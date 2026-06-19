@@ -58,6 +58,8 @@ func run(args []string) int {
 		return delegate(gate.Accept, rest)
 	case "evolve":
 		return cmdEvolve(rest)
+	case "route":
+		return cmdRoute(rest)
 	case "-h", "--help", "help":
 		usage()
 		return 0
@@ -74,6 +76,7 @@ func usage() {
 usage:
   forge run    <workflow> [--mode balanced] [--executor dry|command] [--agent-cmd claude] [--root DIR]
   forge evolve <workflow> [--max-iter 5] [--executor dry|command] [--agent-cmd claude] [--root DIR]
+  forge route  [--complexity F] [--risk-score F] [--security F] [--dependency F] [--context F] [--business F] [--task-type T] [--risk low|medium|high|critical] [--budget F]
   forge gate   [--root DIR]
   forge check  [--root DIR]
   forge accept [--root DIR]

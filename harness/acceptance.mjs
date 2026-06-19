@@ -141,7 +141,10 @@ function runApp(app) {
     return { name: app.name, ok: r.ok, detail: r.ok ? `${app.name}: PASS (python)` : `${app.name}: FAIL (python exit ${r.code})` };
   }
   if (runner === 'go') {
-    const r = run('go', ['test', `./examples/${app.name}/...`]);
+    // -C runs from the app's own module dir, so a self-contained nested module
+    // (its own go.mod, no root go.work) tests correctly — `go test ./examples/..`
+    // from the repo root fails because the root is not a Go module.
+    const r = run('go', ['-C', `examples/${app.name}`, 'test', './...']);
     return { name: app.name, ok: r.ok, detail: r.ok ? `${app.name}: PASS (go)` : `${app.name}: FAIL (go exit ${r.code})` };
   }
   return { name: app.name, ok: false, detail: `${app.name}: FAIL (no recognized test runner)` };
