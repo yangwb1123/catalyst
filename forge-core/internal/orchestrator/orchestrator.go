@@ -129,13 +129,30 @@ func (d DryRunExecutor) logf(format string, args ...any) {
 // carry no on_fail is byte-for-byte unchanged regardless of this value, and even
 // one that DOES carry on_fail still aborts on the first red until the budget is
 // raised. cmd sets a conservative 3.
+//
+// MaxAgentCalls is the per-run ceiling on AGENT-PHASE EXECUTIONS — the paired
+// prerequisite to the recursion guard. The recursion guard (CommandExecutor.MaxDepth)
+// bounds nesting DEPTH (a fork-bomb); this bounds the TOTAL count of agent spawns in
+// one run, INCLUDING the re-runs a directed loop-back triggers (each is a real spawn,
+// real spend). Charged immediately before each runAgentPhase via checkAgentBudget; a
+// positive ceiling that the running count exceeds refuses the spawn fail-closed. The
+// default 0 means "unbounded": the count is tallied but never trips, so an existing
+// run is byte-for-byte unchanged — only a positive ceiling enforces. SCOPE: this
+// counts phase EXECUTIONS (loop-back re-runs included); the retries WITHIN a single
+// phase are bounded separately by MaxRetries and are NOT charged here (one execution
+// charges once). EVOLVE: RunFrom owns this counter (local, reset per call) and
+// LoopEngine invokes RunFrom once per iteration, so under `forge evolve` the ceiling
+// is PER-ITERATION — total evolve spend is bounded by max-iter × MaxAgentCalls, not by
+// this alone. It is the predictable cost bound for --executor=command's real firings;
+// under a dry-run executor the counting is verifiable but no budget is spent.
 type Engine struct {
-	Exec        AgentExecutor
-	RunGate     func(name string) gate.Result
-	Log         func(string)
-	MaxRetries  int
-	MaxLoopBack int
-	ModePolicy  mode.Policy
+	Exec          AgentExecutor
+	RunGate       func(name string) gate.Result
+	Log           func(string)
+	MaxRetries    int
+	MaxLoopBack   int
+	MaxAgentCalls int
+	ModePolicy    mode.Policy
 }
 
 // Run executes the workflow phase by phase under mode, applying the central
@@ -175,6 +192,7 @@ func (e Engine) RunFrom(wf asset.Workflow, mode string, start int) error {
 		return nil
 	}
 	loopBacks := 0
+	agentCalls := 0
 	for i := start; i < len(wf.Phases); i++ {
 		p := wf.Phases[i]
 		if len(p.RequiredGates) > 0 {
@@ -193,6 +211,13 @@ func (e Engine) RunFrom(wf asset.Workflow, mode string, start int) error {
 			continue
 		}
 		e.narrateADR(wf, p)
+		// Charge the per-run agent-call budget BEFORE spawning. A loop-back re-run
+		// re-reaches this agent phase and so is charged again (loop-back × phase is
+		// the blow-up MaxLoopBack alone does not bound); on overrun this returns the
+		// fail-closed error and the phase is never spawned.
+		if err := e.checkAgentBudget(&agentCalls); err != nil {
+			return err
+		}
 		if err := e.runAgentPhase(p, mode); err != nil {
 			return err
 		}

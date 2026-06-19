@@ -80,8 +80,8 @@ func usage() {
 	fmt.Fprint(os.Stderr, `forge — ForgeOS orchestration runtime (forge-core)
 
 usage:
-  forge run    <workflow> [--mode balanced] [--lifecycle mvp] [--executor dry|command] [--agent-cmd claude] [--timeout 0] [--max-retries 0] [--max-agent-depth 2] [--approved] [--root DIR]
-  forge evolve <workflow> [--mode balanced] [--lifecycle mvp] [--max-iter 5] [--executor dry|command] [--agent-cmd claude] [--timeout 0] [--max-retries 0] [--max-agent-depth 2] [--resume] [--root DIR]
+  forge run    <workflow> [--mode balanced] [--lifecycle mvp] [--executor dry|command] [--agent-cmd claude] [--timeout 0] [--max-retries 0] [--max-agent-depth 2] [--max-agent-calls 0] [--approved] [--root DIR]
+  forge evolve <workflow> [--mode balanced] [--lifecycle mvp] [--max-iter 5] [--executor dry|command] [--agent-cmd claude] [--timeout 0] [--max-retries 0] [--max-agent-depth 2] [--max-agent-calls 0] [--resume] [--root DIR]
   forge route  [--complexity F] [--risk-score F] [--security F] [--dependency F] [--context F] [--business F] [--task-type T] [--risk low|medium|high|critical] [--budget F] [--scorecard PATH]
   forge migrate --to engineering [--apply] [--root DIR]
   forge gate   [--root DIR]
@@ -131,6 +131,14 @@ type runOpts struct {
 	// default 2). Plumbed into CommandExecutor.MaxDepth so a real agent that
 	// re-invokes forge cannot recurse unboundedly (a fork-bomb). See that field.
 	maxAgentDepth int
+	// maxAgentCalls is the per-run ceiling on agent-phase EXECUTIONS for
+	// --executor=command (0 = unbounded, backward-compatible default). Plumbed into
+	// Engine.MaxAgentCalls — the paired prerequisite to maxAgentDepth: depth bounds
+	// nesting (fork-bomb), this bounds the TOTAL agent spawns of one run (loop-back
+	// re-runs included), the predictable cost bound. For `forge evolve` it is
+	// PER-ITERATION (the RunFrom-local counter resets each iteration), so total evolve
+	// spend is bounded by max-iter × this. See that field.
+	maxAgentCalls int
 	// approved is the human-approval signal for a human_gate workflow (design):
 	// --approved on the command line is one of the two approval sources (the other
 	// is a <root>/.forge/<stage>.approved marker). Default false: an unapproved
@@ -150,6 +158,7 @@ func bindRunOpts(fs *flag.FlagSet, o *runOpts) {
 	fs.DurationVar(&o.timeout, "timeout", 0, "per-agent-command timeout (0 = no deadline, e.g. 90s, 5m)")
 	fs.IntVar(&o.maxRetries, "max-retries", 0, "retry ceiling for retryable agent failures (0 = no retries)")
 	fs.IntVar(&o.maxAgentDepth, "max-agent-depth", 0, "nested agent-spawn cap for --executor=command (0 = safe default 2; prevents recursive fork-bombs)")
+	fs.IntVar(&o.maxAgentCalls, "max-agent-calls", 0, "per-run ceiling on agent-phase executions for --executor=command (0 = unbounded; for evolve this is PER-ITERATION, total <= max-iter x this)")
 	fs.BoolVar(&o.approved, "approved", false, "supply the human-approval signal for a human_gate workflow (or create <root>/.forge/<stage>.approved)")
 }
 
@@ -220,12 +229,13 @@ func execEngine(wf asset.Workflow, o runOpts) int {
 	lifecycle := resolveLifecycle(o)
 	pol := mode.Effective(o.mode, lifecycle)
 	eng := orchestrator.Engine{
-		Exec:        agentExecutor(o, logln),
-		RunGate:     harnessRunner(o.root, probe),
-		Log:         logln,
-		MaxRetries:  o.maxRetries,
-		MaxLoopBack: maxLoopBack,
-		ModePolicy:  pol,
+		Exec:          agentExecutor(o, logln),
+		RunGate:       harnessRunner(o.root, probe),
+		Log:           logln,
+		MaxRetries:    o.maxRetries,
+		MaxLoopBack:   maxLoopBack,
+		MaxAgentCalls: o.maxAgentCalls,
+		ModePolicy:    pol,
 	}
 	fmt.Printf("forge run: stage=%s mode=%s lifecycle=%s executor=%s gates=%v reviewer=%v discover=%s design=%s adr=%v (%d phases)\n",
 		wf.Stage, o.mode, lifecycle, o.executor, pol.Gates, pol.Reviewer,
