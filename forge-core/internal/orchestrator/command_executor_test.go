@@ -108,6 +108,73 @@ func TestCommandExecutor_MissingBinaryIsConfig(t *testing.T) {
 	}
 }
 
+// The recursion guard refuses to spawn once the inherited agent-call depth has
+// reached the cap: a real agent re-invoking `forge --executor=command` must not
+// fork-bomb. The fault is a NON-retryable KindRecursionLimit (re-running recurses
+// identically) and — critically — NO subprocess is spawned (the Build command here
+// would log "ran ... SHOULD-NOT-RUN" if it executed; it must not).
+func TestCommandExecutor_RecursionGuardBlocksAtCap(t *testing.T) {
+	t.Setenv(agentDepthEnv, "2")
+	rec := &recorder{}
+	ex := CommandExecutor{
+		Build:    func(asset.Phase, string) []string { return []string{"echo", "SHOULD-NOT-RUN"} },
+		Log:      rec.log,
+		MaxDepth: 2,
+	}
+	err := ex.Execute(asset.Phase{Name: "x"}, "m")
+	execErr := requireExecError(t, err)
+	if execErr.Kind != KindRecursionLimit {
+		t.Errorf("at cap: want KindRecursionLimit, got %v", execErr.Kind)
+	}
+	if execErr.Retryable() {
+		t.Error("a recursion-limit fault must not be retryable")
+	}
+	if containsLine(rec.logs, "SHOULD-NOT-RUN") {
+		t.Error("guard must refuse BEFORE spawning; the command must not run")
+	}
+}
+
+// Below the cap, the executor spawns AND propagates an incremented depth to the
+// child, so a nested forge sees parent+1 and the guard composes across processes.
+// printenv echoes the injected var back through CombinedOutput -> logf, proving
+// the child's environment actually carries FORGE_AGENT_DEPTH=1 (parent 0 + 1).
+func TestCommandExecutor_RecursionGuardInjectsIncrementedDepth(t *testing.T) {
+	t.Setenv(agentDepthEnv, "") // top-level: no inherited depth -> reads 0
+	rec := &recorder{}
+	ex := CommandExecutor{
+		Build: func(asset.Phase, string) []string { return []string{"printenv", agentDepthEnv} },
+		Log:   rec.log,
+	}
+	if err := ex.Execute(asset.Phase{Name: "p"}, "m"); err != nil {
+		t.Fatalf("below cap must spawn: %v", err)
+	}
+	if !containsLine(rec.logs, "-> 1") {
+		t.Errorf("child must inherit depth 1 (parent 0 + 1); logs=%v", rec.logs)
+	}
+}
+
+// A malformed inherited depth must NOT block a legitimate top-level run: garbage
+// reads as 0 (fail-safe), so the executor still spawns rather than refusing.
+func TestCommandExecutor_RecursionGuardFailsSafeOnGarbageDepth(t *testing.T) {
+	t.Setenv(agentDepthEnv, "not-a-number")
+	ex := CommandExecutor{Build: func(asset.Phase, string) []string { return []string{"true"} }}
+	if err := ex.Execute(asset.Phase{Name: "p"}, "m"); err != nil {
+		t.Fatalf("garbage depth must fail-safe to 0 and spawn, got: %v", err)
+	}
+}
+
+// The default cap (2) applies when MaxDepth is unset: at depth 2 the guard fires
+// with no per-executor configuration.
+func TestCommandExecutor_RecursionGuardDefaultCap(t *testing.T) {
+	t.Setenv(agentDepthEnv, "2")
+	ex := CommandExecutor{Build: func(asset.Phase, string) []string { return []string{"echo", "x"} }}
+	err := ex.Execute(asset.Phase{Name: "x"}, "m")
+	execErr := requireExecError(t, err)
+	if execErr.Kind != KindRecursionLimit {
+		t.Errorf("default cap: want KindRecursionLimit at depth 2, got %v", execErr.Kind)
+	}
+}
+
 // requireExecError asserts err is a non-nil *ExecError and returns it, so each
 // test can then check Kind/Retryable. Fails the test (fatally) otherwise.
 func requireExecError(t *testing.T, err error) *ExecError {

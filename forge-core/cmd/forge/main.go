@@ -80,8 +80,8 @@ func usage() {
 	fmt.Fprint(os.Stderr, `forge — ForgeOS orchestration runtime (forge-core)
 
 usage:
-  forge run    <workflow> [--mode balanced] [--lifecycle mvp] [--executor dry|command] [--agent-cmd claude] [--timeout 0] [--max-retries 0] [--approved] [--root DIR]
-  forge evolve <workflow> [--mode balanced] [--lifecycle mvp] [--max-iter 5] [--executor dry|command] [--agent-cmd claude] [--timeout 0] [--max-retries 0] [--resume] [--root DIR]
+  forge run    <workflow> [--mode balanced] [--lifecycle mvp] [--executor dry|command] [--agent-cmd claude] [--timeout 0] [--max-retries 0] [--max-agent-depth 2] [--approved] [--root DIR]
+  forge evolve <workflow> [--mode balanced] [--lifecycle mvp] [--max-iter 5] [--executor dry|command] [--agent-cmd claude] [--timeout 0] [--max-retries 0] [--max-agent-depth 2] [--resume] [--root DIR]
   forge route  [--complexity F] [--risk-score F] [--security F] [--dependency F] [--context F] [--business F] [--task-type T] [--risk low|medium|high|critical] [--budget F] [--scorecard PATH]
   forge migrate --to engineering [--apply] [--root DIR]
   forge gate   [--root DIR]
@@ -127,6 +127,10 @@ type runOpts struct {
 	// no retries, backward-compatible default: first error aborts). Plumbed into
 	// Engine.MaxRetries so a transient timeout retries while a permanent failure aborts.
 	maxRetries int
+	// maxAgentDepth caps nested agent spawns for --executor=command (0 = safe
+	// default 2). Plumbed into CommandExecutor.MaxDepth so a real agent that
+	// re-invokes forge cannot recurse unboundedly (a fork-bomb). See that field.
+	maxAgentDepth int
 	// approved is the human-approval signal for a human_gate workflow (design):
 	// --approved on the command line is one of the two approval sources (the other
 	// is a <root>/.forge/<stage>.approved marker). Default false: an unapproved
@@ -145,6 +149,7 @@ func bindRunOpts(fs *flag.FlagSet, o *runOpts) {
 	fs.StringVar(&o.agentCmd, "agent-cmd", "claude", "command for --executor=command (e.g. claude, echo)")
 	fs.DurationVar(&o.timeout, "timeout", 0, "per-agent-command timeout (0 = no deadline, e.g. 90s, 5m)")
 	fs.IntVar(&o.maxRetries, "max-retries", 0, "retry ceiling for retryable agent failures (0 = no retries)")
+	fs.IntVar(&o.maxAgentDepth, "max-agent-depth", 0, "nested agent-spawn cap for --executor=command (0 = safe default 2; prevents recursive fork-bombs)")
 	fs.BoolVar(&o.approved, "approved", false, "supply the human-approval signal for a human_gate workflow (or create <root>/.forge/<stage>.approved)")
 }
 
@@ -353,8 +358,9 @@ func agentExecutor(o runOpts, logln func(string)) orchestrator.AgentExecutor {
 			Build: func(p asset.Phase, mode string) []string {
 				return []string{o.agentCmd, "-p", buildPrompt(o.root, p, mode)}
 			},
-			Timeout: o.timeout,
-			Log:     logln,
+			Timeout:  o.timeout,
+			MaxDepth: o.maxAgentDepth,
+			Log:      logln,
 		}
 	}
 	return orchestrator.DryRunExecutor{Log: logln}

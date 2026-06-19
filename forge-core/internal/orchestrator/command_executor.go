@@ -3,12 +3,24 @@ package orchestrator
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 
 	"forgeos/forge-core/internal/asset"
 )
+
+// defaultMaxAgentDepth bounds nested agent spawns before the recursion guard
+// fires (see CommandExecutor.MaxDepth). 2 permits one legitimate level of
+// sub-agent orchestration (a top-level run whose agent drives one nested run);
+// the 3rd spawn is refused.
+const defaultMaxAgentDepth = 2
+
+// agentDepthEnv names the inherited counter tracking agent-call nesting across
+// process boundaries; each spawn sets it to parent+1 on the child's environment.
+const agentDepthEnv = "FORGE_AGENT_DEPTH"
 
 // CommandExecutor runs an external command per agent phase — the real bridge
 // beyond DryRunExecutor. Build produces the argv for a phase under a mode
@@ -24,7 +36,15 @@ type CommandExecutor struct {
 	// hang the orchestrator. Set it so a wedged agent is killed and surfaces as
 	// a retryable Timeout instead of stalling the whole spine.
 	Timeout time.Duration
-	Log     func(string)
+	// MaxDepth caps nested agent spawns (the recursion guard). A real agent can
+	// itself invoke `forge run --executor=command`, spawning another agent that
+	// invokes forge again — an unbounded fork-bomb that burns budget with no
+	// ceiling. Each spawn inherits an incremented FORGE_AGENT_DEPTH; once it
+	// reaches the cap the next spawn is refused with a non-retryable
+	// KindRecursionLimit. Zero selects the safe default (defaultMaxAgentDepth).
+	// This guard is the prerequisite that makes driving a real agent CLI safe.
+	MaxDepth int
+	Log      func(string)
 }
 
 // Execute builds and runs the phase's command under an optional timeout, failing
@@ -41,24 +61,30 @@ func (c CommandExecutor) Execute(p asset.Phase, mode string) error {
 		return configErr(p.Name, nil) // empty argv: misconfigured, permanent.
 	}
 
-	// A zero Timeout means "no deadline": context.WithTimeout(0) would fire
-	// immediately, so fall back to a plain cancelable context in that case. The
-	// cancel is always deferred to release the timer/goroutine on every return.
+	// Recursion guard: once the inherited agent-call depth reaches the cap, refuse
+	// to spawn — a real agent re-invoking `forge --executor=command` would else
+	// fork-bomb unboundedly. Fail closed, NON-retryable (re-running recurses).
+	depth := currentAgentDepth()
+	if max := c.maxDepth(); depth >= max {
+		c.logf("phase %s: recursion guard fired (depth %d >= cap %d) — refusing another agent spawn", p.Name, depth, max)
+		return recursionErr(p.Name, depth, max)
+	}
+
+	// A zero Timeout means "no deadline": context.WithTimeout(0) would fire at
+	// once, so fall back to a plain cancelable context. cancel is always deferred.
 	ctx, cancel := c.commandContext()
 	defer cancel()
 
-	// On timeout/cancel, exec.CommandContext sends SIGKILL to the DIRECT child
-	// only — it does not kill a process group, so any GRANDCHILDREN the child
-	// spawned can outlive the kill (an orphaned subtree). For the `claude -p`
-	// use-case the direct child IS the agent, so killing it is sufficient. If a
-	// future agent forks its own subprocesses, switch to a process-group kill
-	// (SysProcAttr{Setpgid: true} + signal -pgid, or Cancel/WaitDelay) so the
-	// whole tree dies with the deadline.
-	out, runErr := exec.CommandContext(ctx, argv[0], argv[1:]...).CombinedOutput()
+	// CommandContext SIGKILLs the DIRECT child only (no process-group kill); for
+	// `claude -p` the direct child IS the agent, so killing it suffices. A future
+	// agent that forks grandchildren would need SysProcAttr{Setpgid} + -pgid.
+	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+	// Propagate an incremented depth so a nested forge inherits it; childEnv
+	// REPLACES any inherited key (duplicate-key resolution is unspecified across libcs).
+	cmd.Env = childEnv(depth)
+	out, runErr := cmd.CombinedOutput()
 	c.logf("phase %s: ran %q -> %s", p.Name, strings.Join(argv, " "), strings.TrimSpace(string(out)))
 	if runErr != nil {
-		// Pass ctx.Err() too: a timeout kill shows up as a generic run error, so
-		// the context is the only place that knows the deadline actually tripped.
 		return classifyRunErr(p.Name, runErr, ctx.Err())
 	}
 	return nil
@@ -78,4 +104,48 @@ func (c CommandExecutor) logf(format string, args ...any) {
 	if c.Log != nil {
 		c.Log(fmt.Sprintf(format, args...))
 	}
+}
+
+// currentAgentDepth reads the inherited FORGE_AGENT_DEPTH. A missing or malformed
+// value reads as 0 (fail-safe: a garbage env must never block a legitimate
+// top-level run — only an honest positive counter raises the guard).
+//
+// SCOPE (honest): this guard bounds ACCIDENTAL recursion — real nesting propagates
+// an honestly-incremented integer, never garbage. It does NOT defend against an
+// agent that maliciously rewrites FORGE_AGENT_DEPTH (garbage resets to 0 by
+// design); an agent with arbitrary env control already has other escapes, so
+// hardening to fail-secure would buy no real safety while breaking honest runs.
+func currentAgentDepth() int {
+	d, err := strconv.Atoi(os.Getenv(agentDepthEnv))
+	if err != nil || d < 0 {
+		return 0
+	}
+	return d
+}
+
+// maxDepth is the effective recursion cap: the configured MaxDepth, or the safe
+// default when unset/non-positive.
+func (c CommandExecutor) maxDepth() int {
+	if c.MaxDepth > 0 {
+		return c.MaxDepth
+	}
+	return defaultMaxAgentDepth
+}
+
+// childEnv returns the parent environment with FORGE_AGENT_DEPTH set to depth+1,
+// REPLACING any inherited value rather than appending a duplicate key. POSIX leaves
+// duplicate-key resolution unspecified and libcs differ (glibc's getenv returns the
+// LAST occurrence, some others the first), so collapsing to a single key is the only
+// choice correct under all of them — the child unambiguously observes the
+// incremented agent-call depth regardless of the platform's getenv.
+func childEnv(depth int) []string {
+	prefix := agentDepthEnv + "="
+	base := os.Environ()
+	out := make([]string, 0, len(base)+1)
+	for _, kv := range base {
+		if !strings.HasPrefix(kv, prefix) {
+			out = append(out, kv)
+		}
+	}
+	return append(out, fmt.Sprintf("%s=%d", agentDepthEnv, depth+1))
 }

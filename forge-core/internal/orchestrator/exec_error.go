@@ -28,6 +28,11 @@ const (
 	// ran to completion but reported failure. Treated as terminal here (the
 	// agent decided it failed); not auto-retryable.
 	KindFailed
+	// KindRecursionLimit is a permanent guard fault: the inherited agent-call
+	// depth reached the cap, so spawning another agent was refused to prevent an
+	// unbounded recursive fork-bomb (a real agent re-invoking forge
+	// --executor=command). Never retryable — re-running would recurse identically.
+	KindRecursionLimit
 )
 
 // String renders the kind for logs and error messages.
@@ -39,6 +44,8 @@ func (k ExecKind) String() string {
 		return "timeout"
 	case KindFailed:
 		return "failed"
+	case KindRecursionLimit:
+		return "recursion-limit"
 	default:
 		return "unknown"
 	}
@@ -77,6 +84,17 @@ func (e *ExecError) Retryable() bool { return e.Kind == KindTimeout }
 // (which may be nil for argv/Build faults that have no underlying error value).
 func configErr(phase string, cause error) *ExecError {
 	return &ExecError{Phase: phase, Kind: KindConfig, Err: cause}
+}
+
+// recursionErr builds a KindRecursionLimit failure: the agent-call nesting reached
+// the cap, so another spawn was refused. Non-retryable (Retryable honors only
+// KindTimeout), so the orchestrator aborts fail-closed rather than recursing.
+func recursionErr(phase string, depth, max int) *ExecError {
+	return &ExecError{
+		Phase: phase,
+		Kind:  KindRecursionLimit,
+		Err:   fmt.Errorf("agent-call depth %d reached cap %d", depth, max),
+	}
 }
 
 // classifyRunErr maps the error from running a command to an *ExecError. The
