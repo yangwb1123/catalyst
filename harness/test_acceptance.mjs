@@ -54,36 +54,56 @@ test('importing acceptance.mjs produces no output and exits 0 (no side effects)'
 // the whole acceptance gate from there would recurse (acceptance -> glob ->
 // test_acceptance -> acceptance -> ...) and cost ~4x redundant nested gate runs.
 // The outer `node harness/acceptance.mjs` invocation (no flag) still runs it.
-test('acceptance gate ACCEPTS the real repo and exits 0', { skip: Boolean(process.env.FORGE_ACCEPT_INNER) }, () => {
+// HOST-AGNOSTIC by design: this suite ships VERBATIM into every scaffolded
+// project (it is in forge-init's COPIED_FILES), so it drives `node
+// harness/acceptance.mjs` against WHATEVER repo it lands in and asserts only the
+// invariants that hold for ANY ForgeOS project — the ACCEPTED verdict, the
+// load-bearing criteria PASSing, N/A staying honestly visible, and the
+// declaration-driven app-test routing being live. It must NOT hardcode the
+// SOURCE repo's app names (go-taskd / url-shortener) or environment (go
+// installed), or it would falsely fail when copied to a scaffold that ships only
+// examples/starter/ — turning copy-anywhere into a lie patched over by the INNER
+// skip. (The skip below still prevents recursion when this runs inside
+// acceptance.mjs's own probeTests glob; it is not what makes the asserts portable.)
+test('acceptance gate ACCEPTS the repo it runs in and exits 0', { skip: Boolean(process.env.FORGE_ACCEPT_INNER) }, () => {
   const res = spawnSync(process.execPath, [ACCEPT_PATH], { encoding: 'utf8' });
   assert.equal(res.status, 0, `expected exit 0; got ${res.status}\n${res.stdout}\n${res.stderr}`);
   assert.match(res.stdout, /forge-accept: ACCEPTED/);
   // The four real, executable criteria must show PASS.
   assert.match(res.stdout, /\[PASS\] test_pass/);
-  // app_test_pass proves the dogfood url-shortener suite is actually gated here
-  // (a regression in the app would FAIL this criterion and REJECT the repo).
+  // app_test_pass proves the discovered example app suite is actually gated here
+  // (a regression in any app would FAIL this criterion and REJECT the repo).
   assert.match(res.stdout, /\[PASS\] app_test_pass/);
-  // DECLARATION-DRIVEN routing (gap closed): go-taskd runs via the ADAPTER `test:`
-  // command (`go test ./...`), while url-shortener honestly FALLS BACK because the
-  // typescript adapter's `vitest run` does not fit its node:test *.test.mjs — and
-  // the fail-closed 47-tests count is preserved on that fallback path.
-  assert.match(res.stdout, /go-taskd: PASS \(adapter: go test \.\/\.\.\.\)/);
-  assert.match(res.stdout, /url-shortener: PASS \(node fallback: .*vitest.* does not fit app layout, 47 tests\)/);
+  // DECLARATION-DRIVEN routing must be LIVE, asserted host-agnostically: the
+  // app_test_pass detail must carry an `adapter:` tag (an app whose adapter
+  // `test:` command fits its layout — e.g. the source repo's go-taskd `go test
+  // ./...`) OR a `fallback:` tag (an app that honestly falls back, e.g. a
+  // node:test *.test.mjs app the typescript adapter's `vitest run` does not fit —
+  // url-shortener in the source repo, starter in a fresh scaffold). Either tag
+  // proves the appTestPlan routing ran; we do NOT bind to a specific app name or
+  // test count, which differ per project.
+  const appLine = (res.stdout.match(/\[PASS\] app_test_pass — (.*)/) ?? [])[1] ?? '';
+  assert.match(appLine, /\b(?:adapter|fallback):/, `app_test_pass detail must show a live adapter/fallback test route; got: ${appLine}`);
   assert.match(res.stdout, /\[PASS\] complexity_violations/);
   assert.match(res.stdout, /\[PASS\] arch_violations/);
-  // security_findings is now a REAL check (harness/secret-scan.mjs), not N/A:
-  // the repo ships no hardcoded secret, so it must show PASS.
+  // architecture (clean-architecture dependency-direction + size budgets) is
+  // load-bearing and must PASS for any clean tree.
+  assert.match(res.stdout, /\[PASS\] architecture/);
+  // security_findings is a REAL check (harness/secret-scan.mjs), not N/A: a clean
+  // repo ships no hardcoded secret, so it must show PASS.
   assert.match(res.stdout, /\[PASS\] security_findings/);
-  // N/A criteria must remain visible (honesty: never silently dropped). coverage
-  // is now framework-backed (probeCoverage shells the adapter coverage tools);
-  // it stays N/A here because no coverage tool is runnable+configured (go is
-  // installed but the repo root is not a Go module; pytest/vitest absent), so it
-  // remains NON-load-bearing and the repo is still ACCEPTED.
+  // HONESTY (host-agnostic): the unwired criteria must remain VISIBLE as N/A —
+  // never silently dropped, never faked into a pass. coverage is framework-backed
+  // (probeCoverage shells the adapter coverage tools) but stays N/A wherever no
+  // coverage tool is runnable+configured; build has no wired step. Both are
+  // NON-load-bearing, so an honest N/A keeps the repo ACCEPTED. (We assert N/A
+  // presence, not the per-language reason, which is environment-specific.)
   assert.match(res.stdout, /\[N-A \] coverage/);
   assert.match(res.stdout, /\[N-A \] build/);
-  // Honesty regression guard: go IS installed, so the coverage detail must not
-  // dishonestly claim "go not installed" (the `go --version` exit-2 trap).
-  assert.doesNotMatch(res.stdout, /go not installed/);
+  // HONESTY tally guard (host-agnostic): the footer must show N/A counted
+  // SEPARATELY and explicitly NOT folded into satisfaction — the core invariant
+  // that an N/A can never masquerade as a pass, true for any project.
+  assert.match(res.stdout, /n\/a is NOT counted as satisfied/);
 });
 
 // --- coverage is now a real probe, not a hardcoded N/A in probeNotApplicable --
