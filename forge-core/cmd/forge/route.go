@@ -13,7 +13,10 @@ package main
 import (
 	"flag"
 	"fmt"
+	"os/exec"
+	"strings"
 
+	"forgeos/forge-core/internal/gate"
 	"forgeos/forge-core/internal/risk"
 	"forgeos/forge-core/internal/routing"
 )
@@ -50,6 +53,10 @@ type routeOpts struct {
 	sig                             risk.Signals // declared change features (risk classifier input)
 	riskSetByUser                   bool         // --risk explicitly passed (vs. the "low" default)
 	sigSetByUser                    bool         // any --touches-*/--prod-traffic/--irreversible/--blast-radius passed
+	diffFiles                       string       // --diff-files: comma-separated explicit changed-path list
+	fromGit                         bool         // --from-git: derive changed paths from `git diff --name-only HEAD`
+	root                            string       // --root: repo root for --from-git (gate.RepoRoot resolution)
+	autoReasons                     []string     // human-readable hit reasons from FromChangedPaths (observability)
 }
 
 // cmdRoute parses the routing flags, scores the task, resolves the tier, and
@@ -74,6 +81,9 @@ func cmdRoute(args []string) int {
 	rule := decidingRule(score, o.taskType, effRisk, o.budget)
 	fmt.Printf("forge route: score=%.4f tier=%s decided-by=%s\n", score, tier, rule)
 	fmt.Printf("  task-type=%q risk=%q budget(spend-ratio)=%.2f\n", o.taskType, effRisk, o.budget)
+	if len(o.autoReasons) > 0 {
+		fmt.Printf("  auto-features (path heuristic): %s\n", strings.Join(o.autoReasons, "; "))
+	}
 	fmt.Printf("  %s\n", riskLine)
 	picked, reason := historyDecision(tier, o.taskType, o.scorecard)
 	fmt.Printf("  history: model=%s — %s\n", picked, reason)
@@ -83,12 +93,14 @@ func cmdRoute(args []string) int {
 // resolveRisk turns the parsed options into the EFFECTIVE risk level fed to
 // TierForScore, plus a one-line honest report of how it was decided.
 //
-// Backward compatibility is the contract: when NO feature flag is given, route
-// behaves exactly as before — the effective risk is simply --risk (the manual
-// value or its "low" default). When feature flags ARE given, the classifier
-// computes a level from them and route takes the HIGHER of (classifier, manual
-// --risk): an explicit --risk can only RAISE the floor, never silently lower a
-// risk the declared signals say is greater.
+// Backward compatibility is the contract: when NO feature flag is given (neither
+// an explicit --touches-* nor a changed-path set via --diff-files/--from-git),
+// route behaves exactly as before — the effective risk is simply --risk (the
+// manual value or its "low" default). When features ARE supplied — whether typed
+// explicitly OR auto-derived from changed paths by applyDiffSignals — the
+// classifier computes a level from o.sig and route takes the HIGHER of
+// (classifier, manual --risk): an explicit --risk can only RAISE the floor, never
+// silently lower a risk the declared/derived signals say is greater.
 func resolveRisk(o routeOpts) (level, report string) {
 	if !o.sigSetByUser {
 		return o.risk, fmt.Sprintf("risk: %s (manual --risk; no change features supplied)", o.risk)
@@ -157,12 +169,16 @@ func parseRouteFlags(args []string) (routeOpts, bool) {
 	fs.StringVar(&o.risk, "risk", "low", "manual risk override: low|medium|high|critical (raised to classifier verdict if features given)")
 	fs.Float64Var(&o.budget, "budget", 0, "spend ratio (cumulative_spend/budget_cap), 0..1+")
 	fs.StringVar(&o.scorecard, "scorecard", defaultScorecardPath, "Eval Engine scorecards.json for history-tiebreak (missing file = cold start)")
+	fs.StringVar(&o.diffFiles, "diff-files", "", "comma-separated changed-path list; auto-derives risk features (path heuristic)")
+	fs.BoolVar(&o.fromGit, "from-git", false, "derive changed paths from `git -C <root> diff --name-only HEAD` (fail-tolerant)")
+	fs.StringVar(&o.root, "root", "", "repo root for --from-git (else $FORGE_REPO_ROOT, else cwd)")
 	bindRiskFeatureFlags(fs, &o.sig, &irreversible)
 	if err := fs.Parse(args); err != nil {
 		return routeOpts{}, false
 	}
 	o.sig.Reversible = !irreversible // policy signal is reversibility; flag is its negation
 	recordRiskFlagOrigins(fs, &o)
+	applyDiffSignals(&o)
 	return o, true
 }
 
@@ -198,6 +214,106 @@ func recordRiskFlagOrigins(fs *flag.FlagSet, o *routeOpts) {
 			o.sigSetByUser = true
 		}
 	})
+}
+
+// applyDiffSignals AUTOMATICALLY derives risk features from the changed-path set
+// (--diff-files and/or --from-git) and folds them into o.sig. It is the bridge
+// from risk.FromChangedPaths into route's existing classifier path: when paths
+// are present it merges the auto Signals with any explicit --touches-* flags by
+// taking the STRICTER of the two (raise-only — see mergeAutoSignals), flips
+// sigSetByUser so resolveRisk engages the classifier, and records the hit reasons
+// for the report. With neither flag given it is a no-op, so route stays byte-for-
+// byte backward compatible. Auto can only RAISE risk, never lower a declared one.
+func applyDiffSignals(o *routeOpts) {
+	if o.diffFiles == "" && !o.fromGit {
+		return
+	}
+	paths := changedPaths(o)
+	if len(paths) == 0 {
+		return // no changed paths resolved (empty list / no git / no diff) -> no auto signal
+	}
+	auto, reasons := risk.FromChangedPaths(paths)
+	o.sig = mergeAutoSignals(o.sig, auto)
+	o.autoReasons = reasons
+	o.sigSetByUser = true // a changed-path set was supplied -> classifier mode
+}
+
+// changedPaths assembles the changed-path set from --diff-files (a comma list,
+// blanks trimmed) and --from-git (the working tree's diff vs HEAD). Both sources
+// are unioned; either may be empty without error.
+func changedPaths(o *routeOpts) []string {
+	var paths []string
+	paths = append(paths, splitDiffFiles(o.diffFiles)...)
+	if o.fromGit {
+		paths = append(paths, gitChangedPaths(o.root)...)
+	}
+	return paths
+}
+
+// splitDiffFiles parses a comma-separated path list, dropping empty/whitespace
+// entries so "a, ,b," yields [a b] rather than blanks that would inflate
+// BlastRadius.
+func splitDiffFiles(csv string) []string {
+	var out []string
+	for _, p := range strings.Split(csv, ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// gitChangedPaths returns the files changed in the working tree relative to HEAD
+// via `git -C <root> diff --name-only HEAD`. FAIL-TOLERANT BY DESIGN: outside a
+// git repo, with git absent, or with no changes, it returns an empty slice and
+// never errors — an unavailable git is a missing signal (auto under-states, the
+// human overrides), not a route failure.
+func gitChangedPaths(root string) []string {
+	out, err := exec.Command("git", "-C", gate.RepoRoot(root), "diff", "--name-only", "HEAD").Output()
+	if err != nil {
+		return nil
+	}
+	return splitLines(string(out))
+}
+
+// splitLines returns the non-blank lines of s, trimmed — git emits one path per
+// line with a trailing newline.
+func splitLines(s string) []string {
+	var out []string
+	for _, l := range strings.Split(s, "\n") {
+		if l = strings.TrimSpace(l); l != "" {
+			out = append(out, l)
+		}
+	}
+	return out
+}
+
+// mergeAutoSignals folds AUTO-derived Signals into the EXPLICIT ones, taking the
+// STRICTER value field-by-field so the merge can only RAISE risk: booleans OR
+// (any "true" wins), BlastRadius takes the max, and Reversible takes the AND
+// (irreversible from EITHER source wins — the risk-raising direction). ProdTraffic
+// thus stays true only if the human declared it; auto never sets it (a path can't
+// prove prod exposure). This is the same "raise, never lower" rule resolveRisk
+// applies between the classifier and manual --risk, here applied between the
+// auto and manual FEATURE sources.
+func mergeAutoSignals(explicit, auto risk.Signals) risk.Signals {
+	return risk.Signals{
+		TouchesPayment:   explicit.TouchesPayment || auto.TouchesPayment,
+		TouchesAuth:      explicit.TouchesAuth || auto.TouchesAuth,
+		TouchesSecrets:   explicit.TouchesSecrets || auto.TouchesSecrets,
+		TouchesMigration: explicit.TouchesMigration || auto.TouchesMigration,
+		ProdTraffic:      explicit.ProdTraffic || auto.ProdTraffic,
+		Reversible:       explicit.Reversible && auto.Reversible,
+		BlastRadius:      maxInt(explicit.BlastRadius, auto.BlastRadius),
+	}
+}
+
+// maxInt returns the larger of two ints (BlastRadius merge).
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 // taskTypeFloor mirrors policy.yml tiers.by_task_type — the EXACT same floors

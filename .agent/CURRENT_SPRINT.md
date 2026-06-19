@@ -30,6 +30,9 @@ forge-core **11 Go 包**纯 stdlib 零依赖;arch-check **8 检查** + secret-sc
 ## Sprint 8 (✅ 完成) — 中枢旋钮迁移:explorer→engineering 状态迁移
 `forge migrate --to engineering`:vision 的「创业→企业」治理升级。读 modes.yml 的 migration → 收紧 harness(全 6 gate / coverage 80 / block)+ 抬 router floor(haiku→sonnet)+ 启用 workflow + **派生 5 补债任务**(backfill-tests / add-ci / add-monitoring / refactor-oversized / security-pass)。**默认 dry**(打印 plan 不写文件),`--apply` 才改 project.yml mode + 注入 ROADMAP。fresh reviewer SHIP(stress-test project.yml 多格式保留 + Plan 逐行对齐 modes.yml + apply-ordering 安全)。新 `internal/migrate` 纯叶子(零 import)。
 
+## Sprint 9 (✅ 完成) — 方向五补全:risk 特征自动提取
+`risk.FromChangedPaths` 从改动文件路径启发式推 risk 特征(payment/auth/secret/migration→irreversible + BlastRadius),接 `forge route --diff-files/--from-git`(fail-tolerant)。**只推高不压低**(auto 与人工 `--risk`/`--touches-*` 取更严,OR/max/AND/manual-only merge——empirical 坐实);honesty:粗启发式(只读路径不读内容/调用图)、ProdTraffic 永不从路径凭空推断、`--from-git` 仅 tracked 改动。fresh reviewer APPROVE。
+
 ## 下一前沿(需基础设施 / 真点火,非本环境可完整验证)
 - **真点火** `--agent-cmd=claude`:机制+测试已就位,差凭证/预算/防递归(方向①②③的「自动采集源 / 真语义发现」随此解锁)
 - **v3 基础设施**:SCA/CVE 漏洞库(⑤)· embedding 语义检索(③)· 跨厂商池 LiteLLM · Firecracker 沙箱 · Web UI

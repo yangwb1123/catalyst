@@ -201,6 +201,120 @@ func TestCmdRoute_RiskFeatureFlagsParse(t *testing.T) {
 	}
 }
 
+// --diff-files AUTO-derives risk features from changed paths and feeds them into
+// the SAME classifier path. The headline case: a payment file plus an irreversible
+// migration auto-classifies CRITICAL, which pins TierForScore to Opus — the whole
+// point of automatic extraction (no --touches-* typed by hand).
+func TestRoute_DiffFilesAutoDerivesAndForcesOpus(t *testing.T) {
+	o, ok := parseRouteFlags([]string{
+		"--task-type", "implementation",
+		"--diff-files", "src/payment/charge.go,db/migrations/001.sql",
+	})
+	if !ok {
+		t.Fatal("parseRouteFlags(--diff-files payment+migration) failed to parse")
+	}
+	// The path heuristic must have set the payment + migration signals (and dropped
+	// reversibility for the migration), and recorded observable reasons.
+	if !o.sig.TouchesPayment || !o.sig.TouchesMigration || o.sig.Reversible {
+		t.Errorf("auto signals = %+v, want payment+migration, irreversible", o.sig)
+	}
+	if len(o.autoReasons) == 0 {
+		t.Errorf("autoReasons empty; want observable path-heuristic hits")
+	}
+	level, report := resolveRisk(o)
+	if level != risk.Critical {
+		t.Fatalf("resolveRisk(auto payment+migration) = %q, want critical (report %q)", level, report)
+	}
+	if got := routing.TierForScore(0.05, "implementation", level, 0.0); got != routing.Opus {
+		t.Errorf("auto-critical did not force opus: TierForScore = %q, want opus", got)
+	}
+	// End-to-end command runs clean with the diff flag.
+	if code := cmdRoute([]string{"--task-type", "implementation", "--diff-files", "src/payment/charge.go,db/migrations/001.sql"}); code != 0 {
+		t.Errorf("cmdRoute(--diff-files payment+migration) = %d, want 0", code)
+	}
+}
+
+// A single payment file auto-classifies at least high (the security floor), even
+// for a low-score non-sensitive task type.
+func TestRoute_DiffFilesPaymentIsHigh(t *testing.T) {
+	o, _ := parseRouteFlags([]string{"--task-type", "implementation", "--diff-files", "src/payment/charge.go"})
+	level, _ := resolveRisk(o)
+	if risk.Rank(level) < risk.Rank(risk.High) {
+		t.Errorf("auto payment-only risk = %q, want >= high", level)
+	}
+}
+
+// An empty --diff-files (and a no-match list) must NOT engage the classifier as a
+// false signal: with no explicit --risk the effective risk stays the "low"
+// default and the no-features report line is used (backward-compatible).
+func TestRoute_DiffFilesEmptyStaysLow(t *testing.T) {
+	// Whitespace-only list -> no paths -> no auto signal.
+	o, _ := parseRouteFlags([]string{"--task-type", "crud", "--diff-files", " , ,"})
+	if level, report := resolveRisk(o); level != "low" || !strings.Contains(report, "no change features") {
+		t.Errorf("empty --diff-files risk = (%q, %q), want (low, ...no change features...)", level, report)
+	}
+}
+
+// The AUTO result and an explicit --risk take the STRICTER (auto may RAISE the
+// manual floor; manual may RAISE the auto verdict) — never lowered either way.
+func TestRoute_DiffFilesAutoAndManualTakeStricter(t *testing.T) {
+	// Auto says high (payment); manual --risk=critical raises it to critical.
+	o, _ := parseRouteFlags([]string{"--diff-files", "src/payment/charge.go", "--risk", "critical"})
+	if level, _ := resolveRisk(o); level != risk.Critical {
+		t.Errorf("auto(high) + --risk=critical -> %q, want critical (manual raises)", level)
+	}
+	// Auto says critical (payment+migration); manual --risk=low cannot lower it.
+	o2, _ := parseRouteFlags([]string{"--diff-files", "src/payment/charge.go,db/migrations/001.sql", "--risk", "low"})
+	if level, _ := resolveRisk(o2); level != risk.Critical {
+		t.Errorf("auto(critical) + --risk=low -> %q, want critical (auto never lowered)", level)
+	}
+}
+
+// AUTO and EXPLICIT --touches-* feature flags must also take the stricter merge:
+// an explicit --touches-auth ORs with an auto payment hit, so both surfaces show.
+func TestRoute_DiffFilesMergesWithExplicitTouches(t *testing.T) {
+	o, _ := parseRouteFlags([]string{"--diff-files", "src/payment/charge.go", "--touches-auth"})
+	if !o.sig.TouchesPayment || !o.sig.TouchesAuth {
+		t.Errorf("merged signals = %+v, want BOTH payment (auto) and auth (explicit)", o.sig)
+	}
+	// An explicit --irreversible must survive an auto reversible (irreversible wins).
+	o2, _ := parseRouteFlags([]string{"--diff-files", "src/payment/charge.go", "--irreversible"})
+	if o2.sig.Reversible {
+		t.Errorf("explicit --irreversible was lowered by auto reversible; Reversible=%v, want false", o2.sig.Reversible)
+	}
+}
+
+// --from-git must be FAIL-TOLERANT: pointed at a directory that is not a git repo
+// it yields no paths, engages no classifier, and route still exits 0 (an
+// unavailable git is a missing signal, not a failure).
+func TestRoute_FromGitFailTolerant(t *testing.T) {
+	nonRepo := t.TempDir() // a fresh temp dir is not a git repo
+	if got := gitChangedPaths(nonRepo); got != nil {
+		t.Errorf("gitChangedPaths(non-repo) = %v, want nil (fail-tolerant)", got)
+	}
+	o, _ := parseRouteFlags([]string{"--task-type", "crud", "--from-git", "--root", nonRepo})
+	if level, report := resolveRisk(o); level != "low" || !strings.Contains(report, "no change features") {
+		t.Errorf("--from-git on non-repo risk = (%q, %q), want low/no-features (fail-tolerant)", level, report)
+	}
+	if code := cmdRoute([]string{"--task-type", "crud", "--from-git", "--root", nonRepo}); code != 0 {
+		t.Errorf("cmdRoute(--from-git non-repo) = %d, want 0 (fail-tolerant)", code)
+	}
+}
+
+// splitDiffFiles drops blank/whitespace entries so BlastRadius is not inflated.
+func TestSplitDiffFiles(t *testing.T) {
+	got := splitDiffFiles("a, ,b,,  c  ,")
+	want := []string{"a", "b", "c"}
+	if len(got) != len(want) {
+		t.Fatalf("splitDiffFiles = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("splitDiffFiles[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
 // decidingRule must NAME the rule that produced the tier, honestly, following
 // TierForScore's precedence (safety_override -> budget_guard -> floor -> band).
 func TestRoute_DecidingRuleNames(t *testing.T) {
