@@ -22,6 +22,12 @@ const defaultMaxAgentDepth = 2
 // process boundaries; each spawn sets it to parent+1 on the child's environment.
 const agentDepthEnv = "FORGE_AGENT_DEPTH"
 
+// defaultMaxOutputBytes caps the stdout+stderr the executor RETAINS from one agent
+// command (see CommandExecutor.MaxOutputBytes). 10 MiB is generous for a phase's
+// log yet bounds a runaway agent's output so it cannot OOM the orchestrator the way
+// an unbounded CombinedOutput would. Override per executor with MaxOutputBytes.
+const defaultMaxOutputBytes = 10 << 20
+
 // CommandExecutor runs an external command per agent phase — the real bridge
 // beyond DryRunExecutor. Build produces the argv for a phase under a mode
 // (e.g. ["claude", "-p", prompt]); pointing it at a real agent CLI is how
@@ -44,7 +50,14 @@ type CommandExecutor struct {
 	// KindRecursionLimit. Zero selects the safe default (defaultMaxAgentDepth).
 	// This guard is the prerequisite that makes driving a real agent CLI safe.
 	MaxDepth int
-	Log      func(string)
+	// MaxOutputBytes caps the stdout+stderr RETAINED from one command. A real agent
+	// that runs away (a bug or a loop emitting unbounded output) would OOM the
+	// orchestrator under an unbounded CombinedOutput; the executor instead retains
+	// at most this many bytes, drains the rest, and reports truncation honestly.
+	// Zero selects the safe default (defaultMaxOutputBytes, 10 MiB). The resource
+	// guard's third dimension alongside MaxDepth (depth) and Timeout (wall-clock).
+	MaxOutputBytes int
+	Log            func(string)
 }
 
 // Execute builds and runs the phase's command under an optional timeout, failing
@@ -82,8 +95,14 @@ func (c CommandExecutor) Execute(p asset.Phase, mode string) error {
 	// Propagate an incremented depth so a nested forge inherits it; childEnv
 	// REPLACES any inherited key (duplicate-key resolution is unspecified across libcs).
 	cmd.Env = childEnv(depth)
-	out, runErr := cmd.CombinedOutput()
-	c.logf("phase %s: ran %q -> %s", p.Name, strings.Join(argv, " "), strings.TrimSpace(string(out)))
+	// Bound the captured output: a runaway agent's unbounded stdout would OOM the
+	// orchestrator under CombinedOutput. cappedBuffer retains at most the cap and
+	// drains the rest; the SAME pointer for Stdout+Stderr lets os/exec serialize the
+	// writes (no lock needed), exactly as CombinedOutput merges the two streams.
+	out := &cappedBuffer{cap: c.maxOutputBytes()}
+	cmd.Stdout, cmd.Stderr = out, out
+	runErr := cmd.Run()
+	c.logf("phase %s: ran %q -> %s", p.Name, strings.Join(argv, " "), out.rendered())
 	if runErr != nil {
 		return classifyRunErr(p.Name, runErr, ctx.Err())
 	}
@@ -148,4 +167,50 @@ func childEnv(depth int) []string {
 		}
 	}
 	return append(out, fmt.Sprintf("%s=%d", agentDepthEnv, depth+1))
+}
+
+// maxOutputBytes is the effective cap on retained command output: the configured
+// MaxOutputBytes, or the safe default when unset/non-positive.
+func (c CommandExecutor) maxOutputBytes() int {
+	if c.MaxOutputBytes > 0 {
+		return c.MaxOutputBytes
+	}
+	return defaultMaxOutputBytes
+}
+
+// cappedBuffer is an io.Writer that retains at most cap bytes of what is written,
+// silently discarding the overflow — so a runaway agent's UNBOUNDED stdout/stderr
+// cannot OOM the orchestrator the way an unbounded CombinedOutput would. It tracks
+// the TOTAL bytes seen so truncation is reported honestly. Write never errors or
+// short-writes (a short write would make os/exec treat the pipe as broken and could
+// wedge the child mid-stream); it lets the agent run to its natural end (or the
+// Timeout) while simply not retaining the excess. Used as BOTH cmd.Stdout and
+// cmd.Stderr (the same pointer), os/exec serializes the writes, so no lock is needed.
+type cappedBuffer struct {
+	cap   int
+	buf   []byte
+	total int
+}
+
+func (b *cappedBuffer) Write(p []byte) (int, error) {
+	b.total += len(p)
+	if room := b.cap - len(b.buf); room > 0 {
+		if len(p) <= room {
+			b.buf = append(b.buf, p...)
+		} else {
+			b.buf = append(b.buf, p[:room]...)
+		}
+	}
+	return len(p), nil
+}
+
+// rendered returns the retained output, trimmed, with an honest truncation note
+// when the agent wrote more than was retained — so a clipped log is never mistaken
+// for the agent's full output.
+func (b *cappedBuffer) rendered() string {
+	s := strings.TrimSpace(string(b.buf))
+	if b.total > len(b.buf) {
+		s += fmt.Sprintf(" …[output truncated: retained %d of %d bytes (--max-output-bytes)]", len(b.buf), b.total)
+	}
+	return s
 }

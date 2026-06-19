@@ -2,6 +2,7 @@ package orchestrator
 
 import (
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -172,6 +173,51 @@ func TestCommandExecutor_RecursionGuardDefaultCap(t *testing.T) {
 	execErr := requireExecError(t, err)
 	if execErr.Kind != KindRecursionLimit {
 		t.Errorf("default cap: want KindRecursionLimit at depth 2, got %v", execErr.Kind)
+	}
+}
+
+// A runaway agent's output is bounded: the executor retains at most MaxOutputBytes
+// and reports truncation, instead of OOMing on an unbounded CombinedOutput. seq
+// emits ~600 KB deterministically; a 1 KiB cap must clip it.
+func TestCommandExecutor_OutputCapTruncatesRunaway(t *testing.T) {
+	rec := &recorder{}
+	ex := CommandExecutor{
+		Build:          func(asset.Phase, string) []string { return []string{"seq", "1", "100000"} },
+		MaxOutputBytes: 1024,
+		Log:            rec.log,
+	}
+	if err := ex.Execute(asset.Phase{Name: "x"}, "m"); err != nil {
+		t.Fatalf("seq exits 0; Execute should succeed: %v", err)
+	}
+	last := rec.logs[len(rec.logs)-1]
+	// Retained log is bounded near the 1 KiB cap, NOT the ~600 KB seq produced —
+	// proving no OOM-sized buffer was held.
+	if len(last) > 4096 {
+		t.Errorf("retained output must be bounded near the cap; got %d bytes", len(last))
+	}
+	if !strings.Contains(last, "truncated") {
+		t.Error("a clipped run must be reported as truncated (honest), not as full output")
+	}
+}
+
+// Output under the cap is retained verbatim, with no truncation note — the common
+// case (a phase log far under 10 MiB) is byte-for-byte unchanged.
+func TestCommandExecutor_OutputUnderCapVerbatim(t *testing.T) {
+	rec := &recorder{}
+	ex := CommandExecutor{
+		Build:          func(asset.Phase, string) []string { return []string{"echo", "small-output"} },
+		MaxOutputBytes: 1024,
+		Log:            rec.log,
+	}
+	if err := ex.Execute(asset.Phase{Name: "x"}, "m"); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	last := rec.logs[len(rec.logs)-1]
+	if !strings.Contains(last, "small-output") {
+		t.Errorf("under-cap output must be retained verbatim; got %q", last)
+	}
+	if strings.Contains(last, "truncated") {
+		t.Error("output under the cap must NOT be reported as truncated")
 	}
 }
 
