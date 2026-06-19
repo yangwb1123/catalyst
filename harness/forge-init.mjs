@@ -42,7 +42,7 @@
 //
 // Design: PURE templating functions (return strings, unit-testable without disk)
 // are kept separate from the fs/copy I/O boundary at the bottom; the copy lists
-// (GOVERNANCE_DIRS / HARNESS_FILES) keep scaffold() data-driven and small.
+// (GOVERNANCE_DIRS / COPIED_FILES) keep scaffold() data-driven and small.
 import {
   mkdirSync,
   copyFileSync,

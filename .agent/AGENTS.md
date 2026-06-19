@@ -6,14 +6,14 @@
 
 ## 硬闸门 — harness 自动拦截
 - **体积**:单文件 ≤ 500 行 · 根目录文件 ≤ 15 — `gate.mjs`
+- **函数与循环依赖**:单函数 ≤ 50 行 · 循环依赖 = 0 — `arch-check`(function-length / circular-dependency,真解析)
 - **依赖方向**:interfaces → application → domain 单向向内;domain 不 import 任何外层,infrastructure 是外层细节、由 interfaces 接线 — `arch-check`(真解析 import)
 - **结构预算**:包大小 / 扇入 / 认知负荷(顶层模块数)不超阈;禁技术角色命名目录(utils / common / manager / handler / impl …)— `arch-check`
 - **治理完整性**:agent / skill 引用、路由档位无悬挂引用 — `check.py`
-- **质量**:test / app-test 全绿;lint / typecheck / build / coverage / security 有工具才查、无则诚实 N/A — `forge accept`
+- **安全与质量**:无硬编码 secret;test / app-test 全绿;lint / typecheck / build / coverage 有工具才查、无则诚实 N/A — `secret-scan` + `forge accept`
 
-## 规范 — Reviewer 判断(尚未自动执法)
+## 规范 — Reviewer 判断
 - **单一职责**:一个文件 / 模块只做一件事;组合优先于继承;禁 God Object;禁根目录堆业务代码。
-- 单函数 ≤ 50 行 · 循环依赖 = 0 —— 函数级 / 成环检测适配器待接(依赖方向已由 `arch-check` 执法)。
 
 ## 行为纪律
 - **先拆分,再继续**:命中阈值即停止新增,先重构(skill `refactor-large-file`),复检通过再走。
