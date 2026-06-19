@@ -47,12 +47,20 @@ const COPIED_ENFORCERS = [
 const COPIED_HARNESS = [
   join('harness', 'check.py'),
   join('harness', 'acceptance.mjs'),
+  // adapters.mjs (imported by acceptance.mjs's lint criterion) + the per-language
+  // command maps it reads at runtime + its self-test — all inherited verbatim so
+  // the fresh project's acceptance gate imports and self-governs the module too.
+  join('harness', 'adapters.mjs'),
+  join('harness', 'adapters', 'go.yml'),
+  join('harness', 'adapters', 'python.yml'),
+  join('harness', 'adapters', 'typescript.yml'),
   join('harness', 'yaml2json.py'),
   join('harness', 'scorecard.mjs'),
   join('harness', 'scorecard-update.mjs'),
   join('harness', 'test_check.py'),
   join('harness', 'test_yaml2json.py'),
   join('harness', 'test_acceptance.mjs'),
+  join('harness', 'test_adapters.mjs'),
   join('harness', 'test_gate.mjs'),
   join('harness', 'test_scorecard.mjs'),
   join('harness', 'test_scorecard-update.mjs'),

@@ -36,6 +36,12 @@ forge-core **11 Go 包**纯 stdlib 零依赖;arch-check **8 检查** + secret-sc
 ## Sprint 10 (✅ 完成) — forge-init 完整 Project Harness Template
 forge-init 从「复制执法器」升级为「复制**完整治理**」:`.agent` 通用资产(agents/skills/workflows/eval/routing/policies)+ 全套 harness(工具+自测)+ 生成 CLAUDE.md + CI(`.github/workflows/forge.yml` 跑 forge accept)+ seed app `examples/starter`(真实通过的脚手架起点)。新项目 `forge accept` **ACCEPTED**(6 真 PASS + 4 诚实 N/A,完整治理非仅执法器)。fresh reviewer APPROVE(falsification 坐实 seed app 真测试 + PyYAML skip 不掩盖)。兑现全局化 70% 全局 / 30% 项目差异。
 
+## Sprint 11 (✅ 完成) — 补三个「声明但未实现」gap(逻辑/框架可测,缺工具诚实 N/A)
+- **scorecard recency 衰减**(`policy.yml` recency_half_life_days=30):`decayWeight` 指数衰减 + `merge` 按 age 衰减旧分权重,fail-open(坏时间戳→1 不污染),向后兼容(decayFactor=1 逐位不变)。
+- **mode-gating evolve 维度**(`modes.yml` workflow_depth.evolve):`EvolveDepth`→max-iter(opportunistic 2/standard 5/thorough 10/advisory 1),production override 收紧,显式 `--max-iter` 优先。
+- **adapters lint 接入框架**(`adapters/*.yml` 从纯声明→可执行):`probeLint` 探测语言→读 adapter→linter 装且配好则跑、缺/未配则诚实 N/A(eslint 装了但无 config→N/A **不 FAIL**),非 load-bearing,装上配好即自动执法。forge-init 同步复制 adapters。
+fresh reviewer APPROVE(三块;honesty footgun 对真实 eslint exit-2 坐实无伪造)。
+
 ## 下一前沿(需基础设施 / 真点火,非本环境可完整验证)
 - **真点火** `--agent-cmd=claude`:机制+测试已就位,差凭证/预算/防递归(方向①②③的「自动采集源 / 真语义发现」随此解锁)
 - **v3 基础设施**:SCA/CVE 漏洞库(⑤)· embedding 语义检索(③)· 跨厂商池 LiteLLM · Firecracker 沙箱 · Web UI

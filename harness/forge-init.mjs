@@ -78,7 +78,9 @@ const GOVERNANCE_DIRS = [
 // the FULL harness — every TOOL plus its SELF-TEST, so check + accept both RUN in
 // the fresh project and self-govern (the harness runs its own tests under
 // acceptance's test_pass). Listed explicitly (not a blind harness/ copy) to omit
-// __pycache__, the human-only README, and the adapters/ docs.
+// __pycache__ and the human-only READMEs. The adapters/<lang>.yml command maps
+// ARE copied (acceptance.mjs's lint criterion reads them at runtime); only the
+// adapters/README.md prose is omitted.
 const COPIED_FILES = [
   join('.agent', 'AGENTS.md'),
   join('.arch', 'rules.yaml'),
@@ -87,6 +89,11 @@ const COPIED_FILES = [
   join('harness', 'policies.yml'),
   join('harness', 'check.py'),
   join('harness', 'acceptance.mjs'),
+  // adapters.mjs is imported by acceptance.mjs (the lint criterion shells the
+  // per-language adapter linters); without it the copied acceptance gate would
+  // fail to import in the fresh project. The adapters/<lang>.yml command maps it
+  // reads are copied below.
+  join('harness', 'adapters.mjs'),
   join('harness', 'yaml2json.py'),
   join('harness', 'scorecard.mjs'),
   join('harness', 'scorecard-update.mjs'),
@@ -94,10 +101,16 @@ const COPIED_FILES = [
   join('harness', 'arch', 'arch-check.mjs'),
   join('harness', 'arch', 'scan.mjs'),
   join('harness', 'arch', 'scan-functions.mjs'),
+  // per-language adapter command maps (read at runtime by adapters.mjs / the
+  // lint criterion); the adapters/README.md prose is intentionally omitted.
+  join('harness', 'adapters', 'go.yml'),
+  join('harness', 'adapters', 'python.yml'),
+  join('harness', 'adapters', 'typescript.yml'),
   // harness self-tests (acceptance's test_pass runs these — the harness self-governs)
   join('harness', 'test_check.py'),
   join('harness', 'test_yaml2json.py'),
   join('harness', 'test_acceptance.mjs'),
+  join('harness', 'test_adapters.mjs'),
   join('harness', 'test_gate.mjs'),
   join('harness', 'test_scorecard.mjs'),
   join('harness', 'test_scorecard-update.mjs'),

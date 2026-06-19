@@ -18,6 +18,7 @@ import { spawnSync } from 'node:child_process';
 import { readdirSync, statSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { detectLanguages, loadAdapter, lintBinary } from './adapters.mjs';
 
 const HARNESS_DIR = dirname(fileURLToPath(import.meta.url));
 const ROOT = dirname(HARNESS_DIR);
@@ -198,15 +199,102 @@ export function probeAppTests() {
   return result('app_test_pass', ok ? PASS : FAIL, detail);
 }
 
+// lint == clean  <-  per-language linters from harness/adapters/<lang>.yml.
+// This upgrades lint from a STATIC N/A (the adapters used to be pure
+// declarations with no consumer) to an executable, framework-backed criterion:
+// detect the project's languages, load each adapter's lint command, and — only
+// when that linter is actually INSTALLED — shell it out.
+//
+// HONESTY + FAIL-SAFE (the whole point): a missing linter is NOT a failure and
+// NOT a faked pass. Each contributing helper returns one of:
+//   PASS  — linter installed AND the lint command exited 0 (a real clean run);
+//   FAIL  — linter installed AND it reported real lint violations;
+//   N-A   — linter NOT installed, OR installed but unconfigured for this project
+//           (e.g. eslint with no eslintrc: it can't run, so its result is not a
+//           verdict on the code). N/A is the honest outcome, never a FAIL.
+// The criterion is N/A iff every language is N/A (so a repo with no installed
+// linter — like this one by default — stays N/A and therefore ACCEPTED, keeping
+// lint NON-load-bearing and the gate backward-compatible). Install eslint/
+// golangci-lint/ruff with a config and the SAME code auto-enforces: PASS/FAIL.
+
+// linterInstalled: true iff `<bin> --version` exits 0. The cheap, side-effect-
+// free probe for "is this tool on PATH" before running the heavier lint command.
+function linterInstalled(bin) {
+  return run(bin, ['--version']).ok;
+}
+
+// unconfigured: did the lint command fail because the linter could not actually
+// RUN (no project config), as opposed to finding real violations? Such a result
+// is not a verdict on the code, so we map it to N/A rather than FAIL. Detected
+// generically from the tool's own "couldn't find a configuration" wording (and
+// eslint's exit-2 "fatal/config" code, distinct from its exit-1 "found lint
+// errors"). Conservative: only the clear can't-run signals match here.
+export function unconfigured(out) {
+  return /no\s+configuration|couldn'?t\s+find\s+a?\s*config|configuration\s+file|unable\s+to\s+(?:find|locate)\s+config/i.test(out ?? '');
+}
+
+// judgeLint: PURE per-language lint decision (no I/O) so the honesty/fail-safe
+// branches are directly unit-testable without any linter installed. Inputs:
+//   lang      — adapter language tag (for the detail string);
+//   bin       — the linter binary, or null when the adapter has no lint command;
+//   installed — did `<bin> --version` exit 0 (boolean);
+//   r         — the lint command's run result {ok,code,out}, or null if not run.
+// Order: no bin / not installed -> N/A; exit 0 -> PASS; could-not-run
+// (unconfigured) -> N/A; otherwise (real violations) -> FAIL. A missing linter is
+// NEVER a FAIL and an unconfigured one is NEVER a faked PASS.
+export function judgeLint(lang, bin, installed, r) {
+  if (!bin) return { lang, status: NA, detail: `${lang}: adapter has no lint command` };
+  if (!installed) return { lang, status: NA, detail: `${lang}: ${bin} not installed` };
+  if (r && r.ok) return { lang, status: PASS, detail: `${lang}: ${bin} clean` };
+  if (r && unconfigured(r.out)) return { lang, status: NA, detail: `${lang}: ${bin} installed but unconfigured (no project config) — not run` };
+  return { lang, status: FAIL, detail: `${lang}: ${bin} exit ${r ? r.code : 'n/a'}` };
+}
+
+// probeLintLang: I/O wrapper around judgeLint for one language. Loads the
+// adapter, probes whether the linter is installed, and (only then) shells the
+// lint command — deferring the verdict to the pure judgeLint.
+function probeLintLang(lang) {
+  const { lint } = loadAdapter(lang);
+  const bin = lintBinary(lint);
+  if (!bin) return judgeLint(lang, null, false, null);
+  const installed = linterInstalled(bin);
+  const r = installed ? run(...splitCmd(lint)) : null;
+  return judgeLint(lang, bin, installed, r);
+}
+
+// splitCmd: a lint run-string ("eslint . --max-warnings=0") -> [cmd, argsArray]
+// for run(). Whitespace split is sufficient for the adapter commands (no shell
+// quoting/globs that need a shell); we deliberately do NOT use a shell so there
+// is no injection surface from the adapter YAML.
+function splitCmd(cmd) {
+  const [bin, ...args] = cmd.trim().split(/\s+/);
+  return [bin, args];
+}
+
+// probeLint: aggregate per-language lint into the single `lint` criterion.
+// N/A when no source languages are detected OR every detected language is N/A
+// (no installed/configured linter). FAIL if any language FAILs. Otherwise PASS.
+export function probeLint() {
+  const langs = detectLanguages(ROOT);
+  if (langs.length === 0) return result('lint', NA, 'no source languages detected');
+  const per = langs.map(probeLintLang);
+  const detail = per.map((p) => p.detail).join('; ');
+  if (per.some((p) => p.status === FAIL)) return result('lint', FAIL, detail);
+  if (per.every((p) => p.status === NA)) return result('lint', NA, detail);
+  return result('lint', PASS, detail);
+}
+
 // Criteria with NO executable check in this repo. Surfaced as N/A with an
 // honest reason; NEVER asserted as a pass (see decide()).
 // NOTE: security_findings is NO LONGER here — harness/secret-scan.mjs gives it a
 // real (hardcoded-secret) check, so probeSecurity reports PASS/FAIL, not N/A.
-// The remaining four stay honestly N/A (no coverage/lint/typecheck/build tool).
+// NOTE: lint is NO LONGER here either — probeLint shells the per-language adapter
+// linters, so it reports PASS/FAIL when a linter is installed and N/A only when
+// none is (honest, not a hardcoded N/A). typecheck/coverage/build stay N/A: no
+// type-checker / coverage tool / build step is wired for this repo.
 export function probeNotApplicable() {
   return [
     result('coverage', NA, 'no coverage tool wired in this repo'),
-    result('lint', NA, 'no linter configured (no eslint/ruff)'),
     result('typecheck', NA, 'no TS sources / type-checker in this repo'),
     result('build', NA, 'no build step (declarative + zero-dep harness)'),
   ];
@@ -258,6 +346,7 @@ export function collect() {
     probeArch(),
     probeArchitecture(),
     probeSecurity(),
+    probeLint(),
     ...probeNotApplicable(),
   ];
 }

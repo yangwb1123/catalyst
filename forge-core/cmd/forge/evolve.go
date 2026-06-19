@@ -25,11 +25,20 @@ import (
 
 // cmdEvolve loops a workflow until it converges, a tripwire fires, or the
 // safety bound — the autonomous-loop entry point (real agents via --executor).
+//
+// The safety bound (--max-iter) is the THIRD subsystem the central knob drives:
+// when the operator does NOT pass --max-iter, the loop's iteration budget comes
+// from the mode's evolve depth (mode.Effective(...).EvolveMaxIter() — explorer's
+// opportunistic→2 vs engineering's thorough→10), so a fast posture loops shallowly
+// and a rigorous one loops deep. An EXPLICIT --max-iter still wins (back-compat):
+// resolveMaxIter only fills the default the flag would otherwise have used.
 func cmdEvolve(args []string) int {
 	fs := flag.NewFlagSet("evolve", flag.ContinueOnError)
 	var o runOpts
 	bindRunOpts(fs, &o)
-	maxIter := fs.Int("max-iter", 5, "safety bound on loop iterations (not the goal)")
+	// Default is the legacy 5; resolveMaxIter overrides it with the mode default
+	// ONLY when the operator did not pass --max-iter (detected via fs.Visit).
+	maxIter := fs.Int("max-iter", 5, "safety bound on loop iterations (default: from --mode's evolve depth; not the goal)")
 	resume := fs.Bool("resume", false, "resume from <root>/.forge/checkpoint.json (errors out on a malformed checkpoint)")
 	name, flagArgs := splitPositional(args)
 	if name == "" {
@@ -49,7 +58,38 @@ func cmdEvolve(args []string) int {
 	if converge.IsHumanGate(wf.Stop) {
 		return rejectHumanGate(wf.Stage)
 	}
-	return execLoop(wf, o, *maxIter, *resume)
+	iter, src := resolveMaxIter(fs, *maxIter, o)
+	return execLoop(wf, o, iter, src, *resume)
+}
+
+// resolveMaxIter picks the loop's safety bound and reports WHERE it came from.
+// An EXPLICIT --max-iter always wins (back-compat — fs.Visit reports only flags
+// the operator actually set, exactly as route.go's recordRiskFlagOrigins detects
+// a deliberate flag); absent it, the bound is the mode's evolve-depth default
+// (mode.Effective(mode, lifecycle).EvolveMaxIter()). The source string is purely
+// for the run banner's honesty. lifecycle is resolved the same way every other
+// `forge run`/`evolve` path resolves it (resolveLifecycle: flag, else project.yml,
+// else mvp), so production's veto raises a shallow mode's loop here too.
+func resolveMaxIter(fs *flag.FlagSet, flagVal int, o runOpts) (iter int, source string) {
+	if flagSet(fs, "max-iter") {
+		return flagVal, fmt.Sprintf("explicit --max-iter=%d", flagVal)
+	}
+	lifecycle := resolveLifecycle(o)
+	n := mode.Effective(o.mode, lifecycle).EvolveMaxIter()
+	return n, fmt.Sprintf("mode=%s lifecycle=%s evolve-depth default", o.mode, lifecycle)
+}
+
+// flagSet reports whether the named flag was explicitly passed on the command
+// line (fs.Visit walks only set flags). This is the back-compat hinge: an
+// explicit --max-iter must override the mode default, never the reverse.
+func flagSet(fs *flag.FlagSet, name string) bool {
+	seen := false
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == name {
+			seen = true
+		}
+	})
+	return seen
 }
 
 // rejectHumanGate fails closed when `forge evolve` is pointed at a human_gate
@@ -81,7 +121,7 @@ func rejectHumanGate(stage string) int {
 // checkpoint, appends the round's trajectory to memory, and emits a trace event
 // under <root>/.forge/ — so a crashed run can --resume, later rounds recall what
 // happened, and the run stays auditable.
-func execLoop(wf asset.Workflow, o runOpts, maxIter int, resume bool) int {
+func execLoop(wf asset.Workflow, o runOpts, maxIter int, maxIterSource string, resume bool) int {
 	logln := func(s string) { fmt.Println(s) }
 	start, prev, err := resumeStart(o.root, resume)
 	if err != nil { // malformed checkpoint: fail closed, never silently restart.
@@ -97,8 +137,8 @@ func execLoop(wf asset.Workflow, o runOpts, maxIter int, resume bool) int {
 	loop := buildLoop(wf, o, maxIter, logln)
 	loop.StartIter, loop.ResumePrev = start, prev
 	loop.OnIteration = checkpointHook(o, wf, tracer, logln)
-	fmt.Printf("forge evolve: stage=%s mode=%s max-iter=%d type=%s start-iter=%d (doom-loop tripwire=2)\n",
-		wf.Stage, o.mode, maxIter, stopTypeLabel(wf.Stop.Type), start)
+	fmt.Printf("forge evolve: stage=%s mode=%s max-iter=%d (%s) type=%s start-iter=%d (doom-loop tripwire=2)\n",
+		wf.Stage, o.mode, maxIter, maxIterSource, stopTypeLabel(wf.Stop.Type), start)
 	return reportLoop(loop.Run(wf, o.mode))
 }
 

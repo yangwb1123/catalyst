@@ -31,7 +31,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { collect, decide } from './acceptance.mjs';
-import { synthesize, merge } from './scorecard.mjs';
+import { synthesize, merge, decayWeight } from './scorecard.mjs';
 
 const HARNESS_DIR = dirname(fileURLToPath(import.meta.url));
 const ROOT = dirname(HARNESS_DIR);
@@ -39,25 +39,59 @@ const DEFAULT_OUT = join(ROOT, '.agent', 'routing', 'scorecards.json');
 
 // --- pure core (zero I/O, fully unit-testable) -------------------------------
 
+const MS_PER_DAY = 86400000;
+
+// half-life for recency decay = policy.yml `history.recency_half_life_days`. A
+// stored scorecard score older than this many days has its weight halved when a
+// fresh batch folds in (see scorecard.merge's decayFactor). HONESTY: 30 comes
+// from policy; this repo's history is currently thin so the practical effect is
+// small, but the logic is in place so the Router always consumes a quality_score
+// already decayed by recency — old scores stop dragging a model after it iterates.
+const DEFAULT_HALF_LIFE_DAYS = 30;
+
 // Two rows are the SAME scorecard entry iff their primary key (model, task_type)
 // matches — see scorecard.schema.yml `primary_key: [model, task_type]`.
 function samePair(a, b) {
   return a.model === b.model && a.task_type === b.task_type;
 }
 
-// updateScorecards(existingArray, newRow) -> a NEW array (input untouched).
+// Recency decay factor for a STORED row, given the externally-supplied `now`.
+// PURE: `now` is passed in (never Date.now() here); parsing the row's ISO
+// `updated_at` is a deterministic string->epoch, and the age is plain
+// subtraction — so this stays unit-testable with a fixed --now + fixture row.
+//   ageDays = (now - updated_at) / 86400000   ->   decayWeight(ageDays, halfLife)
+// Fails OPEN to 1 (no decay) when `now`/`updated_at` is absent or unparseable:
+// decayWeight already collapses a non-finite age to 1, so a row with no usable
+// timestamp simply isn't decayed rather than being zeroed or NaN-poisoned.
+function decayForRow(row, now, halfLifeDays) {
+  const nowMs = Date.parse(now);
+  const updatedMs = Date.parse(row && row.updated_at);
+  const ageDays = (nowMs - updatedMs) / MS_PER_DAY;
+  return decayWeight(ageDays, halfLifeDays);
+}
+
+// updateScorecards(existingArray, newRow, opts?) -> a NEW array (input untouched).
 //
 // If a row for newRow's (model, task_type) already exists, it is replaced by the
 // sample-weighted merge() of the stored row and newRow (samples summed). Every
 // other row is carried through unchanged and in order. If no row matches, newRow
 // is appended. Pure: no clock, no disk — the caller supplies newRow's timestamp.
-export function updateScorecards(existing, newRow) {
+//
+// opts.now (ISO) drives RECENCY DECAY: the matched stored row's age (now minus
+// its updated_at) is turned into a decayFactor via decayWeight(age, half-life)
+// and handed to merge(), so an older stored score loses weight to the fresh
+// batch. BACKWARD COMPAT: omit opts (or opts.now) and decayFactor stays 1 — the
+// merge is bit-for-bit the pre-decay behavior, so every existing call is intact.
+export function updateScorecards(existing, newRow, opts = {}) {
   const rows = Array.isArray(existing) ? existing : [];
+  const { now, halfLifeDays = DEFAULT_HALF_LIFE_DAYS } = opts;
   let merged = false;
   const out = rows.map((row) => {
     if (!merged && samePair(row, newRow)) {
       merged = true;
-      return merge(row, newRow);
+      // No `now` supplied -> decayFactor 1 (decay disabled, legacy behavior).
+      const decayFactor = now === undefined ? 1 : decayForRow(row, now, halfLifeDays);
+      return merge(row, newRow, decayFactor);
     }
     return row;
   });
@@ -121,7 +155,9 @@ function runUpdate({ model, taskType, out, now, iterations, reworked }) {
     verdicts: [verdict],
     updated_at: now,
   });
-  const merged = updateScorecards(readScorecards(out), newRow);
+  // Pass `now` so the stored row's age decays its weight in the merge (recency
+  // half-life from policy); without it the fold would be un-decayed (legacy).
+  const merged = updateScorecards(readScorecards(out), newRow, { now });
   writeScorecards(out, merged);
   return { verdict, newRow, merged };
 }

@@ -39,6 +39,29 @@ function floorIterations(n) {
   return n < 1 ? 1 : n;
 }
 
+// decayWeight(ageDays, halfLifeDays) -> a recency multiplier in (0,1].
+//
+// Exponential decay: a sample `ageDays` old is worth `0.5 ** (ageDays /
+// halfLifeDays)` of a fresh one — exactly one half-life halves the weight (30d
+// -> 0.5, 60d -> 0.25 at halfLifeDays 30). This is the Eval-side half of
+// policy.yml `history.recency_half_life_days`: the Router consumes a
+// quality_score that has ALREADY been recency-decayed here, so a model's stale
+// scores stop dragging it down after it iterates.
+//
+// PURE: time is passed IN as a pre-computed age (never Date.now() here), so the
+// decay stays deterministic and unit-testable. Fail-OPEN to 1 (no decay) on any
+// degenerate input — a missing/garbage age or half-life must never zero out or
+// NaN-poison a real sample:
+//   - ageDays <= 0       -> 1 (a "future"/just-written sample is not decayed)
+//   - halfLifeDays <= 0  -> 1 (decay disabled; avoids divide-by-zero / Infinity)
+//   - either non-finite  -> 1 (NaN/Infinity inputs never propagate)
+export function decayWeight(ageDays, halfLifeDays) {
+  if (!Number.isFinite(ageDays) || !Number.isFinite(halfLifeDays)) return 1;
+  if (ageDays <= 0) return 1;
+  if (halfLifeDays <= 0) return 1;
+  return 0.5 ** (ageDays / halfLifeDays);
+}
+
 // Count the accepted verdicts in a batch. Each verdict is the object returned
 // by acceptance.decide(): its `.accepted` boolean is the single binary sample.
 function countAccepted(verdicts) {
@@ -121,34 +144,58 @@ function acceptedWeight(rowSamples, qualityScore) {
   return n * clamp01(qualityScore);
 }
 
-// merge(existing, incoming) -> sample-weighted mean of quality_score with the
-// sample counts summed. This is how a stored (model × task_type) row absorbs a
-// fresh batch without re-reading history: weight each score by its sample count.
+// merge(existing, incoming, decayFactor = 1) -> sample-weighted mean of
+// quality_score with the sample counts summed. This is how a stored (model ×
+// task_type) row absorbs a fresh batch without re-reading history: weight each
+// score by its sample count.
 //
-//   q = (q_e * n_e + q_i * n_i) / (n_e + n_i)   (both n === 0 -> q = 0)
+//   q = (q_e * w_e + q_i * n_i) / (w_e + n_i)    where w_e = n_e * decayFactor
+//                                                (both weights 0 -> q = 0)
 //
-// rework_rate folds the same way (a rate over all samples, weighted by total
-// samples). avg_iterations folds weighted by ACCEPTED samples instead (it is a
-// mean over green tasks only) and survives only if at least one side recorded
-// it; otherwise it is omitted, matching synthesize's "no data" contract.
+// RECENCY DECAY: `decayFactor` (0..1, from decayWeight at the I/O boundary)
+// scales down the EXISTING row's effective weight by its age, so an older stored
+// score loses pull in the weighted mean and the fresh `incoming` batch leads —
+// this is policy.yml `history.recency_half_life_days` realized Eval-side, where
+// the Router reads an already-decayed quality_score. decayFactor applies ONLY to
+// the weights in the averages; it does NOT touch the reported `samples`, which
+// stays the honest integer total n_e + n_i (a count, not a recency-weight).
+//
+// BACKWARD COMPAT: decayFactor defaults to 1, so w_e === n_e and every average
+// is bit-for-bit identical to the pre-decay merge — all existing callers/tests
+// pass unchanged. The same clamp01 / Math.max(0, …) / floor defenses still hold,
+// and decayFactor is itself clamped into [0,1] (a non-finite/garbage factor
+// fails OPEN to 1 = no decay, never zeroes a real sample).
+//
+// rework_rate folds the same way (a rate over all samples, weighted by the
+// decayed existing weight + incoming count). avg_iterations folds weighted by
+// ACCEPTED samples instead (a mean over green tasks only), with the existing
+// accepted-weight likewise decayed, and survives only if at least one side
+// recorded it; otherwise it is omitted, matching synthesize's "no data" contract.
 //
 // Identity/metadata (model, task_type) and updated_at come from `incoming` —
 // it is the newer observation. Counts are floored at 0 so a malformed negative
 // `samples` can never drag the merged total below zero. Missing fields on a
 // legacy stored row (no rework_rate / avg_iterations) are treated as absent and
 // handled gracefully.
-export function merge(existing, incoming) {
+export function merge(existing, incoming, decayFactor = 1) {
   const ne = Math.max(0, existing.samples || 0);
   const ni = Math.max(0, incoming.samples || 0);
-  const total = ne + ni;
+  // decayFactor in [0,1]; garbage/non-finite fails OPEN to 1 (no decay).
+  const df = clamp01(Number.isFinite(decayFactor) ? decayFactor : 1);
+  // Effective (recency-weighted) existing weight for the averages. The reported
+  // `samples` below stays the undecayed integer total — decay only down-weights.
+  const we = ne * df;
+  const total = ne + ni;            // honest sample count (un-decayed)
+  const wTotal = we + ni;           // weight denominator for the averages
   const qe = clamp01(existing.quality_score);
   const qi = clamp01(incoming.quality_score);
-  const quality_score = total === 0 ? 0 : clamp01((qe * ne + qi * ni) / total);
+  const quality_score = wTotal === 0 ? 0 : clamp01((qe * we + qi * ni) / wTotal);
 
-  // rework_rate: total-sample-weighted; a legacy row missing it reads as 0.
+  // rework_rate: weighted by the decayed existing weight + incoming count; a
+  // legacy row missing it reads as 0.
   const re = clamp01(existing.rework_rate ?? 0);
   const ri = clamp01(incoming.rework_rate ?? 0);
-  const rework_rate = total === 0 ? 0 : clamp01((re * ne + ri * ni) / total);
+  const rework_rate = wTotal === 0 ? 0 : clamp01((re * we + ri * ni) / wTotal);
 
   const merged = {
     model: incoming.model ?? existing.model,
@@ -161,13 +208,14 @@ export function merge(existing, incoming) {
   };
 
   // avg_iterations: accepted-sample-weighted, only over rows that recorded it.
-  const we = Number.isFinite(existing.avg_iterations) ? acceptedWeight(ne, existing.quality_score) : 0;
-  const wi = Number.isFinite(incoming.avg_iterations) ? acceptedWeight(ni, incoming.quality_score) : 0;
-  const wTotal = we + wi;
-  if (wTotal > 0) {
+  // The existing side's accepted weight is likewise decayed by decayFactor.
+  const awe = Number.isFinite(existing.avg_iterations) ? acceptedWeight(ne, existing.quality_score) * df : 0;
+  const awi = Number.isFinite(incoming.avg_iterations) ? acceptedWeight(ni, incoming.quality_score) : 0;
+  const awTotal = awe + awi;
+  if (awTotal > 0) {
     const ae = floorIterations(existing.avg_iterations);
     const ai = floorIterations(incoming.avg_iterations);
-    merged.avg_iterations = floorIterations((ae * we + ai * wi) / wTotal);
+    merged.avg_iterations = floorIterations((ae * awe + ai * awi) / awTotal);
   }
   return merged;
 }

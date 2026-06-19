@@ -144,6 +144,68 @@ test('updateScorecards: a legacy stored row absorbs a trajectory verdict gracefu
   assertSchemaShape(m);
 });
 
+// --- recency decay: opts.now ages the stored row down in the merge -----------
+// Fixtures with a controlled gap between the stored row's updated_at and `now`.
+const NOW = '2026-06-30T00:00:00Z';
+const THIRTY_DAYS_AGO = '2026-05-31T00:00:00Z';   // exactly one 30-day half-life before NOW
+
+test('updateScorecards: omitting opts.now keeps decay OFF (bit-for-bit legacy merge)', () => {
+  // The canonical (0.8,10)+(0.4,30)->0.5/40 merge must be identical with no opts.
+  const existing = [row('opus', 'crud', 0.8, 10, THIRTY_DAYS_AGO)];
+  const fresh = row('opus', 'crud', 0.4, 30, NOW);
+  const [m] = updateScorecards(existing, fresh);
+  assert.equal(m.quality_score, 0.5, 'no opts.now -> decayFactor 1 -> un-decayed mean');
+  assert.equal(m.samples, 40);
+});
+
+test('updateScorecards: opts.now halves a one-half-life-old stored row\'s weight', () => {
+  // Stored row is exactly 30 days (one half-life) before NOW -> decayFactor 0.5.
+  // existing q=1.0 n=10 -> weight 5 ; fresh q=0.0 n=10 -> weight 10.
+  // quality = (1*5 + 0*10)/15 = 1/3 ; samples still the honest 20.
+  const existing = [row('opus', 'crud', 1.0, 10, THIRTY_DAYS_AGO)];
+  const fresh = row('opus', 'crud', 0.0, 10, NOW);
+  const [m] = updateScorecards(existing, fresh, { now: NOW });
+  assert.ok(Math.abs(m.quality_score - 1 / 3) < 1e-9, `decayed quality ~0.333, got ${m.quality_score}`);
+  assert.equal(m.samples, 20, 'decay weights the average, not the reported sample count');
+  assertSchemaShape(m);
+});
+
+test('updateScorecards: a fresh (age 0) stored row is NOT decayed even with opts.now', () => {
+  // Stored row's updated_at == NOW -> ageDays 0 -> decayFactor 1 -> plain mean.
+  const existing = [row('opus', 'crud', 1.0, 10, NOW)];
+  const fresh = row('opus', 'crud', 0.0, 10, NOW);
+  const [m] = updateScorecards(existing, fresh, { now: NOW });
+  assert.equal(m.quality_score, 0.5, 'age 0 -> no decay -> equal-weight mean');
+});
+
+test('updateScorecards: an explicit half-life shortens the decay window', () => {
+  // Same 30-day-old row, but a 15-day half-life makes it TWO half-lives old ->
+  // decayFactor 0.25. existing q=1.0 n=10 -> weight 2.5 ; fresh q=0 n=10 -> 10.
+  // quality = (1*2.5 + 0*10)/12.5 = 0.2.
+  const existing = [row('opus', 'crud', 1.0, 10, THIRTY_DAYS_AGO)];
+  const fresh = row('opus', 'crud', 0.0, 10, NOW);
+  const [m] = updateScorecards(existing, fresh, { now: NOW, halfLifeDays: 15 });
+  assert.ok(Math.abs(m.quality_score - 0.2) < 1e-9, `quality ~0.2, got ${m.quality_score}`);
+});
+
+test('updateScorecards: decay only touches the matched row, siblings untouched', () => {
+  const a = row('haiku', 'docs', 0.2, 5, THIRTY_DAYS_AGO);
+  const b = row('opus', 'crud', 1.0, 10, THIRTY_DAYS_AGO);
+  const fresh = row('opus', 'crud', 0.0, 10, NOW);
+  const out = updateScorecards([a, b], fresh, { now: NOW });
+  assert.deepEqual(out[0], a, 'non-matching sibling is byte-for-byte unchanged (not decayed)');
+  assert.ok(Math.abs(out[1].quality_score - 1 / 3) < 1e-9, 'only the matched row is decayed');
+});
+
+test('updateScorecards: a stored row with no parseable updated_at fails open (no decay)', () => {
+  // A malformed/absent updated_at must not zero or NaN-poison the merge.
+  const existing = [row('opus', 'crud', 1.0, 10, 'not-a-date')];
+  const fresh = row('opus', 'crud', 0.0, 10, NOW);
+  const [m] = updateScorecards(existing, fresh, { now: NOW });
+  assert.equal(m.quality_score, 0.5, 'unparseable updated_at -> age non-finite -> decayFactor 1');
+  assert.ok(Number.isFinite(m.quality_score));
+});
+
 // --- immutability: input array/rows are not mutated --------------------------
 test('updateScorecards: does not mutate the input array or its rows', () => {
   const stored = row('opus', 'crud', 0.8, 10, OLD);
@@ -152,4 +214,12 @@ test('updateScorecards: does not mutate the input array or its rows', () => {
   updateScorecards(existing, row('opus', 'crud', 0.4, 30, TS));
   assert.deepEqual(existing, before, 'input array + rows are unchanged');
   assert.equal(stored.samples, 10, 'stored row object not mutated in place');
+});
+
+test('updateScorecards: decay path also leaves the input array immutable', () => {
+  const stored = row('opus', 'crud', 1.0, 10, THIRTY_DAYS_AGO);
+  const existing = [stored];
+  const before = structuredClone(existing);
+  updateScorecards(existing, row('opus', 'crud', 0.0, 10, NOW), { now: NOW });
+  assert.deepEqual(existing, before, 'decay merge does not mutate inputs');
 });

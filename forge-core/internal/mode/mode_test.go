@@ -18,42 +18,49 @@ func sortedGates(p Policy) string {
 const allGatesSorted = "arch,build,complexity,lint,security,test"
 
 // effectiveCase is one Effective expectation: the (mode, lifecycle) input and
-// the gate-set + reviewer it must distill to. The table is package-scope so the
-// test body stays a thin loop (arch-check function-length budget).
+// the gate-set + reviewer + evolve-depth it must distill to. The table is
+// package-scope so the test body stays a thin loop (arch-check function-length
+// budget).
 type effectiveCase struct {
-	name      string
-	mode      string
-	lifecycle string
-	wantGates string // sorted, comma-joined
-	wantRev   bool
+	name       string
+	mode       string
+	lifecycle  string
+	wantGates  string // sorted, comma-joined
+	wantRev    bool
+	wantEvolve string // EvolveDepth label
 }
 
 var effectiveCases = []effectiveCase{
 	// ── mode baselines under the freest lifecycle (idea) — the mode shows through ──
-	// explorer is the headline lean posture: only "does it run", no reviewer.
-	{"explorer/idea lean set", "explorer", "idea", "build,lint", false},
-	{"balanced/idea", "balanced", "idea", "build,complexity,lint,test", true},
-	{"engineering/idea full", "engineering", "idea", allGatesSorted, true},
-	// cto produces no code → empty gate-set, but reviewer ON (reviews the docs).
-	{"cto/idea no code gates", "cto", "idea", "", true},
+	// explorer is the headline lean posture: only "does it run", no reviewer,
+	// shallowest (opportunistic) evolve loop.
+	{"explorer/idea lean set", "explorer", "idea", "build,lint", false, EvolveOpportunistic},
+	{"balanced/idea", "balanced", "idea", "build,complexity,lint,test", true, EvolveStandard},
+	{"engineering/idea full", "engineering", "idea", allGatesSorted, true, EvolveThorough},
+	// cto produces no code → empty gate-set, reviewer ON (reviews docs), advisory evolve.
+	{"cto/idea no code gates", "cto", "idea", "", true, EvolveAdvisory},
 
 	// ── lifecycle tightens the floor (can only ADD gates / force reviewer) ──
-	{"explorer/mvp adds build+lint floor", "explorer", "mvp", "build,lint", false},
-	{"explorer/growth raises floor", "explorer", "growth", "build,complexity,lint,test", false},
+	// idea/mvp/growth impose NO evolve floor, so the mode's depth passes through.
+	{"explorer/mvp adds build+lint floor", "explorer", "mvp", "build,lint", false, EvolveOpportunistic},
+	{"explorer/growth raises floor", "explorer", "growth", "build,complexity,lint,test", false, EvolveOpportunistic},
 
-	// ── ★ production override: the safety veto forces FULL gates + reviewer ★ ──
-	// explorer is the loosest mode; production must STILL force every gate + reviewer.
-	{"explorer/production OVERRIDE full", "explorer", "production", allGatesSorted, true},
-	{"balanced/production full", "balanced", "production", allGatesSorted, true},
-	{"engineering/production full", "engineering", "production", allGatesSorted, true},
-	{"cto/production full", "cto", "production", allGatesSorted, true},
+	// ── ★ production override: safety veto forces FULL gates + reviewer + ≥standard evolve ★ ──
+	// explorer is the loosest mode; production STILL forces every gate + reviewer
+	// AND raises its opportunistic loop to standard (no prototype-shallow loop in prod).
+	{"explorer/production OVERRIDE full", "explorer", "production", allGatesSorted, true, EvolveStandard},
+	{"balanced/production full", "balanced", "production", allGatesSorted, true, EvolveStandard},
+	// engineering is already thorough (≥ standard): the floor RAISES, never caps down.
+	{"engineering/production stays thorough", "engineering", "production", allGatesSorted, true, EvolveThorough},
+	// cto's advisory is raised to the standard floor under production.
+	{"cto/production full", "cto", "production", allGatesSorted, true, EvolveStandard},
 
-	// ── ★ fail-safe: unknown/empty input over-enforces (full + reviewer) ★ ──
-	{"unknown mode → full", "bogus-mode", "mvp", allGatesSorted, true},
-	{"empty mode → full", "", "mvp", allGatesSorted, true},
-	{"unknown lifecycle → full", "explorer", "bogus-lifecycle", allGatesSorted, true},
-	{"empty lifecycle → full", "explorer", "", allGatesSorted, true},
-	{"both unknown → full", "bogus", "bogus", allGatesSorted, true},
+	// ── ★ fail-safe: unknown/empty input over-enforces (full + reviewer + standard evolve) ★ ──
+	{"unknown mode → full", "bogus-mode", "mvp", allGatesSorted, true, EvolveStandard},
+	{"empty mode → full", "", "mvp", allGatesSorted, true, EvolveStandard},
+	{"unknown lifecycle → full", "explorer", "bogus-lifecycle", allGatesSorted, true, EvolveStandard},
+	{"empty lifecycle → full", "explorer", "", allGatesSorted, true, EvolveStandard},
+	{"both unknown → full", "bogus", "bogus", allGatesSorted, true, EvolveStandard},
 }
 
 func TestEffective(t *testing.T) {
@@ -65,6 +72,9 @@ func TestEffective(t *testing.T) {
 			}
 			if got.Reviewer != c.wantRev {
 				t.Errorf("Effective(%q,%q) reviewer = %v, want %v", c.mode, c.lifecycle, got.Reviewer, c.wantRev)
+			}
+			if got.EvolveDepth != c.wantEvolve {
+				t.Errorf("Effective(%q,%q) evolve-depth = %q, want %q", c.mode, c.lifecycle, got.EvolveDepth, c.wantEvolve)
 			}
 		})
 	}
@@ -86,6 +96,69 @@ func TestEffective_ProductionOverridesLooseMode(t *testing.T) {
 	// And it must be STRICTLY more than bare explorer (the override actually fired).
 	if lean := Effective("explorer", "idea"); lean.Allows(GateSecurity) {
 		t.Error("sanity: bare explorer should NOT allow security; the production case proves the override added it")
+	}
+}
+
+// evolveCase pairs an EvolveDepth label with the default --max-iter it must map
+// to (the only concrete v1 behavior evolve-depth drives).
+type evolveCase struct {
+	depth   string
+	wantMax int
+}
+
+// The depth→max-iter contract, asserted directly on Policy.EvolveMaxIter so the
+// mapping is pinned independent of how Effective derives the depth: advisory→1,
+// opportunistic→2, standard→5, thorough→10, and — load-bearing for back-compat —
+// an unknown/empty depth → 5 (the historical default).
+var evolveMaxCases = []evolveCase{
+	{EvolveAdvisory, 1},
+	{EvolveOpportunistic, 2},
+	{EvolveStandard, 5},
+	{EvolveThorough, 10},
+	{"", 5},            // zero-value Policy → the conservative legacy default
+	{"bogus-depth", 5}, // unrecognized label → same conservative fallback
+}
+
+func TestPolicy_EvolveMaxIter(t *testing.T) {
+	for _, c := range evolveMaxCases {
+		if got := (Policy{EvolveDepth: c.depth}).EvolveMaxIter(); got != c.wantMax {
+			t.Errorf("Policy{EvolveDepth:%q}.EvolveMaxIter() = %d, want %d", c.depth, got, c.wantMax)
+		}
+	}
+	// The zero-value Policy must report the legacy default explicitly (back-compat:
+	// a no-mode-gating Policy yields the same --max-iter the CLI used before mode).
+	if got := (Policy{}).EvolveMaxIter(); got != 5 {
+		t.Errorf("zero-value Policy.EvolveMaxIter() = %d, want 5 (legacy default)", got)
+	}
+}
+
+// End-to-end through Effective: the per-mode default iteration budget the CLI
+// will adopt. explorer→opportunistic→2 (shallow), engineering→thorough→10 (deep),
+// cto→advisory→1, balanced→standard→5 — the headline mode-drives-evolve claim.
+func TestEffective_EvolveMaxIterByMode(t *testing.T) {
+	cases := map[string]int{"explorer": 2, "balanced": 5, "engineering": 10, "cto": 1}
+	for m, want := range cases {
+		if got := Effective(m, "idea").EvolveMaxIter(); got != want {
+			t.Errorf("Effective(%q,\"idea\").EvolveMaxIter() = %d, want %d", m, got, want)
+		}
+	}
+}
+
+// ★ production tightens evolve depth the same way it tightens gates: explorer's
+// shallow opportunistic (2) is RAISED to standard (5) in production, but
+// engineering's already-deeper thorough (10) is NOT capped down to it. This is
+// the evolve-dimension half of the production safety veto.
+func TestEffective_ProductionRaisesEvolveFloor(t *testing.T) {
+	if got := Effective("explorer", "production").EvolveMaxIter(); got != 5 {
+		t.Errorf("explorer+production evolve max-iter = %d, want 5 (raised to standard floor)", got)
+	}
+	// Sanity: bare explorer is shallower, proving production actually raised it.
+	if got := Effective("explorer", "idea").EvolveMaxIter(); got != 2 {
+		t.Errorf("bare explorer evolve max-iter = %d, want 2 (the floor must have lifted prod to 5)", got)
+	}
+	// thorough is already ≥ standard: the floor raises, never lowers.
+	if got := Effective("engineering", "production").EvolveMaxIter(); got != 10 {
+		t.Errorf("engineering+production evolve max-iter = %d, want 10 (floor must not cap thorough)", got)
 	}
 }
 

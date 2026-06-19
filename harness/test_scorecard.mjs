@@ -9,7 +9,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { synthesize, merge } from './scorecard.mjs';
+import { synthesize, merge, decayWeight } from './scorecard.mjs';
 
 const TS = '2026-06-19T00:00:00Z';
 const OLD = '2026-06-01T00:00:00Z';
@@ -261,4 +261,103 @@ test('merge: NaN trajectory inputs collapse to safe values (NaN never propagates
   assert.equal(out.rework_rate, 0.2);
   // existing avg is NaN -> not finite -> contributes weight 0; incoming avg=2 adopted.
   assert.equal(out.avg_iterations, 2);
+});
+
+// --- decayWeight: exponential recency decay ----------------------------------
+test('decayWeight: one half-life halves the weight (30d @ 30d -> 0.5)', () => {
+  assert.equal(decayWeight(30, 30), 0.5);
+});
+
+test('decayWeight: two half-lives quarter the weight (60d @ 30d -> 0.25)', () => {
+  assert.equal(decayWeight(60, 30), 0.25);
+});
+
+test('decayWeight: a fresh (age 0) or future (age < 0) sample is not decayed -> 1', () => {
+  assert.equal(decayWeight(0, 30), 1);
+  assert.equal(decayWeight(-5, 30), 1, 'a negative age (future ts) fails open to 1');
+});
+
+test('decayWeight: a non-positive half-life disables decay (fails open to 1)', () => {
+  assert.equal(decayWeight(100, 0), 1, 'halfLife 0 -> no divide-by-zero, weight 1');
+  assert.equal(decayWeight(100, -30), 1, 'negative halfLife -> 1');
+});
+
+test('decayWeight: non-finite inputs never propagate -> 1', () => {
+  assert.equal(decayWeight(NaN, 30), 1);
+  assert.equal(decayWeight(30, NaN), 1);
+  assert.equal(decayWeight(Infinity, 30), 1);
+  assert.equal(decayWeight(30, Infinity), 1);
+});
+
+test('decayWeight: a sub-half-life age decays smoothly between 1 and 0.5', () => {
+  // 15d @ 30d half-life = 0.5 ** 0.5 = 1/sqrt(2) ~ 0.7071.
+  assert.ok(Math.abs(decayWeight(15, 30) - 2 ** -0.5) < 1e-12);
+});
+
+// --- merge with decayFactor: older existing loses weight, fresh leads --------
+test('merge: decayFactor=1 is bit-for-bit the un-decayed merge (backward compat)', () => {
+  // Same numbers as the canonical (0.8,10)+(0.4,30)->0.5/40 case; passing the
+  // default explicitly must not move a single bit.
+  const args = [
+    { model: 'opus', task_type: 'crud', quality_score: 0.8, samples: 10, updated_at: OLD },
+    { model: 'opus', task_type: 'crud', quality_score: 0.4, samples: 30, updated_at: TS },
+  ];
+  assert.deepEqual(merge(args[0], args[1], 1), merge(args[0], args[1]));
+  assert.equal(merge(args[0], args[1], 1).quality_score, 0.5);
+});
+
+test('merge: a 0.5 decayFactor halves the existing row\'s weight in the mean', () => {
+  // existing q=1.0 n=10 decayed to weight 5; incoming q=0.0 n=10 weight 10.
+  // quality = (1*5 + 0*10) / (5+10) = 1/3 ; samples stays the honest 20 (un-decayed).
+  const out = merge(
+    { model: 'opus', task_type: 'crud', quality_score: 1.0, samples: 10, updated_at: OLD },
+    { model: 'opus', task_type: 'crud', quality_score: 0.0, samples: 10, updated_at: TS },
+    0.5,
+  );
+  assert.ok(Math.abs(out.quality_score - 1 / 3) < 1e-9, `quality ~0.333, got ${out.quality_score}`);
+  assert.equal(out.samples, 20, 'decay weights the average, never the reported sample count');
+});
+
+test('merge: a fully decayed existing row (decayFactor 0) lets incoming dominate', () => {
+  // existing weight -> 0, so the merged score is purely the incoming batch, but
+  // the sample count still sums (the history happened, it just lost its pull).
+  const out = merge(
+    { model: 'sonnet', task_type: 'implementation', quality_score: 0.2, samples: 50, rework_rate: 0.9, avg_iterations: 5, updated_at: OLD },
+    { model: 'sonnet', task_type: 'implementation', quality_score: 0.9, samples: 4, rework_rate: 0.1, avg_iterations: 1, updated_at: TS },
+    0,
+  );
+  assert.equal(out.quality_score, 0.9, 'incoming score dominates a fully-decayed existing');
+  assert.equal(out.rework_rate, 0.1, 'incoming rework dominates too');
+  assert.equal(out.avg_iterations, 1, 'incoming avg dominates (existing accepted-weight -> 0)');
+  assert.equal(out.samples, 54, 'sample count still sums honestly');
+});
+
+test('merge: decayFactor decays the existing avg_iterations accepted-weight', () => {
+  // existing: q=1 n=4 (4 accepted) avg=1 ; incoming: q=1 n=4 (4 accepted) avg=3.
+  // Un-decayed avg = (1*4 + 3*4)/8 = 2. With decayFactor 0.5 the existing
+  // accepted-weight 4 -> 2, so avg = (1*2 + 3*4)/(2+4) = 14/6 ~ 2.333.
+  const out = merge(
+    { model: 'sonnet', task_type: 'implementation', quality_score: 1.0, samples: 4, rework_rate: 0, avg_iterations: 1, updated_at: OLD },
+    { model: 'sonnet', task_type: 'implementation', quality_score: 1.0, samples: 4, rework_rate: 0, avg_iterations: 3, updated_at: TS },
+    0.5,
+  );
+  assert.ok(Math.abs(out.avg_iterations - 14 / 6) < 1e-9, `avg ~2.333, got ${out.avg_iterations}`);
+});
+
+test('merge: a garbage (non-finite) decayFactor fails open to 1 (no decay)', () => {
+  const base = [
+    { model: 'opus', task_type: 'crud', quality_score: 0.8, samples: 10, updated_at: OLD },
+    { model: 'opus', task_type: 'crud', quality_score: 0.4, samples: 30, updated_at: TS },
+  ];
+  assert.equal(merge(base[0], base[1], NaN).quality_score, 0.5, 'NaN factor -> 1');
+  assert.equal(merge(base[0], base[1], Infinity).quality_score, 0.5, 'Infinity factor -> clamped, no decay');
+});
+
+test('merge: a decayFactor > 1 is clamped to 1 (cannot up-weight stale history)', () => {
+  const out = merge(
+    { model: 'opus', task_type: 'crud', quality_score: 0.8, samples: 10, updated_at: OLD },
+    { model: 'opus', task_type: 'crud', quality_score: 0.4, samples: 30, updated_at: TS },
+    5,
+  );
+  assert.equal(out.quality_score, 0.5, 'factor 5 clamps to 1 -> un-decayed mean');
 });
