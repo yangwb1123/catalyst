@@ -30,12 +30,28 @@ func Build(agent, phase, mode, tier, card string, ctx []string) string {
 	return b.String()
 }
 
-// Gather collects project context relevant to any agent phase: the recorded
-// architecture decisions (ADR titles) and the hard engineering constraints. It
-// is fault tolerant — missing files yield no context, never an error.
-func Gather(repoRoot string) []string {
+// adrTopK bounds how many architecture decisions the retriever injects per
+// prompt. With today's handful of ADRs this is ≥ the corpus, so top-K ≈ "all" —
+// the HONEST current behavior. It earns its keep the moment the repo accrues
+// more ADRs than fit a context window: the same call then keeps the prompt
+// bounded to the few most relevant to this phase instead of dumping every one.
+const adrTopK = 6
+
+// Gather collects project context for an agent phase, in two distinct lanes:
+//
+//   - Hard constraints — the leading AGENTS.md bullets — are NON-NEGOTIABLE and
+//     ALWAYS injected verbatim (every agent must obey them), never subject to
+//     retrieval/filtering. This is the unchanged constraints() path.
+//   - Relevant ADRs are RETRIEVED: candidate decisions are scored against query
+//     (derived from the phase/agent) and only the top-K most relevant are
+//     injected, so a growing decision log cannot blow the context window.
+//
+// It is fault tolerant — missing files yield no context, never an error. An
+// empty query degrades the ADR lane to nothing (Retrieve's fail-closed
+// boundary); the hard constraints still always inject.
+func Gather(repoRoot, query string) []string {
 	var ctx []string
-	if adrs := adrTitles(repoRoot); len(adrs) > 0 {
+	if adrs := relevantADRs(repoRoot, query); len(adrs) > 0 {
 		ctx = append(ctx, "Architecture decisions (ADRs) to respect:\n"+strings.Join(adrs, "\n"))
 	}
 	if rules := constraints(repoRoot); rules != "" {
@@ -44,7 +60,28 @@ func Gather(repoRoot string) []string {
 	return ctx
 }
 
-// adrTitles returns the first-heading title of each docs/adr/*.md, sorted.
+// relevantADRs scores every ADR title against query and returns the top-K most
+// relevant as "- "-prefixed bullets, preserving the retriever's ranked order.
+// Each title becomes one Doc; Retrieve selects the few that match this phase.
+func relevantADRs(repoRoot, query string) []string {
+	titles := adrTitles(repoRoot)
+	if len(titles) == 0 {
+		return nil
+	}
+	docs := make([]Doc, len(titles))
+	for i, t := range titles {
+		docs[i] = Doc{ID: t, Text: t}
+	}
+	var out []string
+	for _, d := range Retrieve(docs, query, adrTopK) {
+		out = append(out, "- "+d.Text)
+	}
+	return out
+}
+
+// adrTitles returns the raw first-heading title of each docs/adr/*.md, sorted.
+// Titles are unprefixed so each can serve directly as a retrievable Doc.Text;
+// the caller (relevantADRs) adds the "- " bullet marker after retrieval.
 func adrTitles(repoRoot string) []string {
 	dir := filepath.Join(repoRoot, "docs", "adr")
 	entries, err := os.ReadDir(dir)
@@ -57,7 +94,7 @@ func adrTitles(repoRoot string) []string {
 			continue
 		}
 		if t := firstHeading(filepath.Join(dir, e.Name())); t != "" {
-			titles = append(titles, "- "+t)
+			titles = append(titles, t)
 		}
 	}
 	sort.Strings(titles)

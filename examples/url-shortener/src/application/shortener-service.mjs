@@ -28,11 +28,31 @@ function assertStorePort(store) {
 }
 
 /**
+ * Advance from `fromId` until a derived code is free in the store, returning
+ * that code and the id to resume from next time (one past the consumed id).
+ * Module-level + pure-over-its-args so the factory body stays small and this
+ * allocation rule is independently testable.
+ * @param {{ has: (code: string) => boolean }} store
+ * @param {number} fromId  first candidate id to try
+ * @returns {{ code: string, nextId: number }}
+ */
+function allocFreeCode(store, fromId) {
+  let id = fromId;
+  let code = codeForId(id);
+  while (store.has(code)) {
+    id += 1;
+    code = codeForId(id);
+  }
+  return { code, nextId: id + 1 }; // resume one past the id we just consumed
+}
+
+/**
  * Create a shortener service bound to an injected Store port.
  *
  * The service owns an internal monotonically increasing counter used to derive
  * deterministic short codes. On the (rare) event that a derived code is already
- * taken in the store, the counter advances and a fresh code is tried.
+ * taken in the store, the counter advances and a fresh code is tried
+ * (see {@link allocFreeCode}).
  *
  * @param {{
  *   save: (code: string, url: string) => void,
@@ -46,31 +66,8 @@ function assertStorePort(store) {
  */
 export function createService(store) {
   assertStorePort(store);
+  let nextId = 0; // internal auto-increment counter -> next id to encode
 
-  // Internal auto-increment counter -> next id to encode. Starts at 0.
-  let nextId = 0;
-
-  /**
-   * Advance the counter until it yields a code not already taken in the store,
-   * then return that code (without consuming further ids).
-   * @returns {string} a base62 code free in the store
-   */
-  function nextFreeCode() {
-    let code = codeForId(nextId);
-    while (store.has(code)) {
-      nextId += 1;
-      code = codeForId(nextId);
-    }
-    nextId += 1; // consume the id we just allocated
-    return code;
-  }
-
-  /**
-   * Validate, normalize and persist a URL, returning its assigned short code.
-   * @param {string} url  candidate long URL (http/https)
-   * @returns {{ code: string }}
-   * @throws {Error} when `url` is not a valid http/https URL
-   */
   function shorten(url) {
     // One shared parse: canonicalizeUrl validates AND normalizes, returning the
     // canonical href or null. This guarantees the contracted `invalid url` Error
@@ -79,19 +76,13 @@ export function createService(store) {
     if (normalized === null) {
       throw new Error(`shorten: invalid url: ${String(url)}`);
     }
-    const code = nextFreeCode();
-    store.save(code, normalized);
-    return { code };
+    const alloc = allocFreeCode(store, nextId);
+    nextId = alloc.nextId;
+    store.save(alloc.code, normalized);
+    return { code: alloc.code };
   }
 
-  /**
-   * Resolve a short code back to its stored URL.
-   * @param {string} code
-   * @returns {string | undefined} the URL, or undefined for an unknown code
-   */
-  function resolve(code) {
-    return store.get(code);
-  }
+  const resolve = (code) => store.get(code); // unknown code -> undefined
 
   return { shorten, resolve };
 }

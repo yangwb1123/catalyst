@@ -34,11 +34,23 @@ func probeStatuses(root string) map[string]string {
 // phases actually resolved to PASS. GatesGreen is true only when no required
 // gate is FAIL and none is N/A — "green" means every required gate was CHECKED
 // and PASSED, never merely "nothing failed".
+//
+// The same acceptance probe map (criterion -> PASS/FAIL/NA) is also handed to
+// Signals.Criteria, so a workflow can converge on an INDIVIDUAL acceptance
+// criterion (e.g. test_pass) and not only the coarse GatesGreen aggregate. This
+// REUSES the once-per-run probe the gate phases already ran — acceptance is
+// never spawned a second time for convergence; one probe feeds both the gate
+// verdicts and the per-criterion convergence check, keeping them consistent and
+// honest within a run. probe values are exactly gate.ProbeAll's PASS/FAIL/NA,
+// which is the verdict vocabulary converge.evalCriterion expects; a nil probe
+// (broken/absent) leaves Criteria nil and every per-criterion check degrades to
+// unmet (absence of a verdict is never satisfaction).
 func gatherSignals(root string, wf asset.Workflow, probe map[string]string) converge.Signals {
 	md, _ := os.ReadFile(filepath.Join(root, ".agent", "ROADMAP.md"))
 	return converge.Signals{
 		RoadmapCompletion: converge.RoadmapCompletion(string(md)),
 		GatesGreen:        allRequiredGatesPass(root, requiredGates(wf), probe),
+		Criteria:          probe,
 	}
 }
 

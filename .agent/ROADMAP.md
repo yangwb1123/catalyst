@@ -19,7 +19,7 @@
 - [~] 真·无人值守闭环驱动 → 闭环引擎已建(`forge-core` `forge evolve`:phases→gate→converge→loop,带 max-iter/no-progress tripwire);**真·活体 agent 端到端尚未接通**(默认 dry-run,见 v2)
 
 ## v2 — 全局化 + 学习闭环 (forge-core 已落地,持续推进)
-**forge-core 已存在、已构建、全绿**:纯 Go 标准库、**零外部依赖**(`go.mod` 无 `require`),7 个 Go 包(`asset` / `gate` / `routing` / `orchestrator` / `converge` / `prompt` / `cmd/forge`)。CLI 现有 `forge run/evolve/gate/check/accept`;`forge evolve` 是无人值守闭环入口(收敛由 `converge` 按 ROADMAP 完成度 + acceptance gate 实算,非轮数);gate 阶段 shell 出真实 harness(gate.mjs/check.py/acceptance.mjs);路由带硬 Opus 安全底线。
+**forge-core 已存在、已构建、全绿**:纯 Go 标准库、**零外部依赖**(`go.mod` 无 `require`),**11 个 Go 包**(原 7 + **`trace`** 可观测 / **`persist`** 断点续跑 / **`memory`** 跨会话记忆 / **`risk`** 风险分类器 —— 见根 [`ROADMAP.md`](../ROADMAP.md) 的「扩展五方向」:① 韧性运行时 ② 学习闭环 ③ Context/Memory ④ 执法补完 ⑤ 安全合规,均已 dogfood 实现 + fresh-review + 全绿)。CLI 现有 `forge run/evolve/gate/check/accept`;`forge evolve` 是无人值守闭环入口(收敛由 `converge` 按 ROADMAP 完成度 + acceptance gate 实算,非轮数);gate 阶段 shell 出真实 harness(gate.mjs/check.py/acceptance.mjs);路由带硬 Opus 安全底线。
 **明确遗留缺口(诚实标注,不夸大):**
 - Agent 阶段**默认 dry-run、不调 LLM**(`DryRunExecutor` 只叙述路由决策)。真实执行器已随仓发布:`--executor command --agent-cmd claude` 会用「角色卡 + 项目上下文」prompt 跑 `claude -p <prompt>`;真正的遗留限制是 agent-CLI 安装 + 凭证/预算,而非缺接口。
 - **YAML 经 python shim 转码**:Go 标准库无 YAML 解析器且 forge-core 零依赖,`forge run/evolve` shell 出 `python3 harness/yaml2json.py` 把 `.agent/workflows/<name>.yml` 转成运行时消费的 JSON(临时脚手架,未来可换 Go YAML 库——属 architect/cto 的依赖决策)。

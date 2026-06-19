@@ -62,6 +62,9 @@ test('acceptance gate ACCEPTS the real repo and exits 0', { skip: Boolean(proces
   assert.match(res.stdout, /\[PASS\] app_test_pass/);
   assert.match(res.stdout, /\[PASS\] complexity_violations/);
   assert.match(res.stdout, /\[PASS\] arch_violations/);
+  // security_findings is now a REAL check (harness/secret-scan.mjs), not N/A:
+  // the repo ships no hardcoded secret, so it must show PASS.
+  assert.match(res.stdout, /\[PASS\] security_findings/);
   // N/A criteria must remain visible (honesty: never silently dropped).
   assert.match(res.stdout, /\[N-A \] coverage/);
   assert.match(res.stdout, /\[N-A \] build/);

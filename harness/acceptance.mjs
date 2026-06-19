@@ -73,28 +73,45 @@ export function probeArch() {
   );
 }
 
-// test_pass == true  <-  ALL FOUR committed harness suites must be green.
+// test_pass == true  <-  ALL committed harness suites must be green.
 // Self-governance: the harness must run its OWN tests, not a curated subset, or
-// a regression in (e.g.) acceptance.mjs's verdict logic could ship unnoticed.
+// a regression in (e.g.) acceptance.mjs's verdict logic — OR a silently-green
+// arch-check (the enforcer faking a pass) — could ship unnoticed.
 //   - python3 test_check.py        (governance-integrity checker)
 //   - python3 test_yaml2json.py    (the YAML->JSON shim)
-//   - node --test 'harness/test_*.mjs'  picks up test_gate + test_acceptance +
-//     test_scorecard via a QUOTED glob (Node 26's `--test <dir>` is broken;
-//     letting Node's own runner resolve the glob dodges that directory bug).
-// The Node glob run carries FORGE_ACCEPT_INNER=1 so test_acceptance.mjs SKIPS
-// its integration test that re-spawns the full acceptance.mjs — without the
-// flag this probe would trigger ~4x redundant nested gate runs (acceptance ->
-// glob -> test_acceptance -> acceptance -> ...).
+//   - node --test 'harness/test_*.mjs'      picks up test_gate + test_acceptance
+//     + test_scorecard (top-level harness suites).
+//   - node --test 'harness/arch/test_*.mjs' picks up test_arch-check (the 17
+//     negative-fixture tests pinning every architecture check, incl. the
+//     multi-line-string function-length regression). The non-recursive glob
+//     above does NOT descend into harness/arch/, so without this second entry
+//     those 17 tests would never run under `forge accept`.
+// Both Node runs use a QUOTED glob (Node 26's `--test <dir>` is broken; letting
+// Node's own runner resolve the glob dodges that directory bug) and carry
+// FORGE_ACCEPT_INNER=1 so test_acceptance.mjs SKIPS its integration test that
+// re-spawns the full acceptance.mjs — without the flag this probe would trigger
+// ~4x redundant nested gate runs (acceptance -> glob -> test_acceptance -> ...).
+// The arch run is also fail-CLOSED on discovery: exit 0 is necessary but not
+// sufficient — a glob matching nothing still exits 0, so we require the runner's
+// own `# tests N` summary with N > 0 (else the 17 tests could vanish unnoticed).
 export function probeTests() {
+  const archRun = run(
+    'node',
+    ['--test', '--test-reporter=tap', 'harness/arch/test_*.mjs'],
+    { FORGE_ACCEPT_INNER: '1' },
+  );
+  const archCount = (archRun.out.match(/(?:^|\n)# tests (\d+)/) ?? [])[1];
+  const archOk = archRun.ok && Number(archCount) > 0;
   const suites = [
-    ['test_check.py', run('python3', [join(HARNESS_DIR, 'test_check.py')])],
-    ['test_yaml2json.py', run('python3', [join(HARNESS_DIR, 'test_yaml2json.py')])],
-    ['harness/test_*.mjs', run('node', ['--test', 'harness/test_*.mjs'], { FORGE_ACCEPT_INNER: '1' })],
+    ['test_check.py', run('python3', [join(HARNESS_DIR, 'test_check.py')]).ok],
+    ['test_yaml2json.py', run('python3', [join(HARNESS_DIR, 'test_yaml2json.py')]).ok],
+    ['harness/test_*.mjs', run('node', ['--test', 'harness/test_*.mjs'], { FORGE_ACCEPT_INNER: '1' }).ok],
+    ['harness/arch/test_*.mjs', archOk],
   ];
-  const failed = suites.filter(([, r]) => !r.ok).map(([name]) => name);
+  const failed = suites.filter(([, ok]) => !ok).map(([name]) => name);
   const ok = failed.length === 0;
   const detail = ok
-    ? "test_check.py + test_yaml2json.py + harness/test_*.mjs: all green"
+    ? `test_check.py + test_yaml2json.py + harness/test_*.mjs + harness/arch/test_*.mjs (${archCount}): all green`
     : `failed: ${failed.join(', ')}`;
   return result('test_pass', ok ? PASS : FAIL, detail);
 }
@@ -183,26 +200,50 @@ export function probeAppTests() {
 
 // Criteria with NO executable check in this repo. Surfaced as N/A with an
 // honest reason; NEVER asserted as a pass (see decide()).
+// NOTE: security_findings is NO LONGER here — harness/secret-scan.mjs gives it a
+// real (hardcoded-secret) check, so probeSecurity reports PASS/FAIL, not N/A.
+// The remaining four stay honestly N/A (no coverage/lint/typecheck/build tool).
 export function probeNotApplicable() {
   return [
     result('coverage', NA, 'no coverage tool wired in this repo'),
     result('lint', NA, 'no linter configured (no eslint/ruff)'),
     result('typecheck', NA, 'no TS sources / type-checker in this repo'),
     result('build', NA, 'no build step (declarative + zero-dep harness)'),
-    result('security_findings', NA, 'no dependency/security scanner; security-review is a reviewer agent, not a harness tool'),
   ];
 }
 
+// security_findings == 0  <-  hardcoded-secret scan (harness/secret-scan.mjs).
+// Direction-5 security/compliance gate, aligned with OWASP Agentic Top-10 2025-12
+// (sensitive information disclosure). PASS when the secret scanner exits 0 (no
+// committed AWS keys / private-key headers / GitHub-Slack tokens / high-entropy
+// credential assignments), FAIL otherwise. HONESTY: this is a PATTERN scanner
+// for hardcoded secrets only — it is NOT a dependency/CVE (SCA) scanner; that
+// needs a vulnerability DB and is the v3 roadmap item, deliberately out of scope.
+// It is load-bearing (see LOAD_BEARING): a security gate that found a leaked
+// credential yet still ACCEPTED would defeat its own purpose.
+export function probeSecurity() {
+  const r = run('node', [join(HARNESS_DIR, 'secret-scan.mjs')]);
+  return result(
+    'security_findings',
+    r.ok ? PASS : FAIL,
+    r.ok ? 'secret-scan: no hardcoded secrets (pattern scan; SCA/CVE out of scope)' : `secret-scan exit ${r.code}: ${r.out}`,
+  );
+}
+
 // architecture == clean  <-  clean-architecture DEPENDENCY DIRECTION + size
-// budgets (harness/arch/arch-check.mjs: layering / package / fan-in / cognitive).
-// Distinct from arch_violations (check.py governance integrity): this FAILs when
-// e.g. a domain package imports infrastructure (an inner layer imports an outer).
+// budgets (harness/arch/arch-check.mjs, all 8 checks: layering / package /
+// fan-in / cognitive / anti-pattern-naming / function-length /
+// circular-dependency / drift-guard). Distinct from arch_violations (check.py
+// governance integrity): this FAILs when e.g. a domain package imports
+// infrastructure (an inner layer imports an outer) or a function exceeds budget.
 export function probeArchitecture() {
   const r = run('node', [join(HARNESS_DIR, 'arch', 'arch-check.mjs')]);
   return result(
     'architecture',
     r.ok ? PASS : FAIL,
-    r.ok ? 'arch-check: layering/package/fan-in/cognitive clean' : `arch-check exit ${r.code}`,
+    r.ok
+      ? 'arch-check: layering/package/fan-in/cognitive/anti-pattern-naming/function-length/circular-dependency/drift-guard clean'
+      : `arch-check exit ${r.code}`,
   );
 }
 
@@ -216,6 +257,7 @@ export function collect() {
     probeComplexity(),
     probeArch(),
     probeArchitecture(),
+    probeSecurity(),
     ...probeNotApplicable(),
   ];
 }
@@ -224,7 +266,7 @@ export function collect() {
 // for acceptance. Unlike the N/A criteria, these are backed by a real check, so
 // "not FAIL" is not enough — a missing or non-PASS load-bearing criterion is a
 // hard reject (e.g. a probe silently dropped, or surfaced as N/A by mistake).
-export const LOAD_BEARING = ['test_pass', 'app_test_pass', 'complexity_violations', 'arch_violations', 'architecture'];
+export const LOAD_BEARING = ['test_pass', 'app_test_pass', 'complexity_violations', 'arch_violations', 'architecture', 'security_findings'];
 
 // PURE verdict function (no I/O) so it is directly unit-testable.
 //

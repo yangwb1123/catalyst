@@ -14,9 +14,18 @@
 // the I/O boundary (read --now or default once) — NEVER Date.now() inside the
 // pure core — keeping synthesis deterministic.
 //
+// TRAJECTORY: the verdict can carry how many rounds the task took to converge
+// (--iterations) and whether a reviewer bounced it (--rework). These roll into
+// the scorecard's avg_iterations / rework_rate (see scorecard.mjs). HONESTY:
+// auto-collection of trajectory is NOT wired yet — the natural sources are the
+// iteration count in `forge evolve`'s .forge/trace.jsonl and the reviewer's
+// bounce-back verdict. Until that pipe is connected, the orchestrator/CLI
+// supplies these via the flags below; omitting them yields the legacy binary
+// row (rework_rate 0, avg_iterations absent).
+//
 // CLI:
 //   node harness/scorecard-update.mjs --model <m> --task-type <t> \
-//        [--out <path>] [--now <iso>]
+//        [--out <path>] [--now <iso>] [--iterations <n>] [--rework <0|1>]
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -88,11 +97,24 @@ function writeScorecards(path, rows) {
   writeFileSync(path, `${JSON.stringify(rows, null, 2)}\n`);
 }
 
+// Enrich the gate's binary verdict with caller-supplied trajectory. `iterations`
+// (rounds to green) and `reworked` (reviewer bounced it) are injected here at the
+// I/O boundary — NOT auto-collected yet (see header HONESTY note). Undefined
+// values are left off the verdict entirely so synthesize() sees the legacy shape
+// and degrades gracefully (rework_rate 0, avg_iterations absent).
+function withTrajectory(verdict, { iterations, reworked }) {
+  const out = { ...verdict };
+  if (iterations !== undefined) out.iterations = iterations;
+  if (reworked !== undefined) out.reworked = reworked;
+  return out;
+}
+
 // Run the acceptance gate once and fold its single verdict into the scorecards
 // at `out`. Returns the fresh (pre-merge) row for logging. `now` is the ISO
 // timestamp stamped onto the row (supplied by the caller — no Date.now() here).
-function runUpdate({ model, taskType, out, now }) {
-  const verdict = decide(collect());
+// `iterations` / `reworked` are the optional trajectory the caller injects.
+function runUpdate({ model, taskType, out, now, iterations, reworked }) {
+  const verdict = withTrajectory(decide(collect()), { iterations, reworked });
   const newRow = synthesize({
     model,
     task_type: taskType,
@@ -104,10 +126,30 @@ function runUpdate({ model, taskType, out, now }) {
   return { verdict, newRow, merged };
 }
 
+// Parse the optional --iterations <float> flag. Absent -> undefined (the
+// verdict stays legacy-shaped). A non-numeric value is rejected loud rather than
+// silently poisoning the average.
+function parseIterations(raw) {
+  if (raw === undefined) return undefined;
+  const n = Number(raw);
+  if (!Number.isFinite(n)) throw new Error(`--iterations must be a number, got: ${raw}`);
+  return n;
+}
+
+// Parse the optional --rework <0|1> flag into a boolean. Absent -> undefined
+// (no rework signal). Only the literal "0" and "1" are accepted to keep the
+// CLI contract unambiguous.
+function parseRework(raw) {
+  if (raw === undefined) return undefined;
+  if (raw === '1') return true;
+  if (raw === '0') return false;
+  throw new Error(`--rework must be 0 or 1, got: ${raw}`);
+}
+
 function main() {
   const args = parseArgs(process.argv.slice(2));
   if (!args.model || !args['task-type']) {
-    console.error('usage: scorecard-update --model <m> --task-type <t> [--out <path>] [--now <iso>]');
+    console.error('usage: scorecard-update --model <m> --task-type <t> [--out <path>] [--now <iso>] [--iterations <n>] [--rework <0|1>]');
     process.exit(2);
   }
   const out = args.out || DEFAULT_OUT;
@@ -117,11 +159,16 @@ function main() {
     taskType: args['task-type'],
     out,
     now,
+    iterations: parseIterations(args.iterations),
+    reworked: parseRework(args.rework),
   });
+  // avg_iterations is absent when no trajectory was supplied — print n/a so the
+  // log never implies a fabricated count.
+  const ai = newRow.avg_iterations === undefined ? 'n/a' : newRow.avg_iterations;
   console.log(
     `scorecard-update: ${verdict.accepted ? 'ACCEPTED' : 'REJECTED'} -> `
     + `${newRow.model}/${newRow.task_type} quality_score=${newRow.quality_score} `
-    + `samples=${newRow.samples} -> ${out}`,
+    + `samples=${newRow.samples} rework_rate=${newRow.rework_rate} avg_iterations=${ai} -> ${out}`,
   );
 }
 

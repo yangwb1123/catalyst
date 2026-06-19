@@ -3,7 +3,13 @@
 # ForgeOS's own load-bearing wall, applied to ForgeOS. Until now the
 # clean-architecture skill only DECLARED dependency direction; nothing checked
 # it. This file makes the rules executable: arch-check.mjs reads it and FAILS the
-# build on any violation (layering / package size / fan-in / cognitive load).
+# build on any violation (layering / package size / fan-in / cognitive load /
+# anti-pattern naming). Two further checks — function-length and circular-
+# dependency — are ALSO enforced by arch-check.mjs but read their limits
+# (max_function_lines, circular_dependency_count) DIRECTLY from
+# harness/policies.yml, so they are deliberately NOT mirrored here: a single
+# source has nothing to drift from. (function-length fails closed if that limit
+# is missing; circular_dependency_count is a fixed 0 — any cycle fails.)
 #
 # Every numeric limit below is set to ForgeOS's MEASURED actual + sensible
 # headroom, so the repo PASSES honestly today and only trips on real drift.
@@ -12,6 +18,8 @@
 #   package:   max 6 code files/pkg (orchestrator); max 11 exports/pkg (orchestrator)
 #   fanin:     max 11 importing files for one target (forge-core/internal/asset)
 #   cognitive: 4 top-level source modules (docs, examples, forge-core, harness)
+#   functions: longest declared function <= 50 lines (policies.yml max_function_lines)
+#   cycles:    0 circular module imports (policies.yml circular_dependency_count)
 #
 # DRIFT-GUARD: file.max_lines and root.max_files MUST equal harness/policies.yml.
 # arch-check.mjs verifies this equality every run, so the two sources of truth

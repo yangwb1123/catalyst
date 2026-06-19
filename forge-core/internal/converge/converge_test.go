@@ -126,3 +126,70 @@ func TestEvaluate_EmptyIsNotConverged(t *testing.T) {
 		t.Error("zero criteria must not count as converged")
 	}
 }
+
+// crit builds an acceptance per-criterion criterion (e.g. test_pass) whose
+// verdict is resolved from Signals.Criteria, not a threshold.
+func crit(metric string) asset.Criterion {
+	return asset.Criterion{Metric: metric, Operator: "==", Value: "true"}
+}
+
+// Per-criterion dispatch: PASS->met, every other verdict (FAIL/NA/missing)
+// ->unmet. The verdict spelling matches gate.ProbeAll's output exactly.
+func TestEvaluate_CriterionVerdicts(t *testing.T) {
+	cases := []struct {
+		name   string
+		metric string
+		verdct map[string]string // Signals.Criteria
+		want   bool
+	}{
+		{"test_pass PASS is met", "test_pass", map[string]string{"test_pass": "PASS"}, true},
+		{"test_pass FAIL is unmet", "test_pass", map[string]string{"test_pass": "FAIL"}, false},
+		{"test_pass NA is unmet (honesty)", "test_pass", map[string]string{"test_pass": "NA"}, false},
+		{"app_test_pass PASS is met", "app_test_pass", map[string]string{"app_test_pass": "PASS"}, true},
+		{"architecture PASS is met", "architecture", map[string]string{"architecture": "PASS"}, true},
+		{"arch_violations FAIL is unmet", "arch_violations", map[string]string{"arch_violations": "FAIL"}, false},
+		{"complexity_violations PASS is met", "complexity_violations", map[string]string{"complexity_violations": "PASS"}, true},
+		{"missing verdict is unmet", "test_pass", map[string]string{"architecture": "PASS"}, false},
+		{"nil Criteria map is unmet", "test_pass", nil, false},
+		{"unexpected verdict value is unmet", "test_pass", map[string]string{"test_pass": "MAYBE"}, false},
+	}
+	for _, c := range cases {
+		results, all := Evaluate([]asset.Criterion{crit(c.metric)}, Signals{Criteria: c.verdct})
+		if results[0].Met != c.want || all != c.want {
+			t.Errorf("%s: Met=%v all=%v, want %v (detail=%q)", c.name, results[0].Met, all, c.want, results[0].Detail)
+		}
+	}
+}
+
+// Conjunction across kinds: an acceptance criterion AND roadmap must both hold;
+// either one unmet blocks convergence, matching Evaluate's all-met semantics.
+func TestEvaluate_CriterionConjunction(t *testing.T) {
+	sig := Signals{RoadmapCompletion: 1.0, Criteria: map[string]string{"test_pass": "PASS"}}
+
+	if _, all := Evaluate([]asset.Criterion{crit("test_pass"), roadmap("==", 100)}, sig); !all {
+		t.Error("test_pass PASS AND roadmap==100 must converge")
+	}
+
+	// Flip roadmap below threshold: still unmet despite test_pass green.
+	sig.RoadmapCompletion = 0.5
+	if _, all := Evaluate([]asset.Criterion{crit("test_pass"), roadmap("==", 100)}, sig); all {
+		t.Error("a failing roadmap must block convergence even with test_pass green")
+	}
+
+	// Flip the criterion to FAIL: roadmap green is not enough on its own.
+	sig = Signals{RoadmapCompletion: 1.0, Criteria: map[string]string{"test_pass": "FAIL"}}
+	if _, all := Evaluate([]asset.Criterion{crit("test_pass"), roadmap("==", 100)}, sig); all {
+		t.Error("a failing test_pass must block convergence even with roadmap==100")
+	}
+}
+
+// Back-compat: with Criteria nil, the legacy roadmap/gates path is unchanged —
+// a per-criterion metric simply degrades to unmet rather than panicking.
+func TestEvaluate_NilCriteriaBackCompat(t *testing.T) {
+	results, all := Evaluate(
+		[]asset.Criterion{roadmap("==", 100), gates("green")},
+		Signals{RoadmapCompletion: 1.0, GatesGreen: true}) // no Criteria map
+	if !all {
+		t.Errorf("legacy roadmap+gates conjunction must still converge; results=%+v", results)
+	}
+}

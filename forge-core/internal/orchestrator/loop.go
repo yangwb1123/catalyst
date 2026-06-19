@@ -27,6 +27,24 @@ type LoopEngine struct {
 	MaxIter    int                     // safety backstop on iterations
 	NoProgress int                     // halt after this many stale iterations (tripwire)
 	Log        func(string)
+
+	// OnIteration is an injected post-measurement hook called once per iteration,
+	// right after Signals() — the point where "this round's work AND its
+	// measurement are done", so it is the honest place to persist a checkpoint and
+	// emit a trace event. It receives the 1-based iteration index and that round's
+	// live signals. Kept as an injected callback (not a direct trace/persist
+	// import) so the engine stays decoupled from the IO layer, matching how
+	// Engine/Signals/Log/RunGate are already wired. Nil-safe: a nil hook is a no-op.
+	OnIteration func(i int, sig converge.Signals)
+
+	// StartIter and ResumePrev support resuming a crashed/paused run from a
+	// checkpoint. StartIter is the 1-based iteration to begin at (0 or 1 both mean
+	// "start fresh from iteration 1" — the default). ResumePrev seeds the previous
+	// RoadmapCompletion so the stale/tripwire computation is continuous across the
+	// resume boundary; for a fresh run it is the sentinel -1.0 (set by loopStart),
+	// so the first reading is never counted as "no progress vs nothing".
+	StartIter  int
+	ResumePrev float64
 }
 
 // NewLoopEngine constructs a LoopEngine, clamping a non-positive NoProgress to 1
@@ -58,13 +76,15 @@ type LoopOutcome struct {
 // For an external-stop workflow, convergence is not a conjunction check: the
 // loop runs to the safety bound (a clean stop) and reports it as such.
 func (l LoopEngine) Run(wf asset.Workflow, mode string) (LoopOutcome, error) {
-	prev, stale := -1.0, 0
-	for i := 1; i <= l.MaxIter; i++ {
+	start, prev := l.loopStart()
+	stale := 0
+	for i := start; i <= l.MaxIter; i++ {
 		l.logf("iteration %d/%d", i, l.MaxIter)
 		if err := l.Engine.Run(wf, mode); err != nil {
 			return LoopOutcome{i, false, "gate/agent failure"}, err
 		}
 		sig := l.Signals()
+		l.onIteration(i, sig)
 		l.reportConvergence(sig)
 		if out, done := l.checkStop(i, sig); done {
 			return out, nil
@@ -75,6 +95,28 @@ func (l LoopEngine) Run(wf asset.Workflow, mode string) (LoopOutcome, error) {
 		prev = sig.RoadmapCompletion
 	}
 	return l.boundOutcome(), nil
+}
+
+// loopStart resolves the first iteration index and the initial `prev` completion
+// from the resume fields. A StartIter of 0 or 1 is a fresh run: start at
+// iteration 1 with prev = -1.0 (the sentinel that makes the first reading never
+// register as stale). A StartIter > 1 is a resume: begin there and seed prev with
+// ResumePrev (last persisted completion) so the stale/tripwire math is continuous
+// across the resume — a flat first post-resume reading correctly counts as stale.
+// This keeps the default (fresh) path bit-for-bit identical to the original.
+func (l LoopEngine) loopStart() (start int, prev float64) {
+	if l.StartIter > 1 {
+		return l.StartIter, l.ResumePrev
+	}
+	return 1, -1.0
+}
+
+// onIteration invokes the post-measurement hook (the checkpoint/trace point) when
+// one is injected. Nil-safe, so the loop runs unchanged when no hook is wired.
+func (l LoopEngine) onIteration(i int, sig converge.Signals) {
+	if l.OnIteration != nil {
+		l.OnIteration(i, sig)
+	}
 }
 
 // checkStop reports a converged outcome for a conjunction workflow whose

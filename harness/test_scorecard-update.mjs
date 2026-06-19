@@ -35,6 +35,12 @@ const row = (model, task_type, quality_score, samples, updated_at = TS) => ({
   model, task_type, quality_score, samples, pass_rate: quality_score, updated_at,
 });
 
+// A TRAJECTORY-bearing row: adds the optional rework_rate / avg_iterations the
+// learning loop now persists, on top of the required schema fields.
+const trow = (model, task_type, quality_score, samples, rework_rate, avg_iterations, updated_at = TS) => ({
+  model, task_type, quality_score, samples, pass_rate: quality_score, rework_rate, avg_iterations, updated_at,
+});
+
 // --- insert: new (model, task_type) pair -------------------------------------
 test('updateScorecards: inserts a new pair when none matches', () => {
   const existing = [row('opus', 'architecture', 0.9, 10)];
@@ -102,6 +108,40 @@ test('updateScorecards: merges only the FIRST matching row (primary key is uniqu
   assert.equal(out.length, 2);
   assert.notDeepEqual(out[0], dupA, 'first match is merged');
   assert.deepEqual(out[1], dupB, 'second duplicate is left untouched');
+});
+
+// --- trajectory: optional avg_iterations / rework_rate carry through ---------
+test('updateScorecards: inserts a trajectory row intact (optional fields preserved)', () => {
+  const fresh = trow('sonnet', 'implementation', 1.0, 1, 0, 2);
+  const out = updateScorecards([], fresh);
+  assert.deepEqual(out, [fresh]);
+  assert.equal(out[0].avg_iterations, 2);
+  assert.equal(out[0].rework_rate, 0);
+});
+
+test('updateScorecards: merging trajectory rows folds avg_iterations + rework_rate', () => {
+  // stored q=1 n=2 (2 accepted) avg=1 rework=0 ; fresh q=0.5 n=4 (2 accepted)
+  // avg=3 rework=0.5 -> avg weighted by accepted (1*2+3*2)/4 = 2 ; rework
+  // total-weighted (0*2+0.5*4)/6 = 0.333 ; quality (1*2+0.5*4)/6 = 0.667.
+  const existing = [trow('sonnet', 'implementation', 1.0, 2, 0, 1, OLD)];
+  const fresh = trow('sonnet', 'implementation', 0.5, 4, 0.5, 3, TS);
+  const [m] = updateScorecards(existing, fresh);
+  assert.equal(m.samples, 6);
+  assert.equal(m.avg_iterations, 2);
+  assert.ok(Math.abs(m.rework_rate - 1 / 3) < 1e-9, `rework ~0.333, got ${m.rework_rate}`);
+  assertSchemaShape(m);
+});
+
+test('updateScorecards: a legacy stored row absorbs a trajectory verdict gracefully', () => {
+  // Stored row predates trajectory (no rework_rate / avg_iterations); the fresh
+  // verdict's average is adopted and rework folds with the legacy side as 0.
+  const existing = [row('opus', 'crud', 1.0, 2, OLD)];
+  const fresh = trow('opus', 'crud', 1.0, 2, 0.5, 4, TS);
+  const [m] = updateScorecards(existing, fresh);
+  assert.equal(m.avg_iterations, 4, 'incoming avg adopted over legacy (weight-0) side');
+  // rework: legacy 0 over n=2, incoming 0.5 over n=2 -> (0+1)/4 = 0.25
+  assert.equal(m.rework_rate, 0.25);
+  assertSchemaShape(m);
 });
 
 // --- immutability: input array/rows are not mutated --------------------------

@@ -16,6 +16,27 @@ import (
 type Signals struct {
 	RoadmapCompletion float64 // fraction in [0,1] of decided checklist items done
 	GatesGreen        bool    // every required harness gate currently passes
+
+	// Criteria carries per-criterion acceptance verdicts (criterion name ->
+	// "PASS"|"FAIL"|"NA", exactly as gate.ProbeAll emits them) so a workflow can
+	// converge on a single acceptance criterion (e.g. test_pass) instead of only
+	// the coarse GatesGreen aggregate. It reuses the SAME ProbeAll result the
+	// acceptance gate already ran — no extra spawn. A nil map means no probe data
+	// is wired, and every per-criterion check then degrades safely to unmet
+	// (honest: absence of a verdict is never satisfaction).
+	Criteria map[string]string
+}
+
+// acceptanceMetrics is the set of metric names that evalOne resolves from
+// Signals.Criteria (the load-bearing acceptance criteria plus the governance
+// ones). A metric outside this set keeps its prior dispatch (roadmap/gates) or
+// falls through to the honest unknown->unmet default.
+var acceptanceMetrics = map[string]bool{
+	"test_pass":             true,
+	"app_test_pass":         true,
+	"architecture":          true,
+	"arch_violations":       true,
+	"complexity_violations": true,
 }
 
 // Result is one evaluated criterion and whether the live signals satisfy it.
@@ -44,15 +65,32 @@ func Evaluate(allOf []asset.Criterion, sig Signals) (results []Result, allMet bo
 // evalOne dispatches a single criterion on its Metric. Only recognized metrics
 // can be Met; an unknown metric is unmet-by-default (honest, never a silent pass).
 func evalOne(c asset.Criterion, sig Signals) Result {
-	switch c.Metric {
-	case "roadmap_completion":
+	switch {
+	case c.Metric == "roadmap_completion":
 		return evalRoadmap(c, sig)
-	case "gates_status":
+	case c.Metric == "gates_status":
 		met := c.Value == "green" && sig.GatesGreen
 		return Result{render(c), met, greenDetail(sig.GatesGreen)}
+	case acceptanceMetrics[c.Metric]:
+		return evalCriterion(c, sig)
 	default:
 		return Result{render(c), false, unknownDetail(c)}
 	}
+}
+
+// evalCriterion resolves a known acceptance criterion (test_pass, architecture,
+// …) from the per-criterion verdicts in Signals.Criteria. Only an explicit PASS
+// is Met; FAIL, NA, or an absent verdict are all unmet. This mirrors
+// acceptance.decide's honesty law: NA means "not actually checked", so it can
+// never count as satisfied, and a criterion the probe didn't report cannot be
+// assumed green.
+func evalCriterion(c asset.Criterion, sig Signals) Result {
+	status, ok := sig.Criteria[c.Metric]
+	if !ok {
+		return Result{render(c), false, fmt.Sprintf("%s: no verdict (probe absent) — treated as unmet", c.Metric)}
+	}
+	met := status == "PASS"
+	return Result{render(c), met, fmt.Sprintf("%s=%s", c.Metric, status)}
 }
 
 // evalRoadmap compares roadmap completion (as a percentage) against the

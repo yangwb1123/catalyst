@@ -9,7 +9,7 @@ import { pathToFileURL } from 'node:url';
 const ROOT = process.cwd();
 const POLICY_PATH = join(ROOT, 'harness', 'policies.yml');
 const CODE_EXTS = new Set(['.ts', '.tsx', '.js', '.mjs', '.cjs', '.jsx', '.py', '.go', '.rs', '.java']);
-const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'build', '.next', 'coverage', 'vendor']);
+const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'build', '.next', 'coverage', 'vendor', '.forge']);
 // A single line longer than this is a God-file even with few/no newlines
 // (e.g. a minified bundle): the line-count cap alone would miss it.
 const MAX_LINE_LEN = 2000;

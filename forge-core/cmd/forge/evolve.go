@@ -1,0 +1,222 @@
+// evolve.go — the autonomous-loop half of the forge CLI. `forge evolve` reuses
+// the SAME workflow loading + agent executor + real harness gates as `forge run`
+// (those shared pieces live in main.go), then wraps them in a convergence loop
+// with checkpoint/resume, cross-session memory, and a trace audit trail under
+// <root>/.forge. It runs a workflow until it converges, a tripwire fires, or the
+// safety bound — never on round count alone.
+package main
+
+import (
+	"flag"
+	"fmt"
+	"os"
+	"path/filepath"
+	"time"
+
+	"forgeos/forge-core/internal/asset"
+	"forgeos/forge-core/internal/converge"
+	"forgeos/forge-core/internal/gate"
+	"forgeos/forge-core/internal/memory"
+	"forgeos/forge-core/internal/orchestrator"
+	"forgeos/forge-core/internal/persist"
+	"forgeos/forge-core/internal/trace"
+)
+
+// cmdEvolve loops a workflow until it converges, a tripwire fires, or the
+// safety bound — the autonomous-loop entry point (real agents via --executor).
+func cmdEvolve(args []string) int {
+	fs := flag.NewFlagSet("evolve", flag.ContinueOnError)
+	var o runOpts
+	bindRunOpts(fs, &o)
+	maxIter := fs.Int("max-iter", 5, "safety bound on loop iterations (not the goal)")
+	resume := fs.Bool("resume", false, "resume from <root>/.forge/checkpoint.json (errors out on a malformed checkpoint)")
+	name, flagArgs := splitPositional(args)
+	if name == "" {
+		fmt.Fprintln(os.Stderr, "forge evolve: exactly one <workflow> required")
+		usage()
+		return 2
+	}
+	if err := fs.Parse(flagArgs); err != nil {
+		return 2
+	}
+	o.root = gate.RepoRoot(o.root)
+	wf, err := loadWorkflow(o.root, name)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "forge evolve: %v\n", err)
+		return 1
+	}
+	return execLoop(wf, o, *maxIter, *resume)
+}
+
+// execLoop wires the loop engine (real gates + selected executor + live signals)
+// and runs it to convergence, a tripwire, or the safety bound, reporting how it
+// ended. For an external-stop workflow (e.g. evolve), reaching the safety bound is
+// the EXPECTED clean outcome and the CLI exits 0 — never a round-count failure.
+//
+// Resilience + memory wiring: each iteration's post-measurement hook persists a
+// checkpoint, appends the round's trajectory to memory, and emits a trace event
+// under <root>/.forge/ — so a crashed run can --resume, later rounds recall what
+// happened, and the run stays auditable.
+func execLoop(wf asset.Workflow, o runOpts, maxIter int, resume bool) int {
+	logln := func(s string) { fmt.Println(s) }
+	start, prev, err := resumeStart(o.root, resume)
+	if err != nil { // malformed checkpoint: fail closed, never silently restart.
+		fmt.Fprintf(os.Stderr, "forge evolve: %v\n", err)
+		return 1
+	}
+	tracer, closeTrace, err := openTracer(o.root)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "forge evolve: %v\n", err)
+		return 1
+	}
+	defer closeTrace()
+	loop := buildLoop(wf, o, maxIter, logln)
+	loop.StartIter, loop.ResumePrev = start, prev
+	loop.OnIteration = checkpointHook(o, wf, tracer, logln)
+	fmt.Printf("forge evolve: stage=%s mode=%s max-iter=%d type=%s start-iter=%d (doom-loop tripwire=2)\n",
+		wf.Stage, o.mode, maxIter, stopTypeLabel(wf.Stop.Type), start)
+	return reportLoop(loop.Run(wf, o.mode))
+}
+
+// buildLoop constructs the loop engine: real gates + selected executor + live
+// signals, with one acceptance probe per iteration shared by that iteration's gate
+// phases and convergence check (refresh-before-reuse, no double-spawn).
+func buildLoop(wf asset.Workflow, o runOpts, maxIter int, logln func(string)) orchestrator.LoopEngine {
+	probe := &loopProbe{root: o.root}
+	eng := orchestrator.Engine{
+		Exec:       agentExecutor(o, logln),
+		RunGate:    func(name string) gate.Result { return resolveGate(o.root, name, probe.refresh()) },
+		Log:        logln,
+		MaxRetries: o.maxRetries,
+	}
+	return orchestrator.NewLoopEngine(
+		eng, wf.Stop.Type, wf.Stop.AllOf,
+		func() converge.Signals { return gatherSignals(o.root, wf, probe.current()) },
+		maxIter, 2, logln)
+}
+
+// reportLoop prints how the loop ended and maps it to an exit code: a converged
+// (or clean external-stop) outcome is exit 0; anything else is exit 1.
+func reportLoop(out orchestrator.LoopOutcome, err error) int {
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "forge evolve: %v\n", err)
+		return 1
+	}
+	fmt.Printf("forge evolve: ended after %d iter — converged=%v (%s)\n", out.Iterations, out.Converged, out.Reason)
+	if out.Converged {
+		return 0
+	}
+	return 1
+}
+
+// resumeStart resolves the loop's first iteration and seed completion. Without
+// --resume it is a fresh run (0, -1.0): the engine begins at iteration 1 with the
+// -1.0 sentinel. With --resume it loads the checkpoint and continues at
+// cp.Iteration+1, seeding prev with the persisted completion so the stale/tripwire
+// math is continuous. A MALFORMED checkpoint is a hard error (honesty-first):
+// resuming must never silently degrade to a from-scratch rerun. A MISSING
+// checkpoint with --resume is reported but tolerated as a fresh start.
+func resumeStart(root string, resume bool) (start int, prev float64, err error) {
+	if !resume {
+		return 0, -1.0, nil
+	}
+	cp, found, err := persist.Load(checkpointPath(root))
+	if err != nil {
+		return 0, 0, fmt.Errorf("--resume: malformed checkpoint at %s: %w", checkpointPath(root), err)
+	}
+	if !found {
+		fmt.Fprintf(os.Stderr, "forge evolve: --resume found no checkpoint at %s; starting fresh\n", checkpointPath(root))
+		return 0, -1.0, nil
+	}
+	fmt.Printf("forge evolve: resuming from iteration %d (roadmap=%.0f%%, last reason: %s)\n",
+		cp.Iteration+1, cp.RoadmapCompletion*100, cp.Reason)
+	return cp.Iteration + 1, cp.RoadmapCompletion, nil
+}
+
+// checkpointHook builds the loop's post-measurement OnIteration callback: after
+// each round's work AND its measurement, it persists a checkpoint, appends the
+// round's trajectory to memory, and emits an iteration trace event. The snapshot
+// time is injected here (main owns the clock; persist/trace/memory don't).
+// Fail-LOUD-and-continue (deliberately NOT fail-closed): a checkpoint (or memory)
+// write failure is made loudly visible — a stderr WARNING plus the trace status
+// flipped to "checkpoint-write-failed" — but the loop keeps running. For a 24h run
+// that is the correct trade: a transient disk hiccup must not abort hours of work,
+// and the failure is never SWALLOWED, so we never pretend recovery state is durable
+// when it is not. Contrast openTracer, which DOES fail-closed: losing the audit
+// trail entirely is the blind spot trace prevents.
+func checkpointHook(o runOpts, wf asset.Workflow, tracer *trace.Tracer, logln func(string)) func(int, converge.Signals) {
+	return func(i int, sig converge.Signals) {
+		cp := persist.Checkpoint{
+			Workflow: wf.Stage, Mode: o.mode, Iteration: i,
+			RoadmapCompletion: sig.RoadmapCompletion, GatesGreen: sig.GatesGreen,
+			Reason: "iteration complete", UpdatedAtUnix: time.Now().Unix(),
+		}
+		status, detail := "ok", checkpointDetail(sig)
+		if err := persist.Save(checkpointPath(o.root), cp); err != nil {
+			status = "checkpoint-write-failed"
+			detail = err.Error()
+			logln(fmt.Sprintf("forge evolve: WARNING checkpoint write failed (recovery state NOT durable): %v", err))
+		}
+		recordMemory(o.root, wf, i, sig, logln)
+		emitTrace(tracer, trace.Event{Kind: "iteration", Name: fmt.Sprintf("%d", i), Status: status, Detail: detail}, logln)
+	}
+}
+
+// recordMemory appends this iteration's trajectory to the cross-session store so a
+// later round (or --resume) reads where the loop stood. HONESTY: under v1 evolve the
+// executor defaults to dry-run, so the only thing this round TRULY produced is its
+// trajectory / convergence signal (roadmap %, gate state) — real, and what we record
+// (KindLesson, topic=stage). It is NOT a semantic gap/decision a real agent found:
+// those exist only once the loop fires a real agent (--executor=command
+// --agent-cmd=claude); a later wave will parse real-agent output into gap/decision
+// entries (today we record only the dry-run run trajectory). We do not fabricate
+// findings the dry loop never made. Fail-LOUD-and-continue: a failed append is
+// warned, never aborts (enrichment, not correctness).
+func recordMemory(root string, wf asset.Workflow, i int, sig converge.Signals, logln func(string)) {
+	e := memory.Entry{
+		Kind: memory.KindLesson, Topic: wf.Stage, Iteration: i, CreatedAtUnix: time.Now().Unix(),
+		Detail: fmt.Sprintf("iter %d: roadmap=%.0f%%, gates_green=%v (dry-run trajectory)", i, sig.RoadmapCompletion*100, sig.GatesGreen),
+	}
+	if err := memory.Append(memoryPath(root), e); err != nil {
+		logln(fmt.Sprintf("forge evolve: WARNING memory append failed (trajectory NOT recorded): %v", err))
+	}
+}
+
+// checkpointDetail renders the measured signals for the iteration trace line.
+func checkpointDetail(sig converge.Signals) string {
+	return fmt.Sprintf("roadmap=%.0f%% gates_green=%v", sig.RoadmapCompletion*100, sig.GatesGreen)
+}
+
+// emitTrace writes one trace event, logging (never swallowing) a write failure.
+func emitTrace(tracer *trace.Tracer, ev trace.Event, logln func(string)) {
+	if err := tracer.Emit(ev); err != nil {
+		logln(fmt.Sprintf("forge evolve: WARNING trace emit failed: %v", err))
+	}
+}
+
+// stopTypeLabel renders the stop type for the run banner, "(none)" when unset.
+func stopTypeLabel(t string) string {
+	if t == "" {
+		return "(none)"
+	}
+	return t
+}
+
+// checkpointPath is where the per-iteration resume snapshot is persisted.
+func checkpointPath(root string) string { return filepath.Join(forgeDir(root), "checkpoint.json") }
+
+// openTracer creates <root>/.forge and returns a Tracer APPENDING JSONL to
+// trace.jsonl (append, not truncate, lets a --resume continue the same audit
+// trail), plus a closer. A dir/open failure is returned (fail-closed) — the loop
+// must not run blind on observability.
+func openTracer(root string) (*trace.Tracer, func(), error) {
+	if err := os.MkdirAll(forgeDir(root), 0o755); err != nil {
+		return nil, func() {}, fmt.Errorf("create .forge dir: %w", err)
+	}
+	f, err := os.OpenFile(filepath.Join(forgeDir(root), "trace.jsonl"),
+		os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
+	if err != nil {
+		return nil, func() {}, fmt.Errorf("open trace file: %w", err)
+	}
+	return trace.NewTracer(f), func() { f.Close() }, nil
+}

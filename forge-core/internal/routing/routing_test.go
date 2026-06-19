@@ -106,54 +106,61 @@ func TestScore_ZeroWeightTotal(t *testing.T) {
 	}
 }
 
+// tierForScoreCase is one TierForScore expectation. The table lives at package
+// scope (not inside the test) so the test body stays a thin loop — the routing
+// policy bands are data, and a large data table should not blow the function-
+// length budget that arch-check enforces.
+type tierForScoreCase struct {
+	name       string
+	score      float64
+	taskType   string
+	risk       string
+	spendRatio float64
+	want       string
+}
+
+var tierForScoreCases = []tierForScoreCase{
+	// (1) Each threshold band, low risk / in-budget / no task floor.
+	{"band haiku lower", 0.00, "crud", "low", 0.0, Haiku},
+	{"band haiku boundary", 0.34, "crud", "low", 0.0, Haiku},
+	{"band sonnet lower", 0.3401, "implementation", "low", 0.0, Sonnet},
+	{"band sonnet boundary", 0.69, "implementation", "low", 0.0, Sonnet},
+	{"band opus", 0.70, "implementation", "low", 0.0, Opus},
+	{"band opus high", 1.00, "implementation", "low", 0.0, Opus},
+
+	// (2) by_task_type floor lifts a low score.
+	{"task floor sonnet over haiku band", 0.10, "bugfix", "low", 0.0, Sonnet},
+	{"task floor opus arch over haiku band", 0.05, "architecture", "low", 0.0, Opus},
+
+	// (3) safety_override: payment/security force Opus from a haiku score.
+	{"payment opus floor", 0.10, "payment", "low", 0.0, Opus},
+	{"security opus floor", 0.10, "security", "low", 0.0, Opus},
+	{"authorization opus floor", 0.10, "authorization", "low", 0.0, Opus},
+
+	// (3) safety_override: critical risk forces Opus, ignoring budget...
+	{"critical forces opus low score", 0.10, "crud", "critical", 0.0, Opus},
+	{"critical pinned near budget", 0.50, "implementation", "critical", 0.85, Opus},
+	// ...and at spend >= 1.0 critical escalates instead of downgrading.
+	{"critical escalates over budget", 0.90, "implementation", "critical", 1.00, EscalateToHuman},
+	{"critical escalates well over budget", 0.10, "crud", "critical", 1.50, EscalateToHuman},
+
+	// (4) budget_guard near-budget (0.80<=spend<1.00) downgrades one tier.
+	{"0.85 non-critical sonnet->haiku", 0.50, "implementation", "low", 0.85, Haiku},
+	{"0.80 boundary opus->sonnet", 0.90, "implementation", "low", 0.80, Sonnet},
+	// Near-budget downgrade is clamped only by the safety floor, NOT the
+	// softer task_type prior, so a sonnet-floored bugfix still falls to haiku.
+	{"near-budget ignores task prior", 0.50, "bugfix", "medium", 0.90, Haiku},
+	// Just under the 0.80 gate: no downgrade, tier stands.
+	{"below near-budget gate no change", 0.50, "implementation", "low", 0.79, Sonnet},
+
+	// (4) budget_guard over-budget non-critical downgrades to task floor.
+	{"over budget to haiku floor", 0.90, "crud", "low", 1.00, Haiku},
+	{"over budget to sonnet floor", 0.95, "implementation", "high", 1.20, Sonnet},
+	{"over budget opus task stays opus floor", 0.20, "architecture", "high", 1.00, Opus},
+}
+
 func TestTierForScore(t *testing.T) {
-	cases := []struct {
-		name       string
-		score      float64
-		taskType   string
-		risk       string
-		spendRatio float64
-		want       string
-	}{
-		// (1) Each threshold band, low risk / in-budget / no task floor.
-		{"band haiku lower", 0.00, "crud", "low", 0.0, Haiku},
-		{"band haiku boundary", 0.34, "crud", "low", 0.0, Haiku},
-		{"band sonnet lower", 0.3401, "implementation", "low", 0.0, Sonnet},
-		{"band sonnet boundary", 0.69, "implementation", "low", 0.0, Sonnet},
-		{"band opus", 0.70, "implementation", "low", 0.0, Opus},
-		{"band opus high", 1.00, "implementation", "low", 0.0, Opus},
-
-		// (2) by_task_type floor lifts a low score.
-		{"task floor sonnet over haiku band", 0.10, "bugfix", "low", 0.0, Sonnet},
-		{"task floor opus arch over haiku band", 0.05, "architecture", "low", 0.0, Opus},
-
-		// (3) safety_override: payment/security force Opus from a haiku score.
-		{"payment opus floor", 0.10, "payment", "low", 0.0, Opus},
-		{"security opus floor", 0.10, "security", "low", 0.0, Opus},
-		{"authorization opus floor", 0.10, "authorization", "low", 0.0, Opus},
-
-		// (3) safety_override: critical risk forces Opus, ignoring budget...
-		{"critical forces opus low score", 0.10, "crud", "critical", 0.0, Opus},
-		{"critical pinned near budget", 0.50, "implementation", "critical", 0.85, Opus},
-		// ...and at spend >= 1.0 critical escalates instead of downgrading.
-		{"critical escalates over budget", 0.90, "implementation", "critical", 1.00, EscalateToHuman},
-		{"critical escalates well over budget", 0.10, "crud", "critical", 1.50, EscalateToHuman},
-
-		// (4) budget_guard near-budget (0.80<=spend<1.00) downgrades one tier.
-		{"0.85 non-critical sonnet->haiku", 0.50, "implementation", "low", 0.85, Haiku},
-		{"0.80 boundary opus->sonnet", 0.90, "implementation", "low", 0.80, Sonnet},
-		// Near-budget downgrade is clamped only by the safety floor, NOT the
-		// softer task_type prior, so a sonnet-floored bugfix still falls to haiku.
-		{"near-budget ignores task prior", 0.50, "bugfix", "medium", 0.90, Haiku},
-		// Just under the 0.80 gate: no downgrade, tier stands.
-		{"below near-budget gate no change", 0.50, "implementation", "low", 0.79, Sonnet},
-
-		// (4) budget_guard over-budget non-critical downgrades to task floor.
-		{"over budget to haiku floor", 0.90, "crud", "low", 1.00, Haiku},
-		{"over budget to sonnet floor", 0.95, "implementation", "high", 1.20, Sonnet},
-		{"over budget opus task stays opus floor", 0.20, "architecture", "high", 1.00, Opus},
-	}
-	for _, c := range cases {
+	for _, c := range tierForScoreCases {
 		t.Run(c.name, func(t *testing.T) {
 			got := TierForScore(c.score, c.taskType, c.risk, c.spendRatio)
 			if got != c.want {

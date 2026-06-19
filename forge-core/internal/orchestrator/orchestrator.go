@@ -11,6 +11,7 @@
 package orchestrator
 
 import (
+	"errors"
 	"fmt"
 
 	"forgeos/forge-core/internal/asset"
@@ -49,10 +50,20 @@ func (d DryRunExecutor) logf(format string, args ...any) {
 // gate and reports its Result (injected so tests can supply a fake and the CLI
 // can wire the real harness). A nil RunGate treats every gate as failing,
 // surfacing misconfiguration loudly rather than silently passing.
+//
+// MaxRetries is the hard ceiling on RETRIES (re-attempts beyond the first) of a
+// single agent phase, and only a retryable failure consumes one. This is the
+// consumer of ExecError.Retryable that turns ROADMAP direction-one's "classify
+// to drive retry vs human vs halt" into behavior: a transient KindTimeout is
+// re-attempted up to MaxRetries times, while a permanent KindConfig or a clean
+// KindFailed (and any non-ExecError) aborts on the spot — retrying those only
+// burns turns. The default 0 means "no retries": the first error aborts,
+// exactly the pre-retry behavior, so existing runs are byte-for-byte unchanged.
 type Engine struct {
-	Exec    AgentExecutor
-	RunGate func(name string) gate.Result
-	Log     func(string)
+	Exec       AgentExecutor
+	RunGate    func(name string) gate.Result
+	Log        func(string)
+	MaxRetries int
 }
 
 // Run executes the workflow phase by phase under mode.
@@ -70,15 +81,36 @@ func (e Engine) Run(wf asset.Workflow, mode string) error {
 			}
 			continue
 		}
-		if e.Exec == nil {
-			return fmt.Errorf("phase %s: no agent executor configured (fail closed)", p.Name)
-		}
-		if err := e.Exec.Execute(p, mode); err != nil {
-			return fmt.Errorf("phase %s: agent execution failed: %w", p.Name, err)
+		if err := e.runAgentPhase(p, mode); err != nil {
+			return err
 		}
 	}
 	e.reportStop(wf)
 	return nil
+}
+
+// runAgentPhase executes one agent phase, retrying ONLY on retryable failures up
+// to MaxRetries. The first attempt always runs; each subsequent attempt is a
+// retry and is taken only when the last error errors.As's to an *ExecError whose
+// Retryable() is true AND the retry budget is not yet spent. A non-ExecError or
+// any non-retryable ExecError (KindConfig, KindFailed) aborts immediately — the
+// pre-retry behavior — and so does exhausting the budget, returning the LAST
+// error so the operator sees the final failure, not a stale earlier one.
+func (e Engine) runAgentPhase(p asset.Phase, mode string) error {
+	if e.Exec == nil {
+		return fmt.Errorf("phase %s: no agent executor configured (fail closed)", p.Name)
+	}
+	for attempt := 0; ; attempt++ {
+		err := e.Exec.Execute(p, mode)
+		if err == nil {
+			return nil
+		}
+		var execErr *ExecError
+		if !errors.As(err, &execErr) || !execErr.Retryable() || attempt >= e.MaxRetries {
+			return fmt.Errorf("phase %s: agent execution failed: %w", p.Name, err)
+		}
+		e.logf("phase %s: retryable %s, retry %d/%d", p.Name, execErr.Kind, attempt+1, e.MaxRetries)
+	}
 }
 
 // runGates resolves every required gate of a phase with three honest outcomes:

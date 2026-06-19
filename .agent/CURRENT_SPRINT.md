@@ -9,10 +9,20 @@
 ## 🏁 里程碑:ForgeOS 工厂已证可用
 v0+v1 完成 + **首个真实产品被端到端造出并自我治理**。harness 三工具(gate/check/accept)+ 28 自测(check 12 / gate 8 / accept 8);app 39 测试;整仓 `block` 模式全绿。
 
-## 下一前沿(需你定向)
-- **A** 多语言验证:用 Python/Go 再造一个小应用,验证 polyglot harness 适配器(适配器已声明、未在真实代码上跑过)
-- **B** v2 groundwork:真实 forge-core 编排器(本环境有 Go 无 YAML stdlib / 拉模块要网络的摩擦,需先解决)
-- **C** 给 url-shortener 加真实功能(持久化 / 自定义别名 / 点击统计 / 过期)
-- **D** 以此里程碑收尾
+## Sprint 5 (✅ 完成) — 扩展五方向(全局扫描 → 根 ROADMAP → dogfood 实现)
+全局扫描代码库提出根 [`ROADMAP.md`](../ROADMAP.md) 五方向,多 agent 并行实现 + fresh-review + 主控逐方向跑闸门:
+- **① 韧性运行时**:超时/取消 · 错误分类+重试消费者 · trace · checkpoint/resume(forge-core +`trace`/`persist` 包)
+- **② 学习闭环**:scorecard trajectory · history-tiebreak · converge per-criterion
+- **③ Context/Memory**:检索器 `retrieve` · `memory` 包 · Context Engine 注入(硬约束始终注入)
+- **④ 执法补完**:function-length + circular 机器执法(消除两个 `policies.yml` TODO);reviewer 抓出 brace-matcher 假阴性已修;两处上帝文件(main.go/scan.mjs 499)按「先拆分」拆分
+- **⑤ 安全合规**:secret 扫描(`security_findings` N/A→真查,纳入 LOAD_BEARING)· `risk` 分类器(critical→Opus)
+
+## 🏁 里程碑:扩展五方向核心全部交付
+forge-core **11 Go 包**纯 stdlib 零依赖;arch-check **8 检查** + secret-scan;整仓 honest 全绿(go test 11 包 / 四闸门 / accept ACCEPTED / secret-scan 0)。每方向经 fresh-context reviewer 独立审(方向五 reviewer 遇 API 故障 → 主控亲自审 + 对抗验证)。**dogfood 成功**:方向四的 function-length 执法在方向五并行开发中真实抓到 113 行测试函数 → 被迫重构。
+
+## 下一前沿(需基础设施 / 真点火,非本环境可完整验证)
+- **真点火** `--agent-cmd=claude`:机制+测试已就位,差凭证/预算/防递归(方向①②③的「自动采集源 / 真语义发现」随此解锁)
+- **v3 基础设施**:SCA/CVE 漏洞库(⑤)· embedding 语义检索(③)· 跨厂商池 LiteLLM · Firecracker 沙箱 · Web UI
+- **次要优化**:acceptance collect 并行(async 重构,本仓收益小)· probeTests 语言自适应(价值在 fork 项目)
 
 **stop_condition:** roadmap 完成度 / 闸门全绿(非「继续 N 轮」)。

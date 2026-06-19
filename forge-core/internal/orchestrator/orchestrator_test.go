@@ -1,6 +1,7 @@
 package orchestrator
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -146,6 +147,119 @@ func TestDryRunExecutor_LogsTier(t *testing.T) {
 	// reviewer is an Opus-floor agent even under explorer mode.
 	if !containsLine(rec.logs, "phase reviewer -> agent reviewer (tier opus)") {
 		t.Errorf("log = %v, want reviewer routed to opus", rec.logs)
+	}
+}
+
+// seqExecutor is a fake AgentExecutor that returns a scripted sequence of errors
+// (one per call), counting how many times it was invoked. A nil entry is a
+// success; running past the end of the script also returns nil (success), which
+// is how the "succeeds on the Nth attempt" cases are expressed. It is the retry
+// counterpart to recorder.executor (which always succeeds).
+type seqExecutor struct {
+	errs  []error
+	calls int
+}
+
+func (s *seqExecutor) Execute(_ asset.Phase, _ string) error {
+	i := s.calls
+	s.calls++
+	if i < len(s.errs) {
+		return s.errs[i]
+	}
+	return nil
+}
+
+// agentOnlyWorkflow is a single agent phase with no gates, so Run reaches the
+// executor immediately and the retry path is the only thing under test.
+const agentOnlyWorkflow = `{
+  "stage": "build",
+  "phases": [{"name": "implementer", "agent": "implementer", "readonly": false, "required_gates": []}],
+  "stop_condition": {"type": "external", "all_of": [], "anti_pattern": "round_count"}
+}`
+
+func loadAgentOnly(t *testing.T) asset.Workflow {
+	t.Helper()
+	wf, err := asset.LoadWorkflowJSON([]byte(agentOnlyWorkflow))
+	if err != nil {
+		t.Fatalf("load agent-only fixture: %v", err)
+	}
+	return wf
+}
+
+func timeoutErr() *ExecError { return &ExecError{Phase: "implementer", Kind: KindTimeout} }
+
+// MaxRetries=2 + two retryable timeouts then success => Run succeeds and the
+// executor was called exactly 3 times (1 initial + 2 retries, the third clean).
+func TestRunAgentPhase_RetriesThenSucceeds(t *testing.T) {
+	wf := loadAgentOnly(t)
+	rec := &recorder{}
+	exec := &seqExecutor{errs: []error{timeoutErr(), timeoutErr()}} // 3rd call: nil
+	eng := Engine{Exec: exec, RunGate: allOK, Log: rec.log, MaxRetries: 2}
+
+	if err := eng.Run(wf, "balanced"); err != nil {
+		t.Fatalf("Run should succeed once a retry clears the timeout; got %v", err)
+	}
+	if exec.calls != 3 {
+		t.Errorf("executor calls = %d, want 3 (1 initial + 2 retries)", exec.calls)
+	}
+	if !containsLine(rec.logs, "retryable timeout, retry 1/2") || !containsLine(rec.logs, "retryable timeout, retry 2/2") {
+		t.Errorf("each retry must be logged with kind + n/N; logs=%v", rec.logs)
+	}
+}
+
+// MaxRetries=2 + always-retryable => Run fails returning the LAST error after the
+// budget is spent; executor called exactly 3 times (1 initial + 2 retries).
+func TestRunAgentPhase_ExhaustsRetriesAndFails(t *testing.T) {
+	wf := loadAgentOnly(t)
+	rec := &recorder{}
+	exec := &seqExecutor{errs: []error{timeoutErr(), timeoutErr(), timeoutErr(), timeoutErr()}}
+	eng := Engine{Exec: exec, RunGate: allOK, Log: rec.log, MaxRetries: 2}
+
+	err := eng.Run(wf, "balanced")
+	if err == nil {
+		t.Fatal("Run must fail when every attempt times out and the budget is exhausted")
+	}
+	if exec.calls != 3 {
+		t.Errorf("executor calls = %d, want 3 (1 initial + 2 retries, then give up)", exec.calls)
+	}
+	var execErr *ExecError
+	if !errors.As(err, &execErr) || execErr.Kind != KindTimeout {
+		t.Errorf("exhausted retries must return the last (timeout) error; got %v", err)
+	}
+}
+
+// A non-retryable KindConfig failure must abort on the FIRST attempt regardless
+// of a non-zero MaxRetries — retrying a permanent fault only burns turns.
+func TestRunAgentPhase_NonRetryableAbortsImmediately(t *testing.T) {
+	wf := loadAgentOnly(t)
+	rec := &recorder{}
+	exec := &seqExecutor{errs: []error{&ExecError{Phase: "implementer", Kind: KindConfig}}}
+	eng := Engine{Exec: exec, RunGate: allOK, Log: rec.log, MaxRetries: 2}
+
+	if err := eng.Run(wf, "balanced"); err == nil {
+		t.Fatal("a KindConfig fault is permanent and must abort, not pass")
+	}
+	if exec.calls != 1 {
+		t.Errorf("executor calls = %d, want 1 (non-retryable: no retries)", exec.calls)
+	}
+	if containsLine(rec.logs, "retry") {
+		t.Errorf("a non-retryable error must not log a retry; logs=%v", rec.logs)
+	}
+}
+
+// MaxRetries=0 (the default) + a retryable error must still abort on the first
+// error and call the executor exactly once — the back-compat guarantee.
+func TestRunAgentPhase_DefaultNoRetryIsBackCompat(t *testing.T) {
+	wf := loadAgentOnly(t)
+	rec := &recorder{}
+	exec := &seqExecutor{errs: []error{timeoutErr(), timeoutErr()}}
+	eng := Engine{Exec: exec, RunGate: allOK, Log: rec.log} // MaxRetries defaults to 0
+
+	if err := eng.Run(wf, "balanced"); err == nil {
+		t.Fatal("with MaxRetries=0 the first error must abort the run")
+	}
+	if exec.calls != 1 {
+		t.Errorf("executor calls = %d, want 1 (MaxRetries=0 == no retries)", exec.calls)
 	}
 }
 

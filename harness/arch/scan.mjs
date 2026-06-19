@@ -10,11 +10,18 @@
 // scan() do I/O.
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, extname, relative, dirname, sep } from 'node:path';
+// Function-body parsing (the function-length budget's heuristic extractor) lives
+// in a sibling leaf module to keep both files under the file-size budget. scan()
+// calls extractFunctions; it is re-exported so existing `from './scan.mjs'`
+// importers (arch-check's tests) keep working unchanged.
+import { extractFunctions } from './scan-functions.mjs';
+export { extractFunctions };
 
-// Directories never worth scanning (build output, vcs, vendored, fixtures).
+// Directories never worth scanning (build output, vcs, vendored, fixtures,
+// forge-core's git-ignored runtime state in .forge/).
 export const SKIP_DIRS = new Set([
   'node_modules', '.git', 'dist', 'build', '.next', 'coverage',
-  'vendor', 'testdata', '__pycache__',
+  'vendor', 'testdata', '__pycache__', '.forge',
 ]);
 
 // Source extensions we understand, mapped to a coarse language tag.
@@ -299,8 +306,10 @@ function walkAll(root, acc = []) {
 // --- top-level scan ----------------------------------------------------------
 
 // scan: build the full model for `root`. Returns { root, files, modules }.
-// Each file record: { file, rel, lang, layer, dir, isTest, exports, imports[] }
-// where each import is { spec, kind, dir, rel, layer }.
+// Each file record:
+//   { file, rel, lang, layer, dir, isTest, exports, imports[], functions[] }
+// where each import is { spec, kind, dir, rel, layer } and each function is
+// { name, line, lines } (see extractFunctions).
 export function scan(root, rules) {
   const aliases = (rules?.architecture?.dir_aliases) ?? {};
   const goModules = findGoModules(root);
@@ -321,6 +330,7 @@ export function scan(root, rules) {
       isTest: isTestFile(file),
       exports: lang === 'go' ? countGoExports(text) : 0,
       imports,
+      functions: extractFunctions(text, lang),
     });
   }
   return { root, files, modules: goModules };

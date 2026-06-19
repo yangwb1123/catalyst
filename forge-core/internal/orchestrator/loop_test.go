@@ -135,3 +135,137 @@ func TestLoop_ExternalStopNoGapsFound(t *testing.T) {
 		t.Errorf("stale external stop must map to no_gaps_found clean stop; got %+v", out)
 	}
 }
+
+// iterObs records each OnIteration call so a test can assert the hook fires once
+// per round with the right index and the round's measured signals.
+type iterObs struct {
+	iters []int
+	sigs  []converge.Signals
+}
+
+func (o *iterObs) hook() func(int, converge.Signals) {
+	return func(i int, sig converge.Signals) {
+		o.iters = append(o.iters, i)
+		o.sigs = append(o.sigs, sig)
+	}
+}
+
+// OnIteration must fire exactly once per executed iteration, after that round's
+// Signals() measurement, with the 1-based index and the signals that round saw.
+// This is the persistence/trace point the resilience wiring hangs off of.
+func TestLoop_OnIterationCalledPerRound(t *testing.T) {
+	wf := loadFixture(t)
+	obs := &iterObs{}
+	l := loopOver(signalSeq(
+		converge.Signals{RoadmapCompletion: 0.2},
+		converge.Signals{RoadmapCompletion: 0.5},
+		converge.Signals{RoadmapCompletion: 0.8},
+	), 3, 5)
+	l.OnIteration = obs.hook()
+	out, err := l.Run(wf, "balanced")
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if out.Iterations != 3 {
+		t.Fatalf("expected 3 iterations (rising-but-incomplete -> bound); got %+v", out)
+	}
+	if want := []int{1, 2, 3}; !eqInts(obs.iters, want) {
+		t.Errorf("OnIteration indices = %v, want %v", obs.iters, want)
+	}
+	// The hook must observe each round's OWN measured signal, in order.
+	wantSig := []float64{0.2, 0.5, 0.8}
+	for i, s := range obs.sigs {
+		if s.RoadmapCompletion != wantSig[i] {
+			t.Errorf("OnIteration[%d] sig = %.2f, want %.2f", i, s.RoadmapCompletion, wantSig[i])
+		}
+	}
+}
+
+// A nil OnIteration must be a no-op — the loop runs exactly as before (this is
+// the default/back-compat path every existing test already exercises, asserted
+// here explicitly against the converge case).
+func TestLoop_NilOnIterationIsNoOp(t *testing.T) {
+	wf := loadFixture(t)
+	l := loopOver(signalSeq(converge.Signals{RoadmapCompletion: 1.0}), 5, 3)
+	l.OnIteration = nil
+	out, err := l.Run(wf, "balanced")
+	if err != nil || !out.Converged || out.Reason != "converged" {
+		t.Fatalf("nil hook must not change behavior; got %+v err=%v", out, err)
+	}
+}
+
+// Resume must begin at StartIter and seed ResumePrev so the stale/tripwire math
+// is continuous across the resume boundary. Here the loop resumes at iteration 4
+// with the prior completion 0.6; a FLAT first post-resume reading (0.6) must
+// count as stale (cur <= prev), and with NoProgress=1 it trips on that very
+// reading — proving prev was restored, not reset to the -1.0 fresh sentinel.
+func TestLoop_ResumeSeedsPrevForTripwire(t *testing.T) {
+	wf := loadFixture(t)
+	obs := &iterObs{}
+	l := loopOver(signalSeq(converge.Signals{RoadmapCompletion: 0.6}), 10, 1)
+	l.StartIter, l.ResumePrev = 4, 0.6
+	l.OnIteration = obs.hook()
+	out, _ := l.Run(wf, "balanced")
+	// First resumed iter (index 4): cur(0.6) <= prev(0.6) -> stale=1 >= 1 -> trips.
+	if out.Converged || out.Reason != "no-progress tripwire (anti doom-loop)" || out.Iterations != 4 {
+		t.Errorf("resumed prev must make a flat reading trip immediately; got %+v", out)
+	}
+	if want := []int{4}; !eqInts(obs.iters, want) {
+		t.Errorf("resume must start at iteration 4; OnIteration indices = %v, want %v", obs.iters, want)
+	}
+}
+
+// Resume numbering: the loop continues at StartIter and runs through MaxIter,
+// so a resume at 3 with MaxIter 5 executes iterations 3,4,5 — never replaying
+// the already-completed 1,2.
+func TestLoop_ResumeStartsAtIndex(t *testing.T) {
+	wf := loadFixture(t)
+	obs := &iterObs{}
+	l := loopOver(signalSeq(
+		converge.Signals{RoadmapCompletion: 0.4},
+		converge.Signals{RoadmapCompletion: 0.6},
+		converge.Signals{RoadmapCompletion: 0.8},
+	), 5, 9)
+	l.StartIter, l.ResumePrev = 3, 0.2
+	l.OnIteration = obs.hook()
+	out, _ := l.Run(wf, "balanced")
+	if out.Iterations != 5 || out.Reason != "max-iterations safety bound" {
+		t.Errorf("resume at 3 with max 5 must end at the bound (iter 5); got %+v", out)
+	}
+	if want := []int{3, 4, 5}; !eqInts(obs.iters, want) {
+		t.Errorf("resume must run iters 3,4,5 only; got %v", obs.iters)
+	}
+}
+
+// StartIter of 0 or 1 is the fresh default: both begin at iteration 1 with the
+// -1.0 sentinel, so a flat first reading is NOT counted as stale. Asserting both
+// values pins the loopStart contract that back-compat depends on.
+func TestLoop_FreshStartIterDefaults(t *testing.T) {
+	wf := loadFixture(t)
+	for _, start := range []int{0, 1} {
+		obs := &iterObs{}
+		l := loopOver(signalSeq(converge.Signals{RoadmapCompletion: 0.5}), 10, 1)
+		l.StartIter = start // ResumePrev left 0.0; must be IGNORED on a fresh run.
+		l.OnIteration = obs.hook()
+		out, _ := l.Run(wf, "balanced")
+		// First iter: cur(0.5) <= prev(-1.0)? no -> not stale. Second: trips.
+		if out.Iterations != 2 || out.Reason != "no-progress tripwire (anti doom-loop)" {
+			t.Errorf("StartIter=%d must behave as a fresh run (trip on 2nd flat iter); got %+v", start, out)
+		}
+		if want := []int{1, 2}; !eqInts(obs.iters, want) {
+			t.Errorf("StartIter=%d must start at iteration 1; got %v", start, obs.iters)
+		}
+	}
+}
+
+func eqInts(a, b []int) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
