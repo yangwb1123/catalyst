@@ -11,21 +11,33 @@ import { tmpdir } from 'node:os';
 const HARNESS_DIR = dirname(fileURLToPath(import.meta.url));
 const SOURCE_ROOT = dirname(HARNESS_DIR);
 const INIT_PATH = join(HARNESS_DIR, 'forge-init.mjs');
-const GATE_PATH = join(HARNESS_DIR, 'gate.mjs');
 
 // Run forge-init as a child process; returns spawnSync result.
 function runInit(args) {
   return spawnSync(process.execPath, [INIT_PATH, ...args], { encoding: 'utf8' });
 }
 
-const EXPECTED_FILES = [
+// The host-independent ENFORCERS a fresh project must inherit verbatim — each only
+// scans files / resolves paths from its own location, so it runs with zero project
+// wiring. .arch/rules.yaml ships with policies.yml because arch-check's drift-guard
+// asserts the two agree.
+const COPIED_ENFORCERS = [
   join('.agent', 'AGENTS.md'),
+  join('harness', 'gate.mjs'),
+  join('harness', 'policies.yml'),
+  join('harness', 'arch', 'arch-check.mjs'),
+  join('harness', 'arch', 'scan.mjs'),
+  join('harness', 'arch', 'scan-functions.mjs'),
+  join('harness', 'secret-scan.mjs'),
+  join('.arch', 'rules.yaml'),
+];
+
+const EXPECTED_FILES = [
+  ...COPIED_ENFORCERS,
   join('.agent', 'PROJECT.md'),
   join('.agent', 'ROADMAP.md'),
   join('.agent', 'CURRENT_SPRINT.md'),
   join('.agent', 'project.yml'),
-  join('harness', 'gate.mjs'),
-  join('harness', 'policies.yml'),
   'README.md',
   '.gitignore',
 ];
@@ -47,27 +59,33 @@ test('forge-init scaffolds a fresh, governed, runnable project', (t) => {
   assert.match(readFileSync(join(target, '.agent', 'project.yml'), 'utf8'), /acme-svc/);
   assert.match(readFileSync(join(target, '.agent', 'PROJECT.md'), 'utf8'), /acme-svc/);
 
-  // (3) copied gate.mjs is byte-identical to the source.
-  assert.deepEqual(
-    readFileSync(join(target, 'harness', 'gate.mjs')),
-    readFileSync(GATE_PATH),
-    'copied gate.mjs must be byte-identical to source',
-  );
-  // The red-lines (.agent/AGENTS.md) travel verbatim too.
-  assert.deepEqual(
-    readFileSync(join(target, '.agent', 'AGENTS.md')),
-    readFileSync(join(SOURCE_ROOT, '.agent', 'AGENTS.md')),
-    'copied AGENTS.md must be byte-identical to source',
-  );
+  // (3) every copied ENFORCER (incl. the red-lines AGENTS.md) is byte-identical to
+  // its source — a fresh project inherits the REAL tools verbatim, not a fork.
+  for (const rel of COPIED_ENFORCERS) {
+    assert.deepEqual(
+      readFileSync(join(target, rel)),
+      readFileSync(join(SOURCE_ROOT, rel)),
+      `copied ${rel} must be byte-identical to source`,
+    );
+  }
 
-  // (4) ★ running the COPIED gate on the new project PASSES — proves a fresh
-  // project inherits WORKING governance, runnable immediately.
-  const gate = spawnSync(process.execPath, [join(target, 'harness', 'gate.mjs')], {
-    cwd: target,
-    encoding: 'utf8',
-  });
-  assert.equal(gate.status, 0, `copied gate must PASS; stdout:\n${gate.stdout}\nstderr:\n${gate.stderr}`);
-  assert.match(gate.stdout, /forge-gate: PASS/);
+  // (4) ★ running the FULL inherited enforcement triad on the fresh project all
+  // PASSES out of the box — the iron proof that a fresh project inherits WORKING,
+  // runnable governance (not just files on disk). A fresh project has no business
+  // source, so arch-check's layering/package/fanin/cognitive/naming/function-length/
+  // circular/drift-guard report NO violations and secret-scan finds 0 secrets.
+  const enforcers = [
+    { name: 'gate', script: join('harness', 'gate.mjs'), ok: /forge-gate: PASS/ },
+    { name: 'arch-check', script: join('harness', 'arch', 'arch-check.mjs'), ok: /forge-arch: PASS/ },
+    { name: 'secret-scan', script: join('harness', 'secret-scan.mjs'), ok: /forge-secret-scan: PASS/ },
+  ];
+  for (const e of enforcers) {
+    // cwd: target — gate.mjs roots at process.cwd(); the others root at their own
+    // on-disk location, so cwd is harmless to them and keeps the call uniform.
+    const r = spawnSync(process.execPath, [join(target, e.script)], { cwd: target, encoding: 'utf8' });
+    assert.equal(r.status, 0, `copied ${e.name} must PASS out of the box; stdout:\n${r.stdout}\nstderr:\n${r.stderr}`);
+    assert.match(r.stdout, e.ok, `${e.name} stdout must report PASS`);
+  }
 });
 
 test('forge-init refuses to clobber a non-empty .agent without --force; --force succeeds', (t) => {

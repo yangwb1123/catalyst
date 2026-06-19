@@ -14,6 +14,18 @@ func roadmapDone() []asset.Criterion {
 	return []asset.Criterion{{Metric: "roadmap_completion", Operator: "==", Threshold: ptr(100)}}
 }
 
+// conjunctionStop wraps criteria as a conjunction stop condition (the shape the
+// LoopEngine now holds — the full StopCondition, not bare criteria).
+func conjunctionStop(allOf []asset.Criterion) asset.StopCondition {
+	return asset.StopCondition{Type: "conjunction", AllOf: allOf}
+}
+
+// externalStop is the external-stop shape (no conjunction; runs to a safety
+// bound or a clean external trigger).
+func externalStop() asset.StopCondition {
+	return asset.StopCondition{Type: "external"}
+}
+
 // signalSeq yields each entry in turn (repeating the last), so a test can
 // script the convergence trajectory the loop sees.
 func signalSeq(seq ...converge.Signals) func() converge.Signals {
@@ -30,7 +42,7 @@ func signalSeq(seq ...converge.Signals) func() converge.Signals {
 func loopOver(sig func() converge.Signals, maxIter, noProgress int) LoopEngine {
 	return NewLoopEngine(
 		Engine{Exec: DryRunExecutor{}, RunGate: allOK},
-		"conjunction", roadmapDone(), sig, maxIter, noProgress, nil)
+		conjunctionStop(roadmapDone()), sig, maxIter, noProgress, nil)
 }
 
 func TestLoop_Converges(t *testing.T) {
@@ -109,7 +121,7 @@ func TestLoop_ExternalStopHitsBoundCleanly(t *testing.T) {
 	wf := loadFixture(t)
 	l := NewLoopEngine(
 		Engine{Exec: DryRunExecutor{}, RunGate: allOK},
-		"external", nil,
+		externalStop(),
 		signalSeq(converge.Signals{RoadmapCompletion: 0.4, GatesGreen: false}),
 		3, 5, nil)
 	out, err := l.Run(wf, "balanced")
@@ -127,12 +139,74 @@ func TestLoop_ExternalStopNoGapsFound(t *testing.T) {
 	wf := loadFixture(t)
 	l := NewLoopEngine(
 		Engine{Exec: DryRunExecutor{}, RunGate: allOK},
-		"external", nil,
+		externalStop(),
 		signalSeq(converge.Signals{RoadmapCompletion: 0.5}),
 		10, 2, nil)
 	out, _ := l.Run(wf, "balanced")
 	if !out.Converged || out.Reason != "no gaps found (external stop)" {
 		t.Errorf("stale external stop must map to no_gaps_found clean stop; got %+v", out)
+	}
+}
+
+// --- human_gate non-bypassability AT THE LOOPENGINE LAYER ---------------------
+
+// humanGateStop is a human_gate stop condition that ALSO carries a fully
+// satisfiable all_of (roadmap==100 AND gates==green). If the loop ever evaluated
+// the conjunction instead of the approval, this all_of would make it "converge" —
+// so it is exactly the bypass the depth-two guard must defeat.
+func humanGateStop() asset.StopCondition {
+	return asset.StopCondition{
+		Type:          converge.HumanGateType,
+		HumanApproval: "required",
+		AllOf:         []asset.Criterion{{Metric: "roadmap_completion", Operator: "==", Threshold: ptr(100)}, {Metric: "gates_status", Operator: "==", Value: "green"}},
+	}
+}
+
+// THE depth-two security invariant, proven at the LoopEngine layer (not just the
+// converge pure function): a human_gate driven by the loop must NEVER converge
+// without approval — even when its all_of is fully satisfied, roadmap is 100%, and
+// gates are green. Before the fix the loop called converge.Evaluate(all_of) and
+// reported converged=true here; now it calls converge.Converge, which judges a
+// human_gate by approval alone, so an unapproved human_gate can only end at the
+// safety bound. This is the regression test for the bypass the reviewer found.
+func TestLoop_HumanGateUnapprovedNeverConvergesInLoop(t *testing.T) {
+	wf := loadFixture(t)
+	maxed := converge.Signals{
+		RoadmapCompletion: 1.0,
+		GatesGreen:        true,
+		Criteria:          map[string]string{"test_pass": "PASS", "app_test_pass": "PASS", "architecture": "PASS"},
+		HumanApproved:     false, // the ONLY thing missing
+	}
+	l := NewLoopEngine(
+		Engine{Exec: DryRunExecutor{}, RunGate: allOK},
+		humanGateStop(), signalSeq(maxed), 3, 5, nil)
+	out, err := l.Run(wf, "balanced")
+	if err != nil {
+		t.Fatalf("unapproved human_gate loop must not error; got %v", err)
+	}
+	if out.Converged {
+		t.Fatalf("BYPASS: unapproved human_gate converged in the loop despite satisfied all_of/roadmap/gates; got %+v", out)
+	}
+	if out.Reason != "max-iterations safety bound" || out.Iterations != 3 {
+		t.Errorf("unapproved human_gate must run to the safety bound, never converge; got %+v", out)
+	}
+}
+
+// The mirror: once approval is present, the SAME human_gate loop converges on the
+// first iteration — proving approval is the sole lever, not a permanent block, and
+// that the depth-two guard is approval-gated rather than just always-deny.
+func TestLoop_HumanGateApprovedConvergesInLoop(t *testing.T) {
+	wf := loadFixture(t)
+	approved := converge.Signals{RoadmapCompletion: 1.0, GatesGreen: true, HumanApproved: true}
+	l := NewLoopEngine(
+		Engine{Exec: DryRunExecutor{}, RunGate: allOK},
+		humanGateStop(), signalSeq(approved), 3, 5, nil)
+	out, err := l.Run(wf, "balanced")
+	if err != nil {
+		t.Fatalf("approved human_gate loop must not error; got %v", err)
+	}
+	if !out.Converged || out.Reason != "converged" || out.Iterations != 1 {
+		t.Errorf("approved human_gate must converge on iter 1; got %+v", out)
 	}
 }
 

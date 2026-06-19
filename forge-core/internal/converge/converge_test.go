@@ -1,6 +1,7 @@
 package converge
 
 import (
+	"strings"
 	"testing"
 
 	"forgeos/forge-core/internal/asset"
@@ -191,5 +192,130 @@ func TestEvaluate_NilCriteriaBackCompat(t *testing.T) {
 		Signals{RoadmapCompletion: 1.0, GatesGreen: true}) // no Criteria map
 	if !all {
 		t.Errorf("legacy roadmap+gates conjunction must still converge; results=%+v", results)
+	}
+}
+
+// --- human_gate (the design->build approval gate) ----------------------------
+
+// humanStop builds the design.yml-shaped human_gate stop condition.
+func humanStop() asset.StopCondition {
+	return asset.StopCondition{
+		Type:          HumanGateType,
+		HumanApproval: "required",
+		OnApproved:    asset.OnApproved{NextStage: "build"},
+	}
+}
+
+// IsHumanGate recognizes a human_gate by an explicit type OR a human_approval
+// requirement, and does NOT mistake a conjunction/external for one.
+func TestIsHumanGate(t *testing.T) {
+	cases := []struct {
+		name string
+		stop asset.StopCondition
+		want bool
+	}{
+		{"explicit type", asset.StopCondition{Type: HumanGateType}, true},
+		{"human_approval only (no type)", asset.StopCondition{HumanApproval: "required"}, true},
+		{"design.yml shape", humanStop(), true},
+		{"conjunction is not a human gate", asset.StopCondition{Type: "conjunction", AllOf: []asset.Criterion{roadmap("==", 100)}}, false},
+		{"external is not a human gate", asset.StopCondition{Type: "external"}, false},
+		{"empty is not a human gate", asset.StopCondition{}, false},
+	}
+	for _, c := range cases {
+		if got := IsHumanGate(c.stop); got != c.want {
+			t.Errorf("%s: IsHumanGate = %v, want %v", c.name, got, c.want)
+		}
+	}
+}
+
+// Converge on a human_gate is approval-gated: HumanApproved==true converges with
+// a "granted" result; false stays NOT MET with the honest awaiting detail.
+func TestConverge_HumanGate_ApprovalGated(t *testing.T) {
+	// Approved => met.
+	results, met := Converge(humanStop(), Signals{HumanApproved: true})
+	if !met {
+		t.Fatalf("approved human_gate must converge; results=%+v", results)
+	}
+	if len(results) != 1 || !results[0].Met {
+		t.Errorf("approved human_gate should yield one met result; got %+v", results)
+	}
+
+	// Not approved => NOT MET with the exact awaiting detail.
+	results, met = Converge(humanStop(), Signals{HumanApproved: false})
+	if met {
+		t.Fatal("an unapproved human_gate must NOT converge")
+	}
+	if len(results) != 1 || results[0].Met {
+		t.Fatalf("unapproved human_gate should yield one unmet result; got %+v", results)
+	}
+	if results[0].Detail != awaitingApprovalDetail {
+		t.Errorf("detail = %q, want %q", results[0].Detail, awaitingApprovalDetail)
+	}
+	if !strings.Contains(results[0].Detail, "non-bypassable") {
+		t.Errorf("awaiting detail must mark the gate non-bypassable; got %q", results[0].Detail)
+	}
+}
+
+// THE non-bypassable invariant. An unapproved human_gate must NEVER converge —
+// not via the zero-criteria rule, not when other signals are maxed, not when it
+// carries a stray all_of, and not when it is declared by human_approval alone.
+// This is the load-bearing negative test that nails down non-bypassability.
+func TestConverge_HumanGate_UnapprovedNeverConverges(t *testing.T) {
+	maxed := Signals{
+		RoadmapCompletion: 1.0,
+		GatesGreen:        true,
+		Criteria:          map[string]string{"test_pass": "PASS", "app_test_pass": "PASS", "architecture": "PASS"},
+		HumanApproved:     false, // the ONLY thing missing
+	}
+	variants := []struct {
+		name string
+		stop asset.StopCondition
+	}{
+		{"bare human_gate (no criteria)", asset.StopCondition{Type: HumanGateType}},
+		{"design.yml shape", humanStop()},
+		{"human_approval only", asset.StopCondition{HumanApproval: "required"}},
+		// A human_gate that ALSO carries a fully-satisfied conjunction must STILL
+		// not converge without approval — the human branch wins, the all_of is not
+		// a bypass.
+		{"human_gate with satisfied all_of must not bypass", asset.StopCondition{
+			Type:  HumanGateType,
+			AllOf: []asset.Criterion{roadmap("==", 100), gates("green")},
+		}},
+	}
+	for _, v := range variants {
+		if _, met := Converge(v.stop, maxed); met {
+			t.Errorf("%s: converged WITHOUT human approval — non-bypassable invariant broken", v.name)
+		}
+	}
+	// And it flips to met the instant approval is present (proves the gate is the
+	// sole lever, not a permanent block).
+	approved := maxed
+	approved.HumanApproved = true
+	if _, met := Converge(humanStop(), approved); !met {
+		t.Error("human_gate must converge once approved (the approval is the sole key)")
+	}
+}
+
+// Converge must NOT change the conjunction/external paths: a non-human stop is
+// still evaluated exactly by Evaluate(all_of). This guards the dispatch wrapper
+// against regressing the existing behavior.
+func TestConverge_NonHumanGate_DelegatesToEvaluate(t *testing.T) {
+	stop := asset.StopCondition{Type: "conjunction", AllOf: []asset.Criterion{roadmap("==", 100), gates("green")}}
+	sig := Signals{RoadmapCompletion: 1.0, GatesGreen: true}
+
+	cResults, cMet := Converge(stop, sig)
+	eResults, eMet := Evaluate(stop.AllOf, sig)
+	if cMet != eMet || !cMet {
+		t.Errorf("Converge must match Evaluate for a conjunction; cMet=%v eMet=%v", cMet, eMet)
+	}
+	if len(cResults) != len(eResults) {
+		t.Errorf("Converge result count %d != Evaluate %d", len(cResults), len(eResults))
+	}
+	// External stop has no all_of: Converge delegates and reports not-converged
+	// from zero criteria, exactly like Evaluate (the loop, not Converge, treats an
+	// external stop's bound as the clean stop).
+	ext := asset.StopCondition{Type: "external"}
+	if _, met := Converge(ext, sig); met {
+		t.Error("external stop has no criteria; Converge must report not-met (zero-criteria rule)")
 	}
 }

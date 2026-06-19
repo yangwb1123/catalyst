@@ -69,7 +69,7 @@ func usage() {
 	fmt.Fprint(os.Stderr, `forge — ForgeOS orchestration runtime (forge-core)
 
 usage:
-  forge run    <workflow> [--mode balanced] [--executor dry|command] [--agent-cmd claude] [--timeout 0] [--max-retries 0] [--root DIR]
+  forge run    <workflow> [--mode balanced] [--executor dry|command] [--agent-cmd claude] [--timeout 0] [--max-retries 0] [--approved] [--root DIR]
   forge evolve <workflow> [--max-iter 5] [--executor dry|command] [--agent-cmd claude] [--timeout 0] [--max-retries 0] [--resume] [--root DIR]
   forge route  [--complexity F] [--risk-score F] [--security F] [--dependency F] [--context F] [--business F] [--task-type T] [--risk low|medium|high|critical] [--budget F] [--scorecard PATH]
   forge gate   [--root DIR]
@@ -109,6 +109,12 @@ type runOpts struct {
 	// no retries, backward-compatible default: first error aborts). Plumbed into
 	// Engine.MaxRetries so a transient timeout retries while a permanent failure aborts.
 	maxRetries int
+	// approved is the human-approval signal for a human_gate workflow (design):
+	// --approved on the command line is one of the two approval sources (the other
+	// is a <root>/.forge/<stage>.approved marker). Default false: an unapproved
+	// human_gate honestly awaits a human and never auto-converges. Irrelevant to
+	// conjunction/external stops, so it leaves those runs unchanged.
+	approved bool
 }
 
 // bindRunOpts registers the flags shared by `forge run` and `forge evolve` onto
@@ -120,6 +126,7 @@ func bindRunOpts(fs *flag.FlagSet, o *runOpts) {
 	fs.StringVar(&o.agentCmd, "agent-cmd", "claude", "command for --executor=command (e.g. claude, echo)")
 	fs.DurationVar(&o.timeout, "timeout", 0, "per-agent-command timeout (0 = no deadline, e.g. 90s, 5m)")
 	fs.IntVar(&o.maxRetries, "max-retries", 0, "retry ceiling for retryable agent failures (0 = no retries)")
+	fs.BoolVar(&o.approved, "approved", false, "supply the human-approval signal for a human_gate workflow (or create <root>/.forge/<stage>.approved)")
 }
 
 // cmdRun parses flags, loads + transcodes the workflow, and runs the engine.
@@ -199,23 +206,56 @@ func execEngine(wf asset.Workflow, o runOpts) int {
 		return 1
 	}
 	fmt.Println("forge run: workflow completed")
-	reportConvergence(wf, o.root, probe)
+	reportConvergence(wf, o.root, probe, o.approved)
 	return 0
 }
 
 // reportConvergence evaluates the workflow's stop condition against live repo
-// signals (ROADMAP completion, gate state) and prints a per-criterion verdict —
-// the real convergence check (ForgeOS forbids round-count termination), reusing
-// the SAME probe map as the gate phases.
-func reportConvergence(wf asset.Workflow, root string, probe map[string]string) {
+// signals (ROADMAP completion, gate state, and — for a human_gate — the human
+// approval signal) and prints the verdict. It is the real convergence check
+// (ForgeOS forbids round-count termination), reusing the SAME probe map as the
+// gate phases. It dispatches through converge.Converge so a human_gate is judged
+// by approval alone, never the conjunction path. A human_gate gets a distinct,
+// HONEST report: not approved => "awaiting human approval" (a stop to wait for a
+// human, NOT a gate FAIL); approved => "approved -> unlocks <next_stage>".
+func reportConvergence(wf asset.Workflow, root string, probe map[string]string, approvedFlag bool) {
 	if wf.Stop.Type == "" {
 		return
 	}
-	results, met := converge.Evaluate(wf.Stop.AllOf, gatherSignals(root, wf, probe))
+	approved := humanApproved(root, wf.Stage, approvedFlag)
+	results, met := converge.Converge(wf.Stop, gatherSignals(root, wf, probe, approved))
+	if converge.IsHumanGate(wf.Stop) {
+		reportHumanGate(wf, met)
+		return
+	}
 	fmt.Printf("convergence: %s (%s)\n", verdict(met), wf.Stop.Type)
 	for _, r := range results {
 		fmt.Printf("  [%s] %s — %s\n", mark(r.Met), r.Expr, r.Detail)
 	}
+}
+
+// reportHumanGate prints the human-approval gate's honest outcome. Unapproved is
+// NOT a failure: the stage is correctly holding for a non-bypassable human
+// decision, so it reads "awaiting human approval", distinct from a gate FAIL.
+// Approved reads "approved -> unlocks <next_stage>" (the spine stage on_approved
+// unlocks). HONESTY: the approval is a v1 signal check (--approved / on-disk
+// marker), not a durable cross-process wait (durable_wait is v2, Temporal).
+func reportHumanGate(wf asset.Workflow, approved bool) {
+	if !approved {
+		fmt.Printf("convergence: NOT MET (human_gate) — awaiting human approval (non-bypassable)\n")
+		fmt.Println("  pass --approved or create .forge/" + wf.Stage + ".approved to grant approval (v1 signal check; durable wait is v2)")
+		return
+	}
+	fmt.Printf("convergence: MET (human_gate) — approved → unlocks %s\n", nextStageLabel(wf.Stop))
+}
+
+// nextStageLabel renders the stage a human_gate approval unlocks, or a clear
+// marker when the workflow declares none (so the line is always informative).
+func nextStageLabel(stop asset.StopCondition) string {
+	if stop.OnApproved.NextStage == "" {
+		return "(no next_stage declared)"
+	}
+	return "next_stage=" + stop.OnApproved.NextStage
 }
 
 // verdict/mark render a convergence boolean for the report; pick is the missing

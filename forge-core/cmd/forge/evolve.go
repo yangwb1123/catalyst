@@ -45,7 +45,30 @@ func cmdEvolve(args []string) int {
 		fmt.Fprintf(os.Stderr, "forge evolve: %v\n", err)
 		return 1
 	}
+	if converge.IsHumanGate(wf.Stop) {
+		return rejectHumanGate(wf.Stage)
+	}
 	return execLoop(wf, o, *maxIter, *resume)
+}
+
+// rejectHumanGate fails closed when `forge evolve` is pointed at a human_gate
+// workflow. A human_gate (design->build) is a SINGLE-SHOT human-approval gate —
+// it is non-bypassable and semantically must never be driven by an autonomous
+// convergence loop, which would otherwise spin it round after round and (absent
+// the depth-two guard below) risk treating a stray satisfied all_of as
+// "converged" without any approval. The only honest run path for a human_gate is
+// `forge run`, where the operator supplies approval via --approved or an on-disk
+// marker. This is the PRIMARY, outermost defense: a human_gate never enters the
+// loop at all. Exit is non-zero (1) so a script/CI driving evolve cannot mistake
+// the refusal for a clean convergence.
+func rejectHumanGate(stage string) int {
+	fmt.Fprintf(os.Stderr,
+		"forge evolve: %q is a human_gate workflow — a single-shot approval gate "+
+			"must not be driven by an autonomous loop.\n"+
+			"  human_gate is a non-bypassable, one-time human-approval gate (design->build); "+
+			"use `forge run %s [--approved]`, not `forge evolve`.\n",
+		stage, stage)
+	return 1
 }
 
 // execLoop wires the loop engine (real gates + selected executor + live signals)
@@ -81,6 +104,14 @@ func execLoop(wf asset.Workflow, o runOpts, maxIter int, resume bool) int {
 // buildLoop constructs the loop engine: real gates + selected executor + live
 // signals, with one acceptance probe per iteration shared by that iteration's gate
 // phases and convergence check (refresh-before-reuse, no double-spawn).
+//
+// The engine receives the FULL wf.Stop so convergence runs through
+// converge.Converge (which honors every stop shape), and the per-iteration Signals
+// closure fills HumanApproved from the resolved approval signal (reusing
+// gates.go's humanApproved). For a conjunction/external stop this changes nothing
+// — Converge delegates to Evaluate(all_of) and HumanApproved is irrelevant — but
+// it makes the loop's convergence check honest even if a human_gate ever reached
+// it (depth-two defense; cmdEvolve already refuses one up front).
 func buildLoop(wf asset.Workflow, o runOpts, maxIter int, logln func(string)) orchestrator.LoopEngine {
 	probe := &loopProbe{root: o.root}
 	eng := orchestrator.Engine{
@@ -89,9 +120,10 @@ func buildLoop(wf asset.Workflow, o runOpts, maxIter int, logln func(string)) or
 		Log:        logln,
 		MaxRetries: o.maxRetries,
 	}
+	approved := humanApproved(o.root, wf.Stage, o.approved)
 	return orchestrator.NewLoopEngine(
-		eng, wf.Stop.Type, wf.Stop.AllOf,
-		func() converge.Signals { return gatherSignals(o.root, wf, probe.current()) },
+		eng, wf.Stop,
+		func() converge.Signals { return gatherSignals(o.root, wf, probe.current(), approved) },
 		maxIter, 2, logln)
 }
 

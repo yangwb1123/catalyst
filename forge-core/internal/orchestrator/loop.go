@@ -20,9 +20,16 @@ import (
 // onto no_gaps_found semantics — also a clean stop. Such a workflow is NEVER
 // silently degraded to round-count + failure.
 type LoopEngine struct {
-	Engine     Engine                  // runs one iteration's phases (enforces gates)
-	StopType   string                  // stop_condition.type ("conjunction", "external", ...)
-	Stop       []asset.Criterion       // stop-condition criteria (conjunction)
+	Engine Engine // runs one iteration's phases (enforces gates)
+	// Stop is the FULL stop condition (not just Type+AllOf), so the loop's
+	// convergence check goes through converge.Converge — the single entry point
+	// that honors EVERY stop shape. For a conjunction/external stop Converge
+	// delegates to Evaluate(all_of), so those paths are byte-for-byte unchanged;
+	// for a human_gate it judges by approval alone and NEVER by the all_of, so a
+	// human_gate that somehow reaches the loop can never be bypassed by a satisfied
+	// conjunction. (`forge evolve` also refuses a human_gate up front — see
+	// cmd/forge/evolve.go rejectHumanGate — this is the depth-two backstop.)
+	Stop       asset.StopCondition
 	Signals    func() converge.Signals // live signals measured after an iteration
 	MaxIter    int                     // safety backstop on iterations
 	NoProgress int                     // halt after this many stale iterations (tripwire)
@@ -49,21 +56,23 @@ type LoopEngine struct {
 
 // NewLoopEngine constructs a LoopEngine, clamping a non-positive NoProgress to 1
 // so the doom-loop tripwire is always well-defined (it can never disable itself
-// by being asked to fire after zero stale iterations).
-func NewLoopEngine(eng Engine, stopType string, stop []asset.Criterion,
+// by being asked to fire after zero stale iterations). It takes the FULL stop
+// condition so convergence is judged by converge.Converge (which honors every
+// stop shape), not the conjunction-only Evaluate.
+func NewLoopEngine(eng Engine, stop asset.StopCondition,
 	signals func() converge.Signals, maxIter, noProgress int, log func(string)) LoopEngine {
 	if noProgress < 1 {
 		noProgress = 1
 	}
 	return LoopEngine{
-		Engine: eng, StopType: stopType, Stop: stop, Signals: signals,
+		Engine: eng, Stop: stop, Signals: signals,
 		MaxIter: maxIter, NoProgress: noProgress, Log: log,
 	}
 }
 
 // external reports whether this is an external-stop workflow (no conjunction;
 // runs to a safety bound or an external trigger, never round-count failure).
-func (l LoopEngine) external() bool { return l.StopType == "external" }
+func (l LoopEngine) external() bool { return l.Stop.Type == "external" }
 
 // LoopOutcome reports how the loop ended.
 type LoopOutcome struct {
@@ -122,11 +131,19 @@ func (l LoopEngine) onIteration(i int, sig converge.Signals) {
 // checkStop reports a converged outcome for a conjunction workflow whose
 // criteria are all met. External-stop workflows never converge on a conjunction
 // (they have none) — they only end at the safety bound or a clean trigger.
+//
+// Convergence goes through converge.Converge (the dispatch that honors every stop
+// shape), NOT the conjunction-only Evaluate. For a conjunction this is identical
+// to before (Converge delegates to Evaluate(all_of)); the difference is the
+// safety property: if a human_gate ever reaches the loop, Converge judges it by
+// approval alone, so an unapproved human_gate can NEVER report "converged" here —
+// not even with a fully satisfied all_of. (`forge evolve` refuses a human_gate
+// before the loop; this is the depth-two backstop that holds regardless.)
 func (l LoopEngine) checkStop(i int, sig converge.Signals) (LoopOutcome, bool) {
 	if l.external() {
 		return LoopOutcome{}, false
 	}
-	if _, met := converge.Evaluate(l.Stop, sig); met {
+	if _, met := converge.Converge(l.Stop, sig); met {
 		return LoopOutcome{i, true, "converged"}, true
 	}
 	return LoopOutcome{}, false
@@ -169,8 +186,8 @@ func (l LoopEngine) reportConvergence(sig converge.Signals) {
 			sig.RoadmapCompletion*100, sig.GatesGreen)
 		return
 	}
-	results, met := converge.Evaluate(l.Stop, sig)
-	l.logf("convergence: %s (%s)", convergeVerdict(met), l.StopType)
+	results, met := converge.Converge(l.Stop, sig)
+	l.logf("convergence: %s (%s)", convergeVerdict(met), l.Stop.Type)
 	for _, r := range results {
 		l.logf("  [%s] %s — %s", convergeMark(r.Met), r.Expr, r.Detail)
 	}

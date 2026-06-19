@@ -33,10 +33,26 @@ type Phase struct {
 // and AntiPattern records the forbidden shortcut (e.g. "round_count").
 // forge-core loads AllOf and evaluates it live (internal/converge) against
 // roadmap completion and gate state — convergence is computed, not just declared.
+//
+// HumanApproval names the human_gate variant (design.yml): when it is "required"
+// (or Type=="human_gate"), the stage's single convergence key is an explicit
+// human approval signal, NOT a conjunction. It is the highest-leverage gate in
+// the system and is non-bypassable — see internal/converge.Converge. OnApproved
+// carries what an approval unlocks (the next spine stage), surfaced in the report.
 type StopCondition struct {
-	Type        string      `json:"type"`
-	AllOf       []Criterion `json:"all_of"`
-	AntiPattern string      `json:"anti_pattern"`
+	Type          string      `json:"type"`
+	AllOf         []Criterion `json:"all_of"`
+	AntiPattern   string      `json:"anti_pattern"`
+	HumanApproval string      `json:"human_approval"`
+	OnApproved    OnApproved  `json:"on_approved"`
+}
+
+// OnApproved is the subset of a human_gate's on_approved block forge-core needs:
+// NextStage is the spine stage an approval unlocks (design.yml -> "build"). The
+// emit list is materialized by the agent layer, not the runtime, so it is not
+// modeled here — only the routing-relevant NextStage is.
+type OnApproved struct {
+	NextStage string `json:"next_stage"`
 }
 
 // Criterion is one structured stop criterion. The real build.yml authors these

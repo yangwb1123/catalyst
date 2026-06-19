@@ -189,6 +189,49 @@ const externalAgentWorkflow = `{
   "stop_condition": {"type": "external", "all_of": [], "anti_pattern": "round_count"}
 }`
 
+// humanGateLoopWorkflow is a human_gate workflow carrying a fully SATISFIABLE
+// all_of (roadmap_completion == 0, true with no ROADMAP -> 0%) — the exact shape
+// that bypassed the gate before the fix (evolve drove it, the loop evaluated the
+// all_of, and it exited 0 "converged" with NO approval).
+const humanGateLoopWorkflow = `{
+  "stage": "design",
+  "phases": [{"name": "solution-architect", "agent": "architect", "readonly": true, "required_gates": []}],
+  "stop_condition": {"type": "human_gate", "human_approval": "required",
+    "all_of": [{"metric": "roadmap_completion", "operator": "==", "threshold": 0}],
+    "on_approved": {"next_stage": "build"}}
+}`
+
+// THE evolve-path security regression test. `forge evolve` on a human_gate must
+// FAIL CLOSED (non-zero exit) and never enter the loop — the satisfied all_of that
+// produced the pre-fix exit-0 "converged" bypass is now refused outright, so no
+// .forge/ run artifacts are written (the loop never starts).
+func TestEvolve_HumanGateFailsClosed(t *testing.T) {
+	if _, err := exec.LookPath("python3"); err != nil {
+		t.Skip("python3 not available")
+	}
+	root := fakeRepo(t, "design", humanGateLoopWorkflow)
+	// No --approved, no marker, and a satisfiable all_of: the pre-fix bypass setup.
+	code := cmdEvolve([]string{"design", "--root", root, "--max-iter", "3"})
+	if code == 0 {
+		t.Fatalf("BYPASS: forge evolve on an unapproved human_gate exited 0 (converged); must fail closed")
+	}
+	if code != 1 {
+		t.Errorf("forge evolve on a human_gate must fail closed with exit 1; got %d", code)
+	}
+	// The loop must never have started: no checkpoint, no trace under .forge.
+	if _, found, _ := persist.Load(checkpointPath(root)); found {
+		t.Error("a refused human_gate evolve must not write a checkpoint (loop never ran)")
+	}
+	if _, err := os.Stat(filepath.Join(root, ".forge", "trace.jsonl")); err == nil {
+		t.Error("a refused human_gate evolve must not write a trace (loop never ran)")
+	}
+	// Even WITH --approved the refusal stands: a human_gate's single human approval
+	// belongs to `forge run`, never to an autonomous loop that would re-drive it.
+	if code := cmdEvolve([]string{"design", "--root", root, "--max-iter", "3", "--approved"}); code != 1 {
+		t.Errorf("forge evolve must refuse a human_gate even with --approved; got exit %d", code)
+	}
+}
+
 // --timeout must parse on both run and evolve (DurationVar): a bad duration is a
 // parse error (exit 2), a good one is accepted and the command proceeds.
 func TestEvolve_TimeoutFlagParses(t *testing.T) {

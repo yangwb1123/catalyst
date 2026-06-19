@@ -1,9 +1,27 @@
 #!/usr/bin/env node
 // ForgeOS forge-init (v1) — stamp a NEW project with inheritable, runnable governance.
 // One command scaffolds a target dir with: the universal red-lines (.agent/AGENTS.md,
-// COPIED verbatim), generated starter docs, project.yml, and the REAL harness
-// (gate.mjs + policies.yml, COPIED verbatim) so the fresh project enforces file-size
-// governance immediately — `node harness/gate.mjs` passes out of the box.
+// COPIED verbatim), generated starter docs, project.yml, and the REAL host-independent
+// ENFORCERS (COPIED verbatim) so the fresh project enforces governance immediately —
+// `gate` + `arch-check` + `secret-scan` all pass out of the box.
+//
+// What a fresh project INHERITS (the full host-independent enforcement triad — each of
+// these tools only SCANS files and resolves paths from its OWN on-disk location, so it
+// needs nothing project-specific to run):
+//   * file-size + root-count governance  — harness/gate.mjs + harness/policies.yml
+//   * architecture enforcement           — harness/arch/arch-check.mjs (+ scan.mjs,
+//     scan-functions.mjs) reading .arch/rules.yaml: layering / package / fan-in /
+//     cognitive / anti-pattern-naming / function-length / circular / drift-guard.
+//     .arch/rules.yaml ships ALONGSIDE policies.yml because arch-check's drift-guard
+//     asserts the two agree — they MUST travel together to stay consistent.
+//   * hardcoded-secret scanning          — harness/secret-scan.mjs.
+//
+// HONEST about what is NOT inherited yet (do not pretend a fresh project has these):
+//   * check.py (governance-completeness: scans .agent/ agents/skills/workflows/eval)
+//     and acceptance.mjs (the aggregate Stop gate, needs .agent/eval/acceptance.schema.yml)
+//     are NOT copied — a fresh project's minimal .agent/ (PROJECT/ROADMAP/CURRENT_SPRINT/
+//     project.yml only) lacks those structures, so copying them would FAIL on day one.
+//     They light up once the project's .agent/ is fleshed out. See the next-steps print.
 //
 // Usage:
 //   node harness/forge-init.mjs <target-dir> --name <project> \
@@ -169,10 +187,25 @@ export function scaffold(cfg) {
   mkdirSync(targetDir, { recursive: true });
   const created = [];
 
-  // COPIED verbatim from the source repo (red-lines + real enforcement).
+  // COPIED verbatim from the source repo (red-lines + the full host-independent
+  // enforcement triad). Every file below only SCANS files / resolves paths from its
+  // OWN on-disk location, so it runs in a fresh project with ZERO project-specific
+  // wiring — the fresh project passes gate + arch-check + secret-scan out of the box.
   copyFromSource(join('.agent', 'AGENTS.md'), targetDir, created);
+  // 1) file-size + root-count governance.
   copyFromSource(join('harness', 'gate.mjs'), targetDir, created);
   copyFromSource(join('harness', 'policies.yml'), targetDir, created);
+  // 2) architecture enforcement: arch-check + its scan library, reading .arch/rules.yaml.
+  //    rules.yaml MUST ship with policies.yml — arch-check's drift-guard asserts the two
+  //    agree, so omitting either would FAIL the fresh project's arch-check.
+  copyFromSource(join('harness', 'arch', 'arch-check.mjs'), targetDir, created);
+  copyFromSource(join('harness', 'arch', 'scan.mjs'), targetDir, created);
+  copyFromSource(join('harness', 'arch', 'scan-functions.mjs'), targetDir, created);
+  copyFromSource(join('.arch', 'rules.yaml'), targetDir, created);
+  // 3) hardcoded-secret scanning.
+  copyFromSource(join('harness', 'secret-scan.mjs'), targetDir, created);
+  // NOT copied (honest): check.py + acceptance.mjs need a fleshed-out .agent/ the fresh
+  // project doesn't have yet; copying them would FAIL on day one. They light up later.
 
   // Generated starters.
   writeGenerated(join('.agent', 'PROJECT.md'), renderProjectMd(cfg.name), targetDir, created);
@@ -218,7 +251,16 @@ function main(argv) {
 
   console.log(`forge-init: scaffolded ${cfg.name} into ${result.targetDir}`);
   for (const rel of result.created) console.log(`  + ${rel}`);
-  console.log(`next: run node harness/gate.mjs in ${result.targetDir}`);
+  console.log('');
+  console.log('inherited enforcement (run from the new project — all pass out of the box):');
+  console.log('  node harness/gate.mjs              # file-size + root-count');
+  console.log('  node harness/arch/arch-check.mjs   # layering/package/fanin/cognitive/');
+  console.log('                                     #   naming/function-length/circular/drift');
+  console.log('  node harness/secret-scan.mjs       # hardcoded-secret scan');
+  console.log('');
+  console.log('NOT yet inherited (need a fleshed-out .agent/; enabled as the project grows):');
+  console.log('  check.py        — governance completeness (.agent/ agents/skills/workflows/eval)');
+  console.log('  acceptance.mjs  — aggregate Stop gate (needs .agent/eval/acceptance.schema.yml)');
   process.exit(0);
 }
 

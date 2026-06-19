@@ -114,6 +114,52 @@ func TestCriterion_UnmarshalBothForms(t *testing.T) {
 	}
 }
 
+// A human_gate stop condition (design.yml) parses its human_approval flag and
+// the next_stage an approval unlocks, while leaving the conjunction fields
+// (all_of) absent — the human gate is not a conjunction.
+func TestLoadWorkflowJSON_HumanGate(t *testing.T) {
+	wf, err := LoadWorkflowJSON([]byte(`{"stage":"design","stop_condition":{
+		"type":"human_gate",
+		"human_approval":"required",
+		"durable_wait":true,
+		"on_approved":{"next_stage":"build","emit":[".agent/PROJECT.md"]},
+		"on_rejected":{"action":"loop_back"}
+	}}`))
+	if err != nil {
+		t.Fatalf("load human_gate: %v", err)
+	}
+	if wf.Stop.Type != "human_gate" {
+		t.Errorf("stop.Type = %q, want human_gate", wf.Stop.Type)
+	}
+	if wf.Stop.HumanApproval != "required" {
+		t.Errorf("stop.HumanApproval = %q, want required", wf.Stop.HumanApproval)
+	}
+	if wf.Stop.OnApproved.NextStage != "build" {
+		t.Errorf("stop.OnApproved.NextStage = %q, want build", wf.Stop.OnApproved.NextStage)
+	}
+	// A human_gate carries no all_of; the unmodeled keys (durable_wait, emit,
+	// on_rejected) are ignored by the fault-tolerant loader, not an error.
+	if len(wf.Stop.AllOf) != 0 {
+		t.Errorf("human_gate should have no all_of; got %v", wf.Stop.AllOf)
+	}
+}
+
+// Back-compat: the conjunction fixture (build.json) must still parse with the new
+// human-gate fields simply zero-valued — adding them dropped nothing.
+func TestLoadWorkflowJSON_ConjunctionUnaffectedByHumanFields(t *testing.T) {
+	wf := loadFixture(t)
+	if wf.Stop.HumanApproval != "" {
+		t.Errorf("conjunction stop must have empty HumanApproval; got %q", wf.Stop.HumanApproval)
+	}
+	if wf.Stop.OnApproved.NextStage != "" {
+		t.Errorf("conjunction stop must have empty OnApproved.NextStage; got %q", wf.Stop.OnApproved.NextStage)
+	}
+	// The pre-existing conjunction assertions still hold (nothing regressed).
+	if wf.Stop.Type != "conjunction" || len(wf.Stop.AllOf) != 2 {
+		t.Errorf("conjunction fixture changed: type=%q all_of=%d", wf.Stop.Type, len(wf.Stop.AllOf))
+	}
+}
+
 // Fault tolerance: missing fields must not crash; only bad syntax errors.
 func TestLoadWorkflowJSON_FaultTolerant(t *testing.T) {
 	wf, err := LoadWorkflowJSON([]byte(`{"stage":"design"}`))

@@ -17,6 +17,16 @@ type Signals struct {
 	RoadmapCompletion float64 // fraction in [0,1] of decided checklist items done
 	GatesGreen        bool    // every required harness gate currently passes
 
+	// HumanApproved is the approval signal for a human_gate stop condition (the
+	// design->build gate). It is the ONLY key that converges a human_gate: false
+	// means the stage honestly waits for a human (NOT MET, never a gate failure),
+	// true means an explicit approval was given. It is irrelevant to conjunction /
+	// external stops, so the default false leaves those paths byte-for-byte
+	// unchanged. The CLI sources it from --approved or a <root>/.forge/<stage>.approved
+	// marker (see cmd/forge). HONESTY: v1 is an approval-SIGNAL check, not a durable
+	// cross-process wait — see Converge's note on durable_wait.
+	HumanApproved bool
+
 	// Criteria carries per-criterion acceptance verdicts (criterion name ->
 	// "PASS"|"FAIL"|"NA", exactly as gate.ProbeAll emits them) so a workflow can
 	// converge on a single acceptance criterion (e.g. test_pass) instead of only
@@ -44,6 +54,62 @@ type Result struct {
 	Expr   string // human-readable rendering of the criterion
 	Met    bool
 	Detail string
+}
+
+// HumanGateType is the stop_condition.type that marks the human-approval gate.
+const HumanGateType = "human_gate"
+
+// awaitingApprovalDetail is the honest "stopped, waiting for a human" message a
+// not-yet-approved human_gate reports. It is deliberately NOT a gate-failure
+// string: the gate has not failed, it is correctly holding for a non-bypassable
+// human decision.
+const awaitingApprovalDetail = "awaiting human approval (non-bypassable)"
+
+// IsHumanGate reports whether a stop condition is the human-approval gate —
+// either by an explicit type, or by carrying a human_approval requirement (so a
+// workflow that only sets `human_approval: required` is still gated). This is the
+// single predicate the runtime and CLI share, so the two never disagree on what
+// "needs a human" means.
+func IsHumanGate(stop asset.StopCondition) bool {
+	return stop.Type == HumanGateType || stop.HumanApproval != ""
+}
+
+// Converge is the single convergence entry point that honors EVERY stop-condition
+// shape. It dispatches on the condition, so a caller never has to know which kind
+// it holds:
+//
+//   - human_gate (design->build): converges IF AND ONLY IF sig.HumanApproved is
+//     true. This is its OWN branch — it does NOT run the conjunction path, so an
+//     unapproved human_gate can never be mistaken for "converged" by the
+//     zero-criteria rule or any other conjunction edge. Not approved => NOT MET
+//     with the honest "awaiting human approval (non-bypassable)" detail (a stop
+//     to wait for a human, not a gate failure). Fail-closed + non-bypassable:
+//     there is no path from HumanApproved==false to met.
+//   - everything else (conjunction, …): the existing Evaluate(all_of) semantics,
+//     unchanged.
+//
+// HONESTY on durable_wait: design.yml declares `durable_wait: true` (survive
+// restarts for hours/days — Temporal, from v2). v1 does NOT implement a durable
+// cross-process wait; Converge only checks the approval SIGNAL present at
+// evaluation time (a --approved flag or an on-disk marker). It does not block,
+// poll, or persist a pending wait across process boundaries. The non-bypassable
+// SEMANTICS are real (no approval => never converges); the durability is not yet.
+func Converge(stop asset.StopCondition, sig Signals) (results []Result, met bool) {
+	if IsHumanGate(stop) {
+		return humanGate(sig)
+	}
+	return Evaluate(stop.AllOf, sig)
+}
+
+// humanGate evaluates the human-approval gate. The ONLY way it converges is an
+// explicit HumanApproved==true; anything else is the honest "awaiting human
+// approval (non-bypassable)" — a deliberate stop-to-wait, never a failure and
+// never an auto-pass. It returns exactly one Result so the report shows the gate.
+func humanGate(sig Signals) (results []Result, met bool) {
+	if sig.HumanApproved {
+		return []Result{{Expr: "human_approval == granted", Met: true, Detail: "human approval granted"}}, true
+	}
+	return []Result{{Expr: "human_approval == granted", Met: false, Detail: awaitingApprovalDetail}}, false
 }
 
 // Evaluate checks each typed criterion (a conjunction) against signals and

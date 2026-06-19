@@ -45,13 +45,36 @@ func probeStatuses(root string) map[string]string {
 // which is the verdict vocabulary converge.evalCriterion expects; a nil probe
 // (broken/absent) leaves Criteria nil and every per-criterion check degrades to
 // unmet (absence of a verdict is never satisfaction).
-func gatherSignals(root string, wf asset.Workflow, probe map[string]string) converge.Signals {
+func gatherSignals(root string, wf asset.Workflow, probe map[string]string, approved bool) converge.Signals {
 	md, _ := os.ReadFile(filepath.Join(root, ".agent", "ROADMAP.md"))
 	return converge.Signals{
 		RoadmapCompletion: converge.RoadmapCompletion(string(md)),
 		GatesGreen:        allRequiredGatesPass(root, requiredGates(wf), probe),
 		Criteria:          probe,
+		HumanApproved:     approved,
 	}
+}
+
+// approvalPath is the on-disk human-approval marker for a stage: its mere
+// EXISTENCE under <root>/.forge/<stage>.approved is one of the two approval
+// signal sources (the other is the --approved flag). It lives in the git-ignored
+// .forge runtime dir, so an approval is a deliberate local act, never committed.
+func approvalPath(root, stage string) string {
+	return filepath.Join(forgeDir(root), stage+".approved")
+}
+
+// humanApproved resolves the approval SIGNAL for a stage: true if the operator
+// passed --approved OR a <root>/.forge/<stage>.approved marker exists. This is
+// the v1 approval check — NOT a durable cross-process wait (durable_wait is v2,
+// Temporal). It only reads the signal present right now; it does not block or
+// persist a pending wait. fail-closed: with neither source the result is false,
+// so an unapproved human_gate never auto-converges.
+func humanApproved(root, stage string, flag bool) bool {
+	if flag {
+		return true
+	}
+	_, err := os.Stat(approvalPath(root, stage))
+	return err == nil
 }
 
 // requiredGates collects the de-duplicated set of gate names across the
