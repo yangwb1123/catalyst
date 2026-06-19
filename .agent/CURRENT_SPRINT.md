@@ -79,8 +79,11 @@ gate.mjs 的 enforce(warn/block)从读 policies.yml 全局 → `resolveEnforce` 
 ## Sprint 21 (✅ 完成) — agent-call budget guard:真点火安全前置②(成本上界)
 recursion guard 的配对:guard 防深度,budget 防单次 run 的**总** agent-phase 执行数(N phase × K loop-back 重跑 = N×(K+1) 真 spawn,MaxLoopBack/MaxIter 不覆盖)。`Engine.MaxAgentCalls`:RunFrom 在每个 runAgentPhase **前** checkAgentBudget 计数,超限 fail-closed(phase 永不 Execute,spawn ledger 坐实);loop-back 重跑计入。默认 0=无限(向后兼容);`--max-agent-calls` 接 run+evolve。**evolve 为 per-iteration**(计数每迭代重置,总 ≤ max-iter × this)——flag/字段/error 全处诚实披露。fresh review(6 独立 fixture)REQUEST-CHANGES(evolve 文档诚实)已修 → APPROVE。**★真点火安全护栏完整成对(深度 + 总量)★**。
 
+## Sprint 22 (✅ 完成) — output-size cap:真点火安全前置③(防 runaway 输出 OOM)
+CommandExecutor 原 `CombinedOutput()` **无界**读子进程 stdout/stderr 到内存——runaway 真 agent 会 OOM forge。改 `cappedBuffer`(保留 ≤ cap、drain 其余、Write 永不 short-write 免 wedge 子进程)+ `cmd.Run`,同指针 Stdout+Stderr 让 os/exec 串行化(stdlib same-writer 保证,无锁)。截断诚实标注、不假装完整。`--max-output-bytes` 可配、默认 10MiB(对正常 phase 日志透明)。fresh review APPROVE(自测 10MB 流过 1KiB cap 只留 1KiB;`-race -count=20` 并发 stdout+stderr 零 race;边界 honesty)。**★真点火资源安全护栏四维完整:深度(recursion)+ 数量(budget)+ 时间(timeout)+ 内存(output-cap)★**。
+
 ## 下一前沿(需外部资源 / 投机增强 / 架构外,非本环境可完整验证)
-- **真点火** `--agent-cmd=claude`:机制 + **完整安全护栏**(recursion-depth + agent-call budget + timeout + retry + loop-back,Sprint 20–21)已就位,差凭证 + 预算确认即可安全启用(方向①②③的真采集源/真语义发现随此解锁)
+- **真点火** `--agent-cmd=claude`:机制 + **资源安全护栏四维完整**(深度 recursion / 数量 budget / 时间 timeout / 内存 output-cap,Sprint 20–22)+ retry + loop-back + 凭证透传 已就位,差凭证 + 预算确认即可安全启用(方向①②③的真采集源/真语义发现随此解锁)
 - **需外部资源(框架已就绪)**:SCA/CVE 漏洞库 OSV/NVD(差 DB)· 真 cost/latency telemetry(差真 token 数据)· 跨厂商池 LiteLLM(差多厂商 keys)· Firecracker 沙箱(差 KVM/特权)
 - **投机增强(做即违反反 gold-plating 纪律)**:embedding 语义检索(TF-IDF 已工作,增量仅真点火时体现)
 - **架构外**:Web UI(偏离 CLI/声明式核心)
