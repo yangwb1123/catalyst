@@ -8,10 +8,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import * as acc from './acceptance.mjs';
+import { resolveCoverageThreshold, judgeCoverage, computeCoverageThreshold } from './adapters.mjs';
+import { parseRules } from './arch/scan.mjs';
 const { decide, PASS, FAIL, NA, LOAD_BEARING, probeNotApplicable, probeCoverage } = acc;
 
 // allPass builds a results array where every load-bearing criterion is PASS,
@@ -100,6 +103,35 @@ test('probeCoverage yields a single, honest coverage row (the wired-in probe)', 
   const r = probeCoverage();
   assert.equal(r.criterion, 'coverage', 'exactly the coverage criterion');
   assert.ok([PASS, FAIL, NA].includes(r.status), 'coverage status must be an honest verdict');
+});
+
+// --- coverage threshold is the project's mode×lifecycle floor, not hardcoded 60 -
+test('probeCoverage wires the project mode×lifecycle threshold (the central knob), but an N/A is unchanged by it', () => {
+  // The gap closed: the floor flows from .agent/project.yml × modes.yml, NOT the old
+  // hardcoded 60. host-AGNOSTIC (this test ships VERBATIM to scaffolded projects of
+  // ANY mode×lifecycle): instead of hardcoding the host's number, read the host's OWN
+  // project.yml × modes.yml and assert the on-disk resolve equals the pure computation
+  // for that exact pair — proving the wire is live without assuming WHICH knob the host
+  // is set to (engineering×mvp here -> 80; a balanced×mvp scaffold -> 60; both pass).
+  const repoRoot = dirname(fileURLToPath(import.meta.url)).replace(/\/harness$/, '');
+  const project = parseRules(readFileSync(join(repoRoot, '.agent', 'project.yml'), 'utf8'));
+  const modes = parseRules(readFileSync(join(repoRoot, '.agent', 'policies', 'modes.yml'), 'utf8'));
+  const expected = computeCoverageThreshold(modes, project.mode, project.lifecycle);
+  assert.equal(resolveCoverageThreshold(repoRoot), expected, `${project.mode}×${project.lifecycle} resolves to its computed floor ${expected}`);
+  // HONESTY/backward-compat: the threshold only moves the PASS/FAIL boundary when a
+  // tool actually RUNS and emits a %. This repo has no runnable coverage tool, so
+  // the criterion is N/A — and changing the floor cannot turn that N/A into a
+  // verdict. Pin that: probeCoverage stays N/A regardless of the resolved threshold.
+  assert.equal(probeCoverage().status, NA, 'no runnable tool -> N/A, unaffected by the resolved threshold');
+});
+
+test('judgeCoverage honors the resolved threshold at the PASS/FAIL boundary (60 vs 80)', () => {
+  // Proof that the resolved floor is load-bearing WHEN a tool runs: a real 75%
+  // coverage run PASSES at the balanced floor (60) but FAILS at the engineering
+  // floor (80) — exactly the boundary mode×lifecycle is meant to move.
+  const ran75 = { ok: true, code: 0, out: 'coverage: 75.0% of statements' };
+  assert.equal(judgeCoverage('go', 'go', true, ran75, 60).status, PASS, '75% >= 60 (balanced) PASSES');
+  assert.equal(judgeCoverage('go', 'go', true, ran75, 80).status, FAIL, '75% < 80 (engineering) FAILS');
 });
 
 test('coverage is NOT load-bearing (an N/A coverage must not block accept)', () => {

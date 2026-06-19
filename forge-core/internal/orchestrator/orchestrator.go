@@ -47,11 +47,42 @@ type DryRunExecutor struct {
 }
 
 // Execute narrates the phase as "phase <name> -> agent <agent> (tier <tier>)",
-// taking the tier from the routing policy for the phase's agent under mode.
+// taking the tier from phaseTier so a workflow's per-phase model_tier override is
+// honored (raise-only, never below the safety floor — see phaseTier).
 func (d DryRunExecutor) Execute(p asset.Phase, mode string) error {
-	tier := routing.TierFor(p.Agent, mode)
+	tier := phaseTier(p, mode)
 	d.logf("phase %s -> agent %s (tier %s)", p.Name, p.Agent, tier)
 	return nil
+}
+
+// phaseTier resolves the model tier for a phase under a mode, honoring an
+// OPTIONAL per-phase model_tier OVERRIDE authored in the workflow asset.
+//
+// The base is routing.TierFor(agent, mode) — the routed verdict, which already
+// applies the non-negotiable Opus SAFETY FLOOR for judgement-only agents
+// (architect/cto/reviewer) and the per-agent/mode floors. When the phase declares
+// a model_tier, it is combined with the base via routing.Higher: the override can
+// only RAISE the tier, never lower it below the floor. So a phase that writes
+// model_tier: opus on a plain agent routes to Opus (override lifts), while a phase
+// that writes model_tier: haiku on the reviewer STILL routes to Opus (the safety
+// floor in TierFor wins — the override cannot sink it). An empty model_tier (the
+// fault-tolerant default) yields exactly TierFor's verdict, so a workflow without
+// the field is byte-for-byte unchanged.
+//
+// HONESTY: model_tier is an explicit author override, but the safety floor
+// (reviewer/architect/cto -> Opus) is supreme — overrides are raise-only. Under
+// the dry-run executor the resolved tier is narrative/prompt-fidelity only; no
+// model is actually invoked.
+func phaseTier(p asset.Phase, mode string) string {
+	base := routing.TierFor(p.Agent, mode)
+	if p.ModelTier == "" {
+		return base
+	}
+	// Argument order matters: Higher returns its FIRST argument on a rank tie, so
+	// pass base first. An UNRECOGNIZED model_tier ranks as the cheapest (rank 0)
+	// and ties with a haiku base — keeping base first means a garbage override can
+	// never displace a valid routed tier, only a strictly-higher known tier lifts.
+	return routing.Higher(base, p.ModelTier)
 }
 
 func (d DryRunExecutor) logf(format string, args ...any) {

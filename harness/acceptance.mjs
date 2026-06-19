@@ -18,7 +18,7 @@ import { spawnSync } from 'node:child_process';
 import { readdirSync, statSync, existsSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { detectLanguages, loadAdapter, lintBinary, coverageBinary, judgeCoverage, versionProbeArgs, coverageArtifact, appTestPlan, ADAPTER_LANG_BY_RUNNER } from './adapters.mjs';
+import { detectLanguages, loadAdapter, lintBinary, coverageBinary, judgeCoverage, resolveCoverageThreshold, versionProbeArgs, coverageArtifact, appTestPlan, ADAPTER_LANG_BY_RUNNER } from './adapters.mjs';
 
 const HARNESS_DIR = dirname(fileURLToPath(import.meta.url));
 const ROOT = dirname(HARNESS_DIR);
@@ -313,20 +313,20 @@ export function probeLint() {
 // when the run fails on "not a module"). A gate must not pollute the repo it
 // judges, so we snapshot whether that artifact pre-existed and remove ONLY one we
 // ourselves created — never a user's pre-existing coverage report.
-function probeCoverageLang(lang) {
+function probeCoverageLang(lang, threshold) {
   const { coverage } = loadAdapter(lang);
   const bin = coverageBinary(coverage);
-  if (!bin) return judgeCoverage(lang, null, false, null);
+  if (!bin) return judgeCoverage(lang, null, false, null, threshold);
   // Tool-aware install probe: `go version`, else `<bin> --version` (see
   // versionProbeArgs — `go --version` would falsely read as "not installed").
   const installed = run(bin, versionProbeArgs(bin)).ok;
-  if (!installed) return judgeCoverage(lang, bin, false, null);
+  if (!installed) return judgeCoverage(lang, bin, false, null, threshold);
   const artifact = coverageArtifact(coverage);
   const path = artifact ? join(ROOT, artifact) : null;
   const preexisted = path ? existsSync(path) : false;
   const r = run(...splitCmd(coverage));
   if (path && !preexisted && existsSync(path)) rmSync(path, { recursive: true, force: true });
-  return judgeCoverage(lang, bin, true, r);
+  return judgeCoverage(lang, bin, true, r, threshold);
 }
 
 // probeCoverage: aggregate per-language coverage into the single `coverage`
@@ -336,7 +336,11 @@ function probeCoverageLang(lang) {
 export function probeCoverage() {
   const langs = detectLanguages(ROOT);
   if (langs.length === 0) return result('coverage', NA, 'no source languages detected');
-  const per = langs.map(probeCoverageLang);
+  // The line-coverage floor is the project's mode×lifecycle threshold (central knob:
+  // .agent/project.yml × modes.yml — see resolveCoverageThreshold for the resolution,
+  // its missing-file FAIL-SAFE, and why an N/A here is unaffected), NOT a hardcoded 60.
+  const threshold = resolveCoverageThreshold(ROOT);
+  const per = langs.map((lang) => probeCoverageLang(lang, threshold));
   const detail = per.map((p) => p.detail).join('; ');
   if (per.some((p) => p.status === FAIL)) return result('coverage', FAIL, detail);
   if (per.every((p) => p.status === NA)) return result('coverage', NA, detail);

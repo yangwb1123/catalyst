@@ -85,6 +85,44 @@ func TestLoadWorkflowJSON_RequiredWhen(t *testing.T) {
 	}
 }
 
+// ModelTier is parsed VERBATIM from a phase's model_tier (build.yml authors
+// implementer: sonnet, reviewer: opus). A phase without the key loads as "" — the
+// fault-tolerant default the orchestrator reads as "no override, use the agent's
+// routed tier". This pins that the field is purely additive and that a tier hint
+// is carried through to the runtime, not silently dropped.
+func TestLoadWorkflowJSON_ModelTier(t *testing.T) {
+	wf, err := LoadWorkflowJSON([]byte(`{"stage":"build","phases":[
+		{"name":"implementer","agent":"implementer","model_tier":"sonnet"},
+		{"name":"reviewer","agent":"reviewer","model_tier":"opus"},
+		{"name":"planner","agent":"planner"}
+	]}`))
+	if err != nil {
+		t.Fatalf("load model_tier doc: %v", err)
+	}
+	if got := wf.Phases[0].ModelTier; got != "sonnet" {
+		t.Errorf("implementer ModelTier = %q, want sonnet", got)
+	}
+	if got := wf.Phases[1].ModelTier; got != "opus" {
+		t.Errorf("reviewer ModelTier = %q, want opus", got)
+	}
+	// A phase that omits model_tier loads with the empty default ("no override").
+	if got := wf.Phases[2].ModelTier; got != "" {
+		t.Errorf("planner ModelTier = %q, want empty (no override)", got)
+	}
+}
+
+// Back-compat: the committed fixture (build.json) authors NO model_tier on any
+// phase, so every phase must load with ModelTier "" — adding the field dropped
+// nothing and changed no existing phase's parse.
+func TestLoadWorkflowJSON_ModelTierAbsentIsEmpty(t *testing.T) {
+	wf := loadFixture(t)
+	for i, p := range wf.Phases {
+		if p.ModelTier != "" {
+			t.Errorf("phase[%d] (%s) ModelTier = %q, want empty (fixture has no model_tier)", i, p.Name, p.ModelTier)
+		}
+	}
+}
+
 // OnFail is parsed for the gate phases that declare it (harness-gates/reviewer/qa
 // in build.yml all loop_back to implementer) and is nil for phases without the key
 // (planner/implementer) — the fault-tolerant default the orchestrator reads as

@@ -90,6 +90,13 @@ func higher(a, b string) string {
 	return a
 }
 
+// Higher is the exported tier-max: the more capable of two tiers, an unknown tier
+// ranking as the cheapest (rank 0). It is the "raise, never lower" combiner the
+// orchestrator uses to apply a phase's model_tier OVERRIDE on top of TierFor's
+// routed verdict — an override can lift the tier but never sink it below the
+// safety floor. Mirrors risk.Higher's exported role for risk levels.
+func Higher(a, b string) string { return higher(a, b) }
+
 // ── Multi-dimensional task scorer (policy.yml scoring/tiers/override/budget) ──
 //
 // Score + TierForScore are the task-scoring pathway, distinct from TierFor's

@@ -52,6 +52,11 @@ fresh reviewer APPROVE(三块;honesty footgun 对真实 eslint exit-2 坐实无�
 - **adapter test 消费**:probeAppTests 改走 adapter `test:` 命令(go-taskd via `go test ./...`),布局不匹配则诚实 fallback(url-shortener:vitest 不匹配 .mjs→node --test)。两条路径都 load-bearing(注入破坏坐实 REJECTED)。
 fresh reviewer APPROVE(定向 loop-back 真实 + 向后兼容注入验证 + load-bearing 两路坐实)。
 
+## Sprint 14 (✅ 完成) — coverage 阈值 mode×lifecycle + per-phase model_tier
+- **coverage 阈值按 mode×lifecycle**:从 hardcoded 60 → 读 project.yml mode×lifecycle 对照 modes.yml(`coverage_threshold` + `coverage_delta`,封顶 95);fail-safe 缺→60;coverage 工具 N/A 时不改 N/A 结果。fresh review 抓出 **copy-anywhere regression**(测试 hardcode "本仓=80" 但复制给每个 balanced 脚手架=60)→ 修(测试改为读 host config 动态算期望,balanced 脚手架 ACCEPTED 恢复)。
+- **per-phase model_tier override**:build.yml 的 `implementer:sonnet`/`reviewer:opus`(之前 parse 后丢弃)现作为 raise-only override 生效(`Higher(base,model_tier)`),**安全下限只升不破**(reviewer/architect 即使 phase 写低档仍 opus,注入坐实)。
+fresh reviewer:B6 APPROVE;C1 REQUEST-CHANGES→已修。
+
 ## 下一前沿(需基础设施 / 真点火,非本环境可完整验证)
 - **真点火** `--agent-cmd=claude`:机制+测试已就位,差凭证/预算/防递归(方向①②③的「自动采集源 / 真语义发现」随此解锁)
 - **v3 基础设施**:SCA/CVE 漏洞库(⑤)· embedding 语义检索(③)· 跨厂商池 LiteLLM · Firecracker 沙箱 · Web UI

@@ -37,6 +37,16 @@ import (
 // gate" (byte-for-byte the pre-loop-back behavior). The orchestrator acts on it
 // only when Action=="loop_back": it jumps back to the phase named TargetPhase and
 // re-runs forward to here, bounded by Engine.MaxLoopBack (fail-closed when spent).
+//
+// ModelTier carries an OPTIONAL per-phase model-tier OVERRIDE authored in the
+// workflow (build.yml implementer: model_tier: sonnet, reviewer: opus; design.yml
+// solution-architect: opus). It is a plain string so a phase without the key loads
+// as "" — the fault-tolerant default the orchestrator reads as "no override, use
+// the agent's routed tier". When set, it can only RAISE the routed tier, never
+// lower a safety floor: the orchestrator (phaseTier) takes the HIGHER of this hint
+// and routing.TierFor's verdict, so a phase that writes model_tier: haiku on the
+// reviewer/architect still routes to Opus. Honest scope: under the dry-run executor
+// the tier is narrative/prompt-fidelity only — no model is actually invoked.
 type Phase struct {
 	Name          string   `json:"name"`
 	Agent         string   `json:"agent"`
@@ -44,6 +54,7 @@ type Phase struct {
 	RequiredGates []string `json:"required_gates"`
 	RequiredWhen  string   `json:"required_when"`
 	OnFail        *OnFail  `json:"on_fail"`
+	ModelTier     string   `json:"model_tier"`
 }
 
 // OnFail is a gate phase's directed loop-back directive: when its gates FAIL,

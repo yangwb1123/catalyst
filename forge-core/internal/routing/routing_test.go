@@ -56,6 +56,32 @@ func TestTierFor_StricterModeLiftsCheapAgent(t *testing.T) {
 	}
 }
 
+// Higher is the exported "raise, never lower" tier-max the orchestrator uses to
+// apply a phase's model_tier override. It returns the more capable of two tiers;
+// a strictly-higher tier wins regardless of position, and a RANK TIE returns the
+// FIRST argument (so the orchestrator passes the routed base first — a garbage
+// override that ranks at 0 can never displace a valid base, only lift it).
+func TestHigher(t *testing.T) {
+	cases := []struct{ a, b, want string }{
+		{Haiku, Opus, Opus},
+		{Opus, Haiku, Opus}, // strictly-higher wins from either position
+		{Sonnet, Haiku, Sonnet},
+		{Haiku, Sonnet, Sonnet},
+		{Opus, Opus, Opus}, // equal -> same
+		{Sonnet, Sonnet, Sonnet},
+		// Rank tie returns the FIRST arg: an unknown tier ranks 0, the same as
+		// haiku, so order decides. This is exactly why phaseTier passes base first.
+		{Haiku, "garbage", Haiku},     // base haiku, garbage override -> base stays
+		{"garbage", Haiku, "garbage"}, // tie returns first arg (documents the order)
+		{Opus, "garbage", Opus},       // a real floor always beats a rank-0 unknown
+	}
+	for _, c := range cases {
+		if got := Higher(c.a, c.b); got != c.want {
+			t.Errorf("Higher(%q, %q) = %q, want %q", c.a, c.b, got, c.want)
+		}
+	}
+}
+
 func TestScore_WeightedSumRenormalized(t *testing.T) {
 	// Weights here sum to 1.0 exactly (policy dimension weights), so the
 	// renormalized result equals the raw weighted sum.

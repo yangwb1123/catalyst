@@ -201,11 +201,65 @@ export function appTestPlan(adapterTestCmd, testFiles, appName, runner) {
 }
 
 // DEFAULT_COVERAGE_THRESHOLD: the line-coverage floor judgeCoverage compares
-// against when no per-mode threshold is supplied. References .agent/policies/
-// modes.yml's balanced coverage_threshold (60). Per-mode wiring (explorer 0 /
-// engineering 80 / production +20) is a follow-up; until then this is the single
-// honest default so the framework can render PASS/FAIL once a tool actually runs.
+// against when no per-mode threshold can be resolved. References .agent/policies/
+// modes.yml's balanced coverage_threshold (60). This is the fail-SAFE fallback:
+// when project.yml / modes.yml is missing a field or fails to parse,
+// resolveCoverageThreshold returns this single honest default rather than
+// guessing — so a misconfigured project still gets a sane PASS/FAIL boundary.
 export const DEFAULT_COVERAGE_THRESHOLD = 60;
+
+// COVERAGE_THRESHOLD_CAP: the hard ceiling on a resolved threshold. modes.yml
+// states production's +20 coverage_delta "封顶 95 / cap 95"; clamp() enforces it
+// so e.g. engineering(80) + production(+20) lands at 95, not 100.
+export const COVERAGE_THRESHOLD_CAP = 95;
+
+// clamp: bound n into [lo, hi]. Pure.
+function clamp(n, lo, hi) {
+  return Math.min(hi, Math.max(lo, n));
+}
+
+// computeCoverageThreshold: the PURE mode×lifecycle resolution (no I/O), so the
+// arithmetic + fail-safe branches are unit-testable without the filesystem.
+// Inputs are the two already-parsed yml objects (parseRules shape) + the project's
+// chosen mode/lifecycle strings. Resolution:
+//   base  = modes.modes[mode].harness.coverage_threshold   (explorer 0 / balanced
+//           60 / engineering 80);
+//   delta = modes.lifecycle_modifiers[lifecycle].coverage_delta  (idea 0 / growth
+//           +10 / production +20);
+//   threshold = clamp(base + delta, 0, 95).
+// FAIL-SAFE (honesty): if mode/lifecycle is absent, or either looked-up value is
+// not a finite number, fall back to DEFAULT_COVERAGE_THRESHOLD — never a guessed
+// or partial figure. NOTE modes.yml writes the deltas as `+10`/`+20`; the minimal
+// YAML reader keeps a leading-`+` token as the STRING "+10" (its number coercion
+// is `-?\d+` only), so we Number()-coerce both operands here — Number("+10")===10,
+// Number(0)===0, Number("warn")===NaN -> fallback.
+export function computeCoverageThreshold(modes, mode, lifecycle) {
+  const base = Number(modes?.modes?.[mode]?.harness?.coverage_threshold);
+  const delta = Number(modes?.lifecycle_modifiers?.[lifecycle]?.coverage_delta);
+  if (!Number.isFinite(base) || !Number.isFinite(delta)) return DEFAULT_COVERAGE_THRESHOLD;
+  return clamp(base + delta, 0, COVERAGE_THRESHOLD_CAP);
+}
+
+// resolveCoverageThreshold: the I/O boundary for computeCoverageThreshold. Reads
+// <root>/.agent/project.yml for {mode, lifecycle}, then <root>/.agent/policies/
+// modes.yml for the base+delta, and returns the resolved line-coverage floor.
+// This is the wire from the central knob (mode×lifecycle in project.yml) into the
+// acceptance coverage criterion — replacing the hardcoded 60 that ignored both.
+// FAIL-SAFE: ANY failure to read/parse either file (missing file, unreadable,
+// malformed) -> DEFAULT_COVERAGE_THRESHOLD (60). Same for a missing field, via
+// computeCoverageThreshold. So a project without a .agent/ still gets the honest
+// default and the gate stays backward-compatible.
+export function resolveCoverageThreshold(root) {
+  let modes;
+  let project;
+  try {
+    project = parseRules(readFileSync(join(root, '.agent', 'project.yml'), 'utf8'));
+    modes = parseRules(readFileSync(join(root, '.agent', 'policies', 'modes.yml'), 'utf8'));
+  } catch {
+    return DEFAULT_COVERAGE_THRESHOLD;
+  }
+  return computeCoverageThreshold(modes, project?.mode, project?.lifecycle);
+}
 
 // coverageUnrunnable: did a coverage command fail because the tool could not
 // actually RUN here — no module / no tests / unconfigured — as opposed to

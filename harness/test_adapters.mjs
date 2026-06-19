@@ -10,7 +10,7 @@
 //      clean -> PASS, real violations -> FAIL) and probeLint over the real repo.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
@@ -29,11 +29,15 @@ import {
   versionProbeArgs,
   coverageArtifact,
   DEFAULT_COVERAGE_THRESHOLD,
+  COVERAGE_THRESHOLD_CAP,
+  computeCoverageThreshold,
+  resolveCoverageThreshold,
   appTestPlan,
   testCmdMatchesLayout,
   ADAPTER_LANG_BY_RUNNER,
 } from './adapters.mjs';
 import { judgeLint, unconfigured, probeLint, probeCoverage, PASS, FAIL, NA } from './acceptance.mjs';
+import { parseRules } from './arch/scan.mjs';
 
 // --- loadAdapter: reads each shipped adapter's lint command ------------------
 
@@ -363,6 +367,106 @@ test('judgeCoverage -> N/A when the adapter has no coverage command (bin null)',
   const v = judgeCoverage('go', null, false, null);
   assert.equal(v.status, NA);
   assert.match(v.detail, /no coverage command/);
+});
+
+// === COVERAGE THRESHOLD: mode×lifecycle resolution (central knob -> floor) ====
+// The gap this closes: the coverage criterion's threshold was hardcoded 60,
+// ignoring the project's mode (explorer 0 / balanced 60 / engineering 80) and
+// lifecycle modifier (idea 0 / growth +10 / production +20, cap 95). These pin the
+// arithmetic, the +N-string coercion the minimal YAML reader forces, and the
+// fail-safe fallback to the default when a field/file is missing or malformed.
+
+// A modes object shaped exactly like parseRules(modes.yml) returns — including the
+// quirk that `coverage_delta: +10` parses as the STRING "+10" (the reader's number
+// coercion is `-?\d+` only), so computeCoverageThreshold must Number()-coerce it.
+const MODES_FIXTURE = {
+  modes: {
+    explorer: { harness: { coverage_threshold: 0 } },
+    balanced: { harness: { coverage_threshold: 60 } },
+    engineering: { harness: { coverage_threshold: 80 } },
+  },
+  lifecycle_modifiers: {
+    idea: { coverage_delta: 0 },
+    mvp: { coverage_delta: 0 },
+    growth: { coverage_delta: '+10' },     // the leading-`+` STRING the reader yields
+    production: { coverage_delta: '+20' },
+  },
+};
+
+test('computeCoverageThreshold: base per mode (explorer 0 / balanced 60 / engineering 80)', () => {
+  // idea's delta is 0, so these isolate the per-mode BASE.
+  assert.equal(computeCoverageThreshold(MODES_FIXTURE, 'explorer', 'idea'), 0);
+  assert.equal(computeCoverageThreshold(MODES_FIXTURE, 'balanced', 'idea'), 60);
+  assert.equal(computeCoverageThreshold(MODES_FIXTURE, 'engineering', 'idea'), 80);
+});
+
+test('computeCoverageThreshold: lifecycle delta adds onto the base (the +N modifiers)', () => {
+  // balanced(60) + production(+20) = 80; explorer(0) + growth(+10) = 10.
+  assert.equal(computeCoverageThreshold(MODES_FIXTURE, 'balanced', 'production'), 80);
+  assert.equal(computeCoverageThreshold(MODES_FIXTURE, 'explorer', 'growth'), 10);
+  assert.equal(computeCoverageThreshold(MODES_FIXTURE, 'balanced', 'growth'), 70);
+  // The +N coercion is the load-bearing bit: the string "+10" must add as 10.
+  assert.equal(computeCoverageThreshold(MODES_FIXTURE, 'engineering', 'growth'), 90);
+});
+
+test('computeCoverageThreshold: clamps at the 95 cap (engineering + production -> 95, not 100)', () => {
+  assert.equal(COVERAGE_THRESHOLD_CAP, 95);
+  assert.equal(computeCoverageThreshold(MODES_FIXTURE, 'engineering', 'production'), 95, '80+20 caps at 95');
+});
+
+test('computeCoverageThreshold: FAIL-SAFE to default on missing mode/lifecycle/field', () => {
+  // Unknown mode -> base is undefined -> NaN -> fallback (never a guess).
+  assert.equal(computeCoverageThreshold(MODES_FIXTURE, 'cto', 'idea'), DEFAULT_COVERAGE_THRESHOLD, 'no harness.coverage_threshold (cto absent in fixture) -> default');
+  assert.equal(computeCoverageThreshold(MODES_FIXTURE, 'explorer', 'nope'), DEFAULT_COVERAGE_THRESHOLD, 'unknown lifecycle -> default');
+  assert.equal(computeCoverageThreshold(MODES_FIXTURE, undefined, undefined), DEFAULT_COVERAGE_THRESHOLD, 'no mode/lifecycle -> default');
+  assert.equal(computeCoverageThreshold({}, 'balanced', 'mvp'), DEFAULT_COVERAGE_THRESHOLD, 'empty modes -> default');
+  assert.equal(computeCoverageThreshold(null, 'balanced', 'mvp'), DEFAULT_COVERAGE_THRESHOLD, 'null modes -> default');
+  // A non-numeric coverage_threshold (e.g. a stray string) -> NaN -> default.
+  const bad = { modes: { balanced: { harness: { coverage_threshold: 'sixty' } } }, lifecycle_modifiers: { mvp: { coverage_delta: 0 } } };
+  assert.equal(computeCoverageThreshold(bad, 'balanced', 'mvp'), DEFAULT_COVERAGE_THRESHOLD, 'non-numeric base -> default');
+});
+
+// resolveCoverageThreshold: the I/O boundary. writeAgent stages a temp root with
+// a chosen project.yml against the REPO'S OWN modes.yml (copied in) so the on-disk
+// path exercises the real policy file — proving the `+10`/`+20` strings round-trip
+// from disk through parseRules to numbers, and the missing-file fail-safe.
+const REPO_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
+const REAL_MODES = readFileSync(join(REPO_ROOT, '.agent', 'policies', 'modes.yml'), 'utf8');
+function writeAgent(root, projectYml, modesYml = REAL_MODES) {
+  mkdirSync(join(root, '.agent', 'policies'), { recursive: true });
+  if (projectYml !== null) writeFileSync(join(root, '.agent', 'project.yml'), projectYml);
+  if (modesYml !== null) writeFileSync(join(root, '.agent', 'policies', 'modes.yml'), modesYml);
+}
+const inTmp = (fn) => { const d = mkdtempSync(join(tmpdir(), 'cov-thr-')); try { return fn(d); } finally { rmSync(d, { recursive: true, force: true }); } };
+
+test('resolveCoverageThreshold reads project.yml × modes.yml off disk (the mode×lifecycle chain)', () => {
+  // engineering×mvp -> 80+0 = 80 (mirrors this repo); explorer×mvp -> 0; and
+  // balanced×production -> 60+20 = 80, proving the on-disk `+20` string coerces.
+  assert.equal(inTmp((d) => { writeAgent(d, 'mode: engineering\nlifecycle: mvp\n'); return resolveCoverageThreshold(d); }), 80);
+  assert.equal(inTmp((d) => { writeAgent(d, 'mode: explorer\nlifecycle: mvp\n'); return resolveCoverageThreshold(d); }), 0);
+  assert.equal(inTmp((d) => { writeAgent(d, 'mode: balanced\nlifecycle: production\n'); return resolveCoverageThreshold(d); }), 80, 'balanced+production = 60+20, +20 string coerced off disk');
+  // explorer×production = 0+20 = 20, and engineering×production caps 80+20 -> 95.
+  assert.equal(inTmp((d) => { writeAgent(d, 'mode: explorer\nlifecycle: production\n'); return resolveCoverageThreshold(d); }), 20);
+  assert.equal(inTmp((d) => { writeAgent(d, 'mode: engineering\nlifecycle: production\n'); return resolveCoverageThreshold(d); }), 95, 'cap at 95');
+});
+
+test('resolveCoverageThreshold: FAIL-SAFE to 60 when project.yml or modes.yml is missing', () => {
+  assert.equal(inTmp((d) => resolveCoverageThreshold(d)), DEFAULT_COVERAGE_THRESHOLD, 'no .agent at all -> default 60');
+  assert.equal(inTmp((d) => { writeAgent(d, 'mode: engineering\nlifecycle: mvp\n', null); return resolveCoverageThreshold(d); }), DEFAULT_COVERAGE_THRESHOLD, 'modes.yml missing -> default 60');
+  assert.equal(inTmp((d) => { writeAgent(d, null); return resolveCoverageThreshold(d); }), DEFAULT_COVERAGE_THRESHOLD, 'project.yml missing -> default 60');
+});
+
+test('resolveCoverageThreshold on THIS repo agrees with computeCoverageThreshold over its OWN mode×lifecycle', () => {
+  // The live wire — host-AGNOSTIC (this test ships VERBATIM to every scaffolded
+  // project, which may be ANY mode×lifecycle, not necessarily engineering×mvp).
+  // Rather than hardcode the host's number, read the host's OWN project.yml ×
+  // modes.yml and assert the on-disk resolve equals the pure computation for that
+  // exact pair. This proves the I/O boundary wires the central knob through (not
+  // the old hardcoded floor) without assuming WHICH knob the host is set to.
+  const project = parseRules(readFileSync(join(REPO_ROOT, '.agent', 'project.yml'), 'utf8'));
+  const modes = parseRules(REAL_MODES);
+  const expected = computeCoverageThreshold(modes, project.mode, project.lifecycle);
+  assert.equal(resolveCoverageThreshold(REPO_ROOT), expected, `this repo (${project.mode}×${project.lifecycle}) resolves to its computed floor ${expected}`);
 });
 
 // --- probeCoverage over the REAL repo: honest aggregate verdict --------------
