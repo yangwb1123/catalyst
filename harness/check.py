@@ -65,6 +65,17 @@ REQUIRED_AGENT_SECTIONS = [
 
 REQUIRED_ACCEPTANCE_CRITERIA = ["test_pass", "lint", "build"]
 
+# modes.yml `priorities:` is a per-mode ranking over these three trade-off axes.
+# Each axis must be ranked 1..3 (1 = highest priority). The ranking is a WEAK
+# order: ties are legal and intentional — cto declares {speed:3, quality:1,
+# cost:3} ("quality only"; it produces no code, so speed and cost are equally
+# irrelevant at the bottom). So the invariant is NOT a strict permutation (which
+# would falsely flag cto); it is: exactly these three keys present, every value an
+# int in this set. That still catches the real drift — a missing/typo'd axis or an
+# out-of-range rank — without inventing a stricter shape than modes.yml declares.
+PRIORITY_AXES = {"speed", "quality", "cost"}
+PRIORITY_RANKS = {1, 2, 3}
+
 
 # --- helpers -----------------------------------------------------------------
 
@@ -256,6 +267,55 @@ def check_modes_router_tiers(agent_root):
     return issues
 
 
+def _priority_issues(mode_name, prio, path):
+    """Validate one mode's `priorities` block; return a list of issues.
+
+    The honest invariant (see PRIORITY_AXES/PRIORITY_RANKS): exactly the three
+    axes are present, and every rank is an int in {1,2,3}. Ties are allowed
+    (cto's "quality only" ranks speed=cost=3 on purpose), so this is NOT a
+    permutation check — only a missing/extra axis or an out-of-range rank fails.
+    Fault tolerant: a non-mapping `priorities` (or a missing one) is reported as
+    one issue, never a crash.
+    """
+    if prio is None:
+        return [f"{path}: mode '{mode_name}' is missing a 'priorities' block"]
+    if not isinstance(prio, dict):
+        return [f"{path}: mode '{mode_name}' priorities must be a mapping of "
+                f"{sorted(PRIORITY_AXES)} -> rank 1..3"]
+    if set(prio) != PRIORITY_AXES:
+        return [f"{path}: mode '{mode_name}' priorities keys {sorted(prio)} "
+                f"must be exactly {sorted(PRIORITY_AXES)}"]
+    return [
+        f"{path}: mode '{mode_name}' priority '{axis}'={rank!r} must be an "
+        f"int in {sorted(PRIORITY_RANKS)}"
+        # bool is an int subclass in Python; reject True/False explicitly so a
+        # stray `speed: true` is caught rather than silently read as rank 1.
+        for axis, rank in prio.items()
+        if isinstance(rank, bool) or not isinstance(rank, int) or rank not in PRIORITY_RANKS
+    ]
+
+
+def check_mode_priorities(agent_root):
+    """modes.yml each mode's `priorities` must rank {speed,quality,cost} 1..3.
+
+    A governance-completeness check (the trade-off declaration must be well
+    formed), NOT a routing rule: priorities express a mode's intent and their
+    EFFECT is already carried by router_default_tier + gates + evolve depth.
+    This only keeps the declaration honest (no missing/extra axis, no rank
+    outside 1..3); ties are intentional and permitted. See _priority_issues.
+    """
+    path = agent_root / "policies" / "modes.yml"
+    data, err = _load_yaml(path)
+    if err or not isinstance(data, dict):
+        return [] if err else [f"{path}: expected a YAML mapping"]
+    issues = []
+    for mode_name, mode in (data.get("modes") or {}).items():
+        if not isinstance(mode, dict):
+            continue
+        issues.extend(_priority_issues(mode_name, mode.get("priorities"), path))
+    return issues
+
+
 def check_acceptance_schema(agent_root):
     """eval/acceptance.schema.yml must parse and carry required criteria."""
     path = agent_root / "eval" / "acceptance.schema.yml"
@@ -283,6 +343,7 @@ CHECKS = [
     check_skill_refs,
     check_routing_tiers,
     check_modes_router_tiers,
+    check_mode_priorities,
     check_acceptance_schema,
 ]
 

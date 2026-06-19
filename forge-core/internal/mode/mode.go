@@ -47,6 +47,7 @@
 //     which is a harness-policy knob (harness/policies.yml `enforce:`), applied by
 //     the out-of-band harness when it RUNS a gate — not by which gates this Policy
 //     permits. forge-core decides the gate-SET; the harness decides warn/block.
+//
 // So production's require_min_gates floor is wired below; its coverage_delta/
 // enforce_floor veto is honestly left to those subsystems (documented, not dead).
 //
@@ -131,6 +132,61 @@ var evolveMaxIter = map[string]int{
 // `--max-iter 5` default, so a Policy that never set EvolveDepth (or set an
 // unrecognized one) behaves exactly as the pre-mode CLI did.
 const defaultEvolveMaxIter = 5
+
+// Priorities is a mode's declared trade-off ranking over the three axes in
+// modes.yml `priorities:` — 1 = highest priority. It is a WEAK order: ties are
+// legal and intentional (cto ranks speed=cost=3, "quality only").
+//
+// HONESTY — this is an OBSERVABILITY surface, NOT a routing input. A mode's
+// priorities state its INTENT; the EFFECT of that intent is already carried by
+// the other knobs this package and internal/routing distill — router_default_tier
+// (explorer speed=1 → Haiku, cto quality=1 → Opus), the gate-set, and evolve
+// depth. There is deliberately NO independent "priorities → budget/route weight"
+// semantics here: modes.yml does not declare that priorities DRIVE anything on
+// their own, so wiring one would invent un-declared behavior (gold-plating). v1
+// surfaces priorities so the trade-off is inspectable; a real weighting semantics
+// is a future design decision, not assumed. check.py's check_mode_priorities keeps
+// the declaration honest (well-formed ranking); this exposes it.
+type Priorities struct {
+	Speed   int // rank 1..3, 1 = highest
+	Quality int
+	Cost    int
+}
+
+// modePriorities is each mode's priorities ranking, distilled VERBATIM from
+// modes.yml modes.<mode>.priorities — the same hardcoded-distillation play as
+// internal/routing's modeDefault (forge-core is zero-dependency, so it cannot
+// parse the YAML at runtime; the table is the single Go mirror of that data,
+// kept in lockstep with modes.yml, which check.py independently validates).
+//
+//	mode         speed quality cost   (modes.yml priorities)
+//	explorer     1     3       2      speed > cost > quality
+//	balanced     2     1       3      quality first, then speed
+//	engineering  3     1       2      quality >> speed
+//	cto          3     1       3      quality only (speed=cost tied, deprioritized)
+var modePriorities = map[string]Priorities{
+	"explorer":    {Speed: 1, Quality: 3, Cost: 2},
+	"balanced":    {Speed: 2, Quality: 1, Cost: 3},
+	"engineering": {Speed: 3, Quality: 1, Cost: 2},
+	"cto":         {Speed: 3, Quality: 1, Cost: 3},
+}
+
+// PrioritiesFor returns a mode's declared trade-off ranking and whether the mode
+// is known. For an unknown/empty mode it returns the balanced ranking and false —
+// balanced is the modes.yml selector default, so an unrecognized mode surfaces the
+// default posture's priorities (consistent with routing.defaultFor's balanced
+// fallback) while ok=false lets a caller say the mode was not found.
+//
+// HONESTY: this is a read-only accessor for observability (forge route prints it).
+// It does not, and must not, feed the tier/gate/evolve decisions — those already
+// encode the trade-off; priorities are the human-readable statement of intent.
+func PrioritiesFor(mode string) (Priorities, bool) {
+	p, ok := modePriorities[mode]
+	if !ok {
+		return modePriorities["balanced"], false
+	}
+	return p, true
+}
 
 // Policy is the effective Workflow-depth decision for one (mode, lifecycle): the
 // gate-set the orchestrator may run and whether the Reviewer phase is mandatory.

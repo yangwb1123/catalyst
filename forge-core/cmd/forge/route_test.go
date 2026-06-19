@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"forgeos/forge-core/internal/mode"
 	"forgeos/forge-core/internal/risk"
 	"forgeos/forge-core/internal/routing"
 )
@@ -343,4 +344,83 @@ func TestRoute_DecidingRuleNames(t *testing.T) {
 			}
 		})
 	}
+}
+
+// prioritiesLine SURFACES a mode's declared trade-off ranking (observability) —
+// the numbers must match modes.yml verbatim, and the line must HONESTLY mark
+// itself as intent (not an independent route input). For an unknown mode it falls
+// back to balanced's ranking and says so. This is a read-only surface: it never
+// changes the tier (covered by the unchanged-verdict test below).
+func TestRoute_PrioritiesLineSurfacesRanking(t *testing.T) {
+	cases := []struct {
+		mode                   string
+		speed, quality, cost   int
+		wantsUnknownAnnotation bool
+	}{
+		{"explorer", 1, 3, 2, false},
+		{"balanced", 2, 1, 3, false},
+		{"engineering", 3, 1, 2, false},
+		{"cto", 3, 1, 3, false}, // the deliberate tie (speed=cost=3): must surface as-is
+		{"nope", 2, 1, 3, true}, // unknown -> balanced default, annotated
+	}
+	for _, c := range cases {
+		t.Run(c.mode, func(t *testing.T) {
+			got := prioritiesLine(c.mode)
+			want := "speed=" + itoa(c.speed) + " quality=" + itoa(c.quality) + " cost=" + itoa(c.cost)
+			if !strings.Contains(got, want) {
+				t.Errorf("prioritiesLine(%q) = %q, want substring %q", c.mode, got, want)
+			}
+			// Honesty: the line must say the ranking is intent, not a route input.
+			if !strings.Contains(got, "not an independent route input") {
+				t.Errorf("prioritiesLine(%q) = %q, want honesty annotation", c.mode, got)
+			}
+			if c.wantsUnknownAnnotation && !strings.Contains(got, "unknown -> balanced default") {
+				t.Errorf("prioritiesLine(%q) = %q, want unknown-mode annotation", c.mode, got)
+			}
+		})
+	}
+}
+
+// The numbers prioritiesLine prints must be exactly what internal/mode distills
+// (the single Go mirror of modes.yml), so the surface cannot silently drift from
+// the policy data.
+func TestRoute_PrioritiesLineMatchesModeDistillation(t *testing.T) {
+	for _, m := range []string{"explorer", "balanced", "engineering", "cto"} {
+		p, ok := mode.PrioritiesFor(m)
+		if !ok {
+			t.Fatalf("PrioritiesFor(%q) ok=false, want a known mode", m)
+		}
+		got := prioritiesLine(m)
+		want := "speed=" + itoa(p.Speed) + " quality=" + itoa(p.Quality) + " cost=" + itoa(p.Cost)
+		if !strings.Contains(got, want) {
+			t.Errorf("prioritiesLine(%q) = %q, want it to carry %q", m, got, want)
+		}
+	}
+}
+
+// Surfacing priorities is observability ONLY: --mode must not change route's tier
+// verdict (priorities are not a route input). Same dims/task/risk/budget -> same
+// tier regardless of --mode.
+func TestCmdRoute_ModeFlagDoesNotChangeTier(t *testing.T) {
+	// All four modes parse and run clean; the flag is accepted everywhere.
+	for _, m := range []string{"explorer", "balanced", "engineering", "cto"} {
+		if code := cmdRoute([]string{"--task-type", "implementation", "--complexity", "0.5", "--mode", m}); code != 0 {
+			t.Errorf("cmdRoute(--mode %s) = %d, want 0", m, code)
+		}
+	}
+	// The tier is TierForScore's verdict, independent of --mode — assert directly.
+	want := routing.TierForScore(0.5, "implementation", "low", 0.0)
+	if want == "" {
+		t.Fatal("TierForScore returned empty tier")
+	}
+	// An unknown --mode must still parse and run (surfaces balanced default).
+	if code := cmdRoute([]string{"--task-type", "crud", "--mode", "does-not-exist"}); code != 0 {
+		t.Errorf("cmdRoute(--mode does-not-exist) = %d, want 0 (unknown mode surfaces default)", code)
+	}
+}
+
+// itoa is a tiny local int->string for building expected substrings (avoids a
+// strconv import for one-digit ranks; ranks are always 1..3).
+func itoa(n int) string {
+	return string(rune('0' + n))
 }

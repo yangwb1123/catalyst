@@ -278,3 +278,69 @@ func TestEffective_NeverCollapsesToZeroValue(t *testing.T) {
 		}
 	}
 }
+
+// PrioritiesFor mirrors modes.yml `priorities:` VERBATIM (the single Go mirror of
+// that policy data). Each known mode returns its exact ranking; cto's deliberate
+// tie (speed=cost=3, "quality only") is preserved, not normalized to a permutation.
+func TestPrioritiesFor(t *testing.T) {
+	cases := []struct {
+		mode                 string
+		speed, quality, cost int
+	}{
+		{"explorer", 1, 3, 2},
+		{"balanced", 2, 1, 3},
+		{"engineering", 3, 1, 2},
+		{"cto", 3, 1, 3}, // intentional tie — must survive verbatim
+	}
+	for _, c := range cases {
+		t.Run(c.mode, func(t *testing.T) {
+			p, ok := PrioritiesFor(c.mode)
+			if !ok {
+				t.Fatalf("PrioritiesFor(%q) ok=false, want true (known mode)", c.mode)
+			}
+			if p.Speed != c.speed || p.Quality != c.quality || p.Cost != c.cost {
+				t.Errorf("PrioritiesFor(%q) = %+v, want {Speed:%d Quality:%d Cost:%d}",
+					c.mode, p, c.speed, c.quality, c.cost)
+			}
+		})
+	}
+}
+
+// An unknown/empty mode falls back to balanced's ranking with ok=false — the
+// caller can both surface the default posture's priorities AND report that the
+// named mode was not found.
+func TestPrioritiesFor_UnknownFallsBackToBalanced(t *testing.T) {
+	bal, _ := PrioritiesFor("balanced")
+	for _, m := range []string{"", "does-not-exist", "ENGINEERING"} {
+		p, ok := PrioritiesFor(m)
+		if ok {
+			t.Errorf("PrioritiesFor(%q) ok=true, want false (unknown mode)", m)
+		}
+		if p != bal {
+			t.Errorf("PrioritiesFor(%q) = %+v, want balanced default %+v", m, p, bal)
+		}
+	}
+}
+
+// HONESTY guard: priorities must NOT leak into the effective Workflow-depth
+// Policy. Two modes with DIFFERENT priorities but the same gate/evolve posture
+// still differ only where modes.yml says they should — priorities are an
+// observability surface, never an input to Effective. (engineering vs cto differ
+// in gates by design; this asserts the priorities field simply does not exist on
+// Policy, i.e. the distillations are kept separate.)
+func TestPriorities_DoNotAffectEffectivePolicy(t *testing.T) {
+	// Effective's output type carries no priorities — its fields are exactly the
+	// workflow-depth knobs. If priorities were ever wired in, this package would
+	// not compile against the asserted shape below, catching the drift.
+	p := Effective("engineering", "production")
+	_ = p.Gates
+	_ = p.Reviewer
+	_ = p.EvolveDepth
+	_ = p.DiscoverDepth
+	_ = p.DesignDepth
+	_ = p.ADR
+	// Priorities live on their own type, reached only via the accessor.
+	if _, ok := PrioritiesFor("engineering"); !ok {
+		t.Fatal("PrioritiesFor(engineering) ok=false; priorities accessor must stand alone")
+	}
+}

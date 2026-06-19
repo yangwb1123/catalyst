@@ -227,6 +227,96 @@ class OtherChecksTest(unittest.TestCase):
         issues = self.check.check_modes_router_tiers(self.agent_root)
         self.assertTrue(any("gemini" in i for i in issues), issues)
 
+    def test_mode_priorities_valid_permutation_passes(self):
+        # A clean ranking (a strict permutation) is valid.
+        path = self.agent_root / "policies" / "modes.yml"
+        path.write_text(
+            "id: modes\nmodes:\n  explorer:\n"
+            "    priorities: { speed: 1, quality: 3, cost: 2 }\n",
+            encoding="utf-8",
+        )
+        self.assertEqual(self.check.check_mode_priorities(self.agent_root), [])
+
+    def test_mode_priorities_ties_are_allowed(self):
+        # cto's real {speed:3, quality:1, cost:3} ("quality only") is a legal
+        # weak order — ties must NOT be flagged (this is the honest invariant,
+        # not a strict permutation).
+        path = self.agent_root / "policies" / "modes.yml"
+        path.write_text(
+            "id: modes\nmodes:\n  cto:\n"
+            "    priorities: { speed: 3, quality: 1, cost: 3 }\n",
+            encoding="utf-8",
+        )
+        self.assertEqual(self.check.check_mode_priorities(self.agent_root), [])
+
+    def test_live_modes_priorities_are_well_formed(self):
+        # Belt-and-suspenders on the REAL modes.yml: every shipped mode's
+        # priorities passes (back-compat — this repo must stay green).
+        self.assertEqual(self.check.check_mode_priorities(self.agent_root), [])
+
+    def test_mode_priorities_missing_axis_is_flagged(self):
+        path = self.agent_root / "policies" / "modes.yml"
+        path.write_text(
+            "id: modes\nmodes:\n  broken:\n"
+            "    priorities: { speed: 1, quality: 2 }\n",  # cost missing
+            encoding="utf-8",
+        )
+        issues = self.check.check_mode_priorities(self.agent_root)
+        self.assertTrue(any("broken" in i and "cost" in i for i in issues), issues)
+
+    def test_mode_priorities_out_of_range_rank_is_flagged(self):
+        path = self.agent_root / "policies" / "modes.yml"
+        path.write_text(
+            "id: modes\nmodes:\n  broken:\n"
+            "    priorities: { speed: 0, quality: 1, cost: 2 }\n",  # 0 invalid
+            encoding="utf-8",
+        )
+        issues = self.check.check_mode_priorities(self.agent_root)
+        self.assertTrue(any("broken" in i and "speed" in i for i in issues), issues)
+
+    def test_mode_priorities_non_int_rank_is_flagged(self):
+        # A non-int rank (and a bool, which is an int subclass) must be caught.
+        path = self.agent_root / "policies" / "modes.yml"
+        path.write_text(
+            "id: modes\nmodes:\n  broken:\n"
+            "    priorities: { speed: high, quality: 1, cost: 2 }\n",
+            encoding="utf-8",
+        )
+        issues = self.check.check_mode_priorities(self.agent_root)
+        self.assertTrue(any("broken" in i and "speed" in i for i in issues), issues)
+
+    def test_mode_priorities_extra_axis_is_flagged(self):
+        path = self.agent_root / "policies" / "modes.yml"
+        path.write_text(
+            "id: modes\nmodes:\n  broken:\n"
+            "    priorities: { speed: 1, quality: 2, cost: 3, latency: 1 }\n",
+            encoding="utf-8",
+        )
+        issues = self.check.check_mode_priorities(self.agent_root)
+        self.assertTrue(any("broken" in i for i in issues), issues)
+
+    def test_mode_priorities_missing_block_is_flagged_not_crash(self):
+        # Fault tolerance: a mode with NO priorities block reports an issue and
+        # does not crash the check.
+        path = self.agent_root / "policies" / "modes.yml"
+        path.write_text(
+            "id: modes\nmodes:\n  broken:\n    summary: no priorities here\n",
+            encoding="utf-8",
+        )
+        issues = self.check.check_mode_priorities(self.agent_root)
+        self.assertTrue(any("broken" in i and "priorities" in i for i in issues), issues)
+
+    def test_mode_priorities_non_mapping_is_flagged_not_crash(self):
+        # A scalar/list `priorities` previously risked a crash on set()/items();
+        # it must be a clean issue instead.
+        path = self.agent_root / "policies" / "modes.yml"
+        path.write_text(
+            "id: modes\nmodes:\n  broken:\n    priorities: fast\n",
+            encoding="utf-8",
+        )
+        issues = self.check.check_mode_priorities(self.agent_root)
+        self.assertTrue(any("broken" in i for i in issues), issues)
+
     def test_detects_missing_acceptance_criteria(self):
         path = self.agent_root / "eval" / "acceptance.schema.yml"
         path.write_text(

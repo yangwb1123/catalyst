@@ -17,6 +17,7 @@ import (
 	"strings"
 
 	"forgeos/forge-core/internal/gate"
+	"forgeos/forge-core/internal/mode"
 	"forgeos/forge-core/internal/risk"
 	"forgeos/forge-core/internal/routing"
 )
@@ -48,6 +49,7 @@ type routeOpts struct {
 	complexity, riskScore, security float64
 	dependency, context, business   float64
 	taskType, risk                  string
+	mode                            string // --mode: engineering posture, for surfacing its priorities (observability)
 	budget                          float64
 	scorecard                       string
 	sig                             risk.Signals // declared change features (risk classifier input)
@@ -85,9 +87,28 @@ func cmdRoute(args []string) int {
 		fmt.Printf("  auto-features (path heuristic): %s\n", strings.Join(o.autoReasons, "; "))
 	}
 	fmt.Printf("  %s\n", riskLine)
+	fmt.Printf("  %s\n", prioritiesLine(o.mode))
 	picked, reason := historyDecision(tier, o.taskType, o.scorecard)
 	fmt.Printf("  history: model=%s — %s\n", picked, reason)
 	return 0
+}
+
+// prioritiesLine renders the --mode's declared trade-off ranking as an observable
+// report line. HONESTY: priorities are surfaced here ONLY to make a mode's intent
+// inspectable — they did NOT drive this route's tier. Their effect is already
+// carried upstream by router_default_tier + gates + evolve depth (see
+// internal/mode.Priorities); an independent "priorities → route weighting"
+// semantics is undeclared in modes.yml and deliberately not wired. An unknown mode
+// surfaces balanced's ranking (the selector default) and says so.
+func prioritiesLine(modeName string) string {
+	p, ok := mode.PrioritiesFor(modeName)
+	suffix := " (trade-off intent; already reflected in tier/gates/evolve — not an independent route input)"
+	if !ok {
+		return fmt.Sprintf("priorities[mode=%q unknown -> balanced default]: "+
+			"speed=%d quality=%d cost=%d%s", modeName, p.Speed, p.Quality, p.Cost, suffix)
+	}
+	return fmt.Sprintf("priorities[mode=%s]: speed=%d quality=%d cost=%d%s",
+		modeName, p.Speed, p.Quality, p.Cost, suffix)
 }
 
 // resolveRisk turns the parsed options into the EFFECTIVE risk level fed to
@@ -166,6 +187,7 @@ func parseRouteFlags(args []string) (routeOpts, bool) {
 	fs.Float64Var(&o.context, "context", 0, "context-size dimension 0..1")
 	fs.Float64Var(&o.business, "business", 0, "business-impact dimension 0..1")
 	fs.StringVar(&o.taskType, "task-type", "", "task type (e.g. crud|implementation|security|payment|architecture)")
+	fs.StringVar(&o.mode, "mode", "balanced", "engineering posture (explorer|balanced|engineering|cto); surfaces its priorities — observability only")
 	fs.StringVar(&o.risk, "risk", "low", "manual risk override: low|medium|high|critical (raised to classifier verdict if features given)")
 	fs.Float64Var(&o.budget, "budget", 0, "spend ratio (cumulative_spend/budget_cap), 0..1+")
 	fs.StringVar(&o.scorecard, "scorecard", defaultScorecardPath, "Eval Engine scorecards.json for history-tiebreak (missing file = cold start)")
