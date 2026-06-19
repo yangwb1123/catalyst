@@ -108,15 +108,18 @@ func (d DryRunExecutor) logf(format string, args ...any) {
 // ModePolicy is the central knob's Workflow-depth output (mode × lifecycle,
 // distilled by internal/mode): it FILTERS what Run actually executes — a gate
 // phase runs only the intersection of its required_gates with the policy's
-// gate-set, and a phase gated on the reviewer (RequiredWhen) is SKIPPED when the
-// policy makes the reviewer optional (explorer). BACKWARD-COMPATIBILITY CONTRACT:
-// the ZERO-VALUE ModePolicy means "no mode gating" — Run executes the workflow
-// UNFILTERED (every required_gate, no phase skipped), byte-for-byte as before
-// this field existed. Only an explicitly injected non-zero policy filters; cmd
-// injects mode.Effective(mode, lifecycle). SAFETY: because mode.Effective forces
-// the full policy under the production lifecycle (and for any unknown input), a
-// production run filters to ALL gates even when mode=explorer — a loose mode can
-// never relax enforcement here.
+// gate-set, a phase gated on the reviewer (RequiredWhen) is SKIPPED when the
+// policy makes the reviewer optional (explorer), the whole DISCOVER stage is
+// elided when DiscoverDepth=="skip" (explorer), and a design-stage writes_adr
+// phase NARRATES whether an ADR is required (Policy.ADR). BACKWARD-COMPATIBILITY
+// CONTRACT: the ZERO-VALUE ModePolicy means "no mode gating" — Run executes the
+// workflow UNFILTERED (every required_gate, no phase skipped, no stage elided),
+// byte-for-byte as before this field existed. Only an explicitly injected non-zero
+// policy filters; cmd injects mode.Effective(mode, lifecycle). SAFETY: because
+// mode.Effective forces the full policy under the production lifecycle (and for any
+// unknown input), a production run filters to ALL gates, runs FULL discovery, and
+// requires an ADR even when mode=explorer — a loose mode can never relax
+// enforcement here.
 // MaxLoopBack is the hard ceiling on DIRECTED LOOP-BACKS triggered by gate
 // phases that declare on_fail:{action:loop_back} — a doom-loop backstop, never
 // the goal. Each time such a phase fails and the runtime jumps back to its
@@ -166,6 +169,11 @@ func (e Engine) Run(wf asset.Workflow, mode string) error {
 // carry no on_fail, a red gate aborts on the spot exactly as before — directed
 // loop-back is opt-in on BOTH the asset (on_fail) and the engine (budget) side.
 func (e Engine) RunFrom(wf asset.Workflow, mode string, start int) error {
+	if e.discoverStageSkipped(wf) {
+		e.logf("discover stage skipped (mode gating: explorer skips discovery)")
+		e.reportStop(wf)
+		return nil
+	}
 	loopBacks := 0
 	for i := start; i < len(wf.Phases); i++ {
 		p := wf.Phases[i]
@@ -184,6 +192,7 @@ func (e Engine) RunFrom(wf asset.Workflow, mode string, start int) error {
 			e.logf("phase %s skipped (mode gating: reviewer off)", p.Name)
 			continue
 		}
+		e.narrateADR(wf, p)
 		if err := e.runAgentPhase(p, mode); err != nil {
 			return err
 		}
@@ -274,6 +283,48 @@ func (e Engine) skipByMode(p asset.Phase) bool {
 		return false
 	}
 	return requiredWhenKey(p.RequiredWhen) == "reviewer" && !e.ModePolicy.Reviewer
+}
+
+// discoverStageSkipped reports whether the WHOLE discover stage should be elided
+// for this run — true iff gating is active AND this is the discover stage AND the
+// policy's DiscoverDepth is "skip" (explorer's "go straight to build"). It gates
+// the entire stage, not a single phase: discover.yml's phases are all agent phases,
+// so when skip fires RunFrom runs none of them. With gating inactive (zero policy)
+// it is always false — full back-compat, the stage runs unfiltered. light/full
+// (or any non-discover stage) also return false, so only the explicit explorer
+// skip suppresses the stage.
+//
+// HONESTY: this is the gating DECISION — the runtime does not run the discovery
+// phases and says so; under the dry-run executor it cannot prove the skipped
+// discovery was safe to elide (that judgement is a real agent's). It does NOT
+// pretend discovery ran or that real work was skipped — only that the explorer
+// policy elects to skip the stage.
+func (e Engine) discoverStageSkipped(wf asset.Workflow) bool {
+	return e.gatingActive() && wf.Stage == "discover" && e.ModePolicy.DiscoverSkipped()
+}
+
+// narrateADR reports the ADR gating verdict for a design-stage phase that declares
+// writes_adr (design.yml's solution-architect). It NARRATES only — when the mode
+// policy requires an ADR (Policy.ADR, e.g. engineering/cto) it logs that an ADR is
+// required; otherwise (explorer/balanced) it logs that an ADR is not required and
+// will be skipped. It is a no-op unless gating is active, this is the design stage,
+// and the phase actually carries writes_adr — so it never fires for build/discover
+// or for a phase with no ADR marker (back-compat: zero policy narrates nothing).
+//
+// HONESTY: under the dry-run executor this is the gating DECISION + narration —
+// whether an ADR is required, NOT a real ADR written (design.yml enables the ADR
+// target dir from v2; a real agent writes the document). The runtime does not
+// pretend an ADR was authored; it reports the required/not-required verdict the
+// mode policy dictates.
+func (e Engine) narrateADR(wf asset.Workflow, p asset.Phase) {
+	if !e.gatingActive() || wf.Stage != "design" || p.WritesADR == nil {
+		return
+	}
+	if e.ModePolicy.ADR {
+		e.logf("phase %s: ADR required (mode gating: design writes an ADR) — narrated; real ADR needs a live agent", p.Name)
+		return
+	}
+	e.logf("phase %s: ADR not required (mode gating: explorer/balanced skip ADR) — narrated", p.Name)
 }
 
 // requiredWhenKey extracts a RequiredWhen's trailing identifier — the part after

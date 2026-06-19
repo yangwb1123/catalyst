@@ -222,8 +222,9 @@ func execEngine(wf asset.Workflow, o runOpts) int {
 		MaxLoopBack: maxLoopBack,
 		ModePolicy:  pol,
 	}
-	fmt.Printf("forge run: stage=%s mode=%s lifecycle=%s executor=%s gates=%v reviewer=%v (%d phases)\n",
-		wf.Stage, o.mode, lifecycle, o.executor, pol.Gates, pol.Reviewer, len(wf.Phases))
+	fmt.Printf("forge run: stage=%s mode=%s lifecycle=%s executor=%s gates=%v reviewer=%v discover=%s design=%s adr=%v (%d phases)\n",
+		wf.Stage, o.mode, lifecycle, o.executor, pol.Gates, pol.Reviewer,
+		pol.DiscoverDepth, pol.DesignDepth, pol.ADR, len(wf.Phases))
 	if err := eng.Run(wf, o.mode); err != nil {
 		fmt.Fprintf(os.Stderr, "forge run: %v\n", err)
 		return 1

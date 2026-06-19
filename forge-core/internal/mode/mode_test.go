@@ -17,50 +17,55 @@ func sortedGates(p Policy) string {
 
 const allGatesSorted = "arch,build,complexity,lint,security,test"
 
-// effectiveCase is one Effective expectation: the (mode, lifecycle) input and
-// the gate-set + reviewer + evolve-depth it must distill to. The table is
-// package-scope so the test body stays a thin loop (arch-check function-length
-// budget).
+// effectiveCase is one Effective expectation: the (mode, lifecycle) input and the
+// full distilled policy — gate-set + reviewer + evolve-depth + discover/design
+// depth + adr. The table is package-scope so the test body stays a thin loop
+// (arch-check function-length budget).
 type effectiveCase struct {
-	name       string
-	mode       string
-	lifecycle  string
-	wantGates  string // sorted, comma-joined
-	wantRev    bool
-	wantEvolve string // EvolveDepth label
+	name         string
+	mode         string
+	lifecycle    string
+	wantGates    string // sorted, comma-joined
+	wantRev      bool
+	wantEvolve   string // EvolveDepth label
+	wantDiscover string // DiscoverDepth label
+	wantDesign   string // DesignDepth label
+	wantADR      bool
 }
 
 var effectiveCases = []effectiveCase{
 	// ── mode baselines under the freest lifecycle (idea) — the mode shows through ──
 	// explorer is the headline lean posture: only "does it run", no reviewer,
-	// shallowest (opportunistic) evolve loop.
-	{"explorer/idea lean set", "explorer", "idea", "build,lint", false, EvolveOpportunistic},
-	{"balanced/idea", "balanced", "idea", "build,complexity,lint,test", true, EvolveStandard},
-	{"engineering/idea full", "engineering", "idea", allGatesSorted, true, EvolveThorough},
-	// cto produces no code → empty gate-set, reviewer ON (reviews docs), advisory evolve.
-	{"cto/idea no code gates", "cto", "idea", "", true, EvolveAdvisory},
+	// shallowest (opportunistic) evolve loop, SKIPS discover, light design, no ADR.
+	{"explorer/idea lean set", "explorer", "idea", "build,lint", false, EvolveOpportunistic, DiscoverSkip, DesignLight, false},
+	{"balanced/idea", "balanced", "idea", "build,complexity,lint,test", true, EvolveStandard, DiscoverLight, DesignStandard, false},
+	{"engineering/idea full", "engineering", "idea", allGatesSorted, true, EvolveThorough, DiscoverFull, DesignFull, true},
+	// cto produces no code → empty gate-set, reviewer ON (reviews docs), advisory
+	// evolve, but FULL discover/design + ADR (it IS the analysis-producing mode).
+	{"cto/idea no code gates", "cto", "idea", "", true, EvolveAdvisory, DiscoverFull, DesignFull, true},
 
 	// ── lifecycle tightens the floor (can only ADD gates / force reviewer) ──
-	// idea/mvp/growth impose NO evolve floor, so the mode's depth passes through.
-	{"explorer/mvp adds build+lint floor", "explorer", "mvp", "build,lint", false, EvolveOpportunistic},
-	{"explorer/growth raises floor", "explorer", "growth", "build,complexity,lint,test", false, EvolveOpportunistic},
+	// idea/mvp/growth impose NO evolve/discover/design/adr floor → mode passes through.
+	{"explorer/mvp adds build+lint floor", "explorer", "mvp", "build,lint", false, EvolveOpportunistic, DiscoverSkip, DesignLight, false},
+	{"explorer/growth raises gate floor only", "explorer", "growth", "build,complexity,lint,test", false, EvolveOpportunistic, DiscoverSkip, DesignLight, false},
 
-	// ── ★ production override: safety veto forces FULL gates + reviewer + ≥standard evolve ★ ──
-	// explorer is the loosest mode; production STILL forces every gate + reviewer
-	// AND raises its opportunistic loop to standard (no prototype-shallow loop in prod).
-	{"explorer/production OVERRIDE full", "explorer", "production", allGatesSorted, true, EvolveStandard},
-	{"balanced/production full", "balanced", "production", allGatesSorted, true, EvolveStandard},
-	// engineering is already thorough (≥ standard): the floor RAISES, never caps down.
-	{"engineering/production stays thorough", "engineering", "production", allGatesSorted, true, EvolveThorough},
-	// cto's advisory is raised to the standard floor under production.
-	{"cto/production full", "cto", "production", allGatesSorted, true, EvolveStandard},
+	// ── ★ production override: safety veto forces FULL everything ★ ──
+	// explorer is the loosest mode; production STILL forces every gate + reviewer,
+	// raises opportunistic→standard, AND raises discover skip→full, design light→full,
+	// ADR false→true (no prototype skip-discover / no-ADR in prod).
+	{"explorer/production OVERRIDE full", "explorer", "production", allGatesSorted, true, EvolveStandard, DiscoverFull, DesignFull, true},
+	{"balanced/production full", "balanced", "production", allGatesSorted, true, EvolveStandard, DiscoverFull, DesignFull, true},
+	// engineering is already thorough/full/full/true: the floor RAISES, never caps.
+	{"engineering/production stays thorough", "engineering", "production", allGatesSorted, true, EvolveThorough, DiscoverFull, DesignFull, true},
+	// cto's advisory is raised to standard; discover/design/adr already full/full/true.
+	{"cto/production full", "cto", "production", allGatesSorted, true, EvolveStandard, DiscoverFull, DesignFull, true},
 
-	// ── ★ fail-safe: unknown/empty input over-enforces (full + reviewer + standard evolve) ★ ──
-	{"unknown mode → full", "bogus-mode", "mvp", allGatesSorted, true, EvolveStandard},
-	{"empty mode → full", "", "mvp", allGatesSorted, true, EvolveStandard},
-	{"unknown lifecycle → full", "explorer", "bogus-lifecycle", allGatesSorted, true, EvolveStandard},
-	{"empty lifecycle → full", "explorer", "", allGatesSorted, true, EvolveStandard},
-	{"both unknown → full", "bogus", "bogus", allGatesSorted, true, EvolveStandard},
+	// ── ★ fail-safe: unknown/empty input over-enforces (full everything, std evolve) ★ ──
+	{"unknown mode → full", "bogus-mode", "mvp", allGatesSorted, true, EvolveStandard, DiscoverFull, DesignFull, true},
+	{"empty mode → full", "", "mvp", allGatesSorted, true, EvolveStandard, DiscoverFull, DesignFull, true},
+	{"unknown lifecycle → full", "explorer", "bogus-lifecycle", allGatesSorted, true, EvolveStandard, DiscoverFull, DesignFull, true},
+	{"empty lifecycle → full", "explorer", "", allGatesSorted, true, EvolveStandard, DiscoverFull, DesignFull, true},
+	{"both unknown → full", "bogus", "bogus", allGatesSorted, true, EvolveStandard, DiscoverFull, DesignFull, true},
 }
 
 func TestEffective(t *testing.T) {
@@ -75,6 +80,15 @@ func TestEffective(t *testing.T) {
 			}
 			if got.EvolveDepth != c.wantEvolve {
 				t.Errorf("Effective(%q,%q) evolve-depth = %q, want %q", c.mode, c.lifecycle, got.EvolveDepth, c.wantEvolve)
+			}
+			if got.DiscoverDepth != c.wantDiscover {
+				t.Errorf("Effective(%q,%q) discover-depth = %q, want %q", c.mode, c.lifecycle, got.DiscoverDepth, c.wantDiscover)
+			}
+			if got.DesignDepth != c.wantDesign {
+				t.Errorf("Effective(%q,%q) design-depth = %q, want %q", c.mode, c.lifecycle, got.DesignDepth, c.wantDesign)
+			}
+			if got.ADR != c.wantADR {
+				t.Errorf("Effective(%q,%q) adr = %v, want %v", c.mode, c.lifecycle, got.ADR, c.wantADR)
 			}
 		})
 	}
@@ -96,6 +110,60 @@ func TestEffective_ProductionOverridesLooseMode(t *testing.T) {
 	// And it must be STRICTLY more than bare explorer (the override actually fired).
 	if lean := Effective("explorer", "idea"); lean.Allows(GateSecurity) {
 		t.Error("sanity: bare explorer should NOT allow security; the production case proves the override added it")
+	}
+}
+
+// DiscoverSkipped is the orchestrator's switch for eliding the discover stage: it
+// is true ONLY for the explicit "skip" depth (explorer), and false for light/full
+// and the zero value — so a zero-value Policy (no gating) never skips the stage.
+func TestPolicy_DiscoverSkipped(t *testing.T) {
+	cases := []struct {
+		depth string
+		want  bool
+	}{
+		{DiscoverSkip, true},
+		{DiscoverLight, false},
+		{DiscoverFull, false},
+		{"", false},      // zero-value Policy → never skip (back-compat)
+		{"bogus", false}, // unknown → never skip (fail-safe: run the stage)
+	}
+	for _, c := range cases {
+		if got := (Policy{DiscoverDepth: c.depth}).DiscoverSkipped(); got != c.want {
+			t.Errorf("Policy{DiscoverDepth:%q}.DiscoverSkipped() = %v, want %v", c.depth, got, c.want)
+		}
+	}
+	// End-to-end: explorer skips, the others do not.
+	if !Effective("explorer", "idea").DiscoverSkipped() {
+		t.Error("explorer/idea must skip discovery")
+	}
+	for _, m := range []string{"balanced", "engineering", "cto"} {
+		if Effective(m, "idea").DiscoverSkipped() {
+			t.Errorf("%s/idea must NOT skip discovery (light/full)", m)
+		}
+	}
+}
+
+// ★ The production override extends to discover/design/adr the same way it does
+// gates: explorer's skip-discover / light-design / no-ADR is RAISED to full / full
+// / true under production — a loose prototype posture cannot apply in prod. And
+// engineering's already-full baseline is not capped down (the floor only raises).
+func TestEffective_ProductionRaisesDiscoverDesignADR(t *testing.T) {
+	p := Effective("explorer", "production")
+	if p.DiscoverSkipped() {
+		t.Error("explorer+production must NOT skip discovery (production restores the stage)")
+	}
+	if p.DiscoverDepth != DiscoverFull || p.DesignDepth != DesignFull || !p.ADR {
+		t.Errorf("explorer+production = discover %q/design %q/adr %v, want full/full/true",
+			p.DiscoverDepth, p.DesignDepth, p.ADR)
+	}
+	// Sanity: bare explorer is the loose posture, proving production actually raised it.
+	if lean := Effective("explorer", "idea"); !lean.DiscoverSkipped() || lean.ADR {
+		t.Errorf("bare explorer should skip discovery and write no ADR; got discover=%q adr=%v",
+			lean.DiscoverDepth, lean.ADR)
+	}
+	// engineering already full/full/true: the floor raises, never lowers.
+	if e := Effective("engineering", "production"); e.DiscoverDepth != DiscoverFull || !e.ADR {
+		t.Errorf("engineering+production must stay full discovery + ADR; got discover=%q adr=%v", e.DiscoverDepth, e.ADR)
 	}
 }
 

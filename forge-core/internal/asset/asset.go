@@ -47,14 +47,36 @@ import (
 // and routing.TierFor's verdict, so a phase that writes model_tier: haiku on the
 // reviewer/architect still routes to Opus. Honest scope: under the dry-run executor
 // the tier is narrative/prompt-fidelity only — no model is actually invoked.
+//
+// WritesADR carries an OPTIONAL marker that THIS phase produces an Architecture
+// Decision Record (design.yml's solution-architect: writes_adr: {condition, target}).
+// It is a POINTER so a phase without the key loads as nil — the fault-tolerant
+// default the orchestrator reads as "this phase writes no ADR". The orchestrator
+// acts on it only for the design stage: when a phase declares writes_adr it NARRATES
+// whether an ADR is required under the mode policy (Policy.ADR). Honest scope: under
+// the dry-run executor this is a gating-decision narration — whether an ADR is
+// required, not a real ADR written; that needs a real agent (the target dir is
+// enabled from v2 per design.yml).
 type Phase struct {
-	Name          string   `json:"name"`
-	Agent         string   `json:"agent"`
-	Readonly      bool     `json:"readonly"`
-	RequiredGates []string `json:"required_gates"`
-	RequiredWhen  string   `json:"required_when"`
-	OnFail        *OnFail  `json:"on_fail"`
-	ModelTier     string   `json:"model_tier"`
+	Name          string     `json:"name"`
+	Agent         string     `json:"agent"`
+	Readonly      bool       `json:"readonly"`
+	RequiredGates []string   `json:"required_gates"`
+	RequiredWhen  string     `json:"required_when"`
+	OnFail        *OnFail    `json:"on_fail"`
+	ModelTier     string     `json:"model_tier"`
+	WritesADR     *WritesADR `json:"writes_adr"`
+}
+
+// WritesADR is the subset of a phase's writes_adr block forge-core reads:
+// Condition is the human-readable rule the asset authored (design.yml: "mode in
+// [engineering, cto]"), Target the destination dir (docs/adr/, enabled from v2).
+// Its mere PRESENCE (a non-nil pointer) is the signal the orchestrator keys on —
+// this phase is the one that would write an ADR — while the actual required/not
+// verdict comes from the mode Policy, not from re-parsing Condition here.
+type WritesADR struct {
+	Condition string `json:"condition"`
+	Target    string `json:"target"`
 }
 
 // OnFail is a gate phase's directed loop-back directive: when its gates FAIL,

@@ -123,6 +123,42 @@ func TestLoadWorkflowJSON_ModelTierAbsentIsEmpty(t *testing.T) {
 	}
 }
 
+// WritesADR is parsed as a non-nil pointer ONLY for a phase that declares the
+// writes_adr block (design.yml's solution-architect: {condition, target}); a phase
+// without it loads as nil — the fault-tolerant default the orchestrator reads as
+// "this phase writes no ADR". Its PRESENCE is the signal the runtime keys on.
+func TestLoadWorkflowJSON_WritesADR(t *testing.T) {
+	wf, err := LoadWorkflowJSON([]byte(`{"stage":"design","phases":[
+		{"name":"solution-architect","agent":"architect","writes_adr":{"condition":"mode in [engineering, cto]","target":"docs/adr/"}},
+		{"name":"proposal-generator","agent":"cto"}
+	]}`))
+	if err != nil {
+		t.Fatalf("load writes_adr doc: %v", err)
+	}
+	adr := wf.Phases[0].WritesADR
+	if adr == nil {
+		t.Fatal("solution-architect must carry a non-nil WritesADR")
+	}
+	if adr.Condition != "mode in [engineering, cto]" || adr.Target != "docs/adr/" {
+		t.Errorf("WritesADR = %+v, want condition+target preserved", *adr)
+	}
+	// A phase that omits writes_adr loads as nil (no ADR marker).
+	if wf.Phases[1].WritesADR != nil {
+		t.Errorf("proposal-generator must have nil WritesADR; got %+v", *wf.Phases[1].WritesADR)
+	}
+}
+
+// Back-compat: the committed build.json fixture authors NO writes_adr, so every
+// phase must load with a nil WritesADR — the field is purely additive.
+func TestLoadWorkflowJSON_WritesADRAbsentIsNil(t *testing.T) {
+	wf := loadFixture(t)
+	for i, p := range wf.Phases {
+		if p.WritesADR != nil {
+			t.Errorf("phase[%d] (%s) WritesADR = %+v, want nil (fixture has no writes_adr)", i, p.Name, *p.WritesADR)
+		}
+	}
+}
+
 // OnFail is parsed for the gate phases that declare it (harness-gates/reviewer/qa
 // in build.yml all loop_back to implementer) and is nil for phases without the key
 // (planner/implementer) — the fault-tolerant default the orchestrator reads as
