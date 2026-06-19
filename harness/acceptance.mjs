@@ -193,6 +193,19 @@ export function probeNotApplicable() {
   ];
 }
 
+// architecture == clean  <-  clean-architecture DEPENDENCY DIRECTION + size
+// budgets (harness/arch/arch-check.mjs: layering / package / fan-in / cognitive).
+// Distinct from arch_violations (check.py governance integrity): this FAILs when
+// e.g. a domain package imports infrastructure (an inner layer imports an outer).
+export function probeArchitecture() {
+  const r = run('node', [join(HARNESS_DIR, 'arch', 'arch-check.mjs')]);
+  return result(
+    'architecture',
+    r.ok ? PASS : FAIL,
+    r.ok ? 'arch-check: layering/package/fan-in/cognitive clean' : `arch-check exit ${r.code}`,
+  );
+}
+
 // --- aggregation + verdict ---------------------------------------------------
 
 // Gather every criterion result. Order mirrors the acceptance schema.
@@ -202,6 +215,7 @@ export function collect() {
     probeAppTests(),
     probeComplexity(),
     probeArch(),
+    probeArchitecture(),
     ...probeNotApplicable(),
   ];
 }
@@ -210,7 +224,7 @@ export function collect() {
 // for acceptance. Unlike the N/A criteria, these are backed by a real check, so
 // "not FAIL" is not enough — a missing or non-PASS load-bearing criterion is a
 // hard reject (e.g. a probe silently dropped, or surfaced as N/A by mistake).
-export const LOAD_BEARING = ['test_pass', 'app_test_pass', 'complexity_violations', 'arch_violations'];
+export const LOAD_BEARING = ['test_pass', 'app_test_pass', 'complexity_violations', 'arch_violations', 'architecture'];
 
 // PURE verdict function (no I/O) so it is directly unit-testable.
 //

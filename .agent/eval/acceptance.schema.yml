@@ -62,12 +62,18 @@ criteria:
     expect: 0
     required: true
     source: harness
-  arch_violations:         # 架构违规数(循环依赖/禁改区/依赖方向)== 0
+  arch_violations:         # 治理资产完整性违规数(坏 agent/skill 引用、路由档位)== 0
     type: int
     operator: "=="
     expect: 0
     required: true
-    source: harness
+    source: harness        # harness/check.py — governance-asset integrity
+  architecture:            # 架构违规数(依赖方向/包大小/扇入/认知负载)== 0
+    type: int
+    operator: "=="
+    expect: 0
+    required: true
+    source: harness        # harness/arch/arch-check.mjs — clean-arch ENFORCED, not just declared
   security_findings:       # 安全发现数(security-review / 依赖扫描)== 0
     type: int
     operator: "=="
@@ -99,5 +105,6 @@ example:
     build: pass
     complexity_violations: 0
     arch_violations: 0
+    architecture: 0
     security_findings: 0
   decision: pass
