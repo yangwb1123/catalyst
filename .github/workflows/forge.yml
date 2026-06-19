@@ -1,0 +1,39 @@
+# ForgeOS CI — runs `forge accept` (the Stop gate) on every push / PR.
+# Dogfood: the SAME harness that gates new projects gates ForgeOS itself.
+# This is the governance loop closing on its own author.
+name: forge accept
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+
+jobs:
+  accept:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+
+      - name: Install check.py dependency (PyYAML)
+        run: python3 -m pip install --quiet pyyaml
+
+      - name: forge accept (Stop gate — aggregates gate/arch-check/check/secret-scan/tests)
+        run: node harness/acceptance.mjs
+
+      - name: forge-core tests (zero-dep Go runtime)
+        run: go -C forge-core test ./...
