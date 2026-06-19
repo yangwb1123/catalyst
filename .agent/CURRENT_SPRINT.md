@@ -27,6 +27,9 @@ forge-core **11 Go 包**纯 stdlib 零依赖;arch-check **8 检查** + secret-sc
 ## Sprint 7 (✅ 完成) — 中枢旋钮第三块:Workflow 深度 mode-gating
 `mode×lifecycle` 现在真正驱动**三处**(Router ✅ + Harness ✅ + **Workflow 深度 ✅**):新 `forge-core/internal/mode`(distill modes.yml)按 mode 过滤 gate-set + skip reviewer phase。**★安全★ production lifecycle 一票否决强制全执法**(explorer+production 实跑 = 全 6 gate + reviewer,override 不可被宽松 mode 绕过);fail-safe 未知输入→全开(绝不漏执法);零值=全开向后兼容。fresh reviewer APPROVE(empirical 坐实 override 与 fail-safe)。仅 gate-set+reviewer 维度;discover/adr/evolve 深度诚实标注后续。
 
+## Sprint 8 (✅ 完成) — 中枢旋钮迁移:explorer→engineering 状态迁移
+`forge migrate --to engineering`:vision 的「创业→企业」治理升级。读 modes.yml 的 migration → 收紧 harness(全 6 gate / coverage 80 / block)+ 抬 router floor(haiku→sonnet)+ 启用 workflow + **派生 5 补债任务**(backfill-tests / add-ci / add-monitoring / refactor-oversized / security-pass)。**默认 dry**(打印 plan 不写文件),`--apply` 才改 project.yml mode + 注入 ROADMAP。fresh reviewer SHIP(stress-test project.yml 多格式保留 + Plan 逐行对齐 modes.yml + apply-ordering 安全)。新 `internal/migrate` 纯叶子(零 import)。
+
 ## 下一前沿(需基础设施 / 真点火,非本环境可完整验证)
 - **真点火** `--agent-cmd=claude`:机制+测试已就位,差凭证/预算/防递归(方向①②③的「自动采集源 / 真语义发现」随此解锁)
 - **v3 基础设施**:SCA/CVE 漏洞库(⑤)· embedding 语义检索(③)· 跨厂商池 LiteLLM · Firecracker 沙箱 · Web UI

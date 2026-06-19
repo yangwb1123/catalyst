@@ -56,6 +56,8 @@ func run(args []string) int {
 		return cmdEvolve(rest)
 	case "route":
 		return cmdRoute(rest)
+	case "migrate":
+		return cmdMigrate(rest)
 	case "-h", "--help", "help":
 		usage()
 		return 0
@@ -73,6 +75,7 @@ usage:
   forge run    <workflow> [--mode balanced] [--lifecycle mvp] [--executor dry|command] [--agent-cmd claude] [--timeout 0] [--max-retries 0] [--approved] [--root DIR]
   forge evolve <workflow> [--mode balanced] [--lifecycle mvp] [--max-iter 5] [--executor dry|command] [--agent-cmd claude] [--timeout 0] [--max-retries 0] [--resume] [--root DIR]
   forge route  [--complexity F] [--risk-score F] [--security F] [--dependency F] [--context F] [--business F] [--task-type T] [--risk low|medium|high|critical] [--budget F] [--scorecard PATH]
+  forge migrate --to engineering [--apply] [--root DIR]
   forge gate   [--root DIR]
   forge check  [--root DIR]
   forge accept [--root DIR]
