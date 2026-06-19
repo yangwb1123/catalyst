@@ -1,0 +1,114 @@
+# ForgeOS — Model Routing Policy / 模型路由策略
+# 状态: v1 数据资产(声明式·策略即数据)。真正的 Router 是独立服务 = v2+(见 ../ROADMAP.md, north-star 原则#6)。
+# 本文件 = PDP 的策略数据;v1 由 Claude Code 编排「读」它做选型,v2 forge-core(Go) 执行它。
+# 决策链: classify -> score -> tier -> safety_override -> budget_guard -> history-tiebreak
+# This file is policy-as-data; the routing *service* lands in v2+. v1 = Claude tiers only.
+
+version: 1
+provider_pool: claude-only        # v1 仅 Claude 档(D4)。cross_vendor_pool 见文末注释 = v3。
+
+# ── 多维评分维度 / Scoring dimensions ──────────────────────────────
+# 每维产出 0..1 归一分;weight 决定其对总分贡献。权重总和 = 1.0(scoring.normalize 会再保险)。
+dimensions:
+  complexity:                     # 算法/状态/集成难度 | algorithmic & integration difficulty
+    weight: 0.25
+    signals: [loc_delta, files_touched, cyclomatic, new_abstractions]
+  risk:                           # 失败影响面(blast radius)| blast radius if wrong
+    weight: 0.25
+    signals: [blast_radius, reversibility, prod_traffic]
+    levels: [low, medium, high, critical]   # critical 触发 safety_override(硬规则)
+  dependency_change:              # 依赖图变更(增删/版本/循环)| dependency-graph churn
+    weight: 0.12
+    signals: [deps_added, deps_removed, lockfile_delta, cross_module_edges]
+  security:                       # 涉敏面: authz/payment/secrets/PII | security surface
+    weight: 0.18
+    signals: [touches_auth, touches_payment, touches_secrets, touches_pii, sbom_delta]
+  context_size:                   # 所需上下文 token 体量 | required context token volume
+    weight: 0.10
+    signals: [retrieved_tokens, files_in_scope, repo_breadth]
+  business_impact:                # 业务关键度(收入/合规/品牌)| business criticality
+    weight: 0.10
+    signals: [revenue_path, compliance_scope, user_facing]
+
+# ── 合成总分 / Score synthesis ────────────────────────────────────
+scoring:
+  method: weighted_sum            # total = Σ(dimension_score · weight)
+  normalize: true                 # 权重不为 1 时按和归一,防漂移 | renormalize if weights drift
+  output_range: [0.0, 1.0]
+  thresholds:                     # total 分段 -> 基础档(再受 task_type / override 调整)
+    haiku_max: 0.34               # total <= 0.34          -> 倾向 Haiku
+    sonnet_max: 0.69              # 0.34 < total <= 0.69   -> 倾向 Sonnet
+    # total > 0.69                -> 倾向 Opus
+  rounding: half_up
+
+# ── 档位映射 / Tiers (v1: Claude only) ────────────────────────────
+# 选档 = max( score 档, task_type 下限 )。task_type 是强先验,可把低分任务直接顶到 Opus。
+# Tier = the higher of (score-band, task_type floor).
+tiers:
+  models: [haiku, sonnet, opus]   # 升序 = 能力/成本递增 | ascending capability & cost
+  by_score:
+    - { when: "total <= 0.34", model: haiku }
+    - { when: "total <= 0.69", model: sonnet }
+    - { when: "total >  0.69", model: opus }
+  by_task_type:                   # task_type -> 最低档(floor);取与 by_score 的较高者
+    docs:               haiku     # 文档 / 注释 / changelog
+    crud:               haiku     # 样板 CRUD / getter-setter / 配置
+    test:               haiku     # 单测 / fixture 生成
+    implementation:     sonnet    # 常规功能实现 | routine feature work
+    refactor_medium:    sonnet    # 中等重构 | medium refactor
+    bugfix:             sonnet
+    architecture:       opus      # 架构设计 / 系统拆分
+    security:           opus      # 安全 / authz / 加密
+    payment:            opus      # 支付 / 计费
+    authorization:      opus      # 权限 / 访问控制
+    requirements:       opus      # 需求分析(需求探索 > 实现,见 PROJECT 最高论点)
+    reviewer:           opus      # 所有 Reviewer 角色一律 Opus(fresh-context 审查,不许审自己)
+
+# ── 安全下限(硬规则)/ Safety override (HARD) ─────────────────────
+# 风险下限压过速度: risk == critical -> 强制 >= Opus,忽略 mode/speed/budget 的降档诉求。
+# Risk floor beats speed. Non-negotiable (north-star 原则#6: 风险下限压过速度)。
+safety_override:
+  rules:
+    - when: "risk >= critical"
+      force_min_tier: opus
+      ignore: [speed_preference, mode_explorer, budget_downgrade]
+      rationale: "critical risk 不可省钱省时;错代码的代价 >> 模型差价"
+    - when: "task_type in [security, payment, authorization]"
+      force_min_tier: opus        # 与 by_task_type 一致,显式再钉一遍(纵深防御)
+  precedence: highest             # 在 budget_guard 之前生效;override 后预算只能升不能降
+
+# ── 预算守卫 / Budget guard ───────────────────────────────────────
+# spend 逼近 budget -> 降档省钱;但 critical 任务不降,反而升级给「人」。
+# Budget pressure downgrades — except critical, which escalates to a human.
+budget_guard:
+  scope: per_run                  # per_run | per_feature | per_day(v3 成本治理细化)
+  signal: spend_ratio             # = cumulative_spend / budget_cap
+  actions:
+    - when: "spend_ratio >= 0.80"
+      effect: downgrade_one_tier  # opus->sonnet, sonnet->haiku;受 safety_override 钳制不破下限
+      unless: "risk >= critical"
+    - when: "spend_ratio >= 1.00 and risk >= critical"
+      effect: escalate_to_human   # 不静默降级关键任务;停下来要人/要预算
+      note: "宁可阻塞等人,不在 critical 上偷工 | block-for-human over silent cut"
+    - when: "spend_ratio >= 1.00 and risk < critical"
+      effect: downgrade_to_floor  # 降到 task_type floor,仍不破 safety_override
+
+# ── 历史择优(学习闭环的「优」)/ History tie-break ──────────────────
+# 同档候选里,挑 scorecard[model][task_type].quality_score 最高者。这是 Eval->记分卡->Router 闭环的消费端。
+# Among same-tier candidates, pick the model with the best historical scorecard.
+history:
+  source: scorecard.schema.yml    # 由 Eval Engine 填充(见 ../eval/README.md 闭环)
+  key: "scorecard[model][task_type]"
+  tiebreak_on: quality_score      # 越高越好 | higher is better
+  min_samples: 20                 # 样本不足 -> 回退到 tier 默认,不信噪声 | else fall back
+  recency_half_life_days: 30      # 旧分衰减,模型迭代后不被历史拖住 | decay stale scores
+  on_missing: tier_default        # 无记分卡(冷启动)-> 用 tiers 默认档
+
+# ── 跨厂商池 = v3,非 v1 / Cross-vendor pool = v3, NOT v1 ──────────
+# v1 provider_pool 锁死 claude-only(D4)。下列为 v3 形态占位,当前不激活、不解析为路由候选。
+# Qwen / DeepSeek / 本地模型 经 LiteLLM 统一网关接入;届时 dimensions/scoring 复用,仅扩 tiers.models。
+# Cross-vendor (Qwen/DeepSeek/local via LiteLLM) is v3 — see ROADMAP & DECISIONS D4. Placeholder only.
+cross_vendor_pool_v3:
+  status: not_active_in_v1
+  gateway: litellm                # 采购网关,自研路由决策(north-star 服务目录: Model Router)
+  candidates_example: [qwen, deepseek, local]   # 仅示意 / illustrative, inert until v3

@@ -1,0 +1,20 @@
+# ForgeOS — project config (本项目自身配置)
+# 中枢旋钮 mode × lifecycle 同时驱动 Router 档位 · Harness 严格度 · Workflow 深度。
+# 见 ARCHITECTURE.md(中枢旋钮)· DECISIONS.md(D1 栈时序 / D4 路由)。
+
+extends: []                       # 全局 agent-os 仓库 = v2,暂无可继承的上游 (none yet)
+
+project: forgeos
+language: polyglot                # 当前主要声明式/markdown;目标 Go 核心 (target: Go core)
+architecture: control-plane/data-plane   # 目标态;v0–v1 仅 Context + Harness 子集
+mode: engineering                 # 全闸门 (explorer | balanced | engineering | cto)
+lifecycle: mvp                    # idea → mvp → growth → production
+
+overrides:
+  max_file_lines: 500             # 对齐 harness/policies.yml(真相之源)
+  max_root_files: 15
+
+features:
+  discover: minimal               # v1 最小 Discover:confidence + Human gate
+  routing: claude-tier-only       # v1 限 Claude 档(Haiku/Sonnet/Opus);跨厂商池 = v3 (D4)
+  sandbox: false                  # 带外 Sandbox runner = v3;现无强隔离执行

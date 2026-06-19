@@ -1,0 +1,103 @@
+# ForgeOS — Acceptance Schema / 验收标准 Schema
+# 状态: v1 声明式 schema。Architect 为每个 feature 产出一份 acceptance 实例;Stop 闸门据此放行。
+# 作用: 把「完成」变成机器可判断,而非散文。所有 required 标准全绿 = feature 可过 Stop。
+# 真相之源 = 带外 harness/CI(host-independent);CC Stop hook 仅为加速器(ARCHITECTURE 载重墙)。
+# Acceptance = machine-checkable Definition-of-Done. ALL required criteria green => Stop gate passes.
+
+version: 1
+schema: feature-acceptance
+owner: architect                  # 谁产出: 每个 feature 由 Solution-Architect 定义 | produced by Architect
+gates: stop                      # 在哪执法: BUILD 的 Stop 闸门 | enforced at the Stop gate
+
+# ── 实例必带的元信息 / Instance metadata ──────────────────────────
+meta:
+  feature_id:   { type: string,  required: true,  note: "对应 ROADMAP / 任务条目" }
+  evaluated_by: { type: enum, values: [harness, ci, reviewer], default: harness }
+  evaluated_at: { type: timestamp, format: iso8601-utc }
+
+# ── 验收标准字段 / Acceptance criteria ────────────────────────────
+# required=true 的项任一不满足 => Stop 阻塞,feature 不得标记完成。
+# Any failing required criterion blocks Stop. Optional ones annotate but don't block (除非 mode=engineering 提升)。
+# 诚实标注 / honesty note: required=false 的 coverage/lint/typecheck/build/
+# security_findings 在本仓库无可执行检查 → harness/acceptance.mjs 报 N/A,
+# 既不伪装为 pass,也不计入「已满足」。载重判据(test_pass / app_test_pass /
+# complexity_violations / arch_violations)由带外 harness 实测,required=true。
+# Criteria with no executable check in this repo are reported N/A (never faked
+# into a pass, never counted as satisfied); the four load-bearing ones are real.
+criteria:
+  test_pass:               # 全测试通过(harness 套件)| all harness tests green
+    type: bool
+    expect: true
+    required: true
+    source: harness        # test_check.py + test_gate.mjs
+  app_test_pass:           # 应用测试通过(dogfood url-shortener 套件)| app suite green
+    type: bool
+    expect: true
+    required: true
+    source: harness        # examples/url-shortener/test/*.test.mjs
+  coverage:                # 覆盖率 >= 阈值 | coverage at/above threshold
+    type: float
+    range: [0.0, 1.0]
+    operator: ">="
+    threshold: 0.80        # 阈值随 mode/lifecycle 可调(中枢旋钮);此为默认
+    required: false        # N/A reported, not counted — no coverage tool wired
+  lint:                    # 静态检查通过 | linter clean
+    type: enum
+    values: [pass, fail]
+    expect: pass
+    required: false        # N/A reported, not counted — no linter configured
+  typecheck:               # 类型检查通过 | type-checker clean
+    type: enum
+    values: [pass, fail]
+    expect: pass
+    required: false        # N/A reported, not counted — no type-checker in repo
+  build:                   # 构建成功 | build succeeds
+    type: enum
+    values: [pass, fail]
+    expect: pass
+    required: false        # N/A reported, not counted — declarative, no build step
+  complexity_violations:   # 复杂度违规数(行数/函数/圈复杂度,来自 harness/gate)== 0
+    type: int
+    operator: "=="
+    expect: 0
+    required: true
+    source: harness
+  arch_violations:         # 架构违规数(循环依赖/禁改区/依赖方向)== 0
+    type: int
+    operator: "=="
+    expect: 0
+    required: true
+    source: harness
+  security_findings:       # 安全发现数(security-review / 依赖扫描)== 0
+    type: int
+    operator: "=="
+    expect: 0
+    required: false        # N/A reported, not counted — no scanner; reviewer agent only
+    source: security-review
+  p95_latency_ms:          # 可选: 性能预算尾延迟 | optional perf budget
+    type: int
+    operator: "<="
+    threshold: null        # 默认未设;有 SLO 的 feature 由 Architect 填具体值
+    required: false
+
+# ── Stop 判定 / Stop decision ─────────────────────────────────────
+decision:
+  pass_when: "all(required) satisfied"   # 全部 required 满足 -> 放行
+  on_fail: block_stop                    # 否则 -> 阻塞 Stop,回写未达项,派生修复任务
+  feedback_to: scorecard                 # 结果(pass/fail/iterations)回灌记分卡(闭环,见 README)
+
+# ── 实例样例(结构示意,非真实数据)/ Example instance — illustrative ──
+example:
+  feature_id: link-shortener-create
+  evaluated_by: harness
+  results:
+    test_pass: true
+    app_test_pass: true
+    coverage: 0.87
+    lint: pass
+    typecheck: pass
+    build: pass
+    complexity_violations: 0
+    arch_violations: 0
+    security_findings: 0
+  decision: pass

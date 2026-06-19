@@ -1,0 +1,76 @@
+# ForgeOS workflow · DISCOVER (脊柱第 1 段 / spine stage 1)
+# 需求探索 > 代码实现:多数项目败在需求/架构没推导清楚,而非代码写错。
+# Requirement discovery beats implementation — this is the highest-value stage.
+#
+# 机器可读契约 / machine-readable contract:未来 orchestrator 直接解析本文件驱动 workflow。
+# 当前 (v0–v1):无自研 runtime,phases 映射到 Claude Code subagents,人工/胶水驱动。
+# 真相之源 = 带外 harness;本文件是声明式编排意图,非执行引擎。
+
+id: discover
+stage: discover                       # 脊柱段 / spine stage
+title: Idea → 已验证的需求 (validated requirement)
+readonly: true                        # 全程只读:Discover 不写产物代码,只产出分析 / no code artifacts emitted
+description: >
+  把一句 Idea 推导成「带置信度的需求 + 竞品能力矩阵 + MVP/高级分层」。
+  深度由 mode 裁决 (depth gated by mode):见下方 mode_gating —— explorer 整段跳过。
+
+# ── mode 裁决:中枢旋钮在本段的作用 / central knob applied to this stage ──
+# Discover 是否运行、运行多深,由 mode 决定(权威定义见 ../policies/modes.yml 的 workflow_depth.discover)。
+mode_gating:
+  explorer:    skip                   # 创业冲刺:跳过 Discover,直接 vibe-code / skip entirely, go straight to build
+  balanced:    light                  # 仅 requirement-discovery,market-research 可选 / minimal
+  engineering: full                   # 三个 phase 全跑 / all phases
+  cto:         full                   # CTO 模式:只产 PRD/分析,不进 Build / produce analysis only
+  authority: ../policies/modes.yml#workflow_depth.discover   # 单一事实源 / single source of truth
+
+phases:
+  # ── P1 需求发现 / requirement discovery ──
+  - name: requirement-discovery
+    agent: product-manager             # 规范角色卡 / canonical role card (.agent/agents/*)
+    readonly: true
+    required_gates: []                 # 只读分析阶段无 harness 闸门 / no code gates on read-only analysis
+    description: >
+      与 Idea 对话,抽取目标用户/痛点/约束/成功指标;标注缺失信息与假设。
+      Extract users/pain/constraints/success-metrics; surface gaps & assumptions.
+    emits:
+      - requirement-draft.md           # 需求草稿 + 置信度评分 / draft + confidence score
+    confidence_metric: requirement_confidence   # 0–100%,驱动本段 stop_condition
+
+  # ── P2 市场调研 / market research ──
+  - name: market-research
+    agent: researcher
+    readonly: true
+    required_gates: []
+    optional_for: [balanced]           # balanced(light)下可省 / skippable under light depth
+    description: >
+      竞品 / 能力矩阵 / 定价分析。**必须真实检索 + 引用**,严防自信虚构 (anti-hallucination)。
+      Competitor & capability-matrix research. MUST cite real retrieved sources.
+    requires_tools: [web_search, web_fetch]   # 无检索工具则降级 advisory 并打标 / degrade + flag
+    emits:
+      - capability-matrix.md
+      - citations.md                   # 引用清单,可溯源 / traceable citations
+
+  # ── P3 产品设计 / product design ──
+  - name: product-design
+    agent: product-manager
+    readonly: true
+    required_gates: []
+    description: >
+      把需求 + 调研收敛成 MVP / 高级 分层(按 lifecycle,不 day-1 镀金)。
+      Converge into MVP vs advanced tiers, staged by lifecycle — no day-1 gold-plating.
+    emits:
+      - prd.md                         # 产品需求文档,喂给 DESIGN 段 / feeds Design stage
+
+# ── 终止条件 / stop condition ──
+# 纪律:用置信度阈值,不用「继续 N 轮」(no round-count)。
+stop_condition:
+  metric: requirement_confidence
+  operator: ">="
+  threshold: 80                        # 单位 % / percent
+  expression: "requirement_confidence >= 80%"
+  on_unmet:
+    action: loop_back                  # 未达标 → 回 requirement-discovery 补缺失信息
+    target_phase: requirement-discovery
+    note: 列出缺失信息并追问,而非空转 / list gaps and re-ask, never spin idle
+  on_met:
+    next_stage: design                 # 达标 → 交给 DESIGN 段 / hand off to design.yml

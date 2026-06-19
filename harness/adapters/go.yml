@@ -1,0 +1,27 @@
+# Harness adapter: Go
+# 声明式:gate runner 检测到 .go 时 shell 出以下命令 (v0.1+;v0 不调,见 README)。
+# Declarative command map — the runner shells these out; it does not interpret them.
+# 注:forge-core 目标语言;harness CLI 未来固化为 Go 静态二进制(见 DECISIONS D1)。
+
+language: go
+detect: ["go.mod", "*.go"]
+
+commands:
+  lint:                            # golangci-lint:聚合 govet/stareck/gocyclo/funlen 等
+    run: "golangci-lint run ./..."
+    linters:
+      - "gocyclo"                  # 圈复杂度
+      - "funlen"                   # 函数行数 ≤ max_function_lines (50)
+      - "gocognit"                 # 认知复杂度
+  test:
+    run: "go test ./..."
+  build:
+    run: "go build ./..."
+  coverage:
+    run: "go test -coverprofile=coverage.out ./..."
+    report: "coverage.out"
+  complexity:                      # gocyclo 专项(可独立于 lint 跑)
+    run: "gocyclo -over 10 ."
+  circular_deps:                   # Go 编译器原生禁包级循环导入;额外用 go-cleanarch 守层间方向
+    run: "go-cleanarch"
+    note: "tool: 包级循环由编译器拒绝;架构层方向用 go-cleanarch / depguard(golangci 插件)"

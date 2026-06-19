@@ -1,0 +1,115 @@
+# ForgeOS workflow · BUILD (脊柱第 3 段 / spine stage 3)
+# Planner → Implementer → [Harness 闸门] → Reviewer → QA   stop: ROADMAP 100% 且全闸门绿。
+#
+# ┌─ 纪律 / discipline ──────────────────────────────────────────────────────┐
+# │ 终止 **不用 round-count**:不是「再继续 N 轮」。                            │
+# │ NOT driven by round-count — never "run N more rounds".                    │
+# │ 收敛信号 = roadmap_completion == 100% AND 所有必需 gate 绿。               │
+# │ Convergence = roadmap done AND all required gates green. 见 stop_condition。│
+# └──────────────────────────────────────────────────────────────────────────┘
+#
+# 机器可读契约 / machine-readable contract。当前 (v0–v1):phases = Claude Code subagents;
+# harness 闸门 = 带外执法(`node harness/gate.mjs` + 语言适配器),host-independent 真相之源。
+
+id: build
+stage: build
+title: 已批准架构 → 完成且全绿的实现 (roadmap-complete, all-gates-green)
+readonly: false                        # BUILD 写代码 / writes code
+description: >
+  按 ROADMAP 逐项实现,每个增量过 harness 闸门 → 独立 Reviewer → QA。
+  Implement each roadmap item; every increment passes harness gates → fresh-context reviewer → QA.
+
+# ── mode 裁决:开哪些 gate、coverage 阈值、Reviewer 是否必须 ──
+# central knob: which gates run, coverage threshold, whether reviewer is mandatory.
+# 权威定义在 ../policies/modes.yml 的 harness.*;本文件按 mode 取并集。
+mode_gating:
+  gate_set: ../policies/modes.yml#harness.gates          # 单一事实源 / single source of truth
+  reviewer_required: ../policies/modes.yml#workflow_depth.reviewer
+  note: >
+    可用 gate 全集 / full gate vocabulary:
+    lint · test · build · complexity · arch · security
+    (complexity/arch/security 含 harness 体积约束:max_file_lines=500 / max_function_lines=50 /
+     circular_dependency_count=0,见 ../../harness/policies.yml)。
+    explorer 仅 lint+build;engineering/cto 全开。
+
+phases:
+  # ── P1 规划 / planner ──
+  - name: planner
+    agent: planner
+    readonly: true                      # 只拆任务,不写码 / decomposes only
+    required_gates: []
+    description: >
+      把 ROADMAP 下一项拆成可验收的最小任务 + acceptance 判据(机器可判)。
+      Break the next roadmap item into smallest acceptance-checkable tasks.
+    emits:
+      - task-plan.md
+
+  # ── P2 实现 / implementer ──
+  - name: implementer
+    agent: implementer
+    readonly: false                     # 唯一写产物代码的 phase / the only phase that writes product code
+    required_gates: []                  # 闸门在下一 phase 统一跑 / gates run in the next phase
+    model_tier: sonnet                  # 常规实现走 Sonnet;risk≥critical 由 router 抬到 Opus / router may escalate
+    description: >
+      实现单个任务。命中体积/复杂度阈值 → **先拆分再继续**(skill: refactor-large-file),
+      不是机械砍刀,由 Reviewer 判是否真违规。Implement one task; split-before-continue on threshold hits.
+
+  # ── P3 Harness 闸门 / harness gates(带外执法 / out-of-band enforcement) ──
+  - name: harness-gates
+    agent: harness                      # 非 LLM:跑工具链 / not an LLM — runs the toolchain
+    readonly: true                      # 只读校验,不改代码 / verifies, never edits
+    required_gates: [lint, test, build, complexity, arch, security]   # 实际生效集由 mode 过滤 / filtered by mode
+    blocking: true                      # 红灯阻断本增量(enforce: block 时)/ red blocks the increment
+    description: >
+      运行 mode 选定的闸门子集;`node harness/gate.mjs` + 语言适配器(eslint/golangci-lint/radon/madge…)。
+      不绿则回 implementer。Run mode-selected gate subset; loop back to implementer if not green.
+    on_fail:
+      action: loop_back
+      target_phase: implementer
+
+  # ── P4 评审 / reviewer ──
+  - name: reviewer
+    agent: reviewer
+    readonly: true                      # 只评审,不改 / reviews, does not edit
+    fresh_context: true                 # 必须独立 fresh-context Agent,不让实现者审自己 / never self-review
+    model_tier: opus                    # 所有 Reviewer 用 Opus / all reviewers use top tier
+    required_gates: []                  # Reviewer 是人/AI 判断层,非工具闸门 / judgment layer, not a tool gate
+    required_when: ../policies/modes.yml#workflow_depth.reviewer   # explorer 下可省 / skippable under explorer
+    description: >
+      判设计/可维护性/是否真违阈值/禁改区。阈值是「触发审查」信号,非自动 fail。
+      Judge design, maintainability, real-vs-nominal violations, frozen zones.
+    on_fail:
+      action: loop_back
+      target_phase: implementer
+
+  # ── P5 QA / acceptance ──
+  - name: qa
+    agent: qa
+    readonly: true
+    required_gates: [test]              # 至少回归测试绿 / regression must be green
+    description: >
+      对 planner 的 acceptance 判据做端到端验收;产出可喂 Eval 记分卡的结果。
+      Verify against acceptance criteria end-to-end; output feeds the Eval scorecard (v2).
+    on_fail:
+      action: loop_back
+      target_phase: implementer
+
+# ── 终止条件 / stop condition ──
+# 双判据合取:不是轮数,是「活儿干完 + 质量门全绿」。
+# Conjunction — NOT iteration count. Done = work complete AND quality gates green.
+stop_condition:
+  type: conjunction
+  all_of:
+    - metric: roadmap_completion
+      operator: "=="
+      threshold: 100                    # 单位 % / percent
+    - metric: gates_status
+      operator: "=="
+      value: green                      # 所有必需 gate 绿(mode 选定集)/ all required gates green
+  expression: "roadmap_completion == 100% AND all_required_gates == green"
+  anti_pattern: round_count             # 显式禁止 / explicitly forbidden:不要「继续 N 轮」
+  on_unmet:
+    action: loop_to_next_roadmap_item   # 还有未完项 → 回 planner 取下一项 / pull next item
+    target_phase: planner
+  on_met:
+    next_stage: evolve                  # roadmap 满 + 全绿 → 进 EVOLVE 持续演化 / hand off to evolve.yml

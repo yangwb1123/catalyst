@@ -1,0 +1,69 @@
+# ForgeOS workflow · DESIGN (脊柱第 2 段 / spine stage 2)
+# Human Approval(Design→Build 之间)= 全系统最高杠杆的闸门 / the single highest-leverage gate.
+# 在这之前不写任何产物代码;批准后才物化 .agent/ 真相之源。
+# No artifacts are written before approval; the .agent/ source-of-truth is materialized only after.
+#
+# 机器可读契约 / machine-readable contract:供未来 orchestrator 解析。
+# 当前 (v0–v1):phases = Claude Code subagents;human approval = durable wait(v2 起由 Temporal 持久化)。
+
+id: design
+stage: design
+title: 需求 (PRD) → 已批准的架构方案 (approved architecture)
+readonly: false                        # 段内分析只读,但终点 emit 真相之源 / read-only work, then emits SoT
+description: >
+  按 lifecycle 推导架构(单体→服务→事件驱动,分阶段演进,非峰值 QPS 镀金),
+  产出 1 页方案 + 成本 + 风险,送人审。Derive architecture staged by lifecycle, then
+  a 1-page proposal (cost+risk) gated by a human.
+
+# ── mode 裁决 / central knob applied to this stage ──
+mode_gating:
+  explorer:    light                   # 极简架构,可跳 ADR / minimal, ADR optional
+  balanced:    standard
+  engineering: full                     # 完整架构 + ADR / full + ADR
+  cto:         full                      # CTO 模式终点即此段产物(PRD/Arch),人确认后停 / stops here
+  authority: ../policies/modes.yml#workflow_depth.design
+
+phases:
+  # ── P1 方案架构 / solution architecture ──
+  - name: solution-architect
+    agent: architect
+    readonly: true                      # 只设计,不落代码 / designs only, writes no code
+    required_gates: []                  # 设计阶段无 harness 闸门;质量由 Reviewer/人审把 / no code gates
+    model_tier: opus                    # 架构属高风险 → 贵模型 / architecture is high-risk → top tier
+    description: >
+      按 lifecycle 分阶段定架构,标注禁改区 / 依赖方向 / 演进路径。
+      Stage architecture by lifecycle; mark frozen zones, dependency direction, evolution path.
+    writes_adr:                         # 是否写 ADR 由 mode 决定 / ADR gated by mode
+      condition: mode in [engineering, cto]
+      target: docs/adr/                 # v2 起启用 / enabled from v2
+
+  # ── P2 方案生成 / proposal generation ──
+  - name: proposal-generator
+    agent: cto
+    readonly: true
+    required_gates: []
+    description: >
+      1 页方案:范围 / 成本(token+时延)/ 风险 / 备选。供人类一眼可决策。
+      1-page proposal: scope / cost (token+latency) / risk / alternatives — decidable at a glance.
+    emits:
+      - proposal.md                     # 送审物 / the artifact a human reviews
+
+# ── 终止条件 / stop condition ──
+# 本段终点是「人审闸门」,不是自动指标。批准是状态迁移的唯一钥匙。
+# This stage terminates at a HUMAN gate — approval is the only key that advances state.
+stop_condition:
+  type: human_gate
+  human_approval: required             # ★ 不可绕过 / non-bypassable ★
+  durable_wait: true                   # 等待数小时/数天不丢(v2 Temporal 持久化)/ survives restarts from v2
+  expression: "human_approval == granted"
+  on_rejected:
+    action: loop_back                  # 驳回 → 带反馈回 solution-architect / revise with feedback
+    target_phase: solution-architect
+  on_approved:
+    # 批准 = 物化真相之源 + 解锁 BUILD / approval materializes SoT and unlocks build
+    emit:
+      - .agent/PROJECT.md               # 项目愿景/目标/非目标 / vision
+      - .agent/ROADMAP.md               # 分阶段交付计划(驱动 build 的 stop)/ staged plan, drives build stop
+      - .agent/ARCHITECTURE.md          # 脊柱架构 + 中枢旋钮 / spine + central knob
+      - project.yml                     # 机器可读项目清单:mode/lifecycle/stack/gates 选择 / machine-readable manifest
+    next_stage: build                   # 解锁 BUILD 段 / unlocks build.yml

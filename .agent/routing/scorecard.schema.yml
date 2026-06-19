@@ -1,0 +1,58 @@
+# ForgeOS — Model Scorecard Schema / 模型记分卡 Schema
+# 状态: v1 声明式 schema。记分卡「数据」由 Eval Engine 在 v2 学习闭环里填充(见 ../eval/README.md)。
+# 用途: 按 (model × task_type) 记录历史表现,供 policy.yml `history` 段做同档择优。
+# Loop: gate/reviewer 结果 -> Eval 聚合 -> 写本 schema 的实例 -> Router `history` 消费(Eval->记分卡->Router)。
+# This is the schema; instances are written by Eval (v2). v1 ships the contract only.
+
+version: 1
+schema: model-scorecard
+primary_key: [model, task_type]   # 每个 (模型, 任务类型) 一行 | one row per pair
+
+# ── 单条记分卡的字段契约 / Per-entry field contract ───────────────
+entry:
+  model:                          # 必填 | which model the score is about
+    type: enum
+    values: [haiku, sonnet, opus] # v1 限 Claude 档(D4);v3 跨厂商时扩展
+    required: true
+  task_type:                      # 必填 | 对齐 policy.yml tiers.by_task_type 的键
+    type: enum
+    values: [docs, crud, test, implementation, refactor_medium, bugfix,
+             architecture, security, payment, authorization, requirements, reviewer]
+    required: true
+  quality_score:                  # 核心: 综合质量分,policy.history.tiebreak_on 读它
+    type: float
+    range: [0.0, 1.0]             # 1.0 = 最佳 | higher is better
+    required: true
+    derived_from: acceptance      # 由 acceptance 结果合成(见 ../eval/acceptance.schema.yml)
+  samples:                        # 参与统计的样本数;< policy.history.min_samples 则 Router 不信
+    type: int
+    min: 0
+    required: true
+  updated_at:                     # 末次更新(UTC ISO-8601);供 recency 衰减
+    type: timestamp
+    format: iso8601-utc
+    required: true
+
+# ── 可选字段(丰富信号,非 v1 阻塞)/ Optional enrichment ──────────
+optional:
+  pass_rate:        { type: float, range: [0.0, 1.0], note: "acceptance 一次通过率 | first-pass gate rate" }
+  avg_iterations:   { type: float, min: 1.0,          note: "通过前平均往返次数 | rounds to green" }
+  rework_rate:      { type: float, range: [0.0, 1.0], note: "被 Reviewer 打回比例" }
+  avg_cost_usd:     { type: float, min: 0.0,          note: "均次成本,供成本/质量权衡(v3 预算治理)" }
+  p95_latency_ms:   { type: int,   min: 0,            note: "尾延迟,可选信号" }
+  window:           { type: string, example: "30d",  note: "统计窗口,对齐 history.recency_half_life_days" }
+
+# ── 实例样例(说明结构,非真实数据)/ Example instance — illustrative ──
+example:
+  - model: sonnet
+    task_type: implementation
+    quality_score: 0.86
+    samples: 142
+    updated_at: "2026-06-01T00:00:00Z"
+    pass_rate: 0.78
+    avg_iterations: 1.4
+  - model: opus
+    task_type: architecture
+    quality_score: 0.91
+    samples: 37
+    updated_at: "2026-06-10T00:00:00Z"

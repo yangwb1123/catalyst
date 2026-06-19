@@ -1,0 +1,193 @@
+# ForgeOS policy · MODES (中枢旋钮 / the central knob)
+# ───────────────────────────────────────────────────────────────────────────
+# 一个设置同时驱动三处:Router 档位 · Harness 严格度 · Workflow 深度。
+# ONE setting drives three subsystems at once: Router tier · Harness strictness · Workflow depth.
+#
+# 公式 / formula:  effective_policy = mode (基线 baseline) ▸ modified_by ▸ lifecycle (修饰 modifier)
+#   - mode      = 工程姿态 / engineering posture (explorer | balanced | engineering | cto)
+#   - lifecycle = 项目成熟度修饰 / maturity modifier (idea | mvp | growth | production)
+#
+# 机器可读策略即数据 / policy-as-data:未来 PDP(OPA/Rego)消费本文件;workflows 已按 fragment 引用。
+# 当前 (v0–v1):无 PDP,本文件是声明式真相源,人工/胶水按表选档。
+# 单一事实源 / single source of truth — workflows 用 `#fragment` 引这里,勿在别处复制阈值。
+# ───────────────────────────────────────────────────────────────────────────
+
+id: modes
+version: 1
+selector:
+  # 项目在 DESIGN 批准时落定 mode×lifecycle,写入 project.yml / chosen at design-approval into project.yml.
+  keys: [mode, lifecycle]
+  defaults: { mode: balanced, lifecycle: mvp }
+
+# 闸门词表 / gate vocabulary —— 全集,modes 各取子集 / full set; each mode takes a subset.
+# 与带外 harness 对齐 / aligned with out-of-band harness (../../harness/policies.yml):
+#   complexity/arch 内含体积约束:max_file_lines=500 · max_function_lines=50 · circular_dependency_count=0
+gate_catalog:
+  lint:       静态风格/语法 / linters (eslint · golangci-lint · ruff)
+  test:       单元+集成测试 / unit + integration
+  build:      可编译可打包 / compiles & packages
+  complexity: 体积/圈复杂度(行数上限 · 函数长度 · 圈复杂度)/ size & cyclomatic
+  arch:       依赖方向/循环依赖/分层 / dependency direction, cycles, layering (madge · depcruise)
+  security:   依赖扫描/SAST/secret 扫描 / dep-scan, SAST, secrets
+
+# ═══════════════════════════════════════════════════════════════════════════
+# MODES — mode × lifecycle 矩阵基线 / per-mode baseline (lifecycle modifies below)
+# ═══════════════════════════════════════════════════════════════════════════
+modes:
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # explorer — 创业冲刺:快/省/跳 Discover / startup sprint: fast, cheap, skip Discover
+  # ─────────────────────────────────────────────────────────────────────────
+  explorer:
+    summary: 验证想法,vibe-code,最低摩擦 / validate ideas, minimal friction.
+    router_default_tier: haiku           # 默认最便宜档,router 仅在 risk 高时上抬 / cheapest default
+    priorities: { speed: 1, quality: 3, cost: 2 }   # 1=最高 / 1=highest:速度优先,成本次之 / speed > cost > quality
+    harness:
+      gates: [lint, build]               # 只保「能跑」/ just "does it run"
+      coverage_threshold: 0              # 不强制覆盖率 / no coverage gate
+      max_file_lines: 800                # 放宽体积(原型容忍)/ relaxed for prototypes
+      enforce: warn                      # advisory,不阻断 / non-blocking
+    workflow_depth:
+      discover:  skip                    # 跳过需求发现 / skip discovery
+      design:    light                   # 极简架构 / minimal architecture
+      adr:       false                   # 不写 ADR / no ADR
+      reviewer:  false                   # 不强制独立评审 / reviewer optional
+      evolve:    opportunistic           # 仅扫明显机会 / propose-only scans
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # balanced — 默认:速度/质量折中 / default: pragmatic middle
+  # ─────────────────────────────────────────────────────────────────────────
+  balanced:
+    summary: 合理质量 + 合理速度,大多数项目的起点 / sensible default for most projects.
+    router_default_tier: sonnet          # 常规实现走 Sonnet / Sonnet for regular work
+    priorities: { speed: 2, quality: 1, cost: 3 }   # 质量略优先 / quality first, then speed
+    harness:
+      gates: [lint, test, build, complexity]   # 加测试+体积 / + tests & size
+      coverage_threshold: 60             # % 行覆盖 / line coverage
+      max_file_lines: 500                # 对齐红线 / matches AGENTS.md
+      enforce: warn
+    workflow_depth:
+      discover:  light                   # 仅 requirement-discovery / minimal discover
+      design:    standard
+      adr:       false
+      reviewer:  true                    # 走独立 Reviewer / fresh-context reviewer on
+      evolve:    standard
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # engineering — 全闸门:企业级严格 / full gates: enterprise rigor
+  # ─────────────────────────────────────────────────────────────────────────
+  engineering:
+    summary: 全部闸门 + 完整脊柱,面向长期可维护系统 / all gates + full spine.
+    router_default_tier: sonnet          # 实现 Sonnet,架构/安全/评审由 router 抬 Opus / escalates to Opus
+    priorities: { speed: 3, quality: 1, cost: 2 }   # 质量第一,速度让位 / quality >> speed
+    harness:
+      gates: [lint, test, build, complexity, arch, security]   # 全开 / everything
+      coverage_threshold: 80             # 严格覆盖 / strict coverage
+      max_file_lines: 500
+      max_function_lines: 50             # 函数长度上限 / function-length cap
+      circular_dependency_count: 0       # 零循环依赖 / zero cycles
+      enforce: block                     # 硬阻断 / hard-block
+    workflow_depth:
+      discover:  full                    # 三 phase 全跑 / all discover phases
+      design:    full
+      adr:       true                    # 复杂设计写 ADR / ADR required
+      reviewer:  true                    # 强制独立评审 / mandatory fresh-context review
+      evolve:    thorough                # 全维扫描 + 自动派生任务 / full scan, auto-derive
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # cto — 只出 PRD/Arch,人确认 / advisory: produce PRD/Arch, human decides
+  # ─────────────────────────────────────────────────────────────────────────
+  cto:
+    summary: 只做需求+架构+方案,止于人审,不自动 Build / stops at human approval, no auto-build.
+    router_default_tier: opus            # 全是高判断工作 → 顶档 / judgment-only → top tier
+    priorities: { speed: 3, quality: 1, cost: 3 }   # 质量唯一优先 / quality only
+    harness:
+      gates: []                          # 不产代码 → 无代码闸门 / no code → no code gates
+      coverage_threshold: 0
+      enforce: warn
+    workflow_depth:
+      discover:  full                    # 完整需求探索 / full discovery
+      design:    full                    # 完整架构 + 方案 / full architecture + proposal
+      adr:       true
+      reviewer:  true                    # 评审分析文档 / reviews the analysis docs
+      build:     halt                    # ★ 在 Human Approval 后停,不进 Build / halts after approval
+      evolve:    advisory                # 仅 gap 报告 + roadmap 提案 / report + propose only
+
+# ═══════════════════════════════════════════════════════════════════════════
+# LIFECYCLE — 成熟度修饰符 / maturity modifiers (叠加在 mode 之上 / layered onto mode)
+# 不替换 mode,而是收紧/放宽。冲突时取更严者(production 永远收紧)。
+# Does not replace mode — tightens/loosens it. On conflict, the stricter wins (production always tightens).
+# ═══════════════════════════════════════════════════════════════════════════
+lifecycle_modifiers:
+  idea:                                  # 想法期:最大自由 / maximum freedom
+    coverage_delta: 0
+    enforce_floor: warn                  # 闸门下限保持 advisory / floor stays advisory
+    note: 鼓励探索,几乎不强制 / encourage exploration.
+  mvp:                                   # MVP:开始要测试 / start requiring tests
+    coverage_delta: 0
+    require_min_gates: [lint, build]     # 至少这些必开 / minimum gate floor
+    note: 能跑 + 基本质量 / runs + baseline quality.
+  growth:                                # 成长期:收紧 / tighten
+    coverage_delta: +10                  # 覆盖率阈值再加 10 点 / +10pp coverage
+    require_min_gates: [lint, test, build, complexity]
+    enforce_floor: warn
+    note: 防腐化,引入复杂度闸门 / guard against drift.
+  production:                            # 生产:最严,压过 mode 的宽松 / strictest, overrides loose modes
+    coverage_delta: +20                  # 覆盖率再加 20 点(封顶 95)/ +20pp (cap 95)
+    require_min_gates: [lint, test, build, complexity, arch, security]
+    enforce_floor: block                 # 强制阻断,即便 mode 是 warn / force block even if mode says warn
+    note: 安全/架构闸门不可关;explorer+production 也必须过全闸门 / non-negotiable gates.
+
+# ═══════════════════════════════════════════════════════════════════════════
+# MIGRATION — explorer → engineering「创业 → 企业」状态迁移
+# explorer → engineering as a 'startup → enterprise' state transition.
+# 这是中枢旋钮的核心动作:不只是换标志位,而是一次带「补债」的治理升级。
+# Not a flag flip — a governance upgrade that DERIVES remediation tasks for the debt skipped earlier.
+# ═══════════════════════════════════════════════════════════════════════════
+migrations:
+  explorer_to_engineering:
+    trigger: manual                      # 人触发(v1);v3 可由 lifecycle→production 自动 / manual now, auto in v3
+    description: >
+      把「快糙猛」原型升级为受治理的工程项目:收紧 harness + 补齐之前跳过的测试/CI/监控。
+      Promote a quick prototype into a governed project: tighten harness, backfill skipped rigor.
+    effects:
+      tighten_harness:                   # 收紧闸门 / clamp the gates
+        gates: [lint, test, build, complexity, arch, security]   # 全开 / enable all
+        coverage_threshold: 80
+        enforce: block                   # warn → block
+      raise_router_floor: sonnet         # 默认档从 haiku 抬到 sonnet / lift cheap default
+      enable_workflow:
+        discover:  full                  # 补回被跳过的需求探索 / restore skipped discovery
+        adr:       true
+        reviewer:  true
+    derive_tasks:
+      # 自动派生「补债」任务注入 ROADMAP(对应 evolve.yml 的 gap→roadmap)/ injected into ROADMAP.
+      - id: backfill-tests
+        title: 为现有代码补测试至覆盖率阈值 / backfill tests to coverage threshold
+        gate: test
+        priority: high
+      - id: add-ci
+        title: 加 CI 流水线跑全 harness 闸门 / add CI running the full harness
+        priority: high
+      - id: add-monitoring
+        title: 加可观测(日志/指标/告警)/ add observability (logs/metrics/alerts)
+        priority: medium
+      - id: refactor-oversized
+        title: 拆分原型期超阈值文件/函数 / split prototype files over size caps
+        gate: complexity
+        priority: medium
+      - id: security-pass
+        title: 跑依赖扫描 + SAST 补安全债 / dependency scan + SAST remediation
+        gate: security
+        priority: high
+
+# ═══════════════════════════════════════════════════════════════════════════
+# ROUTER 下限 / non-negotiable routing floors —— 风险压过省钱 / risk overrides cost.
+# 与 ARCHITECTURE.md「模型路由」一致 / consistent with ARCHITECTURE.md routing.
+# ═══════════════════════════════════════════════════════════════════════════
+router_floors:
+  critical_risk_min_tier: opus           # risk ≥ critical 强制 ≥ Opus(压过任何 mode 默认)/ forces Opus
+  reviewer_min_tier: opus                # 所有 Reviewer 用 Opus / all reviewers on top tier
+  note: >
+    mode.router_default_tier 仅是「基线档」;真实选档 = classify→score→tier(mode,lifecycle)
+    再过 risk 下限 → 预算守卫 → 历史择优(Eval 记分卡)。v1 限 Claude 档(Haiku/Sonnet/Opus);跨厂商池 = v3。

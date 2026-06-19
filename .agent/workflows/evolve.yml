@@ -1,0 +1,110 @@
+# ForgeOS workflow · EVOLVE (脊柱第 4 段 / spine stage 4)
+# 持续演化闭环 / continuous-evolution loop:
+#   Scan → Gap-Analysis → Roadmap-Update → Implement → Review → Evaluate → (回 Scan)
+# Gap 分析驱动「该做什么」(G4),而非用户逐条下达。Gap analysis decides WHAT to do next.
+#
+# 机器可读契约 / machine-readable contract。当前 (v0–v1):loop = Claude Code subagents 编排;
+# Evaluate 喂记分卡 = v2 起接 Eval Engine → Router 学习闭环 / closes the learning loop from v2.
+
+id: evolve
+stage: evolve
+title: 已发布系统 → 自驱动持续改进 (self-driven continuous improvement)
+readonly: false                        # implement 子段写码 / writes code in the implement phase
+type: loop                             # 长循环,非一次性脊柱段 / a standing loop, not a one-shot
+description: >
+  对已存在系统持续扫描、找差距、更新 ROADMAP、实现、评审、评估,再回到扫描。
+  这是 24h 自治开发的稳态形态。Steady-state of 24h autonomous development.
+
+# ── mode 裁决 / central knob applied to this stage ──
+# Evolve 的激进程度由 mode 决定(扫多深、是否自动开工 vs 仅提案)。
+mode_gating:
+  explorer:    opportunistic           # 仅扫明显机会,默认提案不自动改 / propose, don't auto-act
+  balanced:    standard
+  engineering: thorough                 # 全维扫描(安全/债务/性能)+ 自动派生任务 / full scan, auto-derive
+  cto:         advisory                  # 只产 gap 报告与 roadmap 提案,人确认 / report + propose only
+  authority: ../policies/modes.yml#workflow_depth.evolve
+  # 注:explorer→engineering 迁移会在此自动派生「补测试/CI/监控」债务任务 / migration derives debt tasks here.
+
+# ── 循环体 / loop body ──
+# loop 段同样用 phases 表达,但带 loop_back_to 形成闭环 / phases form a cycle via loop_back_to.
+loop:
+  loop_back_to: scan                    # 末段回到 scan,持续运行 / cycles back to scan
+  phases:
+    # ── P1 扫描 / scan ──
+    - name: scan
+      agent: explorer
+      readonly: true                    # 只观测,不改 / observes only
+      required_gates: []
+      description: >
+        扫代码/依赖/安全/性能/架构腐化/测试覆盖;采当前状态快照。
+        Scan code, deps, security, perf, drift, coverage — snapshot current state.
+
+    # ── P2 差距分析 / gap analysis ──
+    - name: gap-analysis
+      agent: architect
+      readonly: true
+      required_gates: []
+      model_tier: opus                  # 判断密集 → 贵模型 / judgment-heavy → top tier
+      description: >
+        现状 vs 目标(北极星/PRD)算差距,按价值/风险排序。
+        Diff current vs target (north-star/PRD); rank gaps by value & risk.
+      emits:
+        - gap-report.md
+
+    # ── P3 Roadmap 更新 / roadmap update ──
+    - name: roadmap-update
+      agent: planner
+      readonly: false                   # 只改 ROADMAP,不碰产物代码 / edits roadmap, not product code
+      required_gates: []
+      description: >
+        把高优先 gap 写成 ROADMAP 条目(机器可判 acceptance)。
+        Turn top gaps into roadmap items with machine-checkable acceptance.
+      emits:
+        - .agent/ROADMAP.md             # 就地更新 / updated in place
+
+    # ── P4 实现 / implement ──
+    - name: implement
+      agent: implementer
+      readonly: false                   # 写产物代码 / writes product code
+      required_gates: [lint, test, build, complexity, arch, security]   # 生效集由 mode 过滤 / filtered by mode
+      blocking: true
+      description: >
+        实现 roadmap 新增项,过 mode 选定 harness 闸门(同 build 段约束)。
+        Implement new items under the same mode-selected gates as build.
+
+    # ── P5 评审 / review ──
+    - name: review
+      agent: reviewer
+      readonly: true
+      fresh_context: true               # 独立 Agent,不自审 / fresh context, no self-review
+      model_tier: opus                  # 所有 Reviewer 用 Opus / all reviewers use top tier
+      required_gates: []
+      required_when: ../policies/modes.yml#workflow_depth.reviewer
+      description: 评审本轮改动的设计与维护性 / review this cycle's design & maintainability.
+      on_fail:
+        action: loop_back
+        target_phase: implement
+
+    # ── P6 评估 / evaluate ──
+    - name: evaluate
+      agent: qa
+      readonly: true                    # 只评分,不改 / scores only
+      required_gates: []
+      description: >
+        对本轮产出打质量分,喂 Eval 记分卡 → 反哺 Router 择优(学习闭环,v2)。
+        Score this cycle; feed the Eval scorecard → informs Router selection (learning loop, v2).
+      emits:
+        - eval-scorecard.md             # 历史择优数据源 / source for history-based routing
+
+# ── 终止条件 / stop condition ──
+# Evolve 是稳态长循环:默认不自停。停止是外部信号(人/预算/挂起),非内部指标。
+# A standing loop — does not self-terminate; stopping is an EXTERNAL signal.
+stop_condition:
+  type: external                        # 由外部触发,无内部收敛指标 / externally triggered
+  triggers:
+    - human_pause                       # 人工挂起 / operator pause
+    - budget_exhausted                  # 预算守卫熔断(token 配额)/ budget guard tripped
+    - no_gaps_found                     # 连续 N 轮零差距 → 休眠待新信号 / idle until new signal
+  expression: "run_until_external_stop"
+  anti_pattern: round_count             # 同 build:不用「继续 N 轮」/ NOT round-count, consistent with build
+  default: keep_looping                 # 默认持续运行 / default is to keep cycling

@@ -1,0 +1,26 @@
+# Harness adapter: TypeScript / JavaScript
+# 声明式:gate runner 检测到 .ts/.tsx/.js 时 shell 出以下命令 (v0.1+;v0 不调,见 README)。
+# Declarative command map — the runner shells these out; it does not interpret them.
+
+language: typescript
+detect: ["tsconfig.json", "package.json", "*.ts", "*.tsx"]
+
+commands:
+  lint:                            # eslint:含 max-lines / max-lines-per-function / complexity / sonarjs
+    run: "eslint . --max-warnings=0"
+    rules:                         # 由 .eslintrc 强制,镜像 policies.yml
+      - "max-lines"                # ≤ max_file_lines (500)
+      - "max-lines-per-function"   # ≤ max_function_lines (50)
+      - "complexity"               # 圈复杂度上限
+      - "sonarjs/cognitive-complexity"
+  test:
+    run: "vitest run"              # fallback: "jest --ci"
+  build:
+    run: "tsc --noEmit && vite build"
+  coverage:
+    run: "vitest run --coverage"
+    report: "coverage/coverage-summary.json"
+  complexity:                      # 圈复杂度专项(可独立于 lint 跑)
+    run: "eslint . --rule '{\"complexity\":[\"error\",10]}'"
+  circular_deps:                   # 循环依赖 = 0
+    run: "madge --circular --extensions ts,tsx src"

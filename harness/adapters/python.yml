@@ -1,0 +1,26 @@
+# Harness adapter: Python
+# 声明式:gate runner 检测到 .py 时 shell 出以下命令 (v0.1+;v0 不调,见 README)。
+# Declarative command map — the runner shells these out; it does not interpret them.
+
+language: python
+detect: ["pyproject.toml", "setup.cfg", "requirements.txt", "*.py"]
+
+commands:
+  lint:                            # ruff:lint + 行长 + 复杂度(C901)统一一把
+    run: "ruff check ."
+    rules:
+      - "C901"                     # mccabe 圈复杂度(对齐 max_function_lines 意图)
+      - "PLR0915"                  # too-many-statements ≈ 函数体积
+  test:
+    run: "pytest -q"
+  build:
+    run: "python -m build"         # 库:打包;应用项目可改 no-op / 容器构建
+  coverage:
+    run: "pytest --cov --cov-report=json"
+    report: "coverage.json"
+  complexity:                      # radon 测量 + xenon 守阈(CI 失败门)
+    run: "xenon --max-absolute B --max-modules A --max-average A ."
+    measure: "radon cc -s ."
+  circular_deps:                   # 循环依赖 = 0;工具:pydeps(--show-cycles)或 import-linter 契约
+    run: "import-linter --config importlinter.ini"
+    note: "tool: import-linter(声明 forbidden contracts)或 pydeps --show-cycles"

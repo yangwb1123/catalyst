@@ -1,0 +1,8 @@
+# ForgeOS harness policies (v0) — host-independent source of truth.
+# Run: node harness/gate.mjs
+max_file_lines: 500
+max_function_lines: 50         # TODO(v0.1): enforced by per-language adapter (eslint)
+max_root_files: 15
+circular_dependency_count: 0   # TODO(v0.1): depcruise / madge adapter
+coverage_min: 80               # single source of truth (consumed by eval + modes)
+enforce: block                 # warn | block — now ENFORCING (v0 止血完成;CC hook 未装,仅影响手动/CI gate)
