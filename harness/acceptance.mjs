@@ -19,6 +19,7 @@ import { readdirSync, statSync, existsSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { detectLanguages, loadAdapter, lintBinary, coverageBinary, judgeCoverage, resolveCoverageThreshold, versionProbeArgs, coverageArtifact, appTestPlan, ADAPTER_LANG_BY_RUNNER } from './adapters.mjs';
+import { scanRepo as scaScanRepo } from './sca.mjs';
 
 const HARNESS_DIR = dirname(fileURLToPath(import.meta.url));
 const ROOT = dirname(HARNESS_DIR);
@@ -75,27 +76,17 @@ export function probeArch() {
   );
 }
 
-// test_pass == true  <-  ALL committed harness suites must be green.
-// Self-governance: the harness must run its OWN tests, not a curated subset, or
-// a regression in (e.g.) acceptance.mjs's verdict logic — OR a silently-green
-// arch-check (the enforcer faking a pass) — could ship unnoticed.
-//   - python3 test_check.py        (governance-integrity checker)
-//   - python3 test_yaml2json.py    (the YAML->JSON shim)
-//   - node --test 'harness/test_*.mjs'      picks up test_gate + test_acceptance
-//     + test_scorecard (top-level harness suites).
-//   - node --test 'harness/arch/test_*.mjs' picks up test_arch-check (the 17
-//     negative-fixture tests pinning every architecture check, incl. the
-//     multi-line-string function-length regression). The non-recursive glob
-//     above does NOT descend into harness/arch/, so without this second entry
-//     those 17 tests would never run under `forge accept`.
-// Both Node runs use a QUOTED glob (Node 26's `--test <dir>` is broken; letting
-// Node's own runner resolve the glob dodges that directory bug) and carry
-// FORGE_ACCEPT_INNER=1 so test_acceptance.mjs SKIPS its integration test that
-// re-spawns the full acceptance.mjs — without the flag this probe would trigger
-// ~4x redundant nested gate runs (acceptance -> glob -> test_acceptance -> ...).
-// The arch run is also fail-CLOSED on discovery: exit 0 is necessary but not
-// sufficient — a glob matching nothing still exits 0, so we require the runner's
-// own `# tests N` summary with N > 0 (else the 17 tests could vanish unnoticed).
+// test_pass == true  <-  ALL committed harness suites must be green (self-
+// governance: the harness runs its OWN tests, not a curated subset, so a
+// regression in verdict logic — or a silently-green arch-check faking a pass —
+// can't ship). Suites: test_check.py + test_yaml2json.py, plus two Node runs —
+// 'harness/test_*.mjs' (test_gate/test_acceptance/test_scorecard) and
+// 'harness/arch/test_*.mjs' (test_arch-check's negative fixtures; the first glob
+// is non-recursive so this second entry is required, else those vanish). Both
+// Node runs use a QUOTED glob (Node 26's `--test <dir>` is broken) and carry
+// FORGE_ACCEPT_INNER=1 so test_acceptance.mjs SKIPS its full-gate re-spawn
+// (avoiding ~4x nested gate runs). The arch run is fail-CLOSED on discovery:
+// exit 0 alone is insufficient (an empty glob exits 0) — require `# tests N`>0.
 export function probeTests() {
   const archRun = run(
     'node',
@@ -214,10 +205,9 @@ export function probeAppTests() {
 //   N-A   — linter NOT installed, OR installed but unconfigured for this project
 //           (e.g. eslint with no eslintrc: it can't run, so its result is not a
 //           verdict on the code). N/A is the honest outcome, never a FAIL.
-// The criterion is N/A iff every language is N/A (so a repo with no installed
-// linter — like this one by default — stays N/A and therefore ACCEPTED, keeping
-// lint NON-load-bearing and the gate backward-compatible). Install eslint/
-// golangci-lint/ruff with a config and the SAME code auto-enforces: PASS/FAIL.
+// The criterion is N/A iff every language is N/A (a repo with no installed linter
+// stays N/A and therefore ACCEPTED, keeping lint NON-load-bearing); install
+// eslint/golangci-lint/ruff with a config and the SAME code auto-enforces PASS/FAIL.
 
 // linterInstalled: true iff `<bin> --version` exits 0. The cheap, side-effect-
 // free probe for "is this tool on PATH" before running the heavier lint command.
@@ -286,22 +276,15 @@ export function probeLint() {
   return result('lint', PASS, detail);
 }
 
-// coverage >= threshold  <-  per-language coverage tools from the adapters
-// (go test -coverprofile / pytest --cov / vitest --coverage). Like probeLint,
-// this upgrades coverage from a STATIC N/A into an executable, framework-backed
-// criterion: detect languages, load each adapter's coverage command, and — only
-// when that tool is actually INSTALLED — shell it out, then judge the % it prints.
-//
-// HONESTY + FAIL-SAFE (identical to lint): a missing coverage tool is NOT a
-// failure and NOT a faked pass; a tool that is installed but cannot run here
-// (no module / no tests / unconfigured — e.g. `go test ./...` from a non-module
-// repo root) is N/A, never FAIL; only a real run below the threshold FAILs. The
-// pure decision lives in adapters.judgeCoverage so its branches are unit-testable
-// with no tool installed. The criterion is N/A iff every detected language is
-// N/A — so this repo (no coverage tool wired/configured) stays N/A and therefore
-// ACCEPTED, keeping coverage NON-load-bearing (it is NOT in LOAD_BEARING) and
-// the gate backward-compatible. Install + configure a coverage tool and the SAME
-// code auto-enforces PASS/FAIL.
+// coverage >= threshold  <-  per-language coverage tools from the adapters (go
+// test -coverprofile / pytest --cov / vitest --coverage). Like probeLint, this
+// upgrades coverage from a STATIC N/A into an executable, framework-backed
+// criterion. HONESTY/FAIL-SAFE identical to lint: a missing OR can't-run tool
+// (no module/tests/config) is N/A, never FAIL; only a real run below threshold
+// FAILs. The pure decision is adapters.judgeCoverage (unit-testable with no tool
+// installed). N/A iff every language is N/A — so this repo stays N/A and ACCEPTED,
+// keeping coverage NON-load-bearing; install+configure a tool and PASS/FAIL auto-
+// enforce.
 
 // probeCoverageLang: I/O wrapper around judgeCoverage for one language. Loads the
 // adapter's coverage command, probes whether its tool is installed (`<bin>
@@ -347,16 +330,11 @@ export function probeCoverage() {
   return result('coverage', PASS, detail);
 }
 
-// Criteria with NO executable check in this repo. Surfaced as N/A with an
-// honest reason; NEVER asserted as a pass (see decide()).
-// NOTE: security_findings is NO LONGER here — harness/secret-scan.mjs gives it a
-// real (hardcoded-secret) check, so probeSecurity reports PASS/FAIL, not N/A.
-// NOTE: lint is NO LONGER here either — probeLint shells the per-language adapter
-// linters, so it reports PASS/FAIL when a linter is installed and N/A only when
-// none is (honest, not a hardcoded N/A).
-// NOTE: coverage is NO LONGER here either — probeCoverage shells the per-language
-// adapter coverage tools, so it reports PASS/FAIL when a tool is installed AND
-// can run, and N/A only when none is (honest, not a hardcoded N/A).
+// Criteria with NO executable check in this repo. Surfaced as N/A with an honest
+// reason; NEVER asserted as a pass (see decide()). security_findings, lint,
+// coverage, and dependency_vulnerabilities are NO LONGER here — each is now a
+// real probe (secret-scan / adapter linters / adapter coverage / sca) that
+// reports PASS/FAIL when its tool/data is present and N/A only when it is not.
 // typecheck/build stay N/A: no type-checker / build step is wired for this repo.
 export function probeNotApplicable() {
   return [
@@ -367,13 +345,12 @@ export function probeNotApplicable() {
 
 // security_findings == 0  <-  hardcoded-secret scan (harness/secret-scan.mjs).
 // Direction-5 security/compliance gate, aligned with OWASP Agentic Top-10 2025-12
-// (sensitive information disclosure). PASS when the secret scanner exits 0 (no
-// committed AWS keys / private-key headers / GitHub-Slack tokens / high-entropy
-// credential assignments), FAIL otherwise. HONESTY: this is a PATTERN scanner
-// for hardcoded secrets only — it is NOT a dependency/CVE (SCA) scanner; that
-// needs a vulnerability DB and is the v3 roadmap item, deliberately out of scope.
-// It is load-bearing (see LOAD_BEARING): a security gate that found a leaked
-// credential yet still ACCEPTED would defeat its own purpose.
+// (sensitive information disclosure). PASS when the scanner exits 0 (no committed
+// AWS keys / private-key headers / GitHub-Slack tokens / high-entropy credential
+// assignments), FAIL otherwise. HONESTY: this is a PATTERN scanner for hardcoded
+// secrets ONLY — dependency/CVE (SCA) scanning is the separate probeSCA below. It
+// is load-bearing (see LOAD_BEARING): a gate that found a leaked credential yet
+// still ACCEPTED would defeat its purpose.
 export function probeSecurity() {
   const r = run('node', [join(HARNESS_DIR, 'secret-scan.mjs')]);
   return result(
@@ -381,6 +358,29 @@ export function probeSecurity() {
     r.ok ? PASS : FAIL,
     r.ok ? 'secret-scan: no hardcoded secrets (pattern scan; SCA/CVE out of scope)' : `secret-scan exit ${r.code}: ${r.out}`,
   );
+}
+
+// dependency_vulnerabilities == 0  <-  Software-Composition-Analysis (sca.mjs):
+// parse manifests (go.mod/package.json/requirements.txt) and match them vs an
+// OSV-format advisory DB. The v3 SCA/CVE item secret-scan.mjs deferred; distinct
+// from security_findings (hardcoded-secret scan). HONESTY (full rationale in
+// sca.mjs's header): DB present (FORGE_SCA_DB env, else .agent/security/
+// advisories.json) -> PASS / FAIL (detail lists advisory_id+severity); DB ABSENT
+// -> N/A, scan NOT run and NOT faked. NOT in LOAD_BEARING, so the no-DB N/A does
+// not block accept; a DB-present FAIL blocks via decide()'s normal fail path.
+export function probeSCA(root = ROOT) {
+  const dbPath = process.env.FORGE_SCA_DB || join(root, '.agent', 'security', 'advisories.json');
+  const report = scaScanRepo(root, dbPath);
+  const counts = `${report.manifestCount} manifest(s), ${report.depCount} dep(s)`;
+  if (!report.available) {
+    return result('dependency_vulnerabilities', NA,
+      `SCA framework ready; no OSV advisory DB (set FORGE_SCA_DB or ${join('.agent', 'security', 'advisories.json')}) — dependency CVE scan not run, not faked (${counts} parsed)`);
+  }
+  if (report.findings.length === 0) {
+    return result('dependency_vulnerabilities', PASS, `sca: 0 known-vulnerable dependencies (${counts} vs OSV advisory DB)`);
+  }
+  const listed = report.findings.map((f) => `${f.dep}@${f.installed} ${f.advisory_id} (${f.severity})`).join('; ');
+  return result('dependency_vulnerabilities', FAIL, `sca: ${report.findings.length} vulnerable dependenc(ies): ${listed}`);
 }
 
 // architecture == clean  <-  clean-architecture DEPENDENCY DIRECTION + size
@@ -411,6 +411,7 @@ export function collect() {
     probeArch(),
     probeArchitecture(),
     probeSecurity(),
+    probeSCA(),
     probeLint(),
     probeCoverage(),
     ...probeNotApplicable(),

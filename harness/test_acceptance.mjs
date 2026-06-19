@@ -8,14 +8,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { readFileSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import * as acc from './acceptance.mjs';
 import { resolveCoverageThreshold, judgeCoverage, computeCoverageThreshold } from './adapters.mjs';
 import { parseRules } from './arch/scan.mjs';
-const { decide, PASS, FAIL, NA, LOAD_BEARING, probeNotApplicable, probeCoverage } = acc;
+const { decide, PASS, FAIL, NA, LOAD_BEARING, probeNotApplicable, probeCoverage, probeSCA } = acc;
 
 // allPass builds a results array where every load-bearing criterion is PASS,
 // then applies the given overrides — so a test can isolate ONE criterion's
@@ -160,6 +161,64 @@ test('coverage is NOT load-bearing (an N/A coverage must not block accept)', () 
   const base = LOAD_BEARING.map((criterion) => ({ criterion, status: PASS, detail: 'x' }));
   base.push({ criterion: 'coverage', status: NA, detail: 'no runnable coverage tool' });
   assert.equal(decide(base).accepted, true, 'N/A coverage must not block acceptance');
+});
+
+// --- dependency_vulnerabilities (SCA) is a real probe, honest N/A, non-blocking -
+test('probeSCA yields a single, honest dependency_vulnerabilities row', () => {
+  // Like probeCoverage, exercise probeSCA() directly (NOT collect(), which spawns
+  // node --test and would re-enter this suite). With no advisory DB in the repo it
+  // must be N/A — the framework is ready but no OSV DB is provided, so the scan is
+  // not run and NOT faked into a pass.
+  const r = probeSCA();
+  assert.equal(r.criterion, 'dependency_vulnerabilities', 'exactly the SCA criterion');
+  assert.ok([PASS, FAIL, NA].includes(r.status), 'SCA status must be an honest verdict');
+  assert.equal(r.status, NA, 'no advisory DB in this repo -> honest N/A');
+  assert.match(r.detail, /not run, not faked/i, 'N/A reason must say it was NOT faked');
+});
+
+test('dependency_vulnerabilities is NOT load-bearing (an N/A SCA must not block accept)', () => {
+  // Backward-compat invariant (mirrors coverage): with no advisory DB the honest
+  // N/A keeps the repo ACCEPTED — adding SCA must not regress a clean accept.
+  assert.ok(!LOAD_BEARING.includes('dependency_vulnerabilities'), 'SCA must stay non-load-bearing');
+  const base = LOAD_BEARING.map((criterion) => ({ criterion, status: PASS, detail: 'x' }));
+  base.push({ criterion: 'dependency_vulnerabilities', status: NA, detail: 'no advisory DB' });
+  assert.equal(decide(base).accepted, true, 'N/A SCA must not block acceptance');
+});
+
+test('decide() REJECTS when a SCA vuln is found (DB present + vulnerable dep -> FAIL)', () => {
+  // When an advisory DB IS supplied and a dependency matches a vulnerable range,
+  // probeSCA returns FAIL and decide()'s normal fail path must block the accept —
+  // the honesty mirror of N/A: present+vulnerable BLOCKS, absent stays N/A.
+  const base = LOAD_BEARING.map((criterion) => ({ criterion, status: PASS, detail: 'x' }));
+  base.push({ criterion: 'dependency_vulnerabilities', status: FAIL, detail: 'sca: 1 vulnerable dep' });
+  const v = decide(base);
+  assert.equal(v.accepted, false, 'a SCA FAIL must block accept');
+  assert.match(v.line, /dependency_vulnerabilities failed/);
+});
+
+test('probeSCA with a real OSV DB (via FORGE_SCA_DB) DETECTS a planted vuln -> FAIL', () => {
+  // End-to-end through the acceptance probe: a temp project with a vulnerable
+  // go.mod dep + an OSV advisory DB pointed at by FORGE_SCA_DB must yield a FAIL
+  // whose detail names the advisory id + severity. This is the gate-level
+  // anti-stub proof — the probe is wired to the real matching engine, not a stub.
+  const dir = mkdtempSync(join(tmpdir(), 'sca-acc-'));
+  const prev = process.env.FORGE_SCA_DB;
+  try {
+    writeFileSync(join(dir, 'go.mod'), 'module x\ngo 1.26\nrequire (\n\texample.com/vuln/pkg v1.3.0\n)\n');
+    const dbPath = join(dir, 'osv.json');
+    writeFileSync(dbPath, JSON.stringify([{
+      id: 'GHSA-acc-0001', package: 'example.com/vuln/pkg', ecosystem: 'Go',
+      vulnerable: { introduced: 'v1.2.0', fixed: 'v1.4.0' }, severity: 'HIGH',
+    }]));
+    process.env.FORGE_SCA_DB = dbPath;
+    const r = probeSCA(dir);
+    assert.equal(r.status, FAIL, 'a vulnerable dep with a DB present must FAIL');
+    assert.match(r.detail, /GHSA-acc-0001/, 'detail names the advisory id');
+    assert.match(r.detail, /HIGH/, 'detail names the severity');
+  } finally {
+    if (prev === undefined) delete process.env.FORGE_SCA_DB; else process.env.FORGE_SCA_DB = prev;
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 // --- unit: decide() is a pure verdict over a results array -------------------

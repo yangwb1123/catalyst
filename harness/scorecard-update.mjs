@@ -23,9 +23,26 @@
 // supplies these via the flags below; omitting them yields the legacy binary
 // row (rework_rate 0, avg_iterations absent).
 //
+// COST/LATENCY TELEMETRY: the row can also carry tail latency and average cost
+// (scorecard.schema.yml p95_latency_ms / avg_cost_usd / window). Two injection
+// paths, both honest about where the number comes from:
+//   - --trace <path>: reads forge-core's .forge/trace.jsonl (one JSON event per
+//       line; each event's `duration_ms` is a REAL wall-clock measurement, see
+//       forge-core/internal/trace/trace.go) and aggregates the durations into a
+//       latency sample set -> a genuine p95. THIS IS THE REAL DATA PATH.
+//   - --latency-ms / --cost-usd: comma-separated samples injected directly (for
+//       an orchestrator that already holds them, or for tests).
+// HONESTY on cost: avg_cost_usd is a token x unit-price ESTIMATE. A dry-run has
+// no real tokens, so cost is NOT derivable from the trace and is OMITTED unless
+// --cost-usd is supplied; a real per-call cost requires a real LLM executor's
+// token counts. Latency is measured (trace), cost is estimated (must be fed in).
+// Any telemetry with no samples is omitted entirely — never a fabricated 0.
+//
 // CLI:
 //   node harness/scorecard-update.mjs --model <m> --task-type <t> \
-//        [--out <path>] [--now <iso>] [--iterations <n>] [--rework <0|1>]
+//        [--out <path>] [--now <iso>] [--iterations <n>] [--rework <0|1>] \
+//        [--trace <path>] [--latency-ms "12,45,90"] [--cost-usd "0.01,0.02"] \
+//        [--window 30d]
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -99,6 +116,51 @@ export function updateScorecards(existing, newRow, opts = {}) {
   return out;
 }
 
+// parseTraceLatencies(text) -> array of REAL per-event wall-clock durations (ms)
+// extracted from forge-core trace JSONL. `text` is the raw file contents: one
+// JSON object per line (see forge-core/internal/trace/trace.go `Event`). We read
+// each event's `duration_ms` (the on-disk json tag) and keep the finite ones.
+//
+// PURE: text in, numbers out — no filesystem here (the read happens at the I/O
+// boundary), so this is unit-testable against a fixture string. Robust by design
+// because a trace can legitimately interleave shapes:
+//   - blank lines are skipped
+//   - a line that is not valid JSON is skipped (never throws — a corrupt tail
+//     line must not sink the whole aggregation)
+//   - an event with no numeric `duration_ms` (e.g. an instantaneous 0 is kept;
+//     a missing/NaN field is skipped) contributes nothing
+// The result feeds scorecard.percentile for a genuine p95 — these are measured
+// latencies, not estimates.
+export function parseTraceLatencies(text) {
+  if (typeof text !== 'string') return [];
+  const out = [];
+  for (const line of text.split('\n')) {
+    const s = line.trim();
+    if (s === '') continue;
+    let ev;
+    try { ev = JSON.parse(s); } catch { continue; } // skip a malformed line
+    if (ev && Number.isFinite(ev.duration_ms)) out.push(ev.duration_ms);
+  }
+  return out;
+}
+
+// parseNumberList("12,45,90") -> [12,45,90]. Splits on commas, trims, and keeps
+// only finite numbers from NON-EMPTY tokens. Empty tokens are dropped FIRST,
+// before Number(): note `Number("")` is 0, not NaN, so a stray "0.01,,0.02"
+// must not coerce the empty slot into a phantom 0 cost (that would fabricate
+// data — exactly what the honesty contract forbids). An undefined input ->
+// undefined (field not injected); an explicit but empty/all-garbage list -> []
+// which downstream treats as "no data" (the field is then omitted, never a 0).
+export function parseNumberList(raw) {
+  if (raw === undefined) return undefined;
+  return raw
+    .split(',')
+    .map((t) => t.trim())
+    .filter((t) => t !== '')
+    .map((t) => Number(t))
+    .filter((n) => Number.isFinite(n));
+}
+
 // --- I/O boundary -------------------------------------------------------------
 
 // Minimal flag parser for --k v pairs (zero-dep). Unknown flags are ignored.
@@ -143,17 +205,41 @@ function withTrajectory(verdict, { iterations, reworked }) {
   return out;
 }
 
+// Read a forge-core trace file at `path` and parse out its measured latencies.
+// I/O shell around the pure parseTraceLatencies; a missing file is an empty
+// sample set (no trace yet), not an error — telemetry is optional and absence is
+// honest. `undefined` path -> undefined (the --trace flag was not supplied).
+function readTraceLatencies(path) {
+  if (path === undefined) return undefined;
+  if (!existsSync(path)) return [];
+  return parseTraceLatencies(readFileSync(path, 'utf8'));
+}
+
+// Combine the latency sources into one sample set for synthesize, or undefined
+// when neither source was supplied (so the field is omitted, not a fabricated
+// empty). Trace-measured latencies and directly-injected --latency-ms samples
+// are concatenated: both are real measurements, just different ingress paths.
+function combineLatencies(traceLatencies, injectedLatencies) {
+  if (traceLatencies === undefined && injectedLatencies === undefined) return undefined;
+  return [...(traceLatencies ?? []), ...(injectedLatencies ?? [])];
+}
+
 // Run the acceptance gate once and fold its single verdict into the scorecards
 // at `out`. Returns the fresh (pre-merge) row for logging. `now` is the ISO
 // timestamp stamped onto the row (supplied by the caller — no Date.now() here).
-// `iterations` / `reworked` are the optional trajectory the caller injects.
-function runUpdate({ model, taskType, out, now, iterations, reworked }) {
+// `iterations` / `reworked` are the optional trajectory the caller injects;
+// `latenciesMs` / `costsUsd` / `window` are the optional cost/latency telemetry
+// (each omitted from the row when absent — see synthesize's "no data" contract).
+function runUpdate({ model, taskType, out, now, iterations, reworked, latenciesMs, costsUsd, window }) {
   const verdict = withTrajectory(decide(collect()), { iterations, reworked });
   const newRow = synthesize({
     model,
     task_type: taskType,
     verdicts: [verdict],
     updated_at: now,
+    latenciesMs,
+    costsUsd,
+    window,
   });
   // Pass `now` so the stored row's age decays its weight in the merge (recency
   // half-life from policy); without it the fold would be un-decayed (legacy).
@@ -182,14 +268,26 @@ function parseRework(raw) {
   throw new Error(`--rework must be 0 or 1, got: ${raw}`);
 }
 
+// Format an optional telemetry field for the log: absent -> 'n/a' so the line
+// never implies a fabricated number (mirrors avg_iterations).
+function logField(v) {
+  return v === undefined ? 'n/a' : v;
+}
+
 function main() {
   const args = parseArgs(process.argv.slice(2));
   if (!args.model || !args['task-type']) {
-    console.error('usage: scorecard-update --model <m> --task-type <t> [--out <path>] [--now <iso>] [--iterations <n>] [--rework <0|1>]');
+    console.error('usage: scorecard-update --model <m> --task-type <t> [--out <path>] [--now <iso>] [--iterations <n>] [--rework <0|1>] [--trace <path>] [--latency-ms "a,b,c"] [--cost-usd "a,b"] [--window 30d]');
     process.exit(2);
   }
   const out = args.out || DEFAULT_OUT;
   const now = args.now || new Date().toISOString();
+  // Latency comes from the trace (real measurements) and/or direct injection;
+  // cost is estimate-only and never derived here (dry-run has no real tokens).
+  const latenciesMs = combineLatencies(
+    readTraceLatencies(args.trace),
+    parseNumberList(args['latency-ms']),
+  );
   const { verdict, newRow } = runUpdate({
     model: args.model,
     taskType: args['task-type'],
@@ -197,14 +295,19 @@ function main() {
     now,
     iterations: parseIterations(args.iterations),
     reworked: parseRework(args.rework),
+    latenciesMs,
+    costsUsd: parseNumberList(args['cost-usd']),
+    window: args.window,
   });
-  // avg_iterations is absent when no trajectory was supplied — print n/a so the
-  // log never implies a fabricated count.
-  const ai = newRow.avg_iterations === undefined ? 'n/a' : newRow.avg_iterations;
+  // Optional fields are absent when no data was supplied — print n/a so the log
+  // never implies a fabricated count/latency/cost.
   console.log(
     `scorecard-update: ${verdict.accepted ? 'ACCEPTED' : 'REJECTED'} -> `
     + `${newRow.model}/${newRow.task_type} quality_score=${newRow.quality_score} `
-    + `samples=${newRow.samples} rework_rate=${newRow.rework_rate} avg_iterations=${ai} -> ${out}`,
+    + `samples=${newRow.samples} rework_rate=${newRow.rework_rate} `
+    + `avg_iterations=${logField(newRow.avg_iterations)} `
+    + `p95_latency_ms=${logField(newRow.p95_latency_ms)} `
+    + `avg_cost_usd=${logField(newRow.avg_cost_usd)} -> ${out}`,
   );
 }
 

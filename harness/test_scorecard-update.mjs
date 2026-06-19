@@ -10,7 +10,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { updateScorecards } from './scorecard-update.mjs';
+import {
+  updateScorecards, parseTraceLatencies, parseNumberList,
+} from './scorecard-update.mjs';
+import { percentile } from './scorecard.mjs';
 
 const TS = '2026-06-19T00:00:00Z';
 const OLD = '2026-06-01T00:00:00Z';
@@ -223,3 +226,76 @@ test('updateScorecards: decay path also leaves the input array immutable', () =>
   updateScorecards(existing, row('opus', 'crud', 0.0, 10, NOW), { now: NOW });
   assert.deepEqual(existing, before, 'decay merge does not mutate inputs');
 });
+
+// --- parseTraceLatencies: REAL latency extraction from forge-core trace JSONL --
+// trace.go writes one Event per line with a `duration_ms` json tag — these are
+// measured wall-clock spans, so this is the genuine data path for p95 latency.
+const TRACE_FIXTURE = [
+  '{"seq":1,"kind":"agent","name":"plan","status":"ok","duration_ms":120}',
+  '{"seq":2,"kind":"gate","name":"lint","status":"PASS","duration_ms":45}',
+  '{"seq":3,"kind":"gate","name":"test","status":"PASS","duration_ms":900,"detail":"42 tests"}',
+  '{"seq":4,"kind":"converge","name":"check","status":"ok","duration_ms":0}',
+].join('\n');
+
+test('parseTraceLatencies: extracts duration_ms from each trace event (real data path)', () => {
+  const lat = parseTraceLatencies(TRACE_FIXTURE);
+  assert.deepEqual(lat, [120, 45, 900, 0], 'every event\'s measured duration_ms, in order');
+});
+
+test('parseTraceLatencies: a fixture trace resolves to a genuine p95 latency', () => {
+  // This proves the whole pipe: trace text -> latencies -> percentile -> p95.
+  const lat = parseTraceLatencies(TRACE_FIXTURE);
+  const p95 = Math.round(percentile(lat, 95));
+  // sorted [0,45,120,900]; rank 0.95*3 = 2.85 -> 120 + (900-120)*0.85 = 783.
+  assert.equal(p95, 783, 'p95 computed from the real measured durations');
+});
+
+test('parseTraceLatencies: skips blank lines and malformed JSON (corrupt tail safe)', () => {
+  const text = [
+    '{"seq":1,"kind":"gate","name":"lint","status":"PASS","duration_ms":45}',
+    '',
+    'this is not json',
+    '{"seq":2,"kind":"gate","name":"test","status":"PASS","duration_ms":90}',
+    '{ broken json ', // a half-written tail line
+  ].join('\n');
+  assert.deepEqual(parseTraceLatencies(text), [45, 90], 'only the two well-formed events count');
+});
+
+test('parseTraceLatencies: an event with no numeric duration_ms contributes nothing', () => {
+  const text = [
+    '{"seq":1,"kind":"agent","name":"x","status":"ok"}',          // no duration_ms
+    '{"seq":2,"kind":"gate","name":"y","status":"PASS","duration_ms":"slow"}', // non-numeric
+    '{"seq":3,"kind":"gate","name":"z","status":"PASS","duration_ms":30}',
+  ].join('\n');
+  assert.deepEqual(parseTraceLatencies(text), [30], 'only the finite numeric duration is kept');
+});
+
+test('parseTraceLatencies: empty/garbage input -> [] (no data, not a fabricated value)', () => {
+  assert.deepEqual(parseTraceLatencies(''), []);
+  assert.deepEqual(parseTraceLatencies('   \n  \n'), []);
+  assert.deepEqual(parseTraceLatencies(undefined), []);
+});
+
+// --- parseNumberList: comma-separated injection --------------------------------
+test('parseNumberList: splits and keeps finite numbers', () => {
+  assert.deepEqual(parseNumberList('12,45,90'), [12, 45, 90]);
+  assert.deepEqual(parseNumberList('0.01, 0.02 , 0.03'), [0.01, 0.02, 0.03], 'whitespace trimmed');
+});
+
+test('parseNumberList: undefined -> undefined (flag absent, field not injected)', () => {
+  assert.equal(parseNumberList(undefined), undefined);
+});
+
+test('parseNumberList: an empty/garbage list -> [] (downstream omits the field)', () => {
+  assert.deepEqual(parseNumberList(''), []);
+  assert.deepEqual(parseNumberList('foo,,bar'), [], 'non-numeric tokens dropped');
+});
+
+// NOTE: the --trace / --latency-ms / --cost-usd CLI flags are wired in main()'s
+// I/O boundary purely from these PURE pieces (parseTraceLatencies + parseNumberList
+// feeding synthesize), each proven above. A subprocess end-to-end test is omitted
+// on purpose: the CLI's runUpdate() invokes the FULL acceptance gate via
+// collect()/spawnSync (whole-repo lint/test/arch), which is both heavy and unsafe
+// to fire while sibling agents are concurrently editing the harness. The data
+// path itself — trace text -> latencies -> genuine p95 — is covered deterministically
+// by parseTraceLatencies + percentile above, with zero spawning and zero disk.

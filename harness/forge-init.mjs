@@ -98,6 +98,9 @@ const COPIED_FILES = [
   join('harness', 'scorecard.mjs'),
   join('harness', 'scorecard-update.mjs'),
   join('harness', 'secret-scan.mjs'),
+  // sca.mjs is imported by acceptance.mjs (the dependency_vulnerabilities criterion
+  // runs OSV-format SCA); without it the copied acceptance gate fails to import.
+  join('harness', 'sca.mjs'),
   join('harness', 'arch', 'arch-check.mjs'),
   join('harness', 'arch', 'scan.mjs'),
   join('harness', 'arch', 'scan-functions.mjs'),
@@ -113,8 +116,10 @@ const COPIED_FILES = [
   join('harness', 'test_adapters.mjs'),
   join('harness', 'test_gate.mjs'),
   join('harness', 'test_scorecard.mjs'),
+  join('harness', 'test_scorecard-telemetry.mjs'),
   join('harness', 'test_scorecard-update.mjs'),
   join('harness', 'test_secret-scan.mjs'),
+  join('harness', 'test_sca.mjs'),
   join('harness', 'arch', 'test_arch-check.mjs'),
 ];
 

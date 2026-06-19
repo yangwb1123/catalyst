@@ -62,6 +62,54 @@ export function decayWeight(ageDays, halfLifeDays) {
   return 0.5 ** (ageDays / halfLifeDays);
 }
 
+// percentile(values, p) -> the p-th percentile (0..100) of a numeric array, or
+// undefined when there is no data. This is a REAL statistic, not a fabricated
+// number: it sorts the (finite) samples and reads the value at the requested
+// rank, so p95 is the genuine tail of whatever latencies were actually measured.
+//
+// Method: nearest-rank on a 0-based index with linear interpolation between the
+// two straddling samples (rank = (p/100) * (n-1)). For p=100 this is the max,
+// p=0 the min, and an exact integer rank reads a single element with no interp.
+//
+// PURE: no clock, no I/O, input is sorted into a COPY (the caller's array is not
+// mutated). Honesty/fail-safe posture mirrors the rest of this module:
+//   - empty input            -> undefined (no data, never a fabricated 0)
+//   - single element         -> that element (the only observation IS the p95)
+//   - non-finite samples      are filtered out before ranking (NaN never ranks)
+//   - p is clamped into [0,100] so a garbage percentile can't index out of range
+export function percentile(values, p) {
+  if (!Array.isArray(values)) return undefined;
+  const xs = values.filter((x) => Number.isFinite(x)).sort((a, b) => a - b);
+  if (xs.length === 0) return undefined;
+  if (xs.length === 1) return xs[0];
+  const pp = p < 0 ? 0 : p > 100 ? 100 : p;
+  const rank = (pp / 100) * (xs.length - 1);
+  const lo = Math.floor(rank);
+  const hi = Math.ceil(rank);
+  if (lo === hi) return xs[lo];
+  const frac = rank - lo;
+  return xs[lo] + (xs[hi] - xs[lo]) * frac; // linear interpolation
+}
+
+// mean(values) -> arithmetic mean of the FINITE samples, or undefined when there
+// is no data. Like percentile, non-finite entries are filtered (they never
+// poison the average) and an empty set yields undefined — the honest "no data"
+// signal that lets the caller OMIT a field rather than emit a fabricated 0.
+export function mean(values) {
+  if (!Array.isArray(values)) return undefined;
+  const xs = values.filter((x) => Number.isFinite(x));
+  if (xs.length === 0) return undefined;
+  let sum = 0;
+  for (const x of xs) sum += x;
+  return sum / xs.length;
+}
+
+// Round a USD cost to 4 decimal places (sub-cent granularity) so avg_cost_usd is
+// a tidy money value, not a 17-digit float artifact. Kept tiny + pure.
+function roundCost(n) {
+  return Math.round(n * 10000) / 10000;
+}
+
 // Count the accepted verdicts in a batch. Each verdict is the object returned
 // by acceptance.decide(): its `.accepted` boolean is the single binary sample.
 function countAccepted(verdicts) {
@@ -107,14 +155,32 @@ function rollTrajectory(verdicts) {
 //   never a fabricated default) so the Router can tell "1.0 rounds" from "unknown"
 // - updated_at is the caller-supplied ISO-8601 timestamp (NOT Date.now() here)
 //
-// BACKWARD COMPAT: for verdicts shaped `{accepted}` only, quality_score /
-// pass_rate / samples are bit-for-bit unchanged, rework_rate is 0, and
-// avg_iterations is absent — the new fields never perturb the old contract.
+// COST/LATENCY TELEMETRY (optional, all EXTERNALLY injected — this module never
+// measures anything itself):
+//   - latenciesMs: an array of per-task wall-clock durations. These are REAL
+//       measurements piped from forge-core's trace stream (trace.go records
+//       `duration_ms` per Span); when present -> p95_latency_ms = round(p95).
+//   - costsUsd: an array of per-task USD costs. HONESTY: cost is a token x
+//       unit-price ESTIMATE, and a dry-run has zero real tokens, so the caller
+//       only injects this once a real LLM executor reports token counts. When
+//       present -> avg_cost_usd = mean (rounded to sub-cent).
+//   - window: a free-text stats window label (e.g. "30d"), carried through as-is.
+//   Each of these is OMITTED when no data is supplied (empty/undefined array, or
+//   all-non-finite samples -> percentile/mean return undefined) — never a
+//   fabricated 0. This is the anti-"made-up-data" contract: absence is honest.
+//
+// BACKWARD COMPAT: for verdicts shaped `{accepted}` only and NO telemetry args,
+// quality_score / pass_rate / samples are bit-for-bit unchanged, rework_rate is
+// 0, avg_iterations is absent, and none of p95_latency_ms / avg_cost_usd /
+// window appear — the new fields never perturb the old contract.
 //
 // Output satisfies scorecard.schema.yml: {model, task_type, quality_score in
 // [0,1], samples >= 0, updated_at}, plus the optional pass_rate / rework_rate /
-// avg_iterations enrichment.
-export function synthesize({ model, task_type, verdicts = [], updated_at }) {
+// avg_iterations / p95_latency_ms / avg_cost_usd / window enrichment.
+export function synthesize({
+  model, task_type, verdicts = [], updated_at,
+  latenciesMs, costsUsd, window,
+}) {
   const samples = verdicts.length;
   const accepted = countAccepted(verdicts);
   const quality_score = samples === 0 ? 0 : clamp01(accepted / samples);
@@ -132,7 +198,22 @@ export function synthesize({ model, task_type, verdicts = [], updated_at }) {
   // Only emit avg_iterations when at least one accepted task reported a count;
   // floor at 1.0 to honor the schema minimum.
   if (iterCount > 0) entry.avg_iterations = floorIterations(iterSum / iterCount);
+  attachTelemetry(entry, { latenciesMs, costsUsd, window });
   return entry;
+}
+
+// Attach the optional cost/latency telemetry to an entry IN PLACE, omitting any
+// field that has no real data. Factored out of synthesize to keep each function
+// small and the "absence is honest" rule in one place. p95 uses the real
+// percentile; avg cost the real mean; both return undefined on no/garbage data
+// (and we test `=== undefined` so a legit 0 latency/cost still records). `window`
+// is attached only when a non-empty string is supplied.
+function attachTelemetry(entry, { latenciesMs, costsUsd, window }) {
+  const p95 = percentile(latenciesMs, 95);
+  if (p95 !== undefined) entry.p95_latency_ms = Math.round(p95);
+  const avgCost = mean(costsUsd);
+  if (avgCost !== undefined) entry.avg_cost_usd = roundCost(avgCost);
+  if (typeof window === 'string' && window.length > 0) entry.window = window;
 }
 
 // Reconstruct how many ACCEPTED samples backed a row's avg_iterations. avg is a
@@ -171,6 +252,20 @@ function acceptedWeight(rowSamples, qualityScore) {
 // ACCEPTED samples instead (a mean over green tasks only), with the existing
 // accepted-weight likewise decayed, and survives only if at least one side
 // recorded it; otherwise it is omitted, matching synthesize's "no data" contract.
+//
+// TELEMETRY FOLD (p95_latency_ms / avg_cost_usd / window), all graceful when
+// either side lacks the field (never NaN, never a phantom value):
+//   - avg_cost_usd: sample-weighted mean (decayed existing weight + incoming
+//       count), exactly like quality_score — a true running average of cost.
+//   - p95_latency_ms: an APPROXIMATION. A true p95 needs the raw samples, which
+//       a merged row no longer holds, so we take the sample-weighted mean of the
+//       two stored p95s (existing weight decayed). This biases toward the side
+//       with more samples and is documented as approximate; a caller wanting an
+//       exact p95 should re-synthesize from the pooled raw latencies, not merge.
+//   - window: carried from `incoming` (the newer observation) when present, else
+//       the existing label — a string passthrough, not an average.
+// Each field is emitted only if at least one side has it; if neither does it is
+// omitted, same "no data -> no field" contract as synthesize.
 //
 // Identity/metadata (model, task_type) and updated_at come from `incoming` —
 // it is the newer observation. Counts are floored at 0 so a malformed negative
@@ -217,5 +312,41 @@ export function merge(existing, incoming, decayFactor = 1) {
     const ai = floorIterations(incoming.avg_iterations);
     merged.avg_iterations = floorIterations((ae * awe + ai * awi) / awTotal);
   }
+
+  mergeTelemetry(merged, existing, incoming, we, ni);
   return merged;
+}
+
+// Sample-weighted fold of one optional numeric telemetry field present on
+// `existing` and/or `incoming`, using the same (decayed existing weight `we`,
+// incoming count `ni`) weights the quality average uses. Returns undefined when
+// NEITHER side carries a finite value (so the caller omits the field — the "no
+// data, no field" honesty contract). A side missing/garbage value contributes
+// weight 0, so the other side is adopted cleanly (no NaN, no phantom).
+function weightedField(existing, incoming, key, we, ni) {
+  const hasE = Number.isFinite(existing[key]);
+  const hasI = Number.isFinite(incoming[key]);
+  if (!hasE && !hasI) return undefined;
+  const wE = hasE ? we : 0;
+  const wI = hasI ? ni : 0;
+  const wTotal = wE + wI;
+  if (wTotal === 0) return undefined; // both present but zero-weight -> no data
+  return ((hasE ? existing[key] : 0) * wE + (hasI ? incoming[key] : 0) * wI) / wTotal;
+}
+
+// Fold the cost/latency telemetry onto `merged` IN PLACE. avg_cost_usd is a true
+// sample-weighted mean; p95_latency_ms is the documented sample-weighted-mean
+// APPROXIMATION of the two stored p95s (a merged row has no raw samples to
+// recompute an exact percentile); window passes through from the newer side.
+// Each field is set only when data exists, mirroring synthesize.
+function mergeTelemetry(merged, existing, incoming, we, ni) {
+  const cost = weightedField(existing, incoming, 'avg_cost_usd', we, ni);
+  if (cost !== undefined) merged.avg_cost_usd = roundCost(cost);
+  // Approximate p95 merge (see merge() doc): weighted mean of stored p95s.
+  const p95 = weightedField(existing, incoming, 'p95_latency_ms', we, ni);
+  if (p95 !== undefined) merged.p95_latency_ms = Math.round(p95);
+  const window = (typeof incoming.window === 'string' && incoming.window.length > 0)
+    ? incoming.window
+    : (typeof existing.window === 'string' && existing.window.length > 0 ? existing.window : undefined);
+  if (window !== undefined) merged.window = window;
 }
