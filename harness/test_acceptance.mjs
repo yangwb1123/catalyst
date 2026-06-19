@@ -12,7 +12,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import * as acc from './acceptance.mjs';
-const { decide, PASS, FAIL, NA, LOAD_BEARING } = acc;
+const { decide, PASS, FAIL, NA, LOAD_BEARING, probeNotApplicable, probeCoverage } = acc;
 
 // allPass builds a results array where every load-bearing criterion is PASS,
 // then applies the given overrides — so a test can isolate ONE criterion's
@@ -65,9 +65,43 @@ test('acceptance gate ACCEPTS the real repo and exits 0', { skip: Boolean(proces
   // security_findings is now a REAL check (harness/secret-scan.mjs), not N/A:
   // the repo ships no hardcoded secret, so it must show PASS.
   assert.match(res.stdout, /\[PASS\] security_findings/);
-  // N/A criteria must remain visible (honesty: never silently dropped).
+  // N/A criteria must remain visible (honesty: never silently dropped). coverage
+  // is now framework-backed (probeCoverage shells the adapter coverage tools);
+  // it stays N/A here because no coverage tool is runnable+configured (go is
+  // installed but the repo root is not a Go module; pytest/vitest absent), so it
+  // remains NON-load-bearing and the repo is still ACCEPTED.
   assert.match(res.stdout, /\[N-A \] coverage/);
   assert.match(res.stdout, /\[N-A \] build/);
+  // Honesty regression guard: go IS installed, so the coverage detail must not
+  // dishonestly claim "go not installed" (the `go --version` exit-2 trap).
+  assert.doesNotMatch(res.stdout, /go not installed/);
+});
+
+// --- coverage is now a real probe, not a hardcoded N/A in probeNotApplicable --
+test('probeNotApplicable no longer carries coverage (it is a real probe now)', () => {
+  const names = probeNotApplicable().map((r) => r.criterion);
+  assert.ok(!names.includes('coverage'), 'coverage must NOT be a static N/A anymore');
+  // typecheck/build remain the only genuinely-unwired criteria.
+  assert.deepEqual(names.sort(), ['build', 'typecheck']);
+});
+
+test('probeCoverage yields a single, honest coverage row (the wired-in probe)', () => {
+  // NOTE: deliberately tests probeCoverage() directly — NOT collect() — because
+  // collect() runs probeTests()/probeAppTests(), which spawn `node --test`; doing
+  // that from inside `node --test harness/test_*.mjs` would re-enter this suite
+  // and recurse. probeCoverage shells only the (absent/unrunnable) coverage tools,
+  // so it is cheap and side-effect-light, like the probeLint real-repo test.
+  const r = probeCoverage();
+  assert.equal(r.criterion, 'coverage', 'exactly the coverage criterion');
+  assert.ok([PASS, FAIL, NA].includes(r.status), 'coverage status must be an honest verdict');
+});
+
+test('coverage is NOT load-bearing (an N/A coverage must not block accept)', () => {
+  // Backward-compat invariant: coverage staying N/A keeps the repo ACCEPTED.
+  assert.ok(!LOAD_BEARING.includes('coverage'), 'coverage must stay non-load-bearing');
+  const base = LOAD_BEARING.map((criterion) => ({ criterion, status: PASS, detail: 'x' }));
+  base.push({ criterion: 'coverage', status: NA, detail: 'no runnable coverage tool' });
+  assert.equal(decide(base).accepted, true, 'N/A coverage must not block acceptance');
 });
 
 // --- unit: decide() is a pure verdict over a results array -------------------

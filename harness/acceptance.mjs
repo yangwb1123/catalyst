@@ -15,10 +15,10 @@
 // CLI: `node harness/acceptance.mjs`         ->  exit 0 ACCEPTED · exit 1 REJECTED.
 //      `node harness/acceptance.mjs --json`  ->  per-criterion JSON to stdout.
 import { spawnSync } from 'node:child_process';
-import { readdirSync, statSync, existsSync } from 'node:fs';
+import { readdirSync, statSync, existsSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { detectLanguages, loadAdapter, lintBinary } from './adapters.mjs';
+import { detectLanguages, loadAdapter, lintBinary, coverageBinary, judgeCoverage, versionProbeArgs, coverageArtifact } from './adapters.mjs';
 
 const HARNESS_DIR = dirname(fileURLToPath(import.meta.url));
 const ROOT = dirname(HARNESS_DIR);
@@ -284,17 +284,76 @@ export function probeLint() {
   return result('lint', PASS, detail);
 }
 
+// coverage >= threshold  <-  per-language coverage tools from the adapters
+// (go test -coverprofile / pytest --cov / vitest --coverage). Like probeLint,
+// this upgrades coverage from a STATIC N/A into an executable, framework-backed
+// criterion: detect languages, load each adapter's coverage command, and — only
+// when that tool is actually INSTALLED — shell it out, then judge the % it prints.
+//
+// HONESTY + FAIL-SAFE (identical to lint): a missing coverage tool is NOT a
+// failure and NOT a faked pass; a tool that is installed but cannot run here
+// (no module / no tests / unconfigured — e.g. `go test ./...` from a non-module
+// repo root) is N/A, never FAIL; only a real run below the threshold FAILs. The
+// pure decision lives in adapters.judgeCoverage so its branches are unit-testable
+// with no tool installed. The criterion is N/A iff every detected language is
+// N/A — so this repo (no coverage tool wired/configured) stays N/A and therefore
+// ACCEPTED, keeping coverage NON-load-bearing (it is NOT in LOAD_BEARING) and
+// the gate backward-compatible. Install + configure a coverage tool and the SAME
+// code auto-enforces PASS/FAIL.
+
+// probeCoverageLang: I/O wrapper around judgeCoverage for one language. Loads the
+// adapter's coverage command, probes whether its tool is installed (`<bin>
+// --version`), and (only then) shells the coverage command — deferring the
+// verdict to the pure judgeCoverage. Reuses splitCmd + the same no-shell run().
+//
+// Side-effect discipline: coverage commands WRITE a report artifact into the
+// working tree (e.g. `go test -coverprofile=coverage.out` drops coverage.out even
+// when the run fails on "not a module"). A gate must not pollute the repo it
+// judges, so we snapshot whether that artifact pre-existed and remove ONLY one we
+// ourselves created — never a user's pre-existing coverage report.
+function probeCoverageLang(lang) {
+  const { coverage } = loadAdapter(lang);
+  const bin = coverageBinary(coverage);
+  if (!bin) return judgeCoverage(lang, null, false, null);
+  // Tool-aware install probe: `go version`, else `<bin> --version` (see
+  // versionProbeArgs — `go --version` would falsely read as "not installed").
+  const installed = run(bin, versionProbeArgs(bin)).ok;
+  if (!installed) return judgeCoverage(lang, bin, false, null);
+  const artifact = coverageArtifact(coverage);
+  const path = artifact ? join(ROOT, artifact) : null;
+  const preexisted = path ? existsSync(path) : false;
+  const r = run(...splitCmd(coverage));
+  if (path && !preexisted && existsSync(path)) rmSync(path, { recursive: true, force: true });
+  return judgeCoverage(lang, bin, true, r);
+}
+
+// probeCoverage: aggregate per-language coverage into the single `coverage`
+// criterion (mirrors probeLint). N/A when no source languages are detected OR
+// every detected language is N/A (no installed/runnable coverage tool). FAIL if
+// any language is below threshold. Otherwise PASS.
+export function probeCoverage() {
+  const langs = detectLanguages(ROOT);
+  if (langs.length === 0) return result('coverage', NA, 'no source languages detected');
+  const per = langs.map(probeCoverageLang);
+  const detail = per.map((p) => p.detail).join('; ');
+  if (per.some((p) => p.status === FAIL)) return result('coverage', FAIL, detail);
+  if (per.every((p) => p.status === NA)) return result('coverage', NA, detail);
+  return result('coverage', PASS, detail);
+}
+
 // Criteria with NO executable check in this repo. Surfaced as N/A with an
 // honest reason; NEVER asserted as a pass (see decide()).
 // NOTE: security_findings is NO LONGER here — harness/secret-scan.mjs gives it a
 // real (hardcoded-secret) check, so probeSecurity reports PASS/FAIL, not N/A.
 // NOTE: lint is NO LONGER here either — probeLint shells the per-language adapter
 // linters, so it reports PASS/FAIL when a linter is installed and N/A only when
-// none is (honest, not a hardcoded N/A). typecheck/coverage/build stay N/A: no
-// type-checker / coverage tool / build step is wired for this repo.
+// none is (honest, not a hardcoded N/A).
+// NOTE: coverage is NO LONGER here either — probeCoverage shells the per-language
+// adapter coverage tools, so it reports PASS/FAIL when a tool is installed AND
+// can run, and N/A only when none is (honest, not a hardcoded N/A).
+// typecheck/build stay N/A: no type-checker / build step is wired for this repo.
 export function probeNotApplicable() {
   return [
-    result('coverage', NA, 'no coverage tool wired in this repo'),
     result('typecheck', NA, 'no TS sources / type-checker in this repo'),
     result('build', NA, 'no build step (declarative + zero-dep harness)'),
   ];
@@ -347,6 +406,7 @@ export function collect() {
     probeArchitecture(),
     probeSecurity(),
     probeLint(),
+    probeCoverage(),
     ...probeNotApplicable(),
   ];
 }

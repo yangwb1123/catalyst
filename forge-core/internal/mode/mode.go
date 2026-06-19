@@ -20,6 +20,22 @@
 // one-vote veto that FORCES full enforcement regardless of mode (safety is never
 // relaxed by a loose mode).
 //
+// HONESTY — which lifecycle_modifiers dimensions land HERE. Of modes.yml's
+// lifecycle_modifiers block, this slice wires only require_min_gates — the gate
+// FLOOR a lifecycle adds to the mode's gate-set (∪, tighten-only), the one
+// dimension forge-core's Policy can verify because it IS a gate-set. The sibling
+// dimensions are deliberately NOT modeled here, each owned by another subsystem:
+//   - coverage_delta (idea 0 · growth +10 · production +20): a coverage THRESHOLD
+//     adjustment, not a gate name. It needs a coverage tool to mean anything —
+//     that lives in the harness coverage adapters (harness/adapters/<lang>.yml's
+//     `coverage:` runner), not in this pure gate-set distillation. A later wave.
+//   - enforce_floor (warn vs block): the ENFORCEMENT MODE (advisory vs hard-stop),
+//     which is a harness-policy knob (harness/policies.yml `enforce:`), applied by
+//     the out-of-band harness when it RUNS a gate — not by which gates this Policy
+//     permits. forge-core decides the gate-SET; the harness decides warn/block.
+// So production's require_min_gates floor is wired below; its coverage_delta/
+// enforce_floor veto is honestly left to those subsystems (documented, not dead).
+//
 // HONESTY — what "evolve depth" means in v1. EvolveDepth maps to ONE concrete
 // behavior: the DEFAULT --max-iter (the loop's safety bound) `forge evolve` uses
 // when the operator did not pass one (advisory→1, opportunistic→2, standard→5,
