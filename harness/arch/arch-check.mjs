@@ -87,6 +87,29 @@ export function checkCognitive(model, rules) {
   return [];
 }
 
+// anti-pattern naming: a source directory whose basename is a known technical-
+// role grab-bag (utils/common/manager/handler/...) signals "organized by tech
+// detail, not architecture". A name blessed as a real layer in dir_aliases
+// (e.g. service -> application) is EXEMPT — it is a deliberate layer, not a junk
+// drawer. CHEAP PROXY for the cognitive-architecture skill (principle 1/2): it
+// catches obvious smells; it cannot prove a structure is good (that stays the
+// architect's judgment + the 30-second tree litmus).
+export function checkAntiPatterns(model, rules) {
+  const bad = new Set(rules.naming?.anti_patterns ?? []);
+  const blessed = new Set(Object.keys(rules.architecture?.dir_aliases ?? {}));
+  const seen = new Set();
+  const v = [];
+  for (const f of model.files) {
+    for (const seg of f.rel.split(/[\\/]/).slice(0, -1)) {
+      if (bad.has(seg) && !blessed.has(seg) && !seen.has(seg)) {
+        seen.add(seg);
+        v.push(`"${seg}/" is a technical-role grab-bag name (e.g. ${f.rel}) — organize by capability/layer, or bless "${seg}" as a layer in dir_aliases`);
+      }
+    }
+  }
+  return v;
+}
+
 // drift-guard: .arch/rules.yaml file/root limits MUST equal harness/policies.yml
 // so the two sources of truth cannot silently diverge.
 export function checkDrift(rules) {
@@ -117,6 +140,7 @@ function main() {
     ['package', checkPackage(model, rules)],
     ['fanin', checkFanin(model, rules)],
     ['cognitive', checkCognitive(model, rules)],
+    ['anti-pattern-naming', checkAntiPatterns(model, rules)],
     ['drift-guard', checkDrift(rules)],
   ];
   let failed = 0;

@@ -73,3 +73,24 @@ architecture:
     - "domain -> infrastructure"
     # application must not import the outer interfaces layer:
     - "application -> interfaces"
+
+# ── Naming: technical-role directory names that signal "organized by tech
+# detail, not architecture" (cognitive-architecture skill, principle 1/2). A dir
+# with one of these basenames is flagged UNLESS it is blessed as a real layer in
+# architecture.dir_aliases (e.g. `service` -> application). A CHEAP PROXY: it
+# catches obvious technical-layering grab-bags; it cannot prove a structure is
+# good (that stays the architect's judgment + the 30-second tree litmus).
+naming:
+  anti_patterns:
+    - utils
+    - util
+    - common
+    - commons
+    - misc
+    - helpers
+    - helper
+    - manager
+    - managers
+    - handler
+    - handlers
+    - impl
