@@ -1,0 +1,75 @@
+# ForgeOS architecture rules (machine-readable) — ENFORCED by harness/arch/arch-check.mjs.
+#
+# ForgeOS's own load-bearing wall, applied to ForgeOS. Until now the
+# clean-architecture skill only DECLARED dependency direction; nothing checked
+# it. This file makes the rules executable: arch-check.mjs reads it and FAILS the
+# build on any violation (layering / package size / fan-in / cognitive load).
+#
+# Every numeric limit below is set to ForgeOS's MEASURED actual + sensible
+# headroom, so the repo PASSES honestly today and only trips on real drift.
+# Measured 2026-06-19 (node harness/arch/arch-check.mjs prints the live numbers):
+#   root:      4 source dirs, 2 root files
+#   package:   max 6 code files/pkg (orchestrator); max 11 exports/pkg (orchestrator)
+#   fanin:     max 11 importing files for one target (forge-core/internal/asset)
+#   cognitive: 4 top-level source modules (docs, examples, forge-core, harness)
+#
+# DRIFT-GUARD: file.max_lines and root.max_files MUST equal harness/policies.yml.
+# arch-check.mjs verifies this equality every run, so the two sources of truth
+# cannot silently diverge. See `必须与 harness/policies.yml 一致` markers below.
+
+# ── Repository root budget ────────────────────────────────────────────────
+root:
+  max_dirs: 10        # actual 4 source dirs + headroom
+  max_files: 15       # 必须与 harness/policies.yml 一致 (max_root_files) — arch-check enforces equality
+
+# ── Per-package / per-directory budget ────────────────────────────────────
+package:
+  max_files: 12       # actual 6 (forge-core/internal/orchestrator) + headroom
+  max_exports: 20     # actual 11 exported Go idents (orchestrator) + headroom
+
+# ── Per-file budget ───────────────────────────────────────────────────────
+file:
+  max_lines: 500      # 必须与 harness/policies.yml 一致 (max_file_lines) — arch-check enforces equality
+
+# ── Fan-in budget (how many modules may depend on one target) ─────────────
+fanin:
+  max_importers: 20   # actual 11 importing files (forge-core/internal/asset) + headroom
+
+# ── Cognitive-load budget (top-level source modules to hold in your head) ──
+cognitive:
+  max_root_modules: 8 # actual 4 (docs, examples, forge-core, harness) + headroom
+
+# ── Architecture: layered dependency direction (THE headline rule) ────────
+# Clean Architecture: dependencies point INWARD. Outer layers may depend on
+# inner ones; inner layers MUST NOT depend on outer ones.
+#   interfaces (outermost) -> application -> domain (innermost)
+#   infrastructure is an outer detail: it may be wired in by interfaces, but
+#   domain/application must never import it.
+architecture:
+  # Layers ordered OUTER → INNER. Index = depth; a lower index is "more outer".
+  layers:
+    - interfaces
+    - application
+    - domain
+    - infrastructure
+  # Map concrete on-disk directory segment names onto canonical layers.
+  # A file's layer = the layer of the FIRST path segment that matches an alias.
+  dir_aliases:
+    domain: domain
+    application: application
+    service: application
+    interface: interfaces
+    interfaces: interfaces
+    httpapi: interfaces
+    store: infrastructure
+    infrastructure: infrastructure
+  # Forbidden layer imports, as "from -> to". A non-test source file whose layer
+  # is <from> must never import a file/package whose layer is <to>.
+  # Encodes: inner layers never import outer layers.
+  forbidden:
+    # domain (innermost) must import NOTHING outer/sibling-detail:
+    - "domain -> application"
+    - "domain -> interfaces"
+    - "domain -> infrastructure"
+    # application must not import the outer interfaces layer:
+    - "application -> interfaces"
