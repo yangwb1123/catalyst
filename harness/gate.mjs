@@ -5,6 +5,11 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, extname, relative } from 'node:path';
 import { pathToFileURL } from 'node:url';
+// resolveEnforce wires the gate's warn|block strictness to the CENTRAL KNOB
+// (mode×lifecycle in .agent/project.yml × modes.yml) instead of policies.yml's
+// single global `enforce`. Same I/O-boundary + fail-safe shape as the coverage
+// pair next to it; zero-dep (it reuses scan.mjs's in-Node YAML reader).
+import { resolveEnforce } from './adapters.mjs';
 
 const ROOT = process.cwd();
 const POLICY_PATH = join(ROOT, 'harness', 'policies.yml');
@@ -103,27 +108,37 @@ function main() {
   }
   const maxLines = numericPolicy(policy.max_file_lines, 500, 'max_file_lines');
   const maxRoot = numericPolicy(policy.max_root_files, 15, 'max_root_files');
-  const enforce = policy.enforce ?? 'warn';
-  // Validate enforce against the allowed set: an unknown value (typo, garbage)
-  // must fail-closed, not silently degrade the gate to a no-op.
-  if (enforce !== 'warn' && enforce !== 'block') {
-    console.error(`forge-gate: enforce must be 'warn' or 'block', got '${enforce}'`);
+  // policies.yml's enforce is now the FALLBACK only — the live value comes from the
+  // central knob (mode×lifecycle). Validate it first so a garbage policies.yml still
+  // fails-closed loudly rather than feeding junk into the fail-safe path.
+  const policyEnforce = policy.enforce ?? 'warn';
+  if (policyEnforce !== 'warn' && policyEnforce !== 'block') {
+    console.error(`forge-gate: enforce must be 'warn' or 'block', got '${policyEnforce}'`);
     process.exit(2);
   }
+  // Resolve warn|block from .agent/project.yml × modes.yml: mode base (explorer warn
+  // / engineering block) made stricter by the lifecycle floor (production -> block,
+  // overriding a loose mode's warn). Missing .agent/field -> policyEnforce fallback.
+  const enforce = resolveEnforce(ROOT, policyEnforce);
 
   const files = walk(ROOT);
   const violations = [...checkFileSizes(files, maxLines), ...checkRootCount(maxRoot)];
 
+  // HONESTY: violations are ALWAYS reported (the file list + count below), in BOTH
+  // warn and block — warn never pretends a clean tree. The ONLY difference is the
+  // exit code: block -> 1 (stops the pipeline), warn -> 0 (advisory, speed first).
   if (violations.length === 0) {
     console.log(`forge-gate: PASS (${files.length} files, <=${maxLines} lines/file, root <=${maxRoot})`);
     process.exit(0);
   }
   console.log(`forge-gate: ${enforce === 'block' ? 'BLOCK' : 'WARN'} - ${violations.length} violation(s):`);
   console.log(violations.join('\n'));
+  // Name the source so the strictness is auditable: enforce came from mode×lifecycle
+  // (the central knob), not a bare policies.yml flag.
   console.log(
     enforce === 'block'
-      ? 'Split oversized files before continuing (skill: refactor-large-file).'
-      : 'Advisory only. Set `enforce: block` in harness/policies.yml to enforce.',
+      ? 'Split oversized files before continuing (skill: refactor-large-file). [enforce=block from mode×lifecycle]'
+      : 'Advisory only (exit 0); set a stricter mode/lifecycle (or production) to block. [enforce=warn from mode×lifecycle]',
   );
   process.exit(enforce === 'block' ? 1 : 0);
 }

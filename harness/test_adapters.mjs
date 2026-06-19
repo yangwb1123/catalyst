@@ -468,9 +468,9 @@ test('resolveCoverageThreshold on THIS repo agrees with computeCoverageThreshold
   const expected = computeCoverageThreshold(modes, project.mode, project.lifecycle);
   assert.equal(resolveCoverageThreshold(REPO_ROOT), expected, `this repo (${project.mode}×${project.lifecycle}) resolves to its computed floor ${expected}`);
 });
-
+// NOTE: the sibling ENFORCE-strictness resolution exported by adapters.mjs (warn|
+// block knob) is unit-tested in test_enforce.mjs; gate end-to-end in test_gate.mjs.
 // --- probeCoverage over the REAL repo: honest aggregate verdict --------------
-
 test('probeCoverage returns a well-formed, honest result on the real repo', () => {
   const r = probeCoverage();
   assert.equal(r.criterion, 'coverage');

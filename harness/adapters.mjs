@@ -261,6 +261,91 @@ export function resolveCoverageThreshold(root) {
   return computeCoverageThreshold(modes, project?.mode, project?.lifecycle);
 }
 
+// --- enforce strictness: mode×lifecycle resolution (central knob -> warn/block) -
+//
+// The gap this closes (the coverage pair's sibling on the OTHER harness knob): the
+// gate read its warn|block strictness from policies.yml's single GLOBAL `enforce`,
+// ignoring the project's mode (explorer warn / engineering block) and the lifecycle
+// FLOOR (production's enforce_floor: block, which must override even a loose mode's
+// warn — "explorer+production 也必须过全闸门"). These resolve the strictness from
+// the same mode×lifecycle knob resolveCoverageThreshold reads, with the identical
+// fail-safe shape.
+
+// ENFORCE_LEVELS: enforce values ordered by STRICTNESS (index = how strict). block
+// is stricter than warn. enforceRank/stricterEnforce use this so "take the stricter
+// of base and floor" is a max over indices — and a production floor of block wins
+// over any mode's warn. An unknown token (typo/garbage) ranks -1 (less strict than
+// warn) so it can never spuriously WIN a max and silently tighten the gate; the
+// fail-safe in computeEnforce rejects such inputs to the policies fallback instead.
+export const ENFORCE_LEVELS = ['warn', 'block'];
+
+// enforceRank: strictness index of an enforce token (warn 0 / block 1), or -1 when
+// it is not a known level. Pure.
+export function enforceRank(level) {
+  return ENFORCE_LEVELS.indexOf(level);
+}
+
+// stricterEnforce: the stricter of two enforce levels (the one with the higher
+// rank). Pure; this is where "production floor=block overrides mode warn" lives —
+// stricterEnforce('warn','block') === 'block'. Returns null when NEITHER input is a
+// known level (so the caller fails safe rather than inventing a verdict).
+export function stricterEnforce(a, b) {
+  const ra = enforceRank(a);
+  const rb = enforceRank(b);
+  if (ra < 0 && rb < 0) return null;
+  return rb > ra ? b : a;
+}
+
+// computeEnforce: the PURE mode×lifecycle resolution of the gate's warn|block
+// strictness (no I/O), so the "take stricter" + fail-safe branches are unit-testable
+// without the filesystem. Inputs: the parsed modes.yml object (parseRules shape),
+// the project's chosen mode/lifecycle strings, and the policies.yml `enforce` as the
+// conservative FALLBACK (gate.mjs owns that default — currently 'block'). Resolution:
+//   base  = modes.modes[mode].harness.enforce             (explorer warn / balanced
+//           warn / engineering block);
+//   floor = modes.lifecycle_modifiers[lifecycle].enforce_floor  (idea/growth warn /
+//           production block);  — NOT every lifecycle declares a floor (mvp has none).
+//   enforce = stricter(base, floor)  — block wins over warn, so production's block
+//             floor overrides a loose mode's warn (the safety override).
+// FAIL-SAFE (honesty / conservative-not-looser): when base is absent/unknown we use
+// the floor alone; when the floor is absent we use the base alone; when NEITHER is a
+// known level we fall back to `fallback` (the policies.yml enforce). The result is
+// always validated to a known level — an unknown stricter() outcome can't happen, but
+// a non-warn/block fallback (garbage policies.yml) is rejected back to 'block' so the
+// gate never silently degrades to a no-op. So a misconfigured project still BLOCKS.
+export function computeEnforce(modes, mode, lifecycle, fallback) {
+  const base = modes?.modes?.[mode]?.harness?.enforce;
+  const floor = modes?.lifecycle_modifiers?.[lifecycle]?.enforce_floor;
+  const resolved = stricterEnforce(base, floor);
+  // resolved is null only when BOTH base and floor are unknown -> use the fallback;
+  // then guarantee a known level (a garbage policies.yml enforce -> conservative block).
+  const out = resolved ?? fallback;
+  return enforceRank(out) >= 0 ? out : 'block';
+}
+
+// resolveEnforce: the I/O boundary for computeEnforce — the wire from the central
+// knob (mode×lifecycle in project.yml) into the gate's warn|block strictness,
+// replacing the gate's direct read of policies.yml's GLOBAL enforce. Reads
+// <root>/.agent/project.yml for {mode, lifecycle} and <root>/.agent/policies/
+// modes.yml for the base+floor; `fallback` is the policies.yml enforce gate.mjs
+// already parsed (the conservative default when the central knob is unavailable).
+// FAIL-SAFE: ANY failure to read/parse either file (missing/unreadable/malformed)
+// -> the fallback (so a project without a .agent/ keeps the gate's policies default
+// and stays backward-compatible). The honesty/safety guarantees live in
+// computeEnforce: production -> block override, and never looser than the fallback's
+// intent (block stays block; an unknown fallback hardens to block).
+export function resolveEnforce(root, fallback) {
+  let modes;
+  let project;
+  try {
+    project = parseRules(readFileSync(join(root, '.agent', 'project.yml'), 'utf8'));
+    modes = parseRules(readFileSync(join(root, '.agent', 'policies', 'modes.yml'), 'utf8'));
+  } catch {
+    return enforceRank(fallback) >= 0 ? fallback : 'block';
+  }
+  return computeEnforce(modes, project?.mode, project?.lifecycle, fallback);
+}
+
 // coverageUnrunnable: did a coverage command fail because the tool could not
 // actually RUN here — no module / no tests / unconfigured — as opposed to
 // producing a real (below-threshold or failing-test) coverage result? Such a
