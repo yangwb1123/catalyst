@@ -61,6 +61,30 @@ func TestLoadWorkflowJSON_RequiredGates(t *testing.T) {
 	}
 }
 
+// RequiredWhen is stored VERBATIM (fragment and all). The reviewer phase carries
+// the mode-gating reference from build.yml; every other phase leaves it empty
+// (the "always run" default), so adding the field regressed no phase.
+func TestLoadWorkflowJSON_RequiredWhen(t *testing.T) {
+	wf := loadFixture(t)
+
+	reviewer := wf.Phases[3]
+	if reviewer.Name != "reviewer" {
+		t.Fatalf("phase[3].Name = %q, want reviewer", reviewer.Name)
+	}
+	if reviewer.RequiredWhen != "../policies/modes.yml#workflow_depth.reviewer" {
+		t.Errorf("reviewer.RequiredWhen = %q, want the verbatim modes.yml fragment", reviewer.RequiredWhen)
+	}
+	// Every non-reviewer phase must leave RequiredWhen empty ("always run").
+	for i, p := range wf.Phases {
+		if i == 3 {
+			continue
+		}
+		if p.RequiredWhen != "" {
+			t.Errorf("phase[%d] (%s) RequiredWhen = %q, want empty (always run)", i, p.Name, p.RequiredWhen)
+		}
+	}
+}
+
 func TestLoadWorkflowJSON_Stop(t *testing.T) {
 	wf := loadFixture(t)
 

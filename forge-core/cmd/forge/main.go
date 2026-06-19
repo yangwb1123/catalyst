@@ -25,6 +25,7 @@ import (
 	"forgeos/forge-core/internal/converge"
 	"forgeos/forge-core/internal/gate"
 	"forgeos/forge-core/internal/memory"
+	"forgeos/forge-core/internal/mode"
 	"forgeos/forge-core/internal/orchestrator"
 	"forgeos/forge-core/internal/prompt"
 	"forgeos/forge-core/internal/routing"
@@ -69,8 +70,8 @@ func usage() {
 	fmt.Fprint(os.Stderr, `forge — ForgeOS orchestration runtime (forge-core)
 
 usage:
-  forge run    <workflow> [--mode balanced] [--executor dry|command] [--agent-cmd claude] [--timeout 0] [--max-retries 0] [--approved] [--root DIR]
-  forge evolve <workflow> [--max-iter 5] [--executor dry|command] [--agent-cmd claude] [--timeout 0] [--max-retries 0] [--resume] [--root DIR]
+  forge run    <workflow> [--mode balanced] [--lifecycle mvp] [--executor dry|command] [--agent-cmd claude] [--timeout 0] [--max-retries 0] [--approved] [--root DIR]
+  forge evolve <workflow> [--mode balanced] [--lifecycle mvp] [--max-iter 5] [--executor dry|command] [--agent-cmd claude] [--timeout 0] [--max-retries 0] [--resume] [--root DIR]
   forge route  [--complexity F] [--risk-score F] [--security F] [--dependency F] [--context F] [--business F] [--task-type T] [--risk low|medium|high|critical] [--budget F] [--scorecard PATH]
   forge gate   [--root DIR]
   forge check  [--root DIR]
@@ -97,10 +98,16 @@ func delegate(fn func(root string) gate.Result, args []string) int {
 
 // runOpts holds the parsed `forge run` / `forge evolve` flags.
 type runOpts struct {
-	mode     string
-	root     string
-	executor string
-	agentCmd string
+	mode string
+	// lifecycle is the project-maturity modifier (idea|mvp|growth|production) the
+	// central knob composes with mode to produce the Workflow-depth policy. An
+	// empty value (the flag default) means "read it from <root>/.agent/project.yml,
+	// falling back to mvp" — see resolveLifecycle. production forces full
+	// enforcement regardless of mode (the safety veto in mode.Effective).
+	lifecycle string
+	root      string
+	executor  string
+	agentCmd  string
 	// timeout bounds a single agent command's wall-clock runtime (0 = no deadline,
 	// the backward-compatible default). Plumbed into CommandExecutor.Timeout so a
 	// wedged agent is killed and surfaces as a retryable Timeout, not a hang.
@@ -121,6 +128,7 @@ type runOpts struct {
 // fs, writing into o — one definition so both subcommands stay in lockstep.
 func bindRunOpts(fs *flag.FlagSet, o *runOpts) {
 	fs.StringVar(&o.mode, "mode", "balanced", "engineering mode (explorer|balanced|engineering|cto)")
+	fs.StringVar(&o.lifecycle, "lifecycle", "", "maturity modifier (idea|mvp|growth|production); empty = read .agent/project.yml, else mvp")
 	fs.StringVar(&o.root, "root", "", "repo root (default $FORGE_REPO_ROOT or .)")
 	fs.StringVar(&o.executor, "executor", "dry", "agent executor: dry|command")
 	fs.StringVar(&o.agentCmd, "agent-cmd", "claude", "command for --executor=command (e.g. claude, echo)")
@@ -193,14 +201,17 @@ func loadWorkflow(repoRoot, name string) (asset.Workflow, error) {
 func execEngine(wf asset.Workflow, o runOpts) int {
 	logln := func(s string) { fmt.Println(s) }
 	probe := probeStatuses(o.root)
+	lifecycle := resolveLifecycle(o)
+	pol := mode.Effective(o.mode, lifecycle)
 	eng := orchestrator.Engine{
 		Exec:       agentExecutor(o, logln),
 		RunGate:    harnessRunner(o.root, probe),
 		Log:        logln,
 		MaxRetries: o.maxRetries,
+		ModePolicy: pol,
 	}
-	fmt.Printf("forge run: stage=%s mode=%s executor=%s (%d phases)\n",
-		wf.Stage, o.mode, o.executor, len(wf.Phases))
+	fmt.Printf("forge run: stage=%s mode=%s lifecycle=%s executor=%s gates=%v reviewer=%v (%d phases)\n",
+		wf.Stage, o.mode, lifecycle, o.executor, pol.Gates, pol.Reviewer, len(wf.Phases))
 	if err := eng.Run(wf, o.mode); err != nil {
 		fmt.Fprintf(os.Stderr, "forge run: %v\n", err)
 		return 1
@@ -278,6 +289,47 @@ func forgeDir(root string) string { return filepath.Join(root, ".forge") }
 // memoryPath is the cross-session knowledge store the loop appends to and every
 // prompt reads from — the notebook that makes a long run non-amnesiac.
 func memoryPath(root string) string { return filepath.Join(forgeDir(root), "memory.jsonl") }
+
+// resolveLifecycle picks the maturity modifier the central knob composes with
+// mode. Precedence: an explicit --lifecycle flag wins; otherwise read
+// <root>/.agent/project.yml's `lifecycle:`; if neither is present, default to
+// "mvp" (the modes.yml selector default). The flag/value is NOT validated here —
+// mode.Effective fail-safes any unknown value to the FULL (strictest) policy, so
+// a typo over-enforces rather than silently dropping gates.
+func resolveLifecycle(o runOpts) string {
+	if o.lifecycle != "" {
+		return o.lifecycle
+	}
+	if v := projectYAMLValue(o.root, "lifecycle"); v != "" {
+		return v
+	}
+	return "mvp"
+}
+
+// projectYAMLValue reads one top-level scalar `key: value` from
+// <root>/.agent/project.yml, stripping a trailing `# comment` and surrounding
+// whitespace. This is a deliberately tiny line scanner — forge-core is zero-dep
+// (no YAML lib), and project.yml's mode/lifecycle are flat scalars (the same
+// approach arch-check.mjs uses for policies.yml). A missing file or absent key
+// yields "" (the caller then falls back), never an error: project.yml is an
+// optional convenience, not a hard dependency of a run.
+func projectYAMLValue(root, key string) string {
+	data, err := os.ReadFile(filepath.Join(root, ".agent", "project.yml"))
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		rest, ok := strings.CutPrefix(line, key+":")
+		if !ok {
+			continue
+		}
+		if i := strings.IndexByte(rest, '#'); i >= 0 {
+			rest = rest[:i]
+		}
+		return strings.TrimSpace(rest)
+	}
+	return ""
+}
 
 // agentExecutor selects the agent-phase executor. "command" builds a per-phase
 // prompt and drives o.agentCmd with it (real execution when agent-cmd is `claude`;

@@ -17,6 +17,7 @@ import (
 	"forgeos/forge-core/internal/converge"
 	"forgeos/forge-core/internal/gate"
 	"forgeos/forge-core/internal/memory"
+	"forgeos/forge-core/internal/mode"
 	"forgeos/forge-core/internal/orchestrator"
 	"forgeos/forge-core/internal/persist"
 	"forgeos/forge-core/internal/trace"
@@ -119,6 +120,7 @@ func buildLoop(wf asset.Workflow, o runOpts, maxIter int, logln func(string)) or
 		RunGate:    func(name string) gate.Result { return resolveGate(o.root, name, probe.refresh()) },
 		Log:        logln,
 		MaxRetries: o.maxRetries,
+		ModePolicy: mode.Effective(o.mode, resolveLifecycle(o)),
 	}
 	approved := humanApproved(o.root, wf.Stage, o.approved)
 	return orchestrator.NewLoopEngine(

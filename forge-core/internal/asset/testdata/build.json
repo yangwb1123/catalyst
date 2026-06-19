@@ -23,7 +23,8 @@
       "name": "reviewer",
       "agent": "reviewer",
       "readonly": true,
-      "required_gates": []
+      "required_gates": [],
+      "required_when": "../policies/modes.yml#workflow_depth.reviewer"
     },
     {
       "name": "qa",

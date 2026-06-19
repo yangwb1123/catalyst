@@ -20,11 +20,21 @@ import (
 // Phase is one step in a workflow: an agent acts under a stage label, possibly
 // read-only, possibly fronted by required gates that must pass before the
 // agent runs (the harness phase in build.yml is the canonical example).
+//
+// RequiredWhen carries an OPTIONAL mode-gating condition for the phase
+// (build.yml's reviewer phase: required_when:
+// ../policies/modes.yml#workflow_depth.reviewer). The loader stores the value
+// VERBATIM, fragment and all — asset's job is to feed the engine, not to resolve
+// policy references. The orchestrator interprets it by its trailing identifier
+// (the part after '#...'), e.g. "reviewer", and consults the mode Policy. An
+// empty RequiredWhen means "always run" (the default for every other phase), so
+// adding the field changes no existing phase's behavior.
 type Phase struct {
 	Name          string   `json:"name"`
 	Agent         string   `json:"agent"`
 	Readonly      bool     `json:"readonly"`
 	RequiredGates []string `json:"required_gates"`
+	RequiredWhen  string   `json:"required_when"`
 }
 
 // StopCondition is the workflow's convergence predicate, matching the real

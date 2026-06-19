@@ -2,11 +2,13 @@ package orchestrator
 
 import (
 	"errors"
+	"sort"
 	"strings"
 	"testing"
 
 	"forgeos/forge-core/internal/asset"
 	"forgeos/forge-core/internal/gate"
+	"forgeos/forge-core/internal/mode"
 )
 
 // fixtureWorkflow is a self-contained workflow mirroring build.yml's shape: an
@@ -260,6 +262,157 @@ func TestRunAgentPhase_DefaultNoRetryIsBackCompat(t *testing.T) {
 	}
 	if exec.calls != 1 {
 		t.Errorf("executor calls = %d, want 1 (MaxRetries=0 == no retries)", exec.calls)
+	}
+}
+
+// gatingWorkflow mirrors build.yml's full shape for mode-gating tests: a gate
+// phase carrying the FULL gate catalog, plus a reviewer phase gated on the
+// modes.yml reviewer fragment (the phase the explorer policy must skip).
+const gatingWorkflow = `{
+  "stage": "build",
+  "phases": [
+    {"name": "implementer", "agent": "implementer", "readonly": false, "required_gates": []},
+    {"name": "harness-gates", "agent": "harness", "readonly": true,
+     "required_gates": ["lint", "test", "build", "complexity", "arch", "security"]},
+    {"name": "reviewer", "agent": "reviewer", "readonly": true, "required_gates": [],
+     "required_when": "../policies/modes.yml#workflow_depth.reviewer"},
+    {"name": "qa", "agent": "qa", "readonly": true, "required_gates": []}
+  ],
+  "stop_condition": {"type": "external", "all_of": [], "anti_pattern": "round_count"}
+}`
+
+func loadGating(t *testing.T) asset.Workflow {
+	t.Helper()
+	wf, err := asset.LoadWorkflowJSON([]byte(gatingWorkflow))
+	if err != nil {
+		t.Fatalf("load gating fixture: %v", err)
+	}
+	return wf
+}
+
+// gateTracker is a RunGate that records every gate name it was asked to run, so a
+// test can assert WHICH gates the mode filter let through.
+type gateTracker struct{ ran []string }
+
+func (g *gateTracker) run(name string) gate.Result {
+	g.ran = append(g.ran, name)
+	return gate.Result{Name: name, OK: true}
+}
+
+func sortedCSV(ss []string) string {
+	c := append([]string(nil), ss...)
+	sort.Strings(c)
+	return strings.Join(c, ",")
+}
+
+// Explorer policy: the gate phase runs ONLY lint+build (complexity/arch/security
+// filtered out), and the reviewer phase is SKIPPED (reviewer off) with the
+// documented log line. The implementer/qa agent phases still run.
+func TestRun_ExplorerPolicyFiltersGatesAndSkipsReviewer(t *testing.T) {
+	wf := loadGating(t)
+	rec := &recorder{}
+	gt := &gateTracker{}
+	eng := Engine{Exec: rec.executor(), RunGate: gt.run, Log: rec.log,
+		ModePolicy: mode.Effective("explorer", "idea")}
+
+	if err := eng.Run(wf, "explorer"); err != nil {
+		t.Fatalf("Run under explorer: %v", err)
+	}
+	if got := sortedCSV(gt.ran); got != "build,lint" {
+		t.Errorf("explorer ran gates %q, want only build,lint (complexity/arch/security filtered)", got)
+	}
+	if contains(rec.executed, "reviewer") {
+		t.Errorf("reviewer phase must be SKIPPED under explorer; executed=%v", rec.executed)
+	}
+	if !containsLine(rec.logs, "phase reviewer skipped (mode gating: reviewer off)") {
+		t.Errorf("explorer skip must log the documented reason; logs=%v", rec.logs)
+	}
+	// The non-reviewer agent phases still run.
+	for _, want := range []string{"implementer", "qa"} {
+		if !contains(rec.executed, want) {
+			t.Errorf("phase %q should still run under explorer; executed=%v", want, rec.executed)
+		}
+	}
+}
+
+// Engineering policy: ALL gates run and the reviewer phase is NOT skipped.
+func TestRun_EngineeringPolicyRunsAllGatesAndReviewer(t *testing.T) {
+	wf := loadGating(t)
+	rec := &recorder{}
+	gt := &gateTracker{}
+	eng := Engine{Exec: rec.executor(), RunGate: gt.run, Log: rec.log,
+		ModePolicy: mode.Effective("engineering", "mvp")}
+
+	if err := eng.Run(wf, "engineering"); err != nil {
+		t.Fatalf("Run under engineering: %v", err)
+	}
+	if got := sortedCSV(gt.ran); got != "arch,build,complexity,lint,security,test" {
+		t.Errorf("engineering ran gates %q, want the full set", got)
+	}
+	if !contains(rec.executed, "reviewer") {
+		t.Errorf("reviewer phase must run under engineering; executed=%v", rec.executed)
+	}
+}
+
+// ★ Production override ★: even with mode=explorer, the production lifecycle
+// FORCES the full gate-set and keeps the reviewer — a loose mode never relaxes
+// enforcement. This is the orchestrator-level proof of the safety veto.
+func TestRun_ProductionOverrideForcesFullEnforcementEvenForExplorer(t *testing.T) {
+	wf := loadGating(t)
+	rec := &recorder{}
+	gt := &gateTracker{}
+	eng := Engine{Exec: rec.executor(), RunGate: gt.run, Log: rec.log,
+		ModePolicy: mode.Effective("explorer", "production")}
+
+	if err := eng.Run(wf, "explorer"); err != nil {
+		t.Fatalf("Run explorer+production: %v", err)
+	}
+	if got := sortedCSV(gt.ran); got != "arch,build,complexity,lint,security,test" {
+		t.Errorf("explorer+production ran %q, want the FULL set (production override)", got)
+	}
+	if !contains(rec.executed, "reviewer") {
+		t.Errorf("explorer+production must STILL run the reviewer (override); executed=%v", rec.executed)
+	}
+}
+
+// Back-compat: the ZERO-VALUE ModePolicy must run EVERY required gate and skip NO
+// phase — byte-for-byte the pre-gating behavior. This is the contract the
+// existing Engine tests (which never set ModePolicy) depend on.
+func TestRun_ZeroPolicyIsFullyOpenBackCompat(t *testing.T) {
+	wf := loadGating(t)
+	rec := &recorder{}
+	gt := &gateTracker{}
+	eng := Engine{Exec: rec.executor(), RunGate: gt.run, Log: rec.log} // ModePolicy zero
+
+	if err := eng.Run(wf, "balanced"); err != nil {
+		t.Fatalf("Run with zero policy: %v", err)
+	}
+	if got := sortedCSV(gt.ran); got != "arch,build,complexity,lint,security,test" {
+		t.Errorf("zero policy ran %q, want the FULL required set (no filtering)", got)
+	}
+	if !contains(rec.executed, "reviewer") {
+		t.Errorf("zero policy must NOT skip the reviewer phase; executed=%v", rec.executed)
+	}
+	// And no mode-gating log lines leak when gating is inactive.
+	if containsLine(rec.logs, "mode gating") {
+		t.Errorf("zero policy must not emit mode-gating logs; logs=%v", rec.logs)
+	}
+}
+
+// requiredWhenKey reduces a verbatim fragment to its trailing identifier so the
+// orchestrator can match it against the reviewer dimension.
+func TestRequiredWhenKey(t *testing.T) {
+	cases := map[string]string{
+		"../policies/modes.yml#workflow_depth.reviewer": "reviewer",
+		"modes.yml#reviewer":                            "reviewer",
+		"reviewer":                                      "reviewer",
+		"":                                              "",
+		"a.b.c":                                         "c",
+	}
+	for in, want := range cases {
+		if got := requiredWhenKey(in); got != want {
+			t.Errorf("requiredWhenKey(%q) = %q, want %q", in, got, want)
+		}
 	}
 }
 

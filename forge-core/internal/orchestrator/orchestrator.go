@@ -13,9 +13,11 @@ package orchestrator
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"forgeos/forge-core/internal/asset"
 	"forgeos/forge-core/internal/gate"
+	"forgeos/forge-core/internal/mode"
 	"forgeos/forge-core/internal/routing"
 )
 
@@ -59,26 +61,52 @@ func (d DryRunExecutor) logf(format string, args ...any) {
 // KindFailed (and any non-ExecError) aborts on the spot — retrying those only
 // burns turns. The default 0 means "no retries": the first error aborts,
 // exactly the pre-retry behavior, so existing runs are byte-for-byte unchanged.
+//
+// ModePolicy is the central knob's Workflow-depth output (mode × lifecycle,
+// distilled by internal/mode): it FILTERS what Run actually executes — a gate
+// phase runs only the intersection of its required_gates with the policy's
+// gate-set, and a phase gated on the reviewer (RequiredWhen) is SKIPPED when the
+// policy makes the reviewer optional (explorer). BACKWARD-COMPATIBILITY CONTRACT:
+// the ZERO-VALUE ModePolicy means "no mode gating" — Run executes the workflow
+// UNFILTERED (every required_gate, no phase skipped), byte-for-byte as before
+// this field existed. Only an explicitly injected non-zero policy filters; cmd
+// injects mode.Effective(mode, lifecycle). SAFETY: because mode.Effective forces
+// the full policy under the production lifecycle (and for any unknown input), a
+// production run filters to ALL gates even when mode=explorer — a loose mode can
+// never relax enforcement here.
 type Engine struct {
 	Exec       AgentExecutor
 	RunGate    func(name string) gate.Result
 	Log        func(string)
 	MaxRetries int
+	ModePolicy mode.Policy
 }
 
-// Run executes the workflow phase by phase under mode.
+// Run executes the workflow phase by phase under mode, applying the central
+// knob's Workflow-depth gating (e.ModePolicy) as it goes.
 //
-// For a gate phase it runs every required gate; the first not-OK result aborts
-// the run with an error (enforcement — a red gate blocks the increment). For a
-// non-gate phase it invokes the executor. After all phases complete, it logs
-// whether the stop condition is (declared) satisfied. It returns the first
-// error encountered, or nil when the whole workflow runs clean.
+// For a gate phase it runs the required gates FILTERED by the mode policy (the
+// intersection of required_gates with the policy's gate-set); the first not-OK
+// result aborts the run with an error (enforcement — a red gate blocks the
+// increment). An empty intersection is a legal no-op (no gate to run this phase).
+// A non-gate phase whose RequiredWhen makes it the optional reviewer is SKIPPED
+// when the policy turns the reviewer off (explorer); otherwise the executor runs.
+// After all phases complete, it logs whether the stop condition is (declared)
+// satisfied. It returns the first error encountered, or nil on a clean run.
+//
+// BACK-COMPAT: with the zero-value ModePolicy, gating is INACTIVE — every
+// required_gate runs and no phase is skipped, exactly as before this filtering
+// existed (see gatingActive / gatesFor).
 func (e Engine) Run(wf asset.Workflow, mode string) error {
 	for _, p := range wf.Phases {
 		if len(p.RequiredGates) > 0 {
-			if err := e.runGates(p); err != nil {
+			if err := e.runGates(p, e.gatesFor(p)); err != nil {
 				return err
 			}
+			continue
+		}
+		if e.skipByMode(p) {
+			e.logf("phase %s skipped (mode gating: reviewer off)", p.Name)
 			continue
 		}
 		if err := e.runAgentPhase(p, mode); err != nil {
@@ -87,6 +115,64 @@ func (e Engine) Run(wf asset.Workflow, mode string) error {
 	}
 	e.reportStop(wf)
 	return nil
+}
+
+// gatingActive reports whether a mode policy was actually injected. The
+// zero-value Policy ({nil Gates, Reviewer:false}) means "no mode gating" and
+// gating stays INACTIVE (full back-compat: nothing is filtered). Any real mode
+// is distinguishable from the zero value — it carries gates, or (cto, the only
+// empty-gate mode) forces the reviewer on — so this never mistakes a configured
+// policy for the zero value. See mode.Policy's zero-value contract.
+func (e Engine) gatingActive() bool {
+	return len(e.ModePolicy.Gates) > 0 || e.ModePolicy.Reviewer
+}
+
+// gatesFor returns the gates a gate phase should actually run: with gating
+// inactive (zero policy) it is the phase's full required_gates (back-compat);
+// with gating active it is the INTERSECTION of required_gates and the policy's
+// gate-set, so explorer drops complexity/arch/security while a production-forced
+// full policy keeps them all. Order follows the phase's declaration. An empty
+// result is legal — that gate phase simply has no gate to run under this mode.
+func (e Engine) gatesFor(p asset.Phase) []string {
+	if !e.gatingActive() {
+		return p.RequiredGates
+	}
+	kept := make([]string, 0, len(p.RequiredGates))
+	for _, g := range p.RequiredGates {
+		if e.ModePolicy.Allows(g) {
+			kept = append(kept, g)
+		}
+	}
+	return kept
+}
+
+// skipByMode reports whether a non-gate phase should be skipped by the mode
+// policy. The only modeled condition (this slice) is the OPTIONAL reviewer: a
+// phase whose RequiredWhen resolves to "reviewer" is skipped iff gating is active
+// AND the policy makes the reviewer non-mandatory (explorer). With gating
+// inactive (zero policy) nothing is ever skipped — full back-compat. A phase with
+// no RequiredWhen, or a RequiredWhen naming any other condition, is never skipped
+// here (honest: only the reviewer dimension is wired in this slice).
+func (e Engine) skipByMode(p asset.Phase) bool {
+	if !e.gatingActive() {
+		return false
+	}
+	return requiredWhenKey(p.RequiredWhen) == "reviewer" && !e.ModePolicy.Reviewer
+}
+
+// requiredWhenKey extracts a RequiredWhen's trailing identifier — the part after
+// the last '#' (a fragment) and the last '.' (a dotted path) — so build.yml's
+// "../policies/modes.yml#workflow_depth.reviewer" reduces to "reviewer". A bare
+// value (no '#'/'.') is returned as-is; an empty value yields "". This is the
+// orchestrator interpreting the fragment the asset stored verbatim.
+func requiredWhenKey(rw string) string {
+	if i := strings.LastIndex(rw, "#"); i >= 0 {
+		rw = rw[i+1:]
+	}
+	if i := strings.LastIndex(rw, "."); i >= 0 {
+		rw = rw[i+1:]
+	}
+	return rw
 }
 
 // runAgentPhase executes one agent phase, retrying ONLY on retryable failures up
@@ -125,8 +211,16 @@ func (e Engine) runAgentPhase(p asset.Phase, mode string) error {
 //
 // This is the fix for the FAKE PASS: never-checked gates used to be reported as
 // "ok"; now they surface as N/A so the honesty of acceptance.mjs is preserved.
-func (e Engine) runGates(p asset.Phase) error {
-	for _, name := range p.RequiredGates {
+//
+// gates is the mode-FILTERED gate list (required_gates ∩ ModePolicy.Gates, or
+// the full required_gates when gating is inactive) computed by gatesFor — Run
+// passes it in so the filtering lives in one place. An empty gates slice is a
+// legal no-op: the phase runs no gate under this mode (logged for visibility).
+func (e Engine) runGates(p asset.Phase, gates []string) error {
+	if len(gates) < len(p.RequiredGates) {
+		e.logf("phase %s: mode gating runs %d/%d gates (%v)", p.Name, len(gates), len(p.RequiredGates), gates)
+	}
+	for _, name := range gates {
 		res := e.callGate(name)
 		switch gateStatus(res) {
 		case gate.StatusFail:
