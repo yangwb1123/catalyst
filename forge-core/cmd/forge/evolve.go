@@ -156,11 +156,12 @@ func execLoop(wf asset.Workflow, o runOpts, maxIter int, maxIterSource string, r
 func buildLoop(wf asset.Workflow, o runOpts, maxIter int, logln func(string)) orchestrator.LoopEngine {
 	probe := &loopProbe{root: o.root}
 	eng := orchestrator.Engine{
-		Exec:       agentExecutor(o, logln),
-		RunGate:    func(name string) gate.Result { return resolveGate(o.root, name, probe.refresh()) },
-		Log:        logln,
-		MaxRetries: o.maxRetries,
-		ModePolicy: mode.Effective(o.mode, resolveLifecycle(o)),
+		Exec:        agentExecutor(o, logln),
+		RunGate:     func(name string) gate.Result { return resolveGate(o.root, name, probe.refresh()) },
+		Log:         logln,
+		MaxRetries:  o.maxRetries,
+		MaxLoopBack: maxLoopBack,
+		ModePolicy:  mode.Effective(o.mode, resolveLifecycle(o)),
 	}
 	approved := humanApproved(o.root, wf.Stage, o.approved)
 	return orchestrator.NewLoopEngine(

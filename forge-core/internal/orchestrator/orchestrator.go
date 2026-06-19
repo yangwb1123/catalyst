@@ -1,13 +1,25 @@
 // Package orchestrator is forge-core's workflow runtime: it turns a declarative
 // Workflow into a state machine that "runs itself" by stepping through phases
 // in order. Two phase kinds matter — gate phases (required_gates non-empty),
-// where it ENFORCES by invoking the real harness gates and aborting on the
-// first red, and agent phases, where it delegates to an AgentExecutor.
+// where it ENFORCES by invoking the real harness gates, and agent phases, where
+// it delegates to an AgentExecutor.
+//
+// A red gate is NOT always fatal. build.yml's gate phases declare a DIRECTED
+// loop-back (on_fail: {action: loop_back, target_phase: implementer}): when such
+// a phase fails, the runtime jumps the state machine BACK to the named phase and
+// re-runs forward to the failing gate, bounded by Engine.MaxLoopBack (fail-closed:
+// when the budget is spent the run aborts). A gate phase WITHOUT an on_fail (or a
+// zero MaxLoopBack budget) keeps the legacy behavior — the first red gate aborts.
 //
 // The executor is an interface so the runtime stays honest about what it can
 // actually do today: the shipped DryRunExecutor only logs the routing decision
 // (no LLM is invoked). Wiring a real Agent executor (Claude Agent SDK) behind
-// this same interface is the future extension point.
+// this same interface is the future extension point. HONESTY on loop-back under a
+// dry-run executor: re-running phases re-runs the DRY agent, which produces no new
+// code, so the same red gate stays red and the budget is simply spent — the
+// directed-jump STATE MACHINE is exercised and verifiable (a fake gate scripted to
+// fail-then-pass proves the jump), but the loop-back's repair VALUE only
+// materializes once a real agent (--executor=command) edits code between attempts.
 package orchestrator
 
 import (
@@ -74,34 +86,66 @@ func (d DryRunExecutor) logf(format string, args ...any) {
 // the full policy under the production lifecycle (and for any unknown input), a
 // production run filters to ALL gates even when mode=explorer — a loose mode can
 // never relax enforcement here.
+// MaxLoopBack is the hard ceiling on DIRECTED LOOP-BACKS triggered by gate
+// phases that declare on_fail:{action:loop_back} — a doom-loop backstop, never
+// the goal. Each time such a phase fails and the runtime jumps back to its
+// target phase, one unit is consumed; when the budget is spent a still-red gate
+// ABORTS (fail-closed). The default 0 means "no loop-back": a red gate aborts on
+// the spot exactly as before this field existed, so a workflow whose gate phases
+// carry no on_fail is byte-for-byte unchanged regardless of this value, and even
+// one that DOES carry on_fail still aborts on the first red until the budget is
+// raised. cmd sets a conservative 3.
 type Engine struct {
-	Exec       AgentExecutor
-	RunGate    func(name string) gate.Result
-	Log        func(string)
-	MaxRetries int
-	ModePolicy mode.Policy
+	Exec        AgentExecutor
+	RunGate     func(name string) gate.Result
+	Log         func(string)
+	MaxRetries  int
+	MaxLoopBack int
+	ModePolicy  mode.Policy
 }
 
 // Run executes the workflow phase by phase under mode, applying the central
-// knob's Workflow-depth gating (e.ModePolicy) as it goes.
+// knob's Workflow-depth gating (e.ModePolicy) as it goes. It begins at phase 0;
+// RunFrom is the variant the loop uses to begin at a directed start phase.
+func (e Engine) Run(wf asset.Workflow, mode string) error {
+	return e.RunFrom(wf, mode, 0)
+}
+
+// RunFrom executes the workflow starting at phase index `start`, applying mode
+// gating, agent retries, and DIRECTED GATE LOOP-BACK as it steps.
 //
 // For a gate phase it runs the required gates FILTERED by the mode policy (the
-// intersection of required_gates with the policy's gate-set); the first not-OK
-// result aborts the run with an error (enforcement — a red gate blocks the
-// increment). An empty intersection is a legal no-op (no gate to run this phase).
-// A non-gate phase whose RequiredWhen makes it the optional reviewer is SKIPPED
-// when the policy turns the reviewer off (explorer); otherwise the executor runs.
-// After all phases complete, it logs whether the stop condition is (declared)
-// satisfied. It returns the first error encountered, or nil on a clean run.
+// intersection of required_gates with the policy's gate-set). A not-OK result is
+// handled by gateOutcome:
+//   - If the phase declares on_fail:{action:loop_back} AND the loop-back budget is
+//     not yet spent, the runtime JUMPS BACK to the target phase (by name) and
+//     re-runs forward to this gate — a directed state-machine transition, not an
+//     abort and not a whole-workflow replay. One budget unit is consumed.
+//   - Otherwise (no on_fail, an unknown action, an unresolvable target, or the
+//     budget spent) it ABORTS with an error — enforcement, fail-closed.
 //
-// BACK-COMPAT: with the zero-value ModePolicy, gating is INACTIVE — every
-// required_gate runs and no phase is skipped, exactly as before this filtering
-// existed (see gatingActive / gatesFor).
-func (e Engine) Run(wf asset.Workflow, mode string) error {
-	for _, p := range wf.Phases {
+// An empty gate intersection is a legal no-op (no gate to run this phase). A
+// non-gate phase whose RequiredWhen makes it the optional reviewer is SKIPPED when
+// the policy turns the reviewer off (explorer); otherwise the executor runs. After
+// all phases complete, it logs whether the stop condition is (declared) satisfied.
+// It returns the first unrecoverable error, or nil on a clean run.
+//
+// BACK-COMPAT: with the zero-value ModePolicy gating is INACTIVE (every
+// required_gate runs, no phase skipped); with MaxLoopBack 0 or gate phases that
+// carry no on_fail, a red gate aborts on the spot exactly as before — directed
+// loop-back is opt-in on BOTH the asset (on_fail) and the engine (budget) side.
+func (e Engine) RunFrom(wf asset.Workflow, mode string, start int) error {
+	loopBacks := 0
+	for i := start; i < len(wf.Phases); i++ {
+		p := wf.Phases[i]
 		if len(p.RequiredGates) > 0 {
 			if err := e.runGates(p, e.gatesFor(p)); err != nil {
-				return err
+				target, jumped := e.gateOutcome(wf, p, &loopBacks)
+				if !jumped {
+					return err
+				}
+				i = target - 1 // -1 because the for-loop will ++ back to target
+				continue
 			}
 			continue
 		}
@@ -115,6 +159,47 @@ func (e Engine) Run(wf asset.Workflow, mode string) error {
 	}
 	e.reportStop(wf)
 	return nil
+}
+
+// gateOutcome decides what happens after a gate phase failed: a DIRECTED jump
+// back to its on_fail target, or "no jump" (the caller then aborts — fail-closed).
+// It returns the target phase index and whether a jump was taken, consuming one
+// unit of the loop-back budget (*loopBacks) on a jump. A jump is taken only when
+// ALL hold: the phase declares on_fail with action "loop_back", the target phase
+// resolves by name, and the budget is not yet spent (loopBacks < MaxLoopBack).
+// Any miss is logged with the honest reason and returns jumped=false so the run
+// aborts — back-compat (no on_fail) and fail-closed (budget spent) share this path.
+func (e Engine) gateOutcome(wf asset.Workflow, p asset.Phase, loopBacks *int) (target int, jumped bool) {
+	if p.OnFail == nil || p.OnFail.Action != "loop_back" {
+		return 0, false // no directed loop-back declared: legacy abort.
+	}
+	idx, ok := phaseIndex(wf, p.OnFail.TargetPhase)
+	if !ok {
+		e.logf("phase %s: on_fail target %q not found — aborting (fail-closed)", p.Name, p.OnFail.TargetPhase)
+		return 0, false
+	}
+	if *loopBacks >= e.MaxLoopBack {
+		e.logf("phase %s: gate still red after %d/%d loop-backs to %s — aborting (fail-closed)",
+			p.Name, *loopBacks, e.MaxLoopBack, p.OnFail.TargetPhase)
+		return 0, false
+	}
+	*loopBacks++
+	e.logf("phase %s: gate FAILED, loop-back %d/%d to %s (re-running %s→%s)",
+		p.Name, *loopBacks, e.MaxLoopBack, p.OnFail.TargetPhase, p.OnFail.TargetPhase, p.Name)
+	return idx, true
+}
+
+// phaseIndex returns the index of the phase named `name`, or ok=false when no
+// phase carries that name (an unresolvable on_fail/on_unmet target). The lookup is
+// by name — the asset stored the target as a phase name, and the runtime resolves
+// it to a position here, the orchestration counterpart to requiredWhenKey.
+func phaseIndex(wf asset.Workflow, name string) (int, bool) {
+	for i, p := range wf.Phases {
+		if p.Name == name {
+			return i, true
+		}
+	}
+	return 0, false
 }
 
 // gatingActive reports whether a mode policy was actually injected. The

@@ -84,12 +84,21 @@ type LoopOutcome struct {
 // Run loops the workflow until convergence, a tripwire, a failure, or MaxIter.
 // For an external-stop workflow, convergence is not a conjunction check: the
 // loop runs to the safety bound (a clean stop) and reports it as such.
+//
+// DIRECTED RESTART (on_unmet): the FIRST iteration always runs the whole workflow
+// (startPhase 0). Once an iteration is measured NOT converged and the stop
+// declares on_unmet:{action:loop_to_next_roadmap_item, target_phase: planner},
+// every SUBSEQUENT iteration begins at the target phase (Engine.RunFrom) — the
+// loop pulling the next roadmap item from the planner rather than replaying every
+// phase. With no on_unmet (or an unresolvable target) startPhase stays 0 and the
+// loop replays the whole workflow each round, byte-for-byte as before.
 func (l LoopEngine) Run(wf asset.Workflow, mode string) (LoopOutcome, error) {
 	start, prev := l.loopStart()
 	stale := 0
+	startPhase := 0 // first iteration always runs the whole workflow.
 	for i := start; i <= l.MaxIter; i++ {
 		l.logf("iteration %d/%d", i, l.MaxIter)
-		if err := l.Engine.Run(wf, mode); err != nil {
+		if err := l.Engine.RunFrom(wf, mode, startPhase); err != nil {
 			return LoopOutcome{i, false, "gate/agent failure"}, err
 		}
 		sig := l.Signals()
@@ -102,8 +111,26 @@ func (l LoopEngine) Run(wf asset.Workflow, mode string) (LoopOutcome, error) {
 			return l.staleOutcome(i), nil
 		}
 		prev = sig.RoadmapCompletion
+		startPhase = l.nextStartPhase(wf) // unmet this round -> directed restart next.
 	}
 	return l.boundOutcome(), nil
+}
+
+// nextStartPhase resolves where the NEXT iteration should begin after this one was
+// measured not-converged. It is the on_unmet directed restart: when the stop
+// declares action "loop_to_next_roadmap_item" and its target_phase resolves to a
+// phase, the next iteration starts there (the planner, to pull the next roadmap
+// item). Absent on_unmet, an unknown action, or an unresolvable target, it returns
+// 0 — the next iteration replays the whole workflow, exactly the prior behavior.
+func (l LoopEngine) nextStartPhase(wf asset.Workflow) int {
+	ou := l.Stop.OnUnmet
+	if ou == nil || ou.Action != "loop_to_next_roadmap_item" {
+		return 0
+	}
+	if idx, ok := phaseIndex(wf, ou.TargetPhase); ok {
+		return idx
+	}
+	return 0
 }
 
 // loopStart resolves the first iteration index and the initial `prev` completion

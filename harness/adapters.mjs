@@ -38,6 +38,12 @@ const LANG_BY_EXT = new Map([
 // input and to keep detectLanguages from inventing names with no adapter.
 export const ADAPTER_LANGS = ['go', 'python', 'typescript'];
 
+// App test-RUNNER kind (acceptance.mjs inferRunner: node/python/go) -> the adapter
+// language whose <lang>.yml `test:` command governs it. node's *.test.mjs funnels
+// to the typescript adapter (the one LANG_BY_EXT maps .mjs/.ts/.js onto), so the
+// app-test selector and detectLanguages agree on the language.
+export const ADAPTER_LANG_BY_RUNNER = { node: 'typescript', python: 'python', go: 'go' };
+
 // --- pure helpers ------------------------------------------------------------
 
 // langForExt: extension (with dot) -> adapter language, or null when unmapped.
@@ -112,6 +118,86 @@ export function coverageArtifact(coverageCmd) {
   if (/--cov-report[=\s]+json/.test(cmd)) return 'coverage.json';
   if (/--coverage\b/.test(cmd)) return 'coverage';
   return null;
+}
+
+// --- app test selection (declaration-driven, with honest fallback) -----------
+//
+// The adapters ship a `test:` command per language, but the acceptance gate's APP
+// tests (examples/<app>/) used to run a HARDCODED runner per detected extension
+// (node --test / python -m unittest / go test), ignoring the adapter's declared
+// test command entirely (a reviewer flagged the same "no consumer" gap lint and
+// coverage already closed). appTestPlan makes the app-test runner DECLARATION-
+// DRIVEN: prefer the adapter `test:` command, falling back to the hardcoded runner
+// only when that command's runner does not fit the app's on-disk layout — and
+// saying WHY (honesty: never silently substitute a different runner, never claim a
+// pass the declared command did not produce). PURE (no I/O): acceptance.mjs feeds
+// it the adapter command + the test-dir file list and shells the plan it returns.
+
+// runner-binary -> the test-file basename suffixes that runner DISCOVERS, used to
+// decide whether an adapter `test:` command fits an app (its tests must match the
+// runner's conventions). Mirrors arch/scan.mjs isTestFile but keyed by runner.
+//   - go test:   *_test.go;  node: *.test.mjs/.js (node:test's discovery);
+//   - vitest:    *.test/.spec .ts/.js — NOTE not .mjs, so a node:test *.test.mjs
+//                app does NOT fit vitest;  pytest/unittest: test_*.py / *_test.py.
+// A trailing '_' marks a prefix rule (test_), else it is a suffix.
+const RUNNER_TEST_SUFFIXES = new Map([
+  ['go', ['_test.go']],
+  ['node', ['.test.mjs', '.test.js']],
+  ['vitest', ['.test.ts', '.test.js', '.spec.ts', '.spec.js']],
+  ['pytest', ['_test.py', 'test_']],
+]);
+
+// Hardcoded FALLBACK command per runner kind (the pre-adapter behavior), used when
+// the adapter command does not fit. cwd null => repo root; go's -C runs from the
+// app's own module dir (a nested module: own go.mod, no root go.work — `go test
+// ./examples/..` from the non-module repo root fails). node's pattern is resolved
+// by acceptance.mjs (it needs the fail-closed `# tests N>0` count), so node carries
+// no command here. Returns {cmd, args, cwd} or null for node.
+function fallbackCommand(runner, appName) {
+  if (runner === 'python') return { cmd: 'python3', args: ['-m', 'unittest', 'discover', '-s', `examples/${appName}/test`], cwd: null };
+  if (runner === 'go') return { cmd: 'go', args: ['-C', `examples/${appName}`, 'test', './...'], cwd: null };
+  return null; // node -> acceptance.mjs's counting runner
+}
+
+// testCmdMatchesLayout: does the adapter `test:` command's runner DISCOVER the
+// app's actual test files? Pure over (runner binary, [test file basenames]). True
+// when the runner's known suffixes match a file (the command fits); false when the
+// runner is unknown OR no file matches (e.g. adapter `vitest run` vs node:test
+// *.test.mjs). `go test ./...` discovers by PACKAGE, so a Go app's *_test.go
+// presence is the right "this runner fits" signal too.
+export function testCmdMatchesLayout(runner, testFiles) {
+  const suffixes = RUNNER_TEST_SUFFIXES.get(runner);
+  if (!suffixes) return false;
+  return (testFiles ?? []).some((f) => {
+    const base = String(f).split(/[\\/]/).pop();
+    return suffixes.some((s) => (s.endsWith('_') ? base.startsWith(s) : base.endsWith(s)));
+  });
+}
+
+// appTestPlan: the PURE decision for HOW to run one app's tests. Inputs:
+//   adapterTestCmd — the adapter's `test:` run-string (loadAdapter(lang).test);
+//   testFiles      — the app's test-dir file basenames (the layout to fit);
+//   appName        — examples/<appName> (for cwd + fallback command paths);
+//   runner         — the inferRunner kind (node/python/go) for fallback selection.
+// Returns {cmd, args, cwd, tag, countCheck}:
+//   - adapter path  when the command fits — its split cmd/args; cwd = the app dir
+//     for a relative-path command (`go test ./...`), else null; tag "adapter: …".
+//   - fallback path otherwise — the hardcoded runner's command; tag "<runner>
+//     fallback: <reason>". countCheck is true ONLY for node (acceptance.mjs then
+//     enforces the fail-closed `# tests N>0` count; go/python judge on exit code).
+// HONESTY: applicability is a real layout check — when the adapter runner can't
+// discover the app's tests we fall back and SAY SO, never run-and-pretend.
+export function appTestPlan(adapterTestCmd, testFiles, appName, runner) {
+  const [acmd, ...aargs] = String(adapterTestCmd ?? '').trim().split(/\s+/).filter(Boolean);
+  const reason = !acmd ? 'adapter has no test command' : `adapter test runner '${acmd}' does not fit app layout`;
+  const fits = Boolean(acmd) && testCmdMatchesLayout(acmd, testFiles);
+  if (fits) {
+    const relativeToApp = aargs.some((a) => a.startsWith('./') || a === '.' || a.endsWith('/...'));
+    return { cmd: acmd, args: aargs, cwd: relativeToApp ? `examples/${appName}` : null, tag: `adapter: ${[acmd, ...aargs].join(' ')}`, countCheck: false };
+  }
+  const fb = fallbackCommand(runner, appName);
+  if (!fb) return { cmd: null, args: [], cwd: null, tag: `node fallback: ${reason}`, countCheck: true };
+  return { ...fb, tag: `${runner} fallback: ${reason}`, countCheck: false };
 }
 
 // DEFAULT_COVERAGE_THRESHOLD: the line-coverage floor judgeCoverage compares

@@ -85,6 +85,69 @@ func TestLoadWorkflowJSON_RequiredWhen(t *testing.T) {
 	}
 }
 
+// OnFail is parsed for the gate phases that declare it (harness-gates/reviewer/qa
+// in build.yml all loop_back to implementer) and is nil for phases without the key
+// (planner/implementer) — the fault-tolerant default the orchestrator reads as
+// "no directed loop-back, abort on a red gate" (back-compat).
+func TestLoadWorkflowJSON_OnFail(t *testing.T) {
+	wf := loadFixture(t)
+
+	// planner and implementer carry no on_fail -> nil.
+	for _, i := range []int{0, 1} {
+		if wf.Phases[i].OnFail != nil {
+			t.Errorf("phase[%d] (%s) OnFail = %+v, want nil (no directed loop-back)", i, wf.Phases[i].Name, wf.Phases[i].OnFail)
+		}
+	}
+	// harness-gates declares a directed loop-back to implementer.
+	harness := wf.Phases[2]
+	if harness.OnFail == nil {
+		t.Fatalf("harness-gates OnFail = nil, want a loop_back directive")
+	}
+	if harness.OnFail.Action != "loop_back" || harness.OnFail.TargetPhase != "implementer" {
+		t.Errorf("harness-gates OnFail = %+v, want {loop_back, implementer}", *harness.OnFail)
+	}
+	// reviewer and qa likewise loop back to implementer.
+	for _, i := range []int{3, 4} {
+		of := wf.Phases[i].OnFail
+		if of == nil || of.Action != "loop_back" || of.TargetPhase != "implementer" {
+			t.Errorf("phase[%d] (%s) OnFail = %+v, want {loop_back, implementer}", i, wf.Phases[i].Name, of)
+		}
+	}
+}
+
+// OnUnmet is parsed for the conjunction stop's directed restart (loop to the
+// planner for the next roadmap item).
+func TestLoadWorkflowJSON_OnUnmet(t *testing.T) {
+	wf := loadFixture(t)
+	ou := wf.Stop.OnUnmet
+	if ou == nil {
+		t.Fatalf("stop.OnUnmet = nil, want a loop_to_next_roadmap_item directive")
+	}
+	if ou.Action != "loop_to_next_roadmap_item" || ou.TargetPhase != "planner" {
+		t.Errorf("stop.OnUnmet = %+v, want {loop_to_next_roadmap_item, planner}", *ou)
+	}
+}
+
+// Fault tolerance: a workflow whose phases/stop omit on_fail/on_unmet loads with
+// those pointers nil — the back-compat default (abort on red, full replay), never
+// a parse error. This pins that the new fields are PURELY additive.
+func TestLoadWorkflowJSON_OnFailOnUnmetAbsentIsNil(t *testing.T) {
+	wf, err := LoadWorkflowJSON([]byte(`{"stage":"build","phases":[
+		{"name":"harness-gates","agent":"harness","required_gates":["test"]}
+	],"stop_condition":{"type":"conjunction","all_of":[
+		{"metric":"roadmap_completion","operator":"==","threshold":100}
+	]}}`))
+	if err != nil {
+		t.Fatalf("absent on_fail/on_unmet should load, got error: %v", err)
+	}
+	if wf.Phases[0].OnFail != nil {
+		t.Errorf("absent on_fail must be nil; got %+v", wf.Phases[0].OnFail)
+	}
+	if wf.Stop.OnUnmet != nil {
+		t.Errorf("absent on_unmet must be nil; got %+v", wf.Stop.OnUnmet)
+	}
+}
+
 func TestLoadWorkflowJSON_Stop(t *testing.T) {
 	wf := loadFixture(t)
 

@@ -29,6 +29,9 @@ import {
   versionProbeArgs,
   coverageArtifact,
   DEFAULT_COVERAGE_THRESHOLD,
+  appTestPlan,
+  testCmdMatchesLayout,
+  ADAPTER_LANG_BY_RUNNER,
 } from './adapters.mjs';
 import { judgeLint, unconfigured, probeLint, probeCoverage, PASS, FAIL, NA } from './acceptance.mjs';
 
@@ -170,6 +173,69 @@ test('probeLint returns a well-formed, honest result on the real repo', () => {
   // linter must NOT be a FAIL. Honest outcome here is N/A.
   assert.equal(r.status, NA, `repo has no configured linter -> lint must be N/A (got ${r.status}: ${r.detail})`);
   assert.ok(r.detail.length > 0, 'N/A must carry an honest reason');
+});
+
+// === APP TEST SELECTION: declaration-driven runner with honest fallback ======
+// These pin the gap-closing behavior: the app-test runner now PREFERS the
+// adapter `test:` command and falls back to the hardcoded runner only when that
+// command's runner does not fit the app's layout — annotating WHY.
+
+test('ADAPTER_LANG_BY_RUNNER maps each inferRunner kind onto its <lang>.yml', () => {
+  // node funnels to the typescript adapter (same as LANG_BY_EXT / detectLanguages).
+  assert.deepEqual(ADAPTER_LANG_BY_RUNNER, { node: 'typescript', python: 'python', go: 'go' });
+});
+
+test('testCmdMatchesLayout: a runner fits only when the app files match its convention', () => {
+  // go test fits *_test.go; node:test fits *.test.mjs.
+  assert.equal(testCmdMatchesLayout('go', ['domain_test.go', 'go.mod']), true);
+  assert.equal(testCmdMatchesLayout('node', ['url.test.mjs']), true);
+  assert.equal(testCmdMatchesLayout('pytest', ['test_foo.py']), true, 'test_ prefix rule');
+  assert.equal(testCmdMatchesLayout('pytest', ['foo_test.py']), true, '_test.py suffix rule');
+  // The headline mismatch: vitest does NOT discover node:test *.test.mjs.
+  assert.equal(testCmdMatchesLayout('vitest', ['url.test.mjs']), false, 'vitest != node:test *.test.mjs');
+  assert.equal(testCmdMatchesLayout('go', ['url.test.mjs']), false, 'go test does not fit a node app');
+  assert.equal(testCmdMatchesLayout('unknown-runner', ['x_test.go']), false, 'unknown runner never fits');
+  assert.equal(testCmdMatchesLayout('node', []), false, 'no files -> no fit');
+});
+
+test('appTestPlan -> ADAPTER path when the adapter test command fits (go-taskd)', () => {
+  // go-taskd's *_test.go layout fits `go test ./...`: use the DECLARED command,
+  // run from the app's own module dir (relative ./... -> cwd = examples/<app>).
+  const plan = appTestPlan('go test ./...', ['domain_test.go'], 'go-taskd', 'go');
+  assert.equal(plan.cmd, 'go');
+  assert.deepEqual(plan.args, ['test', './...']);
+  assert.equal(plan.cwd, 'examples/go-taskd', 'relative ./... command runs from the module dir');
+  assert.equal(plan.countCheck, false, 'go judges on exit code, not the node tests-count');
+  assert.match(plan.tag, /^adapter: go test \.\/\.\.\.$/);
+});
+
+test('appTestPlan -> node FALLBACK (with honest reason) when vitest does not fit *.test.mjs', () => {
+  // url-shortener: the typescript adapter ships `vitest run`, which does not
+  // discover node:test *.test.mjs -> fall back to the node counting runner, and
+  // SAY WHY (honesty). node carries no cmd here (acceptance.mjs's runNodeApp owns
+  // the *.test.mjs glob + the fail-closed count); countCheck flags that path.
+  const plan = appTestPlan('vitest run', ['http.test.mjs', 'url.test.mjs'], 'url-shortener', 'node');
+  assert.equal(plan.countCheck, true, 'node fallback must route to the counting runner');
+  assert.equal(plan.cmd, null, 'node command is resolved by acceptance.mjs, not the plan');
+  assert.match(plan.tag, /node fallback: adapter test runner 'vitest' does not fit app layout/);
+});
+
+test('appTestPlan -> python FALLBACK command when pytest does not fit a unittest layout', () => {
+  // Forward-looking (no python example ships yet): a unittest-style test_*.py app
+  // DOES match pytest's convention, so that fits -> adapter path. But an app whose
+  // files match NO pytest convention falls back to `python -m unittest discover`.
+  const fits = appTestPlan('pytest -q', ['test_app.py'], 'pyapp', 'python');
+  assert.equal(fits.cmd, 'pytest', 'a test_*.py app fits the pytest adapter command');
+  assert.match(fits.tag, /^adapter: pytest -q$/);
+  const fall = appTestPlan('pytest -q', ['weird.py'], 'pyapp', 'python');
+  assert.deepEqual([fall.cmd, ...fall.args], ['python3', '-m', 'unittest', 'discover', '-s', 'examples/pyapp/test']);
+  assert.match(fall.tag, /python fallback:/);
+});
+
+test('appTestPlan -> fallback with "no test command" when the adapter ships none', () => {
+  const plan = appTestPlan(undefined, ['x_test.go'], 'someapp', 'go');
+  assert.match(plan.tag, /go fallback: adapter has no test command/);
+  assert.deepEqual([plan.cmd, ...plan.args], ['go', '-C', 'examples/someapp', 'test', './...']);
 });
 
 // === COVERAGE: the framework that mirrors lint (adapters.judgeCoverage) ======

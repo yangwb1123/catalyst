@@ -31,6 +31,14 @@ import (
 	"forgeos/forge-core/internal/routing"
 )
 
+// maxLoopBack is the conservative ceiling on DIRECTED gate loop-backs per run
+// (orchestrator.Engine.MaxLoopBack): a gate phase declaring on_fail:{loop_back}
+// may bounce back to its target phase at most this many times before a still-red
+// gate aborts the run (fail-closed). Kept small on purpose — loop-back is a
+// recovery path, not a retry-until-green crutch — and it only ever engages for a
+// workflow whose gate phases actually carry an on_fail (build.yml's do).
+const maxLoopBack = 3
+
 func main() {
 	os.Exit(run(os.Args[1:]))
 }
@@ -207,11 +215,12 @@ func execEngine(wf asset.Workflow, o runOpts) int {
 	lifecycle := resolveLifecycle(o)
 	pol := mode.Effective(o.mode, lifecycle)
 	eng := orchestrator.Engine{
-		Exec:       agentExecutor(o, logln),
-		RunGate:    harnessRunner(o.root, probe),
-		Log:        logln,
-		MaxRetries: o.maxRetries,
-		ModePolicy: pol,
+		Exec:        agentExecutor(o, logln),
+		RunGate:     harnessRunner(o.root, probe),
+		Log:         logln,
+		MaxRetries:  o.maxRetries,
+		MaxLoopBack: maxLoopBack,
+		ModePolicy:  pol,
 	}
 	fmt.Printf("forge run: stage=%s mode=%s lifecycle=%s executor=%s gates=%v reviewer=%v (%d phases)\n",
 		wf.Stage, o.mode, lifecycle, o.executor, pol.Gates, pol.Reviewer, len(wf.Phases))

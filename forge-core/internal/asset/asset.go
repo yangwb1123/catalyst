@@ -29,12 +29,30 @@ import (
 // (the part after '#...'), e.g. "reviewer", and consults the mode Policy. An
 // empty RequiredWhen means "always run" (the default for every other phase), so
 // adding the field changes no existing phase's behavior.
+//
+// OnFail carries an OPTIONAL directed loop-back for a GATE phase (build.yml's
+// harness-gates/reviewer/qa phases: on_fail: {action: loop_back, target_phase:
+// implementer}). It is a POINTER so a phase without the key loads as nil — the
+// fault-tolerant default the orchestrator reads as "no loop-back, abort on a red
+// gate" (byte-for-byte the pre-loop-back behavior). The orchestrator acts on it
+// only when Action=="loop_back": it jumps back to the phase named TargetPhase and
+// re-runs forward to here, bounded by Engine.MaxLoopBack (fail-closed when spent).
 type Phase struct {
 	Name          string   `json:"name"`
 	Agent         string   `json:"agent"`
 	Readonly      bool     `json:"readonly"`
 	RequiredGates []string `json:"required_gates"`
 	RequiredWhen  string   `json:"required_when"`
+	OnFail        *OnFail  `json:"on_fail"`
+}
+
+// OnFail is a gate phase's directed loop-back directive: when its gates FAIL,
+// Action=="loop_back" tells the orchestrator to jump back to the phase named
+// TargetPhase (by name) and re-run from there rather than aborting. Any other
+// Action (or a nil OnFail) leaves the legacy abort-on-red behavior intact.
+type OnFail struct {
+	Action      string `json:"action"`
+	TargetPhase string `json:"target_phase"`
 }
 
 // StopCondition is the workflow's convergence predicate, matching the real
@@ -49,12 +67,30 @@ type Phase struct {
 // human approval signal, NOT a conjunction. It is the highest-leverage gate in
 // the system and is non-bypassable — see internal/converge.Converge. OnApproved
 // carries what an approval unlocks (the next spine stage), surfaced in the report.
+// OnUnmet carries an OPTIONAL directed restart for a conjunction stop that did
+// NOT converge this iteration (build.yml: on_unmet: {action:
+// loop_to_next_roadmap_item, target_phase: planner}). Like Phase.OnFail it is a
+// POINTER so its absence loads as nil — the fault-tolerant default the loop reads
+// as "no directed restart" (the next iteration re-runs every phase, byte-for-byte
+// the pre-on_unmet behavior). When Action=="loop_to_next_roadmap_item" the loop
+// begins each subsequent iteration at the phase named TargetPhase (the planner,
+// to pull the next roadmap item) rather than at phase 0.
 type StopCondition struct {
 	Type          string      `json:"type"`
 	AllOf         []Criterion `json:"all_of"`
 	AntiPattern   string      `json:"anti_pattern"`
 	HumanApproval string      `json:"human_approval"`
 	OnApproved    OnApproved  `json:"on_approved"`
+	OnUnmet       *OnUnmet    `json:"on_unmet"`
+}
+
+// OnUnmet is a conjunction stop's directed-restart directive: when the stop is
+// not yet met, Action=="loop_to_next_roadmap_item" tells the loop to begin the
+// next iteration at the phase named TargetPhase (the planner). A nil OnUnmet (or
+// any other Action) keeps the legacy whole-workflow replay each iteration.
+type OnUnmet struct {
+	Action      string `json:"action"`
+	TargetPhase string `json:"target_phase"`
 }
 
 // OnApproved is the subset of a human_gate's on_approved block forge-core needs:

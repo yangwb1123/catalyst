@@ -18,7 +18,7 @@ import { spawnSync } from 'node:child_process';
 import { readdirSync, statSync, existsSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { detectLanguages, loadAdapter, lintBinary, coverageBinary, judgeCoverage, versionProbeArgs, coverageArtifact } from './adapters.mjs';
+import { detectLanguages, loadAdapter, lintBinary, coverageBinary, judgeCoverage, versionProbeArgs, coverageArtifact, appTestPlan, ADAPTER_LANG_BY_RUNNER } from './adapters.mjs';
 
 const HARNESS_DIR = dirname(fileURLToPath(import.meta.url));
 const ROOT = dirname(HARNESS_DIR);
@@ -30,11 +30,12 @@ export const NA = 'N-A';
 
 // --- low-level command runner ------------------------------------------------
 
-// Run a command from the repo root; return {ok, code, out} where ok === exit 0.
-// Centralised so every probe judges success the same way (exit-code === 0).
-// `extraEnv` overlays additional env vars (e.g. FORGE_ACCEPT_INNER for the
-// nested-suite self-spawn guard) on top of the scrubbed parent environment.
-function run(cmd, args, extraEnv = {}) {
+// Run a command; return {ok, code, out} where ok === exit 0. Centralised so every
+// probe judges success the same way (exit-code === 0). `extraEnv` overlays env
+// vars (e.g. FORGE_ACCEPT_INNER) on the scrubbed parent env. `cwd` defaults to the
+// repo root; a probe overrides it for a command whose paths are relative to a
+// subdir (e.g. an adapter `go test ./...` that must run from the app's module dir).
+function run(cmd, args, extraEnv = {}, cwd = ROOT) {
   // Scrub NODE_TEST_CONTEXT so a nested `node --test` (when acceptance.mjs is
   // itself spawned from under `node --test`, e.g. test_acceptance.mjs) runs as a
   // fresh top-level run and prints its TAP summary to stdout, rather than
@@ -42,7 +43,7 @@ function run(cmd, args, extraEnv = {}) {
   // the app-test count read 0 → a false "no app tests discovered").
   const env = { ...process.env, ...extraEnv };
   delete env.NODE_TEST_CONTEXT;
-  const res = spawnSync(cmd, args, { cwd: ROOT, encoding: 'utf8', env });
+  const res = spawnSync(cmd, args, { cwd, encoding: 'utf8', env });
   if (res.error) return { ok: false, code: null, out: String(res.error.message) };
   const out = `${res.stdout || ''}${res.stderr || ''}`.trim();
   return { ok: res.status === 0, code: res.status, out };
@@ -148,38 +149,39 @@ function inferRunner(app) {
   return null;
 }
 
-// Run one app's suite; return {name, ok, detail}. Node apps preserve the Node-26
-// quoted-glob workaround + fail-closed `tests N > 0` count; python/go shell their
-// native discovery runners and judge on exit code.
+// Run one app's suite; return {name, ok, detail}. DECLARATION-DRIVEN: the pure
+// appTestPlan picks the app's adapter `test:` command when its runner fits the
+// on-disk layout (e.g. go-taskd's `go test ./...`, from its own module dir via
+// plan.cwd), else the hardcoded fallback (e.g. url-shortener's node:test, since
+// the typescript adapter's `vitest run` does not discover *.test.mjs) — annotating
+// WHY (honesty). plan.countCheck routes node to the fail-closed counting runner;
+// adapter/python/go judge on exit code. (ADAPTER_LANG_BY_RUNNER maps the runner
+// kind onto a <lang>.yml.)
 function runApp(app) {
   const runner = inferRunner(app);
-  if (runner === 'node') return runNodeApp(app);
-  if (runner === 'python') {
-    const r = run('python3', ['-m', 'unittest', 'discover', '-s', `examples/${app.name}/test`]);
-    return { name: app.name, ok: r.ok, detail: r.ok ? `${app.name}: PASS (python)` : `${app.name}: FAIL (python exit ${r.code})` };
-  }
-  if (runner === 'go') {
-    // -C runs from the app's own module dir, so a self-contained nested module
-    // (its own go.mod, no root go.work) tests correctly — `go test ./examples/..`
-    // from the repo root fails because the root is not a Go module.
-    const r = run('go', ['-C', `examples/${app.name}`, 'test', './...']);
-    return { name: app.name, ok: r.ok, detail: r.ok ? `${app.name}: PASS (go)` : `${app.name}: FAIL (go exit ${r.code})` };
-  }
-  return { name: app.name, ok: false, detail: `${app.name}: FAIL (no recognized test runner)` };
+  if (!runner) return { name: app.name, ok: false, detail: `${app.name}: FAIL (no recognized test runner)` };
+  const { test: testCmd } = loadAdapter(ADAPTER_LANG_BY_RUNNER[runner]);
+  const plan = appTestPlan(testCmd, readdirSync(app.testDir), app.name, runner);
+  if (plan.countCheck) return runNodeApp(app, plan.tag);
+  const r = run(plan.cmd, plan.args, {}, plan.cwd ? join(ROOT, plan.cwd) : ROOT);
+  const detail = r.ok ? `${app.name}: PASS (${plan.tag})` : `${app.name}: FAIL (${plan.tag}, exit ${r.code})`;
+  return { name: app.name, ok: r.ok, detail };
 }
 
-// Run a node app's *.test.mjs suite. Fail-closed: exit 0 is necessary but NOT
-// sufficient — a glob matching nothing still exits 0 ("tests 0"). Require the
-// runner's own `tests N` summary with N > 0. The quoted glob dodges Node 26's
-// broken `--test <dir>`; the TAP reporter pins the summary format.
-function runNodeApp(app) {
+// Run a node app's *.test.mjs suite (always node here — the typescript adapter's
+// `vitest run` never discovers node:test *.test.mjs, so plan.countCheck is set).
+// Fail-closed: exit 0 is necessary but NOT sufficient — an empty glob still exits
+// 0 ("tests 0"); require the `tests N` summary with N > 0. Quoted glob dodges Node
+// 26's broken `--test <dir>`; the TAP reporter pins the format. `tag` carries the
+// honest "(node fallback: …)" annotation from appTestPlan.
+function runNodeApp(app, tag) {
   const glob = `examples/${app.name}/test/*.test.mjs`;
   const r = run('node', ['--test', '--test-reporter=tap', glob]);
   const m = r.out.match(/(?:^|\n)# tests (\d+)/);
   const count = m ? Number(m[1]) : null;
   const ok = r.ok && count !== null && count > 0;
   const detail = ok
-    ? `${app.name}: PASS (node, ${count} tests)`
+    ? `${app.name}: PASS (${tag}, ${count} tests)`
     : count === 0 || count === null
       ? `${app.name}: FAIL (no tests discovered, expected >=1)`
       : `${app.name}: FAIL (node exit ${r.code})`;

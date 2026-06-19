@@ -60,6 +60,12 @@ test('acceptance gate ACCEPTS the real repo and exits 0', { skip: Boolean(proces
   // app_test_pass proves the dogfood url-shortener suite is actually gated here
   // (a regression in the app would FAIL this criterion and REJECT the repo).
   assert.match(res.stdout, /\[PASS\] app_test_pass/);
+  // DECLARATION-DRIVEN routing (gap closed): go-taskd runs via the ADAPTER `test:`
+  // command (`go test ./...`), while url-shortener honestly FALLS BACK because the
+  // typescript adapter's `vitest run` does not fit its node:test *.test.mjs — and
+  // the fail-closed 47-tests count is preserved on that fallback path.
+  assert.match(res.stdout, /go-taskd: PASS \(adapter: go test \.\/\.\.\.\)/);
+  assert.match(res.stdout, /url-shortener: PASS \(node fallback: .*vitest.* does not fit app layout, 47 tests\)/);
   assert.match(res.stdout, /\[PASS\] complexity_violations/);
   assert.match(res.stdout, /\[PASS\] arch_violations/);
   // security_findings is now a REAL check (harness/secret-scan.mjs), not N/A:
