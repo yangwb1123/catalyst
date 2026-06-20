@@ -7,7 +7,7 @@ import (
 	"forgeos/forge-core/internal/routing"
 )
 
-// phaseTier resolves the per-phase model tier, honoring a workflow's model_tier
+// PhaseTier resolves the per-phase model tier, honoring a workflow's model_tier
 // OVERRIDE that can only RAISE the routed tier — never lower it below the safety
 // floor. Each row is (agent, model_tier, mode) -> expected tier.
 func TestPhaseTier(t *testing.T) {
@@ -41,15 +41,15 @@ func TestPhaseTier(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			p := asset.Phase{Name: c.name, Agent: c.agent, ModelTier: c.modelTier}
-			if got := phaseTier(p, c.mode); got != c.want {
-				t.Errorf("phaseTier(agent=%q, model_tier=%q, mode=%q) = %q, want %q",
+			if got := PhaseTier(p, c.mode); got != c.want {
+				t.Errorf("PhaseTier(agent=%q, model_tier=%q, mode=%q) = %q, want %q",
 					c.agent, c.modelTier, c.mode, got, c.want)
 			}
 		})
 	}
 }
 
-// DryRunExecutor.Execute must NARRATE the phaseTier verdict, so a workflow's
+// DryRunExecutor.Execute must NARRATE the PhaseTier verdict, so a workflow's
 // model_tier override is visible in the dry-run log: a plain agent (implementer)
 // with model_tier: opus narrates tier opus, not its sonnet default.
 func TestDryRunExecutor_HonorsModelTierOverride(t *testing.T) {
@@ -66,7 +66,7 @@ func TestDryRunExecutor_HonorsModelTierOverride(t *testing.T) {
 
 // HONESTY / safety: even a dry-run narration of a reviewer phase that authors
 // model_tier: haiku must STILL report opus — the safety floor is supreme over the
-// override in the executor's OUTPUT, not just inside phaseTier.
+// override in the executor's OUTPUT, not just inside PhaseTier.
 func TestDryRunExecutor_OverrideCannotBreakFloorInNarration(t *testing.T) {
 	rec := &recorder{}
 	exec := DryRunExecutor{Log: rec.log}

@@ -28,7 +28,6 @@ import (
 	"forgeos/forge-core/internal/mode"
 	"forgeos/forge-core/internal/orchestrator"
 	"forgeos/forge-core/internal/prompt"
-	"forgeos/forge-core/internal/routing"
 )
 
 // maxLoopBack is the conservative ceiling on DIRECTED gate loop-backs per run
@@ -382,12 +381,17 @@ func agentExecutor(o runOpts, logln func(string)) orchestrator.AgentExecutor {
 		return orchestrator.CommandExecutor{
 			Build: func(p asset.Phase, mode string) []string {
 				argv := []string{o.agentCmd}
-				// claude print mode needs an explicit permission mode to USE tools
-				// (write files) headlessly; without it the agent only DESCRIBES the
-				// edits it cannot apply. Gate on a claude-family command, since only
-				// it understands the flag (echo / stub commands must not receive it).
-				if o.agentPermission != "" && strings.Contains(o.agentCmd, "claude") {
-					argv = append(argv, "--permission-mode", o.agentPermission)
+				// claude print mode needs flags echo/stubs don't understand, so gate
+				// on a claude-family command: --permission-mode to USE tools (write
+				// files) headlessly — without it the agent only DESCRIBES edits it
+				// can't apply — and --model so a real run honors ForgeOS's ROUTED tier
+				// (the opus floor for reviewer/architect/cto + any per-phase model_tier
+				// override); without --model, claude ignores routing and uses its default.
+				if strings.Contains(o.agentCmd, "claude") {
+					if o.agentPermission != "" {
+						argv = append(argv, "--permission-mode", o.agentPermission)
+					}
+					argv = append(argv, "--model", orchestrator.PhaseTier(p, mode))
 				}
 				return append(argv, "-p", buildPrompt(o.root, p, mode))
 			},
@@ -406,7 +410,7 @@ func agentExecutor(o runOpts, logln func(string)) orchestrator.AgentExecutor {
 // gaps/decisions/lessons prior iterations recorded (memoryContext). The query
 // "<phase> <agent>" is the natural relevance signal for both lanes.
 func buildPrompt(repoRoot string, p asset.Phase, mode string) string {
-	tier := routing.TierFor(p.Agent, mode)
+	tier := orchestrator.PhaseTier(p, mode)
 	ctx := prompt.Gather(repoRoot, p.Name+" "+p.Agent)
 	ctx = append(ctx, memoryContext(repoRoot)...)
 	return prompt.Build(p.Agent, p.Name, mode, tier, readCard(repoRoot, p.Agent), ctx)

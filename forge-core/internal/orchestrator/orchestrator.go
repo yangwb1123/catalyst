@@ -47,16 +47,18 @@ type DryRunExecutor struct {
 }
 
 // Execute narrates the phase as "phase <name> -> agent <agent> (tier <tier>)",
-// taking the tier from phaseTier so a workflow's per-phase model_tier override is
-// honored (raise-only, never below the safety floor — see phaseTier).
+// taking the tier from PhaseTier so a workflow's per-phase model_tier override is
+// honored (raise-only, never below the safety floor — see PhaseTier).
 func (d DryRunExecutor) Execute(p asset.Phase, mode string) error {
-	tier := phaseTier(p, mode)
+	tier := PhaseTier(p, mode)
 	d.logf("phase %s -> agent %s (tier %s)", p.Name, p.Agent, tier)
 	return nil
 }
 
-// phaseTier resolves the model tier for a phase under a mode, honoring an
-// OPTIONAL per-phase model_tier OVERRIDE authored in the workflow asset.
+// PhaseTier resolves the model tier for a phase under a mode, honoring an
+// OPTIONAL per-phase model_tier OVERRIDE authored in the workflow asset. Exported
+// because the REAL executor (cmd/forge) maps it onto `claude --model <tier>`, so a
+// real run honors the routed tier — not just the dry-run narration.
 //
 // The base is routing.TierFor(agent, mode) — the routed verdict, which already
 // applies the non-negotiable Opus SAFETY FLOOR for judgement-only agents
@@ -70,10 +72,10 @@ func (d DryRunExecutor) Execute(p asset.Phase, mode string) error {
 // the field is byte-for-byte unchanged.
 //
 // HONESTY: model_tier is an explicit author override, but the safety floor
-// (reviewer/architect/cto -> Opus) is supreme — overrides are raise-only. Under
-// the dry-run executor the resolved tier is narrative/prompt-fidelity only; no
-// model is actually invoked.
-func phaseTier(p asset.Phase, mode string) string {
+// (reviewer/architect/cto -> Opus) is supreme — overrides are raise-only. Under the
+// dry-run executor the tier is narration only; under the command executor it is
+// passed to `claude --model`, so the routed tier actually drives the model.
+func PhaseTier(p asset.Phase, mode string) string {
 	base := routing.TierFor(p.Agent, mode)
 	if p.ModelTier == "" {
 		return base

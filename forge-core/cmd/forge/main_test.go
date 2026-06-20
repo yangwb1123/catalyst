@@ -138,6 +138,23 @@ func TestAgentExecutor_EmptyPermissionDisablesFlag(t *testing.T) {
 	}
 }
 
+// agentExecutor must pass --model <routed-tier> to a claude-family command so a
+// real run honors ForgeOS's routing (the opus floor for reviewer/architect/cto),
+// and must NOT pass that claude-only flag to a stub like echo.
+func TestAgentExecutor_ModelTierForClaude(t *testing.T) {
+	mk := func(cmd, agent string) string {
+		ex := agentExecutor(runOpts{executor: "command", agentCmd: cmd, root: t.TempDir()}, func(string) {})
+		ce := ex.(orchestrator.CommandExecutor)
+		return strings.Join(ce.Build(asset.Phase{Name: agent, Agent: agent}, "balanced"), " ")
+	}
+	if got := mk("claude", "reviewer"); !strings.Contains(got, "--model opus") {
+		t.Errorf("claude reviewer must route to --model opus (the safety floor); got: %s", got)
+	}
+	if strings.Contains(mk("echo", "reviewer"), "--model") {
+		t.Error("echo (a stub) must NOT receive the claude-only --model flag")
+	}
+}
+
 // End to end: load the REAL build.yml via the yaml2json shim + asset loader and
 // assert the typed criteria evaluate per-criterion as expected. build.yml's
 // all_of items are objects ({metric, operator, threshold/value}), so this proves
