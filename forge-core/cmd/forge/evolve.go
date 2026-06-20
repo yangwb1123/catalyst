@@ -161,24 +161,16 @@ func execLoop(wf asset.Workflow, o runOpts, maxIter int, maxIterSource string, r
 // per-iteration, so the iteration-event assertions are untouched.
 func buildLoop(wf asset.Workflow, o runOpts, maxIter int, logln func(string), costSink func(phase string, usd float64)) orchestrator.LoopEngine {
 	probe := &loopProbe{root: o.root}
-	// Two ledgers shared across ALL iterations: each iteration's harness-gates updates a
-	// gate's verdict in place (so the reviewer always sees the LATEST gate state), and
-	// each iteration's feeds_forward phase (the planner) updates its output in place (so
-	// later phases see the LATEST plan) — the right semantics for a converging loop.
-	// OnGateResult feeds the gate ledger; the Observe sink feeds the phase-output ledger;
-	// agentExecutor reads both into the prompt. feedsForwardOf closes over this wf.
-	ledger := newGateLedger()
-	phaseOut := newPhaseOutputLedger()
-	eng := orchestrator.Engine{
-		Exec:          agentExecutor(o, logln, costSink, ledger, phaseOut, feedsForwardOf(wf)),
-		RunGate:       func(name string) gate.Result { return resolveGate(o.root, name, probe.refresh()) },
-		Log:           logln,
-		OnGateResult:  ledger.record,
-		MaxRetries:    o.maxRetries,
-		MaxLoopBack:   maxLoopBack,
-		MaxAgentCalls: o.maxAgentCalls,
-		ModePolicy:    mode.Effective(o.mode, resolveLifecycle(o)),
-	}
+	// The Engine — with its four prompt/feedback ledgers (gate verdicts, feeds_forward
+	// output, reviewer verdicts driving loop-back, and REQUEST_CHANGES findings) — is built
+	// by the SAME buildRunEngine `forge run` uses, so the two paths never drift. The only
+	// evolve-specific seam is the RunGate: a per-iteration refreshing probe (each iteration
+	// re-measures gate state, so the reviewer always sees the LATEST). The ledgers live for
+	// the whole loop and update in place across iterations — the right converging-loop
+	// semantics (latest gate state, latest plan, latest verdict).
+	eng := buildRunEngine(wf, o, logln, costSink,
+		func(name string) gate.Result { return resolveGate(o.root, name, probe.refresh()) },
+		mode.Effective(o.mode, resolveLifecycle(o)))
 	approved := humanApproved(o.root, wf.Stage, o.approved)
 	return orchestrator.NewLoopEngine(
 		eng, wf.Stop,

@@ -256,24 +256,7 @@ func execEngine(wf asset.Workflow, o runOpts) int {
 		return 1
 	}
 	defer closeTrace()
-	costSink := costEmitter(tracer, logln)
-	// Two ledgers per run, both read into later prompts by agentExecutor (prompt_context.go):
-	// gateLedger (OnGateResult writes gate verdicts) and phaseOutputLedger (the Observe sink
-	// writes a feeds_forward phase's output — the planner's task split). feedsForwardOf closes
-	// over THIS wf so the sink can look up FeedsForward by phase name (the Observe seam sees
-	// only the name, not the Phase).
-	ledger := newGateLedger()
-	phaseOut := newPhaseOutputLedger()
-	eng := orchestrator.Engine{
-		Exec:          agentExecutor(o, logln, costSink, ledger, phaseOut, feedsForwardOf(wf)),
-		RunGate:       harnessRunner(o.root, probe),
-		Log:           logln,
-		OnGateResult:  ledger.record,
-		MaxRetries:    o.maxRetries,
-		MaxLoopBack:   maxLoopBack,
-		MaxAgentCalls: o.maxAgentCalls,
-		ModePolicy:    pol,
-	}
+	eng := buildRunEngine(wf, o, logln, costEmitter(tracer, logln), harnessRunner(o.root, probe), pol)
 	fmt.Printf("forge run: stage=%s mode=%s lifecycle=%s executor=%s gates=%v reviewer=%v discover=%s design=%s adr=%v (%d phases)\n",
 		wf.Stage, o.mode, lifecycle, o.executor, pol.Gates, pol.Reviewer,
 		pol.DiscoverDepth, pol.DesignDepth, pol.ADR, len(wf.Phases))
@@ -412,9 +395,14 @@ func projectYAMLValue(root, key string) string {
 // feedsForward reports whether a just-finished phase's output should be remembered there
 // — it is injected (not derived from asset.Phase) because the executor's generic Observe
 // sink receives only (phase name, output), never the Phase, so the FeedsForward lookup
-// must come from the caller, which holds the workflow. All three are nil-safe (see
-// prompt_context.go); the generic executor stays oblivious to every one of them.
-func agentExecutor(o runOpts, logln func(string), costSink func(phase string, usd float64), gates *gateLedger, phaseOut *phaseOutputLedger, feedsForward func(phase string) bool) orchestrator.AgentExecutor {
+// must come from the caller, which holds the workflow. verdicts records each reviewer's
+// parsed VERDICT (the Observe sink writes it; the engine's AgentVerdict reads it back to
+// drive a directed loop-back); findings stashes a REQUEST_CHANGES review's notes for the
+// loop-back target (the implementer) and is the ONLY of these injected back into a prompt
+// by name; onFailTarget is the data-driven (phase -> loop-back target) lookup that routes
+// those findings. All are nil-safe (see prompt_context.go); the generic executor stays
+// oblivious to every one of them.
+func agentExecutor(o runOpts, logln func(string), costSink func(phase string, usd float64), gates *gateLedger, phaseOut *phaseOutputLedger, feedsForward func(phase string) bool, verdicts *verdictLedger, findings *reviewFindingsLedger, onFailTarget func(phase string) (string, bool)) orchestrator.AgentExecutor {
 	if o.executor == "command" {
 		isClaude := strings.Contains(o.agentCmd, "claude")
 		ex := orchestrator.CommandExecutor{
@@ -439,7 +427,7 @@ func agentExecutor(o runOpts, logln func(string), costSink func(phase string, us
 					}
 					argv = append(argv, "--output-format", "json")
 				}
-				return append(argv, "-p", buildPrompt(o.root, p, mode, gates, phaseOut))
+				return append(argv, "-p", buildPrompt(o.root, p, mode, gates, phaseOut, findings))
 			},
 			Dir:            o.root,
 			Timeout:        o.timeout,
@@ -447,7 +435,7 @@ func agentExecutor(o runOpts, logln func(string), costSink func(phase string, us
 			MaxOutputBytes: o.maxOutputBytes,
 			Log:            logln,
 		}
-		ex.Observe = observeFor(isClaude, costSink, phaseOut, feedsForward)
+		ex.Observe = observeFor(isClaude, costSink, phaseOut, feedsForward, verdicts, findings, onFailTarget)
 		// Only claude emits the cost JSON, so only claude gets the result-unwrapping log
 		// renderer; echo/stubs stay nil -> the generic executor logs raw output verbatim.
 		if isClaude {
@@ -456,4 +444,39 @@ func agentExecutor(o runOpts, logln func(string), costSink func(phase string, us
 		return ex
 	}
 	return orchestrator.DryRunExecutor{Log: logln}
+}
+
+// buildRunEngine assembles the orchestrator.Engine shared by `forge run` (execEngine)
+// and `forge evolve` (buildLoop): the SAME four prompt/feedback ledgers wired to the same
+// seams, so the two entry points never drift. The FOUR ledgers, all per-run/iteration and
+// all nil-safe (prompt_context.go):
+//   - gates (gateLedger): OnGateResult writes each gate's objective verdict; the prompt reads it;
+//   - phaseOut (phaseOutputLedger): the Observe sink writes a feeds_forward phase's output (the
+//     planner's task split); a later prompt reads it;
+//   - verdicts (verdictLedger): the Observe sink writes each reviewer's parsed VERDICT;
+//     Engine.AgentVerdict reads it back to drive the directed reviewer loop-back;
+//   - findings (reviewFindingsLedger): on a REQUEST_CHANGES, the Observe sink stashes the
+//     review notes for the loop-back target (the implementer), read into THAT prompt.
+//
+// feedsForwardOf/onFailTargetOf close over wf so the Observe seam (handed only a phase
+// NAME) can look up FeedsForward and the on_fail loop-back target. runGate is injected
+// because run uses harnessRunner(probe) while evolve uses a per-iteration refreshing
+// probe; pol/cost/log are likewise the caller's. Only the claude executor path activates
+// the verdict/findings sinks (dry/echo leave AgentVerdict effectively inert).
+func buildRunEngine(wf asset.Workflow, o runOpts, logln func(string), costSink func(phase string, usd float64), runGate func(name string) gate.Result, pol mode.Policy) orchestrator.Engine {
+	gates := newGateLedger()
+	phaseOut := newPhaseOutputLedger()
+	verdicts := newVerdictLedger()
+	findings := newReviewFindingsLedger()
+	return orchestrator.Engine{
+		Exec:          agentExecutor(o, logln, costSink, gates, phaseOut, feedsForwardOf(wf), verdicts, findings, onFailTargetOf(wf)),
+		RunGate:       runGate,
+		Log:           logln,
+		OnGateResult:  gates.record,
+		AgentVerdict:  verdicts.get,
+		MaxRetries:    o.maxRetries,
+		MaxLoopBack:   maxLoopBack,
+		MaxAgentCalls: o.maxAgentCalls,
+		ModePolicy:    pol,
+	}
 }

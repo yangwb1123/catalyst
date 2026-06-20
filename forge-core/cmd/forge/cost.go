@@ -39,6 +39,52 @@ func parseClaudeCostUsd(output string) (usd float64, ok bool) {
 	return *env.TotalCostUsd, true
 }
 
+// Reviewer-verdict tokens — the machine-readable last line .agent/agents/reviewer.md
+// contracts the reviewer to emit (verbatim, top-aligned). VerdictApprove lets the run
+// proceed; VerdictRequestChanges drives a directed loop-back to the implementer. These
+// are the NORMALIZED constants parseReviewerVerdict returns and the orchestrator compares
+// against — the single place the reviewer's prose token is turned into an objective signal.
+const (
+	VerdictApprove        = "APPROVE"
+	VerdictRequestChanges = "REQUEST_CHANGES"
+)
+
+// parseReviewerVerdict extracts the reviewer's machine-readable verdict from its raw
+// output — the EXACT mirror of parseClaudeCostUsd's isolation: ALL knowledge of the
+// reviewer's `VERDICT: …` last-line contract lives HERE in cmd/forge, never in the
+// orchestrator (which only reads back an opaque token via Engine.AgentVerdict). It first
+// unwrapClaudeResult's the output (so a real claude JSON envelope is reduced to its
+// `result` text, while an echo/stub is scanned verbatim — a fake sentinel still matches),
+// then takes the LAST non-empty line, trims it, and matches it EXACTLY against the two
+// contracted forms. ok=false (and the caller fires NO verdict — never a fabricated one,
+// the same honesty branch as cost) whenever the last line is anything else: a missing,
+// wrapped, or malformed verdict is treated as "no signal", which the orchestrator maps to
+// fail-open (proceed), per the reviewer card's stated contract.
+func parseReviewerVerdict(output string) (verdict string, ok bool) {
+	last := lastNonEmptyLine(unwrapClaudeResult(output))
+	switch last {
+	case "VERDICT: " + VerdictApprove:
+		return VerdictApprove, true
+	case "VERDICT: " + VerdictRequestChanges:
+		return VerdictRequestChanges, true
+	default:
+		return "", false // missing/wrapped/malformed -> no signal (caller fails open)
+	}
+}
+
+// lastNonEmptyLine returns the last line of s that is non-empty after trimming
+// surrounding whitespace, or "" when every line is blank — so a trailing newline (or
+// blank tail) the agent appended after its VERDICT line does not mask the verdict.
+func lastNonEmptyLine(s string) string {
+	lines := strings.Split(s, "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		if t := strings.TrimSpace(lines[i]); t != "" {
+			return t
+		}
+	}
+	return ""
+}
+
 // unwrapClaudeResult renders a claude JSON envelope down to its human-readable
 // `result` string for the log line; any non-JSON output (echo/stub) is returned
 // verbatim, so the generic executor's logging stays claude-free and unchanged for

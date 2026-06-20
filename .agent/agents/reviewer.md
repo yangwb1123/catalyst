@@ -27,3 +27,19 @@
 - `PASS` → 交 `qa`(E2E/benchmark/security/acceptance)
 - `CHANGES-REQUESTED` → **退回 `implementer`**,附逐条 findings;不放行
 - 偏离的是架构本身(非实现) → 升级回 `architect`
+
+## 机读裁决契约 (machine-readable verdict — 主循环据此决定是否回流)
+你的输出**最后一行**必须且仅为下列两者之一,**顶格、无任何包裹**(无引号 / 反引号 / 列表符 / 代码块):
+
+```
+VERDICT: APPROVE
+```
+或
+```
+VERDICT: REQUEST_CHANGES
+```
+
+- 逐条 findings(`## Review` + 文件:行 + 严重度 + 理由 + 建议)写在 `VERDICT:` 行**之前**;`VERDICT:` 是产物的**末行收尾**。
+- `VERDICT: REQUEST_CHANGES` → 主循环跳回 `implementer`(本 phase 的 on_fail.target)重跑,并把你的 findings 定向喂给它修复。
+- `VERDICT: APPROVE` → 正常放行,继续交 `qa`。
+- **缺失或格式不符**(末行不是顶格的 `VERDICT: APPROVE`/`VERDICT: REQUEST_CHANGES`)→ 主循环按**保守放行(fail-open)**处理:不阻断、继续往前,由 harness 硬闸门 + `qa` 兜底。**故末行务必规范,以使你的裁决真正生效。**

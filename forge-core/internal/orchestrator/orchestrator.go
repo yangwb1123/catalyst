@@ -155,12 +155,30 @@ type Engine struct {
 	// that knows prompts) can feed a prior gate's real results into a LATER agent
 	// phase's prompt — so the reviewer is told "test: ok" and need not re-run it. The
 	// engine just REPORTS, oblivious to where they go (mirror of injected Log/RunGate); nil reports nothing (back-compat, byte-exact).
-	OnGateResult  func(name, status string)
+	OnGateResult func(name, status string)
+	// AgentVerdict is an OPTIONAL puller — the REVERSE twin of OnGateResult. Where
+	// OnGateResult lets the engine PUSH an objective gate verdict out to cmd/forge,
+	// AgentVerdict lets the engine PULL an agent phase's objective verdict back IN
+	// after that phase ran: cmd/forge parses the reviewer's machine-readable last line
+	// (the `VERDICT: …` contract — see parseReviewerVerdict) and exposes the normalized
+	// token here, keyed by phase NAME. The engine stays vendor-free: it never sees the
+	// claude/reviewer output, only an opaque ("APPROVE"|"REQUEST_CHANGES", ok) it
+	// compares against the loop-back literal. A nil puller (or ok=false: no/garbled
+	// verdict) means "no verdict" — the phase simply proceeds, NEVER loops back and
+	// NEVER aborts (back-compat, byte-exact, and the reviewer card's fail-open contract).
+	AgentVerdict  func(phase string) (verdict string, ok bool)
 	MaxRetries    int
 	MaxLoopBack   int
 	MaxAgentCalls int
 	ModePolicy    mode.Policy
 }
+
+// reviewerRequestChanges is the one verdict token that triggers an agent-phase
+// directed loop-back. It mirrors cmd/forge's VerdictRequestChanges, duplicated here
+// (a bare literal, not an import) BECAUSE the orchestrator must stay free of any
+// cmd/forge or claude knowledge — the layering bright-line. The two are pinned
+// together by verdict_loopback_test.go, which drives this exact string end to end.
+const reviewerRequestChanges = "REQUEST_CHANGES"
 
 // Run executes the workflow phase by phase under mode, applying the central
 // knob's Workflow-depth gating (e.ModePolicy) as it goes. It begins at phase 0;
@@ -228,6 +246,14 @@ func (e Engine) RunFrom(wf asset.Workflow, mode string, start int) error {
 		if err := e.runAgentPhase(p, mode); err != nil {
 			return err
 		}
+		// After a CLEAN agent run, a reviewer-style phase may demand a directed
+		// loop-back (its VERDICT was REQUEST_CHANGES). Same jump idiom as the gate
+		// branch — but jumped=false means PROCEED here (fail-open), not abort: an
+		// APPROVE/absent verdict simply falls through to the next phase.
+		if target, jumped := e.agentOutcome(wf, p, &loopBacks); jumped {
+			i = target - 1 // -1 because the for-loop will ++ back to target
+			continue
+		}
 	}
 	e.reportStop(wf)
 	return nil
@@ -235,30 +261,85 @@ func (e Engine) RunFrom(wf asset.Workflow, mode string, start int) error {
 
 // gateOutcome decides what happens after a gate phase failed: a DIRECTED jump
 // back to its on_fail target, or "no jump" (the caller then aborts — fail-closed).
-// It returns the target phase index and whether a jump was taken, consuming one
-// unit of the loop-back budget (*loopBacks) on a jump. A jump is taken only when
-// ALL hold: the phase declares on_fail with action "loop_back", the target phase
-// resolves by name, and the budget is not yet spent (loopBacks < MaxLoopBack).
-// Any miss is logged with the honest reason and returns jumped=false so the run
-// aborts — back-compat (no on_fail) and fail-closed (budget spent) share this path.
+// It is a thin shim over loopBackTo, the shared directed-loop-back core: a red gate
+// is fail-CLOSED, so jumped=false means the caller aborts. The "gate FAILED" reason
+// is what makes loopBackTo emit the legacy "still red after …" budget-spent line that
+// the gate loop-back tests assert.
 func (e Engine) gateOutcome(wf asset.Workflow, p asset.Phase, loopBacks *int) (target int, jumped bool) {
+	return e.loopBackTo(wf, p, loopBacks, "gate FAILED")
+}
+
+// agentOutcome decides what happens after an AGENT phase ran clean: a DIRECTED jump
+// back to its on_fail target (because a reviewer returned REQUEST_CHANGES), or "no
+// jump". It is the agent-side twin of gateOutcome, sharing the SAME loopBackTo core,
+// but with a CRUCIAL semantic difference from a gate: jumped=false here means PROCEED,
+// never abort. A nil puller, an unparsable/absent verdict (ok=false), or an APPROVE
+// all mean "no REQUEST_CHANGES signal" → the run continues forward (to qa) — this is
+// the fail-OPEN posture the reviewer is a SPEC-tier (not hard-gate) check warrants;
+// the harness gates and qa remain the fail-closed backstop. Only a parsed
+// REQUEST_CHANGES attempts the loop-back, and even then a spent budget falls through
+// to proceed (fail-open), unlike a gate's fail-closed abort.
+func (e Engine) agentOutcome(wf asset.Workflow, p asset.Phase, loopBacks *int) (target int, jumped bool) {
+	if e.AgentVerdict == nil {
+		return 0, false // no puller wired (dry/echo, or no verdict source): proceed.
+	}
+	v, ok := e.AgentVerdict(p.Name)
+	if !ok || v != reviewerRequestChanges {
+		return 0, false // APPROVE or no/garbled verdict: proceed forward, NOT abort.
+	}
+	return e.loopBackTo(wf, p, loopBacks, "reviewer verdict REQUEST_CHANGES")
+}
+
+// loopBackTo is the shared DIRECTED LOOP-BACK core for BOTH a failed gate and a
+// reviewer's REQUEST_CHANGES. It returns the target phase index and whether a jump was
+// taken, consuming one unit of the loop-back budget (*loopBacks) on a jump. A jump is
+// taken only when ALL hold: the phase declares on_fail with action "loop_back", the
+// target resolves by name, and the budget is not yet spent (loopBacks < MaxLoopBack).
+// Any miss is logged with the honest reason and returns jumped=false. The CALLER owns
+// the meaning of jumped=false: a gate caller aborts (fail-closed), an agent caller
+// proceeds (fail-open). reason flows into the logs so the gate path keeps its legacy
+// "gate still red after …" budget-spent wording the loop-back tests assert, while the
+// JUMP-success line stays byte-identical ("loop-back %d/%d to %s") for both callers.
+func (e Engine) loopBackTo(wf asset.Workflow, p asset.Phase, loopBacks *int, reason string) (target int, jumped bool) {
 	if p.OnFail == nil || p.OnFail.Action != "loop_back" {
-		return 0, false // no directed loop-back declared: legacy abort.
+		return 0, false // no directed loop-back declared: legacy abort / proceed.
 	}
 	idx, ok := phaseIndex(wf, p.OnFail.TargetPhase)
 	if !ok {
-		e.logf("phase %s: on_fail target %q not found — aborting (fail-closed)", p.Name, p.OnFail.TargetPhase)
+		e.logf("phase %s: on_fail target %q not found — %s", p.Name, p.OnFail.TargetPhase, outcomeSuffix(reason))
 		return 0, false
 	}
 	if *loopBacks >= e.MaxLoopBack {
-		e.logf("phase %s: gate still red after %d/%d loop-backs to %s — aborting (fail-closed)",
-			p.Name, *loopBacks, e.MaxLoopBack, p.OnFail.TargetPhase)
+		e.logf("phase %s: %s — %s", p.Name, budgetSpentReason(reason, *loopBacks, e.MaxLoopBack, p.OnFail.TargetPhase), outcomeSuffix(reason))
 		return 0, false
 	}
 	*loopBacks++
-	e.logf("phase %s: gate FAILED, loop-back %d/%d to %s (re-running %s→%s)",
-		p.Name, *loopBacks, e.MaxLoopBack, p.OnFail.TargetPhase, p.OnFail.TargetPhase, p.Name)
+	e.logf("phase %s: %s, loop-back %d/%d to %s (re-running %s→%s)",
+		p.Name, reason, *loopBacks, e.MaxLoopBack, p.OnFail.TargetPhase, p.OnFail.TargetPhase, p.Name)
 	return idx, true
+}
+
+// budgetSpentReason renders the budget-exhausted log message, preserving the legacy
+// "gate still red after N/M loop-backs to T" wording for the gate path (whose tests
+// assert the "still red after" substring) while giving an honest, reason-appropriate
+// message for any other caller (the reviewer's spent-budget fail-open).
+func budgetSpentReason(reason string, loopBacks, max int, target string) string {
+	if reason == "gate FAILED" {
+		return fmt.Sprintf("gate still red after %d/%d loop-backs to %s", loopBacks, max, target)
+	}
+	return fmt.Sprintf("%s but loop-back budget spent after %d/%d to %s", reason, loopBacks, max, target)
+}
+
+// outcomeSuffix names the honest consequence of a non-jump, which the CALLER owns: a
+// gate caller aborts (fail-closed), a reviewer/agent caller proceeds (fail-open). Keyed
+// off reason so the log matches what RunFrom actually does next — the gate path keeps
+// "aborting (fail-closed)" (its tests assert it), the agent/reviewer path tells the truth
+// instead of logging a fail-closed abort that never happens (it proceeds to qa).
+func outcomeSuffix(reason string) string {
+	if reason == "gate FAILED" {
+		return "aborting (fail-closed)"
+	}
+	return "proceeding (fail-open)"
 }
 
 // phaseIndex returns the index of the phase named `name`, or ok=false when no

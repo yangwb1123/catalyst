@@ -180,6 +180,89 @@ func (l *phaseOutputLedger) contextLines() []string {
 	return nil
 }
 
+// verdictLedger remembers the latest machine-readable verdict of every AGENT phase
+// that emitted one (today: the reviewer's APPROVE/REQUEST_CHANGES), keyed by phase
+// name. It is the cmd/forge end of Engine.AgentVerdict's PULL wire — the reverse twin
+// of gateLedger (which serves the OnGateResult PUSH): the Observe sink writes it via
+// record, and the orchestrator reads it back via get. Storing the NORMALIZED token
+// (not the raw output) keeps the engine vendor-free.
+//
+// CONCURRENCY: lock-free on the same premise as gateLedger/phaseOutputLedger — phases
+// run strictly sequentially, so record and get never race.
+type verdictLedger struct {
+	verdict map[string]string // phase name -> latest normalized verdict token
+}
+
+// newVerdictLedger returns an empty ledger ready to record agent verdicts.
+func newVerdictLedger() *verdictLedger { return &verdictLedger{verdict: map[string]string{}} }
+
+// record stores one phase's latest verdict (the normalized APPROVE/REQUEST_CHANGES
+// token), overwriting a prior one so a re-run reviewer's NEWEST verdict wins. Safe on a
+// nil receiver (no-op) so a run that never built a ledger cannot panic.
+func (l *verdictLedger) record(phase, verdict string) {
+	if l == nil {
+		return
+	}
+	l.verdict[phase] = verdict
+}
+
+// get reads back a phase's recorded verdict for Engine.AgentVerdict: (token, true) when
+// one was recorded, ("", false) when none was — nil-safe, so an unwired ledger reports
+// "no verdict" and the orchestrator proceeds (fail-open), never loops or panics.
+func (l *verdictLedger) get(phase string) (string, bool) {
+	if l == nil {
+		return "", false
+	}
+	v, ok := l.verdict[phase]
+	return v, ok
+}
+
+// reviewFindingsLedger carries the reviewer's findings text BACKWARD across a directed
+// loop-back, to be injected into the IMPLEMENTER's next prompt for targeted repair. It
+// is a deliberately ONE-DIRECTION edge: keyed by the loop-back TARGET phase (the
+// implementer, read from the reviewer phase's on_fail.target — data-driven, zero
+// hard-coded agent name), and buildPrompt injects it ONLY into that target phase. The
+// reviewer, when it re-runs, has p.Name != target, so it NEVER receives these findings —
+// preserving its fresh-context independence (the D3/AGENTS red line: a reviewer must not
+// read its own prior self-report).
+//
+// CONCURRENCY: lock-free on the same sequential-phase premise as the sibling ledgers.
+type reviewFindingsLedger struct {
+	findings map[string]string // loop-back TARGET phase -> latest (truncated) findings
+}
+
+// newReviewFindingsLedger returns an empty ledger ready to record reviewer findings.
+func newReviewFindingsLedger() *reviewFindingsLedger {
+	return &reviewFindingsLedger{findings: map[string]string{}}
+}
+
+// record stores the reviewer's findings for the loop-back TARGET phase (its recipient),
+// TRUNCATED to phaseOutputSummaryCap so a verbose review cannot bloat the implementer's
+// prompt — reusing the same cap/marker as phaseOutputLedger. A re-review overwrites with
+// the newest findings. Safe on a nil receiver (no-op).
+func (l *reviewFindingsLedger) record(targetPhase, findings string) {
+	if l == nil {
+		return
+	}
+	l.findings[targetPhase] = truncateSummary(findings)
+}
+
+// contextLines renders the findings recorded for the phase named `name` as a single
+// appendable prompt block, or nil when none were recorded for it (the common case — the
+// gate is in buildPrompt, which only consults this for the implementer). The text is
+// HONEST about provenance: the previous fresh-context Reviewer's per-finding
+// REQUEST_CHANGES notes, offered for TARGETED repair — explicitly NOT a gate verdict.
+func (l *reviewFindingsLedger) contextLines(name string) []string {
+	if l == nil {
+		return nil
+	}
+	f, ok := l.findings[name]
+	if !ok || f == "" {
+		return nil
+	}
+	return []string{"上一轮 fresh-context Reviewer 判 REQUEST_CHANGES 的逐条 findings(供定向修复参考;非闸门结果,是上游审查角色的判断):\n\n" + f}
+}
+
 // feedsForwardOf returns a predicate that reports whether the phase named `name` in this
 // workflow declares feeds_forward — the bridge from asset.Phase.FeedsForward to the
 // executor's Observe sink, which is handed only a phase NAME (not the Phase). An unknown
@@ -196,25 +279,60 @@ func feedsForwardOf(wf asset.Workflow) func(name string) bool {
 	}
 }
 
+// onFailTargetOf returns a lookup from a phase NAME to its on_fail.loop_back target
+// phase (the recipient of a directed loop-back — the implementer for build.yml's
+// reviewer), or ("", false) when the phase carries no loop_back on_fail. It is the
+// data-driven bridge (the structural mirror of feedsForwardOf) that lets the Observe
+// sink route a reviewer's findings to the SAME phase the orchestrator will jump back to,
+// with zero hard-coded agent name — read straight from the asset the author declared.
+func onFailTargetOf(wf asset.Workflow) func(name string) (string, bool) {
+	return func(name string) (string, bool) {
+		for _, p := range wf.Phases {
+			if p.Name == name && p.OnFail != nil && p.OnFail.Action == "loop_back" {
+				return p.OnFail.TargetPhase, true
+			}
+		}
+		return "", false
+	}
+}
+
 // observeFor builds the executor's Observe sink — the seam where cmd/forge (the only
-// vendor-aware layer) reacts to a finished phase's RAW output. It composes two
-// independent concerns, so the sink fires for echo as well as claude (feed-forward must
-// work under the echo plumbing-check, not just a real claude run):
+// vendor-aware layer) reacts to a finished phase's RAW output. It composes the
+// independent concerns below, so the sink fires for echo as well as claude (feed-forward
+// and the verdict state machine must work under the echo plumbing-check, not only a real
+// claude run):
 //   - feed-forward: when feedsForward(phase) is true, the phase's output (e.g. the
 //     planner's task split) is recorded into phaseOut for injection into later prompts;
+//   - verdict: the output's last line is parsed for the reviewer's VERDICT token and
+//     recorded into verdicts (read back by Engine.AgentVerdict to drive loop-back); on a
+//     REQUEST_CHANGES, the result text is also recorded into findings, keyed by this
+//     phase's on_fail TARGET (the implementer), for targeted-repair injection;
 //   - cost: ONLY for claude, the output is parsed for total_cost_usd and a billed figure
 //     forwarded to costSink — echo/stubs never carry that envelope, so they never bill.
 //
-// Returns nil only when NEITHER concern is live (not claude AND no feeds_forward ledger),
-// preserving the byte-for-byte no-hook default path for a plain stub run with no
-// feed-forward. unwrapClaudeResult (the log renderer) is applied by the caller, not here.
-func observeFor(isClaude bool, costSink func(phase string, usd float64), phaseOut *phaseOutputLedger, feedsForward func(phase string) bool) func(phase, output string) {
-	if !isClaude && phaseOut == nil {
+// Returns nil only when NO concern is live (not claude AND no other ledger wired),
+// preserving the byte-for-byte no-hook default path for a plain stub run. unwrapClaudeResult
+// (the log renderer) is applied by the caller, not here.
+func observeFor(isClaude bool, costSink func(phase string, usd float64), phaseOut *phaseOutputLedger, feedsForward func(phase string) bool, verdicts *verdictLedger, findings *reviewFindingsLedger, onFailTarget func(phase string) (string, bool)) func(phase, output string) {
+	if !isClaude && phaseOut == nil && verdicts == nil && findings == nil {
 		return nil
 	}
 	return func(phase, output string) {
 		if phaseOut != nil && feedsForward != nil && feedsForward(phase) {
 			phaseOut.record(phase, unwrapClaudeResult(output))
+		}
+		if verdicts != nil {
+			if v, ok := parseReviewerVerdict(output); ok {
+				verdicts.record(phase, v)
+				// On REQUEST_CHANGES, stash the findings for the loop-back target (the
+				// implementer) — keyed off the phase's OWN on_fail.target, so the routing
+				// is data-driven and the reviewer (a different phase) never receives them.
+				if v == VerdictRequestChanges && findings != nil && onFailTarget != nil {
+					if target, ok := onFailTarget(phase); ok {
+						findings.record(target, unwrapClaudeResult(output))
+					}
+				}
+			}
 		}
 		if isClaude && costSink != nil {
 			if usd, ok := parseClaudeCostUsd(output); ok {
@@ -227,16 +345,23 @@ func observeFor(isClaude bool, costSink func(phase string, usd float64), phaseOu
 // buildPrompt assembles the instruction for an agent phase. Beyond the role card,
 // the Context Engine injects (1) hard constraints + ADRs RETRIEVED against this
 // phase's query (Gather), (2) cross-session memory (memoryContext), (3) the
-// objective verdicts of any gate the harness already ran this run (gates), and (4)
-// the output of any prior phase that declared feeds_forward — the planner's task
-// split / acceptance criteria, fed to the implementer and reviewer (phaseOut). A nil
-// gates AND a nil/empty phaseOut add no blocks, so the prompt is byte-for-byte the old one.
-func buildPrompt(repoRoot string, p asset.Phase, mode string, gates *gateLedger, phaseOut *phaseOutputLedger) string {
+// objective verdicts of any gate the harness already ran this run (gates), (4) the
+// output of any prior phase that declared feeds_forward — the planner's task split /
+// acceptance criteria, fed to the implementer and reviewer (phaseOut), and (5) — ONLY
+// when this phase is the loop-back recipient — the previous reviewer's REQUEST_CHANGES
+// findings for targeted repair (findings, gated on p.Name so a re-running reviewer is
+// NEVER fed its own prior notes, preserving fresh-context independence). A nil
+// gates/phaseOut/findings add no blocks, so the prompt is byte-for-byte the old one.
+func buildPrompt(repoRoot string, p asset.Phase, mode string, gates *gateLedger, phaseOut *phaseOutputLedger, findings *reviewFindingsLedger) string {
 	tier := orchestrator.PhaseTier(p, mode)
 	ctx := prompt.Gather(repoRoot, p.Name+" "+p.Agent)
 	ctx = append(ctx, memoryContext(repoRoot)...)
 	ctx = append(ctx, gates.contextLines()...)
 	ctx = append(ctx, phaseOut.contextLines()...)
+	// Gated on p.Name: findings.contextLines returns a block ONLY for the loop-back
+	// target (the implementer). The reviewer, re-running with p.Name != target, gets
+	// nil here — its fresh context is never polluted by its own earlier findings.
+	ctx = append(ctx, findings.contextLines(p.Name)...)
 	return prompt.Build(p.Agent, p.Name, mode, tier, readCard(repoRoot, p.Agent), ctx)
 }
 

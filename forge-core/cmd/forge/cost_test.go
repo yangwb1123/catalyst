@@ -79,6 +79,65 @@ func TestUnwrapClaudeResult(t *testing.T) {
 	}
 }
 
+// parseReviewerVerdict on the two contracted last lines returns the NORMALIZED token with
+// ok=true — the signal Engine.AgentVerdict reads back to drive (or not) a loop-back. The
+// findings written ABOVE the VERDICT line are ignored; only the last line decides.
+func TestParseReviewerVerdict_ApproveAndRequestChanges(t *testing.T) {
+	approve := "## Review\n- file.go:10 nit: rename\nLGTM overall.\nVERDICT: APPROVE"
+	if v, ok := parseReviewerVerdict(approve); !ok || v != VerdictApprove {
+		t.Errorf("a trailing VERDICT: APPROVE must parse to (APPROVE,true); got (%q,%v)", v, ok)
+	}
+	changes := "## Review\n- main.go:42 HIGH: nil deref, guard it\nVERDICT: REQUEST_CHANGES"
+	if v, ok := parseReviewerVerdict(changes); !ok || v != VerdictRequestChanges {
+		t.Errorf("a trailing VERDICT: REQUEST_CHANGES must parse to (REQUEST_CHANGES,true); got (%q,%v)", v, ok)
+	}
+}
+
+// A trailing blank line (or whitespace) after the VERDICT line must NOT mask it — the
+// last NON-EMPTY line is what counts, so a stray newline the agent appended is tolerated.
+func TestParseReviewerVerdict_TrailingBlankToleratedAndTrimmed(t *testing.T) {
+	if v, ok := parseReviewerVerdict("findings...\nVERDICT: APPROVE\n\n  "); !ok || v != VerdictApprove {
+		t.Errorf("a trailing blank line must not mask the verdict; got (%q,%v)", v, ok)
+	}
+}
+
+// HONESTY (mirrors the cost parser's branches): a last line that is NOT exactly one of the
+// two contracted forms yields ok=false — a missing, wrapped (backtick/quote/bullet), or
+// mid-text verdict is "no signal", and the orchestrator then fails open (proceeds). The
+// parser NEVER defaults to a verdict it did not literally see.
+func TestParseReviewerVerdict_MalformedOrMissingIsNotOK(t *testing.T) {
+	for _, out := range []string{
+		"",                                  // empty
+		"   ",                               // blank
+		"just a review with no verdict",     // no verdict line
+		"VERDICT: APPROVE\nbut wait, more",  // verdict not on the LAST line
+		"`VERDICT: APPROVE`",                // wrapped in backticks (not top-aligned)
+		"- VERDICT: REQUEST_CHANGES",        // bulleted (wrapped)
+		"VERDICT: MAYBE",                    // unknown token
+		"verdict: approve",                  // wrong case (exact match only)
+		"VERDICT:APPROVE",                   // missing the contracted space
+	} {
+		if v, ok := parseReviewerVerdict(out); ok || v != "" {
+			t.Errorf("malformed/missing verdict %q must yield (\"\",false); got (%q,%v)", out, v, ok)
+		}
+	}
+}
+
+// A claude JSON envelope whose `result` ends in the VERDICT line must be UNWRAPPED first,
+// then scanned — proving parseReviewerVerdict sees through the claude envelope exactly as
+// the cost parser does, while an echo/stub fake sentinel (non-JSON) is scanned verbatim.
+func TestParseReviewerVerdict_UnwrapsClaudeEnvelopeAndEchoSentinel(t *testing.T) {
+	envelope := `{"type":"result","total_cost_usd":0.01,"result":"## Review\nlooks good\nVERDICT: APPROVE"}`
+	if v, ok := parseReviewerVerdict(envelope); !ok || v != VerdictApprove {
+		t.Errorf("a claude envelope's result must be unwrapped before scanning; got (%q,%v)", v, ok)
+	}
+	// An echo fake (plain text, not JSON) ending in the sentinel must still be caught —
+	// this is exactly how the echo state-machine smoke test drives a loop-back.
+	if v, ok := parseReviewerVerdict("fake reviewer output\nVERDICT: REQUEST_CHANGES"); !ok || v != VerdictRequestChanges {
+		t.Errorf("an echo fake sentinel must be scanned verbatim; got (%q,%v)", v, ok)
+	}
+}
+
 // costEmitter converts billed USD to integer microdollars and emits one kind:"agent"
 // cost event on the trace — the value the scorecard's --trace reader aggregates.
 func TestCostEmitter_EmitsMicrodollarAgentEvent(t *testing.T) {
@@ -106,7 +165,7 @@ func TestAgentExecutor_EchoEmitsNoCostEvent(t *testing.T) {
 		costCalls++
 		costEmitter(trace.NewTracer(&buf), func(string) {})(phase, usd)
 	}
-	ex := agentExecutor(runOpts{executor: "command", agentCmd: "echo", root: t.TempDir()}, func(string) {}, costSink, nil, nil, nil)
+	ex := agentExecutor(runOpts{executor: "command", agentCmd: "echo", root: t.TempDir()}, func(string) {}, costSink, nil, nil, nil, nil, nil, nil)
 	ce, ok := ex.(orchestrator.CommandExecutor)
 	if !ok {
 		t.Fatalf("executor=command must yield a CommandExecutor, got %T", ex)
@@ -131,7 +190,7 @@ func TestAgentExecutor_EchoEmitsNoCostEvent(t *testing.T) {
 // --output-format json (so it emits the total_cost_usd envelope this CLI parses),
 // alongside the existing --permission-mode/--model. This is the Build half of the wiring.
 func TestAgentExecutor_ClaudeGetsOutputFormatJSON(t *testing.T) {
-	ex := agentExecutor(runOpts{executor: "command", agentCmd: "claude", agentPermission: "acceptEdits", root: t.TempDir()}, func(string) {}, nil, nil, nil, nil)
+	ex := agentExecutor(runOpts{executor: "command", agentCmd: "claude", agentPermission: "acceptEdits", root: t.TempDir()}, func(string) {}, nil, nil, nil, nil, nil, nil, nil)
 	ce := ex.(orchestrator.CommandExecutor)
 	argv := strings.Join(ce.Build(asset.Phase{Name: "implementer", Agent: "implementer"}, "balanced"), " ")
 	if !strings.Contains(argv, "--output-format json") {
@@ -152,7 +211,7 @@ func TestAgentExecutor_ClaudeObserveDrivesCostSink(t *testing.T) {
 		gotPhase, gotUsd = phase, usd
 		costEmitter(trace.NewTracer(&buf), func(string) {})(phase, usd)
 	}
-	ex := agentExecutor(runOpts{executor: "command", agentCmd: "claude", root: t.TempDir()}, func(string) {}, costSink, nil, nil, nil)
+	ex := agentExecutor(runOpts{executor: "command", agentCmd: "claude", root: t.TempDir()}, func(string) {}, costSink, nil, nil, nil, nil, nil, nil)
 	ce := ex.(orchestrator.CommandExecutor)
 	if ce.Observe == nil {
 		t.Fatal("claude executor must install an Observe sink")
