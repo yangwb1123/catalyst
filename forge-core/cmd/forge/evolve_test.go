@@ -272,25 +272,26 @@ func TestEvolve_WritesCheckpointAndResumes(t *testing.T) {
 func TestResumeStart_Paths(t *testing.T) {
 	root := t.TempDir()
 
-	// No --resume: fresh sentinel, no IO, no error.
-	if start, prev, err := resumeStart(root, false); err != nil || start != 0 || prev != -1.0 {
-		t.Errorf("no-resume = (%d,%v,%v), want (0,-1,nil)", start, prev, err)
+	// No --resume: fresh sentinel, no IO, no error, zero-spend seed.
+	if start, prev, spent, err := resumeStart(root, false); err != nil || start != 0 || prev != -1.0 || spent != 0 {
+		t.Errorf("no-resume = (%d,%v,%d,%v), want (0,-1,0,nil)", start, prev, spent, err)
 	}
-	// --resume, no checkpoint file present: tolerated as a fresh start.
-	if start, prev, err := resumeStart(root, true); err != nil || start != 0 || prev != -1.0 {
-		t.Errorf("resume+missing = (%d,%v,%v), want (0,-1,nil)", start, prev, err)
+	// --resume, no checkpoint file present: tolerated as a fresh start (zero spend).
+	if start, prev, spent, err := resumeStart(root, true); err != nil || start != 0 || prev != -1.0 || spent != 0 {
+		t.Errorf("resume+missing = (%d,%v,%d,%v), want (0,-1,0,nil)", start, prev, spent, err)
 	}
-	// --resume with a present, valid checkpoint: continue at Iteration+1, seed prev.
-	cp := persist.Checkpoint{Workflow: "evolve", Iteration: 5, RoadmapCompletion: 0.6}
+	// --resume with a present, valid checkpoint: continue at Iteration+1, seed prev AND
+	// return the persisted spend so the budget can re-seed across the resume.
+	cp := persist.Checkpoint{Workflow: "evolve", Iteration: 5, RoadmapCompletion: 0.6, SpentUsdMicros: 1_250_000}
 	if err := persist.Save(checkpointPath(root), cp); err != nil {
 		t.Fatalf("seed checkpoint: %v", err)
 	}
-	if start, prev, err := resumeStart(root, true); err != nil || start != 6 || prev != 0.6 {
-		t.Errorf("resume+valid = (%d,%v,%v), want (6,0.6,nil)", start, prev, err)
+	if start, prev, spent, err := resumeStart(root, true); err != nil || start != 6 || prev != 0.6 || spent != 1_250_000 {
+		t.Errorf("resume+valid = (%d,%v,%d,%v), want (6,0.6,1250000,nil)", start, prev, spent, err)
 	}
 	// --resume with a MALFORMED checkpoint: hard error, no silent from-scratch.
 	writeFile(t, checkpointPath(root), "{not valid json")
-	if start, _, err := resumeStart(root, true); err == nil || start != 0 {
+	if start, _, _, err := resumeStart(root, true); err == nil || start != 0 {
 		t.Errorf("resume+malformed must error out (got start=%d err=%v)", start, err)
 	}
 }
@@ -308,7 +309,9 @@ func TestCheckpointHook_PersistsAndTraces(t *testing.T) {
 	var logs []string
 	o := runOpts{root: root, mode: "balanced"}
 	wf := asset.Workflow{Stage: "evolve"}
-	hook := checkpointHook(o, wf, trace.NewTracer(&buf), func(s string) { logs = append(logs, s) })
+	// Unbudgeted run: the budget never bills, so the checkpoint's SpentUsdMicros must be 0
+	// (asserted below) — proving the new field is byte-identical/back-compat absent a budget.
+	hook := checkpointHook(o, wf, trace.NewTracer(&buf), &runBudget{}, func(s string) { logs = append(logs, s) })
 
 	const wantDurationMs int64 = 4200 // a known measured-iteration duration the loop would pass.
 	hook(2, converge.Signals{RoadmapCompletion: 0.75, GatesGreen: true}, wantDurationMs)
@@ -319,6 +322,9 @@ func TestCheckpointHook_PersistsAndTraces(t *testing.T) {
 	}
 	if cp.Iteration != 2 || cp.RoadmapCompletion != 0.75 || !cp.GatesGreen || cp.Mode != "balanced" {
 		t.Errorf("checkpoint = %+v, want iter 2 / 0.75 / green / balanced", cp)
+	}
+	if cp.SpentUsdMicros != 0 {
+		t.Errorf("an unbudgeted run must checkpoint SpentUsdMicros=0 (back-compat); got %d", cp.SpentUsdMicros)
 	}
 	if cp.UpdatedAtUnix == 0 || cp.UpdatedAtUnix > time.Now().Unix()+5 {
 		t.Errorf("UpdatedAtUnix = %d, want a recent main-injected timestamp", cp.UpdatedAtUnix)
@@ -346,7 +352,7 @@ func TestCheckpointHook_AppendsMemoryEntry(t *testing.T) {
 	mkdir(t, filepath.Join(root, ".forge"))
 	var buf bytes.Buffer
 	hook := checkpointHook(runOpts{root: root, mode: "balanced"}, asset.Workflow{Stage: "evolve"},
-		trace.NewTracer(&buf), func(string) {})
+		trace.NewTracer(&buf), &runBudget{}, func(string) {})
 
 	hook(3, converge.Signals{RoadmapCompletion: 0.4, GatesGreen: false}, 0)
 
@@ -381,7 +387,7 @@ func TestCheckpointHook_WriteFailureIsSurfaced(t *testing.T) {
 	var buf bytes.Buffer
 	var logs []string
 	hook := checkpointHook(runOpts{root: root}, asset.Workflow{Stage: "evolve"},
-		trace.NewTracer(&buf), func(s string) { logs = append(logs, s) })
+		trace.NewTracer(&buf), &runBudget{}, func(s string) { logs = append(logs, s) })
 
 	hook(1, converge.Signals{RoadmapCompletion: 0.1}, 0)
 

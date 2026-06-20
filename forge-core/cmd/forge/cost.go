@@ -77,6 +77,37 @@ func (b *runBudget) feed(inner func(phase, model string, usd float64)) func(phas
 	}
 }
 
+// SpentUsdMicros returns the cumulative spend as integer MICRO-dollars (USD x 1e6, rounded)
+// — the ONLY place the run total crosses the dollar->micro boundary for persistence, the exact
+// mirror of costEmitter's `usd*1e6` conversion. persist stores this opaque int (it does not know
+// dollars), so a --resume can re-seed the budget; the micro form is jitter-free across the JSON
+// round-trip (54403 not 0.0544035…), matching trace.Event.CostUsdMicros. Returns 0 for a run that
+// never billed, keeping the checkpoint's spent_usd_micros omitempty (byte-identical, back-compat).
+func (b *runBudget) SpentUsdMicros() int64 {
+	return int64(math.Round(b.spent * 1e6))
+}
+
+// seed re-initializes the accumulated spend from a persisted micro-dollar total — the inverse of
+// SpentUsdMicros, and the OTHER side of the micro<->dollar boundary kept solely here. It exists for
+// --resume: after a crash the new process builds a fresh runBudget at spent=0, so without seeding
+// the cost already billed before the crash escapes the cap and the run overspends; seeding restores
+// the pre-crash cumulative so the cap continues to meter the WHOLE run. It SETS (not adds) the base,
+// called once right after the budget is created and before any phase bills, so a later feed
+// accumulates on top of it. micros<=0 is a no-op (an unbudgeted/never-billed resume stays at 0).
+//
+// HONESTY — iteration-granularity under-count: the seeded value is the LAST CHECKPOINTED total,
+// written AFTER each completed iteration. Cost billed in an iteration that crashed mid-flight was
+// never checkpointed, so on resume that iteration reruns and re-bills, and seed cannot recover the
+// lost partial — the restored cap can under-count by up to one crashed iteration's mid-flight spend
+// (a conservative slight overspend). This is still far better than the pre-fix total reset to $0;
+// phase-granularity precise checkpointing is a later wave.
+func (b *runBudget) seed(micros int64) {
+	if micros <= 0 {
+		return
+	}
+	b.spent = float64(micros) / 1e6
+}
+
 // exhausted reports whether the cumulative spend has reached a POSITIVE cap. An unset cap
 // (0) is never exhausted (>= comparison gated on cap > 0), so an unbudgeted run never stops
 // here. This is the dollar comparison the engine must never see — it consumes only the bool.

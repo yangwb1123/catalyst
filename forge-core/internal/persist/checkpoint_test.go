@@ -3,6 +3,7 @@ package persist
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -154,6 +155,77 @@ func TestEncodeDecode_RoundTrip(t *testing.T) {
 func TestDecode_Malformed_IsError(t *testing.T) {
 	if _, err := decode([]byte("}{garbage")); err == nil {
 		t.Fatal("decode of garbage returned nil error, want error")
+	}
+}
+
+// SpentUsdMicros (the run-level spend a --resume re-seeds the budget from) must survive
+// the encode/decode round-trip exactly — it is an integer, so it round-trips jitter-free
+// (unlike a raw USD float). sampleCheckpoint sets it non-zero, so a round-trip that dropped
+// or zeroed it would already fail TestSaveLoad_RoundTrip; this pins the field value directly.
+func TestEncodeDecode_SpentUsdMicrosRoundTrips(t *testing.T) {
+	want := Checkpoint{Workflow: "evolve", Iteration: 3, SpentUsdMicros: 1_234_567}
+	data, err := encode(want)
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+	got, err := decode(data)
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.SpentUsdMicros != 1_234_567 {
+		t.Errorf("SpentUsdMicros round-trip = %d, want 1234567", got.SpentUsdMicros)
+	}
+	if got != want {
+		t.Errorf("round-trip mismatch:\n got  %+v\n want %+v", got, want)
+	}
+}
+
+// BACK-COMPAT: a checkpoint written BEFORE spent_usd_micros existed has no such key. It must
+// still decode cleanly, with SpentUsdMicros defaulting to 0 (omitempty's other half) — so an
+// old run's --resume loads fine and seeds zero spend (the pre-PR behavior), never an error.
+// This is the determinism the PR rests on: the field is additive, not a breaking change.
+func TestDecode_OldCheckpointWithoutSpent_DefaultsZero(t *testing.T) {
+	// An on-disk checkpoint exactly as the pre-PR encoder produced it: every old field,
+	// and crucially NO spent_usd_micros key at all.
+	old := []byte(`{
+  "workflow": "build",
+  "mode": "autonomous",
+  "iteration": 7,
+  "roadmap_completion": 0.625,
+  "gates_green": true,
+  "reason": "iteration budget reached",
+  "updated_at_unix": 1750000000
+}`)
+	got, err := decode(old)
+	if err != nil {
+		t.Fatalf("an old checkpoint without spent_usd_micros must decode cleanly; got %v", err)
+	}
+	if got.SpentUsdMicros != 0 {
+		t.Errorf("a missing spent_usd_micros must decode to 0 (back-compat); got %d", got.SpentUsdMicros)
+	}
+	// The rest of the old fields must still load — the new field is purely additive.
+	if got.Iteration != 7 || got.Workflow != "build" || got.RoadmapCompletion != 0.625 {
+		t.Errorf("old checkpoint lost a pre-existing field: %+v", got)
+	}
+}
+
+// The omitempty contract on disk: a checkpoint whose spend is 0 (an unbudgeted run) must NOT
+// emit a spent_usd_micros key, keeping its bytes identical to a pre-PR checkpoint. Only a run
+// that actually billed adds the key. This is what makes the unbudgeted path byte-for-byte.
+func TestEncode_ZeroSpentOmitsKey(t *testing.T) {
+	zero, err := encode(Checkpoint{Workflow: "evolve", Iteration: 1})
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+	if strings.Contains(string(zero), "spent_usd_micros") {
+		t.Errorf("a zero-spend checkpoint must omit spent_usd_micros (omitempty back-compat); got:\n%s", zero)
+	}
+	nonzero, err := encode(Checkpoint{Workflow: "evolve", Iteration: 1, SpentUsdMicros: 500})
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+	if !strings.Contains(string(nonzero), "spent_usd_micros") {
+		t.Errorf("a billed checkpoint must persist spent_usd_micros; got:\n%s", nonzero)
 	}
 }
 

@@ -364,10 +364,13 @@ func TestCheckpointHook_IterationEventCarriesNoCost(t *testing.T) {
 	mkdir(t, filepath.Join(root, ".forge"))
 	var buf bytes.Buffer
 	hook := checkpointHook(runOpts{root: root, mode: "balanced"}, asset.Workflow{Stage: "evolve"},
-		trace.NewTracer(&buf), func(string) {})
+		trace.NewTracer(&buf), &runBudget{}, func(string) {})
 
 	hook(2, converge.Signals{RoadmapCompletion: 0.75, GatesGreen: true}, 4200)
 
+	// The TRACE iteration event carries no cost (cost_usd_micros is a per-phase agent-event
+	// field). The checkpoint's SpentUsdMicros is a SEPARATE concern (checkpoint JSON, not the
+	// trace), and stays 0 here since the budget never billed — both invariants hold at once.
 	if strings.Contains(buf.String(), "cost_usd_micros") {
 		t.Errorf("an iteration event must not carry cost (cost is per-phase); got %q", buf.String())
 	}

@@ -123,7 +123,7 @@ func rejectHumanGate(stage string) int {
 // happened, and the run stays auditable.
 func execLoop(wf asset.Workflow, o runOpts, maxIter int, maxIterSource string, resume bool) int {
 	logln := func(s string) { fmt.Println(s) }
-	start, prev, err := resumeStart(o.root, resume)
+	start, prev, spentMicros, err := resumeStart(o.root, resume)
 	if err != nil { // malformed checkpoint: fail closed, never silently restart.
 		fmt.Fprintf(os.Stderr, "forge evolve: %v\n", err)
 		return 1
@@ -143,9 +143,17 @@ func execLoop(wf asset.Workflow, o runOpts, maxIter int, maxIterSource string, r
 		fmt.Fprintf(os.Stderr, "forge evolve: %v\n", err)
 		return 1
 	}
+	// On --resume, re-seed the budget with the spend persisted in the checkpoint BEFORE
+	// the loop bills anything: without this the new process restarts the cumulative cap at
+	// $0, so cost billed before the crash escapes the cap and the run overspends across the
+	// resume (the gap this PR closes). seed is a no-op for a fresh run (spentMicros=0) and
+	// for an unbudgeted run, so both stay byte-for-byte unchanged. Honesty: the seed is the
+	// last-checkpointed total (through the last COMPLETED iteration) — a crashed iteration's
+	// un-checkpointed partial is re-billed on resume, a conservative under-count cost.go notes.
+	budget.seed(spentMicros)
 	loop := buildLoop(wf, o, maxIter, logln, costEmitter(tracer, logln), budget)
 	loop.StartIter, loop.ResumePrev = start, prev
-	loop.OnIteration = checkpointHook(o, wf, tracer, logln)
+	loop.OnIteration = checkpointHook(o, wf, tracer, budget, logln)
 	fmt.Printf("forge evolve: stage=%s mode=%s max-iter=%d (%s) type=%s start-iter=%d (doom-loop tripwire=2)\n",
 		wf.Stage, o.mode, maxIter, maxIterSource, stopTypeLabel(wf.Stop.Type), start)
 	outcome, runErr := loop.Run(wf, o.mode)
@@ -217,28 +225,32 @@ func reportLoop(out orchestrator.LoopOutcome, err error) int {
 	return 1
 }
 
-// resumeStart resolves the loop's first iteration and seed completion. Without
-// --resume it is a fresh run (0, -1.0): the engine begins at iteration 1 with the
-// -1.0 sentinel. With --resume it loads the checkpoint and continues at
-// cp.Iteration+1, seeding prev with the persisted completion so the stale/tripwire
-// math is continuous. A MALFORMED checkpoint is a hard error (honesty-first):
-// resuming must never silently degrade to a from-scratch rerun. A MISSING
-// checkpoint with --resume is reported but tolerated as a fresh start.
-func resumeStart(root string, resume bool) (start int, prev float64, err error) {
+// resumeStart resolves the loop's first iteration, seed completion, and persisted
+// run spend. Without --resume it is a fresh run (0, -1.0, 0): the engine begins at
+// iteration 1 with the -1.0 sentinel and a zero-spend seed. With --resume it loads
+// the checkpoint and continues at cp.Iteration+1, seeding prev with the persisted
+// completion so the stale/tripwire math is continuous AND returning cp.SpentUsdMicros
+// (opaque micro-dollars) so execLoop can re-seed the budget — without which the
+// run-level cost cap would restart at $0 across the resume and overspend. A MALFORMED
+// checkpoint is a hard error (honesty-first): resuming must never silently degrade to
+// a from-scratch rerun. A MISSING checkpoint with --resume is reported but tolerated
+// as a fresh start. An old checkpoint without spent_usd_micros decodes that field to
+// 0 (omitempty back-compat), so its resume seeds zero spend and behaves as before.
+func resumeStart(root string, resume bool) (start int, prev float64, spentMicros int64, err error) {
 	if !resume {
-		return 0, -1.0, nil
+		return 0, -1.0, 0, nil
 	}
 	cp, found, err := persist.Load(checkpointPath(root))
 	if err != nil {
-		return 0, 0, fmt.Errorf("--resume: malformed checkpoint at %s: %w", checkpointPath(root), err)
+		return 0, 0, 0, fmt.Errorf("--resume: malformed checkpoint at %s: %w", checkpointPath(root), err)
 	}
 	if !found {
 		fmt.Fprintf(os.Stderr, "forge evolve: --resume found no checkpoint at %s; starting fresh\n", checkpointPath(root))
-		return 0, -1.0, nil
+		return 0, -1.0, 0, nil
 	}
 	fmt.Printf("forge evolve: resuming from iteration %d (roadmap=%.0f%%, last reason: %s)\n",
 		cp.Iteration+1, cp.RoadmapCompletion*100, cp.Reason)
-	return cp.Iteration + 1, cp.RoadmapCompletion, nil
+	return cp.Iteration + 1, cp.RoadmapCompletion, cp.SpentUsdMicros, nil
 }
 
 // checkpointHook builds the loop's post-measurement OnIteration callback: after
@@ -255,12 +267,21 @@ func resumeStart(root string, resume bool) (start int, prev float64, err error) 
 // and the failure is never SWALLOWED, so we never pretend recovery state is durable
 // when it is not. Contrast openTracer, which DOES fail-closed: losing the audit
 // trail entirely is the blind spot trace prevents.
-func checkpointHook(o runOpts, wf asset.Workflow, tracer *trace.Tracer, logln func(string)) func(int, converge.Signals, int64) {
+func checkpointHook(o runOpts, wf asset.Workflow, tracer *trace.Tracer, budget *runBudget, logln func(string)) func(int, converge.Signals, int64) {
 	return func(i int, sig converge.Signals, durationMs int64) {
+		// SpentUsdMicros records the run's cumulative billed cost AT THIS iteration so a
+		// later --resume re-seeds the budget instead of restarting the cap from $0 (the
+		// cross-resume overspend gap). budget owns the dollar->micro conversion; persist
+		// stores only the opaque int. Iteration-granularity: this is the spend through the
+		// LAST completed iteration — a crash mid-iteration loses that round's un-checkpointed
+		// partial (resume reruns and re-bills it), a conservative under-count seed honestly
+		// documents (cost.go seed/SpentUsdMicros). An unbudgeted run feeds nothing, so this
+		// is 0 and the checkpoint's spent_usd_micros stays omitempty (byte-identical).
 		cp := persist.Checkpoint{
 			Workflow: wf.Stage, Mode: o.mode, Iteration: i,
 			RoadmapCompletion: sig.RoadmapCompletion, GatesGreen: sig.GatesGreen,
 			Reason: "iteration complete", UpdatedAtUnix: time.Now().Unix(),
+			SpentUsdMicros: budget.SpentUsdMicros(),
 		}
 		status, detail := "ok", checkpointDetail(sig)
 		if err := persist.Save(checkpointPath(o.root), cp); err != nil {

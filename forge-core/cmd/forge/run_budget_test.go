@@ -187,6 +187,102 @@ func TestRunBudget_FlagIsBoundAndDistinct(t *testing.T) {
 	}
 }
 
+// ⑧ seed <-> SpentUsdMicros is the persistence boundary (the only dollar<->micro crossing for
+// the checkpoint). SpentUsdMicros reports the cumulative spend as rounded micro-dollars; seed sets
+// the base from a persisted micro total; and a subsequent feed ACCUMULATES on top of the seed (not
+// from 0). A zero/negative seed is a no-op — an unbudgeted or never-billed resume stays at 0.
+func TestRunBudget_SeedAndSpentMicros(t *testing.T) {
+	b := &runBudget{cap: 1.00}
+
+	// A never-billed budget reports 0 micros, and the checkpoint omits the (omitempty) key.
+	if got := b.SpentUsdMicros(); got != 0 {
+		t.Errorf("unbilled SpentUsdMicros = %d, want 0", got)
+	}
+	// SpentUsdMicros mirrors costEmitter's usd*1e6 rounding: 0.054403 -> 54403 (jitter-free,
+	// chosen to land on an exact integer micro so the round is unambiguous).
+	b.feed(nil)("p", "opus", 0.054403)
+	if got := b.SpentUsdMicros(); got != 54403 {
+		t.Errorf("SpentUsdMicros after 0.054403 = %d, want 54403 (rounded micro-dollars)", got)
+	}
+
+	// seed SETS the base from a persisted micro total (the resume path): 250000µ$ = $0.25.
+	fresh := &runBudget{cap: 1.00}
+	fresh.seed(250_000)
+	if !approx(fresh.spent, 0.25) {
+		t.Errorf("after seed(250000) spent = %v, want 0.25", fresh.spent)
+	}
+	if got := fresh.SpentUsdMicros(); got != 250_000 {
+		t.Errorf("SpentUsdMicros after seed = %d, want 250000 (round-trips the seed)", got)
+	}
+	// A later feed accumulates ON TOP of the seed, not from zero: 0.25 + 0.10 = 0.35.
+	fresh.feed(nil)("p", "opus", 0.10)
+	if !approx(fresh.spent, 0.35) {
+		t.Errorf("feed after seed = %v, want 0.35 (accumulates on the seeded base)", fresh.spent)
+	}
+
+	// Zero / negative seed is a no-op (unbudgeted or fresh resume): spend stays untouched.
+	noop := &runBudget{cap: 1.00}
+	noop.seed(0)
+	noop.seed(-5)
+	if noop.spent != 0 {
+		t.Errorf("seed(0)/seed(-5) must be a no-op; spent = %v, want 0", noop.spent)
+	}
+}
+
+// ⑨ ★THE CROSS-RESUME CORRECTNESS TEST★ — the gap PR5 closes. A crash mid-evolve plus --resume
+// builds a FRESH runBudget at spent=0. Without re-seeding from the checkpoint, the cost billed
+// before the crash escapes the cap and the run overspends past it; seeding restores the pre-crash
+// cumulative so the cap keeps metering the WHOLE run. We model the crash by persisting the spend
+// into a Checkpoint (the real channel) and resuming through a brand-new budget.
+//
+// STASH PROOF (the gap is real, not hypothetical): the same scenario WITHOUT seed needs much more
+// post-resume spend before the cap trips — i.e. it overspends. Seed vs no-seed is the whole fix.
+func TestRunBudget_CrossResumeSeedEnforcesCap(t *testing.T) {
+	const cap = 1.00
+	const preCrash = 0.90 // billed in iterations 1..N before the crash
+
+	// --- Pre-crash run: spend 0.90 under a $1.00 cap, then "crash". The loop checkpoints the
+	// cumulative spend as micro-dollars (exactly what checkpointHook writes).
+	pre := &runBudget{cap: cap}
+	pre.feed(nil)("implementer", "opus", preCrash)
+	if pre.exhausted() {
+		t.Fatalf("pre-crash 0.90 < cap 1.00 must not be exhausted (spent=%v)", pre.spent)
+	}
+	persistedMicros := pre.SpentUsdMicros() // 900000 — the value the checkpoint carries
+
+	// --- FIXED behavior: resume SEEDS a fresh budget from the checkpoint. Now just $0.10 more
+	// trips the $1.00 cap (0.90 + 0.10), because the pre-crash spend still counts.
+	seeded := &runBudget{cap: cap}
+	seeded.seed(persistedMicros) // <- the PR5 fix: resume re-seeds the cumulative
+	seeded.feed(nil)("implementer", "opus", 0.10)
+	if !seeded.exhausted() {
+		t.Fatalf("SEEDED resume: 0.90 (pre-crash) + 0.10 = 1.00 must trip the cap — the run-level "+
+			"bound must survive --resume (spent=%v)", seeded.spent)
+	}
+
+	// --- STASH (the pre-PR bug): WITHOUT seed the resumed budget starts at $0. The SAME $0.10
+	// does NOT trip the cap — the run sails past its real total and overspends. This is the gap.
+	unseeded := &runBudget{cap: cap}
+	// (no seed — the crashed-and-restarted budget the bug produced)
+	unseeded.feed(nil)("implementer", "opus", 0.10)
+	if unseeded.exhausted() {
+		t.Fatalf("STASH-PROOF unexpectedly tripped: without seed the cap should NOT trip at 0.10 "+
+			"alone — that it doesn't is the overspend bug (spent=%v)", unseeded.spent)
+	}
+	// Concretely: the unseeded run keeps spending and only trips after ANOTHER ~0.90 — i.e. it
+	// overspends by the entire pre-crash amount before the cap finally bites. That extra slack
+	// IS the gap: total real spend reaches ~1.90 against a $1.00 cap.
+	for !unseeded.exhausted() {
+		unseeded.feed(nil)("implementer", "opus", 0.10)
+	}
+	if unseeded.spent <= seeded.spent {
+		t.Fatalf("the unseeded (buggy) run must overspend relative to the seeded run: unseeded total "+
+			"%v should exceed the seeded cap-trip total %v (the pre-crash spend it ignored)", unseeded.spent, seeded.spent)
+	}
+	t.Logf("gap quantified: seeded trips at %.2f (correct), unseeded only at %.2f (overspent by ~%.2f)",
+		seeded.spent, unseeded.spent, unseeded.spent-seeded.spent)
+}
+
 // approx compares two dollar figures within a tiny epsilon (float sums are not exact).
 func approx(a, b float64) bool {
 	d := a - b

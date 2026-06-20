@@ -50,6 +50,19 @@ type Checkpoint struct {
 	GatesGreen        bool    `json:"gates_green"`        // whether all required gates were green at the snapshot
 	Reason            string  `json:"reason"`             // why the loop last stopped (for resume context)
 	UpdatedAtUnix     int64   `json:"updated_at_unix"`    // caller-supplied snapshot time (Unix seconds)
+	// SpentUsdMicros is the loop's cumulative billed cost so far, in integer
+	// MICRO-dollars (USD x 1e6), OPAQUE to this package EXACTLY like
+	// trace.Event.CostUsdMicros — persist has no notion of dollars or a "budget"; it
+	// only stores and returns this int so a --resume can re-seed the run-level cost
+	// cap instead of restarting the tally from zero (the gap: a crash + --resume built
+	// a fresh budget at spent=0, so cost already billed before the crash escaped the
+	// cap and the run overspent). The micro<->dollar conversion and all budget meaning
+	// live in the caller (cmd/forge cost.go), never here. Integer microdollars match
+	// CostUsdMicros (jitter-free; 0.054 round-trips exactly). omitempty keeps a run
+	// WITHOUT a run budget — and any checkpoint written before this field existed —
+	// byte-for-byte identical on disk and decoding to 0, so old checkpoints stay
+	// loadable and an unbudgeted run is unchanged.
+	SpentUsdMicros int64 `json:"spent_usd_micros,omitempty"`
 }
 
 // Save atomically persists cp to path as JSON.
