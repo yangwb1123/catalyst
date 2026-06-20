@@ -51,8 +51,12 @@ func TestGather_RetrievesADRsAndAlwaysKeepsHardConstraints(t *testing.T) {
 		t.Errorf("query 'stack polyglot go' should retrieve the Go-stack ADR; got: %.300s", joined)
 	}
 	// Hard-constraint lane: the leading AGENTS.md bullets are non-negotiable and
-	// must ALWAYS be present — the 500-line cap and dependency-direction rules.
-	for _, want := range []string{"500", "依赖方向"} {
+	// must ALWAYS be present. Pin the 1st (500-line cap), 3rd (dependency-
+	// direction), and 6th (no-hardcoded-secret) — spanning the injection window's
+	// head/middle/tail, so inserting a bullet that pushes the 6th hard gate out of
+	// the leadingBullets(…, 6) window breaks THIS test instead of silently dropping
+	// a real gate from every agent's injected ground truth.
+	for _, want := range []string{"500", "依赖方向", "secret"} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("hard constraint %q must always inject (never retrieval-filtered); got: %.400s", want, joined)
 		}
