@@ -88,13 +88,26 @@ function extractGoImports(text) {
   return out;
 }
 
-// JS/TS: `import ... from '...'`, bare `import '...'`, and `require('...')`.
+// JS/TS import-graph edges. Beyond `import ... from`, bare `import '...'`, and
+// `require('...')`, this ALSO captures the re-export and dynamic forms that
+// barrel/index modules use — without them a layering violation or import cycle
+// routed THROUGH a re-export is invisible to the graph (a real false negative):
+//   * `export ... from '...'`        — `export { a } from`, `export * from`,
+//                                       `export * as ns from` (one `from` regex)
+//   * `import('...')`                — dynamic import (await import / import().then)
+// All feed the SAME resolve->layer pipeline as static imports (no new mechanism).
 function extractJsImports(text) {
   const out = [];
-  const from = /import\s+[\s\S]*?\s+from\s+['"]([^'"]+)['"]/g;
+  // `import ... from '...'` AND `export ... from '...'` (incl. `export *` /
+  // `export * as ns`): both end in `<clause> from '<spec>'`, so one regex with an
+  // `import|export` head covers static imports and every re-export form.
+  const from = /(?:import|export)\s+[\s\S]*?\sfrom\s+['"]([^'"]+)['"]/g;
   const bare = /import\s+['"]([^'"]+)['"]/g;
+  // Dynamic `import('...')`: the `import` keyword followed directly by `(`
+  // distinguishes the call form from the static `import x from` above.
+  const dyn = /\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g;
   const req = /require\(\s*['"]([^'"]+)['"]\s*\)/g;
-  for (const re of [from, bare, req]) {
+  for (const re of [from, bare, dyn, req]) {
     let m;
     while ((m = re.exec(text)) !== null) out.push(m[1]);
   }

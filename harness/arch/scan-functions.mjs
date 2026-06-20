@@ -151,12 +151,15 @@ function braceDelta(line, lang, state = { quote: null, block: false }) {
 // indentFunctions (Python): a `def` owns every following line that is blank or
 // indented deeper than the `def` keyword, up to the next line at <= its indent.
 // Nested defs are counted independently (each is a function worth bounding), so
-// here we do NOT skip the body — every `def` line is its own entry.
+// here we do NOT skip the body — every `def` line is its own entry. The optional
+// `async ` prefix is matched (NOT captured by the indent group): without it every
+// FastAPI/asyncio `async def` — the standard async form — was INVISIBLE to the
+// function-length budget, so a 500-line coroutine never tripped the 50-line cap.
 function indentFunctions(text) {
   const lines = text.split('\n');
   const out = [];
   for (let i = 0; i < lines.length; i += 1) {
-    const m = lines[i].match(/^(\s*)def\s+([A-Za-z0-9_]+)/);
+    const m = lines[i].match(/^(\s*)(?:async\s+)?def\s+([A-Za-z0-9_]+)/);
     if (!m) continue;
     const indent = m[1].length;
     let end = i;

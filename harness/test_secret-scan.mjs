@@ -18,11 +18,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import * as scanner from './secret-scan.mjs';
-const { scanText, scanLines, matchLine, walkFiles, scanRepo, PATTERNS } = scanner;
+const { scanText, scanLines, matchLine, walkFiles, scanRepo, scannableName, PATTERNS } = scanner;
 
 const SCAN_PATH = join(dirname(fileURLToPath(import.meta.url)), 'secret-scan.mjs');
 
@@ -170,6 +172,56 @@ test('walkFiles excludes SKIP_DIRS (no node_modules/.git paths leak through)', (
     !files.some((f) => /[\\/](node_modules|\.git|\.forge)[\\/]/.test(f)),
     'no skipped directory leaks into the walk',
   );
+});
+
+// --- FALSE-NEGATIVE FIX: extensionless credential files (.env, Dockerfile) ---
+// Structural blind spot: walkFiles gated on `SCAN_EXTS.has(extname(full))`, but
+// `extname('.env') === ''` (it is a BASENAME, not an extension), so `.env` — the
+// FIRST place a leaked secret lands — was never walked, never scanned, and
+// `security_findings` reported a confident PASS. The fix gates by basename too
+// (SCAN_FILENAMES + any `.env*`). These tests pin that the file is now BOTH
+// counted in the walk AND its secret reported (pre-fix: fileCount excluded it).
+
+test('scannableName: extensionless credential files are now scannable (.env/.npmrc/Dockerfile)', () => {
+  assert.equal(scannableName('/repo/.env'), true, '.env (extname === "") must be scanned');
+  assert.equal(scannableName('/repo/.env.local'), true, '.env.local variant via startsWith');
+  assert.equal(scannableName('/repo/.env.production'), true, 'any .env* variant');
+  assert.equal(scannableName('/repo/.npmrc'), true);
+  assert.equal(scannableName('/repo/Dockerfile'), true);
+  assert.equal(scannableName('/repo/src/app.mjs'), true, 'ordinary extensions still scanned');
+  assert.equal(scannableName('/repo/logo.png'), false, 'binary/asset types still skipped');
+});
+
+test('walkFiles + scanRepo FALSE-NEGATIVE FIX: a .env is now walked AND its secret found', () => {
+  // Write a real-format `.env` into a throwaway dir (NOT the repo, so the live
+  // self-scan stays clean). The key/token are assembled from pieces so this test
+  // file holds no literal of its own.
+  const dir = mkdtempSync(join(tmpdir(), 'forge-secret-env-'));
+  try {
+    writeFileSync(join(dir, '.env'), `AWS_ACCESS_KEY_ID=${AWS_KEY}\nGITHUB_TOKEN=${GH_TOKEN}\n`);
+    writeFileSync(join(dir, '.env.local'), `AWS_ACCESS_KEY_ID=${AWS_KEY}\n`);
+    writeFileSync(join(dir, 'README.md'), 'no secrets here\n'); // ordinary file, no finding
+
+    const walked = walkFiles(dir).map((f) => f.split(/[\\/]/).pop()).sort();
+    assert.ok(walked.includes('.env'), `.env must be in the walk; got ${JSON.stringify(walked)}`);
+    assert.ok(walked.includes('.env.local'), '.env.local variant must be walked too');
+
+    const { findings, fileCount } = scanRepo(dir);
+    assert.ok(fileCount >= 3, `the .env files are now COUNTED (was excluded); got ${fileCount}`);
+    const envHits = findings.filter((f) => f.file === '.env');
+    assert.equal(envHits.length, 2, 'both the AWS key and the GitHub token in .env are reported');
+    assert.deepEqual(
+      envHits.map((f) => f.type).sort(),
+      ['aws-access-key-id', 'github-token'],
+      'the exact secret types are surfaced from the .env',
+    );
+    assert.ok(
+      findings.some((f) => f.file === '.env.local' && f.type === 'aws-access-key-id'),
+      '.env.local (startsWith match) is scanned and its key found',
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 // --- integration: the REAL repo must be clean (exit 0, 0 findings) -----------

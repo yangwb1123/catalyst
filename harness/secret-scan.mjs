@@ -35,7 +35,7 @@
 //   Fail-CLOSED: an unexpected scanner error is REPORTED and exits 2 (never a
 //   silent green) so a broken scanner cannot masquerade as "no secrets".
 import { readFileSync, readdirSync, statSync } from 'node:fs';
-import { join, extname, relative, dirname } from 'node:path';
+import { join, extname, basename, relative, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const HARNESS_DIR = dirname(fileURLToPath(import.meta.url));
@@ -50,11 +50,31 @@ export const SKIP_DIRS = new Set([
 
 // File extensions worth scanning for embedded secrets: source + config/docs
 // where a credential is plausibly pasted. Binary/asset types are skipped.
+// NOTE: NO '.env' here — `extname('.env') === ''` (it is a basename, not an
+// extension), so listing it never matched anything. Extensionless credential
+// files are gated by SCAN_FILENAMES below instead.
 const SCAN_EXTS = new Set([
   '.go', '.mjs', '.cjs', '.js', '.jsx', '.ts', '.tsx', '.py', '.rb', '.rs',
-  '.java', '.php', '.sh', '.bash', '.zsh', '.env', '.yml', '.yaml', '.json',
+  '.java', '.php', '.sh', '.bash', '.zsh', '.yml', '.yaml', '.json',
   '.toml', '.ini', '.cfg', '.conf', '.txt', '.md', '.xml', '.properties',
 ]);
+
+// Credential-bearing files with NO scannable extension — `extname()` returns ''
+// for these, so the SCAN_EXTS gate skipped them entirely (a structural false
+// negative: `.env` is the FIRST place a leaked secret lands). Matched by BASENAME
+// instead. `.env.local` / `.env.production` etc. are caught by the startsWith
+// check in scannableName, so only the exact extras need listing here.
+const SCAN_FILENAMES = new Set([
+  '.env', '.npmrc', 'Dockerfile', 'credentials', 'id_rsa',
+]);
+
+// scannableName: a file is scanned when its extension is in SCAN_EXTS OR its
+// basename is a known credential file (exact match in SCAN_FILENAMES, or any
+// `.env*` variant). Pure over the path so the gate is unit-testable.
+export function scannableName(full) {
+  const base = basename(full);
+  return SCAN_EXTS.has(extname(full)) || SCAN_FILENAMES.has(base) || base.startsWith('.env');
+}
 
 // Inline / previous-line suppression marker.
 const IGNORE_MARKER = 'secret-scan:ignore';
@@ -144,7 +164,7 @@ export function walkFiles(root, acc = []) {
     let st;
     try { st = statSync(full); } catch { continue; }
     if (st.isDirectory()) walkFiles(full, acc);
-    else if (SCAN_EXTS.has(extname(full))) acc.push(full);
+    else if (scannableName(full)) acc.push(full);
   }
   return acc;
 }

@@ -9,7 +9,7 @@ import {
   checkLayering, checkPackage, checkFanin, checkCognitive, checkAntiPatterns,
   checkFunctionLength, checkCircular,
 } from './arch-check.mjs';
-import { extractFunctions } from './scan.mjs';
+import { extractFunctions, extractImports } from './scan.mjs';
 
 const rules = {
   architecture: { forbidden: ['domain -> infrastructure', 'domain -> application'] },
@@ -244,6 +244,89 @@ test('extractFunctions(py): a def`s body is its indented block; dedent ends it',
   const fns = extractFunctions(src, 'py');
   const outer = fns.find((f) => f.name === 'outer');
   assert.equal(outer.lines, 3); // def + 2 indented (blank/dedent excluded)
+});
+
+// --- import extraction: re-export + dynamic forms (false-negative fixes) -----
+// These pin the gap where barrel/index re-exports and dynamic import() were
+// INVISIBLE to extractImports — so a layering violation or import cycle routed
+// THROUGH a re-export silently bypassed checkLayering/checkCircular. Each fixture
+// asserts the spec is now RETURNED (it was absent / [] before the fix).
+
+test('extractImports(js) FALSE-NEGATIVE FIX: `export ... from` re-exports ARE captured', () => {
+  // `export { a } from`, `export * from`, and `export * as ns from` were all
+  // invisible before; a re-export is a real import-graph edge and must be seen.
+  const src = [
+    'export { a, b } from "./named.mjs";',
+    'export * from "./star.mjs";',
+    'export * as ns from "./starns.mjs";',
+    'export const local = 1;',          // NOT an edge (no `from`)
+    'export default function f() {}',    // NOT an edge (no `from`)
+  ].join('\n');
+  const got = extractImports(src, 'js');
+  assert.deepEqual(
+    got.sort(),
+    ['./named.mjs', './star.mjs', './starns.mjs'],
+    'all three re-export forms captured; bare `export` declarations add no edge',
+  );
+});
+
+test('extractImports(js) FALSE-NEGATIVE FIX: dynamic `import(...)` IS captured', () => {
+  // `await import('x')` and `import('x').then(...)` are real (lazy) edges; before
+  // the fix only static `import x from` was seen, so dynamic imports were missed.
+  const src = [
+    'const m = await import("./lazy.mjs");',
+    'import("./then.mjs").then((x) => x.run());',
+    'import staticDefault from "./static.mjs";', // static still works (regression)
+  ].join('\n');
+  const got = extractImports(src, 'js');
+  assert.deepEqual(
+    got.sort(),
+    ['./lazy.mjs', './static.mjs', './then.mjs'],
+    'both dynamic import() calls captured alongside the static import',
+  );
+});
+
+test('checkLayering: a forbidden edge routed THROUGH `export ... from` IS now flagged', () => {
+  // The end-to-end consequence of the fix: a domain barrel re-exporting from
+  // infrastructure is a forbidden inner->outer dependency. Before extractImports
+  // saw `export-from`, this edge never reached the model and the violation
+  // slipped through as a false PASS. Build the import record the scan now yields.
+  const m = { files: [
+    file('app/domain/index.mjs', 'domain', [
+      { kind: 'internal', layer: 'infrastructure', rel: 'app/store/db.mjs', spec: './store/db.mjs' },
+    ]),
+  ] };
+  const v = checkLayering(m, rules);
+  assert.equal(v.length, 1, 're-exported forbidden edge must FAIL layering');
+  assert.match(v[0], /forbidden domain -> infrastructure/);
+});
+
+// --- function-length: Python async def (false-negative fix) ------------------
+
+test('extractFunctions(py) FALSE-NEGATIVE FIX: an `async def` body IS counted (was invisible)', () => {
+  // FastAPI/asyncio coroutines use `async def`; the old `^(\s*)def` regex never
+  // matched them, so a 60-line async coroutine yielded ZERO functions and could
+  // never trip the 50-line budget. A sibling plain `def` must still be counted
+  // (regression). This is the decisive pin: pre-fix `big` was simply absent.
+  const src = [
+    'async def big():',                  // 1
+    ...Array(58).fill('    work()'),     // 2..59
+    '    return 1',                      // 60  -> a true 60-line body
+    '',                                  // 61  blank gap
+    'def small():',                      // 62
+    '    return 2',                      // 63  -> 2 lines (regression guard)
+  ].join('\n');
+  const fns = extractFunctions(src, 'py');
+  const big = fns.find((f) => f.name === 'big');
+  const small = fns.find((f) => f.name === 'small');
+  assert.ok(big, 'the async def MUST now be extracted (was invisible pre-fix)');
+  assert.equal(big.lines, 60, 'its true 60-line span is reported');
+  assert.equal(big.line, 1);
+  assert.ok(small && small.lines === 2, 'a plain `def` is still counted correctly');
+  // and the budget now FAILs it where before zero functions => silent PASS.
+  const v = checkFunctionLength({ files: [{ rel: 'svc/api.py', functions: fns }] }, 50);
+  assert.equal(v.length, 1, 'the >50-line async coroutine now FAILs the budget');
+  assert.match(v[0], /svc\/api\.py:1 big 60 lines \(max 50\)/);
 });
 
 // --- circular-dependency -----------------------------------------------------
