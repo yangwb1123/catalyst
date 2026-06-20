@@ -15,7 +15,17 @@
 // fabricated pass) — see context().
 package main
 
-import "strings"
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"forgeos/forge-core/internal/asset"
+	"forgeos/forge-core/internal/memory"
+	"forgeos/forge-core/internal/orchestrator"
+	"forgeos/forge-core/internal/prompt"
+)
 
 // gateLedger accumulates the objective verdict of every gate the harness actually
 // ran this run, keyed by gate name, preserving first-seen order for a stable
@@ -83,4 +93,48 @@ func (l *gateLedger) contextLines() []string {
 		return []string{c}
 	}
 	return nil
+}
+
+// buildPrompt assembles the instruction for an agent phase. Beyond the role card,
+// the Context Engine injects (1) hard constraints + ADRs RETRIEVED against this
+// phase's query (Gather), (2) cross-session memory (memoryContext), and (3) the
+// objective verdicts of any gate the harness already ran this run (ledger) — so a
+// downstream phase like the reviewer sees "test: ok" and need not re-run it. A nil ledger adds no gate block, so the prompt is byte-for-byte the old one.
+func buildPrompt(repoRoot string, p asset.Phase, mode string, ledger *gateLedger) string {
+	tier := orchestrator.PhaseTier(p, mode)
+	ctx := prompt.Gather(repoRoot, p.Name+" "+p.Agent)
+	ctx = append(ctx, memoryContext(repoRoot)...)
+	ctx = append(ctx, ledger.contextLines()...)
+	return prompt.Build(p.Agent, p.Name, mode, tier, readCard(repoRoot, p.Agent), ctx)
+}
+
+// memoryContext renders the cross-session store as one context block so the agent
+// sees what prior iterations learned. Topic is unconstrained — a phase should see
+// every gap/decision/lesson. Missing store = cold start (no block, no error); a
+// malformed store is surfaced as a visible context line, not an aborted prompt.
+func memoryContext(repoRoot string) []string {
+	entries, err := memory.Load(memoryPath(repoRoot))
+	if err != nil {
+		return []string{"Project memory: UNREADABLE (" + err.Error() + ")"}
+	}
+	rel := memory.Query(entries, "", "")
+	if len(rel) == 0 {
+		return nil
+	}
+	var b strings.Builder
+	b.WriteString("Project memory (gaps / decisions / lessons from prior iterations):")
+	for _, e := range rel {
+		fmt.Fprintf(&b, "\n- [%s] %s — %s (iter %d)", e.Kind, e.Topic, e.Detail, e.Iteration)
+	}
+	return []string{b.String()}
+}
+
+// readCard returns the agent's role-card text, or a short marker when absent so
+// the prompt is still well-formed.
+func readCard(repoRoot, agent string) string {
+	b, err := os.ReadFile(filepath.Join(repoRoot, ".agent", "agents", agent+".md"))
+	if err != nil {
+		return fmt.Sprintf("(no role card found for %q)", agent)
+	}
+	return string(b)
 }
