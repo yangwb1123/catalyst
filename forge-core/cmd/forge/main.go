@@ -395,6 +395,7 @@ func agentExecutor(o runOpts, logln func(string)) orchestrator.AgentExecutor {
 				}
 				return append(argv, "-p", buildPrompt(o.root, p, mode))
 			},
+			Dir:            o.root,
 			Timeout:        o.timeout,
 			MaxDepth:       o.maxAgentDepth,
 			MaxOutputBytes: o.maxOutputBytes,

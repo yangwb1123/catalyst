@@ -37,6 +37,12 @@ const defaultMaxOutputBytes = 10 << 20
 type CommandExecutor struct {
 	// Build returns the argv to run for a phase. An empty result is an error.
 	Build func(p asset.Phase, mode string) []string
+	// Dir is the working directory for the spawned agent (the project --root). A
+	// real agent resolves the task's relative paths and writes files relative to its
+	// cwd; without this it inherits forge's OWN cwd, so `forge run --root /project`
+	// launched from elsewhere would have the agent write to the wrong place. Empty
+	// = inherit forge's cwd (os/exec default; the test default, byte-for-byte).
+	Dir string
 	// Timeout bounds a single command's wall-clock runtime. A zero value means
 	// no deadline (the backward-compatible default): an agent that hangs would
 	// hang the orchestrator. Set it so a wedged agent is killed and surfaces as
@@ -92,6 +98,7 @@ func (c CommandExecutor) Execute(p asset.Phase, mode string) error {
 	// `claude -p` the direct child IS the agent, so killing it suffices. A future
 	// agent that forks grandchildren would need SysProcAttr{Setpgid} + -pgid.
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+	cmd.Dir = c.Dir // empty -> inherit forge's cwd (os/exec default)
 	// Propagate an incremented depth so a nested forge inherits it; childEnv
 	// REPLACES any inherited key (duplicate-key resolution is unspecified across libcs).
 	cmd.Env = childEnv(depth)

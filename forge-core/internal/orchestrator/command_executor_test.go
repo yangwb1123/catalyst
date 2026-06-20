@@ -221,6 +221,25 @@ func TestCommandExecutor_OutputUnderCapVerbatim(t *testing.T) {
 	}
 }
 
+// Execute runs the agent in CommandExecutor.Dir (the project --root), so a real
+// agent writes/reads relative to the project, not forge's own cwd. pwd echoes its
+// working directory; the captured output must be the configured Dir.
+func TestCommandExecutor_RunsInDir(t *testing.T) {
+	dir := t.TempDir()
+	rec := &recorder{}
+	ex := CommandExecutor{
+		Build: func(asset.Phase, string) []string { return []string{"pwd"} },
+		Dir:   dir,
+		Log:   rec.log,
+	}
+	if err := ex.Execute(asset.Phase{Name: "p"}, "m"); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if last := rec.logs[len(rec.logs)-1]; !strings.Contains(last, dir) {
+		t.Errorf("agent must run in Dir %q; got: %s", dir, last)
+	}
+}
+
 // requireExecError asserts err is a non-nil *ExecError and returns it, so each
 // test can then check Kind/Retryable. Fails the test (fatally) otherwise.
 func requireExecError(t *testing.T, err error) *ExecError {
