@@ -161,10 +161,16 @@ func execLoop(wf asset.Workflow, o runOpts, maxIter int, maxIterSource string, r
 // per-iteration, so the iteration-event assertions are untouched.
 func buildLoop(wf asset.Workflow, o runOpts, maxIter int, logln func(string), costSink func(phase string, usd float64)) orchestrator.LoopEngine {
 	probe := &loopProbe{root: o.root}
+	// One ledger shared across ALL iterations: each iteration's harness-gates updates
+	// a gate's verdict in place, so the reviewer always sees the LATEST objective gate
+	// state when it runs — the right semantics for a converging loop. OnGateResult
+	// feeds it; agentExecutor reads it into the prompt.
+	ledger := newGateLedger()
 	eng := orchestrator.Engine{
-		Exec:          agentExecutor(o, logln, costSink),
+		Exec:          agentExecutor(o, logln, costSink, ledger),
 		RunGate:       func(name string) gate.Result { return resolveGate(o.root, name, probe.refresh()) },
 		Log:           logln,
+		OnGateResult:  ledger.record,
 		MaxRetries:    o.maxRetries,
 		MaxLoopBack:   maxLoopBack,
 		MaxAgentCalls: o.maxAgentCalls,

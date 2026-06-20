@@ -259,10 +259,13 @@ func execEngine(wf asset.Workflow, o runOpts) int {
 	}
 	defer closeTrace()
 	costSink := costEmitter(tracer, logln)
+	// One ledger per run: OnGateResult records each gate's verdict into it; agentExecutor reads it into a later phase's prompt (see prompt_context.go).
+	ledger := newGateLedger()
 	eng := orchestrator.Engine{
-		Exec:          agentExecutor(o, logln, costSink),
+		Exec:          agentExecutor(o, logln, costSink, ledger),
 		RunGate:       harnessRunner(o.root, probe),
 		Log:           logln,
+		OnGateResult:  ledger.record,
 		MaxRetries:    o.maxRetries,
 		MaxLoopBack:   maxLoopBack,
 		MaxAgentCalls: o.maxAgentCalls,
@@ -399,7 +402,10 @@ func projectYAMLValue(root, key string) string {
 // sink is pointed at parseClaudeCostUsd, and a parsed cost is forwarded to costSink
 // (which the caller wires to a trace event). The generic executor stays claude-free —
 // all claude-JSON knowledge lives in the helpers below, never in orchestrator.
-func agentExecutor(o runOpts, logln func(string), costSink func(phase string, usd float64)) orchestrator.AgentExecutor {
+//
+// ledger carries this run's gate verdicts into each phase's prompt so a downstream
+// agent is told what the gates found, not made to re-run them (nil-safe; see prompt_context.go).
+func agentExecutor(o runOpts, logln func(string), costSink func(phase string, usd float64), ledger *gateLedger) orchestrator.AgentExecutor {
 	if o.executor == "command" {
 		isClaude := strings.Contains(o.agentCmd, "claude")
 		ex := orchestrator.CommandExecutor{
@@ -424,7 +430,7 @@ func agentExecutor(o runOpts, logln func(string), costSink func(phase string, us
 					}
 					argv = append(argv, "--output-format", "json")
 				}
-				return append(argv, "-p", buildPrompt(o.root, p, mode))
+				return append(argv, "-p", buildPrompt(o.root, p, mode, ledger))
 			},
 			Dir:            o.root,
 			Timeout:        o.timeout,
@@ -448,15 +454,16 @@ func agentExecutor(o runOpts, logln func(string), costSink func(phase string, us
 	return orchestrator.DryRunExecutor{Log: logln}
 }
 
-// buildPrompt assembles the instruction for an agent phase. Beyond the role
-// card, the Context Engine now injects (1) hard constraints + ADRs RETRIEVED
-// against this phase's query (Gather), and (2) cross-session memory — the
-// gaps/decisions/lessons prior iterations recorded (memoryContext). The query
-// "<phase> <agent>" is the natural relevance signal for both lanes.
-func buildPrompt(repoRoot string, p asset.Phase, mode string) string {
+// buildPrompt assembles the instruction for an agent phase. Beyond the role card,
+// the Context Engine injects (1) hard constraints + ADRs RETRIEVED against this
+// phase's query (Gather), (2) cross-session memory (memoryContext), and (3) the
+// objective verdicts of any gate the harness already ran this run (ledger) — so a
+// downstream phase like the reviewer sees "test: ok" and need not re-run it. A nil ledger adds no gate block, so the prompt is byte-for-byte the old one.
+func buildPrompt(repoRoot string, p asset.Phase, mode string, ledger *gateLedger) string {
 	tier := orchestrator.PhaseTier(p, mode)
 	ctx := prompt.Gather(repoRoot, p.Name+" "+p.Agent)
 	ctx = append(ctx, memoryContext(repoRoot)...)
+	ctx = append(ctx, ledger.contextLines()...)
 	return prompt.Build(p.Agent, p.Name, mode, tier, readCard(repoRoot, p.Agent), ctx)
 }
 

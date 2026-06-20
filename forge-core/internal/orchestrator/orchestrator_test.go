@@ -263,6 +263,58 @@ func TestRunAgentPhase_DefaultNoRetryIsBackCompat(t *testing.T) {
 	}
 }
 
+// OnGateResult must fire once per gate with its OBJECTIVE verdict — "ok" for a
+// pass, "N/A" for an unbacked check, "FAILED" for a real failure — so cmd/forge
+// can feed those results into a later phase's prompt. This drives all three states:
+// the fixture's harness-gates phase runs lint/test/build, scripted here as
+// pass / N/A / fail respectively, and the run aborts at the failing build gate.
+func TestRunGates_OnGateResultReportsEachVerdict(t *testing.T) {
+	wf := loadFixture(t)
+	rec := &recorder{}
+	// lint -> pass, test -> N/A (tri-state Status), build -> fail.
+	triState := func(name string) gate.Result {
+		switch name {
+		case "test":
+			return gate.Result{Name: name, Status: gate.StatusNA, Output: "no tool in this repo"}
+		case "build":
+			return gate.Result{Name: name, OK: false, Output: "boom"}
+		default:
+			return gate.Result{Name: name, OK: true}
+		}
+	}
+	var got []string
+	eng := Engine{
+		Exec: rec.executor(), RunGate: triState, Log: rec.log,
+		OnGateResult: func(name, status string) { got = append(got, name+"="+status) },
+	}
+
+	if err := eng.Run(wf, "balanced"); err == nil {
+		t.Fatal("Run should abort on the failing build gate")
+	}
+	// Order follows the phase's required_gates; the run aborts AT build, so the
+	// trailing qa gate never reports. All three verdict strings must be exact.
+	want := []string{"lint=ok", "test=N/A", "build=FAILED"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("OnGateResult calls = %v, want %v", got, want)
+	}
+}
+
+// A nil OnGateResult must be a silent no-op: a run that does not wire the callback
+// behaves exactly as before the field existed (back-compat) and never panics.
+func TestRunGates_NilOnGateResultIsBackCompat(t *testing.T) {
+	wf := loadFixture(t)
+	rec := &recorder{}
+	eng := Engine{Exec: rec.executor(), RunGate: allOK, Log: rec.log} // OnGateResult nil
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("a nil OnGateResult must not panic; got %v", r)
+		}
+	}()
+	if err := eng.Run(wf, "balanced"); err != nil {
+		t.Fatalf("Run with a nil OnGateResult should still pass on all-OK gates; got %v", err)
+	}
+}
+
 // requiredWhenKey reduces a verbatim fragment to its trailing identifier so the
 // orchestrator can match it against the reviewer dimension.
 func TestRequiredWhenKey(t *testing.T) {

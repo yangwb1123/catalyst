@@ -18,7 +18,7 @@ import (
 // opus regardless of mode.
 func TestBuildPrompt_EmbedsRolePhaseTier(t *testing.T) {
 	p := asset.Phase{Name: "reviewer", Agent: "reviewer"}
-	got := buildPrompt("/home/u1/catalyst", p, "balanced")
+	got := buildPrompt("/home/u1/catalyst", p, "balanced", nil)
 	for _, want := range []string{`"reviewer" agent`, "phase=reviewer", "tier=opus"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("prompt missing %q", want)
@@ -29,7 +29,7 @@ func TestBuildPrompt_EmbedsRolePhaseTier(t *testing.T) {
 // A missing card must not break prompt assembly — it degrades to a marker.
 func TestBuildPrompt_MissingCardDegrades(t *testing.T) {
 	p := asset.Phase{Name: "ghost", Agent: "no-such-agent"}
-	got := buildPrompt("/home/u1/catalyst", p, "balanced")
+	got := buildPrompt("/home/u1/catalyst", p, "balanced", nil)
 	if !strings.Contains(got, "no role card found") {
 		t.Errorf("expected missing-card marker; got: %.80s", got)
 	}
@@ -39,7 +39,7 @@ func TestBuildPrompt_MissingCardDegrades(t *testing.T) {
 // injection. A prompt built from the REAL repo must still carry the leading
 // AGENTS.md constraints (the 500-line cap), exactly as before retrieval+memory.
 func TestBuildPrompt_StillInjectsHardConstraints(t *testing.T) {
-	got := buildPrompt("/home/u1/catalyst", asset.Phase{Name: "reviewer", Agent: "reviewer"}, "balanced")
+	got := buildPrompt("/home/u1/catalyst", asset.Phase{Name: "reviewer", Agent: "reviewer"}, "balanced", nil)
 	if !strings.Contains(got, "Engineering constraints") || !strings.Contains(got, "500") {
 		t.Errorf("hard constraints must still inject after the Context Engine upgrade; got: %.400s", got)
 	}
@@ -59,7 +59,7 @@ func TestBuildPrompt_IncludesMemoryEntries(t *testing.T) {
 			t.Fatalf("seed memory: %v", err)
 		}
 	}
-	got := buildPrompt(root, asset.Phase{Name: "build", Agent: "implementer"}, "balanced")
+	got := buildPrompt(root, asset.Phase{Name: "build", Agent: "implementer"}, "balanced", nil)
 	if !strings.Contains(got, "Project memory") {
 		t.Errorf("prompt must carry a Project memory block; got: %.400s", got)
 	}
@@ -74,12 +74,41 @@ func TestBuildPrompt_IncludesMemoryEntries(t *testing.T) {
 // without a memory block — absence is the normal first-run case, never a failure.
 func TestBuildPrompt_MissingMemoryIsColdStart(t *testing.T) {
 	root := t.TempDir() // no .forge/memory.jsonl
-	got := buildPrompt(root, asset.Phase{Name: "build", Agent: "implementer"}, "balanced")
+	got := buildPrompt(root, asset.Phase{Name: "build", Agent: "implementer"}, "balanced", nil)
 	if strings.Contains(got, "Project memory") {
 		t.Errorf("cold start must omit the memory block; got: %.300s", got)
 	}
 	if strings.Contains(got, "UNREADABLE") {
 		t.Errorf("a missing store must not be reported as unreadable; got: %.300s", got)
+	}
+}
+
+// buildPrompt must inject the ledger's gate verdicts when the ledger carries any,
+// so a downstream phase (e.g. the reviewer) sees the objective results in its
+// prompt instead of trying to re-run the checks itself. (Lives here, not in
+// prompt_context_test.go, because asserting through buildPrompt needs asset.Phase —
+// and main_test.go already imports asset, so it adds no internal/asset fan-in.)
+func TestBuildPrompt_InjectsGateLedger(t *testing.T) {
+	l := newGateLedger()
+	l.record("test", "ok")
+	l.record("complexity", "ok")
+	got := buildPrompt("/home/u1/catalyst", asset.Phase{Name: "reviewer", Agent: "reviewer"}, "balanced", l)
+
+	if !strings.Contains(got, "前序闸门结果") || !strings.Contains(got, "- test: ok") {
+		t.Errorf("prompt must carry the prior gate results when the ledger is populated; got: %.500s", got)
+	}
+}
+
+// Back-compat: with a nil ledger (and with an empty one) buildPrompt must NOT add
+// the gate-results block — the prompt is exactly the pre-feedback one.
+func TestBuildPrompt_NilOrEmptyLedgerOmitsBlock(t *testing.T) {
+	p := asset.Phase{Name: "reviewer", Agent: "reviewer"}
+	nilGot := buildPrompt("/home/u1/catalyst", p, "balanced", nil)
+	emptyGot := buildPrompt("/home/u1/catalyst", p, "balanced", newGateLedger())
+	for _, got := range []string{nilGot, emptyGot} {
+		if strings.Contains(got, "前序闸门结果") {
+			t.Errorf("a nil/empty ledger must omit the gate-results block; got: %.300s", got)
+		}
 	}
 }
 
@@ -113,7 +142,7 @@ func repoRoot() string {
 // flag to a stub like echo. This is what made real ignition actually WRITE code.
 func TestAgentExecutor_PermissionModeOnlyForClaude(t *testing.T) {
 	mk := func(cmd string) string {
-		ex := agentExecutor(runOpts{executor: "command", agentCmd: cmd, agentPermission: "acceptEdits", root: t.TempDir()}, func(string) {}, nil)
+		ex := agentExecutor(runOpts{executor: "command", agentCmd: cmd, agentPermission: "acceptEdits", root: t.TempDir()}, func(string) {}, nil, nil)
 		ce, ok := ex.(orchestrator.CommandExecutor)
 		if !ok {
 			t.Fatalf("executor=command must yield a CommandExecutor, got %T", ex)
@@ -130,7 +159,7 @@ func TestAgentExecutor_PermissionModeOnlyForClaude(t *testing.T) {
 
 // An empty agent-permission disables the flag even for claude (operator opt-out).
 func TestAgentExecutor_EmptyPermissionDisablesFlag(t *testing.T) {
-	ex := agentExecutor(runOpts{executor: "command", agentCmd: "claude", agentPermission: "", root: t.TempDir()}, func(string) {}, nil)
+	ex := agentExecutor(runOpts{executor: "command", agentCmd: "claude", agentPermission: "", root: t.TempDir()}, func(string) {}, nil, nil)
 	ce := ex.(orchestrator.CommandExecutor)
 	argv := strings.Join(ce.Build(asset.Phase{Name: "p", Agent: "implementer"}, "balanced"), " ")
 	if strings.Contains(argv, "--permission-mode") {
@@ -143,7 +172,7 @@ func TestAgentExecutor_EmptyPermissionDisablesFlag(t *testing.T) {
 // and must NOT pass that claude-only flag to a stub like echo.
 func TestAgentExecutor_ModelTierForClaude(t *testing.T) {
 	mk := func(cmd, agent string) string {
-		ex := agentExecutor(runOpts{executor: "command", agentCmd: cmd, root: t.TempDir()}, func(string) {}, nil)
+		ex := agentExecutor(runOpts{executor: "command", agentCmd: cmd, root: t.TempDir()}, func(string) {}, nil, nil)
 		ce := ex.(orchestrator.CommandExecutor)
 		return strings.Join(ce.Build(asset.Phase{Name: agent, Agent: agent}, "balanced"), " ")
 	}
@@ -160,7 +189,7 @@ func TestAgentExecutor_ModelTierForClaude(t *testing.T) {
 // --max-agent-calls (phase count) and --timeout (wall-clock).
 func TestAgentExecutor_MaxBudgetForClaude(t *testing.T) {
 	mk := func(cmd, budget string) string {
-		ex := agentExecutor(runOpts{executor: "command", agentCmd: cmd, agentMaxBudgetUSD: budget, root: t.TempDir()}, func(string) {}, nil)
+		ex := agentExecutor(runOpts{executor: "command", agentCmd: cmd, agentMaxBudgetUSD: budget, root: t.TempDir()}, func(string) {}, nil, nil)
 		ce := ex.(orchestrator.CommandExecutor)
 		return strings.Join(ce.Build(asset.Phase{Name: "p", Agent: "implementer"}, "balanced"), " ")
 	}

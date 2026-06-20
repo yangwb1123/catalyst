@@ -148,9 +148,15 @@ func (d DryRunExecutor) logf(format string, args ...any) {
 // this alone. It is the predictable cost bound for --executor=command's real firings;
 // under a dry-run executor the counting is verifiable but no budget is spent.
 type Engine struct {
-	Exec          AgentExecutor
-	RunGate       func(name string) gate.Result
-	Log           func(string)
+	Exec    AgentExecutor
+	RunGate func(name string) gate.Result
+	Log     func(string)
+	// OnGateResult is an OPTIONAL callback runGates fires once per gate with its name
+	// and OBJECTIVE verdict ("ok" | "N/A" | "FAILED"), so cmd/forge (the ONLY layer
+	// that knows prompts) can feed a prior gate's real results into a LATER agent
+	// phase's prompt — so the reviewer is told "test: ok" and need not re-run it. The
+	// engine just REPORTS, oblivious to where they go (mirror of injected Log/RunGate); nil reports nothing (back-compat, byte-exact).
+	OnGateResult  func(name, status string)
 	MaxRetries    int
 	MaxLoopBack   int
 	MaxAgentCalls int
@@ -419,11 +425,14 @@ func (e Engine) runGates(p asset.Phase, gates []string) error {
 		switch gateStatus(res) {
 		case gate.StatusFail:
 			e.logf("phase %s: gate %s FAILED", p.Name, name)
+			e.onGateResult(name, "FAILED")
 			return fmt.Errorf("phase %s: required gate %q not OK: %s", p.Name, name, res.Output)
 		case gate.StatusNA:
 			e.logf("phase %s: gate %s N/A (not checked: %s)", p.Name, name, naDetail(res))
+			e.onGateResult(name, "N/A")
 		default: // StatusPass
 			e.logf("phase %s: gate %s ok", p.Name, name)
+			e.onGateResult(name, "ok")
 		}
 	}
 	return nil
@@ -479,5 +488,12 @@ func (e Engine) reportStop(wf asset.Workflow) {
 func (e Engine) logf(format string, args ...any) {
 	if e.Log != nil {
 		e.Log(fmt.Sprintf(format, args...))
+	}
+}
+
+// onGateResult reports one gate's verdict to the OPTIONAL OnGateResult callback — the nil-safe mirror of logf (a no-op when unwired, so back-compat holds).
+func (e Engine) onGateResult(name, status string) {
+	if e.OnGateResult != nil {
+		e.OnGateResult(name, status)
 	}
 }
