@@ -223,3 +223,47 @@ func downgradeOne(tier string) string {
 		return Haiku
 	}
 }
+
+// BudgetAdjustTier applies the budget_guard's NEAR-BUDGET down-tiering to an
+// already-routed agent-phase tier, given the run's cumulative spend ratio
+// (spent/cap). It is the AGENT-PATHWAY counterpart of TierForScore's score-path
+// budget_guard: the same "near budget, drop one tier, but never the safety-floor
+// roles" policy, expressed against an agent role instead of a task score+risk.
+//
+// SEMANTIC MIGRATION of budget_guard from the score path to the agent path:
+//   - the "don't down-tier high-stakes work" exemption that TierForScore keys on
+//     risk == "critical" becomes, here, opusFloorAgents[agent] — the judgement-only
+//     roles (architect / cto / reviewer). Those agents keep their Opus safety floor
+//     near budget exactly as a critical task keeps Opus: safety beats cost.
+//   - the one-tier drop reuses downgradeOne (the SAME helper the score path uses), so
+//     there is one tier-math definition, not a second copy that could drift.
+//
+// QUALITY TRADE-OFF (honest): near budget, a non-floor phase routes to a CHEAPER,
+// LOWER-QUALITY model to extend the run's runway rather than burn the remaining
+// budget at full tier and hard-stop sooner. The judgement-only roles are exempt — we
+// would rather stop the run (PR4 hard-stop, below) than silently down-tier a reviewer
+// or architect and ship a worse decision.
+//
+// BANDS — why only [0.80, 1.00):
+//   - spendRatio < 0.80 (in budget): return base UNCHANGED — byte-for-byte the
+//     pre-PR routed tier, so a run that never approaches its cap (or has no cap at
+//     all → ratio 0) is completely unaffected.
+//   - 0.80 <= spendRatio < 1.00 (near budget): down-tier one step (floor agents exempt).
+//   - spendRatio >= 1.00 is DELIBERATELY ABSENT: PR4's run-level hard-stop
+//     (checkRunBudget, consulted BEFORE the spawn that would call this) already
+//     aborts the run at ratio >= 1.00, so control never reaches BudgetAdjustTier at or
+//     past the cap. There is nothing to do here for that band — a >= 1.00 branch would
+//     be dead code, so it is omitted (the three bands are disjoint: [0,0.80) untouched
+//     | [0.80,1.00) down-tier | [1.00,∞) PR4 already stopped).
+//
+// PURE and deterministic (no clock, no state) — it only reads its arguments and the
+// package's opusFloorAgents/downgradeOne, mirroring TierForScore's purity.
+func BudgetAdjustTier(base, agent string, spendRatio float64) string {
+	if spendRatio < 0.80 {
+		return base // in budget: unchanged (byte-identical to the routed tier).
+	}
+	if opusFloorAgents[agent] {
+		return base // judgement-only roles keep their Opus safety floor near budget.
+	}
+	return downgradeOne(base) // near budget, non-floor: drop one tier to extend runway.
+}

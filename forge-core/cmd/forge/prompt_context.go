@@ -22,7 +22,6 @@ import (
 	"strings"
 
 	"forgeos/forge-core/internal/asset"
-	"forgeos/forge-core/internal/orchestrator"
 	"forgeos/forge-core/internal/prompt"
 )
 
@@ -356,22 +355,12 @@ func phaseModelOf(phaseModel func(phase string) string, phase string) string {
 	return phaseModel(phase)
 }
 
-// phaseModelResolver builds the (phase name -> routed model/tier) resolver the cost sink
-// uses to attribute a billed cost to the model that incurred it. It mirrors feedsForwardOf /
-// onFailTargetOf (closing over wf so the Observe seam, handed only a phase NAME, can look
-// the phase up) and computes orchestrator.PhaseTier(p, mode) — the EXACT value
-// agentExecutor's Build hands to `claude --model`, so the attributed model is the one the
-// run actually routed to. An unknown phase name yields "" (omitempty drops it downstream).
-func phaseModelResolver(wf asset.Workflow, mode string) func(name string) string {
-	return func(name string) string {
-		for _, p := range wf.Phases {
-			if p.Name == name {
-				return orchestrator.PhaseTier(p, mode)
-			}
-		}
-		return ""
-	}
-}
+// The cost path's (phase name -> routed model/tier) resolver lives in engine_build.go as
+// phaseTierByName: it is the name-keyed face of the SHARED phaseTierResolver tierOf (which
+// applies the near-budget down-tier on top of orchestrator.PhaseTier), so the model a cost is
+// attributed to is byte-for-byte the one `claude --model` and the prompt used — one resolver,
+// no drift. (It moved there, beside the resolver it wraps, when PR6 unified the three tier
+// consumers; this file keeps only buildPrompt's prompt-tier consumption below.)
 
 // buildPrompt assembles the instruction for an agent phase. Beyond the role card,
 // the Context Engine injects (1) hard constraints + ADRs RETRIEVED against this
@@ -383,8 +372,14 @@ func phaseModelResolver(wf asset.Workflow, mode string) func(name string) string
 // findings for targeted repair (findings, gated on p.Name so a re-running reviewer is
 // NEVER fed its own prior notes, preserving fresh-context independence). A nil
 // gates/phaseOut/findings add no blocks, so the prompt is byte-for-byte the old one.
-func buildPrompt(repoRoot string, p asset.Phase, mode string, gates *gateLedger, phaseOut *phaseOutputLedger, findings *reviewFindingsLedger) string {
-	tier := orchestrator.PhaseTier(p, mode)
+//
+// tierOf is the shared per-phase tier resolver (engine_build.go) — the SAME one Build
+// hands to `claude --model` and the cost stamp reads — so the tier stated IN the prompt is
+// exactly the model the phase actually runs, near-budget down-tier included. Passing the
+// resolver (not a precomputed tier) keeps the single-source-of-truth: there is no second
+// PhaseTier call here that could drift from the model the run spawns.
+func buildPrompt(repoRoot string, p asset.Phase, mode string, tierOf func(p asset.Phase) string, gates *gateLedger, phaseOut *phaseOutputLedger, findings *reviewFindingsLedger) string {
+	tier := tierOf(p)
 	query := p.Name + " " + p.Agent
 	ctx := prompt.Gather(repoRoot, query)
 	ctx = append(ctx, memoryContext(repoRoot, query)...)

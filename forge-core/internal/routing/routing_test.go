@@ -196,3 +196,56 @@ func TestTierForScore(t *testing.T) {
 		})
 	}
 }
+
+// budgetAdjustCase is one BudgetAdjustTier expectation. Package scope (like
+// tierForScoreCases) so the test body stays a thin loop — the budget bands are data.
+type budgetAdjustCase struct {
+	name       string
+	base       string
+	agent      string
+	spendRatio float64
+	want       string
+}
+
+// budgetAdjustCases pins the AGENT-pathway budget_guard (the near-budget down-tier that
+// realizes routing's budget_guard semantics on an agent role instead of a task score).
+// The boundaries mirror the score-path TierForScore cases: 0.80 is the inclusive gate, the
+// opusFloor roles are the agent-side analogue of risk==critical (exempt), and an unset cap
+// (ratio 0) leaves the routed tier byte-identical.
+var budgetAdjustCases = []budgetAdjustCase{
+	// In-budget: under the 0.80 gate nothing moves, whatever the agent/tier.
+	{"in budget just under gate", Opus, "implementer", 0.79, Opus},       // 0.79 < 0.80 -> no change
+	{"in budget mid", Sonnet, "implementer", 0.40, Sonnet},               // well in budget
+	{"no cap ratio zero byte-identical", Opus, "implementer", 0.0, Opus}, // unset cap -> base verbatim
+
+	// Near-budget boundary: 0.80 is INCLUSIVE — exactly at the gate it down-tiers.
+	{"0.80 boundary downtiers", Opus, "implementer", 0.80, Sonnet},
+
+	// Near-budget, non-floor agents drop exactly one tier.
+	{"0.85 opus->sonnet non-floor", Opus, "implementer", 0.85, Sonnet},
+	{"0.90 sonnet->haiku non-floor", Sonnet, "qa", 0.90, Haiku},
+
+	// opusFloor roles are EXEMPT near budget — safety beats cost (the agent-side mirror of
+	// a critical task staying Opus): reviewer/architect/cto keep their tier untouched.
+	{"reviewer exempt near budget", Opus, "reviewer", 0.85, Opus},
+	{"architect exempt high ratio", Opus, "architect", 0.95, Opus},
+	{"cto exempt high ratio", Opus, "cto", 0.95, Opus},
+
+	// downgradeOne clamps at Haiku: a haiku base near budget stays haiku (cannot go lower).
+	{"haiku clamps at floor", Haiku, "harness", 0.90, Haiku},
+}
+
+// TestBudgetAdjustTier is the decisive boundary table for the near-budget down-tier: the
+// 0.80 inclusive gate, the one-tier drop, the opusFloor (judgement-role) exemption, the
+// Haiku clamp, and the ratio-0 byte-identical no-op. It proves BudgetAdjustTier reuses the
+// SAME downgradeOne/opusFloorAgents as the routed/score paths — no second tier-math.
+func TestBudgetAdjustTier(t *testing.T) {
+	for _, c := range budgetAdjustCases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := BudgetAdjustTier(c.base, c.agent, c.spendRatio); got != c.want {
+				t.Errorf("BudgetAdjustTier(%q, %q, %v) = %q, want %q",
+					c.base, c.agent, c.spendRatio, got, c.want)
+			}
+		})
+	}
+}

@@ -115,6 +115,24 @@ func (b *runBudget) exhausted() bool {
 	return b.cap > 0 && b.spent >= b.cap
 }
 
+// SpendRatio returns the run's cumulative spend as a fraction of its cap — the
+// dimensionless [0,∞) signal the budget-aware DOWN-TIERING consults (routing.BudgetAdjustTier),
+// the near-budget analogue of exhausted's at/over-cap bool. It is the ONLY place spent/cap is
+// divided: dollars never leave cost.go, so what crosses to the routing layer is an opaque ratio,
+// not money — the SAME layering bright-line exhausted draws (the engine sees a bool, the router a
+// ratio, neither sees dollars).
+//
+// An unset (or non-positive) cap yields 0: with no budget there is nothing to be "near", so the
+// ratio sits below the 0.80 down-tier gate and BudgetAdjustTier returns the routed tier unchanged
+// — byte-for-byte the pre-PR behavior for an unbudgeted run. A reflexive symmetry with exhausted:
+// cap<=0 is never exhausted AND never near budget, so an unbudgeted run is untouched on both ends.
+func (b *runBudget) SpendRatio() float64 {
+	if b.cap <= 0 {
+		return 0
+	}
+	return b.spent / b.cap
+}
+
 // BudgetExhaustedFunc returns the opaque puller to inject into Engine.BudgetExhausted, or
 // nil when no cap is set. nil is the deliberate signal "no run-level budget": the engine
 // then never consults it and the run is byte-for-byte unchanged (the back-compat hinge —
@@ -314,12 +332,16 @@ func unwrapClaudeResult(output string) string {
 // (integer, jitter-free); the conversion (USD x 1e6, rounded) is owned here — trace.go
 // stays oblivious to both dollars and what a model is.
 //
-// HONESTY on `model`: this is the REQUESTED/ROUTED tier (orchestrator.PhaseTier — the
-// SAME value handed to `claude --model` at the call site), not a field read back out of
-// the claude JSON. Under v1's claude-only pool, claude bills the tier `--model` selected,
-// so requested == billed and attributing the cost to the routed tier is accurate. (If a
-// future provider could silently downgrade the served model, this would become
-// requested-not-served; the comment is the honest caveat.)
+// HONESTY on `model`: this is the BUDGET-ADJUSTED routed tier — orchestrator.PhaseTier
+// post-filtered by routing.BudgetAdjustTier (so a phase down-tiered near budget is stamped
+// with the CHEAPER model it actually ran, not the un-adjusted route) — the SAME value handed
+// to `claude --model` at the call site, resolved through the ONE shared phaseTierResolver so
+// `--model`, this cost stamp, and the prompt's tier can never disagree. It is NOT a field read
+// back out of the claude JSON. Under v1's claude-only pool, claude bills the tier `--model`
+// selected, so requested == billed == stamped and attributing the cost to the (possibly
+// down-tiered) routed tier is accurate — a near-budget phase correctly lands in the cheaper
+// model's scorecard bucket. (If a future provider could silently downgrade the served model,
+// this would become requested-not-served; the comment is the honest caveat.)
 func costEmitter(tracer *trace.Tracer, logln func(string)) func(phase, model string, usd float64) {
 	return func(phase, model string, usd float64) {
 		emitTrace(tracer, trace.Event{

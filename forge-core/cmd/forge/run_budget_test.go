@@ -283,6 +283,55 @@ func TestRunBudget_CrossResumeSeedEnforcesCap(t *testing.T) {
 		seeded.spent, unseeded.spent, unseeded.spent-seeded.spent)
 }
 
+// ⑩ SpendRatio is the dimensionless spend/cap fraction the near-budget down-tier (PR6)
+// consults — the ONLY place spent/cap is divided, the near-budget analogue of exhausted's
+// at/over-cap bool. An unset (cap<=0) budget yields 0 (nothing to be "near" -> no adjustment,
+// byte-identical to the unbudgeted path); a positive cap yields the live fraction; and after
+// a seed (the resume path) the ratio reflects the SEEDED cumulative, so a resumed run near its
+// cap is correctly seen as near-budget.
+func TestRunBudget_SpendRatio(t *testing.T) {
+	// Unset cap: ratio is 0 regardless of spend (an unbudgeted accumulator still tallies,
+	// but with no cap there is no ratio -> 0, which sits below every down-tier gate).
+	unset := &runBudget{} // cap 0
+	if got := unset.SpendRatio(); got != 0 {
+		t.Errorf("unset cap SpendRatio = %v, want 0 (no cap -> never near budget)", got)
+	}
+	unset.feed(nil)("p", "opus", 5.0) // spend without a cap
+	if got := unset.SpendRatio(); got != 0 {
+		t.Errorf("unset cap stays 0 even after spend; got %v", got)
+	}
+	// A negative cap can never exist (newRunBudget rejects it) but SpendRatio must still be
+	// total-safe: cap<=0 -> 0, no divide-by-zero.
+	if got := (&runBudget{cap: 0, spent: 1}).SpendRatio(); got != 0 {
+		t.Errorf("cap 0 with spend must be 0 (no divide-by-zero); got %v", got)
+	}
+
+	// Positive cap: the live fraction. 0.40 of a 1.00 cap = 0.40; 0.85 = near-budget band.
+	b := &runBudget{cap: 1.00}
+	b.feed(nil)("p", "opus", 0.40)
+	if got := b.SpendRatio(); !approx(got, 0.40) {
+		t.Errorf("SpendRatio after 0.40/1.00 = %v, want 0.40", got)
+	}
+	b.feed(nil)("p", "opus", 0.45) // -> 0.85 total
+	if got := b.SpendRatio(); !approx(got, 0.85) {
+		t.Errorf("SpendRatio after 0.85/1.00 = %v, want 0.85 (near-budget band)", got)
+	}
+	// Past the cap the ratio exceeds 1.0 (it is not clamped — PR4 hard-stop owns >=1.0).
+	b.feed(nil)("p", "opus", 0.30) // -> 1.15 total
+	if got := b.SpendRatio(); !approx(got, 1.15) {
+		t.Errorf("SpendRatio past the cap = %v, want 1.15 (unclamped)", got)
+	}
+
+	// After a SEED (the --resume path, PR5): the ratio reflects the seeded cumulative, so a
+	// resumed run that was already near its cap is seen as near-budget immediately. 0.90 of
+	// a 1.00 cap seeded from 900000µ$.
+	seeded := &runBudget{cap: 1.00}
+	seeded.seed(900_000) // $0.90
+	if got := seeded.SpendRatio(); !approx(got, 0.90) {
+		t.Errorf("SpendRatio after seed(900000)/cap 1.00 = %v, want 0.90 (resume sees near-budget)", got)
+	}
+}
+
 // approx compares two dollar figures within a tiny epsilon (float sums are not exact).
 func approx(a, b float64) bool {
 	d := a - b
