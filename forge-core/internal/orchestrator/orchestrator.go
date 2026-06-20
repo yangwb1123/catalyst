@@ -166,11 +166,29 @@ type Engine struct {
 	// compares against the loop-back literal. A nil puller (or ok=false: no/garbled
 	// verdict) means "no verdict" — the phase simply proceeds, NEVER loops back and
 	// NEVER aborts (back-compat, byte-exact, and the reviewer card's fail-open contract).
-	AgentVerdict  func(phase string) (verdict string, ok bool)
-	MaxRetries    int
-	MaxLoopBack   int
-	MaxAgentCalls int
-	ModePolicy    mode.Policy
+	AgentVerdict func(phase string) (verdict string, ok bool)
+	// BudgetExhausted is an OPTIONAL run-level stop puller — the third cost-bound
+	// dimension beside MaxAgentCalls (phase COUNT) and MaxLoopBack (loop-back count).
+	// Where those two count discrete events the engine itself tallies, this asks an
+	// EXTERNAL accumulator (owned by the caller) a single opaque question before each
+	// agent spawn: "is the run-level budget used up?" The engine stays vendor-free and
+	// unit-free exactly as it does for AgentVerdict — it never sees dollars, a model,
+	// or any vendor envelope, only this bool; whatever resource the caller meters
+	// (cmd/forge meters cumulative billed spend) and the threshold it compares against
+	// live ENTIRELY in the caller's closure. checkRunBudget consults it immediately
+	// before each runAgentPhase: a true verdict is a fail-CLOSED run-level stop (like an
+	// over-count in checkAgentBudget — the prospective phase is NEVER spawned), NOT a
+	// per-phase retry. A nil puller (the default) means "no run-level budget" — never
+	// consulted, so an existing run is byte-for-byte unchanged; only a wired closure
+	// enforces. Because RunFrom owns the agent loop and LoopEngine reuses the SAME
+	// Engine across every iteration, a closure reading a caller accumulator that is NOT
+	// reset per iteration meters the WHOLE evolve run (all iterations), which is the
+	// point: a run-level budget bounds total spend, not per-iteration spend.
+	BudgetExhausted func() bool
+	MaxRetries      int
+	MaxLoopBack     int
+	MaxAgentCalls   int
+	ModePolicy      mode.Policy
 	// Sleep is the OPTIONAL injection point for the inter-retry backoff (the 529/overload
 	// resilience pause), the deterministic-test twin of trace.Now: nil = time.Sleep (the
 	// production default, a real wall-clock pause so the overloaded backend can recover); a test
@@ -244,14 +262,7 @@ func (e Engine) RunFrom(wf asset.Workflow, mode string, start int) error {
 			continue
 		}
 		e.narrateADR(wf, p)
-		// Charge the per-run agent-call budget BEFORE spawning. A loop-back re-run
-		// re-reaches this agent phase and so is charged again (loop-back × phase is
-		// the blow-up MaxLoopBack alone does not bound); on overrun this returns the
-		// fail-closed error and the phase is never spawned.
-		if err := e.checkAgentBudget(&agentCalls); err != nil {
-			return err
-		}
-		if err := e.runAgentPhase(p, mode); err != nil {
+		if err := e.runAgentPhaseBudgeted(p, mode, &agentCalls); err != nil {
 			return err
 		}
 		// After a CLEAN agent run, a reviewer-style phase may demand a directed
@@ -265,6 +276,31 @@ func (e Engine) RunFrom(wf asset.Workflow, mode string, start int) error {
 	}
 	e.reportStop(wf)
 	return nil
+}
+
+// runAgentPhaseBudgeted is the pre-spawn cost pre-flight + the spawn itself, split out of
+// RunFrom's loop (so that loop stays within the function-length budget). It charges BOTH
+// run-level cost guards BEFORE spawning, fail-closed, then runs the phase:
+//
+//  1. checkAgentBudget — the per-run agent-phase COUNT cap (--max-agent-calls). It
+//     increments *calls; a loop-back re-run re-reaches this and is charged again (loop-back
+//     × phase is the blow-up MaxLoopBack alone does not bound). On overrun the phase is
+//     never spawned.
+//  2. checkRunBudget — the run-level CUMULATIVE-resource cap (the opaque BudgetExhausted
+//     puller). *calls-1 is the count of agent phases already COMPLETED this run, passed for
+//     an honest "stopped after N" report. On exhaustion the phase is never spawned.
+//
+// Only when both guards pass does runAgentPhase fire (with its own retry/backoff). Either
+// guard's error propagates up to abort the run; neither charges anything when unset
+// (MaxAgentCalls 0 / nil puller), so an existing run is byte-for-byte unchanged.
+func (e Engine) runAgentPhaseBudgeted(p asset.Phase, mode string, calls *int) error {
+	if err := e.checkAgentBudget(calls); err != nil {
+		return err
+	}
+	if err := e.checkRunBudget(*calls - 1); err != nil {
+		return err
+	}
+	return e.runAgentPhase(p, mode)
 }
 
 // gateOutcome decides what happens after a gate phase failed: a DIRECTED jump

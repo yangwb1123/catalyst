@@ -11,11 +11,90 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"math"
+	"strconv"
 	"strings"
 
 	"forgeos/forge-core/internal/trace"
 )
+
+// runBudget is the RUN-LEVEL cumulative dollar cap — the cmd/forge-side half of the
+// orchestrator's Engine.BudgetExhausted puller, and the layering counterpart to
+// costEmitter: ALL dollar arithmetic and the only knowledge of what "budget" means in
+// money lives HERE, never in the orchestrator (which sees only the opaque bool exhausted
+// returns). It is the THIRD run-level cost bound — cumulative DOLLARS — distinct from the
+// engine's per-run agent-phase COUNT (--max-agent-calls) and from the PER-CLAUDE-CALL
+// ceiling --agent-max-budget-usd passes straight to `claude --max-budget-usd`: this is the
+// sum over the WHOLE run/evolve, the thing no existing bound caps.
+//
+// spent accumulates every phase's billed cost (fed by feed, which wraps the cost sink);
+// cap is the parsed --run-budget-usd (0 = unset). exhausted reports spent >= cap once a
+// POSITIVE cap is set — the closure the engine consults before each spawn. Because ONE
+// runBudget is created per run (in execEngine / execLoop) and the wrapped sink + the
+// closure both close over it, an evolve loop — which reuses the SAME Engine across every
+// iteration — accumulates ACROSS iterations (never reset), so the cap bounds the whole
+// run's spend. Not concurrency-safe by design: v1 orchestration is serial (one phase
+// bills, then the next is gated); a parallel executor (ROADMAP direction five) would add
+// a mutex here, noted so the boundary is honest.
+type runBudget struct {
+	spent float64
+	cap   float64
+}
+
+// newRunBudget parses the --run-budget-usd flag into a run-scoped accumulator. An empty
+// flag (the default) yields a zero cap => unset: feed still tallies but exhausted is always
+// false and BudgetExhaustedFunc returns nil, so the run is byte-for-byte the pre-flag
+// behavior. A malformed or negative value is a hard error (fail-closed on a misconfigured
+// budget, never a silently-ignored cap): a budget the operator believes is set must not be
+// quietly dropped. parsing lives here, with every other dollar concern.
+func newRunBudget(flagVal string) (*runBudget, error) {
+	s := strings.TrimSpace(flagVal)
+	if s == "" {
+		return &runBudget{}, nil // unset: no cap, no-op accumulator.
+	}
+	v, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return nil, fmt.Errorf("--run-budget-usd %q is not a number: %w", flagVal, err)
+	}
+	if v < 0 || math.IsNaN(v) || math.IsInf(v, 0) {
+		return nil, fmt.Errorf("--run-budget-usd must be a non-negative finite dollar amount, got %q", flagVal)
+	}
+	return &runBudget{cap: v}, nil
+}
+
+// feed wraps a phase cost sink so every billed dollar both flows onward (to the trace
+// emitter) AND lands in the run total. It is the single write path into spent — the cost
+// sink already fires exactly once per BILLED phase (only a real claude phase with a parsed
+// total_cost_usd; echo/dry never reach it), so the run total counts real spend only. A nil
+// inner sink is tolerated (the accumulation still happens), keeping the wrap unconditional.
+func (b *runBudget) feed(inner func(phase, model string, usd float64)) func(phase, model string, usd float64) {
+	return func(phase, model string, usd float64) {
+		b.spent += usd
+		if inner != nil {
+			inner(phase, model, usd)
+		}
+	}
+}
+
+// exhausted reports whether the cumulative spend has reached a POSITIVE cap. An unset cap
+// (0) is never exhausted (>= comparison gated on cap > 0), so an unbudgeted run never stops
+// here. This is the dollar comparison the engine must never see — it consumes only the bool.
+func (b *runBudget) exhausted() bool {
+	return b.cap > 0 && b.spent >= b.cap
+}
+
+// BudgetExhaustedFunc returns the opaque puller to inject into Engine.BudgetExhausted, or
+// nil when no cap is set. nil is the deliberate signal "no run-level budget": the engine
+// then never consults it and the run is byte-for-byte unchanged (the back-compat hinge —
+// an unset --run-budget-usd injects nothing). A set cap returns exhausted as a bare
+// func() bool, so the engine learns the verdict and nothing about the dollars behind it.
+func (b *runBudget) BudgetExhaustedFunc() func() bool {
+	if b.cap <= 0 {
+		return nil
+	}
+	return b.exhausted
+}
 
 // parseClaudeCostUsd extracts the real billed dollar cost from a claude `-p
 // --output-format json` envelope's `total_cost_usd`. A *float64 pointer distinguishes

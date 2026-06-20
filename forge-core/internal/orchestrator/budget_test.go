@@ -136,3 +136,130 @@ func TestCheckAgentBudget_LoopBackRerunChargesBudget(t *testing.T) {
 		t.Errorf("the over-budget loop-back re-run must be refused with an honest log; logs=%v", rec.logs)
 	}
 }
+
+// ──────────────────────────────────────────────────────────────────────────────
+// RUN-LEVEL BUDGET (BudgetExhausted puller / checkRunBudget) — the cumulative-resource
+// sibling of the agent-call COUNT budget above. These pin the THIRD cost dimension: a
+// caller-metered run-level cap the engine consults via an OPAQUE bool before each spawn.
+//
+// LAYERING: every test here drives the engine with a bare `func() bool` — NO dollars, NO
+// model, NO vendor envelope ever crosses into the engine. That is the proof the engine
+// stays unit-free: a plain bool is sufficient to make it stop, so it cannot be touching
+// money. (The dollar arithmetic that PRODUCES the bool is cmd/forge's, tested there.)
+
+// budgetGate is a fake run-level budget meter: exhausted flips true once `after` agent
+// phases have been OBSERVED via tick (mimicking cmd/forge's accumulator crossing its cap
+// after N billed phases). It returns ONLY a bool — the engine never sees how it decides.
+type budgetGate struct {
+	after int // become exhausted once this many phases have ticked
+	seen  int // phases observed so far
+}
+
+func (b *budgetGate) exhausted() bool { return b.seen >= b.after }
+func (b *budgetGate) tick()           { b.seen++ }
+
+// ④ OVER BUDGET → RunFrom STOPS at the exhaustion point; later phases never spawn.
+// A 3-agent workflow with a budget that is exhausted after the 2nd phase: planner and
+// implementer run, but BEFORE qa is spawned the run-level guard sees the budget gone and
+// stops fail-closed. Proof is threefold — Run returns the structured budget error, the
+// counting executor was called EXACTLY 2 times (qa never reached Execute), and the honest
+// "not a failure / budget" log fired. The executor TICKS the meter as it runs, so the
+// budget crosses exactly as a real per-phase cost accumulator would.
+func TestCheckRunBudget_OverBudgetStopsAndDoesNotSpawnLater(t *testing.T) {
+	wf := loadThreeAgent(t)
+	rec := &recorder{}
+	bg := &budgetGate{after: 2}
+	exec := &countingExec{}
+	// Wrap the counting executor so each spawn also advances the budget meter — the
+	// engine still sees only Execute()'s error and only the BudgetExhausted bool.
+	tick := execFunc(func(p asset.Phase, m string) error {
+		err := exec.Execute(p, m)
+		bg.tick()
+		return err
+	})
+	eng := Engine{Exec: tick, RunGate: allOK, Log: rec.log, BudgetExhausted: bg.exhausted}
+
+	err := eng.Run(wf, "balanced")
+	if err == nil {
+		t.Fatal("Run must stop fail-closed once the run-level budget is exhausted")
+	}
+	if exec.calls != 2 {
+		t.Errorf("executor calls = %d, want 2 (budget exhausted after 2: qa must NOT spawn)", exec.calls)
+	}
+	if !strings.Contains(err.Error(), "budget") {
+		t.Errorf("error should name the run budget; got %v", err)
+	}
+	// The stop must read as a budget stop, not a crash, and name the completed count.
+	if !containsLine(rec.logs, "run budget exhausted after 2 agent phase(s)") {
+		t.Errorf("the run-level stop must be logged honestly with the completed count; logs=%v", rec.logs)
+	}
+	// And it aborts: the stop condition is never reported on a budget-stopped run.
+	if containsLine(rec.logs, "stop: condition declared") {
+		t.Errorf("stop must not be reported on a budget-stopped run; logs=%v", rec.logs)
+	}
+}
+
+// ⑤ STASH (proves the GAP): the SAME workflow + SAME spend, but with NO BudgetExhausted
+// puller wired (nil — the pre-PR4 world), runs ALL THREE phases to completion. This is the
+// decisive before/after: without the run-level guard there is no cumulative cap, so a run
+// burns through every phase no matter the total spend — exactly the gap PR4 closes.
+func TestCheckRunBudget_NilPullerRunsAllPhases_StashProof(t *testing.T) {
+	wf := loadThreeAgent(t)
+	rec := &recorder{}
+	exec := &countingExec{}
+	eng := Engine{Exec: exec, RunGate: allOK, Log: rec.log} // BudgetExhausted nil: no cap
+
+	if err := eng.Run(wf, "balanced"); err != nil {
+		t.Fatalf("a nil run-budget puller must impose no cap; got %v", err)
+	}
+	if exec.calls != 3 {
+		t.Errorf("executor calls = %d, want 3 (no run budget: every phase runs)", exec.calls)
+	}
+	if containsLine(rec.logs, "run budget exhausted") {
+		t.Errorf("an unbudgeted run must never log a run-budget stop; logs=%v", rec.logs)
+	}
+}
+
+// ⑥ UNDER BUDGET → all phases run. A puller that is NEVER exhausted (always false) must
+// leave the run byte-for-byte identical to the no-cap path: all three phases spawn, no
+// budget error, no budget log. This pins that a wired-but-unmet cap is inert.
+func TestCheckRunBudget_UnderBudgetRunsAllPhases(t *testing.T) {
+	wf := loadThreeAgent(t)
+	rec := &recorder{}
+	exec := &countingExec{}
+	eng := Engine{Exec: exec, RunGate: allOK, Log: rec.log,
+		BudgetExhausted: func() bool { return false }} // never exhausted
+
+	if err := eng.Run(wf, "balanced"); err != nil {
+		t.Fatalf("an unmet run budget must impose no ceiling; got %v", err)
+	}
+	if exec.calls != 3 {
+		t.Errorf("executor calls = %d, want 3 (budget never exhausted)", exec.calls)
+	}
+	if containsLine(rec.logs, "run budget exhausted") {
+		t.Errorf("an unmet budget must never log exhaustion; logs=%v", rec.logs)
+	}
+}
+
+// ⑦ LAYERING: the engine stops on a CONSTANT `func() bool { return true }` — a pure bool
+// carrying no dollar, model, or vendor data whatsoever. The very FIRST agent phase is
+// refused (budget already gone before any spawn), proving the engine needs nothing but the
+// bool to enforce a run-level cap: the dollar knowledge is entirely the caller's.
+func TestCheckRunBudget_PureBoolDrivesEngine_NoDollars(t *testing.T) {
+	wf := loadThreeAgent(t)
+	rec := &recorder{}
+	exec := &countingExec{}
+	eng := Engine{Exec: exec, RunGate: allOK, Log: rec.log,
+		BudgetExhausted: func() bool { return true }} // exhausted from the start
+
+	err := eng.Run(wf, "balanced")
+	if err == nil {
+		t.Fatal("a constantly-exhausted budget must stop the run before the first spawn")
+	}
+	if exec.calls != 0 {
+		t.Errorf("executor calls = %d, want 0 (budget exhausted before any spawn)", exec.calls)
+	}
+	if !containsLine(rec.logs, "run budget exhausted after 0 agent phase(s)") {
+		t.Errorf("a pre-exhausted budget must stop at 0 completed phases; logs=%v", rec.logs)
+	}
+}

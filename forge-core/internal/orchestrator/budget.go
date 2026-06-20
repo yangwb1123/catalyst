@@ -46,3 +46,39 @@ func (e Engine) checkAgentBudget(calls *int) error {
 	}
 	return nil
 }
+
+// checkRunBudget is the RUN-LEVEL budget guard — the cumulative-resource sibling of
+// checkAgentBudget. Where checkAgentBudget bounds the COUNT of agent-phase executions
+// (a number the engine itself tallies), this bounds a cumulative resource the engine
+// does NOT meter: it asks the OPTIONAL Engine.BudgetExhausted puller — owned and metered
+// entirely by the caller — the single opaque question "is the run-level budget used up?"
+// RunFrom calls it immediately BEFORE every runAgentPhase (right after checkAgentBudget),
+// so a prospective spawn is refused the instant the budget is gone. A true verdict is a
+// fail-CLOSED RUN-LEVEL STOP: this phase and every later one are NEVER spawned, and the
+// run ends with the structured error below. This is deliberately a STOP, not a per-phase
+// retry — over-budget is exactly like an over-count, not a transient failure.
+//
+// HONESTY — a budget stop is NOT a run failure. Reaching the cap means the run did its
+// work right up to the spend limit and stopped to PREVENT overspend; the message says so
+// plainly ("not a failure — the budget is used up") so an operator does not read it as a
+// crash. completed is the number of agent phases that already ran, reported for an honest
+// "stopped after N" account. (v1 is a HARD STOP: there is no near-budget down-tier-and-
+// continue here — that budget-aware degradation is dead-logic today, see the puller doc.)
+//
+// BACK-COMPAT: a nil BudgetExhausted is "no run-level budget" — never consulted, zero
+// overhead, so an existing run/evolve is byte-for-byte unchanged. Only a wired closure
+// (cmd/forge injects one only when --run-budget-usd is set) ever stops a run here.
+//
+// EVOLVE SCOPE: the engine does not reset anything per iteration; LoopEngine reuses the
+// SAME Engine (hence the SAME puller closure) across all iterations, so when the caller's
+// accumulator is run-scoped (not iteration-scoped) this guard meters the WHOLE evolve run
+// — total spend across every iteration, which is the correct semantics for a run budget.
+func (e Engine) checkRunBudget(completed int) error {
+	if e.BudgetExhausted == nil || !e.BudgetExhausted() {
+		return nil
+	}
+	e.logf("run budget exhausted after %d agent phase(s) — stopping to prevent overspend (not a failure: the budget is used up, fail-closed)",
+		completed)
+	return fmt.Errorf("run budget exhausted: stopped after %d completed agent phase(s) to stay within the cumulative run budget (--run-budget-usd); this is a budget stop, not a run failure",
+		completed)
+}

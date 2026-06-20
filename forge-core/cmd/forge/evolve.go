@@ -134,7 +134,16 @@ func execLoop(wf asset.Workflow, o runOpts, maxIter int, maxIterSource string, r
 		return 1
 	}
 	defer closeTrace()
-	loop := buildLoop(wf, o, maxIter, logln, costEmitter(tracer, logln))
+	// ONE run budget for the WHOLE loop (created here, before buildLoop, so the SAME
+	// accumulator threads into the single Engine the loop reuses every iteration): the
+	// cumulative cap meters total spend across all iterations, not per-iteration. A
+	// misconfigured budget fails closed — never silently drop a cap.
+	budget, err := newRunBudget(o.runBudgetUSD)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "forge evolve: %v\n", err)
+		return 1
+	}
+	loop := buildLoop(wf, o, maxIter, logln, costEmitter(tracer, logln), budget)
 	loop.StartIter, loop.ResumePrev = start, prev
 	loop.OnIteration = checkpointHook(o, wf, tracer, logln)
 	fmt.Printf("forge evolve: stage=%s mode=%s max-iter=%d (%s) type=%s start-iter=%d (doom-loop tripwire=2)\n",
@@ -169,7 +178,13 @@ func execLoop(wf asset.Workflow, o runOpts, maxIter int, maxIterSource string, r
 // in trace.jsonl. It does NOT go through checkpointHook: cost is per-PHASE (emitted inside
 // RunFrom when a phase bills), not per-iteration, so the iteration-event assertions are
 // untouched.
-func buildLoop(wf asset.Workflow, o runOpts, maxIter int, logln func(string), costSink func(phase, model string, usd float64)) orchestrator.LoopEngine {
+//
+// budget is the loop-wide run budget (created in execLoop, reused here). buildRunEngine
+// wraps costSink with budget.feed and wires budget.BudgetExhaustedFunc() into the Engine,
+// so the cumulative dollar cap meters spend across EVERY iteration (the Engine is built
+// once and reused) — the run-level total bound, distinct from the per-iteration agent-call
+// count cap. Unset (--run-budget-usd empty) ⇒ a no-op accumulator + nil puller ⇒ unchanged.
+func buildLoop(wf asset.Workflow, o runOpts, maxIter int, logln func(string), costSink func(phase, model string, usd float64), budget *runBudget) orchestrator.LoopEngine {
 	probe := &loopProbe{root: o.root}
 	// The Engine — with its four prompt/feedback ledgers (gate verdicts, feeds_forward
 	// output, reviewer verdicts driving loop-back, and REQUEST_CHANGES findings) — is built
@@ -180,7 +195,7 @@ func buildLoop(wf asset.Workflow, o runOpts, maxIter int, logln func(string), co
 	// semantics (latest gate state, latest plan, latest verdict).
 	eng := buildRunEngine(wf, o, logln, costSink,
 		func(name string) gate.Result { return resolveGate(o.root, name, probe.refresh()) },
-		mode.Effective(o.mode, resolveLifecycle(o)))
+		mode.Effective(o.mode, resolveLifecycle(o)), budget)
 	approved := humanApproved(o.root, wf.Stage, o.approved)
 	return orchestrator.NewLoopEngine(
 		eng, wf.Stop,
