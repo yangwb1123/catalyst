@@ -65,7 +65,10 @@ const SOURCE_ROOT = dirname(HARNESS_DIR);
 // schema / routing policy / mode table that check.py validates and acceptance.mjs
 // consumes. Project IDENTITY (PROJECT/ROADMAP/CURRENT_SPRINT/project.yml) is NOT
 // here — it is generated per project below.
-const GOVERNANCE_DIRS = [
+// Exported (with COPIED_FILES) so test_forge-init.mjs's manifest-integrity guard
+// walks harness/ against the REAL manifest, catching drift the moment harness/
+// grows out of sync with these lists.
+export const GOVERNANCE_DIRS = [
   join('.agent', 'agents'),
   join('.agent', 'skills'),
   join('.agent', 'workflows'),
@@ -79,9 +82,8 @@ const GOVERNANCE_DIRS = [
 // the fresh project and self-govern (the harness runs its own tests under
 // acceptance's test_pass). Listed explicitly (not a blind harness/ copy) to omit
 // __pycache__ and the human-only READMEs. The adapters/<lang>.yml command maps
-// ARE copied (acceptance.mjs's lint criterion reads them at runtime); only the
-// adapters/README.md prose is omitted.
-const COPIED_FILES = [
+// ARE copied (the lint criterion reads them); only adapters/README.md is omitted.
+export const COPIED_FILES = [
   join('.agent', 'AGENTS.md'),
   join('.arch', 'rules.yaml'),
   // harness tools
@@ -116,18 +118,30 @@ const COPIED_FILES = [
   join('harness', 'adapters', 'go.yml'),
   join('harness', 'adapters', 'python.yml'),
   join('harness', 'adapters', 'typescript.yml'),
-  // harness self-tests (acceptance's test_pass runs these — the harness self-governs)
+  // harness self-tests (acceptance's test_pass runs these — the harness self-governs).
+  // test_enforce.mjs (pins the warn|block enforce resolution in the copied adapters.mjs)
+  // was once dropped here — the drift test_forge-init.mjs's manifest guard now forbids.
   join('harness', 'test_check.py'),
   join('harness', 'test_yaml2json.py'),
   join('harness', 'test_acceptance.mjs'),
   join('harness', 'test_adapters.mjs'),
   join('harness', 'test_gate.mjs'),
+  join('harness', 'test_enforce.mjs'),
   join('harness', 'test_scorecard.mjs'),
   join('harness', 'test_scorecard-telemetry.mjs'),
   join('harness', 'test_scorecard-update.mjs'),
   join('harness', 'test_secret-scan.mjs'),
   join('harness', 'test_sca.mjs'),
   join('harness', 'arch', 'test_arch-check.mjs'),
+];
+
+// Harness sources DELIBERATELY not copied (test_forge-init.mjs's manifest guard
+// whitelists these): forge-init.mjs is the SCAFFOLDER itself (a generated project
+// does not carry the tool that created it) and test_forge-init.mjs exercises that
+// absent tool. Any OTHER harness source must be in COPIED_FILES / GOVERNANCE_DIRS.
+export const HARNESS_NOT_COPIED = [
+  join('harness', 'forge-init.mjs'),
+  join('harness', 'test_forge-init.mjs'),
 ];
 
 // --- pure templating (no disk; unit-testable) --------------------------------

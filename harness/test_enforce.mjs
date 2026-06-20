@@ -126,12 +126,17 @@ test('resolveEnforce: FAIL-SAFE to the policies fallback when project.yml or mod
 });
 
 test('resolveEnforce on THIS repo agrees with computeEnforce over its OWN mode×lifecycle', () => {
-  // Host-AGNOSTIC live wire (ships verbatim to every scaffolded project). Read the
-  // host's OWN project.yml × modes.yml and assert the on-disk resolve equals the pure
-  // computation for that exact pair — this repo is engineering×mvp -> block.
+  // Host-AGNOSTIC live wire — this file ships VERBATIM into every scaffolded project
+  // (it is in forge-init's COPIED_FILES), so it must assert only what holds for ANY
+  // ForgeOS project. Read the host's OWN project.yml × modes.yml and assert the
+  // on-disk resolve equals the pure computation for that exact pair — proving the
+  // wire is live WITHOUT binding to a specific value (engineering×mvp -> block in
+  // the source repo; balanced×mvp -> warn in a default scaffold; both must pass).
   const project = parseRules(readFileSync(join(REPO_ROOT, '.agent', 'project.yml'), 'utf8'));
   const modes = parseRules(REAL_MODES);
   const expected = computeEnforce(modes, project.mode, project.lifecycle, 'block');
   assert.equal(resolveEnforce(REPO_ROOT, 'block'), expected, `this repo (${project.mode}×${project.lifecycle}) resolves to ${expected}`);
-  assert.equal(expected, 'block', 'this repo is engineering×mvp -> block (backward-compat anchor)');
+  // Host-agnostic backward-compat anchor: the resolved value is a REAL enforce
+  // level (never silently undefined/garbage), whatever the host's mode×lifecycle.
+  assert.ok(ENFORCE_LEVELS.includes(expected), `resolved enforce must be a real level (warn|block); got ${expected}`);
 });

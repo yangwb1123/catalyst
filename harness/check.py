@@ -41,6 +41,19 @@ except ImportError:  # pragma: no cover - clear actionable error, not a crash
 
 VALID_TIERS = {"Haiku", "Sonnet", "Opus"}  # v1: Claude only (DECISIONS D4)
 
+# Workflow CONTROL-FLOW vocabulary (validated by check_workflow_control_flow).
+# These fields drive the REAL orchestrator (forge-core asset.go), so a dangling
+# value is a silent loop to nowhere — exactly the drift this checker exists to
+# catch. model_tier is authored lowercase (build.yml: `model_tier: sonnet`) and
+# drives `claude --model`; PHASE_REF_KEYS values name a phase WITHIN the same
+# workflow (asset.{OnFail,OnUnmet}.TargetPhase / loop.loop_back_to jump by phase
+# name); STAGE_REF_KEYS values name a sibling spine stage (asset.OnApproved.
+# NextStage). on_met/on_rejected/on_approved also carry target_phase/next_stage —
+# all collected generically (key-agnostic) below, so nesting shape never matters.
+VALID_MODEL_TIERS = {"haiku", "sonnet", "opus"}
+PHASE_REF_KEYS = {"target_phase", "loop_back_to"}
+STAGE_REF_KEYS = {"next_stage"}
+
 # A workflow phase's `agent:` field must name a canonical role card directly
 # (the phase's `name:` carries the descriptive role-stage label). There is no
 # alias indirection: a name that is neither a card stem nor the `harness`
@@ -103,6 +116,24 @@ def _iter_strings(node):
     elif isinstance(node, list):
         for value in node:
             yield from _iter_strings(value)
+
+
+def _iter_key_values(node, keys):
+    """Yield every VALUE found under any of `keys`, anywhere in a nested struct.
+
+    Generic and key-agnostic (does not hard-code where in the workflow tree a
+    key may appear), so a control-flow reference nested under a new structural
+    shape — sub-phases, on_met, on_rejected, future handlers — is still found
+    rather than silently skipped. Mirrors _collect_phases' recursion discipline.
+    """
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if key in keys and isinstance(value, (str, int, float)):
+                yield value
+            yield from _iter_key_values(value, keys)
+    elif isinstance(node, list):
+        for value in node:
+            yield from _iter_key_values(value, keys)
 
 
 def _skill_refs(text):
@@ -334,6 +365,62 @@ def check_acceptance_schema(agent_root):
     ]
 
 
+def _workflow_phase_names(data):
+    """Set of every phase `name:` in one workflow (top-level + loop bodies).
+
+    Reuses _collect_phases (which yields every mapping carrying an `agent:` key;
+    every phase has both `name` and `agent`), so phase discovery stays consistent
+    with the agent-ref check and follows the same nested shapes generically.
+    """
+    return {
+        phase.get("name")
+        for phase in _collect_phases(data)
+        if isinstance(phase, dict) and phase.get("name")
+    }
+
+
+def check_workflow_control_flow(agent_root):
+    """Every workflow control-flow reference must resolve to a real target.
+
+    Three dangling-reference classes (see the *_KEYS constants): target_phase /
+    loop_back_to must name a phase IN that workflow; model_tier must be a Claude
+    tier; next_stage must name a known spine stage. The valid-stage set is the
+    union of the workflows' OWN `stage:` fields (single source of truth).
+    """
+    workflows = sorted((agent_root / "workflows").glob("*.yml"))
+    parsed = []
+    stages = set()
+    for path in workflows:
+        data, err = _load_yaml(path)
+        if err:
+            continue  # YAML errors reported by check_yaml_parses
+        parsed.append((path, data))
+        if isinstance(data, dict) and isinstance(data.get("stage"), str):
+            stages.add(data["stage"])
+    issues = []
+    for path, data in parsed:
+        phases = _workflow_phase_names(data)
+        for ref in _iter_key_values(data, PHASE_REF_KEYS):
+            if ref not in phases:
+                issues.append(
+                    f"{path}: control-flow target_phase '{ref}' is not a phase in "
+                    f"this workflow (have: {sorted(phases)})"
+                )
+        for tier in _iter_key_values(data, {"model_tier"}):
+            if str(tier).lower() not in VALID_MODEL_TIERS:
+                issues.append(
+                    f"{path}: model_tier '{tier}' not in "
+                    f"{sorted(VALID_MODEL_TIERS)} (v1 is Claude-only)"
+                )
+        for stage in _iter_key_values(data, STAGE_REF_KEYS):
+            if stage not in stages:
+                issues.append(
+                    f"{path}: next_stage '{stage}' is not a known spine stage "
+                    f"(have: {sorted(stages)})"
+                )
+    return issues
+
+
 # --- runner ------------------------------------------------------------------
 
 CHECKS = [
@@ -345,6 +432,7 @@ CHECKS = [
     check_modes_router_tiers,
     check_mode_priorities,
     check_acceptance_schema,
+    check_workflow_control_flow,
 ]
 
 

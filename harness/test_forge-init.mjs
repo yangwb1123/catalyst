@@ -3,10 +3,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync, existsSync, readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { mkdtempSync, rmSync, existsSync, readFileSync, readdirSync } from 'node:fs';
+import { dirname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
+
+import { COPIED_FILES, GOVERNANCE_DIRS, HARNESS_NOT_COPIED } from './forge-init.mjs';
 
 const HARNESS_DIR = dirname(fileURLToPath(import.meta.url));
 const SOURCE_ROOT = dirname(HARNESS_DIR);
@@ -177,6 +179,61 @@ test('forge-init refuses to clobber a non-empty .agent without --force; --force 
   // ...and --force succeeds.
   const forced = runInit([target, '--name', 'acme-svc', '--force']);
   assert.equal(forced.status, 0, `--force re-init must succeed; stderr:\n${forced.stderr}`);
+});
+
+// --- MANIFEST-INTEGRITY guard: COPIED_FILES must not drift from harness/ ------
+// The blind spot this closes: COPIED_FILES is a HAND-MAINTAINED list with no
+// guard that it stays in sync as harness/ grows. It already drifted — the real
+// test_enforce.mjs (which pins the warn|block enforce middle, a module that IS
+// copied) was dropped, so every scaffold silently ran less coverage. This walks
+// harness/ and asserts EVERY source file is either copied, covered by a copied
+// GOVERNANCE_DIR tree, or on the explicit HARNESS_NOT_COPIED whitelist — one
+// guard that both fixes the drift and prevents the next regression.
+
+// Recursively collect harness/ source files (.mjs/.py/.yml), returned as paths
+// RELATIVE to SOURCE_ROOT (e.g. "harness/arch/scan.mjs") so they line up with
+// the manifest's join('harness', ...) entries. Skips __pycache__ and READMEs
+// (human-only prose, intentionally never copied — matches copyTree's skip).
+function walkHarnessSources(dir = HARNESS_DIR) {
+  const out = [];
+  for (const ent of readdirSync(dir, { withFileTypes: true })) {
+    if (ent.name === '__pycache__') continue;
+    const abs = join(dir, ent.name);
+    if (ent.isDirectory()) { out.push(...walkHarnessSources(abs)); continue; }
+    if (!/\.(mjs|py|yml)$/.test(ent.name)) continue; // README.md etc. omitted
+    out.push(relative(SOURCE_ROOT, abs));
+  }
+  return out;
+}
+
+// Is relPath covered by one of the copied GOVERNANCE_DIRS trees? (Future-proofs
+// the guard if a harness asset ever moves under a copied .agent/ subtree.)
+const underGovernanceDir = (relPath) =>
+  GOVERNANCE_DIRS.some((d) => relPath === d || relPath.startsWith(d + sep));
+
+test('COPIED_FILES has no drift: every harness source is copied or whitelisted', () => {
+  const copied = new Set(COPIED_FILES);
+  const whitelist = new Set(HARNESS_NOT_COPIED);
+  const sources = walkHarnessSources();
+  // Sanity: the walk actually found files (guards against a broken walker
+  // vacuously passing) and the known drift fixture is now present in the manifest.
+  assert.ok(sources.length > 10, `walk should find the harness sources; got ${sources.length}`);
+  assert.ok(copied.has(join('harness', 'test_enforce.mjs')), 'the previously-dropped test_enforce.mjs must now be in COPIED_FILES');
+
+  const missing = sources.filter(
+    (rel) => !copied.has(rel) && !whitelist.has(rel) && !underGovernanceDir(rel),
+  );
+  assert.deepEqual(
+    missing, [],
+    `harness source(s) neither in COPIED_FILES nor whitelisted (drift — a scaffold ` +
+    `would silently miss these):\n  ${missing.join('\n  ')}`,
+  );
+
+  // Honesty the other direction: the whitelist must name only REAL, present files
+  // (a stale whitelist entry would hide a genuinely-missing copy behind a typo).
+  for (const rel of whitelist) {
+    assert.ok(existsSync(join(SOURCE_ROOT, rel)), `whitelisted ${rel} must exist (stale whitelist entry)`);
+  }
 });
 
 test('forge-init exits non-zero on missing required args', () => {

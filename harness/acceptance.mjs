@@ -53,35 +53,48 @@ export function probeArch() {
   );
 }
 
+// runCountedTest: a FAIL-CLOSED `node --test <glob>` run. Exit 0 alone is NOT
+// proof a suite ran — `node --test` exits 0 on a glob that matches ZERO files
+// ("# tests 0"), so a renamed/moved/restructured suite would report green while
+// running nothing (load-bearing test_pass faking a pass; this really happened
+// when forge-init dropped test_enforce.mjs). So every Node glob routes through
+// here: run with the TAP reporter (pins the `# tests N` format; Node 26's
+// `--test <dir>` is broken, hence a QUOTED glob), parse the count, and require
+// BOTH exit 0 AND N > 0. extraEnv carries FORGE_ACCEPT_INNER=1 so a re-entered
+// test_acceptance.mjs SKIPS its full-gate re-spawn (avoiding ~4x nested runs).
+// Returns {ok, count} so callers can surface the discovered count honestly.
+// Exported so test_acceptance.mjs can pin the fail-closed contract directly
+// (a zero-match glob -> ok:false) without spawning the whole probeTests run.
+export function runCountedTest(glob, extraEnv = {}) {
+  const r = run('node', ['--test', '--test-reporter=tap', glob], extraEnv);
+  const count = Number((r.out.match(/(?:^|\n)# tests (\d+)/) ?? [])[1]);
+  return { ok: r.ok && count > 0, count: Number.isNaN(count) ? null : count };
+}
+
 // test_pass == true  <-  ALL committed harness suites must be green (self-
 // governance: the harness runs its OWN tests, not a curated subset, so a
 // regression in verdict logic — or a silently-green arch-check faking a pass —
-// can't ship). Suites: test_check.py + test_yaml2json.py, plus two Node runs —
-// 'harness/test_*.mjs' (test_gate/test_acceptance/test_scorecard) and
-// 'harness/arch/test_*.mjs' (test_arch-check's negative fixtures; the first glob
-// is non-recursive so this second entry is required, else those vanish). Both
-// Node runs use a QUOTED glob (Node 26's `--test <dir>` is broken) and carry
-// FORGE_ACCEPT_INNER=1 so test_acceptance.mjs SKIPS its full-gate re-spawn
-// (avoiding ~4x nested gate runs). The arch run is fail-CLOSED on discovery:
-// exit 0 alone is insufficient (an empty glob exits 0) — require `# tests N`>0.
+// can't ship). Suites: test_check.py + test_yaml2json.py, plus two Node globs —
+// 'harness/test_*.mjs' (test_gate/test_acceptance/test_scorecard/test_enforce/…)
+// and 'harness/arch/test_*.mjs' (test_arch-check's negative fixtures; the first
+// glob is non-recursive so this second entry is required, else those vanish).
+// BOTH Node globs are fail-CLOSED on discovery via runCountedTest: a zero-match
+// glob exits 0 ("# tests 0"), so requiring N>0 stops a moved/renamed suite from
+// reporting green while running nothing — the symmetric guard the arch glob
+// always had but harness/test_*.mjs previously lacked (fail-OPEN: judged `.ok`).
 export function probeTests() {
-  const archRun = run(
-    'node',
-    ['--test', '--test-reporter=tap', 'harness/arch/test_*.mjs'],
-    { FORGE_ACCEPT_INNER: '1' },
-  );
-  const archCount = (archRun.out.match(/(?:^|\n)# tests (\d+)/) ?? [])[1];
-  const archOk = archRun.ok && Number(archCount) > 0;
+  const mjsRun = runCountedTest('harness/test_*.mjs', { FORGE_ACCEPT_INNER: '1' });
+  const archRun = runCountedTest('harness/arch/test_*.mjs', { FORGE_ACCEPT_INNER: '1' });
   const suites = [
     ['test_check.py', run('python3', [join(HARNESS_DIR, 'test_check.py')]).ok],
     ['test_yaml2json.py', run('python3', [join(HARNESS_DIR, 'test_yaml2json.py')]).ok],
-    ['harness/test_*.mjs', run('node', ['--test', 'harness/test_*.mjs'], { FORGE_ACCEPT_INNER: '1' }).ok],
-    ['harness/arch/test_*.mjs', archOk],
+    ['harness/test_*.mjs', mjsRun.ok],
+    ['harness/arch/test_*.mjs', archRun.ok],
   ];
   const failed = suites.filter(([, ok]) => !ok).map(([name]) => name);
   const ok = failed.length === 0;
   const detail = ok
-    ? `test_check.py + test_yaml2json.py + harness/test_*.mjs + harness/arch/test_*.mjs (${archCount}): all green`
+    ? `test_check.py + test_yaml2json.py + harness/test_*.mjs (${mjsRun.count}) + harness/arch/test_*.mjs (${archRun.count}): all green`
     : `failed: ${failed.join(', ')}`;
   return result('test_pass', ok ? PASS : FAIL, detail);
 }

@@ -16,7 +16,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import * as acc from './acceptance.mjs';
 import { resolveCoverageThreshold, judgeCoverage, computeCoverageThreshold } from './adapters.mjs';
 import { parseRules } from './arch/scan.mjs';
-const { decide, PASS, FAIL, NA, LOAD_BEARING, probeNotApplicable, probeCoverage, probeSCA } = acc;
+const { decide, PASS, FAIL, NA, LOAD_BEARING, probeNotApplicable, probeCoverage, probeSCA, runCountedTest } = acc;
 
 // allPass builds a results array where every load-bearing criterion is PASS,
 // then applies the given overrides — so a test can isolate ONE criterion's
@@ -105,6 +105,26 @@ test('acceptance gate ACCEPTS the repo it runs in and exits 0', { skip: Boolean(
   // SEPARATELY and explicitly NOT folded into satisfaction — the core invariant
   // that an N/A can never masquerade as a pass, true for any project.
   assert.match(res.stdout, /n\/a is NOT counted as satisfied/);
+});
+
+// --- fail-CLOSED test discovery: a zero-match glob must NOT report green ------
+// Pins the gap closed in probeTests' harness/test_*.mjs entry: `node --test`
+// exits 0 on a glob matching ZERO files ("# tests 0"), so the old `.ok`-only
+// judgement reported the load-bearing self-test suite GREEN while running
+// nothing (exactly what happened when forge-init dropped test_enforce.mjs).
+// runCountedTest now backs BOTH Node globs; this proves the symmetric guard.
+test('runCountedTest is fail-CLOSED: a zero-match glob is NOT ok (the plugged blind spot)', () => {
+  // A glob that matches no file at all. Pre-fix, probeTests judged this entry by
+  // the child run's `.ok` alone — and `node --test <no-match-glob>` EXITS 0, so
+  // it was a false green. The counted runner must reject it (count 0 -> ok:false).
+  const r = runCountedTest('harness/__no_such_suite_*.mjs', { FORGE_ACCEPT_INNER: '1' });
+  assert.equal(r.ok, false, 'a zero-match glob must be fail-closed (would have been a false green pre-fix)');
+  assert.equal(r.count, 0, 'node --test reports "# tests 0" for a zero-match glob');
+  // Belt-and-suspenders: a glob that DOES match real suites stays green with N>0,
+  // so the guard rejects only the empty case (no false negative on real suites).
+  const real = runCountedTest('harness/arch/test_*.mjs', { FORGE_ACCEPT_INNER: '1' });
+  assert.equal(real.ok, true, 'a glob matching real suites must still pass');
+  assert.ok(real.count > 0, 'real suites report N>0 discovered tests');
 });
 
 // --- coverage is now a real probe, not a hardcoded N/A in probeNotApplicable --
