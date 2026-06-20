@@ -97,3 +97,24 @@ gate 真验证通过、workflow 收敛 —— 真点火的**完整闭环(产出�
 
 HONESTY:dry-run 下 loop-back 修复 / discover-skip / ADR 等是**叙述**;其真值只在真
 `--agent-cmd=claude` 下产生 —— 现已端到端验证为事实。
+
+### 已用真 claude 坐实:多-agent 自治跑到 converge MET
+在 throwaway 项目跑 5-phase 多-agent workflow(planner→implementer→harness-gates→reviewer→qa),
+`--agent-cmd=claude` + `--agent-max-budget-usd 0.50`/call(实测):
+```
+phase planner:       ran "claude --model sonnet --max-budget-usd 0.50 ..."
+phase implementer:   ran "claude --model sonnet ..."   # 从头真写 stats.mjs(mean/max)+ test
+phase harness-gates: gate test ok · complexity ok      # 真验证
+phase reviewer:      ran "claude --model opus ..."      # opus 安全下限,真审
+phase qa:            gate test ok
+convergence: MET — [x] gates_status == green           # ★ForgeOS 自己判收敛★
+```
+多个真 claude agent 自治协作,implementer 真产出通过验收的代码(stats test 独立跑 4 pass),最终
+**ForgeOS 自己的 converge 判定 MET**。模型路由(sonnet/opus)、写权限、成本封顶全程生效。
+
+★诚实边界(增量级 vs 版本级)★:此处 converge MET 用的是 `gates_status==green` —— 所有**声明的工具门
+真绿**(test/complexity/arch/security 全 PASS;lint/build 这类 N/A 的门**不能**声明为 required,否则
+convergence 诚实拒绝 N/A 充绿)。`build.yml` 另有**版本级**判据 `roadmap_completion==100%`,它要 ROADMAP
+checklist 被勾掉 —— 而 ForgeOS **刻意不让 agent 自动勾**:勾掉 = 宣布一个版本切片竣工,是应由**人确认**
+的里程碑。所以真点火 multi-agent 能自治到「增量绿」,而「版本竣工」诚实地保留人在环 —— agent 绝不自我
+宣布完成。这正是 honesty-first 的两面:既不为「跑过了」盖增量章造假,也不让 agent 越权盖版本章。
