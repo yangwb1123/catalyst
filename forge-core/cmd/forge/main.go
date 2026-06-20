@@ -79,8 +79,8 @@ func usage() {
 	fmt.Fprint(os.Stderr, `forge — ForgeOS orchestration runtime (forge-core)
 
 usage:
-  forge run    <workflow> [--mode balanced] [--lifecycle mvp] [--executor dry|command] [--agent-cmd claude] [--agent-permission acceptEdits] [--timeout 0] [--max-retries 0] [--max-agent-depth 2] [--max-agent-calls 0] [--max-output-bytes 0] [--approved] [--root DIR]
-  forge evolve <workflow> [--mode balanced] [--lifecycle mvp] [--max-iter 5] [--executor dry|command] [--agent-cmd claude] [--agent-permission acceptEdits] [--timeout 0] [--max-retries 0] [--max-agent-depth 2] [--max-agent-calls 0] [--max-output-bytes 0] [--resume] [--root DIR]
+  forge run    <workflow> [--mode balanced] [--lifecycle mvp] [--executor dry|command] [--agent-cmd claude] [--agent-permission acceptEdits] [--agent-max-budget-usd ""] [--timeout 0] [--max-retries 0] [--max-agent-depth 2] [--max-agent-calls 0] [--max-output-bytes 0] [--approved] [--root DIR]
+  forge evolve <workflow> [--mode balanced] [--lifecycle mvp] [--max-iter 5] [--executor dry|command] [--agent-cmd claude] [--agent-permission acceptEdits] [--agent-max-budget-usd ""] [--timeout 0] [--max-retries 0] [--max-agent-depth 2] [--max-agent-calls 0] [--max-output-bytes 0] [--resume] [--root DIR]
   forge route  [--complexity F] [--risk-score F] [--security F] [--dependency F] [--context F] [--business F] [--task-type T] [--risk low|medium|high|critical] [--budget F] [--scorecard PATH]
   forge migrate --to engineering [--apply] [--root DIR]
   forge gate   [--root DIR]
@@ -125,6 +125,11 @@ type runOpts struct {
 	// mode only DESCRIBES the edits it cannot apply (headless = no permission prompt
 	// to answer). Empty disables the flag; only applied when agent-cmd is claude.
 	agentPermission string
+	// agentMaxBudgetUSD caps the dollar spend of ONE claude call (claude
+	// --max-budget-usd, print mode) — the THIRD cost dimension, per-phase dollars,
+	// complementing --max-agent-calls (phase count) and --timeout (wall-clock).
+	// Empty = unset (no per-call ceiling); only applied when agent-cmd is claude.
+	agentMaxBudgetUSD string
 	// timeout bounds a single agent command's wall-clock runtime (0 = no deadline,
 	// the backward-compatible default). Plumbed into CommandExecutor.Timeout so a
 	// wedged agent is killed and surfaces as a retryable Timeout, not a hang.
@@ -168,6 +173,7 @@ func bindRunOpts(fs *flag.FlagSet, o *runOpts) {
 	fs.StringVar(&o.executor, "executor", "dry", "agent executor: dry|command")
 	fs.StringVar(&o.agentCmd, "agent-cmd", "claude", "command for --executor=command (e.g. claude, echo)")
 	fs.StringVar(&o.agentPermission, "agent-permission", "acceptEdits", "claude --permission-mode for --executor=command (acceptEdits|plan|default); lets the agent write code headlessly")
+	fs.StringVar(&o.agentMaxBudgetUSD, "agent-max-budget-usd", "", "per-claude-call dollar ceiling (claude --max-budget-usd; empty = unset); the per-phase cost bound complementing --max-agent-calls/--timeout")
 	fs.DurationVar(&o.timeout, "timeout", 0, "per-agent-command timeout (0 = no deadline, e.g. 90s, 5m)")
 	fs.IntVar(&o.maxRetries, "max-retries", 0, "retry ceiling for retryable agent failures (0 = no retries)")
 	fs.IntVar(&o.maxAgentDepth, "max-agent-depth", 0, "nested agent-spawn cap for --executor=command (0 = safe default 2; prevents recursive fork-bombs)")
@@ -392,6 +398,9 @@ func agentExecutor(o runOpts, logln func(string)) orchestrator.AgentExecutor {
 						argv = append(argv, "--permission-mode", o.agentPermission)
 					}
 					argv = append(argv, "--model", orchestrator.PhaseTier(p, mode))
+					if o.agentMaxBudgetUSD != "" {
+						argv = append(argv, "--max-budget-usd", o.agentMaxBudgetUSD)
+					}
 				}
 				return append(argv, "-p", buildPrompt(o.root, p, mode))
 			},

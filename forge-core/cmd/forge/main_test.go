@@ -155,6 +155,26 @@ func TestAgentExecutor_ModelTierForClaude(t *testing.T) {
 	}
 }
 
+// agentExecutor passes claude's --max-budget-usd only when set, and only to a
+// claude-family command — the per-phase dollar ceiling that complements
+// --max-agent-calls (phase count) and --timeout (wall-clock).
+func TestAgentExecutor_MaxBudgetForClaude(t *testing.T) {
+	mk := func(cmd, budget string) string {
+		ex := agentExecutor(runOpts{executor: "command", agentCmd: cmd, agentMaxBudgetUSD: budget, root: t.TempDir()}, func(string) {})
+		ce := ex.(orchestrator.CommandExecutor)
+		return strings.Join(ce.Build(asset.Phase{Name: "p", Agent: "implementer"}, "balanced"), " ")
+	}
+	if got := mk("claude", "0.50"); !strings.Contains(got, "--max-budget-usd 0.50") {
+		t.Errorf("claude with a budget must pass --max-budget-usd; got: %s", got)
+	}
+	if strings.Contains(mk("claude", ""), "--max-budget-usd") {
+		t.Error("empty budget must omit --max-budget-usd")
+	}
+	if strings.Contains(mk("echo", "0.50"), "--max-budget-usd") {
+		t.Error("echo (a stub) must NOT receive the claude-only --max-budget-usd")
+	}
+}
+
 // End to end: load the REAL build.yml via the yaml2json shim + asset loader and
 // assert the typed criteria evaluate per-criterion as expected. build.yml's
 // all_of items are objects ({metric, operator, threshold/value}), so this proves

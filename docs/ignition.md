@@ -76,10 +76,12 @@ routing 算出的 tier(reviewer/architect/cto 的 opus 下限 + per-phase model_
    的 OAuth session;CommandExecutor 透传父进程 env 给子进程,agent 继承凭证)。
 2. **预算确认** —— 真 LLM 调用烧钱。先用上面的 echo 演示确认 workflow 的 phase 数,据此设
    `--max-agent-calls` 上界。
-3. **安全旋钮** —— 至少 `--max-agent-calls N --timeout 5m`;四维护栏 + acceptEdits(不放开 Bash)。
+3. **成本/安全旋钮** —— 三维成本上界:`--max-agent-calls N`(phase 数)· `--timeout 5m`(单 phase 时间)·
+   `--agent-max-budget-usd 0.50`(单 claude 调用的美元上限,claude `--max-budget-usd`、直接限花费);
+   加四维资源护栏 + acceptEdits(不放开 Bash)。总花费上界 ≈ phase 数 × per-phase 美元 —— 真点火成本精确可预测。
 
 ```sh
-forge run build --executor=command --agent-cmd=claude --max-agent-calls 20 --timeout 5m
+forge run build --executor=command --agent-cmd=claude --max-agent-calls 20 --timeout 5m --agent-max-budget-usd 0.50
 ```
 
 ### 已用真 claude 端到端坐实(完整闭环)
