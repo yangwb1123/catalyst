@@ -43,6 +43,19 @@ forge run discover --executor=command --agent-cmd=echo --max-output-bytes 512
 #   → ...[output truncated: retained 512 of 2952 bytes (--max-output-bytes)]
 ```
 
+完整 **build workflow(5-phase 多-agent 编排)** 同样 echo 验证为正确:
+
+```sh
+forge run build --executor=command --agent-cmd=echo --max-agent-calls 8
+#   → planner / implementer: ran "echo ..."
+#   → harness-gates: mode-gating 4/6 gates; test ok · complexity ok · lint/build N/A
+#   → reviewer: ran "echo ..." (balanced 下 required) ; qa: gate test ok ; workflow completed
+```
+
+planner→implementer→harness-gates→reviewer→qa 的顺序、mode-gating 过滤、gate 集成、收敛全部正确。
+单-agent 真闭环(mini,真 claude)+ 多-agent 5-phase 编排(build,echo)合起来是真点火的完整验证矩阵:
+真 LLM 多-agent 协作的真跑只差 operator 预算授权(`--max-agent-calls`/`--timeout`)。
+
 每个 phase 的 prompt 由 `buildPrompt`(forge-core/cmd/forge)构建:agent role card + **当前任务**
 (`.agent/ROADMAP.md` body,让 agent 知道实现什么)+ 检索到的 project context(ADRs + AGENTS.md
 硬闸门作为 ground truth)+ 跨会话 memory。
