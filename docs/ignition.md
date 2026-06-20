@@ -66,6 +66,11 @@ planner→implementer→harness-gates→reviewer→qa 的顺序、mode-gating �
 文件**(自动接受文件编辑、不放开任意 Bash)。没有它,headless 的 `claude -p` 只会**描述**它无权
 施加的编辑(无交互提示可应答)—— 这是真点火能否产出的关键。
 
+真点火时 agentExecutor 还**自动**为 claude 注入两件正确性所需:① `--model <routed-tier>` —— 让
+routing 算出的 tier(reviewer/architect/cto 的 opus 下限 + per-phase model_tier override)真正生效,
+否则 claude 用默认模型、多维模型路由形同虚设;② agent 的工作目录 = `--root`(`CommandExecutor.Dir`)
+—— 让 agent 在项目根解析相对任务路径、写对地方,不靠你手动 `cd`。echo/stub 命令不接收这些 claude 专属 flag。
+
 前置:
 1. **claude CLI + 凭证** —— claude CLI 在 PATH 且认证可用(`ANTHROPIC_API_KEY`,或 Claude Code
    的 OAuth session;CommandExecutor 透传父进程 env 给子进程,agent 继承凭证)。
