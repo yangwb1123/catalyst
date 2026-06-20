@@ -41,7 +41,7 @@ file:
 
 # ── Fan-in budget (how many PRODUCTION files import one target) ───────────
 fanin:
-  max_importers: 20   # actual 7 production importers (forge-core/internal/asset); tests excluded + headroom
+  max_importers: 14   # actual 7 production importers (forge-core/internal/asset); tests excluded + 2x headroom (matches package/root convention)
 
 # ── Cognitive-load budget (top-level source modules to hold in your head) ──
 cognitive:
