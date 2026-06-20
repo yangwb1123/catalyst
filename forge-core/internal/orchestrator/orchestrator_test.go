@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"forgeos/forge-core/internal/asset"
 	"forgeos/forge-core/internal/gate"
@@ -187,6 +188,90 @@ func loadAgentOnly(t *testing.T) asset.Workflow {
 }
 
 func timeoutErr() *ExecError { return &ExecError{Phase: "implementer", Kind: KindTimeout} }
+
+func overloadedErr() *ExecError { return &ExecError{Phase: "implementer", Kind: KindOverloaded} }
+
+// fakeSleep records every backoff duration the engine requests WITHOUT sleeping, so the
+// exponential overload schedule is asserted in microseconds. Returned closure is wired to
+// Engine.Sleep.
+type fakeSleep struct{ durs []time.Duration }
+
+func (f *fakeSleep) sleep(d time.Duration) { f.durs = append(f.durs, d) }
+
+// 529/overload end-to-end: MaxRetries=3, the fake Exec returns KindOverloaded twice then
+// succeeds. The run must succeed, the executor must be called 3 times, and the injected Sleep
+// must have captured the EXPONENTIAL backoff sequence (2s, 4s) — proving an overload is retried
+// AFTER a growing backoff, not in a tight loop. This is the decisive proof the resilience path
+// is wired and bounded by the real schedule (mirrors direction-three's stash-style "prove it").
+func TestRunAgentPhase_OverloadBacksOffThenSucceeds(t *testing.T) {
+	wf := loadAgentOnly(t)
+	rec := &recorder{}
+	fs := &fakeSleep{}
+	exec := &seqExecutor{errs: []error{overloadedErr(), overloadedErr()}} // 3rd call: nil
+	eng := Engine{Exec: exec, RunGate: allOK, Log: rec.log, MaxRetries: 3, Sleep: fs.sleep}
+
+	if err := eng.Run(wf, "balanced"); err != nil {
+		t.Fatalf("Run should succeed once the overload clears; got %v", err)
+	}
+	if exec.calls != 3 {
+		t.Errorf("executor calls = %d, want 3 (1 initial + 2 backed-off retries)", exec.calls)
+	}
+	want := []time.Duration{overloadBackoff(0), overloadBackoff(1)} // 2s, 4s
+	if len(fs.durs) != len(want) {
+		t.Fatalf("backoff count = %d (%v), want %d (%v)", len(fs.durs), fs.durs, len(want), want)
+	}
+	for i := range want {
+		if fs.durs[i] != want[i] {
+			t.Errorf("backoff[%d] = %s, want %s (exponential)", i, fs.durs[i], want[i])
+		}
+	}
+	if !containsLine(rec.logs, "overloaded, backing off 2s before retry 1/3") {
+		t.Errorf("each overload retry must log the backoff; logs=%v", rec.logs)
+	}
+}
+
+// BOUNDED: a backend that stays overloaded past MaxRetries must ABORT — the backoff is charged
+// against the retry budget, never an unbounded wait. Executor called exactly MaxRetries+1 times,
+// the final error is the overload, and Sleep fired exactly MaxRetries times (one per retry taken).
+func TestRunAgentPhase_OverloadExhaustsBudgetAndAborts(t *testing.T) {
+	wf := loadAgentOnly(t)
+	fs := &fakeSleep{}
+	exec := &seqExecutor{errs: []error{overloadedErr(), overloadedErr(), overloadedErr(), overloadedErr()}}
+	eng := Engine{Exec: exec, RunGate: allOK, Log: func(string) {}, MaxRetries: 2, Sleep: fs.sleep}
+
+	err := eng.Run(wf, "balanced")
+	if err == nil {
+		t.Fatal("a persistently overloaded backend must abort once the retry budget is spent")
+	}
+	if exec.calls != 3 {
+		t.Errorf("executor calls = %d, want 3 (1 initial + 2 retries, then give up)", exec.calls)
+	}
+	if len(fs.durs) != 2 {
+		t.Errorf("backoff count = %d, want 2 (one per retry taken — bounded by MaxRetries)", len(fs.durs))
+	}
+	var execErr *ExecError
+	if !errors.As(err, &execErr) || execErr.Kind != KindOverloaded {
+		t.Errorf("exhausted overload retries must return the last overload error; got %v", err)
+	}
+}
+
+// HONEST DISTINCTION: a KindTimeout retry must NOT back off — it already burned its deadline, so
+// it is re-attempted immediately. With only timeouts in the script, the injected Sleep must
+// capture ZERO durations, proving the backoff is overload-specific (not a blanket sleep on every
+// retryable kind).
+func TestRunAgentPhase_TimeoutRetryDoesNotBackOff(t *testing.T) {
+	wf := loadAgentOnly(t)
+	fs := &fakeSleep{}
+	exec := &seqExecutor{errs: []error{timeoutErr(), timeoutErr()}} // 3rd call: nil
+	eng := Engine{Exec: exec, RunGate: allOK, Log: func(string) {}, MaxRetries: 2, Sleep: fs.sleep}
+
+	if err := eng.Run(wf, "balanced"); err != nil {
+		t.Fatalf("timeout retries should still succeed; got %v", err)
+	}
+	if len(fs.durs) != 0 {
+		t.Errorf("a timeout retry must NOT sleep; Sleep was called %d times (%v)", len(fs.durs), fs.durs)
+	}
+}
 
 // MaxRetries=2 + two retryable timeouts then success => Run succeeds and the
 // executor was called exactly 3 times (1 initial + 2 retries, the third clean).

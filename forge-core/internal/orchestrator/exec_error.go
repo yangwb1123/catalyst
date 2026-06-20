@@ -33,6 +33,15 @@ const (
 	// unbounded recursive fork-bomb (a real agent re-invoking forge
 	// --executor=command). Never retryable — re-running would recurse identically.
 	KindRecursionLimit
+	// KindOverloaded is a TRANSIENT capacity fault: the agent's backend reported it
+	// is momentarily overloaded (a one-shot "try again shortly" condition, semantically
+	// like KindTimeout — not the agent's own verdict and not a misconfiguration). Retryable,
+	// but unlike a timeout it should be retried AFTER A BACKOFF so the backend can recover
+	// (a tight retry just re-hits the same overload). This layer knows only the ABSTRACT
+	// "transient overloaded" shape: it does NOT know the fault is a specific vendor's API
+	// status (e.g. a claude/Anthropic 529) — that recognition is the caller's job, handed
+	// in as a bool (see classifyRunErr's isOverload parameter and CommandExecutor.ClassifyOverload).
+	KindOverloaded
 )
 
 // String renders the kind for logs and error messages.
@@ -46,6 +55,8 @@ func (k ExecKind) String() string {
 		return "failed"
 	case KindRecursionLimit:
 		return "recursion-limit"
+	case KindOverloaded:
+		return "overloaded"
 	default:
 		return "unknown"
 	}
@@ -76,9 +87,15 @@ func (e *ExecError) Error() string {
 func (e *ExecError) Unwrap() error { return e.Err }
 
 // Retryable reports whether re-running the same command could plausibly succeed.
-// Only timeouts qualify: config faults are deterministic and a non-zero exit is
-// the agent's own verdict, so retrying either just burns a turn.
-func (e *ExecError) Retryable() bool { return e.Kind == KindTimeout }
+// Two kinds qualify, both transient: a KindTimeout (a slow agent may finish on a
+// later attempt) and a KindOverloaded (the backend was momentarily at capacity and
+// may have recovered). Config faults are deterministic and a non-zero KindFailed is
+// the agent's own verdict, so retrying either just burns a turn. Retryable is only
+// the GATE — the orchestrator additionally backs off before retrying an overload (the
+// timeout already consumed its deadline, so it is retried immediately); see runAgentPhase.
+func (e *ExecError) Retryable() bool {
+	return e.Kind == KindTimeout || e.Kind == KindOverloaded
+}
 
 // configErr builds a KindConfig failure for the given phase, wrapping cause
 // (which may be nil for argv/Build faults that have no underlying error value).
@@ -97,11 +114,30 @@ func recursionErr(phase string, depth, max int) *ExecError {
 	}
 }
 
-// classifyRunErr maps the error from running a command to an *ExecError. The
-// order matters: a missing binary surfaces as exec.ErrNotFound and is permanent
-// config, a tripped deadline is a transient timeout, and anything else (an
-// *exec.ExitError for a clean non-zero exit, or any other run error) is Failed.
-func classifyRunErr(phase string, runErr, ctxErr error) *ExecError {
+// overloadErr builds a KindOverloaded failure: the backend reported a transient
+// overload. Retryable (Retryable honors KindOverloaded), so the orchestrator backs
+// off and re-attempts rather than aborting. Symmetric to recursionErr/configErr, it
+// wraps the underlying run error so errors.Is/As still reach the original cause.
+func overloadErr(phase string, cause error) *ExecError {
+	return &ExecError{Phase: phase, Kind: KindOverloaded, Err: cause}
+}
+
+// classifyRunErr maps the error from running a command to an *ExecError. The order
+// matters: a missing binary surfaces as exec.ErrNotFound and is permanent config; a
+// tripped deadline is a transient timeout; a caller-detected transient overload (isOverload,
+// e.g. a vendor "try again" capacity signal) is retryable-with-backoff; and anything else
+// (an *exec.ExitError for a clean non-zero exit, or any other run error) is Failed.
+//
+// TIMEOUT TAKES PRECEDENCE OVER OVERLOAD (deadline checked before isOverload): a command
+// SIGKILLed at its deadline yields truncated output that may incidentally contain an
+// overload marker the caller's detector trips on, but the real cause is the deadline — a
+// timeout (retried immediately) not an overload (retried after a backoff). notfound stays
+// first (it is permanent config and must never be mistaken for a transient retry).
+//
+// isOverload is a pure boolean the caller supplies; this layer does NOT inspect the output
+// or know what a vendor overload looks like — it only branches on the verdict handed in,
+// keeping all vendor (e.g. claude 529) recognition out of this generic layer.
+func classifyRunErr(phase string, runErr, ctxErr error, isOverload bool) *ExecError {
 	switch {
 	case errors.Is(runErr, exec.ErrNotFound):
 		return &ExecError{Phase: phase, Kind: KindConfig, Err: runErr}
@@ -109,6 +145,8 @@ func classifyRunErr(phase string, runErr, ctxErr error) *ExecError {
 		// Report the deadline as the cause: the kill manifests as a generic
 		// "signal: killed" run error, but the deadline is the real reason.
 		return &ExecError{Phase: phase, Kind: KindTimeout, Err: ctxErr}
+	case isOverload:
+		return overloadErr(phase, runErr)
 	default:
 		return &ExecError{Phase: phase, Kind: KindFailed, Err: runErr}
 	}

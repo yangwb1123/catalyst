@@ -23,8 +23,8 @@
 package orchestrator
 
 import (
-	"errors"
 	"fmt"
+	"time"
 
 	"forgeos/forge-core/internal/asset"
 	"forgeos/forge-core/internal/gate"
@@ -171,6 +171,14 @@ type Engine struct {
 	MaxLoopBack   int
 	MaxAgentCalls int
 	ModePolicy    mode.Policy
+	// Sleep is the OPTIONAL injection point for the inter-retry backoff (the 529/overload
+	// resilience pause), the deterministic-test twin of trace.Now: nil = time.Sleep (the
+	// production default, a real wall-clock pause so the overloaded backend can recover); a test
+	// supplies a fake that RECORDS durations without sleeping, so the schedule is asserted in
+	// microseconds. Only the KindOverloaded retry consults it (a KindTimeout retry already burned
+	// its deadline and never sleeps), so a nil Sleep leaves every pre-existing path byte-for-byte
+	// unchanged. See runAgentPhase, overloadBackoff, and Engine.sleep (backoff.go).
+	Sleep func(time.Duration)
 }
 
 // reviewerRequestChanges is the one verdict token that triggers an agent-phase
@@ -353,30 +361,6 @@ func phaseIndex(wf asset.Workflow, name string) (int, bool) {
 		}
 	}
 	return 0, false
-}
-
-// runAgentPhase executes one agent phase, retrying ONLY on retryable failures up
-// to MaxRetries. The first attempt always runs; each subsequent attempt is a
-// retry and is taken only when the last error errors.As's to an *ExecError whose
-// Retryable() is true AND the retry budget is not yet spent. A non-ExecError or
-// any non-retryable ExecError (KindConfig, KindFailed) aborts immediately — the
-// pre-retry behavior — and so does exhausting the budget, returning the LAST
-// error so the operator sees the final failure, not a stale earlier one.
-func (e Engine) runAgentPhase(p asset.Phase, mode string) error {
-	if e.Exec == nil {
-		return fmt.Errorf("phase %s: no agent executor configured (fail closed)", p.Name)
-	}
-	for attempt := 0; ; attempt++ {
-		err := e.Exec.Execute(p, mode)
-		if err == nil {
-			return nil
-		}
-		var execErr *ExecError
-		if !errors.As(err, &execErr) || !execErr.Retryable() || attempt >= e.MaxRetries {
-			return fmt.Errorf("phase %s: agent execution failed: %w", p.Name, err)
-		}
-		e.logf("phase %s: retryable %s, retry %d/%d", p.Name, execErr.Kind, attempt+1, e.MaxRetries)
-	}
 }
 
 // runGates resolves every required gate of a phase with three honest outcomes:

@@ -138,6 +138,77 @@ func TestParseReviewerVerdict_UnwrapsClaudeEnvelopeAndEchoSentinel(t *testing.T)
 	}
 }
 
+// The claude --executor=command path must install the 529 overload recognizer, and a stub
+// (echo) must NOT — symmetric to the cost Observe / RenderLog wiring. This proves the vendor
+// recognizer reaches the generic executor only for claude, so a failing stub can never be
+// mistaken for a transient overload.
+func TestAgentExecutor_ClaudeInstallsOverloadRecognizer(t *testing.T) {
+	claudeEx := agentExecutor(runOpts{executor: "command", agentCmd: "claude", root: t.TempDir()}, func(string) {}, nil, nil, nil, nil, nil, nil, nil, nil)
+	ce := claudeEx.(orchestrator.CommandExecutor)
+	if ce.ClassifyOverload == nil {
+		t.Fatal("the claude executor must install a ClassifyOverload recognizer")
+	}
+	// The installed recognizer must be the real 529 classifier: it fires on the strong signal
+	// and stays quiet on a normal envelope.
+	if !ce.ClassifyOverload(`{"is_error":true,"api_error_status":529}`) {
+		t.Error("installed recognizer must classify a real 529 envelope as overloaded")
+	}
+	if ce.ClassifyOverload(realClaudeJSON) {
+		t.Error("installed recognizer must NOT classify a normal envelope as overloaded")
+	}
+
+	echoEx := agentExecutor(runOpts{executor: "command", agentCmd: "echo", root: t.TempDir()}, func(string) {}, nil, nil, nil, nil, nil, nil, nil, nil)
+	if ec := echoEx.(orchestrator.CommandExecutor); ec.ClassifyOverload != nil {
+		t.Error("a stub (echo) must NOT get the overload recognizer (back-compat: a failing stub stays KindFailed)")
+	}
+}
+
+// classifyClaudeOverload on a REAL claude 529 envelope must return true — the strong signal
+// is the model's own api_error_status:529. This is the positive case the executor wires onto
+// the claude --executor=command path to turn an overload into a retryable KindOverloaded.
+func TestClassifyClaudeOverload_RealOverloadEnvelopeIsTrue(t *testing.T) {
+	// The shape `claude -p --output-format json` emits when the API returns 529 overloaded_error:
+	// a result envelope with is_error and the terminating HTTP status.
+	for _, env := range []string{
+		`{"type":"result","subtype":"success","is_error":true,"api_error_status":529,"result":"","total_cost_usd":0.0}`,
+		`{"type":"result","is_error":true,"api_error_status":529}`,
+		// Textual fallback: a failed envelope whose result names the overload, no api_error_status.
+		`{"type":"result","is_error":true,"result":"API Error: overloaded_error (Overloaded)"}`,
+		// Plain (non-JSON) transport dump carrying the strong marker.
+		"Error: 529 Overloaded — please retry",
+	} {
+		if !classifyClaudeOverload(env) {
+			t.Errorf("a real overload signal must classify true; missed %q", env)
+		}
+	}
+}
+
+// HONESTY / NO FALSE POSITIVE (the dangerous direction): normal output, a real business
+// failure, and empty output must ALL return false — a non-overload must never be upgraded to a
+// transient infinite-backoff retry. This is the decisive "prove it doesn't mis-fire" assertion.
+func TestClassifyClaudeOverload_NonOverloadIsFalse(t *testing.T) {
+	for _, env := range []string{
+		realClaudeJSON, // a normal successful cost envelope
+		`{"type":"result","subtype":"success","is_error":false,"result":"done editing main.go"}`,
+		// A SUCCESSFUL run that merely MENTIONS overload in prose must not be misread (is_error gate).
+		`{"type":"result","is_error":false,"result":"I refactored the 529-line file and noted it was overloaded with helpers"}`,
+		// A real terminal business failure (non-zero exit, no overload signal) stays false.
+		`{"type":"result","subtype":"error_during_execution","is_error":true,"result":"compile error: undefined symbol"}`,
+		`{"type":"result","is_error":true,"api_error_status":401}`, // a different API error is NOT an overload
+		`{"type":"result","is_error":true,"api_error_status":500}`, // a 5xx that is not 529 is NOT an overload
+		"",                       // empty
+		"   ",                    // blank
+		"build failed: 2 errors", // plain failure, no marker
+		`{"total_cost_usd":0.0005290,"result":""}`, // a cost containing the digits 529 must not trip the token check
+		"processed 15290 tokens",                   // a count containing 529 must not trip it
+		"not json at all",                          // arbitrary non-JSON without a marker
+	} {
+		if classifyClaudeOverload(env) {
+			t.Errorf("a non-overload output must classify false (fail-closed); mis-fired on %q", env)
+		}
+	}
+}
+
 // costEmitter converts billed USD to integer microdollars and emits one kind:"agent"
 // cost event on the trace, STAMPED with the routed model — the values the scorecard's
 // --trace reader aggregates and attributes per model.

@@ -77,6 +77,16 @@ type CommandExecutor struct {
 	// identity (the raw output is logged verbatim, the original byte-for-byte behavior),
 	// so a plain echo/printenv/true output is logged exactly as before.
 	RenderLog func(output string) string
+	// ClassifyOverload, when set, inspects a FAILED command's RAW output and reports whether
+	// the failure was a TRANSIENT backend overload. It is a generic JUDGEMENT sink, the exact
+	// mirror of Observe: this spawner hands the bytes to the caller and does NOT interpret them
+	// — it does not know the output is claude, nor that an overload means an HTTP 529; the caller
+	// injects that vendor-specific recognition and returns a plain bool. A true verdict routes
+	// the failure to a retryable KindOverloaded (retried after a backoff) instead of a terminal
+	// KindFailed; timeout still wins over it (see classifyRunErr). nil = never overloaded =
+	// the original byte-for-byte behavior (every non-timeout failure stays KindFailed). Consulted
+	// ONLY on a failing run, so a clean command never pays for it.
+	ClassifyOverload func(output string) bool
 }
 
 // Execute builds and runs the phase's command under an optional timeout, failing
@@ -122,16 +132,27 @@ func (c CommandExecutor) Execute(p asset.Phase, mode string) error {
 	out := &cappedBuffer{cap: c.maxOutputBytes()}
 	cmd.Stdout, cmd.Stderr = out, out
 	runErr := cmd.Run()
-	// Hand the raw output to the optional sink (the caller may parse an
-	// executor-specific structure this layer cannot), then log a possibly-rendered
-	// view. Both are nil-safe and identity-by-default, so the no-hook path is unchanged.
+	return c.finish(p.Name, argv, out, runErr, ctx.Err())
+}
+
+// finish handles a completed command: it hands the raw output to the optional sink, logs a
+// possibly-rendered view, and (on failure) classifies the error — consulting the optional
+// overload judge. Split out of Execute so each stays within the function-length ceiling; the
+// behavior is unchanged. ctxErr is ctx.Err() captured at the call site (the deadline cause).
+func (c CommandExecutor) finish(phase string, argv []string, out *cappedBuffer, runErr, ctxErr error) error {
+	// Both observe and the log renderer are nil-safe and identity-by-default, so the no-hook
+	// path is byte-for-byte unchanged.
 	rendered := out.rendered()
-	c.observe(p.Name, rendered)
-	c.logf("phase %s: ran %q -> %s", p.Name, strings.Join(argv, " "), c.renderForLog(rendered))
-	if runErr != nil {
-		return classifyRunErr(p.Name, runErr, ctx.Err())
+	c.observe(phase, rendered)
+	c.logf("phase %s: ran %q -> %s", phase, strings.Join(argv, " "), c.renderForLog(rendered))
+	if runErr == nil {
+		return nil
 	}
-	return nil
+	// Ask the optional caller-injected judge whether this failure was a transient overload
+	// (e.g. a vendor 529). nil-safe: with no hook the verdict is false, so classifyRunErr keeps
+	// its original KindFailed branch — byte-for-byte unchanged.
+	isOverload := c.ClassifyOverload != nil && c.ClassifyOverload(rendered)
+	return classifyRunErr(phase, runErr, ctxErr, isOverload)
 }
 
 // commandContext returns the context governing one command run, plus its cancel.

@@ -450,6 +450,10 @@ func agentExecutor(o runOpts, logln func(string), costSink func(phase, model str
 		// renderer; echo/stubs stay nil -> the generic executor logs raw output verbatim.
 		if isClaude {
 			ex.RenderLog = unwrapClaudeResult
+			// Only claude returns the 529 overloaded_error envelope, so only the claude path
+			// gets the overload recognizer; echo/stubs stay nil -> a failing stub is never
+			// mistaken for a transient overload and keeps its terminal KindFailed (back-compat).
+			ex.ClassifyOverload = classifyClaudeOverload
 		}
 		return ex
 	}

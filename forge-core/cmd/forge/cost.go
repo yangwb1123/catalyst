@@ -39,6 +39,104 @@ func parseClaudeCostUsd(output string) (usd float64, ok bool) {
 	return *env.TotalCostUsd, true
 }
 
+// claudeOverloadStatus is the HTTP status the Anthropic API returns when the model
+// pool is momentarily at capacity: 529 overloaded_error (retryable per the API's own
+// error contract). It is the STRONG, unambiguous signal classifyClaudeOverload keys on.
+const claudeOverloadStatus = 529
+
+// classifyClaudeOverload is the claude-specific 529 recognizer — the EXACT mirror of
+// parseClaudeCostUsd's isolation: ALL knowledge that an "overload" means a claude/Anthropic
+// HTTP 529 lives HERE in cmd/forge, never in the orchestrator (which consumes only an opaque
+// bool via CommandExecutor.ClassifyOverload -> classifyRunErr's isOverload). It is wired ONLY
+// onto the `--executor=command` claude path (dry/echo never get it), so a non-claude command's
+// failure can never be mistaken for an overload.
+//
+// RECOGNITION BASIS (verified against the real `claude -p --output-format json` result envelope —
+// the SDK ResultMessage: {type:"result", subtype, is_error, result, total_cost_usd, api_error_status}):
+//   - PRIMARY (strong): the envelope carries `api_error_status` == 529. This is the model's own
+//     report of the terminating HTTP status, so it is exact — no string-matching guesswork.
+//   - SECONDARY (narrow textual fallback): a FAILED envelope (is_error==true) whose result text
+//     carries an explicit overload marker — the literal API error type "overloaded_error", or a
+//     standalone "529", or the word "Overloaded". This covers a stderr/plain-text overload that
+//     reached us without a parseable `api_error_status` (e.g. a transport-level dump).
+//
+// MISJUDGEMENT BOUNDARY — deliberately FAIL-CLOSED / "rather miss than mis-fire":
+//   - A MISS (overload not recognized) is SAFE: the failure stays KindFailed and the run aborts
+//     fail-closed, exactly the pre-existing behavior. We lose a retry opportunity, nothing worse.
+//   - A FALSE POSITIVE (a real terminal KindFailed mislabeled transient) is DANGEROUS: it would be
+//     retried-with-backoff up to MaxRetries, burning budget on a failure that can never succeed —
+//     so it is what this recognizer is tuned AGAINST. Hence: require a STRONG signal (a literal 529
+//     status, or an is_error envelope plus an explicit overload word) and never infer overload from
+//     a bare non-zero exit, a generic "error", or a 5xx that is not 529. When unsure, return false.
+//   - The textual fallback is gated on is_error==true so an agent that merely WROTE the word
+//     "overloaded" into a SUCCESSFUL result (e.g. summarizing this very code) is not misread as a
+//     backend overload — a successful envelope is never an overload regardless of its prose.
+//
+// Honesty on the timeout boundary: a deadline-SIGKILLed run can carry a truncated envelope that
+// trips the textual fallback, but the generic layer checks DeadlineExceeded BEFORE this bool (see
+// classifyRunErr), so a timeout is never downgraded to an overload — this recognizer's verdict only
+// matters when the run was NOT a timeout.
+func classifyClaudeOverload(output string) bool {
+	trimmed := strings.TrimSpace(output)
+	var env struct {
+		IsError        *bool   `json:"is_error"`
+		APIErrorStatus *int    `json:"api_error_status"`
+		Result         *string `json:"result"`
+	}
+	if err := json.Unmarshal([]byte(trimmed), &env); err == nil {
+		// PRIMARY: the model's own terminating HTTP status is the exact, strong signal.
+		if env.APIErrorStatus != nil && *env.APIErrorStatus == claudeOverloadStatus {
+			return true
+		}
+		// SECONDARY (parsed): a FAILED envelope whose result text names an overload. Gated on
+		// is_error so a successful run that merely mentions the word is never misclassified.
+		if env.IsError != nil && *env.IsError && env.Result != nil && hasOverloadMarker(*env.Result) {
+			return true
+		}
+		// A parseable envelope with neither strong signal is NOT an overload (fail-closed) —
+		// don't fall through to scanning the JSON source, which could match an incidental word.
+		return false
+	}
+	// Non-envelope output (a plain stderr/transport dump, not a parseable result JSON): accept it
+	// only on an explicit overload marker. A bare "error"/non-zero exit with no such marker stays
+	// false, so a generic failure is never upgraded to a transient retry.
+	return hasOverloadMarker(trimmed)
+}
+
+// hasOverloadMarker reports whether s carries a STRONG, unambiguous overload signal: the literal
+// Anthropic API error type "overloaded_error", a standalone "529" status, or the word "Overloaded".
+// Case-insensitive for the words; "529" is matched as a bounded token (digit-isolated) so an
+// unrelated number that merely contains the digits 529 (e.g. a cost like 0.0005290, a duration, or
+// a byte count) cannot trip it. Deliberately narrow — see classifyClaudeOverload's misjudgement note.
+func hasOverloadMarker(s string) bool {
+	lower := strings.ToLower(s)
+	if strings.Contains(lower, "overloaded_error") || strings.Contains(lower, "overloaded") {
+		return true
+	}
+	return containsToken529(s)
+}
+
+// containsToken529 reports whether s contains "529" as a standalone numeric token — i.e. not
+// flanked by another digit. This keeps the strong "HTTP 529" signal while rejecting incidental
+// substrings (e.g. "15290", "0.05290") that happen to contain the digits but are not the status.
+func containsToken529(s string) bool {
+	for from := 0; ; {
+		rel := strings.Index(s[from:], "529")
+		if rel < 0 {
+			return false
+		}
+		i := from + rel
+		before := i == 0 || !isDigit(s[i-1])
+		after := i+3 >= len(s) || !isDigit(s[i+3])
+		if before && after {
+			return true
+		}
+		from = i + 1 // overlapping search: advance one byte past this match
+	}
+}
+
+func isDigit(b byte) bool { return b >= '0' && b <= '9' }
+
 // Reviewer-verdict tokens — the machine-readable last line .agent/agents/reviewer.md
 // contracts the reviewer to emit (verbatim, top-aligned). VerdictApprove lets the run
 // proceed; VerdictRequestChanges drives a directed loop-back to the implementer. These

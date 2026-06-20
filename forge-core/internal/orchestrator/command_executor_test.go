@@ -309,6 +309,85 @@ func TestCommandExecutor_NoHooksIsByteForByteDefault(t *testing.T) {
 	}
 }
 
+// ClassifyOverload, when set and returning true on a FAILED command's output, routes the
+// failure to a retryable KindOverloaded instead of a terminal KindFailed. Here a real failing
+// command (false) whose output the hook judges an overload must surface as KindOverloaded — and
+// the hook must receive the captured output to make that call. This proves the generic executor
+// consults the caller's vendor-blind judge on the failure path.
+func TestCommandExecutor_ClassifyOverloadRoutesToOverloaded(t *testing.T) {
+	var sawOutput string
+	ex := CommandExecutor{
+		// printf the envelope to stdout, then exit non-zero — a failing run whose output
+		// carries the (caller-recognized) overload signal.
+		Build: func(asset.Phase, string) []string {
+			return []string{"sh", "-c", `printf '{"is_error":true,"api_error_status":529}'; exit 1`}
+		},
+		ClassifyOverload: func(output string) bool {
+			sawOutput = output
+			return strings.Contains(output, "529")
+		},
+	}
+	err := ex.Execute(asset.Phase{Name: "implementer"}, "balanced")
+	execErr := requireExecError(t, err)
+	if execErr.Kind != KindOverloaded {
+		t.Errorf("a failing run the hook judges overloaded: want KindOverloaded, got %s", execErr.Kind)
+	}
+	if !execErr.Retryable() {
+		t.Error("a KindOverloaded failure must be retryable")
+	}
+	if !strings.Contains(sawOutput, "529") {
+		t.Errorf("ClassifyOverload must receive the captured output; got %q", sawOutput)
+	}
+}
+
+// Back-compat: with a NIL ClassifyOverload (every pre-existing caller), the SAME failing
+// command stays KindFailed — the overload path is opt-in and inert by default. This pins the
+// byte-for-byte guarantee that adding the hook changed nothing for stubs/echo/dry.
+func TestCommandExecutor_NilClassifyOverloadStaysFailed(t *testing.T) {
+	ex := CommandExecutor{
+		Build: func(asset.Phase, string) []string {
+			return []string{"sh", "-c", `printf '{"is_error":true,"api_error_status":529}'; exit 1`}
+		},
+		// ClassifyOverload nil -> never overloaded.
+	}
+	err := ex.Execute(asset.Phase{Name: "implementer"}, "balanced")
+	execErr := requireExecError(t, err)
+	if execErr.Kind != KindFailed {
+		t.Errorf("nil ClassifyOverload: a failing run must stay KindFailed (back-compat), got %s", execErr.Kind)
+	}
+}
+
+// A hook returning false on a failing run leaves the failure terminal: the executor does not
+// upgrade a failure to a retry just because a hook is wired — only a true verdict does.
+func TestCommandExecutor_ClassifyOverloadFalseStaysFailed(t *testing.T) {
+	ex := CommandExecutor{
+		Build:            func(asset.Phase, string) []string { return []string{"false"} },
+		ClassifyOverload: func(string) bool { return false },
+	}
+	execErr := requireExecError(t, ex.Execute(asset.Phase{Name: "x"}, "m"))
+	if execErr.Kind != KindFailed {
+		t.Errorf("ClassifyOverload=false on a failing run: want KindFailed, got %s", execErr.Kind)
+	}
+}
+
+// A CLEAN command never consults ClassifyOverload (it is a failure-path hook only): a
+// successful run whose output would match the overload marker must still succeed, and the hook
+// must not have fired. Proves the hook costs nothing on the success path and cannot turn a
+// success into an error.
+func TestCommandExecutor_ClassifyOverloadNotConsultedOnSuccess(t *testing.T) {
+	called := false
+	ex := CommandExecutor{
+		Build:            func(asset.Phase, string) []string { return []string{"echo", "api_error_status 529"} },
+		ClassifyOverload: func(string) bool { called = true; return true },
+	}
+	if err := ex.Execute(asset.Phase{Name: "x"}, "m"); err != nil {
+		t.Fatalf("a clean run must succeed regardless of output content: %v", err)
+	}
+	if called {
+		t.Error("ClassifyOverload must NOT be consulted on a successful run")
+	}
+}
+
 // requireExecError asserts err is a non-nil *ExecError and returns it, so each
 // test can then check Kind/Retryable. Fails the test (fatally) otherwise.
 func requireExecError(t *testing.T, err error) *ExecError {
