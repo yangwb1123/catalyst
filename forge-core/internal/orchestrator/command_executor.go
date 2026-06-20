@@ -64,6 +64,19 @@ type CommandExecutor struct {
 	// guard's third dimension alongside MaxDepth (depth) and Timeout (wall-clock).
 	MaxOutputBytes int
 	Log            func(string)
+	// Observe, when set, receives a finished command's phase name and RAW captured
+	// output (post-truncation, pre-render). It is a generic output SINK: this spawner
+	// hands the bytes back to the caller and does NOT interpret them — the caller may
+	// parse an executor-specific structure out of the output (e.g. a claude `-p
+	// --output-format json` envelope carrying total_cost_usd) that this layer has no
+	// knowledge of. nil = not observed (the test/default path, byte-for-byte unchanged).
+	Observe func(phase, output string)
+	// RenderLog, when set, transforms a command's captured output before it is written
+	// to the Log line — letting the caller present a tidy view (e.g. unwrap the claude
+	// JSON's `result` field) WITHOUT this generic layer learning that format. nil =
+	// identity (the raw output is logged verbatim, the original byte-for-byte behavior),
+	// so a plain echo/printenv/true output is logged exactly as before.
+	RenderLog func(output string) string
 }
 
 // Execute builds and runs the phase's command under an optional timeout, failing
@@ -109,7 +122,12 @@ func (c CommandExecutor) Execute(p asset.Phase, mode string) error {
 	out := &cappedBuffer{cap: c.maxOutputBytes()}
 	cmd.Stdout, cmd.Stderr = out, out
 	runErr := cmd.Run()
-	c.logf("phase %s: ran %q -> %s", p.Name, strings.Join(argv, " "), out.rendered())
+	// Hand the raw output to the optional sink (the caller may parse an
+	// executor-specific structure this layer cannot), then log a possibly-rendered
+	// view. Both are nil-safe and identity-by-default, so the no-hook path is unchanged.
+	rendered := out.rendered()
+	c.observe(p.Name, rendered)
+	c.logf("phase %s: ran %q -> %s", p.Name, strings.Join(argv, " "), c.renderForLog(rendered))
 	if runErr != nil {
 		return classifyRunErr(p.Name, runErr, ctx.Err())
 	}
@@ -130,6 +148,25 @@ func (c CommandExecutor) logf(format string, args ...any) {
 	if c.Log != nil {
 		c.Log(fmt.Sprintf(format, args...))
 	}
+}
+
+// observe forwards a finished command's raw output to the optional sink. Nil-safe:
+// with no Observe set it is a no-op, so the default/test path is byte-for-byte the
+// original. This layer never inspects output; only the caller's sink may parse it.
+func (c CommandExecutor) observe(phase, output string) {
+	if c.Observe != nil {
+		c.Observe(phase, output)
+	}
+}
+
+// renderForLog applies the optional output transform for the Log line, defaulting
+// to identity when RenderLog is nil — so a non-rendering caller (and every test
+// using a plain command like echo) logs the raw output exactly as before.
+func (c CommandExecutor) renderForLog(output string) string {
+	if c.RenderLog != nil {
+		return c.RenderLog(output)
+	}
+	return output
 }
 
 // currentAgentDepth reads the inherited FORGE_AGENT_DEPTH. A missing or malformed

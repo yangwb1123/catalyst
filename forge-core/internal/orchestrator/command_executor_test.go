@@ -240,6 +240,75 @@ func TestCommandExecutor_RunsInDir(t *testing.T) {
 	}
 }
 
+// Observe, when set, receives the finished command's phase name and RAW captured
+// output — the generic output sink the caller (e.g. the CLI) parses for an
+// executor-specific structure like claude's cost JSON. The executor itself does NOT
+// interpret the bytes; here echo's output is handed back verbatim under the phase name.
+func TestCommandExecutor_ObserveReceivesPhaseAndOutput(t *testing.T) {
+	var gotPhase, gotOutput string
+	called := 0
+	ex := CommandExecutor{
+		Build:   func(p asset.Phase, mode string) []string { return []string{"echo", "hello-sink"} },
+		Observe: func(phase, output string) { called++; gotPhase, gotOutput = phase, output },
+	}
+	if err := ex.Execute(asset.Phase{Name: "implementer"}, "balanced"); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if called != 1 {
+		t.Errorf("Observe must be called exactly once, got %d", called)
+	}
+	if gotPhase != "implementer" {
+		t.Errorf("Observe phase = %q, want implementer", gotPhase)
+	}
+	if !strings.Contains(gotOutput, "hello-sink") {
+		t.Errorf("Observe must receive the raw command output; got %q", gotOutput)
+	}
+}
+
+// RenderLog, when set, transforms the captured output before it is logged — letting
+// the caller present a tidy view (e.g. unwrap claude JSON) WITHOUT this generic layer
+// knowing that format. The raw output still flows to Observe unchanged; only the LOG
+// line is rendered. Here the renderer replaces the output wholesale to prove logf used it.
+func TestCommandExecutor_RenderLogCustomizesLogLine(t *testing.T) {
+	rec := &recorder{}
+	var observed string
+	ex := CommandExecutor{
+		Build:     func(p asset.Phase, mode string) []string { return []string{"echo", "RAW-PAYLOAD"} },
+		Log:       rec.log,
+		Observe:   func(_, output string) { observed = output },
+		RenderLog: func(output string) string { return "RENDERED(" + output + ")" },
+	}
+	if err := ex.Execute(asset.Phase{Name: "p"}, "m"); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if !containsLine(rec.logs, "RENDERED(") {
+		t.Errorf("the log line must use RenderLog's output; logs=%v", rec.logs)
+	}
+	// Observe still sees the RAW bytes — the renderer only affects the log view.
+	if !strings.Contains(observed, "RAW-PAYLOAD") || strings.Contains(observed, "RENDERED") {
+		t.Errorf("Observe must receive raw (unrendered) output; got %q", observed)
+	}
+}
+
+// Honesty / backward-compat: with NEITHER Observe NOR RenderLog set (the default and
+// every pre-existing caller), Execute logs the RAW command output verbatim, exactly as
+// before these fields existed — a non-JSON echo output is logged unchanged and no sink
+// fires. This is the byte-for-byte guarantee the dry/echo paths depend on.
+func TestCommandExecutor_NoHooksIsByteForByteDefault(t *testing.T) {
+	rec := &recorder{}
+	ex := CommandExecutor{
+		Build: func(p asset.Phase, mode string) []string { return []string{"echo", "plain output"} },
+		Log:   rec.log,
+	}
+	if err := ex.Execute(asset.Phase{Name: "p"}, "m"); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	last := rec.logs[len(rec.logs)-1]
+	if !strings.Contains(last, "plain output") || strings.Contains(last, "RENDERED") {
+		t.Errorf("default path must log raw output verbatim; got %q", last)
+	}
+}
+
 // requireExecError asserts err is a non-nil *ExecError and returns it, so each
 // test can then check Kind/Retryable. Fails the test (fatally) otherwise.
 func requireExecError(t *testing.T, err error) *ExecError {

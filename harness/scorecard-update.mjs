@@ -27,15 +27,17 @@
 // (scorecard.schema.yml p95_latency_ms / avg_cost_usd / window). Two injection
 // paths, both honest about where the number comes from:
 //   - --trace <path>: reads forge-core's .forge/trace.jsonl (one JSON event per
-//       line; each event's `duration_ms` is a REAL wall-clock measurement, see
-//       forge-core/internal/trace/trace.go) and aggregates the durations into a
-//       latency sample set -> a genuine p95. THIS IS THE REAL DATA PATH.
+//       line; see forge-core/internal/trace/trace.go) and aggregates BOTH measured
+//       signals it records — each event's `duration_ms` (a REAL wall-clock span ->
+//       a genuine p95) AND each event's `cost_usd_micros` when present (the LLM
+//       executor's REAL billed dollars -> avg_cost_usd). THIS IS THE REAL DATA PATH.
 //   - --latency-ms / --cost-usd: comma-separated samples injected directly (for
 //       an orchestrator that already holds them, or for tests).
-// HONESTY on cost: avg_cost_usd is a token x unit-price ESTIMATE. A dry-run has
-// no real tokens, so cost is NOT derivable from the trace and is OMITTED unless
-// --cost-usd is supplied; a real per-call cost requires a real LLM executor's
-// token counts. Latency is measured (trace), cost is estimated (must be fed in).
+// HONESTY on cost: cost is now READ FROM THE TRACE when a real LLM executor recorded
+// it — forge writes `cost_usd_micros` straight from claude's billed total_cost_usd
+// (the actual charge, MORE accurate than a token x unit-price estimate). A dry/echo
+// run bills nothing and writes no cost field, so those events contribute nothing and
+// avg_cost_usd is OMITTED unless a real-cost trace event or --cost-usd supplies one.
 // Any telemetry with no samples is omitted entirely — never a fabricated 0.
 //
 // CLI:
@@ -144,6 +146,32 @@ export function parseTraceLatencies(text) {
   return out;
 }
 
+// parseTraceCosts(text) -> array of REAL per-event USD costs extracted from
+// forge-core trace JSONL, mirroring parseTraceLatencies. forge writes each LLM
+// executor event's billed cost as integer `cost_usd_micros` (microdollars, USD x
+// 1e6) precisely to avoid the float-JSON drift a raw dollar double would print; we
+// read that field and divide back to dollars. Only events that ACTUALLY billed carry
+// it (a real claude phase); iteration/gate/converge and echo/dry agent events omit it
+// and contribute nothing — honest "no data", never a fabricated 0.
+//
+// PURE: text in, numbers out (the read is at the I/O boundary), so it is unit-testable
+// against a fixture string, and identically robust to parseTraceLatencies:
+//   - blank lines are skipped
+//   - a non-JSON line is skipped (a corrupt tail must not sink the aggregation)
+//   - an event with no finite cost_usd_micros contributes nothing
+export function parseTraceCosts(text) {
+  if (typeof text !== 'string') return [];
+  const out = [];
+  for (const line of text.split('\n')) {
+    const s = line.trim();
+    if (s === '') continue;
+    let ev;
+    try { ev = JSON.parse(s); } catch { continue; } // skip a malformed line
+    if (ev && Number.isFinite(ev.cost_usd_micros)) out.push(ev.cost_usd_micros / 1e6);
+  }
+  return out;
+}
+
 // parseNumberList("12,45,90") -> [12,45,90]. Splits on commas, trims, and keeps
 // only finite numbers from NON-EMPTY tokens. Empty tokens are dropped FIRST,
 // before Number(): note `Number("")` is 0, not NaN, so a stray "0.01,,0.02"
@@ -215,6 +243,16 @@ function readTraceLatencies(path) {
   return parseTraceLatencies(readFileSync(path, 'utf8'));
 }
 
+// Read a forge-core trace file at `path` and parse out its REAL billed costs, the
+// cost twin of readTraceLatencies. A missing file is an empty sample set (no trace
+// yet), not an error; an undefined path -> undefined (--trace was not supplied), so
+// the field is omitted rather than fabricated.
+function readTraceCosts(path) {
+  if (path === undefined) return undefined;
+  if (!existsSync(path)) return [];
+  return parseTraceCosts(readFileSync(path, 'utf8'));
+}
+
 // Combine the latency sources into one sample set for synthesize, or undefined
 // when neither source was supplied (so the field is omitted, not a fabricated
 // empty). Trace-measured latencies and directly-injected --latency-ms samples
@@ -222,6 +260,16 @@ function readTraceLatencies(path) {
 function combineLatencies(traceLatencies, injectedLatencies) {
   if (traceLatencies === undefined && injectedLatencies === undefined) return undefined;
   return [...(traceLatencies ?? []), ...(injectedLatencies ?? [])];
+}
+
+// Combine the cost sources into one sample set for synthesize, or undefined when
+// neither was supplied (so the field is omitted, not a fabricated empty) — the cost
+// twin of combineLatencies. Trace-recorded costs (forge's real billed cost_usd_micros)
+// and directly-injected --cost-usd samples are concatenated: both are real dollars,
+// just different ingress paths.
+function combineCosts(traceCosts, injectedCosts) {
+  if (traceCosts === undefined && injectedCosts === undefined) return undefined;
+  return [...(traceCosts ?? []), ...(injectedCosts ?? [])];
 }
 
 // Run the acceptance gate once and fold its single verdict into the scorecards
@@ -282,11 +330,16 @@ function main() {
   }
   const out = args.out || DEFAULT_OUT;
   const now = args.now || new Date().toISOString();
-  // Latency comes from the trace (real measurements) and/or direct injection;
-  // cost is estimate-only and never derived here (dry-run has no real tokens).
+  // Both latency AND cost now come from the trace (real measurements) and/or direct
+  // injection: --trace feeds p95 latency (duration_ms) and avg cost (cost_usd_micros,
+  // forge's real billed dollars), each concatenated with its direct-injection flag.
   const latenciesMs = combineLatencies(
     readTraceLatencies(args.trace),
     parseNumberList(args['latency-ms']),
+  );
+  const costsUsd = combineCosts(
+    readTraceCosts(args.trace),
+    parseNumberList(args['cost-usd']),
   );
   const { verdict, newRow } = runUpdate({
     model: args.model,
@@ -296,7 +349,7 @@ function main() {
     iterations: parseIterations(args.iterations),
     reworked: parseRework(args.rework),
     latenciesMs,
-    costsUsd: parseNumberList(args['cost-usd']),
+    costsUsd,
     window: args.window,
   });
   // Optional fields are absent when no data was supplied — print n/a so the log

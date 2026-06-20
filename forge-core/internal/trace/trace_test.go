@@ -146,6 +146,45 @@ func TestEmit_ConcurrentLinesIntact(t *testing.T) {
 	}
 }
 
+// CostUsdMicros is an opaque LLM-cost field: when set it must marshal under the
+// stable `cost_usd_micros` json tag (an integer, not a float — jitter-free), and
+// round-trip back to the same value. This is the on-disk contract the scorecard's
+// --trace cost reader consumes.
+func TestEmit_CostUsdMicrosMarshalsWhenSet(t *testing.T) {
+	var buf bytes.Buffer
+	tr := NewTracer(&buf)
+	// 0.0544045 USD is the real claude billed cost; the caller stores it as 54404
+	// microdollars (USD x 1e6, rounded) — exactly what avoids float-JSON drift.
+	if err := tr.Emit(Event{Kind: "agent", Name: "implementer", Status: "ok", CostUsdMicros: 54404}); err != nil {
+		t.Fatalf("Emit: %v", err)
+	}
+	if !strings.Contains(buf.String(), `"cost_usd_micros":54404`) {
+		t.Errorf("cost must marshal under cost_usd_micros as an integer; got %q", buf.String())
+	}
+	var got Event
+	if err := json.Unmarshal([]byte(strings.TrimSpace(buf.String())), &got); err != nil {
+		t.Fatalf("not valid JSON: %v", err)
+	}
+	if got.CostUsdMicros != 54404 {
+		t.Errorf("CostUsdMicros round-trip = %d, want 54404", got.CostUsdMicros)
+	}
+}
+
+// CostUsdMicros is omitempty: an event WITHOUT a cost (every iteration/gate/converge
+// event, and an echo/dry agent phase) must not emit the key at all — keeping those
+// lines byte-for-byte identical to before this field existed, which is what preserves
+// the existing iteration-event assertions.
+func TestEmit_CostUsdMicrosOmittedWhenZero(t *testing.T) {
+	var buf bytes.Buffer
+	tr := NewTracer(&buf)
+	if err := tr.Emit(Event{Kind: "iteration", Name: "1", Status: "ok", DurationMs: 4200}); err != nil {
+		t.Fatalf("Emit: %v", err)
+	}
+	if strings.Contains(buf.String(), "cost_usd_micros") {
+		t.Errorf("a zero cost must be omitted so iteration events are unchanged; got %q", buf.String())
+	}
+}
+
 // encode is pure: it must yield a compact single-line JSON object terminated by
 // exactly one newline (the JSONL framing), and that line must parse back to the
 // same Event. Tested without a Tracer, writer, or lock.

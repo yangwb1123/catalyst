@@ -248,8 +248,19 @@ func execEngine(wf asset.Workflow, o runOpts) int {
 	probe := probeStatuses(o.root)
 	lifecycle := resolveLifecycle(o)
 	pol := mode.Effective(o.mode, lifecycle)
+	// `forge run` did not open a tracer before, so a REAL claude run burned cost the
+	// scorecard never saw. Open one (append, same .forge/trace.jsonl evolve uses; it is
+	// git-ignored) and feed agent-phase cost into it via the sink. Fail-closed mirrors
+	// evolve's openTracer: a run must not proceed blind on the cost it is about to bill.
+	tracer, closeTrace, err := openTracer(o.root)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "forge run: %v\n", err)
+		return 1
+	}
+	defer closeTrace()
+	costSink := costEmitter(tracer, logln)
 	eng := orchestrator.Engine{
-		Exec:          agentExecutor(o, logln),
+		Exec:          agentExecutor(o, logln, costSink),
 		RunGate:       harnessRunner(o.root, probe),
 		Log:           logln,
 		MaxRetries:    o.maxRetries,
@@ -382,9 +393,16 @@ func projectYAMLValue(root, key string) string {
 // agentExecutor selects the agent-phase executor. "command" builds a per-phase
 // prompt and drives o.agentCmd with it (real execution when agent-cmd is `claude`;
 // `echo` inspects the plumbing safely); anything else is the no-LLM DryRunExecutor.
-func agentExecutor(o runOpts, logln func(string)) orchestrator.AgentExecutor {
+//
+// costSink is how this CLI (the ONLY layer that knows the claude JSON shape) records
+// real per-phase dollar cost: for a claude command the executor's generic Observe
+// sink is pointed at parseClaudeCostUsd, and a parsed cost is forwarded to costSink
+// (which the caller wires to a trace event). The generic executor stays claude-free —
+// all claude-JSON knowledge lives in the helpers below, never in orchestrator.
+func agentExecutor(o runOpts, logln func(string), costSink func(phase string, usd float64)) orchestrator.AgentExecutor {
 	if o.executor == "command" {
-		return orchestrator.CommandExecutor{
+		isClaude := strings.Contains(o.agentCmd, "claude")
+		ex := orchestrator.CommandExecutor{
 			Build: func(p asset.Phase, mode string) []string {
 				argv := []string{o.agentCmd}
 				// claude print mode needs flags echo/stubs don't understand, so gate
@@ -393,7 +411,10 @@ func agentExecutor(o runOpts, logln func(string)) orchestrator.AgentExecutor {
 				// can't apply — and --model so a real run honors ForgeOS's ROUTED tier
 				// (the opus floor for reviewer/architect/cto + any per-phase model_tier
 				// override); without --model, claude ignores routing and uses its default.
-				if strings.Contains(o.agentCmd, "claude") {
+				// --output-format json makes claude emit the cost-bearing envelope this
+				// CLI parses (total_cost_usd) — ONLY claude gets it; echo/stubs would
+				// choke on a flag they don't know and must stay plain.
+				if isClaude {
 					if o.agentPermission != "" {
 						argv = append(argv, "--permission-mode", o.agentPermission)
 					}
@@ -401,6 +422,7 @@ func agentExecutor(o runOpts, logln func(string)) orchestrator.AgentExecutor {
 					if o.agentMaxBudgetUSD != "" {
 						argv = append(argv, "--max-budget-usd", o.agentMaxBudgetUSD)
 					}
+					argv = append(argv, "--output-format", "json")
 				}
 				return append(argv, "-p", buildPrompt(o.root, p, mode))
 			},
@@ -410,6 +432,18 @@ func agentExecutor(o runOpts, logln func(string)) orchestrator.AgentExecutor {
 			MaxOutputBytes: o.maxOutputBytes,
 			Log:            logln,
 		}
+		// Only claude emits the cost JSON, so only claude gets the cost sink + the
+		// result-unwrapping log renderer. For echo/stubs both stay nil -> the generic
+		// executor's byte-for-byte default path (no cost event, raw output logged).
+		if isClaude {
+			ex.Observe = func(phase, output string) {
+				if usd, ok := parseClaudeCostUsd(output); ok && costSink != nil {
+					costSink(phase, usd)
+				}
+			}
+			ex.RenderLog = unwrapClaudeResult
+		}
+		return ex
 	}
 	return orchestrator.DryRunExecutor{Log: logln}
 }

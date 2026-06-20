@@ -160,10 +160,11 @@ function rollTrajectory(verdicts) {
 //   - latenciesMs: an array of per-task wall-clock durations. These are REAL
 //       measurements piped from forge-core's trace stream (trace.go records
 //       `duration_ms` per Span); when present -> p95_latency_ms = round(p95).
-//   - costsUsd: an array of per-task USD costs. HONESTY: cost is a token x
-//       unit-price ESTIMATE, and a dry-run has zero real tokens, so the caller
-//       only injects this once a real LLM executor reports token counts. When
-//       present -> avg_cost_usd = mean (rounded to sub-cent).
+//   - costsUsd: an array of per-task USD costs — REAL billed charges piped from
+//       the trace stream (trace.go records `cost_usd_micros` per agent phase:
+//       claude's actual total_cost_usd, NOT a token×price estimate). A dry/echo
+//       run bills nothing so records none; --cost-usd can also inject directly.
+//       When present -> avg_cost_usd = mean (rounded to sub-cent).
 //   - window: a free-text stats window label (e.g. "30d"), carried through as-is.
 //   Each of these is OMITTED when no data is supplied (empty/undefined array, or
 //   all-non-finite samples -> percentile/mean return undefined) — never a

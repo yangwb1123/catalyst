@@ -134,7 +134,7 @@ func execLoop(wf asset.Workflow, o runOpts, maxIter int, maxIterSource string, r
 		return 1
 	}
 	defer closeTrace()
-	loop := buildLoop(wf, o, maxIter, logln)
+	loop := buildLoop(wf, o, maxIter, logln, costEmitter(tracer, logln))
 	loop.StartIter, loop.ResumePrev = start, prev
 	loop.OnIteration = checkpointHook(o, wf, tracer, logln)
 	fmt.Printf("forge evolve: stage=%s mode=%s max-iter=%d (%s) type=%s start-iter=%d (doom-loop tripwire=2)\n",
@@ -153,10 +153,16 @@ func execLoop(wf asset.Workflow, o runOpts, maxIter int, maxIterSource string, r
 // — Converge delegates to Evaluate(all_of) and HumanApproved is irrelevant — but
 // it makes the loop's convergence check honest even if a human_gate ever reached
 // it (depth-two defense; cmdEvolve already refuses one up front).
-func buildLoop(wf asset.Workflow, o runOpts, maxIter int, logln func(string)) orchestrator.LoopEngine {
+//
+// costSink threads the SAME tracer execLoop already owns into the agent executor, so
+// a real claude phase's billed cost lands as a `kind:"agent"` cost event interleaved
+// (Seq-ordered) with the per-iteration events in trace.jsonl. It does NOT go through
+// checkpointHook: cost is per-PHASE (emitted inside RunFrom when a phase bills), not
+// per-iteration, so the iteration-event assertions are untouched.
+func buildLoop(wf asset.Workflow, o runOpts, maxIter int, logln func(string), costSink func(phase string, usd float64)) orchestrator.LoopEngine {
 	probe := &loopProbe{root: o.root}
 	eng := orchestrator.Engine{
-		Exec:          agentExecutor(o, logln),
+		Exec:          agentExecutor(o, logln, costSink),
 		RunGate:       func(name string) gate.Result { return resolveGate(o.root, name, probe.refresh()) },
 		Log:           logln,
 		MaxRetries:    o.maxRetries,

@@ -37,12 +37,21 @@ import (
 // independent of any wall-clock timestamp. The json tags are the on-disk
 // contract that downstream tooling reads, so they are stable and lower_snake.
 type Event struct {
-	Seq        int    `json:"seq"`              // monotonic 1,2,3… assigned by the Tracer
-	Kind       string `json:"kind"`             // event family: "iteration"|"gate"|"agent"|"converge"
-	Name       string `json:"name"`             // the specific phase/gate name within the kind
-	Status     string `json:"status"`           // verdict/outcome: PASS|FAIL|NA|ok|timeout|…
-	DurationMs int64  `json:"duration_ms"`      // wall-clock span in ms; 0 for instantaneous events
-	Detail     string `json:"detail,omitempty"` // free-text context, omitted from JSON when empty
+	Seq        int    `json:"seq"`         // monotonic 1,2,3… assigned by the Tracer
+	Kind       string `json:"kind"`        // event family: "iteration"|"gate"|"agent"|"converge"
+	Name       string `json:"name"`        // the specific phase/gate name within the kind
+	Status     string `json:"status"`      // verdict/outcome: PASS|FAIL|NA|ok|timeout|…
+	DurationMs int64  `json:"duration_ms"` // wall-clock span in ms; 0 for instantaneous events
+	// CostUsdMicros is the LLM dollar cost of this event in integer MICRO-dollars
+	// (USD x 1e6), OPAQUE to this package — duration_ms is a generic wall-clock
+	// measurement every event carries, whereas cost is supplied ONLY by an LLM
+	// executor that actually billed (the claude JSON's total_cost_usd, converted by
+	// the caller). Integer microdollars avoid the float-JSON jitter a raw USD double
+	// would print (0.0544035 round-trips exactly as 54403); omitempty keeps every
+	// event WITHOUT a cost (iteration/gate/converge, and echo/dry agent phases) byte-
+	// for-byte identical on disk, so existing iteration-event assertions are intact.
+	CostUsdMicros int64  `json:"cost_usd_micros,omitempty"`
+	Detail        string `json:"detail,omitempty"` // free-text context, omitted from JSON when empty
 }
 
 // Tracer serializes Events to an io.Writer as JSONL (one JSON object per line).

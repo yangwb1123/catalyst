@@ -11,9 +11,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  updateScorecards, parseTraceLatencies, parseNumberList,
+  updateScorecards, parseTraceLatencies, parseTraceCosts, parseNumberList,
 } from './scorecard-update.mjs';
-import { percentile } from './scorecard.mjs';
+import { percentile, mean } from './scorecard.mjs';
 
 const TS = '2026-06-19T00:00:00Z';
 const OLD = '2026-06-01T00:00:00Z';
@@ -276,6 +276,67 @@ test('parseTraceLatencies: empty/garbage input -> [] (no data, not a fabricated 
   assert.deepEqual(parseTraceLatencies(undefined), []);
 });
 
+// --- parseTraceCosts: REAL billed-cost extraction from forge-core trace JSONL ---
+// forge writes a real LLM phase's billed cost as integer `cost_usd_micros` (USD x
+// 1e6) to avoid float-JSON drift; parseTraceCosts reads it back to dollars. Only
+// events that ACTUALLY billed (a real claude phase) carry it — this is the cost
+// twin of parseTraceLatencies and the genuine data path for avg_cost_usd.
+const COST_TRACE_FIXTURE = [
+  // an iteration event: no cost field (per-iteration events never bill) -> contributes nothing
+  '{"seq":1,"kind":"iteration","name":"1","status":"ok","duration_ms":4200}',
+  // a real claude agent phase: 0.0544035 USD billed -> stored as 54404 microdollars
+  '{"seq":2,"kind":"agent","name":"implementer","status":"ok","cost_usd_micros":54404}',
+  // a gate event: no cost -> contributes nothing
+  '{"seq":3,"kind":"gate","name":"test","status":"PASS","duration_ms":900}',
+  // a second billed agent phase: 0.012 USD -> 12000 microdollars
+  '{"seq":4,"kind":"agent","name":"reviewer","status":"ok","cost_usd_micros":12000}',
+].join('\n');
+
+test('parseTraceCosts: extracts cost_usd_micros as dollars, ignoring non-cost events', () => {
+  const costs = parseTraceCosts(COST_TRACE_FIXTURE);
+  assert.deepEqual(costs, [0.054404, 0.012], 'only the two billed agent events, in dollars');
+});
+
+test('parseTraceCosts: a fixture trace resolves to a genuine avg cost', () => {
+  // Proves the whole pipe: trace text -> costs -> mean -> avg_cost_usd.
+  const costs = parseTraceCosts(COST_TRACE_FIXTURE);
+  assert.ok(Math.abs(mean(costs) - (0.054404 + 0.012) / 2) < 1e-12, 'mean of the real billed costs');
+});
+
+test('parseTraceCosts: an event with no cost_usd_micros contributes nothing (honest no-data)', () => {
+  const text = [
+    '{"seq":1,"kind":"agent","name":"x","status":"ok"}',                       // echo/dry agent: no cost
+    '{"seq":2,"kind":"agent","name":"y","status":"ok","cost_usd_micros":"x"}', // non-numeric -> skipped
+    '{"seq":3,"kind":"agent","name":"z","status":"ok","cost_usd_micros":5000}',
+  ].join('\n');
+  assert.deepEqual(parseTraceCosts(text), [0.005], 'only the finite numeric cost is kept, never a fabricated 0');
+});
+
+test('parseTraceCosts: skips blank lines and malformed JSON (corrupt tail safe)', () => {
+  const text = [
+    '{"seq":1,"kind":"agent","name":"a","status":"ok","cost_usd_micros":1000}',
+    '',
+    'this is not json',
+    '{"seq":2,"kind":"agent","name":"b","status":"ok","cost_usd_micros":2000}',
+    '{ broken tail ',
+  ].join('\n');
+  assert.deepEqual(parseTraceCosts(text), [0.001, 0.002], 'only the two well-formed cost events count');
+});
+
+test('parseTraceCosts: empty/garbage input -> [] (no data, not a fabricated value)', () => {
+  assert.deepEqual(parseTraceCosts(''), []);
+  assert.deepEqual(parseTraceCosts('   \n  \n'), []);
+  assert.deepEqual(parseTraceCosts(undefined), []);
+});
+
+test('parseTraceCosts: a present cost_usd_micros:0 is kept as a real finite sample', () => {
+  // forge's omitempty means it never WRITES a 0 (so a 0-cost event omits the field
+  // and contributes nothing), but the PARSER is robust: an explicitly present 0 is a
+  // finite sample and kept, mirroring parseTraceLatencies keeping duration_ms:0.
+  const text = '{"seq":1,"kind":"agent","name":"a","status":"ok","cost_usd_micros":0}';
+  assert.deepEqual(parseTraceCosts(text), [0], 'an explicit 0 microdollars is a real finite sample');
+});
+
 // --- parseNumberList: comma-separated injection --------------------------------
 test('parseNumberList: splits and keeps finite numbers', () => {
   assert.deepEqual(parseNumberList('12,45,90'), [12, 45, 90]);
@@ -292,10 +353,15 @@ test('parseNumberList: an empty/garbage list -> [] (downstream omits the field)'
 });
 
 // NOTE: the --trace / --latency-ms / --cost-usd CLI flags are wired in main()'s
-// I/O boundary purely from these PURE pieces (parseTraceLatencies + parseNumberList
-// feeding synthesize), each proven above. A subprocess end-to-end test is omitted
-// on purpose: the CLI's runUpdate() invokes the FULL acceptance gate via
-// collect()/spawnSync (whole-repo lint/test/arch), which is both heavy and unsafe
-// to fire while sibling agents are concurrently editing the harness. The data
-// path itself — trace text -> latencies -> genuine p95 — is covered deterministically
-// by parseTraceLatencies + percentile above, with zero spawning and zero disk.
+// I/O boundary purely from these PURE pieces (parseTraceLatencies + parseTraceCosts +
+// parseNumberList feeding synthesize), each proven above. --trace now feeds BOTH
+// latency (duration_ms) and cost (cost_usd_micros) from the same trace file; the
+// readTraceCosts/combineCosts I/O shells mirror the readTraceLatencies/combineLatencies
+// twins exactly (a present path -> parse, missing file -> [], undefined -> undefined),
+// so they need no separate test. A subprocess end-to-end test is omitted on purpose:
+// the CLI's runUpdate() invokes the FULL acceptance gate via collect()/spawnSync
+// (whole-repo lint/test/arch), which is both heavy and unsafe to fire while sibling
+// agents are concurrently editing the harness. The data paths themselves — trace text
+// -> latencies -> genuine p95, and trace text -> costs -> genuine avg — are covered
+// deterministically by parseTraceLatencies+percentile and parseTraceCosts+mean above,
+// with zero spawning and zero disk.
