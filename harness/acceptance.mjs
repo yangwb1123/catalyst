@@ -14,45 +14,22 @@
 //
 // CLI: `node harness/acceptance.mjs`         ->  exit 0 ACCEPTED · exit 1 REJECTED.
 //      `node harness/acceptance.mjs --json`  ->  per-criterion JSON to stdout.
-import { spawnSync } from 'node:child_process';
-import { readdirSync, statSync, existsSync, rmSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
-import { detectLanguages, loadAdapter, lintBinary, coverageBinary, judgeCoverage, resolveCoverageThreshold, versionProbeArgs, coverageArtifact, appTestPlan, ADAPTER_LANG_BY_RUNNER } from './adapters.mjs';
+import { readdirSync, statSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { appTestPlan, ADAPTER_LANG_BY_RUNNER, loadAdapter } from './adapters.mjs';
 import { scanRepo as scaScanRepo } from './sca.mjs';
+import { PASS, FAIL, NA, ROOT, HARNESS_DIR, run, result } from './acceptance-kernel.mjs';
+import { probeLint, probeCoverage } from './acceptance-quality.mjs';
 
-const HARNESS_DIR = dirname(fileURLToPath(import.meta.url));
-const ROOT = dirname(HARNESS_DIR);
-
-// Verdict statuses for a single criterion.
-export const PASS = 'PASS';
-export const FAIL = 'FAIL';
-export const NA = 'N-A';
-
-// --- low-level command runner ------------------------------------------------
-
-// Run a command; return {ok, code, out} where ok === exit 0. Centralised so every
-// probe judges success the same way (exit-code === 0). `extraEnv` overlays env
-// vars (e.g. FORGE_ACCEPT_INNER) on the scrubbed parent env. `cwd` defaults to the
-// repo root; a probe overrides it for a command whose paths are relative to a
-// subdir (e.g. an adapter `go test ./...` that must run from the app's module dir).
-function run(cmd, args, extraEnv = {}, cwd = ROOT) {
-  // Scrub NODE_TEST_CONTEXT so a nested `node --test` (when acceptance.mjs is
-  // itself spawned from under `node --test`, e.g. test_acceptance.mjs) runs as a
-  // fresh top-level run and prints its TAP summary to stdout, rather than
-  // switching to child-reporter mode (which emits no `# tests N` and would make
-  // the app-test count read 0 → a false "no app tests discovered").
-  const env = { ...process.env, ...extraEnv };
-  delete env.NODE_TEST_CONTEXT;
-  const res = spawnSync(cmd, args, { cwd, encoding: 'utf8', env });
-  if (res.error) return { ok: false, code: null, out: String(res.error.message) };
-  const out = `${res.stdout || ''}${res.stderr || ''}`.trim();
-  return { ok: res.status === 0, code: res.status, out };
-}
-
-function result(criterion, status, detail) {
-  return { criterion, status, detail };
-}
+// Re-export the verdict statuses (defined in the kernel) so importers — chiefly
+// test_acceptance.mjs — keep getting PASS/FAIL/NA from acceptance.mjs unchanged.
+export { PASS, FAIL, NA };
+// Re-export the adapter-backed quality probes (moved to acceptance-quality.mjs):
+// collect() below calls them, and test_acceptance.mjs imports probeLint/
+// probeCoverage / the pure judgeLint+unconfigured from acceptance.mjs — keep that
+// surface intact across the split.
+export { judgeLint, unconfigured, probeLint, probeCoverage } from './acceptance-quality.mjs';
 
 // --- per-criterion probes (one criterion == one function) --------------------
 
@@ -192,143 +169,12 @@ export function probeAppTests() {
   return result('app_test_pass', ok ? PASS : FAIL, detail);
 }
 
-// lint == clean  <-  per-language linters from harness/adapters/<lang>.yml.
-// This upgrades lint from a STATIC N/A (the adapters used to be pure
-// declarations with no consumer) to an executable, framework-backed criterion:
-// detect the project's languages, load each adapter's lint command, and — only
-// when that linter is actually INSTALLED — shell it out.
-//
-// HONESTY + FAIL-SAFE (the whole point): a missing linter is NOT a failure and
-// NOT a faked pass. Each contributing helper returns one of:
-//   PASS  — linter installed AND the lint command exited 0 (a real clean run);
-//   FAIL  — linter installed AND it reported real lint violations;
-//   N-A   — linter NOT installed, OR installed but unconfigured for this project
-//           (e.g. eslint with no eslintrc: it can't run, so its result is not a
-//           verdict on the code). N/A is the honest outcome, never a FAIL.
-// The criterion is N/A iff every language is N/A (a repo with no installed linter
-// stays N/A and therefore ACCEPTED, keeping lint NON-load-bearing); install
-// eslint/golangci-lint/ruff with a config and the SAME code auto-enforces PASS/FAIL.
-
-// linterInstalled: true iff `<bin> --version` exits 0. The cheap, side-effect-
-// free probe for "is this tool on PATH" before running the heavier lint command.
-function linterInstalled(bin) {
-  return run(bin, ['--version']).ok;
-}
-
-// unconfigured: did the lint command fail because the linter could not actually
-// RUN (no project config), as opposed to finding real violations? Such a result
-// is not a verdict on the code, so we map it to N/A rather than FAIL. Detected
-// generically from the tool's own "couldn't find a configuration" wording (and
-// eslint's exit-2 "fatal/config" code, distinct from its exit-1 "found lint
-// errors"). Conservative: only the clear can't-run signals match here.
-export function unconfigured(out) {
-  return /no\s+configuration|couldn'?t\s+find\s+a?\s*config|configuration\s+file|unable\s+to\s+(?:find|locate)\s+config/i.test(out ?? '');
-}
-
-// judgeLint: PURE per-language lint decision (no I/O) so the honesty/fail-safe
-// branches are directly unit-testable without any linter installed. Inputs:
-//   lang      — adapter language tag (for the detail string);
-//   bin       — the linter binary, or null when the adapter has no lint command;
-//   installed — did `<bin> --version` exit 0 (boolean);
-//   r         — the lint command's run result {ok,code,out}, or null if not run.
-// Order: no bin / not installed -> N/A; exit 0 -> PASS; could-not-run
-// (unconfigured) -> N/A; otherwise (real violations) -> FAIL. A missing linter is
-// NEVER a FAIL and an unconfigured one is NEVER a faked PASS.
-export function judgeLint(lang, bin, installed, r) {
-  if (!bin) return { lang, status: NA, detail: `${lang}: adapter has no lint command` };
-  if (!installed) return { lang, status: NA, detail: `${lang}: ${bin} not installed` };
-  if (r && r.ok) return { lang, status: PASS, detail: `${lang}: ${bin} clean` };
-  if (r && unconfigured(r.out)) return { lang, status: NA, detail: `${lang}: ${bin} installed but unconfigured (no project config) — not run` };
-  return { lang, status: FAIL, detail: `${lang}: ${bin} exit ${r ? r.code : 'n/a'}` };
-}
-
-// probeLintLang: I/O wrapper around judgeLint for one language. Loads the
-// adapter, probes whether the linter is installed, and (only then) shells the
-// lint command — deferring the verdict to the pure judgeLint.
-function probeLintLang(lang) {
-  const { lint } = loadAdapter(lang);
-  const bin = lintBinary(lint);
-  if (!bin) return judgeLint(lang, null, false, null);
-  const installed = linterInstalled(bin);
-  const r = installed ? run(...splitCmd(lint)) : null;
-  return judgeLint(lang, bin, installed, r);
-}
-
-// splitCmd: a lint run-string ("eslint . --max-warnings=0") -> [cmd, argsArray]
-// for run(). Whitespace split is sufficient for the adapter commands (no shell
-// quoting/globs that need a shell); we deliberately do NOT use a shell so there
-// is no injection surface from the adapter YAML.
-function splitCmd(cmd) {
-  const [bin, ...args] = cmd.trim().split(/\s+/);
-  return [bin, args];
-}
-
-// probeLint: aggregate per-language lint into the single `lint` criterion.
-// N/A when no source languages are detected OR every detected language is N/A
-// (no installed/configured linter). FAIL if any language FAILs. Otherwise PASS.
-export function probeLint() {
-  const langs = detectLanguages(ROOT);
-  if (langs.length === 0) return result('lint', NA, 'no source languages detected');
-  const per = langs.map(probeLintLang);
-  const detail = per.map((p) => p.detail).join('; ');
-  if (per.some((p) => p.status === FAIL)) return result('lint', FAIL, detail);
-  if (per.every((p) => p.status === NA)) return result('lint', NA, detail);
-  return result('lint', PASS, detail);
-}
-
-// coverage >= threshold  <-  per-language coverage tools from the adapters (go
-// test -coverprofile / pytest --cov / vitest --coverage). Like probeLint, this
-// upgrades coverage from a STATIC N/A into an executable, framework-backed
-// criterion. HONESTY/FAIL-SAFE identical to lint: a missing OR can't-run tool
-// (no module/tests/config) is N/A, never FAIL; only a real run below threshold
-// FAILs. The pure decision is adapters.judgeCoverage (unit-testable with no tool
-// installed). N/A iff every language is N/A — so this repo stays N/A and ACCEPTED,
-// keeping coverage NON-load-bearing; install+configure a tool and PASS/FAIL auto-
-// enforce.
-
-// probeCoverageLang: I/O wrapper around judgeCoverage for one language. Loads the
-// adapter's coverage command, probes whether its tool is installed (`<bin>
-// --version`), and (only then) shells the coverage command — deferring the
-// verdict to the pure judgeCoverage. Reuses splitCmd + the same no-shell run().
-//
-// Side-effect discipline: coverage commands WRITE a report artifact into the
-// working tree (e.g. `go test -coverprofile=coverage.out` drops coverage.out even
-// when the run fails on "not a module"). A gate must not pollute the repo it
-// judges, so we snapshot whether that artifact pre-existed and remove ONLY one we
-// ourselves created — never a user's pre-existing coverage report.
-function probeCoverageLang(lang, threshold) {
-  const { coverage } = loadAdapter(lang);
-  const bin = coverageBinary(coverage);
-  if (!bin) return judgeCoverage(lang, null, false, null, threshold);
-  // Tool-aware install probe: `go version`, else `<bin> --version` (see
-  // versionProbeArgs — `go --version` would falsely read as "not installed").
-  const installed = run(bin, versionProbeArgs(bin)).ok;
-  if (!installed) return judgeCoverage(lang, bin, false, null, threshold);
-  const artifact = coverageArtifact(coverage);
-  const path = artifact ? join(ROOT, artifact) : null;
-  const preexisted = path ? existsSync(path) : false;
-  const r = run(...splitCmd(coverage));
-  if (path && !preexisted && existsSync(path)) rmSync(path, { recursive: true, force: true });
-  return judgeCoverage(lang, bin, true, r, threshold);
-}
-
-// probeCoverage: aggregate per-language coverage into the single `coverage`
-// criterion (mirrors probeLint). N/A when no source languages are detected OR
-// every detected language is N/A (no installed/runnable coverage tool). FAIL if
-// any language is below threshold. Otherwise PASS.
-export function probeCoverage() {
-  const langs = detectLanguages(ROOT);
-  if (langs.length === 0) return result('coverage', NA, 'no source languages detected');
-  // The line-coverage floor is the project's mode×lifecycle threshold (central knob:
-  // .agent/project.yml × modes.yml — see resolveCoverageThreshold for the resolution,
-  // its missing-file FAIL-SAFE, and why an N/A here is unaffected), NOT a hardcoded 60.
-  const threshold = resolveCoverageThreshold(ROOT);
-  const per = langs.map((lang) => probeCoverageLang(lang, threshold));
-  const detail = per.map((p) => p.detail).join('; ');
-  if (per.some((p) => p.status === FAIL)) return result('coverage', FAIL, detail);
-  if (per.every((p) => p.status === NA)) return result('coverage', NA, detail);
-  return result('coverage', PASS, detail);
-}
+// NOTE: the adapter-backed quality probes — lint (linterInstalled / unconfigured
+// / judgeLint / probeLintLang / probeLint) and coverage (probeCoverageLang /
+// probeCoverage), plus the shared splitCmd — live in ./acceptance-quality.mjs and
+// ./acceptance-kernel.mjs. collect() calls probeLint/probeCoverage (imported at
+// the top); test_acceptance.mjs's surface (probeLint/probeCoverage/judgeLint/
+// unconfigured) is preserved via the re-export there.
 
 // Criteria with NO executable check in this repo. Surfaced as N/A with an honest
 // reason; NEVER asserted as a pass (see decide()). security_findings, lint,

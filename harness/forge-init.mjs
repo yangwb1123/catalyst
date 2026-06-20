@@ -89,10 +89,17 @@ const COPIED_FILES = [
   join('harness', 'policies.yml'),
   join('harness', 'check.py'),
   join('harness', 'acceptance.mjs'),
-  // adapters.mjs is imported by acceptance.mjs (the lint criterion shells the
-  // per-language adapter linters); without it the copied acceptance gate would
-  // fail to import in the fresh project. The adapters/<lang>.yml command maps it
-  // reads are copied below.
+  // acceptance.mjs is split into a dependency-free kernel (shared run/result/
+  // splitCmd + PASS/FAIL/NA/ROOT/HARNESS_DIR) and the adapter-backed quality
+  // probes (lint + coverage); acceptance.mjs imports BOTH, so a fresh project
+  // missing either fails to import the gate (ERR_MODULE_NOT_FOUND) — copy-anywhere
+  // iron rule.
+  join('harness', 'acceptance-kernel.mjs'),
+  join('harness', 'acceptance-quality.mjs'),
+  // adapters.mjs is imported by acceptance-quality.mjs (the lint/coverage criteria
+  // shell the per-language adapter tools); without it the copied acceptance gate
+  // would fail to import in the fresh project. The adapters/<lang>.yml command maps
+  // it reads are copied below.
   join('harness', 'adapters.mjs'),
   join('harness', 'yaml2json.py'),
   join('harness', 'scorecard.mjs'),
