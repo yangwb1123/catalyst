@@ -2,6 +2,7 @@ package orchestrator
 
 import (
 	"fmt"
+	"time"
 
 	"forgeos/forge-core/internal/asset"
 	"forgeos/forge-core/internal/converge"
@@ -38,11 +39,14 @@ type LoopEngine struct {
 	// OnIteration is an injected post-measurement hook called once per iteration,
 	// right after Signals() — the point where "this round's work AND its
 	// measurement are done", so it is the honest place to persist a checkpoint and
-	// emit a trace event. It receives the 1-based iteration index and that round's
-	// live signals. Kept as an injected callback (not a direct trace/persist
-	// import) so the engine stays decoupled from the IO layer, matching how
-	// Engine/Signals/Log/RunGate are already wired. Nil-safe: a nil hook is a no-op.
-	OnIteration func(i int, sig converge.Signals)
+	// emit a trace event. It receives the 1-based iteration index, that round's
+	// live signals, and the iteration's measured wall-clock duration in ms (the
+	// observed cost of RunFrom — what telemetry needs for real p95 latency, since a
+	// 0 here makes the scorecard read every iteration as instantaneous). Kept as an
+	// injected callback (not a direct trace/persist import) so the engine stays
+	// decoupled from the IO layer, matching how Engine/Signals/Log/RunGate are
+	// already wired. Nil-safe: a nil hook is a no-op.
+	OnIteration func(i int, sig converge.Signals, durationMs int64)
 
 	// StartIter and ResumePrev support resuming a crashed/paused run from a
 	// checkpoint. StartIter is the 1-based iteration to begin at (0 or 1 both mean
@@ -98,11 +102,13 @@ func (l LoopEngine) Run(wf asset.Workflow, mode string) (LoopOutcome, error) {
 	startPhase := 0 // first iteration always runs the whole workflow.
 	for i := start; i <= l.MaxIter; i++ {
 		l.logf("iteration %d/%d", i, l.MaxIter)
+		t0 := time.Now()
 		if err := l.Engine.RunFrom(wf, mode, startPhase); err != nil {
 			return LoopOutcome{i, false, "gate/agent failure"}, err
 		}
+		durationMs := time.Since(t0).Milliseconds()
 		sig := l.Signals()
-		l.onIteration(i, sig)
+		l.onIteration(i, sig, durationMs)
 		l.reportConvergence(sig)
 		if out, done := l.checkStop(i, sig); done {
 			return out, nil
@@ -148,10 +154,11 @@ func (l LoopEngine) loopStart() (start int, prev float64) {
 }
 
 // onIteration invokes the post-measurement hook (the checkpoint/trace point) when
-// one is injected. Nil-safe, so the loop runs unchanged when no hook is wired.
-func (l LoopEngine) onIteration(i int, sig converge.Signals) {
+// one is injected, forwarding the round's measured wall-clock duration. Nil-safe,
+// so the loop runs unchanged when no hook is wired.
+func (l LoopEngine) onIteration(i int, sig converge.Signals, durationMs int64) {
 	if l.OnIteration != nil {
-		l.OnIteration(i, sig)
+		l.OnIteration(i, sig, durationMs)
 	}
 }
 

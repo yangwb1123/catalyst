@@ -297,7 +297,10 @@ func TestResumeStart_Paths(t *testing.T) {
 
 // checkpointHook is the per-iteration persistence+trace point. Invoking the
 // returned closure must write the iteration's snapshot to <root>/.forge and emit
-// a matching "iteration" trace event carrying the measured signals.
+// a matching "iteration" trace event carrying the measured signals AND the
+// iteration's measured wall-clock duration (the value scorecard p95_latency reads,
+// which read 0 before the trace-latency fix). The duration is passed in by the loop
+// here, so the test feeds a known value and asserts the trace event carries exactly it.
 func TestCheckpointHook_PersistsAndTraces(t *testing.T) {
 	root := t.TempDir()
 	mkdir(t, filepath.Join(root, ".forge"))
@@ -307,7 +310,8 @@ func TestCheckpointHook_PersistsAndTraces(t *testing.T) {
 	wf := asset.Workflow{Stage: "evolve"}
 	hook := checkpointHook(o, wf, trace.NewTracer(&buf), func(s string) { logs = append(logs, s) })
 
-	hook(2, converge.Signals{RoadmapCompletion: 0.75, GatesGreen: true})
+	const wantDurationMs int64 = 4200 // a known measured-iteration duration the loop would pass.
+	hook(2, converge.Signals{RoadmapCompletion: 0.75, GatesGreen: true}, wantDurationMs)
 
 	cp, found, err := persist.Load(checkpointPath(root))
 	if err != nil || !found {
@@ -322,6 +326,11 @@ func TestCheckpointHook_PersistsAndTraces(t *testing.T) {
 	ev := lastTraceEvent(t, buf.String())
 	if ev.Kind != "iteration" || ev.Name != "2" || ev.Status != "ok" {
 		t.Errorf("trace event = %+v, want iteration/2/ok", ev)
+	}
+	// The trace must record the iteration's REAL duration (not 0) — this is the
+	// trace-latency fix: scorecard p95_latency reads duration_ms off these events.
+	if ev.DurationMs != wantDurationMs {
+		t.Errorf("trace DurationMs = %d, want %d (the measured iteration wall-clock the loop passed)", ev.DurationMs, wantDurationMs)
 	}
 	if !strings.Contains(ev.Detail, "roadmap=75%") {
 		t.Errorf("trace detail = %q, want measured signals", ev.Detail)
@@ -339,7 +348,7 @@ func TestCheckpointHook_AppendsMemoryEntry(t *testing.T) {
 	hook := checkpointHook(runOpts{root: root, mode: "balanced"}, asset.Workflow{Stage: "evolve"},
 		trace.NewTracer(&buf), func(string) {})
 
-	hook(3, converge.Signals{RoadmapCompletion: 0.4, GatesGreen: false})
+	hook(3, converge.Signals{RoadmapCompletion: 0.4, GatesGreen: false}, 0)
 
 	entries, err := memory.Load(memoryPath(root))
 	if err != nil {
@@ -374,7 +383,7 @@ func TestCheckpointHook_WriteFailureIsSurfaced(t *testing.T) {
 	hook := checkpointHook(runOpts{root: root}, asset.Workflow{Stage: "evolve"},
 		trace.NewTracer(&buf), func(s string) { logs = append(logs, s) })
 
-	hook(1, converge.Signals{RoadmapCompletion: 0.1})
+	hook(1, converge.Signals{RoadmapCompletion: 0.1}, 0)
 
 	ev := lastTraceEvent(t, buf.String())
 	if ev.Status != "checkpoint-write-failed" {

@@ -211,8 +211,11 @@ func resumeStart(root string, resume bool) (start int, prev float64, err error) 
 
 // checkpointHook builds the loop's post-measurement OnIteration callback: after
 // each round's work AND its measurement, it persists a checkpoint, appends the
-// round's trajectory to memory, and emits an iteration trace event. The snapshot
-// time is injected here (main owns the clock; persist/trace/memory don't).
+// round's trajectory to memory, and emits an iteration trace event carrying the
+// iteration's measured wall-clock duration (durationMs from the loop) — the value
+// scorecard p95_latency reads, so the trace records the iteration's real cost
+// instead of a misleading 0. The snapshot time is injected here (main owns the
+// clock; persist/trace/memory don't).
 // Fail-LOUD-and-continue (deliberately NOT fail-closed): a checkpoint (or memory)
 // write failure is made loudly visible — a stderr WARNING plus the trace status
 // flipped to "checkpoint-write-failed" — but the loop keeps running. For a 24h run
@@ -220,8 +223,8 @@ func resumeStart(root string, resume bool) (start int, prev float64, err error) 
 // and the failure is never SWALLOWED, so we never pretend recovery state is durable
 // when it is not. Contrast openTracer, which DOES fail-closed: losing the audit
 // trail entirely is the blind spot trace prevents.
-func checkpointHook(o runOpts, wf asset.Workflow, tracer *trace.Tracer, logln func(string)) func(int, converge.Signals) {
-	return func(i int, sig converge.Signals) {
+func checkpointHook(o runOpts, wf asset.Workflow, tracer *trace.Tracer, logln func(string)) func(int, converge.Signals, int64) {
+	return func(i int, sig converge.Signals, durationMs int64) {
 		cp := persist.Checkpoint{
 			Workflow: wf.Stage, Mode: o.mode, Iteration: i,
 			RoadmapCompletion: sig.RoadmapCompletion, GatesGreen: sig.GatesGreen,
@@ -234,7 +237,7 @@ func checkpointHook(o runOpts, wf asset.Workflow, tracer *trace.Tracer, logln fu
 			logln(fmt.Sprintf("forge evolve: WARNING checkpoint write failed (recovery state NOT durable): %v", err))
 		}
 		recordMemory(o.root, wf, i, sig, logln)
-		emitTrace(tracer, trace.Event{Kind: "iteration", Name: fmt.Sprintf("%d", i), Status: status, Detail: detail}, logln)
+		emitTrace(tracer, trace.Event{Kind: "iteration", Name: fmt.Sprintf("%d", i), Status: status, DurationMs: durationMs, Detail: detail}, logln)
 	}
 }
 
