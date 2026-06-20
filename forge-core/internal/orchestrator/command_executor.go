@@ -117,10 +117,17 @@ func (c CommandExecutor) Execute(p asset.Phase, mode string) error {
 	ctx, cancel := c.commandContext()
 	defer cancel()
 
-	// CommandContext SIGKILLs the DIRECT child only (no process-group kill); for
-	// `claude -p` the direct child IS the agent, so killing it suffices. A future
-	// agent that forks grandchildren would need SysProcAttr{Setpgid} + -pgid.
+	// exec.CommandContext's default cancel SIGKILLs the DIRECT child only. That is
+	// insufficient once `claude -p` forks grandchildren via its own tools (Bash ->
+	// git/test/build): those grandchildren inherit the command's stdout/stderr pipe,
+	// so after the direct child is killed cmd.Run() would block until they close it —
+	// a surviving grandchild thus defeats the Timeout. setupProcessGroup (unix) puts
+	// the child in its own process group and overrides Cancel to SIGKILL the whole
+	// group (-pgid), with a WaitDelay backstop, so the deadline is reliably enforced.
+	// On non-unix it is a no-op and the direct-child-only kill stands (honest platform
+	// difference; Windows Job Object is future work — see command_executor_other.go).
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+	setupProcessGroup(cmd)
 	cmd.Dir = c.Dir // empty -> inherit forge's cwd (os/exec default)
 	// Propagate an incremented depth so a nested forge inherits it; childEnv
 	// REPLACES any inherited key (duplicate-key resolution is unspecified across libcs).
