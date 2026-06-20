@@ -16,12 +16,12 @@
 - [x] 验证脊柱已跑通:plan→implementer×2→gate→reviewer(fresh)→fix 全 spine;workflow↔角色卡 SoT 漂移已消除
 - [x] `forge accept` —— acceptance Stop 闸门(`harness/acceptance.mjs`,聚合 gate+check+tests+**app 测试** 判 ACCEPTED/REJECTED,8 测试;**n/a 项诚实可见,绝不伪造通过**)
 - [x] **Dogfood:首个真实应用 `examples/url-shortener` 经完整 pipeline(architect→3 implementer→fresh reviewer→fix)端到端建成,39 测试,被 `forge accept` 实际 gate**;reviewer 揪出"app 未被 accept 覆盖"治理洞并已补。**Build→Review→Accept 脊柱在真实产品上验证成立。**
-- [~] 真·无人值守闭环驱动 → 闭环引擎已建(`forge-core` `forge evolve`:phases→gate→converge→loop,带 max-iter/no-progress tripwire);**真·活体 agent 端到端尚未接通**(默认 dry-run,见 v2)
+- [x] 真·无人值守闭环驱动 → 闭环引擎已建(`forge-core` `forge evolve`:phases→gate→converge→loop,带 max-iter/no-progress tripwire)**且真·活体 agent 端到端已接通坐实**(Sprint 24-26:真 `--agent-cmd=claude` 多-agent 跑到 converge MET、增量+版本级,八个真跑 gap 全修,见 CURRENT_SPRINT + docs/ignition.md)
 
 ## v2 — 全局化 + 学习闭环 (forge-core 已落地,持续推进)
 **forge-core 已存在、已构建、全绿**:纯 Go 标准库、**零外部依赖**(`go.mod` 无 `require`),**11 个 Go 包**(原 7 + **`trace`** 可观测 / **`persist`** 断点续跑 / **`memory`** 跨会话记忆 / **`risk`** 风险分类器 —— 见根 [`ROADMAP.md`](../ROADMAP.md) 的「扩展五方向」:① 韧性运行时 ② 学习闭环 ③ Context/Memory ④ 执法补完 ⑤ 安全合规,均已 dogfood 实现 + fresh-review + 全绿)。CLI 现有 `forge run/evolve/gate/check/accept`;`forge evolve` 是无人值守闭环入口(收敛由 `converge` 按 ROADMAP 完成度 + acceptance gate 实算,非轮数);gate 阶段 shell 出真实 harness(gate.mjs/check.py/acceptance.mjs);路由带硬 Opus 安全底线。
 **明确遗留缺口(诚实标注,不夸大):**
-- Agent 阶段**默认 dry-run、不调 LLM**(`DryRunExecutor` 只叙述路由决策)。真实执行器已随仓发布:`--executor command --agent-cmd claude` 会用「角色卡 + 项目上下文」prompt 跑 `claude -p <prompt>`;真正的遗留限制是 agent-CLI 安装 + 凭证/预算,而非缺接口。
+- Agent 阶段默认 dry-run(`DryRunExecutor` 只叙述,安全默认);**真实执行器 `--executor command --agent-cmd claude` 已端到端坐实**(Sprint 24-26:真跑暴露并逐个修复**八个**真实 gap —— 任务注入 / 写权限(acceptEdits) / 模型路由(--model) / 工作目录 / 成本封顶(--max-budget-usd) / trace-latency / cost-telemetry / reviewer-缺-gate-信号;这些是真实**接口/实现**缺口、非"仅凭证/预算",均已修 + 真 claude 验证 + Learning loop 三维真数据落盘)。真点火按 docs/ignition.md 配方显式启用(四维资源护栏 + 成本三维)。
 - **YAML 经 python shim 转码**:Go 标准库无 YAML 解析器且 forge-core 零依赖,`forge run/evolve` shell 出 `python3 harness/yaml2json.py` 把 `.agent/workflows/<name>.yml` 转成运行时消费的 JSON(临时脚手架,未来可换 Go YAML 库——属 architect/cto 的依赖决策)。
 - 仍待:独立 `agent-os` 仓库(submodule)+ 模板 + Eval→记分卡→Router 实际回灌 + ADR/RAG。**ADR-0001 的「核心循环验证稳定后再起 forge-core」取代条件已由 url-shortener dogfood 触发。**
 
