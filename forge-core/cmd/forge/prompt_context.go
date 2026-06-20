@@ -22,7 +22,6 @@ import (
 	"strings"
 
 	"forgeos/forge-core/internal/asset"
-	"forgeos/forge-core/internal/memory"
 	"forgeos/forge-core/internal/orchestrator"
 	"forgeos/forge-core/internal/prompt"
 )
@@ -386,8 +385,9 @@ func phaseModelResolver(wf asset.Workflow, mode string) func(name string) string
 // gates/phaseOut/findings add no blocks, so the prompt is byte-for-byte the old one.
 func buildPrompt(repoRoot string, p asset.Phase, mode string, gates *gateLedger, phaseOut *phaseOutputLedger, findings *reviewFindingsLedger) string {
 	tier := orchestrator.PhaseTier(p, mode)
-	ctx := prompt.Gather(repoRoot, p.Name+" "+p.Agent)
-	ctx = append(ctx, memoryContext(repoRoot)...)
+	query := p.Name + " " + p.Agent
+	ctx := prompt.Gather(repoRoot, query)
+	ctx = append(ctx, memoryContext(repoRoot, query)...)
 	ctx = append(ctx, gates.contextLines()...)
 	ctx = append(ctx, phaseOut.contextLines()...)
 	// Gated on p.Name: findings.contextLines returns a block ONLY for the loop-back
@@ -397,26 +397,8 @@ func buildPrompt(repoRoot string, p asset.Phase, mode string, gates *gateLedger,
 	return prompt.Build(p.Agent, p.Name, mode, tier, readCard(repoRoot, p.Agent), ctx)
 }
 
-// memoryContext renders the cross-session store as one context block so the agent
-// sees what prior iterations learned. Topic is unconstrained — a phase should see
-// every gap/decision/lesson. Missing store = cold start (no block, no error); a
-// malformed store is surfaced as a visible context line, not an aborted prompt.
-func memoryContext(repoRoot string) []string {
-	entries, err := memory.Load(memoryPath(repoRoot))
-	if err != nil {
-		return []string{"Project memory: UNREADABLE (" + err.Error() + ")"}
-	}
-	rel := memory.Query(entries, "", "")
-	if len(rel) == 0 {
-		return nil
-	}
-	var b strings.Builder
-	b.WriteString("Project memory (gaps / decisions / lessons from prior iterations):")
-	for _, e := range rel {
-		fmt.Fprintf(&b, "\n- [%s] %s — %s (iter %d)", e.Kind, e.Topic, e.Detail, e.Iteration)
-	}
-	return []string{b.String()}
-}
+// memoryContext (the cross-session memory lane buildPrompt injects above) and its
+// bounding live in prompt_memory.go — split out to keep this file under the volume cap.
 
 // readCard returns the agent's role-card text, or a short marker when absent so
 // the prompt is still well-formed.
