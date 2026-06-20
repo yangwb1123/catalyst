@@ -23,7 +23,7 @@
 **明确遗留缺口(诚实标注,不夸大):**
 - Agent 阶段默认 dry-run(`DryRunExecutor` 只叙述,安全默认);**真实执行器 `--executor command --agent-cmd claude` 已端到端坐实**(Sprint 24-26:真跑暴露并逐个修复**八个**真实 gap —— 任务注入 / 写权限(acceptEdits) / 模型路由(--model) / 工作目录 / 成本封顶(--max-budget-usd) / trace-latency / cost-telemetry / reviewer-缺-gate-信号;这些是真实**接口/实现**缺口、非"仅凭证/预算",均已修 + 真 claude 验证 + Learning loop 三维真数据落盘)。真点火按 docs/ignition.md 配方显式启用(四维资源护栏 + 成本三维)。
 - **YAML 经 python shim 转码**:Go 标准库无 YAML 解析器且 forge-core 零依赖,`forge run/evolve` shell 出 `python3 harness/yaml2json.py` 把 `.agent/workflows/<name>.yml` 转成运行时消费的 JSON(临时脚手架,未来可换 Go YAML 库——属 architect/cto 的依赖决策)。
-- 仍待:独立 `agent-os` 仓库(submodule)+ 模板 + Eval→记分卡→Router 实际回灌 + ADR/RAG。**ADR-0001 的「核心循环验证稳定后再起 forge-core」取代条件已由 url-shortener dogfood 触发。**
+- 仍待:独立 `agent-os` 仓库(submodule)—— **设计就绪见 ADR 0003**(机制 submodule + 双层覆盖 + 路径解析改造已定;推荐暂缓至触发条件,远程位置 + 批准待你)+ 模板 + Eval→记分卡→Router 回灌(`forge route` 已接 `HistoryTiebreak`,v1 单-candidate 下主要是 observability + v3 plumbing)+ ADR/RAG。**ADR-0001 的「核心循环验证稳定后再起 forge-core」取代条件已由 url-shortener dogfood 触发。**
 
 ## v3 — AI 软件工厂
 带外 Sandbox(Firecracker)+ 跨厂商池(LiteLLM)+ 预算治理 + 完整 Discover + Web UI + 动态迁移。

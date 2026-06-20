@@ -10,6 +10,6 @@
 
 ## 待你拍板 (open)
 - **O1 目录改名**:`catalyst/` → `forgeos/`?(现保持 catalyst,产品名 ForgeOS)
-- **O2 全局共享机制**:git submodule(推荐,可复现) / symlink(最简) / npm 包(最现代)?
+- **O2 全局共享机制**:**机制已由 ADR 0003 定 = git submodule**(否决 symlink / npm / subtree / vendoring;双层覆盖 + 路径解析改造设计就绪)。**推荐暂缓**至「被治理项目 ≥ 2~3 且治理资产仍高频演进」触发条件;**仍待你拍板**:远程仓位置 + 批准不可逆迁移 + now-vs-暂缓(见 `../docs/adr/0003-agent-os-repo-extraction.md`「## 待拍板」)。
 - **O3 第一条垂直切片目标**:link-shortener API(我的建议) / 你指定 / dogfood ForgeOS 自己?
 - **O4 enforce**:**已切 `block`(已结)** —— O3 切片(url-shortener)跑通后,`harness/policies.yml` 已置 `enforce: block`,整仓 block 模式全绿。注:函数行数 / 循环依赖适配器仍为 v0.1 TODO(见 policies.yml),其余红线已实际执法。
