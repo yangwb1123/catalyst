@@ -115,6 +115,21 @@ convergence: MET — [x] gates_status == green           # ★ForgeOS 自己判�
 ★诚实边界(增量级 vs 版本级)★:此处 converge MET 用的是 `gates_status==green` —— 所有**声明的工具门
 真绿**(test/complexity/arch/security 全 PASS;lint/build 这类 N/A 的门**不能**声明为 required,否则
 convergence 诚实拒绝 N/A 充绿)。`build.yml` 另有**版本级**判据 `roadmap_completion==100%`,它要 ROADMAP
-checklist 被勾掉 —— 而 ForgeOS **刻意不让 agent 自动勾**:勾掉 = 宣布一个版本切片竣工,是应由**人确认**
-的里程碑。所以真点火 multi-agent 能自治到「增量绿」,而「版本竣工」诚实地保留人在环 —— agent 绝不自我
-宣布完成。这正是 honesty-first 的两面:既不为「跑过了」盖增量章造假,也不让 agent 越权盖版本章。
+checklist 被勾掉。
+
+### 版本级 converge MET:agent/人的诚实分工(实测)
+跑一个 `stop = roadmap_completion==100% AND gates_status==green` 的 multi-agent workflow,真 claude:
+```
+convergence: MET — [x] roadmap_completion == 100% · [x] gates_status == green
+```
+达成它揭示了 ForgeOS honesty 的**机制层**,而非规则层:
+- implementer(`acceptEdits`,能 Edit、**不放开 Bash**)真写了代码,但**跑不了 `node --test` 自查**;
+  它遵守 ROADMAP 的「自查绿后才勾」纪律,**没自查就拒绝勾 `- [x]`**——绝不假装一个它无法验证的完成。
+- **客观验证**交给有权限的 harness-gates(forge 内部、真跑 gate → green);reviewer 也只静态判、把客观
+  信号留给 harness/qa 核实。
+- **版本竣工的那一勾,留给人**:基于客观证据(test 全绿 + gates green + reviewer PASS + `forge accept`
+  ACCEPTED),由人确认勾掉 ROADMAP —— 这才让 `roadmap_completion` 到 100%、converge 判 MET。
+
+所以真点火 multi-agent 在两个层面都能 running to completion,且分工诚实:**增量绿由 agent 自治达成;版本
+竣工由人确认达成**。agent 既不越权盖版本章,也不为没自查的事造假 —— 这不是靠角色卡说教,是靠**权限模型
+让 agent 自己拒绝越权**。honesty-first 贯穿到每个 agent 的每个动作。
