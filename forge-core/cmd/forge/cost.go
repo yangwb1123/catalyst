@@ -100,15 +100,24 @@ func unwrapClaudeResult(output string) string {
 }
 
 // costEmitter builds the per-phase cost sink: it converts a billed USD figure to
-// integer microdollars and emits one `kind:"agent"` trace event carrying it, so the
-// scorecard's --trace reader can aggregate a real avg_cost_usd. Microdollars match
-// trace.Event.CostUsdMicros (integer, jitter-free). The conversion (USD x 1e6, rounded)
-// is owned here — trace.go stays oblivious to dollars.
-func costEmitter(tracer *trace.Tracer, logln func(string)) func(phase string, usd float64) {
-	return func(phase string, usd float64) {
+// integer microdollars and emits one `kind:"agent"` trace event carrying it AND the
+// model it was billed against, so the scorecard's --trace reader can aggregate a real
+// avg_cost_usd attributed to that model. Microdollars match trace.Event.CostUsdMicros
+// (integer, jitter-free); the conversion (USD x 1e6, rounded) is owned here — trace.go
+// stays oblivious to both dollars and what a model is.
+//
+// HONESTY on `model`: this is the REQUESTED/ROUTED tier (orchestrator.PhaseTier — the
+// SAME value handed to `claude --model` at the call site), not a field read back out of
+// the claude JSON. Under v1's claude-only pool, claude bills the tier `--model` selected,
+// so requested == billed and attributing the cost to the routed tier is accurate. (If a
+// future provider could silently downgrade the served model, this would become
+// requested-not-served; the comment is the honest caveat.)
+func costEmitter(tracer *trace.Tracer, logln func(string)) func(phase, model string, usd float64) {
+	return func(phase, model string, usd float64) {
 		emitTrace(tracer, trace.Event{
 			Kind: "agent", Name: phase, Status: "ok",
 			CostUsdMicros: int64(math.Round(usd * 1e6)),
+			Model:         model,
 		}, logln)
 	}
 }

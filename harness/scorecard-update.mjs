@@ -118,10 +118,16 @@ export function updateScorecards(existing, newRow, opts = {}) {
   return out;
 }
 
-// parseTraceLatencies(text) -> array of REAL per-event wall-clock durations (ms)
-// extracted from forge-core trace JSONL. `text` is the raw file contents: one
+// parseTraceLatencies(text, model?) -> array of REAL per-event wall-clock durations
+// (ms) extracted from forge-core trace JSONL. `text` is the raw file contents: one
 // JSON object per line (see forge-core/internal/trace/trace.go `Event`). We read
 // each event's `duration_ms` (the on-disk json tag) and keep the finite ones.
+//
+// MODEL FILTER (optional): when `model` is supplied, only events whose `model` field
+// equals it are counted — so a trace that interleaves several models' cost/latency
+// (forge stamps each billed agent event with its routed tier) yields a per-model p95.
+// `model === undefined` does NOT filter (every event counts), keeping the existing
+// `--trace` callers — `forge route`, any pre-attribution trace — byte-for-byte intact.
 //
 // PURE: text in, numbers out — no filesystem here (the read happens at the I/O
 // boundary), so this is unit-testable against a fixture string. Robust by design
@@ -133,7 +139,7 @@ export function updateScorecards(existing, newRow, opts = {}) {
 //     a missing/NaN field is skipped) contributes nothing
 // The result feeds scorecard.percentile for a genuine p95 — these are measured
 // latencies, not estimates.
-export function parseTraceLatencies(text) {
+export function parseTraceLatencies(text, model) {
   if (typeof text !== 'string') return [];
   const out = [];
   for (const line of text.split('\n')) {
@@ -141,12 +147,13 @@ export function parseTraceLatencies(text) {
     if (s === '') continue;
     let ev;
     try { ev = JSON.parse(s); } catch { continue; } // skip a malformed line
-    if (ev && Number.isFinite(ev.duration_ms)) out.push(ev.duration_ms);
+    if (!ev || (model !== undefined && ev.model !== model)) continue;
+    if (Number.isFinite(ev.duration_ms)) out.push(ev.duration_ms);
   }
   return out;
 }
 
-// parseTraceCosts(text) -> array of REAL per-event USD costs extracted from
+// parseTraceCosts(text, model?) -> array of REAL per-event USD costs extracted from
 // forge-core trace JSONL, mirroring parseTraceLatencies. forge writes each LLM
 // executor event's billed cost as integer `cost_usd_micros` (microdollars, USD x
 // 1e6) precisely to avoid the float-JSON drift a raw dollar double would print; we
@@ -154,12 +161,16 @@ export function parseTraceLatencies(text) {
 // it (a real claude phase); iteration/gate/converge and echo/dry agent events omit it
 // and contribute nothing — honest "no data", never a fabricated 0.
 //
+// MODEL FILTER (optional): identical to parseTraceLatencies — when `model` is supplied,
+// only events whose `model` field equals it count, so a multi-model trace yields a
+// per-model avg cost; `model === undefined` does NOT filter (backward-compatible).
+//
 // PURE: text in, numbers out (the read is at the I/O boundary), so it is unit-testable
 // against a fixture string, and identically robust to parseTraceLatencies:
 //   - blank lines are skipped
 //   - a non-JSON line is skipped (a corrupt tail must not sink the aggregation)
 //   - an event with no finite cost_usd_micros contributes nothing
-export function parseTraceCosts(text) {
+export function parseTraceCosts(text, model) {
   if (typeof text !== 'string') return [];
   const out = [];
   for (const line of text.split('\n')) {
@@ -167,7 +178,8 @@ export function parseTraceCosts(text) {
     if (s === '') continue;
     let ev;
     try { ev = JSON.parse(s); } catch { continue; } // skip a malformed line
-    if (ev && Number.isFinite(ev.cost_usd_micros)) out.push(ev.cost_usd_micros / 1e6);
+    if (!ev || (model !== undefined && ev.model !== model)) continue;
+    if (Number.isFinite(ev.cost_usd_micros)) out.push(ev.cost_usd_micros / 1e6);
   }
   return out;
 }
@@ -233,24 +245,25 @@ function withTrajectory(verdict, { iterations, reworked }) {
   return out;
 }
 
-// Read a forge-core trace file at `path` and parse out its measured latencies.
-// I/O shell around the pure parseTraceLatencies; a missing file is an empty
-// sample set (no trace yet), not an error — telemetry is optional and absence is
-// honest. `undefined` path -> undefined (the --trace flag was not supplied).
-function readTraceLatencies(path) {
+// Read a forge-core trace file at `path` and parse out its measured latencies,
+// optionally filtered to one `model`. I/O shell around the pure parseTraceLatencies; a
+// missing file is an empty sample set (no trace yet), not an error — telemetry is
+// optional and absence is honest. `undefined` path -> undefined (the --trace flag was
+// not supplied). `model` is forwarded straight through (undefined -> no filter).
+function readTraceLatencies(path, model) {
   if (path === undefined) return undefined;
   if (!existsSync(path)) return [];
-  return parseTraceLatencies(readFileSync(path, 'utf8'));
+  return parseTraceLatencies(readFileSync(path, 'utf8'), model);
 }
 
-// Read a forge-core trace file at `path` and parse out its REAL billed costs, the
-// cost twin of readTraceLatencies. A missing file is an empty sample set (no trace
-// yet), not an error; an undefined path -> undefined (--trace was not supplied), so
-// the field is omitted rather than fabricated.
-function readTraceCosts(path) {
+// Read a forge-core trace file at `path` and parse out its REAL billed costs (optionally
+// filtered to one `model`), the cost twin of readTraceLatencies. A missing file is an
+// empty sample set (no trace yet), not an error; an undefined path -> undefined (--trace
+// was not supplied), so the field is omitted rather than fabricated.
+function readTraceCosts(path, model) {
   if (path === undefined) return undefined;
   if (!existsSync(path)) return [];
-  return parseTraceCosts(readFileSync(path, 'utf8'));
+  return parseTraceCosts(readFileSync(path, 'utf8'), model);
 }
 
 // Combine the latency sources into one sample set for synthesize, or undefined
@@ -333,12 +346,19 @@ function main() {
   // Both latency AND cost now come from the trace (real measurements) and/or direct
   // injection: --trace feeds p95 latency (duration_ms) and avg cost (cost_usd_micros,
   // forge's real billed dollars), each concatenated with its direct-injection flag.
+  // The trace reads are FILTERED to this row's --model, so a trace interleaving several
+  // models (forge stamps each billed event with its routed tier) contributes only THIS
+  // model's samples to THIS row — keeping per-model cost/latency honest. (For a legacy
+  // single-model trace the filter is a no-op: every event already carries this model, or
+  // — for a pre-attribution trace with no model field — none would match. The wind-down
+  // only invokes us once it has confirmed model-stamped cost events exist, so the right
+  // path is always the per-model filter.)
   const latenciesMs = combineLatencies(
-    readTraceLatencies(args.trace),
+    readTraceLatencies(args.trace, args.model),
     parseNumberList(args['latency-ms']),
   );
   const costsUsd = combineCosts(
-    readTraceCosts(args.trace),
+    readTraceCosts(args.trace, args.model),
     parseNumberList(args['cost-usd']),
   );
   const { verdict, newRow } = runUpdate({

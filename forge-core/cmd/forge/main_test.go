@@ -165,7 +165,7 @@ func TestFeedsForwardOf(t *testing.T) {
 func TestAgentExecutor_ObserveRecordsFeedsForwardOutput(t *testing.T) {
 	po := newPhaseOutputLedger()
 	feeds := func(phase string) bool { return phase == "planner" }
-	ex := agentExecutor(runOpts{executor: "command", agentCmd: "echo", root: t.TempDir()}, func(string) {}, nil, nil, po, feeds, nil, nil, nil)
+	ex := agentExecutor(runOpts{executor: "command", agentCmd: "echo", root: t.TempDir()}, func(string) {}, nil, nil, nil, po, feeds, nil, nil, nil)
 	ce, ok := ex.(orchestrator.CommandExecutor)
 	if !ok {
 		t.Fatalf("executor=command must yield a CommandExecutor, got %T", ex)
@@ -190,7 +190,7 @@ func TestAgentExecutor_ObserveRecordsFeedsForwardOutput(t *testing.T) {
 func TestAgentExecutor_ObserveUnwrapsClaudeOutputForFeedForward(t *testing.T) {
 	po := newPhaseOutputLedger()
 	feeds := func(string) bool { return true }
-	ex := agentExecutor(runOpts{executor: "command", agentCmd: "claude", root: t.TempDir()}, func(string) {}, nil, nil, po, feeds, nil, nil, nil)
+	ex := agentExecutor(runOpts{executor: "command", agentCmd: "claude", root: t.TempDir()}, func(string) {}, nil, nil, nil, po, feeds, nil, nil, nil)
 	ce := ex.(orchestrator.CommandExecutor)
 	ce.Observe("planner", realClaudeJSON)
 	if got := po.summary["planner"]; got != "done editing main.go" {
@@ -228,7 +228,7 @@ func repoRoot() string {
 // flag to a stub like echo. This is what made real ignition actually WRITE code.
 func TestAgentExecutor_PermissionModeOnlyForClaude(t *testing.T) {
 	mk := func(cmd string) string {
-		ex := agentExecutor(runOpts{executor: "command", agentCmd: cmd, agentPermission: "acceptEdits", root: t.TempDir()}, func(string) {}, nil, nil, nil, nil, nil, nil, nil)
+		ex := agentExecutor(runOpts{executor: "command", agentCmd: cmd, agentPermission: "acceptEdits", root: t.TempDir()}, func(string) {}, nil, nil, nil, nil, nil, nil, nil, nil)
 		ce, ok := ex.(orchestrator.CommandExecutor)
 		if !ok {
 			t.Fatalf("executor=command must yield a CommandExecutor, got %T", ex)
@@ -245,7 +245,7 @@ func TestAgentExecutor_PermissionModeOnlyForClaude(t *testing.T) {
 
 // An empty agent-permission disables the flag even for claude (operator opt-out).
 func TestAgentExecutor_EmptyPermissionDisablesFlag(t *testing.T) {
-	ex := agentExecutor(runOpts{executor: "command", agentCmd: "claude", agentPermission: "", root: t.TempDir()}, func(string) {}, nil, nil, nil, nil, nil, nil, nil)
+	ex := agentExecutor(runOpts{executor: "command", agentCmd: "claude", agentPermission: "", root: t.TempDir()}, func(string) {}, nil, nil, nil, nil, nil, nil, nil, nil)
 	ce := ex.(orchestrator.CommandExecutor)
 	argv := strings.Join(ce.Build(asset.Phase{Name: "p", Agent: "implementer"}, "balanced"), " ")
 	if strings.Contains(argv, "--permission-mode") {
@@ -258,7 +258,7 @@ func TestAgentExecutor_EmptyPermissionDisablesFlag(t *testing.T) {
 // and must NOT pass that claude-only flag to a stub like echo.
 func TestAgentExecutor_ModelTierForClaude(t *testing.T) {
 	mk := func(cmd, agent string) string {
-		ex := agentExecutor(runOpts{executor: "command", agentCmd: cmd, root: t.TempDir()}, func(string) {}, nil, nil, nil, nil, nil, nil, nil)
+		ex := agentExecutor(runOpts{executor: "command", agentCmd: cmd, root: t.TempDir()}, func(string) {}, nil, nil, nil, nil, nil, nil, nil, nil)
 		ce := ex.(orchestrator.CommandExecutor)
 		return strings.Join(ce.Build(asset.Phase{Name: agent, Agent: agent}, "balanced"), " ")
 	}
@@ -275,7 +275,7 @@ func TestAgentExecutor_ModelTierForClaude(t *testing.T) {
 // --max-agent-calls (phase count) and --timeout (wall-clock).
 func TestAgentExecutor_MaxBudgetForClaude(t *testing.T) {
 	mk := func(cmd, budget string) string {
-		ex := agentExecutor(runOpts{executor: "command", agentCmd: cmd, agentMaxBudgetUSD: budget, root: t.TempDir()}, func(string) {}, nil, nil, nil, nil, nil, nil, nil)
+		ex := agentExecutor(runOpts{executor: "command", agentCmd: cmd, agentMaxBudgetUSD: budget, root: t.TempDir()}, func(string) {}, nil, nil, nil, nil, nil, nil, nil, nil)
 		ce := ex.(orchestrator.CommandExecutor)
 		return strings.Join(ce.Build(asset.Phase{Name: "p", Agent: "implementer"}, "balanced"), " ")
 	}

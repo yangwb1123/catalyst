@@ -50,8 +50,18 @@ type Event struct {
 	// would print (0.0544035 round-trips exactly as 54403); omitempty keeps every
 	// event WITHOUT a cost (iteration/gate/converge, and echo/dry agent phases) byte-
 	// for-byte identical on disk, so existing iteration-event assertions are intact.
-	CostUsdMicros int64  `json:"cost_usd_micros,omitempty"`
-	Detail        string `json:"detail,omitempty"` // free-text context, omitted from JSON when empty
+	CostUsdMicros int64 `json:"cost_usd_micros,omitempty"`
+	// Model is the LLM model/tier this event was billed against, OPAQUE to this
+	// package exactly like CostUsdMicros — trace has no notion of what a "model" is
+	// or where the string comes from; it only carries it. It is supplied ONLY by the
+	// same real LLM-executor cost path that fills CostUsdMicros (a routed claude
+	// tier), so a non-LLM event (iteration/gate/converge) and an echo/dry agent phase
+	// leave it empty. omitempty keeps every event WITHOUT a model byte-for-byte
+	// identical on disk, so existing iteration/gate/cost-event assertions stay intact;
+	// downstream the scorecard producer reads it (json tag `model`) to attribute a
+	// billed cost to the model that incurred it.
+	Model  string `json:"model,omitempty"`
+	Detail string `json:"detail,omitempty"` // free-text context, omitted from JSON when empty
 }
 
 // Tracer serializes Events to an io.Writer as JSONL (one JSON object per line).

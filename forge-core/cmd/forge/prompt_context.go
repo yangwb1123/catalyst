@@ -308,12 +308,16 @@ func onFailTargetOf(wf asset.Workflow) func(name string) (string, bool) {
 //     REQUEST_CHANGES, the result text is also recorded into findings, keyed by this
 //     phase's on_fail TARGET (the implementer), for targeted-repair injection;
 //   - cost: ONLY for claude, the output is parsed for total_cost_usd and a billed figure
-//     forwarded to costSink — echo/stubs never carry that envelope, so they never bill.
+//     forwarded to costSink ALONG WITH the phase's routed model — echo/stubs never carry
+//     that envelope, so they never bill. The model is resolved via phaseModel (closing
+//     over wf+mode, the SAME orchestrator.PhaseTier handed to `claude --model`), because
+//     the Observe seam is given only (phase NAME, output), never the Phase — the identical
+//     reason feedsForward/onFailTarget are injected lookups rather than read off a Phase.
 //
 // Returns nil only when NO concern is live (not claude AND no other ledger wired),
 // preserving the byte-for-byte no-hook default path for a plain stub run. unwrapClaudeResult
 // (the log renderer) is applied by the caller, not here.
-func observeFor(isClaude bool, costSink func(phase string, usd float64), phaseOut *phaseOutputLedger, feedsForward func(phase string) bool, verdicts *verdictLedger, findings *reviewFindingsLedger, onFailTarget func(phase string) (string, bool)) func(phase, output string) {
+func observeFor(isClaude bool, costSink func(phase, model string, usd float64), phaseModel func(phase string) string, phaseOut *phaseOutputLedger, feedsForward func(phase string) bool, verdicts *verdictLedger, findings *reviewFindingsLedger, onFailTarget func(phase string) (string, bool)) func(phase, output string) {
 	if !isClaude && phaseOut == nil && verdicts == nil && findings == nil {
 		return nil
 	}
@@ -336,9 +340,37 @@ func observeFor(isClaude bool, costSink func(phase string, usd float64), phaseOu
 		}
 		if isClaude && costSink != nil {
 			if usd, ok := parseClaudeCostUsd(output); ok {
-				costSink(phase, usd)
+				costSink(phase, phaseModelOf(phaseModel, phase), usd)
 			}
 		}
+	}
+}
+
+// phaseModelOf resolves the routed model/tier for a phase NAME via the injected
+// phaseModel lookup, returning "" when none is wired (nil-safe). The empty string flows
+// to costEmitter -> trace.Event.Model, where omitempty drops it — so a missing resolver
+// degrades to an un-attributed cost event, never a panic or a fabricated model name.
+func phaseModelOf(phaseModel func(phase string) string, phase string) string {
+	if phaseModel == nil {
+		return ""
+	}
+	return phaseModel(phase)
+}
+
+// phaseModelResolver builds the (phase name -> routed model/tier) resolver the cost sink
+// uses to attribute a billed cost to the model that incurred it. It mirrors feedsForwardOf /
+// onFailTargetOf (closing over wf so the Observe seam, handed only a phase NAME, can look
+// the phase up) and computes orchestrator.PhaseTier(p, mode) — the EXACT value
+// agentExecutor's Build hands to `claude --model`, so the attributed model is the one the
+// run actually routed to. An unknown phase name yields "" (omitempty drops it downstream).
+func phaseModelResolver(wf asset.Workflow, mode string) func(name string) string {
+	return func(name string) string {
+		for _, p := range wf.Phases {
+			if p.Name == name {
+				return orchestrator.PhaseTier(p, mode)
+			}
+		}
+		return ""
 	}
 }
 

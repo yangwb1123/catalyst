@@ -222,7 +222,7 @@ func TestObserveFor_VerdictAndFindingsRouting(t *testing.T) {
 		}
 		return "", false
 	}
-	sink := observeFor(false, nil, nil, nil, verdicts, findings, target)
+	sink := observeFor(false, nil, nil, nil, nil, verdicts, findings, target)
 	if sink == nil {
 		t.Fatal("with verdict/findings ledgers wired, observeFor must return a sink")
 	}

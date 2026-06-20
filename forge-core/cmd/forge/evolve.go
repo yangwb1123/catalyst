@@ -139,7 +139,16 @@ func execLoop(wf asset.Workflow, o runOpts, maxIter int, maxIterSource string, r
 	loop.OnIteration = checkpointHook(o, wf, tracer, logln)
 	fmt.Printf("forge evolve: stage=%s mode=%s max-iter=%d (%s) type=%s start-iter=%d (doom-loop tripwire=2)\n",
 		wf.Stage, o.mode, maxIter, maxIterSource, stopTypeLabel(wf.Stop.Type), start)
-	return reportLoop(loop.Run(wf, o.mode))
+	outcome, runErr := loop.Run(wf, o.mode)
+	// Learning-loop wind-down: attribute the loop's REAL billed cost into the
+	// scorecards. It runs BEFORE the deferred closeTrace() (the trace file is still
+	// open, per scorecard_wind.go's flush-ordering invariant) and is gate-on-real-cost +
+	// fail-loud-and-continue — so a dry/echo loop (the v1 default) skips it, and a
+	// producer hiccup leaves the loop's outcome (reportLoop below) exactly as Run set it.
+	// It runs whether the loop converged or hit the safety bound: real cost billed across
+	// the iterations is attributable regardless of how the loop ended.
+	windDownScorecards(wf, o, logln)
+	return reportLoop(outcome, runErr)
 }
 
 // buildLoop constructs the loop engine: real gates + selected executor + live
@@ -155,11 +164,12 @@ func execLoop(wf asset.Workflow, o runOpts, maxIter int, maxIterSource string, r
 // it (depth-two defense; cmdEvolve already refuses one up front).
 //
 // costSink threads the SAME tracer execLoop already owns into the agent executor, so
-// a real claude phase's billed cost lands as a `kind:"agent"` cost event interleaved
-// (Seq-ordered) with the per-iteration events in trace.jsonl. It does NOT go through
-// checkpointHook: cost is per-PHASE (emitted inside RunFrom when a phase bills), not
-// per-iteration, so the iteration-event assertions are untouched.
-func buildLoop(wf asset.Workflow, o runOpts, maxIter int, logln func(string), costSink func(phase string, usd float64)) orchestrator.LoopEngine {
+// a real claude phase's billed cost lands as a `kind:"agent"` cost event — now ALSO
+// stamped with the routed model — interleaved (Seq-ordered) with the per-iteration events
+// in trace.jsonl. It does NOT go through checkpointHook: cost is per-PHASE (emitted inside
+// RunFrom when a phase bills), not per-iteration, so the iteration-event assertions are
+// untouched.
+func buildLoop(wf asset.Workflow, o runOpts, maxIter int, logln func(string), costSink func(phase, model string, usd float64)) orchestrator.LoopEngine {
 	probe := &loopProbe{root: o.root}
 	// The Engine — with its four prompt/feedback ledgers (gate verdicts, feeds_forward
 	// output, reviewer verdicts driving loop-back, and REQUEST_CHANGES findings) — is built

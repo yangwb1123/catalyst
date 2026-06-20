@@ -337,6 +337,39 @@ test('parseTraceCosts: a present cost_usd_micros:0 is kept as a real finite samp
   assert.deepEqual(parseTraceCosts(text), [0], 'an explicit 0 microdollars is a real finite sample');
 });
 
+// --- model filter: a multi-model trace attributes each model's own samples -------
+// forge stamps each billed agent event with its routed model; the producer is invoked
+// once per (model, task_type) and filters the SHARED trace to that model, so each row
+// carries only its own cost/latency. This pins that the optional model arg isolates a
+// model's samples — and that omitting it (legacy callers) counts every event.
+const MULTI_MODEL_TRACE = [
+  '{"seq":1,"kind":"agent","name":"implementer","status":"ok","duration_ms":100,"cost_usd_micros":54404,"model":"sonnet"}',
+  '{"seq":2,"kind":"agent","name":"reviewer","status":"ok","duration_ms":300,"cost_usd_micros":120000,"model":"opus"}',
+  '{"seq":3,"kind":"agent","name":"implementer","status":"ok","duration_ms":200,"cost_usd_micros":10000,"model":"sonnet"}',
+  '{"seq":4,"kind":"iteration","name":"1","status":"ok","duration_ms":4200}', // no model -> excluded from any model filter
+].join('\n');
+
+test('parseTraceCosts: model filter keeps only that model\'s billed costs', () => {
+  assert.deepEqual(parseTraceCosts(MULTI_MODEL_TRACE, 'sonnet'), [0.054404, 0.01], 'only sonnet events');
+  assert.deepEqual(parseTraceCosts(MULTI_MODEL_TRACE, 'opus'), [0.12], 'only the opus event');
+  assert.deepEqual(parseTraceCosts(MULTI_MODEL_TRACE, 'haiku'), [], 'a model with no events -> no data');
+});
+
+test('parseTraceLatencies: model filter keeps only that model\'s durations', () => {
+  assert.deepEqual(parseTraceLatencies(MULTI_MODEL_TRACE, 'sonnet'), [100, 200], 'only sonnet durations');
+  assert.deepEqual(parseTraceLatencies(MULTI_MODEL_TRACE, 'opus'), [300], 'only the opus duration');
+  // The unstamped iteration event (no model) is excluded from EVERY model filter — it is
+  // not attributable to any model, so it never inflates a per-model p95.
+  assert.ok(!parseTraceLatencies(MULTI_MODEL_TRACE, 'sonnet').includes(4200), 'unstamped event excluded');
+});
+
+test('parseTrace*: undefined model does NOT filter (backward-compatible: every event)', () => {
+  // The legacy `--trace` callers (forge route, a pre-attribution trace) pass no model,
+  // so the unfiltered aggregate counts ALL events including the unstamped iteration.
+  assert.deepEqual(parseTraceCosts(MULTI_MODEL_TRACE), [0.054404, 0.12, 0.01], 'all billed events');
+  assert.deepEqual(parseTraceLatencies(MULTI_MODEL_TRACE), [100, 300, 200, 4200], 'all durations incl. unstamped');
+});
+
 // --- parseNumberList: comma-separated injection --------------------------------
 test('parseNumberList: splits and keeps finite numbers', () => {
   assert.deepEqual(parseNumberList('12,45,90'), [12, 45, 90]);

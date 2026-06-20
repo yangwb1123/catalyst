@@ -107,15 +107,15 @@ func TestParseReviewerVerdict_TrailingBlankToleratedAndTrimmed(t *testing.T) {
 // parser NEVER defaults to a verdict it did not literally see.
 func TestParseReviewerVerdict_MalformedOrMissingIsNotOK(t *testing.T) {
 	for _, out := range []string{
-		"",                                  // empty
-		"   ",                               // blank
-		"just a review with no verdict",     // no verdict line
-		"VERDICT: APPROVE\nbut wait, more",  // verdict not on the LAST line
-		"`VERDICT: APPROVE`",                // wrapped in backticks (not top-aligned)
-		"- VERDICT: REQUEST_CHANGES",        // bulleted (wrapped)
-		"VERDICT: MAYBE",                    // unknown token
-		"verdict: approve",                  // wrong case (exact match only)
-		"VERDICT:APPROVE",                   // missing the contracted space
+		"",                                 // empty
+		"   ",                              // blank
+		"just a review with no verdict",    // no verdict line
+		"VERDICT: APPROVE\nbut wait, more", // verdict not on the LAST line
+		"`VERDICT: APPROVE`",               // wrapped in backticks (not top-aligned)
+		"- VERDICT: REQUEST_CHANGES",       // bulleted (wrapped)
+		"VERDICT: MAYBE",                   // unknown token
+		"verdict: approve",                 // wrong case (exact match only)
+		"VERDICT:APPROVE",                  // missing the contracted space
 	} {
 		if v, ok := parseReviewerVerdict(out); ok || v != "" {
 			t.Errorf("malformed/missing verdict %q must yield (\"\",false); got (%q,%v)", out, v, ok)
@@ -139,18 +139,36 @@ func TestParseReviewerVerdict_UnwrapsClaudeEnvelopeAndEchoSentinel(t *testing.T)
 }
 
 // costEmitter converts billed USD to integer microdollars and emits one kind:"agent"
-// cost event on the trace — the value the scorecard's --trace reader aggregates.
+// cost event on the trace, STAMPED with the routed model — the values the scorecard's
+// --trace reader aggregates and attributes per model.
 func TestCostEmitter_EmitsMicrodollarAgentEvent(t *testing.T) {
 	var buf bytes.Buffer
 	sink := costEmitter(trace.NewTracer(&buf), func(string) {})
-	sink("implementer", 0.0544035)
+	sink("implementer", "sonnet", 0.0544035)
 	ev := lastTraceEvent(t, buf.String())
 	if ev.Kind != "agent" || ev.Name != "implementer" || ev.Status != "ok" {
 		t.Errorf("cost event = %+v, want agent/implementer/ok", ev)
 	}
+	if ev.Model != "sonnet" {
+		t.Errorf("cost event must be stamped with the routed model; got Model=%q, want sonnet", ev.Model)
+	}
 	// 0.0544035 USD x 1e6 = 54403.5, math.Round (half away from zero) -> 54404 micros.
 	if want := int64(math.Round(0.0544035 * 1e6)); ev.CostUsdMicros != want {
 		t.Errorf("CostUsdMicros = %d, want %d (round(0.0544035*1e6))", ev.CostUsdMicros, want)
+	}
+}
+
+// costEmitter with an empty model (no resolver wired) must OMIT the model field on the
+// wire — omitempty keeps a cost event without attribution byte-compatible, never a "".
+func TestCostEmitter_EmptyModelOmitted(t *testing.T) {
+	var buf bytes.Buffer
+	costEmitter(trace.NewTracer(&buf), func(string) {})("implementer", "", 0.01)
+	if strings.Contains(buf.String(), `"model"`) {
+		t.Errorf("an empty model must be omitted from the cost event JSON; got %q", buf.String())
+	}
+	ev := lastTraceEvent(t, buf.String())
+	if ev.Model != "" || ev.CostUsdMicros == 0 {
+		t.Errorf("event = %+v, want empty Model + a real cost", ev)
 	}
 }
 
@@ -161,11 +179,11 @@ func TestCostEmitter_EmitsMicrodollarAgentEvent(t *testing.T) {
 func TestAgentExecutor_EchoEmitsNoCostEvent(t *testing.T) {
 	var buf bytes.Buffer
 	costCalls := 0
-	costSink := func(phase string, usd float64) {
+	costSink := func(phase, model string, usd float64) {
 		costCalls++
-		costEmitter(trace.NewTracer(&buf), func(string) {})(phase, usd)
+		costEmitter(trace.NewTracer(&buf), func(string) {})(phase, model, usd)
 	}
-	ex := agentExecutor(runOpts{executor: "command", agentCmd: "echo", root: t.TempDir()}, func(string) {}, costSink, nil, nil, nil, nil, nil, nil)
+	ex := agentExecutor(runOpts{executor: "command", agentCmd: "echo", root: t.TempDir()}, func(string) {}, costSink, nil, nil, nil, nil, nil, nil, nil)
 	ce, ok := ex.(orchestrator.CommandExecutor)
 	if !ok {
 		t.Fatalf("executor=command must yield a CommandExecutor, got %T", ex)
@@ -190,7 +208,7 @@ func TestAgentExecutor_EchoEmitsNoCostEvent(t *testing.T) {
 // --output-format json (so it emits the total_cost_usd envelope this CLI parses),
 // alongside the existing --permission-mode/--model. This is the Build half of the wiring.
 func TestAgentExecutor_ClaudeGetsOutputFormatJSON(t *testing.T) {
-	ex := agentExecutor(runOpts{executor: "command", agentCmd: "claude", agentPermission: "acceptEdits", root: t.TempDir()}, func(string) {}, nil, nil, nil, nil, nil, nil, nil)
+	ex := agentExecutor(runOpts{executor: "command", agentCmd: "claude", agentPermission: "acceptEdits", root: t.TempDir()}, func(string) {}, nil, nil, nil, nil, nil, nil, nil, nil)
 	ce := ex.(orchestrator.CommandExecutor)
 	argv := strings.Join(ce.Build(asset.Phase{Name: "implementer", Agent: "implementer"}, "balanced"), " ")
 	if !strings.Contains(argv, "--output-format json") {
@@ -205,37 +223,48 @@ func TestAgentExecutor_ClaudeGetsOutputFormatJSON(t *testing.T) {
 // wiring without burning a live call.
 func TestAgentExecutor_ClaudeObserveDrivesCostSink(t *testing.T) {
 	var buf bytes.Buffer
-	var gotPhase string
+	var gotPhase, gotModel string
 	var gotUsd float64
-	costSink := func(phase string, usd float64) {
-		gotPhase, gotUsd = phase, usd
-		costEmitter(trace.NewTracer(&buf), func(string) {})(phase, usd)
+	costSink := func(phase, model string, usd float64) {
+		gotPhase, gotModel, gotUsd = phase, model, usd
+		costEmitter(trace.NewTracer(&buf), func(string) {})(phase, model, usd)
 	}
-	ex := agentExecutor(runOpts{executor: "command", agentCmd: "claude", root: t.TempDir()}, func(string) {}, costSink, nil, nil, nil, nil, nil, nil)
+	// phaseModel resolves the routed model for the phase name — the SAME injection
+	// point production uses (phaseModelResolver), here a fixed stub so the attribution
+	// is deterministic without depending on routing's tier table.
+	phaseModel := func(string) string { return "sonnet" }
+	ex := agentExecutor(runOpts{executor: "command", agentCmd: "claude", root: t.TempDir()}, func(string) {}, costSink, phaseModel, nil, nil, nil, nil, nil, nil)
 	ce := ex.(orchestrator.CommandExecutor)
 	if ce.Observe == nil {
 		t.Fatal("claude executor must install an Observe sink")
 	}
 	ce.Observe("implementer", realClaudeJSON)
-	if gotPhase != "implementer" || math.Abs(gotUsd-0.0544035) > 1e-9 {
-		t.Errorf("Observe(real JSON) must drive costSink(implementer, 0.0544035); got (%q,%v)", gotPhase, gotUsd)
+	if gotPhase != "implementer" || gotModel != "sonnet" || math.Abs(gotUsd-0.0544035) > 1e-9 {
+		t.Errorf("Observe(real JSON) must drive costSink(implementer, sonnet, 0.0544035); got (%q,%q,%v)", gotPhase, gotModel, gotUsd)
 	}
 	ev := lastTraceEvent(t, buf.String())
-	if ev.Kind != "agent" || ev.CostUsdMicros == 0 {
-		t.Errorf("a real claude cost must trace a non-zero agent cost event; got %+v", ev)
+	if ev.Kind != "agent" || ev.Model != "sonnet" || ev.CostUsdMicros == 0 {
+		t.Errorf("a real claude cost must trace a non-zero, model-stamped agent cost event; got %+v", ev)
 	}
 }
 
 // buildLoop must thread the costSink into the agent executor so a real claude phase's
-// billed cost reaches the trace. With agentCmd=claude the produced CommandExecutor
-// carries an Observe sink (the claude cost hook); the wiring is the same tracer execLoop
-// owns. Driving the installed Observe with a real claude JSON fixture must emit a
-// kind:"agent" cost event — proving buildLoop->executor->costSink->trace is connected.
+// billed cost reaches the trace, ATTRIBUTED to the phase's routed model. With agentCmd=
+// claude the produced CommandExecutor carries an Observe sink (the claude cost hook); the
+// wiring is the same tracer execLoop owns. Driving the installed Observe with a real claude
+// JSON fixture must emit a kind:"agent" cost event stamped with the model buildLoop's
+// internal phaseModelResolver(wf, mode) computes — proving buildLoop -> executor ->
+// costSink(model) -> trace is connected end to end, with the model resolved from the wf.
 func TestBuildLoop_ThreadsCostSinkIntoExecutor(t *testing.T) {
 	root := fakeRepo(t, "evolve", externalAgentWorkflow)
 	var buf bytes.Buffer
 	o := runOpts{root: root, mode: "balanced", executor: "command", agentCmd: "claude"}
-	wf := asset.Workflow{Stage: "evolve", Stop: asset.StopCondition{Type: "external"}}
+	// A wf with the implementer phase so buildLoop's phaseModelResolver attributes the
+	// cost to implementer's routed tier (PhaseTier(implementer, balanced)), proving the
+	// model flows through the SAME resolver production wires — not a test-only stub.
+	wf := asset.Workflow{Stage: "evolve", Stop: asset.StopCondition{Type: "external"},
+		Phases: []asset.Phase{{Name: "implementer", Agent: "implementer"}}}
+	wantModel := orchestrator.PhaseTier(wf.Phases[0], "balanced")
 	loop := buildLoop(wf, o, 1, func(string) {}, costEmitter(trace.NewTracer(&buf), func(string) {}))
 
 	ce, ok := loop.Engine.Exec.(orchestrator.CommandExecutor)
@@ -249,6 +278,9 @@ func TestBuildLoop_ThreadsCostSinkIntoExecutor(t *testing.T) {
 	ev := lastTraceEvent(t, buf.String())
 	if ev.Kind != "agent" || ev.Name != "implementer" || ev.CostUsdMicros == 0 {
 		t.Errorf("cost sink must emit a non-zero agent cost event via the loop tracer; got %+v", ev)
+	}
+	if ev.Model != wantModel {
+		t.Errorf("cost event must be attributed to the routed model %q; got Model=%q", wantModel, ev.Model)
 	}
 }
 

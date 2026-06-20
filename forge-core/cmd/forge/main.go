@@ -266,6 +266,12 @@ func execEngine(wf asset.Workflow, o runOpts) int {
 	}
 	fmt.Println("forge run: workflow completed")
 	reportConvergence(wf, o.root, probe, o.approved)
+	// Learning-loop wind-down: attribute this run's REAL billed cost into the
+	// scorecards. It runs BEFORE the deferred closeTrace() (so the trace file it reads
+	// is still being written, per scorecard_wind.go's flush-ordering invariant) and is
+	// gate-on-real-cost + fail-loud-and-continue, so a dry/echo run skips it and a
+	// producer hiccup never flips this clean run's exit code.
+	windDownScorecards(wf, o, logln)
 	return 0
 }
 
@@ -384,10 +390,14 @@ func projectYAMLValue(root, key string) string {
 // `echo` inspects the plumbing safely); anything else is the no-LLM DryRunExecutor.
 //
 // costSink is how this CLI (the ONLY layer that knows the claude JSON shape) records
-// real per-phase dollar cost: for a claude command the executor's generic Observe
-// sink is pointed at parseClaudeCostUsd, and a parsed cost is forwarded to costSink
-// (which the caller wires to a trace event). The generic executor stays claude-free —
-// all claude-JSON knowledge lives in the helpers below, never in orchestrator.
+// real per-phase dollar cost ATTRIBUTED to the routed model: for a claude command the
+// executor's generic Observe sink is pointed at parseClaudeCostUsd, and a parsed cost —
+// paired with the phase's routed model (phaseModel, the SAME orchestrator.PhaseTier
+// Build hands to `claude --model`) — is forwarded to costSink (which the caller wires to a
+// model-stamped trace event). The generic executor stays claude-free — all claude-JSON
+// knowledge lives in the helpers below, never in orchestrator. phaseModel is an injected
+// lookup (not read off the Phase) because Observe receives only a phase NAME, exactly as
+// feedsForward/onFailTarget are; it is nil-safe (a nil resolver -> un-attributed cost).
 //
 // gates carries this run's gate verdicts into each phase's prompt so a downstream agent
 // is told what the gates found, not made to re-run them. phaseOut carries the output of
@@ -402,7 +412,7 @@ func projectYAMLValue(root, key string) string {
 // by name; onFailTarget is the data-driven (phase -> loop-back target) lookup that routes
 // those findings. All are nil-safe (see prompt_context.go); the generic executor stays
 // oblivious to every one of them.
-func agentExecutor(o runOpts, logln func(string), costSink func(phase string, usd float64), gates *gateLedger, phaseOut *phaseOutputLedger, feedsForward func(phase string) bool, verdicts *verdictLedger, findings *reviewFindingsLedger, onFailTarget func(phase string) (string, bool)) orchestrator.AgentExecutor {
+func agentExecutor(o runOpts, logln func(string), costSink func(phase, model string, usd float64), phaseModel func(phase string) string, gates *gateLedger, phaseOut *phaseOutputLedger, feedsForward func(phase string) bool, verdicts *verdictLedger, findings *reviewFindingsLedger, onFailTarget func(phase string) (string, bool)) orchestrator.AgentExecutor {
 	if o.executor == "command" {
 		isClaude := strings.Contains(o.agentCmd, "claude")
 		ex := orchestrator.CommandExecutor{
@@ -435,7 +445,7 @@ func agentExecutor(o runOpts, logln func(string), costSink func(phase string, us
 			MaxOutputBytes: o.maxOutputBytes,
 			Log:            logln,
 		}
-		ex.Observe = observeFor(isClaude, costSink, phaseOut, feedsForward, verdicts, findings, onFailTarget)
+		ex.Observe = observeFor(isClaude, costSink, phaseModel, phaseOut, feedsForward, verdicts, findings, onFailTarget)
 		// Only claude emits the cost JSON, so only claude gets the result-unwrapping log
 		// renderer; echo/stubs stay nil -> the generic executor logs raw output verbatim.
 		if isClaude {
@@ -463,13 +473,13 @@ func agentExecutor(o runOpts, logln func(string), costSink func(phase string, us
 // because run uses harnessRunner(probe) while evolve uses a per-iteration refreshing
 // probe; pol/cost/log are likewise the caller's. Only the claude executor path activates
 // the verdict/findings sinks (dry/echo leave AgentVerdict effectively inert).
-func buildRunEngine(wf asset.Workflow, o runOpts, logln func(string), costSink func(phase string, usd float64), runGate func(name string) gate.Result, pol mode.Policy) orchestrator.Engine {
+func buildRunEngine(wf asset.Workflow, o runOpts, logln func(string), costSink func(phase, model string, usd float64), runGate func(name string) gate.Result, pol mode.Policy) orchestrator.Engine {
 	gates := newGateLedger()
 	phaseOut := newPhaseOutputLedger()
 	verdicts := newVerdictLedger()
 	findings := newReviewFindingsLedger()
 	return orchestrator.Engine{
-		Exec:          agentExecutor(o, logln, costSink, gates, phaseOut, feedsForwardOf(wf), verdicts, findings, onFailTargetOf(wf)),
+		Exec:          agentExecutor(o, logln, costSink, phaseModelResolver(wf, o.mode), gates, phaseOut, feedsForwardOf(wf), verdicts, findings, onFailTargetOf(wf)),
 		RunGate:       runGate,
 		Log:           logln,
 		OnGateResult:  gates.record,
