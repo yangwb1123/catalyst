@@ -58,29 +58,7 @@ func agentExecutor(o runOpts, logln func(string), costSink func(phase, model str
 		isClaude := strings.Contains(o.agentCmd, "claude")
 		ex := orchestrator.CommandExecutor{
 			Build: func(p asset.Phase, mode string) []string {
-				argv := []string{o.agentCmd}
-				// claude print mode needs flags echo/stubs don't understand, so gate
-				// on a claude-family command: --permission-mode to USE tools (write
-				// files) headlessly — without it the agent only DESCRIBES edits it
-				// can't apply — and --model so a real run honors ForgeOS's ROUTED tier
-				// (the opus floor for reviewer/architect/cto + any per-phase model_tier
-				// override, then any near-budget down-tier); without --model, claude
-				// ignores routing and uses its default. The tier comes from the shared
-				// tierOf (read at THIS spawn, reflecting spend so far), the SAME value
-				// the cost stamp and the prompt below use — one resolver, no drift.
-				// --output-format json makes claude emit the cost-bearing envelope this
-				// CLI parses (total_cost_usd) — ONLY claude gets it; echo/stubs would
-				// choke on a flag they don't know and must stay plain.
-				if isClaude {
-					if o.agentPermission != "" {
-						argv = append(argv, "--permission-mode", o.agentPermission)
-					}
-					argv = append(argv, "--model", tierOf(p))
-					if o.agentMaxBudgetUSD != "" {
-						argv = append(argv, "--max-budget-usd", o.agentMaxBudgetUSD)
-					}
-					argv = append(argv, "--output-format", "json")
-				}
+				argv := claudeArgv(o, isClaude, tierOf(p))
 				return append(argv, "-p", buildPrompt(o.root, p, mode, tierOf, gates, phaseOut, findings))
 			},
 			Dir:            o.root,
@@ -102,6 +80,47 @@ func agentExecutor(o runOpts, logln func(string), costSink func(phase, model str
 		return ex
 	}
 	return orchestrator.DryRunExecutor{Log: logln}
+}
+
+// claudeArgv builds the leading argv (everything before `-p <prompt>`) for an agent
+// command. For a non-claude command (echo/stubs) it is just [agentCmd] — those tools
+// would choke on flags they don't know and must stay plain (back-compat). For a
+// claude-family command it appends the print-mode flags echo/stubs don't understand:
+//   - --permission-mode: USE tools (write files) headlessly — without it `claude -p`
+//     only DESCRIBES edits it can't apply (omitted when agentPermission is empty);
+//   - --allowedTools: pre-grant the READ-ONLY self-verification commands a print-mode
+//     agent needs to honor the completion discipline. acceptEdits auto-applies Write
+//     but STILL gates Bash, and a headless agent has no one to approve it — so without
+//     this it cannot run `node --test`/`node harness/gate.mjs` to self-check the code it
+//     wrote, refuses to tick a ROADMAP [x], and converge's RoadmapCompletion stalls at
+//     0% (the run burns to max-iter). The default whitelist + the ★recursion-guard
+//     invariant★ (NEVER a `forge`/agent-spawning command — it would let an agent fork
+//     another agent OUTSIDE FORGE_AGENT_DEPTH, a fork-bomb) live on defaultAgentAllowedTools
+//     (main.go). HONESTY: these are validation-only reads; a self-check then [x] is a
+//     claim ABOUT to be re-verified (harness gates / fresh-context reviewer / qa re-run
+//     it), never the final verdict. Omitted when agentAllowedTools is empty (opt-out);
+//   - --model <tier>: honor ForgeOS's ROUTED tier (the opus floor for reviewer/architect/
+//     cto + any per-phase override, then any near-budget down-tier) — without it claude
+//     ignores routing. tier is the shared tierOf read at THIS spawn (the SAME value the
+//     cost stamp and prompt use — one resolver, no drift);
+//   - --max-budget-usd: the per-call dollar ceiling (omitted when unset);
+//   - --output-format json: emit the cost-bearing envelope this CLI parses (total_cost_usd).
+func claudeArgv(o runOpts, isClaude bool, tier string) []string {
+	argv := []string{o.agentCmd}
+	if !isClaude {
+		return argv
+	}
+	if o.agentPermission != "" {
+		argv = append(argv, "--permission-mode", o.agentPermission)
+	}
+	if o.agentAllowedTools != "" {
+		argv = append(argv, "--allowedTools", o.agentAllowedTools)
+	}
+	argv = append(argv, "--model", tier)
+	if o.agentMaxBudgetUSD != "" {
+		argv = append(argv, "--max-budget-usd", o.agentMaxBudgetUSD)
+	}
+	return append(argv, "--output-format", "json")
 }
 
 // buildRunEngine assembles the orchestrator.Engine shared by `forge run` (execEngine)

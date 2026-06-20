@@ -253,6 +253,85 @@ func TestAgentExecutor_EmptyPermissionDisablesFlag(t *testing.T) {
 	}
 }
 
+// buildAgentArgv builds the argv for an agent phase via the installed CommandExecutor —
+// the shared helper for the --allowedTools assertions below.
+func buildAgentArgv(t *testing.T, o runOpts) string {
+	t.Helper()
+	o.executor, o.root = "command", t.TempDir()
+	ex := agentExecutor(o, func(string) {}, nil, unbudgetedTier(""), nil, nil, nil, nil, nil, nil, nil)
+	ce, ok := ex.(orchestrator.CommandExecutor)
+	if !ok {
+		t.Fatalf("executor=command must yield a CommandExecutor, got %T", ex)
+	}
+	return strings.Join(ce.Build(asset.Phase{Name: "implementer", Agent: "implementer"}, "balanced"), " ")
+}
+
+// A claude-family agent must carry --allowedTools pre-granting the read-only
+// self-verification commands (node --test + node harness/gate.mjs) so a print-mode (-p)
+// implementer can self-check its code and honestly tick a ROADMAP [x] — without it, Bash
+// awaits a human approval that never comes headless and convergence's RoadmapCompletion
+// stalls at 0%. ★The argv MUST NOT contain `forge`: a whitelisted forge would let the
+// agent fork another agent outside the FORGE_AGENT_DEPTH recursion guard (a fork-bomb).★
+func TestAgentExecutor_AllowedToolsForClaude(t *testing.T) {
+	argv := buildAgentArgv(t, runOpts{agentCmd: "claude", agentAllowedTools: defaultAgentAllowedTools})
+	if !strings.Contains(argv, "--allowedTools") {
+		t.Errorf("claude must carry --allowedTools so a -p agent can self-verify; got: %s", argv)
+	}
+	if !strings.Contains(argv, "node --test") {
+		t.Errorf("the whitelist must pre-grant `node --test` (the completion-discipline self-check); got: %s", argv)
+	}
+	if !strings.Contains(argv, "node harness/gate.mjs") {
+		t.Errorf("the whitelist must pre-grant `node harness/gate.mjs` (the gate self-check); got: %s", argv)
+	}
+	// THE recursion-safety assertion: the read-only validators must never reach a command
+	// that can re-spawn an agent. `forge` on the argv would bypass the depth guard entirely.
+	if strings.Contains(argv, "forge") {
+		t.Errorf("★recursion guard★: the --allowedTools whitelist must NOT contain `forge` (a fork-bomb escape outside FORGE_AGENT_DEPTH); got: %s", argv)
+	}
+}
+
+// --agent-allowed-tools overrides the default node whitelist (so a non-node project can
+// grant pytest/vitest instead) — and the override path must STILL stay recursion-safe.
+func TestAgentExecutor_AllowedToolsOverridesDefault(t *testing.T) {
+	argv := buildAgentArgv(t, runOpts{agentCmd: "claude", agentAllowedTools: "Bash(pytest*) Bash(vitest run*)"})
+	if !strings.Contains(argv, "pytest") || !strings.Contains(argv, "vitest run") {
+		t.Errorf("--agent-allowed-tools must override the default whitelist verbatim; got: %s", argv)
+	}
+	if strings.Contains(argv, "node --test") {
+		t.Errorf("an explicit override must REPLACE the node default, not append it; got: %s", argv)
+	}
+	if strings.Contains(argv, "forge") {
+		t.Errorf("★recursion guard★: even an overridden whitelist must not carry `forge`; got: %s", argv)
+	}
+}
+
+// An empty agent-allowed-tools omits the flag (operator opt-out); a stub like echo never
+// gets the claude-only flag (back-compat: only the claude-family path is touched).
+func TestAgentExecutor_AllowedToolsEmptyAndNonClaude(t *testing.T) {
+	if argv := buildAgentArgv(t, runOpts{agentCmd: "claude", agentAllowedTools: ""}); strings.Contains(argv, "--allowedTools") {
+		t.Errorf("empty agent-allowed-tools must omit the flag; got: %s", argv)
+	}
+	if argv := buildAgentArgv(t, runOpts{agentCmd: "echo", agentAllowedTools: defaultAgentAllowedTools}); strings.Contains(argv, "--allowedTools") {
+		t.Errorf("echo (a stub) must NOT receive the claude-only --allowedTools; got: %s", argv)
+	}
+}
+
+// The default whitelist constant is recursion-safe by construction: read-only validators
+// only, no `forge`/`evolve` token that could re-spawn an agent past the depth guard. This
+// pins the INVARIANT at the source so a future whitelist edit cannot silently regress it.
+func TestDefaultAgentAllowedTools_IsRecursionSafe(t *testing.T) {
+	for _, banned := range []string{"forge", "evolve", "--executor"} {
+		if strings.Contains(defaultAgentAllowedTools, banned) {
+			t.Errorf("★recursion guard★: default whitelist must not contain %q (an agent-spawn escape outside FORGE_AGENT_DEPTH); got: %s", banned, defaultAgentAllowedTools)
+		}
+	}
+	for _, want := range []string{"node --test", "node harness/gate.mjs"} {
+		if !strings.Contains(defaultAgentAllowedTools, want) {
+			t.Errorf("default whitelist must pre-grant the completion-discipline self-check %q; got: %s", want, defaultAgentAllowedTools)
+		}
+	}
+}
+
 // agentExecutor must pass --model <routed-tier> to a claude-family command so a
 // real run honors ForgeOS's routing (the opus floor for reviewer/architect/cto),
 // and must NOT pass that claude-only flag to a stub like echo.

@@ -35,6 +35,22 @@ import (
 // workflow whose gate phases actually carry an on_fail (build.yml's do).
 const maxLoopBack = 3
 
+// defaultAgentAllowedTools is the claude --allowedTools whitelist a print-mode
+// implementer gets by default: ONLY the two read-only self-verification commands the
+// completion discipline requires — `node --test <file>` (run the tests it wrote) and
+// `node harness/gate.mjs` (the size/volume self-check) — so a headless `claude -p`
+// agent can self-verify and then honestly tick a ROADMAP [x] instead of stalling for a
+// human to approve each Bash call (which never comes, so RoadmapCompletion sits at 0%).
+// The `*` lets claude match the trailing argument (the test path / gate args).
+//
+// ★These are READ-ONLY validators that change no state and spawn no agent. The whitelist
+// MUST NEVER contain `forge` or any command that can re-invoke an agent (`forge run/
+// evolve --executor=command`): the recursion guard (command_executor.go's
+// FORGE_AGENT_DEPTH/MaxDepth) only meters agents spawned THROUGH the executor, so a
+// whitelisted `forge` would let an agent fork another agent outside that counter — the
+// guard never fires and budget burns unbounded (a fork-bomb). `node` spawns no forge.★
+const defaultAgentAllowedTools = "Bash(node --test*) Bash(node harness/gate.mjs*)"
+
 func main() {
 	os.Exit(run(os.Args[1:]))
 }
@@ -76,8 +92,8 @@ func usage() {
 	fmt.Fprint(os.Stderr, `forge — ForgeOS orchestration runtime (forge-core)
 
 usage:
-  forge run    <workflow> [--mode balanced] [--lifecycle mvp] [--executor dry|command] [--agent-cmd claude] [--agent-permission acceptEdits] [--agent-max-budget-usd ""] [--run-budget-usd ""] [--timeout 0] [--max-retries 0] [--max-agent-depth 2] [--max-agent-calls 0] [--max-output-bytes 0] [--approved] [--root DIR]
-  forge evolve <workflow> [--mode balanced] [--lifecycle mvp] [--max-iter 5] [--executor dry|command] [--agent-cmd claude] [--agent-permission acceptEdits] [--agent-max-budget-usd ""] [--run-budget-usd ""] [--timeout 0] [--max-retries 0] [--max-agent-depth 2] [--max-agent-calls 0] [--max-output-bytes 0] [--resume] [--root DIR]
+  forge run    <workflow> [--mode balanced] [--lifecycle mvp] [--executor dry|command] [--agent-cmd claude] [--agent-permission acceptEdits] [--agent-allowed-tools "..."] [--agent-max-budget-usd ""] [--run-budget-usd ""] [--timeout 0] [--max-retries 0] [--max-agent-depth 2] [--max-agent-calls 0] [--max-output-bytes 0] [--approved] [--root DIR]
+  forge evolve <workflow> [--mode balanced] [--lifecycle mvp] [--max-iter 5] [--executor dry|command] [--agent-cmd claude] [--agent-permission acceptEdits] [--agent-allowed-tools "..."] [--agent-max-budget-usd ""] [--run-budget-usd ""] [--timeout 0] [--max-retries 0] [--max-agent-depth 2] [--max-agent-calls 0] [--max-output-bytes 0] [--resume] [--root DIR]
   forge route  [--complexity F] [--risk-score F] [--security F] [--dependency F] [--context F] [--business F] [--task-type T] [--risk low|medium|high|critical] [--budget F] [--scorecard PATH]
   forge migrate --to engineering [--apply] [--root DIR]
   forge gate   [--root DIR]
@@ -122,6 +138,19 @@ type runOpts struct {
 	// mode only DESCRIBES the edits it cannot apply (headless = no permission prompt
 	// to answer). Empty disables the flag; only applied when agent-cmd is claude.
 	agentPermission string
+	// agentAllowedTools is the claude --allowedTools whitelist passed to a
+	// claude-family agent under --executor=command: the read-only self-verification
+	// commands a print-mode (`claude -p`) agent may run WITHOUT a human approving each
+	// Bash call. acceptEdits auto-applies Write but still gates Bash, and a headless
+	// agent has no one to approve it — so without this the implementer cannot run
+	// `node --test`/`node harness/gate.mjs` to self-check the code it wrote, refuses to
+	// tick a ROADMAP [x] under the completion discipline, and convergence's
+	// RoadmapCompletion stays 0% (the run burns to max-iter). Default = the node
+	// validation whitelist (defaultAgentAllowedTools); a non-node project overrides it
+	// (e.g. pytest/vitest). ★MUST stay read-only and MUST NEVER include `forge` or any
+	// agent-spawning command — that would bypass the FORGE_AGENT_DEPTH recursion guard
+	// (a fork-bomb).★ Empty disables the flag; only applied when agent-cmd is claude.
+	agentAllowedTools string
 	// agentMaxBudgetUSD caps the dollar spend of ONE claude call (claude
 	// --max-budget-usd, print mode) — the THIRD cost dimension, per-phase dollars,
 	// complementing --max-agent-calls (phase count) and --timeout (wall-clock).
@@ -179,6 +208,7 @@ func bindRunOpts(fs *flag.FlagSet, o *runOpts) {
 	fs.StringVar(&o.executor, "executor", "dry", "agent executor: dry|command")
 	fs.StringVar(&o.agentCmd, "agent-cmd", "claude", "command for --executor=command (e.g. claude, echo)")
 	fs.StringVar(&o.agentPermission, "agent-permission", "acceptEdits", "claude --permission-mode for --executor=command (acceptEdits|plan|default); lets the agent write code headlessly")
+	fs.StringVar(&o.agentAllowedTools, "agent-allowed-tools", defaultAgentAllowedTools, "claude --allowedTools whitelist (space/comma-separated) so a print-mode agent can SELF-VERIFY the code it wrote (run tests/gate) and honestly tick a ROADMAP [x]; default is the node test+gate self-check. READ-ONLY validators only — NEVER add forge or any agent-spawning command (it bypasses the recursion guard). Override for non-node projects (e.g. pytest/vitest); empty disables")
 	fs.StringVar(&o.agentMaxBudgetUSD, "agent-max-budget-usd", "", "per-claude-call dollar ceiling (claude --max-budget-usd; empty = unset); the per-phase cost bound complementing --max-agent-calls/--timeout")
 	fs.StringVar(&o.runBudgetUSD, "run-budget-usd", "", "cumulative run-level dollar cap across ALL phases/iterations (empty = unset); STOPS the run before overspend — distinct from the per-call --agent-max-budget-usd")
 	fs.DurationVar(&o.timeout, "timeout", 0, "per-agent-command timeout (0 = no deadline, e.g. 90s, 5m)")
