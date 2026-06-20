@@ -95,16 +95,148 @@ func (l *gateLedger) contextLines() []string {
 	return nil
 }
 
+// phaseOutputSummaryCap bounds how many bytes of a fed-forward phase's output are
+// remembered. The planner's output (a sprint split + acceptance criteria) can be long;
+// injecting it whole into every later phase's prompt would bloat the prompt (and the
+// token bill) without adding signal past the first screenful. record truncates beyond
+// this cap and appends an ellipsis marker so the downstream agent knows it was clipped.
+const phaseOutputSummaryCap = 800
+
+// phaseOutputLedger accumulates the output of every phase whose asset declares
+// feeds_forward, keyed by phase name, preserving first-seen order for a stable render.
+// It is the in-memory bridge between the agent executor's Observe sink (which writes it,
+// one phase at a time, for a feeds_forward phase only) and buildPrompt (which reads
+// contextLines() into a LATER phase's prompt) — the EXACT structural mirror of
+// gateLedger, but carrying planner-style planning output instead of gate verdicts.
+//
+// CONCURRENCY: deliberately lock-free, on the same premise as gateLedger — the
+// orchestrator runs phases strictly sequentially, so record and contextLines never
+// race. Should phases ever parallelize, this ledger would need a mutex too.
+type phaseOutputLedger struct {
+	summary map[string]string // phase name -> latest (truncated) output summary
+	order   []string          // phase names in first-seen order (stable rendering)
+}
+
+// newPhaseOutputLedger returns an empty ledger ready to record phase outputs.
+func newPhaseOutputLedger() *phaseOutputLedger {
+	return &phaseOutputLedger{summary: map[string]string{}}
+}
+
+// record stores one phase's latest output, TRUNCATED to phaseOutputSummaryCap (with a
+// trailing ellipsis when clipped) so a long planner output cannot bloat downstream
+// prompts. It appends to the render order only the FIRST time a name is seen (a re-run
+// phase — across loop-back or evolve iterations — updates its summary in place, keeping
+// its original position), exactly like gateLedger.record. Safe on a nil receiver
+// (no-op) so a caller that never constructed a ledger cannot panic.
+func (l *phaseOutputLedger) record(phase, output string) {
+	if l == nil {
+		return
+	}
+	if _, seen := l.summary[phase]; !seen {
+		l.order = append(l.order, phase)
+	}
+	l.summary[phase] = truncateSummary(output)
+}
+
+// truncateSummary clips s to phaseOutputSummaryCap runes, appending a marker when it
+// did clip so the reader knows the output continued. Rune-based (not byte-based) so a
+// multi-byte UTF-8 boundary is never split mid-character.
+func truncateSummary(s string) string {
+	r := []rune(s)
+	if len(r) <= phaseOutputSummaryCap {
+		return s
+	}
+	return string(r[:phaseOutputSummaryCap]) + " …(已截断)"
+}
+
+// context renders the recorded phase outputs as a prompt context block, or "" when the
+// ledger is nil or empty (no feeds_forward phase has run yet). The text is HONEST about
+// what this is: the prior PLANNING phase's own output (the planner's task split /
+// acceptance criteria), offered to the implementer and reviewer as reference — NOT a
+// gate verdict, NOT a fabricated fact. Each phase renders as a labeled block in
+// first-seen order.
+func (l *phaseOutputLedger) context() string {
+	if l == nil || len(l.order) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("前序规划阶段产出(planner 的任务拆分/验收标准,供实现与审查参考 —— 这是上游规划角色的客观产出,不是闸门结果):")
+	for _, name := range l.order {
+		b.WriteString("\n\n### ")
+		b.WriteString(name)
+		b.WriteString("\n")
+		b.WriteString(l.summary[name])
+	}
+	return b.String()
+}
+
+// contextLines wraps context() as a slice ready to append onto a prompt's context lanes
+// (nil when there is nothing to inject — symmetric with gateLedger.contextLines and
+// memoryContext), so buildPrompt stays a flat sequence of appends with no inline check.
+func (l *phaseOutputLedger) contextLines() []string {
+	if c := l.context(); c != "" {
+		return []string{c}
+	}
+	return nil
+}
+
+// feedsForwardOf returns a predicate that reports whether the phase named `name` in this
+// workflow declares feeds_forward — the bridge from asset.Phase.FeedsForward to the
+// executor's Observe sink, which is handed only a phase NAME (not the Phase). An unknown
+// name (or a workflow where no phase sets the flag) yields false, so a workflow without
+// any feeds_forward phase records nothing and the downstream prompt is unchanged.
+func feedsForwardOf(wf asset.Workflow) func(name string) bool {
+	return func(name string) bool {
+		for _, p := range wf.Phases {
+			if p.Name == name {
+				return p.FeedsForward
+			}
+		}
+		return false
+	}
+}
+
+// observeFor builds the executor's Observe sink — the seam where cmd/forge (the only
+// vendor-aware layer) reacts to a finished phase's RAW output. It composes two
+// independent concerns, so the sink fires for echo as well as claude (feed-forward must
+// work under the echo plumbing-check, not just a real claude run):
+//   - feed-forward: when feedsForward(phase) is true, the phase's output (e.g. the
+//     planner's task split) is recorded into phaseOut for injection into later prompts;
+//   - cost: ONLY for claude, the output is parsed for total_cost_usd and a billed figure
+//     forwarded to costSink — echo/stubs never carry that envelope, so they never bill.
+//
+// Returns nil only when NEITHER concern is live (not claude AND no feeds_forward ledger),
+// preserving the byte-for-byte no-hook default path for a plain stub run with no
+// feed-forward. unwrapClaudeResult (the log renderer) is applied by the caller, not here.
+func observeFor(isClaude bool, costSink func(phase string, usd float64), phaseOut *phaseOutputLedger, feedsForward func(phase string) bool) func(phase, output string) {
+	if !isClaude && phaseOut == nil {
+		return nil
+	}
+	return func(phase, output string) {
+		if phaseOut != nil && feedsForward != nil && feedsForward(phase) {
+			phaseOut.record(phase, unwrapClaudeResult(output))
+		}
+		if isClaude && costSink != nil {
+			if usd, ok := parseClaudeCostUsd(output); ok {
+				costSink(phase, usd)
+			}
+		}
+	}
+}
+
 // buildPrompt assembles the instruction for an agent phase. Beyond the role card,
 // the Context Engine injects (1) hard constraints + ADRs RETRIEVED against this
-// phase's query (Gather), (2) cross-session memory (memoryContext), and (3) the
-// objective verdicts of any gate the harness already ran this run (ledger) — so a
-// downstream phase like the reviewer sees "test: ok" and need not re-run it. A nil ledger adds no gate block, so the prompt is byte-for-byte the old one.
-func buildPrompt(repoRoot string, p asset.Phase, mode string, ledger *gateLedger) string {
+// phase's query (Gather), (2) cross-session memory (memoryContext), (3) the
+// objective verdicts of any gate the harness already ran this run (gates), and (4)
+// the output of any prior phase that declared feeds_forward — the planner's task
+// split / acceptance criteria, fed to the implementer and reviewer (phaseOut). A nil
+// gates AND a nil/empty phaseOut add no blocks, so the prompt is byte-for-byte the old one.
+func buildPrompt(repoRoot string, p asset.Phase, mode string, gates *gateLedger, phaseOut *phaseOutputLedger) string {
 	tier := orchestrator.PhaseTier(p, mode)
 	ctx := prompt.Gather(repoRoot, p.Name+" "+p.Agent)
 	ctx = append(ctx, memoryContext(repoRoot)...)
-	ctx = append(ctx, ledger.contextLines()...)
+	ctx = append(ctx, gates.contextLines()...)
+	ctx = append(ctx, phaseOut.contextLines()...)
 	return prompt.Build(p.Agent, p.Name, mode, tier, readCard(repoRoot, p.Agent), ctx)
 }
 

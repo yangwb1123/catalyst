@@ -57,6 +57,20 @@ import (
 // the dry-run executor this is a gating-decision narration — whether an ADR is
 // required, not a real ADR written; that needs a real agent (the target dir is
 // enabled from v2 per design.yml).
+//
+// FeedsForward carries an OPTIONAL marker that THIS phase's output is RELEVANT to
+// LATER phases and so should be remembered and injected into their prompts (build.yml /
+// evolve.yml author it on the planner: feeds_forward: true — its sprint split / acceptance
+// criteria steer the implementer and reviewer). It is a plain bool so a phase without
+// the key loads as false — the fault-tolerant default the orchestrator reads as "this
+// phase's output is NOT fed forward" (byte-for-byte the pre-feed-forward behavior: no
+// phase output is remembered, the downstream prompt is unchanged). asset stays a
+// GENERIC carrier: the bool says only "remember my output", with no vendor or
+// phase-output semantics — the cmd/forge layer owns the ledger that records it and the
+// prompt block that injects it (the same bright-line ModelTier draws for `claude
+// --model`). CORRECTNESS: only a planning/task-definition role should set it; a
+// reviewer must NOT (feeding the reviewer its own prior self-report would pollute the
+// fresh-context independence that makes its judgement trustworthy).
 type Phase struct {
 	Name          string     `json:"name"`
 	Agent         string     `json:"agent"`
@@ -66,6 +80,7 @@ type Phase struct {
 	OnFail        *OnFail    `json:"on_fail"`
 	ModelTier     string     `json:"model_tier"`
 	WritesADR     *WritesADR `json:"writes_adr"`
+	FeedsForward  bool       `json:"feeds_forward"`
 }
 
 // WritesADR is the subset of a phase's writes_adr block forge-core reads:

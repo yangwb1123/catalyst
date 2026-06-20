@@ -56,6 +56,7 @@ loop:
       agent: planner
       readonly: false                   # 只改 ROADMAP,不碰产物代码 / edits roadmap, not product code
       required_gates: []
+      feeds_forward: true               # ROADMAP 条目/验收判据前传给 implement / plan feeds downstream
       description: >
         把高优先 gap 写成 ROADMAP 条目(机器可判 acceptance)。
         Turn top gaps into roadmap items with machine-checkable acceptance.

@@ -106,7 +106,7 @@ func TestAgentExecutor_EchoEmitsNoCostEvent(t *testing.T) {
 		costCalls++
 		costEmitter(trace.NewTracer(&buf), func(string) {})(phase, usd)
 	}
-	ex := agentExecutor(runOpts{executor: "command", agentCmd: "echo", root: t.TempDir()}, func(string) {}, costSink, nil)
+	ex := agentExecutor(runOpts{executor: "command", agentCmd: "echo", root: t.TempDir()}, func(string) {}, costSink, nil, nil, nil)
 	ce, ok := ex.(orchestrator.CommandExecutor)
 	if !ok {
 		t.Fatalf("executor=command must yield a CommandExecutor, got %T", ex)
@@ -131,7 +131,7 @@ func TestAgentExecutor_EchoEmitsNoCostEvent(t *testing.T) {
 // --output-format json (so it emits the total_cost_usd envelope this CLI parses),
 // alongside the existing --permission-mode/--model. This is the Build half of the wiring.
 func TestAgentExecutor_ClaudeGetsOutputFormatJSON(t *testing.T) {
-	ex := agentExecutor(runOpts{executor: "command", agentCmd: "claude", agentPermission: "acceptEdits", root: t.TempDir()}, func(string) {}, nil, nil)
+	ex := agentExecutor(runOpts{executor: "command", agentCmd: "claude", agentPermission: "acceptEdits", root: t.TempDir()}, func(string) {}, nil, nil, nil, nil)
 	ce := ex.(orchestrator.CommandExecutor)
 	argv := strings.Join(ce.Build(asset.Phase{Name: "implementer", Agent: "implementer"}, "balanced"), " ")
 	if !strings.Contains(argv, "--output-format json") {
@@ -152,7 +152,7 @@ func TestAgentExecutor_ClaudeObserveDrivesCostSink(t *testing.T) {
 		gotPhase, gotUsd = phase, usd
 		costEmitter(trace.NewTracer(&buf), func(string) {})(phase, usd)
 	}
-	ex := agentExecutor(runOpts{executor: "command", agentCmd: "claude", root: t.TempDir()}, func(string) {}, costSink, nil)
+	ex := agentExecutor(runOpts{executor: "command", agentCmd: "claude", root: t.TempDir()}, func(string) {}, costSink, nil, nil, nil)
 	ce := ex.(orchestrator.CommandExecutor)
 	if ce.Observe == nil {
 		t.Fatal("claude executor must install an Observe sink")

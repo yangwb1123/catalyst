@@ -257,10 +257,15 @@ func execEngine(wf asset.Workflow, o runOpts) int {
 	}
 	defer closeTrace()
 	costSink := costEmitter(tracer, logln)
-	// One ledger per run: OnGateResult records each gate's verdict into it; agentExecutor reads it into a later phase's prompt (see prompt_context.go).
+	// Two ledgers per run, both read into later prompts by agentExecutor (prompt_context.go):
+	// gateLedger (OnGateResult writes gate verdicts) and phaseOutputLedger (the Observe sink
+	// writes a feeds_forward phase's output — the planner's task split). feedsForwardOf closes
+	// over THIS wf so the sink can look up FeedsForward by phase name (the Observe seam sees
+	// only the name, not the Phase).
 	ledger := newGateLedger()
+	phaseOut := newPhaseOutputLedger()
 	eng := orchestrator.Engine{
-		Exec:          agentExecutor(o, logln, costSink, ledger),
+		Exec:          agentExecutor(o, logln, costSink, ledger, phaseOut, feedsForwardOf(wf)),
 		RunGate:       harnessRunner(o.root, probe),
 		Log:           logln,
 		OnGateResult:  ledger.record,
@@ -401,9 +406,15 @@ func projectYAMLValue(root, key string) string {
 // (which the caller wires to a trace event). The generic executor stays claude-free —
 // all claude-JSON knowledge lives in the helpers below, never in orchestrator.
 //
-// ledger carries this run's gate verdicts into each phase's prompt so a downstream
-// agent is told what the gates found, not made to re-run them (nil-safe; see prompt_context.go).
-func agentExecutor(o runOpts, logln func(string), costSink func(phase string, usd float64), ledger *gateLedger) orchestrator.AgentExecutor {
+// gates carries this run's gate verdicts into each phase's prompt so a downstream agent
+// is told what the gates found, not made to re-run them. phaseOut carries the output of
+// any prior feeds_forward phase (the planner's task split) into later prompts, and
+// feedsForward reports whether a just-finished phase's output should be remembered there
+// — it is injected (not derived from asset.Phase) because the executor's generic Observe
+// sink receives only (phase name, output), never the Phase, so the FeedsForward lookup
+// must come from the caller, which holds the workflow. All three are nil-safe (see
+// prompt_context.go); the generic executor stays oblivious to every one of them.
+func agentExecutor(o runOpts, logln func(string), costSink func(phase string, usd float64), gates *gateLedger, phaseOut *phaseOutputLedger, feedsForward func(phase string) bool) orchestrator.AgentExecutor {
 	if o.executor == "command" {
 		isClaude := strings.Contains(o.agentCmd, "claude")
 		ex := orchestrator.CommandExecutor{
@@ -428,7 +439,7 @@ func agentExecutor(o runOpts, logln func(string), costSink func(phase string, us
 					}
 					argv = append(argv, "--output-format", "json")
 				}
-				return append(argv, "-p", buildPrompt(o.root, p, mode, ledger))
+				return append(argv, "-p", buildPrompt(o.root, p, mode, gates, phaseOut))
 			},
 			Dir:            o.root,
 			Timeout:        o.timeout,
@@ -436,15 +447,10 @@ func agentExecutor(o runOpts, logln func(string), costSink func(phase string, us
 			MaxOutputBytes: o.maxOutputBytes,
 			Log:            logln,
 		}
-		// Only claude emits the cost JSON, so only claude gets the cost sink + the
-		// result-unwrapping log renderer. For echo/stubs both stay nil -> the generic
-		// executor's byte-for-byte default path (no cost event, raw output logged).
+		ex.Observe = observeFor(isClaude, costSink, phaseOut, feedsForward)
+		// Only claude emits the cost JSON, so only claude gets the result-unwrapping log
+		// renderer; echo/stubs stay nil -> the generic executor logs raw output verbatim.
 		if isClaude {
-			ex.Observe = func(phase, output string) {
-				if usd, ok := parseClaudeCostUsd(output); ok && costSink != nil {
-					costSink(phase, usd)
-				}
-			}
 			ex.RenderLog = unwrapClaudeResult
 		}
 		return ex

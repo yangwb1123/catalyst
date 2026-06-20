@@ -123,6 +123,45 @@ func TestLoadWorkflowJSON_ModelTierAbsentIsEmpty(t *testing.T) {
 	}
 }
 
+// FeedsForward is parsed VERBATIM from a phase's feeds_forward (build.yml/evolve.yml
+// author it true on the planner). A phase without the key loads as false — the fault-tolerant
+// default the orchestrator reads as "this phase's output is not fed forward". This pins
+// that the field is purely additive and that the marker reaches the runtime, not
+// silently dropped. CORRECTNESS: only the planner carries it; the reviewer must not, so
+// the fresh-context reviewer is never fed a prior phase's self-report.
+func TestLoadWorkflowJSON_FeedsForward(t *testing.T) {
+	wf, err := LoadWorkflowJSON([]byte(`{"stage":"build","phases":[
+		{"name":"planner","agent":"planner","feeds_forward":true},
+		{"name":"implementer","agent":"implementer"},
+		{"name":"reviewer","agent":"reviewer","feeds_forward":false}
+	]}`))
+	if err != nil {
+		t.Fatalf("load feeds_forward doc: %v", err)
+	}
+	if !wf.Phases[0].FeedsForward {
+		t.Error("planner FeedsForward = false, want true (feeds_forward: true)")
+	}
+	// A phase that omits feeds_forward loads with the false default ("not fed forward").
+	if wf.Phases[1].FeedsForward {
+		t.Error("implementer FeedsForward = true, want false (no feeds_forward key)")
+	}
+	// An explicit feeds_forward: false stays false — the reviewer is never fed forward.
+	if wf.Phases[2].FeedsForward {
+		t.Error("reviewer FeedsForward = true, want false (explicit feeds_forward: false)")
+	}
+}
+
+// Back-compat: the committed fixture (build.json) authors NO feeds_forward on any phase,
+// so every phase must load with FeedsForward false — adding the field changed nothing.
+func TestLoadWorkflowJSON_FeedsForwardAbsentIsFalse(t *testing.T) {
+	wf := loadFixture(t)
+	for i, p := range wf.Phases {
+		if p.FeedsForward {
+			t.Errorf("phase[%d] (%s) FeedsForward = true, want false (fixture has no feeds_forward)", i, p.Name)
+		}
+	}
+}
+
 // WritesADR is parsed as a non-nil pointer ONLY for a phase that declares the
 // writes_adr block (design.yml's solution-architect: {condition, target}); a phase
 // without it loads as nil — the fault-tolerant default the orchestrator reads as

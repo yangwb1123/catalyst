@@ -38,6 +38,7 @@ phases:
     agent: planner
     readonly: true                      # 只拆任务,不写码 / decomposes only
     required_gates: []
+    feeds_forward: true                 # 任务拆分/验收判据前传给 implementer/reviewer / plan feeds downstream
     description: >
       把 ROADMAP 下一项拆成可验收的最小任务 + acceptance 判据(机器可判)。
       Break the next roadmap item into smallest acceptance-checkable tasks.
