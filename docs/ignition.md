@@ -43,24 +43,37 @@ forge run discover --executor=command --agent-cmd=echo --max-output-bytes 512
 #   → ...[output truncated: retained 512 of 2952 bytes (--max-output-bytes)]
 ```
 
-每个 phase 的 prompt 由 `buildPrompt`(forge-core/cmd/forge)构建:agent role card + 检索到的
-project context(ADRs + AGENTS.md 硬闸门作为 ground truth)+ 跨会话 memory。
+每个 phase 的 prompt 由 `buildPrompt`(forge-core/cmd/forge)构建:agent role card + **当前任务**
+(`.agent/ROADMAP.md` body,让 agent 知道实现什么)+ 检索到的 project context(ADRs + AGENTS.md
+硬闸门作为 ground truth)+ 跨会话 memory。
 
 ## 启用真点火(`--agent-cmd=claude`)
 
-前置(本环境之外,需操作者提供):
+`--agent-cmd=claude` 默认带 `--agent-permission acceptEdits`:让 claude print mode **能真写
+文件**(自动接受文件编辑、不放开任意 Bash)。没有它,headless 的 `claude -p` 只会**描述**它无权
+施加的编辑(无交互提示可应答)—— 这是真点火能否产出的关键。
 
-1. **claude CLI + 凭证** in env(如 `ANTHROPIC_API_KEY`)—— CommandExecutor 透传父进程 env
-   给子进程,所以 agent 继承凭证。
-2. **预算确认** —— 真 LLM 调用烧钱。先用上面的 echo 演示确认 workflow 的 phase 数 / 调用数,
-   再据此设 `--max-agent-calls` 上界。
-3. **安全旋钮** —— 至少 `--max-agent-calls N --timeout 5m`。
+前置:
+1. **claude CLI + 凭证** —— claude CLI 在 PATH 且认证可用(`ANTHROPIC_API_KEY`,或 Claude Code
+   的 OAuth session;CommandExecutor 透传父进程 env 给子进程,agent 继承凭证)。
+2. **预算确认** —— 真 LLM 调用烧钱。先用上面的 echo 演示确认 workflow 的 phase 数,据此设
+   `--max-agent-calls` 上界。
+3. **安全旋钮** —— 至少 `--max-agent-calls N --timeout 5m`;四维护栏 + acceptEdits(不放开 Bash)。
 
 ```sh
 forge run build --executor=command --agent-cmd=claude --max-agent-calls 20 --timeout 5m
 ```
 
-HONESTY:dry-run 下 loop-back 修复 / discover-skip / ADR 写作等是**叙述**,其真值(真改代码、
-真修复、真 PRD)只在真 `--agent-cmd=claude` 下产生。本文档的 echo 演示坐实了「除真 LLM 本身,
-整条真点火基础设施(prompt 构建、spawn、输出捕获、四维安全护栏、orchestrator 集成)端到端
-工作」—— 真点火就绪,只差凭证 + 预算。
+### 已用真 claude 端到端坐实(完整闭环)
+在一个 throwaway 项目跑最小 implement→gate→converge workflow,`--agent-cmd=claude`(实测):
+```
+phase implementer: ran "claude --permission-mode acceptEdits -p ..."   # 真 claude 带权限
+phase harness-gates: gate test ok · gate complexity ok                 # gate 真验证
+forge run: workflow completed                                          # 收敛
+```
+claude **真写了** `multiply.mjs`(`export function multiply(a,b){ return a*b }`)+ 其 node:test;
+gate 真验证通过、workflow 收敛 —— 真点火的**完整闭环(产出→验证→收敛)在真 LLM 下坐实**,不止
+基础设施(echo)、而是真 agent 产出能过 gate 的代码。
+
+HONESTY:dry-run 下 loop-back 修复 / discover-skip / ADR 等是**叙述**;其真值只在真
+`--agent-cmd=claude` 下产生 —— 现已端到端验证为事实。

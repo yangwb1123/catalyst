@@ -80,8 +80,8 @@ func usage() {
 	fmt.Fprint(os.Stderr, `forge — ForgeOS orchestration runtime (forge-core)
 
 usage:
-  forge run    <workflow> [--mode balanced] [--lifecycle mvp] [--executor dry|command] [--agent-cmd claude] [--timeout 0] [--max-retries 0] [--max-agent-depth 2] [--max-agent-calls 0] [--max-output-bytes 0] [--approved] [--root DIR]
-  forge evolve <workflow> [--mode balanced] [--lifecycle mvp] [--max-iter 5] [--executor dry|command] [--agent-cmd claude] [--timeout 0] [--max-retries 0] [--max-agent-depth 2] [--max-agent-calls 0] [--max-output-bytes 0] [--resume] [--root DIR]
+  forge run    <workflow> [--mode balanced] [--lifecycle mvp] [--executor dry|command] [--agent-cmd claude] [--agent-permission acceptEdits] [--timeout 0] [--max-retries 0] [--max-agent-depth 2] [--max-agent-calls 0] [--max-output-bytes 0] [--approved] [--root DIR]
+  forge evolve <workflow> [--mode balanced] [--lifecycle mvp] [--max-iter 5] [--executor dry|command] [--agent-cmd claude] [--agent-permission acceptEdits] [--timeout 0] [--max-retries 0] [--max-agent-depth 2] [--max-agent-calls 0] [--max-output-bytes 0] [--resume] [--root DIR]
   forge route  [--complexity F] [--risk-score F] [--security F] [--dependency F] [--context F] [--business F] [--task-type T] [--risk low|medium|high|critical] [--budget F] [--scorecard PATH]
   forge migrate --to engineering [--apply] [--root DIR]
   forge gate   [--root DIR]
@@ -119,6 +119,13 @@ type runOpts struct {
 	root      string
 	executor  string
 	agentCmd  string
+	// agentPermission is the --permission-mode passed to a claude-family agent so it
+	// can USE tools (write files) under --executor=command. Default acceptEdits:
+	// auto-accept file edits (the implementer writes code) WITHOUT opening arbitrary
+	// Bash — the safe middle for autonomous code edits. Without it, claude -p print
+	// mode only DESCRIBES the edits it cannot apply (headless = no permission prompt
+	// to answer). Empty disables the flag; only applied when agent-cmd is claude.
+	agentPermission string
 	// timeout bounds a single agent command's wall-clock runtime (0 = no deadline,
 	// the backward-compatible default). Plumbed into CommandExecutor.Timeout so a
 	// wedged agent is killed and surfaces as a retryable Timeout, not a hang.
@@ -161,6 +168,7 @@ func bindRunOpts(fs *flag.FlagSet, o *runOpts) {
 	fs.StringVar(&o.root, "root", "", "repo root (default $FORGE_REPO_ROOT or .)")
 	fs.StringVar(&o.executor, "executor", "dry", "agent executor: dry|command")
 	fs.StringVar(&o.agentCmd, "agent-cmd", "claude", "command for --executor=command (e.g. claude, echo)")
+	fs.StringVar(&o.agentPermission, "agent-permission", "acceptEdits", "claude --permission-mode for --executor=command (acceptEdits|plan|default); lets the agent write code headlessly")
 	fs.DurationVar(&o.timeout, "timeout", 0, "per-agent-command timeout (0 = no deadline, e.g. 90s, 5m)")
 	fs.IntVar(&o.maxRetries, "max-retries", 0, "retry ceiling for retryable agent failures (0 = no retries)")
 	fs.IntVar(&o.maxAgentDepth, "max-agent-depth", 0, "nested agent-spawn cap for --executor=command (0 = safe default 2; prevents recursive fork-bombs)")
@@ -373,7 +381,15 @@ func agentExecutor(o runOpts, logln func(string)) orchestrator.AgentExecutor {
 	if o.executor == "command" {
 		return orchestrator.CommandExecutor{
 			Build: func(p asset.Phase, mode string) []string {
-				return []string{o.agentCmd, "-p", buildPrompt(o.root, p, mode)}
+				argv := []string{o.agentCmd}
+				// claude print mode needs an explicit permission mode to USE tools
+				// (write files) headlessly; without it the agent only DESCRIBES the
+				// edits it cannot apply. Gate on a claude-family command, since only
+				// it understands the flag (echo / stub commands must not receive it).
+				if o.agentPermission != "" && strings.Contains(o.agentCmd, "claude") {
+					argv = append(argv, "--permission-mode", o.agentPermission)
+				}
+				return append(argv, "-p", buildPrompt(o.root, p, mode))
 			},
 			Timeout:        o.timeout,
 			MaxDepth:       o.maxAgentDepth,

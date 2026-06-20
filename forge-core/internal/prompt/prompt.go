@@ -1,6 +1,7 @@
 // Package prompt assembles the instruction a real agent CLI runs for a phase:
-// the role card plus relevant project context (architecture decisions and the
-// engineering constraints the agent must obey). This is forge-core's Context
+// the role card plus relevant project context (the current task from the ROADMAP,
+// architecture decisions, and the engineering constraints the agent must obey).
+// This is forge-core's Context
 // Engine v1 — beyond a bare role card, the prompt now carries project ground
 // truth so a real agent acts within the actual decisions and limits.
 package prompt
@@ -37,8 +38,16 @@ func Build(agent, phase, mode, tier, card string, ctx []string) string {
 // bounded to the few most relevant to this phase instead of dumping every one.
 const adrTopK = 6
 
-// Gather collects project context for an agent phase, in two distinct lanes:
+// taskCap bounds the injected ROADMAP body (in runes) so a long roadmap cannot
+// blow the context window — the same bounding rationale as adrTopK for ADRs.
+const taskCap = 4000
+
+// Gather collects project context for an agent phase, in three distinct lanes:
 //
+//   - The current TASK — the .agent/ROADMAP.md body — is ALWAYS injected (capped).
+//     Without it the agent has its role card and the rules but no concrete WHAT to
+//     build: a real agent driven by only role+constraints does not know which
+//     feature to implement. This is the currentTask() lane.
 //   - Hard constraints — the leading AGENTS.md bullets — are NON-NEGOTIABLE and
 //     ALWAYS injected verbatim (every agent must obey them), never subject to
 //     retrieval/filtering. This is the unchanged constraints() path.
@@ -47,10 +56,13 @@ const adrTopK = 6
 //     injected, so a growing decision log cannot blow the context window.
 //
 // It is fault tolerant — missing files yield no context, never an error. An
-// empty query degrades the ADR lane to nothing (Retrieve's fail-closed
-// boundary); the hard constraints still always inject.
+// empty query degrades the ADR lane to nothing (Retrieve's fail-closed boundary);
+// the task and hard constraints still always inject when their files are present.
 func Gather(repoRoot, query string) []string {
 	var ctx []string
+	if task := currentTask(repoRoot); task != "" {
+		ctx = append(ctx, "Current task — implement what .agent/ROADMAP.md describes:\n"+task)
+	}
 	if adrs := relevantADRs(repoRoot, query); len(adrs) > 0 {
 		ctx = append(ctx, "Architecture decisions (ADRs) to respect:\n"+strings.Join(adrs, "\n"))
 	}
@@ -109,6 +121,29 @@ func constraints(repoRoot string) string {
 		return ""
 	}
 	return leadingBullets(string(b), 6)
+}
+
+// currentTask returns the project ROADMAP body — the agent's WHAT-to-build. It is
+// the task lane Gather injects: role card + constraints tell an agent its job and
+// its limits, but only this tells it which feature to implement. Capped to taskCap
+// runes so a long roadmap stays bounded; a missing file yields "" (a phase with no
+// roadmap degrades cleanly to no task block).
+func currentTask(repoRoot string) string {
+	b, err := os.ReadFile(filepath.Join(repoRoot, ".agent", "ROADMAP.md"))
+	if err != nil {
+		return ""
+	}
+	return capRunes(strings.TrimSpace(string(b)), taskCap)
+}
+
+// capRunes truncates s to at most n runes, appending a marker when it clips, so an
+// oversized task source stays bounded without cutting mid-rune.
+func capRunes(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n]) + "\n…[roadmap truncated]"
 }
 
 // firstHeading returns the text of a markdown file's first "# " heading.

@@ -1,6 +1,8 @@
 package prompt
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -70,5 +72,55 @@ func TestGather_EmptyQueryStillInjectsHardConstraints(t *testing.T) {
 func TestGather_MissingRepoDegradesQuietly(t *testing.T) {
 	if ctx := Gather("/nonexistent-xyz-forge", "anything"); len(ctx) != 0 {
 		t.Errorf("missing repo should yield no context, got %v", ctx)
+	}
+}
+
+// The task lane: Gather must inject the .agent/ROADMAP.md body so a real agent
+// knows WHAT to build — the gap that left an agent with only role+constraints and
+// no concrete task. Verified host-agnostically in a temp repo.
+func TestGather_InjectsRoadmapTask(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, ".agent"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".agent", "ROADMAP.md"),
+		[]byte("# Roadmap\n\nimplement the widget multiplier"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(Gather(dir, "implementer implementer"), "\n")
+	if !strings.Contains(joined, "Current task") {
+		t.Errorf("Gather must inject the ROADMAP task lane; got: %.200s", joined)
+	}
+	if !strings.Contains(joined, "implement the widget multiplier") {
+		t.Errorf("task lane must carry the ROADMAP body; got: %.200s", joined)
+	}
+}
+
+// A repo with no ROADMAP degrades cleanly: no task lane, no error (a discover-stage
+// project may have no roadmap yet).
+func TestGather_MissingRoadmapOmitsTask(t *testing.T) {
+	dir := t.TempDir()
+	if strings.Contains(strings.Join(Gather(dir, "q"), "\n"), "Current task") {
+		t.Error("a repo with no ROADMAP must not inject a task lane")
+	}
+}
+
+// A long roadmap is capped to taskCap runes (+ marker) so it cannot blow the
+// context window — the same bounding guarantee as the ADR lane.
+func TestCurrentTask_CapsLongRoadmap(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, ".agent"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	big := strings.Repeat("x", taskCap+500)
+	if err := os.WriteFile(filepath.Join(dir, ".agent", "ROADMAP.md"), []byte(big), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got := currentTask(dir)
+	if n := len([]rune(got)); n > taskCap+40 {
+		t.Errorf("currentTask must cap near taskCap runes; got %d", n)
+	}
+	if !strings.Contains(got, "truncated") {
+		t.Error("a capped roadmap must carry the truncation marker")
 	}
 }
