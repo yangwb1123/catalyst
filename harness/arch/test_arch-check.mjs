@@ -63,6 +63,15 @@ test('fanin: a target imported by more than max_importers is flagged', () => {
   assert.equal(checkFanin(m, rules).length, 1);
 });
 
+test('fanin: test-file importers are excluded (coupling is a production concern)', () => {
+  const m = { files: [
+    file('a.go', null, [{ kind: 'internal', dir: '/t', layer: null }]),
+    { ...file('a_test.go', null, [{ kind: 'internal', dir: '/t', layer: null }]), isTest: true },
+  ] };
+  // /t has 1 production importer (a.go); the test importer is not counted, so max 1 holds.
+  assert.equal(checkFanin(m, rules).length, 0);
+});
+
 test('cognitive: too many top-level source modules is flagged', () => {
   const m = { files: [file('one/a.go', null), file('two/b.go', null)] }; // 2 > 1
   assert.equal(checkCognitive(m, rules).length, 1);

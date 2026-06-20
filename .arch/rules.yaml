@@ -16,7 +16,7 @@
 # Measured 2026-06-19 (node harness/arch/arch-check.mjs prints the live numbers):
 #   root:      4 source dirs, 2 root files
 #   package:   max 6 code files/pkg (orchestrator); max 11 exports/pkg (orchestrator)
-#   fanin:     max 11 importing files for one target (forge-core/internal/asset)
+#   fanin:     max 7 PRODUCTION importing files (forge-core/internal/asset); tests excluded
 #   cognitive: 4 top-level source modules (docs, examples, forge-core, harness)
 #   functions: longest declared function <= 50 lines (policies.yml max_function_lines)
 #   cycles:    0 circular module imports (policies.yml circular_dependency_count)
@@ -39,9 +39,9 @@ package:
 file:
   max_lines: 500      # 必须与 harness/policies.yml 一致 (max_file_lines) — arch-check enforces equality
 
-# ── Fan-in budget (how many modules may depend on one target) ─────────────
+# ── Fan-in budget (how many PRODUCTION files import one target) ───────────
 fanin:
-  max_importers: 20   # actual 11 importing files (forge-core/internal/asset) + headroom
+  max_importers: 20   # actual 7 production importers (forge-core/internal/asset); tests excluded + headroom
 
 # ── Cognitive-load budget (top-level source modules to hold in your head) ──
 cognitive:
