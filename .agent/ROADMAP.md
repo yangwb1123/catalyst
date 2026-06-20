@@ -8,7 +8,7 @@
 - [x] `refactor-large-file` / `project-reorganization` skills
 - [x] `BOOTSTRAP.md` + `.agent/project.yml`(engineering/mvp)+ 2 ADR + `.gitignore`
 - [~] 函数行数 / 循环依赖适配器:已**声明**于 `harness/adapters/{ts,py,go}.yml`;**接入待"有真实违规可抓的外部目标仓 + linter"**(本仓自身已合规,接入零收益)
-- [ ] `.claude/settings.json`:CC PostToolUse 加速器 — **待你授权**
+- [x] `.claude/settings.json`:CC PostToolUse 加速器 —— 用户授权后落地(Edit/Write/MultiEdit 后自动跑 `gate.mjs`,FAIL→exit 2 把违规喂回 Claude 即时修;团队共享 git-tracked、可逆;快即时信号、不替代完整 `forge accept`)
 
 ## v1 — 闭环 + Claude 档路由 (✅ 完成)
 - [x] 9 agent 卡 + 7 skill 卡 + 4 workflow + mode×lifecycle 矩阵 + 路由策略 + 评估 schema
