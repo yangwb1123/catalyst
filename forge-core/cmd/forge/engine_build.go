@@ -138,12 +138,31 @@ func agentExecutor(o runOpts, logln func(string), costSink func(phase, model str
 // crosses into the near-budget band mid-run is down-tiered from that point on. phaseTierByName
 // is its name-keyed face for the cost Observe seam (handed only a phase NAME), built over the
 // SAME wf+resolver so the two agree by construction.
+//
+// LEARNING-LOOP READ-BACK (PR2): the scorecards the wind-down producer (scorecard_wind.go)
+// writes are loaded ONCE here and threaded into the resolver, closing the loop's read side —
+// PR1 writes scorecards.json, PR2 reads it back. They drive routing.HistoryTiebreak, the
+// decision-chain's last step, for OBSERVABILITY only (the resolver logs history, never lets it
+// change a tier — see phaseTierResolver/logPhaseHistory). FAIL-LOUD-AND-CONTINUE, symmetric to
+// the wind-down's own posture: a cold start (no file) loads (nil,nil) and is silent normal; a
+// MALFORMED scorecards.json is surfaced as a stderr/log WARNING and the run continues on EMPTY
+// cards — history is enrichment, not correctness, so a corrupt scorecard must never abort or
+// re-color a run (it would only mean "no history line", the cold-start path). LoadScorecards is
+// the loop's only fallible step; everything downstream is pure.
 func buildRunEngine(wf asset.Workflow, o runOpts, logln func(string), costSink func(phase, model string, usd float64), runGate func(name string) gate.Result, pol mode.Policy, budget *runBudget) orchestrator.Engine {
 	gates := newGateLedger()
 	phaseOut := newPhaseOutputLedger()
 	verdicts := newVerdictLedger()
 	findings := newReviewFindingsLedger()
-	tierOf := phaseTierResolver(o.mode, budget.SpendRatio, logln)
+	cards, err := routing.LoadScorecards(scorecardPath(o.root))
+	if err != nil {
+		// Malformed scorecards.json: fail loud, continue empty. Honesty over convenience —
+		// the WARNING names the broken Eval producer; the run proceeds on no history (the
+		// cold-start path), since the read-back is observability, not run correctness.
+		logln(fmt.Sprintf("forge: WARNING scorecards unreadable (%v) — continuing with no history (routing unaffected; learning-loop read-back skipped)", err))
+		cards = nil
+	}
+	tierOf := phaseTierResolver(o.mode, budget.SpendRatio, cards, logln)
 	return orchestrator.Engine{
 		Exec:            agentExecutor(o, logln, budget.feed(costSink), tierOf, phaseTierByName(wf, tierOf), gates, phaseOut, feedsForwardOf(wf), verdicts, findings, onFailTargetOf(wf)),
 		RunGate:         runGate,
@@ -170,11 +189,18 @@ func buildRunEngine(wf asset.Workflow, o runOpts, logln func(string), costSink f
 // frozen at the engine-build-time (zero) ratio. (PR4's hard-stop fires at ratio>=1.00
 // BEFORE the spawn, so this resolver only ever sees <1.00; the >=1.00 band never reaches it.)
 //
-// HONESTY: when the adjustment actually lowers the tier, it logs the down-tier with the
-// ratio and both tiers, naming the quality trade-off and the safety-floor exemption — a real
-// down-tier is never silent. When nothing changes (in budget, or a floor agent, or already
-// Haiku) it logs nothing, so an un-budgeted run's log is byte-for-byte unchanged.
-func phaseTierResolver(mode string, spendRatio func() float64, logln func(string)) func(p asset.Phase) string {
+// HONESTY (down-tier): when the adjustment actually lowers the tier, it logs the down-tier
+// with the ratio and both tiers, naming the quality trade-off and the safety-floor exemption
+// — a real down-tier is never silent. When nothing changes (in budget, or a floor agent, or
+// already Haiku) it logs nothing, so an un-budgeted run's log is byte-for-byte unchanged.
+//
+// cards is the run's loaded scorecards (buildRunEngine reads them once via LoadScorecards).
+// They feed the decision-chain's FINAL step — routing.HistoryTiebreak — purely for
+// OBSERVABILITY (logPhaseHistory), so the chain no longer silently drops its history tail.
+// It NEVER changes the returned tier: history is logged, the budget-adjusted tier `adj` is
+// what every consumer gets. A nil/empty cards (cold start, or a load failure that fell back
+// to empty) simply logs "no scorecard" — byte-for-byte the pre-PR2 tier, just one extra line.
+func phaseTierResolver(mode string, spendRatio func() float64, cards []routing.Scorecard, logln func(string)) func(p asset.Phase) string {
 	return func(p asset.Phase) string {
 		base := orchestrator.PhaseTier(p, mode)
 		ratio := spendRatio()
@@ -182,8 +208,43 @@ func phaseTierResolver(mode string, spendRatio func() float64, logln func(string
 		if adj != base && logln != nil {
 			logln(fmt.Sprintf("phase %s: near budget (spend-ratio %.2f) — downtiering %s→%s to extend runway (cheaper model, lower quality; safety-floor agents exempt)", p.Name, ratio, base, adj))
 		}
+		logPhaseHistory(p, adj, cards, logln)
 		return adj
 	}
+}
+
+// logPhaseHistory closes the decision-chain's final step (history-tiebreak) for the agent
+// phase path, mirroring route.go's historyDecision but as pure OBSERVABILITY on a real run:
+// it logs WHY history did (or did not) speak, and changes NOTHING.
+//
+// HONEST v1 SCOPE — this is observability only, NOT a routing input:
+//   - The candidate set is [adj] (one element): v1's provider_pool is claude-only (policy.yml
+//     D4) and each tier band holds a SINGLE candidate model, so there is no real shoot-out.
+//     HistoryTiebreak over one candidate is a PASSTHROUGH — picked == adj ALWAYS — so the
+//     phase's tier is untouched; we only surface the scored history. The genuine multi-model
+//     选优 is v3's cross-vendor pool (Qwen/DeepSeek), where [adj] widens to >1 candidate and
+//     the SAME HistoryTiebreak (already wired + tested) starts to actually pick. We do NOT
+//     pretend v1 is "learning" or steering routing — quality_score is still repo-wide and the
+//     candidate set is singular; what PR2 buys is the loop's read-back made VISIBLE and the
+//     plumbing ready, not a behavior change.
+//   - An UNMAPPED agent (a harness/gate phase — taskTypeForAgent ok=false) is SKIPPED, not
+//     logged: it owns no scorecard task_type, exactly as the wind-down producer skips it.
+//
+// logln nil (a quiet resolver, e.g. some tests) or cards empty (cold start) are both fine —
+// the former no-ops, the latter logs an honest "no scorecard -> tier_default" via the reason.
+func logPhaseHistory(p asset.Phase, adj string, cards []routing.Scorecard, logln func(string)) {
+	if logln == nil {
+		return
+	}
+	taskType, ok := taskTypeForAgent(p.Agent)
+	if !ok {
+		return // unmapped (harness/gate) phase: no task_type to attribute history under
+	}
+	// v1 single-candidate set [adj]: HistoryTiebreak passes the tier through (picked == adj);
+	// the reason is the observable payload. picked is intentionally unused for routing — the
+	// returned tier stays adj — proving history is observability, not a decision here.
+	_, reason := routing.HistoryTiebreak([]string{adj}, taskType, cards, historyMinSamples)
+	logln(fmt.Sprintf("phase %s: tier=%s (task=%s) — history: %s [v1 single-candidate: observability only, tier unchanged]", p.Name, adj, taskType, reason))
 }
 
 // phaseTierByName is the NAME-keyed face of a phaseTierResolver tierOf, for the cost Observe

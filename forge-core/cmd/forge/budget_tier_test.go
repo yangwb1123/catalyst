@@ -182,8 +182,9 @@ func TestBudgetTier_DownTierLogsHonestly(t *testing.T) {
 	phase := asset.Phase{Name: "implementer", Agent: "implementer", ModelTier: "opus"}
 
 	// (a) Near budget, non-floor -> a down-tier IS logged with ratio and both tiers.
+	// nil cards = cold start: history adds only its own line, never a tier change (PR2).
 	var logs []string
-	tierOf := phaseTierResolver("balanced", func() float64 { return 0.85 }, func(s string) { logs = append(logs, s) })
+	tierOf := phaseTierResolver("balanced", func() float64 { return 0.85 }, nil, func(s string) { logs = append(logs, s) })
 	if got := tierOf(phase); got != routing.Sonnet {
 		t.Fatalf("near-budget opus implementer must resolve to sonnet; got %q", got)
 	}
@@ -194,19 +195,35 @@ func TestBudgetTier_DownTierLogsHonestly(t *testing.T) {
 		}
 	}
 
-	// (b) In budget -> the SAME phase logs NOTHING (no spurious down-tier line).
+	// (b) In budget -> the SAME phase emits NO DOWN-TIER line (the PR6 invariant). A history
+	// observability line (PR2) may be present — it never down-tiers — so we assert specifically
+	// that no `downtiering` line appears, not that the log is wholly empty.
 	var quiet []string
-	inBudget := phaseTierResolver("balanced", func() float64 { return 0.50 }, func(s string) { quiet = append(quiet, s) })
-	if got := inBudget(phase); got != routing.Opus || len(quiet) != 0 {
-		t.Errorf("in-budget resolve must be opus and SILENT; got tier=%q, log lines=%d (%v)", inBudget(phase), len(quiet), quiet)
+	inBudget := phaseTierResolver("balanced", func() float64 { return 0.50 }, nil, func(s string) { quiet = append(quiet, s) })
+	if got := inBudget(phase); got != routing.Opus || downTierLines(quiet) != 0 {
+		t.Errorf("in-budget resolve must be opus and emit NO down-tier line; got tier=%q, down-tier lines=%d (%v)", inBudget(phase), downTierLines(quiet), quiet)
 	}
 
-	// (c) Floor agent near budget -> exempt, also SILENT (no down-tier happened).
+	// (c) Floor agent near budget -> exempt, so again NO down-tier line happens (the PR6
+	// invariant). As in (b) a PR2 history line is allowed; only a `downtiering` line is forbidden.
 	var floorLog []string
-	floor := phaseTierResolver("balanced", func() float64 { return 0.95 }, func(s string) { floorLog = append(floorLog, s) })
-	if got := floor(asset.Phase{Name: "review", Agent: "reviewer"}); got != routing.Opus || len(floorLog) != 0 {
-		t.Errorf("floor agent near budget must stay opus and SILENT; got tier=%q, log lines=%d", got, len(floorLog))
+	floor := phaseTierResolver("balanced", func() float64 { return 0.95 }, nil, func(s string) { floorLog = append(floorLog, s) })
+	if got := floor(asset.Phase{Name: "review", Agent: "reviewer"}); got != routing.Opus || downTierLines(floorLog) != 0 {
+		t.Errorf("floor agent near budget must stay opus and emit NO down-tier line; got tier=%q, down-tier lines=%d", got, downTierLines(floorLog))
 	}
+}
+
+// downTierLines counts the resolver's DOWN-TIER log lines (the `downtiering` marker), so a
+// test can pin the PR6 down-tier-silence invariant independently of the PR2 history line that
+// the same resolver also emits (history never down-tiers; the two concerns must not conflate).
+func downTierLines(logs []string) int {
+	n := 0
+	for _, l := range logs {
+		if strings.Contains(l, "downtiering") {
+			n++
+		}
+	}
+	return n
 }
 
 // ── ⑤ phaseTierByName agrees with the Phase-keyed resolver (the cost-path face) ──────────
@@ -217,7 +234,7 @@ func TestBudgetTier_DownTierLogsHonestly(t *testing.T) {
 func TestBudgetTier_PhaseTierByNameMatchesResolver(t *testing.T) {
 	phase := asset.Phase{Name: "implementer", Agent: "implementer", ModelTier: "opus"}
 	wf := asset.Workflow{Phases: []asset.Phase{phase}}
-	tierOf := phaseTierResolver("balanced", func() float64 { return 0.85 }, nil)
+	tierOf := phaseTierResolver("balanced", func() float64 { return 0.85 }, nil, nil)
 	byName := phaseTierByName(wf, tierOf)
 
 	if a, b := byName(phase.Name), tierOf(phase); a != b {
