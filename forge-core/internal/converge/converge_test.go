@@ -195,6 +195,54 @@ func TestEvaluate_NilCriteriaBackCompat(t *testing.T) {
 	}
 }
 
+// greenDetail must render the HONEST exemption summary when a GateProof is wired:
+// name the proven gates AND each waived gate with its category+reason, and never
+// claim "all required gates green" once anything was exempted.
+func TestGreenDetail_ListsExemptions(t *testing.T) {
+	sig := Signals{
+		GatesGreen: true,
+		GateProof: GateProof{
+			Proven: []string{"test", "complexity"},
+			Exemptions: []GateExemption{
+				{Name: "lint", Category: "no_tool", Reason: "eslint not installed"},
+				{Name: "build", Category: "inapplicable", Reason: "no build step"},
+			},
+		},
+	}
+	got := greenDetail(sig)
+	for _, want := range []string{"test", "complexity", "exempt", "lint", "no_tool", "build", "inapplicable"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("greenDetail missing %q; got %q", want, got)
+		}
+	}
+	if strings.Contains(got, "all required gates green") {
+		t.Errorf("an exempted-gate detail must not claim blanket verification; got %q", got)
+	}
+}
+
+// greenDetail with NO proof wired (the zero value — every legacy unit test that
+// sets only GatesGreen) must keep the terse legacy strings, byte-for-byte.
+func TestGreenDetail_LegacyFallback(t *testing.T) {
+	if got := greenDetail(Signals{GatesGreen: true}); got != "all required gates green" {
+		t.Errorf("green + no proof = %q, want legacy 'all required gates green'", got)
+	}
+	if got := greenDetail(Signals{GatesGreen: false}); got != "a required gate is not green" {
+		t.Errorf("not-green = %q, want legacy 'a required gate is not green'", got)
+	}
+}
+
+// A green verdict proven entirely by real PASSes (no exemptions) still reads as a
+// clean summary, not a misleading "exempt" clause.
+func TestGreenDetail_AllProvenNoExemptions(t *testing.T) {
+	got := greenDetail(Signals{GatesGreen: true, GateProof: GateProof{Proven: []string{"test", "lint"}}})
+	if strings.Contains(got, "exempt") {
+		t.Errorf("no exemptions must not render an 'exempt' clause; got %q", got)
+	}
+	if !strings.Contains(got, "test") || !strings.Contains(got, "lint") {
+		t.Errorf("proven gates must be named; got %q", got)
+	}
+}
+
 // --- human_gate (the design->build approval gate) ----------------------------
 
 // humanStop builds the design.yml-shaped human_gate stop condition.

@@ -201,13 +201,17 @@ func buildLoop(wf asset.Workflow, o runOpts, maxIter int, logln func(string), co
 	// re-measures gate state, so the reviewer always sees the LATEST). The ledgers live for
 	// the whole loop and update in place across iterations — the right converging-loop
 	// semantics (latest gate state, latest plan, latest verdict).
+	lifecycle := resolveLifecycle(o)
 	eng := buildRunEngine(wf, o, logln, costSink,
 		func(name string) gate.Result { return resolveGate(o.root, name, probe.refresh()) },
-		mode.Effective(o.mode, resolveLifecycle(o)), budget)
+		mode.Effective(o.mode, lifecycle), budget)
 	approved := humanApproved(o.root, wf.Stage, o.approved)
 	return orchestrator.NewLoopEngine(
 		eng, wf.Stop,
-		func() converge.Signals { return gatherSignals(o.root, wf, probe.current(), approved) },
+		func() converge.Signals {
+			statuses, categories := probe.current()
+			return gatherSignals(o.root, wf, statuses, categories, lifecycle, approved)
+		},
 		maxIter, 2, logln)
 }
 

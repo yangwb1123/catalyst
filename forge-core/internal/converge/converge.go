@@ -35,6 +35,36 @@ type Signals struct {
 	// is wired, and every per-criterion check then degrades safely to unmet
 	// (honest: absence of a verdict is never satisfaction).
 	Criteria map[string]string
+
+	// GateProof is the per-gate breakdown behind GatesGreen — which required gates
+	// were PROVEN (a real PASS) and which were EXEMPTED (an N/A the lifecycle-aware
+	// matrix waived) with the reason. It does NOT change the meaning of GatesGreen
+	// (that bool is still the sole convergence signal for gates_status); it only
+	// lets greenDetail render an HONEST line that names the exempted gates and why,
+	// instead of claiming everything was verified. Empty (the zero value) makes
+	// greenDetail fall back to its terse legacy text, so callers that do not wire it
+	// (and every existing test) are byte-for-byte unchanged.
+	GateProof GateProof
+}
+
+// GateProof records, for honesty rendering only, which required gates were proven
+// versus exempted under the lifecycle-aware N/A matrix. Proven is the gates that
+// resolved to a real PASS; Exemptions is the gates that were N/A but waived, each
+// annotated with its category+reason (e.g. "no_tool:not installed"). The CLI fills
+// it from gatesGreen; converge only renders it.
+type GateProof struct {
+	Proven     []string
+	Exemptions []GateExemption
+}
+
+// GateExemption is one waived gate: its Name, the N/A Category that justified the
+// waiver ("inapplicable"|"no_tool"), and a short human Reason carried from the
+// acceptance detail. Rendered by greenDetail so the convergence report is explicit
+// about what was NOT verified and why it was nonetheless allowed.
+type GateExemption struct {
+	Name     string
+	Category string
+	Reason   string
 }
 
 // acceptanceMetrics is the set of metric names that evalOne resolves from
@@ -136,7 +166,7 @@ func evalOne(c asset.Criterion, sig Signals) Result {
 		return evalRoadmap(c, sig)
 	case c.Metric == "gates_status":
 		met := c.Value == "green" && sig.GatesGreen
-		return Result{render(c), met, greenDetail(sig.GatesGreen)}
+		return Result{render(c), met, greenDetail(sig)}
 	case acceptanceMetrics[c.Metric]:
 		return evalCriterion(c, sig)
 	default:
@@ -209,11 +239,39 @@ func unknownDetail(c asset.Criterion) string {
 	return fmt.Sprintf("unknown metric %q — treated as unmet", c.Metric)
 }
 
-func greenDetail(green bool) string {
-	if green {
+// greenDetail renders the honest convergence detail for gates_status. When the
+// gates are green it does NOT claim blanket verification: if any required gate was
+// EXEMPTED (an N/A waived by the lifecycle-aware matrix) it names the proven gates
+// AND lists each exemption with its category+reason, so the report never pretends a
+// never-run check passed. A red verdict reports it. With no GateProof wired (the
+// zero value — e.g. a unit test that sets only GatesGreen) it falls back to the
+// terse legacy strings, keeping those call sites unchanged.
+func greenDetail(sig Signals) string {
+	if !sig.GatesGreen {
+		return "a required gate is not green"
+	}
+	proof := sig.GateProof
+	if len(proof.Proven) == 0 && len(proof.Exemptions) == 0 {
 		return "all required gates green"
 	}
-	return "a required gate is not green"
+	parts := []string{fmt.Sprintf("%d gate(s) green", len(proof.Proven))}
+	if len(proof.Proven) > 0 {
+		parts[0] += " (" + strings.Join(proof.Proven, ",") + ")"
+	}
+	if len(proof.Exemptions) > 0 {
+		parts = append(parts, "exempt "+renderExemptions(proof.Exemptions))
+	}
+	return strings.Join(parts, "; ")
+}
+
+// renderExemptions formats the waived gates as "name(category:reason)·…" so the
+// detail line is explicit about exactly which gates were not verified and why.
+func renderExemptions(ex []GateExemption) string {
+	parts := make([]string, len(ex))
+	for i, e := range ex {
+		parts[i] = fmt.Sprintf("%s(%s:%s)", e.Name, e.Category, e.Reason)
+	}
+	return strings.Join(parts, "·")
 }
 
 // RoadmapCompletion returns the fraction of decided checklist items ([x] of

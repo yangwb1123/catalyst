@@ -110,21 +110,32 @@ func Accept(root string) Result {
 	return run("accept", r, "node", "harness/acceptance.mjs")
 }
 
-// probeRow mirrors one element of acceptance.mjs's `--json` array.
+// probeRow mirrors one element of acceptance.mjs's `--json` array. Category is the
+// lifecycle-aware N/A classification ("applicable"|"inapplicable"|"no_tool") the
+// harness now stamps on every result; it is OPTIONAL — an older acceptance.mjs
+// that predates the field decodes it as "" and the consumer treats that as the
+// strict default (see cmd/forge's exemption matrix), so the bridge stays
+// backward-compatible in both directions.
 type probeRow struct {
 	Criterion string `json:"criterion"`
 	Status    string `json:"status"`
 	Detail    string `json:"detail"`
+	Category  string `json:"category"`
 }
 
-// ProbeAll runs `node harness/acceptance.mjs --json` ONCE and returns a
-// criterion->status map (statuses normalised to PASS/FAIL/NA). It is the single
-// honest source for per-gate verdicts: callers run it once per run and map each
-// required gate name onto its real status, instead of collapsing lint/build/
-// security onto a coarse "did anything fail" signal. A non-zero acceptance exit
-// is NOT an error here (a load-bearing FAIL is a legitimate, parseable verdict);
-// only a missing tool or unparseable output is an error.
-func ProbeAll(root string) (map[string]string, error) {
+// ProbeAll runs `node harness/acceptance.mjs --json` ONCE and returns two PARALLEL
+// criterion-keyed maps: statuses (normalised to PASS/FAIL/NA) and categories (the
+// lifecycle-aware N/A classification — "applicable"|"inapplicable"|"no_tool", or ""
+// when a pre-category acceptance.mjs omits the field). It is the single honest
+// source for per-gate verdicts: callers run it once per run and map each required
+// gate name onto its real status, instead of collapsing lint/build/security onto a
+// coarse "did anything fail" signal. The categories map is the ADDITIVE channel
+// that lets a downstream lifecycle-aware exemption distinguish an honest "language
+// has no such concept" N/A from a fixable "tool not installed" N/A — it does not
+// change any status. A non-zero acceptance exit is NOT an error here (a load-bearing
+// FAIL is a legitimate, parseable verdict); only a missing tool or unparseable
+// output is an error.
+func ProbeAll(root string) (statuses map[string]string, categories map[string]string, err error) {
 	r := RepoRoot(root)
 	cmd := exec.Command("node", "harness/acceptance.mjs", "--json")
 	cmd.Dir = r
@@ -133,18 +144,20 @@ func ProbeAll(root string) (map[string]string, error) {
 		// An ExitError still carries valid JSON on stdout (REJECTED but honest);
 		// only treat a start failure / no-stdout case as fatal.
 		if ee, ok := err.(*exec.ExitError); !ok || len(out) == 0 {
-			return nil, fmt.Errorf("gate: acceptance --json failed: %w (%s)", err, exitStderr(ee))
+			return nil, nil, fmt.Errorf("gate: acceptance --json failed: %w (%s)", err, exitStderr(ee))
 		}
 	}
 	var rows []probeRow
 	if err := json.Unmarshal(out, &rows); err != nil {
-		return nil, fmt.Errorf("gate: parsing acceptance --json: %w", err)
+		return nil, nil, fmt.Errorf("gate: parsing acceptance --json: %w", err)
 	}
-	statuses := make(map[string]string, len(rows))
+	statuses = make(map[string]string, len(rows))
+	categories = make(map[string]string, len(rows))
 	for _, row := range rows {
 		statuses[row.Criterion] = normStatus(row.Status)
+		categories[row.Criterion] = row.Category
 	}
-	return statuses, nil
+	return statuses, categories, nil
 }
 
 // exitStderr returns an ExitError's captured stderr, or "" when none — kept

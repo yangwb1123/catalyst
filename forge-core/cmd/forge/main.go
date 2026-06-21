@@ -282,7 +282,7 @@ func loadWorkflow(repoRoot, name string) (asset.Workflow, error) {
 // N/A gate does NOT fail the run (it completes, exit 0); only a real FAIL does.
 func execEngine(wf asset.Workflow, o runOpts) int {
 	logln := func(s string) { fmt.Println(s) }
-	probe := probeStatuses(o.root)
+	probe, categories := probeStatuses(o.root)
 	lifecycle := resolveLifecycle(o)
 	pol := mode.Effective(o.mode, lifecycle)
 	// `forge run` did not open a tracer before, so a REAL claude run burned cost the
@@ -309,7 +309,7 @@ func execEngine(wf asset.Workflow, o runOpts) int {
 		return 1
 	}
 	fmt.Println("forge run: workflow completed")
-	reportConvergence(wf, o.root, probe, o.approved)
+	reportConvergence(wf, o.root, probe, categories, lifecycle, o.approved)
 	// Learning-loop wind-down: attribute this run's REAL billed cost into the
 	// scorecards. It runs BEFORE the deferred closeTrace() (so the trace file it reads
 	// is still being written, per scorecard_wind.go's flush-ordering invariant) and is
@@ -327,12 +327,12 @@ func execEngine(wf asset.Workflow, o runOpts) int {
 // by approval alone, never the conjunction path. A human_gate gets a distinct,
 // HONEST report: not approved => "awaiting human approval" (a stop to wait for a
 // human, NOT a gate FAIL); approved => "approved -> unlocks <next_stage>".
-func reportConvergence(wf asset.Workflow, root string, probe map[string]string, approvedFlag bool) {
+func reportConvergence(wf asset.Workflow, root string, probe, categories map[string]string, lifecycle string, approvedFlag bool) {
 	if wf.Stop.Type == "" {
 		return
 	}
 	approved := humanApproved(root, wf.Stage, approvedFlag)
-	results, met := converge.Converge(wf.Stop, gatherSignals(root, wf, probe, approved))
+	results, met := converge.Converge(wf.Stop, gatherSignals(root, wf, probe, categories, lifecycle, approved))
 	if converge.IsHumanGate(wf.Stop) {
 		reportHumanGate(wf, met)
 		return

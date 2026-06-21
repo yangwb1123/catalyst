@@ -16,6 +16,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import * as acc from './acceptance.mjs';
 import { resolveCoverageThreshold, judgeCoverage, computeCoverageThreshold } from './adapters.mjs';
 import { parseRules } from './arch/scan.mjs';
+import { categorize, withCategory, APPLICABLE, INAPPLICABLE, NO_TOOL } from './acceptance-kernel.mjs';
 const { decide, PASS, FAIL, NA, LOAD_BEARING, probeNotApplicable, probeCoverage, probeSCA, runCountedTest } = acc;
 
 // allPass builds a results array where every load-bearing criterion is PASS,
@@ -133,6 +134,73 @@ test('probeNotApplicable no longer carries coverage (it is a real probe now)', (
   assert.ok(!names.includes('coverage'), 'coverage must NOT be a static N/A anymore');
   // typecheck/build remain the only genuinely-unwired criteria.
   assert.deepEqual(names.sort(), ['build', 'typecheck']);
+});
+
+// --- lifecycle-aware N/A categorisation (the bridge to forge-core's exemption) --
+// categorize() is the PURE classifier forge-core's lifecycle-aware matrix relies
+// on: a real verdict is APPLICABLE; an N/A is INAPPLICABLE only when its detail
+// denotes absence-of-concept, else NO_TOOL (the fail-safe default). These pin the
+// exact mapping of every N/A detail string the probes actually emit.
+test('categorize: a verdict (PASS/FAIL) is APPLICABLE', () => {
+  assert.equal(categorize(PASS, 'anything'), APPLICABLE);
+  assert.equal(categorize(FAIL, 'anything'), APPLICABLE);
+});
+
+test('categorize: absence-of-concept N/A details -> INAPPLICABLE', () => {
+  for (const detail of [
+    'no build step (declarative + zero-dep harness)',
+    'no source languages detected',
+    'go: adapter has no lint command',
+    'go: adapter has no coverage command',
+    'no TS sources / type-checker in this repo',
+    'no example apps with a test/ dir discovered under examples/',
+  ]) {
+    assert.equal(categorize(NA, detail), INAPPLICABLE, `inapplicable: ${detail}`);
+  }
+});
+
+test('categorize: missing/unconfigured-TOOL N/A details -> NO_TOOL', () => {
+  for (const detail of [
+    'go: golangci-lint not installed',
+    'js: eslint installed but unconfigured (no project config) — not run',
+    'go: go installed but could not run here (no module/tests/config) — not a coverage verdict',
+    'go: go produced no parseable coverage % (exit 1) — not a verdict',
+    'SCA framework ready; no OSV advisory DB — dependency CVE scan not run, not faked',
+  ]) {
+    assert.equal(categorize(NA, detail), NO_TOOL, `no_tool: ${detail}`);
+  }
+});
+
+test('categorize: an unclassifiable N/A is NO_TOOL (fail-safe toward strict)', () => {
+  // The conservative default: a detail that matches no inapplicable phrase is
+  // treated as a fixable tooling gap, never a free production exemption.
+  assert.equal(categorize(NA, 'some unforeseen reason'), NO_TOOL);
+  assert.equal(categorize(NA, ''), NO_TOOL);
+  assert.equal(categorize(NA, undefined), NO_TOOL);
+});
+
+test('withCategory: ADDITIVE — preserves the row and stamps a category', () => {
+  const r = withCategory({ criterion: 'build', status: NA, detail: 'no build step here' });
+  assert.equal(r.criterion, 'build');
+  assert.equal(r.status, NA);
+  assert.equal(r.detail, 'no build step here');
+  assert.equal(r.category, INAPPLICABLE, 'build with no-build-step detail is inapplicable');
+});
+
+test('collect() stamps a category on every row (the --json bridge payload)', () => {
+  // The integration `collect()` runs probes that spawn `node --test`; from inside
+  // `node --test` that recurses. So assert the contract on a SYNTHETIC row array put
+  // through the same withCategory map collect() applies — proving every row carries
+  // an honest category (a verdict is APPLICABLE, an N/A is classified).
+  const rows = [
+    { criterion: 'test_pass', status: PASS, detail: 'green' },
+    { criterion: 'lint', status: NA, detail: 'go: golangci-lint not installed' },
+    { criterion: 'build', status: NA, detail: 'no build step (declarative + zero-dep harness)' },
+  ].map(withCategory);
+  assert.equal(rows[0].category, APPLICABLE);
+  assert.equal(rows[1].category, NO_TOOL);
+  assert.equal(rows[2].category, INAPPLICABLE);
+  assert.ok(rows.every((r) => typeof r.category === 'string' && r.category), 'every row has a category');
 });
 
 test('probeCoverage yields a single, honest coverage row (the wired-in probe)', () => {

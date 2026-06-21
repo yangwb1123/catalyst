@@ -19,7 +19,7 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { appTestPlan, ADAPTER_LANG_BY_RUNNER, loadAdapter } from './adapters.mjs';
 import { scanRepo as scaScanRepo } from './sca.mjs';
-import { PASS, FAIL, NA, ROOT, HARNESS_DIR, run, result } from './acceptance-kernel.mjs';
+import { PASS, FAIL, NA, ROOT, HARNESS_DIR, run, result, withCategory } from './acceptance-kernel.mjs';
 import { probeLint, probeCoverage } from './acceptance-quality.mjs';
 
 // Re-export the verdict statuses (defined in the kernel) so importers — chiefly
@@ -261,7 +261,11 @@ export function probeArchitecture() {
 
 // --- aggregation + verdict ---------------------------------------------------
 
-// Gather every criterion result. Order mirrors the acceptance schema.
+// Gather every criterion result. Order mirrors the acceptance schema. Each row is
+// annotated with its lifecycle-aware category (withCategory) — an ADDITIVE field
+// that decide()/LOAD_BEARING deliberately ignore (the verdict logic is unchanged),
+// carried so the --json bridge can hand forge-core WHY an N/A is N/A (a missing
+// tool vs a concept the language lacks) for its lifecycle-aware exemption matrix.
 export function collect() {
   return [
     probeTests(),
@@ -274,7 +278,7 @@ export function collect() {
     probeLint(),
     probeCoverage(),
     ...probeNotApplicable(),
-  ];
+  ].map(withCategory);
 }
 
 // The executable, load-bearing criteria: each MUST be present AND status===PASS
