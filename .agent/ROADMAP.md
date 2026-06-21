@@ -11,7 +11,7 @@
 - [x] `.claude/settings.json`:CC PostToolUse 加速器 —— 用户授权后落地(Edit/Write/MultiEdit 后自动跑 `gate.mjs`,FAIL→exit 2 把违规喂回 Claude 即时修;团队共享 git-tracked、可逆;快即时信号、不替代完整 `forge accept`)
 
 ## v1 — 闭环 + Claude 档路由 (✅ 完成)
-- [x] 9 agent 卡 + 7 skill 卡 + 4 workflow + mode×lifecycle 矩阵 + 路由策略 + 评估 schema
+- [x] 9 agent 卡 + 8 skill 卡 + 4 workflow + mode×lifecycle 矩阵 + 路由策略 + 评估 schema
 - [x] `forge check` 资产校验器(`harness/check.py`,7 检查,12 unittest)
 - [x] 验证脊柱已跑通:plan→implementer×2→gate→reviewer(fresh)→fix 全 spine;workflow↔角色卡 SoT 漂移已消除
 - [x] `forge accept` —— acceptance Stop 闸门(`harness/acceptance.mjs`,聚合 gate+check+tests+**app 测试** 判 ACCEPTED/REJECTED,8 测试;**n/a 项诚实可见,绝不伪造通过**)

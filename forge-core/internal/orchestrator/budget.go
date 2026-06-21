@@ -62,8 +62,10 @@ func (e Engine) checkAgentBudget(calls *int) error {
 // work right up to the spend limit and stopped to PREVENT overspend; the message says so
 // plainly ("not a failure — the budget is used up") so an operator does not read it as a
 // crash. completed is the number of agent phases that already ran, reported for an honest
-// "stopped after N" account. (v1 is a HARD STOP: there is no near-budget down-tier-and-
-// continue here — that budget-aware degradation is dead-logic today, see the puller doc.)
+// "stopped after N" account. (checkRunBudget is a HARD STOP: no near-budget down-tier-and-
+// continue HERE. The budget-aware down-tier DOES exist — wired in cmd/forge's
+// phaseTierResolver via routing.BudgetAdjustTier (PR6); this hard stop is the floor beneath
+// it, reached only when spend fully exhausts the cap.)
 //
 // BACK-COMPAT: a nil BudgetExhausted is "no run-level budget" — never consulted, zero
 // overhead, so an existing run/evolve is byte-for-byte unchanged. Only a wired closure
