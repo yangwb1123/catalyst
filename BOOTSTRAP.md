@@ -13,7 +13,7 @@ ForgeOS = **AI-native 软件工厂**:站在 Claude Code / Codex / Gemini CLI 等
 - **v0–v1**:编排骑 Claude Code 原生能力(subagents/hooks/skills);
   只写**声明式**(agent 卡 / workflow / policy)+ 薄胶水(`harness/gate.mjs` 现用 Node,够用)。
 - **v2(现状)**:自研 Go 运行时已**搭好脚手架**——`forge-core/` 已落地、已构建、全绿(纯 Go 标准库、
-  零外部依赖,7 个包,CLI `forge run/evolve/gate/check/accept`)。Agent 阶段**默认 dry-run / 不调 LLM**,
+  零外部依赖,13 个包,CLI `forge run/evolve/gate/check/accept/migrate/route`)。Agent 阶段**默认 dry-run / 不调 LLM**,
   真实执行器经 `--executor command --agent-cmd claude` 提供;YAML 经 python shim 转码。
 - 时序与理由见 [`.agent/DECISIONS.md`](.agent/DECISIONS.md)(D1–D2)。
 
@@ -34,8 +34,8 @@ README.md                 ← 对外简介
   architecture/           ← north-star + HA/安全演进(目标态,非现状)
 harness/                  ← 约束执法(真相之源,host-independent)
   gate.mjs · policies.yml ← 主循环拥有,勿改
-  adapters/               ← polyglot 闸门适配器(ts/python/go;v0.1 接入)
-forge-core/               ← v2 自研编排运行时(纯 Go 标准库,零依赖;CLI forge run/evolve/gate/check/accept)
+  adapters/               ← polyglot 闸门适配器(ts/python/go;lint/coverage/test 框架已接)
+forge-core/               ← v2 自研编排运行时(纯 Go 标准库,零依赖,13 包;CLI forge run/evolve/gate/check/accept/migrate/route)
 examples/                 ← dogfood 真实应用(url-shortener:经完整 pipeline 端到端建成)
 docs/                     ← discovery/design/adr 产物(按需生成)
 ```
@@ -52,10 +52,10 @@ docs/                     ← discovery/design/adr 产物(按需生成)
 
 ## 如何跑闸门 (Gate)
 ```
-node harness/gate.mjs
+node harness/gate.mjs        # 快速体积闸门(edit-time 即时信号)
+node harness/acceptance.mjs  # 完整 Stop 闸门(forge accept,聚合 8 检查 + test)
 ```
-v0:检查文件行数 + 根目录文件数(`enforce: block`,见 `harness/policies.yml`)。
-每次修改后跑。函数行数 / 循环依赖 = v0.1 由 [`harness/adapters/`](harness/adapters/) 按语言接入。
+`gate.mjs` 查体积(`enforce: block`,见 `harness/policies.yml`);完整 Stop 闸门跑 `node harness/acceptance.mjs`(forge accept),聚合:`gate.mjs`(体积)· `arch-check`(架构 **8 检查**:layering / 包 / 扇入 / 认知 / 反模式命名 / **函数 ≤ 50 行** / **循环依赖 = 0** / drift-guard)· `check.py`(治理)· `secret-scan` · test / app-test;无工具的项诚实标 N/A。**每次修改后跑。**
 
 ## 阅读顺序 (Read order)
 1. **BOOTSTRAP**(本文)→

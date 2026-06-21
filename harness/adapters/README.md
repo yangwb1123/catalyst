@@ -17,7 +17,7 @@
 
 ## 时序边界 (Scope — 重要)
 - **v0 的 [`../gate.mjs`](../gate.mjs) 只做行数 + 根目录检查**,host-independent,**不读本目录**。
-- **适配器在 v0.1 接入其余**(函数行数 / 复杂度 / 循环依赖 / lint / test / build / coverage)。
+- **函数行数 / 循环依赖**现由 [`../arch/arch-check.mjs`](../arch/arch-check.mjs) 直接机器执法(8 检查,zero-dep parser,**不走本目录适配器**);**lint / coverage / test 适配器框架已接**(acceptance probeLint/probeCoverage + adapter test 消费,工具齐则跑、缺则诚实 N/A);build 按工具可用性降级。
 - v2 起 runner 固化为 Go 静态二进制(harness workers,带外);见 [`../../.agent/DECISIONS.md`](../../.agent/DECISIONS.md) D1/D3。
 - **勿改 `gate.mjs` / `policies.yml`**(主循环拥有);新增语言 = 新增一个 `<language>.yml`。
 
