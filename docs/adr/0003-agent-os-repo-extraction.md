@@ -11,7 +11,7 @@
 ## 背景
 
 ForgeOS 的价值是**治理资产**(红线 + harness 执法器 + 声明式 agent/skill/workflow/eval/
-routing/policies + 架构规则)。`harness/forge-init.mjs` 已把它**逐项目复制**(Catalyst Vision
+routing/policies + 架构规则)。`harness/scaffold/forge-init.mjs` 已把它**逐项目复制**(Catalyst Vision
 70%/30% 拆分):70% UNIVERSAL、对每个项目相同、COPIED verbatim;30% PROJECT identity、
 GENERATED。这交付了「可继承、可运行、完整」的治理 —— 一命令 stamp 出 day-1 即 ACCEPTED 的项目。
 
@@ -107,4 +107,4 @@ forge-init 生成的 `git submodule add` + README 吸收。**否决 npm 包**:�
 3. **(建议先答)now vs 暂缓** —— 决策 6 的 (A) 现在做 还是 (B) 暂缓(本 ADR 倾向 B)。
 
 参见 `../../.agent/DECISIONS.md` O2 · `../../.agent/ROADMAP.md` v2 · ADR 0002(零依赖哲学,约束否决
-npm 包)· `../../harness/forge-init.mjs`(70%/30% 拆分的事实源)。
+npm 包)· `../../harness/scaffold/forge-init.mjs`(70%/30% 拆分的事实源)。

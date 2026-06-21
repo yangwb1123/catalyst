@@ -1,5 +1,5 @@
-// Tests for harness/forge-init.mjs (node:test, zero external deps).
-// Run: node --test harness/test_forge-init.mjs
+// Tests for harness/scaffold/forge-init.mjs (node:test, zero external deps).
+// Run: node --test harness/scaffold/test_forge-init.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
@@ -10,9 +10,14 @@ import { tmpdir } from 'node:os';
 
 import { COPIED_FILES, GOVERNANCE_DIRS, HARNESS_NOT_COPIED } from './forge-init.mjs';
 
-const HARNESS_DIR = dirname(fileURLToPath(import.meta.url));
+// This test lives in harness/scaffold/, so its own dir is the sub-package and the
+// repo root is TWO levels up. HARNESS_DIR is the REAL harness/ (one level up) — the
+// root the manifest-integrity guard walks (it must see EVERY harness source,
+// including this sub-package).
+const SCAFFOLD_DIR = dirname(fileURLToPath(import.meta.url));
+const HARNESS_DIR = dirname(SCAFFOLD_DIR);
 const SOURCE_ROOT = dirname(HARNESS_DIR);
-const INIT_PATH = join(HARNESS_DIR, 'forge-init.mjs');
+const INIT_PATH = join(SCAFFOLD_DIR, 'forge-init.mjs');
 
 // Run forge-init as a child process; returns spawnSync result.
 function runInit(args) {

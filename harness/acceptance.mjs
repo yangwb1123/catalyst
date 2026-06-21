@@ -74,14 +74,29 @@ export function runCountedTest(glob, extraEnv = {}) {
 // test_pass == true  <-  ALL committed harness suites must be green (self-
 // governance: the harness runs its OWN tests, not a curated subset, so a
 // regression in verdict logic — or a silently-green arch-check faking a pass —
-// can't ship). Suites: test_check.py + test_yaml2json.py, plus two Node globs —
-// 'harness/test_*.mjs' (test_gate/test_acceptance/test_scorecard/test_enforce/…)
-// and 'harness/arch/test_*.mjs' (test_arch-check's negative fixtures; the first
-// glob is non-recursive so this second entry is required, else those vanish).
-// BOTH Node globs are fail-CLOSED on discovery via runCountedTest: a zero-match
-// glob exits 0 ("# tests 0"), so requiring N>0 stops a moved/renamed suite from
-// reporting green while running nothing — the symmetric guard the arch glob
-// always had but harness/test_*.mjs previously lacked (fail-OPEN: judged `.ok`).
+// can't ship). Suites: test_check.py + test_yaml2json.py, plus per-DIRECTORY Node
+// globs — 'harness/test_*.mjs' (test_gate/test_acceptance/test_scorecard/…) and
+// 'harness/arch/test_*.mjs' (test_arch-check's negative fixtures) ALWAYS, plus
+// 'harness/scaffold/test_*.mjs' (test_forge-init / test_forge-upgrade) ONLY when
+// that sub-package is present on disk. The first glob is non-recursive, so the
+// per-subdir globs are REQUIRED — without them a sub-package suite vanishes (a
+// moved suite running NOTHING = a false green); when the scaffold/upgrade tooling
+// moved into harness/scaffold/, its two suites left 'harness/test_*.mjs' coverage.
+//
+// WHY harness/scaffold/ is CONDITIONAL (and still honest): a GENERATED project
+// inherits the harness but NOT harness/scaffold/ (scaffold/upgrade are operator
+// tools a project does not carry — they're on forge-init's HARNESS_NOT_COPIED). So
+// in that project the dir is legitimately absent and there is no suite to run —
+// requiring it would falsely REJECT a clean project. The honesty guard is NOT
+// weakened: when harness/scaffold/ EXISTS (this source repo), the glob is added and
+// is fail-CLOSED exactly like the others (zero-match -> ok:false). It is skipped
+// ONLY when the directory itself is absent — "no such sub-package", not "ran
+// nothing". (Same INAPPLICABLE-when-absent shape as probeAppTests / probeSCA.)
+//
+// ALL included Node globs are fail-CLOSED on discovery via runCountedTest: a
+// zero-match glob exits 0 ("# tests 0"), so requiring N>0 stops a moved/renamed
+// suite from reporting green while running nothing — the symmetric guard the arch
+// glob always had but harness/test_*.mjs previously lacked (fail-OPEN: judged `.ok`).
 export function probeTests() {
   const mjsRun = runCountedTest('harness/test_*.mjs', { FORGE_ACCEPT_INNER: '1' });
   const archRun = runCountedTest('harness/arch/test_*.mjs', { FORGE_ACCEPT_INNER: '1' });
@@ -91,10 +106,19 @@ export function probeTests() {
     ['harness/test_*.mjs', mjsRun.ok],
     ['harness/arch/test_*.mjs', archRun.ok],
   ];
+  // The scaffold/upgrade sub-package's suites run ONLY where that sub-package is
+  // present (the ForgeOS source repo). When present, fail-closed like the rest.
+  const scaffoldPresent = existsSync(join(ROOT, 'harness', 'scaffold'));
+  const scaffoldRun = scaffoldPresent
+    ? runCountedTest('harness/scaffold/test_*.mjs', { FORGE_ACCEPT_INNER: '1' })
+    : null;
+  if (scaffoldRun) suites.push(['harness/scaffold/test_*.mjs', scaffoldRun.ok]);
   const failed = suites.filter(([, ok]) => !ok).map(([name]) => name);
   const ok = failed.length === 0;
   const detail = ok
-    ? `test_check.py + test_yaml2json.py + harness/test_*.mjs (${mjsRun.count}) + harness/arch/test_*.mjs (${archRun.count}): all green`
+    ? `test_check.py + test_yaml2json.py + harness/test_*.mjs (${mjsRun.count}) + harness/arch/test_*.mjs (${archRun.count})`
+      + (scaffoldRun ? ` + harness/scaffold/test_*.mjs (${scaffoldRun.count})` : '')
+      + ': all green'
     : `failed: ${failed.join(', ')}`;
   return result('test_pass', ok ? PASS : FAIL, detail);
 }

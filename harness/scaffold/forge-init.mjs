@@ -43,20 +43,20 @@
 // Design: PURE templating functions (return strings, unit-testable without disk)
 // are kept separate from the fs/copy I/O boundary at the bottom; the copy lists
 // (GOVERNANCE_DIRS / COPIED_FILES) keep scaffold() data-driven and small.
-import {
-  mkdirSync,
-  copyFileSync,
-  writeFileSync,
-  readdirSync,
-  existsSync,
-} from 'node:fs';
+import { mkdirSync, writeFileSync, readdirSync, existsSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+// The SOURCE-tree copy primitives are shared with forge-upgrade (single source of
+// truth for the __pycache__-skipping recursive walk), so they live in scaffold-fs
+// (the same harness/scaffold/ sub-package).
+import { copyFromSource, copyTree } from './scaffold-fs.mjs';
 
 // The script's own location locates the ForgeOS SOURCE repo root so we copy the
-// REAL tools (dirname(harness/forge-init.mjs) === harness; its parent === root).
-const HARNESS_DIR = dirname(fileURLToPath(import.meta.url));
-const SOURCE_ROOT = dirname(HARNESS_DIR);
+// REAL tools. This tool lives in harness/scaffold/, so the repo root is TWO levels
+// up: dirname(harness/scaffold/forge-init.mjs) === harness/scaffold; its parent ===
+// harness; its parent === repo root.
+const SCAFFOLD_DIR = dirname(fileURLToPath(import.meta.url));
+const SOURCE_ROOT = dirname(dirname(SCAFFOLD_DIR));
 
 // --- COPY MANIFESTS (data-driven — the 70% universal governance) -------------
 
@@ -139,9 +139,24 @@ export const COPIED_FILES = [
 // whitelists these): forge-init.mjs is the SCAFFOLDER itself (a generated project
 // does not carry the tool that created it) and test_forge-init.mjs exercises that
 // absent tool. Any OTHER harness source must be in COPIED_FILES / GOVERNANCE_DIRS.
+// All scaffold/upgrade-time tooling lives together in harness/scaffold/ (its own
+// sub-package — kept out of the thin harness/ gate package). A generated project
+// does not scaffold or upgrade sub-projects, so NONE of harness/scaffold/ is copied.
 export const HARNESS_NOT_COPIED = [
-  join('harness', 'forge-init.mjs'),
-  join('harness', 'test_forge-init.mjs'),
+  join('harness', 'scaffold', 'forge-init.mjs'),
+  join('harness', 'scaffold', 'test_forge-init.mjs'),
+  // scaffold-fs.mjs holds the copy/enumerate primitives forge-init and forge-
+  // upgrade share; like forge-init itself it is a SCAFFOLD/UPGRADE-time tool, not
+  // project-runtime governance (a generated project does not scaffold sub-projects),
+  // so it is intentionally not copied.
+  join('harness', 'scaffold', 'scaffold-fs.mjs'),
+  // forge-upgrade resyncs a project's copied governance FROM a ForgeOS source repo;
+  // it is an OPERATOR tool run against a project from OUTSIDE, never carried inside
+  // one (a project does not upgrade itself from itself). Its self-test is likewise
+  // an upgrade-time tool. Listed here so test_forge-init's manifest guard FORCES a
+  // conscious decision whenever these change — the safety net, not an oversight.
+  join('harness', 'scaffold', 'forge-upgrade.mjs'),
+  join('harness', 'scaffold', 'test_forge-upgrade.mjs'),
 ];
 
 // --- pure templating (no disk; unit-testable) --------------------------------
@@ -217,6 +232,7 @@ __pycache__/
 dist/
 build/
 coverage/
+.forge/
 .DS_Store
 `;
 }
@@ -369,27 +385,6 @@ function assertSafeTarget(targetDir, force) {
   }
 }
 
-// Copy a file from the SOURCE repo into the target, creating parent dirs.
-function copyFromSource(relPath, targetDir, created) {
-  const dest = join(targetDir, relPath);
-  mkdirSync(dirname(dest), { recursive: true });
-  copyFileSync(join(SOURCE_ROOT, relPath), dest);
-  created.push(relPath);
-}
-
-// Recursively copy a whole SOURCE directory tree into the target (verbatim),
-// preserving structure. Used for the .agent governance-asset dirs. Skips Python
-// bytecode caches so a generated project ships clean source only.
-function copyTree(relDir, targetDir, created) {
-  const srcDir = join(SOURCE_ROOT, relDir);
-  for (const entry of readdirSync(srcDir, { withFileTypes: true })) {
-    if (entry.name === '__pycache__') continue;
-    const childRel = join(relDir, entry.name);
-    if (entry.isDirectory()) copyTree(childRel, targetDir, created);
-    else copyFromSource(childRel, targetDir, created);
-  }
-}
-
 // Write a generated file into the target, creating parent dirs.
 function writeGenerated(relPath, content, targetDir, created) {
   const dest = join(targetDir, relPath);
@@ -409,8 +404,8 @@ export function scaffold(cfg) {
   mkdirSync(targetDir, { recursive: true });
   const created = [];
 
-  for (const relDir of GOVERNANCE_DIRS) copyTree(relDir, targetDir, created);
-  for (const rel of COPIED_FILES) copyFromSource(rel, targetDir, created);
+  for (const relDir of GOVERNANCE_DIRS) copyTree(relDir, SOURCE_ROOT, targetDir, created);
+  for (const rel of COPIED_FILES) copyFromSource(rel, SOURCE_ROOT, targetDir, created);
 
   writeGenerated(join('.agent', 'PROJECT.md'), renderProjectMd(cfg.name), targetDir, created);
   writeGenerated(join('.agent', 'ROADMAP.md'), renderRoadmapMd(cfg.name), targetDir, created);

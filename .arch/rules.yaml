@@ -15,7 +15,9 @@
 # headroom, so the repo PASSES honestly today and only trips on real drift.
 # Measured 2026-06-19 (node harness/arch/arch-check.mjs prints the live numbers):
 #   root:      4 source dirs, 2 root files
-#   package:   max 6 code files/pkg (orchestrator); max 11 exports/pkg (orchestrator)
+#   package:   max 11 code files/pkg (forge-core/cmd/forge); max 11 exports/pkg
+#              (orchestrator). The scaffold/upgrade tooling lives in its own
+#              harness/scaffold/ sub-package, so harness/ stays a thin gate package.
 #   fanin:     max 7 PRODUCTION importing files (forge-core/internal/asset); tests excluded
 #   cognitive: 4 top-level source modules (docs, examples, forge-core, harness)
 #   functions: longest declared function <= 50 lines (policies.yml max_function_lines)
@@ -32,7 +34,7 @@ root:
 
 # ── Per-package / per-directory budget ────────────────────────────────────
 package:
-  max_files: 12       # actual 6 (forge-core/internal/orchestrator) + headroom
+  max_files: 12       # actual 11 (forge-core/cmd/forge) + headroom — scaffold/upgrade tooling lives in harness/scaffold/
   max_exports: 20     # actual 11 exported Go idents (orchestrator) + headroom
 
 # ── Per-file budget ───────────────────────────────────────────────────────
