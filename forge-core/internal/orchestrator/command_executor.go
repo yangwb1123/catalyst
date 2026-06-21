@@ -64,13 +64,24 @@ type CommandExecutor struct {
 	// guard's third dimension alongside MaxDepth (depth) and Timeout (wall-clock).
 	MaxOutputBytes int
 	Log            func(string)
-	// Observe, when set, receives a finished command's phase name and RAW captured
-	// output (post-truncation, pre-render). It is a generic output SINK: this spawner
-	// hands the bytes back to the caller and does NOT interpret them — the caller may
-	// parse an executor-specific structure out of the output (e.g. a claude `-p
+	// Observe, when set, receives a finished command's phase name, RAW captured output
+	// (post-truncation, pre-render), and the command's measured wall-clock LATENCY (the
+	// time cmd.Run() took — see Now). It is a generic output SINK: this spawner hands the
+	// bytes (and the duration) back to the caller and does NOT interpret them — the caller
+	// may parse an executor-specific structure out of the output (e.g. a claude `-p
 	// --output-format json` envelope carrying total_cost_usd) that this layer has no
-	// knowledge of. nil = not observed (the test/default path, byte-for-byte unchanged).
-	Observe func(phase, output string)
+	// knowledge of. The latency is a generic, OS-level wall-clock span (not vendor- or
+	// claude-specific): every command has one, exactly as every command has output, so it
+	// rides the SAME sink rather than a parallel callback — the caller attributes it to a
+	// model the same way it attributes the parsed cost. nil = not observed (the test/default
+	// path, byte-for-byte unchanged).
+	Observe func(phase, output string, latency time.Duration)
+	// Now supplies the current time for the wall-clock LATENCY measurement bracketing
+	// cmd.Run() — the deterministic-test twin of Engine.Sleep / trace.Now. nil selects the
+	// production default (time.Now), so a real run measures the true agent-phase duration; a
+	// test injects a fake clock to get an exact, sleep-free latency. Read only to bracket the
+	// run, so a nil Now leaves every pre-existing path byte-for-byte unchanged.
+	Now func() time.Time
 	// RenderLog, when set, transforms a command's captured output before it is written
 	// to the Log line — letting the caller present a tidy view (e.g. unwrap the claude
 	// JSON's `result` field) WITHOUT this generic layer learning that format. nil =
@@ -117,6 +128,21 @@ func (c CommandExecutor) Execute(p asset.Phase, mode string) error {
 	ctx, cancel := c.commandContext()
 	defer cancel()
 
+	out, latency, runErr := c.runMeasured(ctx, argv, depth)
+	return c.finish(p.Name, argv, out, runErr, ctx.Err(), latency)
+}
+
+// runMeasured constructs the bounded, process-grouped command for argv and runs it under
+// ctx, bracketing cmd.Run() with the injectable clock to MEASURE its wall-clock latency. It
+// returns the captured output, the run error, and the measured duration. Split out of Execute
+// so that stays within the function-length ceiling; the construction and the timing are one
+// unit (the latency must bracket exactly this run), so they live together here.
+//
+// The latency is the real per-phase duration the cost path stamps onto the agent trace event
+// so the scorecard's p95 is genuinely per-model (not the iteration-shared span). The clock read
+// is OS-level and generic (no claude/vendor knowledge); this layer only knows WHEN the command
+// started and finished, never what model it billed.
+func (c CommandExecutor) runMeasured(ctx context.Context, argv []string, depth int) (*cappedBuffer, time.Duration, error) {
 	// exec.CommandContext's default cancel SIGKILLs the DIRECT child only. That is
 	// insufficient once `claude -p` forks grandchildren via its own tools (Bash ->
 	// git/test/build): those grandchildren inherit the command's stdout/stderr pipe,
@@ -138,19 +164,23 @@ func (c CommandExecutor) Execute(p asset.Phase, mode string) error {
 	// writes (no lock needed), exactly as CombinedOutput merges the two streams.
 	out := &cappedBuffer{cap: c.maxOutputBytes()}
 	cmd.Stdout, cmd.Stderr = out, out
+	// Bracket the run with the injectable clock — the wall-clock span is the phase's latency.
+	start := c.now()
 	runErr := cmd.Run()
-	return c.finish(p.Name, argv, out, runErr, ctx.Err())
+	return out, c.now().Sub(start), runErr
 }
 
-// finish handles a completed command: it hands the raw output to the optional sink, logs a
-// possibly-rendered view, and (on failure) classifies the error — consulting the optional
-// overload judge. Split out of Execute so each stays within the function-length ceiling; the
-// behavior is unchanged. ctxErr is ctx.Err() captured at the call site (the deadline cause).
-func (c CommandExecutor) finish(phase string, argv []string, out *cappedBuffer, runErr, ctxErr error) error {
+// finish handles a completed command: it hands the raw output AND measured latency to the
+// optional sink, logs a possibly-rendered view, and (on failure) classifies the error —
+// consulting the optional overload judge. Split out of Execute so each stays within the
+// function-length ceiling; the behavior is unchanged except for the new latency the sink
+// receives. ctxErr is ctx.Err() captured at the call site (the deadline cause); latency is
+// the wall-clock span bracketing cmd.Run() (see Now).
+func (c CommandExecutor) finish(phase string, argv []string, out *cappedBuffer, runErr, ctxErr error, latency time.Duration) error {
 	// Both observe and the log renderer are nil-safe and identity-by-default, so the no-hook
 	// path is byte-for-byte unchanged.
 	rendered := out.rendered()
-	c.observe(phase, rendered)
+	c.observe(phase, rendered, latency)
 	c.logf("phase %s: ran %q -> %s", phase, strings.Join(argv, " "), c.renderForLog(rendered))
 	if runErr == nil {
 		return nil
@@ -178,13 +208,24 @@ func (c CommandExecutor) logf(format string, args ...any) {
 	}
 }
 
-// observe forwards a finished command's raw output to the optional sink. Nil-safe:
-// with no Observe set it is a no-op, so the default/test path is byte-for-byte the
-// original. This layer never inspects output; only the caller's sink may parse it.
-func (c CommandExecutor) observe(phase, output string) {
+// observe forwards a finished command's raw output AND measured wall-clock latency to the
+// optional sink. Nil-safe: with no Observe set it is a no-op, so the default/test path is
+// byte-for-byte the original. This layer never inspects the output (only the caller's sink
+// may parse it) and never interprets the latency (it is a plain duration the caller stamps).
+func (c CommandExecutor) observe(phase, output string, latency time.Duration) {
 	if c.Observe != nil {
-		c.Observe(phase, output)
+		c.Observe(phase, output, latency)
 	}
+}
+
+// now returns the current time through the injectable clock, defaulting to time.Now when
+// Now is unset — the nil-safe twin of Engine.sleep, so production measures latency on the
+// real wall clock and a test injects a deterministic fake.
+func (c CommandExecutor) now() time.Time {
+	if c.Now != nil {
+		return c.Now()
+	}
+	return time.Now()
 }
 
 // renderForLog applies the optional output transform for the Log line, defaulting

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"forgeos/forge-core/internal/asset"
 	"forgeos/forge-core/internal/converge"
@@ -210,12 +211,14 @@ func TestClassifyClaudeOverload_NonOverloadIsFalse(t *testing.T) {
 }
 
 // costEmitter converts billed USD to integer microdollars and emits one kind:"agent"
-// cost event on the trace, STAMPED with the routed model — the values the scorecard's
-// --trace reader aggregates and attributes per model.
+// cost event on the trace, STAMPED with the routed model AND the phase's measured wall-clock
+// latency (DurationMs) — the values the scorecard's --trace reader aggregates and attributes
+// per model (avg_cost_usd AND p95_latency_ms). The latency is supplied (1234ms) to prove it
+// lands on the SAME agent event as the cost, so the per-model p95 is real, not iteration-shared.
 func TestCostEmitter_EmitsMicrodollarAgentEvent(t *testing.T) {
 	var buf bytes.Buffer
 	sink := costEmitter(trace.NewTracer(&buf), func(string) {})
-	sink("implementer", "sonnet", 0.0544035)
+	sink("implementer", "sonnet", 0.0544035, 1234*time.Millisecond)
 	ev := lastTraceEvent(t, buf.String())
 	if ev.Kind != "agent" || ev.Name != "implementer" || ev.Status != "ok" {
 		t.Errorf("cost event = %+v, want agent/implementer/ok", ev)
@@ -227,13 +230,18 @@ func TestCostEmitter_EmitsMicrodollarAgentEvent(t *testing.T) {
 	if want := int64(math.Round(0.0544035 * 1e6)); ev.CostUsdMicros != want {
 		t.Errorf("CostUsdMicros = %d, want %d (round(0.0544035*1e6))", ev.CostUsdMicros, want)
 	}
+	// The (c) fix: the agent event carries THIS phase's own wall-clock duration, so a
+	// per-model p95 is genuine. 1234ms -> DurationMs 1234 (per-agent, not iteration-shared).
+	if ev.DurationMs != 1234 {
+		t.Errorf("cost event must carry the phase's measured latency; got DurationMs=%d, want 1234", ev.DurationMs)
+	}
 }
 
 // costEmitter with an empty model (no resolver wired) must OMIT the model field on the
 // wire — omitempty keeps a cost event without attribution byte-compatible, never a "".
 func TestCostEmitter_EmptyModelOmitted(t *testing.T) {
 	var buf bytes.Buffer
-	costEmitter(trace.NewTracer(&buf), func(string) {})("implementer", "", 0.01)
+	costEmitter(trace.NewTracer(&buf), func(string) {})("implementer", "", 0.01, 0)
 	if strings.Contains(buf.String(), `"model"`) {
 		t.Errorf("an empty model must be omitted from the cost event JSON; got %q", buf.String())
 	}
@@ -250,9 +258,9 @@ func TestCostEmitter_EmptyModelOmitted(t *testing.T) {
 func TestAgentExecutor_EchoEmitsNoCostEvent(t *testing.T) {
 	var buf bytes.Buffer
 	costCalls := 0
-	costSink := func(phase, model string, usd float64) {
+	costSink := func(phase, model string, usd float64, latency time.Duration) {
 		costCalls++
-		costEmitter(trace.NewTracer(&buf), func(string) {})(phase, model, usd)
+		costEmitter(trace.NewTracer(&buf), func(string) {})(phase, model, usd, latency)
 	}
 	ex := agentExecutor(runOpts{executor: "command", agentCmd: "echo", root: t.TempDir()}, func(string) {}, costSink, unbudgetedTier(""), nil, nil, nil, nil, nil, nil, nil)
 	ce, ok := ex.(orchestrator.CommandExecutor)
@@ -289,16 +297,17 @@ func TestAgentExecutor_ClaudeGetsOutputFormatJSON(t *testing.T) {
 
 // The positive sink path, exercised through the Observe closure agentExecutor installs
 // for claude: feeding a REAL claude JSON envelope to Observe must drive the costSink with
-// the billed dollars (and thus a traced cost event). Driven directly (no real claude
-// spawn) by invoking the installed Observe hook with a fixture — proving the parse->sink
-// wiring without burning a live call.
+// the billed dollars AND the measured latency (and thus a traced cost+latency event). Driven
+// directly (no real claude spawn) by invoking the installed Observe hook with a fixture —
+// proving the parse->sink wiring AND the latency relay without burning a live call.
 func TestAgentExecutor_ClaudeObserveDrivesCostSink(t *testing.T) {
 	var buf bytes.Buffer
 	var gotPhase, gotModel string
 	var gotUsd float64
-	costSink := func(phase, model string, usd float64) {
-		gotPhase, gotModel, gotUsd = phase, model, usd
-		costEmitter(trace.NewTracer(&buf), func(string) {})(phase, model, usd)
+	var gotLatency time.Duration
+	costSink := func(phase, model string, usd float64, latency time.Duration) {
+		gotPhase, gotModel, gotUsd, gotLatency = phase, model, usd, latency
+		costEmitter(trace.NewTracer(&buf), func(string) {})(phase, model, usd, latency)
 	}
 	// phaseModel resolves the routed model for the phase name — the SAME injection
 	// point production uses (phaseTierByName, the name-keyed face of the shared tier
@@ -310,13 +319,18 @@ func TestAgentExecutor_ClaudeObserveDrivesCostSink(t *testing.T) {
 	if ce.Observe == nil {
 		t.Fatal("claude executor must install an Observe sink")
 	}
-	ce.Observe("implementer", realClaudeJSON)
+	// The executor hands the sink the phase's measured latency; feed it a fixture 1500ms.
+	ce.Observe("implementer", realClaudeJSON, 1500*time.Millisecond)
 	if gotPhase != "implementer" || gotModel != "sonnet" || math.Abs(gotUsd-0.0544035) > 1e-9 {
 		t.Errorf("Observe(real JSON) must drive costSink(implementer, sonnet, 0.0544035); got (%q,%q,%v)", gotPhase, gotModel, gotUsd)
 	}
+	// The latency the executor measured must reach the cost sink verbatim (the relay).
+	if gotLatency != 1500*time.Millisecond {
+		t.Errorf("Observe must relay the measured latency to the cost sink; got %v, want 1500ms", gotLatency)
+	}
 	ev := lastTraceEvent(t, buf.String())
-	if ev.Kind != "agent" || ev.Model != "sonnet" || ev.CostUsdMicros == 0 {
-		t.Errorf("a real claude cost must trace a non-zero, model-stamped agent cost event; got %+v", ev)
+	if ev.Kind != "agent" || ev.Model != "sonnet" || ev.CostUsdMicros == 0 || ev.DurationMs != 1500 {
+		t.Errorf("a real claude cost must trace a non-zero, model-stamped, latency-bearing agent event; got %+v", ev)
 	}
 }
 
@@ -346,13 +360,17 @@ func TestBuildLoop_ThreadsCostSinkIntoExecutor(t *testing.T) {
 	if ce.Observe == nil {
 		t.Fatal("a claude executor built by buildLoop must carry the cost Observe sink")
 	}
-	ce.Observe("implementer", realClaudeJSON)
+	ce.Observe("implementer", realClaudeJSON, 800*time.Millisecond)
 	ev := lastTraceEvent(t, buf.String())
 	if ev.Kind != "agent" || ev.Name != "implementer" || ev.CostUsdMicros == 0 {
 		t.Errorf("cost sink must emit a non-zero agent cost event via the loop tracer; got %+v", ev)
 	}
 	if ev.Model != wantModel {
 		t.Errorf("cost event must be attributed to the routed model %q; got Model=%q", wantModel, ev.Model)
+	}
+	// The phase's measured latency rides on the same agent event the loop's cost sink emits.
+	if ev.DurationMs != 800 {
+		t.Errorf("the loop cost event must carry the phase's measured latency; got DurationMs=%d, want 800", ev.DurationMs)
 	}
 }
 

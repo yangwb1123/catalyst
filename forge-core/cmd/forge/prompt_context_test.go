@@ -226,7 +226,7 @@ func TestObserveFor_VerdictAndFindingsRouting(t *testing.T) {
 	if sink == nil {
 		t.Fatal("with verdict/findings ledgers wired, observeFor must return a sink")
 	}
-	sink("reviewer", "## Review\n- x.go:1 bug\nVERDICT: REQUEST_CHANGES")
+	sink("reviewer", "## Review\n- x.go:1 bug\nVERDICT: REQUEST_CHANGES", 0)
 
 	if v, ok := verdicts.get("reviewer"); !ok || v != VerdictRequestChanges {
 		t.Errorf("the verdict ledger must record REQUEST_CHANGES; got (%q,%v)", v, ok)
@@ -235,7 +235,7 @@ func TestObserveFor_VerdictAndFindingsRouting(t *testing.T) {
 		t.Errorf("the findings must be routed to the implementer (on_fail target); got %v", got)
 	}
 	// An APPROVE records the verdict but stashes NO findings (nothing to repair).
-	sink("reviewer", "VERDICT: APPROVE")
+	sink("reviewer", "VERDICT: APPROVE", 0)
 	if v, _ := verdicts.get("reviewer"); v != VerdictApprove {
 		t.Errorf("a later APPROVE must overwrite the verdict; got %q", v)
 	}

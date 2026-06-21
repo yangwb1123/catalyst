@@ -15,6 +15,7 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"time"
 
 	"forgeos/forge-core/internal/trace"
 )
@@ -68,11 +69,15 @@ func newRunBudget(flagVal string) (*runBudget, error) {
 // sink already fires exactly once per BILLED phase (only a real claude phase with a parsed
 // total_cost_usd; echo/dry never reach it), so the run total counts real spend only. A nil
 // inner sink is tolerated (the accumulation still happens), keeping the wrap unconditional.
-func (b *runBudget) feed(inner func(phase, model string, usd float64)) func(phase, model string, usd float64) {
-	return func(phase, model string, usd float64) {
+//
+// The agent phase's measured wall-clock latency rides through UNTOUCHED: the run budget is a
+// dollar accumulator and has no interest in duration, so feed adds only usd to spent and
+// forwards latency verbatim to the inner emitter (which stamps it onto the agent trace event).
+func (b *runBudget) feed(inner func(phase, model string, usd float64, latency time.Duration)) func(phase, model string, usd float64, latency time.Duration) {
+	return func(phase, model string, usd float64, latency time.Duration) {
 		b.spent += usd
 		if inner != nil {
-			inner(phase, model, usd)
+			inner(phase, model, usd, latency)
 		}
 	}
 }
@@ -326,11 +331,26 @@ func unwrapClaudeResult(output string) string {
 }
 
 // costEmitter builds the per-phase cost sink: it converts a billed USD figure to
-// integer microdollars and emits one `kind:"agent"` trace event carrying it AND the
-// model it was billed against, so the scorecard's --trace reader can aggregate a real
-// avg_cost_usd attributed to that model. Microdollars match trace.Event.CostUsdMicros
-// (integer, jitter-free); the conversion (USD x 1e6, rounded) is owned here — trace.go
-// stays oblivious to both dollars and what a model is.
+// integer microdollars and emits one `kind:"agent"` trace event carrying it, the model it
+// was billed against, AND the phase's measured wall-clock LATENCY (DurationMs), so the
+// scorecard's --trace reader can aggregate a real avg_cost_usd AND a real p95_latency_ms,
+// BOTH attributed per model. Microdollars match trace.Event.CostUsdMicros (integer,
+// jitter-free); the conversion (USD x 1e6, rounded) is owned here — trace.go stays oblivious
+// to dollars and what a model is.
+//
+// HONESTY on `latency` (the (c) fix): DurationMs is now the phase's OWN wall-clock span,
+// measured by CommandExecutor.Execute bracketing cmd.Run() (the generic OS-level duration,
+// no claude knowledge) and handed to the cost sink alongside the bytes. It is therefore TRUE
+// PER-MODEL — every agent event carries the duration of THAT phase, so scorecard-update's
+// per-model latency filter yields a genuine per-model p95. This supersedes the (c) gap where
+// agent events carried NO DurationMs (0), so the only non-zero duration lived on the
+// iteration event (un-stamped, model-less) and every pair shared the iteration's span. PR1's
+// claim "cost/latency are real per-model" is now fully delivered for latency too: cost was
+// already per-model, latency now joins it. duration.Milliseconds() truncates sub-ms toward
+// zero (so a <1ms phase records 0, a finite sample kept by parseTraceLatencies, never
+// fabricated) — DurationMs has no omitempty, matching the iteration event that already
+// always writes it; an agent event's duration is meaningful (a 0 means "ran in under a ms",
+// not "absent"), so it is always recorded.
 //
 // HONESTY on `model`: this is the BUDGET-ADJUSTED routed tier — orchestrator.PhaseTier
 // post-filtered by routing.BudgetAdjustTier (so a phase down-tiered near budget is stamped
@@ -342,10 +362,11 @@ func unwrapClaudeResult(output string) string {
 // down-tiered) routed tier is accurate — a near-budget phase correctly lands in the cheaper
 // model's scorecard bucket. (If a future provider could silently downgrade the served model,
 // this would become requested-not-served; the comment is the honest caveat.)
-func costEmitter(tracer *trace.Tracer, logln func(string)) func(phase, model string, usd float64) {
-	return func(phase, model string, usd float64) {
+func costEmitter(tracer *trace.Tracer, logln func(string)) func(phase, model string, usd float64, latency time.Duration) {
+	return func(phase, model string, usd float64, latency time.Duration) {
 		emitTrace(tracer, trace.Event{
 			Kind: "agent", Name: phase, Status: "ok",
+			DurationMs:    latency.Milliseconds(),
 			CostUsdMicros: int64(math.Round(usd * 1e6)),
 			Model:         model,
 		}, logln)

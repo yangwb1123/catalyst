@@ -249,7 +249,7 @@ func TestCommandExecutor_ObserveReceivesPhaseAndOutput(t *testing.T) {
 	called := 0
 	ex := CommandExecutor{
 		Build:   func(p asset.Phase, mode string) []string { return []string{"echo", "hello-sink"} },
-		Observe: func(phase, output string) { called++; gotPhase, gotOutput = phase, output },
+		Observe: func(phase, output string, _ time.Duration) { called++; gotPhase, gotOutput = phase, output },
 	}
 	if err := ex.Execute(asset.Phase{Name: "implementer"}, "balanced"); err != nil {
 		t.Fatalf("Execute: %v", err)
@@ -265,6 +265,53 @@ func TestCommandExecutor_ObserveReceivesPhaseAndOutput(t *testing.T) {
 	}
 }
 
+// Observe receives the phase's measured wall-clock LATENCY (the span bracketing cmd.Run()),
+// and it is DETERMINISTIC under an injected clock — the exact value asserted with no real
+// sleeping, the same fake-clock discipline trace.Span uses. Now is read twice (once before,
+// once after cmd.Run()); a clock whose successive reads differ by a fixed delta makes the
+// latency exactly that delta, so the cost path's stamped duration_ms is testable to the ms.
+func TestCommandExecutor_ObserveReceivesDeterministicLatency(t *testing.T) {
+	// A clock that returns t0, then t0+250ms on its two reads (start, finish). The 0-byte
+	// real-time of `true` between them is irrelevant: the injected clock, not the wall clock,
+	// is what Execute measures, so the latency is exactly 250ms regardless of host speed.
+	t0 := time.Unix(1700000000, 0)
+	times := []time.Time{t0, t0.Add(250 * time.Millisecond)}
+	i := 0
+	var gotLatency time.Duration
+	ex := CommandExecutor{
+		Build:   func(asset.Phase, string) []string { return []string{"true"} },
+		Now:     func() time.Time { tm := times[i]; i++; return tm },
+		Observe: func(_, _ string, latency time.Duration) { gotLatency = latency },
+	}
+	if err := ex.Execute(asset.Phase{Name: "implementer"}, "balanced"); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if gotLatency != 250*time.Millisecond {
+		t.Errorf("Observe latency = %v, want exactly 250ms (start/finish from the injected clock)", gotLatency)
+	}
+	if i != 2 {
+		t.Errorf("Execute must read the clock exactly twice (start, finish); read %d times", i)
+	}
+}
+
+// Backward-compat / default clock: with NO Now injected, Execute measures latency on the
+// real wall clock (time.Now). A command that does observable work (a tiny sleep) yields a
+// strictly positive duration — proving the default path measures a genuine span, not 0.
+func TestCommandExecutor_DefaultClockMeasuresRealLatency(t *testing.T) {
+	var gotLatency time.Duration
+	ex := CommandExecutor{
+		// `sleep 0.05` guarantees the real wall-clock span exceeds 0 with generous slack.
+		Build:   func(asset.Phase, string) []string { return []string{"sleep", "0.05"} },
+		Observe: func(_, _ string, latency time.Duration) { gotLatency = latency },
+	}
+	if err := ex.Execute(asset.Phase{Name: "p"}, "m"); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if gotLatency <= 0 {
+		t.Errorf("default-clock latency must be a real positive wall-clock span; got %v", gotLatency)
+	}
+}
+
 // RenderLog, when set, transforms the captured output before it is logged — letting
 // the caller present a tidy view (e.g. unwrap claude JSON) WITHOUT this generic layer
 // knowing that format. The raw output still flows to Observe unchanged; only the LOG
@@ -275,7 +322,7 @@ func TestCommandExecutor_RenderLogCustomizesLogLine(t *testing.T) {
 	ex := CommandExecutor{
 		Build:     func(p asset.Phase, mode string) []string { return []string{"echo", "RAW-PAYLOAD"} },
 		Log:       rec.log,
-		Observe:   func(_, output string) { observed = output },
+		Observe:   func(_, output string, _ time.Duration) { observed = output },
 		RenderLog: func(output string) string { return "RENDERED(" + output + ")" },
 	}
 	if err := ex.Execute(asset.Phase{Name: "p"}, "m"); err != nil {

@@ -20,6 +20,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"forgeos/forge-core/internal/asset"
 	"forgeos/forge-core/internal/prompt"
@@ -305,21 +306,28 @@ func onFailTargetOf(wf asset.Workflow) func(name string) (string, bool) {
 //     recorded into verdicts (read back by Engine.AgentVerdict to drive loop-back); on a
 //     REQUEST_CHANGES, the result text is also recorded into findings, keyed by this
 //     phase's on_fail TARGET (the implementer), for targeted-repair injection;
-//   - cost: ONLY for claude, the output is parsed for total_cost_usd and a billed figure
-//     forwarded to costSink ALONG WITH the phase's routed model — echo/stubs never carry
-//     that envelope, so they never bill. The model is resolved via phaseModel (closing
-//     over wf+mode, the SAME orchestrator.PhaseTier handed to `claude --model`), because
-//     the Observe seam is given only (phase NAME, output), never the Phase — the identical
-//     reason feedsForward/onFailTarget are injected lookups rather than read off a Phase.
+//   - cost+latency: ONLY for claude, the output is parsed for total_cost_usd and a billed
+//     figure forwarded to costSink ALONG WITH the phase's routed model AND the executor's
+//     measured wall-clock latency — echo/stubs never carry that envelope, so they never bill
+//     (and so never stamp a latency either; the wind-down's gate-on-real-cost then skips a
+//     dry/echo run's scorecard entirely, so an un-billed phase's latency never reaches a
+//     row). The model is resolved via phaseModel (closing over wf+mode, the SAME
+//     orchestrator.PhaseTier handed to `claude --model`), because the Observe seam is given
+//     only (phase NAME, output, latency), never the Phase — the identical reason
+//     feedsForward/onFailTarget are injected lookups rather than read off a Phase. The
+//     latency comes straight from the generic executor (a plain wall-clock duration it
+//     measured), so this vendor-aware layer only RELAYS it to the cost stamp; it neither
+//     measures nor interprets it.
 //
 // Returns nil only when NO concern is live (not claude AND no other ledger wired),
 // preserving the byte-for-byte no-hook default path for a plain stub run. unwrapClaudeResult
-// (the log renderer) is applied by the caller, not here.
-func observeFor(isClaude bool, costSink func(phase, model string, usd float64), phaseModel func(phase string) string, phaseOut *phaseOutputLedger, feedsForward func(phase string) bool, verdicts *verdictLedger, findings *reviewFindingsLedger, onFailTarget func(phase string) (string, bool)) func(phase, output string) {
+// (the log renderer) is applied by the caller, not here. The latency argument is ignored on
+// every non-cost concern (feed-forward, verdict) — only the billed claude path stamps it.
+func observeFor(isClaude bool, costSink func(phase, model string, usd float64, latency time.Duration), phaseModel func(phase string) string, phaseOut *phaseOutputLedger, feedsForward func(phase string) bool, verdicts *verdictLedger, findings *reviewFindingsLedger, onFailTarget func(phase string) (string, bool)) func(phase, output string, latency time.Duration) {
 	if !isClaude && phaseOut == nil && verdicts == nil && findings == nil {
 		return nil
 	}
-	return func(phase, output string) {
+	return func(phase, output string, latency time.Duration) {
 		if phaseOut != nil && feedsForward != nil && feedsForward(phase) {
 			phaseOut.record(phase, unwrapClaudeResult(output))
 		}
@@ -338,7 +346,7 @@ func observeFor(isClaude bool, costSink func(phase, model string, usd float64), 
 		}
 		if isClaude && costSink != nil {
 			if usd, ok := parseClaudeCostUsd(output); ok {
-				costSink(phase, phaseModelOf(phaseModel, phase), usd)
+				costSink(phase, phaseModelOf(phaseModel, phase), usd, latency)
 			}
 		}
 	}

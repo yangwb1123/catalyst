@@ -3,6 +3,7 @@ package main
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"forgeos/forge-core/internal/asset"
 	"forgeos/forge-core/internal/gate"
@@ -34,7 +35,7 @@ func tierConsumers(t *testing.T, wf asset.Workflow, p asset.Phase, ratio float64
 	b.seed(int64(ratio * 1e6)) // ratio of a $1.00 cap -> SpendRatio() == ratio (seed, no feed)
 
 	var stamped string
-	recordSink := func(_, model string, _ float64) { stamped = model }
+	recordSink := func(_, model string, _ float64, _ time.Duration) { stamped = model }
 	eng := buildRunEngine(wf, o, func(string) {}, recordSink,
 		func(string) gate.Result { return gate.Result{} }, mode.Policy{}, b)
 	ce, ok := eng.Exec.(orchestrator.CommandExecutor)
@@ -43,7 +44,7 @@ func tierConsumers(t *testing.T, wf asset.Workflow, p asset.Phase, ratio float64
 	}
 
 	argv := ce.Build(p, "balanced")
-	ce.Observe(p.Name, realClaudeJSON) // drives the cost sink -> records the stamped model
+	ce.Observe(p.Name, realClaudeJSON, 0) // drives the cost sink -> records the stamped model
 	return modelArg(t, argv), promptTier(t, argv), stamped
 }
 
@@ -127,7 +128,7 @@ func TestBudgetTier_RatioReadAtSpawnNotCached(t *testing.T) {
 
 	o := runOpts{root: repoRoot(), mode: "balanced", executor: "command", agentCmd: "claude"}
 	b := &runBudget{cap: 1.00} // starts empty -> ratio 0
-	eng := buildRunEngine(wf, o, func(string) {}, func(string, string, float64) {},
+	eng := buildRunEngine(wf, o, func(string) {}, func(string, string, float64, time.Duration) {},
 		func(string) gate.Result { return gate.Result{} }, mode.Policy{}, b)
 	ce := eng.Exec.(orchestrator.CommandExecutor)
 
@@ -136,7 +137,7 @@ func TestBudgetTier_RatioReadAtSpawnNotCached(t *testing.T) {
 		t.Fatalf("first spawn in-budget must route opus; got %q", got)
 	}
 	// The first phase bills, pushing the run into the near-budget band (0.85 of $1.00).
-	b.feed(nil)(phase.Name, routing.Opus, 0.85)
+	b.feed(nil)(phase.Name, routing.Opus, 0.85, 0)
 	// Second spawn of the SAME executor: the puller now reads 0.85 -> down-tier opus->sonnet.
 	// If the ratio were cached at engine-build (0), this would still read opus — the bug.
 	if got := modelArg(t, ce.Build(phase, "balanced")); got != routing.Sonnet {
@@ -159,13 +160,13 @@ func TestBudgetTier_NoBudgetByteIdenticalAllConsumers(t *testing.T) {
 	o := runOpts{root: repoRoot(), mode: "balanced", executor: "command", agentCmd: "claude"}
 	b := &runBudget{} // cap 0: unset, the back-compat hinge
 	var stamped string
-	eng := buildRunEngine(wf, o, func(string) {}, func(_, m string, _ float64) { stamped = m },
+	eng := buildRunEngine(wf, o, func(string) {}, func(_, m string, _ float64, _ time.Duration) { stamped = m },
 		func(string) gate.Result { return gate.Result{} }, mode.Policy{}, b)
 	ce := eng.Exec.(orchestrator.CommandExecutor)
 
-	b.feed(nil)(phase.Name, routing.Opus, 9.99) // unbudgeted spend -> ratio stays 0, no adjustment
+	b.feed(nil)(phase.Name, routing.Opus, 9.99, 0) // unbudgeted spend -> ratio stays 0, no adjustment
 	argv := ce.Build(phase, "balanced")
-	ce.Observe(phase.Name, realClaudeJSON)
+	ce.Observe(phase.Name, realClaudeJSON, 0)
 	if m, p := modelArg(t, argv), promptTier(t, argv); m != want || p != want || stamped != want {
 		t.Errorf("unbudgeted run must be byte-identical (no down-tier); want %q, got --model=%q prompt=%q stamp=%q",
 			want, m, p, stamped)

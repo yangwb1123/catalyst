@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"forgeos/forge-core/internal/asset"
 	"forgeos/forge-core/internal/gate"
@@ -129,7 +130,7 @@ func TestHistory_MalformedScorecardWarnsAndContinues(t *testing.T) {
 	o := runOpts{root: root, mode: "balanced", executor: "command", agentCmd: "claude"}
 	b := &runBudget{} // unbudgeted -> ratio 0, no down-tier; isolates the history path
 	var logs []string
-	eng := buildRunEngine(wf, o, func(s string) { logs = append(logs, s) }, func(string, string, float64) {},
+	eng := buildRunEngine(wf, o, func(s string) { logs = append(logs, s) }, func(string, string, float64, time.Duration) {},
 		func(string) gate.Result { return gate.Result{} }, mode.Policy{}, b)
 
 	ce, ok := eng.Exec.(orchestrator.CommandExecutor)
@@ -173,12 +174,12 @@ func TestHistory_DriftGuardHoldsWithScorecardLoaded(t *testing.T) {
 	b := &runBudget{cap: 1.00}
 	b.seed(int64(ratio * 1e6))
 	var stamped string
-	eng := buildRunEngine(wf, o, func(string) {}, func(_, m string, _ float64) { stamped = m },
+	eng := buildRunEngine(wf, o, func(string) {}, func(_, m string, _ float64, _ time.Duration) { stamped = m },
 		func(string) gate.Result { return gate.Result{} }, mode.Policy{}, b)
 	ce := eng.Exec.(orchestrator.CommandExecutor)
 
 	argv := ce.Build(phase, "balanced")
-	ce.Observe(phase.Name, realClaudeJSON)
+	ce.Observe(phase.Name, realClaudeJSON, 0)
 	model, prompt := modelArg(t, argv), promptTier(t, argv)
 	if model != want || prompt != want || stamped != want {
 		t.Errorf("DRIFT with a scorecard loaded: --model=%q prompt=%q stamp=%q — all must equal the "+
@@ -199,7 +200,7 @@ func TestHistory_NoScorecardByteIdenticalTier(t *testing.T) {
 
 	o := runOpts{root: root, mode: "balanced", executor: "command", agentCmd: "claude"}
 	b := &runBudget{} // unset cap -> ratio 0
-	eng := buildRunEngine(wf, o, func(string) {}, func(string, string, float64) {},
+	eng := buildRunEngine(wf, o, func(string) {}, func(string, string, float64, time.Duration) {},
 		func(string) gate.Result { return gate.Result{} }, mode.Policy{}, b)
 	ce := eng.Exec.(orchestrator.CommandExecutor)
 

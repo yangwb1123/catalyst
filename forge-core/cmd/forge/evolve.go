@@ -182,17 +182,18 @@ func execLoop(wf asset.Workflow, o runOpts, maxIter int, maxIterSource string, r
 //
 // costSink threads the SAME tracer execLoop already owns into the agent executor, so
 // a real claude phase's billed cost lands as a `kind:"agent"` cost event — now ALSO
-// stamped with the routed model — interleaved (Seq-ordered) with the per-iteration events
-// in trace.jsonl. It does NOT go through checkpointHook: cost is per-PHASE (emitted inside
-// RunFrom when a phase bills), not per-iteration, so the iteration-event assertions are
-// untouched.
+// stamped with the routed model AND the phase's measured wall-clock latency (duration_ms) —
+// interleaved (Seq-ordered) with the per-iteration events in trace.jsonl. It does NOT go
+// through checkpointHook: cost+latency are per-PHASE (emitted inside RunFrom when a phase
+// bills), not per-iteration, so the iteration-event assertions are untouched and the
+// per-model p95 no longer collapses to the iteration's shared span.
 //
 // budget is the loop-wide run budget (created in execLoop, reused here). buildRunEngine
 // wraps costSink with budget.feed and wires budget.BudgetExhaustedFunc() into the Engine,
 // so the cumulative dollar cap meters spend across EVERY iteration (the Engine is built
 // once and reused) — the run-level total bound, distinct from the per-iteration agent-call
 // count cap. Unset (--run-budget-usd empty) ⇒ a no-op accumulator + nil puller ⇒ unchanged.
-func buildLoop(wf asset.Workflow, o runOpts, maxIter int, logln func(string), costSink func(phase, model string, usd float64), budget *runBudget) orchestrator.LoopEngine {
+func buildLoop(wf asset.Workflow, o runOpts, maxIter int, logln func(string), costSink func(phase, model string, usd float64, latency time.Duration), budget *runBudget) orchestrator.LoopEngine {
 	probe := &loopProbe{root: o.root}
 	// The Engine — with its four prompt/feedback ledgers (gate verdicts, feeds_forward
 	// output, reviewer verdicts driving loop-back, and REQUEST_CHANGES findings) — is built

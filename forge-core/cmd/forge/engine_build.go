@@ -8,6 +8,7 @@ package main
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"forgeos/forge-core/internal/asset"
 	"forgeos/forge-core/internal/gate"
@@ -21,11 +22,13 @@ import (
 // `echo` inspects the plumbing safely); anything else is the no-LLM DryRunExecutor.
 //
 // costSink is how this CLI (the ONLY layer that knows the claude JSON shape) records
-// real per-phase dollar cost ATTRIBUTED to the routed model: for a claude command the
-// executor's generic Observe sink is pointed at parseClaudeCostUsd, and a parsed cost —
-// paired with the phase's BUDGET-ADJUSTED routed model — is forwarded to costSink (which
-// the caller wires to a model-stamped trace event). The generic executor stays claude-free
-// — all claude-JSON knowledge lives in the helpers below, never in orchestrator.
+// real per-phase dollar cost AND measured wall-clock latency ATTRIBUTED to the routed model:
+// for a claude command the executor's generic Observe sink is pointed at parseClaudeCostUsd,
+// and a parsed cost — paired with the phase's BUDGET-ADJUSTED routed model AND the latency
+// the generic executor measured for this phase — is forwarded to costSink (which the caller
+// wires to a model-stamped trace event carrying cost_usd_micros AND duration_ms). The generic
+// executor stays claude-free — all claude-JSON knowledge lives in the helpers below, never in
+// orchestrator; the latency is the executor's own generic wall-clock span, merely relayed here.
 //
 // tierOf is the ONE shared per-phase tier resolver (built in buildRunEngine): it computes
 // orchestrator.PhaseTier post-filtered by routing.BudgetAdjustTier and is the SINGLE source
@@ -53,7 +56,7 @@ import (
 // by name; onFailTarget is the data-driven (phase -> loop-back target) lookup that routes
 // those findings. All are nil-safe (see prompt_context.go); the generic executor stays
 // oblivious to every one of them.
-func agentExecutor(o runOpts, logln func(string), costSink func(phase, model string, usd float64), tierOf func(p asset.Phase) string, phaseModel func(phase string) string, gates *gateLedger, phaseOut *phaseOutputLedger, feedsForward func(phase string) bool, verdicts *verdictLedger, findings *reviewFindingsLedger, onFailTarget func(phase string) (string, bool)) orchestrator.AgentExecutor {
+func agentExecutor(o runOpts, logln func(string), costSink func(phase, model string, usd float64, latency time.Duration), tierOf func(p asset.Phase) string, phaseModel func(phase string) string, gates *gateLedger, phaseOut *phaseOutputLedger, feedsForward func(phase string) bool, verdicts *verdictLedger, findings *reviewFindingsLedger, onFailTarget func(phase string) (string, bool)) orchestrator.AgentExecutor {
 	if o.executor == "command" {
 		isClaude := strings.Contains(o.agentCmd, "claude")
 		ex := orchestrator.CommandExecutor{
@@ -168,7 +171,7 @@ func claudeArgv(o runOpts, isClaude bool, tier string) []string {
 // cards — history is enrichment, not correctness, so a corrupt scorecard must never abort or
 // re-color a run (it would only mean "no history line", the cold-start path). LoadScorecards is
 // the loop's only fallible step; everything downstream is pure.
-func buildRunEngine(wf asset.Workflow, o runOpts, logln func(string), costSink func(phase, model string, usd float64), runGate func(name string) gate.Result, pol mode.Policy, budget *runBudget) orchestrator.Engine {
+func buildRunEngine(wf asset.Workflow, o runOpts, logln func(string), costSink func(phase, model string, usd float64, latency time.Duration), runGate func(name string) gate.Result, pol mode.Policy, budget *runBudget) orchestrator.Engine {
 	gates := newGateLedger()
 	phaseOut := newPhaseOutputLedger()
 	verdicts := newVerdictLedger()

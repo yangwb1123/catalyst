@@ -363,6 +363,35 @@ test('parseTraceLatencies: model filter keeps only that model\'s durations', () 
   assert.ok(!parseTraceLatencies(MULTI_MODEL_TRACE, 'sonnet').includes(4200), 'unstamped event excluded');
 });
 
+// --- (c) latency attribution: per-model p95, NOT the iteration-shared span -------
+// The (c) gap: agent cost events carried NO duration_ms, so the only non-zero span lived
+// on the un-stamped (model-less) iteration event — and a per-model filter that fell back to
+// it gave EVERY model the same iteration latency (the real run showed every pair at the
+// iteration's 121681ms). Now forge stamps each agent event with its OWN measured wall-clock
+// latency (costEmitter DurationMs), so per-model p95s genuinely DIVERGE. This fixture models
+// that post-fix trace: each model's agent events carry distinct durations, the iteration
+// event still carries the large shared span (and no model), and the per-model filter must
+// resolve a DIFFERENT p95 per model — never the 121681 iteration span.
+const LATENCY_ATTR_TRACE = [
+  '{"seq":1,"kind":"iteration","name":"1","status":"ok","duration_ms":121681}', // shared, model-less
+  '{"seq":2,"kind":"agent","name":"implementer","status":"ok","duration_ms":3000,"cost_usd_micros":54404,"model":"sonnet"}',
+  '{"seq":3,"kind":"agent","name":"implementer","status":"ok","duration_ms":5000,"cost_usd_micros":10000,"model":"sonnet"}',
+  '{"seq":4,"kind":"agent","name":"reviewer","status":"ok","duration_ms":40000,"cost_usd_micros":120000,"model":"opus"}',
+].join('\n');
+
+test('parseTraceLatencies: per-model p95 diverges and excludes the iteration-shared span (the (c) fix)', () => {
+  const sonnetP95 = Math.round(percentile(parseTraceLatencies(LATENCY_ATTR_TRACE, 'sonnet'), 95));
+  const opusP95 = Math.round(percentile(parseTraceLatencies(LATENCY_ATTR_TRACE, 'opus'), 95));
+  // sonnet sees only its own two agent durations [3000,5000]; opus only [40000]. They MUST
+  // differ (the pre-fix bug gave both the identical 121681), and neither may be the shared span.
+  assert.notEqual(sonnetP95, opusP95, 'each model resolves its OWN p95, not one shared value');
+  assert.notEqual(sonnetP95, 121681, 'sonnet p95 must not be the iteration-shared span');
+  assert.notEqual(opusP95, 121681, 'opus p95 must not be the iteration-shared span');
+  // sorted sonnet [3000,5000]; rank 0.95*1 = 0.95 -> 3000 + (5000-3000)*0.95 = 4900.
+  assert.equal(sonnetP95, 4900, 'sonnet p95 from its own measured agent durations');
+  assert.equal(opusP95, 40000, 'opus p95 is its single agent duration');
+});
+
 test('parseTrace*: undefined model does NOT filter (backward-compatible: every event)', () => {
   // The legacy `--trace` callers (forge route, a pre-attribution trace) pass no model,
   // so the unfiltered aggregate counts ALL events including the unstamped iteration.

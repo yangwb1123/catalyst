@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"testing"
+	"time"
 )
 
 // run_budget_test.go pins the DOLLAR half of the run-level budget cap (cost.go's
@@ -19,12 +20,12 @@ import (
 func TestRunBudget_FeedAccumulatesSumAndForwards(t *testing.T) {
 	b := &runBudget{} // unset cap: pure accumulator
 	var forwarded []float64
-	sink := b.feed(func(_, _ string, usd float64) { forwarded = append(forwarded, usd) })
+	sink := b.feed(func(_, _ string, usd float64, _ time.Duration) { forwarded = append(forwarded, usd) })
 
 	costs := []float64{0.05, 0.18, 0.0044035, 0.12}
 	var want float64
 	for _, c := range costs {
-		sink("implementer", "opus", c)
+		sink("implementer", "opus", c, 0)
 		want += c
 	}
 	if !approx(b.spent, want) {
@@ -47,15 +48,15 @@ func TestRunBudget_ExhaustedCrossesAtCap(t *testing.T) {
 	b := &runBudget{cap: 0.20}
 	feed := b.feed(nil)
 
-	feed("p1", "opus", 0.19)
+	feed("p1", "opus", 0.19, 0)
 	if b.exhausted() {
 		t.Fatalf("0.19 < cap 0.20 must NOT be exhausted (spent=%v)", b.spent)
 	}
-	feed("p2", "opus", 0.01) // -> 0.20, exactly the cap
+	feed("p2", "opus", 0.01, 0) // -> 0.20, exactly the cap
 	if !b.exhausted() {
 		t.Fatalf("0.20 >= cap 0.20 must be exhausted (spent=%v)", b.spent)
 	}
-	feed("p3", "opus", 0.50) // well over: still exhausted
+	feed("p3", "opus", 0.50, 0) // well over: still exhausted
 	if !b.exhausted() {
 		t.Fatalf("past the cap must stay exhausted (spent=%v)", b.spent)
 	}
@@ -71,12 +72,12 @@ func TestRunBudget_AccumulatesAcrossIterations(t *testing.T) {
 	feed := b.feed(nil)
 
 	// Iteration 1: one billed phase at 0.18. Under the 0.30 cap on its own.
-	feed("implementer", "opus", 0.18)
+	feed("implementer", "opus", 0.18, 0)
 	if b.exhausted() {
 		t.Fatalf("iteration 1 alone (0.18) must not trip the 0.30 cap (spent=%v)", b.spent)
 	}
 	// Iteration 2 reuses the SAME accumulator (no reset): another 0.18 -> 0.36 total.
-	feed("implementer", "opus", 0.18)
+	feed("implementer", "opus", 0.18, 0)
 	if !b.exhausted() {
 		t.Fatalf("iter1+iter2 (0.36) must trip the 0.30 cap — the accumulator must NOT reset per iteration (spent=%v)", b.spent)
 	}
@@ -100,7 +101,7 @@ func TestRunBudget_ExhaustedFuncNilWhenUnset(t *testing.T) {
 	if f() {
 		t.Error("puller must read false before any spend")
 	}
-	b.feed(nil)("p", "opus", 0.10)
+	b.feed(nil)("p", "opus", 0.10, 0)
 	if !f() {
 		t.Error("puller must read true once spend reaches the cap")
 	}
@@ -144,23 +145,23 @@ func TestRunBudget_AccumulatesParsedClaudeCost(t *testing.T) {
 	b := &runBudget{cap: 0.10} // realClaudeJSON bills 0.0544035; two phases exceed this
 	// observeFor with only the cost concern live (isClaude=true, other ledgers nil); the
 	// cost sink is wrapped by feed exactly as buildRunEngine wires it.
-	sink := b.feed(func(_, _ string, _ float64) {})
+	sink := b.feed(func(_, _ string, _ float64, _ time.Duration) {})
 	observe := observeFor(true, sink, func(string) string { return "opus" }, nil, nil, nil, nil, nil)
 	if observe == nil {
 		t.Fatal("observeFor must return a live sink when the cost concern is active")
 	}
 
-	observe("implementer", realClaudeJSON) // 0.0544035 — under the 0.10 cap alone
+	observe("implementer", realClaudeJSON, 0) // 0.0544035 — under the 0.10 cap alone
 	if b.exhausted() {
 		t.Fatalf("one claude phase (0.0544035) must not trip the 0.10 cap (spent=%v)", b.spent)
 	}
-	observe("implementer", realClaudeJSON) // -> 0.108807, over the cap
+	observe("implementer", realClaudeJSON, 0) // -> 0.108807, over the cap
 	if !b.exhausted() {
 		t.Fatalf("two claude phases (~0.1089) must trip the 0.10 cap (spent=%v)", b.spent)
 	}
 	// A non-claude / non-cost output must NOT move the total (no fabricated cost).
 	before := b.spent
-	observe("implementer", "plain echo output, no JSON envelope")
+	observe("implementer", "plain echo output, no JSON envelope", 0)
 	if !approx(b.spent, before) {
 		t.Errorf("a non-cost output must not change the run total; spent moved %v -> %v", before, b.spent)
 	}
@@ -200,7 +201,7 @@ func TestRunBudget_SeedAndSpentMicros(t *testing.T) {
 	}
 	// SpentUsdMicros mirrors costEmitter's usd*1e6 rounding: 0.054403 -> 54403 (jitter-free,
 	// chosen to land on an exact integer micro so the round is unambiguous).
-	b.feed(nil)("p", "opus", 0.054403)
+	b.feed(nil)("p", "opus", 0.054403, 0)
 	if got := b.SpentUsdMicros(); got != 54403 {
 		t.Errorf("SpentUsdMicros after 0.054403 = %d, want 54403 (rounded micro-dollars)", got)
 	}
@@ -215,7 +216,7 @@ func TestRunBudget_SeedAndSpentMicros(t *testing.T) {
 		t.Errorf("SpentUsdMicros after seed = %d, want 250000 (round-trips the seed)", got)
 	}
 	// A later feed accumulates ON TOP of the seed, not from zero: 0.25 + 0.10 = 0.35.
-	fresh.feed(nil)("p", "opus", 0.10)
+	fresh.feed(nil)("p", "opus", 0.10, 0)
 	if !approx(fresh.spent, 0.35) {
 		t.Errorf("feed after seed = %v, want 0.35 (accumulates on the seeded base)", fresh.spent)
 	}
@@ -244,7 +245,7 @@ func TestRunBudget_CrossResumeSeedEnforcesCap(t *testing.T) {
 	// --- Pre-crash run: spend 0.90 under a $1.00 cap, then "crash". The loop checkpoints the
 	// cumulative spend as micro-dollars (exactly what checkpointHook writes).
 	pre := &runBudget{cap: cap}
-	pre.feed(nil)("implementer", "opus", preCrash)
+	pre.feed(nil)("implementer", "opus", preCrash, 0)
 	if pre.exhausted() {
 		t.Fatalf("pre-crash 0.90 < cap 1.00 must not be exhausted (spent=%v)", pre.spent)
 	}
@@ -254,7 +255,7 @@ func TestRunBudget_CrossResumeSeedEnforcesCap(t *testing.T) {
 	// trips the $1.00 cap (0.90 + 0.10), because the pre-crash spend still counts.
 	seeded := &runBudget{cap: cap}
 	seeded.seed(persistedMicros) // <- the PR5 fix: resume re-seeds the cumulative
-	seeded.feed(nil)("implementer", "opus", 0.10)
+	seeded.feed(nil)("implementer", "opus", 0.10, 0)
 	if !seeded.exhausted() {
 		t.Fatalf("SEEDED resume: 0.90 (pre-crash) + 0.10 = 1.00 must trip the cap — the run-level "+
 			"bound must survive --resume (spent=%v)", seeded.spent)
@@ -264,7 +265,7 @@ func TestRunBudget_CrossResumeSeedEnforcesCap(t *testing.T) {
 	// does NOT trip the cap — the run sails past its real total and overspends. This is the gap.
 	unseeded := &runBudget{cap: cap}
 	// (no seed — the crashed-and-restarted budget the bug produced)
-	unseeded.feed(nil)("implementer", "opus", 0.10)
+	unseeded.feed(nil)("implementer", "opus", 0.10, 0)
 	if unseeded.exhausted() {
 		t.Fatalf("STASH-PROOF unexpectedly tripped: without seed the cap should NOT trip at 0.10 "+
 			"alone — that it doesn't is the overspend bug (spent=%v)", unseeded.spent)
@@ -273,7 +274,7 @@ func TestRunBudget_CrossResumeSeedEnforcesCap(t *testing.T) {
 	// overspends by the entire pre-crash amount before the cap finally bites. That extra slack
 	// IS the gap: total real spend reaches ~1.90 against a $1.00 cap.
 	for !unseeded.exhausted() {
-		unseeded.feed(nil)("implementer", "opus", 0.10)
+		unseeded.feed(nil)("implementer", "opus", 0.10, 0)
 	}
 	if unseeded.spent <= seeded.spent {
 		t.Fatalf("the unseeded (buggy) run must overspend relative to the seeded run: unseeded total "+
@@ -296,7 +297,7 @@ func TestRunBudget_SpendRatio(t *testing.T) {
 	if got := unset.SpendRatio(); got != 0 {
 		t.Errorf("unset cap SpendRatio = %v, want 0 (no cap -> never near budget)", got)
 	}
-	unset.feed(nil)("p", "opus", 5.0) // spend without a cap
+	unset.feed(nil)("p", "opus", 5.0, 0) // spend without a cap
 	if got := unset.SpendRatio(); got != 0 {
 		t.Errorf("unset cap stays 0 even after spend; got %v", got)
 	}
@@ -308,16 +309,16 @@ func TestRunBudget_SpendRatio(t *testing.T) {
 
 	// Positive cap: the live fraction. 0.40 of a 1.00 cap = 0.40; 0.85 = near-budget band.
 	b := &runBudget{cap: 1.00}
-	b.feed(nil)("p", "opus", 0.40)
+	b.feed(nil)("p", "opus", 0.40, 0)
 	if got := b.SpendRatio(); !approx(got, 0.40) {
 		t.Errorf("SpendRatio after 0.40/1.00 = %v, want 0.40", got)
 	}
-	b.feed(nil)("p", "opus", 0.45) // -> 0.85 total
+	b.feed(nil)("p", "opus", 0.45, 0) // -> 0.85 total
 	if got := b.SpendRatio(); !approx(got, 0.85) {
 		t.Errorf("SpendRatio after 0.85/1.00 = %v, want 0.85 (near-budget band)", got)
 	}
 	// Past the cap the ratio exceeds 1.0 (it is not clamped — PR4 hard-stop owns >=1.0).
-	b.feed(nil)("p", "opus", 0.30) // -> 1.15 total
+	b.feed(nil)("p", "opus", 0.30, 0) // -> 1.15 total
 	if got := b.SpendRatio(); !approx(got, 1.15) {
 		t.Errorf("SpendRatio past the cap = %v, want 1.15 (unclamped)", got)
 	}

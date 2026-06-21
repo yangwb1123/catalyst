@@ -173,8 +173,8 @@ func TestAgentExecutor_ObserveRecordsFeedsForwardOutput(t *testing.T) {
 	if ce.Observe == nil {
 		t.Fatal("with a phase-output ledger present, even an echo executor must install an Observe sink (feed-forward works under echo)")
 	}
-	ce.Observe("planner", "task split: A, B, C")
-	ce.Observe("reviewer", "I, the reviewer, looked at the diff") // not fed forward
+	ce.Observe("planner", "task split: A, B, C", 0)
+	ce.Observe("reviewer", "I, the reviewer, looked at the diff", 0) // not fed forward
 
 	if po.summary["planner"] != "task split: A, B, C" {
 		t.Errorf("a feeds_forward phase's output must be recorded; got %q", po.summary["planner"])
@@ -192,7 +192,7 @@ func TestAgentExecutor_ObserveUnwrapsClaudeOutputForFeedForward(t *testing.T) {
 	feeds := func(string) bool { return true }
 	ex := agentExecutor(runOpts{executor: "command", agentCmd: "claude", root: t.TempDir()}, func(string) {}, nil, unbudgetedTier(""), nil, nil, po, feeds, nil, nil, nil)
 	ce := ex.(orchestrator.CommandExecutor)
-	ce.Observe("planner", realClaudeJSON)
+	ce.Observe("planner", realClaudeJSON, 0)
 	if got := po.summary["planner"]; got != "done editing main.go" {
 		t.Errorf("a claude envelope must be unwrapped to its result for feed-forward; got %q", got)
 	}
