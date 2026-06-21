@@ -14,6 +14,7 @@ import (
 	"forgeos/forge-core/internal/gate"
 	"forgeos/forge-core/internal/mode"
 	"forgeos/forge-core/internal/orchestrator"
+	"forgeos/forge-core/internal/prompt"
 	"forgeos/forge-core/internal/routing"
 )
 
@@ -56,13 +57,13 @@ import (
 // by name; onFailTarget is the data-driven (phase -> loop-back target) lookup that routes
 // those findings. All are nil-safe (see prompt_context.go); the generic executor stays
 // oblivious to every one of them.
-func agentExecutor(o runOpts, logln func(string), costSink func(phase, model string, usd float64, latency time.Duration), tierOf func(p asset.Phase) string, phaseModel func(phase string) string, gates *gateLedger, phaseOut *phaseOutputLedger, feedsForward func(phase string) bool, verdicts *verdictLedger, findings *reviewFindingsLedger, onFailTarget func(phase string) (string, bool)) orchestrator.AgentExecutor {
+func agentExecutor(o runOpts, logln func(string), costSink func(phase, model string, usd float64, latency time.Duration), tierOf func(p asset.Phase) string, phaseModel func(phase string) string, ctxCache *prompt.ContextCache, gates *gateLedger, phaseOut *phaseOutputLedger, feedsForward func(phase string) bool, verdicts *verdictLedger, findings *reviewFindingsLedger, onFailTarget func(phase string) (string, bool)) orchestrator.AgentExecutor {
 	if o.executor == "command" {
 		isClaude := strings.Contains(o.agentCmd, "claude")
 		ex := orchestrator.CommandExecutor{
 			Build: func(p asset.Phase, mode string) []string {
 				argv := claudeArgv(o, isClaude, tierOf(p))
-				return append(argv, "-p", buildPrompt(o.root, p, mode, tierOf, gates, phaseOut, findings))
+				return append(argv, "-p", buildPrompt(o.root, p, mode, tierOf, ctxCache, gates, phaseOut, findings))
 			},
 			Dir:            o.root,
 			Timeout:        o.timeout,
@@ -176,6 +177,16 @@ func buildRunEngine(wf asset.Workflow, o runOpts, logln func(string), costSink f
 	phaseOut := newPhaseOutputLedger()
 	verdicts := newVerdictLedger()
 	findings := newReviewFindingsLedger()
+	// Per-run invariant-context memo (prompt-cache, ROADMAP direction five). Created HERE,
+	// alongside the four ledgers and with the SAME per-run lifetime, so it is reused across
+	// every phase of one run — and, for evolve, across iterations of the SAME Engine (the
+	// invariant lanes are stable for the whole run; the ROADMAP it pointedly does NOT cache
+	// is re-read each phase, so an implementer's mid-run [x] is seen next iteration). It is a
+	// FUNCTION-LOCAL value, never a package global: a singleton would let one run's memoized
+	// ADR/AGENTS snapshot escape into a later unrelated run. nil-safe downstream (buildPrompt
+	// falls back to prompt.Gather on nil), so this is purely additive — the prompt bytes are
+	// unchanged. HONESTY: saves local readdir/readFile, NOT claude tokens (see cache.go).
+	ctxCache := prompt.NewContextCache()
 	cards, err := routing.LoadScorecards(scorecardPath(o.root))
 	if err != nil {
 		// Malformed scorecards.json: fail loud, continue empty. Honesty over convenience —
@@ -186,7 +197,7 @@ func buildRunEngine(wf asset.Workflow, o runOpts, logln func(string), costSink f
 	}
 	tierOf := phaseTierResolver(o.mode, budget.SpendRatio, cards, logln)
 	return orchestrator.Engine{
-		Exec:            agentExecutor(o, logln, budget.feed(costSink), tierOf, phaseTierByName(wf, tierOf), gates, phaseOut, feedsForwardOf(wf), verdicts, findings, onFailTargetOf(wf)),
+		Exec:            agentExecutor(o, logln, budget.feed(costSink), tierOf, phaseTierByName(wf, tierOf), ctxCache, gates, phaseOut, feedsForwardOf(wf), verdicts, findings, onFailTargetOf(wf)),
 		RunGate:         runGate,
 		Log:             logln,
 		OnGateResult:    gates.record,

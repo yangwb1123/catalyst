@@ -370,6 +370,20 @@ func phaseModelOf(phaseModel func(phase string) string, phase string) string {
 // no drift. (It moved there, beside the resolver it wraps, when PR6 unified the three tier
 // consumers; this file keeps only buildPrompt's prompt-tier consumption below.)
 
+// gatherContext is the nil-safe dispatch for the invariant-context lanes: with no run cache
+// it calls prompt.Gather (the unchanged, disk-every-time path — byte-for-byte the pre-cache
+// behavior a nil-cache caller relies on); with a cache it calls prompt.GatherCached (same ctx
+// slice, but the ADR/AGENTS lanes memoized for the run while the ROADMAP stays re-read). The
+// returned slice is identical in both branches — the ONLY difference is whether the invariant
+// inputs hit the filesystem this phase. Isolated as a one-liner so buildPrompt stays a flat
+// append sequence and the back-compat branch is named in one obvious place.
+func gatherContext(cache *prompt.ContextCache, repoRoot, query string) []string {
+	if cache == nil {
+		return prompt.Gather(repoRoot, query)
+	}
+	return prompt.GatherCached(cache, repoRoot, query)
+}
+
 // buildPrompt assembles the instruction for an agent phase. Beyond the role card,
 // the Context Engine injects (1) hard constraints + ADRs RETRIEVED against this
 // phase's query (Gather), (2) cross-session memory (memoryContext), (3) the
@@ -386,10 +400,22 @@ func phaseModelOf(phaseModel func(phase string) string, phase string) string {
 // exactly the model the phase actually runs, near-budget down-tier included. Passing the
 // resolver (not a precomputed tier) keeps the single-source-of-truth: there is no second
 // PhaseTier call here that could drift from the model the run spawns.
-func buildPrompt(repoRoot string, p asset.Phase, mode string, tierOf func(p asset.Phase) string, gates *gateLedger, phaseOut *phaseOutputLedger, findings *reviewFindingsLedger) string {
+//
+// cache is the run-scoped invariant-context memo (prompt.ContextCache, created per-run by
+// buildRunEngine). It is OPTIONAL and nil-safe: a nil cache routes the INVARIANT-lane read
+// through plain prompt.Gather (byte-for-byte the pre-cache path, so every existing caller /
+// test that passes nil is unchanged); a non-nil cache routes it through prompt.GatherCached,
+// which memoizes the ADR/AGENTS lanes across phases but ALWAYS re-reads the ROADMAP (the task
+// lane is agent-writable and must never be served stale — the cache holds no field for it).
+// Either way the ctx slice is identical; the cache only changes whether the invariant inputs
+// are re-read from disk each phase. (HONESTY: this saves local readdir/readFile microseconds,
+// NOT claude tokens — the prompt text is unchanged, so the full prompt is still billed every
+// phase; the token win is v2's claude-API prompt-caching, for which this is the data-shape
+// rehearsal — see internal/prompt/cache.go.)
+func buildPrompt(repoRoot string, p asset.Phase, mode string, tierOf func(p asset.Phase) string, cache *prompt.ContextCache, gates *gateLedger, phaseOut *phaseOutputLedger, findings *reviewFindingsLedger) string {
 	tier := tierOf(p)
 	query := p.Name + " " + p.Agent
-	ctx := prompt.Gather(repoRoot, query)
+	ctx := gatherContext(cache, repoRoot, query)
 	ctx = append(ctx, memoryContext(repoRoot, query)...)
 	ctx = append(ctx, gates.contextLines()...)
 	ctx = append(ctx, phaseOut.contextLines()...)

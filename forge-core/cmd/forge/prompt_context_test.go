@@ -150,12 +150,12 @@ func TestReviewFindingsLedger_OneDirectionImplementerReceivesReviewerDoesNot(t *
 	f.record("implementer", "## Review\n- main.go:42 HIGH: nil deref — guard it\nVERDICT: REQUEST_CHANGES")
 
 	// The implementer (the loop-back recipient) MUST receive the findings block.
-	implPrompt := buildPrompt("/home/u1/catalyst", asset.Phase{Name: "implementer", Agent: "implementer"}, "balanced", unbudgetedTier("balanced"), nil, nil, f)
+	implPrompt := buildPrompt("/home/u1/catalyst", asset.Phase{Name: "implementer", Agent: "implementer"}, "balanced", unbudgetedTier("balanced"), nil, nil, nil, f)
 	if !strings.Contains(implPrompt, "上一轮 fresh-context Reviewer") || !strings.Contains(implPrompt, "nil deref") {
 		t.Errorf("the implementer (loop-back target) must receive the reviewer findings; got: %.500s", implPrompt)
 	}
 	// The reviewer, re-running, MUST NOT receive them — fresh-context independence held.
-	revPrompt := buildPrompt("/home/u1/catalyst", asset.Phase{Name: "reviewer", Agent: "reviewer"}, "balanced", unbudgetedTier("balanced"), nil, nil, f)
+	revPrompt := buildPrompt("/home/u1/catalyst", asset.Phase{Name: "reviewer", Agent: "reviewer"}, "balanced", unbudgetedTier("balanced"), nil, nil, nil, f)
 	if strings.Contains(revPrompt, "上一轮 fresh-context Reviewer") || strings.Contains(revPrompt, "nil deref") {
 		t.Errorf("the reviewer must NEVER receive its own prior findings (fresh-context); got: %.500s", revPrompt)
 	}
