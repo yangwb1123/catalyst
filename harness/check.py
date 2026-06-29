@@ -53,6 +53,12 @@ VALID_TIERS = {"Haiku", "Sonnet", "Opus"}  # v1: Claude only (DECISIONS D4)
 VALID_MODEL_TIERS = {"haiku", "sonnet", "opus"}
 PHASE_REF_KEYS = {"target_phase", "loop_back_to"}
 STAGE_REF_KEYS = {"next_stage"}
+# The on_fail/on_unmet VERB. The runtime dispatches on its literal value (orchestrator
+# loops back only on "loop_back"; loop.go advances only on "loop_to_next_roadmap_item");
+# a typo (`loop_bak`) silently degrades to legacy abort/replay. This validates the verb
+# is a KNOWN action (catching the typo); it does NOT enforce on_fail-vs-on_unmet CONTEXT
+# (which verb is honored in which block is the runtime's contract — a later refactor).
+VALID_ACTIONS = {"loop_back", "loop_to_next_roadmap_item"}
 
 # A workflow phase's `agent:` field must name a canonical role card directly
 # (the phase's `name:` carries the descriptive role-stage label). There is no
@@ -417,6 +423,13 @@ def check_workflow_control_flow(agent_root):
                 issues.append(
                     f"{path}: next_stage '{stage}' is not a known spine stage "
                     f"(have: {sorted(stages)})"
+                )
+        for act in _iter_key_values(data, {"action"}):
+            if act not in VALID_ACTIONS:
+                issues.append(
+                    f"{path}: control-flow action '{act}' not in "
+                    f"{sorted(VALID_ACTIONS)} (a typo silently degrades the "
+                    f"declared loop-back/next-item action to legacy abort/replay)"
                 )
     return issues
 

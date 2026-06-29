@@ -110,6 +110,10 @@ export const COPIED_FILES = [
   // sca.mjs is imported by acceptance.mjs (the dependency_vulnerabilities criterion
   // runs OSV-format SCA); without it the copied acceptance gate fails to import.
   join('harness', 'sca.mjs'),
+  // select-tests.mjs is the incremental (advisory) test selector — a fast edit-time
+  // signal that NEVER replaces the full forge accept; it imports acceptance-kernel.mjs
+  // (already copied). A scaffolded project inherits the same dev-loop accelerator.
+  join('harness', 'select-tests.mjs'),
   join('harness', 'arch', 'arch-check.mjs'),
   join('harness', 'arch', 'scan.mjs'),
   join('harness', 'arch', 'scan-functions.mjs'),
@@ -132,6 +136,7 @@ export const COPIED_FILES = [
   join('harness', 'test_scorecard-update.mjs'),
   join('harness', 'test_secret-scan.mjs'),
   join('harness', 'test_sca.mjs'),
+  join('harness', 'test_select-tests.mjs'),
   join('harness', 'arch', 'test_arch-check.mjs'),
 ];
 

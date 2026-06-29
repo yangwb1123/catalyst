@@ -377,3 +377,46 @@ func TestLoadWorkflowJSON_FaultTolerant(t *testing.T) {
 		t.Error("invalid JSON should return an error")
 	}
 }
+
+// A standing-loop workflow (evolve.yml) authors its phases under `loop:`. The
+// loader must HOIST loop.phases into Workflow.Phases so the engine runs the body
+// instead of loading zero phases and reporting converged=true over no work.
+func TestLoadWorkflowJSON_LoopBodyHoisted(t *testing.T) {
+	// Shape of evolve.yml after yaml2json: top-level phases absent, body under loop.
+	data := []byte(`{"stage":"evolve","type":"loop","loop":{"loop_back_to":"scan",` +
+		`"phases":[{"name":"scan","agent":"explorer"},{"name":"implement","agent":"implementer"}]},` +
+		`"stop_condition":{"type":"external"}}`)
+	wf, err := LoadWorkflowJSON(data)
+	if err != nil {
+		t.Fatalf("LoadWorkflowJSON: %v", err)
+	}
+	if got := len(wf.Phases); got != 2 {
+		t.Fatalf("loop body not hoisted: phase count = %d, want 2 (was 0 pre-fix -> false-clean)", got)
+	}
+	if wf.Phases[0].Name != "scan" || wf.Phases[1].Agent != "implementer" {
+		t.Errorf("hoisted phases = %+v, want scan/…/implementer", wf.Phases)
+	}
+	if wf.Loop == nil || wf.Loop.LoopBackTo != "scan" {
+		t.Errorf("loop_back_to should be carried, got %+v", wf.Loop)
+	}
+}
+
+// Backfill must NOT override a workflow that authors top-level phases (build.yml):
+// only an EMPTY top level is filled from the loop body, so an explicit top-level
+// list always wins and a non-loop workflow is byte-for-byte unaffected (Loop nil).
+func TestLoadWorkflowJSON_TopLevelPhasesWinOverLoop(t *testing.T) {
+	data := []byte(`{"stage":"x","phases":[{"name":"top","agent":"a"}],` +
+		`"loop":{"phases":[{"name":"body","agent":"b"}]}}`)
+	wf, err := LoadWorkflowJSON(data)
+	if err != nil {
+		t.Fatalf("LoadWorkflowJSON: %v", err)
+	}
+	if len(wf.Phases) != 1 || wf.Phases[0].Name != "top" {
+		t.Errorf("top-level phases must win, got %+v", wf.Phases)
+	}
+	// A non-loop workflow (no loop key) loads Loop as nil — unaffected.
+	plain, _ := LoadWorkflowJSON([]byte(`{"stage":"build","phases":[{"name":"p","agent":"a"}]}`))
+	if plain.Loop != nil {
+		t.Errorf("a non-loop workflow must load Loop as nil, got %+v", plain.Loop)
+	}
+}

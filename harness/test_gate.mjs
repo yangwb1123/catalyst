@@ -209,12 +209,15 @@ test('checkRootCount passes when root file count is within max', () => {
 // HONESTY contract (warn ALWAYS reports the violation, only the exit code differs)
 // and the SAFETY override (production forces block over a loose mode's warn).
 //
-// The staged policies.yml sets max_file_lines: 500 (the real cap) and the fixture is
-// 600 lines, so src/big.js is the SOLE violation: stageGate copies the harness module
-// graph (gate/adapters/scan, all <500) into the temp tree for resolveEnforce's imports,
-// so a tiny cap would flag THOSE too and the count would not be 1. `enforce` in
-// policies.yml is the FALLBACK only — the live value comes from .agent.
-const VIOLATE = { 'src/big.js': oversizedFile(600) };         // 600 lines > cap 500 -> the only violation
+// The fixture is 900 lines — over EVERY mode's file-size cap (explorer's relaxed
+// 800 included), so src/big.js is the SOLE violation regardless of how max_file_lines
+// now resolves per mode×lifecycle. (A 600-line fixture would NOT trip explorer, whose
+// cap is 800, so these enforce-strictness tests use a violation that holds for all
+// modes; the dedicated max_file_lines resolution is pinned separately below.) stageGate
+// copies the harness module graph (gate/adapters/scan, all <500) into the temp tree for
+// resolveEnforce's imports, so they never trip. `enforce` in policies.yml is the
+// FALLBACK only — the live value comes from .agent.
+const VIOLATE = { 'src/big.js': oversizedFile(900) };         // 900 lines > every mode's cap -> the only violation
 const CAP500 = 'max_file_lines: 500\nmax_root_files: 99\nenforce: block\n';
 
 test('warn mode (explorer×idea) REPORTS the violation but exits 0 (★honesty + speed★)', () => {
@@ -288,4 +291,31 @@ test('backward-compat: THIS repo (engineering×mvp) still resolves to block, gat
   const res = spawnSync(process.execPath, [GATE_PATH], { cwd: dirname(HARNESS_DIR), encoding: 'utf8' });
   assert.equal(res.status, 0, `real repo must PASS; stdout:\n${res.stdout}\nstderr:\n${res.stderr}`);
   assert.match(res.stdout, /PASS/);
+});
+
+// === max_file_lines wired to mode×lifecycle (the file-size knob, end-to-end) ===
+// gate.mjs now resolves the per-file line cap from .agent (explorer relaxes to 800
+// for prototypes; production clamps any loose mode back to 500), not policies.yml's
+// global 500. A 600-line file is the probe: tolerable under explorer, a violation
+// under a strict mode or in production. The policies.yml fallback stays 500.
+const RELAXED = { 'src/proto.js': oversizedFile(600) };       // 600: > 500 but <= explorer's 800
+
+test('explorer relaxes max_file_lines to 800: a 600-line file PASSes (the gap this fix closes)', () => {
+  const res = runGateWithPolicy(CAP500, { projectYml: 'mode: explorer\nlifecycle: idea\n', files: RELAXED });
+  assert.equal(res.status, 0, `explorer (cap 800) must not flag 600 lines; stdout:\n${res.stdout}`);
+  assert.match(res.stdout, /PASS/, 'a 600-line file is within explorer’s relaxed 800 cap');
+});
+
+test('engineering keeps max_file_lines at 500: the same 600-line file IS a violation', () => {
+  const res = runGateWithPolicy(CAP500, { projectYml: 'mode: engineering\nlifecycle: mvp\n', files: RELAXED });
+  assert.equal(res.status, 1, `engineering (cap 500, block) must flag 600 lines; stdout:\n${res.stdout}`);
+  assert.match(res.stdout, /src\/proto\.js/);
+});
+
+test('production CLAMPS a loose mode’s relaxed cap: explorer×production flags 600 lines (★safety★)', () => {
+  // explorer alone tolerates 600 (cap 800), but production clamps the cap back to 500
+  // AND forces block — so a prototype-relaxed file size can never apply in production.
+  const res = runGateWithPolicy(CAP500, { projectYml: 'mode: explorer\nlifecycle: production\n', files: RELAXED });
+  assert.equal(res.status, 1, `explorer+production must clamp to 500 and BLOCK; stdout:\n${res.stdout}`);
+  assert.match(res.stdout, /src\/proto\.js/);
 });

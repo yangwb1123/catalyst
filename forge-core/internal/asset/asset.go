@@ -71,6 +71,14 @@ import (
 // --model`). CORRECTNESS: only a planning/task-definition role should set it; a
 // reviewer must NOT (feeding the reviewer its own prior self-report would pollute the
 // fresh-context independence that makes its judgement trustworthy).
+// DependsOn carries an OPTIONAL list of phase NAMES this phase must run AFTER — the
+// declarative input to the OPT-IN parallel orchestrator (`forge run/evolve --parallel`).
+// When a workflow declares depends_on, the parallel engine groups phases into
+// dependency-ordered WAVES and runs the mutually-independent phases within a wave
+// concurrently (the Discover scan/market/capability fan-out, or fan-out implementers,
+// no longer block each other). An EMPTY DependsOn (every phase, in every existing
+// workflow today) means "no declared dependency": the field changes NOTHING for the
+// default SERIAL engine (RunFrom ignores it), so adding it is byte-for-byte back-compat.
 type Phase struct {
 	Name          string     `json:"name"`
 	Agent         string     `json:"agent"`
@@ -81,6 +89,7 @@ type Phase struct {
 	ModelTier     string     `json:"model_tier"`
 	WritesADR     *WritesADR `json:"writes_adr"`
 	FeedsForward  bool       `json:"feeds_forward"`
+	DependsOn     []string   `json:"depends_on"`
 }
 
 // WritesADR is the subset of a phase's writes_adr block forge-core reads:
@@ -182,10 +191,29 @@ func (c *Criterion) UnmarshalJSON(data []byte) error {
 
 // Workflow is a loaded, machine-runnable workflow: an ordered list of phases
 // for one spine stage plus the stop condition that decides when it converges.
+//
+// Loop carries a STANDING-LOOP workflow's body (evolve.yml, type: loop): its
+// phases are authored under `loop:` (with loop_back_to forming the cycle) rather
+// than at the top level. LoadWorkflowJSON HOISTS Loop.Phases into Phases when the
+// top level declares none, so the engine runs the loop body. Without this, a
+// `type: loop` workflow's `phases` (evolve.yml's 6: scan…evaluate) were dropped —
+// the engine loaded ZERO phases and the loop reported converged=true over no work
+// (a false-clean: zero work read as success). It is a POINTER so a non-loop
+// workflow (build.yml) loads it as nil and is byte-for-byte unaffected.
 type Workflow struct {
 	Stage  string        `json:"stage"`
 	Phases []Phase       `json:"phases"`
+	Loop   *LoopBody     `json:"loop"`
 	Stop   StopCondition `json:"stop_condition"`
+}
+
+// LoopBody is a standing-loop workflow's `loop:` block: the phases that form the
+// cycle plus LoopBackTo, the phase the loop returns to after the last (evolve.yml:
+// loop_back_to: scan). Only Phases is hoisted into the runnable Workflow today;
+// LoopBackTo is carried so the cycle target is not silently dropped on load.
+type LoopBody struct {
+	LoopBackTo string  `json:"loop_back_to"`
+	Phases     []Phase `json:"phases"`
 }
 
 // LoadWorkflowJSON parses a workflow from its JSON encoding.
@@ -198,6 +226,13 @@ func LoadWorkflowJSON(data []byte) (Workflow, error) {
 	var wf Workflow
 	if err := json.Unmarshal(data, &wf); err != nil {
 		return Workflow{}, fmt.Errorf("asset: invalid workflow JSON: %w", err)
+	}
+	// Hoist a loop body's phases to the top level so a standing-loop workflow
+	// (evolve.yml) RUNS its 6 phases instead of loading zero (the false-clean the
+	// Loop field documents). Only when the top level is empty — a workflow that
+	// authors top-level phases keeps them verbatim.
+	if len(wf.Phases) == 0 && wf.Loop != nil && len(wf.Loop.Phases) > 0 {
+		wf.Phases = wf.Loop.Phases
 	}
 	return wf, nil
 }

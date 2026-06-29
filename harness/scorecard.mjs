@@ -120,34 +120,44 @@ function countAccepted(verdicts) {
   return accepted;
 }
 
-// Roll the trajectory side-channel of a batch into two accumulators:
+// Roll the trajectory side-channel of a batch into accumulators:
 //   - reworked: how many verdicts were bounced back by a reviewer
 //       (`reworked === true`); a verdict that omits the field is NOT reworked,
 //       so legacy `{accepted}`-only batches yield rework_rate 0.
+//   - firstPass: how many tasks were accepted WITHOUT a rework round
+//       (`accepted === true && reworked !== true`) — the schema's "first-pass
+//       gate rate" numerator, DISTINCT from quality_score's accepted-eventually
+//       count. A legacy `{accepted}`-only verdict has no `reworked` field, so it
+//       counts as first-pass, keeping pass_rate === quality_score for old batches.
 //   - iterSum / iterCount: sum and count of `iterations` over ACCEPTED tasks
 //       that actually report a finite count. avg_iterations is a "rounds to
 //       green" metric, so only accepted tasks contribute; a count is floored at
 //       1. iterCount === 0 means "no trajectory data" -> the field is omitted.
 function rollTrajectory(verdicts) {
   let reworked = 0;
+  let firstPass = 0;
   let iterSum = 0;
   let iterCount = 0;
   for (const v of verdicts) {
     if (!v) continue;
     if (v.reworked === true) reworked += 1;
+    if (v.accepted === true && v.reworked !== true) firstPass += 1;
     if (v.accepted === true && Number.isFinite(v.iterations)) {
       iterSum += floorIterations(v.iterations);
       iterCount += 1;
     }
   }
-  return { reworked, iterSum, iterCount };
+  return { reworked, firstPass, iterSum, iterCount };
 }
 
 // synthesize({model, task_type, verdicts, updated_at}) -> one scorecard entry.
 //
 // - one verdict == one task == one binary sample (accepted true/false)
 // - quality_score = #accepted / #tasks   (samples === 0 -> 0, no divide-by-zero)
-// - pass_rate mirrors quality_score (first-pass acceptance rate over this batch)
+// - pass_rate = #(accepted && !reworked) / #tasks — the FIRST-PASS gate rate, so a
+//   task that needed a rework round before passing lifts quality_score but NOT
+//   pass_rate (pass_rate <= quality_score). A legacy `{accepted}`-only batch has no
+//   `reworked` signal, so first-pass == accepted and pass_rate == quality_score there.
 // - rework_rate = #reworked / #tasks     (samples === 0 -> 0); a verdict missing
 //   `reworked` counts as not reworked, so a legacy binary batch yields 0
 // - avg_iterations = mean `iterations` over accepted tasks that report it; when
@@ -185,14 +195,15 @@ export function synthesize({
   const samples = verdicts.length;
   const accepted = countAccepted(verdicts);
   const quality_score = samples === 0 ? 0 : clamp01(accepted / samples);
-  const { reworked, iterSum, iterCount } = rollTrajectory(verdicts);
+  const { reworked, firstPass, iterSum, iterCount } = rollTrajectory(verdicts);
   const rework_rate = samples === 0 ? 0 : clamp01(reworked / samples);
+  const pass_rate = samples === 0 ? 0 : clamp01(firstPass / samples);
   const entry = {
     model,
     task_type,
     quality_score,
     samples,
-    pass_rate: quality_score,
+    pass_rate,
     rework_rate,
     updated_at,
   };
@@ -293,12 +304,18 @@ export function merge(existing, incoming, decayFactor = 1) {
   const ri = clamp01(incoming.rework_rate ?? 0);
   const rework_rate = wTotal === 0 ? 0 : clamp01((re * we + ri * ni) / wTotal);
 
+  // pass_rate (first-pass rate): an INDEPENDENT fold; a legacy row missing it falls
+  // back to quality_score, so an all-legacy merge keeps pass_rate === quality_score.
+  const pe = clamp01(existing.pass_rate ?? existing.quality_score ?? 0);
+  const pi = clamp01(incoming.pass_rate ?? incoming.quality_score ?? 0);
+  const pass_rate = wTotal === 0 ? 0 : clamp01((pe * we + pi * ni) / wTotal);
+
   const merged = {
     model: incoming.model ?? existing.model,
     task_type: incoming.task_type ?? existing.task_type,
     quality_score,
     samples: total,
-    pass_rate: quality_score,
+    pass_rate,
     rework_rate,
     updated_at: incoming.updated_at ?? existing.updated_at,
   };

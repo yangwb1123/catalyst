@@ -9,7 +9,7 @@ import { pathToFileURL } from 'node:url';
 // (mode×lifecycle in .agent/project.yml × modes.yml) instead of policies.yml's
 // single global `enforce`. Same I/O-boundary + fail-safe shape as the coverage
 // pair next to it; zero-dep (it reuses scan.mjs's in-Node YAML reader).
-import { resolveEnforce } from './adapters.mjs';
+import { resolveEnforce, resolveMaxFileLines } from './adapters.mjs';
 
 const ROOT = process.cwd();
 const POLICY_PATH = join(ROOT, 'harness', 'policies.yml');
@@ -106,7 +106,12 @@ function main() {
     console.error(`forge-gate: cannot read ${POLICY_PATH}`);
     process.exit(2);
   }
-  const maxLines = numericPolicy(policy.max_file_lines, 500, 'max_file_lines');
+  // policies.yml's max_file_lines is now the FALLBACK only — validate it fail-closed
+  // first (garbage cap must not silently disable the gate), then let the central knob
+  // (mode×lifecycle) resolve the live cap: explorer relaxes to 800 for prototypes,
+  // production clamps any loose mode back to 500. Missing .agent/ -> this fallback.
+  const policyMaxLines = numericPolicy(policy.max_file_lines, 500, 'max_file_lines');
+  const maxLines = resolveMaxFileLines(ROOT, policyMaxLines);
   const maxRoot = numericPolicy(policy.max_root_files, 15, 'max_root_files');
   // policies.yml's enforce is now the FALLBACK only — the live value comes from the
   // central knob (mode×lifecycle). Validate it first so a garbage policies.yml still

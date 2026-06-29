@@ -18,12 +18,14 @@ meta:
 # ── 验收标准字段 / Acceptance criteria ────────────────────────────
 # required=true 的项任一不满足 => Stop 阻塞,feature 不得标记完成。
 # Any failing required criterion blocks Stop. Optional ones annotate but don't block (除非 mode=engineering 提升)。
-# 诚实标注 / honesty note: required=false 的 coverage/lint/typecheck/build/
-# security_findings 在本仓库无可执行检查 → harness/acceptance.mjs 报 N/A,
-# 既不伪装为 pass,也不计入「已满足」。载重判据(test_pass / app_test_pass /
-# complexity_violations / arch_violations)由带外 harness 实测,required=true。
-# Criteria with no executable check in this repo are reported N/A (never faked
-# into a pass, never counted as satisfied); the four load-bearing ones are real.
+# 诚实标注 / honesty note: typecheck/build 在本仓库无可执行检查 → harness/
+# acceptance.mjs 报 N/A;coverage/lint 是真 adapter probe,仅当工具缺失时报 N/A。
+# 二者均不伪装为 pass,也不计入「已满足」。SIX 载重判据(test_pass / app_test_pass /
+# complexity_violations / arch_violations / architecture / security_findings)
+# 由带外 harness 实测、load-bearing(secret-scan 命中即硬阻断 accept)。
+# Criteria with no check wired here (typecheck/build) are reported N/A; lint/
+# coverage are real probes, N/A only when their tool is absent (never faked into a
+# pass, never counted as satisfied). The SIX load-bearing ones are real harness probes.
 criteria:
   test_pass:               # 全测试通过(harness 套件)| all harness tests green
     type: bool
@@ -74,12 +76,12 @@ criteria:
     expect: 0
     required: true
     source: harness        # harness/arch/arch-check.mjs — clean-arch ENFORCED, not just declared
-  security_findings:       # 安全发现数(security-review / 依赖扫描)== 0
+  security_findings:       # 硬编码 secret 扫描发现数(harness/secret-scan.mjs)== 0
     type: int
     operator: "=="
     expect: 0
-    required: false        # N/A reported, not counted — no scanner; reviewer agent only
-    source: security-review
+    required: true         # load-bearing: secret-scan 真 PASS/FAIL,命中即硬阻断 accept
+    source: harness        # harness/secret-scan.mjs — pattern scan (SCA/CVE = separate sca.mjs)
   p95_latency_ms:          # 可选: 性能预算尾延迟 | optional perf budget
     type: int
     operator: "<="

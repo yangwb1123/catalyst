@@ -3,10 +3,12 @@
 // Maps `.agent/eval/acceptance.schema.yml` criteria onto THIS repo's existing
 // out-of-band checks and renders an ACCEPTED / REJECTED verdict.
 //
-// Honesty first: a criterion is only PASS/FAIL when a real check backs it.
-// Criteria with no executable check in this repo (coverage / lint / typecheck
-// / build / security_findings) are reported N/A with a reason — never faked
-// into a pass, and N/A is never counted as satisfied.
+// Honesty first: a criterion is only PASS/FAIL when a real check backs it. The
+// criteria with NO check wired in this repo (typecheck / build) are reported N/A
+// with a reason; lint / coverage / dependency_vulnerabilities are REAL probes that
+// report N/A only when their tool/DB is absent here. security_findings is a real
+// load-bearing PASS/FAIL probe (secret-scan). N/A is never faked into a pass, and
+// never counted as satisfied.
 //
 // Design: one criterion == one probe function (shells its command, judges the
 // exit code); a runner collects results; `decide()` is a PURE function over the
@@ -71,6 +73,26 @@ export function runCountedTest(glob, extraEnv = {}) {
   return { ok: r.ok && count > 0, count: Number.isNaN(count) ? null : count };
 }
 
+// runPythonSuites: FAIL-CLOSED discovery of harness/test_*.py, symmetric to the
+// Node globs above. Python has no `node --test <glob>` runner, so we readdir
+// HARNESS_DIR for test_*.py and spawn python3 per file. The two suites were
+// previously HARDCODED (test_check.py + test_yaml2json.py), so a newly ADDED
+// harness/test_*.py was never executed — a red new Python suite could ship while
+// load-bearing test_pass reported green (the same false-green the Node globs were
+// hardened against; .py was left asymmetric). Returns per-file [name, ok] rows so a
+// specific failing suite is named. Fail-CLOSED: an empty walk OR a missing known
+// suite is itself a FAIL row (a broken walker / dropped suite can't vacuously pass).
+export function runPythonSuites(dir = HARNESS_DIR) {
+  const found = readdirSync(dir).filter((n) => /^test_.*\.py$/.test(n)).sort();
+  const required = ['test_check.py', 'test_yaml2json.py'];
+  const entries = found.map((n) => [n, run('python3', [join(dir, n)]).ok]);
+  const missing = required.filter((n) => !found.includes(n));
+  if (found.length === 0 || missing.length > 0) {
+    entries.push([`harness/test_*.py discovery (missing: ${missing.join(', ') || 'none found'})`, false]);
+  }
+  return { entries, count: found.length };
+}
+
 // test_pass == true  <-  ALL committed harness suites must be green (self-
 // governance: the harness runs its OWN tests, not a curated subset, so a
 // regression in verdict logic — or a silently-green arch-check faking a pass —
@@ -100,9 +122,9 @@ export function runCountedTest(glob, extraEnv = {}) {
 export function probeTests() {
   const mjsRun = runCountedTest('harness/test_*.mjs', { FORGE_ACCEPT_INNER: '1' });
   const archRun = runCountedTest('harness/arch/test_*.mjs', { FORGE_ACCEPT_INNER: '1' });
+  const py = runPythonSuites();
   const suites = [
-    ['test_check.py', run('python3', [join(HARNESS_DIR, 'test_check.py')]).ok],
-    ['test_yaml2json.py', run('python3', [join(HARNESS_DIR, 'test_yaml2json.py')]).ok],
+    ...py.entries,
     ['harness/test_*.mjs', mjsRun.ok],
     ['harness/arch/test_*.mjs', archRun.ok],
   ];
@@ -116,7 +138,7 @@ export function probeTests() {
   const failed = suites.filter(([, ok]) => !ok).map(([name]) => name);
   const ok = failed.length === 0;
   const detail = ok
-    ? `test_check.py + test_yaml2json.py + harness/test_*.mjs (${mjsRun.count}) + harness/arch/test_*.mjs (${archRun.count})`
+    ? `harness/test_*.py (${py.count}) + harness/test_*.mjs (${mjsRun.count}) + harness/arch/test_*.mjs (${archRun.count})`
       + (scaffoldRun ? ` + harness/scaffold/test_*.mjs (${scaffoldRun.count})` : '')
       + ': all green'
     : `failed: ${failed.join(', ')}`;
@@ -315,8 +337,8 @@ export const LOAD_BEARING = ['test_pass', 'app_test_pass', 'complexity_violation
 //
 // Hardened (P10): ACCEPTED requires ALL of —
 //   (1) every status is a known verdict {PASS,FAIL,N-A} (unknown -> hard reject);
-//   (2) the four load-bearing criteria are each PRESENT and PASS (not merely
-//       not-FAIL); a missing/NA/unknown load-bearing criterion blocks accept;
+//   (2) the six load-bearing criteria (see LOAD_BEARING) are each PRESENT and PASS
+//       (not merely not-FAIL); a missing/NA/unknown load-bearing one blocks accept;
 //   (3) the results are non-empty (zero criteria prove nothing).
 // N/A is explicitly NOT a pass for the remaining criteria: it neither blocks nor
 // counts toward satisfaction — surfaced so missing coverage stays honest.

@@ -74,10 +74,10 @@ var classifyCases = []classifyCase{
 		reasonHas: []string{"high", "migration"},
 	},
 	{
-		name:      "migration + prod traffic + irreversible -> critical",
+		name:      "migration + prod traffic + irreversible -> critical (names the migration factor)",
 		in:        Signals{TouchesMigration: true, ProdTraffic: true, Reversible: false},
 		wantLevel: Critical,
-		reasonHas: []string{"critical", "irreversible"},
+		reasonHas: []string{"critical", "irreversible", "production migration"},
 	},
 	{
 		name:      "reversible migration alone -> medium",

@@ -403,6 +403,40 @@ class OtherChecksTest(unittest.TestCase):
         issues = self.check.check_workflow_control_flow(self.agent_root)
         self.assertTrue(any("gpt5-turbo" in i for i in issues), issues)
 
+    def test_bad_action_verb_is_flagged(self):
+        # The on_fail VERB drives runtime dispatch: a typo (`loop_bak`) silently
+        # degrades to the legacy abort path while the sibling target_phase still
+        # resolves, so PRE-FIX this PASSed even though the declared self-heal loop
+        # was dead. The verb must be validated like its noun.
+        wf = self.agent_root / "workflows" / "cf_action.yml"
+        wf.write_text(
+            "id: cf_action\nstage: build\n"
+            "phases:\n"
+            "  - name: planner\n    agent: planner\n"
+            "  - name: implementer\n    agent: implementer\n"
+            "    on_fail:\n      action: loop_bak\n"
+            "      target_phase: planner\n",  # noun resolves; only the verb is bad
+            encoding="utf-8",
+        )
+        issues = self.check.check_workflow_control_flow(self.agent_root)
+        self.assertTrue(
+            any("loop_bak" in i and "action" in i for i in issues), issues
+        )
+
+    def test_valid_action_verbs_pass(self):
+        # The two real verbs the orchestrator dispatches on must NOT be flagged.
+        wf = self.agent_root / "workflows" / "cf_okaction.yml"
+        wf.write_text(
+            "id: cf_okaction\nstage: build\n"
+            "phases:\n"
+            "  - name: implementer\n    agent: implementer\n"
+            "    on_fail:\n      action: loop_back\n      target_phase: implementer\n"
+            "stop_condition:\n  on_unmet:\n    action: loop_to_next_roadmap_item\n",
+            encoding="utf-8",
+        )
+        issues = self.check.check_workflow_control_flow(self.agent_root)
+        self.assertFalse(any("action" in i for i in issues), issues)
+
     def test_dangling_next_stage_is_flagged(self):
         # on_met/on_approved.next_stage routing to a stage no workflow declares
         # is an unreachable handoff — must FAIL (pre-fix: PASS).

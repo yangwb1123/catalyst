@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"forgeos/forge-core/internal/asset"
 	"forgeos/forge-core/internal/converge"
@@ -233,9 +234,9 @@ func harnessRunner(repoRoot string, probe map[string]string) func(string) gate.R
 //	complexity -> gate.Gate  (structural caps, a real check)
 //	arch       -> gate.Check (governance integrity, a real check)
 //	test       -> PASS iff BOTH acceptance test_pass AND app_test_pass are PASS
-//	lint       -> acceptance 'lint'            (N/A here: no linter)
+//	lint       -> acceptance 'lint'            (N/A here: no linter installed)
 //	build      -> acceptance 'build'           (N/A here: no build step)
-//	security   -> acceptance 'security_findings' (N/A here: no scanner)
+//	security   -> acceptance 'security_findings' (a real secret-scan PASS/FAIL)
 //
 // An acceptance-backed gate whose criterion is missing from the probe map (or
 // whose probe failed) resolves to N/A — honest "not checked", never a pass.
@@ -321,6 +322,11 @@ func probeDetail(criterion, status string) string {
 // iteration re-probes. This avoids double-spawning within an iteration while
 // staying fresh across iterations, and keeps statuses+categories from the SAME run.
 type loopProbe struct {
+	// mu guards the cache so concurrent gate phases under `forge evolve --parallel`
+	// (≥2 gate phases in one wave) prime it exactly once instead of racing. current()
+	// runs single-threaded after the wave, but locks too for a clean, subtlety-free
+	// contract. The serial path takes the uncontended lock — byte-for-byte unchanged.
+	mu         sync.Mutex
 	root       string
 	cached     map[string]string
 	categories map[string]string
@@ -332,6 +338,8 @@ type loopProbe struct {
 // needs statuses. A probe error degrades both maps to nil (downstream treats absent
 // criteria as N/A with an empty, non-exemptible category).
 func (p *loopProbe) refresh() map[string]string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	if !p.primed {
 		statuses, categories, err := gate.ProbeAll(p.root)
 		if err != nil {
@@ -349,8 +357,10 @@ func (p *loopProbe) refresh() map[string]string {
 // the gate phases somehow did not), then marks the cache stale so the next
 // iteration re-probes the changed repo. The convergence check needs both maps.
 func (p *loopProbe) current() (statuses, categories map[string]string) {
-	p.refresh()
+	p.refresh() // locks internally to prime once
+	p.mu.Lock()
 	s, c := p.cached, p.categories
 	p.primed = false
+	p.mu.Unlock()
 	return s, c
 }

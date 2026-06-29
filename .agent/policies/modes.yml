@@ -136,6 +136,7 @@ lifecycle_modifiers:
     coverage_delta: +20                  # 覆盖率再加 20 点(封顶 95)/ +20pp (cap 95)
     require_min_gates: [lint, test, build, complexity, arch, security]
     enforce_floor: block                 # 强制阻断,即便 mode 是 warn / force block even if mode says warn
+    max_file_lines: 500                  # 体积上限收紧:explorer 的 800 在生产被压回 500 / clamp loose modes' relaxed cap
     note: 安全/架构闸门不可关;explorer+production 也必须过全闸门 / non-negotiable gates.
 
 # ═══════════════════════════════════════════════════════════════════════════

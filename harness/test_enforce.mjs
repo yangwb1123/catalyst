@@ -23,6 +23,8 @@ import {
   stricterEnforce,
   computeEnforce,
   resolveEnforce,
+  computeMaxFileLines,
+  resolveMaxFileLines,
 } from './adapters.mjs';
 import { parseRules } from './arch/scan.mjs';
 
@@ -139,4 +141,56 @@ test('resolveEnforce on THIS repo agrees with computeEnforce over its OWN mode×
   // Host-agnostic backward-compat anchor: the resolved value is a REAL enforce
   // level (never silently undefined/garbage), whatever the host's mode×lifecycle.
   assert.ok(ENFORCE_LEVELS.includes(expected), `resolved enforce must be a real level (warn|block); got ${expected}`);
+});
+
+// --- computeMaxFileLines: the file-size cap's mode×lifecycle resolution -------
+// The THIRD harness knob, mirroring computeEnforce above. explorer relaxes the
+// per-file line cap to 800 for prototypes; production clamps any loose mode back
+// down to 500 (file-size is tighten-only: smaller is stricter, so a ceiling only
+// LOWERS). cto declares no cap -> the policies fallback passes through.
+
+test('computeMaxFileLines: per-mode base (explorer 800 / balanced 500 / engineering 500)', () => {
+  const M = parseRules(REAL_MODES);
+  // mvp declares no max_file_lines ceiling -> the per-mode BASE is isolated here.
+  assert.equal(computeMaxFileLines(M, 'explorer', 'mvp', 500), 800, 'explorer relaxes to 800 (the gap this fix closes)');
+  assert.equal(computeMaxFileLines(M, 'balanced', 'mvp', 500), 500);
+  assert.equal(computeMaxFileLines(M, 'engineering', 'mvp', 500), 500);
+  assert.equal(computeMaxFileLines(M, 'cto', 'mvp', 500), 500, 'cto declares none -> fallback');
+});
+
+test('computeMaxFileLines: production ceiling CLAMPS a loose mode back to 500 (★tighten-only★)', () => {
+  const M = parseRules(REAL_MODES);
+  // The safety override: explorer's relaxed 800 can never apply in production.
+  assert.equal(computeMaxFileLines(M, 'explorer', 'production', 500), 500, 'explorer+production clamped to 500');
+  assert.equal(computeMaxFileLines(M, 'balanced', 'production', 500), 500);
+  // A baseline already at/under the ceiling is never RAISED by it.
+  assert.equal(computeMaxFileLines(M, 'engineering', 'production', 500), 500);
+});
+
+test('computeMaxFileLines: FAIL-SAFE — missing/garbage base or modes -> the policies fallback', () => {
+  const M = parseRules(REAL_MODES);
+  assert.equal(computeMaxFileLines(M, 'nope', 'mvp', 444), 444, 'unknown mode -> fallback');
+  assert.equal(computeMaxFileLines({}, 'explorer', 'mvp', 444), 444, 'empty modes -> fallback');
+  assert.equal(computeMaxFileLines(null, 'explorer', 'mvp', 444), 444, 'null modes -> fallback');
+  // A non-positive/garbage ceiling is ignored (base passes through), never a 0-cap.
+  const bad = { modes: { explorer: { harness: { max_file_lines: 800 } } }, lifecycle_modifiers: { production: { max_file_lines: 'junk' } } };
+  assert.equal(computeMaxFileLines(bad, 'explorer', 'production', 500), 800, 'garbage ceiling ignored, not a 0-cap');
+});
+
+test('resolveMaxFileLines on THIS repo agrees with computeMaxFileLines over its OWN mode×lifecycle', () => {
+  // Host-AGNOSTIC live wire (ships verbatim into every scaffold): assert only the
+  // disk resolve equals the pure computation for the host's own pair.
+  const project = parseRules(readFileSync(join(REPO_ROOT, '.agent', 'project.yml'), 'utf8'));
+  const modes = parseRules(REAL_MODES);
+  const expected = computeMaxFileLines(modes, project.mode, project.lifecycle, 500);
+  assert.equal(resolveMaxFileLines(REPO_ROOT, 500), expected, `this repo (${project.mode}×${project.lifecycle}) resolves to ${expected}`);
+  assert.ok(Number.isInteger(expected) && expected > 0, `resolved cap must be a positive integer; got ${expected}`);
+});
+
+test('resolveMaxFileLines: FAIL-SAFE to the fallback when project.yml or modes.yml is missing', () => {
+  inTmp((root) => {
+    assert.equal(resolveMaxFileLines(root, 500), 500, 'no .agent/ -> fallback');
+    writeAgent(root, 'mode: explorer\nlifecycle: mvp\n', null); // modes.yml absent
+    assert.equal(resolveMaxFileLines(root, 500), 500, 'modes.yml missing -> fallback');
+  });
 });

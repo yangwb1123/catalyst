@@ -56,6 +56,28 @@ type LoopEngine struct {
 	// so the first reading is never counted as "no progress vs nothing".
 	StartIter  int
 	ResumePrev float64
+
+	// OnPhase is the ITERATION-AWARE per-phase checkpoint hook (the phase-granular
+	// twin of OnIteration). Run sets Engine.OnPhase per iteration so the engine
+	// reports a completed agent phase's index, and this is invoked with (iteration,
+	// phaseIdx) so the caller can persist a checkpoint mid-iteration — a crash then
+	// resumes at the next unstarted phase instead of replaying every completed
+	// (billed) agent phase. Nil-safe; nil = per-iteration-only checkpointing (the
+	// pre-phase-granular behavior). StartPhase is the phase index the FIRST resumed
+	// iteration begins at (from a mid-iteration checkpoint's PhaseIndex); 0 (the
+	// default) means the first iteration runs the whole workflow, byte-for-byte as
+	// before. Only the first iteration honors it — subsequent iterations reset via
+	// nextStartPhase (the on_unmet directed restart), unchanged.
+	OnPhase    func(iter, phaseIdx int)
+	StartPhase int
+
+	// Parallel routes each iteration through Engine.RunParallel (dependency-wave
+	// concurrency) instead of the serial RunFrom. Set by cmd/forge only when
+	// --parallel AND the workflow declares depends_on. In parallel mode there is no
+	// directed loop-back and no per-PHASE checkpoint (StartPhase/OnPhase are unused —
+	// concurrent phases can't share a linear PhaseIndex); per-ITERATION checkpointing
+	// is unaffected, so `forge evolve --parallel` still resumes at iteration boundaries.
+	Parallel bool
 }
 
 // NewLoopEngine constructs a LoopEngine, clamping a non-positive NoProgress to 1
@@ -97,14 +119,35 @@ type LoopOutcome struct {
 // phase. With no on_unmet (or an unresolvable target) startPhase stays 0 and the
 // loop replays the whole workflow each round, byte-for-byte as before.
 func (l LoopEngine) Run(wf asset.Workflow, mode string) (LoopOutcome, error) {
+	// FALSE-CLEAN GUARD: a workflow that resolves to ZERO phases runs no work, so it
+	// must NEVER be reported as converged — that is exactly the "zero work read as
+	// success" anti-pattern ForgeOS exists to prevent (it is how a dropped evolve loop
+	// body silently passed before loop.phases was hoisted in asset.LoadWorkflowJSON).
+	// Depth-two backstop: even a future stage-bearing-but-phaseless asset (or one nested
+	// under an unrecognized key) ends not-converged with an honest reason, never a
+	// false-clean boundOutcome. No real workflow trips this (all carry phases).
+	if len(wf.Phases) == 0 {
+		return LoopOutcome{0, false, "no phases to run (empty workflow — not converged)"}, nil
+	}
 	start, prev := l.loopStart()
 	stale := 0
-	startPhase := 0 // first iteration always runs the whole workflow.
+	startPhase := l.StartPhase // 0 fresh; a resumed mid-iteration checkpoint begins here.
 	for i := start; i <= l.MaxIter; i++ {
 		l.logf("iteration %d/%d", i, l.MaxIter)
 		t0 := time.Now()
-		if err := l.Engine.RunFrom(wf, mode, startPhase); err != nil {
-			return LoopOutcome{i, false, "gate/agent failure"}, err
+		// Parallel mode runs each iteration's full dependency-wave concurrency (no
+		// startPhase resume, no per-phase checkpoint). Serial mode wires the per-phase
+		// checkpoint hook to THIS iteration's index (a value receiver means this mutates
+		// only the local Engine copy RunFrom reads).
+		var runErr error
+		if l.Parallel {
+			runErr = l.Engine.RunParallel(wf, mode)
+		} else {
+			l.Engine.OnPhase = l.phaseCheckpoint(i)
+			runErr = l.Engine.RunFrom(wf, mode, startPhase)
+		}
+		if runErr != nil {
+			return LoopOutcome{i, false, "gate/agent failure"}, runErr
 		}
 		durationMs := time.Since(t0).Milliseconds()
 		sig := l.Signals()
@@ -160,6 +203,17 @@ func (l LoopEngine) onIteration(i int, sig converge.Signals, durationMs int64) {
 	if l.OnIteration != nil {
 		l.OnIteration(i, sig, durationMs)
 	}
+}
+
+// phaseCheckpoint builds the engine's per-phase hook BOUND to iteration `iter`,
+// forwarding each completed agent phase's index to the iteration-aware l.OnPhase.
+// Returns nil when no per-phase checkpoint is wired, so the engine's hook stays nil
+// and the per-iteration-only path is byte-for-byte unchanged.
+func (l LoopEngine) phaseCheckpoint(iter int) func(phaseIdx int) {
+	if l.OnPhase == nil {
+		return nil
+	}
+	return func(phaseIdx int) { l.OnPhase(iter, phaseIdx) }
 }
 
 // checkStop reports a converged outcome for a conjunction workflow whose

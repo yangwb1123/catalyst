@@ -63,10 +63,18 @@ phases:
 
 # ── 终止条件 / stop condition ──
 # 纪律:用置信度阈值,不用「继续 N 轮」(no round-count)。
+# 形状对齐 build/evolve:type + all_of[criterion],运行时(internal/converge)才会
+# 如实识别并上报本条件 —— 否则缺 type/criterion-not-under-all_of 会被报成「no
+# condition declared」(资产↔运行时漂移)。诚实边界:requirement_confidence 是 AGENT
+# 产出的置信分(非仓库信号),v1 的 converge 对它默认判 unmet(报告条件、不假装达标),
+# 真正评估需真 agent —— 同 evolve 的 external stop 那样如实上报、不静默吞掉。
 stop_condition:
-  metric: requirement_confidence
-  operator: ">="
-  threshold: 80                        # 单位 % / percent
+  type: conjunction                    # 被运行时识别的收敛形状 / a shape the runtime recognizes
+  anti_pattern: round_count            # 用置信度阈值,不用「继续 N 轮」/ NOT round-count
+  all_of:
+    - metric: requirement_confidence
+      operator: ">="
+      threshold: 80                    # 单位 % / percent
   expression: "requirement_confidence >= 80%"
   on_unmet:
     action: loop_back                  # 未达标 → 回 requirement-discovery 补缺失信息

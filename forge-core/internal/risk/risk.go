@@ -102,14 +102,21 @@ func criticalReason(s Signals) (string, string) {
 			why = append(why, "large blast radius")
 		}
 		if s.ProdTraffic {
-			why = append(why, "production traffic")
+			// A migration against production is its OWN grave factor (the doc's
+			// "production migration" critical trigger); otherwise it is plain
+			// production traffic. Folding it in here makes the migration-specific
+			// reason reachable — the standalone branch that followed required the
+			// same (ProdTraffic && !Reversible) the ProdTraffic append already
+			// catches above, so it was dead code that never produced its reason.
+			if s.TouchesMigration {
+				why = append(why, "production migration")
+			} else {
+				why = append(why, "production traffic")
+			}
 		}
 		if len(why) > 0 {
 			return Critical, label(Critical, "irreversible + "+strings.Join(why, " + "))
 		}
-	}
-	if s.TouchesMigration && s.ProdTraffic && !s.Reversible {
-		return Critical, label(Critical, "irreversible production migration")
 	}
 	return "", ""
 }

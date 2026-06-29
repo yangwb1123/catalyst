@@ -123,7 +123,7 @@ func rejectHumanGate(stage string) int {
 // happened, and the run stays auditable.
 func execLoop(wf asset.Workflow, o runOpts, maxIter int, maxIterSource string, resume bool) int {
 	logln := func(s string) { fmt.Println(s) }
-	start, prev, spentMicros, err := resumeStart(o.root, resume)
+	start, prev, spentMicros, phaseStart, err := resumeStart(o.root, resume)
 	if err != nil { // malformed checkpoint: fail closed, never silently restart.
 		fmt.Fprintf(os.Stderr, "forge evolve: %v\n", err)
 		return 1
@@ -152,8 +152,10 @@ func execLoop(wf asset.Workflow, o runOpts, maxIter int, maxIterSource string, r
 	// un-checkpointed partial is re-billed on resume, a conservative under-count cost.go notes.
 	budget.seed(spentMicros)
 	loop := buildLoop(wf, o, maxIter, logln, costEmitter(tracer, logln), budget)
-	loop.StartIter, loop.ResumePrev = start, prev
+	loop.StartIter, loop.ResumePrev, loop.StartPhase = start, prev, phaseStart
 	loop.OnIteration = checkpointHook(o, wf, tracer, budget, logln)
+	loop.OnPhase = phaseCheckpointHook(o, wf, budget, logln)
+	loop.Parallel = parallelEnabled(o, wf, logln, "forge evolve") // depends_on-gated opt-in
 	fmt.Printf("forge evolve: stage=%s mode=%s max-iter=%d (%s) type=%s start-iter=%d (doom-loop tripwire=2)\n",
 		wf.Stage, o.mode, maxIter, maxIterSource, stopTypeLabel(wf.Stop.Type), start)
 	outcome, runErr := loop.Run(wf, o.mode)
@@ -241,21 +243,28 @@ func reportLoop(out orchestrator.LoopOutcome, err error) int {
 // a from-scratch rerun. A MISSING checkpoint with --resume is reported but tolerated
 // as a fresh start. An old checkpoint without spent_usd_micros decodes that field to
 // 0 (omitempty back-compat), so its resume seeds zero spend and behaves as before.
-func resumeStart(root string, resume bool) (start int, prev float64, spentMicros int64, err error) {
+// phaseStart is cp.PhaseIndex — the phase the FIRST resumed iteration begins at when
+// the crash happened mid-iteration (0 for a clean iteration-boundary checkpoint, so
+// the iteration replays in full exactly as before phase-granular checkpointing).
+func resumeStart(root string, resume bool) (start int, prev float64, spentMicros int64, phaseStart int, err error) {
 	if !resume {
-		return 0, -1.0, 0, nil
+		return 0, -1.0, 0, 0, nil
 	}
 	cp, found, err := persist.Load(checkpointPath(root))
 	if err != nil {
-		return 0, 0, 0, fmt.Errorf("--resume: malformed checkpoint at %s: %w", checkpointPath(root), err)
+		return 0, 0, 0, 0, fmt.Errorf("--resume: malformed checkpoint at %s: %w", checkpointPath(root), err)
 	}
 	if !found {
 		fmt.Fprintf(os.Stderr, "forge evolve: --resume found no checkpoint at %s; starting fresh\n", checkpointPath(root))
-		return 0, -1.0, 0, nil
+		return 0, -1.0, 0, 0, nil
 	}
-	fmt.Printf("forge evolve: resuming from iteration %d (roadmap=%.0f%%, last reason: %s)\n",
-		cp.Iteration+1, cp.RoadmapCompletion*100, cp.Reason)
-	return cp.Iteration + 1, cp.RoadmapCompletion, cp.SpentUsdMicros, nil
+	at := ""
+	if cp.PhaseIndex > 0 {
+		at = fmt.Sprintf(", phase %d", cp.PhaseIndex)
+	}
+	fmt.Printf("forge evolve: resuming from iteration %d%s (roadmap=%.0f%%, last reason: %s)\n",
+		cp.Iteration+1, at, cp.RoadmapCompletion*100, cp.Reason)
+	return cp.Iteration + 1, cp.RoadmapCompletion, cp.SpentUsdMicros, cp.PhaseIndex, nil
 }
 
 // checkpointHook builds the loop's post-measurement OnIteration callback: after
@@ -277,10 +286,10 @@ func checkpointHook(o runOpts, wf asset.Workflow, tracer *trace.Tracer, budget *
 		// SpentUsdMicros records the run's cumulative billed cost AT THIS iteration so a
 		// later --resume re-seeds the budget instead of restarting the cap from $0 (the
 		// cross-resume overspend gap). budget owns the dollar->micro conversion; persist
-		// stores only the opaque int. Iteration-granularity: this is the spend through the
-		// LAST completed iteration — a crash mid-iteration loses that round's un-checkpointed
-		// partial (resume reruns and re-bills it), a conservative under-count seed honestly
-		// documents (cost.go seed/SpentUsdMicros). An unbudgeted run feeds nothing, so this
+		// stores only the opaque int. This per-iteration checkpoint records the spend through
+		// the COMPLETED iteration; phaseCheckpointHook records a FINER mid-iteration spend after
+		// each agent phase, so on resume the under-count is at most one in-flight phase's partial
+		// (cost.go seed/SpentUsdMicros documents it). An unbudgeted run feeds nothing, so this
 		// is 0 and the checkpoint's spent_usd_micros stays omitempty (byte-identical).
 		cp := persist.Checkpoint{
 			Workflow: wf.Stage, Mode: o.mode, Iteration: i,
@@ -296,6 +305,33 @@ func checkpointHook(o runOpts, wf asset.Workflow, tracer *trace.Tracer, budget *
 		}
 		recordMemory(o.root, wf, i, sig, logln)
 		emitTrace(tracer, trace.Event{Kind: "iteration", Name: fmt.Sprintf("%d", i), Status: status, DurationMs: durationMs, Detail: detail}, logln)
+	}
+}
+
+// phaseCheckpointHook builds the loop's iteration-aware OnPhase callback: after each
+// agent phase completes MID-iteration, it persists a PHASE-granular checkpoint so a
+// crash resumes at the next unstarted phase instead of replaying every completed
+// (billed) agent phase (the resume gap for a crash in qa: planner+implementer+reviewer
+// re-spawn). It PRESERVES the last completed iteration's measured signals — read from
+// the on-disk checkpoint the per-iteration hook wrote, since a phase checkpoint has no
+// fresh measurement of its own — advancing only PhaseIndex (phaseIdx+1) and the
+// up-to-the-phase cumulative spend (a FINER budget re-seed than the iteration-granular
+// one, shrinking the cross-resume under-count to at most one in-flight phase). At a
+// clean iteration boundary checkpointHook overwrites this with PhaseIndex=0, so a
+// fully-completed iteration resumes from phase 0 exactly as before. Fail-LOUD-and-
+// continue like checkpointHook: a write failure WARNs but never aborts the loop.
+func phaseCheckpointHook(o runOpts, wf asset.Workflow, budget *runBudget, logln func(string)) func(iter, phaseIdx int) {
+	return func(iter, phaseIdx int) {
+		prev, _, _ := persist.Load(checkpointPath(o.root)) // not-found/malformed -> zero signals
+		cp := persist.Checkpoint{
+			Workflow: wf.Stage, Mode: o.mode, Iteration: iter - 1,
+			RoadmapCompletion: prev.RoadmapCompletion, GatesGreen: prev.GatesGreen,
+			PhaseIndex: phaseIdx + 1, Reason: "phase complete (mid-iteration)",
+			UpdatedAtUnix: time.Now().Unix(), SpentUsdMicros: budget.SpentUsdMicros(),
+		}
+		if err := persist.Save(checkpointPath(o.root), cp); err != nil {
+			logln(fmt.Sprintf("forge evolve: WARNING phase checkpoint write failed (recovery state NOT durable): %v", err))
+		}
 	}
 }
 

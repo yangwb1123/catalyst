@@ -346,6 +346,57 @@ export function resolveEnforce(root, fallback) {
   return computeEnforce(modes, project?.mode, project?.lifecycle, fallback);
 }
 
+// --- file-size cap: mode×lifecycle resolution (central knob -> max_file_lines) -
+//
+// The THIRD harness knob's sibling to the coverage + enforce pairs above. The gate
+// read its per-file line cap from policies.yml's single GLOBAL max_file_lines,
+// ignoring the project's mode (explorer declares `max_file_lines: 800` to tolerate
+// prototypes; balanced/engineering 500) AND the lifecycle veto (production must
+// tighten a loose mode back down — "explorer+production 也必须过全闸门"). These
+// resolve the cap from the same mode×lifecycle knob, with the identical fail-safe.
+
+// computeMaxFileLines: the PURE mode×lifecycle resolution of the per-file line cap
+// (no I/O), so the clamp + fail-safe branches are unit-testable. Inputs: the parsed
+// modes.yml object (parseRules shape), the project's mode/lifecycle, and the
+// policies.yml max_file_lines as the conservative FALLBACK (gate.mjs owns it).
+//   base    = modes.modes[mode].harness.max_file_lines  (explorer 800 / balanced
+//             500 / engineering 500; cto declares none -> fallback);
+//   ceiling = modes.lifecycle_modifiers[lifecycle].max_file_lines  (production 500;
+//             other lifecycles declare none).
+//   cap = min(base, ceiling) when a ceiling exists, else base.
+// TIGHTEN-ONLY (the central-knob invariant): file-size is stricter when SMALLER, so
+// a lifecycle ceiling can only LOWER the cap (production clamps explorer's 800 to
+// 500), never raise a stricter base. FAIL-SAFE: a missing/non-positive base falls
+// back to `fallback` (so cto / an absent field keeps the gate's default); a
+// missing/garbage ceiling is simply ignored (base passes through).
+export function computeMaxFileLines(modes, mode, lifecycle, fallback) {
+  const base = Number(modes?.modes?.[mode]?.harness?.max_file_lines);
+  const eff = Number.isFinite(base) && base > 0 ? base : fallback;
+  const ceiling = Number(modes?.lifecycle_modifiers?.[lifecycle]?.max_file_lines);
+  if (Number.isFinite(ceiling) && ceiling > 0) return Math.min(eff, ceiling);
+  return eff;
+}
+
+// resolveMaxFileLines: the I/O boundary for computeMaxFileLines — the wire from the
+// central knob (mode×lifecycle in project.yml) into the gate's per-file line cap,
+// replacing gate.mjs's direct read of policies.yml's GLOBAL max_file_lines. Reads
+// project.yml for {mode, lifecycle} and modes.yml for the base+ceiling; `fallback`
+// is the already-validated positive integer gate.mjs parsed from policies.yml.
+// FAIL-SAFE: ANY failure to read/parse either file (missing/unreadable/malformed)
+// -> the fallback, so a project without a .agent/ keeps the policies default and the
+// gate stays backward-compatible (this repo's engineering×mvp still resolves to 500).
+export function resolveMaxFileLines(root, fallback) {
+  let modes;
+  let project;
+  try {
+    project = parseRules(readFileSync(join(root, '.agent', 'project.yml'), 'utf8'));
+    modes = parseRules(readFileSync(join(root, '.agent', 'policies', 'modes.yml'), 'utf8'));
+  } catch {
+    return fallback;
+  }
+  return computeMaxFileLines(modes, project?.mode, project?.lifecycle, fallback);
+}
+
 // coverageUnrunnable: did a coverage command fail because the tool could not
 // actually RUN here — no module / no tests / unconfigured — as opposed to
 // producing a real (below-threshold or failing-test) coverage result? Such a

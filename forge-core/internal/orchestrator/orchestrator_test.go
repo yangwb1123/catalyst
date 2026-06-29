@@ -85,6 +85,43 @@ func TestRun_AllGatesOK(t *testing.T) {
 	}
 }
 
+// OnPhase is the per-phase checkpoint hook: it must fire once per COMPLETED AGENT
+// phase with that phase's workflow index — never for a gate phase (gates re-run
+// idempotently on resume, so re-validating one is cheap; the cost worth saving is a
+// re-spawned billed agent phase) and never for a mode-skipped phase. A nil OnPhase
+// (every other test) is a no-op, so the per-iteration-only path stays unchanged.
+func TestRunFrom_OnPhaseFiresPerCompletedAgentPhase(t *testing.T) {
+	wf := loadFixture(t)
+	rec := &recorder{}
+	var fired []int
+	eng := Engine{Exec: rec.executor(), RunGate: allOK, Log: rec.log,
+		OnPhase: func(i int) { fired = append(fired, i) }}
+	if err := eng.Run(wf, "balanced"); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	// Expected indices = the workflow positions of the phases the executor actually ran
+	// (the agent phases); gate phases never reach the OnPhase call site.
+	var want []int
+	for _, name := range rec.executed {
+		for i, p := range wf.Phases {
+			if p.Name == name {
+				want = append(want, i)
+			}
+		}
+	}
+	if len(fired) == 0 {
+		t.Fatal("OnPhase never fired — the per-phase checkpoint hook is dead")
+	}
+	if len(fired) != len(want) {
+		t.Fatalf("OnPhase fired %d times %v, want %d (the agent phases %v at %v)", len(fired), fired, len(want), rec.executed, want)
+	}
+	for k := range want {
+		if fired[k] != want[k] {
+			t.Errorf("OnPhase[%d] = %d, want %d (agent phase %q); fired=%v want=%v", k, fired[k], want[k], rec.executed[k], fired, want)
+		}
+	}
+}
+
 func TestRun_GateFailureStops(t *testing.T) {
 	wf := loadFixture(t)
 	rec := &recorder{}

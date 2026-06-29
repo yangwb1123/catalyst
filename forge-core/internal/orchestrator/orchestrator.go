@@ -29,68 +29,7 @@ import (
 	"forgeos/forge-core/internal/asset"
 	"forgeos/forge-core/internal/gate"
 	"forgeos/forge-core/internal/mode"
-	"forgeos/forge-core/internal/routing"
 )
-
-// AgentExecutor performs the agent action for one phase under a mode. A real
-// implementation would drive an LLM agent; DryRunExecutor only narrates.
-type AgentExecutor interface {
-	Execute(p asset.Phase, mode string) error
-}
-
-// DryRunExecutor is the zero-LLM executor: it logs the resolved routing for a
-// phase and returns nil. Log defaults to a no-op when nil, so the executor is
-// safe to use without configuration.
-type DryRunExecutor struct {
-	Log func(string)
-}
-
-// Execute narrates the phase as "phase <name> -> agent <agent> (tier <tier>)",
-// taking the tier from PhaseTier so a workflow's per-phase model_tier override is
-// honored (raise-only, never below the safety floor — see PhaseTier).
-func (d DryRunExecutor) Execute(p asset.Phase, mode string) error {
-	tier := PhaseTier(p, mode)
-	d.logf("phase %s -> agent %s (tier %s)", p.Name, p.Agent, tier)
-	return nil
-}
-
-// PhaseTier resolves the model tier for a phase under a mode, honoring an
-// OPTIONAL per-phase model_tier OVERRIDE authored in the workflow asset. Exported
-// because the REAL executor (cmd/forge) maps it onto `claude --model <tier>`, so a
-// real run honors the routed tier — not just the dry-run narration.
-//
-// The base is routing.TierFor(agent, mode) — the routed verdict, which already
-// applies the non-negotiable Opus SAFETY FLOOR for judgement-only agents
-// (architect/cto/reviewer) and the per-agent/mode floors. When the phase declares
-// a model_tier, it is combined with the base via routing.Higher: the override can
-// only RAISE the tier, never lower it below the floor. So a phase that writes
-// model_tier: opus on a plain agent routes to Opus (override lifts), while a phase
-// that writes model_tier: haiku on the reviewer STILL routes to Opus (the safety
-// floor in TierFor wins — the override cannot sink it). An empty model_tier (the
-// fault-tolerant default) yields exactly TierFor's verdict, so a workflow without
-// the field is byte-for-byte unchanged.
-//
-// HONESTY: model_tier is an explicit author override, but the safety floor
-// (reviewer/architect/cto -> Opus) is supreme — overrides are raise-only. Under the
-// dry-run executor the tier is narration only; under the command executor it is
-// passed to `claude --model`, so the routed tier actually drives the model.
-func PhaseTier(p asset.Phase, mode string) string {
-	base := routing.TierFor(p.Agent, mode)
-	if p.ModelTier == "" {
-		return base
-	}
-	// Argument order matters: Higher returns its FIRST argument on a rank tie, so
-	// pass base first. An UNRECOGNIZED model_tier ranks as the cheapest (rank 0)
-	// and ties with a haiku base — keeping base first means a garbage override can
-	// never displace a valid routed tier, only a strictly-higher known tier lifts.
-	return routing.Higher(base, p.ModelTier)
-}
-
-func (d DryRunExecutor) logf(format string, args ...any) {
-	if d.Log != nil {
-		d.Log(fmt.Sprintf(format, args...))
-	}
-}
 
 // Engine runs a workflow. Exec performs agent phases; RunGate runs one named
 // gate and reports its Result (injected so tests can supply a fake and the CLI
@@ -197,6 +136,15 @@ type Engine struct {
 	// its deadline and never sleeps), so a nil Sleep leaves every pre-existing path byte-for-byte
 	// unchanged. See runAgentPhase, overloadBackoff, and Engine.sleep (backoff.go).
 	Sleep func(time.Duration)
+	// OnPhase is an OPTIONAL post-phase checkpoint hook: RunFrom fires it with the
+	// index of each AGENT phase that just COMPLETED cleanly (not a gate phase, not a
+	// loop-back jump, not a mode-skipped phase). cmd/forge uses it to persist a
+	// PHASE-granular checkpoint so a crash mid-iteration resumes at the next unstarted
+	// phase instead of replaying every completed (expensively-billed) agent phase. The
+	// engine stays iteration-oblivious — it reports only the phase index; the caller
+	// (LoopEngine) supplies the iteration context. nil = no per-phase checkpoint
+	// (byte-for-byte the pre-existing per-iteration-only behavior).
+	OnPhase func(phaseIdx int)
 }
 
 // reviewerRequestChanges is the one verdict token that triggers an agent-phase
@@ -272,6 +220,13 @@ func (e Engine) RunFrom(wf asset.Workflow, mode string, start int) error {
 		if target, jumped := e.agentOutcome(wf, p, &loopBacks); jumped {
 			i = target - 1 // -1 because the for-loop will ++ back to target
 			continue
+		}
+		// Agent phase i completed cleanly (no loop-back): checkpoint progress so a
+		// crash before the next phase resumes at i+1, not phase 0. Only agent phases
+		// fire this — gate phases re-run idempotently on resume, so re-validating one
+		// is cheap; the cost worth saving is a re-spawned (billed) agent phase.
+		if e.OnPhase != nil {
+			e.OnPhase(i)
 		}
 	}
 	e.reportStop(wf)

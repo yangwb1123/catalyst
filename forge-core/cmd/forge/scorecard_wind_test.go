@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"forgeos/forge-core/internal/asset"
-	"forgeos/forge-core/internal/orchestrator"
 )
 
 // writeTrace drops a trace.jsonl with the given lines under <root>/.forge, returning root.
@@ -26,37 +25,42 @@ func writeTrace(t *testing.T, root string, lines ...string) {
 	}
 }
 
-// distinctScorecardPairs derives the (model, task_type) pairs the run attributes to:
-// PhaseTier(p,mode) x agentTaskType[agent], DEDUPED, with unmapped (harness) phases
-// SKIPPED. Two implementer phases at the same tier must collapse to one pair, and the
-// harness/gate phase must produce none.
-func TestDistinctScorecardPairs_DedupAndSkipUnmapped(t *testing.T) {
+// distinctScorecardPairs reads the DISTINCT (model, task_type) pairs the run actually BILLED
+// from the trace's model-stamped cost events: two implementer phases at the SAME stamped model
+// collapse to one pair, a phase with no cost event (the harness/gate phase) contributes none,
+// and the model comes from the trace (the actual billed tier), not a recomputed route.
+func TestDistinctScorecardPairs_FromTraceDedupAndSkipUnbilled(t *testing.T) {
 	wf := asset.Workflow{Phases: []asset.Phase{
 		{Name: "plan", Agent: "planner"},
 		{Name: "impl-a", Agent: "implementer"},
-		{Name: "impl-b", Agent: "implementer"}, // same (tier, implementation) as impl-a -> dedup
-		{Name: "gate", Agent: "harness"},       // no mapping -> skipped entirely
+		{Name: "impl-b", Agent: "implementer"}, // same stamped model -> dedup with impl-a
+		{Name: "gate", Agent: "harness"},        // a gate phase bills no cost event
 		{Name: "review", Agent: "reviewer"},
 	}}
-	pairs := distinctScorecardPairs(wf, "balanced")
+	root := t.TempDir()
+	writeTrace(t, root,
+		`{"seq":1,"kind":"agent","name":"plan","status":"ok","cost_usd_micros":10000,"model":"opus"}`,
+		`{"seq":2,"kind":"agent","name":"impl-a","status":"ok","cost_usd_micros":20000,"model":"sonnet"}`,
+		`{"seq":3,"kind":"agent","name":"impl-b","status":"ok","cost_usd_micros":21000,"model":"sonnet"}`,
+		`{"seq":4,"kind":"gate","name":"gate","status":"PASS","duration_ms":900}`, // no model/cost
+		`{"seq":5,"kind":"agent","name":"review","status":"ok","cost_usd_micros":30000,"model":"opus"}`,
+	)
+	pairs := distinctScorecardPairs(wf, tracePath(root))
 
-	// The invariant: the result is exactly the DISTINCT set of (PhaseTier, task_type)
-	// over the MAPPED phases — harness skipped, planner+implementer folded to the
-	// implementation bucket (deduped if they share a tier), reviewer its own pair. We
-	// rebuild that expected set the same way the producer does and compare counts.
+	// Expected = the DISTINCT (stamped model, agent task_type) over the BILLED phases.
 	want := map[scorecardPair]bool{}
-	for _, p := range []asset.Phase{
-		{Agent: "planner"}, {Agent: "implementer"}, {Agent: "reviewer"},
+	for _, e := range []struct{ agent, model string }{
+		{"planner", "opus"}, {"implementer", "sonnet"}, {"reviewer", "opus"},
 	} {
-		tt, _ := taskTypeForAgent(p.Agent)
-		want[scorecardPair{model: orchestrator.PhaseTier(p, "balanced"), taskType: tt}] = true
+		tt, _ := taskTypeForAgent(e.agent)
+		want[scorecardPair{model: e.model, taskType: tt}] = true
 	}
 
 	got := map[scorecardPair]int{}
 	for _, p := range pairs {
 		got[p]++
 		if !want[p] {
-			t.Errorf("unexpected pair %+v (harness must be skipped; only mapped roles emit)", p)
+			t.Errorf("unexpected pair %+v (the gate phase bills nothing; only billed roles emit)", p)
 		}
 		if got[p] > 1 {
 			t.Errorf("pair %+v appears %d times; pairs must be distinct", p, got[p])
@@ -67,14 +71,35 @@ func TestDistinctScorecardPairs_DedupAndSkipUnmapped(t *testing.T) {
 	}
 }
 
-// A workflow whose phases are ALL unmapped (e.g. only harness/gate phases) yields no
-// pairs — nothing to attribute.
-func TestDistinctScorecardPairs_AllUnmappedYieldsNone(t *testing.T) {
-	wf := asset.Workflow{Phases: []asset.Phase{
-		{Name: "g1", Agent: "harness"}, {Name: "g2", Agent: "gate"},
-	}}
-	if pairs := distinctScorecardPairs(wf, "balanced"); len(pairs) != 0 {
-		t.Errorf("all-unmapped workflow must yield no pairs; got %+v", pairs)
+// THE ATTRIBUTION FIX: a phase whose routed tier was sonnet but which budget-DOWN-TIERED to
+// haiku near the cap is stamped by costEmitter with the model it ACTUALLY ran (haiku). The
+// pair must carry that STAMPED model — not the un-adjusted route — else a scorecard-update
+// query for the original tier finds zero matching cost and the down-tiered spend is LOST.
+func TestDistinctScorecardPairs_BudgetDowngradeAttributedToActualModel(t *testing.T) {
+	wf := asset.Workflow{Phases: []asset.Phase{{Name: "impl", Agent: "implementer"}}}
+	root := t.TempDir()
+	// implementer normally routes to sonnet; near budget it ran (and was stamped) as haiku.
+	writeTrace(t, root,
+		`{"seq":1,"kind":"agent","name":"impl","status":"ok","cost_usd_micros":4000,"model":"haiku"}`,
+	)
+	pairs := distinctScorecardPairs(wf, tracePath(root))
+	ttImpl, _ := taskTypeForAgent("implementer")
+	want := scorecardPair{model: "haiku", taskType: ttImpl}
+	if len(pairs) != 1 || pairs[0] != want {
+		t.Errorf("down-tiered cost must attribute to the ACTUAL stamped model %+v, got %+v", want, pairs)
+	}
+}
+
+// A trace with NO billed (model+cost) event — only iteration/gate rows — yields no pairs:
+// nothing was paid for, so nothing is attributed (mirrors traceHasModelCost's gate-out).
+func TestDistinctScorecardPairs_NoBilledCostYieldsNone(t *testing.T) {
+	wf := asset.Workflow{Phases: []asset.Phase{{Name: "impl", Agent: "implementer"}}}
+	root := t.TempDir()
+	writeTrace(t, root,
+		`{"seq":1,"kind":"iteration","name":"1","status":"ok","duration_ms":4200}`,
+	)
+	if pairs := distinctScorecardPairs(wf, tracePath(root)); len(pairs) != 0 {
+		t.Errorf("a trace with no billed cost must yield no pairs; got %+v", pairs)
 	}
 }
 
@@ -166,8 +191,8 @@ func TestWindDownScorecards_SkipsWhenNoRealCost(t *testing.T) {
 // never signals failure back (the run's exit code is the caller's, set before this).
 func TestWindDownScorecards_FailLoudAndContinue(t *testing.T) {
 	root := t.TempDir() // no harness/ dir -> the node shell-out fails to find the script
-	writeTrace(t, root,
-		`{"seq":1,"kind":"agent","name":"implementer","status":"ok","cost_usd_micros":54404,"model":"sonnet"}`,
+	writeTrace(t, root, // event name MUST match the phase name "impl" (mapped to its task_type)
+		`{"seq":1,"kind":"agent","name":"impl","status":"ok","cost_usd_micros":54404,"model":"sonnet"}`,
 	)
 	wf := asset.Workflow{Phases: []asset.Phase{{Name: "impl", Agent: "implementer"}}}
 	var warned int

@@ -2,10 +2,13 @@
 //
 // The loop's recovery state lives in process memory, so a crash mid-run means
 // replaying from scratch and discarding already-completed work. This package
-// owns the storage layer for that state: a single Checkpoint snapshot written
-// after each iteration and read back on startup to resume where the loop left
-// off. (Wiring it into the loop — write-per-round, resume-on-start — is a later
-// wave; this wave delivers only read/write with atomic persistence.)
+// owns the storage layer for that state: a Checkpoint snapshot written after each
+// completed iteration AND after each completed agent phase (PhaseIndex), read back
+// on startup so a --resume continues where the loop left off — re-entering the
+// in-progress iteration at the next unstarted phase rather than replaying it. The
+// loop wiring (write-per-iteration/phase via cmd/forge's OnIteration/OnPhase hooks,
+// resume-on-start via resumeStart) lives in cmd/forge; this package is the pure
+// read/write storage layer with atomic persistence.
 //
 // Two properties matter most here, and both are about not lying to the caller:
 //
@@ -45,8 +48,17 @@ import (
 type Checkpoint struct {
 	Workflow          string  `json:"workflow"`           // workflow asset being run (e.g. "build")
 	Mode              string  `json:"mode"`               // execution mode the loop was driving under
-	Iteration         int     `json:"iteration"`          // count of iterations already completed
+	Iteration         int     `json:"iteration"`          // count of iterations already COMPLETED
 	RoadmapCompletion float64 `json:"roadmap_completion"` // last observed completion fraction in [0,1]
+	// PhaseIndex is PHASE-granular resume progress WITHIN the in-progress iteration
+	// (Iteration+1): the index of the next phase to run. 0 (the default, and what a
+	// per-iteration checkpoint resets it to at a clean iteration boundary) means "start
+	// the next iteration from phase 0" — byte-for-byte the pre-phase-granular behavior.
+	// A value > 0 is written after each agent phase completes mid-iteration, so a crash
+	// resumes at that phase instead of replaying every completed (billed) agent phase.
+	// omitempty keeps a checkpoint written before this field existed (and any clean
+	// iteration-boundary checkpoint) byte-identical on disk and decoding to 0.
+	PhaseIndex int `json:"phase_index,omitempty"`
 	GatesGreen        bool    `json:"gates_green"`        // whether all required gates were green at the snapshot
 	Reason            string  `json:"reason"`             // why the loop last stopped (for resume context)
 	UpdatedAtUnix     int64   `json:"updated_at_unix"`    // caller-supplied snapshot time (Unix seconds)

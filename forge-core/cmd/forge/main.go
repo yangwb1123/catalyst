@@ -25,6 +25,7 @@ import (
 	"forgeos/forge-core/internal/converge"
 	"forgeos/forge-core/internal/gate"
 	"forgeos/forge-core/internal/mode"
+	"forgeos/forge-core/internal/orchestrator"
 )
 
 // maxLoopBack is the conservative ceiling on DIRECTED gate loop-backs per run
@@ -197,6 +198,13 @@ type runOpts struct {
 	// human_gate honestly awaits a human and never auto-converges. Irrelevant to
 	// conjunction/external stops, so it leaves those runs unchanged.
 	approved bool
+	// parallel OPTS INTO the concurrent orchestrator (orchestrator.RunParallel): a
+	// workflow's depends_on declarations group phases into dependency WAVES and the
+	// independent phases within a wave run concurrently. SAFE-BY-DEFAULT: it takes
+	// effect ONLY for a workflow that DECLARES depends_on (declaresDependsOn) — a
+	// spine workflow with no declared deps would be wrong to run all-concurrent, so it
+	// stays on the serial engine (with a note). Default false = serial, byte-for-byte.
+	parallel bool
 }
 
 // bindRunOpts registers the flags shared by `forge run` and `forge evolve` onto
@@ -217,6 +225,46 @@ func bindRunOpts(fs *flag.FlagSet, o *runOpts) {
 	fs.IntVar(&o.maxAgentCalls, "max-agent-calls", 0, "per-run ceiling on agent-phase executions for --executor=command (0 = unbounded; for evolve this is PER-ITERATION, total <= max-iter x this)")
 	fs.IntVar(&o.maxOutputBytes, "max-output-bytes", 0, "cap on retained agent stdout+stderr per command (0 = safe default 10MiB; prevents a runaway-output OOM)")
 	fs.BoolVar(&o.approved, "approved", false, "supply the human-approval signal for a human_gate workflow (or create <root>/.forge/<stage>.approved)")
+	fs.BoolVar(&o.parallel, "parallel", false, "run a workflow's depends_on-independent phases CONCURRENTLY (dependency waves); takes effect ONLY for a workflow that declares depends_on (else stays serial). No directed loop-back in parallel mode.")
+}
+
+// declaresDependsOn reports whether ANY phase in the workflow declares depends_on — the
+// gate for --parallel. A workflow with no declared deps is NOT run concurrently (running a
+// sequential spine all-at-once would be wrong); only an explicitly dependency-structured
+// workflow opts into RunParallel.
+func declaresDependsOn(wf asset.Workflow) bool {
+	for _, p := range wf.Phases {
+		if len(p.DependsOn) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// parallelEnabled reports whether --parallel should drive the CONCURRENT engine for this
+// workflow: true ONLY when --parallel is set AND the workflow declares depends_on. When
+// --parallel is set but the workflow declares none, it logs that the flag was IGNORED
+// (running a no-deps sequential spine all-at-once would be wrong) so the operator is never
+// silently dropped. ctx is the "forge run"/"forge evolve" message prefix. Shared by run +
+// evolve so the gate and its honest fallback message stay in lockstep.
+func parallelEnabled(o runOpts, wf asset.Workflow, logln func(string), ctx string) bool {
+	if !o.parallel {
+		return false
+	}
+	if declaresDependsOn(wf) {
+		return true
+	}
+	logln(ctx + ": --parallel ignored (workflow declares no depends_on) — running serially")
+	return false
+}
+
+// runWorkflow dispatches a single-pass `forge run` to the PARALLEL engine when
+// parallelEnabled, else the SERIAL engine (the byte-for-byte default).
+func runWorkflow(eng orchestrator.Engine, wf asset.Workflow, o runOpts, logln func(string)) error {
+	if parallelEnabled(o, wf, logln, "forge run") {
+		return eng.RunParallel(wf, o.mode)
+	}
+	return eng.Run(wf, o.mode)
 }
 
 // cmdRun parses flags, loads + transcodes the workflow, and runs the engine.
@@ -301,21 +349,25 @@ func execEngine(wf asset.Workflow, o runOpts) int {
 		return 1
 	}
 	eng := buildRunEngine(wf, o, logln, costEmitter(tracer, logln), harnessRunner(o.root, probe), pol, budget)
+	// Learning-loop wind-down: attribute this run's REAL billed cost into the scorecards
+	// REGARDLESS of outcome — DEFERRED so a run that fails or exhausts its --run-budget-usd
+	// mid-way (the highest-cost, most-informative cases — a REJECTED build is the most useful
+	// quality sample) still attributes what it billed, matching `forge evolve`'s unconditional
+	// placement. The previous success-only call dropped exactly those, biasing scorecards toward
+	// successes. Registered AFTER `defer closeTrace()` above so it runs BEFORE it (LIFO) — the
+	// trace it reads is still open, per scorecard_wind.go's flush-ordering invariant. Still
+	// gate-on-real-cost (a dry/echo or nothing-billed failure skips it) + fail-loud-and-continue
+	// (a producer hiccup never flips the run's exit code, set before these defers fire).
+	defer windDownScorecards(wf, o, logln)
 	fmt.Printf("forge run: stage=%s mode=%s lifecycle=%s executor=%s gates=%v reviewer=%v discover=%s design=%s adr=%v (%d phases)\n",
 		wf.Stage, o.mode, lifecycle, o.executor, pol.Gates, pol.Reviewer,
 		pol.DiscoverDepth, pol.DesignDepth, pol.ADR, len(wf.Phases))
-	if err := eng.Run(wf, o.mode); err != nil {
+	if err := runWorkflow(eng, wf, o, logln); err != nil {
 		fmt.Fprintf(os.Stderr, "forge run: %v\n", err)
 		return 1
 	}
 	fmt.Println("forge run: workflow completed")
 	reportConvergence(wf, o.root, probe, categories, lifecycle, o.approved)
-	// Learning-loop wind-down: attribute this run's REAL billed cost into the
-	// scorecards. It runs BEFORE the deferred closeTrace() (so the trace file it reads
-	// is still being written, per scorecard_wind.go's flush-ordering invariant) and is
-	// gate-on-real-cost + fail-loud-and-continue, so a dry/echo run skips it and a
-	// producer hiccup never flips this clean run's exit code.
-	windDownScorecards(wf, o, logln)
 	return 0
 }
 

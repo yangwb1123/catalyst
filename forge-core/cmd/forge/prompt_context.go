@@ -20,6 +20,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"forgeos/forge-core/internal/asset"
@@ -37,6 +38,7 @@ import (
 // gate execution to guard against. Should the engine ever parallelize phases, this
 // premise breaks and the ledger would need a mutex.
 type gateLedger struct {
+	mu     sync.Mutex        // guards status+order under the OPT-IN parallel orchestrator
 	status map[string]string // gate name -> latest verdict ("ok" | "N/A" | "FAILED")
 	order  []string          // gate names in first-seen order (stable rendering)
 }
@@ -55,6 +57,8 @@ func (l *gateLedger) record(name, status string) {
 	if l == nil {
 		return
 	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	if _, seen := l.status[name]; !seen {
 		l.order = append(l.order, name)
 	}
@@ -69,7 +73,12 @@ func (l *gateLedger) record(name, status string) {
 // its turn on permission-denied re-runs of checks the harness already objectively
 // settled. Each gate renders as "- <name>: <verdict>" in first-seen order.
 func (l *gateLedger) context() string {
-	if l == nil || len(l.order) == 0 {
+	if l == nil {
+		return ""
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if len(l.order) == 0 {
 		return ""
 	}
 	var b strings.Builder
@@ -108,10 +117,11 @@ const phaseOutputSummaryCap = 800
 // contextLines() into a LATER phase's prompt) — the EXACT structural mirror of
 // gateLedger, but carrying planner-style planning output instead of gate verdicts.
 //
-// CONCURRENCY: deliberately lock-free, on the same premise as gateLedger — the
-// orchestrator runs phases strictly sequentially, so record and contextLines never
-// race. Should phases ever parallelize, this ledger would need a mutex too.
+// CONCURRENCY: mu guards summary+order for the OPT-IN parallel orchestrator (the
+// parallelize-then-lock the prior comment foresaw); the serial path takes the
+// uncontended lock and is byte-for-byte unchanged.
 type phaseOutputLedger struct {
+	mu      sync.Mutex        // guards summary+order under parallel execution
 	summary map[string]string // phase name -> latest (truncated) output summary
 	order   []string          // phase names in first-seen order (stable rendering)
 }
@@ -131,6 +141,8 @@ func (l *phaseOutputLedger) record(phase, output string) {
 	if l == nil {
 		return
 	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	if _, seen := l.summary[phase]; !seen {
 		l.order = append(l.order, phase)
 	}
@@ -155,7 +167,12 @@ func truncateSummary(s string) string {
 // gate verdict, NOT a fabricated fact. Each phase renders as a labeled block in
 // first-seen order.
 func (l *phaseOutputLedger) context() string {
-	if l == nil || len(l.order) == 0 {
+	if l == nil {
+		return ""
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if len(l.order) == 0 {
 		return ""
 	}
 	var b strings.Builder
@@ -186,9 +203,10 @@ func (l *phaseOutputLedger) contextLines() []string {
 // record, and the orchestrator reads it back via get. Storing the NORMALIZED token
 // (not the raw output) keeps the engine vendor-free.
 //
-// CONCURRENCY: lock-free on the same premise as gateLedger/phaseOutputLedger — phases
-// run strictly sequentially, so record and get never race.
+// CONCURRENCY: mu guards verdict for the OPT-IN parallel orchestrator (uncontended,
+// byte-for-byte unchanged on the serial path).
 type verdictLedger struct {
+	mu      sync.Mutex
 	verdict map[string]string // phase name -> latest normalized verdict token
 }
 
@@ -202,6 +220,8 @@ func (l *verdictLedger) record(phase, verdict string) {
 	if l == nil {
 		return
 	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	l.verdict[phase] = verdict
 }
 
@@ -212,6 +232,8 @@ func (l *verdictLedger) get(phase string) (string, bool) {
 	if l == nil {
 		return "", false
 	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	v, ok := l.verdict[phase]
 	return v, ok
 }
@@ -225,8 +247,10 @@ func (l *verdictLedger) get(phase string) (string, bool) {
 // preserving its fresh-context independence (the D3/AGENTS red line: a reviewer must not
 // read its own prior self-report).
 //
-// CONCURRENCY: lock-free on the same sequential-phase premise as the sibling ledgers.
+// CONCURRENCY: mu guards findings for the OPT-IN parallel orchestrator, as the sibling
+// ledgers do (uncontended on the serial path).
 type reviewFindingsLedger struct {
+	mu       sync.Mutex
 	findings map[string]string // loop-back TARGET phase -> latest (truncated) findings
 }
 
@@ -243,6 +267,8 @@ func (l *reviewFindingsLedger) record(targetPhase, findings string) {
 	if l == nil {
 		return
 	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	l.findings[targetPhase] = truncateSummary(findings)
 }
 
@@ -255,7 +281,9 @@ func (l *reviewFindingsLedger) contextLines(name string) []string {
 	if l == nil {
 		return nil
 	}
+	l.mu.Lock()
 	f, ok := l.findings[name]
+	l.mu.Unlock()
 	if !ok || f == "" {
 		return nil
 	}

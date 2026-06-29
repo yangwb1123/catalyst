@@ -272,26 +272,35 @@ func TestEvolve_WritesCheckpointAndResumes(t *testing.T) {
 func TestResumeStart_Paths(t *testing.T) {
 	root := t.TempDir()
 
-	// No --resume: fresh sentinel, no IO, no error, zero-spend seed.
-	if start, prev, spent, err := resumeStart(root, false); err != nil || start != 0 || prev != -1.0 || spent != 0 {
-		t.Errorf("no-resume = (%d,%v,%d,%v), want (0,-1,0,nil)", start, prev, spent, err)
+	// No --resume: fresh sentinel, no IO, no error, zero-spend seed, phase 0.
+	if start, prev, spent, phase, err := resumeStart(root, false); err != nil || start != 0 || prev != -1.0 || spent != 0 || phase != 0 {
+		t.Errorf("no-resume = (%d,%v,%d,%d,%v), want (0,-1,0,0,nil)", start, prev, spent, phase, err)
 	}
-	// --resume, no checkpoint file present: tolerated as a fresh start (zero spend).
-	if start, prev, spent, err := resumeStart(root, true); err != nil || start != 0 || prev != -1.0 || spent != 0 {
-		t.Errorf("resume+missing = (%d,%v,%d,%v), want (0,-1,0,nil)", start, prev, spent, err)
+	// --resume, no checkpoint file present: tolerated as a fresh start (zero spend, phase 0).
+	if start, prev, spent, phase, err := resumeStart(root, true); err != nil || start != 0 || prev != -1.0 || spent != 0 || phase != 0 {
+		t.Errorf("resume+missing = (%d,%v,%d,%d,%v), want (0,-1,0,0,nil)", start, prev, spent, phase, err)
 	}
-	// --resume with a present, valid checkpoint: continue at Iteration+1, seed prev AND
-	// return the persisted spend so the budget can re-seed across the resume.
+	// --resume with a present, valid ITERATION-BOUNDARY checkpoint (PhaseIndex 0): continue
+	// at Iteration+1, seed prev AND the persisted spend, phase 0 (replay the iteration in full).
 	cp := persist.Checkpoint{Workflow: "evolve", Iteration: 5, RoadmapCompletion: 0.6, SpentUsdMicros: 1_250_000}
 	if err := persist.Save(checkpointPath(root), cp); err != nil {
 		t.Fatalf("seed checkpoint: %v", err)
 	}
-	if start, prev, spent, err := resumeStart(root, true); err != nil || start != 6 || prev != 0.6 || spent != 1_250_000 {
-		t.Errorf("resume+valid = (%d,%v,%d,%v), want (6,0.6,1250000,nil)", start, prev, spent, err)
+	if start, prev, spent, phase, err := resumeStart(root, true); err != nil || start != 6 || prev != 0.6 || spent != 1_250_000 || phase != 0 {
+		t.Errorf("resume+valid = (%d,%v,%d,%d,%v), want (6,0.6,1250000,0,nil)", start, prev, spent, phase, err)
+	}
+	// --resume with a MID-ITERATION checkpoint (PhaseIndex > 0): resume re-enters the
+	// in-progress iteration AT that phase (phase-granular), not from phase 0.
+	mid := persist.Checkpoint{Workflow: "evolve", Iteration: 5, RoadmapCompletion: 0.6, PhaseIndex: 3, SpentUsdMicros: 2_000_000}
+	if err := persist.Save(checkpointPath(root), mid); err != nil {
+		t.Fatalf("seed mid checkpoint: %v", err)
+	}
+	if start, _, spent, phase, err := resumeStart(root, true); err != nil || start != 6 || phase != 3 || spent != 2_000_000 {
+		t.Errorf("resume+mid-iteration = (start %d, phase %d, spent %d, %v), want (6,3,2000000,nil)", start, phase, spent, err)
 	}
 	// --resume with a MALFORMED checkpoint: hard error, no silent from-scratch.
 	writeFile(t, checkpointPath(root), "{not valid json")
-	if start, _, _, err := resumeStart(root, true); err == nil || start != 0 {
+	if start, _, _, _, err := resumeStart(root, true); err == nil || start != 0 {
 		t.Errorf("resume+malformed must error out (got start=%d err=%v)", start, err)
 	}
 }

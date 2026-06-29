@@ -27,7 +27,14 @@ export function extractFunctions(text, lang) {
 // Header detectors for brace-delimited languages, each returning a function name
 // (or null). Declaration-only, so inline callbacks add no phantom functions — the
 // enclosing function's brace span already covers them.
-const GO_HEADER = /^\s*func\s+(?:\([^)]*\)\s*)?([A-Za-z0-9_]+)?\s*[<(]/;
+// The trailing `[[(]` admits a Go generic free function `func Map[T any](...)`
+// (the name is followed by a type-parameter `[`) alongside the ordinary `(` param
+// list. Go has NO `func Name<` form, so the previous `[<(]` (a stray `<`) matched
+// nothing useful and DROPPED every generic free function — a >50-line generic body
+// then bypassed the function-length budget entirely. Generic METHODS are
+// unaffected: the receiver `(...)` is consumed by the optional group above, then
+// the param-list `(` satisfies the class.
+const GO_HEADER = /^\s*func\s+(?:\([^)]*\)\s*)?([A-Za-z0-9_]+)?\s*[[(]/;
 const JS_HEADER =
   /^\s*(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s*\*?\s*([A-Za-z0-9_$]+)?/;
 const JS_BOUND = // `const f = (..) =>` / `const f = function` / `f = async (..) =>`

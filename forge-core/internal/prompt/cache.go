@@ -33,7 +33,10 @@
 
 package prompt
 
-import "strings"
+import (
+	"strings"
+	"sync"
+)
 
 // ContextCache memoizes ONLY the invariant context lanes for the duration of ONE run
 // (it is created per-run by the caller and never shared across runs — see the cmd/forge
@@ -51,11 +54,14 @@ import "strings"
 // so a repo that legitimately has zero ADRs and no AGENTS.md still builds exactly once
 // (and caches the empty result) rather than re-scanning every phase.
 //
-// CONCURRENCY: not safe for concurrent use, by design — a run drives phases strictly
-// sequentially (the same premise the cmd/forge ledgers rely on), so GatherCached is
-// never called from two goroutines at once. Should phases ever parallelize, this would
-// need a guard; until then a mutex would be dead weight.
+// CONCURRENCY: mu guards the lazy build + the field reads, so GatherCached is safe under
+// the OPT-IN parallel orchestrator (concurrent agent phases each call it once at prompt-
+// build time — the "should phases ever parallelize, this would need a guard" the prior
+// comment foresaw). The build runs ONCE under the lock; the slow per-phase retrieval runs
+// OUTSIDE it over a returned snapshot, so phases still overlap. The serial path takes the
+// uncontended lock and is byte-for-byte unchanged.
 type ContextCache struct {
+	mu               sync.Mutex
 	built            bool   // has the lazy build of the invariant lanes run yet?
 	adrDocs          []Doc  // memoized ADR title set (Retrieve input); nil is a valid built value.
 	constraintsBlock string // memoized AGENTS.md hard constraints; "" is a valid built value.
@@ -86,6 +92,8 @@ func (c *ContextCache) Invalidate() {
 	if c == nil {
 		return
 	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.built = false
 	c.adrDocs = nil
 	c.constraintsBlock = ""
@@ -110,7 +118,9 @@ func (c *ContextCache) Invalidate() {
 // caching; the nil-cache fallback to plain Gather lives one layer up in buildPrompt). lane
 // order is identical to Gather: task, then ADRs, then constraints.
 func GatherCached(cache *ContextCache, repoRoot, query string) []string {
-	cache.ensureBuilt(repoRoot)
+	// Snapshot the invariant lanes UNDER the lock (built once), then do the slow per-phase
+	// work (task re-read + ADR retrieval) OUTSIDE it so concurrent phases overlap.
+	adrDocs, constraintsBlock := cache.invariants(repoRoot)
 	var ctx []string
 	// (1) TASK lane — ROADMAP, re-read every call (NEVER cached; agent-writable).
 	if task := currentTask(repoRoot); task != "" {
@@ -118,28 +128,32 @@ func GatherCached(cache *ContextCache, repoRoot, query string) []string {
 	}
 	// (2) ADR lane — retrieval runs every call over the CACHED doc set (input cached,
 	// output recomputed: query varies per phase, so the selected few can differ).
-	if adrs := retrieveADRBullets(cache.adrDocs, query); len(adrs) > 0 {
+	if adrs := retrieveADRBullets(adrDocs, query); len(adrs) > 0 {
 		ctx = append(ctx, "Architecture decisions (ADRs) to respect:\n"+strings.Join(adrs, "\n"))
 	}
 	// (3) CONSTRAINTS lane — AGENTS.md hard rules, served from the cache (invariant).
-	if cache.constraintsBlock != "" {
-		ctx = append(ctx, "Engineering constraints (hard, non-negotiable):\n"+cache.constraintsBlock)
+	if constraintsBlock != "" {
+		ctx = append(ctx, "Engineering constraints (hard, non-negotiable):\n"+constraintsBlock)
 	}
 	return ctx
 }
 
-// ensureBuilt lazily populates the INVARIANT lanes exactly once per cache. After it runs,
-// built is true even when a lane is empty (no ADRs / no AGENTS.md), so a legitimately bare
-// repo is scanned a single time rather than re-scanned every phase. The ROADMAP is pointedly
-// absent — it is not an invariant lane and is never built here.
-func (c *ContextCache) ensureBuilt(repoRoot string) {
-	if c.built {
-		return
+// invariants lazily populates the INVARIANT lanes exactly once per cache and returns a
+// SNAPSHOT of them, all UNDER the lock — so concurrent callers (the parallel orchestrator)
+// neither double-build nor race on the fields. adrDocs is never mutated after the build, so
+// sharing the returned slice for read-only retrieval across goroutines is safe. After it
+// runs, built is true even when a lane is empty (no ADRs / no AGENTS.md), so a bare repo is
+// scanned a single time. The ROADMAP is pointedly absent — never an invariant lane.
+func (c *ContextCache) invariants(repoRoot string) ([]Doc, string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.built {
+		c.adrDocs = adrDocs(repoRoot)
+		c.constraintsBlock = constraints(repoRoot)
+		c.built = true
+		c.builds++ // observable: counts real filesystem builds (see field doc); ==1 after a run.
 	}
-	c.adrDocs = adrDocs(repoRoot)
-	c.constraintsBlock = constraints(repoRoot)
-	c.built = true
-	c.builds++ // observable: counts real filesystem builds (see field doc); ==1 after a run.
+	return c.adrDocs, c.constraintsBlock
 }
 
 // adrDocs returns the docs/adr title set as []Doc — the CACHEABLE input to retrieval.

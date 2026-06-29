@@ -1,10 +1,13 @@
 # ForgeOS 扩展路线图(Extension Roadmap)
 
-> **本文件是前瞻性提案**:基于对当前代码库的全局扫描,提出最高价值的扩展方向与「为什么」。
-> 项目的**版本纪律事实源**仍是 [`.agent/ROADMAP.md`](.agent/ROADMAP.md)(v0✅ / v1✅ / v2 进行中 / v3);
-> 本文件不替代它,而是为其 v2/v3 段提供资深架构师 / PM 视角的细化、取舍与优先级。
+> **状态(2026-06 更新):本轮 5 方向均已落地交付 —— 本文件已从「提案」转为「已交付变更记录」。**
+> 原为「真点火接通后只读扫描提案」,所列方向当时全是未实现的真 bug / gap;**现已实现并落盘**(每方向标注
+> 实现 commit)。下列诊断不再是「待办」,而是每项变更的**「为什么 / 修复前状态」**依据——请按**过去时**阅读。
+> 诚实分项:**方向一~四全量交付**(方向四含 checkpoint phase 级粒度,本轮 third-wave 补齐);
+> **方向五三子项全交付**(context cache + 并行编排 opt-in + 增量测试 advisory)——各带诚实边界,见各方向标注。
+> 项目的**版本纪律事实源**仍是 [`.agent/ROADMAP.md`](.agent/ROADMAP.md)(v0✅ / v1✅ / v2 进行中 / v3)。
 >
-> **本轮扫描方法**:三位架构师独立全局深扫(forge-core / harness / 真点火-pipeline),每条诊断均带
+> **原扫描方法**:三位架构师独立全局深扫(forge-core / harness / 真点火-pipeline),每条诊断均带
 > 代码 `file:line` 证据 + 实跑证伪;**最高置信度信号是跨-agent 共识**(方向一被两位独立发现为同一真 bug)。
 
 ## 已交付基线(扫描确认)
@@ -19,16 +22,17 @@ circular 机器执法)⑤ 安全合规(secret-scan + risk 分类器 + SCA 框架
 reviewer-gate-信号);**Learning loop 三维真数据**(quality+latency+cost)落盘;**pipeline 数据流注入**
 (gate 裁决→reviewer · planner 拆分→下游,避污染);CC PostToolUse edit-time gate;agent-os 仓化 ADR 0003。
 
-## 结构性新诊断(真点火接通后)
+## 结构性新诊断与交付(真点火接通后)
 
 第一轮把治理设计 + 运行时**基础设施**做到约 90%,但其中大量是用 **echo/stub 验证**为「机制就绪」。真点火
 接通真 claude 后,**下一层 gap 浮现** —— 它们正是 echo 测不出、只在真 LLM 多-agent 长跑下暴露的四类:
 **反馈环的最后一环断裂、执法器的假阴盲区、真 claude 的失败模式、真点火的成本/墙钟浪费**。下列 5 个方向
-逐一补齐,把 ForgeOS 从「真点火能在 throwaway 验证」推向「敢 24h 无人值守真跑」。
+**已逐一补齐**(五方向全部子项交付,各带诚实边界 / opt-in / advisory 标注,见各方向),把 ForgeOS 从「真点火能在 throwaway
+验证」推向「敢 24h 无人值守真跑」。
 
 ---
 
-## 方向一 · 接通 reviewer 裁决回流 —— 脊柱的质量反馈环现在是断的(P0,真 bug)
+## 方向一 · 接通 reviewer 裁决回流 —— 脊柱的质量反馈环曾经是断的,已接通(P0,真 bug · ✅ 已交付 `74395b3`)
 
 **诊断(两位架构师独立印证)**:`build.yml` 的 reviewer/qa phase 声明了 `on_fail:{action:loop_back,
 target_phase:implementer}`,但 orchestrator 的 loop-back **只在 gate phase 触发** —— `RunFrom`
@@ -41,12 +45,12 @@ REQUEST-CHANGES 输出也无人解析(`observeFor` 只对 feeds_forward phase �
 却**对控制流零影响** —— 多-agent 协作退化成「implementer 写完只要 gate 绿就过,reviewer 形同虚设」。这是
 "声明 vs 实现"漂移的典型(正是 Sprint 12 审计要抓的那类),且是 ForgeOS 自纠能力的核心缺口。
 
-**方向**:让 agent phase 也能触发 loop-back —— reviewer card 产出机读 verdict(末行 `VERDICT:
+**交付(`74395b3`,落地为 `orchestrator.agentOutcome` + `cost.go:parseReviewerVerdict`)**:让 agent phase 也能触发 loop-back —— reviewer card 产出机读 verdict(末行 `VERDICT:
 REQUEST_CHANGES`),经 `Observe` sink 解析(类似 `cost.go` 解析 claude JSON),在 `runAgentPhase` 后判
 verdict + phase 的 `OnFail`,复用现成的 `gateOutcome`/loopBacks 预算机制定向跳回;reviewer 的"具体问题"
 经一条**不污染 fresh-context 的单向边**注入 implementer(不回灌给下次 reviewer)。
 
-## 方向二 · 闭合 Learning loop 最后一环 —— scorecard 测了数据却无人读(P0,vision 护城河)
+## 方向二 · 闭合 Learning loop 最后一环 —— scorecard 曾测了数据却无人读,已接通(P0,vision 护城河 · ✅ 已交付 PR1 `46ba67c` + PR2 `6c18b1c`)
 
 **诊断(产消三接头全断,构成一条断裂的闭环)**:① **消费端**:真点火选 `--model` 走
 `PhaseTier→routing.TierFor`(`routing.go:62`),**完全不读 scorecard**(只 opus-floor + agentTier +
@@ -60,12 +64,12 @@ modeDefault);`HistoryTiebreak`/`LoadScorecards` 唯一调用点是独立的 `for
 护城河(越用越聪明)。框架(schema/merge/decay/tiebreak/route 展示)第一轮全交付了,但 `forge route` 里那段
 `HistoryTiebreak` 当前是**纯装饰**(读的文件永不存在、结果从不喂给真 `--model`)。差的就是把产消三个接头接上。
 
-**方向**:(a) `forge run/evolve` 收尾自动 shell `scorecard-update.mjs`(传 `--trace .forge/trace.jsonl` +
+**交付(PR1 `46ba67c` 落盘 + model 归因 / PR2 `6c18b1c` 读回接线 `engine_build.go:LoadScorecards`+`HistoryTiebreak`)**:(a) `forge run/evolve` 收尾自动 shell `scorecard-update.mjs`(传 `--trace .forge/trace.jsonl` +
 每 phase 实际 routed model + iteration/rework 信号);(b) cost/agent trace 事件**附带 model 字段**(让
 producer 按 model 归因);(c) `PhaseTier` 增可选 `scorecardPath`,对同档候选跑 `HistoryTiebreak`(v1 单候选
 下是 no-op + observability,接头通了,v3 扩 `tiers.models` 即生效)。
 
-## 方向三 · 根治执法器假阴盲区 —— 对"治理 OS"比任何功能缺失都伤根本(P0,治理地基)
+## 方向三 · 根治执法器假阴盲区 —— 对"治理 OS"比任何功能缺失都伤根本(P0,治理地基 · ✅ 已交付 `0204a6e` + `7b113ac`)
 
 **诊断(多处真红线经执法器盲区漏网,本仓已活体命中)**:
 - **arch-check 看不见 JS/TS `export-from` / `export *` / 动态 `import()`**(`scan.mjs:92-102` 只匹配
@@ -85,12 +89,12 @@ producer 按 model 归因);(c) `PhaseTier` 增可选 `scorecardPath`,对同档�
 治理可信度 —— 它让 agent 以为过了闸门、实则红线在裸奔。多个盲区**本仓已活体命中**(export-from 边、
 `test_enforce.mjs` 已被 forge-init 漏复制)。修复成本极低(几行正则 / basename 匹配),杠杆最高。
 
-**方向**:`extractJsImports` 加 export-from/export-star/dynamic-import 三条正则;`indentFunctions` 正则加
+**交付(`0204a6e` 三执法器盲区 + `7b113ac` 次级三治理-guard 盲区)**:`extractJsImports` 加 export-from/export-star/dynamic-import 三条正则;`indentFunctions` 正则加
 `(?:async\s+)?`;secret-scan 按 basename 匹配 `.env`/`.npmrc`/`id_rsa` + 补 provider-anchored 模式;
 acceptance 把 fail-closed 的 `count>0` 守卫套到 `harness/test_*` glob;check.py 加 workflow 控制流引用检查
 (`target_phase`/`model_tier`/`next_stage` ∈ 已知集);forge-init 加 copy-list 完整性守卫(防漂移)。
 
-## 方向四 · 真长跑韧性 —— 从「echo 验证机制就绪」到「敢 24h 真 claude 无人值守」(P1)
+## 方向四 · 真长跑韧性 —— 从「echo 验证机制就绪」到「敢 24h 真 claude 无人值守」(P1 · ✅ 全交付:韧性+budget PR1-6 `70d87a3`/`1a236a4`/`791e213`/`6cdcec9`/`16892f6`/`5c5792d` + checkpoint phase 级粒度 third-wave)
 
 **诊断(第一轮韧性 ✅ 但用 echo/stub 验证,真 claude 失败模式未覆盖)**:
 - **claude 失败模式覆盖不全**(`command_executor.go` `classifyRunErr` 把非零 exit 一律 `KindFailed`
@@ -107,12 +111,16 @@ acceptance 把 fail-closed 的 `count>0` 守卫套到 `harness/test_*` glob;chec
 **为什么 P1**:真点火的卖点是 24h 无人值守(vision 核心),但当前韧性是 echo/stub 验证的 —— echo 不 529、不
 fork 孙子、不烧 budget、不让 prompt 膨胀。这些是真 LLM 长跑**最高频**的失败模式,当前几乎全无防护。
 
-**方向**:扩 `ExecError` 分类(从 exit code/stderr 识别 rate-limit→retryable 带退避、budget-cap→降档或
-报人);checkpoint 增 `PhaseIndex`/`AgentCalls`/`StartPhase` + 每 phase 落一次;Linux `SysProcAttr{Setpgid}`
-+ 进程组 SIGTERM→SIGKILL;`buildPrompt` 加总 token 预算 + memory 最近-N 分页(平台隔离 + 零依赖,`syscall`
-是 stdlib)。
+**交付(PR1-6,诚实分项)**:✅ ① 529/过载 → `KindOverloaded` retryable + 退避(`70d87a3`,
+`orchestrator/backoff.go`);✅ ② prompt 长跑预算 → bound 无界 `memoryContext` lane(`1a236a4`);✅ ③
+子进程进程组 `SysProcAttr{Setpgid}` + 组 SIGTERM→SIGKILL(`791e213`,`command_executor_unix.go`);✅ ④
+run-level budget 硬上限 + 跨 `--resume` 持久化 + budget-aware 降档(PR4-6 `6cdcec9`/`16892f6`/`5c5792d`)。
+✅ ⑤ checkpoint **phase 级粒度**(third-wave,`persist.PhaseIndex` + `evolve.go phaseCheckpointHook` 经
+`loop.OnPhase` + `resumeStart`→phaseStart + `phase_checkpoint_test.go`)——崩在 phase N 后 resume 从 N 续跑,
+不再整轮重放 planner+implementer+reviewer。诚实边界:`OnPhase` 仅在 agent-phase **干净完成后**落点,故崩在
+in-flight phase 中途会**重跑那一个** phase(至多欠一个、安全永不跳过未完成工作);gate phase 不落点(幂等/廉价重跑)。
 
-## 方向五 · 真点火性能/成本 —— 削墙钟 + 削 token 账单(P1)
+## 方向五 · 真点火性能/成本 —— 削墙钟 + 削 token 账单(P1 · ✅ **全交付**:context cache `36065df` + 并行编排 opt-in + 增量测试 advisory,后二者 third-wave)
 
 **诊断**:
 - **编排器完全串行**(`orchestrator.go:203` 单循环阻塞 `Exec.Execute`,`asset.Phase` 无 `depends_on`)——
@@ -126,10 +134,15 @@ fork 孙子、不烧 budget、不让 prompt 膨胀。这些是真 LLM 长跑**�
 **为什么 P1**:真点火"烧钱/慢"。串行编排是吞吐量级杠杆(基础设施已铺路:trace 已加锁、ledger 已 run-scoped),
 增量测试 + context 缓存是纯收益低风险优化。三者在 evolve 24h 多迭代下收益线性放大。
 
-**方向**:`asset.Phase` 加 `depends_on` + 编排器按依赖拓扑分层、同层 goroutine+errgroup 并行(ledger/
-agentCalls 加锁,注释已预案);增量测试选择(按 git diff 改动文件只跑相关套件,risk 包 `FromChangedPaths`
-可复用);run-scoped `contextCache`(不变上下文构建一次,各 phase 复用)。诚实:并行需 architect 拍板
-(并发复杂度 vs 串行简单性),增量测试不能跳过版本级全量 accept。
+**交付(诚实分项,三子项全落地)**:✅ **context cache**(`36065df`,`internal/prompt/cache.go` 的
+`ContextCache`/`GatherCached`,run-scoped 不变上下文构建一次、各 phase 复用;commit 自评「v1 边际、为 v2
+prompt-caching 铺路」)。✅ **并行编排**(third-wave,`orchestrator/parallel.go RunParallel` + `waves.go` Kahn
+拓扑分层 + `main.go --parallel`,共享 ledger/agentCalls/budget 全加锁、`-race` 双绿)—— **opt-in 双重门控**:
+`--parallel` 默认 false **且** workflow 须声明 `depends_on`;现有 4 个 workflow 全 `depends_on=0`,故默认串行
+路径**逐字节不变、并行路径今天休眠**。诚实边界:并行模式不触发 loop-back(v1,红 gate→fail-closed abort)。
+✅ **增量测试选择**(third-wave,`harness/select-tests.mjs`,advisory 加速器)—— **与裁决路径完全解耦**:
+acceptance/gates/CI 均不 import 它,`forge accept` 永远跑全量套件;映射 fail-closed(无法判定→建议全量),
+**物理上无法替代全量 gate**(漏跑=假绿不可达,经独立审计对抗构造证伪)。`risk.FromChangedPaths` 原语复用。
 
 ---
 
@@ -137,20 +150,24 @@ agentCalls 加锁,注释已预案);增量测试选择(按 git diff 改动文件�
 
 | 方向 | 优先级 | 类别 | 一句话杠杆 |
 |---|---|---|---|
-| 一 reviewer 裁决回流 | **P0** | 功能+边界(真 bug) | 脊柱质量反馈环现在是断的,两位架构师独立印证 |
-| 二 Learning loop 回灌 | **P0** | 功能 | vision 护城河的字面最后一环,产消三接头全断 |
-| 三 执法器盲区根治 | **P0** | 边界(假阴) | 治理 OS 地基,本仓活体命中,几行正则高杠杆 |
-| 四 真长跑韧性 | P1 | 边界 | 24h 卖点,真 claude 失败模式 echo 测不出 |
-| 五 真点火性能/成本 | P1 | 性能 | 削墙钟+token,基础设施已铺路 |
+| 一 reviewer 裁决回流 | **P0** ✅ | 功能+边界(真 bug) | 脊柱质量反馈环曾是断的(已接通 `74395b3`),两位架构师独立印证 |
+| 二 Learning loop 回灌 | **P0** ✅ | 功能 | vision 护城河的字面最后一环,产消三接头曾全断(已接通 `46ba67c`+`6c18b1c`) |
+| 三 执法器盲区根治 | **P0** ✅ | 边界(假阴) | 治理 OS 地基,本仓活体命中,几行正则高杠杆(已交付 `0204a6e`+`7b113ac`) |
+| 四 真长跑韧性 | P1 ✅ | 边界 | 24h 卖点,真 claude 失败模式 echo 测不出(韧性+budget PR1-6 + checkpoint phase 粒度 third-wave,全交付) |
+| 五 真点火性能/成本 | P1 ✅ | 性能 | 削墙钟+token(context cache + 并行编排 opt-in + 增量测试 advisory,三子项全交付) |
 
-**收敛建议**:
+**收敛建议(原扫描时的优先级取舍 —— 现五方向全量交付;保留为原始决策依据与排序理由)**:
 - **若只做一件**:**方向三(执法器盲区)** —— 成本最低(几行正则)、杠杆最高(治理可信度地基),且本仓已活体
   命中、不修就是已知红线在裸奔。
 - **做前三件(全 P0)**:一+二+三 —— 分别闭合「质量反馈环 / 学习反馈环 / 执法可信度」,正是 ForgeOS
   「自纠 + 自学习 + 真治理」三大支柱各自的临门一脚,且都属「框架/脊柱已在、差最后一接」的高确定性投入。
-- 方向四/五随真点火 24h 长跑的实际投产需求推进;方向四的 claude 失败模式分类**不应晚于首次真·无人值守长跑**
-  (一次未分类的 529 即可让数小时的 run 全废)。
+- 方向四/五原计划「随真点火 24h 长跑投产需求推进」—— 现已**全部前置交付**(韧性+budget+checkpoint phase 粒度 +
+  性能三子项);方向四 claude 失败模式分类(529 等)已落地,兑现了「不晚于首次真·无人值守长跑」的取舍。
 
-> **诚实边界**:本文件是设计提案,所有方向**只读扫描得出、未写任何实现代码**。三份扫描均诚实排除了「已实现
-> 项」(八 gap/telemetry/pipeline 注入已核实为真做了,不列为缺失)与「不可验证的镀金」(如 sca 全库索引优化
-> 需先接入真 OSV-DB)。各方向落地前仍走 ForgeOS 自身的 fresh-context review + 全闸门验收纪律。
+> **交付边界(原「设计提案 / 未写任何实现代码」边界已作废)**:本文件原为只读扫描提案;现五方向均已实现并落盘——
+> **方向一/二/三全量交付**(`74395b3` · `46ba67c`+`6c18b1c` · `0204a6e`+`7b113ac`),**方向四全量交付**(韧性+budget
+> PR1-6 + checkpoint phase 级粒度 third-wave),**方向五全量交付**(context cache `36065df` + 并行编排 opt-in +
+> 增量测试 advisory,third-wave)。每项均经 ForgeOS 自身 fresh-context review + 全闸门验收纪律(本轮 third-wave 经
+> 4 个独立审计员对抗复核:并行 -race / 增量假绿红线 / arch 计数-bug 核实 / 广义回归,全数 APPROVE)。仍排除「不可
+> 验证的镀金」(如 sca 全库索引优化需先接入真 OSV-DB)。**诚实边界(非延后)**:并行编排 opt-in、默认串行不变;增量
+> 测试 advisory、永不替代全量 accept;checkpoint phase 粒度至多欠一个 in-flight phase。**这是落地能力的边界,不是未做。**

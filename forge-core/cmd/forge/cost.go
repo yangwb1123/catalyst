@@ -15,6 +15,7 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"forgeos/forge-core/internal/trace"
@@ -39,6 +40,12 @@ import (
 // bills, then the next is gated); a parallel executor (ROADMAP direction five) would add
 // a mutex here, noted so the boundary is honest.
 type runBudget struct {
+	// mu guards spent so the accumulator is safe under the OPT-IN parallel
+	// orchestrator, where concurrent agent phases bill into feed() at once. cap is
+	// set ONCE in newRunBudget and never mutated, so it is read lock-free. Serial
+	// runs take the uncontended lock — negligible, and the back-compat path is byte-
+	// identical. (This is the mutex cost.go's SpendRatio note pre-announced.)
+	mu    sync.Mutex
 	spent float64
 	cap   float64
 }
@@ -75,7 +82,13 @@ func newRunBudget(flagVal string) (*runBudget, error) {
 // forwards latency verbatim to the inner emitter (which stamps it onto the agent trace event).
 func (b *runBudget) feed(inner func(phase, model string, usd float64, latency time.Duration)) func(phase, model string, usd float64, latency time.Duration) {
 	return func(phase, model string, usd float64, latency time.Duration) {
+		b.mu.Lock()
 		b.spent += usd
+		b.mu.Unlock()
+		// inner (the cost emitter -> trace) is invoked OUTSIDE the budget lock: trace
+		// has its OWN lock, so holding both would needlessly serialize the trace write
+		// behind the budget and risk lock-ordering surprises. Only the spent update is
+		// guarded here; the latency rides through to the inner emitter untouched.
 		if inner != nil {
 			inner(phase, model, usd, latency)
 		}
@@ -89,6 +102,8 @@ func (b *runBudget) feed(inner func(phase, model string, usd float64, latency ti
 // round-trip (54403 not 0.0544035…), matching trace.Event.CostUsdMicros. Returns 0 for a run that
 // never billed, keeping the checkpoint's spent_usd_micros omitempty (byte-identical, back-compat).
 func (b *runBudget) SpentUsdMicros() int64 {
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	return int64(math.Round(b.spent * 1e6))
 }
 
@@ -100,16 +115,18 @@ func (b *runBudget) SpentUsdMicros() int64 {
 // called once right after the budget is created and before any phase bills, so a later feed
 // accumulates on top of it. micros<=0 is a no-op (an unbudgeted/never-billed resume stays at 0).
 //
-// HONESTY — iteration-granularity under-count: the seeded value is the LAST CHECKPOINTED total,
-// written AFTER each completed iteration. Cost billed in an iteration that crashed mid-flight was
-// never checkpointed, so on resume that iteration reruns and re-bills, and seed cannot recover the
-// lost partial — the restored cap can under-count by up to one crashed iteration's mid-flight spend
-// (a conservative slight overspend). This is still far better than the pre-fix total reset to $0;
-// phase-granularity precise checkpointing is a later wave.
+// HONESTY — phase-granularity under-count: the seeded value is the spend through the LAST
+// CHECKPOINTED point. Checkpoints are now written after each completed AGENT PHASE (not only
+// per iteration — see phaseCheckpointHook), so a crash loses at most ONE in-flight phase's
+// un-checkpointed partial spend, which re-bills on resume. seed cannot recover that partial, so
+// the restored cap can under-count by up to one phase's mid-flight spend (a small, conservative
+// overspend) — far tighter than the original per-iteration under-count and the pre-fix $0 reset.
 func (b *runBudget) seed(micros int64) {
 	if micros <= 0 {
 		return
 	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	b.spent = float64(micros) / 1e6
 }
 
@@ -117,6 +134,8 @@ func (b *runBudget) seed(micros int64) {
 // (0) is never exhausted (>= comparison gated on cap > 0), so an unbudgeted run never stops
 // here. This is the dollar comparison the engine must never see — it consumes only the bool.
 func (b *runBudget) exhausted() bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	return b.cap > 0 && b.spent >= b.cap
 }
 
@@ -135,6 +154,8 @@ func (b *runBudget) SpendRatio() float64 {
 	if b.cap <= 0 {
 		return 0
 	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	return b.spent / b.cap
 }
 

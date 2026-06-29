@@ -54,6 +54,58 @@ func TestLoop_Converges(t *testing.T) {
 	}
 }
 
+// PHASE-GRANULAR RESUME: StartPhase makes the FIRST iteration begin mid-workflow, so a
+// crash that was checkpointed at phase K resumes there — the already-completed earlier
+// phases are NOT re-run. Here StartPhase=implementer's index, so planner (before it) is
+// skipped while implementer still runs.
+func TestLoop_StartPhaseSkipsCompletedPhasesOnResume(t *testing.T) {
+	wf := loadFixture(t)
+	implIdx := -1
+	for i, p := range wf.Phases {
+		if p.Name == "implementer" {
+			implIdx = i
+		}
+	}
+	if implIdx < 1 {
+		t.Skip("fixture lacks a non-first implementer phase")
+	}
+	rec := &recorder{}
+	l := NewLoopEngine(Engine{Exec: rec.executor(), RunGate: allOK}, conjunctionStop(roadmapDone()),
+		signalSeq(converge.Signals{RoadmapCompletion: 1.0}), 5, 3, nil)
+	l.StartPhase = implIdx
+	if _, err := l.Run(wf, "balanced"); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if contains(rec.executed, "planner") {
+		t.Errorf("StartPhase=%d must SKIP the already-done planner; executed=%v", implIdx, rec.executed)
+	}
+	if !contains(rec.executed, "implementer") {
+		t.Errorf("StartPhase=%d must still run implementer; executed=%v", implIdx, rec.executed)
+	}
+}
+
+// The loop wires the engine's per-phase hook to EACH iteration's index, so l.OnPhase
+// receives (iteration, phaseIdx) for every completed agent phase. Here it converges on
+// iteration 1, so every callback must carry iter==1.
+func TestLoop_OnPhaseCarriesIterationContext(t *testing.T) {
+	wf := loadFixture(t)
+	var calls [][2]int
+	l := NewLoopEngine(Engine{Exec: DryRunExecutor{}, RunGate: allOK}, conjunctionStop(roadmapDone()),
+		signalSeq(converge.Signals{RoadmapCompletion: 1.0}), 5, 3, nil)
+	l.OnPhase = func(iter, phaseIdx int) { calls = append(calls, [2]int{iter, phaseIdx}) }
+	if _, err := l.Run(wf, "balanced"); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(calls) == 0 {
+		t.Fatal("l.OnPhase never fired through the loop — the per-phase wiring is dead")
+	}
+	for _, c := range calls {
+		if c[0] != 1 {
+			t.Errorf("OnPhase iteration = %d, want 1 (converged on iteration 1); calls=%v", c[0], calls)
+		}
+	}
+}
+
 // Flat progress must trip the doom-loop guard rather than spin forever.
 func TestLoop_TripwireOnNoProgress(t *testing.T) {
 	wf := loadFixture(t)
@@ -131,6 +183,29 @@ func TestLoop_ExternalStopHitsBoundCleanly(t *testing.T) {
 	}
 	if !out.Converged || out.Reason != "ran to safety bound (external stop)" {
 		t.Errorf("external stop at MaxIter must be a clean stop; got %+v", out)
+	}
+}
+
+// FALSE-CLEAN GUARD: a workflow with ZERO phases runs no work and must NEVER report
+// converged — not even an external-stop loop (which otherwise reports a clean stop at
+// the bound). This is the depth-two backstop behind asset.LoadWorkflowJSON's loop.phases
+// hoist: a stage-bearing-but-phaseless asset can no longer silently pass as "converged".
+func TestLoop_ZeroPhasesNeverConverges(t *testing.T) {
+	empty := asset.Workflow{Stage: "evolve", Stop: externalStop()} // no phases
+	l := NewLoopEngine(
+		Engine{Exec: DryRunExecutor{}, RunGate: allOK},
+		externalStop(),
+		signalSeq(converge.Signals{RoadmapCompletion: 1.0, GatesGreen: true}), // would "converge" if run
+		3, 5, nil)
+	out, err := l.Run(empty, "balanced")
+	if err != nil {
+		t.Fatalf("a zero-phase workflow must not error; got %v", err)
+	}
+	if out.Converged {
+		t.Errorf("a zero-phase workflow must NOT be reported converged (false-clean); got %+v", out)
+	}
+	if out.Iterations != 0 {
+		t.Errorf("a zero-phase workflow runs no iterations; got %d", out.Iterations)
 	}
 }
 

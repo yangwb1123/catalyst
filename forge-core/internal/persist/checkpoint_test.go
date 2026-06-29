@@ -180,6 +180,33 @@ func TestEncodeDecode_SpentUsdMicrosRoundTrips(t *testing.T) {
 	}
 }
 
+// PhaseIndex (the phase-granular resume position WITHIN the in-progress iteration) must
+// round-trip exactly, and — being omitempty — a 0 value (a clean iteration boundary, or
+// any pre-phase-granular checkpoint) must emit NO phase_index key, keeping those bytes
+// byte-for-byte identical to before the field existed.
+func TestEncodeDecode_PhaseIndexRoundTripsAndOmitsZero(t *testing.T) {
+	mid := Checkpoint{Workflow: "evolve", Iteration: 4, PhaseIndex: 3}
+	data, err := encode(mid)
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+	got, err := decode(data)
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.PhaseIndex != 3 || got != mid {
+		t.Errorf("PhaseIndex round-trip = %+v, want PhaseIndex 3 / %+v", got, mid)
+	}
+	// omitempty: a clean iteration-boundary checkpoint (PhaseIndex 0) omits the key.
+	zero, err := encode(Checkpoint{Workflow: "evolve", Iteration: 4})
+	if err != nil {
+		t.Fatalf("encode zero: %v", err)
+	}
+	if strings.Contains(string(zero), "phase_index") {
+		t.Errorf("a PhaseIndex-0 checkpoint must omit phase_index (omitempty back-compat); got:\n%s", zero)
+	}
+}
+
 // BACK-COMPAT: a checkpoint written BEFORE spent_usd_micros existed has no such key. It must
 // still decode cleanly, with SpentUsdMicros defaulting to 0 (omitempty's other half) — so an
 // old run's --resume loads fine and seeds zero spend (the pre-PR behavior), never an error.

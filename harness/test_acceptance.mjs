@@ -17,11 +17,11 @@ import * as acc from './acceptance.mjs';
 import { resolveCoverageThreshold, judgeCoverage, computeCoverageThreshold } from './adapters.mjs';
 import { parseRules } from './arch/scan.mjs';
 import { categorize, withCategory, APPLICABLE, INAPPLICABLE, NO_TOOL } from './acceptance-kernel.mjs';
-const { decide, PASS, FAIL, NA, LOAD_BEARING, probeNotApplicable, probeCoverage, probeSCA, runCountedTest } = acc;
+const { decide, PASS, FAIL, NA, LOAD_BEARING, probeNotApplicable, probeCoverage, probeSCA, runCountedTest, runPythonSuites } = acc;
 
 // allPass builds a results array where every load-bearing criterion is PASS,
 // then applies the given overrides — so a test can isolate ONE criterion's
-// status without tripping the P10 "all four load-bearing must PASS" guard.
+// status without tripping the P10 "all six load-bearing must PASS" guard.
 const allPass = (overrides = []) => {
   const base = LOAD_BEARING.map((criterion) => ({ criterion, status: PASS, detail: 'x' }));
   for (const o of overrides) {
@@ -71,7 +71,7 @@ test('acceptance gate ACCEPTS the repo it runs in and exits 0', { skip: Boolean(
   const res = spawnSync(process.execPath, [ACCEPT_PATH], { encoding: 'utf8' });
   assert.equal(res.status, 0, `expected exit 0; got ${res.status}\n${res.stdout}\n${res.stderr}`);
   assert.match(res.stdout, /forge-accept: ACCEPTED/);
-  // The four real, executable criteria must show PASS.
+  // The six load-bearing, executable criteria must each show PASS (asserted below).
   assert.match(res.stdout, /\[PASS\] test_pass/);
   // app_test_pass proves the discovered example app suite is actually gated here
   // (a regression in any app would FAIL this criterion and REJECT the repo).
@@ -126,6 +126,41 @@ test('runCountedTest is fail-CLOSED: a zero-match glob is NOT ok (the plugged bl
   const real = runCountedTest('harness/arch/test_*.mjs', { FORGE_ACCEPT_INNER: '1' });
   assert.equal(real.ok, true, 'a glob matching real suites must still pass');
   assert.ok(real.count > 0, 'real suites report N>0 discovered tests');
+});
+
+// --- fail-CLOSED Python suite discovery (the .mjs/.py asymmetry, now fixed) ---
+// probeTests once HARDCODED the two Python suites, so a newly ADDED harness/
+// test_*.py was never executed — a red new Python suite shipped while test_pass
+// stayed green. runPythonSuites now DISCOVERS them (readdir), fail-closed, mirroring
+// the Node globs. These pin: a red discovered suite fails, and an empty / missing-
+// required walk is itself a FAIL row (a broken walker can't vacuously pass).
+test('runPythonSuites DISCOVERS + runs every test_*.py, fail-CLOSED (the .py blind spot)', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'pysuite-'));
+  try {
+    // Stage the two known suites green + a NEW red one (the previously-ignored case).
+    writeFileSync(join(dir, 'test_check.py'), 'import sys; sys.exit(0)\n');
+    writeFileSync(join(dir, 'test_yaml2json.py'), 'import sys; sys.exit(0)\n');
+    writeFileSync(join(dir, 'test_zzz_new.py'), 'import sys; sys.exit(1)\n'); // a red ADDED suite
+    const { entries, count } = runPythonSuites(dir);
+    assert.equal(count, 3, 'all three test_*.py are discovered (pre-fix the new one was invisible)');
+    const red = entries.find(([n]) => n === 'test_zzz_new.py');
+    assert.deepEqual(red, ['test_zzz_new.py', false], 'the newly added red suite is RUN and fails (was never run pre-fix)');
+    assert.ok(entries.some(([, ok]) => ok === false), 'overall NOT all-ok -> probeTests would REJECT');
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('runPythonSuites is fail-CLOSED on an empty / missing-required walk (no vacuous pass)', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'pyempty-'));
+  try {
+    const empty = runPythonSuites(dir); // no test_*.py at all
+    assert.ok(empty.entries.some(([n, ok]) => ok === false && n.includes('discovery')),
+      'an empty walk emits a fail-closed discovery row (a broken walker cannot pass)');
+    // A walk that finds suites but MISSES a required one is also fail-closed.
+    writeFileSync(join(dir, 'test_only_one.py'), 'import sys; sys.exit(0)\n');
+    const partial = runPythonSuites(dir);
+    assert.ok(partial.entries.some(([n, ok]) => ok === false && n.includes('test_check.py')),
+      'missing a required suite (test_check.py) is a fail-closed discovery row');
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
 // --- coverage is now a real probe, not a hardcoded N/A in probeNotApplicable --
@@ -344,7 +379,7 @@ test('decide() names multiple failures in the REJECTED message', () => {
 
 // --- P10: load-bearing criteria must be PRESENT and PASS ---------------------
 test('decide() REJECTS when a load-bearing criterion is missing entirely', () => {
-  // Only three of the four executable criteria present (no app_test_pass).
+  // Only three of the six load-bearing criteria present (no app_test_pass).
   const results = [row('test_pass', PASS), row('complexity_violations', PASS), row('arch_violations', PASS)];
   const v = decide(results);
   assert.equal(v.accepted, false, 'a missing load-bearing criterion must block accept');

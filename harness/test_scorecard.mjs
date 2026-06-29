@@ -143,7 +143,9 @@ test('synthesize: quality_score always lands in [0,1]', () => {
 // --- trajectory: avg_iterations + rework_rate --------------------------------
 test('synthesize: trajectory rolls avg_iterations (over accepted) and rework_rate', () => {
   // 4 tasks: 3 accepted (1,3,2 rounds), 1 rejected (2 rounds, excluded from avg);
-  // 2 of the 4 were reworked. quality 3/4, rework 2/4, avg (1+3+2)/3 = 2.
+  // 2 of the 4 were reworked. quality 3/4, rework 2/4, avg (1+3+2)/3 = 2. pass_rate
+  // is the FIRST-PASS rate (accepted && !reworked) = 2/4 = 0.5 — DISTINCT from
+  // quality 0.75, since the reworked-then-accepted task lifts quality but not pass.
   const out = synthesize({
     model: 'sonnet',
     task_type: 'implementation',
@@ -151,7 +153,7 @@ test('synthesize: trajectory rolls avg_iterations (over accepted) and rework_rat
     updated_at: TS,
   });
   assert.equal(out.quality_score, 0.75);
-  assert.equal(out.pass_rate, 0.75);
+  assert.equal(out.pass_rate, 0.5, 'first-pass rate (accepted without rework) < quality_score');
   assert.equal(out.samples, 4);
   assert.equal(out.rework_rate, 0.5);
   assert.equal(out.avg_iterations, 2, 'avg over accepted tasks only (reject excluded)');
@@ -217,6 +219,20 @@ test('merge: avg_iterations is accepted-sample-weighted; rework_rate total-weigh
   assert.equal(out.avg_iterations, 2, 'avg weighted by accepted samples');
   assert.equal(out.samples, 6);
   assert.equal(out.updated_at, TS);
+});
+
+test('merge: pass_rate is folded INDEPENDENTLY of quality_score (not re-mirrored)', () => {
+  // Both rows have quality 1.0 but DIVERGENT pass_rate (0.5 vs 1.0) — first-pass and
+  // accepted-eventually genuinely differ. The merge must weight pass_rate on its own
+  // ((0.5*2 + 1.0*2)/4 = 0.75), NOT collapse it back to quality (1.0). This pins the
+  // H3 fix on the merge path: a `pass_rate: quality_score` regression would yield 1.0.
+  const out = merge(
+    { model: 'sonnet', task_type: 'implementation', quality_score: 1.0, samples: 2, pass_rate: 0.5, rework_rate: 0.5, updated_at: OLD },
+    { model: 'sonnet', task_type: 'implementation', quality_score: 1.0, samples: 2, pass_rate: 1.0, rework_rate: 0, updated_at: TS },
+  );
+  assert.equal(out.quality_score, 1.0);
+  assert.equal(out.pass_rate, 0.75, 'pass_rate weighted independently, not mirrored to quality 1.0');
+  assert.notEqual(out.pass_rate, out.quality_score, 'first-pass rate must be able to diverge from quality');
 });
 
 test('merge: avg_iterations survives when only ONE side recorded it (legacy other side)', () => {

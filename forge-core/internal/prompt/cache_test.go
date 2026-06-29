@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -39,6 +40,30 @@ func constraintsLane(ctx []string) string {
 }
 func taskLane(ctx []string) string {
 	return laneWithPrefix(ctx, "Current task")
+}
+
+// CONCURRENCY GUARD (the gap a fresh reviewer's -race run caught end-to-end): under the
+// OPT-IN parallel orchestrator, a fan-out wave's phases each call GatherCached at once. The
+// invariant lanes must build EXACTLY ONCE under the lock (no torn fields, no double build) —
+// this drives N goroutines through the REAL GatherCached and asserts builds==1. Run with
+// `-race`: before the cache mutex this raced on c.built/c.adrDocs/c.constraintsBlock.
+func TestGatherCached_ConcurrentBuildIsRaceFreeAndBuildsOnce(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, ".agent/ROADMAP.md", "# Roadmap\n\nbuild it")
+	writeFile(t, dir, ".agent/AGENTS.md", "# AGENTS\n- 单文件 ≤ 500 行\n- 依赖方向向内")
+	writeFile(t, dir, "docs/adr/0001-stack.md", "# ADR 0001: Go core stack")
+	writeFile(t, dir, "docs/adr/0002-layer.md", "# ADR 0002: layering inward")
+
+	cache := NewContextCache()
+	var wg sync.WaitGroup
+	for i := 0; i < 16; i++ {
+		wg.Add(1)
+		go func() { defer wg.Done(); _ = GatherCached(cache, dir, "implementer") }()
+	}
+	wg.Wait()
+	if cache.builds != 1 {
+		t.Errorf("invariant lanes must build EXACTLY ONCE even under 16 concurrent callers; builds=%d", cache.builds)
+	}
 }
 
 // ★ THE LOAD-BEARING TEST ★ — the ROADMAP is NEVER cached, so an implementer that ticks a

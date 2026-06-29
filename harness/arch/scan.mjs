@@ -37,9 +37,11 @@ export function classifyLang(file) {
   return LANG_BY_EXT.get(extname(file)) ?? null;
 }
 
-// isTestFile: best-effort, per-language test-file detection. Test files are
-// scanned for layering (a test that violates direction is still a smell) but
-// excluded from package export/size budgets where noted by each check.
+// isTestFile: best-effort, per-language test-file detection. Test files enter the
+// scan model (this flag set), but each check decides how to treat them: layering,
+// package (files + exports), and fan-in all EXCLUDE tests (`if (f.isTest) continue`
+// — a test legitimately imports across layers / scales with its package), while
+// function-length deliberately INCLUDES them (an over-long test is its own smell).
 export function isTestFile(file) {
   const base = file.split(/[\\/]/).pop();
   return (
@@ -130,9 +132,42 @@ function extractPyImports(text) {
 
 // countGoExports: exported (Capitalized) top-level func/method/type/var/const.
 // Used by package-check's max_exports budget. Pure over the file text.
+//
+// Counts BOTH single-line decls (`const Foo = 1`, `type Bar struct{}`) AND each
+// exported identifier inside a GROUPED block (`const (\n\tFoo = 1\n\tBar = 2\n)`)
+// — the most idiomatic Go form for enums/vocabularies. Without the grouped-block
+// arm a package could declare any number of exported consts via `const (...)` and
+// the god-package budget saw ZERO of them (a real false negative: e.g. a 23-export
+// vocabulary package counted as 7).
+//
+// HONESTY (heuristic, like extractFunctions): a grouped block is tracked by NESTING
+// depth (both () and {}, ignoring `//` line comments) so a member is counted only at
+// the block's own level — a multi-line value's inner `)` no longer mis-closes the
+// block early (which would UNDER-count later members: the unsafe false-PASS direction)
+// and a struct/interface body's fields (inside `{}`) are NOT mistaken for package
+// exports (which would over-count). Residual limit: parens/braces inside a string
+// literal are not excluded, so a value like `X = "a(b"` can mis-level the block —
+// rare in const/var values, and still strictly better than the pre-fix "grouped
+// block counts 0".
 export function countGoExports(text) {
   let n = 0;
+  let depth = 0; // nesting depth inside a grouped const/var/type block (0 = outside)
   for (const line of text.split('\n')) {
+    if (depth > 0) {
+      // Count a spec only at the block's OWN level (depth 1); a deeper level means
+      // we are inside a multi-line value's parens or a struct/interface body's
+      // braces, whose inner lines are NOT package-level specs.
+      if (depth === 1) n += exportedSpecNames(line);
+      depth += nestDelta(line);
+      continue;
+    }
+    // A grouped declaration opener `const (` / `var (` / `type (` — its members are
+    // counted (above) until nesting returns to 0. Top-level, so anchored at col 0.
+    const opener = line.match(/^(?:const|var|type)\s*\(/);
+    if (opener) {
+      depth = 1 + nestDelta(line.slice(opener[0].length)); // the opener's `(` is depth 1
+      continue;
+    }
     if (
       /^func\s+[A-Z]/.test(line) ||
       /^func\s+\([^)]*\)\s+[A-Z]/.test(line) ||
@@ -144,6 +179,39 @@ export function countGoExports(text) {
     }
   }
   return n;
+}
+
+// nestDelta: net unclosed `(` and `{` on a line, STOPPING at a `//` line comment
+// (a delimiter inside a comment is not real nesting — the same comment-awareness
+// braceDelta in scan-functions.mjs uses; without it a `// foo(` mis-leveled the
+// block and leaked it past its end, dropping later exports). A grouped block tracks
+// BOTH `()` and `{}` so a multi-line call value's inner `)` and a struct/interface
+// body's `{` do not mis-level it. Heuristic residual: delimiters inside a string
+// literal are not excluded, and a `//` inside a string is read as a comment-start
+// (both rare in const/var values; the residual only mis-levels, never worse than
+// the pre-fix "grouped block counts 0").
+function nestDelta(s) {
+  let d = 0;
+  for (let i = 0; i < s.length; i += 1) {
+    const c = s[i];
+    if (c === '/' && s[i + 1] === '/') break; // line comment: the rest is not code
+    if (c === '(' || c === '{') d += 1;
+    else if (c === ')' || c === '}') d -= 1;
+  }
+  return d;
+}
+
+// exportedSpecNames: count the EXPORTED (Capitalized) identifiers declared on one
+// line of a grouped const/var/type block. A spec is `IdentifierList [Type] [= …]`,
+// so the leading comma-separated identifiers are the names (`Foo`, or `Foo, Bar`);
+// the type/value tail is ignored. Blank, comment, and continuation-ish lines yield
+// nothing; `_` and lowercase (unexported) names are skipped.
+function exportedSpecNames(line) {
+  const t = line.trim();
+  if (t === '' || t.startsWith('//') || t.startsWith('/*') || t.startsWith('*')) return 0;
+  const m = t.match(/^([A-Za-z_]\w*(?:\s*,\s*[A-Za-z_]\w*)*)/);
+  if (!m) return 0;
+  return m[1].split(/\s*,\s*/).filter((id) => /^[A-Z]/.test(id)).length;
 }
 
 // --- minimal YAML reader for .arch/rules.yaml --------------------------------

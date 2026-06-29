@@ -34,7 +34,10 @@ EVOLVE
 ## 引擎 (Engines)
 Gateway · Orchestrator · Agent-Runtime · **Model-Router** · Context-Engine · Memory-Engine ·
 Knowledge-Engine · **Evaluation-Engine** · **Sandbox(载重墙)** · Web-UI
-> 当前实现:仅 Harness 子集(`harness/gate.mjs`)+ Context 骨架(本 `.agent/`)。其余为路线图。
+> **v2 现状**:forge-core Go 运行时已落地 **5 引擎**(均构建/全绿,纯标准库零依赖,13 包;与 [`BOOTSTRAP.md`](../BOOTSTRAP.md) §技术栈对齐):
+> **Orchestrator**(`internal/orchestrator`)· **Model-Router**(`routing`)· **Context-Engine**(`prompt`)·
+> **Memory-Engine**(`memory`)· **Evaluation-Engine**(`converge`);外加 Harness 闸门子集(`harness/gate.mjs`)+ Context 骨架(本 `.agent/`)。
+> **Gateway · Agent-Runtime · Knowledge-Engine · Sandbox(载重墙)· Web-UI 仍为路线图。**
 
 ## 模型路由 (v1 限 Claude 档)
 classify → score(复杂度/风险/依赖/安全/上下文) → tier(mode,lifecycle)

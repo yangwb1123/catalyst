@@ -37,7 +37,6 @@ import (
 	"path/filepath"
 
 	"forgeos/forge-core/internal/asset"
-	"forgeos/forge-core/internal/orchestrator"
 	"forgeos/forge-core/internal/trace"
 )
 
@@ -67,32 +66,60 @@ type scorecardPair struct {
 // It returns nothing and is called purely for its side effect (writing scorecards.json), so a
 // caller wires it AFTER computing the run's real exit code — the scorecard is enrichment.
 func windDownScorecards(wf asset.Workflow, o runOpts, logln func(string)) {
-	if !traceHasModelCost(tracePath(o.root)) {
+	tp := tracePath(o.root)
+	if !traceHasModelCost(tp) {
 		// No real billed-cost event (dry/echo, or a run that spawned no LLM phase):
 		// skip entirely rather than persist a row for work no model was paid for.
 		return
 	}
-	for _, p := range distinctScorecardPairs(wf, o.mode) {
+	for _, p := range distinctScorecardPairs(wf, tp) {
 		runScorecardUpdate(o.root, p, logln)
 	}
 }
 
-// distinctScorecardPairs derives the DISTINCT (model=PhaseTier(p,mode),
-// task_type=agentTaskType[p.Agent]) pairs the workflow's phases attribute to, in
-// first-seen order for a deterministic shell-out sequence. A phase whose agent has NO
-// task_type mapping (a harness/gate phase — not an LLM agent) is SKIPPED, so a non-billing
-// phase never produces a scorecard row. Two phases that route to the same (model,
-// task_type) collapse to one pair (e.g. two implementer phases at the same tier), so the
-// producer runs once per pair, not once per phase.
-func distinctScorecardPairs(wf asset.Workflow, mode string) []scorecardPair {
+// distinctScorecardPairs derives the DISTINCT (model, task_type) pairs the run actually
+// BILLED, read from the trace's model-stamped cost events — NOT recomputed from the
+// workflow's un-adjusted routed tier. This is the attribution fix: when a phase is budget-
+// DOWN-TIERED near the cap, costEmitter (cost.go) stamps the trace with the CHEAPER model it
+// ACTUALLY ran, while orchestrator.PhaseTier names the original tier. Querying scorecard-
+// update with that un-adjusted tier would filter the trace to a model that billed NOTHING for
+// the phase (zero match) and the down-tiered cost would be LOST. Reading the model from the
+// trace makes the query model == the stamped model, so every billed dollar is attributed; and
+// it cannot be recomputed at wind-down anyway (the per-phase spend ratio at the time it ran is
+// gone). task_type still comes from the phase's AGENT: the cost event carries the phase NAME,
+// mapped here (ttByPhase) to its agent's task_type. A phase whose agent has no task_type
+// mapping (a harness/gate phase) bills no cost event, so it contributes no pair. Distinct
+// (model, task_type) pairs collapse (two implementer phases at the same stamped model -> one
+// pair), in first-seen order for a deterministic shell-out sequence.
+func distinctScorecardPairs(wf asset.Workflow, tracePath string) []scorecardPair {
+	ttByPhase := map[string]string{}
+	for _, p := range wf.Phases {
+		if tt, ok := taskTypeForAgent(p.Agent); ok {
+			ttByPhase[p.Name] = tt
+		}
+	}
+	f, err := os.Open(tracePath)
+	if err != nil {
+		return nil // no trace (or unreadable): nothing billed to attribute
+	}
+	defer f.Close()
 	seen := map[scorecardPair]bool{}
 	var pairs []scorecardPair
-	for _, p := range wf.Phases {
-		tt, ok := taskTypeForAgent(p.Agent)
-		if !ok {
-			continue // no mapping (harness/gate phase): not attributed
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024) // tolerate long trace lines
+	for sc.Scan() {
+		var ev trace.Event
+		if err := json.Unmarshal(sc.Bytes(), &ev); err != nil {
+			continue // skip a blank/corrupt line, never fatal
 		}
-		pair := scorecardPair{model: orchestrator.PhaseTier(p, mode), taskType: tt}
+		if ev.Model == "" || ev.CostUsdMicros == 0 {
+			continue // not a billed model-bearing cost event
+		}
+		tt, ok := ttByPhase[ev.Name]
+		if !ok {
+			continue // a cost event for a phase with no task_type mapping: not attributed
+		}
+		pair := scorecardPair{model: ev.Model, taskType: tt}
 		if seen[pair] {
 			continue
 		}
