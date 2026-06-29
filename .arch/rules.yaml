@@ -38,7 +38,7 @@ root:
 
 # ── Per-package / per-directory budget ────────────────────────────────────
 package:
-  max_files: 12       # actual 11 (forge-core/cmd/forge) + headroom — scaffold/upgrade tooling lives in harness/scaffold/
+  max_files: 14       # actual 13 (forge-core/cmd/forge, incl. detect.go + prompt_verdict.go) + headroom
   max_exports: 30     # actual 27 (orchestrator, incl. parallel.go/waves.go) / 23 (mode) + headroom — recalibrated 2026-06-27
 
 # ── Per-file budget ───────────────────────────────────────────────────────
