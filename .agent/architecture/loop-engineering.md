@@ -2,7 +2,8 @@
 
 > **状态(诚实分界)**:本文是对 ForgeOS **已落地控制平面**的方法论提炼,**不是**蓝图叙事。
 > 「收敛控制」内核(LoopEngine + converge + 带外验证 + 诚实代数)已实现、已接线、已被测试与 dogfood
-> 覆盖;但「学习飞轮 / 自适应装配 / 真 Reflect」**尚未建成**,本文用 §4 的「已建成 vs 蓝图」表**逐项**
+> 覆盖;Reflect 步已**部分**落地(gate-gap/reviewer-lesson 结构化 memory + scorecard trajectory 接线);
+> 「学习飞轮 / 自适应装配 / Reflect 深度自分析」**尚未建成**,本文用 §4 的「已建成 vs 蓝图」表**逐项**
 > 标注,绝不假装已做(对照 [AGENTS.md](../AGENTS.md) honesty-first 立律)。本文是 [ARCHITECTURE.md](../ARCHITECTURE.md)
 > 所述脊柱的**概念框架**,机制细节以代码为准。
 
@@ -98,9 +99,9 @@ PASS;零-phase workflow **永不**报收敛(`loop.go` false-clean 守卫);全-N/
 | **Loop Engine/Controller**(continue/stop/loop-back/re-plan) | **已建成** | 集中式迭代控制器 `LoopEngine.Run`,4 个优先级停止源(gate/agent 错误→converge→no-progress→MaxIter);迭代内有向 loop-back 是 `RunFrom` 里真状态机跳转;跨迭代 re-plan 重启于 planner。测试覆盖。 | `loop.go:121-166,174-183` · `orchestrator.go:267-319` · `converge.go:127` |
 | **Loop Policy**(合取停 / human-gate / retry / budget / max-iter / checkpoint-resume) | **已建成**(opt-in 注意) | 声明式 YAML→typed `StopCondition` 端到端驱动;合取 `roadmap==100 AND gates green` 对活信号判定;human-gate 不可绕过;529 退避;两个 fail-closed budget cap;原子 + phase 粒度 checkpoint。 | `build.yml:101-116` · `converge.go:149-175` · `backoff.go` · `budget.go` · `persist/checkpoint.go` |
 | **Loop→Model 调度**(phase 驱动档) | **phase+budget 已建成;risk 部分;一例 latent** | 一个共享 `tierOf` 喂 `claude --model`/prompt/cost-stamp(drift-guard 测试);architect/cto/reviewer opus 硬底线真。**但**动态 risk 评分只接入独立 `forge route` CLI、**未接** run/evolve 环;「README→廉价档」latent(`docs→Haiku` 存在但**无 workflow 声明 `agent:docs`**)。 | `executor.go:57-67` · `engine_build.go:236-247` · `routing.go:22-71` · `route.go` |
-| **Loop Memory/Learning**(「学会哪种环最好」) | **部分 → 标题项是蓝图** | 落盘真但粗(`quality_score`=accepted/samples 二值,p95/cost 真)。**「学/选最优」是结构性 no-op**:`HistoryTiebreak`(唯一消费者)**只**用单元素列表调用、pick 被**丢弃**(`_, reason :=`);代码自述「picked==adj ALWAYS… 不假装 v1 在学」。**`scorecards.json` 仓内根本不存在**(永久冷启)。reviewer-score/rework/iterations 自动采集**未接线**。 | `scorecard.go:13-19` · `engine_build.go:256,279` · `scorecard_wind.go:146-149` · `.agent/routing/`(无 scorecards.json) |
+| **Loop Memory/Learning**(「学会哪种环最好」) | **部分 → 标题项是蓝图** | 落盘真但粗(`quality_score`=accepted/samples 二值,p95/cost 真)。**`--iterations`/`--rework` 已接线**(754f372):forge run/evolve 现传 trajectory→avg_iterations/rework_rate。**「学/选最优」仍是结构性 no-op**:`HistoryTiebreak` 只用单元素列表、pick 被丢弃;**`scorecards.json` 仓内仍不存在**(永久冷启,需真跑写入)。 | `scorecard.go:13-19` · `engine_build.go:256,279` · `scorecard_wind.go:159-165`(trajectory 接线) · `.agent/routing/`(无 scorecards.json) |
 | **自适应/动态环装配**(项目类型→专用 agent) | **缺失** | 4 个脊柱 workflow 是静态手写 YAML、phase 与 agent 固定。**全仓无项目类型概念**(grep 零命中);固定 9 张角色卡,所称专用 agent(Product/Performance/Evaluation)**不存在**。mode×lifecycle 是唯一变化,且**纯减法**(过滤 gate/跳 reviewer/discover、设 max-iter)+ **手动选**,非自动检测。 | `orchestrator.go:187-231` · `modes.yml` · `mode_gating.go` · `.agent/agents/`(9 卡) |
-| **7-phase 认知环**(Observe→Think→Plan→Execute→Evaluate→**Reflect**→Evolve) | **部分 —— 6 映射,Reflect 缺失** | 6 个清晰映射到 LoopEngine 真迭代的 phase(Observe→scan / Think→gap-analysis / Plan→planner / Execute→implementer / Evaluate→harness+reviewer+qa〔最强、机器验证〕/ Evolve→环本身)。**Reflect 无真等价物**:环以**二值** converge 裁决 + no-progress tripwire 收尾;最接近的 reviewer findings 前传是**逐产物质量判断**,非「为何环失败/慢」自分析,且永不调整路由/流程。 | `evolve.yml` · `converge.go` · `loop.go` · `evolve.go:338-356` |
+| **7-phase 认知环**(Observe→Think→Plan→Execute→Evaluate→**Reflect**→Evolve) | **部分 —— 6 映射,Reflect 部分** | 6 个清晰映射到 LoopEngine 真迭代的 phase(Observe→scan / Think→gap-analysis / Plan→planner / Execute→implementer / Evaluate→harness+reviewer+qa〔最强、机器验证〕/ Evolve→环本身)。**Reflect 已部分落地**(754f372):`recordMemory` 在每轮写入三类结构化 memory:gate 失败→KindGap,reviewer REQUEST_CHANGES findings→KindLesson(逐 target phase),trajectory→KindLesson(常驻);下轮 `memoryContext` 注入。**仍缺失的**:「为何环失败/慢」深度自分析、路由/流程自适应调整。 | `evolve.go:338-380`(recordMemory) · `prompt_memory.go` · `evolve.yml` |
 
 **横切诚实注**:出厂默认 `--executor=dry`(零 LLM)。开箱即用时环在**不变仓库**上测真 gate —— 收敛**机制**
 真且测过,但自治**修复价值**只在 `--executor=command --agent-cmd=claude` 下兑现。已做过一次真点火
@@ -120,19 +121,18 @@ AutoGPT(同一模型既执行又自判完成)**结构上不具备**的。
 
 按杠杆排序的下一步(**先建成、再宣称**,而非反过来):
 
-1. **真 Reflect 步**(最高杠杆,也是把它从「CI 流水线」提升为「认知环」的关键):把真 reviewer/agent
-   输出解析为结构化 `memory.KindLesson`(今 `recordMemory` 只写 dry-run trajectory),并把环级信号
-   (rounds-to-green / rework / cost-latency)回喂下一迭代 prompt 或路由。底物已在(`memory.go` /
-   `scorecard.mjs` rework_rate·avg_iterations / `prompt_memory.go`),**未接线**(`runScorecardUpdate`
-   现省略 `--rework`/`--iterations`)。接上即让第 7 phase 从「缺失」→「部分」。
+1. **Reflect 步深化**(底座已在 754f372 落地):已完成:gate 失败→KindGap、reviewer REQUEST_CHANGES
+   findings→KindLesson(逐 target phase)、trajectory entry(常驻);`--iterations`/`--rework` 已传
+   `runScorecardUpdate`。**仍是蓝图的**:「为何环失败/慢」深度认知自分析(route latency 归因、
+   no-progress pattern 识别);自适应路由/流程调整(基于 KindGap 历史自动调升 tier 或换 workflow)。
 2. **兑现哪怕最小的学习环**:让真·多候选 `HistoryTiebreak` 真正做选择(今单候选 passthrough),或至少
    从一次真跑生成首个 `scorecards.json`,使观测路径产出过数据。在此之前,**飞轮必须显式标蓝图**。
 
-*(自适应/动态装配是最大野心 gap 但**不是**下一步该押的:它全绿地、且对核心论题非载重。别宣称、别优先于 Reflect。)*
+*(自适应/动态装配是最大野心 gap 但不是下一步该押的:它全绿地、且对核心论题非载重。)*
 
 ---
 
 > **一句话方法论(可对外、且代码兑现)**:Loop Engineering = 自治 agent 的 SRE —— 工程化外层收敛控制,
 > 让多 agent 软件生产收敛到**带外、与执行者无关、可证伪**的判据,而非自报完成。**领以已兑现的**收敛控制 +
-> 带外验证 + 诚实代数 + 韧性护栏;**飞轮 / 自适应 / 真 Reflect 显式围栏为蓝图**。这样它是一门可辩护的
-> **学科**,而非下一行文档漂移。
+> 带外验证 + 诚实代数 + 韧性护栏 + Reflect 底座;**飞轮 / 自适应 / Reflect 深化显式围栏为蓝图**。这样
+> 它是一门可辩护的**学科**,而非下一行文档漂移。
