@@ -107,7 +107,7 @@ func TestBuildRunEngine_EvolveCrossIterationRoadmapNeverStale(t *testing.T) {
 	o := runOpts{root: root, mode: "balanced", executor: "command", agentCmd: "claude"}
 	b := &runBudget{} // unbudgeted: ratio 0, no down-tier — isolates the cache path
 
-	eng := buildRunEngine(wf, o, func(string) {}, func(string, string, float64, time.Duration) {},
+	eng, _, _ := buildRunEngine(wf, o, func(string) {}, func(string, string, float64, time.Duration) {},
 		func(string) gate.Result { return gate.Result{} }, mode.Policy{}, b)
 	ce, ok := eng.Exec.(orchestrator.CommandExecutor)
 	if !ok {

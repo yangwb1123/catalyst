@@ -172,7 +172,10 @@ func claudeArgv(o runOpts, isClaude bool, tier string) []string {
 // cards — history is enrichment, not correctness, so a corrupt scorecard must never abort or
 // re-color a run (it would only mean "no history line", the cold-start path). LoadScorecards is
 // the loop's only fallible step; everything downstream is pure.
-func buildRunEngine(wf asset.Workflow, o runOpts, logln func(string), costSink func(phase, model string, usd float64, latency time.Duration), runGate func(name string) gate.Result, pol mode.Policy, budget *runBudget) orchestrator.Engine {
+// buildRunEngine returns the assembled Engine plus the verdict and findings ledgers so
+// callers (execEngine in main.go, buildLoop in evolve.go) can thread rework+trajectory
+// signals into the scorecard wind-down and the Reflect memory step without re-building.
+func buildRunEngine(wf asset.Workflow, o runOpts, logln func(string), costSink func(phase, model string, usd float64, latency time.Duration), runGate func(name string) gate.Result, pol mode.Policy, budget *runBudget) (orchestrator.Engine, *verdictLedger, *reviewFindingsLedger) {
 	gates := newGateLedger()
 	phaseOut := newPhaseOutputLedger()
 	verdicts := newVerdictLedger()
@@ -207,7 +210,7 @@ func buildRunEngine(wf asset.Workflow, o runOpts, logln func(string), costSink f
 		MaxLoopBack:     maxLoopBack,
 		MaxAgentCalls:   o.maxAgentCalls,
 		ModePolicy:      pol,
-	}
+	}, verdicts, findings
 }
 
 // phaseTierResolver builds the ONE per-phase tier resolver (tierOf) that EVERY tier

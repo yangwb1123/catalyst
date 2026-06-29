@@ -173,7 +173,7 @@ func TestWindDownScorecards_SkipsWhenNoRealCost(t *testing.T) {
 	)
 	wf := asset.Workflow{Phases: []asset.Phase{{Name: "impl", Agent: "implementer"}}}
 	var logs []string
-	windDownScorecards(wf, runOpts{root: root, mode: "balanced"}, func(s string) { logs = append(logs, s) })
+	windDownScorecards(wf, runOpts{root: root, mode: "balanced"}, func(s string) { logs = append(logs, s) }, 1, false)
 
 	if _, err := os.Stat(scorecardPath(root)); !os.IsNotExist(err) {
 		t.Errorf("a no-real-cost run must NOT write scorecards.json (gate-on-real-cost skip); stat err=%v", err)
@@ -202,7 +202,7 @@ func TestWindDownScorecards_FailLoudAndContinue(t *testing.T) {
 		if strings.Contains(s, "WARNING scorecard-update failed") {
 			warned++
 		}
-	})
+	}, 2, true)
 	if warned == 0 {
 		t.Error("a producer failure must surface a loud WARNING (fail-loud), never be swallowed")
 	}

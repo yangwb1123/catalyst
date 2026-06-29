@@ -320,7 +320,7 @@ func TestCheckpointHook_PersistsAndTraces(t *testing.T) {
 	wf := asset.Workflow{Stage: "evolve"}
 	// Unbudgeted run: the budget never bills, so the checkpoint's SpentUsdMicros must be 0
 	// (asserted below) — proving the new field is byte-identical/back-compat absent a budget.
-	hook := checkpointHook(o, wf, trace.NewTracer(&buf), &runBudget{}, func(s string) { logs = append(logs, s) })
+	hook := checkpointHook(o, wf, trace.NewTracer(&buf), &runBudget{}, func(s string) { logs = append(logs, s) }, nil, nil)
 
 	const wantDurationMs int64 = 4200 // a known measured-iteration duration the loop would pass.
 	hook(2, converge.Signals{RoadmapCompletion: 0.75, GatesGreen: true}, wantDurationMs)
@@ -356,12 +356,15 @@ func TestCheckpointHook_PersistsAndTraces(t *testing.T) {
 // trajectory recorded for cross-session recall. It is a KindLesson on the stage
 // topic, carrying this round's measured signals and iteration number. (Honesty:
 // this records the real dry-run trajectory, not a fabricated agent finding.)
+// checkpointHook must append a trajectory KindLesson entry on every iteration, plus a
+// KindGap when gates are not green (the Reflect step). With nil ledgers (no real agent
+// output) and GatesGreen=false: exactly 2 entries (trajectory + gap).
 func TestCheckpointHook_AppendsMemoryEntry(t *testing.T) {
 	root := t.TempDir()
 	mkdir(t, filepath.Join(root, ".forge"))
 	var buf bytes.Buffer
 	hook := checkpointHook(runOpts{root: root, mode: "balanced"}, asset.Workflow{Stage: "evolve"},
-		trace.NewTracer(&buf), &runBudget{}, func(string) {})
+		trace.NewTracer(&buf), &runBudget{}, func(string) {}, nil, nil)
 
 	hook(3, converge.Signals{RoadmapCompletion: 0.4, GatesGreen: false}, 0)
 
@@ -369,18 +372,26 @@ func TestCheckpointHook_AppendsMemoryEntry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load memory: %v", err)
 	}
-	if len(entries) != 1 {
-		t.Fatalf("hook should append exactly one memory entry, got %d", len(entries))
+	// Trajectory (KindLesson) + gate-failure gap (KindGap) = 2 entries.
+	if len(entries) != 2 {
+		t.Fatalf("hook should append 2 entries (trajectory + gate-gap), got %d: %+v", len(entries), entries)
 	}
-	e := entries[0]
-	if e.Kind != memory.KindLesson || e.Topic != "evolve" || e.Iteration != 3 {
-		t.Errorf("entry = %+v, want KindLesson / topic evolve / iter 3", e)
+	traj := entries[0]
+	if traj.Kind != memory.KindLesson || traj.Topic != "evolve" || traj.Iteration != 3 {
+		t.Errorf("trajectory entry = %+v, want KindLesson / topic evolve / iter 3", traj)
 	}
-	if !strings.Contains(e.Detail, "roadmap=40%") || !strings.Contains(e.Detail, "gates_green=false") {
-		t.Errorf("entry detail = %q, want the round's measured trajectory", e.Detail)
+	if !strings.Contains(traj.Detail, "roadmap=40%") || !strings.Contains(traj.Detail, "gates_green=false") {
+		t.Errorf("trajectory detail = %q, want measured signals", traj.Detail)
 	}
-	if e.CreatedAtUnix == 0 {
-		t.Errorf("entry must carry a main-injected timestamp; got %d", e.CreatedAtUnix)
+	gap := entries[1]
+	if gap.Kind != memory.KindGap || gap.Topic != "evolve" || gap.Iteration != 3 {
+		t.Errorf("gap entry = %+v, want KindGap / topic evolve / iter 3", gap)
+	}
+	if !strings.Contains(gap.Detail, "gates not green") {
+		t.Errorf("gap detail = %q, want 'gates not green'", gap.Detail)
+	}
+	if traj.CreatedAtUnix == 0 {
+		t.Errorf("entry must carry a main-injected timestamp; got %d", traj.CreatedAtUnix)
 	}
 }
 
@@ -396,7 +407,7 @@ func TestCheckpointHook_WriteFailureIsSurfaced(t *testing.T) {
 	var buf bytes.Buffer
 	var logs []string
 	hook := checkpointHook(runOpts{root: root}, asset.Workflow{Stage: "evolve"},
-		trace.NewTracer(&buf), &runBudget{}, func(s string) { logs = append(logs, s) })
+		trace.NewTracer(&buf), &runBudget{}, func(s string) { logs = append(logs, s) }, nil, nil)
 
 	hook(1, converge.Signals{RoadmapCompletion: 0.1}, 0)
 

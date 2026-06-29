@@ -36,7 +36,7 @@ func tierConsumers(t *testing.T, wf asset.Workflow, p asset.Phase, ratio float64
 
 	var stamped string
 	recordSink := func(_, model string, _ float64, _ time.Duration) { stamped = model }
-	eng := buildRunEngine(wf, o, func(string) {}, recordSink,
+	eng, _, _ := buildRunEngine(wf, o, func(string) {}, recordSink,
 		func(string) gate.Result { return gate.Result{} }, mode.Policy{}, b)
 	ce, ok := eng.Exec.(orchestrator.CommandExecutor)
 	if !ok {
@@ -128,7 +128,7 @@ func TestBudgetTier_RatioReadAtSpawnNotCached(t *testing.T) {
 
 	o := runOpts{root: repoRoot(), mode: "balanced", executor: "command", agentCmd: "claude"}
 	b := &runBudget{cap: 1.00} // starts empty -> ratio 0
-	eng := buildRunEngine(wf, o, func(string) {}, func(string, string, float64, time.Duration) {},
+	eng, _, _ := buildRunEngine(wf, o, func(string) {}, func(string, string, float64, time.Duration) {},
 		func(string) gate.Result { return gate.Result{} }, mode.Policy{}, b)
 	ce := eng.Exec.(orchestrator.CommandExecutor)
 
@@ -160,7 +160,7 @@ func TestBudgetTier_NoBudgetByteIdenticalAllConsumers(t *testing.T) {
 	o := runOpts{root: repoRoot(), mode: "balanced", executor: "command", agentCmd: "claude"}
 	b := &runBudget{} // cap 0: unset, the back-compat hinge
 	var stamped string
-	eng := buildRunEngine(wf, o, func(string) {}, func(_, m string, _ float64, _ time.Duration) { stamped = m },
+	eng, _, _ := buildRunEngine(wf, o, func(string) {}, func(_, m string, _ float64, _ time.Duration) { stamped = m },
 		func(string) gate.Result { return gate.Result{} }, mode.Policy{}, b)
 	ce := eng.Exec.(orchestrator.CommandExecutor)
 

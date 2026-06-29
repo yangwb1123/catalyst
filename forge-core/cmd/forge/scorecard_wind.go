@@ -65,7 +65,12 @@ type scorecardPair struct {
 // CONTINUE per pair (a scorecard-update failure warns but never changes the run's outcome).
 // It returns nothing and is called purely for its side effect (writing scorecards.json), so a
 // caller wires it AFTER computing the run's real exit code — the scorecard is enrichment.
-func windDownScorecards(wf asset.Workflow, o runOpts, logln func(string)) {
+//
+// iterations is the real loop-count (1 for forge run, outcome.Iterations for forge evolve).
+// reworked is true when a reviewer issued REQUEST_CHANGES during this run. Both are wired
+// into scorecard-update.mjs as --iterations and --rework, populating avg_iterations and
+// rework_rate in the scorecard row. Omitted when zero/false (legacy no-trajectory path).
+func windDownScorecards(wf asset.Workflow, o runOpts, logln func(string), iterations int, reworked bool) {
 	tp := tracePath(o.root)
 	if !traceHasModelCost(tp) {
 		// No real billed-cost event (dry/echo, or a run that spawned no LLM phase):
@@ -73,7 +78,7 @@ func windDownScorecards(wf asset.Workflow, o runOpts, logln func(string)) {
 		return
 	}
 	for _, p := range distinctScorecardPairs(wf, tp) {
-		runScorecardUpdate(o.root, p, logln)
+		runScorecardUpdate(o.root, p, logln, iterations, reworked)
 	}
 }
 
@@ -132,21 +137,34 @@ func distinctScorecardPairs(wf asset.Workflow, tracePath string) []scorecardPair
 // runScorecardUpdate shells the runnable learning-loop step for ONE pair:
 //
 //	node harness/scorecard-update.mjs --model <m> --task-type <tt> \
-//	     --trace <root>/.forge/trace.jsonl --out <root>/.agent/routing/scorecards.json
+//	     --trace <root>/.forge/trace.jsonl --out <root>/.agent/routing/scorecards.json \
+//	     [--iterations <n>] [--rework 0|1]
 //
 // run from the repo root (cmd.Dir, the SAME convention internal/gate uses so
 // `harness/...` resolves) with ABSOLUTE --trace/--out so the paths are unambiguous. The
 // producer's own --model filter (scorecard-update.mjs) makes it aggregate ONLY this
 // model's cost/latency from the shared trace, so each pair's row carries its own numbers.
+// --iterations and --rework carry the real trajectory (rounds-to-green, reviewer bounce)
+// into the scorecard row's avg_iterations / rework_rate fields. They are omitted when
+// iterations<=0 (legacy no-trajectory path) so the row degrades gracefully.
 //
 // FAIL-LOUD-AND-CONTINUE: a non-zero exit (or a failure to even start node) prints a
 // stderr WARNING with the captured output, then returns — the loop moves to the next pair
 // and the run's exit code is untouched. The scorecard is enrichment; a producer hiccup
 // must never abort or re-color the run.
-func runScorecardUpdate(root string, p scorecardPair, logln func(string)) {
-	cmd := exec.Command("node", "harness/scorecard-update.mjs",
+func runScorecardUpdate(root string, p scorecardPair, logln func(string), iterations int, reworked bool) {
+	args := []string{"harness/scorecard-update.mjs",
 		"--model", p.model, "--task-type", p.taskType,
-		"--trace", tracePath(root), "--out", scorecardPath(root))
+		"--trace", tracePath(root), "--out", scorecardPath(root)}
+	if iterations > 0 {
+		args = append(args, "--iterations", fmt.Sprintf("%d", iterations))
+		reworkFlag := "0"
+		if reworked {
+			reworkFlag = "1"
+		}
+		args = append(args, "--rework", reworkFlag)
+	}
+	cmd := exec.Command("node", args...)
 	cmd.Dir = root
 	if out, err := cmd.CombinedOutput(); err != nil {
 		logln(fmt.Sprintf(

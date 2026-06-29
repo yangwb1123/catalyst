@@ -351,7 +351,7 @@ func TestBuildLoop_ThreadsCostSinkIntoExecutor(t *testing.T) {
 	wf := asset.Workflow{Stage: "evolve", Stop: asset.StopCondition{Type: "external"},
 		Phases: []asset.Phase{{Name: "implementer", Agent: "implementer"}}}
 	wantModel := orchestrator.PhaseTier(wf.Phases[0], "balanced")
-	loop := buildLoop(wf, o, 1, func(string) {}, costEmitter(trace.NewTracer(&buf), func(string) {}), &runBudget{})
+	loop, _, _ := buildLoop(wf, o, 1, func(string) {}, costEmitter(trace.NewTracer(&buf), func(string) {}), &runBudget{})
 
 	ce, ok := loop.Engine.Exec.(orchestrator.CommandExecutor)
 	if !ok {
@@ -383,7 +383,7 @@ func TestCheckpointHook_IterationEventCarriesNoCost(t *testing.T) {
 	mkdir(t, filepath.Join(root, ".forge"))
 	var buf bytes.Buffer
 	hook := checkpointHook(runOpts{root: root, mode: "balanced"}, asset.Workflow{Stage: "evolve"},
-		trace.NewTracer(&buf), &runBudget{}, func(string) {})
+		trace.NewTracer(&buf), &runBudget{}, func(string) {}, nil, nil)
 
 	hook(2, converge.Signals{RoadmapCompletion: 0.75, GatesGreen: true}, 4200)
 

@@ -151,9 +151,9 @@ func execLoop(wf asset.Workflow, o runOpts, maxIter int, maxIterSource string, r
 	// last-checkpointed total (through the last COMPLETED iteration) — a crashed iteration's
 	// un-checkpointed partial is re-billed on resume, a conservative under-count cost.go notes.
 	budget.seed(spentMicros)
-	loop := buildLoop(wf, o, maxIter, logln, costEmitter(tracer, logln), budget)
+	loop, verdicts, findings := buildLoop(wf, o, maxIter, logln, costEmitter(tracer, logln), budget)
 	loop.StartIter, loop.ResumePrev, loop.StartPhase = start, prev, phaseStart
-	loop.OnIteration = checkpointHook(o, wf, tracer, budget, logln)
+	loop.OnIteration = checkpointHook(o, wf, tracer, budget, logln, verdicts, findings)
 	loop.OnPhase = phaseCheckpointHook(o, wf, budget, logln)
 	loop.Parallel = parallelEnabled(o, wf, logln, "forge evolve") // depends_on-gated opt-in
 	fmt.Printf("forge evolve: stage=%s mode=%s max-iter=%d (%s) type=%s start-iter=%d (doom-loop tripwire=2)\n",
@@ -166,7 +166,8 @@ func execLoop(wf asset.Workflow, o runOpts, maxIter int, maxIterSource string, r
 	// producer hiccup leaves the loop's outcome (reportLoop below) exactly as Run set it.
 	// It runs whether the loop converged or hit the safety bound: real cost billed across
 	// the iterations is attributable regardless of how the loop ended.
-	windDownScorecards(wf, o, logln)
+	// outcome.Iterations carries the real loop count; verdicts.wasReworked() the rework signal.
+	windDownScorecards(wf, o, logln, outcome.Iterations, verdicts.wasReworked())
 	return reportLoop(outcome, runErr)
 }
 
@@ -195,7 +196,10 @@ func execLoop(wf asset.Workflow, o runOpts, maxIter int, maxIterSource string, r
 // so the cumulative dollar cap meters spend across EVERY iteration (the Engine is built
 // once and reused) — the run-level total bound, distinct from the per-iteration agent-call
 // count cap. Unset (--run-budget-usd empty) ⇒ a no-op accumulator + nil puller ⇒ unchanged.
-func buildLoop(wf asset.Workflow, o runOpts, maxIter int, logln func(string), costSink func(phase, model string, usd float64, latency time.Duration), budget *runBudget) orchestrator.LoopEngine {
+// buildLoop returns the LoopEngine plus the verdict/findings ledgers built inside
+// buildRunEngine, so execLoop can thread rework+trajectory into the scorecard wind-down
+// and the Reflect memory step without rebuilding or re-exposing the Engine internals.
+func buildLoop(wf asset.Workflow, o runOpts, maxIter int, logln func(string), costSink func(phase, model string, usd float64, latency time.Duration), budget *runBudget) (orchestrator.LoopEngine, *verdictLedger, *reviewFindingsLedger) {
 	probe := &loopProbe{root: o.root}
 	// The Engine — with its four prompt/feedback ledgers (gate verdicts, feeds_forward
 	// output, reviewer verdicts driving loop-back, and REQUEST_CHANGES findings) — is built
@@ -205,7 +209,7 @@ func buildLoop(wf asset.Workflow, o runOpts, maxIter int, logln func(string), co
 	// the whole loop and update in place across iterations — the right converging-loop
 	// semantics (latest gate state, latest plan, latest verdict).
 	lifecycle := resolveLifecycle(o)
-	eng := buildRunEngine(wf, o, logln, costSink,
+	eng, verdicts, findings := buildRunEngine(wf, o, logln, costSink,
 		func(name string) gate.Result { return resolveGate(o.root, name, probe.refresh()) },
 		mode.Effective(o.mode, lifecycle), budget)
 	approved := humanApproved(o.root, wf.Stage, o.approved)
@@ -215,7 +219,7 @@ func buildLoop(wf asset.Workflow, o runOpts, maxIter int, logln func(string), co
 			statuses, categories := probe.current()
 			return gatherSignals(o.root, wf, statuses, categories, lifecycle, approved)
 		},
-		maxIter, 2, logln)
+		maxIter, 2, logln), verdicts, findings
 }
 
 // reportLoop prints how the loop ended and maps it to an exit code: a converged
@@ -281,7 +285,9 @@ func resumeStart(root string, resume bool) (start int, prev float64, spentMicros
 // and the failure is never SWALLOWED, so we never pretend recovery state is durable
 // when it is not. Contrast openTracer, which DOES fail-closed: losing the audit
 // trail entirely is the blind spot trace prevents.
-func checkpointHook(o runOpts, wf asset.Workflow, tracer *trace.Tracer, budget *runBudget, logln func(string)) func(int, converge.Signals, int64) {
+// checkpointHook accepts the verdict and findings ledgers so it can extract structured
+// Reflect-step lessons (reviewer findings, gate gaps) alongside the trajectory entry.
+func checkpointHook(o runOpts, wf asset.Workflow, tracer *trace.Tracer, budget *runBudget, logln func(string), verdicts *verdictLedger, findings *reviewFindingsLedger) func(int, converge.Signals, int64) {
 	return func(i int, sig converge.Signals, durationMs int64) {
 		// SpentUsdMicros records the run's cumulative billed cost AT THIS iteration so a
 		// later --resume re-seeds the budget instead of restarting the cap from $0 (the
@@ -303,7 +309,7 @@ func checkpointHook(o runOpts, wf asset.Workflow, tracer *trace.Tracer, budget *
 			detail = err.Error()
 			logln(fmt.Sprintf("forge evolve: WARNING checkpoint write failed (recovery state NOT durable): %v", err))
 		}
-		recordMemory(o.root, wf, i, sig, logln)
+		recordMemory(o.root, wf, i, sig, verdicts, findings, logln)
 		emitTrace(tracer, trace.Event{Kind: "iteration", Name: fmt.Sprintf("%d", i), Status: status, DurationMs: durationMs, Detail: detail}, logln)
 	}
 }
@@ -335,23 +341,50 @@ func phaseCheckpointHook(o runOpts, wf asset.Workflow, budget *runBudget, logln 
 	}
 }
 
-// recordMemory appends this iteration's trajectory to the cross-session store so a
-// later round (or --resume) reads where the loop stood. HONESTY: under v1 evolve the
-// executor defaults to dry-run, so the only thing this round TRULY produced is its
-// trajectory / convergence signal (roadmap %, gate state) — real, and what we record
-// (KindLesson, topic=stage). It is NOT a semantic gap/decision a real agent found:
-// those exist only once the loop fires a real agent (--executor=command
-// --agent-cmd=claude); a later wave will parse real-agent output into gap/decision
-// entries (today we record only the dry-run run trajectory). We do not fabricate
-// findings the dry loop never made. Fail-LOUD-and-continue: a failed append is
-// warned, never aborts (enrichment, not correctness).
-func recordMemory(root string, wf asset.Workflow, i int, sig converge.Signals, logln func(string)) {
-	e := memory.Entry{
-		Kind: memory.KindLesson, Topic: wf.Stage, Iteration: i, CreatedAtUnix: time.Now().Unix(),
-		Detail: fmt.Sprintf("iter %d: roadmap=%.0f%%, gates_green=%v (dry-run trajectory)", i, sig.RoadmapCompletion*100, sig.GatesGreen),
+// recordMemory appends this iteration's knowledge entries to the cross-session store.
+//
+// Three entry types, each honest about its source:
+//  1. Trajectory KindLesson (always): the iteration's measured convergence signals —
+//     roadmap %, gate state. Real signal regardless of executor (dry or live).
+//  2. Reviewer findings KindLesson (only when rework happened): structured lessons from
+//     REQUEST_CHANGES findings, one per target phase. Only written when real agent output
+//     exists (verdicts.wasReworked() is true — dry/echo runs never set this).
+//  3. Gate-failure KindGap (when !sig.GatesGreen): surfaces the gate failure explicitly
+//     so the next iteration's prompt context names it as an open gap.
+//
+// Fail-LOUD-and-continue on each append: a write failure is warned but never aborts
+// the loop (enrichment, not correctness). Nil ledgers (dry/echo runs) produce only the
+// trajectory entry.
+func recordMemory(root string, wf asset.Workflow, i int, sig converge.Signals, verdicts *verdictLedger, findings *reviewFindingsLedger, logln func(string)) {
+	appendEntry := func(e memory.Entry) {
+		if err := memory.Append(memoryPath(root), e); err != nil {
+			logln(fmt.Sprintf("forge evolve: WARNING memory append failed (entry NOT recorded): %v", err))
+		}
 	}
-	if err := memory.Append(memoryPath(root), e); err != nil {
-		logln(fmt.Sprintf("forge evolve: WARNING memory append failed (trajectory NOT recorded): %v", err))
+	now := time.Now().Unix()
+	// 1. Trajectory (always)
+	appendEntry(memory.Entry{
+		Kind: memory.KindLesson, Topic: wf.Stage, Iteration: i, CreatedAtUnix: now,
+		Detail: fmt.Sprintf("iter %d: roadmap=%.0f%%, gates_green=%v", i, sig.RoadmapCompletion*100, sig.GatesGreen),
+	})
+	// 2. Reviewer REQUEST_CHANGES findings → structured KindLesson per target phase
+	if verdicts.wasReworked() {
+		for target, text := range findings.allFindings() {
+			if text == "" {
+				continue
+			}
+			appendEntry(memory.Entry{
+				Kind: memory.KindLesson, Topic: wf.Stage, Iteration: i, CreatedAtUnix: now,
+				Detail: fmt.Sprintf("reviewer requested changes for %s: %s", target, text),
+			})
+		}
+	}
+	// 3. Gate failures → KindGap
+	if !sig.GatesGreen {
+		appendEntry(memory.Entry{
+			Kind: memory.KindGap, Topic: wf.Stage, Iteration: i, CreatedAtUnix: now,
+			Detail: fmt.Sprintf("iter %d: gates not green at roadmap=%.0f%% — fix gate failures before claiming convergence", i, sig.RoadmapCompletion*100),
+		})
 	}
 }
 

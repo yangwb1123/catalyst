@@ -348,7 +348,7 @@ func execEngine(wf asset.Workflow, o runOpts) int {
 		fmt.Fprintf(os.Stderr, "forge run: %v\n", err)
 		return 1
 	}
-	eng := buildRunEngine(wf, o, logln, costEmitter(tracer, logln), harnessRunner(o.root, probe), pol, budget)
+	eng, verdicts, _ := buildRunEngine(wf, o, logln, costEmitter(tracer, logln), harnessRunner(o.root, probe), pol, budget)
 	// Learning-loop wind-down: attribute this run's REAL billed cost into the scorecards
 	// REGARDLESS of outcome — DEFERRED so a run that fails or exhausts its --run-budget-usd
 	// mid-way (the highest-cost, most-informative cases — a REJECTED build is the most useful
@@ -358,7 +358,9 @@ func execEngine(wf asset.Workflow, o runOpts) int {
 	// trace it reads is still open, per scorecard_wind.go's flush-ordering invariant. Still
 	// gate-on-real-cost (a dry/echo or nothing-billed failure skips it) + fail-loud-and-continue
 	// (a producer hiccup never flips the run's exit code, set before these defers fire).
-	defer windDownScorecards(wf, o, logln)
+	// iterations=1: a single `forge run` is one execution; verdicts.wasReworked() carries the
+	// real reviewer-bounce signal into avg_iterations / rework_rate.
+	defer func() { windDownScorecards(wf, o, logln, 1, verdicts.wasReworked()) }()
 	fmt.Printf("forge run: stage=%s mode=%s lifecycle=%s executor=%s gates=%v reviewer=%v discover=%s design=%s adr=%v (%d phases)\n",
 		wf.Stage, o.mode, lifecycle, o.executor, pol.Gates, pol.Reviewer,
 		pol.DiscoverDepth, pol.DesignDepth, pol.ADR, len(wf.Phases))
