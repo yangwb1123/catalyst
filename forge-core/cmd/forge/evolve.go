@@ -50,6 +50,9 @@ func cmdEvolve(args []string) int {
 		return 2
 	}
 	o.root = gate.RepoRoot(o.root)
+	if name == "auto" {
+		name = autoSelectWorkflow(o.root, fs, &o)
+	}
 	wf, err := loadWorkflow(o.root, name)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "forge evolve: %v\n", err)
@@ -379,12 +382,21 @@ func recordMemory(root string, wf asset.Workflow, i int, sig converge.Signals, v
 			})
 		}
 	}
-	// 3. Gate failures → KindGap
+	// 3. Gate failures → KindGap; iter 2+ persistent failure → KindDecision with escalation hint
 	if !sig.GatesGreen {
 		appendEntry(memory.Entry{
 			Kind: memory.KindGap, Topic: wf.Stage, Iteration: i, CreatedAtUnix: now,
 			Detail: fmt.Sprintf("iter %d: gates not green at roadmap=%.0f%% — fix gate failures before claiming convergence", i, sig.RoadmapCompletion*100),
 		})
+		if i >= 2 {
+			// Reflect self-analysis: loop has NOT fixed gate failures across multiple iterations.
+			// This is a structural diagnosis: the current approach (model tier / workflow) is not
+			// converging. Emit a KindDecision entry naming the adaptive adjustment options.
+			appendEntry(memory.Entry{
+				Kind: memory.KindDecision, Topic: wf.Stage, Iteration: i, CreatedAtUnix: now,
+				Detail: fmt.Sprintf("iter %d: RECURRING gate failure (gates not green across %d+ iterations) — self-analysis: current approach not converging; options: (1) review gate output for specific failing check, (2) escalate tier for failing phases, (3) reduce scope of this iteration's changes", i, i),
+			})
+		}
 	}
 }
 

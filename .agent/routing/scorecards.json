@@ -1,0 +1,58 @@
+[
+  {
+    "_note": "bootstrap prior — NOT empirically derived from runs of this project; these are conservative initial priors. Design intent: each model is rated highest for tasks matching its natural capability tier, so routing is preserved until real run data displaces these. windDownScorecards overwrites these entries with real run data after each model-billed execution. Samples=25 clears historyMinSamples=20 so the Router has a non-trivial starting point.",
+    "model": "opus",
+    "task_type": "implementation",
+    "quality_score": 0.88,
+    "samples": 25,
+    "updated_at": "2026-06-29T00:00:00Z"
+  },
+  {
+    "_note": "bootstrap prior",
+    "model": "sonnet",
+    "task_type": "implementation",
+    "quality_score": 0.82,
+    "samples": 25,
+    "updated_at": "2026-06-29T00:00:00Z"
+  },
+  {
+    "_note": "bootstrap prior",
+    "model": "opus",
+    "task_type": "bugfix",
+    "quality_score": 0.85,
+    "samples": 25,
+    "updated_at": "2026-06-29T00:00:00Z"
+  },
+  {
+    "_note": "bootstrap prior",
+    "model": "sonnet",
+    "task_type": "bugfix",
+    "quality_score": 0.80,
+    "samples": 25,
+    "updated_at": "2026-06-29T00:00:00Z"
+  },
+  {
+    "_note": "bootstrap prior",
+    "model": "haiku",
+    "task_type": "test",
+    "quality_score": 0.87,
+    "samples": 25,
+    "updated_at": "2026-06-29T00:00:00Z"
+  },
+  {
+    "_note": "bootstrap prior",
+    "model": "haiku",
+    "task_type": "docs",
+    "quality_score": 0.90,
+    "samples": 25,
+    "updated_at": "2026-06-29T00:00:00Z"
+  },
+  {
+    "_note": "bootstrap prior",
+    "model": "opus",
+    "task_type": "architecture",
+    "quality_score": 0.91,
+    "samples": 25,
+    "updated_at": "2026-06-29T00:00:00Z"
+  }
+]

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"os"
 	"path/filepath"
 	"testing"
@@ -118,5 +119,37 @@ func TestSuggestWorkflow_PreservesMode(t *testing.T) {
 	s := suggestWorkflow(p)
 	if s.Mode != "engineering" || s.Lifecycle != "production" {
 		t.Errorf("mode=%q lifecycle=%q, want engineering/production (preserved from project.yml)", s.Mode, s.Lifecycle)
+	}
+}
+
+func TestAutoSelectWorkflow_GoProject_ReturnsEvolve(t *testing.T) {
+	root := t.TempDir()
+	writeFileAt(t, filepath.Join(root, "go.mod"), "module example.com/foo\n")
+	writeFileAt(t, filepath.Join(root, "main_test.go"), "package main\n")
+	fs := flag.NewFlagSet("evolve", flag.ContinueOnError)
+	var o runOpts
+	bindRunOpts(fs, &o)
+	_ = fs.Parse(nil) // no flags set — auto should fill mode/lifecycle
+
+	name := autoSelectWorkflow(root, fs, &o)
+	if name != "evolve" {
+		t.Errorf("autoSelectWorkflow = %q, want evolve for go project with tests", name)
+	}
+	if o.mode == "" {
+		t.Error("autoSelectWorkflow must set o.mode when --mode not explicitly given")
+	}
+}
+
+func TestAutoSelectWorkflow_ExplicitModePreserved(t *testing.T) {
+	root := t.TempDir()
+	writeFileAt(t, filepath.Join(root, "go.mod"), "module example.com/foo\n")
+	fs := flag.NewFlagSet("evolve", flag.ContinueOnError)
+	var o runOpts
+	bindRunOpts(fs, &o)
+	_ = fs.Parse([]string{"--mode", "engineering"}) // explicit mode
+
+	_ = autoSelectWorkflow(root, fs, &o)
+	if o.mode != "engineering" {
+		t.Errorf("explicit --mode must not be overridden; got %q", o.mode)
 	}
 }

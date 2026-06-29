@@ -74,6 +74,32 @@ func cmdDetect(args []string) int {
 	return 0
 }
 
+// autoSelectWorkflow runs detection and wires the chosen workflow + flags into o.
+// Called by cmdEvolve when the user passes `forge evolve auto`. Returns the detected
+// workflow name; mode/lifecycle are written into *o only when not explicitly set via fs.
+func autoSelectWorkflow(root string, fs *flag.FlagSet, o *runOpts) string {
+	p := detectProject(root)
+	s := suggestWorkflow(p)
+	fmt.Printf("forge evolve: auto-detected workflow=%q mode=%s lifecycle=%s — %s\n",
+		s.Workflow, s.Mode, s.Lifecycle, s.Reason)
+	var modeSet, lifecycleSet bool
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == "mode" {
+			modeSet = true
+		}
+		if f.Name == "lifecycle" {
+			lifecycleSet = true
+		}
+	})
+	if !modeSet {
+		o.mode = s.Mode
+	}
+	if !lifecycleSet {
+		o.lifecycle = s.Lifecycle
+	}
+	return s.Workflow
+}
+
 func boolStr(b bool) string {
 	if b {
 		return "yes"
