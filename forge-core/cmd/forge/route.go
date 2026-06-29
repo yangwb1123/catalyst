@@ -149,15 +149,11 @@ func forcesOpusSuffix(level string) string {
 // historyDecision adds policy.yml's final decision step (history-tiebreak) ON
 // TOP of the resolved tier, and prints it as an observable, honest report line.
 //
-// HONEST v1 scope (claude-only, policy.yml D4): each tier band holds a SINGLE
-// candidate model, so the candidate set built here is [tier] — one element. With
-// one candidate there is no real shoot-out: HistoryTiebreak either echoes that
-// model (its scorecard merely made observable) or falls back to the same tier
-// default. What this buys today is decision-chain completeness (the chain no
-// longer silently drops its history tail) plus full observability of the scored
-// history — the genuine multi-candidate选优 is v3's cross-vendor pool. A missing
-// scorecard file is a cold start, NOT an error, so route's verdict is unchanged
-// from today and we only add one "no scorecard -> tier_default" line.
+// v1.5 multi-candidate scope: for non-safety-floor task types, the candidate set is
+// routing.CandidatesForTier(tier) = [tier, ...cheaper]. HistoryTiebreak picks the
+// highest-quality qualifying model; a cheaper model wins only when it has sufficient
+// samples AND better quality than tier. Cold start → falls back to tier (candidates[0]).
+// This makes `forge route` reflect the actual learning-loop routing decision.
 //
 // LoadScorecards is the only fallible step; a load error is surfaced honestly as
 // the reason (the tier model still passes through) rather than silently dropped.
@@ -166,8 +162,7 @@ func historyDecision(tier, taskType, path string) (picked, reason string) {
 	if err != nil {
 		return tier, fmt.Sprintf("scorecard unreadable (%v) -> tier_default", err)
 	}
-	// v1 single-candidate set: the tier name IS the claude-only model for the band.
-	return routing.HistoryTiebreak([]string{tier}, taskType, cards, historyMinSamples)
+	return routing.HistoryTiebreak(routing.CandidatesForTier(tier), taskType, cards, historyMinSamples)
 }
 
 // parseRouteFlags binds the dimension/context flags and parses args. The six

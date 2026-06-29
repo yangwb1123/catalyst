@@ -244,43 +244,44 @@ func phaseTierResolver(mode string, spendRatio func() float64, cards []routing.S
 		if adj != base && logln != nil {
 			logln(fmt.Sprintf("phase %s: near budget (spend-ratio %.2f) — downtiering %s→%s to extend runway (cheaper model, lower quality; safety-floor agents exempt)", p.Name, ratio, base, adj))
 		}
-		logPhaseHistory(p, adj, cards, logln)
-		return adj
+		picked := logPhaseHistory(p, adj, cards, logln)
+		return picked
 	}
 }
 
 // logPhaseHistory closes the decision-chain's final step (history-tiebreak) for the agent
-// phase path, mirroring route.go's historyDecision but as pure OBSERVABILITY on a real run:
-// it logs WHY history did (or did not) speak, and changes NOTHING.
+// phase path. It returns the HistoryTiebreak-selected model, which phaseTierResolver uses
+// as the actual routing decision for non-safety-floor agents (v1.5 upgrade).
 //
-// HONEST v1 SCOPE — this is observability only, NOT a routing input:
-//   - The candidate set is [adj] (one element): v1's provider_pool is claude-only (policy.yml
-//     D4) and each tier band holds a SINGLE candidate model, so there is no real shoot-out.
-//     HistoryTiebreak over one candidate is a PASSTHROUGH — picked == adj ALWAYS — so the
-//     phase's tier is untouched; we only surface the scored history. The genuine multi-model
-//     选优 is v3's cross-vendor pool (Qwen/DeepSeek), where [adj] widens to >1 candidate and
-//     the SAME HistoryTiebreak (already wired + tested) starts to actually pick. We do NOT
-//     pretend v1 is "learning" or steering routing — quality_score is still repo-wide and the
-//     candidate set is singular; what PR2 buys is the loop's read-back made VISIBLE and the
-//     plumbing ready, not a behavior change.
-//   - An UNMAPPED agent (a harness/gate phase — taskTypeForAgent ok=false) is SKIPPED, not
-//     logged: it owns no scorecard task_type, exactly as the wind-down producer skips it.
+// v1.5 MULTI-CANDIDATE ROUTING:
+//   - For non-floor agents (implementer/planner/scanner/qa/…), the candidate set is
+//     routing.CandidatesForTier(adj) = [adj, ...cheaper]. HistoryTiebreak selects the highest-
+//     quality qualifying candidate; a cheaper model wins only when it has sufficient history
+//     AND better quality_score than adj. Cold start / thin data → falls back to adj (candidates[0]).
+//     This makes the learning loop non-trivial: haiku beats sonnet if evidence supports it.
+//   - For safety-floor agents (reviewer/architect/cto), the candidate set stays [adj] — a
+//     single-element passthrough so Opus can never be overridden by scorecard data.
+//   - An UNMAPPED agent (harness/gate phase) is SKIPPED and adj is returned unchanged: it
+//     owns no scorecard task_type, exactly as the wind-down producer skips it.
 //
-// logln nil (a quiet resolver, e.g. some tests) or cards empty (cold start) are both fine —
-// the former no-ops, the latter logs an honest "no scorecard -> tier_default" via the reason.
-func logPhaseHistory(p asset.Phase, adj string, cards []routing.Scorecard, logln func(string)) {
-	if logln == nil {
-		return
-	}
+// logln nil (quiet resolver) → no log output, but picked is still returned. cards empty
+// (cold start) → falls back to adj with an honest "no scorecard -> tier_default" reason.
+func logPhaseHistory(p asset.Phase, adj string, cards []routing.Scorecard, logln func(string)) string {
 	taskType, ok := taskTypeForAgent(p.Agent)
 	if !ok {
-		return // unmapped (harness/gate) phase: no task_type to attribute history under
+		return adj // unmapped (harness/gate) phase: no task_type, return adj unchanged
 	}
-	// v1 single-candidate set [adj]: HistoryTiebreak passes the tier through (picked == adj);
-	// the reason is the observable payload. picked is intentionally unused for routing — the
-	// returned tier stays adj — proving history is observability, not a decision here.
-	_, reason := routing.HistoryTiebreak([]string{adj}, taskType, cards, historyMinSamples)
-	logln(fmt.Sprintf("phase %s: tier=%s (task=%s) — history: %s [v1 single-candidate: observability only, tier unchanged]", p.Name, adj, taskType, reason))
+	candidates := routing.CandidatesForTier(adj)
+	suffix := "[v1.5 multi-candidate: history may pick cheaper model]"
+	if routing.IsOpusFloorAgent(p.Agent) {
+		candidates = []string{adj} // safety-floor agents: single-candidate passthrough
+		suffix = "[safety-floor: opus locked, history observability only]"
+	}
+	picked, reason := routing.HistoryTiebreak(candidates, taskType, cards, historyMinSamples)
+	if logln != nil {
+		logln(fmt.Sprintf("phase %s: tier=%s (task=%s) — history: %s %s", p.Name, adj, taskType, reason, suffix))
+	}
+	return picked
 }
 
 // phaseTierByName is the NAME-keyed face of a phaseTierResolver tierOf, for the cost Observe

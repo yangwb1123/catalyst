@@ -215,3 +215,42 @@ func TestHistoryTiebreak_SingleCandidateV1Passthrough(t *testing.T) {
 		t.Errorf("reason = %q, want %q", reason, want)
 	}
 }
+
+func TestCandidatesForTier(t *testing.T) {
+	cases := []struct {
+		tier string
+		want []string
+	}{
+		{Haiku, []string{Haiku}},
+		{Sonnet, []string{Sonnet, Haiku}},
+		{Opus, []string{Opus, Sonnet, Haiku}},
+		{"unknown", []string{"unknown"}}, // unknown tier: single-element passthrough
+	}
+	for _, c := range cases {
+		got := CandidatesForTier(c.tier)
+		if len(got) != len(c.want) {
+			t.Errorf("CandidatesForTier(%q) = %v, want %v", c.tier, got, c.want)
+			continue
+		}
+		for i, g := range got {
+			if g != c.want[i] {
+				t.Errorf("CandidatesForTier(%q)[%d] = %q, want %q", c.tier, i, g, c.want[i])
+			}
+		}
+	}
+}
+
+func TestIsOpusFloorAgent(t *testing.T) {
+	floor := []string{"reviewer", "architect", "cto"}
+	for _, a := range floor {
+		if !IsOpusFloorAgent(a) {
+			t.Errorf("IsOpusFloorAgent(%q) = false, want true (safety floor)", a)
+		}
+	}
+	nonFloor := []string{"implementer", "planner", "scanner", "qa", "harness", ""}
+	for _, a := range nonFloor {
+		if IsOpusFloorAgent(a) {
+			t.Errorf("IsOpusFloorAgent(%q) = true, want false", a)
+		}
+	}
+}

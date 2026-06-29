@@ -97,6 +97,31 @@ func higher(a, b string) string {
 // safety floor. Mirrors risk.Higher's exported role for risk levels.
 func Higher(a, b string) string { return higher(a, b) }
 
+// IsOpusFloorAgent reports whether agent is a judgement-only role (architect/cto/reviewer)
+// whose Opus safety floor cannot be lowered by budget pressure or learning-loop history.
+// These agents always route to Opus regardless of scorecard evidence.
+func IsOpusFloorAgent(agent string) bool { return opusFloorAgents[agent] }
+
+// CandidatesForTier returns the HistoryTiebreak candidate set for a given tier: the tier
+// itself at index 0 (safe cold-start fallback) followed by cheaper alternatives in
+// descending tier order. HistoryTiebreak picks the highest-quality qualifying candidate;
+// a cheaper model wins only when it has sufficient samples AND better quality than the
+// tier default, making cost-reduction evidence-gated rather than static.
+//
+// Used by phaseTierResolver and historyDecision for non-floor agents (v1.5 upgrade):
+// the safety floor agents (IsOpusFloorAgent) still use a single-element [adj] set so
+// their Opus assignment can never be overridden by scorecard data.
+func CandidatesForTier(tier string) []string {
+	switch tier {
+	case Opus:
+		return []string{Opus, Sonnet, Haiku}
+	case Sonnet:
+		return []string{Sonnet, Haiku}
+	default:
+		return []string{tier}
+	}
+}
+
 // ── Multi-dimensional task scorer (policy.yml scoring/tiers/override/budget) ──
 //
 // Score + TierForScore are the task-scoring pathway, distinct from TierFor's

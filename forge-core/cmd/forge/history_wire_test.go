@@ -40,19 +40,18 @@ func scorecardsAt(t *testing.T, body string) (root string) {
 	return root
 }
 
-// ── ① HISTORY OBSERVABILITY + SINGLE-CANDIDATE PASSTHROUGH (the headline) ─────────────────
+// ── ① HISTORY ROUTING v1.5: qualifying scorecard for tier model → tier unchanged (tier wins) ──
 //
-// A qualifying scorecard (samples >= historyMinSamples) for the resolved (tier, task_type) must
-// make HistoryTiebreak's reason OBSERVABLE in the log ("picked ... by quality"), while the
-// resolver's RETURNED tier stays the budget-adjusted tier unchanged — proving the v1 single
-// candidate is a decision no-op (observability, not routing).
-func TestHistory_QualifyingScorecardLoggedButTierUnchanged(t *testing.T) {
-	// In-budget sonnet implementer (task_type "implementation"); a qualifying scorecard exists.
+// With v1.5 multi-candidate routing, candidates=[sonnet, haiku] for an adj=sonnet phase.
+// When the scorecard only has sonnet data (no haiku entry), sonnet is the best qualifying
+// candidate: picked=sonnet (unchanged). The history reason is observable in the log.
+func TestHistory_QualifyingScorecardLoggedTierChosen(t *testing.T) {
+	// In-budget sonnet implementer (task_type "implementation"); only sonnet has a scorecard.
 	phase := asset.Phase{Name: "implementer", Agent: "implementer"} // PhaseTier => sonnet (impl floor)
 	cards := []routing.Scorecard{
 		{Model: routing.Sonnet, TaskType: "implementation", QualityScore: 0.91, Samples: 50, UpdatedAt: "2026-06-18T10:00:00Z"},
 	}
-	want := orchestrator.PhaseTier(phase, "balanced") // sonnet — the tier history must NOT change
+	want := orchestrator.PhaseTier(phase, "balanced") // sonnet — haiku has no data, sonnet wins
 	if want != routing.Sonnet {
 		t.Fatalf("precondition: implementer routes to sonnet; got %q", want)
 	}
@@ -62,17 +61,47 @@ func TestHistory_QualifyingScorecardLoggedButTierUnchanged(t *testing.T) {
 	got := tierOf(phase)
 
 	if got != want {
-		t.Errorf("history must NOT change the tier (single-candidate passthrough); got %q, want %q", got, want)
+		t.Errorf("sonnet must be picked (best qualifying, haiku has no data); got %q, want %q", got, want)
 	}
 	joined := strings.Join(logs, "\n")
-	for _, sub := range []string{"history:", "picked sonnet by quality 0.91", "50 samples", "task=implementation", "observability only"} {
+	for _, sub := range []string{"history:", "picked sonnet by quality 0.91", "50 samples", "task=implementation", "multi-candidate"} {
 		if !strings.Contains(joined, sub) {
-			t.Errorf("history log must surface %q (observable read-back); log=%q", sub, joined)
+			t.Errorf("history log must surface %q; log=%q", sub, joined)
 		}
 	}
-	// And no down-tier happened (in budget): the history line is the ONLY new line.
 	if downTierLines(logs) != 0 {
 		t.Errorf("in-budget resolve must not down-tier; down-tier lines=%d (%v)", downTierLines(logs), logs)
+	}
+}
+
+// ── ① v1.5 LEARNING LOOP: haiku beats sonnet when evidence supports it ────────────────────
+//
+// The core non-trivial routing: when haiku has a HIGHER quality_score than sonnet for
+// a task_type (both with enough samples), HistoryTiebreak picks haiku — saving cost
+// while maintaining quality. This is the v1.5 upgrade: history now actually routes.
+func TestHistory_HaikuBeatsOnnetWhenHigherQuality(t *testing.T) {
+	phase := asset.Phase{Name: "implementer", Agent: "implementer"} // PhaseTier => sonnet
+	cards := []routing.Scorecard{
+		{Model: routing.Haiku, TaskType: "implementation", QualityScore: 0.95, Samples: 60, UpdatedAt: "2026-06-18T10:00:00Z"},
+		{Model: routing.Sonnet, TaskType: "implementation", QualityScore: 0.88, Samples: 50, UpdatedAt: "2026-06-18T10:00:00Z"},
+	}
+	// Precondition: base tier is sonnet
+	if orchestrator.PhaseTier(phase, "balanced") != routing.Sonnet {
+		t.Fatalf("precondition: implementer routes to sonnet")
+	}
+
+	var logs []string
+	tierOf := phaseTierResolver("balanced", func() float64 { return 0.50 }, cards, func(s string) { logs = append(logs, s) })
+	got := tierOf(phase)
+
+	if got != routing.Haiku {
+		t.Errorf("haiku (quality 0.95) must beat sonnet (quality 0.88); got %q", got)
+	}
+	joined := strings.Join(logs, "\n")
+	for _, sub := range []string{"history:", "picked haiku by quality 0.95", "multi-candidate"} {
+		if !strings.Contains(joined, sub) {
+			t.Errorf("history log must surface %q; log=%q", sub, joined)
+		}
 	}
 }
 
