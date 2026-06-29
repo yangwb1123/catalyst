@@ -99,8 +99,8 @@ PASS;零-phase workflow **永不**报收敛(`loop.go` false-clean 守卫);全-N/
 | **Loop Engine/Controller**(continue/stop/loop-back/re-plan) | **已建成** | 集中式迭代控制器 `LoopEngine.Run`,4 个优先级停止源(gate/agent 错误→converge→no-progress→MaxIter);迭代内有向 loop-back 是 `RunFrom` 里真状态机跳转;跨迭代 re-plan 重启于 planner。测试覆盖。 | `loop.go:121-166,174-183` · `orchestrator.go:267-319` · `converge.go:127` |
 | **Loop Policy**(合取停 / human-gate / retry / budget / max-iter / checkpoint-resume) | **已建成**(opt-in 注意) | 声明式 YAML→typed `StopCondition` 端到端驱动;合取 `roadmap==100 AND gates green` 对活信号判定;human-gate 不可绕过;529 退避;两个 fail-closed budget cap;原子 + phase 粒度 checkpoint。 | `build.yml:101-116` · `converge.go:149-175` · `backoff.go` · `budget.go` · `persist/checkpoint.go` |
 | **Loop→Model 调度**(phase 驱动档) | **phase+budget 已建成;risk 部分;一例 latent** | 一个共享 `tierOf` 喂 `claude --model`/prompt/cost-stamp(drift-guard 测试);architect/cto/reviewer opus 硬底线真。**但**动态 risk 评分只接入独立 `forge route` CLI、**未接** run/evolve 环;「README→廉价档」latent(`docs→Haiku` 存在但**无 workflow 声明 `agent:docs`**)。 | `executor.go:57-67` · `engine_build.go:236-247` · `routing.go:22-71` · `route.go` |
-| **Loop Memory/Learning**(「学会哪种环最好」) | **部分 → 标题项是蓝图** | 落盘真但粗(`quality_score`=accepted/samples 二值,p95/cost 真)。**`--iterations`/`--rework` 已接线**(754f372):forge run/evolve 现传 trajectory→avg_iterations/rework_rate。**「学/选最优」仍是结构性 no-op**:`HistoryTiebreak` 只用单元素列表、pick 被丢弃;**`scorecards.json` 仓内仍不存在**(永久冷启,需真跑写入)。 | `scorecard.go:13-19` · `engine_build.go:256,279` · `scorecard_wind.go:159-165`(trajectory 接线) · `.agent/routing/`(无 scorecards.json) |
-| **自适应/动态环装配**(项目类型→专用 agent) | **缺失** | 4 个脊柱 workflow 是静态手写 YAML、phase 与 agent 固定。**全仓无项目类型概念**(grep 零命中);固定 9 张角色卡,所称专用 agent(Product/Performance/Evaluation)**不存在**。mode×lifecycle 是唯一变化,且**纯减法**(过滤 gate/跳 reviewer/discover、设 max-iter)+ **手动选**,非自动检测。 | `orchestrator.go:187-231` · `modes.yml` · `mode_gating.go` · `.agent/agents/`(9 卡) |
+| **Loop Memory/Learning**(「学会哪种环最好」) | **部分 → 标题项是蓝图** | 落盘真但粗(`quality_score`=accepted/samples 二值,p95/cost 真)。**`--iterations`/`--rework` 已接线**(754f372)。**HistoryTiebreak v1.5 已非 no-op**(6a1a359):非安全底限 agent 候选集扩展为 `[adj, ...cheaper]`、路由真正用 picked 值;haiku 在证据支持时可胜过 sonnet。**`scorecards.json` 仍需真跑生成**(永久冷启直到首次真跑写入)。 | `scorecard.go:13-19` · `engine_build.go:logPhaseHistory`(多候选) · `routing.go:CandidatesForTier/IsOpusFloorAgent` |
+| **自适应/动态环装配**(项目类型→专用 agent) | **基础 v1(结构检测)** | `forge detect`(fc0434e):结构性扫描 go.mod/package.json/pyproject.toml/Cargo.toml + 测试文件 + CI 配置 + project.yml,输出语言/测试/CI 指标 + 推荐 workflow + 完整命令。**仍是蓝图的**:语义代码分析、workflow YAML 动态生成、自动触发(而非 advisory 建议)。 | `detect.go` · `detect_test.go` |
 | **7-phase 认知环**(Observe→Think→Plan→Execute→Evaluate→**Reflect**→Evolve) | **部分 —— 6 映射,Reflect 部分** | 6 个清晰映射到 LoopEngine 真迭代的 phase(Observe→scan / Think→gap-analysis / Plan→planner / Execute→implementer / Evaluate→harness+reviewer+qa〔最强、机器验证〕/ Evolve→环本身)。**Reflect 已部分落地**(754f372):`recordMemory` 在每轮写入三类结构化 memory:gate 失败→KindGap,reviewer REQUEST_CHANGES findings→KindLesson(逐 target phase),trajectory→KindLesson(常驻);下轮 `memoryContext` 注入。**仍缺失的**:「为何环失败/慢」深度自分析、路由/流程自适应调整。 | `evolve.go:338-380`(recordMemory) · `prompt_memory.go` · `evolve.yml` |
 
 **横切诚实注**:出厂默认 `--executor=dry`(零 LLM)。开箱即用时环在**不变仓库**上测真 gate —— 收敛**机制**
@@ -125,10 +125,10 @@ AutoGPT(同一模型既执行又自判完成)**结构上不具备**的。
    findings→KindLesson(逐 target phase)、trajectory entry(常驻);`--iterations`/`--rework` 已传
    `runScorecardUpdate`。**仍是蓝图的**:「为何环失败/慢」深度认知自分析(route latency 归因、
    no-progress pattern 识别);自适应路由/流程调整(基于 KindGap 历史自动调升 tier 或换 workflow)。
-2. **兑现哪怕最小的学习环**:让真·多候选 `HistoryTiebreak` 真正做选择(今单候选 passthrough),或至少
-   从一次真跑生成首个 `scorecards.json`,使观测路径产出过数据。在此之前,**飞轮必须显式标蓝图**。
+2. **学习环深化**:HistoryTiebreak v1.5 已非 no-op(多候选,非安全底限 agent 真路由);仍缺首个
+   `scorecards.json`(需一次真跑写入)。飞轮机制已接线,冷启动数据是唯一缺口。
 
-*(自适应/动态装配是最大野心 gap 但不是下一步该押的:它全绿地、且对核心论题非载重。)*
+*(自适应/动态装配:v1 forge detect 已落地结构性检测;语义分析/自动触发是进一步蓝图。)*
 
 ---
 
