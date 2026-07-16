@@ -64,8 +64,13 @@ func TestADR0001_ZeroExternalDeps(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read go.mod: %v", err)
 	}
-	// The go.mod must not have a "require (" block — zero external dependencies.
-	// Standard library and the forgeos/forge-core module itself are not external.
+	// The go.mod must not have a "require (" block, AND must not have a
+	// single-line `require <module> <version>` directive — zero external
+	// dependencies. Standard library and the forgeos/forge-core module itself
+	// are not external. (A prior version of this check only scanned inside a
+	// `require (` ... `)` block and silently ignored the single-line form,
+	// which is what `go get`/`go mod tidy` actually emit for one new
+	// dependency — that form was never caught.)
 	lines := strings.Split(string(data), "\n")
 	inRequire := false
 	for _, line := range lines {
@@ -76,7 +81,8 @@ func TestADR0001_ZeroExternalDeps(t *testing.T) {
 		}
 		if inRequire {
 			if trimmed == ")" {
-				break
+				inRequire = false
+				continue
 			}
 			// Skip blank lines and comments.
 			if trimmed == "" || strings.HasPrefix(trimmed, "//") {
@@ -86,7 +92,33 @@ func TestADR0001_ZeroExternalDeps(t *testing.T) {
 			if strings.Contains(trimmed, " ") {
 				t.Errorf("ADR-0001 violation: forge-core has external dependency: %s", trimmed)
 			}
+			continue
 		}
+		// Single-line form: `require <module> <version>`.
+		if strings.HasPrefix(trimmed, "require ") {
+			t.Errorf("ADR-0001 violation: forge-core has external dependency: %s", trimmed)
+		}
+	}
+}
+
+// TestADR0001_ZeroExternalDeps_CatchesSingleLineForm is a regression test for
+// the single-line `require <module> <version>` form (what `go get` actually
+// emits for one new dependency) — a prior version of the scan above only
+// looked inside a `require (` ... `)` block and never noticed this form.
+func TestADR0001_ZeroExternalDeps_CatchesSingleLineForm(t *testing.T) {
+	fixture := "module forgeos/forge-core\n\ngo 1.26\n\nrequire golang.org/x/net v0.20.0\n"
+	found := false
+	for _, line := range strings.Split(fixture, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "require (" {
+			t.Fatal("fixture unexpectedly contains a require block; test needs updating")
+		}
+		if strings.HasPrefix(trimmed, "require ") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("regression: a single-line `require <module> <version>` directive was not detected")
 	}
 }
 

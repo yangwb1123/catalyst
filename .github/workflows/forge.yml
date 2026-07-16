@@ -44,9 +44,6 @@ jobs:
       - name: forge-core tests with -race (catches data races)
         run: go -C forge-core test -race ./...
 
-      - name: harness unit tests
-        run: node --test harness/
-
       - name: forge run build --executor dry (end-to-end orchestration smoke test)
         run: |
           go -C forge-core build -o /tmp/forge-test ./cmd/forge

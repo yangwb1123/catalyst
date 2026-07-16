@@ -128,6 +128,20 @@ func seqItemInlineSequence(itemText string) (any, error) {
 func seqItemMapping(lines []line, itemText string, pos int, seqIndent int) (any, int, error) {
 	m, err := parseSimpleMapping(itemText)
 	if err == nil && m != nil {
+		if bv := lines[pos].blockValue; bv != nil {
+			// itemText's single key ("key:") is a block scalar (| or >)
+			// already decoded onto lines[pos] by normalizeLines.
+			// parseSimpleMapping ran parseInlineValue("") against the empty
+			// rest and got nil — overwrite with the real decoded value,
+			// mirroring how resolveMappingValue (mapping.go) handles this
+			// same situation for non-sequence-item mappings. m has exactly
+			// one key at this point (see parseSimpleMapping), so overwrite
+			// it directly rather than re-deriving the key by string-parsing
+			// itemText again.
+			for k := range m {
+				m[k] = *bv
+			}
+		}
 		pos++
 		more, newPos, err := parseMappingContinuation(lines, pos, seqIndent+1, m)
 		if err != nil {

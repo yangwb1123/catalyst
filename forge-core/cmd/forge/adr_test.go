@@ -38,11 +38,37 @@ func TestADR0002_ZeroExternalDeps(t *testing.T) {
 	if bytes.Contains(data, []byte("require (")) {
 		t.Error("ADR-0002 violation: forge-core must have zero external Go dependencies (go.mod has require block)")
 	}
-	// Check that no indirect dependencies slipped in via toolchain.
+	// Check for the single-line `require <module> <version>` form too (what
+	// `go get`/`go mod tidy` actually emits for a single new dependency).
+	// NOTE: a prior version of this check exempted any line starting with
+	// "require go" to skip a (nonexistent) "require go 1.26" toolchain line —
+	// but that exemption also matched any real dependency whose module path
+	// starts with "go" (golang.org/x/*, google.golang.org/*, go.uber.org/*,
+	// gopkg.in/*, gorm.io/*, go.mongodb.org/*, ...), silently letting those
+	// slip past ADR-0002. The `go 1.26` toolchain directive is its own line
+	// (no "require" prefix at all), so no exemption is needed here.
 	for _, line := range strings.Split(string(data), "\n") {
 		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "require") && !strings.HasPrefix(trimmed, "require go") {
+		if strings.HasPrefix(trimmed, "require ") {
 			t.Errorf("ADR-0002 violation: external dependency found in go.mod: %s", trimmed)
 		}
+	}
+}
+
+// TestADR0002_ZeroExternalDeps_CatchesGoPrefixedModule is a regression test
+// for the "require go" exemption loophole described above: a single-line
+// require directive for a module whose path starts with "go" (e.g.
+// golang.org/x/net) must still be flagged, not silently exempted.
+func TestADR0002_ZeroExternalDeps_CatchesGoPrefixedModule(t *testing.T) {
+	fixture := "module forgeos/forge-core\n\ngo 1.26\n\nrequire golang.org/x/net v0.20.0\n"
+	found := false
+	for _, line := range strings.Split(fixture, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "require ") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("regression: a go-prefixed module path in a single-line require directive was not detected")
 	}
 }

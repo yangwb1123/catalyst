@@ -188,3 +188,35 @@ func TestDecode_BlockScalar_StripChomping(t *testing.T) {
 		t.Errorf("key = %q, want %q", m["key"], want)
 	}
 }
+
+// TestDecode_BlockScalar_SequenceItemInlineMapping is a regression test: a
+// block scalar used as the value of the FIRST key in a compact sequence-item
+// mapping ("- key: |") must decode correctly, and a sibling key on the next
+// line at the block's own indentation must survive as a separate map entry
+// rather than being swallowed into the block's text. This previously failed
+// because the block's baseIndent was computed from the "-" marker's column
+// instead of the key's column, and separately because seqItemMapping never
+// propagated the decoded block value through to the sequence item's map.
+func TestDecode_BlockScalar_SequenceItemInlineMapping(t *testing.T) {
+	input := "items:\n  - note: |\n      line one\n      line two\n    after: done\n"
+	val, err := Decode(strings.NewReader(input))
+	if err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+	m := val.(map[string]any)
+	items, ok := m["items"].([]any)
+	if !ok || len(items) != 1 {
+		t.Fatalf("items = %#v, want a 1-element slice", m["items"])
+	}
+	item, ok := items[0].(map[string]any)
+	if !ok {
+		t.Fatalf("items[0] = %T, want map", items[0])
+	}
+	if want := "line one\nline two\n"; item["note"] != want {
+		t.Errorf("items[0].note = %q, want %q", item["note"], want)
+	}
+	if item["after"] != "done" {
+		t.Errorf("items[0].after = %v, want \"done\" (sibling key must survive, not be swallowed into the block)", item["after"])
+	}
+}
+

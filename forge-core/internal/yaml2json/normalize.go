@@ -45,7 +45,8 @@ func normalizeLines(data string) []line {
 		// Check for multi-line scalar indicator (| or >).
 		if isBlockScalarIndicator(trimmed) {
 			keyPart, indicator, chomp := parseBlockHeader(trimmed)
-			blockText, newI := consumeBlockScalar(rawLines, i+1, indent, indicator, chomp)
+			baseIndent := blockScalarBaseIndent(indent, keyPart)
+			blockText, newI := consumeBlockScalar(rawLines, i+1, baseIndent, indicator, chomp)
 			lines = append(lines, line{indent: indent, text: keyPart, raw: raw, number: outputLine, blockValue: &blockText})
 			// A block scalar can consume many raw lines at once (newI jumps
 			// past i+1); advance outputLine by however many extra raw lines
@@ -112,6 +113,32 @@ func parseBlockHeader(trimmed string) (keyPart string, indicator byte, chomp byt
 		}
 	}
 	return trimmed, '|', 0
+}
+
+// blockScalarBaseIndent returns the correct base indentation to compare a
+// block scalar's continuation lines against. For a plain "key: |" line, the
+// key starts at the line's own indent, so baseIndent == indent. But for a
+// compact sequence-item mapping ("- key: |"), the dash — not the key — sits
+// at the line's indent; YAML judges the block's content against the KEY's
+// column, not the dash's. Using the dash's column as baseIndent makes any
+// sibling key indented deeper than the dash (but at or shallower than the
+// real key) look like it's still "part of the block", silently swallowing
+// it into the block scalar's text instead of ending the block. keyPart is
+// the "key:" text with the block indicator already stripped (still carrying
+// any leading "- " marker(s), e.g. "- note:" or even "- - note:" for a
+// nested compact sequence item).
+func blockScalarBaseIndent(indent int, keyPart string) int {
+	col := indent
+	rest := keyPart
+	for len(rest) > 0 && rest[0] == '-' && (len(rest) == 1 || rest[1] == ' ' || rest[1] == '\t') {
+		col++ // the dash itself
+		rest = rest[1:]
+		for len(rest) > 0 && (rest[0] == ' ' || rest[0] == '\t') {
+			col++
+			rest = rest[1:]
+		}
+	}
+	return col
 }
 
 // gatheredBlockLine is one raw line consumed into a block scalar, before
