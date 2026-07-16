@@ -103,21 +103,40 @@ func TestAgentExecutor_PriorEmitsWiredIntoRealPrompt(t *testing.T) {
 	}
 }
 
+// labelOnlyEmitsAgents are agents whose emits: declarations are a conceptual
+// LABEL, not a literal Write() path, so the write-scope check below must not
+// assert a path prefix for them — and must say so EXPLICITLY rather than
+// silently falling through, which is exactly the blind spot an independent
+// review of this test caught (an agent absent from readonlyAgentWriteScope
+// produced zero assertions, indistinguishable from "correctly scoped"):
+//   - qa: its own card (.agent/agents/qa.md) states "不写代码文件;仅产 QA
+//     报告" — it never writes ANY file; evolve.yml's `evaluate` phase emits:
+//     eval-scorecard.md is shorthand for "this phase's judgment feeds the Eval
+//     scorecard" (harness/scorecard-update.mjs, a separate machine-authored
+//     JSON artifact), not a file qa itself produces.
+//   - planner: readonlyAgentWriteScope's own doc comment already covers this
+//     one (a fixed FILE, not a directory) — build.yml's `emits: task-plan.md`
+//     is a label read back by emitsContext as a bare repo-root filename, not
+//     planner's real write target (.agent/CURRENT_SPRINT.md).
+var labelOnlyEmitsAgents = map[string]bool{
+	"qa": true,
+}
+
 // End-to-end regression: every phase across the four real spine/loop workflows
 // that is BOTH readonly (so its write scope is enforced by readonlyToolScope)
-// AND declares emits: must declare paths that actually fall within its agent's
-// documented write scope (readonlyAgentWriteScope). Otherwise the emits-content
-// injection this file wires (priorEmitsOf/emitsFilesFor/buildPromptWithEmits)
-// silently finds nothing in a real run: emitsContext resolves each emits path
-// relative to repoRoot, so a bare filename like "security-review.md" never
-// matches a file the agent actually wrote at docs/review/security-review.md —
-// this was a real, confirmed bug (review.yml/discover.yml/design.yml/evolve.yml
-// all declared bare filenames until fixed alongside this wiring). A directory-
-// scoped agent (pattern ending "/**") is checked; a fixed-file agent (e.g.
-// planner's own .agent/CURRENT_SPRINT.md, which its card names directly rather
-// than a directory) is skipped — its emits: entry is a declared-artifact LABEL
-// by established convention (see readonlyAgentWriteScope's own doc comment),
-// not a literal write path.
+// AND declares emits: must EITHER declare paths that actually fall within its
+// agent's documented write scope (readonlyAgentWriteScope), OR be one of the
+// explicitly documented label-only exceptions above. Otherwise the emits-
+// content injection this file wires (priorEmitsOf/emitsFilesFor/
+// buildPromptWithEmits) silently finds nothing in a real run: emitsContext
+// resolves each emits path relative to repoRoot, so a bare filename like
+// "security-review.md" never matches a file the agent actually wrote at
+// docs/review/security-review.md — this was a real, confirmed bug (review.yml/
+// discover.yml/design.yml/evolve.yml all declared bare filenames until fixed
+// alongside this wiring). An agent with NEITHER a readonlyAgentWriteScope
+// entry NOR a labelOnlyEmitsAgents exemption is a hard failure, not a silent
+// skip — that combination means either a real unscoped-write bug or an
+// undocumented label case that needs to be added to one of the two maps above.
 func TestEndToEnd_WorkflowEmitsMatchAgentWriteScope(t *testing.T) {
 	if _, err := exec.LookPath("python3"); err != nil {
 		t.Skip("python3 not available")
@@ -142,7 +161,14 @@ func TestEndToEnd_WorkflowEmitsMatchAgentWriteScope(t *testing.T) {
 			if !p.Readonly || len(p.Emits) == 0 {
 				continue
 			}
-			for _, pat := range readonlyAgentWriteScope[p.Agent] {
+			patterns := readonlyAgentWriteScope[p.Agent]
+			if len(patterns) == 0 {
+				if !labelOnlyEmitsAgents[p.Agent] {
+					t.Errorf("%s.yml phase %q: agent %q declares emits %v but has NO readonlyAgentWriteScope entry and is not in labelOnlyEmitsAgents — either add its write-scope pattern, or if its emits are a conceptual label (like qa/planner), add it to labelOnlyEmitsAgents with a documented reason", name, p.Name, p.Agent, p.Emits)
+				}
+				continue
+			}
+			for _, pat := range patterns {
 				if !strings.HasSuffix(pat, "/**") {
 					continue // fixed-file agent (e.g. planner) — emits is a label, not a path
 				}

@@ -132,11 +132,11 @@ func mergeToolList(base, extra string) string {
 // "Review 阶段" section is ADDITIVE, never widens the boundary above it). An agent
 // ABSENT here has NO documented target — reviewer/qa ("不写...代码文件"), explorer
 // ("零写入"), non-LLM `harness` — and stays FULLY denied when readonly, matching its
-// card (readonlyToolScope's zero-pattern branch). planner is a FILE not a dir:
-// planner.md names `.agent/CURRENT_SPRINT.md` itself — build.yml's `emits:
-// task-plan.md` there is a declared-artifact LABEL (read back by emitsContext as a
-// bare repo-root filename), not the real write target; the card wins per this task's
-// brief ("use the convention the project already documents").
+// card. An absent agent that still declares emits: (qa's eval-scorecard.md) is a
+// documented LABEL not a write target — prompt_emits_test.go's labelOnlyEmitsAgents
+// fails loudly, not silently, if that ever stops being true. planner is a FILE not a
+// dir: planner.md names `.agent/CURRENT_SPRINT.md` itself — build.yml's `emits:
+// task-plan.md` is the same kind of LABEL, not the real write target.
 var readonlyAgentWriteScope = map[string][]string{
 	"product-manager":      {"/docs/discovery/**"},
 	"researcher":           {"/docs/discovery/**"},
