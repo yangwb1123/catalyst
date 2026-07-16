@@ -26,12 +26,10 @@ import (
 // agentExecutor selects the agent-phase executor. "command" builds a per-phase
 // prompt and drives o.agentCmd with it (real execution when agent-cmd is `claude`;
 // `echo` inspects the plumbing safely); anything else is the no-LLM DryRunExecutor.
-//
 // costSink records real per-phase dollar cost AND measured latency attributed to the
 // routed model: for claude the generic Observe sink is pointed at parseClaudeCostUsd,
 // and a parsed cost — paired with the BUDGET-ADJUSTED routed model AND the executor's
 // measured latency — is forwarded to costSink. The generic executor stays claude-free.
-//
 // tierOf is the ONE shared per-phase tier resolver (buildRunEngine): the SINGLE source
 // `claude --model`, the cost stamp, and the prompt's stated tier all read, so the three
 // never drift apart. phaseModel is its NAME-keyed face (phaseTierByName) for the cost
@@ -437,6 +435,11 @@ func openRunResources(root, runBudgetUSD string, logln func(string)) (*trace.Tra
 // (gatherSignals) — never double-spawned, never inconsistent within a run. An
 // N/A gate does NOT fail the run (it completes, exit 0); only a real FAIL does.
 func execEngine(ctx context.Context, wf asset.Workflow, o runOpts) int {
+	lock := acquireRunLock(o.root, "forge run")
+	if lock == nil {
+		return 1
+	}
+	defer lock.Release()
 	logln := func(s string) { fmt.Println(s) }
 	probe, categories := probeStatuses(o.root)
 	lifecycle := resolveLifecycle(o)
@@ -454,14 +457,12 @@ func execEngine(ctx context.Context, wf asset.Workflow, o runOpts) int {
 	// Learning-loop wind-down: attribute this run's REAL billed cost into the scorecards
 	// regardless of outcome (a REJECTED build is the most useful quality sample), DEFERRED
 	// after `defer closeTrace()` so it runs BEFORE it (LIFO) — the trace it reads is still
-	// open. iterations=1: a single `forge run` is one execution; verdicts.wasReworked()
-	// carries the real reviewer-bounce signal into avg_iterations / rework_rate.
+	// open. iterations=1 (one `forge run` = one execution); verdicts.wasReworked() carries
+	// the real reviewer-bounce signal into avg_iterations / rework_rate.
 	defer func() { windDownScorecards(wf, o, logln, 1, verdicts.wasReworked()) }()
 	logRunBanner(wf, o, lifecycle, pol)
-	// human_gate REJECTION loop-back (design.yml's on_rejected): a filed
-	// .forge/<stage>.rejected marker redirects this run to target_phase instead
-	// of phase 0 — full contract in resolveRejectionStartPhase (gates.go). 0 is
-	// byte-for-byte the prior always-phase-0 behavior.
+	// human_gate REJECTION loop-back (design.yml's on_rejected): a filed .forge/<stage>.rejected
+	// marker redirects to target_phase instead of phase 0 (resolveRejectionStartPhase, gates.go).
 	startPhase := resolveRejectionStartPhase(wf, o.root, logln)
 	if err := runWorkflow(ctx, eng, wf, o, logln, startPhase); err != nil {
 		fmt.Fprintf(os.Stderr, "forge run: %v\n", err)

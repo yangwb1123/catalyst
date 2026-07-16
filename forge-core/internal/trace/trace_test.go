@@ -185,6 +185,60 @@ func TestEmit_CostUsdMicrosOmittedWhenZero(t *testing.T) {
 	}
 }
 
+// RunID is omitempty: an Event with no RunID set (and a Tracer whose RunID was
+// never set either) must not emit the run_id key at all — keeping every
+// existing golden-byte trace-line assertion in this file byte-for-byte
+// unchanged across this field's addition.
+func TestEvent_RunIDOmitemptyWhenUnset(t *testing.T) {
+	var buf bytes.Buffer
+	tr := NewTracer(&buf) // RunID left at its zero value ""
+	if err := tr.Emit(Event{Kind: "iteration", Name: "1", Status: "ok"}); err != nil {
+		t.Fatalf("Emit: %v", err)
+	}
+	if strings.Contains(buf.String(), "run_id") {
+		t.Errorf("empty RunID should be omitted, got %q", buf.String())
+	}
+}
+
+// Emit must auto-stamp an event's RunID from the Tracer's RunID field when the
+// event itself left RunID unset — this is what threads one process's run_id
+// through every event it emits without every constructor (GateEvent,
+// DecisionEvent, …) needing to know about RunID at all.
+func TestTracer_StampsRunIDOnEmit(t *testing.T) {
+	var buf bytes.Buffer
+	tr := NewTracer(&buf)
+	tr.RunID = "1234abcd-deadbeef"
+	if err := tr.Emit(Event{Kind: "gate", Name: "lint", Status: "PASS"}); err != nil {
+		t.Fatalf("Emit: %v", err)
+	}
+	var got Event
+	if err := json.Unmarshal([]byte(strings.TrimSpace(buf.String())), &got); err != nil {
+		t.Fatalf("not valid JSON: %v", err)
+	}
+	if got.RunID != tr.RunID {
+		t.Errorf("RunID = %q, want tracer's RunID %q", got.RunID, tr.RunID)
+	}
+}
+
+// An Event constructed with RunID already set must NOT be clobbered by Emit's
+// auto-stamp — locks in the exact override contract (auto-stamp fills in only
+// when the caller left RunID empty).
+func TestTracer_DoesNotOverrideExplicitEventRunID(t *testing.T) {
+	var buf bytes.Buffer
+	tr := NewTracer(&buf)
+	tr.RunID = "tracer-run-id"
+	if err := tr.Emit(Event{Kind: "gate", Name: "lint", Status: "PASS", RunID: "explicit-run-id"}); err != nil {
+		t.Fatalf("Emit: %v", err)
+	}
+	var got Event
+	if err := json.Unmarshal([]byte(strings.TrimSpace(buf.String())), &got); err != nil {
+		t.Fatalf("not valid JSON: %v", err)
+	}
+	if got.RunID != "explicit-run-id" {
+		t.Errorf("RunID = %q, want the explicitly-set %q to survive Emit's auto-stamp", got.RunID, "explicit-run-id")
+	}
+}
+
 // encode is pure: it must yield a compact single-line JSON object terminated by
 // exactly one newline (the JSONL framing), and that line must parse back to the
 // same Event. Tested without a Tracer, writer, or lock.

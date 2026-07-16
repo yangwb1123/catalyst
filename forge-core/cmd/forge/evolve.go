@@ -29,7 +29,6 @@ import (
 
 // cmdEvolve loops a workflow until it converges, a tripwire fires, or the
 // safety bound — the autonomous-loop entry point (real agents via --executor).
-//
 // The safety bound (--max-iter) is the THIRD subsystem the central knob drives:
 // when the operator does NOT pass --max-iter, the loop's iteration budget comes
 // from the mode's evolve depth (mode.Effective(...).EvolveMaxIter() — explorer's
@@ -154,12 +153,16 @@ func rejectHumanGate(stage string, root string) int {
 // and runs it to convergence, a tripwire, or the safety bound, reporting how it
 // ended. For an external-stop workflow (e.g. evolve), reaching the safety bound is
 // the EXPECTED clean outcome and the CLI exits 0 — never a round-count failure.
-//
 // Resilience + memory wiring: each iteration's post-measurement hook persists a
 // checkpoint, appends the round's trajectory to memory, and emits a trace event
 // under <root>/.forge/ — so a crashed run can --resume, later rounds recall what
 // happened, and the run stays auditable.
 func execLoop(ctx context.Context, wf asset.Workflow, o runOpts, maxIter int, maxIterSource string, resume bool) int {
+	lock := acquireRunLock(o.root, "forge evolve")
+	if lock == nil {
+		return 1
+	}
+	defer lock.Release()
 	logln := func(s string) { fmt.Println(s) }
 	start, prev, spentMicros, phaseStart, err := resumeStart(o.root, resume)
 	if err != nil { // malformed checkpoint: fail closed, never silently restart.
@@ -221,16 +224,13 @@ func buildTracedLoop(ctx context.Context, wf asset.Workflow, o runOpts, maxIter 
 // honors every stop shape — a human_gate that somehow reaches the loop is judged
 // by approval alone, never a satisfied all_of; depth-two defense, cmdEvolve already
 // refuses one up front).
-//
 // costSink threads the SAME tracer execLoop already owns into the agent executor, so
 // a real claude phase's billed cost+latency lands as a trace-visible `kind:"agent"`
 // event, model-stamped and interleaved with the per-iteration events.
-//
 // budget is the loop-wide run budget (created in execLoop, reused here); buildRunEngine
 // wraps costSink with budget.feed and wires budget.BudgetExhaustedFunc() into the Engine
 // so the cumulative dollar cap meters spend across EVERY iteration (Engine built once,
 // reused). Unset (--run-budget-usd empty) ⇒ a no-op accumulator + nil puller ⇒ unchanged.
-//
 // Returns the LoopEngine plus the verdict/findings ledgers buildRunEngine built, so
 // execLoop can thread rework+trajectory into the scorecard wind-down and the Reflect
 // memory step without rebuilding or re-exposing the Engine internals.
@@ -475,9 +475,10 @@ func openTracer(root string) (*trace.Tracer, func(), error) {
 		return nil, func() {}, fmt.Errorf("create .forge dir: %w", err)
 	}
 	tp := filepath.Join(forgeDir(root), "trace.jsonl")
-	// Rotate trace if it exceeds 10 MB: rename to trace.jsonl.1, start fresh.
-	// O_EXCL-free: two processes rotating at once could race (analysis §2.1 boundry),
-	// but a stale .1 backup is harmless — next rotation overwrites it.
+	// Rotate trace if it exceeds 10 MB: rename to trace.jsonl.1, start fresh. Callers
+	// always hold the run.lock (runlock.Acquire) before reaching here, so no other
+	// forge process can be rotating concurrently; a stale .1 backup from an old,
+	// unlocked binary would just be overwritten by the next rotation regardless.
 	const maxTraceBytes int64 = 10 << 20 // 10 MB
 	if st, err := os.Stat(tp); err == nil && st.Size() > maxTraceBytes {
 		os.Rename(tp, tp+".1") // best-effort; ignore error (rotation is optimization, not correctness)
@@ -486,7 +487,9 @@ func openTracer(root string) (*trace.Tracer, func(), error) {
 	if err != nil {
 		return nil, func() {}, fmt.Errorf("open trace file: %w", err)
 	}
-	return trace.NewTracer(f), func() { f.Close() }, nil
+	t := trace.NewTracer(f)
+	stampRunID(t)
+	return t, func() { f.Close() }, nil
 }
 
 // withSignalCancellation returns a context cancelled by SIGINT/SIGTERM.

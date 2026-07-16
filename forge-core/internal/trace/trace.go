@@ -81,6 +81,13 @@ type Event struct {
 	// billed cost to the model that incurred it.
 	Model  string `json:"model,omitempty"`
 	Detail string `json:"detail,omitempty"` // free-text context, omitted from JSON when empty
+	// RunID correlates every event in one trace.jsonl to the process that
+	// wrote it (forge-core/internal/runlock.NewRunID). A caller normally
+	// leaves this empty and lets Emit auto-stamp it from the Tracer's RunID
+	// field; omitempty keeps every event predating this field, and every
+	// event from a Tracer whose RunID was never set, byte-for-byte
+	// identical on disk (back-compat).
+	RunID string `json:"run_id,omitempty"`
 }
 
 // Tracer serializes Events to an io.Writer as JSONL (one JSON object per line).
@@ -96,6 +103,14 @@ type Tracer struct {
 	// deterministic clock; production leaves it nil and NewTracer defaults it to
 	// time.Now. Keep all time reads going through this so duration stays testable.
 	Now func() time.Time
+
+	// RunID is this process's run-correlation id (see Event.RunID), set once
+	// by the caller right after NewTracer (cmd/forge's openTracer stamps it
+	// via runlock.NewRunID). The zero value "" is back-compat: Emit only
+	// stamps an event's RunID when the event itself left it empty, so a
+	// Tracer that never sets this behaves exactly as before this field
+	// existed.
+	RunID string
 }
 
 // NewTracer returns a Tracer writing JSONL to w. Now defaults to time.Now so the
@@ -121,6 +136,9 @@ func (t *Tracer) Emit(ev Event) error {
 	ev.Seq = t.seq
 	if ev.Format == "" {
 		ev.Format = "forgeos.trace.v1"
+	}
+	if ev.RunID == "" {
+		ev.RunID = t.RunID // auto-stamp; never clobbers a caller-supplied RunID
 	}
 	line, err := encode(ev)
 	if err != nil {
