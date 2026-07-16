@@ -116,7 +116,7 @@
 | 标题 | 机密扫描器绕过：无熵启发式、无 base64/连接检测 |
 | 位置 | `harness/secret-scan.mjs:1-215`（全部）；具体匹配器在 `PATTERNS`（第 56-71 行） |
 | 描述 | 机密扫描器仅通过正则表达式匹配已知模式（AWS `AKIA...`、GitHub `ghp_...`、PEM 头部），并且仅有一条通用规则，它需要**同时**存在类似机密的键名**和**一个 >=20 字符的 base64 字符串值。这种设计刻意偏向于低误报率，但引入了严重的假阴性：任何 base64 编码的机密、连接在不同行上的字符串、ROT13 编码的凭据、键名不匹配 `api_key|secret|token|password` 的机密，或长度低于 20 个字符的机密，都将完全不被检测到。同文件第 19-23 行的文档明确承认了这些局限性，但合规性要求（SOC2、PCI-DSS）规定必须检测混淆的机密。 |
-| 攻击场景 | 场景 A（base64）：ATTACKER 提交 `const x = "QUtJQUlPU0ZPR05ESkZP..."`（base64 编码的 AWS 密钥）。扫描器未匹配 → 机密已提交。场景 B（字符串连接）：`const key = "AKIA" + "IOSFOGNDJ" + "FOPRIVATE"` — 扫描器未匹配，因为单一部分不是有效模式。场景 C（短键名）：`const myKey = "ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"` — 如果`myKey` 不匹配 `api_key|secret|token|password|passwd|pwd`，则通用规则不触发。 |
+| 攻击场景 | 场景 A（base64）：ATTACKER 提交 `const x = "QUtJQUlPU0ZPR05ESkZP..."`（base64 编码的 AWS 密钥）。扫描器未匹配 → 机密已提交。场景 B（字符串连接）：`const key = "AKIA" + "IOSFOGNDJ" + "FOPRIVATE"` — 扫描器未匹配，因为单一部分不是有效模式。场景 C（短键名）：`const myKey = "ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"` — 如果`myKey` 不匹配 `api_key|secret|token|password|passwd|pwd`，则通用规则不触发。 | <!-- secret-scan:ignore: all-x placeholder illustrating the ghp_ pattern shape, not a real token -->
 | 影响 | 机密在提交到仓库时未被检测到，可能被 CI 日志、Slack 集成等处泄露。OWASP Agentic Top-10: A6-敏感信息披露。NIST SP 800-53: AC-6(9), SC-8, SC-13。 |
 | 建议 | 添加一个第二阶段的熵分析器（参考：Shannon 熵 > 4.5 比特/字节用于 base64 编码数据）。在通用规则中将最小长度从 20 降低到 16（典型 API 密钥长度的下限）。添加对检测跨多行连接（`"prefix" + "suffix"`）的简单 AST 模式的支持。作为 v0 的补充，而不是替换。 |
 | 工作量 | **M** — 2-3 天（熵计算实现；更新通用正则表达式；添加连接检测；在已知的真实正例上验证以确保不增加误报率） |
