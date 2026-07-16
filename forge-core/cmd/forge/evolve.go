@@ -7,10 +7,14 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
 	"time"
 
 	"forgeos/forge-core/internal/asset"
@@ -59,10 +63,14 @@ func cmdEvolve(args []string) int {
 		return 1
 	}
 	if converge.IsHumanGate(wf.Stop) {
-		return rejectHumanGate(wf.Stage)
+		return rejectHumanGate(wf.Stage, o.root)
 	}
 	iter, src := resolveMaxIter(fs, *maxIter, o)
-	return execLoop(wf, o, iter, src, *resume)
+	// Signal-aware context: SIGINT/SIGTERM cancel the context, triggering
+	// graceful shutdown of the loop engine and its subprocesses.
+	ctx, stop := withSignalCancellation()
+	defer stop()
+	return execLoop(ctx, wf, o, iter, src, *resume)
 }
 
 // resolveMaxIter picks the loop's safety bound and reports WHERE it came from.
@@ -105,13 +113,40 @@ func flagSet(fs *flag.FlagSet, name string) bool {
 // marker. This is the PRIMARY, outermost defense: a human_gate never enters the
 // loop at all. Exit is non-zero (1) so a script/CI driving evolve cannot mistake
 // the refusal for a clean convergence.
-func rejectHumanGate(stage string) int {
+func rejectHumanGate(stage string, root string) int {
+	// Check for existing checkpoint state to give helpful guidance.
+	cpPath := filepath.Join(root, ".forge", "checkpoint.json")
+	cpHint := ""
+	if data, err := os.ReadFile(cpPath); err == nil {
+		var cp struct {
+			Iteration         int     `json:"iteration"`
+			RoadmapCompletion float64 `json:"roadmap_completion"`
+			GatesGreen        bool    `json:"gates_green"`
+		}
+		if json.Unmarshal(data, &cp) == nil {
+			cpHint = fmt.Sprintf(
+				"\n  Current state: checkpoint at iteration %d, roadmap=%.0f%%, gates=%s",
+				cp.Iteration, cp.RoadmapCompletion*100,
+				map[bool]string{true: "green", false: "red"}[cp.GatesGreen],
+			)
+		}
+	}
+	approvedPath := filepath.Join(root, ".forge", stage+".approved")
+	approveHint := ""
+	if _, err := os.Stat(approvedPath); err == nil {
+		approveHint = "  Approval marker exists: " + approvedPath + "\n"
+	}
 	fmt.Fprintf(os.Stderr,
 		"forge evolve: %q is a human_gate workflow — a single-shot approval gate "+
 			"must not be driven by an autonomous loop.\n"+
 			"  human_gate is a non-bypassable, one-time human-approval gate (design->build); "+
-			"use `forge run %s [--approved]`, not `forge evolve`.\n",
-		stage, stage)
+			"use `forge run %s [--approved]`, not `forge evolve`.%s\n"+
+			"%s"+
+			"  To approve and continue:\n"+
+			"    forge run %s --approved\n"+
+			"  To check pending approvals:\n"+
+			"    forge approve list\n",
+		stage, stage, cpHint, approveHint, stage)
 	return 1
 }
 
@@ -124,7 +159,7 @@ func rejectHumanGate(stage string) int {
 // checkpoint, appends the round's trajectory to memory, and emits a trace event
 // under <root>/.forge/ — so a crashed run can --resume, later rounds recall what
 // happened, and the run stays auditable.
-func execLoop(wf asset.Workflow, o runOpts, maxIter int, maxIterSource string, resume bool) int {
+func execLoop(ctx context.Context, wf asset.Workflow, o runOpts, maxIter int, maxIterSource string, resume bool) int {
 	logln := func(s string) { fmt.Println(s) }
 	start, prev, spentMicros, phaseStart, err := resumeStart(o.root, resume)
 	if err != nil { // malformed checkpoint: fail closed, never silently restart.
@@ -137,28 +172,19 @@ func execLoop(wf asset.Workflow, o runOpts, maxIter int, maxIterSource string, r
 		return 1
 	}
 	defer closeTrace()
-	// ONE run budget for the WHOLE loop (created here, before buildLoop, so the SAME
-	// accumulator threads into the single Engine the loop reuses every iteration): the
-	// cumulative cap meters total spend across all iterations, not per-iteration. A
-	// misconfigured budget fails closed — never silently drop a cap.
+	// Auto-diagnostic: run quick doctor checks and emit results as trace events.
+	// This detects common issues before the evolve loop starts.
+	quickDoctorCheck(o.root, tracer, logln)
 	budget, err := newRunBudget(o.runBudgetUSD)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "forge evolve: %v\n", err)
 		return 1
 	}
-	// On --resume, re-seed the budget with the spend persisted in the checkpoint BEFORE
-	// the loop bills anything: without this the new process restarts the cumulative cap at
-	// $0, so cost billed before the crash escapes the cap and the run overspends across the
-	// resume (the gap this PR closes). seed is a no-op for a fresh run (spentMicros=0) and
-	// for an unbudgeted run, so both stay byte-for-byte unchanged. Honesty: the seed is the
-	// last-checkpointed total (through the last COMPLETED iteration) — a crashed iteration's
-	// un-checkpointed partial is re-billed on resume, a conservative under-count cost.go notes.
 	budget.seed(spentMicros)
-	loop, verdicts, findings := buildLoop(wf, o, maxIter, logln, costEmitter(tracer, logln), budget)
+	loop, verdicts, findings := buildTracedLoop(ctx, wf, o, maxIter, logln, tracer, budget)
 	loop.StartIter, loop.ResumePrev, loop.StartPhase = start, prev, phaseStart
 	loop.OnIteration = checkpointHook(o, wf, tracer, budget, logln, verdicts, findings)
 	loop.OnPhase = phaseCheckpointHook(o, wf, budget, logln)
-	loop.Parallel = parallelEnabled(o, wf, logln, "forge evolve") // depends_on-gated opt-in
 	fmt.Printf("forge evolve: stage=%s mode=%s max-iter=%d (%s) type=%s start-iter=%d (doom-loop tripwire=2)\n",
 		wf.Stage, o.mode, maxIter, maxIterSource, stopTypeLabel(wf.Stop.Type), start)
 	outcome, runErr := loop.Run(wf, o.mode)
@@ -174,53 +200,56 @@ func execLoop(wf asset.Workflow, o runOpts, maxIter int, maxIterSource string, r
 	return reportLoop(outcome, runErr)
 }
 
+// buildTracedLoop resolves auto-risk, builds the loop engine (buildLoop), wires its
+// gate results into the trace (mirroring execEngine's wireGateTrace in
+// engine_build.go), and sets the ctx/--parallel opt-in. Split out of execLoop
+// purely to keep that function under the per-function line budget.
+func buildTracedLoop(ctx context.Context, wf asset.Workflow, o runOpts, maxIter int, logln func(string), tracer *trace.Tracer, budget *runBudget) (orchestrator.LoopEngine, *verdictLedger, *reviewFindingsLedger) {
+	autoRisk, autoRiskReasons := resolveAutoRisk(o.root)
+	logAutoRisk(logln, "forge evolve", autoRisk, autoRiskReasons)
+	loop, verdicts, findings := buildLoop(wf, o, maxIter, logln, costEmitter(tracer, logln), budget, autoRisk, autoRiskReasons)
+	wireGateTrace(&loop.Engine, tracer, logln)
+	loop.Ctx = ctx
+	loop.Parallel = parallelEnabled(o, wf, logln, "forge evolve") // depends_on-gated opt-in
+	return loop, verdicts, findings
+}
+
 // buildLoop constructs the loop engine: real gates + selected executor + live
 // signals, with one acceptance probe per iteration shared by that iteration's gate
-// phases and convergence check (refresh-before-reuse, no double-spawn).
-//
-// The engine receives the FULL wf.Stop so convergence runs through
-// converge.Converge (which honors every stop shape), and the per-iteration Signals
-// closure fills HumanApproved from the resolved approval signal (reusing
-// gates.go's humanApproved). For a conjunction/external stop this changes nothing
-// — Converge delegates to Evaluate(all_of) and HumanApproved is irrelevant — but
-// it makes the loop's convergence check honest even if a human_gate ever reached
-// it (depth-two defense; cmdEvolve already refuses one up front).
+// phases and convergence check (refresh-before-reuse, no double-spawn). The engine
+// receives the FULL wf.Stop so convergence runs through converge.Converge (which
+// honors every stop shape — a human_gate that somehow reaches the loop is judged
+// by approval alone, never a satisfied all_of; depth-two defense, cmdEvolve already
+// refuses one up front).
 //
 // costSink threads the SAME tracer execLoop already owns into the agent executor, so
-// a real claude phase's billed cost lands as a `kind:"agent"` cost event — now ALSO
-// stamped with the routed model AND the phase's measured wall-clock latency (duration_ms) —
-// interleaved (Seq-ordered) with the per-iteration events in trace.jsonl. It does NOT go
-// through checkpointHook: cost+latency are per-PHASE (emitted inside RunFrom when a phase
-// bills), not per-iteration, so the iteration-event assertions are untouched and the
-// per-model p95 no longer collapses to the iteration's shared span.
+// a real claude phase's billed cost+latency lands as a trace-visible `kind:"agent"`
+// event, model-stamped and interleaved with the per-iteration events.
 //
-// budget is the loop-wide run budget (created in execLoop, reused here). buildRunEngine
-// wraps costSink with budget.feed and wires budget.BudgetExhaustedFunc() into the Engine,
-// so the cumulative dollar cap meters spend across EVERY iteration (the Engine is built
-// once and reused) — the run-level total bound, distinct from the per-iteration agent-call
-// count cap. Unset (--run-budget-usd empty) ⇒ a no-op accumulator + nil puller ⇒ unchanged.
-// buildLoop returns the LoopEngine plus the verdict/findings ledgers built inside
-// buildRunEngine, so execLoop can thread rework+trajectory into the scorecard wind-down
-// and the Reflect memory step without rebuilding or re-exposing the Engine internals.
-func buildLoop(wf asset.Workflow, o runOpts, maxIter int, logln func(string), costSink func(phase, model string, usd float64, latency time.Duration), budget *runBudget) (orchestrator.LoopEngine, *verdictLedger, *reviewFindingsLedger) {
+// budget is the loop-wide run budget (created in execLoop, reused here); buildRunEngine
+// wraps costSink with budget.feed and wires budget.BudgetExhaustedFunc() into the Engine
+// so the cumulative dollar cap meters spend across EVERY iteration (Engine built once,
+// reused). Unset (--run-budget-usd empty) ⇒ a no-op accumulator + nil puller ⇒ unchanged.
+//
+// Returns the LoopEngine plus the verdict/findings ledgers buildRunEngine built, so
+// execLoop can thread rework+trajectory into the scorecard wind-down and the Reflect
+// memory step without rebuilding or re-exposing the Engine internals.
+func buildLoop(wf asset.Workflow, o runOpts, maxIter int, logln func(string), costSink func(phase, model string, usd float64, latency time.Duration), budget *runBudget, autoRisk string, autoRiskReasons []string) (orchestrator.LoopEngine, *verdictLedger, *reviewFindingsLedger) {
 	probe := &loopProbe{root: o.root}
-	// The Engine — with its four prompt/feedback ledgers (gate verdicts, feeds_forward
-	// output, reviewer verdicts driving loop-back, and REQUEST_CHANGES findings) — is built
-	// by the SAME buildRunEngine `forge run` uses, so the two paths never drift. The only
-	// evolve-specific seam is the RunGate: a per-iteration refreshing probe (each iteration
-	// re-measures gate state, so the reviewer always sees the LATEST). The ledgers live for
-	// the whole loop and update in place across iterations — the right converging-loop
-	// semantics (latest gate state, latest plan, latest verdict).
+	// The Engine — with its four prompt/feedback ledgers — is built by the SAME
+	// buildRunEngine `forge run` uses, so the two paths never drift. The only
+	// evolve-specific seam is RunGate: a per-iteration refreshing probe (each
+	// iteration re-measures gate state, so the reviewer always sees the LATEST).
 	lifecycle := resolveLifecycle(o)
 	eng, verdicts, findings := buildRunEngine(wf, o, logln, costSink,
-		func(name string) gate.Result { return resolveGate(o.root, name, probe.refresh()) },
-		mode.Effective(o.mode, lifecycle), budget)
+		func(name string) gate.Result { return gate.ResolveGate(o.root, name, probe.refresh()) },
+		mode.Effective(o.mode, lifecycle), budget, autoRisk, autoRiskReasons)
 	approved := humanApproved(o.root, wf.Stage, o.approved)
 	return orchestrator.NewLoopEngine(
 		eng, wf.Stop,
 		func() converge.Signals {
 			statuses, categories := probe.current()
-			return gatherSignals(o.root, wf, statuses, categories, lifecycle, approved)
+			return gatherSignals(o.root, wf, statuses, categories, lifecycle, approved, verdicts)
 		},
 		maxIter, 2, logln), verdicts, findings
 }
@@ -278,18 +307,13 @@ func resumeStart(root string, resume bool) (start int, prev float64, spentMicros
 // each round's work AND its measurement, it persists a checkpoint, appends the
 // round's trajectory to memory, and emits an iteration trace event carrying the
 // iteration's measured wall-clock duration (durationMs from the loop) — the value
-// scorecard p95_latency reads, so the trace records the iteration's real cost
-// instead of a misleading 0. The snapshot time is injected here (main owns the
-// clock; persist/trace/memory don't).
-// Fail-LOUD-and-continue (deliberately NOT fail-closed): a checkpoint (or memory)
-// write failure is made loudly visible — a stderr WARNING plus the trace status
-// flipped to "checkpoint-write-failed" — but the loop keeps running. For a 24h run
-// that is the correct trade: a transient disk hiccup must not abort hours of work,
-// and the failure is never SWALLOWED, so we never pretend recovery state is durable
-// when it is not. Contrast openTracer, which DOES fail-closed: losing the audit
-// trail entirely is the blind spot trace prevents.
-// checkpointHook accepts the verdict and findings ledgers so it can extract structured
-// Reflect-step lessons (reviewer findings, gate gaps) alongside the trajectory entry.
+// scorecard p95_latency reads. Fail-LOUD-and-continue (deliberately NOT fail-closed):
+// a checkpoint/memory write failure is a loud stderr WARNING (+ trace status
+// "checkpoint-write-failed") but the loop keeps running — a 24h run must not abort
+// on a transient disk hiccup, and the failure is never swallowed. Contrast
+// openTracer, which DOES fail-closed (losing the audit trail is the blind spot
+// trace prevents). Accepts the verdict/findings ledgers so it can extract
+// structured Reflect-step lessons alongside the trajectory entry.
 func checkpointHook(o runOpts, wf asset.Workflow, tracer *trace.Tracer, budget *runBudget, logln func(string), verdicts *verdictLedger, findings *reviewFindingsLedger) func(int, converge.Signals, int64) {
 	return func(i int, sig converge.Signals, durationMs int64) {
 		// SpentUsdMicros records the run's cumulative billed cost AT THIS iteration so a
@@ -307,7 +331,7 @@ func checkpointHook(o runOpts, wf asset.Workflow, tracer *trace.Tracer, budget *
 			SpentUsdMicros: budget.SpentUsdMicros(),
 		}
 		status, detail := "ok", checkpointDetail(sig)
-		if err := persist.Save(checkpointPath(o.root), cp); err != nil {
+		if err := persist.Save(checkpointPath(o.root), cp, 5); err != nil {
 			status = "checkpoint-write-failed"
 			detail = err.Error()
 			logln(fmt.Sprintf("forge evolve: WARNING checkpoint write failed (recovery state NOT durable): %v", err))
@@ -320,15 +344,12 @@ func checkpointHook(o runOpts, wf asset.Workflow, tracer *trace.Tracer, budget *
 // phaseCheckpointHook builds the loop's iteration-aware OnPhase callback: after each
 // agent phase completes MID-iteration, it persists a PHASE-granular checkpoint so a
 // crash resumes at the next unstarted phase instead of replaying every completed
-// (billed) agent phase (the resume gap for a crash in qa: planner+implementer+reviewer
-// re-spawn). It PRESERVES the last completed iteration's measured signals — read from
-// the on-disk checkpoint the per-iteration hook wrote, since a phase checkpoint has no
-// fresh measurement of its own — advancing only PhaseIndex (phaseIdx+1) and the
-// up-to-the-phase cumulative spend (a FINER budget re-seed than the iteration-granular
-// one, shrinking the cross-resume under-count to at most one in-flight phase). At a
-// clean iteration boundary checkpointHook overwrites this with PhaseIndex=0, so a
-// fully-completed iteration resumes from phase 0 exactly as before. Fail-LOUD-and-
-// continue like checkpointHook: a write failure WARNs but never aborts the loop.
+// (billed) agent phase. It PRESERVES the last completed iteration's measured signals
+// — read from the on-disk checkpoint the per-iteration hook wrote — advancing only
+// PhaseIndex (phaseIdx+1) and the up-to-the-phase cumulative spend (a FINER budget
+// re-seed than the iteration-granular one). At a clean iteration boundary
+// checkpointHook overwrites this with PhaseIndex=0. Fail-LOUD-and-continue like
+// checkpointHook: a write failure WARNs but never aborts the loop.
 func phaseCheckpointHook(o runOpts, wf asset.Workflow, budget *runBudget, logln func(string)) func(iter, phaseIdx int) {
 	return func(iter, phaseIdx int) {
 		prev, _, _ := persist.Load(checkpointPath(o.root)) // not-found/malformed -> zero signals
@@ -338,7 +359,7 @@ func phaseCheckpointHook(o runOpts, wf asset.Workflow, budget *runBudget, logln 
 			PhaseIndex: phaseIdx + 1, Reason: "phase complete (mid-iteration)",
 			UpdatedAtUnix: time.Now().Unix(), SpentUsdMicros: budget.SpentUsdMicros(),
 		}
-		if err := persist.Save(checkpointPath(o.root), cp); err != nil {
+		if err := persist.Save(checkpointPath(o.root), cp, 5); err != nil {
 			logln(fmt.Sprintf("forge evolve: WARNING phase checkpoint write failed (recovery state NOT durable): %v", err))
 		}
 	}
@@ -367,7 +388,7 @@ func recordMemory(root string, wf asset.Workflow, i int, sig converge.Signals, v
 	now := time.Now().Unix()
 	// 1. Trajectory (always)
 	appendEntry(memory.Entry{
-		Kind: memory.KindLesson, Topic: wf.Stage, Iteration: i, CreatedAtUnix: now,
+		Kind: memory.KindLesson, Topic: wf.Stage, Source: "evolve", Iteration: i, CreatedAtUnix: now,
 		Detail: fmt.Sprintf("iter %d: roadmap=%.0f%%, gates_green=%v", i, sig.RoadmapCompletion*100, sig.GatesGreen),
 	})
 	// 2. Reviewer REQUEST_CHANGES findings → structured KindLesson per target phase
@@ -377,26 +398,48 @@ func recordMemory(root string, wf asset.Workflow, i int, sig converge.Signals, v
 				continue
 			}
 			appendEntry(memory.Entry{
-				Kind: memory.KindLesson, Topic: wf.Stage, Iteration: i, CreatedAtUnix: now,
+				Kind: memory.KindLesson, Topic: wf.Stage, Source: "reviewer", Iteration: i, CreatedAtUnix: now,
 				Detail: fmt.Sprintf("reviewer requested changes for %s: %s", target, text),
 			})
 		}
 	}
-	// 3. Gate failures → KindGap; iter 2+ persistent failure → KindDecision with escalation hint
-	if !sig.GatesGreen {
+	recordGateFailureMemory(appendEntry, wf, i, sig, now)
+	compactMemoryIfDue(root, i, logln)
+}
+
+// recordGateFailureMemory appends entry type 3 (gate failures → KindGap; iter 2+
+// persistent failure → KindDecision with escalation hint), split out of recordMemory
+// purely to keep that function under the per-function line budget.
+func recordGateFailureMemory(appendEntry func(memory.Entry), wf asset.Workflow, i int, sig converge.Signals, now int64) {
+	if sig.GatesGreen {
+		return
+	}
+	appendEntry(memory.Entry{
+		Kind: memory.KindGap, Topic: wf.Stage, Source: "evolve", Iteration: i, CreatedAtUnix: now,
+		Detail: fmt.Sprintf("iter %d: gates not green at roadmap=%.0f%% — fix gate failures before claiming convergence", i, sig.RoadmapCompletion*100),
+	})
+	if i >= 2 {
+		// Reflect self-analysis: loop has NOT fixed gate failures across multiple iterations.
 		appendEntry(memory.Entry{
-			Kind: memory.KindGap, Topic: wf.Stage, Iteration: i, CreatedAtUnix: now,
-			Detail: fmt.Sprintf("iter %d: gates not green at roadmap=%.0f%% — fix gate failures before claiming convergence", i, sig.RoadmapCompletion*100),
+			Kind: memory.KindDecision, Topic: wf.Stage, Source: "evolve", Iteration: i, CreatedAtUnix: now,
+			Detail: fmt.Sprintf("iter %d: RECURRING gate failure (gates not green across %d+ iterations) — self-analysis: current approach not converging; options: (1) review gate output for specific failing check, (2) escalate tier for failing phases, (3) reduce scope of this iteration's changes", i, i),
 		})
-		if i >= 2 {
-			// Reflect self-analysis: loop has NOT fixed gate failures across multiple iterations.
-			// This is a structural diagnosis: the current approach (model tier / workflow) is not
-			// converging. Emit a KindDecision entry naming the adaptive adjustment options.
-			appendEntry(memory.Entry{
-				Kind: memory.KindDecision, Topic: wf.Stage, Iteration: i, CreatedAtUnix: now,
-				Detail: fmt.Sprintf("iter %d: RECURRING gate failure (gates not green across %d+ iterations) — self-analysis: current approach not converging; options: (1) review gate output for specific failing check, (2) escalate tier for failing phases, (3) reduce scope of this iteration's changes", i, i),
-			})
-		}
+	}
+}
+
+// compactMemoryIfDue compacts the memory store every 10 iterations when it exceeds
+// the threshold (groups old entries by kind, keeps the most recent keepPerKind per
+// kind, replaces the rest with summaries) — split out of recordMemory purely to
+// keep that function under the per-function line budget.
+func compactMemoryIfDue(root string, i int, logln func(string)) {
+	if i%10 != 0 {
+		return
+	}
+	removed, compacted, err := memory.Compact(memoryPath(root), memory.DefaultCompactThreshold, memory.DefaultCompactKeepPerKind, memory.CompactAgeSeconds)
+	if err != nil {
+		logln(fmt.Sprintf("forge evolve: WARNING memory compaction failed: %v", err))
+	} else if compacted {
+		logln(fmt.Sprintf("forge evolve: memory compaction removed %d entries", removed))
 	}
 }
 
@@ -423,18 +466,31 @@ func stopTypeLabel(t string) string {
 // checkpointPath is where the per-iteration resume snapshot is persisted.
 func checkpointPath(root string) string { return filepath.Join(forgeDir(root), "checkpoint.json") }
 
-// openTracer creates <root>/.forge and returns a Tracer APPENDING JSONL to
-// trace.jsonl (append, not truncate, lets a --resume continue the same audit
-// trail), plus a closer. A dir/open failure is returned (fail-closed) — the loop
+// openTracer creates an append-mode tracer to <root>/.forge/trace.jsonl, rotating
+// the file when it exceeds 10MB (analysis §2.1) to prevent unbounded growth.
+// It also returns a closer. A dir/open failure is returned (fail-closed) — the loop
 // must not run blind on observability.
 func openTracer(root string) (*trace.Tracer, func(), error) {
 	if err := os.MkdirAll(forgeDir(root), 0o755); err != nil {
 		return nil, func() {}, fmt.Errorf("create .forge dir: %w", err)
 	}
-	f, err := os.OpenFile(filepath.Join(forgeDir(root), "trace.jsonl"),
-		os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
+	tp := filepath.Join(forgeDir(root), "trace.jsonl")
+	// Rotate trace if it exceeds 10 MB: rename to trace.jsonl.1, start fresh.
+	// O_EXCL-free: two processes rotating at once could race (analysis §2.1 boundry),
+	// but a stale .1 backup is harmless — next rotation overwrites it.
+	const maxTraceBytes int64 = 10 << 20 // 10 MB
+	if st, err := os.Stat(tp); err == nil && st.Size() > maxTraceBytes {
+		os.Rename(tp, tp+".1") // best-effort; ignore error (rotation is optimization, not correctness)
+	}
+	f, err := os.OpenFile(tp, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
 	if err != nil {
 		return nil, func() {}, fmt.Errorf("open trace file: %w", err)
 	}
 	return trace.NewTracer(f), func() { f.Close() }, nil
+}
+
+// withSignalCancellation returns a context cancelled by SIGINT/SIGTERM.
+// The returned stop must be called (via defer) to restore default signal handling.
+func withSignalCancellation() (context.Context, func()) {
+	return signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 }

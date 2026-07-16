@@ -79,17 +79,86 @@ import (
 // no longer block each other). An EMPTY DependsOn (every phase, in every existing
 // workflow today) means "no declared dependency": the field changes NOTHING for the
 // default SERIAL engine (RunFrom ignores it), so adding it is byte-for-byte back-compat.
+//
+// FreshContext is an OPTIONAL flag (default false) that tells the prompt builder to
+// give this phase a "clean slate" — skip feeding forward prior phase outputs, gate
+// results, and findings from other phases. This implements the engineering rule
+// (BOOTSTRAP.md, AGENTS.md) that Reviewer must be a fresh-context independent agent
+// that does not see the implementer's output or prior gate results, preventing
+// anchoring bias (asset-runtime-gap.md §1.2). A zero-value (false) means "normal
+// context inheritance", byte-for-byte back-compat with every existing workflow.
+//
+// Emits is an OPTIONAL list of file paths that this phase is declared to produce
+// (e.g. task-plan.md, proposal.md, requirement-draft.md). These declare the
+// inter-phase data dependencies that are currently implicit in YAML comments.
+// When populated, the prompt builder can read and inject the actual content of
+// emitted files into downstream phases that depend on them. A zero-value (nil/empty)
+// means "this phase emits no declarative artifacts", byte-for-byte back-compat.
+//
+// ConfidenceMetric is an OPTIONAL metric name that this phase's agent output is
+// expected to carry a confidence score for (discover.yml's requirement-discovery
+// phase: confidence_metric: requirement_confidence). Its value is parsed from the
+// agent's output (e.g. "Confidence: 85/100") and fed into converge.Signals so the
+// stop condition can evaluate it. An empty string means "this phase does not
+// produce a confidence metric", byte-for-byte back-compat.
+//
+// OptionalFor is an OPTIONAL list of mode names for which this phase MAY be
+// skipped (discover.yml's market-research: optional_for: [balanced]). When the
+// current mode is in this list, the orchestrator's skipByMode may skip the phase;
+// when absent or the mode is not listed, the phase always runs (the default).
+// A nil/empty list means "always run", unchanged from existing behavior.
+//
+// UsesTemplate is an OPTIONAL path to an AI-SDLC template file (review.yml's
+// phases reference .ai/prompts/*.md via uses_template). When populated, the
+// prompt builder can read the template content and inject it as contextual
+// guidance for this phase. An empty string means "this phase does not reference
+// an external template", byte-for-byte back-compat.
+//
+// RequiresTools is an OPTIONAL list of tool names a phase's agent needs to do
+// real work (discover.yml's market-research: requires_tools: [web_search,
+// web_fetch] — the phase's own comment states the intended behavior: degrade to
+// advisory + flag when the tool is absent, never silently fabricate results).
+// ADDED HERE ONLY: this field is decoded and carried on Phase, but nothing in
+// forge-core reads it yet — no degrade-to-advisory check, no flag, no gating.
+// A separate task builds that consumption. A nil/empty list means "this phase
+// declares no tool requirement", byte-for-byte back-compat.
+//
+// Readonly is an OPTIONAL marker (authored at BOTH workflow level and per-phase
+// across every .agent/workflows/*.yml — e.g. review.yml sets it true at the
+// top level and again on every phase; build.yml varies it per phase: false on
+// implementer, true on planner/harness-gates/reviewer/qa) that the phase's
+// agent is expected to only read, never write product code or other state.
+// ADDED HERE ONLY: this field is decoded on both Phase and Workflow, but
+// nothing in forge-core enforces it yet — no write-blocking, no violation
+// check. A separate task builds that consumption. A zero value (false) means
+// "no read-only declaration", byte-for-byte back-compat.
+//
+// SecondaryTemplate is an OPTIONAL second AI-SDLC template path alongside
+// UsesTemplate (review.yml's performance-reliability-review phase pairs
+// uses_template: .../05-performance-review.md with secondary_template:
+// .../06-production-readiness.md — one phase, two review dimensions). ADDED
+// HERE ONLY: this field is decoded and carried on Phase, but nothing in
+// forge-core reads or injects it yet. A separate task builds that consumption.
+// An empty string means "no secondary template", byte-for-byte back-compat.
 type Phase struct {
-	Name          string     `json:"name"`
-	Agent         string     `json:"agent"`
-	Readonly      bool       `json:"readonly"`
-	RequiredGates []string   `json:"required_gates"`
-	RequiredWhen  string     `json:"required_when"`
-	OnFail        *OnFail    `json:"on_fail"`
-	ModelTier     string     `json:"model_tier"`
-	WritesADR     *WritesADR `json:"writes_adr"`
-	FeedsForward  bool       `json:"feeds_forward"`
-	DependsOn     []string   `json:"depends_on"`
+	Name              string     `json:"name"`
+	Agent             string     `json:"agent"`
+	Description       string     `json:"description,omitempty"`
+	RequiredGates     []string   `json:"required_gates"`
+	RequiredWhen      string     `json:"required_when"`
+	OnFail            *OnFail    `json:"on_fail"`
+	ModelTier         string     `json:"model_tier"`
+	WritesADR         *WritesADR `json:"writes_adr"`
+	FeedsForward      bool       `json:"feeds_forward"`
+	DependsOn         []string   `json:"depends_on"`
+	FreshContext      bool       `json:"fresh_context,omitempty"`
+	Emits             []string   `json:"emits,omitempty"`
+	ConfidenceMetric  string     `json:"confidence_metric,omitempty"`
+	OptionalFor       []string   `json:"optional_for,omitempty"`
+	UsesTemplate      string     `json:"uses_template,omitempty"`
+	RequiresTools     []string   `json:"requires_tools,omitempty"`
+	Readonly          bool       `json:"readonly,omitempty"`
+	SecondaryTemplate string     `json:"secondary_template,omitempty"`
 }
 
 // WritesADR is the subset of a phase's writes_adr block forge-core reads:
@@ -139,6 +208,7 @@ type StopCondition struct {
 	HumanApproval string      `json:"human_approval"`
 	OnApproved    OnApproved  `json:"on_approved"`
 	OnUnmet       *OnUnmet    `json:"on_unmet"`
+	OnRejected    *LoopBack   `json:"on_rejected,omitempty"`
 }
 
 // OnUnmet is a conjunction stop's directed-restart directive: when the stop is
@@ -156,6 +226,17 @@ type OnUnmet struct {
 // modeled here — only the routing-relevant NextStage is.
 type OnApproved struct {
 	NextStage string `json:"next_stage"`
+}
+
+// LoopBack is a directed jump-back directive shared by StopCondition.OnRejected
+// and Phase.OnFail. Action names the kind of jump ("loop_back") and TargetPhase
+// names the phase to return to. A nil LoopBack means "no jump".
+// This type exists so the same semantics (jump to phase, bounded by MaxLoopBack)
+// are used by both the gate on_fail path and the human-gate on_rejected path
+// without duplicating the struct definition.
+type LoopBack struct {
+	Action      string `json:"action"`
+	TargetPhase string `json:"target_phase"`
 }
 
 // Criterion is one structured stop criterion. The real build.yml authors these
@@ -200,11 +281,21 @@ func (c *Criterion) UnmarshalJSON(data []byte) error {
 // the engine loaded ZERO phases and the loop reported converged=true over no work
 // (a false-clean: zero work read as success). It is a POINTER so a non-loop
 // workflow (build.yml) loads it as nil and is byte-for-byte unaffected.
+//
+// Readonly is an OPTIONAL workflow-level marker (every one of the 5
+// .agent/workflows/*.yml authors it at the top level — discover.yml/review.yml
+// true, build.yml/evolve.yml/design.yml false — a stage-wide default that a
+// phase's own Readonly can narrow further). ADDED HERE ONLY: this field is
+// decoded, but nothing in forge-core enforces it yet — no write-blocking, no
+// stage/phase-level consistency check between the two. A separate task builds
+// that consumption. A zero value (false) means "no stage-wide read-only
+// declaration", byte-for-byte back-compat.
 type Workflow struct {
-	Stage  string        `json:"stage"`
-	Phases []Phase       `json:"phases"`
-	Loop   *LoopBody     `json:"loop"`
-	Stop   StopCondition `json:"stop_condition"`
+	Stage    string        `json:"stage"`
+	Phases   []Phase       `json:"phases"`
+	Loop     *LoopBody     `json:"loop"`
+	Stop     StopCondition `json:"stop_condition"`
+	Readonly bool          `json:"readonly,omitempty"`
 }
 
 // LoopBody is a standing-loop workflow's `loop:` block: the phases that form the

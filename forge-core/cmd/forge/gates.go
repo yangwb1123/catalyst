@@ -4,13 +4,27 @@
 // resolves to its OWN tri-state (PASS/FAIL/NA) using a single acceptance probe
 // per run, and "gates green" means every required gate was actually CHECKED and
 // PASSED — never merely "nothing failed".
+//
+// The N/A exemption matrix and per-gate resolution (GatesGreen/ResolveGate/…)
+// live in internal/gate (resolve.go) — pure business logic, not CLI glue, so
+// it belongs in the package that already owns gate.Result/ProbeAll rather than
+// in cmd/forge (see internal/attribution for the same precedent). The
+// `forge approve list` CLI lives in approve.go, split out to keep this file
+// under the volume budget; this file keeps the higher-level orchestration:
+// gatherSignals (the Signals{} builder every stop condition is judged
+// against), the per-iteration probe cache, and the honesty-enrichment
+// computers (CodeTestRatio, FileDelta).
 package main
 
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"sync"
+	"unicode"
 
 	"forgeos/forge-core/internal/asset"
 	"forgeos/forge-core/internal/converge"
@@ -19,11 +33,9 @@ import (
 
 // probeStatuses runs gate.ProbeAll once, returning the criterion->status map and
 // the parallel criterion->category map (the lifecycle-aware N/A classification).
-// On a probe error (e.g. node missing) it returns (nil, nil); downstream
-// resolution treats an absent criterion as NA with an empty category, so a broken
-// probe degrades to honest N/A — and, because an empty category is NOT exemptible
-// (the matrix only waives a KNOWN inapplicable/no_tool), a broken probe can never
-// be mistaken for a green convergence.
+// On a probe error (e.g. node missing) it returns (nil, nil); downstream resolution
+// treats an absent criterion as NA with an empty (non-exemptible) category, so a
+// broken probe can never be mistaken for a green convergence.
 func probeStatuses(root string) (statuses, categories map[string]string) {
 	statuses, categories, err := gate.ProbeAll(root)
 	if err != nil {
@@ -41,24 +53,115 @@ func probeStatuses(root string) (statuses, categories map[string]string) {
 //
 // The same acceptance probe map (criterion -> PASS/FAIL/NA) is also handed to
 // Signals.Criteria, so a workflow can converge on an INDIVIDUAL acceptance
-// criterion (e.g. test_pass) and not only the coarse GatesGreen aggregate. This
-// REUSES the once-per-run probe the gate phases already ran — acceptance is
-// never spawned a second time for convergence; one probe feeds both the gate
-// verdicts and the per-criterion convergence check, keeping them consistent and
-// honest within a run. probe values are exactly gate.ProbeAll's PASS/FAIL/NA,
-// which is the verdict vocabulary converge.evalCriterion expects; a nil probe
-// (broken/absent) leaves Criteria nil and every per-criterion check degrades to
-// unmet (absence of a verdict is never satisfaction).
-func gatherSignals(root string, wf asset.Workflow, probe, categories map[string]string, lifecycle string, approved bool) converge.Signals {
+// criterion (e.g. test_pass) and not only the coarse GatesGreen aggregate — REUSING
+// the once-per-run probe the gate phases already ran (never spawned twice). A nil
+// probe (broken/absent) leaves Criteria nil, and every per-criterion check degrades
+// to unmet (absence of a verdict is never satisfaction).
+//
+// verdicts (nil-safe) is the run's *verdictLedger — the same one Engine.AgentVerdict
+// reads back — consulted here via reviewStatus() to populate Signals.ReviewStatus.
+func gatherSignals(root string, wf asset.Workflow, probe, categories map[string]string, lifecycle string, approved bool, verdicts *verdictLedger) converge.Signals {
 	md, _ := os.ReadFile(filepath.Join(root, ".agent", "ROADMAP.md"))
-	green, proof := gatesGreen(root, requiredGates(wf), probe, categories, lifecycle)
-	return converge.Signals{
-		RoadmapCompletion: converge.RoadmapCompletion(string(md)),
-		GatesGreen:        green,
-		GateProof:         proof,
-		Criteria:          probe,
-		HumanApproved:     approved,
+	green, proof := gate.GatesGreen(root, requiredGates(wf), probe, categories, lifecycle)
+	sig := converge.Signals{
+		RoadmapCompletion:     converge.RoadmapCompletion(string(md)),
+		GatesGreen:            green,
+		GateProof:             proof,
+		Criteria:              probe,
+		HumanApproved:         approved,
+		CodeTestRatio:         computeCodeTestRatio(root),
+		ReviewStatus:          reviewStatus(verdicts),
+		RequirementConfidence: requirementConfidence(wf, verdicts),
+		FileDelta:             computeFileDelta(root),
 	}
+	// Warn when prod code changes without corresponding test code (analysis §5.2).
+	if sig.CodeTestRatio == 0 && sig.RoadmapCompletion > 0 {
+		fmt.Printf("forge: test-gap warning — changed lines are 100%% production code with 0%% tests (CodeTestRatio=0); consider adding tests for new code\n")
+	}
+	return sig
+}
+
+// executiveReviewPhase is review.yml P4's fixed phase name (agent: cto), the same
+// literal converge.go's evalReviewStatus implicitly targets via "review_status".
+const executiveReviewPhase = "executive-review"
+
+// reviewStatus resolves Signals.ReviewStatus from the CTO's recorded executive-review
+// verdict (cost.go's parseExecutiveVerdict, wired via prompt_context.go's observeFor)
+// — the previously-missing wire that left ReviewStatus permanently "". Nil-safe
+// (verdictLedger.get tolerates nil), so an unwired/not-yet-run phase stays "" (honest
+// absence, never a fabricated approval). APPROVE/APPROVE_WITH_SIMPLIFICATION -> "approved";
+// REDESIGN/DELAY/REJECT -> their own lowercase token (a MEANINGFUL unmet detail, not a
+// blank "no review phase data"); anything else (not yet recorded) -> "".
+func reviewStatus(verdicts *verdictLedger) string {
+	switch v, _ := verdicts.get(executiveReviewPhase); v {
+	case VerdictApprove, VerdictApproveWithSimplification:
+		return "approved"
+	case VerdictRedesign:
+		return "redesign"
+	case VerdictDelay:
+		return "delay"
+	case VerdictReject:
+		return "reject"
+	default:
+		return ""
+	}
+}
+
+// requirementDiscoveryPhase is the FALLBACK phase name consulted when no phase
+// in the workflow declares confidence_metric: requirement_confidence — discover.yml
+// P1's fixed phase name (agent: product-manager) today, the same literal
+// converge.go's evalRequirementConfidence implicitly targets via
+// "requirement_confidence", and the numeric-signal counterpart to
+// executiveReviewPhase. Preserved as the default so every workflow authored
+// before confidenceMetricPhase existed keeps its exact current behavior.
+const requirementDiscoveryPhase = "requirement-discovery"
+
+// requirementConfidenceMetric is the confidence_metric value discover.yml's
+// requirement-discovery phase declares — the field confidenceMetricPhase scans
+// wf.Phases for.
+const requirementConfidenceMetric = "requirement_confidence"
+
+// confidenceMetricPhase is the field-driven counterpart to mode_gating.go's
+// requiredWhenKey-style dispatch: instead of a hardcoded phase name, it scans
+// wf.Phases for the phase that declares `confidence_metric: <metric>` and
+// returns THAT phase's Name, so a caller can look up its recorded verdict
+// regardless of what the phase is called. Falls back to
+// requirementDiscoveryPhase when no phase in the workflow declares the field —
+// the byte-for-byte back-compat path, since discover.yml's own phase is in
+// fact named "requirement-discovery" today.
+func confidenceMetricPhase(wf asset.Workflow, metric string) string {
+	for _, p := range wf.Phases {
+		if p.ConfidenceMetric == metric {
+			return p.Name
+		}
+	}
+	return requirementDiscoveryPhase
+}
+
+// requirementConfidence resolves Signals.RequirementConfidence from the
+// recorded confidence score of WHICHEVER phase in wf declares
+// confidence_metric: requirement_confidence (confidenceMetricPhase — falling
+// back to the literal requirementDiscoveryPhase when no phase declares it,
+// e.g. discover.yml's product-manager requirement-discovery phase today; cost.go's
+// parseConfidenceScore, wired via prompt_context.go's observeFor as a THIRD
+// fallback verdict tier) — mirrors reviewStatus's structure exactly, but the
+// stored payload is a numeric string ("85"), not a fixed token, so this reads
+// it back and parses it. Nil-safe (verdictLedger.get tolerates nil), so an
+// unwired/not-yet-run phase — or a recorded value that somehow fails to parse
+// (should not happen, since only parseConfidenceScore ever writes to this
+// phase's slot, but handled defensively rather than assumed) — stays 0
+// (honest absence, never a fabricated confidence).
+func requirementConfidence(wf asset.Workflow, verdicts *verdictLedger) float64 {
+	phase := confidenceMetricPhase(wf, requirementConfidenceMetric)
+	v, ok := verdicts.get(phase)
+	if !ok {
+		return 0
+	}
+	n, err := strconv.ParseFloat(v, 64)
+	if err != nil {
+		return 0
+	}
+	return n
 }
 
 // approvalPath is the on-disk human-approval marker for a stage: its mere
@@ -83,6 +186,83 @@ func humanApproved(root, stage string, flag bool) bool {
 	return err == nil
 }
 
+// rejectionPath is the on-disk human-REJECTION marker for a stage: its mere
+// EXISTENCE under <root>/.forge/<stage>.rejected is the rejection SIGNAL,
+// mirroring approvalPath exactly (same git-ignored .forge runtime dir; a
+// rejection is a deliberate local act, never committed). Unlike approval there
+// is no --rejected flag: a human filing a rejection is a one-shot local
+// decision, and the marker file alone captures that, the same reasoning as
+// approval's marker source.
+func rejectionPath(root, stage string) string {
+	return filepath.Join(forgeDir(root), stage+".rejected")
+}
+
+// rejectionPhaseIndex is the cmd/forge-local counterpart to orchestrator's
+// unexported phaseIndex (internal/orchestrator/orchestrator.go): the identical
+// by-name phase lookup, duplicated here rather than exported because it is five
+// lines and pulling a whole export across the package boundary for that would
+// be the heavier change. Returns ok=false when no phase carries that name (an
+// unresolvable on_rejected.target_phase).
+func rejectionPhaseIndex(wf asset.Workflow, name string) (int, bool) {
+	for i, p := range wf.Phases {
+		if p.Name == name {
+			return i, true
+		}
+	}
+	return 0, false
+}
+
+// resolveRejectionStartPhase is `forge run`'s SINGLE-PASS counterpart to
+// LoopEngine.nextStartPhase's OnRejected branch (internal/orchestrator/loop.go)
+// — the missing call site that made design.yml's on_rejected unreachable (see
+// that function's doc comment: `forge run` never loops, `forge evolve` refuses
+// human_gate workflows outright). This is invoked ONCE, BEFORE runWorkflow, and
+// resolves where THIS run should start:
+//
+//   - not a human_gate stop -> phase 0 (scoped to human_gate stops only: a
+//     stray rejection marker for a conjunction/external workflow is inert).
+//   - no on_rejected, or its action isn't "loop_back" -> phase 0 (nothing to
+//     act on; a marker, if any, is left alone since it was never consumed).
+//   - marker absent -> phase 0 (no rejection was filed; back-compat default).
+//   - marker present, on_rejected actionable, target_phase resolves -> that
+//     phase's index, AND the marker is deleted (ONE-SHOT: a human's rejection
+//     is consumed the moment it is acted on, so the NEXT `forge run` does not
+//     loop back again unless a NEW rejection is filed).
+//   - marker present but target_phase does not resolve to a real phase ->
+//     phase 0, marker left in place (nothing was acted on, so nothing is
+//     consumed — an operator can fix the workflow's target_phase and re-run).
+//
+// This is purely additive: any workflow that never declares on_rejected, or
+// never has a rejection marker filed, resolves to 0 — byte-for-byte the prior
+// "always start at phase 0" behavior.
+func resolveRejectionStartPhase(wf asset.Workflow, root string, logln func(string)) int {
+	if !converge.IsHumanGate(wf.Stop) {
+		return 0
+	}
+	if wf.Stop.OnRejected == nil || wf.Stop.OnRejected.Action != "loop_back" {
+		return 0
+	}
+	rp := rejectionPath(root, wf.Stage)
+	if _, err := os.Stat(rp); err != nil {
+		return 0 // no rejection filed: default start (phase 0), byte-for-byte.
+	}
+	idx, ok := rejectionPhaseIndex(wf, wf.Stop.OnRejected.TargetPhase)
+	if !ok {
+		if logln != nil {
+			logln(fmt.Sprintf("forge run: human_gate REJECTED marker found but on_rejected.target_phase %q not found — starting at phase 0 (marker left in place)", wf.Stop.OnRejected.TargetPhase))
+		}
+		return 0
+	}
+	if err := os.Remove(rp); err != nil && logln != nil {
+		logln(fmt.Sprintf("forge run: warning — could not consume rejection marker %s: %v", rp, err))
+	}
+	if logln != nil {
+		logln(fmt.Sprintf("forge run: human_gate REJECTED (marker consumed) — resuming at phase %d (%s) per on_rejected.target_phase",
+			idx, wf.Stop.OnRejected.TargetPhase))
+	}
+	return idx
+}
+
 // requiredGates collects the de-duplicated set of gate names across the
 // workflow's gate phases — the gates whose collective PASS defines "green".
 func requiredGates(wf asset.Workflow) []string {
@@ -97,220 +277,6 @@ func requiredGates(wf asset.Workflow) []string {
 		}
 	}
 	return names
-}
-
-// N/A category vocabulary (mirrors harness/acceptance-kernel.mjs). A criterion the
-// LANGUAGE/project simply lacks is "inapplicable" (honest at every lifecycle); one
-// whose TOOL is just missing/unconfigured is "no_tool" (a fixable gap, waived only
-// while immature). Any other value (including "" from a pre-category probe or a
-// broken probe) is NEITHER and is therefore never exempted — the strict default.
-const (
-	catInapplicable = "inapplicable"
-	catNoTool       = "no_tool"
-)
-
-// exemptsNoTool reports whether a "no_tool" N/A may be waived at this lifecycle.
-// ONLY the immature stages (idea/mvp/growth) qualify; production — and ANY unknown
-// or empty lifecycle — does NOT (fail-safe toward strict: an unrecognised maturity
-// is treated as production, so a missing tool blocks rather than silently passes).
-// This is the lifecycle half of the two-dimensional matrix; it never applies to
-// FAIL or to an "inapplicable" N/A (those have their own, lifecycle-independent
-// rules in gatesGreen).
-func exemptsNoTool(lifecycle string) bool {
-	switch lifecycle {
-	case "idea", "mvp", "growth":
-		return true
-	default: // production, unknown, "" -> strict
-		return false
-	}
-}
-
-// gatesGreen is the lifecycle-aware convergence judgment over the required gates,
-// returning both the verdict and the per-gate proof (for honest reporting). It is
-// the固化 of objective convergence for adapter-less languages WITHOUT weakening
-// production, via a two-dimensional matrix over (status × category):
-//
-//	FAIL                      -> ALWAYS blocks (an exemption never applies to FAIL).
-//	PASS                      -> proven (a real check ran and passed).
-//	NA + inapplicable         -> exempt at ANY lifecycle (the language has no such
-//	                             concept; nothing could make it applicable).
-//	NA + no_tool              -> exempt IFF exemptsNoTool(lifecycle) — idea/mvp/
-//	                             growth waive a fixable tooling gap; production /
-//	                             unknown / "" require the tool (blocks).
-//	NA + (any other category) -> blocks (strict default: a pre-category/broken probe
-//	                             or an unclassified N/A is never waived).
-//
-// VACUOUS-GREEN GUARD (honesty): being "green" requires ≥1 non-NA gate that is a
-// real PASS. If every required gate is N/A — even if all are exempted — nothing was
-// proven, so the verdict is false. This upgrades the old "zero gates is not green"
-// to "zero NON-NA gates is not green". Zero required gates is likewise not green.
-func gatesGreen(root string, names []string, probe, categories map[string]string, lifecycle string) (bool, converge.GateProof) {
-	var proof converge.GateProof
-	if len(names) == 0 {
-		return false, proof
-	}
-	provenCount := 0 // non-NA gates that PASSED (the vacuous-green guard's numerator)
-	green := true
-	for _, name := range names {
-		res := resolveGate(root, name, probe)
-		switch res.Status {
-		case gate.StatusPass:
-			provenCount++
-			proof.Proven = append(proof.Proven, name)
-		case gate.StatusNA:
-			cat := gateCategory(name, categories)
-			if !exemptNA(cat, lifecycle) {
-				green = false // an un-waivable N/A (no_tool@production, or unknown) blocks
-			} else {
-				proof.Exemptions = append(proof.Exemptions, converge.GateExemption{
-					Name: name, Category: cat, Reason: naReason(res, cat),
-				})
-			}
-		default: // StatusFail — never exemptible
-			green = false
-		}
-	}
-	// Vacuous guard: a green verdict must rest on at least one proven (non-NA PASS)
-	// gate; all-N/A (even fully exempted) proves nothing.
-	if provenCount == 0 {
-		green = false
-	}
-	return green, proof
-}
-
-// exemptNA applies the category half of the matrix: an "inapplicable" N/A is waived
-// at any lifecycle, a "no_tool" N/A only when exemptsNoTool(lifecycle), and anything
-// else (unknown/empty) is never waived.
-func exemptNA(category, lifecycle string) bool {
-	switch category {
-	case catInapplicable:
-		return true
-	case catNoTool:
-		return exemptsNoTool(lifecycle)
-	default:
-		return false
-	}
-}
-
-// gateCategory resolves the N/A category for a gate by mapping its name onto the
-// acceptance criterion that backs it (the same mapping resolveGate uses) and
-// reading that criterion's category from the parallel ProbeAll map. The `test`
-// gate combines test_pass+app_test_pass; an N/A there is driven by app_test_pass
-// (the only one that can be N/A — no example apps), so its category is read from
-// app_test_pass. An absent category yields "" (the strict, non-exemptible default).
-func gateCategory(name string, categories map[string]string) string {
-	criterion := name
-	switch name {
-	case "security":
-		criterion = "security_findings"
-	case "test":
-		criterion = "app_test_pass"
-	}
-	return categories[criterion]
-}
-
-// naReason renders a short, honest reason for a waived N/A gate, preferring the
-// acceptance probe's own detail and falling back to the category.
-func naReason(res gate.Result, category string) string {
-	if res.Output != "" {
-		return res.Output
-	}
-	return category
-}
-
-// harnessRunner maps logical gate names onto their REAL per-gate verdict, using
-// the once-per-run acceptance probe map. It is the fix for the FAKE PASS: each
-// required gate resolves to its own PASS/FAIL/NA instead of every name sharing
-// one coarse aggregate verdict.
-func harnessRunner(repoRoot string, probe map[string]string) func(string) gate.Result {
-	return func(name string) gate.Result {
-		return resolveGate(repoRoot, name, probe)
-	}
-}
-
-// resolveGate computes one gate's honest tri-state Result. Structural gates run
-// their own tool live; the rest read the shared acceptance probe:
-//
-//	complexity -> gate.Gate  (structural caps, a real check)
-//	arch       -> gate.Check (governance integrity, a real check)
-//	test       -> PASS iff BOTH acceptance test_pass AND app_test_pass are PASS
-//	lint       -> acceptance 'lint'            (N/A here: no linter installed)
-//	build      -> acceptance 'build'           (N/A here: no build step)
-//	security   -> acceptance 'security_findings' (a real secret-scan PASS/FAIL)
-//
-// An acceptance-backed gate whose criterion is missing from the probe map (or
-// whose probe failed) resolves to N/A — honest "not checked", never a pass.
-func resolveGate(repoRoot, name string, probe map[string]string) gate.Result {
-	switch name {
-	case "complexity":
-		return gate.Gate(repoRoot)
-	case "arch":
-		return gate.Check(repoRoot)
-	case "test":
-		return combinedGate(name, probe, "test_pass", "app_test_pass")
-	case "lint":
-		return probedGate(name, probe, "lint")
-	case "build":
-		return probedGate(name, probe, "build")
-	case "security":
-		return probedGate(name, probe, "security_findings")
-	default:
-		return probedGate(name, probe, name)
-	}
-}
-
-// probedGate reads one acceptance criterion's status from the probe map and
-// renders it as a tri-state gate.Result. A criterion absent from the map means
-// the probe did not report it (or did not run) -> N/A, never a silent pass.
-func probedGate(name string, probe map[string]string, criterion string) gate.Result {
-	status, ok := probe[criterion]
-	if !ok {
-		status = gate.StatusNA
-	}
-	return gate.Result{
-		Name:   name,
-		Status: status,
-		OK:     status == gate.StatusPass,
-		Output: probeDetail(criterion, status),
-	}
-}
-
-// combinedGate ANDs several acceptance criteria into one gate. It is PASS only
-// when every input criterion is PASS; if any input is N/A (and none FAIL) the
-// gate is N/A; any FAIL makes it FAIL. This is how `test` requires BOTH the
-// harness suites (test_pass) and the dogfood app suite (app_test_pass).
-func combinedGate(name string, probe map[string]string, criteria ...string) gate.Result {
-	status := gate.StatusPass
-	for _, c := range criteria {
-		switch probe[c] {
-		case gate.StatusFail:
-			status = gate.StatusFail
-		case gate.StatusPass:
-			// keep current (PASS unless already downgraded)
-		default: // absent or NA
-			if status != gate.StatusFail {
-				status = gate.StatusNA
-			}
-		}
-	}
-	return gate.Result{
-		Name:   name,
-		Status: status,
-		OK:     status == gate.StatusPass,
-		Output: fmt.Sprintf("%v -> %s", criteria, status),
-	}
-}
-
-// probeDetail renders a short, honest reason line for one resolved criterion.
-func probeDetail(criterion, status string) string {
-	switch status {
-	case gate.StatusNA:
-		return fmt.Sprintf("no executable check for %q in this repo", criterion)
-	case gate.StatusFail:
-		return fmt.Sprintf("acceptance criterion %q failed", criterion)
-	default:
-		return fmt.Sprintf("acceptance criterion %q passed", criterion)
-	}
 }
 
 // loopProbe caches one acceptance probe per loop iteration. The repo changes
@@ -363,4 +329,165 @@ func (p *loopProbe) current() (statuses, categories map[string]string) {
 	p.primed = false
 	p.mu.Unlock()
 	return s, c
+}
+
+// computeCodeTestRatio runs `git diff --stat HEAD` and returns the fraction of
+// changed lines that are in test files (test = file names containing _test or
+// starting with test_). 0 means either no changes or 100% production code.
+// Returns 0 on any error (no git, no diff, or parse failure) — enrichment,
+// never a convergence input (analysis §5.2).
+func computeCodeTestRatio(root string) float64 {
+	out, err := exec.Command("git", "-C", root, "diff", "--stat", "HEAD").Output()
+	if err != nil {
+		return 0
+	}
+	var prodLines, testLines int
+	for _, line := range strings.Split(string(out), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || !strings.Contains(line, "|") {
+			continue
+		}
+		// Parse: "path/to/file.go | 42 ++++++++++++++++++"
+		parts := strings.SplitN(line, "|", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		path := strings.TrimSpace(parts[0])
+		// Extract the number before the first space after |
+		numStr := strings.Fields(strings.TrimSpace(parts[1]))
+		if len(numStr) == 0 {
+			continue
+		}
+		n := 0
+		if _, err := fmt.Sscanf(numStr[0], "%d", &n); err != nil || n == 0 {
+			continue
+		}
+		isTest := strings.Contains(path, "_test") || strings.HasPrefix(path, "test_")
+		if isTest {
+			testLines += n
+		} else {
+			prodLines += n
+		}
+	}
+	total := prodLines + testLines
+	if total == 0 {
+		return 0
+	}
+	return float64(testLines) / float64(total)
+}
+
+// computeFileDelta measures the fraction of DONE roadmap items (checklist lines
+// "- [x]"/"- [X]") that have at least one corresponding file-system change in the
+// current git diff — Signals.FileDelta's honesty cross-check (converge.go's doc
+// comment: "roadmap items that have corresponding file-system changes"), consumed
+// by orchestrator/loop.go's reportConvergence to flag a claimed-100%-but-nothing-
+// changed gap.
+//
+// DESIGN CHOICE — DONE items only, not pending/partial: the honesty question this
+// answers is "if the agent claims something is done, is there file evidence for
+// it?" A pending ("- [ ]") or partial ("- [~]") item carries no completion claim
+// to cross-check yet, so folding it into the denominator would only dilute the
+// signal with items nobody asserted were finished — the more faithful reading of
+// the doc comment, and the one that actually detects the self-report-overstates-
+// progress failure mode the caller warns about.
+//
+// This is a CHEAP HEURISTIC PROXY, not a precise link — the exact same honesty
+// posture as internal/risk.FromChangedPaths: a keyword substring match is neither
+// necessary nor sufficient evidence a roadmap item was truly implemented (a
+// coincidental word match counts as a "hit"; a real implementation phrased with
+// different vocabulary is missed as a "miss"). It exists to catch the EGREGIOUS
+// case (high completion claimed, near-zero files touched), not to audit whether
+// any individual item was correctly implemented.
+//
+// Returns 0 on any error (missing ROADMAP.md, no git, no diff) or when there are
+// no DONE items to check — enrichment only, never a convergence input, mirroring
+// computeCodeTestRatio's error posture exactly.
+func computeFileDelta(root string) float64 {
+	md, err := os.ReadFile(filepath.Join(root, ".agent", "ROADMAP.md"))
+	if err != nil {
+		return 0
+	}
+	items := doneRoadmapItems(string(md))
+	if len(items) == 0 {
+		return 0
+	}
+	// --name-only (not computeCodeTestRatio's --stat): FileDelta only needs the
+	// changed PATHS to keyword-match against, not line counts. Same base ref
+	// (HEAD) as computeCodeTestRatio, for consistency.
+	out, err := exec.Command("git", "-C", root, "diff", "--name-only", "HEAD").Output()
+	if err != nil {
+		return 0
+	}
+	changed := strings.Fields(string(out))
+	matched := 0
+	for _, item := range items {
+		if itemTouchesAnyPath(item, changed) {
+			matched++
+		}
+	}
+	return float64(matched) / float64(len(items))
+}
+
+// doneRoadmapItems extracts the item TEXT (the substring after the checkbox
+// marker) of every DONE ("- [x]"/"- [X]") checklist line in a ROADMAP markdown —
+// the same line-matching convention as converge.RoadmapCompletion (kept
+// independent rather than shared, since that function only needs a count, not
+// the text) — restricted to done items per computeFileDelta's design choice above.
+func doneRoadmapItems(markdown string) []string {
+	var items []string
+	for _, line := range strings.Split(markdown, "\n") {
+		t := strings.TrimSpace(line)
+		switch {
+		case strings.HasPrefix(t, "- [x]"):
+			items = append(items, strings.TrimSpace(t[len("- [x]"):]))
+		case strings.HasPrefix(t, "- [X]"):
+			items = append(items, strings.TrimSpace(t[len("- [X]"):]))
+		}
+	}
+	return items
+}
+
+// itemTouchesAnyPath reports whether any MEANINGFUL keyword extracted from a
+// roadmap item's text appears as a case-insensitive substring of any changed
+// file path — the cheap heuristic match itself; see computeFileDelta's doc
+// comment for its honesty posture (a proxy, not proof).
+func itemTouchesAnyPath(item string, changedPaths []string) bool {
+	for _, kw := range itemKeywords(item) {
+		for _, path := range changedPaths {
+			if strings.Contains(strings.ToLower(path), kw) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// fileDeltaStopWords are short/common words filtered out of a roadmap item's
+// text before keyword-matching, because they would otherwise match almost any
+// changed path and produce a meaningless "hit" (the same reason
+// internal/risk.FromChangedPaths uses a fixed needle table rather than raw
+// words) — here derived from prose instead of a fixed surface list, so the
+// filter targets English filler rather than a domain vocabulary.
+var fileDeltaStopWords = map[string]bool{
+	"this": true, "that": true, "with": true, "from": true, "into": true,
+	"then": true, "than": true, "have": true, "will": true, "when": true,
+	"were": true, "been": true, "does": true, "each": true, "such": true,
+}
+
+// itemKeywords extracts lowercase, meaningful (>=4 rune) words from a roadmap
+// item's text, splitting on anything that is not a letter or digit (so
+// backtick-quoted paths like `harness/gate.mjs` yield "harness"/"gate"/"mjs"
+// as separate candidate tokens) and dropping fileDeltaStopWords. Rune-based
+// length so a multi-byte CJK word ("根目录数闸门") is measured by character
+// count, not bytes.
+func itemKeywords(item string) []string {
+	var out []string
+	for _, w := range strings.FieldsFunc(strings.ToLower(item), func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	}) {
+		if len([]rune(w)) >= 4 && !fileDeltaStopWords[w] {
+			out = append(out, w)
+		}
+	}
+	return out
 }

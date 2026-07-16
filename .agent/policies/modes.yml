@@ -52,6 +52,7 @@ modes:
       design:    light                   # 极简架构 / minimal architecture
       adr:       false                   # 不写 ADR / no ADR
       reviewer:  false                   # 不强制独立评审 / reviewer optional
+      review:    skip                    # 跳过深度评审 / skip deep review
       evolve:    opportunistic           # 仅扫明显机会 / propose-only scans
 
   # ─────────────────────────────────────────────────────────────────────────
@@ -71,10 +72,8 @@ modes:
       design:    standard
       adr:       false
       reviewer:  true                    # 走独立 Reviewer / fresh-context reviewer on
+      review:    standard                # 安全 + 分布式 / security + distributed
       evolve:    standard
-
-  # ─────────────────────────────────────────────────────────────────────────
-  # engineering — 全闸门:企业级严格 / full gates: enterprise rigor
   # ─────────────────────────────────────────────────────────────────────────
   engineering:
     summary: 全部闸门 + 完整脊柱,面向长期可维护系统 / all gates + full spine.
@@ -92,6 +91,7 @@ modes:
       design:    full
       adr:       true                    # 复杂设计写 ADR / ADR required
       reviewer:  true                    # 强制独立评审 / mandatory fresh-context review
+      review:    full                    # 全四维度评审 / all four review dimensions
       evolve:    thorough                # 全维扫描 + 自动派生任务 / full scan, auto-derive
 
   # ─────────────────────────────────────────────────────────────────────────
@@ -110,6 +110,7 @@ modes:
       design:    full                    # 完整架构 + 方案 / full architecture + proposal
       adr:       true
       reviewer:  true                    # 评审分析文档 / reviews the analysis docs
+      review:    full                    # 全评审(输出作为文档交付)/ full review as doc deliverable
       build:     halt                    # ★ 在 Human Approval 后停,不进 Build / halts after approval
       evolve:    advisory                # 仅 gap 报告 + roadmap 提案 / report + propose only
 

@@ -333,22 +333,9 @@ func maxInt(a, b int) int {
 	return b
 }
 
-// taskTypeFloor mirrors policy.yml tiers.by_task_type — the EXACT same floors
-// internal/routing applies — used only to NAME the deciding rule, never to pick
-// the tier (that stays TierForScore's job).
-var taskTypeFloor = map[string]string{
-	"docs": routing.Haiku, "crud": routing.Haiku, "test": routing.Haiku,
-	"implementation": routing.Sonnet, "refactor_medium": routing.Sonnet, "bugfix": routing.Sonnet,
-	"architecture": routing.Opus, "security": routing.Opus, "payment": routing.Opus,
-	"authorization": routing.Opus, "requirements": routing.Opus, "reviewer": routing.Opus,
-}
-
-// safetyForceOpus mirrors policy.yml safety_override.rules task_types.
-var safetyForceOpus = map[string]bool{"security": true, "payment": true, "authorization": true}
-
-// rank orders tiers so the explanation can tell whether the floor or the band
-// is the higher (deciding) one — same ordering as routing.higher.
-var rank = map[string]int{routing.Haiku: 0, routing.Sonnet: 1, routing.Opus: 2}
+// taskTypeFloor and safetyForceOpus are imported from routing. route.go no
+// longer maintains its own copies — the routing package is the single source
+// of truth for policy thresholds, task-type floors, safety pins, and tier rank.
 
 // decidingRule names WHICH policy rule produced TierForScore's verdict, applying
 // the same precedence as TierForScore: safety_override -> budget_guard ->
@@ -361,7 +348,7 @@ func decidingRule(score float64, taskType, risk string, spend float64) string {
 	if critical {
 		return "safety_override (risk=critical forces opus)"
 	}
-	if safetyForceOpus[taskType] {
+	if routing.SafetyForceOpus[taskType] {
 		return fmt.Sprintf("safety_override (task-type %q forces opus)", taskType)
 	}
 	if spend >= 1.00 {
@@ -375,25 +362,13 @@ func decidingRule(score float64, taskType, risk string, spend float64) string {
 
 // bandOrFloor decides, for the no-override / in-budget path, whether the score
 // band or the task-type floor is the higher (deciding) rule, naming whichever
-// won — exactly the higher() choice TierForScore makes.
+// won — exactly the higher() choice TierForScore makes. All policy data is
+// imported from routing (the single source of truth).
 func bandOrFloor(score float64, taskType string) string {
-	band := bandForScore(score)
-	floor := taskTypeFloor[taskType]
-	if rank[floor] > rank[band] {
+	band := routing.BandForScore(score)
+	floor := routing.TaskTypeFloor[taskType]
+	if routing.Rank[floor] > routing.Rank[band] {
 		return fmt.Sprintf("task-type floor (%s for %q beats score band %s)", floor, taskType, band)
 	}
 	return fmt.Sprintf("score band (%s for score=%.4f)", band, score)
-}
-
-// bandForScore mirrors policy.yml scoring.thresholds (haiku_max=0.34,
-// sonnet_max=0.69) — the same banding internal/routing uses.
-func bandForScore(score float64) string {
-	switch {
-	case score <= 0.34:
-		return routing.Haiku
-	case score <= 0.69:
-		return routing.Sonnet
-	default:
-		return routing.Opus
-	}
 }

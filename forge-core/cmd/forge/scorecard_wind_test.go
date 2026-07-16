@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"forgeos/forge-core/internal/asset"
+	"forgeos/forge-core/internal/attribution"
+	"forgeos/forge-core/internal/routing"
 )
 
 // writeTrace drops a trace.jsonl with the given lines under <root>/.forge, returning root.
@@ -34,7 +36,7 @@ func TestDistinctScorecardPairs_FromTraceDedupAndSkipUnbilled(t *testing.T) {
 		{Name: "plan", Agent: "planner"},
 		{Name: "impl-a", Agent: "implementer"},
 		{Name: "impl-b", Agent: "implementer"}, // same stamped model -> dedup with impl-a
-		{Name: "gate", Agent: "harness"},        // a gate phase bills no cost event
+		{Name: "gate", Agent: "harness"},       // a gate phase bills no cost event
 		{Name: "review", Agent: "reviewer"},
 	}}
 	root := t.TempDir()
@@ -52,8 +54,8 @@ func TestDistinctScorecardPairs_FromTraceDedupAndSkipUnbilled(t *testing.T) {
 	for _, e := range []struct{ agent, model string }{
 		{"planner", "opus"}, {"implementer", "sonnet"}, {"reviewer", "opus"},
 	} {
-		tt, _ := taskTypeForAgent(e.agent)
-		want[scorecardPair{model: e.model, taskType: tt}] = true
+		tt, _ := attribution.TaskTypeForAgent(e.agent)
+		want[scorecardPair{Model: e.model, TaskType: tt}] = true
 	}
 
 	got := map[scorecardPair]int{}
@@ -83,8 +85,8 @@ func TestDistinctScorecardPairs_BudgetDowngradeAttributedToActualModel(t *testin
 		`{"seq":1,"kind":"agent","name":"impl","status":"ok","cost_usd_micros":4000,"model":"haiku"}`,
 	)
 	pairs := distinctScorecardPairs(wf, tracePath(root))
-	ttImpl, _ := taskTypeForAgent("implementer")
-	want := scorecardPair{model: "haiku", taskType: ttImpl}
+	ttImpl, _ := attribution.TaskTypeForAgent("implementer")
+	want := scorecardPair{Model: "haiku", TaskType: ttImpl}
 	if len(pairs) != 1 || pairs[0] != want {
 		t.Errorf("down-tiered cost must attribute to the ACTUAL stamped model %+v, got %+v", want, pairs)
 	}
@@ -205,5 +207,264 @@ func TestWindDownScorecards_FailLoudAndContinue(t *testing.T) {
 	}, 2, true)
 	if warned == 0 {
 		t.Error("a producer failure must surface a loud WARNING (fail-loud), never be swallowed")
+	}
+}
+
+// ── forge scorecard display tests ─────────────────────────────────────────
+
+func TestScorecard_NoDataColdStart(t *testing.T) {
+	cards := []routing.Scorecard{}
+	if len(cards) != 0 {
+		t.Fatal("test setup: cards must be empty")
+	}
+}
+
+func TestScorecard_TableRendersAllEntries(t *testing.T) {
+	cards := []routing.Scorecard{
+		{Model: "opus", TaskType: "implementation", QualityScore: 0.91, Samples: 30, UpdatedAt: "2026-06-01T00:00:00Z"},
+		{Model: "sonnet", TaskType: "implementation", QualityScore: 0.82, Samples: 25, UpdatedAt: "2026-06-01T00:00:00Z"},
+		{Model: "haiku", TaskType: "test", QualityScore: 0.87, Samples: 5, UpdatedAt: "2026-06-01T00:00:00Z"},
+	}
+	if len(cards) != 3 {
+		t.Fatal("test setup: cards must have 3 entries")
+	}
+	if !anyThin(cards, 20) {
+		t.Error("anyThin should be true when haiku/test has 5 samples < 20")
+	}
+	if anyThin(cards, 5) {
+		t.Error("anyThin should be false when min-samples=5 and all >=5")
+	}
+}
+
+func TestScorecard_ThinEntryDetection(t *testing.T) {
+	tests := []struct {
+		name     string
+		cards    []routing.Scorecard
+		min      int
+		wantThin bool
+	}{
+		{"empty", nil, 20, false},
+		{"all_above_min", []routing.Scorecard{{Samples: 25}, {Samples: 30}}, 20, false},
+		{"one_below_min", []routing.Scorecard{{Samples: 25}, {Samples: 5}}, 20, true},
+		{"exact_min", []routing.Scorecard{{Samples: 20}}, 20, false},
+		{"below_min", []routing.Scorecard{{Samples: 19}}, 20, true},
+		{"zero_samples", []routing.Scorecard{{Samples: 0}}, 20, true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := anyThin(tc.cards, tc.min)
+			if got != tc.wantThin {
+				t.Errorf("anyThin(cards, %d) = %v, want %v", tc.min, got, tc.wantThin)
+			}
+		})
+	}
+}
+
+func TestScorecard_SummaryAggregation(t *testing.T) {
+	cards := []routing.Scorecard{
+		{Model: "opus", TaskType: "implementation", QualityScore: 0.91, Samples: 30},
+		{Model: "sonnet", TaskType: "implementation", QualityScore: 0.82, Samples: 25},
+		{Model: "haiku", TaskType: "test", QualityScore: 0.87, Samples: 10},
+	}
+	printSummary(cards, 20)
+	printTable(cards, 20)
+}
+
+func TestScorecard_SummaryEdgeCases(t *testing.T) {
+	tests := []struct {
+		name  string
+		cards []routing.Scorecard
+	}{
+		{"single_entry", []routing.Scorecard{{Model: "opus", TaskType: "architecture", QualityScore: 0.90, Samples: 25}}},
+		{"same_type_multiple_models", []routing.Scorecard{
+			{Model: "opus", TaskType: "implementation", QualityScore: 0.88, Samples: 30},
+			{Model: "sonnet", TaskType: "implementation", QualityScore: 0.85, Samples: 25},
+			{Model: "haiku", TaskType: "implementation", QualityScore: 0.70, Samples: 10},
+		}},
+		{"all_thin", []routing.Scorecard{
+			{Model: "opus", TaskType: "security", QualityScore: 0.90, Samples: 3},
+			{Model: "haiku", TaskType: "docs", QualityScore: 0.92, Samples: 2},
+		}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			printSummary(tc.cards, 20)
+			printTable(tc.cards, 20)
+		})
+	}
+}
+
+// taskTypeForAgent/agentTaskType vocabulary tests now live in
+// internal/attribution/attribution_test.go, next to the exported
+// TaskTypeForAgent/AgentTaskType they cover.
+
+// ── forge scorecard rebuild: glue tests (relocated from scorecard_rebuild_test.go) ──
+//
+// The PURE (model, task_type) derivation these tests used to exercise directly
+// (taskTypeForRebuildEvent, extractRebuildPairs) now lives in
+// internal/attribution and is tested there (rebuild_test.go). What remains
+// here is the cmd/forge-specific GLUE: resolvePhaseTaskTypes's file I/O
+// (globbing/loading real .agent/workflows/*.yml off disk) and
+// parseScorecardRebuildFlags's flag wiring.
+
+// evolveYmlPhaseAgent mirrors .agent/workflows/evolve.yml's real phase/agent
+// pairs (the flagship autonomous-loop workflow) — its phase NAMES deliberately
+// differ from their AGENT roles, unlike build.yml where they happen to coincide.
+var evolveYmlPhaseAgent = map[string]string{
+	"scan":           "explorer", // unmapped role (harness/observe-only); contributes no pair
+	"gap-analysis":   "architect",
+	"roadmap-update": "planner",
+	"implement":      "implementer",
+	"review":         "reviewer",
+	"evaluate":       "qa",
+}
+
+// writeEvolveShapedWorkflow drops a MINIMAL evolve.yml-shaped workflow (same
+// phase/agent pairs as the real .agent/workflows/evolve.yml, phases nested
+// under `loop:` per its `type: loop` standing-loop shape) at
+// <root>/.agent/workflows/<name>.yml.
+func writeEvolveShapedWorkflow(t *testing.T, root, name string) {
+	t.Helper()
+	dir := filepath.Join(root, ".agent", "workflows")
+	mkdir(t, dir)
+	body := `id: ` + name + `
+stage: evolve
+type: loop
+loop:
+  loop_back_to: scan
+  phases:
+    - name: scan
+      agent: explorer
+    - name: gap-analysis
+      agent: architect
+    - name: roadmap-update
+      agent: planner
+    - name: implement
+      agent: implementer
+    - name: review
+      agent: reviewer
+    - name: evaluate
+      agent: qa
+`
+	writeFile(t, filepath.Join(dir, name+".yml"), body)
+}
+
+// resolvePhaseTaskTypes(root, "") — no --workflow given — scans every workflow
+// under .agent/workflows/*.yml and must read evolve.yml's REAL phase->agent
+// pairs off disk, correctly resolving all 5 mapped phases.
+func TestRebuildResolvePhaseTaskTypes_ScansAllWorkflowsAndReadsEvolveYmlGroundTruth(t *testing.T) {
+	root := t.TempDir()
+	writeEvolveShapedWorkflow(t, root, "evolve")
+
+	got := resolvePhaseTaskTypes(root, "")
+	want := map[string]string{
+		"gap-analysis":   "architecture",
+		"roadmap-update": "implementation",
+		"implement":      "implementation",
+		"review":         "reviewer",
+		"evaluate":       "test",
+	}
+	for name, wantTT := range want {
+		if tt := got[name]; tt != wantTT {
+			t.Errorf("resolvePhaseTaskTypes(root, \"\")[%q] = %q, want %q (full map: %+v)", name, tt, wantTT, got)
+		}
+	}
+	if _, ok := got["scan"]; ok {
+		t.Errorf("phase \"scan\" (agent: explorer) has no task_type mapping and must be absent; got %+v", got)
+	}
+}
+
+// --workflow <name> restricts the scan to exactly that workflow, ignoring any
+// other workflow file present (even one that would map the SAME phase name to a
+// DIFFERENT task_type) — the explicit flag must win over ambient scanning.
+func TestRebuildResolvePhaseTaskTypes_WorkflowFlagRestrictsToNamedWorkflow(t *testing.T) {
+	root := t.TempDir()
+	writeEvolveShapedWorkflow(t, root, "evolve")
+	// A second, conflicting workflow: same phase name "implement", DIFFERENT agent.
+	dir := filepath.Join(root, ".agent", "workflows")
+	writeFile(t, filepath.Join(dir, "other.yml"), `id: other
+phases:
+  - name: implement
+    agent: reviewer
+`)
+
+	got := resolvePhaseTaskTypes(root, "evolve")
+	wantTT, _ := attribution.TaskTypeForAgent("implementer")
+	if got["implement"] != wantTT {
+		t.Errorf("--workflow evolve must resolve \"implement\" from evolve.yml's agent (implementer -> %q), got %q (map: %+v)", wantTT, got["implement"], got)
+	}
+}
+
+// A missing/malformed workflow (no .agent/workflows dir at all, or a --workflow
+// name that doesn't exist on disk) must yield an EMPTY map, never panic or
+// error — the caller (attribution.TaskTypeForRebuildEvent) then falls back to
+// the substring heuristic for every phase, exactly the pre-fix behavior.
+func TestRebuildResolvePhaseTaskTypes_MissingWorkflowYieldsEmptyMapNotPanic(t *testing.T) {
+	root := t.TempDir() // no .agent/workflows dir at all
+	if got := resolvePhaseTaskTypes(root, ""); len(got) != 0 {
+		t.Errorf("no workflows on disk must yield an empty map, got %+v", got)
+	}
+	if got := resolvePhaseTaskTypes(root, "nonexistent"); len(got) != 0 {
+		t.Errorf("--workflow naming a file that doesn't exist must yield an empty map, got %+v", got)
+	}
+}
+
+// END-TO-END WIRING: resolvePhaseTaskTypes (cmd/forge's file I/O glue, reading
+// a REAL evolve.yml-shaped workflow off disk) feeds attribution.ExtractRebuildPairs
+// (the pure trace-derivation logic) correctly — an evolve.yml-shaped trace (billed
+// cost events named after evolve's phases, not its agents) must attribute every
+// billed phase, not come back empty. This pins the exact seam a refactor could
+// silently break even if each half's own unit tests still pass: the fresh-context
+// review's original regression (`forge scorecard rebuild --from <evolve trace>`
+// must not come back empty) is exercised through the REAL glue, not a mock.
+func TestResolvePhaseTaskTypes_EndToEndFeedsExtractRebuildPairs(t *testing.T) {
+	root := t.TempDir()
+	writeEvolveShapedWorkflow(t, root, "evolve")
+	traceFile := filepath.Join(root, "trace.jsonl")
+	lines := []string{
+		`{"seq":1,"kind":"agent","name":"gap-analysis","status":"ok","cost_usd_micros":9000,"model":"opus"}`,
+		`{"seq":2,"kind":"agent","name":"implement","status":"ok","cost_usd_micros":20000,"model":"sonnet"}`,
+		`{"seq":3,"kind":"agent","name":"evaluate","status":"ok","cost_usd_micros":4000,"model":"haiku"}`,
+	}
+	body := ""
+	for _, l := range lines {
+		body += l + "\n"
+	}
+	if err := os.WriteFile(traceFile, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	phaseTaskTypes := resolvePhaseTaskTypes(root, "evolve")
+	pairs, err := attribution.ExtractRebuildPairs(traceFile, phaseTaskTypes)
+	if err != nil {
+		t.Fatalf("attribution.ExtractRebuildPairs: %v", err)
+	}
+	want := map[scorecardPair]bool{
+		{Model: "opus", TaskType: "architecture"}:     true,
+		{Model: "sonnet", TaskType: "implementation"}: true,
+		{Model: "haiku", TaskType: "test"}:            true,
+	}
+	if len(pairs) != len(want) {
+		t.Fatalf("got %d distinct pairs %+v, want %d %+v (real-glue rebuild must not come back empty)", len(pairs), pairs, len(want), want)
+	}
+	for _, p := range pairs {
+		if !want[p] {
+			t.Errorf("unexpected pair %+v", p)
+		}
+	}
+}
+
+// cmdScorecardRebuild wiring sanity: parseScorecardRebuildFlags surfaces
+// --workflow so cmdScorecardRebuild can pass it through to resolvePhaseTaskTypes.
+func TestParseScorecardRebuildFlags_SurfacesWorkflowFlag(t *testing.T) {
+	root := t.TempDir()
+	_, _, _, workflowName, code, ok := parseScorecardRebuildFlags([]string{
+		"--root", root, "--from", "t.jsonl", "--workflow", "evolve",
+	})
+	if !ok || code != 0 {
+		t.Fatalf("parseScorecardRebuildFlags failed: code=%d ok=%v", code, ok)
+	}
+	if workflowName != "evolve" {
+		t.Errorf("--workflow must round-trip through parseScorecardRebuildFlags; got %q", workflowName)
 	}
 }

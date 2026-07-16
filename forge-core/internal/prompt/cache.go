@@ -34,6 +34,9 @@
 package prompt
 
 import (
+	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 )
@@ -62,9 +65,10 @@ import (
 // uncontended lock and is byte-for-byte unchanged.
 type ContextCache struct {
 	mu               sync.Mutex
-	built            bool   // has the lazy build of the invariant lanes run yet?
-	adrDocs          []Doc  // memoized ADR title set (Retrieve input); nil is a valid built value.
-	constraintsBlock string // memoized AGENTS.md hard constraints; "" is a valid built value.
+	built            bool              // has the lazy build of the invariant lanes run yet?
+	adrDocs          []Doc             // memoized ADR title set (Retrieve input); nil is a valid built value.
+	constraintsBlock string            // memoized AGENTS.md hard constraints; "" is a valid built value.
+	cardText         map[string]string // memoized agent card text (§3.4), lazy-built in invariants.
 
 	// builds counts how many times the invariant lanes were ACTUALLY built from the
 	// filesystem (incremented only when ensureBuilt finds built==false and does the scan).
@@ -97,6 +101,7 @@ func (c *ContextCache) Invalidate() {
 	c.built = false
 	c.adrDocs = nil
 	c.constraintsBlock = ""
+	c.cardText = nil
 }
 
 // GatherCached is the cache-aware twin of Gather: it returns the SAME context slice (same
@@ -150,10 +155,45 @@ func (c *ContextCache) invariants(repoRoot string) ([]Doc, string) {
 	if !c.built {
 		c.adrDocs = adrDocs(repoRoot)
 		c.constraintsBlock = constraints(repoRoot)
+		c.cardText = loadCards(repoRoot)
 		c.built = true
 		c.builds++ // observable: counts real filesystem builds (see field doc); ==1 after a run.
 	}
 	return c.adrDocs, c.constraintsBlock
+}
+
+// CardText returns the memoized text for an agent card, or a short marker when
+// absent — matching the format readCard (prompt_context.go) produces.
+func (c *ContextCache) CardText(agent string) string {
+	if c.cardText == nil {
+		return fmt.Sprintf("(no role card found for %q)", agent)
+	}
+	text, ok := c.cardText[agent]
+	if !ok {
+		return fmt.Sprintf("(no role card found for %q)", agent)
+	}
+	return text
+}
+
+// loadCards reads all agent card files under .agent/agents/ into a map.
+// A missing or unreadable card for a specific agent is handled by CardText;
+// a missing agents directory yields an empty map (no error).
+func loadCards(repoRoot string) map[string]string {
+	glob := filepath.Join(repoRoot, ".agent", "agents", "*.md")
+	files, err := filepath.Glob(glob)
+	if err != nil || len(files) == 0 {
+		return nil
+	}
+	cards := make(map[string]string, len(files))
+	for _, f := range files {
+		name := strings.TrimSuffix(filepath.Base(f), ".md")
+		b, err := os.ReadFile(f)
+		if err != nil {
+			continue // skip unreadable card
+		}
+		cards[name] = string(b)
+	}
+	return cards
 }
 
 // adrDocs returns the docs/adr title set as []Doc — the CACHEABLE input to retrieval.

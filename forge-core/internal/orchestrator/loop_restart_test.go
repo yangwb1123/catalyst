@@ -1,6 +1,7 @@
 package orchestrator
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -21,7 +22,7 @@ import (
 // started from and prove the on_unmet directed restart.
 type phaseRecorder struct{ ran []string }
 
-func (r *phaseRecorder) Execute(p asset.Phase, _ string) error {
+func (r *phaseRecorder) Execute(_ context.Context, p asset.Phase, _ string) error {
 	r.ran = append(r.ran, p.Name)
 	return nil
 }

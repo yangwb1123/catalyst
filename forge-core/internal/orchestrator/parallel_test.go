@@ -1,6 +1,7 @@
 package orchestrator
 
 import (
+	"context"
 	"strings"
 	"sync"
 	"testing"
@@ -8,6 +9,7 @@ import (
 
 	"forgeos/forge-core/internal/asset"
 	"forgeos/forge-core/internal/gate"
+	"forgeos/forge-core/internal/mode"
 )
 
 // barrierExec PROVES a wave's phases run CONCURRENTLY (not serially): each phase, on
@@ -22,7 +24,7 @@ type barrierExec struct {
 	timedOut bool
 }
 
-func (b *barrierExec) Execute(p asset.Phase, _ string) error {
+func (b *barrierExec) Execute(_ context.Context, p asset.Phase, _ string) error {
 	b.mu.Lock()
 	b.executed = append(b.executed, p.Name)
 	b.mu.Unlock()
@@ -45,7 +47,7 @@ type safeRec struct {
 	executed []string
 }
 
-func (r *safeRec) Execute(p asset.Phase, _ string) error {
+func (r *safeRec) Execute(_ context.Context, p asset.Phase, _ string) error {
 	r.mu.Lock()
 	r.executed = append(r.executed, p.Name)
 	r.mu.Unlock()
@@ -56,6 +58,13 @@ func parallelWF(phases ...asset.Phase) asset.Workflow {
 	return asset.Workflow{Stage: "discover", Phases: phases, Stop: externalStop()}
 }
 
+// parallelWFStage is parallelWF with an explicit stage name — used by the
+// review-stage mode-gating tests, which need a stage other than "discover" (the
+// default) to isolate ReviewDepth from DiscoverDepth.
+func parallelWFStage(stage string, phases ...asset.Phase) asset.Workflow {
+	return asset.Workflow{Stage: stage, Phases: phases, Stop: externalStop()}
+}
+
 // A pure fan-out (no depends_on) runs ALL phases in ONE wave, CONCURRENTLY (the barrier
 // proves overlap; -race proves the shared-state access is safe).
 func TestRunParallel_FanOutRunsConcurrently(t *testing.T) {
@@ -64,7 +73,7 @@ func TestRunParallel_FanOutRunsConcurrently(t *testing.T) {
 	wg.Add(len(phases))
 	ex := &barrierExec{wg: &wg}
 	eng := Engine{Exec: ex, RunGate: allOK}
-	if err := eng.RunParallel(parallelWF(phases...), "balanced"); err != nil {
+	if err := eng.RunParallel(context.Background(), parallelWF(phases...), "balanced"); err != nil {
 		t.Fatalf("RunParallel: %v", err)
 	}
 	if ex.timedOut {
@@ -81,7 +90,7 @@ func TestRunParallel_RespectsDependencyWaveOrder(t *testing.T) {
 	rec := &safeRec{}
 	eng := Engine{Exec: rec, RunGate: allOK}
 	wf := parallelWF(ph("a"), ph("b", "a"), ph("c", "a"), ph("d", "b", "c"))
-	if err := eng.RunParallel(wf, "balanced"); err != nil {
+	if err := eng.RunParallel(context.Background(), wf, "balanced"); err != nil {
 		t.Fatalf("RunParallel: %v", err)
 	}
 	pos := map[string]int{}
@@ -108,7 +117,7 @@ func TestRunParallel_GateFailureAborts(t *testing.T) {
 		asset.Phase{Name: "gate", RequiredGates: []string{"test"}, DependsOn: []string{"impl"}},
 		ph("final", "gate"),
 	)
-	err := eng.RunParallel(wf, "balanced")
+	err := eng.RunParallel(context.Background(), wf, "balanced")
 	if err == nil {
 		t.Fatal("a red gate must abort the parallel run")
 	}
@@ -124,7 +133,7 @@ func TestRunParallel_CycleErrorsBeforeAnyPhase(t *testing.T) {
 	rec := &safeRec{}
 	eng := Engine{Exec: rec, RunGate: allOK}
 	wf := parallelWF(ph("a", "b"), ph("b", "a"))
-	err := eng.RunParallel(wf, "balanced")
+	err := eng.RunParallel(context.Background(), wf, "balanced")
 	if err == nil || !strings.Contains(err.Error(), "cycle") {
 		t.Fatalf("a cycle must abort with an error; got %v", err)
 	}
@@ -139,8 +148,52 @@ func TestRunParallel_AgentBudgetEnforcedConcurrently(t *testing.T) {
 	rec := &safeRec{}
 	eng := Engine{Exec: rec, RunGate: allOK, MaxAgentCalls: 2}
 	wf := parallelWF(ph("a"), ph("b"), ph("c"), ph("d")) // 4 phases, cap 2
-	err := eng.RunParallel(wf, "balanced")
+	err := eng.RunParallel(context.Background(), wf, "balanced")
 	if err == nil || !strings.Contains(err.Error(), "budget") {
 		t.Fatalf("a fan-out over the agent-call cap must fail-closed; got %v", err)
+	}
+}
+
+// ★ The review-stage mode-gating skip applies to RunParallel exactly as it does to
+// RunFrom (via the shared checkStageSkip/stageSkipped): explorer elides the WHOLE
+// review stage under --parallel too — no phase in it ever spawns.
+func TestRunParallel_ExplorerSkipsReviewStage(t *testing.T) {
+	rec := &safeRec{}
+	eng := Engine{Exec: rec, RunGate: allOK, ModePolicy: mode.Effective("explorer", "idea")}
+	wf := parallelWFStage("review", ph("security-review"), ph("distributed-review"))
+	if err := eng.RunParallel(context.Background(), wf, "explorer"); err != nil {
+		t.Fatalf("RunParallel review under explorer: %v", err)
+	}
+	if len(rec.executed) != 0 {
+		t.Errorf("explorer must run NO review phases under RunParallel; executed=%v", rec.executed)
+	}
+}
+
+// Balanced (ReviewDepth=standard) runs the review stage normally under
+// --parallel: the skip is a no-op once ReviewDepth is anything but "skip".
+func TestRunParallel_BalancedRunsReviewStage(t *testing.T) {
+	rec := &safeRec{}
+	eng := Engine{Exec: rec, RunGate: allOK, ModePolicy: mode.Effective("balanced", "idea")}
+	wf := parallelWFStage("review", ph("security-review"), ph("distributed-review"))
+	if err := eng.RunParallel(context.Background(), wf, "balanced"); err != nil {
+		t.Fatalf("RunParallel review under balanced: %v", err)
+	}
+	if len(rec.executed) != 2 {
+		t.Errorf("balanced (ReviewDepth=standard) must run all review phases; executed=%v", rec.executed)
+	}
+}
+
+// The review-stage skip is STAGE-scoped: explorer (which skips BOTH discover and
+// review) must still run a "build"-stage fan-out under --parallel unfiltered —
+// a whole-stage skip must never bleed into an unrelated stage.
+func TestRunParallel_ExplorerDoesNotSkipNonReviewNonDiscoverStage(t *testing.T) {
+	rec := &safeRec{}
+	eng := Engine{Exec: rec, RunGate: allOK, ModePolicy: mode.Effective("explorer", "idea")}
+	wf := parallelWFStage("build", ph("a"), ph("b"))
+	if err := eng.RunParallel(context.Background(), wf, "explorer"); err != nil {
+		t.Fatalf("RunParallel build under explorer: %v", err)
+	}
+	if len(rec.executed) != 2 {
+		t.Errorf("explorer must NOT skip a build-stage fan-out; executed=%v", rec.executed)
 	}
 }

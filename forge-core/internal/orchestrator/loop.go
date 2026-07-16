@@ -1,6 +1,7 @@
 package orchestrator
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -48,6 +49,16 @@ type LoopEngine struct {
 	// already wired. Nil-safe: a nil hook is a no-op.
 	OnIteration func(i int, sig converge.Signals, durationMs int64)
 
+	// OnBeforeIteration is an optional pre-work hook called ONCE per iteration
+	// BEFORE RunFrom/RunParallel executes the iteration's phases. The caller
+	// (cmd/forge) uses it to persist a "started" checkpoint so that if a crash
+	// happens between RunFrom returning and OnIteration (analysis §5.3), the
+	// resume can detect that this iteration began and avoid replaying it from
+	// scratch (the per-phase checkpoint, when enabled, provides finer granularity).
+	// Nil-safe: a nil hook is a no-op. This is separate from OnIteration because
+	// the engine must not depend on checkpoint/trace/persist state.
+	OnBeforeIteration func(i int)
+
 	// StartIter and ResumePrev support resuming a crashed/paused run from a
 	// checkpoint. StartIter is the 1-based iteration to begin at (0 or 1 both mean
 	// "start fresh from iteration 1" — the default). ResumePrev seeds the previous
@@ -78,6 +89,19 @@ type LoopEngine struct {
 	// concurrent phases can't share a linear PhaseIndex); per-ITERATION checkpointing
 	// is unaffected, so `forge evolve --parallel` still resumes at iteration boundaries.
 	Parallel bool
+	// Ctx is the parent context for cancellation propagation (e.g. SIGINT/SIGTERM).
+	// Each iteration checks ctx before starting; when cancelled the loop returns a
+	// clean "cancelled" outcome instead of hanging at a long phase or between iters.
+	// A nil Ctx is equivalent to context.Background() (backward compatible).
+	Ctx context.Context
+}
+
+// ctx returns the effective parent context: Ctx if non-nil, else context.Background().
+func (l LoopEngine) ctx() context.Context {
+	if l.Ctx != nil {
+		return l.Ctx
+	}
+	return context.Background()
 }
 
 // NewLoopEngine constructs a LoopEngine, clamping a non-positive NoProgress to 1
@@ -119,50 +143,69 @@ type LoopOutcome struct {
 // phase. With no on_unmet (or an unresolvable target) startPhase stays 0 and the
 // loop replays the whole workflow each round, byte-for-byte as before.
 func (l LoopEngine) Run(wf asset.Workflow, mode string) (LoopOutcome, error) {
-	// FALSE-CLEAN GUARD: a workflow that resolves to ZERO phases runs no work, so it
-	// must NEVER be reported as converged — that is exactly the "zero work read as
-	// success" anti-pattern ForgeOS exists to prevent (it is how a dropped evolve loop
-	// body silently passed before loop.phases was hoisted in asset.LoadWorkflowJSON).
-	// Depth-two backstop: even a future stage-bearing-but-phaseless asset (or one nested
-	// under an unrecognized key) ends not-converged with an honest reason, never a
-	// false-clean boundOutcome. No real workflow trips this (all carry phases).
 	if len(wf.Phases) == 0 {
 		return LoopOutcome{0, false, "no phases to run (empty workflow — not converged)"}, nil
 	}
 	start, prev := l.loopStart()
+	var prevGatesGreen bool
 	stale := 0
-	startPhase := l.StartPhase // 0 fresh; a resumed mid-iteration checkpoint begins here.
+	startPhase := l.StartPhase
+	if l.Parallel && startPhase > 0 {
+		l.logf("parallel mode: per-phase resume not supported — iterating from phase 0")
+		startPhase = 0
+	}
 	for i := start; i <= l.MaxIter; i++ {
-		l.logf("iteration %d/%d", i, l.MaxIter)
-		t0 := time.Now()
-		// Parallel mode runs each iteration's full dependency-wave concurrency (no
-		// startPhase resume, no per-phase checkpoint). Serial mode wires the per-phase
-		// checkpoint hook to THIS iteration's index (a value receiver means this mutates
-		// only the local Engine copy RunFrom reads).
-		var runErr error
-		if l.Parallel {
-			runErr = l.Engine.RunParallel(wf, mode)
-		} else {
-			l.Engine.OnPhase = l.phaseCheckpoint(i)
-			runErr = l.Engine.RunFrom(wf, mode, startPhase)
+		lo, err := l.runIteration(wf, mode, i, &startPhase, &prev, &stale, &prevGatesGreen)
+		if lo != nil {
+			return *lo, err
 		}
-		if runErr != nil {
-			return LoopOutcome{i, false, "gate/agent failure"}, runErr
+		if err != nil {
+			return LoopOutcome{i, false, err.Error()}, err
 		}
-		durationMs := time.Since(t0).Milliseconds()
-		sig := l.Signals()
-		l.onIteration(i, sig, durationMs)
-		l.reportConvergence(sig)
-		if out, done := l.checkStop(i, sig); done {
-			return out, nil
-		}
-		if stale = staleCount(sig.RoadmapCompletion, prev, stale); l.tripped(stale) {
-			return l.staleOutcome(i), nil
-		}
-		prev = sig.RoadmapCompletion
-		startPhase = l.nextStartPhase(wf) // unmet this round -> directed restart next.
 	}
 	return l.boundOutcome(), nil
+}
+
+// runIteration runs one iteration and returns a *LoopOutcome if the loop should
+// stop (converged, stale, cancelled, or failed), or nil if the loop should
+// continue to the next iteration. When lo is non-nil, err carries the error for
+// gate/agent failures; for clean stops err is nil.
+func (l LoopEngine) runIteration(wf asset.Workflow, mode string, i int, startPhase *int, prev *float64, stale *int, prevGatesGreen *bool) (*LoopOutcome, error) {
+	if err := l.ctx().Err(); err != nil {
+		return &LoopOutcome{i, false, "cancelled"}, err
+	}
+	if l.OnBeforeIteration != nil {
+		l.OnBeforeIteration(i)
+	}
+	l.logf("iteration %d/%d", i, l.MaxIter)
+	t0 := time.Now()
+	var runErr error
+	if l.Parallel {
+		l.Engine.Ctx = l.ctx()
+		runErr = l.Engine.RunParallel(l.ctx(), wf, mode)
+	} else {
+		l.Engine.Ctx = l.ctx()
+		l.Engine.OnPhase = l.phaseCheckpoint(i)
+		runErr = l.Engine.RunFrom(wf, mode, *startPhase)
+	}
+	if runErr != nil {
+		return &LoopOutcome{i, false, "gate/agent failure"}, runErr
+	}
+	durationMs := time.Since(t0).Milliseconds()
+	sig := l.Signals()
+	l.onIteration(i, sig, durationMs)
+	l.reportConvergence(sig)
+	if lo, done := l.checkStop(i, sig); done {
+		return &lo, nil
+	}
+	if *stale = staleCount(sig.RoadmapCompletion, *prev, *stale, sig.GatesGreen, *prevGatesGreen); l.tripped(*stale) {
+		sto := l.staleOutcome(i)
+		return &sto, nil
+	}
+	*prevGatesGreen = sig.GatesGreen
+	*prev = sig.RoadmapCompletion
+	*startPhase = l.nextStartPhase(wf)
+	return nil, nil
 }
 
 // nextStartPhase resolves where the NEXT iteration should begin after this one was
@@ -171,13 +214,45 @@ func (l LoopEngine) Run(wf asset.Workflow, mode string) (LoopOutcome, error) {
 // phase, the next iteration starts there (the planner, to pull the next roadmap
 // item). Absent on_unmet, an unknown action, or an unresolvable target, it returns
 // 0 — the next iteration replays the whole workflow, exactly the prior behavior.
+//
+// OnRejected is the human_gate counterpart: when the stop condition is a
+// human_gate and carries an on_rejected:{action:loop_back, target_phase:...},
+// a rejection of the approval (not-yet-approved) causes the NEXT iteration to
+// begin at target_phase rather than from phase 0 — the human's feedback has
+// a directed restart target. This is the missing state-machine edge from
+// asset-runtime-gap.md §3.1: when OnRejected is populated the loop actually
+// restarts at the plan-fix phase instead of replaying the whole workflow.
+//
+// Currently unreachable from any CLI path (intentionally dormant, not a bug):
+// as of 2026-07 no command ever constructs the multi-iteration context this
+// branch requires. `forge evolve` refuses any human_gate workflow outright
+// before a LoopEngine is even built (see rejectHumanGate in
+// cmd/forge/evolve.go) — a human_gate is a single-shot human-approval gate,
+// never an autonomous loop target, so design.yml's human_gate stop never
+// reaches here via evolve. `forge run` never loops at all: cmdRun/runWorkflow
+// call orchestrator.Engine.Run/RunParallel (single-pass), not LoopEngine, so
+// nextStartPhase — including this branch — is never invoked from that path
+// either. review.yml's stop is type "conjunction" (not human_gate), so even a
+// hypothetical multi-iteration evolve run over it would still fail the
+// converge.IsHumanGate(l.Stop) guard below; this branch only ever fires for
+// human_gate-typed stops. The mechanism is correctly implemented for a future
+// iterative/multi-stage-pipeline CLI capability — one that both loops AND
+// permits human_gate workflows into that loop — but no current command path
+// reaches it: today's shape is single-pass `forge run` vs.
+// loop-only-for-non-human_gate `forge evolve`, and neither builds the call
+// site this needs. Documentation only; no behavior change.
 func (l LoopEngine) nextStartPhase(wf asset.Workflow) int {
 	ou := l.Stop.OnUnmet
-	if ou == nil || ou.Action != "loop_to_next_roadmap_item" {
-		return 0
+	if ou != nil && ou.Action == "loop_to_next_roadmap_item" {
+		if idx, ok := phaseIndex(wf, ou.TargetPhase); ok {
+			return idx
+		}
 	}
-	if idx, ok := phaseIndex(wf, ou.TargetPhase); ok {
-		return idx
+	// OnRejected for human_gate: when not approved, jump to target_phase.
+	if converge.IsHumanGate(l.Stop) && l.Stop.OnRejected != nil && l.Stop.OnRejected.Action == "loop_back" {
+		if idx, ok := phaseIndex(wf, l.Stop.OnRejected.TargetPhase); ok {
+			return idx
+		}
 	}
 	return 0
 }
@@ -279,6 +354,18 @@ func (l LoopEngine) reportConvergence(sig converge.Signals) {
 	for _, r := range results {
 		l.logf("  [%s] %s — %s", convergeMark(r.Met), r.Expr, r.Detail)
 	}
+	// FileDelta cross-validation: when roadmap is high but file changes are low,
+	// flag the potential honesty gap (analysis §回路D).
+	if sig.RoadmapCompletion > 0.5 && sig.FileDelta < 0.3 {
+		l.logf("  ⚠ honesty: roadmap=%.0f%% but file-change coverage=%.0f%% — agent self-report may overstate progress",
+			sig.RoadmapCompletion*100, sig.FileDelta*100)
+	}
+	// CodeTestRatio warning: when new code was written but no tests accompanied it
+	// (analysis §5.2 — code written but tests not). A ratio < 0.1 means <10% of
+	// changed lines are test code — potential quality gap.
+	if sig.CodeTestRatio >= 0 && sig.RoadmapCompletion > 0.3 && sig.CodeTestRatio < 0.1 {
+		l.logf("  ⚠ test gap: code-to-test ratio=%.0f%% — new code may lack test coverage", sig.CodeTestRatio*100)
+	}
 }
 
 func convergeVerdict(met bool) string {
@@ -297,11 +384,20 @@ func convergeMark(met bool) string {
 
 // staleCount increments the stale counter when progress did not advance, else
 // resets it — the basis of the doom-loop tripwire.
-func staleCount(cur, prev float64, stale int) int {
-	if cur <= prev {
-		return stale + 1
+//
+// Progress is measured along TWO axes:
+//  1. RoadmapCompletion (cur > prev) — the primary signal
+//  2. GatesGreen (gatesChanged from false→true) — a secondary signal: if the
+//     roadmap % did not change but a previously red gate turned green, that is
+//     REAL progress (code was written and tests passed, even if the author
+//     forgot to tick the ROADMAP checkbox). Without this, a flat roadmap % with
+//     a genuine green gate would still advance staleCount and eventually trip
+//     the doom-loop guard (analysis/edgecases-and-perf.md §3.1).
+func staleCount(cur, prev float64, stale int, gatesGreen, prevGatesGreen bool) int {
+	if cur > prev || (!prevGatesGreen && gatesGreen) {
+		return 0
 	}
-	return 0
+	return stale + 1
 }
 
 func (l LoopEngine) logf(format string, args ...any) {

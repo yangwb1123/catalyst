@@ -16,7 +16,7 @@ description: >
 
 # ── mode 裁决:中枢旋钮在本段的作用 / central knob applied to this stage ──
 # Discover 是否运行、运行多深,由 mode 决定(权威定义见 ../policies/modes.yml 的 workflow_depth.discover)。
-mode_gating:
+mode_gating:                          # NOTE: not read by forge-core — depth is actually enforced via internal/mode's independently-maintained Go mirror of modes.yml; block kept as human-readable cross-reference
   explorer:    skip                   # 创业冲刺:跳过 Discover,直接 vibe-code / skip entirely, go straight to build
   balanced:    light                  # 仅 requirement-discovery,market-research 可选 / minimal
   engineering: full                   # 三个 phase 全跑 / all phases
@@ -34,7 +34,7 @@ phases:
       Extract users/pain/constraints/success-metrics; surface gaps & assumptions.
     emits:
       - requirement-draft.md           # 需求草稿 + 置信度评分 / draft + confidence score
-    confidence_metric: requirement_confidence   # 0–100%,驱动本段 stop_condition
+    confidence_metric: requirement_confidence   # 0–100%,驱动本段 stop_condition — NOTE: field itself not read by forge-core; the CONFIDENCE: N parsing (Sprint 29) is wired via a fixed phase-name dispatch, not by consulting this field
 
   # ── P2 市场调研 / market research ──
   - name: market-research

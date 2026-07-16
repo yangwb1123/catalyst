@@ -6,7 +6,31 @@
 // --parallel AND the workflow declares depends_on; every existing workflow (no depends_on,
 // or no --parallel) keeps using RunFrom byte-for-byte.
 //
+// ═══════════════════════════════════════════════════════════════════════════
+// LOCK ORDER CONTRACT (edgecases-and-perf.md §1.3)
+// ═══════════════════════════════════════════════════════════════════════════
+// Parallel mode accesses shared mutable state under multiple locks. The
+// following LOCK ORDER must be strictly observed by every goroutine — any
+// violation can cause a deadlock that is schedule-dependent (a Heisenbug).
+//
+// ACQUISITION ORDER (from outermost/earliest to innermost/latest):
+//  1. trace.Tracer.mu        — trace event emission (the innermost / fastest)
+//  2. runBudget.mu            — cost.go: cumulative spend tracking
+//  3. loopProbe.mu            — gates.go: iteration-level acceptance probe cache
+//  4. gateLedger.mu           — prompt_context.go: gate result recording
+//  5. phaseOutputLedger.mu    — prompt_context.go: feed-forward output recording
+//  6. ContextCache.mu         — internal/prompt/cache.go: ADR/AGENTS cache
+//  7. reviewFindingsLedger.mu — prompt_context.go: reviewer findings
+//  8. verdictLedger.mu        — prompt_context.go: reviewer verdict tracking
+//
+// Every function that holds a lock MUST document which level(s) it acquires.
+// New mutable state added to the parallel path MUST be added to this contract.
+// ═══════════════════════════════════════════════════════════════════════════
+//
 // SCOPE / HONESTY (v1):
+//   - FAIL-FAST: per-wave context cancellation. When a phase fails, the wave
+//     context is cancelled so remaining phases abort promptly via CommandExecutor's
+//     commandContext chain — no wasted agent budget on discarded work.
 //   - NO directed loop-back. Loop-back (a red gate jumping back to re-run an agent phase)
 //     is a SEQUENTIAL-SPINE feature; a fan-out wave has no single "back" target. So in
 //     parallel mode a red gate ABORTS the run (fail-closed) rather than looping — the spine
@@ -26,6 +50,7 @@
 package orchestrator
 
 import (
+	"context"
 	"fmt"
 	"sync"
 
@@ -35,12 +60,12 @@ import (
 // RunParallel executes the workflow wave by wave, running each wave's independent phases
 // concurrently. It returns the FIRST phase error (after letting the failing wave finish),
 // or nil on a clean run. A malformed dependency graph (unknown dep / cycle) aborts before
-// any phase runs (Waves is fail-closed). The discover-stage mode skip is honored exactly
-// as in RunFrom.
-func (e Engine) RunParallel(wf asset.Workflow, mode string) error {
-	if e.discoverStageSkipped(wf) {
-		e.logf("discover stage skipped (mode gating: explorer skips discovery)")
-		e.reportStop(wf)
+// any phase runs (Waves is fail-closed). The discover-stage and review-stage mode skips
+// are honored exactly as in RunFrom (see stageSkipped, mode_gating.go). ctx propagates
+// cancellation so a cancelled run stops between waves and each active phase goroutine
+// checks ctx before spawning.
+func (e Engine) RunParallel(ctx context.Context, wf asset.Workflow, mode string) error {
+	if e.checkStageSkip(wf) {
 		return nil
 	}
 	waves, err := Waves(wf.Phases)
@@ -48,31 +73,68 @@ func (e Engine) RunParallel(wf asset.Workflow, mode string) error {
 		return fmt.Errorf("parallel orchestration: %w", err)
 	}
 	e.logf("parallel: %d phase(s) in %d dependency wave(s)", len(wf.Phases), len(waves))
-	var mu sync.Mutex // guards agentCalls + firstErr across the wave's goroutines
+	var mu sync.Mutex
 	agentCalls := 0
 	var firstErr error
 	for w, wave := range waves {
-		e.logf("parallel: wave %d/%d — %d concurrent phase(s)", w+1, len(waves), len(wave))
-		var wg sync.WaitGroup
-		for _, idx := range wave {
-			wg.Add(1)
-			go func(i int) {
-				defer wg.Done()
-				if err := e.runPhaseParallel(wf, i, mode, &mu, &agentCalls); err != nil {
-					mu.Lock()
-					if firstErr == nil {
-						firstErr = err
-					}
-					mu.Unlock()
-				}
-			}(idx)
-		}
-		wg.Wait() // wg.Wait establishes happens-before: firstErr is safe to read after it.
-		if firstErr != nil {
-			return firstErr // abort: do NOT start the next wave on a failure
+		if err := e.runWave(ctx, wf, mode, w, wave, &mu, &agentCalls, &firstErr); err != nil {
+			return err
 		}
 	}
 	e.reportStop(wf)
+	return nil
+}
+
+// runWave runs one dependency wave: spawns its phases concurrently and cancels
+// the wave on the first failure (fail-fast via per-wave context).
+func (e Engine) runWave(parentCtx context.Context, wf asset.Workflow, mode string, w int, wave []int, mu *sync.Mutex, agentCalls *int, firstErr *error) error {
+	// Before each wave, check if the parent context has been cancelled.
+	select {
+	case <-parentCtx.Done():
+		if *firstErr == nil {
+			*firstErr = fmt.Errorf("cancelled at wave %d: %w", w, parentCtx.Err())
+		}
+		return *firstErr
+	default:
+	}
+	// FAIL-FAST: per-wave cancellable context. When any phase fails, cancel
+	// the wave — remaining phases abort via CommandExecutor's context chain.
+	waveCtx, waveCancel := context.WithCancel(parentCtx)
+	defer waveCancel() // ensure cleanup even on success
+	e.logf("parallel: wave %d — %d concurrent phase(s)", w+1, len(wave))
+	var wg sync.WaitGroup
+	completed := 0
+	var completedMu sync.Mutex
+	for _, idx := range wave {
+		if waveCtx.Err() != nil {
+			continue
+		}
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			if err := e.runPhaseParallel(waveCtx, wf, i, mode, mu, agentCalls); err != nil {
+				mu.Lock()
+				if *firstErr == nil {
+					*firstErr = err
+					waveCancel()
+				}
+				mu.Unlock()
+			} else {
+				completedMu.Lock()
+				completed++
+				completedMu.Unlock()
+			}
+		}(idx)
+	}
+	wg.Wait()
+	if *firstErr != nil {
+		discarded := len(wave) - completed
+		if discarded > 0 {
+			e.logf("parallel: wave %d cancelled after %d/%d phases (%d discarded — potential cost loss)",
+				w+1, completed, len(wave), discarded)
+		}
+		return *firstErr
+	}
 	return nil
 }
 
@@ -82,12 +144,17 @@ func (e Engine) RunParallel(wf asset.Workflow, mode string) error {
 // level budgets under the shared lock (the counter is shared) and then spawns OUTSIDE the
 // lock so phases overlap. A mode-skipped phase is a no-op. It never fires OnPhase (see the
 // file header: no per-phase checkpoint in parallel mode).
-func (e Engine) runPhaseParallel(wf asset.Workflow, i int, mode string, mu *sync.Mutex, agentCalls *int) error {
+func (e Engine) runPhaseParallel(ctx context.Context, wf asset.Workflow, i int, mode string, mu *sync.Mutex, agentCalls *int) error {
 	p := wf.Phases[i]
+	// If the wave context was cancelled (another phase in this wave failed),
+	// abort promptly — do not start billing for discarded work.
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if len(p.RequiredGates) > 0 {
 		return e.runGates(p, e.gatesFor(p))
 	}
-	if e.skipByMode(p) {
+	if e.skipByMode(p, wf.Stage) {
 		e.logf("phase %s skipped (mode gating: reviewer off)", p.Name)
 		return nil
 	}
@@ -104,5 +171,5 @@ func (e Engine) runPhaseParallel(wf asset.Workflow, i int, mode string, mu *sync
 	if err := e.checkRunBudget(completed); err != nil {
 		return err
 	}
-	return e.runAgentPhase(p, mode)
+	return e.runAgentPhase(ctx, p, mode)
 }

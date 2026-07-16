@@ -6,6 +6,7 @@
 package orchestrator
 
 import (
+	"context"
 	"fmt"
 
 	"forgeos/forge-core/internal/asset"
@@ -14,8 +15,11 @@ import (
 
 // AgentExecutor performs the agent action for one phase under a mode. A real
 // implementation would drive an LLM agent; DryRunExecutor only narrates.
+// The ctx parameter carries a parent context for cancellation propagation:
+// when the caller's context is cancelled (e.g. SIGINT), the executor should
+// abort the phase and return ctx.Err().
 type AgentExecutor interface {
-	Execute(p asset.Phase, mode string) error
+	Execute(ctx context.Context, p asset.Phase, mode string) error
 }
 
 // DryRunExecutor is the zero-LLM executor: it logs the resolved routing for a
@@ -28,7 +32,8 @@ type DryRunExecutor struct {
 // Execute narrates the phase as "phase <name> -> agent <agent> (tier <tier>)",
 // taking the tier from PhaseTier so a workflow's per-phase model_tier override is
 // honored (raise-only, never below the safety floor — see PhaseTier).
-func (d DryRunExecutor) Execute(p asset.Phase, mode string) error {
+// ctx is ignored for dry-run (no real work to cancel).
+func (d DryRunExecutor) Execute(ctx context.Context, p asset.Phase, mode string) error {
 	tier := PhaseTier(p, mode)
 	d.logf("phase %s -> agent %s (tier %s)", p.Name, p.Agent, tier)
 	return nil

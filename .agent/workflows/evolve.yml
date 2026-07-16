@@ -17,7 +17,7 @@ description: >
 
 # ── mode 裁决 / central knob applied to this stage ──
 # Evolve 的激进程度由 mode 决定(扫多深、是否自动开工 vs 仅提案)。
-mode_gating:
+mode_gating:                          # NOTE: not read by forge-core — depth is actually enforced via internal/mode's independently-maintained Go mirror of modes.yml; block kept as human-readable cross-reference
   explorer:    opportunistic           # 仅扫明显机会,默认提案不自动改 / propose, don't auto-act
   balanced:    standard
   engineering: thorough                 # 全维扫描(安全/债务/性能)+ 自动派生任务 / full scan, auto-derive
@@ -68,7 +68,7 @@ loop:
       agent: implementer
       readonly: false                   # 写产物代码 / writes product code
       required_gates: [lint, test, build, complexity, arch, security]   # 生效集由 mode 过滤 / filtered by mode
-      blocking: true
+      blocking: true                    # NOTE: value not read by forge-core; a failing gate phase without an on_fail loop-back already aborts the run unconditionally by default
       description: >
         实现 roadmap 新增项,过 mode 选定 harness 闸门(同 build 段约束)。
         Implement new items under the same mode-selected gates as build.

@@ -37,7 +37,7 @@ func tierConsumers(t *testing.T, wf asset.Workflow, p asset.Phase, ratio float64
 	var stamped string
 	recordSink := func(_, model string, _ float64, _ time.Duration) { stamped = model }
 	eng, _, _ := buildRunEngine(wf, o, func(string) {}, recordSink,
-		func(string) gate.Result { return gate.Result{} }, mode.Policy{}, b)
+		func(string) gate.Result { return gate.Result{} }, mode.Policy{}, b, "", nil)
 	ce, ok := eng.Exec.(orchestrator.CommandExecutor)
 	if !ok {
 		t.Fatalf("buildRunEngine must wire a CommandExecutor for claude, got %T", eng.Exec)
@@ -129,7 +129,7 @@ func TestBudgetTier_RatioReadAtSpawnNotCached(t *testing.T) {
 	o := runOpts{root: repoRoot(), mode: "balanced", executor: "command", agentCmd: "claude"}
 	b := &runBudget{cap: 1.00} // starts empty -> ratio 0
 	eng, _, _ := buildRunEngine(wf, o, func(string) {}, func(string, string, float64, time.Duration) {},
-		func(string) gate.Result { return gate.Result{} }, mode.Policy{}, b)
+		func(string) gate.Result { return gate.Result{} }, mode.Policy{}, b, "", nil)
 	ce := eng.Exec.(orchestrator.CommandExecutor)
 
 	// First spawn: in budget (ratio 0) -> the full opus tier, no down-tier.
@@ -161,7 +161,7 @@ func TestBudgetTier_NoBudgetByteIdenticalAllConsumers(t *testing.T) {
 	b := &runBudget{} // cap 0: unset, the back-compat hinge
 	var stamped string
 	eng, _, _ := buildRunEngine(wf, o, func(string) {}, func(_, m string, _ float64, _ time.Duration) { stamped = m },
-		func(string) gate.Result { return gate.Result{} }, mode.Policy{}, b)
+		func(string) gate.Result { return gate.Result{} }, mode.Policy{}, b, "", nil)
 	ce := eng.Exec.(orchestrator.CommandExecutor)
 
 	b.feed(nil)(phase.Name, routing.Opus, 9.99, 0) // unbudgeted spend -> ratio stays 0, no adjustment
@@ -185,7 +185,7 @@ func TestBudgetTier_DownTierLogsHonestly(t *testing.T) {
 	// (a) Near budget, non-floor -> a down-tier IS logged with ratio and both tiers.
 	// nil cards = cold start: history adds only its own line, never a tier change (PR2).
 	var logs []string
-	tierOf := phaseTierResolver("balanced", func() float64 { return 0.85 }, nil, func(s string) { logs = append(logs, s) })
+	tierOf := phaseTierResolver("balanced", func() float64 { return 0.85 }, nil, func(s string) { logs = append(logs, s) }, "", nil)
 	if got := tierOf(phase); got != routing.Sonnet {
 		t.Fatalf("near-budget opus implementer must resolve to sonnet; got %q", got)
 	}
@@ -200,7 +200,7 @@ func TestBudgetTier_DownTierLogsHonestly(t *testing.T) {
 	// observability line (PR2) may be present — it never down-tiers — so we assert specifically
 	// that no `downtiering` line appears, not that the log is wholly empty.
 	var quiet []string
-	inBudget := phaseTierResolver("balanced", func() float64 { return 0.50 }, nil, func(s string) { quiet = append(quiet, s) })
+	inBudget := phaseTierResolver("balanced", func() float64 { return 0.50 }, nil, func(s string) { quiet = append(quiet, s) }, "", nil)
 	if got := inBudget(phase); got != routing.Opus || downTierLines(quiet) != 0 {
 		t.Errorf("in-budget resolve must be opus and emit NO down-tier line; got tier=%q, down-tier lines=%d (%v)", inBudget(phase), downTierLines(quiet), quiet)
 	}
@@ -208,7 +208,7 @@ func TestBudgetTier_DownTierLogsHonestly(t *testing.T) {
 	// (c) Floor agent near budget -> exempt, so again NO down-tier line happens (the PR6
 	// invariant). As in (b) a PR2 history line is allowed; only a `downtiering` line is forbidden.
 	var floorLog []string
-	floor := phaseTierResolver("balanced", func() float64 { return 0.95 }, nil, func(s string) { floorLog = append(floorLog, s) })
+	floor := phaseTierResolver("balanced", func() float64 { return 0.95 }, nil, func(s string) { floorLog = append(floorLog, s) }, "", nil)
 	if got := floor(asset.Phase{Name: "review", Agent: "reviewer"}); got != routing.Opus || downTierLines(floorLog) != 0 {
 		t.Errorf("floor agent near budget must stay opus and emit NO down-tier line; got tier=%q, down-tier lines=%d", got, downTierLines(floorLog))
 	}
@@ -235,7 +235,7 @@ func downTierLines(logs []string) int {
 func TestBudgetTier_PhaseTierByNameMatchesResolver(t *testing.T) {
 	phase := asset.Phase{Name: "implementer", Agent: "implementer", ModelTier: "opus"}
 	wf := asset.Workflow{Phases: []asset.Phase{phase}}
-	tierOf := phaseTierResolver("balanced", func() float64 { return 0.85 }, nil, nil)
+	tierOf := phaseTierResolver("balanced", func() float64 { return 0.85 }, nil, nil, "", nil)
 	byName := phaseTierByName(wf, tierOf)
 
 	if a, b := byName(phase.Name), tierOf(phase); a != b {

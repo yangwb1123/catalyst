@@ -36,6 +36,7 @@ except ImportError:  # pragma: no cover - clear actionable error, not a crash
     )
     sys.exit(2)
 
+from mode_gating_check import check_workflow_mode_gating  # noqa: E402 — after yaml guard
 
 # --- domain constants (data-driven) ------------------------------------------
 
@@ -94,7 +95,6 @@ REQUIRED_ACCEPTANCE_CRITERIA = ["test_pass", "lint", "build"]
 # out-of-range rank — without inventing a stricter shape than modes.yml declares.
 PRIORITY_AXES = {"speed", "quality", "cost"}
 PRIORITY_RANKS = {1, 2, 3}
-
 
 # --- helpers -----------------------------------------------------------------
 
@@ -160,7 +160,6 @@ def _skill_refs(text):
         if token:
             refs.append(token)
     return refs
-
 
 # --- checks (one check == one function, each returns a list of issues) -------
 
@@ -444,6 +443,7 @@ CHECKS = [
     check_routing_tiers,
     check_modes_router_tiers,
     check_mode_priorities,
+    check_workflow_mode_gating,
     check_acceptance_schema,
     check_workflow_control_flow,
 ]

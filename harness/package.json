@@ -1,0 +1,17 @@
+{
+  "name": "forgeos-harness",
+  "version": "2.0.0",
+  "private": true,
+  "description": "ForgeOS harness — governance gates, architecture checks, and acceptance testing infrastructure. Zero external npm dependencies: only Node.js built-in modules and same-repo relative imports. This package.json locks metadata only; when an external dependency is introduced, it MUST be declared here with a pinned version and a package-lock.json MUST accompany it.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "type": "module",
+  "scripts": {
+    "test": "node --test harness/",
+    "gate": "node harness/gate.mjs"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}

@@ -1,3 +1,5 @@
+// detect_test.go — tests for cmdDetect, cmdDetectJSON, autoSelectWorkflow.
+// Parser and integration tests live in detect_parsers_test.go.
 package main
 
 import (
@@ -7,7 +9,7 @@ import (
 	"testing"
 )
 
-// writeFile creates a file with optional content at path, creating parent dirs.
+// writeFileAt creates a file with optional content at path, creating parent dirs.
 func writeFileAt(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -151,5 +153,66 @@ func TestAutoSelectWorkflow_ExplicitModePreserved(t *testing.T) {
 	_ = autoSelectWorkflow(root, fs, &o)
 	if o.mode != "engineering" {
 		t.Errorf("explicit --mode must not be overridden; got %q", o.mode)
+	}
+}
+
+// ── JSON output tests ─────────────────────────────────────────────────────
+
+func TestCmdDetectJSON_GoProject(t *testing.T) {
+	root := t.TempDir()
+	writeFileAt(t, filepath.Join(root, "go.mod"),
+		"module github.com/myorg/myproject\n\ngo 1.23\n")
+	writeFileAt(t, filepath.Join(root, "main_test.go"), "package main\n")
+	writeFileAt(t, filepath.Join(root, ".github", "workflows", "ci.yml"), "")
+	p := detectProject(root)
+	s := suggestWorkflow(p)
+
+	exitCode := cmdDetectJSON(p, s)
+	if exitCode != 0 {
+		t.Fatalf("cmdDetectJSON returned exit code %d, want 0", exitCode)
+	}
+	if p.Language != "go" {
+		t.Errorf("Language = %q, want go", p.Language)
+	}
+	if p.GoModulePath != "github.com/myorg/myproject" {
+		t.Errorf("GoModulePath = %q, want github.com/myorg/myproject", p.GoModulePath)
+	}
+	if p.GoVersion != "1.23" {
+		t.Errorf("GoVersion = %q, want 1.23", p.GoVersion)
+	}
+	if !p.HasTests {
+		t.Error("HasTests should be true")
+	}
+	if !p.HasCI {
+		t.Error("HasCI should be true")
+	}
+	if s.Workflow != "evolve" {
+		t.Errorf("workflow = %q, want evolve", s.Workflow)
+	}
+}
+
+func TestCmdDetectJSON_EmptyProject(t *testing.T) {
+	root := t.TempDir()
+	p := detectProject(root)
+	s := suggestWorkflow(p)
+
+	exitCode := cmdDetectJSON(p, s)
+	if exitCode != 0 {
+		t.Fatalf("cmdDetectJSON returned exit code %d, want 0", exitCode)
+	}
+	if p.Language != "unknown" {
+		t.Errorf("Language = %q, want unknown", p.Language)
+	}
+	if s.Workflow != "discover" {
+		t.Errorf("workflow = %q, want discover (no manifest, no tests)", s.Workflow)
+	}
+	if p.GoModulePath != "" || p.GoVersion != "" {
+		t.Error("expected empty semantic fields for unknown project")
+	}
+	if p.HasBuildScript || p.HasTestScript || p.DepsCount != 0 {
+		t.Error("expected zero-valued Node fields for unknown project")
+	}
+	if p.BuildBackend != "" || p.PythonVersion != "" {
+		t.Error("expected empty Python fields for unknown project")
 	}
 }

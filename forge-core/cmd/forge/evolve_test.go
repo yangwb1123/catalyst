@@ -277,7 +277,7 @@ func TestResumeStart_Paths(t *testing.T) {
 	// --resume with a present, valid ITERATION-BOUNDARY checkpoint (PhaseIndex 0): continue
 	// at Iteration+1, seed prev AND the persisted spend, phase 0 (replay the iteration in full).
 	cp := persist.Checkpoint{Workflow: "evolve", Iteration: 5, RoadmapCompletion: 0.6, SpentUsdMicros: 1_250_000}
-	if err := persist.Save(checkpointPath(root), cp); err != nil {
+	if err := persist.Save(checkpointPath(root), cp, 0); err != nil {
 		t.Fatalf("seed checkpoint: %v", err)
 	}
 	if start, prev, spent, phase, err := resumeStart(root, true); err != nil || start != 6 || prev != 0.6 || spent != 1_250_000 || phase != 0 {
@@ -286,7 +286,7 @@ func TestResumeStart_Paths(t *testing.T) {
 	// --resume with a MID-ITERATION checkpoint (PhaseIndex > 0): resume re-enters the
 	// in-progress iteration AT that phase (phase-granular), not from phase 0.
 	mid := persist.Checkpoint{Workflow: "evolve", Iteration: 5, RoadmapCompletion: 0.6, PhaseIndex: 3, SpentUsdMicros: 2_000_000}
-	if err := persist.Save(checkpointPath(root), mid); err != nil {
+	if err := persist.Save(checkpointPath(root), mid, 0); err != nil {
 		t.Fatalf("seed mid checkpoint: %v", err)
 	}
 	if start, _, spent, phase, err := resumeStart(root, true); err != nil || start != 6 || phase != 3 || spent != 2_000_000 {

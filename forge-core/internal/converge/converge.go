@@ -17,6 +17,33 @@ type Signals struct {
 	RoadmapCompletion float64 // fraction in [0,1] of decided checklist items done
 	GatesGreen        bool    // every required harness gate currently passes
 
+	// RequirementConfidence is the confidence score (0-100) from the discover
+	// workflow's requirement-discovery phase — the product-manager agent's own
+	// self-assessed confidence that the requirements are complete enough to
+	// proceed. This is an agent-reported signal (like RoadmapCompletion), so it
+	// is honest-but-trusting. A zero value means "no discover phase ran or
+	// no confidence score reported" — treated as unmet by evalOne.
+	// Wired from the requirement-discovery phase agent output (confidence_metric
+	// field in discover.yml). Default 0 = no data (never silently converged).
+	RequirementConfidence float64
+
+	// ReviewStatus is the convergence verdict from the review workflow's CTO
+	// executive review phase. Maps the agent's VERDICT to a convergence signal:
+	// "approved" = APPROVE or APPROVE_WITH_SIMPLIFICATION → Met;
+	// anything else or empty = unmet. Wired from parseReviewerVerdict on the
+	// cto-review phase output. Default "" = no data (never silently converged).
+	ReviewStatus string
+
+	// FileDelta is the fraction in [0,1] of roadmap items that have corresponding
+	// file-system changes in the git diff (analysis §scan-current-gaps direction 5).
+	// It provides independent cross-validation of RoadmapCompletion: if the agent
+	// claims 100% completion but FileDelta is near 0 (no code changes), the
+	// convergence report flags a gap. Computed from `git diff --name-only` matched
+	// against roadmap item keywords. Not used for convergence (that remains
+	// RoadmapCompletion AND GatesGreen); surfaced as an honesty warning in the
+	// converge report (analysis §回路D — self-report risk).
+	FileDelta float64
+
 	// HumanApproved is the approval signal for a human_gate stop condition (the
 	// design->build gate). It is the ONLY key that converges a human_gate: false
 	// means the stage honestly waits for a human (NOT MET, never a gate failure),
@@ -45,6 +72,13 @@ type Signals struct {
 	// greenDetail fall back to its terse legacy text, so callers that do not wire it
 	// (and every existing test) are byte-for-byte unchanged.
 	GateProof GateProof
+
+	// CodeTestRatio is the fraction of changed lines that are test code
+	// (0 = no test changes, 0.5 = equal test and prod changes, 1 = all tests).
+	// Computed from `git diff --stat` in gatherSignals. A zero value with
+	// non-zero prod changes indicates a test gap. Not used for convergence;
+	// surfaced as a warning in the converge report (analysis §5.2).
+	CodeTestRatio float64
 }
 
 // GateProof records, for honesty rendering only, which required gates were proven
@@ -167,6 +201,10 @@ func evalOne(c asset.Criterion, sig Signals) Result {
 	case c.Metric == "gates_status":
 		met := c.Value == "green" && sig.GatesGreen
 		return Result{render(c), met, greenDetail(sig)}
+	case c.Metric == "requirement_confidence":
+		return evalRequirementConfidence(c, sig)
+	case c.Metric == "review_status":
+		return evalReviewStatus(c, sig)
 	case acceptanceMetrics[c.Metric]:
 		return evalCriterion(c, sig)
 	default:
@@ -198,6 +236,36 @@ func evalRoadmap(c asset.Criterion, sig Signals) Result {
 		return Result{render(c), false, detail + " (no threshold given)"}
 	}
 	met := compare(pct, c.Operator, *c.Threshold)
+	return Result{render(c), met, detail}
+}
+
+// evalRequirementConfidence evaluates the requirement_confidence metric from
+// the discover workflow. The signal is the agent-reported confidence (0-100).
+// A threshold of 80 means ">= 80% confidence required". Missing threshold:
+// falls back to the value from the criterion's Threshold (built-in from YAML).
+// Zero confidence (no data) is always unmet.
+func evalRequirementConfidence(c asset.Criterion, sig Signals) Result {
+	detail := fmt.Sprintf("requirement_confidence=%.0f", sig.RequirementConfidence)
+	if sig.RequirementConfidence == 0 {
+		return Result{render(c), false, detail + " (no discover phase data)"}
+	}
+	if c.Threshold == nil {
+		return Result{render(c), false, detail + " (no threshold given)"}
+	}
+	met := compare(sig.RequirementConfidence, c.Operator, *c.Threshold)
+	return Result{render(c), met, detail}
+}
+
+// evalReviewStatus evaluates the review_status metric from the review workflow.
+// The signal is the CTO agent's VERDICT: "approved" matches APPROVE or
+// APPROVE_WITH_SIMPLIFICATION; anything else is unmet. An empty review_status
+// (no review phase ran) is always unmet.
+func evalReviewStatus(c asset.Criterion, sig Signals) Result {
+	met := sig.ReviewStatus == "approved"
+	detail := fmt.Sprintf("review_status=%s", sig.ReviewStatus)
+	if sig.ReviewStatus == "" {
+		detail += " (no review phase data)"
+	}
 	return Result{render(c), met, detail}
 }
 

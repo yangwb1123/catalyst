@@ -1,0 +1,140 @@
+# ForgeOS workflow · REVIEW (脊柱第 2.5 段 / spine stage 2.5)
+# Design → ★REVIEW★ → Build
+# 架构批准后、写代码前,做多维深度评审(Security / Distributed / Performance / Reliability)。
+# After design approval, before any code is written — multi-dimensional deep review.
+#
+# 对齐 AI-SDLC Stage 2-6 / aligned with AI-SDLC stages 2-6.
+# 产出 ADR + 风险登记册 + 性能预算 + 上线清单,全部前传给 BUILD / emits artifacts
+# that feed forward into BUILD phases.
+#
+# 机器可读契约 / machine-readable contract。mode 裁决深度 / mode-gated depth.
+
+id: review
+stage: review
+title: 已批架构 → 全维评审通过 (approved architecture → all-dimensions reviewed)
+readonly: true                         # 全段只读分析,不写产物代码 / read-only analysis, no product code
+description: >
+  对已批准的架构做安全/分布式/性能/生产就绪多维评审,在写任何代码之前找出设计缺陷。
+  Deep review of approved architecture across security, distributed systems, performance,
+  and production readiness — surface design flaws BEFORE any code is written.
+
+# ── mode 裁决 / central knob applied to this stage ──
+# Review 深度由 mode 决定:explorer 跳过,engineering 全跑。
+mode_gating:                           # NOTE: not read by forge-core — depth is actually enforced via internal/mode's independently-maintained Go mirror of modes.yml; block kept as human-readable cross-reference
+  explorer:    skip                    # 跳过评审,直进 Build / skip, go straight to build
+  balanced:    standard                # 安全 + 分布式(两个最关键维)/ security + distributed
+  engineering: full                    # 全四维度评审 / all four dimensions
+  cto:         full                    # CTO 模式也跑全评审(输出作为文档交付)/ full review as doc deliverable
+  authority: ../policies/modes.yml#workflow_depth.review
+
+phases:
+  # ── P1 安全与协议评审 / security & protocol review (AI-SDLC Stage 2) ──
+  - name: security-review
+    agent: security-engineer
+    readonly: true
+    required_gates: []                  # 只读分析阶段 / read-only analysis
+    model_tier: opus                    # 安全判断高杠杆 → 贵模型 / security judgment is high-risk
+    description: |
+      对已批架构做安全评审 / Deep security review of approved architecture:
+      - STRIDE 威胁建模 / STRIDE threat modeling
+      - RFC/协议合规矩阵 / RFC/protocol compliance matrix (OAuth2/OIDC/JWT/WebAuthn)
+      - 信任边界与输入验证 / trust boundaries & input validation
+      - Token 生命周期与密钥管理 / token lifecycle & secret management
+      - 审计追踪需求 / audit trail requirements
+    uses_template: .ai/prompts/02-security-rfc-review.md
+    emits:
+      - security-review.md             # 发现 + 风险矩阵 / findings + risk matrix
+      - threat-model.md                # STRIDE 表 / STRIDE table
+    on_fail:
+      action: loop_back
+      target_phase: security-review   # 安全评审未通过,重跑安全评审 / security review failed, re-run security review
+
+  # ── P2 分布式系统评审 / distributed systems review (AI-SDLC Stage 3) ──
+  - name: distributed-review
+    agent: distributed-engineer
+    readonly: true
+    required_gates: []
+    model_tier: opus
+    description: |
+      对已批架构做分布式系统评审 / Distributed systems review:
+      - 并发模型与竞态分析 / concurrency model & race analysis
+      - 幂等性策略 / idempotency strategy (每个写操作 / every write operation)
+      - 故障模式矩阵 / failure mode matrix (Redis/PG/网络分区 / Redis/PG/network partition)
+      - Fail Open / Fail Closed / Fail Unsafe 分类 / classification
+      - 分布式锁与缓存一致性 / distributed locks & cache consistency
+      - 重试与退避策略 / retry & backoff strategy
+    uses_template: .ai/prompts/03-distributed-review.md
+    emits:
+      - distributed-review.md          # 故障矩阵 + 锁策略 / failure matrix + lock strategy
+    on_fail:
+      action: loop_back
+      target_phase: security-review    # 分布式评审未通过,从安全评审重新开始 / distributed review failed, restart from security review
+
+  # ── P3 性能与可靠性评审 / performance & reliability review (AI-SDLC Stage 5+6) ──
+  - name: performance-reliability-review
+    agent: performance-engineer
+    readonly: true
+    required_gates: []
+    model_tier: opus
+    optional_for: [balanced]           # balanced 下可选 / optional under balanced
+    description: |
+      性能预算 + 生产就绪评审 / Performance budget + production readiness review:
+      性能维度 / Performance dimension:
+      - 热路径识别与延迟预算 / hot path identification & latency budget
+      - 数据库查询分析 / DB query analysis (N+1 / 索引 / 连接池)
+      - 内存分配与 GC 压力 / memory allocation & GC pressure
+      - 缓存有效性评估 / cache effectiveness
+      可靠性维度 / Reliability dimension (AI-SDLC Stage 6):
+      - 可观测性验证 / observability verification (metrics/logs/traces)
+      - 部署策略与回滚 / deployment strategy & rollback
+      - 容量规划与扩缩容 / capacity planning & scaling
+      - 测试策略完整性 / test strategy completeness
+      - Runbook 需求 / runbook requirements
+    uses_template: .ai/prompts/05-performance-review.md
+    secondary_template: .ai/prompts/06-production-readiness.md
+    emits:
+      - performance-budget.md          # 延迟预算 + 基准计划 / latency budget + benchmark plan
+      - production-readiness.md        # 上线检查清单 / go/no-go checklist
+    on_fail:
+      action: loop_back
+      target_phase: security-review    # 性能评审未通过,从安全评审重新开始 / performance review failed, restart from security review
+
+  # ── P4 CTO 综合裁决 / CTO executive synthesis (AI-SDLC Stage 9) ──
+  - name: executive-review
+    agent: cto
+    readonly: true
+    required_gates: []
+    model_tier: opus
+    description: |
+      综合所有评审产出,做最终 Go/No-Go 裁决 / Synthesize all review outputs into final Go/No-Go:
+      五问 / Five questions:
+      1. 现在该做吗? / Should we build this NOW?
+      2. 是否过度设计? / Is it over-engineered?
+      3. 能维护 5+ 年吗? / Maintainable for 5+ years?
+      4. 3 人团队能持有吗? / Can a 3-engineer team own it?
+      5. ROI 是否合理? / Is the ROI justified?
+      产出唯一裁决 / Produce exactly one verdict:
+      Approve / Approve with Simplification / Redesign / Delay / Reject
+    uses_template: .ai/prompts/09-cto-review.md
+    feeds_forward: true                 # 裁决 + 约束前传给 BUILD planner / verdict feeds BUILD planner
+    emits:
+      - review-summary.md              # 综合裁决 + Top 10 风险 + Non-Goals / verdict + risks + non-goals
+
+# ── 终止条件 / stop condition ──
+# 全维度评审通过后,解锁 BUILD。
+# All review dimensions passed → unlock BUILD.
+stop_condition:
+  type: conjunction
+  all_of:
+    - metric: review_status
+      operator: "=="
+      value: approved                  # CTO 裁决为 Approve 或 Approve with Simplification
+  expression: "review_status == approved"
+  on_rejected:
+    action: loop_back
+    target_phase: security-review      # 驳回 → 回到第一个评审相位 / reject → back to first review phase
+    note: 附 CTO 裁决反馈 / with CTO verdict feedback
+  on_approved:
+    emit:
+      - .ai/reviews/{subsystem}/       # 所有评审产出归档 / all review artifacts archived
+    next_stage: build                  # 解锁 BUILD 段 / unlocks build.yml

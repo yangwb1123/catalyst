@@ -301,6 +301,21 @@ const (
 	VerdictRequestChanges = "REQUEST_CHANGES"
 )
 
+// Executive-verdict tokens — the machine-readable last line .agent/agents/cto.md's
+// NEW "executive-review" section (review.yml P4, .agent/workflows/review.yml) contracts
+// the CTO's synthesis phase to emit. Five values, not the reviewer's binary two, because
+// review.yml's stated intent is "产出唯一裁决:Approve / Approve with Simplification /
+// Redesign / Delay / Reject" (docs/adr/0004). VerdictApprove is DELIBERATELY REUSED
+// (not redeclared) — the reviewer's plain "APPROVE" and the executive's "APPROVE" are the
+// same normalized token, so a downstream reader (reviewStatus in gates.go) never has to
+// special-case which parser produced it. The other four are new, executive-only tokens.
+const (
+	VerdictApproveWithSimplification = "APPROVE_WITH_SIMPLIFICATION"
+	VerdictRedesign                  = "REDESIGN"
+	VerdictDelay                     = "DELAY"
+	VerdictReject                    = "REJECT"
+)
+
 // parseReviewerVerdict extracts the reviewer's machine-readable verdict from its raw
 // output — the EXACT mirror of parseClaudeCostUsd's isolation: ALL knowledge of the
 // reviewer's `VERDICT: …` last-line contract lives HERE in cmd/forge, never in the
@@ -322,6 +337,67 @@ func parseReviewerVerdict(output string) (verdict string, ok bool) {
 	default:
 		return "", false // missing/wrapped/malformed -> no signal (caller fails open)
 	}
+}
+
+// parseExecutiveVerdict extracts the CTO's machine-readable executive-review verdict
+// from its raw output — structurally IDENTICAL to parseReviewerVerdict (same
+// unwrapClaudeResult + lastNonEmptyLine + exact-match approach, same isolation
+// rationale: cost.go is the ONLY place that knows either contract's string shape),
+// but matched against the FIVE executive tokens (review.yml P4's "唯一裁决" vocabulary)
+// instead of the reviewer's binary two. ok=false (missing/wrapped/malformed last line,
+// or the reviewer's own two tokens spelled differently than "APPROVE") means "no
+// signal" — never a fabricated verdict; the caller (observeFor) tries this ONLY after
+// parseReviewerVerdict has already failed to match, so an ordinary binary reviewer
+// phase's output is never routed here.
+func parseExecutiveVerdict(output string) (verdict string, ok bool) {
+	last := lastNonEmptyLine(unwrapClaudeResult(output))
+	switch last {
+	case "VERDICT: " + VerdictApprove:
+		return VerdictApprove, true
+	case "VERDICT: " + VerdictApproveWithSimplification:
+		return VerdictApproveWithSimplification, true
+	case "VERDICT: " + VerdictRedesign:
+		return VerdictRedesign, true
+	case "VERDICT: " + VerdictDelay:
+		return VerdictDelay, true
+	case "VERDICT: " + VerdictReject:
+		return VerdictReject, true
+	default:
+		return "", false // missing/wrapped/malformed -> no signal (caller fails open)
+	}
+}
+
+// confidenceContract is the literal prefix the requirement-discovery phase's last
+// line must carry — .agent/agents/product-manager.md's `CONFIDENCE: <N>` contract
+// (discover.yml's requirement_confidence stop signal, the NUMERIC counterpart to
+// the reviewer's binary VERDICT: token and the executive's five-way VERDICT: token).
+const confidenceContract = "CONFIDENCE: "
+
+// parseConfidenceScore extracts the requirement-discovery phase's self-reported
+// confidence score (0-100) from its raw output — this file's THIRD verdict-shaped
+// parser (after parseReviewerVerdict and parseExecutiveVerdict), same isolation
+// rationale and same unwrapClaudeResult + lastNonEmptyLine pipeline, but the
+// payload is a bounded INTEGER rather than a fixed token, so this parser
+// additionally validates it. ok=false (never a fabricated score) whenever the
+// last line does not start with the exact "CONFIDENCE: " prefix, the remainder
+// is not a plain base-10 integer, or the value falls outside the contracted
+// [0,100] range — a malformed or out-of-range score is "no signal", exactly like
+// a missing/wrapped VERDICT line, so the caller (observeFor) never records a
+// value that RequirementConfidence's honest 0-default cannot already represent.
+func parseConfidenceScore(output string) (score float64, ok bool) {
+	last := lastNonEmptyLine(unwrapClaudeResult(output))
+	numStr, hasPrefix := strings.CutPrefix(last, confidenceContract)
+	if !hasPrefix {
+		return 0, false
+	}
+	n, err := strconv.Atoi(numStr)
+	if err != nil {
+		return 0, false // not a plain base-10 integer (e.g. "85%", "85.0", "eighty-five")
+	}
+	if n < 0 || n > 100 {
+		return 0, false // out of the contracted [0,100] range
+	}
+	return float64(n), true
 }
 
 // lastNonEmptyLine returns the last line of s that is non-empty after trimming

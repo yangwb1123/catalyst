@@ -1,6 +1,7 @@
 package orchestrator
 
 import (
+	"context"
 	"testing"
 
 	"forgeos/forge-core/internal/asset"
@@ -56,7 +57,7 @@ func TestDryRunExecutor_HonorsModelTierOverride(t *testing.T) {
 	rec := &recorder{}
 	exec := DryRunExecutor{Log: rec.log}
 	p := asset.Phase{Name: "implementer", Agent: "implementer", ModelTier: routing.Opus}
-	if err := exec.Execute(p, "balanced"); err != nil {
+	if err := exec.Execute(context.Background(), p, "balanced"); err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
 	if !containsLine(rec.logs, "phase implementer -> agent implementer (tier opus)") {
@@ -71,7 +72,7 @@ func TestDryRunExecutor_OverrideCannotBreakFloorInNarration(t *testing.T) {
 	rec := &recorder{}
 	exec := DryRunExecutor{Log: rec.log}
 	p := asset.Phase{Name: "reviewer", Agent: "reviewer", ModelTier: routing.Haiku}
-	if err := exec.Execute(p, "explorer"); err != nil {
+	if err := exec.Execute(context.Background(), p, "explorer"); err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
 	if !containsLine(rec.logs, "phase reviewer -> agent reviewer (tier opus)") {

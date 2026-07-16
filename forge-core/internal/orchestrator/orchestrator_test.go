@@ -1,6 +1,7 @@
 package orchestrator
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -44,16 +45,18 @@ type recorder struct {
 func (r *recorder) log(s string) { r.logs = append(r.logs, s) }
 
 func (r *recorder) executor() AgentExecutor {
-	return execFunc(func(p asset.Phase, _ string) error {
+	return execFunc(func(_ context.Context, p asset.Phase, _ string) error {
 		r.executed = append(r.executed, p.Name)
 		return nil
 	})
 }
 
 // execFunc adapts a function to the AgentExecutor interface for tests.
-type execFunc func(asset.Phase, string) error
+type execFunc func(context.Context, asset.Phase, string) error
 
-func (f execFunc) Execute(p asset.Phase, mode string) error { return f(p, mode) }
+func (f execFunc) Execute(ctx context.Context, p asset.Phase, mode string) error {
+	return f(ctx, p, mode)
+}
 
 // allOK is a RunGate that passes every gate.
 func allOK(name string) gate.Result { return gate.Result{Name: name, OK: true} }
@@ -179,7 +182,7 @@ func TestDryRunExecutor_LogsTier(t *testing.T) {
 	rec := &recorder{}
 	exec := DryRunExecutor{Log: rec.log}
 	p := asset.Phase{Name: "reviewer", Agent: "reviewer"}
-	if err := exec.Execute(p, "explorer"); err != nil {
+	if err := exec.Execute(context.Background(), p, "explorer"); err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
 	// reviewer is an Opus-floor agent even under explorer mode.
@@ -198,7 +201,7 @@ type seqExecutor struct {
 	calls int
 }
 
-func (s *seqExecutor) Execute(_ asset.Phase, _ string) error {
+func (s *seqExecutor) Execute(_ context.Context, _ asset.Phase, _ string) error {
 	i := s.calls
 	s.calls++
 	if i < len(s.errs) {

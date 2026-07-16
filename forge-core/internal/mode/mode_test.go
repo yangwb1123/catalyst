@@ -30,42 +30,45 @@ type effectiveCase struct {
 	wantEvolve   string // EvolveDepth label
 	wantDiscover string // DiscoverDepth label
 	wantDesign   string // DesignDepth label
+	wantReview   string // ReviewDepth label
 	wantADR      bool
 }
 
 var effectiveCases = []effectiveCase{
 	// ── mode baselines under the freest lifecycle (idea) — the mode shows through ──
 	// explorer is the headline lean posture: only "does it run", no reviewer,
-	// shallowest (opportunistic) evolve loop, SKIPS discover, light design, no ADR.
-	{"explorer/idea lean set", "explorer", "idea", "build,lint", false, EvolveOpportunistic, DiscoverSkip, DesignLight, false},
-	{"balanced/idea", "balanced", "idea", "build,complexity,lint,test", true, EvolveStandard, DiscoverLight, DesignStandard, false},
-	{"engineering/idea full", "engineering", "idea", allGatesSorted, true, EvolveThorough, DiscoverFull, DesignFull, true},
+	// shallowest (opportunistic) evolve loop, SKIPS discover, light design, SKIPS
+	// the deep review, no ADR.
+	{"explorer/idea lean set", "explorer", "idea", "build,lint", false, EvolveOpportunistic, DiscoverSkip, DesignLight, ReviewSkip, false},
+	{"balanced/idea", "balanced", "idea", "build,complexity,lint,test", true, EvolveStandard, DiscoverLight, DesignStandard, ReviewStandard, false},
+	{"engineering/idea full", "engineering", "idea", allGatesSorted, true, EvolveThorough, DiscoverFull, DesignFull, ReviewFull, true},
 	// cto produces no code → empty gate-set, reviewer ON (reviews docs), advisory
-	// evolve, but FULL discover/design + ADR (it IS the analysis-producing mode).
-	{"cto/idea no code gates", "cto", "idea", "", true, EvolveAdvisory, DiscoverFull, DesignFull, true},
+	// evolve, but FULL discover/design/review + ADR (it IS the analysis-producing mode).
+	{"cto/idea no code gates", "cto", "idea", "", true, EvolveAdvisory, DiscoverFull, DesignFull, ReviewFull, true},
 
 	// ── lifecycle tightens the floor (can only ADD gates / force reviewer) ──
-	// idea/mvp/growth impose NO evolve/discover/design/adr floor → mode passes through.
-	{"explorer/mvp adds build+lint floor", "explorer", "mvp", "build,lint", false, EvolveOpportunistic, DiscoverSkip, DesignLight, false},
-	{"explorer/growth raises gate floor only", "explorer", "growth", "build,complexity,lint,test", false, EvolveOpportunistic, DiscoverSkip, DesignLight, false},
+	// idea/mvp/growth impose NO evolve/discover/design/review/adr floor → mode passes through.
+	{"explorer/mvp adds build+lint floor", "explorer", "mvp", "build,lint", false, EvolveOpportunistic, DiscoverSkip, DesignLight, ReviewSkip, false},
+	{"explorer/growth raises gate floor only", "explorer", "growth", "build,complexity,lint,test", false, EvolveOpportunistic, DiscoverSkip, DesignLight, ReviewSkip, false},
 
 	// ── ★ production override: safety veto forces FULL everything ★ ──
 	// explorer is the loosest mode; production STILL forces every gate + reviewer,
 	// raises opportunistic→standard, AND raises discover skip→full, design light→full,
-	// ADR false→true (no prototype skip-discover / no-ADR in prod).
-	{"explorer/production OVERRIDE full", "explorer", "production", allGatesSorted, true, EvolveStandard, DiscoverFull, DesignFull, true},
-	{"balanced/production full", "balanced", "production", allGatesSorted, true, EvolveStandard, DiscoverFull, DesignFull, true},
-	// engineering is already thorough/full/full/true: the floor RAISES, never caps.
-	{"engineering/production stays thorough", "engineering", "production", allGatesSorted, true, EvolveThorough, DiscoverFull, DesignFull, true},
-	// cto's advisory is raised to standard; discover/design/adr already full/full/true.
-	{"cto/production full", "cto", "production", allGatesSorted, true, EvolveStandard, DiscoverFull, DesignFull, true},
+	// review skip→full, ADR false→true (no prototype skip-discover / skip-review /
+	// no-ADR in prod).
+	{"explorer/production OVERRIDE full", "explorer", "production", allGatesSorted, true, EvolveStandard, DiscoverFull, DesignFull, ReviewFull, true},
+	{"balanced/production full", "balanced", "production", allGatesSorted, true, EvolveStandard, DiscoverFull, DesignFull, ReviewFull, true},
+	// engineering is already thorough/full/full/full/true: the floor RAISES, never caps.
+	{"engineering/production stays thorough", "engineering", "production", allGatesSorted, true, EvolveThorough, DiscoverFull, DesignFull, ReviewFull, true},
+	// cto's advisory is raised to standard; discover/design/review/adr already full/full/full/true.
+	{"cto/production full", "cto", "production", allGatesSorted, true, EvolveStandard, DiscoverFull, DesignFull, ReviewFull, true},
 
 	// ── ★ fail-safe: unknown/empty input over-enforces (full everything, std evolve) ★ ──
-	{"unknown mode → full", "bogus-mode", "mvp", allGatesSorted, true, EvolveStandard, DiscoverFull, DesignFull, true},
-	{"empty mode → full", "", "mvp", allGatesSorted, true, EvolveStandard, DiscoverFull, DesignFull, true},
-	{"unknown lifecycle → full", "explorer", "bogus-lifecycle", allGatesSorted, true, EvolveStandard, DiscoverFull, DesignFull, true},
-	{"empty lifecycle → full", "explorer", "", allGatesSorted, true, EvolveStandard, DiscoverFull, DesignFull, true},
-	{"both unknown → full", "bogus", "bogus", allGatesSorted, true, EvolveStandard, DiscoverFull, DesignFull, true},
+	{"unknown mode → full", "bogus-mode", "mvp", allGatesSorted, true, EvolveStandard, DiscoverFull, DesignFull, ReviewFull, true},
+	{"empty mode → full", "", "mvp", allGatesSorted, true, EvolveStandard, DiscoverFull, DesignFull, ReviewFull, true},
+	{"unknown lifecycle → full", "explorer", "bogus-lifecycle", allGatesSorted, true, EvolveStandard, DiscoverFull, DesignFull, ReviewFull, true},
+	{"empty lifecycle → full", "explorer", "", allGatesSorted, true, EvolveStandard, DiscoverFull, DesignFull, ReviewFull, true},
+	{"both unknown → full", "bogus", "bogus", allGatesSorted, true, EvolveStandard, DiscoverFull, DesignFull, ReviewFull, true},
 }
 
 func TestEffective(t *testing.T) {
@@ -86,6 +89,9 @@ func TestEffective(t *testing.T) {
 			}
 			if got.DesignDepth != c.wantDesign {
 				t.Errorf("Effective(%q,%q) design-depth = %q, want %q", c.mode, c.lifecycle, got.DesignDepth, c.wantDesign)
+			}
+			if got.ReviewDepth != c.wantReview {
+				t.Errorf("Effective(%q,%q) review-depth = %q, want %q", c.mode, c.lifecycle, got.ReviewDepth, c.wantReview)
 			}
 			if got.ADR != c.wantADR {
 				t.Errorf("Effective(%q,%q) adr = %v, want %v", c.mode, c.lifecycle, got.ADR, c.wantADR)
@@ -140,6 +146,40 @@ func TestPolicy_DiscoverSkipped(t *testing.T) {
 		if Effective(m, "idea").DiscoverSkipped() {
 			t.Errorf("%s/idea must NOT skip discovery (light/full)", m)
 		}
+	}
+}
+
+// ReviewSkipped mirrors DiscoverSkipped exactly: true ONLY for the explicit "skip"
+// depth (explorer), false for standard/full and the zero value — so a zero-value
+// Policy (no gating) never skips the review stage.
+func TestPolicy_ReviewSkipped(t *testing.T) {
+	cases := []struct {
+		depth string
+		want  bool
+	}{
+		{ReviewSkip, true},
+		{ReviewStandard, false},
+		{ReviewFull, false},
+		{"", false},      // zero-value Policy → never skip (back-compat)
+		{"bogus", false}, // unknown → never skip (fail-safe: run the stage)
+	}
+	for _, c := range cases {
+		if got := (Policy{ReviewDepth: c.depth}).ReviewSkipped(); got != c.want {
+			t.Errorf("Policy{ReviewDepth:%q}.ReviewSkipped() = %v, want %v", c.depth, got, c.want)
+		}
+	}
+	// End-to-end: explorer skips, the others do not.
+	if !Effective("explorer", "idea").ReviewSkipped() {
+		t.Error("explorer/idea must skip the deep review")
+	}
+	for _, m := range []string{"balanced", "engineering", "cto"} {
+		if Effective(m, "idea").ReviewSkipped() {
+			t.Errorf("%s/idea must NOT skip the deep review (standard/full)", m)
+		}
+	}
+	// ★ production override: explorer+production must NOT skip review.
+	if Effective("explorer", "production").ReviewSkipped() {
+		t.Error("explorer+production must NOT skip the deep review (production restores the stage)")
 	}
 }
 
@@ -338,6 +378,7 @@ func TestPriorities_DoNotAffectEffectivePolicy(t *testing.T) {
 	_ = p.EvolveDepth
 	_ = p.DiscoverDepth
 	_ = p.DesignDepth
+	_ = p.ReviewDepth
 	_ = p.ADR
 	// Priorities live on their own type, reached only via the accessor.
 	if _, ok := PrioritiesFor("engineering"); !ok {

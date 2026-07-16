@@ -42,10 +42,16 @@ import (
 // crash or clean stop. It is deliberately small: just enough to re-enter the
 // workflow at the right place and re-explain why it last stopped.
 //
+// FormatVersion is the on-disk format identifier (e.g. "forgeos.checkpoint.v1"),
+// so the loader can distinguish between format generations when a future
+// breaking change is needed. An empty value (pre-format versioning) is
+// treated as "forgeos.checkpoint.v1" for backward compatibility.
+//
 // UpdatedAtUnix is injected by the caller rather than read from time.Now inside
 // this package, so persistence stays a deterministic pure function of its
 // inputs — tests can assert exact bytes, and the clock is the caller's concern.
 type Checkpoint struct {
+	FormatVersion     string  `json:"_format,omitempty"`
 	Workflow          string  `json:"workflow"`           // workflow asset being run (e.g. "build")
 	Mode              string  `json:"mode"`               // execution mode the loop was driving under
 	Iteration         int     `json:"iteration"`          // count of iterations already COMPLETED
@@ -58,10 +64,10 @@ type Checkpoint struct {
 	// resumes at that phase instead of replaying every completed (billed) agent phase.
 	// omitempty keeps a checkpoint written before this field existed (and any clean
 	// iteration-boundary checkpoint) byte-identical on disk and decoding to 0.
-	PhaseIndex int `json:"phase_index,omitempty"`
-	GatesGreen        bool    `json:"gates_green"`        // whether all required gates were green at the snapshot
-	Reason            string  `json:"reason"`             // why the loop last stopped (for resume context)
-	UpdatedAtUnix     int64   `json:"updated_at_unix"`    // caller-supplied snapshot time (Unix seconds)
+	PhaseIndex    int    `json:"phase_index,omitempty"`
+	GatesGreen    bool   `json:"gates_green"`     // whether all required gates were green at the snapshot
+	Reason        string `json:"reason"`          // why the loop last stopped (for resume context)
+	UpdatedAtUnix int64  `json:"updated_at_unix"` // caller-supplied snapshot time (Unix seconds)
 	// SpentUsdMicros is the loop's cumulative billed cost so far, in integer
 	// MICRO-dollars (USD x 1e6), OPAQUE to this package EXACTLY like
 	// trace.Event.CostUsdMicros — persist has no notion of dollars or a "budget"; it
@@ -84,7 +90,19 @@ type Checkpoint struct {
 // target so the rename stays within one filesystem and is therefore atomic — a
 // crash at any point leaves either the prior checkpoint or the new one whole,
 // never a truncated file. Parent directories are created as needed.
-func Save(path string, cp Checkpoint) error {
+//
+// When retain > 0, up to retain historical checkpoints are preserved by rotating
+// the prior checkpoint to path.N before overwriting. This gives the loop a
+// changelog of convergence states for debugging regressions (scan-new-angles
+// §方向5 phase A). retain=0 (the default) keeps the legacy single-file behavior:
+// the prior checkpoint is overwritten without a backup.
+//
+// FormatVersion is set on save so that all new checkpoints carry the version
+// marker; old files without the field decode with default version "v1".
+func Save(path string, cp Checkpoint, retain int) error {
+	if cp.FormatVersion == "" {
+		cp.FormatVersion = "forgeos.checkpoint.v1"
+	}
 	data, err := encode(cp)
 	if err != nil {
 		return err
@@ -92,6 +110,12 @@ func Save(path string, cp Checkpoint) error {
 	if dir := filepath.Dir(path); dir != "" {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return fmt.Errorf("persist: create checkpoint dir: %w", err)
+		}
+	}
+	// Retain history: rotate the existing checkpoint to path.1 before overwriting.
+	if retain > 0 {
+		if _, err := os.Stat(path); err == nil {
+			rotateRetain(path, retain)
 		}
 	}
 	tmp := path + ".tmp"
@@ -105,6 +129,27 @@ func Save(path string, cp Checkpoint) error {
 		return fmt.Errorf("persist: commit checkpoint: %w", err)
 	}
 	return nil
+}
+
+// rotateRetain shifts historical checkpoints by one so the current file becomes
+// path.1, path.1 becomes path.2, etc., up to retain slots. The eldest (path.N)
+// is dropped. Best-effort: a single rename failure logs nothing but does not
+// abort the caller's Save — one missing history entry is tolerable.
+// Only operates on regular files (skips directories), so a test that simulates a
+// write failure by planting a directory at path is unaffected.
+func rotateRetain(path string, retain int) {
+	// Only rotate if path is a regular file — a directory means the write will
+	// fail later (used by tests to simulate write failure), and rotating the
+	// directory would let the write succeed unexpectedly.
+	if fi, err := os.Stat(path); err != nil || !fi.Mode().IsRegular() {
+		return
+	}
+	for i := retain - 1; i >= 1; i-- {
+		older := fmt.Sprintf("%s.%d", path, i)
+		newer := fmt.Sprintf("%s.%d", path, i+1)
+		os.Rename(older, newer) // best-effort: may not exist
+	}
+	os.Rename(path, path+".1") // current → .1
 }
 
 // writeSynced writes data to path and fsyncs before close, so the bytes are on

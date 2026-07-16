@@ -22,6 +22,31 @@
 #              the export budget moved 20 → 30 to match the corrected real ceiling +
 #              headroom. The scaffold/upgrade tooling lives in its own
 #              harness/scaffold/ sub-package, so harness/ stays a thin gate package.
+#              RECALIBRATED 2026-07-02: forge-core/cmd/forge's gates.go was pressed
+#              against file.max_lines (500) by the RequirementConfidence + FileDelta
+#              gap-fix (two more Signals wired end-to-end, mirroring the already-
+#              landed ReviewStatus wiring) — "先拆分,再继续" split it into gates.go
+#              (orchestration) + gate_resolve.go (the N/A exemption matrix + per-gate
+#              resolution) + approve.go (the `forge approve list` CLI, previously
+#              living at the tail of gates.go), raising the file count 14 → 16 and
+#              (on review, wrongly) pushing max_files 14 → 18. gate_resolve.go was
+#              actually pure business logic — gate-name -> tri-state verdict
+#              resolution over the converge/gate types only, no CLI concerns — so it
+#              moved OUT of cmd/forge into internal/gate/resolve.go instead (extending
+#              the existing gate.Result/ProbeAll package, mirroring the
+#              internal/attribution precedent), dropping the count back to 15 (14
+#              original + approve.go, a genuinely new CLI surface with nowhere else
+#              to go). max_files recalibrated 18 → 16 (actual 15 + headroom 1,
+#              matching this metric's original 13-actual/14-budget convention) rather
+#              than left at the wider 18.
+#              RECALIBRATED again 2026-07-02: the secondary_template consumption gap-fix
+#              split prompt_context.go's artifact-context lane (emitsContext/
+#              usesTemplateContext/secondaryTemplateContext/appendArtifactContext) out
+#              into prompt_artifacts.go — a genuine same-package file split (mirroring
+#              prompt_memory.go's precedent), not new CLI surface — raising the count
+#              15 → 16, which met but exhausted the prior budget's headroom. max_files
+#              moved 16 → 17 (actual 16 + headroom 1, same convention as above) so the
+#              next legitimate split has room rather than tripping immediately.
 #   fanin:     max 7 PRODUCTION importing files (forge-core/internal/asset); tests excluded
 #   cognitive: 4 top-level source modules (docs, examples, forge-core, harness)
 #   functions: longest declared function <= 50 lines (policies.yml max_function_lines)
@@ -38,7 +63,7 @@ root:
 
 # ── Per-package / per-directory budget ────────────────────────────────────
 package:
-  max_files: 14       # actual 13 (forge-core/cmd/forge, incl. detect.go + prompt_verdict.go) + headroom
+  max_files: 17       # actual 16 (forge-core/cmd/forge, incl. approve.go + prompt_artifacts.go split out of prompt_context.go 2026-07-02) + headroom
   max_exports: 30     # actual 27 (orchestrator, incl. parallel.go/waves.go) / 23 (mode) + headroom — recalibrated 2026-06-27
 
 # ── Per-file budget ───────────────────────────────────────────────────────

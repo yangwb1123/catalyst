@@ -123,6 +123,26 @@ func TestScore_WeightedSumRenormalized(t *testing.T) {
 	}
 }
 
+func TestScore_NegativeDimValues(t *testing.T) {
+	dims := map[string]float64{"complexity": -0.5, "risk": -0.3}
+	weights := map[string]float64{"complexity": 0.5, "risk": 0.5}
+	score := Score(dims, weights)
+	// Negative inputs produce negative scores but never panic.
+	if score >= 0 {
+		t.Errorf("negative dims should yield negative score, got %v", score)
+	}
+}
+
+func TestScore_NaNDimValue(t *testing.T) {
+	dims := map[string]float64{"complexity": math.NaN(), "risk": 0.5}
+	weights := map[string]float64{"complexity": 0.5, "risk": 0.5}
+	score := Score(dims, weights)
+	// NaN in any dim propagates through weighted sum. Math.IsNaN check.
+	if !math.IsNaN(score) {
+		t.Errorf("NaN dim should produce NaN score, got %v", score)
+	}
+}
+
 func TestScore_ZeroWeightTotal(t *testing.T) {
 	if got := Score(map[string]float64{"a": 0.9}, map[string]float64{}); got != 0 {
 		t.Errorf("Score with empty weights = %v, want 0", got)
@@ -143,6 +163,33 @@ type tierForScoreCase struct {
 	risk       string
 	spendRatio float64
 	want       string
+}
+
+func TestTierForScore_EdgeCases(t *testing.T) {
+	// Negative spendRatio -> in-budget (no downgrade).
+	if got := TierForScore(0.90, "implementation", "low", -1.0); got != Opus {
+		t.Errorf("negative spendRatio should not trigger budget guard, got %q", got)
+	}
+	// NaN spendRatio -> in-budget (no downgrade).
+	if got := TierForScore(0.90, "implementation", "low", math.NaN()); got != Opus {
+		t.Errorf("NaN spendRatio should not trigger budget guard, got %q", got)
+	}
+	// NaN score -> Opus (safest fallback for unknown input).
+	if got := TierForScore(math.NaN(), "crud", "low", 0.0); got != Opus {
+		t.Errorf("NaN score should fall back to Opus, got %q", got)
+	}
+	// score out of [0,1] range -> no panic, tier clamped by band.
+	if got := TierForScore(2.5, "implementation", "low", 0.0); got != Opus {
+		t.Errorf("score=2.5 should map to Opus, got %q", got)
+	}
+	if got := TierForScore(-0.5, "implementation", "low", 0.0); got != Sonnet {
+		t.Errorf("score=-0.5 should map to Sonnet (task floor), got %q", got)
+	}
+	// Fuzzer-discovered: unknown task type + over budget must NOT return "".
+	// Regression: the over-budget branch returned floor ("" for unknown types).
+	if got := TierForScore(249962, "0", "0", 2.0); got != Haiku {
+		t.Errorf("unknown task type over budget should collapse to Haiku, got %q", got)
+	}
 }
 
 var tierForScoreCases = []tierForScoreCase{
@@ -233,6 +280,11 @@ var budgetAdjustCases = []budgetAdjustCase{
 
 	// downgradeOne clamps at Haiku: a haiku base near budget stays haiku (cannot go lower).
 	{"haiku clamps at floor", Haiku, "harness", 0.90, Haiku},
+
+	// NaN and negative spendRatio -> treated as "no cap/fully in budget" (ratio=0).
+	{"NaN spendRatio treated as in budget", Opus, "implementer", math.NaN(), Opus},
+	{"negative spendRatio treated as in budget", Opus, "implementer", -1.0, Opus},
+	{"negative small spendRatio treated as in budget", Sonnet, "qa", -0.01, Sonnet},
 }
 
 // TestBudgetAdjustTier is the decisive boundary table for the near-budget down-tier: the
@@ -248,4 +300,20 @@ func TestBudgetAdjustTier(t *testing.T) {
 			}
 		})
 	}
+}
+
+// FuzzTierForScore ensures TierForScore never panics on ANY input and always
+// returns one of the four valid verdicts (Haiku / Sonnet / Opus / EscalateToHuman).
+// Run: go test -fuzz=FuzzTierForScore -fuzztime=30s ./internal/routing/
+func FuzzTierForScore(f *testing.F) {
+	f.Add(float64(0.5), "implementation", "low", float64(0.0))
+	f.Add(float64(math.NaN()), "", "", float64(math.NaN()))
+	f.Add(float64(1e6), "security", "critical", float64(2.0))
+	f.Fuzz(func(t *testing.T, score float64, taskType string, risk string, spendRatio float64) {
+		got := TierForScore(score, taskType, risk, spendRatio)
+		valid := got == Haiku || got == Sonnet || got == Opus || got == EscalateToHuman
+		if !valid {
+			t.Errorf("TierForScore(%v, %q, %q, %v) = %q (unexpected)", score, taskType, risk, spendRatio, got)
+		}
+	})
 }

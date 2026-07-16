@@ -367,3 +367,54 @@ func TestConverge_NonHumanGate_DelegatesToEvaluate(t *testing.T) {
 		t.Error("external stop has no criteria; Converge must report not-met (zero-criteria rule)")
 	}
 }
+
+// ── requirement_confidence metric (discover.yml) ─────────────────────────
+
+func TestEvaluate_RequirementConfidence(t *testing.T) {
+	cases := []struct {
+		name string
+		crit asset.Criterion
+		sig  Signals
+		want bool
+	}{
+		{">= threshold met", asset.Criterion{Metric: "requirement_confidence", Operator: ">=", Threshold: ptr(80)},
+			Signals{RequirementConfidence: 85}, true},
+		{">= threshold unmet", asset.Criterion{Metric: "requirement_confidence", Operator: ">=", Threshold: ptr(80)},
+			Signals{RequirementConfidence: 70}, false},
+		{"zero confidence (no data) unmet", asset.Criterion{Metric: "requirement_confidence", Operator: ">=", Threshold: ptr(80)},
+			Signals{RequirementConfidence: 0}, false},
+		{"missing threshold unmet", asset.Criterion{Metric: "requirement_confidence", Operator: ">="},
+			Signals{RequirementConfidence: 85}, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			results, _ := Evaluate([]asset.Criterion{c.crit}, c.sig)
+			if results[0].Met != c.want {
+				t.Errorf("Met=%v, want %v (detail=%q)", results[0].Met, c.want, results[0].Detail)
+			}
+		})
+	}
+}
+
+// ── review_status metric (review.yml) ───────────────────────────────────
+
+func TestEvaluate_ReviewStatus(t *testing.T) {
+	cases := []struct {
+		name string
+		sig  Signals
+		want bool
+	}{
+		{"approved is met", Signals{ReviewStatus: "approved"}, true},
+		{"not approved is unmet", Signals{ReviewStatus: "request_changes"}, false},
+		{"empty status (no review) is unmet", Signals{ReviewStatus: ""}, false},
+	}
+	crit := asset.Criterion{Metric: "review_status", Operator: "==", Value: "approved"}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			results, _ := Evaluate([]asset.Criterion{crit}, c.sig)
+			if results[0].Met != c.want {
+				t.Errorf("Met=%v, want %v (detail=%q)", results[0].Met, c.want, results[0].Detail)
+			}
+		})
+	}
+}

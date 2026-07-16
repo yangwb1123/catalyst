@@ -11,6 +11,7 @@ import (
 // Every field is non-zero so a round-trip that drops or zeroes one is caught.
 func sampleCheckpoint() Checkpoint {
 	return Checkpoint{
+		FormatVersion:     "forgeos.checkpoint.v1",
 		Workflow:          "build",
 		Mode:              "autonomous",
 		Iteration:         7,
@@ -25,7 +26,7 @@ func TestSaveLoad_RoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "checkpoint.json")
 	want := sampleCheckpoint()
 
-	if err := Save(path, want); err != nil {
+	if err := Save(path, want, 0); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 	got, found, err := Load(path)
@@ -82,13 +83,13 @@ func TestSave_OverwriteIsAtomicAndClean(t *testing.T) {
 	path := filepath.Join(dir, "checkpoint.json")
 
 	first := sampleCheckpoint()
-	if err := Save(path, first); err != nil {
+	if err := Save(path, first, 0); err != nil {
 		t.Fatalf("Save first: %v", err)
 	}
 	second := first
 	second.Iteration = 42
 	second.Reason = "converged"
-	if err := Save(path, second); err != nil {
+	if err := Save(path, second, 0); err != nil {
 		t.Fatalf("Save second: %v", err)
 	}
 
@@ -123,7 +124,7 @@ func TestSave_CreatesMissingParentDirs(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "nested", "deeper", "checkpoint.json")
 	want := sampleCheckpoint()
 
-	if err := Save(path, want); err != nil {
+	if err := Save(path, want, 0); err != nil {
 		t.Fatalf("Save into missing dirs: %v", err)
 	}
 	got, found, err := Load(path)

@@ -13,6 +13,11 @@ DESIGN
   Solution-Architect    → 架构(按 lifecycle 分阶段,非峰值 QPS)
   Proposal-Generator    → 1页方案+成本+风险 ──▶ ★ HUMAN APPROVAL ★
                                                  └ 批准 → 生成 .agent/{PROJECT,ROADMAP,ARCHITECTURE}.md
+REVIEW  (深度由 mode 裁决;对齐 AI-SDLC Stage 2-6)
+  Security-Engineer     → STRIDE 威胁建模 + RFC 合规矩阵
+  Distributed-Engineer  → 故障模式矩阵 + 一致性策略 + 重试策略
+  Performance-Engineer  → 性能预算 + 生产就绪检查清单
+  CTO                   → 综合裁决(Approve/Simplify/Redesign/Delay/Reject)
 BUILD
   Planner → Implementer → [Harness 闸门] → Reviewer → QA   stop: ROADMAP 100%
 EVOLVE

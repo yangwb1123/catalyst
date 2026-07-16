@@ -1,6 +1,7 @@
 package orchestrator
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"time"
@@ -27,12 +28,20 @@ import (
 // loop. A KindTimeout retry does NOT wait — it already consumed its whole deadline (we don't
 // blanket-sleep every retryable kind). The backoff is BOUNDED: charged against the SAME MaxRetries
 // budget, so a persistently overloaded backend exhausts the budget and aborts — never unbounded.
-func (e Engine) runAgentPhase(p asset.Phase, mode string) error {
+func (e Engine) runAgentPhase(ctx context.Context, p asset.Phase, mode string) error {
 	if e.Exec == nil {
 		return fmt.Errorf("phase %s: no agent executor configured (fail closed)", p.Name)
 	}
 	for attempt := 0; ; attempt++ {
-		err := e.Exec.Execute(p, mode)
+		// Before each attempt, check if the parent context has been cancelled
+		// (e.g. SIGINT). This avoids starting a long-running phase that would
+		// immediately be torn down.
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("phase %s: cancelled before attempt %d: %w", p.Name, attempt+1, ctx.Err())
+		default:
+		}
+		err := e.Exec.Execute(ctx, p, mode)
 		if err == nil {
 			return nil
 		}

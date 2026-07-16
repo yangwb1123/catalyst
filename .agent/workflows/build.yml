@@ -22,7 +22,7 @@ description: >
 # ── mode 裁决:开哪些 gate、coverage 阈值、Reviewer 是否必须 ──
 # central knob: which gates run, coverage threshold, whether reviewer is mandatory.
 # 权威定义在 ../policies/modes.yml 的 harness.*;本文件按 mode 取并集。
-mode_gating:
+mode_gating:                                             # NOTE: not read by forge-core — depth is actually enforced via internal/mode's independently-maintained Go mirror of modes.yml; block kept as human-readable cross-reference
   gate_set: ../policies/modes.yml#harness.gates          # 单一事实源 / single source of truth
   reviewer_required: ../policies/modes.yml#workflow_depth.reviewer
   note: >
@@ -60,7 +60,7 @@ phases:
     agent: harness                      # 非 LLM:跑工具链 / not an LLM — runs the toolchain
     readonly: true                      # 只读校验,不改代码 / verifies, never edits
     required_gates: [lint, test, build, complexity, arch, security]   # 实际生效集由 mode 过滤 / filtered by mode
-    blocking: true                      # 红灯阻断本增量(enforce: block 时)/ red blocks the increment
+    blocking: true                      # 红灯阻断本增量(enforce: block 时)/ red blocks the increment — NOTE: value not read by forge-core; a failing gate phase without an on_fail loop-back already aborts the run unconditionally by default
     description: >
       运行 mode 选定的闸门子集;`node harness/gate.mjs` + 语言适配器(eslint/golangci-lint/radon/madge…)。
       不绿则回 implementer。Run mode-selected gate subset; loop back to implementer if not green.

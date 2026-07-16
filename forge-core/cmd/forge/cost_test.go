@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"math"
 	"path/filepath"
 	"strings"
@@ -139,6 +140,57 @@ func TestParseReviewerVerdict_UnwrapsClaudeEnvelopeAndEchoSentinel(t *testing.T)
 	}
 }
 
+// parseExecutiveVerdict on all FIVE contracted tokens (.agent/agents/cto.md's
+// "executive-review" section) must parse to the matching NORMALIZED constant with
+// ok=true — the mirror of TestParseReviewerVerdict_ApproveAndRequestChanges, but for
+// the review.yml P4 "唯一裁决" vocabulary.
+func TestParseExecutiveVerdict_AllFiveTokens(t *testing.T) {
+	cases := []struct {
+		last string
+		want string
+	}{
+		{"VERDICT: APPROVE", VerdictApprove},
+		{"VERDICT: APPROVE_WITH_SIMPLIFICATION", VerdictApproveWithSimplification},
+		{"VERDICT: REDESIGN", VerdictRedesign},
+		{"VERDICT: DELAY", VerdictDelay},
+		{"VERDICT: REJECT", VerdictReject},
+	}
+	for _, c := range cases {
+		out := "## Executive Review\nsynthesizing all three dimensions...\n" + c.last
+		if v, ok := parseExecutiveVerdict(out); !ok || v != c.want {
+			t.Errorf("parseExecutiveVerdict(%q) = (%q,%v), want (%q,true)", c.last, v, ok, c.want)
+		}
+	}
+}
+
+// HONESTY (mirrors parseReviewerVerdict's malformed test): a missing, wrapped, or
+// unrecognized last line yields ok=false — never a fabricated verdict.
+func TestParseExecutiveVerdict_MalformedOrMissingIsNotOK(t *testing.T) {
+	for _, out := range []string{
+		"",
+		"   ",
+		"no verdict at all",
+		"VERDICT: APPROVE\nbut wait, more", // not the LAST line
+		"`VERDICT: REDESIGN`",              // wrapped
+		"VERDICT: MAYBE",                   // unknown token
+		"verdict: approve",                 // wrong case
+		"VERDICT: REQUEST_CHANGES",         // the REVIEWER's binary token, not executive
+	} {
+		if v, ok := parseExecutiveVerdict(out); ok || v != "" {
+			t.Errorf("malformed/missing executive verdict %q must yield (\"\",false); got (%q,%v)", out, v, ok)
+		}
+	}
+}
+
+// A claude JSON envelope whose `result` ends in an executive VERDICT line must be
+// UNWRAPPED first — the exact mirror of parseReviewerVerdict's envelope handling.
+func TestParseExecutiveVerdict_UnwrapsClaudeEnvelope(t *testing.T) {
+	envelope := `{"type":"result","total_cost_usd":0.02,"result":"综合裁决...\nVERDICT: APPROVE_WITH_SIMPLIFICATION"}`
+	if v, ok := parseExecutiveVerdict(envelope); !ok || v != VerdictApproveWithSimplification {
+		t.Errorf("a claude envelope's result must be unwrapped before scanning; got (%q,%v)", v, ok)
+	}
+}
+
 // The claude --executor=command path must install the 529 overload recognizer, and a stub
 // (echo) must NOT — symmetric to the cost Observe / RenderLog wiring. This proves the vendor
 // recognizer reaches the generic executor only for claude, so a failing stub can never be
@@ -272,7 +324,7 @@ func TestAgentExecutor_EchoEmitsNoCostEvent(t *testing.T) {
 	if strings.Contains(argv, "--output-format") {
 		t.Errorf("echo (a stub) must NOT receive --output-format json; argv=%s", argv)
 	}
-	if err := ce.Execute(asset.Phase{Name: "implementer"}, "balanced"); err != nil {
+	if err := ce.Execute(context.Background(), asset.Phase{Name: "implementer"}, "balanced"); err != nil {
 		t.Fatalf("Execute(echo): %v", err)
 	}
 	if costCalls != 0 {
@@ -351,7 +403,7 @@ func TestBuildLoop_ThreadsCostSinkIntoExecutor(t *testing.T) {
 	wf := asset.Workflow{Stage: "evolve", Stop: asset.StopCondition{Type: "external"},
 		Phases: []asset.Phase{{Name: "implementer", Agent: "implementer"}}}
 	wantModel := orchestrator.PhaseTier(wf.Phases[0], "balanced")
-	loop, _, _ := buildLoop(wf, o, 1, func(string) {}, costEmitter(trace.NewTracer(&buf), func(string) {}), &runBudget{})
+	loop, _, _ := buildLoop(wf, o, 1, func(string) {}, costEmitter(trace.NewTracer(&buf), func(string) {}), &runBudget{}, "", nil)
 
 	ce, ok := loop.Engine.Exec.(orchestrator.CommandExecutor)
 	if !ok {

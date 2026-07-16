@@ -1,13 +1,23 @@
-// prompt_memory.go — the cross-session MEMORY lane of the prompt's Context Engine
-// (split out of prompt_context.go to keep each file under the volume budget). memory's
-// store is APPEND-ONLY: the evolve loop records one entry per iteration and never
-// rewrites, so over a long run (the package doc's "a 24h run") it grows without bound.
-// The old memoryContext injected EVERY entry, so the memory lane was the one prompt lane
-// with no ceiling — on a marathon run it would eventually overrun the context window, the
-// same "long-run inevitable" failure class as the 529 overload. This file bounds it:
-// boundMemory caps the injected set with a recency-floor + relevance mix, reusing the
-// internal/prompt BM25-lite Retrieve (the "everything → the relevant few" library) for the
-// older entries while always keeping the freshest N so the latest lessons are never lost.
+// prompt_memory.go — the cross-session MEMORY lane of the prompt's Context Engine,
+// plus the sibling in-process LEDGERS that buildPrompt (prompt_context.go) reads
+// state back from: phaseOutputLedger (feeds_forward output), verdictLedger (the
+// reviewer's APPROVE/REQUEST_CHANGES), and reviewFindingsLedger (targeted-repair
+// findings routed to the loop-back target). All are split out of prompt_context.go
+// to keep both files under the volume budget (verdictLedger/reviewFindingsLedger
+// were briefly their own prompt_verdict.go; merged back in here to keep cmd/forge's
+// non-test file count under its package budget — the ledgers share truncateSummary
+// and phaseOutputSummaryCap, so consolidating them removed a needless cross-file
+// duplication risk too).
+//
+// memory's store is APPEND-ONLY: the evolve loop records one entry per iteration and
+// never rewrites, so over a long run (the package doc's "a 24h run") it grows without
+// bound. The old memoryContext injected EVERY entry, so the memory lane was the one
+// prompt lane with no ceiling — on a marathon run it would eventually overrun the
+// context window, the same "long-run inevitable" failure class as the 529 overload.
+// This file bounds it: boundMemory caps the injected set with a recency-floor +
+// relevance mix, reusing the internal/prompt BM25-lite Retrieve (the "everything → the
+// relevant few" library) for the older entries while always keeping the freshest N so
+// the latest lessons are never lost.
 //
 // Layering: selection lives HERE in cmd/forge (the prompt-building layer) and calls the
 // prompt library DOWNWARD (prompt.Retrieve / prompt.Doc); internal/memory is untouched —
@@ -19,6 +29,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 
 	"forgeos/forge-core/internal/memory"
 	"forgeos/forge-core/internal/prompt"
@@ -163,7 +174,243 @@ func memoryContext(repoRoot, query string) []string {
 	var b strings.Builder
 	b.WriteString("Project memory (gaps / decisions / lessons from prior iterations):")
 	for _, e := range rel {
-		fmt.Fprintf(&b, "\n- [%s] %s — %s (iter %d)", e.Kind, e.Topic, e.Detail, e.Iteration)
+		prefix := ""
+		if e.Confidence < 0.3 {
+			prefix = " [unverified]"
+		} else if e.Confidence < 0.7 {
+			prefix = " [low-confidence]"
+		}
+		fmt.Fprintf(&b, "\n- [%s]%s %s — %s (iter %d)", e.Kind, prefix, e.Topic, e.Detail, e.Iteration)
+		if e.Source != "" {
+			fmt.Fprintf(&b, " [source: %s]", e.Source)
+		}
 	}
 	return []string{b.String()}
+}
+
+// phaseOutputSummaryCap bounds how many bytes of a fed-forward phase's output are
+// remembered. The planner's output (a sprint split + acceptance criteria) can be long;
+// injecting it whole into every later phase's prompt would bloat the prompt (and the
+// token bill) without adding signal past the first screenful. record truncates beyond
+// this cap and appends an ellipsis marker so the downstream agent knows it was clipped.
+// Shared by phaseOutputLedger and reviewFindingsLedger below.
+const phaseOutputSummaryCap = 800
+
+// truncateSummary clips s to phaseOutputSummaryCap runes, appending a marker when it
+// did clip so the reader knows the output continued. Rune-based (not byte-based) so a
+// multi-byte UTF-8 boundary is never split mid-character.
+func truncateSummary(s string) string {
+	r := []rune(s)
+	if len(r) <= phaseOutputSummaryCap {
+		return s
+	}
+	return string(r[:phaseOutputSummaryCap]) + " …(已截断)"
+}
+
+// phaseOutputLedger accumulates the output of every phase whose asset declares
+// feeds_forward, keyed by phase name, preserving first-seen order for a stable render.
+// It is the in-memory bridge between the agent executor's Observe sink (which writes it,
+// one phase at a time, for a feeds_forward phase only) and buildPrompt (which reads
+// contextLines() into a LATER phase's prompt) — the EXACT structural mirror of
+// gateLedger (prompt_context.go), but carrying planner-style planning output instead of
+// gate verdicts.
+//
+// CONCURRENCY: mu guards summary+order for the OPT-IN parallel orchestrator (the
+// parallelize-then-lock the prior comment foresaw); the serial path takes the
+// uncontended lock and is byte-for-byte unchanged.
+type phaseOutputLedger struct {
+	mu      sync.Mutex        // guards summary+order under parallel execution
+	summary map[string]string // phase name -> latest (truncated) output summary
+	order   []string          // phase names in first-seen order (stable rendering)
+}
+
+// newPhaseOutputLedger returns an empty ledger ready to record phase outputs.
+func newPhaseOutputLedger() *phaseOutputLedger {
+	return &phaseOutputLedger{summary: map[string]string{}}
+}
+
+// record stores one phase's latest output, TRUNCATED to phaseOutputSummaryCap (with a
+// trailing ellipsis when clipped) so a long planner output cannot bloat downstream
+// prompts. It appends to the render order only the FIRST time a name is seen (a re-run
+// phase — across loop-back or evolve iterations — updates its summary in place, keeping
+// its original position), exactly like gateLedger.record. Safe on a nil receiver
+// (no-op) so a caller that never constructed a ledger cannot panic.
+func (l *phaseOutputLedger) record(phase, output string) {
+	if l == nil {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if _, seen := l.summary[phase]; !seen {
+		l.order = append(l.order, phase)
+	}
+	l.summary[phase] = truncateSummary(output)
+}
+
+// context renders the recorded phase outputs as a prompt context block, or "" when the
+// ledger is nil or empty (no feeds_forward phase has run yet). The text is HONEST about
+// what this is: the prior PLANNING phase's own output (the planner's task split /
+// acceptance criteria), offered to the implementer and reviewer as reference — NOT a
+// gate verdict, NOT a fabricated fact. Each phase renders as a labeled block in
+// first-seen order.
+func (l *phaseOutputLedger) context() string {
+	if l == nil {
+		return ""
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if len(l.order) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("前序规划阶段产出(planner 的任务拆分/验收标准,供实现与审查参考 —— 这是上游规划角色的客观产出,不是闸门结果):")
+	for _, name := range l.order {
+		b.WriteString("\n\n### ")
+		b.WriteString(name)
+		b.WriteString("\n")
+		b.WriteString(l.summary[name])
+	}
+	return b.String()
+}
+
+// contextLines wraps context() as a slice ready to append onto a prompt's context lanes
+// (nil when there is nothing to inject — symmetric with gateLedger.contextLines and
+// memoryContext), so buildPrompt stays a flat sequence of appends with no inline check.
+func (l *phaseOutputLedger) contextLines() []string {
+	if c := l.context(); c != "" {
+		return []string{c}
+	}
+	return nil
+}
+
+// verdictLedger remembers the latest machine-readable verdict of every AGENT phase
+// that emitted one (today: the reviewer's APPROVE/REQUEST_CHANGES), keyed by phase
+// name. It is the cmd/forge end of Engine.AgentVerdict's PULL wire — the reverse twin
+// of gateLedger (which serves the OnGateResult PUSH): the Observe sink writes it via
+// record, and the orchestrator reads it back via get. Storing the NORMALIZED token
+// (not the raw output) keeps the engine vendor-free.
+//
+// CONCURRENCY: mu guards verdict for the OPT-IN parallel orchestrator (uncontended,
+// byte-for-byte unchanged on the serial path).
+type verdictLedger struct {
+	mu      sync.Mutex
+	verdict map[string]string // phase name -> latest normalized verdict token
+}
+
+// newVerdictLedger returns an empty ledger ready to record agent verdicts.
+func newVerdictLedger() *verdictLedger { return &verdictLedger{verdict: map[string]string{}} }
+
+// record stores one phase's latest verdict (the normalized APPROVE/REQUEST_CHANGES
+// token), overwriting a prior one so a re-run reviewer's NEWEST verdict wins. Safe on a
+// nil receiver (no-op) so a run that never built a ledger cannot panic.
+func (l *verdictLedger) record(phase, verdict string) {
+	if l == nil {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.verdict[phase] = verdict
+}
+
+// get reads back a phase's recorded verdict for Engine.AgentVerdict: (token, true) when
+// one was recorded, ("", false) when none was — nil-safe, so an unwired ledger reports
+// "no verdict" and the orchestrator proceeds (fail-open), never loops or panics.
+func (l *verdictLedger) get(phase string) (string, bool) {
+	if l == nil {
+		return "", false
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	v, ok := l.verdict[phase]
+	return v, ok
+}
+
+// wasReworked returns true when any phase recorded a REQUEST_CHANGES verdict —
+// the "rework" signal for trajectory-aware scorecard updates and the Reflect step.
+// Nil-safe (no verdicts = no rework). Used by the wind-down to carry the real
+// reviewer-bounce signal into the learning loop's trajectory row.
+func (l *verdictLedger) wasReworked() bool {
+	if l == nil {
+		return false
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	for _, v := range l.verdict {
+		if v == VerdictRequestChanges {
+			return true
+		}
+	}
+	return false
+}
+
+// reviewFindingsLedger carries the reviewer's findings text BACKWARD across a directed
+// loop-back, to be injected into the IMPLEMENTER's next prompt for targeted repair. It
+// is a deliberately ONE-DIRECTION edge: keyed by the loop-back TARGET phase (the
+// implementer, read from the reviewer phase's on_fail.target — data-driven, zero
+// hard-coded agent name), and buildPrompt injects it ONLY into that target phase. The
+// reviewer, when it re-runs, has p.Name != target, so it NEVER receives these findings —
+// preserving its fresh-context independence (the D3/AGENTS red line: a reviewer must not
+// read its own prior self-report).
+//
+// CONCURRENCY: mu guards findings for the OPT-IN parallel orchestrator, as the sibling
+// ledgers do (uncontended on the serial path).
+type reviewFindingsLedger struct {
+	mu       sync.Mutex
+	findings map[string]string // loop-back TARGET phase -> latest (truncated) findings
+}
+
+// newReviewFindingsLedger returns an empty ledger ready to record reviewer findings.
+func newReviewFindingsLedger() *reviewFindingsLedger {
+	return &reviewFindingsLedger{findings: map[string]string{}}
+}
+
+// record stores the reviewer's findings for the loop-back TARGET phase (its recipient),
+// TRUNCATED to phaseOutputSummaryCap so a verbose review cannot bloat the implementer's
+// prompt — reusing the same cap/marker as phaseOutputLedger. A re-review overwrites with
+// the newest findings. Safe on a nil receiver (no-op).
+func (l *reviewFindingsLedger) record(targetPhase, findings string) {
+	if l == nil {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.findings[targetPhase] = truncateSummary(findings)
+}
+
+// contextLines renders the findings recorded for the phase named `name` as a single
+// appendable prompt block, or nil when none were recorded for it (the common case — the
+// gate is in buildPrompt, which only consults this for the implementer). The text is
+// HONEST about provenance: the previous fresh-context Reviewer's per-finding
+// REQUEST_CHANGES notes, offered for TARGETED repair — explicitly NOT a gate verdict.
+func (l *reviewFindingsLedger) contextLines(name string) []string {
+	if l == nil {
+		return nil
+	}
+	l.mu.Lock()
+	f, ok := l.findings[name]
+	l.mu.Unlock()
+	if !ok || f == "" {
+		return nil
+	}
+	return []string{"上一轮 fresh-context Reviewer 判 REQUEST_CHANGES 的逐条 findings(供定向修复参考;非闸门结果,是上游审查角色的判断):\n\n" + f}
+}
+
+// allFindings returns a snapshot copy of all recorded (targetPhase→findings) entries
+// for the Reflect step: structured memory extraction after an iteration completes.
+// Returns nil when the ledger is empty or nil. The copy lets callers safely read
+// after the ledger's next write proceeds.
+func (l *reviewFindingsLedger) allFindings() map[string]string {
+	if l == nil {
+		return nil
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if len(l.findings) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(l.findings))
+	for k, v := range l.findings {
+		out[k] = v
+	}
+	return out
 }

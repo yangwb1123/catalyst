@@ -1,69 +1,56 @@
 // engine_build.go — the orchestrator.Engine ASSEMBLY for the forge CLI: it selects
 // the agent-phase executor (agentExecutor) and wires the shared Engine (buildRunEngine)
 // that BOTH `forge run` (execEngine, main.go) and `forge evolve` (buildLoop, evolve.go)
-// drive, so the two entry points never drift. Split out of main.go so that file stays
-// under the harness's file-size budget while this keeps the wiring it owns in one place.
+// drive, so the two entry points never drift. Split out of main.go to stay under the
+// harness's file-size budget while keeping the wiring it owns in one place.
 package main
 
 import (
+	"context"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
 	"forgeos/forge-core/internal/asset"
+	"forgeos/forge-core/internal/attribution"
 	"forgeos/forge-core/internal/gate"
 	"forgeos/forge-core/internal/mode"
 	"forgeos/forge-core/internal/orchestrator"
 	"forgeos/forge-core/internal/prompt"
+	"forgeos/forge-core/internal/risk"
 	"forgeos/forge-core/internal/routing"
+	"forgeos/forge-core/internal/trace"
 )
 
 // agentExecutor selects the agent-phase executor. "command" builds a per-phase
 // prompt and drives o.agentCmd with it (real execution when agent-cmd is `claude`;
 // `echo` inspects the plumbing safely); anything else is the no-LLM DryRunExecutor.
 //
-// costSink is how this CLI (the ONLY layer that knows the claude JSON shape) records
-// real per-phase dollar cost AND measured wall-clock latency ATTRIBUTED to the routed model:
-// for a claude command the executor's generic Observe sink is pointed at parseClaudeCostUsd,
-// and a parsed cost — paired with the phase's BUDGET-ADJUSTED routed model AND the latency
-// the generic executor measured for this phase — is forwarded to costSink (which the caller
-// wires to a model-stamped trace event carrying cost_usd_micros AND duration_ms). The generic
-// executor stays claude-free — all claude-JSON knowledge lives in the helpers below, never in
-// orchestrator; the latency is the executor's own generic wall-clock span, merely relayed here.
+// costSink records real per-phase dollar cost AND measured latency attributed to the
+// routed model: for claude the generic Observe sink is pointed at parseClaudeCostUsd,
+// and a parsed cost — paired with the BUDGET-ADJUSTED routed model AND the executor's
+// measured latency — is forwarded to costSink. The generic executor stays claude-free.
 //
-// tierOf is the ONE shared per-phase tier resolver (built in buildRunEngine): it computes
-// orchestrator.PhaseTier post-filtered by routing.BudgetAdjustTier and is the SINGLE source
-// the three tier consumers read, so they can never drift apart —
-//   - `claude --model` here in Build (the model the run actually spawns),
-//   - the cost stamp (observeFor → costSink, the model the bill is attributed to),
-//   - the prompt's stated tier (buildPrompt).
+// tierOf is the ONE shared per-phase tier resolver (buildRunEngine): the SINGLE source
+// `claude --model`, the cost stamp, and the prompt's stated tier all read, so the three
+// never drift apart. phaseModel is its NAME-keyed face (phaseTierByName) for the cost
+// Observe seam, which is handed only a phase NAME. Both nil-safe.
 //
-// All three resolve the IDENTICAL adjusted tier for a given phase + spend ratio. phaseModel
-// is the NAME-keyed face of that SAME tierOf (built by phaseTierByName in buildRunEngine,
-// which holds the workflow): the Observe seam is handed only a phase NAME, so the cost path
-// looks the Phase up and runs the same tierOf — name- and Phase-keyed lookups agree by
-// construction. Both are nil-safe (a nil resolver -> un-attributed cost / un-adjusted tier).
-//
-// gates carries this run's gate verdicts into each phase's prompt so a downstream agent
-// is told what the gates found, not made to re-run them. phaseOut carries the output of
-// any prior feeds_forward phase (the planner's task split) into later prompts, and
-// feedsForward reports whether a just-finished phase's output should be remembered there
-// — it is injected (not derived from asset.Phase) because the executor's generic Observe
-// sink receives only (phase name, output), never the Phase, so the FeedsForward lookup
-// must come from the caller, which holds the workflow. verdicts records each reviewer's
-// parsed VERDICT (the Observe sink writes it; the engine's AgentVerdict reads it back to
-// drive a directed loop-back); findings stashes a REQUEST_CHANGES review's notes for the
-// loop-back target (the implementer) and is the ONLY of these injected back into a prompt
-// by name; onFailTarget is the data-driven (phase -> loop-back target) lookup that routes
-// those findings. All are nil-safe (see prompt_context.go); the generic executor stays
-// oblivious to every one of them.
+// gates carries this run's gate verdicts into each phase's prompt. phaseOut carries a
+// prior feeds_forward phase's output into later prompts; feedsForward (injected, since
+// Observe gets only a phase name) reports whether to remember it. verdicts records
+// each reviewer's parsed VERDICT for Engine.AgentVerdict's loop-back; findings stashes
+// a REQUEST_CHANGES review's notes for the loop-back target; onFailTarget routes them.
+// All nil-safe (prompt_context.go); the generic executor stays oblivious to all of them.
 func agentExecutor(o runOpts, logln func(string), costSink func(phase, model string, usd float64, latency time.Duration), tierOf func(p asset.Phase) string, phaseModel func(phase string) string, ctxCache *prompt.ContextCache, gates *gateLedger, phaseOut *phaseOutputLedger, feedsForward func(phase string) bool, verdicts *verdictLedger, findings *reviewFindingsLedger, onFailTarget func(phase string) (string, bool)) orchestrator.AgentExecutor {
 	if o.executor == "command" {
 		isClaude := strings.Contains(o.agentCmd, "claude")
 		ex := orchestrator.CommandExecutor{
 			Build: func(p asset.Phase, mode string) []string {
-				argv := claudeArgv(o, isClaude, tierOf(p))
-				return append(argv, "-p", buildPrompt(o.root, p, mode, tierOf, ctxCache, gates, phaseOut, findings))
+				narrateReadonly(logln, p)
+				argv := claudeArgv(o, isClaude, tierOf(p), p)
+				return append(argv, "-p", requiresToolsGuard(p, true, isClaude, o.agentAllowedTools, logln, buildPrompt(o.root, p, mode, tierOf, ctxCache, gates, phaseOut, findings)))
 			},
 			Dir:            o.root,
 			Timeout:        o.timeout,
@@ -87,29 +74,23 @@ func agentExecutor(o runOpts, logln func(string), costSink func(phase, model str
 }
 
 // claudeArgv builds the leading argv (everything before `-p <prompt>`) for an agent
-// command. For a non-claude command (echo/stubs) it is just [agentCmd] — those tools
-// would choke on flags they don't know and must stay plain (back-compat). For a
-// claude-family command it appends the print-mode flags echo/stubs don't understand:
-//   - --permission-mode: USE tools (write files) headlessly — without it `claude -p`
-//     only DESCRIBES edits it can't apply (omitted when agentPermission is empty);
-//   - --allowedTools: pre-grant the READ-ONLY self-verification commands a print-mode
-//     agent needs to honor the completion discipline. acceptEdits auto-applies Write
-//     but STILL gates Bash, and a headless agent has no one to approve it — so without
-//     this it cannot run `node --test`/`node harness/gate.mjs` to self-check the code it
-//     wrote, refuses to tick a ROADMAP [x], and converge's RoadmapCompletion stalls at
-//     0% (the run burns to max-iter). The default whitelist + the ★recursion-guard
-//     invariant★ (NEVER a `forge`/agent-spawning command — it would let an agent fork
-//     another agent OUTSIDE FORGE_AGENT_DEPTH, a fork-bomb) live on defaultAgentAllowedTools
-//     (main.go). HONESTY: these are validation-only reads; a self-check then [x] is a
-//     claim ABOUT to be re-verified (harness gates / fresh-context reviewer / qa re-run
-//     it), never the final verdict. Omitted when agentAllowedTools is empty (opt-out);
-//   - --model <tier>: honor ForgeOS's ROUTED tier (the opus floor for reviewer/architect/
-//     cto + any per-phase override, then any near-budget down-tier) — without it claude
-//     ignores routing. tier is the shared tierOf read at THIS spawn (the SAME value the
-//     cost stamp and prompt use — one resolver, no drift);
+// command: [agentCmd] for a non-claude command (echo/stubs, back-compat), else the
+// print-mode flags echo/stubs don't understand:
+//   - --permission-mode: USE tools headlessly (else `claude -p` only DESCRIBES edits);
+//   - --disallowedTools "Edit Write" for a p.Readonly phase (readonlyToolScope): real
+//     path-scoped write enforcement (narrateReadonly only narrates it);
+//   - --allowedTools: the operator's self-verification whitelist (o.agentAllowedTools,
+//     e.g. `node --test`/`gate.mjs`; NEVER whitelist `forge` — fork-bomb past
+//     FORGE_AGENT_DEPTH) MERGED (mergeToolList) with any readonly Edit()/Write() re-open
+//     patterns into ONE flag occurrence — `claude --help` (local, zero API spend)
+//     confirms each of --allowedTools/--disallowedTools takes ONE comma-or-space-
+//     separated <tools...> list; a second occurrence's merge-vs-override semantics were
+//     never exercised here. Omitted entirely when the merged value is empty (opt-out);
+//   - --model <tier>: the shared routed tier — the SAME value the cost stamp and
+//     prompt use, no drift;
 //   - --max-budget-usd: the per-call dollar ceiling (omitted when unset);
-//   - --output-format json: emit the cost-bearing envelope this CLI parses (total_cost_usd).
-func claudeArgv(o runOpts, isClaude bool, tier string) []string {
+//   - --output-format json: the cost-bearing envelope this CLI parses (total_cost_usd).
+func claudeArgv(o runOpts, isClaude bool, tier string, p asset.Phase) []string {
 	argv := []string{o.agentCmd}
 	if !isClaude {
 		return argv
@@ -117,8 +98,12 @@ func claudeArgv(o runOpts, isClaude bool, tier string) []string {
 	if o.agentPermission != "" {
 		argv = append(argv, "--permission-mode", o.agentPermission)
 	}
-	if o.agentAllowedTools != "" {
-		argv = append(argv, "--allowedTools", o.agentAllowedTools)
+	deny, allowExtra := readonlyToolScope(p)
+	if deny != "" {
+		argv = append(argv, "--disallowedTools", deny)
+	}
+	if allowed := mergeToolList(o.agentAllowedTools, allowExtra); allowed != "" {
+		argv = append(argv, "--allowedTools", allowed)
 	}
 	argv = append(argv, "--model", tier)
 	if o.agentMaxBudgetUSD != "" {
@@ -127,55 +112,122 @@ func claudeArgv(o runOpts, isClaude bool, tier string) []string {
 	return append(argv, "--output-format", "json")
 }
 
+// mergeToolList joins the operator whitelist (base) and a readonly phase's Edit/Write
+// re-open patterns (extra) into ONE space-separated --allowedTools value (see
+// claudeArgv). Either half may be empty; "" only when both are.
+func mergeToolList(base, extra string) string {
+	switch {
+	case base == "":
+		return extra
+	case extra == "":
+		return base
+	default:
+		return base + " " + extra
+	}
+}
+
+// readonlyAgentWriteScope maps an agent to the claude permission-specifier PATTERN(s)
+// (gitignore-style, project-root-relative — code.claude.com/docs/en/permissions.md)
+// its OWN card (.agent/agents/<agent>.md "硬边界", "不在 X 之外写文件") documents as
+// its sole write target. Keyed by AGENT, not stage: cto's boundary applies whether it
+// runs as design.yml's proposal-generator OR review.yml's executive-review (cto.md's
+// "Review 阶段" section is ADDITIVE, never widens the boundary above it). An agent
+// ABSENT here has NO documented target — reviewer/qa ("不写...代码文件"), explorer
+// ("零写入"), non-LLM `harness` — and stays FULLY denied when readonly, matching its
+// card (readonlyToolScope's zero-pattern branch). planner is a FILE not a dir:
+// planner.md names `.agent/CURRENT_SPRINT.md` itself — build.yml's `emits:
+// task-plan.md` there is a declared-artifact LABEL (read back by emitsContext as a
+// bare repo-root filename), not the real write target; the card wins per this task's
+// brief ("use the convention the project already documents").
+var readonlyAgentWriteScope = map[string][]string{
+	"product-manager":      {"/docs/discovery/**"},
+	"researcher":           {"/docs/discovery/**"},
+	"architect":            {"/docs/design/**"}, // + docs/adr/** via WritesADR below
+	"cto":                  {"/docs/design/**"}, // Design AND Review-stage responsibilities
+	"planner":              {"/.agent/CURRENT_SPRINT.md"},
+	"security-engineer":    {"/docs/review/**"},
+	"distributed-engineer": {"/docs/review/**"},
+	"performance-engineer": {"/docs/review/**"},
+}
+
+// readonlyToolScope returns the claude --disallowedTools value and any --allowedTools
+// re-open patterns for a phase — REAL enforcement of asset.Phase.Readonly (narrateReadonly
+// only narrates it). Non-readonly -> ("", ""): claudeArgv adds nothing, byte-identical.
+// A readonly phase ALWAYS gets "Edit Write" denied, THEN — if its agent has a
+// documented target (readonlyAgentWriteScope), plus docs/adr/** when THIS phase
+// declares writes_adr (WritesADR.Target decoded off the asset, never hardcoded) —
+// Edit()/Write() reopen for that pattern. No documented target -> denial only: fully
+// read-only, matching its card — a correct zero-write phase, not a gap.
+func readonlyToolScope(p asset.Phase) (deny, allow string) {
+	if !p.Readonly {
+		return "", ""
+	}
+	patterns := append([]string(nil), readonlyAgentWriteScope[p.Agent]...)
+	if p.WritesADR != nil && p.WritesADR.Target != "" {
+		patterns = append(patterns, "/"+strings.Trim(p.WritesADR.Target, "/")+"/**")
+	}
+	if len(patterns) == 0 {
+		return "Edit Write", ""
+	}
+	specs := make([]string, 0, len(patterns)*2)
+	for _, pat := range patterns {
+		specs = append(specs, "Edit("+pat+")", "Write("+pat+")")
+	}
+	return "Edit Write", strings.Join(specs, " ")
+}
+
+// narrateReadonly logs a decision-narration line every time a phase declaring
+// readonly: true is spawned under --executor=command. PURELY observational — the
+// actual restriction is claudeArgv's readonlyToolScope (--disallowedTools "Edit
+// Write" + a path-scoped --allowedTools re-open), wired right after this call.
+//
+// HONESTY: readonly is NOT "writes nothing" — several readonly phases still declare
+// `emits:` they must write. readonlyToolScope re-opens Edit/Write for exactly the
+// dir/file each phase's AGENT CARD documents — never a blanket re-open. ENFORCED BY
+// UNIT TEST AGAINST THE DOCUMENTED CLAUDE CLI CONTRACT ONLY (path-scoped Edit()/
+// Write() specifiers, code.claude.com/docs/en/permissions.md; confirmed via a local
+// `claude --help`, zero API spend) — NOT live-verified against a running claude
+// process; no budget was authorized for that.
+//
+// logln nil (a quiet caller) is a no-op; a non-readonly phase is a no-op.
+func narrateReadonly(logln func(string), p asset.Phase) {
+	if !p.Readonly || logln == nil {
+		return
+	}
+	emits := "none declared"
+	if len(p.Emits) > 0 {
+		emits = strings.Join(p.Emits, ", ")
+	}
+	logln(fmt.Sprintf("phase %s: readonly=true (analysis-only — must not modify existing source/product code; MAY still write its declared emits: %s) — ENFORCED: Edit/Write denied via --disallowedTools except for this agent's documented write target, if any (see readonlyToolScope)", p.Name, emits))
+}
+
 // buildRunEngine assembles the orchestrator.Engine shared by `forge run` (execEngine)
 // and `forge evolve` (buildLoop): the SAME four prompt/feedback ledgers wired to the same
 // seams, so the two entry points never drift. The FOUR ledgers, all per-run/iteration and
-// all nil-safe (prompt_context.go):
-//   - gates (gateLedger): OnGateResult writes each gate's objective verdict; the prompt reads it;
-//   - phaseOut (phaseOutputLedger): the Observe sink writes a feeds_forward phase's output (the
-//     planner's task split); a later prompt reads it;
-//   - verdicts (verdictLedger): the Observe sink writes each reviewer's parsed VERDICT;
-//     Engine.AgentVerdict reads it back to drive the directed reviewer loop-back;
-//   - findings (reviewFindingsLedger): on a REQUEST_CHANGES, the Observe sink stashes the
-//     review notes for the loop-back target (the implementer), read into THAT prompt.
+// all nil-safe (prompt_context.go): gates (OnGateResult writes each gate's verdict, the
+// prompt reads it); phaseOut (the Observe sink writes a feeds_forward phase's output, a
+// later prompt reads it); verdicts (the Observe sink writes each reviewer's parsed VERDICT,
+// AgentVerdict reads it back for the directed loop-back); findings (on a REQUEST_CHANGES,
+// the Observe sink stashes the review notes for the loop-back target). feedsForwardOf/
+// onFailTargetOf close over wf so the Observe seam (handed only a phase NAME) can look
+// them up. runGate is injected (run uses gate.HarnessRunner, evolve a refreshing probe).
 //
-// feedsForwardOf/onFailTargetOf close over wf so the Observe seam (handed only a phase
-// NAME) can look up FeedsForward and the on_fail loop-back target. runGate is injected
-// because run uses harnessRunner(probe) while evolve uses a per-iteration refreshing
-// probe; pol/cost/log are likewise the caller's. Only the claude executor path activates
-// the verdict/findings sinks (dry/echo leave AgentVerdict effectively inert).
+// budget (cost.go) is wired in THREE places: budget.feed WRAPS costSink so every billed
+// phase tallies the run total; BudgetExhaustedFunc() supplies the engine's hard-stop (nil
+// when unset); budget.SpendRatio feeds the shared tier resolver's near-budget down-tier.
+// ONE budget per run so the cap meters the whole run.
 //
-// budget is the run-scoped dollar accumulator (cost.go). It is wired in THREE places so the
-// run-level cap holds end to end: budget.feed WRAPS costSink so every billed phase also
-// tallies the run total; budget.BudgetExhaustedFunc() supplies the engine's opaque
-// BudgetExhausted puller (the PR4 hard-stop, nil when --run-budget-usd is unset → byte-for-byte
-// the prior path); and budget.SpendRatio is closed over by the shared tier resolver below for
-// the near-budget DOWN-TIER (PR6). The caller creates ONE budget per run (BEFORE the loop for
-// evolve), so the SAME accumulator is reused across all iterations and the cap meters the whole
-// run — and the spend ratio the resolver reads reflects every prior phase's spend.
+// SHARED TIER RESOLVER (the drift-kill): phaseTierResolver builds the ONE tierOf the run
+// uses everywhere a tier is needed — `claude --model`, the cost stamp, the prompt — so the
+// three can never disagree; it reads budget.SpendRatio at SPAWN time so a phase crossing
+// the near-budget band mid-run is down-tiered from that point on. LEARNING-LOOP READ-BACK:
+// scorecards (scorecard_wind.go) are loaded ONCE here and fed to the resolver, driving
+// routing.HistoryTiebreak for OBSERVABILITY only — FAIL-LOUD-AND-CONTINUE, a malformed
+// scorecards.json WARNs and continues on empty cards.
 //
-// SHARED TIER RESOLVER (PR6, the drift-kill): phaseTierResolver builds the ONE tierOf the run
-// uses everywhere a phase's model tier is needed — `claude --model`, the cost stamp, the
-// prompt — so those three can never disagree (run model X / prompt says Y / cost charged Z).
-// It reads budget.SpendRatio at SPAWN time (each phase, not engine-build time) so a phase that
-// crosses into the near-budget band mid-run is down-tiered from that point on. phaseTierByName
-// is its name-keyed face for the cost Observe seam (handed only a phase NAME), built over the
-// SAME wf+resolver so the two agree by construction.
-//
-// LEARNING-LOOP READ-BACK (PR2): the scorecards the wind-down producer (scorecard_wind.go)
-// writes are loaded ONCE here and threaded into the resolver, closing the loop's read side —
-// PR1 writes scorecards.json, PR2 reads it back. They drive routing.HistoryTiebreak, the
-// decision-chain's last step, for OBSERVABILITY only (the resolver logs history, never lets it
-// change a tier — see phaseTierResolver/logPhaseHistory). FAIL-LOUD-AND-CONTINUE, symmetric to
-// the wind-down's own posture: a cold start (no file) loads (nil,nil) and is silent normal; a
-// MALFORMED scorecards.json is surfaced as a stderr/log WARNING and the run continues on EMPTY
-// cards — history is enrichment, not correctness, so a corrupt scorecard must never abort or
-// re-color a run (it would only mean "no history line", the cold-start path). LoadScorecards is
-// the loop's only fallible step; everything downstream is pure.
-// buildRunEngine returns the assembled Engine plus the verdict and findings ledgers so
-// callers (execEngine in main.go, buildLoop in evolve.go) can thread rework+trajectory
-// signals into the scorecard wind-down and the Reflect memory step without re-building.
-func buildRunEngine(wf asset.Workflow, o runOpts, logln func(string), costSink func(phase, model string, usd float64, latency time.Duration), runGate func(name string) gate.Result, pol mode.Policy, budget *runBudget) (orchestrator.Engine, *verdictLedger, *reviewFindingsLedger) {
+// Returns the assembled Engine plus the verdict/findings ledgers for callers to thread
+// rework+trajectory signals into wind-down/Reflect without re-building.
+func buildRunEngine(wf asset.Workflow, o runOpts, logln func(string), costSink func(phase, model string, usd float64, latency time.Duration), runGate func(name string) gate.Result, pol mode.Policy, budget *runBudget, autoRisk string, autoRiskReasons []string) (orchestrator.Engine, *verdictLedger, *reviewFindingsLedger) {
 	gates := newGateLedger()
 	phaseOut := newPhaseOutputLedger()
 	verdicts := newVerdictLedger()
@@ -198,7 +250,7 @@ func buildRunEngine(wf asset.Workflow, o runOpts, logln func(string), costSink f
 		logln(fmt.Sprintf("forge: WARNING scorecards unreadable (%v) — continuing with no history (routing unaffected; learning-loop read-back skipped)", err))
 		cards = nil
 	}
-	tierOf := phaseTierResolver(o.mode, budget.SpendRatio, cards, logln)
+	tierOf := phaseTierResolver(o.mode, budget.SpendRatio, cards, logln, autoRisk, autoRiskReasons)
 	return orchestrator.Engine{
 		Exec:            agentExecutor(o, logln, budget.feed(costSink), tierOf, phaseTierByName(wf, tierOf), ctxCache, gates, phaseOut, feedsForwardOf(wf), verdicts, findings, onFailTargetOf(wf)),
 		RunGate:         runGate,
@@ -215,59 +267,56 @@ func buildRunEngine(wf asset.Workflow, o runOpts, logln func(string), costSink f
 
 // phaseTierResolver builds the ONE per-phase tier resolver (tierOf) that EVERY tier
 // consumer in a run shares — `claude --model`, the cost stamp, and the prompt — so the
-// three can never drift apart. For a phase it returns routing.BudgetAdjustTier applied to
-// orchestrator.PhaseTier: the routed tier (Opus floor + per-phase model_tier override),
-// then the near-budget down-tier (PR6) keyed on the CURRENT spend ratio.
-//
-// spendRatio is a PULLER (budget.SpendRatio), not a snapshot value: it is invoked afresh
-// on EACH resolve, so the ratio reflects spend accumulated up to THIS spawn — a phase that
-// pushes the run into the [0.80,1.00) near-budget band is down-tiered from then on, not
-// frozen at the engine-build-time (zero) ratio. (PR4's hard-stop fires at ratio>=1.00
-// BEFORE the spawn, so this resolver only ever sees <1.00; the >=1.00 band never reaches it.)
-//
-// HONESTY (down-tier): when the adjustment actually lowers the tier, it logs the down-tier
-// with the ratio and both tiers, naming the quality trade-off and the safety-floor exemption
-// — a real down-tier is never silent. When nothing changes (in budget, or a floor agent, or
-// already Haiku) it logs nothing, so an un-budgeted run's log is byte-for-byte unchanged.
-//
-// cards is the run's loaded scorecards (buildRunEngine reads them once via LoadScorecards).
-// They feed the decision-chain's FINAL step — routing.HistoryTiebreak — purely for
-// OBSERVABILITY (logPhaseHistory), so the chain no longer silently drops its history tail.
-// It NEVER changes the returned tier: history is logged, the budget-adjusted tier `adj` is
-// what every consumer gets. A nil/empty cards (cold start, or a load failure that fell back
-// to empty) simply logs "no scorecard" — byte-for-byte the pre-PR2 tier, just one extra line.
-func phaseTierResolver(mode string, spendRatio func() float64, cards []routing.Scorecard, logln func(string)) func(p asset.Phase) string {
+// three can never drift apart. For a phase it applies: (1) orchestrator.PhaseTier (Opus
+// floor + per-phase model_tier override); (2) riskAdjustedTier (auto-risk escalation,
+// critical -> Opus, high -> Sonnet); (3) routing.BudgetAdjustTier (near-budget
+// down-tier, clamped not to undo risk escalation). autoRisk is the auto-derived risk
+// level from git diff (empty = no changes/no git); autoRiskReasons are the human-
+// readable path-matching hits, logged when escalation fires.
+func phaseTierResolver(mode string, spendRatio func() float64, cards []routing.Scorecard, logln func(string), autoRisk string, autoRiskReasons []string) func(p asset.Phase) string {
 	return func(p asset.Phase) string {
 		base := orchestrator.PhaseTier(p, mode)
+
+		// Step 2: risk-based escalation (before budget, so risk can't be down-tiered).
+		tier := riskAdjustedTier(base, autoRisk)
+		if tier != base && logln != nil {
+			reasons := ""
+			if len(autoRiskReasons) > 0 {
+				reasons = " (" + strings.Join(autoRiskReasons, "; ") + ")"
+			}
+			logln(fmt.Sprintf("phase %s: risk auto-detected=%s — escalating %s→%s%s",
+				p.Name, autoRisk, base, tier, reasons))
+		}
+
+		// Step 3: near-budget down-tier (can only lower risk-escalated tier when
+		// the run is very near its cap — risk escalation is raise-only, but if budget
+		// pressure forces a Haiku below Opus for a critical change, the hard stop fires
+		// before the spawn anyway).
 		ratio := spendRatio()
-		adj := routing.BudgetAdjustTier(base, p.Agent, ratio)
-		if adj != base && logln != nil {
-			logln(fmt.Sprintf("phase %s: near budget (spend-ratio %.2f) — downtiering %s→%s to extend runway (cheaper model, lower quality; safety-floor agents exempt)", p.Name, ratio, base, adj))
+		adj := routing.BudgetAdjustTier(tier, p.Agent, ratio)
+		if adj != tier && logln != nil {
+			logln(fmt.Sprintf("phase %s: near budget (spend-ratio %.2f) — downtiering %s→%s to extend runway (cheaper model, lower quality; safety-floor agents exempt)", p.Name, ratio, tier, adj))
 		}
 		picked := logPhaseHistory(p, adj, cards, logln)
 		return picked
 	}
 }
 
-// logPhaseHistory closes the decision-chain's final step (history-tiebreak) for the agent
-// phase path. It returns the HistoryTiebreak-selected model, which phaseTierResolver uses
-// as the actual routing decision for non-safety-floor agents (v1.5 upgrade).
+// logPhaseHistory queries HistoryTiebreak for this phase and returns the selected
+// model, which phaseTierResolver uses as the actual routing decision for
+// non-safety-floor agents (v1.5 upgrade):
+//   - non-floor agents: candidates = routing.CandidatesForTier(adj) = [adj,
+//     ...cheaper]. HistoryTiebreak selects the highest-quality qualifying candidate;
+//     a cheaper model wins only with sufficient history AND better quality_score.
+//     Cold start / thin data -> falls back to adj (candidates[0]);
+//   - safety-floor agents (reviewer/architect/cto): candidates stay [adj] — Opus can
+//     never be overridden by scorecard data;
+//   - an UNMAPPED agent (harness/gate phase) is SKIPPED, adj returned unchanged.
 //
-// v1.5 MULTI-CANDIDATE ROUTING:
-//   - For non-floor agents (implementer/planner/scanner/qa/…), the candidate set is
-//     routing.CandidatesForTier(adj) = [adj, ...cheaper]. HistoryTiebreak selects the highest-
-//     quality qualifying candidate; a cheaper model wins only when it has sufficient history
-//     AND better quality_score than adj. Cold start / thin data → falls back to adj (candidates[0]).
-//     This makes the learning loop non-trivial: haiku beats sonnet if evidence supports it.
-//   - For safety-floor agents (reviewer/architect/cto), the candidate set stays [adj] — a
-//     single-element passthrough so Opus can never be overridden by scorecard data.
-//   - An UNMAPPED agent (harness/gate phase) is SKIPPED and adj is returned unchanged: it
-//     owns no scorecard task_type, exactly as the wind-down producer skips it.
-//
-// logln nil (quiet resolver) → no log output, but picked is still returned. cards empty
-// (cold start) → falls back to adj with an honest "no scorecard -> tier_default" reason.
+// logln nil -> no log output, picked still returned. cards empty (cold start) ->
+// falls back to adj with an honest "no scorecard -> tier_default" reason.
 func logPhaseHistory(p asset.Phase, adj string, cards []routing.Scorecard, logln func(string)) string {
-	taskType, ok := taskTypeForAgent(p.Agent)
+	taskType, ok := attribution.TaskTypeForAgent(p.Agent)
 	if !ok {
 		return adj // unmapped (harness/gate) phase: no task_type, return adj unchanged
 	}
@@ -285,20 +334,14 @@ func logPhaseHistory(p asset.Phase, adj string, cards []routing.Scorecard, logln
 }
 
 // phaseTierByName is the NAME-keyed face of a phaseTierResolver tierOf, for the cost Observe
-// seam (which is handed only a phase NAME, never the Phase — exactly as feedsForwardOf /
-// onFailTargetOf are). It looks the Phase up in wf and runs the SAME tierOf, so the cost
-// stamp resolves byte-for-byte the tier `--model` got. An unknown name yields "" (omitempty
-// drops it downstream), matching the prior phaseModelResolver's miss behavior.
+// seam (handed only a phase NAME, never the Phase). It looks the Phase up in wf and runs the
+// SAME tierOf, so the cost stamp resolves byte-for-byte the tier `--model` got. Unknown name
+// -> "" (omitempty drops it downstream).
 //
-// SAME-RATIO GUARANTEE (why the stamp matches `--model`, not a ratio that moved):
-// observeFor resolves this stamp as an ARGUMENT to the feed-wrapped cost sink —
-// costSink(phase, phaseModelOf(...), usd) — and Go evaluates arguments left-to-right
-// BEFORE the call, so the stamp's SpendRatio() read happens BEFORE feed adds THIS phase's
-// usd to spent. Phases are serial (no other phase bills in between), so the ratio the stamp
-// sees is identical to the one Build saw at this phase's spawn: requested == billed ==
-// stamped holds even when the phase's own cost would cross the 0.80 band. The down-tier log
-// may print a second time on this path; that is cosmetic — the tiers are provably equal
-// (the drift-guard test pins it).
+// SAME-RATIO GUARANTEE: observeFor resolves this stamp as an ARGUMENT to the feed-wrapped
+// cost sink, and Go evaluates arguments left-to-right BEFORE the call, so the stamp's
+// SpendRatio() read happens BEFORE feed adds THIS phase's usd to spent — requested == billed
+// == stamped holds even when this phase's own cost crosses the 0.80 band (drift-guard tested).
 func phaseTierByName(wf asset.Workflow, tierOf func(p asset.Phase) string) func(name string) string {
 	return func(name string) string {
 		for _, p := range wf.Phases {
@@ -308,4 +351,148 @@ func phaseTierByName(wf asset.Workflow, tierOf func(p asset.Phase) string) func(
 		}
 		return ""
 	}
+}
+
+// ── Risk auto-extraction (wiring for run/evolve) ──────────────────────────
+//
+// resolveAutoRisk derives the risk level of the pending change set from the git
+// working tree, using the SAME path-substring heuristics as `forge route --from-git`,
+// so every `forge run`/`forge evolve` benefits, not just the standalone CLI.
+//
+// Honesty (mirrors risk_diff.go): path-substring matching is a COARSE heuristic (WILL
+// miss/over-match); ProdTraffic is NEVER auto-set; no git repo/changes -> empty result.
+func resolveAutoRisk(root string) (level string, reasons []string) {
+	// Reuse gitChangedPaths from route.go (same package) — it resolves root
+	// through gate.RepoRoot, which is a no-op on an already-resolved path.
+	paths := gitChangedPaths(root)
+	if len(paths) == 0 {
+		return "", nil
+	}
+	sig, reasons := risk.FromChangedPaths(paths)
+	level, _ = risk.Classify(sig)
+	return level, reasons
+}
+
+// logAutoRisk prints the auto-detected risk level and its path-matching reasons
+// to logln, if a non-empty risk level was detected. Returns the risk reasons
+// slice (callers that need it for the tier resolver can capture it).
+func logAutoRisk(logln func(string), prefix, autoRisk string, autoRiskReasons []string) {
+	if autoRisk == "" {
+		return
+	}
+	rs := ""
+	if len(autoRiskReasons) > 0 {
+		rs = " (" + strings.Join(autoRiskReasons, "; ") + ")"
+	}
+	logln(fmt.Sprintf("%s: auto-detected risk=%s%s", prefix, autoRisk, rs))
+}
+
+// riskAdjustedTier applies risk-based tier escalation on top of the base routed tier,
+// BEFORE the budget down-tier so critical/high-risk work cannot be down-tiered by
+// budget pressure. RAISE-ONLY: never lowers. Critical (irreversible + payment/blast-
+// radius/prod) -> force Opus; High (payment/auth/secrets) -> raise to at least Sonnet;
+// Medium/Low/unset -> no change.
+func riskAdjustedTier(base, riskLevel string) string {
+	switch riskLevel {
+	case risk.Critical:
+		return routing.Higher(base, routing.Opus)
+	case risk.High:
+		return routing.Higher(base, routing.Sonnet)
+	default:
+		return base
+	}
+}
+
+// ── execEngine — `forge run`'s engine wiring + drive (moved from main.go so that
+// file stays under the harness's file-size budget; engine_build.go already owns
+// every other piece of Engine assembly, so this keeps it in one place) ─────────
+
+// openRunResources opens the trace/doctor/budget resources execEngine needs before
+// building the engine — extracted purely to keep execEngine under the harness's
+// per-function line budget, no behavior change. Opens the run's trace (append, same
+// .forge/trace.jsonl evolve uses, git-ignored, so real claude cost is never billed
+// unseen), runs the doctor's pre-run diagnostics into it, then opens the run-level
+// budget — fail-closed on either step. The returned closeTrace is nil only alongside
+// a non-nil err.
+func openRunResources(root, runBudgetUSD string, logln func(string)) (*trace.Tracer, func(), *runBudget, error) {
+	tracer, closeTrace, err := openTracer(root)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	quickDoctorCheck(root, tracer, logln)
+	budget, err := newRunBudget(runBudgetUSD)
+	if err != nil {
+		closeTrace()
+		return nil, nil, nil, err
+	}
+	return tracer, closeTrace, budget, nil
+}
+
+// execEngine wires the real harness gates + the selected agent executor and
+// runs the workflow, returning 0 on a clean run and 1 on the first failure.
+// ctx carries cancellation so the engine can abort cleanly on SIGINT.
+//
+// Honesty: acceptance is probed ONCE per run (gate.ProbeAll), and that single
+// map backs BOTH the per-gate verdicts (harnessRunner) and convergence
+// (gatherSignals) — never double-spawned, never inconsistent within a run. An
+// N/A gate does NOT fail the run (it completes, exit 0); only a real FAIL does.
+func execEngine(ctx context.Context, wf asset.Workflow, o runOpts) int {
+	logln := func(s string) { fmt.Println(s) }
+	probe, categories := probeStatuses(o.root)
+	lifecycle := resolveLifecycle(o)
+	pol := mode.Effective(o.mode, lifecycle)
+	autoRisk, autoRiskReasons := resolveAutoRisk(o.root) // auto-detect risk for tier escalation
+	logAutoRisk(logln, "forge run", autoRisk, autoRiskReasons)
+	tracer, closeTrace, budget, err := openRunResources(o.root, o.runBudgetUSD, logln)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "forge run: %v\n", err)
+		return 1
+	}
+	defer closeTrace()
+	eng, verdicts, _ := buildRunEngine(wf, o, logln, costEmitter(tracer, logln), gate.HarnessRunner(o.root, probe), pol, budget, autoRisk, autoRiskReasons)
+	wireGateTrace(&eng, tracer, logln)
+	// Learning-loop wind-down: attribute this run's REAL billed cost into the scorecards
+	// regardless of outcome (a REJECTED build is the most useful quality sample), DEFERRED
+	// after `defer closeTrace()` so it runs BEFORE it (LIFO) — the trace it reads is still
+	// open. iterations=1: a single `forge run` is one execution; verdicts.wasReworked()
+	// carries the real reviewer-bounce signal into avg_iterations / rework_rate.
+	defer func() { windDownScorecards(wf, o, logln, 1, verdicts.wasReworked()) }()
+	logRunBanner(wf, o, lifecycle, pol)
+	// human_gate REJECTION loop-back (design.yml's on_rejected): a filed
+	// .forge/<stage>.rejected marker redirects this run to target_phase instead
+	// of phase 0 — full contract in resolveRejectionStartPhase (gates.go). 0 is
+	// byte-for-byte the prior always-phase-0 behavior.
+	startPhase := resolveRejectionStartPhase(wf, o.root, logln)
+	if err := runWorkflow(ctx, eng, wf, o, logln, startPhase); err != nil {
+		fmt.Fprintf(os.Stderr, "forge run: %v\n", err)
+		return 1
+	}
+	fmt.Println("forge run: workflow completed")
+	reportConvergence(wf, o.root, probe, categories, lifecycle, o.approved, verdicts)
+	return 0
+}
+
+// wireGateTrace composes the engine's existing gate-ledger recording (eng.OnGateResult)
+// with trace emission so every gate result is observable in trace.jsonl. A nil tracer
+// (never actually returned by openTracer, but defensive) is a no-op.
+func wireGateTrace(eng *orchestrator.Engine, tracer *trace.Tracer, logln func(string)) {
+	if tracer == nil {
+		return
+	}
+	origOnGate := eng.OnGateResult
+	eng.OnGateResult = func(name, status string) {
+		if origOnGate != nil {
+			origOnGate(name, status)
+		}
+		emitTrace(tracer, trace.GateEvent(name, status, ""), logln)
+	}
+}
+
+// logRunBanner prints the "decisions are narrated even in dry-run" summary line for
+// `forge run`, naming every workflow_depth dimension the central knob resolved
+// (discover/design/review/adr) alongside the run's mode/lifecycle/executor/gates.
+func logRunBanner(wf asset.Workflow, o runOpts, lifecycle string, pol mode.Policy) {
+	fmt.Printf("forge run: stage=%s mode=%s lifecycle=%s executor=%s gates=%v reviewer=%v discover=%s design=%s adr=%v review=%s (%d phases)\n",
+		wf.Stage, o.mode, lifecycle, o.executor, pol.Gates, pol.Reviewer,
+		pol.DiscoverDepth, pol.DesignDepth, pol.ADR, pol.ReviewDepth, len(wf.Phases))
 }

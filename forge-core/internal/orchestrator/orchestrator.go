@@ -23,6 +23,7 @@
 package orchestrator
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -50,16 +51,17 @@ import (
 // phase runs only the intersection of its required_gates with the policy's
 // gate-set, a phase gated on the reviewer (RequiredWhen) is SKIPPED when the
 // policy makes the reviewer optional (explorer), the whole DISCOVER stage is
-// elided when DiscoverDepth=="skip" (explorer), and a design-stage writes_adr
-// phase NARRATES whether an ADR is required (Policy.ADR). BACKWARD-COMPATIBILITY
-// CONTRACT: the ZERO-VALUE ModePolicy means "no mode gating" — Run executes the
-// workflow UNFILTERED (every required_gate, no phase skipped, no stage elided),
-// byte-for-byte as before this field existed. Only an explicitly injected non-zero
-// policy filters; cmd injects mode.Effective(mode, lifecycle). SAFETY: because
-// mode.Effective forces the full policy under the production lifecycle (and for any
-// unknown input), a production run filters to ALL gates, runs FULL discovery, and
-// requires an ADR even when mode=explorer — a loose mode can never relax
-// enforcement here.
+// elided when DiscoverDepth=="skip" (explorer), the whole REVIEW stage is elided
+// when ReviewDepth=="skip" (explorer, mirroring discover exactly), and a
+// design-stage writes_adr phase NARRATES whether an ADR is required (Policy.ADR).
+// BACKWARD-COMPATIBILITY CONTRACT: the ZERO-VALUE ModePolicy means "no mode
+// gating" — Run executes the workflow UNFILTERED (every required_gate, no phase
+// skipped, no stage elided), byte-for-byte as before this field existed. Only an
+// explicitly injected non-zero policy filters; cmd injects mode.Effective(mode,
+// lifecycle). SAFETY: because mode.Effective forces the full policy under the
+// production lifecycle (and for any unknown input), a production run filters to
+// ALL gates, runs FULL discovery, runs the FULL deep review, and requires an ADR
+// even when mode=explorer — a loose mode can never relax enforcement here.
 // MaxLoopBack is the hard ceiling on DIRECTED LOOP-BACKS triggered by gate
 // phases that declare on_fail:{action:loop_back} — a doom-loop backstop, never
 // the goal. Each time such a phase fails and the runtime jumps back to its
@@ -145,6 +147,20 @@ type Engine struct {
 	// (LoopEngine) supplies the iteration context. nil = no per-phase checkpoint
 	// (byte-for-byte the pre-existing per-iteration-only behavior).
 	OnPhase func(phaseIdx int)
+	// Ctx is the parent context for cancellation propagation (e.g. SIGINT/SIGTERM).
+	// Every agent phase checks ctx before spawning; when cancelled, the phase is
+	// skipped and ctx.Err() is returned. A nil Ctx is equivalent to context.Background()
+	// (the backward-compatible default — an existing caller that does not set Ctx is
+	// byte-for-byte unchanged).
+	Ctx context.Context
+}
+
+// ctx returns the effective parent context: Ctx if non-nil, else context.Background().
+func (e Engine) ctx() context.Context {
+	if e.Ctx != nil {
+		return e.Ctx
+	}
+	return context.Background()
 }
 
 // reviewerRequestChanges is the one verdict token that triggers an agent-phase
@@ -185,14 +201,17 @@ func (e Engine) Run(wf asset.Workflow, mode string) error {
 // carry no on_fail, a red gate aborts on the spot exactly as before — directed
 // loop-back is opt-in on BOTH the asset (on_fail) and the engine (budget) side.
 func (e Engine) RunFrom(wf asset.Workflow, mode string, start int) error {
-	if e.discoverStageSkipped(wf) {
-		e.logf("discover stage skipped (mode gating: explorer skips discovery)")
-		e.reportStop(wf)
+	if e.checkStageSkip(wf) {
 		return nil
 	}
 	loopBacks := 0
 	agentCalls := 0
+	phasesRan := 0
 	for i := start; i < len(wf.Phases); i++ {
+		// Check for cancellation before each phase (e.g. SIGINT).
+		if err := e.ctx().Err(); err != nil {
+			return fmt.Errorf("cancelled at phase %d: %w", i, err)
+		}
 		p := wf.Phases[i]
 		if len(p.RequiredGates) > 0 {
 			if err := e.runGates(p, e.gatesFor(p)); err != nil {
@@ -203,34 +222,54 @@ func (e Engine) RunFrom(wf asset.Workflow, mode string, start int) error {
 				i = target - 1 // -1 because the for-loop will ++ back to target
 				continue
 			}
+			phasesRan++
 			continue
 		}
-		if e.skipByMode(p) {
+		if e.skipByMode(p, wf.Stage) {
 			e.logf("phase %s skipped (mode gating: reviewer off)", p.Name)
 			continue
 		}
+		phasesRan++
 		e.narrateADR(wf, p)
-		if err := e.runAgentPhaseBudgeted(p, mode, &agentCalls); err != nil {
+		if err := e.runAgentPhaseBudgeted(e.ctx(), p, mode, &agentCalls); err != nil {
 			return err
 		}
-		// After a CLEAN agent run, a reviewer-style phase may demand a directed
-		// loop-back (its VERDICT was REQUEST_CHANGES). Same jump idiom as the gate
-		// branch — but jumped=false means PROCEED here (fail-open), not abort: an
-		// APPROVE/absent verdict simply falls through to the next phase.
+		// Reviewer loop-back: a REQUEST_CHANGES verdict jumps back to target phase.
 		if target, jumped := e.agentOutcome(wf, p, &loopBacks); jumped {
 			i = target - 1 // -1 because the for-loop will ++ back to target
 			continue
 		}
-		// Agent phase i completed cleanly (no loop-back): checkpoint progress so a
-		// crash before the next phase resumes at i+1, not phase 0. Only agent phases
-		// fire this — gate phases re-run idempotently on resume, so re-validating one
-		// is cheap; the cost worth saving is a re-spawned (billed) agent phase.
+		// Phase checkpoint: agent phase i completed (no loop-back); persist index so
+		// a crash resumes at i+1, not phase 0. Gate phases re-run idempotently on resume.
 		if e.OnPhase != nil {
 			e.OnPhase(i)
 		}
 	}
+	e.warnIfVacuous(wf, phasesRan)
 	e.reportStop(wf)
 	return nil
+}
+
+// checkStageSkip logs + reports stop and tells RunFrom to return early when the
+// WHOLE current stage (discover or review) is elided by mode gating — see
+// stageSkipped (mode_gating.go). false means proceed normally; true means the
+// caller must return nil immediately.
+func (e Engine) checkStageSkip(wf asset.Workflow) bool {
+	skipped, msg := e.stageSkipped(wf)
+	if skipped {
+		e.logf("%s", msg)
+		e.reportStop(wf)
+	}
+	return skipped
+}
+
+// warnIfVacuous logs the honest "mode gating filtered every phase" warning when a
+// stage declared phases but completed none of them (edgecases-and-perf.md §3.2) —
+// extracted out of RunFrom's loop tail so the caller stays a single call site.
+func (e Engine) warnIfVacuous(wf asset.Workflow, phasesRan int) {
+	if phasesRan == 0 && len(wf.Phases) > 0 {
+		e.logf("⚠ vacuous run: mode gating filtered all %d phase(s) — no work was performed", len(wf.Phases))
+	}
 }
 
 // runAgentPhaseBudgeted is the pre-spawn cost pre-flight + the spawn itself, split out of
@@ -248,14 +287,15 @@ func (e Engine) RunFrom(wf asset.Workflow, mode string, start int) error {
 // Only when both guards pass does runAgentPhase fire (with its own retry/backoff). Either
 // guard's error propagates up to abort the run; neither charges anything when unset
 // (MaxAgentCalls 0 / nil puller), so an existing run is byte-for-byte unchanged.
-func (e Engine) runAgentPhaseBudgeted(p asset.Phase, mode string, calls *int) error {
+// ctx propagates cancellation so a cancelled runAgentPhase is aborted promptly.
+func (e Engine) runAgentPhaseBudgeted(ctx context.Context, p asset.Phase, mode string, calls *int) error {
 	if err := e.checkAgentBudget(calls); err != nil {
 		return err
 	}
 	if err := e.checkRunBudget(*calls - 1); err != nil {
 		return err
 	}
-	return e.runAgentPhase(p, mode)
+	return e.runAgentPhase(ctx, p, mode)
 }
 
 // gateOutcome decides what happens after a gate phase failed: a DIRECTED jump

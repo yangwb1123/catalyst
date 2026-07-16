@@ -1,10 +1,14 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"forgeos/forge-core/internal/asset"
+	"forgeos/forge-core/internal/memory"
+	"forgeos/forge-core/internal/orchestrator"
 )
 
 // record stores the latest verdict per gate and preserves first-seen order; a
@@ -184,6 +188,52 @@ func TestReviewFindingsLedger_ContextLinesProvenanceAndEmpty(t *testing.T) {
 	}
 }
 
+// ★ THE FreshContext red-line proof ★: appendFeedbackLanes' `if p.FreshContext { return
+// ctx }` early-return is a hard engineering rule (AGENTS.md/BOOTSTRAP.md) — a fresh-context
+// Reviewer phase must NEVER see prior phase output, gate verdicts, review findings, or
+// cross-session memory. This seeds ALL FOUR feedback lanes with real, distinctive content
+// plus an emits artifact (which is NOT gated by FreshContext — asset-runtime-gap §1.2/§1.3
+// draws that line explicitly), builds the prompt for a FreshContext:true phase, and asserts
+// none of the feedback content leaked in while the artifact content still did — proving the
+// gate is selective (feedback lanes only), not a blanket suppression of all context.
+func TestBuildPrompt_FreshContextOmitsFeedbackLanes(t *testing.T) {
+	root := t.TempDir()
+	if err := memory.Append(memoryPath(root), memory.Entry{
+		Kind: memory.KindGap, Topic: "reviewer", Detail: "SECRET-MEMORY-DETAIL-12345", Iteration: 1, CreatedAtUnix: 1,
+	}); err != nil {
+		t.Fatalf("seed memory: %v", err)
+	}
+	gates := newGateLedger()
+	gates.record("test", "SECRET-GATE-VERDICT-67890")
+	phaseOut := newPhaseOutputLedger()
+	phaseOut.record("planner", "SECRET-PHASE-OUTPUT-24680")
+	// Findings keyed to THIS phase name — the loop-back-target case.
+	findings := newReviewFindingsLedger()
+	findings.record("reviewer", "SECRET-FINDINGS-DETAIL-13579")
+	// An emits artifact is NOT gated by FreshContext, so it must still appear.
+	artifactPath := filepath.Join(root, "task-plan.md")
+	if err := os.WriteFile(artifactPath, []byte("ARTIFACT-CONTENT-99999"), 0o644); err != nil {
+		t.Fatalf("seed emits artifact: %v", err)
+	}
+
+	p := asset.Phase{Name: "reviewer", Agent: "reviewer", FreshContext: true}
+	got := buildPromptWithEmits(root, p, "balanced", unbudgetedTier("balanced"), nil, gates, phaseOut, findings, []string{"task-plan.md"})
+
+	for _, secret := range []string{
+		"SECRET-MEMORY-DETAIL-12345", "SECRET-GATE-VERDICT-67890",
+		"SECRET-PHASE-OUTPUT-24680", "SECRET-FINDINGS-DETAIL-13579",
+		"前序闸门结果", "Project memory", "planner 的任务拆分", "非闸门结果",
+	} {
+		if strings.Contains(got, secret) {
+			t.Errorf("FreshContext phase must NEVER see feedback-lane content; leaked %q into: %.800s", secret, got)
+		}
+	}
+	// The sibling emits lane is NOT FreshContext-gated — proving selective suppression.
+	if !strings.Contains(got, "ARTIFACT-CONTENT-99999") {
+		t.Errorf("a FreshContext phase must still receive its declared emits artifact; got: %.800s", got)
+	}
+}
+
 // onFailTargetOf is the data-driven (phase -> loop-back target) lookup the Observe sink
 // uses to route findings: it returns a reviewer phase's on_fail.target with zero
 // hard-coded agent name, and ok=false for a phase carrying no loop_back on_fail.
@@ -241,6 +291,83 @@ func TestObserveFor_VerdictAndFindingsRouting(t *testing.T) {
 	}
 }
 
+// The CTO's executive-review 5-way contract must record into the SAME verdictLedger
+// as the reviewer's binary contract, reached only after parseReviewerVerdict fails to
+// match (asset-runtime-gap: review.yml's review_status was always "" because nothing
+// captured the CTO's verdict). No findings side effect: review.yml's executive-review
+// phase carries no on_fail.loop_back, so onFailTarget correctly finds nothing to route.
+func TestObserveFor_ExecutiveVerdictRoutesIntoSameLedger(t *testing.T) {
+	verdicts := newVerdictLedger()
+	findings := newReviewFindingsLedger()
+	sink := observeFor(false, nil, nil, nil, nil, verdicts, findings, func(string) (string, bool) { return "", false })
+	if sink == nil {
+		t.Fatal("with verdict/findings ledgers wired, observeFor must return a sink")
+	}
+	sink("executive-review", "综合裁决...\nVERDICT: REDESIGN", 0)
+	if v, ok := verdicts.get("executive-review"); !ok || v != VerdictRedesign {
+		t.Errorf("the executive 5-way verdict must land in the SAME ledger; got (%q,%v)", v, ok)
+	}
+	if got := findings.contextLines("executive-review"); len(got) != 0 {
+		t.Errorf("the executive verdict must stash NO findings (no on_fail target); got %v", got)
+	}
+
+	// APPROVE is shared vocabulary: it matches the BINARY parser first (both parsers
+	// normalize it to the identical VerdictApprove token, so dispatch order is
+	// unobservable for this one token) — proving reviewStatus (gates.go) never has
+	// to know or care which parser actually produced it.
+	sink("executive-review", "VERDICT: APPROVE", 0)
+	if v, _ := verdicts.get("executive-review"); v != VerdictApprove {
+		t.Errorf("VERDICT: APPROVE must normalize to VerdictApprove regardless of dispatch path; got %q", v)
+	}
+
+	// A build-stage reviewer's plain REQUEST_CHANGES must be completely unaffected by
+	// the new executive fallback (it matches the binary parser and never reaches
+	// parseExecutiveVerdict) — the existing behavior this task must not change.
+	sink("reviewer", "VERDICT: REQUEST_CHANGES", 0)
+	if v, ok := verdicts.get("reviewer"); !ok || v != VerdictRequestChanges {
+		t.Errorf("an ordinary binary reviewer verdict must be unaffected; got (%q,%v)", v, ok)
+	}
+}
+
+// The product-manager's numeric requirement-discovery contract must land in the SAME
+// verdictLedger, reached only as the THIRD fallback tier — after BOTH
+// parseReviewerVerdict and parseExecutiveVerdict fail to match (neither the reviewer's
+// binary token nor the CTO's five-way token is a "CONFIDENCE: <N>" line). This is the
+// gap-fix mirror of TestObserveFor_ExecutiveVerdictRoutesIntoSameLedger: before this
+// wire, discover.yml's requirement_confidence stayed permanently 0 because nothing
+// captured the product-manager's self-reported score.
+func TestObserveFor_ConfidenceScoreRoutesIntoSameLedger(t *testing.T) {
+	verdicts := newVerdictLedger()
+	findings := newReviewFindingsLedger()
+	sink := observeFor(false, nil, nil, nil, nil, verdicts, findings, func(string) (string, bool) { return "", false })
+	if sink == nil {
+		t.Fatal("with verdict/findings ledgers wired, observeFor must return a sink")
+	}
+	sink("requirement-discovery", "需求分析...\nCONFIDENCE: 85", 0)
+	if v, ok := verdicts.get("requirement-discovery"); !ok || v != "85" {
+		t.Errorf("the confidence score must land in the SAME ledger as the numeric string; got (%q,%v)", v, ok)
+	}
+	if got := findings.contextLines("requirement-discovery"); len(got) != 0 {
+		t.Errorf("the confidence tier must stash NO findings (no on_fail target); got %v", got)
+	}
+
+	// A malformed/out-of-range confidence records NOTHING (no tier matches) — the
+	// ledger keeps its prior, still-valid value rather than being overwritten with
+	// nothing, and certainly never a fabricated one.
+	sink("requirement-discovery", "CONFIDENCE: 150", 0)
+	if v, _ := verdicts.get("requirement-discovery"); v != "85" {
+		t.Errorf("an out-of-range confidence must not overwrite the prior recorded value; got %q", v)
+	}
+
+	// A build-stage reviewer's plain APPROVE must be completely unaffected by the new
+	// confidence fallback (it matches the binary parser first and never reaches
+	// parseConfidenceScore) — the existing behavior this task must not change.
+	sink("reviewer", "VERDICT: APPROVE", 0)
+	if v, ok := verdicts.get("reviewer"); !ok || v != VerdictApprove {
+		t.Errorf("an ordinary binary reviewer verdict must be unaffected; got (%q,%v)", v, ok)
+	}
+}
+
 // A long output is TRUNCATED to the cap (with an ellipsis marker) so a verbose planner
 // cannot bloat downstream prompts; a short output is recorded whole. Truncation is
 // rune-based, so a multi-byte boundary is never split mid-character.
@@ -262,5 +389,89 @@ func TestPhaseOutputLedger_TruncatesLongOutput(t *testing.T) {
 	l.record("discover", "brief")
 	if got := l.summary["discover"]; got != "brief" {
 		t.Errorf("a short output must be stored whole; got %q", got)
+	}
+}
+
+// requiresToolsGuard: discover.yml's requires_tools degrade-and-flag (market-
+// research: [web_search, web_fetch]). Empty RequiresTools is always a pure no-op.
+func TestRequiresToolsGuard_EmptyIsNoOp(t *testing.T) {
+	var logs []string
+	logln := func(s string) { logs = append(logs, s) }
+	got := requiresToolsGuard(asset.Phase{Name: "implementer"}, true, true, "WebSearch WebFetch", logln, "PROMPT")
+	if got != "PROMPT" || len(logs) != 0 {
+		t.Errorf("empty RequiresTools must be a pure no-op; got %q, logs=%v", got, logs)
+	}
+}
+
+// Every scenario that cannot AFFIRMATIVELY confirm tool access must degrade with
+// an honest reason (dry-run, non-claude, no allowlist, or a partial allowlist) —
+// never guessed either way — logging one visible ⚠ line naming the phase.
+func TestRequiresToolsGuard_DegradesWhenUnconfirmed(t *testing.T) {
+	tests := []struct {
+		name, allowed, wantReason string
+		isCommandExec, isClaude   bool
+	}{
+		{"dry-run narrates only", "", "dry-run", false, false},
+		{"non-claude command", "", "non-claude", true, false},
+		{"no allowedTools", "", "no --allowedTools", true, true},
+		{"partial allowlist misses web_fetch", "WebSearch", "web_fetch", true, true},
+	}
+	for _, tc := range tests {
+		p := asset.Phase{Name: "market-research", RequiresTools: []string{"web_search", "web_fetch"}}
+		var logs []string
+		logln := func(s string) { logs = append(logs, s) }
+		got := requiresToolsGuard(p, tc.isCommandExec, tc.isClaude, tc.allowed, logln, "PROMPT")
+		if !strings.Contains(got, "[context:requires_tools]") || !strings.Contains(got, tc.wantReason) {
+			t.Errorf("%s: want degrade note containing %q; got %q", tc.name, tc.wantReason, got)
+		}
+		if len(logs) != 1 || !strings.Contains(logs[0], "⚠") || !strings.Contains(logs[0], "market-research") {
+			t.Errorf("%s: want one visible ⚠ log line naming the phase; got %v", tc.name, logs)
+		}
+	}
+}
+
+// Confirmed path: every required tool's alias (snake_case collapsed to one word,
+// case-insensitive) is present in --allowedTools — unchanged text, nothing logged.
+func TestRequiresToolsGuard_ConfirmedProceedsUnchanged(t *testing.T) {
+	var logs []string
+	logln := func(s string) { logs = append(logs, s) }
+	p := asset.Phase{Name: "market-research", RequiresTools: []string{"web_search", "web_fetch"}}
+	got := requiresToolsGuard(p, true, true, "Bash(node --test*) WebSearch WebFetch", logln, "PROMPT")
+	if got != "PROMPT" || len(logs) != 0 {
+		t.Errorf("confirmed requires_tools must be a pure no-op; got %q, logs=%v", got, logs)
+	}
+}
+
+// Live wiring: agentExecutor's --executor=command Build closure routes the REAL
+// assembled prompt through requiresToolsGuard, so a live claude spawn's argv
+// carries the degrade note end-to-end — proving this is wired, not a dead helper.
+func TestAgentExecutor_RequiresToolsWiredIntoRealPrompt(t *testing.T) {
+	var logs []string
+	logln := func(s string) { logs = append(logs, s) }
+	o := runOpts{root: "/home/u1/catalyst", executor: "command", agentCmd: "claude"} // agentAllowedTools unset
+	ex := agentExecutor(o, logln, nil, unbudgetedTier("balanced"), nil, nil, nil, nil, nil, nil, nil, nil)
+	ce, ok := ex.(orchestrator.CommandExecutor)
+	if !ok {
+		t.Fatalf("--executor=command must select orchestrator.CommandExecutor, got %T", ex)
+	}
+	argv := ce.Build(asset.Phase{Name: "market-research", Agent: "product-manager", RequiresTools: []string{"web_search", "web_fetch"}}, "balanced")
+	if promptArg := argv[len(argv)-1]; !strings.Contains(promptArg, "[context:requires_tools]") {
+		t.Errorf("unconfirmed requires_tools must carry the degrade note in the spawned prompt; got tail %.200q", promptArg)
+	}
+	warned := false
+	for _, l := range logs {
+		warned = warned || (strings.Contains(l, "⚠") && strings.Contains(l, "market-research"))
+	}
+	if !warned {
+		t.Errorf("degrade must log a visible ⚠ line naming the phase; got %v", logs)
+	}
+
+	logs = nil // a phase with NO RequiresTools must be completely unaffected
+	argv2 := ce.Build(asset.Phase{Name: "implementer", Agent: "implementer"}, "balanced")
+	if promptArg2 := argv2[len(argv2)-1]; strings.Contains(promptArg2, "requires_tools") {
+		t.Errorf("a phase without RequiresTools must never carry a requires_tools note; got tail %.200q", promptArg2)
+	}
+	if len(logs) != 0 {
+		t.Errorf("a phase without RequiresTools must log nothing about requires_tools; got %v", logs)
 	}
 }

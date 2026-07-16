@@ -1,6 +1,7 @@
 package orchestrator
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -17,7 +18,7 @@ func TestCommandExecutor_RunsRealProcess(t *testing.T) {
 		Build: func(p asset.Phase, mode string) []string { return []string{"echo", p.Name, mode} },
 		Log:   rec.log,
 	}
-	if err := ex.Execute(asset.Phase{Name: "planner"}, "balanced"); err != nil {
+	if err := ex.Execute(context.Background(), asset.Phase{Name: "planner"}, "balanced"); err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
 	if !containsLine(rec.logs, "planner balanced") {
@@ -29,7 +30,7 @@ func TestCommandExecutor_RunsRealProcess(t *testing.T) {
 // silent success — and a Failed is the agent's own verdict, so not retryable.
 func TestCommandExecutor_FailingCommandErrors(t *testing.T) {
 	ex := CommandExecutor{Build: func(asset.Phase, string) []string { return []string{"false"} }}
-	err := ex.Execute(asset.Phase{Name: "x"}, "m")
+	err := ex.Execute(context.Background(), asset.Phase{Name: "x"}, "m")
 	execErr := requireExecError(t, err)
 	if execErr.Kind != KindFailed {
 		t.Errorf("non-zero exit: want KindFailed, got %v", execErr.Kind)
@@ -42,7 +43,7 @@ func TestCommandExecutor_FailingCommandErrors(t *testing.T) {
 // An empty argv is a misconfiguration: typed KindConfig, fail closed, not a no-op.
 func TestCommandExecutor_EmptyArgvErrors(t *testing.T) {
 	ex := CommandExecutor{Build: func(asset.Phase, string) []string { return nil }}
-	err := ex.Execute(asset.Phase{Name: "x"}, "m")
+	err := ex.Execute(context.Background(), asset.Phase{Name: "x"}, "m")
 	execErr := requireExecError(t, err)
 	if execErr.Kind != KindConfig {
 		t.Errorf("empty argv: want KindConfig, got %v", execErr.Kind)
@@ -60,7 +61,7 @@ func TestCommandExecutor_NilBuildFailsClosed(t *testing.T) {
 			t.Fatalf("nil Build must not panic; got %v", r)
 		}
 	}()
-	err := ex.Execute(asset.Phase{Name: "x"}, "m")
+	err := ex.Execute(context.Background(), asset.Phase{Name: "x"}, "m")
 	execErr := requireExecError(t, err)
 	if execErr.Kind != KindConfig {
 		t.Errorf("nil Build: want KindConfig, got %v", execErr.Kind)
@@ -75,7 +76,7 @@ func TestCommandExecutor_TimeoutKillsAndClassifies(t *testing.T) {
 		Timeout: 50 * time.Millisecond,
 	}
 	start := time.Now()
-	err := ex.Execute(asset.Phase{Name: "slow"}, "m")
+	err := ex.Execute(context.Background(), asset.Phase{Name: "slow"}, "m")
 	elapsed := time.Since(start)
 
 	execErr := requireExecError(t, err)
@@ -99,7 +100,7 @@ func TestCommandExecutor_MissingBinaryIsConfig(t *testing.T) {
 			return []string{"forgeos-no-such-binary-xyzzy"}
 		},
 	}
-	err := ex.Execute(asset.Phase{Name: "x"}, "m")
+	err := ex.Execute(context.Background(), asset.Phase{Name: "x"}, "m")
 	execErr := requireExecError(t, err)
 	if execErr.Kind != KindConfig {
 		t.Errorf("missing binary: want KindConfig, got %v", execErr.Kind)
@@ -122,7 +123,7 @@ func TestCommandExecutor_RecursionGuardBlocksAtCap(t *testing.T) {
 		Log:      rec.log,
 		MaxDepth: 2,
 	}
-	err := ex.Execute(asset.Phase{Name: "x"}, "m")
+	err := ex.Execute(context.Background(), asset.Phase{Name: "x"}, "m")
 	execErr := requireExecError(t, err)
 	if execErr.Kind != KindRecursionLimit {
 		t.Errorf("at cap: want KindRecursionLimit, got %v", execErr.Kind)
@@ -146,7 +147,7 @@ func TestCommandExecutor_RecursionGuardInjectsIncrementedDepth(t *testing.T) {
 		Build: func(asset.Phase, string) []string { return []string{"printenv", agentDepthEnv} },
 		Log:   rec.log,
 	}
-	if err := ex.Execute(asset.Phase{Name: "p"}, "m"); err != nil {
+	if err := ex.Execute(context.Background(), asset.Phase{Name: "p"}, "m"); err != nil {
 		t.Fatalf("below cap must spawn: %v", err)
 	}
 	if !containsLine(rec.logs, "-> 1") {
@@ -159,7 +160,7 @@ func TestCommandExecutor_RecursionGuardInjectsIncrementedDepth(t *testing.T) {
 func TestCommandExecutor_RecursionGuardFailsSafeOnGarbageDepth(t *testing.T) {
 	t.Setenv(agentDepthEnv, "not-a-number")
 	ex := CommandExecutor{Build: func(asset.Phase, string) []string { return []string{"true"} }}
-	if err := ex.Execute(asset.Phase{Name: "p"}, "m"); err != nil {
+	if err := ex.Execute(context.Background(), asset.Phase{Name: "p"}, "m"); err != nil {
 		t.Fatalf("garbage depth must fail-safe to 0 and spawn, got: %v", err)
 	}
 }
@@ -169,7 +170,7 @@ func TestCommandExecutor_RecursionGuardFailsSafeOnGarbageDepth(t *testing.T) {
 func TestCommandExecutor_RecursionGuardDefaultCap(t *testing.T) {
 	t.Setenv(agentDepthEnv, "2")
 	ex := CommandExecutor{Build: func(asset.Phase, string) []string { return []string{"echo", "x"} }}
-	err := ex.Execute(asset.Phase{Name: "x"}, "m")
+	err := ex.Execute(context.Background(), asset.Phase{Name: "x"}, "m")
 	execErr := requireExecError(t, err)
 	if execErr.Kind != KindRecursionLimit {
 		t.Errorf("default cap: want KindRecursionLimit at depth 2, got %v", execErr.Kind)
@@ -186,7 +187,7 @@ func TestCommandExecutor_OutputCapTruncatesRunaway(t *testing.T) {
 		MaxOutputBytes: 1024,
 		Log:            rec.log,
 	}
-	if err := ex.Execute(asset.Phase{Name: "x"}, "m"); err != nil {
+	if err := ex.Execute(context.Background(), asset.Phase{Name: "x"}, "m"); err != nil {
 		t.Fatalf("seq exits 0; Execute should succeed: %v", err)
 	}
 	last := rec.logs[len(rec.logs)-1]
@@ -209,7 +210,7 @@ func TestCommandExecutor_OutputUnderCapVerbatim(t *testing.T) {
 		MaxOutputBytes: 1024,
 		Log:            rec.log,
 	}
-	if err := ex.Execute(asset.Phase{Name: "x"}, "m"); err != nil {
+	if err := ex.Execute(context.Background(), asset.Phase{Name: "x"}, "m"); err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
 	last := rec.logs[len(rec.logs)-1]
@@ -232,7 +233,7 @@ func TestCommandExecutor_RunsInDir(t *testing.T) {
 		Dir:   dir,
 		Log:   rec.log,
 	}
-	if err := ex.Execute(asset.Phase{Name: "p"}, "m"); err != nil {
+	if err := ex.Execute(context.Background(), asset.Phase{Name: "p"}, "m"); err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
 	if last := rec.logs[len(rec.logs)-1]; !strings.Contains(last, dir) {
@@ -251,7 +252,7 @@ func TestCommandExecutor_ObserveReceivesPhaseAndOutput(t *testing.T) {
 		Build:   func(p asset.Phase, mode string) []string { return []string{"echo", "hello-sink"} },
 		Observe: func(phase, output string, _ time.Duration) { called++; gotPhase, gotOutput = phase, output },
 	}
-	if err := ex.Execute(asset.Phase{Name: "implementer"}, "balanced"); err != nil {
+	if err := ex.Execute(context.Background(), asset.Phase{Name: "implementer"}, "balanced"); err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
 	if called != 1 {
@@ -283,7 +284,7 @@ func TestCommandExecutor_ObserveReceivesDeterministicLatency(t *testing.T) {
 		Now:     func() time.Time { tm := times[i]; i++; return tm },
 		Observe: func(_, _ string, latency time.Duration) { gotLatency = latency },
 	}
-	if err := ex.Execute(asset.Phase{Name: "implementer"}, "balanced"); err != nil {
+	if err := ex.Execute(context.Background(), asset.Phase{Name: "implementer"}, "balanced"); err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
 	if gotLatency != 250*time.Millisecond {
@@ -304,7 +305,7 @@ func TestCommandExecutor_DefaultClockMeasuresRealLatency(t *testing.T) {
 		Build:   func(asset.Phase, string) []string { return []string{"sleep", "0.05"} },
 		Observe: func(_, _ string, latency time.Duration) { gotLatency = latency },
 	}
-	if err := ex.Execute(asset.Phase{Name: "p"}, "m"); err != nil {
+	if err := ex.Execute(context.Background(), asset.Phase{Name: "p"}, "m"); err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
 	if gotLatency <= 0 {
@@ -325,7 +326,7 @@ func TestCommandExecutor_RenderLogCustomizesLogLine(t *testing.T) {
 		Observe:   func(_, output string, _ time.Duration) { observed = output },
 		RenderLog: func(output string) string { return "RENDERED(" + output + ")" },
 	}
-	if err := ex.Execute(asset.Phase{Name: "p"}, "m"); err != nil {
+	if err := ex.Execute(context.Background(), asset.Phase{Name: "p"}, "m"); err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
 	if !containsLine(rec.logs, "RENDERED(") {
@@ -347,7 +348,7 @@ func TestCommandExecutor_NoHooksIsByteForByteDefault(t *testing.T) {
 		Build: func(p asset.Phase, mode string) []string { return []string{"echo", "plain output"} },
 		Log:   rec.log,
 	}
-	if err := ex.Execute(asset.Phase{Name: "p"}, "m"); err != nil {
+	if err := ex.Execute(context.Background(), asset.Phase{Name: "p"}, "m"); err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
 	last := rec.logs[len(rec.logs)-1]
@@ -374,7 +375,7 @@ func TestCommandExecutor_ClassifyOverloadRoutesToOverloaded(t *testing.T) {
 			return strings.Contains(output, "529")
 		},
 	}
-	err := ex.Execute(asset.Phase{Name: "implementer"}, "balanced")
+	err := ex.Execute(context.Background(), asset.Phase{Name: "implementer"}, "balanced")
 	execErr := requireExecError(t, err)
 	if execErr.Kind != KindOverloaded {
 		t.Errorf("a failing run the hook judges overloaded: want KindOverloaded, got %s", execErr.Kind)
@@ -397,7 +398,7 @@ func TestCommandExecutor_NilClassifyOverloadStaysFailed(t *testing.T) {
 		},
 		// ClassifyOverload nil -> never overloaded.
 	}
-	err := ex.Execute(asset.Phase{Name: "implementer"}, "balanced")
+	err := ex.Execute(context.Background(), asset.Phase{Name: "implementer"}, "balanced")
 	execErr := requireExecError(t, err)
 	if execErr.Kind != KindFailed {
 		t.Errorf("nil ClassifyOverload: a failing run must stay KindFailed (back-compat), got %s", execErr.Kind)
@@ -411,7 +412,7 @@ func TestCommandExecutor_ClassifyOverloadFalseStaysFailed(t *testing.T) {
 		Build:            func(asset.Phase, string) []string { return []string{"false"} },
 		ClassifyOverload: func(string) bool { return false },
 	}
-	execErr := requireExecError(t, ex.Execute(asset.Phase{Name: "x"}, "m"))
+	execErr := requireExecError(t, ex.Execute(context.Background(), asset.Phase{Name: "x"}, "m"))
 	if execErr.Kind != KindFailed {
 		t.Errorf("ClassifyOverload=false on a failing run: want KindFailed, got %s", execErr.Kind)
 	}
@@ -427,7 +428,7 @@ func TestCommandExecutor_ClassifyOverloadNotConsultedOnSuccess(t *testing.T) {
 		Build:            func(asset.Phase, string) []string { return []string{"echo", "api_error_status 529"} },
 		ClassifyOverload: func(string) bool { called = true; return true },
 	}
-	if err := ex.Execute(asset.Phase{Name: "x"}, "m"); err != nil {
+	if err := ex.Execute(context.Background(), asset.Phase{Name: "x"}, "m"); err != nil {
 		t.Fatalf("a clean run must succeed regardless of output content: %v", err)
 	}
 	if called {

@@ -208,3 +208,60 @@ func TestEncode_PureFraming(t *testing.T) {
 		t.Errorf("round-trip mismatch: got %+v, want %+v", got, ev)
 	}
 }
+
+// ── Constructor helper tests (seventh-wave-data-realism.md §方向1) ──────────
+
+func TestGateEvent_Fields(t *testing.T) {
+	ev := GateEvent("lint", "PASS", "0 issues")
+	if ev.Kind != "gate" || ev.Name != "lint" || ev.Status != "PASS" || ev.Detail != "0 issues" {
+		t.Errorf("GateEvent = %+v, want kind=gate name=lint status=PASS detail=0 issues", ev)
+	}
+}
+
+func TestGateEvent_EmptyDetail(t *testing.T) {
+	ev := GateEvent("test", "NA", "")
+	if ev.Kind != "gate" || ev.Name != "test" || ev.Status != "NA" || ev.Detail != "" {
+		t.Errorf("GateEvent with empty detail = %+v", ev)
+	}
+}
+
+func TestDecisionEvent_Fields(t *testing.T) {
+	ev := DecisionEvent("implementer", "downtier to haiku (spend_ratio=0.85)")
+	if ev.Kind != "decision" || ev.Name != "implementer" || ev.Status != "ok" {
+		t.Errorf("DecisionEvent = %+v, want kind=decision name=implementer status=ok", ev)
+	}
+	if ev.Detail == "" {
+		t.Error("DecisionEvent Detail must be non-empty")
+	}
+}
+
+func TestOverloadEvent_Fields(t *testing.T) {
+	ev := OverloadEvent("implementer", "backoff 4s attempt 1/3")
+	if ev.Kind != "overload_backoff" || ev.Name != "implementer" || ev.Status != "retry" {
+		t.Errorf("OverloadEvent = %+v, want kind=overload_backoff name=implementer status=retry", ev)
+	}
+}
+
+func TestStaleEvent_Fields(t *testing.T) {
+	ev := StaleEvent("iter 3", "roadmap_flat + gate_unchanged")
+	if ev.Kind != "stale_increment" || ev.Name != "iter 3" || ev.Status != "stale" {
+		t.Errorf("StaleEvent = %+v, want kind=stale_increment name=iter3 status=stale", ev)
+	}
+}
+
+func TestErrorEvent_Fields(t *testing.T) {
+	ev := ErrorEvent("implementer", "overload", "recovered", "529 overload, retried after 15s")
+	if ev.Kind != "error" || ev.Name != "implementer" || ev.Status != "recovered" {
+		t.Errorf("ErrorEvent = %+v, want kind=error name=implementer status=recovered", ev)
+	}
+	if !strings.Contains(ev.Detail, "[overload]") {
+		t.Errorf("ErrorEvent Detail must carry the error type tag; got %q", ev.Detail)
+	}
+}
+
+func TestErrorEvent_FatalDetail(t *testing.T) {
+	ev := ErrorEvent("config", "config", "failed", "no agent executor configured")
+	if !strings.Contains(ev.Detail, "[config]") {
+		t.Errorf("ErrorEvent Detail must carry the error type tag; got %q", ev.Detail)
+	}
+}

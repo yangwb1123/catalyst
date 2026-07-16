@@ -1,6 +1,7 @@
 package orchestrator
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -24,7 +25,7 @@ import (
 // phase is provable by its ABSENCE from the count.
 type countingExec struct{ calls int }
 
-func (c *countingExec) Execute(_ asset.Phase, _ string) error {
+func (c *countingExec) Execute(_ context.Context, _ asset.Phase, _ string) error {
 	c.calls++
 	return nil
 }
@@ -172,8 +173,8 @@ func TestCheckRunBudget_OverBudgetStopsAndDoesNotSpawnLater(t *testing.T) {
 	exec := &countingExec{}
 	// Wrap the counting executor so each spawn also advances the budget meter — the
 	// engine still sees only Execute()'s error and only the BudgetExhausted bool.
-	tick := execFunc(func(p asset.Phase, m string) error {
-		err := exec.Execute(p, m)
+	tick := execFunc(func(ctx context.Context, p asset.Phase, m string) error {
+		err := exec.Execute(context.Background(), p, m)
 		bg.tick()
 		return err
 	})

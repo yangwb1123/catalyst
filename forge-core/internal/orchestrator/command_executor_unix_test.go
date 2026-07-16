@@ -111,7 +111,7 @@ func TestCommandExecutor_ProcessGroup_GrandchildReaped(t *testing.T) {
 		Timeout: 300 * time.Millisecond,
 	}
 
-	err := ex.Execute(asset.Phase{Name: "slow"}, "m")
+	err := ex.Execute(context.Background(), asset.Phase{Name: "slow"}, "m")
 
 	pid := readPID(waitForFile(pidFile, time.Second))
 	if pid == 0 {
@@ -168,7 +168,7 @@ func TestCommandExecutor_ProcessGroup_TimeoutReturnsPromptly(t *testing.T) {
 	}
 
 	start := time.Now()
-	err := ex.Execute(asset.Phase{Name: "slow"}, "m")
+	err := ex.Execute(context.Background(), asset.Phase{Name: "slow"}, "m")
 	elapsed := time.Since(start)
 
 	if pid := readPID(waitForFile(pidFile, time.Second)); pid > 0 {
@@ -219,7 +219,7 @@ func TestCommandExecutor_ProcessGroup_SingleProcessUnaffected(t *testing.T) {
 		Log:     rec.log,
 		Timeout: 5 * time.Second,
 	}
-	if err := ex.Execute(asset.Phase{Name: "p"}, "m"); err != nil {
+	if err := ex.Execute(context.Background(), asset.Phase{Name: "p"}, "m"); err != nil {
 		t.Fatalf("a clean single-process command must succeed unchanged: %v", err)
 	}
 	if !containsLine(rec.logs, "byte-identical") {

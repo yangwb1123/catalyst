@@ -1,6 +1,7 @@
 package orchestrator
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -340,7 +341,7 @@ func TestLoop_OnIterationCalledPerRound(t *testing.T) {
 // duration assertion below be honest (a true elapsed time) without a fake clock.
 type sleepyExecutor struct{ d time.Duration }
 
-func (s sleepyExecutor) Execute(asset.Phase, string) error {
+func (s sleepyExecutor) Execute(_ context.Context, _ asset.Phase, _ string) error {
 	time.Sleep(s.d)
 	return nil
 }

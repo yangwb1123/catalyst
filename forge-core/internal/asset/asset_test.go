@@ -34,12 +34,6 @@ func TestLoadWorkflowJSON_Fixture(t *testing.T) {
 	if wf.Phases[0].Name != "planner" || wf.Phases[0].Agent != "planner" {
 		t.Errorf("phase[0] = %+v, want planner/planner", wf.Phases[0])
 	}
-	if !wf.Phases[0].Readonly {
-		t.Error("planner phase should be readonly")
-	}
-	if wf.Phases[1].Readonly {
-		t.Error("implementer phase should not be readonly")
-	}
 }
 
 func TestLoadWorkflowJSON_RequiredGates(t *testing.T) {

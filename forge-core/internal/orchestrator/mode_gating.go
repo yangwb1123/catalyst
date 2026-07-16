@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"forgeos/forge-core/internal/asset"
+	"forgeos/forge-core/internal/mode"
 )
 
 // gatingActive reports whether a mode policy was actually injected. The
@@ -36,17 +37,60 @@ func (e Engine) gatesFor(p asset.Phase) []string {
 }
 
 // skipByMode reports whether a non-gate phase should be skipped by the mode
-// policy. The only modeled condition (this slice) is the OPTIONAL reviewer: a
-// phase whose RequiredWhen resolves to "reviewer" is skipped iff gating is active
-// AND the policy makes the reviewer non-mandatory (explorer). With gating
-// inactive (zero policy) nothing is ever skipped — full back-compat. A phase with
-// no RequiredWhen, or a RequiredWhen naming any other condition, is never skipped
-// here (honest: only the reviewer dimension is wired in this slice).
-func (e Engine) skipByMode(p asset.Phase) bool {
+// policy. Two conditions:
+//  1. Phase RequiredWhen resolves to "reviewer" and policy says no reviewer.
+//  2. Phase declares optional_for containing the current mode (discover.yml's
+//     market-research: optional_for: [balanced]; review.yml's
+//     performance-reliability-review: optional_for: [balanced]) AND this
+//     stage's depth dimension has not been raised to full rigor (see
+//     stageDepthAtMax) — a lifecycle floor (production) must be able to
+//     override a per-phase optional_for escape hatch, not just the whole-
+//     stage skip.
+//
+// With gating inactive (zero policy) nothing is ever skipped — full back-compat.
+func (e Engine) skipByMode(p asset.Phase, stage string) bool {
 	if !e.gatingActive() {
 		return false
 	}
-	return requiredWhenKey(p.RequiredWhen) == "reviewer" && !e.ModePolicy.Reviewer
+	if requiredWhenKey(p.RequiredWhen) == "reviewer" && !e.ModePolicy.Reviewer {
+		return true
+	}
+	// optional_for: if the phase declares a list of modes that may skip it,
+	// the current mode is in that list, AND this stage's depth hasn't been
+	// raised to full by a lifecycle floor, skip this phase.
+	if len(p.OptionalFor) > 0 && !e.stageDepthAtMax(stage) {
+		m := e.ModePolicy.Mode
+		for _, optional := range p.OptionalFor {
+			if optional == m {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// stageDepthAtMax reports whether the workflow_depth dimension tied to stage
+// (discover -> DiscoverDepth, review -> ReviewDepth) has been raised to its
+// maximum "full" rigor for this run — e.g. by the production lifecycle floor
+// (mode.Effective always raises production to DiscoverFull/ReviewFull
+// regardless of the base mode). When a stage's depth is already at max, a
+// per-phase optional_for skip must NOT fire: production's safety veto ("a
+// loose mode can never relax enforcement here", modes.yml) would otherwise be
+// silently defeated by an escape hatch that only ever looked at the raw mode
+// name, never the lifecycle-resolved depth — exactly how balanced+production
+// could still skip review.yml's performance-reliability-review despite
+// ReviewDepth being "full". Stages with no modeled depth dimension (build,
+// design, evolve) return false — optional_for keeps its original raw-mode-
+// only behavior there, unchanged.
+func (e Engine) stageDepthAtMax(stage string) bool {
+	switch stage {
+	case "discover":
+		return e.ModePolicy.DiscoverDepth == mode.DiscoverFull
+	case "review":
+		return e.ModePolicy.ReviewDepth == mode.ReviewFull
+	default:
+		return false
+	}
 }
 
 // discoverStageSkipped reports whether the WHOLE discover stage should be elided
@@ -65,6 +109,41 @@ func (e Engine) skipByMode(p asset.Phase) bool {
 // policy elects to skip the stage.
 func (e Engine) discoverStageSkipped(wf asset.Workflow) bool {
 	return e.gatingActive() && wf.Stage == "discover" && e.ModePolicy.DiscoverSkipped()
+}
+
+// reviewStageSkipped reports whether the WHOLE review stage should be elided for
+// this run — true iff gating is active AND this is the review stage AND the
+// policy's ReviewDepth is "skip" (explorer's "go straight to build" without the
+// deep security/distributed/performance/CTO review). Mirrors discoverStageSkipped
+// byte-for-byte in structure. With gating inactive (zero policy) it is always
+// false — full back-compat, the stage runs unfiltered. standard/full (or any
+// non-review stage) also return false, so only the explicit explorer skip
+// suppresses the stage.
+//
+// HONESTY: this is the gating DECISION — the runtime does not run the review
+// phases and says so; under the dry-run executor it cannot prove the skipped
+// review was safe to elide (that judgement is a real agent's). It does NOT
+// pretend the review ran or that real work was skipped — only that the explorer
+// policy elects to skip the stage.
+func (e Engine) reviewStageSkipped(wf asset.Workflow) bool {
+	return e.gatingActive() && wf.Stage == "review" && e.ModePolicy.ReviewSkipped()
+}
+
+// stageSkipped reports whether the WHOLE current stage should be elided by mode
+// gating — discover (DiscoverDepth=="skip") or review (ReviewDepth=="skip") — and
+// the log message RunFrom should report. It is the shared combinator behind both
+// discoverStageSkipped and reviewStageSkipped, so RunFrom's early guard stays a
+// single call site as more whole-stage skips are added. Each check is scoped to
+// its own wf.Stage name, so at most one can ever fire for a given run — no
+// ordering ambiguity between the two.
+func (e Engine) stageSkipped(wf asset.Workflow) (bool, string) {
+	if e.discoverStageSkipped(wf) {
+		return true, "discover stage skipped (mode gating: explorer skips discovery)"
+	}
+	if e.reviewStageSkipped(wf) {
+		return true, "review stage skipped (mode gating: explorer skips deep review)"
+	}
+	return false, ""
 }
 
 // narrateADR reports the ADR gating verdict for a design-stage phase that declares

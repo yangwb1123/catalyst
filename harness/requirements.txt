@@ -1,0 +1,5 @@
+# ForgeOS harness Python dependencies.
+# Current: only PyYAML for yaml2json.py transcoding (the shim that bridges YAML
+# workflow assets to forge-core's JSON parser). When a new Python dependency is
+# introduced, it MUST be added here with a version pin and a hash/constraint.
+PyYAML>=6.0,<7.0

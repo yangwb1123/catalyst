@@ -36,9 +36,28 @@ import (
 // assigned by the Tracer (callers never set it), giving every line a total order
 // independent of any wall-clock timestamp. The json tags are the on-disk
 // contract that downstream tooling reads, so they are stable and lower_snake.
+//
+// Format carries the on-disk format version identifier (e.g. "forgeos.trace.v1"),
+// so downstream tooling can detect format changes. An empty value (pre-format
+// versioning) is treated as "forgeos.trace.v1" for backward compatibility.
+// omitempty keeps old events without the field byte-for-byte identical on disk.
+//
+// Kind identifies the event family. The canonical kinds are:
+//
+//	"iteration"       — one full loop iteration (measured signals, duration)
+//	"agent"           — one LLM agent phase (with cost+model attribution)
+//	"gate"            — one harness gate verdict (PASS/FAIL/NA)
+//	"decision"        — a runtime decision (tier up/down, cost guard trip)
+//	"converge"        — convergence check verdict
+//	"error"           — recoverable or fatal error (overload, timeout, config)
+//	"overload_backoff" — 529/overload retry pause
+//	"stale_increment" — no-progress increment on the doom-loop guard
+//	"doctor"          — forge doctor diagnostic result
+//	"memory_compact"  — memory compaction event
 type Event struct {
+	Format     string `json:"_format,omitempty"`
 	Seq        int    `json:"seq"`         // monotonic 1,2,3… assigned by the Tracer
-	Kind       string `json:"kind"`        // event family: "iteration"|"gate"|"agent"|"converge"
+	Kind       string `json:"kind"`        // event family: see kind constants above
 	Name       string `json:"name"`        // the specific phase/gate name within the kind
 	Status     string `json:"status"`      // verdict/outcome: PASS|FAIL|NA|ok|timeout|…
 	DurationMs int64  `json:"duration_ms"` // wall-clock span in ms; 0 for instantaneous events
@@ -100,6 +119,9 @@ func (t *Tracer) Emit(ev Event) error {
 
 	t.seq++
 	ev.Seq = t.seq
+	if ev.Format == "" {
+		ev.Format = "forgeos.trace.v1"
+	}
 	line, err := encode(ev)
 	if err != nil {
 		return fmt.Errorf("trace: encoding event seq=%d kind=%q: %w", ev.Seq, ev.Kind, err)
@@ -144,4 +166,42 @@ func encode(ev Event) ([]byte, error) {
 		return nil, err
 	}
 	return append(b, '\n'), nil
+}
+
+// ── Constructor helpers (seventh-wave-data-realism.md §方向1) ────────────────
+
+// GateEvent builds a trace event for one harness gate result.
+// name is the gate name (e.g. "lint", "test"), status is "PASS"|"FAIL"|"NA",
+// and detail carries the gate's output/verdict text.
+func GateEvent(name, status, detail string) Event {
+	return Event{Kind: "gate", Name: name, Status: status, Detail: detail}
+}
+
+// DecisionEvent builds a trace event for a runtime decision (tier up/down,
+// cost guard trip, or adaptive behavior). name identifies the decision context
+// (e.g. the phase name), detail describes what was decided and why.
+func DecisionEvent(name, detail string) Event {
+	return Event{Kind: "decision", Name: name, Status: "ok", Detail: detail}
+}
+
+// OverloadEvent builds a trace event for a 529/overload retry pause. name
+// identifies the affected phase, detail describes the backoff duration and
+// the attempt number (e.g. "backoff 4s attempt 1/3").
+func OverloadEvent(name, detail string) Event {
+	return Event{Kind: "overload_backoff", Name: name, Status: "retry", Detail: detail}
+}
+
+// StaleEvent builds a trace event for a no-progress increment on the
+// doom-loop guard. name identifies the iteration (e.g. "iter 3"), detail
+// describes why progress was flat (e.g. "roadmap_flat + gate_unchanged").
+func StaleEvent(name, detail string) Event {
+	return Event{Kind: "stale_increment", Name: name, Status: "stale", Detail: detail}
+}
+
+// ErrorEvent builds a trace event for a recoverable or fatal error.
+// name identifies the source (phase/gate), errorType classifies the kind
+// (e.g. "overload", "timeout", "config"), status is the outcome
+// ("recovered"|"failed"), and detail carries the error message.
+func ErrorEvent(name, errorType, status, detail string) Event {
+	return Event{Kind: "error", Name: name, Status: status, Detail: fmt.Sprintf("[%s] %s", errorType, detail)}
 }

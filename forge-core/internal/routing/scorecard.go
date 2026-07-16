@@ -30,12 +30,18 @@ import (
 	"os"
 )
 
-// Scorecard is one (model, task_type) row of historical performance, matching
+// Scorecard is one (model, task_type, mode) row of historical performance, matching
 // scorecard.schema.yml and the shared scorecards.json data contract produced by
 // the Eval Engine. JSON tags are the wire contract; keep them aligned with the
 // parallel producer. QualityScore is what policy.history.tiebreak_on reads
 // (higher is better); Samples gates trust (policy.history.min_samples). The
-// PassRate/AvgIterations/ReworkRate trio is optional enrichment (schema
+// Mode field carries the execution mode (explorer/balanced/engineering/cto) that
+// produced this row, so the Router can filter by mode compatibility and avoid
+// cross-mode scoring bias (edgecases §5.4 — an explorer-mode row with no reviewer
+// may show inflated quality that misleads engineering-mode routing). An empty
+// mode means "legacy row written before mode awareness" — treated as compatible
+// with all modes for backward compatibility.
+// The PassRate/AvgIterations/ReworkRate trio is optional enrichment (schema
 // "optional:" block) — absent fields decode to their zero value, which callers
 // must treat as "unknown", not "zero performance".
 type Scorecard struct {
@@ -44,12 +50,20 @@ type Scorecard struct {
 	QualityScore  float64 `json:"quality_score"`
 	Samples       int     `json:"samples"`
 	UpdatedAt     string  `json:"updated_at"`
+	Mode          string  `json:"mode,omitempty"`
 	PassRate      float64 `json:"pass_rate,omitempty"`
 	AvgIterations float64 `json:"avg_iterations,omitempty"`
 	ReworkRate    float64 `json:"rework_rate,omitempty"`
 }
 
 // LoadScorecards reads the scorecards.json array at path.
+//
+// CONCURRENCY CONTRACT (caller): The producer (Eval Engine) MUST write
+// scorecards atomically — write to a temp file, then rename over the
+// target path. This guarantees LoadScorecards always reads a complete,
+// internally consistent snapshot (POSIX rename is atomic on the same
+// filesystem). Without this, concurrent writers and readers can observe
+// partial writes or torn reads.
 //
 // Fault-tolerant but honest, and the distinction is load-bearing:
 //   - Missing file -> (nil, nil). A cold start (Eval has never run / no loop

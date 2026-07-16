@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"forgeos/forge-core/internal/asset"
+	"forgeos/forge-core/internal/attribution"
 	"forgeos/forge-core/internal/gate"
 	"forgeos/forge-core/internal/mode"
 	"forgeos/forge-core/internal/orchestrator"
@@ -57,7 +58,7 @@ func TestHistory_QualifyingScorecardLoggedTierChosen(t *testing.T) {
 	}
 
 	var logs []string
-	tierOf := phaseTierResolver("balanced", func() float64 { return 0.50 }, cards, func(s string) { logs = append(logs, s) })
+	tierOf := phaseTierResolver("balanced", func() float64 { return 0.50 }, cards, func(s string) { logs = append(logs, s) }, "", nil)
 	got := tierOf(phase)
 
 	if got != want {
@@ -91,7 +92,7 @@ func TestHistory_HaikuBeatsOnnetWhenHigherQuality(t *testing.T) {
 	}
 
 	var logs []string
-	tierOf := phaseTierResolver("balanced", func() float64 { return 0.50 }, cards, func(s string) { logs = append(logs, s) })
+	tierOf := phaseTierResolver("balanced", func() float64 { return 0.50 }, cards, func(s string) { logs = append(logs, s) }, "", nil)
 	got := tierOf(phase)
 
 	if got != routing.Haiku {
@@ -112,7 +113,7 @@ func TestHistory_ColdStartPassthroughLogsNoScorecard(t *testing.T) {
 
 	var logs []string
 	// nil cards models LoadScorecards's (nil,nil) cold start.
-	tierOf := phaseTierResolver("balanced", func() float64 { return 0.50 }, nil, func(s string) { logs = append(logs, s) })
+	tierOf := phaseTierResolver("balanced", func() float64 { return 0.50 }, nil, func(s string) { logs = append(logs, s) }, "", nil)
 	if got := tierOf(phase); got != want {
 		t.Errorf("cold start must pass the tier through unchanged; got %q, want %q", got, want)
 	}
@@ -124,19 +125,19 @@ func TestHistory_ColdStartPassthroughLogsNoScorecard(t *testing.T) {
 
 // ── ③ UNMAPPED AGENT (harness/gate phase) -> history is SKIPPED, no line ──────────────────
 //
-// A phase whose agent has no task_type mapping (taskTypeForAgent ok=false) owns no scorecard
-// row, so logPhaseHistory must SKIP it — exactly as the wind-down producer skips it — rather
-// than fabricate a history line under a task_type it has no business owning.
+// A phase whose agent has no task_type mapping (attribution.TaskTypeForAgent ok=false) owns no
+// scorecard row, so logPhaseHistory must SKIP it — exactly as the wind-down producer skips it —
+// rather than fabricate a history line under a task_type it has no business owning.
 func TestHistory_UnmappedAgentSkipsHistory(t *testing.T) {
-	phase := asset.Phase{Name: "gate", Agent: "harness"} // not in agentTaskType
-	if _, ok := taskTypeForAgent(phase.Agent); ok {
+	phase := asset.Phase{Name: "gate", Agent: "harness"} // not in attribution.AgentTaskType
+	if _, ok := attribution.TaskTypeForAgent(phase.Agent); ok {
 		t.Fatalf("precondition: %q must be unmapped", phase.Agent)
 	}
 	cards := []routing.Scorecard{
 		{Model: routing.Sonnet, TaskType: "implementation", QualityScore: 0.91, Samples: 50, UpdatedAt: "x"},
 	}
 	var logs []string
-	tierOf := phaseTierResolver("balanced", func() float64 { return 0.50 }, cards, func(s string) { logs = append(logs, s) })
+	tierOf := phaseTierResolver("balanced", func() float64 { return 0.50 }, cards, func(s string) { logs = append(logs, s) }, "", nil)
 	tierOf(phase)
 	for _, l := range logs {
 		if strings.Contains(l, "history:") {
@@ -160,7 +161,7 @@ func TestHistory_MalformedScorecardWarnsAndContinues(t *testing.T) {
 	b := &runBudget{} // unbudgeted -> ratio 0, no down-tier; isolates the history path
 	var logs []string
 	eng, _, _ := buildRunEngine(wf, o, func(s string) { logs = append(logs, s) }, func(string, string, float64, time.Duration) {},
-		func(string) gate.Result { return gate.Result{} }, mode.Policy{}, b)
+		func(string) gate.Result { return gate.Result{} }, mode.Policy{}, b, "", nil)
 
 	ce, ok := eng.Exec.(orchestrator.CommandExecutor)
 	if !ok {
@@ -204,7 +205,7 @@ func TestHistory_DriftGuardHoldsWithScorecardLoaded(t *testing.T) {
 	b.seed(int64(ratio * 1e6))
 	var stamped string
 	eng, _, _ := buildRunEngine(wf, o, func(string) {}, func(_, m string, _ float64, _ time.Duration) { stamped = m },
-		func(string) gate.Result { return gate.Result{} }, mode.Policy{}, b)
+		func(string) gate.Result { return gate.Result{} }, mode.Policy{}, b, "", nil)
 	ce := eng.Exec.(orchestrator.CommandExecutor)
 
 	argv := ce.Build(phase, "balanced")
@@ -230,7 +231,7 @@ func TestHistory_NoScorecardByteIdenticalTier(t *testing.T) {
 	o := runOpts{root: root, mode: "balanced", executor: "command", agentCmd: "claude"}
 	b := &runBudget{} // unset cap -> ratio 0
 	eng, _, _ := buildRunEngine(wf, o, func(string) {}, func(string, string, float64, time.Duration) {},
-		func(string) gate.Result { return gate.Result{} }, mode.Policy{}, b)
+		func(string) gate.Result { return gate.Result{} }, mode.Policy{}, b, "", nil)
 	ce := eng.Exec.(orchestrator.CommandExecutor)
 
 	if got := modelArg(t, ce.Build(phase, "balanced")); got != want {

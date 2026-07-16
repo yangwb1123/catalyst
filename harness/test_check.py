@@ -109,7 +109,6 @@ class BrokenWorkflowRefTest(unittest.TestCase):
         self.assertEqual(result.returncode, 1, msg=result.stdout)
         self.assertIn("scanner", result.stdout)
 
-
 class MissingSectionTest(unittest.TestCase):
     """An agent card missing a required section must be caught."""
 
@@ -316,6 +315,27 @@ class OtherChecksTest(unittest.TestCase):
         )
         issues = self.check.check_mode_priorities(self.agent_root)
         self.assertTrue(any("broken" in i for i in issues), issues)
+
+    # mode_gating vs modes.yml drift-guard — more fixtures in test_mode_gating_check.py.
+    def test_live_workflow_mode_gating_is_clean(self):
+        self.assertEqual(self.check.check_workflow_mode_gating(self.agent_root), [])
+
+    def test_workflow_mode_gating_agreement_passes(self):
+        (self.agent_root / "workflows" / "mg_ok.yml").write_text(
+            "id: mg\nstage: design\nmode_gating:\n  explorer: light\n"
+            "  authority: ../policies/modes.yml#workflow_depth.design\n"
+            "phases:\n  - name: p\n    agent: architect\n", encoding="utf-8",
+        )
+        self.assertEqual(self.check.check_workflow_mode_gating(self.agent_root), [])
+
+    def test_workflow_mode_gating_mismatch_is_flagged(self):
+        (self.agent_root / "workflows" / "mg_bad.yml").write_text(
+            "id: mg\nstage: design\nmode_gating:\n  explorer: full\n"  # really 'light'
+            "  authority: ../policies/modes.yml#workflow_depth.design\n"
+            "phases:\n  - name: p\n    agent: architect\n", encoding="utf-8",
+        )
+        issues = self.check.check_workflow_mode_gating(self.agent_root)
+        self.assertTrue(any("mg_bad.yml" in i and "explorer" in i for i in issues), issues)
 
     def test_detects_missing_acceptance_criteria(self):
         path = self.agent_root / "eval" / "acceptance.schema.yml"

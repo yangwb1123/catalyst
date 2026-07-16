@@ -23,7 +23,7 @@ func TestPhaseCheckpointHook_WriteResumeRoundTrips(t *testing.T) {
 	// must PRESERVE (a phase checkpoint has no fresh measurement of its own).
 	if err := persist.Save(checkpointPath(root), persist.Checkpoint{
 		Workflow: "evolve", Mode: "balanced", Iteration: 2, RoadmapCompletion: 0.6,
-	}); err != nil {
+	}, 0); err != nil {
 		t.Fatalf("seed prior checkpoint: %v", err)
 	}
 	budget := &runBudget{}

@@ -16,7 +16,7 @@ description: >
   a 1-page proposal (cost+risk) gated by a human.
 
 # ── mode 裁决 / central knob applied to this stage ──
-mode_gating:
+mode_gating:                           # NOTE: not read by forge-core — depth is actually enforced via internal/mode's independently-maintained Go mirror of modes.yml; block kept as human-readable cross-reference
   explorer:    light                   # 极简架构,可跳 ADR / minimal, ADR optional
   balanced:    standard
   engineering: full                     # 完整架构 + ADR / full + ADR
@@ -66,4 +66,4 @@ stop_condition:
       - .agent/ROADMAP.md               # 分阶段交付计划(驱动 build 的 stop)/ staged plan, drives build stop
       - .agent/ARCHITECTURE.md          # 脊柱架构 + 中枢旋钮 / spine + central knob
       - project.yml                     # 机器可读项目清单:mode/lifecycle/stack/gates 选择 / machine-readable manifest
-    next_stage: build                   # 解锁 BUILD 段 / unlocks build.yml
+    next_stage: review                  # → REVIEW 段 / unlocks review.yml (→ build)

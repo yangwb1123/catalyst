@@ -1,18 +1,13 @@
-// Command forge is the forge-core CLI: a zero-dependency (Go stdlib only) driver
-// for ForgeOS workflows and the real harness gates.
-//
-// `forge run <workflow>` loads .agent/workflows/<workflow>.yml, transcodes it to
-// JSON via `python3 harness/yaml2json.py`, and runs it through the orchestrator
-// with the real harness gates. Agent phases use --executor: "dry" narrates the
-// routing decision (no LLM); "command" builds a per-phase prompt — role card +
-// retrieved project context + cross-session memory — and drives --agent-cmd with
-// it (`claude -p` for real, `echo` to inspect the plumbing). `forge gate|check|
-// accept` delegate directly to that harness gate and exit with its status (0==OK).
-// The repo root is --root, else $FORGE_REPO_ROOT, else cwd; per-gate resolution +
-// acceptance probing live in gates.go.
+// Command forge is the forge-core CLI (Go stdlib only). Subcommands:
+// .agent/workflows/<workflow>.yml, transcodes to JSON via
+// `python3 harness/yaml2json.py`, and orchestrates agent phases through harness
+// gates. Subcommands: run|evolve|gate|check|accept|route|migrate|detect|
+// scorecard|validate|memory-prune|status.
 package main
 
 import (
+	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -24,9 +19,19 @@ import (
 	"forgeos/forge-core/internal/asset"
 	"forgeos/forge-core/internal/converge"
 	"forgeos/forge-core/internal/gate"
-	"forgeos/forge-core/internal/mode"
 	"forgeos/forge-core/internal/orchestrator"
+	"forgeos/forge-core/internal/yaml2json"
 )
+
+// forgeVersion is the semantic version of forge-core, injected at build time
+// via `go build -ldflags "-X main.forgeVersion=v2.5.0"`. When empty (plain
+// `go build` without -ldflags), it reports "dev" to indicate a local build.
+var forgeVersion = "dev"
+
+// forgeCommit is the git SHA of the build, injected at build time via
+// `go build -ldflags "-X main.forgeCommit=$(git rev-parse --short HEAD)"`.
+// When empty, the SHA is omitted from version output.
+var forgeCommit = ""
 
 // maxLoopBack is the conservative ceiling on DIRECTED gate loop-backs per run
 // (orchestrator.Engine.MaxLoopBack): a gate phase declaring on_fail:{loop_back}
@@ -56,6 +61,28 @@ func main() {
 	os.Exit(run(os.Args[1:]))
 }
 
+// subcommands maps each dispatchable subcommand name to its handler. Extracted
+// from run so the dispatch table itself stays a plain data literal and run's
+// body stays a short lookup, keeping run under the per-function line budget.
+// gate/check/accept close over delegate + the harness gate.* function they wrap.
+var subcommands = map[string]func([]string) int{
+	"run":          cmdRun,
+	"gate":         func(rest []string) int { return delegate(gate.Gate, rest) },
+	"check":        func(rest []string) int { return delegate(gate.Check, rest) },
+	"accept":       func(rest []string) int { return delegate(gate.Accept, rest) },
+	"evolve":       cmdEvolve,
+	"route":        cmdRoute,
+	"migrate":      cmdMigrate,
+	"detect":       cmdDetect,
+	"validate":     cmdValidate,
+	"memory-prune": cmdMemoryPrune,
+	"status":       cmdStatus,
+	"scorecard":    cmdScorecard,
+	"doctor":       cmdDoctor,
+	"preflight":    cmdPreflight,
+	"approve":      cmdApprove,
+}
+
 // run dispatches a subcommand and returns the process exit code, so main stays
 // a one-liner and the dispatch is testable.
 func run(args []string) int {
@@ -63,32 +90,26 @@ func run(args []string) int {
 		usage()
 		return 2
 	}
+	// Handle --version and version before subcommand dispatch.
+	if args[0] == "--version" || args[0] == "version" {
+		ver := forgeVersion
+		if forgeCommit != "" {
+			ver += " (" + forgeCommit + ")"
+		}
+		fmt.Printf("forge %s\n", ver)
+		return 0
+	}
 	cmd, rest := args[0], args[1:]
-	switch cmd {
-	case "run":
-		return cmdRun(rest)
-	case "gate":
-		return delegate(gate.Gate, rest)
-	case "check":
-		return delegate(gate.Check, rest)
-	case "accept":
-		return delegate(gate.Accept, rest)
-	case "evolve":
-		return cmdEvolve(rest)
-	case "route":
-		return cmdRoute(rest)
-	case "migrate":
-		return cmdMigrate(rest)
-	case "detect":
-		return cmdDetect(rest)
-	case "-h", "--help", "help":
+	if cmd == "-h" || cmd == "--help" || cmd == "help" {
 		usage()
 		return 0
-	default:
-		fmt.Fprintf(os.Stderr, "forge: unknown command %q\n", cmd)
-		usage()
-		return 2
 	}
+	if handler, ok := subcommands[cmd]; ok {
+		return handler(rest)
+	}
+	fmt.Fprintf(os.Stderr, "forge: unknown command %q\n", cmd)
+	usage()
+	return 2
 }
 
 func usage() {
@@ -99,7 +120,9 @@ usage:
   forge evolve <workflow> [--mode balanced] [--lifecycle mvp] [--max-iter 5] [--executor dry|command] [--agent-cmd claude] [--agent-permission acceptEdits] [--agent-allowed-tools "..."] [--agent-max-budget-usd ""] [--run-budget-usd ""] [--timeout 0] [--max-retries 0] [--max-agent-depth 2] [--max-agent-calls 0] [--max-output-bytes 0] [--resume] [--root DIR]
   forge route  [--complexity F] [--risk-score F] [--security F] [--dependency F] [--context F] [--business F] [--task-type T] [--risk low|medium|high|critical] [--budget F] [--scorecard PATH]
   forge migrate --to engineering [--apply] [--root DIR]
-  forge detect [--root DIR]
+  forge detect|scorecard|validate|memory-prune|status|doctor [--root DIR] [--help]
+  forge preflight <workflow> [--root DIR] [--help]
+  forge approve list [--root DIR]
   forge gate   [--root DIR]
   forge check  [--root DIR]
   forge accept [--root DIR]
@@ -262,10 +285,25 @@ func parallelEnabled(o runOpts, wf asset.Workflow, logln func(string), ctx strin
 }
 
 // runWorkflow dispatches a single-pass `forge run` to the PARALLEL engine when
-// parallelEnabled, else the SERIAL engine (the byte-for-byte default).
-func runWorkflow(eng orchestrator.Engine, wf asset.Workflow, o runOpts, logln func(string)) error {
+// parallelEnabled, else the SERIAL engine (the byte-for-byte default). ctx
+// carries cancellation so the engine can abort cleanly on SIGINT.
+//
+// startPhase is the on_rejected loop-back start index resolved by
+// resolveRejectionStartPhase (gates.go); 0 (no rejection filed) runs eng.Run
+// unchanged, else eng.RunFrom, mirroring LoopEngine.runIteration's own
+// RunFrom-vs-top choice. RunParallel has no linear resume point (waves, not a
+// line) — same limitation LoopEngine's Parallel mode accepts — so a non-zero
+// startPhase there is honestly logged and ignored, not silently dropped.
+func runWorkflow(ctx context.Context, eng orchestrator.Engine, wf asset.Workflow, o runOpts, logln func(string), startPhase int) error {
+	eng.Ctx = ctx
 	if parallelEnabled(o, wf, logln, "forge run") {
-		return eng.RunParallel(wf, o.mode)
+		if startPhase != 0 {
+			logln(fmt.Sprintf("forge run: on_rejected loop-back target (phase %d) is not supported under --parallel (no linear resume point) — running the full dependency graph instead", startPhase))
+		}
+		return eng.RunParallel(ctx, wf, o.mode)
+	}
+	if startPhase != 0 {
+		return eng.RunFrom(wf, o.mode, startPhase)
 	}
 	return eng.Run(wf, o.mode)
 }
@@ -290,7 +328,11 @@ func cmdRun(args []string) int {
 		fmt.Fprintf(os.Stderr, "forge run: %v\n", err)
 		return 1
 	}
-	return execEngine(wf, o)
+	// Signal-aware context: SIGINT/SIGTERM cancel the context, triggering
+	// graceful shutdown of the engine and its subprocesses.
+	ctx, stop := withSignalCancellation()
+	defer stop()
+	return execEngine(ctx, wf, o)
 }
 
 // splitPositional takes the leading <workflow> argument (per `forge run
@@ -304,76 +346,43 @@ func splitPositional(args []string) (name string, flags []string) {
 	return args[0], args[1:]
 }
 
-// loadWorkflow transcodes .agent/workflows/<name>.yml to JSON via the python shim
-// and parses it; a missing shim or workflow yields a clear, actionable error.
+// loadWorkflow reads a YAML workflow, transcodes it to JSON via the native Go
+// YAML parser (forge-core zero-dep, replaces the temporary python shim), and
+// parses it into an asset.Workflow. Falls back to the python shim if the Go
+// parser fails, so a missing/partial config still produces an actionable error.
 func loadWorkflow(repoRoot, name string) (asset.Workflow, error) {
 	ymlPath := filepath.Join(repoRoot, ".agent", "workflows", name+".yml")
 	if _, err := os.Stat(ymlPath); err != nil {
 		return asset.Workflow{}, fmt.Errorf("workflow not found: %s", ymlPath)
 	}
+	// Try the native Go YAML parser first (zero-dep, faster).
+	f, err := os.Open(ymlPath)
+	if err != nil {
+		return asset.Workflow{}, fmt.Errorf("open workflow: %w", err)
+	}
+	defer f.Close()
+	val, err := yaml2json.Decode(f)
+	if err == nil {
+		data, marshalErr := json.Marshal(val)
+		if marshalErr == nil {
+			wf, parseErr := asset.LoadWorkflowJSON(data)
+			if parseErr == nil && len(wf.Phases) > 0 {
+				return wf, nil
+			}
+		}
+	}
+	// Fallback: try the Python yaml2json shim.
+	f.Close()
 	shim := filepath.Join(repoRoot, "harness", "yaml2json.py")
 	if _, err := os.Stat(shim); err != nil {
 		return asset.Workflow{}, fmt.Errorf(
-			"YAML->JSON shim missing: %s (forge-core is zero-dep and reads JSON; "+
-				"this transcoder is the temporary YAML bridge — see README)", shim)
+			"YAML->JSON via Go parser failed and python shim missing at %s: %v", shim, err)
 	}
-	out, err := exec.Command("python3", shim, ymlPath).Output()
-	if err != nil {
-		return asset.Workflow{}, fmt.Errorf("transcoding %s via %s failed: %w", ymlPath, shim, err)
+	out, execErr := exec.Command("python3", shim, ymlPath).Output()
+	if execErr != nil {
+		return asset.Workflow{}, fmt.Errorf("transcoding %s via python shim also failed: %w", ymlPath, execErr)
 	}
 	return asset.LoadWorkflowJSON(out)
-}
-
-// execEngine wires the real harness gates + the selected agent executor and
-// runs the workflow, returning 0 on a clean run and 1 on the first failure.
-//
-// Honesty: acceptance is probed ONCE per run (gate.ProbeAll), and that single
-// map backs BOTH the per-gate verdicts (harnessRunner) and convergence
-// (gatherSignals) — never double-spawned, never inconsistent within a run. An
-// N/A gate does NOT fail the run (it completes, exit 0); only a real FAIL does.
-func execEngine(wf asset.Workflow, o runOpts) int {
-	logln := func(s string) { fmt.Println(s) }
-	probe, categories := probeStatuses(o.root)
-	lifecycle := resolveLifecycle(o)
-	pol := mode.Effective(o.mode, lifecycle)
-	// `forge run` did not open a tracer before, so a REAL claude run burned cost the
-	// scorecard never saw. Open one (append, same .forge/trace.jsonl evolve uses; it is
-	// git-ignored) and feed agent-phase cost into it via the sink. Fail-closed mirrors
-	// evolve's openTracer: a run must not proceed blind on the cost it is about to bill.
-	tracer, closeTrace, err := openTracer(o.root)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "forge run: %v\n", err)
-		return 1
-	}
-	defer closeTrace()
-	budget, err := newRunBudget(o.runBudgetUSD)
-	if err != nil { // a misconfigured budget fails closed: never silently drop a cap.
-		fmt.Fprintf(os.Stderr, "forge run: %v\n", err)
-		return 1
-	}
-	eng, verdicts, _ := buildRunEngine(wf, o, logln, costEmitter(tracer, logln), harnessRunner(o.root, probe), pol, budget)
-	// Learning-loop wind-down: attribute this run's REAL billed cost into the scorecards
-	// REGARDLESS of outcome — DEFERRED so a run that fails or exhausts its --run-budget-usd
-	// mid-way (the highest-cost, most-informative cases — a REJECTED build is the most useful
-	// quality sample) still attributes what it billed, matching `forge evolve`'s unconditional
-	// placement. The previous success-only call dropped exactly those, biasing scorecards toward
-	// successes. Registered AFTER `defer closeTrace()` above so it runs BEFORE it (LIFO) — the
-	// trace it reads is still open, per scorecard_wind.go's flush-ordering invariant. Still
-	// gate-on-real-cost (a dry/echo or nothing-billed failure skips it) + fail-loud-and-continue
-	// (a producer hiccup never flips the run's exit code, set before these defers fire).
-	// iterations=1: a single `forge run` is one execution; verdicts.wasReworked() carries the
-	// real reviewer-bounce signal into avg_iterations / rework_rate.
-	defer func() { windDownScorecards(wf, o, logln, 1, verdicts.wasReworked()) }()
-	fmt.Printf("forge run: stage=%s mode=%s lifecycle=%s executor=%s gates=%v reviewer=%v discover=%s design=%s adr=%v (%d phases)\n",
-		wf.Stage, o.mode, lifecycle, o.executor, pol.Gates, pol.Reviewer,
-		pol.DiscoverDepth, pol.DesignDepth, pol.ADR, len(wf.Phases))
-	if err := runWorkflow(eng, wf, o, logln); err != nil {
-		fmt.Fprintf(os.Stderr, "forge run: %v\n", err)
-		return 1
-	}
-	fmt.Println("forge run: workflow completed")
-	reportConvergence(wf, o.root, probe, categories, lifecycle, o.approved)
-	return 0
 }
 
 // reportConvergence evaluates the workflow's stop condition against live repo
@@ -384,12 +393,15 @@ func execEngine(wf asset.Workflow, o runOpts) int {
 // by approval alone, never the conjunction path. A human_gate gets a distinct,
 // HONEST report: not approved => "awaiting human approval" (a stop to wait for a
 // human, NOT a gate FAIL); approved => "approved -> unlocks <next_stage>".
-func reportConvergence(wf asset.Workflow, root string, probe, categories map[string]string, lifecycle string, approvedFlag bool) {
+//
+// verdicts (nil-safe) threads through to gatherSignals so a review-stage run's
+// recorded executive-review verdict populates Signals.ReviewStatus.
+func reportConvergence(wf asset.Workflow, root string, probe, categories map[string]string, lifecycle string, approvedFlag bool, verdicts *verdictLedger) {
 	if wf.Stop.Type == "" {
 		return
 	}
 	approved := humanApproved(root, wf.Stage, approvedFlag)
-	results, met := converge.Converge(wf.Stop, gatherSignals(root, wf, probe, categories, lifecycle, approved))
+	results, met := converge.Converge(wf.Stop, gatherSignals(root, wf, probe, categories, lifecycle, approved, verdicts))
 	if converge.IsHumanGate(wf.Stop) {
 		reportHumanGate(wf, met)
 		return
@@ -485,6 +497,3 @@ func projectYAMLValue(root, key string) string {
 	}
 	return ""
 }
-
-// agentExecutor (executor selection) and buildRunEngine (shared Engine assembly) moved
-// to engine_build.go to keep this file under the file-size budget.

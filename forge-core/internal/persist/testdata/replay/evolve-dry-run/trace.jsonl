@@ -1,0 +1,12 @@
+{"_format":"forgeos.trace.v1","seq":1,"kind":"iteration","name":"1","status":"ok","duration_ms":156,"detail":"roadmap=25% gates_green=false"}
+{"_format":"forgeos.trace.v1","seq":2,"kind":"agent","name":"planner","status":"ok","duration_ms":12000,"cost_usd_micros":4500,"model":"sonnet"}
+{"_format":"forgeos.trace.v1","seq":3,"kind":"gate","name":"lint","status":"PASS","duration_ms":420,"detail":"0 issues"}
+{"_format":"forgeos.trace.v1","seq":4,"kind":"gate","name":"complexity","status":"FAIL","duration_ms":85,"detail":"2 violations: main.go exceeds 500 lines"}
+{"_format":"forgeos.trace.v1","seq":5,"kind":"agent","name":"implementer","status":"ok","duration_ms":45000,"cost_usd_micros":18000,"model":"sonnet"}
+{"_format":"forgeos.trace.v1","seq":6,"kind":"gate","name":"test","status":"PASS","duration_ms":3200,"detail":"47 tests passed, 0 failed"}
+{"_format":"forgeos.trace.v1","seq":7,"kind":"agent","name":"reviewer","status":"ok","duration_ms":28000,"cost_usd_micros":35000,"model":"opus"}
+{"_format":"forgeos.trace.v1","seq":8,"kind":"decision","name":"implementer","status":"ok","detail":"downtier to haiku (spend_ratio=0.85)"}
+{"_format":"forgeos.trace.v1","seq":9,"kind":"overload_backoff","name":"implementer","status":"retry","detail":"backoff 4s attempt 1/3"}
+{"_format":"forgeos.trace.v1","seq":10,"kind":"iteration","name":"2","status":"ok","duration_ms":2100,"detail":"roadmap=50% gates_green=true"}
+{"_format":"forgeos.trace.v1","seq":11,"kind":"converge","name":"evolve","status":"NOT_MET","detail":"roadmap=50% < 100%"}
+{"_format":"forgeos.trace.v1","seq":12,"kind":"stale_increment","name":"iter 3","status":"stale","detail":"roadmap_flat + gate_unchanged"}

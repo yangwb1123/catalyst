@@ -1,18 +1,30 @@
-// prompt_context.go — the cmd/forge side of the gate-result feedback loop. The
-// orchestrator's Engine fires a GENERIC OnGateResult callback (it knows nothing
-// of prompts); THIS file owns the prompt-shaped end of that wire: a gateLedger
-// records each gate's latest objective verdict and renders it as a context block
-// that buildPrompt injects into a LATER agent phase's prompt.
+// prompt_context.go — the cmd/forge side of the gate-result feedback loop, and the
+// seam where a finished phase's raw output funnels into the prompt-shaped state that
+// LATER phases read back. The orchestrator's Engine fires a GENERIC OnGateResult
+// callback (it knows nothing of prompts) and hands the executor a GENERIC Observe
+// sink (it knows nothing of verdicts or feed-forward); THIS file owns the
+// prompt-shaped end of both wires: a gateLedger records each gate's latest objective
+// verdict and renders it as a context block that buildPrompt injects into a LATER
+// agent phase's prompt, and observeFor composes the feed-forward / verdict / findings
+// / cost concerns that react to a phase's raw output.
 //
 // Why it lives here, not in orchestrator: the orchestrator must stay free of any
 // prompt/ledger concept (the same bright-line cost.go draws for claude-JSON cost).
-// The engine REPORTS gate verdicts; cmd/forge — the only layer that builds the
-// prompt — decides to remember them and feed them forward. This closes a real gap:
-// without it the reviewer phase never sees that harness-gates already ran `test`
-// and the complexity check, so under a print-mode agent (no Bash) it would blindly
-// try to re-run them and burn its budget on permission denials. The injected text
-// is the harness's OWN real verdicts (honesty-positive: a true signal, never a
-// fabricated pass) — see context().
+// The engine REPORTS gate verdicts and raw phase output; cmd/forge — the only layer
+// that builds the prompt — decides to remember them and feed them forward. This
+// closes a real gap: without it the reviewer phase never sees that harness-gates
+// already ran `test` and the complexity check, so under a print-mode agent (no Bash)
+// it would blindly try to re-run them and burn its budget on permission denials. The
+// injected text is the harness's OWN real verdicts (honesty-positive: a true signal,
+// never a fabricated pass) — see context().
+//
+// The phaseOutputLedger, verdictLedger, reviewFindingsLedger, and the cross-session
+// memory lane (memoryContext) are the SIBLING state this file's buildPrompt reads
+// back — they live in prompt_memory.go, split out to keep both files under the
+// volume budget (its package doc explains why). The workflow-DECLARED,
+// never-FreshContext-gated artifact lanes (emits / uses_template /
+// secondary_template) that buildPrompt also appends live in
+// prompt_artifacts.go, split out for the same volume-budget reason.
 package main
 
 import (
@@ -22,6 +34,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"forgeos/forge-core/internal/asset"
 	"forgeos/forge-core/internal/prompt"
@@ -103,99 +116,6 @@ func (l *gateLedger) contextLines() []string {
 	return nil
 }
 
-// phaseOutputSummaryCap bounds how many bytes of a fed-forward phase's output are
-// remembered. The planner's output (a sprint split + acceptance criteria) can be long;
-// injecting it whole into every later phase's prompt would bloat the prompt (and the
-// token bill) without adding signal past the first screenful. record truncates beyond
-// this cap and appends an ellipsis marker so the downstream agent knows it was clipped.
-const phaseOutputSummaryCap = 800
-
-// phaseOutputLedger accumulates the output of every phase whose asset declares
-// feeds_forward, keyed by phase name, preserving first-seen order for a stable render.
-// It is the in-memory bridge between the agent executor's Observe sink (which writes it,
-// one phase at a time, for a feeds_forward phase only) and buildPrompt (which reads
-// contextLines() into a LATER phase's prompt) — the EXACT structural mirror of
-// gateLedger, but carrying planner-style planning output instead of gate verdicts.
-//
-// CONCURRENCY: mu guards summary+order for the OPT-IN parallel orchestrator (the
-// parallelize-then-lock the prior comment foresaw); the serial path takes the
-// uncontended lock and is byte-for-byte unchanged.
-type phaseOutputLedger struct {
-	mu      sync.Mutex        // guards summary+order under parallel execution
-	summary map[string]string // phase name -> latest (truncated) output summary
-	order   []string          // phase names in first-seen order (stable rendering)
-}
-
-// newPhaseOutputLedger returns an empty ledger ready to record phase outputs.
-func newPhaseOutputLedger() *phaseOutputLedger {
-	return &phaseOutputLedger{summary: map[string]string{}}
-}
-
-// record stores one phase's latest output, TRUNCATED to phaseOutputSummaryCap (with a
-// trailing ellipsis when clipped) so a long planner output cannot bloat downstream
-// prompts. It appends to the render order only the FIRST time a name is seen (a re-run
-// phase — across loop-back or evolve iterations — updates its summary in place, keeping
-// its original position), exactly like gateLedger.record. Safe on a nil receiver
-// (no-op) so a caller that never constructed a ledger cannot panic.
-func (l *phaseOutputLedger) record(phase, output string) {
-	if l == nil {
-		return
-	}
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	if _, seen := l.summary[phase]; !seen {
-		l.order = append(l.order, phase)
-	}
-	l.summary[phase] = truncateSummary(output)
-}
-
-// truncateSummary clips s to phaseOutputSummaryCap runes, appending a marker when it
-// did clip so the reader knows the output continued. Rune-based (not byte-based) so a
-// multi-byte UTF-8 boundary is never split mid-character.
-func truncateSummary(s string) string {
-	r := []rune(s)
-	if len(r) <= phaseOutputSummaryCap {
-		return s
-	}
-	return string(r[:phaseOutputSummaryCap]) + " …(已截断)"
-}
-
-// context renders the recorded phase outputs as a prompt context block, or "" when the
-// ledger is nil or empty (no feeds_forward phase has run yet). The text is HONEST about
-// what this is: the prior PLANNING phase's own output (the planner's task split /
-// acceptance criteria), offered to the implementer and reviewer as reference — NOT a
-// gate verdict, NOT a fabricated fact. Each phase renders as a labeled block in
-// first-seen order.
-func (l *phaseOutputLedger) context() string {
-	if l == nil {
-		return ""
-	}
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	if len(l.order) == 0 {
-		return ""
-	}
-	var b strings.Builder
-	b.WriteString("前序规划阶段产出(planner 的任务拆分/验收标准,供实现与审查参考 —— 这是上游规划角色的客观产出,不是闸门结果):")
-	for _, name := range l.order {
-		b.WriteString("\n\n### ")
-		b.WriteString(name)
-		b.WriteString("\n")
-		b.WriteString(l.summary[name])
-	}
-	return b.String()
-}
-
-// contextLines wraps context() as a slice ready to append onto a prompt's context lanes
-// (nil when there is nothing to inject — symmetric with gateLedger.contextLines and
-// memoryContext), so buildPrompt stays a flat sequence of appends with no inline check.
-func (l *phaseOutputLedger) contextLines() []string {
-	if c := l.context(); c != "" {
-		return []string{c}
-	}
-	return nil
-}
-
 // feedsForwardOf returns a predicate that reports whether the phase named `name` in this
 // workflow declares feeds_forward — the bridge from asset.Phase.FeedsForward to the
 // executor's Observe sink, which is handed only a phase NAME (not the Phase). An unknown
@@ -262,20 +182,39 @@ func observeFor(isClaude bool, costSink func(phase, model string, usd float64, l
 		return nil
 	}
 	return func(phase, output string, latency time.Duration) {
+		sanitized := sanitizeAgentOutput(output)
 		if phaseOut != nil && feedsForward != nil && feedsForward(phase) {
-			phaseOut.record(phase, unwrapClaudeResult(output))
+			phaseOut.record(phase, unwrapClaudeResult(sanitized))
 		}
 		if verdicts != nil {
-			if v, ok := parseReviewerVerdict(output); ok {
+			if v, ok := parseReviewerVerdict(sanitized); ok {
 				verdicts.record(phase, v)
 				// On REQUEST_CHANGES, stash the findings for the loop-back target (the
 				// implementer) — keyed off the phase's OWN on_fail.target, so the routing
 				// is data-driven and the reviewer (a different phase) never receives them.
 				if v == VerdictRequestChanges && findings != nil && onFailTarget != nil {
 					if target, ok := onFailTarget(phase); ok {
-						findings.record(target, unwrapClaudeResult(output))
+						findings.record(target, unwrapClaudeResult(sanitized))
 					}
 				}
+			} else if v, ok := parseExecutiveVerdict(sanitized); ok {
+				// The binary reviewer contract didn't match — try the CTO's 5-way
+				// executive-review contract (review.yml P4) into the SAME ledger, so
+				// Engine.AgentVerdict and reviewStatus (gates.go) read either kind back
+				// through one uniform lookup. No findings side-effect: the executive
+				// phase carries no on_fail.loop_back in review.yml (its rejection routes
+				// via the workflow's own stop_condition.on_rejected, not a phase jump).
+				verdicts.record(phase, v)
+			} else if score, ok := parseConfidenceScore(sanitized); ok {
+				// Neither the binary nor the 5-way token contract matched — try the
+				// product-manager's numeric requirement-discovery contract (discover.yml
+				// P1's CONFIDENCE: <N> last line). Stored as the plain numeric string
+				// (e.g. "85") into the SAME ledger, so requirementConfidence (gates.go)
+				// reads it back through the identical verdictLedger.get lookup the other
+				// two tiers use — no findings side-effect (this phase carries no
+				// on_fail.loop_back; discover.yml routes an unmet confidence via its own
+				// stop_condition.on_unmet, not a phase jump).
+				verdicts.record(phase, fmt.Sprintf("%.0f", score))
 			}
 		}
 		if isClaude && costSink != nil {
@@ -295,6 +234,39 @@ func phaseModelOf(phaseModel func(phase string) string, phase string) string {
 		return ""
 	}
 	return phaseModel(phase)
+}
+
+// sanitizeAgentOutput strips control characters and non-printable runes from agent
+// output before it enters the feed-forward / verdict / findings pipeline
+// (analysis §scan-new-angles direction 2: prompt injection attack surface).
+// This prevents a compromised agent output from injecting control sequences or
+// marker-syntax that could confuse downstream prompt construction. Characters
+// kept: newline, tab, carriage-return, and all Unicode printable runes. Pure: no IO.
+func sanitizeAgentOutput(output string) string {
+	var b strings.Builder
+	b.Grow(len(output))
+	for _, r := range output {
+		if r == '\n' || r == '	' || r == '\r' {
+			b.WriteRune(r)
+			continue
+		}
+		if unicode.IsPrint(r) {
+			b.WriteRune(r)
+		}
+	}
+	return strings.TrimSpace(b.String())
+}
+
+// contextMarker wraps a context block with a source marker that tells the agent
+// what kind of information follows and that it is system-generated reference
+// context, never a command to execute. This is a simple textual defense-in-depth
+// against prompt injection: the marker is a plain prefix, not a boundary token,
+// so it never interferes with prompt structure.
+func contextMarker(source, content string) string {
+	if content == "" {
+		return ""
+	}
+	return "[context:" + source + "]\n" + content
 }
 
 // The cost path's (phase name -> routed model/tier) resolver lives in engine_build.go as
@@ -347,28 +319,136 @@ func gatherContext(cache *prompt.ContextCache, repoRoot, query string) []string 
 // phase; the token win is v2's claude-API prompt-caching, for which this is the data-shape
 // rehearsal — see internal/prompt/cache.go.)
 func buildPrompt(repoRoot string, p asset.Phase, mode string, tierOf func(p asset.Phase) string, cache *prompt.ContextCache, gates *gateLedger, phaseOut *phaseOutputLedger, findings *reviewFindingsLedger) string {
+	return buildPromptWithEmits(repoRoot, p, mode, tierOf, cache, gates, phaseOut, findings, nil)
+}
+
+// buildPromptWithEmits is like buildPrompt but also injects the content of
+// files that prior phases declared via the `emits` field. The emitsFiles
+// argument carries file path strings (from prior phases' Phase.Emits lists)
+// relative to repoRoot — each existing file's content is read and injected
+// as a [context:emit:...] block. A nil or empty emitsFiles is a no-op.
+// This bridges the asset-runtime-gap §1.3: emitted artifacts (task-plan.md,
+// proposal.md, etc.) are actually surfaced to downstream agent prompts.
+//
+// The lane assembly itself is split into appendFeedbackLanes (the FreshContext-gated
+// memory/gate-results/phase-output/findings lanes) and appendArtifactContext (the
+// always-on emits/uses_template lanes) so this function — and each helper — stays
+// under the function-length budget; the append ORDER is unchanged from the original
+// single-function version.
+func buildPromptWithEmits(repoRoot string, p asset.Phase, mode string, tierOf func(p asset.Phase) string, cache *prompt.ContextCache, gates *gateLedger, phaseOut *phaseOutputLedger, findings *reviewFindingsLedger, emitsFiles []string) string {
 	tier := tierOf(p)
 	query := p.Name + " " + p.Agent
 	ctx := gatherContext(cache, repoRoot, query)
-	ctx = append(ctx, memoryContext(repoRoot, query)...)
-	ctx = append(ctx, gates.contextLines()...)
-	ctx = append(ctx, phaseOut.contextLines()...)
+	// Inject phase description as the first context lane, before the role card
+	// (asset-runtime-gap §1.5). These 2-5 line descriptions carry workflow-level
+	// context about what THIS phase should do in THIS workflow, which is more
+	// specific than the generic agent card.
+	if p.Description != "" {
+		ctx = append(ctx, "## Current phase description\n"+p.Description)
+	}
+	ctx = appendFeedbackLanes(ctx, repoRoot, query, p, gates, phaseOut, findings)
+	ctx = appendArtifactContext(ctx, repoRoot, emitsFiles, p.UsesTemplate, p.SecondaryTemplate)
+	return prompt.Build(p.Agent, p.Name, mode, tier, readCard(repoRoot, p.Agent, cache), ctx)
+}
+
+// appendFeedbackLanes appends the memory / gate-results / phase-output / findings
+// context lanes onto ctx, each wrapped with its [context:source] marker — a defense-in-
+// depth against prompt injection, so an agent can always distinguish system-provided
+// reference context from commands or instructions (scan-new-angles §方向2).
+//
+// FreshContext enforcement: when p.FreshContext is true, this is a NO-OP — gate results,
+// phase outputs, memory, and findings are all skipped, giving this phase a clean slate as
+// declared by the workflow author (asset-runtime-gap §1.2). This implements the
+// engineering rule that a Reviewer must be a fresh-context independent agent that does
+// not see the implementer's prior output or gate results, preventing anchoring bias.
+func appendFeedbackLanes(ctx []string, repoRoot, query string, p asset.Phase, gates *gateLedger, phaseOut *phaseOutputLedger, findings *reviewFindingsLedger) []string {
+	if p.FreshContext {
+		return ctx
+	}
+	if mc := memoryContext(repoRoot, query); len(mc) > 0 {
+		ctx = append(ctx, contextMarker("memory", mc[0]))
+	}
+	if gc := gates.contextLines(); len(gc) > 0 {
+		ctx = append(ctx, contextMarker("gate-results", gc[0]))
+	}
+	if pc := phaseOut.contextLines(); len(pc) > 0 {
+		ctx = append(ctx, contextMarker("phase-output", pc[0]))
+	}
 	// Gated on p.Name: findings.contextLines returns a block ONLY for the loop-back
 	// target (the implementer). The reviewer, re-running with p.Name != target, gets
 	// nil here — its fresh context is never polluted by its own earlier findings.
-	ctx = append(ctx, findings.contextLines(p.Name)...)
-	return prompt.Build(p.Agent, p.Name, mode, tier, readCard(repoRoot, p.Agent), ctx)
+	if fc := findings.contextLines(p.Name); len(fc) > 0 {
+		ctx = append(ctx, contextMarker("findings", fc[0]))
+	}
+	return ctx
 }
 
-// memoryContext (the cross-session memory lane buildPrompt injects above) and its
-// bounding live in prompt_memory.go — split out to keep this file under the volume cap.
+// appendArtifactContext (emits / uses_template / secondary_template — never gated
+// on FreshContext) lives in prompt_artifacts.go, split out to keep this file under
+// the volume budget.
 
 // readCard returns the agent's role-card text, or a short marker when absent so
-// the prompt is still well-formed.
-func readCard(repoRoot, agent string) string {
+// the prompt is still well-formed. Uses the ContextCache when non-nil (§3.4).
+func readCard(repoRoot, agent string, cache *prompt.ContextCache) string {
+	if cache != nil {
+		return cache.CardText(agent)
+	}
 	b, err := os.ReadFile(filepath.Join(repoRoot, ".agent", "agents", agent+".md"))
 	if err != nil {
 		return fmt.Sprintf("(no role card found for %q)", agent)
 	}
 	return string(b)
+}
+
+// requiresToolsGuard implements discover.yml's requires_tools degrade-and-flag
+// contract (market-research: requires_tools: [web_search, web_fetch] — "无检索工具
+// 则降级 advisory 并打标"). forge-core has NO live tool probe, so this decides from
+// STATIC executor config alone, caller-supplied: isCommandExec (false under
+// DryRunExecutor — narrate-only, no live tool call exists at all), isClaude (false
+// under a non-claude command executor, e.g. the echo plumbing check), and
+// allowedTools (this run's claude --allowedTools whitelist string). A required tool
+// (snake_case, e.g. "web_search") is CONFIRMED only when its alias — the name
+// collapsed to one word, "websearch" — appears in allowedTools, matching how a
+// caller would actually whitelist claude's WebSearch/WebFetch tools. Absence of
+// proof is never treated as proof of absence: every branch that cannot
+// affirmatively confirm returns a reason, never a silent guess either way.
+//
+// When every required tool is confirmed, text returns byte-for-byte UNCHANGED
+// (the common, silent path — every phase without requires_tools, and a
+// fully-confirmed one, are both no-ops). Otherwise it logs a visible ⚠ degrade
+// line via logln (mirrors loop.go's honesty-warning convention) and appends a
+// [context:requires_tools] block (reusing contextMarker's prompt-injection-safe
+// prefix) telling the agent to mark unresearched claims advisory/unverified/
+// uncited — never a silent pass-through of unfounded claims, never a hard-fail.
+func requiresToolsGuard(p asset.Phase, isCommandExec, isClaude bool, allowedTools string, logln func(string), text string) string {
+	if len(p.RequiresTools) == 0 {
+		return text
+	}
+	reason := ""
+	switch {
+	case !isCommandExec:
+		reason = "dry-run executor narrates only — no live tool calls exist"
+	case !isClaude:
+		reason = "non-claude command executor — no live tool access"
+	case allowedTools == "":
+		reason = "no --allowedTools whitelist configured — cannot verify tool grant"
+	default:
+		lower := strings.ToLower(allowedTools)
+		var missing []string
+		for _, t := range p.RequiresTools {
+			alias := strings.ReplaceAll(strings.ToLower(t), "_", "")
+			if !strings.Contains(lower, alias) {
+				missing = append(missing, t)
+			}
+		}
+		if len(missing) == 0 {
+			return text // confirmed: every required tool named in --allowedTools
+		}
+		reason = "not confirmed in --allowedTools: " + strings.Join(missing, ", ")
+	}
+	if logln != nil {
+		logln(fmt.Sprintf("forge: ⚠ phase %s requires_tools=%v not confirmed (%s) — degrading to advisory", p.Name, p.RequiresTools, reason))
+	}
+	note := contextMarker("requires_tools", fmt.Sprintf("Declared requires_tools=%v could not be confirmed available this run (%s). If you cannot actually search/fetch, mark affected claims advisory/unverified/uncited rather than presenting them as confirmed fact.", p.RequiresTools, reason))
+	return text + "\n\n" + note
 }

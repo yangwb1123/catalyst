@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"forgeos/forge-core/internal/asset"
-	"forgeos/forge-core/internal/gate"
 	"forgeos/forge-core/internal/mode"
 	"forgeos/forge-core/internal/orchestrator"
 	"forgeos/forge-core/internal/prompt"
@@ -108,7 +107,7 @@ func TestBuildRunEngine_EvolveCrossIterationRoadmapNeverStale(t *testing.T) {
 	b := &runBudget{} // unbudgeted: ratio 0, no down-tier — isolates the cache path
 
 	eng, _, _ := buildRunEngine(wf, o, func(string) {}, func(string, string, float64, time.Duration) {},
-		func(string) gate.Result { return gate.Result{} }, mode.Policy{}, b)
+		nil, mode.Policy{}, b, "", nil)
 	ce, ok := eng.Exec.(orchestrator.CommandExecutor)
 	if !ok {
 		t.Fatalf("buildRunEngine must wire a CommandExecutor; got %T", eng.Exec)

@@ -10,7 +10,12 @@
 // cost, and a fresh-context reviewer is never down-tiered.
 package routing
 
-// Tier names (v1 is Claude-only; ascending capability and cost).
+import "math"
+
+// Tier names (v1 is Claude-only; ascending capability and cost). Provider names
+// extend these for the cross-vendor pool: a fully-qualified tier is "provider/tier"
+// (e.g. "openai/gpt-4o", "anthropic/claude-sonnet-4"). The routing package assigns
+// tiers without knowing providers; the CLI's executor maps them to --model flags.
 const (
 	Haiku  = "haiku"
 	Sonnet = "sonnet"
@@ -79,12 +84,12 @@ func defaultFor(mode string) string {
 	return Sonnet
 }
 
-// rank orders tiers by capability/cost so they can be compared.
-var rank = map[string]int{Haiku: 0, Sonnet: 1, Opus: 2}
+// Rank orders tiers by capability/cost so they can be compared.
+var Rank = map[string]int{Haiku: 0, Sonnet: 1, Opus: 2}
 
 // higher returns the more capable of two tiers.
 func higher(a, b string) string {
-	if rank[b] > rank[a] {
+	if Rank[b] > Rank[a] {
 		return b
 	}
 	return a
@@ -131,13 +136,13 @@ func CandidatesForTier(tier string) []string {
 // Threshold bands from scoring.thresholds: total <= 0.34 -> Haiku,
 // 0.34 < total <= 0.69 -> Sonnet, total > 0.69 -> Opus.
 const (
-	haikuMax  = 0.34
-	sonnetMax = 0.69
+	HaikuMax  = 0.34
+	SonnetMax = 0.69
 )
 
-// taskTypeFloor mirrors tiers.by_task_type: each task_type's minimum tier
+// TaskTypeFloor mirrors tiers.by_task_type: each task_type's minimum tier
 // (a strong prior that can lift a low score straight to Opus).
-var taskTypeFloor = map[string]string{
+var TaskTypeFloor = map[string]string{
 	"docs":            Haiku,
 	"crud":            Haiku,
 	"test":            Haiku,
@@ -152,9 +157,9 @@ var taskTypeFloor = map[string]string{
 	"reviewer":        Opus,
 }
 
-// safetyForceOpus mirrors safety_override.rules: these task_types hard-force
+// SafetyForceOpus mirrors safety_override.rules: these task_types hard-force
 // Opus (alongside risk == critical, handled separately in TierForScore).
-var safetyForceOpus = map[string]bool{
+var SafetyForceOpus = map[string]bool{
 	"security":      true,
 	"payment":       true,
 	"authorization": true,
@@ -181,12 +186,12 @@ func Score(dims map[string]float64, weights map[string]float64) float64 {
 	return weighted / totalWeight
 }
 
-// bandForScore maps a renormalized score to its base tier via the thresholds.
-func bandForScore(score float64) string {
+// BandForScore maps a renormalized score to its base tier via the thresholds.
+func BandForScore(score float64) string {
 	switch {
-	case score <= haikuMax:
+	case score <= HaikuMax:
 		return Haiku
-	case score <= sonnetMax:
+	case score <= SonnetMax:
 		return Sonnet
 	default:
 		return Opus
@@ -206,8 +211,8 @@ func bandForScore(score float64) string {
 //     returns EscalateToHuman; spend >= 1.00 and risk < critical downgrades to
 //     the task_type floor.
 func TierForScore(score float64, taskType string, risk string, spendRatio float64) string {
-	floor := taskTypeFloor[taskType] // "" (Haiku rank 0) for unknown task types
-	tier := higher(bandForScore(score), floor)
+	floor := TaskTypeFloor[taskType] // "" (Haiku rank 0) for unknown task types
+	tier := higher(BandForScore(score), floor)
 
 	critical := risk == "critical"
 
@@ -218,27 +223,30 @@ func TierForScore(score float64, taskType string, risk string, spendRatio float6
 		return EscalateToHuman
 	}
 
-	if critical || safetyForceOpus[taskType] {
+	if critical || SafetyForceOpus[taskType] {
 		return Opus // safety_override beats budget; override can only raise.
 	}
 
 	switch {
 	case spendRatio >= 1.00:
 		// Non-critical & over budget: collapse to the by_task_type floor.
+		if floor == "" {
+			return Haiku // unknown task type -> cheapest tier (no prior to collapse to)
+		}
 		return floor
 	case spendRatio >= 0.80:
 		// Non-critical & near budget: drop exactly one tier. Clamped only by the
 		// safety_override floor (the hard Opus pins, already returned above) — not
 		// by the softer by_task_type prior — so a score-derived Sonnet can fall to
 		// Haiku here, unlike the over-budget collapse which honors the task floor.
-		return downgradeOne(tier)
+		return DowngradeOne(tier)
 	}
 	return tier
 }
 
-// downgradeOne returns the next cheaper tier (opus->sonnet->haiku), clamped at
+// DowngradeOne returns the next cheaper tier (opus->sonnet->haiku), clamped at
 // Haiku. Used by the budget_guard near-budget downgrade.
-func downgradeOne(tier string) string {
+func DowngradeOne(tier string) string {
 	switch tier {
 	case Opus:
 		return Sonnet
@@ -282,13 +290,57 @@ func downgradeOne(tier string) string {
 //     | [0.80,1.00) down-tier | [1.00,∞) PR4 already stopped).
 //
 // PURE and deterministic (no clock, no state) — it only reads its arguments and the
-// package's opusFloorAgents/downgradeOne, mirroring TierForScore's purity.
+// package's opusFloorAgents/DowngradeOne, mirroring TierForScore's purity.
+//
+// HONESTY: a NaN or negative spendRatio is a signal of no valid cap (ratio=0) and
+// is treated as "in budget" — we refuse to silently downgrade on corrupted input.
 func BudgetAdjustTier(base, agent string, spendRatio float64) string {
+	if math.IsNaN(spendRatio) || spendRatio < 0 {
+		spendRatio = 0 // treat corrupted input as "no cap / fully in budget"
+	}
 	if spendRatio < 0.80 {
 		return base // in budget: unchanged (byte-identical to the routed tier).
 	}
 	if opusFloorAgents[agent] {
 		return base // judgement-only roles keep their Opus safety floor near budget.
 	}
-	return downgradeOne(base) // near budget, non-floor: drop one tier to extend runway.
+	return DowngradeOne(base) // near budget, non-floor: drop one tier to extend runway.
+}
+
+// ── Cross-vendor pool (v3 direction) ──────────────────────────────────────
+
+// ModelMap maps a (provider, tier) pair to the model name the executor passes
+// to --model. Built-in providers cover the three Claude tiers; external providers
+// extend this at the caller level (cmd/forge).
+var ModelMap = map[string]map[string]string{
+	"anthropic": {
+		Haiku:  "claude-sonnet-4-haiku",
+		Sonnet: "claude-sonnet-4",
+		Opus:   "claude-opus-4",
+	},
+}
+
+// ResolveModel resolves a (provider, tier) to a model name string.
+// When provider is empty, defaults to "anthropic" (the v1 default).
+// When the provider+tier combo is unknown, returns tier as-is — the CLI
+// executor may still know what to do with the bare tier name.
+func ResolveModel(provider, tier string) string {
+	if provider == "" {
+		provider = "anthropic"
+	}
+	if models, ok := ModelMap[provider]; ok {
+		if m, ok := models[tier]; ok {
+			return m
+		}
+	}
+	return tier // fallback: pass tier through as model name
+}
+
+// Providers returns the list of known provider names.
+func Providers() []string {
+	ps := make([]string, 0, len(ModelMap))
+	for p := range ModelMap {
+		ps = append(ps, p)
+	}
+	return ps
 }

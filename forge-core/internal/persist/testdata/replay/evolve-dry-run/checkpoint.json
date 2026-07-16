@@ -1,0 +1,11 @@
+{
+  "_format": "forgeos.checkpoint.v1",
+  "workflow": "evolve",
+  "mode": "balanced",
+  "iteration": 3,
+  "roadmap_completion": 0.5,
+  "gates_green": true,
+  "reason": "iteration complete",
+  "updated_at_unix": 1782516099,
+  "spent_usd_micros": 115000
+}

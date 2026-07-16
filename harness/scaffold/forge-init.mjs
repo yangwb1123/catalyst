@@ -90,6 +90,7 @@ export const COPIED_FILES = [
   join('harness', 'gate.mjs'),
   join('harness', 'policies.yml'),
   join('harness', 'check.py'),
+  join('harness', 'mode_gating_check.py'), // imported by check.py; without it check.py fails to import
   join('harness', 'acceptance.mjs'),
   // acceptance.mjs is split into a dependency-free kernel (shared run/result/
   // splitCmd + PASS/FAIL/NA/ROOT/HARNESS_DIR) and the adapter-backed quality
@@ -107,9 +108,7 @@ export const COPIED_FILES = [
   join('harness', 'scorecard.mjs'),
   join('harness', 'scorecard-update.mjs'),
   join('harness', 'secret-scan.mjs'),
-  // sca.mjs is imported by acceptance.mjs (the dependency_vulnerabilities criterion
-  // runs OSV-format SCA); without it the copied acceptance gate fails to import.
-  join('harness', 'sca.mjs'),
+  join('harness', 'sca.mjs'), // imported by acceptance.mjs's dependency_vulnerabilities criterion
   // select-tests.mjs is the incremental (advisory) test selector — a fast edit-time
   // signal that NEVER replaces the full forge accept; it imports acceptance-kernel.mjs
   // (already copied). A scaffolded project inherits the same dev-loop accelerator.
@@ -126,6 +125,7 @@ export const COPIED_FILES = [
   // test_enforce.mjs (pins the warn|block enforce resolution in the copied adapters.mjs)
   // was once dropped here — the drift test_forge-init.mjs's manifest guard now forbids.
   join('harness', 'test_check.py'),
+  join('harness', 'test_mode_gating_check.py'),
   join('harness', 'test_yaml2json.py'),
   join('harness', 'test_acceptance.mjs'),
   join('harness', 'test_adapters.mjs'),

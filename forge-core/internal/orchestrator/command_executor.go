@@ -98,14 +98,32 @@ type CommandExecutor struct {
 	// the original byte-for-byte behavior (every non-timeout failure stays KindFailed). Consulted
 	// ONLY on a failing run, so a clean command never pays for it.
 	ClassifyOverload func(output string) bool
+
+	// Sandbox is the OPTIONAL isolation configuration for running agent commands
+	// inside a sandboxed environment (Firecracker microVM, Docker, etc.) instead
+	// of directly on the host. When nil, the command runs on the host (the v1
+	// default). When non-nil, the executor should route the command through the
+	// sandbox's runtime. This is the extension point for ROADMAP v3's "带外
+	// Sandbox (Firecracker)" direction.
+	Sandbox *SandboxConfig
+}
+
+// SandboxConfig describes how to isolate an agent command. v1 placeholder skeleton.
+// The actual sandbox runner lives outside forge-core and is wired by the CLI layer.
+type SandboxConfig struct {
+	Type       string // "" (none) | "firecracker" | "docker"
+	Image      string // container/microVM image
+	MemoryMB   int    // RAM limit; 0 = use default
+	TimeoutSec int    // session timeout; 0 = use command's Timeout
 }
 
 // Execute builds and runs the phase's command under an optional timeout, failing
 // closed with a typed *ExecError on every error path so a broken executor never
 // masquerades as success — and never panics on a nil Build. The error's Kind
 // lets callers tell a retryable timeout from a permanent config fault from the
-// agent's own non-zero exit (see ExecError).
-func (c CommandExecutor) Execute(p asset.Phase, mode string) error {
+// agent's own non-zero exit (see ExecError). ctx propagates cancellation so a
+// parent SIGINT/SIGTERM stops the child process via its process group.
+func (c CommandExecutor) Execute(ctx context.Context, p asset.Phase, mode string) error {
 	if c.Build == nil {
 		return configErr(p.Name, nil) // nil Build: nothing to run, permanent.
 	}
@@ -125,11 +143,11 @@ func (c CommandExecutor) Execute(p asset.Phase, mode string) error {
 
 	// A zero Timeout means "no deadline": context.WithTimeout(0) would fire at
 	// once, so fall back to a plain cancelable context. cancel is always deferred.
-	ctx, cancel := c.commandContext()
-	defer cancel()
+	runCtx, runCancel := c.commandContext(ctx)
+	defer runCancel()
 
-	out, latency, runErr := c.runMeasured(ctx, argv, depth)
-	return c.finish(p.Name, argv, out, runErr, ctx.Err(), latency)
+	out, latency, runErr := c.runMeasured(runCtx, argv, depth)
+	return c.finish(p.Name, argv, out, runErr, runCtx.Err(), latency)
 }
 
 // runMeasured constructs the bounded, process-grouped command for argv and runs it under
@@ -192,14 +210,16 @@ func (c CommandExecutor) finish(phase string, argv []string, out *cappedBuffer, 
 	return classifyRunErr(phase, runErr, ctxErr, isOverload)
 }
 
-// commandContext returns the context governing one command run, plus its cancel.
-// With a positive Timeout it carries a deadline; with the zero default it is
-// merely cancelable (no deadline) to preserve the original unbounded behavior.
-func (c CommandExecutor) commandContext() (context.Context, context.CancelFunc) {
+// commandContext returns a context derived from parent, governing one command run,
+// plus its cancel. With a positive Timeout it carries a deadline derived from parent;
+// with the zero default it is merely cancelable (no deadline) to preserve the original
+// unbounded behavior. Using parent instead of context.Background() lets a parent
+// cancellation (SIGINT) propagate to the running command.
+func (c CommandExecutor) commandContext(parent context.Context) (context.Context, context.CancelFunc) {
 	if c.Timeout > 0 {
-		return context.WithTimeout(context.Background(), c.Timeout)
+		return context.WithTimeout(parent, c.Timeout)
 	}
-	return context.WithCancel(context.Background())
+	return context.WithCancel(parent)
 }
 
 func (c CommandExecutor) logf(format string, args ...any) {

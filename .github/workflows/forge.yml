@@ -35,5 +35,19 @@ jobs:
       - name: forge accept (Stop gate — aggregates gate/arch-check/check/secret-scan/tests)
         run: node harness/acceptance.mjs
 
+      - name: go build (catches compilation errors)
+        run: go -C forge-core build ./...
+
       - name: forge-core tests (zero-dep Go runtime)
         run: go -C forge-core test ./...
+
+      - name: forge-core tests with -race (catches data races)
+        run: go -C forge-core test -race ./...
+
+      - name: harness unit tests
+        run: node --test harness/
+
+      - name: forge run build --executor dry (end-to-end orchestration smoke test)
+        run: |
+          go -C forge-core build -o /tmp/forge-test ./cmd/forge
+          /tmp/forge-test run build --executor dry --root $PWD

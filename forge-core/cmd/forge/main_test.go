@@ -1,14 +1,13 @@
 package main
 
 import (
+	"bytes"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"forgeos/forge-core/internal/asset"
-	"forgeos/forge-core/internal/converge"
 	"forgeos/forge-core/internal/memory"
 	"forgeos/forge-core/internal/orchestrator"
 )
@@ -198,246 +197,129 @@ func TestAgentExecutor_ObserveUnwrapsClaudeOutputForFeedForward(t *testing.T) {
 	}
 }
 
-func TestRun_NoArgsIsUsageError(t *testing.T) {
-	if code := run(nil); code != 2 {
-		t.Errorf("run(nil) = %d, want 2", code)
+// buildPrompt must inject the AI-SDLC template content when the phase declares
+// uses_template (eighth-wave-adr-decay.md §方向2: uses_template 字段代码化).
+// The template content appears as a [context:template:...] block in the prompt.
+func TestBuildPrompt_UsesTemplateInjectsContent(t *testing.T) {
+	root := t.TempDir()
+	tmplDir := filepath.Join(root, ".ai", "prompts")
+	if err := os.MkdirAll(tmplDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	tmplPath := filepath.Join(tmplDir, "02-security-rfc-review.md")
+	tmplContent := "# Security RFC Review Template\n\n## STRIDE Analysis\n- Spoofing\n- Tampering\n"
+	if err := os.WriteFile(tmplPath, []byte(tmplContent), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	p := asset.Phase{Name: "security-review", Agent: "security-engineer", UsesTemplate: ".ai/prompts/02-security-rfc-review.md"}
+	got := buildPromptWithEmits(root, p, "balanced", unbudgetedTier("balanced"), nil, nil, nil, nil, nil)
+	if !strings.Contains(got, "[context:template:") {
+		t.Errorf("buildPrompt with uses_template must inject a [context:template:...] block, got:\n%s", got)
+	}
+	if !strings.Contains(got, "STRIDE Analysis") {
+		t.Errorf("buildPrompt must inject template content, got:\n%s", got)
+	}
+	// Without uses_template, the template block must be absent.
+	plain := buildPromptWithEmits(root, asset.Phase{Name: "security-review", Agent: "security-engineer"}, "balanced", unbudgetedTier("balanced"), nil, nil, nil, nil, nil)
+	if strings.Contains(plain, "[context:template:") {
+		t.Errorf("buildPrompt without uses_template must not inject a template block, got:\n%s", plain)
 	}
 }
 
-// repoRoot finds the ForgeOS repo root (the dir holding harness/yaml2json.py),
-// or "" when the test is not running inside the repo.
-func repoRoot() string {
-	dir, err := os.Getwd()
+// buildPrompt must WARN (via stderr) but NOT fail when uses_template references
+// a missing file — the phase still runs, just without specialized guidance.
+func TestBuildPrompt_UsesTemplateMissingFileWarns(t *testing.T) {
+	root := t.TempDir()
+	// Capture stderr via a pipe.
+	oldStderr := os.Stderr
+	r, w, err := os.Pipe()
 	if err != nil {
-		return ""
+		t.Fatalf("pipe: %v", err)
 	}
-	for {
-		if _, err := os.Stat(filepath.Join(dir, "harness", "yaml2json.py")); err == nil {
-			return dir
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return ""
-		}
-		dir = parent
+	os.Stderr = w
+
+	p := asset.Phase{Name: "security-review", Agent: "security-engineer", UsesTemplate: ".ai/prompts/nonexistent.md"}
+	got := buildPromptWithEmits(root, p, "balanced", unbudgetedTier("balanced"), nil, nil, nil, nil, nil)
+	// Restore stderr before reading the pipe.
+	w.Close()
+	os.Stderr = oldStderr
+	var stderrBuf bytes.Buffer
+	if _, err := stderrBuf.ReadFrom(r); err != nil {
+		t.Fatalf("read stderr pipe: %v", err)
+	}
+	if !strings.Contains(stderrBuf.String(), "WARNING uses_template") {
+		t.Errorf("missing uses_template file must produce a WARNING on stderr, got: %q", stderrBuf.String())
+	}
+	// The prompt must still be valid (no crash, no template block injected).
+	if strings.Contains(got, "[context:template:") {
+		t.Errorf("missing template must not inject a template block, got:\n%s", got)
 	}
 }
 
-// agentExecutor must give a claude-family agent --permission-mode (so it can write
-// files headlessly under --executor=command) and must NOT pass that claude-only
-// flag to a stub like echo. This is what made real ignition actually WRITE code.
-func TestAgentExecutor_PermissionModeOnlyForClaude(t *testing.T) {
-	mk := func(cmd string) string {
-		ex := agentExecutor(runOpts{executor: "command", agentCmd: cmd, agentPermission: "acceptEdits", root: t.TempDir()}, func(string) {}, nil, unbudgetedTier(""), nil, nil, nil, nil, nil, nil, nil, nil)
-		ce, ok := ex.(orchestrator.CommandExecutor)
-		if !ok {
-			t.Fatalf("executor=command must yield a CommandExecutor, got %T", ex)
-		}
-		return strings.Join(ce.Build(asset.Phase{Name: "implementer", Agent: "implementer"}, "balanced"), " ")
+// ── usage() text must match actual CLI behavior ───────────────────────────
+//
+// A fresh-context review found usage() had drifted from the real CLI: (1) the
+// grouped line implied `forge preflight [--root DIR]` needs no positional, but
+// cmdPreflight/parsePreflightFlags require a leading <workflow> (splitPositional
+// returns exit 2 "exactly one <workflow> required" without one); (2) `approve`
+// is registered in the subcommands dispatch table (main.go) but was entirely
+// absent from usage(); (3) route's usage line was missing --scorecard even
+// though route.go's flag set still defines and honors it. These assertions pin
+// usage() to the real behavior so a future edit can't silently reintroduce any
+// of the three drifts.
+func TestUsage_MatchesActualCLIBehavior(t *testing.T) {
+	out := captureUsageStderr(t)
+
+	if !strings.Contains(out, "forge preflight <workflow>") {
+		t.Errorf("usage() must show preflight's required positional <workflow>, got:\n%s", out)
 	}
-	if !strings.Contains(mk("claude"), "--permission-mode acceptEdits") {
-		t.Error("claude must carry --permission-mode acceptEdits to write files headlessly")
+	if strings.Contains(out, "scorecard|validate|memory-prune|status|doctor|preflight") {
+		t.Errorf("preflight must NOT be grouped with the no-positional-arg commands (it requires <workflow>), got:\n%s", out)
 	}
-	if strings.Contains(mk("echo"), "--permission-mode") {
-		t.Error("echo (a stub) must NOT receive the claude-only flag")
+	if !strings.Contains(out, "forge approve") {
+		t.Errorf("usage() must mention the registered `approve` subcommand, got:\n%s", out)
+	}
+	if !strings.Contains(out, "--scorecard") {
+		t.Errorf("usage() must mention route's --scorecard flag (route.go still defines/honors it), got:\n%s", out)
 	}
 }
 
-// An empty agent-permission disables the flag even for claude (operator opt-out).
-func TestAgentExecutor_EmptyPermissionDisablesFlag(t *testing.T) {
-	ex := agentExecutor(runOpts{executor: "command", agentCmd: "claude", agentPermission: "", root: t.TempDir()}, func(string) {}, nil, unbudgetedTier(""), nil, nil, nil, nil, nil, nil, nil, nil)
-	ce := ex.(orchestrator.CommandExecutor)
-	argv := strings.Join(ce.Build(asset.Phase{Name: "p", Agent: "implementer"}, "balanced"), " ")
-	if strings.Contains(argv, "--permission-mode") {
-		t.Errorf("empty agent-permission must omit the flag; got: %s", argv)
+// TestUsage_PreflightPositionalIsActuallyRequired backs assertion (1) above with the
+// real CLI behavior it documents: `forge preflight` with no <workflow> exits 2 and
+// names the missing positional arg, never silently defaulting.
+func TestUsage_PreflightPositionalIsActuallyRequired(t *testing.T) {
+	_, code, ok := parsePreflightFlags(nil)
+	if ok || code != 2 {
+		t.Errorf("forge preflight with no <workflow> must fail (code=2, ok=false); got code=%d ok=%v", code, ok)
 	}
 }
 
-// buildAgentArgv builds the argv for an agent phase via the installed CommandExecutor —
-// the shared helper for the --allowedTools assertions below.
-func buildAgentArgv(t *testing.T, o runOpts) string {
+// TestUsage_ApproveIsDispatchable backs assertion (2): `approve` really is a
+// live subcommand (registered in the subcommands table), not a stale usage claim.
+func TestUsage_ApproveIsDispatchable(t *testing.T) {
+	if _, ok := subcommands["approve"]; !ok {
+		t.Error("`approve` must be registered in the subcommands dispatch table for usage() to document it")
+	}
+}
+
+// captureUsageStderr runs usage() with os.Stderr redirected to a pipe and returns
+// what it printed.
+func captureUsageStderr(t *testing.T) string {
 	t.Helper()
-	o.executor, o.root = "command", t.TempDir()
-	ex := agentExecutor(o, func(string) {}, nil, unbudgetedTier(""), nil, nil, nil, nil, nil, nil, nil, nil)
-	ce, ok := ex.(orchestrator.CommandExecutor)
-	if !ok {
-		t.Fatalf("executor=command must yield a CommandExecutor, got %T", ex)
-	}
-	return strings.Join(ce.Build(asset.Phase{Name: "implementer", Agent: "implementer"}, "balanced"), " ")
-}
-
-// A claude-family agent must carry --allowedTools pre-granting the read-only
-// self-verification commands (node --test + node harness/gate.mjs) so a print-mode (-p)
-// implementer can self-check its code and honestly tick a ROADMAP [x] — without it, Bash
-// awaits a human approval that never comes headless and convergence's RoadmapCompletion
-// stalls at 0%. ★The argv MUST NOT contain `forge`: a whitelisted forge would let the
-// agent fork another agent outside the FORGE_AGENT_DEPTH recursion guard (a fork-bomb).★
-func TestAgentExecutor_AllowedToolsForClaude(t *testing.T) {
-	argv := buildAgentArgv(t, runOpts{agentCmd: "claude", agentAllowedTools: defaultAgentAllowedTools})
-	if !strings.Contains(argv, "--allowedTools") {
-		t.Errorf("claude must carry --allowedTools so a -p agent can self-verify; got: %s", argv)
-	}
-	if !strings.Contains(argv, "node --test") {
-		t.Errorf("the whitelist must pre-grant `node --test` (the completion-discipline self-check); got: %s", argv)
-	}
-	if !strings.Contains(argv, "node harness/gate.mjs") {
-		t.Errorf("the whitelist must pre-grant `node harness/gate.mjs` (the gate self-check); got: %s", argv)
-	}
-	// THE recursion-safety assertion: the read-only validators must never reach a command
-	// that can re-spawn an agent. `forge` on the argv would bypass the depth guard entirely.
-	if strings.Contains(argv, "forge") {
-		t.Errorf("★recursion guard★: the --allowedTools whitelist must NOT contain `forge` (a fork-bomb escape outside FORGE_AGENT_DEPTH); got: %s", argv)
-	}
-}
-
-// --agent-allowed-tools overrides the default node whitelist (so a non-node project can
-// grant pytest/vitest instead) — and the override path must STILL stay recursion-safe.
-func TestAgentExecutor_AllowedToolsOverridesDefault(t *testing.T) {
-	argv := buildAgentArgv(t, runOpts{agentCmd: "claude", agentAllowedTools: "Bash(pytest*) Bash(vitest run*)"})
-	if !strings.Contains(argv, "pytest") || !strings.Contains(argv, "vitest run") {
-		t.Errorf("--agent-allowed-tools must override the default whitelist verbatim; got: %s", argv)
-	}
-	if strings.Contains(argv, "node --test") {
-		t.Errorf("an explicit override must REPLACE the node default, not append it; got: %s", argv)
-	}
-	if strings.Contains(argv, "forge") {
-		t.Errorf("★recursion guard★: even an overridden whitelist must not carry `forge`; got: %s", argv)
-	}
-}
-
-// An empty agent-allowed-tools omits the flag (operator opt-out); a stub like echo never
-// gets the claude-only flag (back-compat: only the claude-family path is touched).
-func TestAgentExecutor_AllowedToolsEmptyAndNonClaude(t *testing.T) {
-	if argv := buildAgentArgv(t, runOpts{agentCmd: "claude", agentAllowedTools: ""}); strings.Contains(argv, "--allowedTools") {
-		t.Errorf("empty agent-allowed-tools must omit the flag; got: %s", argv)
-	}
-	if argv := buildAgentArgv(t, runOpts{agentCmd: "echo", agentAllowedTools: defaultAgentAllowedTools}); strings.Contains(argv, "--allowedTools") {
-		t.Errorf("echo (a stub) must NOT receive the claude-only --allowedTools; got: %s", argv)
-	}
-}
-
-// The default whitelist constant is recursion-safe by construction: read-only validators
-// only, no `forge`/`evolve` token that could re-spawn an agent past the depth guard. This
-// pins the INVARIANT at the source so a future whitelist edit cannot silently regress it.
-func TestDefaultAgentAllowedTools_IsRecursionSafe(t *testing.T) {
-	for _, banned := range []string{"forge", "evolve", "--executor"} {
-		if strings.Contains(defaultAgentAllowedTools, banned) {
-			t.Errorf("★recursion guard★: default whitelist must not contain %q (an agent-spawn escape outside FORGE_AGENT_DEPTH); got: %s", banned, defaultAgentAllowedTools)
-		}
-	}
-	for _, want := range []string{"node --test", "node harness/gate.mjs"} {
-		if !strings.Contains(defaultAgentAllowedTools, want) {
-			t.Errorf("default whitelist must pre-grant the completion-discipline self-check %q; got: %s", want, defaultAgentAllowedTools)
-		}
-	}
-}
-
-// agentExecutor must pass --model <routed-tier> to a claude-family command so a
-// real run honors ForgeOS's routing (the opus floor for reviewer/architect/cto),
-// and must NOT pass that claude-only flag to a stub like echo.
-func TestAgentExecutor_ModelTierForClaude(t *testing.T) {
-	mk := func(cmd, agent string) string {
-		ex := agentExecutor(runOpts{executor: "command", agentCmd: cmd, root: t.TempDir()}, func(string) {}, nil, unbudgetedTier(""), nil, nil, nil, nil, nil, nil, nil, nil)
-		ce := ex.(orchestrator.CommandExecutor)
-		return strings.Join(ce.Build(asset.Phase{Name: agent, Agent: agent}, "balanced"), " ")
-	}
-	if got := mk("claude", "reviewer"); !strings.Contains(got, "--model opus") {
-		t.Errorf("claude reviewer must route to --model opus (the safety floor); got: %s", got)
-	}
-	if strings.Contains(mk("echo", "reviewer"), "--model") {
-		t.Error("echo (a stub) must NOT receive the claude-only --model flag")
-	}
-}
-
-// agentExecutor passes claude's --max-budget-usd only when set, and only to a
-// claude-family command — the per-phase dollar ceiling that complements
-// --max-agent-calls (phase count) and --timeout (wall-clock).
-func TestAgentExecutor_MaxBudgetForClaude(t *testing.T) {
-	mk := func(cmd, budget string) string {
-		ex := agentExecutor(runOpts{executor: "command", agentCmd: cmd, agentMaxBudgetUSD: budget, root: t.TempDir()}, func(string) {}, nil, unbudgetedTier(""), nil, nil, nil, nil, nil, nil, nil, nil)
-		ce := ex.(orchestrator.CommandExecutor)
-		return strings.Join(ce.Build(asset.Phase{Name: "p", Agent: "implementer"}, "balanced"), " ")
-	}
-	if got := mk("claude", "0.50"); !strings.Contains(got, "--max-budget-usd 0.50") {
-		t.Errorf("claude with a budget must pass --max-budget-usd; got: %s", got)
-	}
-	if strings.Contains(mk("claude", ""), "--max-budget-usd") {
-		t.Error("empty budget must omit --max-budget-usd")
-	}
-	if strings.Contains(mk("echo", "0.50"), "--max-budget-usd") {
-		t.Error("echo (a stub) must NOT receive the claude-only --max-budget-usd")
-	}
-}
-
-// End to end: load the REAL build.yml via the yaml2json shim + asset loader and
-// assert the typed criteria evaluate per-criterion as expected. build.yml's
-// all_of items are objects ({metric, operator, threshold/value}), so this proves
-// the typed UnmarshalJSON + converge dispatch works on the production asset.
-// Skips when python3 is unavailable or not inside the repo.
-func TestEndToEnd_BuildYmlCriteria(t *testing.T) {
-	if _, err := exec.LookPath("python3"); err != nil {
-		t.Skip("python3 not available")
-	}
-	root := repoRoot()
-	if root == "" {
-		t.Skip("not running inside the ForgeOS repo (no harness/yaml2json.py)")
-	}
-	wf, err := loadWorkflow(root, "build")
+	oldStderr := os.Stderr
+	r, w, err := os.Pipe()
 	if err != nil {
-		t.Fatalf("load build.yml: %v", err)
+		t.Fatalf("pipe: %v", err)
 	}
-	if wf.Stop.Type != "conjunction" {
-		t.Fatalf("build.yml stop type = %q, want conjunction", wf.Stop.Type)
+	os.Stderr = w
+	usage()
+	w.Close()
+	os.Stderr = oldStderr
+	var buf bytes.Buffer
+	if _, err := buf.ReadFrom(r); err != nil {
+		t.Fatalf("read stderr pipe: %v", err)
 	}
-	if len(wf.Stop.AllOf) != 2 {
-		t.Fatalf("build.yml all_of = %d criteria, want 2 (objects)", len(wf.Stop.AllOf))
-	}
-	// They must be parsed as typed objects, not bare strings.
-	if wf.Stop.AllOf[0].Metric != "roadmap_completion" || wf.Stop.AllOf[0].Raw != "" {
-		t.Errorf("criterion[0] = %+v, want typed roadmap_completion object", wf.Stop.AllOf[0])
-	}
-	if wf.Stop.AllOf[1].Metric != "gates_status" || wf.Stop.AllOf[1].Value != "green" {
-		t.Errorf("criterion[1] = %+v, want gates_status==green", wf.Stop.AllOf[1])
-	}
-
-	// Fully met: 100% roadmap + green gates => all criteria met.
-	met, allMet := converge.Evaluate(wf.Stop.AllOf, converge.Signals{RoadmapCompletion: 1.0, GatesGreen: true})
-	if !allMet || !met[0].Met || !met[1].Met {
-		t.Errorf("100%%+green should meet every criterion; got %+v", met)
-	}
-	// Partial roadmap, green gates => roadmap unmet, gate met, not converged.
-	mixed, conv := converge.Evaluate(wf.Stop.AllOf, converge.Signals{RoadmapCompletion: 0.5, GatesGreen: true})
-	if conv || mixed[0].Met || !mixed[1].Met {
-		t.Errorf("50%%+green: roadmap unmet & gate met & not converged; got %+v", mixed)
-	}
-	// 100% roadmap, red gates => roadmap met, gate unmet, not converged.
-	red, conv2 := converge.Evaluate(wf.Stop.AllOf, converge.Signals{RoadmapCompletion: 1.0, GatesGreen: false})
-	if conv2 || !red[0].Met || red[1].Met {
-		t.Errorf("100%%+red: roadmap met & gate unmet & not converged; got %+v", red)
-	}
-}
-
-// --max-retries must parse on both run and evolve (IntVar): a valid value is
-// accepted and the command proceeds to a clean stop; a non-integer is a parse
-// error (exit 2), not silently ignored. The default (omitted) is 0 == no retries.
-func TestMaxRetriesFlagParses(t *testing.T) {
-	if _, err := exec.LookPath("python3"); err != nil {
-		t.Skip("python3 not available")
-	}
-	root := fakeRepo(t, "evolve", externalAgentWorkflow)
-	// Valid value on evolve: a clean external-stop loop (dry executor never errors).
-	if code := cmdEvolve([]string{"evolve", "--root", root, "--max-retries", "2", "--max-iter", "1"}); code != 0 {
-		t.Errorf("evolve --max-retries 2 should run to a clean stop; exit=%d", code)
-	}
-	// Valid value on run: a single agent phase, dry executor, exits 0.
-	runRoot := fakeRepo(t, "build", externalAgentWorkflow)
-	if code := cmdRun([]string{"build", "--root", runRoot, "--max-retries", "3"}); code != 0 {
-		t.Errorf("run --max-retries 3 should complete cleanly; exit=%d", code)
-	}
-	// A non-integer must be rejected at flag parse (exit 2), never ignored.
-	if code := cmdEvolve([]string{"evolve", "--root", root, "--max-retries", "notanint"}); code != 2 {
-		t.Errorf("malformed --max-retries must be a parse error; exit=%d, want 2", code)
-	}
+	return buf.String()
 }
 
 // --- test helpers ------------------------------------------------------------

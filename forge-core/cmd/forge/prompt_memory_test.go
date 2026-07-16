@@ -232,3 +232,109 @@ func TestMemoryContext_ColdStartYieldsNoBlock(t *testing.T) {
 		t.Errorf("a missing store must yield no memory block; got %v", got)
 	}
 }
+
+// --- verdictLedger / reviewFindingsLedger (merged from prompt_verdict_test.go when
+// prompt_verdict.go was folded into prompt_memory.go to keep cmd/forge's file count
+// under its package budget) ---
+
+func TestVerdictLedger_RecordAndGet(t *testing.T) {
+	l := newVerdictLedger()
+	v, ok := l.get("reviewer")
+	if ok {
+		t.Errorf("empty ledger should return (\"\", false), got (%q, %v)", v, ok)
+	}
+	l.record("reviewer", VerdictApprove)
+	v, ok = l.get("reviewer")
+	if !ok || v != VerdictApprove {
+		t.Errorf("get(reviewer) = (%q, %v), want (%q, true)", v, ok, VerdictApprove)
+	}
+	// Overwrite with new verdict.
+	l.record("reviewer", VerdictRequestChanges)
+	v, ok = l.get("reviewer")
+	if !ok || v != VerdictRequestChanges {
+		t.Errorf("after overwrite, get(reviewer) = (%q, %v), want (%q, true)", v, ok, VerdictRequestChanges)
+	}
+}
+
+func TestVerdictLedger_UnknownPhase(t *testing.T) {
+	l := newVerdictLedger()
+	l.record("reviewer", VerdictApprove)
+	_, ok := l.get("planner")
+	if ok {
+		t.Error("get(planner) should report false for unrecorded phase")
+	}
+}
+
+func TestVerdictLedger_WasReworked(t *testing.T) {
+	l := newVerdictLedger()
+	if l.wasReworked() {
+		t.Error("empty ledger should report no rework")
+	}
+	l.record("reviewer", VerdictApprove)
+	if l.wasReworked() {
+		t.Error("only APPROVE should report no rework")
+	}
+	l.record("reviewer", VerdictRequestChanges)
+	if !l.wasReworked() {
+		t.Error("REQUEST_CHANGES should report rework")
+	}
+	// Only one phase needs to be reworked.
+	l2 := newVerdictLedger()
+	l2.record("reviewer", VerdictApprove)
+	l2.record("qa", VerdictRequestChanges)
+	if !l2.wasReworked() {
+		t.Error("at least one REQUEST_CHANGES should report rework")
+	}
+}
+
+func TestVerdictLedger_NilSafety(t *testing.T) {
+	var l *verdictLedger
+	l.record("reviewer", VerdictApprove) // must not panic
+	_, ok := l.get("reviewer")           // must not panic
+	if ok {
+		t.Error("nil ledger get should return false")
+	}
+	if l.wasReworked() {
+		t.Error("nil ledger wasReworked should return false")
+	}
+}
+
+func TestReviewFindingsLedger_RecordAndContext(t *testing.T) {
+	l := newReviewFindingsLedger()
+	if ctx := l.contextLines("planner"); ctx != nil {
+		t.Errorf("empty ledger -> contextLines = %v, want nil", ctx)
+	}
+	l.record("implementer", "found unhandled error in line 42")
+	l.record("implementer", "missing input validation on user endpoint")
+	ctx := l.contextLines("implementer")
+	if len(ctx) != 1 || ctx[0] == "" {
+		t.Fatalf("contextLines should return 1 non-empty line, got %v", ctx)
+	}
+	// Non-target phase should still return nil.
+	if ctx := l.contextLines("reviewer"); ctx != nil {
+		t.Errorf("contextLines for non-target should be nil, got %v", ctx)
+	}
+}
+
+func TestReviewFindingsLedger_AllFindings(t *testing.T) {
+	l := newReviewFindingsLedger()
+	if all := l.allFindings(); all != nil {
+		t.Errorf("empty ledger allFindings = %v, want nil", all)
+	}
+	l.record("implementer", "error handling missing")
+	all := l.allFindings()
+	if len(all) != 1 || all["implementer"] == "" {
+		t.Errorf("allFindings = %v, want {implementer: ...}", all)
+	}
+}
+
+func TestReviewFindingsLedger_NilSafety(t *testing.T) {
+	var l *reviewFindingsLedger
+	l.record("target", "some findings") // must not panic
+	if ctx := l.contextLines("target"); ctx != nil {
+		t.Errorf("nil ledger contextLines should be nil, got %v", ctx)
+	}
+	if all := l.allFindings(); all != nil {
+		t.Errorf("nil ledger allFindings should be nil, got %v", all)
+	}
+}

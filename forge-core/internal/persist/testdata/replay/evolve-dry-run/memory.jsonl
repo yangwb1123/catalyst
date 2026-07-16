@@ -1,0 +1,14 @@
+{"_format":"forgeos.memory.v1","kind":"lesson","topic":"evolve","detail":"iter 1: roadmap=25%, gates_green=false","iteration":1,"confidence":1.0,"created_at_unix":1781956677}
+{"_format":"forgeos.memory.v1","kind":"gap","topic":"evolve","detail":"iter 1: gates not green at roadmap=25% — size/complexity gate blocks merge","iteration":1,"confidence":1.0,"created_at_unix":1781956677}
+{"_format":"forgeos.memory.v1","kind":"decision","topic":"test-strategy","detail":"adopt table-driven tests for coverage in one pass","iteration":1,"confidence":0.85,"created_at_unix":1781956700}
+{"_format":"forgeos.memory.v1","kind":"lesson","topic":"evolve","detail":"iter 2: roadmap=50%, gates_green=true — first gate-green iteration","iteration":2,"confidence":1.0,"created_at_unix":1782516099}
+{"_format":"forgeos.memory.v1","kind":"lesson","topic":"evolve","detail":"iter 3: roadmap=50%, gates_green=true — flat progress, planner needs more specific tasks","iteration":3,"confidence":1.0,"created_at_unix":1782516200}
+{"_format":"forgeos.memory.v1","kind":"decision","topic":"auth-impl","detail":"use JWT with refresh token rotation, not session cookies","iteration":2,"confidence":0.9,"created_at_unix":1782516300}
+{"_format":"forgeos.memory.v1","kind":"lesson","topic":"evolve","detail":"iter 4: roadmap=65%, gates_green=true — test coverage up to 40%","iteration":4,"confidence":1.0,"created_at_unix":1782516400}
+{"_format":"forgeos.memory.v1","kind":"gap","topic":"evolve","detail":"iter 4: remaining gap — integration test for DB migration not written","iteration":4,"confidence":0.95,"created_at_unix":1782516400}
+{"_format":"forgeos.memory.v1","kind":"decision","topic":"db","detail":"use PostgreSQL with migration-based schema, not auto-migrate","iteration":3,"confidence":0.95,"supersedes":"db-choice","created_at_unix":1782516450}
+{"_format":"forgeos.memory.v1","kind":"lesson","topic":"evolve","detail":"iter 5: roadmap=80%, gates_green=true — approaching convergence","iteration":5,"confidence":1.0,"created_at_unix":1782516500}
+{"_format":"forgeos.memory.v1","kind":"gap","topic":"evolve","detail":"iter 5: security review findings — OAuth2 redirect URI validation missing","iteration":5,"confidence":1.0,"created_at_unix":1782516500}
+{"_format":"forgeos.memory.v1","kind":"decision","topic":"security","detail":"add StrictTransportSecurity header and CSP to all responses","iteration":4,"confidence":0.88,"created_at_unix":1782516550}
+{"_format":"forgeos.memory.v1","kind":"lesson","topic":"evolve","detail":"iter 6: roadmap=100%, gates_green=true — converged","iteration":6,"confidence":1.0,"created_at_unix":1782516600}
+{"_format":"forgeos.memory.v1","kind":"decision","topic":"logging","detail":"switch to structured JSON logging, not plain text — this enables log aggregation","iteration":5,"confidence":0.8,"created_at_unix":1782516650}
