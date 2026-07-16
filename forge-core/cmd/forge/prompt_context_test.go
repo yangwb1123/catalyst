@@ -449,7 +449,7 @@ func TestAgentExecutor_RequiresToolsWiredIntoRealPrompt(t *testing.T) {
 	var logs []string
 	logln := func(s string) { logs = append(logs, s) }
 	o := runOpts{root: "/home/u1/catalyst", executor: "command", agentCmd: "claude"} // agentAllowedTools unset
-	ex := agentExecutor(o, logln, nil, unbudgetedTier("balanced"), nil, nil, nil, nil, nil, nil, nil, nil)
+	ex := agentExecutor(o, logln, nil, unbudgetedTier("balanced"), nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	ce, ok := ex.(orchestrator.CommandExecutor)
 	if !ok {
 		t.Fatalf("--executor=command must select orchestrator.CommandExecutor, got %T", ex)

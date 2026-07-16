@@ -46,7 +46,7 @@ phases:
       1 页方案:范围 / 成本(token+时延)/ 风险 / 备选。供人类一眼可决策。
       1-page proposal: scope / cost (token+latency) / risk / alternatives — decidable at a glance.
     emits:
-      - proposal.md                     # 送审物 / the artifact a human reviews
+      - docs/design/proposal.md         # 送审物 / the artifact a human reviews
 
 # ── 终止条件 / stop condition ──
 # 本段终点是「人审闸门」,不是自动指标。批准是状态迁移的唯一钥匙。

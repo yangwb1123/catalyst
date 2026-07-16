@@ -271,7 +271,7 @@ func TestClaudeArgv_NonReadonlyMappedAgent_Unaffected(t *testing.T) {
 // claudeArgv's readonly branch actually fires: a readonly security-review phase's
 // built argv carries the real enforcement flags, not just the narration line.
 func TestAgentExecutor_ClaudeReadonlyPhaseGetsRealEnforcement(t *testing.T) {
-	ex := agentExecutor(runOpts{executor: "command", agentCmd: "claude", root: t.TempDir()}, func(string) {}, nil, unbudgetedTier(""), nil, nil, nil, nil, nil, nil, nil, nil)
+	ex := agentExecutor(runOpts{executor: "command", agentCmd: "claude", root: t.TempDir()}, func(string) {}, nil, unbudgetedTier(""), nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	ce, ok := ex.(orchestrator.CommandExecutor)
 	if !ok {
 		t.Fatalf("executor=command must yield a CommandExecutor, got %T", ex)
@@ -288,7 +288,7 @@ func TestAgentExecutor_ClaudeReadonlyPhaseGetsRealEnforcement(t *testing.T) {
 // The implementer phase (never readonly in any real workflow) built through the same
 // seam must NOT carry either readonly flag — the non-readonly path stays untouched.
 func TestAgentExecutor_ClaudeNonReadonlyPhaseGetsNoEnforcementFlags(t *testing.T) {
-	ex := agentExecutor(runOpts{executor: "command", agentCmd: "claude", root: t.TempDir()}, func(string) {}, nil, unbudgetedTier(""), nil, nil, nil, nil, nil, nil, nil, nil)
+	ex := agentExecutor(runOpts{executor: "command", agentCmd: "claude", root: t.TempDir()}, func(string) {}, nil, unbudgetedTier(""), nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	ce := ex.(orchestrator.CommandExecutor)
 	argv := strings.Join(ce.Build(asset.Phase{Name: "implementer", Agent: "implementer", Readonly: false}, "engineering"), " ")
 	if strings.Contains(argv, "--disallowedTools") {
@@ -334,7 +334,7 @@ func TestNarrateReadonly_NilLognNeverPanics(t *testing.T) {
 func TestAgentExecutor_NarratesReadonlyPhaseWhenBuilt(t *testing.T) {
 	var logs []string
 	logln := func(s string) { logs = append(logs, s) }
-	ex := agentExecutor(runOpts{executor: "command", agentCmd: "echo", root: t.TempDir()}, logln, nil, unbudgetedTier(""), nil, nil, nil, nil, nil, nil, nil, nil)
+	ex := agentExecutor(runOpts{executor: "command", agentCmd: "echo", root: t.TempDir()}, logln, nil, unbudgetedTier(""), nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	ce, ok := ex.(orchestrator.CommandExecutor)
 	if !ok {
 		t.Fatalf("executor=command must yield a CommandExecutor, got %T", ex)
@@ -354,7 +354,7 @@ func TestAgentExecutor_NarratesReadonlyPhaseWhenBuilt(t *testing.T) {
 func TestAgentExecutor_NoReadonlyNarrationForWritingPhase(t *testing.T) {
 	var logs []string
 	logln := func(s string) { logs = append(logs, s) }
-	ex := agentExecutor(runOpts{executor: "command", agentCmd: "echo", root: t.TempDir()}, logln, nil, unbudgetedTier(""), nil, nil, nil, nil, nil, nil, nil, nil)
+	ex := agentExecutor(runOpts{executor: "command", agentCmd: "echo", root: t.TempDir()}, logln, nil, unbudgetedTier(""), nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	ce := ex.(orchestrator.CommandExecutor)
 	ce.Build(asset.Phase{Name: "implementer", Agent: "implementer", Readonly: false}, "engineering")
 	for _, l := range logs {

@@ -164,7 +164,7 @@ func TestFeedsForwardOf(t *testing.T) {
 func TestAgentExecutor_ObserveRecordsFeedsForwardOutput(t *testing.T) {
 	po := newPhaseOutputLedger()
 	feeds := func(phase string) bool { return phase == "planner" }
-	ex := agentExecutor(runOpts{executor: "command", agentCmd: "echo", root: t.TempDir()}, func(string) {}, nil, unbudgetedTier(""), nil, nil, nil, po, feeds, nil, nil, nil)
+	ex := agentExecutor(runOpts{executor: "command", agentCmd: "echo", root: t.TempDir()}, func(string) {}, nil, unbudgetedTier(""), nil, nil, nil, po, feeds, nil, nil, nil, nil)
 	ce, ok := ex.(orchestrator.CommandExecutor)
 	if !ok {
 		t.Fatalf("executor=command must yield a CommandExecutor, got %T", ex)
@@ -189,7 +189,7 @@ func TestAgentExecutor_ObserveRecordsFeedsForwardOutput(t *testing.T) {
 func TestAgentExecutor_ObserveUnwrapsClaudeOutputForFeedForward(t *testing.T) {
 	po := newPhaseOutputLedger()
 	feeds := func(string) bool { return true }
-	ex := agentExecutor(runOpts{executor: "command", agentCmd: "claude", root: t.TempDir()}, func(string) {}, nil, unbudgetedTier(""), nil, nil, nil, po, feeds, nil, nil, nil)
+	ex := agentExecutor(runOpts{executor: "command", agentCmd: "claude", root: t.TempDir()}, func(string) {}, nil, unbudgetedTier(""), nil, nil, nil, po, feeds, nil, nil, nil, nil)
 	ce := ex.(orchestrator.CommandExecutor)
 	ce.Observe("planner", realClaudeJSON, 0)
 	if got := po.summary["planner"]; got != "done editing main.go" {

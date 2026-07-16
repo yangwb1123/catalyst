@@ -44,14 +44,15 @@ Review 之后)
 的产出,回答五问,做最终 Go/No-Go **综合裁决**(executive synthesis),而非重新评审细节。
 
 ### 输入 (consumes)
-- `security-review.md` + `threat-model.md`(P1 产出)
-- `distributed-review.md`(P2 产出)
-- `performance-budget.md` + `production-readiness.md`(P3 产出)
+- `docs/review/security-review.md` + `docs/review/threat-model.md`(P1 产出)
+- `docs/review/distributed-review.md`(P2 产出)
+- `docs/review/performance-budget.md` + `docs/review/production-readiness.md`(P3 产出)
 - `.ai/prompts/09-cto-review.md`(综合裁决框架)
 
 ### 输出 (produces)
-- `review-summary.md` — 综合裁决 + Top 10 风险 + Non-Goals,`feeds_forward: true` 前传给
-  Build 的 planner
+- `docs/design/review-summary.md` — 综合裁决 + Top 10 风险 + Non-Goals,`feeds_forward: true` 前传给
+  Build 的 planner(写入 `docs/design/`,非 `docs/review/`——本 card 的硬边界全程是 `docs/design/`,
+  Review 阶段的第二职责不改变这条边界)
 
 ### 五问 (five questions)
 1. 现在该做吗?/ Should we build this NOW?

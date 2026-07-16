@@ -33,7 +33,7 @@ phases:
       与 Idea 对话,抽取目标用户/痛点/约束/成功指标;标注缺失信息与假设。
       Extract users/pain/constraints/success-metrics; surface gaps & assumptions.
     emits:
-      - requirement-draft.md           # 需求草稿 + 置信度评分 / draft + confidence score
+      - docs/discovery/requirement-draft.md   # 需求草稿 + 置信度评分 / draft + confidence score
     confidence_metric: requirement_confidence   # 0–100%,驱动本段 stop_condition — this field IS read: cmd/forge/gates.go's confidenceMetricPhase() scans wf.Phases for the matching ConfidenceMetric to resolve which phase's CONFIDENCE: N verdict feeds RequirementConfidence, falling back to a fixed phase name only if no phase declares the field
 
   # ── P2 市场调研 / market research ──
@@ -47,8 +47,8 @@ phases:
       Competitor & capability-matrix research. MUST cite real retrieved sources.
     requires_tools: [web_search, web_fetch]   # 无检索工具则降级 advisory 并打标 / degrade + flag
     emits:
-      - capability-matrix.md
-      - citations.md                   # 引用清单,可溯源 / traceable citations
+      - docs/discovery/capability-matrix.md
+      - docs/discovery/citations.md    # 引用清单,可溯源 / traceable citations
 
   # ── P3 产品设计 / product design ──
   - name: product-design
@@ -59,7 +59,7 @@ phases:
       把需求 + 调研收敛成 MVP / 高级 分层(按 lifecycle,不 day-1 镀金)。
       Converge into MVP vs advanced tiers, staged by lifecycle — no day-1 gold-plating.
     emits:
-      - prd.md                         # 产品需求文档,喂给 DESIGN 段 / feeds Design stage
+      - docs/discovery/prd.md          # 产品需求文档,喂给 DESIGN 段 / feeds Design stage
 
 # ── 终止条件 / stop condition ──
 # 纪律:用置信度阈值,不用「继续 N 轮」(no round-count)。

@@ -30,25 +30,25 @@ import (
 // routed model: for claude the generic Observe sink is pointed at parseClaudeCostUsd,
 // and a parsed cost — paired with the BUDGET-ADJUSTED routed model AND the executor's
 // measured latency — is forwarded to costSink. The generic executor stays claude-free.
-// tierOf is the ONE shared per-phase tier resolver (buildRunEngine): the SINGLE source
-// `claude --model`, the cost stamp, and the prompt's stated tier all read, so the three
-// never drift apart. phaseModel is its NAME-keyed face (phaseTierByName) for the cost
-// Observe seam, which is handed only a phase NAME. Both nil-safe.
-//
+// tierOf is the ONE shared per-phase tier resolver: the SINGLE source `claude --model`,
+// the cost stamp, and the prompt's stated tier all read, so the three never drift apart.
+// phaseModel is its NAME-keyed face for the cost Observe seam. Both nil-safe.
 // gates carries this run's gate verdicts into each phase's prompt. phaseOut carries a
 // prior feeds_forward phase's output into later prompts; feedsForward (injected, since
-// Observe gets only a phase name) reports whether to remember it. verdicts records
-// each reviewer's parsed VERDICT for Engine.AgentVerdict's loop-back; findings stashes
-// a REQUEST_CHANGES review's notes for the loop-back target; onFailTarget routes them.
-// All nil-safe (prompt_context.go); the generic executor stays oblivious to all of them.
-func agentExecutor(o runOpts, logln func(string), costSink func(phase, model string, usd float64, latency time.Duration), tierOf func(p asset.Phase) string, phaseModel func(phase string) string, ctxCache *prompt.ContextCache, gates *gateLedger, phaseOut *phaseOutputLedger, feedsForward func(phase string) bool, verdicts *verdictLedger, findings *reviewFindingsLedger, onFailTarget func(phase string) (string, bool)) orchestrator.AgentExecutor {
+// Observe gets only a phase name) reports whether to remember it. verdicts records each
+// reviewer's parsed VERDICT for Engine.AgentVerdict's loop-back; findings stashes a
+// REQUEST_CHANGES review's notes for the loop-back target; onFailTarget routes them;
+// priorEmits (priorEmitsOf) resolves earlier phases' emits: content into the prompt. All
+// nil-safe; the generic executor stays oblivious to all of them.
+func agentExecutor(o runOpts, logln func(string), costSink func(phase, model string, usd float64, latency time.Duration), tierOf func(p asset.Phase) string, phaseModel func(phase string) string, ctxCache *prompt.ContextCache, gates *gateLedger, phaseOut *phaseOutputLedger, feedsForward func(phase string) bool, verdicts *verdictLedger, findings *reviewFindingsLedger, onFailTarget func(phase string) (string, bool), priorEmits func(phase string) []string) orchestrator.AgentExecutor {
 	if o.executor == "command" {
 		isClaude := strings.Contains(o.agentCmd, "claude")
 		ex := orchestrator.CommandExecutor{
 			Build: func(p asset.Phase, mode string) []string {
 				narrateReadonly(logln, p)
 				argv := claudeArgv(o, isClaude, tierOf(p), p)
-				return append(argv, "-p", requiresToolsGuard(p, true, isClaude, o.agentAllowedTools, logln, buildPrompt(o.root, p, mode, tierOf, ctxCache, gates, phaseOut, findings)))
+				text := buildPromptWithEmits(o.root, p, mode, tierOf, ctxCache, gates, phaseOut, findings, emitsFilesFor(priorEmits, p.Name))
+				return append(argv, "-p", requiresToolsGuard(p, true, isClaude, o.agentAllowedTools, logln, text))
 			},
 			Dir:            o.root,
 			Timeout:        o.timeout,
@@ -250,7 +250,7 @@ func buildRunEngine(wf asset.Workflow, o runOpts, logln func(string), costSink f
 	}
 	tierOf := phaseTierResolver(o.mode, budget.SpendRatio, cards, logln, autoRisk, autoRiskReasons)
 	return orchestrator.Engine{
-		Exec:            agentExecutor(o, logln, budget.feed(costSink), tierOf, phaseTierByName(wf, tierOf), ctxCache, gates, phaseOut, feedsForwardOf(wf), verdicts, findings, onFailTargetOf(wf)),
+		Exec:            agentExecutor(o, logln, budget.feed(costSink), tierOf, phaseTierByName(wf, tierOf), ctxCache, gates, phaseOut, feedsForwardOf(wf), verdicts, findings, onFailTargetOf(wf), priorEmitsOf(wf)),
 		RunGate:         runGate,
 		Log:             logln,
 		OnGateResult:    gates.record,

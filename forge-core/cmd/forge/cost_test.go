@@ -196,7 +196,7 @@ func TestParseExecutiveVerdict_UnwrapsClaudeEnvelope(t *testing.T) {
 // recognizer reaches the generic executor only for claude, so a failing stub can never be
 // mistaken for a transient overload.
 func TestAgentExecutor_ClaudeInstallsOverloadRecognizer(t *testing.T) {
-	claudeEx := agentExecutor(runOpts{executor: "command", agentCmd: "claude", root: t.TempDir()}, func(string) {}, nil, unbudgetedTier(""), nil, nil, nil, nil, nil, nil, nil, nil)
+	claudeEx := agentExecutor(runOpts{executor: "command", agentCmd: "claude", root: t.TempDir()}, func(string) {}, nil, unbudgetedTier(""), nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	ce := claudeEx.(orchestrator.CommandExecutor)
 	if ce.ClassifyOverload == nil {
 		t.Fatal("the claude executor must install a ClassifyOverload recognizer")
@@ -210,7 +210,7 @@ func TestAgentExecutor_ClaudeInstallsOverloadRecognizer(t *testing.T) {
 		t.Error("installed recognizer must NOT classify a normal envelope as overloaded")
 	}
 
-	echoEx := agentExecutor(runOpts{executor: "command", agentCmd: "echo", root: t.TempDir()}, func(string) {}, nil, unbudgetedTier(""), nil, nil, nil, nil, nil, nil, nil, nil)
+	echoEx := agentExecutor(runOpts{executor: "command", agentCmd: "echo", root: t.TempDir()}, func(string) {}, nil, unbudgetedTier(""), nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	if ec := echoEx.(orchestrator.CommandExecutor); ec.ClassifyOverload != nil {
 		t.Error("a stub (echo) must NOT get the overload recognizer (back-compat: a failing stub stays KindFailed)")
 	}
@@ -314,7 +314,7 @@ func TestAgentExecutor_EchoEmitsNoCostEvent(t *testing.T) {
 		costCalls++
 		costEmitter(trace.NewTracer(&buf), func(string) {})(phase, model, usd, latency)
 	}
-	ex := agentExecutor(runOpts{executor: "command", agentCmd: "echo", root: t.TempDir()}, func(string) {}, costSink, unbudgetedTier(""), nil, nil, nil, nil, nil, nil, nil, nil)
+	ex := agentExecutor(runOpts{executor: "command", agentCmd: "echo", root: t.TempDir()}, func(string) {}, costSink, unbudgetedTier(""), nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	ce, ok := ex.(orchestrator.CommandExecutor)
 	if !ok {
 		t.Fatalf("executor=command must yield a CommandExecutor, got %T", ex)
@@ -339,7 +339,7 @@ func TestAgentExecutor_EchoEmitsNoCostEvent(t *testing.T) {
 // --output-format json (so it emits the total_cost_usd envelope this CLI parses),
 // alongside the existing --permission-mode/--model. This is the Build half of the wiring.
 func TestAgentExecutor_ClaudeGetsOutputFormatJSON(t *testing.T) {
-	ex := agentExecutor(runOpts{executor: "command", agentCmd: "claude", agentPermission: "acceptEdits", root: t.TempDir()}, func(string) {}, nil, unbudgetedTier(""), nil, nil, nil, nil, nil, nil, nil, nil)
+	ex := agentExecutor(runOpts{executor: "command", agentCmd: "claude", agentPermission: "acceptEdits", root: t.TempDir()}, func(string) {}, nil, unbudgetedTier(""), nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	ce := ex.(orchestrator.CommandExecutor)
 	argv := strings.Join(ce.Build(asset.Phase{Name: "implementer", Agent: "implementer"}, "balanced"), " ")
 	if !strings.Contains(argv, "--output-format json") {
@@ -366,7 +366,7 @@ func TestAgentExecutor_ClaudeObserveDrivesCostSink(t *testing.T) {
 	// resolver), here a fixed stub so the attribution is deterministic without depending
 	// on routing's tier table. tierOf is unused on this Observe-only path (no Build).
 	phaseModel := func(string) string { return "sonnet" }
-	ex := agentExecutor(runOpts{executor: "command", agentCmd: "claude", root: t.TempDir()}, func(string) {}, costSink, unbudgetedTier(""), phaseModel, nil, nil, nil, nil, nil, nil, nil)
+	ex := agentExecutor(runOpts{executor: "command", agentCmd: "claude", root: t.TempDir()}, func(string) {}, costSink, unbudgetedTier(""), phaseModel, nil, nil, nil, nil, nil, nil, nil, nil)
 	ce := ex.(orchestrator.CommandExecutor)
 	if ce.Observe == nil {
 		t.Fatal("claude executor must install an Observe sink")

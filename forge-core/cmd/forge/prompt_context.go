@@ -149,6 +149,42 @@ func onFailTargetOf(wf asset.Workflow) func(name string) (string, bool) {
 	}
 }
 
+// priorEmitsOf returns a lookup from a phase NAME to the union of every EARLIER
+// phase's declared `emits:` paths (asset-runtime-gap.md §1.3) — the data buildPrompt
+// threads into buildPromptWithEmits so a phase's prompt actually contains the
+// content of files prior phases produced (e.g. review.yml's distributed-review
+// consuming security-review's emitted security-review.md), not just a filename the
+// operator has to go read themselves. "Earlier" means index in wf.Phases strictly
+// less than the named phase's own index — a phase never sees its own or a LATER
+// phase's declared emits (those cannot exist yet). Missing/not-yet-produced files
+// are handled downstream by emitsContext (skip + warn, not an error), so this
+// function can safely return every earlier phase's declared paths regardless of
+// whether that phase has actually run yet. An unknown name (or a workflow with no
+// emits: anywhere) yields nil, the exact back-compat no-op buildPrompt already was.
+func priorEmitsOf(wf asset.Workflow) func(name string) []string {
+	return func(name string) []string {
+		var emits []string
+		for _, p := range wf.Phases {
+			if p.Name == name {
+				break
+			}
+			emits = append(emits, p.Emits...)
+		}
+		return emits
+	}
+}
+
+// emitsFilesFor nil-safely calls priorEmits(name), so agentExecutor's Build
+// closure can call it unconditionally regardless of whether a priorEmits
+// lookup was ever wired (nil in every existing test call site, matching this
+// package's established nil-safe-callback convention).
+func emitsFilesFor(priorEmits func(name string) []string, name string) []string {
+	if priorEmits == nil {
+		return nil
+	}
+	return priorEmits(name)
+}
+
 // observeFor builds the executor's Observe sink — the seam where cmd/forge (the only
 // vendor-aware layer) reacts to a finished phase's RAW output. It composes the
 // independent concerns below, so the sink fires for echo as well as claude (feed-forward

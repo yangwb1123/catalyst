@@ -43,8 +43,8 @@ phases:
       - 审计追踪需求 / audit trail requirements
     uses_template: .ai/prompts/02-security-rfc-review.md
     emits:
-      - security-review.md             # 发现 + 风险矩阵 / findings + risk matrix
-      - threat-model.md                # STRIDE 表 / STRIDE table
+      - docs/review/security-review.md # 发现 + 风险矩阵 / findings + risk matrix
+      - docs/review/threat-model.md    # STRIDE 表 / STRIDE table
     on_fail:
       action: loop_back
       target_phase: security-review   # 安全评审未通过,重跑安全评审 / security review failed, re-run security review
@@ -65,7 +65,7 @@ phases:
       - 重试与退避策略 / retry & backoff strategy
     uses_template: .ai/prompts/03-distributed-review.md
     emits:
-      - distributed-review.md          # 故障矩阵 + 锁策略 / failure matrix + lock strategy
+      - docs/review/distributed-review.md  # 故障矩阵 + 锁策略 / failure matrix + lock strategy
     on_fail:
       action: loop_back
       target_phase: security-review    # 分布式评审未通过,从安全评审重新开始 / distributed review failed, restart from security review
@@ -93,8 +93,8 @@ phases:
     uses_template: .ai/prompts/05-performance-review.md
     secondary_template: .ai/prompts/06-production-readiness.md
     emits:
-      - performance-budget.md          # 延迟预算 + 基准计划 / latency budget + benchmark plan
-      - production-readiness.md        # 上线检查清单 / go/no-go checklist
+      - docs/review/performance-budget.md      # 延迟预算 + 基准计划 / latency budget + benchmark plan
+      - docs/review/production-readiness.md    # 上线检查清单 / go/no-go checklist
     on_fail:
       action: loop_back
       target_phase: security-review    # 性能评审未通过,从安全评审重新开始 / performance review failed, restart from security review
@@ -118,7 +118,7 @@ phases:
     uses_template: .ai/prompts/09-cto-review.md
     feeds_forward: true                 # 裁决 + 约束前传给 BUILD planner / verdict feeds BUILD planner
     emits:
-      - review-summary.md              # 综合裁决 + Top 10 风险 + Non-Goals / verdict + risks + non-goals
+      - docs/design/review-summary.md  # 综合裁决 + Top 10 风险 + Non-Goals / verdict + risks + non-goals — cto's write scope is docs/design/** (cto.md 硬边界), not docs/review/
 
 # ── 终止条件 / stop condition ──
 # 全维度评审通过后,解锁 BUILD。

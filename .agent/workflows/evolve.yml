@@ -49,7 +49,7 @@ loop:
         现状 vs 目标(北极星/PRD)算差距,按价值/风险排序。
         Diff current vs target (north-star/PRD); rank gaps by value & risk.
       emits:
-        - gap-report.md
+        - docs/design/gap-report.md
 
     # ── P3 Roadmap 更新 / roadmap update ──
     - name: roadmap-update
