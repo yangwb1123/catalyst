@@ -7,3 +7,6 @@ build/
 coverage/
 .DS_Store
 .forge/
+
+# compiled forge-core binary (build with `go build ./cmd/forge`)
+forge-core/forge
