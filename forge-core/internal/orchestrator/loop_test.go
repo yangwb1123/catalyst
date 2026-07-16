@@ -455,6 +455,30 @@ func TestLoop_FreshStartIterDefaults(t *testing.T) {
 	}
 }
 
+// TestLoop_ResumeGatesGreenContinuity is a regression test: a resume used to
+// always seed prevGatesGreen at false regardless of the checkpoint's real
+// GatesGreen value, so staleCount's "!prevGatesGreen && gatesGreen" clause
+// would spuriously read as a green-to-still-green TRANSITION (falsely
+// resetting the no-progress tripwire) on the very first post-resume
+// iteration whenever gates were already green before the crash. With
+// ResumeGatesGreen correctly seeded, a resumed run whose roadmap AND gates
+// are both genuinely flat (no real change since the checkpoint) must trip
+// the tripwire on that first iteration instead of silently resetting it.
+func TestLoop_ResumeGatesGreenContinuity(t *testing.T) {
+	wf := loadFixture(t)
+	l := loopOver(signalSeq(converge.Signals{RoadmapCompletion: 0.5, GatesGreen: true}), 5, 1)
+	l.StartIter = 2
+	l.ResumePrev = 0.5
+	l.ResumeGatesGreen = true // checkpoint said gates were already green
+	out, _ := l.Run(wf, "balanced")
+	// Iterations reports the iteration NUMBER reached, not a count run — since
+	// StartIter=2, tripping on the very first (and only) iteration executed
+	// correctly reports 2 here (mirrors TestLoop_FreshStartIterDefaults' convention).
+	if out.Iterations != 2 || out.Reason != "no-progress tripwire (anti doom-loop)" {
+		t.Errorf("flat resume (same roadmap, gates already green) must trip on the first post-resume iteration; got %+v", out)
+	}
+}
+
 func eqInts(a, b []int) bool {
 	if len(a) != len(b) {
 		return false

@@ -34,13 +34,21 @@ import (
 // scorecard.schema.yml and the shared scorecards.json data contract produced by
 // the Eval Engine. JSON tags are the wire contract; keep them aligned with the
 // parallel producer. QualityScore is what policy.history.tiebreak_on reads
-// (higher is better); Samples gates trust (policy.history.min_samples). The
-// Mode field carries the execution mode (explorer/balanced/engineering/cto) that
-// produced this row, so the Router can filter by mode compatibility and avoid
-// cross-mode scoring bias (edgecases §5.4 — an explorer-mode row with no reviewer
-// may show inflated quality that misleads engineering-mode routing). An empty
-// mode means "legacy row written before mode awareness" — treated as compatible
-// with all modes for backward compatibility.
+// (higher is better); Samples gates trust (policy.history.min_samples).
+//
+// Mode is DECLARED-BUT-INERT, not honest yet: the design intent (edgecases
+// §5.4) is that it would carry the execution mode (explorer/balanced/
+// engineering/cto) that produced this row, so the Router could filter by
+// mode compatibility and avoid cross-mode scoring bias (an explorer-mode row
+// with no reviewer may show inflated quality that misleads engineering-mode
+// routing). As of this writing the only producer, harness/scorecard-update.mjs
+// (via synthesize() in harness/scorecard.mjs), never sets it, and no
+// consumer in cmd/forge/gates.go or scorecard_wind.go reads/filters by it —
+// verified by repo-wide grep, not asserted from memory. It always decodes to
+// "", which every consumer already treats as "compatible with all modes"
+// (the intended backward-compat behavior for a legacy row), so this is a
+// dead-but-harmless field today, not an active bug — flagged here honestly
+// rather than describing a filter that does not yet run.
 // The PassRate/AvgIterations/ReworkRate trio is optional enrichment (schema
 // "optional:" block) — absent fields decode to their zero value, which callers
 // must treat as "unknown", not "zero performance".

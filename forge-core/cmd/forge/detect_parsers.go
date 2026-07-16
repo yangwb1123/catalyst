@@ -323,8 +323,17 @@ func fileExists(path string) bool {
 	return err == nil
 }
 
-// dirHasGlob reports whether any file matching pattern exists anywhere under root.
+// dirHasGlob reports whether any file matching pattern exists anywhere under
+// root. A pattern with no "/" (e.g. "*_test.go") matches against the bare
+// basename, at any depth. A pattern WITH a directory segment (e.g.
+// "tests/*.rs", cargo's idiomatic integration-test layout) is matched
+// against the path relative to root instead — filepath.Match's "*" never
+// matches "/", so matching such a pattern against a bare basename (as this
+// function used to, unconditionally) could never succeed; it only detects
+// the pattern's directory sitting directly under root, not an arbitrarily
+// nested one, which matches this function's existing single-root-crate scope.
 func dirHasGlob(root, pattern string) bool {
+	hasDirSegment := strings.Contains(pattern, "/")
 	found := false
 	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil || found {
@@ -333,7 +342,16 @@ func dirHasGlob(root, pattern string) bool {
 		if d.IsDir() && (d.Name() == ".git" || d.Name() == "vendor" || d.Name() == "node_modules") {
 			return filepath.SkipDir
 		}
-		if ok, _ := filepath.Match(pattern, d.Name()); ok {
+		if d.IsDir() {
+			return nil
+		}
+		target := d.Name()
+		if hasDirSegment {
+			if rel, relErr := filepath.Rel(root, path); relErr == nil {
+				target = rel
+			}
+		}
+		if ok, _ := filepath.Match(pattern, target); ok {
 			found = true
 		}
 		return nil

@@ -164,7 +164,7 @@ func execLoop(ctx context.Context, wf asset.Workflow, o runOpts, maxIter int, ma
 	}
 	defer lock.Release()
 	logln := func(s string) { fmt.Println(s) }
-	start, prev, spentMicros, phaseStart, err := resumeStart(o.root, resume)
+	start, prev, spentMicros, phaseStart, gatesGreen, err := resumeStart(o.root, resume)
 	if err != nil { // malformed checkpoint: fail closed, never silently restart.
 		fmt.Fprintf(os.Stderr, "forge evolve: %v\n", err)
 		return 1
@@ -185,7 +185,7 @@ func execLoop(ctx context.Context, wf asset.Workflow, o runOpts, maxIter int, ma
 	}
 	budget.seed(spentMicros)
 	loop, verdicts, findings := buildTracedLoop(ctx, wf, o, maxIter, logln, tracer, budget)
-	loop.StartIter, loop.ResumePrev, loop.StartPhase = start, prev, phaseStart
+	loop.StartIter, loop.ResumePrev, loop.StartPhase, loop.ResumeGatesGreen = start, prev, phaseStart, gatesGreen
 	loop.OnIteration = checkpointHook(o, wf, tracer, budget, logln, verdicts, findings)
 	loop.OnPhase = phaseCheckpointHook(o, wf, budget, logln)
 	fmt.Printf("forge evolve: stage=%s mode=%s max-iter=%d (%s) type=%s start-iter=%d (doom-loop tripwire=2)\n",
@@ -282,17 +282,17 @@ func reportLoop(out orchestrator.LoopOutcome, err error) int {
 // phaseStart is cp.PhaseIndex — the phase the FIRST resumed iteration begins at when
 // the crash happened mid-iteration (0 for a clean iteration-boundary checkpoint, so
 // the iteration replays in full exactly as before phase-granular checkpointing).
-func resumeStart(root string, resume bool) (start int, prev float64, spentMicros int64, phaseStart int, err error) {
+func resumeStart(root string, resume bool) (start int, prev float64, spentMicros int64, phaseStart int, gatesGreen bool, err error) {
 	if !resume {
-		return 0, -1.0, 0, 0, nil
+		return 0, -1.0, 0, 0, false, nil
 	}
 	cp, found, err := persist.Load(checkpointPath(root))
 	if err != nil {
-		return 0, 0, 0, 0, fmt.Errorf("--resume: malformed checkpoint at %s: %w", checkpointPath(root), err)
+		return 0, 0, 0, 0, false, fmt.Errorf("--resume: malformed checkpoint at %s: %w", checkpointPath(root), err)
 	}
 	if !found {
 		fmt.Fprintf(os.Stderr, "forge evolve: --resume found no checkpoint at %s; starting fresh\n", checkpointPath(root))
-		return 0, -1.0, 0, 0, nil
+		return 0, -1.0, 0, 0, false, nil
 	}
 	at := ""
 	if cp.PhaseIndex > 0 {
@@ -300,7 +300,9 @@ func resumeStart(root string, resume bool) (start int, prev float64, spentMicros
 	}
 	fmt.Printf("forge evolve: resuming from iteration %d%s (roadmap=%.0f%%, last reason: %s)\n",
 		cp.Iteration+1, at, cp.RoadmapCompletion*100, cp.Reason)
-	return cp.Iteration + 1, cp.RoadmapCompletion, cp.SpentUsdMicros, cp.PhaseIndex, nil
+	// GatesGreen threads through too, so LoopEngine.ResumeGatesGreen keeps the
+	// resumed stale detector continuous on both axes (see its doc comment).
+	return cp.Iteration + 1, cp.RoadmapCompletion, cp.SpentUsdMicros, cp.PhaseIndex, cp.GatesGreen, nil
 }
 
 // checkpointHook builds the loop's post-measurement OnIteration callback: after
@@ -366,7 +368,6 @@ func phaseCheckpointHook(o runOpts, wf asset.Workflow, budget *runBudget, logln 
 }
 
 // recordMemory appends this iteration's knowledge entries to the cross-session store.
-//
 // Three entry types, each honest about its source:
 //  1. Trajectory KindLesson (always): the iteration's measured convergence signals —
 //     roadmap %, gate state. Real signal regardless of executor (dry or live).
@@ -375,7 +376,6 @@ func phaseCheckpointHook(o runOpts, wf asset.Workflow, budget *runBudget, logln 
 //     exists (verdicts.wasReworked() is true — dry/echo runs never set this).
 //  3. Gate-failure KindGap (when !sig.GatesGreen): surfaces the gate failure explicitly
 //     so the next iteration's prompt context names it as an open gap.
-//
 // Fail-LOUD-and-continue on each append: a write failure is warned but never aborts
 // the loop (enrichment, not correctness). Nil ledgers (dry/echo runs) produce only the
 // trajectory entry.

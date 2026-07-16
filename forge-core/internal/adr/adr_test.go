@@ -149,6 +149,11 @@ func TestADR0002_ForgeCoreIsGo(t *testing.T) {
 
 // TestADR0002_PolyglotNotStarted checks that the other runtimes (Python, Rust, TS)
 // have NOT been introduced yet — they are planned for later stages.
+//
+// Deliberately t.Logf, never t.Error: their appearance means legitimate v3
+// progress (a milestone marker), not a decayed decision — the ONE case in
+// this file's four "soft" ADR-decay tests where a failing assertion would be
+// actively wrong, not just weak.
 func TestADR0002_PolyglotNotStarted(t *testing.T) {
 	root := repoRoot(t)
 	expectedAbsent := []string{"forge-ai", "forge-web", "forge-runtime"}
@@ -161,7 +166,10 @@ func TestADR0002_PolyglotNotStarted(t *testing.T) {
 }
 
 // TestADR0002_HarnessIsNodeJS checks that the harness is still Node.js
-// (the transitional state documented in ADR-0002).
+// (the transitional state documented in ADR-0002). Deliberately t.Log, never
+// t.Error: harness losing its .mjs files means the Go-binary consolidation
+// ADR-0002 itself calls "未来" (future work) has landed — a milestone, not
+// a decayed decision.
 func TestADR0002_HarnessIsNodeJS(t *testing.T) {
 	root := repoRoot(t)
 	harnessDir := filepath.Join(root, "harness")
@@ -207,7 +215,9 @@ func TestADR0004_ReviewAgentCardsExist(t *testing.T) {
 }
 
 // TestADR0004_RoleCheckFileExists checks the review.yml's role_check.md exists
-// (referenced by the workflow).
+// (referenced by the workflow). Deliberately t.Logf, never t.Error: the file
+// is genuinely optional (its own log message says so) — nothing in ADR-0004
+// requires it, so a missing file is not a decayed decision.
 func TestADR0004_RoleCheckFileExists(t *testing.T) {
 	root := repoRoot(t)
 	path := filepath.Join(root, ".ai", "role_checks", "01-general.md")
@@ -241,10 +251,16 @@ func TestCrossADR_HarnessNotInForgeCore(t *testing.T) {
 	}
 }
 
-// TestCrossADR_GoModStaysClean verifies that go.mod stays unchanged (no new
-// dependencies added) by checking the raw file size is within expected range.
-// This is a regression guard, not a hard boundary — update the expected max
-// when a legitimate new standard-library-only feature requires a go.mod change.
+// TestCrossADR_GoModStaysClean is a coarse, deliberately t.Logf-only tripwire
+// for ANY unexpected go.mod growth (not just dependencies) — update the
+// expected max when a legitimate standard-library-only feature grows it.
+// The precise, hard-failing check for actual dependencies is
+// TestADR0001_ZeroExternalDeps above (content-based: it inspects go.mod's
+// require directives directly, in both the block and single-line forms), so
+// this line-count heuristic is intentionally redundant with — and weaker
+// than — that one for the dependency case specifically; it is kept only as
+// a cheap heads-up for growth from OTHER causes (e.g. a retract/toolchain
+// directive) that TestADR0001 has no reason to flag.
 func TestCrossADR_GoModStaysClean(t *testing.T) {
 	root := repoRoot(t)
 	data, err := os.ReadFile(filepath.Join(root, "forge-core", "go.mod"))

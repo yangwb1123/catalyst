@@ -195,6 +195,21 @@ func GateEvent(name, status, detail string) Event {
 	return Event{Kind: "gate", Name: name, Status: status, Detail: detail}
 }
 
+// DecisionEvent, OverloadEvent, StaleEvent, and ErrorEvent below are
+// constructors for four of trace's documented "canonical kinds" — but as of
+// this writing NONE of the four is actually called from any production code
+// path (verified by repo-wide grep): internal/orchestrator deliberately
+// stays generic and does not import internal/trace at all (see backoff.go's
+// own doc comment on why 529/overload handling is vendor-agnostic there),
+// and nothing in cmd/forge currently bridges the orchestrator's real
+// overload-retry/stale-tripwire moments into a callback that would call
+// these. Only trace.GateEvent is wired end-to-end today (engine_build.go's
+// wireGateTrace). These four are exercised solely by their own field-
+// assertion unit tests. Honest status, not a hidden gap: wiring them needs a
+// new Engine/LoopEngine callback hook (mirroring the existing OnGateResult/
+// OnPhase/OnIteration pattern) plus cmd/forge-side wiring — real, scoped
+// follow-up work, not a one-line fix, so left undone here rather than rushed.
+
 // DecisionEvent builds a trace event for a runtime decision (tier up/down,
 // cost guard trip, or adaptive behavior). name identifies the decision context
 // (e.g. the phase name), detail describes what was decided and why.
@@ -216,10 +231,10 @@ func StaleEvent(name, detail string) Event {
 	return Event{Kind: "stale_increment", Name: name, Status: "stale", Detail: detail}
 }
 
-// ErrorEvent builds a trace event for a recoverable or fatal error.
-// name identifies the source (phase/gate), errorType classifies the kind
-// (e.g. "overload", "timeout", "config"), status is the outcome
-// ("recovered"|"failed"), and detail carries the error message.
+// ErrorEvent builds a trace event for a recoverable or fatal error. name
+// identifies the source (phase/gate), errorType classifies the kind (e.g.
+// "overload", "timeout", "config"), status is the outcome ("recovered"|
+// "failed"), and detail carries the error message.
 func ErrorEvent(name, errorType, status, detail string) Event {
 	return Event{Kind: "error", Name: name, Status: status, Detail: fmt.Sprintf("[%s] %s", errorType, detail)}
 }

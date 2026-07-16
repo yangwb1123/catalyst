@@ -21,6 +21,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"forgeos/forge-core/internal/memory"
 )
 
 // replayDir is the fixture directory relative to this test file.
@@ -126,83 +128,21 @@ func TestReplay_TraceSeqIsMonotonic(t *testing.T) {
 
 // ── Memory replay ──────────────────────────────────────────────────────────
 
-// memoryEntry is the minimal on-disk entry shape for fixture parsing.
-// Mirrors memory.Entry.
-type memoryEntry struct {
-	Format        string  `json:"_format,omitempty"`
-	Kind          string  `json:"kind"`
-	Topic         string  `json:"topic"`
-	Detail        string  `json:"detail"`
-	Iteration     int     `json:"iteration"`
-	Confidence    float64 `json:"confidence,omitempty"`
-	Supersedes    string  `json:"supersedes,omitempty"`
-	CreatedAtUnix int64   `json:"created_at_unix"`
-}
-
-// decodeMemory parses JSONL memory data into entries. Mirrors the production
-// decode path in internal/memory (including the confidence default and
-// superseded filtering).
-func decodeMemory(data []byte) ([]memoryEntry, error) {
-	var entries []memoryEntry
-	for len(data) > 0 {
-		idx := indexByte(data, '\n')
-		if idx < 0 {
-			break
-		}
-		line := trimSpace(data[:idx])
-		data = data[idx+1:]
-		if len(line) == 0 {
-			continue
-		}
-		var e memoryEntry
-		if err := json.Unmarshal(line, &e); err != nil {
-			return nil, err
-		}
-		if e.Confidence == 0 {
-			e.Confidence = 1.0
-		}
-		entries = append(entries, e)
-	}
-	return filterSupersededMemory(entries), nil
-}
-
-func filterSupersededMemory(entries []memoryEntry) []memoryEntry {
-	if len(entries) == 0 {
-		return entries
-	}
-	active := make(map[string]int)
-	superseded := make(map[string]bool)
-	for i := len(entries) - 1; i >= 0; i-- {
-		e := entries[i]
-		if e.Supersedes != "" {
-			if _, exists := active[e.Supersedes]; !exists {
-				active[e.Supersedes] = i
-				superseded[e.Supersedes] = true
-			}
-		}
-	}
-	var out []memoryEntry
-	for i, e := range entries {
-		if superseded[e.Topic] {
-			if keeperIdx, ok := active[e.Topic]; ok && keeperIdx == i {
-				out = append(out, e)
-			}
-			continue
-		}
-		out = append(out, e)
-	}
-	return out
-}
-
+// TestReplay_MemoryParsing (and its siblings below) deliberately call the
+// REAL production internal/memory.Load — not a test-local reimplementation —
+// so a regression in memory's decode/filterSuperseded logic (confidence
+// defaulting, the two-pass supersede algorithm) is actually caught here,
+// rather than passing against a copy of that logic frozen at whatever point
+// it was last hand-mirrored.
 func TestReplay_MemoryParsing(t *testing.T) {
 	fixtures := []string{"evolve-dry-run"}
 	for _, name := range fixtures {
 		t.Run(name, func(t *testing.T) {
-			data := readFixture(name, "memory.jsonl")
-			if data == nil {
+			path := filepath.Join(replayDir, name, "memory.jsonl")
+			if _, statErr := os.Stat(path); statErr != nil {
 				t.Skipf("fixture %s/memory.jsonl not found", name)
 			}
-			entries, err := decodeMemory(data)
+			entries, err := memory.Load(path)
 			if err != nil {
 				t.Fatalf("decode memory: %v", err)
 			}
@@ -234,16 +174,18 @@ func TestReplay_MemoryParsing(t *testing.T) {
 }
 
 func TestReplay_MemorySuperseded(t *testing.T) {
-	data := readFixture("evolve-dry-run", "memory.jsonl")
-	if data == nil {
+	path := filepath.Join(replayDir, "evolve-dry-run", "memory.jsonl")
+	if _, statErr := os.Stat(path); statErr != nil {
 		t.Skip("fixture evolve-dry-run/memory.jsonl not found")
 	}
-	entries, err := decodeMemory(data)
+	entries, err := memory.Load(path)
 	if err != nil {
 		t.Fatalf("decode memory: %v", err)
 	}
-	// The fixture has one superseding entry (PostgreSQL supersedes db-choice).
-	// Ensure the superseded entry (Topic="db-choice") has been filtered out.
+	// The fixture has a "db-choice" decision at iteration 1 (a tentative early
+	// choice) and a "db" decision at iteration 3 with supersedes="db-choice"
+	// (the real PostgreSQL decision). Ensure the superseded entry (Topic=
+	// "db-choice") has been filtered out by the real filterSuperseded.
 	for _, e := range entries {
 		if e.Topic == "db-choice" {
 			t.Errorf("superseded entry with topic %q should have been filtered out: %+v", e.Topic, e)
@@ -295,11 +237,12 @@ func TestReplay_MultipleFixtures(t *testing.T) {
 					t.Errorf("%s/trace.jsonl: 0 events", name)
 				}
 			}
-			if memData := readFixture(name, "memory.jsonl"); memData != nil {
-				entries, err := decodeMemory(memData)
+			memPath := filepath.Join(replayDir, name, "memory.jsonl")
+			if _, statErr := os.Stat(memPath); statErr == nil {
+				memEntries, err := memory.Load(memPath)
 				if err != nil {
 					t.Errorf("%s/memory.jsonl: %v", name, err)
-				} else if len(entries) == 0 {
+				} else if len(memEntries) == 0 {
 					t.Errorf("%s/memory.jsonl: 0 entries", name)
 				}
 			}

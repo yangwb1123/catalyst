@@ -1,6 +1,7 @@
 {"_format":"forgeos.memory.v1","kind":"lesson","topic":"evolve","detail":"iter 1: roadmap=25%, gates_green=false","iteration":1,"confidence":1.0,"created_at_unix":1781956677}
 {"_format":"forgeos.memory.v1","kind":"gap","topic":"evolve","detail":"iter 1: gates not green at roadmap=25% — size/complexity gate blocks merge","iteration":1,"confidence":1.0,"created_at_unix":1781956677}
 {"_format":"forgeos.memory.v1","kind":"decision","topic":"test-strategy","detail":"adopt table-driven tests for coverage in one pass","iteration":1,"confidence":0.85,"created_at_unix":1781956700}
+{"_format":"forgeos.memory.v1","kind":"decision","topic":"db-choice","detail":"tentatively use auto-migrate ORM, revisit once schema stabilizes","iteration":1,"confidence":0.6,"created_at_unix":1781956710}
 {"_format":"forgeos.memory.v1","kind":"lesson","topic":"evolve","detail":"iter 2: roadmap=50%, gates_green=true — first gate-green iteration","iteration":2,"confidence":1.0,"created_at_unix":1782516099}
 {"_format":"forgeos.memory.v1","kind":"lesson","topic":"evolve","detail":"iter 3: roadmap=50%, gates_green=true — flat progress, planner needs more specific tasks","iteration":3,"confidence":1.0,"created_at_unix":1782516200}
 {"_format":"forgeos.memory.v1","kind":"decision","topic":"auth-impl","detail":"use JWT with refresh token rotation, not session cookies","iteration":2,"confidence":0.9,"created_at_unix":1782516300}

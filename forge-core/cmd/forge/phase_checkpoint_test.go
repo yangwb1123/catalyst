@@ -46,7 +46,7 @@ func TestPhaseCheckpointHook_WriteResumeRoundTrips(t *testing.T) {
 		t.Errorf("must record the FINER mid-iteration spend; got %d want 500000", cp.SpentUsdMicros)
 	}
 	// Read convention pairs EXACTLY: resume re-enters iteration 3 at phase 3.
-	start, prev, spent, phaseStart, err := resumeStart(root, true)
+	start, prev, spent, phaseStart, _, err := resumeStart(root, true)
 	if err != nil {
 		t.Fatalf("resumeStart: %v", err)
 	}

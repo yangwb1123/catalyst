@@ -174,10 +174,18 @@ func checkWorkflowEstimates(wf asset.Workflow, f preflightFlags, rep *preflightR
 }
 
 // checkCostEstimate (check 5): a rough cost estimate (Sonnet ~$0.08/phase, Opus
-// ~$0.35/phase) across the estimated iteration count.
+// ~$0.35/phase) across the estimated iteration count. Gate-only phases
+// (len(RequiredGates)>0) are skipped — orchestrator.RunFrom dispatches them
+// purely through runGates and never spawns an agent for them even when they
+// also declare an `agent:` field (see RunFrom's `if len(p.RequiredGates) > 0
+// { ...; continue }`), so counting them here would inflate the estimate past
+// the agent-call count checkWorkflowEstimates prints one line earlier.
 func checkCostEstimate(wf asset.Workflow, modeFlag string, iterLimit int, rep *preflightReport) {
 	sonnetCount, opusCount := 0, 0
 	for _, p := range wf.Phases {
+		if len(p.RequiredGates) > 0 {
+			continue
+		}
 		if orchestrator.PhaseTier(p, modeFlag) == routing.Opus {
 			opusCount++
 		} else {

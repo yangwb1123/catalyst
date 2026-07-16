@@ -59,14 +59,24 @@ type LoopEngine struct {
 	// the engine must not depend on checkpoint/trace/persist state.
 	OnBeforeIteration func(i int)
 
-	// StartIter and ResumePrev support resuming a crashed/paused run from a
-	// checkpoint. StartIter is the 1-based iteration to begin at (0 or 1 both mean
-	// "start fresh from iteration 1" — the default). ResumePrev seeds the previous
-	// RoadmapCompletion so the stale/tripwire computation is continuous across the
-	// resume boundary; for a fresh run it is the sentinel -1.0 (set by loopStart),
-	// so the first reading is never counted as "no progress vs nothing".
-	StartIter  int
-	ResumePrev float64
+	// StartIter, ResumePrev, and ResumeGatesGreen support resuming a
+	// crashed/paused run from a checkpoint. StartIter is the 1-based iteration
+	// to begin at (0 or 1 both mean "start fresh from iteration 1" — the
+	// default). ResumePrev seeds the previous RoadmapCompletion so the
+	// stale/tripwire computation is continuous across the resume boundary; for
+	// a fresh run it is the sentinel -1.0 (set by loopStart), so the first
+	// reading is never counted as "no progress vs nothing". ResumeGatesGreen
+	// is GatesGreen's equivalent seed — persist.Checkpoint already carries
+	// GatesGreen at snapshot time, but until this field existed a resumed run
+	// always started prevGatesGreen at false regardless of the checkpoint's
+	// real value, making the two-axis stale detector's GatesGreen half
+	// non-continuous across a resume (a checkpoint saved at gates-green=true
+	// would spuriously look like a green-to-still-green NON-transition on the
+	// first post-resume iteration, instead of correctly seeding "already
+	// green" continuity).
+	StartIter        int
+	ResumePrev       float64
+	ResumeGatesGreen bool
 
 	// OnPhase is the ITERATION-AWARE per-phase checkpoint hook (the phase-granular
 	// twin of OnIteration). Run sets Engine.OnPhase per iteration so the engine
@@ -146,8 +156,7 @@ func (l LoopEngine) Run(wf asset.Workflow, mode string) (LoopOutcome, error) {
 	if len(wf.Phases) == 0 {
 		return LoopOutcome{0, false, "no phases to run (empty workflow — not converged)"}, nil
 	}
-	start, prev := l.loopStart()
-	var prevGatesGreen bool
+	start, prev, prevGatesGreen := l.loopStart()
 	stale := 0
 	startPhase := l.StartPhase
 	if l.Parallel && startPhase > 0 {
@@ -257,18 +266,20 @@ func (l LoopEngine) nextStartPhase(wf asset.Workflow) int {
 	return 0
 }
 
-// loopStart resolves the first iteration index and the initial `prev` completion
-// from the resume fields. A StartIter of 0 or 1 is a fresh run: start at
-// iteration 1 with prev = -1.0 (the sentinel that makes the first reading never
-// register as stale). A StartIter > 1 is a resume: begin there and seed prev with
-// ResumePrev (last persisted completion) so the stale/tripwire math is continuous
-// across the resume — a flat first post-resume reading correctly counts as stale.
-// This keeps the default (fresh) path bit-for-bit identical to the original.
-func (l LoopEngine) loopStart() (start int, prev float64) {
+// loopStart resolves the first iteration index and the initial `prev`/
+// `gatesGreen` seeds from the resume fields. A StartIter of 0 or 1 is a fresh
+// run: start at iteration 1 with prev = -1.0 (the sentinel that makes the
+// first reading never register as stale) and gatesGreen = false. A StartIter
+// > 1 is a resume: begin there and seed prev/gatesGreen with ResumePrev/
+// ResumeGatesGreen (last persisted values) so the stale/tripwire math is
+// continuous across the resume on BOTH axes — a flat first post-resume
+// reading correctly counts as stale. This keeps the default (fresh) path
+// bit-for-bit identical to the original.
+func (l LoopEngine) loopStart() (start int, prev float64, gatesGreen bool) {
 	if l.StartIter > 1 {
-		return l.StartIter, l.ResumePrev
+		return l.StartIter, l.ResumePrev, l.ResumeGatesGreen
 	}
-	return 1, -1.0
+	return 1, -1.0, false
 }
 
 // onIteration invokes the post-measurement hook (the checkpoint/trace point) when

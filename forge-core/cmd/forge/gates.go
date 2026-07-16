@@ -331,6 +331,15 @@ func (p *loopProbe) current() (statuses, categories map[string]string) {
 	return s, c
 }
 
+// isTestPath reports whether a git-diff-reported path names a test file:
+// Go's *_test.go (Contains "_test") or Python's test_*.py (HasPrefix
+// "test_"). The test_* check runs against the BASENAME, not the full path —
+// "tests/test_foo.py" (pytest's dominant layout) starts with "tests/", not
+// "test_", so checking the full path silently missed non-root test files.
+func isTestPath(path string) bool {
+	return strings.Contains(path, "_test") || strings.HasPrefix(filepath.Base(path), "test_")
+}
+
 // computeCodeTestRatio runs `git diff --stat HEAD` and returns the fraction of
 // changed lines that are in test files (test = file names containing _test or
 // starting with test_). 0 means either no changes or 100% production code.
@@ -362,8 +371,7 @@ func computeCodeTestRatio(root string) float64 {
 		if _, err := fmt.Sscanf(numStr[0], "%d", &n); err != nil || n == 0 {
 			continue
 		}
-		isTest := strings.Contains(path, "_test") || strings.HasPrefix(path, "test_")
-		if isTest {
+		if isTestPath(path) {
 			testLines += n
 		} else {
 			prodLines += n
@@ -382,7 +390,6 @@ func computeCodeTestRatio(root string) float64 {
 // comment: "roadmap items that have corresponding file-system changes"), consumed
 // by orchestrator/loop.go's reportConvergence to flag a claimed-100%-but-nothing-
 // changed gap.
-//
 // DESIGN CHOICE — DONE items only, not pending/partial: the honesty question this
 // answers is "if the agent claims something is done, is there file evidence for
 // it?" A pending ("- [ ]") or partial ("- [~]") item carries no completion claim
@@ -390,7 +397,6 @@ func computeCodeTestRatio(root string) float64 {
 // signal with items nobody asserted were finished — the more faithful reading of
 // the doc comment, and the one that actually detects the self-report-overstates-
 // progress failure mode the caller warns about.
-//
 // This is a CHEAP HEURISTIC PROXY, not a precise link — the exact same honesty
 // posture as internal/risk.FromChangedPaths: a keyword substring match is neither
 // necessary nor sufficient evidence a roadmap item was truly implemented (a

@@ -445,3 +445,26 @@ func TestReportConvergence_HumanGate_Approved(t *testing.T) {
 		t.Errorf("marker-approved report must unlock next_stage; got:\n%s", markerOut)
 	}
 }
+
+// TestIsTestPath_NonRootPythonConvention is a regression test: pytest's
+// dominant layout puts tests in a tests/ subdirectory (e.g. "tests/test_foo.py"),
+// which a full-path HasPrefix("test_") check misses entirely since the path
+// starts with "tests/", not "test_". The check must run against the basename.
+func TestIsTestPath_NonRootPythonConvention(t *testing.T) {
+	cases := []struct {
+		path string
+		want bool
+	}{
+		{"test_foo.py", true},                 // root-level: basename == full path
+		{"tests/test_foo.py", true},            // pytest's dominant layout
+		{"app/tests/test_bar.py", true},        // nested tests/ subdirectory
+		{"forge-core/cmd/forge/gates_test.go", true}, // Go convention, unaffected
+		{"internal/foo.go", false},
+		{"app/testify.py", false}, // "test" prefix but not the "test_" convention
+	}
+	for _, c := range cases {
+		if got := isTestPath(c.path); got != c.want {
+			t.Errorf("isTestPath(%q) = %v, want %v", c.path, got, c.want)
+		}
+	}
+}

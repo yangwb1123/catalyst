@@ -34,7 +34,7 @@ phases:
       Extract users/pain/constraints/success-metrics; surface gaps & assumptions.
     emits:
       - requirement-draft.md           # 需求草稿 + 置信度评分 / draft + confidence score
-    confidence_metric: requirement_confidence   # 0–100%,驱动本段 stop_condition — NOTE: field itself not read by forge-core; the CONFIDENCE: N parsing (Sprint 29) is wired via a fixed phase-name dispatch, not by consulting this field
+    confidence_metric: requirement_confidence   # 0–100%,驱动本段 stop_condition — this field IS read: cmd/forge/gates.go's confidenceMetricPhase() scans wf.Phases for the matching ConfidenceMetric to resolve which phase's CONFIDENCE: N verdict feeds RequirementConfidence, falling back to a fixed phase name only if no phase declares the field
 
   # ── P2 市场调研 / market research ──
   - name: market-research

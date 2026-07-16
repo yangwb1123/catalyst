@@ -52,7 +52,7 @@ func (e Engine) runAgentPhase(ctx context.Context, p asset.Phase, mode string) e
 		if execErr.Kind == KindOverloaded {
 			d := overloadBackoff(attempt)
 			e.logf("phase %s: overloaded, backing off %s before retry %d/%d", p.Name, d, attempt+1, e.MaxRetries)
-			e.sleep(d)
+			e.sleep(ctx, d)
 			continue
 		}
 		e.logf("phase %s: retryable %s, retry %d/%d", p.Name, execErr.Kind, attempt+1, e.MaxRetries)
@@ -91,13 +91,21 @@ func overloadBackoff(attempt int) time.Duration {
 	return d
 }
 
-// sleep performs the inter-retry pause via the injected Engine.Sleep, defaulting to time.Sleep
-// when unset — the nil-safe twin of logf, so production waits on the real clock and a test injects
-// a fake that records the duration without sleeping.
-func (e Engine) sleep(d time.Duration) {
+// sleep performs the inter-retry pause via the injected Engine.Sleep, defaulting to a
+// context-cancellable wait when unset — the nil-safe twin of logf, so production waits on the
+// real clock (but returns EARLY the moment ctx is cancelled, e.g. SIGINT, rather than riding out
+// the full up-to-60s backoff before runAgentPhase's next-attempt loop notices) and a test injects
+// a fake that records the duration without sleeping (and without needing to be context-aware,
+// since it never blocks in the first place).
+func (e Engine) sleep(ctx context.Context, d time.Duration) {
 	if e.Sleep != nil {
 		e.Sleep(d)
 		return
 	}
-	time.Sleep(d)
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-t.C:
+	case <-ctx.Done():
+	}
 }
