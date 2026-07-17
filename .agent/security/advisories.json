@@ -1,0 +1,54 @@
+{
+  "_meta": {
+    "source": "https://osv.dev (OSV API v1/query, package-only — full known history per dep, not filtered to the current pin)",
+    "generated_by": "node harness/sca_fetch.mjs (manual/periodic refresh, never run by forge accept/gate)",
+    "dependencies_queried": [
+      {
+        "name": "PyYAML",
+        "ecosystem": "PyPI"
+      }
+    ]
+  },
+  "advisories": [
+    {
+      "id": "GHSA-3pqx-4fqf-j49f",
+      "package": "PyYAML",
+      "ecosystem": "PyPI",
+      "vulnerable": {
+        "introduced": "5.1",
+        "fixed": "5.2"
+      },
+      "severity": "CRITICAL"
+    },
+    {
+      "id": "GHSA-6757-jp84-gxfx",
+      "package": "PyYAML",
+      "ecosystem": "PyPI",
+      "vulnerable": {
+        "introduced": "5.1b7",
+        "fixed": "5.3.1"
+      },
+      "severity": "CRITICAL"
+    },
+    {
+      "id": "GHSA-8q59-q68h-6hv4",
+      "package": "PyYAML",
+      "ecosystem": "PyPI",
+      "vulnerable": {
+        "introduced": "0",
+        "fixed": "5.4"
+      },
+      "severity": "CRITICAL"
+    },
+    {
+      "id": "GHSA-rprw-h62v-c2w7",
+      "package": "PyYAML",
+      "ecosystem": "PyPI",
+      "vulnerable": {
+        "introduced": "0",
+        "fixed": "5.1"
+      },
+      "severity": "CRITICAL"
+    }
+  ]
+}

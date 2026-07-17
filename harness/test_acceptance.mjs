@@ -8,7 +8,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { readFileSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { readFileSync, mkdtempSync, writeFileSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -16,7 +16,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import * as acc from './acceptance.mjs';
 import { resolveCoverageThreshold, judgeCoverage, computeCoverageThreshold } from './adapters.mjs';
 import { parseRules } from './arch/scan.mjs';
-import { categorize, withCategory, APPLICABLE, INAPPLICABLE, NO_TOOL } from './acceptance-kernel.mjs';
+import { categorize, withCategory, APPLICABLE, INAPPLICABLE, NO_TOOL, ROOT } from './acceptance-kernel.mjs';
 const { decide, PASS, FAIL, NA, LOAD_BEARING, probeNotApplicable, probeCoverage, probeSCA, runCountedTest, runPythonSuites } = acc;
 
 // allPass builds a results array where every load-bearing criterion is PASS,
@@ -289,14 +289,31 @@ test('coverage is NOT load-bearing (an N/A coverage must not block accept)', () 
 // --- dependency_vulnerabilities (SCA) is a real probe, honest N/A, non-blocking -
 test('probeSCA yields a single, honest dependency_vulnerabilities row', () => {
   // Like probeCoverage, exercise probeSCA() directly (NOT collect(), which spawns
-  // node --test and would re-enter this suite). With no advisory DB in the repo it
-  // must be N/A — the framework is ready but no OSV DB is provided, so the scan is
-  // not run and NOT faked into a pass.
+  // node --test and would re-enter this suite). COPY-ANYWHERE: this test file is
+  // itself one of COPIED_FILES, so it must not hardcode THIS repo's DB state —
+  // a scaffolded project has no .agent/security/advisories.json (that snapshot is
+  // repo-specific data, not part of the universal template) and must honestly get
+  // N/A, while this source repo ships a REAL OSV snapshot (harness/sca_fetch.mjs,
+  // run against the live OSV API for its one actual dependency, PyYAML — see that
+  // file's header for why it's a static, operator-refreshed snapshot rather than a
+  // live query on every gate run) and must honestly get PASS. Branch on whether the
+  // conventional DB path actually exists on THIS host, exactly like probeSCA itself:
+  // same precedence (FORGE_SCA_DB wins if SET, else the conventional path) AND an
+  // actual existsSync check (not just "the env var happens to be set" — a
+  // FORGE_SCA_DB pointing at a nonexistent file must still resolve to N/A, same
+  // as probeSCA's own loadAdvisories does when the path is unreadable).
+  const dbPath = process.env.FORGE_SCA_DB || join(ROOT, '.agent', 'security', 'advisories.json');
+  const dbPresent = existsSync(dbPath);
   const r = probeSCA();
   assert.equal(r.criterion, 'dependency_vulnerabilities', 'exactly the SCA criterion');
   assert.ok([PASS, FAIL, NA].includes(r.status), 'SCA status must be an honest verdict');
-  assert.equal(r.status, NA, 'no advisory DB in this repo -> honest N/A');
-  assert.match(r.detail, /not run, not faked/i, 'N/A reason must say it was NOT faked');
+  if (dbPresent) {
+    assert.equal(r.status, PASS, 'a real advisory DB with 0 known-vulnerable deps must be PASS, not N/A');
+    assert.match(r.detail, /0 known-vulnerable/i, 'PASS detail must say what was actually checked');
+  } else {
+    assert.equal(r.status, NA, 'no advisory DB on this host -> honest N/A');
+    assert.match(r.detail, /not run, not faked/i, 'N/A reason must say it was NOT faked');
+  }
 });
 
 test('dependency_vulnerabilities is NOT load-bearing (an N/A SCA must not block accept)', () => {

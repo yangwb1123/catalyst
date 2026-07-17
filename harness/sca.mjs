@@ -66,13 +66,20 @@ export const MANIFESTS = {
 
 // parseVer: a version string -> {nums:[major,minor,patch], pre} or null.
 // Tolerant of a leading `v`/`=`/whitespace and of missing minor/patch (zero-
-// filled). A pre-release suffix (`-rc.1`, `-beta`) is captured separately so a
-// pre-release can sort BELOW its final release (1.0.0-rc < 1.0.0), matching
-// SemVer precedence for the common shapes go.mod / npm / PyPI emit.
+// filled). A pre-release suffix is captured separately so a pre-release can
+// sort BELOW its final release (1.0.0-rc < 1.0.0), matching SemVer precedence
+// for the common shapes go.mod / npm / PyPI emit. The separator before the
+// suffix is OPTIONAL (`[-+]?`, not required): SemVer/npm/Go use a `-`/`+`
+// separator (`1.0.0-rc.1`), but PyPI's PEP 440 pre-release form has NO
+// separator at all (`5.2b1`, `5.4rc1`, `1.0a3`) — real OSV advisory data (this
+// repo's own advisories.json) uses exactly this bare form, and requiring a
+// separator would make those versions unparseable (silently sorting as
+// -Infinity in every comparison, which is wrong in either direction depending
+// on which side of a compare it lands on — not merely "conservative").
 function parseVer(v) {
   if (typeof v !== 'string') return null;
   const cleaned = v.trim().replace(/^[v=]\s*/i, '');
-  const m = cleaned.match(/^(\d+)(?:\.(\d+))?(?:\.(\d+))?(?:[-+](.*))?$/);
+  const m = cleaned.match(/^(\d+)(?:\.(\d+))?(?:\.(\d+))?(?:[-+]?(.*))?$/);
   if (!m) return null;
   return {
     nums: [Number(m[1]), Number(m[2] || 0), Number(m[3] || 0)],

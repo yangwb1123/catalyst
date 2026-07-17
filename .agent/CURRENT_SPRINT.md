@@ -183,9 +183,20 @@ Sprint 30 结尾把 14 个 GAP 逐条收口,但 5 处收口方式是加一行 `N
 
 **人工决策收尾(2026-07-03)**:两处「需真 claude 验证」的机制(readonly 路径限定强制、on_rejected 拒绝重跑)是否值得为验证而花真实 API 预算,征询用户——用户明确选择「就此打住,单测已足够」(而非授权花钱真跑)。这是本仓「花真钱需用户显式授权」既有纪律(Sprint 24-26 皆如此)下的正常终止路径,不是回避:两个机制本身**已经真实实现**(非声明未接线),只是运行时行为的最后一道经验证据止步于「按官方文档契约构造 + 单测坐实参数正确性」,未再往「真 claude 进程实测」推进——用户对此知情并明确接受为最终状态。
 
+## Sprint 32(✅ 完成)— BLOCKED-EXTERNAL 复查:环境实测证明 SCA/CVE 的外部资源已可得,收口成真实 PASS
+`/goal` 重新发起后,先复查根 ROADMAP/`docs/FUNCTIONAL_REQUIREMENTS_AUDIT.md` 的三个 BLOCKED-EXTERNAL 项是否仍然真的 blocked,而非默认沿用旧结论——**实测(非假设)**:`/dev/kvm` 本环境存在且当前用户可读写(但 `firecracker` 二进制未装,搭建 microVM runner 是架构级工作,维持 blocked)、无任何跨厂商 LLM key(维持 blocked)、**`api.osv.dev` 真实网络可达**(`curl` 直接验证 200)。第三项此前唯一的阻塞理由就是「缺 DB」,而 DB 恰恰就是这次实测证明可得的外部资源——收口。
+
+**实现**:新增 `harness/sca_fetch.mjs`(人工/周期性刷新工具,复用 `sca.mjs` 已有的 `discoverManifests`/`parseManifest`/`compareVersions`,不重新发明 semver 比较):对本仓 4 个 manifest 解出的唯一真实依赖(`harness/requirements.txt` 的 `PyYAML>=6.0,<7.0`,forge-core/go-taskd 的 go.mod 及 harness 的 package.json 均零依赖)向 OSV API 查询**完整历史**(不按当前 pin 过滤版本,以便未来版本升级落入已知漏洞区间时仍能命中),转写为 `sca.mjs` 既有的简化 schema 并写盘 `.agent/security/advisories.json`。**诚实边界(设计即声明,非事后找补)**:该刷新工具**从不**被 `forge accept`/gate 路径调用——harness 的 gate 链路必须保持零网络、确定性、可离线跑;这是运维者按需手动/定期跑的工具,同 vendoring lockfile 的姿势,`sca.mjs` 本身继续只读盘上快照。
+
+**去重正确性**(独立复核抓出的真 bug,同日修复):OSV 对同一漏洞常见"GHSA 原生记录 + PYSEC 别名记录"两份,且两份自己的 `introduced` 边界可能有细微出入(如 `5.1b7` vs `5.1`)。初版按 (package,ecosystem,introduced,fixed) 做去重键——两份记录只要边界不完全一致就被误判成"不同漏洞",产出重复且矛盾的 DB 行。改按**规范 id**(优先 GHSA-* 别名)去重,合并时取**最保守窗口**(`min(introduced)` + `max(fixed)`,`fixed` 缺失/开放式永远压过任何具体已修复版本)——复用 `sca.mjs` 已测试过的 `compareVersions`,不重新实现 semver 排序。4 条真实 PyYAML 历史漏洞(CVE-2020-1747/CVE-2020-14343 等)全部已在 5.4 之前修复,本仓 pin 在 6.0,故 `dependency_vulnerabilities` 判定 **PASS**(0 known-vulnerable vs 4 条真实 advisory)。
+
+**copy-anywhere 双重坐实**(两处独立自测各抓到一次真回归,同日修复,不是事后合理化):① `sca_fetch.mjs` 遗漏 `forge-init` 的 `COPIED_FILES` 清单,被 `test_forge-init.mjs` 的清单完整性守卫当场抓到(同 Sprint 31 的先例)——补一行清单项;`forge-init.mjs` 因此顶破 500 行上限,把三份纯数据数组(`GOVERNANCE_DIRS`/`COPIED_FILES`/`HARNESS_NOT_COPIED`)拆到新 `harness/scaffold/copy-manifest.mjs`(`export`+局部 re-export,外部 import 路径不变)。② `test_acceptance.mjs`(它自己就是 `COPIED_FILES` 之一)最初把 `probeSCA()` 的断言硬编码成"本仓=PASS",这正是 Sprint 14 已经踩过一次的"copy-anywhere regression"同款错误——一个**没有** `.agent/security/advisories.json` 的新脚手架项目跑这份被复制的测试会得到 N/A 而非 PASS,断言会假失败。改为运行时探测 `existsSync(ROOT + '.agent/security/advisories.json') || FORGE_SCA_DB`,按探测结果分支断言 PASS 或 N/A——两条路径都真实可达且都被验证过(本仓 = PASS 分支;推演脚手架 = N/A 分支,由 `test_forge-upgrade.mjs` 的端到端脚手架-then-accept 集成测试间接坐实)。
+
+**结果**:`go build/vet/test -race` 全绿(forge-core 18 包)· `gate.mjs` PASS · `arch-check.mjs` 8/8 PASS · `node --test`(harness 246 + arch 34 + scaffold 11)全绿 · python 43 测试全绿 · **`forge accept: ACCEPTED`**(`dependency_vulnerabilities` 从 N/A 转 PASS,`0 known-vulnerable dependencies (4 manifest(s), 1 dep(s) vs OSV advisory DB)`)。`docs/FUNCTIONAL_REQUIREMENTS_AUDIT.md` 同步:该行从 BLOCKED-EXTERNAL 划去、移入 DONE(附证据),Firecracker/LiteLLM 两行标注 2026-07-16 复查未变。honesty:仅覆盖本仓当前实际存在的依赖生态(唯一真实依赖是 PyPI 一条;Go/npm 生态零真实依赖,该框架对它们的正确性靠既有 `test_sca.mjs` 的 fixture 覆盖,未经真实数据验证)——不夸大为"全依赖树已扫描"。
+
 ## 下一前沿(需外部资源 / 投机增强 / 架构外,非本环境可完整验证)
 - **真点火** `--agent-cmd=claude`:**multi-agent running to completion 已坐实**(Sprint 25:真 claude 多-agent 跑到 converge MET,增量级 + 版本级)。完整旋钮:四维资源护栏 + 成本三维(phase/时间/美元)+ 任务注入 + 写权限 + 模型路由 + 工作目录 + retry + loop-back;诚实分工:agent 自治增量绿、人确认版本竣工。docs/ignition.md 有完整配方 + 实测
-- **需外部资源(框架已就绪)**:SCA/CVE 漏洞库 OSV/NVD(差 DB)· 跨厂商池 LiteLLM(差多厂商 keys)· Firecracker 沙箱(差 KVM/特权)。〔真 cost/latency telemetry **已达成**——S26 真 claude 补齐真 token/cost/latency 数据,scorecard 三维真值落盘〕
+- **需外部资源(框架已就绪)**:~~SCA/CVE 漏洞库 OSV/NVD(差 DB)~~ **已解决,见 Sprint 32**。跨厂商池 LiteLLM(差多厂商 keys,2026-07-16 复查:env 内仍无任何厂商 key,维持 blocked)· Firecracker 沙箱(2026-07-16 复查:`/dev/kvm` 本环境实测存在且当前用户可读写,但 `firecracker` 二进制未装,搭建 microVM runner 属架构级工作而非接线小修,维持 blocked)。〔真 cost/latency telemetry **已达成**——S26 真 claude 补齐真 token/cost/latency 数据,scorecard 三维真值落盘〕
 - **投机增强(做即违反反 gold-plating 纪律)**:embedding 语义检索(TF-IDF 已工作,增量仅真点火时体现)
 - **架构外**:Web UI(偏离 CLI/声明式核心)
 - **独立大特性,非接线小修(Sprint 30 复核后从 GAP 改判)**:`internal/routing` 的完整多维评分器(complexity/dependency/context/business-impact)接入真实执行路径(目前只喂手动 `forge route` CLI)——包自身文档已自我标注为「v2+ Router service」。
