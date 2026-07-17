@@ -1,6 +1,6 @@
 # ForgeOS 功能需求点全景扫描（未采纳构思目录）
 
-> **扫描日期**：2026-07-16　·　**扫描范围**：项目根目录 + `docs/` + `docs/requirements/` + `docs/results/` 下全部 1,260 份 Markdown 文件
+> **扫描日期**：2026-07-16　·　**扫描范围**：项目根目录 + `docs/` + `docs/requirements/` + `docs/results/` 下全部 1,260 份 Markdown 文件(`docs/analysis/` 另 44 份补充扫描见文末附录，全仓合计 1,304 份)
 > **交互版本**（可搜索/筛选/排序全部 413 项）：https://claude.ai/code/artifact/166312f6-a962-4ea3-9f16-ba2853c83f90
 
 ## 这份文档是什么
@@ -19,9 +19,9 @@
 | 扫描的 Markdown 文件 | 1,260 |
 | 解析出的文档主题（含 `.md`/`.out.md` 配对） | 419 |
 | 提取的原始候选"方向"条目 | 2,110 |
-| 去重聚类后的独立需求主题 | **413** |
+| 去重聚类后的独立需求主题 | **413**（+ `docs/analysis/` 补充扫描 18 项，见文末附录，合计 **431**） |
 | 功能领域分类 | 21 |
-| 标记为生成管线自认幻觉的条目 | 10 |
+| 标记为生成管线自认幻觉的条目 | 10（+ 补充扫描 4 项，合计 14） |
 
 ## 核心发现
 
@@ -2696,5 +2696,53 @@ CommandExecutor 目前给了 agent(在 acceptEdits 模式下)几乎无限制的�
 复核确认代码库中没有任何控制面 daemon 的证据（无 unix socket/gRPC/API server）；并行 evolve 目前仅靠 O_APPEND 处理并发写入，且指出一个具体缺陷——evolve.go:347 的日志 rotate 逻辑没有文件锁(flock)，两个并发进程的 rotate 会相互干扰。当前 MaxAgentCalls 守卫是 per-process 级别而非跨进程 daemon 级配额，FORGE_AGENT_DEPTH 虽能跨进程传递但只防递归、不做配额限制。提议的方向四 Phase A（daemon + UNIX socket 提供跨进程资源配额）被明确定性为真正的新工程、高风险、v3 阶段（1-3月），而非小补丁，与本分类其余聚焦『单进程/子进程隔离机制』的主题在架构层级上不同（更偏向资源记账/控制面而非执行沙箱本身）。
 
 *优先级信号*: low/v3(x1)　·　*最高成熟度*: ideation-proposal　·　*示例来源*: strategic-expansion-perspectives
+
+---
+
+## 补充扫描：`docs/analysis/`（原始扫描未覆盖的 44 份文件）
+
+**扫描日期**：2026-07-16　·　**补充范围**：`docs/analysis/`（44 份 Markdown，共 21,574 行）
+
+### 为什么需要这份补充
+
+上方主扫描的声明范围是「项目根目录 + `docs/` + `docs/requirements/` + `docs/results/`」，`docs/analysis/` 目录（44 份技术负责人/架构师视角的深度分析文档）当时未被纳入。本节对这 44 份文件采用与主扫描完全相同的方法论：从每份文档中提炼候选主题，逐条与主扫描已收录的 413 个去重主题比对上下文与机制细节，判定为 **DUPLICATE**（已有主题的重述或更细粒度实现）、**NEW**（现有 413 项未覆盖的真实缺口）或 **HALLUCINATED_OFF_TOPIC**（脱离 ForgeOS 实际架构、或违反其零依赖红线的通用模式提案）。
+
+### 统计结果
+
+| 判定 | 数量 | 占比 |
+|---|---:|---:|
+| DUPLICATE（与已有 413 项主题重复） | 210 | 90.5% |
+| NEW（现有目录未覆盖的真实缺口） | 18 | 7.8% |
+| HALLUCINATED_OFF_TOPIC（脱离实际架构/违反零依赖红线） | 4 | 1.7% |
+| **合计（从 44 份文件提取的候选主题）** | **232** | 100% |
+
+4 条 HALLUCINATED_OFF_TOPIC 全部集中在同一份文档（`mqtt-and-wasm-integration.md`）提议的 MQTT 消息代理编排/可观测性/人审通道/分布式 worker 方案——均要求引入外部 broker 依赖，直接违反 forge-core「纯标准库、零外部依赖」的架构红线，且假设了代码库中并不存在的基础设施（daemon、实时仪表盘、多 worker 池）。
+
+### 18 个真实 NEW 主题
+
+以下缺口在现有 413 项目录中**没有**对应或高度重叠的既有主题，判定为对目录的真实补充（逐条给出一句话描述）：
+
+1. **多语言 lint gate 聚合失真**（testing-infrastructure）——任一语言 linter 失败即判定整体 lint gate FAIL，且 `forge detect` 按 manifest 文件是否存在（而非实际源文件量）激活整套语言工具链。
+2. **Checkpoint 同步 fsync 阻塞关键路径**（edge-case-reliability）——每次迭代/相位的 checkpoint 写入同步 fsync 并阻塞下一相位启动，提议移入 goroutine 异步落盘。
+3. **staleCount 假阳性 + mode-gating 零相位假收敛**（edge-case-reliability）——无进展熔断只看 roadmap_completion 导致真实进展被误判为停滞，且全部相位被 mode 过滤掉时可零执行"收敛"。
+4. **ROADMAP 条目选择/优先级引擎**（orchestration-engine）——没有确定性算法决定下一个该做哪个 ROADMAP 条目，全靠把整份 ROADMAP 塞进 planner prompt 让 LLM 隐式选择。
+5. **容错式 workflow 加载导致假收敛**（governance-enforcement）——`LoadWorkflowJSON` 对缺失 `phases`/`stop_condition` 的 YAML 静默降级为零值 Workflow，其空 `AllOf` 条件被真空满足，报告 MET 但零实际工作。
+6. **human_gate 审批质量/ROI 回溯度量**（observability-audit）——没有任何机制回溯评估人工审批本身的效力（通过率、返工率、延迟），无从判断这个最高杠杆检查点是否只是橡皮图章。
+7. **WASM 化技能/插件系统**（orchestration-engine）——提议把 `.agent/skills/*.md` 的散文指导编译为配套 WASM 模块，把纯 prompt 自律转为确定性非 LLM 工具。
+8. **迭代级输出合并（loop-back 差异化保留）**（orchestration-engine）——loop-back 重试目前破坏性覆盖全部文件，提议基于 diff 的 `MergeStrategy` 选择性保留 reviewer 未标记的文件。
+9. **闸门可靠性仪表化与 flaky 重试**（testing-infrastructure）——提议记录 gate 基础设施自身的历史 PASS/FAIL 可靠性，据此判断一次 FAIL 是环境抖动（应重试）还是真实回归（应 loop-back）。
+10. **forge-core 架构决策 ADR 补写**（knowledge-semantic-layer）——ADR-0001 被标记 Superseded 后从未有后继 ADR 记录 for-loop 循环、callback 注入、原子重命名 checkpoint 等具体运行时选型的理由。
+11. **forge-core CONTRIBUTING.md 贡献者上手指南**（contributor-onboarding，新增领域）——没有文档覆盖内部包依赖图或新增子命令/gate 类型的步骤，新贡献者只能逆向工程约定。
+12. **mode×lifecycle 场景推荐文档**（web-ui-dx）——16 种组合没有面向用户的"场景→推荐组合"对照表或显式的 mode/lifecycle 覆盖规则说明。
+13. **select-tests.mjs 增量选测的真实性验证**（testing-infrastructure）——已上线的增量测试选择器只对内部映射表逻辑做了单测，从未针对真实 diff 验证过它不会静默漏选必要测试。
+14. **多模型/多流程漂移守卫（forge validate --models）**（governance-enforcement）——没有检查交叉校验三套并行、互不知情的生命周期模型（project lifecycle、workflow YAML pipeline、人工操作的 10 阶段 AI-SDLC 评审）是否一致。
+15. **AI-SDLC 评审发现到代码实现的自动可追溯性**（governance-enforcement）——`.ai/reviews/*.md` 的发现记录没有机读 ID/status/code_tags schema，也没有工具校验某条发现是否真被代码解决。
+16. **Workflow 片段组合系统**（other）——5 个 workflow YAML 大量逐字重复相同 phase 块，没有 include/复用机制，提议类 kustomize 的 `fragments:` 声明式合并。
+17. **Secret-scan 兜底规则集缺失**（governance-enforcement）——`secret-scan.mjs` 没有内置默认规则集，未配置自定义规则时默认判 N/A（非阻塞），零配置仓库照样能通过 `forge accept`。
+18. **跨进程缓存一致性协议**（edge-case-reliability）——memory 的按路径 mtime 缓存在每次 `Append` 时被整体失效（而非按路径），且缓存的 entries slice 在 `--parallel` 下无并发保护，构成潜在数据竞争。
+
+### 结论
+
+在 90.5% 的重复率之上，本次补充扫描没有制造额外的虚假新颖性——这与主文档"该语料库高度重复"的既有结论完全一致，是预期内、诚实的结果。18 个 NEW 项中，绝大多数是窄而具体的实现细节缺口（如 fsync 阻塞、缓存失效粒度、假收敛边界条件），只有 2 项（贡献者上手文档、AI-SDLC 评审可追溯性）触及现有 21 个功能领域分类之外的切面，其余仍落在已有领域标签内。补充后，全仓（1,260 + 44 = 1,304 份文件）范围内合并去重的独立主题总数为 **413 + 18 = 431**。
 
 ---
