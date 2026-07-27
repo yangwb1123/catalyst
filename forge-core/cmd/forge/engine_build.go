@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"forgeos/forge-core/internal/asset"
@@ -40,164 +41,6 @@ import (
 // REQUEST_CHANGES review's notes for the loop-back target; onFailTarget routes them;
 // priorEmits (priorEmitsOf) resolves earlier phases' emits: content into the prompt. All
 // nil-safe; the generic executor stays oblivious to all of them.
-func agentExecutor(o runOpts, logln func(string), costSink func(phase, model string, usd float64, latency time.Duration), tierOf func(p asset.Phase) string, phaseModel func(phase string) string, ctxCache *prompt.ContextCache, gates *gateLedger, phaseOut *phaseOutputLedger, feedsForward func(phase string) bool, verdicts *verdictLedger, findings *reviewFindingsLedger, onFailTarget func(phase string) (string, bool), priorEmits func(phase string) []string) orchestrator.AgentExecutor {
-	if o.executor == "command" {
-		isClaude := strings.Contains(o.agentCmd, "claude")
-		ex := orchestrator.CommandExecutor{
-			Build: func(p asset.Phase, mode string) []string {
-				narrateReadonly(logln, p)
-				argv := claudeArgv(o, isClaude, tierOf(p), p)
-				text := buildPromptWithEmits(o.root, p, mode, tierOf, ctxCache, gates, phaseOut, findings, emitsFilesFor(priorEmits, p.Name))
-				return append(argv, "-p", requiresToolsGuard(p, true, isClaude, o.agentAllowedTools, logln, text))
-			},
-			Dir:            o.root,
-			Timeout:        o.timeout,
-			MaxDepth:       o.maxAgentDepth,
-			MaxOutputBytes: o.maxOutputBytes,
-			Log:            logln,
-		}
-		ex.Observe = observeFor(isClaude, costSink, phaseModel, phaseOut, feedsForward, verdicts, findings, onFailTarget)
-		// Only claude emits the cost JSON, so only claude gets the result-unwrapping log
-		// renderer; echo/stubs stay nil -> the generic executor logs raw output verbatim.
-		if isClaude {
-			ex.RenderLog = unwrapClaudeResult
-			// Only claude returns the 529 overloaded_error envelope, so only the claude path
-			// gets the overload recognizer; echo/stubs stay nil -> a failing stub is never
-			// mistaken for a transient overload and keeps its terminal KindFailed (back-compat).
-			ex.ClassifyOverload = classifyClaudeOverload
-		}
-		return ex
-	}
-	return orchestrator.DryRunExecutor{Log: logln}
-}
-
-// claudeArgv builds the leading argv (everything before `-p <prompt>`) for an agent
-// command: [agentCmd] for a non-claude command (echo/stubs, back-compat), else the
-// print-mode flags echo/stubs don't understand:
-//   - --permission-mode: USE tools headlessly (else `claude -p` only DESCRIBES edits);
-//   - --disallowedTools "Edit Write" for a p.Readonly phase (readonlyToolScope): real
-//     path-scoped write enforcement (narrateReadonly only narrates it);
-//   - --allowedTools: the operator's self-verification whitelist (o.agentAllowedTools,
-//     e.g. `node --test`/`gate.mjs`; NEVER whitelist `forge` — fork-bomb past
-//     FORGE_AGENT_DEPTH) MERGED (mergeToolList) with any readonly Edit()/Write() re-open
-//     patterns into ONE flag occurrence — `claude --help` (local, zero API spend)
-//     confirms each of --allowedTools/--disallowedTools takes ONE comma-or-space-
-//     separated <tools...> list; a second occurrence's merge-vs-override semantics were
-//     never exercised here. Omitted entirely when the merged value is empty (opt-out);
-//   - --model <tier>: the shared routed tier — the SAME value the cost stamp and
-//     prompt use, no drift;
-//   - --max-budget-usd: the per-call dollar ceiling (omitted when unset);
-//   - --output-format json: the cost-bearing envelope this CLI parses (total_cost_usd).
-func claudeArgv(o runOpts, isClaude bool, tier string, p asset.Phase) []string {
-	argv := []string{o.agentCmd}
-	if !isClaude {
-		return argv
-	}
-	if o.agentPermission != "" {
-		argv = append(argv, "--permission-mode", o.agentPermission)
-	}
-	deny, allowExtra := readonlyToolScope(p)
-	if deny != "" {
-		argv = append(argv, "--disallowedTools", deny)
-	}
-	if allowed := mergeToolList(o.agentAllowedTools, allowExtra); allowed != "" {
-		argv = append(argv, "--allowedTools", allowed)
-	}
-	argv = append(argv, "--model", tier)
-	if o.agentMaxBudgetUSD != "" {
-		argv = append(argv, "--max-budget-usd", o.agentMaxBudgetUSD)
-	}
-	return append(argv, "--output-format", "json")
-}
-
-// mergeToolList joins the operator whitelist (base) and a readonly phase's Edit/Write
-// re-open patterns (extra) into ONE space-separated --allowedTools value (see
-// claudeArgv). Either half may be empty; "" only when both are.
-func mergeToolList(base, extra string) string {
-	switch {
-	case base == "":
-		return extra
-	case extra == "":
-		return base
-	default:
-		return base + " " + extra
-	}
-}
-
-// readonlyAgentWriteScope maps an agent to the claude permission-specifier PATTERN(s)
-// (gitignore-style, project-root-relative — code.claude.com/docs/en/permissions.md)
-// its OWN card (.agent/agents/<agent>.md "硬边界", "不在 X 之外写文件") documents as
-// its sole write target. Keyed by AGENT, not stage: cto's boundary applies whether it
-// runs as design.yml's proposal-generator OR review.yml's executive-review (cto.md's
-// "Review 阶段" section is ADDITIVE, never widens the boundary above it). An agent
-// ABSENT here has NO documented target — reviewer/qa ("不写...代码文件"), explorer
-// ("零写入"), non-LLM `harness` — and stays FULLY denied when readonly, matching its
-// card. An absent agent that still declares emits: (qa's eval-scorecard.md) is a
-// documented LABEL not a write target — prompt_emits_test.go's labelOnlyEmitsAgents
-// fails loudly, not silently, if that ever stops being true. planner is a FILE not a
-// dir: planner.md names `.agent/CURRENT_SPRINT.md` itself — build.yml's `emits:
-// task-plan.md` is the same kind of LABEL, not the real write target.
-var readonlyAgentWriteScope = map[string][]string{
-	"product-manager":      {"/docs/discovery/**"},
-	"researcher":           {"/docs/discovery/**"},
-	"architect":            {"/docs/design/**"}, // + docs/adr/** via WritesADR below
-	"cto":                  {"/docs/design/**"}, // Design AND Review-stage responsibilities
-	"planner":              {"/.agent/CURRENT_SPRINT.md"},
-	"security-engineer":    {"/docs/review/**"},
-	"distributed-engineer": {"/docs/review/**"},
-	"performance-engineer": {"/docs/review/**"},
-}
-
-// readonlyToolScope returns the claude --disallowedTools value and any --allowedTools
-// re-open patterns for a phase — REAL enforcement of asset.Phase.Readonly (narrateReadonly
-// only narrates it). Non-readonly -> ("", ""): claudeArgv adds nothing, byte-identical.
-// A readonly phase ALWAYS gets "Edit Write" denied, THEN — if its agent has a
-// documented target (readonlyAgentWriteScope), plus docs/adr/** when THIS phase
-// declares writes_adr (WritesADR.Target decoded off the asset, never hardcoded) —
-// Edit()/Write() reopen for that pattern. No documented target -> denial only: fully
-// read-only, matching its card — a correct zero-write phase, not a gap.
-func readonlyToolScope(p asset.Phase) (deny, allow string) {
-	if !p.Readonly {
-		return "", ""
-	}
-	patterns := append([]string(nil), readonlyAgentWriteScope[p.Agent]...)
-	if p.WritesADR != nil && p.WritesADR.Target != "" {
-		patterns = append(patterns, "/"+strings.Trim(p.WritesADR.Target, "/")+"/**")
-	}
-	if len(patterns) == 0 {
-		return "Edit Write", ""
-	}
-	specs := make([]string, 0, len(patterns)*2)
-	for _, pat := range patterns {
-		specs = append(specs, "Edit("+pat+")", "Write("+pat+")")
-	}
-	return "Edit Write", strings.Join(specs, " ")
-}
-
-// narrateReadonly logs a decision-narration line every time a phase declaring
-// readonly: true is spawned under --executor=command. PURELY observational — the
-// actual restriction is claudeArgv's readonlyToolScope (--disallowedTools "Edit
-// Write" + a path-scoped --allowedTools re-open), wired right after this call.
-//
-// HONESTY: readonly is NOT "writes nothing" — several readonly phases still declare
-// `emits:` they must write. readonlyToolScope re-opens Edit/Write for exactly the
-// dir/file each phase's AGENT CARD documents — never a blanket re-open. ENFORCED BY
-// UNIT TEST AGAINST THE DOCUMENTED CLAUDE CLI CONTRACT ONLY (path-scoped Edit()/
-// Write() specifiers, code.claude.com/docs/en/permissions.md; confirmed via a local
-// `claude --help`, zero API spend) — NOT live-verified against a running claude
-// process; no budget was authorized for that.
-//
-// logln nil (a quiet caller) is a no-op; a non-readonly phase is a no-op.
-func narrateReadonly(logln func(string), p asset.Phase) {
-	if !p.Readonly || logln == nil {
-		return
-	}
-	emits := "none declared"
-	if len(p.Emits) > 0 {
-		emits = strings.Join(p.Emits, ", ")
-	}
-	logln(fmt.Sprintf("phase %s: readonly=true (analysis-only — must not modify existing source/product code; MAY still write its declared emits: %s) — ENFORCED: Edit/Write denied via --disallowedTools except for this agent's documented write target, if any (see readonlyToolScope)", p.Name, emits))
-}
 
 // buildRunEngine assembles the orchestrator.Engine shared by `forge run` (execEngine)
 // and `forge evolve` (buildLoop): the SAME four prompt/feedback ledgers wired to the same
@@ -225,7 +68,8 @@ func narrateReadonly(logln func(string), p asset.Phase) {
 //
 // Returns the assembled Engine plus the verdict/findings ledgers for callers to thread
 // rework+trajectory signals into wind-down/Reflect without re-building.
-func buildRunEngine(wf asset.Workflow, o runOpts, logln func(string), costSink func(phase, model string, usd float64, latency time.Duration), runGate func(name string) gate.Result, pol mode.Policy, budget *runBudget, autoRisk string, autoRiskReasons []string) (orchestrator.Engine, *verdictLedger, *reviewFindingsLedger) {
+func buildRunEngine(wf asset.Workflow, o runOpts, logln func(string), costSink func(phase, model string, usd float64, latency time.Duration), runGate func(name string) gate.Result, pol mode.Policy, budget *runBudget, autoRisk string, autoRiskReasons []string, runIDs ...string) (orchestrator.Engine, *verdictLedger, *reviewFindingsLedger) {
+	o.workflowStage = wf.Stage
 	gates := newGateLedger()
 	phaseOut := newPhaseOutputLedger()
 	verdicts := newVerdictLedger()
@@ -240,27 +84,56 @@ func buildRunEngine(wf asset.Workflow, o runOpts, logln func(string), costSink f
 	// falls back to prompt.Gather on nil), so this is purely additive — the prompt bytes are
 	// unchanged. HONESTY: saves local readdir/readFile, NOT claude tokens (see cache.go).
 	ctxCache := prompt.NewContextCache()
-	cards, err := routing.LoadScorecards(scorecardPath(o.root))
-	if err != nil {
-		// Malformed scorecards.json: fail loud, continue empty. Honesty over convenience —
-		// the WARNING names the broken Eval producer; the run proceeds on no history (the
-		// cold-start path), since the read-back is observability, not run correctness.
-		logln(fmt.Sprintf("forge: WARNING scorecards unreadable (%v) — continuing with no history (routing unaffected; learning-loop read-back skipped)", err))
-		cards = nil
-	}
-	tierOf := phaseTierResolver(o.mode, budget.SpendRatio, cards, logln, autoRisk, autoRiskReasons)
+	o.evolveProposalOnly = wf.Stage == "evolve" && (pol.BuildHalted() || pol.EvolveProposalOnly())
+	cards := loadRunScorecards(wf, o.root, logln)
+	tierOf := taskAwareTierResolver(
+		phaseTierResolver(o.mode, budget.SpendRatio, cards, logln, autoRisk, autoRiskReasons),
+		phaseOut, logln)
+	provenance := newArtifactProvenance(o.root, wf.Stage, firstRunID(runIDs), o.releaseAgentSHA256)
 	return orchestrator.Engine{
-		Exec:            agentExecutor(o, logln, budget.feed(costSink), tierOf, phaseTierByName(wf, tierOf), ctxCache, gates, phaseOut, feedsForwardOf(wf), verdicts, findings, onFailTargetOf(wf), priorEmitsOf(wf)),
-		RunGate:         runGate,
-		Log:             logln,
-		OnGateResult:    gates.record,
-		AgentVerdict:    verdicts.get,
-		BudgetExhausted: budget.BudgetExhaustedFunc(),
-		MaxRetries:      o.maxRetries,
-		MaxLoopBack:     maxLoopBack,
-		MaxAgentCalls:   o.maxAgentCalls,
-		ModePolicy:      pol,
+		Exec: agentExecutor(o, logln, budget.feed(costSink), tierOf, phaseTierByName(wf, tierOf),
+			ctxCache, gates, phaseOut, feedsForwardOf(wf), verdicts, findings,
+			onFailTargetOf(wf), priorEmitsOf(wf), executorHooks{
+				ValidateOutput:    phaseOutputContract(o.root, wf, provenance),
+				ValidateRawOutput: releaseRawOutputContract(wf),
+				OnBuild:           provenance.recordBuild,
+				ModelFor:          provenance.modelFor,
+			}),
+		RunGate:      runGate,
+		Log:          logln,
+		OnGateResult: gates.record,
+		AgentVerdict: loopbackVerdict(verdicts),
+		RequireAgentVerdict: func(p asset.Phase) bool {
+			return releaseValidationPhase(wf.Stage, p)
+		},
+		OnRequiredVerdictApproved: provenance.writeValidationReceipt,
+		BudgetExhausted:           budget.BudgetExhaustedFunc(),
+		MaxRetries:                o.maxRetries,
+		MaxLoopBack:               maxLoopBack,
+		MaxAgentCalls:             o.maxAgentCalls,
+		ModePolicy:                pol,
 	}, verdicts, findings
+}
+
+func loadRunScorecards(wf asset.Workflow, root string, logln func(string)) []routing.Scorecard {
+	if releaseApprovalStage(wf.Stage) {
+		return nil
+	}
+	cards, err := routing.LoadScorecards(scorecardPath(root))
+	if err == nil {
+		return cards
+	}
+	// History only affects observability. Keep the cold-start route, but make
+	// the broken Eval producer visible instead of silently accepting bad data.
+	logln(fmt.Sprintf("forge: WARNING scorecards unreadable (%v) — continuing with no history (routing unaffected; learning-loop read-back skipped)", err))
+	return nil
+}
+
+func firstRunID(runIDs []string) string {
+	if len(runIDs) > 0 {
+		return runIDs[0]
+	}
+	return ""
 }
 
 // phaseTierResolver builds the ONE per-phase tier resolver (tierOf) that EVERY tier
@@ -412,10 +285,13 @@ func riskAdjustedTier(base, riskLevel string) string {
 // unseen), runs the doctor's pre-run diagnostics into it, then opens the run-level
 // budget — fail-closed on either step. The returned closeTrace is nil only alongside
 // a non-nil err.
-func openRunResources(root, runBudgetUSD string, logln func(string)) (*trace.Tracer, func(), *runBudget, error) {
+func openRunResources(root, runBudgetUSD string, logln func(string), runIDs ...string) (*trace.Tracer, func(), *runBudget, error) {
 	tracer, closeTrace, err := openTracer(root)
 	if err != nil {
 		return nil, nil, nil, err
+	}
+	if len(runIDs) > 0 && runIDs[0] != "" {
+		tracer.RunID = runIDs[0]
 	}
 	quickDoctorCheck(root, tracer, logln)
 	budget, err := newRunBudget(runBudgetUSD)
@@ -426,74 +302,162 @@ func openRunResources(root, runBudgetUSD string, logln func(string)) (*trace.Tra
 	return tracer, closeTrace, budget, nil
 }
 
+// runProbe owns one stage's acceptance snapshot and the exact gate set the
+// orchestrator actually executes after mode filtering. Agent success invalidates
+// the snapshot; the next gate (or convergence, when no later gate exists) refreshes
+// it. Convergence reuses the gate snapshot when no agent wrote after that gate.
+type runProbe struct {
+	mu         sync.Mutex
+	root       string
+	load       func(string) (map[string]string, map[string]string, error)
+	statuses   map[string]string
+	categories map[string]string
+	gates      []string
+	seen       map[string]bool
+	primed     bool
+}
+
+func newRunProbe(root string) *runProbe {
+	return &runProbe{root: root, load: gate.ProbeAll, seen: map[string]bool{}}
+}
+
+func (p *runProbe) refresh() map[string]string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if !p.primed {
+		statuses, categories, err := p.load(p.root)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "forge run: acceptance probe unavailable (%v); gates degrade to N/A\n", err)
+			statuses, categories = nil, nil
+		}
+		p.statuses, p.categories, p.primed = statuses, categories, true
+	}
+	return p.statuses
+}
+
+func (p *runProbe) invalidate() {
+	p.mu.Lock()
+	p.primed = false
+	p.mu.Unlock()
+}
+
+func (p *runProbe) runGate(name string) gate.Result {
+	p.mu.Lock()
+	if !p.seen[name] {
+		p.seen[name] = true
+		p.gates = append(p.gates, name)
+	}
+	p.mu.Unlock()
+	return gate.ResolveGate(p.root, name, p.refresh())
+}
+
+func (p *runProbe) current() (map[string]string, map[string]string) {
+	p.refresh()
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.statuses, p.categories
+}
+
+func (p *runProbe) actualGates() []string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return append([]string(nil), p.gates...)
+}
+
+// runProbeExecutor marks the acceptance snapshot stale after a successful agent
+// phase. It wraps the same executor in serial and dependency-wave parallel runs.
+type runProbeExecutor struct {
+	next  orchestrator.AgentExecutor
+	probe *runProbe
+}
+
+func (e runProbeExecutor) Execute(ctx context.Context, p asset.Phase, mode string) error {
+	if err := e.next.Execute(ctx, p, mode); err != nil {
+		return err
+	}
+	e.probe.invalidate()
+	return nil
+}
+
 // execEngine wires the real harness gates + the selected agent executor and
 // runs the workflow, returning 0 on a clean run and 1 on the first failure.
 // ctx carries cancellation so the engine can abort cleanly on SIGINT.
 //
-// Honesty: acceptance is probed ONCE per run (gate.ProbeAll), and that single
-// map backs BOTH the per-gate verdicts (harnessRunner) and convergence
-// (gatherSignals) — never double-spawned, never inconsistent within a run. An
-// N/A gate does NOT fail the run (it completes, exit 0); only a real FAIL does.
-func execEngine(ctx context.Context, wf asset.Workflow, o runOpts) int {
+// Honesty: each stage probes only after agent work, then shares that snapshot
+// between its gate phase and convergence until another agent succeeds. Chained
+// stages therefore never inherit the prior stage's acceptance result.
+func execEngine(ctx context.Context, firstWf asset.Workflow, o runOpts) int {
 	lock := acquireRunLock(o.root, "forge run")
 	if lock == nil {
 		return 1
 	}
 	defer lock.Release()
 	logln := func(s string) { fmt.Println(s) }
-	probe, categories := probeStatuses(o.root)
 	lifecycle := resolveLifecycle(o)
-	pol := mode.Effective(o.mode, lifecycle)
-	autoRisk, autoRiskReasons := resolveAutoRisk(o.root) // auto-detect risk for tier escalation
-	logAutoRisk(logln, "forge run", autoRisk, autoRiskReasons)
-	tracer, closeTrace, budget, err := openRunResources(o.root, o.runBudgetUSD, logln)
+	firstWf, resume, err := prepareChainResume(firstWf, o)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "forge run: cannot resume chain: %v\n", err)
+		return 1
+	}
+	runID := ""
+	if resume != nil {
+		runID = resume.RunID
+	}
+	tracer, closeTrace, budget, err := openRunResources(o.root, o.runBudgetUSD, logln, runID)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "forge run: %v\n", err)
 		return 1
 	}
 	defer closeTrace()
-	eng, verdicts, _ := buildRunEngine(wf, o, logln, costEmitter(tracer, logln), gate.HarnessRunner(o.root, probe), pol, budget, autoRisk, autoRiskReasons)
-	wireGateTrace(&eng, tracer, logln)
-	// Learning-loop wind-down: attribute this run's REAL billed cost into the scorecards
-	// regardless of outcome (a REJECTED build is the most useful quality sample), DEFERRED
-	// after `defer closeTrace()` so it runs BEFORE it (LIFO) — the trace it reads is still
-	// open. iterations=1 (one `forge run` = one execution); verdicts.wasReworked() carries
-	// the real reviewer-bounce signal into avg_iterations / rework_rate.
-	defer func() { windDownScorecards(wf, o, logln, 1, verdicts.wasReworked()) }()
-	logRunBanner(wf, o, lifecycle, pol)
-	// human_gate REJECTION loop-back (design.yml's on_rejected): a filed .forge/<stage>.rejected
-	// marker redirects to target_phase instead of phase 0 (resolveRejectionStartPhase, gates.go).
-	startPhase := resolveRejectionStartPhase(wf, o.root, logln)
-	if err := runWorkflow(ctx, eng, wf, o, logln, startPhase); err != nil {
-		fmt.Fprintf(os.Stderr, "forge run: %v\n", err)
+	lifecycle, err = restoreChainRunOptions(&o, budget, resume, lifecycle)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "forge run: cannot resume chain: %v\n", err)
 		return 1
 	}
-	fmt.Println("forge run: workflow completed")
-	reportConvergence(wf, o.root, probe, categories, lifecycle, o.approved, verdicts)
-	return 0
+	if resume != nil {
+		logln(fmt.Sprintf("forge run: resuming chain run_id=%s at stage=%s after completed=%v",
+			resume.RunID, resume.CurrentStage, resume.CompletedStages))
+	}
+	return runStageChain(ctx, firstWf, o, logln, lifecycle, tracer, budget, resume)
 }
 
-// wireGateTrace composes the engine's existing gate-ledger recording (eng.OnGateResult)
-// with trace emission so every gate result is observable in trace.jsonl. A nil tracer
-// (never actually returned by openTracer, but defensive) is a no-op.
-func wireGateTrace(eng *orchestrator.Engine, tracer *trace.Tracer, logln func(string)) {
-	if tracer == nil {
-		return
+// execOneStage runs a single workflow stage and reports convergence. Returns
+// (met, rejected, 0) on success. rejected tells the caller that a durable
+// rejection was acted on and may be consumed only after its own state commit.
+func execOneStage(ctx context.Context, wf asset.Workflow, o runOpts, logln func(string), lifecycle string, tracer *trace.Tracer, budget *runBudget, chargeAgentCall func(int) (int, bool)) (bool, bool, int) {
+	pol := mode.Effective(o.mode, lifecycle)
+	boundary := resolveStageHostBoundary(wf, o, lifecycle, logln)
+	eng, verdicts, _ := buildRunEngine(wf, o, logln, costEmitter(tracer, logln),
+		boundary.runGate, pol, budget, boundary.autoRisk, boundary.autoRiskReasons, tracer.RunID)
+	eng.ChargeAgentCall = chargeAgentCall
+	if boundary.hostCommands {
+		eng.Exec = runProbeExecutor{next: eng.Exec, probe: boundary.probe}
 	}
-	origOnGate := eng.OnGateResult
-	eng.OnGateResult = func(name, status string) {
-		if origOnGate != nil {
-			origOnGate(name, status)
-		}
-		emitTrace(tracer, trace.GateEvent(name, status, ""), logln)
-	}
-}
+	wireGateTrace(&eng, tracer, logln)
+	logRunBanner(wf, o, lifecycle, pol)
 
-// logRunBanner prints the "decisions are narrated even in dry-run" summary line for
-// `forge run`, naming every workflow_depth dimension the central knob resolved
-// (discover/design/review/adr) alongside the run's mode/lifecycle/executor/gates.
-func logRunBanner(wf asset.Workflow, o runOpts, lifecycle string, pol mode.Policy) {
-	fmt.Printf("forge run: stage=%s mode=%s lifecycle=%s executor=%s gates=%v reviewer=%v discover=%s design=%s adr=%v review=%s (%d phases)\n",
-		wf.Stage, o.mode, lifecycle, o.executor, pol.Gates, pol.Reviewer,
-		pol.DiscoverDepth, pol.DesignDepth, pol.ADR, pol.ReviewDepth, len(wf.Phases))
+	startPhase, rejected, err := resolveRejectionStartPhase(wf, o.root, logln)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "forge run: %v\n", err)
+		return false, false, 1
+	}
+	if err := runWorkflow(ctx, eng, wf, o, logln, startPhase); err != nil {
+		fmt.Fprintf(os.Stderr, "forge run: %v\n", err)
+		return false, rejected, 1
+	}
+	fmt.Printf("forge run: stage=%s workflow completed\n", wf.Stage)
+	var probe, categories map[string]string
+	var actualGates []string
+	if boundary.hostCommands {
+		probe, categories = boundary.probe.current()
+		actualGates = boundary.probe.actualGates()
+	}
+	met := reportStageConvergence(
+		wf, o.root, probe, categories, lifecycle, o.approved,
+		verdicts, actualGates, boundary.proposalStage, boundary.releaseStage,
+	)
+	if boundary.hostCommands {
+		windDownScorecardsForRun(wf, o, logln, 1, verdicts.wasReworked(), tracer.RunID)
+	}
+	return met, rejected, 0
 }

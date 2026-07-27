@@ -16,8 +16,10 @@
 // Discover STAGE runs at all and how deep), design depth (workflow_depth.design:
 // light|standard|full), review depth (workflow_depth.review: skip|standard|full —
 // whether the Discover→Design→★Review★→Build→Evolve spine's deep-REVIEW STAGE runs
-// at all), and adr (workflow_depth.adr — whether an ADR is required for a complex
-// design). What this distillation encodes is the principle that mode sets
+// at all), adr (workflow_depth.adr — whether an ADR is required for a complex
+// design), and build halt (workflow_depth.build: halt — the cto posture's
+// non-negotiable boundary after document review). What this distillation encodes
+// is the principle that mode sets
 // ENFORCEMENT STRENGTH: explorer deliberately runs FEWER gates (speed over rigor),
 // a SHALLOWER evolve loop, SKIPS discovery, SKIPS the deep review, and writes NO
 // ADR, while engineering/cto run all gates, a deeper loop, full discovery+design,
@@ -56,13 +58,15 @@
 // So production's require_min_gates floor is wired below; its coverage_delta/
 // enforce_floor veto is honestly left to those subsystems (documented, not dead).
 //
-// HONESTY — what "evolve depth" means in v1. EvolveDepth maps to ONE concrete
-// behavior: the DEFAULT --max-iter (the loop's safety bound) `forge evolve` uses
-// when the operator did not pass one (advisory→1, opportunistic→2, standard→5,
-// thorough→10). The richer "scan dimensions" semantics modes.yml hints at —
-// thorough = full-dimension scan + auto-derive vs opportunistic = only-obvious-
-// opportunities, propose-only — require a real agent reading the codebase and are
-// a LATER wave. v1 honestly encodes only the iteration budget, not scan breadth.
+// HONESTY — Evolve has two independent machine axes. EvolveDepth sets the
+// DEFAULT --max-iter when the operator did not pass one (advisory→1,
+// opportunistic→2, standard→5, thorough→10). EvolveAuthority separately decides
+// whether the orchestrator may cross the workflow's explicit effect=mutate
+// boundary. Lifecycle quality floors may deepen a scan, but never widen mutation
+// authority. The richer CONTENT semantics modes.yml hints at — thorough =
+// full-dimension scan + auto-derive vs opportunistic = obvious-only — still
+// require a real agent and quality criteria; machine depth does not pretend to
+// prove content breadth.
 package mode
 
 // Policy is the effective Workflow-depth decision for one (mode, lifecycle): the
@@ -92,17 +96,25 @@ package mode
 // lifecycle) sets all three depths; the production/fail-safe paths force full.
 // ADR is a bool: zero-value false; no real mode leaves it ambiguous (cto/engineering
 // set true, explorer/balanced false, production/fail-safe force true).
+// BuildHalt is also fail-open only for the backward-compatible zero value: true
+// means this policy MUST NOT enter the build stage. Only cto sets it. Lifecycle
+// modifiers may tighten quality but never erase this explicit no-code boundary.
 type Policy struct {
 	Mode        string   // the raw mode name ("explorer"|"balanced"|"engineering"|"cto") that produced this policy
 	Gates       []string // gate-set this mode may run (∩ with each phase's required_gates)
 	Reviewer    bool     // is the fresh-context Reviewer phase mandatory?
 	EvolveDepth string   // workflow_depth.evolve: advisory|opportunistic|standard|thorough → default --max-iter
+	// EvolveAuthority is a separate capability axis: propose-only cannot cross
+	// an Evolve workflow's explicit effect=mutate boundary. Lifecycle quality
+	// floors never widen it.
+	EvolveAuthority string
 
 	// The remaining workflow_depth dimensions (now fully modeled — wave 3+4).
 	DiscoverDepth string // workflow_depth.discover: skip|light|full — skip elides the discover stage
 	DesignDepth   string // workflow_depth.design: light|standard|full — narrated design rigor
 	ReviewDepth   string // workflow_depth.review: skip|standard|full — skip elides the whole REVIEW stage
 	ADR           bool   // workflow_depth.adr: is an ADR required for a complex design?
+	BuildHalt     bool   // workflow_depth.build: halt — stop before entering the build stage
 }
 
 // Effective resolves the Workflow-depth Policy for a (mode, lifecycle) pair,
@@ -120,8 +132,10 @@ type Policy struct {
 //     mode (explorer + production MUST pass every gate, per modes.yml's
 //     "explorer+production 也必须过全闸门", and must not run a prototype-shallow
 //     evolve loop). growth raises the floor to its require_min_gates. An
-//     unknown/empty lifecycle is itself fail-safe — treated as the strictest,
-//     forcing the full policy (standard evolve depth).
+//     unknown/empty lifecycle is itself fail-safe — treated as the strictest
+//     lifecycle FLOOR. It must not replace the mode baseline: doing so could
+//     erase a stricter baseline dimension such as engineering's thorough evolve
+//     depth or cto's non-negotiable build halt.
 //
 // Pure and deterministic; the returned Policy owns its slice (safe to mutate).
 func Effective(mode, lifecycle string) Policy {
@@ -144,8 +158,11 @@ func Effective(mode, lifecycle string) Policy {
 func applyLifecycle(p Policy, lifecycle string) Policy {
 	floor, ok := lifecycleFloor[lifecycle]
 	if !ok {
-		// Unknown/empty lifecycle is fail-safe: treat as the strictest (full).
-		return fullPolicy()
+		// Unknown/empty lifecycle is fail-safe: apply the strictest lifecycle
+		// floor without replacing p. Replacement is not monotonic — it can erase
+		// mode constraints that are stricter or orthogonal to production's quality
+		// floor (notably engineering's thorough evolve and cto's BuildHalt).
+		floor = lifecycleFloor["production"]
 	}
 	p.Gates = union(p.Gates, floor.minGates)
 	p.Reviewer = p.Reviewer || floor.reviewer
@@ -190,8 +207,9 @@ type lifecycleMod struct {
 //	             at/above a floor is never capped down (engineering stays
 //	             full/full/full/true/thorough; the floor RAISES only).
 //
-// An unknown/empty lifecycle is intentionally ABSENT so Effective's fail-safe
-// branch forces the full policy for it.
+// An unknown/empty lifecycle is intentionally ABSENT; applyLifecycle maps it to
+// the production floor while preserving every stricter/orthogonal mode baseline
+// dimension.
 var lifecycleFloor = map[string]lifecycleMod{
 	"idea":       {minGates: nil, reviewer: false},
 	"mvp":        {minGates: []string{GateLint, GateBuild}, reviewer: false},
@@ -201,20 +219,20 @@ var lifecycleFloor = map[string]lifecycleMod{
 
 // fullPolicy is the maximally strict policy — every gate + reviewer on, FULL
 // discover + design + review depth, ADR required, with a CONSERVATIVE evolve depth
-// of standard. It backs BOTH the fail-safe (unknown input) and the production
-// override, so "strict" means one thing. discover/design/review are FULL (an
-// unrecognized posture runs discovery + full design + the full deep review + an
-// ADR — never silently skips a stage), and ADR is forced on, matching the gate
-// over-enforcement direction. The evolve depth is deliberately standard, NOT
-// thorough: an unrecognized posture should inherit the historical `--max-iter 5`
+// of standard. It backs the fail-safe for an unknown MODE. Unknown lifecycles
+// instead apply the production floor to the already-resolved baseline so they
+// cannot erase stricter or orthogonal mode constraints. discover/design/review
+// are FULL (an unrecognized posture runs discovery + full design + the full deep
+// review + an ADR — never silently skips a stage), and ADR is forced on, matching
+// the gate over-enforcement direction. The evolve depth is deliberately standard,
+// NOT thorough: an unrecognized MODE should inherit the historical `--max-iter 5`
 // budget (the safe, well-understood default), not a 10-iteration loop it never
 // asked for — over-enforcing GATES (and running a stage) is safe, but silently
 // DEEPENING an autonomous loop past the legacy default would surprise callers.
-// production then re-raises only to this same standard evolve floor (its
-// discover/design/review/adr floors ARE full/full/full/true).
 func fullPolicy() Policy {
 	return Policy{Gates: allGates(), Reviewer: true, EvolveDepth: EvolveStandard,
-		DiscoverDepth: DiscoverFull, DesignDepth: DesignFull, ReviewDepth: ReviewFull, ADR: true}
+		EvolveAuthority: evolveAuthorityPropose,
+		DiscoverDepth:   DiscoverFull, DesignDepth: DesignFull, ReviewDepth: ReviewFull, ADR: true}
 }
 
 // allGates returns a fresh copy of the full gate catalog, so each Policy /
@@ -232,7 +250,9 @@ func (p Policy) clone() Policy {
 	g := make([]string, len(p.Gates))
 	copy(g, p.Gates)
 	return Policy{Gates: g, Reviewer: p.Reviewer, EvolveDepth: p.EvolveDepth,
-		DiscoverDepth: p.DiscoverDepth, DesignDepth: p.DesignDepth, ReviewDepth: p.ReviewDepth, ADR: p.ADR}
+		EvolveAuthority: p.EvolveAuthority,
+		DiscoverDepth:   p.DiscoverDepth, DesignDepth: p.DesignDepth, ReviewDepth: p.ReviewDepth,
+		ADR: p.ADR, BuildHalt: p.BuildHalt}
 }
 
 // EvolveMaxIter maps this Policy's EvolveDepth to the DEFAULT --max-iter
@@ -241,10 +261,11 @@ func (p Policy) clone() Policy {
 // zero-value Policy) falls back to defaultEvolveMaxIter (standard's 5) — the same
 // number the CLI defaulted to before mode drove it, so back-compat holds.
 //
-// HONESTY (v1): this is the ONLY behavior evolve-depth drives today — the loop's
-// iteration budget, not the richer "scan breadth" (thorough = full-dimension scan
-// vs opportunistic = obvious-only) modes.yml hints at; that needs a real agent and
-// is a later wave.
+// HONESTY (v1): this method controls only the iteration budget. Proposal-only
+// enforcement is the independent EvolveAuthority axis and the workflow's
+// effect=mutate boundary. CONTENT semantics ("obvious-only" versus
+// full-dimension/auto-derived opportunities) remain a later wave requiring a
+// real agent and quality criteria.
 func (p Policy) EvolveMaxIter() int {
 	if n, ok := evolveMaxIter[p.EvolveDepth]; ok {
 		return n
@@ -281,6 +302,23 @@ func (p Policy) DiscoverSkipped() bool {
 // the elided work behind it is narrated, not performed.
 func (p Policy) ReviewSkipped() bool {
 	return p.ReviewDepth == ReviewSkip
+}
+
+// BuildHalted reports whether the effective posture must stop before Build.
+// This is intentionally independent of lifecycle tightening: production can
+// require deeper analysis and stronger gates, but it cannot silently turn the
+// explicitly advisory/no-code cto mode into an implementation mode.
+func (p Policy) BuildHalted() bool {
+	return p.BuildHalt
+}
+
+// EvolveProposalOnly reports whether autonomous Evolve must stop at the
+// workflow's explicit agent-authored product-write boundary. Only the exact
+// auto-act value grants that capability; an empty or unknown authority therefore
+// fails closed when a real mode policy is active. Trusted host gates/probes are a
+// separate execution boundary, not agent write authority.
+func (p Policy) EvolveProposalOnly() bool {
+	return p.EvolveAuthority != evolveAuthorityMutate
 }
 
 // Allows reports whether this Policy permits running the named gate. The

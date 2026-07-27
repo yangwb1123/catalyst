@@ -47,6 +47,41 @@ func TestAcquire_CreatesForgeDirIfMissing(t *testing.T) {
 	}
 }
 
+func TestAcquire_RejectsForgeDirectorySymlink(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(root, ".forge")); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	if lock, err := Acquire(root); err == nil {
+		lock.Release()
+		t.Fatal(".forge directory symlink was accepted")
+	}
+}
+
+func TestAcquire_RejectsRunLockSymlinkWithoutClobber(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, ".forge")
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	sentinel := filepath.Join(t.TempDir(), "sentinel")
+	if err := os.WriteFile(sentinel, []byte("keep"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(sentinel, filepath.Join(dir, "run.lock")); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	if lock, err := Acquire(root); err == nil {
+		lock.Release()
+		t.Fatal("run.lock symlink was accepted")
+	}
+	data, err := os.ReadFile(sentinel)
+	if err != nil || string(data) != "keep" {
+		t.Fatalf("outside sentinel changed: data=%q err=%v", data, err)
+	}
+}
+
 // TestAcquire_SecondAttemptFailsFast is the required concurrent-contention
 // test: it proves a second Acquire on an already-held root fails
 // IMMEDIATELY (never blocks/retries/waits) with an actionable error naming

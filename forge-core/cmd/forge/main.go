@@ -1,26 +1,20 @@
-// Command forge is the forge-core CLI (Go stdlib only). Subcommands:
-// .agent/workflows/<workflow>.yml, transcodes to JSON via
-// `python3 harness/yaml2json.py`, and orchestrates agent phases through harness
-// gates. Subcommands: run|evolve|gate|check|accept|route|migrate|detect|
-// scorecard|validate|memory-prune|status.
+// Command forge is the forge-core CLI (Go stdlib only). It loads
+// .agent/workflows/<workflow>.yml with the native parser (Python shim fallback)
+// and orchestrates agent phases through the real harness gates.
 package main
 
 import (
 	"context"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"forgeos/forge-core/internal/asset"
-	"forgeos/forge-core/internal/converge"
 	"forgeos/forge-core/internal/gate"
 	"forgeos/forge-core/internal/orchestrator"
-	"forgeos/forge-core/internal/yaml2json"
 )
 
 // forgeVersion is the semantic version of forge-core, injected at build time
@@ -66,21 +60,25 @@ func main() {
 // body stays a short lookup, keeping run under the per-function line budget.
 // gate/check/accept close over delegate + the harness gate.* function they wrap.
 var subcommands = map[string]func([]string) int{
-	"run":          cmdRun,
-	"gate":         func(rest []string) int { return delegate(gate.Gate, rest) },
-	"check":        func(rest []string) int { return delegate(gate.Check, rest) },
-	"accept":       func(rest []string) int { return delegate(gate.Accept, rest) },
-	"evolve":       cmdEvolve,
-	"route":        cmdRoute,
-	"migrate":      cmdMigrate,
-	"detect":       cmdDetect,
-	"validate":     cmdValidate,
-	"memory-prune": cmdMemoryPrune,
-	"status":       cmdStatus,
-	"scorecard":    cmdScorecard,
-	"doctor":       cmdDoctor,
-	"preflight":    cmdPreflight,
-	"approve":      cmdApprove,
+	"run":                    cmdRun,
+	"gate":                   func(rest []string) int { return delegate(gate.Gate, rest) },
+	"check":                  func(rest []string) int { return delegate(gate.Check, rest) },
+	"accept":                 func(rest []string) int { return delegate(gate.Accept, rest) },
+	"evolve":                 cmdEvolve,
+	"route":                  cmdRoute,
+	"migrate":                cmdMigrate,
+	"detect":                 cmdDetect,
+	"validate":               cmdValidate,
+	"memory-prune":           cmdMemoryPrune,
+	"init":                   cmdInit,
+	"status":                 cmdStatus,
+	"scorecard":              cmdScorecard,
+	"doctor":                 cmdDoctor,
+	"trace":                  cmdTrace,
+	"preflight":              cmdPreflight,
+	"approve":                cmdApprove,
+	"reject":                 cmdReject,
+	releasePinnedExecCommand: cmdReleaseExecPinned,
 }
 
 // run dispatches a subcommand and returns the process exit code, so main stays
@@ -116,16 +114,16 @@ func usage() {
 	fmt.Fprint(os.Stderr, `forge — ForgeOS orchestration runtime (forge-core)
 
 usage:
-  forge run    <workflow> [--mode balanced] [--lifecycle mvp] [--executor dry|command] [--agent-cmd claude] [--agent-permission acceptEdits] [--agent-allowed-tools "..."] [--agent-max-budget-usd ""] [--run-budget-usd ""] [--timeout 0] [--max-retries 0] [--max-agent-depth 2] [--max-agent-calls 0] [--max-output-bytes 0] [--approved] [--root DIR]
-  forge evolve <workflow> [--mode balanced] [--lifecycle mvp] [--max-iter 5] [--executor dry|command] [--agent-cmd claude] [--agent-permission acceptEdits] [--agent-allowed-tools "..."] [--agent-max-budget-usd ""] [--run-budget-usd ""] [--timeout 0] [--max-retries 0] [--max-agent-depth 2] [--max-agent-calls 0] [--max-output-bytes 0] [--resume] [--root DIR]
-  forge route  [--complexity F] [--risk-score F] [--security F] [--dependency F] [--context F] [--business F] [--task-type T] [--risk low|medium|high|critical] [--budget F] [--scorecard PATH]
+  forge run    <workflow> [--mode balanced] [--lifecycle mvp] [--executor dry|command] [--agent-cmd claude] [--chain] [--max-chain-stages 8] [--approved] [--root DIR]
+  forge evolve <workflow> [--mode balanced] [--lifecycle mvp] [--max-iter 5] [--executor dry|command] [--resume] [--root DIR]
+  forge route  [--complexity F] [--risk-score F] [--task-type T] [--risk low|medium|high|critical] [--budget F] [--scorecard PATH]
   forge migrate --to engineering [--apply] [--root DIR]
-  forge detect|scorecard|validate|memory-prune|status|doctor [--root DIR] [--help]
-  forge preflight <workflow> [--root DIR] [--help]
-  forge approve list [--root DIR]
-  forge gate   [--root DIR]
-  forge check  [--root DIR]
-  forge accept [--root DIR]
+  forge init   --name <project> [--mode balanced] [--lifecycle mvp] <target-dir>
+  forge approve|reject <stage> [--root DIR]
+  forge detect|scorecard|validate|memory-prune|status|doctor [--root DIR]
+  forge trace [--kind K] [--status S] [--model M] [--run-id ID] [--tail N] [--strict] [--root DIR]
+  forge preflight <workflow> [--root DIR]
+  forge gate|check|accept [--root DIR]
 `)
 }
 
@@ -149,15 +147,27 @@ func delegate(fn func(root string) gate.Result, args []string) int {
 // runOpts holds the parsed `forge run` / `forge evolve` flags.
 type runOpts struct {
 	mode string
-	// lifecycle is the project-maturity modifier (idea|mvp|growth|production) the
-	// central knob composes with mode to produce the Workflow-depth policy. An
-	// empty value (the flag default) means "read it from <root>/.agent/project.yml,
-	// falling back to mvp" — see resolveLifecycle. production forces full
-	// enforcement regardless of mode (the safety veto in mode.Effective).
+	// evolveProposalOnly is resolved policy state, never a CLI flag.
+	evolveProposalOnly bool
+	// workflowStage binds privileged roles to the loaded workflow identity.
+	workflowStage string
+	// lifecycle freezes the project maturity used to resolve workflow policy.
+	// Empty means read .agent/project.yml, then fall back to mvp.
 	lifecycle string
-	root      string
-	executor  string
-	agentCmd  string
+	// Explicitness keeps CLI defaults distinguishable from deliberate default
+	// values when validating a persisted chain's immutable run envelope.
+	runFlagsCaptured       bool
+	modeExplicit           bool
+	lifecycleExplicit      bool
+	maxAgentCallsExplicit  bool
+	maxChainStagesExplicit bool
+	runBudgetExplicit      bool
+	root                   string
+	executor               string
+	agentCmd               string
+	// Restricted release/proposal stages require a pinned executable and digest.
+	releaseAgentPath   string
+	releaseAgentSHA256 string
 	// agentPermission is the --permission-mode passed to a claude-family agent so it
 	// can USE tools (write files) under --executor=command. Default acceptEdits:
 	// auto-accept file edits (the implementer writes code) WITHOUT opening arbitrary
@@ -183,6 +193,8 @@ type runOpts struct {
 	// complementing --max-agent-calls (phase count) and --timeout (wall-clock).
 	// Empty = unset (no per-call ceiling); only applied when agent-cmd is claude.
 	agentMaxBudgetUSD string
+	// agentEnv is a comma-separated exact-name allow-list for extra child env.
+	agentEnv string
 	// runBudgetUSD is the RUN-LEVEL cumulative dollar cap: the sum of every phase's
 	// billed cost across the WHOLE run (and across ALL iterations of `forge evolve`)
 	// must stay under it, else the run STOPS fail-closed before the next agent spawn.
@@ -231,6 +243,14 @@ type runOpts struct {
 	// spine workflow with no declared deps would be wrong to run all-concurrent, so it
 	// stays on the serial engine (with a note). Default false = serial, byte-for-byte.
 	parallel bool
+	// chain auto-advances through the spine: when a workflow converges MET and
+	// declares on_met.next_stage, load and run the next workflow automatically.
+	// Stops at human_gate (waits for approval) or when no next_stage is declared.
+	chain bool
+	// maxChainStages is a hard safety bound for --chain. It complements cycle
+	// detection so even a long acyclic but misconfigured next_stage graph cannot
+	// run without an operator-defined ceiling.
+	maxChainStages int
 }
 
 // bindRunOpts registers the flags shared by `forge run` and `forge evolve` onto
@@ -241,9 +261,12 @@ func bindRunOpts(fs *flag.FlagSet, o *runOpts) {
 	fs.StringVar(&o.root, "root", "", "repo root (default $FORGE_REPO_ROOT or .)")
 	fs.StringVar(&o.executor, "executor", "dry", "agent executor: dry|command")
 	fs.StringVar(&o.agentCmd, "agent-cmd", "claude", "command for --executor=command (e.g. claude, echo)")
+	fs.StringVar(&o.releaseAgentPath, "release-agent-path", "", "absolute trusted Claude executable for command-mode release or proposal-only Evolve (required with --release-agent-sha256)")
+	fs.StringVar(&o.releaseAgentSHA256, "release-agent-sha256", "", "operator-pinned SHA-256 of --release-agent-path for restricted command execution")
 	fs.StringVar(&o.agentPermission, "agent-permission", "acceptEdits", "claude --permission-mode for --executor=command (acceptEdits|plan|default); lets the agent write code headlessly")
 	fs.StringVar(&o.agentAllowedTools, "agent-allowed-tools", defaultAgentAllowedTools, "claude --allowedTools whitelist (space/comma-separated) so a print-mode agent can SELF-VERIFY the code it wrote (run tests/gate) and honestly tick a ROADMAP [x]; default is the node test+gate self-check. READ-ONLY validators only — NEVER add forge or any agent-spawning command (it bypasses the recursion guard). Override for non-node projects (e.g. pytest/vitest); empty disables")
 	fs.StringVar(&o.agentMaxBudgetUSD, "agent-max-budget-usd", "", "per-claude-call dollar ceiling (claude --max-budget-usd; empty = unset); the per-phase cost bound complementing --max-agent-calls/--timeout")
+	fs.StringVar(&o.agentEnv, "agent-env", "", "comma-separated exact parent env names to grant to the agent; cloud/Git/SSH credentials are denied by default")
 	fs.StringVar(&o.runBudgetUSD, "run-budget-usd", "", "cumulative run-level dollar cap across ALL phases/iterations (empty = unset); STOPS the run before overspend — distinct from the per-call --agent-max-budget-usd")
 	fs.DurationVar(&o.timeout, "timeout", 0, "per-agent-command timeout (0 = no deadline, e.g. 90s, 5m)")
 	fs.IntVar(&o.maxRetries, "max-retries", 0, "retry ceiling for retryable agent failures (0 = no retries)")
@@ -252,6 +275,8 @@ func bindRunOpts(fs *flag.FlagSet, o *runOpts) {
 	fs.IntVar(&o.maxOutputBytes, "max-output-bytes", 0, "cap on retained agent stdout+stderr per command (0 = safe default 10MiB; prevents a runaway-output OOM)")
 	fs.BoolVar(&o.approved, "approved", false, "supply the human-approval signal for a human_gate workflow (or create <root>/.forge/<stage>.approved)")
 	fs.BoolVar(&o.parallel, "parallel", false, "run a workflow's depends_on-independent phases CONCURRENTLY (dependency waves); takes effect ONLY for a workflow that declares depends_on (else stays serial). No directed loop-back in parallel mode.")
+	fs.BoolVar(&o.chain, "chain", false, "auto-advance to the next spine stage (next_stage) when the current workflow converges MET")
+	fs.IntVar(&o.maxChainStages, "max-chain-stages", defaultMaxChainStages, "hard safety bound for --chain stage transitions")
 }
 
 // declaresDependsOn reports whether ANY phase in the workflow declares depends_on — the
@@ -322,8 +347,13 @@ func cmdRun(args []string) int {
 	if err := fs.Parse(flagArgs); err != nil {
 		return 2
 	}
+	if o.chain && o.maxChainStages < 1 {
+		fmt.Fprintln(os.Stderr, "forge run: --max-chain-stages must be >= 1")
+		return 2
+	}
 	o.root = gate.RepoRoot(o.root)
-	wf, err := loadWorkflow(o.root, name)
+	freezeRunOptions(fs, &o)
+	wf, err := loadWorkflowForRunEntry(o.root, name, o)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "forge run: %v\n", err)
 		return 1
@@ -346,45 +376,6 @@ func splitPositional(args []string) (name string, flags []string) {
 	return args[0], args[1:]
 }
 
-// loadWorkflow reads a YAML workflow, transcodes it to JSON via the native Go
-// YAML parser (forge-core zero-dep, replaces the temporary python shim), and
-// parses it into an asset.Workflow. Falls back to the python shim if the Go
-// parser fails, so a missing/partial config still produces an actionable error.
-func loadWorkflow(repoRoot, name string) (asset.Workflow, error) {
-	ymlPath := filepath.Join(repoRoot, ".agent", "workflows", name+".yml")
-	if _, err := os.Stat(ymlPath); err != nil {
-		return asset.Workflow{}, fmt.Errorf("workflow not found: %s", ymlPath)
-	}
-	// Try the native Go YAML parser first (zero-dep, faster).
-	f, err := os.Open(ymlPath)
-	if err != nil {
-		return asset.Workflow{}, fmt.Errorf("open workflow: %w", err)
-	}
-	defer f.Close()
-	val, err := yaml2json.Decode(f)
-	if err == nil {
-		data, marshalErr := json.Marshal(val)
-		if marshalErr == nil {
-			wf, parseErr := asset.LoadWorkflowJSON(data)
-			if parseErr == nil && len(wf.Phases) > 0 {
-				return wf, nil
-			}
-		}
-	}
-	// Fallback: try the Python yaml2json shim.
-	f.Close()
-	shim := filepath.Join(repoRoot, "harness", "yaml2json.py")
-	if _, err := os.Stat(shim); err != nil {
-		return asset.Workflow{}, fmt.Errorf(
-			"YAML->JSON via Go parser failed and python shim missing at %s: %v", shim, err)
-	}
-	out, execErr := exec.Command("python3", shim, ymlPath).Output()
-	if execErr != nil {
-		return asset.Workflow{}, fmt.Errorf("transcoding %s via python shim also failed: %w", ymlPath, execErr)
-	}
-	return asset.LoadWorkflowJSON(out)
-}
-
 // reportConvergence evaluates the workflow's stop condition against live repo
 // signals (ROADMAP completion, gate state, and — for a human_gate — the human
 // approval signal) and prints the verdict. It is the real convergence check
@@ -394,59 +385,6 @@ func loadWorkflow(repoRoot, name string) (asset.Workflow, error) {
 // HONEST report: not approved => "awaiting human approval" (a stop to wait for a
 // human, NOT a gate FAIL); approved => "approved -> unlocks <next_stage>".
 //
-// verdicts (nil-safe) threads through to gatherSignals so a review-stage run's
-// recorded executive-review verdict populates Signals.ReviewStatus.
-func reportConvergence(wf asset.Workflow, root string, probe, categories map[string]string, lifecycle string, approvedFlag bool, verdicts *verdictLedger) {
-	if wf.Stop.Type == "" {
-		return
-	}
-	approved := humanApproved(root, wf.Stage, approvedFlag)
-	results, met := converge.Converge(wf.Stop, gatherSignals(root, wf, probe, categories, lifecycle, approved, verdicts))
-	if converge.IsHumanGate(wf.Stop) {
-		reportHumanGate(wf, met)
-		return
-	}
-	fmt.Printf("convergence: %s (%s)\n", verdict(met), wf.Stop.Type)
-	for _, r := range results {
-		fmt.Printf("  [%s] %s — %s\n", mark(r.Met), r.Expr, r.Detail)
-	}
-}
-
-// reportHumanGate prints the human-approval gate's honest outcome. Unapproved is
-// NOT a failure: the stage is correctly holding for a non-bypassable human
-// decision, so it reads "awaiting human approval", distinct from a gate FAIL.
-// Approved reads "approved -> unlocks <next_stage>" (the spine stage on_approved
-// unlocks). HONESTY: the approval is a v1 signal check (--approved / on-disk
-// marker), not a durable cross-process wait (durable_wait is v2, Temporal).
-func reportHumanGate(wf asset.Workflow, approved bool) {
-	if !approved {
-		fmt.Printf("convergence: NOT MET (human_gate) — awaiting human approval (non-bypassable)\n")
-		fmt.Println("  pass --approved or create .forge/" + wf.Stage + ".approved to grant approval (v1 signal check; durable wait is v2)")
-		return
-	}
-	fmt.Printf("convergence: MET (human_gate) — approved → unlocks %s\n", nextStageLabel(wf.Stop))
-}
-
-// nextStageLabel renders the stage a human_gate approval unlocks, or a clear
-// marker when the workflow declares none (so the line is always informative).
-func nextStageLabel(stop asset.StopCondition) string {
-	if stop.OnApproved.NextStage == "" {
-		return "(no next_stage declared)"
-	}
-	return "next_stage=" + stop.OnApproved.NextStage
-}
-
-// verdict/mark render a convergence boolean for the report; pick is the missing
-// string ternary (a if cond else b).
-func verdict(met bool) string { return pick(met, "MET", "NOT MET") }
-func mark(met bool) string    { return pick(met, "x", " ") }
-func pick(cond bool, a, b string) string {
-	if cond {
-		return a
-	}
-	return b
-}
-
 // forgeDir is the per-repo runtime-state directory (<root>/.forge) holding the
 // checkpoint, trace, and memory store. It is git-ignored and excluded from the
 // harness/arch scans, so these runtime products never pollute the repo's gates.
@@ -471,6 +409,16 @@ func resolveLifecycle(o runOpts) string {
 		return v
 	}
 	return "mvp"
+}
+
+func freezeRunOptions(fs *flag.FlagSet, o *runOpts) {
+	o.runFlagsCaptured = true
+	o.modeExplicit = flagSet(fs, "mode")
+	o.lifecycleExplicit = flagSet(fs, "lifecycle")
+	o.maxAgentCallsExplicit = flagSet(fs, "max-agent-calls")
+	o.maxChainStagesExplicit = flagSet(fs, "max-chain-stages")
+	o.runBudgetExplicit = flagSet(fs, "run-budget-usd")
+	o.lifecycle = resolveLifecycle(*o)
 }
 
 // projectYAMLValue reads one top-level scalar `key: value` from

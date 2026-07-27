@@ -14,10 +14,25 @@ func sampleCheckpoint() Checkpoint {
 		FormatVersion:     "forgeos.checkpoint.v1",
 		Workflow:          "build",
 		Mode:              "autonomous",
+		Lifecycle:         "production",
 		Iteration:         7,
 		RoadmapCompletion: 0.625,
 		GatesGreen:        true,
 		Reason:            "iteration budget reached",
+		UpdatedAtUnix:     1_750_000_000,
+	}
+}
+
+func currentCheckpoint(workflow string, iteration int) Checkpoint {
+	return Checkpoint{
+		FormatVersion:     CheckpointFormatCurrent,
+		Workflow:          workflow,
+		WorkflowDigest:    "test-workflow-digest",
+		Mode:              "balanced",
+		Lifecycle:         "mvp",
+		Iteration:         iteration,
+		RoadmapCompletion: 0.5,
+		Reason:            "test checkpoint",
 		UpdatedAtUnix:     1_750_000_000,
 	}
 }

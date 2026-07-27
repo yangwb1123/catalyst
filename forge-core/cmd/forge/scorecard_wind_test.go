@@ -118,6 +118,35 @@ func TestTraceHasModelCost_TrueOnModelBearingCost(t *testing.T) {
 	}
 }
 
+func TestScorecardTraceIsolationByRunID(t *testing.T) {
+	wf := asset.Workflow{Phases: []asset.Phase{{Name: "impl", Agent: "implementer"}}}
+	root := t.TempDir()
+	writeTrace(t, root,
+		`{"kind":"agent","name":"impl","model":"opus","cost_usd_micros":100,"run_id":"old"}`,
+		`{"kind":"agent","name":"impl","model":"sonnet","cost_usd_micros":200,"run_id":"current"}`,
+	)
+	if traceHasModelCostForRun(tracePath(root), "missing") {
+		t.Error("unrelated run must not trip the real-cost gate")
+	}
+	pairs := distinctScorecardPairsForRun(wf, tracePath(root), "current")
+	if len(pairs) != 1 || pairs[0].Model != "sonnet" {
+		t.Fatalf("current-run pairs = %+v, want only sonnet", pairs)
+	}
+}
+
+func TestPhasesForPairFiltersTaskType(t *testing.T) {
+	wf := asset.Workflow{Phases: []asset.Phase{
+		{Name: "plan", Agent: "planner"},
+		{Name: "impl", Agent: "implementer"},
+		{Name: "review", Agent: "reviewer"},
+	}}
+	tt, _ := attribution.TaskTypeForAgent("implementer")
+	got := phasesForPair(wf, scorecardPair{Model: "sonnet", TaskType: tt})
+	if len(got) != 2 || got[0] != "plan" || got[1] != "impl" {
+		t.Fatalf("phasesForPair = %v, want task-type peers [plan impl]", got)
+	}
+}
+
 // HONESTY (dry/echo gate-out): a trace with NO model-bearing cost event — iteration/gate
 // events, or agent events lacking model and/or cost — must report FALSE, so a dry/echo run
 // skips the wind-down and never fabricates a scorecard row.

@@ -35,7 +35,10 @@ func TestAnomaly_NoHistory(t *testing.T) {
 func TestAnomaly_WithHistory(t *testing.T) {
 	root := t.TempDir()
 	dotForge := mustMkdotForge(t, root)
-	cp := persist.Checkpoint{Workflow: "build", Mode: "balanced", Iteration: 1, UpdatedAtUnix: time.Now().Unix()}
+	cp := persist.Checkpoint{
+		FormatVersion: "forgeos.checkpoint.v1",
+		Workflow:      "build", Mode: "balanced", Iteration: 1, UpdatedAtUnix: time.Now().Unix(),
+	}
 	if err := persist.Save(filepath.Join(dotForge, "checkpoint.json"), cp, 0); err != nil {
 		t.Fatalf("seed checkpoint: %v", err)
 	}
@@ -56,7 +59,10 @@ func TestLoadCheckpointChain_OrderAndBackups(t *testing.T) {
 	dotForge := mustMkdotForge(t, root)
 	cpPath := filepath.Join(dotForge, "checkpoint.json")
 	for i := 1; i <= 3; i++ {
-		cp := persist.Checkpoint{Workflow: "build", Mode: "balanced", Iteration: i}
+		cp := persist.Checkpoint{
+			FormatVersion: "forgeos.checkpoint.v1",
+			Workflow:      "build", Mode: "balanced", Iteration: i,
+		}
 		if err := persist.Save(cpPath, cp, 5); err != nil {
 			t.Fatalf("seed checkpoint #%d: %v", i, err)
 		}

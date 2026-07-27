@@ -1,7 +1,9 @@
 package main
 
 import (
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -51,5 +53,161 @@ func TestProjectYAMLValue(t *testing.T) {
 	}
 	if got := projectYAMLValue(t.TempDir(), "mode"); got != "" {
 		t.Errorf("missing file = %q, want empty", got)
+	}
+}
+
+func TestApproveAndRejectAcceptRootFlagOnEitherSide(t *testing.T) {
+	root := t.TempDir()
+	var approveCode int
+	captureStdout(t, func() {
+		approveCode = cmdApprove([]string{"design", "--root", root})
+	})
+	if approveCode != 0 {
+		t.Fatalf("approve <stage> --root = %d, want 0", approveCode)
+	}
+	approved, _ := approvalMarkerPath(root, "design", ".approved")
+	if _, err := os.Stat(approved); err != nil {
+		t.Fatalf("approved marker missing: %v", err)
+	}
+
+	var rejectCode int
+	captureStdout(t, func() {
+		rejectCode = cmdReject([]string{"--root", root, "design"})
+	})
+	if rejectCode != 0 {
+		t.Fatalf("reject --root <stage> = %d, want 0", rejectCode)
+	}
+	rejected, _ := approvalMarkerPath(root, "design", ".rejected")
+	if _, err := os.Stat(rejected); err != nil {
+		t.Fatalf("rejected marker missing: %v", err)
+	}
+	if _, err := os.Stat(approved); !os.IsNotExist(err) {
+		t.Fatalf("reject must supersede approved marker; stat error = %v", err)
+	}
+}
+
+func TestApprovalDecisionMarkersAreMutuallyExclusive(t *testing.T) {
+	root := t.TempDir()
+	approved, _ := approvalMarkerPath(root, "design", ".approved")
+	rejected, _ := approvalMarkerPath(root, "design", ".rejected")
+
+	captureStdout(t, func() {
+		if code := writeApproval(root, "design", false); code != 0 {
+			t.Fatalf("reject = %d", code)
+		}
+		if code := writeApproval(root, "design", true); code != 0 {
+			t.Fatalf("approve = %d", code)
+		}
+	})
+	if _, err := os.Stat(approved); err != nil {
+		t.Fatalf("approved marker missing: %v", err)
+	}
+	if _, err := os.Stat(rejected); !os.IsNotExist(err) {
+		t.Fatalf("approve must remove rejected marker; stat error = %v", err)
+	}
+}
+
+func TestApprovalStageValidationBlocksPathEscapeAndUnknownStages(t *testing.T) {
+	for _, stage := range []string{"../escape", "design/../../escape", "/tmp/escape", "DESIGN", "unknown"} {
+		t.Run(strings.ReplaceAll(stage, "/", "_"), func(t *testing.T) {
+			root := t.TempDir()
+			if code := writeApproval(root, stage, true); code != 2 {
+				t.Errorf("writeApproval(%q) = %d, want usage error 2", stage, code)
+			}
+			if _, err := os.Stat(forgeDir(root)); !os.IsNotExist(err) {
+				t.Errorf("invalid stage must not create .forge; stat error = %v", err)
+			}
+			if _, err := os.Stat(filepath.Join(root, "escape.approved")); !os.IsNotExist(err) {
+				t.Errorf("invalid stage escaped marker directory; stat error = %v", err)
+			}
+		})
+	}
+}
+
+func TestApprovalMarkerRejectsForgeDirectorySymlinkEscape(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	if err := os.Symlink(outside, forgeDir(root)); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	if code := writeApproval(root, "design", true); code != 2 {
+		t.Fatalf("write through escaping .forge symlink = %d, want 2", code)
+	}
+	if _, err := os.Stat(filepath.Join(outside, "design.approved")); !os.IsNotExist(err) {
+		t.Fatalf("marker escaped through .forge symlink; stat error = %v", err)
+	}
+}
+
+func TestApproveRejectRejectMalformedArgumentShapes(t *testing.T) {
+	root := t.TempDir()
+	cases := []struct {
+		name string
+		call func() int
+	}{
+		{"approve extra positional", func() int { return cmdApprove([]string{"design", "extra", "--root", root}) }},
+		{"reject extra positional", func() int { return cmdReject([]string{"design", "extra", "--root", root}) }},
+		{"approve duplicate root", func() int { return cmdApprove([]string{"--root", root, "design", "--root", root}) }},
+		{"reject unknown flag", func() int { return cmdReject([]string{"design", "--repo", root}) }},
+		{"approve missing root value", func() int { return cmdApprove([]string{"design", "--root"}) }},
+		{"approve empty root value", func() int { return cmdApprove([]string{"design", "--root", ""}) }},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if code := tc.call(); code != 2 {
+				t.Errorf("code = %d, want 2", code)
+			}
+		})
+	}
+	if _, err := os.Stat(forgeDir(root)); !os.IsNotExist(err) {
+		t.Fatalf("malformed arguments must not create markers; stat error = %v", err)
+	}
+}
+
+func TestApproveListReportsDecisionStateNotPendingApproval(t *testing.T) {
+	root := t.TempDir()
+	captureStdout(t, func() {
+		if code := writeApproval(root, "design", true); code != 0 {
+			t.Fatalf("approve = %d", code)
+		}
+		if code := writeApproval(root, "build", false); code != 0 {
+			t.Fatalf("reject = %d", code)
+		}
+	})
+	var code int
+	out := captureStdout(t, func() { code = cmdApproveList(root) })
+	if code != 0 {
+		t.Fatalf("approve list = %d, want 0; output:\n%s", code, out)
+	}
+	for _, want := range []string{
+		"Approval decisions:",
+		"design: approved (persistent until superseded)",
+		"build: rejected (pending successful rework)",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("approve list missing %q; got:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "Pending approvals:") {
+		t.Errorf("already-approved markers must not be labeled pending approvals; got:\n%s", out)
+	}
+}
+
+func TestApproveListSurfacesLegacyConflict(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(forgeDir(root), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	approved, _ := approvalMarkerPath(root, "review", ".approved")
+	rejected, _ := approvalMarkerPath(root, "review", ".rejected")
+	if err := os.WriteFile(approved, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(rejected, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var code int
+	out := captureStdout(t, func() { code = cmdApproveList(root) })
+	if code != 1 || !strings.Contains(out, "review: CONFLICT (approved + rejected)") {
+		t.Fatalf("conflict list = %d, output:\n%s", code, out)
 	}
 }

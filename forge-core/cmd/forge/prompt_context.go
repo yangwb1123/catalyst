@@ -225,22 +225,13 @@ func observeFor(isClaude bool, costSink func(phase, model string, usd float64, l
 		if verdicts != nil {
 			if v, ok := parseReviewerVerdict(sanitized); ok {
 				verdicts.record(phase, v)
-				// On REQUEST_CHANGES, stash the findings for the loop-back target (the
-				// implementer) — keyed off the phase's OWN on_fail.target, so the routing
-				// is data-driven and the reviewer (a different phase) never receives them.
-				if v == VerdictRequestChanges && findings != nil && onFailTarget != nil {
-					if target, ok := onFailTarget(phase); ok {
-						findings.record(target, unwrapClaudeResult(sanitized))
-					}
-				}
+				recordLoopbackFindings(phase, v, sanitized, findings, onFailTarget)
 			} else if v, ok := parseExecutiveVerdict(sanitized); ok {
 				// The binary reviewer contract didn't match — try the CTO's 5-way
 				// executive-review contract (review.yml P4) into the SAME ledger, so
-				// Engine.AgentVerdict and reviewStatus (gates.go) read either kind back
-				// through one uniform lookup. No findings side-effect: the executive
-				// phase carries no on_fail.loop_back in review.yml (its rejection routes
-				// via the workflow's own stop_condition.on_rejected, not a phase jump).
+				// Engine.AgentVerdict and reviewStatus (gates.go) read either kind back.
 				verdicts.record(phase, v)
+				recordLoopbackFindings(phase, v, sanitized, findings, onFailTarget)
 			} else if score, ok := parseConfidenceScore(sanitized); ok {
 				// Neither the binary nor the 5-way token contract matched — try the
 				// product-manager's numeric requirement-discovery contract (discover.yml
@@ -383,7 +374,7 @@ func buildPromptWithEmits(repoRoot string, p asset.Phase, mode string, tierOf fu
 		ctx = append(ctx, "## Current phase description\n"+p.Description)
 	}
 	ctx = appendFeedbackLanes(ctx, repoRoot, query, p, gates, phaseOut, findings)
-	ctx = appendArtifactContext(ctx, repoRoot, emitsFiles, p.UsesTemplate, p.SecondaryTemplate)
+	ctx = appendArtifactContext(ctx, repoRoot, emitsFiles, p.UsesTemplate, p.SecondaryTemplate, p.WritesADR)
 	return prompt.Build(p.Agent, p.Name, mode, tier, readCard(repoRoot, p.Agent, cache), ctx)
 }
 

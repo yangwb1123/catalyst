@@ -134,3 +134,65 @@ func TestGatesGreen_ZeroGatesNotGreen(t *testing.T) {
 		t.Error("zero required gates must not be green")
 	}
 }
+
+func TestResolveGateSecurityRequiresSecretScanAndSCA(t *testing.T) {
+	cases := []struct {
+		name  string
+		probe map[string]string
+		want  string
+	}{
+		{"both pass", map[string]string{
+			"security_findings": StatusPass, "dependency_vulnerabilities": StatusPass,
+		}, StatusPass},
+		{"secret fails", map[string]string{
+			"security_findings": StatusFail, "dependency_vulnerabilities": StatusPass,
+		}, StatusFail},
+		{"SCA fails", map[string]string{
+			"security_findings": StatusPass, "dependency_vulnerabilities": StatusFail,
+		}, StatusFail},
+		{"SCA unavailable", map[string]string{
+			"security_findings": StatusPass, "dependency_vulnerabilities": StatusNA,
+		}, StatusNA},
+		{"SCA missing", map[string]string{
+			"security_findings": StatusPass,
+		}, StatusNA},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := ResolveGate("", "security", tc.probe); got.Status != tc.want {
+				t.Fatalf("security status = %s, want %s (%s)", got.Status, tc.want, got.Output)
+			}
+		})
+	}
+}
+
+func TestGatesGreenSecuritySCAIsLifecycleAware(t *testing.T) {
+	probe := map[string]string{
+		"test_pass": StatusPass, "app_test_pass": StatusPass,
+		"security_findings": StatusPass, "dependency_vulnerabilities": StatusNA,
+	}
+	categories := map[string]string{"dependency_vulnerabilities": catNoTool}
+	names := []string{"test", "security"}
+	if green, _ := GatesGreen("", names, probe, categories, "mvp"); !green {
+		t.Error("an immature project may honestly exempt a missing SCA database")
+	}
+	if green, _ := GatesGreen("", names, probe, categories, "production"); green {
+		t.Error("production must not converge without an SCA database")
+	}
+
+	probe["dependency_vulnerabilities"] = StatusFail
+	if green, _ := GatesGreen("", names, probe, categories, "mvp"); green {
+		t.Error("a detected dependency vulnerability must never be exempted")
+	}
+}
+
+func TestCompositeCategoryDoesNotMaskMissingSecretProbe(t *testing.T) {
+	probe := map[string]string{"dependency_vulnerabilities": StatusNA, "test_pass": StatusPass, "app_test_pass": StatusPass}
+	categories := map[string]string{
+		"security_findings":          "applicable",
+		"dependency_vulnerabilities": catNoTool,
+	}
+	if green, _ := GatesGreen("", []string{"test", "security"}, probe, categories, "mvp"); green {
+		t.Error("a missing secret-scan result must not borrow the SCA no_tool exemption")
+	}
+}

@@ -81,6 +81,43 @@ func TestWaves_Cycle_Errors(t *testing.T) {
 	}
 }
 
+func TestWaves_RejectsAmbiguousPhaseIdentityBeforePlanning(t *testing.T) {
+	tests := []struct {
+		name   string
+		phases []asset.Phase
+		want   string
+	}{
+		{
+			name:   "empty name",
+			phases: []asset.Phase{ph("")},
+			want:   "empty name",
+		},
+		{
+			name:   "duplicate name",
+			phases: []asset.Phase{ph("same"), ph("same")},
+			want:   `duplicates phase name "same"`,
+		},
+		{
+			name: "duplicate normalized emit",
+			phases: []asset.Phase{{
+				Name: "emit", Agent: "implementer", Emits: []string{"b", "a/../b"},
+			}},
+			want: "duplicates normalized target",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			waves, err := Waves(tc.phases)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("Waves error = %v, want %q", err, tc.want)
+			}
+			if waves != nil {
+				t.Fatalf("malformed workflow must return no waves, got %v", waves)
+			}
+		})
+	}
+}
+
 func equalWaves(got, want [][]int) bool {
 	if len(got) != len(want) {
 		return false

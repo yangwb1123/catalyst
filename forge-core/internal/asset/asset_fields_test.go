@@ -10,9 +10,8 @@ import "testing"
 // RequiresTools is parsed VERBATIM from a phase's requires_tools (discover.yml's
 // market-research: requires_tools: [web_search, web_fetch]). A phase without the
 // key loads as nil/empty — the fault-tolerant default ("no declared tool
-// requirement"). Honest scope: nothing in forge-core reads this field yet (a
-// separate task builds the degrade-to-advisory consumption); this test only
-// pins that the value survives decode instead of being silently dropped.
+// requirement"). The command prompt builder consumes it through the
+// degrade-to-advisory guard; this decode test pins the lower schema boundary.
 func TestLoadWorkflowJSON_RequiresTools(t *testing.T) {
 	wf, err := LoadWorkflowJSON([]byte(`{"stage":"discover","phases":[
 		{"name":"market-research","agent":"researcher","requires_tools":["web_search","web_fetch"]},
@@ -34,9 +33,8 @@ func TestLoadWorkflowJSON_RequiresTools(t *testing.T) {
 // Readonly is parsed VERBATIM at BOTH workflow level and phase level (every
 // .agent/workflows/*.yml authors it at the top level; build.yml varies it per
 // phase: false on implementer, true on planner/harness-gates/reviewer/qa).
-// Honest scope: nothing in forge-core enforces this field yet (a separate task
-// builds the write-blocking consumption); this test only pins that the value
-// survives decode at both levels instead of being silently dropped.
+// The command executor enforces the effective phase boundary with `dontAsk` and
+// validated write scopes; this test pins that both schema levels survive decode.
 func TestLoadWorkflowJSON_Readonly(t *testing.T) {
 	wf, err := LoadWorkflowJSON([]byte(`{"stage":"review","readonly":true,"phases":[
 		{"name":"security-review","agent":"security-engineer","readonly":true},
@@ -91,10 +89,8 @@ func TestLoadWorkflowJSON_ReadonlyFixture(t *testing.T) {
 
 // SecondaryTemplate is parsed VERBATIM from a phase's secondary_template
 // (review.yml's performance-reliability-review pairs it with uses_template).
-// A phase without the key loads as "" — the fault-tolerant default. Honest
-// scope: nothing in forge-core reads this field yet (a separate task builds
-// the injection consumption); this test only pins that the value survives
-// decode instead of being silently dropped.
+// A phase without the key loads as "" — the fault-tolerant default. Prompt
+// injection and doctor validation consume the field; this test pins decode.
 func TestLoadWorkflowJSON_SecondaryTemplate(t *testing.T) {
 	wf, err := LoadWorkflowJSON([]byte(`{"stage":"review","phases":[
 		{"name":"performance-reliability-review","agent":"performance-engineer",
@@ -115,5 +111,39 @@ func TestLoadWorkflowJSON_SecondaryTemplate(t *testing.T) {
 	// A phase that omits secondary_template loads with the empty default.
 	if wf.Phases[1].SecondaryTemplate != "" {
 		t.Errorf("security-review SecondaryTemplate = %q, want empty (no secondary_template key)", wf.Phases[1].SecondaryTemplate)
+	}
+}
+
+// Deploy uses only existing workflow fields: concrete emits, a validation
+// on_fail loop-back, and a human gate whose approval advances to Evolve.
+// This test proves the generic loader preserves that declaration without
+// adding cloud/provider-specific runtime types or behavior.
+func TestLoadWorkflowJSON_DeclarativeDeployBoundary(t *testing.T) {
+	wf, err := LoadWorkflowJSON([]byte(`{"stage":"deploy","readonly":true,"phases":[
+		{"name":"release-planning","agent":"release-engineer","readonly":true,
+		 "emits":["docs/release/release-manifest.yml","docs/release/deployment-plan.md"]},
+		{"name":"release-plan-validation","agent":"release-engineer","readonly":true,
+		 "emits":["docs/release/deployment-validation.md"],
+		 "on_fail":{"action":"loop_back","target_phase":"release-planning"}}
+	],"stop_condition":{"type":"human_gate","human_approval":"required",
+	 "on_rejected":{"action":"loop_back","target_phase":"release-planning"},
+	 "on_approved":{"next_stage":"evolve"}}}`))
+	if err != nil {
+		t.Fatalf("load deploy workflow: %v", err)
+	}
+	if wf.Stage != "deploy" || !wf.Readonly || len(wf.Phases) != 2 {
+		t.Fatalf("deploy shape = stage %q readonly %v phases %d", wf.Stage, wf.Readonly, len(wf.Phases))
+	}
+	if got := wf.Phases[0].Emits; len(got) != 2 || got[0] != "docs/release/release-manifest.yml" {
+		t.Errorf("planning emits = %v, want concrete docs/release paths", got)
+	}
+	if fail := wf.Phases[1].OnFail; fail == nil || fail.TargetPhase != "release-planning" {
+		t.Errorf("validation on_fail = %+v, want release-planning", fail)
+	}
+	if rejected := wf.Stop.OnRejected; rejected == nil || rejected.TargetPhase != "release-planning" {
+		t.Errorf("stop on_rejected = %+v, want release-planning", rejected)
+	}
+	if wf.Stop.HumanApproval != "required" || wf.Stop.OnApproved.NextStage != "evolve" {
+		t.Errorf("deploy stop = %+v, want required approval -> evolve", wf.Stop)
 	}
 }

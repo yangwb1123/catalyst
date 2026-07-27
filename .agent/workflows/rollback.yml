@@ -1,0 +1,51 @@
+# ForgeOS workflow · ROLLBACK (独立按需 / standalone on demand)
+#
+# 本 workflow 不接主脊柱，也不自动由 Deploy 触发。它只生成/验证回滚交付包；
+# 外部 CI/operator 实际应用后，由人核对证据并写入可审计 approval marker。
+
+id: rollback
+stage: rollback
+title: 已识别发布风险 → 经外部执行并由人确认的回滚
+readonly: true
+description: >
+  按需生成回滚计划、runbook 与 checklist，并验证目标版本、数据影响、停止阈值和
+  证据引用。ForgeOS 不访问凭证、不执行远程回滚，且本 stage 没有 next_stage。
+
+phases:
+  - name: rollback-planning
+    agent: release-engineer
+    readonly: true
+    required_gates: []
+    model_tier: sonnet
+    feeds_forward: true
+    description: >
+      基于已确认的 release manifest 和事故/变更证据生成回滚交付包；数据不可逆、
+      digest 或责任人不明确时标 unresolved，不推断安全。
+    emits:
+      - docs/release/rollback-plan.md
+      - docs/release/rollback-runbook.md
+      - docs/release/rollback-checklist.md
+
+  - name: rollback-plan-validation
+    agent: release-engineer
+    readonly: true
+    required_gates: []
+    model_tier: sonnet
+    description: >
+      核对目标 revision/digest、数据兼容性、终止条件、恢复验证和人工责任人；
+      APPROVE 仅代表计划可交给外部 CI/operator，不代表已回滚。
+    emits:
+      - docs/release/rollback-validation.md
+    on_fail:
+      action: loop_back
+      target_phase: rollback-planning
+
+stop_condition:
+  type: human_gate
+  human_approval: required
+  durable_wait: true
+  expression: "external_rollback_evidence_verified_by_human == true"
+  on_rejected:
+    action: loop_back
+    target_phase: rollback-planning
+  on_approved: {}

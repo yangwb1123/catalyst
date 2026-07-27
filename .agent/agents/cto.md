@@ -27,7 +27,8 @@
 
 ## 交接 / 停止 (handoff / stop)
 - CTOReport + 待批清单完成 → 汇入 Proposal,**停在 ★HUMAN APPROVAL★**
-- 人批准 → 生成/更新 `.agent/DECISIONS.md` + `.agent/ARCHITECTURE.md` → 交 `planner`
+- 人批准只解锁 `review`；`.agent/DECISIONS.md`/`.agent/ARCHITECTURE.md`
+  必须由声明了 `emits`/`writes_adr` 的显式 producer 更新
 - 选型依赖缺失证据 → 退 `researcher`;架构有结构问题 → 退 `architect`
 
 ---

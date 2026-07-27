@@ -103,40 +103,22 @@ func TestAgentExecutor_PriorEmitsWiredIntoRealPrompt(t *testing.T) {
 	}
 }
 
-// labelOnlyEmitsAgents are agents whose emits: declarations are a conceptual
-// LABEL, not a literal Write() path, so the write-scope check below must not
-// assert a path prefix for them — and must say so EXPLICITLY rather than
-// silently falling through, which is exactly the blind spot an independent
-// review of this test caught (an agent absent from readonlyAgentWriteScope
-// produced zero assertions, indistinguishable from "correctly scoped"):
-//   - qa: its own card (.agent/agents/qa.md) states "不写代码文件;仅产 QA
-//     报告" — it never writes ANY file; evolve.yml's `evaluate` phase emits:
-//     eval-scorecard.md is shorthand for "this phase's judgment feeds the Eval
-//     scorecard" (harness/scorecard-update.mjs, a separate machine-authored
-//     JSON artifact), not a file qa itself produces.
-//   - planner: readonlyAgentWriteScope's own doc comment already covers this
-//     one (a fixed FILE, not a directory) — build.yml's `emits: task-plan.md`
-//     is a label read back by emitsContext as a bare repo-root filename, not
-//     planner's real write target (.agent/CURRENT_SPRINT.md).
-var labelOnlyEmitsAgents = map[string]bool{
-	"qa": true,
+func emitMatchesScope(emit string, patterns []string) bool {
+	normalized := "/" + strings.TrimPrefix(filepath.ToSlash(filepath.Clean(emit)), "/")
+	for _, pattern := range patterns {
+		if strings.HasSuffix(pattern, "/**") {
+			if strings.HasPrefix(normalized, strings.TrimSuffix(pattern, "**")) {
+				return true
+			}
+		} else if normalized == pattern {
+			return true
+		}
+	}
+	return false
 }
 
-// End-to-end regression: every phase across the four real spine/loop workflows
-// that is BOTH readonly (so its write scope is enforced by readonlyToolScope)
-// AND declares emits: must EITHER declare paths that actually fall within its
-// agent's documented write scope (readonlyAgentWriteScope), OR be one of the
-// explicitly documented label-only exceptions above. Otherwise the emits-
-// content injection this file wires (priorEmitsOf/emitsFilesFor/
-// buildPromptWithEmits) silently finds nothing in a real run: emitsContext
-// resolves each emits path relative to repoRoot, so a bare filename like
-// "security-review.md" never matches a file the agent actually wrote at
-// docs/review/security-review.md — this was a real, confirmed bug (review.yml/
-// discover.yml/design.yml/evolve.yml all declared bare filenames until fixed
-// alongside this wiring). An agent with NEITHER a readonlyAgentWriteScope
-// entry NOR a labelOnlyEmitsAgents exemption is a hard failure, not a silent
-// skip — that combination means either a real unscoped-write bug or an
-// undocumented label case that needs to be added to one of the two maps above.
+// Every readonly phase's declared artifacts must be literal paths covered by
+// the same write scope enforced in the spawned agent CLI.
 func TestEndToEnd_WorkflowEmitsMatchAgentWriteScope(t *testing.T) {
 	if _, err := exec.LookPath("python3"); err != nil {
 		t.Skip("python3 not available")
@@ -145,7 +127,7 @@ func TestEndToEnd_WorkflowEmitsMatchAgentWriteScope(t *testing.T) {
 	if root == "" {
 		t.Skip("not running inside the ForgeOS repo (no harness/yaml2json.py)")
 	}
-	for _, name := range []string{"discover", "design", "review", "evolve"} {
+	for _, name := range []string{"discover", "design", "review", "build", "deploy", "rollback", "evolve"} {
 		wf, err := loadWorkflow(root, name)
 		if err != nil {
 			t.Fatalf("load %s.yml: %v", name, err)
@@ -162,21 +144,20 @@ func TestEndToEnd_WorkflowEmitsMatchAgentWriteScope(t *testing.T) {
 				continue
 			}
 			patterns := readonlyAgentWriteScope[p.Agent]
-			if len(patterns) == 0 {
-				if !labelOnlyEmitsAgents[p.Agent] {
-					t.Errorf("%s.yml phase %q: agent %q declares emits %v but has NO readonlyAgentWriteScope entry and is not in labelOnlyEmitsAgents — either add its write-scope pattern, or if its emits are a conceptual label (like qa/planner), add it to labelOnlyEmitsAgents with a documented reason", name, p.Name, p.Agent, p.Emits)
+			if p.Agent == "release-engineer" {
+				patterns, err = releaseEmitPermissionPatterns(root, p)
+				if err != nil {
+					t.Errorf("%s.yml phase %q: exact release emit scope: %v", name, p.Name, err)
+					continue
 				}
+			}
+			if len(patterns) == 0 {
+				t.Errorf("%s.yml phase %q: agent %q declares emits %v but has no readonly write scope", name, p.Name, p.Agent, p.Emits)
 				continue
 			}
-			for _, pat := range patterns {
-				if !strings.HasSuffix(pat, "/**") {
-					continue // fixed-file agent (e.g. planner) — emits is a label, not a path
-				}
-				prefix := strings.TrimPrefix(strings.TrimSuffix(pat, "**"), "/")
-				for _, emit := range p.Emits {
-					if !strings.HasPrefix(emit, prefix) {
-						t.Errorf("%s.yml phase %q (agent %s): emits %q must be under %q (its enforced write scope), or emitsContext will never find it in a real run", name, p.Name, p.Agent, emit, prefix)
-					}
+			for _, emit := range p.Emits {
+				if !emitMatchesScope(emit, patterns) {
+					t.Errorf("%s.yml phase %q (agent %s): emit %q is outside enforced scopes %v", name, p.Name, p.Agent, emit, patterns)
 				}
 			}
 		}

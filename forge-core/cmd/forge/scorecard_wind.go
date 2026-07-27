@@ -78,14 +78,21 @@ type scorecardPair = attribution.ScorecardPair
 // into scorecard-update.mjs as --iterations and --rework, populating avg_iterations and
 // rework_rate in the scorecard row. Omitted when zero/false (legacy no-trajectory path).
 func windDownScorecards(wf asset.Workflow, o runOpts, logln func(string), iterations int, reworked bool) {
+	windDownScorecardsForRun(wf, o, logln, iterations, reworked, "")
+}
+
+// windDownScorecardsForRun scopes append-only trace consumption to the current
+// process run. It also passes the workflow phases belonging to each task type to
+// the producer, preventing another stage/model event from contaminating the row.
+func windDownScorecardsForRun(wf asset.Workflow, o runOpts, logln func(string), iterations int, reworked bool, runID string) {
 	tp := tracePath(o.root)
-	if !traceHasModelCost(tp) {
+	if !traceHasModelCostForRun(tp, runID) {
 		// No real billed-cost event (dry/echo, or a run that spawned no LLM phase):
 		// skip entirely rather than persist a row for work no model was paid for.
 		return
 	}
-	for _, p := range distinctScorecardPairs(wf, tp) {
-		runScorecardUpdate(o.root, p, logln, iterations, reworked)
+	for _, p := range distinctScorecardPairsForRun(wf, tp, runID) {
+		runScorecardUpdateScoped(o.root, p, logln, iterations, reworked, runID, phasesForPair(wf, p))
 	}
 }
 
@@ -104,6 +111,10 @@ func windDownScorecards(wf asset.Workflow, o runOpts, logln func(string), iterat
 // (model, task_type) pairs collapse (two implementer phases at the same stamped model -> one
 // pair), in first-seen order for a deterministic shell-out sequence.
 func distinctScorecardPairs(wf asset.Workflow, tracePath string) []scorecardPair {
+	return distinctScorecardPairsForRun(wf, tracePath, "")
+}
+
+func distinctScorecardPairsForRun(wf asset.Workflow, tracePath, runID string) []scorecardPair {
 	ttByPhase := map[string]string{}
 	for _, p := range wf.Phases {
 		if tt, ok := attribution.TaskTypeForAgent(p.Agent); ok {
@@ -121,11 +132,14 @@ func distinctScorecardPairs(wf asset.Workflow, tracePath string) []scorecardPair
 	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024) // tolerate long trace lines
 	for sc.Scan() {
 		var ev trace.Event
-		if err := json.Unmarshal(sc.Bytes(), &ev); err != nil {
+		if err := json.Unmarshal(sc.Bytes(), &ev); err != nil || trace.ValidateFormat(ev.Format) != nil {
 			continue // skip a blank/corrupt line, never fatal
 		}
 		if ev.Model == "" || ev.CostUsdMicros == 0 {
 			continue // not a billed model-bearing cost event
+		}
+		if runID != "" && ev.RunID != runID {
+			continue
 		}
 		tt, ok := ttByPhase[ev.Name]
 		if !ok {
@@ -139,6 +153,16 @@ func distinctScorecardPairs(wf asset.Workflow, tracePath string) []scorecardPair
 		pairs = append(pairs, pair)
 	}
 	return pairs
+}
+
+func phasesForPair(wf asset.Workflow, pair scorecardPair) []string {
+	var phases []string
+	for _, p := range wf.Phases {
+		if tt, ok := attribution.TaskTypeForAgent(p.Agent); ok && tt == pair.TaskType {
+			phases = append(phases, p.Name)
+		}
+	}
+	return phases
 }
 
 // runScorecardUpdate shells the runnable learning-loop step for ONE pair:
@@ -167,9 +191,23 @@ func runScorecardUpdate(root string, p scorecardPair, logln func(string), iterat
 // output path instead of the default scorecardPath(root). Used by forge scorecard
 // rebuild to write to an arbitrary --out file.
 func runScorecardUpdateWithOut(root string, p scorecardPair, outFile string, logln func(string), iterations int, reworked bool) {
+	runScorecardUpdateScopedWithOut(root, p, outFile, logln, iterations, reworked, "", nil)
+}
+
+func runScorecardUpdateScoped(root string, p scorecardPair, logln func(string), iterations int, reworked bool, runID string, phases []string) {
+	runScorecardUpdateScopedWithOut(root, p, scorecardPath(root), logln, iterations, reworked, runID, phases)
+}
+
+func runScorecardUpdateScopedWithOut(root string, p scorecardPair, outFile string, logln func(string), iterations int, reworked bool, runID string, phases []string) {
 	args := []string{"harness/scorecard-update.mjs",
 		"--model", p.Model, "--task-type", p.TaskType,
 		"--trace", tracePath(root), "--out", outFile}
+	if runID != "" {
+		args = append(args, "--run-id", runID)
+	}
+	if len(phases) > 0 {
+		args = append(args, "--phase-names", strings.Join(phases, ","))
+	}
 	if iterations > 0 {
 		args = append(args, "--iterations", fmt.Sprintf("%d", iterations))
 		reworkFlag := "0"
@@ -195,6 +233,10 @@ func runScorecardUpdateWithOut(root string, p scorecardPair, outFile string, log
 // false -> the wind-down skips. It is robust like the harness parsers: blank/corrupt lines
 // are skipped, never fatal — a single readable cost event is enough to proceed.
 func traceHasModelCost(path string) bool {
+	return traceHasModelCostForRun(path, "")
+}
+
+func traceHasModelCostForRun(path, runID string) bool {
 	f, err := os.Open(path)
 	if err != nil {
 		return false // no trace (or unreadable) -> treat as "no real cost", skip wind-down
@@ -204,10 +246,10 @@ func traceHasModelCost(path string) bool {
 	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024) // tolerate long trace lines
 	for sc.Scan() {
 		var ev trace.Event
-		if err := json.Unmarshal(sc.Bytes(), &ev); err != nil {
+		if err := json.Unmarshal(sc.Bytes(), &ev); err != nil || trace.ValidateFormat(ev.Format) != nil {
 			continue // skip a blank/corrupt line, never fatal
 		}
-		if ev.Model != "" && ev.CostUsdMicros != 0 {
+		if ev.Model != "" && ev.CostUsdMicros != 0 && (runID == "" || ev.RunID == runID) {
 			return true
 		}
 	}
@@ -275,7 +317,7 @@ func cmdScorecard(args []string) int {
 // derivation — including the ground-truth phase-name -> task_type resolution
 // a workflow like evolve.yml needs (its phase names differ from their agent
 // roles) — lives in internal/attribution; this glue only globs/loads the
-// workflow file(s) off disk (via loadWorkflow, the same yaml2json transcoding
+// workflow file(s) off disk (via loadWorkflow, the same native-parser/fallback
 // path cmdRun uses) and drives the shared scorecard-update.mjs producer.
 
 // cmdScorecardRebuild implements `forge scorecard rebuild --from <trace.jsonl>
@@ -342,8 +384,8 @@ func parseScorecardRebuildFlags(args []string) (root, traceFile, outFile, workfl
 
 // resolvePhaseTaskTypes builds `forge scorecard rebuild`'s GROUND-TRUTH
 // phase-name -> task_type map: it globs/loads the actual .agent/workflows/*.yml
-// definition(s) off disk (the same loadWorkflow/yaml2json transcoding path
-// cmdRun uses) and hands the loaded []asset.Workflow to
+// definition(s) off disk (the same loadWorkflow parsing path cmdRun uses) and
+// hands the loaded []asset.Workflow to
 // attribution.PhaseTaskTypes for the pure phase->task_type resolution — the
 // FILE I/O stays here (cmd/forge owns loadWorkflow), the map-building logic
 // is pure and lives in internal/attribution.

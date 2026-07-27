@@ -27,7 +27,8 @@
 ## 交接 / 停止 (handoff / stop)
 - confidence < 80% → **停**,输出缺失信息,等用户/researcher 补全
 - confidence ≥ 80% → 交 `architect`(设计)与 `cto`(选型);PRD 是其唯一权威输入
-- PRD 是 ★HUMAN APPROVAL★ 前的需求事实源,批准后才生成 `.agent/PROJECT.md`
+- PRD 是 ★HUMAN APPROVAL★ 前的需求事实源；批准当前只解锁下一 stage，
+  `.agent/PROJECT.md` 由 scaffold 或声明了产物的显式 producer 维护
 
 ## 机读裁决契约 (machine-readable verdict)
 你的输出**最后一行**必须且仅为 `CONFIDENCE: <N>`,**顶格、无任何包裹**(无引号 / 反引号 /

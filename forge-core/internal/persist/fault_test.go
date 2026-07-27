@@ -9,10 +9,13 @@ package persist
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"forgeos/forge-core/internal/statefs"
 )
 
 // TestSave_CorruptedLastLine verifies that a checkpoint with a trailing
@@ -23,7 +26,8 @@ import (
 func TestSave_CorruptedLastLine(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "checkpoint.json")
 	// Write a valid checkpoint first.
-	cp := Checkpoint{Workflow: "evolve", Iteration: 1, RoadmapCompletion: 0.5}
+	cp := currentCheckpoint("evolve", 1)
+	cp.RoadmapCompletion = 0.5
 	if err := Save(path, cp, 0); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
@@ -123,19 +127,22 @@ func TestSave_RetainHistory(t *testing.T) {
 	path := filepath.Join(dir, "checkpoint.json")
 
 	// First save (retain=3): creates checkpoint.json, no rotation.
-	first := Checkpoint{Workflow: "evolve", Iteration: 1, Reason: "first"}
+	first := currentCheckpoint("evolve", 1)
+	first.Reason = "first"
 	if err := Save(path, first, 3); err != nil {
 		t.Fatalf("Save first: %v", err)
 	}
 
 	// Second save: rotates checkpoint.json → checkpoint.json.1, writes new.
-	second := Checkpoint{Workflow: "evolve", Iteration: 2, Reason: "second"}
+	second := currentCheckpoint("evolve", 2)
+	second.Reason = "second"
 	if err := Save(path, second, 3); err != nil {
 		t.Fatalf("Save second: %v", err)
 	}
 
 	// Third save: .0→.1, .1→.2, writes new.
-	third := Checkpoint{Workflow: "evolve", Iteration: 3, Reason: "third"}
+	third := currentCheckpoint("evolve", 3)
+	third.Reason = "third"
 	if err := Save(path, third, 3); err != nil {
 		t.Fatalf("Save third: %v", err)
 	}
@@ -152,6 +159,70 @@ func TestSave_RetainHistory(t *testing.T) {
 	}
 }
 
+func TestSave_RetainFinalCommitFailureKeepsOldCurrent(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "checkpoint.json")
+	first := currentCheckpoint("evolve", 1)
+	first.Reason = "first"
+	if err := Save(path, first, 2); err != nil {
+		t.Fatalf("Save first: %v", err)
+	}
+
+	second := currentCheckpoint("evolve", 2)
+	second.Reason = "second"
+	writeThenFail := func(target string, data []byte, perm os.FileMode) error {
+		if err := statefs.AtomicWrite(target, data, perm); err != nil {
+			return err
+		}
+		if target == path {
+			return errors.New("injected final commit failure")
+		}
+		return nil
+	}
+	err := saveWithWriter(path, second, 2, writeThenFail)
+	if err == nil || !strings.Contains(err.Error(), "injected final commit failure") {
+		t.Fatalf("saveWithWriter error = %v, want injected final commit failure", err)
+	}
+	loadCheckpointIteration(t, path, 1)
+	if _, statErr := os.Stat(path + ".1"); !os.IsNotExist(statErr) {
+		t.Fatalf("history changed after failed final commit: stat err=%v", statErr)
+	}
+
+	if err := Save(path, second, 2); err != nil {
+		t.Fatalf("retry Save: %v", err)
+	}
+	loadCheckpointIteration(t, path, 2)
+	loadCheckpointIteration(t, path+".1", 1)
+}
+
+func TestSave_RetainHistoryFailureKeepsOldCurrent(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "checkpoint.json")
+	for iteration := 1; iteration <= 2; iteration++ {
+		cp := currentCheckpoint("evolve", iteration)
+		cp.Reason = "seed"
+		if err := Save(path, cp, 2); err != nil {
+			t.Fatalf("seed Save %d: %v", iteration, err)
+		}
+	}
+
+	third := currentCheckpoint("evolve", 3)
+	third.Reason = "third"
+	failHistory := func(target string, data []byte, perm os.FileMode) error {
+		if target == path+".1" {
+			return errors.New("injected history commit failure")
+		}
+		return statefs.AtomicWrite(target, data, perm)
+	}
+	err := saveWithWriter(path, third, 2, failHistory)
+	if err == nil || !strings.Contains(err.Error(), "injected history commit failure") {
+		t.Fatalf("saveWithWriter error = %v, want injected history failure", err)
+	}
+	loadCheckpointIteration(t, path, 2)
+	loadCheckpointIteration(t, path+".1", 1)
+	if _, statErr := os.Stat(path + ".2"); !os.IsNotExist(statErr) {
+		t.Fatalf("history rollback left unexpected .2 file: stat err=%v", statErr)
+	}
+}
+
 // TestSave_RetainOverwrite verifies that a repeated Save with retain > 0
 // correctly evicts the oldest history entry when the rotation chain fills up.
 func TestSave_RetainEviction(t *testing.T) {
@@ -159,7 +230,8 @@ func TestSave_RetainEviction(t *testing.T) {
 	path := filepath.Join(dir, "checkpoint.json")
 
 	for i := 1; i <= 5; i++ {
-		cp := Checkpoint{Workflow: "evolve", Iteration: i, Reason: "iteration"}
+		cp := currentCheckpoint("evolve", i)
+		cp.Reason = "iteration"
 		if err := Save(path, cp, 3); err != nil {
 			t.Fatalf("Save %d: %v", i, err)
 		}
@@ -188,7 +260,8 @@ func TestSave_RetainEviction(t *testing.T) {
 func TestSave_RetainFirstSave(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "fresh", "checkpoint.json") // nested dir to test mkdirAll too
 
-	cp := Checkpoint{Workflow: "evolve", Iteration: 1, Reason: "fresh"}
+	cp := currentCheckpoint("evolve", 1)
+	cp.Reason = "fresh"
 	if err := Save(path, cp, 5); err != nil {
 		t.Fatalf("first Save with retain=5 on clean directory: %v", err)
 	}
@@ -201,12 +274,34 @@ func TestSave_RetainFirstSave(t *testing.T) {
 	}
 }
 
+func TestSave_RetainMissingCurrentPreservesExistingHistory(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "checkpoint.json")
+	history := currentCheckpoint("evolve", 7)
+	data, err := encode(history)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := statefs.AtomicWrite(path+".1", data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	current := currentCheckpoint("evolve", 8)
+	if err := Save(path, current, 2); err != nil {
+		t.Fatal(err)
+	}
+	loadCheckpointIteration(t, path, 8)
+	loadCheckpointIteration(t, path+".1", 7)
+	if _, err := os.Stat(path + ".2"); !os.IsNotExist(err) {
+		t.Fatalf("missing current spuriously aged history: %v", err)
+	}
+}
+
 // TestEncode_FormatVersionIsSetOnSave verifies that every Save sets the
 // FormatVersion field, so new checkpoints carry the version marker even when
 // the caller passes a zero-value Checkpoint.
 func TestEncode_FormatVersionIsSetOnSave(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "checkpoint.json")
-	cp := Checkpoint{Workflow: "evolve", Iteration: 1}
+	cp := currentCheckpoint("evolve", 1)
+	cp.FormatVersion = ""
 	if err := Save(path, cp, 0); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
@@ -214,14 +309,14 @@ func TestEncode_FormatVersionIsSetOnSave(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if got.FormatVersion != "forgeos.checkpoint.v1" {
-		t.Errorf("FormatVersion = %q, want \"forgeos.checkpoint.v1\"", got.FormatVersion)
+	if got.FormatVersion != CheckpointFormatCurrent {
+		t.Errorf("FormatVersion = %q, want %q", got.FormatVersion, CheckpointFormatCurrent)
 	}
 }
 
 // TestDecode_OldFormatWithoutVersionStillLoads verifies that a checkpoint file
 // written before FormatVersion was introduced decodes cleanly, with the
-// default version set to "forgeos.checkpoint.v1".
+// legacy marker left empty so callers can distinguish diagnostic-only state.
 func TestDecode_OldFormatWithoutVersionStillLoads(t *testing.T) {
 	// A minimal checkpoint without _format field, as an old forge version wrote.
 	old := []byte(`{
@@ -269,7 +364,8 @@ func TestSave_TempFileCleanup(t *testing.T) {
 		t.Fatalf("write stale tmp: %v", err)
 	}
 
-	cp := Checkpoint{Workflow: "evolve", Iteration: 1, Reason: "clean"}
+	cp := currentCheckpoint("evolve", 1)
+	cp.Reason = "clean"
 	if err := Save(path, cp, 0); err != nil {
 		t.Fatalf("Save after stale tmp: %v", err)
 	}

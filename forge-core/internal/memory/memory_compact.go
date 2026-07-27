@@ -8,42 +8,34 @@
 package memory
 
 import (
+	"bytes"
 	"fmt"
-	"os"
 	"sort"
 	"strings"
 	"time"
+
+	"forgeos/forge-core/internal/statefs"
 )
 
 // rewriteStore atomically replaces the memory store with a new set of entries.
 // It writes to a temp file and renames over the target, so a crash never leaves
 // a truncated file. Shared by Prune (memory.go) and Compact.
 func rewriteStore(path string, entries []Entry) error {
-	tmp := path + ".tmp"
-	f, err := os.Create(tmp)
-	if err != nil {
-		return fmt.Errorf("memory: create temp: %w", err)
+	if err := statefs.RemoveRegular(path + ".tmp"); err != nil {
+		return fmt.Errorf("memory: reject legacy temp: %w", err)
 	}
+	var data bytes.Buffer
 	for _, e := range entries {
 		line, err := encode(e)
 		if err != nil {
-			f.Close()
-			os.Remove(tmp)
 			return fmt.Errorf("memory: encode entry: %w", err)
 		}
-		if _, err := f.Write(line); err != nil {
-			f.Close()
-			os.Remove(tmp)
+		if _, err := data.Write(line); err != nil {
 			return fmt.Errorf("memory: write entry: %w", err)
 		}
 	}
-	if err := f.Close(); err != nil {
-		os.Remove(tmp)
-		return fmt.Errorf("memory: close temp: %w", err)
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		os.Remove(tmp)
-		return fmt.Errorf("memory: rename: %w", err)
+	if err := statefs.AtomicWrite(path, data.Bytes(), 0o600); err != nil {
+		return fmt.Errorf("memory: rewrite store: %w", err)
 	}
 	return nil
 }

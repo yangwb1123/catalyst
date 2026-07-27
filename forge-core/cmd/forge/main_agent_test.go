@@ -187,6 +187,60 @@ func TestAgentExecutor_MaxBudgetForClaude(t *testing.T) {
 	}
 }
 
+func TestAgentExecutor_ClaudePromptAndEnvironmentSecurity(t *testing.T) {
+	ex := agentExecutor(
+		runOpts{executor: "command", agentCmd: "claude", agentEnv: "CUSTOM_AGENT_TOKEN,AWS_ACCESS_KEY_ID", root: t.TempDir()},
+		func(string) {}, nil, unbudgetedTier(""), nil, nil, nil, nil, nil, nil, nil, nil, nil,
+	)
+	ce := ex.(orchestrator.CommandExecutor)
+	if !ce.PromptViaStdin {
+		t.Fatal("claude prompt must move from argv to stdin before process creation")
+	}
+	if ce.RestrictedEnv {
+		t.Fatal("ordinary Claude phase must retain the ordinary minimal environment policy")
+	}
+	got := make(map[string]bool, len(ce.EnvAllow))
+	for _, name := range ce.EnvAllow {
+		got[name] = true
+	}
+	for _, want := range []string{"ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN", "CUSTOM_AGENT_TOKEN", "AWS_ACCESS_KEY_ID"} {
+		if !got[want] {
+			t.Errorf("explicit/agent-required environment lacks %s: %v", want, ce.EnvAllow)
+		}
+	}
+	if got["GITHUB_TOKEN"] || got["SSH_AUTH_SOCK"] {
+		t.Errorf("unrequested credentials must not be granted: %v", ce.EnvAllow)
+	}
+}
+
+func TestAgentExecutor_RestrictedEnvironmentForProposalAndRelease(t *testing.T) {
+	cases := []runOpts{
+		{executor: "command", agentCmd: "claude", agentEnv: "CUSTOM_AGENT_TOKEN", evolveProposalOnly: true},
+		{executor: "command", agentCmd: "claude", agentEnv: "CUSTOM_AGENT_TOKEN", workflowStage: "deploy"},
+		{executor: "command", agentCmd: "claude", agentEnv: "CUSTOM_AGENT_TOKEN", workflowStage: "rollback"},
+	}
+	for _, opts := range cases {
+		opts.root = t.TempDir()
+		ex := agentExecutor(
+			opts, func(string) {}, nil, unbudgetedTier(""), nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		)
+		command := ex.(orchestrator.CommandExecutor)
+		if !command.RestrictedEnv {
+			t.Fatalf("restricted opts %+v retained ordinary environment", opts)
+		}
+		got := make(map[string]bool, len(command.EnvAllow))
+		for _, name := range command.EnvAllow {
+			got[name] = true
+		}
+		if got["CLAUDE_CONFIG_DIR"] || got["CUSTOM_AGENT_TOKEN"] {
+			t.Fatalf("restricted environment grants = %v", command.EnvAllow)
+		}
+		if !got["ANTHROPIC_API_KEY"] || !got["CLAUDE_CODE_OAUTH_TOKEN"] {
+			t.Fatalf("restricted environment lost direct authentication: %v", command.EnvAllow)
+		}
+	}
+}
+
 // End to end: load the REAL build.yml via the yaml2json shim + asset loader and
 // assert the typed criteria evaluate per-criterion as expected. build.yml's
 // all_of items are objects ({metric, operator, threshold/value}), so this proves
@@ -248,7 +302,8 @@ func TestMaxRetriesFlagParses(t *testing.T) {
 		t.Errorf("evolve --max-retries 2 should run to a clean stop; exit=%d", code)
 	}
 	// Valid value on run: a single agent phase, dry executor, exits 0.
-	runRoot := fakeRepo(t, "build", externalAgentWorkflow)
+	buildWorkflow := strings.Replace(externalAgentWorkflow, `"stage": "evolve"`, `"stage": "build"`, 1)
+	runRoot := fakeRepo(t, "build", buildWorkflow)
 	if code := cmdRun([]string{"build", "--root", runRoot, "--max-retries", "3"}); code != 0 {
 		t.Errorf("run --max-retries 3 should complete cleanly; exit=%d", code)
 	}

@@ -15,7 +15,8 @@
 id: modes
 version: 1
 selector:
-  # 项目在 DESIGN 批准时落定 mode×lifecycle,写入 project.yml / chosen at design-approval into project.yml.
+  # mode×lifecycle 由 .agent/project.yml/CLI 作为运行输入；DESIGN approval 不写配置。
+  # Selected from .agent/project.yml/CLI; design approval does not materialize it.
   keys: [mode, lifecycle]
   defaults: { mode: balanced, lifecycle: mvp }
 
@@ -54,6 +55,7 @@ modes:
       reviewer:  false                   # 不强制独立评审 / reviewer optional
       review:    skip                    # 跳过深度评审 / skip deep review
       evolve:    opportunistic           # 仅扫明显机会 / propose-only scans
+      evolve_authority: propose-only     # proposal artifacts only; no Agent-authored product mutation
 
   # ─────────────────────────────────────────────────────────────────────────
   # balanced — 默认:速度/质量折中 / default: pragmatic middle
@@ -74,6 +76,7 @@ modes:
       reviewer:  true                    # 走独立 Reviewer / fresh-context reviewer on
       review:    standard                # 安全 + 分布式 / security + distributed
       evolve:    standard
+      evolve_authority: auto-act
   # ─────────────────────────────────────────────────────────────────────────
   engineering:
     summary: 全部闸门 + 完整脊柱,面向长期可维护系统 / all gates + full spine.
@@ -93,6 +96,7 @@ modes:
       reviewer:  true                    # 强制独立评审 / mandatory fresh-context review
       review:    full                    # 全四维度评审 / all four review dimensions
       evolve:    thorough                # 全维扫描 + 自动派生任务 / full scan, auto-derive
+      evolve_authority: auto-act
 
   # ─────────────────────────────────────────────────────────────────────────
   # cto — 只出 PRD/Arch,人确认 / advisory: produce PRD/Arch, human decides
@@ -113,6 +117,7 @@ modes:
       review:    full                    # 全评审(输出作为文档交付)/ full review as doc deliverable
       build:     halt                    # ★ 在 Human Approval 后停,不进 Build / halts after approval
       evolve:    advisory                # 仅 gap 报告 + roadmap 提案 / report + propose only
+      evolve_authority: propose-only
 
 # ═══════════════════════════════════════════════════════════════════════════
 # LIFECYCLE — 成熟度修饰符 / maturity modifiers (叠加在 mode 之上 / layered onto mode)

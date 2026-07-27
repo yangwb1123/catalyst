@@ -1,16 +1,15 @@
 // gates.go — the honest bridge from a workflow's REQUIRED gate names to their
 // real per-gate verdicts. This is the fix for the FAKE PASS (FC-01): instead of
 // collapsing lint/build/security onto one coarse aggregate result, each gate
-// resolves to its OWN tri-state (PASS/FAIL/NA) using a single acceptance probe
-// per run, and "gates green" means every required gate was actually CHECKED and
-// PASSED — never merely "nothing failed".
+// resolves to its OWN tri-state (PASS/FAIL/NA) using a shared fresh acceptance
+// snapshot, and "gates green" means every required gate was actually CHECKED
+// and PASSED — never merely "nothing failed".
 //
 // The N/A exemption matrix and per-gate resolution (GatesGreen/ResolveGate/…)
 // live in internal/gate (resolve.go) — pure business logic, not CLI glue, so
 // it belongs in the package that already owns gate.Result/ProbeAll rather than
 // in cmd/forge (see internal/attribution for the same precedent). The
-// `forge approve list` CLI lives in approve.go, split out to keep this file
-// under the volume budget; this file keeps the higher-level orchestration:
+// approve-list CLI lives in approve.go; this file keeps higher-level orchestration:
 // gatherSignals (the Signals{} builder every stop condition is judged
 // against), the per-iteration probe cache, and the honesty-enrichment
 // computers (CodeTestRatio, FileDelta).
@@ -29,21 +28,8 @@ import (
 	"forgeos/forge-core/internal/asset"
 	"forgeos/forge-core/internal/converge"
 	"forgeos/forge-core/internal/gate"
+	"forgeos/forge-core/internal/statefs"
 )
-
-// probeStatuses runs gate.ProbeAll once, returning the criterion->status map and
-// the parallel criterion->category map (the lifecycle-aware N/A classification).
-// On a probe error (e.g. node missing) it returns (nil, nil); downstream resolution
-// treats an absent criterion as NA with an empty (non-exemptible) category, so a
-// broken probe can never be mistaken for a green convergence.
-func probeStatuses(root string) (statuses, categories map[string]string) {
-	statuses, categories, err := gate.ProbeAll(root)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "forge run: acceptance probe unavailable (%v); gates degrade to N/A\n", err)
-		return nil, nil
-	}
-	return statuses, categories
-}
 
 // gatherSignals measures the live convergence inputs: the fraction of ROADMAP
 // checklist items done, and whether EVERY required gate of the workflow's gate
@@ -51,18 +37,23 @@ func probeStatuses(root string) (statuses, categories map[string]string) {
 // gate is FAIL and none is N/A — "green" means every required gate was CHECKED
 // and PASSED, never merely "nothing failed".
 //
-// The same acceptance probe map (criterion -> PASS/FAIL/NA) is also handed to
+// The same fresh acceptance map (criterion -> PASS/FAIL/NA) is also handed to
 // Signals.Criteria, so a workflow can converge on an INDIVIDUAL acceptance
-// criterion (e.g. test_pass) and not only the coarse GatesGreen aggregate — REUSING
-// the once-per-run probe the gate phases already ran (never spawned twice). A nil
+// criterion (e.g. test_pass) and not only the coarse GatesGreen aggregate. A nil
 // probe (broken/absent) leaves Criteria nil, and every per-criterion check degrades
 // to unmet (absence of a verdict is never satisfaction).
 //
 // verdicts (nil-safe) is the run's *verdictLedger — the same one Engine.AgentVerdict
 // reads back — consulted here via reviewStatus() to populate Signals.ReviewStatus.
-func gatherSignals(root string, wf asset.Workflow, probe, categories map[string]string, lifecycle string, approved bool, verdicts *verdictLedger) converge.Signals {
+// gateSet optionally supplies the exact mode-filtered gates the engine executed;
+// callers without an execution ledger retain the workflow-declared fallback.
+func gatherSignals(root string, wf asset.Workflow, probe, categories map[string]string, lifecycle string, approved bool, verdicts *verdictLedger, gateSet ...[]string) converge.Signals {
 	md, _ := os.ReadFile(filepath.Join(root, ".agent", "ROADMAP.md"))
-	green, proof := gate.GatesGreen(root, requiredGates(wf), probe, categories, lifecycle)
+	names := requiredGates(wf)
+	if len(gateSet) > 0 {
+		names = gateSet[0]
+	}
+	green, proof := gate.GatesGreen(root, names, probe, categories, lifecycle)
 	sig := converge.Signals{
 		RoadmapCompletion:     converge.RoadmapCompletion(string(md)),
 		GatesGreen:            green,
@@ -179,20 +170,22 @@ func approvalPath(root, stage string) string {
 // persist a pending wait. fail-closed: with neither source the result is false,
 // so an unapproved human_gate never auto-converges.
 func humanApproved(root, stage string, flag bool) bool {
+	if releaseApprovalStage(stage) {
+		return validReleaseApproval(root, stage)
+	}
 	if flag {
 		return true
 	}
-	_, err := os.Stat(approvalPath(root, stage))
-	return err == nil
+	present, err := markerExists(approvalPath(root, stage))
+	return err == nil && present
 }
 
 // rejectionPath is the on-disk human-REJECTION marker for a stage: its mere
 // EXISTENCE under <root>/.forge/<stage>.rejected is the rejection SIGNAL,
 // mirroring approvalPath exactly (same git-ignored .forge runtime dir; a
 // rejection is a deliberate local act, never committed). Unlike approval there
-// is no --rejected flag: a human filing a rejection is a one-shot local
-// decision, and the marker file alone captures that, the same reasoning as
-// approval's marker source.
+// is no --rejected flag: the marker is the durable local decision, retained
+// across failed rework and consumed after successful rework.
 func rejectionPath(root, stage string) string {
 	return filepath.Join(forgeDir(root), stage+".rejected")
 }
@@ -219,48 +212,55 @@ func rejectionPhaseIndex(wf asset.Workflow, name string) (int, bool) {
 // human_gate workflows outright). This is invoked ONCE, BEFORE runWorkflow, and
 // resolves where THIS run should start:
 //
-//   - not a human_gate stop -> phase 0 (scoped to human_gate stops only: a
-//     stray rejection marker for a conjunction/external workflow is inert).
 //   - no on_rejected, or its action isn't "loop_back" -> phase 0 (nothing to
 //     act on; a marker, if any, is left alone since it was never consumed).
 //   - marker absent -> phase 0 (no rejection was filed; back-compat default).
 //   - marker present, on_rejected actionable, target_phase resolves -> that
-//     phase's index, AND the marker is deleted (ONE-SHOT: a human's rejection
-//     is consumed the moment it is acted on, so the NEXT `forge run` does not
-//     loop back again unless a NEW rejection is filed).
+//     phase's index and rejected=true. The marker remains durable until the
+//     caller confirms the resulting workflow completed successfully.
 //   - marker present but target_phase does not resolve to a real phase ->
 //     phase 0, marker left in place (nothing was acted on, so nothing is
 //     consumed — an operator can fix the workflow's target_phase and re-run).
 //
-// This is purely additive: any workflow that never declares on_rejected, or
-// never has a rejection marker filed, resolves to 0 — byte-for-byte the prior
-// "always start at phase 0" behavior.
-func resolveRejectionStartPhase(wf asset.Workflow, root string, logln func(string)) int {
-	if !converge.IsHumanGate(wf.Stop) {
-		return 0
-	}
+// Workflows without an actionable marker keep the phase-0 default.
+func resolveRejectionStartPhase(wf asset.Workflow, root string, logln func(string)) (int, bool, error) {
 	if wf.Stop.OnRejected == nil || wf.Stop.OnRejected.Action != "loop_back" {
-		return 0
+		return 0, false, nil
 	}
 	rp := rejectionPath(root, wf.Stage)
-	if _, err := os.Stat(rp); err != nil {
-		return 0 // no rejection filed: default start (phase 0), byte-for-byte.
+	present, err := markerExists(rp)
+	if err != nil {
+		return 0, false, fmt.Errorf("inspect rejection marker %s: %w", rp, err)
+	}
+	if !present {
+		return 0, false, nil
 	}
 	idx, ok := rejectionPhaseIndex(wf, wf.Stop.OnRejected.TargetPhase)
 	if !ok {
 		if logln != nil {
-			logln(fmt.Sprintf("forge run: human_gate REJECTED marker found but on_rejected.target_phase %q not found — starting at phase 0 (marker left in place)", wf.Stop.OnRejected.TargetPhase))
+			logln(fmt.Sprintf("forge run: REJECTED marker found but on_rejected.target_phase %q not found — starting at phase 0 (marker left in place)", wf.Stop.OnRejected.TargetPhase))
 		}
-		return 0
-	}
-	if err := os.Remove(rp); err != nil && logln != nil {
-		logln(fmt.Sprintf("forge run: warning — could not consume rejection marker %s: %v", rp, err))
+		return 0, false, nil
 	}
 	if logln != nil {
-		logln(fmt.Sprintf("forge run: human_gate REJECTED (marker consumed) — resuming at phase %d (%s) per on_rejected.target_phase",
+		logln(fmt.Sprintf("forge run: REJECTED (marker retained until successful rework) — resuming at phase %d (%s) per on_rejected.target_phase",
 			idx, wf.Stop.OnRejected.TargetPhase))
 	}
-	return idx
+	return idx, true, nil
+}
+
+func consumeRejectionAfterSuccess(wf asset.Workflow, root string, rejected bool, logln func(string)) error {
+	if !rejected {
+		return nil
+	}
+	path := rejectionPath(root, wf.Stage)
+	if err := statefs.RemoveRegular(path); err != nil {
+		return fmt.Errorf("consume rejection marker %s after successful rework: %w", path, err)
+	}
+	if logln != nil {
+		logln(fmt.Sprintf("forge run: REJECTED marker consumed after successful %s rework", wf.Stage))
+	}
+	return nil
 }
 
 // requiredGates collects the de-duplicated set of gate names across the

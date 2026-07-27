@@ -219,4 +219,3 @@ func TestDecode_BlockScalar_SequenceItemInlineMapping(t *testing.T) {
 		t.Errorf("items[0].after = %v, want \"done\" (sibling key must survive, not be swallowed into the block)", item["after"])
 	}
 }
-

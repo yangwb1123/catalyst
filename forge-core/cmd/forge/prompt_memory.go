@@ -33,6 +33,7 @@ import (
 
 	"forgeos/forge-core/internal/memory"
 	"forgeos/forge-core/internal/prompt"
+	"forgeos/forge-core/internal/tasklist"
 )
 
 // memoryCap is the most cross-session memory entries memoryContext will inject into
@@ -222,11 +223,12 @@ type phaseOutputLedger struct {
 	mu      sync.Mutex        // guards summary+order under parallel execution
 	summary map[string]string // phase name -> latest (truncated) output summary
 	order   []string          // phase names in first-seen order (stable rendering)
+	plans   map[string]tasklist.Plan
 }
 
 // newPhaseOutputLedger returns an empty ledger ready to record phase outputs.
 func newPhaseOutputLedger() *phaseOutputLedger {
-	return &phaseOutputLedger{summary: map[string]string{}}
+	return &phaseOutputLedger{summary: map[string]string{}, plans: map[string]tasklist.Plan{}}
 }
 
 // record stores one phase's latest output, TRUNCATED to phaseOutputSummaryCap (with a
@@ -244,7 +246,31 @@ func (l *phaseOutputLedger) record(phase, output string) {
 	if _, seen := l.summary[phase]; !seen {
 		l.order = append(l.order, phase)
 	}
+	if strings.Contains(output, "TASK_LIST:") {
+		if plan, err := tasklist.Parse(output); err == nil {
+			l.plans[phase] = plan
+			output = tasklist.Render(plan)
+		}
+	}
 	l.summary[phase] = truncateSummary(output)
+}
+
+// recommendedTaskModel returns the first dependency-ready planner task's model
+// hint. The parser stores plans in stable topological order, so index zero is
+// always executable without an unmet task dependency. Empty/unparsed plans have
+// no hint and leave routing unchanged.
+func (l *phaseOutputLedger) recommendedTaskModel() string {
+	if l == nil {
+		return ""
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	for _, phase := range l.order {
+		if plan, ok := l.plans[phase]; ok && len(plan.Tasks) > 0 {
+			return plan.Tasks[0].Model
+		}
+	}
+	return ""
 }
 
 // context renders the recorded phase outputs as a prompt context block, or "" when the
@@ -312,6 +338,20 @@ func (l *verdictLedger) record(phase, verdict string) {
 	l.verdict[phase] = verdict
 }
 
+// clear starts a new execution attempt for phase. Observe sees provider output
+// even when a command later fails its exit/output contract (cost telemetry still
+// needs those bytes), so Build clears any verdict from the previous attempt
+// before the next spawn. A failed APPROVE can therefore never leak into a later
+// successful-but-malformed retry.
+func (l *verdictLedger) clear(phase string) {
+	if l == nil {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	delete(l.verdict, phase)
+}
+
 // get reads back a phase's recorded verdict for Engine.AgentVerdict: (token, true) when
 // one was recorded, ("", false) when none was — nil-safe, so an unwired ledger reports
 // "no verdict" and the orchestrator proceeds (fail-open), never loops or panics.
@@ -336,7 +376,8 @@ func (l *verdictLedger) wasReworked() bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	for _, v := range l.verdict {
-		if v == VerdictRequestChanges {
+		switch v {
+		case VerdictRequestChanges, VerdictRedesign, VerdictDelay, VerdictReject:
 			return true
 		}
 	}

@@ -6,10 +6,10 @@ import "fmt"
 // to the recursion guard (CommandExecutor.MaxDepth). The recursion guard bounds
 // DEPTH (nested spawns, a fork-bomb); this bounds the TOTAL number of agent-phase
 // EXECUTIONS in a single run. RunFrom calls it immediately BEFORE every
-// runAgentPhase, so each prospective spawn first charges the budget: it increments
-// the run-local counter (*calls) and, when MaxAgentCalls is a positive ceiling that
-// the count now exceeds, refuses with a fail-closed error so the phase is NEVER
-// spawned (the operator sees the final failure, not a silent overrun).
+// runAgentPhase, so each prospective spawn first checks the budget. An allowed
+// execution increments the run-local counter (*calls); when MaxAgentCalls is a
+// positive ceiling already reached by completed calls, the next execution is
+// refused without incrementing the counter, so the phase is NEVER spawned.
 //
 // Because RunFrom routes EVERY agent-phase execution through here — including the
 // re-runs a directed gate loop-back triggers (a loop-back jumps back to an agent
@@ -23,9 +23,9 @@ import "fmt"
 // never trips, so an existing run is byte-for-byte unchanged. Only a positive
 // ceiling enforces.
 //
-// EVOLVE SCOPE: *calls lives in RunFrom (reset per call) and LoopEngine invokes
-// RunFrom once per iteration, so under `forge evolve` this ceiling is PER-ITERATION —
-// total spend is bounded by max-iter × MaxAgentCalls, not by MaxAgentCalls alone.
+// EVOLVE SCOPE: without ChargeAgentCall, *calls is RunFrom-local, preserving
+// standalone evolve's per-iteration ceiling. A chain injects ChargeAgentCall so
+// all stages and loop iterations consume one invocation-wide ceiling instead.
 //
 // HONESTY (scope, mirroring the recursion guard's SCOPE note): the budget counts
 // agent-phase EXECUTIONS (each a real spawn under --executor=command), INCLUDING
@@ -37,14 +37,26 @@ import "fmt"
 // --executor=command's REAL firings; under a dry-run executor the counting logic is
 // fully exercised and verifiable but no real budget is spent.
 func (e Engine) checkAgentBudget(calls *int) error {
-	*calls++
-	if e.MaxAgentCalls > 0 && *calls > e.MaxAgentCalls {
-		e.logf("agent-call budget exhausted (%d > cap %d) — refusing another agent spawn (fail-closed)",
-			*calls, e.MaxAgentCalls)
-		return fmt.Errorf("agent-call budget exhausted: %d agent-phase executions exceeds the per-run cap of %d (--max-agent-calls)",
-			*calls, e.MaxAgentCalls)
+	if e.ChargeAgentCall != nil {
+		count, allowed := e.ChargeAgentCall(e.MaxAgentCalls)
+		*calls = count
+		if !allowed {
+			return e.agentBudgetError(count + 1)
+		}
+	} else {
+		if e.MaxAgentCalls > 0 && *calls >= e.MaxAgentCalls {
+			return e.agentBudgetError(*calls + 1)
+		}
+		*calls++
 	}
 	return nil
+}
+
+func (e Engine) agentBudgetError(attempted int) error {
+	e.logf("agent-call budget exhausted (attempted execution %d, completed %d, cap %d) — refusing another agent spawn (fail-closed)",
+		attempted, attempted-1, e.MaxAgentCalls)
+	return fmt.Errorf("agent-call budget exhausted: refusing agent-phase execution %d after %d completed at the configured cap of %d (--max-agent-calls)",
+		attempted, attempted-1, e.MaxAgentCalls)
 }
 
 // checkRunBudget is the RUN-LEVEL budget guard — the cumulative-resource sibling of

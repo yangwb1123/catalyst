@@ -96,7 +96,10 @@ func TestRun_CheckpointHistory(t *testing.T) {
 	root := t.TempDir()
 	dotForge := mustMkdotForge(t, root)
 	cpPath := filepath.Join(dotForge, "checkpoint.json")
-	cp := persist.Checkpoint{Workflow: "build", Mode: "balanced", Iteration: 1}
+	cp := persist.Checkpoint{
+		FormatVersion: "forgeos.checkpoint.v1",
+		Workflow:      "build", Mode: "balanced", Iteration: 1,
+	}
 	if err := persist.Save(cpPath, cp, 3); err != nil {
 		t.Fatalf("seed checkpoint #1: %v", err)
 	}

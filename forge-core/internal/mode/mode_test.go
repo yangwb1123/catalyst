@@ -1,6 +1,7 @@
 package mode
 
 import (
+	"reflect"
 	"sort"
 	"strings"
 	"testing"
@@ -119,6 +120,39 @@ func TestEffective_ProductionOverridesLooseMode(t *testing.T) {
 	}
 }
 
+func TestEffective_CTOAlwaysHaltsBeforeBuild(t *testing.T) {
+	for _, lifecycle := range []string{"idea", "mvp", "growth", "production", "", "bogus-lifecycle"} {
+		if p := Effective("cto", lifecycle); !p.BuildHalted() {
+			t.Errorf("Effective(cto, %q) must preserve workflow_depth.build=halt", lifecycle)
+		}
+	}
+	for _, modeName := range []string{"explorer", "balanced", "engineering"} {
+		if p := Effective(modeName, "mvp"); p.BuildHalted() {
+			t.Errorf("Effective(%q, mvp) unexpectedly halts Build", modeName)
+		}
+	}
+	if (Policy{}).BuildHalted() {
+		t.Error("zero-value Policy must preserve backward-compatible Build behavior")
+	}
+}
+
+// Unknown lifecycle input arrives from either --lifecycle or project.yml and is
+// intentionally accepted by the CLI so policy resolution can fail closed. Its
+// result must equal application of the strictest lifecycle FLOOR, not replacement
+// by a generic policy: replacement would downgrade engineering thorough→standard
+// and erase cto's independent build=halt boundary.
+func TestEffective_UnknownLifecyclePreservesStrictModeBaseline(t *testing.T) {
+	for _, modeName := range []string{"explorer", "balanced", "engineering", "cto"} {
+		want := Effective(modeName, "production")
+		for _, lifecycle := range []string{"", "bogus-lifecycle"} {
+			if got := Effective(modeName, lifecycle); !reflect.DeepEqual(got, want) {
+				t.Errorf("Effective(%q, %q) = %+v, want strict floor %+v",
+					modeName, lifecycle, got, want)
+			}
+		}
+	}
+}
+
 // DiscoverSkipped is the orchestrator's switch for eliding the discover stage: it
 // is true ONLY for the explicit "skip" depth (explorer), and false for light/full
 // and the zero value — so a zero-value Policy (no gating) never skips the stage.
@@ -208,7 +242,9 @@ func TestEffective_ProductionRaisesDiscoverDesignADR(t *testing.T) {
 }
 
 // evolveCase pairs an EvolveDepth label with the default --max-iter it must map
-// to (the only concrete v1 behavior evolve-depth drives).
+// to. This table pins the iteration-budget half of the v1 machine contract; the
+// independent mutation-authority contract is covered separately below and by
+// orchestrator tests.
 type evolveCase struct {
 	depth   string
 	wantMax int
@@ -249,6 +285,34 @@ func TestEffective_EvolveMaxIterByMode(t *testing.T) {
 		if got := Effective(m, "idea").EvolveMaxIter(); got != want {
 			t.Errorf("Effective(%q,\"idea\").EvolveMaxIter() = %d, want %d", m, got, want)
 		}
+	}
+}
+
+func TestEffective_EvolveAuthorityIsIndependentAndNeverLifecycleWidened(t *testing.T) {
+	tests := []struct {
+		name, mode, lifecycle, want string
+	}{
+		{"explorer idea", "explorer", "idea", evolveAuthorityPropose},
+		{"explorer production", "explorer", "production", evolveAuthorityPropose},
+		{"explorer unknown lifecycle", "explorer", "typo", evolveAuthorityPropose},
+		{"cto production", "cto", "production", evolveAuthorityPropose},
+		{"balanced", "balanced", "mvp", evolveAuthorityMutate},
+		{"engineering", "engineering", "production", evolveAuthorityMutate},
+		{"unknown mode fails closed", "typo", "mvp", evolveAuthorityPropose},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := Effective(tc.mode, tc.lifecycle)
+			if got.EvolveAuthority != tc.want {
+				t.Errorf("authority = %q, want %q", got.EvolveAuthority, tc.want)
+			}
+			if got.EvolveProposalOnly() != (tc.want == evolveAuthorityPropose) {
+				t.Errorf("EvolveProposalOnly = %v for authority %q", got.EvolveProposalOnly(), got.EvolveAuthority)
+			}
+		})
+	}
+	if !(Policy{}).EvolveProposalOnly() {
+		t.Error("unknown/empty authority must fail closed at the method boundary")
 	}
 }
 

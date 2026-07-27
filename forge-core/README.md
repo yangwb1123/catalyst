@@ -17,10 +17,14 @@ internal/gate/         shell out to the real harness gates (gate.mjs / check.py 
 internal/routing/      (agent, mode) -> model tier, with a hard Opus safety floor
 internal/prompt/       assemble an agent-phase prompt: role card + project context (ADRs, constraints)
 internal/converge/     evaluate the stop condition against live signals (ROADMAP completion, gate state)
+internal/artifact/     append-only artifact provenance manifest + integrity verification
+internal/runlock/      process lock + run identity for shared .forge state
+internal/tasklist/     strict planner TASK_LIST machine contract
+internal/trace/        versioned/redacted JSONL observability
 internal/orchestrator/ the engine: walk phases, enforce gates, delegate agent phases
   orchestrator.go        one-pass engine: walk phases, run gates, delegate agent phases
   loop.go                LoopEngine: re-run to convergence, with max-iter + no-progress tripwire
-  command_executor.go    CommandExecutor: run a real per-phase command (e.g. `claude -p <prompt>`)
+  command_executor.go    CommandExecutor: run a real per-phase command (Claude prompt via stdin)
 ```
 
 The engine's contract is deliberately small and honest:
@@ -68,13 +72,21 @@ the current directory; override with `--root`):
 # drive a workflow end to end (default dry-run agents + real gates)
 go -C forge-core run ./cmd/forge -- run build --mode balanced --root "$PWD"
 
-# drive agent phases with a real agent CLI (role-card + context prompt -> `claude -p`)
+# drive agent phases with a real agent CLI (role-card + context prompt -> Claude stdin)
 go -C forge-core run ./cmd/forge -- run build --executor command --agent-cmd claude --root "$PWD"
 # inspect the plumbing without firing an agent
 go -C forge-core run ./cmd/forge -- run build --executor command --agent-cmd echo   --root "$PWD"
 
-# autonomous closed loop: re-run to convergence (max-iter is a safety bound, not the goal)
-go -C forge-core run ./cmd/forge -- evolve build --max-iter 5 --executor command --agent-cmd claude --root "$PWD"
+# autonomous Evolve loop (proposal-only modes require the same pinned bytes as release)
+go -C forge-core run ./cmd/forge -- evolve evolve --mode explorer --max-iter 5 \
+  --executor command --agent-cmd claude \
+  --release-agent-path /absolute/operator-trusted/path/claude \
+  --release-agent-sha256 <64-lowercase-hex> --root "$PWD"
+
+# declarative deploy package (Linux only; path and content are operator-pinned)
+go -C forge-core run ./cmd/forge -- run deploy --executor command --agent-cmd claude \
+  --release-agent-path /absolute/operator-trusted/path/claude \
+  --release-agent-sha256 <64-lowercase-hex> --root "$PWD"
 
 # delegate straight to one harness gate; exit code follows the gate
 go -C forge-core run ./cmd/forge -- gate   --root "$PWD"   # node harness/gate.mjs
@@ -91,19 +103,15 @@ These are real, intentional gaps — flagged here rather than hidden:
   <agent> (tier <tier>)`) and invokes no LLM. But a real `CommandExecutor` is
   shipped: `--executor command --agent-cmd claude` builds a per-phase prompt
   from the agent's role card plus project context (ADRs + the hard engineering
-  constraints) and runs `claude -p <prompt>` — actually driving the agent, not
-  narrating. `--agent-cmd echo` exercises the same plumbing without firing an
-  agent. The real remaining limitation is therefore operational, not
-  architectural: the agent CLI must be installed and have credentials/budget in
-  the environment. The `AgentExecutor` interface keeps both executors local and
-  swappable.
-- **YAML is transcoded by a python shim.** Go's standard library has no YAML
-  parser and forge-core takes zero external deps, so `forge run` shells out to
-  `python3 harness/yaml2json.py` to turn `.agent/workflows/<name>.yml` into the
-  JSON the runtime consumes. This is **temporary scaffolding**; it can later be
-  replaced by a Go YAML library (a dependency decision for architect/cto, not
-  taken here). If the shim is absent, `forge run` fails with a clear message.
-  The unit tests never touch it — they parse committed JSON fixtures.
+  constraints) and invokes Claude with `-p` while sending the prompt through
+  stdin, so repository context is absent from process argv and argv logs.
+  `--agent-cmd echo` exercises the same plumbing without firing an agent.
+  Child processes receive a minimal environment; Claude credential names are
+  allowed explicitly and extra variables require `--agent-env NAME`.
+- **YAML uses a native zero-dependency parser first.** `internal/yaml2json`
+  parses the shipped workflow subset in Go. `harness/yaml2json.py` remains a
+  compatibility fallback for unsupported input when Python is available; a
+  missing shim does not disable the native path.
 - **The stop condition is evaluated live against real signals.**
   `internal/converge` dispatches the **typed** `all_of` criteria
   (`{metric, operator, threshold|value}`) by metric: `roadmap_completion`
@@ -113,9 +121,37 @@ These are real, intentional gaps — flagged here rather than hidden:
   per-criterion MET/NOT-MET verdict once; `forge evolve` reports it every
   iteration. An unknown metric is treated as unmet (convergence is never faked).
   External-stop workflows (`type: external`) run to the `--max-iter` safety
-  bound as their expected clean stop. The remaining gap is breadth: only
-  `roadmap_completion` and `gates_status` are recognized today; richer metrics
-  (eval scorecards, coverage trends) are not yet wired.
+  bound as their expected clean stop. Recognized signals include roadmap and
+  gate state, requirement confidence, review status, and named acceptance
+  criteria; unknown metrics remain fail-closed.
+- **No remote deploy or sandbox runtime is claimed.** Deploy/rollback workflows
+  generate and validate `docs/release/**`; external CI/operators perform the
+  real action after human approval. Release phases reject `--agent-env`, custom
+  `--agent-allowed-tools`, non-`claude` executables, writable phase declarations,
+  and shell/network tools before command construction. Command-mode release is
+  Linux-only and requires an absolute repository-external entry path named
+  `claude` plus its operator-pinned SHA-256. The entry may resolve to a
+  repository-external canonical executable with a different basename; an
+  internal helper copies those frozen bytes into an anonymous executable
+  `memfd`, applies and verifies every mutation-preventing seal, then rechecks
+  the final digest and ELF magic before executing a read-only descriptor for
+  that same sealed inode. This pins bytes, not vendor identity or a package
+  signature; the digest needs an independent operator trust channel.
+  The child uses a compiled minimal prompt—not the normal role-card/ROADMAP/ADR/
+  memory context—and receives only exact `Edit(/<phase.emit>)` permissions under
+  `dontAsk`. A whole-tree postflight rejects undeclared release-file changes.
+  Validation requires a single successful Claude JSON envelope, an exact
+  matching report verdict, and an unchanged prompt-reviewed product state.
+  Its receipt and the later human marker bind agent/prompt, source-state and
+  the current stage's fixed release-artifact-set digest (Deploy: its five files;
+  Rollback: the release manifest plus four rollback files), so a later source
+  or bound-stage artifact change invalidates approval. Freshness is contextual
+  equality, not a wall-clock TTL. A requested non-`none` sandbox fails closed until an
+  out-of-band runner (for example Firecracker) is installed and wired.
+
+See [ADR 0005](../docs/adr/0005-declarative-production-delivery-boundary.md),
+the [release artifact contract](../docs/release/README.md), and the
+[ignition guide](../docs/ignition.md).
 
 ## Routing safety floor
 

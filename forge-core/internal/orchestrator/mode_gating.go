@@ -1,6 +1,7 @@
 package orchestrator
 
 import (
+	"fmt"
 	"strings"
 
 	"forgeos/forge-core/internal/asset"
@@ -146,8 +147,127 @@ func (e Engine) stageSkipped(wf asset.Workflow) (bool, string) {
 	return false, ""
 }
 
+// prepareSerialWorkflow validates structure, applies whole-stage gating and the
+// Evolve mutation boundary, then validates resume's executable start index.
+func (e Engine) prepareSerialWorkflow(wf asset.Workflow, start int) (asset.Workflow, bool, error) {
+	if err := asset.ValidateWorkflowStructure(wf); err != nil {
+		return wf, false, fmt.Errorf("serial orchestration: invalid workflow structure: %w", err)
+	}
+	if e.checkStageSkip(wf) {
+		return wf, true, nil
+	}
+	filtered, err := e.applyEvolveCutoff(wf)
+	if err != nil {
+		return wf, false, fmt.Errorf("serial orchestration: evolve policy: %w", err)
+	}
+	if start < 0 || start > len(filtered.Phases) {
+		return wf, false, fmt.Errorf("serial orchestration: start phase %d outside executable range [0,%d]", start, len(filtered.Phases))
+	}
+	return filtered, false, nil
+}
+
+func (e Engine) checkStageSkip(wf asset.Workflow) bool {
+	skipped, msg := e.stageSkipped(wf)
+	if skipped {
+		e.logf("%s", msg)
+		e.reportStop(wf)
+	}
+	return skipped
+}
+
+func (e Engine) warnIfVacuous(wf asset.Workflow, phasesRan, start int) {
+	if phasesRan == 0 && start < len(wf.Phases) {
+		e.logf("⚠ vacuous run: mode gating filtered all %d phase(s) — no work was performed", len(wf.Phases))
+	}
+}
+
+const (
+	evolveEffectObserve = "observe"
+	evolveEffectPropose = "propose"
+	evolveEffectMutate  = "mutate"
+	evolveEffectVerify  = "verify"
+)
+
+// EvolvePhaseLimit returns the number of phases the effective policy may
+// execute. Mutation authority is deliberately independent of EvolveDepth:
+// lifecycle quality floors may deepen the iteration budget, but never turn a
+// propose-only mode into an auto-acting one.
+//
+// A proposal-only workflow must declare exactly one effect=mutate phase. That
+// phase is the name-independent agent-write boundary; every non-mutate phase
+// must be readonly so a renamed/custom agent cannot smuggle an unrestricted
+// writer into the proposal prefix. Trusted host gates/probes remain separate.
+// Missing/ambiguous effects fail closed. A zero-value policy preserves the
+// historical unfiltered behavior.
+func EvolvePhaseLimit(wf asset.Workflow, policy mode.Policy) (int, error) {
+	if wf.Stage != "evolve" || !policyConfigured(policy) {
+		return len(wf.Phases), nil
+	}
+	boundary := -1
+	for i, phase := range wf.Phases {
+		switch phase.Effect {
+		case evolveEffectMutate:
+			if phase.Readonly {
+				return 0, fmt.Errorf("evolve phase %q declares effect=mutate but is readonly", phase.Name)
+			}
+			if boundary >= 0 {
+				return 0, fmt.Errorf("evolve workflow has multiple effect=mutate boundaries (%q and %q)",
+					wf.Phases[boundary].Name, phase.Name)
+			}
+			boundary = i
+		case evolveEffectObserve, evolveEffectPropose, evolveEffectVerify:
+			if !phase.Readonly {
+				return 0, fmt.Errorf("evolve phase %q effect=%s is an unrestricted writer before proposal-only policy can be enforced",
+					phase.Name, phase.Effect)
+			}
+		default:
+			return 0, fmt.Errorf("evolve phase %q has missing/unknown effect %q; want observe|propose|mutate|verify",
+				phase.Name, phase.Effect)
+		}
+	}
+	if boundary < 0 {
+		return 0, fmt.Errorf("evolve workflow has no explicit effect=mutate boundary")
+	}
+	if !policy.BuildHalted() && !policy.EvolveProposalOnly() {
+		return len(wf.Phases), nil
+	}
+	for _, phase := range wf.Phases[:boundary] {
+		if phase.WritesADR != nil {
+			return 0, fmt.Errorf("proposal-only evolve phase %q forbids directory-scoped writes_adr", phase.Name)
+		}
+		if len(phase.RequiredGates) > 0 {
+			return 0, fmt.Errorf("proposal-only evolve phase %q forbids host required_gates", phase.Name)
+		}
+	}
+	return boundary, nil
+}
+
+func policyConfigured(policy mode.Policy) bool {
+	return len(policy.Gates) > 0 || policy.Reviewer
+}
+
+// applyEvolveCutoff returns the executable prefix selected by
+// EvolvePhaseLimit, retaining logging at the point where the capability is
+// removed. The shallow copy leaves the caller's asset unchanged.
+func (e Engine) applyEvolveCutoff(wf asset.Workflow) (asset.Workflow, error) {
+	limit, err := EvolvePhaseLimit(wf, e.ModePolicy)
+	if err != nil {
+		return wf, err
+	}
+	if limit == len(wf.Phases) {
+		return wf, nil
+	}
+	reason := "evolve authority is proposal-only"
+	if e.ModePolicy.BuildHalted() {
+		reason = "build=halt forbids implementation"
+	}
+	e.logf("evolve stage cutoff before phase %s (mode gating: %s)", wf.Phases[limit].Name, reason)
+	wf.Phases = wf.Phases[:limit]
+	return wf, nil
+}
+
 // narrateADR reports the ADR gating verdict for a design-stage phase that declares
-// writes_adr (design.yml's solution-architect). It NARRATES only — when the mode
+// writes_adr (design.yml's solution-architect). This function narrates only — when the mode
 // policy requires an ADR (Policy.ADR, e.g. engineering/cto) it logs that an ADR is
 // required; otherwise (explorer/balanced) it logs that an ADR is not required and
 // will be skipped. It is a no-op unless gating is active, this is the design stage,
@@ -155,10 +275,9 @@ func (e Engine) stageSkipped(wf asset.Workflow) (bool, string) {
 // or for a phase with no ADR marker (back-compat: zero policy narrates nothing).
 //
 // HONESTY: under the dry-run executor this is the gating DECISION + narration —
-// whether an ADR is required, NOT a real ADR written (design.yml enables the ADR
-// target dir from v2; a real agent writes the document). The runtime does not
-// pretend an ADR was authored; it reports the required/not-required verdict the
-// mode policy dictates.
+// whether an ADR is required, NOT a real ADR written. Under command execution a
+// live agent must satisfy the separate post-run artifact contract; this layer
+// never pretends narration itself authored a document.
 func (e Engine) narrateADR(wf asset.Workflow, p asset.Phase) {
 	if !e.gatingActive() || wf.Stage != "design" || p.WritesADR == nil {
 		return

@@ -23,7 +23,8 @@ func TestStatus_WithCheckpoint(t *testing.T) {
 	root := t.TempDir()
 	dotForge := mustMkdotForge(t, root)
 	cp := persist.Checkpoint{
-		Workflow: "build", Mode: "engineering", Iteration: 7,
+		FormatVersion: "forgeos.checkpoint.v1",
+		Workflow:      "build", Mode: "engineering", Iteration: 7,
 		RoadmapCompletion: 0.42, GatesGreen: true,
 	}
 	if err := persist.Save(filepath.Join(dotForge, "checkpoint.json"), cp, 0); err != nil {
@@ -71,7 +72,7 @@ func TestCheckpointHistoryCount(t *testing.T) {
 		t.Fatalf("CheckpointHistoryCount = %d, want 0 with no checkpoint at all", n)
 	}
 	for i := 1; i <= 3; i++ {
-		cp := persist.Checkpoint{Iteration: i}
+		cp := persist.Checkpoint{FormatVersion: "forgeos.checkpoint.v1", Iteration: i}
 		if err := persist.Save(cpPath, cp, 5); err != nil {
 			t.Fatalf("seed checkpoint #%d: %v", i, err)
 		}
@@ -86,7 +87,10 @@ func TestCheckpointHistoryCount(t *testing.T) {
 func TestHistoryLines(t *testing.T) {
 	root := t.TempDir()
 	dotForge := mustMkdotForge(t, root)
-	cp := persist.Checkpoint{Mode: "balanced", Iteration: 1, RoadmapCompletion: 0.5}
+	cp := persist.Checkpoint{
+		FormatVersion: "forgeos.checkpoint.v1",
+		Mode:          "balanced", Iteration: 1, RoadmapCompletion: 0.5,
+	}
 	if err := persist.Save(filepath.Join(dotForge, "checkpoint.json"), cp, 0); err != nil {
 		t.Fatalf("seed checkpoint: %v", err)
 	}

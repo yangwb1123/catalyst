@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"forgeos/forge-core/internal/asset"
+	"forgeos/forge-core/internal/converge"
 )
 
 // This file isolates the per-run AGENT-CALL BUDGET (MaxAgentCalls / checkAgentBudget)
@@ -262,5 +263,28 @@ func TestCheckRunBudget_PureBoolDrivesEngine_NoDollars(t *testing.T) {
 	}
 	if !containsLine(rec.logs, "run budget exhausted after 0 agent phase(s)") {
 		t.Errorf("a pre-exhausted budget must stop at 0 completed phases; logs=%v", rec.logs)
+	}
+}
+
+func TestMaxAgentCallsStandaloneEvolveRemainsPerIteration(t *testing.T) {
+	wf := asset.Workflow{
+		Stage: "evolve",
+		Phases: []asset.Phase{
+			{Name: "scan", Agent: "explorer"},
+		},
+		Stop: asset.StopCondition{Type: "external"},
+	}
+	exec := &countingExec{}
+	loop := NewLoopEngine(
+		Engine{Exec: exec, MaxAgentCalls: 1},
+		wf.Stop, func() converge.Signals { return converge.Signals{} },
+		2, 3, nil,
+	)
+	out, err := loop.Run(wf, "balanced")
+	if err != nil || !out.Converged {
+		t.Fatalf("standalone evolve with one call/iteration: outcome=%+v err=%v", out, err)
+	}
+	if exec.calls != 2 {
+		t.Errorf("executor calls = %d, want 2 (local cap resets for each standalone evolve iteration)", exec.calls)
 	}
 }

@@ -119,6 +119,9 @@ phases:
     feeds_forward: true                 # 裁决 + 约束前传给 BUILD planner / verdict feeds BUILD planner
     emits:
       - docs/design/review-summary.md  # 综合裁决 + Top 10 风险 + Non-Goals / verdict + risks + non-goals — cto's write scope is docs/design/** (cto.md 硬边界), not docs/review/
+    on_fail:
+      action: loop_back
+      target_phase: security-review    # REDESIGN/DELAY/REJECT → 带反馈重跑评审 / retry with CTO feedback
 
 # ── 终止条件 / stop condition ──
 # 全维度评审通过后,解锁 BUILD。
@@ -135,6 +138,6 @@ stop_condition:
     target_phase: security-review      # 驳回 → 回到第一个评审相位 / reject → back to first review phase
     note: 附 CTO 裁决反馈 / with CTO verdict feedback
   on_approved:
-    emit:
-      - .ai/reviews/{subsystem}/       # 所有评审产出归档 / all review artifacts archived
+    # 审批只路由；所有评审文件已由上方各 phase 的 emits 精确声明并验证。
+    # Approval only routes; phase-level emits already own and validate the review files.
     next_stage: build                  # 解锁 BUILD 段 / unlocks build.yml

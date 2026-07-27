@@ -9,12 +9,11 @@
 // Each reference has two parts separated by '#': a FILE path (relative to the
 // referencing workflow) and a dot-separated FIELD path within that file's
 // root object. This package parses those references into a structured form
-// and resolves them by reading the target YAML (through the existing python
-// yaml2json shim) and walking the resulting JSON tree.
+// and resolves them by reading the target YAML through the native zero-dependency
+// yaml2json parser, with the Python converter retained only as a compatibility
+// fallback, then walking the resulting JSON tree.
 //
-// Zero external dependencies: file I/O uses the standard library; YAML→JSON
-// conversion reuses the existing <root>/harness/yaml2json.py shim (which is
-// already a runtime requirement of forge-core).
+// The normal path has zero external dependencies.
 package yamlpath
 
 import (
@@ -24,6 +23,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"forgeos/forge-core/internal/yaml2json"
 )
 
 // Ref is a parsed YAML path reference: a file path and a dot-separated field
@@ -98,34 +99,47 @@ func Resolve(repoRoot, ref string, baseDir string) (any, error) {
 func resolveRef(repoRoot string, r Ref, baseDir string) (any, error) {
 	// Resolve the YAML file path: relative to baseDir, then fallback to repoRoot.
 	absFile := filepath.Join(baseDir, r.File)
-	// Make absolute: if it still contains a parent-dir reference, resolve it
-	// relative to repoRoot.
 	if !filepath.IsAbs(absFile) {
 		absFile = filepath.Join(repoRoot, r.File)
 	}
 	absFile = filepath.Clean(absFile)
 
-	// Transcode YAML→JSON via the python shim.
-	shim := ShimPath(repoRoot)
-	if _, err := os.Stat(shim); err != nil {
-		return nil, fmt.Errorf("yamlpath: yaml2json shim not found at %s: %w", shim, err)
-	}
 	if _, err := os.Stat(absFile); err != nil {
 		return nil, fmt.Errorf("yamlpath: YAML file not found at %s: %w", absFile, err)
 	}
 
-	out, err := exec.Command("python3", shim, absFile).Output()
+	// Transcode YAML→JSON via the native Go parser (zero-dep, primary path).
+	f, err := os.Open(absFile)
 	if err != nil {
-		return nil, fmt.Errorf("yamlpath: transcode %s: %w", absFile, err)
+		return nil, fmt.Errorf("yamlpath: open %s: %w", absFile, err)
+	}
+	defer f.Close()
+	val, err := yaml2json.Decode(f)
+	if err == nil {
+		data, marshalErr := json.Marshal(val)
+		if marshalErr == nil {
+			var root any
+			if unmarshalErr := json.Unmarshal(data, &root); unmarshalErr == nil {
+				return walkPath(root, strings.Split(r.Path, "."))
+			}
+		}
 	}
 
-	// Decode the JSON into a generic tree.
+	// Fallback: try the Python yaml2json shim.
+	shim := ShimPath(repoRoot)
+	if _, statErr := os.Stat(shim); statErr != nil {
+		return nil, fmt.Errorf("yamlpath: go parser failed and python shim not found at %s: %v (go parse err: %v)", shim, statErr, err)
+	}
+	f.Close()
+	out, execErr := exec.Command("python3", shim, absFile).Output()
+	if execErr != nil {
+		return nil, fmt.Errorf("yamlpath: go parser failed (%v) and python shim also failed: %w", err, execErr)
+	}
+
 	var root any
-	if err := json.Unmarshal(out, &root); err != nil {
-		return nil, fmt.Errorf("yamlpath: decode JSON from %s: %w", absFile, err)
+	if decodeErr := json.Unmarshal(out, &root); decodeErr != nil {
+		return nil, fmt.Errorf("yamlpath: decode JSON from %s: %w (go parse err: %v)", absFile, decodeErr, err)
 	}
-
-	// Walk the dot-separated path.
 	return walkPath(root, strings.Split(r.Path, "."))
 }
 

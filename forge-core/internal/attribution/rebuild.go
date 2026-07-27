@@ -103,6 +103,9 @@ func ExtractRebuildPairs(traceFile string, phaseTaskTypes map[string]string) ([]
 		if err := json.Unmarshal(sc.Bytes(), &ev); err != nil {
 			continue
 		}
+		if trace.ValidateFormat(ev.Format) != nil {
+			continue
+		}
 		if ev.Model == "" || ev.CostUsdMicros == 0 {
 			continue
 		}

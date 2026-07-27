@@ -19,10 +19,13 @@ func TestPhaseCheckpointHook_WriteResumeRoundTrips(t *testing.T) {
 	mkdir(t, filepath.Join(root, ".forge"))
 	o := runOpts{root: root, mode: "balanced"}
 	wf := asset.Workflow{Stage: "evolve"}
+	digest := checkpointWorkflowDigest(wf)
 	// A prior COMPLETED-iteration checkpoint whose RoadmapCompletion the mid-iteration hook
 	// must PRESERVE (a phase checkpoint has no fresh measurement of its own).
 	if err := persist.Save(checkpointPath(root), persist.Checkpoint{
-		Workflow: "evolve", Mode: "balanced", Iteration: 2, RoadmapCompletion: 0.6,
+		Workflow: "evolve", WorkflowDigest: digest,
+		Mode: "balanced", Lifecycle: "mvp", Iteration: 2, RoadmapCompletion: 0.6,
+		Reason: "iteration complete", UpdatedAtUnix: 1_750_000_000,
 	}, 0); err != nil {
 		t.Fatalf("seed prior checkpoint: %v", err)
 	}
@@ -30,7 +33,6 @@ func TestPhaseCheckpointHook_WriteResumeRoundTrips(t *testing.T) {
 	budget.seed(500_000) // 0.5 USD already billed this run — the finer mid-iteration spend.
 	hook := phaseCheckpointHook(o, wf, budget, func(string) {})
 	hook(3, 2) // iteration 3 in progress; agent phase index 2 just completed.
-
 	cp, found, err := persist.Load(checkpointPath(root))
 	if err != nil || !found {
 		t.Fatalf("phase checkpoint: found=%v err=%v", found, err)
@@ -39,6 +41,11 @@ func TestPhaseCheckpointHook_WriteResumeRoundTrips(t *testing.T) {
 	if cp.Iteration != 2 || cp.PhaseIndex != 3 {
 		t.Errorf("phase checkpoint = {iter %d, phase %d}, want {2, 3} (iter-1 / phaseIdx+1)", cp.Iteration, cp.PhaseIndex)
 	}
+	if cp.Workflow != "evolve" || cp.WorkflowDigest != digest ||
+		cp.Mode != "balanced" || cp.Lifecycle != "mvp" {
+		t.Errorf("phase checkpoint binding = %q/%q/%q/%q, want evolve/<digest>/balanced/mvp",
+			cp.Workflow, cp.WorkflowDigest, cp.Mode, cp.Lifecycle)
+	}
 	if cp.RoadmapCompletion != 0.6 {
 		t.Errorf("must PRESERVE the last completed iteration's RoadmapCompletion 0.6; got %v", cp.RoadmapCompletion)
 	}
@@ -46,7 +53,10 @@ func TestPhaseCheckpointHook_WriteResumeRoundTrips(t *testing.T) {
 		t.Errorf("must record the FINER mid-iteration spend; got %d want 500000", cp.SpentUsdMicros)
 	}
 	// Read convention pairs EXACTLY: resume re-enters iteration 3 at phase 3.
-	start, prev, spent, phaseStart, _, err := resumeStart(root, true)
+	start, prev, spent, phaseStart, _, err := resumeStart(root, true, checkpointBinding{
+		Workflow: "evolve", WorkflowDigest: digest,
+		Mode: "balanced", Lifecycle: "mvp", PhaseLimit: 3,
+	})
 	if err != nil {
 		t.Fatalf("resumeStart: %v", err)
 	}

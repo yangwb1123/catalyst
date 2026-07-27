@@ -65,8 +65,16 @@ import (
 // cancellation so a cancelled run stops between waves and each active phase goroutine
 // checks ctx before spawning.
 func (e Engine) RunParallel(ctx context.Context, wf asset.Workflow, mode string) error {
+	if err := asset.ValidateWorkflowStructure(wf); err != nil {
+		return fmt.Errorf("parallel orchestration: invalid workflow structure: %w", err)
+	}
 	if e.checkStageSkip(wf) {
 		return nil
+	}
+	var err error
+	wf, err = e.applyEvolveCutoff(wf)
+	if err != nil {
+		return fmt.Errorf("parallel orchestration: evolve policy: %w", err)
 	}
 	waves, err := Waves(wf.Phases)
 	if err != nil {
@@ -139,11 +147,11 @@ func (e Engine) runWave(parentCtx context.Context, wf asset.Workflow, mode strin
 }
 
 // runPhaseParallel runs ONE phase under the parallel engine — the concurrency-safe,
-// loop-back-free analogue of RunFrom's loop body. A gate phase runs its gates (a red gate
-// returns an error -> RunParallel aborts; no loop-back). An agent phase charges BOTH run-
-// level budgets under the shared lock (the counter is shared) and then spawns OUTSIDE the
-// lock so phases overlap. A mode-skipped phase is a no-op. It never fires OnPhase (see the
-// file header: no per-phase checkpoint in parallel mode).
+// loop-back-free analogue of RunFrom's loop body. Required gates run first (a red gate
+// returns an error -> RunParallel aborts; no loop-back). `agent: harness` is gate-only;
+// every other gated agent continues through the same budgeted executor path as an ungated
+// agent. A mode-skipped phase is a no-op. It never fires OnPhase (see the file header: no
+// per-phase checkpoint in parallel mode).
 func (e Engine) runPhaseParallel(ctx context.Context, wf asset.Workflow, i int, mode string, mu *sync.Mutex, agentCalls *int) error {
 	p := wf.Phases[i]
 	// If the wave context was cancelled (another phase in this wave failed),
@@ -152,7 +160,12 @@ func (e Engine) runPhaseParallel(ctx context.Context, wf asset.Workflow, i int, 
 		return err
 	}
 	if len(p.RequiredGates) > 0 {
-		return e.runGates(p, e.gatesFor(p))
+		if err := e.runGates(p, e.gatesFor(p)); err != nil {
+			return err
+		}
+		if gateOnlyPhase(p) {
+			return nil
+		}
 	}
 	if e.skipByMode(p, wf.Stage) {
 		e.logf("phase %s skipped (mode gating: reviewer off)", p.Name)
@@ -160,10 +173,13 @@ func (e Engine) runPhaseParallel(ctx context.Context, wf asset.Workflow, i int, 
 	}
 	e.narrateADR(wf, p)
 	// Budget pre-flight under the shared lock (agentCalls is mutated by every goroutine);
-	// checkAgentBudget increments it, so completed = the count BEFORE this phase.
+	// checkAgentBudget increments it only for an allowed execution.
 	mu.Lock()
 	budgetErr := e.checkAgentBudget(agentCalls)
-	completed := *agentCalls - 1
+	completed := *agentCalls
+	if budgetErr == nil {
+		completed--
+	}
 	mu.Unlock()
 	if budgetErr != nil {
 		return budgetErr

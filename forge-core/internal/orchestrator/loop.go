@@ -153,6 +153,10 @@ type LoopOutcome struct {
 // phase. With no on_unmet (or an unresolvable target) startPhase stays 0 and the
 // loop replays the whole workflow each round, byte-for-byte as before.
 func (l LoopEngine) Run(wf asset.Workflow, mode string) (LoopOutcome, error) {
+	if l.MaxIter < 0 {
+		err := fmt.Errorf("max iterations must be non-negative (got %d)", l.MaxIter)
+		return LoopOutcome{0, false, err.Error()}, err
+	}
 	if len(wf.Phases) == 0 {
 		return LoopOutcome{0, false, "no phases to run (empty workflow — not converged)"}, nil
 	}
@@ -163,7 +167,7 @@ func (l LoopEngine) Run(wf asset.Workflow, mode string) (LoopOutcome, error) {
 		l.logf("parallel mode: per-phase resume not supported — iterating from phase 0")
 		startPhase = 0
 	}
-	for i := start; i <= l.MaxIter; i++ {
+	for i := start; i <= l.MaxIter; {
 		lo, err := l.runIteration(wf, mode, i, &startPhase, &prev, &stale, &prevGatesGreen)
 		if lo != nil {
 			return *lo, err
@@ -171,6 +175,13 @@ func (l LoopEngine) Run(wf asset.Workflow, mode string) (LoopOutcome, error) {
 		if err != nil {
 			return LoopOutcome{i, false, err.Error()}, err
 		}
+		// Do not increment the platform's maximum int. A resumed checkpoint may
+		// legitimately start at MaxInt with MaxIter=MaxInt; the loop must finish
+		// that final iteration and hit the bound, not wrap to a negative index.
+		if i == l.MaxIter {
+			break
+		}
+		i++
 	}
 	return l.boundOutcome(), nil
 }

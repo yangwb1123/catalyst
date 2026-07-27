@@ -70,8 +70,9 @@ func TestRun_AllGatesOK(t *testing.T) {
 		t.Fatalf("Run returned error on all-OK gates: %v", err)
 	}
 
-	// Only the two non-gate phases run the executor; gate phases do not.
-	want := []string{"planner", "implementer"}
+	// `agent:harness` is the only gate-only phase. QA's required test gate is a
+	// precondition, so QA still runs after it passes.
+	want := []string{"planner", "implementer", "qa"}
 	if strings.Join(rec.executed, ",") != strings.Join(want, ",") {
 		t.Errorf("executed = %v, want %v", rec.executed, want)
 	}

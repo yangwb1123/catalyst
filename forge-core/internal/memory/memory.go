@@ -46,13 +46,13 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"sync"
 	"time"
+
+	"forgeos/forge-core/internal/statefs"
 )
 
 // loadCache is a per-path cache for memory.Load: it caches decoded entries
@@ -83,8 +83,8 @@ func loadFromCache(path string) ([]Entry, bool, error) {
 	if !ce.valid {
 		return nil, false, nil
 	}
-	st, err := os.Stat(path)
-	if err != nil {
+	st, present, err := statefs.InspectRegular(path)
+	if err != nil || !present {
 		return nil, false, nil
 	}
 	if !st.ModTime().Equal(ce.modTime) {
@@ -96,7 +96,7 @@ func loadFromCache(path string) ([]Entry, bool, error) {
 // storeToCache caches the result of a Load call. Called by Load after a miss.
 func storeToCache(path string, entries []Entry, err error) {
 	ce := &loadCacheEntry{entries: entries, err: err, valid: true}
-	if st, stErr := os.Stat(path); stErr == nil {
+	if st, present, stErr := statefs.InspectRegular(path); stErr == nil && present {
 		ce.modTime = st.ModTime()
 	}
 	loadCaches.Store(path, ce)
@@ -117,9 +117,11 @@ func invalidateLoadCache() {
 // forward across sessions, and the Kind field is constrained to these so queries
 // and downstream tooling read a small, stable vocabulary rather than free text.
 const (
-	KindGap      = "gap"      // a shortfall the loop noticed and must not re-discover
-	KindDecision = "decision" // a choice the loop committed to, with its rationale
-	KindLesson   = "lesson"   // something a prior attempt (often a failure) taught
+	KindGap        = "gap"      // a shortfall the loop noticed and must not re-discover
+	KindDecision   = "decision" // a choice the loop committed to, with its rationale
+	KindLesson     = "lesson"   // something a prior attempt (often a failure) taught
+	memoryFormatV1 = "forgeos.memory.v1"
+	maxStoreBytes  = 32 << 20
 )
 
 // Entry is a single piece of cross-session knowledge. It is intentionally flat
@@ -158,15 +160,19 @@ const (
 // reader/verifier agent may be weighted differently from those from a writer.
 // An empty source (the default) means "unknown provenance" — backward-compatible.
 type Entry struct {
-	Format        string  `json:"_format,omitempty"`
-	Kind          string  `json:"kind"`                 // one of KindGap | KindDecision | KindLesson
-	Topic         string  `json:"topic"`                // subject this entry is about (the query key)
-	Detail        string  `json:"detail"`               // the knowledge itself, in free text
-	Iteration     int     `json:"iteration"`            // loop iteration that produced this entry
-	Source        string  `json:"source,omitempty"`     // phase/agent that produced this entry (empty=unknown)
-	Confidence    float64 `json:"confidence,omitempty"` // 0.0-1.0, default 1.0 (omitted=highest)
-	Supersedes    string  `json:"supersedes,omitempty"` // Topic this entry replaces (empty=none)
-	CreatedAtUnix int64   `json:"created_at_unix"`      // caller-supplied creation time (Unix seconds)
+	Format     string  `json:"_format,omitempty"`
+	Kind       string  `json:"kind"`                 // one of KindGap | KindDecision | KindLesson
+	Topic      string  `json:"topic"`                // subject this entry is about (the query key)
+	Detail     string  `json:"detail"`               // the knowledge itself, in free text
+	Iteration  int     `json:"iteration"`            // loop iteration that produced this entry
+	Source     string  `json:"source,omitempty"`     // phase/agent that produced this entry (empty=unknown)
+	Confidence float64 `json:"confidence,omitempty"` // 0.0-1.0, default 1.0 (omitted=highest)
+	// ConfidenceExplicitZero distinguishes a caller/JSON record that intentionally
+	// says confidence=0 ("do not trust") from the Go zero value, which remains the
+	// legacy shorthand for an omitted confidence and therefore defaults to 1.
+	ConfidenceExplicitZero bool   `json:"-"`
+	Supersedes             string `json:"supersedes,omitempty"` // Topic this entry replaces (empty=none)
+	CreatedAtUnix          int64  `json:"created_at_unix"`      // caller-supplied creation time (Unix seconds)
 }
 
 // Append adds e to the JSONL knowledge store at path as one new line.
@@ -184,7 +190,10 @@ type Entry struct {
 // version "v1" (backward compatible).
 func Append(path string, e Entry) error {
 	if e.Format == "" {
-		e.Format = "forgeos.memory.v1"
+		e.Format = memoryFormatV1
+	}
+	if err := validateFormat(e.Format); err != nil {
+		return err
 	}
 	line, err := encode(e)
 	if err != nil {
@@ -192,11 +201,11 @@ func Append(path string, e Entry) error {
 	}
 	invalidateLoadCache() // invalidate cache so the next Load sees the new entry
 	if dir := filepath.Dir(path); dir != "" {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return fmt.Errorf("memory: create store dir: %w", err)
+		if err := statefs.EnsurePrivateDirTree(dir); err != nil {
+			return fmt.Errorf("memory: secure store dir: %w", err)
 		}
 	}
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0o644)
+	f, err := statefs.OpenRegular(path, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0o600)
 	if err != nil {
 		return fmt.Errorf("memory: open store: %w", err)
 	}
@@ -230,15 +239,15 @@ func Load(path string) ([]Entry, error) {
 	if entries, ok, err := loadFromCache(path); ok {
 		return entries, err
 	}
-	data, err := os.ReadFile(path)
+	data, found, err := statefs.ReadRegular(path, maxStoreBytes)
 	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			storeToCache(path, nil, nil)
-			return nil, nil
-		}
 		err = fmt.Errorf("memory: read store: %w", err)
 		storeToCache(path, nil, err)
 		return nil, err
+	}
+	if !found {
+		storeToCache(path, nil, nil)
+		return nil, nil
 	}
 	entries, err := decode(data)
 	if err != nil {
@@ -309,7 +318,18 @@ func Query(entries []Entry, kind, topic string) []Entry {
 // object followed by a single '\n' — the JSONL line framing — so the newline is
 // part of the record and Append writes the bytes verbatim. Pure: no IO.
 func encode(e Entry) ([]byte, error) {
-	b, err := json.Marshal(e)
+	var (
+		b   []byte
+		err error
+	)
+	if e.ConfidenceExplicitZero {
+		b, err = json.Marshal(struct {
+			Entry
+			Confidence float64 `json:"confidence"`
+		}{Entry: e, Confidence: 0})
+	} else {
+		b, err = json.Marshal(e)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("memory: encode entry: %w", err)
 	}
@@ -338,9 +358,18 @@ func decode(data []byte) ([]Entry, error) {
 		if err := json.Unmarshal(raw, &e); err != nil {
 			return nil, fmt.Errorf("memory: decode entry on line %d: %w", line, err)
 		}
-		// Zero-value Confidence reads as 1.0 (backward compat: old files without
-		// the field were implicitly full-confidence).
-		if e.Confidence == 0 {
+		if err := validateFormat(e.Format); err != nil {
+			return nil, fmt.Errorf("memory: decode entry on line %d: %w", line, err)
+		}
+		var fields map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &fields); err != nil {
+			return nil, fmt.Errorf("memory: decode fields on line %d: %w", line, err)
+		}
+		_, confidencePresent := fields["confidence"]
+		e.ConfidenceExplicitZero = confidencePresent && e.Confidence == 0
+		// A missing Confidence reads as 1.0 (backward compat); an explicit 0
+		// remains zero and survives later compaction/rewrite.
+		if !confidencePresent {
 			e.Confidence = 1.0
 		}
 		entries = append(entries, e)
@@ -349,6 +378,13 @@ func decode(data []byte) ([]Entry, error) {
 		return nil, fmt.Errorf("memory: scan store: %w", err)
 	}
 	return entries, nil
+}
+
+func validateFormat(format string) error {
+	if format == "" || format == memoryFormatV1 {
+		return nil
+	}
+	return fmt.Errorf("unsupported memory format %q (supported: %s)", format, memoryFormatV1)
 }
 
 // filterSuperseded removes entries that have been superseded by a later entry

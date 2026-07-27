@@ -1,15 +1,16 @@
 # ForgeOS workflow · DESIGN (脊柱第 2 段 / spine stage 2)
 # Human Approval(Design→Build 之间)= 全系统最高杠杆的闸门 / the single highest-leverage gate.
-# 在这之前不写任何产物代码;批准后才物化 .agent/ 真相之源。
-# No artifacts are written before approval; the .agent/ source-of-truth is materialized only after.
+# 人审前可写送审设计文档/ADR,但不写产品代码；批准只解锁下一段。
+# Review artifacts/ADRs may be written before approval, but product code may not;
+# approval only unlocks the next stage and does not synthesize repository truth files.
 #
-# 机器可读契约 / machine-readable contract:供未来 orchestrator 解析。
-# 当前 (v0–v1):phases = Claude Code subagents;human approval = durable wait(v2 起由 Temporal 持久化)。
+# 机器可读契约 / machine-readable contract:由 forge-core 解析执行。
+# 当前 durable wait 由版本化本地 chain state/marker 恢复；多节点调度后端仍属后续阶段。
 
 id: design
 stage: design
 title: 需求 (PRD) → 已批准的架构方案 (approved architecture)
-readonly: false                        # 段内分析只读,但终点 emit 真相之源 / read-only work, then emits SoT
+readonly: false                        # phase 可写声明产物；approval 本身只路由 / phases emit; approval routes only
 description: >
   按 lifecycle 推导架构(单体→服务→事件驱动,分阶段演进,非峰值 QPS 镀金),
   产出 1 页方案 + 成本 + 风险,送人审。Derive architecture staged by lifecycle, then
@@ -30,12 +31,13 @@ phases:
     readonly: true                      # 只设计,不落代码 / designs only, writes no code
     required_gates: []                  # 设计阶段无 harness 闸门;质量由 Reviewer/人审把 / no code gates
     model_tier: opus                    # 架构属高风险 → 贵模型 / architecture is high-risk → top tier
+    uses_template: .ai/prompts/01-architecture-review.md
     description: >
       按 lifecycle 分阶段定架构,标注禁改区 / 依赖方向 / 演进路径。
       Stage architecture by lifecycle; mark frozen zones, dependency direction, evolution path.
     writes_adr:                         # 是否写 ADR 由 mode 决定 / ADR gated by mode
       condition: mode in [engineering, cto]
-      target: docs/adr/                 # v2 起启用 / enabled from v2
+      target: docs/adr/                 # command-mode 有界写入并做新鲜产物校验 / bounded + freshness-checked
 
   # ── P2 方案生成 / proposal generation ──
   - name: proposal-generator
@@ -54,16 +56,14 @@ phases:
 stop_condition:
   type: human_gate
   human_approval: required             # ★ 不可绕过 / non-bypassable ★
-  durable_wait: true                   # 等待数小时/数天不丢(v2 Temporal 持久化)/ survives restarts from v2
+  durable_wait: true                   # 版本化本地 state 跨重启恢复 / versioned local state survives restarts
   expression: "human_approval == granted"
   on_rejected:
     action: loop_back                  # 驳回 → 带反馈回 solution-architect / revise with feedback
     target_phase: solution-architect
   on_approved:
-    # 批准 = 物化真相之源 + 解锁 BUILD / approval materializes SoT and unlocks build
-    emit:
-      - .agent/PROJECT.md               # 项目愿景/目标/非目标 / vision
-      - .agent/ROADMAP.md               # 分阶段交付计划(驱动 build 的 stop)/ staged plan, drives build stop
-      - .agent/ARCHITECTURE.md          # 脊柱架构 + 中枢旋钮 / spine + central knob
-      - project.yml                     # 机器可读项目清单:mode/lifecycle/stack/gates 选择 / machine-readable manifest
+    # 批准只做状态迁移；本 workflow 的真实产物由 phase emits/writes_adr 负责。
+    # Approval is routing only; phase emits/writes_adr own every produced artifact.
+    # .agent truth files are managed by scaffold/explicit planning workflows, not
+    # invented from an approval event without a declared producer/source mapping.
     next_stage: review                  # → REVIEW 段 / unlocks review.yml (→ build)

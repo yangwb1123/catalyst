@@ -1,25 +1,27 @@
 // Package asset loads ForgeOS declarative workflow assets.
 //
-// Workflows are authored as YAML under .agent/workflows/, but YAML is not in
-// the Go standard library and forge-core takes zero external dependencies. So
-// the orchestration runtime consumes JSON: assets are transcoded to JSON
-// out-of-band (a python shim today; a Go YAML lib later) and parsed here with
-// the stdlib encoding/json.
+// Workflows are authored as YAML under .agent/workflows/. The CLI first parses
+// the shipped subset with internal/yaml2json (pure Go, zero dependencies), then
+// decodes the normalized JSON here. The Python converter is only a compatibility
+// fallback for input outside the native subset.
 //
-// Parsing is deliberately fault tolerant: a workflow with missing or extra
-// fields loads into a partially-populated Workflow rather than failing. The
-// governance layer already has a strict validator (harness/check.py); this
-// loader's job is to feed the engine, not to re-litigate schema validity.
+// Parsing tolerates missing or extra top-level fields, but machine identities
+// are fail-closed: phase names and per-phase emit targets must be unambiguous.
+// The governance layer (harness/check.py) enforces the same structural contract
+// before assets reach this runtime boundary.
 package asset
 
 import (
 	"encoding/json"
 	"fmt"
+	"path"
+	"strings"
 )
 
 // Phase is one step in a workflow: an agent acts under a stage label, possibly
-// read-only, possibly fronted by required gates that must pass before the
-// agent runs (the harness phase in build.yml is the canonical example).
+// read-only, possibly fronted by required gates that must pass before it runs.
+// `agent: harness` is the reserved gate-only pseudo-agent; every other phase
+// continues to its agent after its required gates pass.
 //
 // RequiredWhen carries an OPTIONAL mode-gating condition for the phase
 // (build.yml's reviewer phase: required_when:
@@ -51,12 +53,9 @@ import (
 // WritesADR carries an OPTIONAL marker that THIS phase produces an Architecture
 // Decision Record (design.yml's solution-architect: writes_adr: {condition, target}).
 // It is a POINTER so a phase without the key loads as nil — the fault-tolerant
-// default the orchestrator reads as "this phase writes no ADR". The orchestrator
-// acts on it only for the design stage: when a phase declares writes_adr it NARRATES
-// whether an ADR is required under the mode policy (Policy.ADR). Honest scope: under
-// the dry-run executor this is a gating-decision narration — whether an ADR is
-// required, not a real ADR written; that needs a real agent (the target dir is
-// enabled from v2 per design.yml).
+// default the orchestrator reads as "this phase writes no ADR". Dry-run narrates
+// the policy decision; command execution validates the condition/target, grants
+// the bounded ADR write scope, and applies the post-run ADR artifact contract.
 //
 // FeedsForward carries an OPTIONAL marker that THIS phase's output is RELEVANT to
 // LATER phases and so should be remembered and injected into their prompts (build.yml /
@@ -88,8 +87,8 @@ import (
 // anchoring bias (asset-runtime-gap.md §1.2). A zero-value (false) means "normal
 // context inheritance", byte-for-byte back-compat with every existing workflow.
 //
-// Emits is an OPTIONAL list of file paths that this phase is declared to produce
-// (e.g. task-plan.md, proposal.md, requirement-draft.md). These declare the
+// Emits is an OPTIONAL list of repository-relative file paths that this phase is
+// declared to produce (including valid root files such as report.md). These declare the
 // inter-phase data dependencies that are currently implicit in YAML comments.
 // When populated, the prompt builder can read and inject the actual content of
 // emitted files into downstream phases that depend on them. A zero-value (nil/empty)
@@ -118,28 +117,33 @@ import (
 // real work (discover.yml's market-research: requires_tools: [web_search,
 // web_fetch] — the phase's own comment states the intended behavior: degrade to
 // advisory + flag when the tool is absent, never silently fabricate results).
-// ADDED HERE ONLY: this field is decoded and carried on Phase, but nothing in
-// forge-core reads it yet — no degrade-to-advisory check, no flag, no gating.
-// A separate task builds that consumption. A nil/empty list means "this phase
-// declares no tool requirement", byte-for-byte back-compat.
+// The command prompt builder consumes it through requiresToolsGuard: an
+// unavailable/unconfirmed tool degrades visibly to advisory. A nil/empty list
+// means "this phase declares no tool requirement", byte-for-byte back-compat.
 //
 // Readonly is an OPTIONAL marker (authored at BOTH workflow level and per-phase
 // across every .agent/workflows/*.yml — e.g. review.yml sets it true at the
 // top level and again on every phase; build.yml varies it per phase: false on
 // implementer, true on planner/harness-gates/reviewer/qa) that the phase's
 // agent is expected to only read, never write product code or other state.
-// ADDED HERE ONLY: this field is decoded on both Phase and Workflow, but
-// nothing in forge-core enforces it yet — no write-blocking, no violation
-// check. A separate task builds that consumption. A zero value (false) means
-// "no read-only declaration", byte-for-byte back-compat.
+// Command execution enforces it with `dontAsk` and a validated per-role write
+// scope for declared analysis artifacts; product-code writes remain denied.
+// A zero value (false) means "no read-only declaration", byte-for-byte back-compat.
+//
+// Effect is an OPTIONAL machine-readable phase side-effect class. Evolve
+// workflows use observe|propose|mutate|verify so proposal-only mode can locate
+// the explicit product-mutation boundary without trusting a phase or agent name.
+// The orchestrator validates the complete Evolve effect shape before applying
+// that policy. Other workflow stages and legacy zero-policy callers ignore an
+// empty Effect, preserving their existing behavior.
 //
 // SecondaryTemplate is an OPTIONAL second AI-SDLC template path alongside
 // UsesTemplate (review.yml's performance-reliability-review phase pairs
 // uses_template: .../05-performance-review.md with secondary_template:
-// .../06-production-readiness.md — one phase, two review dimensions). ADDED
-// HERE ONLY: this field is decoded and carried on Phase, but nothing in
-// forge-core reads or injects it yet. A separate task builds that consumption.
-// An empty string means "no secondary template", byte-for-byte back-compat.
+// .../06-production-readiness.md — one phase, two review dimensions). The prompt
+// builder injects it with the same validated containment rules as UsesTemplate,
+// and doctor validates the reference. An empty string means "no secondary
+// template", byte-for-byte back-compat.
 type Phase struct {
 	Name              string     `json:"name"`
 	Agent             string     `json:"agent"`
@@ -158,12 +162,13 @@ type Phase struct {
 	UsesTemplate      string     `json:"uses_template,omitempty"`
 	RequiresTools     []string   `json:"requires_tools,omitempty"`
 	Readonly          bool       `json:"readonly,omitempty"`
+	Effect            string     `json:"effect,omitempty"`
 	SecondaryTemplate string     `json:"secondary_template,omitempty"`
 }
 
 // WritesADR is the subset of a phase's writes_adr block forge-core reads:
-// Condition is the human-readable rule the asset authored (design.yml: "mode in
-// [engineering, cto]"), Target the destination dir (docs/adr/, enabled from v2).
+// Condition is the rule the asset authored (design.yml: "mode in
+// [engineering, cto]"), Target the bounded destination directory (docs/adr/).
 // Its mere PRESENCE (a non-nil pointer) is the signal the orchestrator keys on —
 // this phase is the one that would write an ADR — while the actual required/not
 // verdict comes from the mode Policy, not from re-parsing Condition here.
@@ -206,9 +211,12 @@ type StopCondition struct {
 	AllOf         []Criterion `json:"all_of"`
 	AntiPattern   string      `json:"anti_pattern"`
 	HumanApproval string      `json:"human_approval"`
+	DurableWait   bool        `json:"durable_wait"`
+	Expression    string      `json:"expression"`
 	OnApproved    OnApproved  `json:"on_approved"`
 	OnUnmet       *OnUnmet    `json:"on_unmet"`
 	OnRejected    *LoopBack   `json:"on_rejected,omitempty"`
+	OnMet         *OnMet      `json:"on_met,omitempty"`
 }
 
 // OnUnmet is a conjunction stop's directed-restart directive: when the stop is
@@ -220,11 +228,18 @@ type OnUnmet struct {
 	TargetPhase string `json:"target_phase"`
 }
 
-// OnApproved is the subset of a human_gate's on_approved block forge-core needs:
-// NextStage is the spine stage an approval unlocks (design.yml -> "build"). The
-// emit list is materialized by the agent layer, not the runtime, so it is not
-// modeled here — only the routing-relevant NextStage is.
+// OnApproved is the supported subset of an on_approved transition: NextStage is
+// the spine stage an approval unlocks. Approval has routing semantics only;
+// artifacts must be owned by phase-level Emits/WritesADR. The governance checker
+// rejects on_approved.emit so an unsupported side effect cannot be silently lost.
 type OnApproved struct {
+	NextStage string `json:"next_stage"`
+}
+
+// OnMet carries the directive for when a conjunction stop converges MET
+// (discover.yml, build.yml). NextStage names the spine stage to advance to
+// (e.g. discover -> design, build -> evolve).
+type OnMet struct {
 	NextStage string `json:"next_stage"`
 }
 
@@ -277,7 +292,7 @@ func (c *Criterion) UnmarshalJSON(data []byte) error {
 // phases are authored under `loop:` (with loop_back_to forming the cycle) rather
 // than at the top level. LoadWorkflowJSON HOISTS Loop.Phases into Phases when the
 // top level declares none, so the engine runs the loop body. Without this, a
-// `type: loop` workflow's `phases` (evolve.yml's 6: scan…evaluate) were dropped —
+// `type: loop` workflow's `phases` (evolve.yml's 7: scan…evaluate) were dropped —
 // the engine loaded ZERO phases and the loop reported converged=true over no work
 // (a false-clean: zero work read as success). It is a POINTER so a non-loop
 // workflow (build.yml) loads it as nil and is byte-for-byte unaffected.
@@ -285,12 +300,12 @@ func (c *Criterion) UnmarshalJSON(data []byte) error {
 // Readonly is an OPTIONAL workflow-level marker (every one of the 5
 // .agent/workflows/*.yml authors it at the top level — discover.yml/review.yml
 // true, build.yml/evolve.yml/design.yml false — a stage-wide default that a
-// phase's own Readonly can narrow further). ADDED HERE ONLY: this field is
-// decoded, but nothing in forge-core enforces it yet — no write-blocking, no
-// stage/phase-level consistency check between the two. A separate task builds
-// that consumption. A zero value (false) means "no stage-wide read-only
-// declaration", byte-for-byte back-compat.
+// phase's own Readonly can narrow further). The command executor enforces the
+// effective per-phase read-only boundary; the workflow value is retained for
+// schema fidelity and stage policy checks. A zero value (false) means "no
+// stage-wide read-only declaration", byte-for-byte back-compat.
 type Workflow struct {
+	ID       string        `json:"id,omitempty"`
 	Stage    string        `json:"stage"`
 	Phases   []Phase       `json:"phases"`
 	Loop     *LoopBody     `json:"loop"`
@@ -307,23 +322,80 @@ type LoopBody struct {
 	Phases     []Phase `json:"phases"`
 }
 
+// ValidateWorkflowStructure enforces the identity invariants shared by every
+// workflow consumer. Phase names are machine identities: every runnable phase
+// must have a non-blank, unique name so serial lookup, dependency waves and
+// output-contract maps all resolve the same phase. Within one phase, emits must
+// not name the same path more than once after portable slash/path cleaning.
+//
+// Duplicate emit detection is intentionally scoped to one phase. Reusing an
+// emit in a later phase remains legal: a later owner may deliberately revise an
+// earlier artifact, and that cross-phase ownership policy is not an identity
+// ambiguity.
+func ValidateWorkflowStructure(wf Workflow) error {
+	seenNames := make(map[string]int, len(wf.Phases))
+	for i, phase := range wf.Phases {
+		if strings.TrimSpace(phase.Name) == "" {
+			return fmt.Errorf("asset: phase[%d] has an empty name", i)
+		}
+		if phase.Agent == "release-engineer" && wf.Stage != "" &&
+			wf.Stage != "deploy" && wf.Stage != "rollback" {
+			return fmt.Errorf(
+				"asset: release-engineer phase %q is only permitted in deploy/rollback workflows, not stage %q",
+				phase.Name, wf.Stage,
+			)
+		}
+		if first, ok := seenNames[phase.Name]; ok {
+			return fmt.Errorf(
+				"asset: phase[%d] duplicates phase name %q first declared at phase[%d]",
+				i, phase.Name, first,
+			)
+		}
+		seenNames[phase.Name] = i
+
+		seenEmits := make(map[string]string, len(phase.Emits))
+		for _, emit := range phase.Emits {
+			normalized := normalizedEmitIdentity(emit)
+			if first, ok := seenEmits[normalized]; ok {
+				return fmt.Errorf(
+					"asset: phase %q emit %q duplicates normalized target %q already declared as %q",
+					phase.Name, emit, normalized, first,
+				)
+			}
+			seenEmits[normalized] = emit
+		}
+	}
+	return nil
+}
+
+// normalizedEmitIdentity is platform-independent: workflow paths are portable
+// repository paths, so both slash styles are compared with path (not host OS)
+// semantics. It is an identity comparison only; containment and file-shape
+// validation remain the output contract's responsibility.
+func normalizedEmitIdentity(emit string) string {
+	return path.Clean(strings.ReplaceAll(emit, `\`, "/"))
+}
+
 // LoadWorkflowJSON parses a workflow from its JSON encoding.
 //
-// It is fault tolerant by design: only a syntactically invalid document is an
-// error. A document missing fields (no stage, no phases, no stop) yields a
-// zero-valued-but-usable Workflow so the engine can still run what is present
-// rather than crashing on partial assets.
+// It remains tolerant of omitted top-level fields: a document with no phases is
+// a zero-valued-but-usable Workflow. Once phases are present, their machine
+// identities are fail-closed through ValidateWorkflowStructure; invalid JSON,
+// blank/duplicate phase names and duplicate per-phase emit targets are errors.
 func LoadWorkflowJSON(data []byte) (Workflow, error) {
 	var wf Workflow
 	if err := json.Unmarshal(data, &wf); err != nil {
 		return Workflow{}, fmt.Errorf("asset: invalid workflow JSON: %w", err)
 	}
 	// Hoist a loop body's phases to the top level so a standing-loop workflow
-	// (evolve.yml) RUNS its 6 phases instead of loading zero (the false-clean the
+	// (evolve.yml) RUNS its 7 phases instead of loading zero (the false-clean the
 	// Loop field documents). Only when the top level is empty — a workflow that
 	// authors top-level phases keeps them verbatim.
 	if len(wf.Phases) == 0 && wf.Loop != nil && len(wf.Loop.Phases) > 0 {
 		wf.Phases = wf.Loop.Phases
+	}
+	if err := ValidateWorkflowStructure(wf); err != nil {
+		return Workflow{}, err
 	}
 	return wf, nil
 }

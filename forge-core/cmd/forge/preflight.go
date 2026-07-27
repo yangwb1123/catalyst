@@ -9,6 +9,8 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -21,6 +23,8 @@ import (
 	"forgeos/forge-core/internal/mode"
 	"forgeos/forge-core/internal/orchestrator"
 	"forgeos/forge-core/internal/routing"
+	"forgeos/forge-core/internal/statefs"
+	"forgeos/forge-core/internal/yaml2json"
 )
 
 // preflightFlags holds the parsed `forge preflight <workflow> [flags]` inputs.
@@ -213,13 +217,23 @@ func checkSafetyDimensions(f preflightFlags, rep *preflightReport) {
 // checkForgeState (check 7): flags a prior incomplete evolve session so the
 // operator knows to --resume or clear it before a fresh run.
 func checkForgeState(root string, rep *preflightReport) {
+	if err := rejectTrackedForgeControlState(root); err != nil {
+		rep.fail("Forge control-state provenance: %v", err)
+		return
+	}
 	dotForge := forgeDir(root)
-	if _, err := os.Stat(dotForge); os.IsNotExist(err) {
+	if _, present, err := statefs.InspectDir(dotForge); err != nil {
+		rep.fail(".forge/ state directory: %v", err)
+		return
+	} else if !present {
 		rep.pass(".forge/ directory: clean (no prior run state)")
 		return
 	}
 	cpPath := filepath.Join(dotForge, "checkpoint.json")
-	if data, err := os.ReadFile(cpPath); err == nil && len(data) > 0 {
+	data, present, err := statefs.ReadRegular(cpPath, 4<<20)
+	if err != nil {
+		rep.fail(".forge/checkpoint.json: %v", err)
+	} else if present && len(data) > 0 {
 		rep.warn(".forge/checkpoint.json exists — prior evolve session may be incomplete. Use --resume or remove it")
 	} else {
 		rep.pass(".forge/ state: no active session detected")
@@ -256,4 +270,130 @@ func finishPreflight(rep *preflightReport) int {
 	}
 	fmt.Println("forge preflight: some checks FAILED — review warnings above")
 	return 1
+}
+
+// loadWorkflow uses the zero-dependency native loader first and retains the
+// legacy repository Python shim for ordinary trusted-host operation.
+func loadWorkflow(repoRoot, name string) (asset.Workflow, error) {
+	return loadWorkflowWithFallback(repoRoot, name, true)
+}
+
+// loadWorkflowNativeOnly excludes the repository-owned Python transcoder.
+func loadWorkflowNativeOnly(repoRoot, name string) (asset.Workflow, error) {
+	return loadWorkflowWithFallback(repoRoot, name, false)
+}
+
+// loadWorkflowForExecution removes the repo shim from direct and chained
+// restricted stages.
+func loadWorkflowForExecution(repoRoot, name, runMode, lifecycle string) (asset.Workflow, error) {
+	if restrictedWorkflowExecution(name, runMode, lifecycle) {
+		return loadWorkflowNativeOnly(repoRoot, name)
+	}
+	return loadWorkflow(repoRoot, name)
+}
+
+func restrictedWorkflowExecution(name, runMode, lifecycle string) bool {
+	if name == "deploy" || name == "rollback" {
+		return true
+	}
+	policy := mode.Effective(runMode, lifecycle)
+	if policy.BuildHalted() {
+		return true
+	}
+	return name == "evolve" && policy.EvolveProposalOnly()
+}
+
+// loadWorkflowForRunEntry makes every chain entry native-only. Workflow loading
+// happens before execEngine acquires run.lock, so merely consulting a persisted
+// restricted cursor would leave a state-swap race back to the repository shim.
+// Native-only entry loading removes that executable pre-lock dependency.
+func loadWorkflowForRunEntry(repoRoot, name string, o runOpts) (asset.Workflow, error) {
+	if !o.chain {
+		return loadWorkflowForExecution(repoRoot, name, o.mode, o.lifecycle)
+	}
+	if err := rejectTrackedForgeControlState(repoRoot); err != nil {
+		return asset.Workflow{}, err
+	}
+	state, found, err := loadChainState(repoRoot)
+	if err != nil {
+		return asset.Workflow{}, fmt.Errorf("load persisted chain state: %w", err)
+	}
+	if !found || state.Status != "waiting_approval" {
+		return loadWorkflowNativeOnly(repoRoot, name)
+	}
+	if err := validateResumableChainState(state); err != nil {
+		return asset.Workflow{}, err
+	}
+	return loadWorkflowNativeOnly(repoRoot, name)
+}
+
+func loadWorkflowWithFallback(repoRoot, name string, allowRepoShim bool) (asset.Workflow, error) {
+	if !validWorkflowName(name) {
+		return asset.Workflow{}, fmt.Errorf("invalid workflow name %q (use letters, digits, '_' or '-' only)", name)
+	}
+	ymlPath := filepath.Join(repoRoot, ".agent", "workflows", name+".yml")
+	source, err := os.ReadFile(ymlPath)
+	if err != nil {
+		return asset.Workflow{}, fmt.Errorf("workflow not found: %s", ymlPath)
+	}
+	wf, parsed, err := parseNativeWorkflow(source)
+	if parsed && err != nil {
+		return asset.Workflow{}, err
+	}
+	if parsed && len(wf.Phases) > 0 {
+		return validateWorkflowIdentity(name, wf)
+	}
+	if !allowRepoShim {
+		return asset.Workflow{}, fmt.Errorf(
+			"native YAML loader could not produce an executable workflow; repository Python fallback is disabled for restricted execution")
+	}
+	shim := filepath.Join(repoRoot, "harness", "yaml2json.py")
+	if _, err := os.Stat(shim); err != nil {
+		return asset.Workflow{}, fmt.Errorf(
+			"YAML->JSON via Go parser failed and python shim missing at %s: %v", shim, err)
+	}
+	out, execErr := exec.Command("python3", shim, ymlPath).Output()
+	if execErr != nil {
+		return asset.Workflow{}, fmt.Errorf("transcoding %s via python shim also failed: %w", ymlPath, execErr)
+	}
+	wf, err = asset.LoadWorkflowJSON(out)
+	if err != nil {
+		return asset.Workflow{}, err
+	}
+	return validateWorkflowIdentity(name, wf)
+}
+
+func parseNativeWorkflow(source []byte) (asset.Workflow, bool, error) {
+	var value any
+	jsonErr := json.Unmarshal(source, &value)
+	if jsonErr != nil {
+		var err error
+		value, err = yaml2json.Decode(bytes.NewReader(source))
+		if err != nil {
+			return asset.Workflow{}, false, nil
+		}
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return asset.Workflow{}, true, fmt.Errorf("encode native workflow: %w", err)
+	}
+	wf, err := asset.LoadWorkflowJSON(data)
+	if err != nil {
+		return asset.Workflow{}, true, err
+	}
+	return wf, true, nil
+}
+
+func validWorkflowName(name string) bool {
+	if name == "" {
+		return false
+	}
+	for _, r := range name {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
+			(r >= '0' && r <= '9') || r == '_' || r == '-' {
+			continue
+		}
+		return false
+	}
+	return true
 }

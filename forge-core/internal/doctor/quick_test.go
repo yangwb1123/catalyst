@@ -36,7 +36,10 @@ func TestQuickChecks_FreshForgeDir_OnlyClosingEntry(t *testing.T) {
 func TestQuickChecks_CheckpointReadable(t *testing.T) {
 	root := t.TempDir()
 	dotForge := mustMkdotForge(t, root)
-	cp := persist.Checkpoint{Workflow: "build", Mode: "balanced", Iteration: 1}
+	cp := persist.Checkpoint{
+		FormatVersion: "forgeos.checkpoint.v1",
+		Workflow:      "build", Mode: "balanced", Iteration: 1,
+	}
 	if err := persist.Save(filepath.Join(dotForge, "checkpoint.json"), cp, 0); err != nil {
 		t.Fatalf("seed checkpoint: %v", err)
 	}

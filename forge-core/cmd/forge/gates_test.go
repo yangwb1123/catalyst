@@ -455,9 +455,9 @@ func TestIsTestPath_NonRootPythonConvention(t *testing.T) {
 		path string
 		want bool
 	}{
-		{"test_foo.py", true},                 // root-level: basename == full path
-		{"tests/test_foo.py", true},            // pytest's dominant layout
-		{"app/tests/test_bar.py", true},        // nested tests/ subdirectory
+		{"test_foo.py", true},                        // root-level: basename == full path
+		{"tests/test_foo.py", true},                  // pytest's dominant layout
+		{"app/tests/test_bar.py", true},              // nested tests/ subdirectory
 		{"forge-core/cmd/forge/gates_test.go", true}, // Go convention, unaffected
 		{"internal/foo.go", false},
 		{"app/testify.py", false}, // "test" prefix but not the "test_" convention

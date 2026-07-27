@@ -1,0 +1,55 @@
+# ForgeOS workflow · DEPLOY (脊柱第 4 段 / spine stage 4)
+#
+# 诚实边界：本 workflow 只生成并验证声明式 release 交付包。它不持有云/K8s
+# 凭证，不执行 kubectl/helm/cloud CLI，不调用远程部署 API。实际应用由外部
+# CI/operator 完成；人核对其证据后，才通过持久 approval marker 放行。
+
+id: deploy
+stage: deploy
+title: 已验收构建 → 经外部执行并由人确认的发布
+readonly: true
+description: >
+  生成 release manifest、部署计划、runbook 与 Go/No-Go checklist，并验证其
+  完整性和证据引用。外部 CI/operator 负责实际应用；ForgeOS 停在 human gate，
+  不把“计划可用”冒充“已部署”。
+
+phases:
+  - name: release-planning
+    agent: release-engineer
+    readonly: true
+    required_gates: []
+    model_tier: sonnet
+    feeds_forward: true
+    description: >
+      基于已通过的 Build/QA 证据生成声明式交付包。缺失 digest、目标约束或责任人时
+      显式标 unresolved，不访问任何远程系统补猜。
+    emits:
+      - docs/release/release-manifest.yml
+      - docs/release/deployment-plan.md
+      - docs/release/deployment-runbook.md
+      - docs/release/go-no-go-checklist.md
+
+  - name: release-plan-validation
+    agent: release-engineer
+    readonly: true
+    required_gates: []
+    model_tier: sonnet
+    description: >
+      只验证前一 phase 的文件、不可变标识、证据引用、终止阈值、回滚入口和责任人；
+      APPROVE 仅代表可交给外部 CI/operator，不代表已发布。
+    emits:
+      - docs/release/deployment-validation.md
+    on_fail:
+      action: loop_back
+      target_phase: release-planning
+
+stop_condition:
+  type: human_gate
+  human_approval: required
+  durable_wait: true
+  expression: "external_apply_evidence_verified_by_human == true"
+  on_rejected:
+    action: loop_back
+    target_phase: release-planning
+  on_approved:
+    next_stage: evolve

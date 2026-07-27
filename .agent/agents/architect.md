@@ -27,5 +27,6 @@
 
 ## 交接 / 停止 (handoff / stop)
 - ARCHITECTURE 完成 → 交 `cto`(评选型/成本/风险)→ 汇入 Proposal → ★HUMAN APPROVAL★
-- 批准后才落 `.agent/ARCHITECTURE.md`;`planner` 据此拆 ROADMAP→任务
+- 批准当前不自动落 `.agent/ARCHITECTURE.md`；`planner` 只消费由 scaffold
+  或声明了产物的显式 producer 已落盘的真相源
 - PRD 不足以支撑设计决策 → **停**,退回 `product-manager` 补全

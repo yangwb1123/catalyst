@@ -27,10 +27,20 @@ var fullGates = []string{
 // unrecognized posture inherits today's `--max-iter 5` rather than 0 (which would
 // never loop) or a runaway count.
 const (
-	EvolveAdvisory      = "advisory"      // gap report + roadmap proposal only → 1 iteration
+	EvolveAdvisory      = "advisory"      // lightest scan/analysis budget → 1 iteration
 	EvolveOpportunistic = "opportunistic" // scan only the obvious opportunities → 2 iterations
 	EvolveStandard      = "standard"      // the pragmatic middle (and the safe default) → 5 iterations
 	EvolveThorough      = "thorough"      // full-dimension scan, auto-derive → 10 iterations
+)
+
+// Evolve mutation authority is deliberately independent of EvolveDepth.
+// Depth controls scan/iteration intensity; authority controls whether the
+// workflow may cross its explicit effect=mutate boundary. A lifecycle quality
+// floor may deepen scanning, but never grants product-write authority that the
+// selected mode did not have.
+const (
+	evolveAuthorityPropose = "propose-only"
+	evolveAuthorityMutate  = "auto-act"
 )
 
 // Discover-depth labels — modes.yml workflow_depth.discover's vocabulary,
@@ -145,19 +155,21 @@ func PrioritiesFor(mode string) (Priorities, bool) {
 }
 
 // baseline is each mode's full workflow-depth posture distilled from modes.yml's
-// modes.<mode>.harness.gates and .workflow_depth.{reviewer,evolve,discover,design,review,adr}:
+// modes.<mode>.harness.gates and
+// .workflow_depth.{reviewer,evolve,discover,design,review,adr,build}. Authority
+// is distilled from evolve's canonical "propose-only" versus auto-act meaning:
 //
-//	mode         gates                          reviewer evolve         discover design   review   adr
-//	explorer     [lint, build]                  false    opportunistic  skip     light    skip     false
-//	balanced     [lint, test, build, complexity] true    standard       light    standard standard false
-//	engineering  [all six gates]                true     thorough       full     full     full     true
-//	cto          [] (no code → no code gates)   true     advisory       full     full     full     true
+//	mode         gates                          reviewer evolve         authority     discover design   review   adr    build
+//	explorer     [lint, build]                  false    opportunistic  propose-only  skip     light    skip     false  run
+//	balanced     [lint, test, build, complexity] true    standard       auto-act      light    standard standard false  run
+//	engineering  [all six gates]                true     thorough       auto-act      full     full     full     true   run
+//	cto          [] (no code → no code gates)   true     advisory       propose-only  full     full     full     true   halt
 //
 // Each entry copies fullGates / a fresh slice so a caller mutating a returned
 // Policy.Gates can never corrupt this table.
 var baseline = map[string]Policy{
-	"explorer":    {Gates: []string{GateLint, GateBuild}, Reviewer: false, EvolveDepth: EvolveOpportunistic, DiscoverDepth: DiscoverSkip, DesignDepth: DesignLight, ReviewDepth: ReviewSkip, ADR: false},
-	"balanced":    {Gates: []string{GateLint, GateTest, GateBuild, GateComplexity}, Reviewer: true, EvolveDepth: EvolveStandard, DiscoverDepth: DiscoverLight, DesignDepth: DesignStandard, ReviewDepth: ReviewStandard, ADR: false},
-	"engineering": {Gates: allGates(), Reviewer: true, EvolveDepth: EvolveThorough, DiscoverDepth: DiscoverFull, DesignDepth: DesignFull, ReviewDepth: ReviewFull, ADR: true},
-	"cto":         {Gates: []string{}, Reviewer: true, EvolveDepth: EvolveAdvisory, DiscoverDepth: DiscoverFull, DesignDepth: DesignFull, ReviewDepth: ReviewFull, ADR: true},
+	"explorer":    {Gates: []string{GateLint, GateBuild}, Reviewer: false, EvolveDepth: EvolveOpportunistic, EvolveAuthority: evolveAuthorityPropose, DiscoverDepth: DiscoverSkip, DesignDepth: DesignLight, ReviewDepth: ReviewSkip, ADR: false},
+	"balanced":    {Gates: []string{GateLint, GateTest, GateBuild, GateComplexity}, Reviewer: true, EvolveDepth: EvolveStandard, EvolveAuthority: evolveAuthorityMutate, DiscoverDepth: DiscoverLight, DesignDepth: DesignStandard, ReviewDepth: ReviewStandard, ADR: false},
+	"engineering": {Gates: allGates(), Reviewer: true, EvolveDepth: EvolveThorough, EvolveAuthority: evolveAuthorityMutate, DiscoverDepth: DiscoverFull, DesignDepth: DesignFull, ReviewDepth: ReviewFull, ADR: true},
+	"cto":         {Gates: []string{}, Reviewer: true, EvolveDepth: EvolveAdvisory, EvolveAuthority: evolveAuthorityPropose, DiscoverDepth: DiscoverFull, DesignDepth: DesignFull, ReviewDepth: ReviewFull, ADR: true, BuildHalt: true},
 }

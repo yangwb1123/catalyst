@@ -55,6 +55,7 @@ phases:
     agent: product-manager
     readonly: true
     required_gates: []
+    uses_template: .ai/prompts/00-product-discovery.md
     description: >
       把需求 + 调研收敛成 MVP / 高级 分层(按 lifecycle,不 day-1 镀金)。
       Converge into MVP vs advanced tiers, staged by lifecycle — no day-1 gold-plating.

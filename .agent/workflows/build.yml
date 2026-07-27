@@ -43,7 +43,7 @@ phases:
       把 ROADMAP 下一项拆成可验收的最小任务 + acceptance 判据(机器可判)。
       Break the next roadmap item into smallest acceptance-checkable tasks.
     emits:
-      - task-plan.md
+      - .agent/CURRENT_SPRINT.md          # planner 的真实受控写入目标 / planner's enforced concrete artifact
 
   # ── P2 实现 / implementer ──
   - name: implementer
@@ -75,6 +75,7 @@ phases:
     fresh_context: true                 # 必须独立 fresh-context Agent,不让实现者审自己 / never self-review
     model_tier: opus                    # 所有 Reviewer 用 Opus / all reviewers use top tier
     required_gates: []                  # Reviewer 是人/AI 判断层,非工具闸门 / judgment layer, not a tool gate
+    uses_template: .ai/prompts/04-implementation-review.md
     required_when: ../policies/modes.yml#workflow_depth.reviewer   # explorer 下可省 / skippable under explorer
     description: >
       判设计/可维护性/是否真违阈值/禁改区。阈值是「触发审查」信号,非自动 fail。
@@ -113,4 +114,4 @@ stop_condition:
     action: loop_to_next_roadmap_item   # 还有未完项 → 回 planner 取下一项 / pull next item
     target_phase: planner
   on_met:
-    next_stage: evolve                  # roadmap 满 + 全绿 → 进 EVOLVE 持续演化 / hand off to evolve.yml
+    next_stage: deploy                  # roadmap 满 + 全绿 → 生成/验证发布交付包 / hand off to deploy.yml

@@ -316,7 +316,8 @@ func TestLoadWorkflowJSON_HumanGate(t *testing.T) {
 		"type":"human_gate",
 		"human_approval":"required",
 		"durable_wait":true,
-		"on_approved":{"next_stage":"build","emit":[".agent/PROJECT.md"]},
+		"expression":"human_approved == true",
+		"on_approved":{"next_stage":"build","future_extension":"ignored"},
 		"on_rejected":{"action":"loop_back"}
 	}}`))
 	if err != nil {
@@ -328,11 +329,15 @@ func TestLoadWorkflowJSON_HumanGate(t *testing.T) {
 	if wf.Stop.HumanApproval != "required" {
 		t.Errorf("stop.HumanApproval = %q, want required", wf.Stop.HumanApproval)
 	}
+	if !wf.Stop.DurableWait || wf.Stop.Expression != "human_approved == true" {
+		t.Errorf("stop durable contract = %+v", wf.Stop)
+	}
 	if wf.Stop.OnApproved.NextStage != "build" {
 		t.Errorf("stop.OnApproved.NextStage = %q, want build", wf.Stop.OnApproved.NextStage)
 	}
-	// A human_gate carries no all_of; the unmodeled keys (durable_wait, emit,
-	// on_rejected) are ignored by the fault-tolerant loader, not an error.
+	// A human_gate carries no all_of; an unknown future extension remains ignored
+	// by the fault-tolerant runtime loader (the governance checker is strict for
+	// shipped YAML and separately rejects known-unsupported on_approved.emit).
 	if len(wf.Stop.AllOf) != 0 {
 		t.Errorf("human_gate should have no all_of; got %v", wf.Stop.AllOf)
 	}
@@ -354,7 +359,7 @@ func TestLoadWorkflowJSON_ConjunctionUnaffectedByHumanFields(t *testing.T) {
 	}
 }
 
-// Fault tolerance: missing fields must not crash; only bad syntax errors.
+// Missing top-level fields remain valid when no runnable phase identity exists.
 func TestLoadWorkflowJSON_FaultTolerant(t *testing.T) {
 	wf, err := LoadWorkflowJSON([]byte(`{"stage":"design"}`))
 	if err != nil {

@@ -30,6 +30,18 @@ import (
 	"time"
 )
 
+// FormatV1 is the supported JSONL event format. Empty format remains accepted
+// for pre-versioned events, while any other non-empty value fails closed.
+const FormatV1 = "forgeos.trace.v1"
+
+// ValidateFormat rejects a trace generation this binary cannot interpret.
+func ValidateFormat(format string) error {
+	if format == "" || format == FormatV1 {
+		return nil
+	}
+	return fmt.Errorf("unsupported trace format %q (supported: %s)", format, FormatV1)
+}
+
 // Event is one structured record in the trace stream. It is intentionally flat
 // and string-typed so it round-trips through JSON without bespoke decoders and
 // stays greppable by tools that do not know forge-core's internal types. Seq is
@@ -135,11 +147,15 @@ func (t *Tracer) Emit(ev Event) error {
 	t.seq++
 	ev.Seq = t.seq
 	if ev.Format == "" {
-		ev.Format = "forgeos.trace.v1"
+		ev.Format = FormatV1
+	}
+	if err := ValidateFormat(ev.Format); err != nil {
+		return fmt.Errorf("trace: event seq=%d: %w", ev.Seq, err)
 	}
 	if ev.RunID == "" {
 		ev.RunID = t.RunID // auto-stamp; never clobbers a caller-supplied RunID
 	}
+	ev.Detail = redactSensitive(ev.Detail)
 	line, err := encode(ev)
 	if err != nil {
 		return fmt.Errorf("trace: encoding event seq=%d kind=%q: %w", ev.Seq, ev.Kind, err)

@@ -147,8 +147,8 @@ func TestADR0002_ForgeCoreIsGo(t *testing.T) {
 	}
 }
 
-// TestADR0002_PolyglotNotStarted checks that the other runtimes (Python, Rust, TS)
-// have NOT been introduced yet — they are planned for later stages.
+// TestADR0002_PolyglotNotStarted checks that the still-deferred Python and TS
+// runtimes have not been introduced yet.
 //
 // Deliberately t.Logf, never t.Error: their appearance means legitimate v3
 // progress (a milestone marker), not a decayed decision — the ONE case in
@@ -156,11 +156,38 @@ func TestADR0002_ForgeCoreIsGo(t *testing.T) {
 // actively wrong, not just weak.
 func TestADR0002_PolyglotNotStarted(t *testing.T) {
 	root := repoRoot(t)
-	expectedAbsent := []string{"forge-ai", "forge-web", "forge-runtime"}
+	expectedAbsent := []string{"forge-ai", "forge-web"}
 	for _, name := range expectedAbsent {
 		path := filepath.Join(root, name)
 		if fi, err := os.Stat(path); err == nil && fi.IsDir() {
 			t.Logf("ADR-0002: %s/ detected — polyglot stage advancing (expected for v3, not v2)", name)
+		}
+	}
+}
+
+func TestADR0006_RustRuntimeSliceExists(t *testing.T) {
+	root := repoRoot(t)
+	required := []string{
+		"forge-runtime/Cargo.toml",
+		"docs/adr/0006-pi-inspired-agent-runtime-boundary.md",
+	}
+	for _, relative := range required {
+		if _, err := os.Stat(filepath.Join(root, relative)); err != nil {
+			t.Errorf("ADR-0006 artifact missing: %s: %v", relative, err)
+		}
+	}
+}
+
+func TestADR0007_ConversationHubSliceExists(t *testing.T) {
+	root := repoRoot(t)
+	required := []string{
+		"docs/adr/0007-local-first-conversation-hub.md",
+		"forge-runtime/crates/infrastructure/src/sqlite_hub/schema.rs",
+		"forge-runtime/crates/interfaces/tests/cli_hub.rs",
+	}
+	for _, relative := range required {
+		if _, err := os.Stat(filepath.Join(root, relative)); err != nil {
+			t.Errorf("ADR-0007 artifact missing: %s: %v", relative, err)
 		}
 	}
 }

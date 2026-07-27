@@ -156,6 +156,31 @@ func TestAutoSelectWorkflow_ExplicitModePreserved(t *testing.T) {
 	}
 }
 
+func TestEvolveAutoRoutesGreenfieldThroughRunSemantics(t *testing.T) {
+	root := greenfieldDiscoverRepo(t)
+	if code := cmdEvolve([]string{"auto", "--root", root}); code != 0 {
+		t.Fatalf("forge evolve auto greenfield exit=%d, want one-shot success", code)
+	}
+	if _, err := os.Stat(checkpointPath(root)); !os.IsNotExist(err) {
+		t.Fatalf("one-shot auto route must not create evolve checkpoint: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, ".forge", "trace.jsonl")); err != nil {
+		t.Fatalf("one-shot auto route must use forge run resources: %v", err)
+	}
+}
+
+func TestEvolveAutoRejectsExplicitLoopFlagsForGreenfield(t *testing.T) {
+	root := greenfieldDiscoverRepo(t)
+	if code := cmdEvolve([]string{
+		"auto", "--root", root, "--max-iter", "2",
+	}); code != 2 {
+		t.Fatalf("greenfield auto + explicit --max-iter exit=%d, want usage transfer", code)
+	}
+	if _, err := os.Stat(filepath.Join(root, ".forge")); !os.IsNotExist(err) {
+		t.Fatalf("rejected auto transfer created run state: %v", err)
+	}
+}
+
 // ── JSON output tests ─────────────────────────────────────────────────────
 
 func TestCmdDetectJSON_GoProject(t *testing.T) {

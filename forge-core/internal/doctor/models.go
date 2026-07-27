@@ -4,6 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"strings"
+
+	"forgeos/forge-core/internal/yamlpath"
 )
 
 // ModelsFinding is one line of `forge validate --models` output, classified
@@ -23,6 +26,8 @@ type workflowPhase struct {
 	Agent             string        `json:"agent"`
 	UsesTemplate      string        `json:"uses_template"`
 	SecondaryTemplate string        `json:"secondary_template"`
+	RequiredWhen      string        `json:"required_when"`
+	Emits             []string      `json:"emits"`
 	OnFail            *onFailTarget `json:"on_fail"`
 }
 
@@ -38,10 +43,19 @@ type onFailTarget struct {
 // loops like evolve.yml) — never both, so EvaluateWorkflowModels falls back
 // to Loop.Phases only when Phases is empty.
 type workflowDoc struct {
-	Phases []workflowPhase `json:"phases"`
-	Loop   struct {
+	Phases     []workflowPhase `json:"phases"`
+	ModeGating *modeGating     `json:"mode_gating"`
+	Loop       struct {
 		Phases []workflowPhase `json:"phases"`
 	} `json:"loop"`
+}
+
+// modeGating is the subset of a workflow's mode_gating block that forge
+// validate --models inspects: the authority field is a YAML path reference
+// (e.g. "../policies/modes.yml#workflow_depth.discover") that must be
+// well-formed.
+type modeGating struct {
+	Authority string `json:"authority"`
 }
 
 // EvaluateWorkflowModels performs the cross-model consistency checks (forge
@@ -68,6 +82,8 @@ func EvaluateWorkflowModels(rel string, out []byte, knownAgents, aiTemplates map
 
 	var findings []ModelsFinding
 	ok := true
+	ok = evaluateModeGatingAuthority(rel, doc.ModeGating, &findings) && ok
+
 	seenPhases := map[string]bool{}
 	for _, p := range phases {
 		if p.Agent != "" && p.Agent != "harness" && !knownAgents[p.Agent] {
@@ -80,6 +96,12 @@ func EvaluateWorkflowModels(rel string, out []byte, knownAgents, aiTemplates map
 		}
 		if p.SecondaryTemplate != "" {
 			ok = evaluateSecondaryTemplate(rel, p.SecondaryTemplate, aiTemplates, &findings) && ok
+		}
+		if p.RequiredWhen != "" {
+			ok = evaluateRequiredWhen(rel, p.RequiredWhen, aiTemplates, &findings) && ok
+		}
+		if len(p.Emits) > 0 {
+			ok = evaluateEmits(rel, p.Emits, &findings) && ok
 		}
 		// A phase's own name is registered BEFORE its on_fail is checked, so a
 		// self-referencing loop-back (a phase whose on_fail.target_phase names
@@ -95,6 +117,72 @@ func EvaluateWorkflowModels(rel string, out []byte, knownAgents, aiTemplates map
 		}
 	}
 	return ok, findings
+}
+
+// evaluateModeGatingAuthority validates the workflow's mode_gating.authority
+// reference, if declared. The authority value must be a well-formed YAML path
+// reference (e.g. "../policies/modes.yml#workflow_depth.discover"). Uses
+// yamlpath.Parse for pure string validation (no I/O).
+func evaluateModeGatingAuthority(rel string, mg *modeGating, findings *[]ModelsFinding) bool {
+	if mg == nil || mg.Authority == "" {
+		return true // no mode_gating block or no authority field — nothing to validate
+	}
+	if _, err := yamlpath.Parse(mg.Authority); err != nil {
+		*findings = append(*findings, ModelsFinding{Level: "FAIL",
+			Message: fmt.Sprintf("%s — mode_gating.authority %q: %v", rel, mg.Authority, err)})
+		return false
+	}
+	*findings = append(*findings, ModelsFinding{Level: "PASS",
+		Message: fmt.Sprintf("%s — mode_gating.authority %q is a valid reference", rel, mg.Authority)})
+	return true
+}
+
+// evaluateRequiredWhen validates a phase's required_when field, which is a
+// YAML path reference (e.g. "../policies/modes.yml#workflow_depth.reviewer")
+// pointing into modes.yml. An empty string is valid (phase always runs). Uses
+// yamlpath.Parse for pure string validation (no I/O). Never fails the workflow
+// (a malformed reference is a WARN, not a FAIL), matching the template fields.
+func evaluateRequiredWhen(rel, rw string, _ map[string]bool, findings *[]ModelsFinding) bool {
+	if rw == "" {
+		return true // empty = always run, nothing to validate
+	}
+	if _, err := yamlpath.Parse(rw); err != nil {
+		*findings = append(*findings, ModelsFinding{Level: "WARN",
+			Message: fmt.Sprintf("%s — required_when %q: %v", rel, rw, err)})
+		return true // warn only, never fail
+	}
+	*findings = append(*findings, ModelsFinding{Level: "PASS",
+		Message: fmt.Sprintf("%s — required_when %q is a valid reference", rel, rw)})
+	return true
+}
+
+// evaluateEmits validates a phase's declared emits paths. Each path must be
+// non-empty and must not contain path-traversal components (".."). A phase
+// with no emits (len == 0) passes trivially. A malformed path is a WARN, not
+// a FAIL (the phase may still produce output via other means), so it always
+// returns true.
+func evaluateEmits(rel string, emits []string, findings *[]ModelsFinding) bool {
+	ok := true
+	for _, e := range emits {
+		if e == "" {
+			*findings = append(*findings, ModelsFinding{Level: "WARN",
+				Message: fmt.Sprintf("%s — emits contains empty path", rel)})
+			ok = false
+			continue
+		}
+		if strings.Contains(e, "..") {
+			*findings = append(*findings, ModelsFinding{Level: "WARN",
+				Message: fmt.Sprintf("%s — emits path %q contains parent-traversal ('..')", rel, e)})
+			ok = false
+			continue
+		}
+		*findings = append(*findings, ModelsFinding{Level: "PASS",
+			Message: fmt.Sprintf("%s — emits path %q is valid", rel, e)})
+	}
+	if !ok {
+		return true // warn only, never fail the workflow
+	}
+	return true
 }
 
 // evaluateUsesTemplate appends a PASS/WARN finding for one phase's

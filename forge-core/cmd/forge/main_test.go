@@ -282,6 +282,25 @@ func TestUsage_MatchesActualCLIBehavior(t *testing.T) {
 	if !strings.Contains(out, "--scorecard") {
 		t.Errorf("usage() must mention route's --scorecard flag (route.go still defines/honors it), got:\n%s", out)
 	}
+	if !strings.Contains(out, "forge trace") {
+		t.Errorf("usage() must mention the registered `trace` subcommand, got:\n%s", out)
+	}
+	if !strings.Contains(out, "--max-chain-stages") {
+		t.Errorf("usage() must document the --chain safety bound, got:\n%s", out)
+	}
+}
+
+func TestValidWorkflowNameRejectsPathTraversal(t *testing.T) {
+	for _, name := range []string{"build", "security-review", "review_v2", "Stage1"} {
+		if !validWorkflowName(name) {
+			t.Errorf("validWorkflowName(%q) = false, want true", name)
+		}
+	}
+	for _, name := range []string{"", "../build", "foo/bar", ".", "/tmp/build", "build.yml"} {
+		if validWorkflowName(name) {
+			t.Errorf("validWorkflowName(%q) = true, want false", name)
+		}
+	}
 }
 
 // TestUsage_PreflightPositionalIsActuallyRequired backs assertion (1) above with the

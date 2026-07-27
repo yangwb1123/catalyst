@@ -109,6 +109,17 @@ func TestEvolve_ExplicitMaxIterWins(t *testing.T) {
 	}
 }
 
+func TestEvolve_NegativeMaxIterFailsBeforeRunState(t *testing.T) {
+	requirePython(t)
+	root := fakeRepo(t, "evolve", externalAgentWorkflow)
+	if code := cmdEvolve([]string{"evolve", "--root", root, "--max-iter", "-1"}); code != 2 {
+		t.Fatalf("negative --max-iter exit=%d, want usage error 2", code)
+	}
+	if _, err := os.Stat(filepath.Join(root, ".forge")); !os.IsNotExist(err) {
+		t.Fatalf("negative bound created run state before rejection: %v", err)
+	}
+}
+
 // The production lifecycle veto reaches evolve depth too: explorer's opportunistic
 // (2) is raised to the standard floor (5) under --lifecycle production, with no
 // explicit --max-iter. This is the CLI-level proof of the production override on
@@ -144,21 +155,17 @@ func minInt(a, b int) int {
 
 // --- resilience wiring: timeout / checkpoint / resume / trace -----------------
 
-// fakeRepo builds a self-contained repo root in a temp dir with the bits the CLI
-// needs to load a workflow without the real ForgeOS tree: a stub yaml2json.py
-// that emits the given workflow JSON, the workflow yml (content unused — the stub
-// ignores it), and an empty .agent/agents dir. It returns the root.
+// fakeRepo builds a self-contained repo with a natively loadable JSON-as-YAML
+// workflow plus a legacy shim retained for tests of the ordinary fallback path.
 func fakeRepo(t *testing.T, name, workflowJSON string) string {
 	t.Helper()
 	root := t.TempDir()
 	mkdir(t, filepath.Join(root, "harness"))
 	mkdir(t, filepath.Join(root, ".agent", "workflows"))
 	mkdir(t, filepath.Join(root, ".agent", "agents"))
-	// The stub transcoder ignores its argument and prints the workflow JSON, so
-	// loadWorkflow's `python3 yaml2json.py <yml>` yields our fixture deterministically.
 	shim := "import sys\nsys.stdout.write(" + pyQuote(workflowJSON) + ")\n"
 	writeFile(t, filepath.Join(root, "harness", "yaml2json.py"), shim)
-	writeFile(t, filepath.Join(root, ".agent", "workflows", name+".yml"), "stub: true\n")
+	writeFile(t, filepath.Join(root, ".agent", "workflows", name+".yml"), workflowJSON)
 	return root
 }
 
@@ -167,7 +174,7 @@ func fakeRepo(t *testing.T, name, workflowJSON string) string {
 // it reaches the safety bound cleanly (the expected external-stop outcome).
 const externalAgentWorkflow = `{
   "stage": "evolve",
-  "phases": [{"name": "implementer", "agent": "implementer", "readonly": false, "required_gates": []}],
+  "phases": [{"name": "implementer", "agent": "implementer", "readonly": false, "effect": "mutate", "required_gates": []}],
   "stop_condition": {"type": "external", "all_of": [], "anti_pattern": "round_count"}
 }`
 
@@ -265,39 +272,207 @@ func TestEvolve_WritesCheckpointAndResumes(t *testing.T) {
 // MALFORMED checkpoint with --resume is a hard error — never a silent restart.
 func TestResumeStart_Paths(t *testing.T) {
 	root := t.TempDir()
-
+	binding := checkpointBinding{
+		Workflow: "evolve", WorkflowDigest: "workflow-digest",
+		Mode: "balanced", Lifecycle: "mvp", PhaseLimit: 3,
+	}
 	// No --resume: fresh sentinel, no IO, no error, zero-spend seed, phase 0, gates false.
-	if start, prev, spent, phase, gg, err := resumeStart(root, false); err != nil || start != 0 || prev != -1.0 || spent != 0 || phase != 0 || gg != false {
+	if start, prev, spent, phase, gg, err := resumeStart(root, false, binding); err != nil || start != 0 || prev != -1.0 || spent != 0 || phase != 0 || gg != false {
 		t.Errorf("no-resume = (%d,%v,%d,%d,%v,%v), want (0,-1,0,0,false,nil)", start, prev, spent, phase, gg, err)
 	}
 	// --resume, no checkpoint file present: tolerated as a fresh start (zero spend, phase 0).
-	if start, prev, spent, phase, gg, err := resumeStart(root, true); err != nil || start != 0 || prev != -1.0 || spent != 0 || phase != 0 || gg != false {
+	if start, prev, spent, phase, gg, err := resumeStart(root, true, binding); err != nil || start != 0 || prev != -1.0 || spent != 0 || phase != 0 || gg != false {
 		t.Errorf("resume+missing = (%d,%v,%d,%d,%v,%v), want (0,-1,0,0,false,nil)", start, prev, spent, phase, gg, err)
 	}
 	// --resume with a present, valid ITERATION-BOUNDARY checkpoint (PhaseIndex 0): continue
 	// at Iteration+1, seed prev AND the persisted spend, phase 0 (replay the iteration in
 	// full), AND GatesGreen (regression: this used to be silently dropped, so a resumed
 	// loop's stale detector always started as if gates were red regardless of the checkpoint).
-	cp := persist.Checkpoint{Workflow: "evolve", Iteration: 5, RoadmapCompletion: 0.6, SpentUsdMicros: 1_250_000, GatesGreen: true}
+	cp := persist.Checkpoint{
+		Workflow: "evolve", WorkflowDigest: "workflow-digest",
+		Mode: "balanced", Lifecycle: "mvp", Iteration: 5,
+		RoadmapCompletion: 0.6, SpentUsdMicros: 1_250_000, GatesGreen: true,
+		Reason: "iteration complete", UpdatedAtUnix: 1_750_000_000,
+	}
 	if err := persist.Save(checkpointPath(root), cp, 0); err != nil {
 		t.Fatalf("seed checkpoint: %v", err)
 	}
-	if start, prev, spent, phase, gg, err := resumeStart(root, true); err != nil || start != 6 || prev != 0.6 || spent != 1_250_000 || phase != 0 || gg != true {
+	if start, prev, spent, phase, gg, err := resumeStart(root, true, binding); err != nil || start != 6 || prev != 0.6 || spent != 1_250_000 || phase != 0 || gg != true {
 		t.Errorf("resume+valid = (%d,%v,%d,%d,%v,%v), want (6,0.6,1250000,0,true,nil)", start, prev, spent, phase, gg, err)
 	}
 	// --resume with a MID-ITERATION checkpoint (PhaseIndex > 0): resume re-enters the
 	// in-progress iteration AT that phase (phase-granular), not from phase 0.
-	mid := persist.Checkpoint{Workflow: "evolve", Iteration: 5, RoadmapCompletion: 0.6, PhaseIndex: 3, SpentUsdMicros: 2_000_000}
+	mid := persist.Checkpoint{
+		Workflow: "evolve", WorkflowDigest: "workflow-digest",
+		Mode: "balanced", Lifecycle: "mvp", Iteration: 5,
+		RoadmapCompletion: 0.6, PhaseIndex: 3, SpentUsdMicros: 2_000_000,
+		Reason: "phase complete", UpdatedAtUnix: 1_750_000_001,
+	}
 	if err := persist.Save(checkpointPath(root), mid, 0); err != nil {
 		t.Fatalf("seed mid checkpoint: %v", err)
 	}
-	if start, _, spent, phase, _, err := resumeStart(root, true); err != nil || start != 6 || phase != 3 || spent != 2_000_000 {
+	if start, _, spent, phase, _, err := resumeStart(root, true, binding); err != nil || start != 6 || phase != 3 || spent != 2_000_000 {
 		t.Errorf("resume+mid-iteration = (start %d, phase %d, spent %d, %v), want (6,3,2000000,nil)", start, phase, spent, err)
 	}
 	// --resume with a MALFORMED checkpoint: hard error, no silent from-scratch.
 	writeFile(t, checkpointPath(root), "{not valid json")
-	if start, _, _, _, _, err := resumeStart(root, true); err == nil || start != 0 {
+	if start, _, _, _, _, err := resumeStart(root, true, binding); err == nil || start != 0 {
 		t.Errorf("resume+malformed must error out (got start=%d err=%v)", start, err)
+	}
+}
+
+func TestResumeStart_RejectsBindingDriftAndInvalidState(t *testing.T) {
+	binding := checkpointBinding{
+		Workflow: "evolve", WorkflowDigest: "workflow-digest",
+		Mode: "explorer", Lifecycle: "idea", PhaseLimit: 3,
+	}
+	valid := persist.Checkpoint{
+		FormatVersion: persist.CheckpointFormatCurrent,
+		Workflow:      "evolve", WorkflowDigest: "workflow-digest",
+		Mode: "explorer", Lifecycle: "idea",
+		Iteration: 2, RoadmapCompletion: 0.5, PhaseIndex: 2, SpentUsdMicros: 10,
+		Reason: "phase complete", UpdatedAtUnix: 1_750_000_000,
+	}
+	tests := []struct {
+		name string
+		edit func(*persist.Checkpoint)
+		want string
+	}{
+		{"missing workflow", func(cp *persist.Checkpoint) { cp.Workflow = "" }, "lacks required"},
+		{"missing mode", func(cp *persist.Checkpoint) { cp.Mode = "" }, "lacks required"},
+		{"legacy missing lifecycle", func(cp *persist.Checkpoint) { cp.Lifecycle = "" }, "legacy checkpoints"},
+		{"legacy format", func(cp *persist.Checkpoint) { cp.FormatVersion = "forgeos.checkpoint.v1" }, "diagnostic-only"},
+		{"missing workflow digest", func(cp *persist.Checkpoint) { cp.WorkflowDigest = "" }, "workflow digest"},
+		{"missing reason", func(cp *persist.Checkpoint) { cp.Reason = "" }, "recovery metadata"},
+		{"missing update time", func(cp *persist.Checkpoint) { cp.UpdatedAtUnix = 0 }, "recovery metadata"},
+		{"workflow mismatch", func(cp *persist.Checkpoint) { cp.Workflow = "build" }, "workflow mismatch"},
+		{"workflow digest mismatch", func(cp *persist.Checkpoint) { cp.WorkflowDigest = "other" }, "digest mismatch"},
+		{"mode mismatch", func(cp *persist.Checkpoint) { cp.Mode = "engineering" }, "mode mismatch"},
+		{"lifecycle mismatch", func(cp *persist.Checkpoint) { cp.Lifecycle = "production" }, "lifecycle mismatch"},
+		{"negative iteration", func(cp *persist.Checkpoint) { cp.Iteration = -1 }, "non-negative"},
+		{"iteration overflow", func(cp *persist.Checkpoint) { cp.Iteration = int(^uint(0) >> 1) }, "incremented safely"},
+		{"negative roadmap", func(cp *persist.Checkpoint) { cp.RoadmapCompletion = -0.1 }, "within [0,1]"},
+		{"roadmap above one", func(cp *persist.Checkpoint) { cp.RoadmapCompletion = 1.1 }, "within [0,1]"},
+		{"negative phase", func(cp *persist.Checkpoint) { cp.PhaseIndex = -1 }, "executable range"},
+		{"phase beyond policy cutoff", func(cp *persist.Checkpoint) { cp.PhaseIndex = 4 }, "executable range"},
+		{"negative spend", func(cp *persist.Checkpoint) { cp.SpentUsdMicros = -1 }, "non-negative"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cp := valid
+			tc.edit(&cp)
+			if err := validateResumeCheckpoint(cp, binding); err == nil ||
+				!strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("validateResumeCheckpoint error = %v, want %q", err, tc.want)
+			}
+		})
+	}
+}
+
+func TestEvolve_CheckpointPolicyBindingEndToEnd(t *testing.T) {
+	requirePython(t)
+	root := fakeRepo(t, "evolve", externalAgentWorkflow)
+	firstArgs := []string{
+		"evolve", "--root", root, "--mode", "engineering",
+		"--lifecycle", "growth", "--max-iter", "1",
+	}
+	if code := cmdEvolve(firstArgs); code != 0 {
+		t.Fatalf("first evolve exit=%d", code)
+	}
+	cp, found, err := persist.Load(checkpointPath(root))
+	if err != nil || !found {
+		t.Fatalf("load checkpoint: found=%v err=%v", found, err)
+	}
+	if cp.Workflow != "evolve" || cp.Mode != "engineering" || cp.Lifecycle != "growth" {
+		t.Fatalf("checkpoint binding = %q/%q/%q, want evolve/engineering/growth",
+			cp.Workflow, cp.Mode, cp.Lifecycle)
+	}
+	if code := cmdEvolve([]string{
+		"evolve", "--root", root, "--mode", "engineering",
+		"--lifecycle", "growth", "--max-iter", "2", "--resume",
+	}); code != 0 {
+		t.Fatalf("same-policy resume exit=%d, want 0", code)
+	}
+	cp, found, err = persist.Load(checkpointPath(root))
+	if err != nil || !found || cp.Iteration != 2 {
+		t.Fatalf("same-policy resume did not advance: checkpoint=%+v found=%v err=%v", cp, found, err)
+	}
+}
+
+func TestEvolve_ResumePolicyMismatchFailsBeforeTraceOrCheckpointMutation(t *testing.T) {
+	requirePython(t)
+	root := fakeRepo(t, "evolve", externalAgentWorkflow)
+	if code := cmdEvolve([]string{
+		"evolve", "--root", root, "--mode", "engineering",
+		"--lifecycle", "growth", "--max-iter", "1",
+	}); code != 0 {
+		t.Fatalf("first evolve exit=%d", code)
+	}
+	cpBefore, err := os.ReadFile(checkpointPath(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tracePath := filepath.Join(root, ".forge", "trace.jsonl")
+	traceBefore, err := os.ReadFile(tracePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{"mode", []string{"--mode", "balanced", "--lifecycle", "growth"}},
+		{"lifecycle", []string{"--mode", "engineering", "--lifecycle", "production"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			args := []string{"evolve", "--root", root, "--max-iter", "1", "--resume"}
+			args = append(args, tc.args...)
+			if code := cmdEvolve(args); code != 1 {
+				t.Fatalf("mismatched resume exit=%d, want 1", code)
+			}
+			cpAfter, _ := os.ReadFile(checkpointPath(root))
+			traceAfter, _ := os.ReadFile(tracePath)
+			if string(cpAfter) != string(cpBefore) {
+				t.Fatal("mismatched resume modified checkpoint")
+			}
+			if string(traceAfter) != string(traceBefore) {
+				t.Fatal("mismatched resume opened/appended the trace before rejection")
+			}
+		})
+	}
+}
+
+func TestEvolve_ResumeRejectsForeignAndLegacyCheckpointBeforeTrace(t *testing.T) {
+	requirePython(t)
+	for _, tc := range []struct {
+		name string
+		cp   persist.Checkpoint
+	}{
+		{"foreign workflow", persist.Checkpoint{
+			Workflow: "build", WorkflowDigest: "foreign-workflow",
+			Mode: "balanced", Lifecycle: "mvp",
+			Reason: "iteration complete", UpdatedAtUnix: 1_750_000_000,
+		}},
+		{"legacy missing lifecycle", persist.Checkpoint{
+			FormatVersion: "forgeos.checkpoint.v1",
+			Workflow:      "evolve", Mode: "balanced",
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := fakeRepo(t, "evolve", externalAgentWorkflow)
+			if err := persist.Save(checkpointPath(root), tc.cp, 0); err != nil {
+				t.Fatal(err)
+			}
+			if code := cmdEvolve([]string{
+				"evolve", "--root", root, "--mode", "balanced",
+				"--lifecycle", "mvp", "--max-iter", "1", "--resume",
+			}); code != 1 {
+				t.Fatalf("unsafe resume exit=%d, want 1", code)
+			}
+			if _, err := os.Stat(filepath.Join(root, ".forge", "trace.jsonl")); !os.IsNotExist(err) {
+				t.Fatalf("unsafe resume created trace before rejection: %v", err)
+			}
+		})
 	}
 }
 

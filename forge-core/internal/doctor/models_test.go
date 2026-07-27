@@ -273,3 +273,90 @@ func TestEvaluateWorkflowModels_UnparseableJSON(t *testing.T) {
 		t.Fatalf("findings = %+v, want exactly one FAIL", findings)
 	}
 }
+
+// TestEvaluateModeGatingAuthority_Valid covers the PASS path for a well-formed
+// mode_gating.authority reference.
+func TestEvaluateModeGatingAuthority_Valid(t *testing.T) {
+	var findings []ModelsFinding
+	ok := evaluateModeGatingAuthority("wf.yml", &modeGating{Authority: "../policies/modes.yml#workflow_depth.discover"}, &findings)
+	if !ok {
+		t.Fatal("evaluateModeGatingAuthority(valid) = false, want true")
+	}
+	if len(findings) != 1 || findings[0].Level != "PASS" {
+		t.Fatalf("findings = %+v, want exactly one PASS", findings)
+	}
+}
+
+// TestEvaluateModeGatingAuthority_Invalid covers the FAIL path for a malformed
+// mode_gating.authority reference (missing '#' separator).
+func TestEvaluateModeGatingAuthority_Invalid(t *testing.T) {
+	var findings []ModelsFinding
+	ok := evaluateModeGatingAuthority("wf.yml", &modeGating{Authority: "not-a-valid-reference"}, &findings)
+	if ok {
+		t.Fatal("evaluateModeGatingAuthority(invalid) = true, want false")
+	}
+	if len(findings) != 1 || findings[0].Level != "FAIL" {
+		t.Fatalf("findings = %+v, want exactly one FAIL", findings)
+	}
+}
+
+// TestEvaluateModeGatingAuthority_NilOrEmpty covers the no-op paths: nil
+// modeGating or empty Authority.
+func TestEvaluateModeGatingAuthority_NilOrEmpty(t *testing.T) {
+	var findings []ModelsFinding
+	// nil modeGating
+	if !evaluateModeGatingAuthority("wf.yml", nil, &findings) {
+		t.Fatal("evaluateModeGatingAuthority(nil) = false, want true")
+	}
+	if len(findings) != 0 {
+		t.Fatalf("findings = %+v, want none for nil modeGating", findings)
+	}
+	// empty Authority
+	var findings2 []ModelsFinding
+	if !evaluateModeGatingAuthority("wf.yml", &modeGating{Authority: ""}, &findings2) {
+		t.Fatal("evaluateModeGatingAuthority(empty) = false, want true")
+	}
+	if len(findings2) != 0 {
+		t.Fatalf("findings = %+v, want none for empty Authority", findings2)
+	}
+}
+
+// TestEvaluateRequiredWhen_Valid covers the PASS path for a well-formed
+// required_when reference.
+func TestEvaluateRequiredWhen_Valid(t *testing.T) {
+	var findings []ModelsFinding
+	ok := evaluateRequiredWhen("wf.yml", "../policies/modes.yml#workflow_depth.reviewer", nil, &findings)
+	if !ok {
+		t.Fatal("evaluateRequiredWhen(valid) = false, want true")
+	}
+	if len(findings) != 1 || findings[0].Level != "PASS" {
+		t.Fatalf("findings = %+v, want exactly one PASS", findings)
+	}
+}
+
+// TestEvaluateRequiredWhen_Invalid covers the WARN path for a malformed
+// required_when reference. Note: required_when never FAILs the workflow
+// (it's a WARN-only field), so ok must be true.
+func TestEvaluateRequiredWhen_Invalid(t *testing.T) {
+	var findings []ModelsFinding
+	ok := evaluateRequiredWhen("wf.yml", "bad-ref", nil, &findings)
+	if !ok {
+		t.Fatal("evaluateRequiredWhen(invalid) = false, want true (warn-only, never fail)")
+	}
+	if len(findings) != 1 || findings[0].Level != "WARN" {
+		t.Fatalf("findings = %+v, want exactly one WARN", findings)
+	}
+}
+
+// TestEvaluateRequiredWhen_Empty covers the no-op path: empty required_when
+// means the phase always runs, nothing to validate.
+func TestEvaluateRequiredWhen_Empty(t *testing.T) {
+	var findings []ModelsFinding
+	ok := evaluateRequiredWhen("wf.yml", "", nil, &findings)
+	if !ok {
+		t.Fatal("evaluateRequiredWhen(empty) = false, want true")
+	}
+	if len(findings) != 0 {
+		t.Fatalf("findings = %+v, want none for empty required_when", findings)
+	}
+}

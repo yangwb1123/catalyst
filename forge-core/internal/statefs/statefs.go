@@ -1,0 +1,252 @@
+// Package statefs provides fail-closed filesystem primitives for Forge's
+// repository-local control state. Repository contents are untrusted input, so
+// a pre-planted symlink or hard link must never turn a state write into an
+// out-of-repository mutation.
+package statefs
+
+import (
+	"errors"
+	"fmt"
+	"io"
+	"io/fs"
+	"os"
+	"path/filepath"
+)
+
+// EnsurePrivateDir creates path as a private directory or verifies the existing
+// leaf is a real directory. Mkdir (not MkdirAll) avoids accepting a symlink as
+// the state-directory leaf; callers must provide an existing parent.
+func EnsurePrivateDir(path string) error {
+	err := os.Mkdir(path, 0o700)
+	if err != nil && !errors.Is(err, fs.ErrExist) {
+		return fmt.Errorf("statefs: create directory %s: %w", path, err)
+	}
+	before, err := os.Lstat(path)
+	if err != nil {
+		return fmt.Errorf("statefs: inspect directory %s: %w", path, err)
+	}
+	if before.Mode()&os.ModeSymlink != 0 || !before.IsDir() {
+		return fmt.Errorf("statefs: %s must be a real directory", path)
+	}
+	if err := os.Chmod(path, 0o700); err != nil {
+		return fmt.Errorf("statefs: secure directory %s: %w", path, err)
+	}
+	after, err := os.Lstat(path)
+	if err != nil || !os.SameFile(before, after) || !after.IsDir() {
+		return fmt.Errorf("statefs: directory %s changed while securing it", path)
+	}
+	return nil
+}
+
+// EnsurePrivateDirTree treats the nearest existing directory as the caller's
+// trust anchor and creates only missing descendants beneath it. Security-
+// sensitive callers use a direct <trusted-root>/.forge leaf, so
+// EnsurePrivateDir still rejects that leaf when it is a symlink. Treating the
+// existing ancestor as an anchor preserves intentional/macOS path aliases.
+func EnsurePrivateDirTree(path string) error {
+	path = filepath.Clean(path)
+	var missing []string
+	var anchor string
+	for cursor := path; ; cursor = filepath.Dir(cursor) {
+		_, err := os.Lstat(cursor)
+		if err == nil {
+			anchor, err = filepath.EvalSymlinks(cursor)
+			if err != nil {
+				return fmt.Errorf("statefs: resolve directory anchor %s: %w", cursor, err)
+			}
+			resolved, err := os.Stat(anchor)
+			if err != nil || !resolved.IsDir() {
+				return fmt.Errorf("statefs: directory anchor %s is not a directory", cursor)
+			}
+			break
+		}
+		if errors.Is(err, fs.ErrNotExist) {
+			missing = append(missing, filepath.Base(cursor))
+			parent := filepath.Dir(cursor)
+			if parent == cursor {
+				return fmt.Errorf("statefs: no existing directory anchor for %s", path)
+			}
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("statefs: inspect directory anchor %s: %w", cursor, err)
+		}
+	}
+	for i := len(missing) - 1; i >= 0; i-- {
+		anchor = filepath.Join(anchor, missing[i])
+		if err := os.Mkdir(anchor, 0o700); err != nil {
+			return fmt.Errorf("statefs: create directory %s: %w", anchor, err)
+		}
+	}
+	return EnsurePrivateDir(path)
+}
+
+// InspectDir distinguishes a missing directory from an alias or non-directory.
+func InspectDir(path string) (os.FileInfo, bool, error) {
+	info, err := os.Lstat(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, fmt.Errorf("statefs: inspect directory %s: %w", path, err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+		return nil, false, fmt.Errorf("statefs: %s must be a real directory", path)
+	}
+	return info, true, nil
+}
+
+// InspectRegular accepts a missing leaf or a regular single-link file. It uses
+// Lstat so a symlink is rejected rather than followed.
+func InspectRegular(path string) (os.FileInfo, bool, error) {
+	if _, present, err := InspectDir(filepath.Dir(path)); err != nil || !present {
+		return nil, false, err
+	}
+	info, err := os.Lstat(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, fmt.Errorf("statefs: inspect %s: %w", path, err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+		return nil, false, fmt.Errorf("statefs: %s must be a regular non-symlink file", path)
+	}
+	if !singleLink(info) {
+		return nil, false, fmt.Errorf("statefs: %s must be a single-link file", path)
+	}
+	return info, true, nil
+}
+
+// OpenRegular opens a state leaf without following a final symlink on
+// supported hosts, then verifies identity, type, link count, and permissions
+// before the caller can mutate it.
+func OpenRegular(path string, flag int, perm os.FileMode) (*os.File, error) {
+	if _, present, err := InspectDir(filepath.Dir(path)); err != nil || !present {
+		if err == nil {
+			err = fmt.Errorf("statefs: parent directory is missing")
+		}
+		return nil, err
+	}
+	before, present, err := InspectRegular(path)
+	if err != nil {
+		return nil, err
+	}
+	file, err := openFileNoFollow(path, flag, perm)
+	if err != nil {
+		return nil, fmt.Errorf("statefs: open %s: %w", path, err)
+	}
+	opened, err := file.Stat()
+	if err != nil || !opened.Mode().IsRegular() || !singleLink(opened) {
+		file.Close()
+		return nil, fmt.Errorf("statefs: opened leaf %s is not a regular single-link file", path)
+	}
+	if present && !os.SameFile(before, opened) {
+		file.Close()
+		return nil, fmt.Errorf("statefs: %s changed while opening", path)
+	}
+	current, nowPresent, err := InspectRegular(path)
+	if err != nil || !nowPresent || !os.SameFile(opened, current) {
+		file.Close()
+		return nil, fmt.Errorf("statefs: %s identity changed while opening", path)
+	}
+	if err := file.Chmod(perm); err != nil {
+		file.Close()
+		return nil, fmt.Errorf("statefs: secure %s: %w", path, err)
+	}
+	return file, nil
+}
+
+// ReadRegular reads a secure leaf and distinguishes a missing file from an
+// empty one. A positive maxBytes bounds state-file memory use.
+func ReadRegular(path string, maxBytes int64) ([]byte, bool, error) {
+	info, present, err := InspectRegular(path)
+	if err != nil || !present {
+		return nil, present, err
+	}
+	if maxBytes > 0 && info.Size() > maxBytes {
+		return nil, true, fmt.Errorf("statefs: %s exceeds %d bytes", path, maxBytes)
+	}
+	file, err := OpenRegular(path, os.O_RDONLY, 0o600)
+	if err != nil {
+		return nil, true, err
+	}
+	defer file.Close()
+	reader := io.Reader(file)
+	if maxBytes > 0 {
+		reader = io.LimitReader(file, maxBytes+1)
+	}
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		return nil, true, fmt.Errorf("statefs: read %s: %w", path, err)
+	}
+	if maxBytes > 0 && int64(len(data)) > maxBytes {
+		return nil, true, fmt.Errorf("statefs: %s exceeds %d bytes", path, maxBytes)
+	}
+	return data, true, nil
+}
+
+// AtomicWrite publishes data using an unpredictable O_EXCL sibling and rename.
+// Existing target aliases are rejected before any target mutation.
+func AtomicWrite(path string, data []byte, perm os.FileMode) error {
+	dir := filepath.Dir(path)
+	if err := EnsurePrivateDir(dir); err != nil {
+		return err
+	}
+	if _, _, err := InspectRegular(path); err != nil {
+		return err
+	}
+	temp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".tmp-*")
+	if err != nil {
+		return fmt.Errorf("statefs: create temporary file for %s: %w", path, err)
+	}
+	tempPath := temp.Name()
+	defer os.Remove(tempPath)
+	if err := writeTemp(temp, data, perm); err != nil {
+		return fmt.Errorf("statefs: prepare %s: %w", path, err)
+	}
+	tempInfo, err := os.Lstat(tempPath)
+	if err != nil || !tempInfo.Mode().IsRegular() || !singleLink(tempInfo) {
+		return fmt.Errorf("statefs: temporary file for %s lost identity", path)
+	}
+	if _, _, err := InspectRegular(path); err != nil {
+		return err
+	}
+	if err := os.Rename(tempPath, path); err != nil {
+		return fmt.Errorf("statefs: commit %s: %w", path, err)
+	}
+	published, present, err := InspectRegular(path)
+	if err != nil || !present || !os.SameFile(tempInfo, published) {
+		return fmt.Errorf("statefs: published file %s lost identity", path)
+	}
+	return nil
+}
+
+func writeTemp(file *os.File, data []byte, perm os.FileMode) error {
+	if err := file.Chmod(perm); err != nil {
+		file.Close()
+		return err
+	}
+	if _, err := file.Write(data); err != nil {
+		file.Close()
+		return err
+	}
+	if err := file.Sync(); err != nil {
+		file.Close()
+		return err
+	}
+	return file.Close()
+}
+
+// RemoveRegular removes a state leaf only after rejecting aliases and special
+// files. Missing leaves are already absent and therefore succeed.
+func RemoveRegular(path string) error {
+	_, present, err := InspectRegular(path)
+	if err != nil || !present {
+		return err
+	}
+	if err := os.Remove(path); err != nil {
+		return fmt.Errorf("statefs: remove %s: %w", path, err)
+	}
+	return nil
+}

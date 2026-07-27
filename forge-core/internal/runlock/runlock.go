@@ -24,6 +24,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"forgeos/forge-core/internal/statefs"
 )
 
 // errLockHeld is the sentinel tryLock (lock_unix.go/lock_other.go) returns
@@ -57,11 +59,11 @@ type Lock struct {
 // Callers must defer Release() on success.
 func Acquire(root string) (*Lock, error) {
 	dir := filepath.Join(root, ".forge")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return nil, fmt.Errorf("runlock: create %s: %w", dir, err)
+	if err := statefs.EnsurePrivateDir(dir); err != nil {
+		return nil, fmt.Errorf("runlock: secure %s: %w", dir, err)
 	}
 	path := filepath.Join(dir, "run.lock")
-	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o644)
+	f, err := statefs.OpenRegular(path, os.O_RDWR|os.O_CREATE, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("runlock: open %s: %w", path, err)
 	}

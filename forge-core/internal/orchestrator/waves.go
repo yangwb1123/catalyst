@@ -24,6 +24,9 @@ import (
 // with NO depends_on at all yields a single wave of every phase in authored order
 // (the parallel engine then runs them all concurrently — the pure fan-out case).
 func Waves(phases []asset.Phase) ([][]int, error) {
+	if err := asset.ValidateWorkflowStructure(asset.Workflow{Phases: phases}); err != nil {
+		return nil, fmt.Errorf("invalid workflow structure: %w", err)
+	}
 	idx := make(map[string]int, len(phases))
 	for i, p := range phases {
 		idx[p.Name] = i

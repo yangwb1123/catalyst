@@ -30,7 +30,7 @@
 //	  py-version: <ver>      (pyproject.toml project.requires-python, when detected)
 //	  indicators: <list>
 //	  workflow:  <name>  — <reason>
-//	  command:   forge evolve .agent/workflows/<name>.yml --mode <mode> --lifecycle <lc>
+//	  command:   forge evolve evolve ... OR forge run discover ...
 //
 // Parsing functions live in detect_parsers.go. Tests in detect_test.go and
 // detect_parsers_test.go.
@@ -121,8 +121,7 @@ func cmdDetect(args []string) int {
 	}
 	fmt.Printf("  indicators:  %s\n", strings.Join(p.Indicators, "; "))
 	fmt.Printf("  workflow:    %s  — %s\n", s.Workflow, s.Reason)
-	fmt.Printf("  command:     forge evolve .agent/workflows/%s.yml --mode %s --lifecycle %s\n",
-		s.Workflow, s.Mode, s.Lifecycle)
+	fmt.Printf("  command:     %s\n", suggestionCommand(s))
 	return 0
 }
 
@@ -175,8 +174,7 @@ func cmdDetectJSON(p projectProfile, s workflowSuggestion) int {
 		WorkflowMode:   s.Mode,
 		WorkflowLC:     s.Lifecycle,
 		WorkflowReason: s.Reason,
-		Command: fmt.Sprintf("forge evolve .agent/workflows/%s.yml --mode %s --lifecycle %s",
-			s.Workflow, s.Mode, s.Lifecycle),
+		Command:        suggestionCommand(s),
 	}
 	data, err := json.MarshalIndent(out, "", "  ")
 	if err != nil {
@@ -193,8 +191,8 @@ func cmdDetectJSON(p projectProfile, s workflowSuggestion) int {
 func autoSelectWorkflow(root string, fs *flag.FlagSet, o *runOpts) string {
 	p := detectProject(root)
 	s := suggestWorkflow(p)
-	fmt.Printf("forge evolve: auto-detected workflow=%q mode=%s lifecycle=%s — %s\n",
-		s.Workflow, s.Mode, s.Lifecycle, s.Reason)
+	fmt.Printf("forge evolve: auto-detected workflow=%q mode=%s lifecycle=%s route=%q — %s\n",
+		s.Workflow, s.Mode, s.Lifecycle, suggestionCommand(s), s.Reason)
 	var modeSet, lifecycleSet bool
 	fs.Visit(func(f *flag.Flag) {
 		if f.Name == "mode" {
@@ -211,6 +209,15 @@ func autoSelectWorkflow(root string, fs *flag.FlagSet, o *runOpts) string {
 		o.lifecycle = s.Lifecycle
 	}
 	return s.Workflow
+}
+
+func suggestionCommand(s workflowSuggestion) string {
+	subcommand := "run"
+	if s.Workflow == "evolve" {
+		subcommand = "evolve"
+	}
+	return fmt.Sprintf("forge %s %s --mode %s --lifecycle %s",
+		subcommand, s.Workflow, s.Mode, s.Lifecycle)
 }
 
 func boolStr(b bool) string {

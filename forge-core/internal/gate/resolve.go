@@ -75,7 +75,7 @@ func GatesGreen(root string, names []string, probe, categories map[string]string
 			provenCount++
 			proof.Proven = append(proof.Proven, name)
 		case StatusNA:
-			cat := gateCategory(name, categories)
+			cat := gateCategory(name, probe, categories)
 			if !exemptNA(cat, lifecycle) {
 				green = false // an un-waivable N/A (no_tool@production, or unknown) blocks
 			} else {
@@ -109,21 +109,27 @@ func exemptNA(category, lifecycle string) bool {
 	}
 }
 
-// gateCategory resolves the N/A category for a gate by mapping its name onto the
-// acceptance criterion that backs it (the same mapping ResolveGate uses) and
-// reading that criterion's category from the parallel ProbeAll map. The `test`
-// gate combines test_pass+app_test_pass; an N/A there is driven by app_test_pass
-// (the only one that can be N/A — no example apps), so its category is read from
-// app_test_pass. An absent category yields "" (the strict, non-exemptible default).
-func gateCategory(name string, categories map[string]string) string {
-	criterion := name
+// gateCategory resolves the N/A category for a logical gate. Composite gates
+// use the first underlying criterion that is absent/N/A, so a broken required
+// probe cannot borrow a more permissive sibling's exemption.
+func gateCategory(name string, probe, categories map[string]string) string {
 	switch name {
 	case "security":
-		criterion = "security_findings"
+		return firstNACategory(probe, categories, "security_findings", "dependency_vulnerabilities")
 	case "test":
-		criterion = "app_test_pass"
+		return firstNACategory(probe, categories, "test_pass", "app_test_pass")
+	default:
+		return categories[name]
 	}
-	return categories[criterion]
+}
+
+func firstNACategory(probe, categories map[string]string, criteria ...string) string {
+	for _, criterion := range criteria {
+		if status, ok := probe[criterion]; !ok || status == StatusNA {
+			return categories[criterion]
+		}
+	}
+	return ""
 }
 
 // naReason renders a short, honest reason for a waived N/A gate, preferring the
@@ -153,7 +159,8 @@ func HarnessRunner(repoRoot string, probe map[string]string) func(string) Result
 //	test       -> PASS iff BOTH acceptance test_pass AND app_test_pass are PASS
 //	lint       -> acceptance 'lint'            (N/A here: no linter installed)
 //	build      -> acceptance 'build'           (N/A here: no build step)
-//	security   -> acceptance 'security_findings' (a real secret-scan PASS/FAIL)
+//	security   -> BOTH acceptance 'security_findings' and
+//	              'dependency_vulnerabilities' (secret scan + SCA)
 //
 // An acceptance-backed gate whose criterion is missing from the probe map (or
 // whose probe failed) resolves to N/A — honest "not checked", never a pass.
@@ -170,7 +177,7 @@ func ResolveGate(repoRoot, name string, probe map[string]string) Result {
 	case "build":
 		return probedGate(name, probe, "build")
 	case "security":
-		return probedGate(name, probe, "security_findings")
+		return combinedGate(name, probe, "security_findings", "dependency_vulnerabilities")
 	default:
 		return probedGate(name, probe, name)
 	}

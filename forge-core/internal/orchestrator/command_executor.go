@@ -37,6 +37,16 @@ const defaultMaxOutputBytes = 10 << 20
 type CommandExecutor struct {
 	// Build returns the argv to run for a phase. An empty result is an error.
 	Build func(p asset.Phase, mode string) []string
+	// ValidateConfig is an OPTIONAL phase-aware authorization check run before
+	// Build constructs an argv. It lets a caller enforce workflow/agent security
+	// boundaries without teaching this generic process runner about a particular
+	// agent vendor. Any error is a permanent KindConfig failure and no command is
+	// constructed or spawned.
+	ValidateConfig func(p asset.Phase, mode string) error
+	// PromptViaStdin moves the final prompt argument of a "-p <prompt>" command
+	// to stdin immediately before process creation. Build remains inspectable and
+	// backward-compatible, while sensitive repository context never reaches ps.
+	PromptViaStdin bool
 	// Dir is the working directory for the spawned agent (the project --root). A
 	// real agent resolves the task's relative paths and writes files relative to its
 	// cwd; without this it inherits forge's OWN cwd, so `forge run --root /project`
@@ -63,7 +73,18 @@ type CommandExecutor struct {
 	// Zero selects the safe default (defaultMaxOutputBytes, 10 MiB). The resource
 	// guard's third dimension alongside MaxDepth (depth) and Timeout (wall-clock).
 	MaxOutputBytes int
-	Log            func(string)
+	// EnvAllow names additional parent environment variables the child may
+	// inherit. The default environment is intentionally minimal (process basics,
+	// locale, and certificate paths); only the trusted FORGE_AGENT_DEPTH counter
+	// is injected. Cloud, source-control, and SSH credentials are not inherited
+	// unless explicitly named here.
+	EnvAllow []string
+	// RestrictedEnv removes ambient discovery paths (HOME, SHELL, TMPDIR, XDG,
+	// and the parent PATH) for security-sensitive agent phases. It preserves
+	// only locale/certificate settings plus EnvAllow, and injects a fixed host
+	// PATH. This is intentionally stronger than the ordinary minimal policy.
+	RestrictedEnv bool
+	Log           func(string)
 	// Observe, when set, receives a finished command's phase name, RAW captured output
 	// (post-truncation, pre-render), and the command's measured wall-clock LATENCY (the
 	// time cmd.Run() took — see Now). It is a generic output SINK: this spawner hands the
@@ -76,6 +97,17 @@ type CommandExecutor struct {
 	// model the same way it attributes the parsed cost. nil = not observed (the test/default
 	// path, byte-for-byte unchanged).
 	Observe func(phase, output string, latency time.Duration)
+	// ValidateOutput is an OPTIONAL machine-contract check applied after a command
+	// exits successfully. It receives the same human-readable output RenderLog
+	// would print. A validation error turns the phase into a terminal KindFailed
+	// result, preventing malformed planner/reviewer contracts from silently
+	// flowing downstream. Nil preserves the legacy no-validation path.
+	ValidateOutput func(phase, output string) error
+	// ValidateRawOutput is the pre-render twin of ValidateOutput. It receives the
+	// complete retained command envelope before RenderLog unwraps it, allowing a
+	// caller to enforce transport metadata (for example type/result/is_error)
+	// without changing the generic executor's vendor-neutral behavior.
+	ValidateRawOutput func(phase, output string) error
 	// Now supplies the current time for the wall-clock LATENCY measurement bracketing
 	// cmd.Run() — the deterministic-test twin of Engine.Sleep / trace.Now. nil selects the
 	// production default (time.Now), so a real run measures the true agent-phase duration; a
@@ -101,15 +133,15 @@ type CommandExecutor struct {
 
 	// Sandbox is the OPTIONAL isolation configuration for running agent commands
 	// inside a sandboxed environment (Firecracker microVM, Docker, etc.) instead
-	// of directly on the host. When nil, the command runs on the host (the v1
-	// default). When non-nil, the executor should route the command through the
-	// sandbox's runtime. This is the extension point for ROADMAP v3's "带外
-	// Sandbox (Firecracker)" direction.
+	// of directly on the host. nil, an empty Type, or Type "none" explicitly
+	// selects host execution. Any requested runtime fails closed until a sandbox
+	// runner is installed and wired; it is never silently ignored.
 	Sandbox *SandboxConfig
 }
 
-// SandboxConfig describes how to isolate an agent command. v1 placeholder skeleton.
-// The actual sandbox runner lives outside forge-core and is wired by the CLI layer.
+// SandboxConfig describes how to isolate an agent command. It is the v3 extension
+// point; forge-core currently has no runtime implementation and therefore rejects
+// every non-"none" Type rather than accidentally executing it on the host.
 type SandboxConfig struct {
 	Type       string // "" (none) | "firecracker" | "docker"
 	Image      string // container/microVM image
@@ -127,9 +159,24 @@ func (c CommandExecutor) Execute(ctx context.Context, p asset.Phase, mode string
 	if c.Build == nil {
 		return configErr(p.Name, nil) // nil Build: nothing to run, permanent.
 	}
+	if c.ValidateConfig != nil {
+		if err := c.ValidateConfig(p, mode); err != nil {
+			return configErr(p.Name, err)
+		}
+	}
+	if err := c.sandboxConfigError(p.Name); err != nil {
+		return err
+	}
+	if err := c.environmentConfigError(p.Name); err != nil {
+		return err
+	}
 	argv := c.Build(p, mode)
 	if len(argv) == 0 {
 		return configErr(p.Name, nil) // empty argv: misconfigured, permanent.
+	}
+	argv, input, useStdin, err := c.prepareInput(p.Name, argv)
+	if err != nil {
+		return err
 	}
 
 	// Recursion guard: once the inherited agent-call depth reaches the cap, refuse
@@ -146,8 +193,33 @@ func (c CommandExecutor) Execute(ctx context.Context, p asset.Phase, mode string
 	runCtx, runCancel := c.commandContext(ctx)
 	defer runCancel()
 
-	out, latency, runErr := c.runMeasured(runCtx, argv, depth)
+	out, latency, runErr := c.runMeasured(runCtx, argv, depth, input, useStdin)
 	return c.finish(p.Name, argv, out, runErr, runCtx.Err(), latency)
+}
+
+// sandboxConfigError enforces the isolation boundary. A declared sandbox is a
+// safety requirement, not a hint: until a runtime is wired, falling back to the
+// host would violate the workflow contract and must be a permanent config error.
+func (c CommandExecutor) sandboxConfigError(phase string) error {
+	if c.Sandbox == nil {
+		return nil
+	}
+	runtime := strings.TrimSpace(c.Sandbox.Type)
+	if runtime == "" || strings.EqualFold(runtime, "none") {
+		return nil
+	}
+	return configErr(phase, fmt.Errorf("sandbox %q requested but no sandbox runner is installed; refusing host execution", runtime))
+}
+
+func (c CommandExecutor) prepareInput(phase string, argv []string) ([]string, string, bool, error) {
+	if !c.PromptViaStdin {
+		return argv, "", false, nil
+	}
+	if len(argv) < 2 || (argv[len(argv)-2] != "-p" && argv[len(argv)-2] != "--print") {
+		return nil, "", false, configErr(phase, fmt.Errorf("stdin prompt requires a terminal -p <prompt> command shape"))
+	}
+	runArgv := append([]string(nil), argv[:len(argv)-1]...)
+	return runArgv, argv[len(argv)-1], true, nil
 }
 
 // runMeasured constructs the bounded, process-grouped command for argv and runs it under
@@ -160,7 +232,7 @@ func (c CommandExecutor) Execute(ctx context.Context, p asset.Phase, mode string
 // so the scorecard's p95 is genuinely per-model (not the iteration-shared span). The clock read
 // is OS-level and generic (no claude/vendor knowledge); this layer only knows WHEN the command
 // started and finished, never what model it billed.
-func (c CommandExecutor) runMeasured(ctx context.Context, argv []string, depth int) (*cappedBuffer, time.Duration, error) {
+func (c CommandExecutor) runMeasured(ctx context.Context, argv []string, depth int, input string, useStdin bool) (*cappedBuffer, time.Duration, error) {
 	// exec.CommandContext's default cancel SIGKILLs the DIRECT child only. That is
 	// insufficient once `claude -p` forks grandchildren via its own tools (Bash ->
 	// git/test/build): those grandchildren inherit the command's stdout/stderr pipe,
@@ -175,7 +247,10 @@ func (c CommandExecutor) runMeasured(ctx context.Context, argv []string, depth i
 	cmd.Dir = c.Dir // empty -> inherit forge's cwd (os/exec default)
 	// Propagate an incremented depth so a nested forge inherits it; childEnv
 	// REPLACES any inherited key (duplicate-key resolution is unspecified across libcs).
-	cmd.Env = childEnv(depth)
+	cmd.Env = c.childEnv(depth)
+	if useStdin {
+		cmd.Stdin = strings.NewReader(input)
+	}
 	// Bound the captured output: a runaway agent's unbounded stdout would OOM the
 	// orchestrator under CombinedOutput. cappedBuffer retains at most the cap and
 	// drains the rest; the SAME pointer for Stdout+Stderr lets os/exec serialize the
@@ -199,8 +274,19 @@ func (c CommandExecutor) finish(phase string, argv []string, out *cappedBuffer, 
 	// path is byte-for-byte unchanged.
 	rendered := out.rendered()
 	c.observe(phase, rendered, latency)
-	c.logf("phase %s: ran %q -> %s", phase, strings.Join(argv, " "), c.renderForLog(rendered))
+	visible := c.renderForLog(rendered)
+	c.logf("phase %s: ran %q -> %s", phase, strings.Join(argv, " "), visible)
 	if runErr == nil {
+		if c.ValidateRawOutput != nil {
+			if err := c.ValidateRawOutput(phase, rendered); err != nil {
+				return &ExecError{Phase: phase, Kind: KindFailed, Err: fmt.Errorf("raw output contract: %w", err)}
+			}
+		}
+		if c.ValidateOutput != nil {
+			if err := c.ValidateOutput(phase, visible); err != nil {
+				return &ExecError{Phase: phase, Kind: KindFailed, Err: fmt.Errorf("output contract: %w", err)}
+			}
+		}
 		return nil
 	}
 	// Ask the optional caller-injected judge whether this failure was a transient overload
@@ -282,24 +368,6 @@ func (c CommandExecutor) maxDepth() int {
 		return c.MaxDepth
 	}
 	return defaultMaxAgentDepth
-}
-
-// childEnv returns the parent environment with FORGE_AGENT_DEPTH set to depth+1,
-// REPLACING any inherited value rather than appending a duplicate key. POSIX leaves
-// duplicate-key resolution unspecified and libcs differ (glibc's getenv returns the
-// LAST occurrence, some others the first), so collapsing to a single key is the only
-// choice correct under all of them — the child unambiguously observes the
-// incremented agent-call depth regardless of the platform's getenv.
-func childEnv(depth int) []string {
-	prefix := agentDepthEnv + "="
-	base := os.Environ()
-	out := make([]string, 0, len(base)+1)
-	for _, kv := range base {
-		if !strings.HasPrefix(kv, prefix) {
-			out = append(out, kv)
-		}
-	}
-	return append(out, fmt.Sprintf("%s=%d", agentDepthEnv, depth+1))
 }
 
 // maxOutputBytes is the effective cap on retained command output: the configured

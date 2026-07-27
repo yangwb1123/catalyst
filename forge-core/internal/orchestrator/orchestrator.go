@@ -25,6 +25,7 @@ package orchestrator
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"forgeos/forge-core/internal/asset"
@@ -52,8 +53,10 @@ import (
 // gate-set, a phase gated on the reviewer (RequiredWhen) is SKIPPED when the
 // policy makes the reviewer optional (explorer), the whole DISCOVER stage is
 // elided when DiscoverDepth=="skip" (explorer), the whole REVIEW stage is elided
-// when ReviewDepth=="skip" (explorer, mirroring discover exactly), and a
-// design-stage writes_adr phase NARRATES whether an ADR is required (Policy.ADR).
+// when ReviewDepth=="skip" (explorer, mirroring discover exactly), proposal-only
+// EvolveAuthority stops at the explicit effect=mutate capability boundary,
+// BuildHalt enforces that same cutoff, and a design-stage writes_adr phase
+// receives the ADR policy verdict.
 // BACKWARD-COMPATIBILITY CONTRACT: the ZERO-VALUE ModePolicy means "no mode
 // gating" — Run executes the workflow UNFILTERED (every required_gate, no phase
 // skipped, no stage elided), byte-for-byte as before this field existed. Only an
@@ -82,10 +85,10 @@ import (
 // run is byte-for-byte unchanged — only a positive ceiling enforces. SCOPE: this
 // counts phase EXECUTIONS (loop-back re-runs included); the retries WITHIN a single
 // phase are bounded separately by MaxRetries and are NOT charged here (one execution
-// charges once). EVOLVE: RunFrom owns this counter (local, reset per call) and
-// LoopEngine invokes RunFrom once per iteration, so under `forge evolve` the ceiling
-// is PER-ITERATION — total evolve spend is bounded by max-iter × MaxAgentCalls, not by
-// this alone. It is the predictable cost bound for --executor=command's real firings;
+// charges once). EVOLVE defaults to a RunFrom-local, per-iteration counter. An
+// optional ChargeAgentCall closure replaces that local charge source, allowing a CLI
+// chain to share one concurrency-safe ceiling across stages and loop iterations.
+// It is the predictable cost bound for --executor=command's real firings;
 // under a dry-run executor the counting is verifiable but no budget is spent.
 type Engine struct {
 	Exec    AgentExecutor
@@ -108,6 +111,17 @@ type Engine struct {
 	// verdict) means "no verdict" — the phase simply proceeds, NEVER loops back and
 	// NEVER aborts (back-compat, byte-exact, and the reviewer card's fail-open contract).
 	AgentVerdict func(phase string) (verdict string, ok bool)
+	// RequireAgentVerdict identifies the small set of agent phases whose verdict is
+	// an enforcement boundary rather than advisory review. For those phases only,
+	// AgentVerdict must return exactly APPROVE or REQUEST_CHANGES. A missing,
+	// malformed, or unsupported verdict aborts; REQUEST_CHANGES must successfully
+	// loop back and aborts once its directed-loop budget is unavailable. Nil keeps
+	// every legacy/advisory reviewer fail-open.
+	RequireAgentVerdict func(phase asset.Phase) bool
+	// OnRequiredVerdictApproved commits caller-owned evidence only after a
+	// required verdict has been parsed and accepted by this state machine.
+	// Returning an error aborts before the phase checkpoint or next phase.
+	OnRequiredVerdictApproved func(phase asset.Phase) error
 	// BudgetExhausted is an OPTIONAL run-level stop puller — the third cost-bound
 	// dimension beside MaxAgentCalls (phase COUNT) and MaxLoopBack (loop-back count).
 	// Where those two count discrete events the engine itself tallies, this asks an
@@ -129,6 +143,7 @@ type Engine struct {
 	MaxRetries      int
 	MaxLoopBack     int
 	MaxAgentCalls   int
+	ChargeAgentCall func(max int) (count int, allowed bool)
 	ModePolicy      mode.Policy
 	// Sleep is the OPTIONAL injection point for the inter-retry backoff (the 529/overload
 	// resilience pause), the deterministic-test twin of trace.Now: nil = time.Sleep (the
@@ -168,7 +183,10 @@ func (e Engine) ctx() context.Context {
 // (a bare literal, not an import) BECAUSE the orchestrator must stay free of any
 // cmd/forge or claude knowledge — the layering bright-line. The two are pinned
 // together by verdict_loopback_test.go, which drives this exact string end to end.
-const reviewerRequestChanges = "REQUEST_CHANGES"
+const (
+	reviewerApprove        = "APPROVE"
+	reviewerRequestChanges = "REQUEST_CHANGES"
+)
 
 // Run executes the workflow phase by phase under mode, applying the central
 // knob's Workflow-depth gating (e.ModePolicy) as it goes. It begins at phase 0;
@@ -180,9 +198,11 @@ func (e Engine) Run(wf asset.Workflow, mode string) error {
 // RunFrom executes the workflow starting at phase index `start`, applying mode
 // gating, agent retries, and DIRECTED GATE LOOP-BACK as it steps.
 //
-// For a gate phase it runs the required gates FILTERED by the mode policy (the
-// intersection of required_gates with the policy's gate-set). A not-OK result is
-// handled by gateOutcome:
+// For a phase with required_gates it first runs those gates FILTERED by the mode
+// policy (the intersection of required_gates with the policy's gate-set). The
+// reserved agent "harness" denotes a pure gate phase and stops there; every other
+// agent continues to the executor after its gates pass. A not-OK result is handled
+// by gateOutcome:
 //   - If the phase declares on_fail:{action:loop_back} AND the loop-back budget is
 //     not yet spent, the runtime JUMPS BACK to the target phase (by name) and
 //     re-runs forward to this gate — a directed state-machine transition, not an
@@ -201,7 +221,11 @@ func (e Engine) Run(wf asset.Workflow, mode string) error {
 // carry no on_fail, a red gate aborts on the spot exactly as before — directed
 // loop-back is opt-in on BOTH the asset (on_fail) and the engine (budget) side.
 func (e Engine) RunFrom(wf asset.Workflow, mode string, start int) error {
-	if e.checkStageSkip(wf) {
+	wf, skipped, err := e.prepareSerialWorkflow(wf, start)
+	if err != nil {
+		return err
+	}
+	if skipped {
 		return nil
 	}
 	loopBacks := 0
@@ -222,54 +246,59 @@ func (e Engine) RunFrom(wf asset.Workflow, mode string, start int) error {
 				i = target - 1 // -1 because the for-loop will ++ back to target
 				continue
 			}
-			phasesRan++
-			continue
+			if gateOnlyPhase(p) {
+				phasesRan++
+				continue
+			}
 		}
 		if e.skipByMode(p, wf.Stage) {
 			e.logf("phase %s skipped (mode gating: reviewer off)", p.Name)
 			continue
 		}
 		phasesRan++
-		e.narrateADR(wf, p)
-		if err := e.runAgentPhaseBudgeted(e.ctx(), p, mode, &agentCalls); err != nil {
+		target, jumped, err := e.runAgentTransition(wf, p, mode, i, &agentCalls, &loopBacks)
+		if err != nil {
 			return err
 		}
-		// Reviewer loop-back: a REQUEST_CHANGES verdict jumps back to target phase.
-		if target, jumped := e.agentOutcome(wf, p, &loopBacks); jumped {
+		if jumped {
 			i = target - 1 // -1 because the for-loop will ++ back to target
 			continue
 		}
-		// Phase checkpoint: agent phase i completed (no loop-back); persist index so
-		// a crash resumes at i+1, not phase 0. Gate phases re-run idempotently on resume.
-		if e.OnPhase != nil {
-			e.OnPhase(i)
-		}
 	}
-	e.warnIfVacuous(wf, phasesRan)
+	e.warnIfVacuous(wf, phasesRan, start)
 	e.reportStop(wf)
 	return nil
 }
 
-// checkStageSkip logs + reports stop and tells RunFrom to return early when the
-// WHOLE current stage (discover or review) is elided by mode gating — see
-// stageSkipped (mode_gating.go). false means proceed normally; true means the
-// caller must return nil immediately.
-func (e Engine) checkStageSkip(wf asset.Workflow) bool {
-	skipped, msg := e.stageSkipped(wf)
-	if skipped {
-		e.logf("%s", msg)
-		e.reportStop(wf)
-	}
-	return skipped
+// gateOnlyPhase distinguishes the one non-LLM workflow role from an agent phase
+// that also declares gate preconditions. In the shipped assets `agent: harness`
+// means "run the toolchain only"; required_gates on any other agent are front
+// gates and must not suppress that agent's execution.
+func gateOnlyPhase(p asset.Phase) bool {
+	return p.Agent == "harness"
 }
 
-// warnIfVacuous logs the honest "mode gating filtered every phase" warning when a
-// stage declared phases but completed none of them (edgecases-and-perf.md §3.2) —
-// extracted out of RunFrom's loop tail so the caller stays a single call site.
-func (e Engine) warnIfVacuous(wf asset.Workflow, phasesRan int) {
-	if phasesRan == 0 && len(wf.Phases) > 0 {
-		e.logf("⚠ vacuous run: mode gating filtered all %d phase(s) — no work was performed", len(wf.Phases))
+func (e Engine) runAgentTransition(
+	wf asset.Workflow,
+	p asset.Phase,
+	mode string,
+	index int,
+	agentCalls, loopBacks *int,
+) (target int, jumped bool, err error) {
+	e.narrateADR(wf, p)
+	if err := e.runAgentPhaseBudgeted(e.ctx(), p, mode, agentCalls); err != nil {
+		return 0, false, err
 	}
+	target, jumped, err = e.agentOutcome(wf, p, loopBacks)
+	if err != nil || jumped {
+		return target, jumped, err
+	}
+	// Persist the completed agent index so a crash resumes at the next phase.
+	// Gate phases intentionally re-run idempotently after resume.
+	if e.OnPhase != nil {
+		e.OnPhase(index)
+	}
+	return target, false, nil
 }
 
 // runAgentPhaseBudgeted is the pre-spawn cost pre-flight + the spawn itself, split out of
@@ -318,15 +347,45 @@ func (e Engine) gateOutcome(wf asset.Workflow, p asset.Phase, loopBacks *int) (t
 // the harness gates and qa remain the fail-closed backstop. Only a parsed
 // REQUEST_CHANGES attempts the loop-back, and even then a spent budget falls through
 // to proceed (fail-open), unlike a gate's fail-closed abort.
-func (e Engine) agentOutcome(wf asset.Workflow, p asset.Phase, loopBacks *int) (target int, jumped bool) {
+func (e Engine) agentOutcome(wf asset.Workflow, p asset.Phase, loopBacks *int) (target int, jumped bool, err error) {
+	required := e.RequireAgentVerdict != nil && e.RequireAgentVerdict(p)
 	if e.AgentVerdict == nil {
-		return 0, false // no puller wired (dry/echo, or no verdict source): proceed.
+		if required {
+			return 0, false, fmt.Errorf("phase %s: required agent verdict is unavailable", p.Name)
+		}
+		return 0, false, nil // no puller wired (dry/echo, or no verdict source): proceed.
 	}
 	v, ok := e.AgentVerdict(p.Name)
-	if !ok || v != reviewerRequestChanges {
-		return 0, false // APPROVE or no/garbled verdict: proceed forward, NOT abort.
+	if !ok {
+		if required {
+			return 0, false, fmt.Errorf("phase %s: required agent verdict is missing or malformed", p.Name)
+		}
+		return 0, false, nil // no/garbled advisory verdict: proceed forward.
 	}
-	return e.loopBackTo(wf, p, loopBacks, "reviewer verdict REQUEST_CHANGES")
+	switch v {
+	case reviewerApprove:
+		if required && e.OnRequiredVerdictApproved != nil {
+			if err := e.OnRequiredVerdictApproved(p); err != nil {
+				return 0, false, fmt.Errorf("phase %s: commit required approval evidence: %w", p.Name, err)
+			}
+		}
+		return 0, false, nil
+	case reviewerRequestChanges:
+		reason := "reviewer verdict REQUEST_CHANGES"
+		if required {
+			reason = "required reviewer verdict REQUEST_CHANGES"
+		}
+		target, jumped = e.loopBackTo(wf, p, loopBacks, reason)
+		if required && !jumped {
+			return 0, false, fmt.Errorf("phase %s: REQUEST_CHANGES could not take its required directed loop-back", p.Name)
+		}
+		return target, jumped, nil
+	default:
+		if required {
+			return 0, false, fmt.Errorf("phase %s: unsupported required agent verdict %q", p.Name, v)
+		}
+		return 0, false, nil
+	}
 }
 
 // loopBackTo is the shared DIRECTED LOOP-BACK core for BOTH a failed gate and a
@@ -375,7 +434,7 @@ func budgetSpentReason(reason string, loopBacks, max int, target string) string 
 // "aborting (fail-closed)" (its tests assert it), the agent/reviewer path tells the truth
 // instead of logging a fail-closed abort that never happens (it proceeds to qa).
 func outcomeSuffix(reason string) string {
-	if reason == "gate FAILED" {
+	if reason == "gate FAILED" || strings.HasPrefix(reason, "required reviewer verdict ") {
 		return "aborting (fail-closed)"
 	}
 	return "proceeding (fail-open)"
@@ -392,77 +451,6 @@ func phaseIndex(wf asset.Workflow, name string) (int, bool) {
 		}
 	}
 	return 0, false
-}
-
-// runGates resolves every required gate of a phase with three honest outcomes:
-//
-//	PASS — the gate was actually CHECKED and passed: log "gate X ok", continue.
-//	FAIL — a real check failed: log + ABORT the run (a red gate blocks the
-//	       increment — enforcement).
-//	NA   — no executable check backs this gate in THIS repo (e.g. lint/build/
-//	       security with no tooling): log "gate X N/A (not checked: <detail>)"
-//	       and continue. N/A is a known environmental limitation, NOT a pass and
-//	       NOT a fail — it never counts as "ok" and never aborts the run.
-//
-// This is the fix for the FAKE PASS: never-checked gates used to be reported as
-// "ok"; now they surface as N/A so the honesty of acceptance.mjs is preserved.
-//
-// gates is the mode-FILTERED gate list (required_gates ∩ ModePolicy.Gates, or
-// the full required_gates when gating is inactive) computed by gatesFor — Run
-// passes it in so the filtering lives in one place. An empty gates slice is a
-// legal no-op: the phase runs no gate under this mode (logged for visibility).
-func (e Engine) runGates(p asset.Phase, gates []string) error {
-	if len(gates) < len(p.RequiredGates) {
-		e.logf("phase %s: mode gating runs %d/%d gates (%v)", p.Name, len(gates), len(p.RequiredGates), gates)
-	}
-	for _, name := range gates {
-		res := e.callGate(name)
-		switch gateStatus(res) {
-		case gate.StatusFail:
-			e.logf("phase %s: gate %s FAILED", p.Name, name)
-			e.onGateResult(name, "FAILED")
-			return fmt.Errorf("phase %s: required gate %q not OK: %s", p.Name, name, res.Output)
-		case gate.StatusNA:
-			e.logf("phase %s: gate %s N/A (not checked: %s)", p.Name, name, naDetail(res))
-			e.onGateResult(name, "N/A")
-		default: // StatusPass
-			e.logf("phase %s: gate %s ok", p.Name, name)
-			e.onGateResult(name, "ok")
-		}
-	}
-	return nil
-}
-
-// gateStatus reads a Result's tri-state Status, falling back to its OK flag when
-// a runner supplies no explicit Status (back-compat: legacy/test fakes set only
-// OK). This keeps OK==true -> PASS, OK==false -> FAIL, while honoring an
-// explicit NA that a tri-state runner sets.
-func gateStatus(res gate.Result) string {
-	if res.Status != "" {
-		return res.Status
-	}
-	if res.OK {
-		return gate.StatusPass
-	}
-	return gate.StatusFail
-}
-
-// naDetail returns a short reason for an N/A gate, defaulting when the runner
-// supplied no detail so the log line is always informative.
-func naDetail(res gate.Result) string {
-	if res.Output != "" {
-		return res.Output
-	}
-	return "no executable check in this repo"
-}
-
-// callGate invokes the injected RunGate, or returns a failing result when none
-// is wired so a missing dependency cannot masquerade as a pass.
-func (e Engine) callGate(name string) gate.Result {
-	if e.RunGate == nil {
-		return gate.Result{Name: name, OK: false, Output: "no gate runner configured"}
-	}
-	return e.RunGate(name)
 }
 
 // reportStop logs the workflow's stop condition. ForgeOS forbids round-count
@@ -483,12 +471,5 @@ func (e Engine) reportStop(wf asset.Workflow) {
 func (e Engine) logf(format string, args ...any) {
 	if e.Log != nil {
 		e.Log(fmt.Sprintf(format, args...))
-	}
-}
-
-// onGateResult reports one gate's verdict to the OPTIONAL OnGateResult callback — the nil-safe mirror of logf (a no-op when unwired, so back-compat holds).
-func (e Engine) onGateResult(name, status string) {
-	if e.OnGateResult != nil {
-		e.OnGateResult(name, status)
 	}
 }

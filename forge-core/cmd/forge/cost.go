@@ -107,6 +107,25 @@ func (b *runBudget) SpentUsdMicros() int64 {
 	return int64(math.Round(b.spent * 1e6))
 }
 
+func (b *runBudget) CapUsdMicros() int64 {
+	return int64(math.Round(b.cap * 1e6))
+}
+
+func (b *runBudget) restore(capMicros, spentMicros int64) error {
+	if capMicros < 0 || spentMicros < 0 {
+		return fmt.Errorf("persisted run budget values must be non-negative")
+	}
+	currentCap := b.CapUsdMicros()
+	if currentCap != 0 && currentCap != capMicros {
+		return fmt.Errorf("persisted run budget cap is %d micro-USD, but this invocation configured %d", capMicros, currentCap)
+	}
+	if currentCap == 0 {
+		b.cap = float64(capMicros) / 1e6
+	}
+	b.seed(spentMicros)
+	return nil
+}
+
 // seed re-initializes the accumulated spend from a persisted micro-dollar total — the inverse of
 // SpentUsdMicros, and the OTHER side of the micro<->dollar boundary kept solely here. It exists for
 // --resume: after a crash the new process builds a fresh runBudget at spent=0, so without seeding

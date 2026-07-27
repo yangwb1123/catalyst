@@ -87,7 +87,7 @@ func TestRiskAdjustedTier_RaiseOnlyNeverLowers(t *testing.T) {
 
 // ── readonlyToolScope / claudeArgv: REAL path-scoped write enforcement ──
 //
-// These prove the exact --disallowedTools/--allowedTools flags by CONSTRUCTION
+// These prove the exact dontAsk/--allowedTools flags by CONSTRUCTION
 // (unit test against the documented claude CLI contract — code.claude.com/docs/en/
 // permissions.md, plus a local `claude --help` confirming --allowedTools/
 // --disallowedTools each take one comma-or-space-separated <tools...> list). This is
@@ -101,15 +101,15 @@ func TestReadonlyToolScope_NonReadonlyIsNoop(t *testing.T) {
 	}
 }
 
-// reviewer/qa/explorer/harness have NO documented write target in their own agent
+// reviewer/explorer/harness have NO documented write target in their own agent
 // cards ("不写任何代码文件" / "零写入") — a readonly phase run by them must be
-// FULLY denied (deny="Edit Write", allow="").
+// FULLY denied by dontAsk with no pre-approved Edit path.
 func TestReadonlyToolScope_UnmappedAgentFullyBlocked(t *testing.T) {
-	for _, agent := range []string{"reviewer", "qa", "explorer", "harness", ""} {
+	for _, agent := range []string{"reviewer", "explorer", "harness", ""} {
 		t.Run(agent, func(t *testing.T) {
 			deny, allow := readonlyToolScope(asset.Phase{Name: "x", Agent: agent, Readonly: true})
-			if deny != "Edit Write" {
-				t.Errorf("agent=%q: deny = %q, want \"Edit Write\"", agent, deny)
+			if deny != "" {
+				t.Errorf("agent=%q: deny = %q, want empty (dontAsk supplies the default denial)", agent, deny)
 			}
 			if allow != "" {
 				t.Errorf("agent=%q: allow = %q, want \"\" (no documented write target)", agent, allow)
@@ -118,15 +118,14 @@ func TestReadonlyToolScope_UnmappedAgentFullyBlocked(t *testing.T) {
 	}
 }
 
-// security-engineer's own card ("不在 docs/review/ 之外写文件") maps to a re-opened
-// docs/review/** pattern — this is the actual enforcement `security-review` (review.yml)
-// gets, replacing the old blanket acceptEdits grant.
-func TestReadonlyToolScope_MappedAgentReopensDocsDir(t *testing.T) {
-	deny, allow := readonlyToolScope(asset.Phase{Name: "security-review", Agent: "security-engineer", Readonly: true})
-	if deny != "Edit Write" {
-		t.Errorf("deny = %q, want \"Edit Write\"", deny)
+// A role's documented directory is only a ceiling. The actual grant is the
+// phase's exact validated emit, never the whole directory.
+func TestReadonlyToolScope_MappedAgentReopensExactEmit(t *testing.T) {
+	deny, allow := readonlyToolScope(asset.Phase{Name: "security-review", Agent: "security-engineer", Readonly: true, Emits: []string{"docs/review/security-review.md"}})
+	if deny != "" {
+		t.Errorf("deny = %q, want empty", deny)
 	}
-	want := "Edit(/docs/review/**) Write(/docs/review/**)"
+	want := "Edit(/docs/review/security-review.md)"
 	if allow != want {
 		t.Errorf("allow = %q, want %q", allow, want)
 	}
@@ -136,8 +135,16 @@ func TestReadonlyToolScope_MappedAgentReopensDocsDir(t *testing.T) {
 // this is the write planner NEEDS to keep functioning (build.yml's real task-split
 // output), so it must be scoped to exactly that file, not a docs/** glob.
 func TestReadonlyToolScope_PlannerReopensSingleFile(t *testing.T) {
-	_, allow := readonlyToolScope(asset.Phase{Name: "planner", Agent: "planner", Readonly: true})
-	want := "Edit(/.agent/CURRENT_SPRINT.md) Write(/.agent/CURRENT_SPRINT.md)"
+	_, allow := readonlyToolScope(asset.Phase{Name: "planner", Agent: "planner", Readonly: true, Emits: []string{".agent/CURRENT_SPRINT.md"}})
+	want := "Edit(/.agent/CURRENT_SPRINT.md)"
+	if allow != want {
+		t.Errorf("allow = %q, want %q", allow, want)
+	}
+}
+
+func TestReadonlyToolScope_QAReopensOnlyEvalReport(t *testing.T) {
+	_, allow := readonlyToolScope(asset.Phase{Name: "evaluate", Agent: "qa", Readonly: true, Emits: []string{"docs/review/eval-scorecard.md"}})
+	want := "Edit(/docs/review/eval-scorecard.md)"
 	if allow != want {
 		t.Errorf("allow = %q, want %q", allow, want)
 	}
@@ -149,22 +156,22 @@ func TestReadonlyToolScope_PlannerReopensSingleFile(t *testing.T) {
 func TestReadonlyToolScope_ArchitectWithWritesADR_ReopensBothDirs(t *testing.T) {
 	p := asset.Phase{
 		Name: "solution-architect", Agent: "architect", Readonly: true,
+		Emits:     []string{"docs/design/proposal.md"},
 		WritesADR: &asset.WritesADR{Condition: "mode in [engineering, cto]", Target: "docs/adr/"},
 	}
 	_, allow := readonlyToolScope(p)
-	for _, want := range []string{"Edit(/docs/design/**)", "Write(/docs/design/**)", "Edit(/docs/adr/**)", "Write(/docs/adr/**)"} {
+	for _, want := range []string{"Edit(/docs/design/proposal.md)", "Edit(/docs/adr/**)"} {
 		if !strings.Contains(allow, want) {
 			t.Errorf("allow = %q, missing %q", allow, want)
 		}
 	}
 }
 
-// architect phases WITHOUT writes_adr (e.g. evolve.yml's gap-analysis) only get
-// docs/design/** — no docs/adr/** leaks in from another phase's declaration.
-func TestReadonlyToolScope_ArchitectWithoutWritesADR_DesignOnly(t *testing.T) {
-	_, allow := readonlyToolScope(asset.Phase{Name: "gap-analysis", Agent: "architect", Readonly: true})
-	if allow != "Edit(/docs/design/**) Write(/docs/design/**)" {
-		t.Errorf("allow = %q, want docs/design/** only (no writes_adr on this phase)", allow)
+// architect phases WITHOUT writes_adr get only their exact gap report.
+func TestReadonlyToolScope_ArchitectWithoutWritesADR_ExactEmitOnly(t *testing.T) {
+	_, allow := readonlyToolScope(asset.Phase{Name: "gap-analysis", Agent: "architect", Readonly: true, Emits: []string{"docs/design/gap-report.md"}})
+	if allow != "Edit(/docs/design/gap-report.md)" {
+		t.Errorf("allow = %q, want exact gap-report emit only", allow)
 	}
 	if strings.Contains(allow, "adr") {
 		t.Errorf("allow = %q must not mention docs/adr/ without a WritesADR declaration", allow)
@@ -176,13 +183,13 @@ func TestReadonlyToolScope_ArchitectWithoutWritesADR_DesignOnly(t *testing.T) {
 // executive-review are the SAME agent card, so they must resolve identically. Keyed
 // by AGENT, not phase name or workflow stage.
 func TestReadonlyToolScope_CtoConsistentAcrossWorkflowPhases(t *testing.T) {
-	_, allowDesign := readonlyToolScope(asset.Phase{Name: "proposal-generator", Agent: "cto", Readonly: true})
-	_, allowReview := readonlyToolScope(asset.Phase{Name: "executive-review", Agent: "cto", Readonly: true})
+	_, allowDesign := readonlyToolScope(asset.Phase{Name: "proposal-generator", Agent: "cto", Readonly: true, Emits: []string{"docs/design/proposal.md"}})
+	_, allowReview := readonlyToolScope(asset.Phase{Name: "executive-review", Agent: "cto", Readonly: true, Emits: []string{"docs/design/proposal.md"}})
 	if allowDesign != allowReview {
 		t.Errorf("cto scope drifted by phase name: proposal-generator=%q executive-review=%q", allowDesign, allowReview)
 	}
-	if allowDesign != "Edit(/docs/design/**) Write(/docs/design/**)" {
-		t.Errorf("cto allow = %q, want docs/design/**", allowDesign)
+	if allowDesign != "Edit(/docs/design/proposal.md)" {
+		t.Errorf("cto allow = %q, want exact proposal emit", allowDesign)
 	}
 }
 
@@ -201,22 +208,20 @@ func TestMergeToolList(t *testing.T) {
 }
 
 // Full end-to-end argv construction for a readonly phase with an operator-configured
-// base --allowedTools whitelist: proves --disallowedTools "Edit Write" appears BEFORE
-// --allowedTools (matching the documented/confirmed CLI pattern's ordering), and that
-// the base whitelist survives MERGED into that SAME occurrence — never dropped, never
-// a second --allowedTools flag (whose merge-vs-override semantics were never verified).
+// base --allowedTools whitelist: proves readonly forces dontAsk and merges the
+// canonical Edit(path) rule into one allow list. A broad deny cannot be used
+// because Claude evaluates deny before allow and permits no narrower exception.
 func TestClaudeArgv_ReadonlyPhase_FullArgvExactMatch(t *testing.T) {
 	o := runOpts{
 		agentCmd:          "claude",
 		agentPermission:   "acceptEdits",
 		agentAllowedTools: "Bash(node --test*)",
 	}
-	p := asset.Phase{Name: "security-review", Agent: "security-engineer", Readonly: true}
+	p := asset.Phase{Name: "security-review", Agent: "security-engineer", Readonly: true, Emits: []string{"docs/review/security-review.md"}}
 	argv := claudeArgv(o, true, "opus", p)
 	want := []string{
-		"claude", "--permission-mode", "acceptEdits",
-		"--disallowedTools", "Edit Write",
-		"--allowedTools", "Bash(node --test*) Edit(/docs/review/**) Write(/docs/review/**)",
+		"claude", "--permission-mode", "dontAsk",
+		"--allowedTools", "Bash(node --test*) Edit(/docs/review/security-review.md)",
 		"--model", "opus", "--output-format", "json",
 	}
 	if len(argv) != len(want) {
@@ -231,13 +236,12 @@ func TestClaudeArgv_ReadonlyPhase_FullArgvExactMatch(t *testing.T) {
 
 // An unmapped-agent readonly phase (e.g. reviewer) with NO operator whitelist
 // configured must omit --allowedTools entirely (nothing to merge, nothing to grant)
-// while still carrying --disallowedTools "Edit Write" — fully read-only, no dangling
-// empty flag.
+// while carrying dontAsk — fully read-only, no dangling empty allow flag.
 func TestClaudeArgv_ReadonlyUnmappedAgent_NoAllowedToolsFlagWhenNothingToGrant(t *testing.T) {
 	o := runOpts{agentCmd: "claude"}
 	p := asset.Phase{Name: "reviewer", Agent: "reviewer", Readonly: true}
 	argv := claudeArgv(o, true, "opus", p)
-	want := []string{"claude", "--disallowedTools", "Edit Write", "--model", "opus", "--output-format", "json"}
+	want := []string{"claude", "--permission-mode", "dontAsk", "--model", "opus", "--output-format", "json"}
 	if len(argv) != len(want) {
 		t.Fatalf("argv = %v (len=%d), want %v (len=%d)", argv, len(argv), want, len(want))
 	}
@@ -276,12 +280,12 @@ func TestAgentExecutor_ClaudeReadonlyPhaseGetsRealEnforcement(t *testing.T) {
 	if !ok {
 		t.Fatalf("executor=command must yield a CommandExecutor, got %T", ex)
 	}
-	argv := strings.Join(ce.Build(asset.Phase{Name: "security-review", Agent: "security-engineer", Readonly: true, Emits: []string{"security-review.md"}}, "engineering"), " ")
-	if !strings.Contains(argv, `--disallowedTools Edit Write`) {
-		t.Errorf("expected --disallowedTools \"Edit Write\" in built argv, got: %s", argv)
+	argv := strings.Join(ce.Build(asset.Phase{Name: "security-review", Agent: "security-engineer", Readonly: true, Emits: []string{"docs/review/security-review.md"}}, "engineering"), " ")
+	if !strings.Contains(argv, `--permission-mode dontAsk`) {
+		t.Errorf("expected readonly dontAsk mode in built argv, got: %s", argv)
 	}
-	if !strings.Contains(argv, "Edit(/docs/review/**)") || !strings.Contains(argv, "Write(/docs/review/**)") {
-		t.Errorf("expected docs/review/** re-open patterns in built argv, got: %s", argv)
+	if !strings.Contains(argv, "Edit(/docs/review/security-review.md)") || strings.Contains(argv, "Write(/docs/review/security-review.md)") {
+		t.Errorf("expected the exact security-review emit Edit rule only, got: %s", argv)
 	}
 }
 
@@ -383,25 +387,37 @@ func rejectableWorkflow() asset.Workflow {
 // (a) no marker -> phase 0, exactly as before (back-compat default).
 func TestResolveRejectionStartPhase_NoMarkerStartsAtZero(t *testing.T) {
 	root := t.TempDir()
-	if got := resolveRejectionStartPhase(rejectableWorkflow(), root, nil); got != 0 {
+	if got, rejected, err := resolveRejectionStartPhase(rejectableWorkflow(), root, nil); err != nil || got != 0 || rejected {
 		t.Errorf("no marker: startPhase = %d, want 0 (back-compat)", got)
 	}
 }
 
-// (b) marker present + on_rejected declared -> starts at the target phase AND
-// the marker file is gone afterward (one-shot consumption).
-func TestResolveRejectionStartPhase_MarkerResolvesAndConsumes(t *testing.T) {
+// (b) marker present + on_rejected declared -> starts at the target phase,
+// remains durable during work, and is consumed only after success.
+func TestResolveRejectionStartPhase_MarkerResolvesThenConsumesAfterSuccess(t *testing.T) {
 	root := t.TempDir()
 	wf := rejectableWorkflow()
 	mkdir(t, forgeDir(root))
 	writeFile(t, rejectionPath(root, wf.Stage), "")
 	var logs []string
-	got := resolveRejectionStartPhase(wf, root, func(s string) { logs = append(logs, s) })
+	got, rejected, err := resolveRejectionStartPhase(wf, root, func(s string) { logs = append(logs, s) })
+	if err != nil {
+		t.Fatal(err)
+	}
 	if got != 1 {
 		t.Fatalf("startPhase = %d, want 1 (solution-architect's index)", got)
 	}
-	if _, err := os.Stat(rejectionPath(root, wf.Stage)); err == nil {
-		t.Error("rejection marker must be CONSUMED (deleted) once acted on")
+	if !rejected {
+		t.Fatal("resolved rejection was not reported to the caller")
+	}
+	if _, err := os.Stat(rejectionPath(root, wf.Stage)); err != nil {
+		t.Fatalf("rejection marker must remain until successful rework: %v", err)
+	}
+	if err := consumeRejectionAfterSuccess(wf, root, rejected, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(rejectionPath(root, wf.Stage)); !os.IsNotExist(err) {
+		t.Error("successful rework must consume the rejection marker")
 	}
 	found := false
 	for _, l := range logs {
@@ -431,31 +447,28 @@ func TestResolveRejectionStartPhase_NonActionableOnRejectedFallsBackToZero(t *te
 			c.mut(&wf)
 			mkdir(t, forgeDir(root))
 			writeFile(t, rejectionPath(root, wf.Stage), "")
-			if got := resolveRejectionStartPhase(wf, root, nil); got != 0 {
+			if got, rejected, err := resolveRejectionStartPhase(wf, root, nil); err != nil || got != 0 || rejected {
 				t.Errorf("%s: startPhase = %d, want 0 (not actionable)", c.name, got)
 			}
 		})
 	}
 }
 
-// (d) a non-human_gate workflow with a stray rejection marker present is
-// completely unaffected — scoped to IsHumanGate stops only, and the untouched
-// marker proves nothing was consumed.
-func TestResolveRejectionStartPhase_NonHumanGateIgnoresStrayMarker(t *testing.T) {
+// (d) conjunction workflows such as review.yml also declare on_rejected and
+// must honor the same one-shot marker instead of leaving the branch unreachable.
+func TestResolveRejectionStartPhase_ConjunctionHonorsDeclaredRejection(t *testing.T) {
 	root := t.TempDir()
 	wf := rejectableWorkflow()
-	// Clear BOTH human_gate signals (Type and HumanApproval) — converge.IsHumanGate
-	// recognizes either alone (see its own doc comment), so a genuine non-human_gate
-	// stop must carry neither.
 	wf.Stop.Type = "conjunction"
 	wf.Stop.HumanApproval = ""
 	wf.Stop.AllOf = []asset.Criterion{{Metric: "roadmap_completion", Operator: "==", Value: "100"}}
 	mkdir(t, forgeDir(root))
-	writeFile(t, rejectionPath(root, wf.Stage), "") // stray, e.g. left from a prior human_gate stage
-	if got := resolveRejectionStartPhase(wf, root, nil); got != 0 {
-		t.Errorf("non-human_gate stop: startPhase = %d, want 0 (scoped to human_gate only)", got)
+	writeFile(t, rejectionPath(root, wf.Stage), "")
+	got, rejected, err := resolveRejectionStartPhase(wf, root, nil)
+	if err != nil || got != 1 || !rejected {
+		t.Errorf("conjunction rejection: startPhase = %d, want 1", got)
 	}
 	if _, err := os.Stat(rejectionPath(root, wf.Stage)); err != nil {
-		t.Error("a stray marker for a non-human_gate stop must be left untouched (never consumed)")
+		t.Error("rejection marker must remain until successful conjunction rework")
 	}
 }
