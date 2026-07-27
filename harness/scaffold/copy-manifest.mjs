@@ -20,7 +20,13 @@ export const GOVERNANCE_DIRS = [
   join('.agent', 'eval'),
   join('.agent', 'routing'),
   join('.agent', 'policies'),
+  join('.ai', 'prompts'),
 ];
+
+// Persisted by forge-init so a later forge-upgrade can distinguish a genuinely
+// retired copied file from a user's unrelated file. This state is project
+// metadata, not part of the copied 70%, and therefore is never source-overwritten.
+export const SCAFFOLD_STATE_FILE = join('.agent', 'scaffold-state.json');
 
 // Individual files copied verbatim: the red-lines, the architecture rules, and
 // the FULL harness — every TOOL plus its SELF-TEST, so check + accept both RUN in
@@ -31,11 +37,16 @@ export const GOVERNANCE_DIRS = [
 export const COPIED_FILES = [
   join('.agent', 'AGENTS.md'),
   join('.arch', 'rules.yaml'),
+  // The runtime release executor requires this real (non-symlink) directory
+  // before it grants exact Edit permission for an immutable phase emit set.
+  join('docs', 'release', 'README.md'),
   // harness tools
   join('harness', 'gate.mjs'),
   join('harness', 'policies.yml'),
   join('harness', 'check.py'),
   join('harness', 'mode_gating_check.py'), // imported by check.py; without it check.py fails to import
+  join('harness', 'release_boundary_check.py'), // imported by check.py; pins docs-only deploy/rollback trust boundary
+  join('harness', 'workflow_control_check.py'), // imported by check.py; fails closed on dangling/unsupported workflow control
   join('harness', 'acceptance.mjs'),
   // acceptance.mjs is split into a dependency-free kernel (shared run/result/
   // splitCmd + PASS/FAIL/NA/ROOT/HARNESS_DIR) and the adapter-backed quality
@@ -44,11 +55,15 @@ export const COPIED_FILES = [
   // iron rule.
   join('harness', 'acceptance-kernel.mjs'),
   join('harness', 'acceptance-quality.mjs'),
-  // adapters.mjs is imported by acceptance-quality.mjs (the lint/coverage criteria
-  // shell the per-language adapter tools); without it the copied acceptance gate
-  // would fail to import in the fresh project. The adapters/<lang>.yml command maps
-  // it reads are copied below.
+  join('harness', 'acceptance-project.mjs'),
+  join('harness', 'acceptance-tests.mjs'),
+  // Adapter runtime: adapters.mjs owns common declarations, detection.mjs scans
+  // all supported source extensions, and project.mjs safely selects/executes
+  // Rust Cargo or Java wrapper argv for project-level acceptance.
   join('harness', 'adapters.mjs'),
+  join('harness', 'adapters', 'detection.mjs'),
+  join('harness', 'adapters', 'project-execution.mjs'),
+  join('harness', 'adapters', 'project.mjs'),
   join('harness', 'yaml2json.py'),
   join('harness', 'scorecard.mjs'),
   join('harness', 'scorecard-update.mjs'),
@@ -65,16 +80,23 @@ export const COPIED_FILES = [
   // per-language adapter command maps (read at runtime by adapters.mjs / the
   // lint criterion); the adapters/README.md prose is intentionally omitted.
   join('harness', 'adapters', 'go.yml'),
+  join('harness', 'adapters', 'java.yml'),
   join('harness', 'adapters', 'python.yml'),
+  join('harness', 'adapters', 'rust.yml'),
   join('harness', 'adapters', 'typescript.yml'),
   // harness self-tests (acceptance's test_pass runs these — the harness self-governs).
   // test_enforce.mjs (pins the warn|block enforce resolution in the copied adapters.mjs)
   // was once dropped here — the drift test_forge-init.mjs's manifest guard now forbids.
   join('harness', 'test_check.py'),
   join('harness', 'test_mode_gating_check.py'),
+  join('harness', 'test_release_boundary_check.py'),
+  join('harness', 'test_workflow_control_check.py'),
   join('harness', 'test_yaml2json.py'),
   join('harness', 'test_acceptance.mjs'),
+  join('harness', 'test_acceptance_project.mjs'),
+  join('harness', 'test_acceptance_discovery.mjs'),
   join('harness', 'test_adapters.mjs'),
+  join('harness', 'test_polyglot_adapters.mjs'),
   join('harness', 'test_gate.mjs'),
   join('harness', 'test_enforce.mjs'),
   join('harness', 'test_scorecard.mjs'),
@@ -85,6 +107,7 @@ export const COPIED_FILES = [
   join('harness', 'test_sca_fetch.mjs'),
   join('harness', 'test_select-tests.mjs'),
   join('harness', 'arch', 'test_arch-check.mjs'),
+  join('harness', 'arch', 'test_arch-go-exports.mjs'),
 ];
 
 // Harness sources DELIBERATELY not copied (test_forge-init.mjs's manifest guard
@@ -104,11 +127,14 @@ export const HARNESS_NOT_COPIED = [
   join('harness', 'scaffold', 'scaffold-fs.mjs'),
   // forge-upgrade resyncs a project's copied governance FROM a ForgeOS source repo;
   // it is an OPERATOR tool run against a project from OUTSIDE, never carried inside
-  // one (a project does not upgrade itself from itself). Its self-test is likewise
-  // an upgrade-time tool. Listed here so test_forge-init's manifest guard FORCES a
-  // conscious decision whenever these change — the safety net, not an oversight.
+  // one (a project does not upgrade itself from itself). Its functional and
+  // filesystem-security self-tests are likewise upgrade-time tools. Listed here
+  // so test_forge-init's manifest guard FORCES a conscious decision whenever
+  // these change — the safety net, not an oversight.
   join('harness', 'scaffold', 'forge-upgrade.mjs'),
+  join('harness', 'scaffold', 'upgrade-state.mjs'),
   join('harness', 'scaffold', 'test_forge-upgrade.mjs'),
+  join('harness', 'scaffold', 'test_scaffold_security.mjs'),
   // copy-manifest.mjs itself is this data module — scaffold/upgrade-time only,
   // same rationale as scaffold-fs.mjs (never carried into a generated project).
   join('harness', 'scaffold', 'copy-manifest.mjs'),

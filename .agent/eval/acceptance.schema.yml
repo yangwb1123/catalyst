@@ -82,6 +82,12 @@ criteria:
     expect: 0
     required: true         # load-bearing: secret-scan 真 PASS/FAIL,命中即硬阻断 accept
     source: harness        # harness/secret-scan.mjs — pattern scan (SCA/CVE = separate sca.mjs)
+  dependency_vulnerabilities: # 依赖已知漏洞数(SCA/OSV snapshot)== 0
+    type: int
+    operator: "=="
+    expect: 0
+    required: production   # idea/mvp/growth 可诚实豁免 no_tool N/A；production 必须配置 DB
+    source: harness        # harness/sca.mjs — deterministic offline advisory snapshot
   p95_latency_ms:          # 可选: 性能预算尾延迟 | optional perf budget
     type: int
     operator: "<="

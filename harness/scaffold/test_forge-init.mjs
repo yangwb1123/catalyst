@@ -3,12 +3,26 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync, existsSync, readFileSync, readdirSync } from 'node:fs';
+import {
+  mkdtempSync,
+  mkdirSync,
+  rmSync,
+  existsSync,
+  readFileSync,
+  readdirSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { dirname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 
-import { COPIED_FILES, GOVERNANCE_DIRS, HARNESS_NOT_COPIED } from './forge-init.mjs';
+import {
+  COPIED_FILES,
+  GOVERNANCE_DIRS,
+  HARNESS_NOT_COPIED,
+  SCAFFOLD_STATE_FILE,
+} from './forge-init.mjs';
 
 // This test lives in harness/scaffold/, so its own dir is the sub-package and the
 // repo root is TWO levels up. HARNESS_DIR is the REAL harness/ (one level up) — the
@@ -53,21 +67,29 @@ const COPIED_ENFORCERS = [
 // self-test (acceptance's test_pass runs these, so the harness self-governs).
 const COPIED_HARNESS = [
   join('harness', 'check.py'),
+  join('harness', 'release_boundary_check.py'),
+  join('harness', 'workflow_control_check.py'),
   join('harness', 'acceptance.mjs'),
-  // adapters.mjs (imported by acceptance.mjs's lint criterion) + the per-language
-  // command maps it reads at runtime + its self-test — all inherited verbatim so
-  // the fresh project's acceptance gate imports and self-governs the module too.
+  // Common + Rust/Java project adapters, declarations, and self-tests are all
+  // inherited verbatim so a fresh project retains the same polyglot verdicts.
   join('harness', 'adapters.mjs'),
+  join('harness', 'adapters', 'detection.mjs'),
+  join('harness', 'adapters', 'project.mjs'),
   join('harness', 'adapters', 'go.yml'),
+  join('harness', 'adapters', 'java.yml'),
   join('harness', 'adapters', 'python.yml'),
+  join('harness', 'adapters', 'rust.yml'),
   join('harness', 'adapters', 'typescript.yml'),
   join('harness', 'yaml2json.py'),
   join('harness', 'scorecard.mjs'),
   join('harness', 'scorecard-update.mjs'),
   join('harness', 'test_check.py'),
+  join('harness', 'test_release_boundary_check.py'),
+  join('harness', 'test_workflow_control_check.py'),
   join('harness', 'test_yaml2json.py'),
   join('harness', 'test_acceptance.mjs'),
   join('harness', 'test_adapters.mjs'),
+  join('harness', 'test_polyglot_adapters.mjs'),
   join('harness', 'test_gate.mjs'),
   join('harness', 'test_scorecard.mjs'),
   join('harness', 'test_scorecard-update.mjs'),
@@ -79,9 +101,13 @@ const COPIED_HARNESS = [
 // declarative cards/skills/workflows/eval/routing/policies check.py validates
 // and acceptance.mjs consumes (without them check.py FAILs / has no schema).
 const COPIED_ASSETS = [
+  join('docs', 'release', 'README.md'),
   join('.agent', 'agents', 'architect.md'),
+  join('.agent', 'agents', 'release-engineer.md'),
   join('.agent', 'skills', 'clean-architecture.md'),
   join('.agent', 'workflows', 'build.yml'),
+  join('.agent', 'workflows', 'deploy.yml'),
+  join('.agent', 'workflows', 'rollback.yml'),
   join('.agent', 'eval', 'acceptance.schema.yml'),
   join('.agent', 'routing', 'policy.yml'),
   join('.agent', 'policies', 'modes.yml'),
@@ -99,10 +125,12 @@ const GENERATED_FILES = [
   join('.agent', 'project.yml'),
   'CLAUDE.md',
   join('.github', 'workflows', 'forge.yml'),
+  join('examples', 'starter', 'package.json'),
   join('examples', 'starter', 'src', 'greet.mjs'),
   join('examples', 'starter', 'test', 'greet.test.mjs'),
   'README.md',
   '.gitignore',
+  SCAFFOLD_STATE_FILE,
 ];
 
 test('forge-init scaffolds COMPLETE governance and the project is ACCEPTED', (t) => {
@@ -127,6 +155,11 @@ test('forge-init scaffolds COMPLETE governance and the project is ACCEPTED', (t)
   assert.match(
     readFileSync(join(target, '.github', 'workflows', 'forge.yml'), 'utf8'),
     /node harness\/acceptance\.mjs/,
+  );
+  assert.match(
+    readFileSync(join(target, '.github', 'workflows', 'forge.yml'), 'utf8'),
+    /node-version: '22'/,
+    'generated CI must satisfy harness/package.json node >=22',
   );
 
   // (4) every verbatim-copied file (enforcers + full harness + assets) is
@@ -184,6 +217,78 @@ test('forge-init refuses to clobber a non-empty .agent without --force; --force 
   // ...and --force succeeds.
   const forced = runInit([target, '--name', 'acme-svc', '--force']);
   assert.equal(forced.status, 0, `--force re-init must succeed; stderr:\n${forced.stderr}`);
+});
+
+test('forge-init preflights README/CI conflicts before writing anything', (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'forge-init-conflict-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const target = join(dir, 'proj');
+  const ci = join(target, '.github', 'workflows', 'forge.yml');
+  mkdirSync(dirname(ci), { recursive: true });
+  writeFileSync(join(target, 'README.md'), '# user readme\n');
+  writeFileSync(ci, 'name: user-ci\n');
+
+  const res = runInit([target, '--name', 'must-not-clobber']);
+  assert.notEqual(res.status, 0, 'conflicting target must fail without --force');
+  assert.match(res.stderr, /scaffold conflict/);
+  assert.match(res.stderr, /README\.md/);
+  assert.equal(readFileSync(join(target, 'README.md'), 'utf8'), '# user readme\n');
+  assert.equal(readFileSync(ci, 'utf8'), 'name: user-ci\n');
+  assert.equal(existsSync(join(target, '.agent')), false, 'preflight must happen before first write');
+  assert.equal(existsSync(join(target, 'harness')), false, 'no copied harness may leak on failure');
+});
+
+test('forge-init refuses symlinked destination ancestors even with --force', (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'forge-init-symlink-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const target = join(dir, 'proj');
+  const outside = join(dir, 'outside');
+  mkdirSync(target, { recursive: true });
+  mkdirSync(outside, { recursive: true });
+  symlinkSync(outside, join(target, '.github'));
+
+  const res = runInit([target, '--name', 'unsafe-link', '--force']);
+  assert.notEqual(res.status, 0);
+  assert.match(res.stderr, /unsafe symlink path.*\.github/i);
+  assert.equal(existsSync(join(outside, 'workflows')), false, 'init must not write through the link');
+});
+
+test('forge-init refuses a symlink target and a symlink destination leaf', (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'forge-init-target-link-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const outside = join(dir, 'outside');
+  const target = join(dir, 'project-link');
+  mkdirSync(outside);
+  symlinkSync(outside, target);
+
+  const linkedTarget = runInit([target, '--name', 'unsafe-target', '--force']);
+  assert.notEqual(linkedTarget.status, 0);
+  assert.match(linkedTarget.stderr, /unsafe symlink path.*target directory/i);
+  assert.equal(readdirSync(outside).length, 0, 'a symlink target must remain untouched');
+
+  rmSync(target);
+  mkdirSync(target);
+  const outsideReadme = join(outside, 'README.md');
+  writeFileSync(outsideReadme, '# external\n');
+  symlinkSync(outsideReadme, join(target, 'README.md'));
+  const linkedLeaf = runInit([target, '--name', 'unsafe-leaf', '--force']);
+  assert.notEqual(linkedLeaf.status, 0);
+  assert.match(linkedLeaf.stderr, /unsafe symlink path.*README\.md/i);
+  assert.equal(readFileSync(outsideReadme, 'utf8'), '# external\n');
+});
+
+test('forge-init refuses a symlinked parent above the target directory', (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'forge-init-parent-link-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const realParent = join(dir, 'real-parent');
+  const linkedParent = join(dir, 'linked-parent');
+  mkdirSync(realParent);
+  symlinkSync(realParent, linkedParent);
+
+  const res = runInit([join(linkedParent, 'project'), '--name', 'unsafe-parent', '--force']);
+  assert.notEqual(res.status, 0);
+  assert.match(res.stderr, /unsafe symlink path.*target directory/i);
+  assert.equal(readdirSync(realParent).length, 0, 'init must not create through a linked parent');
 });
 
 // --- MANIFEST-INTEGRITY guard: COPIED_FILES must not drift from harness/ ------

@@ -16,7 +16,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -260,10 +260,14 @@ test('scanRepo with NO DB reports available:false (framework ready, scan not run
 });
 
 // --- discoverManifests skips SKIP_DIRS ---------------------------------------
-test('discoverManifests skips node_modules / .git (no vendored manifests leak)', () => {
+test('discoverManifests skips vendored and Rust target manifests', () => {
   const dir = mkdtempSync(join(tmpdir(), 'sca-walk-'));
   try {
     writeFileSync(join(dir, 'package.json'), '{}');
+    for (const skipped of ['node_modules', '.git', 'target']) {
+      mkdirSync(join(dir, skipped), { recursive: true });
+      writeFileSync(join(dir, skipped, 'package.json'), '{"dependencies":{"hidden":"1.0.0"}}');
+    }
     const found = discoverManifests(dir);
     assert.equal(found.length, 1, 'finds the top-level manifest');
     assert.equal(found[0].kind, 'package.json');

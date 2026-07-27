@@ -8,8 +8,9 @@
 // function-length budget. Returns [{name, line, lines}] — `line` is the 1-based
 // start, `lines` the inclusive body span.
 // HONESTY: this is a regex + brace/indent heuristic, NOT a real AST parser. It
-// targets DECLARED functions (Go `func`, JS `function`/arrow-binding/method,
-// Python `def`); inline anonymous callbacks count as part of their ENCLOSING
+// targets DECLARED functions (Go `func`, Rust `fn`, JS
+// `function`/arrow-binding/method, Python `def`); inline anonymous callbacks
+// count as part of their ENCLOSING
 // function, not separately. Brace counting threads a lexer state across lines
 // (braceDelta/matchBrace), so braces inside multi-line Go raw strings / JS
 // template literals (backtick) and `/* */` block comments are skipped — closing
@@ -19,7 +20,9 @@
 // a JS `${ }` interpolation is opaque string text and skipped — this only
 // UNDER-counts, never a false PASS. A real linter is a v3 enhancement (ROADMAP).
 export function extractFunctions(text, lang) {
-  if (lang === 'go' || lang === 'js' || lang === 'ts') return braceFunctions(text, lang);
+  if (lang === 'go' || lang === 'rust' || lang === 'js' || lang === 'ts') {
+    return braceFunctions(text, lang);
+  }
   if (lang === 'py') return indentFunctions(text);
   return [];
 }
@@ -35,6 +38,8 @@ export function extractFunctions(text, lang) {
 // unaffected: the receiver `(...)` is consumed by the optional group above, then
 // the param-list `(` satisfies the class.
 const GO_HEADER = /^\s*func\s+(?:\([^)]*\)\s*)?([A-Za-z0-9_]+)?\s*[[(]/;
+const RUST_HEADER =
+  /^\s*(?:pub(?:\([^)]*\))?\s+)?(?:const\s+)?(?:async\s+)?(?:unsafe\s+)?fn\s+([A-Za-z0-9_]+)/;
 const JS_HEADER =
   /^\s*(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s*\*?\s*([A-Za-z0-9_$]+)?/;
 const JS_BOUND = // `const f = (..) =>` / `const f = function` / `f = async (..) =>`
@@ -83,8 +88,13 @@ function braceFunctions(text, lang) {
   const lines = text.split('\n');
   const out = [];
   for (let i = 0; i < lines.length; i += 1) {
-    let name = lang === 'go' ? goHeaderName(lines[i]) : jsHeaderName(lines[i]);
-    if (name === null && lang !== 'go') name = multiLineArrowName(lines, i);
+    let name;
+    if (lang === 'go') name = goHeaderName(lines[i]);
+    else if (lang === 'rust') name = rustHeaderName(lines[i]);
+    else name = jsHeaderName(lines[i]);
+    if (name === null && lang !== 'go' && lang !== 'rust') {
+      name = multiLineArrowName(lines, i);
+    }
     if (name === null) continue;
     const end = matchBrace(lines, i, lang);
     if (end === null) continue; // no body found (e.g. interface method decl) — skip
@@ -97,6 +107,10 @@ function braceFunctions(text, lang) {
 function goHeaderName(line) {
   const m = line.match(GO_HEADER);
   return m ? (m[1] ?? '(closure)') : null;
+}
+
+function rustHeaderName(line) {
+  return line.match(RUST_HEADER)?.[1] ?? null;
 }
 
 // matchBrace: from header line `start`, find the line index of the `}` closing
@@ -136,7 +150,8 @@ function braceDelta(line, lang, state = { quote: null, block: false }) {
       continue;
     }
     if (quote) {
-      // A Go raw string (backtick) takes no escapes; every other string honors `\`.
+      // A Go raw string (backtick) takes no escapes; every other recognized
+      // quoted string honors `\`.
       if (c === '\\' && !(lang === 'go' && quote === '`')) { i += 1; continue; }
       if (c === quote) quote = null;
       continue;

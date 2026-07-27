@@ -10,10 +10,14 @@ the source of truth even when the app is broken. It is intentionally polyglot.
 | --- | --- | --- |
 | `node harness/gate.mjs` | Node.js | Structural gate: per-file line cap (code files) + root file count. Reads `harness/policies.yml`. |
 | `python3 harness/check.py [repo_root]` | Python 3 + **PyYAML** | Governance integrity (`forge check`): validates `.agent/` YAML, agent-card sections, workflow `agent:`/`skill:` references, routing/mode tiers, acceptance schema. |
+| `node harness/acceptance.mjs` | Node.js | Full acceptance: harness/app/project tests plus lint, typecheck, build, coverage and security/SCA probes. |
 
 ## Dependencies
 
 - **`node harness/gate.mjs`** — Node.js only (zero npm deps).
+- **Rust/Java acceptance adapters** — Node.js built-ins only. Project tools remain
+  ecosystem-native: Cargo for Rust; repository-local `mvnw`/`gradlew` for Java.
+  Missing tools are reported `N-A/no_tool` (production-blocking), never PASS.
 - **`python3 harness/check.py`** — Python 3 + **PyYAML** (`pip install pyyaml`).
   PyYAML is the sole third-party requirement; if it is missing the tool exits
   `2` with an actionable message rather than crashing.

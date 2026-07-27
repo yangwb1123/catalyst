@@ -18,7 +18,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -172,6 +172,21 @@ test('walkFiles excludes SKIP_DIRS (no node_modules/.git paths leak through)', (
     !files.some((f) => /[\\/](node_modules|\.git|\.forge)[\\/]/.test(f)),
     'no skipped directory leaks into the walk',
   );
+});
+
+test('walkFiles skips Rust target output but still scans sibling source', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'forge-secret-target-'));
+  try {
+    mkdirSync(join(dir, 'target', 'debug'), { recursive: true });
+    mkdirSync(join(dir, 'src'));
+    writeFileSync(join(dir, 'target', 'debug', 'generated.rs'), `token="${GH_TOKEN}"\n`);
+    writeFileSync(join(dir, 'src', 'lib.rs'), 'pub fn clean() {}\n');
+    const files = walkFiles(dir);
+    assert.deepEqual(files.map((f) => f.slice(dir.length + 1)), [join('src', 'lib.rs')]);
+    assert.deepEqual(scanRepo(dir).findings, []);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 // --- FALSE-NEGATIVE FIX: extensionless credential files (.env, Dockerfile) ---

@@ -15,17 +15,20 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import {
   mkdtempSync,
+  mkdirSync,
   rmSync,
   existsSync,
   readFileSync,
   writeFileSync,
   readdirSync,
+  symlinkSync,
 } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 
 import { run, classifyDrift, manifestProjection } from './forge-upgrade.mjs';
+import { SCAFFOLD_STATE_FILE } from './forge-init.mjs';
 
 // This test lives in harness/scaffold/, so the repo root (= the SOURCE repo used
 // as the upgrade fixture) is TWO levels up; forge-init is its same-dir sibling.
@@ -43,6 +46,7 @@ const GENERATED_FILES = [
   join('.agent', 'project.yml'),
   'CLAUDE.md',
   join('.github', 'workflows', 'forge.yml'),
+  join('examples', 'starter', 'package.json'),
   join('examples', 'starter', 'src', 'greet.mjs'),
   join('examples', 'starter', 'test', 'greet.test.mjs'),
   'README.md',
@@ -85,6 +89,18 @@ function onlyChildDir(parent) {
   const kids = readdirSync(parent, { withFileTypes: true }).filter((e) => e.isDirectory());
   assert.equal(kids.length, 1, `expected exactly one backup dir under ${parent}, got ${kids.length}`);
   return join(parent, kids[0].name);
+}
+
+function projectedSource(t) {
+  const dir = mkdtempSync(join(tmpdir(), 'forge-upgrade-source-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const source = join(dir, 'source');
+  for (const rel of manifestProjection(SOURCE_ROOT)) {
+    const destination = join(source, rel);
+    mkdirSync(dirname(destination), { recursive: true });
+    writeFileSync(destination, readFileSync(join(SOURCE_ROOT, rel)));
+  }
+  return source;
 }
 
 // ① DRY writes NOTHING. Mutate the project's copied acceptance.mjs and DELETE its
@@ -249,4 +265,233 @@ test('--no-backup skips the backup entirely', (t) => {
   assert.ok(res.written >= 1, 'apply should still write with --no-backup');
   assert.equal(res.backedUp, 0, '--no-backup must take no backups');
   assert.equal(existsSync(join(target, '.forge')), false, '--no-backup must not create .forge');
+});
+
+// ⑧ PRUNE is real but ledger-constrained: a path recorded by the prior scaffold
+// and retired from the current source is backed up + deleted. An unrecorded user
+// file in the same harness directory is never inferred as removable.
+test('--prune backs up and removes only ledger-recorded retired files', (t) => {
+  const target = scaffoldProject(t);
+  const retired = join('harness', 'retired-tool.mjs');
+  const userFile = join('harness', 'user-local.mjs');
+  const retiredBytes = Buffer.from('// retired copied tool\n');
+  writeFileSync(join(target, retired), retiredBytes);
+  writeFileSync(join(target, userFile), '// user-owned extension\n');
+
+  const statePath = join(target, SCAFFOLD_STATE_FILE);
+  const state = JSON.parse(readFileSync(statePath, 'utf8'));
+  state.copied.push(retired);
+  writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`);
+
+  const dry = run({ from: SOURCE_ROOT, target, apply: false, backup: true, prune: true });
+  assert.ok(dry.removed.includes(retired), 'dry report must identify the retired ledger path');
+  assert.equal(existsSync(join(target, retired)), true, 'dry --prune must not delete');
+
+  const res = run({ from: SOURCE_ROOT, target, apply: true, backup: true, prune: true });
+  assert.equal(res.pruned, 1);
+  assert.equal(existsSync(join(target, retired)), false, 'retired copied file must be deleted');
+  assert.equal(existsSync(join(target, userFile)), true, 'unrecorded user file must survive');
+  const backup = onlyChildDir(join(target, '.forge', 'upgrade-backup'));
+  assert.ok(readFileSync(join(backup, retired)).equals(retiredBytes), 'pruned bytes must be recoverable');
+  const updated = JSON.parse(readFileSync(statePath, 'utf8'));
+  assert.equal(updated.copied.includes(retired), false, 'pruned path leaves the persisted projection');
+});
+
+test('--prune rejects a tampered ledger path outside governance namespaces', (t) => {
+  const target = scaffoldProject(t);
+  const readme = readFileSync(join(target, 'README.md'));
+  const statePath = join(target, SCAFFOLD_STATE_FILE);
+  const state = JSON.parse(readFileSync(statePath, 'utf8'));
+  state.copied.push('README.md');
+  writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`);
+
+  assert.throws(
+    () => run({ from: SOURCE_ROOT, target, apply: true, backup: true, prune: true }),
+    /unsafe path.*README\.md/,
+  );
+  assert.ok(readFileSync(join(target, 'README.md')).equals(readme), 'identity file must remain untouched');
+});
+
+test('--prune permits only the fixed release contract path, not arbitrary docs files', (t) => {
+  const target = scaffoldProject(t);
+  const unsafe = join('docs', 'product-notes.md');
+  mkdirSync(dirname(join(target, unsafe)), { recursive: true });
+  writeFileSync(join(target, unsafe), 'user-owned\n');
+  const statePath = join(target, SCAFFOLD_STATE_FILE);
+  const state = JSON.parse(readFileSync(statePath, 'utf8'));
+  assert.ok(state.copied.includes(join('docs', 'release', 'README.md')));
+  state.copied.push(unsafe);
+  writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`);
+
+  assert.throws(
+    () => run({ from: SOURCE_ROOT, target, apply: true, backup: true, prune: true }),
+    /unsafe path.*docs.*product-notes\.md/,
+  );
+  assert.equal(readFileSync(join(target, unsafe), 'utf8'), 'user-owned\n');
+});
+
+test('apply refuses to overwrite a symlinked copied file', (t) => {
+  const target = scaffoldProject(t);
+  const gate = join(target, 'harness', 'gate.mjs');
+  const outside = join(dirname(target), 'outside-gate.mjs');
+  const outsideBytes = Buffer.from('// outside user file\n');
+  writeFileSync(outside, outsideBytes);
+  rmSync(gate);
+  symlinkSync(outside, gate);
+
+  assert.throws(
+    () => run({ from: SOURCE_ROOT, target, apply: true, backup: true, prune: false }),
+    /unsafe symlink path.*gate\.mjs/,
+  );
+  assert.ok(readFileSync(outside).equals(outsideBytes), 'external symlink target must not change');
+});
+
+test('upgrade refuses a symlink target and a symlinked harness ancestor', (t) => {
+  const target = scaffoldProject(t);
+  const parent = dirname(target);
+  const outsideTarget = join(parent, 'outside-target');
+  mkdirSync(outsideTarget);
+  writeFileSync(join(outsideTarget, 'sentinel'), 'external\n');
+  rmSync(target, { recursive: true, force: true });
+  symlinkSync(outsideTarget, target);
+  assert.throws(
+    () => run({ from: SOURCE_ROOT, target, apply: true, backup: false, prune: false }),
+    /unsafe symlink path.*target directory/i,
+  );
+  assert.deepEqual(readdirSync(outsideTarget), ['sentinel']);
+
+  rmSync(target);
+  mkdirSync(target);
+  const outsideHarness = join(parent, 'outside-harness');
+  mkdirSync(outsideHarness);
+  symlinkSync(outsideHarness, join(target, 'harness'));
+  assert.throws(
+    () => run({ from: SOURCE_ROOT, target, apply: true, backup: false, prune: false }),
+    /unsafe symlink path.*harness/i,
+  );
+  assert.equal(readdirSync(outsideHarness).length, 0, 'apply must not write through harness link');
+});
+
+test('upgrade refuses a symlinked parent above the target directory', (t) => {
+  const target = scaffoldProject(t);
+  const parent = dirname(target);
+  const linkedParent = join(parent, 'linked-parent');
+  symlinkSync(parent, linkedParent);
+
+  assert.throws(
+    () => run({
+      from: SOURCE_ROOT,
+      target: join(linkedParent, 'proj'),
+      apply: true,
+      backup: false,
+      prune: false,
+    }),
+    /unsafe symlink path.*target directory/i,
+  );
+  assert.equal(existsSync(join(target, '.forge')), false, 'linked-parent rejection must write nothing');
+});
+
+test('upgrade refuses a symlinked scaffold-state.json before reading it', (t) => {
+  const target = scaffoldProject(t);
+  const statePath = join(target, SCAFFOLD_STATE_FILE);
+  const outsideState = join(dirname(target), 'outside-state.json');
+  const outsideBytes = Buffer.from('{"copied":["harness/gate.mjs"]}\n');
+  writeFileSync(outsideState, outsideBytes);
+  rmSync(statePath);
+  symlinkSync(outsideState, statePath);
+
+  assert.throws(
+    () => run({ from: SOURCE_ROOT, target, apply: false, backup: true, prune: true }),
+    /unsafe symlink path.*scaffold-state\.json/i,
+  );
+  assert.ok(readFileSync(outsideState).equals(outsideBytes), 'external state must not be read through or changed');
+});
+
+test('upgrade rejects symlinks in the governed --from projection', (t) => {
+  const target = scaffoldProject(t);
+  const source = projectedSource(t);
+  const sourceGate = join(source, 'harness', 'gate.mjs');
+  const outsideSource = join(dirname(source), 'outside-source.mjs');
+  writeFileSync(outsideSource, '// outside source bytes\n');
+  rmSync(sourceGate);
+  symlinkSync(outsideSource, sourceGate);
+
+  assert.throws(
+    () => run({ from: source, target, apply: false, backup: true, prune: false }),
+    /unsafe symlink path.*source.*gate\.mjs/i,
+  );
+  assert.equal(existsSync(join(target, '.forge')), false, 'source rejection must happen before target writes');
+});
+
+test('upgrade refuses symlinks at every backup ancestor including timestamp', (t) => {
+  const now = new Date('2026-07-27T12:00:00.000Z');
+  const timestamp = '2026-07-27T12-00-00.000Z';
+  const cases = [
+    {
+      name: '.forge',
+      setup(target, outside) {
+        symlinkSync(outside, join(target, '.forge'));
+      },
+    },
+    {
+      name: 'upgrade-backup',
+      setup(target, outside) {
+        mkdirSync(join(target, '.forge'));
+        symlinkSync(outside, join(target, '.forge', 'upgrade-backup'));
+      },
+    },
+    {
+      name: 'timestamp',
+      setup(target, outside) {
+        mkdirSync(join(target, '.forge', 'upgrade-backup'), { recursive: true });
+        symlinkSync(outside, join(target, '.forge', 'upgrade-backup', timestamp));
+      },
+    },
+  ];
+
+  for (const fixture of cases) {
+    const target = scaffoldProject(t, `backup-link-${fixture.name}`);
+    const outside = join(dirname(target), `outside-${fixture.name}`);
+    mkdirSync(outside);
+    writeFileSync(join(target, 'harness', 'gate.mjs'), '// drift requiring backup\n');
+    fixture.setup(target, outside);
+
+    assert.throws(
+      () => run(
+        { from: SOURCE_ROOT, target, apply: true, backup: true, prune: false },
+        now,
+      ),
+      /unsafe symlink path.*backup/i,
+      `${fixture.name} symlink must be rejected`,
+    );
+    assert.equal(readdirSync(outside).length, 0, `${fixture.name} link must receive no backup`);
+    assert.equal(
+      readFileSync(join(target, 'harness', 'gate.mjs'), 'utf8'),
+      '// drift requiring backup\n',
+      `${fixture.name} rejection must precede governed overwrites`,
+    );
+  }
+});
+
+test('--prune refuses a symlinked ancestor before deleting an external retired file', (t) => {
+  const target = scaffoldProject(t);
+  const retired = join('harness', 'retired-tool.mjs');
+  const statePath = join(target, SCAFFOLD_STATE_FILE);
+  const state = JSON.parse(readFileSync(statePath, 'utf8'));
+  state.copied.push(retired);
+  writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`);
+
+  const outsideHarness = join(dirname(target), 'outside-prune-harness');
+  mkdirSync(outsideHarness);
+  const outsideRetired = join(outsideHarness, 'retired-tool.mjs');
+  writeFileSync(outsideRetired, '// must survive\n');
+  rmSync(join(target, 'harness'), { recursive: true, force: true });
+  symlinkSync(outsideHarness, join(target, 'harness'));
+
+  assert.throws(
+    () => run({ from: SOURCE_ROOT, target, apply: true, backup: true, prune: true }),
+    /unsafe symlink path.*harness/i,
+  );
+  assert.equal(readFileSync(outsideRetired, 'utf8'), '// must survive\n');
+  assert.equal(existsSync(join(target, '.forge')), false, 'rejection must precede backup writes');
 });

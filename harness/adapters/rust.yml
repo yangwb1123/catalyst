@@ -1,0 +1,17 @@
+# Harness adapter: Rust
+# Commands are executed as argv (never through a shell) from the Cargo project.
+
+language: rust
+detect:
+  manifest: "Cargo.toml"
+  source: "*.rs"
+
+commands:
+  test:
+    run: "cargo test --all-targets --all-features"
+  lint:
+    run: "cargo clippy --all-targets --all-features -- -D warnings"
+  typecheck:
+    run: "cargo check --all-targets --all-features"
+  build:
+    run: "cargo build --all-targets --all-features"

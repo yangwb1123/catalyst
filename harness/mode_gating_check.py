@@ -79,6 +79,18 @@ def _known_workflow_depth_dimensions(modes):
     return dimensions
 
 
+def _gating_contracts(gating):
+    """Yield flat authority contracts, supporting one or several dimensions."""
+    if not isinstance(gating, dict):
+        return
+    if "authority" in gating:
+        yield gating
+        return
+    for value in gating.values():
+        if isinstance(value, dict) and "authority" in value:
+            yield value
+
+
 def check_workflow_mode_gating(agent_root):
     """workflow mode_gating values must agree with modes.yml's canonical values.
 
@@ -106,18 +118,19 @@ def check_workflow_mode_gating(agent_root):
         gating = data.get("mode_gating")
         if not isinstance(gating, dict):
             continue  # no mode_gating block — not every workflow needs one
-        dimension = _authority_dimension(gating.get("authority"))
-        if dimension is None or dimension not in known_dimensions:
-            continue  # authority doesn't resolve to a known workflow_depth dimension
-        # Only compare keys that are BOTH declared here AND real modes in
-        # modes.yml — key-agnostic, so a future mode needs no code change here.
-        for mode_name in sorted(set(gating) & set(modes)):
-            declared = gating[mode_name]
-            canonical = _canonical_workflow_depth(modes, mode_name, dimension)
-            if declared != canonical:
-                issues.append(
-                    f"{path}: mode_gating.{mode_name}={declared!r} disagrees with "
-                    f"{modes_path} modes.{mode_name}.workflow_depth.{dimension}="
-                    f"{canonical!r}"
-                )
+        for contract in _gating_contracts(gating):
+            dimension = _authority_dimension(contract.get("authority"))
+            if dimension is None or dimension not in known_dimensions:
+                continue  # authority doesn't resolve to a known workflow_depth dimension
+            # Only compare keys that are BOTH declared here AND real modes in
+            # modes.yml — key-agnostic, so a future mode needs no code change here.
+            for mode_name in sorted(set(contract) & set(modes)):
+                declared = contract[mode_name]
+                canonical = _canonical_workflow_depth(modes, mode_name, dimension)
+                if declared != canonical:
+                    issues.append(
+                        f"{path}: mode_gating.{mode_name}={declared!r} disagrees with "
+                        f"{modes_path} modes.{mode_name}.workflow_depth.{dimension}="
+                        f"{canonical!r}"
+                    )
     return issues

@@ -20,7 +20,7 @@ export { extractFunctions };
 // Directories never worth scanning (build output, vcs, vendored, fixtures,
 // forge-core's git-ignored runtime state in .forge/).
 export const SKIP_DIRS = new Set([
-  'node_modules', '.git', 'dist', 'build', '.next', 'coverage',
+  'node_modules', '.git', 'dist', 'build', 'target', '.next', 'coverage',
   'vendor', 'testdata', '__pycache__', '.forge',
 ]);
 
@@ -28,6 +28,7 @@ export const SKIP_DIRS = new Set([
 const LANG_BY_EXT = new Map([
   ['.go', 'go'], ['.mjs', 'js'], ['.cjs', 'js'], ['.js', 'js'],
   ['.jsx', 'js'], ['.ts', 'ts'], ['.tsx', 'ts'], ['.py', 'py'],
+  ['.rs', 'rust'],
 ]);
 
 // --- pure classification -----------------------------------------------------
@@ -48,7 +49,7 @@ export function isTestFile(file) {
     base.endsWith('_test.go') ||
     base.endsWith('.test.mjs') || base.endsWith('.test.js') ||
     base.endsWith('_test.py') || base.startsWith('test_') ||
-    file.split(/[\\/]/).includes('test')
+    file.split(/[\\/]/).some((part) => part === 'test' || part === 'tests')
   );
 }
 
@@ -71,6 +72,7 @@ export function extractImports(text, lang) {
   if (lang === 'go') return extractGoImports(text);
   if (lang === 'js' || lang === 'ts') return extractJsImports(text);
   if (lang === 'py') return extractPyImports(text);
+  if (lang === 'rust') return extractRustImports(text);
   return [];
 }
 
@@ -125,6 +127,20 @@ function extractPyImports(text) {
   let m;
   while ((m = imp.exec(text)) !== null) out.push(m[1]);
   while ((m = from.exec(text)) !== null) out.push(m[1]);
+  return out;
+}
+
+// Rust: crate-qualified `use`/`pub use` and `extern crate` declarations. The
+// first path segment is enough to resolve a Cargo package; nested/grouped
+// imports stay within that same crate. `crate`/`super` are resolved locally.
+function extractRustImports(text) {
+  const out = [];
+  const use = /^\s*(?:pub(?:\([^)]*\))?\s+)?use\s+([A-Za-z_]\w*(?:::[A-Za-z_]\w*)*)/gm;
+  const extern = /^\s*extern\s+crate\s+([A-Za-z_]\w*)/gm;
+  for (const re of [use, extern]) {
+    let m;
+    while ((m = re.exec(text)) !== null) out.push(m[1]);
+  }
   return out;
 }
 
@@ -311,12 +327,17 @@ export function walkSource(root, acc = []) {
 // 'external' (stdlib / third-party / unresolved). Layer is derived from the
 // resolved dir via aliases; external targets carry layer null.
 export function resolveTarget(spec, fromFile, ctx) {
-  const { root, aliases, goModules } = ctx;
+  const { root, aliases, goModules, rustCrates } = ctx;
   if (spec.startsWith('.')) return resolveRelative(spec, fromFile, root, aliases);
   const goDir = resolveGoModule(spec, goModules);
   if (goDir) {
     const rel = relative(root, goDir);
     return { kind: 'internal', dir: goDir, rel, layer: classifyLayer(rel, aliases) };
+  }
+  const rustDir = resolveRustCrate(spec, fromFile, rustCrates);
+  if (rustDir) {
+    const rel = relative(root, rustDir);
+    return { kind: 'internal', dir: rustDir, rel, layer: classifyLayer(rel, aliases) };
   }
   return { kind: 'external', dir: null, rel: spec, layer: null };
 }
@@ -369,6 +390,31 @@ export function findGoModules(root) {
   return mods.sort((a, b) => b.module.length - a.module.length);
 }
 
+// findRustCrates maps each Cargo package's Rust import identifier (hyphens
+// normalized to underscores) to its crate directory. Workspace-only manifests
+// have no [package] section and are intentionally omitted.
+export function findRustCrates(root) {
+  const crates = [];
+  for (const file of walkAll(root)) {
+    if (!file.endsWith('Cargo.toml')) continue;
+    try {
+      const text = readFileSync(file, 'utf8');
+      const section = text.match(/\[package\][^\n]*\n([\s\S]*?)(?=\n\[|$)/);
+      const name = section?.[1].match(/^\s*name\s*=\s*["']([^"']+)["']/m)?.[1];
+      if (name) crates.push({ name: name.replaceAll('-', '_'), dir: dirname(file) });
+    } catch { /* unreadable Cargo.toml — skip */ }
+  }
+  return crates.sort((a, b) => b.dir.length - a.dir.length);
+}
+
+function resolveRustCrate(spec, fromFile, crates) {
+  const head = spec.split('::')[0];
+  if (head === 'crate' || head === 'self' || head === 'super') {
+    return crates.find(({ dir }) => fromFile.startsWith(dir + sep))?.dir ?? null;
+  }
+  return crates.find(({ name }) => name === head)?.dir ?? null;
+}
+
 // walkAll: like walkSource but returns ALL files (needed to find go.mod).
 function walkAll(root, acc = []) {
   let entries;
@@ -394,7 +440,8 @@ function walkAll(root, acc = []) {
 export function scan(root, rules) {
   const aliases = (rules?.architecture?.dir_aliases) ?? {};
   const goModules = findGoModules(root);
-  const ctx = { root, aliases, goModules };
+  const rustCrates = findRustCrates(root);
+  const ctx = { root, aliases, goModules, rustCrates };
   const files = [];
   for (const file of walkSource(root)) {
     const rel = relative(root, file);
@@ -414,5 +461,5 @@ export function scan(root, rules) {
       functions: extractFunctions(text, lang),
     });
   }
-  return { root, files, modules: goModules };
+  return { root, files, modules: goModules, rustCrates };
 }

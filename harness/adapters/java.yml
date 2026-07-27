@@ -1,0 +1,33 @@
+# Harness adapter: Java
+# A project probe selects a repository-local Maven or Gradle wrapper. Commands
+# are fixed argv; project content is never interpolated into a shell command.
+
+language: java
+detect:
+  source: "*.java"
+
+toolchains:
+  maven:
+    manifest: "pom.xml"
+    wrapper: "mvnw"
+    commands:
+      test:
+        run: "./mvnw -q test"
+      lint:
+        run: "./mvnw -q checkstyle:check"
+      typecheck:
+        run: "./mvnw -q -DskipTests compile"
+      build:
+        run: "./mvnw -q -DskipTests package"
+  gradle:
+    manifest: "build.gradle|build.gradle.kts|settings.gradle|settings.gradle.kts"
+    wrapper: "gradlew"
+    commands:
+      test:
+        run: "./gradlew test"
+      lint:
+        run: "./gradlew check -x test"
+      typecheck:
+        run: "./gradlew classes"
+      build:
+        run: "./gradlew assemble"

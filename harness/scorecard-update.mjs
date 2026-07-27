@@ -43,7 +43,7 @@
 // CLI:
 //   node harness/scorecard-update.mjs --model <m> --task-type <t> \
 //        [--out <path>] [--now <iso>] [--iterations <n>] [--rework <0|1>] \
-//        [--trace <path>] [--latency-ms "12,45,90"] [--cost-usd "0.01,0.02"] \
+//        [--trace <path>] [--run-id <id>] [--latency-ms "12,45,90"] [--cost-usd "0.01,0.02"] \
 //        [--window 30d]
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -59,6 +59,11 @@ const DEFAULT_OUT = join(ROOT, '.agent', 'routing', 'scorecards.json');
 // --- pure core (zero I/O, fully unit-testable) -------------------------------
 
 const MS_PER_DAY = 86400000;
+const TRACE_FORMAT_V1 = 'forgeos.trace.v1';
+
+function supportedTraceEvent(ev) {
+  return ev && (ev._format === undefined || ev._format === '' || ev._format === TRACE_FORMAT_V1);
+}
 
 // half-life for recency decay = policy.yml `history.recency_half_life_days`. A
 // stored scorecard score older than this many days has its weight halved when a
@@ -139,7 +144,7 @@ export function updateScorecards(existing, newRow, opts = {}) {
 //     a missing/NaN field is skipped) contributes nothing
 // The result feeds scorecard.percentile for a genuine p95 — these are measured
 // latencies, not estimates.
-export function parseTraceLatencies(text, model) {
+export function parseTraceLatencies(text, model, runId, phaseNames) {
   if (typeof text !== 'string') return [];
   const out = [];
   for (const line of text.split('\n')) {
@@ -147,7 +152,10 @@ export function parseTraceLatencies(text, model) {
     if (s === '') continue;
     let ev;
     try { ev = JSON.parse(s); } catch { continue; } // skip a malformed line
-    if (!ev || (model !== undefined && ev.model !== model)) continue;
+    if (!supportedTraceEvent(ev)
+      || (model !== undefined && ev.model !== model)
+      || (runId !== undefined && ev.run_id !== runId)
+      || (phaseNames !== undefined && !phaseNames.has(ev.name))) continue;
     if (Number.isFinite(ev.duration_ms)) out.push(ev.duration_ms);
   }
   return out;
@@ -170,7 +178,7 @@ export function parseTraceLatencies(text, model) {
 //   - blank lines are skipped
 //   - a non-JSON line is skipped (a corrupt tail must not sink the aggregation)
 //   - an event with no finite cost_usd_micros contributes nothing
-export function parseTraceCosts(text, model) {
+export function parseTraceCosts(text, model, runId, phaseNames) {
   if (typeof text !== 'string') return [];
   const out = [];
   for (const line of text.split('\n')) {
@@ -178,7 +186,10 @@ export function parseTraceCosts(text, model) {
     if (s === '') continue;
     let ev;
     try { ev = JSON.parse(s); } catch { continue; } // skip a malformed line
-    if (!ev || (model !== undefined && ev.model !== model)) continue;
+    if (!supportedTraceEvent(ev)
+      || (model !== undefined && ev.model !== model)
+      || (runId !== undefined && ev.run_id !== runId)
+      || (phaseNames !== undefined && !phaseNames.has(ev.name))) continue;
     if (Number.isFinite(ev.cost_usd_micros)) out.push(ev.cost_usd_micros / 1e6);
   }
   return out;
@@ -250,20 +261,20 @@ function withTrajectory(verdict, { iterations, reworked }) {
 // missing file is an empty sample set (no trace yet), not an error — telemetry is
 // optional and absence is honest. `undefined` path -> undefined (the --trace flag was
 // not supplied). `model` is forwarded straight through (undefined -> no filter).
-function readTraceLatencies(path, model) {
+function readTraceLatencies(path, model, runId, phaseNames) {
   if (path === undefined) return undefined;
   if (!existsSync(path)) return [];
-  return parseTraceLatencies(readFileSync(path, 'utf8'), model);
+  return parseTraceLatencies(readFileSync(path, 'utf8'), model, runId, phaseNames);
 }
 
 // Read a forge-core trace file at `path` and parse out its REAL billed costs (optionally
 // filtered to one `model`), the cost twin of readTraceLatencies. A missing file is an
 // empty sample set (no trace yet), not an error; an undefined path -> undefined (--trace
 // was not supplied), so the field is omitted rather than fabricated.
-function readTraceCosts(path, model) {
+function readTraceCosts(path, model, runId, phaseNames) {
   if (path === undefined) return undefined;
   if (!existsSync(path)) return [];
-  return parseTraceCosts(readFileSync(path, 'utf8'), model);
+  return parseTraceCosts(readFileSync(path, 'utf8'), model, runId, phaseNames);
 }
 
 // Combine the latency sources into one sample set for synthesize, or undefined
@@ -335,10 +346,14 @@ function logField(v) {
   return v === undefined ? 'n/a' : v;
 }
 
+function phaseNameSet(raw) {
+  return raw === undefined ? undefined : new Set(raw.split(',').map((s) => s.trim()).filter(Boolean));
+}
+
 function main() {
   const args = parseArgs(process.argv.slice(2));
   if (!args.model || !args['task-type']) {
-    console.error('usage: scorecard-update --model <m> --task-type <t> [--out <path>] [--now <iso>] [--iterations <n>] [--rework <0|1>] [--trace <path>] [--latency-ms "a,b,c"] [--cost-usd "a,b"] [--window 30d]');
+    console.error('usage: scorecard-update --model <m> --task-type <t> [--out <path>] [--now <iso>] [--iterations <n>] [--rework <0|1>] [--trace <path>] [--run-id <id>] [--phase-names <a,b>] [--latency-ms "a,b,c"] [--cost-usd "a,b"] [--window 30d]');
     process.exit(2);
   }
   const out = args.out || DEFAULT_OUT;
@@ -353,12 +368,13 @@ function main() {
   // — for a pre-attribution trace with no model field — none would match. The wind-down
   // only invokes us once it has confirmed model-stamped cost events exist, so the right
   // path is always the per-model filter.)
+  const phaseNames = phaseNameSet(args['phase-names']);
   const latenciesMs = combineLatencies(
-    readTraceLatencies(args.trace, args.model),
+    readTraceLatencies(args.trace, args.model, args['run-id'], phaseNames),
     parseNumberList(args['latency-ms']),
   );
   const costsUsd = combineCosts(
-    readTraceCosts(args.trace, args.model),
+    readTraceCosts(args.trace, args.model, args['run-id'], phaseNames),
     parseNumberList(args['cost-usd']),
   );
   const { verdict, newRow } = runUpdate({

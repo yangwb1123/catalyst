@@ -83,6 +83,25 @@ class SkipShapesTest(unittest.TestCase):
         issues = mode_gating_check.check_workflow_mode_gating(self.agent_root)
         self.assertFalse(any("build.yml" in i for i in issues), issues)
 
+    def test_nested_multi_dimension_mismatch_is_flagged(self):
+        wf = self.agent_root / "workflows" / "mg_multi.yml"
+        wf.write_text(
+            "id: mg_multi\nstage: evolve\nmode_gating:\n"
+            "  depth:\n"
+            "    explorer: opportunistic\n"
+            "    authority: ../policies/modes.yml#workflow_depth.evolve\n"
+            "  mutation_authority:\n"
+            "    explorer: auto-act\n"
+            "    authority: ../policies/modes.yml#workflow_depth.evolve_authority\n"
+            "phases:\n  - name: scan\n    agent: explorer\n",
+            encoding="utf-8",
+        )
+        issues = mode_gating_check.check_workflow_mode_gating(self.agent_root)
+        self.assertTrue(
+            any("evolve_authority" in issue and "explorer" in issue for issue in issues),
+            issues,
+        )
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

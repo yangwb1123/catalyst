@@ -47,8 +47,28 @@
 #              15 → 16, which met but exhausted the prior budget's headroom. max_files
 #              moved 16 → 17 (actual 16 + headroom 1, same convention as above) so the
 #              next legitimate split has room rather than tripping immediately.
-#   fanin:     max 7 PRODUCTION importing files (forge-core/internal/asset); tests excluded
-#   cognitive: 4 top-level source modules (docs, examples, forge-core, harness)
+#              RECALIBRATED 2026-07-24: spine chaining (--chain) added 3 files
+#              (chain.go + report.go + executor.go) — genuine function-level splits
+#              from over-500-line engine_build.go/main.go, not new surface. max_files
+#              17 → 21 (actual 20 + headroom 1).
+#              RECALIBRATED 2026-07-25: forge trace command added trace_cmd.go.
+#              max_files 21 → 23 (actual 22 + headroom 1).
+#              RECALIBRATED 2026-07-27: durable chain resume/status plus the
+#              fail-closed release executor, minimal prompt, output/receipt
+#              contracts, and portable link validation raised cmd/forge to 30
+#              cohesive command-boundary files. Platform pin helpers were merged
+#              without weakening their build tags; max_files is 31 (actual 30 +
+#              headroom 1). Moving the whole boundary to internal/release is
+#              deferred until a second consumer justifies a cross-package API.
+#              RECALIBRATED again 2026-07-27: the dynamic writes_adr pre/post tree
+#              contract cannot fit artifact_provenance.go under the 500-line gate
+#              and has a distinct responsibility, raising actual 30 → 31.
+#              max_files 31 → 32 preserves the established one-file headroom.
+#   fanin:     max 26 PRODUCTION importing files (forge-core/internal/asset);
+#              Rust domain is 25. Tests excluded. RECALIBRATED 2026-07-27 when
+#              Rust entered the scanner; both are intended innermost APIs.
+#   cognitive: 4 top-level source modules
+#              (examples, forge-core, forge-runtime, harness)
 #   functions: longest declared function <= 50 lines (policies.yml max_function_lines)
 #   cycles:    0 circular module imports (policies.yml circular_dependency_count)
 #
@@ -63,8 +83,8 @@ root:
 
 # ── Per-package / per-directory budget ────────────────────────────────────
 package:
-  max_files: 17       # actual 16 (forge-core/cmd/forge, incl. approve.go + prompt_artifacts.go split out of prompt_context.go 2026-07-02) + headroom
-  max_exports: 30     # actual 27 (orchestrator, incl. parallel.go/waves.go) / 23 (mode) + headroom — recalibrated 2026-06-27
+  max_files: 32       # actual 31 (cmd/forge incl. chain/release/ADR contracts) + headroom 1
+  max_exports: 30     # actual 28 (orchestrator and mode) + headroom — recalibrated 2026-07-27
 
 # ── Per-file budget ───────────────────────────────────────────────────────
 file:
@@ -72,11 +92,11 @@ file:
 
 # ── Fan-in budget (how many PRODUCTION files import one target) ───────────
 fanin:
-  max_importers: 20   # actual 15 (forge-core/internal/asset, tests excluded) — RECALIBRATED 2026-06-27: asset is the foundational DATA-MODEL package (Workflow/Phase types), so a high fan-in is healthy, not a god-dependency smell (every orchestration file shares its vocabulary); the parallel orchestrator's waves.go/parallel.go legitimately import it. + headroom.
+  max_importers: 30   # actual 26 (Go internal/asset), Rust domain 25; tests excluded — RECALIBRATED 2026-07-27 after .rs scanning closed the prior blind spot. Both are intentional innermost APIs.
 
 # ── Cognitive-load budget (top-level source modules to hold in your head) ──
 cognitive:
-  max_root_modules: 8 # actual 4 (docs, examples, forge-core, harness) + headroom
+  max_root_modules: 8 # actual 4 (examples, forge-core, forge-runtime, harness) + headroom
 
 # ── Architecture: layered dependency direction (THE headline rule) ────────
 # Clean Architecture: dependencies point INWARD. Outer layers may depend on
@@ -85,12 +105,14 @@ cognitive:
 #   infrastructure is an outer detail: it may be wired in by interfaces, but
 #   domain/application must never import it.
 architecture:
-  # Layers ordered OUTER → INNER. Index = depth; a lower index is "more outer".
+  # Layers ordered OUTER → INNER for documentation. The checker deliberately
+  # enforces the explicit forbidden edges below; it does not infer policy from
+  # this order. Infrastructure is an outer adapter wired by interfaces.
   layers:
     - interfaces
+    - infrastructure
     - application
     - domain
-    - infrastructure
   # Map concrete on-disk directory segment names onto canonical layers.
   # A file's layer = the layer of the FIRST path segment that matches an alias.
   dir_aliases:
@@ -110,8 +132,18 @@ architecture:
     - "domain -> application"
     - "domain -> interfaces"
     - "domain -> infrastructure"
-    # application must not import the outer interfaces layer:
+    # application owns use-cases and ports; it must not import either outer
+    # delivery interfaces or concrete infrastructure adapters:
     - "application -> interfaces"
+    - "application -> infrastructure"
+    # infrastructure adapters may implement domain/application ports, but must
+    # not reach sideways into a delivery interface:
+    - "infrastructure -> interfaces"
+
+  # Scope note: layering applies only to directories mapped by dir_aliases.
+  # All 38 production Rust files are mapped. The legacy Go core uses package,
+  # fan-in, cycle and naming checks but is not yet fully classified into these
+  # four canonical layers; this heuristic is not claimed as whole-repo proof.
 
 # ── Naming: technical-role directory names that signal "organized by tech
 # detail, not architecture" (cognitive-architecture skill, principle 1/2). A dir

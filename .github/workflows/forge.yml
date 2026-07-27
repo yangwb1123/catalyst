@@ -29,6 +29,16 @@ jobs:
         with:
           go-version: '1.26'
 
+      - name: Set up Rust 1.93.0
+        working-directory: forge-runtime
+        run: |
+          rustup toolchain install 1.93.0 --profile minimal --component clippy,rustfmt
+          rustup override set 1.93.0
+
+      - name: Fetch forge-runtime locked dependencies
+        working-directory: forge-runtime
+        run: cargo fetch --locked
+
       - name: Install check.py dependency (PyYAML)
         run: python3 -m pip install --quiet pyyaml
 
@@ -43,6 +53,15 @@ jobs:
 
       - name: forge-core tests with -race (catches data races)
         run: go -C forge-core test -race ./...
+
+      - name: forge-runtime quality (locked dependency set, offline execution)
+        working-directory: forge-runtime
+        run: |
+          cargo fmt --all --check
+          cargo test --all-targets --all-features --offline
+          cargo clippy --all-targets --all-features --offline -- -D warnings
+          cargo check --all-targets --all-features --offline
+          cargo build --all-targets --all-features --offline
 
       - name: forge run build --executor dry (end-to-end orchestration smoke test)
         run: |

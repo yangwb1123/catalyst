@@ -24,6 +24,10 @@ import {
   versionProbeArgs,
   coverageArtifact,
 } from './adapters.mjs';
+import {
+  PROJECT_ADAPTER_LANGS,
+  probeProjectOperations,
+} from './adapters/project.mjs';
 
 // lint == clean  <-  per-language linters from harness/adapters/<lang>.yml.
 // This upgrades lint from a STATIC N/A (the adapters used to be pure
@@ -38,14 +42,14 @@ import {
 //   N-A   — linter NOT installed, OR installed but unconfigured for this project
 //           (e.g. eslint with no eslintrc: it can't run, so its result is not a
 //           verdict on the code). N/A is the honest outcome, never a FAIL.
-// The criterion is N/A iff every language is N/A (a repo with no installed linter
-// stays N/A and therefore ACCEPTED, keeping lint NON-load-bearing); install
-// eslint/golangci-lint/ruff with a config and the SAME code auto-enforces PASS/FAIL.
+// The criterion is N/A if ANY detected language is N/A: a working tool in one
+// ecosystem must not hide a missing/unconfigured tool in another. Install and
+// configure every detected linter to make the aggregate a real PASS/FAIL verdict.
 
 // linterInstalled: true iff `<bin> --version` exits 0. The cheap, side-effect-
 // free probe for "is this tool on PATH" before running the heavier lint command.
-function linterInstalled(bin) {
-  return run(bin, ['--version']).ok;
+function linterInstalled(bin, root, exec) {
+  return exec(bin, ['--version'], {}, root).ok;
 }
 
 // unconfigured: did the lint command fail because the linter could not actually
@@ -78,25 +82,30 @@ export function judgeLint(lang, bin, installed, r) {
 // probeLintLang: I/O wrapper around judgeLint for one language. Loads the
 // adapter, probes whether the linter is installed, and (only then) shells the
 // lint command — deferring the verdict to the pure judgeLint.
-function probeLintLang(lang) {
+function probeLintLang(lang, root, exec) {
   const { lint } = loadAdapter(lang);
   const bin = lintBinary(lint);
   if (!bin) return judgeLint(lang, null, false, null);
-  const installed = linterInstalled(bin);
-  const r = installed ? run(...splitCmd(lint)) : null;
+  const installed = linterInstalled(bin, root, exec);
+  const [cmd, args] = splitCmd(lint);
+  const r = installed ? exec(cmd, args, {}, root) : null;
   return judgeLint(lang, bin, installed, r);
 }
 
 // probeLint: aggregate per-language lint into the single `lint` criterion.
-// N/A when no source languages are detected OR every detected language is N/A
-// (no installed/configured linter). FAIL if any language FAILs. Otherwise PASS.
-export function probeLint() {
-  const langs = detectLanguages(ROOT);
+// A PASS requires every detected language to produce a real clean verdict:
+// one missing/unconfigured tool keeps the aggregate N/A so a green ecosystem
+// cannot mask a production-blocking tool gap in another.
+export function probeLint(root = ROOT, exec = run) {
+  const langs = detectLanguages(root);
   if (langs.length === 0) return result('lint', NA, 'no source languages detected');
-  const per = langs.map(probeLintLang);
+  const per = langs
+    .filter((lang) => !PROJECT_ADAPTER_LANGS.includes(lang))
+    .map((lang) => probeLintLang(lang, root, exec));
+  per.push(...probeProjectOperations(root, 'lint', exec));
   const detail = per.map((p) => p.detail).join('; ');
   if (per.some((p) => p.status === FAIL)) return result('lint', FAIL, detail);
-  if (per.every((p) => p.status === NA)) return result('lint', NA, detail);
+  if (per.some((p) => p.status === NA)) return result('lint', NA, detail);
   return result('lint', PASS, detail);
 }
 
@@ -106,9 +115,9 @@ export function probeLint() {
 // criterion. HONESTY/FAIL-SAFE identical to lint: a missing OR can't-run tool
 // (no module/tests/config) is N/A, never FAIL; only a real run below threshold
 // FAILs. The pure decision is adapters.judgeCoverage (unit-testable with no tool
-// installed). N/A iff every language is N/A — so this repo stays N/A and ACCEPTED,
-// keeping coverage NON-load-bearing; install+configure a tool and PASS/FAIL auto-
-// enforce.
+// installed). N/A if ANY detected language is N/A, so one configured ecosystem
+// cannot mask a missing coverage command/tool in another; only all-real results
+// aggregate to PASS or FAIL.
 
 // probeCoverageLang: I/O wrapper around judgeCoverage for one language. Loads the
 // adapter's coverage command, probes whether its tool is installed (`<bin>
@@ -120,18 +129,19 @@ export function probeLint() {
 // when the run fails on "not a module"). A gate must not pollute the repo it
 // judges, so we snapshot whether that artifact pre-existed and remove ONLY one we
 // ourselves created — never a user's pre-existing coverage report.
-function probeCoverageLang(lang, threshold) {
+function probeCoverageLang(lang, threshold, root, exec) {
   const { coverage } = loadAdapter(lang);
   const bin = coverageBinary(coverage);
   if (!bin) return judgeCoverage(lang, null, false, null, threshold);
   // Tool-aware install probe: `go version`, else `<bin> --version` (see
   // versionProbeArgs — `go --version` would falsely read as "not installed").
-  const installed = run(bin, versionProbeArgs(bin)).ok;
+  const installed = exec(bin, versionProbeArgs(bin), {}, root).ok;
   if (!installed) return judgeCoverage(lang, bin, false, null, threshold);
   const artifact = coverageArtifact(coverage);
-  const path = artifact ? join(ROOT, artifact) : null;
+  const path = artifact ? join(root, artifact) : null;
   const preexisted = path ? existsSync(path) : false;
-  const r = run(...splitCmd(coverage));
+  const [cmd, args] = splitCmd(coverage);
+  const r = exec(cmd, args, {}, root);
   if (path && !preexisted && existsSync(path)) rmSync(path, { recursive: true, force: true });
   return judgeCoverage(lang, bin, true, r, threshold);
 }
@@ -140,16 +150,16 @@ function probeCoverageLang(lang, threshold) {
 // criterion (mirrors probeLint). N/A when no source languages are detected OR
 // every detected language is N/A (no installed/runnable coverage tool). FAIL if
 // any language is below threshold. Otherwise PASS.
-export function probeCoverage() {
-  const langs = detectLanguages(ROOT);
+export function probeCoverage(root = ROOT, exec = run) {
+  const langs = detectLanguages(root);
   if (langs.length === 0) return result('coverage', NA, 'no source languages detected');
   // The line-coverage floor is the project's mode×lifecycle threshold (central knob:
   // .agent/project.yml × modes.yml — see resolveCoverageThreshold for the resolution,
   // its missing-file FAIL-SAFE, and why an N/A here is unaffected), NOT a hardcoded 60.
-  const threshold = resolveCoverageThreshold(ROOT);
-  const per = langs.map((lang) => probeCoverageLang(lang, threshold));
+  const threshold = resolveCoverageThreshold(root);
+  const per = langs.map((lang) => probeCoverageLang(lang, threshold, root, exec));
   const detail = per.map((p) => p.detail).join('; ');
   if (per.some((p) => p.status === FAIL)) return result('coverage', FAIL, detail);
-  if (per.every((p) => p.status === NA)) return result('coverage', NA, detail);
+  if (per.some((p) => p.status === NA)) return result('coverage', NA, detail);
   return result('coverage', PASS, detail);
 }

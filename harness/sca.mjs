@@ -50,7 +50,7 @@ const ROOT = dirname(HARNESS_DIR);
 // Directories never worth scanning for manifests — same exclusions as the rest
 // of the harness (vcs / build output / vendored / fixtures / runtime state).
 export const SKIP_DIRS = new Set([
-  'node_modules', '.git', 'dist', 'build', '.next', 'coverage',
+  'node_modules', '.git', 'dist', 'build', 'target', '.next', 'coverage',
   'vendor', 'testdata', '__pycache__', '.forge',
 ]);
 

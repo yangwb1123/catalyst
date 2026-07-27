@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // ForgeOS harness gate (v0) — host-independent constraint enforcement.
 // Checks: per-file line cap (code files) + root file count.
-// Function-length & circular-deps are language-specific -> later adapters (see ROADMAP).
+// Function length, cycles, layering and coupling are enforced by the composed
+// harness/arch/arch-check.mjs gate; this fast edit-time gate owns only size caps.
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, extname, relative } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -14,7 +15,10 @@ import { resolveEnforce, resolveMaxFileLines } from './adapters.mjs';
 const ROOT = process.cwd();
 const POLICY_PATH = join(ROOT, 'harness', 'policies.yml');
 const CODE_EXTS = new Set(['.ts', '.tsx', '.js', '.mjs', '.cjs', '.jsx', '.py', '.go', '.rs', '.java']);
-const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'build', '.next', 'coverage', 'vendor', '.forge']);
+const SKIP_DIRS = new Set([
+  'node_modules', '.git', 'dist', 'build', 'target', '.next', 'coverage',
+  'vendor', '.forge',
+]);
 // A single line longer than this is a God-file even with few/no newlines
 // (e.g. a minified bundle): the line-count cap alone would miss it.
 const MAX_LINE_LEN = 2000;

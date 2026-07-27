@@ -43,20 +43,33 @@
 // Design: PURE templating functions (return strings, unit-testable without disk)
 // are kept separate from the fs/copy I/O boundary at the bottom; the copy lists
 // (GOVERNANCE_DIRS / COPIED_FILES) keep scaffold() data-driven and small.
-import { mkdirSync, writeFileSync, readdirSync, existsSync } from 'node:fs';
+import { mkdirSync, readdirSync, existsSync, lstatSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 // The SOURCE-tree copy primitives are shared with forge-upgrade (single source of
 // truth for the __pycache__-skipping recursive walk), so they live in scaffold-fs
 // (the same harness/scaffold/ sub-package).
-import { copyFromSource, copyTree } from './scaffold-fs.mjs';
+import {
+  assertNoSymlinkComponents,
+  assertSafeRegularFile,
+  assertSafeSourceProjection,
+  copyFromSource,
+  copyTree,
+  enumerateTree,
+  writeFileNoFollow,
+} from './scaffold-fs.mjs';
 // COPY MANIFESTS (data-driven — the 70% universal governance) live in their own
 // module to keep this file under the harness's own 500-line cap; re-exported
 // here (not just imported) so existing import sites (test_forge-init.mjs et al.)
 // are unaffected.
-import { GOVERNANCE_DIRS, COPIED_FILES, HARNESS_NOT_COPIED } from './copy-manifest.mjs';
+import {
+  GOVERNANCE_DIRS,
+  COPIED_FILES,
+  HARNESS_NOT_COPIED,
+  SCAFFOLD_STATE_FILE,
+} from './copy-manifest.mjs';
 
-export { GOVERNANCE_DIRS, COPIED_FILES, HARNESS_NOT_COPIED };
+export { GOVERNANCE_DIRS, COPIED_FILES, HARNESS_NOT_COPIED, SCAFFOLD_STATE_FILE };
 
 // The script's own location locates the ForgeOS SOURCE repo root so we copy the
 // REAL tools. This tool lives in harness/scaffold/, so the repo root is TWO levels
@@ -64,6 +77,33 @@ export { GOVERNANCE_DIRS, COPIED_FILES, HARNESS_NOT_COPIED };
 // harness; its parent === repo root.
 const SCAFFOLD_DIR = dirname(fileURLToPath(import.meta.url));
 const SOURCE_ROOT = dirname(dirname(SCAFFOLD_DIR));
+
+export const GENERATED_FILES = [
+  join('.agent', 'PROJECT.md'),
+  join('.agent', 'ROADMAP.md'),
+  join('.agent', 'CURRENT_SPRINT.md'),
+  join('.agent', 'project.yml'),
+  'CLAUDE.md',
+  join('.github', 'workflows', 'forge.yml'),
+  join('examples', 'starter', 'package.json'),
+  join('examples', 'starter', 'src', 'greet.mjs'),
+  join('examples', 'starter', 'test', 'greet.test.mjs'),
+  'README.md',
+  '.gitignore',
+];
+
+// Exact copied-file projection shared with forge-upgrade and the conflict
+// preflight. Keeping this set data-driven makes it impossible for init to check
+// fewer destinations than it later writes.
+export function copiedProjection(sourceRoot = SOURCE_ROOT) {
+  const fromDirs = GOVERNANCE_DIRS.flatMap((rel) => enumerateTree(rel, sourceRoot));
+  const projection = [...new Set([...fromDirs, ...COPIED_FILES])].sort();
+  return assertSafeSourceProjection(sourceRoot, projection);
+}
+
+export function renderScaffoldState(paths = copiedProjection()) {
+  return `${JSON.stringify({ version: 1, copied: [...paths].sort() }, null, 2)}\n`;
+}
 
 // --- pure templating (no disk; unit-testable) --------------------------------
 
@@ -160,9 +200,12 @@ export function renderClaudeMd(name) {
 ## 治理资产 (Governance assets, under .agent/)
 - \`agents/\`     角色卡 (architect / planner / implementer / reviewer / qa / …)
 - \`skills/\`     可复用技能 (clean-architecture / testing / code-review / …)
-- \`workflows/\`  生命周期工作流 (discover / design / build / evolve)
+- \`workflows/\`  生命周期工作流 (discover / design / review / build / deploy / rollback / evolve)
 - \`eval/\`       验收 schema (acceptance.schema.yml —— Stop 闸门的机器可判定 DoD)
 - \`routing/\`    模型路由策略 · \`policies/\` mode 表
+
+\`deploy\` / \`rollback\` 只生成并验证声明式 \`docs/release/*\` 交付物；真实远程操作与
+凭证始终归带外 CI/operator，不能把 workflow 名称当作“已部署”证据。
 
 ## 闸门:完成前必须 ACCEPTED (Gate before done)
 \`\`\`sh
@@ -204,7 +247,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
       - uses: actions/setup-python@v5
         with:
           python-version: '3.x'
@@ -233,6 +276,17 @@ export function greet(name) {
   return \`Hello, \${name}!\`;
 }
 `;
+}
+
+export function renderStarterPackage() {
+  return `${JSON.stringify({
+    name: 'forgeos-starter-example',
+    private: true,
+    type: 'module',
+    scripts: {
+      test: 'node --test --test-reporter=tap test/*.test.mjs',
+    },
+  }, null, 2)}\n`;
 }
 
 export function renderStarterAppTest() {
@@ -274,19 +328,49 @@ export function parseArgs(argv) {
   return out;
 }
 
-// SAFETY: refuse to scaffold over a non-empty .agent/ unless force is set.
-function assertSafeTarget(targetDir, force) {
-  const agentDir = join(targetDir, '.agent');
-  if (force || !existsSync(agentDir)) return;
-  let entries = [];
+// SAFETY: resolve every destination before the first write and refuse any
+// collision unless force is explicit. This covers README/CI/harness conflicts,
+// not just a pre-existing .agent directory.
+function lexicalExists(path) {
   try {
-    entries = readdirSync(agentDir);
-  } catch {
-    return; // unreadable -> not a populated project we'd clobber
+    lstatSync(path);
+    return true;
+  } catch (err) {
+    if (err?.code === 'ENOENT' || err?.code === 'ENOTDIR') return false;
+    throw new Error(`cannot safely inspect ${path}: ${err.message}`);
   }
-  if (entries.length > 0) {
+}
+
+function assertSafeTarget(targetDir, force) {
+  const planned = [...new Set([
+    ...copiedProjection(), ...GENERATED_FILES, SCAFFOLD_STATE_FILE,
+  ])];
+  assertNoSymlinkComponents(targetDir, 'target directory');
+  for (const rel of planned) {
+    const destination = join(targetDir, rel);
+    assertNoSymlinkComponents(destination, rel);
+    // --force authorizes overwriting safe regular files; it does not authorize
+    // discovering a late hardlink/special leaf after earlier files were changed.
+    if (lexicalExists(destination)) assertSafeRegularFile(destination, rel);
+  }
+  if (force) return;
+  const conflicts = planned.filter((rel) => lexicalExists(join(targetDir, rel)));
+  const agentDir = join(targetDir, '.agent');
+  if (existsSync(agentDir)) {
+    let entries;
+    try {
+      entries = readdirSync(agentDir);
+    } catch (err) {
+      throw new Error(`cannot safely inspect ${agentDir}: ${err.message}`);
+    }
+    if (entries.length > 0 && conflicts.length === 0) conflicts.push('.agent/ (non-empty)');
+  }
+  if (conflicts.length > 0) {
+    const preview = conflicts.slice(0, 8).join(', ');
+    const more = conflicts.length > 8 ? `, … (+${conflicts.length - 8} more)` : '';
     throw new Error(
-      `${agentDir} already exists and is non-empty; pass --force to overwrite`,
+      `target contains ${conflicts.length} scaffold conflict(s): ${preview}${more}; ` +
+      'pass --force to overwrite',
     );
   }
 }
@@ -294,9 +378,28 @@ function assertSafeTarget(targetDir, force) {
 // Write a generated file into the target, creating parent dirs.
 function writeGenerated(relPath, content, targetDir, created) {
   const dest = join(targetDir, relPath);
-  mkdirSync(dirname(dest), { recursive: true });
-  writeFileSync(dest, content);
+  writeFileNoFollow(dest, content, relPath);
   created.push(relPath);
+}
+
+function writeGeneratedProjectFiles(cfg, targetDir, created) {
+  const files = [
+    [join('.agent', 'PROJECT.md'), renderProjectMd(cfg.name)],
+    [join('.agent', 'ROADMAP.md'), renderRoadmapMd(cfg.name)],
+    [join('.agent', 'CURRENT_SPRINT.md'), renderCurrentSprintMd(cfg.name)],
+    [join('.agent', 'project.yml'), renderProjectYml(cfg.name, cfg.mode, cfg.lifecycle)],
+    ['CLAUDE.md', renderClaudeMd(cfg.name)],
+    [join('.github', 'workflows', 'forge.yml'), renderForgeCi()],
+    [join('examples', 'starter', 'package.json'), renderStarterPackage()],
+    [join('examples', 'starter', 'src', 'greet.mjs'), renderStarterApp()],
+    [join('examples', 'starter', 'test', 'greet.test.mjs'), renderStarterAppTest()],
+    ['README.md', renderReadmeMd(cfg.name)],
+    ['.gitignore', renderGitignore()],
+    [SCAFFOLD_STATE_FILE, renderScaffoldState(copiedProjection())],
+  ];
+  for (const [relPath, content] of files) {
+    writeGenerated(relPath, content, targetDir, created);
+  }
 }
 
 // Scaffold the whole project. Returns the list of created relative paths.
@@ -312,38 +415,8 @@ export function scaffold(cfg) {
 
   for (const relDir of GOVERNANCE_DIRS) copyTree(relDir, SOURCE_ROOT, targetDir, created);
   for (const rel of COPIED_FILES) copyFromSource(rel, SOURCE_ROOT, targetDir, created);
-
-  writeGenerated(join('.agent', 'PROJECT.md'), renderProjectMd(cfg.name), targetDir, created);
-  writeGenerated(join('.agent', 'ROADMAP.md'), renderRoadmapMd(cfg.name), targetDir, created);
-  writeGenerated(
-    join('.agent', 'CURRENT_SPRINT.md'),
-    renderCurrentSprintMd(cfg.name),
-    targetDir,
-    created,
-  );
-  writeGenerated(
-    join('.agent', 'project.yml'),
-    renderProjectYml(cfg.name, cfg.mode, cfg.lifecycle),
-    targetDir,
-    created,
-  );
-  writeGenerated('CLAUDE.md', renderClaudeMd(cfg.name), targetDir, created);
-  writeGenerated(join('.github', 'workflows', 'forge.yml'), renderForgeCi(), targetDir, created);
   // Seed app + test so the load-bearing app_test_pass criterion is a REAL pass.
-  writeGenerated(
-    join('examples', 'starter', 'src', 'greet.mjs'),
-    renderStarterApp(),
-    targetDir,
-    created,
-  );
-  writeGenerated(
-    join('examples', 'starter', 'test', 'greet.test.mjs'),
-    renderStarterAppTest(),
-    targetDir,
-    created,
-  );
-  writeGenerated('README.md', renderReadmeMd(cfg.name), targetDir, created);
-  writeGenerated('.gitignore', renderGitignore(), targetDir, created);
+  writeGeneratedProjectFiles(cfg, targetDir, created);
 
   return { targetDir, created };
 }

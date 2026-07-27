@@ -16,27 +16,19 @@
 // PURE (take their inputs explicitly, no I/O) so they are unit-testable without
 // the filesystem; only loadAdapter and detectLanguages touch disk.
 import { readFileSync } from 'node:fs';
-import { dirname, join, extname } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseRules, walkSource } from './arch/scan.mjs';
+import { parseRules } from './arch/scan.mjs';
+import { ADAPTER_LANGS } from './adapters/detection.mjs';
+export {
+  ADAPTER_LANGS,
+  detectLanguages,
+  langForExt,
+  walkAdapterSources,
+} from './adapters/detection.mjs';
 
 const HARNESS_DIR = dirname(fileURLToPath(import.meta.url));
 const ADAPTERS_DIR = join(HARNESS_DIR, 'adapters');
-
-// Source extension -> the ADAPTER language whose <lang>.yml governs it. Note
-// this maps onto the adapter file names (go/python/typescript), so every JS/TS
-// flavour funnels to the single typescript.yml adapter (its eslint command lints
-// .js too), matching the adapters/README "polyglot repo can hit multiple".
-const LANG_BY_EXT = new Map([
-  ['.go', 'go'],
-  ['.mjs', 'typescript'], ['.cjs', 'typescript'], ['.js', 'typescript'],
-  ['.jsx', 'typescript'], ['.ts', 'typescript'], ['.tsx', 'typescript'],
-  ['.py', 'python'],
-]);
-
-// The adapter languages we ship a <lang>.yml for. Used to validate loadAdapter
-// input and to keep detectLanguages from inventing names with no adapter.
-export const ADAPTER_LANGS = ['go', 'python', 'typescript'];
 
 // App test-RUNNER kind (acceptance.mjs inferRunner: node/python/go) -> the adapter
 // language whose <lang>.yml `test:` command governs it. node's *.test.mjs funnels
@@ -46,13 +38,7 @@ export const ADAPTER_LANG_BY_RUNNER = { node: 'typescript', python: 'python', go
 
 // --- pure helpers ------------------------------------------------------------
 
-// langForExt: extension (with dot) -> adapter language, or null when unmapped.
-// Pure; exported for direct unit testing of the extension mapping.
-export function langForExt(ext) {
-  return LANG_BY_EXT.get(ext) ?? null;
-}
-
-// adapterCommands: pull the {lint,test,coverage} run-strings out of a parsed
+// adapterCommands: pull executable run-strings out of a parsed command map.
 // adapter object (the shape parseRules returns for a <lang>.yml). Missing
 // commands come back undefined rather than throwing — a partial adapter is the
 // caller's problem to interpret, not a crash here. Pure over the parsed object.
@@ -61,6 +47,8 @@ export function adapterCommands(parsed) {
   return {
     lint: cmds.lint?.run,
     test: cmds.test?.run,
+    typecheck: cmds.typecheck?.run,
+    build: cmds.build?.run,
     coverage: cmds.coverage?.run,
   };
 }
@@ -453,7 +441,7 @@ export function parseCoveragePercent(out) {
 // N/A; % >= threshold -> PASS; % < threshold -> FAIL. A MISSING tool is NEVER a
 // FAIL and a tool that could not run is NEVER a faked PASS.
 export function judgeCoverage(lang, bin, installed, r, threshold = DEFAULT_COVERAGE_THRESHOLD) {
-  if (!bin) return { lang, status: 'N-A', detail: `${lang}: adapter has no coverage command` };
+  if (!bin) return { lang, status: 'N-A', detail: `${lang}: coverage command/tool is not configured` };
   if (!installed) return { lang, status: 'N-A', detail: `${lang}: ${bin} not installed` };
   if (!r) return { lang, status: 'N-A', detail: `${lang}: ${bin} not run` };
   if (coverageUnrunnable(r.out)) {
@@ -471,29 +459,26 @@ export function judgeCoverage(lang, bin, installed, r, threshold = DEFAULT_COVER
 
 // --- I/O boundary ------------------------------------------------------------
 
-// loadAdapter: read harness/adapters/<lang>.yml and return its
-// { lint, test, coverage } command strings. Throws on an unknown language (no
-// such adapter ships) so a typo surfaces loudly rather than silently yielding an
-// all-undefined command map. The file read uses the same minimal YAML reader the
-// arch checks use (zero-dep, in-Node).
-export function loadAdapter(lang) {
+// loadAdapterDocument: parse one adapter without choosing a Java toolchain.
+export function loadAdapterDocument(lang) {
   if (!ADAPTER_LANGS.includes(lang)) {
     throw new Error(`no adapter for language '${lang}' (have: ${ADAPTER_LANGS.join(', ')})`);
   }
   const text = readFileSync(join(ADAPTERS_DIR, `${lang}.yml`), 'utf8');
-  return adapterCommands(parseRules(text));
+  return parseRules(text);
 }
 
-// detectLanguages: scan the project tree under `root` and return the SORTED,
-// de-duplicated set of adapter languages present, inferred from source-file
-// extensions (.go -> go, .mjs/.ts/.js... -> typescript, .py -> python). Reuses
-// walkSource from scan.mjs, so it skips node_modules/.git/vendor/etc. the same
-// way the arch scan does. Empty array when the tree has no recognized sources.
-export function detectLanguages(root) {
-  const langs = new Set();
-  for (const file of walkSource(root)) {
-    const lang = langForExt(extname(file));
-    if (lang) langs.add(lang);
+// loadAdapter: read harness/adapters/<lang>.yml and return its command strings.
+// Java callers pass maven|gradle so the selected wrapper remains explicit. An
+// omitted profile reads the common top-level command map. Throws on an unknown
+// such adapter ships) so a typo surfaces loudly rather than silently yielding an
+// all-undefined command map. The file read uses the same minimal YAML reader the
+// arch checks use (zero-dep, in-Node).
+export function loadAdapter(lang, profile = null) {
+  const parsed = loadAdapterDocument(lang);
+  const commandMap = profile ? parsed?.toolchains?.[profile] : parsed;
+  if (profile && !commandMap) {
+    throw new Error(`adapter '${lang}' has no toolchain profile '${profile}'`);
   }
-  return [...langs].sort();
+  return adapterCommands(commandMap);
 }

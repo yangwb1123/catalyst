@@ -94,9 +94,16 @@ function stageGate(policyText, opts = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'forge-gate-'));
   const harness = join(dir, 'harness');
   mkdirSync(join(harness, 'arch'), { recursive: true });
+  mkdirSync(join(harness, 'adapters'), { recursive: true });
   writeFileSync(join(harness, 'policies.yml'), policyText);
   // Copy the live module graph so the temp gate resolves its imports.
-  for (const rel of ['gate.mjs', 'adapters.mjs', 'arch/scan.mjs', 'arch/scan-functions.mjs']) {
+  for (const rel of [
+    'gate.mjs',
+    'adapters.mjs',
+    'adapters/detection.mjs',
+    'arch/scan.mjs',
+    'arch/scan-functions.mjs',
+  ]) {
     writeFileSync(join(harness, rel), readFileSync(join(HARNESS_DIR, rel), 'utf8'));
   }
   // Optional central-knob config: project.yml mode×lifecycle + the real modes.yml.
@@ -275,6 +282,21 @@ test('no violations -> PASS exit 0 under BOTH warn and block modes', () => {
     assert.equal(r.status, 0, `clean tree must exit 0; stdout:\n${r.stdout}`);
     assert.match(r.stdout, /PASS/);
   }
+});
+
+test('Rust target build output is skipped while ordinary source remains governed', () => {
+  const files = {
+    'target/debug/generated.js': oversizedFile(900),
+    'src/ordinary.js': oversizedFile(900),
+  };
+  const res = runGateWithPolicy(CAP500, {
+    projectYml: 'mode: engineering\nlifecycle: mvp\n',
+    files,
+  });
+  assert.equal(res.status, 1, `ordinary source must remain governed; stdout:\n${res.stdout}`);
+  assert.match(res.stdout, /1 violation/);
+  assert.match(res.stdout, /src\/ordinary\.js/);
+  assert.doesNotMatch(res.stdout, /target\/debug\/generated\.js/);
 });
 
 test('FAIL-SAFE: no .agent at all -> falls back to policies.yml enforce (block here)', () => {

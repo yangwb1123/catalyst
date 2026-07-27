@@ -44,7 +44,7 @@ const ROOT = dirname(HARNESS_DIR);
 // Directories never worth scanning — same exclusions as arch/scan.mjs
 // (vcs / build output / vendored / fixtures / forge-core runtime state).
 export const SKIP_DIRS = new Set([
-  'node_modules', '.git', 'dist', 'build', '.next', 'coverage',
+  'node_modules', '.git', 'dist', 'build', 'target', '.next', 'coverage',
   'vendor', 'testdata', '__pycache__', '.forge',
 ]);
 

@@ -4,11 +4,12 @@
 // out-of-band checks and renders an ACCEPTED / REJECTED verdict.
 //
 // Honesty first: a criterion is only PASS/FAIL when a real check backs it. The
-// criteria with NO check wired in this repo (typecheck / build) are reported N/A
-// with a reason; lint / coverage / dependency_vulnerabilities are REAL probes that
-// report N/A only when their tool/DB is absent here. security_findings is a real
-// load-bearing PASS/FAIL probe (secret-scan). N/A is never faked into a pass, and
-// never counted as satisfied.
+// Build/typecheck are project-aware: forge-core is test/build/vet gated, while a
+// copied project with no such target is honestly N/A. lint / coverage /
+// dependency_vulnerabilities are REAL probes that report N/A only when their
+// tool/DB is absent here. security_findings is a real load-bearing PASS/FAIL
+// probe. N/A is never faked into a pass or counted as satisfied; production
+// blocks missing tools for critical criteria while exempting true inapplicability.
 //
 // Design: one criterion == one probe function (shells its command, judges the
 // exit code); a runner collects results; `decide()` is a PURE function over the
@@ -16,13 +17,26 @@
 //
 // CLI: `node harness/acceptance.mjs`         ->  exit 0 ACCEPTED · exit 1 REJECTED.
 //      `node harness/acceptance.mjs --json`  ->  per-criterion JSON to stdout.
-import { readdirSync, statSync, existsSync } from 'node:fs';
+import { readdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { appTestPlan, ADAPTER_LANG_BY_RUNNER, loadAdapter } from './adapters.mjs';
+import { probeDiscoveredProjectTests } from './adapters/project.mjs';
 import { scanRepo as scaScanRepo } from './sca.mjs';
-import { PASS, FAIL, NA, ROOT, HARNESS_DIR, run, result, withCategory } from './acceptance-kernel.mjs';
+import {
+  PASS, FAIL, NA, ROOT, HARNESS_DIR, INAPPLICABLE, run, result, withCategory,
+} from './acceptance-kernel.mjs';
 import { probeLint, probeCoverage } from './acceptance-quality.mjs';
+import {
+  runHarnessSuites, runPythonSuites,
+} from './acceptance-tests.mjs';
+import {
+  criticalNAReasons,
+  probeBuild,
+  probeForgeCoreTests,
+  probeProjectTests,
+  probeTypecheck,
+  readProjectLifecycle,
+} from './acceptance-project.mjs';
 
 // Re-export the verdict statuses (defined in the kernel) so importers — chiefly
 // test_acceptance.mjs — keep getting PASS/FAIL/NA from acceptance.mjs unchanged.
@@ -32,6 +46,17 @@ export { PASS, FAIL, NA };
 // probeCoverage / the pure judgeLint+unconfigured from acceptance.mjs — keep that
 // surface intact across the split.
 export { judgeLint, unconfigured, probeLint, probeCoverage } from './acceptance-quality.mjs';
+export {
+  discoverHarnessSuites, runCountedNodeFiles, runPythonSuites,
+} from './acceptance-tests.mjs';
+export {
+  criticalNAReasons,
+  probeBuild,
+  probeForgeCoreTests,
+  probeProjectTests,
+  probeTypecheck,
+  readProjectLifecycle,
+} from './acceptance-project.mjs';
 
 // --- per-criterion probes (one criterion == one function) --------------------
 
@@ -73,155 +98,73 @@ export function runCountedTest(glob, extraEnv = {}) {
   return { ok: r.ok && count > 0, count: Number.isNaN(count) ? null : count };
 }
 
-// runPythonSuites: FAIL-CLOSED discovery of harness/test_*.py, symmetric to the
-// Node globs above. Python has no `node --test <glob>` runner, so we readdir
-// HARNESS_DIR for test_*.py and spawn python3 per file. The two suites were
-// previously HARDCODED (test_check.py + test_yaml2json.py), so a newly ADDED
-// harness/test_*.py was never executed — a red new Python suite could ship while
-// load-bearing test_pass reported green (the same false-green the Node globs were
-// hardened against; .py was left asymmetric). Returns per-file [name, ok] rows so a
-// specific failing suite is named. Fail-CLOSED: an empty walk OR a missing known
-// suite is itself a FAIL row (a broken walker / dropped suite can't vacuously pass).
-export function runPythonSuites(dir = HARNESS_DIR) {
-  const found = readdirSync(dir).filter((n) => /^test_.*\.py$/.test(n)).sort();
-  const required = ['test_check.py', 'test_yaml2json.py'];
-  const entries = found.map((n) => [n, run('python3', [join(dir, n)]).ok]);
-  const missing = required.filter((n) => !found.includes(n));
-  if (found.length === 0 || missing.length > 0) {
-    entries.push([`harness/test_*.py discovery (missing: ${missing.join(', ') || 'none found'})`, false]);
-  }
-  return { entries, count: found.length };
-}
-
-// test_pass == true  <-  ALL committed harness suites must be green (self-
-// governance: the harness runs its OWN tests, not a curated subset, so a
-// regression in verdict logic — or a silently-green arch-check faking a pass —
-// can't ship). Suites: test_check.py + test_yaml2json.py, plus per-DIRECTORY Node
-// globs — 'harness/test_*.mjs' (test_gate/test_acceptance/test_scorecard/…) and
-// 'harness/arch/test_*.mjs' (test_arch-check's negative fixtures) ALWAYS, plus
-// 'harness/scaffold/test_*.mjs' (test_forge-init / test_forge-upgrade) ONLY when
-// that sub-package is present on disk. The first glob is non-recursive, so the
-// per-subdir globs are REQUIRED — without them a sub-package suite vanishes (a
-// moved suite running NOTHING = a false green); when the scaffold/upgrade tooling
-// moved into harness/scaffold/, its two suites left 'harness/test_*.mjs' coverage.
-//
-// WHY harness/scaffold/ is CONDITIONAL (and still honest): a GENERATED project
-// inherits the harness but NOT harness/scaffold/ (scaffold/upgrade are operator
-// tools a project does not carry — they're on forge-init's HARNESS_NOT_COPIED). So
-// in that project the dir is legitimately absent and there is no suite to run —
-// requiring it would falsely REJECT a clean project. The honesty guard is NOT
-// weakened: when harness/scaffold/ EXISTS (this source repo), the glob is added and
-// is fail-CLOSED exactly like the others (zero-match -> ok:false). It is skipped
-// ONLY when the directory itself is absent — "no such sub-package", not "ran
-// nothing". (Same INAPPLICABLE-when-absent shape as probeAppTests / probeSCA.)
-//
-// ALL included Node globs are fail-CLOSED on discovery via runCountedTest: a
-// zero-match glob exits 0 ("# tests 0"), so requiring N>0 stops a moved/renamed
-// suite from reporting green while running nothing — the symmetric guard the arch
-// glob always had but harness/test_*.mjs previously lacked (fail-OPEN: judged `.ok`).
+// test_pass recursively discovers every harness Node/Python suite. Node runs the
+// concrete discovered file list and requires TAP `# tests N>0`; Python imports
+// each file, runs unittest plus module-level pytest-style tests, and likewise
+// requires a real positive count. New nested subpackages cannot vanish behind a
+// curated glob. Project manifests are independently load-bearing below.
 export function probeTests() {
-  const mjsRun = runCountedTest('harness/test_*.mjs', { FORGE_ACCEPT_INNER: '1' });
-  const archRun = runCountedTest('harness/arch/test_*.mjs', { FORGE_ACCEPT_INNER: '1' });
-  const py = runPythonSuites();
-  const suites = [
-    ...py.entries,
-    ['harness/test_*.mjs', mjsRun.ok],
-    ['harness/arch/test_*.mjs', archRun.ok],
-  ];
-  // The scaffold/upgrade sub-package's suites run ONLY where that sub-package is
-  // present (the ForgeOS source repo). When present, fail-closed like the rest.
-  const scaffoldPresent = existsSync(join(ROOT, 'harness', 'scaffold'));
-  const scaffoldRun = scaffoldPresent
-    ? runCountedTest('harness/scaffold/test_*.mjs', { FORGE_ACCEPT_INNER: '1' })
-    : null;
-  if (scaffoldRun) suites.push(['harness/scaffold/test_*.mjs', scaffoldRun.ok]);
+  const harness = runHarnessSuites();
+  const suites = [...harness.entries];
+  // Project test targets are load-bearing when present. A missing Rust/Java
+  // tool is N/A/no_tool at the project-probe boundary, but cannot be silently
+  // skipped inside test_pass; only a truly inapplicable "no project" is omitted.
+  const projectTests = withCategory(probeProjectTests());
+  if (projectTests.category !== INAPPLICABLE) {
+    suites.push(['project tests', projectTests.status === PASS]);
+  }
   const failed = suites.filter(([, ok]) => !ok).map(([name]) => name);
   const ok = failed.length === 0;
   const detail = ok
-    ? `harness/test_*.py (${py.count}) + harness/test_*.mjs (${mjsRun.count}) + harness/arch/test_*.mjs (${archRun.count})`
-      + (scaffoldRun ? ` + harness/scaffold/test_*.mjs (${scaffoldRun.count})` : '')
+    ? `recursive Python suites (${harness.python.files} files/${harness.python.count} tests)`
+      + ` + recursive Node suites (${harness.node.files} files/${harness.node.count} tests)`
+      + (projectTests.status === PASS ? ` + ${projectTests.detail}` : '')
       + ': all green'
-    : `failed: ${failed.join(', ')}`;
+    : `failed: ${failed.join(', ')}${projectTests.status !== PASS ? ` — ${projectTests.detail}` : ''}`;
   return result('test_pass', ok ? PASS : FAIL, detail);
 }
 
 // app_test_pass == true  <-  EVERY discovered example app's test suite is green.
 // Without this probe, `forge accept` would happily ACCEPT a regressed app: no
-// automated gate ran the app's tests. P21: discover all examples/<app>/ dirs
-// that ship a test/ subdir (not just the hardcoded url-shortener), infer the
-// runner per app from its test-file extensions, and FAIL if ANY app fails.
-
-// Discover example apps: examples/<app>/ dirs that contain a test/ subdir.
-// Returns [{name, testDir}] sorted by name (deterministic ordering).
-function discoverApps() {
-  const examples = join(ROOT, 'examples');
+// automated gate ran the app's tests. Every direct examples/<app>/ directory is
+// a required app; its recursively discovered Go/Node/Python/Rust/Java project
+// plans must execute at least one observable test. This covers nested tests/,
+// language-native layouts, and mixed/nested manifest roots without a shallow
+// extension heuristic.
+function discoverApps(root) {
+  const examples = join(root, 'examples');
   if (!existsSync(examples)) return [];
-  const apps = [];
-  for (const name of readdirSync(examples).sort()) {
-    const testDir = join(examples, name, 'test');
-    let st;
-    try { st = statSync(testDir); } catch { continue; }
-    if (st.isDirectory()) apps.push({ name, testDir });
+  return readdirSync(examples, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => ({ name: entry.name, root: join(examples, entry.name) }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function runApp(app, exec) {
+  const rows = probeDiscoveredProjectTests(app.root, exec);
+  if (rows.length === 0) {
+    return {
+      name: app.name,
+      ok: false,
+      detail: `${app.name}: FAIL (no configured project test target)`,
+    };
   }
-  return apps;
+  const failed = rows.filter((row) => row.status !== PASS);
+  const evidence = rows.map((row) => row.detail).join(', ');
+  return {
+    name: app.name,
+    ok: failed.length === 0,
+    detail: `${app.name}: ${failed.length === 0 ? 'PASS' : 'FAIL'} (${evidence})`,
+  };
 }
 
-// Infer a runner from the test files present. Order matters: a single app dir
-// is assumed homogeneous; first matching language wins. null -> unknown layout.
-function inferRunner(app) {
-  const files = readdirSync(app.testDir);
-  if (files.some((f) => f.endsWith('.test.mjs'))) return 'node';
-  if (files.some((f) => f.endsWith('_test.py') || (f.startsWith('test_') && f.endsWith('.py')))) return 'python';
-  if (files.some((f) => f.endsWith('_test.go'))) return 'go';
-  return null;
-}
-
-// Run one app's suite; return {name, ok, detail}. DECLARATION-DRIVEN: the pure
-// appTestPlan picks the app's adapter `test:` command when its runner fits the
-// on-disk layout (e.g. go-taskd's `go test ./...`, from its own module dir via
-// plan.cwd), else the hardcoded fallback (e.g. url-shortener's node:test, since
-// the typescript adapter's `vitest run` does not discover *.test.mjs) — annotating
-// WHY (honesty). plan.countCheck routes node to the fail-closed counting runner;
-// adapter/python/go judge on exit code. (ADAPTER_LANG_BY_RUNNER maps the runner
-// kind onto a <lang>.yml.)
-function runApp(app) {
-  const runner = inferRunner(app);
-  if (!runner) return { name: app.name, ok: false, detail: `${app.name}: FAIL (no recognized test runner)` };
-  const { test: testCmd } = loadAdapter(ADAPTER_LANG_BY_RUNNER[runner]);
-  const plan = appTestPlan(testCmd, readdirSync(app.testDir), app.name, runner);
-  if (plan.countCheck) return runNodeApp(app, plan.tag);
-  const r = run(plan.cmd, plan.args, {}, plan.cwd ? join(ROOT, plan.cwd) : ROOT);
-  const detail = r.ok ? `${app.name}: PASS (${plan.tag})` : `${app.name}: FAIL (${plan.tag}, exit ${r.code})`;
-  return { name: app.name, ok: r.ok, detail };
-}
-
-// Run a node app's *.test.mjs suite (always node here — the typescript adapter's
-// `vitest run` never discovers node:test *.test.mjs, so plan.countCheck is set).
-// Fail-closed: exit 0 is necessary but NOT sufficient — an empty glob still exits
-// 0 ("tests 0"); require the `tests N` summary with N > 0. Quoted glob dodges Node
-// 26's broken `--test <dir>`; the TAP reporter pins the format. `tag` carries the
-// honest "(node fallback: …)" annotation from appTestPlan.
-function runNodeApp(app, tag) {
-  const glob = `examples/${app.name}/test/*.test.mjs`;
-  const r = run('node', ['--test', '--test-reporter=tap', glob]);
-  const m = r.out.match(/(?:^|\n)# tests (\d+)/);
-  const count = m ? Number(m[1]) : null;
-  const ok = r.ok && count !== null && count > 0;
-  const detail = ok
-    ? `${app.name}: PASS (${tag}, ${count} tests)`
-    : count === 0 || count === null
-      ? `${app.name}: FAIL (no tests discovered, expected >=1)`
-      : `${app.name}: FAIL (node exit ${r.code})`;
-  return { name: app.name, ok, detail };
-}
-
-export function probeAppTests() {
-  const apps = discoverApps();
+export function probeAppTests(root = ROOT, exec = run) {
+  const apps = discoverApps(root);
   if (apps.length === 0) {
     // Never a silent pass: zero apps is reported N/A with a reason.
-    return result('app_test_pass', NA, 'no example apps with a test/ dir discovered under examples/');
+    return result('app_test_pass', NA, 'no example app directories discovered under examples/');
   }
-  const runs = apps.map(runApp);
+  const runs = apps.map((app) => runApp(app, exec));
   const failed = runs.filter((r) => !r.ok);
   const ok = failed.length === 0;
   const detail = runs.map((r) => r.detail).join('; ');
@@ -235,17 +178,12 @@ export function probeAppTests() {
 // the top); test_acceptance.mjs's surface (probeLint/probeCoverage/judgeLint/
 // unconfigured) is preserved via the re-export there.
 
-// Criteria with NO executable check in this repo. Surfaced as N/A with an honest
-// reason; NEVER asserted as a pass (see decide()). security_findings, lint,
-// coverage, and dependency_vulnerabilities are NO LONGER here — each is now a
-// real probe (secret-scan / adapter linters / adapter coverage / sca) that
-// reports PASS/FAIL when its tool/data is present and N/A only when it is not.
-// typecheck/build stay N/A: no type-checker / build step is wired for this repo.
+// Kept as a compatibility surface for callers/tests that imported the former
+// static-N/A list. Build and typecheck are now project probes: forge-core makes
+// them real Go build/vet verdicts; a copied project without such a target gets an
+// honest inapplicable N/A from acceptance-project.mjs.
 export function probeNotApplicable() {
-  return [
-    result('typecheck', NA, 'no TS sources / type-checker in this repo'),
-    result('build', NA, 'no build step (declarative + zero-dep harness)'),
-  ];
+  return [];
 }
 
 // security_findings == 0  <-  hardcoded-secret scan (harness/secret-scan.mjs).
@@ -271,8 +209,10 @@ export function probeSecurity() {
 // from security_findings (hardcoded-secret scan). HONESTY (full rationale in
 // sca.mjs's header): DB present (FORGE_SCA_DB env, else .agent/security/
 // advisories.json) -> PASS / FAIL (detail lists advisory_id+severity); DB ABSENT
-// -> N/A, scan NOT run and NOT faked. NOT in LOAD_BEARING, so the no-DB N/A does
-// not block accept; a DB-present FAIL blocks via decide()'s normal fail path.
+// -> N/A, scan NOT run and NOT faked. It stays outside the unconditional
+// LOAD_BEARING set so an immature project may honestly lack a repo-specific DB;
+// criticalNAReasons requires the tool at production. A DB-present FAIL always
+// blocks via decide()'s normal fail path.
 export function probeSCA(root = ROOT) {
   const dbPath = process.env.FORGE_SCA_DB || join(root, '.agent', 'security', 'advisories.json');
   const report = scaScanRepo(root, dbPath);
@@ -308,10 +248,9 @@ export function probeArchitecture() {
 // --- aggregation + verdict ---------------------------------------------------
 
 // Gather every criterion result. Order mirrors the acceptance schema. Each row is
-// annotated with its lifecycle-aware category (withCategory) — an ADDITIVE field
-// that decide()/LOAD_BEARING deliberately ignore (the verdict logic is unchanged),
-// carried so the --json bridge can hand forge-core WHY an N/A is N/A (a missing
-// tool vs a concept the language lacks) for its lifecycle-aware exemption matrix.
+// annotated with its lifecycle-aware category (withCategory). The category lets
+// both direct decide() and the --json forge-core bridge distinguish a missing
+// tool from a concept that does not apply.
 export function collect() {
   return [
     probeTests(),
@@ -323,7 +262,8 @@ export function collect() {
     probeSCA(),
     probeLint(),
     probeCoverage(),
-    ...probeNotApplicable(),
+    probeTypecheck(),
+    probeBuild(),
   ].map(withCategory);
 }
 
@@ -340,9 +280,9 @@ export const LOAD_BEARING = ['test_pass', 'app_test_pass', 'complexity_violation
 //   (2) the six load-bearing criteria (see LOAD_BEARING) are each PRESENT and PASS
 //       (not merely not-FAIL); a missing/NA/unknown load-bearing one blocks accept;
 //   (3) the results are non-empty (zero criteria prove nothing).
-// N/A is explicitly NOT a pass for the remaining criteria: it neither blocks nor
-// counts toward satisfaction — surfaced so missing coverage stays honest.
-export function decide(results) {
+// N/A is explicitly NOT a pass. Before production a critical NO_TOOL N/A is
+// exempt; production blocks it. INAPPLICABLE remains exempt at every lifecycle.
+export function decide(results, lifecycle = 'mvp') {
   const failed = results.filter((r) => r.status === FAIL);
   const passed = results.filter((r) => r.status === PASS);
   const na = results.filter((r) => r.status === NA);
@@ -355,6 +295,7 @@ export function decide(results) {
     ...missing
       .filter((name) => byName.get(name) === undefined || byName.get(name) === NA)
       .map((name) => `${name} not satisfied (${byName.get(name) ?? 'absent'})`),
+    ...criticalNAReasons(results, lifecycle),
   ];
   const empty = results.length === 0;
   const accepted = reasons.length === 0 && !empty;
@@ -388,7 +329,7 @@ export function render(results, verdict) {
 function emitJson() {
   const results = collect();
   console.log(JSON.stringify(results));
-  process.exit(decide(results).accepted ? 0 : 1);
+  process.exit(decide(results, readProjectLifecycle()).accepted ? 0 : 1);
 }
 
 function main() {
@@ -397,7 +338,7 @@ function main() {
     return;
   }
   const results = collect();
-  const verdict = decide(results);
+  const verdict = decide(results, readProjectLifecycle());
   console.log(render(results, verdict));
   process.exit(verdict.accepted ? 0 : 1);
 }

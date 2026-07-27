@@ -53,7 +53,7 @@ export function result(criterion, status, detail) {
 // the absence is honest-and-permanent or a fixable tooling gap:
 //   APPLICABLE   — a real check ran (PASS/FAIL): the criterion is fully verified.
 //   INAPPLICABLE — the LANGUAGE/project has no such concept (no build step, no
-//                  source language, the adapter declares no command). Honest at
+//                  source language). Honest at
 //                  EVERY lifecycle: there is nothing to install that would make
 //                  it applicable. Exempt anywhere.
 //   NO_TOOL      — the concept applies but the TOOL is missing/unconfigured (a
@@ -72,12 +72,12 @@ export const NO_TOOL = 'no_tool';
 // matched against the result detail the existing probes already produce — the
 // classifier reads ONLY status+detail, it does not re-judge. Conservative: a
 // phrase must clearly denote absence-of-concept (no source / no build step /
-// adapter declares no command / no apps) to be INAPPLICABLE; everything else N/A
+// no apps) to be INAPPLICABLE; a missing adapter command is a configuration/tool
+// gap and therefore stays NO_TOOL. Everything else N/A
 // stays NO_TOOL.
 const inapplicableDetail = [
   /\bno build step\b/i,
   /\bno source languages?\b/i,
-  /\badapter has no\b/i,
   /\bno TS sources\b/i,
   /\bno example apps\b/i,
 ];
@@ -93,12 +93,13 @@ export function categorize(status, detail) {
 }
 
 // withCategory returns a copy of a result row annotated with its category. The
-// category is an ADDITIVE field: decide()/LOAD_BEARING never read it (acceptance-
-// layer behaviour is byte-for-byte unchanged), and any consumer reading the old
-// {criterion,status,detail} shape ignores it. It exists so the --json bridge can
-// carry the category to forge-core's lifecycle-aware exemption matrix.
+// field is additive for shape compatibility; direct acceptance and the --json
+// forge-core bridge both use it for the same lifecycle-aware exemption matrix.
 export function withCategory(r) {
-  return { ...r, category: categorize(r.status, r.detail) };
+  // A probe that knows applicability structurally outranks free-form detail
+  // text. This prevents an untrusted project path/label containing a phrase
+  // such as "no source languages" from spoofing an INAPPLICABLE exemption.
+  return { ...r, category: r.category ?? categorize(r.status, r.detail) };
 }
 
 // splitCmd: a run-string ("eslint . --max-warnings=0") -> [cmd, argsArray] for

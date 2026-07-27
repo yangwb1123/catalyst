@@ -17,7 +17,19 @@ import * as acc from './acceptance.mjs';
 import { resolveCoverageThreshold, judgeCoverage, computeCoverageThreshold } from './adapters.mjs';
 import { parseRules } from './arch/scan.mjs';
 import { categorize, withCategory, APPLICABLE, INAPPLICABLE, NO_TOOL, ROOT } from './acceptance-kernel.mjs';
-const { decide, PASS, FAIL, NA, LOAD_BEARING, probeNotApplicable, probeCoverage, probeSCA, runCountedTest, runPythonSuites } = acc;
+const {
+  decide,
+  PASS,
+  FAIL,
+  NA,
+  LOAD_BEARING,
+  probeCoverage,
+  probeNotApplicable,
+  probeSCA,
+  readProjectLifecycle,
+  runCountedTest,
+  runPythonSuites,
+} = acc;
 
 // allPass builds a results array where every load-bearing criterion is PASS,
 // then applies the given overrides — so a test can isolate ONE criterion's
@@ -50,7 +62,7 @@ test('importing acceptance.mjs produces no output and exits 0 (no side effects)'
   assert.equal(typeof decide, 'function');
 });
 
-// --- integration: real repo must be ACCEPTED with exit 0 ---------------------
+// --- integration: CLI exit must equal the pure lifecycle-aware verdict --------
 // SKIPPED when FORGE_ACCEPT_INNER is set: that env flag means this suite is
 // itself running *inside* acceptance.mjs's probeTests() glob run. Re-spawning
 // the whole acceptance gate from there would recurse (acceptance -> glob ->
@@ -59,53 +71,35 @@ test('importing acceptance.mjs produces no output and exits 0 (no side effects)'
 // HOST-AGNOSTIC by design: this suite ships VERBATIM into every scaffolded
 // project (it is in forge-init's COPIED_FILES), so it drives `node
 // harness/acceptance.mjs` against WHATEVER repo it lands in and asserts only the
-// invariants that hold for ANY ForgeOS project — the ACCEPTED verdict, the
-// load-bearing criteria PASSing, N/A staying honestly visible, and the
-// declaration-driven app-test routing being live. It must NOT hardcode the
+// invariants that hold for ANY ForgeOS project — CLI/pure-verdict agreement,
+// known categorized rows, critical criteria staying visible, and live
+// declaration-driven app-test routing when the app suite passes. It must NOT hardcode the
 // SOURCE repo's app names (go-taskd / url-shortener) or environment (go
 // installed), or it would falsely fail when copied to a scaffold that ships only
 // examples/starter/ — turning copy-anywhere into a lie patched over by the INNER
 // skip. (The skip below still prevents recursion when this runs inside
 // acceptance.mjs's own probeTests glob; it is not what makes the asserts portable.)
-test('acceptance gate ACCEPTS the repo it runs in and exits 0', { skip: Boolean(process.env.FORGE_ACCEPT_INNER) }, () => {
-  const res = spawnSync(process.execPath, [ACCEPT_PATH], { encoding: 'utf8' });
-  assert.equal(res.status, 0, `expected exit 0; got ${res.status}\n${res.stdout}\n${res.stderr}`);
-  assert.match(res.stdout, /forge-accept: ACCEPTED/);
-  // The six load-bearing, executable criteria must each show PASS (asserted below).
-  assert.match(res.stdout, /\[PASS\] test_pass/);
-  // app_test_pass proves the discovered example app suite is actually gated here
-  // (a regression in any app would FAIL this criterion and REJECT the repo).
-  assert.match(res.stdout, /\[PASS\] app_test_pass/);
-  // DECLARATION-DRIVEN routing must be LIVE, asserted host-agnostically: the
-  // app_test_pass detail must carry an `adapter:` tag (an app whose adapter
-  // `test:` command fits its layout — e.g. the source repo's go-taskd `go test
-  // ./...`) OR a `fallback:` tag (an app that honestly falls back, e.g. a
-  // node:test *.test.mjs app the typescript adapter's `vitest run` does not fit —
-  // url-shortener in the source repo, starter in a fresh scaffold). Either tag
-  // proves the appTestPlan routing ran; we do NOT bind to a specific app name or
-  // test count, which differ per project.
-  const appLine = (res.stdout.match(/\[PASS\] app_test_pass — (.*)/) ?? [])[1] ?? '';
-  assert.match(appLine, /\b(?:adapter|fallback):/, `app_test_pass detail must show a live adapter/fallback test route; got: ${appLine}`);
-  assert.match(res.stdout, /\[PASS\] complexity_violations/);
-  assert.match(res.stdout, /\[PASS\] arch_violations/);
-  // architecture (clean-architecture dependency-direction + size budgets) is
-  // load-bearing and must PASS for any clean tree.
-  assert.match(res.stdout, /\[PASS\] architecture/);
-  // security_findings is a REAL check (harness/secret-scan.mjs), not N/A: a clean
-  // repo ships no hardcoded secret, so it must show PASS.
-  assert.match(res.stdout, /\[PASS\] security_findings/);
-  // HONESTY (host-agnostic): the unwired criteria must remain VISIBLE as N/A —
-  // never silently dropped, never faked into a pass. coverage is framework-backed
-  // (probeCoverage shells the adapter coverage tools) but stays N/A wherever no
-  // coverage tool is runnable+configured; build has no wired step. Both are
-  // NON-load-bearing, so an honest N/A keeps the repo ACCEPTED. (We assert N/A
-  // presence, not the per-language reason, which is environment-specific.)
-  assert.match(res.stdout, /\[N-A \] coverage/);
-  assert.match(res.stdout, /\[N-A \] build/);
-  // HONESTY tally guard (host-agnostic): the footer must show N/A counted
-  // SEPARATELY and explicitly NOT folded into satisfaction — the core invariant
-  // that an N/A can never masquerade as a pass, true for any project.
-  assert.match(res.stdout, /n\/a is NOT counted as satisfied/);
+test('acceptance CLI exit matches its lifecycle-aware pure verdict', { skip: Boolean(process.env.FORGE_ACCEPT_INNER) }, () => {
+  const res = spawnSync(process.execPath, [ACCEPT_PATH, '--json'], { encoding: 'utf8' });
+  assert.ok([0, 1].includes(res.status), `gate must return a verdict exit; got ${res.status}\n${res.stderr}`);
+  const rows = JSON.parse(res.stdout);
+  const verdict = decide(rows, readProjectLifecycle());
+  assert.equal(res.status, verdict.accepted ? 0 : 1, 'CLI and pure decide() must agree');
+  assert.ok(rows.length > LOAD_BEARING.length, 'the aggregate must expose quality + N/A criteria');
+  assert.ok(rows.every((r) => [PASS, FAIL, NA].includes(r.status) && r.category),
+    'every emitted criterion must carry a known verdict and N/A category');
+
+  const app = rows.find((r) => r.criterion === 'app_test_pass');
+  if (app?.status === PASS) {
+    assert.match(
+      app.detail,
+      /\bPASS \(\d+ test\(s\) observed\)/,
+      'app tests must expose a positive observed count from their real project command',
+    );
+  }
+  for (const criterion of ['lint', 'coverage', 'build', 'typecheck']) {
+    assert.ok(rows.some((r) => r.criterion === criterion), `${criterion} must remain visible`);
+  }
 });
 
 // --- fail-CLOSED test discovery: a zero-match glob must NOT report green ------
@@ -138,9 +132,9 @@ test('runPythonSuites DISCOVERS + runs every test_*.py, fail-CLOSED (the .py bli
   const dir = mkdtempSync(join(tmpdir(), 'pysuite-'));
   try {
     // Stage the two known suites green + a NEW red one (the previously-ignored case).
-    writeFileSync(join(dir, 'test_check.py'), 'import sys; sys.exit(0)\n');
-    writeFileSync(join(dir, 'test_yaml2json.py'), 'import sys; sys.exit(0)\n');
-    writeFileSync(join(dir, 'test_zzz_new.py'), 'import sys; sys.exit(1)\n'); // a red ADDED suite
+    writeFileSync(join(dir, 'test_check.py'), 'def test_green(): pass\n');
+    writeFileSync(join(dir, 'test_yaml2json.py'), 'def test_green(): pass\n');
+    writeFileSync(join(dir, 'test_zzz_new.py'), 'def test_red(): raise AssertionError("red")\n');
     const { entries, count } = runPythonSuites(dir);
     assert.equal(count, 3, 'all three test_*.py are discovered (pre-fix the new one was invisible)');
     const red = entries.find(([n]) => n === 'test_zzz_new.py');
@@ -156,7 +150,7 @@ test('runPythonSuites is fail-CLOSED on an empty / missing-required walk (no vac
     assert.ok(empty.entries.some(([n, ok]) => ok === false && n.includes('discovery')),
       'an empty walk emits a fail-closed discovery row (a broken walker cannot pass)');
     // A walk that finds suites but MISSES a required one is also fail-closed.
-    writeFileSync(join(dir, 'test_only_one.py'), 'import sys; sys.exit(0)\n');
+    writeFileSync(join(dir, 'test_only_one.py'), 'def test_green(): pass\n');
     const partial = runPythonSuites(dir);
     assert.ok(partial.entries.some(([n, ok]) => ok === false && n.includes('test_check.py')),
       'missing a required suite (test_check.py) is a fail-closed discovery row');
@@ -164,11 +158,10 @@ test('runPythonSuites is fail-CLOSED on an empty / missing-required walk (no vac
 });
 
 // --- coverage is now a real probe, not a hardcoded N/A in probeNotApplicable --
-test('probeNotApplicable no longer carries coverage (it is a real probe now)', () => {
+test('probeNotApplicable is empty now that build/typecheck are project probes', () => {
   const names = probeNotApplicable().map((r) => r.criterion);
   assert.ok(!names.includes('coverage'), 'coverage must NOT be a static N/A anymore');
-  // typecheck/build remain the only genuinely-unwired criteria.
-  assert.deepEqual(names.sort(), ['build', 'typecheck']);
+  assert.deepEqual(names, [], 'no acceptance criterion may be a hardcoded N/A');
 });
 
 // --- lifecycle-aware N/A categorisation (the bridge to forge-core's exemption) --
@@ -185,8 +178,6 @@ test('categorize: absence-of-concept N/A details -> INAPPLICABLE', () => {
   for (const detail of [
     'no build step (declarative + zero-dep harness)',
     'no source languages detected',
-    'go: adapter has no lint command',
-    'go: adapter has no coverage command',
     'no TS sources / type-checker in this repo',
     'no example apps with a test/ dir discovered under examples/',
   ]) {
@@ -196,6 +187,8 @@ test('categorize: absence-of-concept N/A details -> INAPPLICABLE', () => {
 
 test('categorize: missing/unconfigured-TOOL N/A details -> NO_TOOL', () => {
   for (const detail of [
+    'rust: coverage command/tool is not configured',
+    'go: adapter has no lint command',
     'go: golangci-lint not installed',
     'js: eslint installed but unconfigured (no project config) — not run',
     'go: go installed but could not run here (no module/tests/config) — not a coverage verdict',
@@ -220,6 +213,13 @@ test('withCategory: ADDITIVE — preserves the row and stamps a category', () =>
   assert.equal(r.status, NA);
   assert.equal(r.detail, 'no build step here');
   assert.equal(r.category, INAPPLICABLE, 'build with no-build-step detail is inapplicable');
+  const structural = withCategory({
+    criterion: 'project_test',
+    status: NA,
+    detail: 'node:no source languages: package.json has no scripts.test',
+    category: NO_TOOL,
+  });
+  assert.equal(structural.category, NO_TOOL, 'structural category must outrank free-form detail');
 });
 
 test('collect() stamps a category on every row (the --json bridge payload)', () => {
@@ -278,15 +278,15 @@ test('judgeCoverage honors the resolved threshold at the PASS/FAIL boundary (60 
   assert.equal(judgeCoverage('go', 'go', true, ran75, 80).status, FAIL, '75% < 80 (engineering) FAILS');
 });
 
-test('coverage is NOT load-bearing (an N/A coverage must not block accept)', () => {
-  // Backward-compat invariant: coverage staying N/A keeps the repo ACCEPTED.
+test('coverage is not load-bearing and a pre-production no_tool N/A is exempt', () => {
+  // Lifecycle invariant: mvp follows the Go policy's missing-tool exemption.
   assert.ok(!LOAD_BEARING.includes('coverage'), 'coverage must stay non-load-bearing');
   const base = LOAD_BEARING.map((criterion) => ({ criterion, status: PASS, detail: 'x' }));
   base.push({ criterion: 'coverage', status: NA, detail: 'no runnable coverage tool' });
-  assert.equal(decide(base).accepted, true, 'N/A coverage must not block acceptance');
+  assert.equal(decide(base, 'mvp').accepted, true, 'mvp N/A coverage must not block acceptance');
 });
 
-// --- dependency_vulnerabilities (SCA) is a real probe, honest N/A, non-blocking -
+// --- dependency_vulnerabilities (SCA) is real and lifecycle-aware -------------
 test('probeSCA yields a single, honest dependency_vulnerabilities row', () => {
   // Like probeCoverage, exercise probeSCA() directly (NOT collect(), which spawns
   // node --test and would re-enter this suite). COPY-ANYWHERE: this test file is
@@ -316,13 +316,17 @@ test('probeSCA yields a single, honest dependency_vulnerabilities row', () => {
   }
 });
 
-test('dependency_vulnerabilities is NOT load-bearing (an N/A SCA must not block accept)', () => {
-  // Backward-compat invariant (mirrors coverage): with no advisory DB the honest
-  // N/A keeps the repo ACCEPTED — adding SCA must not regress a clean accept.
-  assert.ok(!LOAD_BEARING.includes('dependency_vulnerabilities'), 'SCA must stay non-load-bearing');
+test('SCA no_tool N/A is exempt before production and blocks production', () => {
+  // SCA remains outside the unconditional load-bearing set because copied,
+  // immature projects may lack a repository-specific advisory snapshot. The
+  // lifecycle policy nevertheless requires that tool/database for production.
+  assert.ok(!LOAD_BEARING.includes('dependency_vulnerabilities'));
   const base = LOAD_BEARING.map((criterion) => ({ criterion, status: PASS, detail: 'x' }));
   base.push({ criterion: 'dependency_vulnerabilities', status: NA, detail: 'no advisory DB' });
-  assert.equal(decide(base).accepted, true, 'N/A SCA must not block acceptance');
+  assert.equal(decide(base, 'mvp').accepted, true, 'immature projects may exempt missing SCA data');
+  const production = decide(base, 'production');
+  assert.equal(production.accepted, false, 'production must have an SCA database');
+  assert.match(production.line, /dependency_vulnerabilities not satisfied/);
 });
 
 test('decide() REJECTS when a SCA vuln is found (DB present + vulnerable dep -> FAIL)', () => {

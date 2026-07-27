@@ -250,6 +250,26 @@ test('parseTraceLatencies: a fixture trace resolves to a genuine p95 latency', (
   assert.equal(p95, 783, 'p95 computed from the real measured durations');
 });
 
+test('trace parsers: run_id isolates one execution from append-only history', () => {
+  const text = [
+    '{"kind":"agent","model":"sonnet","run_id":"old","duration_ms":9000,"cost_usd_micros":900000}',
+    '{"kind":"agent","model":"sonnet","run_id":"current","duration_ms":120,"cost_usd_micros":12000}',
+    '{"kind":"agent","model":"opus","run_id":"current","duration_ms":500,"cost_usd_micros":50000}',
+  ].join('\n');
+  assert.deepEqual(parseTraceLatencies(text, 'sonnet', 'current'), [120]);
+  assert.deepEqual(parseTraceCosts(text, 'sonnet', 'current'), [0.012]);
+});
+
+test('trace parsers: phase names isolate task type within one run and model', () => {
+  const text = [
+    '{"kind":"agent","name":"planner","model":"sonnet","run_id":"current","duration_ms":300,"cost_usd_micros":30000}',
+    '{"kind":"agent","name":"implementer","model":"sonnet","run_id":"current","duration_ms":900,"cost_usd_micros":90000}',
+  ].join('\n');
+  const phases = new Set(['implementer']);
+  assert.deepEqual(parseTraceLatencies(text, 'sonnet', 'current', phases), [900]);
+  assert.deepEqual(parseTraceCosts(text, 'sonnet', 'current', phases), [0.09]);
+});
+
 test('parseTraceLatencies: skips blank lines and malformed JSON (corrupt tail safe)', () => {
   const text = [
     '{"seq":1,"kind":"gate","name":"lint","status":"PASS","duration_ms":45}',
@@ -259,6 +279,16 @@ test('parseTraceLatencies: skips blank lines and malformed JSON (corrupt tail sa
     '{ broken json ', // a half-written tail line
   ].join('\n');
   assert.deepEqual(parseTraceLatencies(text), [45, 90], 'only the two well-formed events count');
+});
+
+test('parseTrace*: ignores unsupported trace format generations', () => {
+  const text = [
+    '{"_format":"forgeos.trace.v2","duration_ms":99,"cost_usd_micros":9000}',
+    '{"_format":"forgeos.trace.v1","duration_ms":12,"cost_usd_micros":3000}',
+    '{"duration_ms":7,"cost_usd_micros":1000}',
+  ].join('\n');
+  assert.deepEqual(parseTraceLatencies(text), [12, 7]);
+  assert.deepEqual(parseTraceCosts(text), [0.003, 0.001]);
 });
 
 test('parseTraceLatencies: an event with no numeric duration_ms contributes nothing', () => {
