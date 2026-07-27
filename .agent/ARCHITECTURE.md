@@ -12,7 +12,7 @@ DISCOVER  (深度由 mode 裁决)
 DESIGN
   Solution-Architect    → 架构(按 lifecycle 分阶段,非峰值 QPS)
   Proposal-Generator    → 1页方案+成本+风险 ──▶ ★ HUMAN APPROVAL ★
-                                                 └ 批准 → 生成 .agent/{PROJECT,ROADMAP,ARCHITECTURE}.md
+                                                 └ 批准 → 仅解锁 REVIEW（产物由 phase 契约负责）
 REVIEW  (深度由 mode 裁决;对齐 AI-SDLC Stage 2-6)
   Security-Engineer     → STRIDE 威胁建模 + RFC 合规矩阵
   Distributed-Engineer  → 故障模式矩阵 + 一致性策略 + 重试策略
@@ -20,8 +20,14 @@ REVIEW  (深度由 mode 裁决;对齐 AI-SDLC Stage 2-6)
   CTO                   → 综合裁决(Approve/Simplify/Redesign/Delay/Reject)
 BUILD
   Planner → Implementer → [Harness 闸门] → Reviewer → QA   stop: ROADMAP 100%
+DEPLOY  (声明式生产交付边界;不访问凭证/不执行远程部署)
+  Release-Engineer      → Manifest + Plan + Runbook + Go/No-Go + Validation
+  External CI/Operator  → 实际应用 ──▶ ★ HUMAN APPROVAL MARKER ★
+ROLLBACK  (独立按需,不接主链)
+  Release-Engineer      → Rollback Plan + Runbook + Checklist + Validation
+  External CI/Operator  → 实际应用 ──▶ ★ HUMAN APPROVAL MARKER ★
 EVOLVE
-  Scan → Gap → Roadmap → Implement → Review → Evaluate → (loop)
+  Scan → Gap → Roadmap → Implement → Harness → Review → Evaluate → (loop)
 ```
 
 ## 中枢旋钮:mode × lifecycle
@@ -35,14 +41,20 @@ EVOLVE
 - **真相之源 = 带外执法层**(Sandbox / CI runner 跑 harness 闸门),host-independent。
 - 各工具的 hook(CC 的 PostToolUse/Stop 等)= **加速器适配器**(编辑器内快速失败),非地基。
 - 每个宿主一个薄 adapter;无阻断能力处优雅降级为 advisory。
+- **生产交付边界**:`deploy`/`rollback` 只生成与验证精确声明的 `docs/release/*`；
+  command-mode 使用最小固定 prompt、operator-pinned Claude executable bytes(非供应商身份)、整树 postflight 和
+  receipt/source/artifact freshness。这里的 source 是排除 `.forge/**`、`docs/release/**`
+  和 commit metadata 的 product 工作树摘要，不是 Git commit identity。云/K8s 凭证和远程执行始终归外部 CI/operator；
+  人核对外部证据后写 approval marker，agent 不得自证发布成功。
 
 ## 引擎 (Engines)
 Gateway · Orchestrator · Agent-Runtime · **Model-Router** · Context-Engine · Memory-Engine ·
 Knowledge-Engine · **Evaluation-Engine** · **Sandbox(载重墙)** · Web-UI
-> **v2 现状**:forge-core Go 运行时已落地 **5 引擎**(均构建/全绿,纯标准库零依赖,13 包;与 [`BOOTSTRAP.md`](../BOOTSTRAP.md) §技术栈对齐):
+> **v2 现状**:forge-core Go 运行时当前 **21 包**(纯标准库零依赖),已落地 5 个核心引擎与可工作的本地 Agent-Runtime 切片:
 > **Orchestrator**(`internal/orchestrator`)· **Model-Router**(`routing`)· **Context-Engine**(`prompt`)·
-> **Memory-Engine**(`memory`)· **Evaluation-Engine**(`converge`);外加 Harness 闸门子集(`harness/gate.mjs`)+ Context 骨架(本 `.agent/`)。
-> **Gateway · Agent-Runtime · Knowledge-Engine · Sandbox(载重墙)· Web-UI 仍为路线图。**
+> **Memory-Engine**(`memory`)· **Evaluation-Engine**(`converge`);Agent-Runtime 已具备本地命令执行、预算/超时/进程组、最小环境、stdin prompt、产物溯源与 run lock。`forge run --chain` 以版本化状态跨 Discover→Design→Review→Build→Deploy→Evolve 持久恢复，拒绝/cycle/max-stage/策略 halt 均失败关闭。
+> `forge-runtime/` 现另有 Rust 原生多轮模型/工具循环的**离线首切片**:provider/tool 端口、严格递增 JSONL 事件、能力限制、只读 workspace 工具与 deterministic provider；以及 SQLite local-first Conversation Hub:无路径 Global、有路径 Project、Group 联动、跨进程 Conversation/Prompt ledger。SQLite 整次首次打开/PRAGMA/WAL/schema 在 BUSY/LOCKED 下有统一 5 秒重试截止，DB/WAL/SHM 私有权限及 workspace 打开失败的单一 terminal event 有并发回归。Hub 尚未自动回放进 Agent context；Rust 侧真实 provider、Run/事件恢复、远程账号与同步、审批、写/进程工具及 OS 沙箱仍未实现。
+> **Gateway · 完整 Knowledge-Engine · Sandbox runner(载重墙)· Web-UI 仍为路线图。**
 
 ## 模型路由 (v1 限 Claude 档)
 classify → score(复杂度/风险/依赖/安全/上下文) → tier(mode,lifecycle)

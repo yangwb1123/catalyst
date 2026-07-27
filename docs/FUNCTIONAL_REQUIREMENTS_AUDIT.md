@@ -1,20 +1,48 @@
 # ForgeOS Functional Requirements Audit
 
-**Methodology.** This audit is derived entirely from ForgeOS's own declared commitments — its
-root `ROADMAP.md`, `.agent/{ROADMAP,PROJECT,ARCHITECTURE}.md`, the four accepted ADRs under
-`docs/adr/`, `.agent/DECISIONS.md`, the field-level schema implied by the five real
-`.agent/workflows/*.yml` files, the machine-readable contracts declared in the twelve
-`.agent/agents/*.md` and nine `.agent/skills/*.md` cards, and every honesty admission recorded
-across the 29 sprints of `.agent/CURRENT_SPRINT.md` — never an external spec. Five independent
-audit passes each produced a requirement → bucket (`DONE` / `BLOCKED-EXTERNAL` /
-`DEFERRED-BY-DESIGN` / `GAP`) table by reading source code end-to-end, running `go build`/`go
-vet`/`go test`, and executing the harness (`gate.mjs`, `arch-check.mjs`, `check.py`,
-`acceptance.mjs`) live against the working tree. This document merges and deduplicates those
-five tables; every `GAP` row below was re-verified directly against current source
-(`forge-core/**/*.go`, `.agent/workflows/*.yml`) as part of the merge, and any disagreement
-between source reports was resolved by reading the disputed code rather than left as a
-contradiction. Audited 2026-07-02 against the working tree at commit `b0c80e4` plus uncommitted
-changes.
+**Methodology and authority boundary.** This audit is derived only from ForgeOS's adopted
+commitments: root `ROADMAP.md`, `.agent/{ROADMAP,PROJECT,ARCHITECTURE}.md`, and all seven ADR
+records while preserving their actual Accepted / Proposed / Superseded status,
+`.agent/DECISIONS.md`, seven shipped workflows, thirteen agent cards, nine skill cards, and the
+implementation/verification record in `.agent/CURRENT_SPRINT.md`. It is not an external
+specification. In particular, `FUNCTIONAL_REQUIREMENTS_BACKLOG_SCAN.md` explicitly labels its
+413/431 generated ideas as *unadopted*; their internal P0/P1 labels are discovery signals, not
+requirements, unless a later authoritative source or Accepted ADR adopts one.
+
+The large tables below preserve the original 2026-07-02 five-pass audit as a historical
+baseline. Its then-current counts and source references must not be read as a present-tense
+inventory. A fresh independent audit was run on 2026-07-27 against the current working tree,
+including Go build/vet/test/race, Rust test/clippy/check/build, the Node and Python harness
+suites, scaffold adversarial tests, and the composed Stop gate. Current deltas are recorded in
+the live DONE/DEFERRED rows and `.agent/CURRENT_SPRINT.md`.
+
+### Current closure matrix (2026-07-27)
+
+This matrix is the present-tense closure record for the adopted plan. `DONE` means an
+implemented, executable contract with positive and negative tests; it does not mean an
+unadopted idea from the backlog scan was silently promoted into scope. `NON-GOAL` means
+an Accepted ADR deliberately places that action outside ForgeOS's trust boundary.
+
+| Status | Adopted requirement | Verifiable delivery |
+|---|---|---|
+| DONE | Gate freshness and honest convergence | Required gates run at the point of use; stale/N-A results cannot satisfy required or production criteria; unknown stop metrics fail closed |
+| DONE | `mode × lifecycle` is one executable policy | Run/evolve/chain restore the effective policy, enforce review/build/action halts, gate floors, depth and model safety floors; Evolve iteration depth and agent-write authority are independent canonical fields, lifecycle tightening never grants auto-act, and proposal-only stops at a validated `effect: mutate` boundary with no host gate runner; every chain entry and resumable path reconstruction disables repository YAML shims, with option conflicts rejected before reconstruction; resumable checkpoint v2 requires every non-null recovery field, rejects null optional scalar cursors/budget, hashes the full normalized workflow, and binds mode/resolved-lifecycle before trace or Agent startup |
+| DONE | Durable lifecycle chain | `forge run --chain` persists a versioned run/stage state across Discover→Design→Review→Build→Deploy→Evolve; resume, cycle/max-stage limits, rejection rework, approval waits and terminal failure reasons have E2E coverage; retained Evolve checkpoint history is copied before the final atomic current commit rather than moving current, and fault tests prove failed history/final commits leave the old current loadable |
+| DONE | Machine task/output/verdict contracts | Workflow phase identities and normalized per-phase emit targets are unambiguous; Planner `TASK_LIST` is strict; ordinary declared emits must be in-repo regular non-empty files and are provenance-recorded; valid reviewer/CTO tokens drive routing while missing/malformed advisory tokens never fabricate a verdict; ADR and release artifacts add current-attempt freshness, and release validation requires an exact fail-closed verdict |
+| DONE | Approval and rejection are auditable state | Private versioned markers, failure-retained/success-consumed rejection, durable approval, conflicting-marker fail-close and release-specific source/artifact binding are tested |
+| DONE | Artifact provenance and trace query | Append-only records bind run/workflow/phase/agent/model/path/content/prompt hashes; `forge trace` reads filtered versioned/redacted state and malformed/unknown generations fail safely |
+| DONE | Command executor and control-state safety | Prompt uses stdin; ordinary child env is minimal/explicit while release/proposal-only execution removes host config/temp/XDG state, fixes `PATH`, and admits only direct auth plus locale/TLS inputs; output/time/call/depth/budget limits and process-group termination are enforced; `.forge` uses real private directories, bounded regular leaves and atomic unique temps, with Unix no-follow/single-link enforcement; Linux's verified-host-Git boundary rejects tracked `.forge/**` and its portable case/slash aliases before control-state use, and rejects a `--root` nested below the true Git toplevel (non-Unix retains type/static-symlink/identity/permission/size checks but does not claim link-count or adversarial-index provenance); sandbox requests fail closed and emitted state is redacted/private |
+| DONE | Declarative deploy/rollback boundary (ADR 0005) | `release-engineer` is stage-confined to immutable Deploy/Rollback; exact `Edit(<phase.emit>)`, fixed minimal prompt, operator-pinned bytes (not vendor identity), a sealed executable Linux memfd whose final immutable digest/ELF is verified before read-only FD execution (scripts/binfmt rejected; unsupported host policy fails closed), fixed/minimal-env host Git with repository fsmonitor/hooks disabled for source inventory, exact Git-toplevel root binding and portable protected-path alias rejection, whole-tree postflight, strict JSON/verdict, validation feedback, receipt freshness against product state/current stage's fixed artifact set, and human marker contracts; no remote action or credential access |
+| DONE | Recursive polyglot acceptance | Go, Node, Python, Rust and Java project discovery uses fixed argv; manifestless/unreadable/zero-test targets cannot pass; both dogfood apps run real tests |
+| DONE | Copy-anywhere init/upgrade | Fresh scaffold includes a real starter manifest/test and the complete governed harness; init/upgrade preflight every planned existing/backup leaf before the first mutation, while portable case/Windows aliases, inode aliases, source/target/state/backup/prune symlink and special-file attacks fail closed |
+| DONE | Rust Agent Runtime offline slice (ADR 0006) | Deterministic provider/tool loop, bounded output/turn/tool calls, cancellation, strict JSONL event ordering, workspace capability confinement and exactly-one terminal failure contracts |
+| DONE | Local Conversation Hub (ADR 0007) | Global/Project/Group CLI, SQLite Conversation/Prompt/Project/Group persistence, atomic/idempotent mutations, complete first-open retry, private DB/WAL/SHM and workspace-unavailable failure contract |
+| DONE | Offline deterministic dependency scan | Committed OSV snapshot drives a real SCA PASS/FAIL without network during acceptance; missing DB remains visible rather than fabricated green |
+| BLOCKED-EXTERNAL | Firecracker-compatible out-of-band sandbox | 2026-07-27 probe: `firecracker`/`jailer` are absent; `/dev/kvm` exists but the current user has neither read nor write access. Docker Server 29.6.1 and rootless Podman 4.9.3/runc are reachable, but neither proves the required microVM isolation and Forge has no sandbox runner wired. Non-`none` requests already fail before host execution |
+| BLOCKED-EXTERNAL | Cross-vendor LiteLLM validation | LiteLLM 1.83.14 is installed, but network/DNS is restricted and only one provider credential is present; a two-vendor routing test cannot be performed honestly |
+| DEFERRED-BY-DESIGN | Independent `agent-os`, remote Hub/account/sync and Web UI | ADR 0003 still needs a remote location and migration approval; remote identity/ACL/sync remain later phases, and Web UI remains part of the v3 target architecture |
+| DEFERRED-BY-DESIGN | Content-level Evolve scan breadth | The machine policy now enforces proposal-only versus implementation-capable phase sets and mode-specific iteration budgets; judging “obvious-only” versus “full-dimension/auto-derived” opportunities inside a live agent remains the explicitly documented later wave |
+| NON-GOAL | Real remote deploy/rollback inside ForgeOS | ADR 0005 explicitly limits ForgeOS to generation, validation and human approval of a declarative package; separately governed external CI/operators own remote execution |
 
 ---
 
@@ -22,6 +50,11 @@ changes.
 
 | Requirement | Source | Evidence |
 |---|---|---|
+| Local Conversation Hub selects Global with no path and a canonical Project with a bare path/`-C` | ADR 0007; CURRENT_SPRINT.md Sprint 34 | `interfaces/args.rs` + `hub_command.rs`; process-level CLI tests cover both selectors and JSON scope |
+| Project/Conversation/Prompt/Group state survives CLI processes in a versioned local SQLite store | ADR 0007 | `infrastructure/sqlite_hub`; persistence/reopen, schema, idempotency, concurrency, permission and CLI process tests |
+| Local Groups link frontend/backend/SSO Projects by descriptive role and own discussion Conversations | ADR 0007 | `group_projects` store contract + CLI integration test; roles are explicitly non-ACL labels |
+| Hub mutations are retry-safe and Group linking is atomic | ADR 0007 | Caller-reusable `--idempotency-key`; Project registration + Group link share one immediate transaction; process tests cover replay/conflict and rollback on a missing Group |
+| Sensitive Prompt ingestion can avoid argv and add-response echo | ADR 0007 | `prompt add SESSION_ID -` reads bounded UTF-8 stdin; add returns a body-free receipt while explicit `prompt list` remains plaintext |
 | Reviewer `REQUEST_CHANGES` triggers directed loop-back on agent phases, not just gate phases | ROADMAP.md:35-51 | `orchestrator.go:321 agentOutcome` + `cost.go:330 parseReviewerVerdict`, shares `loopBackTo` with gate path |
 | Reviewer's specific feedback reaches the implementer via a non-polluting one-way edge | ROADMAP.md:50-51 | `prompt_context.go:187` feeds verdict forward without re-injecting into reviewer's own fresh context |
 | `scorecards.json` auto-written after `forge run/evolve` | ROADMAP.md:58-70 | `cmd/forge/scorecard_wind.go:88 runScorecardUpdate`, fail-loud-and-continue |
@@ -30,21 +63,21 @@ changes.
 | arch-check sees JS/TS `export … from`, `export *`, dynamic `import()` | ROADMAP.md:75-79 | `harness/arch/scan.mjs:101-108 extractJsImports` |
 | Function-length gate catches Python `async def` | ROADMAP.md:79-81 | `harness/arch/scan-functions.mjs:169` |
 | secret-scan catches `.env` files structurally, not by extension | ROADMAP.md:81-83 | `harness/secret-scan.mjs:68,75-76` matches by basename |
-| `forge accept`'s Node test globs are fail-closed | ROADMAP.md:83-84 | `harness/acceptance.mjs:70-73 runCountedTest` requires `count>0` |
-| check.py validates workflow control-flow refs resolve to real targets | ROADMAP.md:85-86 | `harness/check.py:388 check_workflow_control_flow`, registered in `CHECKS` |
+| `forge accept`'s Node test globs are fail-closed | ROADMAP.md:83-84 | `harness/acceptance.mjs` `runCountedTest` requires `count>0`; recursive discovery/counting lives in `harness/acceptance-tests.mjs` |
+| check.py validates workflow control-flow refs resolve to real targets | ROADMAP.md:85-86 | `harness/workflow_control_check.py` validates the control graph and `harness/check.py` registers it in `CHECKS` |
 | forge-init's copy-list is guarded against silent drift | ROADMAP.md:94-95 | `harness/scaffold/forge-init.mjs` + `test_forge-init.mjs:108` manifest-integrity guard |
 | Rate-limit/529/overload errors classified retryable, not terminal | ROADMAP.md:100-102 | `command_executor.go:96-97,207-210 classifyRunErr` → `KindOverloaded`; `backoff.go` |
 | Checkpoint resumes at phase granularity, not just iteration granularity | ROADMAP.md:103-105,118-121 | `persist/checkpoint.go:59 PhaseIndex` + `orchestrator.go Engine.OnPhase` + `evolve.go:344 phaseCheckpointHook` (honest boundary: in-flight phase re-runs once on crash mid-phase) |
 | Spawned agent subprocesses die as a process group | ROADMAP.md:106-107 | `command_executor_unix.go:49 Setpgid:true` + group SIGKILL |
 | Prompt-injection memory lane has a hard cap | ROADMAP.md:108-109 | `prompt_memory.go:48 memoryCap = 32` + recency-floor/relevance mix |
 | Run-level budget has a hard dollar cap surviving `--resume`, drives tier downgrade | ROADMAP.md:97 | `--run-budget-usd`/`--agent-max-budget-usd`; `route.go:355,358 budget_guard`; cost persisted across resume |
-| Opt-in parallel execution of `depends_on`-independent phases, default serial unchanged | ROADMAP.md:127-142 | `orchestrator/parallel.go:67 RunParallel` + `waves.go` Kahn sort + `--parallel` flag; all 5 shipped workflows declare zero `depends_on` |
+| Opt-in parallel execution of `depends_on`-independent phases, default serial unchanged | ROADMAP.md:127-142 | `orchestrator/parallel.go:67 RunParallel` + `waves.go` Kahn sort + `--parallel` flag; all 7 shipped workflows declare zero `depends_on` |
 | Context (ROADMAP/ADR/AGENTS.md) not re-gathered/re-tokenized every phase within one run | ROADMAP.md:131-132,137 | `internal/prompt/cache.go:66 ContextCache` + `GatherCached` |
 | Incremental test selection is advisory only, never replaces the full `forge accept` gate | ROADMAP.md:143-145 | `harness/select-tests.mjs` not imported by `acceptance.mjs`/`gates.go`/CI; fail-closed mapping |
-| `.agent/` doc skeleton, `gate.mjs`, 2 ADRs, `.gitignore` | .agent/ROADMAP.md:6-9 | `node harness/gate.mjs` → `PASS (366 files, <=500 lines/file, root <=15)` |
+| `.agent/` doc skeleton, `gate.mjs`, 2 ADRs, `.gitignore` | .agent/ROADMAP.md:6-9 | `node harness/gate.mjs` → `PASS (477 files, <=500 lines/file, root <=15)` |
 | Function-length / circular-dependency machine-enforced | .agent/ROADMAP.md:10 | `.arch/rules.yaml` + `harness/arch/arch-check.mjs` (8 checks) |
 | CC PostToolUse hook auto-runs `gate.mjs` on Edit/Write/MultiEdit | .agent/ROADMAP.md:11 | `.claude/settings.json` PostToolUse hook, exit 2 on FAIL |
-| `forge check` asset validator; `forge accept` aggregation → ACCEPTED/REJECTED with honest N/A | .agent/ROADMAP.md:15,17 | `harness/check.py` (9 `check_*` fns, 32 tests); `acceptance.mjs` composes gate+check+tests+app-tests; N/A confirmed live (`sca.mjs:328`) |
+| `forge check` asset validator; `forge accept` aggregation → ACCEPTED/REJECTED with honest N/A | .agent/ROADMAP.md:15,17 | `harness/check.py` registers 11 checks; 61 Python tests cover governance/release helpers; `acceptance.mjs` composes gate+check+tests+app-tests; lint/coverage remain honestly N/A when their configured tools are absent, while SCA is a real PASS/FAIL gate |
 | Dogfood app (`examples/url-shortener`) built end-to-end and gated by `forge accept` | .agent/ROADMAP.md:18 | `examples/url-shortener/{src,test,SPEC.md,README.md}`, 5 test files |
 | `forge evolve` unattended loop: phases→gate→converge→loop with max-iter / no-progress tripwire | .agent/ROADMAP.md:19 | `orchestrator/loop.go:14-37,107-114 NoProgress` tripwire + `MaxIter`; convergence criterion-based, never round-count |
 | Real `--executor=command --agent-cmd claude` end-to-end (task injection/acceptEdits/model/cwd/budget/trace-latency/cost-telemetry/reviewer-gate-signal) | .agent/ROADMAP.md:24 | `engine_build.go:122 --permission-mode`, `command_executor.go` cwd, `main.go` budget flags, routing wiring, `agentOutcome` |
@@ -55,15 +88,15 @@ changes.
 | G3: budget guard downgrades tier under spend pressure | ARCHITECTURE.md:49 | `routing.BudgetAdjustTier` in `engine_build.go:251`, safety-floor agents exempt |
 | G3: history-based tiebreak from Eval scorecard wired to real routing | ARCHITECTURE.md:49 | `HistoryTiebreak` — see `engine_build.go:288` row above |
 | G4: Gap analysis drives roadmap items via agent, not hardcoded logic | PROJECT.md:14 | `evolve.yml` P1-P3: scan(explorer)→gap-analysis(architect)→roadmap-update(planner, `feeds_forward:true`) |
-| G5: Scan→Gap→Roadmap→Implement→Review→Evaluate→(loop) closed loop | PROJECT.md:15; ARCHITECTURE.md:23-24 | `evolve.yml loop.loop_back_to: scan`; `orchestrator.RunFrom`/`LoopEngine` with convergence + tripwire |
+| G5: Scan→Gap→Roadmap→Implement→Harness→Review→Evaluate→(loop) closed loop | PROJECT.md:15; ARCHITECTURE.md:29-30 | `evolve.yml loop.loop_back_to: scan`; dedicated post-implementation `agent:harness` phase; `orchestrator.RunFrom`/`LoopEngine` with convergence + tripwire |
 | Human Approval between Design→Build is judged by approval alone, distinctly reported | PROJECT.md:23; ARCHITECTURE.md:14 | `.forge/<stage>.approved` marker / `--approved` flag; `converge.IsHumanGate`/`reportHumanGate` |
-| mode × lifecycle central knob drives Router tier / harness strictness / workflow depth | ARCHITECTURE.md:27-32 | `internal/mode/mode.go Effective(mode, lifecycle)` forces full policy under production |
+| mode × lifecycle central knob drives Router tier / harness strictness / workflow depth | ARCHITECTURE.md:27-32 | `internal/mode/mode.go Effective(mode, lifecycle)` applies production as a monotonic quality floor without widening `evolve_authority`; orchestrator mode gating enforces stage skips, CTO build halt, and a name-independent proposal cutoff at the workflow's unique Agent-write `effect: mutate` boundary |
 | Out-of-band harness gates are sole source of truth; host hooks are accelerators only | ARCHITECTURE.md:33-37 | CC PostToolUse hook additive/non-authoritative; `forge accept` is the real Stop gate CI relies on |
 | 5 Engines landed: Orchestrator, Model-Router, Context-Engine, Memory-Engine, Evaluation-Engine | ARCHITECTURE.md:42-44 | `internal/{orchestrator,routing,prompt,memory,converge}` all exist, build, wired into `cmd/forge` |
 | Agent-execution runtime — a real, working slice (not the full north-star microservice) | ARCHITECTURE.md:45 | `command_executor.go` spawns real `claude` processes with retry/backoff/timeout/process-group/budget/checkpoint |
 | v0–v1: orchestrator = Claude Code native, no custom runtime; deliverables limited to declarative assets + thin glue | adr/0001:12-14 | `harness/gate.mjs` thin glue; `.agent/{agents,skills,workflows,policies}` predate forge-core |
 | Supersession: forge-core built, zero external deps, CLI has `run/evolve/gate/check/accept`(+`migrate`/`route`) | adr/0001:5 | `go.mod` no `require`; `main.go:69-76` full dispatch table plus `detect/validate/status/scorecard/doctor/preflight/approve` |
-| Target stack: `forge-core`=Go for orchestration/scheduling/routing/workflow | adr/0002:11 | `forge-core/cmd/forge` + 17 `internal/*` packages; `go build`/`go test` pass |
+| Target stack: `forge-core`=Go for orchestration/scheduling/routing/workflow | adr/0002:11 | `forge-core/cmd/forge` + 20 `internal/*` directories (21 Go packages total); `go build`/`go test` pass |
 | Insert REVIEW stage: Discover→Design→REVIEW→Build→Evolve | adr/0004:26 | `design.yml:69 next_stage: review`; `review.yml` exists; `.agent/ARCHITECTURE.md:16` spine lists REVIEW |
 | 4 REVIEW phases (security/distributed/performance/cto) match agents+emits | adr/0004:29-36 | `review.yml` phases + 4 matching agent cards under `.agent/agents/` |
 | New assets: `review.yml`, 3 reviewer agent cards, `ai-sdlc-review.md` skill card | adr/0004:49-54 | All present; `internal/adr.TestADR0004_*` also asserts this |
@@ -72,13 +105,14 @@ changes.
 | Machine-readable per-phase VERDICT + `review_status` metric drives orchestrator routing | adr/0004:84 | `converge.go:206,259 evalReviewStatus`; `parseReviewerVerdict` |
 | D2/D3/D5/D6/O3/O4 (DECISIONS.md): CC-native orchestration; out-of-band gate as source of truth; v0 scope=Context+Harness; gate shells real harness, Opus floor, `forge evolve` unattended entry, convergence from `converge` pkg, agent phases real via `--executor command --agent-cmd claude`; url-shortener first vertical slice; `enforce: block` settled | .agent/DECISIONS.md:5-15 | `internal/gate/gate.go` shells real harness; `modes.yml router_floors`; `cmdEvolve`/`internal/converge`; `main.go --agent-cmd` default `claude`; `examples/url-shortener/`; `harness/policies.yml:8 enforce: block` |
 | D1/D4 (Claude-only v1 routing scope: Haiku/Sonnet/Opus tiers) | .agent/DECISIONS.md:8 | `internal/routing/routing.go:20-22` only 3 tier constants, no vendor field |
-| `required_gates` list gates a phase, mode-filtered | build.yml:62, evolve.yml:70 | `mode_gating.go:26 gatesFor` intersects `RequiredGates` with `ModePolicy.Gates` |
+| `required_gates` are mode-filtered front gates; only `agent:harness` is gate-only | build.yml harness/QA; evolve.yml `harness-gates` | `gatesFor` intersects with `ModePolicy.Gates`; serial/parallel engines run non-harness agents after green front gates; shipped-workflow tests prove Evolve `implement→harness-gates→review→evaluate` and red gates loop only to `implement` |
 | `required_when: modes.yml#...` skips a phase when mode disallows | build.yml:78, evolve.yml:83 | `mode_gating.go:51-57 skipByMode`/`requiredWhenKey` |
 | `on_fail: {action: loop_back, target_phase}` on a gate phase jumps back and re-runs | build.yml:67-69 | `orchestrator.go:343-358 loopBackTo`, bounded by `MaxLoopBack` |
 | `on_fail.target_phase` on an agent/reviewer phase triggered by `REQUEST_CHANGES` | review.yml:51,72,101 | `runAgentPhase`→`AgentVerdict`→`loopBackTo`; live-validated via `forge validate --models` |
 | `stop_condition.on_unmet: {loop_to_next_roadmap_item, target_phase}` | build.yml:112-114 | `loop.go:213-227 nextStartPhase`, unconditional across stop types |
 | `uses_template` injects referenced `.ai/prompts/*.md` into the agent's prompt, validated | review.yml:44,67,94 | `prompt_context.go:327-343`; `doctor.EvaluateWorkflowModels`; live `forge validate --models` shows PASS for all 4 |
-| `emits:` declares output artifacts consumed by downstream phases | build.yml:46, design.yml:49, discover.yml:36,50-51,62 | `prompt_context.go:301-320,407-410` injects `[context:emit:...]` blocks |
+| `emits:` declares output artifacts consumed by downstream phases | build.yml:46, design.yml:49, discover.yml:36,50-51,62 | Prompt context injects prior emit content; the output contract requires every declared file to be contained, regular and non-empty, and provenance captures content/prompt hashes |
+| Enabled `writes_adr` produces a fresh machine-verified ADR rather than narration-only | design.yml solution-architect | Condition/mode/lifecycle and target containment determine the effective write scope; command-mode pre/post snapshots require exactly one new canonical non-empty regular ADR for the current attempt and append provenance; disabled modes impose no ADR postcondition |
 | `feeds_forward: true` remembers a phase's output for later phases | build.yml:41, evolve.yml:59 | `prompt_context.go:183 feedsForward`→`phaseOutputLedger`→`appendFeedbackLanes` |
 | `fresh_context: true` gives a reviewer a clean slate | build.yml, review.yml phases | `asset.go:127 FreshContext` makes `appendFeedbackLanes` a no-op |
 | `model_tier:` per-phase override raises but never lowers the routed tier | build.yml:53,76; design.yml:32 | `routing.Higher(base, p.ModelTier)`; reviewer floor cannot be undercut |
@@ -87,7 +121,7 @@ changes.
 | `stop_condition.type: human_gate` + `human_approval: required`, non-bypassable | design.yml:55-58 | `converge.go:137-177 IsHumanGate`/`humanGate`: only path to `met=true` is `sig.HumanApproved` |
 | `stop_condition.type: conjunction`, `all_of` evaluated live per metric, unknown metric never silently passes | build.yml:101-110, discover.yml:71-78, review.yml:127-133 | `converge.go:183-213 Evaluate`/`evalOne` |
 | `anti_pattern: round_count` — loop never terminates on iteration count alone | build.yml:111, evolve.yml:110, discover.yml:73 | Structurally enforced: `MaxIter` is a safety bound, reported distinct from "converged"; label itself is logging-only but the underlying discipline is real |
-| `on_approved.next_stage` — approval unlocks the named next stage | design.yml:62-69, review.yml:138-141 | `OnApproved.NextStage` surfaced by `reportHumanGate`; the `emit:` file list is deliberately not modeled — explicit design choice per `asset.go:196-198`, agent layer's job |
+| `on_approved.next_stage` — approval unlocks the named next stage and has routing semantics only | design.yml, review.yml | `OnApproved.NextStage` drives report/chain/resume; produced files must be owned by phase `emits`/`writes_adr`, and `forge check` rejects unsupported `stop_condition.on_approved.emit` instead of silently dropping it |
 | `stop_condition.type: external`, named triggers each independently real (no literal `Triggers` field, but every trigger works) | evolve.yml:104-108 | `human_pause` via SIGINT/SIGTERM context cancellation; `budget_exhausted` via `Engine.BudgetExhausted`; `no_gaps_found` via no-progress tripwire mapped to clean stop |
 | `reviewer.md` binary `VERDICT: APPROVE`/`REQUEST_CHANGES` contract | .agent/agents/reviewer.md:31-45 | `parseReviewerVerdict` exact-matches both tokens; `TestParseReviewerVerdict_*` pass |
 | `security-engineer.md` / `distributed-engineer.md` / `performance-engineer.md` binary `VERDICT:` contracts | respective cards | Same generic token-shape parser; each `review.yml` phase's `on_fail: loop_back` confirmed |
@@ -112,7 +146,7 @@ changes.
 | Discover/ADR decision logic (skip/depth/ADR-required) is real Go code, independent of agent quality | CURRENT_SPRINT.md:61 | `mode.go` |
 | `avg_cost_usd` now real billing via `claude --output-format json total_cost_usd`, not list-price estimate | CURRENT_SPRINT.md:74 | `cost.go`; live value cited `avg_cost_usd=0.1841` |
 | `RequirementConfidence` and `FileDelta` `converge.Signals` — both declared-and-unassigned gaps closed (the latter had been an active false-positive bug) | CURRENT_SPRINT.md:130,139,140,144 | `gates.go:74-75,299`; test-verified via fake-agent tokens and real git fixtures |
-| SCA/CVE `dependency_vulnerabilities` now a real PASS/FAIL scan, not a permanent N/A — moved from BLOCKED-EXTERNAL 2026-07-16 | CURRENT_SPRINT.md (Sprint 32) | `.agent/security/advisories.json` (4 real OSV records for this repo's one actual dependency, PyPI:PyYAML) generated by the new `harness/sca_fetch.mjs` against the live OSV API; `forge accept` now reports `[PASS] dependency_vulnerabilities`. Honest scope: a manually-refreshed snapshot (never a live query during `forge accept`, to keep the gate deterministic/offline), and only covers the ecosystems/deps actually present today — Go/npm remain untested against real advisory data because this repo has zero real Go/npm dependencies to query. |
+| SCA/CVE `dependency_vulnerabilities` now a real PASS/FAIL scan, not a permanent N/A — moved from BLOCKED-EXTERNAL 2026-07-16 | CURRENT_SPRINT.md (Sprint 32) | `.agent/security/advisories.json` contains four OSV records fetched on 2026-07-16 for this repo's one actual dependency, PyPI:PyYAML; `forge accept` now reports `[PASS] dependency_vulnerabilities`. The gate reads only this committed snapshot and is deterministic/offline. Current 2026-07-27 DNS restrictions may prevent an immediate refresh; they do not turn a successful historical fetch into live network availability. Honest scope: only ecosystems/dependencies present today are evaluated against real data. |
 
 ---
 
@@ -120,9 +154,9 @@ changes.
 
 | Requirement | Source | Evidence |
 |---|---|---|
-| Firecracker microVM sandbox (v3) | ROADMAP.md:29; CURRENT_SPRINT.md:154 | `command_executor.go:102-118`: `SandboxConfig` explicitly commented "v1 placeholder skeleton — the actual sandbox runner lives outside forge-core"; `/dev/kvm` exists and is read/write in this environment, but the `firecracker` binary itself is not installed and standing up a microVM runner is a genuine architectural undertaking (out-of-band sandbox, not a wiring fix) — re-checked 2026-07-16, still blocked |
-| Cross-vendor model pool via LiteLLM (v3) | ROADMAP.md:29; ARCHITECTURE.md:50; CURRENT_SPRINT.md:154 | `routing/scorecard.go:16` and `.agent/routing/policy.yml:109-110` mark this "v3…Placeholder only"; zero LiteLLM client code exists; blocked on multi-vendor API keys — re-checked 2026-07-16, no keys present, still blocked |
-| ~~SCA/CVE vulnerability scanning needs an OSV/NVD advisory database~~ — **RESOLVED 2026-07-16, moved to DONE** | CURRENT_SPRINT.md:74,154 | See DONE bucket: this environment has real network egress to the OSV API, so the "external resource" is now actually available and has been fetched. |
+| Firecracker microVM sandbox (v3) | ROADMAP.md:29; CURRENT_SPRINT.md Sprint 35 / “下一前沿” | `CommandExecutor` fails every non-`none` sandbox request closed before host execution. Re-checked 2026-07-27: `firecracker`/`jailer` are absent and `/dev/kvm` exists but is unreadable/unwritable by the current user. Docker Server 29.6.1 and rootless Podman 4.9.3/runc answer `info`, but they are not a Firecracker isolation substitute and no Forge sandbox runner is implemented, so the required runner still cannot be exercised honestly. |
+| Cross-vendor model pool via LiteLLM (v3) | ROADMAP.md:29; ARCHITECTURE.md:50; CURRENT_SPRINT.md Sprint 35 / “下一前沿” | Routing policy still marks the multi-vendor pool as a v3 placeholder. Re-checked 2026-07-27: LiteLLM 1.83.14 is installed, but DNS/network access is restricted and only an Anthropic credential is present; there is no second-vendor credential with which to perform a cross-vendor test. |
+| ~~SCA/CVE vulnerability scanning needs an OSV/NVD advisory database~~ — **RESOLVED 2026-07-16, moved to DONE** | CURRENT_SPRINT.md Sprint 32 | See DONE bucket: a real OSV snapshot was fetched and committed on 2026-07-16. Acceptance stays offline; current DNS restrictions affect refresh operations, not the deterministic scan of the existing snapshot. |
 
 ---
 
@@ -131,15 +165,17 @@ changes.
 | Requirement | Source | Evidence |
 |---|---|---|
 | Independent `agent-os` submodule repo for global governance sharing, incl. mechanism/split-boundary/Stage A-B rollout/trigger condition | ROADMAP.md:26; adr/0003 (whole document) | `docs/adr/0003:1-8`: status Proposed, "用户定位置+批准前，不创建任何仓、不改任何代码" — explicit textual hold pending user decision on every sub-clause (mechanism, path rules, rollout stages, trigger condition) |
+| Content-level Evolve scan breadth (`opportunistic` obvious-only vs `thorough` full-dimension/auto-derived) | modes.yml `workflow_depth.evolve`; `internal/mode` v1 honesty boundary | Machine behavior is delivered through separate iteration budgets and canonical `evolve_authority`; proposal-only validates every effect shape and cuts at the unique Agent-write `effect: mutate` boundary across serial/parallel/resume. Command mode additionally pins executable bytes, isolates ambient Claude configuration, removes Bash/network, rejects directory grants/aliases, permits only exact emits, uses file/ledger-only convergence signals, and rejects repository gates/probes in the proposal prefix. Ordinary auto-act/run host gates remain trusted project commands rather than an OS-readonly sandbox. Determining the semantic breadth and quality of opportunities found by a live provider is explicitly a later agent-semantics wave. |
 | Budget governance (PDP-style policy engine), materially broader than the run-level dollar cap already built | ROADMAP.md:29; north-star.md:44 | Listed v3; described as a distinct OPA/Rego "Policy/Gov" service, not started |
-| Web UI (v3) | ROADMAP.md:29; ARCHITECTURE.md:41,45; CURRENT_SPRINT.md:156 | "Web-UI 仍为路线图"; zero frontend code anywhere; explicitly declared out-of-architecture |
+| Web UI (v3) | ROADMAP.md:29,33; ARCHITECTURE.md:52,57; DECISIONS.md D1 | `forge-web`/Web-UI is in the target architecture and v3 roadmap; zero frontend code exists in the current phase, so this is deferred rather than architecture-external |
 | Dynamic migration (auto-triggered, lifecycle-driven) (v3) | ROADMAP.md:29 | `internal/migrate/migrate.go:19-22`: only the hardcoded explorer→engineering migration exists (`trigger: manual` in modes.yml); v3 auto-trigger not modeled |
-| Gateway, Knowledge-Engine unbuilt roadmap items | ARCHITECTURE.md:45 | "Gateway·Agent-Runtime·Knowledge-Engine·Sandbox·Web-UI 仍为路线图"; no `gateway`/`knowledge` package exists |
+| Gateway, Knowledge-Engine unbuilt roadmap items | ARCHITECTURE.md:45 | Gateway and complete Knowledge-Engine remain roadmap items; no `gateway`/`knowledge` package exists |
 | Sandbox (载重墙) unbuilt beyond v1 placeholder | ARCHITECTURE.md:41,45 | Consistent with the Firecracker BLOCKED-EXTERNAL row — the placeholder itself is a deliberate v1 scope decision |
-| Target stack: `forge-runtime`=Rust (sandbox), timed for v3 | adr/0002:11,13 | Explicit "Rust v3" text; `internal/adr.TestADR0002_PolyglotNotStarted` codifies the expectation |
+| Production runtime bridge, sandbox, remote identity and live provider behind `forge-runtime` remain deferred | adr/0002; adr/0006; adr/0007 | Local Conversation/Prompt persistence now exists. Automatic Agent-history replay, Run/event crash recovery, live provider, remote account/sync, mutating tools, approvals, and OS sandbox remain explicitly deferred. |
 | harness CLI future consolidation into a Go static binary, zero runtime deps | adr/0002:14 | "未来" (future) is explicit future-tense wording in the Decision text itself; `harness/*.mjs` still Node.js today |
-| `durable_wait` (Temporal-backed persistent human-approval wait) | design.yml:57; CURRENT_SPRINT.md:25 | Both `design.yml:7` and `converge.go:155-160` state "v2 起由 Temporal 持久化" — explicit textual deferral in both the workflow and the code |
-| `writes_adr` real ADR authorship (vs. narration-only) | design.yml:36-39 | `mode_gating.go:162-171 narrateADR` logs the verdict only; `design.yml:38` states `target: docs/adr/ # v2 起启用` |
+| HA/distributed approval-wait backend (Temporal or equivalent), beyond the delivered local durable chain state | adr/0002; north-star architecture | Local `chain-state.v2` resume and private approval markers are DONE; a multi-node scheduler/database-backed wait service remains future infrastructure work |
+| Approval-time repository-truth materializer | design workflow history | Current `on_approved` is intentionally routing-only. A future materializer first needs an adopted producer/source mapping, freshness rules and atomic commit contract; shipped assets no longer claim `.agent/*`/root `project.yml` are synthesized, and governance rejects `on_approved.emit` |
+| Strict machine handshake for free-text QA report (separate from the delivered machine `test` gate) | `.agent/agents/qa.md` | QA's required `test` gate is fail-closed and loops back today; parsing/validating a second structured QA-report verdict is explicitly deferred rather than treating prose as approval |
 | `priorities` (speed/quality/cost) independent routing-weight semantics, deliberately not wired | CURRENT_SPRINT.md:48,68 | `route.go:97-102` comment: effect is already carried upstream; an independent weighting scheme is "deliberately not wired" — explicit anti-gold-plating rationale |
 | `risk.FromChangedPaths` stays a coarse path-substring heuristic (no AST/call-graph, `ProdTraffic` never inferred, `--from-git` sees only tracked changes) | CURRENT_SPRINT.md:34 | `risk_diff.go:3-28` header: "Precise extraction needs real signal: AST/call-graph… that is v3" |
 | Recursion-depth guard (`FORGE_AGENT_DEPTH`) scoped to accidental recursion only, not adversarial env tampering | CURRENT_SPRINT.md:77 | `command_executor.go:261-269`: explicit comment states hardening to fail-secure "would buy no real safety" — a deliberate, reasoned non-goal |
@@ -149,6 +185,10 @@ changes.
 ---
 
 ## GAP
+
+> Historical finding table: `CONFIRMED` below describes what the 2026-07-02
+> audit observed at that time. It is not a current defect list. Present status
+> is the 2026-07-27 closure matrix above plus the resolution addendum below.
 
 Each row below was independently re-verified against current source as part of this merge. Where
 source reports disagreed, the disagreement is resolved explicitly rather than concatenated.
@@ -174,7 +214,12 @@ source reports disagreed, the disagreement is resolved explicitly rather than co
 
 ### Note on doc-drift-only items (excluded from the buckets above as non-functional)
 
-Several counts in `.agent/ROADMAP.md` are stale (e.g. "9 agent cards + 8 skill cards + 4 workflows" vs. actual 12/9/5; "forge check … 7 checks, 12 unittest" vs. actual 9/32; "13 Go packages" vs. actual 18; the YAML-shim description describing the Python fallback as primary when a native Go `yaml2json` parser now leads). All of these are the checklist undercounting a capability that has since *grown* — no functional loss, purely stale numbers left over from an earlier sprint. Not included as GAP rows because nothing is missing; flagged here only for whoever next edits `.agent/ROADMAP.md`.
+The original audit found stale counts in `.agent/ROADMAP.md` (agents, skills,
+workflows, checks and Go packages) plus an obsolete claim that the Python YAML
+shim was primary. Those were documentation-only findings, not missing runtime
+capabilities. The roadmap was corrected on 2026-07-27 to prefer stable
+capability descriptions over brittle counts; the native Go YAML parser is the
+primary path and Python remains a compatibility fallback.
 
 ---
 
@@ -186,10 +231,10 @@ Every `GAP` row above was triaged and acted on the same day this audit ran. Stat
 |---|---|
 | `requires_tools` degrade-and-flag | **RESOLVED.** `Phase.RequiresTools` decoded; `requiresToolsGuard` (cmd/forge/prompt_context.go) degrades honestly (dry-run / non-claude / no-allowlist / unconfirmed tool → advisory notice injected into the agent's prompt + logged) and confirms silently when tools ARE confirmed available. Live-wired into the real `agentExecutor` build path; unit + end-to-end tests added. |
 | `mode_gating:` top-level block never decoded | **RESOLVED (2026-07-03, second pass).** Re-examined after further review: a comment alone left the cross-reference free to silently drift from `modes.yml` with nothing to catch it. Built a real drift-guard instead — `harness/check.py`'s new `check_workflow_mode_gating` (factored into `harness/mode_gating_check.py` for line budget) parses each workflow's `mode_gating:` block, resolves its `authority:` pointer's dimension, and compares every declared per-mode value against `modes.yml`'s canonical `workflow_depth.<dimension>`. Registered in `CHECKS`; runs clean against the real repo today (confirmed independently: zero issues), and would now catch future drift instead of silently tolerating it. `forge-init`'s `COPIED_FILES` manifest updated so scaffolded projects inherit it (a first pass missed this and broke `forge accept`'s scaffold-drift test; caught and fixed same-day). |
-| `readonly` never decoded/enforced | **RESOLVED (2026-07-03, second pass).** The live-`claude`-testing blocker was removed: researched Claude Code's official permission-syntax docs (`code.claude.com/docs/en/permissions.md`, zero API cost — `--help` and doc fetches are free, only a live *run* would have cost money) and confirmed path-scoped `Edit(/docs/review/**)`/`Write(...)` rules are a documented, stable feature with deny-before-allow precedence. Implemented real enforcement in `claudeArgv`: a readonly phase gets `--disallowedTools "Edit Write"` plus a per-agent `--allowedTools` re-open scoped to that agent's card-documented output directory (`docs/discovery/`, `docs/design/`, `docs/review/`, plus `docs/adr/` when `writes_adr` is set) — derived from the agent cards' own boundary sections, not invented. Proven correct **by unit test against the documented CLI contract** (exact argv assertions, 20+ tests) — still not live-verified against a running `claude` process (no budget authorized for that), stated precisely rather than overclaimed. |
+| `readonly` never decoded/enforced | **RESOLVED (2026-07-03, second pass; current-contract correction 2026-07-27).** The historical implementation used path-scoped Edit/Write deny/re-open rules. Current Claude integration instead runs readonly phases under `dontAsk`, with explicit pre-approved `Edit(...)` paths; it never emits deprecated `Write(path)`. Release phases are narrower still: `--tools Edit,Write` exposes the built-ins, `Bash WebFetch WebSearch` are denied, and only exact absolute `Edit(/<phase.emit>)` rules are granted. A whole-tree postflight rejects undeclared release changes. Ordinary readonly roles retain their validated per-agent directories. Unit/fake-agent tests prove argv and filesystem contracts; no new paid Claude run was authorized. |
 | `blocking: true` field never decoded | **Left DOCUMENTED — deliberately, with reasoning, not by default.** Re-examined for a genuine implementable difference (unlike the two rows above): `blocking: false` is never used anywhere in any real workflow file (grepped to confirm), and the field's only alternative meaning (\"a failing gate does NOT abort the run\") would be new, untested, never-exercised behavior invented for a value nothing declares — implementing it would be gold-plating, not gap-closing. The one-line `NOTE:` comment stands as the correct final answer, not a placeholder. |
 | `secondary_template` unconsumed | **RESOLVED.** Decoded; consumed at every site `uses_template` is (prompt injection in the new `cmd/forge/prompt_artifacts.go`, `doctor.EvaluateWorkflowModels` validation). Live-verified: `forge validate --models` now emits a PASS line for `review.yml`'s `secondary_template` reference, symmetric with `uses_template`. |
-| `stop_condition.on_rejected` unreachable dead code | **RESOLVED (2026-07-03, second pass).** Built a minimal, bounded, single-pass rejection loop-back for `forge run`, mirroring the existing `.forge/<stage>.approved` marker convention exactly: a new `.forge/<stage>.rejected` marker, checked before `runWorkflow` for `IsHumanGate` stops with a `loop_back` `on_rejected`, resolves the target phase and starts there instead of phase 0, then **consumes** (deletes) the marker so it fires exactly once. Independently live-verified (not just the implementing agent's self-report): built the binary, filed the marker, confirmed the exact narration line fires once and the marker is gone after, and a third run with no marker falls back to default (phase 0) with zero narration — true one-shot, fully back-compatible. |
+| `stop_condition.on_rejected` unreachable dead code | **RESOLVED (2026-07-03, current lifecycle correction 2026-07-27).** Built a minimal, bounded rejection loop-back for `forge run`: `.forge/<stage>.rejected` plus an actionable `on_rejected` resolves the target phase and starts there instead of phase 0. The marker is retained when rework fails and consumed only after rework completes successfully, so failure remains retryable without fabricating approval. Tests cover both retention and successful consumption; a later run after successful consumption falls back to phase 0. |
 | `review.yml`'s decorative `required_when` | **RESOLVED (2026-07-03, second pass).** Re-examined: this field never did anything (confirmed dead via full-repo grep) and the honest fix is to remove the false declaration rather than build a phantom consumer duplicating the already-correct stage-level gating. Removed from `review.yml`; confirmed no test asserted on its presence, YAML still parses cleanly, `check.py` still passes. |
 | yaml2json bare `-` sequence item dropped | **RESOLVED.** `parseSeqItem`'s empty-item branch now always appends (matching every other branch, including literal `null`), fixed and tested; confirmed zero effect on all 7 real repo YAML files (none use the pattern). |
 | `confidence_metric:` field declared-but-inert | **RESOLVED (2026-07-03, second pass).** Re-examined: field-driven dispatch has real generalization value (any future phase can declare `confidence_metric: requirement_confidence` without new Go code), and `gatherSignals` already had the workflow in scope — low-risk to wire properly instead of leaving a comment. `requirementConfidence` now scans `wf.Phases` for whichever phase declares the matching `ConfidenceMetric`, falling back to the historical hardcoded phase name only when no phase declares the field (byte-for-byte behavior-preserving for discover.yml's current shape — verified by a dedicated regression test — with a second test proving a differently-named phase is now correctly picked up). |

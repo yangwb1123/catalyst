@@ -12,11 +12,13 @@ ForgeOS 站在 Claude Code / Codex / Gemini CLI / OpenCode / OpenHands 之上,�
 - **G2 自动架构设计** — 按 lifecycle 推导(单体→服务→事件驱动),分阶段演进,不 day-1 镀金。
 - **G3 自动模型调度** — 多维路由(复杂度/风险/阶段/预算/上下文/历史),贵模型只用在该用处。
 - **G4 自动 Roadmap** — Gap 分析驱动「该做什么」,而非用户逐条下达。
-- **G5 持续演化** — Scan→Gap→Roadmap→Implement→Review→Evaluate→Scan 闭环。
+- **G5 持续演化** — Scan→Gap→Roadmap→Implement→Harness→Review→Evaluate→Scan 闭环。
 
 ## 非目标 (Non-Goals)
 - 不替代 Claude Code 等 CLI —— 它们是执行宿主,ForgeOS 是治理层。
 - 不自研基础模型;不做 IDE;v0–v2 不做跨厂商模型池(见 ROADMAP)。
+- 不持有云/K8s 凭证或直接执行远程部署/回滚；ForgeOS 只生成并验证声明式交付包，
+  实际应用由外部 CI/operator 完成并由人审 marker 确认。
 
 ## 最高论点
 需求探索 > 代码实现。多数项目失败在需求/架构没推导清楚,而非代码写错。
