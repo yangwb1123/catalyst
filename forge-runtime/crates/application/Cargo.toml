@@ -1,0 +1,20 @@
+[package]
+name = "forge-runtime-application"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+forge-runtime-domain.workspace = true
+futures-util.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+forge-runtime-infrastructure.workspace = true
+serde_json.workspace = true
+tempfile = "3"
+tokio.workspace = true
+
+[lints]
+workspace = true

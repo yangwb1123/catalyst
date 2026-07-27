@@ -7,6 +7,7 @@ build/
 coverage/
 .DS_Store
 .forge/
+/forge-runtime/target/
 
 # compiled forge-core binary (build with `go build ./cmd/forge`)
 forge-core/forge
