@@ -59,7 +59,25 @@ pub enum GroupCommand {
         include_content: bool,
         max_bytes: usize,
     },
+    Run(GroupRunCommand),
     List,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub enum GroupRunCommand {
+    Prepare {
+        group_id: String,
+        include_content: bool,
+        max_bytes: usize,
+    },
+    Show {
+        run_id: String,
+        include_content: bool,
+    },
+    List {
+        group_id: Option<String>,
+        limit: usize,
+    },
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -206,9 +224,15 @@ fn parse_global_options(tokens: &mut VecDeque<String>) -> Result<GlobalOptions, 
                 tokens.pop_front();
                 options.group = Some(next_value(tokens, "--group")?);
             }
-            Some("--idempotency-key") => {
+            Some("--idempotency-key") if options.idempotency_key.is_none() => {
                 tokens.pop_front();
                 options.idempotency_key = Some(next_value(tokens, "--idempotency-key")?);
+            }
+            Some("--idempotency-key") => {
+                return Err(format!(
+                    "--idempotency-key was specified more than once\n\n{}",
+                    usage()
+                ));
             }
             Some("--read") => {
                 tokens.pop_front();
@@ -274,7 +298,11 @@ fn accepts_idempotency_key(command: &Command) -> bool {
         command,
         Command::Session(SessionCommand::New { .. })
             | Command::Prompt(PromptCommand::Add { .. })
-            | Command::Group(GroupCommand::Create { .. } | GroupCommand::Add { .. })
+            | Command::Group(
+                GroupCommand::Create { .. }
+                    | GroupCommand::Add { .. }
+                    | GroupCommand::Run(GroupRunCommand::Prepare { .. })
+            )
             | Command::Run(RunCommand::Start { .. })
     )
 }
@@ -287,7 +315,7 @@ fn parse_named_command(
     match command {
         "session" => parse_session(tokens),
         "prompt" => parse_prompt(tokens),
-        "group" => group_args::parse(tokens),
+        "group" => group_args::parse(tokens, &mut options.idempotency_key),
         "run" => run_args::parse(tokens, options),
         "demo" => parse_demo(tokens, options),
         "help" => {
@@ -417,3 +445,7 @@ pub fn usage() -> &'static str {
 #[cfg(test)]
 #[path = "args_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "group_run_args_tests.rs"]
+mod group_run_tests;

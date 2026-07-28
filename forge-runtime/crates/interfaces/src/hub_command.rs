@@ -5,21 +5,27 @@ use std::{
     sync::Arc,
 };
 
-use forge_runtime_application::{HubService, MAX_PROMPT_BYTES, RunService};
+use forge_runtime_application::{GroupRunService, HubService, MAX_PROMPT_BYTES, RunService};
 use forge_runtime_infrastructure::SqliteHubStore;
 
 use crate::{
-    args::{Args, Command, GroupCommand, PromptCommand, RunCommand, SessionCommand},
+    args::{
+        Args, Command, GroupCommand, GroupRunCommand, PromptCommand, RunCommand, SessionCommand,
+    },
     group_context_output::GroupContextView,
+    group_run_output::GroupRunSnapshotView,
     hub_output::{CliOutput, OutputKind, RemoteStatus},
-    runtime_domain::ConversationScope,
-    state_path::{canonical_project, hub_database_path, idempotency_key},
+    runtime_domain::{ConversationScope, GROUP_RUN_VERSION, GroupContextPolicy, PrepareGroupRun},
+    state_path::{
+        canonical_project, hub_database_path, idempotency_key, unique_id, unix_time_millis,
+    },
 };
 
 pub fn execute(args: &Args) -> Result<CliOutput, Box<dyn Error>> {
     let database = hub_database_path(args.state_dir.as_deref())?;
     let store = Arc::new(SqliteHubStore::open(database)?);
     let service = HubService::new(store.clone());
+    let group_runs = GroupRunService::new(store.clone());
     match &args.command {
         Command::Hub => show_hub(&service, args.project.as_deref(), args.group.as_deref()),
         Command::Session(command) => execute_session(
@@ -32,9 +38,12 @@ pub fn execute(args: &Args) -> Result<CliOutput, Box<dyn Error>> {
         Command::Prompt(command) => {
             execute_prompt(&service, args.idempotency_key.as_deref(), command)
         }
-        Command::Group(command) => {
-            execute_group(&service, args.idempotency_key.as_deref(), command)
-        }
+        Command::Group(command) => execute_group(
+            &service,
+            &group_runs,
+            args.idempotency_key.as_deref(),
+            command,
+        ),
         Command::Run(command) => execute_run(&RunService::new(store), command),
         Command::Demo(_) | Command::Help => Err("command is not a Hub operation".into()),
     }
@@ -121,6 +130,7 @@ fn execute_prompt(
 
 fn execute_group(
     service: &HubService,
+    group_runs: &GroupRunService,
     supplied_key: Option<&str>,
     command: &GroupCommand,
 ) -> Result<CliOutput, Box<dyn Error>> {
@@ -150,10 +160,68 @@ fn execute_group(
                 context: GroupContextView::from_slice(slice, *include_content),
             }))
         }
+        GroupCommand::Run(command) => execute_group_run(group_runs, supplied_key, command),
         GroupCommand::List => Ok(CliOutput::new(OutputKind::Groups {
             groups: service.list_groups()?,
         })),
     }
+}
+
+fn execute_group_run(
+    service: &GroupRunService,
+    supplied_key: Option<&str>,
+    command: &GroupRunCommand,
+) -> Result<CliOutput, Box<dyn Error>> {
+    match command {
+        GroupRunCommand::Prepare {
+            group_id,
+            include_content,
+            max_bytes,
+        } => prepare_group_run(
+            service,
+            supplied_key,
+            group_id,
+            *max_bytes,
+            *include_content,
+        ),
+        GroupRunCommand::Show {
+            run_id,
+            include_content,
+        } => {
+            let snapshot = service.inspect(run_id)?;
+            Ok(CliOutput::new(OutputKind::GroupRun {
+                snapshot: GroupRunSnapshotView::from_snapshot(snapshot, *include_content),
+            }))
+        }
+        GroupRunCommand::List { group_id, limit } => Ok(CliOutput::new(OutputKind::GroupRuns {
+            runs: service.list(group_id.as_deref(), *limit)?,
+        })),
+    }
+}
+
+fn prepare_group_run(
+    service: &GroupRunService,
+    supplied_key: Option<&str>,
+    group_id: &str,
+    max_bytes: usize,
+    include_content: bool,
+) -> Result<CliOutput, Box<dyn Error>> {
+    let policy = GroupContextPolicy {
+        max_total_content_bytes: max_bytes,
+        ..GroupContextPolicy::default()
+    };
+    let result = service.prepare(&PrepareGroupRun {
+        v: GROUP_RUN_VERSION,
+        run_id: unique_id("group-run"),
+        group_id: group_id.to_owned(),
+        policy,
+        idempotency_key: operation_key(supplied_key, "group-run"),
+        created_at_ms: unix_time_millis(),
+    })?;
+    Ok(CliOutput::new(OutputKind::GroupRunPrepared {
+        disposition: result.disposition,
+        snapshot: GroupRunSnapshotView::from_snapshot(result.snapshot, include_content),
+    }))
 }
 
 fn open_project_scope(

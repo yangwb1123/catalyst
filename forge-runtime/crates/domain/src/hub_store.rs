@@ -156,6 +156,7 @@ pub enum HubEntity {
     Conversation,
     Prompt,
     Group,
+    GroupRun,
     GroupProjectMember,
 }
 

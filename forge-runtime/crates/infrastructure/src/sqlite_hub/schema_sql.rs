@@ -70,3 +70,27 @@ CREATE TABLE run_assistant_prompts (
 CREATE INDEX runs_conversation
   ON runs(conversation_id, created_at_ms DESC, id DESC);
 PRAGMA user_version = 2;";
+
+pub(super) const MIGRATE_V2_TO_V3_SQL: &str = "CREATE TABLE group_runs (
+  id TEXT NOT NULL PRIMARY KEY
+    CHECK(typeof(id) = 'text' AND length(CAST(id AS BLOB)) BETWEEN 1 AND 128),
+  group_id TEXT NOT NULL REFERENCES groups(id) ON DELETE RESTRICT
+    CHECK(typeof(group_id) = 'text'
+      AND length(CAST(group_id AS BLOB)) BETWEEN 1 AND 128),
+  run_version INTEGER NOT NULL CHECK(run_version = 1),
+  status TEXT NOT NULL CHECK(status = 'prepared'),
+  context_version INTEGER NOT NULL CHECK(context_version = 1),
+  context_slice_sha256 BLOB NOT NULL
+    CHECK(typeof(context_slice_sha256) = 'blob' AND length(context_slice_sha256) = 32),
+  context_blob BLOB NOT NULL
+    CHECK(typeof(context_blob) = 'blob' AND length(context_blob) BETWEEN 1 AND 8388608),
+  snapshot_sha256 BLOB NOT NULL
+    CHECK(typeof(snapshot_sha256) = 'blob' AND length(snapshot_sha256) = 32),
+  idempotency_key TEXT NOT NULL UNIQUE
+    CHECK(typeof(idempotency_key) = 'text'
+      AND length(CAST(idempotency_key AS BLOB)) BETWEEN 1 AND 256),
+  created_at_ms INTEGER NOT NULL CHECK(created_at_ms >= 0)
+);
+CREATE INDEX group_runs_group
+  ON group_runs(group_id, created_at_ms DESC, id DESC);
+PRAGMA user_version = 3;";

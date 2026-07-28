@@ -64,8 +64,8 @@
 #              contract cannot fit artifact_provenance.go under the 500-line gate
 #              and has a distinct responsibility, raising actual 30 → 31.
 #              max_files 31 → 32 preserves the established one-file headroom.
-#   fanin:     max 26 PRODUCTION importing files (forge-core/internal/asset);
-#              Rust domain is 25. Tests excluded. RECALIBRATED 2026-07-27 when
+#   fanin:     max 28 PRODUCTION importing files (Rust domain);
+#              forge-core/internal/asset is 26. Tests excluded. RECALIBRATED 2026-07-27 when
 #              Rust entered the scanner; both are intended innermost APIs.
 #   cognitive: 4 top-level source modules
 #              (examples, forge-core, forge-runtime, harness)
@@ -92,7 +92,7 @@ file:
 
 # ── Fan-in budget (how many PRODUCTION files import one target) ───────────
 fanin:
-  max_importers: 30   # actual 26 (Go internal/asset), Rust domain 25; tests excluded — RECALIBRATED 2026-07-27 after .rs scanning closed the prior blind spot. Both are intentional innermost APIs.
+  max_importers: 30   # actual 28 (Rust domain), 26 (Go internal/asset); tests excluded — RECALIBRATED 2026-07-27 after .rs scanning closed the prior blind spot. Both are intentional innermost APIs.
 
 # ── Cognitive-load budget (top-level source modules to hold in your head) ──
 cognitive:

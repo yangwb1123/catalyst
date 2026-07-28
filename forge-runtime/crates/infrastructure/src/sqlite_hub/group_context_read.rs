@@ -79,11 +79,29 @@ fn load_with_hook(
     let transaction = connection
         .transaction_with_behavior(TransactionBehavior::Deferred)
         .map_err(read_error)?;
-    let group = load_group(&transaction, group_id)?;
-    after_group();
-    let slice = load_locked(&transaction, group, group_id, policy)?;
+    let slice = load_with_group_hook(&transaction, group_id, policy, after_group)?;
     transaction.commit().map_err(read_error)?;
     Ok(slice)
+}
+
+fn load_with_group_hook(
+    connection: &Connection,
+    group_id: &str,
+    policy: &GroupContextPolicy,
+    after_group: impl FnOnce(),
+) -> Result<GroupContextSlice, HubStoreError> {
+    let group = load_group(connection, group_id)?;
+    after_group();
+    load_locked(connection, group, group_id, policy)
+}
+
+pub(super) fn load_in_snapshot(
+    connection: &Connection,
+    group_id: &str,
+    policy: &GroupContextPolicy,
+) -> Result<GroupContextSlice, HubStoreError> {
+    validate_policy(policy)?;
+    load_with_group_hook(connection, group_id, policy, || {})
 }
 
 fn load_locked(
@@ -104,7 +122,7 @@ fn load_locked(
     )
 }
 
-fn validate_policy(policy: &GroupContextPolicy) -> Result<(), HubStoreError> {
+pub(super) fn validate_policy(policy: &GroupContextPolicy) -> Result<(), HubStoreError> {
     let valid = (1..=MAX_GROUP_CONTEXT_MEMBERS).contains(&policy.max_members)
         && (1..=MAX_GROUP_CONTEXT_GROUP_CONVERSATIONS).contains(&policy.max_group_conversations)
         && (1..=MAX_GROUP_CONTEXT_PROJECT_CONVERSATIONS)

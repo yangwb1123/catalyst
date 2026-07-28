@@ -9,12 +9,13 @@ use rusqlite::{Connection, Error as SqliteError, ErrorCode};
 
 use super::{
     HubStoreError,
-    schema_sql::{CREATE_V1_SCHEMA_SQL, MIGRATE_V1_TO_V2_SQL},
+    schema_sql::{CREATE_V1_SCHEMA_SQL, MIGRATE_V1_TO_V2_SQL, MIGRATE_V2_TO_V3_SQL},
     unavailable,
 };
 
-const SCHEMA_VERSION: i64 = 2;
-const LEGACY_SCHEMA_VERSION: i64 = 1;
+const SCHEMA_VERSION: i64 = 3;
+const V1_SCHEMA_VERSION: i64 = 1;
+const V2_SCHEMA_VERSION: i64 = 2;
 const CONNECTION_BUSY_TIMEOUT: Duration = Duration::from_millis(250);
 const OPEN_RETRY_TIMEOUT: Duration = Duration::from_secs(5);
 const OPEN_RETRY_DELAY: Duration = Duration::from_millis(10);
@@ -100,7 +101,10 @@ fn configure(connection: &Connection) -> Result<(), SqliteError> {
 
 fn reject_unsupported_schema(connection: &Connection) -> Result<(), OpenAttemptError> {
     let version = schema_version(connection)?;
-    if matches!(version, 0 | LEGACY_SCHEMA_VERSION | SCHEMA_VERSION) {
+    if matches!(
+        version,
+        0 | V1_SCHEMA_VERSION | V2_SCHEMA_VERSION | SCHEMA_VERSION
+    ) {
         return Ok(());
     }
     Err(unsupported_schema(version))
@@ -137,9 +141,14 @@ fn validate_locked_schema(connection: &Connection) -> Result<(), OpenAttemptErro
     match version {
         0 => {
             create_v1_schema(connection)?;
-            migrate_v1_to_v2(connection)
+            migrate_v1_to_v2(connection)?;
+            migrate_v2_to_v3(connection)
         }
-        LEGACY_SCHEMA_VERSION => migrate_v1_to_v2(connection),
+        V1_SCHEMA_VERSION => {
+            migrate_v1_to_v2(connection)?;
+            migrate_v2_to_v3(connection)
+        }
+        V2_SCHEMA_VERSION => migrate_v2_to_v3(connection),
         SCHEMA_VERSION => Ok(()),
         other => Err(unsupported_schema(other)),
     }
@@ -162,6 +171,11 @@ fn create_v1_schema(connection: &Connection) -> Result<(), SqliteError> {
 
 fn migrate_v1_to_v2(connection: &Connection) -> Result<(), OpenAttemptError> {
     connection.execute_batch(MIGRATE_V1_TO_V2_SQL)?;
+    Ok(())
+}
+
+fn migrate_v2_to_v3(connection: &Connection) -> Result<(), OpenAttemptError> {
+    connection.execute_batch(MIGRATE_V2_TO_V3_SQL)?;
     Ok(())
 }
 

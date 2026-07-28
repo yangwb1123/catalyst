@@ -1,8 +1,6 @@
 use std::path::{Component, Path, PathBuf};
 
-use forge_runtime_domain::ConversationScope;
-
-use crate::{HubError, HubField};
+use crate::{HubError, HubField, runtime_domain::ConversationScope};
 
 pub const MAX_ENTITY_ID_BYTES: usize = 128;
 pub const MAX_GROUP_NAME_BYTES: usize = 128;

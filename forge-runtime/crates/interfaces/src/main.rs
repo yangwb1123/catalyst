@@ -2,6 +2,7 @@ mod args;
 mod cli_usage;
 mod demo;
 mod group_context_output;
+mod group_run_output;
 mod hub_command;
 mod hub_output;
 mod run_command;

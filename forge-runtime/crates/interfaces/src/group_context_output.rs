@@ -93,7 +93,7 @@ pub fn write_group_context(
     writeln!(
         writer,
         "group context {} — {}",
-        payload.group.id,
+        terminal_text(&payload.group.id),
         terminal_text(&payload.group.name)
     )?;
     writeln!(
@@ -116,7 +116,7 @@ pub fn write_group_context(
         writeln!(
             writer,
             "member {} — {} ({})",
-            member.project_id,
+            terminal_text(&member.project_id),
             terminal_text(&member.project_name),
             terminal_text(&member.role)
         )?;
@@ -146,7 +146,7 @@ fn write_conversation(
     writeln!(
         writer,
         "session {} — {} [{}]",
-        context.conversation.id,
+        terminal_text(&context.conversation.id),
         terminal_text(&context.conversation.title),
         provenance_label(&context.provenance)
     )?;
@@ -167,7 +167,9 @@ fn write_prompt(prompt: &GroupContextPromptView, writer: &mut impl Write) -> Res
     write!(
         writer,
         "  prompt {} — {} — {} byte(s)",
-        prompt.id, prompt.role, prompt.original_bytes
+        terminal_text(&prompt.id),
+        terminal_text(&prompt.role),
+        prompt.original_bytes
     )?;
     if let Some(hash) = &prompt.content_sha256 {
         write!(writer, " — sha256 {hash}")?;
@@ -184,14 +186,20 @@ fn write_prompt(prompt: &GroupContextPromptView, writer: &mut impl Write) -> Res
 
 fn provenance_label(provenance: &GroupContextProvenance) -> String {
     match provenance {
-        GroupContextProvenance::Group { group_id } => format!("group:{group_id}"),
+        GroupContextProvenance::Group { group_id } => {
+            format!("group:{}", terminal_text(group_id))
+        }
         GroupContextProvenance::Project { project_id, role } => {
-            format!("project:{project_id}, role:{}", terminal_text(role))
+            format!(
+                "project:{}, role:{}",
+                terminal_text(project_id),
+                terminal_text(role)
+            )
         }
     }
 }
 
-fn terminal_text(value: &str) -> String {
+pub(crate) fn terminal_text(value: &str) -> String {
     let mut escaped = String::with_capacity(value.len());
     for character in value.chars() {
         match character {

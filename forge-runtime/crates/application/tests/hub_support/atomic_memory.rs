@@ -2,7 +2,7 @@ use std::path::Path;
 
 use forge_runtime_domain::{GroupProjectMember, HubEntity, HubStoreError, Project};
 
-use super::{MemoryState, conflict, project_name, require_group, same_member};
+use super::{MemoryState, conflict, memory_queries::require_group, project_name, same_member};
 
 pub(super) fn link_project_path(
     state: &mut MemoryState,

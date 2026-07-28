@@ -4,6 +4,10 @@ mod group_context_read;
 #[cfg(test)]
 #[path = "tests/group_context_snapshot.rs"]
 mod group_context_snapshot_tests;
+mod group_context_validate;
+mod group_run_codec;
+mod group_run_read;
+mod group_run_write;
 mod read;
 mod rows;
 mod run_integrity;
@@ -23,7 +27,8 @@ use std::path::{Path, PathBuf};
 
 use forge_runtime_domain::{
     BeginRun, BeginRunResult, Conversation, ConversationScope, GroupContextPolicy,
-    GroupContextSlice, GroupProjectMember, HubEntity, HubSnapshot, HubStore, HubStoreError,
+    GroupContextSlice, GroupProjectMember, GroupRunRecord, GroupRunSnapshot, GroupRunStore,
+    HubEntity, HubSnapshot, HubStore, HubStoreError, PrepareGroupRun, PrepareGroupRunResult,
     Project, PromptRecord, RunInspection, RunRecord, RunStore, RunStoreError, RuntimeEvent,
     SessionGroup,
 };
@@ -163,6 +168,27 @@ impl HubStore for SqliteHubStore {
             role,
             idempotency_key,
         )
+    }
+}
+
+impl GroupRunStore for SqliteHubStore {
+    fn prepare_group_run(
+        &self,
+        request: &PrepareGroupRun,
+    ) -> Result<PrepareGroupRunResult, HubStoreError> {
+        group_run_write::prepare(&mut self.connect()?, request)
+    }
+
+    fn inspect_group_run(&self, run_id: &str) -> Result<GroupRunSnapshot, HubStoreError> {
+        group_run_read::inspect(&self.connect()?, run_id)
+    }
+
+    fn list_group_runs(
+        &self,
+        group_id: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<GroupRunRecord>, HubStoreError> {
+        group_run_read::list(&self.connect()?, group_id, limit)
     }
 }
 

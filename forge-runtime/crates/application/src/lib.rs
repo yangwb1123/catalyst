@@ -3,6 +3,7 @@ mod conversation_history;
 mod emitter;
 mod engine;
 mod error;
+mod group_run_service;
 mod hub_error;
 mod hub_service;
 mod hub_validation;
@@ -21,8 +22,10 @@ pub use conversation_history::{
 pub use engine::AgentRuntime;
 pub use error::RuntimeError;
 pub use forge_runtime_domain::{
-    DEFAULT_GROUP_CONTEXT_CONTENT_BYTES, MAX_GROUP_CONTEXT_CONTENT_BYTES,
+    DEFAULT_GROUP_CONTEXT_CONTENT_BYTES, GROUP_RUN_VERSION, MAX_GROUP_CONTEXT_CONTENT_BYTES,
+    MAX_GROUP_RUN_LIST_LIMIT,
 };
+pub use group_run_service::GroupRunService;
 pub use hub_error::{HubError, HubField};
 pub use hub_service::HubService;
 pub use hub_validation::{

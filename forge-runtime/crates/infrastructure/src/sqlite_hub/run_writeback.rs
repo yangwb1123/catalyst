@@ -119,7 +119,7 @@ fn run_entity(entity: HubEntity) -> RunEntity {
         HubEntity::Project => RunEntity::Project,
         HubEntity::Conversation => RunEntity::Conversation,
         HubEntity::Prompt => RunEntity::Prompt,
-        HubEntity::Group | HubEntity::GroupProjectMember => RunEntity::Run,
+        HubEntity::Group | HubEntity::GroupProjectMember | HubEntity::GroupRun => RunEntity::Run,
     }
 }
 

@@ -2,10 +2,16 @@ use std::io::{self, Write};
 
 use serde::Serialize;
 
-use crate::group_context_output::{GroupContextView, write_group_context};
 use crate::runtime_domain::{
-    Conversation, ConversationScope, GroupProjectMember, HubSnapshot, PromptRecord, RunInspection,
-    RunRecord, RunRecoveryState, RuntimeEventKind, SessionGroup,
+    Conversation, ConversationScope, GroupProjectMember, GroupRunRecord, HubSnapshot,
+    PrepareGroupRunDisposition, PromptRecord, RunInspection, RunRecord, RunRecoveryState,
+    RuntimeEventKind, SessionGroup,
+};
+use crate::{
+    group_context_output::{GroupContextView, write_group_context},
+    group_run_output::{
+        GroupRunSnapshotView, write_group_run, write_group_run_list, write_group_run_prepared,
+    },
 };
 
 #[derive(Debug, Serialize)]
@@ -43,6 +49,16 @@ pub enum OutputKind {
     },
     GroupContext {
         context: GroupContextView,
+    },
+    GroupRunPrepared {
+        disposition: PrepareGroupRunDisposition,
+        snapshot: GroupRunSnapshotView,
+    },
+    GroupRun {
+        snapshot: GroupRunSnapshotView,
+    },
+    GroupRuns {
+        runs: Vec<GroupRunRecord>,
     },
     Groups {
         groups: Vec<SessionGroup>,
@@ -123,6 +139,12 @@ fn write_human(kind: &OutputKind, writer: &mut impl Write) -> Result<(), io::Err
             member.project_id, member.group_id, member.role
         ),
         OutputKind::GroupContext { context } => write_group_context(context, writer),
+        OutputKind::GroupRunPrepared {
+            disposition,
+            snapshot,
+        } => write_group_run_prepared(*disposition, snapshot, writer),
+        OutputKind::GroupRun { snapshot } => write_group_run(snapshot, writer),
+        OutputKind::GroupRuns { runs } => write_group_run_list(runs, writer),
         OutputKind::Groups { groups } => write_groups(groups, writer),
         OutputKind::Runs { runs } => write_runs(runs, writer),
         OutputKind::Run { inspection } => write_run(inspection, writer),

@@ -1,10 +1,14 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fmt::Write as _,
+};
 
 use crate::runtime_domain::{
     GROUP_CONTEXT_DIGEST_DOMAIN, GROUP_CONTEXT_VERSION, GroupContextConversation,
     GroupContextMember, GroupContextPayload, GroupContextPolicy, GroupContextPrompt,
     GroupContextProvenance, GroupContextSlice, GroupContextStats, HubStoreError, SessionGroup,
 };
+use serde::Serialize;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
@@ -42,7 +46,7 @@ pub(super) fn build_slice(
         conversations,
         omitted_conversation_count,
     );
-    let slice_sha256 = digest_json(&payload)?;
+    let slice_sha256 = digest_payload(&payload)?;
     Ok(GroupContextSlice {
         v: GROUP_CONTEXT_VERSION,
         payload,
@@ -53,6 +57,38 @@ pub(super) fn build_slice(
 pub(super) fn digest_bytes(bytes: &[u8]) -> String {
     let digest = Sha256::digest(bytes);
     format!("{digest:x}")
+}
+
+pub(super) fn digest_with_domain(domain: &[u8], bytes: &[u8]) -> String {
+    let digest = digest_with_domain_bytes(domain, bytes);
+    let mut encoded = String::with_capacity(64);
+    for byte in digest {
+        write!(&mut encoded, "{byte:02x}").expect("writing to String cannot fail");
+    }
+    encoded
+}
+
+pub(super) fn digest_with_domain_bytes(domain: &[u8], bytes: &[u8]) -> [u8; 32] {
+    let mut digest = Sha256::new();
+    digest.update(domain);
+    digest.update(bytes);
+    digest.finalize().into()
+}
+
+pub(super) fn validate_slice(slice: &GroupContextSlice) -> Result<(), HubStoreError> {
+    if slice.v != GROUP_CONTEXT_VERSION {
+        return Err(HubStoreError::Corrupt {
+            message: "stored Group context has an unsupported version".into(),
+        });
+    }
+    let expected = digest_payload(&slice.payload)?;
+    if expected == slice.slice_sha256 {
+        Ok(())
+    } else {
+        Err(HubStoreError::Corrupt {
+            message: "stored Group context digest does not match its payload".into(),
+        })
+    }
 }
 
 fn allocate_excerpts(conversations: &mut [LoadedConversation], policy: &GroupContextPolicy) {
@@ -196,18 +232,18 @@ fn context_stats(
     }
 }
 
-fn digest_json(value: &GroupContextPayload) -> Result<String, HubStoreError> {
+fn digest_payload(value: &GroupContextPayload) -> Result<String, HubStoreError> {
+    let encoded = canonical_json_bytes(value)?;
+    Ok(digest_with_domain(GROUP_CONTEXT_DIGEST_DOMAIN, &encoded))
+}
+
+pub(super) fn canonical_json_bytes(value: &impl Serialize) -> Result<Vec<u8>, HubStoreError> {
     let value = serde_json::to_value(value).map_err(|error| HubStoreError::Corrupt {
-        message: format!("Group context payload cannot encode: {error}"),
+        message: format!("canonical JSON value cannot encode: {error}"),
     })?;
-    let encoded =
-        serde_json::to_vec(&sort_json(value)).map_err(|error| HubStoreError::Corrupt {
-            message: format!("Group context payload cannot encode: {error}"),
-        })?;
-    let mut digest = Sha256::new();
-    digest.update(GROUP_CONTEXT_DIGEST_DOMAIN);
-    digest.update(encoded);
-    Ok(format!("{:x}", digest.finalize()))
+    serde_json::to_vec(&sort_json(value)).map_err(|error| HubStoreError::Corrupt {
+        message: format!("canonical JSON value cannot encode: {error}"),
+    })
 }
 
 fn sort_json(value: Value) -> Value {

@@ -1,6 +1,7 @@
 mod cancellation;
 mod event;
 mod group_context;
+mod group_run;
 mod hub;
 mod hub_store;
 mod message;
@@ -20,6 +21,11 @@ pub use group_context::{
     MAX_GROUP_CONTEXT_CONTENT_BYTES, MAX_GROUP_CONTEXT_GROUP_CONVERSATIONS,
     MAX_GROUP_CONTEXT_MEMBERS, MAX_GROUP_CONTEXT_PROJECT_CONVERSATIONS,
     MAX_GROUP_CONTEXT_PROMPT_EXCERPT_BYTES, MAX_GROUP_CONTEXT_PROMPTS_PER_CONVERSATION,
+};
+pub use group_run::{
+    GROUP_RUN_SNAPSHOT_DIGEST_DOMAIN, GROUP_RUN_VERSION, GroupRunRecord, GroupRunSnapshot,
+    GroupRunStatus, GroupRunStore, MAX_GROUP_RUN_LIST_LIMIT, MAX_GROUP_RUN_SNAPSHOT_JSON_BYTES,
+    PrepareGroupRun, PrepareGroupRunDisposition, PrepareGroupRunResult,
 };
 pub use hub::{
     Conversation, ConversationScope, GroupProjectMember, HubSnapshot, Project, PromptRecord,
