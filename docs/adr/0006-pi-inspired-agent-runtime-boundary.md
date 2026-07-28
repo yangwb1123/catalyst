@@ -47,10 +47,13 @@ It does not implement a live model provider, write or process tools, SQLite,
 session branching, context compaction, extensions, MCP, a TUI, or multi-agent
 handoffs.
 
-**Subsequent status (2026-07-27).** ADR 0007 has since delivered a separate
-SQLite Conversation/Prompt/Project/Group Hub. That does not retroactively add
-Run/event persistence to this first slice: crash-safe Agent Run recovery,
-automatic history replay and remote synchronization remain unimplemented.
+**Subsequent status (2026-07-27).** ADR 0007 delivered the separate SQLite
+Conversation/Prompt/Project/Group Hub. ADR 0008 then delivered its bounded
+Project-Run bridge: append-only Run/events, prior user/assistant history at an
+explicit Prompt boundary, completed assistant writeback, and an opt-in OpenAI
+Responses adapter. Automatic execution resume/branching, remote
+synchronization, and mutating tools remain unimplemented. See
+[`run-journal-phase1.md`](../design/run-journal-phase1.md).
 
 ## Consequences
 
@@ -58,6 +61,11 @@ The initial binary demonstrates the real control flow without consuming an API
 budget or granting mutation privileges. The provider, durable store, approval
 protocol, and TypeScript client can be added behind versioned domain ports;
 those ports remain intentionally evolvable during the runtime proof.
+
+The delivered journal follows that boundary: Rust owns its `RunStore` port and
+SQLite adapter, while the existing Agent Loop retains sole ownership of model
+and tool sequencing. Persisting `tool_started` before an effect provides
+crash-visible ambiguity; it does not authorize automatic replay.
 
 The read tool opens the workspace as a `cap-std` directory capability and opens
 relative files through that handle, so later workspace-path replacement cannot

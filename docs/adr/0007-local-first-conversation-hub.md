@@ -62,6 +62,7 @@ forge-runtime prompt list [SESSION_ID] [--limit N]
 
 forge-runtime group create NAME
 forge-runtime group add GROUP_ID PATH [--role ROLE]
+forge-runtime group context GROUP_ID [--include-content] [--max-bytes N]
 forge-runtime group list
 ```
 
@@ -77,6 +78,24 @@ capability grant, task queue, or multi-Agent fan-out instruction.
 
 Project selection and Group linkage never grant file, process, network, or
 write capabilities. Runtime capabilities remain explicit per Run.
+
+`group context` is a read-only, on-demand dossier. In one SQLite read
+transaction it selects bounded committed Prompt history from the Group's own
+Conversations and its member Projects, preserves Run-answer causal placement,
+and labels every Project source with its descriptive role. It excludes Global,
+other-Group, and nonmember histories, as well as canonical paths, files, Run
+events, and tool/provider context.
+
+The output is deterministically ordered and content-addressed. Its
+`slice_sha256` is SHA-256 over the domain separator
+`forge.group-context.v1\0` followed by compact UTF-8 payload JSON whose object
+keys are recursively sorted lexicographically and whose array order is
+preserved. It reports source IDs, dossier hash, byte counts, omissions, and
+truncation by default. Exact bounded `excerpt` fields and per-Prompt full-body
+hashes require `--include-content`, which makes the public payload independently
+rehashable. Neither mode is an anonymized, share-safe export.
+Generating this local preview is not consent to send it to a model, does not
+persist a Run snapshot, and grants no workspace capability.
 
 ## Persistence
 
@@ -110,10 +129,22 @@ success. Prompts are limited to 256 KiB each. `prompt list` with no Conversation
 ID queries across every local Conversation, newest first, so the Global lobby
 can inspect the complete local Prompt ledger.
 
-This ledger is not yet automatic Agent context. Persisting all Prompt text does
-not mean sending all history to every model request. Context replay, bounded
-retrieval, source references, and derived memory require a later runtime bridge.
-The CLI therefore does not claim `continue` or resume semantics yet.
+Persisting all Prompt text does not mean sending all history to every model
+request. ADR 0008's Project Run bridge now loads only prior lowercase
+user/assistant records at an explicit Prompt boundary, under a strict byte
+budget. It still does not claim `continue`, interrupted execution resume,
+semantic retrieval, or derived memory.
+
+The local Group dossier similarly remains a preview. Before a future Agent can
+consume it, the exact bounded payload must be durably frozen and bound to that
+Run so retries never query a newer cross-project view.
+
+**Follow-on status (2026-07-27).** Schema version 2 and its append-only
+Run/event journal are delivered. A Run binds an existing Project Conversation
+and user Prompt; its recovery view classifies terminal, incomplete, or pending
+tool. A terminal retry can reconcile a missing assistant writeback, but no
+stored nonterminal prefix is automatically executed. See ADR 0008 and
+[`run-journal-phase1.md`](../design/run-journal-phase1.md).
 
 The existing deterministic `demo` remains separate and does not silently write
 its Prompt to the Hub:
@@ -182,22 +213,24 @@ boundaries have real implementations.
 
 ## Forge Core boundary
 
-Rust owns current Conversation persistence and is the designated future owner
-of task-run persistence; Run persistence is not implemented by this slice.
-Existing Go files under a project's `.forge/` directory remain workflow
-checkpoint, trace, and learned project-state owned by `forge-core`. This Hub
-does not migrate, merge, or reinterpret them as global Prompt history.
+Rust owns Conversation and task-run persistence. ADR-0007's original local-Hub
+slice did not implement Runs; ADR 0008's follow-on now does. Existing Go files
+under a project's `.forge/` directory remain workflow checkpoint, trace, and
+learned project-state owned by `forge-core`. This Hub does not migrate, merge,
+or reinterpret them as global Prompt history.
 
 ## Consequences
 
 The local UX now has stable Global, Project, and Group discovery and retains
 Prompt text across CLI processes. It can represent a frontend/backend/SSO
-discussion without pretending to provide remote identity or multi-Agent
+discussion and produce a bounded, provenance-preserving local context manifest
+without pretending to provide remote identity, model analysis, or multi-Agent
 execution.
 
-The remaining product work is explicit: runtime history replay and crash-safe
-Run records, interactive UI, account binding and synchronization, shared ACL
-Groups, derived memory, and remote execution.
+The remaining product work is explicit: automatic interrupted execution
+resume/branching, semantic or derived memory, interactive UI, account binding
+and synchronization, shared ACL Groups, Group multi-Agent execution, mutating
+tools, sandboxing, and remote execution.
 
 Implementation evidence includes repeated concurrent first-open runs against
 fresh databases, a deterministic lock held beyond the former two-second busy

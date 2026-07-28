@@ -53,7 +53,7 @@ Knowledge-Engine · **Evaluation-Engine** · **Sandbox(载重墙)** · Web-UI
 > **v2 现状**:forge-core Go 运行时当前 **21 包**(纯标准库零依赖),已落地 5 个核心引擎与可工作的本地 Agent-Runtime 切片:
 > **Orchestrator**(`internal/orchestrator`)· **Model-Router**(`routing`)· **Context-Engine**(`prompt`)·
 > **Memory-Engine**(`memory`)· **Evaluation-Engine**(`converge`);Agent-Runtime 已具备本地命令执行、预算/超时/进程组、最小环境、stdin prompt、产物溯源与 run lock。`forge run --chain` 以版本化状态跨 Discover→Design→Review→Build→Deploy→Evolve 持久恢复，拒绝/cycle/max-stage/策略 halt 均失败关闭。
-> `forge-runtime/` 现另有 Rust 原生多轮模型/工具循环的**离线首切片**:provider/tool 端口、严格递增 JSONL 事件、能力限制、只读 workspace 工具与 deterministic provider；以及 SQLite local-first Conversation Hub:无路径 Global、有路径 Project、Group 联动、跨进程 Conversation/Prompt ledger。SQLite 整次首次打开/PRAGMA/WAL/schema 在 BUSY/LOCKED 下有统一 5 秒重试截止，DB/WAL/SHM 私有权限及 workspace 打开失败的单一 terminal event 有并发回归。Hub 尚未自动回放进 Agent context；Rust 侧真实 provider、Run/事件恢复、远程账号与同步、审批、写/进程工具及 OS 沙箱仍未实现。
+> `forge-runtime/` 现有 Rust 原生多轮模型/工具循环、SQLite local-first Conversation Hub 与 durable Project Run：无路径 Global、有路径 Project、Group 联动；execution-bound Run、append-only event journal、O(1) 增量语义 cursor、同快照 inspection、严格有界 causal user/assistant history、Run 原子授权 assistant 写回、terminal/incomplete/pending-tool 判定均跨进程持久化。默认 deterministic/offline；显式 `--live` 默认零工具，仅 exact `--allow-read` 授权，并启用固定 HTTPS origin、无 redirect/隐式 retry、`store:false` 完整 validated output-item 回放、phase-aware final projection、terminal status/item identity 校验及 transport/SSE/token/output 全套上限；incomplete 永不释放工具。SQLite open→PRAGMA/WAL→schema 有统一 5 秒重试，DB/WAL/SHM 私有权限及 workspace capability 失败有并发/反例回归。自动 execution resume/branching、远程账号与同步、共享 ACL/Group 多 Agent、审批、写/进程工具及 OS 沙箱仍未实现。
 > **Gateway · 完整 Knowledge-Engine · Sandbox runner(载重墙)· Web-UI 仍为路线图。**
 
 ## 模型路由 (v1 限 Claude 档)

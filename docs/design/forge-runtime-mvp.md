@@ -14,6 +14,9 @@ Prove, offline and deterministically, that a Rust-owned agent can:
 
 This is a runtime proof, not yet a useful autonomous coding product.
 
+The first proof and its durable Project-Run follow-on are delivered. The latter
+is specified in [`run-journal-phase1.md`](run-journal-phase1.md) and ADR 0008.
+
 ## Boundary
 
 ```text
@@ -28,7 +31,8 @@ forge-runtime
        |
   domain          messages, events, provider/tool ports
        ^
-  infrastructure  deterministic provider, local read tool, JSONL sink
+  infrastructure  deterministic/Responses providers, local read tool,
+                  SQLite RunStore, persistence-first JSONL sink
              |
              v
 future forge-web (TypeScript presentation only)
@@ -83,8 +87,11 @@ separate acknowledgement, while `run_finished` remains the terminal run event.
 - Rejected calls emit `tool_rejected`, never `tool_started`.
 - Tool-result bytes, including error text, are bounded and expose whether they
   were truncated.
-- Turn count, tool count, and tool-output bytes have hard limits.
-- No test or default command calls a real LLM.
+- Turn count, tool count, tool-output bytes, model-event count, and aggregate
+  model-output bytes have hard limits; every model turn has an explicit output
+  token request cap.
+- No test or default command calls a real LLM. Live OpenAI access requires an
+  explicit CLI flag, explicit idempotency key, and environment credential.
 
 The read tool's directory handle remains confined across concurrent
 rename/symlink replacement, and reads are bounded on the opened file handle.
@@ -121,9 +128,12 @@ The exact delta count may vary; ordering of lifecycle events may not.
 
 ## Next slices
 
-1. Append-only Run/event store with crash-safe tool execution records.
+1. **Delivered:** append-only Run/event store with crash-visible tool execution
+   records, bounded Conversation history, and assistant writeback; this adds
+   durable inspection, not automatic interrupted execution resume.
 2. Versioned stdin/stdout commands: prompt, steer, follow-up, abort, approval.
-3. One real provider adapter with recorded-stream contract tests.
+3. **Delivered:** one opt-in OpenAI Responses adapter with loopback streaming
+   contract tests; multi-provider routing remains later.
 4. Read/list/search tools, then approved replace and process tools.
 5. TypeScript CLI/Web client generated from the protocol schema.
 6. Context compaction, branching, extensions, and multi-agent behavior only

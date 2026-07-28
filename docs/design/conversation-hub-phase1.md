@@ -41,12 +41,14 @@ in infrastructure. The CLI composes the concrete store and service.
 | Space | Global, Project, or local-private Group discovery scope |
 | Conversation | Persistent user-visible chat; CLI alias is `session` |
 | Prompt | Exact user text appended to one Conversation |
-| Run | One Agent Loop execution; not persisted by this slice |
+| Run | One Agent Loop execution; not persisted by the original Hub slice |
 | AuthSession | Future account credential lifecycle; absent in this slice |
 
-Reusing a Conversation ID is not yet resume: current Agent runs do not load Hub
-history. That claim becomes valid only after a versioned runtime bridge replays
-committed messages and fails closed around interrupted tool calls.
+Reusing a Conversation ID is not interrupted execution resume. The delivered
+Project-Run bridge starts a new Run and loads bounded committed user/assistant
+messages before its selected user Prompt. It never executes an interrupted
+stored prefix or guesses whether a pending tool effect happened. See ADR 0008
+and [`run-journal-phase1.md`](run-journal-phase1.md).
 
 ## CLI contract
 
@@ -70,8 +72,12 @@ forge-runtime [OPTIONS] prompt add SESSION_ID PROMPT|-
 forge-runtime [OPTIONS] prompt list [SESSION_ID] [--limit N]
 forge-runtime [OPTIONS] group create NAME
 forge-runtime [OPTIONS] group add GROUP_ID PATH [--role ROLE]
+forge-runtime [OPTIONS] group context GROUP_ID [--include-content] [--max-bytes N]
 forge-runtime [OPTIONS] group list
 forge-runtime [OPTIONS] [PATH|-C PATH] demo [--read FILE] PROMPT
+forge-runtime [OPTIONS] -C PATH run start SESSION_ID PROMPT_ID [RUN_OPTIONS]
+forge-runtime [OPTIONS] run list [SESSION_ID] [--limit N]
+forge-runtime [OPTIONS] run show RUN_ID
 ```
 
 `PATH` is recognized in the top-level selector position and is never
@@ -81,8 +87,9 @@ commands (`session`, `prompt`, `group`, `demo`, `help`) use `./name` or
 `-C name`. Prompt and Group-management commands reject space selectors instead
 of silently ignoring them.
 
-`--idempotency-key` is accepted only by `session new`, `prompt add`,
-`group create`, and `group add`. When omitted, the CLI generates a fresh key.
+`--idempotency-key` is accepted by `session new`, `prompt add`, `group create`,
+`group add`, and `run start`. When omitted, local mutations generate a fresh
+key; `run start --live` instead requires the caller to supply one explicitly.
 After an uncertain commit/output result, a cross-process retry is safe only
 when the caller repeats the same command, payload, scope, and explicit key.
 `prompt add SESSION_ID -` reads the exact UTF-8 Prompt from standard input.
@@ -92,14 +99,83 @@ Conversations, Groups, and links. A Project snapshot includes that Project,
 its Conversations, and related Groups. A Group snapshot includes linked
 Projects, role labels, and Group Conversations.
 
+### Group context dossier
+
+`group context` is a local, read-only dossier for reviewing linked work before
+an Agent Run. It includes only committed `user` and `assistant` Prompts from:
+
+- the selected Group's own nonempty Conversations; and
+- nonempty Project Conversations belonging to the Group's current members.
+
+Global Conversations, other Groups, and nonmember Projects are excluded.
+Project canonical paths, files, Run events, tool/provider context, and
+idempotency keys are never part of the dossier. A member role such as
+`frontend`, `backend`, or `sso` is provenance only; it grants no capability.
+
+Membership, Conversations, causal Prompt ordering, and content are resolved in
+one deferred SQLite transaction. A delayed Run assistant is anchored next to
+its source user Prompt instead of being reordered by recovery/writeback time.
+The resulting version-1 payload has deterministic ordering. Its lowercase
+`slice_sha256` is:
+
+```text
+SHA256("forge.group-context.v1\0" || canonical_payload_json)
+```
+
+`canonical_payload_json` is compact UTF-8 JSON with object keys recursively
+sorted by their UTF-8 byte sequences and array order preserved. Integers use
+unsigned base-10 without leading zeroes; booleans use JSON literals. Strings
+emit Unicode scalars as UTF-8 except `"` and `\`, the standard short escapes
+for backspace/tab/LF/form-feed/CR, and lowercase `\u00xx` for the remaining
+U+0000–U+001F controls. There is no insignificant whitespace. The separator
+ends in one NUL byte, not the two text characters `\` and `0`.
+
+With `--include-content`, the public `.context.payload` includes each exact
+`excerpt` and is the complete digest input; the default redacted manifest
+intentionally cannot be rehashed without those excerpts and per-Prompt
+fingerprints. Each `content_sha256` independently hashes the full, untruncated
+Prompt UTF-8 bytes.
+
+The fixed structural policy admits at most 16 members, four recent Group
+Conversations, two recent Conversations per member Project, and eight causal
+Prompt records per selected Conversation. A Group above the member bound fails
+instead of silently omitting members. Conversation and Prompt omissions are
+reported. Content is distributed newest causal group first in round-robin
+Conversation order, with source user content allocated before answers in the
+same causal group. Each Prompt excerpt is limited to 16 KiB and the default
+total budget is 256 KiB; `--max-bytes` may lower or raise the total up to
+512 KiB. UTF-8 is never split. If the remaining budget cannot encode even the
+source's first Unicode scalar, answers from that causal group receive no
+excerpt; the unused bytes remain available to other Conversations.
+
+Both human and JSON output omit Prompt content and per-Prompt content
+fingerprints unless `--include-content` is explicit. The redacted manifest
+still reports Prompt IDs, roles, timestamps, original byte counts, truncation,
+the aggregate content volume, and the dossier-level digest. Explicit content
+output also includes each full-content SHA-256 so a truncated excerpt can be
+verified against its persisted source. Human output prints aggregate omission
+and truncation counts, per-Conversation Prompt omissions, and per-Prompt
+truncation. Human text escapes C0/ANSI controls, newline/tab, Unicode line
+separators, and bidi controls. This command performs no network request and
+does not read member workspaces; neither output mode should be treated as
+anonymized or safe to publish.
+
+The dossier is derived on demand and is not yet an Agent input. A future Run
+that consumes it must persist the exact bounded payload before the first
+provider call and replay that snapshot, rather than re-querying “latest”
+history. It must also require separate live/off-machine consent.
+
 The JSON envelope is:
 
 ```json
 {
   "v": 1,
-  "type": "hub",
-  "snapshot": {},
-  "remote": "not_configured"
+  "type": "group_context",
+  "context": {
+    "v": 1,
+    "payload": {},
+    "slice_sha256": "..."
+  }
 }
 ```
 
@@ -114,10 +190,13 @@ The JSON envelope is:
 | Entity ID | 128 bytes |
 | Idempotency key | 256 bytes |
 | Prompt list result | 1–1000 rows |
+| Group context members | 16 |
+| Group context content | 1–512 KiB (default 256 KiB) |
+| Group context Prompt excerpt | 16 KiB |
 
 Required strings reject empty or whitespace-only values.
 
-## SQLite schema version 1
+## SQLite schema version 1 (original Hub slice)
 
 ```text
 projects
@@ -165,6 +244,14 @@ Schema creation runs behind an immediate write lock and sets
 `PRAGMA user_version=1` only inside the successful transaction. An unsupported
 version is rejected before persistent PRAGMA changes and fails closed without
 modifying the database.
+
+### Follow-on schema version 2 (delivered)
+
+The Run journal adds `runs` and append-only `run_events` through a
+transactional version-1-to-version-2 migration. Existing Hub rows are
+preserved, and `user_version=2` is committed only with the complete migration.
+The exact schema and append/recovery invariants are defined in
+[`run-journal-phase1.md`](run-journal-phase1.md).
 
 Every connection enables:
 
@@ -257,6 +344,11 @@ does not classify as corruption.
 - Global Prompt listing spans Project Conversations;
 - three Projects can be linked as `frontend`, `backend`, and `sso`;
 - a Group can own a discussion Conversation and Prompt;
+- a Group context atomically combines Group and member-Project Prompt history
+  with provenance while excluding Global, other-Group, and nonmember records;
+- Group context defaults to a content-free manifest, uses deterministic
+  SHA-256 identities, preserves causal assistant placement, and reports
+  UTF-8-safe truncation and omissions;
 - idempotent retries cannot change payload;
 - an explicit CLI idempotency key safely replays across processes;
 - a failed Group link does not leave a newly registered Project;
@@ -269,18 +361,26 @@ does not classify as corruption.
   exactly one failed terminal event;
 - Unix state/database symlinks are rejected; dedicated directories are
   narrowed while populated shared directories are rejected unchanged.
+- a Project Run loads only earlier user/assistant Prompt records under a strict
+  byte budget and commits the current Prompt exactly once;
+- a completed Run writes its final assistant Prompt idempotently, while replay
+  repairs a missing writeback without invoking provider or tools;
+- incomplete and pending-tool Runs are inspectable but cannot auto-resume.
 
 ## Explicitly deferred
 
-- automatic Agent history replay, `continue`, Run/event persistence, branching,
-  and crash recovery;
-- assistant/tool transcript persistence and derived memory;
+- `continue`, branching, and interrupted execution recovery; bounded prior
+  history replay for a new Project Run is delivered;
+- derived/semantic memory; final assistants persist as Prompts and detailed
+  runtime/tool evidence persists in the Run journal;
 - interactive TTY/TUI and TypeScript client;
 - OIDC login, account binding, OS keyring, explicit local-data claim;
 - remote directory, replicas, cursors, conflict merge, deletion propagation;
 - tenants, invitations, history visibility, ACL-backed shared Groups;
 - live multi-Agent Group execution or cross-project tool capabilities;
-- real model Provider, write/process/network tools, and process sandbox.
+- persisted Group-context snapshots and consumption by a Group Run;
+- providers beyond the delivered opt-in OpenAI Responses adapter,
+  write/process/network tools, and process sandbox.
 
 Remote identity and synchronization must follow ADR-0007's consent and
 isolation boundaries; adding placeholder commands before real adapters exist
