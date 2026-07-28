@@ -1,7 +1,10 @@
 mod args;
+mod cli_usage;
 mod demo;
+mod group_context_output;
 mod hub_command;
 mod hub_output;
+mod run_command;
 mod state_path;
 
 use std::{
@@ -10,8 +13,10 @@ use std::{
 };
 
 use args::{Args, Command, usage};
-use forge_runtime_domain::RunOutcome;
 use hub_output::write_output;
+
+pub(crate) use forge_runtime_domain as runtime_domain;
+use runtime_domain::RunOutcome;
 
 #[tokio::main]
 async fn main() -> ExitCode {
@@ -25,6 +30,29 @@ async fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         Command::Demo(demo_args) => run_demo(demo_args, args.project.as_deref()).await,
+        Command::Run(args::RunCommand::Start {
+            conversation_id,
+            prompt_id,
+            read_path,
+            allowed_read_paths,
+            live,
+            model,
+            max_output_tokens,
+        }) => {
+            run_persisted(
+                &args,
+                run_command::StartOptions {
+                    conversation_id,
+                    prompt_id,
+                    read_path,
+                    allowed_read_paths,
+                    live: *live,
+                    model: model.as_deref(),
+                    max_output_tokens: *max_output_tokens,
+                },
+            )
+            .await
+        }
         _ => run_hub(&args),
     }
 }
@@ -55,6 +83,20 @@ async fn run_demo(args: &args::DemoArgs, project: Option<&std::path::Path>) -> E
         }
         Err(error) => {
             eprintln!("runtime failed: {error}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+async fn run_persisted(args: &Args, options: run_command::StartOptions<'_>) -> ExitCode {
+    match run_command::start(args, options).await {
+        Ok(RunOutcome::Completed { .. }) => ExitCode::SUCCESS,
+        Ok(outcome) => {
+            eprintln!("runtime stopped without completion: {outcome:?}");
+            ExitCode::from(2)
+        }
+        Err(error) => {
+            eprintln!("Run command failed: {error}");
             ExitCode::FAILURE
         }
     }

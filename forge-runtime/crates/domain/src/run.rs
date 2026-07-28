@@ -9,6 +9,9 @@ pub struct RunLimits {
     pub max_turns: u32,
     pub max_tool_calls: u32,
     pub max_tool_output_bytes: usize,
+    pub max_model_output_bytes: usize,
+    pub max_model_events: u32,
+    pub max_output_tokens_per_turn: u32,
 }
 
 impl Default for RunLimits {
@@ -17,6 +20,9 @@ impl Default for RunLimits {
             max_turns: 8,
             max_tool_calls: 16,
             max_tool_output_bytes: 64 * 1024,
+            max_model_output_bytes: 64 * 1024,
+            max_model_events: 4_096,
+            max_output_tokens_per_turn: 4_096,
         }
     }
 }

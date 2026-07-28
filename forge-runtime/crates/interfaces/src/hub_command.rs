@@ -5,19 +5,21 @@ use std::{
     sync::Arc,
 };
 
-use forge_runtime_application::{HubService, MAX_PROMPT_BYTES};
-use forge_runtime_domain::ConversationScope;
+use forge_runtime_application::{HubService, MAX_PROMPT_BYTES, RunService};
 use forge_runtime_infrastructure::SqliteHubStore;
 
 use crate::{
-    args::{Args, Command, GroupCommand, PromptCommand, SessionCommand},
+    args::{Args, Command, GroupCommand, PromptCommand, RunCommand, SessionCommand},
+    group_context_output::GroupContextView,
     hub_output::{CliOutput, OutputKind, RemoteStatus},
+    runtime_domain::ConversationScope,
     state_path::{canonical_project, hub_database_path, idempotency_key},
 };
 
 pub fn execute(args: &Args) -> Result<CliOutput, Box<dyn Error>> {
     let database = hub_database_path(args.state_dir.as_deref())?;
-    let service = HubService::new(Arc::new(SqliteHubStore::open(database)?));
+    let store = Arc::new(SqliteHubStore::open(database)?);
+    let service = HubService::new(store.clone());
     match &args.command {
         Command::Hub => show_hub(&service, args.project.as_deref(), args.group.as_deref()),
         Command::Session(command) => execute_session(
@@ -33,7 +35,23 @@ pub fn execute(args: &Args) -> Result<CliOutput, Box<dyn Error>> {
         Command::Group(command) => {
             execute_group(&service, args.idempotency_key.as_deref(), command)
         }
+        Command::Run(command) => execute_run(&RunService::new(store), command),
         Command::Demo(_) | Command::Help => Err("command is not a Hub operation".into()),
+    }
+}
+
+fn execute_run(service: &RunService, command: &RunCommand) -> Result<CliOutput, Box<dyn Error>> {
+    match command {
+        RunCommand::List {
+            conversation_id,
+            limit,
+        } => Ok(CliOutput::new(OutputKind::Runs {
+            runs: service.list_runs(conversation_id.as_deref(), *limit)?,
+        })),
+        RunCommand::Show { run_id } => Ok(CliOutput::new(OutputKind::Run {
+            inspection: service.inspect_run(run_id)?,
+        })),
+        RunCommand::Start { .. } => Err("run start must use the runtime execution path".into()),
     }
 }
 
@@ -121,6 +139,16 @@ fn execute_group(
             let key = operation_key(supplied_key, "group-link");
             let member = service.add_project_path_to_group(group_id, &canonical, role, &key)?;
             Ok(CliOutput::new(OutputKind::GroupLinked { member }))
+        }
+        GroupCommand::Context {
+            group_id,
+            include_content,
+            max_bytes,
+        } => {
+            let slice = service.group_context(group_id, *max_bytes)?;
+            Ok(CliOutput::new(OutputKind::GroupContext {
+                context: GroupContextView::from_slice(slice, *include_content),
+            }))
         }
         GroupCommand::List => Ok(CliOutput::new(OutputKind::Groups {
             groups: service.list_groups()?,

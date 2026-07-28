@@ -7,58 +7,17 @@ use std::{
 
 use rusqlite::{Connection, Error as SqliteError, ErrorCode};
 
-use super::{HubStoreError, unavailable};
+use super::{
+    HubStoreError,
+    schema_sql::{CREATE_V1_SCHEMA_SQL, MIGRATE_V1_TO_V2_SQL},
+    unavailable,
+};
 
-const SCHEMA_VERSION: i64 = 1;
+const SCHEMA_VERSION: i64 = 2;
+const LEGACY_SCHEMA_VERSION: i64 = 1;
 const CONNECTION_BUSY_TIMEOUT: Duration = Duration::from_millis(250);
 const OPEN_RETRY_TIMEOUT: Duration = Duration::from_secs(5);
 const OPEN_RETRY_DELAY: Duration = Duration::from_millis(10);
-const SCHEMA_SQL: &str = "CREATE TABLE projects (
-  id TEXT PRIMARY KEY,
-  name TEXT NOT NULL,
-  canonical_path TEXT NOT NULL UNIQUE,
-  created_at_ms INTEGER NOT NULL CHECK(created_at_ms >= 0)
-);
-CREATE TABLE groups (
-  id TEXT PRIMARY KEY,
-  name TEXT NOT NULL COLLATE NOCASE UNIQUE,
-  idempotency_key TEXT NOT NULL UNIQUE,
-  created_at_ms INTEGER NOT NULL CHECK(created_at_ms >= 0)
-);
-CREATE TABLE conversations (
-  id TEXT PRIMARY KEY,
-  scope_kind TEXT NOT NULL CHECK(scope_kind IN ('global','project','group')),
-  scope_id TEXT,
-  title TEXT NOT NULL,
-  idempotency_key TEXT NOT NULL UNIQUE,
-  created_at_ms INTEGER NOT NULL CHECK(created_at_ms >= 0),
-  updated_at_ms INTEGER NOT NULL CHECK(updated_at_ms >= created_at_ms),
-  CHECK(
-    (scope_kind = 'global' AND scope_id IS NULL) OR
-    (scope_kind != 'global' AND scope_id IS NOT NULL)
-  )
-);
-CREATE TABLE group_projects (
-  group_id TEXT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
-  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE RESTRICT,
-  role TEXT NOT NULL,
-  idempotency_key TEXT NOT NULL UNIQUE,
-  added_at_ms INTEGER NOT NULL CHECK(added_at_ms >= 0),
-  PRIMARY KEY(group_id, project_id)
-);
-CREATE TABLE prompts (
-  id TEXT PRIMARY KEY,
-  conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
-  role TEXT NOT NULL,
-  content TEXT NOT NULL,
-  idempotency_key TEXT NOT NULL UNIQUE,
-  created_at_ms INTEGER NOT NULL CHECK(created_at_ms >= 0)
-);
-CREATE INDEX conversations_scope
-  ON conversations(scope_kind, scope_id, updated_at_ms DESC);
-CREATE INDEX prompts_conversation
-  ON prompts(conversation_id, created_at_ms DESC, id DESC);
-PRAGMA user_version = 1;";
 
 pub(super) fn open_database(path: &Path) -> Result<Connection, HubStoreError> {
     let deadline = Instant::now() + OPEN_RETRY_TIMEOUT;
@@ -141,7 +100,7 @@ fn configure(connection: &Connection) -> Result<(), SqliteError> {
 
 fn reject_unsupported_schema(connection: &Connection) -> Result<(), OpenAttemptError> {
     let version = schema_version(connection)?;
-    if matches!(version, 0 | SCHEMA_VERSION) {
+    if matches!(version, 0 | LEGACY_SCHEMA_VERSION | SCHEMA_VERSION) {
         return Ok(());
     }
     Err(unsupported_schema(version))
@@ -177,9 +136,10 @@ fn validate_locked_schema(connection: &Connection) -> Result<(), OpenAttemptErro
     let version = schema_version(connection)?;
     match version {
         0 => {
-            create_schema(connection)?;
-            Ok(())
+            create_v1_schema(connection)?;
+            migrate_v1_to_v2(connection)
         }
+        LEGACY_SCHEMA_VERSION => migrate_v1_to_v2(connection),
         SCHEMA_VERSION => Ok(()),
         other => Err(unsupported_schema(other)),
     }
@@ -196,8 +156,13 @@ fn unsupported_schema(version: i64) -> OpenAttemptError {
     .into()
 }
 
-fn create_schema(connection: &Connection) -> Result<(), SqliteError> {
-    connection.execute_batch(SCHEMA_SQL)
+fn create_v1_schema(connection: &Connection) -> Result<(), SqliteError> {
+    connection.execute_batch(CREATE_V1_SCHEMA_SQL)
+}
+
+fn migrate_v1_to_v2(connection: &Connection) -> Result<(), OpenAttemptError> {
+    connection.execute_batch(MIGRATE_V1_TO_V2_SQL)?;
+    Ok(())
 }
 
 enum OpenAttemptError {

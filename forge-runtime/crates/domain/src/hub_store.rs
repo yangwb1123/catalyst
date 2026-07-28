@@ -1,8 +1,8 @@
 use std::path::Path;
 
 use crate::{
-    Conversation, ConversationScope, GroupProjectMember, HubSnapshot, Project, PromptRecord,
-    SessionGroup,
+    Conversation, ConversationScope, GroupContextPolicy, GroupContextSlice, GroupProjectMember,
+    HubSnapshot, Project, PromptRecord, SessionGroup,
 };
 
 pub trait HubStore: Send + Sync {
@@ -57,7 +57,8 @@ pub trait HubStore: Send + Sync {
 
     /// Lists prompts newest first, breaking timestamp ties by descending record id.
     ///
-    /// `None` spans every conversation visible to the store.
+    /// `None` spans every conversation visible to the store. A conversation-specific
+    /// query returns `NotFound` when that Conversation does not exist.
     ///
     /// # Errors
     ///
@@ -67,6 +68,42 @@ pub trait HubStore: Send + Sync {
         conversation_id: Option<&str>,
         limit: usize,
     ) -> Result<Vec<PromptRecord>, HubStoreError>;
+
+    /// Lists records strictly before one user Prompt in the same Conversation.
+    ///
+    /// Ordering is newest causal record first. An assistant Prompt associated
+    /// with a Run is placed immediately after that Run's bound user Prompt,
+    /// independent of delayed recovery/writeback time. Boundary validation and
+    /// the read share one storage snapshot. The global record budget keeps
+    /// newer causal groups first and reserves the cutoff group's source before
+    /// admitting the newest answers that still fit.
+    ///
+    /// # Errors
+    ///
+    /// Returns `NotFound` when the Conversation or boundary Prompt is absent
+    /// or mismatched, and `Conflict` when the boundary is not a user Prompt.
+    fn list_prompts_before(
+        &self,
+        conversation_id: &str,
+        boundary_prompt_id: &str,
+        limit: usize,
+    ) -> Result<Vec<PromptRecord>, HubStoreError>;
+
+    /// Loads a deterministic, bounded dossier for one collaboration group.
+    ///
+    /// The result contains only committed Prompt history from the Group's own
+    /// Conversations and its current member Projects. Implementations must
+    /// resolve membership, Conversations, and Prompts from one read snapshot.
+    ///
+    /// # Errors
+    ///
+    /// Returns a structured error for a missing Group, invalid policy,
+    /// corrupt provenance, unsupported Prompt roles, or unavailable storage.
+    fn load_group_context(
+        &self,
+        group_id: &str,
+        policy: &GroupContextPolicy,
+    ) -> Result<GroupContextSlice, HubStoreError>;
 
     /// Creates a collaboration group, idempotently for identical request data.
     ///

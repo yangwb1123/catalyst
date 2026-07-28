@@ -29,10 +29,22 @@ impl Usage {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ModelEvent {
-    TextDelta { delta: String },
-    ToolCall { call: ToolCall },
-    Usage { usage: Usage },
-    Finished { reason: ModelFinishReason },
+    TextDelta {
+        delta: String,
+    },
+    ToolCall {
+        call: ToolCall,
+    },
+    ProviderContext {
+        provider: String,
+        items: Vec<serde_json::Value>,
+    },
+    Usage {
+        usage: Usage,
+    },
+    Finished {
+        reason: ModelFinishReason,
+    },
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -66,6 +78,7 @@ pub struct ModelRequest {
     pub system_prompt: String,
     pub messages: Vec<Message>,
     pub tools: Vec<ToolSpec>,
+    pub max_output_tokens: u32,
     pub cancellation: Cancellation,
 }
 

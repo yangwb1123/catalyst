@@ -57,6 +57,9 @@ fn request(root: &TempDir) -> RunRequest {
             max_turns: 4,
             max_tool_calls: 4,
             max_tool_output_bytes: 1024,
+            max_model_output_bytes: 64 * 1024,
+            max_model_events: 4_096,
+            max_output_tokens_per_turn: 4_096,
         },
     }
 }

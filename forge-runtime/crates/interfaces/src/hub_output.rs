@@ -1,9 +1,12 @@
 use std::io::{self, Write};
 
-use forge_runtime_domain::{
-    Conversation, ConversationScope, GroupProjectMember, HubSnapshot, PromptRecord, SessionGroup,
-};
 use serde::Serialize;
+
+use crate::group_context_output::{GroupContextView, write_group_context};
+use crate::runtime_domain::{
+    Conversation, ConversationScope, GroupProjectMember, HubSnapshot, PromptRecord, RunInspection,
+    RunRecord, RunRecoveryState, RuntimeEventKind, SessionGroup,
+};
 
 #[derive(Debug, Serialize)]
 pub struct CliOutput {
@@ -38,8 +41,17 @@ pub enum OutputKind {
     GroupLinked {
         member: GroupProjectMember,
     },
+    GroupContext {
+        context: GroupContextView,
+    },
     Groups {
         groups: Vec<SessionGroup>,
+    },
+    Runs {
+        runs: Vec<RunRecord>,
+    },
+    Run {
+        inspection: RunInspection,
     },
 }
 
@@ -110,7 +122,10 @@ fn write_human(kind: &OutputKind, writer: &mut impl Write) -> Result<(), io::Err
             "linked project {} to group {} as {}",
             member.project_id, member.group_id, member.role
         ),
+        OutputKind::GroupContext { context } => write_group_context(context, writer),
         OutputKind::Groups { groups } => write_groups(groups, writer),
+        OutputKind::Runs { runs } => write_runs(runs, writer),
+        OutputKind::Run { inspection } => write_run(inspection, writer),
     }
 }
 
@@ -189,6 +204,62 @@ fn write_groups(groups: &[SessionGroup], writer: &mut impl Write) -> Result<(), 
         writeln!(writer, "{}\t{}", group.id, group.name)?;
     }
     Ok(())
+}
+
+fn write_runs(runs: &[RunRecord], writer: &mut impl Write) -> Result<(), io::Error> {
+    writeln!(writer, "runs: {}", runs.len())?;
+    for run in runs {
+        writeln!(
+            writer,
+            "{}\tconversation={}\tprompt={}\tcreated={}",
+            run.run_id, run.conversation_id, run.prompt_id, run.created_at_ms
+        )?;
+    }
+    Ok(())
+}
+
+fn write_run(inspection: &RunInspection, writer: &mut impl Write) -> Result<(), io::Error> {
+    writeln!(
+        writer,
+        "run {} — {} — {} event(s)",
+        inspection.run.run_id,
+        recovery_label(&inspection.recovery.state),
+        inspection.events.len()
+    )?;
+    for event in &inspection.events {
+        writeln!(
+            writer,
+            "{}\t{}\t{}",
+            event.seq,
+            event.emitted_at_ms,
+            event_label(&event.kind)
+        )?;
+    }
+    Ok(())
+}
+
+fn recovery_label(state: &RunRecoveryState) -> String {
+    match state {
+        RunRecoveryState::Terminal { .. } => "terminal".into(),
+        RunRecoveryState::Incomplete => "incomplete".into(),
+        RunRecoveryState::PendingTool { calls } => {
+            format!("blocked_pending_tool({})", calls.len())
+        }
+    }
+}
+
+fn event_label(kind: &RuntimeEventKind) -> &'static str {
+    match kind {
+        RuntimeEventKind::RunStarted { .. } => "run_started",
+        RuntimeEventKind::TurnStarted { .. } => "turn_started",
+        RuntimeEventKind::AssistantDelta { .. } => "assistant_delta",
+        RuntimeEventKind::MessageCommitted { .. } => "message_committed",
+        RuntimeEventKind::ToolStarted { .. } => "tool_started",
+        RuntimeEventKind::ToolFinished { .. } => "tool_finished",
+        RuntimeEventKind::ToolRejected { .. } => "tool_rejected",
+        RuntimeEventKind::RuntimeError { .. } => "runtime_error",
+        RuntimeEventKind::RunFinished { .. } => "run_finished",
+    }
 }
 
 fn scope_label(scope: &ConversationScope) -> String {

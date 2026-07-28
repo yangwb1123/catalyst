@@ -1,14 +1,31 @@
 mod atomic_link;
+mod group_context_build;
+mod group_context_read;
+#[cfg(test)]
+#[path = "tests/group_context_snapshot.rs"]
+mod group_context_snapshot_tests;
 mod read;
 mod rows;
+mod run_integrity;
+mod run_read;
+#[cfg(test)]
+#[path = "tests/run_read_snapshot.rs"]
+mod run_read_snapshot_tests;
+mod run_write;
+mod run_writeback;
 mod schema;
+#[cfg(test)]
+mod schema_migration_tests;
+mod schema_sql;
 mod write;
 
 use std::path::{Path, PathBuf};
 
 use forge_runtime_domain::{
-    Conversation, ConversationScope, GroupProjectMember, HubEntity, HubSnapshot, HubStore,
-    HubStoreError, Project, PromptRecord, SessionGroup,
+    BeginRun, BeginRunResult, Conversation, ConversationScope, GroupContextPolicy,
+    GroupContextSlice, GroupProjectMember, HubEntity, HubSnapshot, HubStore, HubStoreError,
+    Project, PromptRecord, RunInspection, RunRecord, RunStore, RunStoreError, RuntimeEvent,
+    SessionGroup,
 };
 use rusqlite::{Connection, Error as SqliteError, ErrorCode};
 
@@ -88,6 +105,25 @@ impl HubStore for SqliteHubStore {
         read::list_prompts(&self.connect()?, conversation_id, limit)
     }
 
+    fn list_prompts_before(
+        &self,
+        conversation_id: &str,
+        boundary_prompt_id: &str,
+        limit: usize,
+    ) -> Result<Vec<PromptRecord>, HubStoreError> {
+        let mut connection = self.connect()?;
+        read::list_prompts_before(&mut connection, conversation_id, boundary_prompt_id, limit)
+    }
+
+    fn load_group_context(
+        &self,
+        group_id: &str,
+        policy: &GroupContextPolicy,
+    ) -> Result<GroupContextSlice, HubStoreError> {
+        let mut connection = self.connect()?;
+        group_context_read::load(&mut connection, group_id, policy)
+    }
+
     fn create_group(
         &self,
         name: &str,
@@ -130,6 +166,48 @@ impl HubStore for SqliteHubStore {
     }
 }
 
+impl RunStore for SqliteHubStore {
+    fn begin_run(&self, request: &BeginRun) -> Result<BeginRunResult, RunStoreError> {
+        let mut connection = self.connect_run()?;
+        run_write::begin_run(&mut connection, request)
+    }
+
+    fn append_event(&self, event: &RuntimeEvent) -> Result<(), RunStoreError> {
+        let mut connection = self.connect_run()?;
+        run_write::append_event(&mut connection, event)
+    }
+
+    fn find_run_by_idempotency_key(
+        &self,
+        idempotency_key: &str,
+    ) -> Result<Option<RunRecord>, RunStoreError> {
+        run_read::record_by_key(&self.connect_run()?, idempotency_key)
+    }
+
+    fn inspect_run(&self, run_id: &str) -> Result<RunInspection, RunStoreError> {
+        run_read::inspect_transaction(&mut self.connect_run()?, run_id)
+    }
+
+    fn list_runs(
+        &self,
+        conversation_id: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<RunRecord>, RunStoreError> {
+        run_read::list_runs(&self.connect_run()?, conversation_id, limit)
+    }
+
+    fn reconcile_completed_assistant(&self, run_id: &str) -> Result<PromptRecord, RunStoreError> {
+        let mut connection = self.connect_run()?;
+        run_writeback::reconcile_completed_assistant(&mut connection, run_id)
+    }
+}
+
+impl SqliteHubStore {
+    fn connect_run(&self) -> Result<Connection, RunStoreError> {
+        self.connect().map_err(run_error_from_hub)
+    }
+}
+
 fn write_error(entity: HubEntity, error: SqliteError) -> HubStoreError {
     match &error {
         SqliteError::SqliteFailure(problem, message)
@@ -158,5 +236,17 @@ fn read_error(error: SqliteError) -> HubStoreError {
 fn unavailable(error: impl std::fmt::Display) -> HubStoreError {
     HubStoreError::Unavailable {
         message: error.to_string(),
+    }
+}
+
+fn run_error_from_hub(error: HubStoreError) -> RunStoreError {
+    match error {
+        HubStoreError::Unavailable { message } => RunStoreError::Unavailable { message },
+        HubStoreError::Corrupt { message } => RunStoreError::Corrupt { message },
+        HubStoreError::NotFound { .. } | HubStoreError::Conflict { .. } => {
+            RunStoreError::Unavailable {
+                message: error.to_string(),
+            }
+        }
     }
 }

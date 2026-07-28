@@ -11,6 +11,48 @@ const PROMPT_COLUMNS: &str = "id, conversation_id, role, content, idempotency_ke
 const GROUP_COLUMNS: &str = "id, name, created_at_ms";
 const MEMBER_COLUMNS: &str = "group_id, project_id, role, added_at_ms";
 type SnapshotParts = (Vec<Project>, Vec<SessionGroup>, Vec<GroupProjectMember>);
+const CAUSAL_HISTORY_SQL: &str = "WITH causal AS (
+  SELECT p.id, p.conversation_id, p.role, p.content,
+         p.idempotency_key, p.created_at_ms,
+         p.rowid AS prompt_rowid,
+         COALESCE(source.rowid, p.rowid) AS anchor_rowid,
+         CASE WHEN w.run_id IS NULL THEN 0 ELSE 1 END AS run_answer,
+         r.rowid AS run_rowid
+  FROM prompts p
+  LEFT JOIN run_assistant_prompts w ON w.prompt_id = p.id
+  LEFT JOIN runs r ON r.id = w.run_id
+  LEFT JOIN prompts source ON source.id = r.prompt_id
+  WHERE p.conversation_id = ?1 AND p.id <> ?2
+    AND COALESCE(source.rowid, p.rowid) < ?3
+), ranked AS (
+  SELECT *, ROW_NUMBER() OVER (
+    PARTITION BY anchor_rowid
+    ORDER BY run_answer DESC, run_rowid DESC, prompt_rowid DESC
+  ) AS anchor_rank
+  FROM causal
+), anchor_groups AS (
+  SELECT anchor_rowid, COUNT(*) AS group_size
+  FROM causal
+  GROUP BY anchor_rowid
+), anchor_budgets AS (
+  SELECT anchor_rowid, COALESCE(SUM(group_size) OVER (
+    ORDER BY anchor_rowid DESC
+    ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+  ), 0) AS newer_size
+  FROM anchor_groups
+)
+SELECT r.id, r.conversation_id, r.role, r.content,
+       r.idempotency_key, r.created_at_ms
+FROM ranked r
+JOIN anchor_budgets budget ON budget.anchor_rowid = r.anchor_rowid
+WHERE budget.newer_size < ?4
+  AND (
+    r.run_answer = 0
+    OR r.anchor_rank <= ?4 - budget.newer_size - 1
+  )
+ORDER BY r.anchor_rowid DESC, r.run_answer DESC,
+         r.run_rowid DESC, r.prompt_rowid DESC
+LIMIT ?4";
 
 pub(super) fn snapshot(
     connection: &mut Connection,
@@ -103,6 +145,108 @@ pub(super) fn list_prompts(
     }
     .map_err(read_error)?;
     records.collect::<Result<Vec<_>, _>>().map_err(read_error)
+}
+
+pub(super) fn list_prompts_before(
+    connection: &mut Connection,
+    conversation_id: &str,
+    boundary_prompt_id: &str,
+    limit: usize,
+) -> Result<Vec<PromptRecord>, HubStoreError> {
+    let transaction = connection
+        .transaction_with_behavior(TransactionBehavior::Deferred)
+        .map_err(read_error)?;
+    ensure_conversation_exists(&transaction, conversation_id)?;
+    validate_causal_associations(&transaction, conversation_id)?;
+    let (boundary_rowid, role) =
+        prompt_boundary(&transaction, conversation_id, boundary_prompt_id)?;
+    if role != "user" {
+        return Err(HubStoreError::Conflict {
+            entity: HubEntity::Prompt,
+            message: "history boundary must be a user prompt".into(),
+        });
+    }
+    let records = query_prompts_before(
+        &transaction,
+        conversation_id,
+        boundary_prompt_id,
+        boundary_rowid,
+        limit,
+    )?;
+    transaction.commit().map_err(read_error)?;
+    Ok(records)
+}
+
+pub(super) fn validate_causal_associations(
+    connection: &Connection,
+    conversation_id: &str,
+) -> Result<(), HubStoreError> {
+    let invalid = connection
+        .query_row(
+            "SELECT COALESCE(p.id, w.prompt_id)
+             FROM run_assistant_prompts w
+             LEFT JOIN prompts p ON p.id = w.prompt_id
+             LEFT JOIN runs r ON r.id = w.run_id
+             LEFT JOIN prompts source ON source.id = r.prompt_id
+             WHERE (
+               p.conversation_id = ?1 OR r.conversation_id = ?1
+               OR source.conversation_id = ?1
+             ) AND (
+               p.id IS NULL OR r.id IS NULL OR source.id IS NULL
+               OR p.role <> 'assistant' OR source.role <> 'user'
+               OR p.conversation_id <> r.conversation_id
+               OR r.conversation_id <> source.conversation_id
+             )
+             LIMIT 1",
+            [conversation_id],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(read_error)?;
+    invalid.map_or(Ok(()), |prompt_id| {
+        Err(HubStoreError::Corrupt {
+            message: format!("invalid Run assistant association for Prompt '{prompt_id}'"),
+        })
+    })
+}
+
+fn prompt_boundary(
+    connection: &Connection,
+    conversation_id: &str,
+    prompt_id: &str,
+) -> Result<(i64, String), HubStoreError> {
+    connection
+        .query_row(
+            "SELECT rowid, role FROM prompts
+             WHERE id = ?1 AND conversation_id = ?2",
+            params![prompt_id, conversation_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()
+        .map_err(read_error)?
+        .ok_or_else(|| not_found(HubEntity::Prompt, prompt_id))
+}
+
+fn query_prompts_before(
+    connection: &Connection,
+    conversation_id: &str,
+    boundary_prompt_id: &str,
+    boundary_rowid: i64,
+    limit: usize,
+) -> Result<Vec<PromptRecord>, HubStoreError> {
+    let limit = i64::try_from(limit).map_err(|error| HubStoreError::Conflict {
+        entity: HubEntity::Prompt,
+        message: error.to_string(),
+    })?;
+    let mut statement = connection.prepare(CAUSAL_HISTORY_SQL).map_err(read_error)?;
+    statement
+        .query_map(
+            params![conversation_id, boundary_prompt_id, boundary_rowid, limit],
+            rows::prompt,
+        )
+        .map_err(read_error)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(read_error)
 }
 
 pub(super) fn list_groups(connection: &Connection) -> Result<Vec<SessionGroup>, HubStoreError> {

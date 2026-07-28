@@ -32,11 +32,22 @@ pub fn canonical_project(path: &Path) -> Result<PathBuf, io::Error> {
 }
 
 pub fn idempotency_key(operation: &str) -> String {
+    unique_id(&format!("cli-{operation}"))
+}
+
+pub fn unique_id(prefix: &str) -> String {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |duration| duration.as_nanos());
     let counter = IDEMPOTENCY_COUNTER.fetch_add(1, Ordering::Relaxed);
-    format!("cli-{operation}-{}-{nanos}-{counter}", std::process::id())
+    format!("{prefix}-{}-{nanos}-{counter}", std::process::id())
+}
+
+pub fn unix_time_millis() -> u64 {
+    let millis = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |duration| duration.as_millis());
+    u64::try_from(millis).unwrap_or(u64::MAX)
 }
 
 fn default_state_dir() -> Option<PathBuf> {
@@ -67,7 +78,9 @@ mod tests {
 
     use tempfile::TempDir;
 
-    use super::{canonical_project, hub_database_path, idempotency_key};
+    use super::{
+        canonical_project, hub_database_path, idempotency_key, unique_id, unix_time_millis,
+    };
 
     #[test]
     fn an_explicit_state_directory_is_deterministic() {
@@ -93,5 +106,7 @@ mod tests {
     #[test]
     fn generated_idempotency_keys_do_not_repeat_in_process() {
         assert_ne!(idempotency_key("prompt"), idempotency_key("prompt"));
+        assert_ne!(unique_id("run"), unique_id("run"));
+        assert!(unix_time_millis() > 0);
     }
 }

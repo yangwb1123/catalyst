@@ -1,8 +1,8 @@
 use std::{path::Path, sync::Arc};
 
 use forge_runtime_domain::{
-    Conversation, ConversationScope, GroupProjectMember, HubSnapshot, HubStore, Project,
-    PromptRecord, SessionGroup,
+    Conversation, ConversationScope, GroupContextPolicy, GroupContextSlice, GroupProjectMember,
+    HubSnapshot, HubStore, MAX_GROUP_CONTEXT_CONTENT_BYTES, Project, PromptRecord, SessionGroup,
 };
 
 use crate::{
@@ -134,6 +134,28 @@ impl HubService {
         Ok(self.store.list_prompts(conversation_id, limit)?)
     }
 
+    /// Builds an atomic, bounded Prompt dossier for one collaboration group.
+    ///
+    /// Project paths, files, Run journals, and tool/provider context are never
+    /// included. Group roles remain descriptive provenance only.
+    ///
+    /// # Errors
+    ///
+    /// Returns validation or structured storage errors.
+    pub fn group_context(
+        &self,
+        group_id: &str,
+        max_content_bytes: usize,
+    ) -> Result<GroupContextSlice, HubError> {
+        required_id(group_id, HubField::GroupId)?;
+        context_bytes(max_content_bytes)?;
+        let policy = GroupContextPolicy {
+            max_total_content_bytes: max_content_bytes,
+            ..GroupContextPolicy::default()
+        };
+        Ok(self.store.load_group_context(group_id, &policy)?)
+    }
+
     /// Creates a collaboration group.
     ///
     /// # Errors
@@ -202,5 +224,17 @@ impl HubService {
 }
 
 fn validate_idempotency_key(value: &str) -> Result<(), HubError> {
-    required(value, HubField::IdempotencyKey, MAX_IDEMPOTENCY_KEY_BYTES)
+    required(value, HubField::IdempotencyKey, MAX_IDEMPOTENCY_KEY_BYTES)?;
+    Ok(())
+}
+
+fn context_bytes(value: usize) -> Result<(), HubError> {
+    if (1..=MAX_GROUP_CONTEXT_CONTENT_BYTES).contains(&value) {
+        return Ok(());
+    }
+    Err(HubError::OutOfRange {
+        field: HubField::GroupContextBytes,
+        min: 1,
+        max: MAX_GROUP_CONTEXT_CONTENT_BYTES,
+    })
 }

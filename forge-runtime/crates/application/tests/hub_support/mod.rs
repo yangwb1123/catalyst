@@ -1,11 +1,13 @@
+#![allow(dead_code)]
+
 use std::{
     path::Path,
     sync::{Arc, Mutex, MutexGuard},
 };
 
 use forge_runtime_domain::{
-    Conversation, ConversationScope, GroupProjectMember, HubEntity, HubSnapshot, HubStore,
-    HubStoreError, Project, PromptRecord, SessionGroup,
+    Conversation, ConversationScope, GroupContextPolicy, GroupContextSlice, GroupProjectMember,
+    HubEntity, HubSnapshot, HubStore, HubStoreError, Project, PromptRecord, SessionGroup,
 };
 
 mod atomic_memory;
@@ -44,6 +46,14 @@ impl MemoryHubStore {
         self.state.lock().map_err(|_| HubStoreError::Unavailable {
             message: "memory store lock poisoned".into(),
         })
+    }
+
+    pub fn seed_prompt(&self, prompt: PromptRecord) {
+        self.state
+            .lock()
+            .expect("memory store fixture lock")
+            .prompts
+            .push(prompt);
     }
 }
 
@@ -149,6 +159,9 @@ impl HubStore for MemoryHubStore {
         limit: usize,
     ) -> Result<Vec<PromptRecord>, HubStoreError> {
         let state = self.state()?;
+        if let Some(id) = conversation_id {
+            require_conversation(&state, id)?;
+        }
         let mut prompts: Vec<_> = state
             .prompts
             .iter()
@@ -163,6 +176,36 @@ impl HubStore for MemoryHubStore {
         });
         prompts.truncate(limit);
         Ok(prompts)
+    }
+
+    fn list_prompts_before(
+        &self,
+        conversation_id: &str,
+        boundary_prompt_id: &str,
+        limit: usize,
+    ) -> Result<Vec<PromptRecord>, HubStoreError> {
+        let state = self.state()?;
+        require_conversation(&state, conversation_id)?;
+        let boundary = history_boundary_index(&state, conversation_id, boundary_prompt_id)?;
+        require_user_boundary(&state.prompts[boundary])?;
+        let prompts = state.prompts[..boundary]
+            .iter()
+            .rev()
+            .filter(|item| item.conversation_id == conversation_id)
+            .take(limit)
+            .cloned()
+            .collect();
+        Ok(prompts)
+    }
+
+    fn load_group_context(
+        &self,
+        _group_id: &str,
+        _policy: &GroupContextPolicy,
+    ) -> Result<GroupContextSlice, HubStoreError> {
+        Err(HubStoreError::Unavailable {
+            message: "the in-memory Hub fixture does not implement Group context".into(),
+        })
     }
 
     fn create_group(
@@ -416,6 +459,31 @@ fn touch_conversation(state: &mut MemoryState, id: &str, updated_at_ms: u64) {
     if let Some(conversation) = state.conversations.iter_mut().find(|item| item.id == id) {
         conversation.updated_at_ms = updated_at_ms;
     }
+}
+
+fn history_boundary_index(
+    state: &MemoryState,
+    conversation_id: &str,
+    prompt_id: &str,
+) -> Result<usize, HubStoreError> {
+    state
+        .prompts
+        .iter()
+        .position(|item| item.id == prompt_id && item.conversation_id == conversation_id)
+        .ok_or_else(|| HubStoreError::NotFound {
+            entity: HubEntity::Prompt,
+            id: prompt_id.into(),
+        })
+}
+
+fn require_user_boundary(boundary: &PromptRecord) -> Result<(), HubStoreError> {
+    if boundary.role != "user" {
+        return Err(HubStoreError::Conflict {
+            entity: HubEntity::Prompt,
+            message: "history boundary must be a user prompt".into(),
+        });
+    }
+    Ok(())
 }
 
 fn project_name(path: &Path) -> String {

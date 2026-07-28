@@ -8,6 +8,10 @@ pub enum Message {
     User {
         text: String,
     },
+    ProviderContext {
+        provider: String,
+        items: Vec<serde_json::Value>,
+    },
     Assistant {
         text: String,
         tool_calls: Vec<ToolCall>,

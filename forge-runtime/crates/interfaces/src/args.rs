@@ -1,5 +1,10 @@
 use std::{collections::VecDeque, env, path::PathBuf};
 
+#[path = "group_args.rs"]
+mod group_args;
+#[path = "run_args.rs"]
+mod run_args;
+
 #[derive(Debug, Eq, PartialEq)]
 pub struct Args {
     pub state_dir: Option<PathBuf>,
@@ -16,6 +21,7 @@ pub enum Command {
     Session(SessionCommand),
     Prompt(PromptCommand),
     Group(GroupCommand),
+    Run(RunCommand),
     Demo(DemoArgs),
     Help,
 }
@@ -48,7 +54,32 @@ pub enum GroupCommand {
         project: PathBuf,
         role: String,
     },
+    Context {
+        group_id: String,
+        include_content: bool,
+        max_bytes: usize,
+    },
     List,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub enum RunCommand {
+    Start {
+        conversation_id: String,
+        prompt_id: String,
+        read_path: String,
+        allowed_read_paths: Vec<String>,
+        live: bool,
+        model: Option<String>,
+        max_output_tokens: u32,
+    },
+    List {
+        conversation_id: Option<String>,
+        limit: usize,
+    },
+    Show {
+        run_id: String,
+    },
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -78,32 +109,7 @@ fn parse_tokens(tokens: impl IntoIterator<Item = String>) -> Result<Args, String
     let mut tokens: VecDeque<_> = tokens.into_iter().collect();
     let mut options = parse_global_options(&mut tokens)?;
     let command = parse_command(&mut tokens, &mut options)?;
-    if options.project.is_some() && options.group.is_some() {
-        return Err(format!(
-            "-C/--project and --group are mutually exclusive\n\n{}",
-            usage()
-        ));
-    }
-    if (options.project.is_some() || options.group.is_some())
-        && matches!(command, Command::Prompt(_) | Command::Group(_))
-    {
-        return Err(format!(
-            "project/group selectors are not valid for prompt or group management commands\n\n{}",
-            usage()
-        ));
-    }
-    if options.group.is_some() && matches!(command, Command::Demo(_)) {
-        return Err(format!("--group is not valid for demo\n\n{}", usage()));
-    }
-    if options.read_path.is_some() && !matches!(command, Command::Demo(_)) {
-        return Err(format!("--read is only valid for demo\n\n{}", usage()));
-    }
-    if options.idempotency_key.is_some() && !accepts_idempotency_key(&command) {
-        return Err(format!(
-            "--idempotency-key is only valid for mutating Hub commands\n\n{}",
-            usage()
-        ));
-    }
+    validate_options(&options, &command)?;
     Ok(Args {
         state_dir: options.state_dir,
         project: options.project,
@@ -112,6 +118,75 @@ fn parse_tokens(tokens: impl IntoIterator<Item = String>) -> Result<Args, String
         json: options.json,
         command,
     })
+}
+
+fn validate_options(options: &GlobalOptions, command: &Command) -> Result<(), String> {
+    if options.project.is_some() && options.group.is_some() {
+        return Err(format!(
+            "-C/--project and --group are mutually exclusive\n\n{}",
+            usage()
+        ));
+    }
+    if (options.project.is_some() || options.group.is_some())
+        && matches!(
+            command,
+            Command::Prompt(_)
+                | Command::Group(_)
+                | Command::Run(RunCommand::List { .. } | RunCommand::Show { .. })
+        )
+    {
+        return Err(format!(
+            "project/group selectors are not valid for this management command\n\n{}",
+            usage()
+        ));
+    }
+    if options.group.is_some()
+        && matches!(
+            command,
+            Command::Demo(_) | Command::Run(RunCommand::Start { .. })
+        )
+    {
+        return Err(format!(
+            "--group is not valid for local execution\n\n{}",
+            usage()
+        ));
+    }
+    if matches!(command, Command::Run(RunCommand::Start { .. })) && options.project.is_none() {
+        return Err(format!(
+            "run start requires -C/--project PATH\n\n{}",
+            usage()
+        ));
+    }
+    validate_execution_options(options, command)
+}
+
+fn validate_execution_options(options: &GlobalOptions, command: &Command) -> Result<(), String> {
+    if matches!(command, Command::Run(RunCommand::Start { live: true, .. }))
+        && options.idempotency_key.is_none()
+    {
+        return Err(format!(
+            "--live requires an explicit --idempotency-key\n\n{}",
+            usage()
+        ));
+    }
+    if options.read_path.is_some()
+        && !matches!(
+            command,
+            Command::Demo(_) | Command::Run(RunCommand::Start { .. })
+        )
+    {
+        return Err(format!(
+            "--read is only valid for demo or run start\n\n{}",
+            usage()
+        ));
+    }
+    if options.idempotency_key.is_some() && !accepts_idempotency_key(command) {
+        return Err(format!(
+            "--idempotency-key is only valid for mutating commands\n\n{}",
+            usage()
+        ));
+    }
+    Ok(())
 }
 
 fn parse_global_options(tokens: &mut VecDeque<String>) -> Result<GlobalOptions, String> {
@@ -188,7 +263,10 @@ fn parse_command(
 }
 
 fn is_command(value: &str) -> bool {
-    matches!(value, "session" | "prompt" | "group" | "demo" | "help")
+    matches!(
+        value,
+        "session" | "prompt" | "group" | "run" | "demo" | "help"
+    )
 }
 
 fn accepts_idempotency_key(command: &Command) -> bool {
@@ -197,6 +275,7 @@ fn accepts_idempotency_key(command: &Command) -> bool {
         Command::Session(SessionCommand::New { .. })
             | Command::Prompt(PromptCommand::Add { .. })
             | Command::Group(GroupCommand::Create { .. } | GroupCommand::Add { .. })
+            | Command::Run(RunCommand::Start { .. })
     )
 }
 
@@ -208,7 +287,8 @@ fn parse_named_command(
     match command {
         "session" => parse_session(tokens),
         "prompt" => parse_prompt(tokens),
-        "group" => parse_group(tokens),
+        "group" => group_args::parse(tokens),
+        "run" => run_args::parse(tokens, options),
         "demo" => parse_demo(tokens, options),
         "help" => {
             require_empty(tokens)?;
@@ -216,6 +296,25 @@ fn parse_named_command(
         }
         _ => unreachable!("command was checked before dispatch"),
     }
+}
+
+fn parse_optional_id_and_limit(
+    tokens: &mut VecDeque<String>,
+) -> Result<(Option<String>, usize), String> {
+    let id = match tokens.front().map(String::as_str) {
+        Some("--limit") | None => None,
+        Some(_) => tokens.pop_front(),
+    };
+    let mut limit = 50;
+    if tokens.front().is_some_and(|value| value == "--limit") {
+        tokens.pop_front();
+        let value = next_value(tokens, "--limit")?;
+        limit = value
+            .parse()
+            .map_err(|_| format!("invalid --limit '{value}'"))?;
+    }
+    require_empty(tokens)?;
+    Ok((id, limit))
 }
 
 fn parse_session(tokens: &mut VecDeque<String>) -> Result<Command, String> {
@@ -263,53 +362,10 @@ fn parse_prompt(tokens: &mut VecDeque<String>) -> Result<Command, String> {
 }
 
 fn parse_prompt_list(tokens: &mut VecDeque<String>) -> Result<Command, String> {
-    let conversation_id = match tokens.front().map(String::as_str) {
-        Some("--limit") | None => None,
-        Some(_) => tokens.pop_front(),
-    };
-    let mut limit = 50;
-    if tokens.front().is_some_and(|value| value == "--limit") {
-        tokens.pop_front();
-        let value = next_value(tokens, "--limit")?;
-        limit = value
-            .parse()
-            .map_err(|_| format!("invalid --limit '{value}'"))?;
-    }
-    require_empty(tokens)?;
+    let (conversation_id, limit) = parse_optional_id_and_limit(tokens)?;
     Ok(Command::Prompt(PromptCommand::List {
         conversation_id,
         limit,
-    }))
-}
-
-fn parse_group(tokens: &mut VecDeque<String>) -> Result<Command, String> {
-    match tokens.pop_front().as_deref() {
-        Some("create") => Ok(Command::Group(GroupCommand::Create {
-            name: required_text(tokens, "group name")?,
-        })),
-        Some("add") => parse_group_add(tokens),
-        Some("list") => {
-            require_empty(tokens)?;
-            Ok(Command::Group(GroupCommand::List))
-        }
-        Some(value) => Err(format!("unknown group command '{value}'\n\n{}", usage())),
-        None => Err(format!("group command is required\n\n{}", usage())),
-    }
-}
-
-fn parse_group_add(tokens: &mut VecDeque<String>) -> Result<Command, String> {
-    let group_id = next_value(tokens, "group add")?;
-    let project = PathBuf::from(next_value(tokens, "group add project")?);
-    let mut role = "member".to_owned();
-    if tokens.front().is_some_and(|value| value == "--role") {
-        tokens.pop_front();
-        role = next_value(tokens, "--role")?;
-    }
-    require_empty(tokens)?;
-    Ok(Command::Group(GroupCommand::Add {
-        group_id,
-        project,
-        role,
     }))
 }
 
@@ -355,20 +411,7 @@ fn require_empty(tokens: &VecDeque<String>) -> Result<(), String> {
 }
 
 pub fn usage() -> &'static str {
-    "usage:
-  forge-runtime [--state-dir PATH] [--json] [PATH|-C PATH|--group GROUP_ID]
-  forge-runtime [OPTIONS] [PATH|-C PATH|--group GROUP_ID] session list
-  forge-runtime [OPTIONS] [PATH|-C PATH|--group GROUP_ID] session new [--title TITLE]
-  forge-runtime [OPTIONS] prompt add SESSION_ID PROMPT|-
-  forge-runtime [OPTIONS] prompt list [SESSION_ID] [--limit N]
-  forge-runtime [OPTIONS] group create NAME
-  forge-runtime [OPTIONS] group add GROUP_ID PATH [--role ROLE]
-  forge-runtime [OPTIONS] group list
-  forge-runtime [OPTIONS] [PATH|-C PATH] demo [--read FILE] PROMPT
-
-  Mutations accept --idempotency-key KEY before the command.
-  For prompt add, '-' reads UTF-8 prompt content from standard input.
-  A PATH named session/prompt/group/demo/help must use ./PATH or -C PATH."
+    crate::cli_usage::TEXT
 }
 
 #[cfg(test)]

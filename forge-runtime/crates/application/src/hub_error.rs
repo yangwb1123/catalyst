@@ -12,6 +12,7 @@ pub enum HubField {
     Prompt,
     IdempotencyKey,
     PromptLimit,
+    GroupContextBytes,
 }
 
 #[derive(Debug, Error)]
@@ -20,7 +21,7 @@ pub enum HubError {
     Empty { field: HubField },
     #[error("{field:?} exceeds the {max_bytes}-byte limit")]
     TooLong { field: HubField, max_bytes: usize },
-    #[error("PromptLimit must be between {min} and {max}")]
+    #[error("{field:?} must be between {min} and {max}")]
     OutOfRange {
         field: HubField,
         min: usize,

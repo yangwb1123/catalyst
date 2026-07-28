@@ -8,11 +8,12 @@ publish.workspace = true
 [dependencies]
 forge-runtime-domain.workspace = true
 futures-util.workspace = true
+serde_json.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
 forge-runtime-infrastructure.workspace = true
-serde_json.workspace = true
+rusqlite.workspace = true
 tempfile = "3"
 tokio.workspace = true
 

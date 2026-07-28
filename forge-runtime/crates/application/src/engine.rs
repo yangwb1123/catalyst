@@ -1,12 +1,21 @@
 use std::sync::Arc;
 
 use forge_runtime_domain::{
-    Cancellation, EventSink, LimitKind, Message, ModelFinishReason, ModelProvider, ModelRequest,
-    RunOutcome, RunRequest, RunResult, RuntimeEventKind, ToolCall, ToolContext, ToolOutput, Usage,
+    Cancellation, EventSink, LimitKind, Message, ModelProvider, ModelRequest, RunOutcome,
+    RunRequest, RunResult, RuntimeEventKind, ToolCall, ToolContext, ToolOutput,
     WorkspaceReadCapability, WorkspaceReadFactory,
 };
 
-use crate::{RuntimeError, ToolCatalog, emitter::EventEmitter, model_turn::collect_model_turn};
+use crate::{
+    ConversationHistory, RuntimeError, ToolCatalog,
+    emitter::EventEmitter,
+    model_turn::{ModelBudget, collect_model_turn},
+    output_limit::truncate_output,
+    run_state::{
+        AssistantAction, RunState, classify_assistant_turn, finish_without_tools, limit_outcome,
+        pre_turn_outcome,
+    },
+};
 
 pub struct AgentRuntime {
     provider: Arc<dyn ModelProvider>,
@@ -41,13 +50,35 @@ impl AgentRuntime {
         cancellation: Cancellation,
         sink: &mut dyn EventSink,
     ) -> Result<RunResult, RuntimeError> {
+        self.run_with_history(request, ConversationHistory::default(), cancellation, sink)
+            .await
+    }
+
+    /// Runs one prompt with a validated, bounded persisted Conversation history.
+    ///
+    /// # Errors
+    ///
+    /// Returns the same structured failures as `run`.
+    pub async fn run_with_history(
+        &self,
+        request: RunRequest,
+        history: ConversationHistory,
+        cancellation: Cancellation,
+        sink: &mut dyn EventSink,
+    ) -> Result<RunResult, RuntimeError> {
         let mut emitter =
             EventEmitter::new(sink, request.session_id.clone(), request.run_id.clone());
         Self::emit_run_start(&request, &mut emitter)?;
         let result = match self.workspace_factory.open(&request.workspace) {
             Ok(workspace) => {
-                self.drive(&request, &workspace, &cancellation, &mut emitter)
-                    .await
+                self.drive(
+                    &request,
+                    history.into_messages(),
+                    &workspace,
+                    &cancellation,
+                    &mut emitter,
+                )
+                .await
             }
             Err(error) => Err(RuntimeError::Workspace(error.to_string())),
         };
@@ -71,11 +102,12 @@ impl AgentRuntime {
     async fn drive(
         &self,
         request: &RunRequest,
+        history: Vec<Message>,
         workspace: &WorkspaceReadCapability,
         cancellation: &Cancellation,
         emitter: &mut EventEmitter<'_>,
     ) -> Result<RunResult, RuntimeError> {
-        let mut state = RunState::new(request.prompt.clone());
+        let mut state = RunState::new(history, request.prompt.clone());
         loop {
             if let Some(outcome) = pre_turn_outcome(request, cancellation, &state) {
                 return Ok(state.result(outcome));
@@ -148,9 +180,21 @@ impl AgentRuntime {
             system_prompt: request.system_prompt.clone(),
             messages: state.messages.clone(),
             tools: self.tools.specs(),
+            max_output_tokens: request.limits.max_output_tokens_per_turn,
             cancellation: cancellation.clone(),
         };
-        collect_model_turn(self.provider.as_ref(), model_request, cancellation, emitter).await
+        let budget = ModelBudget {
+            remaining_bytes: state.remaining_model_bytes(request),
+            remaining_events: state.remaining_model_events(request),
+        };
+        collect_model_turn(
+            self.provider.as_ref(),
+            model_request,
+            cancellation,
+            budget,
+            emitter,
+        )
+        .await
     }
 
     fn commit_assistant(
@@ -160,10 +204,15 @@ impl AgentRuntime {
     ) -> Result<AssistantAction, RuntimeError> {
         state.turns = state.turns.saturating_add(1);
         state.usage.add(turn.usage);
+        state.charge_model_output(turn.output_bytes, turn.output_events);
         let calls = turn.tool_calls;
         let action = classify_assistant_turn(turn.finish_reason, &calls)?;
         if matches!(action, AssistantAction::Limit(_)) {
             return Ok(action);
+        }
+        for message in turn.provider_context {
+            state.messages.push(message.clone());
+            emitter.emit(RuntimeEventKind::MessageCommitted { message })?;
         }
         let message = Message::Assistant {
             text: turn.text,
@@ -277,104 +326,6 @@ impl AgentRuntime {
     }
 }
 
-fn pre_turn_outcome(
-    request: &RunRequest,
-    cancellation: &Cancellation,
-    state: &RunState,
-) -> Option<RunOutcome> {
-    if cancellation.is_cancelled() {
-        Some(RunOutcome::Cancelled)
-    } else if state.turns >= request.limits.max_turns {
-        Some(limit_outcome(LimitKind::Turns))
-    } else {
-        None
-    }
-}
-
-struct RunState {
-    messages: Vec<Message>,
-    usage: Usage,
-    turns: u32,
-    tool_calls: u32,
-}
-
-enum AssistantAction {
-    Execute(Vec<ToolCall>),
-    Reject(Vec<ToolCall>, &'static str),
-    Finish,
-    Limit(LimitKind),
-}
-
-impl AssistantAction {
-    fn tool_calls(&self) -> &[ToolCall] {
-        match self {
-            Self::Execute(calls) | Self::Reject(calls, _) => calls,
-            Self::Finish | Self::Limit(_) => &[],
-        }
-    }
-}
-
-impl RunState {
-    fn new(prompt: String) -> Self {
-        Self {
-            messages: vec![Message::User { text: prompt }],
-            usage: Usage::default(),
-            turns: 0,
-            tool_calls: 0,
-        }
-    }
-
-    fn result(self, outcome: RunOutcome) -> RunResult {
-        RunResult {
-            outcome,
-            messages: self.messages,
-            usage: self.usage,
-        }
-    }
-
-    fn charge_tool_calls(&mut self, count: usize, max: u32) -> bool {
-        let count = u32::try_from(count).unwrap_or(u32::MAX);
-        self.tool_calls = self.tool_calls.saturating_add(count);
-        self.tool_calls > max
-    }
-}
-
-fn finish_without_tools(state: RunState) -> Result<RunResult, RuntimeError> {
-    let Some(Message::Assistant { text, .. }) = state.messages.last() else {
-        return Err(RuntimeError::Protocol(
-            "run ended without an assistant message".into(),
-        ));
-    };
-    if text.trim().is_empty() {
-        return Err(RuntimeError::Protocol(
-            "assistant returned neither text nor tool calls".into(),
-        ));
-    }
-    let answer = text.clone();
-    Ok(state.result(RunOutcome::Completed { answer }))
-}
-
-fn classify_assistant_turn(
-    finish_reason: ModelFinishReason,
-    calls: &[ToolCall],
-) -> Result<AssistantAction, RuntimeError> {
-    match (finish_reason, calls.is_empty()) {
-        (ModelFinishReason::Completed, true) => Ok(AssistantAction::Finish),
-        (ModelFinishReason::ToolUse, false) => Ok(AssistantAction::Execute(calls.to_vec())),
-        (ModelFinishReason::Length, true) => Ok(AssistantAction::Limit(LimitKind::ModelOutput)),
-        (ModelFinishReason::Length, false) => Ok(AssistantAction::Reject(
-            calls.to_vec(),
-            "truncated_tool_call",
-        )),
-        (ModelFinishReason::Completed, false) => Err(RuntimeError::Protocol(
-            "provider marked a turn completed while emitting tool calls".into(),
-        )),
-        (ModelFinishReason::ToolUse, true) => Err(RuntimeError::Protocol(
-            "provider marked a turn as tool use without a tool call".into(),
-        )),
-    }
-}
-
 fn reject_calls(
     calls: &[ToolCall],
     code: &str,
@@ -460,39 +411,4 @@ fn commit_tool_message(
     };
     state.messages.push(message.clone());
     emitter.emit(RuntimeEventKind::MessageCommitted { message })
-}
-
-fn truncate_output(mut output: ToolOutput, max_bytes: usize) -> ToolOutput {
-    if output.content.len() <= max_bytes {
-        return output;
-    }
-    let mut boundary = max_bytes.min(output.content.len());
-    while !output.content.is_char_boundary(boundary) {
-        boundary = boundary.saturating_sub(1);
-    }
-    output.content.truncate(boundary);
-    output.truncated = true;
-    output
-}
-
-fn limit_outcome(kind: LimitKind) -> RunOutcome {
-    RunOutcome::LimitExceeded { kind }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::truncate_output;
-
-    #[test]
-    fn truncation_sets_the_flag_and_preserves_a_utf8_boundary() {
-        let output = truncate_output(
-            forge_runtime_domain::ToolOutput {
-                content: "ééé".into(),
-                truncated: false,
-            },
-            3,
-        );
-        assert_eq!(output.content, "é");
-        assert!(output.truncated);
-    }
 }

@@ -3,16 +3,18 @@ use std::{
     io,
     path::{Path, PathBuf},
     sync::Arc,
-    time::{SystemTime, UNIX_EPOCH},
 };
 
 use forge_runtime_application::{AgentRuntime, ToolCatalog};
-use forge_runtime_domain::{Cancellation, Capability, RunLimits, RunOutcome, RunRequest};
 use forge_runtime_infrastructure::{
     CapStdWorkspaceFactory, JsonlEventSink, ReadFileTool, ReadThenAnswerProvider,
 };
 
-use crate::{args::DemoArgs, state_path::canonical_project};
+use crate::{
+    args::DemoArgs,
+    runtime_domain::{Cancellation, Capability, RunLimits, RunOutcome, RunRequest},
+    state_path::{canonical_project, unique_id},
+};
 
 pub async fn run(args: &DemoArgs, project: Option<&Path>) -> Result<RunOutcome, Box<dyn Error>> {
     let workspace = canonical_project(project.unwrap_or_else(|| Path::new(".")))?;
@@ -31,8 +33,8 @@ pub async fn run(args: &DemoArgs, project: Option<&Path>) -> Result<RunOutcome, 
 
 fn request_from(args: &DemoArgs, workspace: PathBuf) -> RunRequest {
     RunRequest {
-        session_id: new_id("session"),
-        run_id: new_id("run"),
+        session_id: unique_id("session"),
+        run_id: unique_id("run"),
         prompt: args.prompt.clone(),
         system_prompt: "Use the available read-only tools to answer the user.".into(),
         workspace,
@@ -41,13 +43,9 @@ fn request_from(args: &DemoArgs, workspace: PathBuf) -> RunRequest {
             max_turns: 4,
             max_tool_calls: 4,
             max_tool_output_bytes: 64 * 1024,
+            max_model_output_bytes: 64 * 1024,
+            max_model_events: 4_096,
+            max_output_tokens_per_turn: 4_096,
         },
     }
-}
-
-fn new_id(prefix: &str) -> String {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |duration| duration.as_nanos());
-    format!("{prefix}-{}-{nanos}", std::process::id())
 }

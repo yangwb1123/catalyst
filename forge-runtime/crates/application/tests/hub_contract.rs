@@ -3,8 +3,9 @@ mod hub_support;
 use std::{path::Path, sync::Arc};
 
 use forge_runtime_application::{
-    HubError, HubField, HubService, MAX_GROUP_NAME_BYTES, MAX_IDEMPOTENCY_KEY_BYTES,
-    MAX_PROMPT_BYTES, MAX_PROMPT_LIST_LIMIT, MAX_ROLE_BYTES, MAX_TITLE_BYTES,
+    HubError, HubField, HubService, MAX_GROUP_CONTEXT_CONTENT_BYTES, MAX_GROUP_NAME_BYTES,
+    MAX_IDEMPOTENCY_KEY_BYTES, MAX_PROMPT_BYTES, MAX_PROMPT_LIST_LIMIT, MAX_ROLE_BYTES,
+    MAX_TITLE_BYTES,
 };
 use forge_runtime_domain::{ConversationScope, HubEntity, HubStore, HubStoreError};
 use hub_support::MemoryHubStore;
@@ -218,6 +219,32 @@ fn prompt_query_limit_and_optional_conversation_id_are_validated() {
         service.list_prompts(Some(" "), 1),
         Err(HubError::Empty {
             field: HubField::ConversationId
+        })
+    ));
+}
+
+#[test]
+fn group_context_scope_and_byte_budget_are_validated_before_storage() {
+    let service = service();
+    assert!(matches!(
+        service.group_context(" ", 1),
+        Err(HubError::Empty {
+            field: HubField::GroupId
+        })
+    ));
+    assert!(matches!(
+        service.group_context("group", 0),
+        Err(HubError::OutOfRange {
+            field: HubField::GroupContextBytes,
+            min: 1,
+            max: MAX_GROUP_CONTEXT_CONTENT_BYTES
+        })
+    ));
+    assert!(matches!(
+        service.group_context("group", MAX_GROUP_CONTEXT_CONTENT_BYTES + 1),
+        Err(HubError::OutOfRange {
+            field: HubField::GroupContextBytes,
+            ..
         })
     ));
 }

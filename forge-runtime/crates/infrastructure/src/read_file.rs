@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{collections::BTreeSet, path::PathBuf, sync::Arc};
 
 use forge_runtime_domain::{AgentTool, Capability, ToolContext, ToolError, ToolFuture, ToolSpec};
 use schemars::{JsonSchema, schema_for};
@@ -8,38 +8,83 @@ use serde_json::Value;
 #[derive(Clone, Copy, Debug, Default)]
 pub struct ReadFileTool;
 
+#[derive(Clone, Debug)]
+pub struct AllowlistedReadFileTool {
+    allowed_paths: Arc<BTreeSet<String>>,
+}
+
 #[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct ReadFileInput {
     path: String,
 }
 
+impl ReadFileTool {
+    #[must_use]
+    pub fn restricted(allowed_paths: impl IntoIterator<Item = String>) -> AllowlistedReadFileTool {
+        AllowlistedReadFileTool {
+            allowed_paths: Arc::new(allowed_paths.into_iter().collect()),
+        }
+    }
+}
+
 impl AgentTool for ReadFileTool {
     fn spec(&self) -> ToolSpec {
-        let schema = serde_json::to_value(schema_for!(ReadFileInput))
-            .expect("generated read-file schema is serializable");
-        ToolSpec {
-            name: "read_file".into(),
-            description: "Read one UTF-8 text file inside the workspace.".into(),
-            input_schema: schema,
-            capability: Capability::WorkspaceRead,
-        }
+        read_file_spec("Read one UTF-8 text file inside the workspace.")
     }
 
     fn execute(&self, arguments: Value, context: ToolContext) -> ToolFuture<'_> {
-        Box::pin(async move {
-            let input = parse_input(arguments)?;
-            if context.cancellation.is_cancelled() {
-                return Err(ToolError::new("cancelled", "run was cancelled"));
-            }
-            let relative = PathBuf::from(input.path);
-            let workspace = context.workspace;
-            let max_bytes = context.max_output_bytes;
-            tokio::task::spawn_blocking(move || workspace.read_file(&relative, max_bytes))
-                .await
-                .map_err(|error| ToolError::new("read_task_failed", error.to_string()))?
-        })
+        execute_read(arguments, context, None)
     }
+}
+
+impl AgentTool for AllowlistedReadFileTool {
+    fn spec(&self) -> ToolSpec {
+        read_file_spec("Read one explicitly allowed UTF-8 text file inside the workspace.")
+    }
+
+    fn execute(&self, arguments: Value, context: ToolContext) -> ToolFuture<'_> {
+        execute_read(arguments, context, Some(self.allowed_paths.clone()))
+    }
+}
+
+fn read_file_spec(description: &str) -> ToolSpec {
+    let schema = serde_json::to_value(schema_for!(ReadFileInput))
+        .expect("generated read-file schema is serializable");
+    ToolSpec {
+        name: "read_file".into(),
+        description: description.into(),
+        input_schema: schema,
+        capability: Capability::WorkspaceRead,
+    }
+}
+
+fn execute_read(
+    arguments: Value,
+    context: ToolContext,
+    allowed_paths: Option<Arc<BTreeSet<String>>>,
+) -> ToolFuture<'static> {
+    Box::pin(async move {
+        let input = parse_input(arguments)?;
+        if allowed_paths
+            .as_ref()
+            .is_some_and(|paths| !paths.contains(&input.path))
+        {
+            return Err(ToolError::new(
+                "path_not_allowlisted",
+                "path was not explicitly allowed for this run",
+            ));
+        }
+        if context.cancellation.is_cancelled() {
+            return Err(ToolError::new("cancelled", "run was cancelled"));
+        }
+        let relative = PathBuf::from(input.path);
+        let workspace = context.workspace;
+        let max_bytes = context.max_output_bytes;
+        tokio::task::spawn_blocking(move || workspace.read_file(&relative, max_bytes))
+            .await
+            .map_err(|error| ToolError::new("read_task_failed", error.to_string()))?
+    })
 }
 
 fn parse_input(arguments: Value) -> Result<ReadFileInput, ToolError> {
@@ -77,6 +122,40 @@ mod tests {
             .await
             .expect("read succeeds");
         assert_eq!(output.content, "hello");
+    }
+
+    #[tokio::test]
+    async fn restricted_tool_reads_only_the_exact_allowlisted_path() {
+        let root = TempDir::new().expect("temporary workspace");
+        fs::write(root.path().join("note.txt"), "hello").expect("fixture file");
+        let tool = ReadFileTool::restricted(["note.txt".to_owned()]);
+
+        let output = tool
+            .execute(json!({ "path": "note.txt" }), context(root.path()))
+            .await
+            .expect("allowlisted read succeeds");
+        let alias_error = tool
+            .execute(json!({ "path": "./note.txt" }), context(root.path()))
+            .await
+            .expect_err("a non-exact alias is denied");
+
+        assert_eq!(output.content, "hello");
+        assert_eq!(alias_error.code, "path_not_allowlisted");
+    }
+
+    #[tokio::test]
+    async fn restricted_tool_denies_unlisted_sensitive_paths() {
+        let root = TempDir::new().expect("temporary workspace");
+        fs::write(root.path().join(".env"), "SECRET=fixture").expect("sensitive fixture");
+        let tool = ReadFileTool::restricted(["README.md".to_owned()]);
+
+        for path in [".env", "proc/self/environ"] {
+            let error = tool
+                .execute(json!({ "path": path }), context(root.path()))
+                .await
+                .expect_err("an unlisted path is denied before workspace access");
+            assert_eq!(error.code, "path_not_allowlisted");
+        }
     }
 
     #[tokio::test]

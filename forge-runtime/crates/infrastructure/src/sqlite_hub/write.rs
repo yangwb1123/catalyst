@@ -355,7 +355,7 @@ fn insert_conversation(
     Ok(())
 }
 
-fn insert_prompt(
+pub(super) fn insert_prompt(
     transaction: &Transaction<'_>,
     prompt: &PromptRecord,
 ) -> Result<(), HubStoreError> {

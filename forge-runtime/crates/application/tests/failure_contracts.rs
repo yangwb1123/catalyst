@@ -161,6 +161,35 @@ async fn midstream_sink_failure_aborts_without_writing_more_events() {
     ));
 }
 
+#[tokio::test]
+async fn tool_start_sink_failure_prevents_the_tool_effect() {
+    let root = TempDir::new().expect("temporary workspace");
+    let probe = ProbeTool::succeeds("must_not_run", "unexpected");
+    let runtime = runtime(
+        vec![tool_turn(
+            vec![tool_call("call-1", "must_not_run", json!({}))],
+            ModelFinishReason::ToolUse,
+        )],
+        vec![probe.clone()],
+    );
+    let mut sink = FailOnToolStartSink::default();
+
+    let error = runtime
+        .run(request(&root), Cancellation::default(), &mut sink)
+        .await
+        .expect_err("tool-start persistence failure must stop execution");
+
+    assert_eq!(error.code(), "event_sink_error");
+    assert_eq!(probe.invocation_count(), 0);
+    assert_eq!(
+        sink.events
+            .iter()
+            .filter(|event| matches!(event.kind, RuntimeEventKind::ToolStarted { .. }))
+            .count(),
+        0
+    );
+}
+
 fn has_tool_error(messages: &[Message], code: &str) -> bool {
     messages.iter().any(|message| {
         matches!(
@@ -213,6 +242,11 @@ struct FailAtSink {
     events: Vec<RuntimeEvent>,
 }
 
+#[derive(Default)]
+struct FailOnToolStartSink {
+    events: Vec<RuntimeEvent>,
+}
+
 impl FailAtSink {
     fn new(fail_at: usize) -> Self {
         Self {
@@ -240,6 +274,18 @@ impl EventSink for FailOnRecordedTerminalSink {
         if matches!(event.kind, RuntimeEventKind::RunFinished { .. }) {
             return Err(EventSinkError::new("terminal write failed after append"));
         }
+        Ok(())
+    }
+}
+
+impl EventSink for FailOnToolStartSink {
+    fn emit(&mut self, event: &RuntimeEvent) -> Result<(), EventSinkError> {
+        if matches!(event.kind, RuntimeEventKind::ToolStarted { .. }) {
+            return Err(EventSinkError::new(
+                "deterministic tool-start persistence failure",
+            ));
+        }
+        self.events.push(event.clone());
         Ok(())
     }
 }
