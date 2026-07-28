@@ -73,6 +73,9 @@ forge-runtime [OPTIONS] prompt list [SESSION_ID] [--limit N]
 forge-runtime [OPTIONS] group create NAME
 forge-runtime [OPTIONS] group add GROUP_ID PATH [--role ROLE]
 forge-runtime [OPTIONS] group context GROUP_ID [--include-content] [--max-bytes N]
+forge-runtime [OPTIONS] group run prepare GROUP_ID [--include-content] [--max-bytes N]
+forge-runtime [OPTIONS] group run show RUN_ID [--include-content]
+forge-runtime [OPTIONS] group run list [GROUP_ID] [--limit N]
 forge-runtime [OPTIONS] group list
 forge-runtime [OPTIONS] [PATH|-C PATH] demo [--read FILE] PROMPT
 forge-runtime [OPTIONS] -C PATH run start SESSION_ID PROMPT_ID [RUN_OPTIONS]
@@ -88,11 +91,12 @@ commands (`session`, `prompt`, `group`, `demo`, `help`) use `./name` or
 of silently ignoring them.
 
 `--idempotency-key` is accepted by `session new`, `prompt add`, `group create`,
-`group add`, and `run start`. When omitted, local mutations generate a fresh
-key; `run start --live` instead requires the caller to supply one explicitly.
-After an uncertain commit/output result, a cross-process retry is safe only
-when the caller repeats the same command, payload, scope, and explicit key.
-`prompt add SESSION_ID -` reads the exact UTF-8 Prompt from standard input.
+`group add`, `group run prepare`, and `run start`. When omitted, local
+mutations generate a fresh key; `run start --live` instead requires the caller
+to supply one explicitly. After an uncertain commit/output result, a
+cross-process retry is safe only when the caller repeats the same command,
+payload, scope, and explicit key. `prompt add SESSION_ID -` reads the exact
+UTF-8 Prompt from standard input.
 
 No selector means Global. A Global snapshot lists all local Projects,
 Conversations, Groups, and links. A Project snapshot includes that Project,
@@ -160,10 +164,11 @@ separators, and bidi controls. This command performs no network request and
 does not read member workspaces; neither output mode should be treated as
 anonymized or safe to publish.
 
-The dossier is derived on demand and is not yet an Agent input. A future Run
-that consumes it must persist the exact bounded payload before the first
-provider call and replay that snapshot, rather than re-querying “latest”
-history. It must also require separate live/off-machine consent.
+The dossier is derived on demand and is not an Agent input. `group run
+prepare` now persists the exact bounded payload as a separate prepared/frozen
+Group Run and replays it without querying “latest” history. Preparation still
+does not make a provider call. A future execution transition must consume that
+verified snapshot and require separate live/off-machine consent.
 
 The JSON envelope is:
 
@@ -193,6 +198,8 @@ The JSON envelope is:
 | Group context members | 16 |
 | Group context content | 1–512 KiB (default 256 KiB) |
 | Group context Prompt excerpt | 16 KiB |
+| Prepared Group Run snapshot JSON | 8 MiB |
+| Prepared Group Run list | 1–100 rows |
 
 Required strings reject empty or whitespace-only values.
 
@@ -253,6 +260,15 @@ preserved, and `user_version=2` is committed only with the complete migration.
 The exact schema and append/recovery invariants are defined in
 [`run-journal-phase1.md`](run-journal-phase1.md).
 
+### Follow-on schema version 3 (delivered)
+
+Prepared Group Runs add `group_runs` through an atomic version-2-to-version-3
+migration. Each row embeds one immutable canonical `GroupContextSlice` BLOB,
+raw 32-byte inner and outer digests, fixed versions/status, the Group binding,
+idempotency key, and original creation time. Snapshot byte count is derived
+from the BLOB. Existing Hub and Project Run journal rows are preserved. The
+full transaction, replay, integrity, and privacy contract is ADR 0009.
+
 Every connection enables:
 
 ```text
@@ -277,6 +293,16 @@ For `group add`, Project lookup/registration and Group linking are one
 transaction. Missing Groups, payload conflicts, and write failures roll back
 both parts. Each Hub snapshot is assembled inside one deferred read
 transaction.
+
+`group run prepare` uses one immediate transaction and looks up its
+idempotency key before reading current Group history. A matching version,
+Group, and complete context policy returns the original frozen ID, creation
+time, hashes, and bytes; the retry's newly generated candidate ID and time are
+ignored. A changed Group or any changed policy field conflicts. For a new key,
+the Group, membership, Conversations, Prompts, canonical encoding, hashes, and
+insert all share that transaction, so no member or Prompt write can interleave
+with snapshot construction. Failure leaves no `group_runs` row and creates no
+Project Run, event, association, or assistant Prompt.
 
 Idempotency is payload-sensitive:
 
@@ -323,6 +349,15 @@ remote traffic. A successful `prompt add` response is a receipt without the
 body or idempotency key; `prompt list` deliberately returns bodies in human and
 JSON output. There is no remote traffic in this slice.
 
+Prepared Group rows store their bounded excerpts, per-Prompt hashes, and
+idempotency keys in plaintext. Default `prepare` and `show` output removes the
+excerpts, per-Prompt hashes, raw canonical JSON, keys, and canonical Project
+paths; `--include-content` deliberately reveals the bounded excerpts and
+hashes. `group run list` reads only bounded metadata and is not a full body
+integrity audit; `show` and idempotent replay validate the exact snapshot body.
+The unkeyed digests are content-integrity identities, not authentication
+against a same-user SQLite rewrite.
+
 Direct `prompt add ... PROMPT` input is visible in process arguments and may be
 saved by shell history. On hosts with permissive process inspection, this can
 also expose it to other local users. Use `prompt add SESSION_ID -` over standard
@@ -349,6 +384,18 @@ does not classify as corruption.
 - Group context defaults to a content-free manifest, uses deterministic
   SHA-256 identities, preserves causal assistant placement, and reports
   UTF-8-safe truncation and omissions;
+- schema v1 and v2 data survive the atomic migration to v3, while a failing
+  second migration stage rolls the complete v1 chain back without v2 residue;
+- Group Run preparation freezes exact canonical bytes, survives reopen, and
+  same-key replay remains key-first even after newer or invalid Group history;
+- concurrent same-key preparation creates one row and replays one snapshot,
+  while divergent Groups cannot share the same key;
+- `show` and replay reject malformed, noncanonical, or digest-mismatched
+  snapshots; `list` remains a bounded metadata-only inventory;
+- missing Groups and invalid policy leave no prepared row, and Group Run
+  management creates no Project Run/event/assistant side effect;
+- default Group Run output is redacted; explicit content output still hides
+  idempotency keys, raw canonical JSON, canonical paths, and workspace files;
 - idempotent retries cannot change payload;
 - an explicit CLI idempotency key safely replays across processes;
 - a failed Group link does not leave a newly registered Project;
@@ -378,7 +425,7 @@ does not classify as corruption.
 - remote directory, replicas, cursors, conflict merge, deletion propagation;
 - tenants, invitations, history visibility, ACL-backed shared Groups;
 - live multi-Agent Group execution or cross-project tool capabilities;
-- persisted Group-context snapshots and consumption by a Group Run;
+- model/provider consumption of the delivered prepared Group snapshot;
 - providers beyond the delivered opt-in OpenAI Responses adapter,
   write/process/network tools, and process sandbox.
 

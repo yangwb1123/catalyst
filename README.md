@@ -25,5 +25,8 @@ ForgeOS 不替代 Claude Code / Codex / Gemini CLI / OpenCode / OpenHands ——
 `group context GROUP_ID` 可在本地原子预览 Group discussion 与成员 Project
 的有界 Prompt dossier；默认只显示来源、摘要和容量，显式
 `--include-content` 才显示正文，且从不读取项目文件。
+`group run prepare GROUP_ID` 会把同一份有界 dossier 原子冻结为可跨进程
+幂等重放的本地 prepared snapshot；`show/list` 可检查它，但不会启动模型、
+provider、工具或 workspace，也不代表已经完成分析或讨论。
 
 > 目录名暂为 `catalyst`,产品名 **ForgeOS**(是否改名见 `.agent/DECISIONS.md`)。

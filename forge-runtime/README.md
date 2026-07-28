@@ -48,6 +48,15 @@ forge-runtime --json group context GROUP_ID
 # Explicitly inspect bounded Prompt excerpts; this still reads no project files.
 forge-runtime --json group context GROUP_ID \
   --include-content --max-bytes 262144
+
+# Freeze the exact dossier locally. Reuse the key after uncertain output.
+forge-runtime --json --idempotency-key sso-freeze-1 \
+  group run prepare GROUP_ID --max-bytes 262144
+
+# Inspect the original frozen bytes or list prepared metadata.
+forge-runtime --json group run show GROUP_RUN_ID
+forge-runtime --json group run show GROUP_RUN_ID --include-content
+forge-runtime --json group run list GROUP_ID --limit 20
 ```
 
 Group context includes only the Group's own discussion history and current
@@ -55,11 +64,27 @@ member Projects' persisted `user`/`assistant` Prompts. It excludes Global,
 other-Group, and nonmember history. The deterministic dossier is bounded,
 causally orders delayed Run answers with their source Prompt, reports
 omissions/truncation, and never turns role labels into capabilities. It is an
-on-demand local preview, not yet a persisted Run input or model-analysis call.
+on-demand local preview and never a model-analysis call.
 With `--include-content`, the JSON `excerpt` fields and per-Prompt hashes expose
 the exact domain-separated canonical payload covered by `slice_sha256`; the
 default redacted manifest omits both and intentionally does not contain enough
 body data to rehash it. Neither mode is an anonymized export.
+
+`group run prepare` persists that exact canonical slice as a separate
+`prepared` Group Run. The first use of an idempotency key freezes one SQLite
+snapshot; a same-Group/same-policy retry returns the original Run ID, time,
+bytes, and hashes without querying newer history. A different Group or policy
+with the same key conflicts. `snapshot_sha256` covers the exact frozen slice
+bytes with the `forge.group-run-snapshot.v1\0` domain separator. Default
+prepare/show output remains redacted; `--include-content` makes the bounded
+snapshot visible, and `--json --include-content` makes both digest inputs
+independently rehashable. `group run list` reads and validates
+metadata only; use `show` to verify a snapshot body.
+
+Prepared Group Runs are local input artifacts, not executions. These commands
+do not open a workspace, provider, model, or tool and do not create Project Run
+events or assistant Prompts. Group model consumption, planning, multi-Agent
+discussion, remote sync, ACLs, and transmission consent remain unimplemented.
 
 Use `--json` for a versioned, scriptable response. Without `--state-dir`, the
 Hub uses `FORGE_RUNTIME_HOME`, the platform state directory, or the documented
@@ -67,15 +92,19 @@ per-user fallback. If a relative directory is named `group`, `prompt`, `run`,
 `session`, `demo`, or `help`, select it as `./group` or with `-C` so it is not
 ambiguous with a command.
 
-The local Hub is not encrypted. Prompt/history bodies, local paths, Run
-configuration, model deltas, provider context, tool arguments/results, and
-allowed file contents can all be stored in plaintext SQLite and exposed by
-explicit queries such as `prompt list` and `run show`. New or empty dedicated
-Unix state directories are narrowed to the current user; populated shared
-directories are rejected instead of chmodded. Direct Prompt arguments may be
-visible in process listings and shell history, so use stdin (`-`) for sensitive
-input. `prompt add` returns a body-free receipt, but this is not an encryption
+The local Hub is not encrypted. Prompt/history bodies, frozen Group Run
+snapshots, local paths, Project Run configuration, model deltas, provider
+context, tool arguments/results, and allowed file contents can all be stored in
+plaintext SQLite and exposed by explicit queries such as `prompt list`, `group
+run show --include-content`, and `run show`. New or empty dedicated Unix state
+directories are narrowed to the current user; populated shared directories are
+rejected instead of chmodded. Direct Prompt arguments may be visible in
+process listings and shell history, so use stdin (`-`) for sensitive input.
+`prompt add` returns a body-free receipt, but this is not an encryption
 boundary.
+
+The Group-context and snapshot SHA-256 values are unkeyed content-integrity
+identities, not authentication against a same-user database rewrite.
 
 Mutating commands accept `--idempotency-key KEY`. Reuse the same key and exact
 payload for a retry after uncertain output; omitting it generates a new key.
@@ -189,5 +218,6 @@ Architecture:
 - [Agent Runtime ADR](../docs/adr/0006-pi-inspired-agent-runtime-boundary.md)
 - [Conversation Hub ADR](../docs/adr/0007-local-first-conversation-hub.md)
 - [Durable Project Run ADR](../docs/adr/0008-durable-project-run-and-responses-provider.md)
+- [Prepared Group Run ADR](../docs/adr/0009-durable-prepared-group-run-snapshot.md)
 - [Hub local-foundation design](../docs/design/conversation-hub-phase1.md)
 - [Durable Run journal design](../docs/design/run-journal-phase1.md)

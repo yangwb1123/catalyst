@@ -63,6 +63,9 @@ forge-runtime prompt list [SESSION_ID] [--limit N]
 forge-runtime group create NAME
 forge-runtime group add GROUP_ID PATH [--role ROLE]
 forge-runtime group context GROUP_ID [--include-content] [--max-bytes N]
+forge-runtime group run prepare GROUP_ID [--include-content] [--max-bytes N]
+forge-runtime group run show RUN_ID [--include-content]
+forge-runtime group run list [GROUP_ID] [--limit N]
 forge-runtime group list
 ```
 
@@ -95,11 +98,13 @@ truncation by default. Exact bounded `excerpt` fields and per-Prompt full-body
 hashes require `--include-content`, which makes the public payload independently
 rehashable. Neither mode is an anonymized, share-safe export.
 Generating this local preview is not consent to send it to a model, does not
-persist a Run snapshot, and grants no workspace capability.
+itself persist a Run snapshot, and grants no workspace capability. The
+separate, explicit `group run prepare` follow-on freezes the exact dossier
+locally without starting execution; see ADR 0009.
 
 ## Persistence
 
-The Hub database contains these version-1 tables:
+The Hub database began with these version-1 tables:
 
 - `projects`: opaque ID, display name, canonical local path, creation time;
 - `conversations`: opaque ID, Global/Project/Group scope, title, timestamps,
@@ -135,9 +140,10 @@ user/assistant records at an explicit Prompt boundary, under a strict byte
 budget. It still does not claim `continue`, interrupted execution resume,
 semantic retrieval, or derived memory.
 
-The local Group dossier similarly remains a preview. Before a future Agent can
-consume it, the exact bounded payload must be durably frozen and bound to that
-Run so retries never query a newer cross-project view.
+The local Group dossier preview remains non-executing. ADR 0009 now provides
+the explicit durable preparation step: the exact bounded payload is frozen in
+schema version 3 and bound to a separate prepared Group Run, so retries never
+query a newer cross-project view. No provider consumes it yet.
 
 **Follow-on status (2026-07-27).** Schema version 2 and its append-only
 Run/event journal are delivered. A Run binds an existing Project Conversation
@@ -145,6 +151,10 @@ and user Prompt; its recovery view classifies terminal, incomplete, or pending
 tool. A terminal retry can reconcile a missing assistant writeback, but no
 stored nonterminal prefix is automatically executed. See ADR 0008 and
 [`run-journal-phase1.md`](../design/run-journal-phase1.md).
+
+**Follow-on status (2026-07-28).** Schema version 3 and prepared Group Run
+snapshots are delivered. `prepare/show/list` remain local management commands;
+they do not create Project Run events or imply model analysis. See ADR 0009.
 
 The existing deterministic `demo` remains separate and does not silently write
 its Prompt to the Hub:
@@ -155,15 +165,18 @@ forge-runtime -C PATH demo --read FILE PROMPT
 
 ## Confidentiality and failure boundary
 
-Prompt text and canonical paths are plaintext. On Unix, a newly created or
-empty dedicated Hub directory is narrowed to mode `0700`; the database and
-observed WAL/shared-memory files are narrowed to `0600`. A state-directory or
-database symbolic link is rejected. An existing nonempty directory that is
-accessible by group or others is rejected without changing its permissions,
-so `--state-dir /tmp` cannot silently chmod a shared directory. These measures
+Prompt text, canonical paths, prepared Group snapshot excerpts/hashes, and
+local idempotency keys are plaintext. On Unix, a newly created or empty
+dedicated Hub directory is narrowed to mode `0700`; the database and observed
+WAL/shared-memory files are narrowed to `0600`. A state-directory or database
+symbolic link is rejected. An existing nonempty directory that is accessible
+by group or others is rejected without changing its permissions, so
+`--state-dir /tmp` cannot silently chmod a shared directory. These measures
 reduce accidental cross-user access; they are not encryption and do not
 protect against the same OS user, administrators, malware, snapshots, or
-backups.
+backups. Default Group Run output is redacted, while
+`group run show --include-content` deliberately returns the frozen bounded
+excerpts and per-Prompt hashes.
 
 Passing a Prompt directly as `PROMPT` places it in process arguments and may
 also place it in shell history; on some hosts other local users can inspect
@@ -214,23 +227,25 @@ boundaries have real implementations.
 ## Forge Core boundary
 
 Rust owns Conversation and task-run persistence. ADR-0007's original local-Hub
-slice did not implement Runs; ADR 0008's follow-on now does. Existing Go files
-under a project's `.forge/` directory remain workflow checkpoint, trace, and
-learned project-state owned by `forge-core`. This Hub does not migrate, merge,
-or reinterpret them as global Prompt history.
+slice did not implement Runs; ADR 0008 adds executable Project Runs and ADR
+0009 adds non-executing prepared Group snapshots. Existing Go files under a
+project's `.forge/` directory remain workflow checkpoint, trace, and learned
+project-state owned by `forge-core`. This Hub does not migrate, merge, or
+reinterpret them as global Prompt history.
 
 ## Consequences
 
 The local UX now has stable Global, Project, and Group discovery and retains
 Prompt text across CLI processes. It can represent a frontend/backend/SSO
 discussion and produce a bounded, provenance-preserving local context manifest
-without pretending to provide remote identity, model analysis, or multi-Agent
-execution.
+or freeze that manifest for exact replay without pretending to provide remote
+identity, model analysis, or multi-Agent execution.
 
 The remaining product work is explicit: automatic interrupted execution
 resume/branching, semantic or derived memory, interactive UI, account binding
-and synchronization, shared ACL Groups, Group multi-Agent execution, mutating
-tools, sandboxing, and remote execution.
+and synchronization, shared ACL Groups, model/provider consumption of prepared
+Group snapshots, separate off-machine consent, Group multi-Agent execution,
+mutating tools, sandboxing, and remote execution.
 
 Implementation evidence includes repeated concurrent first-open runs against
 fresh databases, a deterministic lock held beyond the former two-second busy

@@ -240,6 +240,14 @@ ADR 0007 的 frontend/backend/SSO Group 从“只展示关联关系”推进到�
 
 这仍是 on-demand preview，不假装已完成模型分析或 multi-Agent execution。未来 provider 消费前必须先持久化 exact dossier snapshot 并让幂等 Run 重放该快照，不能重新查询“最新”；任何 off-machine 发送还需单独显式同意。本轮没有发起真实付费模型请求。最终验证：Rust workspace 221 tests 全绿，fmt/locked Clippy/check/build、531-file gate、392-source arch-check、501-file secret scan 与 `git diff --check` 全绿；完整 `forge accept` 为 **ACCEPTED**（9 pass、0 fail、2 个诚实 N/A）。专项正反例覆盖真实并发 snapshot、公开 payload 重哈希、窗口外旧非法 Prompt role、成员溢出、跨组/Global/非成员隔离、ASCII/UTF-8 极小预算因果门控、总字节裁剪、延迟 Run answer 锚定、默认隐藏正文/逐 Prompt 指纹、缺失 Group ID 不落库与 Human 控制字符；fresh-context 安全/契约复核最终 APPROVE。
 
+## Sprint 38(✅ 完成)— Durable prepared Group Run snapshot
+
+ADR 0009 把 Sprint 37 的 on-demand dossier 接到明确的本地持久化边界。SQLite schema v3 新增独立 `group_runs`，内嵌完整 canonical `GroupContextSlice` BLOB、raw 32-byte 内/外 SHA-256、固定 prepared 状态、Group/version/幂等键与原始时间；合法 snapshot 上限 8 MiB，list 只读元数据。它没有复用 execution-bound Project `runs`，因此不会伪造 Conversation/Prompt/provider 或把空 journal 冒充执行。
+
+`group run prepare/show/list` 全走 Hub 管理路径。首次 prepare 在单一 `BEGIN IMMEDIATE` 中先查 key、再读取 Group/member/Conversation/Prompt、编码一次并提交；同 key + 同 Group/full policy 忽略重试候选 ID/时间并返回原冻结字节，任何语义变化冲突，损坏数据失败关闭且绝不从“最新”历史修复。默认 Human/JSON 隐藏 excerpt、逐 Prompt hash、raw JSON、路径和 key；只有显式 `--json --include-content` 才包含可独立重算两层 digest 的完整公开结构。输出明确 prepared/frozen 且 model/provider execution 未启动；命令不构造 provider/tool/workspace，不写 Project Run/event/assistant Prompt。v1→v3、v2→v3、迁移回滚、跨进程 replay、并发同 key/分歧 key、历史变化、corruption、scope/privacy 与零执行副作用均有测试。本轮没有发起真实或付费模型请求；Group snapshot 的 provider 消费、计划/讨论、多 Agent、远程账号/同步/ACL 与外发同意仍属后续。
+
+最终验证：Rust workspace 262 tests 全绿，fmt/locked Clippy/check/build 与 `git diff --check` 全绿；545-file gate、405-source arch-check、11 项治理检查、515-file secret scan、5-manifest SCA 均通过。完整 `forge accept` 为 **ACCEPTED**（9 pass、0 fail、2 个诚实 N/A）；两份 fresh-context 独立复核均 **APPROVE**，无发布阻断项，另记录一个不阻断当前单用户信任边界的 schema-v3 完整结构复验加固项。专项反例还覆盖默认正文脱敏、显式内容两层重哈希、重复全局 key、终端控制/双向字符注入、正文损坏时 metadata-only list 可用而 show/replay 失败关闭。
+
 ## 下一前沿(需外部资源 / 后续阶段 / 投机增强 / 明确非目标,非本环境可完整验证)
 - **真点火** `--agent-cmd=claude`:**multi-agent running to completion 已坐实**(Sprint 25:真 claude 多-agent 跑到 converge MET,增量级 + 版本级)。完整旋钮:四维资源护栏 + 成本三维(phase/时间/美元)+ 任务注入 + 写权限 + 模型路由 + 工作目录 + retry + loop-back;诚实分工:agent 自治增量绿、人确认版本竣工。docs/ignition.md 有完整配方 + 实测
 - **需外部资源(框架已就绪)**:~~SCA/CVE 漏洞库 OSV/NVD(差 DB)~~ **已解决,见 Sprint 32**。2026-07-27 重新实测:LiteLLM 已安装,但仅发现 Anthropic 一家凭证且网络受限,缺第二厂商凭证所以无法做跨厂商验证；`firecracker`/`jailer` 均未安装，`/dev/kvm` 存在但当前用户不可读写。Docker daemon 可达（Server 29.6.1），rootless Podman 4.9.3/runc 也可查询，但容器 runtime 不是 Firecracker microVM 的等价证明，Forge 也尚未接入任何 sandbox runner。上述能力维持 blocked，所有非 `none` sandbox 请求当前会在宿主执行前失败关闭。〔真 cost/latency telemetry **已达成**——S26 真 claude 补齐真 token/cost/latency 数据,scorecard 三维真值落盘〕
