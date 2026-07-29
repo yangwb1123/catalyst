@@ -28,5 +28,14 @@ ForgeOS 不替代 Claude Code / Codex / Gemini CLI / OpenCode / OpenHands ——
 `group run prepare GROUP_ID` 会把同一份有界 dossier 原子冻结为可跨进程
 幂等重放的本地 prepared snapshot；`show/list` 可检查它，但不会启动模型、
 provider、工具或 workspace，也不代表已经完成分析或讨论。
+`group execution start GROUP_RUN_ID` 再把一个已验证 snapshot 绑定到独立、
+可恢复的本地 execution receipt。这个首切片只验证冻结输入并持久化证据：
+不调用模型/provider，不读取 workspace，不开放工具或网络，也不产出分析、
+讨论或任务结论。
+`group analysis prepare GROUP_RUN_ID` 可在本地冻结一份精确、零工具的
+OpenAI Responses 请求；只有后续 `group analysis send ANALYSIS_ID
+--confirm-off-machine` 才读取环境凭证并释放一次外发。SQLite claim 一旦提交，
+任何超时、崩溃或落库失败都保持 `dispatch_unknown` 且禁止自动重发；结果正文
+默认隐藏，仅 `show/send --include-result` 显式显示已验证的单模型结果。
 
 > 目录名暂为 `catalyst`,产品名 **ForgeOS**(是否改名见 `.agent/DECISIONS.md`)。

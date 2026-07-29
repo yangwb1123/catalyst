@@ -248,6 +248,26 @@ ADR 0009 把 Sprint 37 的 on-demand dossier 接到明确的本地持久化边�
 
 最终验证：Rust workspace 262 tests 全绿，fmt/locked Clippy/check/build 与 `git diff --check` 全绿；545-file gate、405-source arch-check、11 项治理检查、515-file secret scan、5-manifest SCA 均通过。完整 `forge accept` 为 **ACCEPTED**（9 pass、0 fail、2 个诚实 N/A）；两份 fresh-context 独立复核均 **APPROVE**，无发布阻断项，另记录一个不阻断当前单用户信任边界的 schema-v3 完整结构复验加固项。专项反例还覆盖默认正文脱敏、显式内容两层重哈希、重复全局 key、终端控制/双向字符注入、正文损坏时 metadata-only list 可用而 show/replay 失败关闭。
 
+## Sprint 39（✅ 完成）— Local Group execution integrity receipt
+
+ADR 0010 在 immutable prepared Group Run 与未来真实 Group Agent 之间增加了一个诚实的本地执行边界。SQLite schema v4 使用独立 `group_executions` 与 `group_execution_events`；key-first `BEGIN IMMEDIATE` 先验证并 pin exact frozen source、创建 incomplete intent，随后三条确定性事件各自在独立 immediate transaction 中原子推进 cursor、journal bytes 与 status。崩溃可留下合法 incomplete prefix；同 key 只因该模式纯本地、无外部 effect，才允许校验 prefix 后补 missing suffix，`start` 必须到 `snapshot_validated` terminal 才返回成功。
+
+`group execution start/show/list` 均走同步 Hub 管理路径；`start` 强制调用方提供显式 key，保证尚未输出 ID 时中断的多事务 prefix 仍可恢复。默认 JSON/Human 只给 record、status、event count 与 content-free receipt summary，不含 event/context body、Prompt/excerpt、逐 Prompt hash、路径、key 或 raw context；JSON list 还明确标记 metadata-only、未复验 source/journal 并指向 `show`。命令不读取 cwd/workspace/`OPENAI_API_KEY`，不构造 AgentRuntime/model/provider/tool/network，也不创建 Project Run/event/assistant Prompt。成功只记录本地冻结 snapshot integrity 校验已完成；receipt/event SHA-256 不是 MAC、签名或第三方 attestation，分析、讨论、task result、Group 模型消费和 multi-Agent execution 均未实现。
+
+最终验证：Rust workspace 296 tests 全绿，fmt/locked Clippy/check/build 与 `git diff --check` 全绿；558-file gate、417-source arch-check、11 项治理检查、528-file secret scan、5-manifest SCA 均通过。完整 `forge accept` 为 **ACCEPTED**（9 pass、0 fail、2 个诚实 N/A）。领域/SQLite/CLI 的反例覆盖 cursor 状态序列与 receipt/status 绑定、source/event/cursor 损坏、v1/v2/v3→v4 原子迁移、并发幂等、崩溃 suffix-only repair、终态零追加、metadata-only list 不越权宣称复验，以及跨进程无 Project Run/Prompt/provider/workspace/network 副作用；fresh-context 最终复核 **APPROVE**，无 Blocker/Major/Minor/Nit。
+
+## Sprint 40（✅ 完成）— Two-phase Group model analysis
+
+ADR 0011 把一个已验证 prepared Group Run 接到独立、可审计的单模型分析边界，而没有复用 Project `AgentRuntime` 或 v4 的可补后缀本地 receipt。SQLite schema v5 新增 `group_model_analyses`、紧凑事件 journal 与独立 result artifact；`group analysis prepare` 在一个 immediate transaction 中绑定完整 source、固定 versioned system Prompt、provider/endpoint/model/limits、canonical private config、exact Responses request bytes、domain-separated hashes 与 `analysis_prepared` 事件。请求唯一 user message 是 frozen `context_json`，固定 `tools:[]`、`store:false` 与 streaming；prepare 不读凭证、不构造 provider、不访问 workspace/当前历史/网络，也不写 Conversation、Project Run、Prompt、task 或 memory。
+
+`group analysis send` 只在 durable 状态仍为 `awaiting_consent` 时接受当次 `--confirm-off-machine`。接口先验证 `OPENAI_API_KEY` 非空且可安全构造 Authorization header，并核对实际完整 endpoint/model；应用层再次在 claim 前核对 provider metadata、source 和逐字节重编码，inspect/list 也会重建 application-owned 固定配置并拒绝自洽篡改。随后 `BEGIN IMMEDIATE` 只允许一个赢家提交 `provider_dispatch_released`，且非 Clone authority 重哈希实际 body 后才消费释放 exact bytes；输家只得到无正文 inspection。claim 一提交即为 `dispatch_unknown`，超时、取消、EOF、HTTP/SSE/provider/protocol/tool-call、本地 byte/event/token limit 或 result commit 失败都不会自动重发，也绝不伪装成 provider `Length`。只有真实 `Completed`/`Length` terminal、零工具且随后 EOF 才能把 canonical result、独立 byte count/hash、completion event、cursor 和 terminal status 原子落库。
+
+默认 prepare/show/send/list 使用专门安全 view，隐藏 frozen excerpt、request/config/event/result body、逐 Prompt hash、key、provider context 与 credential；list 明示 metadata-only/未复验 source+journal，`--include-result` 只显示已验证 final projection，Human 输出转义终端控制字符。所有 SHA-256 只证明本地 domain-separated 内容一致性，不是 MAC、签名、同用户改库防护、remote attestation 或事实认证。结果明确标为单模型生成，不冒充 multi-Agent discussion/consensus、工具执行或 Conversation memory。本轮未发起真实或付费模型请求。
+
+专项测试覆盖 10 个领域 journal/authority 契约、9 个应用两阶段/collector 契约、9 个 SQLite 原子性/并发/篡改/零旁路副作用契约、8 个 prepared-request adapter 契约、5 个 CLI parser 与 4 个跨进程 CLI 契约；畸形 header credential 在 claim 前失败，provider sentinel 不进入公共错误，concurrent claim 只有一个 authority，local limit 不成为 `Length`，v1–v4→v5 与 late-conflict 全链回滚均有反例。为保持架构指标语义准确，arch-check 同时以测试坐实 Rust `crate/self/super` 是 crate 内 cohesion、仅外部 Cargo-crate import 计入 fan-in。
+
+最终验证：Rust workspace 347 tests 全绿，fmt/locked Clippy/check/build 与 `git diff --check` 全绿；595-file gate、453-source arch-check、11 项治理检查、565-file secret scan、5-manifest SCA 均通过。完整 `forge accept` 为 **ACCEPTED**（9 pass、0 fail、2 个诚实 N/A）；fresh-context 威胁矩阵最终复核 **APPROVE**，无 Blocker/Major/Minor。
+
 ## 下一前沿(需外部资源 / 后续阶段 / 投机增强 / 明确非目标,非本环境可完整验证)
 - **真点火** `--agent-cmd=claude`:**multi-agent running to completion 已坐实**(Sprint 25:真 claude 多-agent 跑到 converge MET,增量级 + 版本级)。完整旋钮:四维资源护栏 + 成本三维(phase/时间/美元)+ 任务注入 + 写权限 + 模型路由 + 工作目录 + retry + loop-back;诚实分工:agent 自治增量绿、人确认版本竣工。docs/ignition.md 有完整配方 + 实测
 - **需外部资源(框架已就绪)**:~~SCA/CVE 漏洞库 OSV/NVD(差 DB)~~ **已解决,见 Sprint 32**。2026-07-27 重新实测:LiteLLM 已安装,但仅发现 Anthropic 一家凭证且网络受限,缺第二厂商凭证所以无法做跨厂商验证；`firecracker`/`jailer` 均未安装，`/dev/kvm` 存在但当前用户不可读写。Docker daemon 可达（Server 29.6.1），rootless Podman 4.9.3/runc 也可查询，但容器 runtime 不是 Firecracker microVM 的等价证明，Forge 也尚未接入任何 sandbox runner。上述能力维持 blocked，所有非 `none` sandbox 请求当前会在宿主执行前失败关闭。〔真 cost/latency telemetry **已达成**——S26 真 claude 补齐真 token/cost/latency 数据,scorecard 三维真值落盘〕

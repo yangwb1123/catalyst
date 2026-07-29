@@ -140,11 +140,12 @@ model/provider execution has not started.
 ## Consequences and deferred work
 
 The local system now has a durable, inspectable boundary between Group history
-and future execution. It still has no Group model request, planning loop,
-multi-Agent discussion, automatic task creation, approval flow, remote account,
-sync, shared ACL, or provider consent.
+and future execution. At adoption, this ADR itself added no Group model request,
+planning loop, multi-Agent discussion, automatic task creation, approval flow,
+remote account, sync, shared ACL, or provider consent.
 
-A later execution design must introduce an explicit transition from a verified
-prepared snapshot to a versioned execution record. Off-machine transmission
-must remain a separate visible consent boundary and must consume the frozen
-bytes rather than querying current Group history.
+ADR 0010 now introduces the first explicit transition from a verified prepared
+snapshot to a versioned execution record, but only as a local integrity
+receipt. ADR 0011 adds a distinct, consent-gated single-model request over the
+same frozen bytes. Multi-Agent execution remains separate and must not query
+current Group history in place of its immutable input.

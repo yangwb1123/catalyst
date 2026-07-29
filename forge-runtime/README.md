@@ -57,6 +57,25 @@ forge-runtime --json --idempotency-key sso-freeze-1 \
 forge-runtime --json group run show GROUP_RUN_ID
 forge-runtime --json group run show GROUP_RUN_ID --include-content
 forge-runtime --json group run list GROUP_ID --limit 20
+
+# Validate one frozen snapshot and persist a local execution receipt.
+forge-runtime --json --idempotency-key sso-execution-1 \
+  group execution start GROUP_RUN_ID
+forge-runtime --json group execution show GROUP_EXECUTION_ID
+forge-runtime --json group execution list GROUP_RUN_ID --limit 20
+
+# Prepare an exact single-model request locally, without reading credentials.
+forge-runtime --json --idempotency-key sso-analysis-1 \
+  group analysis prepare GROUP_RUN_ID \
+  --model gpt-5.6-sol --max-output-tokens 4096
+forge-runtime --json group analysis show GROUP_ANALYSIS_ID
+forge-runtime --json group analysis list GROUP_RUN_ID --limit 20
+
+# This separate phase sends the complete frozen dossier off-machine once.
+# Supply OPENAI_API_KEY through your secret manager/environment first.
+forge-runtime --json group analysis send GROUP_ANALYSIS_ID \
+  --confirm-off-machine
+forge-runtime --json group analysis show GROUP_ANALYSIS_ID --include-result
 ```
 
 Group context includes only the Group's own discussion history and current
@@ -83,8 +102,59 @@ metadata only; use `show` to verify a snapshot body.
 
 Prepared Group Runs are local input artifacts, not executions. These commands
 do not open a workspace, provider, model, or tool and do not create Project Run
-events or assistant Prompts. Group model consumption, planning, multi-Agent
-discussion, remote sync, ACLs, and transmission consent remain unimplemented.
+events or assistant Prompts.
+
+`group execution start` is a separate, synchronous local transition. It fully
+validates the referenced frozen snapshot, persists a versioned execution
+record and integrity receipt, and never queries newer Group history. Reusing
+the same explicit idempotency key and Group Run ID returns the original
+execution and receipt across processes. If a process stops after creating the
+intent or an evidence prefix, that same key validates the prefix and appends
+only the deterministic missing suffix; success is returned only at the
+terminal receipt. `show` inspects one execution; `list` returns bounded
+metadata. Output contains record/status/receipt summary only: no events,
+excerpts, Prompt content or hashes, canonical paths, idempotency key, or raw
+context JSON.
+
+This local execution mode is deliberately not a model run. It constructs no
+model/provider, does not read `OPENAI_API_KEY`, opens no workspace, registers
+no tools or capabilities, and performs no network request. A successful
+`snapshot_validated` receipt is not analysis, discussion, planning, or a task
+result.
+
+`group analysis prepare` is the next independent boundary. It fully validates
+one frozen Group Run, pins the versioned analysis Prompt, destination, model,
+and limits, and atomically stores one exact OpenAI Responses request with its
+first journal event. The request has one user message containing the exact
+frozen `context_json`, `tools: []`, `store: false`, and bounded streaming
+output. Preparation is local: it does not read `OPENAI_API_KEY`, construct a
+provider, inspect current Group history or project files, open a workspace, or
+mutate a Conversation, Project Run, task, or memory.
+
+`group analysis send` is a separate irreversible-effect phase. An analysis in
+`awaiting_consent` requires `--confirm-off-machine`; only then does the command
+read and locally validate the environment credential and verify the prepared
+provider target. SQLite commits one exclusive dispatch claim before the claim
+winner receives the exact stored request bytes. Concurrent or later senders
+receive no bytes and never dispatch again.
+
+The state becomes `dispatch_unknown` as soon as that claim commits. A crash,
+timeout, cancellation, transport/protocol failure, missing terminal frame, or
+result-commit failure cannot prove whether the provider accepted the request,
+so this version never retries it automatically. A deliberate retry requires a
+new prepared analysis and may duplicate disclosure and cost. Only a complete,
+validated provider `completed` or `length` terminal with no tool call can
+atomically add the final result and completion event. This is one
+model-generated analysis—not verified fact, multi-Agent discussion,
+tool-completed work, or persistent Conversation memory.
+
+Prepare/show/send output omits exact request/config/event bodies, frozen
+excerpts, idempotency keys, credentials, provider context, and result text by
+default. `--include-result` reveals only the validated final projection and
+escapes terminal controls in human output. List is deliberately metadata-only.
+The API key stays environment-only, but the Hub stores the dossier, request and
+completed result in plaintext. `store: false` is a request setting, not a
+provider privacy guarantee.
 
 Use `--json` for a versioned, scriptable response. Without `--state-dir`, the
 Hub uses `FORGE_RUNTIME_HOME`, the platform state directory, or the documented
@@ -93,25 +163,31 @@ per-user fallback. If a relative directory is named `group`, `prompt`, `run`,
 ambiguous with a command.
 
 The local Hub is not encrypted. Prompt/history bodies, frozen Group Run
-snapshots, local paths, Project Run configuration, model deltas, provider
-context, tool arguments/results, and allowed file contents can all be stored in
-plaintext SQLite and exposed by explicit queries such as `prompt list`, `group
-run show --include-content`, and `run show`. New or empty dedicated Unix state
-directories are narrowed to the current user; populated shared directories are
-rejected instead of chmodded. Direct Prompt arguments may be visible in
-process listings and shell history, so use stdin (`-`) for sensitive input.
-`prompt add` returns a body-free receipt, but this is not an encryption
+snapshots, Group-analysis request/result bodies, local paths, Project Run
+configuration, model deltas, provider context, tool arguments/results, and
+allowed file contents can all be stored in plaintext SQLite and exposed by
+explicit queries such as `prompt list`, `group run show --include-content`,
+`group analysis show --include-result`, and `run show`. New or empty dedicated
+Unix state directories are narrowed to the current user; populated shared
+directories are rejected instead of chmodded. Direct Prompt arguments may be
+visible in process listings and shell history, so use stdin (`-`) for sensitive
+input. `prompt add` returns a body-free receipt, but this is not an encryption
 boundary.
 
-The Group-context and snapshot SHA-256 values are unkeyed content-integrity
-identities, not authentication against a same-user database rewrite.
+The Group-context, snapshot, execution-event, analysis-request, journal, and
+result SHA-256 values are unkeyed local integrity identities, not
+authentication against a same-user database rewrite. A validation receipt is
+not a MAC, signature, remote-provider attestation, or proof that model output
+is factual; its digests and aggregate statistics can correlate related
+content, so it is not anonymized or safe to share by default.
 
 Mutating commands accept `--idempotency-key KEY`. Reuse the same key and exact
-payload for a retry after uncertain output; omitting it generates a new key.
-Live execution requires an explicit key. Completed Run replays never call the
-provider or tools again; they only reconcile the final assistant Prompt.
-Incomplete or pending-tool Runs fail closed and are never automatically
-resumed.
+payload for a retry after uncertain output; single-transaction local mutations
+can generate a key when it is omitted. Group snapshot-validation execution and
+live Project execution require an explicit key. Completed Run replays never
+call the provider or tools again; they only reconcile the final assistant
+Prompt. Incomplete or pending-tool Project Runs fail closed and are never
+automatically resumed.
 
 Each Run durably binds its provider/model, system Prompt, exact read allowlist,
 and execution limits. Terminal assistant insertion is authorized by the
@@ -219,5 +295,7 @@ Architecture:
 - [Conversation Hub ADR](../docs/adr/0007-local-first-conversation-hub.md)
 - [Durable Project Run ADR](../docs/adr/0008-durable-project-run-and-responses-provider.md)
 - [Prepared Group Run ADR](../docs/adr/0009-durable-prepared-group-run-snapshot.md)
+- [Local Group execution receipt ADR](../docs/adr/0010-local-group-execution-receipt.md)
+- [Two-phase Group model analysis ADR](../docs/adr/0011-two-phase-group-model-analysis.md)
 - [Hub local-foundation design](../docs/design/conversation-hub-phase1.md)
 - [Durable Run journal design](../docs/design/run-journal-phase1.md)

@@ -241,11 +241,12 @@ discussion and produce a bounded, provenance-preserving local context manifest
 or freeze that manifest for exact replay without pretending to provide remote
 identity, model analysis, or multi-Agent execution.
 
-The remaining product work is explicit: automatic interrupted execution
+Subsequent ADRs 0009–0011 add immutable prepared Group snapshots, local
+integrity receipts, and a separately consented single-model analysis. The
+remaining product work is explicit: automatic interrupted execution
 resume/branching, semantic or derived memory, interactive UI, account binding
-and synchronization, shared ACL Groups, model/provider consumption of prepared
-Group snapshots, separate off-machine consent, Group multi-Agent execution,
-mutating tools, sandboxing, and remote execution.
+and synchronization, shared ACL Groups, Group multi-Agent execution, mutating
+tools, sandboxing, and remote execution.
 
 Implementation evidence includes repeated concurrent first-open runs against
 fresh databases, a deterministic lock held beyond the former two-second busy

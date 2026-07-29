@@ -42,6 +42,9 @@ in infrastructure. The CLI composes the concrete store and service.
 | Conversation | Persistent user-visible chat; CLI alias is `session` |
 | Prompt | Exact user text appended to one Conversation |
 | Run | One Agent Loop execution; not persisted by the original Hub slice |
+| Prepared Group Run | Immutable, canonical Group-context input artifact |
+| Group execution | Local receipt proving one prepared snapshot was validated |
+| Group analysis | Consent-gated single-model result over one frozen Group Run |
 | AuthSession | Future account credential lifecycle; absent in this slice |
 
 Reusing a Conversation ID is not interrupted execution resume. The delivered
@@ -76,6 +79,13 @@ forge-runtime [OPTIONS] group context GROUP_ID [--include-content] [--max-bytes 
 forge-runtime [OPTIONS] group run prepare GROUP_ID [--include-content] [--max-bytes N]
 forge-runtime [OPTIONS] group run show RUN_ID [--include-content]
 forge-runtime [OPTIONS] group run list [GROUP_ID] [--limit N]
+forge-runtime [OPTIONS] group execution start GROUP_RUN_ID --idempotency-key KEY
+forge-runtime [OPTIONS] group execution show EXECUTION_ID
+forge-runtime [OPTIONS] group execution list [GROUP_RUN_ID] [--limit N]
+forge-runtime [OPTIONS] group analysis prepare GROUP_RUN_ID [--model MODEL]
+forge-runtime [OPTIONS] group analysis send ANALYSIS_ID --confirm-off-machine
+forge-runtime [OPTIONS] group analysis show ANALYSIS_ID [--include-result]
+forge-runtime [OPTIONS] group analysis list [GROUP_RUN_ID] [--limit N]
 forge-runtime [OPTIONS] group list
 forge-runtime [OPTIONS] [PATH|-C PATH] demo [--read FILE] PROMPT
 forge-runtime [OPTIONS] -C PATH run start SESSION_ID PROMPT_ID [RUN_OPTIONS]
@@ -91,12 +101,14 @@ commands (`session`, `prompt`, `group`, `demo`, `help`) use `./name` or
 of silently ignoring them.
 
 `--idempotency-key` is accepted by `session new`, `prompt add`, `group create`,
-`group add`, `group run prepare`, and `run start`. When omitted, local
-mutations generate a fresh key; `run start --live` instead requires the caller
-to supply one explicitly. After an uncertain commit/output result, a
-cross-process retry is safe only when the caller repeats the same command,
-payload, scope, and explicit key. `prompt add SESSION_ID -` reads the exact
-UTF-8 Prompt from standard input.
+`group add`, `group run prepare`, `group execution start`, `group analysis
+prepare`, and `run start`.
+When omitted, single-transaction local mutations generate a fresh key.
+`group execution start` requires an explicit key because it must recover a
+multi-transaction evidence prefix; `run start --live` also requires one before
+external effects. After an uncertain result, a cross-process retry is safe only
+when the caller repeats the same command, payload, scope, and explicit key.
+`prompt add SESSION_ID -` reads the exact UTF-8 Prompt from standard input.
 
 No selector means Global. A Global snapshot lists all local Projects,
 Conversations, Groups, and links. A Project snapshot includes that Project,
@@ -167,8 +179,10 @@ anonymized or safe to publish.
 The dossier is derived on demand and is not an Agent input. `group run
 prepare` now persists the exact bounded payload as a separate prepared/frozen
 Group Run and replays it without querying “latest” history. Preparation still
-does not make a provider call. A future execution transition must consume that
-verified snapshot and require separate live/off-machine consent.
+does not make a provider call. `group execution start` can validate that frozen
+input and persist a content-free local receipt without invoking a model. A
+future live transition must consume the same bytes and require separate
+off-machine consent.
 
 The JSON envelope is:
 
@@ -200,6 +214,8 @@ The JSON envelope is:
 | Group context Prompt excerpt | 16 KiB |
 | Prepared Group Run snapshot JSON | 8 MiB |
 | Prepared Group Run list | 1–100 rows |
+| Group execution list | 1–100 rows |
+| Group analysis list | 1–100 rows |
 
 Required strings reject empty or whitespace-only values.
 
@@ -269,6 +285,20 @@ idempotency key, and original creation time. Snapshot byte count is derived
 from the BLOB. Existing Hub and Project Run journal rows are preserved. The
 full transaction, replay, integrity, and privacy contract is ADR 0009.
 
+### Follow-on schema version 4 (delivered)
+
+`group_executions` and `group_execution_events` reference `group_runs` with
+deletion restricted. They do not mutate prepared artifacts or reuse Project
+Run/event/assistant tables. Each execution binds the verified snapshot hashes,
+fixed offline-validation mode, versions, content-free receipt, idempotency key,
+original time, and compact contiguous evidence. See ADR 0010.
+
+### Follow-on schema version 5 (delivered)
+
+Three Group-analysis tables bind one verified `group_runs` row to exact request
+bytes, a compact event journal, and an optional result artifact. Inspection
+revalidates every source/config/request/event/cursor/result binding. See ADR 0011.
+
 Every connection enables:
 
 ```text
@@ -303,6 +333,24 @@ the Group, membership, Conversations, Prompts, canonical encoding, hashes, and
 insert all share that transaction, so no member or Prompt write can interleave
 with snapshot construction. Failure leaves no `group_runs` row and creates no
 Project Run, event, association, or assistant Prompt.
+
+`group execution start` begins key-first in an immediate transaction. A new key
+fully validates the frozen body, then atomically creates an incomplete intent
+that pins the source snapshot; a divergent same-key request conflicts. Each of
+the three deterministic evidence events is subsequently appended in its own
+immediate transaction together with the cursor, journal-byte count, and status
+advance. A crash may leave a valid incomplete prefix. Because this local mode
+has no external effects, a same-key retry validates that prefix and appends
+only its deterministic missing suffix; `start` returns success only after the
+journal is terminal. A terminal retry returns the original receipt without an
+append. The transition never queries newer Group history and has no Project
+Run, Prompt, workspace, tool, provider, or network side effect.
+
+`group analysis prepare` atomically stores one exact zero-tool request and its
+prepared event without reading credentials. Confirmed `send` performs local
+credential/target preflight, then one claim grants exact bytes only to its
+winner and moves recovery to `dispatch_unknown`. It never retries post-claim;
+only a valid provider terminal atomically commits result, event and status.
 
 Idempotency is payload-sensitive:
 
@@ -358,6 +406,18 @@ integrity audit; `show` and idempotent replay validate the exact snapshot body.
 The unkeyed digests are content-integrity identities, not authentication
 against a same-user SQLite rewrite.
 
+Group execution output contains only record/status/receipt metadata. It omits
+snapshot excerpts and Prompt bodies, per-Prompt hashes, paths, keys, and raw
+canonical JSON. Its receipt records local frozen-snapshot validation only; it
+is not a MAC, signature, third-party attestation, model analysis, discussion,
+planning, or task completion. Digests and statistics remain correlatable, so
+the output is not anonymized or safe to share by default.
+
+Group analysis stores frozen context, exact request and terminal result in
+plaintext. Default views omit request/config/event/result bodies;
+`--include-result` reveals only the validated terminal projection. Its hashes
+are not signatures, remote attestations, or factual verification.
+
 Direct `prompt add ... PROMPT` input is visible in process arguments and may be
 saved by shell history. On hosts with permissive process inspection, this can
 also expose it to other local users. Use `prompt add SESSION_ID -` over standard
@@ -396,6 +456,12 @@ does not classify as corruption.
   management creates no Project Run/event/assistant side effect;
 - default Group Run output is redacted; explicit content output still hides
   idempotency keys, raw canonical JSON, canonical paths, and workspace files;
+- Group execution start/show/list survive separate processes, remain stable
+  after newer Prompts, and expose only a content-free validation receipt;
+- Group execution invokes no model, provider, workspace, tool, network,
+  Project Run, or assistant writeback;
+- Group analysis prepare stays local; concurrent confirmed send releases one
+  dispatch, never retries uncertainty, and accepts only valid terminal results;
 - idempotent retries cannot change payload;
 - an explicit CLI idempotency key safely replays across processes;
 - a failed Group link does not leave a newly registered Project;
@@ -425,7 +491,7 @@ does not classify as corruption.
 - remote directory, replicas, cursors, conflict merge, deletion propagation;
 - tenants, invitations, history visibility, ACL-backed shared Groups;
 - live multi-Agent Group execution or cross-project tool capabilities;
-- model/provider consumption of the delivered prepared Group snapshot;
+- Group multi-Agent discussion, delegation, writeback, and derived memory;
 - providers beyond the delivered opt-in OpenAI Responses adapter,
   write/process/network tools, and process sandbox.
 
