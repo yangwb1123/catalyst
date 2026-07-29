@@ -1,7 +1,7 @@
 # ForgeOS Functional Requirements Audit
 
 **Methodology and authority boundary.** This audit is derived only from ForgeOS's adopted
-commitments: root `ROADMAP.md`, `.agent/{ROADMAP,PROJECT,ARCHITECTURE}.md`, and all ten ADR
+commitments: root `ROADMAP.md`, `.agent/{ROADMAP,PROJECT,ARCHITECTURE}.md`, and all twelve ADR
 records while preserving their actual Accepted / Proposed / Superseded status,
 `.agent/DECISIONS.md`, seven shipped workflows, thirteen agent cards, nine skill cards, and the
 implementation/verification record in `.agent/CURRENT_SPRINT.md`. It is not an external
@@ -16,7 +16,7 @@ including Go build/vet/test/race, Rust test/clippy/check/build, the Node and Pyt
 suites, scaffold adversarial tests, and the composed Stop gate. Current deltas are recorded in
 the live DONE/DEFERRED rows and `.agent/CURRENT_SPRINT.md`.
 
-### Current closure matrix (2026-07-27)
+### Current closure matrix (2026-07-29)
 
 This matrix is the present-tense closure record for the adopted plan. `DONE` means an
 implemented, executable contract with positive and negative tests; it does not mean an
@@ -37,6 +37,7 @@ an Accepted ADR deliberately places that action outside ForgeOS's trust boundary
 | DONE | Copy-anywhere init/upgrade | Fresh scaffold includes a real starter manifest/test and the complete governed harness; init/upgrade preflight every planned existing/backup leaf before the first mutation, while portable case/Windows aliases, inode aliases, source/target/state/backup/prune symlink and special-file attacks fail closed |
 | DONE | Rust Agent Runtime offline slice (ADR 0006) | Deterministic provider/tool loop, bounded output/turn/tool calls, cancellation, strict JSONL event ordering, workspace capability confinement and exactly-one terminal failure contracts |
 | DONE | Local Conversation Hub (ADR 0007) | Global/Project/Group CLI, SQLite Conversation/Prompt/Project/Group persistence, atomic/idempotent mutations, complete first-open retry, private DB/WAL/SHM and workspace-unavailable failure contract |
+| DONE | Strict Hub schema ownership validation (ADR 0012) | Every declared v0–v5 schema is validated before migration DDL (v0 must be empty), and the final legacy-migration step validates the exact 14-table/8-explicit-index main catalog plus column/FK and all 25 implicit-index signatures. Published v1–v5 DDL and the independent structural contract are hash-pinned; old-object drift and rogue table/view/trigger/virtual shadows fail as corruption without repair, and validation failure rolls the migration transaction back |
 | DONE | Local Group context dossier (ADR 0007 follow-on) | `group context` resolves Group discussion and member-Project Prompt history in one SQLite snapshot, preserves causal Run-answer placement, emits deterministic provenance/hashes/omission statistics under member/conversation/Prompt/content bounds, hides content by default, and excludes Global/other-Group/nonmember records, canonical paths, files, tools and network |
 | DONE | Durable prepared Group Run snapshot (ADR 0009) | SQLite v3 atomically freezes one exact canonical Group dossier into an independent prepared Group Run; same-key retries replay original bytes without querying newer history, divergent inputs conflict, show verifies both digest layers and structural bindings, list reads metadata only, default output is redacted, and the management path creates no provider/tool/workspace or Project Run/event/assistant side effect |
 | DONE | Local Group execution integrity receipt (ADR 0010) | SQLite v4 binds one independently versioned execution to a fully verified prepared Group Run and persists a compact three-event receipt journal; key-first creation pins an incomplete intent, exact per-event transactions advance its durable prefix, and same-key local recovery appends only a deterministic missing suffix before returning terminal success. Newer Prompts cannot alter the receipt, output excludes event/context bodies, paths, and keys, and the synchronous path constructs no model/provider/runtime/workspace/tool/network or Project Run/assistant side effect |
@@ -61,6 +62,7 @@ an Accepted ADR deliberately places that action outside ForgeOS's trust boundary
 | Project/Conversation/Prompt/Group state survives CLI processes in a versioned local SQLite store | ADR 0007 | `infrastructure/sqlite_hub`; persistence/reopen, schema, idempotency, concurrency, permission and CLI process tests |
 | Local Groups link frontend/backend/SSO Projects by descriptive role and own discussion Conversations | ADR 0007 | `group_projects` store contract + CLI integration test; roles are explicitly non-ACL labels |
 | Hub mutations are retry-safe and Group linking is atomic | ADR 0007 | Caller-reusable `--idempotency-key`; Project registration + Group link share one immediate transaction; process tests cover replay/conflict and rollback on a missing Group |
+| Hub v0–v5 schema ownership is fully revalidated | ADR 0012; CURRENT_SPRINT.md Sprint 41 | `schema_v5/full_contract.rs` generates every prefix contract from immutable DDL and checks exact definitions, full catalog, `table_xinfo`, FK and named/implicit index signatures before migration and at v5 commit; adversarial tests cover every legacy generation, empty-v0 enforcement, rogue catalog objects, both release goldens, error classification and whole-chain rollback |
 | Sensitive Prompt ingestion can avoid argv and add-response echo | ADR 0007 | `prompt add SESSION_ID -` reads bounded UTF-8 stdin; add returns a body-free receipt while explicit `prompt list` remains plaintext |
 | Reviewer `REQUEST_CHANGES` triggers directed loop-back on agent phases, not just gate phases | ROADMAP.md:35-51 | `orchestrator.go:321 agentOutcome` + `cost.go:330 parseReviewerVerdict`, shares `loopBackTo` with gate path |
 | Reviewer's specific feedback reaches the implementer via a non-polluting one-way edge | ROADMAP.md:50-51 | `prompt_context.go:187` feeds verdict forward without re-injecting into reviewer's own fresh context |

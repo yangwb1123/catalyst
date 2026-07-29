@@ -30,11 +30,10 @@ tables. One analysis references one immutable prepared Group Run. It is a
 single OpenAI Responses request, one model turn, zero tools, zero workspace,
 and no Conversation, task, or memory mutation.
 
-Every v5 open validates the three new tables against the migration contract:
-column, primary/unique key, foreign-key, index, trigger inventory, and exact
-SQLite schema definitions must agree. The expected definitions are produced by
-executing the same migration SQL in an isolated in-memory database, rather than
-maintaining a second parser or copied constraint text.
+Every v5 open validates the schema against the migration contract. ADR 0012
+generalizes that check across all v1–v5 Hub objects: exact definitions and
+catalog inventory must agree with independently inspected column, key,
+foreign-key, and index structures.
 
 The public workflow is deliberately two-phase:
 

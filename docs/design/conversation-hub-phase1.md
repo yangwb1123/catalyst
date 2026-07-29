@@ -299,6 +299,15 @@ Three Group-analysis tables bind one verified `group_runs` row to exact request
 bytes, a compact event journal, and an optional result artifact. Inspection
 revalidates every source/config/request/event/cursor/result binding. See ADR 0011.
 
+The v5 layout is also the complete Hub-owned main-schema contract. Every open
+validates its declared v0–v5 prefix before migration DDL (v0 must be empty),
+then compares the final 14 tables and 8 explicit indexes with definitions
+generated from the immutable v1–v5 DDL, cross-checks columns/FKs and all
+explicit/implicit index signatures through schema-qualified PRAGMAs, and
+rejects extra main tables/views/triggers/virtual shadows. The final validation
+runs inside the migration transaction, so an invalid legacy schema cannot
+leave a partial upgrade. See ADR 0012.
+
 Every connection enables:
 
 ```text
@@ -451,6 +460,10 @@ does not classify as corruption.
   UTF-8-safe truncation and omissions;
 - schema v1 and v2 data survive the atomic migration to v3, while a failing
   second migration stage rolls the complete v1 chain back without v2 residue;
+- valid fresh/v1/v2/v3/v4 schemas reach and reopen as v5, while old-table
+  CHECK/key/FK/index drift, rogue catalog objects, and PRAGMA virtual shadows
+  fail closed without repair; final validation failure rolls the complete
+  legacy migration chain back;
 - Group Run preparation freezes exact canonical bytes, survives reopen, and
   same-key replay remains key-first even after newer or invalid Group history;
 - concurrent same-key preparation creates one row and replays one snapshot,

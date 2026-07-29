@@ -246,7 +246,7 @@ ADR 0009 把 Sprint 37 的 on-demand dossier 接到明确的本地持久化边�
 
 `group run prepare/show/list` 全走 Hub 管理路径。首次 prepare 在单一 `BEGIN IMMEDIATE` 中先查 key、再读取 Group/member/Conversation/Prompt、编码一次并提交；同 key + 同 Group/full policy 忽略重试候选 ID/时间并返回原冻结字节，任何语义变化冲突，损坏数据失败关闭且绝不从“最新”历史修复。默认 Human/JSON 隐藏 excerpt、逐 Prompt hash、raw JSON、路径和 key；只有显式 `--json --include-content` 才包含可独立重算两层 digest 的完整公开结构。输出明确 prepared/frozen 且 model/provider execution 未启动；命令不构造 provider/tool/workspace，不写 Project Run/event/assistant Prompt。v1→v3、v2→v3、迁移回滚、跨进程 replay、并发同 key/分歧 key、历史变化、corruption、scope/privacy 与零执行副作用均有测试。本轮没有发起真实或付费模型请求；Group snapshot 的 provider 消费、计划/讨论、多 Agent、远程账号/同步/ACL 与外发同意仍属后续。
 
-最终验证：Rust workspace 262 tests 全绿，fmt/locked Clippy/check/build 与 `git diff --check` 全绿；545-file gate、405-source arch-check、11 项治理检查、515-file secret scan、5-manifest SCA 均通过。完整 `forge accept` 为 **ACCEPTED**（9 pass、0 fail、2 个诚实 N/A）；两份 fresh-context 独立复核均 **APPROVE**，无发布阻断项，另记录一个不阻断当前单用户信任边界的 schema-v3 完整结构复验加固项。专项反例还覆盖默认正文脱敏、显式内容两层重哈希、重复全局 key、终端控制/双向字符注入、正文损坏时 metadata-only list 可用而 show/replay 失败关闭。
+最终验证：Rust workspace 262 tests 全绿，fmt/locked Clippy/check/build 与 `git diff --check` 全绿；545-file gate、405-source arch-check、11 项治理检查、515-file secret scan、5-manifest SCA 均通过。完整 `forge accept` 为 **ACCEPTED**（9 pass、0 fail、2 个诚实 N/A）；两份 fresh-context 独立复核均 **APPROVE**，无发布阻断项，当时记录的 schema-v3 完整结构复验加固项现已由 Sprint 41 闭环。专项反例还覆盖默认正文脱敏、显式内容两层重哈希、重复全局 key、终端控制/双向字符注入、正文损坏时 metadata-only list 可用而 show/replay 失败关闭。
 
 ## Sprint 39（✅ 完成）— Local Group execution integrity receipt
 
@@ -267,6 +267,16 @@ ADR 0011 把一个已验证 prepared Group Run 接到独立、可审计的单模
 专项测试覆盖 10 个领域 journal/authority 契约、9 个应用两阶段/collector 契约、1 个真实 application→SQLite→reopen 完成链、8 个 SQLite 集成契约与 1 个同连接 late-write 原子回滚契约、9 个 prepared-request/transport adapter 契约、9 个 v5 迁移/定义契约、5 个 CLI parser 与 4 个跨进程 CLI 契约；畸形 header credential 在 claim 前失败，provider sentinel 不进入公共错误，concurrent claim 只有一个 authority，incomplete function call 与 terminal 后分片 frame 均失败关闭，应用/SQLite canonical result 不再漂移，local limit 不成为 `Length`。v1–v4→v5 与 late-conflict 全链回滚继续有反例；另有 19 类错误 column/key/CHECK/index/FK/trigger/catalog 定义在打开 v5 时失败关闭。为保持架构指标语义准确，arch-check 同时以测试坐实 Rust `crate/self/super` 是 crate 内 cohesion、仅外部 Cargo-crate import 计入 fan-in。
 
 最终验证：Rust workspace 350 tests 全绿，fmt/locked Clippy/check/build 与 `git diff --check` 全绿；598-file gate、456-source arch-check、11 项治理检查、568-file secret scan、5-manifest SCA 均通过。完整 `forge accept` 为 **ACCEPTED**（9 pass、0 fail、2 个诚实 N/A）；fresh-context 加固复核 **APPROVE**，无 Blocker/Major/Minor。
+
+## Sprint 41（✅ 完成）— Strict Hub v0–v5 schema ownership
+
+ADR 0012 在不升级 schema v5、不改变任何业务表布局的前提下，闭环 Sprint 38 留下的旧 Schema 结构复验项。Hub 的 `main` catalog 现在明确为应用独占：14 张 v1–v5 表、8 个具名显式索引、由 PK/UQ 派生的 25 个隐式 autoindex，且不允许额外 table/view/trigger/virtual shadow。每次打开都在任何迁移 DDL 前先复验其声明版本的完整 prefix，v0 必须是空应用 catalog；合法 v0–v4 才在原有 `BEGIN IMMEDIATE` 中迁移并运行完整 v5 复验，只有通过才提交。声明布局不匹配及 SQLite corruption/not-a-database 视为 corruption 且不自动修复；锁耗尽、I/O 等环境错误沿用 availability 分类。迁移末端契约失败会把新对象、`user_version` 与数据变化整链撤销。
+
+期望契约由独立内存库顺序执行同一组 v1 create + v2–v5 migration SQL 生成，不维护第二份 SQLite 约束解析器。磁盘定义既要逐字匹配 `main.sqlite_schema`，也要与 schema-qualified `table_xinfo`、`foreign_key_list`、`index_list`、`index_xinfo` 的列/default/hidden、FK、PK/UQ、origin/unique/partial、key 顺序/CID/DESC/collation 结构一致。显式索引还绑定名称；SQLite 自动索引名称不稳定，因此比较排序后的语义签名及 25 项 owning-table multiset。已发布 DDL 的 length-framed SHA-256 固定为 `cb3b65a96f9d4434995ecc409acd7da256332f800142bc661e25f9ab7296ebf8`，独立结构契约摘要固定为 `790b05cb9b2727755829f42fae47e3d0193170acdba41415a2005444e797bbf9`；未来 SQLite 合法表示变化必须显式维护历史契约或新迁移。
+
+专项反例覆盖 fresh/v1/v2/v3/v4→v5 合法升级重开与各代数据保留，v1 Conversation CHECK/index、v2 Run FK/PK、v3 Group Run CHECK/index、v4 execution event FK/PK，owned-table rogue index/trigger、独立 rogue table/view 与持久化 `pragma_index_list` FTS virtual shadow；还覆盖非空 v0、迁移前 future-table blocker、raw autoindex owner 篡改、PK/UQ/显式索引计数 golden 与 writer-lock exhaustion 分类。畸形 v1/v4 prefix 会在 DDL 前拒绝且保持原库不变；另一个仅测试可用、连接作用域的确定性 fault 在合法 v1 真实完成 v2–v5 全部 DDL 后、最终 v5 validator 前注入 rogue table，证明 validator 返回 corruption 时同一事务会撤销整条迁移，原 schema/data/version 不变且无新对象或 fault 残留。这是应用 Schema 漂移检测，不是数据库加密、MAC/签名、同 OS 用户防篡改或 validation 后 TOCTOU 防护；本轮没有网络、provider、credential、workspace、tool、model、Conversation/Prompt/Run 或真实付费请求副作用。
+
+最终验证：Rust workspace 364 tests 全绿，fmt/locked Clippy/check/build 与 `git diff --check` 全绿；605-file gate、462-source arch-check、11 项治理检查、575-file secret scan、5-manifest SCA 均通过。完整 `forge accept` 为 **ACCEPTED**（9 pass、0 fail、2 个诚实 N/A）。原发布复审提出的两项证据准确性 Minor 均已修复并复核关闭；最终 fresh-context 发布复审 **APPROVE**，无 Blocker/Major/Minor。
 
 ## 下一前沿(需外部资源 / 后续阶段 / 投机增强 / 明确非目标,非本环境可完整验证)
 - **真点火** `--agent-cmd=claude`:**multi-agent running to completion 已坐实**(Sprint 25:真 claude 多-agent 跑到 converge MET,增量级 + 版本级)。完整旋钮:四维资源护栏 + 成本三维(phase/时间/美元)+ 任务注入 + 写权限 + 模型路由 + 工作目录 + retry + loop-back;诚实分工:agent 自治增量绿、人确认版本竣工。docs/ignition.md 有完整配方 + 实测

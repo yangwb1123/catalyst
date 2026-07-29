@@ -205,6 +205,16 @@ it does not prove that replaying an interrupted tool effect is safe. Run
 inspection reads its record, cursor, events, and bound Prompt from one SQLite
 snapshot so a concurrent append cannot look like corruption.
 
+The main SQLite catalog is exclusively Hub-owned. Every declared v0–v5 schema
+is validated before migration DDL (v0 must be empty); the final migration step
+then validates the exact v5 14-table/8-index catalog, DDL, columns, keys,
+foreign keys, explicit and implicit index structures, and the absence of extra
+views/triggers/tables before the immediate transaction commits. Published DDL
+and the independent structural contract are release-pinned; unexpected state
+fails as corruption and is never auto-repaired. Environmental SQLite failures
+remain unavailable. This detects schema drift but is not a same-user tamper or
+TOCTOU boundary.
+
 ## Durable Project Run
 
 Create a user Prompt first, then bind a Run to that exact Prompt:
@@ -300,5 +310,6 @@ Architecture:
 - [Prepared Group Run ADR](../docs/adr/0009-durable-prepared-group-run-snapshot.md)
 - [Local Group execution receipt ADR](../docs/adr/0010-local-group-execution-receipt.md)
 - [Two-phase Group model analysis ADR](../docs/adr/0011-two-phase-group-model-analysis.md)
+- [Strict Hub schema ownership ADR](../docs/adr/0012-strict-hub-schema-ownership.md)
 - [Hub local-foundation design](../docs/design/conversation-hub-phase1.md)
 - [Durable Run journal design](../docs/design/run-journal-phase1.md)
