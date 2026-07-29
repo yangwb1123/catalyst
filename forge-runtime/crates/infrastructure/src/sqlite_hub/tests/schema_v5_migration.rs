@@ -59,15 +59,16 @@ fn v4_group_execution_schema_migrates_to_v5() {
 }
 
 #[test]
-fn late_v5_conflict_rolls_back_partially_created_tables() {
+fn v4_future_analysis_result_blocker_is_rejected_before_migration() {
     let (root, database) = legacy_v4_database();
-    let blocker = Connection::open(&database).expect("open migration blocker");
+    let blocker = Connection::open(&database).expect("open v4 future-table fixture");
     blocker
         .execute_batch("CREATE TABLE group_model_analysis_results(blocker TEXT)")
-        .expect("install deterministic migration conflict");
+        .expect("install future v5 result-table blocker");
     drop(blocker);
 
-    open_database(&database).expect_err("conflicting v5 migration fails");
+    let error = open_database(&database).expect_err("v4 prefix rejects future v5 table");
+    assert!(matches!(error, HubStoreError::Corrupt { .. }));
     let unchanged = Connection::open(&database).expect("reopen unchanged v4 database");
     assert_v4_schema(&unchanged);
     assert_eq!(
@@ -86,15 +87,16 @@ fn late_v5_conflict_rolls_back_partially_created_tables() {
 }
 
 #[test]
-fn v5_conflict_rolls_back_the_entire_v1_migration_chain() {
+fn v1_future_analysis_result_blocker_is_rejected_before_migration_chain() {
     let (root, database) = legacy_v1_database();
-    let blocker = Connection::open(&database).expect("open migration blocker");
+    let blocker = Connection::open(&database).expect("open v1 future-table fixture");
     blocker
         .execute_batch("CREATE TABLE group_model_analysis_results(blocker TEXT)")
-        .expect("install deterministic v5 migration conflict");
+        .expect("install future v5 result-table blocker");
     drop(blocker);
 
-    open_database(&database).expect_err("fourth migration stage fails");
+    let error = open_database(&database).expect_err("v1 prefix rejects future v5 table");
+    assert!(matches!(error, HubStoreError::Corrupt { .. }));
     let unchanged = Connection::open(&database).expect("reopen unchanged v1 database");
     assert_eq!(schema_version(&unchanged), 1);
     for table in [

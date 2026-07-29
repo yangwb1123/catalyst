@@ -1,27 +1,36 @@
 use rusqlite::Connection;
 use tempfile::TempDir;
 
+use crate::runtime_domain::HubStoreError;
+
 use super::{
-    schema::open_database,
+    schema::{migrate_with_before_final_fault_for_test, open_database},
     schema_sql::{
         CREATE_V1_SCHEMA_SQL, MIGRATE_V1_TO_V2_SQL, MIGRATE_V2_TO_V3_SQL, MIGRATE_V3_TO_V4_SQL,
         MIGRATE_V4_TO_V5_SQL,
     },
 };
 
+#[path = "tests/schema_full_validation.rs"]
+mod schema_full_validation_tests;
+#[path = "tests/schema_open_adversarial.rs"]
+mod schema_open_adversarial_tests;
+#[path = "tests/schema_transaction_rollback.rs"]
+mod schema_transaction_rollback_tests;
 #[path = "tests/schema_v5_migration.rs"]
 mod schema_v5_migration_tests;
 
 #[test]
-fn conflicting_group_runs_table_rolls_back_v2_to_v3_migration() {
+fn v2_future_group_runs_blocker_is_rejected_before_migration() {
     let (root, database) = legacy_v2_database();
-    let blocker = Connection::open(&database).expect("open migration blocker");
+    let blocker = Connection::open(&database).expect("open v2 future-table fixture");
     blocker
         .execute_batch("CREATE TABLE group_runs(blocker TEXT)")
-        .expect("install deterministic migration conflict");
+        .expect("install future v3 table blocker");
     drop(blocker);
 
-    open_database(&database).expect_err("conflicting v3 migration fails");
+    let error = open_database(&database).expect_err("v2 prefix rejects future v3 table");
+    assert!(matches!(error, HubStoreError::Corrupt { .. }));
     let unchanged = Connection::open(&database).expect("reopen unchanged v2 database");
     assert_eq!(schema_version(&unchanged), 2);
     assert_legacy_run(&unchanged);
@@ -35,21 +44,22 @@ fn conflicting_group_runs_table_rolls_back_v2_to_v3_migration() {
 }
 
 #[test]
-fn v3_conflict_rolls_back_the_entire_v1_migration_chain() {
+fn v1_future_group_runs_blocker_is_rejected_before_migration_chain() {
     let (root, database) = legacy_v1_database();
-    let blocker = Connection::open(&database).expect("open migration blocker");
+    let blocker = Connection::open(&database).expect("open v1 future-table fixture");
     blocker
         .execute_batch("CREATE TABLE group_runs(blocker TEXT)")
-        .expect("install deterministic migration conflict");
+        .expect("install future v3 table blocker");
     drop(blocker);
 
-    open_database(&database).expect_err("second migration stage fails");
+    let error = open_database(&database).expect_err("v1 prefix rejects future v3 table");
+    assert!(matches!(error, HubStoreError::Corrupt { .. }));
     let unchanged = Connection::open(&database).expect("reopen unchanged v1 database");
     assert_eq!(schema_version(&unchanged), 1);
     for table in ["runs", "run_events", "run_assistant_prompts"] {
         assert!(
             !schema_object_exists(&unchanged, "table", table),
-            "rolled-back v2 table remains: {table}"
+            "unexpected post-v1 table exists: {table}"
         );
     }
     assert_eq!(table_columns(&unchanged, "group_runs"), vec!["blocker"]);
@@ -59,21 +69,22 @@ fn v3_conflict_rolls_back_the_entire_v1_migration_chain() {
             [],
             |row| row.get(0),
         )
-        .expect("v1 Prompt survives rollback");
+        .expect("v1 Prompt remains after prefix rejection");
     assert_eq!(prompt, "preserve me");
     drop((unchanged, root));
 }
 
 #[test]
-fn v4_conflict_rolls_back_the_entire_v1_migration_chain() {
+fn v1_future_group_executions_blocker_is_rejected_before_migration_chain() {
     let (root, database) = legacy_v1_database();
-    let blocker = Connection::open(&database).expect("open migration blocker");
+    let blocker = Connection::open(&database).expect("open v1 future-table fixture");
     blocker
         .execute_batch("CREATE TABLE group_executions(blocker TEXT)")
-        .expect("install deterministic v4 migration conflict");
+        .expect("install future v4 table blocker");
     drop(blocker);
 
-    open_database(&database).expect_err("third migration stage fails");
+    let error = open_database(&database).expect_err("v1 prefix rejects future v4 table");
+    assert!(matches!(error, HubStoreError::Corrupt { .. }));
     let unchanged = Connection::open(&database).expect("reopen unchanged v1 database");
     assert_eq!(schema_version(&unchanged), 1);
     for table in [
@@ -85,7 +96,7 @@ fn v4_conflict_rolls_back_the_entire_v1_migration_chain() {
     ] {
         assert!(
             !schema_object_exists(&unchanged, "table", table),
-            "rolled-back migration table remains: {table}"
+            "unexpected post-v1 table exists: {table}"
         );
     }
     assert_eq!(
@@ -105,21 +116,22 @@ fn v4_conflict_rolls_back_the_entire_v1_migration_chain() {
             [],
             |row| row.get(0),
         )
-        .expect("v1 Prompt survives v4 rollback");
+        .expect("v1 Prompt remains after prefix rejection");
     assert_eq!(prompt, "preserve me");
     drop((unchanged, root));
 }
 
 #[test]
-fn conflicting_group_executions_table_rolls_back_v3_to_v4_migration() {
+fn v3_future_group_executions_blocker_is_rejected_before_migration() {
     let (root, database) = legacy_v3_database();
-    let blocker = Connection::open(&database).expect("open migration blocker");
+    let blocker = Connection::open(&database).expect("open v3 future-table fixture");
     blocker
         .execute_batch("CREATE TABLE group_executions(blocker TEXT)")
-        .expect("install deterministic migration conflict");
+        .expect("install future v4 table blocker");
     drop(blocker);
 
-    open_database(&database).expect_err("conflicting v4 migration fails");
+    let error = open_database(&database).expect_err("v3 prefix rejects future v4 table");
+    assert!(matches!(error, HubStoreError::Corrupt { .. }));
     let unchanged = Connection::open(&database).expect("reopen unchanged v3 database");
     assert_v3_schema(&unchanged);
     assert_eq!(
