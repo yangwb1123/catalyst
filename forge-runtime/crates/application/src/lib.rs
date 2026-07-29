@@ -3,6 +3,15 @@ mod conversation_history;
 mod emitter;
 mod engine;
 mod error;
+mod group_execution_service;
+mod group_model_analysis_artifact;
+mod group_model_analysis_codec;
+mod group_model_analysis_collector;
+mod group_model_analysis_error;
+mod group_model_analysis_prepare;
+mod group_model_analysis_service;
+mod group_model_analysis_source;
+mod group_model_analysis_validation;
 mod group_run_service;
 mod hub_error;
 mod hub_service;
@@ -22,8 +31,18 @@ pub use conversation_history::{
 pub use engine::AgentRuntime;
 pub use error::RuntimeError;
 pub use forge_runtime_domain::{
-    DEFAULT_GROUP_CONTEXT_CONTENT_BYTES, GROUP_RUN_VERSION, MAX_GROUP_CONTEXT_CONTENT_BYTES,
-    MAX_GROUP_RUN_LIST_LIMIT,
+    DEFAULT_GROUP_CONTEXT_CONTENT_BYTES, GROUP_EXECUTION_VERSION, GROUP_RUN_VERSION,
+    MAX_GROUP_CONTEXT_CONTENT_BYTES, MAX_GROUP_EXECUTION_LIST_LIMIT,
+    MAX_GROUP_MODEL_ANALYSIS_LIST_LIMIT, MAX_GROUP_RUN_LIST_LIMIT,
+};
+pub use group_execution_service::{GroupExecutionService, StartGroupExecutionResult};
+pub use group_model_analysis_error::GroupModelAnalysisServiceError;
+pub use group_model_analysis_prepare::{
+    GROUP_MODEL_ANALYSIS_SYSTEM_PROMPT, GroupModelAnalysisRequestCodec,
+    PrepareGroupModelAnalysisInput,
+};
+pub use group_model_analysis_service::{
+    GroupModelAnalysisDispatchProvider, GroupModelAnalysisService, SendGroupModelAnalysisResult,
 };
 pub use group_run_service::GroupRunService;
 pub use hub_error::{HubError, HubField};

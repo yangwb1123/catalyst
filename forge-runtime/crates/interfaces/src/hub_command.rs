@@ -5,17 +5,24 @@ use std::{
     sync::Arc,
 };
 
-use forge_runtime_application::{GroupRunService, HubService, MAX_PROMPT_BYTES, RunService};
+use forge_runtime_application::{
+    GroupExecutionService, GroupRunService, HubService, MAX_PROMPT_BYTES, RunService,
+};
 use forge_runtime_infrastructure::SqliteHubStore;
 
 use crate::{
     args::{
-        Args, Command, GroupCommand, GroupRunCommand, PromptCommand, RunCommand, SessionCommand,
+        Args, Command, GroupCommand, GroupExecutionCommand, GroupRunCommand, PromptCommand,
+        RunCommand, SessionCommand,
     },
     group_context_output::GroupContextView,
+    group_execution_output::GroupExecutionInspectionView,
     group_run_output::GroupRunSnapshotView,
     hub_output::{CliOutput, OutputKind, RemoteStatus},
-    runtime_domain::{ConversationScope, GROUP_RUN_VERSION, GroupContextPolicy, PrepareGroupRun},
+    runtime_domain::{
+        BeginGroupExecution, ConversationScope, GROUP_EXECUTION_VERSION, GROUP_RUN_VERSION,
+        GroupContextPolicy, GroupExecutionMode, PrepareGroupRun,
+    },
     state_path::{
         canonical_project, hub_database_path, idempotency_key, unique_id, unix_time_millis,
     },
@@ -26,6 +33,7 @@ pub fn execute(args: &Args) -> Result<CliOutput, Box<dyn Error>> {
     let store = Arc::new(SqliteHubStore::open(database)?);
     let service = HubService::new(store.clone());
     let group_runs = GroupRunService::new(store.clone());
+    let group_executions = GroupExecutionService::new(store.clone());
     match &args.command {
         Command::Hub => show_hub(&service, args.project.as_deref(), args.group.as_deref()),
         Command::Session(command) => execute_session(
@@ -41,6 +49,7 @@ pub fn execute(args: &Args) -> Result<CliOutput, Box<dyn Error>> {
         Command::Group(command) => execute_group(
             &service,
             &group_runs,
+            &group_executions,
             args.idempotency_key.as_deref(),
             command,
         ),
@@ -131,10 +140,14 @@ fn execute_prompt(
 fn execute_group(
     service: &HubService,
     group_runs: &GroupRunService,
+    group_executions: &GroupExecutionService,
     supplied_key: Option<&str>,
     command: &GroupCommand,
 ) -> Result<CliOutput, Box<dyn Error>> {
     match command {
+        GroupCommand::Analysis(_) => {
+            Err("group analysis must use the dedicated model-analysis path".into())
+        }
         GroupCommand::Create { name } => {
             let key = operation_key(supplied_key, "group");
             let group = service.create_group(name, &key)?;
@@ -160,11 +173,66 @@ fn execute_group(
                 context: GroupContextView::from_slice(slice, *include_content),
             }))
         }
+        GroupCommand::Execution(command) => {
+            execute_group_execution(group_executions, supplied_key, command)
+        }
         GroupCommand::Run(command) => execute_group_run(group_runs, supplied_key, command),
         GroupCommand::List => Ok(CliOutput::new(OutputKind::Groups {
             groups: service.list_groups()?,
         })),
     }
+}
+
+fn execute_group_execution(
+    service: &GroupExecutionService,
+    supplied_key: Option<&str>,
+    command: &GroupExecutionCommand,
+) -> Result<CliOutput, Box<dyn Error>> {
+    match command {
+        GroupExecutionCommand::Start { group_run_id } => {
+            start_group_execution(service, supplied_key, group_run_id)
+        }
+        GroupExecutionCommand::Show { execution_id } => {
+            let inspection = service.inspect(execution_id)?;
+            Ok(CliOutput::new(OutputKind::GroupExecution {
+                inspection: GroupExecutionInspectionView::from(inspection),
+            }))
+        }
+        GroupExecutionCommand::List {
+            group_run_id,
+            limit,
+        } => Ok(CliOutput::new(OutputKind::GroupExecutions {
+            metadata_only: true,
+            source_and_journal_validated: false,
+            inspect_with: "group execution show EXECUTION_ID",
+            executions: service.list(group_run_id.as_deref(), *limit)?,
+        })),
+    }
+}
+
+fn start_group_execution(
+    service: &GroupExecutionService,
+    supplied_key: Option<&str>,
+    group_run_id: &str,
+) -> Result<CliOutput, Box<dyn Error>> {
+    let supplied_key = supplied_key.ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "group execution start requires an explicit idempotency key for durable recovery",
+        )
+    })?;
+    let result = service.start(&BeginGroupExecution {
+        v: GROUP_EXECUTION_VERSION,
+        execution_id: unique_id("group-execution"),
+        group_run_id: group_run_id.to_owned(),
+        mode: GroupExecutionMode::OfflineSnapshotValidation,
+        idempotency_key: supplied_key.to_owned(),
+        created_at_ms: unix_time_millis(),
+    })?;
+    Ok(CliOutput::new(OutputKind::GroupExecutionStarted {
+        disposition: result.disposition,
+        inspection: GroupExecutionInspectionView::from(result.inspection),
+    }))
 }
 
 fn execute_group_run(

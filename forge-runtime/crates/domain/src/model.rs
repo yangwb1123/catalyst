@@ -82,9 +82,39 @@ pub struct ModelRequest {
     pub cancellation: Cancellation,
 }
 
+/// One already encoded provider request that must be consumed for dispatch.
+pub struct PreparedModelRequest {
+    body: Vec<u8>,
+    cancellation: Cancellation,
+}
+
+impl PreparedModelRequest {
+    /// Binds exact request-body bytes to their local cancellation handle.
+    #[must_use]
+    pub fn new(body: Vec<u8>, cancellation: Cancellation) -> Self {
+        Self { body, cancellation }
+    }
+
+    /// Borrows the exact request-body bytes without transferring dispatch ownership.
+    #[must_use]
+    pub fn body(&self) -> &[u8] {
+        &self.body
+    }
+
+    /// Consumes the prepared request into the values required by a transport.
+    #[must_use]
+    pub fn into_parts(self) -> (Vec<u8>, Cancellation) {
+        (self.body, self.cancellation)
+    }
+}
+
 pub type ModelEventStream =
     Pin<Box<dyn Stream<Item = Result<ModelEvent, ProviderError>> + Send + 'static>>;
 
 pub trait ModelProvider: Send + Sync {
     fn stream(&self, request: ModelRequest) -> ModelEventStream;
+}
+
+pub trait PreparedModelProvider: Send + Sync {
+    fn stream_prepared(&self, request: PreparedModelRequest) -> ModelEventStream;
 }

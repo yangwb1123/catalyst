@@ -403,6 +403,7 @@ async fn mount_response(server: &MockServer, response: ResponseTemplate) {
     Mock::given(method("POST"))
         .and(path("/v1/responses"))
         .and(header("authorization", format!("Bearer {SECRET}")))
+        .and(header("content-type", "application/json"))
         .respond_with(response)
         .expect(1)
         .mount(server)

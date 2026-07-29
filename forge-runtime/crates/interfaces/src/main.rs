@@ -2,6 +2,9 @@ mod args;
 mod cli_usage;
 mod demo;
 mod group_context_output;
+mod group_execution_output;
+mod group_model_analysis_command;
+mod group_model_analysis_output;
 mod group_run_output;
 mod hub_command;
 mod hub_output;
@@ -54,8 +57,22 @@ async fn main() -> ExitCode {
             )
             .await
         }
+        Command::Group(args::GroupCommand::Analysis(command)) => {
+            run_group_model_analysis(&args, command).await
+        }
         _ => run_hub(&args),
     }
+}
+
+async fn run_group_model_analysis(args: &Args, command: &args::GroupAnalysisCommand) -> ExitCode {
+    let output = match group_model_analysis_command::execute(args, command).await {
+        Ok(output) => output,
+        Err(error) => {
+            eprintln!("Group Analysis command failed: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    write_cli_output(args, &output)
 }
 
 fn run_hub(args: &Args) -> ExitCode {
@@ -66,9 +83,11 @@ fn run_hub(args: &Args) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let stdout = io::stdout();
-    let mut writer = stdout.lock();
-    if let Err(error) = write_output(&output, args.json, &mut writer) {
+    write_cli_output(args, &output)
+}
+
+fn write_cli_output(args: &Args, output: &hub_output::CliOutput) -> ExitCode {
+    if let Err(error) = write_output(output, args.json, &mut io::stdout().lock()) {
         eprintln!("failed to write CLI output: {error}");
         return ExitCode::FAILURE;
     }

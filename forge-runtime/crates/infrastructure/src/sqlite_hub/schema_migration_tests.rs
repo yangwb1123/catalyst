@@ -1,39 +1,15 @@
 use rusqlite::Connection;
 use tempfile::TempDir;
 
-use crate::runtime_domain::HubStoreError;
-
 use super::{
     schema::open_database,
-    schema_sql::{CREATE_V1_SCHEMA_SQL, MIGRATE_V1_TO_V2_SQL},
+    schema_sql::{
+        CREATE_V1_SCHEMA_SQL, MIGRATE_V1_TO_V2_SQL, MIGRATE_V2_TO_V3_SQL, MIGRATE_V3_TO_V4_SQL,
+    },
 };
 
-#[test]
-fn v1_hub_data_is_preserved_by_atomic_v3_migration() {
-    let (root, database) = legacy_v1_database();
-    let connection = open_database(&database).expect("v1 Hub migrates through v3");
-
-    assert_v3_schema(&connection);
-    let prompt: String = connection
-        .query_row(
-            "SELECT content FROM prompts WHERE id = 'prompt-1'",
-            [],
-            |row| row.get(0),
-        )
-        .expect("legacy Prompt survives");
-    assert_eq!(prompt, "preserve me");
-    drop((connection, root));
-}
-
-#[test]
-fn v2_run_journal_and_assistant_are_preserved_by_v3_migration() {
-    let (root, database) = legacy_v2_database();
-    let connection = open_database(&database).expect("v2 Hub migrates to v3");
-
-    assert_v3_schema(&connection);
-    assert_legacy_run(&connection);
-    drop((connection, root));
-}
+#[path = "tests/schema_v5_migration.rs"]
+mod schema_v5_migration_tests;
 
 #[test]
 fn conflicting_group_runs_table_rolls_back_v2_to_v3_migration() {
@@ -88,21 +64,88 @@ fn v3_conflict_rolls_back_the_entire_v1_migration_chain() {
 }
 
 #[test]
-fn unknown_v4_schema_is_rejected_without_mutation() {
-    let (root, database) = legacy_v2_database();
-    let connection = Connection::open(&database).expect("open v2 fixture");
-    connection
-        .pragma_update(None, "user_version", 4)
-        .expect("mark future schema");
-    drop(connection);
+fn v4_conflict_rolls_back_the_entire_v1_migration_chain() {
+    let (root, database) = legacy_v1_database();
+    let blocker = Connection::open(&database).expect("open migration blocker");
+    blocker
+        .execute_batch("CREATE TABLE group_executions(blocker TEXT)")
+        .expect("install deterministic v4 migration conflict");
+    drop(blocker);
 
-    let error = open_database(&database).expect_err("v4 schema is unsupported");
-    assert!(matches!(error, HubStoreError::Corrupt { .. }));
-    let unchanged = Connection::open(&database).expect("reopen future schema");
-    assert_eq!(schema_version(&unchanged), 4);
-    assert_legacy_run(&unchanged);
-    assert!(!schema_object_exists(&unchanged, "table", "group_runs"));
+    open_database(&database).expect_err("third migration stage fails");
+    let unchanged = Connection::open(&database).expect("reopen unchanged v1 database");
+    assert_eq!(schema_version(&unchanged), 1);
+    for table in [
+        "runs",
+        "run_events",
+        "run_assistant_prompts",
+        "group_runs",
+        "group_execution_events",
+    ] {
+        assert!(
+            !schema_object_exists(&unchanged, "table", table),
+            "rolled-back migration table remains: {table}"
+        );
+    }
+    assert_eq!(
+        table_columns(&unchanged, "group_executions"),
+        vec!["blocker"]
+    );
+    for index in [
+        "group_runs_group",
+        "group_executions_group_run",
+        "group_executions_created",
+    ] {
+        assert!(!schema_object_named(&unchanged, index));
+    }
+    let prompt: String = unchanged
+        .query_row(
+            "SELECT content FROM prompts WHERE id='prompt-1'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("v1 Prompt survives v4 rollback");
+    assert_eq!(prompt, "preserve me");
     drop((unchanged, root));
+}
+
+#[test]
+fn conflicting_group_executions_table_rolls_back_v3_to_v4_migration() {
+    let (root, database) = legacy_v3_database();
+    let blocker = Connection::open(&database).expect("open migration blocker");
+    blocker
+        .execute_batch("CREATE TABLE group_executions(blocker TEXT)")
+        .expect("install deterministic migration conflict");
+    drop(blocker);
+
+    open_database(&database).expect_err("conflicting v4 migration fails");
+    let unchanged = Connection::open(&database).expect("reopen unchanged v3 database");
+    assert_v3_schema(&unchanged);
+    assert_eq!(
+        table_columns(&unchanged, "group_executions"),
+        vec!["blocker"]
+    );
+    for object in ["group_execution_events", "group_executions_group_run"] {
+        assert!(!schema_object_named(&unchanged, object));
+    }
+    drop((unchanged, root));
+}
+
+fn assert_v4_schema(connection: &Connection) {
+    assert_eq!(schema_version(connection), 4);
+    for table in [
+        "runs",
+        "run_events",
+        "run_assistant_prompts",
+        "group_runs",
+        "group_executions",
+        "group_execution_events",
+    ] {
+        assert!(
+            schema_object_exists(connection, "table", table),
+            "missing v4 table {table}"
+        );
+    }
 }
 
 fn assert_v3_schema(connection: &Connection) {
@@ -118,6 +161,16 @@ fn assert_v3_schema(connection: &Connection) {
         "index",
         "group_runs_group"
     ));
+}
+
+fn schema_object_named(connection: &Connection, name: &str) -> bool {
+    connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE name = ?1)",
+            [name],
+            |row| row.get(0),
+        )
+        .expect("schema object name query")
 }
 
 fn assert_legacy_run(connection: &Connection) {
@@ -203,6 +256,28 @@ fn legacy_v2_database() -> (TempDir, std::path::PathBuf) {
     (root, database)
 }
 
+fn legacy_v3_database() -> (TempDir, std::path::PathBuf) {
+    let (root, database) = legacy_v2_database();
+    let connection = Connection::open(&database).expect("open v2 fixture");
+    connection
+        .execute_batch(MIGRATE_V2_TO_V3_SQL)
+        .expect("migrate fixture to v3");
+    seed_v3_group_run(&connection);
+    drop(connection);
+    (root, database)
+}
+
+fn legacy_v4_database() -> (TempDir, std::path::PathBuf) {
+    let (root, database) = legacy_v3_database();
+    let connection = Connection::open(&database).expect("open v3 fixture");
+    connection
+        .execute_batch(MIGRATE_V3_TO_V4_SQL)
+        .expect("migrate fixture to v4");
+    seed_v4_group_execution(&connection);
+    drop(connection);
+    (root, database)
+}
+
 fn seed_v1_records(connection: &Connection) {
     connection
         .execute_batch(
@@ -243,6 +318,42 @@ fn seed_v2_run(connection: &Connection) {
                  VALUES('run-1','assistant-1');"#,
         )
         .expect("seed v2 Run records");
+}
+
+fn seed_v3_group_run(connection: &Connection) {
+    connection
+        .execute_batch(
+            "INSERT INTO groups(id,name,idempotency_key,created_at_ms)
+               VALUES('group-legacy','Legacy Group','group-legacy-key',3);
+             INSERT INTO group_runs(
+               id,group_id,run_version,status,context_version,context_slice_sha256,
+               context_blob,snapshot_sha256,idempotency_key,created_at_ms
+             ) VALUES(
+               'group-run-legacy','group-legacy',1,'prepared',1,zeroblob(32),
+               x'7b7d',zeroblob(32),'group-run-legacy-key',3
+             );",
+        )
+        .expect("seed v3 Group Run");
+}
+
+fn seed_v4_group_execution(connection: &Connection) {
+    connection
+        .execute_batch(
+            "INSERT INTO group_executions(
+               id,group_run_id,execution_version,mode,status,source_snapshot_sha256,
+               cursor_json,journal_bytes,idempotency_key,protocol_version,created_at_ms
+             ) VALUES(
+               'group-execution-legacy','group-run-legacy',1,
+               'offline_snapshot_validation','incomplete',zeroblob(32),
+               '{}',18,'group-execution-legacy-key',1,4
+             );
+             INSERT INTO group_execution_events(
+               execution_id,seq,event_json,event_sha256
+             ) VALUES(
+               'group-execution-legacy',1,'{\"legacy\":\"event\"}',zeroblob(32)
+             );",
+        )
+        .expect("seed v4 Group Execution");
 }
 
 fn schema_version(connection: &Connection) -> i64 {

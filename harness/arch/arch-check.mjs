@@ -71,6 +71,7 @@ export function checkFanin(model, rules) {
     if (f.isTest) continue;
     for (const imp of f.imports) {
       if (imp.kind !== 'internal' || !imp.dir) continue;
+      if (isRustSelfImport(f, imp)) continue;
       const set = importers.get(imp.dir) ?? new Set();
       set.add(f.rel);
       importers.set(imp.dir, set);
@@ -81,6 +82,16 @@ export function checkFanin(model, rules) {
     if (set.size > max) v.push(`${relOf(dir)}: ${set.size} importers (max ${max})`);
   }
   return v;
+}
+
+// `use crate::...`, `self::...`, and `super::...` are cohesion inside one Rust
+// crate, not inbound coupling to that crate. Resolution deliberately maps them
+// to the crate root for layering/cycle checks; fan-in must not count every
+// split module as if it were an external consumer.
+function isRustSelfImport(file, imported) {
+  if (file.lang !== 'rust') return false;
+  const head = imported.spec.split('::')[0];
+  return head === 'crate' || head === 'self' || head === 'super';
 }
 
 // cognitive: number of distinct top-level source modules <= max_root_modules.

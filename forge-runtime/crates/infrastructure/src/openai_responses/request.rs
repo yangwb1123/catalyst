@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use serde_json::{Value, json};
 
 use crate::runtime_domain::{Message, ModelRequest, ProviderError, ToolCall, ToolSpec};
@@ -18,6 +20,76 @@ pub(super) fn encode_request(model: &str, request: &ModelRequest) -> Result<Valu
         "stream": true,
         "store": false,
     }))
+}
+
+pub(super) fn encode_request_bytes(
+    model: &str,
+    request: &ModelRequest,
+) -> Result<Vec<u8>, ProviderError> {
+    canonical_json_bytes(encode_request(model, request)?)
+}
+
+pub(super) fn validate_exact_request_bytes(
+    model: &str,
+    expected_request: &ModelRequest,
+    actual_bytes: &[u8],
+) -> Result<(), ProviderError> {
+    let expected_bytes = encode_request_bytes(model, expected_request)?;
+    if actual_bytes == expected_bytes.as_slice() {
+        Ok(())
+    } else {
+        Err(protocol_error(
+            "prepared request body does not exactly match the expected request",
+        ))
+    }
+}
+
+pub(super) fn validate_request_bytes(
+    configured_model: &str,
+    bytes: &[u8],
+) -> Result<(), ProviderError> {
+    let value = serde_json::from_slice::<Value>(bytes)
+        .map_err(|_| protocol_error("prepared request body is not valid JSON"))?;
+    let canonical = canonical_json_bytes(value.clone())?;
+    if canonical != bytes {
+        return Err(protocol_error(
+            "prepared request body is not canonical JSON",
+        ));
+    }
+    let object = value
+        .as_object()
+        .ok_or_else(|| protocol_error("prepared request body must be a JSON object"))?;
+    if object.get("model").and_then(Value::as_str) != Some(configured_model) {
+        return Err(protocol_error(
+            "prepared request model does not match the configured model",
+        ));
+    }
+    if object.get("store") != Some(&Value::Bool(false)) {
+        return Err(protocol_error("prepared request must set store to false"));
+    }
+    if object.get("stream") != Some(&Value::Bool(true)) {
+        return Err(protocol_error("prepared request must set stream to true"));
+    }
+    Ok(())
+}
+
+fn canonical_json_bytes(value: Value) -> Result<Vec<u8>, ProviderError> {
+    serde_json::to_vec(&sort_json(value))
+        .map_err(|_| protocol_error("provider request could not be encoded"))
+}
+
+fn sort_json(value: Value) -> Value {
+    match value {
+        Value::Array(items) => Value::Array(items.into_iter().map(sort_json).collect()),
+        Value::Object(items) => {
+            let sorted = items
+                .into_iter()
+                .map(|(key, value)| (key, sort_json(value)))
+                .collect::<BTreeMap<_, _>>();
+            Value::Object(sorted.into_iter().collect())
+        }
+        other => other,
+    }
 }
 
 fn encode_messages(messages: &[Message]) -> Result<Vec<Value>, ProviderError> {

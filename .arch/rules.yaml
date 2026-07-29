@@ -65,8 +65,9 @@
 #              and has a distinct responsibility, raising actual 30 → 31.
 #              max_files 31 → 32 preserves the established one-file headroom.
 #   fanin:     max 28 PRODUCTION importing files (Rust domain);
-#              forge-core/internal/asset is 26. Tests excluded. RECALIBRATED 2026-07-27 when
-#              Rust entered the scanner; both are intended innermost APIs.
+#              forge-core/internal/asset is 26. Tests excluded. RECALIBRATED 2026-07-29:
+#              Rust `crate/self/super` imports are same-crate cohesion, not inbound
+#              consumers; external Cargo-crate imports remain counted.
 #   cognitive: 4 top-level source modules
 #              (examples, forge-core, forge-runtime, harness)
 #   functions: longest declared function <= 50 lines (policies.yml max_function_lines)

@@ -1,6 +1,8 @@
 mod cancellation;
 mod event;
 mod group_context;
+mod group_execution;
+mod group_model_analysis;
 mod group_run;
 mod hub;
 mod hub_store;
@@ -22,6 +24,41 @@ pub use group_context::{
     MAX_GROUP_CONTEXT_MEMBERS, MAX_GROUP_CONTEXT_PROJECT_CONVERSATIONS,
     MAX_GROUP_CONTEXT_PROMPT_EXCERPT_BYTES, MAX_GROUP_CONTEXT_PROMPTS_PER_CONVERSATION,
 };
+pub use group_execution::{
+    BeginGroupExecution, BeginGroupExecutionDisposition, BeginGroupExecutionResult,
+    GROUP_EXECUTION_PROTOCOL_VERSION, GROUP_EXECUTION_VERSION, GroupExecutionEvent,
+    GroupExecutionEventKind, GroupExecutionInspection, GroupExecutionJournalCursor,
+    GroupExecutionJournalError, GroupExecutionMode, GroupExecutionOutcome, GroupExecutionReceipt,
+    GroupExecutionRecord, GroupExecutionRecovery, GroupExecutionStatus, GroupExecutionStore,
+    MAX_GROUP_EXECUTION_CURSOR_JSON_BYTES, MAX_GROUP_EXECUTION_EVENT_JSON_BYTES,
+    MAX_GROUP_EXECUTION_EVENTS, MAX_GROUP_EXECUTION_JOURNAL_BYTES, MAX_GROUP_EXECUTION_LIST_LIMIT,
+};
+pub use group_model_analysis::{
+    ClaimGroupModelAnalysisDispatch, ClaimGroupModelAnalysisDispatchResult,
+    CompleteGroupModelAnalysis, CompleteGroupModelAnalysisDisposition,
+    CompleteGroupModelAnalysisResult, GROUP_MODEL_ANALYSIS_CONFIG_DIGEST_DOMAIN,
+    GROUP_MODEL_ANALYSIS_CONSENT_VERSION, GROUP_MODEL_ANALYSIS_EVENT_DIGEST_DOMAIN,
+    GROUP_MODEL_ANALYSIS_PROTOCOL_VERSION, GROUP_MODEL_ANALYSIS_PROVIDER_ENDPOINT,
+    GROUP_MODEL_ANALYSIS_REQUEST_DIGEST_DOMAIN, GROUP_MODEL_ANALYSIS_RESULT_DIGEST_DOMAIN,
+    GROUP_MODEL_ANALYSIS_RESULT_VERSION, GROUP_MODEL_ANALYSIS_SYSTEM_PROMPT_DIGEST_DOMAIN,
+    GROUP_MODEL_ANALYSIS_SYSTEM_PROMPT_VERSION, GROUP_MODEL_ANALYSIS_VERSION,
+    GroupModelAnalysisConfig, GroupModelAnalysisDispatchAuthority, GroupModelAnalysisDispatchClaim,
+    GroupModelAnalysisEvent, GroupModelAnalysisEventKind, GroupModelAnalysisInspection,
+    GroupModelAnalysisJournalCursor, GroupModelAnalysisJournalError, GroupModelAnalysisOutcome,
+    GroupModelAnalysisPreparedReceipt, GroupModelAnalysisProvider, GroupModelAnalysisRecord,
+    GroupModelAnalysisRecovery, GroupModelAnalysisRequestConfig, GroupModelAnalysisResult,
+    GroupModelAnalysisResultArtifact, GroupModelAnalysisResultReceipt, GroupModelAnalysisSource,
+    GroupModelAnalysisStatus, GroupModelAnalysisStore, MAX_GROUP_MODEL_ANALYSIS_CONFIG_JSON_BYTES,
+    MAX_GROUP_MODEL_ANALYSIS_CURSOR_JSON_BYTES, MAX_GROUP_MODEL_ANALYSIS_EVENT_JSON_BYTES,
+    MAX_GROUP_MODEL_ANALYSIS_EVENTS, MAX_GROUP_MODEL_ANALYSIS_ID_BYTES,
+    MAX_GROUP_MODEL_ANALYSIS_IDEMPOTENCY_KEY_BYTES, MAX_GROUP_MODEL_ANALYSIS_JOURNAL_BYTES,
+    MAX_GROUP_MODEL_ANALYSIS_LIST_LIMIT, MAX_GROUP_MODEL_ANALYSIS_MODEL_BYTES,
+    MAX_GROUP_MODEL_ANALYSIS_MODEL_EVENTS, MAX_GROUP_MODEL_ANALYSIS_OUTPUT_BYTES,
+    MAX_GROUP_MODEL_ANALYSIS_OUTPUT_TOKENS, MAX_GROUP_MODEL_ANALYSIS_REQUEST_BYTES,
+    MAX_GROUP_MODEL_ANALYSIS_RESULT_BYTES, MAX_GROUP_MODEL_ANALYSIS_SYSTEM_PROMPT_BYTES,
+    PrepareGroupModelAnalysis, PrepareGroupModelAnalysisDisposition,
+    PrepareGroupModelAnalysisResult,
+};
 pub use group_run::{
     GROUP_RUN_SNAPSHOT_DIGEST_DOMAIN, GROUP_RUN_VERSION, GroupRunRecord, GroupRunSnapshot,
     GroupRunStatus, GroupRunStore, MAX_GROUP_RUN_LIST_LIMIT, MAX_GROUP_RUN_SNAPSHOT_JSON_BYTES,
@@ -34,8 +71,8 @@ pub use hub::{
 pub use hub_store::{HubEntity, HubStore, HubStoreError};
 pub use message::Message;
 pub use model::{
-    ModelEvent, ModelEventStream, ModelFinishReason, ModelProvider, ModelRequest, ProviderError,
-    Usage,
+    ModelEvent, ModelEventStream, ModelFinishReason, ModelProvider, ModelRequest,
+    PreparedModelProvider, PreparedModelRequest, ProviderError, Usage,
 };
 pub use run::{LimitKind, RunLimits, RunOutcome, RunRequest, RunResult};
 pub use run_journal::{

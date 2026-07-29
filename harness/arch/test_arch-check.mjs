@@ -106,6 +106,31 @@ test('fanin: test-file importers are excluded (coupling is a production concern)
   assert.equal(checkFanin(m, rules).length, 0);
 });
 
+test('fanin: Rust crate/self/super imports are cohesion, not inbound coupling', () => {
+  const target = '/repo/crates/domain';
+  const model = {
+    files: [
+      {
+        rel: 'crates/domain/src/a.rs',
+        lang: 'rust',
+        isTest: false,
+        imports: [
+          { kind: 'internal', dir: target, spec: 'crate::model' },
+          { kind: 'internal', dir: target, spec: 'super::validation' },
+        ],
+      },
+      {
+        rel: 'crates/application/src/a.rs',
+        lang: 'rust',
+        isTest: false,
+        imports: [{ kind: 'internal', dir: target, spec: 'forge_runtime_domain' }],
+      },
+    ],
+  };
+  assert.deepEqual(checkFanin(model, { fanin: { max_importers: 1 } }), []);
+  assert.equal(checkFanin(model, { fanin: { max_importers: 0 } }).length, 1);
+});
+
 test('cognitive: too many top-level source modules is flagged', () => {
   const m = { files: [file('one/a.go', null), file('two/b.go', null)] }; // 2 > 1
   assert.equal(checkCognitive(m, rules).length, 1);

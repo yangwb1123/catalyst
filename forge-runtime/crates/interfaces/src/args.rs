@@ -1,9 +1,17 @@
 use std::{collections::VecDeque, env, path::PathBuf};
 
+#[path = "group_analysis_args.rs"]
+mod group_analysis_args;
 #[path = "group_args.rs"]
 mod group_args;
+#[path = "group_commands.rs"]
+mod group_commands;
 #[path = "run_args.rs"]
 mod run_args;
+
+pub use group_commands::{
+    GroupAnalysisCommand, GroupCommand, GroupExecutionCommand, GroupRunCommand,
+};
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct Args {
@@ -40,42 +48,6 @@ pub enum PromptCommand {
     },
     List {
         conversation_id: Option<String>,
-        limit: usize,
-    },
-}
-
-#[derive(Debug, Eq, PartialEq)]
-pub enum GroupCommand {
-    Create {
-        name: String,
-    },
-    Add {
-        group_id: String,
-        project: PathBuf,
-        role: String,
-    },
-    Context {
-        group_id: String,
-        include_content: bool,
-        max_bytes: usize,
-    },
-    Run(GroupRunCommand),
-    List,
-}
-
-#[derive(Debug, Eq, PartialEq)]
-pub enum GroupRunCommand {
-    Prepare {
-        group_id: String,
-        include_content: bool,
-        max_bytes: usize,
-    },
-    Show {
-        run_id: String,
-        include_content: bool,
-    },
-    List {
-        group_id: Option<String>,
         limit: usize,
     },
 }
@@ -198,6 +170,17 @@ fn validate_execution_options(options: &GlobalOptions, command: &Command) -> Res
             usage()
         ));
     }
+    if options.idempotency_key.is_some()
+        && matches!(
+            command,
+            Command::Group(GroupCommand::Analysis(GroupAnalysisCommand::Send { .. }))
+        )
+    {
+        return Err(format!(
+            "--idempotency-key is not valid for group analysis send; ANALYSIS_ID owns the single dispatch claim\n\n{}",
+            usage()
+        ));
+    }
     if options.idempotency_key.is_some() && !accepts_idempotency_key(command) {
         return Err(format!(
             "--idempotency-key is only valid for mutating commands\n\n{}",
@@ -301,6 +284,8 @@ fn accepts_idempotency_key(command: &Command) -> bool {
             | Command::Group(
                 GroupCommand::Create { .. }
                     | GroupCommand::Add { .. }
+                    | GroupCommand::Analysis(GroupAnalysisCommand::Prepare { .. })
+                    | GroupCommand::Execution(GroupExecutionCommand::Start { .. })
                     | GroupCommand::Run(GroupRunCommand::Prepare { .. })
             )
             | Command::Run(RunCommand::Start { .. })
@@ -449,3 +434,11 @@ mod tests;
 #[cfg(test)]
 #[path = "group_run_args_tests.rs"]
 mod group_run_tests;
+
+#[cfg(test)]
+#[path = "group_execution_args_tests.rs"]
+mod group_execution_tests;
+
+#[cfg(test)]
+#[path = "group_analysis_args_tests.rs"]
+mod group_analysis_tests;

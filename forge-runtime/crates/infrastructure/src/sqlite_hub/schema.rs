@@ -7,15 +7,23 @@ use std::{
 
 use rusqlite::{Connection, Error as SqliteError, ErrorCode};
 
+#[path = "schema_v5.rs"]
+mod v5;
+
 use super::{
     HubStoreError,
-    schema_sql::{CREATE_V1_SCHEMA_SQL, MIGRATE_V1_TO_V2_SQL, MIGRATE_V2_TO_V3_SQL},
+    schema_sql::{
+        CREATE_V1_SCHEMA_SQL, MIGRATE_V1_TO_V2_SQL, MIGRATE_V2_TO_V3_SQL, MIGRATE_V3_TO_V4_SQL,
+        MIGRATE_V4_TO_V5_SQL,
+    },
     unavailable,
 };
 
-const SCHEMA_VERSION: i64 = 3;
+const SCHEMA_VERSION: i64 = 5;
 const V1_SCHEMA_VERSION: i64 = 1;
 const V2_SCHEMA_VERSION: i64 = 2;
+const V3_SCHEMA_VERSION: i64 = 3;
+const V4_SCHEMA_VERSION: i64 = 4;
 const CONNECTION_BUSY_TIMEOUT: Duration = Duration::from_millis(250);
 const OPEN_RETRY_TIMEOUT: Duration = Duration::from_secs(5);
 const OPEN_RETRY_DELAY: Duration = Duration::from_millis(10);
@@ -103,7 +111,11 @@ fn reject_unsupported_schema(connection: &Connection) -> Result<(), OpenAttemptE
     let version = schema_version(connection)?;
     if matches!(
         version,
-        0 | V1_SCHEMA_VERSION | V2_SCHEMA_VERSION | SCHEMA_VERSION
+        0 | V1_SCHEMA_VERSION
+            | V2_SCHEMA_VERSION
+            | V3_SCHEMA_VERSION
+            | V4_SCHEMA_VERSION
+            | SCHEMA_VERSION
     ) {
         return Ok(());
     }
@@ -142,14 +154,27 @@ fn validate_locked_schema(connection: &Connection) -> Result<(), OpenAttemptErro
         0 => {
             create_v1_schema(connection)?;
             migrate_v1_to_v2(connection)?;
-            migrate_v2_to_v3(connection)
+            migrate_v2_to_v3(connection)?;
+            migrate_v3_to_v4(connection)?;
+            migrate_v4_to_v5(connection)
         }
         V1_SCHEMA_VERSION => {
             migrate_v1_to_v2(connection)?;
-            migrate_v2_to_v3(connection)
+            migrate_v2_to_v3(connection)?;
+            migrate_v3_to_v4(connection)?;
+            migrate_v4_to_v5(connection)
         }
-        V2_SCHEMA_VERSION => migrate_v2_to_v3(connection),
-        SCHEMA_VERSION => Ok(()),
+        V2_SCHEMA_VERSION => {
+            migrate_v2_to_v3(connection)?;
+            migrate_v3_to_v4(connection)?;
+            migrate_v4_to_v5(connection)
+        }
+        V3_SCHEMA_VERSION => {
+            migrate_v3_to_v4(connection)?;
+            migrate_v4_to_v5(connection)
+        }
+        V4_SCHEMA_VERSION => migrate_v4_to_v5(connection),
+        SCHEMA_VERSION => v5::validate(connection).map_err(Into::into),
         other => Err(unsupported_schema(other)),
     }
 }
@@ -176,6 +201,16 @@ fn migrate_v1_to_v2(connection: &Connection) -> Result<(), OpenAttemptError> {
 
 fn migrate_v2_to_v3(connection: &Connection) -> Result<(), OpenAttemptError> {
     connection.execute_batch(MIGRATE_V2_TO_V3_SQL)?;
+    Ok(())
+}
+
+fn migrate_v3_to_v4(connection: &Connection) -> Result<(), OpenAttemptError> {
+    connection.execute_batch(MIGRATE_V3_TO_V4_SQL)?;
+    Ok(())
+}
+
+fn migrate_v4_to_v5(connection: &Connection) -> Result<(), OpenAttemptError> {
+    connection.execute_batch(MIGRATE_V4_TO_V5_SQL)?;
     Ok(())
 }
 

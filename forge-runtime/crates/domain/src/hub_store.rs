@@ -157,6 +157,8 @@ pub enum HubEntity {
     Prompt,
     Group,
     GroupRun,
+    GroupExecution,
+    GroupModelAnalysis,
     GroupProjectMember,
 }
 

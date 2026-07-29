@@ -264,7 +264,9 @@ dependencies = [
  "forge-runtime-infrastructure",
  "futures-util",
  "rusqlite",
+ "serde",
  "serde_json",
+ "sha2",
  "tempfile",
  "thiserror",
  "tokio",
@@ -292,6 +294,7 @@ dependencies = [
  "futures-core",
  "serde",
  "serde_json",
+ "sha2",
 ]
 
 [[package]]

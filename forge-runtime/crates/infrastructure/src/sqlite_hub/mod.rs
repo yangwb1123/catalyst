@@ -5,6 +5,10 @@ mod group_context_read;
 #[path = "tests/group_context_snapshot.rs"]
 mod group_context_snapshot_tests;
 mod group_context_validate;
+mod group_execution_codec;
+mod group_execution_read;
+mod group_execution_write;
+mod group_model_analysis;
 mod group_run_codec;
 mod group_run_read;
 mod group_run_write;
@@ -26,11 +30,12 @@ mod write;
 use std::path::{Path, PathBuf};
 
 use forge_runtime_domain::{
-    BeginRun, BeginRunResult, Conversation, ConversationScope, GroupContextPolicy,
-    GroupContextSlice, GroupProjectMember, GroupRunRecord, GroupRunSnapshot, GroupRunStore,
-    HubEntity, HubSnapshot, HubStore, HubStoreError, PrepareGroupRun, PrepareGroupRunResult,
-    Project, PromptRecord, RunInspection, RunRecord, RunStore, RunStoreError, RuntimeEvent,
-    SessionGroup,
+    BeginGroupExecution, BeginGroupExecutionResult, BeginRun, BeginRunResult, Conversation,
+    ConversationScope, GroupContextPolicy, GroupContextSlice, GroupExecutionEvent,
+    GroupExecutionInspection, GroupExecutionRecord, GroupExecutionStore, GroupProjectMember,
+    GroupRunRecord, GroupRunSnapshot, GroupRunStore, HubEntity, HubSnapshot, HubStore,
+    HubStoreError, PrepareGroupRun, PrepareGroupRunResult, Project, PromptRecord, RunInspection,
+    RunRecord, RunStore, RunStoreError, RuntimeEvent, SessionGroup,
 };
 use rusqlite::{Connection, Error as SqliteError, ErrorCode};
 
@@ -189,6 +194,37 @@ impl GroupRunStore for SqliteHubStore {
         limit: usize,
     ) -> Result<Vec<GroupRunRecord>, HubStoreError> {
         group_run_read::list(&self.connect()?, group_id, limit)
+    }
+}
+
+impl GroupExecutionStore for SqliteHubStore {
+    fn begin_group_execution(
+        &self,
+        request: &BeginGroupExecution,
+    ) -> Result<BeginGroupExecutionResult, HubStoreError> {
+        group_execution_write::begin(&mut self.connect()?, request)
+    }
+
+    fn append_group_execution_event(
+        &self,
+        event: &GroupExecutionEvent,
+    ) -> Result<(), HubStoreError> {
+        group_execution_write::append(&mut self.connect()?, event)
+    }
+
+    fn inspect_group_execution(
+        &self,
+        execution_id: &str,
+    ) -> Result<GroupExecutionInspection, HubStoreError> {
+        group_execution_read::inspect(&mut self.connect()?, execution_id)
+    }
+
+    fn list_group_executions(
+        &self,
+        group_run_id: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<GroupExecutionRecord>, HubStoreError> {
+        group_execution_read::list(&self.connect()?, group_run_id, limit)
     }
 }
 

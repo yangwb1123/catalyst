@@ -3,12 +3,23 @@ use std::io::{self, Write};
 use serde::Serialize;
 
 use crate::runtime_domain::{
-    Conversation, ConversationScope, GroupProjectMember, GroupRunRecord, HubSnapshot,
-    PrepareGroupRunDisposition, PromptRecord, RunInspection, RunRecord, RunRecoveryState,
-    RuntimeEventKind, SessionGroup,
+    BeginGroupExecutionDisposition, Conversation, ConversationScope, GroupProjectMember,
+    GroupRunRecord, HubSnapshot, PrepareGroupRunDisposition, PromptRecord, RunInspection,
+    RunRecord, RunRecoveryState, RuntimeEventKind, SessionGroup,
 };
 use crate::{
     group_context_output::{GroupContextView, write_group_context},
+    group_execution_output::{
+        GroupExecutionInspectionView, write_group_execution, write_group_execution_list,
+        write_group_execution_started,
+    },
+    group_model_analysis_output::{
+        GroupModelAnalysisInspectionView, GroupModelAnalysisSendDisposition,
+        write_analysis as write_group_model_analysis,
+        write_list as write_group_model_analysis_list,
+        write_prepared as write_group_model_analysis_prepared,
+        write_sent as write_group_model_analysis_sent,
+    },
     group_run_output::{
         GroupRunSnapshotView, write_group_run, write_group_run_list, write_group_run_prepared,
     },
@@ -59,6 +70,36 @@ pub enum OutputKind {
     },
     GroupRuns {
         runs: Vec<GroupRunRecord>,
+    },
+    GroupExecutionStarted {
+        disposition: BeginGroupExecutionDisposition,
+        inspection: GroupExecutionInspectionView,
+    },
+    GroupExecution {
+        inspection: GroupExecutionInspectionView,
+    },
+    GroupExecutions {
+        metadata_only: bool,
+        source_and_journal_validated: bool,
+        inspect_with: &'static str,
+        executions: Vec<crate::runtime_domain::GroupExecutionRecord>,
+    },
+    GroupModelAnalysisPrepared {
+        disposition: crate::runtime_domain::PrepareGroupModelAnalysisDisposition,
+        inspection: GroupModelAnalysisInspectionView,
+    },
+    GroupModelAnalysisSent {
+        disposition: GroupModelAnalysisSendDisposition,
+        inspection: GroupModelAnalysisInspectionView,
+    },
+    GroupModelAnalysis {
+        inspection: GroupModelAnalysisInspectionView,
+    },
+    GroupModelAnalyses {
+        metadata_only: bool,
+        source_and_journal_validated: bool,
+        inspect_with: &'static str,
+        analyses: Vec<crate::runtime_domain::GroupModelAnalysisRecord>,
     },
     Groups {
         groups: Vec<SessionGroup>,
@@ -145,9 +186,41 @@ fn write_human(kind: &OutputKind, writer: &mut impl Write) -> Result<(), io::Err
         } => write_group_run_prepared(*disposition, snapshot, writer),
         OutputKind::GroupRun { snapshot } => write_group_run(snapshot, writer),
         OutputKind::GroupRuns { runs } => write_group_run_list(runs, writer),
+        OutputKind::GroupExecutionStarted {
+            disposition,
+            inspection,
+        } => write_group_execution_started(*disposition, inspection, writer),
+        OutputKind::GroupExecution { inspection } => write_group_execution(inspection, writer),
+        OutputKind::GroupExecutions { executions, .. } => {
+            write_group_execution_list(executions, writer)
+        }
+        OutputKind::GroupModelAnalysisPrepared { .. }
+        | OutputKind::GroupModelAnalysisSent { .. }
+        | OutputKind::GroupModelAnalysis { .. }
+        | OutputKind::GroupModelAnalyses { .. } => write_group_model_kind(kind, writer),
         OutputKind::Groups { groups } => write_groups(groups, writer),
         OutputKind::Runs { runs } => write_runs(runs, writer),
         OutputKind::Run { inspection } => write_run(inspection, writer),
+    }
+}
+
+fn write_group_model_kind(kind: &OutputKind, writer: &mut impl Write) -> Result<(), io::Error> {
+    match kind {
+        OutputKind::GroupModelAnalysisPrepared {
+            disposition,
+            inspection,
+        } => write_group_model_analysis_prepared(*disposition, inspection, writer),
+        OutputKind::GroupModelAnalysisSent {
+            disposition,
+            inspection,
+        } => write_group_model_analysis_sent(*disposition, inspection, writer),
+        OutputKind::GroupModelAnalysis { inspection } => {
+            write_group_model_analysis(inspection, writer)
+        }
+        OutputKind::GroupModelAnalyses { analyses, .. } => {
+            write_group_model_analysis_list(analyses, writer)
+        }
+        _ => unreachable!("caller routes only Group Model Analysis output"),
     }
 }
 

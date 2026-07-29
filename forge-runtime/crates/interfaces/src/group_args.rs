@@ -1,11 +1,13 @@
 use std::{collections::VecDeque, path::PathBuf};
 
 use forge_runtime_application::{
-    DEFAULT_GROUP_CONTEXT_CONTENT_BYTES, MAX_GROUP_CONTEXT_CONTENT_BYTES, MAX_GROUP_RUN_LIST_LIMIT,
+    DEFAULT_GROUP_CONTEXT_CONTENT_BYTES, MAX_GROUP_CONTEXT_CONTENT_BYTES,
+    MAX_GROUP_EXECUTION_LIST_LIMIT, MAX_GROUP_RUN_LIST_LIMIT,
 };
 
 use super::{
-    Command, GroupCommand, GroupRunCommand, next_value, require_empty, required_text, usage,
+    Command, GroupCommand, GroupExecutionCommand, GroupRunCommand, group_analysis_args, next_value,
+    require_empty, required_text, usage,
 };
 
 pub(super) fn parse(
@@ -17,7 +19,9 @@ pub(super) fn parse(
             name: required_text(tokens, "group name")?,
         })),
         Some("add") => parse_add(tokens),
+        Some("analysis") => group_analysis_args::parse(tokens, idempotency_key),
         Some("context") => parse_context(tokens),
+        Some("execution") => parse_execution(tokens, idempotency_key),
         Some("run") => parse_run(tokens, idempotency_key),
         Some("list") => {
             require_empty(tokens)?;
@@ -26,6 +30,79 @@ pub(super) fn parse(
         Some(value) => Err(format!("unknown group command '{value}'\n\n{}", usage())),
         None => Err(format!("group command is required\n\n{}", usage())),
     }
+}
+
+fn parse_execution(
+    tokens: &mut VecDeque<String>,
+    idempotency_key: &mut Option<String>,
+) -> Result<Command, String> {
+    match tokens.pop_front().as_deref() {
+        Some("start") => parse_execution_start(tokens, idempotency_key),
+        Some("show") => parse_execution_show(tokens),
+        Some("list") => parse_execution_list(tokens),
+        Some(value) => Err(format!(
+            "unknown group execution command '{value}'\n\n{}",
+            usage()
+        )),
+        None => Err(format!(
+            "group execution command is required\n\n{}",
+            usage()
+        )),
+    }
+}
+
+fn parse_execution_start(
+    tokens: &mut VecDeque<String>,
+    idempotency_key: &mut Option<String>,
+) -> Result<Command, String> {
+    let group_run_id = required_id(tokens, "group execution start", "GROUP_RUN_ID")?;
+    if tokens
+        .front()
+        .is_some_and(|value| value == "--idempotency-key")
+    {
+        tokens.pop_front();
+        if idempotency_key.is_some() {
+            return Err(duplicate("--idempotency-key"));
+        }
+        *idempotency_key = Some(next_value(tokens, "--idempotency-key")?);
+    }
+    require_empty(tokens)?;
+    if idempotency_key.is_none() {
+        return Err(format!(
+            "group execution start requires an explicit --idempotency-key for durable recovery\n\n{}",
+            usage()
+        ));
+    }
+    Ok(Command::Group(GroupCommand::Execution(
+        GroupExecutionCommand::Start { group_run_id },
+    )))
+}
+
+fn parse_execution_show(tokens: &mut VecDeque<String>) -> Result<Command, String> {
+    let execution_id = required_id(tokens, "group execution show", "EXECUTION_ID")?;
+    require_empty(tokens)?;
+    Ok(Command::Group(GroupCommand::Execution(
+        GroupExecutionCommand::Show { execution_id },
+    )))
+}
+
+fn parse_execution_list(tokens: &mut VecDeque<String>) -> Result<Command, String> {
+    let group_run_id = match tokens.front().map(String::as_str) {
+        Some(value) if !value.starts_with('-') => tokens.pop_front(),
+        _ => None,
+    };
+    let mut limit = 50;
+    if tokens.front().is_some_and(|value| value == "--limit") {
+        tokens.pop_front();
+        limit = parse_list_limit(tokens, MAX_GROUP_EXECUTION_LIST_LIMIT)?;
+    }
+    require_empty(tokens)?;
+    Ok(Command::Group(GroupCommand::Execution(
+        GroupExecutionCommand::List {
+            group_run_id,
+            limit,
+        },
+    )))
 }
 
 fn parse_context(tokens: &mut VecDeque<String>) -> Result<Command, String> {
@@ -124,7 +201,7 @@ fn parse_run_list(tokens: &mut VecDeque<String>) -> Result<Command, String> {
     let mut limit = 50;
     if tokens.front().is_some_and(|value| value == "--limit") {
         tokens.pop_front();
-        limit = parse_list_limit(tokens)?;
+        limit = parse_list_limit(tokens, MAX_GROUP_RUN_LIST_LIMIT)?;
     }
     require_empty(tokens)?;
     Ok(Command::Group(GroupCommand::Run(GroupRunCommand::List {
@@ -157,17 +234,15 @@ fn parse_context_bytes(tokens: &mut VecDeque<String>) -> Result<usize, String> {
     ))
 }
 
-fn parse_list_limit(tokens: &mut VecDeque<String>) -> Result<usize, String> {
+fn parse_list_limit(tokens: &mut VecDeque<String>, max: usize) -> Result<usize, String> {
     let value = next_value(tokens, "--limit")?;
     let parsed = value
         .parse::<usize>()
         .map_err(|_| format!("invalid --limit '{value}'"))?;
-    if (1..=MAX_GROUP_RUN_LIST_LIMIT).contains(&parsed) {
+    if (1..=max).contains(&parsed) {
         return Ok(parsed);
     }
-    Err(format!(
-        "--limit must be between 1 and {MAX_GROUP_RUN_LIST_LIMIT}"
-    ))
+    Err(format!("--limit must be between 1 and {max}"))
 }
 
 fn parse_add(tokens: &mut VecDeque<String>) -> Result<Command, String> {

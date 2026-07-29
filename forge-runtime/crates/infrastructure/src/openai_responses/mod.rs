@@ -1,8 +1,12 @@
+mod endpoint;
 mod output_items;
 mod output_semantics;
 #[cfg(test)]
 #[path = "tests/phase_stream.rs"]
 mod phase_stream_tests;
+#[cfg(test)]
+#[path = "tests/prepared_request.rs"]
+mod prepared_request_tests;
 #[cfg(test)]
 #[path = "tests/protocol.rs"]
 mod protocol_tests;
@@ -28,16 +32,22 @@ mod tests;
 
 use std::time::Duration;
 
-#[cfg(test)]
-use std::net::IpAddr;
-
 use crate::runtime_domain::{
-    Cancellation, ModelEvent, ModelEventStream, ModelProvider, ModelRequest, ProviderError,
+    Cancellation, ModelEvent, ModelEventStream, ModelProvider, ModelRequest, PreparedModelProvider,
+    PreparedModelRequest, ProviderError,
 };
 use futures_util::{StreamExt, stream};
 use reqwest::{Client, Response, Url, header};
 
-use self::{request::encode_request, sse::SseDecoder};
+use self::{
+    endpoint::{build_client, responses_endpoint},
+    request::{
+        encode_request_bytes as encode_canonical_request_bytes,
+        validate_exact_request_bytes as validate_exact_canonical_request_bytes,
+        validate_request_bytes,
+    },
+    sse::SseDecoder,
+};
 
 const ERROR_BODY_LIMIT: usize = 64 * 1024;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
@@ -101,7 +111,7 @@ impl OpenAiResponsesProvider {
         endpoint_policy: EndpointPolicy,
     ) -> Result<Self, ProviderError> {
         validate_non_empty("model", &model)?;
-        validate_non_empty("api_key", &api_key)?;
+        validate_api_key(&api_key)?;
         Ok(Self {
             client: build_client(endpoint_policy)?,
             endpoint: responses_endpoint(base_url, endpoint_policy)?,
@@ -109,10 +119,80 @@ impl OpenAiResponsesProvider {
             api_key,
         })
     }
+
+    /// Encodes the exact canonical request-body bytes for the configured model.
+    ///
+    /// This pure adapter operation requires neither a provider instance nor an
+    /// API key and performs no network I/O.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the model is empty, provider context violates the
+    /// Responses protocol, or canonical JSON encoding fails.
+    pub fn encode_request_bytes(
+        model: &str,
+        request: &ModelRequest,
+    ) -> Result<Vec<u8>, ProviderError> {
+        validate_non_empty("model", model)?;
+        encode_canonical_request_bytes(model, request)
+    }
+
+    /// Verifies persisted bytes against an exact expected logical request.
+    ///
+    /// The expected request is encoded again through the same canonical path
+    /// used for dispatch, then compared byte-for-byte with `actual_bytes`.
+    /// This pure adapter operation requires neither a provider instance nor an
+    /// API key and performs no network I/O.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the model or expected request is invalid, encoding
+    /// fails, or any byte differs.
+    pub fn validate_exact_request_bytes(
+        model: &str,
+        expected_request: &ModelRequest,
+        actual_bytes: &[u8],
+    ) -> Result<(), ProviderError> {
+        validate_non_empty("model", model)?;
+        validate_exact_canonical_request_bytes(model, expected_request, actual_bytes)
+    }
+
+    #[must_use]
+    pub fn endpoint(&self) -> &str {
+        self.endpoint.as_str()
+    }
+
+    #[must_use]
+    pub fn model(&self) -> &str {
+        &self.model
+    }
+
+    /// Encodes one request into the exact canonical bytes that will be sent.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when provider context violates the Responses protocol
+    /// or the request cannot be encoded as canonical JSON.
+    pub fn prepare_request(
+        &self,
+        request: ModelRequest,
+    ) -> Result<PreparedModelRequest, ProviderError> {
+        let body = Self::encode_request_bytes(&self.model, &request)?;
+        Ok(PreparedModelRequest::new(body, request.cancellation))
+    }
 }
 
 impl ModelProvider for OpenAiResponsesProvider {
     fn stream(&self, request: ModelRequest) -> ModelEventStream {
+        match self.prepare_request(request) {
+            Ok(prepared) => self.stream_prepared(prepared),
+            Err(error) => error_stream(error),
+        }
+    }
+}
+
+impl PreparedModelProvider for OpenAiResponsesProvider {
+    fn stream_prepared(&self, request: PreparedModelRequest) -> ModelEventStream {
         response_stream(
             self.client.clone(),
             self.endpoint.clone(),
@@ -128,18 +208,23 @@ fn response_stream(
     endpoint: Url,
     model: String,
     api_key: String,
-    request: ModelRequest,
+    request: PreparedModelRequest,
 ) -> ModelEventStream {
+    let (body, cancellation) = request.into_parts();
+    let decode_cancellation = cancellation.clone();
     let opening = stream::once(async move {
-        let cancellation = request.cancellation.clone();
-        send_request(&client, endpoint, &model, &api_key, &request)
+        send_request(&client, endpoint, &model, &api_key, body, cancellation)
             .await
-            .map(|response| (response, cancellation, api_key))
+            .map(|response| (response, decode_cancellation, api_key))
     });
     Box::pin(opening.flat_map(|result| match result {
         Ok((response, cancellation, api_key)) => decode_response(response, cancellation, api_key),
         Err(error) => Box::pin(stream::once(async move { Err(error) })),
     }))
+}
+
+fn error_stream(error: ProviderError) -> ModelEventStream {
+    Box::pin(stream::once(async move { Err(error) }))
 }
 
 fn decode_response(
@@ -207,20 +292,22 @@ async fn send_request(
     endpoint: Url,
     model: &str,
     api_key: &str,
-    request: &ModelRequest,
+    body: Vec<u8>,
+    cancellation: Cancellation,
 ) -> Result<Response, ProviderError> {
-    if request.cancellation.is_cancelled() {
+    if cancellation.is_cancelled() {
         return Err(cancelled_error());
     }
-    let body = encode_request(model, request)?;
+    validate_request_bytes(model, &body)?;
     let pending = client
         .post(endpoint)
         .bearer_auth(api_key)
         .header(header::ACCEPT, "text/event-stream")
-        .json(&body)
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(body)
         .send();
     let response = tokio::select! {
-        () = request.cancellation.cancelled() => return Err(cancelled_error()),
+        () = cancellation.cancelled() => return Err(cancelled_error()),
         result = pending => result.map_err(|error| transport_error(error.is_connect() || error.is_timeout()))?,
     };
     if response.status().is_success() && has_event_stream_content_type(&response) {
@@ -335,78 +422,23 @@ struct ApiError {
     message: String,
 }
 
-fn responses_endpoint(
-    base_url: &str,
-    endpoint_policy: EndpointPolicy,
-) -> Result<Url, ProviderError> {
-    let mut url = Url::parse(base_url)
-        .map_err(|_| config_error("base_url must be an absolute HTTP(S) URL"))?;
-    if url.cannot_be_a_base()
-        || !url.username().is_empty()
-        || url.password().is_some()
-        || url.query().is_some()
-        || url.fragment().is_some()
-    {
-        return Err(config_error(
-            "base_url must not contain credentials, a query, or a fragment",
-        ));
-    }
-    match endpoint_policy {
-        EndpointPolicy::Official => validate_official_base_url(&url)?,
-        #[cfg(test)]
-        EndpointPolicy::TestLoopback => {
-            if url.scheme() != "http"
-                || !url.host_str().is_some_and(is_loopback_host)
-                || !matches!(url.path(), "/v1" | "/v1/")
-            {
-                return Err(config_error(
-                    "test base_url must be an HTTP loopback URL ending in /v1",
-                ));
-            }
-        }
-    }
-    url.set_path("/v1/responses");
-    Ok(url)
-}
-
-fn validate_official_base_url(url: &Url) -> Result<(), ProviderError> {
-    if url.scheme() != "https"
-        || url.host_str() != Some("api.openai.com")
-        || url.port().is_some()
-        || !matches!(url.path(), "/v1" | "/v1/")
-    {
-        return Err(config_error(
-            "base_url must be exactly https://api.openai.com/v1",
-        ));
-    }
-    Ok(())
-}
-
-#[cfg(test)]
-fn is_loopback_host(host: &str) -> bool {
-    host == "localhost"
-        || host
-            .parse::<IpAddr>()
-            .is_ok_and(|address| address.is_loopback())
-}
-
-fn build_client(endpoint_policy: EndpointPolicy) -> Result<Client, ProviderError> {
-    Client::builder()
-        .https_only(matches!(endpoint_policy, EndpointPolicy::Official))
-        .redirect(reqwest::redirect::Policy::none())
-        .retry(reqwest::retry::never())
-        .connect_timeout(CONNECT_TIMEOUT)
-        .timeout(REQUEST_TIMEOUT)
-        .read_timeout(READ_TIMEOUT)
-        .build()
-        .map_err(|_| config_error("failed to construct the HTTP client"))
-}
-
 fn validate_non_empty(field: &str, value: &str) -> Result<(), ProviderError> {
     if value.trim().is_empty() {
         return Err(config_error(&format!("{field} must not be empty")));
     }
     Ok(())
+}
+
+fn validate_api_key(value: &str) -> Result<(), ProviderError> {
+    validate_non_empty("api_key", value)?;
+    if value.trim() != value {
+        return Err(config_error(
+            "api_key must not contain leading or trailing whitespace",
+        ));
+    }
+    header::HeaderValue::from_str(&format!("Bearer {value}"))
+        .map(|_| ())
+        .map_err(|_| config_error("api_key cannot form an Authorization header"))
 }
 
 fn redact(message: &str, api_key: &str) -> String {

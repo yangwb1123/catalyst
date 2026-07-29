@@ -7,6 +7,7 @@ pub enum HubField {
     ConversationId,
     GroupId,
     GroupRunId,
+    GroupExecutionId,
     ProjectId,
     Title,
     GroupName,
@@ -21,6 +22,7 @@ pub enum HubField {
     GroupContextPromptExcerptBytes,
     GroupContextBytes,
     GroupRunLimit,
+    GroupExecutionLimit,
 }
 
 #[derive(Debug, Error)]
@@ -39,8 +41,12 @@ pub enum HubError {
     },
     #[error("unsupported Group Run request version {actual}; expected {expected}")]
     UnsupportedGroupRunVersion { actual: u16, expected: u16 },
+    #[error("unsupported Group Execution request version {actual}; expected {expected}")]
+    UnsupportedGroupExecutionVersion { actual: u16, expected: u16 },
     #[error("Group Run creation time exceeds SQLite's signed 64-bit range")]
     GroupRunCreationTimeOutOfRange,
+    #[error("Group Execution creation time exceeds SQLite's signed 64-bit range")]
+    GroupExecutionCreationTimeOutOfRange,
     #[error("project path must be normalized and absolute")]
     InvalidProjectPath,
     #[error("hub store failed: {0}")]
