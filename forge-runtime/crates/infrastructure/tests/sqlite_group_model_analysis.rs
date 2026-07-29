@@ -250,41 +250,6 @@ fn completion_is_atomic_and_exactly_replayable() {
 }
 
 #[test]
-fn prepare_and_complete_roll_back_on_late_event_failure() {
-    let fixture = Fixture::new();
-    install_event_abort(&fixture, 1);
-    assert!(
-        fixture
-            .store
-            .prepare_group_model_analysis(&fixture.candidate("analysis-fail", "fail-key", 20))
-            .is_err()
-    );
-    assert_row_count(&fixture, "group_model_analyses", "analysis-fail", 0);
-    assert_row_count(&fixture, "group_model_analysis_events", "analysis-fail", 0);
-    remove_event_abort(&fixture);
-
-    let dispatched = dispatch(&fixture);
-    install_event_abort(&fixture, 3);
-    let artifact = result_artifact(&dispatched, "will roll back", 40);
-    assert!(
-        fixture
-            .store
-            .complete_group_model_analysis(&CompleteGroupModelAnalysis { v: 1, artifact })
-            .is_err()
-    );
-    let inspection = fixture
-        .store
-        .inspect_group_model_analysis("analysis-1")
-        .expect("dispatch state remains valid");
-    assert!(matches!(
-        inspection.recovery,
-        GroupModelAnalysisRecovery::DispatchUnknown { .. }
-    ));
-    assert_row_count(&fixture, "group_model_analysis_events", "analysis-1", 2);
-    assert_row_count(&fixture, "group_model_analysis_results", "analysis-1", 0);
-}
-
-#[test]
 fn full_inspection_rejects_corrupt_configuration_request_and_journal() {
     for sql in [
         "UPDATE group_model_analyses SET config_json='{}' WHERE id='analysis-1'",
@@ -430,20 +395,6 @@ fn assert_completed_corruption(sql: &str) {
         fixture.store.inspect_group_model_analysis("analysis-1"),
         Err(HubStoreError::Corrupt { .. })
     ));
-}
-
-fn install_event_abort(fixture: &Fixture, sequence: u64) {
-    execute_raw(
-        fixture,
-        &format!(
-            "CREATE TRIGGER fail_analysis_event BEFORE INSERT ON group_model_analysis_events
-             WHEN NEW.seq={sequence} BEGIN SELECT RAISE(ABORT,'injected failure'); END"
-        ),
-    );
-}
-
-fn remove_event_abort(fixture: &Fixture) {
-    execute_raw(fixture, "DROP TRIGGER fail_analysis_event");
 }
 
 fn execute_raw(fixture: &Fixture, sql: &str) {

@@ -5,6 +5,9 @@ mod output_semantics;
 #[path = "tests/phase_stream.rs"]
 mod phase_stream_tests;
 #[cfg(test)]
+#[path = "tests/post_terminal.rs"]
+mod post_terminal_tests;
+#[cfg(test)]
 #[path = "tests/prepared_request.rs"]
 mod prepared_request_tests;
 #[cfg(test)]
@@ -262,9 +265,6 @@ fn decode_response(
                 Ok(events) => {
                     for event in events {
                         yield Ok(event);
-                    }
-                    if decoder.is_terminal() {
-                        return;
                     }
                 }
                 Err(error) => {

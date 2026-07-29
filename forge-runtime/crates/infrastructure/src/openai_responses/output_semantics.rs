@@ -2,6 +2,8 @@ use serde_json::{Map, Value};
 
 use crate::runtime_domain::ProviderError;
 
+use super::sse_wire::IncompleteDetails;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum OutputTerminal {
     Completed,
@@ -26,6 +28,11 @@ pub(super) struct MessageProjection {
 pub(super) enum MessagePhase {
     Commentary,
     FinalAnswer,
+}
+
+pub(super) enum IncompleteReason {
+    MaxOutputTokens,
+    ContentFilter,
 }
 
 pub(super) fn optional_item_status(
@@ -113,6 +120,19 @@ pub(super) fn select_assistant_text(
     Ok(joined_text(messages, |message| {
         message.phase != Some(MessagePhase::Commentary)
     }))
+}
+
+pub(super) fn incomplete_reason(
+    details: Option<&IncompleteDetails>,
+) -> Result<IncompleteReason, ProviderError> {
+    match details.and_then(|details| details.reason.as_deref()) {
+        Some("max_output_tokens") => Ok(IncompleteReason::MaxOutputTokens),
+        Some("content_filter") => Ok(IncompleteReason::ContentFilter),
+        Some(_) => Err(protocol_error(
+            "response incomplete reason was not supported",
+        )),
+        None => Err(protocol_error("response incomplete reason was omitted")),
+    }
 }
 
 fn protocol_error(message: &str) -> ProviderError {

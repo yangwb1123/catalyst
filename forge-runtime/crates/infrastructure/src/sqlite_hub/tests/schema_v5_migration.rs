@@ -3,9 +3,9 @@ use rusqlite::Connection;
 use crate::runtime_domain::HubStoreError;
 
 use super::{
-    assert_legacy_run, assert_v4_schema, legacy_v1_database, legacy_v2_database,
-    legacy_v3_database, legacy_v4_database, open_database, schema_object_exists,
-    schema_object_named, schema_version, table_columns,
+    MIGRATE_V4_TO_V5_SQL, assert_legacy_run, assert_v4_schema, legacy_v1_database,
+    legacy_v2_database, legacy_v3_database, legacy_v4_database, open_database,
+    schema_object_exists, schema_object_named, schema_version, table_columns,
 };
 
 #[test]
@@ -159,6 +159,121 @@ fn malformed_v5_schema_is_rejected_without_mutation() {
         "table",
         "group_model_analyses"
     ));
+    drop((unchanged, root));
+}
+
+#[test]
+fn malformed_v5_definitions_are_rejected() {
+    for sql in malformed_column_cases()
+        .into_iter()
+        .chain(malformed_relation_cases())
+    {
+        assert_malformed_v5_is_rejected(&sql);
+    }
+}
+
+fn malformed_column_cases() -> [String; 6] {
+    [
+        malformed("model TEXT NOT NULL", "model BLOB NOT NULL"),
+        malformed("status TEXT NOT NULL", "status TEXT"),
+        malformed("model TEXT NOT NULL", "model TEXT NOT NULL DEFAULT 'model'"),
+        malformed(
+            "provider TEXT NOT NULL\n    CHECK(typeof(provider) = 'text' AND provider = 'openai_responses')",
+            "provider TEXT NOT NULL",
+        ),
+        malformed(
+            "analysis_id TEXT NOT NULL PRIMARY KEY",
+            "analysis_id TEXT NOT NULL",
+        ),
+        malformed(
+            "idempotency_key TEXT NOT NULL UNIQUE",
+            "idempotency_key TEXT NOT NULL",
+        ),
+    ]
+}
+
+fn malformed_relation_cases() -> [String; 13] {
+    [
+        malformed(
+            "group_run_id, created_at_ms DESC, id DESC",
+            "group_run_id, model DESC, id DESC",
+        ),
+        malformed("created_at_ms DESC, id DESC", "created_at_ms, id DESC"),
+        malformed(
+            "group_run_id, created_at_ms DESC, id DESC",
+            "group_run_id COLLATE NOCASE, created_at_ms DESC, id DESC",
+        ),
+        malformed(
+            "CREATE INDEX group_model_analyses_created",
+            "CREATE UNIQUE INDEX group_model_analyses_created",
+        ),
+        wrong_source_foreign_key(),
+        malformed("REFERENCES group_runs(id)", "REFERENCES groups(id)"),
+        malformed(
+            "REFERENCES group_runs(id)",
+            "REFERENCES group_runs(group_id)",
+        ),
+        malformed(
+            "REFERENCES group_runs(id)",
+            "REFERENCES group_runs(id) MATCH FULL",
+        ),
+        malformed("ON DELETE RESTRICT", "ON UPDATE CASCADE ON DELETE RESTRICT"),
+        malformed("ON DELETE RESTRICT", "ON DELETE CASCADE"),
+        format!(
+            "{MIGRATE_V4_TO_V5_SQL}
+CREATE UNIQUE INDEX rogue_v5_index ON group_model_analyses(model);"
+        ),
+        format!(
+            "{MIGRATE_V4_TO_V5_SQL}
+CREATE VIRTUAL TABLE pragma_index_list
+USING fts5(seq,name,\"unique\",origin,partial);
+CREATE UNIQUE INDEX shadowed_rogue_index ON group_model_analyses(model);"
+        ),
+        format!(
+            "{MIGRATE_V4_TO_V5_SQL}
+CREATE TRIGGER rogue_v5_trigger AFTER INSERT ON GROUP_MODEL_ANALYSES
+BEGIN SELECT 1; END;"
+        ),
+    ]
+}
+
+fn wrong_source_foreign_key() -> String {
+    let source_fk = MIGRATE_V4_TO_V5_SQL
+        .replacen(
+            "group_run_id TEXT NOT NULL REFERENCES group_runs(id) ON DELETE RESTRICT",
+            "group_run_id TEXT NOT NULL",
+            1,
+        )
+        .replacen(
+            "model TEXT NOT NULL",
+            "model TEXT NOT NULL REFERENCES group_runs(id) ON DELETE RESTRICT",
+            1,
+        );
+    assert_ne!(
+        source_fk, MIGRATE_V4_TO_V5_SQL,
+        "source FK replacement must match"
+    );
+    source_fk
+}
+
+fn malformed(original: &str, replacement: &str) -> String {
+    let sql = MIGRATE_V4_TO_V5_SQL.replacen(original, replacement, 1);
+    assert_ne!(sql, MIGRATE_V4_TO_V5_SQL, "fixture replacement must match");
+    sql
+}
+
+fn assert_malformed_v5_is_rejected(sql: &str) {
+    let (root, database) = legacy_v4_database();
+    let connection = Connection::open(&database).expect("open v4 fixture");
+    connection
+        .execute_batch(sql)
+        .expect("forge malformed v5 schema");
+    drop(connection);
+
+    let error = open_database(&database).expect_err("malformed v5 definition is corrupt");
+    assert!(matches!(error, HubStoreError::Corrupt { .. }));
+    let unchanged = Connection::open(&database).expect("reopen malformed v5 database");
+    assert_eq!(schema_version(&unchanged), 5);
     drop((unchanged, root));
 }
 

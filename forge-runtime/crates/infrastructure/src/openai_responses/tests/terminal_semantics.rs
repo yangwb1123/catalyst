@@ -148,7 +148,7 @@ fn incomplete_responses_accept_completed_or_incomplete_message_status() {
 }
 
 #[test]
-fn incomplete_function_calls_are_never_emitted_as_tool_calls() {
+fn incomplete_function_calls_are_protocol_failures() {
     let mut decoder = SseDecoder::new(SECRET);
     push_event(
         &mut decoder,
@@ -166,18 +166,14 @@ fn incomplete_function_calls_are_never_emitted_as_tool_calls() {
         None,
     );
 
-    let events = push_event(&mut decoder, &event).expect("incomplete function response");
+    let error = push_event(&mut decoder, &event).expect_err("incomplete function response");
 
-    assert_eq!(
-        events,
-        vec![ModelEvent::Finished {
-            reason: ModelFinishReason::Length,
-        }]
-    );
+    assert_eq!(error.code, "provider_protocol");
+    assert!(error.message.contains("function call"));
 }
 
 #[test]
-fn even_completed_calls_in_an_incomplete_response_are_not_executable() {
+fn completed_calls_in_an_incomplete_response_are_protocol_failures() {
     let mut decoder = SseDecoder::new(SECRET);
     push_event(&mut decoder, &function_added("item-done", "call-done")).expect("function item");
     push_event(
@@ -196,14 +192,10 @@ fn even_completed_calls_in_an_incomplete_response_are_not_executable() {
         None,
     );
 
-    let events = push_event(&mut decoder, &event).expect("incomplete response");
+    let error = push_event(&mut decoder, &event).expect_err("incomplete response");
 
-    assert_eq!(
-        events,
-        vec![ModelEvent::Finished {
-            reason: ModelFinishReason::Length,
-        }]
-    );
+    assert_eq!(error.code, "provider_protocol");
+    assert!(error.message.contains("function call"));
 }
 
 #[test]

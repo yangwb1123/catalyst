@@ -4,11 +4,10 @@ use crate::runtime_domain::{ModelEvent, ModelFinishReason, ProviderError, ToolCa
 
 use super::{
     output_items::{OPENAI_RESPONSES_CONTEXT, OutputProjection, validated_output_items},
-    output_semantics::{MessagePhase, OutputTerminal},
+    output_semantics::{IncompleteReason, MessagePhase, OutputTerminal, incomplete_reason},
     redaction::{StreamingRedactor, redact_text},
     sse_wire::{
-        CompletedResponse, IncompleteDetails, OutputItem, StreamEvent, WireUsage, frame_boundary,
-        parse_frame,
+        CompletedResponse, OutputItem, StreamEvent, WireUsage, frame_boundary, parse_frame,
     },
 };
 
@@ -403,6 +402,11 @@ impl SseDecoder {
                 "incomplete output did not match streamed assistant events",
             ));
         }
+        if !projection.tool_calls.is_empty() || !projection.incomplete_tool_calls.is_empty() {
+            return Err(protocol_error(
+                "incomplete response contained a function call",
+            ));
+        }
         Ok(())
     }
 
@@ -456,19 +460,6 @@ fn emit_usage(usage: Option<WireUsage>, output: &mut Vec<ModelEvent>) {
     }
 }
 
-fn incomplete_reason(
-    details: Option<&IncompleteDetails>,
-) -> Result<IncompleteReason, ProviderError> {
-    match details.and_then(|details| details.reason.as_deref()) {
-        Some("max_output_tokens") => Ok(IncompleteReason::MaxOutputTokens),
-        Some("content_filter") => Ok(IncompleteReason::ContentFilter),
-        Some(_) => Err(protocol_error(
-            "response incomplete reason was not supported",
-        )),
-        None => Err(protocol_error("response incomplete reason was omitted")),
-    }
-}
-
 struct PendingCall {
     call_id: String,
     name: String,
@@ -482,11 +473,6 @@ struct CompletedCall {
 struct StreamedMessage {
     phase: Option<MessagePhase>,
     text: String,
-}
-
-enum IncompleteReason {
-    MaxOutputTokens,
-    ContentFilter,
 }
 
 fn protocol_error(message: &str) -> ProviderError {

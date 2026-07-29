@@ -147,7 +147,7 @@ pub fn result_artifact(
             output_tokens: 7,
         },
     };
-    let bytes = serde_json::to_vec(&result).expect("result JSON");
+    let bytes = canonical_json_bytes(&result);
     GroupModelAnalysisResultArtifact {
         result,
         result_sha256: digest(GROUP_MODEL_ANALYSIS_RESULT_DIGEST_DOMAIN, &bytes),

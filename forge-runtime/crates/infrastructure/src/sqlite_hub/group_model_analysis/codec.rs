@@ -104,8 +104,7 @@ pub(super) fn encode_result(
     result: &GroupModelAnalysisResult,
     created_at_ms: u64,
 ) -> Result<(GroupModelAnalysisResultArtifact, EncodedJson), HubStoreError> {
-    let bytes = serde_json::to_vec(result)
-        .map_err(|error| corrupt(&format!("analysis result cannot encode: {error}")))?;
+    let bytes = canonical_json_bytes(result)?;
     let encoded = encoded_result(bytes)?;
     let artifact = GroupModelAnalysisResultArtifact {
         result: result.clone(),
@@ -127,7 +126,7 @@ pub(super) fn decode_result(
     validate_result_bytes(bytes, &digest)?;
     let result = serde_json::from_str(json)
         .map_err(|error| corrupt(&format!("invalid stored analysis result: {error}")))?;
-    if serde_json::to_vec(&result).map_err(|error| corrupt(&error.to_string()))? != bytes {
+    if canonical_json_bytes(&result)? != bytes {
         return Err(corrupt("stored analysis result is not canonical"));
     }
     Ok(GroupModelAnalysisResultArtifact {

@@ -1,3 +1,6 @@
+#[cfg(test)]
+#[path = "tests/group_model_analysis_atomicity.rs"]
+mod atomicity_tests;
 mod codec;
 mod complete;
 mod read;

@@ -5,6 +5,7 @@ use super::{
     schema::open_database,
     schema_sql::{
         CREATE_V1_SCHEMA_SQL, MIGRATE_V1_TO_V2_SQL, MIGRATE_V2_TO_V3_SQL, MIGRATE_V3_TO_V4_SQL,
+        MIGRATE_V4_TO_V5_SQL,
     },
 };
 
