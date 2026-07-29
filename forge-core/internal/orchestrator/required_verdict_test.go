@@ -109,3 +109,25 @@ func TestRun_RequiredApproveEvidenceCommitIsEnforced(t *testing.T) {
 		t.Fatalf("evidence failure commits=%d executed=%v", commits, rec.executed)
 	}
 }
+
+func TestRun_StrictQAContractIsIntrinsicWithoutCallerRequirementHook(t *testing.T) {
+	qa := asset.Phase{
+		Name: "qa", Agent: "qa", VerdictContract: asset.VerdictContractQAV1,
+		RequiredGates: []string{"test"},
+		OnFail:        &asset.OnFail{Action: "loop_back", TargetPhase: "implementer"},
+	}
+	wf := asset.Workflow{Stage: "build", Phases: []asset.Phase{
+		{Name: "implementer", Agent: "implementer"}, qa,
+		{Name: "after-qa", Agent: "observer"},
+	}}
+	rec := &recorder{}
+	eng := Engine{Exec: rec.executor(), RunGate: allOK}
+
+	err := eng.Run(wf, "balanced")
+	if err == nil || !strings.Contains(err.Error(), "required agent verdict is unavailable") {
+		t.Fatalf("intrinsic strict-QA error = %v", err)
+	}
+	if contains(rec.executed, "after-qa") {
+		t.Fatalf("strict QA without a caller hook failed open: %v", rec.executed)
+	}
+}

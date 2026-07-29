@@ -68,6 +68,14 @@ func (e Engine) RunParallel(ctx context.Context, wf asset.Workflow, mode string)
 	if err := asset.ValidateWorkflowStructure(wf); err != nil {
 		return fmt.Errorf("parallel orchestration: invalid workflow structure: %w", err)
 	}
+	for _, p := range wf.Phases {
+		if p.VerdictContract == asset.VerdictContractQAV1 {
+			return fmt.Errorf(
+				"parallel orchestration: phase %s: verdict_contract %q requires serial directed loop-back orchestration",
+				p.Name, p.VerdictContract,
+			)
+		}
+	}
 	if e.checkStageSkip(wf) {
 		return nil
 	}

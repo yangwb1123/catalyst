@@ -213,7 +213,7 @@ func emitsFilesFor(priorEmits func(name string) []string, name string) []string 
 // preserving the byte-for-byte no-hook default path for a plain stub run. unwrapClaudeResult
 // (the log renderer) is applied by the caller, not here. The latency argument is ignored on
 // every non-cost concern (feed-forward, verdict) — only the billed claude path stamps it.
-func observeFor(isClaude bool, costSink func(phase, model string, usd float64, latency time.Duration), phaseModel func(phase string) string, phaseOut *phaseOutputLedger, feedsForward func(phase string) bool, verdicts *verdictLedger, findings *reviewFindingsLedger, onFailTarget func(phase string) (string, bool)) func(phase, output string, latency time.Duration) {
+func observeFor(isClaude bool, costSink func(phase, model string, usd float64, latency time.Duration), phaseModel func(phase string) string, phaseOut *phaseOutputLedger, feedsForward func(phase string) bool, verdicts *verdictLedger, findings *reviewFindingsLedger, onFailTarget func(phase string) (string, bool), contractLookups ...func(phase string) string) func(phase, output string, latency time.Duration) {
 	if !isClaude && phaseOut == nil && verdicts == nil && findings == nil {
 		return nil
 	}
@@ -223,7 +223,16 @@ func observeFor(isClaude bool, costSink func(phase, model string, usd float64, l
 			phaseOut.record(phase, unwrapClaudeResult(sanitized))
 		}
 		if verdicts != nil {
-			if v, ok := parseReviewerVerdict(sanitized); ok {
+			contract := verdictContractFor(contractLookups, phase)
+			if contract == asset.VerdictContractQAV1 {
+				// Strict QA parses the raw bytes so sanitization cannot erase a
+				// wrapper control character and turn a malformed line into an
+				// exact token. Findings remain sanitized before prompt reuse.
+				if v, ok := parseQAVerdictForExecutor(output, isClaude); ok {
+					verdicts.record(phase, v)
+					recordLoopbackFindings(phase, v, sanitized, findings, onFailTarget)
+				}
+			} else if v, ok := parseReviewerVerdict(sanitized); ok {
 				verdicts.record(phase, v)
 				recordLoopbackFindings(phase, v, sanitized, findings, onFailTarget)
 			} else if v, ok := parseExecutiveVerdict(sanitized); ok {

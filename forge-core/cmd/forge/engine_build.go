@@ -94,10 +94,11 @@ func buildRunEngine(wf asset.Workflow, o runOpts, logln func(string), costSink f
 		Exec: agentExecutor(o, logln, budget.feed(costSink), tierOf, phaseTierByName(wf, tierOf),
 			ctxCache, gates, phaseOut, feedsForwardOf(wf), verdicts, findings,
 			onFailTargetOf(wf), priorEmitsOf(wf), executorHooks{
-				ValidateOutput:    phaseOutputContract(o.root, wf, provenance),
-				ValidateRawOutput: releaseRawOutputContract(wf),
-				OnBuild:           provenance.recordBuild,
-				ModelFor:          provenance.modelFor,
+				ValidateOutput:     phaseOutputContract(o.root, wf, provenance),
+				ValidateRawOutput:  releaseRawOutputContract(wf),
+				OnBuild:            provenance.recordBuild,
+				ModelFor:           provenance.modelFor,
+				VerdictContractFor: verdictContractOf(wf),
 			}),
 		RunGate:      runGate,
 		Log:          logln,
@@ -106,13 +107,22 @@ func buildRunEngine(wf asset.Workflow, o runOpts, logln func(string), costSink f
 		RequireAgentVerdict: func(p asset.Phase) bool {
 			return releaseValidationPhase(wf.Stage, p)
 		},
-		OnRequiredVerdictApproved: provenance.writeValidationReceipt,
+		OnRequiredVerdictApproved: releaseVerdictCommit(wf.Stage, provenance),
 		BudgetExhausted:           budget.BudgetExhaustedFunc(),
 		MaxRetries:                o.maxRetries,
 		MaxLoopBack:               maxLoopBack,
 		MaxAgentCalls:             o.maxAgentCalls,
 		ModePolicy:                pol,
 	}, verdicts, findings
+}
+
+func releaseVerdictCommit(stage string, provenance *artifactProvenance) func(asset.Phase) error {
+	return func(p asset.Phase) error {
+		if !releaseValidationPhase(stage, p) {
+			return nil
+		}
+		return provenance.writeValidationReceipt(p)
+	}
 }
 
 func loadRunScorecards(wf asset.Workflow, root string, logln func(string)) []routing.Scorecard {

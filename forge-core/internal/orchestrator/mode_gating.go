@@ -22,15 +22,18 @@ func (e Engine) gatingActive() bool {
 // inactive (zero policy) it is the phase's full required_gates (back-compat);
 // with gating active it is the INTERSECTION of required_gates and the policy's
 // gate-set, so explorer drops complexity/arch/security while a production-forced
-// full policy keeps them all. Order follows the phase's declaration. An empty
-// result is legal — that gate phase simply has no gate to run under this mode.
+// full policy keeps them all. qa_v1's independently required test gate is the
+// explicit exception: mode filtering can never remove that enforcement boundary.
+// Order follows the phase's declaration. An empty result is legal for phases
+// without a strict verdict contract.
 func (e Engine) gatesFor(p asset.Phase) []string {
 	if !e.gatingActive() {
 		return p.RequiredGates
 	}
 	kept := make([]string, 0, len(p.RequiredGates))
 	for _, g := range p.RequiredGates {
-		if e.ModePolicy.Allows(g) {
+		if e.ModePolicy.Allows(g) ||
+			(p.VerdictContract == asset.VerdictContractQAV1 && g == "test") {
 			kept = append(kept, g)
 		}
 	}

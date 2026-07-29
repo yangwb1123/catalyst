@@ -39,7 +39,7 @@ const threeAgentWorkflow = `{
   "phases": [
     {"name": "planner", "agent": "planner", "readonly": true, "required_gates": []},
     {"name": "implementer", "agent": "implementer", "readonly": false, "required_gates": []},
-    {"name": "qa", "agent": "qa", "readonly": true, "required_gates": []}
+    {"name": "qa", "agent": "test-agent", "readonly": true, "required_gates": []}
   ],
   "stop_condition": {"type": "external", "all_of": [], "anti_pattern": "round_count"}
 }`

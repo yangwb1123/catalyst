@@ -66,6 +66,7 @@ REQUIRED_AGENT_SECTIONS = [
 ]
 
 REQUIRED_ACCEPTANCE_CRITERIA = ["test_pass", "lint", "build"]
+QA_VERDICT_CONTRACT = "qa_v1"
 
 # modes.yml `priorities:` is a per-mode ranking over these three trade-off axes.
 # Each axis must be ranked 1..3 (1 = highest priority). The ranking is a WEAK
@@ -334,6 +335,92 @@ def check_acceptance_schema(agent_root):
     ]
 
 
+def _phase_verdict_contract_issues(path, data, phase):
+    """Validate one phase's opt-in machine-verdict contract."""
+    contract = phase.get("verdict_contract")
+    stage, agent = data.get("stage"), phase.get("agent")
+    if contract is None or contract == "":
+        if stage == "build" and agent == "qa":
+            return [f"{path}: build QA phase {phase.get('name')!r} must declare "
+                    f"verdict_contract: {QA_VERDICT_CONTRACT}"]
+        return []
+    if contract != QA_VERDICT_CONTRACT:
+        return [f"{path}: verdict_contract {contract!r} is unsupported "
+                f"(allowed: absent/empty or {QA_VERDICT_CONTRACT!r})"]
+    issues = []
+    if stage != "build":
+        issues.append(f"{path}: {QA_VERDICT_CONTRACT} is restricted to stage 'build'")
+    if agent != "qa":
+        issues.append(f"{path}: {QA_VERDICT_CONTRACT} is restricted to agent 'qa'")
+    on_fail = phase.get("on_fail")
+    if not isinstance(on_fail, dict) or on_fail.get("action") != "loop_back":
+        issues.append(f"{path}: {QA_VERDICT_CONTRACT} requires on_fail.action: loop_back")
+    target = on_fail.get("target_phase") if isinstance(on_fail, dict) else None
+    if not isinstance(target, str) or not target.strip():
+        issues.append(f"{path}: {QA_VERDICT_CONTRACT} requires non-empty "
+                      "on_fail.target_phase")
+    if str(phase.get("required_when") or "").strip() or phase.get("optional_for"):
+        issues.append(f"{path}: {QA_VERDICT_CONTRACT} phase {phase.get('name')!r} "
+                      "must not be mode-skippable")
+    gates = phase.get("required_gates")
+    if not isinstance(gates, list) or "test" not in gates:
+        issues.append(f"{path}: {QA_VERDICT_CONTRACT} phase {phase.get('name')!r} "
+                      "requires the independent test gate")
+    return issues
+
+
+def _qa_loop_target_issues(path, phases, phase_index, target):
+    """Require a qa_v1 rejection lane to resolve to one prior implementer."""
+    if not isinstance(target, str) or not target.strip():
+        return []
+    matches = [
+        (index, phase)
+        for index, phase in enumerate(phases)
+        if phase.get("name") == target
+    ]
+    if not matches:
+        return [f"{path}: {QA_VERDICT_CONTRACT} target {target!r} does not exist"]
+    if len(matches) != 1:
+        return [f"{path}: {QA_VERDICT_CONTRACT} target {target!r} is ambiguous"]
+    target_index, target_phase = matches[0]
+    if target_index >= phase_index:
+        return [
+            f"{path}: {QA_VERDICT_CONTRACT} target {target!r} "
+            "must be an earlier phase"
+        ]
+    if target_phase.get("agent") != "implementer":
+        return [
+            f"{path}: {QA_VERDICT_CONTRACT} target {target!r} "
+            "must use agent 'implementer'"
+        ]
+    if target_phase.get("readonly") is True:
+        return [f"{path}: {QA_VERDICT_CONTRACT} target {target!r} must be writable"]
+    if (str(target_phase.get("required_when") or "").strip()
+            or target_phase.get("optional_for")):
+        return [
+            f"{path}: {QA_VERDICT_CONTRACT} target {target!r} "
+            "must not be mode-skippable"
+        ]
+    return []
+
+
+def check_workflow_verdict_contracts(agent_root):
+    """Only Build's QA phase may opt into the strict qa_v1 handshake."""
+    issues = []
+    for path in sorted((agent_root / "workflows").glob("*.yml")):
+        data, err = _load_yaml(path)
+        if err or not isinstance(data, dict):
+            continue
+        phases = list(_collect_phases(data))
+        for index, phase in enumerate(phases):
+            issues.extend(_phase_verdict_contract_issues(path, data, phase))
+            if phase.get("verdict_contract") == QA_VERDICT_CONTRACT:
+                on_fail = phase.get("on_fail")
+                target = on_fail.get("target_phase") if isinstance(on_fail, dict) else None
+                issues.extend(_qa_loop_target_issues(path, phases, index, target))
+    return issues
+
+
 # --- runner ------------------------------------------------------------------
 
 CHECKS = [
@@ -346,6 +433,7 @@ CHECKS = [
     check_mode_priorities,
     check_workflow_mode_gating,
     check_acceptance_schema,
+    check_workflow_verdict_contracts,
     check_workflow_control_flow,
     check_release_boundary,
 ]

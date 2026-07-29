@@ -22,7 +22,7 @@ const fixtureWorkflow = `{
     {"name": "implementer", "agent": "implementer", "readonly": false, "required_gates": []},
     {"name": "harness-gates", "agent": "harness", "readonly": true,
      "required_gates": ["lint", "test", "build"]},
-    {"name": "qa", "agent": "qa", "readonly": true, "required_gates": ["test"]}
+    {"name": "qa", "agent": "test-agent", "readonly": true, "required_gates": ["test"]}
   ],
   "stop_condition": {"type": "conjunction", "all_of": [{"metric": "roadmap_completion", "operator": "==", "threshold": 100}, {"metric": "gates_status", "operator": "==", "value": "green"}], "anti_pattern": "round_count"}
 }`

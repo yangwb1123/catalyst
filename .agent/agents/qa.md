@@ -12,7 +12,8 @@
 - `harness/gate.mjs`(结构闸门作前置)
 
 ## 输出 (produces)
-- `## QA Report` 结论:`ACCEPTED` / `REJECTED` + 逐项 acceptance 通过/失败 + 证据 —— **人读报告 + 喂 Eval 记分卡**(机读 loop-back 由下方 `test` 闸门驱动、非此文本:当前**无 QA verdict 解析器**)
+- `## QA Report` 结论:`ACCEPTED` / `REJECTED` + 逐项 acceptance 通过/失败 + 证据 —— **人读报告 + 喂 Eval 记分卡**
+- Build QA 报告的**最后一个非空行**必须精确为 `QA_VERDICT: ACCEPTED` 或 `QA_VERDICT: REJECTED`；不得放进 Markdown 列表/引用/代码围栏，不得在其后追加非空文本
 - Evolve `evaluate` 阶段仅可写 `docs/review/eval-scorecard.md`;该文件是本轮审计报告,结构化路由数据仍由 wind-down 写入 `.agent/routing/scorecards.json`
 - E2E 结果 · benchmark 数值 vs NFR 阈值 · security scan 发现(依赖/SBOM/注入面)
 - 失败项:复现步骤 + 期望 vs 实际 + 严重度(喂回 Eval 记分卡)
@@ -25,6 +26,9 @@
 - ✅ 验收基于客观证据(运行结果/扫描输出),非主观判断
 
 ## 交接 / 停止 (handoff / stop)
-- **机读 test-gate 回流(非 QA-report verdict 握手)**:qa phase 的 `required_gates: [test]` —— 回归测试红 → `on_fail` 自动退回 `implementer`(build.yml)。这是 QA phase **唯一**机读回流触发源。
-- **QA 报告裁决(当前 fail-open、无机读握手)**:E2E/benchmark/NFR/security 的 `REJECTED`(`test` 闸门抓不到的失败)当前**无解析器**、不自动阻断 —— 喂 Eval 记分卡 + 人读 + lifecycle 派生补测;对称 `reviewer` 的 fail-open,但 reviewer 有 `VERDICT:` 机读契约、qa 暂无 → **严格机读 QA 握手待后续显式设计**。安全/性能架构级问题 → 升 `architect`。
+- **Build QA 严格机读握手**:`build.yml` 的 `verdict_contract: qa_v1` 要求上述精确末行；缺失/畸形裁决一律 fail-closed，`REJECTED` 按 `on_fail` 回 `implementer`，回流预算耗尽则中止而非放行
+- **不可绕过**:该 phase 不得声明 `required_when`/非空 `optional_for`，必须保留且在所有 mode 下实际运行独立 `test` gate；回流目标必须是已存在、位于 QA 之前、可写且不可被 mode 跳过的 `implementer`
+- **裁决规则**:所有必需 acceptance 均有通过证据才可 `ACCEPTED`；任一必需项失败、未验证或证据不足都必须 `REJECTED`
+- **test gate 独立生效**:`required_gates: [test]` 红灯同样回 `implementer`，不能用 `QA_VERDICT: ACCEPTED` 覆盖工具闸门失败
+- 该握手只属于 Build QA；Evolve `evaluate` 仍是记分卡评估，不冒充 Build 验收裁决。安全/性能架构级问题 → 升 `architect`
 - ROADMAP 当前版全部验收 + 闸门全绿 → 进 **Evolve**(Scan→Gap→Roadmap→Implement→Harness→Review→Evaluate)

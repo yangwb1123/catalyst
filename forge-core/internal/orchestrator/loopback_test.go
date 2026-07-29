@@ -29,7 +29,7 @@ const loopBackWorkflow = `{
     {"name": "harness-gates", "agent": "harness", "readonly": true,
      "required_gates": ["lint", "test"],
      "on_fail": {"action": "loop_back", "target_phase": "implementer"}},
-    {"name": "qa", "agent": "qa", "readonly": true, "required_gates": []}
+    {"name": "qa", "agent": "test-agent", "readonly": true, "required_gates": []}
   ],
   "stop_condition": {"type": "conjunction", "all_of": [], "anti_pattern": "round_count"}
 }`
@@ -140,7 +140,7 @@ func TestRun_NoOnFailStillAbortsBackCompat(t *testing.T) {
 	    {"name": "planner", "agent": "planner", "readonly": true, "required_gates": []},
 	    {"name": "implementer", "agent": "implementer", "readonly": false, "required_gates": []},
 	    {"name": "harness-gates", "agent": "harness", "readonly": true, "required_gates": ["test"]},
-	    {"name": "qa", "agent": "qa", "readonly": true, "required_gates": ["test"]}
+	    {"name": "qa", "agent": "test-agent", "readonly": true, "required_gates": ["test"]}
 	  ],
 	  "stop_condition": {"type": "conjunction", "all_of": [], "anti_pattern": "round_count"}
 	}`

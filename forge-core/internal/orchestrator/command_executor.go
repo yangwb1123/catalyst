@@ -272,8 +272,9 @@ func (c CommandExecutor) runMeasured(ctx context.Context, argv []string, depth i
 func (c CommandExecutor) finish(phase string, argv []string, out *cappedBuffer, runErr, ctxErr error, latency time.Duration) error {
 	// Both observe and the log renderer are nil-safe and identity-by-default, so the no-hook
 	// path is byte-for-byte unchanged.
+	observed := out.observed()
 	rendered := out.rendered()
-	c.observe(phase, rendered, latency)
+	c.observe(phase, observed, latency)
 	visible := c.renderForLog(rendered)
 	c.logf("phase %s: ran %q -> %s", phase, strings.Join(argv, " "), visible)
 	if runErr == nil {
@@ -410,6 +411,17 @@ func (b *cappedBuffer) Write(p []byte) (int, error) {
 // for the agent's full output.
 func (b *cappedBuffer) rendered() string {
 	s := strings.TrimSpace(string(b.buf))
+	if b.total > len(b.buf) {
+		s += fmt.Sprintf(" …[output truncated: retained %d of %d bytes (--max-output-bytes)]", len(b.buf), b.total)
+	}
+	return s
+}
+
+// observed preserves every retained byte for machine parsers. In particular,
+// leading/trailing whitespace cannot be erased into an exact verdict token.
+// A truncation marker remains non-empty evidence that the capture was incomplete.
+func (b *cappedBuffer) observed() string {
+	s := string(b.buf)
 	if b.total > len(b.buf) {
 		s += fmt.Sprintf(" …[output truncated: retained %d of %d bytes (--max-output-bytes)]", len(b.buf), b.total)
 	}

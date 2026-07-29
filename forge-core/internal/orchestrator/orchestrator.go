@@ -107,16 +107,15 @@ type Engine struct {
 	// (the `VERDICT: …` contract — see parseReviewerVerdict) and exposes the normalized
 	// token here, keyed by phase NAME. The engine stays vendor-free: it never sees the
 	// claude/reviewer output, only an opaque ("APPROVE"|"REQUEST_CHANGES", ok) it
-	// compares against the loop-back literal. A nil puller (or ok=false: no/garbled
-	// verdict) means "no verdict" — the phase simply proceeds, NEVER loops back and
-	// NEVER aborts (back-compat, byte-exact, and the reviewer card's fail-open contract).
+	// compares against the loop-back literal. A nil puller (or ok=false) keeps an
+	// advisory reviewer fail-open, but a phase declaring qa_v1 fails closed below.
 	AgentVerdict func(phase string) (verdict string, ok bool)
 	// RequireAgentVerdict identifies the small set of agent phases whose verdict is
 	// an enforcement boundary rather than advisory review. For those phases only,
 	// AgentVerdict must return exactly APPROVE or REQUEST_CHANGES. A missing,
 	// malformed, or unsupported verdict aborts; REQUEST_CHANGES must successfully
 	// loop back and aborts once its directed-loop budget is unavailable. Nil keeps
-	// every legacy/advisory reviewer fail-open.
+	// every legacy/advisory reviewer fail-open; qa_v1 is intrinsically required.
 	RequireAgentVerdict func(phase asset.Phase) bool
 	// OnRequiredVerdictApproved commits caller-owned evidence only after a
 	// required verdict has been parsed and accepted by this state machine.
@@ -337,18 +336,16 @@ func (e Engine) gateOutcome(wf asset.Workflow, p asset.Phase, loopBacks *int) (t
 	return e.loopBackTo(wf, p, loopBacks, "gate FAILED")
 }
 
-// agentOutcome decides what happens after an AGENT phase ran clean: a DIRECTED jump
-// back to its on_fail target (because a reviewer returned REQUEST_CHANGES), or "no
-// jump". It is the agent-side twin of gateOutcome, sharing the SAME loopBackTo core,
-// but with a CRUCIAL semantic difference from a gate: jumped=false here means PROCEED,
-// never abort. A nil puller, an unparsable/absent verdict (ok=false), or an APPROVE
-// all mean "no REQUEST_CHANGES signal" → the run continues forward (to qa) — this is
-// the fail-OPEN posture the reviewer is a SPEC-tier (not hard-gate) check warrants;
-// the harness gates and qa remain the fail-closed backstop. Only a parsed
-// REQUEST_CHANGES attempts the loop-back, and even then a spent budget falls through
-// to proceed (fail-open), unlike a gate's fail-closed abort.
+// agentOutcome applies two verdict postures after a clean AGENT phase. Legacy/advisory
+// reviewers remain fail-open: absent or malformed output proceeds, and an exhausted
+// REQUEST_CHANGES loop also proceeds. A phase declaring qa_v1, or selected by the
+// caller's RequireAgentVerdict hook, is fail-closed: its verdict must exist and be a
+// supported token; REQUEST_CHANGES must take the declared directed loop-back and aborts
+// when that jump is unavailable. Both postures share loopBackTo's bounded jump core.
 func (e Engine) agentOutcome(wf asset.Workflow, p asset.Phase, loopBacks *int) (target int, jumped bool, err error) {
-	required := e.RequireAgentVerdict != nil && e.RequireAgentVerdict(p)
+	strictQA := p.VerdictContract == asset.VerdictContractQAV1
+	externallyRequired := e.RequireAgentVerdict != nil && e.RequireAgentVerdict(p)
+	required := strictQA || externallyRequired
 	if e.AgentVerdict == nil {
 		if required {
 			return 0, false, fmt.Errorf("phase %s: required agent verdict is unavailable", p.Name)
@@ -364,7 +361,9 @@ func (e Engine) agentOutcome(wf asset.Workflow, p asset.Phase, loopBacks *int) (
 	}
 	switch v {
 	case reviewerApprove:
-		if required && e.OnRequiredVerdictApproved != nil {
+		// Required approval evidence is a caller-owned release contract. Strict QA
+		// acceptance authorizes progress but must never mint a release receipt.
+		if externallyRequired && !strictQA && e.OnRequiredVerdictApproved != nil {
 			if err := e.OnRequiredVerdictApproved(p); err != nil {
 				return 0, false, fmt.Errorf("phase %s: commit required approval evidence: %w", p.Name, err)
 			}
@@ -373,7 +372,7 @@ func (e Engine) agentOutcome(wf asset.Workflow, p asset.Phase, loopBacks *int) (
 	case reviewerRequestChanges:
 		reason := "reviewer verdict REQUEST_CHANGES"
 		if required {
-			reason = "required reviewer verdict REQUEST_CHANGES"
+			reason = "required agent verdict REQUEST_CHANGES"
 		}
 		target, jumped = e.loopBackTo(wf, p, loopBacks, reason)
 		if required && !jumped {
@@ -394,8 +393,8 @@ func (e Engine) agentOutcome(wf asset.Workflow, p asset.Phase, loopBacks *int) (
 // taken only when ALL hold: the phase declares on_fail with action "loop_back", the
 // target resolves by name, and the budget is not yet spent (loopBacks < MaxLoopBack).
 // Any miss is logged with the honest reason and returns jumped=false. The CALLER owns
-// the meaning of jumped=false: a gate caller aborts (fail-closed), an agent caller
-// proceeds (fail-open). reason flows into the logs so the gate path keeps its legacy
+// the meaning of jumped=false: gates and required agent contracts abort, while an
+// advisory reviewer proceeds. reason flows into the logs so the gate path keeps its legacy
 // "gate still red after …" budget-spent wording the loop-back tests assert, while the
 // JUMP-success line stays byte-identical ("loop-back %d/%d to %s") for both callers.
 func (e Engine) loopBackTo(wf asset.Workflow, p asset.Phase, loopBacks *int, reason string) (target int, jumped bool) {
@@ -420,7 +419,7 @@ func (e Engine) loopBackTo(wf asset.Workflow, p asset.Phase, loopBacks *int, rea
 // budgetSpentReason renders the budget-exhausted log message, preserving the legacy
 // "gate still red after N/M loop-backs to T" wording for the gate path (whose tests
 // assert the "still red after" substring) while giving an honest, reason-appropriate
-// message for any other caller (the reviewer's spent-budget fail-open).
+// message for any agent-verdict caller.
 func budgetSpentReason(reason string, loopBacks, max int, target string) string {
 	if reason == "gate FAILED" {
 		return fmt.Sprintf("gate still red after %d/%d loop-backs to %s", loopBacks, max, target)
@@ -428,13 +427,10 @@ func budgetSpentReason(reason string, loopBacks, max int, target string) string 
 	return fmt.Sprintf("%s but loop-back budget spent after %d/%d to %s", reason, loopBacks, max, target)
 }
 
-// outcomeSuffix names the honest consequence of a non-jump, which the CALLER owns: a
-// gate caller aborts (fail-closed), a reviewer/agent caller proceeds (fail-open). Keyed
-// off reason so the log matches what RunFrom actually does next — the gate path keeps
-// "aborting (fail-closed)" (its tests assert it), the agent/reviewer path tells the truth
-// instead of logging a fail-closed abort that never happens (it proceeds to qa).
+// outcomeSuffix names the honest consequence of a non-jump: gates and required verdicts
+// abort fail-closed, while an advisory reviewer proceeds fail-open.
 func outcomeSuffix(reason string) string {
-	if reason == "gate FAILED" || strings.HasPrefix(reason, "required reviewer verdict ") {
+	if reason == "gate FAILED" || strings.HasPrefix(reason, "required agent verdict ") {
 		return "aborting (fail-closed)"
 	}
 	return "proceeding (fail-open)"

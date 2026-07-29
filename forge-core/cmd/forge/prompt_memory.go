@@ -354,7 +354,7 @@ func (l *verdictLedger) clear(phase string) {
 
 // get reads back a phase's recorded verdict for Engine.AgentVerdict: (token, true) when
 // one was recorded, ("", false) when none was — nil-safe, so an unwired ledger reports
-// "no verdict" and the orchestrator proceeds (fail-open), never loops or panics.
+// "no verdict"; the orchestrator then applies the phase's advisory or required posture.
 func (l *verdictLedger) get(phase string) (string, bool) {
 	if l == nil {
 		return "", false
@@ -384,14 +384,13 @@ func (l *verdictLedger) wasReworked() bool {
 	return false
 }
 
-// reviewFindingsLedger carries the reviewer's findings text BACKWARD across a directed
+// reviewFindingsLedger carries upstream review/QA findings BACKWARD across a directed
 // loop-back, to be injected into the IMPLEMENTER's next prompt for targeted repair. It
 // is a deliberately ONE-DIRECTION edge: keyed by the loop-back TARGET phase (the
 // implementer, read from the reviewer phase's on_fail.target — data-driven, zero
 // hard-coded agent name), and buildPrompt injects it ONLY into that target phase. The
-// reviewer, when it re-runs, has p.Name != target, so it NEVER receives these findings —
-// preserving its fresh-context independence (the D3/AGENTS red line: a reviewer must not
-// read its own prior self-report).
+// source phase, when it re-runs, has p.Name != target, so it NEVER receives these findings —
+// preserving fresh-context reviewer independence (the D3/AGENTS red line).
 //
 // CONCURRENCY: mu guards findings for the OPT-IN parallel orchestrator, as the sibling
 // ledgers do (uncontended on the serial path).
@@ -400,12 +399,12 @@ type reviewFindingsLedger struct {
 	findings map[string]string // loop-back TARGET phase -> latest (truncated) findings
 }
 
-// newReviewFindingsLedger returns an empty ledger ready to record reviewer findings.
+// newReviewFindingsLedger returns an empty ledger ready to record repair findings.
 func newReviewFindingsLedger() *reviewFindingsLedger {
 	return &reviewFindingsLedger{findings: map[string]string{}}
 }
 
-// record stores the reviewer's findings for the loop-back TARGET phase (its recipient),
+// record stores upstream findings for the loop-back TARGET phase (its recipient),
 // TRUNCATED to phaseOutputSummaryCap so a verbose review cannot bloat the implementer's
 // prompt — reusing the same cap/marker as phaseOutputLedger. A re-review overwrites with
 // the newest findings. Safe on a nil receiver (no-op).
@@ -421,8 +420,8 @@ func (l *reviewFindingsLedger) record(targetPhase, findings string) {
 // contextLines renders the findings recorded for the phase named `name` as a single
 // appendable prompt block, or nil when none were recorded for it (the common case — the
 // gate is in buildPrompt, which only consults this for the implementer). The text is
-// HONEST about provenance: the previous fresh-context Reviewer's per-finding
-// REQUEST_CHANGES notes, offered for TARGETED repair — explicitly NOT a gate verdict.
+// HONEST about provenance without inventing one source: Reviewer, QA and executive
+// review can all feed this lane, and the original evidence retains its own verdict word.
 func (l *reviewFindingsLedger) contextLines(name string) []string {
 	if l == nil {
 		return nil
@@ -433,7 +432,7 @@ func (l *reviewFindingsLedger) contextLines(name string) []string {
 	if !ok || f == "" {
 		return nil
 	}
-	return []string{"上一轮 fresh-context Reviewer 判 REQUEST_CHANGES 的逐条 findings(供定向修复参考;非闸门结果,是上游审查角色的判断):\n\n" + f}
+	return []string{"上一轮上游审查/验收角色给出的逐条修复证据(供定向修复参考;非闸门结果,裁决词以原始证据为准):\n\n" + f}
 }
 
 // allFindings returns a snapshot copy of all recorded (targetPhase→findings) entries

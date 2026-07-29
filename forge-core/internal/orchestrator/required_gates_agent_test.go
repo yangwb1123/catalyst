@@ -41,6 +41,13 @@ func (r *gateAgentEvents) snapshot() []string {
 	return append([]string(nil), r.events...)
 }
 
+func acceptedStrictQAVerdict(phase string) (string, bool) {
+	if phase == "qa" {
+		return reviewerApprove, true
+	}
+	return "", false
+}
+
 func loadShippedWorkflow(t *testing.T, name string) asset.Workflow {
 	t.Helper()
 	dir, err := os.Getwd()
@@ -124,7 +131,7 @@ func assertEvolvePostGateOrder(t *testing.T, events []string) {
 
 func TestRun_ShippedBuildQAExecutesAfterFrontGates(t *testing.T) {
 	events := &gateAgentEvents{}
-	engine := Engine{Exec: events, RunGate: events.runGate}
+	engine := Engine{Exec: events, RunGate: events.runGate, AgentVerdict: acceptedStrictQAVerdict}
 	if err := engine.Run(loadShippedWorkflow(t, "build"), "engineering"); err != nil {
 		t.Fatalf("run shipped build: %v", err)
 	}
@@ -190,7 +197,10 @@ func TestRun_ShippedQAGateLoopBackRunsAgentOnlyAfterRecovery(t *testing.T) {
 		}
 		return gate.Result{Name: name, OK: ok}
 	}
-	engine := Engine{Exec: rec.executor(), RunGate: runGate, MaxLoopBack: 1}
+	engine := Engine{
+		Exec: rec.executor(), RunGate: runGate, MaxLoopBack: 1,
+		AgentVerdict: acceptedStrictQAVerdict,
+	}
 	if err := engine.Run(wf, "engineering"); err != nil {
 		t.Fatalf("QA gate should recover through its declared loop-back: %v", err)
 	}
@@ -206,8 +216,12 @@ func TestRun_ShippedQAGateLoopBackRunsAgentOnlyAfterRecovery(t *testing.T) {
 func TestRun_GatedAgentStillUsesBudgetAndPropagatesExecutorFailure(t *testing.T) {
 	t.Run("budget", func(t *testing.T) {
 		wf := asset.Workflow{Stage: "build", Stop: externalStop(), Phases: []asset.Phase{
-			{Name: "planner", Agent: "planner"},
-			{Name: "qa", Agent: "qa", RequiredGates: []string{"test"}},
+			{Name: "implementer", Agent: "implementer"},
+			{
+				Name: "qa", Agent: "qa", RequiredGates: []string{"test"},
+				VerdictContract: asset.VerdictContractQAV1,
+				OnFail:          &asset.OnFail{Action: "loop_back", TargetPhase: "implementer"},
+			},
 		}}
 		rec := &recorder{}
 		engine := Engine{Exec: rec.executor(), RunGate: allOK, MaxAgentCalls: 1}
@@ -215,17 +229,25 @@ func TestRun_GatedAgentStillUsesBudgetAndPropagatesExecutorFailure(t *testing.T)
 		if err == nil || !strings.Contains(err.Error(), "agent-call budget") {
 			t.Fatalf("gated agent must be charged to the agent-call budget: %v", err)
 		}
-		if strings.Join(rec.executed, ",") != "planner" {
-			t.Fatalf("budgeted execution=%v, want only planner", rec.executed)
+		if strings.Join(rec.executed, ",") != "implementer" {
+			t.Fatalf("budgeted execution=%v, want only implementer", rec.executed)
 		}
 	})
 
 	t.Run("executor contract", func(t *testing.T) {
 		contractErr := errors.New("synthetic output contract failure")
 		wf := asset.Workflow{Stage: "build", Stop: externalStop(), Phases: []asset.Phase{
-			{Name: "qa", Agent: "qa", RequiredGates: []string{"test"}},
+			{Name: "implementer", Agent: "implementer"},
+			{
+				Name: "qa", Agent: "qa", RequiredGates: []string{"test"},
+				VerdictContract: asset.VerdictContractQAV1,
+				OnFail:          &asset.OnFail{Action: "loop_back", TargetPhase: "implementer"},
+			},
 		}}
-		exec := execFunc(func(_ context.Context, _ asset.Phase, _ string) error {
+		exec := execFunc(func(_ context.Context, phase asset.Phase, _ string) error {
+			if phase.Name != "qa" {
+				return nil
+			}
 			return contractErr
 		})
 		engine := Engine{Exec: exec, RunGate: allOK}
@@ -244,20 +266,18 @@ func serialPhaseDependencies(wf *asset.Workflow) {
 	}
 }
 
-func TestRunParallel_ShippedBuildQAExecutesAfterFrontGates(t *testing.T) {
+func TestRunParallel_ShippedBuildRejectsStrictQABeforeExecution(t *testing.T) {
 	wf := loadShippedWorkflow(t, "build")
 	serialPhaseDependencies(&wf)
 	events := &gateAgentEvents{}
 	engine := Engine{Exec: events, RunGate: events.runGate}
-	if err := engine.RunParallel(context.Background(), wf, "engineering"); err != nil {
-		t.Fatalf("parallel run shipped build: %v", err)
+	err := engine.RunParallel(context.Background(), wf, "engineering")
+	if err == nil || !strings.Contains(err.Error(), "requires serial directed loop-back orchestration") {
+		t.Fatalf("parallel strict-QA error = %v", err)
 	}
 	got := events.snapshot()
-	assertAgentSequence(t, got, []string{"planner", "implementer", "reviewer", "qa"})
-	gateAt := lastEventIndex(got, "gate:test")
-	qaAt := eventIndex(got, "agent:qa")
-	if gateAt < 0 || qaAt < 0 || gateAt >= qaAt {
-		t.Fatalf("parallel QA front gate must finish before QA executes; events=%v", got)
+	if len(got) != 0 {
+		t.Fatalf("rejected strict-QA parallel workflow executed events: %v", got)
 	}
 }
 

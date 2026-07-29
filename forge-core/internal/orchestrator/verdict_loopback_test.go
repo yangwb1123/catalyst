@@ -30,7 +30,7 @@ const verdictWorkflow = `{
     {"name": "implementer", "agent": "implementer", "readonly": false, "required_gates": []},
     {"name": "reviewer", "agent": "reviewer", "readonly": true, "required_gates": [],
      "on_fail": {"action": "loop_back", "target_phase": "implementer"}},
-    {"name": "qa", "agent": "qa", "readonly": true, "required_gates": []}
+    {"name": "qa", "agent": "test-agent", "readonly": true, "required_gates": []}
   ],
   "stop_condition": {"type": "conjunction", "all_of": [], "anti_pattern": "round_count"}
 }`
@@ -212,7 +212,7 @@ func TestRun_ReviewerRequestChangesNoOnFailProceeds(t *testing.T) {
 	  "phases": [
 	    {"name": "implementer", "agent": "implementer", "readonly": false, "required_gates": []},
 	    {"name": "reviewer", "agent": "reviewer", "readonly": true, "required_gates": []},
-	    {"name": "qa", "agent": "qa", "readonly": true, "required_gates": []}
+	    {"name": "qa", "agent": "test-agent", "readonly": true, "required_gates": []}
 	  ],
 	  "stop_condition": {"type": "external", "all_of": [], "anti_pattern": "round_count"}
 	}`

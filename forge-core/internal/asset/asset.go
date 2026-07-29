@@ -137,6 +137,11 @@ import (
 // that policy. Other workflow stages and legacy zero-policy callers ignore an
 // empty Effect, preserving their existing behavior.
 //
+// VerdictContract is an OPTIONAL machine-verdict protocol selected explicitly by
+// the workflow. The zero value preserves the advisory verdict behavior; qa_v1
+// requires the phase's final non-empty output line to carry the strict Build QA
+// handshake. Runtime code keys on this field, never on a phase or agent name.
+//
 // SecondaryTemplate is an OPTIONAL second AI-SDLC template path alongside
 // UsesTemplate (review.yml's performance-reliability-review phase pairs
 // uses_template: .../05-performance-review.md with secondary_template:
@@ -147,6 +152,7 @@ import (
 type Phase struct {
 	Name              string     `json:"name"`
 	Agent             string     `json:"agent"`
+	VerdictContract   string     `json:"verdict_contract,omitempty"`
 	Description       string     `json:"description,omitempty"`
 	RequiredGates     []string   `json:"required_gates"`
 	RequiredWhen      string     `json:"required_when"`
@@ -165,6 +171,9 @@ type Phase struct {
 	Effect            string     `json:"effect,omitempty"`
 	SecondaryTemplate string     `json:"secondary_template,omitempty"`
 }
+
+// VerdictContractQAV1 is the explicit, fail-closed Build QA handshake contract.
+const VerdictContractQAV1 = "qa_v1"
 
 // WritesADR is the subset of a phase's writes_adr block forge-core reads:
 // Condition is the rule the asset authored (design.yml: "mode in
@@ -345,6 +354,9 @@ func ValidateWorkflowStructure(wf Workflow) error {
 				phase.Name, wf.Stage,
 			)
 		}
+		if err := validateVerdictContract(wf.Stage, phase); err != nil {
+			return err
+		}
 		if first, ok := seenNames[phase.Name]; ok {
 			return fmt.Errorf(
 				"asset: phase[%d] duplicates phase name %q first declared at phase[%d]",
@@ -365,7 +377,83 @@ func ValidateWorkflowStructure(wf Workflow) error {
 			seenEmits[normalized] = emit
 		}
 	}
+	if err := validateVerdictTargets(wf, seenNames); err != nil {
+		return err
+	}
 	return nil
+}
+
+func validateVerdictContract(stage string, phase Phase) error {
+	if phase.VerdictContract == "" {
+		if stage == "build" && phase.Agent == "qa" {
+			return fmt.Errorf("asset: Build QA phase %q requires verdict_contract %q",
+				phase.Name, VerdictContractQAV1)
+		}
+		return nil
+	}
+	if phase.VerdictContract != VerdictContractQAV1 {
+		return fmt.Errorf("asset: phase %q has unsupported verdict_contract %q",
+			phase.Name, phase.VerdictContract)
+	}
+	if stage != "build" || phase.Agent != "qa" {
+		return fmt.Errorf("asset: phase %q verdict_contract %q requires stage build and agent qa",
+			phase.Name, phase.VerdictContract)
+	}
+	if phase.OnFail == nil || phase.OnFail.Action != "loop_back" ||
+		strings.TrimSpace(phase.OnFail.TargetPhase) == "" {
+		return fmt.Errorf("asset: phase %q verdict_contract %q requires on_fail.loop_back with a non-empty target_phase",
+			phase.Name, phase.VerdictContract)
+	}
+	if strings.TrimSpace(phase.RequiredWhen) != "" || len(phase.OptionalFor) > 0 {
+		return fmt.Errorf("asset: phase %q verdict_contract %q must not be mode-skippable",
+			phase.Name, phase.VerdictContract)
+	}
+	if !containsString(phase.RequiredGates, "test") {
+		return fmt.Errorf("asset: phase %q verdict_contract %q requires the independent test gate",
+			phase.Name, phase.VerdictContract)
+	}
+	return nil
+}
+
+func validateVerdictTargets(wf Workflow, phaseIndexes map[string]int) error {
+	for i, phase := range wf.Phases {
+		if phase.VerdictContract != VerdictContractQAV1 {
+			continue
+		}
+		target := phase.OnFail.TargetPhase
+		targetIndex, ok := phaseIndexes[target]
+		if !ok {
+			return fmt.Errorf("asset: phase %q verdict_contract %q target %q does not exist",
+				phase.Name, phase.VerdictContract, target)
+		}
+		if targetIndex >= i {
+			return fmt.Errorf("asset: phase %q verdict_contract %q target %q must be an earlier phase",
+				phase.Name, phase.VerdictContract, target)
+		}
+		if wf.Phases[targetIndex].Agent != "implementer" {
+			return fmt.Errorf("asset: phase %q verdict_contract %q target %q must use agent implementer",
+				phase.Name, phase.VerdictContract, target)
+		}
+		targetPhase := wf.Phases[targetIndex]
+		if targetPhase.Readonly {
+			return fmt.Errorf("asset: phase %q verdict_contract %q target %q must be writable",
+				phase.Name, phase.VerdictContract, target)
+		}
+		if strings.TrimSpace(targetPhase.RequiredWhen) != "" || len(targetPhase.OptionalFor) > 0 {
+			return fmt.Errorf("asset: phase %q verdict_contract %q target %q must not be mode-skippable",
+				phase.Name, phase.VerdictContract, target)
+		}
+	}
+	return nil
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }
 
 // normalizedEmitIdentity is platform-independent: workflow paths are portable

@@ -31,6 +31,7 @@
     {
       "name": "qa",
       "agent": "qa",
+      "verdict_contract": "qa_v1",
       "readonly": true,
       "required_gates": ["test"],
       "on_fail": {"action": "loop_back", "target_phase": "implementer"}

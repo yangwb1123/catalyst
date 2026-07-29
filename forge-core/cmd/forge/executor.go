@@ -81,7 +81,7 @@ func (c commandExecutorConfig) executor() orchestrator.AgentExecutor {
 		ValidateRawOutput: c.hooks.ValidateRawOutput,
 	}
 	phaseModel := preferPhaseModel(c.hooks.ModelFor, c.phaseModel)
-	ex.Observe = observeFor(c.isClaude, c.costSink, phaseModel, c.phaseOut, c.feedsForward, c.verdicts, c.findings, c.onFailTarget)
+	ex.Observe = observeFor(c.isClaude, c.costSink, phaseModel, c.phaseOut, c.feedsForward, c.verdicts, c.findings, c.onFailTarget, c.hooks.VerdictContractFor)
 	if c.isClaude {
 		ex.RenderLog = unwrapClaudeResult
 		ex.ClassifyOverload = classifyClaudeOverload
@@ -147,10 +147,11 @@ func (c commandExecutorConfig) build(p asset.Phase, runMode string) []string {
 }
 
 type executorHooks struct {
-	ValidateOutput    func(phase, output string) error
-	ValidateRawOutput func(phase, output string) error
-	OnBuild           func(phase asset.Phase, model, promptText, frozenSourceRevision string, frozenReleaseInputs map[string]string)
-	ModelFor          func(phase string) string
+	ValidateOutput     func(phase, output string) error
+	ValidateRawOutput  func(phase, output string) error
+	OnBuild            func(phase asset.Phase, model, promptText, frozenSourceRevision string, frozenReleaseInputs map[string]string)
+	ModelFor           func(phase string) string
+	VerdictContractFor func(phase string) string
 }
 
 func firstExecutorHooks(hooks []executorHooks) executorHooks {

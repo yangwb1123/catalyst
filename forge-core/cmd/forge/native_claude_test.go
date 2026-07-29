@@ -87,6 +87,11 @@ func main() {
 		result = "CONFIDENCE: 100"
 	case "planner", "roadmap-update":
 		result = "TASK_LIST:\n- [ ] T001: deterministic task — acceptance: pass — files: docs/fake.md — depends_on: none — model: sonnet — roadmap: v2"
+	case "qa":
+		result = "QA_VERDICT: ACCEPTED"
+		if verdict != "APPROVE" {
+			result = "QA_VERDICT: " + verdict
+		}
 	}
 	envelope := map[string]any{
 		"type": "result", "subtype": "success", "is_error": false,

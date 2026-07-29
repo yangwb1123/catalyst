@@ -348,6 +348,124 @@ class OtherChecksTest(unittest.TestCase):
         self.assertTrue(any("test_pass" in i for i in issues), issues)
         self.assertTrue(any("build" in i for i in issues), issues)
 
+    def test_live_workflow_verdict_contracts_are_clean(self):
+        issues = self.check.check_workflow_verdict_contracts(self.agent_root)
+        self.assertEqual(issues, [])
+        build, _ = self.check._load_yaml(
+            self.agent_root / "workflows" / "build.yml"
+        )
+        qa = next(p for p in build["phases"] if p.get("agent") == "qa")
+        self.assertEqual(qa.get("verdict_contract"), "qa_v1")
+
+    def test_unknown_verdict_contract_is_rejected(self):
+        path = self.agent_root / "workflows" / "bad-contract.yml"
+        path.write_text(
+            "id: bad\nstage: build\nphases:\n"
+            "  - {name: qa, agent: qa, verdict_contract: qa_v2}\n",
+            encoding="utf-8",
+        )
+        issues = self.check.check_workflow_verdict_contracts(self.agent_root)
+        self.assertTrue(any("qa_v2" in issue for issue in issues), issues)
+
+    def test_build_qa_must_declare_verdict_contract(self):
+        path = self.agent_root / "workflows" / "missing-contract.yml"
+        path.write_text(
+            "id: missing\nstage: build\nphases:\n"
+            "  - {name: qa, agent: qa}\n",
+            encoding="utf-8",
+        )
+        issues = self.check.check_workflow_verdict_contracts(self.agent_root)
+        self.assertTrue(any("must declare" in issue for issue in issues), issues)
+
+    def test_qa_v1_is_restricted_to_build_qa(self):
+        path = self.agent_root / "workflows" / "wrong-owner.yml"
+        path.write_text(
+            "id: wrong\nstage: evolve\nphases:\n"
+            "  - name: impostor\n    agent: reviewer\n"
+            "    verdict_contract: qa_v1\n"
+            "    on_fail: {action: loop_back, target_phase: impostor}\n",
+            encoding="utf-8",
+        )
+        issues = self.check.check_workflow_verdict_contracts(self.agent_root)
+        self.assertTrue(any("stage 'build'" in issue for issue in issues), issues)
+        self.assertTrue(any("agent 'qa'" in issue for issue in issues), issues)
+
+    def test_qa_v1_requires_loop_back_with_target(self):
+        path = self.agent_root / "workflows" / "bad-loop.yml"
+        path.write_text(
+            "id: bad-loop\nstage: build\nphases:\n"
+            "  - {name: qa, agent: qa, verdict_contract: qa_v1, "
+            "on_fail: {action: abort}}\n",
+            encoding="utf-8",
+        )
+        issues = self.check.check_workflow_verdict_contracts(self.agent_root)
+        self.assertTrue(any("action: loop_back" in issue for issue in issues), issues)
+        self.assertTrue(any("target_phase" in issue for issue in issues), issues)
+
+    def test_qa_v1_cannot_be_mode_skipped_and_requires_test_gate(self):
+        path = self.agent_root / "workflows" / "skippable-qa.yml"
+        path.write_text(
+            "id: skippable-qa\nstage: build\nphases:\n"
+            "  - {name: implementer, agent: implementer}\n"
+            "  - name: qa\n    agent: qa\n    verdict_contract: qa_v1\n"
+            "    required_when: ../policies/modes.yml#workflow_depth.qa\n"
+            "    optional_for: [explorer]\n    required_gates: [build]\n"
+            "    on_fail: {action: loop_back, target_phase: implementer}\n",
+            encoding="utf-8",
+        )
+        issues = self.check.check_workflow_verdict_contracts(self.agent_root)
+        self.assertTrue(any("mode-skippable" in issue for issue in issues), issues)
+        self.assertTrue(any("independent test gate" in issue for issue in issues), issues)
+
+    def test_qa_v1_target_must_resolve_to_prior_implementer(self):
+        path = self.agent_root / "workflows" / "bad-qa-target.yml"
+        cases = [
+            ("missing",
+                "  - {name: implementer, agent: implementer}\n"
+                "  - &qa {name: qa, agent: qa, verdict_contract: qa_v1, "
+                "required_gates: [test], on_fail: {action: loop_back, target_phase: missing}}\n",
+                "does not exist",
+            ),
+            ("self",
+                "  - {name: implementer, agent: implementer}\n"
+                "  - {name: qa, agent: qa, verdict_contract: qa_v1, "
+                "required_gates: [test], on_fail: {action: loop_back, target_phase: qa}}\n",
+                "must be an earlier phase",
+            ),
+            ("forward",
+                "  - {name: qa, agent: qa, verdict_contract: qa_v1, "
+                "required_gates: [test], on_fail: {action: loop_back, target_phase: implementer}}\n"
+                "  - {name: implementer, agent: implementer}\n",
+                "must be an earlier phase",
+            ),
+            ("wrong agent",
+                "  - {name: reviewer, agent: reviewer}\n"
+                "  - {name: qa, agent: qa, verdict_contract: qa_v1, "
+                "required_gates: [test], on_fail: {action: loop_back, target_phase: reviewer}}\n",
+                "must use agent 'implementer'",
+            ),
+            (
+                "readonly target",
+                "  - {name: implementer, agent: implementer, readonly: true}\n"
+                "  - {name: qa, agent: qa, verdict_contract: qa_v1, required_gates: [test], "
+                "on_fail: {action: loop_back, target_phase: implementer}}\n", "must be writable",
+            ),
+            (
+                "skippable target",
+                "  - {name: implementer, agent: implementer, optional_for: [explorer]}\n"
+                "  - {name: qa, agent: qa, verdict_contract: qa_v1, required_gates: [test], "
+                "on_fail: {action: loop_back, target_phase: implementer}}\n", "mode-skippable",
+            ),
+        ]
+        for name, phases, want in cases:
+            with self.subTest(name=name):
+                path.write_text(
+                    "id: bad-qa-target\nstage: build\nphases:\n" + phases,
+                    encoding="utf-8",
+                )
+                issues = self.check.check_workflow_verdict_contracts(self.agent_root)
+                self.assertTrue(any(want in issue for issue in issues), issues)
+
     def test_live_workflow_agent_refs_are_canonical(self):
         # No alias indirection: every live workflow `agent:` must be a real
         # role-card stem (or the `harness` pseudo-agent), so the checker passes

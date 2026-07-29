@@ -88,6 +88,7 @@ phases:
   - name: qa
     agent: qa
     readonly: true
+    verdict_contract: qa_v1             # 最后一个非空输出行必须是精确 QA_VERDICT 裁决 / strict machine verdict
     required_gates: [test]              # 至少回归测试绿 / regression must be green
     description: >
       对 planner 的 acceptance 判据做端到端验收;产出可喂 Eval 记分卡的结果。

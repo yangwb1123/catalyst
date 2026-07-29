@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,6 +10,95 @@ import (
 	"forgeos/forge-core/internal/asset"
 	"forgeos/forge-core/internal/tasklist"
 )
+
+// parseQAVerdict extracts the strict qa_v1 handshake from a phase's raw output.
+// It shares the reviewer parser's envelope isolation and exact final-non-empty-line
+// rule, but accepts only the QA vocabulary and normalizes it to the two tokens the
+// vendor-neutral orchestrator already understands. A missing, wrapped, malformed,
+// or trailing-prose token returns ok=false; a qa_v1 phase's required-verdict seam
+// turns that absence into a fail-closed run error.
+func parseQAVerdict(output string) (verdict string, ok bool) {
+	return parseQAVerdictForExecutor(output, false)
+}
+
+func parseQAVerdictForExecutor(output string, requireEnvelope bool) (verdict string, ok bool) {
+	payload, validEnvelope := qaVerdictPayload(output, requireEnvelope)
+	if !validEnvelope {
+		return "", false
+	}
+	switch lastNonEmptyExactLine(payload) {
+	case "QA_VERDICT: ACCEPTED":
+		return VerdictApprove, true
+	case "QA_VERDICT: REJECTED":
+		return VerdictRequestChanges, true
+	default:
+		return "", false
+	}
+}
+
+func lastNonEmptyExactLine(output string) string {
+	lines := strings.Split(output, "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		if strings.TrimSpace(lines[i]) != "" {
+			if i < len(lines)-1 {
+				return strings.TrimSuffix(lines[i], "\r")
+			}
+			return lines[i]
+		}
+	}
+	return ""
+}
+
+// qaVerdictPayload accepts plain command output, but when output is a JSON result
+// envelope it also requires the provider's complete success metadata. An
+// `is_error`/failed/malformed envelope cannot certify QA merely by carrying an
+// ACCEPTED string in its result field.
+func qaVerdictPayload(output string, requireEnvelope bool) (string, bool) {
+	var envelope struct {
+		Type    string  `json:"type"`
+		Subtype string  `json:"subtype"`
+		IsError *bool   `json:"is_error"`
+		Result  *string `json:"result"`
+	}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(output)), &envelope); err != nil {
+		if requireEnvelope {
+			return "", false
+		}
+		return output, true
+	}
+	if envelope.Result == nil {
+		if requireEnvelope {
+			return "", false
+		}
+		return output, true
+	}
+	if envelope.Type != "result" || envelope.Subtype != "success" ||
+		envelope.IsError == nil || *envelope.IsError {
+		return "", false
+	}
+	return *envelope.Result, true
+}
+
+// verdictContractOf resolves a phase's explicitly declared machine-verdict
+// protocol. Unknown phases and omitted declarations return the empty advisory
+// default; no behavior is inferred from the phase or agent name.
+func verdictContractOf(wf asset.Workflow) func(name string) string {
+	return func(name string) string {
+		for _, p := range wf.Phases {
+			if p.Name == name {
+				return p.VerdictContract
+			}
+		}
+		return ""
+	}
+}
+
+func verdictContractFor(lookups []func(phase string) string, phase string) string {
+	if len(lookups) == 0 || lookups[0] == nil {
+		return ""
+	}
+	return lookups[0](phase)
+}
 
 // phaseOutputContract validates machine-readable planner output and every
 // declared artifact postcondition after a successful command executor phase.

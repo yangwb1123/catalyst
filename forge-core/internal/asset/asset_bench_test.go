@@ -20,7 +20,7 @@ func BenchmarkLoadWorkflowJSON(b *testing.B) {
     {"name": "implementer", "agent": "implementer", "required_gates": [], "model_tier": "sonnet", "feeds_forward": true, "emits": ["task-plan.md", "proposal.md"], "fresh_context": false},
     {"name": "harness-gates", "agent": "implementer", "required_gates": ["lint", "test", "build", "complexity"], "on_fail": {"action": "loop_back", "target_phase": "implementer"}},
     {"name": "reviewer", "agent": "reviewer", "required_gates": [], "fresh_context": true, "required_when": "../policies/modes.yml#workflow_depth.reviewer"},
-    {"name": "qa", "agent": "qa", "required_gates": ["test", "build"], "on_fail": {"action": "loop_back", "target_phase": "implementer"}}
+    {"name": "qa", "agent": "qa", "verdict_contract": "qa_v1", "required_gates": ["test", "build"], "on_fail": {"action": "loop_back", "target_phase": "implementer"}}
   ],
   "stop_condition": {
     "type": "conjunction",

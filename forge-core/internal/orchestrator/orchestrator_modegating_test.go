@@ -28,7 +28,7 @@ const gatingWorkflow = `{
      "required_gates": ["lint", "test", "build", "complexity", "arch", "security"]},
     {"name": "reviewer", "agent": "reviewer", "readonly": true, "required_gates": [],
      "required_when": "../policies/modes.yml#workflow_depth.reviewer"},
-    {"name": "qa", "agent": "qa", "readonly": true, "required_gates": []}
+    {"name": "qa", "agent": "test-agent", "readonly": true, "required_gates": []}
   ],
   "stop_condition": {"type": "external", "all_of": [], "anti_pattern": "round_count"}
 }`
@@ -84,6 +84,29 @@ func TestRun_ExplorerPolicyFiltersGatesAndSkipsReviewer(t *testing.T) {
 		if !contains(rec.executed, want) {
 			t.Errorf("phase %q should still run under explorer; executed=%v", want, rec.executed)
 		}
+	}
+}
+
+func TestRun_StrictQATestGateSurvivesExplorerPolicy(t *testing.T) {
+	rec := &recorder{}
+	gt := &gateTracker{}
+	wf := asset.Workflow{Stage: "build", Phases: []asset.Phase{
+		{Name: "implementer", Agent: "implementer"},
+		{
+			Name: "qa", Agent: "qa", VerdictContract: asset.VerdictContractQAV1,
+			RequiredGates: []string{"test"},
+			OnFail:        &asset.OnFail{Action: "loop_back", TargetPhase: "implementer"},
+		},
+	}}
+	eng := Engine{
+		Exec: rec.executor(), RunGate: gt.run, AgentVerdict: acceptedStrictQAVerdict,
+		ModePolicy: mode.Effective("explorer", "idea"),
+	}
+	if err := eng.Run(wf, "explorer"); err != nil {
+		t.Fatalf("strict QA under explorer: %v", err)
+	}
+	if got := sortedCSV(gt.ran); got != "test" {
+		t.Fatalf("strict QA gates=%q, want non-filterable test", got)
 	}
 }
 
