@@ -350,7 +350,12 @@ Run, Prompt, workspace, tool, provider, or network side effect.
 prepared event without reading credentials. Confirmed `send` performs local
 credential/target preflight, then one claim grants exact bytes only to its
 winner and moves recovery to `dispatch_unknown`. It never retries post-claim;
-only a valid provider terminal atomically commits result, event and status.
+only a zero-tool valid provider terminal followed by transport EOF atomically
+commits result, event and status. Incomplete function calls and trailing frames
+fail closed. Application and SQLite use the same recursively key-sorted result
+encoding, and a reopened-database integration test crosses both layers. Each
+v5 database open also compares the three analysis tables, keys, foreign keys,
+indexes, trigger inventory, and exact definitions with the migration contract.
 
 Idempotency is payload-sensitive:
 

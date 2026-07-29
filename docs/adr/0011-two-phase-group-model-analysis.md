@@ -30,6 +30,12 @@ tables. One analysis references one immutable prepared Group Run. It is a
 single OpenAI Responses request, one model turn, zero tools, zero workspace,
 and no Conversation, task, or memory mutation.
 
+Every v5 open validates the three new tables against the migration contract:
+column, primary/unique key, foreign-key, index, trigger inventory, and exact
+SQLite schema definitions must agree. The expected definitions are produced by
+executing the same migration SQL in an isolated in-memory database, rather than
+maintaining a second parser or copied constraint text.
+
 The public workflow is deliberately two-phase:
 
 ```text
@@ -107,9 +113,15 @@ Only a completely validated provider terminal with no tool call may produce a
 result. `completed` and provider `length` finishes are recorded distinctly.
 Hitting a local byte, event, timeout or cancellation limit is an error and
 must never be relabeled as a provider `length` terminal.
+An incomplete response containing any completed or partial function call fails
+closed. After a terminal frame, the adapter continues consuming the transport;
+completion requires real HTTP EOF, and any trailing frame or non-whitespace
+payload is a protocol failure.
 The bounded final answer and usage become a canonical result artifact. SQLite
-inserts that artifact, its hash and independently checked byte count, the matching
-`analysis_completed` event, cursor and terminal status atomically.
+re-encodes it with the same recursively key-sorted canonical JSON contract used
+by the application, then inserts that artifact, its hash and independently
+checked byte count, the matching `analysis_completed` event, cursor and terminal
+status atomically.
 
 The result artifact is separate from the compact event journal. Inspection
 rehashes canonical configuration, request, events and result; rebuilds the

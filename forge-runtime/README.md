@@ -143,10 +143,13 @@ timeout, cancellation, transport/protocol failure, missing terminal frame, or
 result-commit failure cannot prove whether the provider accepted the request,
 so this version never retries it automatically. A deliberate retry requires a
 new prepared analysis and may duplicate disclosure and cost. Only a complete,
-validated provider `completed` or `length` terminal with no tool call can
-atomically add the final result and completion event. This is one
-model-generated analysis—not verified fact, multi-Agent discussion,
-tool-completed work, or persistent Conversation memory.
+validated provider `completed` or `length` terminal with no completed or
+partial tool call, followed by real transport EOF, can atomically add the final
+result and completion event. Application and SQLite bind that result with the
+same canonical JSON bytes; reopening the database revalidates the artifact.
+A trailing frame or payload fails closed. This is one model-generated
+analysis—not verified fact, multi-Agent discussion, tool-completed work, or
+persistent Conversation memory.
 
 Prepare/show/send output omits exact request/config/event bodies, frozen
 excerpts, idempotency keys, credentials, provider context, and result text by
