@@ -3,6 +3,7 @@ package migrationtxn
 import (
 	"bytes"
 	"fmt"
+	"path/filepath"
 
 	"forgeos/forge-core/internal/runlock"
 )
@@ -57,7 +58,12 @@ func requirePreviewIdle(root string) error {
 		return fmt.Errorf("migrationtxn: probe repository mutation lock: %w", err)
 	}
 	if busy {
-		return fmt.Errorf("migrationtxn: repository mutation lock is busy")
+		return fmt.Errorf(
+			"migrationtxn: repository mutation lock %s is busy; "+
+				"wait for the verified holder to finish; "+
+				"do not unlink a contended lock file",
+			filepath.Join(root, ".forge", "run.lock"),
+		)
 	}
 	pending, err := pendingWithOps(root, realFileOps{})
 	if err != nil {

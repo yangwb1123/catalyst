@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"forgeos/forge-core/internal/migrate"
@@ -45,9 +46,7 @@ func TestMigrationAPIsRespectSharedRepositoryLockWithoutMutation(t *testing.T) {
 	}
 	for _, call := range calls {
 		t.Run(call.name, func(t *testing.T) {
-			if err := call.run(); err == nil {
-				t.Fatal("migration API ignored held repository lock")
-			}
+			requireActionableContentionError(t, call.run(), lock.Path)
 		})
 	}
 	assertBytesEqual(t, "project", readTestFile(t, projectPath(root)), projectBefore)
@@ -57,5 +56,21 @@ func TestMigrationAPIsRespectSharedRepositoryLockWithoutMutation(t *testing.T) {
 	}
 	if _, err := os.Lstat(filepath.Join(root, ".forge", "migrations")); !os.IsNotExist(err) {
 		t.Fatalf("contention created migration state: %v", err)
+	}
+}
+
+func requireActionableContentionError(t *testing.T, err error, lockPath string) {
+	t.Helper()
+	if err == nil {
+		t.Fatal("migration API ignored held repository lock")
+	}
+	for _, want := range []string{
+		lockPath,
+		"wait for the verified holder to finish",
+		"do not unlink a contended lock file",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("contention error %q missing %q", err, want)
+		}
 	}
 }
