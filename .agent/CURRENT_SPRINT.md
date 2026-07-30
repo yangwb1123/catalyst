@@ -278,6 +278,22 @@ ADR 0012 在不升级 schema v5、不改变任何业务表布局的前提下，�
 
 最终验证：Rust workspace 364 tests 全绿，fmt/locked Clippy/check/build 与 `git diff --check` 全绿；605-file gate、462-source arch-check、11 项治理检查、575-file secret scan、5-manifest SCA 均通过。完整 `forge accept` 为 **ACCEPTED**（9 pass、0 fail、2 个诚实 N/A）。原发布复审提出的两项证据准确性 Minor 均已修复并复核关闭；最终 fresh-context 发布复审 **APPROVE**，无 Blocker/Major/Minor。
 
+## Sprint 43（✅ 完成）— Strict Build QA verdict handshake
+
+ADR 0014 为 Build QA 增加独立、失败关闭的 `qa_v1` 机器裁决，而不改变普通 Reviewer、Evolve 或 Release 的既有宽松/专用契约。Build 的 QA phase 必须显式声明 `verdict_contract: qa_v1`，并在所有 mode 下保留自身的 `test` gate；mode 不能跳过 QA。命令执行器保留未经清洗的原始输出，普通可执行文件只接受末个非空行精确等于 `QA_VERDICT: ACCEPTED` 或 `QA_VERDICT: REJECTED`；被解析为 Claude 的命令还必须先给出唯一、完整、成功且非 error 的 JSON result envelope，纯文本不得冒充成功 envelope。缺失、空白包装、尾随 prose、畸形 envelope、裸 CR 或未知 token 都不会制造批准。
+
+`REJECTED` 只能回到更早、可写且不可被 mode 跳过的实现 phase；资产检查与运行时都会验证 target，默认三次 loop-back 预算耗尽后中止。dry/echo 无真实 Agent 输出，因此会在 QA 失败关闭；带严格 QA 的并行执行在启动任何 Agent 前被拒绝。QA 接受不会生成或改写 Deploy/Build/Rollback validation receipt，Release 的 operator-pinned executable、严格 JSON/verdict 与人工批准边界保持不变。
+
+专项 Go 正反例、命令执行 E2E 与 `-race` 全绿，两份独立 fresh-context 契约复核均 **APPROVE**。经用户明确授权，真实 `codex exec --ephemeral --sandbox workspace-write` 从提交 `8b03cd1` 构建静态 Forge 二进制（SHA-256 `e07b8d987d285689a9b15d9a7c7268adcc36c0f8b68c2245fa32d00c8e115f57`），通过原生编译 Agent 子进程和真实 Node gate 跑完 **16/16** 黑盒场景：6 条成功/兼容路径、10 条失败关闭/前置拒绝路径；release receipt 30-byte sentinel 字节不变。Codex 沙箱宿主拒绝 7 个与本功能无关的 sealed-memfd release 测试，但主环境随后完整 `forge accept` 覆盖并通过全部 Go **1040 tests**、Python **68 tests**、Node **378 tests**、Rust 各 workspace、go-taskd 22 tests 与 url-shortener 47 tests，最终 **ACCEPTED**（9 pass、0 fail、2 个诚实 N/A）。
+
+## Sprint 45（✅ 完成）— Durable lifecycle promotion migration
+
+ADR 0016 把 lifecycle-driven dynamic migration 落成显式、可审计的持久事件：`forge migrate --to-lifecycle production [--apply]` 默认 dry 且零写入，只有 `--apply` 才持久晋升。Explorer 的真实非生产→production 边会在同一事务中变为 engineering、追加五个既有治理欠债任务并写入 production；balanced/engineering/cto 只改变 lifecycle，ROADMAP 字节不变；已在 production 且无回执的仓库保持精确 NOOP，不臆造历史迁移。旧的 `forge migrate --to engineering` 也复用同一事务内核。无显式参数时 run/evolve 读取 `.agent/project.yml`，显式 mode/lifecycle 仍只是本次调用覆盖且永不改写 selector；等待链对隐式 selector 漂移失败关闭。
+
+两类操作共享 `.forge/run.lock`、一个 canonical pending intent 与各自独立的 terminal receipt。事务按 intent→ROADMAP→project commit point→receipt→移除 intent 的顺序 durable publish，精确绑定 before/after bytes、权限位与 digest；失败后只有匹配操作能确定性 roll-forward。所有预览、状态和 busy probe 都是 bounded、side-effect-free read；symlink/hardlink/FIFO、非 canonical/超限状态、跨操作伪造、tracked `.forge/**` provenance、selector/marker/receipt 漂移均在 mutation 或 workflow/agent/trace/checkpoint 前拒绝。`forge status [--json]` 会报告 pending、完成的 operation ID 与恢复命令；竞争提示明确禁止 unlink 锁路径，避免创建第二锁命名空间。
+
+最终安全审查 **APPROVE**，无 Blocker/Major。专项 Go、`-race`、随机顺序、`go vet`、Windows/Darwin 交叉编译、553-source arch-check 与 12 项治理检查全绿。隔离提交树的完整 `forge accept` 两次均 **ACCEPTED**（9 pass、0 fail、2 个诚实 N/A），覆盖 Forge Go **1111 tests**、Python **68 tests**、Node **378 tests**、全部 Rust workspace、go-taskd 22 tests 与 url-shortener 47 tests。真实 Codex 首轮在提交 `29d2689` 的 13 场景黑盒验收中得到 12/13，并发现 busy 路径缺少 never-unlink 警告；修复提交 `2a72acb` 后，Codex 从干净 checkout 离线构建 VCS-pinned 二进制（SHA-256 `e20bfa8f1636f2e1d5a9ad9a926f071921e3a07a1970b60d3007e17715dd2f98`），完整复跑 **13/13 PASS**。独立 held-flock 复现 4 ms 失败关闭、tracked bytes/modes 不变、无回执，解锁后一次重试产生恰好五个不同 marker；前后 `git status --porcelain` 均为空，未调用真实 provider。
+
 ## 下一前沿(需外部资源 / 后续阶段 / 投机增强 / 明确非目标,非本环境可完整验证)
 - **真点火** `--agent-cmd=claude`:**multi-agent running to completion 已坐实**(Sprint 25:真 claude 多-agent 跑到 converge MET,增量级 + 版本级)。完整旋钮:四维资源护栏 + 成本三维(phase/时间/美元)+ 任务注入 + 写权限 + 模型路由 + 工作目录 + retry + loop-back;诚实分工:agent 自治增量绿、人确认版本竣工。docs/ignition.md 有完整配方 + 实测
 - **需外部资源(框架已就绪)**:~~SCA/CVE 漏洞库 OSV/NVD(差 DB)~~ **已解决,见 Sprint 32**。2026-07-27 重新实测:LiteLLM 已安装,但仅发现 Anthropic 一家凭证且网络受限,缺第二厂商凭证所以无法做跨厂商验证；`firecracker`/`jailer` 均未安装，`/dev/kvm` 存在但当前用户不可读写。Docker daemon 可达（Server 29.6.1），rootless Podman 4.9.3/runc 也可查询，但容器 runtime 不是 Firecracker microVM 的等价证明，Forge 也尚未接入任何 sandbox runner。上述能力维持 blocked，所有非 `none` sandbox 请求当前会在宿主执行前失败关闭。〔真 cost/latency telemetry **已达成**——S26 真 claude 补齐真 token/cost/latency 数据,scorecard 三维真值落盘〕

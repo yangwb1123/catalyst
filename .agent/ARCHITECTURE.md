@@ -19,7 +19,7 @@ REVIEW  (深度由 mode 裁决;对齐 AI-SDLC Stage 2-6)
   Performance-Engineer  → 性能预算 + 生产就绪检查清单
   CTO                   → 综合裁决(Approve/Simplify/Redesign/Delay/Reject)
 BUILD
-  Planner → Implementer → [Harness 闸门] → Reviewer → QA   stop: ROADMAP 100%
+  Planner → Implementer → [Harness 闸门] → Reviewer → QA(`qa_v1` strict verdict)   stop: ROADMAP 100%
 DEPLOY  (声明式生产交付边界;不访问凭证/不执行远程部署)
   Release-Engineer      → Manifest + Plan + Runbook + Go/No-Go + Validation
   External CI/Operator  → 实际应用 ──▶ ★ HUMAN APPROVAL MARKER ★
@@ -35,6 +35,7 @@ EVOLVE
 - mode: explorer(快/省/跳 Discover) · balanced · engineering(全闸门) · cto(只出 PRD/Arch,人确认)
 - lifecycle: idea → mvp → growth → production
 - explorer→engineering = 一次「创业→企业」状态迁移:自动收紧 harness + 派生补测试/CI/监控任务。
+- 持久 `lifecycle→production` 只能经 `forge migrate --to-lifecycle production --apply`；Explorer 在同一可恢复事务中触发上述 mode 迁移，run/evolve 临时 flags 永不写盘。terminal receipt 是执行前双检的治理 floor。
 
 ## 载重墙(对原始构想的修正)
 "站在所有 CLI 之上" ⇒ 只能强制最弱宿主允许的东西。因此:

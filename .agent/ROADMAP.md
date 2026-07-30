@@ -12,11 +12,12 @@
 
 ## v1 — 闭环 + Claude 档路由 (✅ 完成)
 - [x] 13 agent 卡 + 9 skill 卡 + 7 workflow(含独立 deploy/rollback) + mode×lifecycle 矩阵 + 路由策略 + 评估 schema
-- [x] `forge check` 资产校验器(`harness/check.py`,当前 11 项治理检查)
+- [x] `forge check` 资产校验器(`harness/check.py`,当前 12 项治理检查)
 - [x] 验证脊柱已跑通:plan→implementer×2→gate→reviewer(fresh)→fix 全 spine;workflow↔角色卡 SoT 漂移已消除
 - [x] `forge accept` —— acceptance Stop 闸门(`harness/acceptance.mjs` 聚合 11 类判据，递归发现 harness tests，并对 Go/Node/Python/Rust/Java 项目要求可观察的正测试数；**n/a 项诚实可见,绝不伪造通过**)
 - [x] **Dogfood:首个真实应用 `examples/url-shortener` 经完整 pipeline(architect→3 implementer→fresh reviewer→fix)端到端建成并保持套件全绿,被 `forge accept` 实际 gate**;reviewer 揪出"app 未被 accept 覆盖"治理洞并已补。**Build→Review→Accept 脊柱在真实产品上验证成立。**
 - [x] 真·无人值守闭环驱动 → 闭环引擎已建(`forge-core` `forge evolve`:phases→gate→converge→loop,带 max-iter/no-progress tripwire)**且真·活体 agent 端到端已接通坐实**(Sprint 24-26:真 `--agent-cmd=claude` 多-agent 跑到 converge MET、增量+版本级,八个真跑 gap 全修,见 CURRENT_SPRINT + docs/ignition.md)
+- [x] **Strict Build QA handshake(ADR 0014)**:`verdict_contract: qa_v1` 不可被 mode 跳过，强制在所有 mode 实跑独立 `test` gate 并回到更早、可写、不可跳过的 `implementer`，只接受精确最终非空行 `QA_VERDICT: ACCEPTED|REJECTED`;缺失/畸形、无法回流及 loop budget 耗尽均失败关闭，普通 Reviewer/Evolve/Release 契约不变
 
 ## v2 — 全局化 + 学习闭环 (forge-core 已落地,持续推进)
 **forge-core 已存在、已构建、全绿**:纯 Go 标准库、**零外部依赖**(`go.mod` 无 `require`)。CLI 已覆盖 `run/evolve/init/trace/approve/reject/preflight/doctor/gate/check/accept` 等；`forge run --chain` 持久化跨阶段状态并执行 Discover→Design→Review→Build→Deploy→Evolve，`forge evolve` 按真实 stop signal 收敛。产物 JSONL v1 记录 run/workflow/phase/agent/model/hash，planner/审批/拒绝/CTO halt 均有机器契约；Rust/Java adapter 与 init/upgrade copy-anywhere 已接入验收。
@@ -27,6 +28,7 @@
 - [x] **Strict Hub schema ownership validation(ADR 0012)**:不升 schema 版本；每个 v0–v5 声明版本在任何迁移 DDL 前先按不可变 DDL 复验（v0 必须空 catalog），迁移提交前再复验完整 v5 的 14 张表、8 个显式索引、25 个隐式 autoindex exact/structural 契约与独占 main catalog。旧 CHECK/PK/UQ/FK/index 漂移、额外 table/view/trigger/virtual shadow 均失败关闭且不自动修复，迁移末端失败整链回滚。
 - [x] **Durable Project Run + Responses adapter(ADR 0008)**:SQLite v1→v2 追加执行配置、增量语义 cursor、同快照 inspection、`runs`/`run_events`/Run-assistant 关联，persistence-first sink 保证 `tool_started` 在工具效果前提交；`run start/list/show`、bounded causal history、terminal/incomplete/pending-tool 判定、原子 assistant 写回与终态 crash-repair 均已交付。默认 deterministic/offline；显式 `--live` 默认零工具，仅 exact `--allow-read` 授权，并启用固定 HTTPS origin、无 redirect/隐式 retry、`store:false` 完整 output-item 回放、phase-aware final projection、terminal identity/status 校验及完整传输/token 上限；incomplete 永不释放工具。自动 execution resume、写/进程工具、remote 与 Web 不在本项。
 - [x] **声明式生产交付边界(ADR 0005)**:Deploy/Rollback 使用精确 emit 权限、固定最小 prompt、operator-pinned Claude executable bytes(非供应商身份)、整树 postflight、严格 JSON/verdict、validation receipt 与 source/artifact freshness；人审 marker 才能推进，远程执行保持外置。
+- [x] **Durable lifecycle-driven migration(ADR 0016)**:`forge migrate --to-lifecycle production [--apply]` 只把显式持久晋升事件映射到 production；Explorer 同事务迁为 Engineering 并稳定注入五项补债，其他已知 mode 只改 lifecycle，已 production 不追溯。manual/lifecycle 共用 run lock、canonical intent WAL、before-image CAS、独立 receipt 与确定性 roll-forward；dry/transient flags 零写入，run/evolve 双检 terminal receipt 形成不可静默降级的持久治理 floor，status 暴露 pending/operation/recovery。
 **明确遗留缺口(诚实标注,不夸大):**
 - Agent 阶段默认 dry-run(`DryRunExecutor` 只叙述,安全默认);真实执行器需显式 `--executor command`。Claude prompt 走 stdin，子进程环境最小化；额外变量须 `--agent-env` 精确授权。未经本轮用户授权不重复烧付费模型预算。
 - 原生 Go YAML 子集解析器为主，`harness/yaml2json.py` 仅作兼容回退；未知格式/契约版本均失败关闭。
@@ -34,4 +36,4 @@
 - 远程部署/回滚是明确非目标：ForgeOS 只生成和验证声明式交付包，外部 CI/operator 实施并由人写结构化 approval marker；command-mode release 当前因开放 FD pin 契约只支持 Linux，其他平台失败关闭。
 
 ## v3 — AI 软件工厂
-带外 Sandbox(Firecracker)+ 跨厂商池(LiteLLM)+ 预算治理 + 完整 Discover + Web UI + 动态迁移。
+带外 Sandbox(Firecracker)+ 跨厂商池(LiteLLM)+ 预算治理 + 完整 Discover + Web UI。动态迁移已由 ADR 0016 前置交付。

@@ -5,6 +5,10 @@
 agent CLI、通过 stdin 发送构建好的 per-phase prompt 驱动它编辑代码,orchestrator 再跑真 harness gate
 验证、按 `on_fail` 定向 loop-back 修复。
 
+ADR 0014 后，随仓 Build 的 QA phase 还要求真实输出最后一个非空行为
+`QA_VERDICT: ACCEPTED` 或 `QA_VERDICT: REJECTED`。`dry`/`echo` 不伪造这个裁决，因此可继续用于
+前序路由与 prompt plumbing 检查，但会在 Build QA 处失败关闭，不能再把叙述性运行冒充完整 Build 验收。
+
 本文档是启用真点火的操作手册:安全护栏、端到端验证、启用前置。
 
 ## 安全护栏(资源四维)
@@ -74,18 +78,20 @@ forge run discover --executor=command --agent-cmd=echo --max-output-bytes 512
 #   → ...[output truncated: retained 512 of 2952 bytes (--max-output-bytes)]
 ```
 
-完整 **build workflow(5-phase 多-agent 编排)** 同样 echo 验证为正确:
+完整 **build workflow(5-phase 多-agent 编排)** 可用 echo 验证 QA 之前的 plumbing，并验证
+strict QA 确实失败关闭:
 
 ```sh
 forge run build --executor=command --agent-cmd=echo --max-agent-calls 8
 #   → planner / implementer: ran "echo ..."
 #   → harness-gates: mode-gating 4/6 gates; test ok · complexity ok · lint/build N/A
-#   → reviewer: ran "echo ..." (balanced 下 required) ; qa: gate test ok ; workflow completed
+#   → reviewer: ran "echo ..." (balanced 下 required) ; qa: gate test ok
+#   → qa: missing or malformed required agent verdict ; run aborts (预期)
 ```
 
-planner→implementer→harness-gates→reviewer→qa 的顺序、mode-gating 过滤、gate 集成、收敛全部正确。
-单-agent 真闭环(mini,真 claude)+ 多-agent 5-phase 编排(build,echo)合起来是真点火的完整验证矩阵:
-echo 本身不证明模型行为；后文记录的是历史上另获预算授权后完成的真 Claude 多-agent 实跑。
+这条测试证明 planner→implementer→harness-gates→reviewer→qa 的顺序、mode-gating 过滤、
+gate 集成及 QA fail-closed 边界；echo 不再被描述为完成 Build 或证明模型行为。后文记录的是
+历史上另获预算授权后完成的真 Claude 多-agent 实跑。
 
 每个 phase 的 prompt 由 `buildPrompt`(forge-core/cmd/forge)构建:agent role card + **当前任务**
 (`.agent/ROADMAP.md` body,让 agent 知道实现什么)+ 检索到的 project context(ADRs + AGENTS.md
@@ -218,13 +224,15 @@ phase planner:       ran "claude --model sonnet --max-budget-usd 0.50 ..."
 phase implementer:   ran "claude --model sonnet ..."   # 从头真写 stats.mjs(mean/max)+ test
 phase harness-gates: gate test ok · complexity ok      # 真验证
 phase reviewer:      ran "claude --model opus ..."      # opus 安全下限,真审
-phase qa:            gate test ok
+phase qa:            gate test ok                        # 当时仍是自由文本 QA
 convergence: MET — [x] gates_status == green           # ★ForgeOS 自己判收敛★
 ```
 多个真 claude agent 自治协作,implementer 真产出通过验收的代码(stats test 独立跑 4 pass),最终
 **ForgeOS 自己的 converge 判定 MET**。模型路由(sonnet/opus)、写权限、成本封顶全程生效。
 
 上面的历史转录用 `...` 表示 prompt；当前实现的真实日志只显示到终端 `-p` 标志，prompt 正文走 stdin。
+该实跑发生在 strict QA handshake 采纳前；今天重跑同一 Build 必须同时满足独立 `test` gate 和上述
+`QA_VERDICT` 末行，否则缺失/畸形裁决、持续拒绝或 loop budget 耗尽都会中止。
 若调用方显式要求非 `none` sandbox，而本机没有已接线的 sandbox runner，CommandExecutor 会在构造
 命令前返回配置错误，绝不会静默退回宿主机执行。Firecracker/Docker runner 仍属 v3 外部基础设施边界。
 
