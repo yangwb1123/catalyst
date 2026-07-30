@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"os"
 	"path/filepath"
 	"strings"
@@ -33,6 +34,46 @@ func TestResolveLifecycle_Precedence(t *testing.T) {
 	writeFile(t, filepath.Join(bare, ".agent", "project.yml"), "mode: balanced\n")
 	if got := resolveLifecycle(runOpts{root: bare}); got != "mvp" {
 		t.Errorf("missing lifecycle key = %q, want mvp", got)
+	}
+}
+
+func TestResolveMode_Precedence(t *testing.T) {
+	root := t.TempDir()
+	mkdir(t, filepath.Join(root, ".agent"))
+	writeFile(t, filepath.Join(root, ".agent", "project.yml"),
+		"mode: explorer  # persistent central selector\nlifecycle: mvp\n")
+
+	if got := resolveMode(runOpts{root: root, mode: "cto"}); got != "cto" {
+		t.Errorf("explicit flag = %q, want cto", got)
+	}
+	if got := resolveMode(runOpts{root: root}); got != "explorer" {
+		t.Errorf("project.yml mode = %q, want explorer", got)
+	}
+	if got := resolveMode(runOpts{root: t.TempDir()}); got != "balanced" {
+		t.Errorf("missing project mode = %q, want balanced", got)
+	}
+}
+
+func TestFreezeRunOptionsConsumesPersistentModeWithoutMakingItExplicit(t *testing.T) {
+	root := t.TempDir()
+	mkdir(t, filepath.Join(root, ".agent"))
+	writeFile(t, filepath.Join(root, ".agent", "project.yml"),
+		"mode: engineering\nlifecycle: growth\n")
+
+	var o runOpts
+	fs := flag.NewFlagSet("persistent-selector", flag.ContinueOnError)
+	bindRunOpts(fs, &o)
+	if err := fs.Parse([]string{"--root", root}); err != nil {
+		t.Fatal(err)
+	}
+	o.root = root
+	freezeRunOptions(fs, &o)
+	if o.mode != "engineering" || o.lifecycle != "growth" {
+		t.Fatalf("resolved selector = %s/%s, want engineering/growth", o.mode, o.lifecycle)
+	}
+	if o.modeExplicit || o.lifecycleExplicit {
+		t.Fatalf("project selector was misclassified as explicit CLI input: mode=%v lifecycle=%v",
+			o.modeExplicit, o.lifecycleExplicit)
 	}
 }
 

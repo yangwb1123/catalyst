@@ -58,10 +58,10 @@ func waitForFile(path string, timeout time.Duration) bool {
 // acquires run.lock and is then SIGKILLed (not gracefully exited), then
 // verifies a fresh Acquire on the same root succeeds promptly afterward.
 // This directly demonstrates — rather than leaving as an unverified
-// comment — that the "if stale from a crash" escape hatch in Acquire's
-// error message is (mostly) unnecessary in practice: flock is tied to the
-// OPEN FILE DESCRIPTION, so the kernel releases it automatically on ANY
-// holder process death, including SIGKILL.
+// comment — that a crashed holder releases flock automatically, so a
+// contended lock pathname must never be unlinked. flock is tied to the OPEN
+// FILE DESCRIPTION and the kernel releases it on any holder process death,
+// including SIGKILL.
 func TestAcquire_ProcessDeathReleasesLock(t *testing.T) {
 	if testing.Short() {
 		t.Skip("spawns a real subprocess; skipped under -short")

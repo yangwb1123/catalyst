@@ -8,6 +8,9 @@ import (
 	"syscall"
 )
 
+// Supported reports whether this build has a real cross-process lock.
+func Supported() bool { return true }
+
 // tryLock claims an exclusive, non-blocking flock(2) on f. flock is tied to
 // the OPEN FILE DESCRIPTION, not the process or the fd number, so the kernel
 // releases it automatically on ANY holder process exit — clean, signal-

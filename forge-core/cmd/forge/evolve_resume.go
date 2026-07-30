@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/sha256"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -20,6 +21,25 @@ type loopResumeState struct {
 	spentMicros int64
 	phaseStart  int
 	gatesGreen  bool
+}
+
+func validateEvolveEntry(
+	wf asset.Workflow, o runOpts, fs *flag.FlagSet, requestedMaxIter int,
+) (int, string, int) {
+	if converge.IsHumanGate(wf.Stop) {
+		return 0, "", rejectHumanGate(wf.Stage, o.root)
+	}
+	if wf.Stage != "evolve" {
+		fmt.Fprintf(os.Stderr, "forge evolve: workflow stage must be %q (got %q)\n",
+			"evolve", wf.Stage)
+		return 0, "", 1
+	}
+	iter, source := resolveMaxIter(fs, requestedMaxIter, o)
+	if iter < 0 {
+		fmt.Fprintf(os.Stderr, "forge evolve: --max-iter must be non-negative (got %d)\n", iter)
+		return 0, "", 2
+	}
+	return iter, source, 0
 }
 
 func loadEvolveWorkflow(root, name string, o runOpts) (asset.Workflow, error) {

@@ -31,15 +31,16 @@ type statFile struct {
 
 // statusJSON is the structured --json output for forge status.
 type statusJSON struct {
-	Project           string              `json:"project"`
-	DotForge          string              `json:"dot_forge"`
-	Checkpoint        *statFile           `json:"checkpoint,omitempty"`
-	CheckpointHistory int                 `json:"checkpoint_history"`
-	Trace             *statFile           `json:"trace,omitempty"`
-	TraceBackup       *statFile           `json:"trace_backup,omitempty"`
-	Memory            *statFile           `json:"memory,omitempty"`
-	CheckpointCP      *checkpointSummary  `json:"checkpoint_content,omitempty"`
-	Chain             *chainStatusDisplay `json:"chain,omitempty"`
+	Project           string                  `json:"project"`
+	DotForge          string                  `json:"dot_forge"`
+	Checkpoint        *statFile               `json:"checkpoint,omitempty"`
+	CheckpointHistory int                     `json:"checkpoint_history"`
+	Trace             *statFile               `json:"trace,omitempty"`
+	TraceBackup       *statFile               `json:"trace_backup,omitempty"`
+	Memory            *statFile               `json:"memory,omitempty"`
+	CheckpointCP      *checkpointSummary      `json:"checkpoint_content,omitempty"`
+	Chain             *chainStatusDisplay     `json:"chain,omitempty"`
+	Migration         *migrationStatusDisplay `json:"migration,omitempty"`
 }
 
 // checkpointSummary is the parsed checkpoint content for forge status --json.
@@ -307,7 +308,7 @@ func printStatusJSON(root string, snap doctor.StatusSnapshot) {
 		Project: filepath.Base(root), DotForge: snap.DotForge,
 		Checkpoint: toFile(snap.Checkpoint), CheckpointHistory: snap.CheckpointHistory,
 		Trace: toFile(snap.Trace), TraceBackup: toFile(snap.TraceBackup), Memory: toFile(snap.Memory),
-		Chain: chainStatusForDisplay(root),
+		Chain: chainStatusForDisplay(root), Migration: migrationStatusForDisplay(root),
 	}
 	if ci := snap.CheckpointInfo; ci.Found && ci.ParseOK {
 		sd.CheckpointCP = &checkpointSummary{
@@ -335,6 +336,7 @@ func printStatusText(root string, snap doctor.StatusSnapshot) {
 		fmt.Printf("  checkpoint: present (unreadable or incomplete)\n")
 	}
 	printChainStatusText(root)
+	printMigrationStatusText(root)
 }
 
 // printFileLine prints one `  <label>: <path> (<size>, <age>)` status line;

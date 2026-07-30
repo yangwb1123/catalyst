@@ -20,18 +20,30 @@
 //     explorer -> engineering. There is no other migration in the data, so there
 //     is no generic engine here — when modes.yml grows a second migration, this
 //     becomes a table (today a single function is the honest shape).
-//   - modes.yml marks this `trigger: manual`: a human runs it (v1). The v3
-//     auto-trigger (lifecycle -> production drives it) is NOT modeled here.
+//   - the manual transition remains available, while PromoteToProduction models
+//     the adopted persistent lifecycle trigger. Transient run/evolve flags do
+//     not call it and therefore never mutate project state.
 //   - The derived Tasks are REMEDIATION DEBT injected into the roadmap; this
 //     package neither executes them nor claims they are done. Doing the work is
 //     the job of a later build/evolve pass over the injected roadmap items.
 package migrate
 
+import "fmt"
+
 // Mode names — the engineering postures from modes.yml's `modes` block. v1's
 // single migration goes between exactly these two.
 const (
 	ModeExplorer    = "explorer"
+	ModeBalanced    = "balanced"
 	ModeEngineering = "engineering"
+	ModeCTO         = "cto"
+)
+
+const (
+	LifecycleIdea       = "idea"
+	LifecycleMVP        = "mvp"
+	LifecycleGrowth     = "growth"
+	LifecycleProduction = "production"
 )
 
 // Tier names mirror internal/routing (v1 is Claude-only). RouterFloor below is
@@ -86,6 +98,67 @@ type Plan struct {
 
 	// ── derive_tasks ── the remediation debt to inject into ROADMAP.md.
 	Tasks []Task
+}
+
+// Promotion is the pure state transition for a persistent lifecycle promotion
+// to production. Explorer projects additionally receive the declared
+// explorer->engineering governance migration; all other known modes retain
+// their mode and do not receive prototype-debt tasks. AlreadyProduction is a
+// no-op/replay signal: an invocation cannot infer a historical transition and
+// must never retroactively migrate an explorer that was already production.
+type Promotion struct {
+	FromMode          string
+	ToMode            string
+	FromLifecycle     string
+	ToLifecycle       string
+	Migration         Plan
+	AutoMigration     bool
+	AlreadyProduction bool
+}
+
+// PromoteToProduction validates and derives the only persistent lifecycle
+// promotion currently supported. Unknown selectors fail closed. A production
+// source is an exact no-op regardless of mode; only a real non-production to
+// production edge may auto-trigger explorer->engineering.
+func PromoteToProduction(mode, lifecycle string) (Promotion, error) {
+	if !knownMode(mode) {
+		return Promotion{}, fmt.Errorf("unknown persistent mode %q", mode)
+	}
+	if !knownLifecycle(lifecycle) {
+		return Promotion{}, fmt.Errorf("unknown persistent lifecycle %q", lifecycle)
+	}
+	promotion := Promotion{
+		FromMode: mode, ToMode: mode,
+		FromLifecycle: lifecycle, ToLifecycle: LifecycleProduction,
+	}
+	if lifecycle == LifecycleProduction {
+		promotion.AlreadyProduction = true
+		return promotion, nil
+	}
+	if mode == ModeExplorer {
+		promotion.ToMode = ModeEngineering
+		promotion.Migration = ExplorerToEngineering()
+		promotion.AutoMigration = true
+	}
+	return promotion, nil
+}
+
+func knownMode(value string) bool {
+	switch value {
+	case ModeExplorer, ModeBalanced, ModeEngineering, ModeCTO:
+		return true
+	default:
+		return false
+	}
+}
+
+func knownLifecycle(value string) bool {
+	switch value {
+	case LifecycleIdea, LifecycleMVP, LifecycleGrowth, LifecycleProduction:
+		return true
+	default:
+		return false
+	}
 }
 
 // fullGates is modes.yml's complete gate_catalog (ascending rigor) — the exact

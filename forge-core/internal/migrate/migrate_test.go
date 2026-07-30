@@ -94,3 +94,64 @@ func TestExplorerToEngineering_ReturnedSlicesOwned(t *testing.T) {
 			again.TightenGates, again.Tasks[0].ID)
 	}
 }
+
+func TestPromoteToProduction_TransitionMatrix(t *testing.T) {
+	modes := []string{ModeExplorer, ModeBalanced, ModeEngineering, ModeCTO}
+	lifecycles := []string{
+		LifecycleIdea, LifecycleMVP, LifecycleGrowth, LifecycleProduction,
+	}
+	for _, mode := range modes {
+		for _, lifecycle := range lifecycles {
+			name := mode + "_" + lifecycle
+			t.Run(name, func(t *testing.T) {
+				got, err := PromoteToProduction(mode, lifecycle)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if got.FromMode != mode || got.FromLifecycle != lifecycle ||
+					got.ToLifecycle != LifecycleProduction {
+					t.Fatalf("promotion = %+v", got)
+				}
+				if lifecycle == LifecycleProduction {
+					if !got.AlreadyProduction || got.AutoMigration || got.ToMode != mode {
+						t.Fatalf("production source was not an exact no-op: %+v", got)
+					}
+					return
+				}
+				wantAuto := mode == ModeExplorer
+				wantMode := mode
+				if wantAuto {
+					wantMode = ModeEngineering
+				}
+				if got.AlreadyProduction || got.AutoMigration != wantAuto ||
+					got.ToMode != wantMode {
+					t.Fatalf("non-production promotion = %+v, want mode=%s auto=%v",
+						got, wantMode, wantAuto)
+				}
+				if got.AutoMigration && len(got.Migration.Tasks) != 5 {
+					t.Fatalf("auto migration tasks = %d, want 5", len(got.Migration.Tasks))
+				}
+				if !got.AutoMigration && len(got.Migration.Tasks) != 0 {
+					t.Fatalf("non-explorer promotion derived tasks: %+v", got.Migration.Tasks)
+				}
+			})
+		}
+	}
+}
+
+func TestPromoteToProduction_UnknownSelectorsFailClosed(t *testing.T) {
+	for _, input := range []struct {
+		mode      string
+		lifecycle string
+	}{
+		{"", LifecycleMVP},
+		{"unknown", LifecycleMVP},
+		{ModeExplorer, ""},
+		{ModeExplorer, "unknown"},
+	} {
+		if _, err := PromoteToProduction(input.mode, input.lifecycle); err == nil {
+			t.Errorf("PromoteToProduction(%q, %q) accepted an unknown selector",
+				input.mode, input.lifecycle)
+		}
+	}
+}

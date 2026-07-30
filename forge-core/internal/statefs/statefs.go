@@ -5,6 +5,7 @@
 package statefs
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -18,6 +19,7 @@ import (
 // the state-directory leaf; callers must provide an existing parent.
 func EnsurePrivateDir(path string) error {
 	err := os.Mkdir(path, 0o700)
+	created := err == nil
 	if err != nil && !errors.Is(err, fs.ErrExist) {
 		return fmt.Errorf("statefs: create directory %s: %w", path, err)
 	}
@@ -34,6 +36,9 @@ func EnsurePrivateDir(path string) error {
 	after, err := os.Lstat(path)
 	if err != nil || !os.SameFile(before, after) || !after.IsDir() {
 		return fmt.Errorf("statefs: directory %s changed while securing it", path)
+	}
+	if err := syncSecuredDirectory(path, created); err != nil {
+		return fmt.Errorf("statefs: persist directory %s: %w", path, err)
 	}
 	return nil
 }
@@ -74,8 +79,8 @@ func EnsurePrivateDirTree(path string) error {
 	}
 	for i := len(missing) - 1; i >= 0; i-- {
 		anchor = filepath.Join(anchor, missing[i])
-		if err := os.Mkdir(anchor, 0o700); err != nil {
-			return fmt.Errorf("statefs: create directory %s: %w", anchor, err)
+		if err := EnsurePrivateDir(anchor); err != nil {
+			return err
 		}
 	}
 	return EnsurePrivateDir(path)
@@ -157,6 +162,34 @@ func OpenRegular(path string, flag int, perm os.FileMode) (*os.File, error) {
 	return file, nil
 }
 
+// OpenRegularReadOnly securely opens an existing state leaf without changing
+// its bytes, timestamps, or permissions.
+func OpenRegularReadOnly(path string) (*os.File, error) {
+	before, present, err := InspectRegular(path)
+	if err != nil {
+		return nil, err
+	}
+	if !present {
+		return nil, fmt.Errorf("statefs: state leaf %s is missing", path)
+	}
+	file, err := openFileNoFollow(path, os.O_RDONLY, 0)
+	if err != nil {
+		return nil, fmt.Errorf("statefs: open %s read-only: %w", path, err)
+	}
+	opened, err := file.Stat()
+	if err != nil || !opened.Mode().IsRegular() || !singleLink(opened) ||
+		!os.SameFile(before, opened) {
+		file.Close()
+		return nil, fmt.Errorf("statefs: state leaf %s changed while opening", path)
+	}
+	current, stillPresent, err := InspectRegular(path)
+	if err != nil || !stillPresent || !os.SameFile(opened, current) {
+		file.Close()
+		return nil, fmt.Errorf("statefs: state leaf %s identity changed while opening", path)
+	}
+	return file, nil
+}
+
 // ReadRegular reads a secure leaf and distinguishes a missing file from an
 // empty one. A positive maxBytes bounds state-file memory use.
 func ReadRegular(path string, maxBytes int64) ([]byte, bool, error) {
@@ -182,6 +215,39 @@ func ReadRegular(path string, maxBytes int64) ([]byte, bool, error) {
 	}
 	if maxBytes > 0 && int64(len(data)) > maxBytes {
 		return nil, true, fmt.Errorf("statefs: %s exceeds %d bytes", path, maxBytes)
+	}
+	return data, true, nil
+}
+
+// ReadRegularUnmodified is the side-effect-free counterpart to ReadRegular.
+// It retains the alias, identity, and size checks but never chmods the leaf.
+func ReadRegularUnmodified(path string, maxBytes int64) ([]byte, bool, error) {
+	info, present, err := InspectRegular(path)
+	if err != nil || !present {
+		return nil, present, err
+	}
+	if maxBytes > 0 && info.Size() > maxBytes {
+		return nil, true, fmt.Errorf("statefs: %s exceeds %d bytes", path, maxBytes)
+	}
+	file, err := OpenRegularReadOnly(path)
+	if err != nil {
+		return nil, true, err
+	}
+	defer file.Close()
+	reader := io.Reader(file)
+	if maxBytes > 0 {
+		reader = io.LimitReader(file, maxBytes+1)
+	}
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		return nil, true, fmt.Errorf("statefs: read %s: %w", path, err)
+	}
+	if maxBytes > 0 && int64(len(data)) > maxBytes {
+		return nil, true, fmt.Errorf("statefs: %s exceeds %d bytes", path, maxBytes)
+	}
+	current, stillPresent, err := InspectRegular(path)
+	if err != nil || !stillPresent || !os.SameFile(info, current) {
+		return nil, true, fmt.Errorf("statefs: %s changed while reading", path)
 	}
 	return data, true, nil
 }
@@ -218,6 +284,158 @@ func AtomicWrite(path string, data []byte, perm os.FileMode) error {
 	published, present, err := InspectRegular(path)
 	if err != nil || !present || !os.SameFile(tempInfo, published) {
 		return fmt.Errorf("statefs: published file %s lost identity", path)
+	}
+	return nil
+}
+
+// ReadTracked reads a repository-tracked regular file without changing its
+// permissions. Unlike private control-state reads, a tracked file may use any
+// caller-selected permission bits. The direct parent and leaf must be real,
+// and the leaf must have exactly one hard link.
+func ReadTracked(path string, maxBytes int64) ([]byte, os.FileMode, bool, error) {
+	info, present, err := InspectRegular(path)
+	if err != nil || !present {
+		return nil, 0, present, err
+	}
+	if maxBytes > 0 && info.Size() > maxBytes {
+		return nil, 0, true, fmt.Errorf("statefs: %s exceeds %d bytes", path, maxBytes)
+	}
+	file, err := openFileNoFollow(path, os.O_RDONLY, 0)
+	if err != nil {
+		return nil, 0, true, fmt.Errorf("statefs: open tracked file %s: %w", path, err)
+	}
+	defer file.Close()
+	opened, err := file.Stat()
+	if err != nil || !opened.Mode().IsRegular() || !singleLink(opened) ||
+		!os.SameFile(info, opened) {
+		return nil, 0, true, fmt.Errorf("statefs: tracked file %s changed while opening", path)
+	}
+	reader := io.Reader(file)
+	if maxBytes > 0 {
+		reader = io.LimitReader(file, maxBytes+1)
+	}
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		return nil, 0, true, fmt.Errorf("statefs: read tracked file %s: %w", path, err)
+	}
+	if maxBytes > 0 && int64(len(data)) > maxBytes {
+		return nil, 0, true, fmt.Errorf("statefs: %s exceeds %d bytes", path, maxBytes)
+	}
+	current, stillPresent, err := InspectRegular(path)
+	if err != nil || !stillPresent || !os.SameFile(opened, current) {
+		return nil, 0, true, fmt.Errorf("statefs: tracked file %s changed while reading", path)
+	}
+	return data, opened.Mode().Perm(), true, nil
+}
+
+// AtomicWriteTrackedIfUnchanged atomically replaces or creates a tracked file
+// only while its complete expected image remains current. This catches both
+// rename-based edits and in-place content/permission edits during preparation.
+func AtomicWriteTrackedIfUnchanged(
+	path string,
+	expectedData []byte,
+	expectedMode os.FileMode,
+	expectedPresent bool,
+	data []byte,
+	perm os.FileMode,
+) error {
+	dir := filepath.Dir(path)
+	if _, present, err := InspectDir(dir); err != nil || !present {
+		if err == nil {
+			err = fmt.Errorf("statefs: tracked parent directory is missing")
+		}
+		return err
+	}
+	if err := requireTrackedSnapshot(
+		path, expectedData, expectedMode, expectedPresent,
+	); err != nil {
+		return err
+	}
+	before, existed, err := InspectRegular(path)
+	if err != nil {
+		return err
+	}
+	temp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".tmp-*")
+	if err != nil {
+		return fmt.Errorf("statefs: create tracked temporary file for %s: %w", path, err)
+	}
+	tempPath := temp.Name()
+	defer os.Remove(tempPath)
+	if err := writeTemp(temp, data, perm); err != nil {
+		return fmt.Errorf("statefs: prepare tracked file %s: %w", path, err)
+	}
+	tempInfo, err := os.Lstat(tempPath)
+	if err != nil || !tempInfo.Mode().IsRegular() || !singleLink(tempInfo) {
+		return fmt.Errorf("statefs: tracked temporary file for %s lost identity", path)
+	}
+	current, present, err := InspectRegular(path)
+	if err != nil || present != existed || (existed && !os.SameFile(before, current)) {
+		return fmt.Errorf("statefs: tracked target %s changed before commit", path)
+	}
+	if err := requireTrackedSnapshot(
+		path, expectedData, expectedMode, expectedPresent,
+	); err != nil {
+		return err
+	}
+	return commitTrackedTemp(dir, tempPath, path, tempInfo)
+}
+
+func commitTrackedTemp(
+	dir, tempPath, path string,
+	tempInfo os.FileInfo,
+) error {
+	if err := os.Rename(tempPath, path); err != nil {
+		return fmt.Errorf("statefs: commit tracked file %s: %w", path, err)
+	}
+	if err := SyncDir(dir); err != nil {
+		return fmt.Errorf("statefs: sync tracked directory for %s: %w", path, err)
+	}
+	published, present, err := InspectRegular(path)
+	if err != nil || !present || !os.SameFile(tempInfo, published) {
+		return fmt.Errorf("statefs: published tracked file %s lost identity", path)
+	}
+	return nil
+}
+
+func requireTrackedSnapshot(
+	path string,
+	expectedData []byte,
+	expectedMode os.FileMode,
+	expectedPresent bool,
+) error {
+	maxBytes := int64(len(expectedData)) + 1
+	data, mode, present, err := ReadTracked(path, maxBytes)
+	if err != nil {
+		return fmt.Errorf("statefs: verify tracked target %s: %w", path, err)
+	}
+	if present != expectedPresent ||
+		(present && (mode != expectedMode.Perm() || !bytes.Equal(data, expectedData))) {
+		return fmt.Errorf("statefs: tracked target %s no longer matches expected image", path)
+	}
+	return nil
+}
+
+// SyncDir persists directory-entry changes on filesystems that require an
+// explicit directory fsync after rename or removal.
+func SyncDir(path string) error {
+	info, present, err := InspectDir(path)
+	if err != nil || !present {
+		if err == nil {
+			err = fmt.Errorf("statefs: directory is missing")
+		}
+		return err
+	}
+	dir, err := os.Open(path)
+	if err != nil {
+		return fmt.Errorf("statefs: open directory %s: %w", path, err)
+	}
+	defer dir.Close()
+	opened, err := dir.Stat()
+	if err != nil || !opened.IsDir() || !os.SameFile(info, opened) {
+		return fmt.Errorf("statefs: directory %s changed while opening", path)
+	}
+	if err := dir.Sync(); err != nil {
+		return fmt.Errorf("statefs: sync directory %s: %w", path, err)
 	}
 	return nil
 }

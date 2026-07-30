@@ -52,6 +52,9 @@ func cmdEvolve(args []string) int {
 		return 2
 	}
 	o.root = gate.RepoRoot(o.root)
+	if code := rejectPendingPromotionAtEntry("forge evolve", o.root); code != 0 {
+		return code
+	}
 	autoSelected := name == "auto"
 	if autoSelected {
 		name = autoSelectWorkflow(o.root, fs, &o)
@@ -67,17 +70,9 @@ func cmdEvolve(args []string) int {
 	if autoSelected && wf.Stage != "evolve" {
 		return runAutoSelectedOneShot(wf, o, fs, *resume)
 	}
-	if converge.IsHumanGate(wf.Stop) {
-		return rejectHumanGate(wf.Stage, o.root)
-	}
-	if wf.Stage != "evolve" {
-		fmt.Fprintf(os.Stderr, "forge evolve: workflow stage must be %q (got %q)\n", "evolve", wf.Stage)
-		return 1
-	}
-	iter, src := resolveMaxIter(fs, *maxIter, o)
-	if iter < 0 {
-		fmt.Fprintf(os.Stderr, "forge evolve: --max-iter must be non-negative (got %d)\n", iter)
-		return 2
+	iter, src, code := validateEvolveEntry(wf, o, fs, *maxIter)
+	if code != 0 {
+		return code
 	}
 	// SIGINT/SIGTERM cancel the loop and its subprocesses gracefully.
 	ctx, stop := withSignalCancellation()
@@ -194,7 +189,7 @@ func rejectHumanGate(stage string, root string) int {
 // under <root>/.forge/ — so a crashed run can --resume, later rounds recall what
 // happened, and the run stays auditable.
 func execLoop(ctx context.Context, wf asset.Workflow, o runOpts, maxIter int, maxIterSource string, resume bool) int {
-	lock := acquireRunLock(o.root, "forge evolve")
+	lock := acquireRunLockForOptions(o, "forge evolve")
 	if lock == nil {
 		return 1
 	}

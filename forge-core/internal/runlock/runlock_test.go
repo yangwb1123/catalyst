@@ -47,6 +47,32 @@ func TestAcquire_CreatesForgeDirIfMissing(t *testing.T) {
 	}
 }
 
+func TestBusyDoesNotCreateStateAndTracksHeldLock(t *testing.T) {
+	root := t.TempDir()
+	busy, err := Busy(root)
+	if err != nil || busy {
+		t.Fatalf("Busy on fresh root = %v, %v", busy, err)
+	}
+	if _, err := os.Stat(filepath.Join(root, ".forge")); !os.IsNotExist(err) {
+		t.Fatalf("Busy created .forge on a read-only probe: %v", err)
+	}
+	lock, err := Acquire(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	busy, err = Busy(root)
+	if Supported() && (err != nil || !busy) {
+		t.Fatalf("Busy while held = %v, %v", busy, err)
+	}
+	if err := lock.Release(); err != nil {
+		t.Fatal(err)
+	}
+	busy, err = Busy(root)
+	if err != nil || busy {
+		t.Fatalf("Busy after release = %v, %v", busy, err)
+	}
+}
+
 func TestAcquire_RejectsForgeDirectorySymlink(t *testing.T) {
 	root := t.TempDir()
 	outside := t.TempDir()
@@ -112,10 +138,18 @@ func TestAcquire_SecondAttemptFailsFast(t *testing.T) {
 
 	msg := err.Error()
 	lockPath := filepath.Join(root, ".forge", "run.lock")
-	for _, want := range []string{lockPath, "already active", "wait for it to finish", "stale from a crash"} {
+	for _, want := range []string{
+		lockPath,
+		"already active",
+		"wait for that command to finish",
+		"do not unlink a contended lock file",
+	} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("error message %q missing expected substring %q", msg, want)
 		}
+	}
+	if strings.Contains(msg, "remove") || strings.Contains(msg, "stale") {
+		t.Errorf("contention message gives unsafe stale-file advice: %q", msg)
 	}
 }
 

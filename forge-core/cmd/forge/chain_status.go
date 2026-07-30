@@ -23,6 +23,9 @@ func validateChainRunOptionConflicts(o runOpts, state chainState, resolvedLifecy
 		lifecycleSet = o.lifecycleExplicit
 		maxChainStagesSet = o.maxChainStagesExplicit
 		runBudgetSet = o.runBudgetExplicit
+		if err := validateStaleChainSelectors(o, state); err != nil {
+			return err
+		}
 	}
 	if maxAgentCallsSet && o.maxAgentCalls != state.MaxAgentCalls {
 		return fmt.Errorf("persisted --max-agent-calls=%d conflicts with requested %d", state.MaxAgentCalls, o.maxAgentCalls)
@@ -47,6 +50,28 @@ func validateChainRunOptionConflicts(o runOpts, state chainState, resolvedLifecy
 				state.BudgetCapMicros, capMicros,
 			)
 		}
+	}
+	return nil
+}
+
+func validateStaleChainSelectors(o runOpts, state chainState) error {
+	persistedMode := projectYAMLValue(o.root, "mode")
+	if !o.modeExplicit && persistedMode != "" && persistedMode != state.Mode {
+		return fmt.Errorf(
+			"persisted chain mode=%q is stale against current project mode=%q; "+
+				"retry with an explicit matching --mode to resume intentionally",
+			state.Mode, persistedMode,
+		)
+	}
+	persistedLifecycle := projectYAMLValue(o.root, "lifecycle")
+	if !o.lifecycleExplicit &&
+		persistedLifecycle != "" &&
+		persistedLifecycle != state.Lifecycle {
+		return fmt.Errorf(
+			"persisted chain lifecycle=%q is stale against current project lifecycle=%q; "+
+				"retry with an explicit matching --lifecycle to resume intentionally",
+			state.Lifecycle, persistedLifecycle,
+		)
 	}
 	return nil
 }

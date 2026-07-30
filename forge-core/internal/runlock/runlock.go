@@ -1,11 +1,10 @@
-// Package runlock provides two small, independent, additive facilities used
-// by cmd/forge's `forge run`/`forge evolve` entry points:
+// Package runlock provides two small, independent facilities used by Forge
+// repository-mutating commands:
 //
 //   - Acquire/Release: a single-host advisory lock on <root>/.forge/run.lock
-//     that makes the two entry points fail FAST — never block, retry, or
-//     wait — when another forge process already holds it, so two concurrent
-//     runs against the same root can never race on .forge/ state
-//     (checkpoint.json, trace.jsonl, memory.jsonl).
+//     that makes a competing command fail FAST — never block, retry, or wait —
+//     so run, evolve, and migration transactions cannot race on repository or
+//     .forge/ state.
 //   - NewRunID: a process-scoped, roughly time-ordered id for trace
 //     correlation, independent of the lock (see runid.go).
 //
@@ -45,11 +44,10 @@ type Lock struct {
 // Acquire claims the exclusive, NON-BLOCKING advisory lock on
 // <root>/.forge/run.lock. It never blocks, retries, or waits: if another
 // forge process already holds the lock, it returns immediately with an
-// actionable error naming the lock path and both operator remedies — wait
-// for the other run to finish, or remove the file if it's stale from a
-// crash (see the package doc for why that should almost never be necessary
-// with a correct flock(2) implementation: the kernel releases the lock
-// automatically on ANY holder process exit, including SIGKILL).
+// actionable error naming the lock path. A contended inode always has a live
+// holder: flock is released automatically on process exit, including SIGKILL.
+// The path must not be unlinked while contended because doing so would create a
+// second lock namespace and permit split-brain mutation.
 //
 // It creates <root>/.forge if missing (MkdirAll), mirroring the trace/
 // checkpoint writers' own directory-creation behavior, so Acquire can be
@@ -71,14 +69,46 @@ func Acquire(root string) (*Lock, error) {
 		f.Close()
 		if errors.Is(err, errLockHeld) {
 			return nil, fmt.Errorf(
-				"runlock: %s is already active — another `forge run`/`forge evolve` "+
-					"holds it; wait for it to finish, or remove the file if it's stale "+
-					"from a crash", path)
+				"runlock: %s is already active — another Forge mutation holds it; "+
+					"wait for that command to finish or terminate its verified holder; "+
+					"do not unlink a contended lock file", path)
 		}
 		return nil, fmt.Errorf("runlock: lock %s: %w", path, err)
 	}
 	stampLockMeta(f) // best-effort; never fails Acquire
 	return &Lock{f: f, Path: path}, nil
+}
+
+// Busy performs a read-only, non-creating contention probe. A missing .forge
+// directory or run.lock means not busy. An existing lock file is opened without
+// O_CREATE and briefly locked; success is immediately released, while a held
+// flock reports busy. On platforms without a real lock implementation the probe
+// honestly reports not busy so dry-run callers remain available.
+func Busy(root string) (bool, error) {
+	if !Supported() {
+		return false, nil
+	}
+	dir := filepath.Join(root, ".forge")
+	if _, present, err := statefs.InspectDir(dir); err != nil || !present {
+		return false, err
+	}
+	path := filepath.Join(dir, "run.lock")
+	if _, present, err := statefs.InspectRegular(path); err != nil || !present {
+		return false, err
+	}
+	file, err := statefs.OpenRegularReadOnly(path)
+	if err != nil {
+		return false, fmt.Errorf("runlock: probe %s: %w", path, err)
+	}
+	defer file.Close()
+	if err := tryLock(file); err != nil {
+		if errors.Is(err, errLockHeld) {
+			return true, nil
+		}
+		return false, fmt.Errorf("runlock: probe lock %s: %w", path, err)
+	}
+	_ = unlock(file)
+	return false, nil
 }
 
 // Release releases the lock and closes the underlying file descriptor.
@@ -100,11 +130,9 @@ func (l *Lock) Release() error {
 }
 
 // stampLockMeta best-effort writes "pid=%d started=%s" into the held lock
-// file so a human `cat`-ing a HELD run.lock can sanity-check whether it
-// looks stale (a frozen-but-not-dead process, or a weak-flock network
-// mount). Purely informational — never load-bearing for correctness, which
-// comes entirely from the flock call. Failures are silently ignored: losing
-// this metadata never blocks a run.
+// file so a human inspecting a held run.lock can identify its likely holder.
+// Purely informational — never load-bearing for correctness, which comes
+// entirely from flock. Failures are silently ignored.
 func stampLockMeta(f *os.File) {
 	_ = f.Truncate(0)
 	_, _ = f.Seek(0, 0)

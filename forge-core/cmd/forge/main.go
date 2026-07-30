@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -117,7 +118,7 @@ usage:
   forge run    <workflow> [--mode balanced] [--lifecycle mvp] [--executor dry|command] [--agent-cmd claude] [--chain] [--max-chain-stages 8] [--approved] [--root DIR]
   forge evolve <workflow> [--mode balanced] [--lifecycle mvp] [--max-iter 5] [--executor dry|command] [--resume] [--root DIR]
   forge route  [--complexity F] [--risk-score F] [--task-type T] [--risk low|medium|high|critical] [--budget F] [--scorecard PATH]
-  forge migrate --to engineering [--apply] [--root DIR]
+  forge migrate (--to engineering | --to-lifecycle production) [--apply] [--root DIR]
   forge init   --name <project> [--mode balanced] [--lifecycle mvp] <target-dir>
   forge approve|reject <stage> [--root DIR]
   forge detect|scorecard|validate|memory-prune|status|doctor [--root DIR]
@@ -256,7 +257,7 @@ type runOpts struct {
 // bindRunOpts registers the flags shared by `forge run` and `forge evolve` onto
 // fs, writing into o — one definition so both subcommands stay in lockstep.
 func bindRunOpts(fs *flag.FlagSet, o *runOpts) {
-	fs.StringVar(&o.mode, "mode", "balanced", "engineering mode (explorer|balanced|engineering|cto)")
+	fs.StringVar(&o.mode, "mode", "", "engineering mode (explorer|balanced|engineering|cto); empty = read .agent/project.yml, else balanced")
 	fs.StringVar(&o.lifecycle, "lifecycle", "", "maturity modifier (idea|mvp|growth|production); empty = read .agent/project.yml, else mvp")
 	fs.StringVar(&o.root, "root", "", "repo root (default $FORGE_REPO_ROOT or .)")
 	fs.StringVar(&o.executor, "executor", "dry", "agent executor: dry|command")
@@ -352,6 +353,9 @@ func cmdRun(args []string) int {
 		return 2
 	}
 	o.root = gate.RepoRoot(o.root)
+	if code := rejectPendingPromotionAtEntry("forge run", o.root); code != 0 {
+		return code
+	}
 	freezeRunOptions(fs, &o)
 	wf, err := loadWorkflowForRunEntry(o.root, name, o)
 	if err != nil {
@@ -411,6 +415,22 @@ func resolveLifecycle(o runOpts) string {
 	return "mvp"
 }
 
+// resolveMode mirrors resolveLifecycle for the other half of the central
+// project selector. An explicit flag wins; otherwise the persistent mode in
+// project.yml is consumed; a project without that optional setting keeps the
+// historical balanced default. Values stay unvalidated here so mode.Effective
+// can apply its strict fail-safe to an unknown value instead of silently
+// downgrading it to balanced.
+func resolveMode(o runOpts) string {
+	if o.mode != "" {
+		return o.mode
+	}
+	if v := projectYAMLValue(o.root, "mode"); v != "" {
+		return v
+	}
+	return "balanced"
+}
+
 func freezeRunOptions(fs *flag.FlagSet, o *runOpts) {
 	o.runFlagsCaptured = true
 	o.modeExplicit = flagSet(fs, "mode")
@@ -418,6 +438,7 @@ func freezeRunOptions(fs *flag.FlagSet, o *runOpts) {
 	o.maxAgentCallsExplicit = flagSet(fs, "max-agent-calls")
 	o.maxChainStagesExplicit = flagSet(fs, "max-chain-stages")
 	o.runBudgetExplicit = flagSet(fs, "run-budget-usd")
+	o.mode = resolveMode(*o)
 	o.lifecycle = resolveLifecycle(*o)
 }
 
@@ -441,7 +462,16 @@ func projectYAMLValue(root, key string) string {
 		if i := strings.IndexByte(rest, '#'); i >= 0 {
 			rest = rest[:i]
 		}
-		return strings.TrimSpace(rest)
+		raw := strings.TrimSpace(rest)
+		if len(raw) >= 2 && raw[0] == '"' && raw[len(raw)-1] == '"' {
+			if value, err := strconv.Unquote(raw); err == nil {
+				return value
+			}
+		}
+		if len(raw) >= 2 && raw[0] == '\'' && raw[len(raw)-1] == '\'' {
+			return strings.ReplaceAll(raw[1:len(raw)-1], "''", "'")
+		}
+		return raw
 	}
 	return ""
 }

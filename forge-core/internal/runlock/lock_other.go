@@ -4,6 +4,9 @@ package runlock
 
 import "os"
 
+// Supported is false when this build cannot provide a real cross-process lock.
+func Supported() bool { return false }
+
 // tryLock is an honest no-op on non-unix platforms: it never locks, so it
 // always succeeds and never contends with another process. This repo runs
 // unix-only in practice (CI is ubuntu-only; see command_executor_other.go

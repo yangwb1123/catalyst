@@ -97,7 +97,8 @@ func TestChainResumeRestoresProductionLifecycleIntoRejectedDesignExecutor(t *tes
 	state := resumableTestState("design", "design", nil)
 	state.Mode, state.Lifecycle = "explorer", "production"
 	o := chainOpts(root)
-	o.lifecycle, o.runFlagsCaptured = "", true
+	o.mode, o.lifecycle = "explorer", "production"
+	o.runFlagsCaptured, o.modeExplicit, o.lifecycleExplicit = true, true, true
 	o.executor, o.agentCmd = "command", "claude"
 	lifecycle, err := restoreChainRunOptions(&o, &runBudget{}, &state, resolveLifecycle(o))
 	if err != nil {
@@ -156,6 +157,9 @@ func TestChainResumeRejectsExplicitDefaultFlagConflicts(t *testing.T) {
 				t.Fatal(err)
 			}
 			o.root = t.TempDir()
+			mkdir(t, filepath.Join(o.root, ".agent"))
+			writeFile(t, filepath.Join(o.root, ".agent", "project.yml"),
+				"mode: engineering\nlifecycle: production\n")
 			freezeRunOptions(fs, &o)
 			err := validateChainRunOptionConflicts(o, state, resolveLifecycle(o))
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
@@ -167,8 +171,50 @@ func TestChainResumeRejectsExplicitDefaultFlagConflicts(t *testing.T) {
 	var omitted runOpts
 	bindRunOpts(fs, &omitted)
 	omitted.root = t.TempDir()
+	mkdir(t, filepath.Join(omitted.root, ".agent"))
+	writeFile(t, filepath.Join(omitted.root, ".agent", "project.yml"),
+		"mode: engineering\nlifecycle: production\n")
 	freezeRunOptions(fs, &omitted)
 	if err := validateChainRunOptionConflicts(omitted, state, resolveLifecycle(omitted)); err != nil {
 		t.Fatalf("omitted defaults should restore persisted options: %v", err)
+	}
+}
+
+func TestChainResumeRejectsStaleProjectSelectorsUnlessOldValuesAreExplicit(t *testing.T) {
+	root := t.TempDir()
+	entry := humanChainWorkflow("design", "review")
+	writeChainAsset(t, root, "design", entry)
+	writeChainAsset(t, root, "review", humanChainWorkflow("review", ""))
+	writeFile(t, filepath.Join(root, ".agent", "project.yml"),
+		"mode: engineering\nlifecycle: production\n")
+	state := resumableTestState("design", "review", []string{"design"})
+	state.Mode, state.Lifecycle = "explorer", "mvp"
+	if err := saveChainState(root, state); err != nil {
+		t.Fatal(err)
+	}
+	projectBefore := readFileStr(t, filepath.Join(root, ".agent", "project.yml"))
+
+	code, output := captureChainOutput(t, func() int {
+		return cmdRun([]string{"design", "--root", root, "--chain"})
+	})
+	if code != 1 || !strings.Contains(output, "stale") {
+		t.Fatalf("omitted stale selector resume exit=%d output:\n%s", code, output)
+	}
+	if strings.Contains(output, "awaiting human approval") {
+		t.Fatalf("stale selector resume reached the held gate:\n%s", output)
+	}
+
+	code, output = captureChainOutput(t, func() int {
+		return cmdRun([]string{
+			"design", "--root", root, "--chain",
+			"--mode", "explorer", "--lifecycle", "mvp",
+		})
+	})
+	if code != exitChainIncomplete || !strings.Contains(output, "awaiting human approval") {
+		t.Fatalf("explicit historical selector resume exit=%d output:\n%s", code, output)
+	}
+	if got := readFileStr(t, filepath.Join(root, ".agent", "project.yml")); got != projectBefore {
+		t.Fatalf("transient historical resume mutated project.yml\nbefore=%q\nafter=%q",
+			projectBefore, got)
 	}
 }

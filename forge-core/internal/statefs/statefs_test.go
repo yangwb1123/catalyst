@@ -1,6 +1,7 @@
 package statefs
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"testing"
@@ -134,5 +135,123 @@ func TestRemoveRegularRejectsParentSymlink(t *testing.T) {
 	data, err := os.ReadFile(sentinel)
 	if err != nil || string(data) != "keep" {
 		t.Fatalf("outside sentinel changed: data=%q err=%v", data, err)
+	}
+}
+
+func TestTrackedReadAndAtomicWritePreserveRepositoryDirectoryMode(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, ".agent")
+	if err := os.Mkdir(dir, 0o775); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "project.yml")
+	if err := os.WriteFile(path, []byte("mode: explorer\n"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	beforeDir, err := os.Stat(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, mode, present, err := ReadTracked(path, 1024)
+	if err != nil || !present || string(data) != "mode: explorer\n" || mode != 0o640 {
+		t.Fatalf("ReadTracked = data=%q mode=%#o present=%v err=%v",
+			data, mode, present, err)
+	}
+	if err := AtomicWriteTrackedIfUnchanged(
+		path, data, mode, true, []byte("mode: engineering\n"), mode,
+	); err != nil {
+		t.Fatal(err)
+	}
+	afterDir, err := os.Stat(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	afterData, afterMode, present, err := ReadTracked(path, 1024)
+	if err != nil || !present || string(afterData) != "mode: engineering\n" ||
+		afterMode != 0o640 {
+		t.Fatalf("published tracked file = data=%q mode=%#o present=%v err=%v",
+			afterData, afterMode, present, err)
+	}
+	if afterDir.Mode().Perm() != beforeDir.Mode().Perm() {
+		t.Fatalf("tracked write changed parent mode %#o -> %#o",
+			beforeDir.Mode().Perm(), afterDir.Mode().Perm())
+	}
+}
+
+func TestTrackedOperationsRejectAliasesAndSpecialFiles(t *testing.T) {
+	for _, kind := range []string{"symlink", "hardlink", "directory"} {
+		t.Run(kind, func(t *testing.T) {
+			root := t.TempDir()
+			dir := filepath.Join(root, ".agent")
+			if err := os.Mkdir(dir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			path := filepath.Join(dir, "ROADMAP.md")
+			outside := filepath.Join(t.TempDir(), "outside")
+			if err := os.WriteFile(outside, []byte("keep"), 0o640); err != nil {
+				t.Fatal(err)
+			}
+			switch kind {
+			case "symlink":
+				if err := os.Symlink(outside, path); err != nil {
+					t.Skip(err)
+				}
+			case "hardlink":
+				if err := os.Link(outside, path); err != nil {
+					t.Skip(err)
+				}
+			case "directory":
+				if err := os.Mkdir(path, 0o755); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if _, _, _, err := ReadTracked(path, 1024); err == nil {
+				t.Fatal("ReadTracked accepted an alias or special file")
+			}
+			if err := AtomicWriteTrackedIfUnchanged(
+				path, nil, 0, false, []byte("replace"), 0o644,
+			); err == nil {
+				t.Fatal("AtomicWriteTracked accepted an alias or special file")
+			}
+			got, err := os.ReadFile(outside)
+			if err != nil || string(got) != "keep" {
+				t.Fatalf("outside target changed: data=%q err=%v", got, err)
+			}
+		})
+	}
+}
+
+func TestAtomicWriteTrackedRejectsInPlaceImageDrift(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, ".agent")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "project.yml")
+	expected := []byte("mode: explorer\n")
+	drifted := []byte("mode: balanced\n")
+	if err := os.WriteFile(path, expected, 0o640); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, drifted, 0o640); err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.Stat(path)
+	if err != nil || !os.SameFile(before, after) {
+		t.Fatalf("fixture did not retain inode: before=%v after=%v err=%v", before, after, err)
+	}
+	err = AtomicWriteTrackedIfUnchanged(
+		path, expected, 0o640, true, []byte("mode: engineering\n"), 0o640,
+	)
+	if err == nil {
+		t.Fatal("tracked CAS accepted in-place content drift")
+	}
+	got, readErr := os.ReadFile(path)
+	if readErr != nil || !bytes.Equal(got, drifted) {
+		t.Fatalf("tracked CAS overwrote drift: data=%q err=%v", got, readErr)
 	}
 }

@@ -153,7 +153,11 @@ lifecycle_modifiers:
 # ═══════════════════════════════════════════════════════════════════════════
 migrations:
   explorer_to_engineering:
-    trigger: manual                      # 人触发(v1);v3 可由 lifecycle→production 自动 / manual now, auto in v3
+    trigger: manual                      # 显式 mode 迁移入口仍保留 / explicit mode migration remains available
+    auto_trigger:
+      persistent_lifecycle_to: production
+      command: forge migrate --to-lifecycle production --apply
+      note: 仅持久晋升事件触发；run/evolve 的临时 CLI 覆盖绝不写盘 / persistent promotion only; transient run flags never write
     description: >
       把「快糙猛」原型升级为受治理的工程项目:收紧 harness + 补齐之前跳过的测试/CI/监控。
       Promote a quick prototype into a governed project: tighten harness, backfill skipped rigor.

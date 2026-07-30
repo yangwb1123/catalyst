@@ -35,6 +35,19 @@ func acquireRunLock(root, cmd string) *runlock.Lock {
 	return lock
 }
 
+func acquireRunLockForOptions(o runOpts, cmd string) *runlock.Lock {
+	lock := acquireRunLock(o.root, cmd)
+	if lock == nil {
+		return nil
+	}
+	if err := validateFrozenProjectSelectors(o); err != nil {
+		fmt.Fprintf(os.Stderr, "%s: %v\n", cmd, err)
+		_ = lock.Release()
+		return nil
+	}
+	return lock
+}
+
 // stampRunID sets t's process-correlation RunID (internal/runlock.NewRunID,
 // trace.Tracer.RunID) so every trace.jsonl line this process emits can be
 // attributed to this run. Called once by openTracer, the single shared

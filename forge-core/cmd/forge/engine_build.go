@@ -397,7 +397,7 @@ func (e runProbeExecutor) Execute(ctx context.Context, p asset.Phase, mode strin
 // between its gate phase and convergence until another agent succeeds. Chained
 // stages therefore never inherit the prior stage's acceptance result.
 func execEngine(ctx context.Context, firstWf asset.Workflow, o runOpts) int {
-	lock := acquireRunLock(o.root, "forge run")
+	lock := acquireRunLockForOptions(o, "forge run")
 	if lock == nil {
 		return 1
 	}
