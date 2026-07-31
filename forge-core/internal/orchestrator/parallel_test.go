@@ -154,6 +154,34 @@ func TestRunParallel_AgentBudgetEnforcedConcurrently(t *testing.T) {
 	}
 }
 
+func TestRunParallel_RejectsSerialResourceProgressBeforeExecution(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		calls int
+		backs int
+	}{
+		{name: "reserved agent call", calls: 1},
+		{name: "consumed loop-back", calls: 1, backs: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := &safeRec{}
+			eng := Engine{
+				Exec: rec, RunGate: allOK,
+				InitialAgentCalls: tc.calls, InitialLoopBacks: tc.backs,
+			}
+			err := eng.RunParallel(
+				context.Background(), parallelWF(ph("a"), ph("b")), "balanced",
+			)
+			if err == nil || !strings.Contains(err.Error(), "serial mid-iteration resource progress") {
+				t.Fatalf("parallel resource progress error = %v", err)
+			}
+			if len(rec.executed) != 0 {
+				t.Fatalf("invalid parallel resume executed phases: %v", rec.executed)
+			}
+		})
+	}
+}
+
 // ★ The review-stage mode-gating skip applies to RunParallel exactly as it does to
 // RunFrom (via the shared checkStageSkip/stageSkipped): explorer elides the WHOLE
 // review stage under --parallel too — no phase in it ever spawns.

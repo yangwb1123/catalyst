@@ -37,16 +37,19 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode/utf8"
 
 	"forgeos/forge-core/internal/statefs"
 )
 
 const (
-	checkpointFormatV1 = "forgeos.checkpoint.v1"
-	checkpointMaxBytes = 4 << 20
+	checkpointFormatV1           = "forgeos.checkpoint.v1"
+	checkpointFormatV2           = "forgeos.checkpoint.v2"
+	checkpointMaxBytes           = 4 << 20
+	checkpointScanReportMaxBytes = 66 << 10
 	// CheckpointFormatCurrent is the only generation safe for autonomous resume.
 	// Older generations remain Load-readable so doctor/status can diagnose them.
-	CheckpointFormatCurrent = "forgeos.checkpoint.v2"
+	CheckpointFormatCurrent = "forgeos.checkpoint.v3"
 )
 
 type checkpointWriter func(string, []byte, os.FileMode) error
@@ -60,9 +63,9 @@ type checkpointSnapshot struct {
 // crash or clean stop. It is deliberately small: just enough to re-enter the
 // workflow at the right place and re-explain why it last stopped.
 //
-// FormatVersion is the on-disk format identifier (e.g. "forgeos.checkpoint.v2"),
+// FormatVersion is the on-disk format identifier (e.g. "forgeos.checkpoint.v3"),
 // so the loader can distinguish between format generations when a future
-// breaking change is needed. Empty/v1 state remains readable for diagnostics,
+// breaking change is needed. Empty/v1/v2 state remains readable for diagnostics,
 // while cmd/forge refuses to resume anything except the current generation.
 //
 // UpdatedAtUnix is injected by the caller rather than read from time.Now inside
@@ -82,25 +85,28 @@ type Checkpoint struct {
 	// the next iteration from phase 0" — byte-for-byte the pre-phase-granular behavior.
 	// A value > 0 is written after each agent phase completes mid-iteration, so a crash
 	// resumes at that phase instead of replaying every completed (billed) agent phase.
-	// omitempty keeps a checkpoint written before this field existed (and any clean
-	// iteration-boundary checkpoint) byte-identical on disk and decoding to 0.
-	PhaseIndex    int    `json:"phase_index,omitempty"`
+	// v3 persists this field explicitly even when it is 0. Earlier formats may omit
+	// it and remain diagnostic-readable with the Go zero value.
+	PhaseIndex    int    `json:"phase_index"`
 	GatesGreen    bool   `json:"gates_green"`     // whether all required gates were green at the snapshot
 	Reason        string `json:"reason"`          // why the loop last stopped (for resume context)
 	UpdatedAtUnix int64  `json:"updated_at_unix"` // caller-supplied snapshot time (Unix seconds)
-	// SpentUsdMicros is the loop's cumulative billed cost so far, in integer
-	// MICRO-dollars (USD x 1e6), OPAQUE to this package EXACTLY like
-	// trace.Event.CostUsdMicros — persist has no notion of dollars or a "budget"; it
-	// only stores and returns this int so a --resume can re-seed the run-level cost
-	// cap instead of restarting the tally from zero (the gap: a crash + --resume built
-	// a fresh budget at spent=0, so cost already billed before the crash escaped the
-	// cap and the run overspent). The micro<->dollar conversion and all budget meaning
-	// live in the caller (cmd/forge cost.go), never here. Integer microdollars match
-	// CostUsdMicros (jitter-free; 0.054 round-trips exactly). omitempty keeps a run
-	// WITHOUT a run budget — and any checkpoint written before this field existed —
-	// byte-for-byte identical on disk and decoding to 0, so old checkpoints stay
-	// loadable and an unbudgeted run is unchanged.
-	SpentUsdMicros int64 `json:"spent_usd_micros,omitempty"`
+	// The v3 resource envelope is enough to restore one standalone Evolve
+	// iteration without resetting a cap or replaying already charged work. A zero
+	// budget cap is unset and zero max-agent-calls is unbounded; in contrast, zero
+	// max-loop-backs forbids loop-backs. All values are explicit JSON numbers so
+	// missing recovery state cannot masquerade as zero.
+	BudgetCapMicros int64 `json:"budget_cap_micros"`
+	SpentUsdMicros  int64 `json:"spent_usd_micros"`
+	MaxAgentCalls   int   `json:"max_agent_calls"`
+	AgentCalls      int   `json:"agent_calls"`
+	MaxLoopBacks    int   `json:"max_loop_backs"`
+	LoopBacks       int   `json:"loop_backs"`
+	// EvolveScanReport is the canonical, already validated feed-forward report
+	// needed to resume after the contracted scan without replaying completed
+	// mutable/billed phases. WorkflowDigest, mode, lifecycle and PhaseIndex bind
+	// it to this exact in-progress iteration; iteration-boundary state omits it.
+	EvolveScanReport string `json:"evolve_scan_report,omitempty"`
 }
 
 // Save atomically persists cp to path as JSON.
@@ -292,13 +298,14 @@ func decode(data []byte) (Checkpoint, error) {
 }
 
 func validateFormat(format string) error {
-	if format == "" || format == checkpointFormatV1 || format == CheckpointFormatCurrent {
+	if format == "" || format == checkpointFormatV1 ||
+		format == checkpointFormatV2 || format == CheckpointFormatCurrent {
 		return nil
 	}
 	return fmt.Errorf("persist: unsupported checkpoint format %q", format)
 }
 
-var checkpointV2RequiredFields = []string{
+var checkpointV3RequiredFields = []string{
 	"workflow",
 	"workflow_digest",
 	"mode",
@@ -308,24 +315,30 @@ var checkpointV2RequiredFields = []string{
 	"gates_green",
 	"reason",
 	"updated_at_unix",
+	"phase_index",
+	"budget_cap_micros",
+	"spent_usd_micros",
+	"max_agent_calls",
+	"agent_calls",
+	"max_loop_backs",
+	"loop_backs",
 }
 
-var checkpointV2OptionalScalarFields = []string{
-	"phase_index",
-	"spent_usd_micros",
+var checkpointV3OptionalScalarFields = []string{
+	"evolve_scan_report",
 }
 
 // validateCurrentEncoding distinguishes a deliberately persisted zero/false
 // value from a missing or explicit-null field. encoding/json maps null into the
 // Go zero value for scalar fields, so validating only the decoded struct would
-// let a truncated v2 checkpoint masquerade as a legitimate iteration-zero
+// let a truncated v3 checkpoint masquerade as a legitimate iteration-zero
 // snapshot.
 func validateCurrentEncoding(data []byte) error {
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(data, &fields); err != nil {
 		return fmt.Errorf("persist: decode checkpoint fields: %w", err)
 	}
-	for _, name := range checkpointV2RequiredFields {
+	for _, name := range checkpointV3RequiredFields {
 		raw, ok := fields[name]
 		if !ok {
 			return fmt.Errorf("persist: checkpoint %s missing required field %q",
@@ -337,7 +350,7 @@ func validateCurrentEncoding(data []byte) error {
 				CheckpointFormatCurrent, name)
 		}
 	}
-	for _, name := range checkpointV2OptionalScalarFields {
+	for _, name := range checkpointV3OptionalScalarFields {
 		raw, ok := fields[name]
 		if ok && bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
 			return fmt.Errorf("persist: checkpoint %s optional scalar field %q is null",
@@ -348,6 +361,24 @@ func validateCurrentEncoding(data []byte) error {
 }
 
 func validateCurrentCheckpoint(cp Checkpoint) error {
+	if err := validateCheckpointSnapshot(cp); err != nil {
+		return err
+	}
+	if err := validateCheckpointResources(cp); err != nil {
+		return err
+	}
+	switch {
+	case len(cp.EvolveScanReport) > checkpointScanReportMaxBytes ||
+		!utf8.ValidString(cp.EvolveScanReport):
+		return fmt.Errorf("persist: checkpoint evolve_scan_report must be valid UTF-8 with at most %d bytes",
+			checkpointScanReportMaxBytes)
+	case cp.PhaseIndex == 0 && cp.EvolveScanReport != "":
+		return fmt.Errorf("persist: checkpoint evolve_scan_report requires a positive phase_index")
+	}
+	return nil
+}
+
+func validateCheckpointSnapshot(cp Checkpoint) error {
 	requiredStrings := []struct {
 		name  string
 		value string
@@ -370,14 +401,41 @@ func validateCurrentCheckpoint(cp Checkpoint) error {
 	case cp.RoadmapCompletion < 0 || cp.RoadmapCompletion > 1:
 		return fmt.Errorf("persist: checkpoint roadmap_completion %v must be within [0,1]",
 			cp.RoadmapCompletion)
-	case cp.PhaseIndex < 0:
-		return fmt.Errorf("persist: checkpoint phase_index %d must be non-negative", cp.PhaseIndex)
-	case cp.SpentUsdMicros < 0:
-		return fmt.Errorf("persist: checkpoint spent_usd_micros %d must be non-negative",
-			cp.SpentUsdMicros)
 	case cp.UpdatedAtUnix <= 0:
 		return fmt.Errorf("persist: checkpoint updated_at_unix %d must be positive",
 			cp.UpdatedAtUnix)
+	}
+	return nil
+}
+
+func validateCheckpointResources(cp Checkpoint) error {
+	switch {
+	case cp.PhaseIndex < 0:
+		return fmt.Errorf("persist: checkpoint phase_index %d must be non-negative", cp.PhaseIndex)
+	case cp.BudgetCapMicros < 0:
+		return fmt.Errorf("persist: checkpoint budget_cap_micros %d must be non-negative",
+			cp.BudgetCapMicros)
+	case cp.SpentUsdMicros < 0:
+		return fmt.Errorf("persist: checkpoint spent_usd_micros %d must be non-negative",
+			cp.SpentUsdMicros)
+	case cp.MaxAgentCalls < 0:
+		return fmt.Errorf("persist: checkpoint max_agent_calls %d must be non-negative",
+			cp.MaxAgentCalls)
+	case cp.AgentCalls < 0:
+		return fmt.Errorf("persist: checkpoint agent_calls %d must be non-negative",
+			cp.AgentCalls)
+	case cp.MaxAgentCalls > 0 && cp.AgentCalls > cp.MaxAgentCalls:
+		return fmt.Errorf("persist: checkpoint agent_calls %d exceeds max_agent_calls %d",
+			cp.AgentCalls, cp.MaxAgentCalls)
+	case cp.MaxLoopBacks < 0:
+		return fmt.Errorf("persist: checkpoint max_loop_backs %d must be non-negative",
+			cp.MaxLoopBacks)
+	case cp.LoopBacks < 0:
+		return fmt.Errorf("persist: checkpoint loop_backs %d must be non-negative",
+			cp.LoopBacks)
+	case cp.LoopBacks > cp.MaxLoopBacks:
+		return fmt.Errorf("persist: checkpoint loop_backs %d exceeds max_loop_backs %d",
+			cp.LoopBacks, cp.MaxLoopBacks)
 	}
 	return nil
 }

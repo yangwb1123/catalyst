@@ -84,7 +84,7 @@ func TestProposalOnlyLoopHasNoRepositoryGateRunner(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	loop, _, _ := buildLoop(wf, runOpts{
+	loop, _, _, _ := buildLoop(wf, runOpts{
 		root: root, mode: "explorer", lifecycle: "idea", executor: "dry",
 	}, 1, func(string) {}, nil, budget, "", nil)
 	if result := loop.Engine.RunGate("test"); result.Status != "FAIL" {
@@ -213,7 +213,42 @@ func TestEvolveResumeRejectsDiagnosticOnlyFormatBeforeTrace(t *testing.T) {
 	}
 }
 
-func TestEvolveResumeRejectsIncompleteV2BeforeTrace(t *testing.T) {
+func TestEvolveResumeRejectsV2DiagnosticCheckpointBeforeTrace(t *testing.T) {
+	requirePython(t)
+	root := fakeRepo(t, "evolve", externalAgentWorkflow)
+	wf, err := loadWorkflow(root, "evolve")
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := json.Marshal(map[string]any{
+		"_format":          "forgeos.checkpoint.v2",
+		"workflow":         "evolve",
+		"workflow_digest":  checkpointWorkflowDigest(wf),
+		"mode":             "balanced",
+		"lifecycle":        "mvp",
+		"iteration":        1,
+		"phase_index":      1,
+		"spent_usd_micros": 1000,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mkdir(t, filepath.Join(root, ".forge"))
+	if err := os.WriteFile(checkpointPath(root), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if code := cmdEvolve([]string{
+		"evolve", "--root", root, "--mode", "balanced",
+		"--lifecycle", "mvp", "--max-iter", "2", "--resume",
+	}); code != 1 {
+		t.Fatalf("v2 diagnostic resume exit=%d, want 1", code)
+	}
+	if _, err := os.Stat(filepath.Join(root, ".forge", "trace.jsonl")); !os.IsNotExist(err) {
+		t.Fatalf("v2 diagnostic resume created trace: %v", err)
+	}
+}
+
+func TestEvolveResumeRejectsIncompleteV3BeforeTrace(t *testing.T) {
 	requirePython(t)
 	root := fakeRepo(t, "evolve", externalAgentWorkflow)
 	wf, err := loadWorkflow(root, "evolve")

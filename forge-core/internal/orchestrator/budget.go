@@ -1,6 +1,68 @@
 package orchestrator
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+)
+
+func (e Engine) initialPhaseProgress() (agentCalls, loopBacks int, err error) {
+	switch {
+	case e.InitialAgentCalls < 0:
+		return 0, 0, fmt.Errorf("initial agent-call progress %d must be non-negative", e.InitialAgentCalls)
+	case e.InitialLoopBacks < 0:
+		return 0, 0, fmt.Errorf("initial loop-back progress %d must be non-negative", e.InitialLoopBacks)
+	case e.MaxAgentCalls > 0 && e.InitialAgentCalls > e.MaxAgentCalls:
+		return 0, 0, fmt.Errorf("initial agent-call progress %d exceeds configured cap %d",
+			e.InitialAgentCalls, e.MaxAgentCalls)
+	case e.InitialLoopBacks > e.MaxLoopBack:
+		return 0, 0, fmt.Errorf("initial loop-back progress %d exceeds configured cap %d",
+			e.InitialLoopBacks, e.MaxLoopBack)
+	default:
+		return e.InitialAgentCalls, e.InitialLoopBacks, nil
+	}
+}
+
+func (e Engine) checkpointPhase(nextPhaseIdx, agentCalls, loopBacks int) error {
+	if e.OnPhase == nil {
+		return nil
+	}
+	if err := e.OnPhase(nextPhaseIdx, agentCalls, loopBacks); err != nil {
+		return fmt.Errorf("durable progress at next phase %d: %w", nextPhaseIdx, err)
+	}
+	return nil
+}
+
+func (e Engine) prepareAgentSpawn(index int, agentCalls, loopBacks *int) error {
+	if err := e.checkAgentBudget(agentCalls); err != nil {
+		return err
+	}
+	if err := e.checkRunBudget(*agentCalls - 1); err != nil {
+		return err
+	}
+	if err := e.checkpointPhase(index, *agentCalls, *loopBacks); err != nil {
+		return fmt.Errorf("pre-spawn checkpoint: %w", err)
+	}
+	return nil
+}
+
+func (e Engine) checkpointAgentFailure(index, agentCalls, loopBacks int, cause error) error {
+	if err := e.checkpointPhase(index, agentCalls, loopBacks); err != nil {
+		return errors.Join(cause, fmt.Errorf("failed-agent checkpoint: %w", err))
+	}
+	return cause
+}
+
+func (e Engine) checkpointLoopBack(target, agentCalls int, loopBacks *int, cause error) error {
+	if err := e.checkpointPhase(target, agentCalls, *loopBacks); err != nil {
+		*loopBacks--
+		progressErr := fmt.Errorf("directed-transition checkpoint: %w", err)
+		if cause != nil {
+			return errors.Join(cause, progressErr)
+		}
+		return progressErr
+	}
+	return nil
+}
 
 // checkAgentBudget is the per-run agent-call budget guard — the PAIRED PREREQUISITE
 // to the recursion guard (CommandExecutor.MaxDepth). The recursion guard bounds

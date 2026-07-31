@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -94,18 +93,8 @@ func releaseRawOutputContract(wf asset.Workflow) func(phase, output string) erro
 		if !ok || p.Agent != "release-engineer" {
 			return nil
 		}
-		var envelope struct {
-			Type    string  `json:"type"`
-			Subtype string  `json:"subtype"`
-			IsError *bool   `json:"is_error"`
-			Result  *string `json:"result"`
-		}
-		if err := json.Unmarshal([]byte(strings.TrimSpace(output)), &envelope); err != nil {
-			return fmt.Errorf("release agent must return one complete Claude JSON result envelope: %w", err)
-		}
-		if envelope.Type != "result" || envelope.Subtype != "success" ||
-			envelope.IsError == nil || *envelope.IsError || envelope.Result == nil {
-			return fmt.Errorf("release agent envelope must be type=result, subtype=success, is_error=false, with a result")
+		if _, err := successfulClaudeResultPayload(output); err != nil {
+			return fmt.Errorf("release agent %w", err)
 		}
 		return nil
 	}

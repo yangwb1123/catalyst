@@ -1,6 +1,7 @@
 package orchestrator
 
 import (
+	"errors"
 	"testing"
 
 	"forgeos/forge-core/internal/converge"
@@ -33,5 +34,27 @@ func TestLoop_NegativeBoundFailsClosed(t *testing.T) {
 	out, err := l.Run(loadFixture(t), "balanced")
 	if err == nil || out.Converged || out.Iterations != 0 {
 		t.Fatalf("negative bound outcome=%+v err=%v, want pre-run rejection", out, err)
+	}
+}
+
+func TestLoop_OnIterationErrorStopsBeforeNextRound(t *testing.T) {
+	wf := loadAgentOnly(t)
+	exec := &countingExec{}
+	hookErr := errors.New("iteration checkpoint failed")
+	hookCalls := 0
+	l := NewLoopEngine(
+		Engine{Exec: exec, RunGate: allOK}, wf.Stop,
+		signalSeq(converge.Signals{}), 3, 3, nil,
+	)
+	l.OnIteration = func(_ int, _ converge.Signals, _ int64) error {
+		hookCalls++
+		return hookErr
+	}
+	out, err := l.Run(wf, "balanced")
+	if !errors.Is(err, hookErr) || out.Reason != "iteration checkpoint failure" {
+		t.Fatalf("iteration checkpoint outcome=%+v err=%v", out, err)
+	}
+	if out.Iterations != 1 || exec.calls != 1 || hookCalls != 1 {
+		t.Fatalf("iteration failure did not stop: outcome=%+v exec=%d hooks=%d", out, exec.calls, hookCalls)
 	}
 }

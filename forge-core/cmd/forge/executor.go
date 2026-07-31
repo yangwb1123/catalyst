@@ -28,7 +28,7 @@ func agentExecutor(o runOpts, logln func(string), costSink func(phase, model str
 	if o.executor != "command" {
 		return orchestrator.DryRunExecutor{Log: logln}
 	}
-	isClaude := filepath.Base(strings.TrimSpace(o.agentCmd)) == "claude"
+	isClaude := isClaudeExecutable(o.agentCmd)
 	config := commandExecutorConfig{
 		opts: o, logln: logln, costSink: costSink, tierOf: tierOf,
 		phaseModel: phaseModel, ctxCache: ctxCache, gates: gates,
@@ -41,6 +41,10 @@ func agentExecutor(o runOpts, logln func(string), costSink func(phase, model str
 		releasePrompts: newReleasePromptCache(), lifecycle: resolveLifecycle(o),
 	}
 	return config.executor()
+}
+
+func isClaudeExecutable(command string) bool {
+	return filepath.Base(strings.TrimSpace(command)) == "claude"
 }
 
 type commandExecutorConfig struct {
@@ -81,7 +85,7 @@ func (c commandExecutorConfig) executor() orchestrator.AgentExecutor {
 		ValidateRawOutput: c.hooks.ValidateRawOutput,
 	}
 	phaseModel := preferPhaseModel(c.hooks.ModelFor, c.phaseModel)
-	ex.Observe = observeFor(c.isClaude, c.costSink, phaseModel, c.phaseOut, c.feedsForward, c.verdicts, c.findings, c.onFailTarget, c.hooks.VerdictContractFor)
+	ex.Observe = observeFor(c.isClaude, c.costSink, phaseModel, c.phaseOut, c.feedsForward, c.verdicts, c.findings, c.onFailTarget, c.hooks.VerdictContractFor, c.hooks.ScanContractFor)
 	if c.isClaude {
 		ex.RenderLog = unwrapClaudeResult
 		ex.ClassifyOverload = classifyClaudeOverload
@@ -139,6 +143,7 @@ func (c commandExecutorConfig) build(p asset.Phase, runMode string) []string {
 	} else {
 		text = buildPromptWithEmits(c.opts.root, p, runMode, frozenTier, c.ctxCache, c.gates, c.phaseOut, c.findings, emitsFilesFor(c.priorEmits, p.Name))
 	}
+	text = appendEvolveScanPrompt(text, p, c.hooks.ScanDepth)
 	text = requiresToolsGuard(p, true, c.isClaude, c.opts.agentAllowedTools, c.logln, text)
 	if c.hooks.OnBuild != nil {
 		c.hooks.OnBuild(p, model, text, frozenSourceRevision, frozenReleaseInputs)
@@ -152,6 +157,8 @@ type executorHooks struct {
 	OnBuild            func(phase asset.Phase, model, promptText, frozenSourceRevision string, frozenReleaseInputs map[string]string)
 	ModelFor           func(phase string) string
 	VerdictContractFor func(phase string) string
+	ScanContractFor    func(phase string) string
+	ScanDepth          string
 }
 
 func firstExecutorHooks(hooks []executorHooks) executorHooks {

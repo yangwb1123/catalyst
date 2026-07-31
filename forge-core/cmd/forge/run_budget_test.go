@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"math"
 	"testing"
 	"time"
 )
@@ -108,8 +109,9 @@ func TestRunBudget_ExhaustedFuncNilWhenUnset(t *testing.T) {
 }
 
 // ⑤ newRunBudget: empty flag -> unset no-op accumulator (cap 0, nil puller); a valid
-// number -> that cap; a malformed or negative value -> a hard error (fail-closed: a budget
-// the operator set must never be silently dropped).
+// number -> the canonical persisted micro-dollar cap; malformed, negative, sub-micro,
+// or unrepresentably large values -> a hard error (fail-closed: a budget the operator
+// set must never be silently dropped or change meaning on resume).
 func TestNewRunBudget_ParsesAndFailsClosed(t *testing.T) {
 	// Empty = unset.
 	b, err := newRunBudget("")
@@ -129,11 +131,79 @@ func TestNewRunBudget_ParsesAndFailsClosed(t *testing.T) {
 		t.Errorf("parsed cap = %v, want 2.50", b.cap)
 	}
 
-	// Malformed / negative / non-finite = fail-closed error.
-	for _, bad := range []string{"abc", "-1", "1.2.3", "NaN", "Inf"} {
+	// More precision than checkpoint v3 supports is rounded exactly once at
+	// parse time, so first-run enforcement and resumed enforcement agree.
+	b, err = newRunBudget("1.0000004")
+	if err != nil {
+		t.Fatalf("a representable high-precision cap must parse; got %v", err)
+	}
+	if b.cap != 1 || b.CapUsdMicros() != 1_000_000 {
+		t.Errorf("canonical cap = %v (%d micro-USD), want 1.0 (1000000)", b.cap, b.CapUsdMicros())
+	}
+
+	// Malformed / negative / non-finite / non-persistable = fail-closed error.
+	for _, bad := range []string{
+		"abc", "-1", "1.2.3", "NaN", "Inf",
+		"0.0000004",          // positive but rounds to the persisted "unset" sentinel
+		"9223372036854.7758", // would overflow the checkpoint int64 micro-USD field
+	} {
 		if _, err := newRunBudget(bad); err == nil {
 			t.Errorf("newRunBudget(%q) must fail closed, not silently drop the cap", bad)
 		}
+	}
+}
+
+func TestRunBudget_LargeCanonicalMicrosRemainStableAcrossResume(t *testing.T) {
+	for _, input := range []string{
+		"4503599627.360497", // immediately above float64's exact integer range
+		"9223372036854",     // near the int64 micro-dollar persistence ceiling
+	} {
+		t.Run(input, func(t *testing.T) {
+			configured, err := newRunBudget(input)
+			if err != nil {
+				t.Fatal(err)
+			}
+			wantCap := configured.CapUsdMicros()
+			if wantCap <= 1<<51 {
+				t.Fatalf("test cap %d does not exercise large integer precision", wantCap)
+			}
+			wantSpent := wantCap - 1
+			for cycle := 0; cycle < 5; cycle++ {
+				resumed := &runBudget{}
+				if err := resumed.restore(wantCap, wantSpent); err != nil {
+					t.Fatalf("restore cycle %d: %v", cycle, err)
+				}
+				if got := resumed.CapUsdMicros(); got != wantCap {
+					t.Fatalf("cycle %d cap drifted to %d, want %d", cycle, got, wantCap)
+				}
+				if got := resumed.SpentUsdMicros(); got != wantSpent {
+					t.Fatalf("cycle %d spend drifted to %d, want %d", cycle, got, wantSpent)
+				}
+			}
+		})
+	}
+}
+
+func TestRunBudget_UnrepresentableSpendSaturatesFailClosed(t *testing.T) {
+	b, err := newRunBudget("1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.feed(nil)("phase", "model", 1e308, 0)
+	if got := b.SpentUsdMicros(); got != math.MaxInt64 {
+		t.Fatalf("huge finite bill persisted as %d, want saturated MaxInt64", got)
+	}
+	if !b.exhausted() {
+		t.Fatal("huge finite bill must exhaust a representable cap")
+	}
+
+	resumed := &runBudget{}
+	if err := resumed.restore(b.CapUsdMicros(), b.SpentUsdMicros()); err != nil {
+		t.Fatalf("restore saturated spend: %v", err)
+	}
+	if resumed.SpentUsdMicros() != math.MaxInt64 || !resumed.exhausted() {
+		t.Fatalf("saturated spend did not remain fail-closed after resume: micros=%d exhausted=%v",
+			resumed.SpentUsdMicros(), resumed.exhausted())
 	}
 }
 

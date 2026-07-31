@@ -99,6 +99,30 @@ func TestRun_ReviewerRequestChangesLoopsBackThenApproves(t *testing.T) {
 	}
 }
 
+func TestRun_ReviewerJumpCheckpointsTargetBeforeExecutingIt(t *testing.T) {
+	wf := loadVerdict(t)
+	rec := &recorder{}
+	fv := &flakyVerdict{phase: "reviewer", changesUntil: 1}
+	var progress []phaseProgress
+	eng := Engine{
+		Exec: rec.executor(), RunGate: allOK, MaxLoopBack: 2, AgentVerdict: fv.verdict,
+		OnPhase: func(next, calls, backs int) error {
+			progress = append(progress, phaseProgress{next, calls, backs})
+			return nil
+		},
+	}
+	if err := eng.RunFrom(wf, "balanced", 2); err != nil {
+		t.Fatalf("reviewer jump: %v", err)
+	}
+	want := []phaseProgress{{2, 1, 0}, {1, 1, 1}}
+	if len(progress) < len(want) || progress[0] != want[0] || progress[1] != want[1] {
+		t.Fatalf("reviewer jump progress = %+v, want prefix %+v", progress, want)
+	}
+	if len(rec.executed) < 2 || rec.executed[1] != "implementer" {
+		t.Fatalf("checkpointed target was not the next execution: %v", rec.executed)
+	}
+}
+
 // APPROVE on the FIRST review proceeds straight through with NO loop-back: implementer
 // runs once, reviewer once, qa runs — the happy path that proves an approving verdict
 // never bounces the run.

@@ -231,13 +231,19 @@ func newPhaseOutputLedger() *phaseOutputLedger {
 	return &phaseOutputLedger{summary: map[string]string{}, plans: map[string]tasklist.Plan{}}
 }
 
-// record stores one phase's latest output, TRUNCATED to phaseOutputSummaryCap (with a
-// trailing ellipsis when clipped) so a long planner output cannot bloat downstream
-// prompts. It appends to the render order only the FIRST time a name is seen (a re-run
-// phase — across loop-back or evolve iterations — updates its summary in place, keeping
-// its original position), exactly like gateLedger.record. Safe on a nil receiver
-// (no-op) so a caller that never constructed a ledger cannot panic.
+// record stores one phase's latest output, truncated to phaseOutputSummaryCap.
 func (l *phaseOutputLedger) record(phase, output string) {
+	l.recordWithPolicy(phase, output, false)
+}
+
+// recordExact stores a machine-validated, independently bounded output without
+// applying the ordinary summary truncation. The evolve_scan_v1 adapter calls this
+// only after strict decoding and canonicalization.
+func (l *phaseOutputLedger) recordExact(phase, output string) {
+	l.recordWithPolicy(phase, output, true)
+}
+
+func (l *phaseOutputLedger) recordWithPolicy(phase, output string, exact bool) {
 	if l == nil {
 		return
 	}
@@ -252,7 +258,21 @@ func (l *phaseOutputLedger) record(phase, output string) {
 			output = tasklist.Render(plan)
 		}
 	}
+	if exact {
+		l.summary[phase] = output
+		return
+	}
 	l.summary[phase] = truncateSummary(output)
+}
+
+func (l *phaseOutputLedger) output(phase string) (string, bool) {
+	if l == nil {
+		return "", false
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	output, ok := l.summary[phase]
+	return output, ok
 }
 
 // recommendedTaskModel returns the first dependency-ready planner task's model
@@ -289,7 +309,7 @@ func (l *phaseOutputLedger) context() string {
 		return ""
 	}
 	var b strings.Builder
-	b.WriteString("前序规划阶段产出(planner 的任务拆分/验收标准,供实现与审查参考 —— 这是上游规划角色的客观产出,不是闸门结果):")
+	b.WriteString("前序声明前传阶段产出(包括 planner 的任务拆分/验收标准或机器校验报告,供后续阶段参考 —— 这是上游阶段产出,不是闸门结果):")
 	for _, name := range l.order {
 		b.WriteString("\n\n### ")
 		b.WriteString(name)

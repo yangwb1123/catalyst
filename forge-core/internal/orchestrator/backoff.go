@@ -29,6 +29,15 @@ import (
 // blanket-sleep every retryable kind). The backoff is BOUNDED: charged against the SAME MaxRetries
 // budget, so a persistently overloaded backend exhausts the budget and aborts — never unbounded.
 func (e Engine) runAgentPhase(ctx context.Context, p asset.Phase, mode string) error {
+	return e.runAgentPhaseWithProgress(ctx, p, mode, nil)
+}
+
+func (e Engine) runAgentPhaseWithProgress(
+	ctx context.Context,
+	p asset.Phase,
+	mode string,
+	onFailedAttempt func() error,
+) error {
 	if e.Exec == nil {
 		return fmt.Errorf("phase %s: no agent executor configured (fail closed)", p.Name)
 	}
@@ -44,6 +53,14 @@ func (e Engine) runAgentPhase(ctx context.Context, p asset.Phase, mode string) e
 		err := e.Exec.Execute(ctx, p, mode)
 		if err == nil {
 			return nil
+		}
+		if onFailedAttempt != nil {
+			if progressErr := onFailedAttempt(); progressErr != nil {
+				return errors.Join(
+					fmt.Errorf("phase %s: agent execution failed: %w", p.Name, err),
+					fmt.Errorf("phase %s: failed-attempt checkpoint: %w", p.Name, progressErr),
+				)
+			}
 		}
 		var execErr *ExecError
 		if !errors.As(err, &execErr) || !execErr.Retryable() || attempt >= e.MaxRetries {

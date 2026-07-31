@@ -1,6 +1,7 @@
 package orchestrator
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -73,7 +74,11 @@ func TestRun_DirectedLoopBackOnGateFail(t *testing.T) {
 	rec := &recorder{}
 	fg := &flakyGate{name: "test", failUntil: 2}
 	eng := Engine{Exec: rec.executor(), RunGate: fg.run, Log: rec.log, MaxLoopBack: 3}
-
+	var progress []phaseProgress
+	eng.OnPhase = func(index, agentCalls, loopBacks int) error {
+		progress = append(progress, phaseProgress{index, agentCalls, loopBacks})
+		return nil
+	}
 	if err := eng.Run(wf, "balanced"); err != nil {
 		t.Fatalf("Run should recover via directed loop-back and complete; got %v", err)
 	}
@@ -83,6 +88,23 @@ func TestRun_DirectedLoopBackOnGateFail(t *testing.T) {
 	want := []string{"planner", "implementer", "implementer", "implementer", "qa"}
 	if strings.Join(rec.executed, ",") != strings.Join(want, ",") {
 		t.Errorf("directed loop-back executed %v, want %v", rec.executed, want)
+	}
+	wantProgress := []phaseProgress{
+		{0, 1, 0}, {1, 1, 0},
+		{1, 2, 0}, {2, 2, 0},
+		{1, 2, 1},
+		{1, 3, 1}, {2, 3, 1},
+		{1, 3, 2},
+		{1, 4, 2}, {2, 4, 2},
+		{3, 5, 2}, {4, 5, 2},
+	}
+	if len(progress) != len(wantProgress) {
+		t.Fatalf("phase progress = %+v, want %+v", progress, wantProgress)
+	}
+	for i := range wantProgress {
+		if progress[i] != wantProgress[i] {
+			t.Errorf("phase progress[%d] = %+v, want %+v", i, progress[i], wantProgress[i])
+		}
 	}
 	// The flaky gate was attempted three times (two FAILs + one PASS).
 	if fg.calls != 3 {
@@ -95,6 +117,29 @@ func TestRun_DirectedLoopBackOnGateFail(t *testing.T) {
 	// The completed run reports the stop condition (it did not abort).
 	if !containsLine(rec.logs, "stop: condition declared") {
 		t.Errorf("a recovered run must complete and report stop; logs=%v", rec.logs)
+	}
+}
+
+func TestRun_GateLoopBackCheckpointFailureDoesNotExecuteTarget(t *testing.T) {
+	wf := loadLoopBack(t)
+	exec := &countingExec{}
+	fg := &flakyGate{name: "test", failUntil: 99}
+	hookErr := errors.New("loop-back checkpoint failed")
+	var got phaseProgress
+	eng := Engine{Exec: exec, RunGate: fg.run, MaxLoopBack: 1}
+	eng.OnPhase = func(next, calls, backs int) error {
+		got = phaseProgress{next, calls, backs}
+		return hookErr
+	}
+	err := eng.RunFrom(wf, "balanced", 2)
+	if !errors.Is(err, hookErr) || !strings.Contains(err.Error(), `required gate "test"`) {
+		t.Fatalf("gate/checkpoint joined error = %v", err)
+	}
+	if exec.calls != 0 {
+		t.Fatalf("failed transition checkpoint executed target %d time(s)", exec.calls)
+	}
+	if got != (phaseProgress{1, 0, 1}) {
+		t.Fatalf("gate loop-back progress = %+v, want target=1 calls=0 backs=1", got)
 	}
 }
 

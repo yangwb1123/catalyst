@@ -142,6 +142,12 @@ import (
 // requires the phase's final non-empty output line to carry the strict Build QA
 // handshake. Runtime code keys on this field, never on a phase or agent name.
 //
+// ScanContract is an OPTIONAL machine-report protocol selected explicitly by an
+// Evolve observe phase. evolve_scan_v1 binds the phase to the effective
+// mode×lifecycle EvolveDepth, requires a strict evidence-bearing final-line report,
+// and feeds its normalized complete output to later phases. The zero value keeps
+// custom/legacy workflows unchanged and makes no content-breadth claim.
+//
 // SecondaryTemplate is an OPTIONAL second AI-SDLC template path alongside
 // UsesTemplate (review.yml's performance-reliability-review phase pairs
 // uses_template: .../05-performance-review.md with secondary_template:
@@ -153,6 +159,7 @@ type Phase struct {
 	Name              string     `json:"name"`
 	Agent             string     `json:"agent"`
 	VerdictContract   string     `json:"verdict_contract,omitempty"`
+	ScanContract      string     `json:"scan_contract,omitempty"`
 	Description       string     `json:"description,omitempty"`
 	RequiredGates     []string   `json:"required_gates"`
 	RequiredWhen      string     `json:"required_when"`
@@ -378,6 +385,9 @@ func ValidateWorkflowStructure(wf Workflow) error {
 		}
 	}
 	if err := validateVerdictTargets(wf, seenNames); err != nil {
+		return err
+	}
+	if err := validateScanContracts(wf); err != nil {
 		return err
 	}
 	return nil

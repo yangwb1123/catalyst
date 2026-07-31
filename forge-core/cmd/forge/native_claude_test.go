@@ -85,6 +85,8 @@ func main() {
 	switch phase {
 	case "requirement-discovery":
 		result = "CONFIDENCE: 100"
+	case "scan":
+		result = scanReport(prompt)
 	case "planner", "roadmap-update":
 		result = "TASK_LIST:\n- [ ] T001: deterministic task — acceptance: pass — files: docs/fake.md — depends_on: none — model: sonnet — roadmap: v2"
 	case "qa":
@@ -98,6 +100,36 @@ func main() {
 		"result": result, "total_cost_usd": 0,
 	}
 	_ = json.NewEncoder(os.Stdout).Encode(envelope)
+}
+
+func scanReport(prompt string) string {
+	depth := "standard"
+	for _, candidate := range []string{"advisory", "opportunistic", "standard", "thorough"} {
+		if strings.Contains(prompt, "Effective mode×lifecycle scan depth: "+candidate) {
+			depth = candidate
+			break
+		}
+	}
+	names := []string{"code"}
+	if depth == "thorough" {
+		names = []string{"code", "dependencies", "security", "performance", "architecture_drift", "test_coverage"}
+	}
+	dimensions := make([]map[string]any, 0, len(names))
+	for _, name := range names {
+		dimensions = append(dimensions, map[string]any{
+			"name": name, "status": "clear",
+			"evidence": []map[string]any{{
+				"path": ".agent/ROADMAP.md", "line": 1,
+				"detail": "deterministic fake inspected repository roadmap for " + name,
+			}},
+		})
+	}
+	report := map[string]any{
+		"version": "evolve_scan_v1", "depth": depth,
+		"dimensions": dimensions, "opportunities": []any{},
+	}
+	data, _ := json.Marshal(report)
+	return "EVOLVE_SCAN_V1: " + string(data)
 }
 
 func phaseOf(prompt string) string {

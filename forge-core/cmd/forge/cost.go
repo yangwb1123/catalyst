@@ -21,94 +21,119 @@ import (
 	"forgeos/forge-core/internal/trace"
 )
 
-// runBudget is the RUN-LEVEL cumulative dollar cap — the cmd/forge-side half of the
-// orchestrator's Engine.BudgetExhausted puller, and the layering counterpart to
-// costEmitter: ALL dollar arithmetic and the only knowledge of what "budget" means in
-// money lives HERE, never in the orchestrator (which sees only the opaque bool exhausted
-// returns). It is the THIRD run-level cost bound — cumulative DOLLARS — distinct from the
-// engine's per-run agent-phase COUNT (--max-agent-calls) and from the PER-CLAUDE-CALL
-// ceiling --agent-max-budget-usd passes straight to `claude --max-budget-usd`: this is the
-// sum over the WHOLE run/evolve, the thing no existing bound caps.
+// runBudget owns the run-level cumulative dollar cap. The orchestrator sees
+// only BudgetExhausted's boolean; vendor cost parsing remains below.
 //
-// spent accumulates every phase's billed cost (fed by feed, which wraps the cost sink);
-// cap is the parsed --run-budget-usd (0 = unset). exhausted reports spent >= cap once a
-// POSITIVE cap is set — the closure the engine consults before each spawn. Because ONE
-// runBudget is created per run (in execEngine / execLoop) and the wrapped sink + the
-// closure both close over it, an evolve loop — which reuses the SAME Engine across every
-// iteration — accumulates ACROSS iterations (never reset), so the cap bounds the whole
-// run's spend. Not concurrency-safe by design: v1 orchestration is serial (one phase
-// bills, then the next is gated); a parallel executor (ROADMAP direction five) would add
-// a mutex here, noted so the boundary is honest.
+// capMicros and spentBaseMicros are the canonical checkpoint representation.
+// spentDelta contains only costs observed since the last restore, so an exact
+// persisted base never drifts through a micro -> float -> micro cycle.
 type runBudget struct {
-	// mu guards spent so the accumulator is safe under the OPT-IN parallel
-	// orchestrator, where concurrent agent phases bill into feed() at once. cap is
-	// set ONCE in newRunBudget and never mutated, so it is read lock-free. Serial
-	// runs take the uncontended lock — negligible, and the back-compat path is byte-
-	// identical. (This is the mutex cost.go's SpendRatio note pre-announced.)
-	mu    sync.Mutex
-	spent float64
-	cap   float64
+	mu sync.Mutex
+
+	spent           float64
+	spentBaseMicros int64
+	spentDelta      float64
+
+	cap       float64
+	capMicros int64
 }
 
-// newRunBudget parses the --run-budget-usd flag into a run-scoped accumulator. An empty
-// flag (the default) yields a zero cap => unset: feed still tallies but exhausted is always
-// false and BudgetExhaustedFunc returns nil, so the run is byte-for-byte the pre-flag
-// behavior. A malformed or negative value is a hard error (fail-closed on a misconfigured
-// budget, never a silently-ignored cap): a budget the operator believes is set must not be
-// quietly dropped. parsing lives here, with every other dollar concern.
+// newRunBudget canonicalizes a configured cap once to checkpoint v3
+// micro-dollars. Empty and explicit zero both mean unset.
 func newRunBudget(flagVal string) (*runBudget, error) {
 	s := strings.TrimSpace(flagVal)
 	if s == "" {
-		return &runBudget{}, nil // unset: no cap, no-op accumulator.
+		return &runBudget{}, nil
 	}
 	v, err := strconv.ParseFloat(s, 64)
 	if err != nil {
 		return nil, fmt.Errorf("--run-budget-usd %q is not a number: %w", flagVal, err)
 	}
 	if v < 0 || math.IsNaN(v) || math.IsInf(v, 0) {
-		return nil, fmt.Errorf("--run-budget-usd must be a non-negative finite dollar amount, got %q", flagVal)
+		return nil, fmt.Errorf(
+			"--run-budget-usd must be a non-negative finite dollar amount, got %q",
+			flagVal,
+		)
 	}
-	return &runBudget{cap: v}, nil
+	scaled := v * 1e6
+	// float64(math.MaxInt64) rounds to 2^63, so that boundary is unsafe too.
+	if math.IsInf(scaled, 0) || scaled >= float64(math.MaxInt64) {
+		return nil, fmt.Errorf(
+			"--run-budget-usd %q is too large to persist as micro-USD", flagVal,
+		)
+	}
+	micros := int64(math.Round(scaled))
+	if v > 0 && micros == 0 {
+		return nil, fmt.Errorf(
+			"--run-budget-usd %q is below the persisted micro-USD precision; "+
+				"use at least 0.0000005",
+			flagVal,
+		)
+	}
+	return &runBudget{
+		cap:       float64(micros) / 1e6,
+		capMicros: micros,
+	}, nil
 }
 
-// feed wraps a phase cost sink so every billed dollar both flows onward (to the trace
-// emitter) AND lands in the run total. It is the single write path into spent — the cost
-// sink already fires exactly once per BILLED phase (only a real claude phase with a parsed
-// total_cost_usd; echo/dry never reach it), so the run total counts real spend only. A nil
-// inner sink is tolerated (the accumulation still happens), keeping the wrap unconditional.
-//
-// The agent phase's measured wall-clock latency rides through UNTOUCHED: the run budget is a
-// dollar accumulator and has no interest in duration, so feed adds only usd to spent and
-// forwards latency verbatim to the inner emitter (which stamps it onto the agent trace event).
-func (b *runBudget) feed(inner func(phase, model string, usd float64, latency time.Duration)) func(phase, model string, usd float64, latency time.Duration) {
+// feed accumulates a billed phase and forwards the original observation.
+func (b *runBudget) feed(
+	inner func(phase, model string, usd float64, latency time.Duration),
+) func(phase, model string, usd float64, latency time.Duration) {
 	return func(phase, model string, usd float64, latency time.Duration) {
 		b.mu.Lock()
 		b.spent += usd
+		b.spentDelta += usd
 		b.mu.Unlock()
-		// inner (the cost emitter -> trace) is invoked OUTSIDE the budget lock: trace
-		// has its OWN lock, so holding both would needlessly serialize the trace write
-		// behind the budget and risk lock-ordering surprises. Only the spent update is
-		// guarded here; the latency rides through to the inner emitter untouched.
 		if inner != nil {
 			inner(phase, model, usd, latency)
 		}
 	}
 }
 
-// SpentUsdMicros returns the cumulative spend as integer MICRO-dollars (USD x 1e6, rounded)
-// — the ONLY place the run total crosses the dollar->micro boundary for persistence, the exact
-// mirror of costEmitter's `usd*1e6` conversion. persist stores this opaque int (it does not know
-// dollars), so a --resume can re-seed the budget; the micro form is jitter-free across the JSON
-// round-trip (54403 not 0.0544035…), matching trace.Event.CostUsdMicros. Returns 0 for a run that
-// never billed, keeping the checkpoint's spent_usd_micros omitempty (byte-identical, back-compat).
+// SpentUsdMicros returns the exact restored base plus rounded new spend.
+// Saturation is fail-closed: an unrepresentably large bill exhausts any
+// representable cap and never wraps the persisted counter negative.
 func (b *runBudget) SpentUsdMicros() int64 {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return int64(math.Round(b.spent * 1e6))
+
+	deltaMicros := usdMicrosSaturating(b.spentDelta)
+	if deltaMicros == 0 {
+		return b.spentBaseMicros
+	}
+	if deltaMicros == math.MaxInt64 ||
+		deltaMicros > math.MaxInt64-b.spentBaseMicros {
+		return math.MaxInt64
+	}
+	return b.spentBaseMicros + deltaMicros
 }
 
+func usdMicrosSaturating(usd float64) int64 {
+	if usd <= 0 || math.IsNaN(usd) {
+		return 0
+	}
+	scaled := usd * 1e6
+	if math.IsInf(scaled, 0) || scaled >= float64(math.MaxInt64) {
+		return math.MaxInt64
+	}
+	return int64(math.Round(scaled))
+}
+
+// CapUsdMicros returns the canonical cap without a second float round-trip.
+// The fallback supports package-local tests that construct runBudget directly.
 func (b *runBudget) CapUsdMicros() int64 {
-	return int64(math.Round(b.cap * 1e6))
+	if b.capMicros != 0 || b.cap == 0 {
+		return b.capMicros
+	}
+	scaled := math.Round(b.cap * 1e6)
+	if scaled <= 0 {
+		return 0
+	}
+	if math.IsInf(scaled, 0) || scaled >= float64(math.MaxInt64) {
+		return math.MaxInt64
+	}
+	return int64(scaled)
 }
 
 func (b *runBudget) restore(capMicros, spentMicros int64) error {
@@ -117,29 +142,22 @@ func (b *runBudget) restore(capMicros, spentMicros int64) error {
 	}
 	currentCap := b.CapUsdMicros()
 	if currentCap != 0 && currentCap != capMicros {
-		return fmt.Errorf("persisted run budget cap is %d micro-USD, but this invocation configured %d", capMicros, currentCap)
+		return fmt.Errorf(
+			"persisted run budget cap is %d micro-USD, but this invocation configured %d",
+			capMicros, currentCap,
+		)
 	}
 	if currentCap == 0 {
+		b.capMicros = capMicros
 		b.cap = float64(capMicros) / 1e6
 	}
 	b.seed(spentMicros)
 	return nil
 }
 
-// seed re-initializes the accumulated spend from a persisted micro-dollar total — the inverse of
-// SpentUsdMicros, and the OTHER side of the micro<->dollar boundary kept solely here. It exists for
-// --resume: after a crash the new process builds a fresh runBudget at spent=0, so without seeding
-// the cost already billed before the crash escapes the cap and the run overspends; seeding restores
-// the pre-crash cumulative so the cap continues to meter the WHOLE run. It SETS (not adds) the base,
-// called once right after the budget is created and before any phase bills, so a later feed
-// accumulates on top of it. micros<=0 is a no-op (an unbudgeted/never-billed resume stays at 0).
-//
-// HONESTY — phase-granularity under-count: the seeded value is the spend through the LAST
-// CHECKPOINTED point. Checkpoints are now written after each completed AGENT PHASE (not only
-// per iteration — see phaseCheckpointHook), so a crash loses at most ONE in-flight phase's
-// un-checkpointed partial spend, which re-bills on resume. seed cannot recover that partial, so
-// the restored cap can under-count by up to one phase's mid-flight spend (a small, conservative
-// overspend) — far tighter than the original per-iteration under-count and the pre-fix $0 reset.
+// seed restores a checkpoint's exact micro-dollar base. A later feed
+// accumulates separately on top. Non-positive input remains a no-op for the
+// fresh/unbilled compatibility path; restore rejects negative values first.
 func (b *runBudget) seed(micros int64) {
 	if micros <= 0 {
 		return
@@ -147,28 +165,17 @@ func (b *runBudget) seed(micros int64) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.spent = float64(micros) / 1e6
+	b.spentBaseMicros = micros
+	b.spentDelta = 0
 }
 
-// exhausted reports whether the cumulative spend has reached a POSITIVE cap. An unset cap
-// (0) is never exhausted (>= comparison gated on cap > 0), so an unbudgeted run never stops
-// here. This is the dollar comparison the engine must never see — it consumes only the bool.
 func (b *runBudget) exhausted() bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return b.cap > 0 && b.spent >= b.cap
 }
 
-// SpendRatio returns the run's cumulative spend as a fraction of its cap — the
-// dimensionless [0,∞) signal the budget-aware DOWN-TIERING consults (routing.BudgetAdjustTier),
-// the near-budget analogue of exhausted's at/over-cap bool. It is the ONLY place spent/cap is
-// divided: dollars never leave cost.go, so what crosses to the routing layer is an opaque ratio,
-// not money — the SAME layering bright-line exhausted draws (the engine sees a bool, the router a
-// ratio, neither sees dollars).
-//
-// An unset (or non-positive) cap yields 0: with no budget there is nothing to be "near", so the
-// ratio sits below the 0.80 down-tier gate and BudgetAdjustTier returns the routed tier unchanged
-// — byte-for-byte the pre-PR behavior for an unbudgeted run. A reflexive symmetry with exhausted:
-// cap<=0 is never exhausted AND never near budget, so an unbudgeted run is untouched on both ends.
+// SpendRatio exposes only a dimensionless routing signal.
 func (b *runBudget) SpendRatio() float64 {
 	if b.cap <= 0 {
 		return 0
@@ -178,11 +185,6 @@ func (b *runBudget) SpendRatio() float64 {
 	return b.spent / b.cap
 }
 
-// BudgetExhaustedFunc returns the opaque puller to inject into Engine.BudgetExhausted, or
-// nil when no cap is set. nil is the deliberate signal "no run-level budget": the engine
-// then never consults it and the run is byte-for-byte unchanged (the back-compat hinge —
-// an unset --run-budget-usd injects nothing). A set cap returns exhausted as a bare
-// func() bool, so the engine learns the verdict and nothing about the dollars behind it.
 func (b *runBudget) BudgetExhaustedFunc() func() bool {
 	if b.cap <= 0 {
 		return nil
@@ -194,8 +196,9 @@ func (b *runBudget) BudgetExhaustedFunc() func() bool {
 // --output-format json` envelope's `total_cost_usd`. A *float64 pointer distinguishes
 // an ABSENT field from a legitimate 0.0. ok=false (and the caller emits NO cost event,
 // never a fabricated 0) when the output is not a single JSON object, carries no
-// total_cost_usd, or the value is non-finite — the four honesty branches that keep an
-// echo/dry/stub output (not claude JSON) from inventing a cost.
+// total_cost_usd, or the value is negative/non-finite — the honesty branches that keep
+// an echo/dry/stub output (not claude JSON) or malformed telemetry from inventing cost
+// or reducing the run's cumulative spend.
 func parseClaudeCostUsd(output string) (usd float64, ok bool) {
 	var env struct {
 		TotalCostUsd *float64 `json:"total_cost_usd"`
@@ -206,8 +209,8 @@ func parseClaudeCostUsd(output string) (usd float64, ok bool) {
 	if env.TotalCostUsd == nil {
 		return 0, false // valid JSON but no total_cost_usd -> never fabricate one
 	}
-	if math.IsNaN(*env.TotalCostUsd) || math.IsInf(*env.TotalCostUsd, 0) {
-		return 0, false // non-finite -> not a real cost
+	if *env.TotalCostUsd < 0 || math.IsNaN(*env.TotalCostUsd) || math.IsInf(*env.TotalCostUsd, 0) {
+		return 0, false // negative/non-finite -> not a real billed cost
 	}
 	return *env.TotalCostUsd, true
 }
@@ -483,7 +486,7 @@ func costEmitter(tracer *trace.Tracer, logln func(string)) func(phase, model str
 		emitTrace(tracer, trace.Event{
 			Kind: "agent", Name: phase, Status: "ok",
 			DurationMs:    latency.Milliseconds(),
-			CostUsdMicros: int64(math.Round(usd * 1e6)),
+			CostUsdMicros: usdMicrosSaturating(usd),
 			Model:         model,
 		}, logln)
 	}

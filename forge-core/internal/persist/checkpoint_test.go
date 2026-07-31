@@ -196,12 +196,12 @@ func TestEncodeDecode_SpentUsdMicrosRoundTrips(t *testing.T) {
 	}
 }
 
-// PhaseIndex (the phase-granular resume position WITHIN the in-progress iteration) must
-// round-trip exactly, and — being omitempty — a 0 value (a clean iteration boundary, or
-// any pre-phase-granular checkpoint) must emit NO phase_index key, keeping those bytes
-// byte-for-byte identical to before the field existed.
-func TestEncodeDecode_PhaseIndexRoundTripsAndOmitsZero(t *testing.T) {
-	mid := Checkpoint{Workflow: "evolve", Iteration: 4, PhaseIndex: 3}
+// PhaseIndex (the phase-granular resume position WITHIN the in-progress
+// iteration) must round-trip exactly. v3 also persists an explicit zero at a
+// clean iteration boundary so missing recovery state cannot decode as zero.
+func TestEncodeDecode_PhaseIndexRoundTripsAndV3PersistsZero(t *testing.T) {
+	mid := currentCheckpoint("evolve", 4)
+	mid.PhaseIndex = 3
 	data, err := encode(mid)
 	if err != nil {
 		t.Fatalf("encode: %v", err)
@@ -213,20 +213,61 @@ func TestEncodeDecode_PhaseIndexRoundTripsAndOmitsZero(t *testing.T) {
 	if got.PhaseIndex != 3 || got != mid {
 		t.Errorf("PhaseIndex round-trip = %+v, want PhaseIndex 3 / %+v", got, mid)
 	}
-	// omitempty: a clean iteration-boundary checkpoint (PhaseIndex 0) omits the key.
-	zero, err := encode(Checkpoint{Workflow: "evolve", Iteration: 4})
+	zero, err := encode(currentCheckpoint("evolve", 4))
 	if err != nil {
 		t.Fatalf("encode zero: %v", err)
 	}
-	if strings.Contains(string(zero), "phase_index") {
-		t.Errorf("a PhaseIndex-0 checkpoint must omit phase_index (omitempty back-compat); got:\n%s", zero)
+	if !strings.Contains(string(zero), `"phase_index": 0`) {
+		t.Errorf("a v3 PhaseIndex-0 checkpoint must persist explicit zero; got:\n%s", zero)
 	}
 }
 
-// BACK-COMPAT: a checkpoint written BEFORE spent_usd_micros existed has no such key. It must
-// still decode cleanly, with SpentUsdMicros defaulting to 0 (omitempty's other half) — so an
-// old run's --resume loads fine and seeds zero spend (the pre-PR behavior), never an error.
-// This is the determinism the PR rests on: the field is additive, not a breaking change.
+func TestEncodeDecode_EvolveScanReportRequiresMidIterationPosition(t *testing.T) {
+	report := `EVOLVE_SCAN_V1: {"version":"evolve_scan_v1"}`
+	mid := currentCheckpoint("evolve", 4)
+	mid.PhaseIndex = 1
+	mid.EvolveScanReport = report
+	data, err := encode(mid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := decode(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.EvolveScanReport != report {
+		t.Fatalf("scan report = %q, want %q", got.EvolveScanReport, report)
+	}
+	mid.PhaseIndex = 0
+	if err := validateCurrentCheckpoint(mid); err == nil ||
+		!strings.Contains(err.Error(), "positive phase_index") {
+		t.Fatalf("iteration-boundary scan report error = %v", err)
+	}
+}
+
+func TestCheckpointV3BoundsEvolveScanReport(t *testing.T) {
+	cp := currentCheckpoint("evolve", 1)
+	cp.PhaseIndex, cp.AgentCalls = 1, 1
+	cp.EvolveScanReport = strings.Repeat("x", checkpointScanReportMaxBytes)
+	if err := validateCurrentCheckpoint(cp); err != nil {
+		t.Fatalf("exact-limit report rejected: %v", err)
+	}
+	cp.EvolveScanReport += "x"
+	if err := validateCurrentCheckpoint(cp); err == nil ||
+		!strings.Contains(err.Error(), "valid UTF-8") {
+		t.Fatalf("oversized report error = %v", err)
+	}
+	cp.EvolveScanReport = string([]byte{0xff})
+	if err := validateCurrentCheckpoint(cp); err == nil ||
+		!strings.Contains(err.Error(), "valid UTF-8") {
+		t.Fatalf("invalid UTF-8 report error = %v", err)
+	}
+}
+
+// BACK-COMPAT FOR DIAGNOSTICS: a checkpoint written before spent_usd_micros
+// existed still decodes with zero spend. It remains inspectable by status/doctor,
+// while autonomous resume separately rejects every pre-v3 generation because it
+// lacks a complete resource envelope.
 func TestDecode_OldCheckpointWithoutSpent_DefaultsZero(t *testing.T) {
 	// An on-disk checkpoint exactly as the pre-PR encoder produced it: every old field,
 	// and crucially NO spent_usd_micros key at all.
@@ -252,23 +293,24 @@ func TestDecode_OldCheckpointWithoutSpent_DefaultsZero(t *testing.T) {
 	}
 }
 
-// The omitempty contract on disk: a checkpoint whose spend is 0 (an unbudgeted run) must NOT
-// emit a spent_usd_micros key, keeping its bytes identical to a pre-PR checkpoint. Only a run
-// that actually billed adds the key. This is what makes the unbudgeted path byte-for-byte.
-func TestEncode_ZeroSpentOmitsKey(t *testing.T) {
-	zero, err := encode(Checkpoint{Workflow: "evolve", Iteration: 1})
+// v3's recovery envelope writes zero spend explicitly. Missing spend remains
+// accepted only for the diagnostic-readable legacy generations pinned above.
+func TestEncode_V3ZeroSpentIsExplicit(t *testing.T) {
+	zero, err := encode(currentCheckpoint("evolve", 1))
 	if err != nil {
 		t.Fatalf("encode: %v", err)
 	}
-	if strings.Contains(string(zero), "spent_usd_micros") {
-		t.Errorf("a zero-spend checkpoint must omit spent_usd_micros (omitempty back-compat); got:\n%s", zero)
+	if !strings.Contains(string(zero), `"spent_usd_micros": 0`) {
+		t.Errorf("a v3 zero-spend checkpoint must persist explicit zero; got:\n%s", zero)
 	}
-	nonzero, err := encode(Checkpoint{Workflow: "evolve", Iteration: 1, SpentUsdMicros: 500})
+	nonzero := currentCheckpoint("evolve", 1)
+	nonzero.SpentUsdMicros = 500
+	data, err := encode(nonzero)
 	if err != nil {
 		t.Fatalf("encode: %v", err)
 	}
-	if !strings.Contains(string(nonzero), "spent_usd_micros") {
-		t.Errorf("a billed checkpoint must persist spent_usd_micros; got:\n%s", nonzero)
+	if !strings.Contains(string(data), `"spent_usd_micros": 500`) {
+		t.Errorf("a billed checkpoint must persist spent_usd_micros; got:\n%s", data)
 	}
 }
 

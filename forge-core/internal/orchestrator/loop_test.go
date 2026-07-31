@@ -93,7 +93,10 @@ func TestLoop_OnPhaseCarriesIterationContext(t *testing.T) {
 	var calls [][2]int
 	l := NewLoopEngine(Engine{Exec: DryRunExecutor{}, RunGate: allOK}, conjunctionStop(roadmapDone()),
 		signalSeq(converge.Signals{RoadmapCompletion: 1.0}), 5, 3, nil)
-	l.OnPhase = func(iter, phaseIdx int) { calls = append(calls, [2]int{iter, phaseIdx}) }
+	l.OnPhase = func(iter, phaseIdx, _, _ int) error {
+		calls = append(calls, [2]int{iter, phaseIdx})
+		return nil
+	}
 	if _, err := l.Run(wf, "balanced"); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -296,11 +299,12 @@ type iterObs struct {
 	durs  []int64
 }
 
-func (o *iterObs) hook() func(int, converge.Signals, int64) {
-	return func(i int, sig converge.Signals, durationMs int64) {
+func (o *iterObs) hook() func(int, converge.Signals, int64) error {
+	return func(i int, sig converge.Signals, durationMs int64) error {
 		o.iters = append(o.iters, i)
 		o.sigs = append(o.sigs, sig)
 		o.durs = append(o.durs, durationMs)
+		return nil
 	}
 }
 

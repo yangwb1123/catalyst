@@ -68,6 +68,14 @@ func TestParseClaudeCostUsd_NonFiniteIsNotOK(t *testing.T) {
 	}
 }
 
+// HONESTY branch 5: a negative total cannot be a billed cost. Accepting it would
+// reduce cumulative spend and could reopen a run-level budget after it was exhausted.
+func TestParseClaudeCostUsd_NegativeIsNotOK(t *testing.T) {
+	if usd, ok := parseClaudeCostUsd(`{"total_cost_usd":-0.01}`); ok || usd != 0 {
+		t.Errorf("a negative cost must yield (0,false), got (%v,%v)", usd, ok)
+	}
+}
+
 // unwrapClaudeResult pulls the human-readable result out of a claude envelope for the
 // log line, and returns NON-claude output verbatim (so the generic log path is unchanged).
 func TestUnwrapClaudeResult(t *testing.T) {
@@ -289,6 +297,21 @@ func TestCostEmitter_EmitsMicrodollarAgentEvent(t *testing.T) {
 	}
 }
 
+func TestCostEmitter_SaturatesUnrepresentableCost(t *testing.T) {
+	var buf bytes.Buffer
+	costEmitter(trace.NewTracer(&buf), func(string) {})(
+		"implementer", "sonnet", 1e308, time.Second,
+	)
+	ev := lastTraceEvent(t, buf.String())
+	if ev.CostUsdMicros != math.MaxInt64 {
+		t.Fatalf("huge finite cost trace = %d, want saturated MaxInt64",
+			ev.CostUsdMicros)
+	}
+	if ev.CostUsdMicros < 0 {
+		t.Fatal("cost telemetry overflowed to a negative audit value")
+	}
+}
+
 // costEmitter with an empty model (no resolver wired) must OMIT the model field on the
 // wire — omitempty keeps a cost event without attribution byte-compatible, never a "".
 func TestCostEmitter_EmptyModelOmitted(t *testing.T) {
@@ -403,7 +426,7 @@ func TestBuildLoop_ThreadsCostSinkIntoExecutor(t *testing.T) {
 	wf := asset.Workflow{Stage: "evolve", Stop: asset.StopCondition{Type: "external"},
 		Phases: []asset.Phase{{Name: "implementer", Agent: "implementer"}}}
 	wantModel := orchestrator.PhaseTier(wf.Phases[0], "balanced")
-	loop, _, _ := buildLoop(wf, o, 1, func(string) {}, costEmitter(trace.NewTracer(&buf), func(string) {}), &runBudget{}, "", nil)
+	loop, _, _, _ := buildLoop(wf, o, 1, func(string) {}, costEmitter(trace.NewTracer(&buf), func(string) {}), &runBudget{}, "", nil)
 
 	ce, ok := loop.Engine.Exec.(orchestrator.CommandExecutor)
 	if !ok {

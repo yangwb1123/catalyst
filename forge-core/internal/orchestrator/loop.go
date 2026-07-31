@@ -46,8 +46,9 @@ type LoopEngine struct {
 	// 0 here makes the scorecard read every iteration as instantaneous). Kept as an
 	// injected callback (not a direct trace/persist import) so the engine stays
 	// decoupled from the IO layer, matching how Engine/Signals/Log/RunGate are
-	// already wired. Nil-safe: a nil hook is a no-op.
-	OnIteration func(i int, sig converge.Signals, durationMs int64)
+	// already wired. Returning an error aborts the loop before convergence or a
+	// later iteration can proceed. Nil-safe: a nil hook is a no-op.
+	OnIteration func(i int, sig converge.Signals, durationMs int64) error
 
 	// OnBeforeIteration is an optional pre-work hook called ONCE per iteration
 	// BEFORE RunFrom/RunParallel executes the iteration's phases. The caller
@@ -80,16 +81,12 @@ type LoopEngine struct {
 
 	// OnPhase is the ITERATION-AWARE per-phase checkpoint hook (the phase-granular
 	// twin of OnIteration). Run sets Engine.OnPhase per iteration so the engine
-	// reports a completed agent phase's index, and this is invoked with (iteration,
-	// phaseIdx) so the caller can persist a checkpoint mid-iteration — a crash then
-	// resumes at the next unstarted phase instead of replaying every completed
-	// (billed) agent phase. Nil-safe; nil = per-iteration-only checkpointing (the
-	// pre-phase-granular behavior). StartPhase is the phase index the FIRST resumed
-	// iteration begins at (from a mid-iteration checkpoint's PhaseIndex); 0 (the
-	// default) means the first iteration runs the whole workflow, byte-for-byte as
-	// before. Only the first iteration honors it — subsequent iterations reset via
-	// nextStartPhase (the on_unmet directed restart), unchanged.
-	OnPhase    func(iter, phaseIdx int)
+	// reports the next phase and consumed counters at every durable boundary, and
+	// this adds the iteration so the caller can persist a complete checkpoint.
+	// Nil-safe; nil = per-iteration-only checkpointing. StartPhase is
+	// the phase index the FIRST resumed iteration begins at; only that iteration
+	// consumes Engine.Initial* seeds. Subsequent iterations reset them to zero.
+	OnPhase    func(iter, nextPhaseIdx, agentCalls, loopBacks int) error
 	StartPhase int
 
 	// Parallel routes each iteration through Engine.RunParallel (dependency-wave
@@ -181,6 +178,8 @@ func (l LoopEngine) Run(wf asset.Workflow, mode string) (LoopOutcome, error) {
 		if i == l.MaxIter {
 			break
 		}
+		l.Engine.InitialAgentCalls = 0
+		l.Engine.InitialLoopBacks = 0
 		i++
 	}
 	return l.boundOutcome(), nil
@@ -213,7 +212,9 @@ func (l LoopEngine) runIteration(wf asset.Workflow, mode string, i int, startPha
 	}
 	durationMs := time.Since(t0).Milliseconds()
 	sig := l.Signals()
-	l.onIteration(i, sig, durationMs)
+	if err := l.onIteration(i, sig, durationMs); err != nil {
+		return &LoopOutcome{i, false, "iteration checkpoint failure"}, err
+	}
 	l.reportConvergence(sig)
 	if lo, done := l.checkStop(i, sig); done {
 		return &lo, nil
@@ -296,21 +297,27 @@ func (l LoopEngine) loopStart() (start int, prev float64, gatesGreen bool) {
 // onIteration invokes the post-measurement hook (the checkpoint/trace point) when
 // one is injected, forwarding the round's measured wall-clock duration. Nil-safe,
 // so the loop runs unchanged when no hook is wired.
-func (l LoopEngine) onIteration(i int, sig converge.Signals, durationMs int64) {
-	if l.OnIteration != nil {
-		l.OnIteration(i, sig, durationMs)
+func (l LoopEngine) onIteration(i int, sig converge.Signals, durationMs int64) error {
+	if l.OnIteration == nil {
+		return nil
 	}
+	if err := l.OnIteration(i, sig, durationMs); err != nil {
+		return fmt.Errorf("iteration %d checkpoint: %w", i, err)
+	}
+	return nil
 }
 
 // phaseCheckpoint builds the engine's per-phase hook BOUND to iteration `iter`,
-// forwarding each completed agent phase's index to the iteration-aware l.OnPhase.
+// forwarding each durable serial progress record to the iteration-aware l.OnPhase.
 // Returns nil when no per-phase checkpoint is wired, so the engine's hook stays nil
 // and the per-iteration-only path is byte-for-byte unchanged.
-func (l LoopEngine) phaseCheckpoint(iter int) func(phaseIdx int) {
+func (l LoopEngine) phaseCheckpoint(iter int) func(int, int, int) error {
 	if l.OnPhase == nil {
 		return nil
 	}
-	return func(phaseIdx int) { l.OnPhase(iter, phaseIdx) }
+	return func(nextPhaseIdx, agentCalls, loopBacks int) error {
+		return l.OnPhase(iter, nextPhaseIdx, agentCalls, loopBacks)
+	}
 }
 
 // checkStop reports a converged outcome for a conjunction workflow whose

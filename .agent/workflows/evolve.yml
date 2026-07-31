@@ -42,6 +42,8 @@ loop:
       agent: explorer
       readonly: true                    # 只观测,不改 / observes only
       effect: observe                    # agent observes only; proposal execution runs no repository probes
+      scan_contract: evolve_scan_v1      # effective depth + evidence-bearing machine report
+      feeds_forward: true                # normalized complete report drives gap-analysis
       required_gates: []
       description: >
         扫代码/依赖/安全/性能/架构腐化/测试覆盖;采当前状态快照。

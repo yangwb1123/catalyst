@@ -136,10 +136,10 @@ func rejectionMarkerExists(root, stage string) (bool, error) {
 func execChainEvolve(ctx context.Context, wf asset.Workflow, o runOpts, logln func(string), tracer *trace.Tracer, budget *runBudget, calls *chainAgentCounter) int {
 	o.evolveProposalOnly = proposalOnlyEvolve(wf, o, o.lifecycle)
 	maxIter := mode.Effective(o.mode, o.lifecycle).EvolveMaxIter()
-	loop, verdicts, findings := buildTracedLoop(ctx, wf, o, maxIter, logln, tracer, budget)
+	loop, verdicts, findings, phaseOut := buildTracedLoop(ctx, wf, o, maxIter, logln, tracer, budget)
 	loop.Engine.ChargeAgentCall = calls.charge
 	loop.OnIteration = checkpointHook(o, wf, tracer, budget, logln, verdicts, findings)
-	loop.OnPhase = phaseCheckpointHook(o, wf, budget, logln)
+	loop.OnPhase = phaseCheckpointHook(o, wf, budget, phaseOut, logln)
 	fmt.Printf("forge run --chain: entering evolve LoopEngine stage=%s max-iter=%d (mode/lifecycle default)\n",
 		wf.Stage, maxIter)
 	outcome, err := loop.Run(wf, o.mode)

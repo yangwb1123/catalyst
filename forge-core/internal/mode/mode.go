@@ -63,10 +63,11 @@
 // opportunistic→2, standard→5, thorough→10). EvolveAuthority separately decides
 // whether the orchestrator may cross the workflow's explicit effect=mutate
 // boundary. Lifecycle quality floors may deepen a scan, but never widen mutation
-// authority. The richer CONTENT semantics modes.yml hints at — thorough =
-// full-dimension scan + auto-derive vs opportunistic = obvious-only — still
-// require a real agent and quality criteria; machine depth does not pretend to
-// prove content breadth.
+// authority. The CONTENT profile is now consumed separately by the explicit
+// evolve_scan_v1 phase contract: effective depth enters the Agent prompt and a
+// strict evidence-bearing report verifies declared breadth and task derivation.
+// That contract proves report shape and repository-local evidence locators, not
+// that an Agent's judgement is true.
 package mode
 
 // Policy is the effective Workflow-depth decision for one (mode, lifecycle): the
@@ -261,11 +262,10 @@ func (p Policy) clone() Policy {
 // zero-value Policy) falls back to defaultEvolveMaxIter (standard's 5) — the same
 // number the CLI defaulted to before mode drove it, so back-compat holds.
 //
-// HONESTY (v1): this method controls only the iteration budget. Proposal-only
-// enforcement is the independent EvolveAuthority axis and the workflow's
-// effect=mutate boundary. CONTENT semantics ("obvious-only" versus
-// full-dimension/auto-derived opportunities) remain a later wave requiring a
-// real agent and quality criteria.
+// This method controls only the iteration budget. Proposal-only enforcement is
+// the independent EvolveAuthority axis and the workflow's effect=mutate
+// boundary; the evolve_scan_v1 output contract consumes the same EvolveDepth for
+// content-profile prompting and report validation.
 func (p Policy) EvolveMaxIter() int {
 	if n, ok := evolveMaxIter[p.EvolveDepth]; ok {
 		return n

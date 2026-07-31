@@ -182,6 +182,111 @@ class WorkflowControlCheckTest(unittest.TestCase):
         )
         self.assertEqual(issues, [])
 
+    def test_valid_evolve_scan_contract_passes(self):
+        issues = self.write_workflow(
+            "cf_evolve_scan.yml",
+            "id: cf_evolve_scan\nstage: evolve\ntype: loop\n"
+            "loop:\n  loop_back_to: inventory\n  phases:\n"
+            "    - name: inventory\n      agent: explorer\n"
+            "      readonly: true\n      effect: observe\n"
+            "      feeds_forward: true\n"
+            "      scan_contract: evolve_scan_v1\n",
+        )
+        self.assertEqual(issues, [])
+
+    def test_invalid_evolve_scan_contract_shapes_are_rejected(self):
+        cases = {
+            "unknown": (
+                "stage: evolve\nreadonly: true\neffect: observe\n"
+                "feeds_forward: true\nscan_contract: evolve_scan_v2\n",
+                "unsupported",
+            ),
+            "writable": (
+                "stage: evolve\nreadonly: false\neffect: observe\n"
+                "feeds_forward: true\nscan_contract: evolve_scan_v1\n",
+                "readonly=true",
+            ),
+            "not-forwarded": (
+                "stage: evolve\nreadonly: true\neffect: observe\n"
+                "feeds_forward: false\nscan_contract: evolve_scan_v1\n",
+                "feeds_forward=true",
+            ),
+            "mode-skippable": (
+                "stage: evolve\nreadonly: true\neffect: observe\n"
+                "feeds_forward: true\noptional_for: [explorer]\n"
+                "scan_contract: evolve_scan_v1\n",
+                "mode-skippable",
+            ),
+            "emitting": (
+                "stage: evolve\nreadonly: true\neffect: observe\n"
+                "feeds_forward: true\nemits: [scan.md]\n"
+                "scan_contract: evolve_scan_v1\n",
+                "must not grant",
+            ),
+        }
+        for name, (body, want) in cases.items():
+            with self.subTest(name=name):
+                lines = body.splitlines()
+                phase = "\n".join(f"    {line}" for line in lines[1:])
+                issues = self.write_workflow(
+                    f"cf_scan_{name}.yml",
+                    f"id: cf_scan_{name}\n{lines[0]}\nphases:\n"
+                    f"  - name: inventory\n    agent: explorer\n{phase}\n",
+                )
+                self.assertTrue(any(want in issue for issue in issues), issues)
+
+    def test_duplicate_evolve_scan_contract_is_rejected(self):
+        issues = self.write_workflow(
+            "cf_duplicate_scan.yml",
+            "id: cf_duplicate_scan\nstage: evolve\nphases:\n"
+            "  - &scan\n    name: scan-a\n    agent: explorer\n"
+            "    readonly: true\n    effect: observe\n    feeds_forward: true\n"
+            "    scan_contract: evolve_scan_v1\n"
+            "  - <<: *scan\n    name: scan-b\n",
+        )
+        self.assertTrue(any("declared by both" in issue for issue in issues), issues)
+
+    def test_late_or_gate_only_scan_contract_is_rejected(self):
+        issues = self.write_workflow(
+            "cf_late_scan.yml",
+            "id: cf_late_scan\nstage: evolve\nphases:\n"
+            "  - name: implement\n    agent: implementer\n    effect: mutate\n"
+            "  - name: inventory\n    agent: harness\n"
+            "    readonly: true\n    effect: observe\n"
+            "    required_gates: [test]\n    depends_on: [implement]\n"
+            "    feeds_forward: true\n    scan_contract: evolve_scan_v1\n",
+        )
+        for want in ("first phase", "non-harness", "depends_on=[]"):
+            self.assertTrue(any(want in issue for issue in issues), issues)
+
+    def test_parallel_dependency_graph_must_follow_scan(self):
+        content = (
+            "id: cf_scan_deps\nstage: evolve\nphases:\n"
+            "  - name: inventory\n    agent: explorer\n"
+            "    readonly: true\n    effect: observe\n"
+            "    feeds_forward: true\n    scan_contract: evolve_scan_v1\n"
+            "  - name: gap\n    agent: architect\n    depends_on: [inventory]\n"
+            "  - name: implement\n    agent: implementer\n{implement_dep}"
+        )
+        issues = self.write_workflow(
+            "cf_scan_deps.yml", content.format(implement_dep=""),
+        )
+        self.assertTrue(any("must transitively depend" in issue for issue in issues), issues)
+        issues = self.write_workflow(
+            "cf_scan_deps.yml",
+            content.format(implement_dep="    depends_on: [gap]\n"),
+        )
+        self.assertFalse(any("must transitively depend" in issue for issue in issues), issues)
+
+    def test_shipped_evolve_declares_scan_contract(self):
+        path = self.agent_root / "workflows" / "evolve.yml"
+        data = control.yaml.safe_load(path.read_text(encoding="utf-8"))
+        phases = control._workflow_phases(data)
+        self.assertEqual(
+            [phase.get("scan_contract") for phase in phases],
+            ["evolve_scan_v1"] + [None] * (len(phases) - 1),
+        )
+
     def test_live_workflows_control_flow_is_clean(self):
         self.assertEqual(
             control.check_workflow_control_flow(self.agent_root), [],

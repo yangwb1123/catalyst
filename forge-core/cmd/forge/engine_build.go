@@ -69,9 +69,13 @@ import (
 // Returns the assembled Engine plus the verdict/findings ledgers for callers to thread
 // rework+trajectory signals into wind-down/Reflect without re-building.
 func buildRunEngine(wf asset.Workflow, o runOpts, logln func(string), costSink func(phase, model string, usd float64, latency time.Duration), runGate func(name string) gate.Result, pol mode.Policy, budget *runBudget, autoRisk string, autoRiskReasons []string, runIDs ...string) (orchestrator.Engine, *verdictLedger, *reviewFindingsLedger) {
+	return buildRunEngineWithPhaseOutput(wf, o, logln, costSink, runGate, pol,
+		budget, autoRisk, autoRiskReasons, newPhaseOutputLedger(), runIDs...)
+}
+
+func buildRunEngineWithPhaseOutput(wf asset.Workflow, o runOpts, logln func(string), costSink func(phase, model string, usd float64, latency time.Duration), runGate func(name string) gate.Result, pol mode.Policy, budget *runBudget, autoRisk string, autoRiskReasons []string, phaseOut *phaseOutputLedger, runIDs ...string) (orchestrator.Engine, *verdictLedger, *reviewFindingsLedger) {
 	o.workflowStage = wf.Stage
 	gates := newGateLedger()
-	phaseOut := newPhaseOutputLedger()
 	verdicts := newVerdictLedger()
 	findings := newReviewFindingsLedger()
 	// Per-run invariant-context memo (prompt-cache, ROADMAP direction five). Created HERE,
@@ -94,11 +98,13 @@ func buildRunEngine(wf asset.Workflow, o runOpts, logln func(string), costSink f
 		Exec: agentExecutor(o, logln, budget.feed(costSink), tierOf, phaseTierByName(wf, tierOf),
 			ctxCache, gates, phaseOut, feedsForwardOf(wf), verdicts, findings,
 			onFailTargetOf(wf), priorEmitsOf(wf), executorHooks{
-				ValidateOutput:     phaseOutputContract(o.root, wf, provenance),
-				ValidateRawOutput:  releaseRawOutputContract(wf),
+				ValidateOutput:     phaseOutputContractWithPolicy(o.root, wf, pol, provenance),
+				ValidateRawOutput:  workflowRawOutputContract(wf, o.agentCmd),
 				OnBuild:            provenance.recordBuild,
 				ModelFor:           provenance.modelFor,
 				VerdictContractFor: verdictContractOf(wf),
+				ScanContractFor:    scanContractOf(wf),
+				ScanDepth:          pol.EvolveDepth,
 			}),
 		RunGate:      runGate,
 		Log:          logln,

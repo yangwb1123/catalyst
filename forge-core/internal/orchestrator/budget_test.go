@@ -2,6 +2,7 @@ package orchestrator
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -25,6 +26,11 @@ import (
 // EXACTLY how many agent phases were actually spawned, so a refused (over-budget)
 // phase is provable by its ABSENCE from the count.
 type countingExec struct{ calls int }
+
+type iterationProgress struct {
+	iter int
+	phaseProgress
+}
 
 func (c *countingExec) Execute(_ context.Context, _ asset.Phase, _ string) error {
 	c.calls++
@@ -266,25 +272,171 @@ func TestCheckRunBudget_PureBoolDrivesEngine_NoDollars(t *testing.T) {
 	}
 }
 
-func TestMaxAgentCallsStandaloneEvolveRemainsPerIteration(t *testing.T) {
+func TestPhaseProgressPreSpawnFailureDoesNotExecute(t *testing.T) {
+	wf := loadAgentOnly(t)
+	exec := &countingExec{}
+	hookErr := errors.New("checkpoint unavailable")
+	var got []iterationProgress
+	loop := NewLoopEngine(
+		Engine{Exec: exec, RunGate: allOK}, wf.Stop,
+		func() converge.Signals { return converge.Signals{} }, 1, 1, nil,
+	)
+	loop.OnPhase = func(iter, next, calls, backs int) error {
+		got = append(got, iterationProgress{iter, phaseProgress{next, calls, backs}})
+		return hookErr
+	}
+	out, err := loop.Run(wf, "balanced")
+	if !errors.Is(err, hookErr) || out.Converged {
+		t.Fatalf("pre-spawn checkpoint outcome=%+v err=%v, want hook failure", out, err)
+	}
+	if exec.calls != 0 || len(got) != 1 || got[0] != (iterationProgress{1, phaseProgress{0, 1, 0}}) {
+		t.Fatalf("pre-spawn failure executed=%d progress=%+v", exec.calls, got)
+	}
+}
+
+func TestPhaseProgressRecordsEveryFailedRetryAttempt(t *testing.T) {
+	exec := &seqExecutor{errs: []error{timeoutErr(), timeoutErr()}}
+	var got []phaseProgress
+	eng := Engine{Exec: exec, RunGate: allOK, MaxRetries: 2}
+	eng.OnPhase = func(next, calls, backs int) error {
+		got = append(got, phaseProgress{next, calls, backs})
+		return nil
+	}
+	if err := eng.Run(loadAgentOnly(t), "balanced"); err != nil {
+		t.Fatalf("retrying run: %v", err)
+	}
+	want := []phaseProgress{{0, 1, 0}, {0, 1, 0}, {0, 1, 0}, {1, 1, 0}}
+	if exec.calls != 3 || len(got) != len(want) {
+		t.Fatalf("retry calls=%d progress=%+v, want %+v", exec.calls, got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("progress[%d]=%+v, want %+v", i, got[i], want[i])
+		}
+	}
+}
+
+func TestFailedAttemptCheckpointErrorStopsRetryAndJoins(t *testing.T) {
+	attemptErr := timeoutErr()
+	hookErr := errors.New("checkpoint write failed")
+	exec := &seqExecutor{errs: []error{attemptErr}}
+	hookCalls := 0
+	eng := Engine{Exec: exec, RunGate: allOK, MaxRetries: 3}
+	eng.OnPhase = func(_, _, _ int) error {
+		hookCalls++
+		if hookCalls == 2 {
+			return hookErr
+		}
+		return nil
+	}
+	err := eng.Run(loadAgentOnly(t), "balanced")
+	if !errors.Is(err, attemptErr) || !errors.Is(err, hookErr) {
+		t.Fatalf("joined failure = %v, want attempt and checkpoint causes", err)
+	}
+	if exec.calls != 1 || hookCalls != 2 {
+		t.Fatalf("failed checkpoint must stop retry: exec=%d hooks=%d", exec.calls, hookCalls)
+	}
+}
+
+func TestAdvanceCheckpointFailureStopsBeforeNextAgent(t *testing.T) {
+	hookErr := errors.New("advance checkpoint failed")
+	exec := &countingExec{}
+	hookCalls := 0
+	eng := Engine{Exec: exec, RunGate: allOK}
+	eng.OnPhase = func(_, _, _ int) error {
+		hookCalls++
+		if hookCalls == 2 {
+			return hookErr
+		}
+		return nil
+	}
+	err := eng.Run(loadThreeAgent(t), "balanced")
+	if !errors.Is(err, hookErr) || exec.calls != 1 || hookCalls != 2 {
+		t.Fatalf("advance failure err=%v exec=%d hooks=%d", err, exec.calls, hookCalls)
+	}
+}
+
+func TestPhaseCountersSeedFirstResumeIterationThenReset(t *testing.T) {
 	wf := asset.Workflow{
 		Stage: "evolve",
 		Phases: []asset.Phase{
 			{Name: "scan", Agent: "explorer"},
+			{Name: "implement", Agent: "implementer"},
 		},
 		Stop: asset.StopCondition{Type: "external"},
 	}
 	exec := &countingExec{}
 	loop := NewLoopEngine(
-		Engine{Exec: exec, MaxAgentCalls: 1},
+		Engine{
+			Exec: exec, MaxAgentCalls: 2, MaxLoopBack: 2,
+			InitialAgentCalls: 1, InitialLoopBacks: 2,
+		},
 		wf.Stop, func() converge.Signals { return converge.Signals{} },
 		2, 3, nil,
 	)
+	loop.StartPhase = 1
+	var progress []iterationProgress
+	loop.OnPhase = func(iter, phaseIdx, agentCalls, loopBacks int) error {
+		progress = append(progress, iterationProgress{
+			iter, phaseProgress{phaseIdx, agentCalls, loopBacks},
+		})
+		return nil
+	}
 	out, err := loop.Run(wf, "balanced")
 	if err != nil || !out.Converged {
-		t.Fatalf("standalone evolve with one call/iteration: outcome=%+v err=%v", out, err)
+		t.Fatalf("standalone evolve resume: outcome=%+v err=%v", out, err)
 	}
-	if exec.calls != 2 {
-		t.Errorf("executor calls = %d, want 2 (local cap resets for each standalone evolve iteration)", exec.calls)
+	if exec.calls != 3 {
+		t.Errorf("executor calls = %d, want 3 (one resumed phase then two fresh-iteration phases)", exec.calls)
+	}
+	want := []iterationProgress{
+		{1, phaseProgress{1, 2, 2}},
+		{1, phaseProgress{2, 2, 2}},
+		{2, phaseProgress{0, 1, 0}},
+		{2, phaseProgress{1, 1, 0}},
+		{2, phaseProgress{1, 2, 0}},
+		{2, phaseProgress{2, 2, 0}},
+	}
+	if len(progress) != len(want) {
+		t.Fatalf("progress callbacks = %+v, want %+v", progress, want)
+	}
+	for i := range want {
+		if progress[i] != want[i] {
+			t.Errorf("progress[%d] = %+v, want %+v", i, progress[i], want[i])
+		}
+	}
+}
+
+func TestRunFromRejectsInvalidInitialProgressBeforeExecution(t *testing.T) {
+	wf := loadThreeAgent(t)
+	tests := []struct {
+		name string
+		edit func(*Engine)
+		want string
+	}{
+		{"negative agent calls", func(e *Engine) { e.InitialAgentCalls = -1 }, "agent-call progress -1"},
+		{"negative loop backs", func(e *Engine) { e.InitialLoopBacks = -1 }, "loop-back progress -1"},
+		{"loop backs above zero cap", func(e *Engine) { e.InitialLoopBacks = 1 },
+			"loop-back progress 1 exceeds configured cap 0"},
+		{"agent calls above cap", func(e *Engine) {
+			e.MaxAgentCalls, e.InitialAgentCalls = 2, 3
+		}, "agent-call progress 3 exceeds configured cap 2"},
+		{"loop backs above cap", func(e *Engine) {
+			e.MaxLoopBack, e.InitialLoopBacks = 2, 3
+		}, "loop-back progress 3 exceeds configured cap 2"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			exec := &countingExec{}
+			engine := Engine{Exec: exec, RunGate: allOK}
+			tc.edit(&engine)
+			err := engine.RunFrom(wf, "balanced", 1)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("error = %v, want %q", err, tc.want)
+			}
+			if exec.calls != 0 {
+				t.Fatalf("invalid resume seed executed %d agent phase(s)", exec.calls)
+			}
+		})
 	}
 }

@@ -292,6 +292,21 @@ func (e Engine) narrateADR(wf asset.Workflow, p asset.Phase) {
 	e.logf("phase %s: ADR not required (mode gating: explorer/balanced skip ADR) — narrated", p.Name)
 }
 
+// narrateEvolveScan exposes the selected content profile even under dry-run.
+// It reports a policy decision only; successful contract validation still
+// requires a command executor and a real evidence-bearing Agent result.
+func (e Engine) narrateEvolveScan(wf asset.Workflow, p asset.Phase) {
+	if wf.Stage != "evolve" || p.ScanContract != asset.ScanContractEvolveV1 {
+		return
+	}
+	depth := e.ModePolicy.EvolveDepth
+	if depth == "" {
+		depth = "unresolved"
+	}
+	e.logf("phase %s: scan_contract=%s effective-depth=%s — selected profile only; real scan completion requires a validated Agent report",
+		p.Name, p.ScanContract, depth)
+}
+
 // requiredWhenKey extracts a RequiredWhen's trailing identifier — the part after
 // the last '#' (a fragment) and the last '.' (a dotted path) — so build.yml's
 // "../policies/modes.yml#workflow_depth.reviewer" reduces to "reviewer". A bare

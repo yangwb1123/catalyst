@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	"forgeos/forge-core/internal/asset"
+	"forgeos/forge-core/internal/evolvescan"
+	"forgeos/forge-core/internal/mode"
 	"forgeos/forge-core/internal/tasklist"
 )
 
@@ -49,18 +51,40 @@ func lastNonEmptyExactLine(output string) string {
 	return ""
 }
 
+type claudeResultEnvelope struct {
+	Type    string  `json:"type"`
+	Subtype string  `json:"subtype"`
+	IsError *bool   `json:"is_error"`
+	Result  *string `json:"result"`
+}
+
+func decodeClaudeResultEnvelope(output string) (claudeResultEnvelope, error) {
+	var envelope claudeResultEnvelope
+	if err := json.Unmarshal([]byte(strings.TrimSpace(output)), &envelope); err != nil {
+		return envelope, err
+	}
+	return envelope, nil
+}
+
+func successfulClaudeResultPayload(output string) (string, error) {
+	envelope, err := decodeClaudeResultEnvelope(output)
+	if err != nil {
+		return "", fmt.Errorf("must return one complete Claude JSON result envelope: %w", err)
+	}
+	if envelope.Type != "result" || envelope.Subtype != "success" ||
+		envelope.IsError == nil || *envelope.IsError || envelope.Result == nil {
+		return "", fmt.Errorf("envelope must be type=result, subtype=success, is_error=false, with a result")
+	}
+	return *envelope.Result, nil
+}
+
 // qaVerdictPayload accepts plain command output, but when output is a JSON result
 // envelope it also requires the provider's complete success metadata. An
 // `is_error`/failed/malformed envelope cannot certify QA merely by carrying an
 // ACCEPTED string in its result field.
 func qaVerdictPayload(output string, requireEnvelope bool) (string, bool) {
-	var envelope struct {
-		Type    string  `json:"type"`
-		Subtype string  `json:"subtype"`
-		IsError *bool   `json:"is_error"`
-		Result  *string `json:"result"`
-	}
-	if err := json.Unmarshal([]byte(strings.TrimSpace(output)), &envelope); err != nil {
+	envelope, err := decodeClaudeResultEnvelope(output)
+	if err != nil {
 		if requireEnvelope {
 			return "", false
 		}
@@ -103,6 +127,14 @@ func verdictContractFor(lookups []func(phase string) string, phase string) strin
 // phaseOutputContract validates machine-readable planner output and every
 // declared artifact postcondition after a successful command executor phase.
 func phaseOutputContract(root string, wf asset.Workflow, provenance ...*artifactProvenance) func(phase, output string) error {
+	return buildPhaseOutputContract(root, wf, "", provenance...)
+}
+
+func phaseOutputContractWithPolicy(root string, wf asset.Workflow, policy mode.Policy, provenance ...*artifactProvenance) func(phase, output string) error {
+	return buildPhaseOutputContract(root, wf, policy.EvolveDepth, provenance...)
+}
+
+func buildPhaseOutputContract(root string, wf asset.Workflow, scanDepth string, provenance ...*artifactProvenance) func(phase, output string) error {
 	if err := asset.ValidateWorkflowStructure(wf); err != nil {
 		return func(_, _ string) error {
 			return fmt.Errorf("output contract: invalid workflow structure: %w", err)
@@ -121,11 +153,14 @@ func phaseOutputContract(root string, wf asset.Workflow, provenance ...*artifact
 		if !ok {
 			return fmt.Errorf("phase %q is not declared by workflow %q", phase, wf.Stage)
 		}
-		return validatePhaseOutput(root, wf.Stage, p, output, prov)
+		return validatePhaseOutput(root, wf.Stage, p, output, scanDepth, prov)
 	}
 }
 
-func validatePhaseOutput(root, stage string, p asset.Phase, output string, prov *artifactProvenance) error {
+func validatePhaseOutput(root, stage string, p asset.Phase, output, scanDepth string, prov *artifactProvenance) error {
+	if err := validateEvolveScanOutput(root, p, output, scanDepth); err != nil {
+		return err
+	}
 	if p.Agent == "planner" {
 		if _, err := tasklist.Parse(sanitizeAgentOutput(output)); err != nil {
 			return fmt.Errorf("planner TASK_LIST: %w", err)
@@ -208,5 +243,118 @@ func validateEmittedFile(root, emit string) error {
 	if strings.TrimSpace(string(data)) == "" {
 		return fmt.Errorf("required artifact is empty")
 	}
+	return nil
+}
+
+// scanContractOf resolves a phase's explicitly declared scan protocol without
+// inferring from its name or agent role.
+func scanContractOf(wf asset.Workflow) func(string) string {
+	return func(name string) string {
+		for _, phase := range wf.Phases {
+			if phase.Name == name {
+				return phase.ScanContract
+			}
+		}
+		return ""
+	}
+}
+
+// scanContractFor reads the second output-contract lookup passed to observeFor.
+// The first lookup remains the existing verdict contract for compatibility.
+func scanContractFor(lookups []func(string) string, phase string) string {
+	if len(lookups) < 2 || lookups[1] == nil {
+		return ""
+	}
+	return lookups[1](phase)
+}
+
+// appendEvolveScanPrompt adds the already-resolved effective scan profile to
+// only the explicitly contracted phase.
+func appendEvolveScanPrompt(text string, phase asset.Phase, depth string) string {
+	if phase.ScanContract != asset.ScanContractEvolveV1 {
+		return text
+	}
+	instructions, err := evolvescan.Instructions(depth)
+	if err != nil {
+		// Asset/policy validation should make this unreachable. Keeping an explicit
+		// marker causes the output contract to fail closed if policy wiring drifts.
+		return text + "\n\n[context:evolve-scan-policy]\nINVALID POLICY: " + err.Error()
+	}
+	return text + "\n\n" + instructions
+}
+
+// validateEvolveScanOutput applies the root-aware contract to an explicitly
+// declared scan phase.
+func validateEvolveScanOutput(root string, phase asset.Phase, output, depth string) error {
+	if phase.ScanContract == "" {
+		return nil
+	}
+	if phase.ScanContract != asset.ScanContractEvolveV1 {
+		return fmt.Errorf("unsupported scan_contract %q", phase.ScanContract)
+	}
+	if _, err := evolvescan.Validate(root, output, depth); err != nil {
+		return fmt.Errorf("%s: %w", phase.ScanContract, err)
+	}
+	return nil
+}
+
+// evolveScanRawOutputContract closes the provider-envelope trust boundary for
+// Claude without imposing provider-specific framing on custom command executors.
+// The payload itself is validated by the ordinary phase output contract.
+func evolveScanRawOutputContract(wf asset.Workflow, requireEnvelope bool) func(phase, output string) error {
+	contractOf := scanContractOf(wf)
+	return func(phase, output string) error {
+		if contractOf(phase) != asset.ScanContractEvolveV1 || !requireEnvelope {
+			return nil
+		}
+		if _, err := successfulClaudeResultPayload(output); err != nil {
+			return fmt.Errorf("%s %w", asset.ScanContractEvolveV1, err)
+		}
+		return nil
+	}
+}
+
+func combineRawOutputContracts(contracts ...func(phase, output string) error) func(phase, output string) error {
+	return func(phase, output string) error {
+		for _, contract := range contracts {
+			if contract == nil {
+				continue
+			}
+			if err := contract(phase, output); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+}
+
+func workflowRawOutputContract(wf asset.Workflow, agentCommand string) func(phase, output string) error {
+	return combineRawOutputContracts(
+		releaseRawOutputContract(wf),
+		evolveScanRawOutputContract(wf, isClaudeExecutable(agentCommand)),
+	)
+}
+
+// recordForwardedPhaseOutput gives a valid structured scan its own complete,
+// canonical, bounded lane. A contracted scan never falls back to the historical
+// 800-rune summary: live execution observes before ValidateOutput, so this error
+// leaves the ledger untouched and the shared validator subsequently fails the
+// phase; resume validates first, making this conversion infallible afterward.
+// Other phase output retains the historical summary behavior.
+func recordForwardedPhaseOutput(
+	ledger *phaseOutputLedger,
+	phase, output string,
+	contractLookups []func(string) string,
+) error {
+	if scanContractFor(contractLookups, phase) == asset.ScanContractEvolveV1 {
+		canonical, err := evolvescan.Canonicalize(output)
+		if err != nil {
+			return fmt.Errorf("%s canonical feed-forward: %w",
+				asset.ScanContractEvolveV1, err)
+		}
+		ledger.recordExact(phase, canonical)
+		return nil
+	}
+	ledger.record(phase, output)
 	return nil
 }

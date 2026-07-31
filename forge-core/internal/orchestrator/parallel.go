@@ -65,6 +65,13 @@ import (
 // cancellation so a cancelled run stops between waves and each active phase goroutine
 // checks ctx before spawning.
 func (e Engine) RunParallel(ctx context.Context, wf asset.Workflow, mode string) error {
+	if e.InitialAgentCalls != 0 || e.InitialLoopBacks != 0 {
+		return fmt.Errorf(
+			"parallel orchestration cannot consume serial mid-iteration resource progress "+
+				"(agent_calls=%d loop_backs=%d)",
+			e.InitialAgentCalls, e.InitialLoopBacks,
+		)
+	}
 	if err := asset.ValidateWorkflowStructure(wf); err != nil {
 		return fmt.Errorf("parallel orchestration: invalid workflow structure: %w", err)
 	}
@@ -88,6 +95,9 @@ func (e Engine) RunParallel(ctx context.Context, wf asset.Workflow, mode string)
 	if err != nil {
 		return fmt.Errorf("parallel orchestration: %w", err)
 	}
+	if err := validateParallelScanHandoff(wf, waves); err != nil {
+		return fmt.Errorf("parallel orchestration: %w", err)
+	}
 	e.logf("parallel: %d phase(s) in %d dependency wave(s)", len(wf.Phases), len(waves))
 	var mu sync.Mutex
 	agentCalls := 0
@@ -98,6 +108,33 @@ func (e Engine) RunParallel(ctx context.Context, wf asset.Workflow, mode string)
 		}
 	}
 	e.reportStop(wf)
+	return nil
+}
+
+// validateParallelScanHandoff ensures a contracted scan completes and validates
+// before every later phase can consume its feed-forward report or mutate state.
+func validateParallelScanHandoff(wf asset.Workflow, waves [][]int) error {
+	scanIndex := -1
+	waveOf := make([]int, len(wf.Phases))
+	for waveIndex, wave := range waves {
+		for _, phaseIndex := range wave {
+			waveOf[phaseIndex] = waveIndex
+			if wf.Phases[phaseIndex].ScanContract == asset.ScanContractEvolveV1 {
+				scanIndex = phaseIndex
+			}
+		}
+	}
+	if scanIndex < 0 {
+		return nil
+	}
+	for i := scanIndex + 1; i < len(wf.Phases); i++ {
+		if waveOf[i] <= waveOf[scanIndex] {
+			return fmt.Errorf(
+				"phase %s must be in a later dependency wave than contracted scan phase %s",
+				wf.Phases[i].Name, wf.Phases[scanIndex].Name,
+			)
+		}
+	}
 	return nil
 }
 
@@ -180,6 +217,7 @@ func (e Engine) runPhaseParallel(ctx context.Context, wf asset.Workflow, i int, 
 		return nil
 	}
 	e.narrateADR(wf, p)
+	e.narrateEvolveScan(wf, p)
 	// Budget pre-flight under the shared lock (agentCalls is mutated by every goroutine);
 	// checkAgentBudget increments it only for an allowed execution.
 	mu.Lock()

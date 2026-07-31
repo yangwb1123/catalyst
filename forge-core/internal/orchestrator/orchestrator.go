@@ -142,8 +142,12 @@ type Engine struct {
 	MaxRetries      int
 	MaxLoopBack     int
 	MaxAgentCalls   int
-	ChargeAgentCall func(max int) (count int, allowed bool)
-	ModePolicy      mode.Policy
+	// InitialAgentCalls and InitialLoopBacks resume the counters consumed before
+	// RunFrom's start phase. Zero preserves a fresh iteration.
+	InitialAgentCalls int
+	InitialLoopBacks  int
+	ChargeAgentCall   func(max int) (count int, allowed bool)
+	ModePolicy        mode.Policy
 	// Sleep is the OPTIONAL injection point for the inter-retry backoff (the 529/overload
 	// resilience pause), the deterministic-test twin of trace.Now: nil = time.Sleep (the
 	// production default, a real wall-clock pause so the overloaded backend can recover); a test
@@ -152,15 +156,11 @@ type Engine struct {
 	// its deadline and never sleeps), so a nil Sleep leaves every pre-existing path byte-for-byte
 	// unchanged. See runAgentPhase, overloadBackoff, and Engine.sleep (backoff.go).
 	Sleep func(time.Duration)
-	// OnPhase is an OPTIONAL post-phase checkpoint hook: RunFrom fires it with the
-	// index of each AGENT phase that just COMPLETED cleanly (not a gate phase, not a
-	// loop-back jump, not a mode-skipped phase). cmd/forge uses it to persist a
-	// PHASE-granular checkpoint so a crash mid-iteration resumes at the next unstarted
-	// phase instead of replaying every completed (expensively-billed) agent phase. The
-	// engine stays iteration-oblivious — it reports only the phase index; the caller
-	// (LoopEngine) supplies the iteration context. nil = no per-phase checkpoint
-	// (byte-for-byte the pre-existing per-iteration-only behavior).
-	OnPhase func(phaseIdx int)
+	// OnPhase durably records the next phase to run and counters consumed so far.
+	// RunFrom invokes it before a spawn, after each failed attempt, and before
+	// committing a forward or loop-back transition. An error aborts fail-closed.
+	// Nil keeps per-iteration-only checkpointing.
+	OnPhase func(nextPhaseIdx, agentCalls, loopBacks int) error
 	// Ctx is the parent context for cancellation propagation (e.g. SIGINT/SIGTERM).
 	// Every agent phase checks ctx before spawning; when cancelled, the phase is
 	// skipped and ctx.Err() is returned. A nil Ctx is equivalent to context.Background()
@@ -194,6 +194,15 @@ func (e Engine) Run(wf asset.Workflow, mode string) error {
 	return e.RunFrom(wf, mode, 0)
 }
 
+func (e Engine) prepareSerialRun(wf asset.Workflow, start int) (asset.Workflow, bool, int, int, error) {
+	wf, skipped, err := e.prepareSerialWorkflow(wf, start)
+	if err != nil {
+		return wf, false, 0, 0, err
+	}
+	agentCalls, loopBacks, err := e.initialPhaseProgress()
+	return wf, skipped, agentCalls, loopBacks, err
+}
+
 // RunFrom executes the workflow starting at phase index `start`, applying mode
 // gating, agent retries, and DIRECTED GATE LOOP-BACK as it steps.
 //
@@ -220,15 +229,13 @@ func (e Engine) Run(wf asset.Workflow, mode string) error {
 // carry no on_fail, a red gate aborts on the spot exactly as before — directed
 // loop-back is opt-in on BOTH the asset (on_fail) and the engine (budget) side.
 func (e Engine) RunFrom(wf asset.Workflow, mode string, start int) error {
-	wf, skipped, err := e.prepareSerialWorkflow(wf, start)
+	wf, skipped, agentCalls, loopBacks, err := e.prepareSerialRun(wf, start)
 	if err != nil {
 		return err
 	}
 	if skipped {
 		return nil
 	}
-	loopBacks := 0
-	agentCalls := 0
 	phasesRan := 0
 	for i := start; i < len(wf.Phases); i++ {
 		// Check for cancellation before each phase (e.g. SIGINT).
@@ -237,9 +244,9 @@ func (e Engine) RunFrom(wf asset.Workflow, mode string, start int) error {
 		}
 		p := wf.Phases[i]
 		if len(p.RequiredGates) > 0 {
-			if err := e.runGates(p, e.gatesFor(p)); err != nil {
-				target, jumped := e.gateOutcome(wf, p, &loopBacks)
-				if !jumped {
+			if gateErr := e.runGates(p, e.gatesFor(p)); gateErr != nil {
+				target, err := e.gateOutcome(wf, p, agentCalls, &loopBacks, gateErr)
+				if err != nil {
 					return err
 				}
 				i = target - 1 // -1 because the for-loop will ++ back to target
@@ -285,45 +292,28 @@ func (e Engine) runAgentTransition(
 	agentCalls, loopBacks *int,
 ) (target int, jumped bool, err error) {
 	e.narrateADR(wf, p)
-	if err := e.runAgentPhaseBudgeted(e.ctx(), p, mode, agentCalls); err != nil {
+	e.narrateEvolveScan(wf, p)
+	if err := e.prepareAgentSpawn(index, agentCalls, loopBacks); err != nil {
+		return 0, false, fmt.Errorf("phase %s: %w", p.Name, err)
+	}
+	onFailure := func() error {
+		return e.checkpointPhase(index, *agentCalls, *loopBacks)
+	}
+	if err := e.runAgentPhaseWithProgress(e.ctx(), p, mode, onFailure); err != nil {
 		return 0, false, err
 	}
 	target, jumped, err = e.agentOutcome(wf, p, loopBacks)
-	if err != nil || jumped {
-		return target, jumped, err
+	if err != nil {
+		return 0, false, e.checkpointAgentFailure(index, *agentCalls, *loopBacks, err)
 	}
-	// Persist the completed agent index so a crash resumes at the next phase.
-	// Gate phases intentionally re-run idempotently after resume.
-	if e.OnPhase != nil {
-		e.OnPhase(index)
+	if jumped {
+		err = e.checkpointLoopBack(target, *agentCalls, loopBacks, nil)
+		return target, err == nil, err
+	}
+	if err := e.checkpointPhase(index+1, *agentCalls, *loopBacks); err != nil {
+		return 0, false, fmt.Errorf("phase %s: completion checkpoint: %w", p.Name, err)
 	}
 	return target, false, nil
-}
-
-// runAgentPhaseBudgeted is the pre-spawn cost pre-flight + the spawn itself, split out of
-// RunFrom's loop (so that loop stays within the function-length budget). It charges BOTH
-// run-level cost guards BEFORE spawning, fail-closed, then runs the phase:
-//
-//  1. checkAgentBudget — the per-run agent-phase COUNT cap (--max-agent-calls). It
-//     increments *calls; a loop-back re-run re-reaches this and is charged again (loop-back
-//     × phase is the blow-up MaxLoopBack alone does not bound). On overrun the phase is
-//     never spawned.
-//  2. checkRunBudget — the run-level CUMULATIVE-resource cap (the opaque BudgetExhausted
-//     puller). *calls-1 is the count of agent phases already COMPLETED this run, passed for
-//     an honest "stopped after N" report. On exhaustion the phase is never spawned.
-//
-// Only when both guards pass does runAgentPhase fire (with its own retry/backoff). Either
-// guard's error propagates up to abort the run; neither charges anything when unset
-// (MaxAgentCalls 0 / nil puller), so an existing run is byte-for-byte unchanged.
-// ctx propagates cancellation so a cancelled runAgentPhase is aborted promptly.
-func (e Engine) runAgentPhaseBudgeted(ctx context.Context, p asset.Phase, mode string, calls *int) error {
-	if err := e.checkAgentBudget(calls); err != nil {
-		return err
-	}
-	if err := e.checkRunBudget(*calls - 1); err != nil {
-		return err
-	}
-	return e.runAgentPhase(ctx, p, mode)
 }
 
 // gateOutcome decides what happens after a gate phase failed: a DIRECTED jump
@@ -332,8 +322,21 @@ func (e Engine) runAgentPhaseBudgeted(ctx context.Context, p asset.Phase, mode s
 // is fail-CLOSED, so jumped=false means the caller aborts. The "gate FAILED" reason
 // is what makes loopBackTo emit the legacy "still red after …" budget-spent line that
 // the gate loop-back tests assert.
-func (e Engine) gateOutcome(wf asset.Workflow, p asset.Phase, loopBacks *int) (target int, jumped bool) {
-	return e.loopBackTo(wf, p, loopBacks, "gate FAILED")
+func (e Engine) gateOutcome(
+	wf asset.Workflow,
+	p asset.Phase,
+	agentCalls int,
+	loopBacks *int,
+	gateErr error,
+) (int, error) {
+	target, jumped := e.loopBackTo(wf, p, loopBacks, "gate FAILED")
+	if !jumped {
+		return 0, gateErr
+	}
+	if err := e.checkpointLoopBack(target, agentCalls, loopBacks, gateErr); err != nil {
+		return 0, err
+	}
+	return target, nil
 }
 
 // agentOutcome applies two verdict postures after a clean AGENT phase. Legacy/advisory

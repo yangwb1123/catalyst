@@ -6,6 +6,7 @@ import yaml
 
 
 VALID_MODEL_TIERS = {"haiku", "sonnet", "opus"}
+EVOLVE_SCAN_CONTRACT = "evolve_scan_v1"
 PHASE_REF_KEYS = {"target_phase", "loop_back_to"}
 STAGE_REF_KEYS = {"next_stage"}
 VALID_ACTIONS = {"loop_back", "loop_to_next_roadmap_item"}
@@ -118,6 +119,109 @@ def _unsupported_transition_fields(path, data):
     return []
 
 
+def _scan_contract_issues(path, data):
+    """Mirror forge-core's explicit Evolve scan-contract shape."""
+    if not isinstance(data, dict):
+        return []
+    issues = []
+    declared = None
+    phases = _workflow_phases(data)
+    for index, phase in enumerate(phases):
+        if not isinstance(phase, dict) or not phase.get("scan_contract"):
+            continue
+        name = phase.get("name")
+        contract = phase.get("scan_contract")
+        if contract != EVOLVE_SCAN_CONTRACT:
+            issues.append(
+                f"{path}: phase {name!r} has unsupported scan_contract {contract!r}"
+            )
+            continue
+        if declared is not None:
+            issues.append(
+                f"{path}: scan_contract {EVOLVE_SCAN_CONTRACT!r} is declared "
+                f"by both {declared!r} and {name!r}"
+            )
+        declared = name
+        issues.extend(_scan_phase_shape_issues(path, data, phase, index))
+    if declared is not None:
+        issues.extend(_scan_dependency_issues(path, phases, declared))
+    return issues
+
+
+def _scan_phase_shape_issues(path, data, phase, index):
+    name, contract = phase.get("name"), phase.get("scan_contract")
+    issues = []
+    if index != 0:
+        issues.append(
+            f"{path}: phase {name!r} scan_contract {contract!r} must be "
+            "the first phase so every later phase observes its validated report"
+        )
+    if (data.get("stage") != "evolve" or phase.get("readonly") is not True
+            or phase.get("effect") != "observe"):
+        issues.append(
+            f"{path}: phase {name!r} scan_contract {contract!r} requires "
+            "stage evolve, readonly=true, and effect=observe"
+        )
+    if phase.get("agent") == "harness" or phase.get("required_gates"):
+        issues.append(
+            f"{path}: phase {name!r} scan_contract {contract!r} must execute "
+            "a non-harness Agent with required_gates=[]"
+        )
+    if phase.get("depends_on"):
+        issues.append(
+            f"{path}: phase {name!r} scan_contract {contract!r} is the root "
+            "producer and requires depends_on=[]"
+        )
+    if phase.get("emits") or phase.get("writes_adr") is not None:
+        issues.append(
+            f"{path}: phase {name!r} scan_contract {contract!r} must not grant "
+            "emits or writes_adr"
+        )
+    if phase.get("feeds_forward") is not True:
+        issues.append(
+            f"{path}: phase {name!r} scan_contract {contract!r} requires "
+            "feeds_forward=true"
+        )
+    if phase.get("required_when") or phase.get("optional_for"):
+        issues.append(
+            f"{path}: phase {name!r} scan_contract {contract!r} "
+            "must not be mode-skippable"
+        )
+    return issues
+
+
+def _scan_dependency_issues(path, phases, scan_name):
+    if not any(p.get("depends_on") for p in phases if isinstance(p, dict)):
+        return []
+    by_name = {
+        phase.get("name"): phase for phase in phases
+        if isinstance(phase, dict) and phase.get("name")
+    }
+    memo = {}
+
+    def reaches_scan(name, active):
+        if name in memo:
+            return memo[name]
+        if name in active:
+            return False
+        phase = by_name.get(name, {})
+        active = active | {name}
+        result = any(
+            dep == scan_name or reaches_scan(dep, active)
+            for dep in phase.get("depends_on", [])
+            if dep in by_name
+        )
+        memo[name] = result
+        return result
+
+    return [
+        f"{path}: phase {phase.get('name')!r} must transitively depend on "
+        f"contracted scan phase {scan_name!r} when depends_on enables parallel mode"
+        for phase in phases[1:]
+        if isinstance(phase, dict) and not reaches_scan(phase.get("name"), set())
+    ]
+
+
 def check_workflow_control_flow(agent_root):
     """Validate phase, tier, stage, action and transition-effect references."""
     workflows = sorted((agent_root / "workflows").glob("*.yml"))
@@ -133,6 +237,7 @@ def check_workflow_control_flow(agent_root):
     issues = []
     for path, data in parsed:
         issues.extend(_workflow_structure_issues(path, data))
+        issues.extend(_scan_contract_issues(path, data))
         phases = _workflow_phase_names(data)
         for ref in _iter_key_values(data, PHASE_REF_KEYS):
             if ref not in phases:

@@ -151,7 +151,10 @@ func TestCheckpointHook_WriteFailureIsSurfaced(t *testing.T) {
 	hook := checkpointHook(runOpts{root: root}, asset.Workflow{Stage: "evolve"},
 		trace.NewTracer(&buf), &runBudget{}, func(s string) { logs = append(logs, s) }, nil, nil)
 
-	hook(1, converge.Signals{RoadmapCompletion: 0.1}, 0)
+	hookErr := hook(1, converge.Signals{RoadmapCompletion: 0.1}, 0)
+	if hookErr == nil || !strings.Contains(hookErr.Error(), "persist iteration checkpoint") {
+		t.Fatalf("checkpoint write failure must stop the loop: %v", hookErr)
+	}
 
 	ev := lastTraceEvent(t, buf.String())
 	if ev.Status != "checkpoint-write-failed" {

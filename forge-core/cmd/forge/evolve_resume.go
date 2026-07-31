@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
 
 	"forgeos/forge-core/internal/asset"
 	"forgeos/forge-core/internal/converge"
@@ -16,11 +18,18 @@ import (
 )
 
 type loopResumeState struct {
-	start       int
-	prev        float64
-	spentMicros int64
-	phaseStart  int
-	gatesGreen  bool
+	found           bool
+	start           int
+	prev            float64
+	spentMicros     int64
+	budgetCapMicros int64
+	phaseStart      int
+	gatesGreen      bool
+	scanReport      string
+	maxAgentCalls   int
+	agentCalls      int
+	maxLoopBacks    int
+	loopBacks       int
 }
 
 func validateEvolveEntry(
@@ -81,8 +90,187 @@ func prepareLoopResume(wf asset.Workflow, o *runOpts, resume bool) (loopResumeSt
 		Workflow: wf.Stage, WorkflowDigest: checkpointWorkflowDigest(wf),
 		Mode: o.mode, Lifecycle: o.lifecycle, PhaseLimit: phaseLimit,
 	}
-	start, prev, spent, phase, gates, err := resumeStart(o.root, resume, binding)
-	return loopResumeState{start, prev, spent, phase, gates}, err
+	state, err := loadLoopResumeState(o.root, resume, binding)
+	if err != nil {
+		return loopResumeState{}, err
+	}
+	if err := restoreResumeRunOptions(o, state); err != nil {
+		return loopResumeState{}, fmt.Errorf("--resume: %w", err)
+	}
+	if contractedScanBefore(wf, state.phaseStart) && state.scanReport == "" {
+		return loopResumeState{}, fmt.Errorf("--resume: checkpoint phase %d lacks the contracted scan report required by downstream prompts",
+			state.phaseStart)
+	}
+	return state, nil
+}
+
+func restoreResumeRunOptions(o *runOpts, state loopResumeState) error {
+	if !state.found {
+		return nil
+	}
+	maxCallsSet := o.maxAgentCalls != 0
+	budgetSet := strings.TrimSpace(o.runBudgetUSD) != ""
+	if o.runFlagsCaptured {
+		maxCallsSet = o.maxAgentCallsExplicit
+		budgetSet = o.runBudgetExplicit
+	}
+	if maxCallsSet && o.maxAgentCalls != state.maxAgentCalls {
+		return fmt.Errorf("persisted --max-agent-calls=%d conflicts with requested %d",
+			state.maxAgentCalls, o.maxAgentCalls)
+	}
+	if budgetSet {
+		requested, err := newRunBudget(o.runBudgetUSD)
+		if err != nil {
+			return err
+		}
+		if requested.CapUsdMicros() != state.budgetCapMicros {
+			return fmt.Errorf("persisted run budget cap is %d micro-USD, but requested --run-budget-usd resolves to %d",
+				state.budgetCapMicros, requested.CapUsdMicros())
+		}
+	}
+	if state.maxLoopBacks != maxLoopBack {
+		return fmt.Errorf("persisted loop-back cap=%d conflicts with runtime cap=%d",
+			state.maxLoopBacks, maxLoopBack)
+	}
+	o.maxAgentCalls = state.maxAgentCalls
+	return nil
+}
+
+func restoreLoopBudget(budget *runBudget, state loopResumeState) error {
+	if !state.found {
+		return nil
+	}
+	if err := budget.restore(state.budgetCapMicros, state.spentMicros); err != nil {
+		return fmt.Errorf("restore persisted run budget: %w", err)
+	}
+	return nil
+}
+
+func newResumedRunBudget(flagValue string, state loopResumeState) (*runBudget, error) {
+	budget, err := newRunBudget(flagValue)
+	if err != nil {
+		return nil, err
+	}
+	if err := restoreLoopBudget(budget, state); err != nil {
+		return nil, err
+	}
+	return budget, nil
+}
+
+func contractedScanBefore(wf asset.Workflow, phaseStart int) bool {
+	for i, phase := range wf.Phases {
+		if phase.ScanContract == asset.ScanContractEvolveV1 {
+			return phaseStart > i
+		}
+	}
+	return false
+}
+
+type validatedOutputRestorer interface {
+	RestoreValidatedOutput(asset.Phase, string) error
+}
+
+func restoreContractedScanOutput(
+	executor orchestrator.AgentExecutor,
+	wf asset.Workflow,
+	phaseStart int,
+	report string,
+) error {
+	if !contractedScanBefore(wf, phaseStart) {
+		return nil
+	}
+	restorer, ok := executor.(validatedOutputRestorer)
+	if !ok {
+		return fmt.Errorf("executor cannot restore a validated contracted scan report")
+	}
+	for _, phase := range wf.Phases {
+		if phase.ScanContract != asset.ScanContractEvolveV1 {
+			continue
+		}
+		if err := restorer.RestoreValidatedOutput(phase, report); err != nil {
+			return fmt.Errorf("restore contracted scan report: %w", err)
+		}
+		return nil
+	}
+	return fmt.Errorf("checkpoint carries a scan report but workflow has no contracted scan phase")
+}
+
+func applyLoopResume(loop *orchestrator.LoopEngine, wf asset.Workflow, resumed loopResumeState) error {
+	if loop.Parallel &&
+		(resumed.phaseStart > 0 || resumed.agentCalls > 0 || resumed.loopBacks > 0) {
+		return fmt.Errorf(
+			"parallel execution cannot resume serial mid-iteration checkpoint "+
+				"at phase %d with agent_calls=%d loop_backs=%d; resume without --parallel",
+			resumed.phaseStart, resumed.agentCalls, resumed.loopBacks,
+		)
+	}
+	loop.StartIter, loop.ResumePrev = resumed.start, resumed.prev
+	loop.StartPhase, loop.ResumeGatesGreen = resumed.phaseStart, resumed.gatesGreen
+	loop.Engine.InitialAgentCalls = resumed.agentCalls
+	loop.Engine.InitialLoopBacks = resumed.loopBacks
+	return restoreContractedScanOutput(
+		loop.Engine.Exec, wf, resumed.phaseStart, resumed.scanReport,
+	)
+}
+
+// phaseCheckpointHook builds the loop's iteration-aware durable-progress callback.
+// The engine calls it before every Agent spawn and again after a phase fails,
+// advances, or takes a directed loop-back. nextPhaseIdx is therefore the exact
+// resume target, while the counters and budget snapshot include all consumption
+// known at that transition. The last completed iteration's measured signals are
+// preserved from the iteration checkpoint. A write failure is fail-closed: running
+// more phases without a durable resource envelope would let a later resume replay
+// work and silently regain budget.
+func phaseCheckpointHook(
+	o runOpts,
+	wf asset.Workflow,
+	budget *runBudget,
+	phaseOut *phaseOutputLedger,
+	logln func(string),
+) func(iter, nextPhaseIdx, agentCalls, loopBacks int) error {
+	workflowDigest := checkpointWorkflowDigest(wf)
+	lifecycle := resolveLifecycle(o)
+	return func(iter, nextPhaseIdx, agentCalls, loopBacks int) error {
+		prev, _, _ := persist.Load(checkpointPath(o.root)) // not-found/malformed -> zero signals
+		if prev.FormatVersion != persist.CheckpointFormatCurrent ||
+			prev.Workflow != wf.Stage || prev.WorkflowDigest != workflowDigest ||
+			prev.Mode != o.mode || prev.Lifecycle != lifecycle {
+			prev = persist.Checkpoint{}
+		}
+		cp := persist.Checkpoint{
+			Workflow: wf.Stage, WorkflowDigest: workflowDigest,
+			Mode: o.mode, Lifecycle: lifecycle, Iteration: iter - 1,
+			RoadmapCompletion: prev.RoadmapCompletion, GatesGreen: prev.GatesGreen,
+			PhaseIndex: nextPhaseIdx, Reason: "durable phase progress (mid-iteration)",
+			UpdatedAtUnix: time.Now().Unix(), SpentUsdMicros: budget.SpentUsdMicros(),
+			BudgetCapMicros: budget.CapUsdMicros(),
+			MaxAgentCalls:   o.maxAgentCalls, AgentCalls: agentCalls,
+			MaxLoopBacks: maxLoopBack, LoopBacks: loopBacks,
+		}
+		report, required := checkpointScanReport(wf, phaseOut, cp.PhaseIndex)
+		if required && report == "" {
+			err := fmt.Errorf("validated scan report is unavailable at resume phase %d", cp.PhaseIndex)
+			logln("forge evolve: ERROR durable phase checkpoint refused: " + err.Error())
+			return err
+		}
+		cp.EvolveScanReport = report
+		if err := persist.Save(checkpointPath(o.root), cp, 5); err != nil {
+			logln(fmt.Sprintf("forge evolve: ERROR phase checkpoint write failed; stopping before more work (recovery state NOT durable): %v", err))
+			return fmt.Errorf("persist durable phase progress: %w", err)
+		}
+		return nil
+	}
+}
+
+func checkpointScanReport(wf asset.Workflow, phaseOut *phaseOutputLedger, phaseIndex int) (string, bool) {
+	for i, phase := range wf.Phases {
+		if phase.ScanContract != asset.ScanContractEvolveV1 || phaseIndex <= i {
+			continue
+		}
+		report, _ := phaseOut.output(phase.Name)
+		return report, true
+	}
+	return "", false
 }
 
 // proposalLoopSignals is intentionally file/ledger-only: proposal authority
@@ -111,23 +299,31 @@ type checkpointBinding struct {
 // state. Present state must exactly match the current workflow, mode, lifecycle,
 // and executable phase range; legacy unbound state remains readable but cannot
 // be resumed. Missing state is the only --resume case that starts fresh.
-func resumeStart(root string, resume bool, binding checkpointBinding) (start int, prev float64, spentMicros int64, phaseStart int, gatesGreen bool, err error) {
+func resumeStart(root string, resume bool, binding checkpointBinding) (start int, prev float64, spentMicros int64, phaseStart int, gatesGreen bool, scanReport string, err error) {
+	state, err := loadLoopResumeState(root, resume, binding)
+	return state.start, state.prev, state.spentMicros, state.phaseStart,
+		state.gatesGreen, state.scanReport, err
+}
+
+func loadLoopResumeState(
+	root string, resume bool, binding checkpointBinding,
+) (loopResumeState, error) {
 	if !resume {
-		return 0, -1.0, 0, 0, false, nil
+		return loopResumeState{prev: -1.0}, nil
 	}
 	if err := rejectTrackedForgeControlState(root); err != nil {
-		return 0, 0, 0, 0, false, fmt.Errorf("--resume: %w", err)
+		return loopResumeState{}, fmt.Errorf("--resume: %w", err)
 	}
 	cp, found, err := persist.Load(checkpointPath(root))
 	if err != nil {
-		return 0, 0, 0, 0, false, fmt.Errorf("--resume: malformed checkpoint at %s: %w", checkpointPath(root), err)
+		return loopResumeState{}, fmt.Errorf("--resume: malformed checkpoint at %s: %w", checkpointPath(root), err)
 	}
 	if !found {
 		fmt.Fprintf(os.Stderr, "forge evolve: --resume found no checkpoint at %s; starting fresh\n", checkpointPath(root))
-		return 0, -1.0, 0, 0, false, nil
+		return loopResumeState{prev: -1.0}, nil
 	}
 	if err := validateResumeCheckpoint(cp, binding); err != nil {
-		return 0, 0, 0, 0, false, fmt.Errorf("--resume: invalid checkpoint at %s: %w", checkpointPath(root), err)
+		return loopResumeState{}, fmt.Errorf("--resume: invalid checkpoint at %s: %w", checkpointPath(root), err)
 	}
 	at := ""
 	if cp.PhaseIndex > 0 {
@@ -135,7 +331,14 @@ func resumeStart(root string, resume bool, binding checkpointBinding) (start int
 	}
 	fmt.Printf("forge evolve: resuming from iteration %d%s (roadmap=%.0f%%, last reason: %s)\n",
 		cp.Iteration+1, at, cp.RoadmapCompletion*100, cp.Reason)
-	return cp.Iteration + 1, cp.RoadmapCompletion, cp.SpentUsdMicros, cp.PhaseIndex, cp.GatesGreen, nil
+	return loopResumeState{
+		found: true, start: cp.Iteration + 1, prev: cp.RoadmapCompletion,
+		spentMicros: cp.SpentUsdMicros, budgetCapMicros: cp.BudgetCapMicros,
+		phaseStart: cp.PhaseIndex, gatesGreen: cp.GatesGreen,
+		scanReport: cp.EvolveScanReport, maxAgentCalls: cp.MaxAgentCalls,
+		agentCalls: cp.AgentCalls, maxLoopBacks: cp.MaxLoopBacks,
+		loopBacks: cp.LoopBacks,
+	}, nil
 }
 
 func validateResumeCheckpoint(cp persist.Checkpoint, want checkpointBinding) error {
@@ -177,13 +380,25 @@ func validateResumeCheckpoint(cp persist.Checkpoint, want checkpointBinding) err
 	if cp.RoadmapCompletion < 0 || cp.RoadmapCompletion > 1 {
 		return fmt.Errorf("roadmap_completion %v must be within [0,1]", cp.RoadmapCompletion)
 	}
-	if cp.PhaseIndex < 0 || cp.PhaseIndex > want.PhaseLimit {
-		return fmt.Errorf("phase_index %d outside executable range [0,%d]", cp.PhaseIndex, want.PhaseLimit)
-	}
-	if cp.SpentUsdMicros < 0 {
+	return validateResumeResourceProgress(cp, want.PhaseLimit)
+}
+
+func validateResumeResourceProgress(cp persist.Checkpoint, phaseLimit int) error {
+	switch {
+	case cp.PhaseIndex < 0 || cp.PhaseIndex > phaseLimit:
+		return fmt.Errorf("phase_index %d outside executable range [0,%d]",
+			cp.PhaseIndex, phaseLimit)
+	case cp.PhaseIndex > 0 && cp.AgentCalls == 0:
+		return fmt.Errorf("phase_index %d is unreachable with zero agent_calls for an Evolve workflow",
+			cp.PhaseIndex)
+	case cp.LoopBacks > cp.AgentCalls:
+		return fmt.Errorf("loop_backs %d exceeds recorded agent_calls %d",
+			cp.LoopBacks, cp.AgentCalls)
+	case cp.SpentUsdMicros < 0:
 		return fmt.Errorf("spent_usd_micros %d must be non-negative", cp.SpentUsdMicros)
+	default:
+		return nil
 	}
-	return nil
 }
 
 // checkpointWorkflowDigest binds resume indices to the complete normalized

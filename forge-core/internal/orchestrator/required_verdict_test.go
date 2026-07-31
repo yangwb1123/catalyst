@@ -30,6 +30,36 @@ func TestRun_RequiredVerdictMissingFailsClosed(t *testing.T) {
 	}
 }
 
+func TestRun_VerdictFailureCheckpointsCurrentAndJoinsHookError(t *testing.T) {
+	wf := loadVerdict(t)
+	rec := &recorder{}
+	hookErr := errors.New("verdict checkpoint failed")
+	var progress []phaseProgress
+	eng := Engine{
+		Exec: rec.executor(), RunGate: allOK,
+		AgentVerdict:        func(string) (string, bool) { return "", false },
+		RequireAgentVerdict: requireReviewer,
+		OnPhase: func(next, calls, backs int) error {
+			progress = append(progress, phaseProgress{next, calls, backs})
+			if len(progress) == 2 {
+				return hookErr
+			}
+			return nil
+		},
+	}
+	err := eng.RunFrom(wf, "balanced", 2)
+	if !errors.Is(err, hookErr) || !strings.Contains(err.Error(), "missing or malformed") {
+		t.Fatalf("verdict/checkpoint joined error = %v", err)
+	}
+	want := phaseProgress{2, 1, 0}
+	if len(progress) != 2 || progress[0] != want || progress[1] != want {
+		t.Fatalf("verdict failure progress = %+v, want current phase twice", progress)
+	}
+	if strings.Join(rec.executed, ",") != "reviewer" {
+		t.Fatalf("verdict failure executed unexpected phases: %v", rec.executed)
+	}
+}
+
 func TestRun_RequiredVerdictUnknownFailsClosed(t *testing.T) {
 	wf := loadVerdict(t)
 	rec := &recorder{}

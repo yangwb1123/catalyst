@@ -220,7 +220,9 @@ func observeFor(isClaude bool, costSink func(phase, model string, usd float64, l
 	return func(phase, output string, latency time.Duration) {
 		sanitized := sanitizeAgentOutput(output)
 		if phaseOut != nil && feedsForward != nil && feedsForward(phase) {
-			phaseOut.record(phase, unwrapClaudeResult(sanitized))
+			recordForwardedPhaseOutput(
+				phaseOut, phase, unwrapClaudeResult(sanitized), contractLookups,
+			)
 		}
 		if verdicts != nil {
 			contract := verdictContractFor(contractLookups, phase)

@@ -297,6 +297,21 @@ func (c CommandExecutor) finish(phase string, argv []string, out *cappedBuffer, 
 	return classifyRunErr(phase, runErr, ctxErr, isOverload)
 }
 
+// RestoreValidatedOutput revalidates a durable provider-neutral phase result and
+// feeds it back through Observe without spawning an Agent. Evolve resume uses
+// this to rebuild an in-memory feed-forward ledger while preserving the
+// phase-granular guarantee that completed mutable/billed phases are not replayed.
+func (c CommandExecutor) RestoreValidatedOutput(p asset.Phase, output string) error {
+	if c.ValidateOutput == nil {
+		return fmt.Errorf("phase %s: output validator is unavailable", p.Name)
+	}
+	if err := c.ValidateOutput(p.Name, output); err != nil {
+		return fmt.Errorf("phase %s: restored output contract: %w", p.Name, err)
+	}
+	c.observe(p.Name, output, 0)
+	return nil
+}
+
 // commandContext returns a context derived from parent, governing one command run,
 // plus its cancel. With a positive Timeout it carries a deadline derived from parent;
 // with the zero default it is merely cancelable (no deadline) to preserve the original
