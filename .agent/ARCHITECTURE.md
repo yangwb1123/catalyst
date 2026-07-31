@@ -27,7 +27,7 @@ ROLLBACK  (独立按需,不接主链)
   Release-Engineer      → Rollback Plan + Runbook + Checklist + Validation
   External CI/Operator  → 实际应用 ──▶ ★ HUMAN APPROVAL MARKER ★
 EVOLVE
-  Scan → Gap → Roadmap → Implement → Harness → Review → Evaluate → (loop)
+  Scan(`evolve_scan_v1`) → Gap → Roadmap → Implement → Harness → Review → Evaluate → (loop)
 ```
 
 ## 中枢旋钮:mode × lifecycle
@@ -36,6 +36,18 @@ EVOLVE
 - lifecycle: idea → mvp → growth → production
 - explorer→engineering = 一次「创业→企业」状态迁移:自动收紧 harness + 派生补测试/CI/监控任务。
 - 持久 `lifecycle→production` 只能经 `forge migrate --to-lifecycle production --apply`；Explorer 在同一可恢复事务中触发上述 mode 迁移，run/evolve 临时 flags 永不写盘。terminal receipt 是执行前双检的治理 floor。
+
+### Evolve 内容契约
+shipped Evolve workflow 的首 phase 以 `scan_contract: evolve_scan_v1` 冻结有效
+`EvolveDepth`：opportunistic 仅允许直接证据支持的明显机会，standard 不声称全覆盖，
+thorough 必须逐一覆盖 code/dependencies/security/performance/architecture drift/test coverage
+且从每个 finding 派生 candidate task，advisory 明示限制且不授予实现权限。最终非空行必须是
+`EVOLVE_SCAN_V1: {compact JSON}`；证据只能指向当前仓库内已有、非 symlink、≤1 MiB 的
+UTF-8 regular file 和有效行号。完整 canonical report（≤64 KiB）不经摘要截断地 feed forward。
+checkpoint v3 同时持久化 phase cursor、scan report、整数微美元预算/花费、Agent-call 与
+loop-back 计数；串行 resume 重验后恢复 report 且不重放已完成 scan，native parallel
+只在 iteration boundary checkpoint，中断 iteration 可以整体重放。结构、coverage 声明和
+locator 可机器复验，但不把 Agent 的“clear”判断或机会价值冒充事实认证。
 
 ## 载重墙(对原始构想的修正)
 "站在所有 CLI 之上" ⇒ 只能强制最弱宿主允许的东西。因此:

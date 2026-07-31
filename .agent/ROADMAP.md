@@ -18,6 +18,7 @@
 - [x] **Dogfood:首个真实应用 `examples/url-shortener` 经完整 pipeline(architect→3 implementer→fresh reviewer→fix)端到端建成并保持套件全绿,被 `forge accept` 实际 gate**;reviewer 揪出"app 未被 accept 覆盖"治理洞并已补。**Build→Review→Accept 脊柱在真实产品上验证成立。**
 - [x] 真·无人值守闭环驱动 → 闭环引擎已建(`forge-core` `forge evolve`:phases→gate→converge→loop,带 max-iter/no-progress tripwire)**且真·活体 agent 端到端已接通坐实**(Sprint 24-26:真 `--agent-cmd=claude` 多-agent 跑到 converge MET、增量+版本级,八个真跑 gap 全修,见 CURRENT_SPRINT + docs/ignition.md)
 - [x] **Strict Build QA handshake(ADR 0014)**:`verdict_contract: qa_v1` 不可被 mode 跳过，强制在所有 mode 实跑独立 `test` gate 并回到更早、可写、不可跳过的 `implementer`，只接受精确最终非空行 `QA_VERDICT: ACCEPTED|REJECTED`;缺失/畸形、无法回流及 loop budget 耗尽均失败关闭，普通 Reviewer/Evolve/Release 契约不变
+- [x] **Evidence-backed Evolve scan contract(ADR 0020)**:首 phase 显式声明 `scan_contract: evolve_scan_v1`，把有效 mode×lifecycle depth 冻结进提示、裁决与完整 canonical feed-forward；六维扫描只接受真实仓内 UTF-8 regular-file 证据，thorough 强制全维且 finding 自动派生 candidate task。checkpoint v3 以整数微美元、Agent-call 与 loop-back 资源信封持久恢复；串行已完成 scan 不重放，parallel 只诚实承诺 iteration-boundary 恢复，旧 workflow 保持兼容
 
 ## v2 — 全局化 + 学习闭环 (forge-core 已落地,持续推进)
 **forge-core 已存在、已构建、全绿**:纯 Go 标准库、**零外部依赖**(`go.mod` 无 `require`)。CLI 已覆盖 `run/evolve/init/trace/approve/reject/preflight/doctor/gate/check/accept` 等；`forge run --chain` 持久化跨阶段状态并执行 Discover→Design→Review→Build→Deploy→Evolve，`forge evolve` 按真实 stop signal 收敛。产物 JSONL v1 记录 run/workflow/phase/agent/model/hash，planner/审批/拒绝/CTO halt 均有机器契约；Rust/Java adapter 与 init/upgrade copy-anywhere 已接入验收。
