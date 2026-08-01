@@ -1,6 +1,15 @@
-use std::{fs, path::Path};
+use std::{
+    fs,
+    io::Read,
+    path::{Path, PathBuf},
+    time::SystemTime,
+};
 
 use super::{HubStoreError, unavailable};
+
+const SQLITE_HEADER_BYTES: usize = 20;
+const SQLITE_HEADER_MAGIC: &[u8; 16] = b"SQLite format 3\0";
+const SQLITE_WAL_FORMAT: u8 = 2;
 
 pub(super) fn prepare(path: &Path) -> Result<(), HubStoreError> {
     let parent = path.parent().ok_or_else(|| HubStoreError::Unavailable {
@@ -13,6 +22,215 @@ pub(super) fn prepare(path: &Path) -> Result<(), HubStoreError> {
 pub(super) fn restrict(path: &Path) -> Result<(), HubStoreError> {
     restrict_file_permissions(path)?;
     restrict_auxiliary_permissions(path)
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct ExistingDatabaseIdentity {
+    canonical_path: PathBuf,
+    length: u64,
+    modified: SystemTime,
+    #[cfg(unix)]
+    device: u64,
+    #[cfg(unix)]
+    inode: u64,
+}
+
+impl ExistingDatabaseIdentity {
+    pub(super) fn canonical_path(&self) -> &Path {
+        &self.canonical_path
+    }
+}
+
+pub(super) fn inspect_existing_read_only(
+    path: &Path,
+) -> Result<ExistingDatabaseIdentity, HubStoreError> {
+    verify_existing_private_parent(path)?;
+    let metadata = checked_database_metadata(path)?;
+    verify_private_file_permissions(path, &metadata)?;
+    reject_auxiliary_files(path)?;
+    validate_persistent_wal_header(path)?;
+    let canonical_path = fs::canonicalize(path).map_err(unavailable)?;
+    let current = checked_database_metadata(&canonical_path)?;
+    if !same_database_file(&metadata, &current) {
+        return Err(HubStoreError::Unavailable {
+            message: format!(
+                "Hub database changed while its read-only identity was checked: {}",
+                path.display()
+            ),
+        });
+    }
+    reject_auxiliary_files(&canonical_path)?;
+    validate_persistent_wal_header(&canonical_path)?;
+    identity(canonical_path, &current)
+}
+
+fn verify_existing_private_parent(path: &Path) -> Result<(), HubStoreError> {
+    let parent = path.parent().ok_or_else(|| HubStoreError::Unavailable {
+        message: "Hub database path has no parent directory".into(),
+    })?;
+    let metadata = checked_directory_metadata(parent)?;
+    if private_directory(&metadata) {
+        Ok(())
+    } else {
+        Err(HubStoreError::Unavailable {
+            message: format!(
+                "existing Hub state directory is accessible by group or others; run chmod 700 {}",
+                parent.display()
+            ),
+        })
+    }
+}
+
+fn checked_database_metadata(path: &Path) -> Result<fs::Metadata, HubStoreError> {
+    let metadata = fs::symlink_metadata(path).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::NotFound {
+            HubStoreError::Unavailable {
+                message: format!(
+                    "effect-free Hub reads require an existing database: {}",
+                    path.display()
+                ),
+            }
+        } else {
+            unavailable(error)
+        }
+    })?;
+    if metadata.file_type().is_symlink() {
+        return Err(HubStoreError::Unavailable {
+            message: format!("Hub database cannot be a symbolic link: {}", path.display()),
+        });
+    }
+    if !metadata.is_file() {
+        return Err(HubStoreError::Unavailable {
+            message: format!("Hub database path is not a file: {}", path.display()),
+        });
+    }
+    Ok(metadata)
+}
+
+fn reject_auxiliary_files(path: &Path) -> Result<(), HubStoreError> {
+    for suffix in ["-wal", "-shm", "-journal"] {
+        let auxiliary = auxiliary_path(path, suffix);
+        match fs::symlink_metadata(&auxiliary) {
+            Ok(_) => {
+                return Err(HubStoreError::Unavailable {
+                    message: format!(
+                        "effect-free Hub reads reject SQLite sidecar files: {}",
+                        auxiliary.display()
+                    ),
+                });
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(unavailable(error)),
+        }
+    }
+    Ok(())
+}
+
+fn validate_persistent_wal_header(path: &Path) -> Result<(), HubStoreError> {
+    let mut header = [0_u8; SQLITE_HEADER_BYTES];
+    fs::File::open(path)
+        .map_err(unavailable)?
+        .read_exact(&mut header)
+        .map_err(|error| {
+            if error.kind() == std::io::ErrorKind::UnexpectedEof {
+                invalid_database_header("header is truncated")
+            } else {
+                unavailable(error)
+            }
+        })?;
+    if &header[..SQLITE_HEADER_MAGIC.len()] != SQLITE_HEADER_MAGIC {
+        return Err(invalid_database_header("magic is invalid"));
+    }
+    let write_format = header[18];
+    let read_format = header[19];
+    if write_format != SQLITE_WAL_FORMAT || read_format != SQLITE_WAL_FORMAT {
+        return Err(invalid_database_header(&format!(
+            "persistent journal format is {write_format}/{read_format}; expected WAL 2/2"
+        )));
+    }
+    Ok(())
+}
+
+fn invalid_database_header(detail: &str) -> HubStoreError {
+    HubStoreError::Corrupt {
+        message: format!("effect-free Hub read rejected SQLite database header: {detail}"),
+    }
+}
+
+fn auxiliary_path(path: &Path, suffix: &str) -> PathBuf {
+    let mut value = path.as_os_str().to_os_string();
+    value.push(suffix);
+    PathBuf::from(value)
+}
+
+fn identity(
+    canonical_path: PathBuf,
+    metadata: &fs::Metadata,
+) -> Result<ExistingDatabaseIdentity, HubStoreError> {
+    Ok(ExistingDatabaseIdentity {
+        canonical_path,
+        length: metadata.len(),
+        modified: metadata.modified().map_err(unavailable)?,
+        #[cfg(unix)]
+        device: database_device(metadata),
+        #[cfg(unix)]
+        inode: database_inode(metadata),
+    })
+}
+
+#[cfg(unix)]
+fn same_database_file(left: &fs::Metadata, right: &fs::Metadata) -> bool {
+    database_device(left) == database_device(right) && database_inode(left) == database_inode(right)
+}
+
+#[cfg(not(unix))]
+fn same_database_file(left: &fs::Metadata, right: &fs::Metadata) -> bool {
+    left.len() == right.len() && left.modified().ok() == right.modified().ok()
+}
+
+#[cfg(unix)]
+fn database_device(metadata: &fs::Metadata) -> u64 {
+    use std::os::unix::fs::MetadataExt;
+
+    metadata.dev()
+}
+
+#[cfg(unix)]
+fn database_inode(metadata: &fs::Metadata) -> u64 {
+    use std::os::unix::fs::MetadataExt;
+
+    metadata.ino()
+}
+
+#[cfg(unix)]
+#[allow(
+    clippy::verbose_bit_mask,
+    reason = "the Unix group/other permission mask is clearest in octal"
+)]
+fn verify_private_file_permissions(
+    path: &Path,
+    metadata: &fs::Metadata,
+) -> Result<(), HubStoreError> {
+    use std::os::unix::fs::PermissionsExt;
+
+    if metadata.permissions().mode() & 0o077 == 0 {
+        Ok(())
+    } else {
+        Err(HubStoreError::Unavailable {
+            message: format!(
+                "existing Hub database is accessible by group or others; run chmod 600 {}",
+                path.display()
+            ),
+        })
+    }
+}
+
+#[cfg(not(unix))]
+fn verify_private_file_permissions(
+    _path: &Path,
+    _metadata: &fs::Metadata,
+) -> Result<(), HubStoreError> {
+    Ok(())
 }
 
 fn prepare_private_directory(path: &Path) -> Result<(), HubStoreError> {
@@ -129,6 +347,11 @@ fn private_directory(metadata: &fs::Metadata) -> bool {
 }
 
 #[cfg(not(unix))]
+fn private_directory(_metadata: &fs::Metadata) -> bool {
+    true
+}
+
+#[cfg(not(unix))]
 pub(super) fn verify_private_directory_permissions(
     _path: &Path,
     _metadata: &fs::Metadata,
@@ -137,6 +360,25 @@ pub(super) fn verify_private_directory_permissions(
 }
 
 #[cfg(unix)]
+fn checked_directory_metadata(path: &Path) -> Result<fs::Metadata, HubStoreError> {
+    let metadata = fs::symlink_metadata(path).map_err(unavailable)?;
+    if metadata.file_type().is_symlink() {
+        return Err(HubStoreError::Unavailable {
+            message: format!(
+                "Hub state directory cannot be a symbolic link: {}",
+                path.display()
+            ),
+        });
+    }
+    if !metadata.is_dir() {
+        return Err(HubStoreError::Unavailable {
+            message: format!("Hub state path is not a directory: {}", path.display()),
+        });
+    }
+    Ok(metadata)
+}
+
+#[cfg(not(unix))]
 fn checked_directory_metadata(path: &Path) -> Result<fs::Metadata, HubStoreError> {
     let metadata = fs::symlink_metadata(path).map_err(unavailable)?;
     if metadata.file_type().is_symlink() {

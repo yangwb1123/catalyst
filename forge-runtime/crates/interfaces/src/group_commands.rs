@@ -73,6 +73,13 @@ pub enum GroupGraphRunDispatchCommand {
         graph_run_id: Option<String>,
         limit: usize,
     },
+    ReleaseControlExport {
+        graph_run_id: String,
+    },
+    AuthorizationVerify {
+        graph_run_id: String,
+        authorization_source: String,
+    },
 }
 
 #[derive(Debug, Eq, PartialEq)]

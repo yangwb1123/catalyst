@@ -314,6 +314,7 @@ dependencies = [
  "sha2",
  "tempfile",
  "tokio",
+ "url",
  "wiremock",
 ]
 

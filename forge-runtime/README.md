@@ -257,8 +257,41 @@ while `show --include-request` explicitly reveals the exact private body.
 Preparation is not dispatch. It accepts no consent flag, reads no credential,
 constructs no provider or HTTP client, makes no network or workspace access,
 uses no tool, produces no result, and writes no Conversation/Prompt/memory.
-Dispatch authority remains false; release/claim/send/result/advance commands do
-not exist in this slice.
+Dispatch authority remains false; authority-claim/send/result/advance commands
+do not exist in this slice.
+
+The next effect-free boundary is an explicit three-command release handshake:
+
+```text
+forge-runtime group graph run dispatch release-control export GRAPH_RUN_ID
+forge graph-node-dispatch-authorize --control FILE|-
+forge-runtime group graph run dispatch authorization verify GRAPH_RUN_ID \
+  --authorization FILE|-
+```
+
+Rust export fully reloads the v3 source, plan, manifest, three-event journal,
+contract, exact prepared request and production codec bytes, then emits one
+private canonical snapshot with no trailing LF. The snapshot contains Prompt,
+task, project, endpoint, model, pricing and exact body plaintext; the explicit
+export command is the disclosure boundary and `--json` deliberately does not
+wrap its bytes. Go independently reconstructs the original v1 control and all
+scheduler/request bindings before emitting a domain-separated,
+content-addressed authorization. Rust verify rebuilds the release control from
+current durable state and accepts only the one exact canonical authorization.
+Both Rust commands require an existing private v11 Hub. Their dedicated
+read-only open does not create or migrate state, change permissions, configure
+WAL, or start a write transaction. It requires a persistent WAL `2/2` database
+header; missing/legacy/corrupt state and any present SQLite WAL, SHM, or
+rollback-journal sidecar fail closed.
+
+Authorization is still not dispatch. It is not persisted, schema stays v11,
+the Run stays v3 `awaiting_dispatch_authorization`, and authority remains
+false. Export/authorize/verify obtain no consent, read no credential, construct
+no provider, claim no Project lane, access no network/workspace/tool, produce
+no result, write nothing back, and do not advance the graph. A future
+effectful slice must pair the global lane/seq-3 claim with a bounded terminal
+result artifact and lane/graph lifecycle; a claim-only or send-without-result
+surface is intentionally absent.
 
 `group analysis prepare` is the next independent boundary. It fully validates
 one frozen Group Run, pins the versioned analysis Prompt, destination, model,
@@ -504,5 +537,6 @@ Architecture:
 - [Core-owned Group Agent Graph Run plan ADR](../docs/adr/0018-core-owned-group-agent-graph-run-plan.md)
 - [Core-owned first-node execution contract ADR](../docs/adr/0019-core-owned-first-node-execution-contract.md)
 - [Core-owned Node Dispatch Request preparation ADR](../docs/adr/0021-core-owned-node-dispatch-request-preparation.md)
+- [Effect-free Node Dispatch release authorization ADR](../docs/adr/0022-effect-free-node-dispatch-release-authorization.md)
 - [Hub local-foundation design](../docs/design/conversation-hub-phase1.md)
 - [Durable Run journal design](../docs/design/run-journal-phase1.md)

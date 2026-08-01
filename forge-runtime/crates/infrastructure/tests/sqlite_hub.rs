@@ -1,4 +1,4 @@
-use std::fs;
+use std::{collections::BTreeMap, fs, path::Path};
 
 use forge_runtime_domain::{ConversationScope, HubEntity, HubSnapshot, HubStore, HubStoreError};
 use forge_runtime_infrastructure::SqliteHubStore;
@@ -317,3 +317,166 @@ fn existing_shared_state_directory_is_rejected_without_chmod() {
         0o755
     );
 }
+
+#[test]
+fn effect_free_open_requires_an_existing_database_without_creating_state() {
+    let root = TempDir::new().expect("temporary root");
+    let state = root.path().join("private-state");
+    fs::create_dir(&state).expect("private state directory");
+    make_private_directory(&state);
+    let database = state.join("hub.sqlite3");
+    let before = state_files(&state);
+
+    let error = SqliteHubStore::open_existing_current_read_only(&database)
+        .expect_err("missing Hub is rejected");
+
+    assert!(matches!(error, HubStoreError::Unavailable { .. }));
+    assert_eq!(state_files(&state), before);
+    for name in [
+        "hub.sqlite3",
+        "hub.sqlite3-wal",
+        "hub.sqlite3-shm",
+        "hub.sqlite3-journal",
+    ] {
+        assert!(!state.join(name).exists(), "created {name}");
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn effect_free_open_does_not_chmod_an_empty_shared_state_directory() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let root = TempDir::new().expect("temporary root");
+    let state = root.path().join("shared-state");
+    fs::create_dir(&state).expect("shared state directory");
+    fs::set_permissions(&state, fs::Permissions::from_mode(0o755)).expect("shared mode");
+
+    let error = SqliteHubStore::open_existing_current_read_only(state.join("hub.sqlite3"))
+        .expect_err("shared state is rejected without chmod");
+
+    assert!(matches!(error, HubStoreError::Unavailable { .. }));
+    assert_eq!(
+        fs::metadata(&state).expect("metadata").permissions().mode() & 0o777,
+        0o755
+    );
+    assert!(state_files(&state).is_empty());
+}
+
+#[test]
+fn effect_free_open_reads_current_state_and_cannot_write_or_create_sidecars() {
+    let (root, store) = fixture();
+    store
+        .create_group("read-only fixture", "read-only-group")
+        .expect("create group");
+    drop(store);
+    let database = root.path().join("hub.sqlite3");
+    let before = state_files(root.path());
+
+    let read_only = SqliteHubStore::open_existing_current_read_only(&database)
+        .expect("open current Hub without effects");
+    assert_eq!(
+        read_only.list_groups().expect("read groups")[0].name,
+        "read-only fixture"
+    );
+    let error = read_only
+        .create_group("forbidden", "forbidden-write")
+        .expect_err("read-only store rejects writes");
+    assert!(matches!(error, HubStoreError::Unavailable { .. }));
+    drop(read_only);
+
+    assert_eq!(state_files(root.path()), before);
+    assert!(!root.path().join("hub.sqlite3-wal").exists());
+    assert!(!root.path().join("hub.sqlite3-shm").exists());
+    assert!(!root.path().join("hub.sqlite3-journal").exists());
+}
+
+#[test]
+fn effect_free_open_rejects_non_current_and_corrupt_databases_without_changes() {
+    let (root, store) = fixture();
+    drop(store);
+    let database = root.path().join("hub.sqlite3");
+    let connection = rusqlite::Connection::open(&database).expect("open raw Hub");
+    connection
+        .pragma_update(None, "user_version", 10)
+        .expect("make schema non-current");
+    drop(connection);
+    let before = state_files(root.path());
+
+    let error = SqliteHubStore::open_existing_current_read_only(&database)
+        .expect_err("non-current Hub is rejected");
+    assert!(matches!(error, HubStoreError::Corrupt { .. }));
+    assert!(
+        error
+            .to_string()
+            .contains("current schema version 11; found 10")
+    );
+    assert_eq!(state_files(root.path()), before);
+
+    let corrupt_root = TempDir::new().expect("corrupt root");
+    let corrupt = corrupt_root.path().join("hub.sqlite3");
+    drop(SqliteHubStore::open(&corrupt).expect("initialize private corrupt fixture"));
+    fs::write(&corrupt, b"not a SQLite database").expect("corrupt database fixture");
+    let before = state_files(corrupt_root.path());
+    let error = SqliteHubStore::open_existing_current_read_only(&corrupt)
+        .expect_err("corrupt Hub is rejected");
+    assert!(
+        matches!(error, HubStoreError::Corrupt { .. }),
+        "unexpected error: {error:?}"
+    );
+    assert_eq!(state_files(corrupt_root.path()), before);
+}
+
+#[test]
+fn effect_free_open_rejects_live_uncheckpointed_wal_without_reading_stale_main() {
+    let (root, store) = fixture();
+    drop(store);
+    let database = root.path().join("hub.sqlite3");
+    let writer = rusqlite::Connection::open(&database).expect("open WAL writer");
+    writer
+        .pragma_update(None, "wal_autocheckpoint", 0)
+        .expect("disable automatic checkpoint");
+    writer
+        .execute_batch(
+            "BEGIN IMMEDIATE;
+             CREATE TABLE uncheckpointed_security_state(value TEXT NOT NULL);
+             INSERT INTO uncheckpointed_security_state(value) VALUES ('must-not-be-ignored');
+             COMMIT;",
+        )
+        .expect("commit only to live WAL");
+    assert!(root.path().join("hub.sqlite3-wal").exists());
+    assert!(root.path().join("hub.sqlite3-shm").exists());
+    let before = state_files(root.path());
+
+    let error = SqliteHubStore::open_existing_current_read_only(&database)
+        .expect_err("live WAL is rejected before immutable read");
+
+    assert!(matches!(error, HubStoreError::Unavailable { .. }));
+    assert_eq!(state_files(root.path()), before);
+    drop(writer);
+}
+
+fn state_files(directory: &Path) -> BTreeMap<String, Vec<u8>> {
+    fs::read_dir(directory)
+        .expect("read state directory")
+        .map(|entry| {
+            let entry = entry.expect("state entry");
+            let name = entry
+                .file_name()
+                .into_string()
+                .expect("UTF-8 state filename");
+            let bytes = fs::read(entry.path()).expect("read state file");
+            (name, bytes)
+        })
+        .collect()
+}
+
+#[cfg(unix)]
+fn make_private_directory(path: &Path) {
+    use std::os::unix::fs::PermissionsExt;
+
+    fs::set_permissions(path, fs::Permissions::from_mode(0o700)).expect("private fixture");
+}
+
+#[cfg(not(unix))]
+fn make_private_directory(_path: &Path) {}

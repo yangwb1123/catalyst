@@ -11,10 +11,13 @@ mod admission_validation;
 mod codec;
 #[path = "group_agent_node_execution/dispatch.rs"]
 mod dispatch;
+#[path = "group_agent_node_execution/dispatch_release.rs"]
+mod dispatch_release;
 #[path = "group_agent_node_execution_validation.rs"]
 mod validation;
 
 pub use dispatch::*;
+pub use dispatch_release::*;
 
 pub const GROUP_AGENT_GRAPH_CONTROL_SNAPSHOT_VERSION: u16 = 1;
 pub const GROUP_AGENT_NODE_EXECUTION_CONTRACT_VERSION: u16 = 1;

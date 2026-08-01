@@ -4,7 +4,8 @@ use std::{
     time::{Duration, Instant},
 };
 
-use rusqlite::{Connection, Error as SqliteError, ErrorCode};
+use rusqlite::{Connection, Error as SqliteError, ErrorCode, OpenFlags};
+use url::Url;
 
 #[path = "schema_contract.rs"]
 mod contract;
@@ -49,6 +50,57 @@ pub(super) fn open_database(path: &Path) -> Result<Connection, HubStoreError> {
             Err(OpenAttemptError::Sqlite(error)) => return Err(contract::sqlite_error(error)),
             Err(OpenAttemptError::Store(error)) => return Err(error),
         }
+    }
+}
+
+pub(super) fn open_existing_current_read_only_database(
+    path: &Path,
+) -> Result<Connection, HubStoreError> {
+    let before = location::inspect_existing_read_only(path)?;
+    let uri = immutable_file_uri(before.canonical_path())?;
+    let flags = OpenFlags::SQLITE_OPEN_READ_ONLY
+        | OpenFlags::SQLITE_OPEN_URI
+        | OpenFlags::SQLITE_OPEN_NO_MUTEX;
+    let connection =
+        Connection::open_with_flags(uri.as_str(), flags).map_err(contract::sqlite_error)?;
+    connection
+        .busy_timeout(CONNECTION_BUSY_TIMEOUT)
+        .map_err(contract::sqlite_error)?;
+    connection
+        .pragma_update(None, "query_only", true)
+        .map_err(contract::sqlite_error)?;
+    let version = schema_version(&connection).map_err(contract::sqlite_error)?;
+    if version != SCHEMA_VERSION {
+        return Err(current_schema_required(version));
+    }
+    contract::validate_version(&connection, version)?;
+    let after = location::inspect_existing_read_only(path)?;
+    if before != after {
+        return Err(HubStoreError::Unavailable {
+            message: "Hub database changed during effect-free read-only open".into(),
+        });
+    }
+    Ok(connection)
+}
+
+fn immutable_file_uri(path: &Path) -> Result<Url, HubStoreError> {
+    let mut uri = Url::from_file_path(path).map_err(|()| HubStoreError::Unavailable {
+        message: format!(
+            "Hub database path cannot be represented as a file URI: {}",
+            path.display()
+        ),
+    })?;
+    uri.query_pairs_mut()
+        .append_pair("mode", "ro")
+        .append_pair("immutable", "1");
+    Ok(uri)
+}
+
+fn current_schema_required(version: i64) -> HubStoreError {
+    HubStoreError::Corrupt {
+        message: format!(
+            "effect-free Hub reads require current schema version {SCHEMA_VERSION}; found {version}"
+        ),
     }
 }
 

@@ -2,6 +2,8 @@ mod dispatch_error;
 mod dispatch_service;
 mod dispatch_validation;
 mod error;
+mod release_error;
+mod release_service;
 mod service;
 mod snapshot;
 mod validation;
@@ -15,8 +17,17 @@ pub use crate::runtime_domain::{
     MAX_GROUP_AGENT_NODE_EXECUTION_CONTRACT_LIST_LIMIT,
 };
 pub use crate::runtime_domain::{
-    GROUP_AGENT_NODE_DISPATCH_CODEC_VERSION, GROUP_AGENT_NODE_DISPATCH_REQUEST_VERSION,
-    GroupAgentNodeDispatchRequestInspection, GroupAgentNodeDispatchRequestRecord,
+    GROUP_AGENT_NODE_DISPATCH_AUTHORIZATION_PROTOCOL_VERSION,
+    GROUP_AGENT_NODE_DISPATCH_AUTHORIZATION_VERSION, GROUP_AGENT_NODE_DISPATCH_CODEC_VERSION,
+    GROUP_AGENT_NODE_DISPATCH_RELEASE_CONTROL_PROTOCOL_VERSION,
+    GROUP_AGENT_NODE_DISPATCH_RELEASE_CONTROL_VERSION, GROUP_AGENT_NODE_DISPATCH_REQUEST_VERSION,
+    GroupAgentNodeDispatchAuthorization, GroupAgentNodeDispatchConsentRequirement,
+    GroupAgentNodeDispatchCredentialPreflight, GroupAgentNodeDispatchDestinationPreflight,
+    GroupAgentNodeDispatchPricingPreflight, GroupAgentNodeDispatchProjectLaneClaim,
+    GroupAgentNodeDispatchProviderHealthCheck, GroupAgentNodeDispatchReleaseControl,
+    GroupAgentNodeDispatchReleaseRequirements, GroupAgentNodeDispatchRequestInspection,
+    GroupAgentNodeDispatchRequestRecord, MAX_GROUP_AGENT_NODE_DISPATCH_AUTHORIZATION_BYTES,
+    MAX_GROUP_AGENT_NODE_DISPATCH_RELEASE_CONTROL_BYTES,
     MAX_GROUP_AGENT_NODE_DISPATCH_REQUEST_LIST_LIMIT,
     PrepareGroupAgentNodeDispatchRequestDisposition, PrepareGroupAgentNodeDispatchRequestResult,
 };
@@ -26,6 +37,11 @@ pub use dispatch_service::{
     PrepareGroupAgentNodeDispatchRequestInput,
 };
 pub use error::GroupAgentNodeExecutionContractServiceError;
+pub use release_error::GroupAgentNodeDispatchReleaseControlServiceError;
+pub use release_service::{
+    ExportGroupAgentNodeDispatchReleaseControl, GroupAgentNodeDispatchReleaseControlService,
+    VerifiedGroupAgentNodeDispatchAuthorization,
+};
 pub use service::{
     AdmitGroupAgentNodeExecutionContractInput, ExportGroupAgentGraphControl,
     GroupAgentNodeExecutionContractService,

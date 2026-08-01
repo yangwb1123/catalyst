@@ -47,6 +47,7 @@ in infrastructure. The CLI composes the concrete store and service.
 | Group Agent Graph | Immutable manager/task/dependency definition over one prepared Group Run |
 | Group Agent Graph Run | Passive state admitting an exact Core Plan, one first-node contract, and optionally its exact provider request bytes |
 | Node Execution Contract | Exact, budgeted first-node input awaiting a separate dispatch authority |
+| Node Dispatch Authorization | Effect-free Go decision bound to one exact current v3 release-control snapshot; not consent, a claim, or released authority |
 | Group analysis | Consent-gated single-model result over one frozen Group Run |
 | Group analysis panel | Ordered local assembly of completed analyses from one frozen Group Run |
 | Group panel synthesis | Separately consented single-model comparison over one immutable panel |
@@ -394,6 +395,29 @@ time. Two explicit indexes support lane/source validation and bounded recency
 inventory; neither one claims a project lane. Existing v10 rows remain v1 or
 v2. See ADR 0021.
 
+### Effect-free release protocol over schema version 11 (delivered)
+
+ADR 0022 deliberately adds no table, event, projection, or Run version. Rust
+can export one private canonical release-control snapshot containing the exact
+v3 source, Core Plan, manifest, three-event journal, contract, dispatch request
+and provider body. Go independently rebuilds the original base control and
+validates every source/request/lane/budget/failure binding before emitting a
+domain-separated content-addressed authorization. Rust verify freshly reloads
+the same durable aggregate and accepts only the exact current authorization.
+The two Rust reads use an existing-current-schema-only connection: they never
+create/migrate/chmod Hub state, require persistent WAL header formats `2/2`,
+and reject WAL/SHM/rollback-journal sidecars rather than reading an immutable
+but potentially stale or rollback-dependent main database.
+
+Authorization is not admitted into SQLite: the Run remains v3
+`awaiting_dispatch_authorization`, seq 3 remains the journal head, and dispatch
+authority remains false. Export/authorize/verify do not obtain off-machine
+consent, read a credential, construct a provider, claim a Project lane, access
+network/workspace/tools, produce a result, perform writeback, or advance a
+node/wave. The first effectful follow-on must pair claim/send with a bounded
+terminal result and lane/graph lifecycle instead of introducing a claim-only
+dead end.
+
 The generated full-catalog contract now covers immutable v1–v11 DDL and the
 exact v11 inventory of 24 tables, 20 named explicit indexes, and 45 implicit
 indexes. The v1–v11 length-framed DDL SHA-256 is
@@ -651,6 +675,16 @@ metadata; only `dispatch show --include-request` reveals the exact body, which
 may contain every frozen Prompt. Request and destination hashes remain
 correlatable unkeyed identities, not provider attestations or authorization.
 
+Node Dispatch release-control export is an additional explicit private
+disclosure. Its canonical plaintext includes the complete manifest, Prompts,
+Project bindings, endpoint/model/pricing, journal, contract, and exact provider
+body. The Go authorization repeats selected private destination and Project
+bindings and must be handled as a private artifact even though default Rust
+verify output exposes only redacted identities and honesty flags. Both artifact
+hashes are unkeyed content identities—not user signatures, Go authorship,
+consent receipts, current-pricing evidence, or proof that authority was
+released.
+
 Group analysis stores frozen context, exact request and terminal result in
 plaintext. Default views omit request/config/event/result bodies;
 `--include-result` reveals only the validated terminal projection. Its hashes
@@ -743,6 +777,11 @@ does not classify as corruption.
 - dispatch preparation deterministically freezes the exact Responses bytes,
   performs seq-2/head CAS, preserves one v3 receipt under replay/concurrency,
   defaults to redacted output, and releases no consent or dispatch authority;
+- release-control export, Go authorization, and Rust verification agree on
+  exact canonical bytes and domain-separated identities, reject independently
+  re-signed binding drift, leave SQLite byte-for-byte unchanged, and report
+  every absent consent/credential/provider/network/lane/result/writeback/
+  advance effect honestly;
 - Group analysis prepare stays local; concurrent confirmed send releases one
   dispatch, never retries uncertainty, and accepts only valid terminal results;
 - Group panel prepare preserves two-through-eight input order, replays one
@@ -785,8 +824,9 @@ does not classify as corruption.
 - OIDC login, account binding, OS keyring, explicit local-data claim;
 - remote directory, replicas, cursors, conflict merge, deletion propagation;
 - tenants, invitations, history visibility, ACL-backed shared Groups;
-- effectful manager/node Graph dispatch/execution, successor selection, or
-  cross-project tool/workspace capabilities; first-node contract admission is delivered;
+- effectful manager/node Graph authority claim/dispatch/execution, terminal
+  result/lane release, successor selection, or cross-project tool/workspace
+  capabilities; passive contract/request/release authorization is delivered;
 - Group multi-Agent discussion, delegation, writeback, and derived memory;
 - providers beyond the delivered opt-in OpenAI Responses adapter,
   write/process/network tools, and process sandbox.

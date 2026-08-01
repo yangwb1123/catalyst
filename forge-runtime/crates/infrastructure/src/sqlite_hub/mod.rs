@@ -53,6 +53,13 @@ use rusqlite::{Connection, Error as SqliteError, ErrorCode};
 #[derive(Clone, Debug)]
 pub struct SqliteHubStore {
     database_path: PathBuf,
+    open_mode: SqliteHubStoreOpenMode,
+}
+
+#[derive(Clone, Copy, Debug)]
+enum SqliteHubStoreOpenMode {
+    ReadWrite,
+    ExistingCurrentReadOnly,
 }
 
 impl SqliteHubStore {
@@ -65,11 +72,39 @@ impl SqliteHubStore {
     pub fn open(database_path: impl AsRef<Path>) -> Result<Self, HubStoreError> {
         let database_path = database_path.as_ref().to_path_buf();
         schema::open_database(&database_path)?;
-        Ok(Self { database_path })
+        Ok(Self {
+            database_path,
+            open_mode: SqliteHubStoreOpenMode::ReadWrite,
+        })
+    }
+
+    /// Opens an existing current-schema Hub database without changing any state files.
+    ///
+    /// This mode never creates a database, migrates a schema, changes file permissions,
+    /// or opens a database with live `SQLite` WAL/SHM/rollback-journal sidecars.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the database is missing, unsafe, non-current, corrupt,
+    /// concurrently changing, lacks a persistent WAL header, or has `SQLite` sidecars.
+    pub fn open_existing_current_read_only(
+        database_path: impl AsRef<Path>,
+    ) -> Result<Self, HubStoreError> {
+        let database_path = database_path.as_ref().to_path_buf();
+        schema::open_existing_current_read_only_database(&database_path)?;
+        Ok(Self {
+            database_path,
+            open_mode: SqliteHubStoreOpenMode::ExistingCurrentReadOnly,
+        })
     }
 
     fn connect(&self) -> Result<Connection, HubStoreError> {
-        schema::open_database(&self.database_path)
+        match self.open_mode {
+            SqliteHubStoreOpenMode::ReadWrite => schema::open_database(&self.database_path),
+            SqliteHubStoreOpenMode::ExistingCurrentReadOnly => {
+                schema::open_existing_current_read_only_database(&self.database_path)
+            }
+        }
     }
 }
 

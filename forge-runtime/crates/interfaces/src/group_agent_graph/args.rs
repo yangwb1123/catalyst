@@ -58,9 +58,72 @@ fn parse_run_dispatch(
         Some("prepare") => parse_dispatch_prepare(tokens, idempotency_key),
         Some("show") => parse_dispatch_show(tokens),
         Some("list") => parse_dispatch_list(tokens),
+        Some("release-control") => parse_dispatch_release_control(tokens),
+        Some("authorization") => parse_dispatch_authorization(tokens),
         Some(_) => Err(unknown_dispatch("group graph run dispatch")),
         None => Err(with_usage("group graph run dispatch command is required")),
     }
+}
+
+fn parse_dispatch_release_control(tokens: &mut VecDeque<String>) -> Result<Command, String> {
+    match tokens.pop_front().as_deref() {
+        Some("export") => {
+            let graph_run_id = required_id(
+                tokens,
+                "group graph run dispatch release-control export",
+                "GRAPH_RUN_ID",
+            )?;
+            require_empty(tokens)?;
+            Ok(run_command(GroupGraphRunCommand::Dispatch(
+                GroupGraphRunDispatchCommand::ReleaseControlExport { graph_run_id },
+            )))
+        }
+        Some(_) => Err(unknown_dispatch("group graph run dispatch release-control")),
+        None => Err(with_usage(
+            "group graph run dispatch release-control command is required",
+        )),
+    }
+}
+
+fn parse_dispatch_authorization(tokens: &mut VecDeque<String>) -> Result<Command, String> {
+    match tokens.pop_front().as_deref() {
+        Some("verify") => parse_dispatch_authorization_verify(tokens),
+        Some(_) => Err(unknown_dispatch("group graph run dispatch authorization")),
+        None => Err(with_usage(
+            "group graph run dispatch authorization command is required",
+        )),
+    }
+}
+
+fn parse_dispatch_authorization_verify(tokens: &mut VecDeque<String>) -> Result<Command, String> {
+    let graph_run_id = required_id(
+        tokens,
+        "group graph run dispatch authorization verify",
+        "GRAPH_RUN_ID",
+    )?;
+    let mut authorization_source = None;
+    while let Some(option) = tokens.pop_front() {
+        match option.as_str() {
+            "--authorization" if authorization_source.is_none() => {
+                authorization_source = Some(next_value(tokens, "--authorization")?);
+            }
+            "--authorization" => return Err(duplicate("--authorization")),
+            _ => {
+                return Err(unknown_dispatch(
+                    "group graph run dispatch authorization verify",
+                ));
+            }
+        }
+    }
+    let authorization_source = authorization_source.ok_or_else(|| {
+        with_usage("group graph run dispatch authorization verify requires --authorization FILE|-")
+    })?;
+    Ok(run_command(GroupGraphRunCommand::Dispatch(
+        GroupGraphRunDispatchCommand::AuthorizationVerify {
+            graph_run_id,
+            authorization_source,
+        },
+    )))
 }
 
 fn parse_dispatch_prepare(

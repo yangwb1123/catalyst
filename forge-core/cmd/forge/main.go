@@ -17,6 +17,7 @@ import (
 	"forgeos/forge-core/internal/gate"
 	"forgeos/forge-core/internal/graphdispatch"
 	"forgeos/forge-core/internal/graphplan"
+	"forgeos/forge-core/internal/graphrelease"
 	"forgeos/forge-core/internal/orchestrator"
 )
 
@@ -63,24 +64,27 @@ func main() {
 // body stays a short lookup, keeping run under the per-function line budget.
 // gate/check/accept close over delegate + the harness gate.* function they wrap.
 var subcommands = map[string]func([]string) int{
-	"run":                    cmdRun,
-	"gate":                   func(rest []string) int { return delegate(gate.Gate, rest) },
-	"check":                  func(rest []string) int { return delegate(gate.Check, rest) },
-	"accept":                 func(rest []string) int { return delegate(gate.Accept, rest) },
-	"evolve":                 cmdEvolve,
-	"route":                  cmdRoute,
-	"migrate":                cmdMigrate,
-	"detect":                 cmdDetect,
-	"validate":               cmdValidate,
-	"memory-prune":           cmdMemoryPrune,
-	"init":                   cmdInit,
-	"status":                 cmdStatus,
-	"scorecard":              cmdScorecard,
-	"doctor":                 cmdDoctor,
-	"trace":                  cmdTrace,
-	"preflight":              cmdPreflight,
-	"graph-plan":             func(rest []string) int { return graphplan.Command(rest, os.Stdin, os.Stdout, os.Stderr) },
-	"graph-node-contract":    func(rest []string) int { return graphdispatch.Command(rest, os.Stdin, os.Stdout, os.Stderr) },
+	"run":                 cmdRun,
+	"gate":                func(rest []string) int { return delegate(gate.Gate, rest) },
+	"check":               func(rest []string) int { return delegate(gate.Check, rest) },
+	"accept":              func(rest []string) int { return delegate(gate.Accept, rest) },
+	"evolve":              cmdEvolve,
+	"route":               cmdRoute,
+	"migrate":             cmdMigrate,
+	"detect":              cmdDetect,
+	"validate":            cmdValidate,
+	"memory-prune":        cmdMemoryPrune,
+	"init":                cmdInit,
+	"status":              cmdStatus,
+	"scorecard":           cmdScorecard,
+	"doctor":              cmdDoctor,
+	"trace":               cmdTrace,
+	"preflight":           cmdPreflight,
+	"graph-plan":          func(rest []string) int { return graphplan.Command(rest, os.Stdin, os.Stdout, os.Stderr) },
+	"graph-node-contract": func(rest []string) int { return graphdispatch.Command(rest, os.Stdin, os.Stdout, os.Stderr) },
+	"graph-node-dispatch-authorize": func(rest []string) int {
+		return graphrelease.Command(rest, os.Stdin, os.Stdout, os.Stderr)
+	},
 	"approve":                cmdApprove,
 	"reject":                 cmdReject,
 	releasePinnedExecCommand: cmdReleaseExecPinned,
@@ -130,6 +134,7 @@ usage:
   forge preflight <workflow> [--root DIR]
   forge graph-plan --graph-id ID --manifest-sha256 HEX [--input FILE|-]
   forge graph-node-contract --control FILE|- --endpoint HTTPS_URL --model MODEL --max-output-tokens N --max-model-output-bytes N --max-model-events N --timeout-ms N --max-cost-usd-micros N --pricing-snapshot-sha256 SHA256 --max-result-bytes N
+  forge graph-node-dispatch-authorize --control FILE|-
   forge gate|check|accept [--root DIR]
 `)
 }

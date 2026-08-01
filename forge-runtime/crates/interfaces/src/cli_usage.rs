@@ -32,6 +32,9 @@ pub const TEXT: &str = "usage:
   forge-runtime [OPTIONS] group graph run dispatch show DISPATCH_REQUEST_ID
                 [--include-request]
   forge-runtime [OPTIONS] group graph run dispatch list [GRAPH_RUN_ID] [--limit N]
+  forge-runtime [OPTIONS] group graph run dispatch release-control export GRAPH_RUN_ID
+  forge-runtime [OPTIONS] group graph run dispatch authorization verify GRAPH_RUN_ID
+                --authorization FILE|-
   forge-runtime [OPTIONS] group graph run show GRAPH_RUN_ID [--include-plan]
   forge-runtime [OPTIONS] group graph run list [GRAPH_ID] [--limit N]
   forge-runtime [OPTIONS] group analysis prepare GROUP_RUN_ID
@@ -94,6 +97,15 @@ pub const TEXT: &str = "usage:
   no dispatch authority, and invokes no provider, network, workspace, tool, result,
   or writeback effect. Pricing identity is pinned but pricing policy is not enforced.
   Request bodies remain hidden unless dispatch show --include-request is explicit.
+  WARNING: dispatch release-control export emits a private canonical artifact with
+  complete source, contract, exact prepared request, destination, model, pricing,
+  and Prompt data. The explicit export command is authorization to disclose it to
+  stdout; redirect it only to a trusted consumer. --json does not wrap the bytes.
+  Dispatch authorization verify reads only the explicitly named bounded canonical
+  authorization and fully revalidates the current v3 database state. The validated
+  artifact authorizes a future release but does not release authority, obtain consent, read a
+  credential, claim a project lane, invoke a provider/model/network, produce a
+  result, or write Conversation/Prompt/memory/database/workspace state.
   Group analysis prepare locally revalidates one frozen Group Run and persists
   the exact bounded OpenAI request-body bytes. It reads no API key and sends nothing.
   Group analysis send can release those frozen Prompt excerpts and metadata
