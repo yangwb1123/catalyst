@@ -45,7 +45,7 @@ in infrastructure. The CLI composes the concrete store and service.
 | Prepared Group Run | Immutable, canonical Group-context input artifact |
 | Group execution | Local receipt proving one prepared snapshot was validated |
 | Group Agent Graph | Immutable manager/task/dependency definition over one prepared Group Run |
-| Group Agent Graph Run | Passive state admitting an exact Core Plan and, optionally, one first-node contract |
+| Group Agent Graph Run | Passive state admitting an exact Core Plan, one first-node contract, and optionally its exact provider request bytes |
 | Node Execution Contract | Exact, budgeted first-node input awaiting a separate dispatch authority |
 | Group analysis | Consent-gated single-model result over one frozen Group Run |
 | Group analysis panel | Ordered local assembly of completed analyses from one frozen Group Run |
@@ -382,12 +382,24 @@ project-lane digests, and replay key. Project-lane and recency indexes support
 future claim validation and metadata inventories. Existing v9 rows remain v1.
 See ADR 0019.
 
-The generated full-catalog contract now covers immutable v1–v10 DDL and the
-exact v10 inventory of 23 tables, 18 named explicit indexes, and 41 implicit
-indexes. The v1–v10 length-framed DDL SHA-256 is
-`16752cf9b054b8e840a98976b06e8f2d015aca6f001191943d4ac54a237e352b`;
-the independent v10 structural-contract SHA-256 is
-`ce5383f44a3a982ab127608acda473d1531ff10fc4b6ca8e7036d84fdec75d8d`.
+### Follow-on schema version 11 (delivered)
+
+The Graph Run tables now admit a third exact passive state: v3
+`awaiting_dispatch_authorization` with one contract, one prepared request,
+three events, and dispatch authority still false. The independent
+`group_agent_graph_node_dispatch_requests` table stores one content-addressed
+request per Run/contract, including the exact Responses body, destination and
+pricing identities, expected seq-2/head, replay key, and original creation
+time. Two explicit indexes support lane/source validation and bounded recency
+inventory; neither one claims a project lane. Existing v10 rows remain v1 or
+v2. See ADR 0021.
+
+The generated full-catalog contract now covers immutable v1–v11 DDL and the
+exact v11 inventory of 24 tables, 20 named explicit indexes, and 45 implicit
+indexes. The v1–v11 length-framed DDL SHA-256 is
+`7019cd92d67e07733b4fbca71757c3f914323e5af944367cb693343fe6694a19`;
+the independent v11 structural-contract SHA-256 is
+`ba468ed1b393264b7788f2a82332667b3053aa1f0ff9074a0b148c1aa8c83fd7`.
 Final validation runs inside the migration transaction, so an invalid legacy
 schema cannot leave a partial upgrade. Unexpected definitions or objects fail
 as corruption without repair. See ADR 0012.
@@ -523,6 +535,17 @@ same-key replay preserves original identity, bytes, event, and time; stale
 heads, second keys, divergent bytes, or corrupt source state fail closed.
 Dispatch authority remains false throughout.
 
+`group graph run dispatch prepare` resolves the sole admitted contract for the
+Run, reconstructs its one-message zero-tool `ModelRequest`, and invokes only
+the pure Responses byte encoder. In one immediate transaction the store fully
+revalidates the frozen source, exact contract and seq-2 head, inserts one exact
+request and seq-3 event, changes only the Run to v3
+`awaiting_dispatch_authorization`, rereads the aggregate, and commits. Replay
+preserves the original identity/body/event/time; stale heads, second keys,
+different bytes, or stored corruption fail closed. No credential, consent,
+provider, transport, network, workspace, result, or writeback capability is
+introduced.
+
 This passive receipt has no node/wave transition, execution envelope,
 capability, provider, model, workspace authority, result, or writeback. Its
 two protocol booleans remain false. Topology wave zero means only “no graph
@@ -621,6 +644,13 @@ Go attestations, anonymity, or same-user database tamper protection. Admission
 selects a model configuration but does not read a credential or use a model,
 provider, network, tool, workspace, result, Conversation, Prompt, or memory.
 
+Prepared Node Dispatch Request rows also retain the exact provider body,
+endpoint, model, pricing identity, expected journal head, and replay key in
+local plaintext. Normal dispatch prepare/show/list output exposes only bounded
+metadata; only `dispatch show --include-request` reveals the exact body, which
+may contain every frozen Prompt. Request and destination hashes remain
+correlatable unkeyed identities, not provider attestations or authorization.
+
 Group analysis stores frozen context, exact request and terminal result in
 plaintext. Default views omit request/config/event/result bodies;
 `--include-result` reveals only the validated terminal projection. Its hashes
@@ -710,6 +740,9 @@ does not classify as corruption.
   exact Prompts, provider settings, budgets, policies, and digests;
 - contract admission performs exact seq/head CAS, is one-per-Run and replay-safe,
   truthfully transitions the Run to awaiting Core dispatch, and releases no effect;
+- dispatch preparation deterministically freezes the exact Responses bytes,
+  performs seq-2/head CAS, preserves one v3 receipt under replay/concurrency,
+  defaults to redacted output, and releases no consent or dispatch authority;
 - Group analysis prepare stays local; concurrent confirmed send releases one
   dispatch, never retries uncertainty, and accepts only valid terminal results;
 - Group panel prepare preserves two-through-eight input order, replays one

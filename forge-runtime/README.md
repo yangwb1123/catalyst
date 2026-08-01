@@ -243,6 +243,23 @@ plaintext. This slice reads no credential, contacts no provider, invokes no
 Agent, opens no workspace, uses no tool/network, produces no result, and writes
 no Conversation/Prompt/memory.
 
+`group graph run dispatch prepare` then reconstructs that admitted logical
+request and calls only the existing pure Responses encoder. SQLite v11 stores
+the exact compact request bytes, their domain-separated identities, and one
+`node_dispatch_request_prepared` seq-3 event in the same immediate transaction
+that moves the Run to `awaiting_dispatch_authorization`. Same-key replay returns
+the original request, event, body, and time; a second key, stale seq/head, or
+corrupt source fails closed. `dispatch show` fully revalidates the complete
+source, contract, journal, and byte-for-byte codec result; `dispatch list` is
+metadata-only. Default output hides Prompt/body/endpoint/model/pricing material,
+while `show --include-request` explicitly reveals the exact private body.
+
+Preparation is not dispatch. It accepts no consent flag, reads no credential,
+constructs no provider or HTTP client, makes no network or workspace access,
+uses no tool, produces no result, and writes no Conversation/Prompt/memory.
+Dispatch authority remains false; release/claim/send/result/advance commands do
+not exist in this slice.
+
 `group analysis prepare` is the next independent boundary. It fully validates
 one frozen Group Run, pins the versioned analysis Prompt, destination, model,
 and limits, and atomically stores one exact OpenAI Responses request with its
@@ -329,12 +346,14 @@ ambiguous with a command.
 The local Hub is not encrypted. Prompt/history bodies, frozen Group Run
 snapshots, Group-Agent-Graph instructions/tasks, Group-analysis request/result
 bodies, copied panel manifests, panel-synthesis request/result bodies, local
-paths, Project Run configuration, model deltas, provider context, tool
+paths, exact Graph Node Dispatch Request bodies, Project Run configuration,
+model deltas, provider context, tool
 arguments/results, and allowed file contents can all be stored in plaintext
 SQLite and exposed by explicit queries such as `prompt list`, `group run show
 --include-content`, `group graph show --include-spec`, `group analysis show
 --include-result`, `group panel show --include-results`, `group synthesis show
---include-result`, and `run show`. New or empty dedicated Unix state
+--include-result`, `group graph run dispatch show --include-request`, and `run
+show`. New or empty dedicated Unix state
 directories are narrowed to the current user; populated shared directories are
 rejected instead of chmodded. Direct Prompt arguments may be visible in
 process listings and shell history, so use stdin (`-`) for sensitive input.
@@ -369,16 +388,16 @@ it does not prove that replaying an interrupted tool effect is safe. Run
 inspection reads its record, cursor, events, and bound Prompt from one SQLite
 snapshot so a concurrent append cannot look like corruption.
 
-The main SQLite catalog is exclusively Hub-owned. Every declared v0–v10 schema
+The main SQLite catalog is exclusively Hub-owned. Every declared v0–v11 schema
 is validated before migration DDL (v0 must be empty); the final migration step
-then validates the exact v10 23-table/18-explicit-index/41-implicit-index
+then validates the exact v11 24-table/20-explicit-index/45-implicit-index
 catalog, DDL, columns, keys, foreign keys, index structures, and absence of
 extra views/triggers/tables before the immediate transaction commits.
 Published DDL and the independent structural contract are release-pinned;
-the v1–v10 length-framed DDL SHA-256 is
-`16752cf9b054b8e840a98976b06e8f2d015aca6f001191943d4ac54a237e352b`
-and the v10 structural-contract SHA-256 is
-`ce5383f44a3a982ab127608acda473d1531ff10fc4b6ca8e7036d84fdec75d8d`.
+the v1–v11 length-framed DDL SHA-256 is
+`7019cd92d67e07733b4fbca71757c3f914323e5af944367cb693343fe6694a19`
+and the v11 structural-contract SHA-256 is
+`ba468ed1b393264b7788f2a82332667b3053aa1f0ff9074a0b148c1aa8c83fd7`.
 Unexpected state fails as corruption and is never auto-repaired.
 Environmental SQLite failures remain unavailable. This detects schema drift
 but is not a same-user tamper or TOCTOU boundary.
@@ -484,5 +503,6 @@ Architecture:
 - [Durable local Group Agent Graph ADR](../docs/adr/0017-durable-group-agent-graph.md)
 - [Core-owned Group Agent Graph Run plan ADR](../docs/adr/0018-core-owned-group-agent-graph-run-plan.md)
 - [Core-owned first-node execution contract ADR](../docs/adr/0019-core-owned-first-node-execution-contract.md)
+- [Core-owned Node Dispatch Request preparation ADR](../docs/adr/0021-core-owned-node-dispatch-request-preparation.md)
 - [Hub local-foundation design](../docs/design/conversation-hub-phase1.md)
 - [Durable Run journal design](../docs/design/run-journal-phase1.md)
