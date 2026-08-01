@@ -4,10 +4,10 @@ use crate::{GroupAgentGraphEdge, HubStoreError};
 
 #[path = "group_agent_graph_run_codec.rs"]
 mod codec;
-#[path = "group_agent_graph_run_journal_validation.rs"]
-mod journal_validation;
 #[path = "group_agent_graph_run/event_wire.rs"]
 mod event_wire;
+#[path = "group_agent_graph_run_journal_validation.rs"]
+mod journal_validation;
 #[path = "group_agent_graph_run_validation.rs"]
 mod validation;
 
@@ -110,13 +110,17 @@ pub enum GroupAgentGraphRunEventKind {
         previous_event_sha256: String,
         contract_id: String,
         contract_sha256: String,
+        dispatch_request_id: String,
+        dispatch_request_sha256: String,
+        request_body_sha256: String,
+        request_body_bytes: usize,
+        logical_request_sha256: String,
         node_id: String,
         attempt: u16,
-        request_sha256: String,
         project_lane_sha256: String,
-        provider_request_sha256: String,
-        provider_request_bytes: usize,
-        codec_version: u16,
+        codec_protocol_version: u16,
+        provider_kind: crate::GroupAgentNodeProviderKind,
+        destination_sha256: String,
         pricing_snapshot_sha256: String,
         prepared_at_ms: u64,
     },
@@ -208,7 +212,7 @@ impl GroupAgentGraphRunRecord {
 }
 
 impl GroupAgentGraphRunEvent {
-    /// Validates the sole passive Graph Run preparation event.
+    /// Validates one versioned passive Graph Run journal event.
     ///
     /// # Errors
     ///

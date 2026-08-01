@@ -3,7 +3,7 @@ use sha2::{Digest, Sha256};
 use super::{
     CREATE_V1_SCHEMA_SQL, MIGRATE_V1_TO_V2_SQL, MIGRATE_V2_TO_V3_SQL, MIGRATE_V3_TO_V4_SQL,
     MIGRATE_V4_TO_V5_SQL, MIGRATE_V5_TO_V6_SQL, MIGRATE_V6_TO_V7_SQL, MIGRATE_V7_TO_V8_SQL,
-    MIGRATE_V8_TO_V9_SQL, MIGRATE_V9_TO_V10_SQL,
+    MIGRATE_V8_TO_V9_SQL, MIGRATE_V9_TO_V10_SQL, MIGRATE_V10_TO_V11_SQL,
 };
 
 const V1_TO_V5_SHA256: [u8; 32] = [
@@ -30,6 +30,10 @@ const V1_TO_V10_SHA256: [u8; 32] = [
     0x16, 0x75, 0x2c, 0xf9, 0xb0, 0x54, 0xb8, 0xe8, 0x40, 0xa9, 0x89, 0x76, 0xb0, 0x6e, 0x8f, 0x2d,
     0x01, 0x5a, 0xca, 0x6f, 0x00, 0x11, 0x91, 0x94, 0x3d, 0x4a, 0xc5, 0x4a, 0x23, 0x7e, 0x35, 0x2b,
 ];
+const V1_TO_V11_SHA256: [u8; 32] = [
+    0x70, 0x19, 0xcd, 0x92, 0xd6, 0x7e, 0x07, 0x73, 0x3b, 0x4f, 0xbc, 0xa7, 0x17, 0x57, 0xc3, 0xf9,
+    0x14, 0x32, 0x3e, 0x5a, 0xf9, 0x44, 0x36, 0x7c, 0xb6, 0x93, 0x34, 0x3f, 0xe6, 0x69, 0x4a, 0x19,
+];
 const RELEASE_BATCHES: &[&str] = &[
     CREATE_V1_SCHEMA_SQL,
     MIGRATE_V1_TO_V2_SQL,
@@ -41,6 +45,7 @@ const RELEASE_BATCHES: &[&str] = &[
     MIGRATE_V7_TO_V8_SQL,
     MIGRATE_V8_TO_V9_SQL,
     MIGRATE_V9_TO_V10_SQL,
+    MIGRATE_V10_TO_V11_SQL,
 ];
 
 #[test]
@@ -50,7 +55,8 @@ fn published_schema_literals_match_distinct_release_hashes() {
     let v1_to_v7 = schema_digest(&RELEASE_BATCHES[..7]);
     let v1_to_v8 = schema_digest(&RELEASE_BATCHES[..8]);
     let v1_to_v9 = schema_digest(&RELEASE_BATCHES[..9]);
-    let v1_to_v10 = schema_digest(RELEASE_BATCHES);
+    let v1_to_v10 = schema_digest(&RELEASE_BATCHES[..10]);
+    let v1_to_v11 = schema_digest(RELEASE_BATCHES);
 
     assert_eq!(v1_to_v5, V1_TO_V5_SHA256);
     assert_eq!(v1_to_v6, V1_TO_V6_SHA256);
@@ -58,11 +64,13 @@ fn published_schema_literals_match_distinct_release_hashes() {
     assert_eq!(v1_to_v8, V1_TO_V8_SHA256);
     assert_eq!(v1_to_v9, V1_TO_V9_SHA256);
     assert_eq!(v1_to_v10, V1_TO_V10_SHA256);
+    assert_eq!(v1_to_v11, V1_TO_V11_SHA256);
     assert_ne!(v1_to_v5, v1_to_v6);
     assert_ne!(v1_to_v6, v1_to_v7);
     assert_ne!(v1_to_v7, v1_to_v8);
     assert_ne!(v1_to_v8, v1_to_v9);
     assert_ne!(v1_to_v9, v1_to_v10);
+    assert_ne!(v1_to_v10, v1_to_v11);
 }
 
 fn schema_digest(batches: &[&str]) -> [u8; 32] {

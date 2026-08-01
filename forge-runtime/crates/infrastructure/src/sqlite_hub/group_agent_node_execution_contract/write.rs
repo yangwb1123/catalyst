@@ -238,11 +238,13 @@ fn transition_run(
         .execute(
             "UPDATE group_agent_graph_runs
              SET run_version = 2,status = 'awaiting_core_dispatch',
-                 execution_contract_present = 1,dispatch_authority_released = 0,
+                 execution_contract_present = 1,dispatch_request_present = 0,
+                 dispatch_authority_released = 0,
                  last_event_seq = 2,journal_bytes = journal_bytes + ?1
              WHERE id = ?2 AND run_version = 1
                AND status = 'awaiting_execution_contract'
                AND execution_contract_present = 0
+               AND dispatch_request_present = 0
                AND dispatch_authority_released = 0
                AND last_event_seq = ?3",
             params![

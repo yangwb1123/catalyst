@@ -171,6 +171,7 @@ fn record(request: &BeginGroupAgentGraphRun) -> GroupAgentGraphRunRecord {
         node_count: request.plan.authored_node_ids.len(),
         wave_count: request.plan.waves.len(),
         execution_contract_present: false,
+        dispatch_request_present: false,
         dispatch_authority_released: false,
         last_event_seq: 1,
         journal_bytes: request.event_json.len(),

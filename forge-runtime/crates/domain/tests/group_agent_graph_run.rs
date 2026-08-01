@@ -1,9 +1,11 @@
 use forge_runtime_domain::{
     BeginGroupAgentGraphRun, GROUP_AGENT_GRAPH_CORE_PLAN_VERSION,
+    GROUP_AGENT_GRAPH_RUN_CONTRACT_VERSION, GROUP_AGENT_GRAPH_RUN_DISPATCH_REQUEST_VERSION,
     GROUP_AGENT_GRAPH_RUN_EVENT_DIGEST_DOMAIN, GROUP_AGENT_GRAPH_RUN_VERSION,
-    GROUP_AGENT_GRAPH_SCHEDULER_PROTOCOL_VERSION, GroupAgentGraphCorePlan, GroupAgentGraphEdge,
-    GroupAgentGraphRunEvent, GroupAgentGraphRunEventKind, GroupAgentGraphRunInspection,
-    GroupAgentGraphRunRecord, GroupAgentGraphRunStatus,
+    GROUP_AGENT_GRAPH_SCHEDULER_PROTOCOL_VERSION, GROUP_AGENT_NODE_DISPATCH_CODEC_VERSION,
+    GroupAgentGraphCorePlan, GroupAgentGraphEdge, GroupAgentGraphRunEvent,
+    GroupAgentGraphRunEventKind, GroupAgentGraphRunInspection, GroupAgentGraphRunRecord,
+    GroupAgentGraphRunStatus, GroupAgentNodeProviderKind, group_agent_node_dispatch_request_id,
 };
 use serde::Deserialize;
 
@@ -183,6 +185,70 @@ fn inspection_revalidates_record_plan_event_bytes_and_bindings() {
     assert!(wrong_event.validate().is_err());
 }
 
+#[test]
+fn run_records_accept_only_the_three_passive_versioned_states() {
+    let v1 = inspection().run;
+    v1.validate().expect("v1 awaiting contract");
+
+    let mut v2 = v1.clone();
+    v2.v = GROUP_AGENT_GRAPH_RUN_CONTRACT_VERSION;
+    v2.status = GroupAgentGraphRunStatus::AwaitingCoreDispatch;
+    v2.execution_contract_present = true;
+    v2.last_event_seq = 2;
+    v2.validate().expect("v2 awaiting Core dispatch");
+
+    let mut v3 = v2.clone();
+    v3.v = GROUP_AGENT_GRAPH_RUN_DISPATCH_REQUEST_VERSION;
+    v3.status = GroupAgentGraphRunStatus::AwaitingDispatchAuthorization;
+    v3.dispatch_request_present = true;
+    v3.last_event_seq = 3;
+    v3.validate().expect("v3 awaiting dispatch authorization");
+
+    let mut premature_request = v2;
+    premature_request.dispatch_request_present = true;
+    assert!(premature_request.validate().is_err());
+
+    let mut released = v3;
+    released.dispatch_authority_released = true;
+    assert!(released.validate().is_err());
+}
+
+#[test]
+fn v2_and_v3_journals_preserve_seq3_hash_chain_and_strict_event_shape() {
+    let v3 = dispatch_request_inspection();
+    v3.validate().expect("valid three-event v3 journal");
+
+    let mut v2 = v3.clone();
+    v2.v = GROUP_AGENT_GRAPH_RUN_CONTRACT_VERSION;
+    v2.run.v = GROUP_AGENT_GRAPH_RUN_CONTRACT_VERSION;
+    v2.run.status = GroupAgentGraphRunStatus::AwaitingCoreDispatch;
+    v2.run.dispatch_request_present = false;
+    v2.run.last_event_seq = 2;
+    v2.events.pop();
+    v2.event_jsons.pop();
+    v2.run.journal_bytes = v2.event_jsons.iter().map(String::len).sum();
+    v2.validate().expect("legacy v2 journal remains valid");
+
+    let encoded = v3.event_jsons[2].clone();
+    let unknown = encoded.replacen("\"seq\":3", "\"seq\":3,\"unknown\":true", 1);
+    assert!(serde_json::from_str::<GroupAgentGraphRunEvent>(&unknown).is_err());
+
+    let mut wrong_head = v3;
+    let GroupAgentGraphRunEventKind::NodeDispatchRequestPrepared {
+        previous_event_sha256,
+        ..
+    } = &mut wrong_head.events[2].kind
+    else {
+        panic!("dispatch-request fixture event");
+    };
+    *previous_event_sha256 = "0".repeat(64);
+    wrong_head.event_jsons[2] = wrong_head.events[2]
+        .canonical_json()
+        .expect("canonical tampered event");
+    wrong_head.run.journal_bytes = wrong_head.event_jsons.iter().map(String::len).sum();
+    assert!(wrong_head.validate().is_err());
+}
+
 fn payload_from_plan(plan: &GroupAgentGraphCorePlan) -> String {
     let encoded = plan.canonical_json().expect("canonical plan");
     let suffix = format!(",\"plan_sha256\":\"{}\"}}", plan.plan_sha256);
@@ -270,6 +336,7 @@ fn inspection() -> GroupAgentGraphRunInspection {
             node_count: request.plan.authored_node_ids.len(),
             wave_count: request.plan.waves.len(),
             execution_contract_present: false,
+            dispatch_request_present: false,
             dispatch_authority_released: false,
             last_event_seq: 1,
             journal_bytes: request.event_json.len(),
@@ -279,5 +346,72 @@ fn inspection() -> GroupAgentGraphRunInspection {
         plan: request.plan,
         event_jsons: vec![request.event_json],
         events: vec![request.event],
+    }
+}
+
+fn dispatch_request_inspection() -> GroupAgentGraphRunInspection {
+    let mut value = inspection();
+    let contract = contract_event(&value.events[0]);
+    let dispatch = dispatch_request_event(&contract);
+    value.events.extend([contract, dispatch]);
+    value.event_jsons = value
+        .events
+        .iter()
+        .map(|event| event.canonical_json().expect("canonical event"))
+        .collect();
+    value.v = GROUP_AGENT_GRAPH_RUN_DISPATCH_REQUEST_VERSION;
+    value.run.v = GROUP_AGENT_GRAPH_RUN_DISPATCH_REQUEST_VERSION;
+    value.run.status = GroupAgentGraphRunStatus::AwaitingDispatchAuthorization;
+    value.run.execution_contract_present = true;
+    value.run.dispatch_request_present = true;
+    value.run.last_event_seq = 3;
+    value.run.journal_bytes = value.event_jsons.iter().map(String::len).sum();
+    value
+}
+
+fn contract_event(previous: &GroupAgentGraphRunEvent) -> GroupAgentGraphRunEvent {
+    GroupAgentGraphRunEvent {
+        v: GROUP_AGENT_GRAPH_RUN_CONTRACT_VERSION,
+        graph_run_id: previous.graph_run_id.clone(),
+        seq: 2,
+        kind: GroupAgentGraphRunEventKind::NodeExecutionContractAdmitted {
+            previous_event_sha256: previous.expected_sha256().expect("prepared digest"),
+            control_snapshot_sha256: "b".repeat(64),
+            contract_id: format!("node-contract-{}", "c".repeat(64)),
+            contract_sha256: "c".repeat(64),
+            contract_bytes: 1,
+            node_id: "frontend".into(),
+            attempt: 1,
+            request_sha256: "d".repeat(64),
+            project_lane_sha256: "e".repeat(64),
+            admitted_at_ms: 74,
+        },
+    }
+}
+
+fn dispatch_request_event(previous: &GroupAgentGraphRunEvent) -> GroupAgentGraphRunEvent {
+    let dispatch_request_sha256 = "1".repeat(64);
+    GroupAgentGraphRunEvent {
+        v: GROUP_AGENT_GRAPH_RUN_DISPATCH_REQUEST_VERSION,
+        graph_run_id: previous.graph_run_id.clone(),
+        seq: 3,
+        kind: GroupAgentGraphRunEventKind::NodeDispatchRequestPrepared {
+            previous_event_sha256: previous.expected_sha256().expect("contract digest"),
+            contract_id: format!("node-contract-{}", "c".repeat(64)),
+            contract_sha256: "c".repeat(64),
+            dispatch_request_id: group_agent_node_dispatch_request_id(&dispatch_request_sha256),
+            dispatch_request_sha256,
+            request_body_sha256: "f".repeat(64),
+            request_body_bytes: 1,
+            logical_request_sha256: "d".repeat(64),
+            node_id: "frontend".into(),
+            attempt: 1,
+            project_lane_sha256: "e".repeat(64),
+            codec_protocol_version: GROUP_AGENT_NODE_DISPATCH_CODEC_VERSION,
+            provider_kind: GroupAgentNodeProviderKind::OpenAiResponses,
+            destination_sha256: "2".repeat(64),
+            pricing_snapshot_sha256: "4".repeat(64),
+            prepared_at_ms: 75,
+        },
     }
 }

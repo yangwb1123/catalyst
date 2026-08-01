@@ -155,7 +155,7 @@ impl GroupAgentNodeExecutionContractService {
         checked_graph(graph)
     }
 
-    fn load_run(
+    pub(super) fn load_run(
         &self,
         graph_run_id: &str,
     ) -> Result<
@@ -166,6 +166,12 @@ impl GroupAgentNodeExecutionContractService {
             .runs
             .inspect_group_agent_graph_run(graph_run_id)
             .map_err(GroupAgentNodeExecutionContractServiceError::from)?;
-        checked_run(run)
+        let run = checked_run(run)?;
+        if run.run.graph_run_id != graph_run_id {
+            return Err(super::error::corrupt(
+                "store returned a different Graph Run identity",
+            ));
+        }
+        Ok(run)
     }
 }

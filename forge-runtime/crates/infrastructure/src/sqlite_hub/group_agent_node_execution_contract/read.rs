@@ -1,15 +1,16 @@
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior};
 
 use crate::runtime_domain::{
-    GROUP_AGENT_NODE_EXECUTION_CONTRACT_VERSION, GroupAgentGraphRunEvent,
+    GROUP_AGENT_NODE_EXECUTION_CONTRACT_VERSION, GroupAgentGraphInspection,
+    GroupAgentGraphRunEvent, GroupAgentGraphRunInspection, GroupAgentNodeExecutionContract,
     GroupAgentNodeExecutionContractInspection, GroupAgentNodeExecutionContractRecord, HubEntity,
     HubStoreError, MAX_GROUP_AGENT_GRAPH_IDEMPOTENCY_KEY_BYTES,
     MAX_GROUP_AGENT_GRAPH_IDENTIFIER_BYTES, MAX_GROUP_AGENT_NODE_EXECUTION_CONTRACT_LIST_LIMIT,
 };
 
 use super::{
-    super::{group_agent_graph_run, group_run_codec, read_error},
-    codec, rows,
+    super::{group_agent_graph, group_agent_graph_run, group_run_codec, read_error},
+    codec, rows, snapshot,
 };
 
 pub(super) fn inspect(
@@ -37,6 +38,54 @@ pub(super) fn validate_stored(
     connection: &Connection,
     stored: rows::RawStoredContract,
 ) -> Result<GroupAgentNodeExecutionContractInspection, HubStoreError> {
+    let decoded = decode_stored(stored)?;
+    let graph_run = load_graph_run_stored(connection, &decoded.record.graph_run_id)?;
+    let graph = group_agent_graph::read::inspect_in_snapshot(connection, &graph_run.run.graph_id)?;
+    validate_with_sources(decoded, graph_run, &graph)
+}
+
+fn load_graph_run_stored(
+    connection: &Connection,
+    graph_run_id: &str,
+) -> Result<GroupAgentGraphRunInspection, HubStoreError> {
+    group_agent_graph_run::read::inspect_in_snapshot(connection, graph_run_id).map_err(|error| {
+        match error {
+            HubStoreError::NotFound { .. } => {
+                corrupt("stored Node Execution Contract references a missing Graph Run")
+            }
+            other => other,
+        }
+    })
+}
+
+pub(in crate::sqlite_hub) fn validate_graph_run_binding(
+    connection: &Connection,
+    graph_run: &GroupAgentGraphRunInspection,
+    graph: &GroupAgentGraphInspection,
+) -> Result<Option<GroupAgentNodeExecutionContractInspection>, HubStoreError> {
+    let stored = rows::find_by_run(connection, &graph_run.run.graph_run_id)?;
+    match (graph_run.run.execution_contract_present, stored) {
+        (false, None) => Ok(None),
+        (true, Some(stored)) => {
+            validate_with_sources(decode_stored(stored)?, graph_run.clone(), graph).map(Some)
+        }
+        (_, Some(stored)) => {
+            decode_stored(stored)?;
+            Err(corrupt(
+                "stored Graph Run has an unexpected execution contract",
+            ))
+        }
+        (true, None) => Err(corrupt("stored Graph Run execution contract is missing")),
+    }
+}
+
+struct DecodedStoredContract {
+    record: GroupAgentNodeExecutionContractRecord,
+    contract_json: String,
+    contract: GroupAgentNodeExecutionContract,
+}
+
+fn decode_stored(stored: rows::RawStoredContract) -> Result<DecodedStoredContract, HubStoreError> {
     validate_stored_key(&stored.idempotency_key)?;
     let record = metadata_record(stored.metadata)?;
     if stored.contract_blob.len() != record.contract_bytes {
@@ -46,14 +95,25 @@ pub(super) fn validate_stored(
     }
     let (contract, contract_json) =
         codec::decode_contract(&stored.contract_blob, &record_digest(&record)?)?;
-    let graph_run =
-        group_agent_graph_run::read::inspect_in_snapshot(connection, &record.graph_run_id)?;
-    let (admission_event, admission_event_json) = admission_event(&graph_run)?;
-    let inspection = GroupAgentNodeExecutionContractInspection {
-        v: GROUP_AGENT_NODE_EXECUTION_CONTRACT_VERSION,
+    Ok(DecodedStoredContract {
         record,
         contract_json,
         contract,
+    })
+}
+
+fn validate_with_sources(
+    decoded: DecodedStoredContract,
+    graph_run: GroupAgentGraphRunInspection,
+    graph: &GroupAgentGraphInspection,
+) -> Result<GroupAgentNodeExecutionContractInspection, HubStoreError> {
+    validate_reconstructed_control(&graph_run, graph, &decoded.contract)?;
+    let (admission_event, admission_event_json) = admission_event(&graph_run)?;
+    let inspection = GroupAgentNodeExecutionContractInspection {
+        v: GROUP_AGENT_NODE_EXECUTION_CONTRACT_VERSION,
+        record: decoded.record,
+        contract_json: decoded.contract_json,
+        contract: decoded.contract,
         admission_event_json,
         admission_event,
         graph_run,
@@ -62,6 +122,17 @@ pub(super) fn validate_stored(
         .validate()
         .map_err(|error| corrupt(&error.to_string()))?;
     Ok(inspection)
+}
+
+fn validate_reconstructed_control(
+    graph_run: &GroupAgentGraphRunInspection,
+    graph: &GroupAgentGraphInspection,
+    contract: &GroupAgentNodeExecutionContract,
+) -> Result<(), HubStoreError> {
+    let (control, _) = snapshot::reconstruct(graph_run, graph)?;
+    contract
+        .validate_against_control(&control)
+        .map_err(|error| corrupt(&error.to_string()))
 }
 
 pub(super) fn list(

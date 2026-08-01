@@ -27,6 +27,11 @@ pub const TEXT: &str = "usage:
   forge-runtime [OPTIONS] group graph run contract show CONTRACT_ID
                 [--include-contract]
   forge-runtime [OPTIONS] group graph run contract list [GRAPH_RUN_ID] [--limit N]
+  forge-runtime [OPTIONS] group graph run dispatch prepare GRAPH_RUN_ID
+                [--idempotency-key KEY]
+  forge-runtime [OPTIONS] group graph run dispatch show DISPATCH_REQUEST_ID
+                [--include-request]
+  forge-runtime [OPTIONS] group graph run dispatch list [GRAPH_RUN_ID] [--limit N]
   forge-runtime [OPTIONS] group graph run show GRAPH_RUN_ID [--include-plan]
   forge-runtime [OPTIONS] group graph run list [GRAPH_ID] [--limit N]
   forge-runtime [OPTIONS] group analysis prepare GROUP_RUN_ID
@@ -84,6 +89,11 @@ pub const TEXT: &str = "usage:
   It releases no dispatch authority and invokes no Agent, provider, model, tool,
   network, workspace, result, Conversation, Prompt, memory, or writeback effect.
   --include-contract explicitly reveals private contract and Prompt plaintext.
+  Group graph run dispatch prepare uses only the pure local Responses codec and
+  persists exact request bytes. It obtains no consent, reads no credential, releases
+  no dispatch authority, and invokes no provider, network, workspace, tool, result,
+  or writeback effect. Pricing identity is pinned but pricing policy is not enforced.
+  Request bodies remain hidden unless dispatch show --include-request is explicit.
   Group analysis prepare locally revalidates one frozen Group Run and persists
   the exact bounded OpenAI request-body bytes. It reads no API key and sends nothing.
   Group analysis send can release those frozen Prompt excerpts and metadata

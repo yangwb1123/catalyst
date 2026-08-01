@@ -1,7 +1,9 @@
 use forge_runtime_domain::{
-    Cancellation, Message, ModelRequest, PreparedModelProvider, PreparedModelRequest, ProviderError,
+    Cancellation, GroupAgentNodeExecutionContract, Message, ModelRequest, PreparedModelProvider,
+    PreparedModelRequest, ProviderError, group_agent_node_provider_request_sha256,
 };
 use futures_util::StreamExt;
+use serde::Deserialize;
 use serde_json::Value;
 use wiremock::{
     Mock, MockServer, ResponseTemplate,
@@ -16,6 +18,56 @@ use super::{
 
 const GOLDEN: &[u8] = br#"{"include":["reasoning.encrypted_content"],"input":[{"content":"go","role":"user","type":"message"}],"instructions":"system","max_output_tokens":1024,"model":"test-model","store":false,"stream":true,"tools":[]}"#;
 const SECRET: &str = "sk-prepared-request-test";
+
+#[derive(Deserialize)]
+struct SharedContractFixture {
+    expected: SharedContractExpected,
+}
+
+#[derive(Deserialize)]
+struct SharedContractExpected {
+    canonical_contract_json: String,
+    canonical_provider_request_body_json: String,
+    provider_request_bytes: usize,
+    provider_request_sha256: String,
+}
+
+#[test]
+fn shared_go_contract_encodes_to_the_exact_rust_provider_body_golden() {
+    let fixture: SharedContractFixture = serde_json::from_str(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../../docs/contracts/fixtures/group-agent-node-execution-contract-v1.json"
+    )))
+    .expect("shared Go contract fixture");
+    let contract: GroupAgentNodeExecutionContract =
+        serde_json::from_str(&fixture.expected.canonical_contract_json).expect("contract JSON");
+    let request = ModelRequest {
+        system_prompt: contract.request.system_prompt,
+        messages: vec![Message::User {
+            text: contract.request.user_prompt,
+        }],
+        tools: Vec::new(),
+        max_output_tokens: contract.budgets.max_output_tokens,
+        cancellation: Cancellation::default(),
+    };
+
+    let body = OpenAiResponsesProvider::encode_request_bytes(&contract.provider.model, &request)
+        .expect("production Responses codec");
+
+    assert_eq!(
+        body,
+        fixture
+            .expected
+            .canonical_provider_request_body_json
+            .as_bytes()
+    );
+    assert_eq!(body.len(), fixture.expected.provider_request_bytes);
+    assert_ne!(body.last(), Some(&b'\n'));
+    assert_eq!(
+        group_agent_node_provider_request_sha256(&body),
+        fixture.expected.provider_request_sha256
+    );
+}
 
 #[test]
 fn request_encoding_is_deterministic_canonical_json() {

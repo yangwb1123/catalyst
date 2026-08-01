@@ -54,7 +54,7 @@ fn late_reread_fault_rolls_back_contract_event_and_run_transition() {
     assert!(connection.is_autocommit());
 }
 
-fn admission(
+pub(in crate::sqlite_hub) fn admission(
     graph: &GroupAgentGraphInspection,
     run: &GroupAgentGraphRunInspection,
 ) -> AdmitGroupAgentNodeExecutionContract {

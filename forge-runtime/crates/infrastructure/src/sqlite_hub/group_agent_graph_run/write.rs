@@ -86,6 +86,7 @@ fn record(
         node_count: request.plan.authored_node_ids.len(),
         wave_count: request.plan.waves.len(),
         execution_contract_present: false,
+        dispatch_request_present: false,
         dispatch_authority_released: false,
         last_event_seq: 1,
         journal_bytes: encoded.event_bytes.len(),
@@ -107,11 +108,11 @@ fn insert_run(
                id,graph_id,run_version,status,source_snapshot_sha256,
                graph_manifest_sha256,scheduler_protocol_version,plan_blob,plan_bytes,
                plan_sha256,node_count,wave_count,execution_contract_present,
-               dispatch_authority_released,last_event_seq,journal_bytes,idempotency_key,
-               created_at_ms
+               dispatch_request_present,dispatch_authority_released,last_event_seq,journal_bytes,
+               idempotency_key,created_at_ms
              ) VALUES(
                ?1,?2,?3,'awaiting_execution_contract',?4,?5,?6,?7,?8,?9,?10,?11,
-               0,0,1,?12,?13,?14
+               0,0,0,1,?12,?13,?14
              )",
             params![
                 record.graph_run_id,

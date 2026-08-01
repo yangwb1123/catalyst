@@ -149,7 +149,7 @@ fn assert_malformed_v7_is_rejected(sql: &str) {
 }
 
 fn assert_current_shape(connection: &Connection) {
-    assert_eq!(schema_version(connection), 10);
+    assert_eq!(schema_version(connection), 11);
     for table in [
         "group_panel_syntheses",
         "group_panel_synthesis_events",
@@ -158,6 +158,7 @@ fn assert_current_shape(connection: &Connection) {
         "group_agent_graph_runs",
         "group_agent_graph_run_events",
         "group_agent_graph_node_execution_contracts",
+        "group_agent_graph_node_dispatch_requests",
     ] {
         assert!(
             schema_object_exists(connection, "table", table),
@@ -173,6 +174,8 @@ fn assert_current_shape(connection: &Connection) {
         "group_agent_graph_runs_created",
         "group_agent_graph_node_contracts_project_lane",
         "group_agent_graph_node_contracts_created",
+        "group_agent_graph_node_dispatch_requests_project_lane",
+        "group_agent_graph_node_dispatch_requests_created",
     ] {
         assert!(
             schema_object_exists(connection, "index", index),

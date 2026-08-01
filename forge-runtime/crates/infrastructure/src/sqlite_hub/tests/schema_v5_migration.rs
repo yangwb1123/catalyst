@@ -303,7 +303,7 @@ fn assert_malformed_v5_is_rejected(sql: &str) {
 }
 
 fn assert_current_schema(connection: &Connection) {
-    assert_eq!(schema_version(connection), 10);
+    assert_eq!(schema_version(connection), 11);
     for table in [
         "runs",
         "run_events",
@@ -329,6 +329,11 @@ fn assert_current_schema(connection: &Connection) {
             "missing current table {table}"
         );
     }
+    assert_current_indexes(connection);
+    assert_v11_dispatch_objects(connection);
+}
+
+fn assert_current_indexes(connection: &Connection) {
     for index in [
         "group_runs_group",
         "group_executions_group_run",
@@ -350,6 +355,20 @@ fn assert_current_schema(connection: &Connection) {
             schema_object_exists(connection, "index", index),
             "missing current index {index}"
         );
+    }
+}
+
+fn assert_v11_dispatch_objects(connection: &Connection) {
+    assert!(schema_object_exists(
+        connection,
+        "table",
+        "group_agent_graph_node_dispatch_requests"
+    ));
+    for index in [
+        "group_agent_graph_node_dispatch_requests_project_lane",
+        "group_agent_graph_node_dispatch_requests_created",
+    ] {
+        assert!(schema_object_exists(connection, "index", index));
     }
 }
 

@@ -82,14 +82,14 @@ fn future_schema_version_is_rejected_without_mutation() {
     let (root, database) = legacy_v7_database();
     let connection = open_database(&database).expect("migrate future-version fixture");
     connection
-        .pragma_update(None, "user_version", 11)
+        .pragma_update(None, "user_version", 12)
         .expect("mark future schema");
     drop(connection);
 
-    let error = open_database(&database).expect_err("future v11 schema is unsupported");
+    let error = open_database(&database).expect_err("future v12 schema is unsupported");
     assert!(matches!(error, HubStoreError::Corrupt { .. }));
     let unchanged = Connection::open(&database).expect("reopen future schema directly");
-    assert_eq!(schema_version(&unchanged), 11);
+    assert_eq!(schema_version(&unchanged), 12);
     assert_legacy_synthesis(&unchanged);
     assert!(schema_object_named(&unchanged, "group_agent_graphs"));
     drop((unchanged, root));
@@ -188,12 +188,13 @@ fn seed_v7_synthesis(connection: &Connection) {
 }
 
 fn assert_current_shape(connection: &Connection) {
-    assert_eq!(schema_version(connection), 10);
+    assert_eq!(schema_version(connection), 11);
     for table in [
         "group_agent_graphs",
         "group_agent_graph_runs",
         "group_agent_graph_run_events",
         "group_agent_graph_node_execution_contracts",
+        "group_agent_graph_node_dispatch_requests",
     ] {
         assert!(
             schema_object_exists(connection, "table", table),
@@ -207,6 +208,8 @@ fn assert_current_shape(connection: &Connection) {
         "group_agent_graph_runs_created",
         "group_agent_graph_node_contracts_project_lane",
         "group_agent_graph_node_contracts_created",
+        "group_agent_graph_node_dispatch_requests_project_lane",
+        "group_agent_graph_node_dispatch_requests_created",
     ] {
         assert!(
             schema_object_exists(connection, "index", index),

@@ -3,12 +3,15 @@
 use std::collections::VecDeque;
 
 use crate::{
-    group_context_output::terminal_text, runtime_domain::MAX_GROUP_AGENT_GRAPH_LIST_LIMIT,
+    group_context_output::terminal_text,
+    runtime_domain::{
+        MAX_GROUP_AGENT_GRAPH_LIST_LIMIT, MAX_GROUP_AGENT_NODE_DISPATCH_REQUEST_LIST_LIMIT,
+    },
 };
 
 use super::{
     Command, GroupCommand, GroupGraphCommand, GroupGraphRunCommand, GroupGraphRunContractCommand,
-    GroupGraphRunControlCommand, next_value, require_empty, usage,
+    GroupGraphRunControlCommand, GroupGraphRunDispatchCommand, next_value, require_empty, usage,
 };
 
 pub(super) fn parse(
@@ -36,6 +39,7 @@ fn parse_run(
         Some("prepare") => parse_run_prepare(tokens, idempotency_key),
         Some("control") => parse_run_control(tokens),
         Some("contract") => parse_run_contract(tokens, idempotency_key),
+        Some("dispatch") => parse_run_dispatch(tokens, idempotency_key),
         Some("show") => parse_run_show(tokens),
         Some("list") => parse_run_list(tokens),
         Some(value) => Err(with_usage(&format!(
@@ -44,6 +48,81 @@ fn parse_run(
         ))),
         None => Err(with_usage("group graph run command is required")),
     }
+}
+
+fn parse_run_dispatch(
+    tokens: &mut VecDeque<String>,
+    idempotency_key: &mut Option<String>,
+) -> Result<Command, String> {
+    match tokens.pop_front().as_deref() {
+        Some("prepare") => parse_dispatch_prepare(tokens, idempotency_key),
+        Some("show") => parse_dispatch_show(tokens),
+        Some("list") => parse_dispatch_list(tokens),
+        Some(_) => Err(unknown_dispatch("group graph run dispatch")),
+        None => Err(with_usage("group graph run dispatch command is required")),
+    }
+}
+
+fn parse_dispatch_prepare(
+    tokens: &mut VecDeque<String>,
+    idempotency_key: &mut Option<String>,
+) -> Result<Command, String> {
+    let graph_run_id = required_id(tokens, "group graph run dispatch prepare", "GRAPH_RUN_ID")?;
+    while let Some(option) = tokens.pop_front() {
+        match option.as_str() {
+            "--idempotency-key" if idempotency_key.is_none() => {
+                *idempotency_key = Some(next_value(tokens, "--idempotency-key")?);
+            }
+            "--idempotency-key" => return Err(duplicate("--idempotency-key")),
+            _ => return Err(unknown_dispatch("group graph run dispatch prepare")),
+        }
+    }
+    Ok(run_command(GroupGraphRunCommand::Dispatch(
+        GroupGraphRunDispatchCommand::Prepare { graph_run_id },
+    )))
+}
+
+fn parse_dispatch_show(tokens: &mut VecDeque<String>) -> Result<Command, String> {
+    let dispatch_request_id = required_id(
+        tokens,
+        "group graph run dispatch show",
+        "DISPATCH_REQUEST_ID",
+    )?;
+    let include_request = match tokens.pop_front().as_deref() {
+        Some("--include-request") => true,
+        Some(_) => return Err(unknown_dispatch("group graph run dispatch show")),
+        None => false,
+    };
+    if !tokens.is_empty() {
+        return Err(unknown_dispatch("group graph run dispatch show"));
+    }
+    Ok(run_command(GroupGraphRunCommand::Dispatch(
+        GroupGraphRunDispatchCommand::Show {
+            dispatch_request_id,
+            include_request,
+        },
+    )))
+}
+
+fn parse_dispatch_list(tokens: &mut VecDeque<String>) -> Result<Command, String> {
+    let graph_run_id = match tokens.front().map(String::as_str) {
+        Some(value) if !value.starts_with('-') => tokens.pop_front(),
+        _ => None,
+    };
+    let mut limit = 50;
+    if tokens.front().is_some_and(|value| value == "--limit") {
+        tokens.pop_front();
+        limit = parse_bounded_limit(tokens, MAX_GROUP_AGENT_NODE_DISPATCH_REQUEST_LIST_LIMIT)?;
+    }
+    if !tokens.is_empty() {
+        return Err(unknown_dispatch("group graph run dispatch list"));
+    }
+    Ok(run_command(GroupGraphRunCommand::Dispatch(
+        GroupGraphRunDispatchCommand::List {
+            graph_run_id,
+            limit,
+        },
+    )))
 }
 
 fn parse_run_control(tokens: &mut VecDeque<String>) -> Result<Command, String> {
@@ -268,15 +347,19 @@ fn parse_list(tokens: &mut VecDeque<String>) -> Result<Command, String> {
 }
 
 fn parse_limit(tokens: &mut VecDeque<String>) -> Result<usize, String> {
+    parse_bounded_limit(tokens, MAX_GROUP_AGENT_GRAPH_LIST_LIMIT)
+}
+
+fn parse_bounded_limit(tokens: &mut VecDeque<String>, maximum: usize) -> Result<usize, String> {
     let value = next_value(tokens, "--limit")?;
     let parsed = value
         .parse::<usize>()
         .map_err(|_| with_usage(&format!("invalid --limit '{}'", terminal_text(&value))))?;
-    if (1..=MAX_GROUP_AGENT_GRAPH_LIST_LIMIT).contains(&parsed) {
+    if (1..=maximum).contains(&parsed) {
         Ok(parsed)
     } else {
         Err(with_usage(&format!(
-            "--limit must be between 1 and {MAX_GROUP_AGENT_GRAPH_LIST_LIMIT}"
+            "--limit must be between 1 and {maximum}"
         )))
     }
 }
@@ -301,6 +384,10 @@ fn unknown(operation: &str, option: &str) -> String {
         "unknown {operation} option '{}'",
         terminal_text(option)
     ))
+}
+
+fn unknown_dispatch(operation: &str) -> String {
+    with_usage(&format!("unknown {operation} option"))
 }
 
 fn with_usage(message: &str) -> String {

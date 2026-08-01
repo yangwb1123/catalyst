@@ -1,8 +1,8 @@
 use std::{env, error::Error};
 
 use forge_runtime_application::{
-    GroupModelAnalysisDispatchProvider, GroupModelAnalysisRequestCodec,
-    GroupPanelSynthesisDispatchProvider,
+    GroupAgentNodeDispatchRequestCodec, GroupModelAnalysisDispatchProvider,
+    GroupModelAnalysisRequestCodec, GroupPanelSynthesisDispatchProvider,
 };
 use forge_runtime_infrastructure::OpenAiResponsesProvider;
 
@@ -76,6 +76,25 @@ impl GroupPanelSynthesisDispatchProvider for OpenAiPreparedProvider {
 }
 
 pub(crate) struct OpenAiRequestCodec;
+
+impl GroupAgentNodeDispatchRequestCodec for OpenAiRequestCodec {
+    fn encode_request(
+        &self,
+        model: &str,
+        request: &ModelRequest,
+    ) -> Result<Vec<u8>, ProviderError> {
+        OpenAiResponsesProvider::encode_request_bytes(model, request)
+    }
+
+    fn validate_exact_request(
+        &self,
+        model: &str,
+        expected: &ModelRequest,
+        actual: &[u8],
+    ) -> Result<(), ProviderError> {
+        OpenAiResponsesProvider::validate_exact_request_bytes(model, expected, actual)
+    }
+}
 
 impl GroupModelAnalysisRequestCodec for OpenAiRequestCodec {
     fn encode_request(

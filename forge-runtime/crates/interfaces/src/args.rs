@@ -18,7 +18,7 @@ mod run_args;
 pub use group_commands::{
     GroupAnalysisCommand, GroupCommand, GroupExecutionCommand, GroupGraphCommand,
     GroupGraphRunCommand, GroupGraphRunContractCommand, GroupGraphRunControlCommand,
-    GroupPanelCommand, GroupRunCommand, GroupSynthesisCommand,
+    GroupGraphRunDispatchCommand, GroupPanelCommand, GroupRunCommand, GroupSynthesisCommand,
 };
 
 #[derive(Debug, Eq, PartialEq)]
@@ -306,6 +306,9 @@ fn accepts_idempotency_key(command: &Command) -> bool {
                                 GroupGraphRunCommand::Prepare { .. }
                                     | GroupGraphRunCommand::Contract(
                                         GroupGraphRunContractCommand::Admit { .. },
+                                    )
+                                    | GroupGraphRunCommand::Dispatch(
+                                        GroupGraphRunDispatchCommand::Prepare { .. },
                                     ),
                             ),
                     )
@@ -471,6 +474,10 @@ mod group_execution_tests;
 #[cfg(test)]
 #[path = "group_agent_graph/args_tests.rs"]
 mod group_graph_tests;
+
+#[cfg(test)]
+#[path = "group_agent_graph/dispatch_args_tests.rs"]
+mod group_graph_dispatch_tests;
 
 #[cfg(test)]
 #[path = "group_analysis_args_tests.rs"]

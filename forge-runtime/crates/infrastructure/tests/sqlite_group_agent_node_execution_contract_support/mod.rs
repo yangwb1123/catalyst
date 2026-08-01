@@ -31,9 +31,18 @@ pub fn request(
     key: &str,
     admitted_at_ms: u64,
 ) -> AdmitGroupAgentNodeExecutionContract {
+    request_for_run(fixture, "graph-run-1", key, admitted_at_ms)
+}
+
+pub fn request_for_run(
+    fixture: &Fixture,
+    graph_run_id: &str,
+    key: &str,
+    admitted_at_ms: u64,
+) -> AdmitGroupAgentNodeExecutionContract {
     let run = fixture
         .store
-        .inspect_group_agent_graph_run("graph-run-1")
+        .inspect_group_agent_graph_run(graph_run_id)
         .expect("inspect base Graph Run");
     let snapshot = control_snapshot(&run, &fixture.graph);
     let contract = contract(&snapshot);

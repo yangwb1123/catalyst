@@ -77,6 +77,13 @@ impl Fixture {
             assert_eq!(&actual, expected);
         }
     }
+
+    #[allow(dead_code)] // This support module is compiled independently by several CLI test crates.
+    pub(super) fn remove_member_workspaces(&self) {
+        for role in ["frontend", "backend", "sso"] {
+            fs::remove_dir_all(self.projects.path().join(role)).expect("remove member workspace");
+        }
+    }
 }
 
 fn setup_group_source(

@@ -2,7 +2,8 @@
 #[path = "tests/group_agent_node_execution_contract_atomicity.rs"]
 mod atomicity_tests;
 mod codec;
-mod read;
+pub(super) mod dispatch_request;
+pub(in crate::sqlite_hub) mod read;
 mod rows;
 mod snapshot;
 mod write;

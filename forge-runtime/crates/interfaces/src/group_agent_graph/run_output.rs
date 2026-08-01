@@ -339,6 +339,9 @@ fn status_label(status: GroupAgentGraphRunStatus) -> &'static str {
     match status {
         GroupAgentGraphRunStatus::AwaitingExecutionContract => "awaiting_execution_contract",
         GroupAgentGraphRunStatus::AwaitingCoreDispatch => "awaiting_core_dispatch",
+        GroupAgentGraphRunStatus::AwaitingDispatchAuthorization => {
+            "awaiting_dispatch_authorization"
+        }
     }
 }
 

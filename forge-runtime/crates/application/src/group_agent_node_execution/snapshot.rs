@@ -79,6 +79,7 @@ fn is_base_run(inspection: &GroupAgentGraphRunInspection) -> bool {
         && inspection.v == GROUP_AGENT_GRAPH_RUN_VERSION
         && run.status == GroupAgentGraphRunStatus::AwaitingExecutionContract
         && !run.execution_contract_present
+        && !run.dispatch_request_present
         && !run.dispatch_authority_released
         && run.last_event_seq == 1
         && inspection.events.len() == 1
@@ -93,13 +94,23 @@ fn require_admission_state(
         && inspection.v == crate::runtime_domain::GROUP_AGENT_GRAPH_RUN_CONTRACT_VERSION
         && run.status == GroupAgentGraphRunStatus::AwaitingCoreDispatch
         && run.execution_contract_present
+        && !run.dispatch_request_present
         && !run.dispatch_authority_released
         && run.last_event_seq == 2
         && inspection.events.len() == 2
         && inspection.event_jsons.len() == 2;
-    (is_base_run(inspection) || admitted)
+    let prepared = run.v == crate::runtime_domain::GROUP_AGENT_GRAPH_RUN_DISPATCH_REQUEST_VERSION
+        && inspection.v == crate::runtime_domain::GROUP_AGENT_GRAPH_RUN_DISPATCH_REQUEST_VERSION
+        && run.status == GroupAgentGraphRunStatus::AwaitingDispatchAuthorization
+        && run.execution_contract_present
+        && run.dispatch_request_present
+        && !run.dispatch_authority_released
+        && run.last_event_seq == 3
+        && inspection.events.len() == 3
+        && inspection.event_jsons.len() == 3;
+    (is_base_run(inspection) || admitted || prepared)
         .then_some(())
-        .ok_or_else(|| conflict("admission requires the exact v1 base or v2 admitted state"))
+        .ok_or_else(|| conflict("admission requires an exact v1, v2, or v3 passive state"))
 }
 
 pub(super) fn validate_source_binding(

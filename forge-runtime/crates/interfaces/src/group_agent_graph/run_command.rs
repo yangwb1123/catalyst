@@ -19,6 +19,8 @@ use crate::{
 use super::{
     contract_command::{self, GroupAgentGraphControlContractCliOutput},
     contract_output::{self, GroupAgentNodeExecutionContractCliOutput},
+    dispatch_command,
+    dispatch_output::{self, GroupAgentNodeDispatchRequestCliOutput},
     run_output::{self, GroupAgentGraphRunCliOutput},
 };
 
@@ -26,6 +28,7 @@ pub enum GroupAgentGraphRunCommandCliOutput {
     Run(Box<GroupAgentGraphRunCliOutput>),
     ControlSnapshot(String),
     Contract(Box<GroupAgentNodeExecutionContractCliOutput>),
+    Dispatch(Box<GroupAgentNodeDispatchRequestCliOutput>),
 }
 
 pub fn execute(
@@ -70,6 +73,11 @@ pub fn execute(
         GroupGraphRunCommand::Contract(command) => Ok(aux_output(
             contract_command::execute_contract(args, command)?,
         )),
+        GroupGraphRunCommand::Dispatch(command) => {
+            Ok(GroupAgentGraphRunCommandCliOutput::Dispatch(Box::new(
+                dispatch_command::execute(args, command)?,
+            )))
+        }
     }
 }
 
@@ -87,6 +95,9 @@ pub fn write_output(
         }
         GroupAgentGraphRunCommandCliOutput::Contract(output) => {
             contract_output::write_output(output, json, writer)
+        }
+        GroupAgentGraphRunCommandCliOutput::Dispatch(output) => {
+            dispatch_output::write_output(output, json, writer)
         }
     }
 }

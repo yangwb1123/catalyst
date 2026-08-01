@@ -49,12 +49,28 @@ pub enum GroupGraphRunCommand {
     },
     Control(GroupGraphRunControlCommand),
     Contract(GroupGraphRunContractCommand),
+    Dispatch(GroupGraphRunDispatchCommand),
     Show {
         graph_run_id: String,
         include_plan: bool,
     },
     List {
         graph_id: Option<String>,
+        limit: usize,
+    },
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub enum GroupGraphRunDispatchCommand {
+    Prepare {
+        graph_run_id: String,
+    },
+    Show {
+        dispatch_request_id: String,
+        include_request: bool,
+    },
+    List {
+        graph_run_id: Option<String>,
         limit: usize,
     },
 }

@@ -16,15 +16,19 @@ use forge_runtime_domain::{
 
 use super::FixtureBundle;
 
-struct State {
+#[path = "store/dispatch.rs"]
+mod dispatch;
+
+pub(super) struct State {
     graph: GroupAgentGraphInspection,
     run: GroupAgentGraphRunInspection,
     admission: Option<StoredAdmission>,
+    dispatch: Option<dispatch::StoredDispatch>,
     list_override: Option<Vec<GroupAgentNodeExecutionContractRecord>>,
 }
 
 #[derive(Clone)]
-struct StoredAdmission {
+pub(super) struct StoredAdmission {
     key: String,
     inspection: GroupAgentNodeExecutionContractInspection,
 }
@@ -41,6 +45,7 @@ impl MemoryContractHub {
                 graph: fixture.graph.clone(),
                 run: fixture.run.clone(),
                 admission: None,
+                dispatch: None,
                 list_override: None,
             }),
             run_reads: AtomicUsize::new(0),
@@ -65,7 +70,7 @@ impl MemoryContractHub {
             .inspection = inspection;
     }
 
-    fn lock(&self) -> MutexGuard<'_, State> {
+    pub(super) fn lock(&self) -> MutexGuard<'_, State> {
         self.state.lock().expect("memory contract hub")
     }
 }

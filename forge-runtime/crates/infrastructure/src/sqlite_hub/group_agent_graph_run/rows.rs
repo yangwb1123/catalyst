@@ -1,14 +1,17 @@
 use rusqlite::{Connection, OptionalExtension, Row, params};
 
+use crate::runtime_domain::MAX_GROUP_AGENT_GRAPH_RUN_EVENTS;
+
 use super::{super::read_error, HubStoreError};
 
 const METADATA_COLUMNS: &str = "id,graph_id,run_version,status,source_snapshot_sha256,\
  graph_manifest_sha256,scheduler_protocol_version,plan_sha256,plan_bytes,node_count,wave_count,\
- execution_contract_present,dispatch_authority_released,last_event_seq,journal_bytes,created_at_ms";
+ execution_contract_present,dispatch_request_present,dispatch_authority_released,last_event_seq,\
+ journal_bytes,created_at_ms";
 const STORED_COLUMNS: &str = "id,graph_id,run_version,status,source_snapshot_sha256,\
  graph_manifest_sha256,scheduler_protocol_version,plan_sha256,plan_bytes,node_count,wave_count,\
- execution_contract_present,dispatch_authority_released,last_event_seq,journal_bytes,created_at_ms,\
- idempotency_key,plan_blob";
+ execution_contract_present,dispatch_request_present,dispatch_authority_released,last_event_seq,\
+ journal_bytes,created_at_ms,idempotency_key,plan_blob";
 
 #[derive(Clone)]
 pub(super) struct RawRunMetadata {
@@ -24,6 +27,7 @@ pub(super) struct RawRunMetadata {
     pub node_count: i64,
     pub wave_count: i64,
     pub execution_contract_present: i64,
+    pub dispatch_request_present: i64,
     pub dispatch_authority_released: i64,
     pub last_event_seq: i64,
     pub journal_bytes: i64,
@@ -84,16 +88,18 @@ pub(super) fn load_events(
     connection: &Connection,
     graph_run_id: &str,
 ) -> Result<Vec<RawEvent>, HubStoreError> {
+    let limit = i64::try_from(MAX_GROUP_AGENT_GRAPH_RUN_EVENTS + 1)
+        .map_err(|error| corrupt(&format!("invalid Graph Run event read limit: {error}")))?;
     let mut statement = connection
         .prepare(
             "SELECT graph_run_id,seq,event_version,kind,event_blob,event_bytes,
                     event_sha256,created_at_ms
              FROM group_agent_graph_run_events
-             WHERE graph_run_id = ?1 ORDER BY seq LIMIT 2",
+             WHERE graph_run_id = ?1 ORDER BY seq LIMIT ?2",
         )
         .map_err(read_error)?;
     statement
-        .query_map([graph_run_id], event_row)
+        .query_map(params![graph_run_id, limit], event_row)
         .map_err(read_error)?
         .map(|row| row.map_err(read_error))
         .collect()
@@ -137,8 +143,8 @@ where
 fn stored_row(row: &Row<'_>) -> rusqlite::Result<RawStoredRun> {
     Ok(RawStoredRun {
         metadata: metadata_row(row)?,
-        idempotency_key: row.get(16)?,
-        plan_blob: row.get(17)?,
+        idempotency_key: row.get(17)?,
+        plan_blob: row.get(18)?,
     })
 }
 
@@ -156,10 +162,11 @@ fn metadata_row(row: &Row<'_>) -> rusqlite::Result<RawRunMetadata> {
         node_count: row.get(9)?,
         wave_count: row.get(10)?,
         execution_contract_present: row.get(11)?,
-        dispatch_authority_released: row.get(12)?,
-        last_event_seq: row.get(13)?,
-        journal_bytes: row.get(14)?,
-        created_at_ms: row.get(15)?,
+        dispatch_request_present: row.get(12)?,
+        dispatch_authority_released: row.get(13)?,
+        last_event_seq: row.get(14)?,
+        journal_bytes: row.get(15)?,
+        created_at_ms: row.get(16)?,
     })
 }
 

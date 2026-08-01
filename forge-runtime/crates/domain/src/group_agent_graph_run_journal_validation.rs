@@ -1,5 +1,6 @@
 use super::{
-    BeginGroupAgentGraphRun, GROUP_AGENT_GRAPH_RUN_CONTRACT_VERSION, GROUP_AGENT_GRAPH_RUN_VERSION,
+    BeginGroupAgentGraphRun, GROUP_AGENT_GRAPH_RUN_CONTRACT_VERSION,
+    GROUP_AGENT_GRAPH_RUN_DISPATCH_REQUEST_VERSION, GROUP_AGENT_GRAPH_RUN_VERSION,
     GROUP_AGENT_GRAPH_SCHEDULER_PROTOCOL_VERSION, GroupAgentGraphCorePlan, GroupAgentGraphRunEvent,
     GroupAgentGraphRunEventKind, GroupAgentGraphRunInspection, GroupAgentGraphRunRecord,
     GroupAgentGraphRunStatus, GroupAgentGraphRunValidationError,
@@ -7,8 +8,10 @@ use super::{
     MAX_GROUP_AGENT_GRAPH_RUN_EVENTS, MAX_GROUP_AGENT_GRAPH_RUN_JOURNAL_BYTES,
 };
 use crate::{
+    GROUP_AGENT_NODE_DISPATCH_CODEC_VERSION, GroupAgentNodeProviderKind,
     MAX_GROUP_AGENT_GRAPH_IDEMPOTENCY_KEY_BYTES, MAX_GROUP_AGENT_GRAPH_IDENTIFIER_BYTES,
     MAX_GROUP_AGENT_GRAPH_NODE_EXECUTION_CONTRACT_BYTES, MAX_GROUP_AGENT_GRAPH_NODES,
+    MAX_GROUP_AGENT_NODE_PROVIDER_REQUEST_BYTES, group_agent_node_dispatch_request_id,
 };
 
 pub(super) fn validate_record(
@@ -37,6 +40,7 @@ fn valid_record_state(record: &GroupAgentGraphRunRecord) -> bool {
             record.v,
             record.status,
             record.execution_contract_present,
+            record.dispatch_request_present,
             record.dispatch_authority_released,
             record.last_event_seq,
         ),
@@ -45,13 +49,22 @@ fn valid_record_state(record: &GroupAgentGraphRunRecord) -> bool {
             GroupAgentGraphRunStatus::AwaitingExecutionContract,
             false,
             false,
+            false,
             1,
         ) | (
             GROUP_AGENT_GRAPH_RUN_CONTRACT_VERSION,
             GroupAgentGraphRunStatus::AwaitingCoreDispatch,
             true,
             false,
+            false,
             2,
+        ) | (
+            GROUP_AGENT_GRAPH_RUN_DISPATCH_REQUEST_VERSION,
+            GroupAgentGraphRunStatus::AwaitingDispatchAuthorization,
+            true,
+            true,
+            false,
+            3,
         )
     )
 }
@@ -59,7 +72,17 @@ fn valid_record_state(record: &GroupAgentGraphRunRecord) -> bool {
 pub(super) fn validate_event(
     event: &GroupAgentGraphRunEvent,
 ) -> Result<(), GroupAgentGraphRunValidationError> {
-    let valid = match &event.kind {
+    if validate_event_kind(event)
+        && event.canonical_json()?.len() <= MAX_GROUP_AGENT_GRAPH_RUN_EVENT_BYTES
+    {
+        Ok(())
+    } else {
+        Err(invalid("invalid passive Group Agent Graph Run event"))
+    }
+}
+
+fn validate_event_kind(event: &GroupAgentGraphRunEvent) -> bool {
+    match &event.kind {
         GroupAgentGraphRunEventKind::GraphRunPrepared {
             graph_id,
             graph_manifest_sha256,
@@ -98,12 +121,56 @@ pub(super) fn validate_event(
             project_lane_sha256,
             *admitted_at_ms,
         ),
-    };
-    if valid && event.canonical_json()?.len() <= MAX_GROUP_AGENT_GRAPH_RUN_EVENT_BYTES {
-        Ok(())
-    } else {
-        Err(invalid("invalid passive Group Agent Graph Run event"))
+        kind @ GroupAgentGraphRunEventKind::NodeDispatchRequestPrepared { .. } => {
+            validate_dispatch_request_event(event, kind)
+        }
     }
+}
+
+fn validate_dispatch_request_event(
+    event: &GroupAgentGraphRunEvent,
+    kind: &GroupAgentGraphRunEventKind,
+) -> bool {
+    let GroupAgentGraphRunEventKind::NodeDispatchRequestPrepared {
+        previous_event_sha256,
+        contract_id,
+        contract_sha256,
+        dispatch_request_id,
+        dispatch_request_sha256,
+        request_body_sha256,
+        request_body_bytes,
+        logical_request_sha256,
+        node_id,
+        attempt,
+        project_lane_sha256,
+        codec_protocol_version,
+        provider_kind,
+        destination_sha256,
+        pricing_snapshot_sha256,
+        prepared_at_ms,
+    } = kind
+    else {
+        return false;
+    };
+    event.v == GROUP_AGENT_GRAPH_RUN_DISPATCH_REQUEST_VERSION
+        && event.seq == 3
+        && valid_identifier(&event.graph_run_id)
+        && is_lower_hex_digest(previous_event_sha256)
+        && contract_id == &format!("node-contract-{contract_sha256}")
+        && is_lower_hex_digest(contract_sha256)
+        && dispatch_request_id == &group_agent_node_dispatch_request_id(dispatch_request_sha256)
+        && is_lower_hex_digest(dispatch_request_sha256)
+        && is_lower_hex_digest(request_body_sha256)
+        && (1..=MAX_GROUP_AGENT_NODE_PROVIDER_REQUEST_BYTES).contains(request_body_bytes)
+        && is_lower_hex_digest(logical_request_sha256)
+        && valid_identifier(node_id)
+        && *attempt == 1
+        && is_lower_hex_digest(project_lane_sha256)
+        && *codec_protocol_version == GROUP_AGENT_NODE_DISPATCH_CODEC_VERSION
+        && *provider_kind == GroupAgentNodeProviderKind::OpenAiResponses
+        && is_lower_hex_digest(destination_sha256)
+        && is_lower_hex_digest(pricing_snapshot_sha256)
+        && i64::try_from(*prepared_at_ms).is_ok()
 }
 
 fn validate_prepared_event(
@@ -317,11 +384,23 @@ fn validate_journal_head(
     else {
         return Err(invalid("Graph Run seq-2 event kind is invalid"));
     };
-    if previous == *previous_event_sha256 {
-        Ok(())
-    } else {
-        Err(invalid("Graph Run event hash chain is invalid"))
+    if previous != *previous_event_sha256 {
+        return Err(invalid("Graph Run event hash chain is invalid"));
     }
+    if inspection.events.len() == 2 {
+        return Ok(());
+    }
+    let previous = inspection.events[1].expected_sha256()?;
+    let GroupAgentGraphRunEventKind::NodeDispatchRequestPrepared {
+        previous_event_sha256,
+        ..
+    } = &inspection.events[2].kind
+    else {
+        return Err(invalid("Graph Run seq-3 event kind is invalid"));
+    };
+    (previous == *previous_event_sha256)
+        .then_some(())
+        .ok_or_else(|| invalid("Graph Run event hash chain is invalid"))
 }
 
 fn validate_exact_plan(

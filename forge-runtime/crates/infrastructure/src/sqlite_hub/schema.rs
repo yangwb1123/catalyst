@@ -19,10 +19,11 @@ use super::{
     },
     schema_v9_sql::MIGRATE_V8_TO_V9_SQL,
     schema_v10_sql::MIGRATE_V9_TO_V10_SQL,
+    schema_v11_sql::MIGRATE_V10_TO_V11_SQL,
     unavailable,
 };
 
-const SCHEMA_VERSION: i64 = 10;
+const SCHEMA_VERSION: i64 = 11;
 const CONNECTION_BUSY_TIMEOUT: Duration = Duration::from_millis(250);
 const OPEN_RETRY_TIMEOUT: Duration = Duration::from_secs(5);
 const OPEN_RETRY_DELAY: Duration = Duration::from_millis(10);
@@ -155,6 +156,9 @@ fn migrate_to_current(connection: &Connection, version: i64) -> Result<(), OpenA
     if version <= 9 {
         migrate_v9_to_v10(connection)?;
     }
+    if version <= 10 {
+        migrate_v10_to_v11(connection)?;
+    }
     Ok(())
 }
 
@@ -229,6 +233,11 @@ fn migrate_v8_to_v9(connection: &Connection) -> Result<(), OpenAttemptError> {
 
 fn migrate_v9_to_v10(connection: &Connection) -> Result<(), OpenAttemptError> {
     connection.execute_batch(MIGRATE_V9_TO_V10_SQL)?;
+    Ok(())
+}
+
+fn migrate_v10_to_v11(connection: &Connection) -> Result<(), OpenAttemptError> {
+    connection.execute_batch(MIGRATE_V10_TO_V11_SQL)?;
     Ok(())
 }
 

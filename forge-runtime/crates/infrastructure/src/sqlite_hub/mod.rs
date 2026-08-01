@@ -34,6 +34,7 @@ mod schema;
 mod schema_migration_tests;
 mod schema_sql;
 mod schema_v10_sql;
+mod schema_v11_sql;
 mod schema_v9_sql;
 mod write;
 

@@ -1,7 +1,11 @@
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior};
 
 use super::{
-    super::{group_agent_graph, group_run_codec, read_error},
+    super::{
+        group_agent_graph,
+        group_agent_node_execution_contract::{dispatch_request, read as contract_read},
+        group_run_codec, read_error,
+    },
     BeginGroupAgentGraphRun, GroupAgentGraphCorePlan, GroupAgentGraphInspection,
     GroupAgentGraphRunEvent, GroupAgentGraphRunEventKind, GroupAgentGraphRunInspection,
     GroupAgentGraphRunRecord, GroupAgentGraphRunStatus, HubEntity, HubStoreError,
@@ -47,10 +51,39 @@ fn inspect_in_snapshot_with_hook<F>(
 where
     F: FnOnce() -> Result<(), HubStoreError>,
 {
-    let stored = rows::find_by_id(connection, graph_run_id)?
-        .ok_or_else(|| not_found(HubEntity::GroupAgentGraphRun, graph_run_id))?;
+    let Some(stored) = rows::find_by_id(connection, graph_run_id)? else {
+        return Err(missing_run_error(connection, graph_run_id)?);
+    };
     after_run()?;
     validate_stored(connection, stored)
+}
+
+fn missing_run_error(
+    connection: &Connection,
+    graph_run_id: &str,
+) -> Result<HubStoreError, HubStoreError> {
+    let has_owned_child: bool = connection
+        .query_row(
+            "SELECT EXISTS(
+               SELECT graph_run_id FROM group_agent_graph_run_events WHERE graph_run_id=?1
+               UNION ALL
+               SELECT graph_run_id FROM group_agent_graph_node_execution_contracts
+                 WHERE graph_run_id=?1
+               UNION ALL
+               SELECT graph_run_id FROM group_agent_graph_node_dispatch_requests
+                 WHERE graph_run_id=?1
+             )",
+            [graph_run_id],
+            |row| row.get(0),
+        )
+        .map_err(read_error)?;
+    if has_owned_child {
+        Ok(corrupt(
+            "stored Graph Run parent is missing for owned child rows",
+        ))
+    } else {
+        Ok(not_found(HubEntity::GroupAgentGraphRun, graph_run_id))
+    }
 }
 
 #[cfg(test)]
@@ -89,7 +122,6 @@ pub(super) fn validate_stored(
     }
     let (plan, plan_json) = codec::decode_plan(&stored.plan_blob, &record_digest(&record)?)?;
     let (events, event_jsons) = load_events(connection, &record)?;
-    validate_contract_presence(connection, &record)?;
     let graph = load_graph_stored(connection, &record.graph_id)?;
     validate_graph_binding(&graph, &record, &plan)?;
     let inspection = GroupAgentGraphRunInspection {
@@ -103,29 +135,9 @@ pub(super) fn validate_stored(
     inspection
         .validate()
         .map_err(|error| corrupt(&error.to_string()))?;
+    let contract = contract_read::validate_graph_run_binding(connection, &inspection, &graph)?;
+    dispatch_request::read::validate_graph_run_binding(connection, &inspection, contract.as_ref())?;
     Ok(inspection)
-}
-
-fn validate_contract_presence(
-    connection: &Connection,
-    record: &GroupAgentGraphRunRecord,
-) -> Result<(), HubStoreError> {
-    let count: i64 = connection
-        .query_row(
-            "SELECT count(*) FROM group_agent_graph_node_execution_contracts
-             WHERE graph_run_id = ?1",
-            [&record.graph_run_id],
-            |row| row.get(0),
-        )
-        .map_err(read_error)?;
-    let expected = i64::from(record.execution_contract_present);
-    if count == expected {
-        Ok(())
-    } else {
-        Err(corrupt(
-            "stored Graph Run execution-contract presence disagrees",
-        ))
-    }
 }
 
 pub(super) fn validate_candidate_graph(
@@ -204,6 +216,9 @@ fn event_kind(kind: &GroupAgentGraphRunEventKind) -> &'static str {
         GroupAgentGraphRunEventKind::NodeExecutionContractAdmitted { .. } => {
             "node_execution_contract_admitted"
         }
+        GroupAgentGraphRunEventKind::NodeDispatchRequestPrepared { .. } => {
+            "node_dispatch_request_prepared"
+        }
     }
 }
 
@@ -212,6 +227,9 @@ fn event_time(kind: &GroupAgentGraphRunEventKind) -> u64 {
         GroupAgentGraphRunEventKind::GraphRunPrepared { prepared_at_ms, .. } => *prepared_at_ms,
         GroupAgentGraphRunEventKind::NodeExecutionContractAdmitted { admitted_at_ms, .. } => {
             *admitted_at_ms
+        }
+        GroupAgentGraphRunEventKind::NodeDispatchRequestPrepared { prepared_at_ms, .. } => {
+            *prepared_at_ms
         }
     }
 }
@@ -270,6 +288,10 @@ fn metadata_record(raw: rows::RawRunMetadata) -> Result<GroupAgentGraphRunRecord
             raw.execution_contract_present,
             "execution contract presence",
         )?,
+        dispatch_request_present: parse_boolean(
+            raw.dispatch_request_present,
+            "dispatch request presence",
+        )?,
         dispatch_authority_released: parse_boolean(
             raw.dispatch_authority_released,
             "dispatch authority",
@@ -326,6 +348,9 @@ fn parse_status(value: &str) -> Result<GroupAgentGraphRunStatus, HubStoreError> 
     match value {
         "awaiting_execution_contract" => Ok(GroupAgentGraphRunStatus::AwaitingExecutionContract),
         "awaiting_core_dispatch" => Ok(GroupAgentGraphRunStatus::AwaitingCoreDispatch),
+        "awaiting_dispatch_authorization" => {
+            Ok(GroupAgentGraphRunStatus::AwaitingDispatchAuthorization)
+        }
         _ => Err(corrupt(
             "stored Group Agent Graph Run status is unsupported",
         )),

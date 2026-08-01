@@ -131,6 +131,7 @@ fn run(
             node_count: snapshot.plan.authored_node_ids.len(),
             wave_count: snapshot.plan.waves.len(),
             execution_contract_present: false,
+            dispatch_request_present: false,
             dispatch_authority_released: false,
             last_event_seq: 1,
             journal_bytes: event_json.len(),

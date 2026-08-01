@@ -167,7 +167,7 @@ fn validate_workspace(
         .ok_or_else(|| invalid("Node Execution Contract workspace must be none"))
 }
 
-fn validate_provider(
+pub(super) fn validate_provider(
     provider: &GroupAgentNodeExecutionProvider,
 ) -> Result<(), GroupAgentNodeExecutionValidationError> {
     let valid = provider.kind == GroupAgentNodeProviderKind::OpenAiResponses

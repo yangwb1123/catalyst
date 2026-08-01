@@ -15,14 +15,25 @@ type sharedFixture struct {
 		ExecutionOptions             fixtureOptions `json:"execution_options"`
 	} `json:"input"`
 	Expected struct {
-		SelectedNodeID               string `json:"selected_node_id"`
-		CanonicalUserPromptJSON      string `json:"canonical_user_prompt_json"`
-		CanonicalRequestPayloadJSON  string `json:"canonical_request_payload_json"`
-		RequestSHA256                string `json:"request_sha256"`
-		CanonicalContractPayloadJSON string `json:"canonical_contract_payload_json"`
-		ContractSHA256               string `json:"contract_sha256"`
-		ContractID                   string `json:"contract_id"`
-		CanonicalContractJSON        string `json:"canonical_contract_json"`
+		SelectedNodeID                   string `json:"selected_node_id"`
+		CanonicalUserPromptJSON          string `json:"canonical_user_prompt_json"`
+		CanonicalRequestPayloadJSON      string `json:"canonical_request_payload_json"`
+		RequestSHA256                    string `json:"request_sha256"`
+		CanonicalContractPayloadJSON     string `json:"canonical_contract_payload_json"`
+		ContractSHA256                   string `json:"contract_sha256"`
+		ContractID                       string `json:"contract_id"`
+		CanonicalProviderRequestBodyJSON string `json:"canonical_provider_request_body_json"`
+		ProviderRequestBytes             uint64 `json:"provider_request_bytes"`
+		ProviderRequestSHA256            string `json:"provider_request_sha256"`
+		CanonicalDestinationPayloadJSON  string `json:"canonical_destination_payload_json"`
+		DestinationSHA256                string `json:"destination_sha256"`
+		AdmittedAtMilliseconds           uint64 `json:"admitted_at_ms"`
+		CanonicalAdmissionEventJSON      string `json:"canonical_admission_event_json"`
+		AdmissionEventSHA256             string `json:"admission_event_sha256"`
+		CanonicalDispatchRequestJSON     string `json:"canonical_dispatch_request_payload_json"`
+		DispatchRequestSHA256            string `json:"dispatch_request_sha256"`
+		DispatchRequestID                string `json:"dispatch_request_id"`
+		CanonicalContractJSON            string `json:"canonical_contract_json"`
 	} `json:"expected"`
 }
 

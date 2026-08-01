@@ -8,9 +8,9 @@ use super::{
     group_agent_node_user_prompt,
 };
 use crate::{
-    GROUP_AGENT_GRAPH_RUN_CONTRACT_VERSION, GroupAgentGraphRunEvent, GroupAgentGraphRunEventKind,
-    GroupAgentGraphRunStatus, MAX_GROUP_AGENT_GRAPH_IDEMPOTENCY_KEY_BYTES,
-    MAX_GROUP_AGENT_GRAPH_RUN_EVENT_BYTES,
+    GROUP_AGENT_GRAPH_RUN_CONTRACT_VERSION, GROUP_AGENT_GRAPH_RUN_DISPATCH_REQUEST_VERSION,
+    GroupAgentGraphRunEvent, GroupAgentGraphRunEventKind, GroupAgentGraphRunStatus,
+    MAX_GROUP_AGENT_GRAPH_IDEMPOTENCY_KEY_BYTES, MAX_GROUP_AGENT_GRAPH_RUN_EVENT_BYTES,
 };
 
 pub(super) fn validate_record(
@@ -250,8 +250,17 @@ fn validate_inspection_run(
 ) -> Result<(), GroupAgentNodeExecutionValidationError> {
     let run = &inspection.graph_run;
     let contract = &inspection.contract;
-    let valid = run.run.v == GROUP_AGENT_GRAPH_RUN_CONTRACT_VERSION
-        && run.run.status == GroupAgentGraphRunStatus::AwaitingCoreDispatch
+    let state_valid = matches!(
+        (run.run.v, run.run.status),
+        (
+            GROUP_AGENT_GRAPH_RUN_CONTRACT_VERSION,
+            GroupAgentGraphRunStatus::AwaitingCoreDispatch,
+        ) | (
+            GROUP_AGENT_GRAPH_RUN_DISPATCH_REQUEST_VERSION,
+            GroupAgentGraphRunStatus::AwaitingDispatchAuthorization,
+        )
+    );
+    let valid = state_valid
         && run.run.graph_run_id == contract.graph_run_id
         && run.run.graph_id == contract.graph_id
         && run.run.source_snapshot_sha256 == contract.source_snapshot_sha256
