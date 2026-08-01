@@ -44,7 +44,12 @@ in infrastructure. The CLI composes the concrete store and service.
 | Run | One Agent Loop execution; not persisted by the original Hub slice |
 | Prepared Group Run | Immutable, canonical Group-context input artifact |
 | Group execution | Local receipt proving one prepared snapshot was validated |
+| Group Agent Graph | Immutable manager/task/dependency definition over one prepared Group Run |
+| Group Agent Graph Run | Passive state admitting an exact Core Plan and, optionally, one first-node contract |
+| Node Execution Contract | Exact, budgeted first-node input awaiting a separate dispatch authority |
 | Group analysis | Consent-gated single-model result over one frozen Group Run |
+| Group analysis panel | Ordered local assembly of completed analyses from one frozen Group Run |
+| Group panel synthesis | Separately consented single-model comparison over one immutable panel |
 | AuthSession | Future account credential lifecycle; absent in this slice |
 
 Reusing a Conversation ID is not interrupted execution resume. The delivered
@@ -82,10 +87,23 @@ forge-runtime [OPTIONS] group run list [GROUP_ID] [--limit N]
 forge-runtime [OPTIONS] group execution start GROUP_RUN_ID --idempotency-key KEY
 forge-runtime [OPTIONS] group execution show EXECUTION_ID
 forge-runtime [OPTIONS] group execution list [GROUP_RUN_ID] [--limit N]
+forge-runtime [OPTIONS] group graph prepare GROUP_RUN_ID --spec FILE|-
+forge-runtime [OPTIONS] group graph show GRAPH_ID [--include-spec]
+forge-runtime [OPTIONS] group graph list [GROUP_RUN_ID] [--limit N]
+forge-runtime [OPTIONS] group graph run prepare GRAPH_ID --plan FILE|-
+forge-runtime [OPTIONS] group graph run show GRAPH_RUN_ID [--include-plan]
+forge-runtime [OPTIONS] group graph run list [GRAPH_ID] [--limit N]
 forge-runtime [OPTIONS] group analysis prepare GROUP_RUN_ID [--model MODEL]
 forge-runtime [OPTIONS] group analysis send ANALYSIS_ID --confirm-off-machine
 forge-runtime [OPTIONS] group analysis show ANALYSIS_ID [--include-result]
 forge-runtime [OPTIONS] group analysis list [GROUP_RUN_ID] [--limit N]
+forge-runtime [OPTIONS] group panel prepare GROUP_RUN_ID --analysis ANALYSIS_ID [...]
+forge-runtime [OPTIONS] group panel show PANEL_ID [--include-results]
+forge-runtime [OPTIONS] group panel list [GROUP_RUN_ID] [--limit N]
+forge-runtime [OPTIONS] group synthesis prepare PANEL_ID [--model MODEL]
+forge-runtime [OPTIONS] group synthesis send SYNTHESIS_ID --confirm-off-machine
+forge-runtime [OPTIONS] group synthesis show SYNTHESIS_ID [--include-result]
+forge-runtime [OPTIONS] group synthesis list [PANEL_ID] [--limit N]
 forge-runtime [OPTIONS] group list
 forge-runtime [OPTIONS] [PATH|-C PATH] demo [--read FILE] PROMPT
 forge-runtime [OPTIONS] -C PATH run start SESSION_ID PROMPT_ID [RUN_OPTIONS]
@@ -101,8 +119,9 @@ commands (`session`, `prompt`, `group`, `demo`, `help`) use `./name` or
 of silently ignoring them.
 
 `--idempotency-key` is accepted by `session new`, `prompt add`, `group create`,
-`group add`, `group run prepare`, `group execution start`, `group analysis
-prepare`, and `run start`.
+`group add`, `group run prepare`, `group execution start`, `group graph
+prepare`, `group graph run prepare`, `group analysis prepare`, `group panel
+prepare`, `group synthesis prepare`, and `run start`.
 When omitted, single-transaction local mutations generate a fresh key.
 `group execution start` requires an explicit key because it must recover a
 multi-transaction evidence prefix; `run start --live` also requires one before
@@ -215,7 +234,22 @@ The JSON envelope is:
 | Prepared Group Run snapshot JSON | 8 MiB |
 | Prepared Group Run list | 1–100 rows |
 | Group execution list | 1–100 rows |
+| Group Agent Graph nodes / edges | 1–32 / 0–512 |
+| Group Agent Graph manifest | 2 MiB |
+| Group Agent Graph list | 1–100 rows |
+| Group Agent Graph Core Plan / event | 2 MiB / 64 KiB |
+| Graph control snapshot / Node Execution Contract | 4 MiB / 4 MiB |
+| Node Contract output / events / result | 32,768 tokens / 4,096 / 512 KiB |
+| Node Contract timeout / cost ceiling | 86,400,000 ms / 10^12 USD micros |
+| Group Agent Graph Run list | 1–100 rows |
 | Group analysis list | 1–100 rows |
+| Group panel analyses | 2–8 unique completed results |
+| Group panel canonical manifest | 8 MiB |
+| Group panel list | 1–100 rows |
+| Group synthesis request | 16 MiB |
+| Group synthesis model output | 64 KiB / 32,768 tokens / 4,096 events |
+| Group synthesis result artifact | 512 KiB |
+| Group synthesis list | 1–100 rows |
 
 Required strings reject empty or whitespace-only values.
 
@@ -299,14 +333,64 @@ Three Group-analysis tables bind one verified `group_runs` row to exact request
 bytes, a compact event journal, and an optional result artifact. Inspection
 revalidates every source/config/request/event/cursor/result binding. See ADR 0011.
 
-The v5 layout is also the complete Hub-owned main-schema contract. Every open
-validates its declared v0–v5 prefix before migration DDL (v0 must be empty),
-then compares the final 14 tables and 8 explicit indexes with definitions
-generated from the immutable v1–v5 DDL, cross-checks columns/FKs and all
-explicit/implicit index signatures through schema-qualified PRAGMAs, and
-rejects extra main tables/views/triggers/virtual shadows. The final validation
-runs inside the migration transaction, so an invalid legacy schema cannot
-leave a partial upgrade. See ADR 0012.
+ADR 0012 established the complete Hub-owned schema contract at v5. Every open
+validates its declared prefix before migration DDL (v0 must be empty), checks
+columns/FKs and every explicit/implicit index signature through
+schema-qualified PRAGMAs, and rejects extra main
+tables/views/triggers/virtual shadows.
+
+### Follow-on schema version 6 (delivered)
+
+`group_analysis_panels` and `group_analysis_panel_analyses` bind one canonical,
+ordered manifest to two through eight existing completed analysis results.
+The parent stores the exact manifest bytes/digest, shared Group Run source,
+count, key, and original time; child rows preserve position and bind each
+analysis and expected result digest. Deletion is restricted. See ADR 0013.
+
+### Follow-on schema version 7 (delivered)
+
+`group_panel_syntheses`, `group_panel_synthesis_events`, and
+`group_panel_synthesis_results` bind one immutable panel to a separate exact
+zero-tool request, three-event external-effect journal, and optional terminal
+result. The source FK, events, and result all restrict deletion. Fixed
+`local_artifact` output and `none` writeback targets are schema-checked. See
+ADR 0015.
+
+### Follow-on schema version 8 (delivered)
+
+`group_agent_graphs` binds one exact prepared Group Run to immutable canonical
+manager/task/dependency bytes, source and manifest digests, bounded
+node/edge/wave counts, and one unique idempotency key. The Group Run foreign
+key restricts deletion. Two explicit indexes support source-filtered and
+global recency inventories. See ADR 0017.
+
+### Follow-on schema version 9 (delivered)
+
+`group_agent_graph_runs` and `group_agent_graph_run_events` bind one exact
+Core Plan to its fully revalidated Graph, passive status, fixed false execution
+authority flags, and one preparation receipt. Two explicit indexes support
+source-filtered and global recency inventories. See ADR 0018.
+
+### Follow-on schema version 10 (delivered)
+
+The Graph Run tables admit exactly two durable states: v1
+`awaiting_execution_contract` with one event and no contract, or v2
+`awaiting_core_dispatch` with one contract, two events, and dispatch authority
+still false. `group_agent_graph_node_execution_contracts` stores one exact
+canonical first-node contract per Run, its expected cursor/head, request and
+project-lane digests, and replay key. Project-lane and recency indexes support
+future claim validation and metadata inventories. Existing v9 rows remain v1.
+See ADR 0019.
+
+The generated full-catalog contract now covers immutable v1–v10 DDL and the
+exact v10 inventory of 23 tables, 18 named explicit indexes, and 41 implicit
+indexes. The v1–v10 length-framed DDL SHA-256 is
+`16752cf9b054b8e840a98976b06e8f2d015aca6f001191943d4ac54a237e352b`;
+the independent v10 structural-contract SHA-256 is
+`ce5383f44a3a982ab127608acda473d1531ff10fc4b6ca8e7036d84fdec75d8d`.
+Final validation runs inside the migration transaction, so an invalid legacy
+schema cannot leave a partial upgrade. Unexpected definitions or objects fail
+as corruption without repair. See ADR 0012.
 
 Every connection enables:
 
@@ -363,8 +447,86 @@ only a zero-tool valid provider terminal followed by transport EOF atomically
 commits result, event and status. Incomplete function calls and trailing frames
 fail closed. Application and SQLite use the same recursively key-sorted result
 encoding, and a reopened-database integration test crosses both layers. Each
-v5 database open also compares the three analysis tables, keys, foreign keys,
+v6 database open also compares the three analysis tables, keys, foreign keys,
 indexes, trigger inventory, and exact definitions with the migration contract.
+
+`group panel prepare` fully validates one frozen Group Run and every selected
+source analysis in one immediate transaction, then stores the parent manifest
+and ordered child bindings atomically. Same-key replay compares the exact
+manifest before returning the original panel; order is payload. Inspection
+rebuilds the canonical manifest and revalidates the current source rows against
+its copied contributions. A missing, changed, nonterminal, `length`, cross-run,
+or digest-divergent input fails closed, and a failed creation leaves no partial
+panel.
+
+`group synthesis prepare` revalidates that complete panel in one immediate
+transaction, stores a fixed Prompt/configuration and exact request, and appends
+only its prepared event. Its sole user message is the canonical ordered panel
+manifest; v1 adds no separate Group dossier or excerpt fields, although copied
+analysis text may itself quote or reproduce source content. Same-key replay
+preserves the original identity, time and bytes, while any source, order,
+result, Prompt, target, model, limit or request change conflicts.
+
+Confirmed `group synthesis send` performs complete source/request and
+credential/destination preflight before an immediate single-winner claim.
+Claim losers receive no request bytes and perform no provider call. A committed
+claim is immediately `dispatch_unknown`; no post-claim failure can authorize
+an automatic resend. Only a zero-tool provider terminal followed by true EOF
+can atomically insert the result, completion event, cursor and terminal status.
+
+`group graph prepare` validates the candidate Group Run, canonicalizes edge
+order, and derives authored-order Kahn waves in the application layer. Its
+SQLite persistence step starts key-first in one immediate transaction; a new
+key independently revalidates the exact prepared Group Run, every node's frozen
+`project_id + role`, canonical edge order, and deterministic waves before it
+inserts the immutable manifest and rereads it prior to commit. Duplicate
+nodes/edges, unknown or self edges, cycles, member mismatch, source drift, and
+noncanonical bytes fail closed. An exact same-key semantic replay returns the
+original graph identity and time; candidate identity/time and input edge order
+are not payload. `show` revalidates source, members, bytes, counts, and digest
+in one read snapshot. `list` reads metadata only. No operation resolves a
+profile label or runs the manager or node Agents.
+
+`forge graph-plan` uses the Go control plane's shared dependency implementation
+to recompute one strict Core Plan from the authored spec. The plan binds the
+exact stored Graph manifest digest, authored node order, canonical edges,
+waves, and scheduler protocol. Rust independently validates the same topology
+and shared canonical-byte golden but never chooses or advances a wave.
+
+`group graph run prepare` then admits that exact plan in one immediate SQLite
+transaction. It revalidates the complete Graph and frozen Group source,
+inserts an `awaiting_execution_contract` Run plus one canonical
+`graph_run_prepared` event, rereads both, and only then commits. Same-key replay
+preserves the original Run, plan, event, and creation time. A different Graph
+or plan conflicts; stored Graph/plan/event/digest drift remains corruption.
+`show` uses one read snapshot and validates the complete chain, while `list`
+reads metadata only. The v9 schema contains 22 owned tables, 16 explicit
+indexes, and 38 implicit autoindexes.
+
+`group graph run control export` fully revalidates the v1 Run, event head,
+Graph, frozen Group source, member bindings, Core Plan, and manifest, then emits
+one private bounded canonical snapshot without a trailing newline. Go alone
+selects `plan.waves[0][0]` and freezes its exact Prompts, HTTPS destination and
+model, all resource budgets, zero workspace/tools/predecessors, explicit future
+consent, and no-retry uncertainty policy into one canonical contract.
+Both languages enforce the same byte-stable endpoint subset: lowercase
+canonical DNS or IPv4 HTTPS, optional non-default port, and an unreserved path.
+Userinfo, query/fragment, percent escapes, dot segments, IPv6, and normalized
+host/port spellings fail closed.
+
+`group graph run contract admit` validates canonical bytes before opening the
+Hub, then starts key-first in one immediate transaction. It reconstructs the
+exact control snapshot, checks the expected seq/head and first-node selection,
+inserts the contract and second event, changes only the Run to v2
+`awaiting_core_dispatch`, rereads the complete aggregate, and commits. A
+same-key replay preserves original identity, bytes, event, and time; stale
+heads, second keys, divergent bytes, or corrupt source state fail closed.
+Dispatch authority remains false throughout.
+
+This passive receipt has no node/wave transition, execution envelope,
+capability, provider, model, workspace authority, result, or writeback. Its
+two protocol booleans remain false. Topology wave zero means only “no graph
+predecessors”; it does not mean resource-safe or dispatch-ready.
 
 Idempotency is payload-sensitive:
 
@@ -427,10 +589,59 @@ is not a MAC, signature, third-party attestation, model analysis, discussion,
 planning, or task completion. Digests and statistics remain correlatable, so
 the output is not anonymized or safe to share by default.
 
+Group Agent Graph rows store manager instructions, task and acceptance text,
+project IDs, frozen member roles, canonical edges, and readiness waves in
+plaintext. Default prepare/show output contains only graph metadata and
+honesty flags; `--include-spec` explicitly reveals the validated manifest.
+List remains metadata-only. Profile names are labels, edges express ordering
+without transporting results, and waves are a deterministic plan rather than
+proof of scheduling. Graph commands run no manager or node Agent, resolve no
+profile, grant no capability, scan no member workspace, read no provider
+credential, send no network request, and produce no task result or memory
+writeback. Prepare separately reports whether it read an explicitly named spec
+file; it discovers or traverses no other path.
+
+Group Agent Graph Run rows store the Core Plan, identifiers, topology, unkeyed
+digests, idempotency key, and bounded event journal in plaintext. Default prepare/show
+output hides the plan; `--include-plan` reveals its node identifiers, edges,
+waves, and correlatable Graph digest. List is metadata-only. The plan omits
+manager/task/project/role text, but its identifiers and hashes are not
+anonymous. A caller-named plan file is the only file this operation reads.
+Preparation/show/list use no provider credential, network, tool, member
+workspace, model, manager/node Agent, result, Conversation, Prompt, memory, or
+writeback.
+
+The private control export and Node Execution Contract additionally contain
+manager instruction, selected task and acceptance text, Project/member labels,
+exact system/user Prompts, provider endpoint/model, pricing identity, budgets,
+and policies in plaintext. Default contract show/list output omits those fields;
+`--include-contract` deliberately reveals them and Human output escapes terminal
+controls. Contract IDs and hashes are local content identities, not signatures,
+Go attestations, anonymity, or same-user database tamper protection. Admission
+selects a model configuration but does not read a credential or use a model,
+provider, network, tool, workspace, result, Conversation, Prompt, or memory.
+
 Group analysis stores frozen context, exact request and terminal result in
 plaintext. Default views omit request/config/event/result bodies;
 `--include-result` reveals only the validated terminal projection. Its hashes
 are not signatures, remote attestations, or factual verification.
+
+Group panels copy validated result artifacts in plaintext. Default prepare and
+show output omits result text; `--include-results` deliberately reveals the
+copied result projections. Preparation/list/inspection access no provider,
+credential, workspace, tool, newer Prompt history, Conversation, task, memory,
+or Project Run. A panel is assembly only—not synthesis, discussion, consensus,
+verification, or an Agent role assignment.
+
+Group panel synthesis stores every copied panel result, fixed moderator Prompt,
+exact request, journal, and final result in plaintext. Preparation is local and
+adds no separate frozen-dossier fields; copied results may nevertheless repeat
+source content. Fresh explicit consent is required before those copied results
+and source metadata leave the machine; prior analysis consent does not carry
+forward. Default views and metadata-only list hide all private bodies, while
+`--include-result` reveals only the validated terminal single-model projection.
+The protocol performs no discussion, consensus, factual verification, tools,
+workspace access, or writeback.
 
 Direct `prompt add ... PROMPT` input is visible in process arguments and may be
 saved by shell history. On hosts with permissive process inspection, this can
@@ -460,7 +671,7 @@ does not classify as corruption.
   UTF-8-safe truncation and omissions;
 - schema v1 and v2 data survive the atomic migration to v3, while a failing
   second migration stage rolls the complete v1 chain back without v2 residue;
-- valid fresh/v1/v2/v3/v4 schemas reach and reopen as v5, while old-table
+- valid fresh/v1/v2/v3/v4/v5/v6/v7/v8/v9 schemas reach and reopen as v10, while old-table
   CHECK/key/FK/index drift, rogue catalog objects, and PRAGMA virtual shadows
   fail closed without repair; final validation failure rolls the complete
   legacy migration chain back;
@@ -478,8 +689,41 @@ does not classify as corruption.
   after newer Prompts, and expose only a content-free validation receipt;
 - Group execution invokes no model, provider, workspace, tool, network,
   Project Run, or assistant writeback;
+- Group Agent Graph prepare binds an exact Group Run and frozen project-role
+  membership, canonicalizes edge order, preserves semantic node order, and
+  computes deterministic acyclic waves without executing an Agent;
+- Group Agent Graph same-key replay ignores candidate identity/time and input
+  edge order, while source, authored node order, or task changes conflict;
+- Group Agent Graph show revalidates source plus canonical manifest in one
+  SQLite snapshot, default output stays redacted, explicit spec output is
+  terminal-safe, and list remains metadata-only;
+- Go and Rust agree on exact Core Plan canonical bytes and digest while the Go
+  workflow and Group adapters share one authored-order dependency algorithm;
+- Group Agent Graph Run prepare atomically stores one exact passive plan and
+  preparation event, same-key replay preserves the original receipt, and
+  divergent/corrupt source, plan, event, cursor, or honesty flags fail closed;
+- Group Agent Graph Run show revalidates the complete source chain in one
+  SQLite snapshot, default output hides the plan, list stays metadata-only,
+  and no dispatch or execution side effect occurs;
+- control export and Go agree byte-for-byte on one private canonical snapshot;
+- Go deterministically selects only wave zero's first authored node and freezes
+  exact Prompts, provider settings, budgets, policies, and digests;
+- contract admission performs exact seq/head CAS, is one-per-Run and replay-safe,
+  truthfully transitions the Run to awaiting Core dispatch, and releases no effect;
 - Group analysis prepare stays local; concurrent confirmed send releases one
   dispatch, never retries uncertainty, and accepts only valid terminal results;
+- Group panel prepare preserves two-through-eight input order, replays one
+  exact manifest under concurrency, rejects incomplete/length/cross-source
+  analyses, and leaves no partial row on failure;
+- Group panel show defaults to redacted results, explicit result output is
+  terminal-safe, list stays metadata-only, and manifest/member/source/result
+  corruption fails closed;
+- Group synthesis prepare is local and exact; fresh consent releases one
+  dispatch authority, uncertainty never retries, terminal output requires zero
+  tools plus EOF, and default/show/list output remains redacted;
+- Group synthesis revalidates the panel and all copied source results before
+  prepare and claim, while schema/request/journal/result corruption fails
+  closed and creates no Conversation, Prompt, Project Run, task or memory;
 - idempotent retries cannot change payload;
 - an explicit CLI idempotency key safely replays across processes;
 - a failed Group link does not leave a newly registered Project;
@@ -508,7 +752,8 @@ does not classify as corruption.
 - OIDC login, account binding, OS keyring, explicit local-data claim;
 - remote directory, replicas, cursors, conflict merge, deletion propagation;
 - tenants, invitations, history visibility, ACL-backed shared Groups;
-- live multi-Agent Group execution or cross-project tool capabilities;
+- effectful manager/node Graph dispatch/execution, successor selection, or
+  cross-project tool/workspace capabilities; first-node contract admission is delivered;
 - Group multi-Agent discussion, delegation, writeback, and derived memory;
 - providers beyond the delivered opt-in OpenAI Responses adapter,
   write/process/network tools, and process sandbox.
