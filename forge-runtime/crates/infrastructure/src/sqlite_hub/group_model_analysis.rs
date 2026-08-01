@@ -3,7 +3,7 @@
 mod atomicity_tests;
 mod codec;
 mod complete;
-mod read;
+pub(super) mod read;
 mod rows;
 mod sql;
 mod write;

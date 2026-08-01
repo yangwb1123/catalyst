@@ -1,4 +1,11 @@
 mod atomic_link;
+#[cfg(test)]
+#[path = "tests/error_classification.rs"]
+mod error_classification_tests;
+mod group_agent_graph;
+mod group_agent_graph_run;
+mod group_agent_node_execution_contract;
+mod group_analysis_panel;
 mod group_context_build;
 mod group_context_read;
 #[cfg(test)]
@@ -9,6 +16,7 @@ mod group_execution_codec;
 mod group_execution_read;
 mod group_execution_write;
 mod group_model_analysis;
+mod group_panel_synthesis;
 mod group_run_codec;
 mod group_run_read;
 mod group_run_write;
@@ -25,6 +33,8 @@ mod schema;
 #[cfg(test)]
 mod schema_migration_tests;
 mod schema_sql;
+mod schema_v10_sql;
+mod schema_v9_sql;
 mod write;
 
 use std::path::{Path, PathBuf};
@@ -280,7 +290,7 @@ fn write_error(entity: HubEntity, error: SqliteError) -> HubStoreError {
                 message: message.clone().unwrap_or_else(|| problem.to_string()),
             }
         }
-        _ => unavailable(error),
+        _ => schema::sqlite_error(error),
     }
 }
 
@@ -291,7 +301,7 @@ fn read_error(error: SqliteError) -> HubStoreError {
         | SqliteError::IntegralValueOutOfRange(..) => HubStoreError::Corrupt {
             message: error.to_string(),
         },
-        _ => unavailable(error),
+        _ => schema::sqlite_error(error),
     }
 }
 

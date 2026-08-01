@@ -1,13 +1,19 @@
 mod args;
 mod cli_usage;
 mod demo;
+mod group_agent_graph;
+mod group_analysis_panel_command;
+mod group_analysis_panel_output;
 mod group_context_output;
 mod group_execution_output;
 mod group_model_analysis_command;
 mod group_model_analysis_output;
+mod group_panel_synthesis_command;
+mod group_panel_synthesis_output;
 mod group_run_output;
 mod hub_command;
 mod hub_output;
+mod openai_prepared_dispatch;
 mod run_command;
 mod state_path;
 
@@ -60,8 +66,80 @@ async fn main() -> ExitCode {
         Command::Group(args::GroupCommand::Analysis(command)) => {
             run_group_model_analysis(&args, command).await
         }
+        Command::Group(args::GroupCommand::Graph(args::GroupGraphCommand::Run(command))) => {
+            run_group_agent_graph_run(&args, command)
+        }
+        Command::Group(args::GroupCommand::Graph(command)) => run_group_agent_graph(&args, command),
+        Command::Group(args::GroupCommand::Panel(command)) => {
+            run_group_analysis_panel(&args, command)
+        }
+        Command::Group(args::GroupCommand::Synthesis(command)) => {
+            run_group_panel_synthesis(&args, command).await
+        }
         _ => run_hub(&args),
     }
+}
+
+fn run_group_agent_graph_run(args: &Args, command: &args::GroupGraphRunCommand) -> ExitCode {
+    let output = match group_agent_graph::run_command::execute(args, command) {
+        Ok(output) => output,
+        Err(error) => {
+            eprintln!(
+                "Group Agent Graph Run command failed: {}",
+                group_context_output::terminal_text(&error.to_string())
+            );
+            return ExitCode::FAILURE;
+        }
+    };
+    if let Err(error) =
+        group_agent_graph::run_command::write_output(&output, args.json, &mut io::stdout().lock())
+    {
+        eprintln!("failed to write Group Agent Graph Run output: {error}");
+        return ExitCode::FAILURE;
+    }
+    ExitCode::SUCCESS
+}
+
+fn run_group_agent_graph(args: &Args, command: &args::GroupGraphCommand) -> ExitCode {
+    let output = match group_agent_graph::command::execute(args, command) {
+        Ok(output) => output,
+        Err(error) => {
+            eprintln!(
+                "Group Agent Graph command failed: {}",
+                group_context_output::terminal_text(&error.to_string())
+            );
+            return ExitCode::FAILURE;
+        }
+    };
+    if let Err(error) =
+        group_agent_graph::output::write_output(&output, args.json, &mut io::stdout().lock())
+    {
+        eprintln!("failed to write Group Agent Graph output: {error}");
+        return ExitCode::FAILURE;
+    }
+    ExitCode::SUCCESS
+}
+
+async fn run_group_panel_synthesis(args: &Args, command: &args::GroupSynthesisCommand) -> ExitCode {
+    let output = match group_panel_synthesis_command::execute(args, command).await {
+        Ok(output) => output,
+        Err(error) => {
+            eprintln!("Group Panel Synthesis command failed: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    write_cli_output(args, &output)
+}
+
+fn run_group_analysis_panel(args: &Args, command: &args::GroupPanelCommand) -> ExitCode {
+    let output = match group_analysis_panel_command::execute(args, command) {
+        Ok(output) => output,
+        Err(error) => {
+            eprintln!("Group Analysis Panel command failed: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    write_cli_output(args, &output)
 }
 
 async fn run_group_model_analysis(args: &Args, command: &args::GroupAnalysisCommand) -> ExitCode {
@@ -123,6 +201,17 @@ async fn run_persisted(args: &Args, options: run_command::StartOptions<'_>) -> E
 }
 
 fn argument_error(error: &str) -> ExitCode {
-    let _ = writeln!(io::stderr().lock(), "{error}");
+    let usage_suffix = format!("\n\n{}", usage());
+    let mut stderr = io::stderr().lock();
+    if let Some(summary) = error.strip_suffix(&usage_suffix) {
+        let _ = writeln!(
+            stderr,
+            "{}\n\n{}",
+            group_context_output::terminal_text(summary),
+            usage()
+        );
+    } else {
+        let _ = writeln!(stderr, "{}", group_context_output::terminal_text(error));
+    }
     ExitCode::from(2)
 }

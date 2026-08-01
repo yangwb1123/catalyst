@@ -64,6 +64,45 @@ forge-runtime --json --idempotency-key sso-execution-1 \
 forge-runtime --json group execution show GROUP_EXECUTION_ID
 forge-runtime --json group execution list GROUP_RUN_ID --limit 20
 
+# Freeze an authored manager/task dependency graph without executing it.
+forge-runtime --json --idempotency-key sso-graph-1 \
+  group graph prepare GROUP_RUN_ID --spec graph.json
+forge-runtime --json group graph show GROUP_AGENT_GRAPH_ID
+forge-runtime --json group graph show GROUP_AGENT_GRAPH_ID --include-spec
+forge-runtime --json group graph list GROUP_RUN_ID --limit 20
+
+# Have the sole Go control plane recompute and bind the topology.
+forge graph-plan --graph-id GROUP_AGENT_GRAPH_ID \
+  --manifest-sha256 GRAPH_MANIFEST_SHA256 --input graph.json > core-plan.json
+
+# Freeze that exact passive plan; this still releases no execution authority.
+forge-runtime --json --idempotency-key sso-graph-run-1 \
+  group graph run prepare GROUP_AGENT_GRAPH_ID --plan core-plan.json
+forge-runtime --json group graph run show GROUP_AGENT_GRAPH_RUN_ID
+forge-runtime --json group graph run show GROUP_AGENT_GRAPH_RUN_ID --include-plan
+forge-runtime --json group graph run list GROUP_AGENT_GRAPH_ID --limit 20
+
+# Export exact private scheduler state without a trailing newline.
+forge-runtime group graph run control export GROUP_AGENT_GRAPH_RUN_ID > control.json
+
+# Go selects only wave zero's first node and freezes future execution inputs.
+# This command performs no provider request.
+forge graph-node-contract --control control.json \
+  --endpoint https://api.openai.com/v1/responses \
+  --model PINNED_MODEL --max-output-tokens 4096 \
+  --max-model-output-bytes 65536 --max-model-events 1024 \
+  --timeout-ms 120000 --max-cost-usd-micros 1000000 \
+  --pricing-snapshot-sha256 "$PRICING_SNAPSHOT_SHA256" \
+  --max-result-bytes 262144 > node-contract.json
+
+# Admission uses an exact event cursor/head CAS and still releases no dispatch.
+forge-runtime --json --idempotency-key sso-node-contract-1 \
+  group graph run contract admit GROUP_AGENT_GRAPH_RUN_ID \
+  --contract node-contract.json
+forge-runtime --json group graph run contract show NODE_CONTRACT_ID
+forge-runtime --json group graph run contract show NODE_CONTRACT_ID --include-contract
+forge-runtime --json group graph run contract list GROUP_AGENT_GRAPH_RUN_ID --limit 20
+
 # Prepare an exact single-model request locally, without reading credentials.
 forge-runtime --json --idempotency-key sso-analysis-1 \
   group analysis prepare GROUP_RUN_ID \
@@ -76,6 +115,29 @@ forge-runtime --json group analysis list GROUP_RUN_ID --limit 20
 forge-runtime --json group analysis send GROUP_ANALYSIS_ID \
   --confirm-off-machine
 forge-runtime --json group analysis show GROUP_ANALYSIS_ID --include-result
+
+# Freeze two through eight completed analyses in caller-selected order.
+forge-runtime --json --idempotency-key sso-panel-1 \
+  group panel prepare GROUP_RUN_ID \
+  --analysis FRONTEND_ANALYSIS_ID \
+  --analysis BACKEND_ANALYSIS_ID \
+  --analysis SSO_ANALYSIS_ID
+forge-runtime --json group panel show GROUP_PANEL_ID
+forge-runtime --json group panel show GROUP_PANEL_ID --include-results
+forge-runtime --json group panel list GROUP_RUN_ID --limit 20
+
+# Prepare a separate single-model synthesis over that exact ordered panel.
+forge-runtime --json --idempotency-key sso-synthesis-1 \
+  group synthesis prepare GROUP_PANEL_ID \
+  --model gpt-5.6-sol --max-output-tokens 4096
+forge-runtime --json group synthesis show GROUP_SYNTHESIS_ID
+forge-runtime --json group synthesis list GROUP_PANEL_ID --limit 20
+
+# Fresh consent is required to resend every copied panel result off-machine.
+# V1 adds no separate dossier fields; copied results may still quote source text.
+forge-runtime --json group synthesis send GROUP_SYNTHESIS_ID \
+  --confirm-off-machine
+forge-runtime --json group synthesis show GROUP_SYNTHESIS_ID --include-result
 ```
 
 Group context includes only the Group's own discussion history and current
@@ -122,6 +184,65 @@ no tools or capabilities, and performs no network request. A successful
 `snapshot_validated` receipt is not analysis, discussion, planning, or a task
 result.
 
+`group graph prepare` is a separate, immutable graph-definition step over one
+exact Group Run. Its bounded, versioned JSON spec names a manager label,
+authored task nodes, frozen member project/role bindings, acceptance text, and
+dependency edges. The application canonicalizes edge order, preserves authored
+node order, rejects unknown/self/cyclic dependencies, and persists
+deterministic Kahn waves. Multiple nodes may target one project because a node
+identifies a task. Edges and waves express readiness only; they do not carry
+results and prove no scheduling or execution occurred.
+
+Preparation and `show` revalidate the frozen source, every member binding,
+canonical bytes, counts, and domain-separated digest. Same-key edge reordering
+replays the original graph; source, node-order, or task changes conflict.
+Default output hides the manager instruction, tasks, acceptance criteria,
+project IDs, roles, spec path, and idempotency key. `--include-spec` explicitly
+reveals the validated plaintext manifest; `list` is metadata-only. This slice
+does not resolve profile labels, run a manager or node Agent, choose a model,
+grant capabilities, discover or traverse member workspaces beyond the
+explicitly named spec file, use tools/network, produce task results, or write
+Conversation/task/memory state. Output reports whether a spec file was read.
+
+`forge graph-plan` is the only scheduler-side topology planner. It consumes the
+same authored graph spec, canonicalizes its edges, and uses the same inward
+dependency implementation as the Go workflow orchestrator. Its canonical plan
+binds the stored Graph manifest digest, authored node order, edges, waves, and
+scheduler protocol. Both `execution_contract_present` and
+`dispatch_authority_released` are fixed false.
+
+`group graph run prepare` passively validates that Core Plan against the exact
+stored Graph and atomically records an `awaiting_execution_contract` Run plus
+one `graph_run_prepared` event. Exact same-key replay returns the original
+receipt. `show` revalidates Run, plan, journal, Graph source, and member
+bindings in one snapshot; `list` remains metadata-only. No node/wave state is
+advanced, and topology wave zero is not dispatch authority. Plan preparation
+and admission do not select or call a model/provider, inspect a workspace,
+grant a capability, run a manager/node, produce a result, or write
+Conversation/Prompt/task/memory state.
+
+`group graph run control export` privately emits the exact revalidated v1 Run,
+plan, Graph manifest, event cursor, and head digest as bounded canonical JSON.
+`forge graph-node-contract` is the only node selector: v1 always chooses
+`plan.waves[0][0]` and freezes its exact Prompts, HTTPS destination/model,
+token/byte/event/time/cost/result budgets, zero tools/workspace/dataflow, and
+fail-closed retry policy. The caller cannot choose a node.
+
+Both binaries accept the same byte-stable endpoint subset: lowercase canonical
+DNS or IPv4 HTTPS, optional non-default port, and an unreserved path; ambiguous
+or normalized URL spellings fail closed.
+
+`group graph run contract admit` rejects malformed or noncanonical input before
+opening SQLite, then revalidates the complete source and admits at most one
+contract by exact seq/head compare-and-swap. The transaction appends event two
+and changes only that Run to `awaiting_core_dispatch`; dispatch authority stays
+false. Same-key replay preserves the original bytes and time. Default show/list
+hides the contract, Prompts, task, member/project, endpoint/model, pricing
+digest, key, and path. Control export and `--include-contract` reveal private
+plaintext. This slice reads no credential, contacts no provider, invokes no
+Agent, opens no workspace, uses no tool/network, produces no result, and writes
+no Conversation/Prompt/memory.
+
 `group analysis prepare` is the next independent boundary. It fully validates
 one frozen Group Run, pins the versioned analysis Prompt, destination, model,
 and limits, and atomically stores one exact OpenAI Responses request with its
@@ -159,6 +280,46 @@ The API key stays environment-only, but the Hub stores the dossier, request and
 completed result in plaintext. `store: false` is a request setting, not a
 provider privacy guarantee.
 
+`group panel prepare` is a separate local assembly step. It accepts two through
+eight unique, terminal-`completed` analyses from the same exact Group Run,
+preserves their caller-supplied order, and atomically copies their validated
+metadata and result artifacts into one canonical 8 MiB manifest. Same-key
+replay returns the original panel identity and bytes; a changed analysis,
+result, source, or order conflicts. A `length` result is not eligible.
+
+Panel preparation and inspection do not read credentials, call a provider,
+open a workspace, invoke tools, query newer Prompt history, or write a
+Conversation, task, memory, or Project Run. Default output hides result text;
+`--include-results` reveals only the copied projections after the Group Run,
+source analyses, member rows, canonical manifest, and digests have all been
+revalidated. This is a durable side-by-side assembly, not a discussion,
+synthesis, consensus, factual verification, or tool-completed result.
+
+`group synthesis prepare` creates a new, independently versioned boundary over
+one exact panel. It fully revalidates the panel and source artifacts, uses the
+canonical ordered panel manifest as its only user message, pins a moderator
+Prompt and fixed `local_artifact`/no-writeback targets, and stores the exact
+zero-tool, `store: false` Responses request locally. It does not read a
+credential or send anything. Version 1 includes every copied analysis result
+and panel/source metadata but deliberately omits the original frozen dossier
+and excerpts.
+
+`group synthesis send` requires a fresh `--confirm-off-machine`; consent used
+for any source analysis does not carry forward. Credential, exact
+endpoint/model, source and byte-for-byte request checks occur before SQLite
+commits one exclusive dispatch claim. Only the claim winner receives the
+persisted request bytes. The state becomes `dispatch_unknown` at claim, and
+post-claim timeout, cancellation, transport/protocol/tool/local-limit, EOF or
+result-store failures never trigger an automatic resend.
+
+Only a validated zero-tool provider `completed` or `length` terminal followed
+by real transport EOF can atomically persist a synthesis result. Default
+prepare/send/show/list output hides the Prompt, copied panel results, exact
+request, events, key, credential and result text; `--include-result` reveals
+only the validated final projection. JSON and human output label it one
+single-model panel synthesis—not discussion, consensus, factual verification,
+workspace/tool work, or Conversation memory.
+
 Use `--json` for a versioned, scriptable response. Without `--state-dir`, the
 Hub uses `FORGE_RUNTIME_HOME`, the platform state directory, or the documented
 per-user fallback. If a relative directory is named `group`, `prompt`, `run`,
@@ -166,15 +327,18 @@ per-user fallback. If a relative directory is named `group`, `prompt`, `run`,
 ambiguous with a command.
 
 The local Hub is not encrypted. Prompt/history bodies, frozen Group Run
-snapshots, Group-analysis request/result bodies, local paths, Project Run
-configuration, model deltas, provider context, tool arguments/results, and
-allowed file contents can all be stored in plaintext SQLite and exposed by
-explicit queries such as `prompt list`, `group run show --include-content`,
-`group analysis show --include-result`, and `run show`. New or empty dedicated
-Unix state directories are narrowed to the current user; populated shared
-directories are rejected instead of chmodded. Direct Prompt arguments may be
-visible in process listings and shell history, so use stdin (`-`) for sensitive
-input. `prompt add` returns a body-free receipt, but this is not an encryption
+snapshots, Group-Agent-Graph instructions/tasks, Group-analysis request/result
+bodies, copied panel manifests, panel-synthesis request/result bodies, local
+paths, Project Run configuration, model deltas, provider context, tool
+arguments/results, and allowed file contents can all be stored in plaintext
+SQLite and exposed by explicit queries such as `prompt list`, `group run show
+--include-content`, `group graph show --include-spec`, `group analysis show
+--include-result`, `group panel show --include-results`, `group synthesis show
+--include-result`, and `run show`. New or empty dedicated Unix state
+directories are narrowed to the current user; populated shared directories are
+rejected instead of chmodded. Direct Prompt arguments may be visible in
+process listings and shell history, so use stdin (`-`) for sensitive input.
+`prompt add` returns a body-free receipt, but this is not an encryption
 boundary.
 
 The Group-context, snapshot, execution-event, analysis-request, journal, and
@@ -205,15 +369,19 @@ it does not prove that replaying an interrupted tool effect is safe. Run
 inspection reads its record, cursor, events, and bound Prompt from one SQLite
 snapshot so a concurrent append cannot look like corruption.
 
-The main SQLite catalog is exclusively Hub-owned. Every declared v0–v5 schema
+The main SQLite catalog is exclusively Hub-owned. Every declared v0–v10 schema
 is validated before migration DDL (v0 must be empty); the final migration step
-then validates the exact v5 14-table/8-index catalog, DDL, columns, keys,
-foreign keys, explicit and implicit index structures, and the absence of extra
-views/triggers/tables before the immediate transaction commits. Published DDL
-and the independent structural contract are release-pinned; unexpected state
-fails as corruption and is never auto-repaired. Environmental SQLite failures
-remain unavailable. This detects schema drift but is not a same-user tamper or
-TOCTOU boundary.
+then validates the exact v10 23-table/18-explicit-index/41-implicit-index
+catalog, DDL, columns, keys, foreign keys, index structures, and absence of
+extra views/triggers/tables before the immediate transaction commits.
+Published DDL and the independent structural contract are release-pinned;
+the v1–v10 length-framed DDL SHA-256 is
+`16752cf9b054b8e840a98976b06e8f2d015aca6f001191943d4ac54a237e352b`
+and the v10 structural-contract SHA-256 is
+`ce5383f44a3a982ab127608acda473d1531ff10fc4b6ca8e7036d84fdec75d8d`.
+Unexpected state fails as corruption and is never auto-repaired.
+Environmental SQLite failures remain unavailable. This detects schema drift
+but is not a same-user tamper or TOCTOU boundary.
 
 ## Durable Project Run
 
@@ -311,5 +479,10 @@ Architecture:
 - [Local Group execution receipt ADR](../docs/adr/0010-local-group-execution-receipt.md)
 - [Two-phase Group model analysis ADR](../docs/adr/0011-two-phase-group-model-analysis.md)
 - [Strict Hub schema ownership ADR](../docs/adr/0012-strict-hub-schema-ownership.md)
+- [Durable local Group analysis panel ADR](../docs/adr/0013-durable-local-group-analysis-panel.md)
+- [Two-phase Group panel synthesis ADR](../docs/adr/0015-two-phase-group-panel-synthesis.md)
+- [Durable local Group Agent Graph ADR](../docs/adr/0017-durable-group-agent-graph.md)
+- [Core-owned Group Agent Graph Run plan ADR](../docs/adr/0018-core-owned-group-agent-graph-run-plan.md)
+- [Core-owned first-node execution contract ADR](../docs/adr/0019-core-owned-first-node-execution-contract.md)
 - [Hub local-foundation design](../docs/design/conversation-hub-phase1.md)
 - [Durable Run journal design](../docs/design/run-journal-phase1.md)

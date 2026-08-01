@@ -1,5 +1,4 @@
 use rusqlite::Connection;
-use sha2::{Digest, Sha256};
 use tempfile::TempDir;
 
 use crate::runtime_domain::HubStoreError;
@@ -7,8 +6,9 @@ use crate::runtime_domain::HubStoreError;
 use super::{
     CREATE_V1_SCHEMA_SQL, MIGRATE_V1_TO_V2_SQL, MIGRATE_V2_TO_V3_SQL, MIGRATE_V3_TO_V4_SQL,
     MIGRATE_V4_TO_V5_SQL, assert_legacy_run, legacy_v1_database, legacy_v2_database,
-    legacy_v3_database, legacy_v4_database, open_database, restrict_fixture_root,
-    schema_object_named, schema_version, seed_v1_records,
+    legacy_v3_database, legacy_v4_database, legacy_v5_database, legacy_v6_database, open_database,
+    restrict_fixture_root, schema_object_named, schema_v8_migration_tests::legacy_v7_database,
+    schema_v9_migration_tests::legacy_v8_database, schema_version, seed_v1_records,
 };
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -37,12 +37,16 @@ struct MalformedCase {
 pub(super) type SchemaRow = (String, String, String, Option<String>);
 
 #[test]
-fn valid_fresh_and_legacy_schemas_reach_and_reopen_as_v5() {
+fn valid_fresh_and_legacy_schemas_reach_and_reopen_as_current() {
     assert_valid_migration(fresh_database(), 0);
     assert_valid_migration(legacy_v1_database(), 1);
     assert_valid_migration(legacy_v2_database(), 2);
     assert_valid_migration(legacy_v3_database(), 3);
     assert_valid_migration(legacy_v4_database(), 4);
+    assert_valid_migration(legacy_v5_database(), 5);
+    assert_valid_migration(legacy_v6_database(), 6);
+    assert_valid_migration(legacy_v7_database(), 7);
+    assert_valid_migration(legacy_v8_database(), 8);
 }
 
 #[test]
@@ -80,45 +84,15 @@ fn shadowed_pragma_index_list_is_rejected_without_repair() {
     assert_malformed_case_is_rejected(&case);
 }
 
-#[test]
-fn published_v1_through_v5_schema_literals_match_release_hash() {
-    let mut hasher = Sha256::new();
-    for (version, sql) in [
-        (1_u8, CREATE_V1_SCHEMA_SQL),
-        (2, MIGRATE_V1_TO_V2_SQL),
-        (3, MIGRATE_V2_TO_V3_SQL),
-        (4, MIGRATE_V3_TO_V4_SQL),
-        (5, MIGRATE_V4_TO_V5_SQL),
-    ] {
-        let bytes = sql.as_bytes();
-        hasher.update([version]);
-        hasher.update(
-            u64::try_from(bytes.len())
-                .expect("DDL length fits u64")
-                .to_be_bytes(),
-        );
-        hasher.update(bytes);
-    }
-    let actual: [u8; 32] = hasher.finalize().into();
-    assert_eq!(
-        actual,
-        [
-            0xcb, 0x3b, 0x65, 0xa9, 0x6f, 0x9d, 0x44, 0x34, 0x99, 0x5e, 0xcc, 0x40, 0x9a, 0xcd,
-            0x7d, 0xa2, 0x56, 0x33, 0x2f, 0x80, 0x01, 0x42, 0xbc, 0x66, 0x1e, 0x25, 0xf9, 0xab,
-            0x72, 0x96, 0xeb, 0xf8,
-        ]
-    );
-}
-
 fn assert_valid_migration(fixture: (TempDir, std::path::PathBuf), seed_level: u8) {
     let (root, database) = fixture;
-    let connection = open_database(&database).expect("valid schema migrates to v5");
-    assert_eq!(schema_version(&connection), 5);
+    let connection = open_database(&database).expect("valid schema migrates to v10");
+    assert_eq!(schema_version(&connection), 10);
     assert_seed_data(&connection, seed_level);
     drop(connection);
 
-    let reopened = open_database(&database).expect("valid v5 schema reopens");
-    assert_eq!(schema_version(&reopened), 5);
+    let reopened = open_database(&database).expect("valid v10 schema reopens");
+    assert_eq!(schema_version(&reopened), 10);
     assert_seed_data(&reopened, seed_level);
     drop((reopened, root));
 }
@@ -143,6 +117,21 @@ fn assert_seed_data(connection: &Connection, seed_level: u8) {
     if seed_level >= 4 {
         assert_row_exists(connection, "group_executions", "group-execution-legacy");
         assert_event_exists(connection);
+    }
+    if seed_level >= 5 {
+        assert_row_exists(connection, "group_model_analyses", "analysis-legacy");
+    }
+    if seed_level >= 6 {
+        assert_row_exists(connection, "group_analysis_panels", "panel-legacy");
+        let members: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM group_analysis_panel_analyses
+                 WHERE panel_id = 'panel-legacy'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("legacy panel members survive");
+        assert_eq!(members, 2);
     }
 }
 
@@ -306,6 +295,25 @@ pub(super) fn assert_post_v1_objects_absent(connection: &Connection) {
         "group_model_analysis_results",
         "group_model_analyses_group_run",
         "group_model_analyses_created",
+        "group_analysis_panels",
+        "group_analysis_panel_analyses",
+        "group_analysis_panels_group_run",
+        "group_analysis_panels_created",
+        "group_panel_syntheses",
+        "group_panel_synthesis_events",
+        "group_panel_synthesis_results",
+        "group_panel_syntheses_panel",
+        "group_panel_syntheses_created",
+        "group_agent_graphs",
+        "group_agent_graphs_group_run",
+        "group_agent_graphs_created",
+        "group_agent_graph_runs",
+        "group_agent_graph_run_events",
+        "group_agent_graph_runs_graph",
+        "group_agent_graph_runs_created",
+        "group_agent_graph_node_execution_contracts",
+        "group_agent_graph_node_contracts_project_lane",
+        "group_agent_graph_node_contracts_created",
     ] {
         assert!(!schema_object_named(connection, name), "unexpected {name}");
     }

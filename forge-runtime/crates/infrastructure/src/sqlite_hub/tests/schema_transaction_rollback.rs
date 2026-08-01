@@ -15,6 +15,21 @@ use super::{
 
 const FINAL_VALIDATION_ROGUE: &str = "rogue_before_final_validation";
 const FINAL_VALIDATION_FAULT_SQL: &str = "CREATE TABLE rogue_before_final_validation(id TEXT)";
+const FINAL_TABLES: &[&str] = &[
+    "runs",
+    "group_runs",
+    "group_executions",
+    "group_model_analyses",
+    "group_analysis_panels",
+    "group_analysis_panel_analyses",
+    "group_panel_syntheses",
+    "group_panel_synthesis_events",
+    "group_panel_synthesis_results",
+    "group_agent_graphs",
+    "group_agent_graph_runs",
+    "group_agent_graph_run_events",
+    "group_agent_graph_node_execution_contracts",
+];
 
 #[test]
 fn malformed_v4_prefix_is_rejected_before_migration() {
@@ -67,13 +82,8 @@ fn injected_final_validation_failure_rolls_back_complete_v1_migration_chain() {
 
     let error = migrate_with_before_final_fault_for_test(&connection, |migrated| {
         reached_final.set(true);
-        assert_eq!(schema_version(migrated), 5);
-        for table in [
-            "runs",
-            "group_runs",
-            "group_executions",
-            "group_model_analyses",
-        ] {
+        assert_eq!(schema_version(migrated), 10);
+        for table in FINAL_TABLES {
             assert!(
                 schema_object_exists(migrated, "table", table),
                 "{table} must exist before the final-validation fault"
@@ -81,7 +91,7 @@ fn injected_final_validation_failure_rolls_back_complete_v1_migration_chain() {
         }
         migrated.execute_batch(FINAL_VALIDATION_FAULT_SQL)
     })
-    .expect_err("real final v5 validation must reject the injected rogue table");
+    .expect_err("real final v10 validation must reject the injected rogue table");
     assert!(
         reached_final.get(),
         "before-final fault hook was not reached"
@@ -90,8 +100,8 @@ fn injected_final_validation_failure_rolls_back_complete_v1_migration_chain() {
         panic!("final validator returned the wrong error class: {error:?}");
     };
     assert_eq!(
-        message, "Hub v5 main catalog has invalid object inventory",
-        "error must originate from the real final v5 catalog validator"
+        message, "Hub v10 main catalog has invalid object inventory",
+        "error must originate from the real final v10 catalog validator"
     );
 
     assert_v1_unchanged(&connection, &before_schema, &before_data);

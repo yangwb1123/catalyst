@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use rusqlite::Connection;
+use rusqlite::{Connection, params};
 use tempfile::TempDir;
 
 use crate::runtime_domain::HubStoreError;
@@ -34,6 +34,25 @@ const POST_PROJECT_OBJECTS: &[&str] = &[
     "group_model_analysis_results",
     "group_model_analyses_group_run",
     "group_model_analyses_created",
+    "group_analysis_panels",
+    "group_analysis_panel_analyses",
+    "group_analysis_panels_group_run",
+    "group_analysis_panels_created",
+    "group_panel_syntheses",
+    "group_panel_synthesis_events",
+    "group_panel_synthesis_results",
+    "group_panel_syntheses_panel",
+    "group_panel_syntheses_created",
+    "group_agent_graphs",
+    "group_agent_graphs_group_run",
+    "group_agent_graphs_created",
+    "group_agent_graph_runs",
+    "group_agent_graph_run_events",
+    "group_agent_graph_runs_graph",
+    "group_agent_graph_runs_created",
+    "group_agent_graph_node_execution_contracts",
+    "group_agent_graph_node_contracts_project_lane",
+    "group_agent_graph_node_contracts_created",
 ];
 
 const INDEX_ORIGIN_GOLDEN: &[(&str, (usize, usize, usize))] = &[
@@ -51,6 +70,15 @@ const INDEX_ORIGIN_GOLDEN: &[(&str, (usize, usize, usize))] = &[
     ("group_model_analyses", (1, 1, 2)),
     ("group_model_analysis_events", (1, 0, 0)),
     ("group_model_analysis_results", (1, 0, 0)),
+    ("group_analysis_panels", (1, 1, 2)),
+    ("group_analysis_panel_analyses", (1, 1, 0)),
+    ("group_panel_syntheses", (1, 1, 2)),
+    ("group_panel_synthesis_events", (1, 0, 0)),
+    ("group_panel_synthesis_results", (1, 0, 0)),
+    ("group_agent_graphs", (1, 1, 2)),
+    ("group_agent_graph_runs", (1, 1, 2)),
+    ("group_agent_graph_run_events", (1, 0, 0)),
+    ("group_agent_graph_node_execution_contracts", (1, 2, 2)),
 ];
 
 #[test]
@@ -118,7 +146,7 @@ fn v1_future_table_blocker_is_corrupt_before_migration() {
 #[test]
 fn raw_autoindex_owner_corruption_is_rejected_without_repair() {
     let (root, database) = empty_database();
-    let connection = open_database(&database).expect("create valid v5 fixture");
+    let connection = open_database(&database).expect("create valid v10 fixture");
     let table_sql = table_definition(&connection, "groups");
     corrupt_unique_index_owner(&connection);
     let before = schema_snapshot(&connection);
@@ -126,16 +154,32 @@ fn raw_autoindex_owner_corruption_is_rejected_without_repair() {
 
     assert_open_is_corrupt(&database, "raw autoindex owner corruption");
     let unchanged = Connection::open(&database).expect("reopen raw-corrupt fixture");
-    assert_eq!(schema_version(&unchanged), 5);
+    assert_eq!(schema_version(&unchanged), 10);
     assert_eq!(schema_snapshot(&unchanged), before);
     assert_eq!(table_definition(&unchanged, "groups"), table_sql);
     drop((unchanged, root));
 }
 
 #[test]
-fn v5_structural_index_inventory_matches_the_release_golden() {
+fn sqlite_prefixed_trigger_is_rejected_without_repair() {
     let (root, database) = empty_database();
-    let connection = open_database(&database).expect("create valid v5 fixture");
+    let connection = open_database(&database).expect("create valid v10 fixture");
+    install_hidden_panel_trigger(&connection);
+    let before = schema_snapshot(&connection);
+    drop(connection);
+
+    assert_open_is_corrupt(&database, "sqlite-prefixed trigger");
+    let unchanged = Connection::open(&database).expect("reopen rejected trigger fixture");
+    assert_eq!(schema_version(&unchanged), 10);
+    assert_eq!(schema_snapshot(&unchanged), before);
+    assert!(schema_object_named(&unchanged, "sqlite_hidden_panel_child"));
+    drop((unchanged, root));
+}
+
+#[test]
+fn v10_structural_index_inventory_matches_the_release_golden() {
+    let (root, database) = empty_database();
+    let connection = open_database(&database).expect("create valid v10 fixture");
     let mut totals = (0, 0, 0);
     for &(table, expected) in INDEX_ORIGIN_GOLDEN {
         let actual = index_origin_counts(&connection, table);
@@ -144,7 +188,7 @@ fn v5_structural_index_inventory_matches_the_release_golden() {
         totals.1 += actual.1;
         totals.2 += actual.2;
     }
-    assert_eq!(totals, (14, 11, 8));
+    assert_eq!(totals, (23, 18, 18));
     drop((connection, root));
 }
 
@@ -247,6 +291,28 @@ fn corrupt_unique_index_owner(connection: &Connection) {
     connection
         .execute_batch("PRAGMA schema_version=99; PRAGMA writable_schema=OFF")
         .expect("publish raw schema fixture");
+}
+
+fn install_hidden_panel_trigger(connection: &Connection) {
+    let definition = "CREATE TRIGGER sqlite_hidden_panel_child
+        AFTER INSERT ON group_analysis_panel_analyses
+        BEGIN
+          DELETE FROM group_analysis_panel_analyses
+          WHERE panel_id=NEW.panel_id AND position=NEW.position;
+        END";
+    connection
+        .execute_batch("PRAGMA writable_schema=ON")
+        .expect("enable raw schema fixture");
+    connection
+        .execute(
+            "INSERT INTO sqlite_schema(type,name,tbl_name,rootpage,sql)
+             VALUES('trigger',?1,'group_analysis_panel_analyses',0,?2)",
+            params!["sqlite_hidden_panel_child", definition],
+        )
+        .expect("inject sqlite-prefixed trigger");
+    connection
+        .execute_batch("PRAGMA schema_version=100; PRAGMA writable_schema=OFF")
+        .expect("publish hidden trigger fixture");
 }
 
 fn index_origin_counts(connection: &Connection, table: &str) -> (usize, usize, usize) {

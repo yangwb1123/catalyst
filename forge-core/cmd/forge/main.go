@@ -15,6 +15,8 @@ import (
 
 	"forgeos/forge-core/internal/asset"
 	"forgeos/forge-core/internal/gate"
+	"forgeos/forge-core/internal/graphdispatch"
+	"forgeos/forge-core/internal/graphplan"
 	"forgeos/forge-core/internal/orchestrator"
 )
 
@@ -77,6 +79,8 @@ var subcommands = map[string]func([]string) int{
 	"doctor":                 cmdDoctor,
 	"trace":                  cmdTrace,
 	"preflight":              cmdPreflight,
+	"graph-plan":             func(rest []string) int { return graphplan.Command(rest, os.Stdin, os.Stdout, os.Stderr) },
+	"graph-node-contract":    func(rest []string) int { return graphdispatch.Command(rest, os.Stdin, os.Stdout, os.Stderr) },
 	"approve":                cmdApprove,
 	"reject":                 cmdReject,
 	releasePinnedExecCommand: cmdReleaseExecPinned,
@@ -124,6 +128,8 @@ usage:
   forge detect|scorecard|validate|memory-prune|status|doctor [--root DIR]
   forge trace [--kind K] [--status S] [--model M] [--run-id ID] [--tail N] [--strict] [--root DIR]
   forge preflight <workflow> [--root DIR]
+  forge graph-plan --graph-id ID --manifest-sha256 HEX [--input FILE|-]
+  forge graph-node-contract --control FILE|- --endpoint HTTPS_URL --model MODEL --max-output-tokens N --max-model-output-bytes N --max-model-events N --timeout-ms N --max-cost-usd-micros N --pricing-snapshot-sha256 SHA256 --max-result-bytes N
   forge gate|check|accept [--root DIR]
 `)
 }

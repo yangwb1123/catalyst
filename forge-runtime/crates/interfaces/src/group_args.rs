@@ -6,8 +6,9 @@ use forge_runtime_application::{
 };
 
 use super::{
-    Command, GroupCommand, GroupExecutionCommand, GroupRunCommand, group_analysis_args, next_value,
-    require_empty, required_text, usage,
+    Command, GroupCommand, GroupExecutionCommand, GroupRunCommand, group_analysis_args,
+    group_graph_args, group_panel_args, group_synthesis_args, next_value, require_empty,
+    required_text, usage,
 };
 
 pub(super) fn parse(
@@ -22,7 +23,10 @@ pub(super) fn parse(
         Some("analysis") => group_analysis_args::parse(tokens, idempotency_key),
         Some("context") => parse_context(tokens),
         Some("execution") => parse_execution(tokens, idempotency_key),
+        Some("graph") => group_graph_args::parse(tokens, idempotency_key),
+        Some("panel") => group_panel_args::parse(tokens, idempotency_key),
         Some("run") => parse_run(tokens, idempotency_key),
+        Some("synthesis") => group_synthesis_args::parse(tokens, idempotency_key),
         Some("list") => {
             require_empty(tokens)?;
             Ok(Command::Group(GroupCommand::List))

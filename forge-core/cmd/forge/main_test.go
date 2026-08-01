@@ -288,6 +288,12 @@ func TestUsage_MatchesActualCLIBehavior(t *testing.T) {
 	if !strings.Contains(out, "--max-chain-stages") {
 		t.Errorf("usage() must document the --chain safety bound, got:\n%s", out)
 	}
+	if !strings.Contains(out, "forge graph-plan") {
+		t.Errorf("usage() must mention the registered `graph-plan` subcommand, got:\n%s", out)
+	}
+	if !strings.Contains(out, "forge graph-node-contract") {
+		t.Errorf("usage() must mention the registered `graph-node-contract` subcommand, got:\n%s", out)
+	}
 }
 
 func TestValidWorkflowNameRejectsPathTraversal(t *testing.T) {
@@ -318,6 +324,18 @@ func TestUsage_PreflightPositionalIsActuallyRequired(t *testing.T) {
 func TestUsage_ApproveIsDispatchable(t *testing.T) {
 	if _, ok := subcommands["approve"]; !ok {
 		t.Error("`approve` must be registered in the subcommands dispatch table for usage() to document it")
+	}
+}
+
+func TestUsage_GraphPlanIsDispatchable(t *testing.T) {
+	if _, ok := subcommands["graph-plan"]; !ok {
+		t.Error("`graph-plan` must be registered for usage() to document it")
+	}
+}
+
+func TestUsage_GraphNodeContractIsDispatchable(t *testing.T) {
+	if _, ok := subcommands["graph-node-contract"]; !ok {
+		t.Error("`graph-node-contract` must be registered for usage() to document it")
 	}
 }
 

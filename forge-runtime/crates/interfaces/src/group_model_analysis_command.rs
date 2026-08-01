@@ -1,10 +1,9 @@
-use std::{env, error::Error, io, sync::Arc};
+use std::{error::Error, io, sync::Arc};
 
 use forge_runtime_application::{
-    GroupModelAnalysisDispatchProvider, GroupModelAnalysisRequestCodec, GroupModelAnalysisService,
-    PrepareGroupModelAnalysisInput, SendGroupModelAnalysisResult,
+    GroupModelAnalysisService, PrepareGroupModelAnalysisInput, SendGroupModelAnalysisResult,
 };
-use forge_runtime_infrastructure::{OpenAiResponsesProvider, SqliteHubStore};
+use forge_runtime_infrastructure::SqliteHubStore;
 
 use crate::{
     args::{Args, GroupAnalysisCommand},
@@ -13,17 +12,13 @@ use crate::{
         GroupModelAnalysisInspectionView, GroupModelAnalysisSendDisposition,
     },
     hub_output::{CliOutput, OutputKind},
+    openai_prepared_dispatch::{DEFAULT_OPENAI_MODEL, OpenAiPreparedProvider, OpenAiRequestCodec},
     runtime_domain::{
         Cancellation, ClaimGroupModelAnalysisDispatch, GROUP_MODEL_ANALYSIS_CONSENT_VERSION,
-        GroupModelAnalysisInspection, GroupModelAnalysisProvider, GroupModelAnalysisStatus,
-        ModelEventStream, ModelRequest, PrepareGroupModelAnalysisResult, PreparedModelProvider,
-        PreparedModelRequest, ProviderError,
+        GroupModelAnalysisInspection, GroupModelAnalysisStatus, PrepareGroupModelAnalysisResult,
     },
     state_path::{hub_database_path, idempotency_key, unique_id, unix_time_millis},
 };
-
-const OPENAI_BASE_URL: &str = "https://api.openai.com/v1";
-const DEFAULT_OPENAI_MODEL: &str = "gpt-5.6-sol";
 
 pub async fn execute(
     args: &Args,
@@ -189,63 +184,12 @@ fn require_consent(
 
 fn provider_for(
     inspection: &GroupModelAnalysisInspection,
-) -> Result<AnalysisOpenAiProvider, Box<dyn Error>> {
-    let api_key = env::var("OPENAI_API_KEY")
-        .map_err(|_| "OPENAI_API_KEY is required after explicit off-machine consent")?;
-    if api_key.trim().is_empty() {
-        return Err("OPENAI_API_KEY must not be empty after explicit off-machine consent".into());
-    }
-    let provider =
-        OpenAiResponsesProvider::new(OPENAI_BASE_URL, &inspection.analysis.config.model, api_key)?;
+) -> Result<OpenAiPreparedProvider, Box<dyn Error>> {
+    let provider = OpenAiPreparedProvider::from_environment(&inspection.analysis.config.model)?;
     if provider.endpoint() != inspection.analysis.config.endpoint
         || provider.model() != inspection.analysis.config.model
     {
         return Err("configured provider destination does not match the prepared analysis".into());
     }
-    Ok(AnalysisOpenAiProvider { inner: provider })
-}
-
-struct AnalysisOpenAiProvider {
-    inner: OpenAiResponsesProvider,
-}
-
-impl PreparedModelProvider for AnalysisOpenAiProvider {
-    fn stream_prepared(&self, request: PreparedModelRequest) -> ModelEventStream {
-        self.inner.stream_prepared(request)
-    }
-}
-
-impl GroupModelAnalysisDispatchProvider for AnalysisOpenAiProvider {
-    fn analysis_provider(&self) -> GroupModelAnalysisProvider {
-        GroupModelAnalysisProvider::OpenAiResponses
-    }
-
-    fn endpoint(&self) -> &str {
-        self.inner.endpoint()
-    }
-
-    fn model(&self) -> &str {
-        self.inner.model()
-    }
-}
-
-struct OpenAiRequestCodec;
-
-impl GroupModelAnalysisRequestCodec for OpenAiRequestCodec {
-    fn encode_request(
-        &self,
-        model: &str,
-        request: &ModelRequest,
-    ) -> Result<Vec<u8>, ProviderError> {
-        OpenAiResponsesProvider::encode_request_bytes(model, request)
-    }
-
-    fn validate_exact_request(
-        &self,
-        model: &str,
-        expected: &ModelRequest,
-        actual: &[u8],
-    ) -> Result<(), ProviderError> {
-        OpenAiResponsesProvider::validate_exact_request_bytes(model, expected, actual)
-    }
+    Ok(provider)
 }

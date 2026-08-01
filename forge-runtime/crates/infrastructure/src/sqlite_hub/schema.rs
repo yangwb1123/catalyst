@@ -1,5 +1,4 @@
 use std::{
-    fs,
     path::Path,
     thread,
     time::{Duration, Instant},
@@ -7,35 +6,38 @@ use std::{
 
 use rusqlite::{Connection, Error as SqliteError, ErrorCode};
 
-#[path = "schema_v5.rs"]
-mod v5;
+#[path = "schema_contract.rs"]
+mod contract;
+#[path = "schema_location.rs"]
+mod location;
 
 use super::{
     HubStoreError,
     schema_sql::{
         CREATE_V1_SCHEMA_SQL, MIGRATE_V1_TO_V2_SQL, MIGRATE_V2_TO_V3_SQL, MIGRATE_V3_TO_V4_SQL,
-        MIGRATE_V4_TO_V5_SQL,
+        MIGRATE_V4_TO_V5_SQL, MIGRATE_V5_TO_V6_SQL, MIGRATE_V6_TO_V7_SQL, MIGRATE_V7_TO_V8_SQL,
     },
+    schema_v9_sql::MIGRATE_V8_TO_V9_SQL,
+    schema_v10_sql::MIGRATE_V9_TO_V10_SQL,
     unavailable,
 };
 
-const SCHEMA_VERSION: i64 = 5;
-const V1_SCHEMA_VERSION: i64 = 1;
-const V2_SCHEMA_VERSION: i64 = 2;
-const V3_SCHEMA_VERSION: i64 = 3;
-const V4_SCHEMA_VERSION: i64 = 4;
+const SCHEMA_VERSION: i64 = 10;
 const CONNECTION_BUSY_TIMEOUT: Duration = Duration::from_millis(250);
 const OPEN_RETRY_TIMEOUT: Duration = Duration::from_secs(5);
 const OPEN_RETRY_DELAY: Duration = Duration::from_millis(10);
 
+pub(super) fn sqlite_error(error: SqliteError) -> HubStoreError {
+    contract::sqlite_error(error)
+}
+
 pub(super) fn open_database(path: &Path) -> Result<Connection, HubStoreError> {
     let deadline = Instant::now() + OPEN_RETRY_TIMEOUT;
     loop {
-        prepare_location(path)?;
+        location::prepare(path)?;
         match open_database_once(path) {
             Ok(connection) => {
-                restrict_file_permissions(path)?;
-                restrict_auxiliary_permissions(path)?;
+                location::restrict(path)?;
                 return Ok(connection);
             }
             Err(OpenAttemptError::Sqlite(error))
@@ -43,7 +45,7 @@ pub(super) fn open_database(path: &Path) -> Result<Connection, HubStoreError> {
             {
                 thread::sleep(OPEN_RETRY_DELAY);
             }
-            Err(OpenAttemptError::Sqlite(error)) => return Err(v5::sqlite_error(error)),
+            Err(OpenAttemptError::Sqlite(error)) => return Err(contract::sqlite_error(error)),
             Err(OpenAttemptError::Store(error)) => return Err(error),
         }
     }
@@ -58,46 +60,6 @@ fn open_database_once(path: &Path) -> Result<Connection, OpenAttemptError> {
     Ok(connection)
 }
 
-fn prepare_location(path: &Path) -> Result<(), HubStoreError> {
-    let parent = path.parent().ok_or_else(|| HubStoreError::Unavailable {
-        message: "Hub database path has no parent directory".into(),
-    })?;
-    prepare_private_directory(parent)?;
-    reject_symlink(path)?;
-    Ok(())
-}
-
-fn prepare_private_directory(path: &Path) -> Result<(), HubStoreError> {
-    match fs::symlink_metadata(path) {
-        Ok(metadata) if metadata.file_type().is_symlink() => Err(HubStoreError::Unavailable {
-            message: format!(
-                "Hub state directory cannot be a symbolic link: {}",
-                path.display()
-            ),
-        }),
-        Ok(metadata) if !metadata.is_dir() => Err(HubStoreError::Unavailable {
-            message: format!("Hub state path is not a directory: {}", path.display()),
-        }),
-        Ok(metadata) => verify_private_directory_permissions(path, &metadata),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            fs::create_dir_all(path).map_err(unavailable)?;
-            restrict_directory_permissions(path)
-        }
-        Err(error) => Err(unavailable(error)),
-    }
-}
-
-fn reject_symlink(path: &Path) -> Result<(), HubStoreError> {
-    match fs::symlink_metadata(path) {
-        Ok(metadata) if metadata.file_type().is_symlink() => Err(HubStoreError::Unavailable {
-            message: format!("Hub database cannot be a symbolic link: {}", path.display()),
-        }),
-        Ok(_) => Ok(()),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(error) => Err(unavailable(error)),
-    }
-}
-
 fn configure(connection: &Connection) -> Result<(), SqliteError> {
     connection.execute_batch(
         "PRAGMA journal_mode = WAL;
@@ -109,14 +71,7 @@ fn configure(connection: &Connection) -> Result<(), SqliteError> {
 
 fn reject_unsupported_schema(connection: &Connection) -> Result<(), OpenAttemptError> {
     let version = schema_version(connection)?;
-    if matches!(
-        version,
-        0 | V1_SCHEMA_VERSION
-            | V2_SCHEMA_VERSION
-            | V3_SCHEMA_VERSION
-            | V4_SCHEMA_VERSION
-            | SCHEMA_VERSION
-    ) {
+    if (0..=SCHEMA_VERSION).contains(&version) {
         return Ok(());
     }
     Err(unsupported_schema(version))
@@ -160,38 +115,47 @@ fn validate_locked_schema(
     before_final: impl FnOnce(&Connection) -> Result<(), OpenAttemptError>,
 ) -> Result<(), OpenAttemptError> {
     let version = schema_version(connection)?;
-    v5::validate_version(connection, version)?;
+    contract::validate_version(connection, version)?;
     if version == SCHEMA_VERSION {
         return Ok(());
     }
-    match version {
-        0 => {
-            create_v1_schema(connection)?;
-            migrate_v1_to_v2(connection)?;
-            migrate_v2_to_v3(connection)?;
-            migrate_v3_to_v4(connection)?;
-            migrate_v4_to_v5(connection)?;
-        }
-        V1_SCHEMA_VERSION => {
-            migrate_v1_to_v2(connection)?;
-            migrate_v2_to_v3(connection)?;
-            migrate_v3_to_v4(connection)?;
-            migrate_v4_to_v5(connection)?;
-        }
-        V2_SCHEMA_VERSION => {
-            migrate_v2_to_v3(connection)?;
-            migrate_v3_to_v4(connection)?;
-            migrate_v4_to_v5(connection)?;
-        }
-        V3_SCHEMA_VERSION => {
-            migrate_v3_to_v4(connection)?;
-            migrate_v4_to_v5(connection)?;
-        }
-        V4_SCHEMA_VERSION => migrate_v4_to_v5(connection)?,
-        other => return Err(unsupported_schema(other)),
-    }
+    migrate_to_current(connection, version)?;
     before_final(connection)?;
-    v5::validate_version(connection, SCHEMA_VERSION).map_err(Into::into)
+    contract::validate_version(connection, SCHEMA_VERSION).map_err(Into::into)
+}
+
+fn migrate_to_current(connection: &Connection, version: i64) -> Result<(), OpenAttemptError> {
+    if version == 0 {
+        create_v1_schema(connection)?;
+    }
+    if version <= 1 {
+        migrate_v1_to_v2(connection)?;
+    }
+    if version <= 2 {
+        migrate_v2_to_v3(connection)?;
+    }
+    if version <= 3 {
+        migrate_v3_to_v4(connection)?;
+    }
+    if version <= 4 {
+        migrate_v4_to_v5(connection)?;
+    }
+    if version <= 5 {
+        migrate_v5_to_v6(connection)?;
+    }
+    if version <= 6 {
+        migrate_v6_to_v7(connection)?;
+    }
+    if version <= 7 {
+        migrate_v7_to_v8(connection)?;
+    }
+    if version <= 8 {
+        migrate_v8_to_v9(connection)?;
+    }
+    if version <= 9 {
+        migrate_v9_to_v10(connection)?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -203,7 +167,7 @@ pub(super) fn migrate_with_before_final_fault_for_test(
         fault(connection).map_err(Into::into)
     })
     .map_err(|error| match error {
-        OpenAttemptError::Sqlite(error) => v5::sqlite_error(error),
+        OpenAttemptError::Sqlite(error) => contract::sqlite_error(error),
         OpenAttemptError::Store(error) => error,
     })
 }
@@ -243,6 +207,31 @@ fn migrate_v4_to_v5(connection: &Connection) -> Result<(), OpenAttemptError> {
     Ok(())
 }
 
+fn migrate_v5_to_v6(connection: &Connection) -> Result<(), OpenAttemptError> {
+    connection.execute_batch(MIGRATE_V5_TO_V6_SQL)?;
+    Ok(())
+}
+
+fn migrate_v6_to_v7(connection: &Connection) -> Result<(), OpenAttemptError> {
+    connection.execute_batch(MIGRATE_V6_TO_V7_SQL)?;
+    Ok(())
+}
+
+fn migrate_v7_to_v8(connection: &Connection) -> Result<(), OpenAttemptError> {
+    connection.execute_batch(MIGRATE_V7_TO_V8_SQL)?;
+    Ok(())
+}
+
+fn migrate_v8_to_v9(connection: &Connection) -> Result<(), OpenAttemptError> {
+    connection.execute_batch(MIGRATE_V8_TO_V9_SQL)?;
+    Ok(())
+}
+
+fn migrate_v9_to_v10(connection: &Connection) -> Result<(), OpenAttemptError> {
+    connection.execute_batch(MIGRATE_V9_TO_V10_SQL)?;
+    Ok(())
+}
+
 enum OpenAttemptError {
     Sqlite(SqliteError),
     Store(HubStoreError),
@@ -260,170 +249,8 @@ impl From<HubStoreError> for OpenAttemptError {
     }
 }
 
-#[cfg(unix)]
-fn restrict_directory_permissions(path: &Path) -> Result<(), HubStoreError> {
-    let expected = checked_directory_metadata(path)?;
-    restrict_directory_permissions_if_unchanged(path, &expected)
-}
-
-#[cfg(unix)]
-fn restrict_directory_permissions_if_unchanged(
-    path: &Path,
-    expected: &fs::Metadata,
-) -> Result<(), HubStoreError> {
-    use std::os::unix::fs::PermissionsExt;
-
-    let directory = fs::File::open(path).map_err(unavailable)?;
-    let opened = directory.metadata().map_err(unavailable)?;
-    if !same_file(expected, &opened) {
-        return Err(changed_directory_error(path));
-    }
-    directory
-        .set_permissions(fs::Permissions::from_mode(0o700))
-        .map_err(unavailable)?;
-    let current = checked_directory_metadata(path)?;
-    if !same_file(expected, &current) {
-        return Err(changed_directory_error(path));
-    }
-    Ok(())
-}
-
-#[cfg(not(unix))]
-fn restrict_directory_permissions(_path: &Path) -> Result<(), HubStoreError> {
-    Ok(())
-}
-
-#[cfg(unix)]
-fn verify_private_directory_permissions(
-    path: &Path,
-    metadata: &fs::Metadata,
-) -> Result<(), HubStoreError> {
-    // Another first opener may have observed the same empty directory, made it
-    // private, and created the database after our initial metadata read. Check
-    // the current object before inspecting or changing it based on stale data.
-    let current = checked_directory_metadata(path)?;
-    if !same_file(metadata, &current) {
-        return Err(changed_directory_error(path));
-    }
-    let mode = directory_mode(&current);
-    #[allow(
-        clippy::verbose_bit_mask,
-        reason = "the Unix group/other permission mask is clearest in octal"
-    )]
-    if mode & 0o077 == 0 {
-        return Ok(());
-    }
-
-    let is_empty = fs::read_dir(path)
-        .map_err(unavailable)?
-        .next()
-        .transpose()
-        .map_err(unavailable)?
-        .is_none();
-    let inspected = checked_directory_metadata(path)?;
-    if !same_file(&current, &inspected) {
-        return Err(changed_directory_error(path));
-    }
-    let mode = directory_mode(&inspected);
-    #[allow(
-        clippy::verbose_bit_mask,
-        reason = "the Unix group/other permission mask is clearest in octal"
-    )]
-    if mode & 0o077 == 0 {
-        return Ok(());
-    }
-    if is_empty {
-        return restrict_directory_permissions_if_unchanged(path, &inspected);
-    }
-    Err(HubStoreError::Unavailable {
-        message: format!(
-            "existing Hub state directory is accessible by group or others \
-             (mode {mode:o}); choose a dedicated private directory or run chmod 700 {}",
-            path.display()
-        ),
-    })
-}
-
-#[cfg(unix)]
-fn checked_directory_metadata(path: &Path) -> Result<fs::Metadata, HubStoreError> {
-    let metadata = fs::symlink_metadata(path).map_err(unavailable)?;
-    if metadata.file_type().is_symlink() {
-        return Err(HubStoreError::Unavailable {
-            message: format!(
-                "Hub state directory cannot be a symbolic link: {}",
-                path.display()
-            ),
-        });
-    }
-    if !metadata.is_dir() {
-        return Err(HubStoreError::Unavailable {
-            message: format!("Hub state path is not a directory: {}", path.display()),
-        });
-    }
-    Ok(metadata)
-}
-
-#[cfg(unix)]
-fn same_file(left: &fs::Metadata, right: &fs::Metadata) -> bool {
-    use std::os::unix::fs::MetadataExt;
-
-    left.dev() == right.dev() && left.ino() == right.ino()
-}
-
-#[cfg(unix)]
-fn directory_mode(metadata: &fs::Metadata) -> u32 {
-    use std::os::unix::fs::PermissionsExt;
-
-    metadata.permissions().mode() & 0o777
-}
-
-#[cfg(unix)]
-fn changed_directory_error(path: &Path) -> HubStoreError {
-    HubStoreError::Unavailable {
-        message: format!(
-            "Hub state directory changed while its permissions were being verified: {}",
-            path.display()
-        ),
-    }
-}
-
-#[cfg(not(unix))]
-fn verify_private_directory_permissions(
-    _path: &Path,
-    _metadata: &fs::Metadata,
-) -> Result<(), HubStoreError> {
-    Ok(())
-}
-
-#[cfg(unix)]
-fn restrict_file_permissions(path: &Path) -> Result<(), HubStoreError> {
-    use std::os::unix::fs::PermissionsExt;
-
-    fs::set_permissions(path, fs::Permissions::from_mode(0o600)).map_err(unavailable)
-}
-
-#[cfg(not(unix))]
-fn restrict_file_permissions(_path: &Path) -> Result<(), HubStoreError> {
-    Ok(())
-}
-
-#[cfg(unix)]
-fn restrict_auxiliary_permissions(path: &Path) -> Result<(), HubStoreError> {
-    for suffix in ["-wal", "-shm"] {
-        let mut auxiliary = path.as_os_str().to_os_string();
-        auxiliary.push(suffix);
-        let auxiliary = std::path::PathBuf::from(auxiliary);
-        if auxiliary.exists() {
-            restrict_file_permissions(&auxiliary)?;
-        }
-    }
-    Ok(())
-}
-
-#[cfg(not(unix))]
-fn restrict_auxiliary_permissions(_path: &Path) -> Result<(), HubStoreError> {
-    Ok(())
-}
+#[cfg(all(test, unix))]
+use location::verify_private_directory_permissions;
 
 #[cfg(all(test, unix))]
 #[path = "tests/schema_permissions.rs"]

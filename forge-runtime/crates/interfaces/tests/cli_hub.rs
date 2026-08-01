@@ -1,7 +1,7 @@
 use std::{
     fs,
     io::Write,
-    process::{Command, Stdio},
+    process::{Command, Output, Stdio},
 };
 
 use serde_json::Value;
@@ -27,6 +27,13 @@ fn run_failure(arguments: &[&str]) -> String {
         .expect("run forge-runtime");
     assert!(!output.status.success(), "command must fail");
     String::from_utf8(output.stderr).expect("diagnostics are UTF-8")
+}
+
+fn run_argument_failure(arguments: &[&str]) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_forge-runtime"))
+        .args(arguments)
+        .output()
+        .expect("run forge-runtime")
 }
 
 fn run_json_stdin(arguments: &[&str], input: &str) -> Value {
@@ -207,6 +214,25 @@ fn a_local_group_links_frontend_backend_and_sso_roles() {
 fn management_commands_never_silently_ignore_a_space_selector() {
     let error = run_failure(&["--group", "missing", "prompt", "list"]);
     assert!(error.contains("selectors are not valid"));
+}
+
+#[test]
+fn argument_errors_escape_untrusted_argv_but_preserve_usage_layout() {
+    let injected = "BAD\u{1b}[31mINJECT\nNEXT";
+    for arguments in [
+        vec![format!("--{injected}")],
+        vec!["--group".into(), "group-1".into(), injected.into()],
+        vec!["/tmp/project".into(), injected.into()],
+    ] {
+        let output =
+            run_argument_failure(&arguments.iter().map(String::as_str).collect::<Vec<_>>());
+        assert_eq!(output.status.code(), Some(2));
+        let error = String::from_utf8(output.stderr).expect("diagnostics are UTF-8");
+        assert!(!error.contains('\u{1b}'));
+        assert!(!error.contains("INJECT\nNEXT"));
+        assert!(error.contains("BAD\\x1b[31mINJECT\\nNEXT"));
+        assert!(error.contains("\n\nusage:"));
+    }
 }
 
 #[test]

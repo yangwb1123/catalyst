@@ -24,11 +24,18 @@ pub(super) fn inspect(
     let transaction = connection
         .transaction_with_behavior(TransactionBehavior::Deferred)
         .map_err(read_error)?;
-    let stored = rows::find_by_id(&transaction, analysis_id)?
-        .ok_or_else(|| not_found(HubEntity::GroupModelAnalysis, analysis_id))?;
-    let inspection = validate_stored(&transaction, stored)?.inspection;
+    let inspection = inspect_in_snapshot(&transaction, analysis_id)?;
     transaction.commit().map_err(read_error)?;
     Ok(inspection)
+}
+
+pub(in crate::sqlite_hub) fn inspect_in_snapshot(
+    connection: &Connection,
+    analysis_id: &str,
+) -> Result<GroupModelAnalysisInspection, HubStoreError> {
+    let stored = rows::find_by_id(connection, analysis_id)?
+        .ok_or_else(|| not_found(HubEntity::GroupModelAnalysis, analysis_id))?;
+    Ok(validate_stored(connection, stored)?.inspection)
 }
 
 pub(super) fn list(
@@ -65,7 +72,9 @@ pub(super) fn validate_stored(
     })
 }
 
-pub(super) fn source_from_snapshot(source: &GroupRunSnapshot) -> GroupModelAnalysisSource {
+pub(in crate::sqlite_hub) fn source_from_snapshot(
+    source: &GroupRunSnapshot,
+) -> GroupModelAnalysisSource {
     GroupModelAnalysisSource {
         group_run_version: source.run.v,
         group_run_id: source.run.run_id.clone(),

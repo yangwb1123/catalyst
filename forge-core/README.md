@@ -70,29 +70,60 @@ the current directory; override with `--root`):
 
 ```sh
 # drive a workflow end to end (default dry-run agents + real gates)
-go -C forge-core run ./cmd/forge -- run build --mode balanced --root "$PWD"
+go -C forge-core run ./cmd/forge run build --mode balanced --root "$PWD"
 
 # drive agent phases with a real agent CLI (role-card + context prompt -> Claude stdin)
-go -C forge-core run ./cmd/forge -- run build --executor command --agent-cmd claude --root "$PWD"
+go -C forge-core run ./cmd/forge run build --executor command --agent-cmd claude --root "$PWD"
 # inspect the plumbing without firing an agent
-go -C forge-core run ./cmd/forge -- run build --executor command --agent-cmd echo   --root "$PWD"
+go -C forge-core run ./cmd/forge run build --executor command --agent-cmd echo   --root "$PWD"
 
 # autonomous Evolve loop (proposal-only modes require the same pinned bytes as release)
-go -C forge-core run ./cmd/forge -- evolve evolve --mode explorer --max-iter 5 \
+go -C forge-core run ./cmd/forge evolve evolve --mode explorer --max-iter 5 \
   --executor command --agent-cmd claude \
   --release-agent-path /absolute/operator-trusted/path/claude \
   --release-agent-sha256 <64-lowercase-hex> --root "$PWD"
 
 # declarative deploy package (Linux only; path and content are operator-pinned)
-go -C forge-core run ./cmd/forge -- run deploy --executor command --agent-cmd claude \
+go -C forge-core run ./cmd/forge run deploy --executor command --agent-cmd claude \
   --release-agent-path /absolute/operator-trusted/path/claude \
   --release-agent-sha256 <64-lowercase-hex> --root "$PWD"
 
 # delegate straight to one harness gate; exit code follows the gate
-go -C forge-core run ./cmd/forge -- gate   --root "$PWD"   # node harness/gate.mjs
-go -C forge-core run ./cmd/forge -- check  --root "$PWD"   # python3 harness/check.py
-go -C forge-core run ./cmd/forge -- accept --root "$PWD"   # node harness/acceptance.mjs
+go -C forge-core run ./cmd/forge gate   --root "$PWD"   # node harness/gate.mjs
+go -C forge-core run ./cmd/forge check  --root "$PWD"   # python3 harness/check.py
+go -C forge-core run ./cmd/forge accept --root "$PWD"   # node harness/acceptance.mjs
 ```
+
+## Group Agent Graph control artifacts
+
+The Go binary is also the sole scheduler for persisted Group Agent Graphs. It
+can produce two canonical, effect-free interchange artifacts:
+
+```sh
+forge graph-plan --graph-id GROUP_AGENT_GRAPH_ID \
+  --manifest-sha256 GRAPH_MANIFEST_SHA256 --input graph.json > core-plan.json
+
+forge graph-node-contract --control control.json \
+  --endpoint https://api.openai.com/v1/responses \
+  --model PINNED_MODEL --max-output-tokens 4096 \
+  --max-model-output-bytes 65536 --max-model-events 1024 \
+  --timeout-ms 120000 --max-cost-usd-micros 1000000 \
+  --pricing-snapshot-sha256 "$PRICING_SNAPSHOT_SHA256" \
+  --max-result-bytes 262144 > node-contract.json
+```
+
+`graph-node-contract` strictly validates Rust's canonical private control
+snapshot and always selects `plan.waves[0][0]`; callers cannot name a node.
+It freezes exact Prompts, provider configuration, budgets, zero capabilities,
+and failure policy but reads no credential and performs no provider, model,
+network, tool, workspace, result, memory, or writeback effect. Output is compact
+canonical UTF-8 JSON with no trailing newline.
+
+Provider endpoints use a conservative, byte-stable HTTPS grammar shared with
+Rust: lowercase canonical DNS or dotted-decimal IPv4, an optional canonical
+non-default port, and an empty or `/`-rooted unreserved path. Userinfo,
+query/fragment, percent escapes, dot segments, IPv6, and spellings that would
+normalize a host or port are rejected.
 
 ## Honest limitations (current scope)
 

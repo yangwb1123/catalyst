@@ -1,0 +1,12 @@
+#[path = "group_agent_graph/command.rs"]
+pub(crate) mod command;
+#[path = "group_agent_graph/contract_command.rs"]
+pub(crate) mod contract_command;
+#[path = "group_agent_graph/contract_output.rs"]
+pub(crate) mod contract_output;
+#[path = "group_agent_graph/output.rs"]
+pub(crate) mod output;
+#[path = "group_agent_graph/run_command.rs"]
+pub(crate) mod run_command;
+#[path = "group_agent_graph/run_output.rs"]
+pub(crate) mod run_output;

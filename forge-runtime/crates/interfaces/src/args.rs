@@ -6,11 +6,19 @@ mod group_analysis_args;
 mod group_args;
 #[path = "group_commands.rs"]
 mod group_commands;
+#[path = "group_agent_graph/args.rs"]
+mod group_graph_args;
+#[path = "group_panel_args.rs"]
+mod group_panel_args;
+#[path = "group_synthesis_args.rs"]
+mod group_synthesis_args;
 #[path = "run_args.rs"]
 mod run_args;
 
 pub use group_commands::{
-    GroupAnalysisCommand, GroupCommand, GroupExecutionCommand, GroupRunCommand,
+    GroupAnalysisCommand, GroupCommand, GroupExecutionCommand, GroupGraphCommand,
+    GroupGraphRunCommand, GroupGraphRunContractCommand, GroupGraphRunControlCommand,
+    GroupPanelCommand, GroupRunCommand, GroupSynthesisCommand,
 };
 
 #[derive(Debug, Eq, PartialEq)]
@@ -171,15 +179,9 @@ fn validate_execution_options(options: &GlobalOptions, command: &Command) -> Res
         ));
     }
     if options.idempotency_key.is_some()
-        && matches!(
-            command,
-            Command::Group(GroupCommand::Analysis(GroupAnalysisCommand::Send { .. }))
-        )
+        && let Some(message) = dispatch_claim_key_error(command)
     {
-        return Err(format!(
-            "--idempotency-key is not valid for group analysis send; ANALYSIS_ID owns the single dispatch claim\n\n{}",
-            usage()
-        ));
+        return Err(format!("{message}\n\n{}", usage()));
     }
     if options.idempotency_key.is_some() && !accepts_idempotency_key(command) {
         return Err(format!(
@@ -188,6 +190,18 @@ fn validate_execution_options(options: &GlobalOptions, command: &Command) -> Res
         ));
     }
     Ok(())
+}
+
+fn dispatch_claim_key_error(command: &Command) -> Option<&'static str> {
+    match command {
+        Command::Group(GroupCommand::Analysis(GroupAnalysisCommand::Send { .. })) => Some(
+            "--idempotency-key is not valid for group analysis send; ANALYSIS_ID owns the single dispatch claim",
+        ),
+        Command::Group(GroupCommand::Synthesis(GroupSynthesisCommand::Send { .. })) => Some(
+            "--idempotency-key is not valid for group synthesis send; SYNTHESIS_ID owns the single dispatch claim",
+        ),
+        _ => None,
+    }
 }
 
 fn parse_global_options(tokens: &mut VecDeque<String>) -> Result<GlobalOptions, String> {
@@ -286,7 +300,18 @@ fn accepts_idempotency_key(command: &Command) -> bool {
                     | GroupCommand::Add { .. }
                     | GroupCommand::Analysis(GroupAnalysisCommand::Prepare { .. })
                     | GroupCommand::Execution(GroupExecutionCommand::Start { .. })
+                    | GroupCommand::Graph(
+                        GroupGraphCommand::Prepare { .. }
+                            | GroupGraphCommand::Run(
+                                GroupGraphRunCommand::Prepare { .. }
+                                    | GroupGraphRunCommand::Contract(
+                                        GroupGraphRunContractCommand::Admit { .. },
+                                    ),
+                            ),
+                    )
+                    | GroupCommand::Panel(GroupPanelCommand::Prepare { .. })
                     | GroupCommand::Run(GroupRunCommand::Prepare { .. })
+                    | GroupCommand::Synthesis(GroupSynthesisCommand::Prepare { .. })
             )
             | Command::Run(RunCommand::Start { .. })
     )
@@ -419,7 +444,11 @@ fn drain_text(tokens: &mut VecDeque<String>) -> String {
 
 fn require_empty(tokens: &VecDeque<String>) -> Result<(), String> {
     tokens.front().map_or(Ok(()), |value| {
-        Err(format!("unexpected argument '{value}'\n\n{}", usage()))
+        Err(format!(
+            "unexpected argument '{}'\n\n{}",
+            crate::group_context_output::terminal_text(value),
+            usage()
+        ))
     })
 }
 
@@ -440,5 +469,17 @@ mod group_run_tests;
 mod group_execution_tests;
 
 #[cfg(test)]
+#[path = "group_agent_graph/args_tests.rs"]
+mod group_graph_tests;
+
+#[cfg(test)]
 #[path = "group_analysis_args_tests.rs"]
 mod group_analysis_tests;
+
+#[cfg(test)]
+#[path = "group_panel_args_tests.rs"]
+mod group_panel_tests;
+
+#[cfg(test)]
+#[path = "group_synthesis_args_tests.rs"]
+mod group_synthesis_tests;

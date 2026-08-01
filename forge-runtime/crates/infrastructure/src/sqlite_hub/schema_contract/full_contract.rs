@@ -5,7 +5,8 @@ use sha2::{Digest, Sha256};
 
 use super::super::{
     CREATE_V1_SCHEMA_SQL, HubStoreError, MIGRATE_V1_TO_V2_SQL, MIGRATE_V2_TO_V3_SQL,
-    MIGRATE_V3_TO_V4_SQL, MIGRATE_V4_TO_V5_SQL,
+    MIGRATE_V3_TO_V4_SQL, MIGRATE_V4_TO_V5_SQL, MIGRATE_V5_TO_V6_SQL, MIGRATE_V6_TO_V7_SQL,
+    MIGRATE_V7_TO_V8_SQL, MIGRATE_V8_TO_V9_SQL, MIGRATE_V9_TO_V10_SQL,
 };
 
 #[path = "full_contract/structure.rs"]
@@ -26,6 +27,15 @@ const OWNED_TABLES: &[&str] = &[
     "group_model_analyses",
     "group_model_analysis_events",
     "group_model_analysis_results",
+    "group_analysis_panels",
+    "group_analysis_panel_analyses",
+    "group_panel_syntheses",
+    "group_panel_synthesis_events",
+    "group_panel_synthesis_results",
+    "group_agent_graphs",
+    "group_agent_graph_runs",
+    "group_agent_graph_run_events",
+    "group_agent_graph_node_execution_contracts",
 ];
 const SCHEMA_BATCHES: &[&str] = &[
     CREATE_V1_SCHEMA_SQL,
@@ -33,14 +43,39 @@ const SCHEMA_BATCHES: &[&str] = &[
     MIGRATE_V2_TO_V3_SQL,
     MIGRATE_V3_TO_V4_SQL,
     MIGRATE_V4_TO_V5_SQL,
+    MIGRATE_V5_TO_V6_SQL,
+    MIGRATE_V6_TO_V7_SQL,
+    MIGRATE_V7_TO_V8_SQL,
+    MIGRATE_V8_TO_V9_SQL,
+    MIGRATE_V9_TO_V10_SQL,
 ];
-const VERSION_TABLE_COUNTS: [usize; 6] = [0, 5, 8, 9, 11, 14];
-const VERSION_EXPLICIT_INDEX_COUNTS: [usize; 6] = [0, 2, 3, 4, 6, 8];
-const IMPLICIT_INDEX_COUNT: usize = 25;
+const VERSION_TABLE_COUNTS: [usize; 11] = [0, 5, 8, 9, 11, 14, 16, 19, 20, 22, 23];
+const VERSION_EXPLICIT_INDEX_COUNTS: [usize; 11] = [0, 2, 3, 4, 6, 8, 10, 12, 14, 16, 18];
+const V6_IMPLICIT_INDEX_COUNT: usize = 29;
+const V7_IMPLICIT_INDEX_COUNT: usize = 33;
+const V8_IMPLICIT_INDEX_COUNT: usize = 35;
+const V9_IMPLICIT_INDEX_COUNT: usize = 38;
+const V10_IMPLICIT_INDEX_COUNT: usize = 41;
 const STRUCTURAL_DIGEST_DOMAIN: &[u8] = b"forge-hub-structural-contract-v1\0";
-const STRUCTURAL_CONTRACT_SHA256: [u8; 32] = [
-    0x79, 0x0b, 0x05, 0xcb, 0x9b, 0x27, 0x27, 0x75, 0x58, 0x29, 0xf4, 0x2f, 0xae, 0x47, 0xe3, 0xd0,
-    0x19, 0x31, 0x70, 0xac, 0xdb, 0xa4, 0x14, 0x15, 0xa2, 0x00, 0x54, 0x44, 0xe7, 0x97, 0xbb, 0xf9,
+const V6_STRUCTURAL_CONTRACT_SHA256: [u8; 32] = [
+    0x89, 0x39, 0x2a, 0xf9, 0xcd, 0xca, 0x0e, 0xfd, 0x55, 0xd7, 0x28, 0xc7, 0x41, 0xde, 0x1a, 0x01,
+    0x05, 0xc9, 0x6b, 0x85, 0x37, 0xd1, 0x41, 0xcd, 0x4d, 0xaf, 0x18, 0x57, 0xd7, 0x31, 0x0c, 0xb9,
+];
+const V7_STRUCTURAL_CONTRACT_SHA256: [u8; 32] = [
+    0x44, 0xfe, 0xd8, 0x26, 0x8f, 0x1a, 0x30, 0x18, 0x60, 0xf2, 0xad, 0x54, 0x0f, 0x44, 0x81, 0x34,
+    0xe3, 0x24, 0x24, 0xc8, 0xb6, 0xee, 0x5b, 0x17, 0xfb, 0x56, 0xa4, 0x2f, 0xcb, 0x5b, 0x34, 0x70,
+];
+const V8_STRUCTURAL_CONTRACT_SHA256: [u8; 32] = [
+    0x1e, 0xdd, 0xa5, 0x40, 0x70, 0xb6, 0x2b, 0xf9, 0x77, 0x7a, 0x62, 0x16, 0x62, 0x22, 0xf5, 0xf6,
+    0x2c, 0x33, 0xd6, 0xa4, 0x84, 0x84, 0xbe, 0x5e, 0x52, 0x5c, 0xc9, 0xf4, 0x2b, 0x33, 0x04, 0xed,
+];
+const V9_STRUCTURAL_CONTRACT_SHA256: [u8; 32] = [
+    0xc9, 0xbd, 0x52, 0x32, 0x68, 0xad, 0xe4, 0x99, 0xfe, 0x44, 0x66, 0x73, 0xa3, 0xba, 0xa2, 0x55,
+    0x43, 0xf6, 0x26, 0x8c, 0x96, 0x3d, 0x50, 0x21, 0x12, 0xfd, 0x14, 0xa6, 0x07, 0x30, 0x06, 0x07,
+];
+const V10_STRUCTURAL_CONTRACT_SHA256: [u8; 32] = [
+    0xce, 0x53, 0x83, 0xf4, 0x4a, 0x3a, 0x98, 0x2a, 0xb1, 0x27, 0x60, 0x8a, 0xcd, 0xa4, 0x73, 0xd1,
+    0x53, 0x1f, 0xf1, 0x0f, 0xc4, 0xb6, 0xca, 0x8e, 0x70, 0x36, 0xd8, 0x4f, 0xde, 0xc7, 0x5d, 0x8d,
 ];
 
 static EXPECTED_SCHEMAS: OnceLock<Result<Vec<ExpectedSchema>, String>> = OnceLock::new();
@@ -178,7 +213,7 @@ fn load_expected_schema(connection: &Connection, version: usize) -> Result<Expec
         tables,
     };
     validate_generated_contract(&schema)?;
-    if version == SCHEMA_BATCHES.len() {
+    if version >= 6 {
         validate_release_structure(&schema)?;
     }
     Ok(schema)
@@ -209,22 +244,32 @@ fn validate_generated_contract(schema: &ExpectedSchema) -> Result<(), String> {
 }
 
 fn validate_release_structure(schema: &ExpectedSchema) -> Result<(), String> {
+    let (expected_indexes, expected_digest) = match schema.version {
+        6 => (V6_IMPLICIT_INDEX_COUNT, V6_STRUCTURAL_CONTRACT_SHA256),
+        7 => (V7_IMPLICIT_INDEX_COUNT, V7_STRUCTURAL_CONTRACT_SHA256),
+        8 => (V8_IMPLICIT_INDEX_COUNT, V8_STRUCTURAL_CONTRACT_SHA256),
+        9 => (V9_IMPLICIT_INDEX_COUNT, V9_STRUCTURAL_CONTRACT_SHA256),
+        10 => (V10_IMPLICIT_INDEX_COUNT, V10_STRUCTURAL_CONTRACT_SHA256),
+        version => return Err(format!("Hub v{version} has no release structural contract")),
+    };
     let implicit_indexes = schema
         .tables
         .iter()
         .map(|table| table.signature.implicit_index_count())
         .sum::<usize>();
-    if implicit_indexes != IMPLICIT_INDEX_COUNT
-        || schema.catalog.implicit_index_owners.len() != IMPLICIT_INDEX_COUNT
+    if implicit_indexes != expected_indexes
+        || schema.catalog.implicit_index_owners.len() != expected_indexes
     {
         return Err(format!(
-            "generated Hub v5 has {implicit_indexes} implicit indexes; expected {IMPLICIT_INDEX_COUNT}"
+            "generated Hub v{} has {implicit_indexes} implicit indexes; expected {expected_indexes}",
+            schema.version
         ));
     }
     let digest = structural_digest(&schema.tables);
-    if digest != STRUCTURAL_CONTRACT_SHA256 {
+    if digest != expected_digest {
         return Err(format!(
-            "generated Hub v5 structural digest changed: {digest:02x?}"
+            "generated Hub v{} structural digest changed: {digest:02x?}",
+            schema.version
         ));
     }
     Ok(())
@@ -300,9 +345,6 @@ fn catalog(connection: &Connection) -> rusqlite::Result<CatalogSignature> {
     for (kind, name, owner, sql) in rows {
         if kind == "index" && sql.is_none() {
             catalog.implicit_index_owners.push(owner);
-            continue;
-        }
-        if name.starts_with("sqlite_") {
             continue;
         }
         match kind.as_str() {

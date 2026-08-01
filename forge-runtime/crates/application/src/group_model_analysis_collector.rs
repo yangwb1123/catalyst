@@ -18,6 +18,9 @@ pub(crate) struct AnalysisModelTurn {
     pub(crate) usage: Usage,
 }
 
+pub(crate) type PreparedTurnLimits = AnalysisModelLimits;
+pub(crate) type PreparedTurn = AnalysisModelTurn;
+
 pub(crate) async fn collect_prepared_turn(
     provider: &dyn PreparedModelProvider,
     body: Vec<u8>,
@@ -47,6 +50,15 @@ pub(crate) async fn collect_prepared_turn(
     }
 }
 
+pub(crate) async fn collect_zero_tool_turn(
+    provider: &dyn PreparedModelProvider,
+    body: Vec<u8>,
+    cancellation: &Cancellation,
+    limits: PreparedTurnLimits,
+) -> Result<PreparedTurn, PostClaimError> {
+    collect_prepared_turn(provider, body, cancellation, limits).await
+}
+
 async fn require_eof(
     stream: &mut forge_runtime_domain::ModelEventStream,
     cancellation: &Cancellation,
@@ -65,6 +77,7 @@ struct AnalysisCollector {
     answer: String,
     finish_reason: Option<ModelFinishReason>,
     usage: Usage,
+    usage_seen: bool,
     output_bytes: usize,
     events: u32,
 }
@@ -128,6 +141,7 @@ impl AnalysisCollector {
     ) -> Result<(), PostClaimError> {
         self.charge(0, limits)?;
         self.usage = checked_usage(self.usage, next)?;
+        self.usage_seen = true;
         if self.usage.output_tokens > u64::from(limits.output_tokens) {
             return Err(PostClaimError::Limit(AnalysisLimit::OutputTokens));
         }
@@ -148,6 +162,9 @@ impl AnalysisCollector {
 
     fn finish(self) -> Result<AnalysisModelTurn, PostClaimError> {
         let finish_reason = self.finish_reason.ok_or(PostClaimError::Protocol)?;
+        if !self.usage_seen {
+            return Err(PostClaimError::Protocol);
+        }
         if matches!(finish_reason, ModelFinishReason::ToolUse) {
             return Err(PostClaimError::ToolCall);
         }

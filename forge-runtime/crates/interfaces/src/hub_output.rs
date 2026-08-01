@@ -8,6 +8,11 @@ use crate::runtime_domain::{
     RunRecord, RunRecoveryState, RuntimeEventKind, SessionGroup,
 };
 use crate::{
+    group_analysis_panel_output::{
+        GroupAnalysisPanelInspectionView, write_list as write_group_analysis_panel_list,
+        write_panel as write_group_analysis_panel,
+        write_prepared as write_group_analysis_panel_prepared,
+    },
     group_context_output::{GroupContextView, write_group_context},
     group_execution_output::{
         GroupExecutionInspectionView, write_group_execution, write_group_execution_list,
@@ -19,6 +24,13 @@ use crate::{
         write_list as write_group_model_analysis_list,
         write_prepared as write_group_model_analysis_prepared,
         write_sent as write_group_model_analysis_sent,
+    },
+    group_panel_synthesis_output::{
+        GroupPanelSynthesisInspectionView, GroupPanelSynthesisListItemView,
+        GroupPanelSynthesisSendDisposition, write_list as write_group_panel_synthesis_list,
+        write_prepared as write_group_panel_synthesis_prepared,
+        write_sent as write_group_panel_synthesis_sent,
+        write_synthesis as write_group_panel_synthesis,
     },
     group_run_output::{
         GroupRunSnapshotView, write_group_run, write_group_run_list, write_group_run_prepared,
@@ -101,6 +113,36 @@ pub enum OutputKind {
         inspect_with: &'static str,
         analyses: Vec<crate::runtime_domain::GroupModelAnalysisRecord>,
     },
+    GroupAnalysisPanelPrepared {
+        disposition: crate::runtime_domain::PrepareGroupAnalysisPanelDisposition,
+        panel: GroupAnalysisPanelInspectionView,
+    },
+    GroupAnalysisPanel {
+        panel: GroupAnalysisPanelInspectionView,
+    },
+    GroupAnalysisPanels {
+        metadata_only: bool,
+        source_and_results_validated: bool,
+        inspect_with: &'static str,
+        panels: Vec<crate::runtime_domain::GroupAnalysisPanelRecord>,
+    },
+    GroupPanelSynthesisPrepared {
+        disposition: crate::runtime_domain::PrepareGroupPanelSynthesisDisposition,
+        inspection: GroupPanelSynthesisInspectionView,
+    },
+    GroupPanelSynthesisSent {
+        disposition: GroupPanelSynthesisSendDisposition,
+        inspection: GroupPanelSynthesisInspectionView,
+    },
+    GroupPanelSynthesis {
+        inspection: GroupPanelSynthesisInspectionView,
+    },
+    GroupPanelSyntheses {
+        metadata_only: bool,
+        source_and_journal_validated: bool,
+        inspect_with: &'static str,
+        syntheses: Vec<GroupPanelSynthesisListItemView>,
+    },
     Groups {
         groups: Vec<SessionGroup>,
     },
@@ -161,19 +203,9 @@ fn write_human(kind: &OutputKind, writer: &mut impl Write) -> Result<(), io::Err
         OutputKind::SessionCreated { session } => {
             writeln!(writer, "created session {} — {}", session.id, session.title)
         }
-        OutputKind::PromptAdded { prompt } => writeln!(
-            writer,
-            "remembered prompt {} in session {}",
-            prompt.id, prompt.conversation_id
-        ),
+        OutputKind::PromptAdded { prompt } => write_prompt_added(prompt, writer),
         OutputKind::Prompts { prompts } => write_prompts(prompts, writer),
-        OutputKind::GroupCreated { group } => {
-            writeln!(
-                writer,
-                "created local-private group {} — {}",
-                group.id, group.name
-            )
-        }
+        OutputKind::GroupCreated { group } => write_group_created(group, writer),
         OutputKind::GroupLinked { member } => writeln!(
             writer,
             "linked project {} to group {} as {}",
@@ -198,9 +230,65 @@ fn write_human(kind: &OutputKind, writer: &mut impl Write) -> Result<(), io::Err
         | OutputKind::GroupModelAnalysisSent { .. }
         | OutputKind::GroupModelAnalysis { .. }
         | OutputKind::GroupModelAnalyses { .. } => write_group_model_kind(kind, writer),
+        OutputKind::GroupAnalysisPanelPrepared { .. }
+        | OutputKind::GroupAnalysisPanel { .. }
+        | OutputKind::GroupAnalysisPanels { .. } => write_group_panel_kind(kind, writer),
+        OutputKind::GroupPanelSynthesisPrepared { .. }
+        | OutputKind::GroupPanelSynthesisSent { .. }
+        | OutputKind::GroupPanelSynthesis { .. }
+        | OutputKind::GroupPanelSyntheses { .. } => write_group_synthesis_kind(kind, writer),
         OutputKind::Groups { groups } => write_groups(groups, writer),
         OutputKind::Runs { runs } => write_runs(runs, writer),
         OutputKind::Run { inspection } => write_run(inspection, writer),
+    }
+}
+
+fn write_group_created(group: &SessionGroup, writer: &mut impl Write) -> Result<(), io::Error> {
+    writeln!(
+        writer,
+        "created local-private group {} — {}",
+        group.id, group.name
+    )
+}
+
+fn write_group_synthesis_kind(kind: &OutputKind, writer: &mut impl Write) -> Result<(), io::Error> {
+    match kind {
+        OutputKind::GroupPanelSynthesisPrepared {
+            disposition,
+            inspection,
+        } => write_group_panel_synthesis_prepared(*disposition, inspection, writer),
+        OutputKind::GroupPanelSynthesisSent {
+            disposition,
+            inspection,
+        } => write_group_panel_synthesis_sent(*disposition, inspection, writer),
+        OutputKind::GroupPanelSynthesis { inspection } => {
+            write_group_panel_synthesis(inspection, writer)
+        }
+        OutputKind::GroupPanelSyntheses { syntheses, .. } => {
+            write_group_panel_synthesis_list(syntheses, writer)
+        }
+        _ => unreachable!("caller routes only Group Panel Synthesis output"),
+    }
+}
+
+fn write_prompt_added(prompt: &PromptReceipt, writer: &mut impl Write) -> Result<(), io::Error> {
+    writeln!(
+        writer,
+        "remembered prompt {} in session {}",
+        prompt.id, prompt.conversation_id
+    )
+}
+
+fn write_group_panel_kind(kind: &OutputKind, writer: &mut impl Write) -> Result<(), io::Error> {
+    match kind {
+        OutputKind::GroupAnalysisPanelPrepared { disposition, panel } => {
+            write_group_analysis_panel_prepared(*disposition, panel, writer)
+        }
+        OutputKind::GroupAnalysisPanel { panel } => write_group_analysis_panel(panel, writer),
+        OutputKind::GroupAnalysisPanels { panels, .. } => {
+            write_group_analysis_panel_list(panels, writer)
+        }
+        _ => unreachable!("caller routes only Group Analysis Panel output"),
     }
 }
 

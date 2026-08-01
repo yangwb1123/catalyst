@@ -123,7 +123,12 @@ fn run_entity(entity: HubEntity) -> RunEntity {
         | HubEntity::GroupProjectMember
         | HubEntity::GroupRun
         | HubEntity::GroupExecution
-        | HubEntity::GroupModelAnalysis => RunEntity::Run,
+        | HubEntity::GroupModelAnalysis
+        | HubEntity::GroupAnalysisPanel
+        | HubEntity::GroupPanelSynthesis
+        | HubEntity::GroupAgentGraph
+        | HubEntity::GroupAgentGraphRun
+        | HubEntity::GroupAgentNodeExecutionContract => RunEntity::Run,
     }
 }
 

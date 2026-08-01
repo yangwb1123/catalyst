@@ -7,41 +7,32 @@ use super::{
     schema::{migrate_with_before_final_fault_for_test, open_database},
     schema_sql::{
         CREATE_V1_SCHEMA_SQL, MIGRATE_V1_TO_V2_SQL, MIGRATE_V2_TO_V3_SQL, MIGRATE_V3_TO_V4_SQL,
-        MIGRATE_V4_TO_V5_SQL,
+        MIGRATE_V4_TO_V5_SQL, MIGRATE_V5_TO_V6_SQL, MIGRATE_V6_TO_V7_SQL, MIGRATE_V7_TO_V8_SQL,
     },
+    schema_v9_sql::MIGRATE_V8_TO_V9_SQL,
+    schema_v10_sql::MIGRATE_V9_TO_V10_SQL,
 };
 
 #[path = "tests/schema_full_validation.rs"]
 mod schema_full_validation_tests;
 #[path = "tests/schema_open_adversarial.rs"]
 mod schema_open_adversarial_tests;
+#[path = "tests/schema_release_golden.rs"]
+mod schema_release_golden_tests;
 #[path = "tests/schema_transaction_rollback.rs"]
 mod schema_transaction_rollback_tests;
+#[path = "tests/schema_v10_migration.rs"]
+mod schema_v10_migration_tests;
 #[path = "tests/schema_v5_migration.rs"]
 mod schema_v5_migration_tests;
-
-#[test]
-fn v2_future_group_runs_blocker_is_rejected_before_migration() {
-    let (root, database) = legacy_v2_database();
-    let blocker = Connection::open(&database).expect("open v2 future-table fixture");
-    blocker
-        .execute_batch("CREATE TABLE group_runs(blocker TEXT)")
-        .expect("install future v3 table blocker");
-    drop(blocker);
-
-    let error = open_database(&database).expect_err("v2 prefix rejects future v3 table");
-    assert!(matches!(error, HubStoreError::Corrupt { .. }));
-    let unchanged = Connection::open(&database).expect("reopen unchanged v2 database");
-    assert_eq!(schema_version(&unchanged), 2);
-    assert_legacy_run(&unchanged);
-    assert_eq!(table_columns(&unchanged, "group_runs"), vec!["blocker"]);
-    assert!(!schema_object_exists(
-        &unchanged,
-        "index",
-        "group_runs_group"
-    ));
-    drop((unchanged, root));
-}
+#[path = "tests/schema_v6_migration.rs"]
+mod schema_v6_migration_tests;
+#[path = "tests/schema_v7_migration.rs"]
+mod schema_v7_migration_tests;
+#[path = "tests/schema_v8_migration.rs"]
+mod schema_v8_migration_tests;
+#[path = "tests/schema_v9_migration.rs"]
+mod schema_v9_migration_tests;
 
 #[test]
 fn v1_future_group_runs_blocker_is_rejected_before_migration_chain() {
@@ -291,6 +282,28 @@ fn legacy_v4_database() -> (TempDir, std::path::PathBuf) {
     (root, database)
 }
 
+fn legacy_v5_database() -> (TempDir, std::path::PathBuf) {
+    let (root, database) = legacy_v4_database();
+    let connection = Connection::open(&database).expect("open v4 fixture");
+    connection
+        .execute_batch(MIGRATE_V4_TO_V5_SQL)
+        .expect("migrate fixture to v5");
+    seed_v5_analysis(&connection);
+    drop(connection);
+    (root, database)
+}
+
+fn legacy_v6_database() -> (TempDir, std::path::PathBuf) {
+    let (root, database) = legacy_v5_database();
+    let connection = Connection::open(&database).expect("open v5 fixture");
+    connection
+        .execute_batch(MIGRATE_V5_TO_V6_SQL)
+        .expect("migrate fixture to v6");
+    seed_v6_panel(&connection);
+    drop(connection);
+    (root, database)
+}
+
 fn seed_v1_records(connection: &Connection) {
     connection
         .execute_batch(
@@ -367,6 +380,70 @@ fn seed_v4_group_execution(connection: &Connection) {
              );",
         )
         .expect("seed v4 Group Execution");
+}
+
+fn seed_v5_analysis(connection: &Connection) {
+    connection
+        .execute_batch(
+            "INSERT INTO group_model_analyses(
+               id,group_run_id,analysis_version,status,source_snapshot_sha256,
+               provider,endpoint,model,system_prompt_version,system_prompt_sha256,
+               max_output_tokens,max_model_output_bytes,max_model_events,config_json,
+               config_sha256,request_body,request_bytes,request_sha256,cursor_json,
+               journal_bytes,idempotency_key,protocol_version,created_at_ms
+             ) VALUES(
+               'analysis-legacy','group-run-legacy',1,'completed',zeroblob(32),
+               'openai_responses','https://api.openai.com/v1/responses','legacy-model',
+               1,zeroblob(32),64,1024,3,'{}',zeroblob(32),x'7b7d',2,
+               zeroblob(32),'{}',2,'analysis-legacy-key',1,5
+             );
+             INSERT INTO group_model_analysis_events(
+               analysis_id,seq,event_json,event_sha256
+             ) VALUES('analysis-legacy',1,'{}',zeroblob(32));
+             INSERT INTO group_model_analysis_results(
+               analysis_id,result_version,result_blob,result_bytes,result_sha256,created_at_ms
+             ) VALUES('analysis-legacy',1,x'7b7d',2,zeroblob(32),5);",
+        )
+        .expect("seed v5 model analysis");
+}
+
+fn seed_v6_panel(connection: &Connection) {
+    connection
+        .execute_batch(
+            "INSERT INTO group_model_analyses(
+               id,group_run_id,analysis_version,status,source_snapshot_sha256,
+               provider,endpoint,model,system_prompt_version,system_prompt_sha256,
+               max_output_tokens,max_model_output_bytes,max_model_events,config_json,
+               config_sha256,request_body,request_bytes,request_sha256,cursor_json,
+               journal_bytes,idempotency_key,protocol_version,created_at_ms
+             ) SELECT
+               'analysis-legacy-2',group_run_id,analysis_version,status,source_snapshot_sha256,
+               provider,endpoint,model,system_prompt_version,system_prompt_sha256,
+               max_output_tokens,max_model_output_bytes,max_model_events,config_json,
+               config_sha256,request_body,request_bytes,request_sha256,cursor_json,
+               journal_bytes,'analysis-legacy-key-2',protocol_version,6
+             FROM group_model_analyses WHERE id='analysis-legacy';
+             INSERT INTO group_model_analysis_events(
+               analysis_id,seq,event_json,event_sha256
+             ) VALUES('analysis-legacy-2',1,'{}',zeroblob(32));
+             INSERT INTO group_model_analysis_results(
+               analysis_id,result_version,result_blob,result_bytes,result_sha256,created_at_ms
+             ) VALUES('analysis-legacy-2',1,x'7b7d',2,zeroblob(32),6);
+             INSERT INTO group_analysis_panels(
+               id,group_run_id,panel_version,status,source_snapshot_sha256,
+               analysis_count,manifest_blob,manifest_bytes,manifest_sha256,
+               idempotency_key,created_at_ms
+             ) VALUES(
+               'panel-legacy','group-run-legacy',1,'prepared',zeroblob(32),
+               2,x'7b7d',2,zeroblob(32),'panel-legacy-key',7
+             );
+             INSERT INTO group_analysis_panel_analyses(
+               panel_id,position,analysis_id,result_sha256
+             ) VALUES
+               ('panel-legacy',0,'analysis-legacy',zeroblob(32)),
+               ('panel-legacy',1,'analysis-legacy-2',zeroblob(32));",
+        )
+        .expect("seed v6 analysis panel");
 }
 
 fn schema_version(connection: &Connection) -> i64 {

@@ -9,11 +9,11 @@ use super::{
 };
 
 #[test]
-fn v1_hub_data_is_preserved_by_atomic_v5_migration() {
+fn v1_hub_data_is_preserved_by_atomic_current_migration() {
     let (root, database) = legacy_v1_database();
-    let connection = open_database(&database).expect("v1 Hub migrates through v5");
+    let connection = open_database(&database).expect("v1 Hub migrates to current");
 
-    assert_v5_schema(&connection);
+    assert_current_schema(&connection);
     let prompt: String = connection
         .query_row(
             "SELECT content FROM prompts WHERE id = 'prompt-1'",
@@ -26,36 +26,59 @@ fn v1_hub_data_is_preserved_by_atomic_v5_migration() {
 }
 
 #[test]
-fn v2_run_journal_and_assistant_are_preserved_by_v5_migration() {
+fn v2_run_journal_and_assistant_are_preserved_by_current_migration() {
     let (root, database) = legacy_v2_database();
-    let connection = open_database(&database).expect("v2 Hub migrates to v5");
+    let connection = open_database(&database).expect("v2 Hub migrates to current");
 
-    assert_v5_schema(&connection);
+    assert_current_schema(&connection);
     assert_legacy_run(&connection);
     drop((connection, root));
 }
 
 #[test]
-fn v3_group_run_schema_migrates_to_v5() {
+fn v3_group_run_schema_migrates_to_current() {
     let (root, database) = legacy_v3_database();
-    let connection = open_database(&database).expect("v3 Hub migrates to v5");
+    let connection = open_database(&database).expect("v3 Hub migrates to current");
 
-    assert_v5_schema(&connection);
+    assert_current_schema(&connection);
     assert_legacy_run(&connection);
     assert_legacy_group_run(&connection);
     drop((connection, root));
 }
 
 #[test]
-fn v4_group_execution_schema_migrates_to_v5() {
+fn v4_group_execution_schema_migrates_to_current() {
     let (root, database) = legacy_v4_database();
-    let connection = open_database(&database).expect("v4 Hub migrates to v5");
+    let connection = open_database(&database).expect("v4 Hub migrates to current");
 
-    assert_v5_schema(&connection);
+    assert_current_schema(&connection);
     assert_legacy_run(&connection);
     assert_legacy_group_run(&connection);
     assert_legacy_group_execution(&connection);
     drop((connection, root));
+}
+
+#[test]
+fn v2_future_group_runs_blocker_is_rejected_before_migration() {
+    let (root, database) = legacy_v2_database();
+    let blocker = Connection::open(&database).expect("open v2 future-table fixture");
+    blocker
+        .execute_batch("CREATE TABLE group_runs(blocker TEXT)")
+        .expect("install future v3 table blocker");
+    drop(blocker);
+
+    let error = open_database(&database).expect_err("v2 prefix rejects future v3 table");
+    assert!(matches!(error, HubStoreError::Corrupt { .. }));
+    let unchanged = Connection::open(&database).expect("reopen unchanged v2 database");
+    assert_eq!(schema_version(&unchanged), 2);
+    assert_legacy_run(&unchanged);
+    assert_eq!(table_columns(&unchanged, "group_runs"), vec!["blocker"]);
+    assert!(!schema_object_exists(
+        &unchanged,
+        "index",
+        "group_runs_group"
+    ));
+    drop((unchanged, root));
 }
 
 #[test]
@@ -117,18 +140,18 @@ fn v1_future_analysis_result_blocker_is_rejected_before_migration_chain() {
 }
 
 #[test]
-fn unknown_v6_schema_is_rejected_without_mutation() {
+fn malformed_v7_marker_is_rejected_without_mutation() {
     let (root, database) = legacy_v4_database();
     let connection = Connection::open(&database).expect("open v4 fixture");
     connection
-        .pragma_update(None, "user_version", 6)
+        .pragma_update(None, "user_version", 7)
         .expect("mark future schema");
     drop(connection);
 
-    let error = open_database(&database).expect_err("v6 schema is unsupported");
+    let error = open_database(&database).expect_err("incomplete v7 schema is corrupt");
     assert!(matches!(error, HubStoreError::Corrupt { .. }));
     let unchanged = Connection::open(&database).expect("reopen future schema");
-    assert_eq!(schema_version(&unchanged), 6);
+    assert_eq!(schema_version(&unchanged), 7);
     assert_legacy_run(&unchanged);
     assert!(schema_object_exists(
         &unchanged,
@@ -279,8 +302,8 @@ fn assert_malformed_v5_is_rejected(sql: &str) {
     drop((unchanged, root));
 }
 
-fn assert_v5_schema(connection: &Connection) {
-    assert_eq!(schema_version(connection), 5);
+fn assert_current_schema(connection: &Connection) {
+    assert_eq!(schema_version(connection), 10);
     for table in [
         "runs",
         "run_events",
@@ -291,10 +314,19 @@ fn assert_v5_schema(connection: &Connection) {
         "group_model_analyses",
         "group_model_analysis_events",
         "group_model_analysis_results",
+        "group_analysis_panels",
+        "group_analysis_panel_analyses",
+        "group_panel_syntheses",
+        "group_panel_synthesis_events",
+        "group_panel_synthesis_results",
+        "group_agent_graphs",
+        "group_agent_graph_runs",
+        "group_agent_graph_run_events",
+        "group_agent_graph_node_execution_contracts",
     ] {
         assert!(
             schema_object_exists(connection, "table", table),
-            "missing v5 table {table}"
+            "missing current table {table}"
         );
     }
     for index in [
@@ -303,10 +335,20 @@ fn assert_v5_schema(connection: &Connection) {
         "group_executions_created",
         "group_model_analyses_group_run",
         "group_model_analyses_created",
+        "group_analysis_panels_group_run",
+        "group_analysis_panels_created",
+        "group_panel_syntheses_panel",
+        "group_panel_syntheses_created",
+        "group_agent_graphs_group_run",
+        "group_agent_graphs_created",
+        "group_agent_graph_runs_graph",
+        "group_agent_graph_runs_created",
+        "group_agent_graph_node_contracts_project_lane",
+        "group_agent_graph_node_contracts_created",
     ] {
         assert!(
             schema_object_exists(connection, "index", index),
-            "missing v5 index {index}"
+            "missing current index {index}"
         );
     }
 }

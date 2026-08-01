@@ -159,6 +159,11 @@ pub enum HubEntity {
     GroupRun,
     GroupExecution,
     GroupModelAnalysis,
+    GroupAnalysisPanel,
+    GroupPanelSynthesis,
+    GroupAgentGraph,
+    GroupAgentGraphRun,
+    GroupAgentNodeExecutionContract,
     GroupProjectMember,
 }
 

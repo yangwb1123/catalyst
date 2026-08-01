@@ -148,6 +148,11 @@ fn execute_group(
         GroupCommand::Analysis(_) => {
             Err("group analysis must use the dedicated model-analysis path".into())
         }
+        GroupCommand::Graph(_) => Err("group graph must use the dedicated Agent-graph path".into()),
+        GroupCommand::Panel(_) => {
+            Err("group panel must use the dedicated analysis-panel path".into())
+        }
+        GroupCommand::Synthesis(_) => Err("group synthesis requires its dedicated path".into()),
         GroupCommand::Create { name } => {
             let key = operation_key(supplied_key, "group");
             let group = service.create_group(name, &key)?;

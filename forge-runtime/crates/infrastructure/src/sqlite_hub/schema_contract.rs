@@ -1,6 +1,6 @@
 use rusqlite::Connection;
 
-#[path = "schema_v5/full_contract.rs"]
+#[path = "schema_contract/full_contract.rs"]
 mod full_contract;
 
 pub(super) fn validate_version(

@@ -1,8 +1,13 @@
 mod cancellation;
 mod event;
+mod group_agent_graph;
+mod group_agent_graph_run;
+mod group_agent_node_execution;
+mod group_analysis_panel;
 mod group_context;
 mod group_execution;
 mod group_model_analysis;
+mod group_panel_synthesis;
 mod group_run;
 mod hub;
 mod hub_store;
@@ -16,6 +21,67 @@ mod workspace;
 
 pub use cancellation::Cancellation;
 pub use event::{EventSink, EventSinkError, PROTOCOL_VERSION, RuntimeEvent, RuntimeEventKind};
+pub use group_agent_graph::{
+    GROUP_AGENT_GRAPH_MANIFEST_DIGEST_DOMAIN, GROUP_AGENT_GRAPH_VERSION, GroupAgentGraphEdge,
+    GroupAgentGraphInspection, GroupAgentGraphManager, GroupAgentGraphManifest,
+    GroupAgentGraphNode, GroupAgentGraphRecord, GroupAgentGraphSource, GroupAgentGraphStatus,
+    GroupAgentGraphStore, GroupAgentGraphValidationError,
+    MAX_GROUP_AGENT_GRAPH_AGENT_PROFILE_BYTES, MAX_GROUP_AGENT_GRAPH_EDGES,
+    MAX_GROUP_AGENT_GRAPH_IDEMPOTENCY_KEY_BYTES, MAX_GROUP_AGENT_GRAPH_IDENTIFIER_BYTES,
+    MAX_GROUP_AGENT_GRAPH_LIST_LIMIT, MAX_GROUP_AGENT_GRAPH_MANAGER_INSTRUCTION_BYTES,
+    MAX_GROUP_AGENT_GRAPH_MANIFEST_BYTES, MAX_GROUP_AGENT_GRAPH_MEMBER_ROLE_BYTES,
+    MAX_GROUP_AGENT_GRAPH_NODE_ACCEPTANCE_BYTES, MAX_GROUP_AGENT_GRAPH_NODE_TASK_BYTES,
+    MAX_GROUP_AGENT_GRAPH_NODES, PrepareGroupAgentGraph, PrepareGroupAgentGraphDisposition,
+    PrepareGroupAgentGraphResult, compute_group_agent_graph_waves,
+};
+pub use group_agent_graph_run::{
+    BeginGroupAgentGraphRun, BeginGroupAgentGraphRunDisposition, BeginGroupAgentGraphRunResult,
+    GROUP_AGENT_GRAPH_CORE_PLAN_DIGEST_DOMAIN, GROUP_AGENT_GRAPH_CORE_PLAN_VERSION,
+    GROUP_AGENT_GRAPH_RUN_CONTRACT_VERSION, GROUP_AGENT_GRAPH_RUN_CONTROL_EVENT_DIGEST_DOMAIN,
+    GROUP_AGENT_GRAPH_RUN_DISPATCH_REQUEST_VERSION,
+    GROUP_AGENT_GRAPH_RUN_EVENT_DIGEST_DOMAIN, GROUP_AGENT_GRAPH_RUN_VERSION,
+    GROUP_AGENT_GRAPH_SCHEDULER_PROTOCOL_VERSION, GroupAgentGraphCorePlan, GroupAgentGraphRunEvent,
+    GroupAgentGraphRunEventKind, GroupAgentGraphRunInspection, GroupAgentGraphRunRecord,
+    GroupAgentGraphRunStatus, GroupAgentGraphRunStore, GroupAgentGraphRunValidationError,
+    MAX_GROUP_AGENT_GRAPH_CORE_PLAN_BYTES, MAX_GROUP_AGENT_GRAPH_RUN_EVENT_BYTES,
+    MAX_GROUP_AGENT_GRAPH_RUN_EVENTS, MAX_GROUP_AGENT_GRAPH_RUN_JOURNAL_BYTES,
+    MAX_GROUP_AGENT_GRAPH_RUN_LIST_LIMIT,
+};
+pub use group_agent_node_execution::{
+    AdmitGroupAgentNodeExecutionContract, AdmitGroupAgentNodeExecutionContractDisposition,
+    AdmitGroupAgentNodeExecutionContractResult, GROUP_AGENT_GRAPH_CONTROL_SNAPSHOT_DIGEST_DOMAIN,
+    GROUP_AGENT_GRAPH_CONTROL_SNAPSHOT_VERSION, GROUP_AGENT_NODE_EXECUTION_CONTRACT_DIGEST_DOMAIN,
+    GROUP_AGENT_NODE_EXECUTION_CONTRACT_VERSION, GROUP_AGENT_NODE_EXECUTION_PROTOCOL_VERSION,
+    GROUP_AGENT_NODE_REQUEST_DIGEST_DOMAIN, GROUP_AGENT_PROJECT_LANE_DIGEST_DOMAIN,
+    GroupAgentGraphControlSnapshot, GroupAgentNodeArtifactKind, GroupAgentNodeDataflowPolicy,
+    GroupAgentNodeEffectApproval, GroupAgentNodeExecutionApproval, GroupAgentNodeExecutionBudgets,
+    GroupAgentNodeExecutionContract, GroupAgentNodeExecutionContractInspection,
+    GroupAgentNodeExecutionContractRecord, GroupAgentNodeExecutionContractStore,
+    GroupAgentNodeExecutionFailurePolicy, GroupAgentNodeExecutionNode,
+    GroupAgentNodeExecutionProvider, GroupAgentNodeExecutionRequest,
+    GroupAgentNodeExecutionResultPolicy, GroupAgentNodeExecutionValidationError,
+    GroupAgentNodeExecutionWorkspace, GroupAgentNodeFailurePropagationOwner,
+    GroupAgentNodePostClaimUncertainty, GroupAgentNodeProviderApproval, GroupAgentNodeProviderKind,
+    GroupAgentNodeSameProjectPolicy, GroupAgentNodeWorkspaceMode, GroupAgentNodeWritebackPolicy,
+    MAX_GROUP_AGENT_GRAPH_CONTROL_SNAPSHOT_BYTES,
+    MAX_GROUP_AGENT_GRAPH_NODE_EXECUTION_CONTRACT_BYTES, MAX_GROUP_AGENT_NODE_COST_USD_MICROS,
+    MAX_GROUP_AGENT_NODE_EXECUTION_CONTRACT_LIST_LIMIT, MAX_GROUP_AGENT_NODE_MODEL_BYTES,
+    MAX_GROUP_AGENT_NODE_MODEL_EVENTS, MAX_GROUP_AGENT_NODE_MODEL_OUTPUT_BYTES,
+    MAX_GROUP_AGENT_NODE_OUTPUT_TOKENS, MAX_GROUP_AGENT_NODE_PROVIDER_ENDPOINT_BYTES,
+    MAX_GROUP_AGENT_NODE_RESULT_BYTES, MAX_GROUP_AGENT_NODE_TIMEOUT_MS,
+    group_agent_node_system_prompt, group_agent_node_user_prompt, group_agent_project_lane_sha256,
+    group_agent_prompt_sha256,
+};
+pub use group_analysis_panel::{
+    GROUP_ANALYSIS_PANEL_MANIFEST_DIGEST_DOMAIN, GROUP_ANALYSIS_PANEL_VERSION,
+    GroupAnalysisPanelContribution, GroupAnalysisPanelInspection, GroupAnalysisPanelManifest,
+    GroupAnalysisPanelRecord, GroupAnalysisPanelStatus, GroupAnalysisPanelStore,
+    GroupAnalysisPanelValidationError, MAX_GROUP_ANALYSIS_PANEL_ANALYSES,
+    MAX_GROUP_ANALYSIS_PANEL_IDEMPOTENCY_KEY_BYTES, MAX_GROUP_ANALYSIS_PANEL_LIST_LIMIT,
+    MAX_GROUP_ANALYSIS_PANEL_MANIFEST_BYTES, MIN_GROUP_ANALYSIS_PANEL_ANALYSES,
+    PrepareGroupAnalysisPanel, PrepareGroupAnalysisPanelDisposition,
+    PrepareGroupAnalysisPanelResult,
+};
 pub use group_context::{
     DEFAULT_GROUP_CONTEXT_CONTENT_BYTES, GROUP_CONTEXT_DIGEST_DOMAIN, GROUP_CONTEXT_VERSION,
     GroupContextConversation, GroupContextMember, GroupContextPayload, GroupContextPolicy,
@@ -58,6 +124,33 @@ pub use group_model_analysis::{
     MAX_GROUP_MODEL_ANALYSIS_RESULT_BYTES, MAX_GROUP_MODEL_ANALYSIS_SYSTEM_PROMPT_BYTES,
     PrepareGroupModelAnalysis, PrepareGroupModelAnalysisDisposition,
     PrepareGroupModelAnalysisResult,
+};
+pub use group_panel_synthesis::{
+    ClaimGroupPanelSynthesisDispatch, ClaimGroupPanelSynthesisDispatchResult,
+    CompleteGroupPanelSynthesis, CompleteGroupPanelSynthesisDisposition,
+    CompleteGroupPanelSynthesisResult, GROUP_PANEL_SYNTHESIS_CONFIG_DIGEST_DOMAIN,
+    GROUP_PANEL_SYNTHESIS_CONSENT_VERSION, GROUP_PANEL_SYNTHESIS_EVENT_DIGEST_DOMAIN,
+    GROUP_PANEL_SYNTHESIS_PROTOCOL_VERSION, GROUP_PANEL_SYNTHESIS_PROVIDER_ENDPOINT,
+    GROUP_PANEL_SYNTHESIS_REQUEST_DIGEST_DOMAIN, GROUP_PANEL_SYNTHESIS_RESULT_DIGEST_DOMAIN,
+    GROUP_PANEL_SYNTHESIS_RESULT_VERSION, GROUP_PANEL_SYNTHESIS_SYSTEM_PROMPT_DIGEST_DOMAIN,
+    GROUP_PANEL_SYNTHESIS_SYSTEM_PROMPT_VERSION, GROUP_PANEL_SYNTHESIS_VERSION,
+    GroupPanelSynthesisConfig, GroupPanelSynthesisDispatchAuthority,
+    GroupPanelSynthesisDispatchClaim, GroupPanelSynthesisEvent, GroupPanelSynthesisEventKind,
+    GroupPanelSynthesisInspection, GroupPanelSynthesisJournalCursor,
+    GroupPanelSynthesisJournalError, GroupPanelSynthesisOutcome, GroupPanelSynthesisOutputTarget,
+    GroupPanelSynthesisPreparedReceipt, GroupPanelSynthesisProvider, GroupPanelSynthesisRecord,
+    GroupPanelSynthesisRecovery, GroupPanelSynthesisRequestConfig, GroupPanelSynthesisResult,
+    GroupPanelSynthesisResultArtifact, GroupPanelSynthesisResultReceipt, GroupPanelSynthesisSource,
+    GroupPanelSynthesisStatus, GroupPanelSynthesisStore, GroupPanelSynthesisWritebackTarget,
+    MAX_GROUP_PANEL_SYNTHESIS_CONFIG_JSON_BYTES, MAX_GROUP_PANEL_SYNTHESIS_CURSOR_JSON_BYTES,
+    MAX_GROUP_PANEL_SYNTHESIS_EVENT_JSON_BYTES, MAX_GROUP_PANEL_SYNTHESIS_EVENTS,
+    MAX_GROUP_PANEL_SYNTHESIS_ID_BYTES, MAX_GROUP_PANEL_SYNTHESIS_IDEMPOTENCY_KEY_BYTES,
+    MAX_GROUP_PANEL_SYNTHESIS_JOURNAL_BYTES, MAX_GROUP_PANEL_SYNTHESIS_LIST_LIMIT,
+    MAX_GROUP_PANEL_SYNTHESIS_MODEL_BYTES, MAX_GROUP_PANEL_SYNTHESIS_MODEL_EVENTS,
+    MAX_GROUP_PANEL_SYNTHESIS_OUTPUT_BYTES, MAX_GROUP_PANEL_SYNTHESIS_OUTPUT_TOKENS,
+    MAX_GROUP_PANEL_SYNTHESIS_REQUEST_BYTES, MAX_GROUP_PANEL_SYNTHESIS_RESULT_BYTES,
+    MAX_GROUP_PANEL_SYNTHESIS_SYSTEM_PROMPT_BYTES, PrepareGroupPanelSynthesis,
+    PrepareGroupPanelSynthesisDisposition, PrepareGroupPanelSynthesisResult,
 };
 pub use group_run::{
     GROUP_RUN_SNAPSHOT_DIGEST_DOMAIN, GROUP_RUN_VERSION, GroupRunRecord, GroupRunSnapshot,

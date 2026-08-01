@@ -1,0 +1,86 @@
+{
+  "v": 1,
+  "input": {
+    "graph_id": "graph-fixture-v1",
+    "graph_manifest_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    "spec": {
+      "v": 1,
+      "manager": {
+        "agent_profile": "integration-manager",
+        "instruction": "Coordinate frontend, backend, and SSO."
+      },
+      "nodes": [
+        {
+          "node_id": "frontend",
+          "project_id": "project-frontend",
+          "member_role": "frontend",
+          "agent_profile": "implementer",
+          "task": "Implement browser flow.",
+          "acceptance": "Browser uses the shared issuer."
+        },
+        {
+          "node_id": "backend",
+          "project_id": "project-backend",
+          "member_role": "backend",
+          "agent_profile": "implementer",
+          "task": "Implement token verification.",
+          "acceptance": "API validates the shared issuer."
+        },
+        {
+          "node_id": "sso",
+          "project_id": "project-sso",
+          "member_role": "sso",
+          "agent_profile": "reviewer",
+          "task": "Review relying parties.",
+          "acceptance": "Both contracts agree."
+        }
+      ],
+      "edges": [
+        {
+          "from_node_id": "frontend",
+          "to_node_id": "sso"
+        },
+        {
+          "from_node_id": "backend",
+          "to_node_id": "sso"
+        }
+      ]
+    }
+  },
+  "expected_plan": {
+    "v": 1,
+    "scheduler_protocol_version": 1,
+    "graph_version": 1,
+    "graph_id": "graph-fixture-v1",
+    "graph_manifest_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    "authored_node_ids": [
+      "frontend",
+      "backend",
+      "sso"
+    ],
+    "edges": [
+      {
+        "from_node_id": "backend",
+        "to_node_id": "sso"
+      },
+      {
+        "from_node_id": "frontend",
+        "to_node_id": "sso"
+      }
+    ],
+    "waves": [
+      [
+        "frontend",
+        "backend"
+      ],
+      [
+        "sso"
+      ]
+    ],
+    "execution_contract_present": false,
+    "dispatch_authority_released": false,
+    "plan_sha256": "e286b16586904bd82bd38c63e453843d36ec6c39cc2fbc139e877f53ba56d0d3"
+  },
+  "expected_canonical_payload_json": "{\"v\":1,\"scheduler_protocol_version\":1,\"graph_version\":1,\"graph_id\":\"graph-fixture-v1\",\"graph_manifest_sha256\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"authored_node_ids\":[\"frontend\",\"backend\",\"sso\"],\"edges\":[{\"from_node_id\":\"backend\",\"to_node_id\":\"sso\"},{\"from_node_id\":\"frontend\",\"to_node_id\":\"sso\"}],\"waves\":[[\"frontend\",\"backend\"],[\"sso\"]],\"execution_contract_present\":false,\"dispatch_authority_released\":false}",
+  "expected_canonical_plan_json": "{\"v\":1,\"scheduler_protocol_version\":1,\"graph_version\":1,\"graph_id\":\"graph-fixture-v1\",\"graph_manifest_sha256\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"authored_node_ids\":[\"frontend\",\"backend\",\"sso\"],\"edges\":[{\"from_node_id\":\"backend\",\"to_node_id\":\"sso\"},{\"from_node_id\":\"frontend\",\"to_node_id\":\"sso\"}],\"waves\":[[\"frontend\",\"backend\"],[\"sso\"]],\"execution_contract_present\":false,\"dispatch_authority_released\":false,\"plan_sha256\":\"e286b16586904bd82bd38c63e453843d36ec6c39cc2fbc139e877f53ba56d0d3\"}"
+}
