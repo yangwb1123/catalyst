@@ -227,6 +227,31 @@ pub(super) fn non_candidate_hub_state(state: &Path) -> BTreeMap<String, Vec<Vec<
         .collect()
 }
 
+#[allow(dead_code)]
+pub(super) fn non_provider_request_hub_state(state: &Path) -> BTreeMap<String, Vec<Vec<SqlValue>>> {
+    let connection = Connection::open(state.join("hub.sqlite3")).expect("open Hub");
+    let table = "group_agent_graph_scheduled_node_provider_requests";
+    let present: bool = connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE type='table' AND name=?1)",
+            [table],
+            |row| row.get(0),
+        )
+        .expect("provider request table presence");
+    assert!(present, "schema v15 provider request table missing");
+    non_candidate_table_names(&connection)
+        .into_iter()
+        .chain(std::iter::once(
+            "group_agent_graph_scheduled_node_contract_candidates".to_owned(),
+        ))
+        .filter(|name| name != table)
+        .map(|name| {
+            let rows = snapshot_table(&connection, &name);
+            (name, rows)
+        })
+        .collect()
+}
+
 fn assert_candidate_table_present(connection: &Connection) {
     let candidate_table_present: bool = connection
         .query_row(

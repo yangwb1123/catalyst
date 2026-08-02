@@ -51,14 +51,14 @@ fn dispatch_preflight_reads_exact_v11_without_migration_or_sidecars() {
 #[test]
 fn v11_request_survives_current_migration_and_reopen() {
     let (root, database) = legacy_v11_database();
-    let connection = open_database(&database).expect("v11 Hub migrates to v14");
+    let connection = open_database(&database).expect("v11 Hub migrates to v15");
     assert_current_shape(&connection);
     assert_legacy_v3_run(&connection);
     assert_lifecycle_empty(&connection);
     assert_foreign_keys_clean(&connection);
     drop(connection);
 
-    let reopened = open_database(&database).expect("migrated v14 Hub reopens");
+    let reopened = open_database(&database).expect("migrated v15 Hub reopens");
     assert_current_shape(&reopened);
     assert_legacy_v3_run(&reopened);
     drop((reopened, root));
@@ -92,7 +92,7 @@ fn failed_final_validation_rolls_back_v11_to_current_atomically() {
         assert_current_shape(migrated);
         migrated.execute_batch("CREATE TABLE rogue_v13_final_fault(id TEXT)")
     })
-    .expect_err("final v14 validation rejects rogue object");
+    .expect_err("final v15 validation rejects rogue object");
     assert!(matches!(error, HubStoreError::Corrupt { .. }));
 
     assert_eq!(schema_version(&connection), 11);
@@ -221,7 +221,7 @@ fn malformed(original: &str, replacement: &str) -> String {
 }
 
 fn assert_current_shape(connection: &Connection) {
-    assert_eq!(schema_version(connection), 14);
+    assert_eq!(schema_version(connection), 15);
     for table in LIFECYCLE_TABLES {
         assert!(
             schema_object_exists(connection, "table", table),

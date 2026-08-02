@@ -37,6 +37,12 @@ pub const TEXT: &str = "usage:
   forge-runtime [OPTIONS] group graph run scheduled-contract show CONTRACT_ID
     [--include-contract]
   forge-runtime [OPTIONS] group graph run scheduled-contract list [GRAPH_RUN_ID] [--limit N]
+  forge-runtime [OPTIONS] group graph run scheduled-contract provider-request prepare CONTRACT_ID
+    [--idempotency-key KEY]
+  forge-runtime [OPTIONS] group graph run scheduled-contract provider-request show PROVIDER_REQUEST_ID
+    [--include-request]
+  forge-runtime [OPTIONS] group graph run scheduled-contract provider-request list
+    [GRAPH_RUN_ID] [--limit N]
   forge-runtime [OPTIONS] group graph run dispatch prepare GRAPH_RUN_ID
                 [--idempotency-key KEY]
   forge-runtime [OPTIONS] group graph run dispatch show DISPATCH_REQUEST_ID
@@ -118,6 +124,13 @@ pub const TEXT: &str = "usage:
   releases no authority, observes no progress or receipt, and advances no
   successor. The private artifact is revealed only by an explicit
   scheduled-contract show --include-contract.
+  Group graph run scheduled-contract provider-request prepare uses only the pure
+  local Responses codec and persists exact request bytes in a passive sidecar.
+  It does not alter the Run or journal, admit a lifecycle contract, release
+  execution/dispatch/lane/successor authority, obtain consent, read a credential,
+  construct a provider, access a network/workspace/tool, observe progress or a
+  receipt, or write results/Conversation/Prompt/memory. Request bytes remain hidden
+  unless provider-request show --include-request is explicit.
   Group graph run dispatch prepare uses only the pure local Responses codec and
   persists exact request bytes. It obtains no consent, reads no credential, releases
   no dispatch authority, and invokes no provider, network, workspace, tool, result,

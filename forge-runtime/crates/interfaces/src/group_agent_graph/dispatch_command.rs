@@ -272,10 +272,6 @@ async fn execute_dispatch(
     confirm_off_machine: bool,
     include_result: bool,
 ) -> Result<GroupAgentGraphRunDispatchCommandCliOutput, Box<dyn Error>> {
-    let bridge = Arc::new(PinnedCoreTerminalBridge::new(
-        PathBuf::from(core_bin),
-        core_bin_sha256.into(),
-    )?);
     validate_execute_preflight(
         args,
         graph_run_id,
@@ -283,6 +279,10 @@ async fn execute_dispatch(
         inputs.pricing(),
         confirm_off_machine,
     )?;
+    let bridge = Arc::new(PinnedCoreTerminalBridge::new(
+        PathBuf::from(core_bin),
+        core_bin_sha256.into(),
+    )?);
     let dependencies =
         PreparedDispatchDependencies::prepare(inputs.authorization(), inputs.pricing())?;
     let service = execution_service(args, bridge, dependencies)?;

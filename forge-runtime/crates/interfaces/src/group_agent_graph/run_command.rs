@@ -25,6 +25,8 @@ use super::{
     schedule_output::{self, GroupAgentGraphExecutionScheduleCliOutput},
     scheduled_contract_command,
     scheduled_contract_output::{self, GroupAgentScheduledNodeContractCliOutput},
+    scheduled_provider_request_command,
+    scheduled_provider_request_output::{self, GroupAgentScheduledNodeProviderRequestCliOutput},
 };
 
 pub enum GroupAgentGraphRunCommandCliOutput {
@@ -34,6 +36,7 @@ pub enum GroupAgentGraphRunCommandCliOutput {
     Dispatch(Box<GroupAgentGraphRunDispatchCommandCliOutput>),
     Schedule(Box<GroupAgentGraphExecutionScheduleCliOutput>),
     ScheduledContract(Box<GroupAgentScheduledNodeContractCliOutput>),
+    ScheduledProviderRequest(Box<GroupAgentScheduledNodeProviderRequestCliOutput>),
 }
 
 pub async fn execute(
@@ -74,6 +77,9 @@ pub async fn execute(
         GroupGraphRunCommand::Schedule(command) => Ok(schedule_cli_output(
             schedule_command::execute(args, command)?,
         )),
+        GroupGraphRunCommand::ScheduledContract(
+            crate::args::GroupGraphRunScheduledContractCommand::ProviderRequest(command),
+        ) => execute_scheduled_provider_request(args, command),
         GroupGraphRunCommand::ScheduledContract(command) => {
             execute_scheduled_contract(args, command)
         }
@@ -120,6 +126,9 @@ pub fn write_output(
         GroupAgentGraphRunCommandCliOutput::ScheduledContract(output) => {
             scheduled_contract_output::write_output(output, json, writer)
         }
+        GroupAgentGraphRunCommandCliOutput::ScheduledProviderRequest(output) => {
+            scheduled_provider_request_output::write_output(output, json, writer)
+        }
     }
 }
 
@@ -146,6 +155,17 @@ fn execute_scheduled_contract(
     Ok(scheduled_contract_cli_output(
         scheduled_contract_command::execute(args, command)?,
     ))
+}
+
+fn execute_scheduled_provider_request(
+    args: &Args,
+    command: &crate::args::GroupGraphRunScheduledContractProviderRequestCommand,
+) -> Result<GroupAgentGraphRunCommandCliOutput, Box<dyn Error>> {
+    Ok(
+        GroupAgentGraphRunCommandCliOutput::ScheduledProviderRequest(Box::new(
+            scheduled_provider_request_command::execute(args, command)?,
+        )),
+    )
 }
 
 fn dispatch_cli_output(

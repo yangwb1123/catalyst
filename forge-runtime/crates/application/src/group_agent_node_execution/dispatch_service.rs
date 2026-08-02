@@ -23,7 +23,11 @@ pub struct PrepareGroupAgentNodeDispatchRequestInput {
 }
 
 pub trait GroupAgentNodeDispatchRequestCodec: Send + Sync {
-    /// Encodes one logical request into exact provider body bytes.
+    /// Deterministically encodes one logical request into exact provider body bytes.
+    ///
+    /// Implementations must be side-effect-free. Encoding must not read credentials,
+    /// construct or invoke a provider or transport, access the network, filesystem,
+    /// or workspace, or perform any write.
     ///
     /// # Errors
     ///
@@ -31,7 +35,12 @@ pub trait GroupAgentNodeDispatchRequestCodec: Send + Sync {
     fn encode_request(&self, model: &str, request: &ModelRequest)
     -> Result<Vec<u8>, ProviderError>;
 
-    /// Re-encodes and compares one stored request byte-for-byte.
+    /// Deterministically re-encodes and compares one stored request byte-for-byte.
+    ///
+    /// Implementations must obey the same side-effect-free contract as
+    /// [`Self::encode_request`]. Validation must not read credentials, construct or
+    /// invoke a provider or transport, access the network, filesystem, or workspace,
+    /// or perform any write.
     ///
     /// # Errors
     ///

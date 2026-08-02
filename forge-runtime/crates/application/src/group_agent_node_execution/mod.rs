@@ -14,6 +14,12 @@ mod scheduled_contract_service;
 #[path = "scheduled_contract_tests.rs"]
 mod scheduled_contract_tests;
 mod scheduled_contract_validation;
+mod scheduled_provider_request_error;
+mod scheduled_provider_request_service;
+#[cfg(test)]
+#[path = "scheduled_provider_request_tests.rs"]
+mod scheduled_provider_request_tests;
+mod scheduled_provider_request_validation;
 mod service;
 mod snapshot;
 mod validation;
@@ -56,6 +62,13 @@ pub use crate::runtime_domain::{
     MAX_GROUP_AGENT_NODE_DISPATCH_REQUEST_LIST_LIMIT,
     PrepareGroupAgentNodeDispatchRequestDisposition, PrepareGroupAgentNodeDispatchRequestResult,
 };
+pub use crate::runtime_domain::{
+    GROUP_AGENT_SCHEDULED_NODE_PROVIDER_REQUEST_VERSION,
+    GroupAgentScheduledNodeProviderRequestInspection, GroupAgentScheduledNodeProviderRequestRecord,
+    MAX_GROUP_AGENT_SCHEDULED_NODE_PROVIDER_REQUEST_LIST_LIMIT,
+    PrepareGroupAgentScheduledNodeProviderRequestDisposition,
+    PrepareGroupAgentScheduledNodeProviderRequestResult,
+};
 pub use dispatch_error::GroupAgentNodeDispatchRequestServiceError;
 pub use dispatch_service::{
     GroupAgentNodeDispatchRequestCodec, GroupAgentNodeDispatchRequestService,
@@ -78,6 +91,11 @@ pub use schedule_service::{
 pub use scheduled_contract_error::GroupAgentScheduledNodeContractServiceError;
 pub use scheduled_contract_service::{
     AdmitGroupAgentScheduledNodeContractInput, GroupAgentScheduledNodeContractService,
+};
+pub use scheduled_provider_request_error::GroupAgentScheduledNodeProviderRequestServiceError;
+pub use scheduled_provider_request_service::{
+    GroupAgentScheduledNodeProviderRequestService,
+    PrepareGroupAgentScheduledNodeProviderRequestInput,
 };
 pub use service::{
     AdmitGroupAgentNodeExecutionContractInput, ExportGroupAgentGraphControl,

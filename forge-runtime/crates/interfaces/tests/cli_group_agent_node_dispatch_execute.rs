@@ -42,7 +42,7 @@ fn help_and_argument_failures_expose_required_boundaries_without_state_access() 
 }
 
 #[test]
-fn wrong_core_pin_fails_before_database_credential_or_result_disclosure() {
+fn missing_source_fails_before_core_credential_or_result_disclosure() {
     let state = TempDir::new().expect("state directory");
     let cwd = TempDir::new().expect("current directory");
     let authorization = cwd.path().join("authorization.json");
@@ -81,7 +81,8 @@ fn wrong_core_pin_fails_before_database_credential_or_result_disclosure() {
     assert!(!output.status.success());
     assert!(output.stdout.is_empty());
     let error = String::from_utf8_lossy(&output.stderr);
-    assert!(error.contains("Core executable identity disagrees"));
+    assert!(error.contains("store unavailable"), "{error}");
+    assert!(!error.contains("Core executable identity disagrees"));
     assert!(!error.contains(CREDENTIAL_SECRET));
     assert!(!error.contains(artifact_fixture));
     assert!(!state.path().join("hub.sqlite3").exists());

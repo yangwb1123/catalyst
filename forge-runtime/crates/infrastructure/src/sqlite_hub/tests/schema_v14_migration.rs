@@ -15,6 +15,11 @@ const CANDIDATE_TABLE: &str = "group_agent_graph_scheduled_node_contract_candida
 const PROJECT_LANE_INDEX: &str = "group_agent_graph_scheduled_node_candidates_project_lane";
 const CREATED_INDEX: &str = "group_agent_graph_scheduled_node_candidates_created";
 const V14_OBJECTS: &[&str] = &[CANDIDATE_TABLE, PROJECT_LANE_INDEX, CREATED_INDEX];
+const V15_OBJECTS: &[&str] = &[
+    "group_agent_graph_scheduled_node_provider_requests",
+    "group_agent_graph_scheduled_node_provider_requests_project_lane",
+    "group_agent_graph_scheduled_node_provider_requests_created",
+];
 
 #[test]
 fn active_v13_data_and_schema_survive_v14_migration_and_reopen() {
@@ -24,14 +29,14 @@ fn active_v13_data_and_schema_survive_v14_migration_and_reopen() {
     let before_run = active_run(&legacy);
     drop(legacy);
 
-    let connection = open_database(&database).expect("active v13 Hub migrates to v14");
+    let connection = open_database(&database).expect("active v13 Hub migrates to v15");
     assert_v14_shape(&connection);
     assert_eq!(without_v14(&schema_snapshot(&connection)), before_schema);
     assert_eq!(active_run(&connection), before_run);
     assert_foreign_keys_clean(&connection);
     drop(connection);
 
-    let reopened = open_database(&database).expect("migrated v14 Hub reopens");
+    let reopened = open_database(&database).expect("migrated v15 Hub reopens");
     assert_v14_shape(&reopened);
     assert_eq!(active_run(&reopened), before_run);
     drop((reopened, root));
@@ -58,7 +63,7 @@ fn v13_future_candidate_blocker_is_rejected_before_migration() {
 }
 
 #[test]
-fn failed_final_validation_rolls_back_v13_to_v14_atomically() {
+fn failed_final_validation_rolls_back_v13_to_current_atomically() {
     let (root, database) = legacy_active_v13_database();
     let connection = Connection::open(&database).expect("open v13 rollback fixture");
     let before_schema = schema_snapshot(&connection);
@@ -68,12 +73,15 @@ fn failed_final_validation_rolls_back_v13_to_v14_atomically() {
         assert_v14_shape(migrated);
         migrated.execute_batch("CREATE TABLE rogue_v14_final_fault(id TEXT)")
     })
-    .expect_err("final v14 validation rejects rogue object");
+    .expect_err("final v15 validation rejects rogue object");
     assert!(matches!(error, HubStoreError::Corrupt { .. }));
     assert_eq!(schema_version(&connection), 13);
     assert_eq!(schema_snapshot(&connection), before_schema);
     assert_eq!(active_run(&connection), before_run);
     for object in V14_OBJECTS {
+        assert!(!schema_object_named(&connection, object));
+    }
+    for object in V15_OBJECTS {
         assert!(!schema_object_named(&connection, object));
     }
     assert!(!schema_object_named(&connection, "rogue_v14_final_fault"));
@@ -97,7 +105,7 @@ fn malformed_v14_definitions_and_rogue_objects_are_rejected() {
     }
 }
 
-fn legacy_active_v13_database() -> (tempfile::TempDir, std::path::PathBuf) {
+pub(super) fn legacy_active_v13_database() -> (tempfile::TempDir, std::path::PathBuf) {
     let (root, database) = legacy_active_v12_database();
     let connection = Connection::open(&database).expect("open v12 fixture");
     connection
@@ -139,7 +147,7 @@ fn malformed(original: &str, replacement: &str) -> String {
 }
 
 fn assert_v14_shape(connection: &Connection) {
-    assert_eq!(schema_version(connection), 14);
+    assert_eq!(schema_version(connection), 15);
     assert!(schema_object_exists(connection, "table", CANDIDATE_TABLE));
     assert!(schema_object_exists(
         connection,
@@ -153,7 +161,9 @@ fn assert_v14_shape(connection: &Connection) {
 fn without_v14(snapshot: &[SchemaRow]) -> Vec<SchemaRow> {
     snapshot
         .iter()
-        .filter(|(_, name, _, _)| !V14_OBJECTS.contains(&name.as_str()))
+        .filter(|(_, name, _, _)| {
+            !V14_OBJECTS.contains(&name.as_str()) && !V15_OBJECTS.contains(&name.as_str())
+        })
         .cloned()
         .collect()
 }

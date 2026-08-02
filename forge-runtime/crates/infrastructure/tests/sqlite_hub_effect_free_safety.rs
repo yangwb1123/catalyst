@@ -113,8 +113,34 @@ fn dispatch_reentry_rejects_incomplete_or_malformed_wal_sidecars_without_changes
 }
 
 #[test]
-fn dispatch_reentry_reads_real_hot_v12_v13_and_v14_wals_without_logical_changes() {
-    for version in [12, 13, 14] {
+fn dispatch_reentry_preserves_corrupt_classification_from_hot_wal() {
+    let (root, store) = fixture();
+    drop(store);
+    let database = root.path().join("hub.sqlite3");
+    let writer = rusqlite::Connection::open(&database).expect("open WAL writer");
+    writer
+        .execute_batch(
+            "PRAGMA wal_checkpoint(TRUNCATE);
+             PRAGMA wal_autocheckpoint=0;
+             CREATE TABLE rogue_hot_wal_schema(id TEXT PRIMARY KEY);",
+        )
+        .expect("commit rogue schema to hot WAL");
+    let wal = root.path().join("hub.sqlite3-wal");
+    let main_before = fs::read(&database).expect("read main before re-entry");
+    let wal_before = fs::read(&wal).expect("read WAL before re-entry");
+
+    let error = SqliteHubStore::open_existing_dispatch_inspection_read_only(&database)
+        .expect_err("rogue hot-WAL schema must be corrupt");
+
+    assert!(matches!(error, HubStoreError::Corrupt { .. }), "{error}");
+    assert_eq!(fs::read(&database).expect("read main after"), main_before);
+    assert_eq!(fs::read(&wal).expect("read WAL after"), wal_before);
+    drop(writer);
+}
+
+#[test]
+fn dispatch_reentry_reads_real_hot_v12_through_v15_wals_without_logical_changes() {
+    for version in [12, 13, 14, 15] {
         assert_hot_wal_reentry(version);
     }
 }
@@ -153,6 +179,14 @@ fn assert_hot_wal_reentry(version: i64) {
 }
 
 fn restore_schema_version(connection: &rusqlite::Connection, version: i64) {
+    if version < 15 {
+        connection
+            .execute_batch(
+                "DROP TABLE group_agent_graph_scheduled_node_provider_requests;
+                 PRAGMA user_version=14;",
+            )
+            .expect("restore exact v14 schema");
+    }
     if version < 14 {
         connection
             .execute_batch(

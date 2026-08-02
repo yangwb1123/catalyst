@@ -488,18 +488,46 @@ source and exact stored schedule; stale state, divergent input, or corruption
 fails closed. Default views redact the private artifact and state
 `current_run_lifecycle_included=false`; explicit reveal is required.
 
-This is the empty-predecessor base case, not execution. It creates no lifecycle
-contract/provider request, observes no progress, grants no dispatch/lane/tool/
+This is the empty-predecessor base case, not execution. Candidate admission
+creates no lifecycle contract or provider request, observes no progress, grants no dispatch/lane/tool/
 workspace/writeback authority, and cannot produce a receipt or advance a
 successor. Terminal receipt v1 proves whole-Graph single-node completion and is
 therefore forbidden as intermediate predecessor evidence. See ADR 0026.
 
-The generated full-catalog contract now covers immutable v1–v14 DDL and the
-exact v14 inventory of 30 tables, 27 named explicit indexes, and 71 implicit
-indexes. The v1–v14 length-framed DDL SHA-256 is
-`6e573a754bdee36aaea820554d45b0c72a5c30fdbc50a9f0deb75ce88047f616`;
-the independent v14 structural-contract SHA-256 is
-`ce999cba9a007d9e91cd303a8c631bb0a5fceb5818bda371dc356b51915abce9`.
+### Passive scheduled-node provider request over schema version 15 (delivered)
+
+Rust fully reconstructs the admitted ordinal-zero candidate and its Run,
+Graph, control, schedule, Prompt, lane, provider, pricing, and logical request.
+The existing deterministic Responses codec then encodes and immediately
+validates compact canonical JSON with `store:false`, `stream:true`, empty
+tools, and the frozen output-token ceiling. The exact non-newline-terminated
+bytes are stored in a distinct immutable sidecar and never silently
+re-encoded. The public codec contract is pure: it cannot read credentials,
+construct or invoke a provider/transport, access network/workspace/filesystem,
+or write state.
+
+Preparation uses one `BEGIN IMMEDIATE` snapshot, validates corruption before
+replay/conflict, guards the unchanged sequence-1 head, inserts once, and fully
+rereads the stored row and all sources before commit. The Run remains v1 at
+sequence 1 and the main journal does not change. A source drift under the
+persisted scheduled family is corruption because candidate/legacy mutual
+exclusion makes legitimate advancement impossible. Default show/list output
+redacts request bytes and private routing identities; only
+`show --include-request` reveals the exact body.
+
+This sidecar is request data, not lifecycle authority. It has no send,
+authorization, readiness, claim, execute, progress, result, receipt, retry, or
+successor operation and is not discoverable by the legacy dispatch family.
+Legacy execute validates its source, consent, and readiness before constructing
+the pinned Core bridge, so a scheduled-only Run cannot use that entry point to
+start a local process. See ADR 0027.
+
+The generated full-catalog contract now covers immutable v1–v15 DDL and the
+exact v15 inventory of 31 tables, 29 named explicit indexes, and 79 implicit
+indexes. The v1–v15 length-framed DDL SHA-256 is
+`3de756301993c122077feab587c102108fe337a2cef4920b9d756a5171aae393`;
+the independent v15 structural-contract SHA-256 is
+`d9f6c0eb2a2374b24ee460435cc818f34c78d08f9092519d646d8c5518bf078b`.
 Final validation runs inside the migration transaction, so an invalid legacy
 schema cannot leave a partial upgrade. Unexpected definitions or objects fail
 as corruption without repair. See ADR 0012.
@@ -947,13 +975,13 @@ does not classify as corruption.
 - OIDC login, account binding, OS keyring, explicit local-data claim;
 - remote directory, replicas, cursors, conflict merge, deletion propagation;
 - tenants, invitations, history visibility, ACL-backed shared Groups;
-- multi-node manager execution, dispatch of the delivered initial-only
-  schedule-bound contract-v2 candidate, real intermediate predecessor receipts,
+- multi-node manager execution, authorization/claim/terminal dispatch of the
+  delivered initial-only schedule-bound request, real intermediate predecessor receipts,
   noninitial per-node contract/request/terminal/successor advancement,
   receipt/result dataflow, cross-project tool/workspace capabilities, and
   no-send adjudication of a hard-crashed v4 claim; the passive serial schedule,
-  passive ordinal-zero candidate, and single-node claim/dispatch/terminal/
-  lane-release lifecycle are delivered;
+  passive ordinal-zero candidate, its exact-byte request sidecar, and the
+  single-node claim/dispatch/terminal/lane-release lifecycle are delivered;
 - Group multi-Agent discussion, delegation, writeback, and derived memory;
 - providers beyond the delivered opt-in OpenAI Responses adapter,
   write/process/network tools, and process sandbox.

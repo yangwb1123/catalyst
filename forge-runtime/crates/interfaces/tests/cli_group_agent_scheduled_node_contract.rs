@@ -225,6 +225,11 @@ fn assert_views(fixture: &Fixture, contract_id: &str, candidate: &[u8], endpoint
         ],
     );
     assert_eq!(shown["inspection"]["contract"], json(candidate));
+    assert_list_view(fixture, endpoint);
+    assert_human_view(fixture, contract_id);
+}
+
+fn assert_list_view(fixture: &Fixture, endpoint: &str) {
     let listed = run_json(
         fixture.state.path(),
         fixture.cwd.path(),
@@ -232,7 +237,13 @@ fn assert_views(fixture: &Fixture, contract_id: &str, candidate: &[u8], endpoint
     );
     assert_eq!(listed["metadata_only"], true);
     assert_eq!(listed["passive_initial_candidate_only"], true);
+    assert_eq!(listed["candidate_creation_state_only"], true);
     assert_eq!(listed["current_run_lifecycle_included"], false);
+    assert_eq!(listed["current_provider_request_sidecar_included"], false);
+    assert_eq!(
+        listed["provider_request_present_at_candidate_creation"],
+        false
+    );
     for field in false_candidate_fields() {
         assert_eq!(listed[field], false, "list {field} must be false");
     }
@@ -241,7 +252,6 @@ fn assert_views(fixture: &Fixture, contract_id: &str, candidate: &[u8], endpoint
     }
     assert_private(&listed);
     assert_endpoint_hidden(&listed, endpoint);
-    assert_human_view(fixture, contract_id);
 }
 
 fn assert_human_view(fixture: &Fixture, contract_id: &str) {
@@ -306,7 +316,16 @@ fn assert_legacy_contract_conflicts(fixture: &Fixture, run: &str, control: &[u8]
 }
 
 fn assert_boundaries(inspection: &Value) {
+    assert_eq!(inspection["candidate_creation_state_only"], true);
     assert_eq!(inspection["current_run_lifecycle_included"], false);
+    assert_eq!(
+        inspection["current_provider_request_sidecar_included"],
+        false
+    );
+    assert_eq!(
+        inspection["provider_request_present_at_candidate_creation"],
+        false
+    );
     assert_eq!(inspection["predecessor_receipts_present"], false);
     assert_eq!(inspection["predecessor_content_included"], false);
     for field in false_candidate_fields() {

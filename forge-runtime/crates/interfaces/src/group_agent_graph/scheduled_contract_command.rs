@@ -49,6 +49,9 @@ pub fn execute(
                 service(args)?.list(graph_run_id.as_deref(), *limit)?,
             ))
         }
+        GroupGraphRunScheduledContractCommand::ProviderRequest(_) => {
+            unreachable!("provider-request commands are routed by run_command")
+        }
     }
 }
 

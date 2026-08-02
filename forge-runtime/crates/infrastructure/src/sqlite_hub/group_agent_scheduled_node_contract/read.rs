@@ -27,7 +27,7 @@ pub(super) fn inspect(
     Ok(inspection)
 }
 
-fn inspect_in_snapshot(
+pub(in crate::sqlite_hub) fn inspect_in_snapshot(
     connection: &Connection,
     contract_id: &str,
 ) -> Result<GroupAgentScheduledNodeContractInspection, HubStoreError> {

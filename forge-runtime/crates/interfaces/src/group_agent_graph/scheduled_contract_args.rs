@@ -1,6 +1,8 @@
 use std::collections::VecDeque;
 
-use crate::args::GroupGraphRunScheduledContractCommand;
+use crate::args::{
+    GroupGraphRunScheduledContractCommand, GroupGraphRunScheduledContractProviderRequestCommand,
+};
 
 use super::{
     Command, GroupGraphRunCommand, duplicate, next_value, parse_limit, required_id, run_command,
@@ -15,11 +17,96 @@ pub(super) fn parse(
         Some("admit") => parse_admit(tokens, idempotency_key),
         Some("show") => parse_show(tokens),
         Some("list") => parse_list(tokens),
+        Some("provider-request") => parse_provider_request(tokens, idempotency_key),
         Some(value) => Err(unknown("group graph run scheduled-contract", value)),
         None => Err(with_usage(
             "group graph run scheduled-contract command is required",
         )),
     }
+}
+
+fn parse_provider_request(
+    tokens: &mut VecDeque<String>,
+    idempotency_key: &mut Option<String>,
+) -> Result<Command, String> {
+    match tokens.pop_front().as_deref() {
+        Some("prepare") => parse_provider_request_prepare(tokens, idempotency_key),
+        Some("show") => parse_provider_request_show(tokens),
+        Some("list") => parse_provider_request_list(tokens),
+        Some(value) => Err(unknown(
+            "group graph run scheduled-contract provider-request",
+            value,
+        )),
+        None => Err(with_usage(
+            "group graph run scheduled-contract provider-request command is required",
+        )),
+    }
+}
+
+fn parse_provider_request_prepare(
+    tokens: &mut VecDeque<String>,
+    idempotency_key: &mut Option<String>,
+) -> Result<Command, String> {
+    let operation = "group graph run scheduled-contract provider-request prepare";
+    let scheduled_contract_id = required_id(tokens, operation, "CONTRACT_ID")?;
+    while let Some(option) = tokens.pop_front() {
+        match option.as_str() {
+            "--idempotency-key" if idempotency_key.is_none() => {
+                *idempotency_key = Some(next_value(tokens, "--idempotency-key")?);
+            }
+            "--idempotency-key" => return Err(duplicate("--idempotency-key")),
+            _ => return Err(unknown(operation, &option)),
+        }
+    }
+    Ok(provider_request_command(
+        GroupGraphRunScheduledContractProviderRequestCommand::Prepare {
+            scheduled_contract_id,
+        },
+    ))
+}
+
+fn parse_provider_request_show(tokens: &mut VecDeque<String>) -> Result<Command, String> {
+    let operation = "group graph run scheduled-contract provider-request show";
+    let provider_request_id = required_id(tokens, operation, "PROVIDER_REQUEST_ID")?;
+    let include_request = match tokens.pop_front().as_deref() {
+        Some("--include-request") => true,
+        Some(value) => return Err(unknown(operation, value)),
+        None => false,
+    };
+    super::require_empty(tokens)?;
+    Ok(provider_request_command(
+        GroupGraphRunScheduledContractProviderRequestCommand::Show {
+            provider_request_id,
+            include_request,
+        },
+    ))
+}
+
+fn parse_provider_request_list(tokens: &mut VecDeque<String>) -> Result<Command, String> {
+    let graph_run_id = match tokens.front().map(String::as_str) {
+        Some(value) if !value.starts_with('-') => tokens.pop_front(),
+        _ => None,
+    };
+    let mut limit = 50;
+    if tokens.front().is_some_and(|value| value == "--limit") {
+        tokens.pop_front();
+        limit = parse_limit(tokens)?;
+    }
+    super::require_empty(tokens)?;
+    Ok(provider_request_command(
+        GroupGraphRunScheduledContractProviderRequestCommand::List {
+            graph_run_id,
+            limit,
+        },
+    ))
+}
+
+fn provider_request_command(
+    value: GroupGraphRunScheduledContractProviderRequestCommand,
+) -> Command {
+    command(GroupGraphRunScheduledContractCommand::ProviderRequest(
+        value,
+    ))
 }
 
 fn parse_admit(
@@ -90,7 +177,8 @@ fn command(value: GroupGraphRunScheduledContractCommand) -> Command {
 mod tests {
     use crate::args::{
         Command, GroupCommand, GroupGraphCommand, GroupGraphRunCommand,
-        GroupGraphRunScheduledContractCommand, parse_tokens,
+        GroupGraphRunScheduledContractCommand,
+        GroupGraphRunScheduledContractProviderRequestCommand, parse_tokens,
     };
 
     fn parse(args: &[&str]) -> Result<crate::args::Args, String> {
@@ -213,6 +301,132 @@ mod tests {
                 "candidate-1",
             ])
             .expect_err("show rejects key")
+            .contains("only valid for mutating commands")
+        );
+    }
+
+    #[test]
+    fn parses_provider_request_prepare() {
+        let prepared = parse(&[
+            "group",
+            "graph",
+            "run",
+            "scheduled-contract",
+            "provider-request",
+            "prepare",
+            "scheduled-contract-1",
+            "--idempotency-key",
+            "request-key",
+        ])
+        .expect("provider request preparation parses");
+        assert_eq!(prepared.idempotency_key.as_deref(), Some("request-key"));
+        assert!(matches!(
+            prepared.command,
+            Command::Group(GroupCommand::Graph(GroupGraphCommand::Run(
+                GroupGraphRunCommand::ScheduledContract(
+                    GroupGraphRunScheduledContractCommand::ProviderRequest(
+                        GroupGraphRunScheduledContractProviderRequestCommand::Prepare {
+                            scheduled_contract_id,
+                        }
+                    )
+                )
+            ))) if scheduled_contract_id == "scheduled-contract-1"
+        ));
+    }
+
+    #[test]
+    fn parses_provider_request_show() {
+        assert!(matches!(
+            parse(&[
+                "group",
+                "graph",
+                "run",
+                "scheduled-contract",
+                "provider-request",
+                "show",
+                "scheduled-request-1",
+                "--include-request",
+            ])
+            .expect("provider request show parses")
+            .command,
+            Command::Group(GroupCommand::Graph(GroupGraphCommand::Run(
+                GroupGraphRunCommand::ScheduledContract(
+                    GroupGraphRunScheduledContractCommand::ProviderRequest(
+                        GroupGraphRunScheduledContractProviderRequestCommand::Show {
+                            include_request: true,
+                            ..
+                        }
+                    )
+                )
+            )))
+        ));
+    }
+
+    #[test]
+    fn parses_provider_request_list() {
+        assert!(matches!(
+            parse(&[
+                "group",
+                "graph",
+                "run",
+                "scheduled-contract",
+                "provider-request",
+                "list",
+                "run-1",
+                "--limit",
+                "7",
+            ])
+            .expect("provider request list parses")
+            .command,
+            Command::Group(GroupCommand::Graph(GroupGraphCommand::Run(
+                GroupGraphRunCommand::ScheduledContract(
+                    GroupGraphRunScheduledContractCommand::ProviderRequest(
+                        GroupGraphRunScheduledContractProviderRequestCommand::List { limit: 7, .. }
+                    )
+                )
+            )))
+        ));
+    }
+
+    #[test]
+    fn rejects_invalid_provider_request_arguments() {
+        assert!(
+            parse(&[
+                "group",
+                "graph",
+                "run",
+                "scheduled-contract",
+                "provider-request",
+                "prepare",
+            ])
+            .is_err()
+        );
+        assert!(
+            parse(&[
+                "group",
+                "graph",
+                "run",
+                "scheduled-contract",
+                "provider-request",
+                "show",
+                "request-1",
+                "--include-request",
+                "--include-request",
+            ])
+            .is_err()
+        );
+        assert!(
+            parse(&[
+                "--idempotency-key",
+                "wrong",
+                "group",
+                "graph",
+                "run",
+                "scheduled-contract",
+                "provider-request",
+                "list",
+            ])
+            .expect_err("read-only request list rejects key")
             .contains("only valid for mutating commands")
         );
     }

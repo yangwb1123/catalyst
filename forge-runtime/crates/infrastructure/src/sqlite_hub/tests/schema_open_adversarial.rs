@@ -69,6 +69,9 @@ const POST_PROJECT_OBJECTS: &[&str] = &[
     "group_agent_graph_scheduled_node_contract_candidates",
     "group_agent_graph_scheduled_node_candidates_project_lane",
     "group_agent_graph_scheduled_node_candidates_created",
+    "group_agent_graph_scheduled_node_provider_requests",
+    "group_agent_graph_scheduled_node_provider_requests_project_lane",
+    "group_agent_graph_scheduled_node_provider_requests_created",
 ];
 
 const INDEX_ORIGIN_GOLDEN: &[(&str, (usize, usize, usize))] = &[
@@ -104,6 +107,10 @@ const INDEX_ORIGIN_GOLDEN: &[(&str, (usize, usize, usize))] = &[
     (
         "group_agent_graph_scheduled_node_contract_candidates",
         (1, 6, 2),
+    ),
+    (
+        "group_agent_graph_scheduled_node_provider_requests",
+        (1, 7, 2),
     ),
 ];
 
@@ -172,7 +179,7 @@ fn v1_future_table_blocker_is_corrupt_before_migration() {
 #[test]
 fn raw_autoindex_owner_corruption_is_rejected_without_repair() {
     let (root, database) = empty_database();
-    let connection = open_database(&database).expect("create valid v14 fixture");
+    let connection = open_database(&database).expect("create valid v15 fixture");
     let table_sql = table_definition(&connection, "groups");
     corrupt_unique_index_owner(&connection);
     let before = schema_snapshot(&connection);
@@ -180,7 +187,7 @@ fn raw_autoindex_owner_corruption_is_rejected_without_repair() {
 
     assert_open_is_corrupt(&database, "raw autoindex owner corruption");
     let unchanged = Connection::open(&database).expect("reopen raw-corrupt fixture");
-    assert_eq!(schema_version(&unchanged), 14);
+    assert_eq!(schema_version(&unchanged), 15);
     assert_eq!(schema_snapshot(&unchanged), before);
     assert_eq!(table_definition(&unchanged, "groups"), table_sql);
     drop((unchanged, root));
@@ -189,23 +196,23 @@ fn raw_autoindex_owner_corruption_is_rejected_without_repair() {
 #[test]
 fn sqlite_prefixed_trigger_is_rejected_without_repair() {
     let (root, database) = empty_database();
-    let connection = open_database(&database).expect("create valid v14 fixture");
+    let connection = open_database(&database).expect("create valid v15 fixture");
     install_hidden_panel_trigger(&connection);
     let before = schema_snapshot(&connection);
     drop(connection);
 
     assert_open_is_corrupt(&database, "sqlite-prefixed trigger");
     let unchanged = Connection::open(&database).expect("reopen rejected trigger fixture");
-    assert_eq!(schema_version(&unchanged), 14);
+    assert_eq!(schema_version(&unchanged), 15);
     assert_eq!(schema_snapshot(&unchanged), before);
     assert!(schema_object_named(&unchanged, "sqlite_hidden_panel_child"));
     drop((unchanged, root));
 }
 
 #[test]
-fn v14_structural_index_inventory_matches_the_release_golden() {
+fn v15_structural_index_inventory_matches_the_release_golden() {
     let (root, database) = empty_database();
-    let connection = open_database(&database).expect("create valid v14 fixture");
+    let connection = open_database(&database).expect("create valid v15 fixture");
     let mut totals = (0, 0, 0);
     for &(table, expected) in INDEX_ORIGIN_GOLDEN {
         let actual = index_origin_counts(&connection, table);
@@ -214,7 +221,7 @@ fn v14_structural_index_inventory_matches_the_release_golden() {
         totals.1 += actual.1;
         totals.2 += actual.2;
     }
-    assert_eq!(totals, (30, 41, 27));
+    assert_eq!(totals, (31, 48, 29));
     drop((connection, root));
 }
 

@@ -76,6 +76,22 @@ pub enum GroupGraphRunScheduledContractCommand {
         graph_run_id: Option<String>,
         limit: usize,
     },
+    ProviderRequest(GroupGraphRunScheduledContractProviderRequestCommand),
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub enum GroupGraphRunScheduledContractProviderRequestCommand {
+    Prepare {
+        scheduled_contract_id: String,
+    },
+    Show {
+        provider_request_id: String,
+        include_request: bool,
+    },
+    List {
+        graph_run_id: Option<String>,
+        limit: usize,
+    },
 }
 
 #[derive(Debug, Eq, PartialEq)]

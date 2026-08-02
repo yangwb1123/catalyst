@@ -28,9 +28,12 @@ pub enum GroupAgentScheduledNodeContractCliOutput {
         v: u16,
         metadata_only: bool,
         passive_initial_candidate_only: bool,
+        candidate_creation_state_only: bool,
         current_run_lifecycle_included: bool,
+        current_provider_request_sidecar_included: bool,
         lifecycle_contract_admitted: bool,
         provider_request_present: bool,
+        provider_request_present_at_candidate_creation: bool,
         execution_authority_released: bool,
         dispatch_authority_released: bool,
         progress_observed: bool,
@@ -51,12 +54,15 @@ pub enum GroupAgentScheduledNodeContractCliOutput {
 pub struct ScheduledContractInspectionView {
     v: u16,
     passive_initial_candidate_only: bool,
+    candidate_creation_state_only: bool,
     source_graph_validated: bool,
     control_snapshot_validated: bool,
     stored_schedule_validated: bool,
     current_run_lifecycle_included: bool,
+    current_provider_request_sidecar_included: bool,
     lifecycle_contract_admitted: bool,
     provider_request_present: bool,
+    provider_request_present_at_candidate_creation: bool,
     execution_authority_released: bool,
     dispatch_authority_released: bool,
     progress_observed: bool,
@@ -122,9 +128,12 @@ impl GroupAgentScheduledNodeContractCliOutput {
             v: GROUP_AGENT_SCHEDULED_NODE_CONTRACT_VERSION,
             metadata_only: true,
             passive_initial_candidate_only: true,
+            candidate_creation_state_only: true,
             current_run_lifecycle_included: false,
+            current_provider_request_sidecar_included: false,
             lifecycle_contract_admitted: false,
             provider_request_present: false,
+            provider_request_present_at_candidate_creation: false,
             execution_authority_released: false,
             dispatch_authority_released: false,
             progress_observed: false,
@@ -153,12 +162,15 @@ impl ScheduledContractInspectionView {
         Self {
             v: inspection.v,
             passive_initial_candidate_only: true,
+            candidate_creation_state_only: true,
             source_graph_validated: true,
             control_snapshot_validated: true,
             stored_schedule_validated: true,
             current_run_lifecycle_included: false,
+            current_provider_request_sidecar_included: false,
             lifecycle_contract_admitted: false,
             provider_request_present: false,
+            provider_request_present_at_candidate_creation: false,
             execution_authority_released: false,
             dispatch_authority_released: false,
             progress_observed: false,
@@ -285,7 +297,11 @@ fn write_boundaries(writer: &mut impl Write) -> Result<(), io::Error> {
     writeln!(writer, "current Run lifecycle is not reported")?;
     writeln!(
         writer,
-        "no authority, provider request, progress, predecessor receipt, or successor"
+        "candidate creation flags report no provider request or authority at creation"
+    )?;
+    writeln!(
+        writer,
+        "current provider-request sidecars, Run progress, receipts, and successors are not reported"
     )?;
     writeln!(
         writer,

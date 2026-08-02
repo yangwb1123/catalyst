@@ -4,8 +4,8 @@ use super::{
     super::{
         group_agent_graph,
         group_agent_node_execution_contract::{dispatch_request, read as contract_read},
-        group_agent_node_lifecycle, group_agent_scheduled_node_contract, group_run_codec,
-        read_error,
+        group_agent_node_lifecycle, group_agent_scheduled_node_contract,
+        group_agent_scheduled_node_provider_request, group_run_codec, read_error,
     },
     BeginGroupAgentGraphRun, GroupAgentGraphCorePlan, GroupAgentGraphInspection,
     GroupAgentGraphRunEvent, GroupAgentGraphRunEventKind, GroupAgentGraphRunInspection,
@@ -13,38 +13,6 @@ use super::{
     MAX_GROUP_AGENT_GRAPH_IDEMPOTENCY_KEY_BYTES, MAX_GROUP_AGENT_GRAPH_IDENTIFIER_BYTES,
     MAX_GROUP_AGENT_GRAPH_RUN_LIST_LIMIT, codec, rows, schedule,
 };
-
-const V11_OWNED_CHILD_QUERY: &str = "SELECT EXISTS(
-       SELECT graph_run_id FROM group_agent_graph_run_events WHERE graph_run_id=?1
-       UNION ALL
-       SELECT graph_run_id FROM group_agent_graph_node_execution_contracts
-         WHERE graph_run_id=?1
-       UNION ALL
-       SELECT graph_run_id FROM group_agent_graph_node_dispatch_requests
-         WHERE graph_run_id=?1
-     )";
-
-const V12_OWNED_CHILD_QUERY: &str = "SELECT EXISTS(
-       SELECT graph_run_id FROM group_agent_graph_run_events WHERE graph_run_id=?1
-       UNION ALL
-       SELECT graph_run_id FROM group_agent_graph_node_execution_contracts
-         WHERE graph_run_id=?1
-       UNION ALL
-       SELECT graph_run_id FROM group_agent_graph_node_dispatch_requests
-         WHERE graph_run_id=?1
-       UNION ALL
-       SELECT graph_run_id FROM group_agent_graph_node_dispatch_claims
-         WHERE graph_run_id=?1
-       UNION ALL
-       SELECT graph_run_id FROM group_agent_project_lane_ownerships
-         WHERE graph_run_id=?1
-       UNION ALL
-       SELECT graph_run_id FROM group_agent_graph_node_terminal_artifacts
-         WHERE graph_run_id=?1
-       UNION ALL
-       SELECT graph_run_id FROM group_agent_graph_node_terminal_receipts
-         WHERE graph_run_id=?1
-     )";
 
 pub(super) fn inspect(
     connection: &mut Connection,
@@ -95,37 +63,13 @@ fn missing_run_error(
     connection: &Connection,
     graph_run_id: &str,
 ) -> Result<HubStoreError, HubStoreError> {
-    if has_owned_child(connection, graph_run_id)? {
+    if super::children::has_owned_child(connection, graph_run_id)? {
         Ok(corrupt(
             "stored Graph Run parent is missing for owned child rows",
         ))
     } else {
         Ok(not_found(HubEntity::GroupAgentGraphRun, graph_run_id))
     }
-}
-
-fn has_owned_child(connection: &Connection, graph_run_id: &str) -> Result<bool, HubStoreError> {
-    let version: i64 = connection
-        .pragma_query_value(None, "user_version", |row| row.get(0))
-        .map_err(read_error)?;
-    let query = if version == 11 {
-        V11_OWNED_CHILD_QUERY
-    } else {
-        V12_OWNED_CHILD_QUERY
-    };
-    let owned = connection
-        .query_row(query, [graph_run_id], |row| row.get(0))
-        .map_err(read_error)?;
-    if owned || version < 13 {
-        return Ok(owned);
-    }
-    if schedule::read::has_graph_run_child(connection, graph_run_id)? {
-        return Ok(true);
-    }
-    if version < 14 {
-        return Ok(false);
-    }
-    group_agent_scheduled_node_contract::read::has_graph_run_child(connection, graph_run_id)
 }
 
 #[cfg(test)]
@@ -178,10 +122,15 @@ pub(super) fn validate_stored(
         .validate()
         .map_err(|error| corrupt(&error.to_string()))?;
     schedule::read::validate_graph_run_binding(connection, &inspection, &graph)?;
-    group_agent_scheduled_node_contract::read::validate_graph_run_binding(
+    let scheduled_contract = group_agent_scheduled_node_contract::read::validate_graph_run_binding(
         connection,
         &inspection,
         &graph,
+    )?;
+    group_agent_scheduled_node_provider_request::read::validate_graph_run_binding(
+        connection,
+        &inspection,
+        scheduled_contract.as_ref(),
     )?;
     let dispatch_source = dispatch_source_inspection(&inspection)?;
     let contract = contract_read::validate_graph_run_binding(connection, &dispatch_source, &graph)?;

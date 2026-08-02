@@ -7,6 +7,7 @@ mod group_agent_graph_run;
 mod group_agent_node_execution_contract;
 mod group_agent_node_lifecycle;
 mod group_agent_scheduled_node_contract;
+mod group_agent_scheduled_node_provider_request;
 mod group_analysis_panel;
 mod group_context_build;
 mod group_context_read;
@@ -43,6 +44,8 @@ mod schema_v12_sql;
 mod schema_v13_sql;
 #[path = "schema_contract/v14_sql.rs"]
 mod schema_v14_sql;
+#[path = "schema_contract/v15_sql.rs"]
+mod schema_v15_sql;
 mod schema_v9_sql;
 mod write;
 
@@ -109,7 +112,7 @@ impl SqliteHubStore {
         })
     }
 
-    /// Opens an exact existing v11, v12, v13, or v14 Hub for dispatch topology preflight only.
+    /// Opens an exact existing v11, v12, v13, v14, or v15 Hub for dispatch topology preflight only.
     ///
     /// This mode is immutable and cannot create, migrate, chmod, or write Hub state.
     ///
@@ -129,8 +132,8 @@ impl SqliteHubStore {
 
     /// Opens existing dispatch state for a no-send re-entry diagnosis.
     ///
-    /// A clean exact v11/v12/v13/v14 database keeps the immutable preflight path. When
-    /// v12, v13, or v14 has a hot WAL, the fallback reads the existing WAL/SHM pair without
+    /// A clean exact v11/v12/v13/v14/v15 database keeps the immutable preflight path. When
+    /// v12, v13, v14, or v15 has a hot WAL, the fallback reads the existing WAL/SHM pair without
     /// changing logical Hub content; `SQLite` may update transient SHM read locks.
     ///
     /// # Errors
@@ -145,7 +148,9 @@ impl SqliteHubStore {
                 Ok(_) => SqliteHubStoreOpenMode::ExistingDispatchPreflightReadOnly,
                 Err(immutable_error) => {
                     schema::open_existing_dispatch_reentry_read_only_database(&database_path)
-                        .map_err(|_| immutable_error)?;
+                        .map_err(|reentry_error| {
+                            prefer_corruption(immutable_error, reentry_error)
+                        })?;
                     SqliteHubStoreOpenMode::ExistingDispatchReentryReadOnly
                 }
             };
@@ -181,6 +186,19 @@ impl SqliteHubStore {
             }
         }
     }
+}
+
+fn prefer_corruption(
+    immutable_error: HubStoreError,
+    reentry_error: HubStoreError,
+) -> HubStoreError {
+    if matches!(immutable_error, HubStoreError::Corrupt { .. }) {
+        return immutable_error;
+    }
+    if matches!(reentry_error, HubStoreError::Corrupt { .. }) {
+        return reentry_error;
+    }
+    immutable_error
 }
 
 impl HubStore for SqliteHubStore {

@@ -1,6 +1,8 @@
 #[cfg(test)]
 #[path = "tests/group_agent_graph_run_atomicity.rs"]
 pub(in crate::sqlite_hub) mod atomicity_tests;
+#[path = "group_agent_graph_run/children.rs"]
+mod children;
 mod codec;
 pub(in crate::sqlite_hub) mod read;
 mod rows;

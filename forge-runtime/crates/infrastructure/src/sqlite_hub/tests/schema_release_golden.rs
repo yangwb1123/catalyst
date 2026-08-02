@@ -4,7 +4,7 @@ use super::{
     CREATE_V1_SCHEMA_SQL, MIGRATE_V1_TO_V2_SQL, MIGRATE_V2_TO_V3_SQL, MIGRATE_V3_TO_V4_SQL,
     MIGRATE_V4_TO_V5_SQL, MIGRATE_V5_TO_V6_SQL, MIGRATE_V6_TO_V7_SQL, MIGRATE_V7_TO_V8_SQL,
     MIGRATE_V8_TO_V9_SQL, MIGRATE_V9_TO_V10_SQL, MIGRATE_V10_TO_V11_SQL, MIGRATE_V11_TO_V12_SQL,
-    MIGRATE_V12_TO_V13_SQL, MIGRATE_V13_TO_V14_SQL,
+    MIGRATE_V12_TO_V13_SQL, MIGRATE_V13_TO_V14_SQL, MIGRATE_V14_TO_V15_SQL,
 };
 
 const V1_TO_V5_SHA256: [u8; 32] = [
@@ -47,6 +47,10 @@ const V1_TO_V14_SHA256: [u8; 32] = [
     0x6e, 0x57, 0x3a, 0x75, 0x4b, 0xde, 0xe3, 0x6a, 0xae, 0xa8, 0x20, 0x55, 0x4d, 0x45, 0xb0, 0xc7,
     0x2a, 0x5c, 0x30, 0xfd, 0xbc, 0x50, 0xa9, 0xf0, 0xde, 0xb7, 0x5c, 0xe8, 0x80, 0x47, 0xf6, 0x16,
 ];
+const V1_TO_V15_SHA256: [u8; 32] = [
+    0x3d, 0xe7, 0x56, 0x30, 0x19, 0x93, 0xc1, 0x22, 0x07, 0x7f, 0xea, 0xb5, 0x87, 0xc1, 0x02, 0x10,
+    0x8f, 0xe3, 0x37, 0xa2, 0xce, 0xf4, 0x92, 0x0b, 0x9d, 0x75, 0x6a, 0x51, 0x71, 0xaa, 0xe3, 0x93,
+];
 const RELEASE_BATCHES: &[&str] = &[
     CREATE_V1_SCHEMA_SQL,
     MIGRATE_V1_TO_V2_SQL,
@@ -62,6 +66,7 @@ const RELEASE_BATCHES: &[&str] = &[
     MIGRATE_V11_TO_V12_SQL,
     MIGRATE_V12_TO_V13_SQL,
     MIGRATE_V13_TO_V14_SQL,
+    MIGRATE_V14_TO_V15_SQL,
 ];
 
 #[test]
@@ -75,7 +80,8 @@ fn published_schema_literals_match_distinct_release_hashes() {
     let v1_to_v11 = schema_digest(&RELEASE_BATCHES[..11]);
     let v1_to_v12 = schema_digest(&RELEASE_BATCHES[..12]);
     let v1_to_v13 = schema_digest(&RELEASE_BATCHES[..13]);
-    let v1_to_v14 = schema_digest(RELEASE_BATCHES);
+    let v1_to_v14 = schema_digest(&RELEASE_BATCHES[..14]);
+    let current_schema_digest = schema_digest(RELEASE_BATCHES);
 
     assert_eq!(v1_to_v5, V1_TO_V5_SHA256);
     assert_eq!(v1_to_v6, V1_TO_V6_SHA256);
@@ -87,6 +93,7 @@ fn published_schema_literals_match_distinct_release_hashes() {
     assert_eq!(v1_to_v12, V1_TO_V12_SHA256);
     assert_eq!(v1_to_v13, V1_TO_V13_SHA256);
     assert_eq!(v1_to_v14, V1_TO_V14_SHA256);
+    assert_eq!(current_schema_digest, V1_TO_V15_SHA256);
     assert_ne!(v1_to_v5, v1_to_v6);
     assert_ne!(v1_to_v6, v1_to_v7);
     assert_ne!(v1_to_v7, v1_to_v8);
@@ -96,6 +103,7 @@ fn published_schema_literals_match_distinct_release_hashes() {
     assert_ne!(v1_to_v11, v1_to_v12);
     assert_ne!(v1_to_v12, v1_to_v13);
     assert_ne!(v1_to_v13, v1_to_v14);
+    assert_ne!(v1_to_v14, current_schema_digest);
 }
 
 fn schema_digest(batches: &[&str]) -> [u8; 32] {

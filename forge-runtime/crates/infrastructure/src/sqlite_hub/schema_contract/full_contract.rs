@@ -7,7 +7,7 @@ use super::super::{
     CREATE_V1_SCHEMA_SQL, HubStoreError, MIGRATE_V1_TO_V2_SQL, MIGRATE_V2_TO_V3_SQL,
     MIGRATE_V3_TO_V4_SQL, MIGRATE_V4_TO_V5_SQL, MIGRATE_V5_TO_V6_SQL, MIGRATE_V6_TO_V7_SQL,
     MIGRATE_V7_TO_V8_SQL, MIGRATE_V8_TO_V9_SQL, MIGRATE_V9_TO_V10_SQL, MIGRATE_V10_TO_V11_SQL,
-    MIGRATE_V11_TO_V12_SQL, MIGRATE_V12_TO_V13_SQL, MIGRATE_V13_TO_V14_SQL,
+    MIGRATE_V11_TO_V12_SQL, MIGRATE_V12_TO_V13_SQL, MIGRATE_V13_TO_V14_SQL, MIGRATE_V14_TO_V15_SQL,
 };
 
 #[path = "full_contract/structure.rs"]
@@ -44,6 +44,7 @@ const OWNED_TABLES: &[&str] = &[
     "group_agent_graph_node_terminal_receipts",
     "group_agent_graph_execution_schedules",
     "group_agent_graph_scheduled_node_contract_candidates",
+    "group_agent_graph_scheduled_node_provider_requests",
 ];
 const SCHEMA_BATCHES: &[&str] = &[
     CREATE_V1_SCHEMA_SQL,
@@ -60,10 +61,12 @@ const SCHEMA_BATCHES: &[&str] = &[
     MIGRATE_V11_TO_V12_SQL,
     MIGRATE_V12_TO_V13_SQL,
     MIGRATE_V13_TO_V14_SQL,
+    MIGRATE_V14_TO_V15_SQL,
 ];
-const VERSION_TABLE_COUNTS: [usize; 15] = [0, 5, 8, 9, 11, 14, 16, 19, 20, 22, 23, 24, 28, 29, 30];
-const VERSION_EXPLICIT_INDEX_COUNTS: [usize; 15] =
-    [0, 2, 3, 4, 6, 8, 10, 12, 14, 16, 18, 20, 24, 25, 27];
+const VERSION_TABLE_COUNTS: [usize; 16] =
+    [0, 5, 8, 9, 11, 14, 16, 19, 20, 22, 23, 24, 28, 29, 30, 31];
+const VERSION_EXPLICIT_INDEX_COUNTS: [usize; 16] =
+    [0, 2, 3, 4, 6, 8, 10, 12, 14, 16, 18, 20, 24, 25, 27, 29];
 const V6_IMPLICIT_INDEX_COUNT: usize = 29;
 const V7_IMPLICIT_INDEX_COUNT: usize = 33;
 const V8_IMPLICIT_INDEX_COUNT: usize = 35;
@@ -73,6 +76,7 @@ const V11_IMPLICIT_INDEX_COUNT: usize = 45;
 const V12_IMPLICIT_INDEX_COUNT: usize = 61;
 const V13_IMPLICIT_INDEX_COUNT: usize = 64;
 const V14_IMPLICIT_INDEX_COUNT: usize = 71;
+const V15_IMPLICIT_INDEX_COUNT: usize = 79;
 const STRUCTURAL_DIGEST_DOMAIN: &[u8] = b"forge-hub-structural-contract-v1\0";
 const V6_STRUCTURAL_CONTRACT_SHA256: [u8; 32] = [
     0x89, 0x39, 0x2a, 0xf9, 0xcd, 0xca, 0x0e, 0xfd, 0x55, 0xd7, 0x28, 0xc7, 0x41, 0xde, 0x1a, 0x01,
@@ -109,6 +113,10 @@ const V13_STRUCTURAL_CONTRACT_SHA256: [u8; 32] = [
 const V14_STRUCTURAL_CONTRACT_SHA256: [u8; 32] = [
     0xce, 0x99, 0x9c, 0xba, 0x9a, 0x00, 0x7d, 0x9e, 0x91, 0xcd, 0x30, 0x3a, 0x8c, 0x63, 0x1b, 0xb0,
     0xa5, 0xfc, 0xeb, 0x58, 0x18, 0xbd, 0xa3, 0x71, 0xdc, 0x35, 0x6b, 0x51, 0x91, 0x5a, 0xbc, 0xe9,
+];
+const V15_STRUCTURAL_CONTRACT_SHA256: [u8; 32] = [
+    0xd9, 0xf6, 0xc0, 0xeb, 0x2a, 0x23, 0x74, 0xb2, 0x4e, 0xe4, 0x60, 0x43, 0x5c, 0xc8, 0x18, 0xf3,
+    0x4c, 0x78, 0xd0, 0x8f, 0x90, 0x92, 0x51, 0x9d, 0x64, 0x6d, 0x8c, 0x55, 0x18, 0xbf, 0x07, 0x8b,
 ];
 
 static EXPECTED_SCHEMAS: OnceLock<Result<Vec<ExpectedSchema>, String>> = OnceLock::new();
@@ -287,6 +295,7 @@ fn validate_release_structure(schema: &ExpectedSchema) -> Result<(), String> {
         12 => (V12_IMPLICIT_INDEX_COUNT, V12_STRUCTURAL_CONTRACT_SHA256),
         13 => (V13_IMPLICIT_INDEX_COUNT, V13_STRUCTURAL_CONTRACT_SHA256),
         14 => (V14_IMPLICIT_INDEX_COUNT, V14_STRUCTURAL_CONTRACT_SHA256),
+        15 => (V15_IMPLICIT_INDEX_COUNT, V15_STRUCTURAL_CONTRACT_SHA256),
         version => return Err(format!("Hub v{version} has no release structural contract")),
     };
     let implicit_indexes = schema

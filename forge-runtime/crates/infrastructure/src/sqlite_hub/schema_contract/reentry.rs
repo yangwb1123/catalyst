@@ -1,4 +1,4 @@
-//! Validates live v12/v13/v14 files before a no-send dispatch re-entry inspection.
+//! Validates live v12/v13/v14/v15 files before a no-send dispatch re-entry inspection.
 
 use std::{
     fs,
@@ -37,10 +37,10 @@ pub(in crate::sqlite_hub) fn open_existing_dispatch_reentry_read_only_database(
         .pragma_update(None, "query_only", true)
         .map_err(contract::sqlite_error)?;
     let version = schema_version(&connection).map_err(contract::sqlite_error)?;
-    if ![12, 13, 14].contains(&version) {
+    if ![12, 13, 14, 15].contains(&version) {
         return Err(read_only_schema_required(
             version,
-            "dispatch re-entry schema version 12, 13, or 14",
+            "dispatch re-entry schema version 12, 13, 14, or 15",
         ));
     }
     contract::validate_version(&connection, version)?;

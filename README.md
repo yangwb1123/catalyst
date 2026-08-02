@@ -35,17 +35,17 @@ provider、工具或 workspace，也不代表已经完成分析或讨论。
 Graph 首节点还可通过 Go 生成 immutable `operator_asserted` pricing snapshot，
 再由 Rust `group graph run dispatch readiness verify` 把当前 release authorization、
 固定官方 destination、exact pricing bytes 与 frozen cost budget 合并复验。该命令
-保持 current SQLite v13/Run v3 不变，不读凭证、不构造 provider、不 claim/send/result/advance；
+保持 current SQLite v15/Run v3 不变，不读凭证、不构造 provider、不 claim/send/result/advance；
 定价也不带 vendor attestation，不代表实时厂商价格或账单保证。
 多节点 Graph 可把同一份 exact private control 交给 Go
 `graph-execution-schedule`，冻结 serial authored-order、Project lane identity、
 直接前驱 receipt slots 与 fail-fast policy；Rust `group graph run schedule admit/show/list`
-只在 SQLite v13 保存 immutable sidecar，不占用 Graph 主 journal seq，也不创建 contract、
+只在 SQLite v15 保存 immutable sidecar，不占用 Graph 主 journal seq，也不创建 contract、
 观察 progress、推进 successor 或接触 credential/provider/network/workspace/tool/result。
 它是后续多节点协议的可验证策略前置条件，不代表 frontend/backend/SSO 已经执行。
 对严格单节点 Graph，`group graph run dispatch execute` 再要求本次 fresh consent、
 exact authorization/pricing 与 SHA-256 固定的 Go Core binary；该 effectful 命令当前
-仅支持 Linux，并从密封、复验后的匿名 executable memfd 执行 Core。SQLite v13 沿用
+仅支持 Linux，并从密封、复验后的匿名 executable memfd 执行 Core。SQLite v15 沿用
 v12 lifecycle 表原子 claim
 全 Hub Project lane，只在 approved service path 把 non-`Clone` exact request authority
 交给一个赢家（可信 store adapter 属于进程内 TCB）；一次派发后 bounded

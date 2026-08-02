@@ -18,6 +18,7 @@ use super::{
     schema_v12_sql::MIGRATE_V11_TO_V12_SQL,
     schema_v13_sql::MIGRATE_V12_TO_V13_SQL,
     schema_v14_sql::MIGRATE_V13_TO_V14_SQL,
+    schema_v15_sql::MIGRATE_V14_TO_V15_SQL,
 };
 
 #[path = "tests/schema_full_validation.rs"]
@@ -40,6 +41,8 @@ mod schema_v12_migration_tests;
 mod schema_v13_migration_tests;
 #[path = "tests/schema_v14_migration.rs"]
 mod schema_v14_migration_tests;
+#[path = "tests/schema_v15_migration.rs"]
+mod schema_v15_migration_tests;
 #[path = "tests/schema_v5_migration.rs"]
 mod schema_v5_migration_tests;
 #[path = "tests/schema_v6_migration.rs"]
@@ -50,6 +53,15 @@ mod schema_v7_migration_tests;
 mod schema_v8_migration_tests;
 #[path = "tests/schema_v9_migration.rs"]
 mod schema_v9_migration_tests;
+#[path = "../../tests/sqlite_group_agent_graph_execution_schedule_support/mod.rs"]
+#[allow(dead_code, clippy::duplicate_mod)]
+mod sqlite_group_agent_graph_execution_schedule_support;
+#[path = "../../tests/sqlite_group_agent_graph_run_support/mod.rs"]
+#[allow(dead_code, clippy::duplicate_mod)]
+mod sqlite_group_agent_graph_run_support;
+#[path = "../../tests/sqlite_group_agent_scheduled_node_contract_support/mod.rs"]
+#[allow(dead_code, clippy::duplicate_mod)]
+mod sqlite_group_agent_scheduled_node_contract_support;
 
 use schema_migration_support::{
     restrict_fixture_root, schema_object_exists, schema_version, table_columns,
