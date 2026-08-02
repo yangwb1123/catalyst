@@ -112,6 +112,54 @@ fn dispatch_reentry_rejects_incomplete_or_malformed_wal_sidecars_without_changes
     }
 }
 
+#[test]
+fn dispatch_reentry_reads_real_hot_v12_and_v13_wals_without_logical_changes() {
+    for version in [12, 13] {
+        assert_hot_wal_reentry(version);
+    }
+}
+
+fn assert_hot_wal_reentry(version: i64) {
+    let (root, store) = fixture();
+    drop(store);
+    let database = root.path().join("hub.sqlite3");
+    let writer = rusqlite::Connection::open(&database).expect("open WAL writer");
+    if version == 12 {
+        writer
+            .execute_batch(
+                "DROP INDEX group_agent_graph_execution_schedules_created;
+                 DROP TABLE group_agent_graph_execution_schedules;
+                 PRAGMA user_version=12;",
+            )
+            .expect("restore exact v12 schema");
+    }
+    writer
+        .execute_batch("PRAGMA wal_checkpoint(TRUNCATE); PRAGMA wal_autocheckpoint=0;")
+        .expect("checkpoint schema before hot write");
+    writer
+        .execute(
+            "INSERT INTO groups(id,name,idempotency_key,created_at_ms)
+             VALUES(?1,?2,?3,?4)",
+            ("hot-group", "Hot WAL group", "hot-group-key", 1_i64),
+        )
+        .expect("commit one hot-WAL row");
+    let wal = root.path().join("hub.sqlite3-wal");
+    let shm = root.path().join("hub.sqlite3-shm");
+    assert!(wal.exists() && shm.exists(), "missing hot SQLite sidecars");
+    let main_before = fs::read(&database).expect("read main before re-entry");
+    let wal_before = fs::read(&wal).expect("read WAL before re-entry");
+
+    let reader = SqliteHubStore::open_existing_dispatch_inspection_read_only(&database)
+        .expect("open exact hot-WAL dispatch re-entry");
+    let groups = reader.list_groups().expect("read through hot WAL");
+    assert!(groups.iter().any(|group| group.id == "hot-group"));
+    drop(reader);
+
+    assert_eq!(fs::read(&database).expect("read main after"), main_before);
+    assert_eq!(fs::read(&wal).expect("read WAL after"), wal_before);
+    drop(writer);
+}
+
 fn valid_wal_header() -> [u8; 32] {
     let mut header = [0_u8; 32];
     header[..4].copy_from_slice(&[0x37, 0x7f, 0x06, 0x82]);

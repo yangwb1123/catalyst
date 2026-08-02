@@ -85,6 +85,16 @@ forge-runtime --json group graph run list GROUP_AGENT_GRAPH_ID --limit 20
 # Export exact private scheduler state without a trailing newline.
 forge-runtime group graph run control export GROUP_AGENT_GRAPH_RUN_ID > control.json
 
+# Freeze and admit Core's passive multi-node serial policy. This does not execute it.
+forge graph-execution-schedule --control control.json > schedule.json
+forge-runtime --json --idempotency-key sso-schedule-1 \
+  group graph run schedule admit GROUP_AGENT_GRAPH_RUN_ID \
+  --schedule schedule.json
+forge-runtime --json group graph run schedule show GRAPH_EXECUTION_SCHEDULE_ID
+forge-runtime --json group graph run schedule show GRAPH_EXECUTION_SCHEDULE_ID \
+  --include-schedule
+forge-runtime --json group graph run schedule list GROUP_AGENT_GRAPH_RUN_ID --limit 20
+
 # Go selects only wave zero's first node and freezes future execution inputs.
 # This command performs no provider request.
 forge graph-node-contract --control control.json \
@@ -223,6 +233,30 @@ Conversation/Prompt/task/memory state.
 
 `group graph run control export` privately emits the exact revalidated v1 Run,
 plan, Graph manifest, event cursor, and head digest as bounded canonical JSON.
+For a Graph with at least two nodes, `forge graph-execution-schedule` consumes
+only that exact control and freezes one content-addressed passive policy:
+serial execution, wave-then-authored selection, a single in-flight node,
+attempt one, Project lane digest per node, authored-order direct-predecessor
+receipt slots, initial frontier/selection, no predecessor or partial-output
+dataflow, and fail-fast/no-retry outcomes. It omits manager/task/acceptance,
+Project/member/profile, provider/model/credential, and result text.
+
+`group graph run schedule admit` independently rebuilds the exact control and
+stores the canonical artifact in SQLite v13 as one immutable sidecar per Run.
+The transaction consumes no Graph Run journal sequence and leaves the Run,
+event head, Graph, Conversations, Prompts, credentials, providers, network,
+workspaces, tools, results, and writeback unchanged. Same-key exact input
+replays the original bytes and time; another key, stale control, policy or
+topology drift, and stored corruption fail closed. `show` fully revalidates the
+source and artifact; default show/list output hides schedule body, node and
+predecessor identities, lane digests, and replay key. Only
+`show --include-schedule` reveals the artifact. Public false flags are named
+`artifact_*`, and `current_run_lifecycle_included=false` makes clear that a
+historical schedule may coexist with a later legacy contract without reporting
+the Run's current lifecycle. Schedule presence is not progress, successor
+advancement, a contract, dispatch authority, or proof that frontend/backend/SSO
+ran. Single-node schedules are rejected.
+
 `forge graph-node-contract` is the only node selector: v1 always chooses
 `plan.waves[0][0]` and freezes its exact Prompts, HTTPS destination/model,
 token/byte/event/time/cost/result budgets, zero tools/workspace/dataflow, and
@@ -287,7 +321,7 @@ wrap its bytes. Go independently reconstructs the original v1 control and all
 scheduler/request bindings before emitting a domain-separated,
 content-addressed authorization. Rust verify rebuilds the release control from
 current durable state and accepts only the one exact canonical authorization.
-Both Rust commands require an existing private current-v12 Hub. Their dedicated
+Both Rust commands require an existing private current-v13 Hub. Their dedicated
 read-only open does not create or migrate state, change permissions, configure
 WAL, or start a write transaction. It requires a persistent WAL `2/2` database
 header; missing/legacy/corrupt state and any present SQLite WAL, SHM, or
@@ -313,7 +347,7 @@ no environment lookup or network request occurs during either construction
 phase.
 
 Authorization and readiness are still not dispatch. Neither is persisted,
-schema stays at the already-current v12,
+schema stays at the already-current v13,
 the Run stays v3 `awaiting_dispatch_authorization`, and authority remains
 false. Pricing/export/authorize/verify obtain no consent, read no credential, construct
 no provider, claim no Project lane, access no network/workspace/tool, produce
@@ -352,7 +386,7 @@ Core failure or uncertain final commit leaves v4 `dispatch_unknown` plus the
 active lane; reinvocation reports the existing quarantine before credential or
 network access. There is no lease release, retry/resume, or separate public
 claim/send/complete command. Protocol v1 does not execute multi-node Graphs.
-For a hard-crash hot WAL, the re-entry-only reader verifies the exact v12 main
+For a hard-crash hot WAL, the re-entry-only reader verifies the exact v12/v13 main
 database and WAL/SHM identities, requires a complete valid sidecar pair, rejects
 rollback journals, and leaves logical Hub content plus database/WAL bytes
 unchanged; `SQLite` may update transient SHM read-lock bytes.
@@ -451,7 +485,8 @@ per-user fallback. If a relative directory is named `group`, `prompt`, `run`,
 ambiguous with a command.
 
 The local Hub is not encrypted. Prompt/history bodies, frozen Group Run
-snapshots, Group-Agent-Graph instructions/tasks, Group-analysis request/result
+snapshots, Group-Agent-Graph instructions/tasks and execution schedules,
+Group-analysis request/result
 bodies, copied panel manifests, panel-synthesis request/result bodies, local
 paths, exact Graph Node Dispatch Request bodies, Project Run configuration,
 model deltas, provider context, tool
@@ -459,8 +494,8 @@ arguments/results, and allowed file contents can all be stored in plaintext
 SQLite and exposed by explicit queries such as `prompt list`, `group run show
 --include-content`, `group graph show --include-spec`, `group analysis show
 --include-result`, `group panel show --include-results`, `group synthesis show
---include-result`, `group graph run dispatch show --include-request`, and `run
-show`. New or empty dedicated Unix state
+--include-result`, `group graph run schedule show --include-schedule`,
+`group graph run dispatch show --include-request`, and `run show`. New or empty dedicated Unix state
 directories are narrowed to the current user; populated shared directories are
 rejected instead of chmodded. Direct Prompt arguments may be visible in
 process listings and shell history, so use stdin (`-`) for sensitive input.
@@ -495,16 +530,16 @@ it does not prove that replaying an interrupted tool effect is safe. Run
 inspection reads its record, cursor, events, and bound Prompt from one SQLite
 snapshot so a concurrent append cannot look like corruption.
 
-The main SQLite catalog is exclusively Hub-owned. Every declared v0–v12 schema
+The main SQLite catalog is exclusively Hub-owned. Every declared v0–v13 schema
 is validated before migration DDL (v0 must be empty); the final migration step
-then validates the exact v12 28-table/24-explicit-index/61-implicit-index
+then validates the exact v13 29-table/25-explicit-index/64-implicit-index
 catalog, DDL, columns, keys, foreign keys, index structures, and absence of
 extra views/triggers/tables before the immediate transaction commits.
 Published DDL and the independent structural contract are release-pinned;
-the v1–v12 length-framed DDL SHA-256 is
-`2b2f6a5550e3a5ea50fb6e4bb9a2e4b6b00d2d7fb5078cdf09d46ade6e35d4d0`
-and the v12 structural-contract SHA-256 is
-`eece924b11691950d7a749bb30b47ef7c207bc6234b310ff5a0b9a06e9fe6de9`.
+the v1–v13 length-framed DDL SHA-256 is
+`1e10710c621e80e62c927842f73097fe141ff247df0fba851543175ee6012a49`
+and the v13 structural-contract SHA-256 is
+`2b12222a5a0f1e7d3336ac4399e80cfa6a097f50bd3de3cc145541e43d6fbbc1`.
 Unexpected state fails as corruption and is never auto-repaired.
 Environmental SQLite failures remain unavailable. This detects schema drift
 but is not a same-user tamper or TOCTOU boundary.
@@ -614,5 +649,6 @@ Architecture:
 - [Effect-free Node Dispatch release authorization ADR](../docs/adr/0022-effect-free-node-dispatch-release-authorization.md)
 - [Effect-free registered destination and pricing readiness ADR](../docs/adr/0023-effect-free-node-dispatch-readiness.md)
 - [Single-node Dispatch terminal lifecycle ADR](../docs/adr/0024-single-node-dispatch-terminal-lifecycle.md)
+- [Passive multi-node execution schedule ADR](../docs/adr/0025-passive-multi-node-execution-schedule.md)
 - [Hub local-foundation design](../docs/design/conversation-hub-phase1.md)
 - [Durable Run journal design](../docs/design/run-journal-phase1.md)

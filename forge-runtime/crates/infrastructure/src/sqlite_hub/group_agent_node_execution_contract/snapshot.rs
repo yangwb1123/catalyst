@@ -4,7 +4,7 @@ use crate::runtime_domain::{
     HubEntity, HubStoreError,
 };
 
-pub(super) fn reconstruct(
+pub(in crate::sqlite_hub) fn reconstruct(
     run: &GroupAgentGraphRunInspection,
     graph: &GroupAgentGraphInspection,
 ) -> Result<(GroupAgentGraphControlSnapshot, String), HubStoreError> {

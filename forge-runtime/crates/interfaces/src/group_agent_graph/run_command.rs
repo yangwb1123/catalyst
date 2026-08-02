@@ -21,6 +21,8 @@ use super::{
     contract_output::{self, GroupAgentNodeExecutionContractCliOutput},
     dispatch_command::{self, GroupAgentGraphRunDispatchCommandCliOutput},
     run_output::{self, GroupAgentGraphRunCliOutput},
+    schedule_command,
+    schedule_output::{self, GroupAgentGraphExecutionScheduleCliOutput},
 };
 
 pub enum GroupAgentGraphRunCommandCliOutput {
@@ -28,6 +30,7 @@ pub enum GroupAgentGraphRunCommandCliOutput {
     ControlSnapshot(String),
     Contract(Box<GroupAgentNodeExecutionContractCliOutput>),
     Dispatch(Box<GroupAgentGraphRunDispatchCommandCliOutput>),
+    Schedule(Box<GroupAgentGraphExecutionScheduleCliOutput>),
 }
 
 pub async fn execute(
@@ -72,11 +75,12 @@ pub async fn execute(
         GroupGraphRunCommand::Contract(command) => Ok(aux_output(
             contract_command::execute_contract(args, command)?,
         )),
-        GroupGraphRunCommand::Dispatch(command) => {
-            Ok(GroupAgentGraphRunCommandCliOutput::Dispatch(Box::new(
-                dispatch_command::execute(args, command).await?,
-            )))
-        }
+        GroupGraphRunCommand::Dispatch(command) => Ok(dispatch_cli_output(
+            dispatch_command::execute(args, command).await?,
+        )),
+        GroupGraphRunCommand::Schedule(command) => Ok(schedule_cli_output(
+            schedule_command::execute(args, command)?,
+        )),
     }
 }
 
@@ -98,11 +102,26 @@ pub fn write_output(
         GroupAgentGraphRunCommandCliOutput::Dispatch(output) => {
             dispatch_command::write_output(output, json, writer)
         }
+        GroupAgentGraphRunCommandCliOutput::Schedule(output) => {
+            schedule_output::write_output(output, json, writer)
+        }
     }
 }
 
 fn run_output(output: GroupAgentGraphRunCliOutput) -> GroupAgentGraphRunCommandCliOutput {
     GroupAgentGraphRunCommandCliOutput::Run(Box::new(output))
+}
+
+fn schedule_cli_output(
+    output: GroupAgentGraphExecutionScheduleCliOutput,
+) -> GroupAgentGraphRunCommandCliOutput {
+    GroupAgentGraphRunCommandCliOutput::Schedule(Box::new(output))
+}
+
+fn dispatch_cli_output(
+    output: GroupAgentGraphRunDispatchCommandCliOutput,
+) -> GroupAgentGraphRunCommandCliOutput {
+    GroupAgentGraphRunCommandCliOutput::Dispatch(Box::new(output))
 }
 
 fn aux_output(

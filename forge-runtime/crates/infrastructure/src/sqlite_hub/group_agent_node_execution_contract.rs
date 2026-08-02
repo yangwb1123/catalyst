@@ -5,7 +5,7 @@ mod codec;
 pub(super) mod dispatch_request;
 pub(in crate::sqlite_hub) mod read;
 mod rows;
-mod snapshot;
+pub(in crate::sqlite_hub) mod snapshot;
 mod write;
 
 use crate::runtime_domain::{

@@ -30,10 +30,11 @@ use super::{
     schema_v10_sql::MIGRATE_V9_TO_V10_SQL,
     schema_v11_sql::MIGRATE_V10_TO_V11_SQL,
     schema_v12_sql::MIGRATE_V11_TO_V12_SQL,
+    schema_v13_sql::MIGRATE_V12_TO_V13_SQL,
     unavailable,
 };
 
-const SCHEMA_VERSION: i64 = 12;
+const SCHEMA_VERSION: i64 = 13;
 const CONNECTION_BUSY_TIMEOUT: Duration = Duration::from_millis(250);
 const OPEN_RETRY_TIMEOUT: Duration = Duration::from_secs(5);
 const OPEN_RETRY_DELAY: Duration = Duration::from_millis(10);
@@ -65,7 +66,7 @@ pub(super) fn open_database(path: &Path) -> Result<Connection, HubStoreError> {
 pub(super) fn open_existing_current_read_only_database(
     path: &Path,
 ) -> Result<Connection, HubStoreError> {
-    open_existing_validated_read_only_database(path, &[SCHEMA_VERSION], "current schema version 12")
+    open_existing_validated_read_only_database(path, &[SCHEMA_VERSION], "current schema version 13")
 }
 
 pub(super) fn open_existing_dispatch_preflight_read_only_database(
@@ -73,8 +74,8 @@ pub(super) fn open_existing_dispatch_preflight_read_only_database(
 ) -> Result<Connection, HubStoreError> {
     open_existing_validated_read_only_database(
         path,
-        &[11, SCHEMA_VERSION],
-        "schema version 11 or 12",
+        &[11, 12, SCHEMA_VERSION],
+        "schema version 11, 12, or 13",
     )
 }
 
@@ -239,6 +240,9 @@ fn migrate_to_current(connection: &Connection, version: i64) -> Result<(), OpenA
     if version <= 11 {
         migrate_v11_to_v12(connection)?;
     }
+    if version <= 12 {
+        migrate_v12_to_v13(connection)?;
+    }
     Ok(())
 }
 
@@ -323,6 +327,11 @@ fn migrate_v10_to_v11(connection: &Connection) -> Result<(), OpenAttemptError> {
 
 fn migrate_v11_to_v12(connection: &Connection) -> Result<(), OpenAttemptError> {
     connection.execute_batch(MIGRATE_V11_TO_V12_SQL)?;
+    Ok(())
+}
+
+fn migrate_v12_to_v13(connection: &Connection) -> Result<(), OpenAttemptError> {
+    connection.execute_batch(MIGRATE_V12_TO_V13_SQL)?;
     Ok(())
 }
 

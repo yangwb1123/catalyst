@@ -49,17 +49,17 @@ fn dispatch_preflight_reads_exact_v11_without_migration_or_sidecars() {
 }
 
 #[test]
-fn v11_request_survives_v12_migration_and_reopen() {
+fn v11_request_survives_current_migration_and_reopen() {
     let (root, database) = legacy_v11_database();
-    let connection = open_database(&database).expect("v11 Hub migrates to v12");
-    assert_v12_shape(&connection);
+    let connection = open_database(&database).expect("v11 Hub migrates to v13");
+    assert_current_shape(&connection);
     assert_legacy_v3_run(&connection);
     assert_lifecycle_empty(&connection);
     assert_foreign_keys_clean(&connection);
     drop(connection);
 
-    let reopened = open_database(&database).expect("migrated v12 Hub reopens");
-    assert_v12_shape(&reopened);
+    let reopened = open_database(&database).expect("migrated v13 Hub reopens");
+    assert_current_shape(&reopened);
     assert_legacy_v3_run(&reopened);
     drop((reopened, root));
 }
@@ -85,21 +85,21 @@ fn v11_future_claim_blocker_is_rejected_before_migration() {
 }
 
 #[test]
-fn failed_final_validation_rolls_back_v11_to_v12_atomically() {
+fn failed_final_validation_rolls_back_v11_to_current_atomically() {
     let (root, database) = legacy_v11_database();
     let connection = Connection::open(&database).expect("open v11 rollback fixture");
     let error = migrate_with_before_final_fault_for_test(&connection, |migrated| {
-        assert_v12_shape(migrated);
-        migrated.execute_batch("CREATE TABLE rogue_v12_final_fault(id TEXT)")
+        assert_current_shape(migrated);
+        migrated.execute_batch("CREATE TABLE rogue_v13_final_fault(id TEXT)")
     })
-    .expect_err("final v12 validation rejects rogue object");
+    .expect_err("final v13 validation rejects rogue object");
     assert!(matches!(error, HubStoreError::Corrupt { .. }));
 
     assert_eq!(schema_version(&connection), 11);
     for table in LIFECYCLE_TABLES {
         assert!(!schema_object_named(&connection, table));
     }
-    assert!(!schema_object_named(&connection, "rogue_v12_final_fault"));
+    assert!(!schema_object_named(&connection, "rogue_v13_final_fault"));
     assert_legacy_v3_run(&connection);
     drop((connection, root));
 }
@@ -220,8 +220,8 @@ fn malformed(original: &str, replacement: &str) -> String {
     sql
 }
 
-fn assert_v12_shape(connection: &Connection) {
-    assert_eq!(schema_version(connection), 12);
+fn assert_current_shape(connection: &Connection) {
+    assert_eq!(schema_version(connection), 13);
     for table in LIFECYCLE_TABLES {
         assert!(
             schema_object_exists(connection, "table", table),

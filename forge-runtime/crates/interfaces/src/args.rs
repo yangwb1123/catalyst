@@ -18,7 +18,8 @@ mod run_args;
 pub use group_commands::{
     GroupAnalysisCommand, GroupCommand, GroupExecutionCommand, GroupGraphCommand,
     GroupGraphRunCommand, GroupGraphRunContractCommand, GroupGraphRunControlCommand,
-    GroupGraphRunDispatchCommand, GroupPanelCommand, GroupRunCommand, GroupSynthesisCommand,
+    GroupGraphRunDispatchCommand, GroupGraphRunScheduleCommand, GroupPanelCommand, GroupRunCommand,
+    GroupSynthesisCommand,
 };
 
 #[derive(Debug, Eq, PartialEq)]
@@ -312,6 +313,9 @@ fn accepts_idempotency_key(command: &Command) -> bool {
                                     | GroupGraphRunCommand::Contract(
                                         GroupGraphRunContractCommand::Admit { .. },
                                     )
+                                    | GroupGraphRunCommand::Schedule(
+                                        GroupGraphRunScheduleCommand::Admit { .. },
+                                    )
                                     | GroupGraphRunCommand::Dispatch(
                                         GroupGraphRunDispatchCommand::Prepare { .. },
                                     ),
@@ -465,28 +469,23 @@ pub fn usage() -> &'static str {
 }
 
 #[cfg(test)]
-#[path = "args_tests.rs"]
-mod tests;
-
-#[cfg(test)]
-#[path = "group_run_args_tests.rs"]
-mod group_run_tests;
-
+#[path = "group_analysis_args_tests.rs"]
+mod group_analysis_tests;
 #[cfg(test)]
 #[path = "group_execution_args_tests.rs"]
 mod group_execution_tests;
-
-#[cfg(test)]
-#[path = "group_agent_graph/args_tests.rs"]
-mod group_graph_tests;
-
 #[cfg(test)]
 #[path = "group_agent_graph/dispatch_args_tests.rs"]
 mod group_graph_dispatch_tests;
-
 #[cfg(test)]
-#[path = "group_analysis_args_tests.rs"]
-mod group_analysis_tests;
+#[path = "group_agent_graph/args_tests.rs"]
+mod group_graph_tests;
+#[cfg(test)]
+#[path = "group_run_args_tests.rs"]
+mod group_run_tests;
+#[cfg(test)]
+#[path = "args_tests.rs"]
+mod tests;
 
 #[cfg(test)]
 #[path = "group_panel_args_tests.rs"]

@@ -128,6 +128,7 @@ fn run_entity(entity: HubEntity) -> RunEntity {
         | HubEntity::GroupPanelSynthesis
         | HubEntity::GroupAgentGraph
         | HubEntity::GroupAgentGraphRun
+        | HubEntity::GroupAgentGraphExecutionSchedule
         | HubEntity::GroupAgentNodeExecutionContract
         | HubEntity::GroupAgentNodeDispatchRequest
         | HubEntity::GroupAgentNodeLifecycle => RunEntity::Run,

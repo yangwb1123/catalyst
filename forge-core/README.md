@@ -98,11 +98,14 @@ go -C forge-core run ./cmd/forge accept --root "$PWD"   # node harness/acceptanc
 
 The Go binary is also the sole scheduler for persisted Group Agent Graphs. It
 produces canonical, effect-free interchange artifacts for planning, immutable
-operator pricing, first-node contracting, and passive release authorization:
+multi-node scheduling policy, operator pricing, first-node contracting, and
+passive release authorization:
 
 ```sh
 forge graph-plan --graph-id GROUP_AGENT_GRAPH_ID \
   --manifest-sha256 GRAPH_MANIFEST_SHA256 --input graph.json > core-plan.json
+
+forge graph-execution-schedule --control control.json > schedule.json
 
 forge graph-node-pricing-snapshot --model PINNED_MODEL \
   --input-usd-micros-per-token-unit 2000000 \
@@ -131,6 +134,14 @@ It freezes exact Prompts, provider configuration, budgets, zero capabilities,
 and failure policy but reads no credential and performs no provider, model,
 network, tool, workspace, result, memory, or writeback effect. Output is compact
 canonical UTF-8 JSON with no trailing newline.
+
+`graph-execution-schedule` accepts that same exact private v1 control only for
+multi-node Graphs. It freezes one serial wave-then-authored order, Project lane
+digests, authored-order direct-predecessor receipt slots, initial frontier, and
+fail-fast/no-dataflow policy. The content-addressed output contains no private
+manager/task/project/profile/provider/result text, observes no progress, grants
+no dispatch authority, and does not advance a successor. Single-node Graphs
+remain on the separate terminal lifecycle.
 
 `graph-node-pricing-snapshot` fixes the production destination to the official
 OpenAI Responses endpoint and emits an immutable local pricing assertion. Its

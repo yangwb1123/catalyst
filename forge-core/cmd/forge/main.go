@@ -19,6 +19,7 @@ import (
 	"forgeos/forge-core/internal/graphplan"
 	"forgeos/forge-core/internal/graphpricing"
 	"forgeos/forge-core/internal/graphrelease"
+	"forgeos/forge-core/internal/graphschedule"
 	"forgeos/forge-core/internal/graphterminal"
 	"forgeos/forge-core/internal/orchestrator"
 )
@@ -87,15 +88,12 @@ var subcommands = map[string]func([]string) int{
 	"graph-node-pricing-snapshot": func(rest []string) int {
 		return graphpricing.Command(rest, os.Stdout, os.Stderr)
 	},
-	"graph-node-dispatch-authorize": func(rest []string) int {
-		return graphrelease.Command(rest, os.Stdin, os.Stdout, os.Stderr)
-	},
-	"graph-node-terminal-receipt": func(rest []string) int {
-		return graphterminal.Command(rest, os.Stdin, os.Stdout, os.Stderr)
-	},
-	"approve":                cmdApprove,
-	"reject":                 cmdReject,
-	releasePinnedExecCommand: cmdReleaseExecPinned,
+	"graph-node-dispatch-authorize": func(rest []string) int { return graphrelease.Command(rest, os.Stdin, os.Stdout, os.Stderr) },
+	"graph-node-terminal-receipt":   func(rest []string) int { return graphterminal.Command(rest, os.Stdin, os.Stdout, os.Stderr) },
+	"graph-execution-schedule":      func(rest []string) int { return graphschedule.Command(rest, os.Stdin, os.Stdout, os.Stderr) },
+	"approve":                       cmdApprove,
+	"reject":                        cmdReject,
+	releasePinnedExecCommand:        cmdReleaseExecPinned,
 }
 
 // run dispatches a subcommand and returns the process exit code, so main stays
@@ -146,6 +144,7 @@ usage:
   forge graph-node-dispatch-authorize --control FILE|-
   forge graph-node-terminal-receipt --control FILE|-
   forge graph-node-terminal-receipt --protocol-version
+  forge graph-execution-schedule --control FILE|-
   forge gate|check|accept [--root DIR]
 `)
 }

@@ -22,3 +22,7 @@ pub(crate) mod output;
 pub(crate) mod run_command;
 #[path = "group_agent_graph/run_output.rs"]
 pub(crate) mod run_output;
+#[path = "group_agent_graph/schedule_command.rs"]
+pub(crate) mod schedule_command;
+#[path = "group_agent_graph/schedule_output.rs"]
+pub(crate) mod schedule_output;

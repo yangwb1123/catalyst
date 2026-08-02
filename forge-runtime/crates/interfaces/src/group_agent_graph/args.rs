@@ -6,6 +6,8 @@ use std::collections::VecDeque;
 mod dispatch_execute_args;
 #[path = "dispatch_readiness_args.rs"]
 mod dispatch_readiness_args;
+#[path = "schedule_args.rs"]
+mod schedule_args;
 
 use crate::{
     group_context_output::terminal_text,
@@ -16,7 +18,8 @@ use crate::{
 
 use super::{
     Command, GroupCommand, GroupGraphCommand, GroupGraphRunCommand, GroupGraphRunContractCommand,
-    GroupGraphRunControlCommand, GroupGraphRunDispatchCommand, next_value, require_empty, usage,
+    GroupGraphRunControlCommand, GroupGraphRunDispatchCommand, GroupGraphRunScheduleCommand,
+    next_value, require_empty, usage,
 };
 
 pub(super) fn parse(
@@ -45,6 +48,7 @@ fn parse_run(
         Some("control") => parse_run_control(tokens),
         Some("contract") => parse_run_contract(tokens, idempotency_key),
         Some("dispatch") => parse_run_dispatch(tokens, idempotency_key),
+        Some("schedule") => schedule_args::parse(tokens, idempotency_key),
         Some("show") => parse_run_show(tokens),
         Some("list") => parse_run_list(tokens),
         Some(value) => Err(with_usage(&format!(

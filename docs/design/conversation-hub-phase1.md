@@ -45,7 +45,8 @@ in infrastructure. The CLI composes the concrete store and service.
 | Prepared Group Run | Immutable, canonical Group-context input artifact |
 | Group execution | Local receipt proving one prepared snapshot was validated |
 | Group Agent Graph | Immutable manager/task/dependency definition over one prepared Group Run |
-| Group Agent Graph Run | Passive state admitting an exact Core Plan, one first-node contract, and optionally its exact provider request bytes |
+| Group Agent Graph Run | State binding an exact Core Plan, optional passive multi-node schedule, and the fenced single-node lifecycle |
+| Graph Execution Schedule | Passive Core-owned multi-node serial policy sidecar; not progress or successor execution |
 | Node Execution Contract | Exact, budgeted first-node input awaiting a separate dispatch authority |
 | Node Dispatch Authorization | Effect-free Go decision bound to one exact current v3 release-control snapshot; not consent, a claim, or released authority |
 | Group analysis | Consent-gated single-model result over one frozen Group Run |
@@ -94,6 +95,10 @@ forge-runtime [OPTIONS] group graph list [GROUP_RUN_ID] [--limit N]
 forge-runtime [OPTIONS] group graph run prepare GRAPH_ID --plan FILE|-
 forge-runtime [OPTIONS] group graph run show GRAPH_RUN_ID [--include-plan]
 forge-runtime [OPTIONS] group graph run list [GRAPH_ID] [--limit N]
+forge-runtime [OPTIONS] group graph run control export GRAPH_RUN_ID
+forge-runtime [OPTIONS] group graph run schedule admit GRAPH_RUN_ID --schedule FILE|-
+forge-runtime [OPTIONS] group graph run schedule show SCHEDULE_ID [--include-schedule]
+forge-runtime [OPTIONS] group graph run schedule list [GRAPH_RUN_ID] [--limit N]
 forge-runtime [OPTIONS] group analysis prepare GROUP_RUN_ID [--model MODEL]
 forge-runtime [OPTIONS] group analysis send ANALYSIS_ID --confirm-off-machine
 forge-runtime [OPTIONS] group analysis show ANALYSIS_ID [--include-result]
@@ -436,12 +441,39 @@ lane ownership. Crash/Core/commit uncertainty leaves durable v4
 local single-consumption, not remote exactly-once. Multi-node successor and
 predecessor-dataflow protocols remain absent.
 
-The generated full-catalog contract now covers immutable v1–v12 DDL and the
-exact v12 inventory of 28 tables, 24 named explicit indexes, and 61 implicit
-indexes. The v1–v12 length-framed DDL SHA-256 is
-`2b2f6a5550e3a5ea50fb6e4bb9a2e4b6b00d2d7fb5078cdf09d46ade6e35d4d0`;
-the independent v12 structural-contract SHA-256 is
-`eece924b11691950d7a749bb30b47ef7c207bc6234b310ff5a0b9a06e9fe6de9`.
+### Passive multi-node execution schedule over schema version 13 (delivered)
+
+For an exact v1 multi-node Graph Run, Go Core flattens topology waves in
+wave-then-authored order and emits one canonical serial schedule. It fixes a
+single in-flight node, attempt one, Project lane identity, authored-order
+direct-predecessor receipt slots, initial frontier/selection, fail-fast
+outcomes, no predecessor/partial-output dataflow, and four false
+progress/authority flags. Single-node Graphs are rejected by this protocol.
+
+Rust reconstructs the exact base control and admits at most one immutable
+schedule sidecar per Graph Run under `BEGIN IMMEDIATE`. Schema v13 only creates
+`group_agent_graph_execution_schedules` plus its recency index; every v12 table,
+active v4 claim/lane, Run record, event byte, and journal sequence remains
+unchanged. Exact same-key input replays its original identity/bytes/time;
+another key, stale source/head, divergent policy, concurrency loser, or stored
+corruption fails closed. `show` performs full source/artifact validation;
+`list` reads and validates metadata only. CLI false flags are explicitly scoped
+as `artifact_*`, while `current_run_lifecycle_included=false` prevents a
+historical schedule from being mistaken for the current Run lifecycle after a
+later legacy contract admission.
+
+This sidecar is static policy, not a contract, dispatch claim, result, receipt,
+progress observation, successor decision, or Graph completion. It reads no
+credential and creates no provider/network/workspace/tool/writeback effect.
+A future contract-v2 protocol must bind its digest and real predecessor receipt
+identities before any multi-node execution fence can change. See ADR 0025.
+
+The generated full-catalog contract now covers immutable v1–v13 DDL and the
+exact v13 inventory of 29 tables, 25 named explicit indexes, and 64 implicit
+indexes. The v1–v13 length-framed DDL SHA-256 is
+`1e10710c621e80e62c927842f73097fe141ff247df0fba851543175ee6012a49`;
+the independent v13 structural-contract SHA-256 is
+`2b12222a5a0f1e7d3336ac4399e80cfa6a097f50bd3de3cc145541e43d6fbbc1`.
 Final validation runs inside the migration transaction, so an invalid legacy
 schema cannot leave a partial upgrade. Unexpected definitions or objects fail
 as corruption without repair. See ADR 0012.
@@ -559,9 +591,15 @@ indexes, and 38 implicit autoindexes.
 
 `group graph run control export` fully revalidates the v1 Run, event head,
 Graph, frozen Group source, member bindings, Core Plan, and manifest, then emits
-one private bounded canonical snapshot without a trailing newline. Go alone
-selects `plan.waves[0][0]` and freezes its exact Prompts, HTTPS destination and
-model, all resource budgets, zero workspace/tools/predecessors, explicit future
+one private bounded canonical snapshot without a trailing newline. For a
+multi-node Graph, Go can turn that exact snapshot into the passive serial
+Graph Execution Schedule described above; Rust admits it without changing the
+Run or journal, and default inspection remains node/lane-redacted. This policy
+does not authorize any node.
+
+Separately, Go alone selects `plan.waves[0][0]` and freezes its exact Prompts,
+HTTPS destination and model, all resource budgets, zero
+workspace/tools/predecessors, explicit future
 consent, and no-retry uncertainty policy into one canonical contract.
 Both languages enforce the same byte-stable endpoint subset: lowercase
 canonical DNS or IPv4 HTTPS, optional non-default port, and an unreserved path.
@@ -675,6 +713,18 @@ anonymous. A caller-named plan file is the only file this operation reads.
 Preparation/show/list use no provider credential, network, tool, member
 workspace, model, manager/node Agent, result, Conversation, Prompt, memory, or
 writeback.
+
+Graph Execution Schedule rows retain canonical serial node order, initial
+frontier, direct-predecessor identities, Project lane digests, source/head
+digests, and the replay key in local plaintext. Default admit/show/list output
+hides the schedule body and all node/predecessor/lane fields;
+`show --include-schedule` deliberately reveals the validated artifact. The
+schedule ID and digest are unkeyed consistency identities, not a signature,
+Core attestation, progress receipt, execution authorization, or same-user
+tamper boundary. Admission performs no Agent, credential, model, provider,
+network, workspace, tool, result, successor, Conversation, Prompt, memory, or
+writeback operation. Artifact false flags do not claim that a later current Run
+still lacks a contract; the schedule views deliberately omit current lifecycle.
 
 The private control export and Node Execution Contract additionally contain
 manager instruction, selected task and acceptance text, Project/member labels,
@@ -792,6 +842,13 @@ does not classify as corruption.
   terminal-safe, and list remains metadata-only;
 - Go and Rust agree on exact Core Plan canonical bytes and digest while the Go
   workflow and Group adapters share one authored-order dependency algorithm;
+- Go and Rust agree byte-for-byte on the passive multi-node serial schedule,
+  Project lane digests, authored-order direct-predecessor slots, initial
+  frontier, fixed outcome policy, content digest, and ID;
+- schedule admission preserves the complete Graph Run/main journal byte-for-byte,
+  replays one exact sidecar under concurrency, defaults to node/lane-redacted
+  output, and rejects single-node, stale, divergent, or corrupt input without
+  credential/provider/network/workspace/tool/result/successor effects;
 - Group Agent Graph Run prepare atomically stores one exact passive plan and
   preparation event, same-key replay preserves the original receipt, and
   divergent/corrupt source, plan, event, cursor, or honesty flags fail closed;
@@ -864,10 +921,11 @@ does not classify as corruption.
 - OIDC login, account binding, OS keyring, explicit local-data claim;
 - remote directory, replicas, cursors, conflict merge, deletion propagation;
 - tenants, invitations, history visibility, ACL-backed shared Groups;
-- multi-node manager/node successor selection, predecessor-result dataflow,
-  per-node contract/request advancement, cross-project tool/workspace
-  capabilities, and no-send adjudication of a hard-crashed v4 claim; the
-  single-node claim/dispatch/terminal/lane-release lifecycle is delivered;
+- multi-node manager execution, schedule-bound contract v2, real predecessor
+  receipt/result dataflow, per-node request/terminal/successor advancement,
+  cross-project tool/workspace capabilities, and no-send adjudication of a
+  hard-crashed v4 claim; the passive serial schedule and single-node
+  claim/dispatch/terminal/lane-release lifecycle are delivered;
 - Group multi-Agent discussion, delegation, writeback, and derived memory;
 - providers beyond the delivered opt-in OpenAI Responses adapter,
   write/process/network tools, and process sandbox.

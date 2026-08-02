@@ -5,10 +5,20 @@ mod error;
 mod pricing_readiness;
 mod release_error;
 mod release_service;
+mod schedule_error;
+mod schedule_service;
+mod schedule_validation;
 mod service;
 mod snapshot;
 mod validation;
 
+pub use crate::runtime_domain::{
+    AdmitGroupAgentGraphExecutionScheduleDisposition, AdmitGroupAgentGraphExecutionScheduleResult,
+    GROUP_AGENT_GRAPH_EXECUTION_SCHEDULE_VERSION, GroupAgentGraphExecutionSchedule,
+    GroupAgentGraphExecutionScheduleInspection, GroupAgentGraphExecutionScheduleRecord,
+    MAX_GROUP_AGENT_GRAPH_EXECUTION_SCHEDULE_BYTES,
+    MAX_GROUP_AGENT_GRAPH_EXECUTION_SCHEDULE_LIST_LIMIT,
+};
 pub use crate::runtime_domain::{
     AdmitGroupAgentNodeExecutionContractDisposition, AdmitGroupAgentNodeExecutionContractResult,
     GROUP_AGENT_NODE_EXECUTION_CONTRACT_VERSION, GroupAgentGraphControlSnapshot,
@@ -47,6 +57,10 @@ pub use release_error::GroupAgentNodeDispatchReleaseControlServiceError;
 pub use release_service::{
     ExportGroupAgentNodeDispatchReleaseControl, GroupAgentNodeDispatchReleaseControlService,
     VerifiedGroupAgentNodeDispatchAuthorization,
+};
+pub use schedule_error::GroupAgentGraphExecutionScheduleServiceError;
+pub use schedule_service::{
+    AdmitGroupAgentGraphExecutionScheduleInput, GroupAgentGraphExecutionScheduleService,
 };
 pub use service::{
     AdmitGroupAgentNodeExecutionContractInput, ExportGroupAgentGraphControl,

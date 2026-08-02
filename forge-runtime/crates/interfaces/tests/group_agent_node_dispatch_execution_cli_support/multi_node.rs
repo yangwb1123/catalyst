@@ -57,7 +57,7 @@ impl Fixture {
 }
 
 fn downgrade_hub_to_v11(database: &Path) {
-    let connection = rusqlite::Connection::open(database).expect("open v12 Hub for fixture");
+    let connection = rusqlite::Connection::open(database).expect("open current Hub for fixture");
     connection
         .execute_batch(
             "PRAGMA foreign_keys=OFF;
@@ -66,6 +66,7 @@ fn downgrade_hub_to_v11(database: &Path) {
                SELECT * FROM group_agent_graph_node_dispatch_requests;
              CREATE TEMP TABLE saved_seq3 AS
                SELECT * FROM group_agent_graph_run_events WHERE seq=3;
+             DROP TABLE group_agent_graph_execution_schedules;
              DROP TABLE group_agent_graph_node_terminal_receipts;
              DROP TABLE group_agent_graph_node_terminal_artifacts;
              DROP TABLE group_agent_project_lane_ownerships;

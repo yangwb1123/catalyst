@@ -10,7 +10,7 @@ use super::{
     GroupAgentGraphRunEvent, GroupAgentGraphRunEventKind, GroupAgentGraphRunInspection,
     GroupAgentGraphRunRecord, GroupAgentGraphRunStatus, HubEntity, HubStoreError,
     MAX_GROUP_AGENT_GRAPH_IDEMPOTENCY_KEY_BYTES, MAX_GROUP_AGENT_GRAPH_IDENTIFIER_BYTES,
-    MAX_GROUP_AGENT_GRAPH_RUN_LIST_LIMIT, codec, rows,
+    MAX_GROUP_AGENT_GRAPH_RUN_LIST_LIMIT, codec, rows, schedule,
 };
 
 pub(super) fn inspect(
@@ -108,9 +108,13 @@ fn has_owned_child(connection: &Connection, graph_run_id: &str) -> Result<bool, 
                  WHERE graph_run_id=?1
              )"
     };
-    connection
+    let owned = connection
         .query_row(query, [graph_run_id], |row| row.get(0))
-        .map_err(read_error)
+        .map_err(read_error)?;
+    if owned || version < 13 {
+        return Ok(owned);
+    }
+    schedule::read::has_graph_run_child(connection, graph_run_id)
 }
 
 #[cfg(test)]
@@ -162,6 +166,7 @@ pub(super) fn validate_stored(
     inspection
         .validate()
         .map_err(|error| corrupt(&error.to_string()))?;
+    schedule::read::validate_graph_run_binding(connection, &inspection, &graph)?;
     let dispatch_source = dispatch_source_inspection(&inspection)?;
     let contract = contract_read::validate_graph_run_binding(connection, &dispatch_source, &graph)?;
     let dispatch = dispatch_request::read::validate_graph_run_binding(
