@@ -17,6 +17,7 @@ import (
 	"forgeos/forge-core/internal/gate"
 	"forgeos/forge-core/internal/graphdispatch"
 	"forgeos/forge-core/internal/graphplan"
+	"forgeos/forge-core/internal/graphpricing"
 	"forgeos/forge-core/internal/graphrelease"
 	"forgeos/forge-core/internal/orchestrator"
 )
@@ -82,6 +83,9 @@ var subcommands = map[string]func([]string) int{
 	"preflight":           cmdPreflight,
 	"graph-plan":          func(rest []string) int { return graphplan.Command(rest, os.Stdin, os.Stdout, os.Stderr) },
 	"graph-node-contract": func(rest []string) int { return graphdispatch.Command(rest, os.Stdin, os.Stdout, os.Stderr) },
+	"graph-node-pricing-snapshot": func(rest []string) int {
+		return graphpricing.Command(rest, os.Stdout, os.Stderr)
+	},
 	"graph-node-dispatch-authorize": func(rest []string) int {
 		return graphrelease.Command(rest, os.Stdin, os.Stdout, os.Stderr)
 	},
@@ -134,6 +138,7 @@ usage:
   forge preflight <workflow> [--root DIR]
   forge graph-plan --graph-id ID --manifest-sha256 HEX [--input FILE|-]
   forge graph-node-contract --control FILE|- --endpoint HTTPS_URL --model MODEL --max-output-tokens N --max-model-output-bytes N --max-model-events N --timeout-ms N --max-cost-usd-micros N --pricing-snapshot-sha256 SHA256 --max-result-bytes N
+  forge graph-node-pricing-snapshot --model MODEL --input-usd-micros-per-token-unit N --output-usd-micros-per-token-unit N --max-input-tokens N
   forge graph-node-dispatch-authorize --control FILE|-
   forge gate|check|accept [--root DIR]
 `)

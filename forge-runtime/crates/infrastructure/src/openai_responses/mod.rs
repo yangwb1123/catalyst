@@ -17,6 +17,7 @@ mod protocol_tests;
 #[path = "tests/reasoning_loop.rs"]
 mod reasoning_loop_tests;
 mod redaction;
+mod registered;
 mod request;
 #[cfg(test)]
 #[path = "tests/response_fixtures.rs"]
@@ -26,6 +27,10 @@ mod response_fixtures;
 mod secret_redaction_tests;
 mod sse;
 mod sse_wire;
+pub use registered::{
+    RegisteredGroupAgentNodeProvider, RegisteredGroupAgentNodeProviderFactory,
+    RegisteredGroupAgentNodeProviderFactoryError, RegisteredGroupAgentNodeProviderReadiness,
+};
 #[cfg(test)]
 #[path = "tests/terminal_semantics.rs"]
 mod terminal_semantics_tests;
@@ -79,7 +84,8 @@ impl OpenAiResponsesProvider {
     ///
     /// Returns an error when the model or API key is empty, the base URL is
     /// not the official `https://api.openai.com/v1` origin and path, or the
-    /// bounded HTTP client cannot be constructed.
+    /// bounded HTTP client cannot be constructed. Ambient proxy environment
+    /// variables are ignored; all transport configuration is explicit.
     pub fn new(
         base_url: impl AsRef<str>,
         model: impl Into<String>,

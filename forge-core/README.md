@@ -97,12 +97,19 @@ go -C forge-core run ./cmd/forge accept --root "$PWD"   # node harness/acceptanc
 ## Group Agent Graph control artifacts
 
 The Go binary is also the sole scheduler for persisted Group Agent Graphs. It
-can produce two canonical, effect-free interchange artifacts:
+produces canonical, effect-free interchange artifacts for planning, immutable
+operator pricing, first-node contracting, and passive release authorization:
 
 ```sh
 forge graph-plan --graph-id GROUP_AGENT_GRAPH_ID \
   --manifest-sha256 GRAPH_MANIFEST_SHA256 --input graph.json > core-plan.json
 
+forge graph-node-pricing-snapshot --model PINNED_MODEL \
+  --input-usd-micros-per-token-unit 2000000 \
+  --output-usd-micros-per-token-unit 10000000 \
+  --max-input-tokens 400000 > pricing.json
+
+# Pin pricing.json's pricing_snapshot_sha256 in the contract.
 forge graph-node-contract --control control.json \
   --endpoint https://api.openai.com/v1/responses \
   --model PINNED_MODEL --max-output-tokens 4096 \
@@ -110,6 +117,9 @@ forge graph-node-contract --control control.json \
   --timeout-ms 120000 --max-cost-usd-micros 1000000 \
   --pricing-snapshot-sha256 "$PRICING_SNAPSHOT_SHA256" \
   --max-result-bytes 262144 > node-contract.json
+
+forge graph-node-dispatch-authorize \
+  --control release-control.json > authorization.json
 ```
 
 `graph-node-contract` strictly validates Rust's canonical private control
@@ -118,6 +128,19 @@ It freezes exact Prompts, provider configuration, budgets, zero capabilities,
 and failure policy but reads no credential and performs no provider, model,
 network, tool, workspace, result, memory, or writeback effect. Output is compact
 canonical UTF-8 JSON with no trailing newline.
+
+`graph-node-pricing-snapshot` fixes the production destination to the official
+OpenAI Responses endpoint and emits an immutable local pricing assertion. Its
+rates and input-token ceiling are operator supplied, provenance is
+`operator_asserted`, and vendor attestation is explicitly absent. The artifact
+and its integer cost calculation are not a current vendor price sheet or bill
+guarantee. The command reads no credential or file, constructs no provider,
+and performs no network request.
+
+`graph-node-dispatch-authorize` independently validates Rust's exact current
+release-control snapshot and emits a passive content-addressed authorization.
+It does not persist or release dispatch authority; Rust must still revalidate
+it against current durable state and the exact pricing artifact.
 
 Provider endpoints use a conservative, byte-stable HTTPS grammar shared with
 Rust: lowercase canonical DNS or dotted-decimal IPv4, an optional canonical

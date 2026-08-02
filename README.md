@@ -32,6 +32,11 @@ provider、工具或 workspace，也不代表已经完成分析或讨论。
 可恢复的本地 execution receipt。这个首切片只验证冻结输入并持久化证据：
 不调用模型/provider，不读取 workspace，不开放工具或网络，也不产出分析、
 讨论或任务结论。
+Graph 首节点还可通过 Go 生成 immutable `operator_asserted` pricing snapshot，
+再由 Rust `group graph run dispatch readiness verify` 把当前 release authorization、
+固定官方 destination、exact pricing bytes 与 frozen cost budget 合并复验。该命令
+保持 SQLite v11/Run v3 不变，不读凭证、不构造 provider、不 claim/send/result/advance；
+定价也不带 vendor attestation，不代表实时厂商价格或账单保证。
 `group analysis prepare GROUP_RUN_ID` 可在本地冻结一份精确、零工具的
 OpenAI Responses 请求；只有后续 `group analysis send ANALYSIS_ID
 --confirm-off-machine` 才读取环境凭证并释放一次外发。SQLite claim 一旦提交，

@@ -19,3 +19,11 @@ fn authorization_reader_rejects_bytes_past_the_public_bound() {
     assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
     assert!(error.to_string().contains("exceeds its byte limit"));
 }
+
+#[test]
+fn pricing_reader_rejects_bytes_past_the_public_bound() {
+    let bytes = vec![b'x'; crate::runtime_domain::MAX_GROUP_AGENT_NODE_PRICING_SNAPSHOT_BYTES + 1];
+    let error = read_pricing_bounded(bytes.as_slice()).expect_err("oversize input fails");
+    assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
+    assert!(error.to_string().contains("exceeds its byte limit"));
+}

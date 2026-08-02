@@ -80,6 +80,11 @@ pub enum GroupGraphRunDispatchCommand {
         graph_run_id: String,
         authorization_source: String,
     },
+    ReadinessVerify {
+        graph_run_id: String,
+        authorization_source: String,
+        pricing_source: String,
+    },
 }
 
 #[derive(Debug, Eq, PartialEq)]

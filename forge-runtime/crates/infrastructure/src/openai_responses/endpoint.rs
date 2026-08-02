@@ -67,6 +67,7 @@ fn is_loopback_host(host: &str) -> bool {
 
 pub(super) fn build_client(endpoint_policy: EndpointPolicy) -> Result<Client, ProviderError> {
     Client::builder()
+        .no_proxy()
         .https_only(matches!(endpoint_policy, EndpointPolicy::Official))
         .redirect(reqwest::redirect::Policy::none())
         .retry(reqwest::retry::never())
@@ -75,4 +76,21 @@ pub(super) fn build_client(endpoint_policy: EndpointPolicy) -> Result<Client, Pr
         .read_timeout(READ_TIMEOUT)
         .build()
         .map_err(|_| config_error("failed to construct the HTTP client"))
+}
+
+#[cfg(test)]
+mod ambient_proxy_contract_tests {
+    #[test]
+    fn production_client_builder_disables_ambient_proxy_discovery() {
+        let source = include_str!("endpoint.rs");
+        let marker = [".no_", "proxy()"].concat();
+        let (_, after_signature) = source
+            .split_once("pub(super) fn build_client")
+            .expect("client builder source");
+        let (builder, _) = after_signature
+            .split_once(".build()")
+            .expect("client builder terminator");
+
+        assert!(builder.contains(&marker));
+    }
 }

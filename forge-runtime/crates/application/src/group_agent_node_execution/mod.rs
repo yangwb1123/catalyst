@@ -2,6 +2,7 @@ mod dispatch_error;
 mod dispatch_service;
 mod dispatch_validation;
 mod error;
+mod pricing_readiness;
 mod release_error;
 mod release_service;
 mod service;
@@ -26,7 +27,8 @@ pub use crate::runtime_domain::{
     GroupAgentNodeDispatchPricingPreflight, GroupAgentNodeDispatchProjectLaneClaim,
     GroupAgentNodeDispatchProviderHealthCheck, GroupAgentNodeDispatchReleaseControl,
     GroupAgentNodeDispatchReleaseRequirements, GroupAgentNodeDispatchRequestInspection,
-    GroupAgentNodeDispatchRequestRecord, MAX_GROUP_AGENT_NODE_DISPATCH_AUTHORIZATION_BYTES,
+    GroupAgentNodeDispatchRequestRecord, GroupAgentNodePricingQuote,
+    MAX_GROUP_AGENT_NODE_DISPATCH_AUTHORIZATION_BYTES,
     MAX_GROUP_AGENT_NODE_DISPATCH_RELEASE_CONTROL_BYTES,
     MAX_GROUP_AGENT_NODE_DISPATCH_REQUEST_LIST_LIMIT,
     PrepareGroupAgentNodeDispatchRequestDisposition, PrepareGroupAgentNodeDispatchRequestResult,
@@ -37,6 +39,10 @@ pub use dispatch_service::{
     PrepareGroupAgentNodeDispatchRequestInput,
 };
 pub use error::GroupAgentNodeExecutionContractServiceError;
+pub use pricing_readiness::{
+    GroupAgentNodeDispatchReadinessService, GroupAgentNodeDispatchReadinessServiceError,
+    VerifiedGroupAgentNodeDispatchReadiness,
+};
 pub use release_error::GroupAgentNodeDispatchReleaseControlServiceError;
 pub use release_service::{
     ExportGroupAgentNodeDispatchReleaseControl, GroupAgentNodeDispatchReleaseControlService,

@@ -10,6 +10,8 @@ pub(crate) mod dispatch_authorization_output;
 pub(crate) mod dispatch_command;
 #[path = "group_agent_graph/dispatch_output.rs"]
 pub(crate) mod dispatch_output;
+#[path = "group_agent_graph/dispatch_readiness_output.rs"]
+pub(crate) mod dispatch_readiness_output;
 #[path = "group_agent_graph/output.rs"]
 pub(crate) mod output;
 #[path = "group_agent_graph/run_command.rs"]

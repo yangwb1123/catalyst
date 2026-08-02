@@ -35,6 +35,8 @@ pub const TEXT: &str = "usage:
   forge-runtime [OPTIONS] group graph run dispatch release-control export GRAPH_RUN_ID
   forge-runtime [OPTIONS] group graph run dispatch authorization verify GRAPH_RUN_ID
                 --authorization FILE|-
+  forge-runtime [OPTIONS] group graph run dispatch readiness verify GRAPH_RUN_ID
+                --authorization FILE|- --pricing FILE|-
   forge-runtime [OPTIONS] group graph run show GRAPH_RUN_ID [--include-plan]
   forge-runtime [OPTIONS] group graph run list [GRAPH_ID] [--limit N]
   forge-runtime [OPTIONS] group analysis prepare GROUP_RUN_ID
@@ -106,6 +108,13 @@ pub const TEXT: &str = "usage:
   artifact authorizes a future release but does not release authority, obtain consent, read a
   credential, claim a project lane, invoke a provider/model/network, produce a
   result, or write Conversation/Prompt/memory/database/workspace state.
+  Dispatch readiness verify additionally checks the exact official registered
+  destination and an immutable operator-asserted pricing snapshot. Its integer
+  cost upper bound is conditional on the snapshot's declared input-token ceiling;
+  the artifact is not vendor-attested and is not a live bill or price guarantee.
+  Readiness remains read-only and is not the final consent/credential/budget
+  preflight: no provider is constructed, no lane or authority is claimed, and no
+  request, result, database write, or graph advance occurs.
   Group analysis prepare locally revalidates one frozen Group Run and persists
   the exact bounded OpenAI request-body bytes. It reads no API key and sends nothing.
   Group analysis send can release those frozen Prompt excerpts and metadata

@@ -22,7 +22,6 @@ const CREDENTIAL_MARKER: &str = "credential-must-not-be-read-during-authorizatio
 const CREDENTIAL_SENTINEL: &str =
     "credential-must-not-be-read-during-authorization-verification\r\nx-private-header: rejected";
 const PRICING: &str = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
-
 pub(super) fn prepare_run(fixture: &Fixture) -> String {
     let prepared = successful_json(&fixture.prepare(&fixture.plan(), "authorization-source-run"));
     text(&prepared["inspection"]["run"]["graph_run_id"])
@@ -41,6 +40,14 @@ pub(super) fn export_scheduler_control(fixture: &Fixture, graph_run_id: &str) ->
 }
 
 pub(super) fn build_contract_with_real_core(control: &[u8], endpoint: &str) -> Vec<u8> {
+    build_contract_with_pricing(control, endpoint, PRICING)
+}
+
+pub(super) fn build_contract_with_pricing(
+    control: &[u8],
+    endpoint: &str,
+    pricing_sha256: &str,
+) -> Vec<u8> {
     let mut child = Command::new("go")
         .current_dir(forge_core_dir())
         .env("GOTOOLCHAIN", "local")
@@ -67,7 +74,7 @@ pub(super) fn build_contract_with_real_core(control: &[u8], endpoint: &str) -> V
             "--max-cost-usd-micros",
             "1000000",
             "--pricing-snapshot-sha256",
-            PRICING,
+            pricing_sha256,
             "--max-result-bytes",
             "16384",
         ])

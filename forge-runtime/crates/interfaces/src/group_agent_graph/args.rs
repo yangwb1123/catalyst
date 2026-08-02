@@ -2,6 +2,9 @@
 
 use std::collections::VecDeque;
 
+#[path = "dispatch_readiness_args.rs"]
+mod dispatch_readiness_args;
+
 use crate::{
     group_context_output::terminal_text,
     runtime_domain::{
@@ -60,6 +63,7 @@ fn parse_run_dispatch(
         Some("list") => parse_dispatch_list(tokens),
         Some("release-control") => parse_dispatch_release_control(tokens),
         Some("authorization") => parse_dispatch_authorization(tokens),
+        Some("readiness") => dispatch_readiness_args::parse(tokens),
         Some(_) => Err(unknown_dispatch("group graph run dispatch")),
         None => Err(with_usage("group graph run dispatch command is required")),
     }

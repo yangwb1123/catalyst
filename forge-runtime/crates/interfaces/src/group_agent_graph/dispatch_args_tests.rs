@@ -149,6 +149,76 @@ fn dispatch_authorization_verify_requires_an_explicit_source() {
 }
 
 #[test]
+fn dispatch_readiness_verify_binds_two_unambiguous_artifacts() {
+    let parsed = parse(&[
+        "group",
+        "graph",
+        "run",
+        "dispatch",
+        "readiness",
+        "verify",
+        "graph-run-1",
+        "--authorization",
+        "authorization.json",
+        "--pricing",
+        "-",
+    ]);
+    assert_eq!(
+        parsed.command,
+        Command::Group(GroupCommand::Graph(GroupGraphCommand::Run(
+            GroupGraphRunCommand::Dispatch(GroupGraphRunDispatchCommand::ReadinessVerify {
+                graph_run_id: "graph-run-1".into(),
+                authorization_source: "authorization.json".into(),
+                pricing_source: "-".into(),
+            })
+        )))
+    );
+}
+
+#[test]
+fn dispatch_readiness_verify_requires_both_sources_and_one_stdin() {
+    for tokens in [
+        vec![
+            "group",
+            "graph",
+            "run",
+            "dispatch",
+            "readiness",
+            "verify",
+            "run-1",
+            "--authorization",
+            "authorization.json",
+        ],
+        vec![
+            "group",
+            "graph",
+            "run",
+            "dispatch",
+            "readiness",
+            "verify",
+            "run-1",
+            "--pricing",
+            "pricing.json",
+        ],
+        vec![
+            "group",
+            "graph",
+            "run",
+            "dispatch",
+            "readiness",
+            "verify",
+            "run-1",
+            "--authorization",
+            "-",
+            "--pricing",
+            "-",
+        ],
+    ] {
+        assert!(parse_error(&tokens).contains("usage:"));
+    }
+}
+
+#[test]
 fn dispatch_rejects_effectful_and_malformed_options() {
     for tokens in [
         vec!["group", "graph", "run", "dispatch", "prepare"],

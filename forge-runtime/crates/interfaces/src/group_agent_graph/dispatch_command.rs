@@ -6,10 +6,11 @@ use std::{
 };
 
 use forge_runtime_application::{
-    GroupAgentNodeDispatchReleaseControlService, GroupAgentNodeDispatchRequestService,
-    MAX_GROUP_AGENT_NODE_DISPATCH_AUTHORIZATION_BYTES, PrepareGroupAgentNodeDispatchRequestInput,
+    GroupAgentNodeDispatchReadinessService, GroupAgentNodeDispatchReleaseControlService,
+    GroupAgentNodeDispatchRequestService, MAX_GROUP_AGENT_NODE_DISPATCH_AUTHORIZATION_BYTES,
+    PrepareGroupAgentNodeDispatchRequestInput,
 };
-use forge_runtime_infrastructure::SqliteHubStore;
+use forge_runtime_infrastructure::{RegisteredGroupAgentNodeProviderFactory, SqliteHubStore};
 
 use crate::{
     args::{Args, GroupGraphRunDispatchCommand},
@@ -20,25 +21,58 @@ use crate::{
 use super::{
     dispatch_authorization_output::{self, GroupAgentNodeDispatchAuthorizationCliOutput},
     dispatch_output::{self, GroupAgentNodeDispatchRequestCliOutput},
+    dispatch_readiness_output::{self, GroupAgentNodeDispatchReadinessCliOutput},
 };
 
 pub enum GroupAgentGraphRunDispatchCommandCliOutput {
     Request(Box<GroupAgentNodeDispatchRequestCliOutput>),
     ReleaseControl(String),
     Authorization(Box<GroupAgentNodeDispatchAuthorizationCliOutput>),
+    Readiness(Box<GroupAgentNodeDispatchReadinessCliOutput>),
+}
+
+struct DispatchInputs {
+    authorization_json: Option<String>,
+    pricing_json: Option<String>,
 }
 
 pub fn execute(
     args: &Args,
     command: &GroupGraphRunDispatchCommand,
 ) -> Result<GroupAgentGraphRunDispatchCommandCliOutput, Box<dyn Error>> {
+    let inputs = read_inputs(command)?;
+    execute_with_inputs(args, command, &inputs)
+}
+
+fn read_inputs(command: &GroupGraphRunDispatchCommand) -> Result<DispatchInputs, Box<dyn Error>> {
     let authorization_json = match command {
         GroupGraphRunDispatchCommand::AuthorizationVerify {
+            authorization_source,
+            ..
+        }
+        | GroupGraphRunDispatchCommand::ReadinessVerify {
             authorization_source,
             ..
         } => Some(read_authorization(authorization_source)?),
         _ => None,
     };
+    let pricing_json = match command {
+        GroupGraphRunDispatchCommand::ReadinessVerify { pricing_source, .. } => {
+            Some(read_pricing(pricing_source)?)
+        }
+        _ => None,
+    };
+    Ok(DispatchInputs {
+        authorization_json,
+        pricing_json,
+    })
+}
+
+fn execute_with_inputs(
+    args: &Args,
+    command: &GroupGraphRunDispatchCommand,
+    inputs: &DispatchInputs,
+) -> Result<GroupAgentGraphRunDispatchCommandCliOutput, Box<dyn Error>> {
     match command {
         GroupGraphRunDispatchCommand::Prepare { graph_run_id } => {
             execute_prepare(args, graph_run_id)
@@ -64,10 +98,22 @@ pub fn execute(
             export_release_control(args, graph_run_id)
         }
         GroupGraphRunDispatchCommand::AuthorizationVerify { graph_run_id, .. } => {
-            let authorization_json = authorization_json
+            let authorization_json = inputs
+                .authorization_json
                 .as_deref()
                 .expect("authorization was read before service construction");
             verify_authorization(args, graph_run_id, authorization_json)
+        }
+        GroupGraphRunDispatchCommand::ReadinessVerify { graph_run_id, .. } => {
+            let authorization_json = inputs
+                .authorization_json
+                .as_deref()
+                .expect("authorization was read before service construction");
+            let pricing_json = inputs
+                .pricing_json
+                .as_deref()
+                .expect("pricing was read before service construction");
+            verify_readiness(args, graph_run_id, authorization_json, pricing_json)
         }
     }
 }
@@ -127,6 +173,9 @@ pub fn write_output(
         GroupAgentGraphRunDispatchCommandCliOutput::Authorization(output) => {
             dispatch_authorization_output::write_output(output, json, writer)
         }
+        GroupAgentGraphRunDispatchCommandCliOutput::Readiness(output) => {
+            dispatch_readiness_output::write_output(output, json, writer)
+        }
     }
 }
 
@@ -160,6 +209,32 @@ fn release_service(
     ))
 }
 
+fn verify_readiness(
+    args: &Args,
+    graph_run_id: &str,
+    authorization_json: &str,
+    pricing_json: &str,
+) -> Result<GroupAgentGraphRunDispatchCommandCliOutput, Box<dyn Error>> {
+    let verified =
+        readiness_service(args)?.verify(graph_run_id, authorization_json, pricing_json)?;
+    Ok(GroupAgentGraphRunDispatchCommandCliOutput::Readiness(
+        Box::new(GroupAgentNodeDispatchReadinessCliOutput::verified(verified)),
+    ))
+}
+
+fn readiness_service(
+    args: &Args,
+) -> Result<GroupAgentNodeDispatchReadinessService, Box<dyn Error>> {
+    let database = hub_database_path(args.state_dir.as_deref())?;
+    let store = Arc::new(SqliteHubStore::open_existing_current_read_only(database)?);
+    Ok(GroupAgentNodeDispatchReadinessService::new(
+        store.clone(),
+        store,
+        Arc::new(OpenAiRequestCodec),
+        Arc::new(RegisteredGroupAgentNodeProviderFactory::new()),
+    ))
+}
+
 fn read_authorization(source: &str) -> Result<String, Box<dyn Error>> {
     let bytes = if source == "-" {
         read_authorization_bounded(io::stdin().lock())?
@@ -168,6 +243,16 @@ fn read_authorization(source: &str) -> Result<String, Box<dyn Error>> {
     };
     String::from_utf8(bytes)
         .map_err(|_| invalid_input("Node Dispatch Authorization must be UTF-8").into())
+}
+
+fn read_pricing(source: &str) -> Result<String, Box<dyn Error>> {
+    let bytes = if source == "-" {
+        read_pricing_bounded(io::stdin().lock())?
+    } else {
+        read_pricing_bounded(File::open(source)?)?
+    };
+    String::from_utf8(bytes)
+        .map_err(|_| invalid_input("Node pricing snapshot must be UTF-8").into())
 }
 
 fn read_authorization_bounded(reader: impl Read) -> Result<Vec<u8>, io::Error> {
@@ -182,6 +267,30 @@ fn read_authorization_bounded(reader: impl Read) -> Result<Vec<u8>, io::Error> {
         return Err(invalid_input(
             "Node Dispatch Authorization exceeds its byte limit",
         ));
+    }
+    Ok(bytes)
+}
+
+fn read_pricing_bounded(reader: impl Read) -> Result<Vec<u8>, io::Error> {
+    read_bounded_artifact(
+        reader,
+        crate::runtime_domain::MAX_GROUP_AGENT_NODE_PRICING_SNAPSHOT_BYTES,
+        "Node pricing snapshot exceeds its byte limit",
+    )
+}
+
+fn read_bounded_artifact(
+    reader: impl Read,
+    maximum: usize,
+    message: &str,
+) -> Result<Vec<u8>, io::Error> {
+    let limit = maximum.checked_add(1).expect("artifact bound fits usize");
+    let mut bytes = Vec::new();
+    reader
+        .take(u64::try_from(limit).expect("artifact bound fits u64"))
+        .read_to_end(&mut bytes)?;
+    if bytes.len() > maximum {
+        return Err(invalid_input(message));
     }
     Ok(bytes)
 }

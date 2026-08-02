@@ -1,0 +1,70 @@
+{
+  "v": 1,
+  "input": {
+    "model": "gpt-5.6-sol",
+    "input_usd_micros_per_token_unit": 2000000,
+    "output_usd_micros_per_token_unit": 10000000,
+    "max_input_tokens": 400000
+  },
+  "cost_vectors": [
+    {
+      "name": "exact_division",
+      "input_usd_micros_per_token_unit": 2000000,
+      "output_usd_micros_per_token_unit": 10000000,
+      "max_input_tokens": 500000,
+      "max_output_tokens": 10000,
+      "expected_usd_micros": 1100000
+    },
+    {
+      "name": "input_round_up_one_unit",
+      "input_usd_micros_per_token_unit": 1,
+      "output_usd_micros_per_token_unit": 1000000,
+      "max_input_tokens": 1,
+      "max_output_tokens": 1,
+      "expected_usd_micros": 2
+    },
+    {
+      "name": "output_round_up_one_unit",
+      "input_usd_micros_per_token_unit": 1000000,
+      "output_usd_micros_per_token_unit": 1,
+      "max_input_tokens": 1,
+      "max_output_tokens": 1,
+      "expected_usd_micros": 2
+    },
+    {
+      "name": "both_components_round_up_one_unit",
+      "input_usd_micros_per_token_unit": 1,
+      "output_usd_micros_per_token_unit": 1,
+      "max_input_tokens": 1,
+      "max_output_tokens": 1,
+      "expected_usd_micros": 2
+    },
+    {
+      "name": "current_golden",
+      "input_usd_micros_per_token_unit": 2000000,
+      "output_usd_micros_per_token_unit": 10000000,
+      "max_input_tokens": 400000,
+      "max_output_tokens": 4096,
+      "expected_usd_micros": 840960
+    },
+    {
+      "name": "protocol_maximum_supported_values",
+      "input_usd_micros_per_token_unit": 1000000000000,
+      "output_usd_micros_per_token_unit": 1000000000000,
+      "max_input_tokens": 1000000000,
+      "max_output_tokens": 32768,
+      "expected_usd_micros": 1000032768000000
+    }
+  ],
+  "expected": {
+    "canonical_destination_payload_json": "{\"v\":1,\"provider_kind\":\"openai_responses\",\"endpoint\":\"https://api.openai.com/v1/responses\",\"model\":\"gpt-5.6-sol\"}",
+    "destination_sha256": "11b9241e923e4ff5512595de764f6da0d350cbb319a51c7f20036ae8d6e18457",
+    "canonical_pricing_payload_json": "{\"v\":1,\"pricing_protocol_version\":1,\"provider_kind\":\"openai_responses\",\"endpoint\":\"https://api.openai.com/v1/responses\",\"model\":\"gpt-5.6-sol\",\"destination_sha256\":\"11b9241e923e4ff5512595de764f6da0d350cbb319a51c7f20036ae8d6e18457\",\"currency\":\"usd_micros\",\"token_unit\":1000000,\"input_usd_micros_per_token_unit\":2000000,\"output_usd_micros_per_token_unit\":10000000,\"max_input_tokens\":400000,\"cost_algorithm\":\"ceil_each_token_component_v1\",\"provenance\":\"operator_asserted\",\"vendor_attestation_present\":false}",
+    "canonical_pricing_snapshot_json": "{\"v\":1,\"pricing_protocol_version\":1,\"provider_kind\":\"openai_responses\",\"endpoint\":\"https://api.openai.com/v1/responses\",\"model\":\"gpt-5.6-sol\",\"destination_sha256\":\"11b9241e923e4ff5512595de764f6da0d350cbb319a51c7f20036ae8d6e18457\",\"currency\":\"usd_micros\",\"token_unit\":1000000,\"input_usd_micros_per_token_unit\":2000000,\"output_usd_micros_per_token_unit\":10000000,\"max_input_tokens\":400000,\"cost_algorithm\":\"ceil_each_token_component_v1\",\"provenance\":\"operator_asserted\",\"vendor_attestation_present\":false,\"pricing_snapshot_sha256\":\"49804dcb6e9f583820efb2c395eca27752bc33d5635db886273aea20efd24e20\"}",
+    "pricing_snapshot_sha256": "49804dcb6e9f583820efb2c395eca27752bc33d5635db886273aea20efd24e20",
+    "worst_cost": {
+      "max_output_tokens": 4096,
+      "usd_micros": 840960
+    }
+  }
+}

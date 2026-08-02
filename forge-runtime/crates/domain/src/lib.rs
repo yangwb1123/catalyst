@@ -3,6 +3,8 @@ mod event;
 mod group_agent_graph;
 mod group_agent_graph_run;
 mod group_agent_node_execution;
+#[path = "group_agent_node_execution/pricing.rs"]
+mod group_agent_node_pricing;
 mod group_analysis_panel;
 mod group_context;
 mod group_execution;
@@ -94,6 +96,16 @@ pub use group_agent_node_execution::{
     group_agent_node_dispatch_request_id, group_agent_node_provider_request_sha256,
     group_agent_node_system_prompt, group_agent_node_user_prompt, group_agent_project_lane_sha256,
     group_agent_prompt_sha256,
+};
+pub use group_agent_node_pricing::{
+    GROUP_AGENT_NODE_OFFICIAL_OPENAI_RESPONSES_ENDPOINT, GROUP_AGENT_NODE_PRICING_COST_ALGORITHM,
+    GROUP_AGENT_NODE_PRICING_CURRENCY, GROUP_AGENT_NODE_PRICING_PROTOCOL_VERSION,
+    GROUP_AGENT_NODE_PRICING_PROVENANCE, GROUP_AGENT_NODE_PRICING_SNAPSHOT_DIGEST_DOMAIN,
+    GROUP_AGENT_NODE_PRICING_SNAPSHOT_VERSION, GROUP_AGENT_NODE_PRICING_TOKEN_UNIT,
+    GroupAgentNodeDestinationRegistry, GroupAgentNodeDestinationRegistryError,
+    GroupAgentNodePricingQuote, GroupAgentNodePricingSnapshot,
+    GroupAgentNodePricingValidationError, MAX_GROUP_AGENT_NODE_PRICING_INPUT_TOKENS,
+    MAX_GROUP_AGENT_NODE_PRICING_RATE_USD_MICROS, MAX_GROUP_AGENT_NODE_PRICING_SNAPSHOT_BYTES,
 };
 pub use group_analysis_panel::{
     GROUP_ANALYSIS_PANEL_MANIFEST_DIGEST_DOMAIN, GROUP_ANALYSIS_PANEL_VERSION,

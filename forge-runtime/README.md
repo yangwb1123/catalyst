@@ -260,13 +260,22 @@ uses no tool, produces no result, and writes no Conversation/Prompt/memory.
 Dispatch authority remains false; authority-claim/send/result/advance commands
 do not exist in this slice.
 
-The next effect-free boundary is an explicit three-command release handshake:
+The effect-free release boundary now also has an exact pricing prerequisite and
+a combined readiness diagnostic. Create the immutable operator assertion before
+building the Node contract, pin its digest in that contract, and retain the
+exact artifact for the later check:
 
 ```text
+forge graph-node-pricing-snapshot --model MODEL \
+  --input-usd-micros-per-token-unit N \
+  --output-usd-micros-per-token-unit N \
+  --max-input-tokens N > pricing.json
 forge-runtime group graph run dispatch release-control export GRAPH_RUN_ID
 forge graph-node-dispatch-authorize --control FILE|-
 forge-runtime group graph run dispatch authorization verify GRAPH_RUN_ID \
   --authorization FILE|-
+forge-runtime group graph run dispatch readiness verify GRAPH_RUN_ID \
+  --authorization FILE|- --pricing pricing.json
 ```
 
 Rust export fully reloads the v3 source, plan, manifest, three-event journal,
@@ -284,9 +293,29 @@ WAL, or start a write transaction. It requires a persistent WAL `2/2` database
 header; missing/legacy/corrupt state and any present SQLite WAL, SHM, or
 rollback-journal sidecar fail closed.
 
-Authorization is still not dispatch. It is not persisted, schema stays v11,
+The pricing artifact fixes `openai_responses` at
+`https://api.openai.com/v1/responses`, the exact model and destination digest,
+micro-USD rates per one million tokens, an operator-declared maximum input-token
+count, and `ceil_each_token_component_v1`. Go and Rust independently compute
+each input/output component with integer ceiling and checked addition. Readiness
+accepts only exact canonical bytes whose declared maximum fits the frozen
+authorization budget. This is a mathematical bound conditional on
+operator-asserted rates and token ceiling: `vendor_attestation_present` is
+false, and no live price, invoice, or billing guarantee is claimed.
+
+Readiness reloads the same current v3 aggregate and exact request, verifies the
+authorization, pricing bindings and registered destination, and returns only
+redacted metadata plus explicit effect flags. It neither reads a credential nor
+constructs the registered provider. The production provider factory separately
+supports pure metadata resolution followed by construction from an explicit
+header-safe credential. The transport also disables ambient proxy discovery;
+no environment lookup or network request occurs during either construction
+phase.
+
+Authorization and readiness are still not dispatch. Neither is persisted,
+schema stays v11,
 the Run stays v3 `awaiting_dispatch_authorization`, and authority remains
-false. Export/authorize/verify obtain no consent, read no credential, construct
+false. Pricing/export/authorize/verify obtain no consent, read no credential, construct
 no provider, claim no Project lane, access no network/workspace/tool, produce
 no result, write nothing back, and do not advance the graph. A future
 effectful slice must pair the global lane/seq-3 claim with a bounded terminal
