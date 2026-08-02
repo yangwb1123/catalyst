@@ -465,15 +465,41 @@ later legacy contract admission.
 This sidecar is static policy, not a contract, dispatch claim, result, receipt,
 progress observation, successor decision, or Graph completion. It reads no
 credential and creates no provider/network/workspace/tool/writeback effect.
-A future contract-v2 protocol must bind its digest and real predecessor receipt
-identities before any multi-node execution fence can change. See ADR 0025.
+The delivered initial-only contract-v2 candidate binds this digest as described
+below; real predecessor receipt evidence is still required before any
+noninitial-node or multi-node execution fence can change. See ADR 0025.
 
-The generated full-catalog contract now covers immutable v1–v13 DDL and the
-exact v13 inventory of 29 tables, 25 named explicit indexes, and 64 implicit
-indexes. The v1–v13 length-framed DDL SHA-256 is
-`1e10710c621e80e62c927842f73097fe141ff247df0fba851543175ee6012a49`;
-the independent v13 structural-contract SHA-256 is
-`2b12222a5a0f1e7d3336ac4399e80cfa6a097f50bd3de3cc145541e43d6fbbc1`.
+### Passive schedule-bound initial-node candidate over schema version 14 (delivered)
+
+Go Core accepts the exact private control plus only the caller's claimed
+schedule digest and explicit bounded provider settings. It independently
+reconstructs the schedule and matches that digest without reading Hub state;
+Rust admission later requires the matching stored schedule. Core selects
+ordinal zero and freezes the exact sequence-1 head, node/Project lane, Prompts,
+provider, budgets, empty predecessor-node and terminal-receipt arrays, and
+no-workspace/no-tool/no-dataflow/no-retry policies. There is no caller-selected
+node, ordinal, attempt, schedule body, or receipt.
+
+Rust admits the canonical v2 artifact into one immutable candidate sidecar
+without changing the Graph Run or main journal. Candidate v2 and legacy
+lifecycle contract v1 are mutually exclusive under `BEGIN IMMEDIATE`, so a
+cross-family race has one winner. Replays revalidate the current pristine
+source and exact stored schedule; stale state, divergent input, or corruption
+fails closed. Default views redact the private artifact and state
+`current_run_lifecycle_included=false`; explicit reveal is required.
+
+This is the empty-predecessor base case, not execution. It creates no lifecycle
+contract/provider request, observes no progress, grants no dispatch/lane/tool/
+workspace/writeback authority, and cannot produce a receipt or advance a
+successor. Terminal receipt v1 proves whole-Graph single-node completion and is
+therefore forbidden as intermediate predecessor evidence. See ADR 0026.
+
+The generated full-catalog contract now covers immutable v1–v14 DDL and the
+exact v14 inventory of 30 tables, 27 named explicit indexes, and 71 implicit
+indexes. The v1–v14 length-framed DDL SHA-256 is
+`6e573a754bdee36aaea820554d45b0c72a5c30fdbc50a9f0deb75ce88047f616`;
+the independent v14 structural-contract SHA-256 is
+`ce999cba9a007d9e91cd303a8c631bb0a5fceb5818bda371dc356b51915abce9`.
 Final validation runs inside the migration transaction, so an invalid legacy
 schema cannot leave a partial upgrade. Unexpected definitions or objects fail
 as corruption without repair. See ADR 0012.
@@ -921,11 +947,13 @@ does not classify as corruption.
 - OIDC login, account binding, OS keyring, explicit local-data claim;
 - remote directory, replicas, cursors, conflict merge, deletion propagation;
 - tenants, invitations, history visibility, ACL-backed shared Groups;
-- multi-node manager execution, schedule-bound contract v2, real predecessor
-  receipt/result dataflow, per-node request/terminal/successor advancement,
-  cross-project tool/workspace capabilities, and no-send adjudication of a
-  hard-crashed v4 claim; the passive serial schedule and single-node
-  claim/dispatch/terminal/lane-release lifecycle are delivered;
+- multi-node manager execution, dispatch of the delivered initial-only
+  schedule-bound contract-v2 candidate, real intermediate predecessor receipts,
+  noninitial per-node contract/request/terminal/successor advancement,
+  receipt/result dataflow, cross-project tool/workspace capabilities, and
+  no-send adjudication of a hard-crashed v4 claim; the passive serial schedule,
+  passive ordinal-zero candidate, and single-node claim/dispatch/terminal/
+  lane-release lifecycle are delivered;
 - Group multi-Agent discussion, delegation, writeback, and derived memory;
 - providers beyond the delivered opt-in OpenAI Responses adapter,
   write/process/network tools, and process sandbox.

@@ -113,8 +113,8 @@ fn dispatch_reentry_rejects_incomplete_or_malformed_wal_sidecars_without_changes
 }
 
 #[test]
-fn dispatch_reentry_reads_real_hot_v12_and_v13_wals_without_logical_changes() {
-    for version in [12, 13] {
+fn dispatch_reentry_reads_real_hot_v12_v13_and_v14_wals_without_logical_changes() {
+    for version in [12, 13, 14] {
         assert_hot_wal_reentry(version);
     }
 }
@@ -124,15 +124,7 @@ fn assert_hot_wal_reentry(version: i64) {
     drop(store);
     let database = root.path().join("hub.sqlite3");
     let writer = rusqlite::Connection::open(&database).expect("open WAL writer");
-    if version == 12 {
-        writer
-            .execute_batch(
-                "DROP INDEX group_agent_graph_execution_schedules_created;
-                 DROP TABLE group_agent_graph_execution_schedules;
-                 PRAGMA user_version=12;",
-            )
-            .expect("restore exact v12 schema");
-    }
+    restore_schema_version(&writer, version);
     writer
         .execute_batch("PRAGMA wal_checkpoint(TRUNCATE); PRAGMA wal_autocheckpoint=0;")
         .expect("checkpoint schema before hot write");
@@ -158,6 +150,28 @@ fn assert_hot_wal_reentry(version: i64) {
     assert_eq!(fs::read(&database).expect("read main after"), main_before);
     assert_eq!(fs::read(&wal).expect("read WAL after"), wal_before);
     drop(writer);
+}
+
+fn restore_schema_version(connection: &rusqlite::Connection, version: i64) {
+    if version < 14 {
+        connection
+            .execute_batch(
+                "DROP INDEX group_agent_graph_scheduled_node_candidates_project_lane;
+                 DROP INDEX group_agent_graph_scheduled_node_candidates_created;
+                 DROP TABLE group_agent_graph_scheduled_node_contract_candidates;
+                 PRAGMA user_version=13;",
+            )
+            .expect("restore exact v13 schema");
+    }
+    if version < 13 {
+        connection
+            .execute_batch(
+                "DROP INDEX group_agent_graph_execution_schedules_created;
+                 DROP TABLE group_agent_graph_execution_schedules;
+                 PRAGMA user_version=12;",
+            )
+            .expect("restore exact v12 schema");
+    }
 }
 
 fn valid_wal_header() -> [u8; 32] {

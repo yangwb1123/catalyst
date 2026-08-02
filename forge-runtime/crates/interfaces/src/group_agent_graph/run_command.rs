@@ -23,6 +23,8 @@ use super::{
     run_output::{self, GroupAgentGraphRunCliOutput},
     schedule_command,
     schedule_output::{self, GroupAgentGraphExecutionScheduleCliOutput},
+    scheduled_contract_command,
+    scheduled_contract_output::{self, GroupAgentScheduledNodeContractCliOutput},
 };
 
 pub enum GroupAgentGraphRunCommandCliOutput {
@@ -31,6 +33,7 @@ pub enum GroupAgentGraphRunCommandCliOutput {
     Contract(Box<GroupAgentNodeExecutionContractCliOutput>),
     Dispatch(Box<GroupAgentGraphRunDispatchCommandCliOutput>),
     Schedule(Box<GroupAgentGraphExecutionScheduleCliOutput>),
+    ScheduledContract(Box<GroupAgentScheduledNodeContractCliOutput>),
 }
 
 pub async fn execute(
@@ -41,17 +44,7 @@ pub async fn execute(
         GroupGraphRunCommand::Prepare {
             graph_id,
             plan_source,
-        } => {
-            let plan_json = read_plan(plan_source)?;
-            let service = service(args)?;
-            Ok(run_output(prepare(
-                args,
-                &service,
-                graph_id,
-                plan_json,
-                plan_source != "-",
-            )?))
-        }
+        } => execute_prepare(args, graph_id, plan_source),
         GroupGraphRunCommand::Show {
             graph_run_id,
             include_plan,
@@ -81,7 +74,26 @@ pub async fn execute(
         GroupGraphRunCommand::Schedule(command) => Ok(schedule_cli_output(
             schedule_command::execute(args, command)?,
         )),
+        GroupGraphRunCommand::ScheduledContract(command) => {
+            execute_scheduled_contract(args, command)
+        }
     }
+}
+
+fn execute_prepare(
+    args: &Args,
+    graph_id: &str,
+    plan_source: &str,
+) -> Result<GroupAgentGraphRunCommandCliOutput, Box<dyn Error>> {
+    let plan_json = read_plan(plan_source)?;
+    let service = service(args)?;
+    Ok(run_output(prepare(
+        args,
+        &service,
+        graph_id,
+        plan_json,
+        plan_source != "-",
+    )?))
 }
 
 pub fn write_output(
@@ -105,6 +117,9 @@ pub fn write_output(
         GroupAgentGraphRunCommandCliOutput::Schedule(output) => {
             schedule_output::write_output(output, json, writer)
         }
+        GroupAgentGraphRunCommandCliOutput::ScheduledContract(output) => {
+            scheduled_contract_output::write_output(output, json, writer)
+        }
     }
 }
 
@@ -116,6 +131,21 @@ fn schedule_cli_output(
     output: GroupAgentGraphExecutionScheduleCliOutput,
 ) -> GroupAgentGraphRunCommandCliOutput {
     GroupAgentGraphRunCommandCliOutput::Schedule(Box::new(output))
+}
+
+fn scheduled_contract_cli_output(
+    output: GroupAgentScheduledNodeContractCliOutput,
+) -> GroupAgentGraphRunCommandCliOutput {
+    GroupAgentGraphRunCommandCliOutput::ScheduledContract(Box::new(output))
+}
+
+fn execute_scheduled_contract(
+    args: &Args,
+    command: &crate::args::GroupGraphRunScheduledContractCommand,
+) -> Result<GroupAgentGraphRunCommandCliOutput, Box<dyn Error>> {
+    Ok(scheduled_contract_cli_output(
+        scheduled_contract_command::execute(args, command)?,
+    ))
 }
 
 fn dispatch_cli_output(

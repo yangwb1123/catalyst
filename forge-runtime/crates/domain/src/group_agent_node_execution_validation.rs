@@ -155,7 +155,7 @@ fn validate_node(
         .ok_or_else(|| invalid("invalid Node Execution Contract node"))
 }
 
-fn validate_workspace(
+pub(super) fn validate_workspace(
     workspace: &GroupAgentNodeExecutionWorkspace,
 ) -> Result<(), GroupAgentNodeExecutionValidationError> {
     let valid = workspace.mode == GroupAgentNodeWorkspaceMode::None
@@ -202,7 +202,7 @@ fn validate_request(
     Ok(())
 }
 
-fn validate_budgets(
+pub(super) fn validate_budgets(
     budgets: &GroupAgentNodeExecutionBudgets,
 ) -> Result<(), GroupAgentNodeExecutionValidationError> {
     let valid = budgets.max_turns == 1
@@ -218,7 +218,7 @@ fn validate_budgets(
         .ok_or_else(|| invalid("invalid Node Execution Contract budgets"))
 }
 
-fn validate_approval(
+pub(super) fn validate_approval(
     approval: &GroupAgentNodeExecutionApproval,
 ) -> Result<(), GroupAgentNodeExecutionValidationError> {
     let valid = approval.provider_dispatch
@@ -231,7 +231,7 @@ fn validate_approval(
         .ok_or_else(|| invalid("invalid Node Execution Contract approval policy"))
 }
 
-fn validate_result(
+pub(super) fn validate_result(
     result: &GroupAgentNodeExecutionResultPolicy,
 ) -> Result<(), GroupAgentNodeExecutionValidationError> {
     let valid = result.artifact_kind == GroupAgentNodeArtifactKind::LocalGraphNodeArtifact
@@ -245,7 +245,7 @@ fn validate_result(
         .ok_or_else(|| invalid("invalid Node Execution Contract result policy"))
 }
 
-fn validate_failure(
+pub(super) fn validate_failure(
     failure: &GroupAgentNodeExecutionFailurePolicy,
 ) -> Result<(), GroupAgentNodeExecutionValidationError> {
     let valid = !failure.automatic_retry
@@ -362,7 +362,7 @@ pub(super) fn valid_text(value: &str, maximum: usize) -> bool {
     !value.trim().is_empty() && value.len() <= maximum && !value.chars().any(unsupported_character)
 }
 
-fn valid_prose(value: &str) -> bool {
+pub(super) fn valid_prose(value: &str) -> bool {
     !value.trim().is_empty()
         && !value.chars().any(|character| {
             (character.is_control() && !matches!(character, '\n' | '\r' | '\t'))

@@ -98,8 +98,13 @@ go -C forge-core run ./cmd/forge accept --root "$PWD"   # node harness/acceptanc
 
 The Go binary is also the sole scheduler for persisted Group Agent Graphs. It
 produces canonical, effect-free interchange artifacts for planning, immutable
-multi-node scheduling policy, operator pricing, first-node contracting, and
-passive release authorization:
+multi-node scheduling policy, schedule-bound initial-node contracting,
+operator pricing, legacy first-node contracting, and passive release
+authorization:
+
+The commands below are a protocol map. Replace uppercase tokens with the
+preceding artifact fields: read `SCHEDULE_SHA256` from `schedule.json` and
+`PRICING_SNAPSHOT_SHA256` from `pricing.json` before building either contract.
 
 ```sh
 forge graph-plan --graph-id GROUP_AGENT_GRAPH_ID \
@@ -111,6 +116,15 @@ forge graph-node-pricing-snapshot --model PINNED_MODEL \
   --input-usd-micros-per-token-unit 2000000 \
   --output-usd-micros-per-token-unit 10000000 \
   --max-input-tokens 400000 > pricing.json
+
+forge graph-scheduled-node-contract --control control.json \
+  --schedule-sha256 "$SCHEDULE_SHA256" \
+  --endpoint https://api.openai.com/v1/responses \
+  --model PINNED_MODEL --max-output-tokens 4096 \
+  --max-model-output-bytes 65536 --max-model-events 1024 \
+  --timeout-ms 120000 --max-cost-usd-micros 1000000 \
+  --pricing-snapshot-sha256 "$PRICING_SNAPSHOT_SHA256" \
+  --max-result-bytes 262144 > scheduled-node-contract.json
 
 # Pin pricing.json's pricing_snapshot_sha256 in the contract.
 forge graph-node-contract --control control.json \
@@ -142,6 +156,15 @@ fail-fast/no-dataflow policy. The content-addressed output contains no private
 manager/task/project/profile/provider/result text, observes no progress, grants
 no dispatch authority, and does not advance a successor. Single-node Graphs
 remain on the separate terminal lifecycle.
+
+`graph-scheduled-node-contract` independently rebuilds that schedule from the
+same exact control and accepts only its lowercase digest—not a caller-supplied
+schedule, node, ordinal, attempt, or receipt. It selects ordinal zero, binds the
+pristine sequence-1 head and exact Prompts/provider/budgets, and requires empty
+predecessor-node and terminal-receipt arrays. The canonical v2 output is a
+passive initial-node candidate: it creates no lifecycle contract or provider
+request, observes no progress, grants no authority, and cannot advance a
+successor. Terminal receipt v1 is not valid predecessor evidence.
 
 `graph-node-pricing-snapshot` fixes the production destination to the official
 OpenAI Responses endpoint and emits an immutable local pricing assertion. Its

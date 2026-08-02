@@ -15,10 +15,13 @@ mod group_synthesis_args;
 #[path = "run_args.rs"]
 mod run_args;
 
+pub use run_args::RunCommand;
+
 pub use group_commands::{
     GroupAnalysisCommand, GroupCommand, GroupExecutionCommand, GroupGraphCommand,
     GroupGraphRunCommand, GroupGraphRunContractCommand, GroupGraphRunControlCommand,
-    GroupGraphRunDispatchCommand, GroupGraphRunScheduleCommand, GroupPanelCommand, GroupRunCommand,
+    GroupGraphRunDispatchCommand, GroupGraphRunScheduleCommand,
+    GroupGraphRunScheduledContractCommand, GroupPanelCommand, GroupRunCommand,
     GroupSynthesisCommand,
 };
 
@@ -58,26 +61,6 @@ pub enum PromptCommand {
     List {
         conversation_id: Option<String>,
         limit: usize,
-    },
-}
-
-#[derive(Debug, Eq, PartialEq)]
-pub enum RunCommand {
-    Start {
-        conversation_id: String,
-        prompt_id: String,
-        read_path: String,
-        allowed_read_paths: Vec<String>,
-        live: bool,
-        model: Option<String>,
-        max_output_tokens: u32,
-    },
-    List {
-        conversation_id: Option<String>,
-        limit: usize,
-    },
-    Show {
-        run_id: String,
     },
 }
 
@@ -315,6 +298,9 @@ fn accepts_idempotency_key(command: &Command) -> bool {
                                     )
                                     | GroupGraphRunCommand::Schedule(
                                         GroupGraphRunScheduleCommand::Admit { .. },
+                                    )
+                                    | GroupGraphRunCommand::ScheduledContract(
+                                        GroupGraphRunScheduledContractCommand::Admit { .. },
                                     )
                                     | GroupGraphRunCommand::Dispatch(
                                         GroupGraphRunDispatchCommand::Prepare { .. },

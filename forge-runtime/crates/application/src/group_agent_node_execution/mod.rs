@@ -8,6 +8,12 @@ mod release_service;
 mod schedule_error;
 mod schedule_service;
 mod schedule_validation;
+mod scheduled_contract_error;
+mod scheduled_contract_service;
+#[cfg(test)]
+#[path = "scheduled_contract_tests.rs"]
+mod scheduled_contract_tests;
+mod scheduled_contract_validation;
 mod service;
 mod snapshot;
 mod validation;
@@ -26,6 +32,13 @@ pub use crate::runtime_domain::{
     GroupAgentNodeExecutionContractRecord, MAX_GROUP_AGENT_GRAPH_CONTROL_SNAPSHOT_BYTES,
     MAX_GROUP_AGENT_GRAPH_NODE_EXECUTION_CONTRACT_BYTES,
     MAX_GROUP_AGENT_NODE_EXECUTION_CONTRACT_LIST_LIMIT,
+};
+pub use crate::runtime_domain::{
+    AdmitGroupAgentScheduledNodeContractDisposition, AdmitGroupAgentScheduledNodeContractResult,
+    GROUP_AGENT_SCHEDULED_NODE_CONTRACT_VERSION, GroupAgentScheduledNodeContractCandidate,
+    GroupAgentScheduledNodeContractInspection, GroupAgentScheduledNodeContractRecord,
+    MAX_GROUP_AGENT_SCHEDULED_NODE_CONTRACT_BYTES,
+    MAX_GROUP_AGENT_SCHEDULED_NODE_CONTRACT_LIST_LIMIT,
 };
 pub use crate::runtime_domain::{
     GROUP_AGENT_NODE_DISPATCH_AUTHORIZATION_PROTOCOL_VERSION,
@@ -61,6 +74,10 @@ pub use release_service::{
 pub use schedule_error::GroupAgentGraphExecutionScheduleServiceError;
 pub use schedule_service::{
     AdmitGroupAgentGraphExecutionScheduleInput, GroupAgentGraphExecutionScheduleService,
+};
+pub use scheduled_contract_error::GroupAgentScheduledNodeContractServiceError;
+pub use scheduled_contract_service::{
+    AdmitGroupAgentScheduledNodeContractInput, GroupAgentScheduledNodeContractService,
 };
 pub use service::{
     AdmitGroupAgentNodeExecutionContractInput, ExportGroupAgentGraphControl,

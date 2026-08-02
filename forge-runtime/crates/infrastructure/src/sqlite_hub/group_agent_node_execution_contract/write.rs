@@ -11,7 +11,10 @@ use crate::runtime_domain::{
 };
 
 use super::{
-    super::{group_agent_graph, group_agent_graph_run, read_error, write_error},
+    super::{
+        group_agent_graph, group_agent_graph_run, group_agent_scheduled_node_contract, read_error,
+        write_error,
+    },
     codec, read, rows, snapshot,
 };
 
@@ -49,6 +52,14 @@ fn admit_locked<F>(
 where
     F: FnOnce() -> Result<(), HubStoreError>,
 {
+    if group_agent_scheduled_node_contract::read::validate_existing_for_run(
+        transaction,
+        &request.graph_run_id,
+    )? {
+        return Err(conflict(
+            "Graph Run already belongs to the scheduled contract-v2 candidate family",
+        ));
+    }
     if let Some(stored) = rows::find_by_key(transaction, &request.idempotency_key)? {
         return replay(transaction, stored, request);
     }

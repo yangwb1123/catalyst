@@ -8,6 +8,8 @@ mod dispatch_execute_args;
 mod dispatch_readiness_args;
 #[path = "schedule_args.rs"]
 mod schedule_args;
+#[path = "scheduled_contract_args.rs"]
+mod scheduled_contract_args;
 
 use crate::{
     group_context_output::terminal_text,
@@ -49,6 +51,7 @@ fn parse_run(
         Some("contract") => parse_run_contract(tokens, idempotency_key),
         Some("dispatch") => parse_run_dispatch(tokens, idempotency_key),
         Some("schedule") => schedule_args::parse(tokens, idempotency_key),
+        Some("scheduled-contract") => scheduled_contract_args::parse(tokens, idempotency_key),
         Some("show") => parse_run_show(tokens),
         Some("list") => parse_run_list(tokens),
         Some(value) => Err(with_usage(&format!(

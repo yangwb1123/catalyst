@@ -35,6 +35,13 @@ cargo run -p forge-runtime-cli -- \
 Local-private Groups can link several Projects with descriptive roles and own
 their own discussion Conversations:
 
+The block below is a protocol map, not a copy-paste script: replace every
+uppercase token with the preceding JSON output. For the two exclusive contract
+branches, repeat `group graph run prepare` with distinct idempotency keys and
+assign the resulting IDs to `MULTI_NODE_GRAPH_RUN_ID` and
+`LEGACY_SINGLE_NODE_GRAPH_RUN_ID`. Read `SCHEDULE_SHA256` from Core's schedule
+JSON; `PRICING_SNAPSHOT_SHA256` is an operator-supplied 64-hex pricing identity.
+
 ```bash
 forge-runtime group create "SSO rollout"
 forge-runtime group add GROUP_ID ../frontend --role frontend
@@ -82,22 +89,44 @@ forge-runtime --json group graph run show GROUP_AGENT_GRAPH_RUN_ID
 forge-runtime --json group graph run show GROUP_AGENT_GRAPH_RUN_ID --include-plan
 forge-runtime --json group graph run list GROUP_AGENT_GRAPH_ID --limit 20
 
-# Export exact private scheduler state without a trailing newline.
-forge-runtime group graph run control export GROUP_AGENT_GRAPH_RUN_ID > control.json
+# Multi-node passive-candidate branch. Do not use the legacy-contract branch
+# below for this same Run: schema v14 makes the two contract families exclusive.
+forge-runtime group graph run control export MULTI_NODE_GRAPH_RUN_ID > multi-control.json
 
 # Freeze and admit Core's passive multi-node serial policy. This does not execute it.
-forge graph-execution-schedule --control control.json > schedule.json
+forge graph-execution-schedule --control multi-control.json > schedule.json
 forge-runtime --json --idempotency-key sso-schedule-1 \
-  group graph run schedule admit GROUP_AGENT_GRAPH_RUN_ID \
+  group graph run schedule admit MULTI_NODE_GRAPH_RUN_ID \
   --schedule schedule.json
 forge-runtime --json group graph run schedule show GRAPH_EXECUTION_SCHEDULE_ID
 forge-runtime --json group graph run schedule show GRAPH_EXECUTION_SCHEDULE_ID \
   --include-schedule
-forge-runtime --json group graph run schedule list GROUP_AGENT_GRAPH_RUN_ID --limit 20
+forge-runtime --json group graph run schedule list MULTI_NODE_GRAPH_RUN_ID --limit 20
 
-# Go selects only wave zero's first node and freezes future execution inputs.
-# This command performs no provider request.
-forge graph-node-contract --control control.json \
+# Bind Core's ordinal-zero candidate to the claimed schedule digest and pristine head.
+# This sidecar is not a dispatchable lifecycle contract.
+forge graph-scheduled-node-contract --control multi-control.json \
+  --schedule-sha256 "$SCHEDULE_SHA256" \
+  --endpoint https://api.openai.com/v1/responses \
+  --model PINNED_MODEL --max-output-tokens 4096 \
+  --max-model-output-bytes 65536 --max-model-events 1024 \
+  --timeout-ms 120000 --max-cost-usd-micros 1000000 \
+  --pricing-snapshot-sha256 "$PRICING_SNAPSHOT_SHA256" \
+  --max-result-bytes 262144 > scheduled-node-contract.json
+forge-runtime --json --idempotency-key sso-scheduled-contract-1 \
+  group graph run scheduled-contract admit MULTI_NODE_GRAPH_RUN_ID \
+  --contract scheduled-node-contract.json
+forge-runtime --json group graph run scheduled-contract show SCHEDULED_CONTRACT_ID
+forge-runtime --json group graph run scheduled-contract show SCHEDULED_CONTRACT_ID \
+  --include-contract
+forge-runtime --json group graph run scheduled-contract list \
+  MULTI_NODE_GRAPH_RUN_ID --limit 20
+
+# Alternative legacy lifecycle branch: start from a different pristine Run.
+# This path can later prepare/authorize/execute only a single-node Graph.
+forge-runtime group graph run control export LEGACY_SINGLE_NODE_GRAPH_RUN_ID \
+  > legacy-control.json
+forge graph-node-contract --control legacy-control.json \
   --endpoint https://api.openai.com/v1/responses \
   --model PINNED_MODEL --max-output-tokens 4096 \
   --max-model-output-bytes 65536 --max-model-events 1024 \
@@ -107,11 +136,12 @@ forge graph-node-contract --control control.json \
 
 # Admission uses an exact event cursor/head CAS and still releases no dispatch.
 forge-runtime --json --idempotency-key sso-node-contract-1 \
-  group graph run contract admit GROUP_AGENT_GRAPH_RUN_ID \
+  group graph run contract admit LEGACY_SINGLE_NODE_GRAPH_RUN_ID \
   --contract node-contract.json
 forge-runtime --json group graph run contract show NODE_CONTRACT_ID
 forge-runtime --json group graph run contract show NODE_CONTRACT_ID --include-contract
-forge-runtime --json group graph run contract list GROUP_AGENT_GRAPH_RUN_ID --limit 20
+forge-runtime --json group graph run contract list \
+  LEGACY_SINGLE_NODE_GRAPH_RUN_ID --limit 20
 
 # Prepare an exact single-model request locally, without reading credentials.
 forge-runtime --json --idempotency-key sso-analysis-1 \
@@ -257,6 +287,30 @@ the Run's current lifecycle. Schedule presence is not progress, successor
 advancement, a contract, dispatch authority, or proof that frontend/backend/SSO
 ran. Single-node schedules are rejected.
 
+`forge graph-scheduled-node-contract` then rebuilds Core's exact schedule from
+that same control and accepts only the caller's claimed schedule digest. It
+does not read Hub state; Rust admission later requires that digest to match the
+stored schedule. Callers cannot name a node, ordinal, attempt, predecessor, or
+receipt. Core selects schedule ordinal zero and emits a canonical v2 candidate
+bound to the pristine sequence-1 head, exact Prompts/provider/budgets, empty
+predecessor-node and terminal-receipt arrays, and six false
+lifecycle/authority/progress flags.
+
+`group graph run scheduled-contract admit` stores that artifact in SQLite v14
+as an immutable passive sidecar. Candidate v2 and legacy lifecycle contract v1
+are mutually exclusive under the same immediate-write serialization: either
+family may win a race, but both cannot coexist for one Run. Admission and exact
+same-key replay revalidate the current source, stored schedule, and pristine
+head before returning; divergent identity/input, stale state, or stored
+corruption fails closed. The Run and main journal remain byte-for-byte
+unchanged. Default show/list output hides the candidate, Prompts, node/member,
+Project lane, provider, budgets, predecessor fields, and replay key; only
+`show --include-contract` reveals the exact private artifact. Every view states
+`current_run_lifecycle_included=false`: candidate presence is not an admitted
+lifecycle contract, provider request, receipt, progress, authority, or
+successor decision. Terminal receipt v1 cannot serve as predecessor evidence,
+and multi-node dispatch remains fenced.
+
 `forge graph-node-contract` is the only node selector: v1 always chooses
 `plan.waves[0][0]` and freezes its exact Prompts, HTTPS destination/model,
 token/byte/event/time/cost/result budgets, zero tools/workspace/dataflow, and
@@ -321,7 +375,7 @@ wrap its bytes. Go independently reconstructs the original v1 control and all
 scheduler/request bindings before emitting a domain-separated,
 content-addressed authorization. Rust verify rebuilds the release control from
 current durable state and accepts only the one exact canonical authorization.
-Both Rust commands require an existing private current-v13 Hub. Their dedicated
+Both Rust commands require an existing private exact-v11/v12/v13/v14 Hub. Their dedicated
 read-only open does not create or migrate state, change permissions, configure
 WAL, or start a write transaction. It requires a persistent WAL `2/2` database
 header; missing/legacy/corrupt state and any present SQLite WAL, SHM, or
@@ -347,7 +401,7 @@ no environment lookup or network request occurs during either construction
 phase.
 
 Authorization and readiness are still not dispatch. Neither is persisted,
-schema stays at the already-current v13,
+schema stays at the already-current exact v11–v14 version,
 the Run stays v3 `awaiting_dispatch_authorization`, and authority remains
 false. Pricing/export/authorize/verify obtain no consent, read no credential, construct
 no provider, claim no Project lane, access no network/workspace/tool, produce
@@ -386,7 +440,7 @@ Core failure or uncertain final commit leaves v4 `dispatch_unknown` plus the
 active lane; reinvocation reports the existing quarantine before credential or
 network access. There is no lease release, retry/resume, or separate public
 claim/send/complete command. Protocol v1 does not execute multi-node Graphs.
-For a hard-crash hot WAL, the re-entry-only reader verifies the exact v12/v13 main
+For a hard-crash hot WAL, the re-entry-only reader verifies the exact v12/v13/v14 main
 database and WAL/SHM identities, requires a complete valid sidecar pair, rejects
 rollback journals, and leaves logical Hub content plus database/WAL bytes
 unchanged; `SQLite` may update transient SHM read-lock bytes.
@@ -485,8 +539,8 @@ per-user fallback. If a relative directory is named `group`, `prompt`, `run`,
 ambiguous with a command.
 
 The local Hub is not encrypted. Prompt/history bodies, frozen Group Run
-snapshots, Group-Agent-Graph instructions/tasks and execution schedules,
-Group-analysis request/result
+snapshots, Group-Agent-Graph instructions/tasks, execution schedules, and
+scheduled-node contract candidates, Group-analysis request/result
 bodies, copied panel manifests, panel-synthesis request/result bodies, local
 paths, exact Graph Node Dispatch Request bodies, Project Run configuration,
 model deltas, provider context, tool
@@ -495,7 +549,8 @@ SQLite and exposed by explicit queries such as `prompt list`, `group run show
 --include-content`, `group graph show --include-spec`, `group analysis show
 --include-result`, `group panel show --include-results`, `group synthesis show
 --include-result`, `group graph run schedule show --include-schedule`,
-`group graph run dispatch show --include-request`, and `run show`. New or empty dedicated Unix state
+`group graph run scheduled-contract show --include-contract`, `group graph run
+dispatch show --include-request`, and `run show`. New or empty dedicated Unix state
 directories are narrowed to the current user; populated shared directories are
 rejected instead of chmodded. Direct Prompt arguments may be visible in
 process listings and shell history, so use stdin (`-`) for sensitive input.
@@ -530,16 +585,16 @@ it does not prove that replaying an interrupted tool effect is safe. Run
 inspection reads its record, cursor, events, and bound Prompt from one SQLite
 snapshot so a concurrent append cannot look like corruption.
 
-The main SQLite catalog is exclusively Hub-owned. Every declared v0–v13 schema
+The main SQLite catalog is exclusively Hub-owned. Every declared v0–v14 schema
 is validated before migration DDL (v0 must be empty); the final migration step
-then validates the exact v13 29-table/25-explicit-index/64-implicit-index
+then validates the exact v14 30-table/27-explicit-index/71-implicit-index
 catalog, DDL, columns, keys, foreign keys, index structures, and absence of
 extra views/triggers/tables before the immediate transaction commits.
 Published DDL and the independent structural contract are release-pinned;
-the v1–v13 length-framed DDL SHA-256 is
-`1e10710c621e80e62c927842f73097fe141ff247df0fba851543175ee6012a49`
-and the v13 structural-contract SHA-256 is
-`2b12222a5a0f1e7d3336ac4399e80cfa6a097f50bd3de3cc145541e43d6fbbc1`.
+the v1–v14 length-framed DDL SHA-256 is
+`6e573a754bdee36aaea820554d45b0c72a5c30fdbc50a9f0deb75ce88047f616`
+and the v14 structural-contract SHA-256 is
+`ce999cba9a007d9e91cd303a8c631bb0a5fceb5818bda371dc356b51915abce9`.
 Unexpected state fails as corruption and is never auto-repaired.
 Environmental SQLite failures remain unavailable. This detects schema drift
 but is not a same-user tamper or TOCTOU boundary.
@@ -650,5 +705,6 @@ Architecture:
 - [Effect-free registered destination and pricing readiness ADR](../docs/adr/0023-effect-free-node-dispatch-readiness.md)
 - [Single-node Dispatch terminal lifecycle ADR](../docs/adr/0024-single-node-dispatch-terminal-lifecycle.md)
 - [Passive multi-node execution schedule ADR](../docs/adr/0025-passive-multi-node-execution-schedule.md)
+- [Passive schedule-bound initial-node contract candidate ADR](../docs/adr/0026-passive-schedule-bound-initial-node-contract.md)
 - [Hub local-foundation design](../docs/design/conversation-hub-phase1.md)
 - [Durable Run journal design](../docs/design/run-journal-phase1.md)

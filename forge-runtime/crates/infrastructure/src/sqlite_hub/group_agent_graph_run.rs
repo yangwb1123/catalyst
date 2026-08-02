@@ -5,7 +5,7 @@ mod codec;
 pub(in crate::sqlite_hub) mod read;
 mod rows;
 #[path = "group_agent_graph_run/schedule/mod.rs"]
-mod schedule;
+pub(in crate::sqlite_hub) mod schedule;
 mod write;
 
 use crate::runtime_domain::{

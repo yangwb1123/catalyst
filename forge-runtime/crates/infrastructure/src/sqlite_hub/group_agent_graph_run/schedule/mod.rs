@@ -1,4 +1,4 @@
-pub(super) mod read;
+pub(in crate::sqlite_hub) mod read;
 mod rows;
 mod write;
 

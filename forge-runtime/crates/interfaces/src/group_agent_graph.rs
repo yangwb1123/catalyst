@@ -26,3 +26,7 @@ pub(crate) mod run_output;
 pub(crate) mod schedule_command;
 #[path = "group_agent_graph/schedule_output.rs"]
 pub(crate) mod schedule_output;
+#[path = "group_agent_graph/scheduled_contract_command.rs"]
+pub(crate) mod scheduled_contract_command;
+#[path = "group_agent_graph/scheduled_contract_output.rs"]
+pub(crate) mod scheduled_contract_output;

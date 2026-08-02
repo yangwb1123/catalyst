@@ -163,6 +163,36 @@ pub(super) fn user_prompt(
     })
 }
 
+/// Computes the unkeyed SHA-256 identity of exact UTF-8 Prompt bytes.
+#[must_use]
+pub fn group_agent_prompt_sha256(prompt: &str) -> String {
+    digest_hex(&[], prompt.as_bytes())
+}
+
+/// Builds the exact fixed system Prompt around the frozen manager instruction.
+#[must_use]
+pub fn group_agent_node_system_prompt(manager_instruction: &str) -> String {
+    format!(
+        "Execute exactly one frozen Group Agent Graph node. Follow the manager \
+instruction, complete only the assigned task, and return a text result that can \
+be checked against the acceptance criteria. Tools, network, workspace access, \
+memory, and writeback are unavailable.\n\nManager instruction:\n{manager_instruction}"
+    )
+}
+
+/// Builds the exact canonical user Prompt for one node.
+///
+/// # Errors
+///
+/// Returns an error when canonical encoding fails.
+pub fn group_agent_node_user_prompt(
+    node_id: &str,
+    task: &str,
+    acceptance: &str,
+) -> Result<String, GroupAgentNodeExecutionValidationError> {
+    user_prompt(node_id, task, acceptance)
+}
+
 pub(super) fn digest_hex(domain: &[u8], bytes: &[u8]) -> String {
     let mut digest = Sha256::new();
     digest.update(domain);

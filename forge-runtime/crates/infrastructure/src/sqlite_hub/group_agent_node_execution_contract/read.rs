@@ -44,6 +44,16 @@ pub(super) fn validate_stored(
     validate_with_sources(decoded, graph_run, &graph)
 }
 
+pub(in crate::sqlite_hub) fn validate_existing_for_run(
+    connection: &Connection,
+    graph_run_id: &str,
+) -> Result<bool, HubStoreError> {
+    let Some(stored) = rows::find_by_run(connection, graph_run_id)? else {
+        return Ok(false);
+    };
+    validate_stored(connection, stored).map(|_| true)
+}
+
 fn load_graph_run_stored(
     connection: &Connection,
     graph_run_id: &str,

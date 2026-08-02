@@ -6,6 +6,7 @@ mod group_agent_graph;
 mod group_agent_graph_run;
 mod group_agent_node_execution_contract;
 mod group_agent_node_lifecycle;
+mod group_agent_scheduled_node_contract;
 mod group_analysis_panel;
 mod group_context_build;
 mod group_context_read;
@@ -40,6 +41,8 @@ mod schema_v11_sql;
 mod schema_v12_sql;
 #[path = "schema_contract/v13_sql.rs"]
 mod schema_v13_sql;
+#[path = "schema_contract/v14_sql.rs"]
+mod schema_v14_sql;
 mod schema_v9_sql;
 mod write;
 
@@ -106,7 +109,7 @@ impl SqliteHubStore {
         })
     }
 
-    /// Opens an exact existing v11, v12, or v13 Hub for dispatch topology preflight only.
+    /// Opens an exact existing v11, v12, v13, or v14 Hub for dispatch topology preflight only.
     ///
     /// This mode is immutable and cannot create, migrate, chmod, or write Hub state.
     ///
@@ -126,8 +129,8 @@ impl SqliteHubStore {
 
     /// Opens existing dispatch state for a no-send re-entry diagnosis.
     ///
-    /// A clean exact v11/v12/v13 database keeps the immutable preflight path. When
-    /// v12 or v13 has a hot WAL, the fallback reads the existing WAL/SHM pair without
+    /// A clean exact v11/v12/v13/v14 database keeps the immutable preflight path. When
+    /// v12, v13, or v14 has a hot WAL, the fallback reads the existing WAL/SHM pair without
     /// changing logical Hub content; `SQLite` may update transient SHM read locks.
     ///
     /// # Errors

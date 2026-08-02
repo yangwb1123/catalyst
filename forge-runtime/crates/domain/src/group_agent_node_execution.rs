@@ -15,12 +15,18 @@ mod dispatch;
 mod dispatch_release;
 #[path = "group_agent_node_execution/schedule.rs"]
 mod schedule;
+#[path = "group_agent_node_execution/scheduled_contract.rs"]
+mod scheduled_contract;
 #[path = "group_agent_node_execution_validation.rs"]
 mod validation;
 
+pub use codec::{
+    group_agent_node_system_prompt, group_agent_node_user_prompt, group_agent_prompt_sha256,
+};
 pub use dispatch::*;
 pub use dispatch_release::*;
 pub use schedule::*;
+pub use scheduled_contract::*;
 
 pub const GROUP_AGENT_GRAPH_CONTROL_SNAPSHOT_VERSION: u16 = 1;
 pub const GROUP_AGENT_NODE_EXECUTION_CONTRACT_VERSION: u16 = 1;
@@ -424,36 +430,6 @@ pub fn group_agent_project_lane_sha256(project_id: &str) -> String {
         GROUP_AGENT_PROJECT_LANE_DIGEST_DOMAIN,
         project_id.as_bytes(),
     )
-}
-
-/// Computes the unkeyed SHA-256 identity of exact UTF-8 Prompt bytes.
-#[must_use]
-pub fn group_agent_prompt_sha256(prompt: &str) -> String {
-    codec::digest_hex(&[], prompt.as_bytes())
-}
-
-/// Builds the exact fixed system Prompt around the frozen manager instruction.
-#[must_use]
-pub fn group_agent_node_system_prompt(manager_instruction: &str) -> String {
-    format!(
-        "Execute exactly one frozen Group Agent Graph node. Follow the manager \
-instruction, complete only the assigned task, and return a text result that can \
-be checked against the acceptance criteria. Tools, network, workspace access, \
-memory, and writeback are unavailable.\n\nManager instruction:\n{manager_instruction}"
-    )
-}
-
-/// Builds the exact canonical user Prompt for one node.
-///
-/// # Errors
-///
-/// Returns an error when canonical encoding fails.
-pub fn group_agent_node_user_prompt(
-    node_id: &str,
-    task: &str,
-    acceptance: &str,
-) -> Result<String, GroupAgentNodeExecutionValidationError> {
-    codec::user_prompt(node_id, task, acceptance)
 }
 
 pub trait GroupAgentNodeExecutionContractStore: Send + Sync {

@@ -25,6 +25,13 @@ pub(super) fn for_admission(
     reconstruct_base(run, graph)
 }
 
+pub(super) fn historical_base(
+    run: &GroupAgentGraphRunInspection,
+    graph: &GroupAgentGraphInspection,
+) -> Result<ExportGroupAgentGraphControl, GroupAgentNodeExecutionContractServiceError> {
+    reconstruct_base(run, graph)
+}
+
 fn reconstruct_base(
     run: &GroupAgentGraphRunInspection,
     graph: &GroupAgentGraphInspection,

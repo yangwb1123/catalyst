@@ -32,6 +32,11 @@ pub const TEXT: &str = "usage:
   forge-runtime [OPTIONS] group graph run schedule show SCHEDULE_ID
                 [--include-schedule]
   forge-runtime [OPTIONS] group graph run schedule list [GRAPH_RUN_ID] [--limit N]
+  forge-runtime [OPTIONS] group graph run scheduled-contract admit GRAPH_RUN_ID
+    --contract FILE|- [--idempotency-key KEY]
+  forge-runtime [OPTIONS] group graph run scheduled-contract show CONTRACT_ID
+    [--include-contract]
+  forge-runtime [OPTIONS] group graph run scheduled-contract list [GRAPH_RUN_ID] [--limit N]
   forge-runtime [OPTIONS] group graph run dispatch prepare GRAPH_RUN_ID
                 [--idempotency-key KEY]
   forge-runtime [OPTIONS] group graph run dispatch show DISPATCH_REQUEST_ID
@@ -108,6 +113,11 @@ pub const TEXT: &str = "usage:
   reads no credential or provider/network/workspace/tool state. Schedule bodies,
   node/predecessor identities, and lane digests stay hidden unless
   schedule show --include-schedule is explicit.
+  Group graph run scheduled-contract admit stores only a passive initial-node
+  candidate sidecar. It creates no lifecycle contract or provider request,
+  releases no authority, observes no progress or receipt, and advances no
+  successor. The private artifact is revealed only by an explicit
+  scheduled-contract show --include-contract.
   Group graph run dispatch prepare uses only the pure local Responses codec and
   persists exact request bytes. It obtains no consent, reads no credential, releases
   no dispatch authority, and invokes no provider, network, workspace, tool, result,

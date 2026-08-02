@@ -17,10 +17,13 @@ use super::{
     schema_v11_sql::MIGRATE_V10_TO_V11_SQL,
     schema_v12_sql::MIGRATE_V11_TO_V12_SQL,
     schema_v13_sql::MIGRATE_V12_TO_V13_SQL,
+    schema_v14_sql::MIGRATE_V13_TO_V14_SQL,
 };
 
 #[path = "tests/schema_full_validation.rs"]
 mod schema_full_validation_tests;
+#[path = "tests/schema_migration_support.rs"]
+mod schema_migration_support;
 #[path = "tests/schema_open_adversarial.rs"]
 mod schema_open_adversarial_tests;
 #[path = "tests/schema_release_golden.rs"]
@@ -35,6 +38,8 @@ mod schema_v11_migration_tests;
 mod schema_v12_migration_tests;
 #[path = "tests/schema_v13_migration.rs"]
 mod schema_v13_migration_tests;
+#[path = "tests/schema_v14_migration.rs"]
+mod schema_v14_migration_tests;
 #[path = "tests/schema_v5_migration.rs"]
 mod schema_v5_migration_tests;
 #[path = "tests/schema_v6_migration.rs"]
@@ -45,6 +50,10 @@ mod schema_v7_migration_tests;
 mod schema_v8_migration_tests;
 #[path = "tests/schema_v9_migration.rs"]
 mod schema_v9_migration_tests;
+
+use schema_migration_support::{
+    restrict_fixture_root, schema_object_exists, schema_version, table_columns,
+};
 
 #[test]
 fn v1_future_group_runs_blocker_is_rejected_before_migration_chain() {
@@ -457,42 +466,3 @@ fn seed_v6_panel(connection: &Connection) {
         )
         .expect("seed v6 analysis panel");
 }
-
-fn schema_version(connection: &Connection) -> i64 {
-    connection
-        .pragma_query_value(None, "user_version", |row| row.get(0))
-        .expect("schema version")
-}
-
-fn schema_object_exists(connection: &Connection, kind: &str, name: &str) -> bool {
-    connection
-        .query_row(
-            "SELECT EXISTS(
-               SELECT 1 FROM sqlite_schema WHERE type = ?1 AND name = ?2
-             )",
-            [kind, name],
-            |row| row.get(0),
-        )
-        .expect("schema object query")
-}
-
-fn table_columns(connection: &Connection, table: &str) -> Vec<String> {
-    let sql = format!("SELECT name FROM pragma_table_info('{table}') ORDER BY cid");
-    let mut statement = connection.prepare(&sql).expect("table column query");
-    statement
-        .query_map([], |row| row.get(0))
-        .expect("query table columns")
-        .collect::<Result<_, _>>()
-        .expect("read table columns")
-}
-
-#[cfg(unix)]
-fn restrict_fixture_root(root: &TempDir) {
-    use std::os::unix::fs::PermissionsExt;
-
-    std::fs::set_permissions(root.path(), std::fs::Permissions::from_mode(0o700))
-        .expect("private legacy Hub root");
-}
-
-#[cfg(not(unix))]
-fn restrict_fixture_root(_root: &TempDir) {}

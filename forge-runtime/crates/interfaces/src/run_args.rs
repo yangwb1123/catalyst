@@ -4,14 +4,33 @@ use std::{
 };
 
 use super::{
-    Command, GlobalOptions, RunCommand, next_value, parse_optional_id_and_limit, require_empty,
-    usage,
+    Command, GlobalOptions, next_value, parse_optional_id_and_limit, require_empty, usage,
 };
 
 const DEFAULT_MAX_OUTPUT_TOKENS: u32 = 4_096;
 const MAX_OUTPUT_TOKENS: u32 = 32_768;
 const MAX_ALLOWED_READS: usize = 32;
 const MAX_ALLOWED_READ_PATH_BYTES: usize = 1_024;
+
+#[derive(Debug, Eq, PartialEq)]
+pub enum RunCommand {
+    Start {
+        conversation_id: String,
+        prompt_id: String,
+        read_path: String,
+        allowed_read_paths: Vec<String>,
+        live: bool,
+        model: Option<String>,
+        max_output_tokens: u32,
+    },
+    List {
+        conversation_id: Option<String>,
+        limit: usize,
+    },
+    Show {
+        run_id: String,
+    },
+}
 
 #[derive(Default)]
 struct StartOptions {

@@ -13,6 +13,11 @@ use super::{
 
 const SCHEDULE_TABLE: &str = "group_agent_graph_execution_schedules";
 const SCHEDULE_INDEX: &str = "group_agent_graph_execution_schedules_created";
+const SCHEDULED_CONTRACT_TABLE: &str = "group_agent_graph_scheduled_node_contract_candidates";
+const SCHEDULED_CONTRACT_INDEXES: &[&str] = &[
+    "group_agent_graph_scheduled_node_candidates_project_lane",
+    "group_agent_graph_scheduled_node_candidates_created",
+];
 const ACTIVE_TABLES: &[&str] = &[
     "group_agent_graph_runs",
     "group_agent_graph_run_events",
@@ -30,7 +35,7 @@ fn active_v4_claim_and_old_schema_survive_v13_migration_and_reopen() {
     let before_schema = old_schema(&schema_snapshot(&legacy));
     drop(legacy);
 
-    let connection = open_database(&database).expect("active v12 Hub migrates to v13");
+    let connection = open_database(&database).expect("active v12 Hub migrates to v14");
     assert_v13_shape(&connection);
     assert_eq!(active_rows(&connection), before_rows);
     assert_eq!(old_schema(&schema_snapshot(&connection)), before_schema);
@@ -38,7 +43,7 @@ fn active_v4_claim_and_old_schema_survive_v13_migration_and_reopen() {
     assert_foreign_keys_clean(&connection);
     drop(connection);
 
-    let reopened = open_database(&database).expect("migrated v13 Hub reopens");
+    let reopened = open_database(&database).expect("migrated v14 Hub reopens");
     assert_v13_shape(&reopened);
     assert_eq!(active_rows(&reopened), before_rows);
     assert_active_lane(&reopened);
@@ -66,7 +71,7 @@ fn v12_future_schedule_blocker_is_rejected_before_migration() {
 }
 
 #[test]
-fn failed_final_validation_rolls_back_v12_to_v13_atomically() {
+fn failed_final_validation_rolls_back_v12_to_v14_atomically() {
     let (root, database) = legacy_active_v12_database();
     let connection = Connection::open(&database).expect("open v12 rollback fixture");
     let before_schema = schema_snapshot(&connection);
@@ -76,7 +81,7 @@ fn failed_final_validation_rolls_back_v12_to_v13_atomically() {
         assert_v13_shape(migrated);
         migrated.execute_batch("CREATE TABLE rogue_v13_final_fault(id TEXT)")
     })
-    .expect_err("final v13 validation rejects rogue object");
+    .expect_err("final v14 validation rejects rogue object");
     assert!(matches!(error, HubStoreError::Corrupt { .. }));
     assert_eq!(schema_version(&connection), 12);
     assert_eq!(schema_snapshot(&connection), before_schema);
@@ -288,7 +293,7 @@ fn malformed(original: &str, replacement: &str) -> String {
 }
 
 fn assert_v13_shape(connection: &Connection) {
-    assert_eq!(schema_version(connection), 13);
+    assert_eq!(schema_version(connection), 14);
     assert!(schema_object_exists(connection, "table", SCHEDULE_TABLE));
     assert!(schema_object_exists(connection, "index", SCHEDULE_INDEX));
     assert_eq!(row_count(connection, SCHEDULE_TABLE), 0);
@@ -316,7 +321,12 @@ fn table_rows(connection: &Connection, table: &str) -> Vec<Vec<Value>> {
 fn old_schema(snapshot: &[SchemaRow]) -> Vec<SchemaRow> {
     snapshot
         .iter()
-        .filter(|(_, name, _, _)| name != SCHEDULE_TABLE && name != SCHEDULE_INDEX)
+        .filter(|(_, name, _, _)| {
+            name != SCHEDULE_TABLE
+                && name != SCHEDULE_INDEX
+                && name != SCHEDULED_CONTRACT_TABLE
+                && !SCHEDULED_CONTRACT_INDEXES.contains(&name.as_str())
+        })
         .cloned()
         .collect()
 }

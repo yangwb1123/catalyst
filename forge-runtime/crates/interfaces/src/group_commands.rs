@@ -51,12 +51,29 @@ pub enum GroupGraphRunCommand {
     Contract(GroupGraphRunContractCommand),
     Dispatch(GroupGraphRunDispatchCommand),
     Schedule(GroupGraphRunScheduleCommand),
+    ScheduledContract(GroupGraphRunScheduledContractCommand),
     Show {
         graph_run_id: String,
         include_plan: bool,
     },
     List {
         graph_id: Option<String>,
+        limit: usize,
+    },
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub enum GroupGraphRunScheduledContractCommand {
+    Admit {
+        graph_run_id: String,
+        contract_source: String,
+    },
+    Show {
+        contract_id: String,
+        include_contract: bool,
+    },
+    List {
+        graph_run_id: Option<String>,
         limit: usize,
     },
 }

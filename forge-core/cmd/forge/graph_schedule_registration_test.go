@@ -14,3 +14,14 @@ func TestGraphExecutionScheduleIsRegisteredAndDocumented(t *testing.T) {
 		t.Fatalf("usage omits graph-execution-schedule:\n%s", output)
 	}
 }
+
+func TestGraphScheduledNodeContractIsRegisteredAndDocumented(t *testing.T) {
+	if _, ok := subcommands["graph-scheduled-node-contract"]; !ok {
+		t.Fatal("graph-scheduled-node-contract must be registered")
+	}
+	output := captureUsageStderr(t)
+	if !strings.Contains(output, "forge graph-scheduled-node-contract --control FILE|-") ||
+		!strings.Contains(output, "--schedule-sha256 SHA256") {
+		t.Fatalf("usage omits scheduled-node contract command:\n%s", output)
+	}
+}
