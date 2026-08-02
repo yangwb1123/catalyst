@@ -84,6 +84,54 @@ fn hot_rollback_journal_is_rejected_before_immutable_read() {
     writer.execute_batch("ROLLBACK").expect("rollback fixture");
 }
 
+#[test]
+fn dispatch_reentry_rejects_incomplete_or_malformed_wal_sidecars_without_changes() {
+    let cases = [
+        ("wal_without_shm", valid_wal_header().to_vec(), None),
+        (
+            "truncated_shm",
+            valid_wal_header().to_vec(),
+            Some(vec![0; 1]),
+        ),
+        ("invalid_wal", vec![0; 32], Some(vec![0; 32_768])),
+    ];
+    for (name, wal, shm) in cases {
+        let (root, store) = fixture();
+        drop(store);
+        let database = root.path().join("hub.sqlite3");
+        write_private(&root.path().join("hub.sqlite3-wal"), &wal);
+        if let Some(bytes) = shm {
+            write_private(&root.path().join("hub.sqlite3-shm"), &bytes);
+        }
+        let before = state_files(root.path());
+
+        let result = SqliteHubStore::open_existing_dispatch_inspection_read_only(&database);
+
+        assert!(result.is_err(), "accepted malformed sidecars: {name}");
+        assert_eq!(state_files(root.path()), before, "changed state: {name}");
+    }
+}
+
+fn valid_wal_header() -> [u8; 32] {
+    let mut header = [0_u8; 32];
+    header[..4].copy_from_slice(&[0x37, 0x7f, 0x06, 0x82]);
+    header
+}
+
+fn write_private(path: &Path, bytes: &[u8]) {
+    fs::write(path, bytes).expect("write private sidecar fixture");
+    restrict_file(path);
+}
+
+#[cfg(unix)]
+fn restrict_file(path: &Path) {
+    use std::os::unix::fs::PermissionsExt;
+    fs::set_permissions(path, fs::Permissions::from_mode(0o600)).expect("private sidecar mode");
+}
+
+#[cfg(not(unix))]
+fn restrict_file(_path: &Path) {}
+
 fn fixture() -> (TempDir, SqliteHubStore) {
     let root = TempDir::new().expect("temporary root");
     let store = SqliteHubStore::open(root.path().join("hub.sqlite3")).expect("open Hub");

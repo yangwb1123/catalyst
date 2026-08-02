@@ -200,6 +200,11 @@ fn dispatch_claim_key_error(command: &Command) -> Option<&'static str> {
         Command::Group(GroupCommand::Synthesis(GroupSynthesisCommand::Send { .. })) => Some(
             "--idempotency-key is not valid for group synthesis send; SYNTHESIS_ID owns the single dispatch claim",
         ),
+        Command::Group(GroupCommand::Graph(GroupGraphCommand::Run(
+            GroupGraphRunCommand::Dispatch(GroupGraphRunDispatchCommand::Execute { .. }),
+        ))) => Some(
+            "--idempotency-key is not valid for graph dispatch execute; GRAPH_RUN_ID owns the single dispatch claim",
+        ),
         _ => None,
     }
 }

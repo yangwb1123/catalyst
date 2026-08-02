@@ -8,7 +8,7 @@ use forge_runtime_domain::{
 };
 use forge_runtime_infrastructure::OpenAiResponsesProvider;
 
-use crate::{
+use super::{
     sqlite_group_agent_graph_run_support::Fixture,
     sqlite_group_agent_node_execution_contract_support::{
         prepared_fixture, request as contract_request,

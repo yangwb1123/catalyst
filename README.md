@@ -35,8 +35,20 @@ provider、工具或 workspace，也不代表已经完成分析或讨论。
 Graph 首节点还可通过 Go 生成 immutable `operator_asserted` pricing snapshot，
 再由 Rust `group graph run dispatch readiness verify` 把当前 release authorization、
 固定官方 destination、exact pricing bytes 与 frozen cost budget 合并复验。该命令
-保持 SQLite v11/Run v3 不变，不读凭证、不构造 provider、不 claim/send/result/advance；
+保持 current SQLite v12/Run v3 不变，不读凭证、不构造 provider、不 claim/send/result/advance；
 定价也不带 vendor attestation，不代表实时厂商价格或账单保证。
+对严格单节点 Graph，`group graph run dispatch execute` 再要求本次 fresh consent、
+exact authorization/pricing 与 SHA-256 固定的 Go Core binary；该 effectful 命令当前
+仅支持 Linux，并从密封、复验后的匿名 executable memfd 执行 Core。SQLite v12 原子 claim
+全 Hub Project lane，只在 approved service path 把 non-`Clone` exact request authority
+交给一个赢家（可信 store adapter 属于进程内 TCB）；一次派发后 bounded
+收集 result/uncertainty，由 Go Core 生成 terminal receipt，最终事务同时持久化证据、
+追加 seq 5 并释放 lane。claim 后崩溃或 Core/commit 失败会保留 v4 quarantine 且禁止
+自动重发；当前协议不执行 frontend/backend/SSO 等多节点 Graph。claim、result 或
+bounded partial output、artifact 与 receipt 都以本地 SQLite plaintext 保存；默认输出
+只含 metadata，只有 `--include-result` 才揭示完整复验后的结果。fresh consent 仅授权
+这一份 exact request，不授权 workspace/tool、Conversation/Prompt/memory/task writeback、
+其他 node 或 retry；它只保证 Hub-local single-consumption，不声称 remote exactly-once。
 `group analysis prepare GROUP_RUN_ID` 可在本地冻结一份精确、零工具的
 OpenAI Responses 请求；只有后续 `group analysis send ANALYSIS_ID
 --confirm-off-machine` 才读取环境凭证并释放一次外发。SQLite claim 一旦提交，

@@ -82,11 +82,79 @@ enum DispatchRequestType {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DispatchReleasedWire {
+    v: u16,
+    graph_run_id: String,
+    seq: u64,
+    #[serde(rename = "type")]
+    kind: DispatchReleasedType,
+    previous_event_sha256: String,
+    dispatch_id: String,
+    authorization_id: String,
+    authorization_sha256: String,
+    dispatch_request_id: String,
+    dispatch_request_sha256: String,
+    logical_request_sha256: String,
+    request_body_sha256: String,
+    request_body_bytes: usize,
+    pricing_snapshot_sha256: String,
+    node_id: String,
+    attempt: u16,
+    max_cost_usd_micros: u64,
+    consent_contract_version: u16,
+    lane_ownership_id: String,
+    project_lane_sha256: String,
+    released_at_ms: u64,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum DispatchReleasedType {
+    NodeDispatchReleased,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LifecycleTerminalizedWire {
+    v: u16,
+    graph_run_id: String,
+    seq: u64,
+    #[serde(rename = "type")]
+    kind: LifecycleTerminalizedType,
+    previous_event_sha256: String,
+    dispatch_id: String,
+    lane_ownership_id: String,
+    project_lane_sha256: String,
+    artifact_id: String,
+    artifact_sha256: String,
+    terminal_receipt_id: String,
+    terminal_receipt_sha256: String,
+    node_id: String,
+    attempt: u16,
+    node_outcome: crate::GroupAgentNodeTerminalOutcome,
+    wave_index: usize,
+    wave_outcome: crate::GroupAgentNodeTerminalOutcome,
+    graph_status: super::GroupAgentGraphRunStatus,
+    retry_authorized: bool,
+    lane_released: bool,
+    terminalized_at_ms: u64,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum LifecycleTerminalizedType {
+    NodeLifecycleTerminalized,
+}
+
+#[derive(Deserialize)]
 #[serde(untagged)]
 enum EventWire {
     Prepared(PreparedWire),
     Contract(ContractWire),
     DispatchRequest(DispatchRequestWire),
+    DispatchReleased(DispatchReleasedWire),
+    LifecycleTerminalized(LifecycleTerminalizedWire),
 }
 
 impl<'de> Deserialize<'de> for GroupAgentGraphRunEvent {
@@ -98,6 +166,8 @@ impl<'de> Deserialize<'de> for GroupAgentGraphRunEvent {
             EventWire::Prepared(wire) => prepared(wire),
             EventWire::Contract(wire) => contract(wire),
             EventWire::DispatchRequest(wire) => dispatch_request(wire),
+            EventWire::DispatchReleased(wire) => dispatch_released(wire),
+            EventWire::LifecycleTerminalized(wire) => lifecycle_terminalized(wire),
         })
     }
 }
@@ -162,6 +232,62 @@ fn dispatch_request(wire: DispatchRequestWire) -> GroupAgentGraphRunEvent {
             destination_sha256: wire.destination_sha256,
             pricing_snapshot_sha256: wire.pricing_snapshot_sha256,
             prepared_at_ms: wire.prepared_at_ms,
+        },
+    }
+}
+
+fn dispatch_released(wire: DispatchReleasedWire) -> GroupAgentGraphRunEvent {
+    let DispatchReleasedType::NodeDispatchReleased = wire.kind;
+    GroupAgentGraphRunEvent {
+        v: wire.v,
+        graph_run_id: wire.graph_run_id,
+        seq: wire.seq,
+        kind: GroupAgentGraphRunEventKind::NodeDispatchReleased {
+            previous_event_sha256: wire.previous_event_sha256,
+            dispatch_id: wire.dispatch_id,
+            authorization_id: wire.authorization_id,
+            authorization_sha256: wire.authorization_sha256,
+            dispatch_request_id: wire.dispatch_request_id,
+            dispatch_request_sha256: wire.dispatch_request_sha256,
+            logical_request_sha256: wire.logical_request_sha256,
+            request_body_sha256: wire.request_body_sha256,
+            request_body_bytes: wire.request_body_bytes,
+            pricing_snapshot_sha256: wire.pricing_snapshot_sha256,
+            node_id: wire.node_id,
+            attempt: wire.attempt,
+            max_cost_usd_micros: wire.max_cost_usd_micros,
+            consent_contract_version: wire.consent_contract_version,
+            lane_ownership_id: wire.lane_ownership_id,
+            project_lane_sha256: wire.project_lane_sha256,
+            released_at_ms: wire.released_at_ms,
+        },
+    }
+}
+
+fn lifecycle_terminalized(wire: LifecycleTerminalizedWire) -> GroupAgentGraphRunEvent {
+    let LifecycleTerminalizedType::NodeLifecycleTerminalized = wire.kind;
+    GroupAgentGraphRunEvent {
+        v: wire.v,
+        graph_run_id: wire.graph_run_id,
+        seq: wire.seq,
+        kind: GroupAgentGraphRunEventKind::NodeLifecycleTerminalized {
+            previous_event_sha256: wire.previous_event_sha256,
+            dispatch_id: wire.dispatch_id,
+            lane_ownership_id: wire.lane_ownership_id,
+            project_lane_sha256: wire.project_lane_sha256,
+            artifact_id: wire.artifact_id,
+            artifact_sha256: wire.artifact_sha256,
+            terminal_receipt_id: wire.terminal_receipt_id,
+            terminal_receipt_sha256: wire.terminal_receipt_sha256,
+            node_id: wire.node_id,
+            attempt: wire.attempt,
+            node_outcome: wire.node_outcome,
+            wave_index: wire.wave_index,
+            wave_outcome: wire.wave_outcome,
+            graph_status: wire.graph_status,
+            retry_authorized: wire.retry_authorized,
+            lane_released: wire.lane_released,
+            terminalized_at_ms: wire.terminalized_at_ms,
         },
     }
 }

@@ -21,15 +21,15 @@ pub(in crate::sqlite_hub) fn validate_graph_run_binding(
     connection: &Connection,
     graph_run: &GroupAgentGraphRunInspection,
     contract: Option<&GroupAgentNodeExecutionContractInspection>,
-) -> Result<(), HubStoreError> {
+) -> Result<Option<GroupAgentNodeDispatchRequestInspection>, HubStoreError> {
     let stored = rows::find_by_run(connection, &graph_run.run.graph_run_id)?;
     match (graph_run.run.dispatch_request_present, stored) {
-        (false, None) => Ok(()),
+        (false, None) => Ok(None),
         (true, Some(stored)) => {
             let contract = contract.ok_or_else(|| {
                 corrupt("stored Graph Run dispatch request has no execution contract")
             })?;
-            validate_stored_with_contract(stored, contract.clone()).map(|_| ())
+            validate_stored_with_contract(stored, contract.clone()).map(Some)
         }
         (_, Some(stored)) => {
             decode_stored(stored)?;
@@ -66,7 +66,7 @@ pub(super) fn inspect(
     Ok(inspection)
 }
 
-pub(super) fn inspect_in_snapshot(
+pub(in crate::sqlite_hub) fn inspect_in_snapshot(
     connection: &Connection,
     dispatch_request_id: &str,
 ) -> Result<GroupAgentNodeDispatchRequestInspection, HubStoreError> {

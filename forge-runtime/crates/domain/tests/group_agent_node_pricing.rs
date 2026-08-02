@@ -249,6 +249,34 @@ fn quote_uses_component_ceiling_and_accepts_only_an_exact_budget() {
 }
 
 #[test]
+fn actual_cost_checks_observed_tokens_component_rounding_and_authorized_bounds() {
+    let snapshot = snapshot();
+    let authorization = authorization(&snapshot, 840_960, 4_096);
+    assert_eq!(
+        snapshot
+            .actual_cost_usd_micros(5, 3, &authorization)
+            .expect("checked actual usage"),
+        40
+    );
+    for (input_tokens, output_tokens) in [(0, 3), (5, 0), (400_001, 3), (5, 4_097)] {
+        assert!(
+            snapshot
+                .actual_cost_usd_micros(input_tokens, output_tokens, &authorization)
+                .is_err()
+        );
+    }
+
+    let mut insufficient = authorization;
+    insufficient.budgets.max_cost_usd_micros = 39;
+    sign_authorization(&mut insufficient);
+    assert!(
+        snapshot
+            .actual_cost_usd_micros(5, 3, &insufficient)
+            .is_err()
+    );
+}
+
+#[test]
 fn pure_cost_rejects_public_values_before_out_of_protocol_arithmetic() {
     let baseline = snapshot();
     assert!(baseline.maximum_cost_usd_micros(0).is_err());

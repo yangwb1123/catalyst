@@ -1,4 +1,7 @@
-//! Parser and help tests for passive Node Dispatch Request commands.
+//! Parser and help tests for Node Dispatch commands.
+
+#[path = "dispatch_execute_args_tests.rs"]
+mod execute;
 
 use super::{
     Command, GroupCommand, GroupGraphCommand, GroupGraphRunCommand, GroupGraphRunDispatchCommand,

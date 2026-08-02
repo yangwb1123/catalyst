@@ -30,7 +30,7 @@ pub enum GroupAgentGraphRunCommandCliOutput {
     Dispatch(Box<GroupAgentGraphRunDispatchCommandCliOutput>),
 }
 
-pub fn execute(
+pub async fn execute(
     args: &Args,
     command: &GroupGraphRunCommand,
 ) -> Result<GroupAgentGraphRunCommandCliOutput, Box<dyn Error>> {
@@ -74,7 +74,7 @@ pub fn execute(
         )),
         GroupGraphRunCommand::Dispatch(command) => {
             Ok(GroupAgentGraphRunCommandCliOutput::Dispatch(Box::new(
-                dispatch_command::execute(args, command)?,
+                dispatch_command::execute(args, command).await?,
             )))
         }
     }

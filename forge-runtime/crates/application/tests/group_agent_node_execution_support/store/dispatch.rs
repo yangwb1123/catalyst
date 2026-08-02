@@ -10,8 +10,8 @@ use super::MemoryContractHub;
 
 #[derive(Clone)]
 pub(super) struct StoredDispatch {
-    key: String,
-    inspection: GroupAgentNodeDispatchRequestInspection,
+    pub(super) key: String,
+    pub(super) inspection: GroupAgentNodeDispatchRequestInspection,
 }
 
 impl GroupAgentNodeDispatchRequestStore for MemoryContractHub {

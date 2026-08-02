@@ -3,6 +3,7 @@ mod event;
 mod group_agent_graph;
 mod group_agent_graph_run;
 mod group_agent_node_execution;
+mod group_agent_node_lifecycle;
 #[path = "group_agent_node_execution/pricing.rs"]
 mod group_agent_node_pricing;
 mod group_analysis_panel;
@@ -40,7 +41,8 @@ pub use group_agent_graph_run::{
     BeginGroupAgentGraphRun, BeginGroupAgentGraphRunDisposition, BeginGroupAgentGraphRunResult,
     GROUP_AGENT_GRAPH_CORE_PLAN_DIGEST_DOMAIN, GROUP_AGENT_GRAPH_CORE_PLAN_VERSION,
     GROUP_AGENT_GRAPH_RUN_CONTRACT_VERSION, GROUP_AGENT_GRAPH_RUN_CONTROL_EVENT_DIGEST_DOMAIN,
-    GROUP_AGENT_GRAPH_RUN_DISPATCH_REQUEST_VERSION, GROUP_AGENT_GRAPH_RUN_EVENT_DIGEST_DOMAIN,
+    GROUP_AGENT_GRAPH_RUN_DISPATCH_CLAIM_VERSION, GROUP_AGENT_GRAPH_RUN_DISPATCH_REQUEST_VERSION,
+    GROUP_AGENT_GRAPH_RUN_EVENT_DIGEST_DOMAIN, GROUP_AGENT_GRAPH_RUN_TERMINAL_VERSION,
     GROUP_AGENT_GRAPH_RUN_VERSION, GROUP_AGENT_GRAPH_SCHEDULER_PROTOCOL_VERSION,
     GroupAgentGraphCorePlan, GroupAgentGraphRunEvent, GroupAgentGraphRunEventKind,
     GroupAgentGraphRunInspection, GroupAgentGraphRunRecord, GroupAgentGraphRunStatus,
@@ -97,6 +99,7 @@ pub use group_agent_node_execution::{
     group_agent_node_system_prompt, group_agent_node_user_prompt, group_agent_project_lane_sha256,
     group_agent_prompt_sha256,
 };
+pub use group_agent_node_lifecycle::*;
 pub use group_agent_node_pricing::{
     GROUP_AGENT_NODE_OFFICIAL_OPENAI_RESPONSES_ENDPOINT, GROUP_AGENT_NODE_PRICING_COST_ALGORITHM,
     GROUP_AGENT_NODE_PRICING_CURRENCY, GROUP_AGENT_NODE_PRICING_PROTOCOL_VERSION,

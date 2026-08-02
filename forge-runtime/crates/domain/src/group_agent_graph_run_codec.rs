@@ -59,7 +59,9 @@ pub(super) fn event_digest(
             GROUP_AGENT_GRAPH_RUN_EVENT_DIGEST_DOMAIN
         }
         GroupAgentGraphRunEventKind::NodeExecutionContractAdmitted { .. }
-        | GroupAgentGraphRunEventKind::NodeDispatchRequestPrepared { .. } => {
+        | GroupAgentGraphRunEventKind::NodeDispatchRequestPrepared { .. }
+        | GroupAgentGraphRunEventKind::NodeDispatchReleased { .. }
+        | GroupAgentGraphRunEventKind::NodeLifecycleTerminalized { .. } => {
             GROUP_AGENT_GRAPH_RUN_CONTROL_EVENT_DIGEST_DOMAIN
         }
     };

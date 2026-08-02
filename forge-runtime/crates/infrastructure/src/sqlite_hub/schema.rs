@@ -11,6 +11,14 @@ use url::Url;
 mod contract;
 #[path = "schema_location.rs"]
 mod location;
+#[path = "schema_contract/reentry.rs"]
+mod reentry;
+
+pub(super) fn open_existing_dispatch_reentry_read_only_database(
+    path: &Path,
+) -> Result<Connection, HubStoreError> {
+    reentry::open_existing_dispatch_reentry_read_only_database(path)
+}
 
 use super::{
     HubStoreError,
@@ -21,10 +29,11 @@ use super::{
     schema_v9_sql::MIGRATE_V8_TO_V9_SQL,
     schema_v10_sql::MIGRATE_V9_TO_V10_SQL,
     schema_v11_sql::MIGRATE_V10_TO_V11_SQL,
+    schema_v12_sql::MIGRATE_V11_TO_V12_SQL,
     unavailable,
 };
 
-const SCHEMA_VERSION: i64 = 11;
+const SCHEMA_VERSION: i64 = 12;
 const CONNECTION_BUSY_TIMEOUT: Duration = Duration::from_millis(250);
 const OPEN_RETRY_TIMEOUT: Duration = Duration::from_secs(5);
 const OPEN_RETRY_DELAY: Duration = Duration::from_millis(10);
@@ -56,6 +65,24 @@ pub(super) fn open_database(path: &Path) -> Result<Connection, HubStoreError> {
 pub(super) fn open_existing_current_read_only_database(
     path: &Path,
 ) -> Result<Connection, HubStoreError> {
+    open_existing_validated_read_only_database(path, &[SCHEMA_VERSION], "current schema version 12")
+}
+
+pub(super) fn open_existing_dispatch_preflight_read_only_database(
+    path: &Path,
+) -> Result<Connection, HubStoreError> {
+    open_existing_validated_read_only_database(
+        path,
+        &[11, SCHEMA_VERSION],
+        "schema version 11 or 12",
+    )
+}
+
+fn open_existing_validated_read_only_database(
+    path: &Path,
+    accepted_versions: &[i64],
+    requirement: &str,
+) -> Result<Connection, HubStoreError> {
     let before = location::inspect_existing_read_only(path)?;
     let uri = immutable_file_uri(before.canonical_path())?;
     let flags = OpenFlags::SQLITE_OPEN_READ_ONLY
@@ -70,8 +97,8 @@ pub(super) fn open_existing_current_read_only_database(
         .pragma_update(None, "query_only", true)
         .map_err(contract::sqlite_error)?;
     let version = schema_version(&connection).map_err(contract::sqlite_error)?;
-    if version != SCHEMA_VERSION {
-        return Err(current_schema_required(version));
+    if !accepted_versions.contains(&version) {
+        return Err(read_only_schema_required(version, requirement));
     }
     contract::validate_version(&connection, version)?;
     let after = location::inspect_existing_read_only(path)?;
@@ -96,11 +123,9 @@ fn immutable_file_uri(path: &Path) -> Result<Url, HubStoreError> {
     Ok(uri)
 }
 
-fn current_schema_required(version: i64) -> HubStoreError {
+fn read_only_schema_required(version: i64, requirement: &str) -> HubStoreError {
     HubStoreError::Corrupt {
-        message: format!(
-            "effect-free Hub reads require current schema version {SCHEMA_VERSION}; found {version}"
-        ),
+        message: format!("effect-free Hub reads require {requirement}; found {version}"),
     }
 }
 
@@ -211,6 +236,9 @@ fn migrate_to_current(connection: &Connection, version: i64) -> Result<(), OpenA
     if version <= 10 {
         migrate_v10_to_v11(connection)?;
     }
+    if version <= 11 {
+        migrate_v11_to_v12(connection)?;
+    }
     Ok(())
 }
 
@@ -290,6 +318,11 @@ fn migrate_v9_to_v10(connection: &Connection) -> Result<(), OpenAttemptError> {
 
 fn migrate_v10_to_v11(connection: &Connection) -> Result<(), OpenAttemptError> {
     connection.execute_batch(MIGRATE_V10_TO_V11_SQL)?;
+    Ok(())
+}
+
+fn migrate_v11_to_v12(connection: &Connection) -> Result<(), OpenAttemptError> {
+    connection.execute_batch(MIGRATE_V11_TO_V12_SQL)?;
     Ok(())
 }
 

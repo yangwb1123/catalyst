@@ -48,14 +48,14 @@ fn load_graph_run_stored(
     connection: &Connection,
     graph_run_id: &str,
 ) -> Result<GroupAgentGraphRunInspection, HubStoreError> {
-    group_agent_graph_run::read::inspect_in_snapshot(connection, graph_run_id).map_err(|error| {
-        match error {
+    let current = group_agent_graph_run::read::inspect_in_snapshot(connection, graph_run_id)
+        .map_err(|error| match error {
             HubStoreError::NotFound { .. } => {
                 corrupt("stored Node Execution Contract references a missing Graph Run")
             }
             other => other,
-        }
-    })
+        })?;
+    group_agent_graph_run::read::dispatch_source_inspection(&current)
 }
 
 pub(in crate::sqlite_hub) fn validate_graph_run_binding(

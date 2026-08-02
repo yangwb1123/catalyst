@@ -64,7 +64,7 @@ pub(super) fn inspect_existing_read_only(
     identity(canonical_path, &current)
 }
 
-fn verify_existing_private_parent(path: &Path) -> Result<(), HubStoreError> {
+pub(super) fn verify_existing_private_parent(path: &Path) -> Result<(), HubStoreError> {
     let parent = path.parent().ok_or_else(|| HubStoreError::Unavailable {
         message: "Hub database path has no parent directory".into(),
     })?;
@@ -81,7 +81,7 @@ fn verify_existing_private_parent(path: &Path) -> Result<(), HubStoreError> {
     }
 }
 
-fn checked_database_metadata(path: &Path) -> Result<fs::Metadata, HubStoreError> {
+pub(super) fn checked_database_metadata(path: &Path) -> Result<fs::Metadata, HubStoreError> {
     let metadata = fs::symlink_metadata(path).map_err(|error| {
         if error.kind() == std::io::ErrorKind::NotFound {
             HubStoreError::Unavailable {
@@ -126,7 +126,7 @@ fn reject_auxiliary_files(path: &Path) -> Result<(), HubStoreError> {
     Ok(())
 }
 
-fn validate_persistent_wal_header(path: &Path) -> Result<(), HubStoreError> {
+pub(super) fn validate_persistent_wal_header(path: &Path) -> Result<(), HubStoreError> {
     let mut header = [0_u8; SQLITE_HEADER_BYTES];
     fs::File::open(path)
         .map_err(unavailable)?
@@ -157,7 +157,7 @@ fn invalid_database_header(detail: &str) -> HubStoreError {
     }
 }
 
-fn auxiliary_path(path: &Path, suffix: &str) -> PathBuf {
+pub(super) fn auxiliary_path(path: &Path, suffix: &str) -> PathBuf {
     let mut value = path.as_os_str().to_os_string();
     value.push(suffix);
     PathBuf::from(value)
@@ -179,12 +179,12 @@ fn identity(
 }
 
 #[cfg(unix)]
-fn same_database_file(left: &fs::Metadata, right: &fs::Metadata) -> bool {
+pub(super) fn same_database_file(left: &fs::Metadata, right: &fs::Metadata) -> bool {
     database_device(left) == database_device(right) && database_inode(left) == database_inode(right)
 }
 
 #[cfg(not(unix))]
-fn same_database_file(left: &fs::Metadata, right: &fs::Metadata) -> bool {
+pub(super) fn same_database_file(left: &fs::Metadata, right: &fs::Metadata) -> bool {
     left.len() == right.len() && left.modified().ok() == right.modified().ok()
 }
 
@@ -207,7 +207,7 @@ fn database_inode(metadata: &fs::Metadata) -> u64 {
     clippy::verbose_bit_mask,
     reason = "the Unix group/other permission mask is clearest in octal"
 )]
-fn verify_private_file_permissions(
+pub(super) fn verify_private_file_permissions(
     path: &Path,
     metadata: &fs::Metadata,
 ) -> Result<(), HubStoreError> {
@@ -226,7 +226,7 @@ fn verify_private_file_permissions(
 }
 
 #[cfg(not(unix))]
-fn verify_private_file_permissions(
+pub(super) fn verify_private_file_permissions(
     _path: &Path,
     _metadata: &fs::Metadata,
 ) -> Result<(), HubStoreError> {

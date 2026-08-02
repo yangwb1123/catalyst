@@ -146,7 +146,7 @@ fn assert_malformed_v6_is_rejected(sql: &str) {
 }
 
 fn assert_current_shape(connection: &Connection) {
-    assert_eq!(schema_version(connection), 11);
+    assert_eq!(schema_version(connection), 12);
     for table in [
         "group_analysis_panels",
         "group_analysis_panel_analyses",

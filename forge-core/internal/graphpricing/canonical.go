@@ -32,6 +32,20 @@ func WorstCostUSDMicros(value Snapshot, maxOutputTokens uint64) (uint64, error) 
 	)
 }
 
+// ActualCostUSDMicros computes observed cost with the frozen pricing
+// algorithm. Both token counts must be positive and remain inside their
+// independently declared protocol bounds.
+func ActualCostUSDMicros(value Snapshot, inputTokens, outputTokens uint64) (uint64, error) {
+	if validate(value) != nil || !inRange(inputTokens, value.MaxInputTokens) ||
+		!inRange(outputTokens, MaxOutputTokens) {
+		return 0, errInvalidSnapshot
+	}
+	return maximumCostUSDMicros(
+		inputTokens, outputTokens, value.InputUSDMicrosPerTokenUnit,
+		value.OutputUSDMicrosPerTokenUnit, value.TokenUnit,
+	)
+}
+
 func maximumCostUSDMicros(inputTokens, outputTokens, inputRate, outputRate, unit uint64) (uint64, error) {
 	input, err := ceilTokenComponent(
 		inputRate, inputTokens, unit,

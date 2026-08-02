@@ -154,6 +154,24 @@ impl GroupAgentNodePricingSnapshot {
     ) -> Result<GroupAgentNodePricingQuote, GroupAgentNodePricingValidationError> {
         verify_pricing_authorization(self, authorization)
     }
+
+    /// Computes exact observed usage cost under one immutable authorization.
+    ///
+    /// Each input and output component is independently rounded up using wide,
+    /// checked arithmetic. Both token counts must be observed and nonzero.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for invalid bindings, token bounds, arithmetic overflow,
+    /// or an actual cost above the authorized budget.
+    pub fn actual_cost_usd_micros(
+        &self,
+        input_tokens: u64,
+        output_tokens: u64,
+        authorization: &GroupAgentNodeDispatchAuthorization,
+    ) -> Result<u64, GroupAgentNodePricingValidationError> {
+        verify_actual_cost(self, input_tokens, output_tokens, authorization)
+    }
 }
 
 impl std::fmt::Display for GroupAgentNodePricingValidationError {
@@ -298,6 +316,30 @@ fn verify_pricing_authorization(
         max_output_tokens: authorization.budgets.max_output_tokens,
         max_cost_usd_micros: maximum,
     })
+}
+
+fn verify_actual_cost(
+    snapshot: &GroupAgentNodePricingSnapshot,
+    input_tokens: u64,
+    output_tokens: u64,
+    authorization: &GroupAgentNodeDispatchAuthorization,
+) -> Result<u64, GroupAgentNodePricingValidationError> {
+    verify_pricing_authorization(snapshot, authorization)?;
+    let valid_tokens = (1..=snapshot.max_input_tokens).contains(&input_tokens)
+        && (1..=u64::from(authorization.budgets.max_output_tokens)).contains(&output_tokens);
+    if !valid_tokens {
+        return Err(invalid("observed usage is outside its authorized bounds"));
+    }
+    let actual = maximum_cost_components(
+        input_tokens,
+        output_tokens,
+        snapshot.input_usd_micros_per_token_unit,
+        snapshot.output_usd_micros_per_token_unit,
+        snapshot.token_unit,
+    )?;
+    (actual <= authorization.budgets.max_cost_usd_micros)
+        .then_some(actual)
+        .ok_or_else(|| invalid("observed usage cost exceeds its authorized budget"))
 }
 
 fn validate_authorization_bindings(

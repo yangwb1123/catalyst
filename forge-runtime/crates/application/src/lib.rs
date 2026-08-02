@@ -7,6 +7,7 @@ mod group_agent_graph_run_service;
 mod group_agent_graph_run_validation;
 mod group_agent_graph_service;
 mod group_agent_graph_validation;
+mod group_agent_node_dispatch_execution;
 mod group_agent_node_execution;
 mod group_analysis_panel_error;
 mod group_analysis_panel_service;
@@ -57,6 +58,13 @@ pub use group_agent_graph_run_service::{
 };
 pub use group_agent_graph_service::{
     GroupAgentGraphService, GroupAgentGraphServiceError, PrepareGroupAgentGraphInput,
+};
+pub use group_agent_node_dispatch_execution::{
+    ExecuteGroupAgentNodeDispatchInput, ExecuteGroupAgentNodeDispatchResult,
+    GroupAgentNodeCredentialSource, GroupAgentNodeCredentialSourceError,
+    GroupAgentNodeDispatchClaimMetadata, GroupAgentNodeDispatchExecutionService,
+    GroupAgentNodeDispatchExecutionServiceError, GroupAgentNodeDispatchMetadataSource,
+    GroupAgentNodeDispatchMetadataSourceError, validate_group_agent_node_dispatch_topology,
 };
 pub use group_agent_node_execution::{
     AdmitGroupAgentNodeExecutionContractDisposition, AdmitGroupAgentNodeExecutionContractInput,

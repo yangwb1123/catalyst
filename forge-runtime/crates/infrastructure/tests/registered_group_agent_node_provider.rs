@@ -1,6 +1,7 @@
 use forge_runtime_domain::{
-    GroupAgentNodeDispatchAuthorization, GroupAgentNodePricingSnapshot, GroupAgentNodeProviderKind,
-    group_agent_node_destination_sha256, group_agent_node_dispatch_authorization_id,
+    GroupAgentNodeDispatchAuthorization, GroupAgentNodeDispatchProviderFactory,
+    GroupAgentNodePricingSnapshot, GroupAgentNodeProviderKind, group_agent_node_destination_sha256,
+    group_agent_node_dispatch_authorization_id,
 };
 use forge_runtime_infrastructure::RegisteredGroupAgentNodeProviderFactory;
 use serde::Deserialize;
@@ -115,6 +116,41 @@ fn credential_construction_errors_are_redacted() {
             "registered Group Agent Node provider credential is invalid"
         );
     }
+}
+
+#[test]
+fn lifecycle_factory_trait_resolves_and_builds_without_provider_io() {
+    let factory = RegisteredGroupAgentNodeProviderFactory::new();
+    let lifecycle_factory: &dyn GroupAgentNodeDispatchProviderFactory = &factory;
+    let (snapshot, authorization) = artifacts();
+    let resolved = lifecycle_factory
+        .resolve(&authorization, &snapshot)
+        .expect("trait readiness");
+
+    assert_eq!(
+        resolved.authorization_sha256,
+        authorization.authorization_sha256
+    );
+    assert_eq!(resolved.destination_sha256, snapshot.destination_sha256);
+    assert_eq!(
+        resolved.pricing_snapshot_sha256,
+        snapshot.pricing_snapshot_sha256
+    );
+    assert_eq!(resolved.max_cost_usd_micros, 840_960);
+    lifecycle_factory
+        .build(resolved.clone(), "explicit-test-credential".into())
+        .expect("trait construction is local");
+
+    let mut forged = resolved;
+    forged.destination_sha256 = A.into();
+    let Err(error) = lifecycle_factory.build(forged, "secret-must-not-leak".into()) else {
+        panic!("forged readiness accepted");
+    };
+    assert_eq!(
+        error.message,
+        "registered Group Agent Node provider is unavailable"
+    );
+    assert!(!error.message.contains("secret-must-not-leak"));
 }
 
 fn artifacts() -> (

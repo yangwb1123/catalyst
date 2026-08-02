@@ -414,16 +414,34 @@ Authorization is not admitted into SQLite: the Run remains v3
 authority remains false. Export/authorize/verify do not obtain off-machine
 consent, read a credential, construct a provider, claim a Project lane, access
 network/workspace/tools, produce a result, perform writeback, or advance a
-node/wave. The first effectful follow-on must pair claim/send with a bounded
-terminal result and lane/graph lifecycle instead of introducing a claim-only
-dead end.
+node/wave. The effectful follow-on is delivered by ADR 0024 and remains a
+separate command.
 
-The generated full-catalog contract now covers immutable v1–v11 DDL and the
-exact v11 inventory of 24 tables, 20 named explicit indexes, and 45 implicit
-indexes. The v1–v11 length-framed DDL SHA-256 is
-`7019cd92d67e07733b4fbca71757c3f914323e5af944367cb693343fe6694a19`;
-the independent v11 structural-contract SHA-256 is
-`ba468ed1b393264b7788f2a82332667b3053aa1f0ff9074a0b148c1aa8c83fd7`.
+### Single-node terminal lifecycle over schema version 12 (delivered)
+
+Only an exact one-node, one-wave, zero-edge Graph can cross this boundary.
+`dispatch execute` revalidates the v3 aggregate, explicit authorization/pricing,
+fresh consent and fixed destination before one immediate transaction claims the
+seq-3 journal head and a Hub-global Project lane. The committing winner alone
+receives non-cloneable authority over the exact stored provider bytes; there is
+no public claim-only, retry, resume, complete, or release-lane surface.
+
+The one-shot collector produces a content-addressed Result or Uncertainty with
+bounded output, usage/cost and terminal/EOF chronology. Go Core independently
+validates the real v4 claim/lane/control and emits a terminal receipt. A second
+immediate transaction stores artifact and receipt, appends seq 5, changes the
+Run to `completed`, `failed`, or `failed_uncertain`, and deletes only the exact
+lane ownership. Crash/Core/commit uncertainty leaves durable v4
+`dispatch_unknown` and the lane active, so reinvocation cannot resend. This is
+local single-consumption, not remote exactly-once. Multi-node successor and
+predecessor-dataflow protocols remain absent.
+
+The generated full-catalog contract now covers immutable v1–v12 DDL and the
+exact v12 inventory of 28 tables, 24 named explicit indexes, and 61 implicit
+indexes. The v1–v12 length-framed DDL SHA-256 is
+`2b2f6a5550e3a5ea50fb6e4bb9a2e4b6b00d2d7fb5078cdf09d46ade6e35d4d0`;
+the independent v12 structural-contract SHA-256 is
+`eece924b11691950d7a749bb30b47ef7c207bc6234b310ff5a0b9a06e9fe6de9`.
 Final validation runs inside the migration transaction, so an invalid legacy
 schema cannot leave a partial upgrade. Unexpected definitions or objects fail
 as corruption without repair. See ADR 0012.
@@ -685,6 +703,17 @@ hashes are unkeyed content identities—not user signatures, Go authorship,
 consent receipts, current-pricing evidence, or proof that authority was
 released.
 
+The v12 dispatch lifecycle persists its immutable claim, terminal Result or
+Uncertainty artifact, and Go Core receipt in local SQLite plaintext. A Result
+contains the bounded final output; an Uncertainty may retain bounded partial
+output plus chronology, usage, and cost evidence. Default `dispatch execute`
+output remains metadata-only. `--include-result` deliberately reveals the
+fully revalidated stored output and Human rendering escapes terminal controls.
+Fresh off-machine consent covers only the one frozen request to the exact
+authorized destination; it grants no workspace, tool, Conversation, Prompt,
+memory, task-writeback, other-node, retry, or recovery authority. The lane and
+claim provide Hub-local single-consumption, not remote exactly-once delivery.
+
 Group analysis stores frozen context, exact request and terminal result in
 plaintext. Default views omit request/config/event/result bodies;
 `--include-result` reveals only the validated terminal projection. Its hashes
@@ -735,7 +764,7 @@ does not classify as corruption.
   UTF-8-safe truncation and omissions;
 - schema v1 and v2 data survive the atomic migration to v3, while a failing
   second migration stage rolls the complete v1 chain back without v2 residue;
-- valid fresh/v1/v2/v3/v4/v5/v6/v7/v8/v9 schemas reach and reopen as v10, while old-table
+- valid fresh/v1/v2/v3/v4/v5/v6/v7/v8/v9/v10/v11 schemas reach and reopen as v12, while old-table
   CHECK/key/FK/index drift, rogue catalog objects, and PRAGMA virtual shadows
   fail closed without repair; final validation failure rolls the complete
   legacy migration chain back;
@@ -782,6 +811,17 @@ does not classify as corruption.
   re-signed binding drift, leave SQLite byte-for-byte unchanged, and report
   every absent consent/credential/provider/network/lane/result/writeback/
   advance effect honestly;
+- dispatch execution rejects a v11 multi-node Graph through immutable preflight
+  with schema bytes, sidecars, credential and provider effects unchanged;
+- two claimants and two Runs sharing one Project lane produce one authority,
+  while stage-by-stage injected faults roll back claim/lane/seq-4 and
+  artifact/receipt/seq-5/lane-release transactions completely;
+- the no-retry collector classifies HTTP 429/500, transport, premature EOF,
+  provider protocol, cancellation, timeout, tool and local-limit uncertainty
+  after one provider call, and known completion requires terminal plus true EOF;
+- Rust and the real pinned Go Core agree on exact claim, Result/Uncertainty,
+  private terminal control, receipt and seq-5 bytes; default CLI output stays
+  metadata-only and explicit result disclosure remains terminal-safe;
 - Group analysis prepare stays local; concurrent confirmed send releases one
   dispatch, never retries uncertainty, and accepts only valid terminal results;
 - Group panel prepare preserves two-through-eight input order, replays one
@@ -824,9 +864,10 @@ does not classify as corruption.
 - OIDC login, account binding, OS keyring, explicit local-data claim;
 - remote directory, replicas, cursors, conflict merge, deletion propagation;
 - tenants, invitations, history visibility, ACL-backed shared Groups;
-- effectful manager/node Graph authority claim/dispatch/execution, terminal
-  result/lane release, successor selection, or cross-project tool/workspace
-  capabilities; passive contract/request/release authorization is delivered;
+- multi-node manager/node successor selection, predecessor-result dataflow,
+  per-node contract/request advancement, cross-project tool/workspace
+  capabilities, and no-send adjudication of a hard-crashed v4 claim; the
+  single-node claim/dispatch/terminal/lane-release lifecycle is delivered;
 - Group multi-Agent discussion, delegation, writeback, and derived memory;
 - providers beyond the delivered opt-in OpenAI Responses adapter,
   write/process/network tools, and process sandbox.

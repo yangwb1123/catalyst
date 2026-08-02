@@ -37,6 +37,10 @@ pub const TEXT: &str = "usage:
                 --authorization FILE|-
   forge-runtime [OPTIONS] group graph run dispatch readiness verify GRAPH_RUN_ID
                 --authorization FILE|- --pricing FILE|-
+  forge-runtime [OPTIONS] group graph run dispatch execute GRAPH_RUN_ID
+                --authorization FILE|- --pricing FILE|-
+                --core-bin ABSOLUTE_FILE --core-bin-sha256 SHA256
+                --confirm-off-machine [--include-result]
   forge-runtime [OPTIONS] group graph run show GRAPH_RUN_ID [--include-plan]
   forge-runtime [OPTIONS] group graph run list [GRAPH_ID] [--limit N]
   forge-runtime [OPTIONS] group analysis prepare GROUP_RUN_ID
@@ -115,6 +119,13 @@ pub const TEXT: &str = "usage:
   Readiness remains read-only and is not the final consent/credential/budget
   preflight: no provider is constructed, no lane or authority is claimed, and no
   request, result, database write, or graph advance occurs.
+  WARNING: dispatch execute is the only effectful Graph surface. It revalidates
+  one single-node Graph, exact authorization/pricing, and an explicitly pinned
+  Core executable before reading OPENAI_API_KEY. This effectful command is Linux-only:
+  Core runs from sealed, digest-verified anonymous executable bytes. --confirm-off-machine permits
+  exactly one frozen request to the registered provider. A durable claim forbids
+  automatic resend; a hard crash can quarantine the Project lane. Result text is
+  hidden unless --include-result is explicit. Multi-node execution is not yet supported.
   Group analysis prepare locally revalidates one frozen Group Run and persists
   the exact bounded OpenAI request-body bytes. It reads no API key and sends nothing.
   Group analysis send can release those frozen Prompt excerpts and metadata

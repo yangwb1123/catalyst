@@ -120,6 +120,9 @@ forge graph-node-contract --control control.json \
 
 forge graph-node-dispatch-authorize \
   --control release-control.json > authorization.json
+
+forge graph-node-terminal-receipt \
+  --control terminal-control.json > terminal-receipt.json
 ```
 
 `graph-node-contract` strictly validates Rust's canonical private control
@@ -141,6 +144,12 @@ and performs no network request.
 release-control snapshot and emits a passive content-addressed authorization.
 It does not persist or release dispatch authority; Rust must still revalidate
 it against current durable state and the exact pricing artifact.
+
+`graph-node-terminal-receipt` strictly rebuilds the claimed single-node run,
+authorization, pricing, lane, claim event, and bounded terminal artifact. It
+emits Core's content-addressed terminal decision without reading credentials,
+calling a provider, touching a database, or releasing the Project lane. Use
+`--protocol-version` for the exact no-newline bridge preflight value `1`.
 
 Provider endpoints use a conservative, byte-stable HTTPS grammar shared with
 Rust: lowercase canonical DNS or dotted-decimal IPv4, an optional canonical

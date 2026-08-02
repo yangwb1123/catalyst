@@ -85,6 +85,15 @@ pub enum GroupGraphRunDispatchCommand {
         authorization_source: String,
         pricing_source: String,
     },
+    Execute {
+        graph_run_id: String,
+        authorization_source: String,
+        pricing_source: String,
+        core_bin: String,
+        core_bin_sha256: String,
+        confirm_off_machine: bool,
+        include_result: bool,
+    },
 }
 
 #[derive(Debug, Eq, PartialEq)]

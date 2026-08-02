@@ -10,16 +10,16 @@ use super::{
 };
 
 #[test]
-fn v10_contract_and_run_data_survive_v11_migration_and_reopen() {
+fn v10_contract_and_run_data_survive_current_migration_and_reopen() {
     let (root, database) = legacy_v10_database();
-    let connection = open_database(&database).expect("v10 Hub migrates to v11");
-    assert_v11_shape(&connection);
+    let connection = open_database(&database).expect("v10 Hub migrates to current");
+    assert_current_shape(&connection);
     assert_legacy_v2_contract(&connection);
     assert_foreign_keys_clean(&connection);
     drop(connection);
 
-    let reopened = open_database(&database).expect("migrated v11 Hub reopens");
-    assert_v11_shape(&reopened);
+    let reopened = open_database(&database).expect("migrated current Hub reopens");
+    assert_current_shape(&reopened);
     assert_legacy_v2_contract(&reopened);
     drop((reopened, root));
 }
@@ -49,7 +49,7 @@ fn failed_final_validation_rolls_back_v10_to_v11_atomically() {
     let (root, database) = legacy_v10_database();
     let connection = Connection::open(&database).expect("open v10 rollback fixture");
     let error = migrate_with_before_final_fault_for_test(&connection, |migrated| {
-        assert_v11_shape(migrated);
+        assert_current_shape(migrated);
         migrated.execute_batch("CREATE TABLE rogue_v11_final_fault(id TEXT)")
     })
     .expect_err("final v11 validation rejects rogue object");
@@ -103,14 +103,14 @@ fn future_schema_version_is_rejected_without_mutation() {
     let (root, database) = legacy_v10_database();
     let connection = open_database(&database).expect("migrate future-version fixture");
     connection
-        .pragma_update(None, "user_version", 12)
+        .pragma_update(None, "user_version", 13)
         .expect("mark future schema");
     let before = schema_snapshot(&connection);
     drop(connection);
 
     assert_open_corrupt(&database);
     let unchanged = Connection::open(&database).expect("reopen future schema directly");
-    assert_eq!(schema_version(&unchanged), 12);
+    assert_eq!(schema_version(&unchanged), 13);
     assert_eq!(schema_snapshot(&unchanged), before);
     drop((unchanged, root));
 }
@@ -190,8 +190,8 @@ fn malformed(original: &str, replacement: &str) -> String {
     sql
 }
 
-fn assert_v11_shape(connection: &Connection) {
-    assert_eq!(schema_version(connection), 11);
+fn assert_current_shape(connection: &Connection) {
+    assert_eq!(schema_version(connection), 12);
     for table in [
         "group_agent_graph_runs",
         "group_agent_graph_run_events",

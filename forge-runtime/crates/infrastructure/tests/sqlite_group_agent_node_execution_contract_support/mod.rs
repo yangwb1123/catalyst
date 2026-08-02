@@ -15,7 +15,7 @@ use forge_runtime_domain::{
     group_agent_node_user_prompt, group_agent_project_lane_sha256, group_agent_prompt_sha256,
 };
 
-use crate::sqlite_group_agent_graph_run_support::Fixture;
+use super::sqlite_group_agent_graph_run_support::Fixture;
 
 pub fn prepared_fixture() -> Fixture {
     let fixture = Fixture::new();

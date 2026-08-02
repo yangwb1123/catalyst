@@ -257,8 +257,8 @@ while `show --include-request` explicitly reveals the exact private body.
 Preparation is not dispatch. It accepts no consent flag, reads no credential,
 constructs no provider or HTTP client, makes no network or workspace access,
 uses no tool, produces no result, and writes no Conversation/Prompt/memory.
-Dispatch authority remains false; authority-claim/send/result/advance commands
-do not exist in this slice.
+Dispatch authority remains false at this boundary; the separate, all-or-
+quarantine single-node execution boundary is described below.
 
 The effect-free release boundary now also has an exact pricing prerequisite and
 a combined readiness diagnostic. Create the immutable operator assertion before
@@ -287,7 +287,7 @@ wrap its bytes. Go independently reconstructs the original v1 control and all
 scheduler/request bindings before emitting a domain-separated,
 content-addressed authorization. Rust verify rebuilds the release control from
 current durable state and accepts only the one exact canonical authorization.
-Both Rust commands require an existing private v11 Hub. Their dedicated
+Both Rust commands require an existing private current-v12 Hub. Their dedicated
 read-only open does not create or migrate state, change permissions, configure
 WAL, or start a write transaction. It requires a persistent WAL `2/2` database
 header; missing/legacy/corrupt state and any present SQLite WAL, SHM, or
@@ -313,14 +313,59 @@ no environment lookup or network request occurs during either construction
 phase.
 
 Authorization and readiness are still not dispatch. Neither is persisted,
-schema stays v11,
+schema stays at the already-current v12,
 the Run stays v3 `awaiting_dispatch_authorization`, and authority remains
 false. Pricing/export/authorize/verify obtain no consent, read no credential, construct
 no provider, claim no Project lane, access no network/workspace/tool, produce
-no result, write nothing back, and do not advance the graph. A future
-effectful slice must pair the global lane/seq-3 claim with a bounded terminal
-result artifact and lane/graph lifecycle; a claim-only or send-without-result
-surface is intentionally absent.
+no result, write nothing back, and do not advance the graph.
+
+The only effectful Graph surface is deliberately one complete single-node
+lifecycle:
+
+```text
+forge-runtime group graph run dispatch execute GRAPH_RUN_ID \
+  --authorization authorization.json \
+  --pricing pricing.json \
+  --core-bin /absolute/path/to/forge \
+  --core-bin-sha256 LOWERCASE_SHA256 \
+  --confirm-off-machine
+```
+
+It rejects every Graph except one authored node, one wave containing that node,
+and zero edges before credential access or mutation. After fresh consent it
+reads only `OPENAI_API_KEY`, constructs the fixed no-proxy/no-redirect/no-retry
+Responses adapter, and atomically claims both seq-3/head and the Hub-global
+Project lane. On the approved service path, only the committing winner receives
+a non-`Clone` authority for the exact persisted request body; trusted in-process
+store adapters remain part of the TCB. The collector sends once, bounds time/events/
+bytes/tokens, rejects tools and trailing data, requires true EOF for a known
+result, and never acts on a retryable hint.
+
+Result or uncertainty evidence binds claim, lane, authorization, request body,
+pricing, observed usage/cost, output and no-retry flags. On Linux, the bridge
+copies the operator-pinned Go Core bytes into a sealed executable memfd, verifies
+the final anonymous bytes, and runs that descriptor; unsupported hosts fail
+closed. Core revalidates the complete private v4 snapshot and returns a canonical
+terminal receipt. One final transaction saves artifact and receipt, appends seq
+5, terminalizes the Graph and releases the exact lane ownership. A hard crash,
+Core failure or uncertain final commit leaves v4 `dispatch_unknown` plus the
+active lane; reinvocation reports the existing quarantine before credential or
+network access. There is no lease release, retry/resume, or separate public
+claim/send/complete command. Protocol v1 does not execute multi-node Graphs.
+For a hard-crash hot WAL, the re-entry-only reader verifies the exact v12 main
+database and WAL/SHM identities, requires a complete valid sidecar pair, rejects
+rollback journals, and leaves logical Hub content plus database/WAL bytes
+unchanged; `SQLite` may update transient SHM read-lock bytes.
+The claim, Result/Uncertainty artifact, bounded output or partial output, and
+Core receipt remain local SQLite plaintext. Execution output is metadata-only
+by default; `--include-result` explicitly reveals the fully validated stored
+output with terminal-safe Human rendering. Fresh consent authorizes only this
+one exact request: it grants no workspace/tool, Conversation/Prompt/memory/task
+writeback, other-node, retry, or recovery capability. This is Hub-local
+single-consumption and does not claim remote exactly-once delivery.
+Collector cancellation uses an explicit application token. This CLI version
+does not translate OS signals into that token, so abrupt termination follows
+the hard-crash/quarantine semantics rather than a caught-cancellation artifact.
 
 `group analysis prepare` is the next independent boundary. It fully validates
 one frozen Group Run, pins the versioned analysis Prompt, destination, model,
@@ -450,16 +495,16 @@ it does not prove that replaying an interrupted tool effect is safe. Run
 inspection reads its record, cursor, events, and bound Prompt from one SQLite
 snapshot so a concurrent append cannot look like corruption.
 
-The main SQLite catalog is exclusively Hub-owned. Every declared v0–v11 schema
+The main SQLite catalog is exclusively Hub-owned. Every declared v0–v12 schema
 is validated before migration DDL (v0 must be empty); the final migration step
-then validates the exact v11 24-table/20-explicit-index/45-implicit-index
+then validates the exact v12 28-table/24-explicit-index/61-implicit-index
 catalog, DDL, columns, keys, foreign keys, index structures, and absence of
 extra views/triggers/tables before the immediate transaction commits.
 Published DDL and the independent structural contract are release-pinned;
-the v1–v11 length-framed DDL SHA-256 is
-`7019cd92d67e07733b4fbca71757c3f914323e5af944367cb693343fe6694a19`
-and the v11 structural-contract SHA-256 is
-`ba468ed1b393264b7788f2a82332667b3053aa1f0ff9074a0b148c1aa8c83fd7`.
+the v1–v12 length-framed DDL SHA-256 is
+`2b2f6a5550e3a5ea50fb6e4bb9a2e4b6b00d2d7fb5078cdf09d46ade6e35d4d0`
+and the v12 structural-contract SHA-256 is
+`eece924b11691950d7a749bb30b47ef7c207bc6234b310ff5a0b9a06e9fe6de9`.
 Unexpected state fails as corruption and is never auto-repaired.
 Environmental SQLite failures remain unavailable. This detects schema drift
 but is not a same-user tamper or TOCTOU boundary.
@@ -567,5 +612,7 @@ Architecture:
 - [Core-owned first-node execution contract ADR](../docs/adr/0019-core-owned-first-node-execution-contract.md)
 - [Core-owned Node Dispatch Request preparation ADR](../docs/adr/0021-core-owned-node-dispatch-request-preparation.md)
 - [Effect-free Node Dispatch release authorization ADR](../docs/adr/0022-effect-free-node-dispatch-release-authorization.md)
+- [Effect-free registered destination and pricing readiness ADR](../docs/adr/0023-effect-free-node-dispatch-readiness.md)
+- [Single-node Dispatch terminal lifecycle ADR](../docs/adr/0024-single-node-dispatch-terminal-lifecycle.md)
 - [Hub local-foundation design](../docs/design/conversation-hub-phase1.md)
 - [Durable Run journal design](../docs/design/run-journal-phase1.md)

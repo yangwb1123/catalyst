@@ -89,6 +89,21 @@ func TestWorstCostUsesIndependentCeilAndCheckedWideArithmetic(t *testing.T) {
 	}
 }
 
+func TestActualCostUsesObservedBoundsAndIndependentCeil(t *testing.T) {
+	value := mustBuild(t, Input{
+		Model: "actual", InputUSDMicrosPerTokenUnit: 1,
+		OutputUSDMicrosPerTokenUnit: 1, MaxInputTokens: 3,
+	})
+	if cost, err := ActualCostUSDMicros(value, 2, 3); err != nil || cost != 2 {
+		t.Fatalf("actual cost = %d / %v, want 2", cost, err)
+	}
+	for _, tokens := range [][2]uint64{{0, 1}, {1, 0}, {4, 1}, {1, MaxOutputTokens + 1}} {
+		if _, err := ActualCostUSDMicros(value, tokens[0], tokens[1]); err == nil {
+			t.Fatalf("accepted out-of-range observed tokens %v", tokens)
+		}
+	}
+}
+
 func mustBuild(t *testing.T, input Input) Snapshot {
 	t.Helper()
 	value, err := Build(input)

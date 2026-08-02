@@ -46,6 +46,23 @@ impl Fixture {
         }
     }
 
+    #[allow(dead_code)]
+    pub fn single_node() -> Self {
+        let root = TempDir::new().expect("single-node Graph Run root");
+        let database = root.path().join("state").join("hub.sqlite3");
+        let store = SqliteHubStore::open(&database).expect("open Hub");
+        let group = store.create_group("Delivery", "group-key").expect("Group");
+        let project = add_member(&store, root.path(), &group.id, "frontend");
+        let snapshot = prepare_group_run(&store, &group.id);
+        let graph = prepare_single_graph(&store, &snapshot, &project);
+        Self {
+            _root: root,
+            database,
+            store,
+            graph,
+        }
+    }
+
     pub fn request(&self, run_id: &str, key: &str, created_at_ms: u64) -> BeginGroupAgentGraphRun {
         request(&self.graph, run_id, key, created_at_ms)
     }
@@ -112,6 +129,32 @@ fn prepare_graph(
     store
         .prepare_group_agent_graph(&request)
         .expect("prepare Group Agent Graph")
+        .inspection
+}
+
+#[allow(dead_code)]
+fn prepare_single_graph(
+    store: &SqliteHubStore,
+    snapshot: &GroupRunSnapshot,
+    project: &str,
+) -> GroupAgentGraphInspection {
+    let nodes = vec![graph_node("frontend", project)];
+    let edges = Vec::new();
+    let waves = compute_group_agent_graph_waves(&nodes, &edges).expect("single-node DAG waves");
+    let manifest = graph_manifest(snapshot, nodes, edges, waves);
+    let bytes = canonical_json_bytes(&manifest);
+    let request = PrepareGroupAgentGraph {
+        v: GROUP_AGENT_GRAPH_VERSION,
+        graph_id: "graph-single".into(),
+        manifest,
+        manifest_json: String::from_utf8(bytes.clone()).expect("manifest UTF-8"),
+        manifest_sha256: digest_hex(GROUP_AGENT_GRAPH_MANIFEST_DIGEST_DOMAIN, &bytes),
+        idempotency_key: "graph-single-key".into(),
+        created_at_ms: 20,
+    };
+    store
+        .prepare_group_agent_graph(&request)
+        .expect("prepare single-node Graph")
         .inspection
 }
 

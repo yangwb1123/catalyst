@@ -8,6 +8,7 @@ mod codec;
 mod event_wire;
 #[path = "group_agent_graph_run_journal_validation.rs"]
 mod journal_validation;
+mod terminal_validation;
 #[path = "group_agent_graph_run_validation.rs"]
 mod validation;
 
@@ -15,6 +16,8 @@ pub const GROUP_AGENT_GRAPH_CORE_PLAN_VERSION: u16 = 1;
 pub const GROUP_AGENT_GRAPH_RUN_VERSION: u16 = 1;
 pub const GROUP_AGENT_GRAPH_RUN_CONTRACT_VERSION: u16 = 2;
 pub const GROUP_AGENT_GRAPH_RUN_DISPATCH_REQUEST_VERSION: u16 = 3;
+pub const GROUP_AGENT_GRAPH_RUN_DISPATCH_CLAIM_VERSION: u16 = 4;
+pub const GROUP_AGENT_GRAPH_RUN_TERMINAL_VERSION: u16 = 5;
 pub const GROUP_AGENT_GRAPH_SCHEDULER_PROTOCOL_VERSION: u16 = 1;
 pub const GROUP_AGENT_GRAPH_CORE_PLAN_DIGEST_DOMAIN: &[u8] =
     b"forge.group-agent-graph-core-plan.v1\0";
@@ -24,9 +27,9 @@ pub const GROUP_AGENT_GRAPH_RUN_CONTROL_EVENT_DIGEST_DOMAIN: &[u8] =
     b"forge.group-agent-graph-run-control-event.v1\0";
 pub const MAX_GROUP_AGENT_GRAPH_CORE_PLAN_BYTES: usize = 2 * 1024 * 1024;
 pub const MAX_GROUP_AGENT_GRAPH_RUN_EVENT_BYTES: usize = 64 * 1024;
-pub const MAX_GROUP_AGENT_GRAPH_RUN_EVENTS: usize = 3;
+pub const MAX_GROUP_AGENT_GRAPH_RUN_EVENTS: usize = 5;
 pub const MAX_GROUP_AGENT_GRAPH_RUN_JOURNAL_BYTES: usize =
-    3 * MAX_GROUP_AGENT_GRAPH_RUN_EVENT_BYTES;
+    MAX_GROUP_AGENT_GRAPH_RUN_EVENTS * MAX_GROUP_AGENT_GRAPH_RUN_EVENT_BYTES;
 pub const MAX_GROUP_AGENT_GRAPH_RUN_LIST_LIMIT: usize = 100;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -51,6 +54,10 @@ pub enum GroupAgentGraphRunStatus {
     AwaitingExecutionContract,
     AwaitingCoreDispatch,
     AwaitingDispatchAuthorization,
+    DispatchUnknown,
+    Completed,
+    Failed,
+    FailedUncertain,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -123,6 +130,44 @@ pub enum GroupAgentGraphRunEventKind {
         destination_sha256: String,
         pricing_snapshot_sha256: String,
         prepared_at_ms: u64,
+    },
+    NodeDispatchReleased {
+        previous_event_sha256: String,
+        dispatch_id: String,
+        authorization_id: String,
+        authorization_sha256: String,
+        dispatch_request_id: String,
+        dispatch_request_sha256: String,
+        logical_request_sha256: String,
+        request_body_sha256: String,
+        request_body_bytes: usize,
+        pricing_snapshot_sha256: String,
+        node_id: String,
+        attempt: u16,
+        max_cost_usd_micros: u64,
+        consent_contract_version: u16,
+        lane_ownership_id: String,
+        project_lane_sha256: String,
+        released_at_ms: u64,
+    },
+    NodeLifecycleTerminalized {
+        previous_event_sha256: String,
+        dispatch_id: String,
+        lane_ownership_id: String,
+        project_lane_sha256: String,
+        artifact_id: String,
+        artifact_sha256: String,
+        terminal_receipt_id: String,
+        terminal_receipt_sha256: String,
+        node_id: String,
+        attempt: u16,
+        node_outcome: crate::GroupAgentNodeTerminalOutcome,
+        wave_index: usize,
+        wave_outcome: crate::GroupAgentNodeTerminalOutcome,
+        graph_status: GroupAgentGraphRunStatus,
+        retry_authorized: bool,
+        lane_released: bool,
+        terminalized_at_ms: u64,
     },
 }
 
@@ -212,6 +257,41 @@ impl GroupAgentGraphRunRecord {
 }
 
 impl GroupAgentGraphRunEvent {
+    /// Strictly decodes one exact compact canonical journal event.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for empty, oversized, malformed, noncanonical, or
+    /// protocol-invalid input.
+    pub fn decode_exact(json: &str) -> Result<Self, GroupAgentGraphRunValidationError> {
+        Self::decode_exact_bytes(json.as_bytes())
+    }
+
+    /// Strictly decodes exact compact canonical event bytes, including UTF-8.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for empty, oversized, non-UTF-8, malformed,
+    /// noncanonical, or protocol-invalid input.
+    pub fn decode_exact_bytes(bytes: &[u8]) -> Result<Self, GroupAgentGraphRunValidationError> {
+        if bytes.is_empty() || bytes.len() > MAX_GROUP_AGENT_GRAPH_RUN_EVENT_BYTES {
+            return Err(GroupAgentGraphRunValidationError {
+                message: "Graph Run event input is outside its byte bound".into(),
+            });
+        }
+        let event: Self =
+            serde_json::from_slice(bytes).map_err(|_| GroupAgentGraphRunValidationError {
+                message: "Graph Run event input is invalid JSON".into(),
+            })?;
+        event.validate()?;
+        if event.canonical_json()?.as_bytes() != bytes {
+            return Err(GroupAgentGraphRunValidationError {
+                message: "Graph Run event input is not exact canonical JSON".into(),
+            });
+        }
+        Ok(event)
+    }
+
     /// Validates one versioned passive Graph Run journal event.
     ///
     /// # Errors

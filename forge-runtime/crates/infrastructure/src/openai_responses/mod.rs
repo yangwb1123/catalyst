@@ -1,4 +1,7 @@
 mod endpoint;
+#[cfg(test)]
+#[path = "tests/http_errors.rs"]
+mod http_error_tests;
 mod output_items;
 mod output_semantics;
 #[cfg(test)]
@@ -389,17 +392,12 @@ async fn http_error(response: Response, api_key: &str) -> ProviderError {
     let api_error = serde_json::from_slice::<ErrorEnvelope>(&body)
         .ok()
         .map(|envelope| envelope.error);
-    let code = api_error
-        .as_ref()
-        .and_then(|error| error.code.clone())
-        .unwrap_or_else(|| format!("http_{}", status.as_u16()));
-    let code = redact(&code, api_key);
     let message = api_error.map_or_else(
         || format!("provider returned HTTP {}", status.as_u16()),
         |error| redact(&error.message, api_key),
     );
     ProviderError::new(
-        code,
+        format!("http_{}", status.as_u16()),
         message,
         status.as_u16() == 429 || status.is_server_error(),
     )
@@ -424,7 +422,6 @@ struct ErrorEnvelope {
 
 #[derive(serde::Deserialize)]
 struct ApiError {
-    code: Option<String>,
     message: String,
 }
 

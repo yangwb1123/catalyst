@@ -13,11 +13,13 @@ path = "src/main.rs"
 forge-runtime-application.workspace = true
 forge-runtime-domain.workspace = true
 forge-runtime-infrastructure.workspace = true
+rand.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
 
 [dev-dependencies]
+futures-util.workspace = true
 rusqlite.workspace = true
 sha2.workspace = true
 tempfile = "3"

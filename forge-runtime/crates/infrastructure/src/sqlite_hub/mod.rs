@@ -5,6 +5,7 @@ mod error_classification_tests;
 mod group_agent_graph;
 mod group_agent_graph_run;
 mod group_agent_node_execution_contract;
+mod group_agent_node_lifecycle;
 mod group_analysis_panel;
 mod group_context_build;
 mod group_context_read;
@@ -35,11 +36,14 @@ mod schema_migration_tests;
 mod schema_sql;
 mod schema_v10_sql;
 mod schema_v11_sql;
+#[path = "schema_contract/v12_sql.rs"]
+mod schema_v12_sql;
 mod schema_v9_sql;
 mod write;
 
 use std::path::{Path, PathBuf};
 
+use forge_runtime_domain::GroupAgentNodeLifecycleInspection;
 use forge_runtime_domain::{
     BeginGroupExecution, BeginGroupExecutionResult, BeginRun, BeginRunResult, Conversation,
     ConversationScope, GroupContextPolicy, GroupContextSlice, GroupExecutionEvent,
@@ -60,6 +64,8 @@ pub struct SqliteHubStore {
 enum SqliteHubStoreOpenMode {
     ReadWrite,
     ExistingCurrentReadOnly,
+    ExistingDispatchPreflightReadOnly,
+    ExistingDispatchReentryReadOnly,
 }
 
 impl SqliteHubStore {
@@ -98,11 +104,75 @@ impl SqliteHubStore {
         })
     }
 
+    /// Opens an exact existing v11 or v12 Hub for dispatch topology preflight only.
+    ///
+    /// This mode is immutable and cannot create, migrate, chmod, or write Hub state.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for unsafe, missing, corrupt, unsupported, or active state.
+    pub fn open_existing_dispatch_preflight_read_only(
+        database_path: impl AsRef<Path>,
+    ) -> Result<Self, HubStoreError> {
+        let database_path = database_path.as_ref().to_path_buf();
+        schema::open_existing_dispatch_preflight_read_only_database(&database_path)?;
+        Ok(Self {
+            database_path,
+            open_mode: SqliteHubStoreOpenMode::ExistingDispatchPreflightReadOnly,
+        })
+    }
+
+    /// Opens existing dispatch state for a no-send re-entry diagnosis.
+    ///
+    /// A clean exact v11/v12 database keeps the immutable preflight path. When
+    /// v12 has a hot WAL, the fallback reads the existing WAL/SHM pair without
+    /// changing logical Hub content; `SQLite` may update transient SHM read locks.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for unsafe, missing, corrupt, unsupported, or changing state.
+    pub fn open_existing_dispatch_inspection_read_only(
+        database_path: impl AsRef<Path>,
+    ) -> Result<Self, HubStoreError> {
+        let database_path = database_path.as_ref().to_path_buf();
+        let open_mode =
+            match schema::open_existing_dispatch_preflight_read_only_database(&database_path) {
+                Ok(_) => SqliteHubStoreOpenMode::ExistingDispatchPreflightReadOnly,
+                Err(immutable_error) => {
+                    schema::open_existing_dispatch_reentry_read_only_database(&database_path)
+                        .map_err(|_| immutable_error)?;
+                    SqliteHubStoreOpenMode::ExistingDispatchReentryReadOnly
+                }
+            };
+        Ok(Self {
+            database_path,
+            open_mode,
+        })
+    }
+
+    /// Inspects a dispatch lifecycle, when one exists, in one deferred snapshot.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for missing Runs, corrupt evidence, or unavailable storage.
+    pub fn inspect_existing_group_agent_node_lifecycle(
+        &self,
+        graph_run_id: &str,
+    ) -> Result<Option<GroupAgentNodeLifecycleInspection>, HubStoreError> {
+        group_agent_node_lifecycle::inspect_if_present(&mut self.connect()?, graph_run_id)
+    }
+
     fn connect(&self) -> Result<Connection, HubStoreError> {
         match self.open_mode {
             SqliteHubStoreOpenMode::ReadWrite => schema::open_database(&self.database_path),
             SqliteHubStoreOpenMode::ExistingCurrentReadOnly => {
                 schema::open_existing_current_read_only_database(&self.database_path)
+            }
+            SqliteHubStoreOpenMode::ExistingDispatchPreflightReadOnly => {
+                schema::open_existing_dispatch_preflight_read_only_database(&self.database_path)
+            }
+            SqliteHubStoreOpenMode::ExistingDispatchReentryReadOnly => {
+                schema::open_existing_dispatch_reentry_read_only_database(&self.database_path)
             }
         }
     }

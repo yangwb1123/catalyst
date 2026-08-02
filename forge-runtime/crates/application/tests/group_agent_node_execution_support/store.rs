@@ -10,20 +10,24 @@ use forge_runtime_domain::{
     GROUP_AGENT_NODE_EXECUTION_CONTRACT_VERSION, GroupAgentGraphInspection, GroupAgentGraphRecord,
     GroupAgentGraphRunInspection, GroupAgentGraphRunRecord, GroupAgentGraphRunStatus,
     GroupAgentGraphRunStore, GroupAgentGraphStore, GroupAgentNodeExecutionContractInspection,
-    GroupAgentNodeExecutionContractRecord, GroupAgentNodeExecutionContractStore, HubEntity,
-    HubStoreError, PrepareGroupAgentGraph, PrepareGroupAgentGraphResult,
+    GroupAgentNodeExecutionContractRecord, GroupAgentNodeExecutionContractStore,
+    GroupAgentNodeLifecycleInspection, HubEntity, HubStoreError, PrepareGroupAgentGraph,
+    PrepareGroupAgentGraphResult,
 };
 
 use super::FixtureBundle;
 
 #[path = "store/dispatch.rs"]
 mod dispatch;
+#[path = "store/lifecycle.rs"]
+mod lifecycle;
 
 pub(super) struct State {
     graph: GroupAgentGraphInspection,
     run: GroupAgentGraphRunInspection,
     admission: Option<StoredAdmission>,
     dispatch: Option<dispatch::StoredDispatch>,
+    lifecycle: Option<GroupAgentNodeLifecycleInspection>,
     list_override: Option<Vec<GroupAgentNodeExecutionContractRecord>>,
 }
 
@@ -46,6 +50,7 @@ impl MemoryContractHub {
                 run: fixture.run.clone(),
                 admission: None,
                 dispatch: None,
+                lifecycle: None,
                 list_override: None,
             }),
             run_reads: AtomicUsize::new(0),

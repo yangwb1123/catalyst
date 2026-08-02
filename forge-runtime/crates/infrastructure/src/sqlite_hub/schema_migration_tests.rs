@@ -4,7 +4,10 @@ use tempfile::TempDir;
 use crate::runtime_domain::HubStoreError;
 
 use super::{
-    schema::{migrate_with_before_final_fault_for_test, open_database},
+    schema::{
+        migrate_with_before_final_fault_for_test, open_database,
+        open_existing_dispatch_preflight_read_only_database,
+    },
     schema_sql::{
         CREATE_V1_SCHEMA_SQL, MIGRATE_V1_TO_V2_SQL, MIGRATE_V2_TO_V3_SQL, MIGRATE_V3_TO_V4_SQL,
         MIGRATE_V4_TO_V5_SQL, MIGRATE_V5_TO_V6_SQL, MIGRATE_V6_TO_V7_SQL, MIGRATE_V7_TO_V8_SQL,
@@ -12,6 +15,7 @@ use super::{
     schema_v9_sql::MIGRATE_V8_TO_V9_SQL,
     schema_v10_sql::MIGRATE_V9_TO_V10_SQL,
     schema_v11_sql::MIGRATE_V10_TO_V11_SQL,
+    schema_v12_sql::MIGRATE_V11_TO_V12_SQL,
 };
 
 #[path = "tests/schema_full_validation.rs"]
@@ -26,6 +30,8 @@ mod schema_transaction_rollback_tests;
 mod schema_v10_migration_tests;
 #[path = "tests/schema_v11_migration.rs"]
 mod schema_v11_migration_tests;
+#[path = "tests/schema_v12_migration.rs"]
+mod schema_v12_migration_tests;
 #[path = "tests/schema_v5_migration.rs"]
 mod schema_v5_migration_tests;
 #[path = "tests/schema_v6_migration.rs"]

@@ -19,6 +19,7 @@ import (
 	"forgeos/forge-core/internal/graphplan"
 	"forgeos/forge-core/internal/graphpricing"
 	"forgeos/forge-core/internal/graphrelease"
+	"forgeos/forge-core/internal/graphterminal"
 	"forgeos/forge-core/internal/orchestrator"
 )
 
@@ -89,6 +90,9 @@ var subcommands = map[string]func([]string) int{
 	"graph-node-dispatch-authorize": func(rest []string) int {
 		return graphrelease.Command(rest, os.Stdin, os.Stdout, os.Stderr)
 	},
+	"graph-node-terminal-receipt": func(rest []string) int {
+		return graphterminal.Command(rest, os.Stdin, os.Stdout, os.Stderr)
+	},
 	"approve":                cmdApprove,
 	"reject":                 cmdReject,
 	releasePinnedExecCommand: cmdReleaseExecPinned,
@@ -140,6 +144,8 @@ usage:
   forge graph-node-contract --control FILE|- --endpoint HTTPS_URL --model MODEL --max-output-tokens N --max-model-output-bytes N --max-model-events N --timeout-ms N --max-cost-usd-micros N --pricing-snapshot-sha256 SHA256 --max-result-bytes N
   forge graph-node-pricing-snapshot --model MODEL --input-usd-micros-per-token-unit N --output-usd-micros-per-token-unit N --max-input-tokens N
   forge graph-node-dispatch-authorize --control FILE|-
+  forge graph-node-terminal-receipt --control FILE|-
+  forge graph-node-terminal-receipt --protocol-version
   forge gate|check|accept [--root DIR]
 `)
 }

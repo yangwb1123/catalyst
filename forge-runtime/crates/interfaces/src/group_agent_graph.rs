@@ -8,6 +8,10 @@ pub(crate) mod contract_output;
 pub(crate) mod dispatch_authorization_output;
 #[path = "group_agent_graph/dispatch_command.rs"]
 pub(crate) mod dispatch_command;
+#[path = "group_agent_graph/dispatch_execution_adapters.rs"]
+pub(crate) mod dispatch_execution_adapters;
+#[path = "group_agent_graph/dispatch_execution_output.rs"]
+pub(crate) mod dispatch_execution_output;
 #[path = "group_agent_graph/dispatch_output.rs"]
 pub(crate) mod dispatch_output;
 #[path = "group_agent_graph/dispatch_readiness_output.rs"]

@@ -118,29 +118,6 @@ async fn maps_incomplete_responses_to_the_length_finish_reason() {
 }
 
 #[tokio::test]
-async fn redacts_the_api_key_from_http_errors() {
-    let server = MockServer::start().await;
-    let body = json!({
-        "error": {
-            "code": "invalid_api_key",
-            "message": format!("credential {SECRET} was rejected")
-        }
-    });
-    mount_response(&server, ResponseTemplate::new(401).set_body_json(body)).await;
-
-    let errors = provider(&server)
-        .stream(empty_request())
-        .collect::<Vec<_>>()
-        .await;
-    let error = errors[0].as_ref().expect_err("HTTP failure");
-
-    assert_eq!(error.code, "invalid_api_key");
-    assert!(!error.retryable);
-    assert!(!format!("{error:?}").contains(SECRET));
-    assert!(error.message.contains("[REDACTED]"));
-}
-
-#[tokio::test]
 async fn redacts_the_api_key_from_stream_errors() {
     let server = MockServer::start().await;
     let stream = format!(

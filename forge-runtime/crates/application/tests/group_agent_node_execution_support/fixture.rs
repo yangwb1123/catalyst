@@ -5,7 +5,7 @@ use forge_runtime_domain::{
     GROUP_AGENT_GRAPH_VERSION, GroupAgentGraphControlSnapshot, GroupAgentGraphInspection,
     GroupAgentGraphRecord, GroupAgentGraphRunEvent, GroupAgentGraphRunEventKind,
     GroupAgentGraphRunInspection, GroupAgentGraphRunRecord, GroupAgentGraphRunStatus,
-    GroupAgentGraphStatus, GroupAgentNodeExecutionContract,
+    GroupAgentGraphStatus, GroupAgentNodeExecutionContract, GroupAgentNodeTerminalControl,
 };
 use serde::Deserialize;
 use serde_json::Value;
@@ -39,10 +39,32 @@ pub(crate) fn fixture() -> FixtureBundle {
         "/../../../docs/contracts/fixtures/group-agent-node-execution-contract-v1.json"
     )))
     .expect("shared Go fixture");
-    let mut snapshot: GroupAgentGraphControlSnapshot =
+    let snapshot: GroupAgentGraphControlSnapshot =
         serde_json::from_str(&fixture.input.canonical_control_snapshot_json).expect("snapshot");
-    let mut contract: GroupAgentNodeExecutionContract =
+    let contract: GroupAgentNodeExecutionContract =
         serde_json::from_str(&fixture.expected.canonical_contract_json).expect("contract");
+    bundle(snapshot, contract)
+}
+
+#[allow(dead_code)]
+pub(crate) fn single_node_fixture() -> FixtureBundle {
+    let fixture: Value = serde_json::from_str(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../../docs/contracts/fixtures/group-agent-node-terminal-lifecycle-v1.json"
+    )))
+    .expect("terminal lifecycle fixture");
+    let json = fixture["canonical_terminal_control_json"]
+        .as_str()
+        .expect("terminal control JSON");
+    let control: GroupAgentNodeTerminalControl = serde_json::from_str(json).expect("control");
+    let snapshot = snapshot_from_terminal(&control);
+    bundle(snapshot, control.contract)
+}
+
+fn bundle(
+    mut snapshot: GroupAgentGraphControlSnapshot,
+    mut contract: GroupAgentNodeExecutionContract,
+) -> FixtureBundle {
     let event = prepared_event(&snapshot);
     snapshot.last_event_sha256 = event.expected_sha256().expect("prepared event digest");
     snapshot.snapshot_sha256 = snapshot.expected_sha256().expect("snapshot digest");
@@ -68,6 +90,29 @@ pub(crate) fn fixture() -> FixtureBundle {
         contract_json: contract.canonical_json().expect("contract JSON"),
         graph,
         run,
+    }
+}
+
+#[allow(dead_code)]
+fn snapshot_from_terminal(
+    control: &GroupAgentNodeTerminalControl,
+) -> GroupAgentGraphControlSnapshot {
+    GroupAgentGraphControlSnapshot {
+        v: 1,
+        scheduler_protocol_version: control.scheduler_protocol_version,
+        graph_run_version: 1,
+        graph_run_id: control.graph_run.graph_run_id.clone(),
+        graph_id: control.graph_run.graph_id.clone(),
+        source_snapshot_sha256: control.graph_run.source_snapshot_sha256.clone(),
+        graph_manifest_sha256: control.graph_run.graph_manifest_sha256.clone(),
+        core_plan_sha256: control.graph_run.plan_sha256.clone(),
+        last_event_seq: 1,
+        last_event_sha256: control.contract.expected_last_event_sha256.clone(),
+        execution_contract_present: false,
+        dispatch_authority_released: false,
+        plan: control.plan.clone(),
+        manifest: control.manifest.clone(),
+        snapshot_sha256: control.contract.control_snapshot_sha256.clone(),
     }
 }
 

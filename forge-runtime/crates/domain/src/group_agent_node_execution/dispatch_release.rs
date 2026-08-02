@@ -169,6 +169,32 @@ impl GroupAgentNodeDispatchReleaseControl {
 }
 
 impl GroupAgentNodeDispatchAuthorization {
+    /// Strictly decodes one exact compact canonical authorization document.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for empty, oversized, malformed, noncanonical, or
+    /// self-inconsistent input. Input bytes are never included in errors.
+    pub fn decode_exact(json: &str) -> Result<Self, GroupAgentNodeDispatchReleaseValidationError> {
+        if json.is_empty() || json.len() > MAX_GROUP_AGENT_NODE_DISPATCH_AUTHORIZATION_BYTES {
+            return Err(GroupAgentNodeDispatchReleaseValidationError {
+                message: "Node Dispatch Authorization input is outside its byte bound".into(),
+            });
+        }
+        let authorization: Self = serde_json::from_str(json).map_err(|_| {
+            GroupAgentNodeDispatchReleaseValidationError {
+                message: "Node Dispatch Authorization input is invalid JSON".into(),
+            }
+        })?;
+        authorization.validate()?;
+        if authorization.canonical_json()?.as_bytes() != json.as_bytes() {
+            return Err(GroupAgentNodeDispatchReleaseValidationError {
+                message: "Node Dispatch Authorization input is not exact canonical JSON".into(),
+            });
+        }
+        Ok(authorization)
+    }
+
     /// Validates the authorization envelope and its self-addressed identity.
     ///
     /// # Errors

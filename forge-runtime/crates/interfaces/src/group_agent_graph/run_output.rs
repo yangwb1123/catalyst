@@ -108,13 +108,14 @@ impl GroupAgentGraphRunCliOutput {
 
     pub fn list(v: u16, runs: Vec<GroupAgentGraphRunRecord>) -> Self {
         let execution_contract_present = runs.iter().any(|run| run.execution_contract_present);
+        let dispatch_authority_released = runs.iter().any(|run| run.dispatch_authority_released);
         Self::GraphAgentRuns {
             v,
             metadata_only: true,
             plan_and_journal_validated: false,
             source_graph_validated: false,
             execution_contract_present,
-            dispatch_authority_released: false,
+            dispatch_authority_released,
             execution_performed: false,
             manager_execution_performed: false,
             node_execution_performed: false,
@@ -227,6 +228,7 @@ fn write_inspection(
     write_boundaries(
         inspection.explicit_plan_file_read,
         inspection.execution_contract_present,
+        run.dispatch_authority_released,
         writer,
     )
 }
@@ -296,6 +298,7 @@ fn write_list(runs: &[GroupAgentGraphRunRecord], writer: &mut impl Write) -> Res
     write_boundaries(
         false,
         runs.iter().any(|run| run.execution_contract_present),
+        runs.iter().any(|run| run.dispatch_authority_released),
         writer,
     )
 }
@@ -303,9 +306,15 @@ fn write_list(runs: &[GroupAgentGraphRunRecord], writer: &mut impl Write) -> Res
 fn write_boundaries(
     explicit_plan_file_read: bool,
     execution_contract_present: bool,
+    dispatch_authority_released: bool,
     writer: &mut impl Write,
 ) -> Result<(), io::Error> {
-    if execution_contract_present {
+    if dispatch_authority_released {
+        writeln!(
+            writer,
+            "durable dispatch authority released; use dispatch output for terminal evidence"
+        )?;
+    } else if execution_contract_present {
         writeln!(
             writer,
             "execution contract present; dispatch authority not released"
@@ -318,11 +327,11 @@ fn write_boundaries(
     }
     writeln!(
         writer,
-        "manager/node Agents not executed; model configuration selected={execution_contract_present}; model not used"
+        "this inspection performed no manager/node Agent or model execution; model configuration selected={execution_contract_present}"
     )?;
     writeln!(
         writer,
-        "no provider/network/workspace/tools; no task results"
+        "this inspection used no provider/network/workspace/tools and produced no task result"
     )?;
     writeln!(
         writer,
@@ -342,6 +351,10 @@ fn status_label(status: GroupAgentGraphRunStatus) -> &'static str {
         GroupAgentGraphRunStatus::AwaitingDispatchAuthorization => {
             "awaiting_dispatch_authorization"
         }
+        GroupAgentGraphRunStatus::DispatchUnknown => "dispatch_unknown",
+        GroupAgentGraphRunStatus::Completed => "completed",
+        GroupAgentGraphRunStatus::Failed => "failed",
+        GroupAgentGraphRunStatus::FailedUncertain => "failed_uncertain",
     }
 }
 
@@ -351,3 +364,7 @@ fn disposition_label(disposition: BeginGroupAgentGraphRunDisposition) -> &'stati
         BeginGroupAgentGraphRunDisposition::Replayed => "replayed",
     }
 }
+
+#[cfg(test)]
+#[path = "run_output_tests.rs"]
+mod tests;

@@ -66,7 +66,7 @@ fn valid_record_state(record: &GroupAgentGraphRunRecord) -> bool {
             false,
             3,
         )
-    )
+    ) || super::terminal_validation::valid_terminal_record_state(record)
 }
 
 pub(super) fn validate_event(
@@ -123,6 +123,10 @@ fn validate_event_kind(event: &GroupAgentGraphRunEvent) -> bool {
         ),
         kind @ GroupAgentGraphRunEventKind::NodeDispatchRequestPrepared { .. } => {
             validate_dispatch_request_event(event, kind)
+        }
+        kind @ (GroupAgentGraphRunEventKind::NodeDispatchReleased { .. }
+        | GroupAgentGraphRunEventKind::NodeLifecycleTerminalized { .. }) => {
+            super::terminal_validation::validate_lifecycle_event(event, kind)
         }
     }
 }
@@ -326,7 +330,8 @@ fn validate_inspection_binding(
         && run.created_at_ms == prepared.4
         && run.plan_bytes == inspection.plan_json.len()
         && run.node_count == plan.authored_node_ids.len()
-        && run.wave_count == plan.waves.len();
+        && run.wave_count == plan.waves.len()
+        && super::terminal_validation::terminal_record_matches_head(run, &inspection.events);
     valid
         .then_some(())
         .ok_or_else(|| invalid("Graph Run inspection bindings disagree"))
@@ -373,34 +378,15 @@ fn validate_event_journal(
 fn validate_journal_head(
     inspection: &GroupAgentGraphRunInspection,
 ) -> Result<(), GroupAgentGraphRunValidationError> {
-    if inspection.events.len() == 1 {
-        return Ok(());
+    for pair in inspection.events.windows(2) {
+        let previous = pair[0].expected_sha256()?;
+        let claimed = super::terminal_validation::previous_event_sha256(&pair[1])
+            .ok_or_else(|| invalid("Graph Run chained event kind is invalid"))?;
+        if previous != claimed {
+            return Err(invalid("Graph Run event hash chain is invalid"));
+        }
     }
-    let previous = inspection.events[0].expected_sha256()?;
-    let GroupAgentGraphRunEventKind::NodeExecutionContractAdmitted {
-        previous_event_sha256,
-        ..
-    } = &inspection.events[1].kind
-    else {
-        return Err(invalid("Graph Run seq-2 event kind is invalid"));
-    };
-    if previous != *previous_event_sha256 {
-        return Err(invalid("Graph Run event hash chain is invalid"));
-    }
-    if inspection.events.len() == 2 {
-        return Ok(());
-    }
-    let previous = inspection.events[1].expected_sha256()?;
-    let GroupAgentGraphRunEventKind::NodeDispatchRequestPrepared {
-        previous_event_sha256,
-        ..
-    } = &inspection.events[2].kind
-    else {
-        return Err(invalid("Graph Run seq-3 event kind is invalid"));
-    };
-    (previous == *previous_event_sha256)
-        .then_some(())
-        .ok_or_else(|| invalid("Graph Run event hash chain is invalid"))
+    Ok(())
 }
 
 fn validate_exact_plan(
@@ -427,11 +413,11 @@ fn validate_exact_event(
         .ok_or_else(|| invalid("Graph Run event JSON is not its exact canonical encoding"))
 }
 
-fn valid_identifier(value: &str) -> bool {
+pub(super) fn valid_identifier(value: &str) -> bool {
     valid_text(value, MAX_GROUP_AGENT_GRAPH_IDENTIFIER_BYTES)
 }
 
-fn valid_text(value: &str, maximum: usize) -> bool {
+pub(super) fn valid_text(value: &str, maximum: usize) -> bool {
     !value.trim().is_empty() && value.len() <= maximum && !value.chars().any(unsupported_character)
 }
 
@@ -447,7 +433,7 @@ fn unsupported_character(value: char) -> bool {
         )
 }
 
-fn is_lower_hex_digest(value: &str) -> bool {
+pub(super) fn is_lower_hex_digest(value: &str) -> bool {
     value.len() == 64
         && value
             .bytes()
