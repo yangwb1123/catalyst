@@ -33,6 +33,8 @@ fn parse_provider_request(
         Some("prepare") => parse_provider_request_prepare(tokens, idempotency_key),
         Some("show") => parse_provider_request_show(tokens),
         Some("list") => parse_provider_request_list(tokens),
+        Some("release-control") => super::scheduled_release_args::parse_release_control(tokens),
+        Some("authorization") => super::scheduled_release_args::parse_authorization(tokens),
         Some(value) => Err(unknown(
             "group graph run scheduled-contract provider-request",
             value,

@@ -24,7 +24,7 @@ use super::{
 
 #[path = "scheduled_provider_request_test_store.rs"]
 mod store;
-use store::{SpyCodec, SpyHub};
+pub(super) use store::{SpyCodec, SpyHub};
 
 const BODY: &[u8] = br#"{"model":"fixture"}"#;
 

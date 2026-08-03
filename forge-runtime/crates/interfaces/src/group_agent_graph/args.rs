@@ -10,6 +10,8 @@ mod dispatch_readiness_args;
 mod schedule_args;
 #[path = "scheduled_contract_args.rs"]
 mod scheduled_contract_args;
+#[path = "scheduled_release/args.rs"]
+mod scheduled_release_args;
 
 use crate::{
     group_context_output::terminal_text,

@@ -6,6 +6,7 @@ use tempfile::TempDir;
 
 #[allow(dead_code)]
 mod cli_group_agent_scheduled_node_contract_support;
+#[allow(dead_code)]
 mod cli_group_agent_scheduled_node_provider_request_support;
 mod group_agent_graph_run_support;
 mod group_agent_graph_support;

@@ -20,6 +20,11 @@ mod scheduled_provider_request_service;
 #[path = "scheduled_provider_request_tests.rs"]
 mod scheduled_provider_request_tests;
 mod scheduled_provider_request_validation;
+mod scheduled_release_error;
+mod scheduled_release_service;
+#[cfg(test)]
+#[path = "scheduled_release_tests.rs"]
+mod scheduled_release_tests;
 mod service;
 mod snapshot;
 mod validation;
@@ -63,8 +68,26 @@ pub use crate::runtime_domain::{
     PrepareGroupAgentNodeDispatchRequestDisposition, PrepareGroupAgentNodeDispatchRequestResult,
 };
 pub use crate::runtime_domain::{
+    GROUP_AGENT_SCHEDULED_NODE_DISPATCH_AUTHORIZATION_PROTOCOL_VERSION,
+    GROUP_AGENT_SCHEDULED_NODE_DISPATCH_AUTHORIZATION_VERSION,
+    GROUP_AGENT_SCHEDULED_NODE_DISPATCH_CONSENT_CONTRACT_VERSION,
+    GROUP_AGENT_SCHEDULED_NODE_DISPATCH_RELEASE_CONTROL_PROTOCOL_VERSION,
+    GROUP_AGENT_SCHEDULED_NODE_DISPATCH_RELEASE_CONTROL_VERSION,
     GROUP_AGENT_SCHEDULED_NODE_PROVIDER_REQUEST_VERSION,
+    GroupAgentScheduledNodeDispatchAtomicTransitionRequirement,
+    GroupAgentScheduledNodeDispatchAuthorization,
+    GroupAgentScheduledNodeDispatchConsentRequirement,
+    GroupAgentScheduledNodeDispatchCredentialPreflight,
+    GroupAgentScheduledNodeDispatchDestinationPreflight,
+    GroupAgentScheduledNodeDispatchPricingPreflight,
+    GroupAgentScheduledNodeDispatchProjectLaneClaim,
+    GroupAgentScheduledNodeDispatchProviderHealthCheck,
+    GroupAgentScheduledNodeDispatchReleaseControl,
+    GroupAgentScheduledNodeDispatchReleaseRequirements,
     GroupAgentScheduledNodeProviderRequestInspection, GroupAgentScheduledNodeProviderRequestRecord,
+    GroupAgentScheduledNodeSuccessorRequirement,
+    MAX_GROUP_AGENT_SCHEDULED_NODE_DISPATCH_AUTHORIZATION_BYTES,
+    MAX_GROUP_AGENT_SCHEDULED_NODE_DISPATCH_RELEASE_CONTROL_BYTES,
     MAX_GROUP_AGENT_SCHEDULED_NODE_PROVIDER_REQUEST_LIST_LIMIT,
     PrepareGroupAgentScheduledNodeProviderRequestDisposition,
     PrepareGroupAgentScheduledNodeProviderRequestResult,
@@ -96,6 +119,12 @@ pub use scheduled_provider_request_error::GroupAgentScheduledNodeProviderRequest
 pub use scheduled_provider_request_service::{
     GroupAgentScheduledNodeProviderRequestService,
     PrepareGroupAgentScheduledNodeProviderRequestInput,
+};
+pub use scheduled_release_error::GroupAgentScheduledNodeDispatchReleaseControlServiceError;
+pub use scheduled_release_service::{
+    ExportGroupAgentScheduledNodeDispatchReleaseControl,
+    GroupAgentScheduledNodeDispatchReleaseControlService,
+    VerifiedGroupAgentScheduledNodeDispatchAuthorization,
 };
 pub use service::{
     AdmitGroupAgentNodeExecutionContractInput, ExportGroupAgentGraphControl,

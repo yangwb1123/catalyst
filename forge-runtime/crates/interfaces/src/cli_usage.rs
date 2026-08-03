@@ -43,6 +43,10 @@ pub const TEXT: &str = "usage:
     [--include-request]
   forge-runtime [OPTIONS] group graph run scheduled-contract provider-request list
     [GRAPH_RUN_ID] [--limit N]
+  forge-runtime [OPTIONS] group graph run scheduled-contract provider-request release-control
+    export PROVIDER_REQUEST_ID
+  forge-runtime [OPTIONS] group graph run scheduled-contract provider-request authorization
+    verify PROVIDER_REQUEST_ID --authorization FILE|-
   forge-runtime [OPTIONS] group graph run dispatch prepare GRAPH_RUN_ID
                 [--idempotency-key KEY]
   forge-runtime [OPTIONS] group graph run dispatch show DISPATCH_REQUEST_ID
@@ -131,6 +135,19 @@ pub const TEXT: &str = "usage:
   construct a provider, access a network/workspace/tool, observe progress or a
   receipt, or write results/Conversation/Prompt/memory. Request bytes remain hidden
   unless provider-request show --include-request is explicit.
+  WARNING: scheduled-contract provider-request release-control export emits one
+  private canonical artifact containing complete Graph/Run/schedule/candidate,
+  exact provider request, Prompt, endpoint/model/budget/lane/pricing, and digests.
+  The explicit export command authorizes disclosure to stdout; redirect it only
+  to a trusted Core consumer. --json never wraps or reformats these exact bytes.
+  Scheduled provider-request authorization verify first accepts only a bounded
+  exact UTF-8 canonical artifact, then freshly revalidates the current v15 Hub
+  through a read-only connection. Three true authorization decisions permit a
+  future atomic lifecycle admission/execution/dispatch release only after every
+  declared precondition; all current effect facts remain false. Verification
+  reads no credential, contacts no provider/network/workspace/tool, claims no
+  lane, writes no database/Conversation/Prompt/memory/result, and advances no
+  Graph successor. Default human/JSON output contains redacted metadata only.
   Group graph run dispatch prepare uses only the pure local Responses codec and
   persists exact request bytes. It obtains no consent, reads no credential, releases
   no dispatch authority, and invokes no provider, network, workspace, tool, result,

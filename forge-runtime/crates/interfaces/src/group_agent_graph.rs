@@ -34,3 +34,5 @@ pub(crate) mod scheduled_contract_output;
 pub(crate) mod scheduled_provider_request_command;
 #[path = "group_agent_graph/scheduled_provider_request_output.rs"]
 pub(crate) mod scheduled_provider_request_output;
+#[path = "group_agent_graph/scheduled_release/output.rs"]
+pub(crate) mod scheduled_release_output;

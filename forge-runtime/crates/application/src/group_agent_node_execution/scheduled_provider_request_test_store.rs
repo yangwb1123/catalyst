@@ -1,6 +1,9 @@
 use std::{
     collections::BTreeMap,
-    sync::{Mutex, MutexGuard},
+    sync::{
+        Mutex, MutexGuard,
+        atomic::{AtomicUsize, Ordering},
+    },
 };
 
 use serde_json::Value;
@@ -24,20 +27,20 @@ use crate::runtime_domain::{
 use super::{contract_record, result, source};
 use crate::group_agent_node_execution::GroupAgentNodeDispatchRequestCodec;
 
-pub(super) struct SpyCodec {
+pub(crate) struct SpyCodec {
     body: Vec<u8>,
     calls: Mutex<Vec<&'static str>>,
 }
 
 impl SpyCodec {
-    pub(super) fn new(body: Vec<u8>) -> Self {
+    pub(crate) fn new(body: Vec<u8>) -> Self {
         Self {
             body,
             calls: Mutex::new(Vec::new()),
         }
     }
 
-    pub(super) fn calls(&self) -> Vec<&'static str> {
+    pub(crate) fn calls(&self) -> Vec<&'static str> {
         self.calls.lock().expect("codec calls").clone()
     }
 }
@@ -68,16 +71,17 @@ impl GroupAgentNodeDispatchRequestCodec for SpyCodec {
     }
 }
 
-pub(super) struct SpyHub {
+pub(crate) struct SpyHub {
     graph: GroupAgentGraphInspection,
     run: GroupAgentGraphRunInspection,
     schedule: GroupAgentGraphExecutionScheduleInspection,
     contract: GroupAgentScheduledNodeContractInspection,
-    captured_body: Mutex<Option<Vec<u8>>>,
+    captured_request: Mutex<Option<GroupAgentScheduledNodeProviderRequestInspection>>,
+    mutation_calls: AtomicUsize,
 }
 
 impl SpyHub {
-    pub(super) fn new() -> Self {
+    pub(crate) fn new() -> Self {
         let run = super::pristine_run();
         let control = current_control(&run);
         let schedule = schedule(&control);
@@ -87,24 +91,38 @@ impl SpyHub {
             run,
             schedule,
             contract,
-            captured_body: Mutex::new(None),
+            captured_request: Mutex::new(None),
+            mutation_calls: AtomicUsize::new(0),
         }
     }
 
-    pub(super) fn captured_body(&self) -> Vec<u8> {
-        self.captured_body
+    pub(crate) fn captured_body(&self) -> Vec<u8> {
+        self.captured_request
             .lock()
-            .expect("captured body")
-            .clone()
+            .expect("captured request")
+            .as_ref()
+            .map(|inspection| inspection.provider_request_body.clone())
             .expect("request captured")
     }
 
-    pub(super) fn contract_id(&self) -> String {
+    pub(crate) fn contract_id(&self) -> String {
         self.contract.record.contract_id.clone()
     }
 
-    fn body(&self) -> MutexGuard<'_, Option<Vec<u8>>> {
-        self.captured_body.lock().expect("captured body")
+    pub(crate) fn mutation_calls(&self) -> usize {
+        self.mutation_calls.load(Ordering::SeqCst)
+    }
+
+    pub(crate) fn reset_mutation_calls(&self) {
+        self.mutation_calls.store(0, Ordering::SeqCst);
+    }
+
+    fn request(&self) -> MutexGuard<'_, Option<GroupAgentScheduledNodeProviderRequestInspection>> {
+        self.captured_request.lock().expect("captured request")
+    }
+
+    fn record_mutation(&self) {
+        self.mutation_calls.fetch_add(1, Ordering::SeqCst);
     }
 }
 
@@ -113,6 +131,7 @@ impl GroupAgentGraphStore for SpyHub {
         &self,
         _request: &PrepareGroupAgentGraph,
     ) -> Result<PrepareGroupAgentGraphResult, HubStoreError> {
+        self.record_mutation();
         Err(unavailable("Graph preparation is outside this test"))
     }
 
@@ -137,6 +156,7 @@ impl GroupAgentGraphRunStore for SpyHub {
         &self,
         _request: &BeginGroupAgentGraphRun,
     ) -> Result<BeginGroupAgentGraphRunResult, HubStoreError> {
+        self.record_mutation();
         Err(unavailable("Graph Run preparation is outside this test"))
     }
 
@@ -161,6 +181,7 @@ impl GroupAgentGraphExecutionScheduleStore for SpyHub {
         &self,
         _request: &AdmitGroupAgentGraphExecutionSchedule,
     ) -> Result<AdmitGroupAgentGraphExecutionScheduleResult, HubStoreError> {
+        self.record_mutation();
         Err(unavailable("schedule admission is outside this test"))
     }
 
@@ -189,6 +210,7 @@ impl GroupAgentScheduledNodeContractStore for SpyHub {
         &self,
         _request: &AdmitGroupAgentScheduledNodeContractCandidate,
     ) -> Result<AdmitGroupAgentScheduledNodeContractResult, HubStoreError> {
+        self.record_mutation();
         Err(unavailable("contract admission is outside this test"))
     }
 
@@ -217,21 +239,30 @@ impl GroupAgentScheduledNodeProviderRequestStore for SpyHub {
         &self,
         request: &PrepareGroupAgentScheduledNodeProviderRequest,
     ) -> Result<PrepareGroupAgentScheduledNodeProviderRequestResult, HubStoreError> {
+        self.record_mutation();
         request
             .validate()
             .map_err(|error| conflict(&error.to_string()))?;
-        *self.body() = Some(request.provider_request_body.clone());
-        Ok(result(request, self.contract.clone()))
+        let result = result(request, self.contract.clone());
+        *self.request() = Some(result.inspection.clone());
+        Ok(result)
     }
 
     fn inspect_group_agent_scheduled_node_provider_request(
         &self,
         provider_request_id: &str,
     ) -> Result<GroupAgentScheduledNodeProviderRequestInspection, HubStoreError> {
-        Err(not_found(
-            HubEntity::GroupAgentScheduledNodeProviderRequest,
-            provider_request_id,
-        ))
+        let request = self.request();
+        request
+            .as_ref()
+            .filter(|value| value.record.provider_request_id == provider_request_id)
+            .cloned()
+            .ok_or_else(|| {
+                not_found(
+                    HubEntity::GroupAgentScheduledNodeProviderRequest,
+                    provider_request_id,
+                )
+            })
     }
 
     fn list_group_agent_scheduled_node_provider_requests(
@@ -239,7 +270,11 @@ impl GroupAgentScheduledNodeProviderRequestStore for SpyHub {
         _graph_run_id: Option<&str>,
         _limit: usize,
     ) -> Result<Vec<GroupAgentScheduledNodeProviderRequestRecord>, HubStoreError> {
-        Ok(Vec::new())
+        Ok(self
+            .request()
+            .as_ref()
+            .map(|value| vec![value.record.clone()])
+            .unwrap_or_default())
     }
 }
 

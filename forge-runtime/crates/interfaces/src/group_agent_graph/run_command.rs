@@ -25,8 +25,9 @@ use super::{
     schedule_output::{self, GroupAgentGraphExecutionScheduleCliOutput},
     scheduled_contract_command,
     scheduled_contract_output::{self, GroupAgentScheduledNodeContractCliOutput},
-    scheduled_provider_request_command,
-    scheduled_provider_request_output::{self, GroupAgentScheduledNodeProviderRequestCliOutput},
+    scheduled_provider_request_command::{
+        self, GroupAgentScheduledNodeProviderRequestCommandCliOutput,
+    },
 };
 
 pub enum GroupAgentGraphRunCommandCliOutput {
@@ -36,7 +37,7 @@ pub enum GroupAgentGraphRunCommandCliOutput {
     Dispatch(Box<GroupAgentGraphRunDispatchCommandCliOutput>),
     Schedule(Box<GroupAgentGraphExecutionScheduleCliOutput>),
     ScheduledContract(Box<GroupAgentScheduledNodeContractCliOutput>),
-    ScheduledProviderRequest(Box<GroupAgentScheduledNodeProviderRequestCliOutput>),
+    ScheduledProviderRequest(Box<GroupAgentScheduledNodeProviderRequestCommandCliOutput>),
 }
 
 pub async fn execute(
@@ -127,7 +128,7 @@ pub fn write_output(
             scheduled_contract_output::write_output(output, json, writer)
         }
         GroupAgentGraphRunCommandCliOutput::ScheduledProviderRequest(output) => {
-            scheduled_provider_request_output::write_output(output, json, writer)
+            scheduled_provider_request_command::write_output(output, json, writer)
         }
     }
 }

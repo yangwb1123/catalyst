@@ -43,6 +43,14 @@ Graph 首节点还可通过 Go 生成 immutable `operator_asserted` pricing snap
 只在 SQLite v15 保存 immutable sidecar，不占用 Graph 主 journal seq，也不创建 contract、
 观察 progress、推进 successor 或接触 credential/provider/network/workspace/tool/result。
 它是后续多节点协议的可验证策略前置条件，不代表 frontend/backend/SSO 已经执行。
+已冻结的 scheduled initial-node request 可通过 Rust
+`scheduled-contract provider-request release-control export` 导出私有 canonical control，
+交给 Go `graph-scheduled-node-dispatch-authorize --control FILE|-` 生成 content-addressed
+decision，再由 Rust `scheduled-contract provider-request authorization verify` 对 fresh Hub
+state 复验。control/authorization 含 Prompt、Project、provider 与 request binding，应只走受保护的
+pipe/file；verify 输出会脱敏。该握手只授权未来的 exact lifecycle admission、execution-authority
+release 与 dispatch-authority release，
+当前仍未 admission、consent、claim、send、记录 receipt 或推进 successor。
 对严格单节点 Graph，`group graph run dispatch execute` 再要求本次 fresh consent、
 exact authorization/pricing 与 SHA-256 固定的 Go Core binary；该 effectful 命令当前
 仅支持 Linux，并从密封、复验后的匿名 executable memfd 执行 Core。SQLite v15 沿用

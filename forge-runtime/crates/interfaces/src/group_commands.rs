@@ -92,6 +92,13 @@ pub enum GroupGraphRunScheduledContractProviderRequestCommand {
         graph_run_id: Option<String>,
         limit: usize,
     },
+    ReleaseControlExport {
+        provider_request_id: String,
+    },
+    AuthorizationVerify {
+        provider_request_id: String,
+        authorization_source: String,
+    },
 }
 
 #[derive(Debug, Eq, PartialEq)]

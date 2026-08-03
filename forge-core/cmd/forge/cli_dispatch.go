@@ -14,6 +14,7 @@ import (
 	"forgeos/forge-core/internal/graphrelease"
 	"forgeos/forge-core/internal/graphschedule"
 	"forgeos/forge-core/internal/graphscheduledcontract"
+	"forgeos/forge-core/internal/graphscheduledrelease"
 	"forgeos/forge-core/internal/graphterminal"
 )
 
@@ -45,9 +46,12 @@ var subcommands = map[string]func([]string) int{
 	"graph-node-terminal-receipt":   func(rest []string) int { return graphterminal.Command(rest, os.Stdin, os.Stdout, os.Stderr) },
 	"graph-execution-schedule":      func(rest []string) int { return graphschedule.Command(rest, os.Stdin, os.Stdout, os.Stderr) },
 	"graph-scheduled-node-contract": func(rest []string) int { return graphscheduledcontract.Command(rest, os.Stdin, os.Stdout, os.Stderr) },
-	"approve":                       cmdApprove,
-	"reject":                        cmdReject,
-	releasePinnedExecCommand:        cmdReleaseExecPinned,
+	"graph-scheduled-node-dispatch-authorize": func(rest []string) int {
+		return graphscheduledrelease.Command(rest, os.Stdin, os.Stdout, os.Stderr)
+	},
+	"approve":                cmdApprove,
+	"reject":                 cmdReject,
+	releasePinnedExecCommand: cmdReleaseExecPinned,
 }
 
 // run dispatches a subcommand and returns the process exit code, so main stays
@@ -99,6 +103,7 @@ usage:
   forge graph-node-terminal-receipt --protocol-version
   forge graph-execution-schedule --control FILE|-
   forge graph-scheduled-node-contract --control FILE|- --schedule-sha256 SHA256 --endpoint HTTPS_URL --model MODEL --max-output-tokens N --max-model-output-bytes N --max-model-events N --timeout-ms N --max-cost-usd-micros N --pricing-snapshot-sha256 SHA256 --max-result-bytes N
+  forge graph-scheduled-node-dispatch-authorize --control FILE|-
   forge gate|check|accept [--root DIR]
 `)
 }

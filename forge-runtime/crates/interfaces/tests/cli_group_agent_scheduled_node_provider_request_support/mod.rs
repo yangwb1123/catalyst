@@ -1,6 +1,6 @@
-use std::{path::Path, process::Output};
+use std::{collections::BTreeMap, path::Path, process::Output};
 
-use rusqlite::Connection;
+use rusqlite::{Connection, types::Value as SqlValue};
 use tempfile::TempDir;
 
 use super::group_agent_graph_run_support::invoke_with_stdin;
@@ -60,4 +60,60 @@ pub(super) fn assert_cli_conflict(output: &Output) {
     assert!(output.stdout.is_empty());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("conflict"), "stderr was {stderr:?}");
+}
+
+pub(super) fn all_hub_state(state: &Path) -> BTreeMap<String, Vec<Vec<SqlValue>>> {
+    let connection = Connection::open(state.join("hub.sqlite3")).expect("open Hub");
+    table_names(&connection)
+        .into_iter()
+        .map(|table| {
+            let rows = snapshot_table(&connection, &table);
+            (table, rows)
+        })
+        .collect()
+}
+
+fn table_names(connection: &Connection) -> Vec<String> {
+    let mut statement = connection
+        .prepare(
+            "SELECT name FROM sqlite_schema
+             WHERE type='table' AND name NOT LIKE 'sqlite_%'
+             ORDER BY name",
+        )
+        .expect("prepare table inventory");
+    statement
+        .query_map([], |row| row.get::<_, String>(0))
+        .expect("query table inventory")
+        .collect::<Result<_, _>>()
+        .expect("collect table inventory")
+}
+
+fn snapshot_table(connection: &Connection, table: &str) -> Vec<Vec<SqlValue>> {
+    let quoted = format!("\"{}\"", table.replace('"', "\"\""));
+    let columns = connection
+        .prepare(&format!("SELECT * FROM {quoted} LIMIT 0"))
+        .expect("prepare table shape")
+        .column_count();
+    let order = (1..=columns)
+        .map(|index| index.to_string())
+        .collect::<Vec<_>>()
+        .join(",");
+    query_rows(
+        connection,
+        &format!("SELECT * FROM {quoted} ORDER BY {order}"),
+    )
+}
+
+fn query_rows(connection: &Connection, sql: &str) -> Vec<Vec<SqlValue>> {
+    let mut statement = connection.prepare(sql).expect("prepare snapshot query");
+    let columns = statement.column_count();
+    statement
+        .query_map([], |row| {
+            (0..columns)
+                .map(|index| row.get(index))
+                .collect::<Result<_, _>>()
+        })
+        .expect("query snapshot")
+        .collect::<Result<_, _>>()
+        .expect("collect snapshot")
 }
