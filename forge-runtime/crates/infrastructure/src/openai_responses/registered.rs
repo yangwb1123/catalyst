@@ -3,8 +3,9 @@ use crate::runtime_domain::{
     GroupAgentNodeDestinationRegistryError, GroupAgentNodeDispatchAuthorization,
     GroupAgentNodeDispatchProviderFactory, GroupAgentNodeDispatchProviderFactoryError,
     GroupAgentNodePricingQuote, GroupAgentNodePricingSnapshot, GroupAgentNodeProviderKind,
-    GroupAgentNodeResolvedDispatch, ModelEventStream, PreparedModelProvider, PreparedModelRequest,
-    group_agent_node_destination_sha256,
+    GroupAgentNodeResolvedDispatch, GroupAgentScheduledNodeDestinationRegistry,
+    GroupAgentScheduledNodeDispatchAuthorization, ModelEventStream, PreparedModelProvider,
+    PreparedModelRequest, group_agent_node_destination_sha256,
 };
 
 use super::OpenAiResponsesProvider;
@@ -59,7 +60,12 @@ impl RegisteredGroupAgentNodeProviderFactory {
         let quote = pricing
             .verify_authorization(authorization)
             .map_err(|_| invalid_readiness())?;
-        validate_registered_destination(authorization)?;
+        validate_registered_destination(
+            authorization.provider_kind,
+            &authorization.endpoint,
+            &authorization.model,
+            &authorization.destination_sha256,
+        )?;
         Ok(RegisteredGroupAgentNodeProviderReadiness {
             authorization_sha256: authorization.authorization_sha256.clone(),
             provider_kind: authorization.provider_kind,
@@ -105,6 +111,17 @@ impl GroupAgentNodeDestinationRegistry for RegisteredGroupAgentNodeProviderFacto
     ) -> Result<GroupAgentNodePricingQuote, GroupAgentNodeDestinationRegistryError> {
         RegisteredGroupAgentNodeProviderFactory::resolve(self, authorization, pricing)
             .map(|readiness| readiness.quote)
+            .map_err(|_| GroupAgentNodeDestinationRegistryError::Rejected)
+    }
+}
+
+impl GroupAgentScheduledNodeDestinationRegistry for RegisteredGroupAgentNodeProviderFactory {
+    fn resolve(
+        &self,
+        authorization: &GroupAgentScheduledNodeDispatchAuthorization,
+        pricing: &GroupAgentNodePricingSnapshot,
+    ) -> Result<GroupAgentNodePricingQuote, GroupAgentNodeDestinationRegistryError> {
+        resolve_scheduled_pricing_quote(authorization, pricing)
             .map_err(|_| GroupAgentNodeDestinationRegistryError::Rejected)
     }
 }
@@ -201,17 +218,32 @@ fn lifecycle_factory_error() -> GroupAgentNodeDispatchProviderFactoryError {
 }
 
 fn validate_registered_destination(
-    authorization: &GroupAgentNodeDispatchAuthorization,
+    provider_kind: GroupAgentNodeProviderKind,
+    endpoint: &str,
+    model: &str,
+    destination_sha256: &str,
 ) -> Result<(), RegisteredGroupAgentNodeProviderFactoryError> {
-    let digest = group_agent_node_destination_sha256(
+    let digest = group_agent_node_destination_sha256(provider_kind, endpoint, model);
+    let registered = provider_kind == GroupAgentNodeProviderKind::OpenAiResponses
+        && endpoint == GROUP_AGENT_NODE_OFFICIAL_OPENAI_RESPONSES_ENDPOINT
+        && destination_sha256 == digest;
+    registered.then_some(()).ok_or_else(invalid_readiness)
+}
+
+fn resolve_scheduled_pricing_quote(
+    authorization: &GroupAgentScheduledNodeDispatchAuthorization,
+    pricing: &GroupAgentNodePricingSnapshot,
+) -> Result<GroupAgentNodePricingQuote, RegisteredGroupAgentNodeProviderFactoryError> {
+    let quote = pricing
+        .verify_scheduled_authorization(authorization)
+        .map_err(|_| invalid_readiness())?;
+    validate_registered_destination(
         authorization.provider_kind,
         &authorization.endpoint,
         &authorization.model,
-    );
-    let registered = authorization.provider_kind == GroupAgentNodeProviderKind::OpenAiResponses
-        && authorization.endpoint == GROUP_AGENT_NODE_OFFICIAL_OPENAI_RESPONSES_ENDPOINT
-        && authorization.destination_sha256 == digest;
-    registered.then_some(()).ok_or_else(invalid_readiness)
+        &authorization.destination_sha256,
+    )?;
+    Ok(quote)
 }
 
 impl RegisteredGroupAgentNodeProviderReadiness {

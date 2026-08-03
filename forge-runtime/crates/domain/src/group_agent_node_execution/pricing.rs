@@ -1,6 +1,11 @@
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+#[path = "pricing_scheduled.rs"]
+mod scheduled;
+
+pub use scheduled::GroupAgentScheduledNodeDestinationRegistry;
+
 use crate::{
     GroupAgentNodeDispatchAuthorization, GroupAgentNodeProviderKind,
     MAX_GROUP_AGENT_NODE_MODEL_BYTES, MAX_GROUP_AGENT_NODE_OUTPUT_TOKENS,

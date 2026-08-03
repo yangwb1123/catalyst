@@ -225,7 +225,7 @@ fn service_with_requests(
     )
 }
 
-fn authorization(
+pub(super) fn authorization(
     control: &GroupAgentScheduledNodeDispatchReleaseControl,
 ) -> GroupAgentScheduledNodeDispatchAuthorization {
     let mut object = Map::new();

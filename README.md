@@ -51,6 +51,12 @@ state 复验。control/authorization 含 Prompt、Project、provider 与 request
 pipe/file；verify 输出会脱敏。该握手只授权未来的 exact lifecycle admission、execution-authority
 release 与 dispatch-authority release，
 当前仍未 admission、consent、claim、send、记录 receipt 或推进 successor。
+同一 request 还可通过 `scheduled-contract provider-request readiness verify` 同时提交
+exact authorization 与既有 Go `graph-node-pricing-snapshot` 工件；Rust 会重新读取 current
+v15 Hub，复验官方 registered destination、逐项向上取整的整数成本上界与 frozen budget。
+结果只含脱敏元数据，pricing 仍是 operator assertion、没有 vendor attestation；命令不缓存
+readiness，也不读取 credential、构造 provider、联网、claim lane、send、落库或推进 successor。
+未来 effectful dispatch 仍必须在 fresh consent 后紧邻原子 claim 重做全部检查。
 对严格单节点 Graph，`group graph run dispatch execute` 再要求本次 fresh consent、
 exact authorization/pricing 与 SHA-256 固定的 Go Core binary；该 effectful 命令当前
 仅支持 Linux，并从密封、复验后的匿名 executable memfd 执行 Core。SQLite v15 沿用

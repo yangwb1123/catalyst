@@ -14,6 +14,10 @@ mod scheduled_contract_service;
 #[path = "scheduled_contract_tests.rs"]
 mod scheduled_contract_tests;
 mod scheduled_contract_validation;
+mod scheduled_pricing_readiness;
+#[cfg(test)]
+#[path = "scheduled_pricing_readiness_tests.rs"]
+mod scheduled_pricing_readiness_tests;
 mod scheduled_provider_request_error;
 mod scheduled_provider_request_service;
 #[cfg(test)]
@@ -114,6 +118,11 @@ pub use schedule_service::{
 pub use scheduled_contract_error::GroupAgentScheduledNodeContractServiceError;
 pub use scheduled_contract_service::{
     AdmitGroupAgentScheduledNodeContractInput, GroupAgentScheduledNodeContractService,
+};
+pub use scheduled_pricing_readiness::{
+    GroupAgentScheduledNodeDispatchReadinessService,
+    GroupAgentScheduledNodeDispatchReadinessServiceError,
+    VerifiedGroupAgentScheduledNodeDispatchReadiness,
 };
 pub use scheduled_provider_request_error::GroupAgentScheduledNodeProviderRequestServiceError;
 pub use scheduled_provider_request_service::{

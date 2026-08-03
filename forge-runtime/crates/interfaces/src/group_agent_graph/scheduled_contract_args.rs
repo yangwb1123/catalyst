@@ -35,6 +35,7 @@ fn parse_provider_request(
         Some("list") => parse_provider_request_list(tokens),
         Some("release-control") => super::scheduled_release_args::parse_release_control(tokens),
         Some("authorization") => super::scheduled_release_args::parse_authorization(tokens),
+        Some("readiness") => super::scheduled_release_args::parse_readiness(tokens),
         Some(value) => Err(unknown(
             "group graph run scheduled-contract provider-request",
             value,

@@ -82,10 +82,25 @@ pub(crate) struct SpyHub {
 
 impl SpyHub {
     pub(crate) fn new() -> Self {
+        Self::new_with_pricing_policy(
+            "4444444444444444444444444444444444444444444444444444444444444444",
+            1_000_000,
+        )
+    }
+
+    pub(crate) fn new_with_pricing_policy(
+        pricing_snapshot_sha256: &str,
+        max_cost_usd_micros: u64,
+    ) -> Self {
         let run = super::pristine_run();
         let control = current_control(&run);
         let schedule = schedule(&control);
-        let contract = scheduled_contract(&control, &schedule);
+        let contract = scheduled_contract(
+            &control,
+            &schedule,
+            pricing_snapshot_sha256,
+            max_cost_usd_micros,
+        );
         Self {
             graph: graph(&control),
             run,
@@ -341,12 +356,16 @@ fn current_control(
 fn scheduled_contract(
     control: &crate::runtime_domain::GroupAgentGraphControlSnapshot,
     schedule: &GroupAgentGraphExecutionScheduleInspection,
+    pricing_snapshot_sha256: &str,
+    max_cost_usd_micros: u64,
 ) -> GroupAgentScheduledNodeContractInspection {
     let mut candidate = source().candidate;
     candidate.control_snapshot_sha256 = control.snapshot_sha256.clone();
     candidate.schedule_id = schedule.record.schedule_id.clone();
     candidate.schedule_sha256 = schedule.record.schedule_sha256.clone();
     candidate.expected_last_event_sha256 = control.last_event_sha256.clone();
+    candidate.budgets.pricing_snapshot_sha256 = pricing_snapshot_sha256.into();
+    candidate.budgets.max_cost_usd_micros = max_cost_usd_micros;
     candidate.request.schedule_id = candidate.schedule_id.clone();
     candidate.request.schedule_sha256 = candidate.schedule_sha256.clone();
     let request_sha256 = candidate.request.expected_sha256().expect("request digest");

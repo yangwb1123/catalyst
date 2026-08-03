@@ -99,6 +99,11 @@ pub enum GroupGraphRunScheduledContractProviderRequestCommand {
         provider_request_id: String,
         authorization_source: String,
     },
+    ReadinessVerify {
+        provider_request_id: String,
+        authorization_source: String,
+        pricing_source: String,
+    },
 }
 
 #[derive(Debug, Eq, PartialEq)]

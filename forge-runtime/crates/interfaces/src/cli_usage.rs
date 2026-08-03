@@ -47,6 +47,8 @@ pub const TEXT: &str = "usage:
     export PROVIDER_REQUEST_ID
   forge-runtime [OPTIONS] group graph run scheduled-contract provider-request authorization
     verify PROVIDER_REQUEST_ID --authorization FILE|-
+  forge-runtime [OPTIONS] group graph run scheduled-contract provider-request readiness
+    verify PROVIDER_REQUEST_ID --authorization FILE|- --pricing FILE|-
   forge-runtime [OPTIONS] group graph run dispatch prepare GRAPH_RUN_ID
                 [--idempotency-key KEY]
   forge-runtime [OPTIONS] group graph run dispatch show DISPATCH_REQUEST_ID
@@ -148,6 +150,12 @@ pub const TEXT: &str = "usage:
   reads no credential, contacts no provider/network/workspace/tool, claims no
   lane, writes no database/Conversation/Prompt/memory/result, and advances no
   Graph successor. Default human/JSON output contains redacted metadata only.
+  Scheduled provider-request readiness verify additionally accepts one exact
+  immutable operator-asserted pricing snapshot and checks the authorization's
+  exact official registered destination plus integer cost upper bound against
+  its frozen budget. It is not vendor-attested or a live price guarantee, and
+  remains read-only: no consent/credential/provider/network/lane/authority,
+  execution/result/database/Graph successor or writeback effect occurs.
   Group graph run dispatch prepare uses only the pure local Responses codec and
   persists exact request bytes. It obtains no consent, reads no credential, releases
   no dispatch authority, and invokes no provider, network, workspace, tool, result,

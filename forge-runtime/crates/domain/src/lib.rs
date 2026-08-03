@@ -162,8 +162,9 @@ pub use group_agent_node_pricing::{
     GROUP_AGENT_NODE_PRICING_SNAPSHOT_VERSION, GROUP_AGENT_NODE_PRICING_TOKEN_UNIT,
     GroupAgentNodeDestinationRegistry, GroupAgentNodeDestinationRegistryError,
     GroupAgentNodePricingQuote, GroupAgentNodePricingSnapshot,
-    GroupAgentNodePricingValidationError, MAX_GROUP_AGENT_NODE_PRICING_INPUT_TOKENS,
-    MAX_GROUP_AGENT_NODE_PRICING_RATE_USD_MICROS, MAX_GROUP_AGENT_NODE_PRICING_SNAPSHOT_BYTES,
+    GroupAgentNodePricingValidationError, GroupAgentScheduledNodeDestinationRegistry,
+    MAX_GROUP_AGENT_NODE_PRICING_INPUT_TOKENS, MAX_GROUP_AGENT_NODE_PRICING_RATE_USD_MICROS,
+    MAX_GROUP_AGENT_NODE_PRICING_SNAPSHOT_BYTES,
 };
 pub use group_analysis_panel::{
     GROUP_ANALYSIS_PANEL_MANIFEST_DIGEST_DOMAIN, GROUP_ANALYSIS_PANEL_VERSION,
