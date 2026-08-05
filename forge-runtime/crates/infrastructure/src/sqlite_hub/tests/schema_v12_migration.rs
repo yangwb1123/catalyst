@@ -221,7 +221,7 @@ fn malformed(original: &str, replacement: &str) -> String {
 }
 
 fn assert_current_shape(connection: &Connection) {
-    assert_eq!(schema_version(connection), 16);
+    assert_eq!(schema_version(connection), 17);
     for table in LIFECYCLE_TABLES {
         assert!(
             schema_object_exists(connection, "table", table),

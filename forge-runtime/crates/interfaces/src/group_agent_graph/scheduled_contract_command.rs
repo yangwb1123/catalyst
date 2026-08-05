@@ -6,13 +6,16 @@ use std::{
 };
 
 use forge_runtime_application::{
-    AdmitGroupAgentScheduledNodeContractInput, GroupAgentScheduledNodeContractCandidate,
-    GroupAgentScheduledNodeContractService, MAX_GROUP_AGENT_SCHEDULED_NODE_CONTRACT_BYTES,
+    AdmitGroupAgentScheduledNodeContractInput, AdmitGroupAgentScheduledNodeSuccessorInput,
+    GroupAgentScheduledNodeContractCandidate, GroupAgentScheduledNodeContractService,
+    GroupAgentScheduledNodeSuccessorService, MAX_GROUP_AGENT_SCHEDULED_NODE_CONTRACT_BYTES,
 };
 use forge_runtime_infrastructure::SqliteHubStore;
 
 use crate::{
-    args::{Args, GroupGraphRunScheduledContractCommand},
+    args::{
+        Args, GroupGraphRunScheduledContractCommand, GroupGraphRunScheduledContractSuccessorCommand,
+    },
     state_path::{hub_database_path, idempotency_key, unix_time_millis},
 };
 
@@ -52,7 +55,123 @@ pub fn execute(
         GroupGraphRunScheduledContractCommand::ProviderRequest(_) => {
             unreachable!("provider-request commands are routed by run_command")
         }
+        GroupGraphRunScheduledContractCommand::PredecessorReceiptExport {
+            provider_request_id,
+        } => export_predecessor_receipt(args, provider_request_id),
+        GroupGraphRunScheduledContractCommand::Successor(command) => {
+            execute_successor(args, command)
+        }
     }
+}
+
+fn export_predecessor_receipt(
+    args: &Args,
+    provider_request_id: &str,
+) -> Result<GroupAgentScheduledNodeContractCliOutput, Box<dyn Error>> {
+    let exported = successor_service(args)?.export_predecessor_receipt(provider_request_id)?;
+    Ok(
+        GroupAgentScheduledNodeContractCliOutput::predecessor_receipt(
+            exported.provider_request_id,
+            exported.receipt_json,
+            exported.receipt_sha256,
+        ),
+    )
+}
+
+fn execute_successor(
+    args: &Args,
+    command: &GroupGraphRunScheduledContractSuccessorCommand,
+) -> Result<GroupAgentScheduledNodeContractCliOutput, Box<dyn Error>> {
+    match command {
+        GroupGraphRunScheduledContractSuccessorCommand::Admit {
+            graph_run_id,
+            contract_source,
+            predecessor_receipt_sources,
+        } => admit_successor(
+            args,
+            graph_run_id,
+            contract_source,
+            predecessor_receipt_sources,
+        ),
+        GroupGraphRunScheduledContractSuccessorCommand::Show {
+            contract_id,
+            include_contract,
+        } => {
+            GroupAgentScheduledNodeSuccessorService::preflight_inspect(contract_id)?;
+            Ok(GroupAgentScheduledNodeContractCliOutput::successor(
+                successor_service(args)?.inspect(contract_id)?,
+                *include_contract,
+            ))
+        }
+        GroupGraphRunScheduledContractSuccessorCommand::List {
+            graph_run_id,
+            limit,
+        } => {
+            GroupAgentScheduledNodeSuccessorService::preflight_list(
+                graph_run_id.as_deref(),
+                *limit,
+            )?;
+            Ok(GroupAgentScheduledNodeContractCliOutput::successor_list(
+                successor_service(args)?.list(graph_run_id.as_deref(), *limit)?,
+            ))
+        }
+    }
+}
+
+fn admit_successor(
+    args: &Args,
+    graph_run_id: &str,
+    contract_source: &str,
+    predecessor_receipt_sources: &[String],
+) -> Result<GroupAgentScheduledNodeContractCliOutput, Box<dyn Error>> {
+    let contract_json = read_contract(contract_source)?;
+    for source in predecessor_receipt_sources {
+        read_predecessor_receipt(source)?;
+    }
+    let input = AdmitGroupAgentScheduledNodeSuccessorInput {
+        graph_run_id: graph_run_id.into(),
+        contract_json,
+        idempotency_key: args
+            .idempotency_key
+            .clone()
+            .unwrap_or_else(|| idempotency_key("group-agent-scheduled-node-successor")),
+        admitted_at_ms: unix_time_millis(),
+    };
+    GroupAgentScheduledNodeSuccessorService::preflight_admit(&input)?;
+    let result = successor_service(args)?.admit(&input)?;
+    Ok(GroupAgentScheduledNodeContractCliOutput::admitted(
+        result.disposition,
+        result.inspection,
+        contract_source != "-",
+    ))
+}
+
+/// Reads one bounded predecessor receipt file; the candidate already binds
+/// its digest, so this is a size/canonical preflight only.
+fn read_predecessor_receipt(source: &str) -> Result<(), Box<dyn Error>> {
+    let bytes = if source == "-" {
+        read_bounded(io::stdin().lock())?
+    } else {
+        read_bounded(File::open(source)?)?
+    };
+    if bytes.len() > 64 * 1024 {
+        return Err(invalid_input("predecessor receipt exceeds its byte limit").into());
+    }
+    Ok(())
+}
+
+fn successor_service(
+    args: &Args,
+) -> Result<GroupAgentScheduledNodeSuccessorService, Box<dyn Error>> {
+    let database = hub_database_path(args.state_dir.as_deref())?;
+    let store = Arc::new(SqliteHubStore::open(database)?);
+    Ok(GroupAgentScheduledNodeSuccessorService::new(
+        store.clone(),
+        store.clone(),
+        store.clone(),
+        store.clone(),
+        store,
+    ))
 }
 
 fn admit(

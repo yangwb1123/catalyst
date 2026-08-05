@@ -152,7 +152,7 @@ fn read_operations_reject_exact_v14_without_migration() {
         .expect("run read-only list against v14");
     assert!(!output.status.success());
     assert!(output.stdout.is_empty());
-    assert!(String::from_utf8_lossy(&output.stderr).contains("current schema version 16"));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("current schema version 17"));
     assert_eq!(fs::read(&database).expect("reread v14 database"), before);
 
     let connection = Connection::open(database).expect("inspect unchanged v14 database");

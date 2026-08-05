@@ -27,8 +27,8 @@ pub(super) fn validate_candidate(
     candidate: &GroupAgentScheduledNodeContractCandidate,
 ) -> Result<(), GroupAgentScheduledNodeContractValidationError> {
     validate_header(candidate)?;
-    validate_node(&candidate.node)?;
-    validate_request(&candidate.request)?;
+    validate_node(&candidate.node, candidate.contract_scope)?;
+    validate_request(&candidate.request, candidate.contract_scope)?;
     validate_request_binding(candidate)?;
     validate_shared_policy(candidate)?;
     let digest = candidate.expected_sha256()?;
@@ -53,8 +53,11 @@ fn validate_header(
             == GROUP_AGENT_SCHEDULED_NODE_EXECUTION_PROTOCOL_VERSION
         && candidate.execution_schedule_protocol_version
             == GROUP_AGENT_GRAPH_EXECUTION_SCHEDULE_PROTOCOL_VERSION
-        && candidate.contract_scope
-            == GroupAgentScheduledNodeContractScope::ScheduleInitialNodeOnly
+        && matches!(
+            candidate.contract_scope,
+            GroupAgentScheduledNodeContractScope::ScheduleInitialNodeOnly
+                | GroupAgentScheduledNodeContractScope::ScheduleSuccessorOnly
+        )
         && super::super::validation::valid_identifier(&candidate.graph_run_id)
         && super::super::validation::valid_identifier(&candidate.graph_id)
         && digest(&candidate.source_snapshot_sha256)
@@ -82,11 +85,21 @@ fn validate_header(
 
 fn validate_node(
     node: &GroupAgentScheduledNodeExecutionNode,
+    scope: GroupAgentScheduledNodeContractScope,
 ) -> Result<(), GroupAgentScheduledNodeContractValidationError> {
-    let valid = node.execution_ordinal == 0
+    let (ordinal_valid, wave_valid) = match scope {
+        GroupAgentScheduledNodeContractScope::ScheduleInitialNodeOnly => {
+            (node.execution_ordinal == 0, node.topology_wave_index == 0)
+        }
+        GroupAgentScheduledNodeContractScope::ScheduleSuccessorOnly => (
+            node.execution_ordinal >= 1 && node.execution_ordinal < MAX_GROUP_AGENT_GRAPH_NODES,
+            node.topology_wave_index < MAX_GROUP_AGENT_GRAPH_NODES,
+        ),
+    };
+    let valid = ordinal_valid
         && super::super::validation::valid_identifier(&node.node_id)
         && node.authored_node_index < MAX_GROUP_AGENT_GRAPH_NODES
-        && node.topology_wave_index == 0
+        && wave_valid
         && node.attempt == 1
         && super::super::validation::valid_identifier(&node.project_id)
         && super::super::validation::valid_text(&node.member_role, 64)
@@ -100,7 +113,14 @@ fn validate_node(
 
 fn validate_request(
     request: &GroupAgentScheduledNodeRequest,
+    scope: GroupAgentScheduledNodeContractScope,
 ) -> Result<(), GroupAgentScheduledNodeContractValidationError> {
+    let predecessors_valid = predecessors_valid(request, scope);
+    let ordinal_valid = if scope == GroupAgentScheduledNodeContractScope::ScheduleSuccessorOnly {
+        request.execution_ordinal >= 1
+    } else {
+        request.execution_ordinal == 0
+    };
     let valid = request.v == GROUP_AGENT_SCHEDULED_NODE_REQUEST_VERSION
         && super::super::validation::valid_identifier(&request.graph_run_id)
         && valid_content_id(
@@ -108,7 +128,7 @@ fn validate_request(
             "graph-execution-schedule-",
             &request.schedule_sha256,
         )
-        && request.execution_ordinal == 0
+        && ordinal_valid
         && super::super::validation::valid_identifier(&request.node_id)
         && request.attempt == 1
         && valid_prompt(
@@ -123,19 +143,59 @@ fn validate_request(
             &request.user_prompt_sha256,
             MAX_USER_PROMPT_BYTES,
         )
-        && request.required_predecessor_node_ids.is_empty()
-        && request.predecessor_terminal_receipts.is_empty()
+        && predecessors_valid
         && !request.predecessor_content_included
         && request.tools.is_empty()
         && digest(&request.request_sha256);
     if !valid || request.expected_sha256()? != request.request_sha256 {
-        return Err(invalid("invalid scheduled initial-node request"));
+        return Err(invalid("invalid scheduled node request"));
     }
     validate_user_prompt(request)?;
     if request.request_id != format!("{REQUEST_ID_PREFIX}{}", request.request_sha256) {
         return Err(invalid("scheduled request identity disagrees"));
     }
     Ok(())
+}
+
+/// Predecessor evidence rules: the initial candidate requires an empty set,
+/// while a successor candidate requires at least one consumed receipt and
+/// coverage of every required topological predecessor.
+fn predecessors_valid(
+    request: &GroupAgentScheduledNodeRequest,
+    scope: GroupAgentScheduledNodeContractScope,
+) -> bool {
+    if scope != GroupAgentScheduledNodeContractScope::ScheduleSuccessorOnly {
+        return request.required_predecessor_node_ids.is_empty()
+            && request.predecessor_terminal_receipts.is_empty();
+    }
+    !request.predecessor_terminal_receipts.is_empty()
+        && request
+            .required_predecessor_node_ids
+            .iter()
+            .all(|required| {
+                request
+                    .predecessor_terminal_receipts
+                    .iter()
+                    .any(|receipt| &receipt.predecessor_node_id == required)
+            })
+        && request
+            .predecessor_terminal_receipts
+            .iter()
+            .all(valid_receipt)
+}
+
+/// Every consumed predecessor receipt must carry exact identity evidence and
+/// stay free of forbidden authority.
+fn valid_receipt(receipt: &crate::GroupAgentScheduledNodePredecessorReceipt) -> bool {
+    super::super::validation::valid_identifier(&receipt.predecessor_node_id)
+        && receipt.predecessor_attempt == 1
+        && valid_content_id(
+            &receipt.terminal_receipt_id,
+            "scheduled-node-terminal-receipt-",
+            &receipt.terminal_receipt_sha256,
+        )
+        && super::super::validation::valid_identifier(&receipt.provider_request_id)
+        && super::super::validation::valid_identifier(&receipt.dispatch_id)
 }
 
 fn validate_request_binding(

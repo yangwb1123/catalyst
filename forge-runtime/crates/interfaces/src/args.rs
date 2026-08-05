@@ -22,7 +22,8 @@ pub use group_commands::{
     GroupGraphRunCommand, GroupGraphRunContractCommand, GroupGraphRunControlCommand,
     GroupGraphRunDispatchCommand, GroupGraphRunScheduleCommand,
     GroupGraphRunScheduledContractCommand, GroupGraphRunScheduledContractProviderRequestCommand,
-    GroupPanelCommand, GroupRunCommand, GroupSynthesisCommand,
+    GroupGraphRunScheduledContractSuccessorCommand, GroupPanelCommand, GroupRunCommand,
+    GroupSynthesisCommand,
 };
 
 #[derive(Debug, Eq, PartialEq)]
@@ -310,6 +311,9 @@ fn accepts_idempotency_key(command: &Command) -> bool {
                                     )
                                     | GroupGraphRunCommand::ScheduledContract(
                                         GroupGraphRunScheduledContractCommand::Admit { .. }
+                                            | GroupGraphRunScheduledContractCommand::Successor(
+                                                GroupGraphRunScheduledContractSuccessorCommand::Admit { .. },
+                                            )
                                             | GroupGraphRunScheduledContractCommand::ProviderRequest(
                                                 GroupGraphRunScheduledContractProviderRequestCommand::Prepare { .. },
                                             ),

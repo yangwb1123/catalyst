@@ -23,6 +23,41 @@ pub enum GroupAgentScheduledNodeContractCliOutput {
         v: u16,
         inspection: ScheduledContractInspectionView,
     },
+    #[serde(rename = "group_agent_scheduled_node_predecessor_receipt")]
+    PredecessorReceipt {
+        v: u16,
+        provider_request_id: String,
+        receipt_sha256: String,
+        receipt_included: bool,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        receipt: Option<String>,
+    },
+    #[serde(rename = "group_agent_scheduled_node_successor_candidate")]
+    Successor {
+        v: u16,
+        inspection: ScheduledContractInspectionView,
+    },
+    #[serde(rename = "group_agent_scheduled_node_successor_candidates")]
+    Successors {
+        v: u16,
+        metadata_only: bool,
+        passive_successor_candidate_only: bool,
+        current_run_lifecycle_included: bool,
+        lifecycle_contract_admitted: bool,
+        provider_request_present: bool,
+        execution_authority_released: bool,
+        dispatch_authority_released: bool,
+        progress_observed: bool,
+        successor_advance_authorized: bool,
+        credential_read: bool,
+        provider_used: bool,
+        network_accessed: bool,
+        workspace_accessed: bool,
+        tools_used: bool,
+        result_or_receipt_produced: bool,
+        writeback_performed: bool,
+        contracts: Vec<ScheduledContractMetadataView>,
+    },
     #[serde(rename = "group_agent_scheduled_node_contract_candidates")]
     Contracts {
         v: u16,
@@ -123,6 +158,60 @@ impl GroupAgentScheduledNodeContractCliOutput {
         }
     }
 
+    pub fn predecessor_receipt(
+        provider_request_id: String,
+        receipt_json: String,
+        receipt_sha256: String,
+    ) -> Self {
+        Self::PredecessorReceipt {
+            v: GROUP_AGENT_SCHEDULED_NODE_CONTRACT_VERSION,
+            provider_request_id,
+            receipt_sha256,
+            receipt_included: true,
+            receipt: Some(receipt_json),
+        }
+    }
+
+    pub fn successor(
+        inspection: GroupAgentScheduledNodeContractInspection,
+        include_contract: bool,
+    ) -> Self {
+        Self::Successor {
+            v: GROUP_AGENT_SCHEDULED_NODE_CONTRACT_VERSION,
+            inspection: ScheduledContractInspectionView::new_successor(
+                inspection,
+                include_contract,
+                false,
+            ),
+        }
+    }
+
+    pub fn successor_list(records: Vec<GroupAgentScheduledNodeContractRecord>) -> Self {
+        Self::Successors {
+            v: GROUP_AGENT_SCHEDULED_NODE_CONTRACT_VERSION,
+            metadata_only: true,
+            passive_successor_candidate_only: true,
+            current_run_lifecycle_included: false,
+            lifecycle_contract_admitted: false,
+            provider_request_present: false,
+            execution_authority_released: false,
+            dispatch_authority_released: false,
+            progress_observed: false,
+            successor_advance_authorized: false,
+            credential_read: false,
+            provider_used: false,
+            network_accessed: false,
+            workspace_accessed: false,
+            tools_used: false,
+            result_or_receipt_produced: false,
+            writeback_performed: false,
+            contracts: records
+                .into_iter()
+                .map(ScheduledContractMetadataView::from)
+                .collect(),
+        }
+    }
+
     pub fn list(records: Vec<GroupAgentScheduledNodeContractRecord>) -> Self {
         Self::Contracts {
             v: GROUP_AGENT_SCHEDULED_NODE_CONTRACT_VERSION,
@@ -154,6 +243,17 @@ impl GroupAgentScheduledNodeContractCliOutput {
 }
 
 impl ScheduledContractInspectionView {
+    fn new_successor(
+        inspection: GroupAgentScheduledNodeContractInspection,
+        include_contract: bool,
+        explicit_contract_file_read: bool,
+    ) -> Self {
+        let mut view = Self::new(inspection, include_contract, explicit_contract_file_read);
+        view.passive_initial_candidate_only = false;
+        view.predecessor_receipts_present = true;
+        view
+    }
+
     fn new(
         inspection: GroupAgentScheduledNodeContractInspection,
         include_contract: bool,
@@ -231,13 +331,54 @@ pub fn write_output(
             )?;
             write_inspection(inspection, writer)
         }
-        GroupAgentScheduledNodeContractCliOutput::Contract { inspection, .. } => {
+        GroupAgentScheduledNodeContractCliOutput::Contract { inspection, .. }
+        | GroupAgentScheduledNodeContractCliOutput::Successor { inspection, .. } => {
             write_inspection(inspection, writer)
         }
-        GroupAgentScheduledNodeContractCliOutput::Contracts { contracts, .. } => {
+        GroupAgentScheduledNodeContractCliOutput::Contracts { contracts, .. }
+        | GroupAgentScheduledNodeContractCliOutput::Successors { contracts, .. } => {
             write_list(contracts, writer)
         }
+        GroupAgentScheduledNodeContractCliOutput::PredecessorReceipt {
+            provider_request_id,
+            receipt_sha256,
+            receipt_included,
+            receipt,
+            ..
+        } => write_predecessor_receipt(
+            provider_request_id,
+            receipt_sha256,
+            *receipt_included,
+            receipt.as_deref(),
+            writer,
+        ),
     }
+}
+
+fn write_predecessor_receipt(
+    provider_request_id: &str,
+    receipt_sha256: &str,
+    receipt_included: bool,
+    receipt: Option<&str>,
+    writer: &mut impl Write,
+) -> Result<(), io::Error> {
+    writeln!(
+        writer,
+        "predecessor receipt · provider_request={} · sha256={}",
+        terminal_text(provider_request_id),
+        terminal_text(receipt_sha256)
+    )?;
+    if receipt_included {
+        if let Some(receipt) = receipt {
+            writeln!(writer, "receipt: {}", terminal_text(receipt))?;
+        }
+    } else {
+        writeln!(
+            writer,
+            "receipt hidden; use --include-receipt to reveal exact evidence"
+        )?;
+    }
+    write_successor_boundaries(writer)
 }
 
 fn write_inspection(
@@ -287,6 +428,18 @@ fn write_list(
         )?;
     }
     write_boundaries(writer)
+}
+
+fn write_successor_boundaries(writer: &mut impl Write) -> Result<(), io::Error> {
+    writeln!(
+        writer,
+        "passive successor candidate evidence; not a Run lifecycle contract"
+    )?;
+    writeln!(writer, "current Run lifecycle is not reported")?;
+    writeln!(
+        writer,
+        "receipt is predecessor evidence only; no successor authority is granted"
+    )
 }
 
 fn write_boundaries(writer: &mut impl Write) -> Result<(), io::Error> {

@@ -9,6 +9,7 @@ mod group_agent_node_lifecycle;
 mod group_agent_scheduled_node_contract;
 mod group_agent_scheduled_node_lifecycle;
 mod group_agent_scheduled_node_provider_request;
+mod group_agent_scheduled_node_successor;
 mod group_analysis_panel;
 mod group_context_build;
 mod group_context_read;
@@ -49,6 +50,8 @@ mod schema_v14_sql;
 mod schema_v15_sql;
 #[path = "schema_contract/v16_sql.rs"]
 mod schema_v16_sql;
+#[path = "schema_contract/v17_sql.rs"]
+mod schema_v17_sql;
 mod schema_v9_sql;
 mod write;
 

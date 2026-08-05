@@ -1,7 +1,7 @@
 use crate::args::{
     Command, GroupCommand, GroupGraphCommand, GroupGraphRunCommand,
     GroupGraphRunScheduledContractCommand, GroupGraphRunScheduledContractProviderRequestCommand,
-    parse_tokens,
+    GroupGraphRunScheduledContractSuccessorCommand, parse_tokens,
 };
 
 fn parse(args: &[&str]) -> Result<crate::args::Args, String> {
@@ -316,5 +316,84 @@ fn rejects_key_on_read_only_and_dual_stdin_dispatch() {
         ])
         .expect_err("two stdin sources reject")
         .contains("cannot both read from stdin")
+    );
+}
+
+#[test]
+fn parses_predecessor_receipt_export_and_successor_commands() {
+    let parsed = parse(&[
+        "group",
+        "graph",
+        "run",
+        "scheduled-contract",
+        "predecessor-receipt",
+        "export",
+        "scheduled-node-provider-request-frontend",
+    ])
+    .expect("predecessor export parses");
+    assert!(matches!(
+        parsed.command,
+        Command::Group(GroupCommand::Graph(GroupGraphCommand::Run(
+            GroupGraphRunCommand::ScheduledContract(
+                GroupGraphRunScheduledContractCommand::PredecessorReceiptExport {
+                    provider_request_id
+                }
+            )
+        ))) if provider_request_id == "scheduled-node-provider-request-frontend"
+    ));
+}
+
+#[test]
+fn parses_successor_admit() {
+    let parsed = parse(&[
+        "group",
+        "graph",
+        "run",
+        "scheduled-contract",
+        "successor",
+        "admit",
+        "graph-run-fixture-v1",
+        "--contract",
+        "candidate.json",
+        "--predecessor-receipt",
+        "receipt-0.json",
+        "--idempotency-key",
+        "successor-key",
+    ])
+    .expect("successor admit parses");
+    assert!(matches!(
+        parsed.command,
+        Command::Group(GroupCommand::Graph(GroupGraphCommand::Run(
+            GroupGraphRunCommand::ScheduledContract(
+                GroupGraphRunScheduledContractCommand::Successor(
+                    GroupGraphRunScheduledContractSuccessorCommand::Admit {
+                        graph_run_id,
+                        contract_source,
+                        predecessor_receipt_sources,
+                    }
+                )
+            )
+        ))) if graph_run_id == "graph-run-fixture-v1"
+            && contract_source == "candidate.json"
+            && predecessor_receipt_sources == vec!["receipt-0.json".to_string()]
+    ));
+}
+
+#[test]
+fn successor_admit_requires_predecessor_receipts() {
+    assert!(
+        parse(&[
+            "group",
+            "graph",
+            "run",
+            "scheduled-contract",
+            "successor",
+            "admit",
+            "graph-run-fixture-v1",
+            "--contract",
+            "candidate.json",
+        ])
+        .expect_err("successor admit without receipts rejects")
+        .contains("at least one --predecessor-receipt")
     );
 }

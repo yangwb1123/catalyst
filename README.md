@@ -64,6 +64,16 @@ terminal control/receipt 一起落库；Core 或提交失败进入不可重发�
 scheduled Run 的 v1/seq-1 journal，也不推进 frontend/backend/SSO successor；多节点推进、
 resume、lease 与 remote exactly-once 仍未开放。effectful dispatch 每次仍须在原子 claim
 前 fresh 重做所有检查。
+对 scheduled ordinal-zero 的 terminal receipt，Sprint 60 增加了 successor 前置：
+`scheduled-contract predecessor-receipt export PROVIDER_REQUEST_ID` 从 v16 侧车导出
+exact canonical receipt（仅限 terminalized 状态），`forge graph-scheduled-node-contract
+--predecessor-receipt FILE...` 由 Go Core 验证 receipts 构成 serial schedule 的连续前缀
+并生成 ordinal-N 的 successor candidate（scope=schedule_successor_only，predecessor
+receipt 只作证据、`predecessor_content_included=false`），Rust
+`scheduled-contract successor admit/show/list` 在 SQLite v17 中原子保存该不可变候选，
+且 admission 逐字节复验每个 receipt 与 durable terminalized lifecycle 一致。该链路
+不 dispatch、不 claim lane、不读 credential、不推进 wave/successor；跨 node 内容
+disclosure/consent 与 effectful successor dispatch 仍属后续协议。
 对严格单节点 Graph，`group graph run dispatch execute` 再要求本次 fresh consent、
 exact authorization/pricing 与 SHA-256 固定的 Go Core binary；该 effectful 命令当前
 仅支持 Linux，并从密封、复验后的匿名 executable memfd 执行 Core。SQLite v15 沿用

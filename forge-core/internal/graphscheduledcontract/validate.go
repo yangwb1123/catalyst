@@ -9,7 +9,7 @@ import (
 )
 
 func validateCandidate(value ScheduledNodeContractCandidate) error {
-	if !validHeader(value) || !validNode(value.Node) ||
+	if !validHeader(value) || !validNode(value.Node, value.ContractScope) ||
 		!validRequest(value.Request, value) || !validPolicies(value) {
 		return errInvalidCandidate
 	}
@@ -26,10 +26,12 @@ func validateCandidate(value ScheduledNodeContractCandidate) error {
 }
 
 func validHeader(value ScheduledNodeContractCandidate) bool {
+	scopeValid := value.ContractScope == contractScope ||
+		value.ContractScope == successorContractScope
 	return value.V == CandidateVersion && value.SchedulerProtocolVersion == 1 &&
 		value.NodeExecutionProtocolVersion == NodeExecutionProtocolVersion &&
 		value.ExecutionScheduleProtocolVersion == graphschedule.ExecutionScheduleProtocolVersion &&
-		value.ContractScope == contractScope && validIdentifier(value.GraphRunID, 128) &&
+		scopeValid && validIdentifier(value.GraphRunID, 128) &&
 		validIdentifier(value.GraphID, 128) && isLowerHexDigest(value.SourceSnapshotSHA256) &&
 		isLowerHexDigest(value.GraphManifestSHA256) && isLowerHexDigest(value.CorePlanSHA256) &&
 		isLowerHexDigest(value.ControlSnapshotSHA256) && validScheduleIdentity(value) &&
@@ -45,9 +47,12 @@ func validScheduleIdentity(value ScheduledNodeContractCandidate) bool {
 		value.ScheduleID == "graph-execution-schedule-"+value.ScheduleSHA256
 }
 
-func validNode(node CandidateNode) bool {
-	return node.ExecutionOrdinal == 0 && node.AuthoredNodeIndex < 32 &&
-		node.TopologyWaveIndex == 0 && node.Attempt == 1 &&
+func validNode(node CandidateNode, scope string) bool {
+	ordinalValid, waveValid := node.ExecutionOrdinal == 0, node.TopologyWaveIndex == 0
+	if scope == successorContractScope {
+		ordinalValid, waveValid = node.ExecutionOrdinal >= 1, node.TopologyWaveIndex <= 31
+	}
+	return ordinalValid && node.AuthoredNodeIndex < 32 && waveValid && node.Attempt == 1 &&
 		validIdentifier(node.NodeID, 128) && validIdentifier(node.ProjectID, 128) &&
 		validIdentifier(node.MemberRole, 64) && validIdentifier(node.AgentProfile, 128) &&
 		node.ProjectLaneSHA256 == rawDomainDigest(projectLaneDomain, node.ProjectID) &&
@@ -62,14 +67,40 @@ func validRequest(
 		request.ScheduleID == candidate.ScheduleID && request.ScheduleSHA256 == candidate.ScheduleSHA256 &&
 		request.ExecutionOrdinal == candidate.Node.ExecutionOrdinal && request.NodeID == candidate.Node.NodeID &&
 		request.Attempt == candidate.Node.Attempt && request.RequiredPredecessorNodeIDs != nil &&
-		len(request.RequiredPredecessorNodeIDs) == 0 && request.PredecessorTerminalReceipts != nil &&
-		len(request.PredecessorTerminalReceipts) == 0 && !request.PredecessorContentIncluded &&
+		request.PredecessorTerminalReceipts != nil && !request.PredecessorContentIncluded &&
 		request.Tools != nil && len(request.Tools) == 0
+	if candidate.ContractScope == contractScope {
+		bound = bound && len(request.RequiredPredecessorNodeIDs) == 0 &&
+			len(request.PredecessorTerminalReceipts) == 0
+	} else {
+		bound = bound && len(request.PredecessorTerminalReceipts) > 0 &&
+			predecessorsCoverReceipts(request.RequiredPredecessorNodeIDs,
+				request.PredecessorTerminalReceipts)
+	}
 	if !bound || !validPrompts(request) || !isLowerHexDigest(request.RequestSHA256) {
 		return false
 	}
 	digest, err := domainDigest(requestDigestDomain, requestPayloadFrom(request))
 	return err == nil && digest == request.RequestSHA256 && request.RequestID == requestIDPrefix+digest
+}
+
+// predecessorsCoverReceipts checks that every required topological
+// predecessor has a consumed terminal receipt. A serial successor may have an
+// empty required set (wave siblings), while the evidence prefix is non-empty.
+func predecessorsCoverReceipts(
+	required []string,
+	receipts []PredecessorTerminalReceipt,
+) bool {
+	consumed := make(map[string]bool, len(receipts))
+	for _, receipt := range receipts {
+		consumed[receipt.PredecessorNodeID] = true
+	}
+	for _, predecessorID := range required {
+		if !consumed[predecessorID] {
+			return false
+		}
+	}
+	return true
 }
 
 func validPrompts(request ScheduledNodeRequest) bool {

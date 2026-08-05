@@ -29,6 +29,7 @@ mod scheduled_release_service;
 #[cfg(test)]
 #[path = "scheduled_release_tests.rs"]
 mod scheduled_release_tests;
+mod scheduled_successor_service;
 mod service;
 mod snapshot;
 mod validation;
@@ -134,6 +135,10 @@ pub use scheduled_release_service::{
     ExportGroupAgentScheduledNodeDispatchReleaseControl,
     GroupAgentScheduledNodeDispatchReleaseControlService,
     VerifiedGroupAgentScheduledNodeDispatchAuthorization,
+};
+pub use scheduled_successor_service::{
+    AdmitGroupAgentScheduledNodeSuccessorInput, ExportedPredecessorReceipt,
+    GroupAgentScheduledNodeSuccessorService,
 };
 pub use service::{
     AdmitGroupAgentNodeExecutionContractInput, ExportGroupAgentGraphControl,

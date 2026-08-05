@@ -81,29 +81,6 @@ type terminalControl struct {
 	SnapshotSHA256            string           `json:"snapshot_sha256"`
 }
 
-type terminalReceipt struct {
-	V                          uint16 `json:"v"`
-	SchedulerProtocolVersion   uint16 `json:"scheduler_protocol_version"`
-	TerminalReceiptProtocol    uint16 `json:"terminal_receipt_protocol_version"`
-	TerminalControlSHA256      string `json:"terminal_control_sha256"`
-	GraphRunID                 string `json:"graph_run_id"`
-	GraphID                    string `json:"graph_id"`
-	NodeID                     string `json:"node_id"`
-	Attempt                    uint16 `json:"attempt"`
-	DispatchID                 string `json:"dispatch_id"`
-	ProviderRequestID          string `json:"provider_request_id"`
-	ProjectLaneSHA256          string `json:"project_lane_sha256"`
-	ArtifactKind               string `json:"artifact_kind"`
-	ArtifactID                 string `json:"artifact_id"`
-	ArtifactSHA256             string `json:"artifact_sha256"`
-	NodeOutcome                string `json:"node_outcome"`
-	RetryAuthorized            bool   `json:"retry_authorized"`
-	LaneReleaseAuthorized      bool   `json:"lane_release_authorized"`
-	SuccessorAdvanceAuthorized bool   `json:"successor_advance_authorized"`
-	ReceiptID                  string `json:"receipt_id"`
-	ReceiptSHA256              string `json:"receipt_sha256"`
-}
-
 func decodeControl(data []byte) (terminalControl, error) {
 	if len(data) == 0 || len(data) > maxControlBytes {
 		return terminalControl{}, errors.New("control size is invalid")
@@ -309,4 +286,140 @@ func validIdentifier(value string) bool {
 		}
 	}
 	return true
+}
+
+// Receipt is the exported, validated view of one terminal receipt. It is the
+// exact evidence a successor protocol consumes; it never grants successor
+// advancement by itself.
+type Receipt struct {
+	V                          uint16 `json:"v"`
+	SchedulerProtocolVersion   uint16 `json:"scheduler_protocol_version"`
+	TerminalReceiptProtocol    uint16 `json:"terminal_receipt_protocol_version"`
+	TerminalControlSHA256      string `json:"terminal_control_sha256"`
+	GraphRunID                 string `json:"graph_run_id"`
+	GraphID                    string `json:"graph_id"`
+	NodeID                     string `json:"node_id"`
+	Attempt                    uint16 `json:"attempt"`
+	DispatchID                 string `json:"dispatch_id"`
+	ProviderRequestID          string `json:"provider_request_id"`
+	ProjectLaneSHA256          string `json:"project_lane_sha256"`
+	ArtifactKind               string `json:"artifact_kind"`
+	ArtifactID                 string `json:"artifact_id"`
+	ArtifactSHA256             string `json:"artifact_sha256"`
+	NodeOutcome                string `json:"node_outcome"`
+	RetryAuthorized            bool   `json:"retry_authorized"`
+	LaneReleaseAuthorized      bool   `json:"lane_release_authorized"`
+	SuccessorAdvanceAuthorized bool   `json:"successor_advance_authorized"`
+	ReceiptID                  string `json:"receipt_id"`
+	ReceiptSHA256              string `json:"receipt_sha256"`
+}
+
+// terminalReceipt is the historical private name for the exported Receipt.
+type terminalReceipt = Receipt
+
+// DecodeReceipt strictly decodes one canonical terminal receipt and verifies
+// its domain-separated digest and protocol/identity fields. It is the
+// successor protocol's trust anchor for predecessor evidence.
+func DecodeReceipt(data []byte) (Receipt, error) {
+	if len(data) == 0 || len(data) > maxReceiptBytes {
+		return Receipt{}, errors.New("receipt size is invalid")
+	}
+	var value Receipt
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&value); err != nil {
+		return Receipt{}, err
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		return Receipt{}, errors.New("trailing receipt data")
+	}
+	canonical, err := marshalCanonical(value)
+	if err != nil || !bytes.Equal(canonical, data) {
+		return Receipt{}, errors.New("receipt is not canonical")
+	}
+	if value.V != 1 || value.SchedulerProtocolVersion != 1 ||
+		value.TerminalReceiptProtocol != terminalProtocol || value.Attempt != 1 {
+		return Receipt{}, errors.New("receipt protocol is invalid")
+	}
+	if !validIdentifier(value.GraphRunID) || !validIdentifier(value.GraphID) ||
+		!validIdentifier(value.NodeID) || !validIdentifier(value.DispatchID) ||
+		!validIdentifier(value.ProviderRequestID) {
+		return Receipt{}, errors.New("receipt identity is invalid")
+	}
+	if !validDigest(value.TerminalControlSHA256) || !validDigest(value.ProjectLaneSHA256) ||
+		!validDigest(value.ArtifactSHA256) {
+		return Receipt{}, errors.New("receipt digest is invalid")
+	}
+	if value.ArtifactKind != "result" && value.ArtifactKind != "uncertainty" {
+		return Receipt{}, errors.New("receipt artifact kind is invalid")
+	}
+	if value.NodeOutcome != "completed" && value.NodeOutcome != "failed" &&
+		value.NodeOutcome != "failed_uncertain" {
+		return Receipt{}, errors.New("receipt outcome is invalid")
+	}
+	if value.RetryAuthorized || value.SuccessorAdvanceAuthorized {
+		return Receipt{}, errors.New("receipt carries forbidden authority")
+	}
+	digest, err := digestWithoutField(value, []string{"receipt_id", "receipt_sha256"}, receiptDomain)
+	if err != nil || value.ReceiptSHA256 != digest {
+		return Receipt{}, errors.New("receipt identity is invalid")
+	}
+	if value.ReceiptID != "scheduled-node-terminal-receipt-"+digest {
+		return Receipt{}, errors.New("receipt id is invalid")
+	}
+	return value, nil
+}
+
+// BuildReceipt strictly decodes one canonical terminal control and emits the
+// validated, content-addressed intermediate receipt. It is the pure core of
+// the `graph-scheduled-node-terminal-receipt` command and the trust anchor a
+// successor protocol consumes as predecessor evidence.
+func BuildReceipt(controlBytes []byte) ([]byte, error) {
+	control, err := decodeControl(controlBytes)
+	if err != nil {
+		return nil, err
+	}
+	receipt, err := buildReceipt(control)
+	if err != nil {
+		return nil, err
+	}
+	return marshalReceipt(receipt)
+}
+
+// MarshalReceipt validates the protocol/identity fields of an explicit receipt
+// and emits its canonical JSON with a fresh domain-separated digest and ID. It
+// is the counterpart of DecodeReceipt for constructing successor test
+// evidence; production receipts are derived from validated controls.
+func MarshalReceipt(value Receipt) ([]byte, error) {
+	if value.V != 1 || value.SchedulerProtocolVersion != 1 ||
+		value.TerminalReceiptProtocol != terminalProtocol || value.Attempt != 1 {
+		return nil, errors.New("receipt protocol is invalid")
+	}
+	if !validIdentifier(value.GraphRunID) || !validIdentifier(value.GraphID) ||
+		!validIdentifier(value.NodeID) || !validIdentifier(value.DispatchID) ||
+		!validIdentifier(value.ProviderRequestID) {
+		return nil, errors.New("receipt identity is invalid")
+	}
+	if !validDigest(value.TerminalControlSHA256) || !validDigest(value.ProjectLaneSHA256) ||
+		!validDigest(value.ArtifactSHA256) {
+		return nil, errors.New("receipt digest is invalid")
+	}
+	if value.ArtifactKind != "result" && value.ArtifactKind != "uncertainty" {
+		return nil, errors.New("receipt artifact kind is invalid")
+	}
+	if value.NodeOutcome != "completed" && value.NodeOutcome != "failed" &&
+		value.NodeOutcome != "failed_uncertain" {
+		return nil, errors.New("receipt outcome is invalid")
+	}
+	if value.RetryAuthorized || value.SuccessorAdvanceAuthorized {
+		return nil, errors.New("receipt carries forbidden authority")
+	}
+	digest, err := digestWithoutField(value, []string{"receipt_id", "receipt_sha256"}, receiptDomain)
+	if err != nil {
+		return nil, err
+	}
+	value.ReceiptSHA256 = digest
+	value.ReceiptID = "scheduled-node-terminal-receipt-" + digest
+	return marshalReceipt(value)
 }

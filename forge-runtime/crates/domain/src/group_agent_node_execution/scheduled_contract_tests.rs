@@ -343,3 +343,127 @@ fn assert_intrinsic_but_source_rejected(
             .is_err()
     );
 }
+
+#[test]
+fn successor_candidate_with_verified_receipts_validates() {
+    let (mut candidate, _, schedule) = fixture();
+    let backend = schedule
+        .nodes
+        .iter()
+        .find(|node| node.execution_ordinal == 1)
+        .expect("ordinal-1 node");
+    let frontend = schedule.nodes[0].clone();
+    // 构造 successor:ordinal 1、backend 节点、消费 frontend 的 receipt
+    candidate.contract_scope = GroupAgentScheduledNodeContractScope::ScheduleSuccessorOnly;
+    candidate.node.execution_ordinal = 1;
+    candidate.node.node_id = backend.node_id.clone();
+    candidate.node.project_id = "backend-project".into();
+    candidate.node.project_lane_sha256 =
+        group_agent_project_lane_sha256(&candidate.node.project_id);
+    candidate.request.execution_ordinal = 1;
+    candidate.request.node_id = backend.node_id.clone();
+    candidate.request.user_prompt = format!(
+        "{{\"v\":2,\"node_id\":\"{}\",\"task\":\"t\",\"acceptance\":\"a\"}}",
+        backend.node_id
+    );
+    candidate.request.predecessor_terminal_receipts =
+        vec![crate::GroupAgentScheduledNodePredecessorReceipt {
+            predecessor_node_id: frontend.node_id.clone(),
+            predecessor_attempt: 1,
+            terminal_event_seq: 0,
+            terminal_event_sha256: String::new(),
+            terminal_receipt_id: format!("scheduled-node-terminal-receipt-{}", "a".repeat(64)),
+            terminal_receipt_sha256: "a".repeat(64),
+            node_outcome: crate::GroupAgentScheduledNodePredecessorOutcome::Completed,
+            provider_request_id: "scheduled-node-provider-request-frontend".into(),
+            dispatch_id: "dispatch-frontend".into(),
+        }];
+    resign_prompt_and_candidate(&mut candidate);
+    candidate
+        .validate()
+        .expect("successor candidate must validate");
+}
+
+#[test]
+fn successor_candidate_rejects_ordinal_zero_scope() {
+    let (mut candidate, _, _) = fixture();
+    candidate.contract_scope = GroupAgentScheduledNodeContractScope::ScheduleSuccessorOnly;
+    candidate.request.predecessor_terminal_receipts =
+        vec![crate::GroupAgentScheduledNodePredecessorReceipt {
+            predecessor_node_id: "frontend".into(),
+            predecessor_attempt: 1,
+            terminal_event_seq: 0,
+            terminal_event_sha256: String::new(),
+            terminal_receipt_id: format!("scheduled-node-terminal-receipt-{}", "a".repeat(64)),
+            terminal_receipt_sha256: "a".repeat(64),
+            node_outcome: crate::GroupAgentScheduledNodePredecessorOutcome::Completed,
+            provider_request_id: "scheduled-node-provider-request-frontend".into(),
+            dispatch_id: "dispatch-frontend".into(),
+        }];
+    resign_prompt_and_candidate(&mut candidate);
+    assert!(
+        candidate.validate().is_err(),
+        "ordinal-0 successor must fail"
+    );
+}
+
+#[test]
+fn initial_scope_rejects_predecessor_receipts() {
+    let (mut candidate, _, _) = fixture();
+    candidate.request.predecessor_terminal_receipts =
+        vec![crate::GroupAgentScheduledNodePredecessorReceipt {
+            predecessor_node_id: "frontend".into(),
+            predecessor_attempt: 1,
+            terminal_event_seq: 0,
+            terminal_event_sha256: String::new(),
+            terminal_receipt_id: format!("scheduled-node-terminal-receipt-{}", "a".repeat(64)),
+            terminal_receipt_sha256: "a".repeat(64),
+            node_outcome: crate::GroupAgentScheduledNodePredecessorOutcome::Completed,
+            provider_request_id: "scheduled-node-provider-request-frontend".into(),
+            dispatch_id: "dispatch-frontend".into(),
+        }];
+    resign_prompt_and_candidate(&mut candidate);
+    assert!(
+        candidate.validate().is_err(),
+        "initial candidate with receipts must fail"
+    );
+}
+
+#[test]
+fn successor_candidate_rejects_receipt_without_provider_identity() {
+    let (mut candidate, _, schedule) = fixture();
+    let backend = schedule
+        .nodes
+        .iter()
+        .find(|node| node.execution_ordinal == 1)
+        .expect("ordinal-1 node");
+    candidate.contract_scope = GroupAgentScheduledNodeContractScope::ScheduleSuccessorOnly;
+    candidate.node.execution_ordinal = 1;
+    candidate.node.node_id = backend.node_id.clone();
+    candidate.node.project_id = "backend-project".into();
+    candidate.node.project_lane_sha256 =
+        group_agent_project_lane_sha256(&candidate.node.project_id);
+    candidate.request.execution_ordinal = 1;
+    candidate.request.node_id = backend.node_id.clone();
+    candidate.request.user_prompt = format!(
+        "{{\"v\":2,\"node_id\":\"{}\",\"task\":\"t\",\"acceptance\":\"a\"}}",
+        backend.node_id
+    );
+    candidate.request.predecessor_terminal_receipts =
+        vec![crate::GroupAgentScheduledNodePredecessorReceipt {
+            predecessor_node_id: schedule.nodes[0].node_id.clone(),
+            predecessor_attempt: 1,
+            terminal_event_seq: 0,
+            terminal_event_sha256: String::new(),
+            terminal_receipt_id: format!("scheduled-node-terminal-receipt-{}", "a".repeat(64)),
+            terminal_receipt_sha256: "a".repeat(64),
+            node_outcome: crate::GroupAgentScheduledNodePredecessorOutcome::Failed,
+            provider_request_id: String::new(),
+            dispatch_id: "dispatch-frontend".into(),
+        }];
+    resign_prompt_and_candidate(&mut candidate);
+    assert!(
+        candidate.validate().is_err(),
+        "receipt without provider request identity must fail"
+    );
+}

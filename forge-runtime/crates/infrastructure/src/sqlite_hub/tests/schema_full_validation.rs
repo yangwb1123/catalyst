@@ -86,13 +86,13 @@ fn shadowed_pragma_index_list_is_rejected_without_repair() {
 
 fn assert_valid_migration(fixture: (TempDir, std::path::PathBuf), seed_level: u8) {
     let (root, database) = fixture;
-    let connection = open_database(&database).expect("valid schema migrates to v16");
-    assert_eq!(schema_version(&connection), 16);
+    let connection = open_database(&database).expect("valid schema migrates to v17");
+    assert_eq!(schema_version(&connection), 17);
     assert_seed_data(&connection, seed_level);
     drop(connection);
 
-    let reopened = open_database(&database).expect("valid v16 schema reopens");
-    assert_eq!(schema_version(&reopened), 16);
+    let reopened = open_database(&database).expect("valid v17 schema reopens");
+    assert_eq!(schema_version(&reopened), 17);
     assert_seed_data(&reopened, seed_level);
     drop((reopened, root));
 }

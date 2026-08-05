@@ -77,6 +77,27 @@ pub enum GroupGraphRunScheduledContractCommand {
         limit: usize,
     },
     ProviderRequest(GroupGraphRunScheduledContractProviderRequestCommand),
+    PredecessorReceiptExport {
+        provider_request_id: String,
+    },
+    Successor(GroupGraphRunScheduledContractSuccessorCommand),
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub enum GroupGraphRunScheduledContractSuccessorCommand {
+    Admit {
+        graph_run_id: String,
+        contract_source: String,
+        predecessor_receipt_sources: Vec<String>,
+    },
+    Show {
+        contract_id: String,
+        include_contract: bool,
+    },
+    List {
+        graph_run_id: Option<String>,
+        limit: usize,
+    },
 }
 
 #[derive(Debug, Eq, PartialEq)]

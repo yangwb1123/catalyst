@@ -409,7 +409,7 @@ fn effect_free_open_rejects_non_current_and_corrupt_databases_without_changes() 
     assert!(
         error
             .to_string()
-            .contains("current schema version 16; found 10")
+            .contains("current schema version 17; found 10")
     );
     assert_eq!(state_files(root.path()), before);
 

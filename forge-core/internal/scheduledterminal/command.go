@@ -36,17 +36,9 @@ func Command(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if err != nil {
 		return commandFailure(stderr, 1, "invalid scheduled terminal control")
 	}
-	control, err := decodeControl(controlBytes)
-	if err != nil {
-		return commandFailure(stderr, 1, "invalid scheduled terminal control")
-	}
-	receipt, err := buildReceipt(control)
+	encoded, err := BuildReceipt(controlBytes)
 	if err != nil {
 		return commandFailure(stderr, 1, "cannot build scheduled terminal receipt")
-	}
-	encoded, err := marshalReceipt(receipt)
-	if err != nil {
-		return commandFailure(stderr, 1, "cannot encode scheduled terminal receipt")
 	}
 	return writeExact(stdout, stderr, encoded, "cannot write scheduled terminal receipt")
 }

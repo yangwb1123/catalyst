@@ -34,10 +34,11 @@ use super::{
     schema_v14_sql::MIGRATE_V13_TO_V14_SQL,
     schema_v15_sql::MIGRATE_V14_TO_V15_SQL,
     schema_v16_sql::MIGRATE_V15_TO_V16_SQL,
+    schema_v17_sql::MIGRATE_V16_TO_V17_SQL,
     unavailable,
 };
 
-const SCHEMA_VERSION: i64 = 16;
+const SCHEMA_VERSION: i64 = 17;
 const CONNECTION_BUSY_TIMEOUT: Duration = Duration::from_millis(250);
 const OPEN_RETRY_TIMEOUT: Duration = Duration::from_secs(5);
 const OPEN_RETRY_DELAY: Duration = Duration::from_millis(10);
@@ -69,7 +70,7 @@ pub(super) fn open_database(path: &Path) -> Result<Connection, HubStoreError> {
 pub(super) fn open_existing_current_read_only_database(
     path: &Path,
 ) -> Result<Connection, HubStoreError> {
-    open_existing_validated_read_only_database(path, &[SCHEMA_VERSION], "current schema version 16")
+    open_existing_validated_read_only_database(path, &[SCHEMA_VERSION], "current schema version 17")
 }
 
 pub(super) fn open_existing_dispatch_preflight_read_only_database(
@@ -77,8 +78,8 @@ pub(super) fn open_existing_dispatch_preflight_read_only_database(
 ) -> Result<Connection, HubStoreError> {
     open_existing_validated_read_only_database(
         path,
-        &[11, 12, 13, 14, 15, 16],
-        "schema version 11, 12, 13, 14, 15, or 16",
+        &[11, 12, 13, 14, 15, 16, 17],
+        "schema version 11, 12, 13, 14, 15, 16, or 17",
     )
 }
 
@@ -208,6 +209,12 @@ fn validate_locked_schema(
 
 fn migrate_to_current(connection: &Connection, version: i64) -> Result<(), OpenAttemptError> {
     create_if_empty(connection, version)?;
+    migrate_early(connection, version)?;
+    migrate_late(connection, version)
+}
+
+/// Migrations v1 through v9 (the legacy Conversation/Hub generations).
+fn migrate_early(connection: &Connection, version: i64) -> Result<(), OpenAttemptError> {
     if version <= 1 {
         migrate_v1_to_v2(connection)?;
     }
@@ -232,6 +239,11 @@ fn migrate_to_current(connection: &Connection, version: i64) -> Result<(), OpenA
     if version <= 8 {
         migrate_v8_to_v9(connection)?;
     }
+    Ok(())
+}
+
+/// Migrations v10 through v17 (the Graph/Agent generations).
+fn migrate_late(connection: &Connection, version: i64) -> Result<(), OpenAttemptError> {
     if version <= 9 {
         migrate_v9_to_v10(connection)?;
     }
@@ -252,6 +264,9 @@ fn migrate_to_current(connection: &Connection, version: i64) -> Result<(), OpenA
     }
     if version <= 15 {
         migrate_v15_to_v16(connection)?;
+    }
+    if version <= 16 {
+        migrate_v16_to_v17(connection)?;
     }
     Ok(())
 }
@@ -365,6 +380,11 @@ fn migrate_v14_to_v15(connection: &Connection) -> Result<(), OpenAttemptError> {
 
 fn migrate_v15_to_v16(connection: &Connection) -> Result<(), OpenAttemptError> {
     connection.execute_batch(MIGRATE_V15_TO_V16_SQL)?;
+    Ok(())
+}
+
+fn migrate_v16_to_v17(connection: &Connection) -> Result<(), OpenAttemptError> {
+    connection.execute_batch(MIGRATE_V16_TO_V17_SQL)?;
     Ok(())
 }
 

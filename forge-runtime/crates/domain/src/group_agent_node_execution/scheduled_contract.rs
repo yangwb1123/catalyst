@@ -33,6 +33,7 @@ pub const MAX_GROUP_AGENT_SCHEDULED_NODE_CONTRACT_LIST_LIMIT: usize = 100;
 #[serde(rename_all = "snake_case")]
 pub enum GroupAgentScheduledNodeContractScope {
     ScheduleInitialNodeOnly,
+    ScheduleSuccessorOnly,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -54,6 +55,8 @@ pub struct GroupAgentScheduledNodeExecutionNode {
 #[serde(rename_all = "snake_case")]
 pub enum GroupAgentScheduledNodePredecessorOutcome {
     Completed,
+    Failed,
+    FailedUncertain,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -66,6 +69,8 @@ pub struct GroupAgentScheduledNodePredecessorReceipt {
     pub terminal_receipt_id: String,
     pub terminal_receipt_sha256: String,
     pub node_outcome: GroupAgentScheduledNodePredecessorOutcome,
+    pub provider_request_id: String,
+    pub dispatch_id: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -323,6 +328,39 @@ pub fn group_agent_scheduled_node_user_prompt(
     acceptance: &str,
 ) -> Result<String, GroupAgentScheduledNodeContractValidationError> {
     codec::user_prompt(node_id, task, acceptance)
+}
+
+pub trait GroupAgentScheduledNodeSuccessorStore: Send + Sync {
+    /// Atomically admits or exactly replays one passive successor candidate.
+    ///
+    /// # Errors
+    ///
+    /// Returns a structured conflict, corruption, or storage error.
+    fn admit_group_agent_scheduled_node_successor(
+        &self,
+        request: &AdmitGroupAgentScheduledNodeContractCandidate,
+    ) -> Result<AdmitGroupAgentScheduledNodeContractResult, HubStoreError>;
+
+    /// Fully loads one immutable scheduled successor candidate.
+    ///
+    /// # Errors
+    ///
+    /// Returns a structured not-found, corruption, or storage error.
+    fn inspect_group_agent_scheduled_node_successor(
+        &self,
+        contract_id: &str,
+    ) -> Result<GroupAgentScheduledNodeContractInspection, HubStoreError>;
+
+    /// Lists bounded, content-free scheduled successor metadata.
+    ///
+    /// # Errors
+    ///
+    /// Returns a structured validation, corruption, or storage error.
+    fn list_group_agent_scheduled_node_successors(
+        &self,
+        graph_run_id: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<GroupAgentScheduledNodeContractRecord>, HubStoreError>;
 }
 
 pub trait GroupAgentScheduledNodeContractStore: Send + Sync {

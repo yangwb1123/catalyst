@@ -139,8 +139,8 @@ fn dispatch_reentry_preserves_corrupt_classification_from_hot_wal() {
 }
 
 #[test]
-fn dispatch_reentry_reads_real_hot_v12_through_v15_wals_without_logical_changes() {
-    for version in [12, 13, 14, 15] {
+fn dispatch_reentry_reads_real_hot_v12_through_v16_wals_without_logical_changes() {
+    for version in [12, 13, 14, 15, 16] {
         assert_hot_wal_reentry(version);
     }
 }
@@ -179,6 +179,15 @@ fn assert_hot_wal_reentry(version: i64) {
 }
 
 fn restore_schema_version(connection: &rusqlite::Connection, version: i64) {
+    if version < 17 {
+        connection
+            .execute_batch(
+                "DROP INDEX group_agent_graph_scheduled_node_successor_candidates_created;
+                 DROP TABLE group_agent_graph_scheduled_node_successor_candidates;
+                 PRAGMA user_version=16;",
+            )
+            .expect("restore exact v16 schema");
+    }
     if version < 16 {
         connection
             .execute_batch(

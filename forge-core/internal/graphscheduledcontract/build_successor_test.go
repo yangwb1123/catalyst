@@ -1,0 +1,233 @@
+package graphscheduledcontract
+
+import (
+	"bytes"
+	"os"
+	"strings"
+	"testing"
+
+	"forgeos/forge-core/internal/graphschedule"
+	"forgeos/forge-core/internal/scheduledterminal"
+)
+
+// successorReceipt builds one valid ordinal-zero predecessor receipt bound to
+// the fixture control and the first scheduled node.
+func successorReceipt(t *testing.T) scheduledterminal.Receipt {
+	t.Helper()
+	snapshot := fixtureSnapshot(t)
+	schedule := mustSchedule(t)
+	node := schedule.Nodes[0]
+	receipt := scheduledterminal.Receipt{
+		V: 1, SchedulerProtocolVersion: 1, TerminalReceiptProtocol: 1,
+		TerminalControlSHA256: strings.Repeat("a", 64),
+		GraphRunID:            snapshot.GraphRunID,
+		GraphID:               snapshot.GraphID,
+		NodeID:                node.NodeID,
+		Attempt:               node.Attempt,
+		DispatchID:            "dispatch-successor-fixture",
+		ProviderRequestID:     "scheduled-node-provider-request-successor-fixture",
+		ProjectLaneSHA256:     node.ProjectLaneSHA256,
+		ArtifactKind:          "result",
+		ArtifactID:            "scheduled-node-terminal-artifact-" + strings.Repeat("b", 64),
+		ArtifactSHA256:        strings.Repeat("b", 64),
+		NodeOutcome:           "completed",
+		RetryAuthorized:       false,
+		LaneReleaseAuthorized: true,
+	}
+	encoded, err := scheduledterminal.MarshalReceipt(receipt)
+	if err != nil {
+		t.Fatalf("marshal receipt: %v", err)
+	}
+	decoded, err := scheduledterminal.DecodeReceipt(encoded)
+	if err != nil {
+		t.Fatalf("decode receipt: %v", err)
+	}
+	return decoded
+}
+
+func mustSchedule(t *testing.T) graphschedule.ExecutionSchedule {
+	t.Helper()
+	snapshot := fixtureSnapshot(t)
+	schedule, err := graphschedule.Build(snapshot)
+	if err != nil {
+		t.Fatalf("build schedule: %v", err)
+	}
+	return schedule
+}
+
+func TestBuildSuccessorSelectsOrdinalOne(t *testing.T) {
+	snapshot := fixtureSnapshot(t)
+	schedule := mustSchedule(t)
+	if schedule.NodeCount < 2 {
+		t.Fatalf("successor test needs >= 2 nodes, got %d", schedule.NodeCount)
+	}
+	options := readSourceFixture(t).Input.ExecutionOptions.options()
+	receipt := successorReceipt(t)
+	candidate, err := BuildSuccessor(snapshot, schedule.ScheduleSHA256, options, []scheduledterminal.Receipt{receipt})
+	if err != nil {
+		t.Fatalf("BuildSuccessor: %v", err)
+	}
+	if candidate.ContractScope != successorContractScope {
+		t.Fatalf("scope = %q", candidate.ContractScope)
+	}
+	if candidate.Node.ExecutionOrdinal != 1 {
+		t.Fatalf("ordinal = %d, want 1", candidate.Node.ExecutionOrdinal)
+	}
+	if candidate.Node.NodeID != schedule.Nodes[1].NodeID {
+		t.Fatalf("node = %q, want %q", candidate.Node.NodeID, schedule.Nodes[1].NodeID)
+	}
+	if len(candidate.Request.PredecessorTerminalReceipts) != 1 {
+		t.Fatalf("predecessor receipts = %d, want 1", len(candidate.Request.PredecessorTerminalReceipts))
+	}
+	if candidate.Request.PredecessorTerminalReceipts[0].TerminalReceiptSHA256 != receipt.ReceiptSHA256 {
+		t.Fatal("predecessor receipt digest not bound")
+	}
+	if candidate.Request.PredecessorContentIncluded {
+		t.Fatal("predecessor content must stay excluded")
+	}
+	if candidate.SuccessorAdvanceAuthorized || candidate.ProgressObserved ||
+		candidate.DispatchAuthorityReleased || candidate.ExecutionAuthorityReleased ||
+		candidate.ProviderRequestPresent || candidate.LifecycleContractAdmitted {
+		t.Fatal("successor candidate carries forbidden authority")
+	}
+}
+
+func TestBuildSuccessorRejectsDriftedReceipts(t *testing.T) {
+	snapshot := fixtureSnapshot(t)
+	schedule := mustSchedule(t)
+	options := readSourceFixture(t).Input.ExecutionOptions.options()
+	receipt := successorReceipt(t)
+	cases := []struct {
+		name   string
+		mutate func(*scheduledterminal.Receipt)
+	}{
+		{"wrong node", func(r *scheduledterminal.Receipt) { r.NodeID = "other-node" }},
+		{"wrong graph run", func(r *scheduledterminal.Receipt) { r.GraphRunID = "other-run" }},
+		{"wrong lane", func(r *scheduledterminal.Receipt) { r.ProjectLaneSHA256 = strings.Repeat("0", 64) }},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			value := receipt
+			test.mutate(&value)
+			encoded, err := scheduledterminal.MarshalReceipt(value)
+			if err != nil {
+				t.Fatalf("mutated receipt must stay marshallable: %v", err)
+			}
+			decoded, err := scheduledterminal.DecodeReceipt(encoded)
+			if err != nil {
+				t.Fatalf("decode mutated receipt: %v", err)
+			}
+			if _, err := BuildSuccessor(
+				snapshot, schedule.ScheduleSHA256, options, []scheduledterminal.Receipt{decoded},
+			); err == nil {
+				t.Fatal("BuildSuccessor accepted a drifted receipt")
+			}
+		})
+	}
+}
+
+func TestBuildSuccessorRejectsOutOfOrderAndProtocolViolations(t *testing.T) {
+	snapshot := fixtureSnapshot(t)
+	schedule := mustSchedule(t)
+	options := readSourceFixture(t).Input.ExecutionOptions.options()
+	receipt := successorReceipt(t)
+	// Receipt-level protocol violations are rejected by DecodeReceipt before
+	// successor selection can even observe them.
+	for _, mutate := range []func(*scheduledterminal.Receipt){
+		func(r *scheduledterminal.Receipt) { r.Attempt = 2 },
+		func(r *scheduledterminal.Receipt) { r.RetryAuthorized = true },
+		func(r *scheduledterminal.Receipt) { r.SuccessorAdvanceAuthorized = true },
+	} {
+		value := receipt
+		mutate(&value)
+		encoded, err := scheduledterminal.MarshalReceipt(value)
+		if err == nil {
+			t.Fatal("DecodeReceipt-layer violation unexpectedly marshaled")
+		}
+		_ = encoded
+	}
+	// A receipt that is not the schedule prefix (second node as first receipt).
+	value := receipt
+	value.NodeID = schedule.Nodes[1].NodeID
+	value.ProjectLaneSHA256 = schedule.Nodes[1].ProjectLaneSHA256
+	encoded, err := scheduledterminal.MarshalReceipt(value)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	decoded, err := scheduledterminal.DecodeReceipt(encoded)
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if _, err := BuildSuccessor(snapshot, schedule.ScheduleSHA256, options, []scheduledterminal.Receipt{decoded}); err == nil {
+		t.Fatal("BuildSuccessor accepted a non-prefix receipt")
+	}
+}
+
+func TestBuildSuccessorRejectsEmptyAndFullConsumption(t *testing.T) {
+	snapshot := fixtureSnapshot(t)
+	schedule := mustSchedule(t)
+	options := readSourceFixture(t).Input.ExecutionOptions.options()
+	if _, err := BuildSuccessor(snapshot, schedule.ScheduleSHA256, options, nil); err == nil {
+		t.Fatal("BuildSuccessor accepted an empty predecessor set")
+	}
+	receipts := make([]scheduledterminal.Receipt, 0, len(schedule.Nodes))
+	for index := range schedule.Nodes {
+		receipt := successorReceipt(t)
+		receipt.NodeID = schedule.Nodes[index].NodeID
+		receipt.ProjectLaneSHA256 = schedule.Nodes[index].ProjectLaneSHA256
+		encoded, err := scheduledterminal.MarshalReceipt(receipt)
+		if err != nil {
+			t.Fatalf("marshal: %v", err)
+		}
+		decoded, err := scheduledterminal.DecodeReceipt(encoded)
+		if err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		receipts = append(receipts, decoded)
+	}
+	if _, err := BuildSuccessor(snapshot, schedule.ScheduleSHA256, options, receipts); err == nil {
+		t.Fatal("BuildSuccessor accepted full consumption with no successor node")
+	}
+}
+
+func TestCommandBuildsSuccessorFromReceiptFiles(t *testing.T) {
+	schedule := mustSchedule(t)
+	options := readSourceFixture(t).Input.ExecutionOptions.options()
+	receipt := successorReceipt(t)
+	encoded, err := scheduledterminal.MarshalReceipt(receipt)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	dir := t.TempDir()
+	controlPath := writeTemp(t, dir, "control.json", []byte(readSourceFixture(t).Input.CanonicalControlSnapshotJSON))
+	receiptPath := writeTemp(t, dir, "receipt.json", encoded)
+	var stdout, stderr bytes.Buffer
+	code := Command([]string{
+		"--control", controlPath, "--schedule-sha256", schedule.ScheduleSHA256,
+		"--endpoint", options.Endpoint, "--model", options.Model,
+		"--max-output-tokens", "4096", "--max-model-output-bytes", "65536",
+		"--max-model-events", "4096", "--timeout-ms", "300000",
+		"--max-cost-usd-micros", "1000000", "--pricing-snapshot-sha256", options.PricingSnapshotSHA256,
+		"--max-result-bytes", "262144",
+		"--predecessor-receipt", receiptPath,
+	}, strings.NewReader(""), &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("command code=%d stderr=%q", code, stderr.String())
+	}
+	candidate, err := DecodeCandidate(bytes.NewReader(stdout.Bytes()))
+	if err != nil {
+		t.Fatalf("decode candidate: %v", err)
+	}
+	if candidate.ContractScope != successorContractScope || candidate.Node.ExecutionOrdinal != 1 {
+		t.Fatalf("candidate scope=%q ordinal=%d", candidate.ContractScope, candidate.Node.ExecutionOrdinal)
+	}
+}
+
+func writeTemp(t *testing.T, dir, name string, data []byte) string {
+	t.Helper()
+	path := dir + "/" + name
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatalf("write %s: %v", name, err)
+	}
+	return path
+}

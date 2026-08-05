@@ -2,6 +2,7 @@ use std::collections::VecDeque;
 
 use crate::args::{
     GroupGraphRunScheduledContractCommand, GroupGraphRunScheduledContractProviderRequestCommand,
+    GroupGraphRunScheduledContractSuccessorCommand,
 };
 
 use super::{
@@ -18,6 +19,8 @@ pub(super) fn parse(
         Some("show") => parse_show(tokens),
         Some("list") => parse_list(tokens),
         Some("provider-request") => parse_provider_request(tokens, idempotency_key),
+        Some("predecessor-receipt") => parse_predecessor_receipt(tokens),
+        Some("successor") => parse_successor(tokens, idempotency_key),
         Some(value) => Err(unknown("group graph run scheduled-contract", value)),
         None => Err(with_usage(
             "group graph run scheduled-contract command is required",
@@ -212,6 +215,121 @@ fn provider_request_command(
     command(GroupGraphRunScheduledContractCommand::ProviderRequest(
         value,
     ))
+}
+
+fn parse_predecessor_receipt(tokens: &mut VecDeque<String>) -> Result<Command, String> {
+    let operation = "group graph run scheduled-contract predecessor-receipt";
+    match tokens.pop_front().as_deref() {
+        Some("export") => {
+            let provider_request_id = required_id(
+                tokens,
+                "group graph run scheduled-contract predecessor-receipt export",
+                "PROVIDER_REQUEST_ID",
+            )?;
+            super::require_empty(tokens)?;
+            Ok(command(
+                GroupGraphRunScheduledContractCommand::PredecessorReceiptExport {
+                    provider_request_id,
+                },
+            ))
+        }
+        Some(value) => Err(unknown(operation, value)),
+        None => Err(with_usage(
+            "group graph run scheduled-contract predecessor-receipt command is required",
+        )),
+    }
+}
+
+fn parse_successor(
+    tokens: &mut VecDeque<String>,
+    idempotency_key: &mut Option<String>,
+) -> Result<Command, String> {
+    let operation = "group graph run scheduled-contract successor";
+    match tokens.pop_front().as_deref() {
+        Some("admit") => parse_successor_admit(tokens, idempotency_key),
+        Some("show") => parse_successor_show(tokens),
+        Some("list") => parse_successor_list(tokens),
+        Some(value) => Err(unknown(operation, value)),
+        None => Err(with_usage(
+            "group graph run scheduled-contract successor command is required",
+        )),
+    }
+}
+
+fn parse_successor_admit(
+    tokens: &mut VecDeque<String>,
+    idempotency_key: &mut Option<String>,
+) -> Result<Command, String> {
+    let operation = "group graph run scheduled-contract successor admit";
+    let graph_run_id = required_id(tokens, operation, "GRAPH_RUN_ID")?;
+    let mut contract_source = None;
+    let mut predecessor_receipt_sources = Vec::new();
+    while let Some(option) = tokens.pop_front() {
+        match option.as_str() {
+            "--contract" if contract_source.is_none() => {
+                contract_source = Some(next_value(tokens, "--contract")?);
+            }
+            "--contract" => return Err(duplicate("--contract")),
+            "--predecessor-receipt" => {
+                predecessor_receipt_sources.push(next_value(tokens, "--predecessor-receipt")?);
+            }
+            "--idempotency-key" if idempotency_key.is_none() => {
+                *idempotency_key = Some(next_value(tokens, "--idempotency-key")?);
+            }
+            "--idempotency-key" => return Err(duplicate("--idempotency-key")),
+            _ => return Err(unknown(operation, &option)),
+        }
+    }
+    let contract_source =
+        contract_source.ok_or_else(|| with_usage("successor admit requires --contract FILE|-"))?;
+    if predecessor_receipt_sources.is_empty() {
+        return Err(with_usage(
+            "successor admit requires at least one --predecessor-receipt FILE|-",
+        ));
+    }
+    Ok(command(GroupGraphRunScheduledContractCommand::Successor(
+        GroupGraphRunScheduledContractSuccessorCommand::Admit {
+            graph_run_id,
+            contract_source,
+            predecessor_receipt_sources,
+        },
+    )))
+}
+
+fn parse_successor_show(tokens: &mut VecDeque<String>) -> Result<Command, String> {
+    let operation = "group graph run scheduled-contract successor show";
+    let contract_id = required_id(tokens, operation, "SUCCESSOR_ID")?;
+    let include_contract = match tokens.pop_front().as_deref() {
+        Some("--include-contract") => true,
+        Some(value) => return Err(unknown(operation, value)),
+        None => false,
+    };
+    super::require_empty(tokens)?;
+    Ok(command(GroupGraphRunScheduledContractCommand::Successor(
+        GroupGraphRunScheduledContractSuccessorCommand::Show {
+            contract_id,
+            include_contract,
+        },
+    )))
+}
+
+fn parse_successor_list(tokens: &mut VecDeque<String>) -> Result<Command, String> {
+    let graph_run_id = match tokens.front().map(String::as_str) {
+        Some(value) if !value.starts_with('-') => tokens.pop_front(),
+        _ => None,
+    };
+    let mut limit = 50;
+    if tokens.front().is_some_and(|value| value == "--limit") {
+        tokens.pop_front();
+        limit = parse_limit(tokens)?;
+    }
+    super::require_empty(tokens)?;
+    Ok(command(GroupGraphRunScheduledContractCommand::Successor(
+        GroupGraphRunScheduledContractSuccessorCommand::List {
+            graph_run_id,
+            limit,
+        },
+    )))
 }
 
 fn parse_admit(

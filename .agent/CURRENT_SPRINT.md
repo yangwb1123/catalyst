@@ -463,6 +463,27 @@ SQLite v16 的完整 owned-catalog/structural contract、corruption-first read/r
 Core protocol handshake 通过；测试只使用 deterministic/local fixtures 和本地 pinned
 Core，不触碰 live provider、付费模型、workspace、tool 或 successor。
 
+## Sprint 60（✅ 完成）— Passive successor contract candidate consuming verified predecessor receipts
+
+ADR 0031 把 scheduled ordinal-zero 的 terminal receipt 接成 successor 前置，但保持
+effect-free：`scheduled-contract predecessor-receipt export PROVIDER_REQUEST_ID` 从
+v16 lifecycle sidecar（仅 terminalized）导出 exact canonical receipt 与 domain digest；
+`forge graph-scheduled-node-contract --predecessor-receipt FILE...` 由 Go Core 重建
+schedule、验证 receipts 构成 serial 连续前缀（每份 receipt 绑定 graph_run/lane/node/
+attempt 且 retry/successor 双 authority 为 false）、选定下一个 ordinal 并生成
+scope=schedule_successor_only 的 successor candidate（predecessor 只作证据，
+`predecessor_content_included=false`，全部 effect flags 保持 false）；Rust
+`scheduled-contract successor admit/show/list` 在 SQLite v17（新不可变侧车表，33 表
+catalog）中原子保存，admission 逐字节复验每个 receipt 与 durable terminalized
+lifecycle 一致。Go/Rust 共享 golden 之外，专项测试覆盖 receipt 前缀/漂移/全消费拒绝、
+scope-aware 验证（initial 仍拒收任何 predecessor）、CLI 解析与 key 门控，以及
+v17 迁移的全量旧版兼容（未来版本测试、降级 fixture、dispatch re-entry 允许 v17）。
+Sprint 59 的架构闸门修复（包文件数/扇入/函数长度/严格 clippy）与 v17 迁移测试更新
+已一并收口：`forge accept` 为 **ACCEPTED**（9 pass · 0 fail · 2 诚实 N/A），
+Rust 911 tests、Go 全量、arch-check 8/8 全绿。仍未 dispatch、不 claim lane、不读
+credential、不推进 wave/successor；跨 node disclosure/consent、effectful successor
+dispatch 与 legacy v4 hard-crash adjudication 仍属后续协议。
+
 ## 下一前沿(需外部资源 / 后续阶段 / 投机增强 / 明确非目标,非本环境可完整验证)
 - **Graph 下一协议切片**:Sprint 59 只完成 scheduled ordinal-zero 的独立 claim/send/terminal sidecar；仍没有真实 successor/wave advancement、verified per-node/per-attempt receipt 驱动的非初始 contract-v2，也没有 predecessor dataflow。后续必须另立 successor 选择、receipt consumption、跨 node disclosure/consent 与 byte-bound 契约，不能从 ordering edge 推断。另一个独立协议仍是 legacy v4 hard-crash no-send adjudication：必须证明旧 executor 已停止，不能用 lease/时间流逝猜测后自动释放或重发。
 - **真点火** `--agent-cmd=claude`:**multi-agent running to completion 已坐实**(Sprint 25:真 claude 多-agent 跑到 converge MET,增量级 + 版本级)。完整旋钮:四维资源护栏 + 成本三维(phase/时间/美元)+ 任务注入 + 写权限 + 模型路由 + 工作目录 + retry + loop-back;诚实分工:agent 自治增量绿、人确认版本竣工。docs/ignition.md 有完整配方 + 实测

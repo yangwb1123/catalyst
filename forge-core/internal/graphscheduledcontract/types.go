@@ -44,8 +44,10 @@ type CandidateNode struct {
 	SameProjectPolicy string `json:"same_project_policy"`
 }
 
-// PredecessorTerminalReceipt reserves the evidence shape a later protocol
-// must verify. Candidate v2 rejects every non-empty instance.
+// PredecessorTerminalReceipt is one verified terminal receipt consumed as
+// predecessor evidence by a successor candidate. The scheduled sidecar does
+// not consume the Graph Run journal, so TerminalEventSeq/SHA256 stay zero/
+// empty; ProviderRequestID and DispatchID bind the exact dispatch evidence.
 type PredecessorTerminalReceipt struct {
 	PredecessorNodeID     string `json:"predecessor_node_id"`
 	PredecessorAttempt    uint16 `json:"predecessor_attempt"`
@@ -54,6 +56,8 @@ type PredecessorTerminalReceipt struct {
 	TerminalReceiptID     string `json:"terminal_receipt_id"`
 	TerminalReceiptSHA256 string `json:"terminal_receipt_sha256"`
 	NodeOutcome           string `json:"node_outcome"`
+	ProviderRequestID     string `json:"provider_request_id"`
+	DispatchID            string `json:"dispatch_id"`
 }
 
 // ScheduledNodeRequest is local logical-request evidence. Predecessor receipt

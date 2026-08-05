@@ -56,16 +56,14 @@ impl Fixture {
     }
 }
 
-fn downgrade_hub_to_v11(database: &Path) {
-    let connection = rusqlite::Connection::open(database).expect("open current Hub for fixture");
-    connection
-        .execute_batch(
-            "PRAGMA foreign_keys=OFF;
+const DOWNGRADE_V17_TO_V10_SQL: &str = "PRAGMA foreign_keys=OFF;
              BEGIN IMMEDIATE;
              CREATE TEMP TABLE saved_dispatch_request AS
                SELECT * FROM group_agent_graph_node_dispatch_requests;
              CREATE TEMP TABLE saved_seq3 AS
                SELECT * FROM group_agent_graph_run_events WHERE seq=3;
+             DROP INDEX group_agent_graph_scheduled_node_successor_candidates_created;
+             DROP TABLE group_agent_graph_scheduled_node_successor_candidates;
              DROP INDEX group_agent_graph_scheduled_node_dispatch_lifecycles_project_lane_active;
              DROP INDEX group_agent_graph_scheduled_node_dispatch_lifecycles_created;
              DROP TABLE group_agent_graph_scheduled_node_dispatch_lifecycles;
@@ -83,8 +81,11 @@ fn downgrade_hub_to_v11(database: &Path) {
                last_event_seq=2,journal_bytes=(
                  SELECT SUM(event_bytes) FROM group_agent_graph_run_events
                  WHERE graph_run_id=group_agent_graph_runs.id
-               );",
-        )
+               );";
+fn downgrade_hub_to_v11(database: &Path) {
+    let connection = rusqlite::Connection::open(database).expect("open current Hub for fixture");
+    connection
+        .execute_batch(DOWNGRADE_V17_TO_V10_SQL)
         .expect("prepare v10-shaped fixture");
     connection
         .execute_batch(v11_migration_sql())
