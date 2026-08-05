@@ -519,6 +519,22 @@ fallback 到 successor 表(轻量 decode,避免经 Graph Run 重查的递归)。
 effectful dispatch execute 的拓扑 fence 仍不变;跨 node disclosure/consent、
 wave 并行与 legacy v4 hard-crash adjudication 仍属后续协议。
 
+## Sprint 63（✅ 完成）— G3 多维路由自动评分器接入真实执行路径
+
+Sprint 30 把"完整多维评分器接入真实执行"改判为独立大特性(包文档自我推迟为
+v2+ Router service)。本轮补齐它的自动生产者与真实消费端:`routing.FromChangedPaths`
+从改动路径集合推导六维 dims(complexity=文件量/8、context_size=跨域数/3、
+dependency_change=核心面命中/5、business_impact=敏感面/生产流量/迁移、
+risk=分类器级别 0..1、security 镜像 business_impact),纯确定性;`forge run`/
+`evolve` 的 tier resolver 新增 score 提升步骤(raise-only,BandForScore 决定
++0/+1/Opus,位于 budget 降档之前所以评分提升不被预算压掉,风险提升之后叠加);
+`forge route --diff-files/--from-git` 对未显式设置的维度自动填充(diff 驱动
+自动评分,显式 flag 仍权威)。无 diff 时全链路逐字节向后兼容。专项测试覆盖
+敏感多文件 diff 达到 Sonnet/Opus 带、单文件 README 只带复杂度、空输入全零、
+band 提升逻辑。`forge accept` 为 **ACCEPTED**;Go 全量测试、arch 8/8、gate 全绿。
+至此 G3 的多维路由(复杂度/风险/依赖/上下文/业务影响)从手动 `forge route`
+跃升为 run/evolve 的真实执行输入;跨厂商模型池仍属 v3。
+
 ## 下一前沿(需外部资源 / 后续阶段 / 投机增强 / 明确非目标,非本环境可完整验证)
 - **Graph 下一协议切片**:Sprint 59 只完成 scheduled ordinal-zero 的独立 claim/send/terminal sidecar；仍没有真实 successor/wave advancement、verified per-node/per-attempt receipt 驱动的非初始 contract-v2，也没有 predecessor dataflow。后续必须另立 successor 选择、receipt consumption、跨 node disclosure/consent 与 byte-bound 契约，不能从 ordering edge 推断。另一个独立协议仍是 legacy v4 hard-crash no-send adjudication：必须证明旧 executor 已停止，不能用 lease/时间流逝猜测后自动释放或重发。
 - **真点火** `--agent-cmd=claude`:**multi-agent running to completion 已坐实**(Sprint 25:真 claude 多-agent 跑到 converge MET,增量级 + 版本级)。完整旋钮:四维资源护栏 + 成本三维(phase/时间/美元)+ 任务注入 + 写权限 + 模型路由 + 工作目录 + retry + loop-back;诚实分工:agent 自治增量绿、人确认版本竣工。docs/ignition.md 有完整配方 + 实测

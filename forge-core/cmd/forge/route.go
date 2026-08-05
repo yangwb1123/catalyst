@@ -196,6 +196,7 @@ func parseRouteFlags(args []string) (routeOpts, bool) {
 	o.sig.Reversible = !irreversible // policy signal is reversibility; flag is its negation
 	recordRiskFlagOrigins(fs, &o)
 	applyDiffSignals(&o)
+	applyAutoDims(fs, &o)
 	return o, true
 }
 
@@ -253,6 +254,42 @@ func applyDiffSignals(o *routeOpts) {
 	o.sig = mergeAutoSignals(o.sig, auto)
 	o.autoReasons = reasons
 	o.sigSetByUser = true // a changed-path set was supplied -> classifier mode
+}
+
+// applyAutoDims fills the multi-dimensional scorer's dims from the changed-path
+// set for any dimension the caller did NOT set explicitly. Raise-only in
+// spirit: an explicit dim always wins (manual is authoritative), and no diff
+// means no auto dims, so route without --diff-files/--from-git stays
+// byte-for-byte backward compatible.
+func applyAutoDims(fs *flag.FlagSet, o *routeOpts) {
+	if o.diffFiles == "" && !o.fromGit {
+		return
+	}
+	paths := changedPaths(o)
+	if len(paths) == 0 {
+		return
+	}
+	explicit := make(map[string]bool)
+	fs.Visit(func(f *flag.Flag) { explicit[f.Name] = true })
+	auto := routing.FromChangedPaths(paths)
+	if !explicit["complexity"] {
+		o.complexity = auto["complexity"]
+	}
+	if !explicit["risk-score"] {
+		o.riskScore = auto["risk"]
+	}
+	if !explicit["security"] {
+		o.security = auto["security"]
+	}
+	if !explicit["dependency"] {
+		o.dependency = auto["dependency_change"]
+	}
+	if !explicit["context"] {
+		o.context = auto["context_size"]
+	}
+	if !explicit["business"] {
+		o.business = auto["business_impact"]
+	}
 }
 
 // changedPaths assembles the changed-path set from --diff-files (a comma list,
@@ -372,3 +409,24 @@ func bandOrFloor(score float64, taskType string) string {
 	}
 	return fmt.Sprintf("score band (%s for score=%.4f)", band, score)
 }
+
+// scoreAdjustedTier applies multi-dimensional auto-score escalation on top of
+// the base routed tier, RAISE-ONLY: a score at or above the Sonnet band lifts
+// the base tier by one step, and an Opus-band score forces Opus. Unknown or
+// zero dims leave the base tier untouched, so no-diff runs behave exactly as
+// before.
+func scoreAdjustedTier(base string, dims map[string]float64) string {
+	score := routing.Score(dims, dimWeights)
+	switch routing.BandForScore(score) {
+	case routing.Opus:
+		return routing.Higher(base, routing.Opus)
+	case routing.Sonnet:
+		return routing.Higher(base, routing.Sonnet)
+	default:
+		return base
+	}
+}
+
+// resolveAutoDims derives the multi-dimensional routing dims from the same
+// git diff resolveAutoRisk uses. Empty (no changes/no git) yields an all-zero
+// dim set so the tier resolver's score escalation is a no-op.

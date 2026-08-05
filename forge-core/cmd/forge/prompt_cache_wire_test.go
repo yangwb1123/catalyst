@@ -107,7 +107,7 @@ func TestBuildRunEngine_EvolveCrossIterationRoadmapNeverStale(t *testing.T) {
 	b := &runBudget{} // unbudgeted: ratio 0, no down-tier — isolates the cache path
 
 	eng, _, _ := buildRunEngine(wf, o, func(string) {}, func(string, string, float64, time.Duration) {},
-		nil, mode.Policy{}, b, "", nil)
+		nil, mode.Policy{}, b, "", nil, nil, nil)
 	ce, ok := eng.Exec.(orchestrator.CommandExecutor)
 	if !ok {
 		t.Fatalf("buildRunEngine must wire a CommandExecutor; got %T", eng.Exec)

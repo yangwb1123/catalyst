@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"forgeos/forge-core/internal/routing"
 	"os"
 	"path/filepath"
 
@@ -93,6 +94,8 @@ type stageHostBoundary struct {
 	hostCommands    bool
 	autoRisk        string
 	autoRiskReasons []string
+	autoDims        map[string]float64
+	autoDimsReasons []string
 	probe           *runProbe
 	runGate         func(string) gate.Result
 }
@@ -114,6 +117,7 @@ func resolveStageHostBoundary(wf asset.Workflow, o runOpts, lifecycle string, lo
 	}
 	boundary.autoRisk, boundary.autoRiskReasons = resolveAutoRisk(o.root)
 	logAutoRisk(logln, "forge run", boundary.autoRisk, boundary.autoRiskReasons)
+	boundary.autoDims, boundary.autoDimsReasons = resolveAutoDims(o.root)
 	boundary.probe = newRunProbe(o.root)
 	boundary.runGate = boundary.probe.runGate
 	return boundary
@@ -151,4 +155,22 @@ func logRunBanner(wf asset.Workflow, o runOpts, lifecycle string, pol mode.Polic
 	fmt.Printf("forge run: stage=%s mode=%s lifecycle=%s executor=%s gates=%v reviewer=%v discover=%s design=%s adr=%v review=%s build_halt=%v (%d phases)\n",
 		wf.Stage, o.mode, lifecycle, o.executor, pol.Gates, pol.Reviewer,
 		pol.DiscoverDepth, pol.DesignDepth, pol.ADR, pol.ReviewDepth, pol.BuildHalted(), len(wf.Phases))
+}
+
+func resolveAutoDims(root string) (map[string]float64, []string) {
+	paths := gitChangedPaths(root)
+	if len(paths) == 0 {
+		return routing.FromChangedPaths(nil), nil
+	}
+	dims := routing.FromChangedPaths(paths)
+	reasons := make([]string, 0, 3)
+	for _, dim := range []string{
+		"complexity", "context_size", "dependency_change",
+		"business_impact", "risk",
+	} {
+		if dims[dim] > 0 {
+			reasons = append(reasons, fmt.Sprintf("%s=%.2f", dim, dims[dim]))
+		}
+	}
+	return dims, reasons
 }

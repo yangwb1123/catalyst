@@ -68,12 +68,13 @@ import (
 //
 // Returns the assembled Engine plus the verdict/findings ledgers for callers to thread
 // rework+trajectory signals into wind-down/Reflect without re-building.
-func buildRunEngine(wf asset.Workflow, o runOpts, logln func(string), costSink func(phase, model string, usd float64, latency time.Duration), runGate func(name string) gate.Result, pol mode.Policy, budget *runBudget, autoRisk string, autoRiskReasons []string, runIDs ...string) (orchestrator.Engine, *verdictLedger, *reviewFindingsLedger) {
+func buildRunEngine(wf asset.Workflow, o runOpts, logln func(string), costSink func(phase, model string, usd float64, latency time.Duration), runGate func(name string) gate.Result, pol mode.Policy, budget *runBudget, autoRisk string, autoRiskReasons []string, autoDims map[string]float64, autoReasons []string, runIDs ...string) (orchestrator.Engine, *verdictLedger, *reviewFindingsLedger) {
 	return buildRunEngineWithPhaseOutput(wf, o, logln, costSink, runGate, pol,
-		budget, autoRisk, autoRiskReasons, newPhaseOutputLedger(), runIDs...)
+		budget, autoRisk, autoRiskReasons, autoDims, autoReasons,
+		newPhaseOutputLedger(), runIDs...)
 }
 
-func buildRunEngineWithPhaseOutput(wf asset.Workflow, o runOpts, logln func(string), costSink func(phase, model string, usd float64, latency time.Duration), runGate func(name string) gate.Result, pol mode.Policy, budget *runBudget, autoRisk string, autoRiskReasons []string, phaseOut *phaseOutputLedger, runIDs ...string) (orchestrator.Engine, *verdictLedger, *reviewFindingsLedger) {
+func buildRunEngineWithPhaseOutput(wf asset.Workflow, o runOpts, logln func(string), costSink func(phase, model string, usd float64, latency time.Duration), runGate func(name string) gate.Result, pol mode.Policy, budget *runBudget, autoRisk string, autoRiskReasons []string, autoDims map[string]float64, autoReasons []string, phaseOut *phaseOutputLedger, runIDs ...string) (orchestrator.Engine, *verdictLedger, *reviewFindingsLedger) {
 	o.workflowStage = wf.Stage
 	gates := newGateLedger()
 	verdicts := newVerdictLedger()
@@ -91,7 +92,7 @@ func buildRunEngineWithPhaseOutput(wf asset.Workflow, o runOpts, logln func(stri
 	o.evolveProposalOnly = wf.Stage == "evolve" && (pol.BuildHalted() || pol.EvolveProposalOnly())
 	cards := loadRunScorecards(wf, o.root, logln)
 	tierOf := taskAwareTierResolver(
-		phaseTierResolver(o.mode, budget.SpendRatio, cards, logln, autoRisk, autoRiskReasons),
+		phaseTierResolver(o.mode, budget.SpendRatio, cards, logln, autoRisk, autoRiskReasons, autoDims, autoReasons),
 		phaseOut, logln)
 	provenance := newArtifactProvenance(o.root, wf.Stage, firstRunID(runIDs), o.releaseAgentSHA256)
 	return orchestrator.Engine{
@@ -160,12 +161,25 @@ func firstRunID(runIDs []string) string {
 // down-tier, clamped not to undo risk escalation). autoRisk is the auto-derived risk
 // level from git diff (empty = no changes/no git); autoRiskReasons are the human-
 // readable path-matching hits, logged when escalation fires.
-func phaseTierResolver(mode string, spendRatio func() float64, cards []routing.Scorecard, logln func(string), autoRisk string, autoRiskReasons []string) func(p asset.Phase) string {
+func phaseTierResolver(mode string, spendRatio func() float64, cards []routing.Scorecard, logln func(string), autoRisk string, autoRiskReasons []string, autoDims map[string]float64, autoReasons []string) func(p asset.Phase) string {
 	return func(p asset.Phase) string {
 		base := orchestrator.PhaseTier(p, mode)
 
-		// Step 2: risk-based escalation (before budget, so risk can't be down-tiered).
-		tier := riskAdjustedTier(base, autoRisk)
+		// Step 2: multi-dimensional score escalation (before budget, so a
+		// scored-complex change can't be down-tiered). Mirrors risk escalation:
+		// raise-only, capped at Opus, never lowering the base tier.
+		tier := scoreAdjustedTier(base, autoDims)
+		if tier != base && logln != nil {
+			rs := ""
+			if len(autoReasons) > 0 {
+				rs = " (" + strings.Join(autoReasons, "; ") + ")"
+			}
+			logln(fmt.Sprintf("phase %s: auto-score=%.2f — escalating %s→%s%s",
+				p.Name, routing.Score(autoDims, dimWeights), base, tier, rs))
+		}
+
+		// Step 3: risk-based escalation (before budget, so risk can't be down-tiered).
+		tier = riskAdjustedTier(tier, autoRisk)
 		if tier != base && logln != nil {
 			reasons := ""
 			if len(autoRiskReasons) > 0 {
@@ -444,7 +458,8 @@ func execOneStage(ctx context.Context, wf asset.Workflow, o runOpts, logln func(
 	pol := mode.Effective(o.mode, lifecycle)
 	boundary := resolveStageHostBoundary(wf, o, lifecycle, logln)
 	eng, verdicts, _ := buildRunEngine(wf, o, logln, costEmitter(tracer, logln),
-		boundary.runGate, pol, budget, boundary.autoRisk, boundary.autoRiskReasons, tracer.RunID)
+		boundary.runGate, pol, budget, boundary.autoRisk, boundary.autoRiskReasons,
+		boundary.autoDims, boundary.autoDimsReasons, tracer.RunID)
 	eng.ChargeAgentCall = chargeAgentCall
 	if boundary.hostCommands {
 		eng.Exec = runProbeExecutor{next: eng.Exec, probe: boundary.probe}

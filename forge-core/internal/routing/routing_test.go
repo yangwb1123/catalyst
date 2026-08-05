@@ -317,3 +317,66 @@ func FuzzTierForScore(f *testing.F) {
 		}
 	})
 }
+
+func TestFromChangedPathsDerivesAllDims(t *testing.T) {
+	dims := FromChangedPaths([]string{
+		"internal/payment/billing.go",
+		"internal/payment/webhook.go",
+		"internal/domain/models.go",
+		"internal/auth/session.go",
+		"db/migrations/0001_init.sql",
+	})
+	if dims["complexity"] != 0.625 {
+		t.Fatalf("complexity = %v, want 0.625 (5 files/8)", dims["complexity"])
+	}
+	if dims["business_impact"] != 1 {
+		t.Fatalf("business_impact = %v, want 1 (payment/auth/secrets)", dims["business_impact"])
+	}
+	if dims["risk"] < 0.5 {
+		t.Fatalf("risk dim = %v, want >= 0.5 (high from sensitive surface)", dims["risk"])
+	}
+	if dims["dependency_change"] == 0 {
+		t.Fatal("dependency dim must be non-zero (domain/schema/migration files)")
+	}
+	if dims["context_size"] == 0 {
+		t.Fatal("context dim must be non-zero (multiple top-level domains)")
+	}
+}
+
+func TestFromChangedPathsEmptyAndOrdinaryInputs(t *testing.T) {
+	for _, paths := range [][]string{nil, {}} {
+		dims := FromChangedPaths(paths)
+		for _, dim := range []string{
+			"complexity", "context_size", "dependency_change", "risk", "business_impact", "security",
+		} {
+			if dims[dim] != 0 {
+				t.Fatalf("empty input must yield zero %s, got %v", dim, dims)
+			}
+		}
+	}
+	// A single non-sensitive file carries only its change-volume complexity.
+	dims := FromChangedPaths([]string{"README.md"})
+	if dims["complexity"] != 0.125 {
+		t.Fatalf("single-file complexity = %v, want 0.125", dims["complexity"])
+	}
+	if dims["context_size"] != 0 || dims["dependency_change"] != 0 ||
+		dims["risk"] != 0 || dims["business_impact"] != 0 {
+		t.Fatalf("README must not trigger spread/dependency/risk dims, got %v", dims)
+	}
+}
+
+func TestFromChangedPathsScoreReachesBands(t *testing.T) {
+	weights := map[string]float64{
+		"complexity": 1, "risk": 1, "business_impact": 1,
+		"dependency_change": 1, "context_size": 1,
+	}
+	paths := []string{
+		"internal/payment/billing.go", "internal/payment/webhook.go",
+		"internal/domain/models.go", "internal/auth/session.go",
+		"db/migrations/0001_init.sql",
+	}
+	score := Score(FromChangedPaths(paths), weights)
+	if score < SonnetMax {
+		t.Fatalf("sensitive multi-file diff score %v must reach at least the Sonnet band", score)
+	}
+}

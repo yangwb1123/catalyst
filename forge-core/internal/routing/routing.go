@@ -10,7 +10,12 @@
 // cost, and a fresh-context reviewer is never down-tiered.
 package routing
 
-import "math"
+import (
+	"math"
+	"strings"
+
+	"forgeos/forge-core/internal/risk"
+)
 
 // Tier names (v1 is Claude-only; ascending capability and cost). Provider names
 // extend these for the cross-vendor pool: a fully-qualified tier is "provider/tier"
@@ -343,4 +348,118 @@ func Providers() []string {
 		ps = append(ps, p)
 	}
 	return ps
+}
+
+// Dimension names consumed by Score/TierForScore and surfaced by the CLI.
+const (
+	dimComplexity     = "complexity"
+	dimRisk           = "risk"
+	dimSecurity       = "security"
+	dimDependency     = "dependency_change"
+	dimContext        = "context_size"
+	dimBusinessImpact = "business_impact"
+)
+
+// FromChangedPaths derives multi-dimensional routing dims (each 0..1) from a
+// changed-path set, the automatic producer for the v2 scorer. Dimensions:
+//
+//   - complexity: change volume (file count, saturated at 8 files);
+//   - context_size: cross-domain spread (distinct top-level directories,
+//     saturated at 3);
+//   - dependency_change: core-surface touches (schema/migration/domain-ish
+//     files, saturated at 5);
+//   - business_impact: sensitive surface (payment/auth/secrets from the risk
+//     path heuristic) or production-traffic/blast radius;
+//   - risk: the risk classifier's level as a 0..1 value.
+//
+// Pure and deterministic; empty input yields all-zero dims. The security dim
+// mirrors business_impact (the security floor already pins Opus via
+// SafetyForceOpus for those task types; the dim exists for observability).
+func FromChangedPaths(paths []string) map[string]float64 {
+	dims := map[string]float64{
+		dimComplexity:     0,
+		dimRisk:           0,
+		dimSecurity:       0,
+		dimDependency:     0,
+		dimContext:        0,
+		dimBusinessImpact: 0,
+	}
+	if len(paths) == 0 {
+		return dims
+	}
+	dims[dimComplexity] = math.Min(1, float64(len(paths))/8.0)
+
+	domains := make(map[string]bool)
+	coreHits := 0
+	for _, path := range paths {
+		if domain := topLevelDomain(path); domain != "" {
+			domains[domain] = true
+		}
+		if isCoreSurface(path) {
+			coreHits++
+		}
+	}
+	dims[dimContext] = math.Min(1, float64(len(domains))/3.0)
+	dims[dimDependency] = math.Min(1, float64(coreHits)/5.0)
+
+	sig, _ := riskFromChangedPaths(paths)
+	dims[dimBusinessImpact] = businessImpactDim(sig)
+	dims[dimRisk] = riskLevelDim(sig)
+	dims[dimSecurity] = dims[dimBusinessImpact]
+	return dims
+}
+
+// topLevelDomain extracts the first path segment (repo-relative), skipping
+// dot-entries; "" for a bare file in the repo root.
+func topLevelDomain(path string) string {
+	clean := strings.TrimPrefix(path, "./")
+	if idx := strings.IndexByte(clean, '/'); idx > 0 {
+		return clean[:idx]
+	}
+	return ""
+}
+
+// isCoreSurface flags files whose change tends to ripple through importers:
+// schema/migration definitions and shared domain-ish types.
+func isCoreSurface(path string) bool {
+	for _, marker := range []string{
+		"schema", "migration", "domain", "types.go", "models.go",
+		"internal/asset", "workflows/", "policies/",
+	} {
+		if strings.Contains(path, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func riskFromChangedPaths(paths []string) (risk.Signals, []string) {
+	return risk.FromChangedPaths(paths)
+}
+
+func businessImpactDim(sig risk.Signals) float64 {
+	switch {
+	case sig.TouchesPayment || sig.TouchesAuth || sig.TouchesSecrets:
+		return 1
+	case sig.ProdTraffic || sig.BlastRadius >= 5:
+		return 0.6
+	case sig.TouchesMigration:
+		return 0.4
+	default:
+		return 0
+	}
+}
+
+func riskLevelDim(sig risk.Signals) float64 {
+	level, _ := risk.Classify(sig)
+	switch level {
+	case risk.Critical:
+		return 1
+	case risk.High:
+		return 0.8
+	case risk.Medium:
+		return 0.5
+	default:
+		return 0
+	}
 }

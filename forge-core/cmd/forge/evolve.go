@@ -281,11 +281,13 @@ func buildLoop(wf asset.Workflow, o runOpts, maxIter int, logln func(string), co
 	// iteration re-measures gate state, so the reviewer always sees the LATEST).
 	lifecycle := resolveLifecycle(o)
 	policy := mode.Effective(o.mode, lifecycle)
+	autoDims, autoDimsReasons := resolveAutoDims(o.root)
 	proposalOnly := policy.BuildHalted() || policy.EvolveProposalOnly()
 	runGate := proposalEvolveGateRunner(o.root, probe, proposalOnly)
 	phaseOut := newPhaseOutputLedger()
 	eng, verdicts, findings := buildRunEngineWithPhaseOutput(wf, o, logln, costSink,
-		runGate, policy, budget, autoRisk, autoRiskReasons, phaseOut, runIDs...)
+		runGate, policy, budget, autoRisk, autoRiskReasons, autoDims, autoDimsReasons,
+		phaseOut, runIDs...)
 	approved := humanApproved(o.root, wf.Stage, o.approved)
 	signals := func() converge.Signals {
 		statuses, categories := probe.current()

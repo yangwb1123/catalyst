@@ -210,7 +210,7 @@ func TestBuildRunEngineThreadsTraceRunIDIntoManifest(t *testing.T) {
 	eng, _, _ := buildRunEngine(
 		wf, o, func(string) {}, nil,
 		func(string) gate.Result { return gate.Result{OK: true} },
-		mode.Policy{}, &runBudget{}, "", nil, "trace-runtime-id",
+		mode.Policy{}, &runBudget{}, "", nil, nil, nil, "trace-runtime-id",
 	)
 	if err := eng.Exec.Execute(context.Background(), phase, "balanced"); err != nil {
 		t.Fatalf("Execute: %v", err)

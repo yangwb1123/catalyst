@@ -168,7 +168,7 @@ func TestBuildRunEngine_QAAcceptanceNeverWritesReleaseReceipt(t *testing.T) {
 		runOpts{root: t.TempDir(), mode: "balanced", executor: "dry"},
 		func(string) {}, nil,
 		func(string) gate.Result { return gate.Result{OK: true} },
-		mode.Policy{}, &runBudget{}, "", nil,
+		mode.Policy{}, &runBudget{}, "", nil, nil, nil,
 	)
 
 	if eng.RequireAgentVerdict(qa) {
