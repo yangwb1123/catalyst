@@ -504,6 +504,21 @@ scheduled Run 保持 v1/seq-1。同 project 的串行节点由
 hard-crash adjudication;dispatch execute 的拓扑 fence 不变(successor 需先
 通过被动链取得授权)。
 
+## Sprint 62（✅ 完成）— SQLite v18:provider-request 表支持 successor ordinal
+
+ADR-0032 的 domain 放松后,SQLite 层仍有两道 ordinal 墙:v15 provider-request
+表的 `execution_ordinal = 0` CHECK 与指向 initial candidate 表的 FK/EXISTS
+保护。SQLite v18 重建该表:CHECK 放宽为 0..=31,列级约束保留,两个 FK 移除
+(引用完整性由 store 层双表校验替代);INSERT 的序列-1 head 保护改为 initial/
+successor 双候选表匹配;回读/Graph Run 关联校验在 initial 表 NotFound 时
+fallback 到 successor 表(轻量 decode,避免经 Graph Run 重查的递归)。
+专项集成测试证明 ordinal-1 successor candidate admit 后,其 provider request
+可落库并在回读中完整复验。迁移兼容:v17→v18 数据保留、v12–v16 降级 fixture
+重建 v15 表、dispatch re-entry 接受 v18、未来版本测试移至 19。
+`forge accept` 为 **ACCEPTED**;Rust 913 tests、clippy/arch/gate 全绿。
+effectful dispatch execute 的拓扑 fence 仍不变;跨 node disclosure/consent、
+wave 并行与 legacy v4 hard-crash adjudication 仍属后续协议。
+
 ## 下一前沿(需外部资源 / 后续阶段 / 投机增强 / 明确非目标,非本环境可完整验证)
 - **Graph 下一协议切片**:Sprint 59 只完成 scheduled ordinal-zero 的独立 claim/send/terminal sidecar；仍没有真实 successor/wave advancement、verified per-node/per-attempt receipt 驱动的非初始 contract-v2，也没有 predecessor dataflow。后续必须另立 successor 选择、receipt consumption、跨 node disclosure/consent 与 byte-bound 契约，不能从 ordering edge 推断。另一个独立协议仍是 legacy v4 hard-crash no-send adjudication：必须证明旧 executor 已停止，不能用 lease/时间流逝猜测后自动释放或重发。
 - **真点火** `--agent-cmd=claude`:**multi-agent running to completion 已坐实**(Sprint 25:真 claude 多-agent 跑到 converge MET,增量级 + 版本级)。完整旋钮:四维资源护栏 + 成本三维(phase/时间/美元)+ 任务注入 + 写权限 + 模型路由 + 工作目录 + retry + loop-back;诚实分工:agent 自治增量绿、人确认版本竣工。docs/ignition.md 有完整配方 + 实测

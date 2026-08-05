@@ -4,8 +4,8 @@ use crate::runtime_domain::{
     GROUP_AGENT_SCHEDULED_NODE_CONTRACT_VERSION, GroupAgentGraphExecutionScheduleInspection,
     GroupAgentGraphInspection, GroupAgentGraphRunInspection,
     GroupAgentScheduledNodeContractCandidate, GroupAgentScheduledNodeContractInspection,
-    GroupAgentScheduledNodeContractRecord, HubEntity, HubStoreError,
-    MAX_GROUP_AGENT_GRAPH_IDEMPOTENCY_KEY_BYTES,
+    GroupAgentScheduledNodeContractRecord, GroupAgentScheduledNodeContractScope, HubEntity,
+    HubStoreError, MAX_GROUP_AGENT_GRAPH_IDEMPOTENCY_KEY_BYTES,
     MAX_GROUP_AGENT_SCHEDULED_NODE_CONTRACT_LIST_LIMIT,
 };
 
@@ -54,7 +54,7 @@ pub(super) fn list(
     Ok(records)
 }
 
-pub(super) fn validate_stored(
+pub(in crate::sqlite_hub) fn validate_stored(
     connection: &Connection,
     stored: rows::RawStoredCandidate,
 ) -> Result<GroupAgentScheduledNodeContractInspection, HubStoreError> {
@@ -79,8 +79,8 @@ fn required_schedule(
         .ok_or_else(|| corrupt("stored scheduled-node contract candidate has no schedule"))
 }
 
-pub(super) struct DecodedStoredCandidate {
-    pub(super) inspection: GroupAgentScheduledNodeContractInspection,
+pub(in crate::sqlite_hub) struct DecodedStoredCandidate {
+    pub(in crate::sqlite_hub) inspection: GroupAgentScheduledNodeContractInspection,
     extra: StoredExtra,
 }
 
@@ -95,7 +95,7 @@ struct StoredExtra {
     required_predecessor_node_count: i64,
 }
 
-pub(super) fn decode_stored(
+pub(in crate::sqlite_hub) fn decode_stored(
     stored: rows::RawStoredCandidate,
 ) -> Result<DecodedStoredCandidate, HubStoreError> {
     validate_stored_key(&stored.idempotency_key)?;
@@ -169,7 +169,15 @@ fn validate_extra_columns(
             == i64::from(candidate.node_execution_protocol_version)
         && extra.execution_schedule_protocol_version
             == i64::from(candidate.execution_schedule_protocol_version)
-        && extra.contract_scope == "schedule_initial_node_only"
+        && extra.contract_scope
+            == match candidate.contract_scope {
+                GroupAgentScheduledNodeContractScope::ScheduleInitialNodeOnly => {
+                    "schedule_initial_node_only"
+                }
+                GroupAgentScheduledNodeContractScope::ScheduleSuccessorOnly => {
+                    "schedule_successor_only"
+                }
+            }
         && extra.authored_node_index
             == i64::try_from(candidate.node.authored_node_index).unwrap_or(-1)
         && extra.topology_wave_index

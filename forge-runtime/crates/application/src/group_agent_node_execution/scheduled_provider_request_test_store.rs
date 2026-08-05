@@ -128,7 +128,6 @@ impl SpyHub {
         self.contract = contract;
     }
 
-
     pub(crate) fn contract(&self) -> GroupAgentScheduledNodeContractInspection {
         self.contract.clone()
     }

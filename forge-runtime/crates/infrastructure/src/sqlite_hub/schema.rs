@@ -35,10 +35,11 @@ use super::{
     schema_v15_sql::MIGRATE_V14_TO_V15_SQL,
     schema_v16_sql::MIGRATE_V15_TO_V16_SQL,
     schema_v17_sql::MIGRATE_V16_TO_V17_SQL,
+    schema_v18_sql::MIGRATE_V17_TO_V18_SQL,
     unavailable,
 };
 
-const SCHEMA_VERSION: i64 = 17;
+const SCHEMA_VERSION: i64 = 18;
 const CONNECTION_BUSY_TIMEOUT: Duration = Duration::from_millis(250);
 const OPEN_RETRY_TIMEOUT: Duration = Duration::from_secs(5);
 const OPEN_RETRY_DELAY: Duration = Duration::from_millis(10);
@@ -78,8 +79,8 @@ pub(super) fn open_existing_dispatch_preflight_read_only_database(
 ) -> Result<Connection, HubStoreError> {
     open_existing_validated_read_only_database(
         path,
-        &[11, 12, 13, 14, 15, 16, 17],
-        "schema version 11, 12, 13, 14, 15, 16, or 17",
+        &[11, 12, 13, 14, 15, 16, 17, 18],
+        "schema version 11, 12, 13, 14, 15, 16, 17, or 18",
     )
 }
 
@@ -268,6 +269,9 @@ fn migrate_late(connection: &Connection, version: i64) -> Result<(), OpenAttempt
     if version <= 16 {
         migrate_v16_to_v17(connection)?;
     }
+    if version <= 17 {
+        migrate_v17_to_v18(connection)?;
+    }
     Ok(())
 }
 
@@ -385,6 +389,11 @@ fn migrate_v15_to_v16(connection: &Connection) -> Result<(), OpenAttemptError> {
 
 fn migrate_v16_to_v17(connection: &Connection) -> Result<(), OpenAttemptError> {
     connection.execute_batch(MIGRATE_V16_TO_V17_SQL)?;
+    Ok(())
+}
+
+fn migrate_v17_to_v18(connection: &Connection) -> Result<(), OpenAttemptError> {
+    connection.execute_batch(MIGRATE_V17_TO_V18_SQL)?;
     Ok(())
 }
 

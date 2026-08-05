@@ -7,10 +7,9 @@ use crate::runtime_domain::{
     GroupAgentGraphControlSnapshot, GroupAgentGraphRunEvent, GroupAgentGraphRunEventKind,
     GroupAgentGraphRunInspection, GroupAgentGraphRunRecord, GroupAgentGraphRunStatus,
     GroupAgentScheduledNodeContractCandidate, GroupAgentScheduledNodeContractInspection,
-    GroupAgentScheduledNodeContractScope,
-    GroupAgentScheduledNodeContractRecord, GroupAgentScheduledNodeProviderRequestInspection,
-    GroupAgentScheduledNodeProviderRequestRecord, Message,
-    PrepareGroupAgentScheduledNodeProviderRequestDisposition,
+    GroupAgentScheduledNodeContractRecord, GroupAgentScheduledNodeContractScope,
+    GroupAgentScheduledNodeProviderRequestInspection, GroupAgentScheduledNodeProviderRequestRecord,
+    Message, PrepareGroupAgentScheduledNodeProviderRequestDisposition,
     PrepareGroupAgentScheduledNodeProviderRequestResult,
 };
 
@@ -362,8 +361,7 @@ fn pristine_run_record(
 fn successor_source() -> GroupAgentScheduledNodeContractInspection {
     let spy = SpyHub::new();
     let mut source = spy.contract();
-    source.candidate.contract_scope =
-        GroupAgentScheduledNodeContractScope::ScheduleSuccessorOnly;
+    source.candidate.contract_scope = GroupAgentScheduledNodeContractScope::ScheduleSuccessorOnly;
     source.candidate.node.execution_ordinal = 1;
     source.candidate.node.node_id = "backend".into();
     source.candidate.node.authored_node_index = 1;
@@ -375,18 +373,20 @@ fn successor_source() -> GroupAgentScheduledNodeContractInspection {
     source.candidate.request.user_prompt =
         "{\"v\":2,\"node_id\":\"backend\",\"task\":\"backend task\",\"acceptance\":\"backend acceptance\"}"
             .to_owned();
-    source.candidate.request.predecessor_terminal_receipts =
-        vec![crate::runtime_domain::GroupAgentScheduledNodePredecessorReceipt {
+    source.candidate.request.predecessor_terminal_receipts = vec![
+        crate::runtime_domain::GroupAgentScheduledNodePredecessorReceipt {
             predecessor_node_id: "frontend".into(),
             predecessor_attempt: 1,
             terminal_event_seq: 0,
             terminal_event_sha256: String::new(),
             terminal_receipt_id: format!("scheduled-node-terminal-receipt-{}", "a".repeat(64)),
             terminal_receipt_sha256: "a".repeat(64),
-            node_outcome: crate::runtime_domain::GroupAgentScheduledNodePredecessorOutcome::Completed,
+            node_outcome:
+                crate::runtime_domain::GroupAgentScheduledNodePredecessorOutcome::Completed,
             provider_request_id: "scheduled-node-provider-request-frontend".into(),
             dispatch_id: "dispatch-frontend".into(),
-        }];
+        },
+    ];
     resign_successor(&mut source);
     source
 }
@@ -440,7 +440,9 @@ fn successor_ordinal_one_request_prepares_through_the_same_codec() {
 
     let mut request = input();
     request.scheduled_contract_id = hub.contract_id();
-    let result = service.prepare(&request).expect("successor request prepares");
+    let result = service
+        .prepare(&request)
+        .expect("successor request prepares");
     assert_eq!(result.inspection.provider_request_body, BODY);
     assert_eq!(result.inspection.record.execution_ordinal, 1);
 }

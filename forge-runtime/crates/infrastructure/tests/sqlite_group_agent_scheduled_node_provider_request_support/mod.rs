@@ -74,7 +74,7 @@ pub fn request(
     request
 }
 
-fn provider_body(source: &GroupAgentScheduledNodeContractInspection) -> Vec<u8> {
+pub fn provider_body(source: &GroupAgentScheduledNodeContractInspection) -> Vec<u8> {
     OpenAiResponsesProvider::encode_request_bytes(
         &source.candidate.provider.model,
         &model_request(source),

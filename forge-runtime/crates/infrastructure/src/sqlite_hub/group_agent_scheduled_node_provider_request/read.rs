@@ -14,7 +14,11 @@ use crate::{
     },
 };
 
-use super::super::{group_agent_scheduled_node_contract, group_run_codec, read_error};
+use super::super::group_agent_scheduled_node_successor::rows as successor_rows;
+use super::super::{
+    group_agent_scheduled_node_contract, group_agent_scheduled_node_successor, group_run_codec,
+    read_error,
+};
 use super::rows;
 
 pub(super) fn inspect(
@@ -52,13 +56,19 @@ pub(in crate::sqlite_hub) fn validate_graph_run_binding(
     let Some(stored) = rows::find_by_run(connection, &run.run.graph_run_id)? else {
         return Ok(None);
     };
-    let Some(scheduled_contract) = scheduled_contract else {
-        decode_stored(stored)?;
-        return Err(corrupt(
-            "stored scheduled-node provider request has no scheduled contract",
-        ));
+    let scheduled_contract = if let Some(contract) = scheduled_contract {
+        contract.clone()
+    } else {
+        // The bound contract may live in the successor candidate table.
+        // Lightweight decode only: re-inspecting the Graph Run from here
+        // would recurse back into this validator.
+        let stored =
+            successor_rows::find_by_run(connection, &run.run.graph_run_id)?.ok_or_else(|| {
+                corrupt("stored scheduled-node provider request has no scheduled contract")
+            })?;
+        group_agent_scheduled_node_successor::read::decode_stored(stored)?.inspection
     };
-    validate_stored_with_contract(stored, scheduled_contract.clone()).map(Some)
+    validate_stored_with_contract(stored, scheduled_contract).map(Some)
 }
 
 pub(in crate::sqlite_hub) fn has_graph_run_child(
@@ -73,12 +83,30 @@ pub(super) fn validate_stored(
     stored: rows::RawStoredRequest,
 ) -> Result<GroupAgentScheduledNodeProviderRequestInspection, HubStoreError> {
     let (record, body) = decode_stored(stored)?;
-    let scheduled_contract = group_agent_scheduled_node_contract::read::inspect_in_snapshot(
-        connection,
-        &record.scheduled_contract_id,
-    )
-    .map_err(stored_contract_error)?;
+    let scheduled_contract = load_source_contract(connection, &record.scheduled_contract_id)?;
     validate_decoded(record, body, scheduled_contract)
+}
+
+/// Loads the bound contract from either the initial or the successor
+/// candidate table.
+fn load_source_contract(
+    connection: &Connection,
+    scheduled_contract_id: &str,
+) -> Result<GroupAgentScheduledNodeContractInspection, HubStoreError> {
+    match group_agent_scheduled_node_contract::read::inspect_in_snapshot(
+        connection,
+        scheduled_contract_id,
+    ) {
+        Ok(inspection) => Ok(inspection),
+        Err(HubStoreError::NotFound { .. }) => {
+            group_agent_scheduled_node_successor::read::inspect_in_snapshot(
+                connection,
+                scheduled_contract_id,
+            )
+            .map_err(stored_contract_error)
+        }
+        Err(other) => Err(other),
+    }
 }
 
 fn validate_stored_with_contract(

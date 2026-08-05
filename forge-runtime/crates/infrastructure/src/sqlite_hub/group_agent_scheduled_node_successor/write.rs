@@ -7,8 +7,8 @@ use crate::runtime_domain::{
     AdmitGroupAgentScheduledNodeContractResult, GROUP_AGENT_GRAPH_RUN_VERSION,
     GROUP_AGENT_SCHEDULED_NODE_CONTRACT_VERSION, GroupAgentGraphExecutionScheduleInspection,
     GroupAgentGraphInspection, GroupAgentGraphRunInspection,
-    GroupAgentScheduledNodeContractInspection, GroupAgentScheduledNodeContractRecord, HubEntity,
-    HubStoreError,
+    GroupAgentScheduledNodeContractInspection, GroupAgentScheduledNodeContractRecord,
+    GroupAgentScheduledNodeContractScope, HubEntity, HubStoreError,
 };
 
 use super::super::{
@@ -314,7 +314,7 @@ fn insert_candidate(
                 i64::from(candidate.scheduler_protocol_version),
                 i64::from(candidate.node_execution_protocol_version),
                 i64::from(candidate.execution_schedule_protocol_version),
-                "schedule_initial_node_only",
+                scope_label(candidate.contract_scope),
                 values.control.as_slice(),
                 values.schedule.as_slice(),
                 values.expected_last_event_seq,
@@ -441,5 +441,14 @@ fn conflict(message: &str) -> HubStoreError {
 fn corrupt(message: &str) -> HubStoreError {
     HubStoreError::Corrupt {
         message: message.into(),
+    }
+}
+
+fn scope_label(scope: GroupAgentScheduledNodeContractScope) -> &'static str {
+    match scope {
+        GroupAgentScheduledNodeContractScope::ScheduleInitialNodeOnly => {
+            "schedule_initial_node_only"
+        }
+        GroupAgentScheduledNodeContractScope::ScheduleSuccessorOnly => "schedule_successor_only",
     }
 }

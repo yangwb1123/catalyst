@@ -13,7 +13,10 @@ use crate::runtime_domain::{
     PrepareGroupAgentScheduledNodeProviderRequestResult,
 };
 
-use super::super::{group_agent_scheduled_node_contract, read_error, write_error};
+use super::super::{
+    group_agent_scheduled_node_contract, group_agent_scheduled_node_successor, read_error,
+    write_error,
+};
 use super::{identity, read, rows};
 
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
@@ -38,21 +41,44 @@ const INSERT_REQUEST_SQL: &str = "INSERT INTO group_agent_graph_scheduled_node_p
        FROM group_agent_graph_runs AS run
        JOIN group_agent_graph_run_events AS event
          ON event.graph_run_id=run.id AND event.seq=run.last_event_seq
-       JOIN group_agent_graph_scheduled_node_contract_candidates AS contract
-         ON contract.graph_run_id=run.id
        WHERE run.id=?2 AND run.run_version=1
          AND run.status='awaiting_execution_contract'
          AND run.execution_contract_present=0
          AND run.dispatch_request_present=0
          AND run.dispatch_authority_released=0
          AND run.last_event_seq=?24 AND event.event_sha256=?25
-         AND contract.id=?4 AND contract.schedule_id=?3
-         AND contract.contract_sha256=?10
-         AND contract.provider_request_present=0
-         AND contract.execution_authority_released=0
-         AND contract.dispatch_authority_released=0
-         AND contract.progress_observed=0
-         AND contract.successor_advance_authorized=0
+         AND (
+           EXISTS(
+             SELECT 1 FROM group_agent_graph_scheduled_node_contract_candidates AS contract
+             WHERE contract.graph_run_id=run.id AND contract.id=?4
+               AND contract.schedule_id=?3 AND contract.contract_sha256=?10
+           )
+           OR
+           EXISTS(
+             SELECT 1 FROM group_agent_graph_scheduled_node_successor_candidates AS successor
+             WHERE successor.graph_run_id=run.id AND successor.id=?4
+               AND successor.schedule_id=?3 AND successor.contract_sha256=?10
+           )
+           AND (
+             EXISTS(
+               SELECT 1 FROM group_agent_graph_scheduled_node_contract_candidates AS contract
+               WHERE contract.id=?4 AND contract.provider_request_present=0
+                 AND contract.execution_authority_released=0
+                 AND contract.dispatch_authority_released=0
+                 AND contract.progress_observed=0
+                 AND contract.successor_advance_authorized=0
+             )
+             OR
+             EXISTS(
+               SELECT 1 FROM group_agent_graph_scheduled_node_successor_candidates AS successor
+               WHERE successor.id=?4 AND successor.provider_request_present=0
+                 AND successor.execution_authority_released=0
+                 AND successor.dispatch_authority_released=0
+                 AND successor.progress_observed=0
+                 AND successor.successor_advance_authorized=0
+             )
+           )
+     )
      )";
 
 pub(super) fn prepare(
@@ -113,16 +139,25 @@ fn load_source(
     transaction: &Transaction<'_>,
     scheduled_contract_id: &str,
 ) -> Result<GroupAgentScheduledNodeContractInspection, HubStoreError> {
-    group_agent_scheduled_node_contract::read::inspect_in_snapshot(
+    match group_agent_scheduled_node_contract::read::inspect_in_snapshot(
         transaction,
         scheduled_contract_id,
-    )
-    .map_err(|error| match error {
-        HubStoreError::NotFound { .. } => {
-            conflict("scheduled-node provider request references a missing contract")
+    ) {
+        Ok(inspection) => Ok(inspection),
+        Err(HubStoreError::NotFound { .. }) => {
+            group_agent_scheduled_node_successor::read::inspect_in_snapshot(
+                transaction,
+                scheduled_contract_id,
+            )
+            .map_err(|error| match error {
+                HubStoreError::NotFound { .. } => {
+                    conflict("scheduled-node provider request references a missing contract")
+                }
+                other => other,
+            })
         }
-        other => other,
-    })
+        Err(other) => Err(other),
+    }
 }
 
 fn validate_candidate(

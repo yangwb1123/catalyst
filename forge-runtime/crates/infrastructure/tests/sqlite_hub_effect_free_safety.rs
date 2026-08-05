@@ -180,23 +180,10 @@ fn assert_hot_wal_reentry(version: i64) {
 
 fn restore_schema_version(connection: &rusqlite::Connection, version: i64) {
     if version < 17 {
-        connection
-            .execute_batch(
-                "DROP INDEX group_agent_graph_scheduled_node_successor_candidates_created;
-                 DROP TABLE group_agent_graph_scheduled_node_successor_candidates;
-                 PRAGMA user_version=16;",
-            )
-            .expect("restore exact v16 schema");
+        restore_v16_schema(connection);
     }
     if version < 16 {
-        connection
-            .execute_batch(
-                "DROP INDEX group_agent_graph_scheduled_node_dispatch_lifecycles_project_lane_active;
-                 DROP INDEX group_agent_graph_scheduled_node_dispatch_lifecycles_created;
-                 DROP TABLE group_agent_graph_scheduled_node_dispatch_lifecycles;
-                 PRAGMA user_version=15;",
-            )
-            .expect("restore exact v15 schema");
+        restore_v15_schema(connection);
     }
     if version < 15 {
         connection
@@ -263,4 +250,45 @@ fn state_files(directory: &Path) -> BTreeMap<String, Vec<u8>> {
             (name, bytes)
         })
         .collect()
+}
+
+fn v15_provider_request_sql() -> &'static str {
+    const SOURCE: &str = include_str!("../src/sqlite_hub/schema_contract/v15_sql.rs");
+    SOURCE
+        .strip_prefix("pub(super) const MIGRATE_V14_TO_V15_SQL: &str =\n    \"")
+        .and_then(|value| value.strip_suffix("\";\n"))
+        .expect("embedded v15 provider request DDL")
+}
+
+fn restore_v16_schema(connection: &rusqlite::Connection) {
+    connection
+        .execute_batch(
+            "DROP INDEX group_agent_graph_scheduled_node_successor_candidates_created;
+             DROP TABLE group_agent_graph_scheduled_node_successor_candidates;
+             DROP TABLE group_agent_graph_scheduled_node_provider_requests;",
+        )
+        .expect("drop v18-shaped tables for v16");
+    connection
+        .execute_batch(v15_provider_request_sql())
+        .expect("rebuild exact v15 provider request table for v16");
+    connection
+        .pragma_update(None, "user_version", 16)
+        .expect("mark v16 schema");
+}
+
+fn restore_v15_schema(connection: &rusqlite::Connection) {
+    connection
+        .execute_batch(
+            "DROP INDEX group_agent_graph_scheduled_node_dispatch_lifecycles_project_lane_active;
+             DROP INDEX group_agent_graph_scheduled_node_dispatch_lifecycles_created;
+             DROP TABLE group_agent_graph_scheduled_node_dispatch_lifecycles;
+             DROP TABLE group_agent_graph_scheduled_node_provider_requests;",
+        )
+        .expect("drop v18-shaped tables");
+    connection
+        .execute_batch(v15_provider_request_sql())
+        .expect("rebuild exact v15 provider request table");
+    connection
+        .pragma_update(None, "user_version", 15)
+        .expect("mark v15 schema");
 }

@@ -3,7 +3,8 @@ use super::{
     GroupAgentScheduledNodeContractCandidate, GroupAgentScheduledNodeContractInspection,
     GroupAgentScheduledNodeContractRecord, GroupAgentScheduledNodeContractScope,
     GroupAgentScheduledNodeContractValidationError, MAX_GROUP_AGENT_SCHEDULED_NODE_CONTRACT_BYTES,
-    group_agent_scheduled_node_user_prompt, validation::{digest, invalid},
+    group_agent_scheduled_node_user_prompt,
+    validation::{digest, invalid},
 };
 use crate::{
     GroupAgentGraphControlSnapshot, GroupAgentGraphExecutionSchedule,
@@ -107,7 +108,9 @@ fn validate_successor_node(
 ) -> Result<(), GroupAgentScheduledNodeContractValidationError> {
     let ordinal = candidate.node.execution_ordinal;
     if ordinal == 0 {
-        return Err(invalid("scheduled successor node must carry a non-zero ordinal"));
+        return Err(invalid(
+            "scheduled successor node must carry a non-zero ordinal",
+        ));
     }
     let scheduled = schedule
         .nodes
