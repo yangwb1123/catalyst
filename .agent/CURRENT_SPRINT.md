@@ -484,6 +484,26 @@ Rust 911 tests、Go 全量、arch-check 8/8 全绿。仍未 dispatch、不 claim
 credential、不推进 wave/successor；跨 node disclosure/consent、effectful successor
 dispatch 与 legacy v4 hard-crash adjudication 仍属后续协议。
 
+## Sprint 61（✅ 完成）— Effectful successor dispatch:ordinal-N 被动链全通
+
+ADR 0032 解除 scheduled 家族 passive 链上的 ordinal==0 硬墙,让 ADR-0031 的
+successor candidate 能走进 provider-request codec 管线:domain 的
+`validate_against_sources` 按 scope 分支(initial 路径逐字节不变;successor 路径
+校验 serial 选择、direct-predecessor 覆盖与 Project lane),admission record 按
+predecessor_receipt_count 区分 ordinal 槽位,provider-request record 与 dispatch
+release control 接受 1..=31。claim/terminalize 内部本就 ordinal-agnostic,故
+effectful execute(ADR-0030)语义不变:fresh consent、原子 claim+lane、bounded
+collector、pinned Core receipt、terminalize+释放 lane、no-resend quarantine;
+scheduled Run 保持 v1/seq-1。同 project 的串行节点由
+`exclusive_until_terminal` lane 策略天然串行(前一 ordinal terminalize 释放后
+后继才能 claim),不同 project 用不同 lane 可独立推进。专项测试:基于 SpyHub
+真实 contract 改造成 ordinal-1 successor 的 provider-request prepare 全链路
+(codec/绑定/record 校验),证明 successor 请求字节可被同一纯 codec 编码并持久化。
+`forge accept` 为 **ACCEPTED**;Rust 912 tests、clippy/arch 全绿。仍未做:
+跨 node disclosure/consent(predecessor 内容入 prompt)、wave 并行、legacy v4
+hard-crash adjudication;dispatch execute 的拓扑 fence 不变(successor 需先
+通过被动链取得授权)。
+
 ## 下一前沿(需外部资源 / 后续阶段 / 投机增强 / 明确非目标,非本环境可完整验证)
 - **Graph 下一协议切片**:Sprint 59 只完成 scheduled ordinal-zero 的独立 claim/send/terminal sidecar；仍没有真实 successor/wave advancement、verified per-node/per-attempt receipt 驱动的非初始 contract-v2，也没有 predecessor dataflow。后续必须另立 successor 选择、receipt consumption、跨 node disclosure/consent 与 byte-bound 契约，不能从 ordering edge 推断。另一个独立协议仍是 legacy v4 hard-crash no-send adjudication：必须证明旧 executor 已停止，不能用 lease/时间流逝猜测后自动释放或重发。
 - **真点火** `--agent-cmd=claude`:**multi-agent running to completion 已坐实**(Sprint 25:真 claude 多-agent 跑到 converge MET,增量级 + 版本级)。完整旋钮:四维资源护栏 + 成本三维(phase/时间/美元)+ 任务注入 + 写权限 + 模型路由 + 工作目录 + retry + loop-back;诚实分工:agent 自治增量绿、人确认版本竣工。docs/ignition.md 有完整配方 + 实测

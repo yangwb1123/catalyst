@@ -1,9 +1,9 @@
 use super::{
     AdmitGroupAgentScheduledNodeContractCandidate, GROUP_AGENT_SCHEDULED_NODE_CONTRACT_VERSION,
     GroupAgentScheduledNodeContractCandidate, GroupAgentScheduledNodeContractInspection,
-    GroupAgentScheduledNodeContractRecord, GroupAgentScheduledNodeContractValidationError,
-    MAX_GROUP_AGENT_SCHEDULED_NODE_CONTRACT_BYTES, group_agent_scheduled_node_user_prompt,
-    validation::{digest, invalid},
+    GroupAgentScheduledNodeContractRecord, GroupAgentScheduledNodeContractScope,
+    GroupAgentScheduledNodeContractValidationError, MAX_GROUP_AGENT_SCHEDULED_NODE_CONTRACT_BYTES,
+    group_agent_scheduled_node_user_prompt, validation::{digest, invalid},
 };
 use crate::{
     GroupAgentGraphControlSnapshot, GroupAgentGraphExecutionSchedule,
@@ -23,7 +23,14 @@ pub(super) fn validate_against_sources(
         .validate_against_control(control)
         .map_err(|_| invalid("scheduled contract schedule is invalid"))?;
     validate_source_bindings(candidate, control, schedule)?;
-    validate_initial_node(candidate, control, schedule)
+    match candidate.contract_scope {
+        GroupAgentScheduledNodeContractScope::ScheduleInitialNodeOnly => {
+            validate_initial_node(candidate, control, schedule)
+        }
+        GroupAgentScheduledNodeContractScope::ScheduleSuccessorOnly => {
+            validate_successor_node(candidate, schedule)
+        }
+    }
 }
 
 fn validate_source_bindings(
@@ -94,6 +101,44 @@ fn validate_initial_node(
         .ok_or_else(|| invalid("scheduled contract initial-node binding disagrees"))
 }
 
+fn validate_successor_node(
+    candidate: &GroupAgentScheduledNodeContractCandidate,
+    schedule: &GroupAgentGraphExecutionSchedule,
+) -> Result<(), GroupAgentScheduledNodeContractValidationError> {
+    let ordinal = candidate.node.execution_ordinal;
+    if ordinal == 0 {
+        return Err(invalid("scheduled successor node must carry a non-zero ordinal"));
+    }
+    let scheduled = schedule
+        .nodes
+        .iter()
+        .find(|node| node.execution_ordinal == ordinal)
+        .ok_or_else(|| invalid("scheduled successor ordinal is absent from the schedule"))?;
+    let node = &candidate.node;
+    let request = &candidate.request;
+    let consumed = request
+        .predecessor_terminal_receipts
+        .iter()
+        .map(|receipt| receipt.predecessor_node_id.as_str())
+        .collect::<Vec<_>>();
+    let predecessors_covered = scheduled
+        .direct_predecessor_node_ids
+        .iter()
+        .all(|predecessor| consumed.contains(&predecessor.as_str()));
+    let valid = scheduled.node_id == node.node_id
+        && node.authored_node_index == scheduled.authored_node_index
+        && node.topology_wave_index == scheduled.topology_wave_index
+        && node.attempt == scheduled.attempt
+        && node.project_lane_sha256 == scheduled.project_lane_sha256
+        && predecessors_covered
+        && request.execution_ordinal == node.execution_ordinal
+        && request.node_id == node.node_id
+        && request.attempt == node.attempt;
+    valid
+        .then_some(())
+        .ok_or_else(|| invalid("scheduled contract successor-node binding disagrees"))
+}
+
 pub(super) fn validate_record(
     record: &GroupAgentScheduledNodeContractRecord,
 ) -> Result<(), GroupAgentScheduledNodeContractValidationError> {
@@ -110,7 +155,7 @@ pub(super) fn validate_record(
             &record.schedule_sha256,
         )
         && super::super::validation::valid_identifier(&record.node_id)
-        && record.execution_ordinal == 0
+        && ordinal_slot_valid(record)
         && record.attempt == 1
         && digest(&record.control_snapshot_sha256)
         && (1..=MAX_GROUP_AGENT_SCHEDULED_NODE_CONTRACT_BYTES).contains(&record.contract_bytes)
@@ -122,7 +167,7 @@ pub(super) fn validate_record(
         && digest(&record.project_lane_sha256)
         && record.expected_last_event_seq == 1
         && digest(&record.expected_last_event_sha256)
-        && record.predecessor_receipt_count == 0
+        && predecessor_count_valid(record)
         && !record.lifecycle_contract_admitted
         && !record.provider_request_present
         && !record.execution_authority_released
@@ -211,4 +256,23 @@ fn content_id(value: &str, prefix: &str, sha256: &str) -> bool {
     digest(sha256)
         && super::super::validation::valid_identifier(value)
         && value == format!("{prefix}{sha256}")
+}
+
+/// Ordinal/slot rule: the initial contract occupies ordinal zero with an
+/// empty predecessor set; every successor contract carries a non-zero
+/// ordinal and at least one consumed predecessor receipt.
+fn ordinal_slot_valid(record: &GroupAgentScheduledNodeContractRecord) -> bool {
+    if record.predecessor_receipt_count == 0 {
+        record.execution_ordinal == 0
+    } else {
+        (1..=31).contains(&record.execution_ordinal)
+    }
+}
+
+fn predecessor_count_valid(record: &GroupAgentScheduledNodeContractRecord) -> bool {
+    if record.execution_ordinal == 0 {
+        record.predecessor_receipt_count == 0
+    } else {
+        (1..=31).contains(&record.predecessor_receipt_count)
+    }
 }

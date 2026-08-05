@@ -137,7 +137,7 @@ fn validate_authorization_header(
         && digests.into_iter().all(digest)
         && valid_authorization_content_ids(value)
         && value.expected_last_event_seq == 1
-        && value.execution_ordinal == 0
+        && value.execution_ordinal <= 31
         && value.attempt == 1
         && (1..=MAX_GROUP_AGENT_NODE_PROVIDER_REQUEST_BYTES).contains(&value.request_body_bytes)
         && value.project_lane_sha256 == group_agent_project_lane_sha256(&value.project_id)

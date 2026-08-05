@@ -90,7 +90,7 @@ fn valid_source_identity(
         && valid_identifier(graph_run_id)
         && content_id(schedule_id, "graph-execution-schedule-", schedule_sha256)
         && content_id(contract_id, "scheduled-node-contract-", contract_sha256)
-        && ordinal == 0
+        && (0..=31).contains(&ordinal)
         && valid_identifier(node_id)
         && attempt == 1
         && content_id(
