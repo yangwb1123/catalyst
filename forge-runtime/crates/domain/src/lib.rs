@@ -150,7 +150,8 @@ pub use group_agent_node_execution::{
     group_agent_node_provider_request_sha256, group_agent_node_system_prompt,
     group_agent_node_user_prompt, group_agent_project_lane_sha256, group_agent_prompt_sha256,
     group_agent_scheduled_node_dispatch_authorization_id,
-    group_agent_scheduled_node_provider_request_id, group_agent_scheduled_node_user_prompt,
+    group_agent_scheduled_node_predecessor_output, group_agent_scheduled_node_provider_request_id,
+    group_agent_scheduled_node_user_prompt, group_agent_scheduled_node_user_prompt_with_output,
 };
 pub use group_agent_node_lifecycle::*;
 pub use group_agent_node_pricing::{

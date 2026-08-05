@@ -370,6 +370,7 @@ fn parses_successor_admit() {
                         graph_run_id,
                         contract_source,
                         predecessor_receipt_sources,
+                        ..
                     }
                 )
             )

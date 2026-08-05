@@ -89,6 +89,7 @@ pub enum GroupGraphRunScheduledContractSuccessorCommand {
         graph_run_id: String,
         contract_source: String,
         predecessor_receipt_sources: Vec<String>,
+        predecessor_content_source: Option<String>,
     },
     Show {
         contract_id: String,
@@ -132,6 +133,7 @@ pub enum GroupGraphRunScheduledContractProviderRequestCommand {
         core_bin: String,
         core_bin_sha256: String,
         confirm_off_machine: bool,
+        confirm_predecessor_content: bool,
         include_result: bool,
     },
 }

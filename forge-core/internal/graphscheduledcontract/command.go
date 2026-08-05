@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"unicode/utf8"
 
 	"forgeos/forge-core/internal/graphdispatch"
 	"forgeos/forge-core/internal/scheduledterminal"
@@ -48,8 +49,16 @@ func Command(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		if readErr != nil {
 			return commandFailure(stderr, 1, "invalid predecessor receipt")
 		}
+		var predecessorContent string
+		if options.predecessorContentSource != "" {
+			content, readErr := readPredecessorContent(options.predecessorContentSource, stdin)
+			if readErr != nil {
+				return commandFailure(stderr, 1, "invalid predecessor content")
+			}
+			predecessorContent = content
+		}
 		candidate, err = BuildSuccessor(
-			snapshot, options.scheduleSHA256, options.execution, receipts,
+			snapshot, options.scheduleSHA256, options.execution, receipts, predecessorContent,
 		)
 	}
 	if err != nil {
@@ -64,6 +73,25 @@ func Command(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return commandFailure(stderr, 1, "cannot write scheduled node contract candidate")
 	}
 	return 0
+}
+
+// readPredecessorContent reads one bounded exact UTF-8 predecessor result
+// text; it is embedded verbatim into the successor user Prompt.
+func readPredecessorContent(source string, stdin io.Reader) (string, error) {
+	var data []byte
+	var err error
+	if source == "-" {
+		data, err = io.ReadAll(io.LimitReader(stdin, 1024*1024+1))
+	} else {
+		data, err = os.ReadFile(source)
+	}
+	if err != nil || len(data) == 0 || len(data) > 1024*1024 {
+		return "", errInvalidCandidate
+	}
+	if !utf8.Valid(data) {
+		return "", errInvalidCandidate
+	}
+	return string(data), nil
 }
 
 // readPredecessorReceipts reads and strictly decodes every predecessor

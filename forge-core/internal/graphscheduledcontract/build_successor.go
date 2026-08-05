@@ -24,6 +24,7 @@ func BuildSuccessor(
 	scheduleSHA256 string,
 	options graphdispatch.ExecutionOptions,
 	receipts []scheduledterminal.Receipt,
+	predecessorContent string,
 ) (ScheduledNodeContractCandidate, error) {
 	base, err := graphdispatch.Build(snapshot, options)
 	if err != nil {
@@ -37,14 +38,43 @@ func BuildSuccessor(
 	if err != nil {
 		return ScheduledNodeContractCandidate{}, errInvalidCandidate
 	}
-	ordinal := uint16(len(receipts))
-	if ordinal >= schedule.NodeCount {
+	scheduled, err := successorNode(schedule, uint16(len(receipts)))
+	if err != nil {
 		return ScheduledNodeContractCandidate{}, errInvalidCandidate
 	}
-	scheduled := schedule.Nodes[ordinal]
 	if !successorPredecessorsCovered(scheduled, predecessors) {
 		return ScheduledNodeContractCandidate{}, errInvalidCandidate
 	}
+	value, err := successorCandidate(
+		snapshot, schedule, scheduled, base, predecessors, predecessorContent,
+	)
+	if err != nil {
+		return ScheduledNodeContractCandidate{}, errInvalidCandidate
+	}
+	return value, nil
+}
+
+// successorNode selects the next serial node after the consumed prefix.
+func successorNode(
+	schedule graphschedule.ExecutionSchedule,
+	ordinal uint16,
+) (graphschedule.ScheduledNode, error) {
+	if ordinal >= schedule.NodeCount {
+		return graphschedule.ScheduledNode{}, errInvalidCandidate
+	}
+	return schedule.Nodes[ordinal], nil
+}
+
+// successorCandidate rebuilds the node profile, the request, and the signed
+// candidate for the selected successor node.
+func successorCandidate(
+	snapshot graphdispatch.ControlSnapshot,
+	schedule graphschedule.ExecutionSchedule,
+	scheduled graphschedule.ScheduledNode,
+	base graphdispatch.NodeExecutionContract,
+	predecessors []PredecessorTerminalReceipt,
+	predecessorContent string,
+) (ScheduledNodeContractCandidate, error) {
 	source, err := manifestNode(snapshot, scheduled.NodeID)
 	if err != nil {
 		return ScheduledNodeContractCandidate{}, errInvalidCandidate
@@ -53,6 +83,7 @@ func BuildSuccessor(
 	successorBase.Node = successorContractNode(scheduled, source, base.Node.SameProjectPolicy)
 	request, err := buildSuccessorRequest(
 		snapshot.GraphRunID, schedule, scheduled, source, base.Request, predecessors,
+		predecessorContent,
 	)
 	if err != nil {
 		return ScheduledNodeContractCandidate{}, errInvalidCandidate
@@ -133,9 +164,11 @@ func buildSuccessorRequest(
 	source graphplan.Node,
 	base graphdispatch.NodeRequest,
 	predecessors []PredecessorTerminalReceipt,
+	predecessorContent string,
 ) (ScheduledNodeRequest, error) {
 	user, err := canonicalBytes(userPrompt{
 		V: RequestVersion, NodeID: source.NodeID, Task: source.Task, Acceptance: source.Acceptance,
+		PredecessorOutput: predecessorContent,
 	})
 	if err != nil {
 		return ScheduledNodeRequest{}, errInvalidCandidate
@@ -148,7 +181,7 @@ func buildSuccessorRequest(
 		UserPrompt: string(user), UserPromptBytes: uint64(len(user)), UserPromptSHA256: byteDigest(string(user)),
 		RequiredPredecessorNodeIDs:  nonNilStrings(node.DirectPredecessorNodeIDs),
 		PredecessorTerminalReceipts: nonNilReceipts(predecessors),
-		PredecessorContentIncluded:  false, Tools: []string{},
+		PredecessorContentIncluded:  predecessorContent != "", Tools: []string{},
 	}
 	digest, err := domainDigest(requestDigestDomain, requestPayloadFrom(value))
 	if err != nil {

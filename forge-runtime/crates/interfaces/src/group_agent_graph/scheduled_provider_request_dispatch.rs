@@ -98,6 +98,7 @@ pub(super) async fn execute_dispatch(
     core_bin: &str,
     core_bin_sha256: &str,
     confirm_off_machine: bool,
+    confirm_predecessor_content: bool,
     include_result: bool,
 ) -> Result<GroupAgentScheduledNodeProviderRequestCommandCliOutput, Box<dyn Error>> {
     validate_execute_preflight(
@@ -124,6 +125,7 @@ pub(super) async fn execute_dispatch(
                 .clone()
                 .expect("scheduled pricing was read before execution"),
             confirm_off_machine,
+            confirm_predecessor_content,
             cancellation: Cancellation::default(),
         }),
     )

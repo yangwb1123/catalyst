@@ -62,10 +62,11 @@ type candidatePayload struct {
 }
 
 type userPrompt struct {
-	V          uint16 `json:"v"`
-	NodeID     string `json:"node_id"`
-	Task       string `json:"task"`
-	Acceptance string `json:"acceptance"`
+	V                 uint16 `json:"v"`
+	NodeID            string `json:"node_id"`
+	Task              string `json:"task"`
+	Acceptance        string `json:"acceptance"`
+	PredecessorOutput string `json:"predecessor_output,omitempty"`
 }
 
 func canonicalBytes(value any) ([]byte, error) {

@@ -9,10 +9,11 @@ import (
 )
 
 type commandOptions struct {
-	control            string
-	scheduleSHA256     string
-	execution          graphdispatch.ExecutionOptions
-	predecessorSources []string
+	control                  string
+	scheduleSHA256           string
+	execution                graphdispatch.ExecutionOptions
+	predecessorSources       []string
+	predecessorContentSource string
 }
 
 func parseCommandOptions(args []string) (commandOptions, error) {
@@ -26,6 +27,7 @@ func parseCommandOptions(args []string) (commandOptions, error) {
 	bindStringFlag(flags, seen, "model", &options.execution.Model)
 	bindBudgetFlags(flags, seen, &options.execution)
 	bindRepeatStringFlag(flags, "predecessor-receipt", &options.predecessorSources)
+	bindOptionalStringFlag(flags, "predecessor-content", &options.predecessorContentSource)
 	if err := flags.Parse(args); err != nil {
 		return commandOptions{}, err
 	}
@@ -44,6 +46,20 @@ func bindRepeatStringFlag(
 ) {
 	flags.Func(name, "", func(value string) error {
 		*target = append(*target, value)
+		return nil
+	})
+}
+
+func bindOptionalStringFlag(
+	flags *flag.FlagSet,
+	name string,
+	target *string,
+) {
+	flags.Func(name, "", func(value string) error {
+		if *target != "" {
+			return errInvalidCandidate
+		}
+		*target = value
 		return nil
 	})
 }

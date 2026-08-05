@@ -28,6 +28,9 @@ pub struct AdmitGroupAgentScheduledNodeSuccessorInput {
     pub contract_json: String,
     pub idempotency_key: String,
     pub admitted_at_ms: u64,
+    /// Exact predecessor result text the candidate's prompt embeds; required
+    /// exactly when `predecessor_content_included` is true.
+    pub predecessor_content: Option<String>,
 }
 
 /// Result of one predecessor terminal receipt export.
@@ -88,7 +91,7 @@ impl GroupAgentScheduledNodeSuccessorService {
                 "successor admission requires a schedule_successor_only candidate",
             ));
         }
-        Ok(())
+        verify_content_presence(&candidate, input.predecessor_content.as_deref())
     }
 
     /// Validates an inspection identifier before a caller opens storage.
@@ -161,6 +164,7 @@ impl GroupAgentScheduledNodeSuccessorService {
             admitted_at_ms: input.admitted_at_ms,
         })?;
         self.verify_predecessor_evidence(&candidate)?;
+        self.verify_predecessor_content(&candidate, input.predecessor_content.as_deref())?;
         let run = self.load_run(&input.graph_run_id)?;
         let graph = self.load_graph(&run.run.graph_id)?;
         let control = snapshot::export(&run, &graph)?;
@@ -237,6 +241,75 @@ impl GroupAgentScheduledNodeSuccessorService {
         validate_list(&records, graph_run_id, limit)?;
         Ok(records)
     }
+
+    /// Verifies the disclosed predecessor content: the candidate's prompt
+    /// must embed exactly the caller-supplied bytes, which must equal the
+    /// durable result-class artifact text of the receipt's lifecycle.
+    fn verify_predecessor_content(
+        &self,
+        candidate: &crate::runtime_domain::GroupAgentScheduledNodeContractCandidate,
+        supplied: Option<&str>,
+    ) -> Result<(), GroupAgentScheduledNodeContractServiceError> {
+        if !candidate.request.predecessor_content_included {
+            if supplied.is_some() {
+                return Err(invalid(
+                    "predecessor content supplied for a candidate that excludes it",
+                ));
+            }
+            return Ok(());
+        }
+        let supplied = supplied.ok_or_else(|| {
+            invalid("successor candidate embeds predecessor content; --predecessor-content is required")
+        })?;
+        let embedded = crate::runtime_domain::group_agent_scheduled_node_predecessor_output(
+            &candidate.request.user_prompt,
+        )
+        .map_err(|error| corrupt(&error.to_string()))?;
+        match embedded.as_deref() {
+            Some(value) if value == supplied => {}
+            _ => {
+                return Err(corrupt(
+                    "candidate prompt predecessor output disagrees with supplied content",
+                ));
+            }
+        }
+        self.verify_durable_artifact_matches(candidate, supplied)
+    }
+
+    /// The disclosed content must equal the durable result-class artifact
+    /// text of the receipt's lifecycle (serial prefix's first predecessor).
+    fn verify_durable_artifact_matches(
+        &self,
+        candidate: &crate::runtime_domain::GroupAgentScheduledNodeContractCandidate,
+        supplied: &str,
+    ) -> Result<(), GroupAgentScheduledNodeContractServiceError> {
+        let receipt = candidate
+            .request
+            .predecessor_terminal_receipts
+            .first()
+            .ok_or_else(|| corrupt("successor candidate has no predecessor receipt"))?;
+        let lifecycle = self
+            .lifecycles
+            .inspect_group_agent_scheduled_node_lifecycle(&receipt.provider_request_id)
+            .map_err(GroupAgentScheduledNodeContractServiceError::from)?;
+        let artifact = lifecycle.artifact.as_ref().ok_or_else(|| {
+            corrupt("terminalized lifecycle has no artifact for predecessor content")
+        })?;
+        if artifact.artifact_kind
+            != crate::runtime_domain::GroupAgentScheduledNodeTerminalArtifactKind::Result
+        {
+            return Err(invalid(
+                "predecessor content can only be disclosed from a result-class artifact",
+            ));
+        }
+        if artifact.output_text != supplied {
+            return Err(corrupt(
+                "supplied predecessor content disagrees with the durable artifact",
+            ));
+        }
+        Ok(())
+    }
+
 
     /// Every consumed predecessor receipt must correspond to a durable
     /// terminalized lifecycle whose stored receipt identities match exactly.
@@ -334,4 +407,22 @@ fn verify_receipt_binding(
     valid
         .then_some(())
         .ok_or_else(|| corrupt("predecessor receipt disagrees with durable lifecycle"))
+}
+
+/// Pure presence check: content must be supplied exactly when the candidate
+/// declares it embedded, and must be absent otherwise.
+fn verify_content_presence(
+    candidate: &crate::runtime_domain::GroupAgentScheduledNodeContractCandidate,
+    supplied: Option<&str>,
+) -> Result<(), GroupAgentScheduledNodeContractServiceError> {
+    match (candidate.request.predecessor_content_included, supplied) {
+        (false, None) => Ok(()),
+        (false, Some(_)) => Err(invalid(
+            "predecessor content supplied for a candidate that excludes it",
+        )),
+        (true, Some(content)) if !content.is_empty() => Ok(()),
+        (true, _) => Err(invalid(
+            "successor candidate embeds predecessor content; --predecessor-content is required",
+        )),
+    }
 }

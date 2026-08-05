@@ -67,11 +67,11 @@ func validRequest(
 		request.ScheduleID == candidate.ScheduleID && request.ScheduleSHA256 == candidate.ScheduleSHA256 &&
 		request.ExecutionOrdinal == candidate.Node.ExecutionOrdinal && request.NodeID == candidate.Node.NodeID &&
 		request.Attempt == candidate.Node.Attempt && request.RequiredPredecessorNodeIDs != nil &&
-		request.PredecessorTerminalReceipts != nil && !request.PredecessorContentIncluded &&
+		request.PredecessorTerminalReceipts != nil &&
 		request.Tools != nil && len(request.Tools) == 0
 	if candidate.ContractScope == contractScope {
 		bound = bound && len(request.RequiredPredecessorNodeIDs) == 0 &&
-			len(request.PredecessorTerminalReceipts) == 0
+			len(request.PredecessorTerminalReceipts) == 0 && !request.PredecessorContentIncluded
 	} else {
 		bound = bound && len(request.PredecessorTerminalReceipts) > 0 &&
 			predecessorsCoverReceipts(request.RequiredPredecessorNodeIDs,

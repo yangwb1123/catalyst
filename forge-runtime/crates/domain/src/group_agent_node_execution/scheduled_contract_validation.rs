@@ -5,6 +5,7 @@ use super::{
     GroupAgentScheduledNodeContractScope, GroupAgentScheduledNodeContractValidationError,
     GroupAgentScheduledNodeExecutionNode, GroupAgentScheduledNodeRequest,
     MAX_GROUP_AGENT_SCHEDULED_NODE_CONTRACT_BYTES,
+    MAX_GROUP_AGENT_SCHEDULED_NODE_PREDECESSOR_OUTPUT_BYTES,
 };
 use crate::{
     GROUP_AGENT_GRAPH_EXECUTION_SCHEDULE_PROTOCOL_VERSION,
@@ -243,13 +244,24 @@ fn validate_user_prompt(
     request: &GroupAgentScheduledNodeRequest,
 ) -> Result<(), GroupAgentScheduledNodeContractValidationError> {
     let prompt = super::codec::decode_user_prompt_exact(&request.user_prompt)?;
+    let content_present = prompt.predecessor_output.is_some();
+    let content_valid = match &prompt.predecessor_output {
+        Some(output) => {
+            !output.is_empty()
+                && output.len() <= MAX_GROUP_AGENT_SCHEDULED_NODE_PREDECESSOR_OUTPUT_BYTES
+                && super::super::validation::valid_prose(output)
+        }
+        None => true,
+    };
     let valid = prompt.v == GROUP_AGENT_SCHEDULED_NODE_REQUEST_VERSION
         && prompt.node_id == request.node_id
         && super::super::validation::valid_identifier(&prompt.node_id)
         && prompt.task.len() <= MAX_GROUP_AGENT_GRAPH_NODE_TASK_BYTES
         && super::super::validation::valid_prose(&prompt.task)
         && prompt.acceptance.len() <= MAX_GROUP_AGENT_GRAPH_NODE_ACCEPTANCE_BYTES
-        && super::super::validation::valid_prose(&prompt.acceptance);
+        && super::super::validation::valid_prose(&prompt.acceptance)
+        && request.predecessor_content_included == content_present
+        && content_valid;
     valid
         .then_some(())
         .ok_or_else(|| invalid("invalid scheduled user Prompt"))

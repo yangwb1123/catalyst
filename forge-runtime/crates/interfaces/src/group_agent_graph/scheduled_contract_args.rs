@@ -93,6 +93,7 @@ fn parse_dispatch_execute(tokens: &mut VecDeque<String>) -> Result<Command, Stri
             core_bin,
             core_bin_sha256,
             confirm_off_machine: options.confirm_off_machine,
+            confirm_predecessor_content: options.confirm_predecessor_content,
             include_result: options.include_result,
         },
     ))
@@ -105,6 +106,7 @@ struct ExecuteOptions {
     core_bin: Option<String>,
     core_bin_sha256: Option<String>,
     confirm_off_machine: bool,
+    confirm_predecessor_content: bool,
     include_result: bool,
 }
 
@@ -138,6 +140,12 @@ fn parse_execute_options(
                     return Err(duplicate("--confirm-off-machine"));
                 }
                 options.confirm_off_machine = true;
+            }
+            "--confirm-predecessor-content" => {
+                if options.confirm_predecessor_content {
+                    return Err(duplicate("--confirm-predecessor-content"));
+                }
+                options.confirm_predecessor_content = true;
             }
             "--include-result" => {
                 if options.include_result {
@@ -264,6 +272,7 @@ fn parse_successor_admit(
     let graph_run_id = required_id(tokens, operation, "GRAPH_RUN_ID")?;
     let mut contract_source = None;
     let mut predecessor_receipt_sources = Vec::new();
+    let mut predecessor_content_source = None;
     while let Some(option) = tokens.pop_front() {
         match option.as_str() {
             "--contract" if contract_source.is_none() => {
@@ -273,6 +282,10 @@ fn parse_successor_admit(
             "--predecessor-receipt" => {
                 predecessor_receipt_sources.push(next_value(tokens, "--predecessor-receipt")?);
             }
+            "--predecessor-content" if predecessor_content_source.is_none() => {
+                predecessor_content_source = Some(next_value(tokens, "--predecessor-content")?);
+            }
+            "--predecessor-content" => return Err(duplicate("--predecessor-content")),
             "--idempotency-key" if idempotency_key.is_none() => {
                 *idempotency_key = Some(next_value(tokens, "--idempotency-key")?);
             }
@@ -292,6 +305,7 @@ fn parse_successor_admit(
             graph_run_id,
             contract_source,
             predecessor_receipt_sources,
+            predecessor_content_source,
         },
     )))
 }

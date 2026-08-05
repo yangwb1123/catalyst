@@ -77,6 +77,8 @@ pub(super) struct UserPrompt {
     pub(super) node_id: String,
     pub(super) task: String,
     pub(super) acceptance: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) predecessor_output: Option<String>,
 }
 
 pub(super) fn decode_exact(
@@ -127,12 +129,14 @@ pub(super) fn user_prompt(
     node_id: &str,
     task: &str,
     acceptance: &str,
+    predecessor_output: Option<&str>,
 ) -> Result<String, GroupAgentScheduledNodeContractValidationError> {
     canonical_json(&UserPrompt {
         v: GROUP_AGENT_SCHEDULED_NODE_REQUEST_VERSION,
         node_id: node_id.into(),
         task: task.into(),
         acceptance: acceptance.into(),
+        predecessor_output: predecessor_output.map(str::to_owned),
     })
 }
 

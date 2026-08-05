@@ -87,11 +87,13 @@ fn execute_successor(
             graph_run_id,
             contract_source,
             predecessor_receipt_sources,
+            predecessor_content_source,
         } => admit_successor(
             args,
             graph_run_id,
             contract_source,
             predecessor_receipt_sources,
+            predecessor_content_source.as_deref(),
         ),
         GroupGraphRunScheduledContractSuccessorCommand::Show {
             contract_id,
@@ -123,11 +125,16 @@ fn admit_successor(
     graph_run_id: &str,
     contract_source: &str,
     predecessor_receipt_sources: &[String],
+    predecessor_content_source: Option<&str>,
 ) -> Result<GroupAgentScheduledNodeContractCliOutput, Box<dyn Error>> {
     let contract_json = read_contract(contract_source)?;
     for source in predecessor_receipt_sources {
         read_predecessor_receipt(source)?;
     }
+    let predecessor_content = match predecessor_content_source {
+        Some(source) => Some(read_predecessor_content(source)?),
+        None => None,
+    };
     let input = AdmitGroupAgentScheduledNodeSuccessorInput {
         graph_run_id: graph_run_id.into(),
         contract_json,
@@ -136,6 +143,7 @@ fn admit_successor(
             .clone()
             .unwrap_or_else(|| idempotency_key("group-agent-scheduled-node-successor")),
         admitted_at_ms: unix_time_millis(),
+        predecessor_content,
     };
     GroupAgentScheduledNodeSuccessorService::preflight_admit(&input)?;
     let result = successor_service(args)?.admit(&input)?;
@@ -144,6 +152,20 @@ fn admit_successor(
         result.inspection,
         contract_source != "-",
     ))
+}
+
+/// Reads one bounded exact UTF-8 predecessor content file (1 MiB cap).
+fn read_predecessor_content(source: &str) -> Result<String, Box<dyn Error>> {
+    let bytes = if source == "-" {
+        read_bounded(std::io::stdin().lock())?
+    } else {
+        read_bounded(std::fs::File::open(source)?)?
+    };
+    if bytes.len() > 1024 * 1024 {
+        return Err(invalid_input("predecessor content exceeds its byte limit").into());
+    }
+    String::from_utf8(bytes)
+        .map_err(|_| invalid_input("predecessor content must be UTF-8").into())
 }
 
 /// Reads one bounded predecessor receipt file; the candidate already binds

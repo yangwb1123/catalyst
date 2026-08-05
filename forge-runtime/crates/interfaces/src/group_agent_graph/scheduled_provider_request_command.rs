@@ -60,6 +60,7 @@ pub async fn execute(
         core_bin,
         core_bin_sha256,
         confirm_off_machine,
+        confirm_predecessor_content,
         include_result,
         ..
     } = command
@@ -71,6 +72,7 @@ pub async fn execute(
             core_bin,
             core_bin_sha256,
             *confirm_off_machine,
+            *confirm_predecessor_content,
             *include_result,
         ))
         .await;

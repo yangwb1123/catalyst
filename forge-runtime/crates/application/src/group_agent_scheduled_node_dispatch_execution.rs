@@ -5,6 +5,7 @@ use std::sync::Arc;
 use thiserror::Error;
 
 use crate::group_agent_node_execution::{
+    ExportGroupAgentScheduledNodeDispatchReleaseControl,
     GroupAgentScheduledNodeDispatchReleaseControlService,
     GroupAgentScheduledNodeDispatchReleaseControlServiceError,
 };
@@ -40,6 +41,10 @@ pub struct ExecuteGroupAgentScheduledNodeDispatchInput {
     pub authorization_json: String,
     pub pricing_json: String,
     pub confirm_off_machine: bool,
+    /// Required exactly when the admitted candidate embeds predecessor
+    /// content: sending another node's produced text off-machine is an
+    /// independent consent, never inferred from --confirm-off-machine.
+    pub confirm_predecessor_content: bool,
     pub cancellation: Cancellation,
 }
 
@@ -137,6 +142,7 @@ impl GroupAgentScheduledNodeDispatchExecutionService {
             return Err(GroupAgentScheduledNodeDispatchExecutionServiceError::InvalidInput);
         }
         let export = self.release.export(&input.provider_request_id)?;
+        Self::require_predecessor_content_consent(input, &export)?;
         let authorization =
             GroupAgentScheduledNodeDispatchAuthorization::decode_exact(&input.authorization_json)
                 .map_err(|_| GroupAgentScheduledNodeDispatchExecutionServiceError::InvalidInput)?;
@@ -194,6 +200,21 @@ impl GroupAgentScheduledNodeDispatchExecutionService {
                 }))
             }
         }
+    }
+
+    /// The candidate bound to the provider request may embed predecessor
+    /// content; disclosing it off-machine needs its own explicit consent,
+    /// never inferred from --confirm-off-machine.
+    fn require_predecessor_content_consent(
+        input: &ExecuteGroupAgentScheduledNodeDispatchInput,
+        export: &ExportGroupAgentScheduledNodeDispatchReleaseControl,
+    ) -> Result<(), GroupAgentScheduledNodeDispatchExecutionServiceError> {
+        if export.release_control.scheduled_contract.request.predecessor_content_included
+            && !input.confirm_predecessor_content
+        {
+            return Err(GroupAgentScheduledNodeDispatchExecutionServiceError::ConsentRequired);
+        }
+        Ok(())
     }
 
     fn build_provider(

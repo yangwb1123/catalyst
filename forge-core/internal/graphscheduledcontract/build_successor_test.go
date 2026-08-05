@@ -63,7 +63,7 @@ func TestBuildSuccessorSelectsOrdinalOne(t *testing.T) {
 	}
 	options := readSourceFixture(t).Input.ExecutionOptions.options()
 	receipt := successorReceipt(t)
-	candidate, err := BuildSuccessor(snapshot, schedule.ScheduleSHA256, options, []scheduledterminal.Receipt{receipt})
+	candidate, err := BuildSuccessor(snapshot, schedule.ScheduleSHA256, options, []scheduledterminal.Receipt{receipt}, "")
 	if err != nil {
 		t.Fatalf("BuildSuccessor: %v", err)
 	}
@@ -118,7 +118,7 @@ func TestBuildSuccessorRejectsDriftedReceipts(t *testing.T) {
 				t.Fatalf("decode mutated receipt: %v", err)
 			}
 			if _, err := BuildSuccessor(
-				snapshot, schedule.ScheduleSHA256, options, []scheduledterminal.Receipt{decoded},
+				snapshot, schedule.ScheduleSHA256, options, []scheduledterminal.Receipt{decoded}, "",
 			); err == nil {
 				t.Fatal("BuildSuccessor accepted a drifted receipt")
 			}
@@ -158,7 +158,7 @@ func TestBuildSuccessorRejectsOutOfOrderAndProtocolViolations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if _, err := BuildSuccessor(snapshot, schedule.ScheduleSHA256, options, []scheduledterminal.Receipt{decoded}); err == nil {
+	if _, err := BuildSuccessor(snapshot, schedule.ScheduleSHA256, options, []scheduledterminal.Receipt{decoded}, ""); err == nil {
 		t.Fatal("BuildSuccessor accepted a non-prefix receipt")
 	}
 }
@@ -167,7 +167,7 @@ func TestBuildSuccessorRejectsEmptyAndFullConsumption(t *testing.T) {
 	snapshot := fixtureSnapshot(t)
 	schedule := mustSchedule(t)
 	options := readSourceFixture(t).Input.ExecutionOptions.options()
-	if _, err := BuildSuccessor(snapshot, schedule.ScheduleSHA256, options, nil); err == nil {
+	if _, err := BuildSuccessor(snapshot, schedule.ScheduleSHA256, options, nil, ""); err == nil {
 		t.Fatal("BuildSuccessor accepted an empty predecessor set")
 	}
 	receipts := make([]scheduledterminal.Receipt, 0, len(schedule.Nodes))
@@ -185,7 +185,7 @@ func TestBuildSuccessorRejectsEmptyAndFullConsumption(t *testing.T) {
 		}
 		receipts = append(receipts, decoded)
 	}
-	if _, err := BuildSuccessor(snapshot, schedule.ScheduleSHA256, options, receipts); err == nil {
+	if _, err := BuildSuccessor(snapshot, schedule.ScheduleSHA256, options, receipts, ""); err == nil {
 		t.Fatal("BuildSuccessor accepted full consumption with no successor node")
 	}
 }
@@ -230,4 +230,40 @@ func writeTemp(t *testing.T, dir, name string, data []byte) string {
 		t.Fatalf("write %s: %v", name, err)
 	}
 	return path
+}
+
+func TestBuildSuccessorEmbedsPredecessorContent(t *testing.T) {
+	snapshot := fixtureSnapshot(t)
+	schedule := mustSchedule(t)
+	options := readSourceFixture(t).Input.ExecutionOptions.options()
+	receipt := successorReceipt(t)
+	content := "frontend produced: login flow verified, token refresh works"
+	candidate, err := BuildSuccessor(
+		snapshot, schedule.ScheduleSHA256, options, []scheduledterminal.Receipt{receipt}, content,
+	)
+	if err != nil {
+		t.Fatalf("BuildSuccessor: %v", err)
+	}
+	if !candidate.Request.PredecessorContentIncluded {
+		t.Fatal("predecessor content flag must be true when content is embedded")
+	}
+	if !strings.Contains(candidate.Request.UserPrompt, content) {
+		t.Fatalf("user prompt must embed the predecessor output, got %q", candidate.Request.UserPrompt)
+	}
+	if !strings.Contains(candidate.Request.UserPrompt, "predecessor_output") {
+		t.Fatal("user prompt must carry the predecessor_output field")
+	}
+	// 无内容时字段必须省略(向后兼容)
+	plain, err := BuildSuccessor(
+		snapshot, schedule.ScheduleSHA256, options, []scheduledterminal.Receipt{receipt}, "",
+	)
+	if err != nil {
+		t.Fatalf("BuildSuccessor plain: %v", err)
+	}
+	if plain.Request.PredecessorContentIncluded {
+		t.Fatal("plain successor must keep predecessor content excluded")
+	}
+	if strings.Contains(plain.Request.UserPrompt, "predecessor_output") {
+		t.Fatal("plain successor prompt must omit the predecessor_output field")
+	}
 }

@@ -11,13 +11,16 @@ use crate::{GroupAgentGraphControlSnapshot, GroupAgentGraphExecutionSchedule, Hu
 #[path = "scheduled_contract_admission_validation.rs"]
 mod admission_validation;
 #[path = "scheduled_contract_codec.rs"]
-mod codec;
+pub(crate) mod codec;
 #[path = "scheduled_contract_validation.rs"]
 mod validation;
 
 #[cfg(test)]
 #[path = "scheduled_contract_tests.rs"]
 mod tests;
+#[cfg(test)]
+#[path = "scheduled_contract_content_tests.rs"]
+mod content_tests;
 
 pub const GROUP_AGENT_SCHEDULED_NODE_CONTRACT_VERSION: u16 = 2;
 pub const GROUP_AGENT_SCHEDULED_NODE_REQUEST_VERSION: u16 = 2;
@@ -27,6 +30,7 @@ pub const GROUP_AGENT_SCHEDULED_NODE_REQUEST_DIGEST_DOMAIN: &[u8] =
 pub const GROUP_AGENT_SCHEDULED_NODE_CONTRACT_DIGEST_DOMAIN: &[u8] =
     b"forge.group-agent-scheduled-node-contract.v2\0";
 pub const MAX_GROUP_AGENT_SCHEDULED_NODE_CONTRACT_BYTES: usize = 4 * 1024 * 1024;
+pub const MAX_GROUP_AGENT_SCHEDULED_NODE_PREDECESSOR_OUTPUT_BYTES: usize = 1024 * 1024;
 pub const MAX_GROUP_AGENT_SCHEDULED_NODE_CONTRACT_LIST_LIMIT: usize = 100;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -327,7 +331,34 @@ pub fn group_agent_scheduled_node_user_prompt(
     task: &str,
     acceptance: &str,
 ) -> Result<String, GroupAgentScheduledNodeContractValidationError> {
-    codec::user_prompt(node_id, task, acceptance)
+    codec::user_prompt(node_id, task, acceptance, None)
+}
+
+/// Extracts the embedded predecessor output block from the exact request-v2
+/// user Prompt, if any.
+///
+/// # Errors
+///
+/// Returns an error when the prompt is not exact canonical JSON.
+pub fn group_agent_scheduled_node_predecessor_output(
+    value: &str,
+) -> Result<Option<String>, GroupAgentScheduledNodeContractValidationError> {
+    Ok(codec::decode_user_prompt_exact(value)?.predecessor_output)
+}
+
+/// Builds the exact request-v2 user Prompt with an embedded predecessor
+/// output block (exact UTF-8 predecessor result text).
+///
+/// # Errors
+///
+/// Returns an error when the canonical JSON cannot be encoded.
+pub fn group_agent_scheduled_node_user_prompt_with_output(
+    node_id: &str,
+    task: &str,
+    acceptance: &str,
+    predecessor_output: &str,
+) -> Result<String, GroupAgentScheduledNodeContractValidationError> {
+    codec::user_prompt(node_id, task, acceptance, Some(predecessor_output))
 }
 
 pub trait GroupAgentScheduledNodeSuccessorStore: Send + Sync {
