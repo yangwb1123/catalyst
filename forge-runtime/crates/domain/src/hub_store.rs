@@ -166,6 +166,7 @@ pub enum HubEntity {
     GroupAgentGraphExecutionSchedule,
     GroupAgentScheduledNodeContract,
     GroupAgentScheduledNodeProviderRequest,
+    GroupAgentScheduledNodeLifecycle,
     GroupAgentNodeExecutionContract,
     GroupAgentNodeDispatchRequest,
     GroupAgentNodeLifecycle,

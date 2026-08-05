@@ -187,7 +187,7 @@ fn raw_autoindex_owner_corruption_is_rejected_without_repair() {
 
     assert_open_is_corrupt(&database, "raw autoindex owner corruption");
     let unchanged = Connection::open(&database).expect("reopen raw-corrupt fixture");
-    assert_eq!(schema_version(&unchanged), 15);
+    assert_eq!(schema_version(&unchanged), 16);
     assert_eq!(schema_snapshot(&unchanged), before);
     assert_eq!(table_definition(&unchanged, "groups"), table_sql);
     drop((unchanged, root));
@@ -203,7 +203,7 @@ fn sqlite_prefixed_trigger_is_rejected_without_repair() {
 
     assert_open_is_corrupt(&database, "sqlite-prefixed trigger");
     let unchanged = Connection::open(&database).expect("reopen rejected trigger fixture");
-    assert_eq!(schema_version(&unchanged), 15);
+    assert_eq!(schema_version(&unchanged), 16);
     assert_eq!(schema_snapshot(&unchanged), before);
     assert!(schema_object_named(&unchanged, "sqlite_hidden_panel_child"));
     drop((unchanged, root));

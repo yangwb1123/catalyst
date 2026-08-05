@@ -4,8 +4,10 @@ use crate::runtime_domain::{
     GroupAgentNodeDispatchProviderFactory, GroupAgentNodeDispatchProviderFactoryError,
     GroupAgentNodePricingQuote, GroupAgentNodePricingSnapshot, GroupAgentNodeProviderKind,
     GroupAgentNodeResolvedDispatch, GroupAgentScheduledNodeDestinationRegistry,
-    GroupAgentScheduledNodeDispatchAuthorization, ModelEventStream, PreparedModelProvider,
-    PreparedModelRequest, group_agent_node_destination_sha256,
+    GroupAgentScheduledNodeDispatchAuthorization, GroupAgentScheduledNodeProviderFactory,
+    GroupAgentScheduledNodeProviderFactoryError, GroupAgentScheduledNodeResolvedDispatch,
+    ModelEventStream, PreparedModelProvider, PreparedModelRequest,
+    group_agent_node_destination_sha256,
 };
 
 use super::OpenAiResponsesProvider;
@@ -123,6 +125,54 @@ impl GroupAgentScheduledNodeDestinationRegistry for RegisteredGroupAgentNodeProv
     ) -> Result<GroupAgentNodePricingQuote, GroupAgentNodeDestinationRegistryError> {
         resolve_scheduled_pricing_quote(authorization, pricing)
             .map_err(|_| GroupAgentNodeDestinationRegistryError::Rejected)
+    }
+}
+
+impl GroupAgentScheduledNodeProviderFactory for RegisteredGroupAgentNodeProviderFactory {
+    fn resolve(
+        &self,
+        authorization: &GroupAgentScheduledNodeDispatchAuthorization,
+        pricing: &GroupAgentNodePricingSnapshot,
+    ) -> Result<GroupAgentScheduledNodeResolvedDispatch, GroupAgentScheduledNodeProviderFactoryError>
+    {
+        let quote = resolve_scheduled_pricing_quote(authorization, pricing)
+            .map_err(|_| scheduled_factory_error())?;
+        Ok(GroupAgentScheduledNodeResolvedDispatch {
+            authorization_sha256: authorization.authorization_sha256.clone(),
+            provider_kind: authorization.provider_kind,
+            endpoint: authorization.endpoint.clone(),
+            model: authorization.model.clone(),
+            destination_sha256: authorization.destination_sha256.clone(),
+            pricing_snapshot_sha256: authorization.pricing_snapshot_sha256.clone(),
+            quote,
+        })
+    }
+
+    fn build(
+        &self,
+        resolved: GroupAgentScheduledNodeResolvedDispatch,
+        credential: String,
+    ) -> Result<Box<dyn PreparedModelProvider>, GroupAgentScheduledNodeProviderFactoryError> {
+        let valid = resolved.provider_kind == GroupAgentNodeProviderKind::OpenAiResponses
+            && resolved.endpoint == GROUP_AGENT_NODE_OFFICIAL_OPENAI_RESPONSES_ENDPOINT
+            && resolved.quote.destination_sha256 == resolved.destination_sha256
+            && resolved.quote.pricing_snapshot_sha256 == resolved.pricing_snapshot_sha256
+            && resolved.quote.max_output_tokens > 0;
+        if !valid {
+            return Err(scheduled_factory_error());
+        }
+        let readiness = RegisteredGroupAgentNodeProviderReadiness {
+            authorization_sha256: resolved.authorization_sha256,
+            provider_kind: resolved.provider_kind,
+            endpoint: resolved.endpoint,
+            model: resolved.model,
+            destination_sha256: resolved.destination_sha256,
+            pricing_snapshot_sha256: resolved.pricing_snapshot_sha256,
+            quote: resolved.quote,
+        };
+        RegisteredGroupAgentNodeProviderFactory::build(self, readiness, credential)
+            .map(|provider| Box::new(provider) as Box<dyn PreparedModelProvider>)
+            .map_err(|_| scheduled_factory_error())
     }
 }
 
@@ -323,5 +373,11 @@ fn invalid_readiness() -> RegisteredGroupAgentNodeProviderFactoryError {
 fn invalid_credential() -> RegisteredGroupAgentNodeProviderFactoryError {
     RegisteredGroupAgentNodeProviderFactoryError {
         message: "registered Group Agent Node provider credential is invalid".into(),
+    }
+}
+
+fn scheduled_factory_error() -> GroupAgentScheduledNodeProviderFactoryError {
+    GroupAgentScheduledNodeProviderFactoryError {
+        message: "registered scheduled Node provider is unavailable".into(),
     }
 }

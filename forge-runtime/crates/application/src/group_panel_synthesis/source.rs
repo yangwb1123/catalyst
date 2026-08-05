@@ -5,9 +5,9 @@ use crate::runtime_domain::{
 };
 
 use crate::{
-    group_analysis_panel_error::GroupAnalysisPanelServiceError,
     group_analysis_panel_service::GroupAnalysisPanelService,
     group_model_analysis_codec::{canonical_json_bytes, digest_hex},
+    group_model_analysis_error::GroupAnalysisPanelServiceError,
 };
 
 use super::error::GroupPanelSynthesisServiceError;

@@ -25,21 +25,62 @@ use crate::{
 };
 
 use super::{
-    scheduled_provider_request_output::{self, GroupAgentScheduledNodeProviderRequestCliOutput},
+    scheduled_provider_request_output::{
+        self, GroupAgentScheduledNodeDispatchExecutionCliOutput,
+        GroupAgentScheduledNodeProviderRequestCliOutput,
+    },
     scheduled_release_output::{self, GroupAgentScheduledNodeDispatchAuthorizationCliOutput},
     scheduled_release_readiness_output::{
         self, GroupAgentScheduledNodeDispatchReadinessCliOutput, ScheduledReadinessMetadataView,
     },
 };
 
+#[path = "scheduled_provider_request_dispatch.rs"]
+mod dispatch;
+use dispatch::{execute_dispatch, inspect_existing_execution, read_inputs};
+
 pub enum GroupAgentScheduledNodeProviderRequestCommandCliOutput {
     Request(Box<GroupAgentScheduledNodeProviderRequestCliOutput>),
     ReleaseControl(String),
     Authorization(Box<GroupAgentScheduledNodeDispatchAuthorizationCliOutput>),
     Readiness(Box<GroupAgentScheduledNodeDispatchReadinessCliOutput>),
+    Execution(Box<GroupAgentScheduledNodeDispatchExecutionCliOutput>),
 }
 
-pub fn execute(
+pub async fn execute(
+    args: &Args,
+    command: &GroupGraphRunScheduledContractProviderRequestCommand,
+) -> Result<GroupAgentScheduledNodeProviderRequestCommandCliOutput, Box<dyn Error>> {
+    if let Some(existing) = inspect_existing_execution(args, command)? {
+        return Ok(existing);
+    }
+    let inputs = read_inputs(command)?;
+    if let GroupGraphRunScheduledContractProviderRequestCommand::Execute {
+        provider_request_id,
+        core_bin,
+        core_bin_sha256,
+        confirm_off_machine,
+        include_result,
+        ..
+    } = command
+    {
+        return Box::pin(execute_dispatch(
+            args,
+            provider_request_id,
+            &inputs,
+            core_bin,
+            core_bin_sha256,
+            *confirm_off_machine,
+            *include_result,
+        ))
+        .await;
+    }
+    run_sync_command(args, command)
+}
+
+/// Runs the non-dispatch (effect-free) commands, which never touch a provider,
+/// credential, lane, or the network.
+fn run_sync_command(
     args: &Args,
     command: &GroupGraphRunScheduledContractProviderRequestCommand,
 ) -> Result<GroupAgentScheduledNodeProviderRequestCommandCliOutput, Box<dyn Error>> {
@@ -72,6 +113,9 @@ pub fn execute(
             authorization_source,
             pricing_source,
         ),
+        GroupGraphRunScheduledContractProviderRequestCommand::Execute { .. } => {
+            unreachable!("dispatch execute is routed before run_sync_command")
+        }
     }
 }
 
@@ -200,6 +244,9 @@ pub fn write_output(
         }
         GroupAgentScheduledNodeProviderRequestCommandCliOutput::Readiness(output) => {
             scheduled_release_readiness_output::write_output(output, json, writer)
+        }
+        GroupAgentScheduledNodeProviderRequestCommandCliOutput::Execution(output) => {
+            scheduled_provider_request_output::write_dispatch_execution_output(output, json, writer)
         }
     }
 }

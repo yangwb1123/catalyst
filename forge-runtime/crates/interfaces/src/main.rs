@@ -67,7 +67,7 @@ async fn main() -> ExitCode {
             run_group_model_analysis(&args, command).await
         }
         Command::Group(args::GroupCommand::Graph(args::GroupGraphCommand::Run(command))) => {
-            run_group_agent_graph_run(&args, command).await
+            Box::pin(run_group_agent_graph_run(&args, command)).await
         }
         Command::Group(args::GroupCommand::Graph(command)) => run_group_agent_graph(&args, command),
         Command::Group(args::GroupCommand::Panel(command)) => {
@@ -81,7 +81,7 @@ async fn main() -> ExitCode {
 }
 
 async fn run_group_agent_graph_run(args: &Args, command: &args::GroupGraphRunCommand) -> ExitCode {
-    let output = match group_agent_graph::run_command::execute(args, command).await {
+    let output = match Box::pin(group_agent_graph::run_command::execute(args, command)).await {
         Ok(output) => output,
         Err(error) => {
             eprintln!(

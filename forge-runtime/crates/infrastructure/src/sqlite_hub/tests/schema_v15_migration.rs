@@ -18,6 +18,11 @@ const REQUEST_TABLE: &str = "group_agent_graph_scheduled_node_provider_requests"
 const PROJECT_LANE_INDEX: &str = "group_agent_graph_scheduled_node_provider_requests_project_lane";
 const CREATED_INDEX: &str = "group_agent_graph_scheduled_node_provider_requests_created";
 const V15_OBJECTS: &[&str] = &[REQUEST_TABLE, PROJECT_LANE_INDEX, CREATED_INDEX];
+const V16_TABLE: &str = "group_agent_graph_scheduled_node_dispatch_lifecycles";
+const V16_INDEXES: &[&str] = &[
+    "group_agent_graph_scheduled_node_dispatch_lifecycles_project_lane_active",
+    "group_agent_graph_scheduled_node_dispatch_lifecycles_created",
+];
 const REQUEST_COLUMNS: &[&str] = &[
     "id",
     "graph_run_id",
@@ -111,22 +116,29 @@ fn populated_v14_candidate_and_all_prior_schema_survive_v15_migration_and_reopen
     legacy
         .execute_batch(&format!(
             "DROP TABLE {REQUEST_TABLE};
-             PRAGMA user_version=14;"
+             DROP INDEX {};
+             DROP INDEX {};
+             DROP TABLE {V16_TABLE};
+             PRAGMA user_version=14;",
+            V16_INDEXES[0], V16_INDEXES[1],
         ))
         .expect("downgrade empty v15 suffix to exact v14");
     let before_schema = schema_snapshot(&legacy);
     assert_eq!(schema_version(&legacy), 14);
     drop(legacy);
 
-    let migrated = open_database(&database).expect("populated v14 Hub migrates to v15");
-    assert_v15_shape(&migrated);
-    assert_eq!(without_v15(&schema_snapshot(&migrated)), before_schema);
+    let migrated = open_database(&database).expect("populated v14 Hub migrates to v16");
+    assert_current_shape(&migrated);
+    assert_eq!(
+        without_v15_and_v16(&schema_snapshot(&migrated)),
+        before_schema
+    );
     assert_eq!(candidate_row(&migrated), before_candidate);
     assert_foreign_keys_clean(&migrated);
     drop(migrated);
 
-    let reopened = open_database(&database).expect("migrated v15 Hub reopens");
-    assert_v15_shape(&reopened);
+    let reopened = open_database(&database).expect("migrated v16 Hub reopens");
+    assert_current_shape(&reopened);
     assert_eq!(candidate_row(&reopened), before_candidate);
     drop((reopened, fixture));
 }
@@ -139,9 +151,12 @@ fn active_v14_data_survive_v15_migration_without_rebuilding_old_tables() {
     let before_run = active_run(&legacy);
     drop(legacy);
 
-    let migrated = open_database(&database).expect("active v14 Hub migrates to v15");
-    assert_v15_shape(&migrated);
-    assert_eq!(without_v15(&schema_snapshot(&migrated)), before_schema);
+    let migrated = open_database(&database).expect("active v14 Hub migrates to v16");
+    assert_current_shape(&migrated);
+    assert_eq!(
+        without_v15_and_v16(&schema_snapshot(&migrated)),
+        before_schema
+    );
     assert_eq!(active_run(&migrated), before_run);
     assert_foreign_keys_clean(&migrated);
     drop((migrated, root));
@@ -175,7 +190,7 @@ fn failed_final_validation_rolls_back_v14_to_v15_atomically() {
     let before_run = active_run(&connection);
 
     let error = migrate_with_before_final_fault_for_test(&connection, |migrated| {
-        assert_v15_shape(migrated);
+        assert_current_shape(migrated);
         migrated.execute_batch("CREATE TABLE rogue_v15_final_fault(id TEXT)")
     })
     .expect_err("final v15 validation rejects rogue object");
@@ -211,7 +226,7 @@ fn malformed_v15_definitions_and_rogue_objects_are_rejected() {
 fn v15_physical_columns_and_catalog_counts_are_locked() {
     let (root, database) = legacy_active_v14_database();
     let connection = open_database(&database).expect("migrate contract fixture");
-    assert_v15_shape(&connection);
+    assert_current_shape(&connection);
     assert_eq!(table_columns(&connection, REQUEST_TABLE), REQUEST_COLUMNS);
     let (tables, implicit_indexes, explicit_indexes): (i64, i64, i64) = connection
         .query_row(
@@ -224,7 +239,7 @@ fn v15_physical_columns_and_catalog_counts_are_locked() {
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .expect("catalog counts");
-    assert_eq!((tables, implicit_indexes, explicit_indexes), (31, 79, 29));
+    assert_eq!((tables, implicit_indexes, explicit_indexes), (32, 83, 31));
     drop((connection, root));
 }
 
@@ -289,8 +304,8 @@ fn malformed(original: &str, replacement: &str) -> String {
     sql
 }
 
-fn assert_v15_shape(connection: &Connection) {
-    assert_eq!(schema_version(connection), 15);
+fn assert_current_shape(connection: &Connection) {
+    assert_eq!(schema_version(connection), 16);
     assert!(schema_object_exists(connection, "table", REQUEST_TABLE));
     assert!(schema_object_exists(
         connection,
@@ -299,12 +314,20 @@ fn assert_v15_shape(connection: &Connection) {
     ));
     assert!(schema_object_exists(connection, "index", CREATED_INDEX));
     assert_eq!(row_count(connection, REQUEST_TABLE), 0);
+    assert!(schema_object_exists(connection, "table", V16_TABLE));
+    for index in V16_INDEXES {
+        assert!(schema_object_exists(connection, "index", index));
+    }
 }
 
-fn without_v15(snapshot: &[SchemaRow]) -> Vec<SchemaRow> {
+fn without_v15_and_v16(snapshot: &[SchemaRow]) -> Vec<SchemaRow> {
     snapshot
         .iter()
-        .filter(|(_, name, _, _)| !V15_OBJECTS.contains(&name.as_str()))
+        .filter(|(_, name, _, _)| {
+            !V15_OBJECTS.contains(&name.as_str())
+                && *name != V16_TABLE
+                && !V16_INDEXES.contains(&name.as_str())
+        })
         .cloned()
         .collect()
 }

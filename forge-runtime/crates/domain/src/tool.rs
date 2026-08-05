@@ -73,3 +73,26 @@ pub trait AgentTool: Send + Sync {
 
     fn execute(&self, arguments: Value, context: ToolContext) -> ToolFuture<'_>;
 }
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(tag = "role", rename_all = "snake_case")]
+pub enum Message {
+    User {
+        text: String,
+    },
+    ProviderContext {
+        provider: String,
+        items: Vec<serde_json::Value>,
+    },
+    Assistant {
+        text: String,
+        tool_calls: Vec<ToolCall>,
+    },
+    Tool {
+        call_id: String,
+        name: String,
+        output: String,
+        is_error: bool,
+        truncated: bool,
+    },
+}

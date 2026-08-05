@@ -80,7 +80,7 @@ pub async fn execute(
         )),
         GroupGraphRunCommand::ScheduledContract(
             crate::args::GroupGraphRunScheduledContractCommand::ProviderRequest(command),
-        ) => execute_scheduled_provider_request(args, command),
+        ) => Box::pin(execute_scheduled_provider_request(args, command)).await,
         GroupGraphRunCommand::ScheduledContract(command) => {
             execute_scheduled_contract(args, command)
         }
@@ -158,13 +158,13 @@ fn execute_scheduled_contract(
     ))
 }
 
-fn execute_scheduled_provider_request(
+async fn execute_scheduled_provider_request(
     args: &Args,
     command: &crate::args::GroupGraphRunScheduledContractProviderRequestCommand,
 ) -> Result<GroupAgentGraphRunCommandCliOutput, Box<dyn Error>> {
     Ok(
         GroupAgentGraphRunCommandCliOutput::ScheduledProviderRequest(Box::new(
-            scheduled_provider_request_command::execute(args, command)?,
+            Box::pin(scheduled_provider_request_command::execute(args, command)).await?,
         )),
     )
 }

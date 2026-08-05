@@ -4,10 +4,6 @@ use std::collections::VecDeque;
 
 #[path = "dispatch_execute_args.rs"]
 mod dispatch_execute_args;
-#[path = "dispatch_readiness_args.rs"]
-mod dispatch_readiness_args;
-#[path = "schedule_args.rs"]
-mod schedule_args;
 #[path = "scheduled_contract_args.rs"]
 mod scheduled_contract_args;
 #[path = "scheduled_release/args.rs"]
@@ -22,8 +18,7 @@ use crate::{
 
 use super::{
     Command, GroupCommand, GroupGraphCommand, GroupGraphRunCommand, GroupGraphRunContractCommand,
-    GroupGraphRunControlCommand, GroupGraphRunDispatchCommand, GroupGraphRunScheduleCommand,
-    next_value, require_empty, usage,
+    GroupGraphRunControlCommand, GroupGraphRunDispatchCommand, next_value, require_empty, usage,
 };
 
 pub(super) fn parse(
@@ -52,7 +47,9 @@ fn parse_run(
         Some("control") => parse_run_control(tokens),
         Some("contract") => parse_run_contract(tokens, idempotency_key),
         Some("dispatch") => parse_run_dispatch(tokens, idempotency_key),
-        Some("schedule") => schedule_args::parse(tokens, idempotency_key),
+        Some("schedule") => {
+            crate::group_agent_graph::schedule_command::parse_schedule(tokens, idempotency_key)
+        }
         Some("scheduled-contract") => scheduled_contract_args::parse(tokens, idempotency_key),
         Some("show") => parse_run_show(tokens),
         Some("list") => parse_run_list(tokens),
@@ -74,7 +71,7 @@ fn parse_run_dispatch(
         Some("list") => parse_dispatch_list(tokens),
         Some("release-control") => parse_dispatch_release_control(tokens),
         Some("authorization") => parse_dispatch_authorization(tokens),
-        Some("readiness") => dispatch_readiness_args::parse(tokens),
+        Some("readiness") => dispatch_execute_args::parse_readiness(tokens),
         Some("execute") => dispatch_execute_args::parse(tokens),
         Some(_) => Err(unknown_dispatch("group graph run dispatch")),
         None => Err(with_usage("group graph run dispatch command is required")),
@@ -296,7 +293,7 @@ fn parse_contract_list(tokens: &mut VecDeque<String>) -> Result<Command, String>
     )))
 }
 
-fn run_command(command: GroupGraphRunCommand) -> Command {
+pub(crate) fn run_command(command: GroupGraphRunCommand) -> Command {
     Command::Group(GroupCommand::Graph(GroupGraphCommand::Run(command)))
 }
 
@@ -425,7 +422,7 @@ fn parse_list(tokens: &mut VecDeque<String>) -> Result<Command, String> {
     )))
 }
 
-fn parse_limit(tokens: &mut VecDeque<String>) -> Result<usize, String> {
+pub(crate) fn parse_limit(tokens: &mut VecDeque<String>) -> Result<usize, String> {
     parse_bounded_limit(tokens, MAX_GROUP_AGENT_GRAPH_LIST_LIMIT)
 }
 
@@ -443,7 +440,7 @@ fn parse_bounded_limit(tokens: &mut VecDeque<String>, maximum: usize) -> Result<
     }
 }
 
-fn required_id(
+pub(crate) fn required_id(
     tokens: &mut VecDeque<String>,
     operation: &str,
     field: &str,
@@ -454,21 +451,21 @@ fn required_id(
     }
 }
 
-fn duplicate(option: &str) -> String {
+pub(crate) fn duplicate(option: &str) -> String {
     with_usage(&format!("{option} was specified more than once"))
 }
 
-fn unknown(operation: &str, option: &str) -> String {
+pub(crate) fn unknown(operation: &str, option: &str) -> String {
     with_usage(&format!(
         "unknown {operation} option '{}'",
         terminal_text(option)
     ))
 }
 
-fn unknown_dispatch(operation: &str) -> String {
+pub(crate) fn unknown_dispatch(operation: &str) -> String {
     with_usage(&format!("unknown {operation} option"))
 }
 
-fn with_usage(message: &str) -> String {
+pub(crate) fn with_usage(message: &str) -> String {
     format!("{message}\n\n{}", usage())
 }

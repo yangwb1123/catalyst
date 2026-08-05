@@ -36,6 +36,7 @@ fn parse_provider_request(
         Some("release-control") => super::scheduled_release_args::parse_release_control(tokens),
         Some("authorization") => super::scheduled_release_args::parse_authorization(tokens),
         Some("readiness") => super::scheduled_release_args::parse_readiness(tokens),
+        Some("dispatch") => parse_dispatch(tokens),
         Some(value) => Err(unknown(
             "group graph run scheduled-contract provider-request",
             value,
@@ -44,6 +45,107 @@ fn parse_provider_request(
             "group graph run scheduled-contract provider-request command is required",
         )),
     }
+}
+
+fn parse_dispatch(tokens: &mut VecDeque<String>) -> Result<Command, String> {
+    match tokens.pop_front().as_deref() {
+        Some("execute") => parse_dispatch_execute(tokens),
+        Some(value) => Err(unknown(
+            "group graph run scheduled-contract provider-request dispatch",
+            value,
+        )),
+        None => Err(with_usage(
+            "scheduled provider-request dispatch command is required",
+        )),
+    }
+}
+
+fn parse_dispatch_execute(tokens: &mut VecDeque<String>) -> Result<Command, String> {
+    let operation = "group graph run scheduled-contract provider-request dispatch execute";
+    let provider_request_id = required_id(tokens, operation, "PROVIDER_REQUEST_ID")?;
+    let mut options = ExecuteOptions::default();
+    parse_execute_options(tokens, operation, &mut options)?;
+    let authorization_source = options
+        .authorization_source
+        .ok_or_else(|| with_usage("scheduled dispatch execute requires --authorization FILE|-"))?;
+    let pricing_source = options
+        .pricing_source
+        .ok_or_else(|| with_usage("scheduled dispatch execute requires --pricing FILE|-"))?;
+    let core_bin = options.core_bin.ok_or_else(|| {
+        with_usage("scheduled dispatch execute requires --core-bin ABSOLUTE_FILE")
+    })?;
+    let core_bin_sha256 = options.core_bin_sha256.ok_or_else(|| {
+        with_usage("scheduled dispatch execute requires --core-bin-sha256 SHA256")
+    })?;
+    if authorization_source == "-" && pricing_source == "-" {
+        return Err(with_usage(
+            "authorization and pricing cannot both read from stdin",
+        ));
+    }
+    Ok(provider_request_command(
+        GroupGraphRunScheduledContractProviderRequestCommand::Execute {
+            provider_request_id,
+            authorization_source,
+            pricing_source,
+            core_bin,
+            core_bin_sha256,
+            confirm_off_machine: options.confirm_off_machine,
+            include_result: options.include_result,
+        },
+    ))
+}
+
+#[derive(Default)]
+struct ExecuteOptions {
+    authorization_source: Option<String>,
+    pricing_source: Option<String>,
+    core_bin: Option<String>,
+    core_bin_sha256: Option<String>,
+    confirm_off_machine: bool,
+    include_result: bool,
+}
+
+/// Consumes the option tokens for `dispatch execute`, rejecting duplicates and
+/// unknown options.
+fn parse_execute_options(
+    tokens: &mut VecDeque<String>,
+    operation: &str,
+    options: &mut ExecuteOptions,
+) -> Result<(), String> {
+    while let Some(option) = tokens.pop_front() {
+        match option.as_str() {
+            "--authorization" if options.authorization_source.is_none() => {
+                options.authorization_source = Some(next_value(tokens, "--authorization")?);
+            }
+            "--authorization" => return Err(duplicate("--authorization")),
+            "--pricing" if options.pricing_source.is_none() => {
+                options.pricing_source = Some(next_value(tokens, "--pricing")?);
+            }
+            "--pricing" => return Err(duplicate("--pricing")),
+            "--core-bin" if options.core_bin.is_none() => {
+                options.core_bin = Some(next_value(tokens, "--core-bin")?);
+            }
+            "--core-bin" => return Err(duplicate("--core-bin")),
+            "--core-bin-sha256" if options.core_bin_sha256.is_none() => {
+                options.core_bin_sha256 = Some(next_value(tokens, "--core-bin-sha256")?);
+            }
+            "--core-bin-sha256" => return Err(duplicate("--core-bin-sha256")),
+            "--confirm-off-machine" => {
+                if options.confirm_off_machine {
+                    return Err(duplicate("--confirm-off-machine"));
+                }
+                options.confirm_off_machine = true;
+            }
+            "--include-result" => {
+                if options.include_result {
+                    return Err(duplicate("--include-result"));
+                }
+                options.include_result = true;
+            }
+            _ => return Err(unknown(operation, &option)),
+        }
+    }
+    Ok(())
 }
 
 fn parse_provider_request_prepare(
@@ -177,260 +279,5 @@ fn command(value: GroupGraphRunScheduledContractCommand) -> Command {
 }
 
 #[cfg(test)]
-mod tests {
-    use crate::args::{
-        Command, GroupCommand, GroupGraphCommand, GroupGraphRunCommand,
-        GroupGraphRunScheduledContractCommand,
-        GroupGraphRunScheduledContractProviderRequestCommand, parse_tokens,
-    };
-
-    fn parse(args: &[&str]) -> Result<crate::args::Args, String> {
-        parse_tokens(args.iter().map(|value| (*value).to_owned()))
-    }
-
-    #[test]
-    fn parses_admit() {
-        let admitted = parse(&[
-            "group",
-            "graph",
-            "run",
-            "scheduled-contract",
-            "admit",
-            "run-1",
-            "--contract",
-            "-",
-            "--idempotency-key",
-            "candidate-key",
-        ])
-        .expect("admission parses");
-        assert_eq!(admitted.idempotency_key.as_deref(), Some("candidate-key"));
-        assert!(matches!(
-            admitted.command,
-            Command::Group(GroupCommand::Graph(GroupGraphCommand::Run(
-                GroupGraphRunCommand::ScheduledContract(
-                    GroupGraphRunScheduledContractCommand::Admit {
-                        graph_run_id,
-                        contract_source,
-                    }
-                )
-            ))) if graph_run_id == "run-1" && contract_source == "-"
-        ));
-    }
-
-    #[test]
-    fn parses_show() {
-        assert!(matches!(
-            parse(&[
-                "group",
-                "graph",
-                "run",
-                "scheduled-contract",
-                "show",
-                "candidate-1",
-                "--include-contract",
-            ])
-            .expect("show parses")
-            .command,
-            Command::Group(GroupCommand::Graph(GroupGraphCommand::Run(
-                GroupGraphRunCommand::ScheduledContract(
-                    GroupGraphRunScheduledContractCommand::Show {
-                        include_contract: true,
-                        ..
-                    }
-                )
-            )))
-        ));
-    }
-
-    #[test]
-    fn parses_list() {
-        assert!(matches!(
-            parse(&[
-                "group",
-                "graph",
-                "run",
-                "scheduled-contract",
-                "list",
-                "run-1",
-                "--limit",
-                "7",
-            ])
-            .expect("list parses")
-            .command,
-            Command::Group(GroupCommand::Graph(GroupGraphCommand::Run(
-                GroupGraphRunCommand::ScheduledContract(
-                    GroupGraphRunScheduledContractCommand::List { limit: 7, .. }
-                )
-            )))
-        ));
-    }
-
-    #[test]
-    fn rejects_missing_duplicate_and_read_only_keys() {
-        assert!(
-            parse(&[
-                "group",
-                "graph",
-                "run",
-                "scheduled-contract",
-                "admit",
-                "run-1",
-            ])
-            .expect_err("missing contract rejects")
-            .contains("requires --contract")
-        );
-        assert!(
-            parse(&[
-                "group",
-                "graph",
-                "run",
-                "scheduled-contract",
-                "show",
-                "candidate-1",
-                "--include-contract",
-                "--include-contract",
-            ])
-            .is_err()
-        );
-        assert!(
-            parse(&[
-                "--idempotency-key",
-                "wrong",
-                "group",
-                "graph",
-                "run",
-                "scheduled-contract",
-                "show",
-                "candidate-1",
-            ])
-            .expect_err("show rejects key")
-            .contains("only valid for mutating commands")
-        );
-    }
-
-    #[test]
-    fn parses_provider_request_prepare() {
-        let prepared = parse(&[
-            "group",
-            "graph",
-            "run",
-            "scheduled-contract",
-            "provider-request",
-            "prepare",
-            "scheduled-contract-1",
-            "--idempotency-key",
-            "request-key",
-        ])
-        .expect("provider request preparation parses");
-        assert_eq!(prepared.idempotency_key.as_deref(), Some("request-key"));
-        assert!(matches!(
-            prepared.command,
-            Command::Group(GroupCommand::Graph(GroupGraphCommand::Run(
-                GroupGraphRunCommand::ScheduledContract(
-                    GroupGraphRunScheduledContractCommand::ProviderRequest(
-                        GroupGraphRunScheduledContractProviderRequestCommand::Prepare {
-                            scheduled_contract_id,
-                        }
-                    )
-                )
-            ))) if scheduled_contract_id == "scheduled-contract-1"
-        ));
-    }
-
-    #[test]
-    fn parses_provider_request_show() {
-        assert!(matches!(
-            parse(&[
-                "group",
-                "graph",
-                "run",
-                "scheduled-contract",
-                "provider-request",
-                "show",
-                "scheduled-request-1",
-                "--include-request",
-            ])
-            .expect("provider request show parses")
-            .command,
-            Command::Group(GroupCommand::Graph(GroupGraphCommand::Run(
-                GroupGraphRunCommand::ScheduledContract(
-                    GroupGraphRunScheduledContractCommand::ProviderRequest(
-                        GroupGraphRunScheduledContractProviderRequestCommand::Show {
-                            include_request: true,
-                            ..
-                        }
-                    )
-                )
-            )))
-        ));
-    }
-
-    #[test]
-    fn parses_provider_request_list() {
-        assert!(matches!(
-            parse(&[
-                "group",
-                "graph",
-                "run",
-                "scheduled-contract",
-                "provider-request",
-                "list",
-                "run-1",
-                "--limit",
-                "7",
-            ])
-            .expect("provider request list parses")
-            .command,
-            Command::Group(GroupCommand::Graph(GroupGraphCommand::Run(
-                GroupGraphRunCommand::ScheduledContract(
-                    GroupGraphRunScheduledContractCommand::ProviderRequest(
-                        GroupGraphRunScheduledContractProviderRequestCommand::List { limit: 7, .. }
-                    )
-                )
-            )))
-        ));
-    }
-
-    #[test]
-    fn rejects_invalid_provider_request_arguments() {
-        assert!(
-            parse(&[
-                "group",
-                "graph",
-                "run",
-                "scheduled-contract",
-                "provider-request",
-                "prepare",
-            ])
-            .is_err()
-        );
-        assert!(
-            parse(&[
-                "group",
-                "graph",
-                "run",
-                "scheduled-contract",
-                "provider-request",
-                "show",
-                "request-1",
-                "--include-request",
-                "--include-request",
-            ])
-            .is_err()
-        );
-        assert!(
-            parse(&[
-                "--idempotency-key",
-                "wrong",
-                "group",
-                "graph",
-                "run",
-                "scheduled-contract",
-                "provider-request",
-                "list",
-            ])
-            .expect_err("read-only request list rejects key")
-            .contains("only valid for mutating commands")
-        );
-    }
-}
+#[path = "scheduled_contract_args_tests.rs"]
+mod tests;

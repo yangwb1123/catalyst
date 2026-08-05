@@ -4,8 +4,8 @@ use crate::runtime_domain::HubStoreError;
 
 use super::{
     super::{
-        group_agent_scheduled_node_contract, group_agent_scheduled_node_provider_request,
-        read_error,
+        group_agent_scheduled_node_contract, group_agent_scheduled_node_lifecycle,
+        group_agent_scheduled_node_provider_request, read_error,
     },
     schedule,
 };
@@ -72,5 +72,14 @@ pub(super) fn has_owned_child(
     if version < 15 {
         return Ok(false);
     }
-    group_agent_scheduled_node_provider_request::read::has_graph_run_child(connection, graph_run_id)
+    if group_agent_scheduled_node_provider_request::read::has_graph_run_child(
+        connection,
+        graph_run_id,
+    )? {
+        return Ok(true);
+    }
+    if version < 16 {
+        return Ok(false);
+    }
+    group_agent_scheduled_node_lifecycle::has_graph_run_child(connection, graph_run_id)
 }

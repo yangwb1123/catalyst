@@ -179,6 +179,16 @@ fn assert_hot_wal_reentry(version: i64) {
 }
 
 fn restore_schema_version(connection: &rusqlite::Connection, version: i64) {
+    if version < 16 {
+        connection
+            .execute_batch(
+                "DROP INDEX group_agent_graph_scheduled_node_dispatch_lifecycles_project_lane_active;
+                 DROP INDEX group_agent_graph_scheduled_node_dispatch_lifecycles_created;
+                 DROP TABLE group_agent_graph_scheduled_node_dispatch_lifecycles;
+                 PRAGMA user_version=15;",
+            )
+            .expect("restore exact v15 schema");
+    }
     if version < 15 {
         connection
             .execute_batch(

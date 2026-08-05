@@ -351,3 +351,134 @@ fn disposition_label(
         PrepareGroupAgentScheduledNodeProviderRequestDisposition::Replayed => "replayed",
     }
 }
+
+use forge_runtime_application::ExecuteGroupAgentScheduledNodeDispatchResult;
+
+use crate::runtime_domain::{
+    GroupAgentNodeTerminalClassification, GroupAgentNodeTerminalOutcome,
+    GroupAgentScheduledNodeLifecycleInspection, GroupAgentScheduledNodeLifecycleStatus,
+};
+
+/// Public CLI projection for the scheduled effectful lifecycle.
+///
+/// The projection deliberately contains no request, authorization, pricing,
+/// credential, or Core-control bytes. The optional result is only emitted when
+/// the caller explicitly asks for it.
+#[derive(Serialize)]
+#[allow(clippy::struct_excessive_bools)]
+pub struct GroupAgentScheduledNodeDispatchExecutionCliOutput {
+    pub v: u16,
+    pub r#type: &'static str,
+    pub status: GroupAgentScheduledNodeLifecycleStatus,
+    pub provider_request_id: String,
+    pub graph_run_id: String,
+    pub node_id: String,
+    pub attempt: u16,
+    pub dispatch_id: String,
+    pub artifact_kind: Option<crate::runtime_domain::GroupAgentScheduledNodeTerminalArtifactKind>,
+    pub classification: Option<GroupAgentNodeTerminalClassification>,
+    pub outcome: Option<GroupAgentNodeTerminalOutcome>,
+    pub provider_poll_started: bool,
+    pub terminal_seen: bool,
+    pub stream_eof_seen: bool,
+    pub lane_active: bool,
+    pub retry_authorized: bool,
+    pub lane_release_authorized: bool,
+    pub successor_advance_authorized: bool,
+    pub dispatch_performed_this_invocation: bool,
+    pub database_written_this_invocation: bool,
+    pub metadata_only: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub result_text: Option<String>,
+}
+
+impl GroupAgentScheduledNodeDispatchExecutionCliOutput {
+    pub fn from_result(
+        result: ExecuteGroupAgentScheduledNodeDispatchResult,
+        include_result: bool,
+    ) -> Self {
+        let (inspection, performed) = match result {
+            ExecuteGroupAgentScheduledNodeDispatchResult::Terminalized(inspection) => {
+                (inspection, true)
+            }
+            ExecuteGroupAgentScheduledNodeDispatchResult::AlreadyClaimed(inspection) => {
+                (inspection, false)
+            }
+        };
+        Self::from_inspection(&inspection, performed, include_result)
+    }
+
+    fn from_inspection(
+        inspection: &GroupAgentScheduledNodeLifecycleInspection,
+        performed: bool,
+        include_result: bool,
+    ) -> Self {
+        let artifact = inspection.artifact.as_ref();
+        let receipt = inspection.terminal_receipt.as_ref();
+        let result_text = include_result
+            .then(|| artifact.map(|value| value.output_text.clone()))
+            .flatten();
+        Self {
+            v: inspection.v,
+            r#type: "group_agent_scheduled_node_dispatch_execution",
+            status: inspection.status,
+            provider_request_id: inspection.claim.provider_request_id.clone(),
+            graph_run_id: inspection.claim.graph_run_id.clone(),
+            node_id: inspection.claim.node_id.clone(),
+            attempt: inspection.claim.attempt,
+            dispatch_id: inspection.claim.dispatch_id.clone(),
+            artifact_kind: artifact.map(|value| value.artifact_kind),
+            classification: artifact.map(|value| value.classification),
+            outcome: receipt.map(|value| value.node_outcome),
+            provider_poll_started: artifact.is_some_and(|value| value.provider_poll_started),
+            terminal_seen: artifact.is_some_and(|value| value.terminal_seen),
+            stream_eof_seen: artifact.is_some_and(|value| value.stream_eof_seen),
+            lane_active: inspection.active_lane.is_some(),
+            retry_authorized: artifact.is_some_and(|value| value.retry_authorized)
+                || receipt.is_some_and(|value| value.retry_authorized),
+            lane_release_authorized: receipt.is_some_and(|value| value.lane_release_authorized),
+            successor_advance_authorized: receipt
+                .is_some_and(|value| value.successor_advance_authorized),
+            dispatch_performed_this_invocation: performed,
+            database_written_this_invocation: performed,
+            metadata_only: result_text.is_none(),
+            result_text,
+        }
+    }
+}
+
+pub fn write_dispatch_execution_output(
+    output: &GroupAgentScheduledNodeDispatchExecutionCliOutput,
+    json: bool,
+    writer: &mut impl Write,
+) -> Result<(), io::Error> {
+    if json {
+        serde_json::to_writer(&mut *writer, output)?;
+        writeln!(writer)
+    } else {
+        writeln!(
+            writer,
+            "scheduled graph dispatch {} · provider_request={} · graph_run={} · node={} · attempt={} · dispatch={} · lane_active={} · retry={}",
+            status_text(output.status),
+            terminal_text(&output.provider_request_id),
+            terminal_text(&output.graph_run_id),
+            terminal_text(&output.node_id),
+            output.attempt,
+            terminal_text(&output.dispatch_id),
+            output.lane_active,
+            output.retry_authorized,
+        )?;
+        if let Some(result) = &output.result_text {
+            writeln!(writer, "result: {}", terminal_text(result))?;
+        }
+        Ok(())
+    }
+}
+
+fn status_text(status: GroupAgentScheduledNodeLifecycleStatus) -> &'static str {
+    match status {
+        GroupAgentScheduledNodeLifecycleStatus::Claimed => "claimed",
+        GroupAgentScheduledNodeLifecycleStatus::Terminalized => "terminalized",
+        GroupAgentScheduledNodeLifecycleStatus::Quarantined => "quarantined",
+    }
+}

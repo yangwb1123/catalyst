@@ -9,7 +9,7 @@ mod group_agent_graph_service;
 mod group_agent_graph_validation;
 mod group_agent_node_dispatch_execution;
 mod group_agent_node_execution;
-mod group_analysis_panel_error;
+mod group_agent_scheduled_node_dispatch_execution;
 mod group_analysis_panel_service;
 mod group_analysis_panel_validation;
 mod group_execution_service;
@@ -28,7 +28,6 @@ mod hub_service;
 mod hub_validation;
 mod model_turn;
 mod output_limit;
-mod run_error;
 mod run_service;
 mod run_state;
 
@@ -40,6 +39,7 @@ pub use conversation_history::{
 };
 pub use engine::AgentRuntime;
 pub use error::RuntimeError;
+pub use error::{RunError, RunField};
 pub use forge_runtime_domain::{
     DEFAULT_GROUP_CONTEXT_CONTENT_BYTES, GROUP_AGENT_GRAPH_VERSION, GROUP_EXECUTION_VERSION,
     GROUP_RUN_VERSION, MAX_GROUP_AGENT_GRAPH_LIST_LIMIT, MAX_GROUP_CONTEXT_CONTENT_BYTES,
@@ -142,10 +142,16 @@ pub use group_agent_node_execution::{
     VerifiedGroupAgentScheduledNodeDispatchAuthorization,
     VerifiedGroupAgentScheduledNodeDispatchReadiness,
 };
-pub use group_analysis_panel_error::GroupAnalysisPanelServiceError;
+pub use group_agent_scheduled_node_dispatch_execution::{
+    ExecuteGroupAgentScheduledNodeDispatchInput, ExecuteGroupAgentScheduledNodeDispatchResult,
+    GroupAgentScheduledNodeDispatchExecutionService,
+    GroupAgentScheduledNodeDispatchExecutionServiceError,
+};
 pub use group_analysis_panel_service::{GroupAnalysisPanelService, PrepareGroupAnalysisPanelInput};
 pub use group_execution_service::{GroupExecutionService, StartGroupExecutionResult};
-pub use group_model_analysis_error::GroupModelAnalysisServiceError;
+pub use group_model_analysis_error::{
+    GroupAnalysisPanelServiceError, GroupModelAnalysisServiceError,
+};
 pub use group_model_analysis_prepare::{
     GROUP_MODEL_ANALYSIS_SYSTEM_PROMPT, GroupModelAnalysisRequestCodec,
     PrepareGroupModelAnalysisInput,
@@ -165,5 +171,4 @@ pub use hub_validation::{
     MAX_ENTITY_ID_BYTES, MAX_GROUP_NAME_BYTES, MAX_IDEMPOTENCY_KEY_BYTES, MAX_PROMPT_BYTES,
     MAX_PROMPT_LIST_LIMIT, MAX_ROLE_BYTES, MAX_TITLE_BYTES,
 };
-pub use run_error::{RunError, RunField};
 pub use run_service::RunService;

@@ -20,6 +20,11 @@ const V15_OBJECTS: &[&str] = &[
     "group_agent_graph_scheduled_node_provider_requests_project_lane",
     "group_agent_graph_scheduled_node_provider_requests_created",
 ];
+const V16_OBJECTS: &[&str] = &[
+    "group_agent_graph_scheduled_node_dispatch_lifecycles",
+    "group_agent_graph_scheduled_node_dispatch_lifecycles_project_lane_active",
+    "group_agent_graph_scheduled_node_dispatch_lifecycles_created",
+];
 
 #[test]
 fn active_v13_data_and_schema_survive_v14_migration_and_reopen() {
@@ -147,7 +152,7 @@ fn malformed(original: &str, replacement: &str) -> String {
 }
 
 fn assert_v14_shape(connection: &Connection) {
-    assert_eq!(schema_version(connection), 15);
+    assert_eq!(schema_version(connection), 16);
     assert!(schema_object_exists(connection, "table", CANDIDATE_TABLE));
     assert!(schema_object_exists(
         connection,
@@ -162,7 +167,9 @@ fn without_v14(snapshot: &[SchemaRow]) -> Vec<SchemaRow> {
     snapshot
         .iter()
         .filter(|(_, name, _, _)| {
-            !V14_OBJECTS.contains(&name.as_str()) && !V15_OBJECTS.contains(&name.as_str())
+            !V14_OBJECTS.contains(&name.as_str())
+                && !V15_OBJECTS.contains(&name.as_str())
+                && !V16_OBJECTS.contains(&name.as_str())
         })
         .cloned()
         .collect()

@@ -10,8 +10,6 @@ pub(crate) mod dispatch_authorization_output;
 pub(crate) mod dispatch_command;
 #[path = "group_agent_graph/dispatch_execution_adapters.rs"]
 pub(crate) mod dispatch_execution_adapters;
-#[path = "group_agent_graph/dispatch_execution_output.rs"]
-pub(crate) mod dispatch_execution_output;
 #[path = "group_agent_graph/dispatch_output.rs"]
 pub(crate) mod dispatch_output;
 #[path = "group_agent_graph/dispatch_readiness_output.rs"]
@@ -22,7 +20,7 @@ pub(crate) mod output;
 pub(crate) mod run_command;
 #[path = "group_agent_graph/run_output.rs"]
 pub(crate) mod run_output;
-#[path = "group_agent_graph/schedule_command.rs"]
+#[path = "group_agent_graph/schedule_args.rs"]
 pub(crate) mod schedule_command;
 #[path = "group_agent_graph/schedule_output.rs"]
 pub(crate) mod schedule_output;

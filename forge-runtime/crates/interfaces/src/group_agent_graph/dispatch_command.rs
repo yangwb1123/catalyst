@@ -26,8 +26,10 @@ use crate::{
 
 use super::{
     dispatch_authorization_output::{self, GroupAgentNodeDispatchAuthorizationCliOutput},
-    dispatch_execution_adapters::{PreparedDispatchDependencies, SystemDispatchMetadataSource},
-    dispatch_execution_output::{self, GroupAgentNodeDispatchExecutionCliOutput},
+    dispatch_execution_adapters::{
+        self, GroupAgentNodeDispatchExecutionCliOutput, PreparedDispatchDependencies,
+        SystemDispatchMetadataSource,
+    },
     dispatch_output::{self, GroupAgentNodeDispatchRequestCliOutput},
     dispatch_readiness_output::{self, GroupAgentNodeDispatchReadinessCliOutput},
 };
@@ -257,7 +259,7 @@ pub fn write_output(
             dispatch_readiness_output::write_output(output, json, writer)
         }
         GroupAgentGraphRunDispatchCommandCliOutput::Execution(output) => {
-            dispatch_execution_output::write_output(output, json, writer)
+            dispatch_execution_adapters::write_output(output, json, writer)
         }
     }
 }

@@ -152,7 +152,7 @@ fn read_operations_reject_exact_v14_without_migration() {
         .expect("run read-only list against v14");
     assert!(!output.status.success());
     assert!(output.stdout.is_empty());
-    assert!(String::from_utf8_lossy(&output.stderr).contains("current schema version 15"));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("current schema version 16"));
     assert_eq!(fs::read(&database).expect("reread v14 database"), before);
 
     let connection = Connection::open(database).expect("inspect unchanged v14 database");
@@ -197,7 +197,8 @@ fn help_and_empty_list_keep_the_passive_boundary_explicit() {
         assert!(help.contains(operation), "help omitted {operation}");
     }
     assert!(!help.contains("scheduled-contract provider-request send"));
-    assert!(!help.contains("scheduled-contract provider-request execute"));
+    assert!(help.contains("scheduled-contract provider-request dispatch"));
+    assert!(help.contains("execute PROVIDER_REQUEST_ID"));
 }
 
 fn loopback_sentinel() -> (TcpListener, String) {

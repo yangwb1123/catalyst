@@ -18,6 +18,8 @@ mod error;
 #[path = "group_agent_node_dispatch_execution/service.rs"]
 mod service;
 
+pub(crate) use collector::{CollectedDispatchEvidence, DispatchCollectionLimits, collect_dispatch};
+
 pub use error::GroupAgentNodeDispatchExecutionServiceError;
 pub use service::validate_group_agent_node_dispatch_topology;
 

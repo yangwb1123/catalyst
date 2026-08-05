@@ -33,10 +33,11 @@ use super::{
     schema_v13_sql::MIGRATE_V12_TO_V13_SQL,
     schema_v14_sql::MIGRATE_V13_TO_V14_SQL,
     schema_v15_sql::MIGRATE_V14_TO_V15_SQL,
+    schema_v16_sql::MIGRATE_V15_TO_V16_SQL,
     unavailable,
 };
 
-const SCHEMA_VERSION: i64 = 15;
+const SCHEMA_VERSION: i64 = 16;
 const CONNECTION_BUSY_TIMEOUT: Duration = Duration::from_millis(250);
 const OPEN_RETRY_TIMEOUT: Duration = Duration::from_secs(5);
 const OPEN_RETRY_DELAY: Duration = Duration::from_millis(10);
@@ -68,7 +69,7 @@ pub(super) fn open_database(path: &Path) -> Result<Connection, HubStoreError> {
 pub(super) fn open_existing_current_read_only_database(
     path: &Path,
 ) -> Result<Connection, HubStoreError> {
-    open_existing_validated_read_only_database(path, &[SCHEMA_VERSION], "current schema version 15")
+    open_existing_validated_read_only_database(path, &[SCHEMA_VERSION], "current schema version 16")
 }
 
 pub(super) fn open_existing_dispatch_preflight_read_only_database(
@@ -76,8 +77,8 @@ pub(super) fn open_existing_dispatch_preflight_read_only_database(
 ) -> Result<Connection, HubStoreError> {
     open_existing_validated_read_only_database(
         path,
-        &[11, 12, 13, 14, 15],
-        "schema version 11, 12, 13, 14, or 15",
+        &[11, 12, 13, 14, 15, 16],
+        "schema version 11, 12, 13, 14, 15, or 16",
     )
 }
 
@@ -206,9 +207,7 @@ fn validate_locked_schema(
 }
 
 fn migrate_to_current(connection: &Connection, version: i64) -> Result<(), OpenAttemptError> {
-    if version == 0 {
-        create_v1_schema(connection)?;
-    }
+    create_if_empty(connection, version)?;
     if version <= 1 {
         migrate_v1_to_v2(connection)?;
     }
@@ -250,6 +249,17 @@ fn migrate_to_current(connection: &Connection, version: i64) -> Result<(), OpenA
     }
     if version <= 14 {
         migrate_v14_to_v15(connection)?;
+    }
+    if version <= 15 {
+        migrate_v15_to_v16(connection)?;
+    }
+    Ok(())
+}
+
+/// Creates the v1 schema when opening a fresh Hub; existing Hubs skip this.
+fn create_if_empty(connection: &Connection, version: i64) -> Result<(), OpenAttemptError> {
+    if version == 0 {
+        create_v1_schema(connection)?;
     }
     Ok(())
 }
@@ -350,6 +360,11 @@ fn migrate_v13_to_v14(connection: &Connection) -> Result<(), OpenAttemptError> {
 
 fn migrate_v14_to_v15(connection: &Connection) -> Result<(), OpenAttemptError> {
     connection.execute_batch(MIGRATE_V14_TO_V15_SQL)?;
+    Ok(())
+}
+
+fn migrate_v15_to_v16(connection: &Connection) -> Result<(), OpenAttemptError> {
+    connection.execute_batch(MIGRATE_V15_TO_V16_SQL)?;
     Ok(())
 }
 

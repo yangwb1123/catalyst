@@ -56,7 +56,14 @@ exact authorization 与既有 Go `graph-node-pricing-snapshot` 工件；Rust 会
 v15 Hub，复验官方 registered destination、逐项向上取整的整数成本上界与 frozen budget。
 结果只含脱敏元数据，pricing 仍是 operator assertion、没有 vendor attestation；命令不缓存
 readiness，也不读取 credential、构造 provider、联网、claim lane、send、落库或推进 successor。
-未来 effectful dispatch 仍必须在 fresh consent 后紧邻原子 claim 重做全部检查。
+对 scheduled ordinal-zero 初始节点，Sprint 59 已增加独立的 effectful sidecar 生命周期：
+`scheduled-contract provider-request dispatch execute REQUEST_ID` 要求 fresh consent、
+exact authorization/pricing、header-safe credential 与 SHA-256 固定的 Go Core binary，
+在 SQLite v16 中原子 claim Project lane，单次发送后把 bounded result/uncertainty、
+terminal control/receipt 一起落库；Core 或提交失败进入不可重发的 quarantine。它不修改
+scheduled Run 的 v1/seq-1 journal，也不推进 frontend/backend/SSO successor；多节点推进、
+resume、lease 与 remote exactly-once 仍未开放。effectful dispatch 每次仍须在原子 claim
+前 fresh 重做所有检查。
 对严格单节点 Graph，`group graph run dispatch execute` 再要求本次 fresh consent、
 exact authorization/pricing 与 SHA-256 固定的 Go Core binary；该 effectful 命令当前
 仅支持 Linux，并从密封、复验后的匿名 executable memfd 执行 Core。SQLite v15 沿用

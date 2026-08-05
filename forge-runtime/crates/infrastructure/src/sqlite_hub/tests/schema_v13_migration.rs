@@ -23,6 +23,11 @@ const SCHEDULED_PROVIDER_REQUEST_OBJECTS: &[&str] = &[
     "group_agent_graph_scheduled_node_provider_requests_project_lane",
     "group_agent_graph_scheduled_node_provider_requests_created",
 ];
+const SCHEDULED_DISPATCH_LIFECYCLE_OBJECTS: &[&str] = &[
+    "group_agent_graph_scheduled_node_dispatch_lifecycles",
+    "group_agent_graph_scheduled_node_dispatch_lifecycles_project_lane_active",
+    "group_agent_graph_scheduled_node_dispatch_lifecycles_created",
+];
 const ACTIVE_TABLES: &[&str] = &[
     "group_agent_graph_runs",
     "group_agent_graph_run_events",
@@ -298,7 +303,7 @@ fn malformed(original: &str, replacement: &str) -> String {
 }
 
 fn assert_v13_shape(connection: &Connection) {
-    assert_eq!(schema_version(connection), 15);
+    assert_eq!(schema_version(connection), 16);
     assert!(schema_object_exists(connection, "table", SCHEDULE_TABLE));
     assert!(schema_object_exists(connection, "index", SCHEDULE_INDEX));
     assert_eq!(row_count(connection, SCHEDULE_TABLE), 0);
@@ -332,6 +337,7 @@ fn old_schema(snapshot: &[SchemaRow]) -> Vec<SchemaRow> {
                 && name != SCHEDULED_CONTRACT_TABLE
                 && !SCHEDULED_CONTRACT_INDEXES.contains(&name.as_str())
                 && !SCHEDULED_PROVIDER_REQUEST_OBJECTS.contains(&name.as_str())
+                && !SCHEDULED_DISPATCH_LIFECYCLE_OBJECTS.contains(&name.as_str())
         })
         .cloned()
         .collect()

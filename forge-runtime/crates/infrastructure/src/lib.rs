@@ -13,7 +13,9 @@ extern crate self as forge_runtime_infrastructure;
 
 pub(crate) use forge_runtime_domain as runtime_domain;
 
-pub use core_terminal_bridge::{CoreTerminalBridgeError, PinnedCoreTerminalBridge};
+pub use core_terminal_bridge::{
+    CoreTerminalBridgeError, PinnedCoreTerminalBridge, PinnedScheduledCoreTerminalBridge,
+};
 pub use deterministic_provider::ReadThenAnswerProvider;
 pub use durable_event_sink::DurableFirstEventSink;
 pub use event_sink::{JsonlEventSink, MemoryEventSink};

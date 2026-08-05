@@ -16,6 +16,7 @@ import (
 	"forgeos/forge-core/internal/graphscheduledcontract"
 	"forgeos/forge-core/internal/graphscheduledrelease"
 	"forgeos/forge-core/internal/graphterminal"
+	"forgeos/forge-core/internal/scheduledterminal"
 )
 
 // subcommands keeps run's body a short lookup under the function-line budget.
@@ -44,6 +45,9 @@ var subcommands = map[string]func([]string) int{
 	},
 	"graph-node-dispatch-authorize": func(rest []string) int { return graphrelease.Command(rest, os.Stdin, os.Stdout, os.Stderr) },
 	"graph-node-terminal-receipt":   func(rest []string) int { return graphterminal.Command(rest, os.Stdin, os.Stdout, os.Stderr) },
+	"graph-scheduled-node-terminal-receipt": func(rest []string) int {
+		return scheduledterminal.Command(rest, os.Stdin, os.Stdout, os.Stderr)
+	},
 	"graph-execution-schedule":      func(rest []string) int { return graphschedule.Command(rest, os.Stdin, os.Stdout, os.Stderr) },
 	"graph-scheduled-node-contract": func(rest []string) int { return graphscheduledcontract.Command(rest, os.Stdin, os.Stdout, os.Stderr) },
 	"graph-scheduled-node-dispatch-authorize": func(rest []string) int {
@@ -101,6 +105,8 @@ usage:
   forge graph-node-dispatch-authorize --control FILE|-
   forge graph-node-terminal-receipt --control FILE|-
   forge graph-node-terminal-receipt --protocol-version
+  forge graph-scheduled-node-terminal-receipt --control FILE|-
+  forge graph-scheduled-node-terminal-receipt --protocol-version
   forge graph-execution-schedule --control FILE|-
   forge graph-scheduled-node-contract --control FILE|- --schedule-sha256 SHA256 --endpoint HTTPS_URL --model MODEL --max-output-tokens N --max-model-output-bytes N --max-model-events N --timeout-ms N --max-cost-usd-micros N --pricing-snapshot-sha256 SHA256 --max-result-bytes N
   forge graph-scheduled-node-dispatch-authorize --control FILE|-

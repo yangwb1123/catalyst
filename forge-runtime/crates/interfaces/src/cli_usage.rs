@@ -49,6 +49,10 @@ pub const TEXT: &str = "usage:
     verify PROVIDER_REQUEST_ID --authorization FILE|-
   forge-runtime [OPTIONS] group graph run scheduled-contract provider-request readiness
     verify PROVIDER_REQUEST_ID --authorization FILE|- --pricing FILE|-
+  forge-runtime [OPTIONS] group graph run scheduled-contract provider-request dispatch
+    execute PROVIDER_REQUEST_ID --authorization FILE|- --pricing FILE|-
+    --core-bin ABSOLUTE_FILE --core-bin-sha256 SHA256
+    --confirm-off-machine [--include-result]
   forge-runtime [OPTIONS] group graph run dispatch prepare GRAPH_RUN_ID
                 [--idempotency-key KEY]
   forge-runtime [OPTIONS] group graph run dispatch show DISPATCH_REQUEST_ID
@@ -143,7 +147,7 @@ pub const TEXT: &str = "usage:
   The explicit export command authorizes disclosure to stdout; redirect it only
   to a trusted Core consumer. --json never wraps or reformats these exact bytes.
   Scheduled provider-request authorization verify first accepts only a bounded
-  exact UTF-8 canonical artifact, then freshly revalidates the current v15 Hub
+  exact UTF-8 canonical artifact, then freshly revalidates the current v16 Hub
   through a read-only connection. Three true authorization decisions permit a
   future atomic lifecycle admission/execution/dispatch release only after every
   declared precondition; all current effect facts remain false. Verification
@@ -156,6 +160,15 @@ pub const TEXT: &str = "usage:
   its frozen budget. It is not vendor-attested or a live price guarantee, and
   remains read-only: no consent/credential/provider/network/lane/authority,
   execution/result/database/Graph successor or writeback effect occurs.
+  Scheduled provider-request dispatch execute is the only effectful scheduled
+  surface. It requires fresh --confirm-off-machine consent, exact authorization
+  and pricing, an environment credential, and a pinned scheduled Core executable.
+  It atomically claims the pristine v1 Run and Project lane before one provider
+  stream, then records one result/uncertainty artifact and one Core terminal
+  receipt. Claims remain durable on uncertain provider/Core outcomes: there is
+  no lease, resend, retry, successor advance, Run journal mutation, workspace/
+  tool effect, or Prompt/memory writeback. Re-entry returns stored metadata and
+  never invokes the provider again.
   Group graph run dispatch prepare uses only the pure local Responses codec and
   persists exact request bytes. It obtains no consent, reads no credential, releases
   no dispatch authority, and invokes no provider, network, workspace, tool, result,

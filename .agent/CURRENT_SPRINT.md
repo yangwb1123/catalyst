@@ -438,8 +438,33 @@ ADR 0029 采用 ADR 0023 已发布、与 Graph source 无关的 Go canonical pri
 
 最终验证：Rust workspace all-targets/all-features locked-offline test、strict Clippy/check/build/fmt，Go full/race/vet/build，1136-file gate、965-source arch-check 8/8、12 项 governance check 与 `git diff --check` 全部通过。完整 `forge accept` 为 **ACCEPTED**（9 pass、0 fail、2 个诚实 N/A），其中观察到 Forge Core **1294 tests**。
 
+## Sprint 59（✅ 完成）— Independent scheduled-node effectful dispatch lifecycle
+
+ADR 0030 把 scheduled ordinal-zero request 从 readiness 推进到一条独立于 legacy
+single-node family 的 effectful sidecar 协议。Rust 在 fresh authorization/pricing、
+registered destination、header-safe credential 与 pinned Core preflight 全部通过后，
+才打开 SQLite v16 写状态；`BEGIN IMMEDIATE` 原子完成 pristine v1/seq-1 Graph Run
+校验、exact prepared-request claim 与全局 Project-lane claim。claim 同时绑定两种不同
+内容身份：`provider_request_sha256` 是 prepared envelope digest，
+`request_body_sha256` 是实际发送字节 digest，二者贯穿 authorization、claim、artifact、
+control、receipt，不能互换。
+
+一次性 authority 只把精确 body 交给 bounded collector；completed/length/uncertainty
+都必须有完整的 terminal chronology、usage/cost 约束与 canonical byte count。scheduled
+terminal control 交给 SHA-256 固定的 Go Core 子进程，Core 独立复验并生成一个中间
+receipt；随后第二个立即事务完整回读并原子保存 artifact/control/receipt、释放 lane。
+Core/commit 失败只保留 artifact-only quarantine，任何重发、retry、resume、lease、
+health check 或 successor/wave advance 都被禁止。scheduled Run/journal 继续保持
+v1/seq-1，legacy dispatch 也不能发现 scheduled sidecar。
+
+SQLite v16 的完整 owned-catalog/structural contract、corruption-first read/reentry、
+跨 source/artifact/control/receipt 绑定、canonical output 与 metadata-only CLI projection
+均已加入回归。Rust/Go full test、vet、fmt、locked-offline check/clippy 与真实本地 Go
+Core protocol handshake 通过；测试只使用 deterministic/local fixtures 和本地 pinned
+Core，不触碰 live provider、付费模型、workspace、tool 或 successor。
+
 ## 下一前沿(需外部资源 / 后续阶段 / 投机增强 / 明确非目标,非本环境可完整验证)
-- **Graph 下一协议切片**:Sprint 58 已完成 effect-free scheduled destination/pricing readiness，但仍没有 current lifecycle admission/release、fresh consent、global lane claim、one-shot send、terminal evidence 或 intermediate receipt。后续必须以独立于 legacy single-node family 的原子 effectful protocol 完成这些边界，再用真实已验证的 per-node/per-attempt terminal receipt identity 驱动 Core successor/wave decision 和非初始 contract-v2；result/dataflow 继续为 none。若未来传 predecessor content，必须另立 disclosure/consent 与 byte-bound 契约，不能从 ordering edge 推断。另一个独立协议仍是 v4 hard-crash no-send adjudication：必须证明旧 executor 已停止，不能用 lease/时间流逝猜测后自动释放或重发。
+- **Graph 下一协议切片**:Sprint 59 只完成 scheduled ordinal-zero 的独立 claim/send/terminal sidecar；仍没有真实 successor/wave advancement、verified per-node/per-attempt receipt 驱动的非初始 contract-v2，也没有 predecessor dataflow。后续必须另立 successor 选择、receipt consumption、跨 node disclosure/consent 与 byte-bound 契约，不能从 ordering edge 推断。另一个独立协议仍是 legacy v4 hard-crash no-send adjudication：必须证明旧 executor 已停止，不能用 lease/时间流逝猜测后自动释放或重发。
 - **真点火** `--agent-cmd=claude`:**multi-agent running to completion 已坐实**(Sprint 25:真 claude 多-agent 跑到 converge MET,增量级 + 版本级)。完整旋钮:四维资源护栏 + 成本三维(phase/时间/美元)+ 任务注入 + 写权限 + 模型路由 + 工作目录 + retry + loop-back;诚实分工:agent 自治增量绿、人确认版本竣工。docs/ignition.md 有完整配方 + 实测
 - **需外部资源(框架已就绪)**:~~SCA/CVE 漏洞库 OSV/NVD(差 DB)~~ **已解决,见 Sprint 32**。2026-07-27 重新实测:LiteLLM 已安装,但仅发现 Anthropic 一家凭证且网络受限,缺第二厂商凭证所以无法做跨厂商验证；`firecracker`/`jailer` 均未安装，`/dev/kvm` 存在但当前用户不可读写。Docker daemon 可达（Server 29.6.1），rootless Podman 4.9.3/runc 也可查询，但容器 runtime 不是 Firecracker microVM 的等价证明，Forge 也尚未接入任何 sandbox runner。上述能力维持 blocked，所有非 `none` sandbox 请求当前会在宿主执行前失败关闭。〔真 cost/latency telemetry **已达成**——S26 真 claude 补齐真 token/cost/latency 数据,scorecard 三维真值落盘〕
 - **投机增强(做即违反反 gold-plating 纪律)**:embedding 语义检索(TF-IDF 已工作,增量仅真点火时体现)

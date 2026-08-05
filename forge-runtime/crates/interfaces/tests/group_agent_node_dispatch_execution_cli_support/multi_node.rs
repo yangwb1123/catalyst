@@ -66,6 +66,9 @@ fn downgrade_hub_to_v11(database: &Path) {
                SELECT * FROM group_agent_graph_node_dispatch_requests;
              CREATE TEMP TABLE saved_seq3 AS
                SELECT * FROM group_agent_graph_run_events WHERE seq=3;
+             DROP INDEX group_agent_graph_scheduled_node_dispatch_lifecycles_project_lane_active;
+             DROP INDEX group_agent_graph_scheduled_node_dispatch_lifecycles_created;
+             DROP TABLE group_agent_graph_scheduled_node_dispatch_lifecycles;
              DROP TABLE group_agent_graph_scheduled_node_provider_requests;
              DROP TABLE group_agent_graph_scheduled_node_contract_candidates;
              DROP TABLE group_agent_graph_execution_schedules;

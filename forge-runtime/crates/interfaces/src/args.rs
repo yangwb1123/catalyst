@@ -7,7 +7,7 @@ mod group_args;
 #[path = "group_commands.rs"]
 mod group_commands;
 #[path = "group_agent_graph/args.rs"]
-mod group_graph_args;
+pub(crate) mod group_graph_args;
 #[path = "group_panel_args.rs"]
 mod group_panel_args;
 #[path = "group_synthesis_args.rs"]
@@ -87,7 +87,7 @@ impl Args {
     }
 }
 
-fn parse_tokens(tokens: impl IntoIterator<Item = String>) -> Result<Args, String> {
+pub(crate) fn parse_tokens(tokens: impl IntoIterator<Item = String>) -> Result<Args, String> {
     let mut tokens: VecDeque<_> = tokens.into_iter().collect();
     let mut options = parse_global_options(&mut tokens)?;
     let command = parse_command(&mut tokens, &mut options)?;
@@ -188,6 +188,15 @@ fn dispatch_claim_key_error(command: &Command) -> Option<&'static str> {
             GroupGraphRunCommand::Dispatch(GroupGraphRunDispatchCommand::Execute { .. }),
         ))) => Some(
             "--idempotency-key is not valid for graph dispatch execute; GRAPH_RUN_ID owns the single dispatch claim",
+        ),
+        Command::Group(GroupCommand::Graph(GroupGraphCommand::Run(
+            GroupGraphRunCommand::ScheduledContract(
+                GroupGraphRunScheduledContractCommand::ProviderRequest(
+                    GroupGraphRunScheduledContractProviderRequestCommand::Execute { .. },
+                ),
+            ),
+        ))) => Some(
+            "--idempotency-key is not valid for scheduled dispatch execute; PROVIDER_REQUEST_ID owns the single dispatch claim",
         ),
         _ => None,
     }
@@ -426,7 +435,7 @@ fn parse_demo(
     }))
 }
 
-fn next_value(tokens: &mut VecDeque<String>, option: &str) -> Result<String, String> {
+pub(crate) fn next_value(tokens: &mut VecDeque<String>, option: &str) -> Result<String, String> {
     tokens
         .pop_front()
         .ok_or_else(|| format!("{option} requires a value"))
@@ -443,7 +452,7 @@ fn drain_text(tokens: &mut VecDeque<String>) -> String {
     tokens.drain(..).collect::<Vec<_>>().join(" ")
 }
 
-fn require_empty(tokens: &VecDeque<String>) -> Result<(), String> {
+pub(crate) fn require_empty(tokens: &VecDeque<String>) -> Result<(), String> {
     tokens.front().map_or(Ok(()), |value| {
         Err(format!(
             "unexpected argument '{}'\n\n{}",

@@ -5,7 +5,8 @@ use super::{
         group_agent_graph,
         group_agent_node_execution_contract::{dispatch_request, read as contract_read},
         group_agent_node_lifecycle, group_agent_scheduled_node_contract,
-        group_agent_scheduled_node_provider_request, group_run_codec, read_error,
+        group_agent_scheduled_node_lifecycle, group_agent_scheduled_node_provider_request,
+        group_run_codec, read_error,
     },
     BeginGroupAgentGraphRun, GroupAgentGraphCorePlan, GroupAgentGraphInspection,
     GroupAgentGraphRunEvent, GroupAgentGraphRunEventKind, GroupAgentGraphRunInspection,
@@ -132,6 +133,7 @@ pub(super) fn validate_stored(
         &inspection,
         scheduled_contract.as_ref(),
     )?;
+    group_agent_scheduled_node_lifecycle::validate_graph_run_binding(connection, &inspection)?;
     let dispatch_source = dispatch_source_inspection(&inspection)?;
     let contract = contract_read::validate_graph_run_binding(connection, &dispatch_source, &graph)?;
     let dispatch = dispatch_request::read::validate_graph_run_binding(

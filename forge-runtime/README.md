@@ -132,6 +132,16 @@ forge-runtime --json group graph run scheduled-contract provider-request \
 forge-runtime --json group graph run scheduled-contract provider-request \
   list MULTI_NODE_GRAPH_RUN_ID --limit 20
 
+# Apply the scheduled ordinal-zero sidecar once. This is a separate lifecycle
+# from legacy `dispatch execute`; it never advances the scheduled Run journal.
+forge-runtime --json group graph run scheduled-contract provider-request \
+  dispatch execute SCHEDULED_NODE_PROVIDER_REQUEST_ID \
+  --authorization scheduled-authorization.json \
+  --pricing pricing.json \
+  --core-bin /absolute/path/to/forge \
+  --core-bin-sha256 LOWERCASE_SHA256 \
+  --confirm-off-machine
+
 # Alternative legacy lifecycle branch: start from a different pristine Run.
 # This path can later prepare/authorize/execute only a single-node Graph.
 forge-runtime group graph run control export LEGACY_SINGLE_NODE_GRAPH_RUN_ID \
@@ -282,8 +292,8 @@ dataflow, and fail-fast/no-retry outcomes. It omits manager/task/acceptance,
 Project/member/profile, provider/model/credential, and result text.
 
 `group graph run schedule admit` independently rebuilds the exact control and
-stores the canonical artifact in current SQLite v15 (the sidecar was introduced
-in v13) as one immutable row per Run.
+stores the canonical artifact in current SQLite v16 (the schedule sidecar was
+introduced in v13) as one immutable row per Run.
 The transaction consumes no Graph Run journal sequence and leaves the Run,
 event head, Graph, Conversations, Prompts, credentials, providers, network,
 workspaces, tools, results, and writeback unchanged. Same-key exact input
@@ -308,7 +318,7 @@ predecessor-node and terminal-receipt arrays, and six false
 lifecycle/authority/progress flags.
 
 `group graph run scheduled-contract admit` stores that artifact in current
-SQLite v15 (the sidecar was introduced in v14) as an immutable passive row.
+SQLite v16 (the candidate sidecar was introduced in v14) as an immutable passive row.
 Candidate v2 and legacy lifecycle contract v1
 are mutually exclusive under the same immediate-write serialization: either
 family may win a race, but both cannot coexist for one Run. Admission and exact
@@ -325,7 +335,7 @@ and multi-node dispatch remains fenced.
 
 `group graph run scheduled-contract provider-request prepare` then fully
 revalidates that candidate and every source binding before using the production
-Responses codec as a deterministic, side-effect-free encoder. SQLite v15 stores
+Responses codec as a deterministic, side-effect-free encoder. SQLite v16 stores
 the exact compact canonical body in a separate immutable sidecar while the Run
 remains v1/seq 1 and the main journal remains unchanged. The candidate's own
 `provider_request_present=false` is an immutable creation-time field; request
@@ -341,6 +351,33 @@ accesses no workspace/tool, and releases no lifecycle/dispatch/lane/progress/
 receipt/successor authority. Legacy `dispatch execute` completes source,
 consent and readiness preflight before constructing the pinned Core bridge, so
 a scheduled-only Run cannot start that process through the old lifecycle.
+
+The scheduled sidecar now has one deliberately separate effectful entry point:
+
+```text
+forge-runtime group graph run scheduled-contract provider-request \
+  dispatch execute PROVIDER_REQUEST_ID \
+  --authorization FILE|- \
+  --pricing FILE|- \
+  --core-bin /absolute/path/to/forge \
+  --core-bin-sha256 SHA256 \
+  --confirm-off-machine
+```
+
+This command repeats release and readiness validation after fresh consent, reads
+one header-safe credential, resolves the registered provider without a health
+request, and opens current SQLite schema v16 only at the effectful boundary.
+Its immediate transaction claims the exact scheduled request and global Project
+lane. The one-shot provider stream is reduced to bounded result/uncertainty
+evidence; a pinned Go Core receives a scheduled terminal control and returns one
+canonical receipt. A successful second transaction stores artifact/control/
+receipt evidence and releases the lane. Any Core or commit failure stores an
+artifact-only quarantine and forbids retry/resend. Existing scheduled request
+rows remain isolated from legacy dispatch discovery, the scheduled Graph Run
+stays v1/seq-1, and no successor/wave/receipt dataflow is inferred. Default
+output is metadata-only; `--include-result` explicitly reveals the validated
+stored result. Protocol v1 has no retry, resume, lease, provider health check,
+or successor command.
 
 `forge graph-node-contract` is the only node selector: v1 always chooses
 `plan.waves[0][0]` and freezes its exact Prompts, HTTPS destination/model,
@@ -406,7 +443,7 @@ wrap its bytes. Go independently reconstructs the original v1 control and all
 scheduler/request bindings before emitting a domain-separated,
 content-addressed authorization. Rust verify rebuilds the release control from
 current durable state and accepts only the one exact canonical authorization.
-Both Rust commands require an existing private exact-v11/v12/v13/v14/v15 Hub. Their dedicated
+Both Rust commands require an existing private exact-v11/v12/v13/v14/v15/v16 Hub. Their dedicated
 read-only open does not create or migrate state, change permissions, configure
 WAL, or start a write transaction. It requires a persistent WAL `2/2` database
 header; missing/legacy/corrupt state and any present SQLite WAL, SHM, or
@@ -432,7 +469,7 @@ no environment lookup or network request occurs during either construction
 phase.
 
 Authorization and readiness are still not dispatch. Neither is persisted,
-schema stays at the already-current exact v11–v15 version,
+and the scheduled sidecar remains unchanged,
 the Run stays v3 `awaiting_dispatch_authorization`, and authority remains
 false. Pricing/export/authorize/verify obtain no consent, read no credential, construct
 no provider, claim no Project lane, access no network/workspace/tool, produce
@@ -471,7 +508,7 @@ Core failure or uncertain final commit leaves v4 `dispatch_unknown` plus the
 active lane; reinvocation reports the existing quarantine before credential or
 network access. There is no lease release, retry/resume, or separate public
 claim/send/complete command. Protocol v1 does not execute multi-node Graphs.
-For a hard-crash hot WAL, the re-entry-only reader verifies the exact v12/v13/v14/v15 main
+For a hard-crash hot WAL, the re-entry-only reader verifies the exact v12/v13/v14/v15/v16 main
 database and WAL/SHM identities, requires a complete valid sidecar pair, rejects
 rollback journals, and leaves logical Hub content plus database/WAL bytes
 unchanged; `SQLite` may update transient SHM read-lock bytes.
@@ -618,16 +655,16 @@ it does not prove that replaying an interrupted tool effect is safe. Run
 inspection reads its record, cursor, events, and bound Prompt from one SQLite
 snapshot so a concurrent append cannot look like corruption.
 
-The main SQLite catalog is exclusively Hub-owned. Every declared v0–v15 schema
+The main SQLite catalog is exclusively Hub-owned. Every declared v0–v16 schema
 is validated before migration DDL (v0 must be empty); the final migration step
-then validates the exact v15 31-table/29-explicit-index/79-implicit-index
-catalog, DDL, columns, keys, foreign keys, index structures, and absence of
+then validates the exact v16 scheduled-lifecycle catalog, DDL, columns, keys,
+foreign keys, structural/index contract, and absence of
 extra views/triggers/tables before the immediate transaction commits.
 Published DDL and the independent structural contract are release-pinned;
-the v1–v15 length-framed DDL SHA-256 is
+the published v1–v15 length-framed DDL SHA-256 is
 `3de756301993c122077feab587c102108fe337a2cef4920b9d756a5171aae393`
-and the v15 structural-contract SHA-256 is
-`d9f6c0eb2a2374b24ee460435cc818f34c78d08f9092519d646d8c5518bf078b`.
+and the v16 structural-contract SHA-256 is
+`0cef17f11eed4481d8cc97a1d40568677392df40f24577b1db61af63f39f6531`.
 Unexpected state fails as corruption and is never auto-repaired.
 Environmental SQLite failures remain unavailable. This detects schema drift
 but is not a same-user tamper or TOCTOU boundary.

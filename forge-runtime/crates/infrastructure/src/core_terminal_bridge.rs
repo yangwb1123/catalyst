@@ -1,9 +1,10 @@
+#![allow(clippy::missing_errors_doc)]
+
 use std::{
     fs::{File, Metadata},
-    io::{Read, Write},
+    io::Read,
     path::PathBuf,
-    process::{Command, Stdio},
-    sync::mpsc::{self, Receiver},
+    sync::mpsc,
     thread,
     time::{Duration, Instant},
 };
@@ -12,14 +13,22 @@ use sha2::{Digest, Sha256};
 
 #[path = "core_terminal_bridge/pinned_executable.rs"]
 mod pinned_executable;
+#[path = "core_terminal_bridge/process.rs"]
+mod process;
 
 use pinned_executable::PinnedCoreExecutable;
+use process::{CoreIo, core_command, process_io, terminate_process_tree, wait_bounded};
 
 use crate::runtime_domain::{
     GroupAgentNodeCoreTerminalReceiptEnvelope, GroupAgentNodeCoreTerminalReceiptPort,
     GroupAgentNodeCoreTerminalReceiptPortError, GroupAgentNodeTerminalControl,
     GroupAgentNodeTerminalReceipt, MAX_GROUP_AGENT_NODE_TERMINAL_CONTROL_BYTES,
     MAX_GROUP_AGENT_NODE_TERMINAL_RECEIPT_BYTES,
+};
+use crate::runtime_domain::{
+    GroupAgentScheduledNodeCoreTerminalReceiptEnvelope, GroupAgentScheduledNodeTerminalControl,
+    GroupAgentScheduledNodeTerminalReceipt, GroupAgentScheduledNodeTerminalReceiptPort,
+    MAX_GROUP_AGENT_SCHEDULED_NODE_CONTROL_BYTES, MAX_GROUP_AGENT_SCHEDULED_NODE_RECEIPT_BYTES,
 };
 
 const MAX_CORE_BINARY_BYTES: u64 = 128 * 1024 * 1024;
@@ -39,6 +48,11 @@ pub struct PinnedCoreTerminalBridge {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CoreTerminalBridgeError {
     pub message: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct PinnedScheduledCoreTerminalBridge {
+    inner: PinnedCoreTerminalBridge,
 }
 
 impl PinnedCoreTerminalBridge {
@@ -160,31 +174,37 @@ impl PinnedCoreTerminalBridge {
     }
 }
 
-fn core_command(
-    executable: &PinnedCoreExecutable,
-    display_path: &PathBuf,
-    args: &[&str],
-) -> Command {
-    let mut command = Command::new(executable.command_path());
-    configure_argv_zero(&mut command, display_path);
-    command
-        .args(args)
-        .env_clear()
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    configure_process_tree(&mut command);
-    command
-}
+impl PinnedScheduledCoreTerminalBridge {
+    /// Validates and handshakes the scheduled-specific Core receipt command.
+    pub fn new(path: PathBuf, sha256: String) -> Result<Self, CoreTerminalBridgeError> {
+        let bridge = PinnedCoreTerminalBridge { path, sha256 };
+        let output = bridge.invoke(
+            &[
+                "graph-scheduled-node-terminal-receipt",
+                "--protocol-version",
+            ],
+            b"",
+            CORE_PREFLIGHT_TIMEOUT,
+        )?;
+        if output.as_slice() != b"1" {
+            return Err(invalid("Core scheduled terminal protocol handshake failed"));
+        }
+        Ok(Self { inner: bridge })
+    }
 
-#[cfg(unix)]
-fn configure_argv_zero(command: &mut Command, display_path: &PathBuf) {
-    use std::os::unix::process::CommandExt;
-    command.arg0(display_path);
+    pub fn decide_json(&self, control: &[u8]) -> Result<Vec<u8>, CoreTerminalBridgeError> {
+        if !(1..=MAX_GROUP_AGENT_SCHEDULED_NODE_CONTROL_BYTES).contains(&control.len()) {
+            return Err(invalid(
+                "Core scheduled terminal control is outside its byte bound",
+            ));
+        }
+        self.inner.invoke(
+            &["graph-scheduled-node-terminal-receipt", "--control", "-"],
+            control,
+            CORE_DECISION_TIMEOUT,
+        )
+    }
 }
-
-#[cfg(not(unix))]
-fn configure_argv_zero(_command: &mut Command, _display_path: &PathBuf) {}
 
 impl GroupAgentNodeCoreTerminalReceiptPort for PinnedCoreTerminalBridge {
     fn decide(
@@ -211,136 +231,45 @@ impl GroupAgentNodeCoreTerminalReceiptPort for PinnedCoreTerminalBridge {
     }
 }
 
-struct BoundedRead {
-    bytes: Vec<u8>,
-    overflow: bool,
-}
-
-struct CoreIo {
-    writer: Receiver<std::io::Result<BoundedRead>>,
-    stdout: Receiver<std::io::Result<BoundedRead>>,
-    stderr: Receiver<std::io::Result<BoundedRead>>,
-}
-
-impl CoreIo {
-    fn spawn(
-        stdin: impl Write + Send + 'static,
-        stdout: impl Read + Send + 'static,
-        stderr: impl Read + Send + 'static,
-        input: Vec<u8>,
-    ) -> Self {
-        Self {
-            writer: spawn_io(move || write_input(stdin, &input)),
-            stdout: spawn_io(move || read_bounded(stdout, MAX_CORE_STDOUT_BYTES)),
-            stderr: spawn_io(move || read_bounded(stderr, MAX_CORE_STDERR_BYTES)),
-        }
-    }
-
-    fn collect(
-        self,
-        deadline: Instant,
-    ) -> Result<(BoundedRead, BoundedRead, BoundedRead), CoreTerminalBridgeError> {
-        Ok((
-            receive_io(&self.writer, deadline)?,
-            receive_io(&self.stdout, deadline)?,
-            receive_io(&self.stderr, deadline)?,
-        ))
+fn scheduled_core_port_error()
+-> crate::runtime_domain::GroupAgentScheduledNodeTerminalReceiptPortError {
+    crate::runtime_domain::GroupAgentScheduledNodeTerminalReceiptPortError {
+        message: "scheduled Core terminal receipt is invalid".into(),
     }
 }
 
-fn write_input(mut stdin: impl Write, input: &[u8]) -> std::io::Result<BoundedRead> {
-    stdin.write_all(input)?;
-    Ok(BoundedRead {
-        bytes: Vec::new(),
-        overflow: false,
-    })
-}
-
-fn read_bounded(mut reader: impl Read, limit: usize) -> std::io::Result<BoundedRead> {
-    let mut bytes = Vec::with_capacity(limit.min(8192));
-    let mut overflow = false;
-    let mut chunk = [0_u8; 8192];
-    loop {
-        let read = reader.read(&mut chunk)?;
-        if read == 0 {
-            break;
+impl GroupAgentScheduledNodeTerminalReceiptPort for PinnedScheduledCoreTerminalBridge {
+    fn decide(
+        &self,
+        control: &GroupAgentScheduledNodeTerminalControl,
+    ) -> Result<
+        GroupAgentScheduledNodeCoreTerminalReceiptEnvelope,
+        crate::runtime_domain::GroupAgentScheduledNodeTerminalReceiptPortError,
+    > {
+        control
+            .validate()
+            .map_err(|_| scheduled_core_port_error())?;
+        let control_json = control
+            .canonical_json()
+            .map_err(|_| scheduled_core_port_error())?;
+        let bytes = self
+            .decide_json(control_json.as_bytes())
+            .map_err(|_| scheduled_core_port_error())?;
+        if bytes.len() > MAX_GROUP_AGENT_SCHEDULED_NODE_RECEIPT_BYTES {
+            return Err(scheduled_core_port_error());
         }
-        let remaining = limit.saturating_sub(bytes.len());
-        bytes.extend_from_slice(&chunk[..read.min(remaining)]);
-        overflow |= read > remaining;
-    }
-    Ok(BoundedRead { bytes, overflow })
-}
-
-fn wait_bounded(
-    child: &mut std::process::Child,
-    deadline: Instant,
-) -> Result<std::process::ExitStatus, CoreTerminalBridgeError> {
-    loop {
-        if Instant::now() >= deadline {
-            terminate_process_tree(child);
-            return Err(invalid("Core terminal process timed out"));
-        }
-        if let Some(status) = child
-            .try_wait()
-            .map_err(|_| invalid("Core terminal process wait failed"))?
-        {
-            return Ok(status);
-        }
-        thread::sleep(Duration::from_millis(5));
+        let receipt = GroupAgentScheduledNodeTerminalReceipt::decode_exact(&bytes)
+            .map_err(|_| scheduled_core_port_error())?;
+        let receipt_json = String::from_utf8(bytes).map_err(|_| scheduled_core_port_error())?;
+        receipt
+            .validate_against_control(control)
+            .map_err(|_| scheduled_core_port_error())?;
+        Ok(GroupAgentScheduledNodeCoreTerminalReceiptEnvelope {
+            receipt,
+            receipt_json,
+        })
     }
 }
-
-fn spawn_io(
-    task: impl FnOnce() -> std::io::Result<BoundedRead> + Send + 'static,
-) -> Receiver<std::io::Result<BoundedRead>> {
-    let (sender, receiver) = mpsc::sync_channel(1);
-    thread::spawn(move || {
-        let _ = sender.send(task());
-    });
-    receiver
-}
-
-fn receive_io(
-    receiver: &Receiver<std::io::Result<BoundedRead>>,
-    deadline: Instant,
-) -> Result<BoundedRead, CoreTerminalBridgeError> {
-    let remaining = deadline.saturating_duration_since(Instant::now());
-    receiver
-        .recv_timeout(remaining)
-        .map_err(|_| process_io())?
-        .map_err(|_| process_io())
-}
-
-#[cfg(unix)]
-fn configure_process_tree(command: &mut Command) {
-    use std::os::unix::process::CommandExt;
-    command.process_group(0);
-}
-
-#[cfg(not(unix))]
-fn configure_process_tree(_command: &mut Command) {}
-
-fn terminate_process_tree(child: &mut std::process::Child) {
-    terminate_process_group(child);
-    let _ = child.kill();
-    let deadline = Instant::now() + CORE_KILL_REAP_TIMEOUT;
-    while Instant::now() < deadline {
-        if matches!(child.try_wait(), Ok(Some(_))) {
-            return;
-        }
-        thread::sleep(Duration::from_millis(5));
-    }
-}
-
-#[cfg(unix)]
-fn terminate_process_group(child: &std::process::Child) {
-    let group = rustix::process::Pid::from_child(child);
-    let _ = rustix::process::kill_process_group(group, rustix::process::Signal::KILL);
-}
-
-#[cfg(not(unix))]
-fn terminate_process_group(_child: &std::process::Child) {}
 
 fn hash_bounded(file: &mut File, size: u64) -> Result<String, CoreTerminalBridgeError> {
     if size == 0 || size > MAX_CORE_BINARY_BYTES {
@@ -390,10 +319,6 @@ fn same_file(left: &Metadata, right: &Metadata) -> bool {
 #[cfg(not(unix))]
 fn same_file(left: &Metadata, right: &Metadata) -> bool {
     left.len() == right.len() && left.modified().ok() == right.modified().ok()
-}
-
-fn process_io() -> CoreTerminalBridgeError {
-    invalid("Core terminal process I/O failed")
 }
 
 fn invalid(message: &str) -> CoreTerminalBridgeError {
