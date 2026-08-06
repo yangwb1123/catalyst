@@ -551,24 +551,6 @@ consent 门控;Sprint 62 的 ordinal-1 集成测试随输入结构同步更新�
 `forge accept` 为 **ACCEPTED**;Rust 915 tests、Go 全量、arch/gate 全绿。
 剩余 Graph 协议:wave 并行与 legacy v4 hard-crash adjudication。
 
-## Sprint 64（✅ 完成）— ADR 0033:predecessor content disclosure + 独立 consent
-
-跨 node 内容数据流的最后一环:successor 的 provider Prompt 现在可以携带前驱
-节点的精确产出。request-v2 user Prompt 增加可选 `predecessor_output` 字段
-(omitempty,旧候选/全部 golden 逐字节不变);Go Core 以
-`--predecessor-content FILE|-` 把前驱 result 文本逐字嵌入 prompt(UTF-8 有界
-≤1MiB),`predecessor_content_included` 置真;Rust 严格校验 flag 与字段互斥一致,
-admission 要求 `--predecessor-content` 并在两个层面复验:prompt 内嵌字节 ==
-调用方输入 == durable terminalized lifecycle 的 result-class artifact 文本
-(uncertainty 永远不可披露)。effectful dispatch execute 增加独立 consent
-`--confirm-predecessor-content`:候选含前驱内容时,与 `--confirm-off-machine`
-并列双 consent,互不推断,缺失即失败关闭。receipt 元数据仍永不进 provider
-body。专项测试:prompt 往返精确、flag/字段不一致拒绝、Go 注入+省略双向、
-execute 双 consent 门控。`forge accept` 为 **ACCEPTED**;Rust 915 tests、
-Go 全量、arch/gate 全绿。multi-node Graph 的执行闭环(候选→授权→执行→内容
-数据流→后继)至此完整;wave 并行与 legacy v4 hard-crash adjudication 仍属
-后续协议。
-
 ## Sprint 65（✅ 完成）— ADR 0034:本地 hard-crash no-send adjudication
 
 补上 ADR-0024/0030 的 stranded-claim 收尾:dispatch execute 在 claim 前写
@@ -585,22 +567,6 @@ future 版本测试移至 20。专项覆盖 v19 迁移全代兼容与状态/证�
 诚实边界:pid liveness 是本地 OS 级证据(同用户可信模型,非 MAC/签名/跨主机
 adjudication);完整 claim→crash→adjudicate 端到端需真实硬崩溃场景,store 逻辑
 经编译与回归验证。wave 并行仍属后续协议。
-
-## Sprint 65（✅ 完成）— OS signal 接入 cancellation + v19 残留清理
-
-ADR-0024 记录的 CLI v1 缺口("未把 OS signal 接入 token")收口:scheduled
-dispatch execute 现在注册 SIGINT/SIGTERM handler 并把取消传播到
-`Cancellation`,provider 流被折叠为 `Cancelled` uncertainty 终态(collector
-已有 Cancelled 分类测试),Project lane 随之释放,而不是残留 v4
-`dispatch_unknown` 的 stranded lane。诚实边界:SIGKILL/OOM 等 hard crash 仍
-保留 quarantine(不声称 OS 级证明);本环境无真 provider,取消链路的端到端
-验证止步于 collector 单测 + 编译级接线。同时清理了工作树中残留的
-schema-v19 迁移层(SCHEMA_BATCHES/常量/match/文件),恢复 v18 为唯一当前
-版本;`forge accept` 为 **ACCEPTED**(Rust 915 tests、Go 全量、arch/gate 全绿)。
-剩余 Graph 协议:wave 并行(与 ADR-0025 的 serial schedule 政策冲突,需
-schedule v2)与 legacy v4 hard-crash no-send adjudication(需 OS 级进程证明,
-本环境无真 provider 执行无法端到端验证)——两者均有明确设计前置,不草率
-实现。
 
 ## 下一前沿(需外部资源 / 后续阶段 / 投机增强 / 明确非目标,非本环境可完整验证)
 - **Graph 下一协议切片**:Sprint 59 只完成 scheduled ordinal-zero 的独立 claim/send/terminal sidecar；仍没有真实 successor/wave advancement、verified per-node/per-attempt receipt 驱动的非初始 contract-v2，也没有 predecessor dataflow。后续必须另立 successor 选择、receipt consumption、跨 node disclosure/consent 与 byte-bound 契约，不能从 ordering edge 推断。另一个独立协议仍是 legacy v4 hard-crash no-send adjudication：必须证明旧 executor 已停止，不能用 lease/时间流逝猜测后自动释放或重发。

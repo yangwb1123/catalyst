@@ -300,14 +300,49 @@ func TestBuildSuccessorAcceptsOutOfOrderReceiptsAndSelectsReadyNode(t *testing.T
 	if err != nil {
 		t.Fatalf("decode backend receipt: %v", err)
 	}
-	candidate, err := BuildSuccessor(
+	// 乱序 backend receipt(initial 未做)→ 拒绝:初始节点属于 initial 流程。
+	if _, err := BuildSuccessor(
 		snapshot, schedule.ScheduleSHA256, options, []scheduledterminal.Receipt{decoded}, "",
+	); err == nil {
+		t.Fatal("successor selection must reject an out-of-order receipt while initial is unconsumed")
+	}
+
+	// wave 并行核心:consumed = {frontend} 时,backend(同 wave、无前驱)立即就绪,
+	// 不需要等待任何其它 ordinal —— diamond 的并行分支可独立推进。
+	frontend := schedule.Nodes[0]
+	frontendReceipt := scheduledterminal.Receipt{
+		V: 1, SchedulerProtocolVersion: 1, TerminalReceiptProtocol: 1,
+		TerminalControlSHA256: strings.Repeat("a", 64),
+		GraphRunID:            snapshot.GraphRunID,
+		GraphID:               snapshot.GraphID,
+		NodeID:                frontend.NodeID,
+		Attempt:               frontend.Attempt,
+		DispatchID:            "dispatch-frontend-fixture",
+		ProviderRequestID:     "scheduled-node-provider-request-frontend",
+		ProjectLaneSHA256:     frontend.ProjectLaneSHA256,
+		ArtifactKind:          "result",
+		ArtifactID:            "scheduled-node-terminal-artifact-" + strings.Repeat("c", 64),
+		ArtifactSHA256:        strings.Repeat("c", 64),
+		NodeOutcome:           "completed",
+		RetryAuthorized:       false,
+		LaneReleaseAuthorized: true,
+	}
+	frontendEncoded, err := scheduledterminal.MarshalReceipt(frontendReceipt)
+	if err != nil {
+		t.Fatalf("marshal frontend receipt: %v", err)
+	}
+	frontendDecoded, err := scheduledterminal.DecodeReceipt(frontendEncoded)
+	if err != nil {
+		t.Fatalf("decode frontend receipt: %v", err)
+	}
+	candidate, err := BuildSuccessor(
+		snapshot, schedule.ScheduleSHA256, options,
+		[]scheduledterminal.Receipt{frontendDecoded}, "",
 	)
 	if err != nil {
-		t.Fatalf("topologically-ready selection must accept out-of-order receipts: %v", err)
+		t.Fatalf("wave-parallel selection failed: %v", err)
 	}
-	if candidate.Node.NodeID != schedule.Nodes[0].NodeID {
-		t.Fatalf("selected node = %q, want first ready node %q",
-			candidate.Node.NodeID, schedule.Nodes[0].NodeID)
+	if candidate.Node.NodeID != backend.NodeID {
+		t.Fatalf("selected node = %q, want backend (ready same-wave sibling)", candidate.Node.NodeID)
 	}
 }

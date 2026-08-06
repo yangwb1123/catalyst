@@ -65,6 +65,11 @@ func selectReadyNode(
 		consumed[receipt.PredecessorNodeID] = true
 	}
 	for _, node := range schedule.Nodes {
+		if node.ExecutionOrdinal == 0 {
+			// The initial node belongs to the initial-candidate flow; a
+			// successor selection never re-derives it.
+			continue
+		}
 		if consumed[node.NodeID] {
 			continue
 		}
