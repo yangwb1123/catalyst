@@ -268,12 +268,12 @@ func TestBuildSuccessorEmbedsPredecessorContent(t *testing.T) {
 	}
 }
 
-func TestBuildSuccessorAcceptsOutOfOrderReceiptsAndSelectsReadyNode(t *testing.T) {
+func TestBuildSuccessorRejectsOutOfOrderReceiptBeforeInitial(t *testing.T) {
 	snapshot := fixtureSnapshot(t)
 	schedule := mustSchedule(t)
 	options := readSourceFixture(t).Input.ExecutionOptions.options()
-	// diamond: frontend/backend -> sso。提供 backend 的 receipt(非前缀,
-	// serial 规则会拒绝),拓扑就绪规则应接受并推进到最早就绪的 frontend。
+	// diamond: frontend/backend -> sso。backend 的 receipt 非 serial 前缀:
+	// 初始节点未被消费时,successor 选择必须拒绝它。
 	backend := schedule.Nodes[1]
 	receipt := scheduledterminal.Receipt{
 		V: 1, SchedulerProtocolVersion: 1, TerminalReceiptProtocol: 1,
@@ -300,15 +300,20 @@ func TestBuildSuccessorAcceptsOutOfOrderReceiptsAndSelectsReadyNode(t *testing.T
 	if err != nil {
 		t.Fatalf("decode backend receipt: %v", err)
 	}
-	// 乱序 backend receipt(initial 未做)→ 拒绝:初始节点属于 initial 流程。
 	if _, err := BuildSuccessor(
 		snapshot, schedule.ScheduleSHA256, options, []scheduledterminal.Receipt{decoded}, "",
 	); err == nil {
 		t.Fatal("successor selection must reject an out-of-order receipt while initial is unconsumed")
 	}
+}
 
+func TestBuildSuccessorSelectsReadyWaveSibling(t *testing.T) {
+	snapshot := fixtureSnapshot(t)
+	schedule := mustSchedule(t)
+	options := readSourceFixture(t).Input.ExecutionOptions.options()
 	// wave 并行核心:consumed = {frontend} 时,backend(同 wave、无前驱)立即就绪,
 	// 不需要等待任何其它 ordinal —— diamond 的并行分支可独立推进。
+	backend := schedule.Nodes[1]
 	frontend := schedule.Nodes[0]
 	frontendReceipt := scheduledterminal.Receipt{
 		V: 1, SchedulerProtocolVersion: 1, TerminalReceiptProtocol: 1,
