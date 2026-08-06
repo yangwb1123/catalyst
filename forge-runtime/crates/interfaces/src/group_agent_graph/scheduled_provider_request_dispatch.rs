@@ -113,6 +113,8 @@ pub(super) async fn execute_dispatch(
         core_bin_sha256.into(),
     )?);
     let service = execution_service(args, bridge)?;
+    let cancellation = Cancellation::default();
+    let cancel_on_signal = tokio::spawn(cancel_on_os_signal(cancellation.clone()));
     let result = Box::pin(
         service.execute(&ExecuteGroupAgentScheduledNodeDispatchInput {
             provider_request_id: provider_request_id.into(),
@@ -126,15 +128,38 @@ pub(super) async fn execute_dispatch(
                 .expect("scheduled pricing was read before execution"),
             confirm_off_machine,
             confirm_predecessor_content,
-            cancellation: Cancellation::default(),
+            cancellation,
         }),
     )
     .await?;
+    cancel_on_signal.abort();
+    let _ = cancel_on_signal.await;
     Ok(
         GroupAgentScheduledNodeProviderRequestCommandCliOutput::Execution(Box::new(
             GroupAgentScheduledNodeDispatchExecutionCliOutput::from_result(result, include_result),
         )),
     )
+}
+
+/// Watches SIGINT/SIGTERM and cancels the in-flight dispatch so the provider
+/// stream is folded into a `Cancelled` uncertainty terminal and the Project
+/// lane is released, instead of leaving a stranded v4 `dispatch_unknown`.
+/// Hard crashes (SIGKILL/OOM) still leave quarantine; this only closes the
+/// catchable-signal gap.
+async fn cancel_on_os_signal(cancellation: Cancellation) {
+    let mut sigint = match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt()) {
+        Ok(signal) => signal,
+        Err(_) => return,
+    };
+    let mut sigterm = match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+        Ok(signal) => signal,
+        Err(_) => return,
+    };
+    tokio::select! {
+        _ = sigint.recv() => {}
+        _ = sigterm.recv() => {}
+    }
+    cancellation.cancel();
 }
 
 fn execution_service(
