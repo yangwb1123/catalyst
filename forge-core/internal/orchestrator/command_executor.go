@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"forgeos/forge-core/internal/asset"
-	"forgeos/forge-core/internal/orchestrator/firecracker"
+	"forgeos/forge-core/internal/orchestrator/sandbox"
 )
 
 // defaultMaxAgentDepth bounds nested agent spawns before the recursion guard
@@ -151,7 +151,7 @@ type SandboxConfig struct {
 	// Runner is the wired isolation implementation for Type. nil keeps the
 	// fail-closed contract: a declared sandbox without a runner is a
 	// permanent config error and never falls back to host execution.
-	Runner firecracker.Runner
+	Runner sandbox.Runner
 }
 
 // Execute builds and runs the phase's command under an optional timeout, failing

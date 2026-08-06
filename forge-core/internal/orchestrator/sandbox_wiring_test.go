@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"forgeos/forge-core/internal/asset"
-	"forgeos/forge-core/internal/orchestrator/firecracker"
+	"forgeos/forge-core/internal/orchestrator/sandbox"
 )
 
 // fakeRunner records the argv/timeout it received and returns scripted
@@ -33,7 +33,7 @@ func (f *fakeRunner) Run(
 	return f.output, f.code, f.err
 }
 
-func sandboxedExecutor(runner firecracker.Runner) CommandExecutor {
+func sandboxedExecutor(runner sandbox.Runner) CommandExecutor {
 	return CommandExecutor{
 		Build: func(_ asset.Phase, _ string) []string {
 			return []string{"agent", "-p", "prompt"}

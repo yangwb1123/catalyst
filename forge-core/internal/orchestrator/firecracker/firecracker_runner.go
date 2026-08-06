@@ -16,14 +16,6 @@ import (
 	"time"
 )
 
-// Runner executes a command inside an isolated environment. Run returns the
-// captured output, the guest exit code (0 on success), and an infrastructure
-// error (config fault, timeout, or transport failure). A non-zero code with
-// a nil error is a clean run that failed.
-type Runner interface {
-	Run(ctx context.Context, argv []string, timeout time.Duration) (output string, exitCode int, err error)
-}
-
 // FirecrackerRunner executes agent commands inside a KVM-backed microVM.
 // It is the wired implementation behind SandboxConfig.Type "firecracker":
 // the rootfs template is copied, the guest /init is replaced with a script
