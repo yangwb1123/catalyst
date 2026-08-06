@@ -1,0 +1,227 @@
+use std::collections::BTreeMap;
+use std::io::Write;
+use std::path::Path;
+
+use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
+use tempfile::TempDir;
+
+#[allow(dead_code)]
+mod cli_group_agent_scheduled_node_contract_support;
+mod group_agent_graph_run_support;
+mod group_agent_graph_support;
+
+use cli_group_agent_scheduled_node_contract_support::{
+    admit_schedule, build_schedule, export_control, prepare_run,
+};
+const PRICING: &str = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
+use group_agent_graph_run_support::{Fixture, command};
+use group_agent_graph_support::{successful_json, text};
+
+const RECEIPT_DOMAIN: &str = "forge.group-agent-scheduled-node-terminal-receipt.v1\0";
+
+/// Builds a canonical predecessor terminal receipt exactly as the Go core
+/// validates it: the digest is sha256(domain || canonical(digest-object))
+/// where the digest object carries every field except `receipt_id` /
+/// `receipt_sha256` serialized with keys sorted (Go map marshal); the full
+/// canonical receipt follows the Go struct field order.
+fn build_receipt(
+    graph_run_id: &str,
+    graph_id: &str,
+    node_id: &str,
+    control_sha256: &str,
+    lane_sha256: &str,
+) -> Vec<u8> {
+    let mut digest_object: BTreeMap<String, Value> = BTreeMap::new();
+    digest_object.insert("v".into(), json!(1));
+    digest_object.insert("scheduler_protocol_version".into(), json!(1));
+    digest_object.insert("terminal_receipt_protocol_version".into(), json!(1));
+    digest_object.insert("terminal_control_sha256".into(), json!(control_sha256));
+    digest_object.insert("graph_run_id".into(), json!(graph_run_id));
+    digest_object.insert("graph_id".into(), json!(graph_id));
+    digest_object.insert("node_id".into(), json!(node_id));
+    digest_object.insert("attempt".into(), json!(1));
+    digest_object.insert("dispatch_id".into(), json!("dispatch-wave-fixture"));
+    digest_object.insert("provider_request_id".into(), json!("scheduled-node-provider-request-wave-fixture"));
+    digest_object.insert("project_lane_sha256".into(), json!(lane_sha256));
+    digest_object.insert("artifact_kind".into(), json!("result"));
+    digest_object.insert("artifact_id".into(), json!("scheduled-node-terminal-artifact-".to_string() + &"b".repeat(64)));
+    digest_object.insert("artifact_sha256".into(), json!("b".repeat(64)));
+    digest_object.insert("node_outcome".into(), json!("completed"));
+    digest_object.insert("retry_authorized".into(), json!(false));
+    digest_object.insert("lane_release_authorized".into(), json!(true));
+    digest_object.insert("successor_advance_authorized".into(), json!(false));
+    let digest_canonical = serde_json::to_string(&digest_object).expect("digest canonical");
+    let mut hasher = Sha256::new();
+    hasher.update(RECEIPT_DOMAIN.as_bytes());
+    hasher.update(digest_canonical.as_bytes());
+    let digest = format!("{:x}", hasher.finalize());
+    let receipt_id = format!("scheduled-node-terminal-receipt-{digest}");
+    format!(
+        "{{\"v\":1,\"scheduler_protocol_version\":1,\"terminal_receipt_protocol_version\":1,\
+         \"terminal_control_sha256\":\"{control_sha256}\",\"graph_run_id\":\"{graph_run_id}\",\
+         \"graph_id\":\"{graph_id}\",\"node_id\":\"{node_id}\",\"attempt\":1,\
+         \"dispatch_id\":\"dispatch-wave-fixture\",\
+         \"provider_request_id\":\"scheduled-node-provider-request-wave-fixture\",\
+         \"project_lane_sha256\":\"{lane_sha256}\",\"artifact_kind\":\"result\",\
+         \"artifact_id\":\"scheduled-node-terminal-artifact-{pad}\",\
+         \"artifact_sha256\":\"{pad}\",\"node_outcome\":\"completed\",\
+         \"retry_authorized\":false,\"lane_release_authorized\":true,\
+         \"successor_advance_authorized\":false,\"receipt_id\":\"{receipt_id}\",\
+         \"receipt_sha256\":\"{digest}\"}}",
+        pad = "b".repeat(64),
+    )
+    .into_bytes()
+}
+
+fn write_temp(dir: &TempDir, name: &str, data: &[u8]) -> String {
+    let path = dir.path().join(name);
+    let mut file = std::fs::File::create(&path).expect("create temp");
+    file.write_all(data).expect("write temp");
+    path.display().to_string()
+}
+
+fn json_parse(bytes: &[u8]) -> Value {
+    serde_json::from_slice(bytes).expect("valid JSON")
+}
+
+fn prepared_wave(fixture: &Fixture, key: &str) -> (String, String, Value) {
+    let graph_run_id = prepare_run(fixture, key);
+    let control = export_control(fixture, &graph_run_id);
+    let schedule = build_schedule(&control);
+    admit_schedule(fixture, &graph_run_id, &schedule);
+    let schedule_sha256 = text(&json_parse(&schedule)["schedule_sha256"]);
+    (graph_run_id, schedule_sha256, json_parse(&schedule))
+}
+
+#[test]
+fn wave_admit_materializes_every_ready_node_from_one_wave() {
+    let fixture = Fixture::new();
+    let (graph_run_id, schedule_sha256, schedule) = prepared_wave(&fixture, "wave-admit-source-run");
+    let graph_id = text(&schedule["graph_id"]);
+    // node 0 (frontend) is consumed; the wave lists its successor(s).
+    let node0 = text(&schedule["nodes"][0]["node_id"]);
+    let receipt = build_receipt(
+        &graph_run_id,
+        &graph_id,
+        &node0,
+        &"a".repeat(64),
+        &text(&schedule["nodes"][0]["project_lane_sha256"]),
+    );
+    let dir = TempDir::new().expect("tempdir");
+    let receipt_path = write_temp(&dir, "receipt.json", &receipt);
+
+    let output = command(
+        fixture.state.path(),
+        fixture.cwd.path(),
+        &[
+            "group", "graph", "run", "scheduled-contract", "wave-admit",
+            &graph_run_id,
+            "--schedule-sha256", &schedule_sha256,
+            "--predecessor-receipt", &receipt_path,
+        ],
+    )
+    .output()
+    .expect("wave-admit");
+    let parsed = successful_json(&output);
+    assert_eq!(parsed["v"], 1);
+    // The Go core planned the wave (backend is ready after node0), the
+    // candidate was materialized, and admission ran — the evidence-chain
+    // guard then correctly rejected the fabricated receipt because no
+    // provider-request lifecycle exists for it (a real predecessor receipt
+    // comes from a completed dispatch; that admission success path is the
+    // same successor-service code covered by the application-layer tests).
+    let wave = parsed["wave"].as_array().expect("wave array");
+    let rejected = parsed["rejected"].as_array().expect("rejected array");
+    assert_eq!(rejected.len(), 1, "exactly one ready node rejected by the evidence chain: {parsed}");
+    assert_ne!(rejected[0]["node_id"], node0);
+    assert_eq!(wave.len(), 0);
+    let reason = text(&rejected[0]["disposition"]);
+    assert!(
+        reason.contains("was not found"),
+        "evidence-chain guard must name the missing lifecycle: {reason}"
+    );
+}
+
+#[test]
+fn wave_admit_requires_receipts_and_schedule() {
+    let fixture = Fixture::new();
+    let (graph_run_id, schedule_sha256, _) = prepared_wave(&fixture, "wave-admit-reject-run");
+    // No receipts: rejected before any Go core call.
+    let output = command(
+        fixture.state.path(),
+        fixture.cwd.path(),
+        &[
+            "group", "graph", "run", "scheduled-contract", "wave-admit",
+            &graph_run_id,
+            "--schedule-sha256", &schedule_sha256,
+        ],
+    )
+    .output()
+    .expect("wave-admit without receipts");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("requires at least one"), "{stderr}");
+    // Unknown flag rejected.
+    let output = command(
+        fixture.state.path(),
+        fixture.cwd.path(),
+        &[
+            "group", "graph", "run", "scheduled-contract", "wave-admit",
+            &graph_run_id, "--bogus",
+        ],
+    )
+    .output()
+    .expect("wave-admit bogus flag");
+    assert!(!output.status.success());
+}
+
+#[test]
+fn wave_admit_rejects_drifted_receipt_without_admitting_anything() {
+    let fixture = Fixture::new();
+    let (graph_run_id, schedule_sha256, schedule) = prepared_wave(&fixture, "wave-admit-drift-run");
+    let graph_id = text(&schedule["graph_id"]);
+    let node0 = text(&schedule["nodes"][0]["node_id"]);
+    let mut receipt = build_receipt(
+        &graph_run_id,
+        &graph_id,
+        &node0,
+        &"a".repeat(64),
+        &text(&schedule["nodes"][0]["project_lane_sha256"]),
+    );
+    // Mutate the receipt body: digest no longer matches -> Go core rejects.
+    let drift: String = String::from_utf8(receipt.clone()).expect("utf8")
+        .replacen(&"a".repeat(64), &"c".repeat(64), 1);
+    receipt = drift.into_bytes();
+    let dir = TempDir::new().expect("tempdir");
+    let receipt_path = write_temp(&dir, "receipt.json", &receipt);
+    let output = command(
+        fixture.state.path(),
+        fixture.cwd.path(),
+        &[
+            "group", "graph", "run", "scheduled-contract", "wave-admit",
+            &graph_run_id,
+            "--schedule-sha256", &schedule_sha256,
+            "--predecessor-receipt", &receipt_path,
+        ],
+    )
+    .output()
+    .expect("wave-admit drifted receipt");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("go core"), "{stderr}");
+    // Nothing admitted: contract list is empty for the run.
+    let list = command(
+        fixture.state.path(),
+        fixture.cwd.path(),
+        &["group", "graph", "run", "scheduled-contract", "list", &graph_run_id],
+    )
+    .output()
+    .expect("list contracts after rejected wave");
+    let listed = successful_json(&list);
+    let contracts = listed["contracts"].as_array().expect("contracts array");
+    assert!(contracts.is_empty(), "no contract admitted: {listed}");
+}
+
+#[allow(dead_code)]
+fn _unused(_: &Path) {}

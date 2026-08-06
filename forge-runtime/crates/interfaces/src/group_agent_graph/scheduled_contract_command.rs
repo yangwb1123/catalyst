@@ -7,8 +7,13 @@ use std::{
 
 use forge_runtime_application::{
     AdmitGroupAgentScheduledNodeContractInput, AdmitGroupAgentScheduledNodeSuccessorInput,
-    GroupAgentScheduledNodeContractCandidate, GroupAgentScheduledNodeContractService,
-    GroupAgentScheduledNodeSuccessorService, MAX_GROUP_AGENT_SCHEDULED_NODE_CONTRACT_BYTES,
+    GroupAgentNodeExecutionContractService, GroupAgentScheduledNodeContractCandidate,
+    GroupAgentScheduledNodeContractService, GroupAgentScheduledNodeSuccessorService,
+    MAX_GROUP_AGENT_SCHEDULED_NODE_CONTRACT_BYTES,
+};
+pub(crate) use forge_runtime_application::{
+    AdmitGroupAgentScheduledNodeSuccessorInput as WaveAdmitInput,
+    GroupAgentScheduledNodeSuccessorService as WaveSuccessorService,
 };
 use forge_runtime_infrastructure::SqliteHubStore;
 
@@ -61,6 +66,12 @@ pub fn execute(
         GroupGraphRunScheduledContractCommand::Successor(command) => {
             execute_successor(args, command)
         }
+        GroupGraphRunScheduledContractCommand::WaveAdmit {
+            graph_run_id,
+            predecessor_receipt_sources,
+            schedule_sha256,
+            go_core,
+        } => execute_wave(args, graph_run_id, predecessor_receipt_sources, schedule_sha256, go_core.as_deref()),
     }
 }
 
@@ -181,7 +192,7 @@ fn read_predecessor_receipt(source: &str) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn successor_service(
+pub(crate) fn successor_service(
     args: &Args,
 ) -> Result<GroupAgentScheduledNodeSuccessorService, Box<dyn Error>> {
     let database = hub_database_path(args.state_dir.as_deref())?;
@@ -217,6 +228,39 @@ fn admit(
         result.inspection,
         contract_source != "-",
     ))
+}
+
+fn execute_wave(
+    args: &Args,
+    graph_run_id: &str,
+    predecessor_receipt_sources: &[String],
+    schedule_sha256: &str,
+    go_core: Option<&str>,
+) -> Result<GroupAgentScheduledNodeContractCliOutput, Box<dyn Error>> {
+    super::wave_command::execute_wave_admit(
+        args,
+        graph_run_id,
+        predecessor_receipt_sources,
+        schedule_sha256,
+        go_core,
+    )
+}
+
+/// `export_control` loads the graph run control snapshot (the artifact the
+/// `control export` command prints); shared with the wave-admit adapter.
+pub(crate) fn export_control(
+    args: &Args,
+    graph_run_id: &str,
+) -> Result<Vec<u8>, Box<dyn Error>> {
+    let database = hub_database_path(args.state_dir.as_deref())?;
+    let store = Arc::new(SqliteHubStore::open(database)?);
+    let service = GroupAgentNodeExecutionContractService::new(
+        store.clone(),
+        store.clone(),
+        store,
+    );
+    let exported = service.export_control(graph_run_id)?;
+    Ok(exported.snapshot_json.into_bytes())
 }
 
 fn service(args: &Args) -> Result<GroupAgentScheduledNodeContractService, Box<dyn Error>> {

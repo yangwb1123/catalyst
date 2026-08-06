@@ -1,0 +1,31 @@
+# ForgeOS review context — Graph 多节点执行协议(Sprint 59-72 成果)
+# 十阶段评审框架的上下文示例:对 wave-parallel successor 计划层 + v20 存储
+# 适配 + sandbox runner 做一次独立评审。修改本文件或按需新建上下文。
+
+project: "ForgeOS"
+subsystem: "Graph scheduled successor protocol (wave-parallel planning)"
+repo: "/home/u1/catalyst"
+files:
+  - forge-core/internal/graphscheduledcontract/build_successor.go
+  - forge-core/internal/graphscheduledcontract/ready_command.go
+  - forge-core/internal/orchestrator/firecracker/firecracker_runner.go
+  - forge-core/internal/orchestrator/docker/docker_runner.go
+  - forge-core/internal/orchestrator/sandbox_config.go
+  - forge-runtime/crates/infrastructure/src/sqlite_hub/schema_contract/v20_sql.rs
+rfcs:
+  - docs/adr/0031-passive-successor-contract-candidate.md
+  - docs/adr/0035-topologically-ready-successor-selection.md
+  - docs/adr/0034-hard-crash-adjudication.md
+architecture_summary: |
+  Successor candidates are effect-free (ADR-0031); admission is scope-aware;
+  topologically-ready selection (ADR-0035) allows wave-parallel branches;
+  the v20 store keeps one candidate per node per run; sandbox runners
+  (firecracker/docker) isolate agent commands behind a fail-closed
+  sandbox.Runner contract.
+load_profile: "(not provided)"
+infra: "single host; KVM + Docker verified locally"
+slo_targets: "forge accept must stay ACCEPTED after every change"
+sprint_goal: "Verify the wave-parallel planning path and sandbox isolation
+boundaries hold under adversarial review; propose evidence-backed
+improvements only."
+team_size: "1-2"

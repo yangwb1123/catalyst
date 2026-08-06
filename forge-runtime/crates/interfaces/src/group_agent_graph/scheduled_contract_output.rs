@@ -58,6 +58,12 @@ pub enum GroupAgentScheduledNodeContractCliOutput {
         writeback_performed: bool,
         contracts: Vec<ScheduledContractMetadataView>,
     },
+    #[serde(rename = "group_agent_scheduled_node_wave_admit")]
+    Wave {
+        v: u16,
+        wave: Vec<super::wave_command::WaveAdmitNodeOutput>,
+        rejected: Vec<super::wave_command::WaveAdmitNodeOutput>,
+    },
     #[serde(rename = "group_agent_scheduled_node_contract_candidates")]
     Contracts {
         v: u16,
@@ -132,6 +138,14 @@ pub struct ScheduledContractMetadataView {
 }
 
 impl GroupAgentScheduledNodeContractCliOutput {
+    pub fn wave(output: super::wave_command::WaveAdmitOutput) -> Self {
+        Self::Wave {
+            v: 1,
+            wave: output.wave,
+            rejected: output.rejected,
+        }
+    }
+
     pub fn admitted(
         disposition: AdmitGroupAgentScheduledNodeContractDisposition,
         inspection: GroupAgentScheduledNodeContractInspection,
@@ -319,6 +333,9 @@ pub fn write_output(
         return Ok(());
     }
     match output {
+        GroupAgentScheduledNodeContractCliOutput::Wave { wave, rejected, .. } => {
+            super::wave_command::write_wave(writer, wave, rejected)
+        }
         GroupAgentScheduledNodeContractCliOutput::Admitted {
             disposition,
             inspection,

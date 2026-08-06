@@ -1,7 +1,8 @@
 use std::collections::VecDeque;
 
 use crate::args::{
-    GroupGraphRunScheduledContractCommand, GroupGraphRunScheduledContractProviderRequestCommand,
+    GroupCommand, GroupGraphCommand, GroupGraphRunScheduledContractCommand,
+    GroupGraphRunScheduledContractProviderRequestCommand,
     GroupGraphRunScheduledContractSuccessorCommand,
 };
 
@@ -21,6 +22,7 @@ pub(super) fn parse(
         Some("provider-request") => parse_provider_request(tokens, idempotency_key),
         Some("predecessor-receipt") => parse_predecessor_receipt(tokens),
         Some("successor") => parse_successor(tokens, idempotency_key),
+        Some("wave-admit") => parse_wave_admit(tokens, idempotency_key),
         Some(value) => Err(unknown("group graph run scheduled-contract", value)),
         None => Err(with_usage(
             "group graph run scheduled-contract command is required",
@@ -425,3 +427,46 @@ fn command(value: GroupGraphRunScheduledContractCommand) -> Command {
 #[cfg(test)]
 #[path = "scheduled_contract_args_tests.rs"]
 mod tests;
+
+
+fn parse_wave_admit(
+    tokens: &mut VecDeque<String>,
+    idempotency_key: &mut Option<String>,
+) -> Result<Command, String> {
+    let graph_run_id = required_id(tokens, "wave-admit", "GRAPH_RUN_ID")?;
+    let mut receipts: Vec<String> = Vec::new();
+    let mut schedule_sha256: Option<String> = None;
+    let mut go_core: Option<String> = None;
+    while let Some(flag) = tokens.pop_front() {
+        match flag.as_str() {
+            "--predecessor-receipt" => {
+                let value = next_value(tokens, "--predecessor-receipt")?;
+                receipts.push(value);
+            }
+            "--schedule-sha256" => {
+                schedule_sha256 = Some(next_value(tokens, "--schedule-sha256")?);
+            }
+            "--go-core" => {
+                go_core = Some(next_value(tokens, "--go-core")?);
+            }
+            "--idempotency-key" => {
+                let value = next_value(tokens, "--idempotency-key")?;
+                *idempotency_key = Some(value);
+            }
+            other => return Err(unknown("group graph run scheduled-contract wave-admit", other)),
+        }
+    }
+    let schedule_sha256 = schedule_sha256.ok_or_else(|| {
+        with_usage("group graph run scheduled-contract wave-admit requires --schedule-sha256")
+    })?;
+    Ok(Command::Group(GroupCommand::Graph(GroupGraphCommand::Run(
+        GroupGraphRunCommand::ScheduledContract(
+            GroupGraphRunScheduledContractCommand::WaveAdmit {
+                graph_run_id,
+                predecessor_receipt_sources: receipts,
+                schedule_sha256,
+                go_core,
+            },
+        ),
+    ))))
+}

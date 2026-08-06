@@ -665,6 +665,24 @@ effect-free;错误路径:无 receipts/未知节点 receipt 一律拒绝。
 测试:diamond 消费 frontend 后就绪=1 节点、无 receipt 拒绝、drift receipt
 拒绝;`forge accept` ACCEPTED。
 
+## Sprint 73（✅ 完成）— ai-batch-runner 高维特性移植 + wave-admit 编排命令
+
+(1) **工具移植**(docs/ai-batch/ + docs/reviews/):十阶段评审框架
+(run-review.py 脱钩版:review_core/agents/bounds 拆分 ≤500 行)+ 10 阶段模板 +
+31 角色 prompt + 高维分析工具薄壳(pi-batch.py:classify/rules/assess/eval,
+依赖闭包 8 模块全部 ≤500 行,零外部依赖,PyYAML 可选)。engineering-principles
+适配 ForgeOS 版(证据权威表指向 .agent/ 与 harness/)。
+(2) **高维分析应用**:用 assess 评估 wave 并行调度场景 —— 8/8 维度完整、
+**工作流 L3_platform(9 分)**、产品化 L3(克制:低成本预留 tenant 类字段、
+高成本 Billing 禁止提前设计);画像 frontend_ui 为关键词误判(诚实记录)。
+(3) **wave-admit 编排命令**(Rust CLI):`group graph run scheduled-contract
+wave-admit GRAPH_RUN_ID --schedule-sha256 ... --predecessor-receipt ...`
+—— 调 Go core ready-nodes 计划 → 逐节点 --target-node 生成候选 → admit
+落库。集成测试 3/3(真 Go core 全链路:计划→物化→证据链防线正确拒绝伪造
+receipt;参数拒绝;drifted receipt 零落库)。fanin 30(经
+scheduled_contract_command 复用 service 构造)。
+`forge accept` 为 **ACCEPTED**;Rust 920 tests;arch 8/8。
+
 ## 下一前沿(需外部资源 / 后续阶段 / 投机增强 / 明确非目标,非本环境可完整验证)
 - **Graph 下一协议切片**:Sprint 59 只完成 scheduled ordinal-zero 的独立 claim/send/terminal sidecar；仍没有真实 successor/wave advancement、verified per-node/per-attempt receipt 驱动的非初始 contract-v2，也没有 predecessor dataflow。后续必须另立 successor 选择、receipt consumption、跨 node disclosure/consent 与 byte-bound 契约，不能从 ordering edge 推断。另一个独立协议仍是 legacy v4 hard-crash no-send adjudication：必须证明旧 executor 已停止，不能用 lease/时间流逝猜测后自动释放或重发。
 - **真点火** `--agent-cmd=claude`:**multi-agent running to completion 已坐实**(Sprint 25:真 claude 多-agent 跑到 converge MET,增量级 + 版本级)。完整旋钮:四维资源护栏 + 成本三维(phase/时间/美元)+ 任务注入 + 写权限 + 模型路由 + 工作目录 + retry + loop-back;诚实分工:agent 自治增量绿、人确认版本竣工。docs/ignition.md 有完整配方 + 实测

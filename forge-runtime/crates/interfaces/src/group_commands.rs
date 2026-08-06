@@ -81,6 +81,12 @@ pub enum GroupGraphRunScheduledContractCommand {
         provider_request_id: String,
     },
     Successor(GroupGraphRunScheduledContractSuccessorCommand),
+    WaveAdmit {
+        graph_run_id: String,
+        predecessor_receipt_sources: Vec<String>,
+        schedule_sha256: String,
+        go_core: Option<String>,
+    },
 }
 
 #[derive(Debug, Eq, PartialEq)]

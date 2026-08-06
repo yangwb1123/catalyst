@@ -1,3 +1,5 @@
+// Support module shared by CLI integration tests; each test file uses
+// a subset of its helpers, so dead_code is expected here.
 use std::{
     collections::BTreeMap,
     fs,
@@ -18,6 +20,7 @@ use super::group_agent_graph_support::{path_text, successful_json, text};
 pub(super) const TASK_SECRET: &str = "private-task-must-not-leak-from-passive-run";
 pub(super) const WORKSPACE_SECRET: &str = "workspace-secret-must-not-be-read";
 
+#[allow(dead_code)]
 pub(super) struct Fixture {
     pub(super) state: TempDir,
     projects: TempDir,
@@ -26,6 +29,7 @@ pub(super) struct Fixture {
     sentinels: BTreeMap<&'static str, Vec<u8>>,
 }
 
+#[allow(dead_code)]
 impl Fixture {
     pub(super) fn new() -> Self {
         let state = TempDir::new().expect("state directory");
@@ -264,7 +268,8 @@ pub(super) fn command(state: &Path, cwd: &Path, args: &[&str]) -> Command {
     command
 }
 
-pub(super) fn human_command(state: &Path, cwd: &Path, args: &[&str]) -> Output {
+#[allow(dead_code)]
+    pub(super) fn human_command(state: &Path, cwd: &Path, args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_forge-runtime"))
         .current_dir(cwd)
         .env_remove("OPENAI_API_KEY")
