@@ -22,12 +22,10 @@ pub(super) fn adjudicate(
     let transaction = connection
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(read_error)?;
-    let raw =
-        read::find_by_provider_request(&transaction, &request.provider_request_id)?.ok_or_else(|| {
-            HubStoreError::NotFound {
-                entity: HubEntity::GroupAgentScheduledNodeLifecycle,
-                id: request.provider_request_id.clone(),
-            }
+    let raw = read::find_by_provider_request(&transaction, &request.provider_request_id)?
+        .ok_or_else(|| HubStoreError::NotFound {
+            entity: HubEntity::GroupAgentScheduledNodeLifecycle,
+            id: request.provider_request_id.clone(),
         })?;
     let existing = read::reconstruct(&transaction, &raw)?;
     // 只有硬崩溃的 claim(无任何 terminal evidence、lane 仍 active)可被裁决。
@@ -56,8 +54,7 @@ pub(super) fn adjudicate(
             params![adjudicated_at_ms, request.provider_request_id],
         )
         .map_err(|error| write_error(HubEntity::GroupAgentScheduledNodeLifecycle, error))?;
-    let inspection =
-        read::inspect_in_snapshot(&transaction, &request.provider_request_id)?;
+    let inspection = read::inspect_in_snapshot(&transaction, &request.provider_request_id)?;
     transaction.commit().map_err(read_error)?;
     Ok(inspection)
 }

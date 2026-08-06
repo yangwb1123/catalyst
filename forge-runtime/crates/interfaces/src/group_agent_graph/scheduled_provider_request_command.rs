@@ -122,9 +122,9 @@ fn run_sync_command(
             pricing_source,
         ),
         GroupGraphRunScheduledContractProviderRequestCommand::Execute { .. }
-        | GroupGraphRunScheduledContractProviderRequestCommand::Adjudicate { .. } => unreachable!(
-            "dispatch execute/adjudicate are routed before run_sync_command"
-        ),
+        | GroupGraphRunScheduledContractProviderRequestCommand::Adjudicate { .. } => {
+            unreachable!("dispatch execute/adjudicate are routed before run_sync_command")
+        }
     }
 }
 

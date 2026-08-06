@@ -113,6 +113,30 @@ pub(super) async fn execute_dispatch(
         core_bin_sha256.into(),
     )?);
     let service = execution_service(args, bridge)?;
+    execute_with_signal_cancellation(
+        &service,
+        args,
+        provider_request_id,
+        inputs,
+        confirm_off_machine,
+        confirm_predecessor_content,
+        include_result,
+    )
+    .await
+}
+
+/// Runs one effectful dispatch with a pid sidecar for hard-crash
+/// adjudication and OS-signal cancellation folding into the cancellation
+/// token (clean uncertainty terminal instead of a stranded claim).
+async fn execute_with_signal_cancellation(
+    service: &GroupAgentScheduledNodeDispatchExecutionService,
+    args: &Args,
+    provider_request_id: &str,
+    inputs: &DispatchInputs,
+    confirm_off_machine: bool,
+    confirm_predecessor_content: bool,
+    include_result: bool,
+) -> Result<GroupAgentScheduledNodeProviderRequestCommandCliOutput, Box<dyn Error>> {
     let sidecar = ExecutorPidSidecar::write(args, provider_request_id)?;
     let cancellation = Cancellation::default();
     let cancel_on_signal = tokio::spawn(cancel_on_os_signal(cancellation.clone()));
@@ -189,8 +213,14 @@ impl ExecutorPidSidecar {
         std::fs::create_dir_all(&dir)?;
         let path = dir.join(format!("{provider_request_id}.pid"));
         let hostname = std::env::var("HOSTNAME").unwrap_or_else(|_| "localhost".into());
-        std::fs::write(&path, format!("{} {hostname}
-", std::process::id()))?;
+        std::fs::write(
+            &path,
+            format!(
+                "{} {hostname}
+",
+                std::process::id()
+            ),
+        )?;
         Ok(Self { path })
     }
 

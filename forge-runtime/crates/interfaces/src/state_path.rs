@@ -25,7 +25,9 @@ pub fn state_dir(override_dir: Option<&Path>) -> Result<PathBuf, io::Error> {
     let state_dir = override_dir
         .map(Path::to_path_buf)
         .or_else(default_state_dir)
-        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "state directory is not available"))?;
+        .ok_or_else(|| {
+            io::Error::new(io::ErrorKind::NotFound, "state directory is not available")
+        })?;
     std::fs::create_dir_all(&state_dir)?;
     Ok(state_dir)
 }

@@ -569,6 +569,23 @@ Go 全量、arch/gate 全绿。multi-node Graph 的执行闭环(候选→授权�
 数据流→后继)至此完整;wave 并行与 legacy v4 hard-crash adjudication 仍属
 后续协议。
 
+## Sprint 65（✅ 完成）— ADR 0034:本地 hard-crash no-send adjudication
+
+补上 ADR-0024/0030 的 stranded-claim 收尾:dispatch execute 在 claim 前写
+`.forge/executor-pids/<request_id>.pid`(pid + hostname)、terminalize 后删除;
+可捕获的 SIGINT/SIGTERM 折入 cancellation token(干净 uncertainty terminal +
+lane 释放,不再 stranded)。`dispatch adjudicate PROVIDER_REQUEST_ID` 是唯一
+显式、永不自动/时间驱动的 lane 回收:要求 durable 状态为硬崩溃后的 claimed(无
+任何 terminal evidence、lane active),读 pid sidecar 证明同主机 executor 已
+停止(sidecar 缺失、跨主机、pid 存活一律拒绝),然后原子置
+status='adjudicated' + lane_active=0。SQLite v19 重建 lifecycle 表(status
+CHECK 加 'adjudicated';列不变,旧库查询零破坏),dispatch re-entry 接受 v19,
+future 版本测试移至 20。专项覆盖 v19 迁移全代兼容与状态/证据形状校验。
+`forge accept` 为 **ACCEPTED**;Rust 915 tests、Go 全量、arch/gate 全绿。
+诚实边界:pid liveness 是本地 OS 级证据(同用户可信模型,非 MAC/签名/跨主机
+adjudication);完整 claim→crash→adjudicate 端到端需真实硬崩溃场景,store 逻辑
+经编译与回归验证。wave 并行仍属后续协议。
+
 ## 下一前沿(需外部资源 / 后续阶段 / 投机增强 / 明确非目标,非本环境可完整验证)
 - **Graph 下一协议切片**:Sprint 59 只完成 scheduled ordinal-zero 的独立 claim/send/terminal sidecar；仍没有真实 successor/wave advancement、verified per-node/per-attempt receipt 驱动的非初始 contract-v2，也没有 predecessor dataflow。后续必须另立 successor 选择、receipt consumption、跨 node disclosure/consent 与 byte-bound 契约，不能从 ordering edge 推断。另一个独立协议仍是 legacy v4 hard-crash no-send adjudication：必须证明旧 executor 已停止，不能用 lease/时间流逝猜测后自动释放或重发。
 - **真点火** `--agent-cmd=claude`:**multi-agent running to completion 已坐实**(Sprint 25:真 claude 多-agent 跑到 converge MET,增量级 + 版本级)。完整旋钮:四维资源护栏 + 成本三维(phase/时间/美元)+ 任务注入 + 写权限 + 模型路由 + 工作目录 + retry + loop-back;诚实分工:agent 自治增量绿、人确认版本竣工。docs/ignition.md 有完整配方 + 实测
