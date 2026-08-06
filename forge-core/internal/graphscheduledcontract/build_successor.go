@@ -7,18 +7,16 @@ import (
 	"forgeos/forge-core/internal/scheduledterminal"
 )
 
-// successorContractScope marks a candidate that follows a verified contiguous
-// prefix of predecessor terminal receipts.
+// successorContractScope marks a candidate that follows verified predecessor
+// terminal receipts under the topological-ready rule (ADR-0035).
 const successorContractScope = "schedule_successor_only"
 
-// BuildSuccessor freezes the contract candidate for the next serial node after
-// a verified contiguous prefix of predecessor terminal receipts. It grants no
-// lifecycle, execution, dispatch, lane, or successor authority.
-//
-// receipts must be ordered by execution ordinal: receipt i is the terminal
-// evidence for schedule.Nodes[i]. The successor is schedule.Nodes[N] where N
-// is the number of receipts, and every direct predecessor of that node must
-// be covered by the consumed prefix.
+// BuildSuccessor freezes the contract candidate for a topologically-ready
+// successor node: every direct predecessor of the selected node carries a
+// consumed, verified receipt (any order; unrelated same-wave siblings do not
+// block it). It grants no lifecycle, execution, dispatch, lane, or successor
+// authority. With an empty targetNodeID the first ready node in serial order
+// is selected; a non-empty target requires that exact node to be ready.
 func BuildSuccessor(
 	snapshot graphdispatch.ControlSnapshot,
 	scheduleSHA256 string,
@@ -223,25 +221,6 @@ func scheduledNodeFor(
 	return graphschedule.ScheduledNode{}, false
 }
 
-// successorPredecessorsCovered checks that every direct predecessor of the
-// successor node is present in the consumed receipt prefix. Topology order
-// guarantees direct predecessors carry smaller ordinals, so prefix coverage
-// is both necessary and sufficient.
-func successorPredecessorsCovered(
-	successor graphschedule.ScheduledNode,
-	predecessors []PredecessorTerminalReceipt,
-) bool {
-	consumed := make(map[string]bool, len(predecessors))
-	for _, receipt := range predecessors {
-		consumed[receipt.PredecessorNodeID] = true
-	}
-	for _, predecessorID := range successor.DirectPredecessorNodeIDs {
-		if !consumed[predecessorID] {
-			return false
-		}
-	}
-	return true
-}
 
 func buildSuccessorRequest(
 	graphRunID string,

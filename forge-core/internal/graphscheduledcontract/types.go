@@ -1,6 +1,7 @@
-// Package graphscheduledcontract builds and validates one passive, schedule-
-// bound initial-node contract candidate. It grants no lifecycle or dispatch
-// authority and cannot select a successor.
+// Package graphscheduledcontract builds and validates passive, schedule-bound
+// contract candidates: the initial-node candidate and successor candidates
+// selected by the topological-ready rule (ADR-0035). It grants no lifecycle
+// or dispatch authority.
 package graphscheduledcontract
 
 import (

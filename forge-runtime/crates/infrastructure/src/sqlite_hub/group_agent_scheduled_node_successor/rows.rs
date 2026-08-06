@@ -96,12 +96,6 @@ pub(in crate::sqlite_hub) fn find_all_by_run(
     rows.collect::<Result<Vec<_>, _>>().map_err(read_error)
 }
 
-pub(super) fn find_by_schedule(
-    connection: &Connection,
-    schedule_id: &str,
-) -> Result<Option<RawStoredCandidate>, HubStoreError> {
-    query_one(connection, "schedule_id", &[schedule_id])
-}
 
 pub(super) fn find_by_request_id(
     connection: &Connection,

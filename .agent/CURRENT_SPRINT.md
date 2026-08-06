@@ -683,6 +683,28 @@ receipt;参数拒绝;drifted receipt 零落库)。fanin 30(经
 scheduled_contract_command 复用 service 构造)。
 `forge accept` 为 **ACCEPTED**;Rust 920 tests;arch 8/8。
 
+## Sprint 74（✅ 完成）— 十阶段评审驱动修复(架构评审发现 4 项)
+
+用移植的评审框架对 graph successor 协议 + sandbox 做真 agent 架构评审
+(Stage 01,~1500s),发现并修复:
+(1) **High — v20 per-node 不变量未实施**:`reject_existing_candidate_identity`
+  仍保留 per-run/per-schedule 一次性检查(串行链遗墙),第二个 successor
+  候选必拒。修复:移除 run/schedule 级检查,保留 per-node/per-ordinal/
+  per-request 槽位;新增 serial-three fixture(3 节点)+ 同 run 双候选
+  admit 测试(**sso 在 backend 之后同一 run 成功 admit**,3/3 PASS)。
+(2) **Medium — 文档漂移**:BuildSuccessor/包文档/命令文档仍写
+  "contiguous prefix / ordinal order"(Sprint 66 已实现拓扑选择)。
+  修复:全部改写为 ADR-0035 拓扑就绪语义。
+(3) **Low — 死代码**:`successorPredecessorsCovered`(Go)+
+  `find_by_schedule`(Rust rows)删除。
+**诚实记录下一阶段**(评审建议,非本 sprint):v21 迁移(provider-request v18
+表 UNIQUE(graph_run_id) 与 lifecycle v16 表 UNIQUE(graph_run_id) 改为
+per-(run,node,attempt)—— effectful 多节点 dispatch 的前提)与 ADR-0035
+receipts 应只含 direct predecessors 的协议对齐(Go 过滤 + Rust 校验放宽 +
+v20 CHECK 连锁)。
+`forge accept` 为 **ACCEPTED**;Rust 921 tests;评审产物:
+docs/reviews/reviews/forgeos-review-context/stage-01.out.md。
+
 ## 下一前沿(需外部资源 / 后续阶段 / 投机增强 / 明确非目标,非本环境可完整验证)
 - **Graph 下一协议切片**:Sprint 59 只完成 scheduled ordinal-zero 的独立 claim/send/terminal sidecar；仍没有真实 successor/wave advancement、verified per-node/per-attempt receipt 驱动的非初始 contract-v2，也没有 predecessor dataflow。后续必须另立 successor 选择、receipt consumption、跨 node disclosure/consent 与 byte-bound 契约，不能从 ordering edge 推断。另一个独立协议仍是 legacy v4 hard-crash no-send adjudication：必须证明旧 executor 已停止，不能用 lease/时间流逝猜测后自动释放或重发。
 - **真点火** `--agent-cmd=claude`:**multi-agent running to completion 已坐实**(Sprint 25:真 claude 多-agent 跑到 converge MET,增量级 + 版本级)。完整旋钮:四维资源护栏 + 成本三维(phase/时间/美元)+ 任务注入 + 写权限 + 模型路由 + 工作目录 + retry + loop-back;诚实分工:agent 自治增量绿、人确认版本竣工。docs/ignition.md 有完整配方 + 实测

@@ -221,3 +221,128 @@ fn same_run_rejects_a_second_candidate_for_the_same_node_v20() {
         .expect_err("second candidate for the same node must conflict");
     assert!(matches!(error, HubStoreError::Conflict { .. }));
 }
+
+/// Builds the ordinal-2 (sso) successor candidate admission for the
+/// serial-three fixture: rebinds node/request/receipts to the sso node and
+/// re-signs every digest.
+fn sso_successor_admit(
+    candidate: &forge_runtime_domain::AdmitGroupAgentScheduledNodeContractCandidate,
+    admit_backend: &forge_runtime_domain::AdmitGroupAgentScheduledNodeContractCandidate,
+) -> forge_runtime_domain::AdmitGroupAgentScheduledNodeContractCandidate {
+    use forge_runtime_domain::GroupAgentScheduledNodeContractScope;
+    let mut successor = candidate.candidate.clone();
+    successor.contract_scope = GroupAgentScheduledNodeContractScope::ScheduleSuccessorOnly;
+    let sso = candidate
+        .schedule
+        .nodes
+        .iter()
+        .find(|node| node.execution_ordinal == 2)
+        .expect("ordinal-2 schedule node")
+        .clone();
+    bind_sso_node(&mut successor, &sso, candidate);
+    resign_successor_fields(
+        &mut successor,
+        &candidate.schedule.initial_node,
+        &manifest_task(candidate, &sso.node_id),
+        &sso,
+    );
+    rebind_sso_receipt(&mut successor);
+    resign_sso_digests(&mut successor);
+    let successor_json = successor.canonical_json().expect("sso successor JSON");
+    let mut admit_sso = admit_backend.clone();
+    admit_sso.idempotency_key = "scheduled-wave-admit-sso".into();
+    admit_sso.admitted_at_ms = 90;
+    admit_sso.candidate = successor;
+    admit_sso.candidate_json = successor_json;
+    admit_sso
+}
+
+fn bind_sso_node(
+    successor: &mut forge_runtime_domain::GroupAgentScheduledNodeContractCandidate,
+    sso: &forge_runtime_domain::GroupAgentGraphExecutionScheduleNode,
+    candidate: &forge_runtime_domain::AdmitGroupAgentScheduledNodeContractCandidate,
+) {
+    successor.node.execution_ordinal = 2;
+    successor.node.node_id.clone_from(&sso.node_id);
+    successor.node.authored_node_index = sso.authored_node_index;
+    successor.node.topology_wave_index = sso.topology_wave_index;
+    successor
+        .node
+        .project_id
+        .clone_from(&manifest_project_id(candidate, &sso.node_id));
+    successor
+        .node
+        .project_lane_sha256
+        .clone_from(&sso.project_lane_sha256);
+    successor.request.execution_ordinal = 2;
+    successor.request.node_id.clone_from(&sso.node_id);
+    successor.request.required_predecessor_node_ids = vec!["backend".to_owned()];
+}
+
+fn rebind_sso_receipt(
+    successor: &mut forge_runtime_domain::GroupAgentScheduledNodeContractCandidate,
+) {
+    use forge_runtime_domain::{
+        GroupAgentScheduledNodePredecessorOutcome, GroupAgentScheduledNodePredecessorReceipt,
+    };
+    successor.request.predecessor_terminal_receipts =
+        vec![GroupAgentScheduledNodePredecessorReceipt {
+            predecessor_node_id: "backend".to_owned(),
+            predecessor_attempt: 1,
+            terminal_event_seq: 0,
+            terminal_event_sha256: String::new(),
+            terminal_receipt_id: format!("scheduled-node-terminal-receipt-{}", "b".repeat(64)),
+            terminal_receipt_sha256: "b".repeat(64),
+            node_outcome: GroupAgentScheduledNodePredecessorOutcome::Completed,
+            provider_request_id: "scheduled-node-provider-request-backend".into(),
+            dispatch_id: "dispatch-backend".into(),
+        }];
+}
+
+fn resign_sso_digests(
+    successor: &mut forge_runtime_domain::GroupAgentScheduledNodeContractCandidate,
+) {
+    successor.request.user_prompt_bytes = successor.request.user_prompt.len();
+    successor.request.user_prompt_sha256 =
+        forge_runtime_domain::group_agent_prompt_sha256(&successor.request.user_prompt);
+    let request_digest = successor.request.expected_sha256().expect("sso request digest");
+    successor.request.request_id = format!("scheduled-node-request-{request_digest}");
+    successor.request.request_sha256 = request_digest;
+    let contract_digest = successor.expected_sha256().expect("sso contract digest");
+    successor.contract_id = format!("scheduled-node-contract-{contract_digest}");
+    successor.contract_sha256 = contract_digest;
+}
+
+#[test]
+fn same_run_admits_a_second_candidate_for_a_different_node_v21() {
+    use forge_runtime_domain::{
+        GroupAgentGraphExecutionScheduleStore, GroupAgentGraphRunStore,
+    };
+    use sqlite_group_agent_graph_run_support as run_support;
+    use sqlite_group_agent_graph_execution_schedule_support as schedule_support;
+    use sqlite_group_agent_scheduled_node_contract_support as contract_support;
+    let fixture = run_support::Fixture::serial_three();
+    let _run = fixture
+        .store
+        .begin_group_agent_graph_run(&fixture.request("graph-run-1", "run-key", 30))
+        .expect("seed serial-three Graph Run");
+    let schedule = schedule_support::request(&fixture, "schedule-key", 40);
+    fixture
+        .store
+        .admit_group_agent_graph_execution_schedule(&schedule)
+        .expect("admit schedule");
+    let candidate = contract_support::admission(schedule, "scheduled-contract-key", 50);
+    let (admit_backend, _) = successor_admit_request(&candidate);
+    fixture
+        .store
+        .admit_group_agent_scheduled_node_successor(&admit_backend)
+        .expect("admit backend successor candidate");
+
+    let admit_sso = sso_successor_admit(&candidate, &admit_backend);
+    let admitted = fixture
+        .store
+        .admit_group_agent_scheduled_node_successor(&admit_sso)
+        .expect("second wave sibling (sso) must admit in the same run");
+    assert_eq!(admitted.inspection.record.execution_ordinal, 2);
+    assert_eq!(admitted.inspection.record.node_id, "sso");
+}

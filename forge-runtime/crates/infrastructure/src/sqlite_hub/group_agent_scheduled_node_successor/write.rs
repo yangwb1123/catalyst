@@ -110,23 +110,16 @@ fn reject_existing_candidate_identity(
     request: &AdmitGroupAgentScheduledNodeContractCandidate,
 ) -> Result<(), HubStoreError> {
     let candidate = &request.candidate;
+    // v21 (ADR-0035 wave-parallel): one candidate per (node, attempt) slot,
+    // not per run or per schedule — same-wave siblings coexist in one run.
+    // The per-run and per-schedule one-shot checks were the serial-chain
+    // wall that deadlocked the second successor node; they are replaced by
+    // the per-node and per-ordinal slots below (UNIQUE(graph_run_id,
+    // node_id, attempt) / UNIQUE(schedule_id, execution_ordinal, attempt)).
     let matches = [
         (
             rows::find_by_id(transaction, &candidate.contract_id)?,
             "contract ID",
-        ),
-        (
-            // v20: one candidate per node; any candidate proves the Graph
-            // Run is not pristine. The exact per-node slot is enforced by
-            // UNIQUE(graph_run_id, node_id, attempt).
-            rows::find_all_by_run(transaction, &request.graph_run_id)?
-                .into_iter()
-                .next(),
-            "Graph Run",
-        ),
-        (
-            rows::find_by_schedule(transaction, &candidate.schedule_id)?,
-            "schedule",
         ),
         (
             rows::find_by_request_id(transaction, &candidate.request.request_id)?,
@@ -156,7 +149,7 @@ fn reject_existing_candidate_identity(
 
 fn reject_identity_matches(
     transaction: &Transaction<'_>,
-    matches: [(Option<rows::RawStoredCandidate>, &str); 6],
+    matches: [(Option<rows::RawStoredCandidate>, &str); 4],
 ) -> Result<(), HubStoreError> {
     for (stored, identity) in matches {
         if let Some(stored) = stored {

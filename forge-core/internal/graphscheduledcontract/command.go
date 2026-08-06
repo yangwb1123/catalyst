@@ -96,7 +96,8 @@ func readPredecessorContent(source string, stdin io.Reader) (string, error) {
 }
 
 // readPredecessorReceipts reads and strictly decodes every predecessor
-// receipt in ordinal order; at most one source may use stdin.
+// receipt in any order (topological-ready selection); at most one
+// source may use stdin.
 func readPredecessorReceipts(
 	sources []string,
 	stdin io.Reader,
