@@ -82,14 +82,14 @@ fn future_schema_version_is_rejected_without_mutation() {
     let (root, database) = legacy_v7_database();
     let connection = open_database(&database).expect("migrate future-version fixture");
     connection
-        .pragma_update(None, "user_version", 19)
+        .pragma_update(None, "user_version", 20)
         .expect("mark future schema");
     drop(connection);
 
-    let error = open_database(&database).expect_err("future v19 schema is unsupported");
+    let error = open_database(&database).expect_err("future v20 schema is unsupported");
     assert!(matches!(error, HubStoreError::Corrupt { .. }));
     let unchanged = Connection::open(&database).expect("reopen future schema directly");
-    assert_eq!(schema_version(&unchanged), 19);
+    assert_eq!(schema_version(&unchanged), 20);
     assert_legacy_synthesis(&unchanged);
     assert!(schema_object_named(&unchanged, "group_agent_graphs"));
     drop((unchanged, root));
@@ -188,7 +188,7 @@ fn seed_v7_synthesis(connection: &Connection) {
 }
 
 fn assert_current_shape(connection: &Connection) {
-    assert_eq!(schema_version(connection), 18);
+    assert_eq!(schema_version(connection), 19);
     for table in [
         "group_agent_graphs",
         "group_agent_graph_runs",

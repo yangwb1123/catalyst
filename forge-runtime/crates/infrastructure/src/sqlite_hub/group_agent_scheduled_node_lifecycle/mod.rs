@@ -1,11 +1,12 @@
+mod adjudicate;
 mod claim;
 mod read;
 mod terminalize;
 
 use crate::runtime_domain::{
-    ClaimGroupAgentScheduledNodeDispatch, ClaimGroupAgentScheduledNodeDispatchResult,
-    GroupAgentScheduledNodeLifecycleInspection, GroupAgentScheduledNodeLifecycleStore,
-    HubStoreError, TerminalizeGroupAgentScheduledNodeDispatch,
+    AdjudicateGroupAgentScheduledNodeDispatch, ClaimGroupAgentScheduledNodeDispatch,
+    ClaimGroupAgentScheduledNodeDispatchResult, GroupAgentScheduledNodeLifecycleInspection,
+    GroupAgentScheduledNodeLifecycleStore, HubStoreError, TerminalizeGroupAgentScheduledNodeDispatch,
     TerminalizeGroupAgentScheduledNodeDispatchResult,
 };
 
@@ -33,5 +34,12 @@ impl GroupAgentScheduledNodeLifecycleStore for SqliteHubStore {
         provider_request_id: &str,
     ) -> Result<GroupAgentScheduledNodeLifecycleInspection, HubStoreError> {
         read::inspect(&mut self.connect()?, provider_request_id)
+    }
+
+    fn adjudicate_group_agent_scheduled_node_dispatch(
+        &self,
+        request: &AdjudicateGroupAgentScheduledNodeDispatch,
+    ) -> Result<GroupAgentScheduledNodeLifecycleInspection, HubStoreError> {
+        adjudicate::adjudicate(&mut self.connect()?, request)
     }
 }

@@ -1,6 +1,6 @@
 use crate::{
-    group_agent_scheduled_node_predecessor_output, group_agent_scheduled_node_user_prompt,
-    group_agent_scheduled_node_user_prompt_with_output, GroupAgentScheduledNodeContractScope,
+    GroupAgentScheduledNodeContractScope, group_agent_scheduled_node_predecessor_output,
+    group_agent_scheduled_node_user_prompt, group_agent_scheduled_node_user_prompt_with_output,
 };
 
 use super::tests::{fixture, resign_prompt_and_candidate};
@@ -14,16 +14,17 @@ fn prompt_with_predecessor_output_round_trips_exactly() {
         "frontend produced: login flow verified",
     )
     .expect("prompt with output");
-    let embedded = group_agent_scheduled_node_predecessor_output(&with_output)
-        .expect("decode output");
+    let embedded =
+        group_agent_scheduled_node_predecessor_output(&with_output).expect("decode output");
     assert_eq!(
         embedded.as_deref(),
         Some("frontend produced: login flow verified")
     );
     assert!(with_output.contains("predecessor_output"));
 
-    let plain = group_agent_scheduled_node_user_prompt("backend", "backend task", "backend acceptance")
-        .expect("plain prompt");
+    let plain =
+        group_agent_scheduled_node_user_prompt("backend", "backend task", "backend acceptance")
+            .expect("plain prompt");
     let embedded = group_agent_scheduled_node_predecessor_output(&plain).expect("decode plain");
     assert_eq!(embedded, None);
     assert!(!plain.contains("predecessor_output"));
@@ -35,8 +36,8 @@ fn content_flag_must_match_prompt_field() {
     let (mut candidate, _, _) = fixture();
     candidate.contract_scope = GroupAgentScheduledNodeContractScope::ScheduleSuccessorOnly;
     candidate.request.predecessor_content_included = true;
-    candidate.request.predecessor_terminal_receipts = vec![
-        crate::GroupAgentScheduledNodePredecessorReceipt {
+    candidate.request.predecessor_terminal_receipts =
+        vec![crate::GroupAgentScheduledNodePredecessorReceipt {
             predecessor_node_id: "frontend".into(),
             predecessor_attempt: 1,
             terminal_event_seq: 0,
@@ -46,8 +47,7 @@ fn content_flag_must_match_prompt_field() {
             node_outcome: crate::GroupAgentScheduledNodePredecessorOutcome::Completed,
             provider_request_id: "scheduled-node-provider-request-frontend".into(),
             dispatch_id: "dispatch-frontend".into(),
-        },
-    ];
+        }];
     resign_prompt_and_candidate(&mut candidate);
     assert!(
         candidate.validate().is_err(),

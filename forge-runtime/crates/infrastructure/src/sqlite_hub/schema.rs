@@ -36,10 +36,11 @@ use super::{
     schema_v16_sql::MIGRATE_V15_TO_V16_SQL,
     schema_v17_sql::MIGRATE_V16_TO_V17_SQL,
     schema_v18_sql::MIGRATE_V17_TO_V18_SQL,
+    schema_v19_sql::MIGRATE_V18_TO_V19_SQL,
     unavailable,
 };
 
-const SCHEMA_VERSION: i64 = 18;
+const SCHEMA_VERSION: i64 = 19;
 const CONNECTION_BUSY_TIMEOUT: Duration = Duration::from_millis(250);
 const OPEN_RETRY_TIMEOUT: Duration = Duration::from_secs(5);
 const OPEN_RETRY_DELAY: Duration = Duration::from_millis(10);
@@ -71,7 +72,7 @@ pub(super) fn open_database(path: &Path) -> Result<Connection, HubStoreError> {
 pub(super) fn open_existing_current_read_only_database(
     path: &Path,
 ) -> Result<Connection, HubStoreError> {
-    open_existing_validated_read_only_database(path, &[SCHEMA_VERSION], "current schema version 17")
+    open_existing_validated_read_only_database(path, &[SCHEMA_VERSION], "current schema version 18")
 }
 
 pub(super) fn open_existing_dispatch_preflight_read_only_database(
@@ -79,8 +80,8 @@ pub(super) fn open_existing_dispatch_preflight_read_only_database(
 ) -> Result<Connection, HubStoreError> {
     open_existing_validated_read_only_database(
         path,
-        &[11, 12, 13, 14, 15, 16, 17, 18],
-        "schema version 11, 12, 13, 14, 15, 16, 17, or 18",
+        &[11, 12, 13, 14, 15, 16, 17, 18, 19],
+        "schema version 11, 12, 13, 14, 15, 16, 17, 18, or 19",
     )
 }
 
@@ -272,6 +273,9 @@ fn migrate_late(connection: &Connection, version: i64) -> Result<(), OpenAttempt
     if version <= 17 {
         migrate_v17_to_v18(connection)?;
     }
+    if version <= 18 {
+        migrate_v18_to_v19(connection)?;
+    }
     Ok(())
 }
 
@@ -394,6 +398,11 @@ fn migrate_v16_to_v17(connection: &Connection) -> Result<(), OpenAttemptError> {
 
 fn migrate_v17_to_v18(connection: &Connection) -> Result<(), OpenAttemptError> {
     connection.execute_batch(MIGRATE_V17_TO_V18_SQL)?;
+    Ok(())
+}
+
+fn migrate_v18_to_v19(connection: &Connection) -> Result<(), OpenAttemptError> {
+    connection.execute_batch(MIGRATE_V18_TO_V19_SQL)?;
     Ok(())
 }
 

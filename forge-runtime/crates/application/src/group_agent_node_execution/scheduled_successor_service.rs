@@ -259,7 +259,9 @@ impl GroupAgentScheduledNodeSuccessorService {
             return Ok(());
         }
         let supplied = supplied.ok_or_else(|| {
-            invalid("successor candidate embeds predecessor content; --predecessor-content is required")
+            invalid(
+                "successor candidate embeds predecessor content; --predecessor-content is required",
+            )
         })?;
         let embedded = crate::runtime_domain::group_agent_scheduled_node_predecessor_output(
             &candidate.request.user_prompt,
@@ -309,7 +311,6 @@ impl GroupAgentScheduledNodeSuccessorService {
         }
         Ok(())
     }
-
 
     /// Every consumed predecessor receipt must correspond to a durable
     /// terminalized lifecycle whose stored receipt identities match exactly.

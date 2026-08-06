@@ -311,6 +311,7 @@ fn validate_inspection_status(
         inspection.status,
         GroupAgentScheduledNodeLifecycleStatus::Terminalized
             | GroupAgentScheduledNodeLifecycleStatus::Quarantined
+            | GroupAgentScheduledNodeLifecycleStatus::Adjudicated
     );
     if terminal != inspection.active_lane.is_none() {
         return Err(invalid("scheduled lifecycle lane/status disagree"));
@@ -319,7 +320,8 @@ fn validate_inspection_status(
         GroupAgentScheduledNodeLifecycleStatus::Claimed
             if inspection.artifact.is_none()
                 && inspection.terminal_control.is_none()
-                && inspection.terminal_receipt.is_none() => {}
+                && inspection.terminal_receipt.is_none()
+                && inspection.active_lane.is_some() => {}
         GroupAgentScheduledNodeLifecycleStatus::Terminalized
             if inspection.artifact.is_some()
                 && inspection.terminal_control.is_some()
@@ -328,6 +330,11 @@ fn validate_inspection_status(
             if inspection.artifact.is_some()
                 && inspection.terminal_control.is_none()
                 && inspection.terminal_receipt.is_none() => {}
+        GroupAgentScheduledNodeLifecycleStatus::Adjudicated
+            if inspection.artifact.is_none()
+                && inspection.terminal_control.is_none()
+                && inspection.terminal_receipt.is_none()
+                && inspection.active_lane.is_none() => {}
         _ => return Err(invalid("scheduled lifecycle evidence/status disagree")),
     }
     Ok(())

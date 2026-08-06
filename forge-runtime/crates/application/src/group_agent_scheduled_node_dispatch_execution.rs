@@ -209,7 +209,11 @@ impl GroupAgentScheduledNodeDispatchExecutionService {
         input: &ExecuteGroupAgentScheduledNodeDispatchInput,
         export: &ExportGroupAgentScheduledNodeDispatchReleaseControl,
     ) -> Result<(), GroupAgentScheduledNodeDispatchExecutionServiceError> {
-        if export.release_control.scheduled_contract.request.predecessor_content_included
+        if export
+            .release_control
+            .scheduled_contract
+            .request
+            .predecessor_content_included
             && !input.confirm_predecessor_content
         {
             return Err(GroupAgentScheduledNodeDispatchExecutionServiceError::ConsentRequired);

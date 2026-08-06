@@ -113,6 +113,7 @@ pub(super) async fn execute_dispatch(
         core_bin_sha256.into(),
     )?);
     let service = execution_service(args, bridge)?;
+    let sidecar = ExecutorPidSidecar::write(args, provider_request_id)?;
     let cancellation = Cancellation::default();
     let cancel_on_signal = tokio::spawn(cancel_on_os_signal(cancellation.clone()));
     let result = Box::pin(
@@ -134,11 +135,122 @@ pub(super) async fn execute_dispatch(
     .await?;
     cancel_on_signal.abort();
     let _ = cancel_on_signal.await;
+    sidecar.remove();
     Ok(
         GroupAgentScheduledNodeProviderRequestCommandCliOutput::Execution(Box::new(
             GroupAgentScheduledNodeDispatchExecutionCliOutput::from_result(result, include_result),
         )),
     )
+}
+
+/// Local hard-crash adjudication evidence: records the executor pid + hostname
+/// before the claim so a later operator can prove the old executor stopped.
+pub(super) fn adjudicate_dispatch(
+    args: &Args,
+    provider_request_id: &str,
+) -> Result<GroupAgentScheduledNodeProviderRequestCommandCliOutput, Box<dyn Error>> {
+    let database = crate::state_path::hub_database_path(args.state_dir.as_deref())?;
+    let store = std::sync::Arc::new(forge_runtime_infrastructure::SqliteHubStore::open(
+        database,
+    )?);
+    let evidence = ExecutorPidSidecar::prove_stopped(args, provider_request_id)?;
+    let inspection = store.adjudicate_group_agent_scheduled_node_dispatch(
+        &forge_runtime_domain::AdjudicateGroupAgentScheduledNodeDispatch {
+            v: 1,
+            provider_request_id: provider_request_id.into(),
+            adjudicated_at_ms: crate::state_path::unix_time_millis(),
+        },
+    )?;
+    evidence.remove();
+    Ok(
+        GroupAgentScheduledNodeProviderRequestCommandCliOutput::Execution(Box::new(
+            GroupAgentScheduledNodeDispatchExecutionCliOutput::from_inspection(
+                &inspection,
+                false,
+                false,
+            ),
+        )),
+    )
+}
+
+/// The `.forge/executor-pids/<request_id>.pid` sidecar: one line
+/// "PID HOSTNAME", written before the claim and removed after the terminalize
+/// transaction commits. Its absence after a hard crash is impossible for a
+/// normally completed dispatch; adjudication requires the record to exist AND
+/// the recorded pid to be provably dead on this host.
+pub(super) struct ExecutorPidSidecar {
+    path: std::path::PathBuf,
+}
+
+impl ExecutorPidSidecar {
+    pub(super) fn write(args: &Args, provider_request_id: &str) -> Result<Self, Box<dyn Error>> {
+        let state = crate::state_path::state_dir(args.state_dir.as_deref())?;
+        let dir = state.join("executor-pids");
+        std::fs::create_dir_all(&dir)?;
+        let path = dir.join(format!("{provider_request_id}.pid"));
+        let hostname = std::env::var("HOSTNAME").unwrap_or_else(|_| "localhost".into());
+        std::fs::write(&path, format!("{} {hostname}
+", std::process::id()))?;
+        Ok(Self { path })
+    }
+
+    fn remove(&self) {
+        let _ = std::fs::remove_file(&self.path);
+    }
+
+    /// Proves the recorded executor stopped: sidecar exists, same hostname,
+    /// and the recorded pid is not alive. Any other outcome rejects.
+    fn prove_stopped(args: &Args, provider_request_id: &str) -> Result<Self, Box<dyn Error>> {
+        let state = crate::state_path::state_dir(args.state_dir.as_deref())?;
+        let path = state
+            .join("executor-pids")
+            .join(format!("{provider_request_id}.pid"));
+        let raw = std::fs::read_to_string(&path).map_err(|_| {
+            std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "no executor pid sidecar: hard-crash adjudication has no evidence to prove",
+            )
+        })?;
+        let mut parts = raw.split_whitespace();
+        let pid: u32 = parts
+            .next()
+            .and_then(|value| value.parse().ok())
+            .ok_or_else(|| invalid_evidence("malformed executor pid sidecar"))?;
+        let hostname = parts
+            .next()
+            .ok_or_else(|| invalid_evidence("malformed executor pid sidecar"))?;
+        let current_host = std::env::var("HOSTNAME").unwrap_or_else(|_| "localhost".into());
+        if hostname != current_host {
+            return Err(Box::new(invalid_evidence(
+                "executor pid sidecar belongs to another host; cannot prove it stopped",
+            )));
+        }
+        if pid_alive(pid) {
+            return Err(Box::new(invalid_evidence(
+                "recorded executor pid is still alive; adjudication refused",
+            )));
+        }
+        Ok(Self { path })
+    }
+}
+
+fn pid_alive(pid: u32) -> bool {
+    // /proc/<pid> exists while the process (or a zombie) is present; a
+    // completed reaped process leaves no entry. Best-effort local liveness,
+    // not a cross-host or adversarial guarantee.
+    let proc_path = format!("/proc/{pid}");
+    let proc_entry = std::path::Path::new(&proc_path);
+    if !proc_entry.exists() {
+        return false;
+    }
+    // A zombie still occupies the pid; treat it as alive (conservative).
+    std::fs::read_to_string(proc_entry.join("stat"))
+        .map(|stat| !stat.contains(" Z "))
+        .unwrap_or(true)
+}
+
+fn invalid_evidence(message: &str) -> std::io::Error {
+    std::io::Error::new(std::io::ErrorKind::InvalidData, message)
 }
 
 /// Watches SIGINT/SIGTERM and cancels the in-flight dispatch so the provider
@@ -147,13 +259,13 @@ pub(super) async fn execute_dispatch(
 /// Hard crashes (SIGKILL/OOM) still leave quarantine; this only closes the
 /// catchable-signal gap.
 async fn cancel_on_os_signal(cancellation: Cancellation) {
-    let mut sigint = match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt()) {
-        Ok(signal) => signal,
-        Err(_) => return,
+    let Ok(mut sigint) = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())
+    else {
+        return;
     };
-    let mut sigterm = match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
-        Ok(signal) => signal,
-        Err(_) => return,
+    let Ok(mut sigterm) = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+    else {
+        return;
     };
     tokio::select! {
         _ = sigint.recv() => {}

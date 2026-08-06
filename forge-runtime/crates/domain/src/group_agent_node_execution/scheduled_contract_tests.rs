@@ -315,7 +315,9 @@ fn resign_request(request: &mut GroupAgentScheduledNodeRequest) {
     request.request_sha256 = digest;
 }
 
-pub(super) fn resign_prompt_and_candidate(candidate: &mut GroupAgentScheduledNodeContractCandidate) {
+pub(super) fn resign_prompt_and_candidate(
+    candidate: &mut GroupAgentScheduledNodeContractCandidate,
+) {
     let request = &mut candidate.request;
     request.user_prompt_bytes = request.user_prompt.len();
     request.user_prompt_sha256 = group_agent_prompt_sha256(&request.user_prompt);

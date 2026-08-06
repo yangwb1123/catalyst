@@ -9,6 +9,7 @@ use super::super::{
     MIGRATE_V7_TO_V8_SQL, MIGRATE_V8_TO_V9_SQL, MIGRATE_V9_TO_V10_SQL, MIGRATE_V10_TO_V11_SQL,
     MIGRATE_V11_TO_V12_SQL, MIGRATE_V12_TO_V13_SQL, MIGRATE_V13_TO_V14_SQL, MIGRATE_V14_TO_V15_SQL,
     MIGRATE_V15_TO_V16_SQL, MIGRATE_V16_TO_V17_SQL, MIGRATE_V17_TO_V18_SQL,
+    MIGRATE_V18_TO_V19_SQL,
 };
 
 #[path = "full_contract/structure.rs"]
@@ -68,12 +69,13 @@ const SCHEMA_BATCHES: &[&str] = &[
     MIGRATE_V15_TO_V16_SQL,
     MIGRATE_V16_TO_V17_SQL,
     MIGRATE_V17_TO_V18_SQL,
+    MIGRATE_V18_TO_V19_SQL,
 ];
-const VERSION_TABLE_COUNTS: [usize; 19] = [
-    0, 5, 8, 9, 11, 14, 16, 19, 20, 22, 23, 24, 28, 29, 30, 31, 32, 33, 33,
+const VERSION_TABLE_COUNTS: [usize; 20] = [
+    0, 5, 8, 9, 11, 14, 16, 19, 20, 22, 23, 24, 28, 29, 30, 31, 32, 33, 33, 33,
 ];
-const VERSION_EXPLICIT_INDEX_COUNTS: [usize; 19] = [
-    0, 2, 3, 4, 6, 8, 10, 12, 14, 16, 18, 20, 24, 25, 27, 29, 31, 32, 32,
+const VERSION_EXPLICIT_INDEX_COUNTS: [usize; 20] = [
+    0, 2, 3, 4, 6, 8, 10, 12, 14, 16, 18, 20, 24, 25, 27, 29, 31, 32, 32, 32,
 ];
 const V6_IMPLICIT_INDEX_COUNT: usize = 29;
 const V7_IMPLICIT_INDEX_COUNT: usize = 33;
@@ -88,6 +90,11 @@ const V15_IMPLICIT_INDEX_COUNT: usize = 79;
 const V16_IMPLICIT_INDEX_COUNT: usize = 83;
 const V17_IMPLICIT_INDEX_COUNT: usize = 90;
 const V18_IMPLICIT_INDEX_COUNT: usize = 90;
+const V19_IMPLICIT_INDEX_COUNT: usize = 90;
+const V19_STRUCTURAL_CONTRACT_SHA256: [u8; 32] = [
+    0x5a, 0x99, 0x8b, 0xf2, 0x31, 0x6c, 0xcd, 0x31, 0xb4, 0x26, 0x1e, 0x70, 0xf1, 0xe0, 0x1b, 0x68,
+    0x5c, 0x26, 0xd6, 0x92, 0x18, 0x51, 0x88, 0x02, 0xff, 0xb1, 0x98, 0x56, 0xb7, 0x2a, 0x8c, 0x65,
+];
 const V18_STRUCTURAL_CONTRACT_SHA256: [u8; 32] = [
     0x5a, 0x99, 0x8b, 0xf2, 0x31, 0x6c, 0xcd, 0x31, 0xb4, 0x26, 0x1e, 0x70, 0xf1, 0xe0, 0x1b, 0x68,
     0x5c, 0x26, 0xd6, 0x92, 0x18, 0x51, 0x88, 0x02, 0xff, 0xb1, 0x98, 0x56, 0xb7, 0x2a, 0x8c, 0x65,
@@ -322,6 +329,7 @@ fn validate_release_structure(schema: &ExpectedSchema) -> Result<(), String> {
         16 => (V16_IMPLICIT_INDEX_COUNT, V16_STRUCTURAL_CONTRACT_SHA256),
         17 => (V17_IMPLICIT_INDEX_COUNT, V17_STRUCTURAL_CONTRACT_SHA256),
         18 => (V18_IMPLICIT_INDEX_COUNT, V18_STRUCTURAL_CONTRACT_SHA256),
+        19 => (V19_IMPLICIT_INDEX_COUNT, V19_STRUCTURAL_CONTRACT_SHA256),
         version => return Err(format!("Hub v{version} has no release structural contract")),
     };
     let implicit_indexes = schema

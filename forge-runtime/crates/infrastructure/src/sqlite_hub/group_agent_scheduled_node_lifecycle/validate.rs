@@ -176,6 +176,12 @@ fn validate_raw_evidence_shape(
                 && raw.terminal_receipt_json.is_none()
                 && raw.terminalized_at_ms.is_some()
         }
+        GroupAgentScheduledNodeLifecycleStatus::Adjudicated => {
+            raw.lane_active == 0
+                && raw.artifact_json.is_none()
+                && raw.terminal_control_json.is_none()
+                && raw.terminal_receipt_json.is_none()
+        }
     };
     if !evidence_shape {
         return Err(corrupt(

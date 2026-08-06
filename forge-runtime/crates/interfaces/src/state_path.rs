@@ -20,6 +20,16 @@ pub fn hub_database_path(override_dir: Option<&Path>) -> Result<PathBuf, io::Err
     Ok(state_dir.join("hub.sqlite3"))
 }
 
+/// Resolves the state directory (override or platform default), creating it.
+pub fn state_dir(override_dir: Option<&Path>) -> Result<PathBuf, io::Error> {
+    let state_dir = override_dir
+        .map(Path::to_path_buf)
+        .or_else(default_state_dir)
+        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "state directory is not available"))?;
+    std::fs::create_dir_all(&state_dir)?;
+    Ok(state_dir)
+}
+
 pub fn canonical_project(path: &Path) -> Result<PathBuf, io::Error> {
     let canonical = fs::canonicalize(path)?;
     if !fs::metadata(&canonical)?.is_dir() {

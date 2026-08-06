@@ -46,6 +46,7 @@ pub enum GroupAgentScheduledNodeLifecycleStatus {
     Claimed,
     Terminalized,
     Quarantined,
+    Adjudicated,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -318,6 +319,24 @@ pub trait GroupAgentScheduledNodeLifecycleStore: Send + Sync {
         &self,
         provider_request_id: &str,
     ) -> Result<GroupAgentScheduledNodeLifecycleInspection, HubStoreError>;
+
+    /// Releases the stranded Project lane of a hard-crashed claim after the
+    /// operator proves the old executor stopped (local pid-liveness check).
+    /// The lifecycle becomes `adjudicated`; no provider request is re-sent.
+    fn adjudicate_group_agent_scheduled_node_dispatch(
+        &self,
+        request: &AdjudicateGroupAgentScheduledNodeDispatch,
+    ) -> Result<GroupAgentScheduledNodeLifecycleInspection, HubStoreError>;
+}
+
+/// Operator-invoked hard-crash adjudication: proves (via pid liveness) that
+/// the executor which claimed this dispatch has stopped, then releases the
+/// lane. Never automatic, never time-based.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AdjudicateGroupAgentScheduledNodeDispatch {
+    pub v: u16,
+    pub provider_request_id: String,
+    pub adjudicated_at_ms: u64,
 }
 
 pub trait GroupAgentScheduledNodeProviderFactory: Send + Sync {

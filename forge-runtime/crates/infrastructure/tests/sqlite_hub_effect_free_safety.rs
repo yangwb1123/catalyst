@@ -252,6 +252,14 @@ fn state_files(directory: &Path) -> BTreeMap<String, Vec<u8>> {
         .collect()
 }
 
+fn v16_lifecycle_sql() -> &'static str {
+    const SOURCE: &str = include_str!("../src/sqlite_hub/schema_contract/v16_sql.rs");
+    SOURCE
+        .strip_prefix("pub(super) const MIGRATE_V15_TO_V16_SQL: &str =\n    \"")
+        .and_then(|value| value.strip_suffix("\";\n"))
+        .expect("embedded v16 lifecycle DDL")
+}
+
 fn v15_provider_request_sql() -> &'static str {
     const SOURCE: &str = include_str!("../src/sqlite_hub/schema_contract/v15_sql.rs");
     SOURCE
@@ -265,9 +273,15 @@ fn restore_v16_schema(connection: &rusqlite::Connection) {
         .execute_batch(
             "DROP INDEX group_agent_graph_scheduled_node_successor_candidates_created;
              DROP TABLE group_agent_graph_scheduled_node_successor_candidates;
+             DROP INDEX group_agent_graph_scheduled_node_dispatch_lifecycles_project_lane_active;
+             DROP INDEX group_agent_graph_scheduled_node_dispatch_lifecycles_created;
+             DROP TABLE group_agent_graph_scheduled_node_dispatch_lifecycles;
              DROP TABLE group_agent_graph_scheduled_node_provider_requests;",
         )
-        .expect("drop v18-shaped tables for v16");
+        .expect("drop v19/v18-shaped tables for v16");
+    connection
+        .execute_batch(v16_lifecycle_sql())
+        .expect("rebuild exact v16 lifecycle table for v16");
     connection
         .execute_batch(v15_provider_request_sql())
         .expect("rebuild exact v15 provider request table for v16");

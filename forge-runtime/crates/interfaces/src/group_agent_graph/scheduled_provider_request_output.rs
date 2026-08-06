@@ -408,7 +408,7 @@ impl GroupAgentScheduledNodeDispatchExecutionCliOutput {
         Self::from_inspection(&inspection, performed, include_result)
     }
 
-    fn from_inspection(
+    pub(super) fn from_inspection(
         inspection: &GroupAgentScheduledNodeLifecycleInspection,
         performed: bool,
         include_result: bool,
@@ -480,5 +480,6 @@ fn status_text(status: GroupAgentScheduledNodeLifecycleStatus) -> &'static str {
         GroupAgentScheduledNodeLifecycleStatus::Claimed => "claimed",
         GroupAgentScheduledNodeLifecycleStatus::Terminalized => "terminalized",
         GroupAgentScheduledNodeLifecycleStatus::Quarantined => "quarantined",
+        GroupAgentScheduledNodeLifecycleStatus::Adjudicated => "adjudicated",
     }
 }

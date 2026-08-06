@@ -136,6 +136,9 @@ pub enum GroupGraphRunScheduledContractProviderRequestCommand {
         confirm_predecessor_content: bool,
         include_result: bool,
     },
+    Adjudicate {
+        provider_request_id: String,
+    },
 }
 
 #[derive(Debug, Eq, PartialEq)]

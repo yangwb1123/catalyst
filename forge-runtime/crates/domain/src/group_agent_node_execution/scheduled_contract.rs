@@ -16,11 +16,11 @@ pub(crate) mod codec;
 mod validation;
 
 #[cfg(test)]
-#[path = "scheduled_contract_tests.rs"]
-mod tests;
-#[cfg(test)]
 #[path = "scheduled_contract_content_tests.rs"]
 mod content_tests;
+#[cfg(test)]
+#[path = "scheduled_contract_tests.rs"]
+mod tests;
 
 pub const GROUP_AGENT_SCHEDULED_NODE_CONTRACT_VERSION: u16 = 2;
 pub const GROUP_AGENT_SCHEDULED_NODE_REQUEST_VERSION: u16 = 2;

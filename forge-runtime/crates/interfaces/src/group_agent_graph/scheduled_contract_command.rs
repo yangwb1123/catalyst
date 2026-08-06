@@ -164,8 +164,7 @@ fn read_predecessor_content(source: &str) -> Result<String, Box<dyn Error>> {
     if bytes.len() > 1024 * 1024 {
         return Err(invalid_input("predecessor content exceeds its byte limit").into());
     }
-    String::from_utf8(bytes)
-        .map_err(|_| invalid_input("predecessor content must be UTF-8").into())
+    String::from_utf8(bytes).map_err(|_| invalid_input("predecessor content must be UTF-8").into())
 }
 
 /// Reads one bounded predecessor receipt file; the candidate already binds

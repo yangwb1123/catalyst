@@ -37,7 +37,7 @@ use super::{
 
 #[path = "scheduled_provider_request_dispatch.rs"]
 mod dispatch;
-use dispatch::{execute_dispatch, inspect_existing_execution, read_inputs};
+use dispatch::{adjudicate_dispatch, execute_dispatch, inspect_existing_execution, read_inputs};
 
 pub enum GroupAgentScheduledNodeProviderRequestCommandCliOutput {
     Request(Box<GroupAgentScheduledNodeProviderRequestCliOutput>),
@@ -53,6 +53,12 @@ pub async fn execute(
 ) -> Result<GroupAgentScheduledNodeProviderRequestCommandCliOutput, Box<dyn Error>> {
     if let Some(existing) = inspect_existing_execution(args, command)? {
         return Ok(existing);
+    }
+    if let GroupGraphRunScheduledContractProviderRequestCommand::Adjudicate {
+        provider_request_id,
+    } = command
+    {
+        return adjudicate_dispatch(args, provider_request_id);
     }
     let inputs = read_inputs(command)?;
     if let GroupGraphRunScheduledContractProviderRequestCommand::Execute {
@@ -115,9 +121,10 @@ fn run_sync_command(
             authorization_source,
             pricing_source,
         ),
-        GroupGraphRunScheduledContractProviderRequestCommand::Execute { .. } => {
-            unreachable!("dispatch execute is routed before run_sync_command")
-        }
+        GroupGraphRunScheduledContractProviderRequestCommand::Execute { .. }
+        | GroupGraphRunScheduledContractProviderRequestCommand::Adjudicate { .. } => unreachable!(
+            "dispatch execute/adjudicate are routed before run_sync_command"
+        ),
     }
 }
 

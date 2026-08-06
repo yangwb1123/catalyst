@@ -53,6 +53,7 @@ fn parse_provider_request(
 fn parse_dispatch(tokens: &mut VecDeque<String>) -> Result<Command, String> {
     match tokens.pop_front().as_deref() {
         Some("execute") => parse_dispatch_execute(tokens),
+        Some("adjudicate") => parse_dispatch_adjudicate(tokens),
         Some(value) => Err(unknown(
             "group graph run scheduled-contract provider-request dispatch",
             value,
@@ -61,6 +62,17 @@ fn parse_dispatch(tokens: &mut VecDeque<String>) -> Result<Command, String> {
             "scheduled provider-request dispatch command is required",
         )),
     }
+}
+
+fn parse_dispatch_adjudicate(tokens: &mut VecDeque<String>) -> Result<Command, String> {
+    let operation = "group graph run scheduled-contract provider-request dispatch adjudicate";
+    let provider_request_id = required_id(tokens, operation, "PROVIDER_REQUEST_ID")?;
+    super::require_empty(tokens)?;
+    Ok(provider_request_command(
+        GroupGraphRunScheduledContractProviderRequestCommand::Adjudicate {
+            provider_request_id,
+        },
+    ))
 }
 
 fn parse_dispatch_execute(tokens: &mut VecDeque<String>) -> Result<Command, String> {
