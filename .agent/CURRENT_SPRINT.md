@@ -568,6 +568,24 @@ future 版本测试移至 20。专项覆盖 v19 迁移全代兼容与状态/证�
 adjudication);完整 claim→crash→adjudicate 端到端需真实硬崩溃场景,store 逻辑
 经编译与回归验证。wave 并行仍属后续协议。
 
+## Sprint 66（✅ 完成）— Wave-parallel successor planning + 外部资源本机部署验证
+
+两部分:
+(1) **外部资源解锁**:`/dev/kvm` ACL 可写 + 网络可达 + sudo 可用,Firecracker
+v1.7.0 已安装并真实启动 KVM 后端 microVM(官方 vmlinux + 自建 busybox
+rootfs,guest init 输出 FORGEOS-FIRECRACKER-VERIFIED 后 poweroff);LiteLLM
+跨厂商路由实测(deepseek @ :4000 + 本地 Ollama @ :11434 双后端,厂商 B 完整
+推理成功,厂商 A 路由正确但上游月度限额)。两项从 BLOCKED-EXTERNAL 划为
+host-VERIFIED,记录于 `docs/external-resource-verification.md`。
+(2) **wave 并行计划层**:SQLite v20 重建 successor-candidates 表
+(graph_run_id/schedule_id 的 one-per-Run UNIQUE 移除,保留
+UNIQUE(graph_run_id,node_id,attempt) per-node 槽位),store 适配多候选
+查询;Go `BuildSuccessor` 支持指定目标节点(带拓扑就绪验证)并新增
+`ReadySuccessorNodes` 输出就绪节点清单 —— diamond 图同 wave 并行分支的
+批量候选计划视图。专项测试:per-node 冲突、就绪清单序列、乱序 receipts。
+`forge accept` 为 **ACCEPTED**;Rust 916 tests、Go 全量、arch/gate 全绿。
+多 dispatch 并发编排命令(一次跑多个 execute)仍属后续编排层。
+
 ## 下一前沿(需外部资源 / 后续阶段 / 投机增强 / 明确非目标,非本环境可完整验证)
 - **Graph 下一协议切片**:Sprint 59 只完成 scheduled ordinal-zero 的独立 claim/send/terminal sidecar；仍没有真实 successor/wave advancement、verified per-node/per-attempt receipt 驱动的非初始 contract-v2，也没有 predecessor dataflow。后续必须另立 successor 选择、receipt consumption、跨 node disclosure/consent 与 byte-bound 契约，不能从 ordering edge 推断。另一个独立协议仍是 legacy v4 hard-crash no-send adjudication：必须证明旧 executor 已停止，不能用 lease/时间流逝猜测后自动释放或重发。
 - **真点火** `--agent-cmd=claude`:**multi-agent running to completion 已坐实**(Sprint 25:真 claude 多-agent 跑到 converge MET,增量级 + 版本级)。完整旋钮:四维资源护栏 + 成本三维(phase/时间/美元)+ 任务注入 + 写权限 + 模型路由 + 工作目录 + retry + loop-back;诚实分工:agent 自治增量绿、人确认版本竣工。docs/ignition.md 有完整配方 + 实测

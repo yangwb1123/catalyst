@@ -58,7 +58,7 @@ func Command(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			predecessorContent = content
 		}
 		candidate, err = BuildSuccessor(
-			snapshot, options.scheduleSHA256, options.execution, receipts, predecessorContent,
+			snapshot, options.scheduleSHA256, options.execution, receipts, predecessorContent, "",
 		)
 	}
 	if err != nil {

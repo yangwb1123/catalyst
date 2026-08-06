@@ -25,6 +25,7 @@ func BuildSuccessor(
 	options graphdispatch.ExecutionOptions,
 	receipts []scheduledterminal.Receipt,
 	predecessorContent string,
+	targetNodeID string,
 ) (ScheduledNodeContractCandidate, error) {
 	base, err := graphdispatch.Build(snapshot, options)
 	if err != nil {
@@ -38,7 +39,7 @@ func BuildSuccessor(
 	if err != nil {
 		return ScheduledNodeContractCandidate{}, errInvalidCandidate
 	}
-	scheduled, err := selectReadyNode(schedule, predecessors)
+	scheduled, err := selectReadyNode(schedule, predecessors, targetNodeID)
 	if err != nil {
 		return ScheduledNodeContractCandidate{}, errInvalidCandidate
 	}
@@ -51,14 +52,17 @@ func BuildSuccessor(
 	return value, nil
 }
 
-// selectReadyNode picks the first node in the schedule's serial
-// (wave-then-authored) order whose direct predecessors are all consumed and
-// which itself is not yet consumed. This is the topologically-ready rule:
-// unrelated earlier ordinals (same-wave siblings) do not block a node whose
-// own predecessor set is satisfied.
+// selectReadyNode picks a topologically-ready successor node. With an empty
+// target it is the first node in the schedule's serial (wave-then-authored)
+// order whose direct predecessors are all consumed and which itself is not
+// yet consumed; with a non-empty target it requires that exact node to be
+// ready. This is the wave-parallel rule: unrelated earlier ordinals
+// (same-wave siblings) do not block a node whose own predecessor set is
+// satisfied.
 func selectReadyNode(
 	schedule graphschedule.ExecutionSchedule,
 	predecessors []PredecessorTerminalReceipt,
+	targetNodeID string,
 ) (graphschedule.ScheduledNode, error) {
 	consumed := make(map[string]bool, len(predecessors))
 	for _, receipt := range predecessors {
@@ -68,6 +72,9 @@ func selectReadyNode(
 		if node.ExecutionOrdinal == 0 {
 			// The initial node belongs to the initial-candidate flow; a
 			// successor selection never re-derives it.
+			continue
+		}
+		if targetNodeID != "" && node.NodeID != targetNodeID {
 			continue
 		}
 		if consumed[node.NodeID] {
@@ -85,6 +92,46 @@ func selectReadyNode(
 		}
 	}
 	return graphschedule.ScheduledNode{}, errInvalidCandidate
+}
+
+// ReadySuccessorNodes lists every topologically-ready successor node for a
+// consumed receipt set, in serial order — the wave-parallel planning view.
+func ReadySuccessorNodes(
+	snapshot graphdispatch.ControlSnapshot,
+	scheduleSHA256 string,
+	receipts []scheduledterminal.Receipt,
+) ([]string, error) {
+	schedule, err := graphschedule.Build(snapshot)
+	if err != nil || schedule.ScheduleSHA256 != scheduleSHA256 {
+		return nil, errInvalidCandidate
+	}
+	if _, err := verifyReceipts(snapshot, schedule, receipts); err != nil {
+		return nil, errInvalidCandidate
+	}
+	consumed := make(map[string]bool, len(receipts))
+	for _, receipt := range receipts {
+		consumed[receipt.NodeID] = true
+	}
+	ready := make([]string, 0, len(schedule.Nodes))
+	for _, node := range schedule.Nodes {
+		if node.ExecutionOrdinal == 0 || consumed[node.NodeID] {
+			continue
+		}
+		all := true
+		for _, predecessorID := range node.DirectPredecessorNodeIDs {
+			if !consumed[predecessorID] {
+				all = false
+				break
+			}
+		}
+		if all {
+			ready = append(ready, node.NodeID)
+		}
+	}
+	if len(ready) == 0 {
+		return nil, errInvalidCandidate
+	}
+	return ready, nil
 }
 
 // successorCandidate rebuilds the node profile, the request, and the signed

@@ -63,7 +63,7 @@ func TestBuildSuccessorSelectsOrdinalOne(t *testing.T) {
 	}
 	options := readSourceFixture(t).Input.ExecutionOptions.options()
 	receipt := successorReceipt(t)
-	candidate, err := BuildSuccessor(snapshot, schedule.ScheduleSHA256, options, []scheduledterminal.Receipt{receipt}, "")
+	candidate, err := BuildSuccessor(snapshot, schedule.ScheduleSHA256, options, []scheduledterminal.Receipt{receipt}, "", "")
 	if err != nil {
 		t.Fatalf("BuildSuccessor: %v", err)
 	}
@@ -118,7 +118,7 @@ func TestBuildSuccessorRejectsDriftedReceipts(t *testing.T) {
 				t.Fatalf("decode mutated receipt: %v", err)
 			}
 			if _, err := BuildSuccessor(
-				snapshot, schedule.ScheduleSHA256, options, []scheduledterminal.Receipt{decoded}, "",
+				snapshot, schedule.ScheduleSHA256, options, []scheduledterminal.Receipt{decoded}, "", "",
 			); err == nil {
 				t.Fatal("BuildSuccessor accepted a drifted receipt")
 			}
@@ -158,7 +158,7 @@ func TestBuildSuccessorRejectsOutOfOrderAndProtocolViolations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if _, err := BuildSuccessor(snapshot, schedule.ScheduleSHA256, options, []scheduledterminal.Receipt{decoded}, ""); err == nil {
+	if _, err := BuildSuccessor(snapshot, schedule.ScheduleSHA256, options, []scheduledterminal.Receipt{decoded}, "", ""); err == nil {
 		t.Fatal("BuildSuccessor accepted a non-prefix receipt")
 	}
 }
@@ -167,7 +167,7 @@ func TestBuildSuccessorRejectsEmptyAndFullConsumption(t *testing.T) {
 	snapshot := fixtureSnapshot(t)
 	schedule := mustSchedule(t)
 	options := readSourceFixture(t).Input.ExecutionOptions.options()
-	if _, err := BuildSuccessor(snapshot, schedule.ScheduleSHA256, options, nil, ""); err == nil {
+	if _, err := BuildSuccessor(snapshot, schedule.ScheduleSHA256, options, nil, "", ""); err == nil {
 		t.Fatal("BuildSuccessor accepted an empty predecessor set")
 	}
 	receipts := make([]scheduledterminal.Receipt, 0, len(schedule.Nodes))
@@ -185,7 +185,7 @@ func TestBuildSuccessorRejectsEmptyAndFullConsumption(t *testing.T) {
 		}
 		receipts = append(receipts, decoded)
 	}
-	if _, err := BuildSuccessor(snapshot, schedule.ScheduleSHA256, options, receipts, ""); err == nil {
+	if _, err := BuildSuccessor(snapshot, schedule.ScheduleSHA256, options, receipts, "", ""); err == nil {
 		t.Fatal("BuildSuccessor accepted full consumption with no successor node")
 	}
 }
@@ -239,7 +239,7 @@ func TestBuildSuccessorEmbedsPredecessorContent(t *testing.T) {
 	receipt := successorReceipt(t)
 	content := "frontend produced: login flow verified, token refresh works"
 	candidate, err := BuildSuccessor(
-		snapshot, schedule.ScheduleSHA256, options, []scheduledterminal.Receipt{receipt}, content,
+		snapshot, schedule.ScheduleSHA256, options, []scheduledterminal.Receipt{receipt}, content, "",
 	)
 	if err != nil {
 		t.Fatalf("BuildSuccessor: %v", err)
@@ -255,7 +255,7 @@ func TestBuildSuccessorEmbedsPredecessorContent(t *testing.T) {
 	}
 	// 无内容时字段必须省略(向后兼容)
 	plain, err := BuildSuccessor(
-		snapshot, schedule.ScheduleSHA256, options, []scheduledterminal.Receipt{receipt}, "",
+		snapshot, schedule.ScheduleSHA256, options, []scheduledterminal.Receipt{receipt}, "", "",
 	)
 	if err != nil {
 		t.Fatalf("BuildSuccessor plain: %v", err)
@@ -301,7 +301,7 @@ func TestBuildSuccessorRejectsOutOfOrderReceiptBeforeInitial(t *testing.T) {
 		t.Fatalf("decode backend receipt: %v", err)
 	}
 	if _, err := BuildSuccessor(
-		snapshot, schedule.ScheduleSHA256, options, []scheduledterminal.Receipt{decoded}, "",
+		snapshot, schedule.ScheduleSHA256, options, []scheduledterminal.Receipt{decoded}, "", "",
 	); err == nil {
 		t.Fatal("successor selection must reject an out-of-order receipt while initial is unconsumed")
 	}
@@ -342,12 +342,47 @@ func TestBuildSuccessorSelectsReadyWaveSibling(t *testing.T) {
 	}
 	candidate, err := BuildSuccessor(
 		snapshot, schedule.ScheduleSHA256, options,
-		[]scheduledterminal.Receipt{frontendDecoded}, "",
+		[]scheduledterminal.Receipt{frontendDecoded}, "", "",
 	)
 	if err != nil {
 		t.Fatalf("wave-parallel selection failed: %v", err)
 	}
 	if candidate.Node.NodeID != backend.NodeID {
 		t.Fatalf("selected node = %q, want backend (ready same-wave sibling)", candidate.Node.NodeID)
+	}
+}
+
+func TestReadySuccessorNodesListsWaveParallelPlan(t *testing.T) {
+	snapshot := fixtureSnapshot(t)
+	schedule := mustSchedule(t)
+	// 无 receipts(initial 已做后)??ReadySuccessorNodes 需要 receipts 非空。
+	// diamond:消费 frontend 后,就绪 = backend(serial 序第一个);消费 backend 后,就绪 = sso。
+	frontend := successorReceipt(t)
+	ready, err := ReadySuccessorNodes(snapshot, schedule.ScheduleSHA256, []scheduledterminal.Receipt{frontend})
+	if err != nil {
+		t.Fatalf("ReadySuccessorNodes: %v", err)
+	}
+	if len(ready) != 1 || ready[0] != schedule.Nodes[1].NodeID {
+		t.Fatalf("ready after frontend = %v, want [%s]", ready, schedule.Nodes[1].NodeID)
+	}
+	// 消费 frontend + backend → 就绪 = sso(链式:frontend->backend->sso 的下一节点)
+	backendReceipt := successorReceipt(t)
+	backendReceipt.NodeID = schedule.Nodes[1].NodeID
+	backendReceipt.ProjectLaneSHA256 = schedule.Nodes[1].ProjectLaneSHA256
+	encoded, err := scheduledterminal.MarshalReceipt(backendReceipt)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	backendDecoded, err := scheduledterminal.DecodeReceipt(encoded)
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	ready, err = ReadySuccessorNodes(snapshot, schedule.ScheduleSHA256,
+		[]scheduledterminal.Receipt{frontend, backendDecoded})
+	if err != nil {
+		t.Fatalf("ReadySuccessorNodes all-consumed: %v", err)
+	}
+	if len(ready) != 1 || ready[0] != schedule.Nodes[2].NodeID {
+		t.Fatalf("ready after frontend+backend = %v, want [%s]", ready, schedule.Nodes[2].NodeID)
 	}
 }
