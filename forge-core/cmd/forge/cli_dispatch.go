@@ -50,6 +50,7 @@ var subcommands = map[string]func([]string) int{
 	},
 	"graph-execution-schedule":      func(rest []string) int { return graphschedule.Command(rest, os.Stdin, os.Stdout, os.Stderr) },
 	"graph-scheduled-node-contract": func(rest []string) int { return graphscheduledcontract.Command(rest, os.Stdin, os.Stdout, os.Stderr) },
+	"graph-scheduled-ready-nodes": func(rest []string) int { return graphscheduledcontract.ReadyCommand(rest, os.Stdin, os.Stdout, os.Stderr) },
 	"graph-scheduled-node-dispatch-authorize": func(rest []string) int {
 		return graphscheduledrelease.Command(rest, os.Stdin, os.Stdout, os.Stderr)
 	},
