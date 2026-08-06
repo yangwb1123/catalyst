@@ -78,3 +78,24 @@ credential remains unavailable; the routing mechanism itself is proven.
 - `Cross-vendor LiteLLM validation`: BLOCKED-EXTERNAL → VERIFIED (deepseek +
   local Ollama; quota-limited upstream noted).
 - OSV SCA DB: already resolved (Sprint 32).
+
+## Forge × LiteLLM Responses 转译实测(2026-08)
+
+LiteLLM `:4001` 的 `/v1/responses` 端点把 Responses 请求转译为上游
+chat-completions。forge 的 OpenAI Responses adapter(纯流式,单请求)实测:
+
+1. **互通确认**:请求编码 / SSE 解析 / 流式文本 / 事件语义全部与真实端点
+   工作;`reasoning_effort: none`(→ Ollama `think:false`)后得到标准纯
+   `output_text` 流(无 reasoning 事件)。
+2. **转译缺陷(上游,forge 非缺陷)**:流式 item 与 completed 快照的
+   message id 不一致(`msg_…` vs `chatcmpl-…`);思考模式下输出全进
+   reasoning、assistant message 为空。真实 OpenAI Responses 不产生这些。
+3. **forge 防漂移校验实证**:上述 id 漂移被 terminal-consistency 守卫
+   正确拦截(`provider_protocol`/"terminal output did not match streamed
+   assistant events")。这证明防漂移防御在真实(有缺陷的)转译下工作。
+4. **测试**:`live_gateway_reasoning_round_trip_via_local_gateway`
+   (env-gated,`FORGE_LIVE_GATEWAY_ENDPOINT`;无端点诚实 skip)。
+   成功路径完整执行需真实 OpenAI Responses 端点(或 LiteLLM 修复 id 一致性)。
+
+环境:LiteLLM :4001(deepseek-flash + local-qwen,`reasoning_effort: none`);
+Ollama :11434(qwen3.5:0.8b);系统 LiteLLM :4000(deepseek 网关,月度限额)。

@@ -40,6 +40,9 @@ mod terminal_semantics_tests;
 #[cfg(test)]
 #[path = "tests/transport.rs"]
 mod tests;
+#[cfg(test)]
+#[path = "tests/live_gateway.rs"]
+mod live_gateway_tests;
 
 use std::time::Duration;
 
@@ -65,8 +68,9 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(600);
 const READ_TIMEOUT: Duration = Duration::from_secs(60);
 
-#[derive(Clone, Copy)]
-enum EndpointPolicy {
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) enum EndpointPolicy {
+    #[default]
     Official,
     #[cfg(test)]
     TestLoopback,

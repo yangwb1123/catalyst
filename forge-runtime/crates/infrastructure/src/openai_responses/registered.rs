@@ -10,12 +10,13 @@ use crate::runtime_domain::{
     group_agent_node_destination_sha256,
 };
 
-use super::OpenAiResponsesProvider;
-
-const OFFICIAL_OPENAI_RESPONSES_BASE_URL: &str = "https://api.openai.com/v1";
+use super::{EndpointPolicy, OpenAiResponsesProvider};
 
 #[derive(Clone, Copy, Debug, Default)]
-pub struct RegisteredGroupAgentNodeProviderFactory;
+pub struct RegisteredGroupAgentNodeProviderFactory {
+    endpoint_policy: EndpointPolicy,
+}
+
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RegisteredGroupAgentNodeProviderReadiness {
@@ -41,7 +42,19 @@ pub struct RegisteredGroupAgentNodeProviderFactoryError {
 impl RegisteredGroupAgentNodeProviderFactory {
     #[must_use]
     pub const fn new() -> Self {
-        Self
+        Self {
+            endpoint_policy: EndpointPolicy::Official,
+        }
+    }
+
+    /// Test-only factory that accepts an HTTP loopback Responses endpoint
+    /// (used by live-endpoint integration tests against a local gateway).
+    #[cfg(test)]
+    #[must_use]
+    pub fn new_insecure_for_test() -> Self {
+        Self {
+            endpoint_policy: EndpointPolicy::TestLoopback,
+        }
     }
 
     /// Resolves immutable provider metadata and pricing without credentials,
@@ -92,13 +105,30 @@ impl RegisteredGroupAgentNodeProviderFactory {
         credential: String,
     ) -> Result<RegisteredGroupAgentNodeProvider, RegisteredGroupAgentNodeProviderFactoryError>
     {
-        let inner = OpenAiResponsesProvider::new(
-            OFFICIAL_OPENAI_RESPONSES_BASE_URL,
+        // The authorization endpoint names the full Responses origin
+        // (`https://host/v1/responses` or a test loopback `/v1` base); the
+        // adapter builds from the base URL and always serves `/v1/responses`,
+        // so compare both sides with the `/responses` suffix normalized away.
+        let base_url = readiness
+            .endpoint
+            .strip_suffix("/responses")
+            .unwrap_or(&readiness.endpoint);
+        let inner = OpenAiResponsesProvider::build(
+            base_url,
             readiness.model.clone(),
             credential,
+            self.endpoint_policy,
         )
         .map_err(|_| invalid_credential())?;
-        if inner.endpoint() != readiness.endpoint || inner.model() != readiness.model {
+        let served_endpoint = inner
+            .endpoint()
+            .strip_suffix("/responses")
+            .unwrap_or(inner.endpoint());
+        let authorized_endpoint = readiness
+            .endpoint
+            .strip_suffix("/responses")
+            .unwrap_or(&readiness.endpoint);
+        if served_endpoint != authorized_endpoint || inner.model() != readiness.model {
             return Err(invalid_readiness());
         }
         Ok(RegisteredGroupAgentNodeProvider { inner, readiness })
@@ -274,10 +304,30 @@ fn validate_registered_destination(
     destination_sha256: &str,
 ) -> Result<(), RegisteredGroupAgentNodeProviderFactoryError> {
     let digest = group_agent_node_destination_sha256(provider_kind, endpoint, model);
+    #[cfg(test)]
+    let endpoint_ok = endpoint == GROUP_AGENT_NODE_OFFICIAL_OPENAI_RESPONSES_ENDPOINT
+        || is_test_loopback_endpoint(endpoint);
+    #[cfg(not(test))]
+    let endpoint_ok = endpoint == GROUP_AGENT_NODE_OFFICIAL_OPENAI_RESPONSES_ENDPOINT;
     let registered = provider_kind == GroupAgentNodeProviderKind::OpenAiResponses
-        && endpoint == GROUP_AGENT_NODE_OFFICIAL_OPENAI_RESPONSES_ENDPOINT
+        && endpoint_ok
         && destination_sha256 == digest;
     registered.then_some(()).ok_or_else(invalid_readiness)
+}
+
+#[cfg(test)]
+fn is_test_loopback_endpoint(endpoint: &str) -> bool {
+    endpoint
+        .parse::<url::Url>()
+        .is_ok_and(|url| url.scheme() == "http" && url.host_str().is_some_and(is_loopback))
+}
+
+#[cfg(test)]
+fn is_loopback(host: &str) -> bool {
+    host == "localhost"
+        || host
+            .parse::<std::net::IpAddr>()
+            .is_ok_and(|address| address.is_loopback())
 }
 
 fn resolve_scheduled_pricing_quote(
