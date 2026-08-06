@@ -18,7 +18,7 @@ const commandUsage = `usage:
     --max-output-tokens N --max-model-output-bytes N --max-model-events N
     --timeout-ms N --max-cost-usd-micros N
     --pricing-snapshot-sha256 SHA256 --max-result-bytes N
-    [--predecessor-receipt FILE|-]...
+    [--predecessor-receipt FILE|-]... [--target-node NODE_ID]
 
 warning:
   The control and candidate are private. Without --predecessor-receipt the
@@ -58,7 +58,8 @@ func Command(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			predecessorContent = content
 		}
 		candidate, err = BuildSuccessor(
-			snapshot, options.scheduleSHA256, options.execution, receipts, predecessorContent, "",
+			snapshot, options.scheduleSHA256, options.execution, receipts, predecessorContent,
+			options.targetNode,
 		)
 	}
 	if err != nil {

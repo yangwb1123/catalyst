@@ -14,6 +14,7 @@ type commandOptions struct {
 	execution                graphdispatch.ExecutionOptions
 	predecessorSources       []string
 	predecessorContentSource string
+	targetNode               string
 }
 
 func parseCommandOptions(args []string) (commandOptions, error) {
@@ -28,6 +29,7 @@ func parseCommandOptions(args []string) (commandOptions, error) {
 	bindBudgetFlags(flags, seen, &options.execution)
 	bindRepeatStringFlag(flags, "predecessor-receipt", &options.predecessorSources)
 	bindOptionalStringFlag(flags, "predecessor-content", &options.predecessorContentSource)
+	bindOptionalStringFlag(flags, "target-node", &options.targetNode)
 	if err := flags.Parse(args); err != nil {
 		return commandOptions{}, err
 	}
