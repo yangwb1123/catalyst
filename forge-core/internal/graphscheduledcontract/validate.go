@@ -73,7 +73,11 @@ func validRequest(
 		bound = bound && len(request.RequiredPredecessorNodeIDs) == 0 &&
 			len(request.PredecessorTerminalReceipts) == 0 && !request.PredecessorContentIncluded
 	} else {
-		bound = bound && len(request.PredecessorTerminalReceipts) > 0 &&
+		// ADR-0035: the candidate carries exactly its direct predecessors'
+		// receipts — a wave sibling with an empty direct-predecessor set
+		// carries zero receipts, while every required predecessor must be
+		// covered by the carried evidence.
+		bound = bound &&
 			predecessorsCoverReceipts(request.RequiredPredecessorNodeIDs,
 				request.PredecessorTerminalReceipts)
 	}

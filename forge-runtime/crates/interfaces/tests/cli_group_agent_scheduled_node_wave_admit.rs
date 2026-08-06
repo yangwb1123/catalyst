@@ -133,14 +133,29 @@ fn wave_admit_materializes_every_ready_node_from_one_wave() {
     // same successor-service code covered by the application-layer tests).
     let wave = parsed["wave"].as_array().expect("wave array");
     let rejected = parsed["rejected"].as_array().expect("rejected array");
-    assert_eq!(rejected.len(), 1, "exactly one ready node rejected by the evidence chain: {parsed}");
-    assert_ne!(rejected[0]["node_id"], node0);
-    assert_eq!(wave.len(), 0);
-    let reason = text(&rejected[0]["disposition"]);
-    assert!(
-        reason.contains("was not found"),
-        "evidence-chain guard must name the missing lifecycle: {reason}"
-    );
+    // backend is a same-wave sibling of frontend with an empty
+    // direct-predecessor set: its candidate carries zero receipts and
+    // admits without any lifecycle dependency (ADR-0035 + v21).
+    assert_eq!(rejected.len(), 0, "no rejections: {parsed}");
+    assert_eq!(wave.len(), 1, "exactly one wave node admitted: {parsed}");
+    assert_ne!(wave[0]["node_id"], node0);
+    let contract_id = text(&wave[0]["contract_id"]);
+    assert!(!contract_id.is_empty());
+    assert_wave_contract_visible(&fixture, &contract_id);
+}
+
+///  verifies the admitted successor candidate is
+/// queryable through the successor show command.
+fn assert_wave_contract_visible(fixture: &Fixture, contract_id: &str) {
+    let show = command(
+        fixture.state.path(),
+        fixture.cwd.path(),
+        &["group", "graph", "run", "scheduled-contract", "successor", "show", contract_id],
+    )
+    .output()
+    .expect("show admitted wave contract");
+    let shown = successful_json(&show);
+    assert_eq!(shown["inspection"]["record"]["execution_ordinal"], 1);
 }
 
 #[test]

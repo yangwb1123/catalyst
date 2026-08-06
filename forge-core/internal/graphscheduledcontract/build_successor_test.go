@@ -76,11 +76,11 @@ func TestBuildSuccessorSelectsOrdinalOne(t *testing.T) {
 	if candidate.Node.NodeID != schedule.Nodes[1].NodeID {
 		t.Fatalf("node = %q, want %q", candidate.Node.NodeID, schedule.Nodes[1].NodeID)
 	}
-	if len(candidate.Request.PredecessorTerminalReceipts) != 1 {
-		t.Fatalf("predecessor receipts = %d, want 1", len(candidate.Request.PredecessorTerminalReceipts))
-	}
-	if candidate.Request.PredecessorTerminalReceipts[0].TerminalReceiptSHA256 != receipt.ReceiptSHA256 {
-		t.Fatal("predecessor receipt digest not bound")
+	// backend is a same-wave sibling of frontend with an empty
+	// direct-predecessor set: ADR-0035 carries exactly the direct
+	// predecessors' receipts, so this candidate carries zero.
+	if len(candidate.Request.PredecessorTerminalReceipts) != 0 {
+		t.Fatalf("predecessor receipts = %d, want 0 (wave sibling)", len(candidate.Request.PredecessorTerminalReceipts))
 	}
 	if candidate.Request.PredecessorContentIncluded {
 		t.Fatal("predecessor content must stay excluded")

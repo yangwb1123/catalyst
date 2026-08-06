@@ -169,16 +169,19 @@ fn predecessors_valid(
         return request.required_predecessor_node_ids.is_empty()
             && request.predecessor_terminal_receipts.is_empty();
     }
-    !request.predecessor_terminal_receipts.is_empty()
-        && request
-            .required_predecessor_node_ids
-            .iter()
-            .all(|required| {
-                request
-                    .predecessor_terminal_receipts
-                    .iter()
-                    .any(|receipt| &receipt.predecessor_node_id == required)
-            })
+    // ADR-0035: the candidate carries exactly its direct predecessors'
+    // receipts — a wave sibling with an empty direct-predecessor set carries
+    // zero receipts. Every required predecessor must be covered by the
+    // carried evidence, and every carried receipt must be valid.
+    request
+        .required_predecessor_node_ids
+        .iter()
+        .all(|required| {
+            request
+                .predecessor_terminal_receipts
+                .iter()
+                .any(|receipt| &receipt.predecessor_node_id == required)
+        })
         && request
             .predecessor_terminal_receipts
             .iter()

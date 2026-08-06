@@ -705,6 +705,26 @@ v20 CHECK 连锁)。
 `forge accept` 为 **ACCEPTED**;Rust 921 tests;评审产物:
 docs/reviews/reviews/forgeos-review-context/stage-01.out.md。
 
+## Sprint 75（✅ 完成）— ADR-0035 证据绑定对齐 + SQLite v21
+
+架构评审 Finding 2(Medium)完整修复:
+(1) **Go 侧**:`buildSuccessorRequest` 现在只携带**直接前驱**的 receipts
+(ADR-0035:同 wave 兄弟是进度证据但不被候选携带);`validate.go` 放宽
+(空直接前驱集允许 0 receipts,覆盖校验保留);diamond fixture 的 backend
+候选 = 0 receipts。
+(2) **Rust 侧**:`predecessors_valid`/`ordinal_slot_valid`/
+`predecessor_count_valid` 同步放宽(required 覆盖为核心,receipts 0..=31)。
+(3) **SQLite v21**:successor_candidates 表重建,CHECK 从 1..31 放宽到
+0..=31;完整 schema 链(版本 21、结构 digest 与 v20 相同 —— CHECK 不参与
+结构签名、future-schema 22、dispatch re-entry 12..=21)。
+(4) **测试**:diamond fixture(frontend/backend 同 wave 0 前驱)+ 0-receipt
+候选全链落库 + **wave-admit 成功路径**(backend Created + successor show
+可查 —— 之前证据链拒绝只因 0-receipt 候选无 lifecycle 依赖)。
+`forge accept` 为 **ACCEPTED**;Rust 922 tests。
+**诚实记录下一阶段**(评审 Finding 1b):provider-request(v18)/lifecycle(v16)
+表的 per-run UNIQUE 迁移(per-(run,node,attempt))—— effectful 多节点
+dispatch 的前提,影响 dispatch 语义,独立切片。
+
 ## 下一前沿(需外部资源 / 后续阶段 / 投机增强 / 明确非目标,非本环境可完整验证)
 - **Graph 下一协议切片**:Sprint 59 只完成 scheduled ordinal-zero 的独立 claim/send/terminal sidecar；仍没有真实 successor/wave advancement、verified per-node/per-attempt receipt 驱动的非初始 contract-v2，也没有 predecessor dataflow。后续必须另立 successor 选择、receipt consumption、跨 node disclosure/consent 与 byte-bound 契约，不能从 ordering edge 推断。另一个独立协议仍是 legacy v4 hard-crash no-send adjudication：必须证明旧 executor 已停止，不能用 lease/时间流逝猜测后自动释放或重发。
 - **真点火** `--agent-cmd=claude`:**multi-agent running to completion 已坐实**(Sprint 25:真 claude 多-agent 跑到 converge MET,增量级 + 版本级)。完整旋钮:四维资源护栏 + 成本三维(phase/时间/美元)+ 任务注入 + 写权限 + 模型路由 + 工作目录 + retry + loop-back;诚实分工:agent 自治增量绿、人确认版本竣工。docs/ignition.md 有完整配方 + 实测

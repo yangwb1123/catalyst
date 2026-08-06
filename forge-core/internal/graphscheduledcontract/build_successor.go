@@ -92,6 +92,25 @@ func selectReadyNode(
 	return graphschedule.ScheduledNode{}, errInvalidCandidate
 }
 
+// filterDirectPredecessors keeps only the receipts of the candidate node's
+// direct predecessors, in receipt order — the ADR-0035 evidence binding.
+func filterDirectPredecessors(
+	node graphschedule.ScheduledNode,
+	predecessors []PredecessorTerminalReceipt,
+) []PredecessorTerminalReceipt {
+	direct := make(map[string]bool, len(node.DirectPredecessorNodeIDs))
+	for _, id := range node.DirectPredecessorNodeIDs {
+		direct[id] = true
+	}
+	filtered := make([]PredecessorTerminalReceipt, 0, len(direct))
+	for _, receipt := range predecessors {
+		if direct[receipt.PredecessorNodeID] {
+			filtered = append(filtered, receipt)
+		}
+	}
+	return filtered
+}
+
 // ReadySuccessorNodes lists every topologically-ready successor node for a
 // consumed receipt set, in serial order — the wave-parallel planning view.
 func ReadySuccessorNodes(
@@ -231,6 +250,11 @@ func buildSuccessorRequest(
 	predecessors []PredecessorTerminalReceipt,
 	predecessorContent string,
 ) (ScheduledNodeRequest, error) {
+	// ADR-0035: the candidate carries exactly its direct predecessors'
+	// receipts. Same-wave siblings are evidence of progress but are not
+	// carried by this candidate's request (a wave-sibling with an empty
+	// direct-predecessor set carries zero receipts).
+	predecessors = filterDirectPredecessors(node, predecessors)
 	user, err := canonicalBytes(userPrompt{
 		V: RequestVersion, NodeID: source.NodeID, Task: source.Task, Acceptance: source.Acceptance,
 		PredecessorOutput: predecessorContent,

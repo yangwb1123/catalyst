@@ -46,6 +46,28 @@ impl Fixture {
         }
     }
 
+    /// Diamond (frontend, backend -> sso): frontend and backend are
+    /// same-wave siblings with empty predecessor sets — the zero-receipt
+    /// successor candidate shape of ADR-0035.
+    #[allow(dead_code)]
+    pub fn diamond() -> Self {
+        let root = TempDir::new().expect("diamond Graph Run root");
+        let database = root.path().join("state").join("hub.sqlite3");
+        let store = SqliteHubStore::open(&database).expect("open Hub");
+        let group = store.create_group("Delivery", "group-key").expect("Group");
+        let frontend = add_member(&store, root.path(), &group.id, "frontend");
+        let backend = add_member(&store, root.path(), &group.id, "backend");
+        let sso = add_member(&store, root.path(), &group.id, "sso");
+        let snapshot = prepare_group_run(&store, &group.id);
+        let graph = prepare_graph_diamond(&store, &snapshot, &frontend, &backend, &sso);
+        Self {
+            _root: root,
+            database,
+            store,
+            graph,
+        }
+    }
+
     /// Three-node serial chain (frontend -> backend -> sso): supports two
     /// successive successor candidates in one run.
     #[allow(dead_code)]
@@ -138,6 +160,58 @@ fn prepare_group_run(store: &SqliteHubStore, group_id: &str) -> GroupRunSnapshot
         })
         .expect("prepare Group Run")
         .snapshot
+}
+
+fn prepare_graph_diamond(
+    store: &SqliteHubStore,
+    snapshot: &GroupRunSnapshot,
+    frontend: &str,
+    backend: &str,
+    sso: &str,
+) -> GroupAgentGraphInspection {
+    let request = graph_request_diamond(snapshot, frontend, backend, sso);
+    store
+        .prepare_group_agent_graph(&request)
+        .expect("prepare diamond Group Agent Graph")
+        .inspection
+}
+
+fn graph_request_diamond(
+    snapshot: &GroupRunSnapshot,
+    frontend: &str,
+    backend: &str,
+    sso: &str,
+) -> PrepareGroupAgentGraph {
+    let nodes = vec![
+        graph_node("frontend", frontend),
+        graph_node("backend", backend),
+        graph_node("sso", sso),
+    ];
+    let mut edges = vec![
+        GroupAgentGraphEdge {
+            from_node_id: "frontend".into(),
+            to_node_id: "sso".into(),
+        },
+        GroupAgentGraphEdge {
+            from_node_id: "backend".into(),
+            to_node_id: "sso".into(),
+        },
+    ];
+    edges.sort_by(|a, b| {
+        a.from_node_id.cmp(&b.from_node_id).then(a.to_node_id.cmp(&b.to_node_id))
+    });
+    let waves = compute_group_agent_graph_waves(&nodes, &edges).expect("diamond DAG waves");
+    let manifest = graph_manifest(snapshot, nodes, edges, waves);
+    let bytes = canonical_json_bytes(&manifest);
+    PrepareGroupAgentGraph {
+        v: GROUP_AGENT_GRAPH_VERSION,
+        graph_id: "graph-diamond".into(),
+        manifest,
+        manifest_json: String::from_utf8(bytes.clone()).expect("manifest UTF-8"),
+        manifest_sha256: digest_hex(GROUP_AGENT_GRAPH_MANIFEST_DIGEST_DOMAIN, &bytes),
+        idempotency_key: "graph-diamond-key".into(),
+        created_at_ms: 10,
+    }
 }
 
 fn prepare_graph_three(

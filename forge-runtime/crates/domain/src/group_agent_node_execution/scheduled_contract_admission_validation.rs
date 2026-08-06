@@ -261,12 +261,13 @@ fn content_id(value: &str, prefix: &str, sha256: &str) -> bool {
         && value == format!("{prefix}{sha256}")
 }
 
-/// Ordinal/slot rule: the initial contract occupies ordinal zero with an
-/// empty predecessor set; every successor contract carries a non-zero
-/// ordinal and at least one consumed predecessor receipt.
+/// Ordinal/slot rule (ADR-0035): the initial contract occupies ordinal zero
+/// with an empty predecessor set; a successor carries a non-zero ordinal and
+/// zero-or-more receipts (a same-wave sibling with no direct predecessors
+/// carries zero).
 fn ordinal_slot_valid(record: &GroupAgentScheduledNodeContractRecord) -> bool {
     if record.predecessor_receipt_count == 0 {
-        record.execution_ordinal == 0
+        true
     } else {
         (1..=31).contains(&record.execution_ordinal)
     }
@@ -276,6 +277,6 @@ fn predecessor_count_valid(record: &GroupAgentScheduledNodeContractRecord) -> bo
     if record.execution_ordinal == 0 {
         record.predecessor_receipt_count == 0
     } else {
-        (1..=31).contains(&record.predecessor_receipt_count)
+        (0..=31).contains(&record.predecessor_receipt_count)
     }
 }

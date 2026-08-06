@@ -346,3 +346,55 @@ fn same_run_admits_a_second_candidate_for_a_different_node_v21() {
     assert_eq!(admitted.inspection.record.execution_ordinal, 2);
     assert_eq!(admitted.inspection.record.node_id, "sso");
 }
+
+#[test]
+fn zero_receipt_wave_sibling_persists_through_v21() {
+    use sqlite_group_agent_graph_run_support as run_support;
+    use sqlite_group_agent_graph_execution_schedule_support as schedule_support;
+    use sqlite_group_agent_scheduled_node_contract_support as contract_support;
+    use forge_runtime_domain::{
+        GroupAgentGraphExecutionScheduleStore, GroupAgentGraphRunStore,
+    };
+    let fixture = run_support::Fixture::diamond();
+    let _run = fixture
+        .store
+        .begin_group_agent_graph_run(&fixture.request("graph-run-1", "run-key", 30))
+        .expect("seed diamond Graph Run");
+    let schedule = schedule_support::request(&fixture, "schedule-key", 40);
+    fixture
+        .store
+        .admit_group_agent_graph_execution_schedule(&schedule)
+        .expect("admit schedule");
+    let candidate = contract_support::admission(schedule, "scheduled-contract-key", 50);
+    // backend is a same-wave sibling of frontend with an empty
+    // direct-predecessor set: its successor candidate carries zero
+    // receipts (ADR-0035). The v21 CHECK allows 0..=31.
+    let (admit_backend, successor) = successor_admit_request(&candidate);
+    let mut empty = admit_backend.clone();
+    empty.candidate.request.predecessor_terminal_receipts.clear();
+    empty.candidate.request.required_predecessor_node_ids.clear();
+    empty.candidate.request.user_prompt = format!(
+        "{{\"v\":2,\"node_id\":\"{}\",\"task\":\"{}\",\"acceptance\":\"{}\"}}",
+        successor.node.node_id, "backend task", "backend acceptance"
+    );
+    empty.candidate.request.user_prompt_bytes = empty.candidate.request.user_prompt.len();
+    empty.candidate.request.user_prompt_sha256 = forge_runtime_domain::group_agent_prompt_sha256(
+        &empty.candidate.request.user_prompt,
+    );
+    let request_digest = empty.candidate.request.expected_sha256().expect("request digest");
+    empty.candidate.request.request_id = format!("scheduled-node-request-{request_digest}");
+    empty.candidate.request.request_sha256 = request_digest;
+    let contract_digest = empty.candidate.expected_sha256().expect("contract digest");
+    empty.candidate.contract_id = format!("scheduled-node-contract-{contract_digest}");
+    empty.candidate.contract_sha256 = contract_digest;
+    empty.candidate_json = empty
+        .candidate
+        .canonical_json()
+        .expect("zero-receipt canonical JSON");
+    empty.idempotency_key = "scheduled-wave-sibling-zero-receipt".into();
+    let admitted = fixture
+        .store
+        .admit_group_agent_scheduled_node_successor(&empty)
+        .expect("zero-receipt wave sibling must admit through v21");
+    assert_eq!(admitted.inspection.record.execution_ordinal, 1);
+}

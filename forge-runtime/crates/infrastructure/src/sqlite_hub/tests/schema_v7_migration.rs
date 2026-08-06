@@ -149,7 +149,7 @@ fn assert_malformed_v7_is_rejected(sql: &str) {
 }
 
 fn assert_current_shape(connection: &Connection) {
-    assert_eq!(schema_version(connection), 20);
+    assert_eq!(schema_version(connection), 21);
     for table in [
         "group_panel_syntheses",
         "group_panel_synthesis_events",
