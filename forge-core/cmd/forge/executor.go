@@ -73,6 +73,7 @@ func (c commandExecutorConfig) executor() orchestrator.AgentExecutor {
 	ex := orchestrator.CommandExecutor{
 		ValidateConfig:    c.validate,
 		Build:             c.build,
+		Sandbox:           sandboxConfig(c.opts),
 		Dir:               c.opts.root,
 		Timeout:           c.opts.timeout,
 		MaxDepth:          c.opts.maxAgentDepth,

@@ -94,6 +94,10 @@ type runOpts struct {
 	root                   string
 	executor               string
 	agentCmd               string
+	// sandbox isolates agent commands: "" (host) | "docker" | "firecracker".
+	sandbox       string
+	sandboxImage  string
+	sandboxKernel string
 	// Restricted release/proposal stages require a pinned executable and digest.
 	releaseAgentPath   string
 	releaseAgentSHA256 string
@@ -189,6 +193,9 @@ func bindRunOpts(fs *flag.FlagSet, o *runOpts) {
 	fs.StringVar(&o.lifecycle, "lifecycle", "", "maturity modifier (idea|mvp|growth|production); empty = read .agent/project.yml, else mvp")
 	fs.StringVar(&o.root, "root", "", "repo root (default $FORGE_REPO_ROOT or .)")
 	fs.StringVar(&o.executor, "executor", "dry", "agent executor: dry|command")
+	fs.StringVar(&o.sandbox, "sandbox", "", "isolate agent commands: docker|firecracker (requires --sandbox-image; firecracker also requires --sandbox-kernel)")
+	fs.StringVar(&o.sandboxImage, "sandbox-image", "", "docker image or firecracker rootdir template for --sandbox")
+	fs.StringVar(&o.sandboxKernel, "sandbox-kernel", "", "firecracker vmlinux.bin path for --sandbox=firecracker")
 	fs.StringVar(&o.agentCmd, "agent-cmd", "claude", "command for --executor=command (e.g. claude, echo)")
 	fs.StringVar(&o.releaseAgentPath, "release-agent-path", "", "absolute trusted Claude executable for command-mode release or proposal-only Evolve (required with --release-agent-sha256)")
 	fs.StringVar(&o.releaseAgentSHA256, "release-agent-sha256", "", "operator-pinned SHA-256 of --release-agent-path for restricted command execution")
@@ -402,4 +409,19 @@ func projectYAMLValue(root, key string) string {
 		return raw
 	}
 	return ""
+}
+
+// sandboxConfig maps the CLI sandbox flags onto the executor's isolation
+// config. Empty --sandbox selects host execution; the auto-wiring in
+// orchestrator handles docker/firecracker field completion and fails closed
+// on unknown or incomplete configurations.
+func sandboxConfig(o runOpts) *orchestrator.SandboxConfig {
+	if strings.TrimSpace(o.sandbox) == "" {
+		return nil
+	}
+	return &orchestrator.SandboxConfig{
+		Type:   o.sandbox,
+		Image:  o.sandboxImage,
+		Kernel: o.sandboxKernel,
+	}
 }

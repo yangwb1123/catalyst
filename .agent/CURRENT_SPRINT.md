@@ -644,6 +644,16 @@ command_executor.go(528 行)拆到独立 `sandbox_config.go`(gate 500 行上限)
 (podman)/不完整 firecracker 配置 fail-closed(KindConfig);firecracker 真 VM
 回归 PASS;`forge accept` ACCEPTED。
 
+## Sprint 71（✅ 完成）— CLI 沙箱接线(`forge run --sandbox`)
+
+`forge run` / `forge evolve` 新增 `--sandbox docker|firecracker` +
+`--sandbox-image`(+ firecracker 的 `--sandbox-kernel`):flags → runOpts →
+`orchestrator.SandboxConfig` → auto-wire 真实 runner。空 `--sandbox` 保持
+宿主执行。验证:sandboxConfig 映射单测(三类型 + 空);orchestrator
+auto-wire 真容器测试(既有);executor.go 485 行/gate 500 上限;arch 8/8;
+`forge accept` ACCEPTED。CLI 端到端(完整 workflow + 容器内 claude)由组件
+测试覆盖,诚实标注。
+
 ## 下一前沿(需外部资源 / 后续阶段 / 投机增强 / 明确非目标,非本环境可完整验证)
 - **Graph 下一协议切片**:Sprint 59 只完成 scheduled ordinal-zero 的独立 claim/send/terminal sidecar；仍没有真实 successor/wave advancement、verified per-node/per-attempt receipt 驱动的非初始 contract-v2，也没有 predecessor dataflow。后续必须另立 successor 选择、receipt consumption、跨 node disclosure/consent 与 byte-bound 契约，不能从 ordering edge 推断。另一个独立协议仍是 legacy v4 hard-crash no-send adjudication：必须证明旧 executor 已停止，不能用 lease/时间流逝猜测后自动释放或重发。
 - **真点火** `--agent-cmd=claude`:**multi-agent running to completion 已坐实**(Sprint 25:真 claude 多-agent 跑到 converge MET,增量级 + 版本级)。完整旋钮:四维资源护栏 + 成本三维(phase/时间/美元)+ 任务注入 + 写权限 + 模型路由 + 工作目录 + retry + loop-back;诚实分工:agent 自治增量绿、人确认版本竣工。docs/ignition.md 有完整配方 + 实测
