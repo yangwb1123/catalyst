@@ -99,3 +99,28 @@ chat-completions。forge 的 OpenAI Responses adapter(纯流式,单请求)实测
 
 环境:LiteLLM :4001(deepseek-flash + local-qwen,`reasoning_effort: none`);
 Ollama :11434(qwen3.5:0.8b);系统 LiteLLM :4000(deepseek 网关,月度限额)。
+
+## Firecracker sandbox runner(2026-08)
+
+`forge-core/internal/orchestrator/firecracker` 的 `FirecrackerRunner` 在 KVM
+微虚拟机内执行命令,端到端验证 PASS(guest 输出 FORGELIVE-VM-OK,~1.4s)。
+
+- 机制:rootdir 模板拷贝 → 注入 init 脚本(命令 shell-quoted)→ `mke2fs -d`
+  构建全新 ext4(免 sudo)→ firecracker 启动 → guest 执行 → `/forge-exit`
+  marker 回读(debugfs)+ 串口输出捕获 → 自动 poweroff。
+- 踩坑:debugfs 直接注入模板镜像会被 ext4 journal 重放覆盖(已实测多次);
+  **必须从零构建镜像**(mke2fs -d),每轮全新无历史状态。
+- 失败分类:缺 firecracker/debugfs/mke2fs/KVM = 永久 config 错(继续
+  fail-closed,绝不回退宿主);guest 超时 = retryable;非零退出 = KindFailed。
+- rootdir 模板准备:
+  ```sh
+  mkdir -p rootdir/{bin,dev,etc,proc,root,sys,sbin}
+  cp /usr/bin/busybox rootdir/bin/
+  ln -sf /bin/busybox rootdir/bin/{sh,mount,poweroff,echo,cat,ls,sync,sleep}
+  ln -sf /bin/busybox rootdir/sbin/init
+  printf '::sysinit:/init\n' > rootdir/etc/inittab
+  # /init 由 runner 每轮生成,模板可不含
+  ```
+- 集成测试:`TestFirecrackerRunnerLiveMicroVM`(env-gated:
+  FORGE_FIRECRACKER_KERNEL/ROOTDIR/BINARY/DEBUGFS/MKE2FS;无 env 诚实 skip)。
+  产物:/tmp/fc-test(vmlinux.bin + rootfs.ext4 模板)、/tmp/vmtest/rootdir。

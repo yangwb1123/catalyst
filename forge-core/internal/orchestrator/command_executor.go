@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"forgeos/forge-core/internal/asset"
+	"forgeos/forge-core/internal/orchestrator/firecracker"
 )
 
 // defaultMaxAgentDepth bounds nested agent spawns before the recursion guard
@@ -147,6 +148,10 @@ type SandboxConfig struct {
 	Image      string // container/microVM image
 	MemoryMB   int    // RAM limit; 0 = use default
 	TimeoutSec int    // session timeout; 0 = use command's Timeout
+	// Runner is the wired isolation implementation for Type. nil keeps the
+	// fail-closed contract: a declared sandbox without a runner is a
+	// permanent config error and never falls back to host execution.
+	Runner firecracker.Runner
 }
 
 // Execute builds and runs the phase's command under an optional timeout, failing
@@ -178,6 +183,12 @@ func (c CommandExecutor) Execute(ctx context.Context, p asset.Phase, mode string
 	if err != nil {
 		return err
 	}
+	if c.Sandbox != nil && c.Sandbox.Runner != nil && !c.sandboxNone() {
+		runCtx, runCancel := c.commandContext(ctx)
+		defer runCancel()
+		timeout := time.Duration(c.Sandbox.TimeoutSec) * time.Second
+		return c.executeSandboxed(runCtx, p.Name, argv, timeout)
+	}
 
 	// Recursion guard: once the inherited agent-call depth reaches the cap, refuse
 	// to spawn — a real agent re-invoking `forge --executor=command` would else
@@ -200,12 +211,23 @@ func (c CommandExecutor) Execute(ctx context.Context, p asset.Phase, mode string
 // sandboxConfigError enforces the isolation boundary. A declared sandbox is a
 // safety requirement, not a hint: until a runtime is wired, falling back to the
 // host would violate the workflow contract and must be a permanent config error.
+func (c CommandExecutor) sandboxNone() bool {
+	if c.Sandbox == nil {
+		return true
+	}
+	runtime := strings.TrimSpace(c.Sandbox.Type)
+	return runtime == "" || strings.EqualFold(runtime, "none")
+}
+
 func (c CommandExecutor) sandboxConfigError(phase string) error {
 	if c.Sandbox == nil {
 		return nil
 	}
 	runtime := strings.TrimSpace(c.Sandbox.Type)
 	if runtime == "" || strings.EqualFold(runtime, "none") {
+		return nil
+	}
+	if c.Sandbox.Runner != nil {
 		return nil
 	}
 	return configErr(phase, fmt.Errorf("sandbox %q requested but no sandbox runner is installed; refusing host execution", runtime))
@@ -441,4 +463,33 @@ func (b *cappedBuffer) observed() string {
 		s += fmt.Sprintf(" …[output truncated: retained %d of %d bytes (--max-output-bytes)]", len(b.buf), b.total)
 	}
 	return s
+}
+
+// executeSandboxed runs the phase through the wired sandbox runner instead of
+// the host shell, then funnels the outcome through the same finish pipeline so
+// observation, output contracts, and error classification stay uniform. A
+// clean non-zero guest exit becomes a KindFailed run; infrastructure faults
+// (config, timeout) map onto their own kinds without fabricating an agent
+// verdict.
+func (c CommandExecutor) executeSandboxed(
+	runCtx context.Context,
+	phase string,
+	argv []string,
+	timeout time.Duration,
+) error {
+	start := c.now()
+	output, code, err := c.Sandbox.Runner.Run(runCtx, argv, timeout)
+	latency := c.now().Sub(start)
+	out := &cappedBuffer{cap: c.maxOutputBytes()}
+	_, _ = out.Write([]byte(output))
+	if err != nil {
+		if runCtx.Err() != nil || strings.Contains(err.Error(), "timed out") {
+			return &ExecError{Phase: phase, Kind: KindTimeout, Err: err}
+		}
+		return &ExecError{Phase: phase, Kind: KindConfig, Err: err}
+	}
+	if code != 0 {
+		err = &exec.ExitError{}
+	}
+	return c.finish(phase, argv, out, err, runCtx.Err(), latency)
 }

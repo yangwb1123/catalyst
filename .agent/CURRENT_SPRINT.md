@@ -606,6 +606,23 @@ gated 冒烟测试(无端点时诚实 skip,CI 不受影响)。
 `forge accept` 为 **ACCEPTED**(343 infra / 全 workspace 全绿);
 LiteLLM :4001 实例常驻本机(deepseek-flash + local-qwen)。
 
+## Sprint 68（✅ 完成）— Firecracker sandbox runner 真实接入
+
+forge-core 的 v3 Sandbox 扩展点(原 fail-closed:任何非 none sandbox 一律拒绝)
+获得第一个**真实运行实现**:
+(1) **FirecrackerRunner**(新子包 `internal/orchestrator/firecracker`):每轮运行
+从 busybox rootdir 模板拷贝 + 注入命令 init 脚本 → `mke2fs -d` 构建全新 ext4
+镜像(免 sudo)→ firecracker v1.7 启动(KVM)→ guest 挂载/执行/写退出码
+marker/自动 poweroff → 宿主 debugfs 回读 marker + 串口捕获输出。错误分类:
+缺二进制/KVM = KindConfig、guest 超时 = KindTimeout、非零退出 = KindFailed。
+(2) **踩坑实录**(诚实记录):debugfs 直接注入模板镜像会失败 —— ext4 journal
+重放覆盖注入(inode 块分配异常、旧事务恢复),多次实验后改为"从零构建镜像"
+方案根治(每次 mke2fs 新镜像,无历史状态)。
+(3) **验证**:真 KVM 微虚拟机端到端 PASS(`FORGELIVE-VM-OK` 从 guest 内输出,
+~1.4s 完成);fake-runner 接线测试(接线的 argv/超时/分类);arch-check 8/8
+(package 导出 33→30:runner 拆子包);`forge accept` 为 **ACCEPTED**。
+模板准备脚本见 `docs/external-resource-verification.md`。
+
 ## 下一前沿(需外部资源 / 后续阶段 / 投机增强 / 明确非目标,非本环境可完整验证)
 - **Graph 下一协议切片**:Sprint 59 只完成 scheduled ordinal-zero 的独立 claim/send/terminal sidecar；仍没有真实 successor/wave advancement、verified per-node/per-attempt receipt 驱动的非初始 contract-v2，也没有 predecessor dataflow。后续必须另立 successor 选择、receipt consumption、跨 node disclosure/consent 与 byte-bound 契约，不能从 ordering edge 推断。另一个独立协议仍是 legacy v4 hard-crash no-send adjudication：必须证明旧 executor 已停止，不能用 lease/时间流逝猜测后自动释放或重发。
 - **真点火** `--agent-cmd=claude`:**multi-agent running to completion 已坐实**(Sprint 25:真 claude 多-agent 跑到 converge MET,增量级 + 版本级)。完整旋钮:四维资源护栏 + 成本三维(phase/时间/美元)+ 任务注入 + 写权限 + 模型路由 + 工作目录 + retry + loop-back;诚实分工:agent 自治增量绿、人确认版本竣工。docs/ignition.md 有完整配方 + 实测
