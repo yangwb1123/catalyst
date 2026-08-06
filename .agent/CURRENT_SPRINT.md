@@ -634,6 +634,16 @@ firecracker 与 docker 两个 runtime 共同实现,消除 firecracker 名绑定)
 验证:真 alpine 容器端到端 PASS(`FORGELIVE-DOCKER-OK`,0.35s;非零退出码
 透传测试 7);firecracker 真 VM 回归 PASS;arch 8/8;`forge accept` ACCEPTED。
 
+## Sprint 70（✅ 完成）— Sandbox 配置即用(自动接线)
+
+`SandboxConfig` 增加 **auto-wire**:声明 `Type` + 配置字段即可运行,无需
+手动注入 runner —— `{Type:"docker", Image:"alpine:latest"}` 或
+`{Type:"firecracker", Kernel, Image(rootdir)}`。sandbox 逻辑从
+command_executor.go(528 行)拆到独立 `sandbox_config.go`(gate 500 行上限)。
+验证:auto-wire docker 真容器 PASS(AUTOWIRE-DOCKER-OK,0.35s);未知类型
+(podman)/不完整 firecracker 配置 fail-closed(KindConfig);firecracker 真 VM
+回归 PASS;`forge accept` ACCEPTED。
+
 ## 下一前沿(需外部资源 / 后续阶段 / 投机增强 / 明确非目标,非本环境可完整验证)
 - **Graph 下一协议切片**:Sprint 59 只完成 scheduled ordinal-zero 的独立 claim/send/terminal sidecar；仍没有真实 successor/wave advancement、verified per-node/per-attempt receipt 驱动的非初始 contract-v2，也没有 predecessor dataflow。后续必须另立 successor 选择、receipt consumption、跨 node disclosure/consent 与 byte-bound 契约，不能从 ordering edge 推断。另一个独立协议仍是 legacy v4 hard-crash no-send adjudication：必须证明旧 executor 已停止，不能用 lease/时间流逝猜测后自动释放或重发。
 - **真点火** `--agent-cmd=claude`:**multi-agent running to completion 已坐实**(Sprint 25:真 claude 多-agent 跑到 converge MET,增量级 + 版本级)。完整旋钮:四维资源护栏 + 成本三维(phase/时间/美元)+ 任务注入 + 写权限 + 模型路由 + 工作目录 + retry + loop-back;诚实分工:agent 自治增量绿、人确认版本竣工。docs/ignition.md 有完整配方 + 实测

@@ -3,6 +3,7 @@ package orchestrator
 import (
 	"context"
 	"errors"
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -117,6 +118,64 @@ func TestDeclaredSandboxWithoutRunnerFailsClosed(t *testing.T) {
 	}
 	if execErr.Kind != KindConfig {
 		t.Fatalf("kind = %v, want KindConfig", execErr.Kind)
+	}
+	if !strings.Contains(err.Error(), "refusing host execution") {
+		t.Fatalf("error must refuse host execution: %v", err)
+	}
+}
+
+// TestSandboxAutoWireDockerRunsLiveContainer proves the configuration-only
+// path: SandboxConfig{Type:"docker", Image} auto-wires a real Docker runner
+// with no injected Runner. Skipped when the daemon is unreachable.
+func TestSandboxAutoWireDockerRunsLiveContainer(t *testing.T) {
+	probe := exec.Command("docker", "info")
+	if err := probe.Run(); err != nil {
+		t.Skipf("docker daemon unavailable: %v", err)
+	}
+	executor := CommandExecutor{
+		Build: func(_ asset.Phase, _ string) []string {
+			return []string{"/bin/echo", "AUTOWIRE-DOCKER-OK"}
+		},
+		Sandbox: &SandboxConfig{
+			Type:  "docker",
+			Image: "alpine:latest",
+		},
+	}
+	err := executor.Execute(context.Background(), asset.Phase{Name: "sandbox-phase"}, "run")
+	if err != nil {
+		t.Fatalf("auto-wired docker Execute: %v", err)
+	}
+}
+
+// TestSandboxAutoWireUnknownTypeFailsClosed proves an unknown Type still
+// fails closed with no runner injected.
+func TestSandboxAutoWireUnknownTypeFailsClosed(t *testing.T) {
+	executor := CommandExecutor{
+		Build: func(_ asset.Phase, _ string) []string {
+			return []string{"agent"}
+		},
+		Sandbox: &SandboxConfig{Type: "podman"},
+	}
+	err := executor.Execute(context.Background(), asset.Phase{Name: "sandbox-phase"}, "run")
+	var execErr *ExecError
+	if !errors.As(err, &execErr) || execErr.Kind != KindConfig {
+		t.Fatalf("unknown sandbox type must fail closed as KindConfig, got %v", err)
+	}
+}
+
+// TestSandboxAutoWireFirecrackerRequiresKernelAndRootdir proves incomplete
+// firecracker configuration fails closed instead of fabricating a runner.
+func TestSandboxAutoWireFirecrackerRequiresKernelAndRootdir(t *testing.T) {
+	executor := CommandExecutor{
+		Build: func(_ asset.Phase, _ string) []string {
+			return []string{"agent"}
+		},
+		Sandbox: &SandboxConfig{Type: "firecracker", Kernel: "/vmlinux.bin"},
+	}
+	err := executor.Execute(context.Background(), asset.Phase{Name: "sandbox-phase"}, "run")
+	var execErr *ExecError
+	if !errors.As(err, &execErr) || execErr.Kind != KindConfig {
+		t.Fatalf("incomplete firecracker config must fail closed as KindConfig, got %v", err)
 	}
 	if !strings.Contains(err.Error(), "refusing host execution") {
 		t.Fatalf("error must refuse host execution: %v", err)
