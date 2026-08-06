@@ -79,11 +79,21 @@ pub(super) fn find_by_key(
     query_one(connection, "idempotency_key", &[key])
 }
 
-pub(in crate::sqlite_hub) fn find_by_run(
+/// Returns every successor candidate admitted for one Graph Run (v20 allows
+/// one candidate per node), in creation order.
+pub(in crate::sqlite_hub) fn find_all_by_run(
     connection: &Connection,
     graph_run_id: &str,
-) -> Result<Option<RawStoredCandidate>, HubStoreError> {
-    query_one(connection, "graph_run_id", &[graph_run_id])
+) -> Result<Vec<RawStoredCandidate>, HubStoreError> {
+    let mut statement = connection
+        .prepare(&format!(
+            "SELECT {STORED_COLUMNS} FROM {TABLE} WHERE graph_run_id=?1"
+        ))
+        .map_err(read_error)?;
+    let rows = statement
+        .query_map([graph_run_id], stored_row)
+        .map_err(read_error)?;
+    rows.collect::<Result<Vec<_>, _>>().map_err(read_error)
 }
 
 pub(super) fn find_by_schedule(

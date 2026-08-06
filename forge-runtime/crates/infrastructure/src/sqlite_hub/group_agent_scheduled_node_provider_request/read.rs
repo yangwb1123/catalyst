@@ -62,8 +62,10 @@ pub(in crate::sqlite_hub) fn validate_graph_run_binding(
         // The bound contract may live in the successor candidate table.
         // Lightweight decode only: re-inspecting the Graph Run from here
         // would recurse back into this validator.
-        let stored =
-            successor_rows::find_by_run(connection, &run.run.graph_run_id)?.ok_or_else(|| {
+        let stored = successor_rows::find_all_by_run(connection, &run.run.graph_run_id)?
+            .into_iter()
+            .next()
+            .ok_or_else(|| {
                 corrupt("stored scheduled-node provider request has no scheduled contract")
             })?;
         group_agent_scheduled_node_successor::read::decode_stored(stored)?.inspection

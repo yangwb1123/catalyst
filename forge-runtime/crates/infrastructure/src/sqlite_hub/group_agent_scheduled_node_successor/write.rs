@@ -116,7 +116,12 @@ fn reject_existing_candidate_identity(
             "contract ID",
         ),
         (
-            rows::find_by_run(transaction, &request.graph_run_id)?,
+            // v20: one candidate per node; any candidate proves the Graph
+            // Run is not pristine. The exact per-node slot is enforced by
+            // UNIQUE(graph_run_id, node_id, attempt).
+            rows::find_all_by_run(transaction, &request.graph_run_id)?
+                .into_iter()
+                .next(),
             "Graph Run",
         ),
         (

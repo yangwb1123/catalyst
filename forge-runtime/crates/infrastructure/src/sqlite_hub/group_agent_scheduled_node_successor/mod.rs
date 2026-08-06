@@ -1,5 +1,5 @@
 pub(super) mod read;
-pub(super) mod rows;
+pub(in crate::sqlite_hub) mod rows;
 mod write;
 
 use crate::runtime_domain::{

@@ -11,6 +11,7 @@ mod sqlite_group_agent_scheduled_node_provider_request_support;
 
 use forge_runtime_domain::{
     GroupAgentScheduledNodeProviderRequestStore, GroupAgentScheduledNodeSuccessorStore,
+    HubStoreError,
 };
 
 fn successor_admit_request(
@@ -175,4 +176,48 @@ fn ordinal_one_successor_request_persists_through_the_v18_table() {
         .inspection;
     assert_eq!(stored.record.execution_ordinal, 1);
     assert_eq!(stored.record.node_id, backend_node_id);
+}
+
+#[test]
+fn same_run_rejects_a_second_candidate_for_the_same_node_v20() {
+    use sqlite_group_agent_scheduled_node_contract_support::prepared_fixture as contract_fixture;
+    let (fixture, candidate) = contract_fixture();
+    let (admit_backend, _) = successor_admit_request(&candidate);
+    fixture
+        .store
+        .admit_group_agent_scheduled_node_successor(&admit_backend)
+        .expect("admit backend successor candidate");
+
+    // 同一 run 同一 node 的第二个候选(不同 idempotency key)必须冲突:
+    // v20 的 UNIQUE(graph_run_id, node_id, attempt) 是 per-node 唯一性。
+    let mut duplicate = admit_backend.clone();
+    duplicate.idempotency_key = "successor-admit-key-backend-2".into();
+    let mut duplicate_candidate = duplicate.candidate;
+    duplicate_candidate.request.user_prompt =
+        "{\"v\":2,\"node_id\":\"backend\",\"task\":\"backend task 2\",\"acceptance\":\"acceptance 2\"}"
+            .to_owned();
+    duplicate_candidate.request.user_prompt_bytes = duplicate_candidate.request.user_prompt.len();
+    duplicate_candidate.request.user_prompt_sha256 =
+        forge_runtime_domain::group_agent_prompt_sha256(&duplicate_candidate.request.user_prompt);
+    let request_digest = duplicate_candidate
+        .request
+        .expected_sha256()
+        .expect("duplicate request digest");
+    duplicate_candidate.request.request_id = format!("scheduled-node-request-{request_digest}");
+    duplicate_candidate.request.request_sha256 = request_digest;
+    let contract_digest = duplicate_candidate
+        .expected_sha256()
+        .expect("duplicate contract digest");
+    duplicate_candidate.contract_id = format!("scheduled-node-contract-{contract_digest}");
+    duplicate_candidate.contract_sha256 = contract_digest;
+    duplicate.candidate = duplicate_candidate;
+    duplicate.candidate_json = duplicate
+        .candidate
+        .canonical_json()
+        .expect("duplicate canonical JSON");
+    let error = fixture
+        .store
+        .admit_group_agent_scheduled_node_successor(&duplicate)
+        .expect_err("second candidate for the same node must conflict");
+    assert!(matches!(error, HubStoreError::Conflict { .. }));
 }
