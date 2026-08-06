@@ -267,3 +267,47 @@ func TestBuildSuccessorEmbedsPredecessorContent(t *testing.T) {
 		t.Fatal("plain successor prompt must omit the predecessor_output field")
 	}
 }
+
+func TestBuildSuccessorAcceptsOutOfOrderReceiptsAndSelectsReadyNode(t *testing.T) {
+	snapshot := fixtureSnapshot(t)
+	schedule := mustSchedule(t)
+	options := readSourceFixture(t).Input.ExecutionOptions.options()
+	// diamond: frontend/backend -> sso。提供 backend 的 receipt(非前缀,
+	// serial 规则会拒绝),拓扑就绪规则应接受并推进到最早就绪的 frontend。
+	backend := schedule.Nodes[1]
+	receipt := scheduledterminal.Receipt{
+		V: 1, SchedulerProtocolVersion: 1, TerminalReceiptProtocol: 1,
+		TerminalControlSHA256: strings.Repeat("a", 64),
+		GraphRunID:            snapshot.GraphRunID,
+		GraphID:               snapshot.GraphID,
+		NodeID:                backend.NodeID,
+		Attempt:               backend.Attempt,
+		DispatchID:            "dispatch-backend-fixture",
+		ProviderRequestID:     "scheduled-node-provider-request-backend",
+		ProjectLaneSHA256:     backend.ProjectLaneSHA256,
+		ArtifactKind:          "result",
+		ArtifactID:            "scheduled-node-terminal-artifact-" + strings.Repeat("b", 64),
+		ArtifactSHA256:        strings.Repeat("b", 64),
+		NodeOutcome:           "completed",
+		RetryAuthorized:       false,
+		LaneReleaseAuthorized: true,
+	}
+	encoded, err := scheduledterminal.MarshalReceipt(receipt)
+	if err != nil {
+		t.Fatalf("marshal backend receipt: %v", err)
+	}
+	decoded, err := scheduledterminal.DecodeReceipt(encoded)
+	if err != nil {
+		t.Fatalf("decode backend receipt: %v", err)
+	}
+	candidate, err := BuildSuccessor(
+		snapshot, schedule.ScheduleSHA256, options, []scheduledterminal.Receipt{decoded}, "",
+	)
+	if err != nil {
+		t.Fatalf("topologically-ready selection must accept out-of-order receipts: %v", err)
+	}
+	if candidate.Node.NodeID != schedule.Nodes[0].NodeID {
+		t.Fatalf("selected node = %q, want first ready node %q",
+			candidate.Node.NodeID, schedule.Nodes[0].NodeID)
+	}
+}

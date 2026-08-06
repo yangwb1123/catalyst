@@ -34,15 +34,12 @@ func BuildSuccessor(
 	if err != nil || schedule.ScheduleSHA256 != scheduleSHA256 {
 		return ScheduledNodeContractCandidate{}, errInvalidCandidate
 	}
-	predecessors, err := verifyPredecessorPrefix(snapshot, schedule, receipts)
+	predecessors, err := verifyReceipts(snapshot, schedule, receipts)
 	if err != nil {
 		return ScheduledNodeContractCandidate{}, errInvalidCandidate
 	}
-	scheduled, err := successorNode(schedule, uint16(len(receipts)))
+	scheduled, err := selectReadyNode(schedule, predecessors)
 	if err != nil {
-		return ScheduledNodeContractCandidate{}, errInvalidCandidate
-	}
-	if !successorPredecessorsCovered(scheduled, predecessors) {
 		return ScheduledNodeContractCandidate{}, errInvalidCandidate
 	}
 	value, err := successorCandidate(
@@ -54,15 +51,35 @@ func BuildSuccessor(
 	return value, nil
 }
 
-// successorNode selects the next serial node after the consumed prefix.
-func successorNode(
+// selectReadyNode picks the first node in the schedule's serial
+// (wave-then-authored) order whose direct predecessors are all consumed and
+// which itself is not yet consumed. This is the topologically-ready rule:
+// unrelated earlier ordinals (same-wave siblings) do not block a node whose
+// own predecessor set is satisfied.
+func selectReadyNode(
 	schedule graphschedule.ExecutionSchedule,
-	ordinal uint16,
+	predecessors []PredecessorTerminalReceipt,
 ) (graphschedule.ScheduledNode, error) {
-	if ordinal >= schedule.NodeCount {
-		return graphschedule.ScheduledNode{}, errInvalidCandidate
+	consumed := make(map[string]bool, len(predecessors))
+	for _, receipt := range predecessors {
+		consumed[receipt.PredecessorNodeID] = true
 	}
-	return schedule.Nodes[ordinal], nil
+	for _, node := range schedule.Nodes {
+		if consumed[node.NodeID] {
+			continue
+		}
+		ready := true
+		for _, predecessorID := range node.DirectPredecessorNodeIDs {
+			if !consumed[predecessorID] {
+				ready = false
+				break
+			}
+		}
+		if ready {
+			return node, nil
+		}
+	}
+	return graphschedule.ScheduledNode{}, errInvalidCandidate
 }
 
 // successorCandidate rebuilds the node profile, the request, and the signed
@@ -107,7 +124,7 @@ func successorCandidate(
 // returns the candidate's predecessor-evidence shape for each receipt. The
 // scheduled sidecar does not consume the Graph Run journal, so the reserved
 // event-seq fields stay zero/empty rather than inventing journal evidence.
-func verifyPredecessorPrefix(
+func verifyReceipts(
 	snapshot graphdispatch.ControlSnapshot,
 	schedule graphschedule.ExecutionSchedule,
 	receipts []scheduledterminal.Receipt,
@@ -116,12 +133,17 @@ func verifyPredecessorPrefix(
 		return nil, errInvalidCandidate
 	}
 	predecessors := make([]PredecessorTerminalReceipt, 0, len(receipts))
-	for index, receipt := range receipts {
-		node := schedule.Nodes[index]
-		if receipt.GraphRunID != snapshot.GraphRunID || receipt.NodeID != node.NodeID ||
+	seen := make(map[string]bool, len(receipts))
+	for _, receipt := range receipts {
+		node, ok := scheduledNodeFor(schedule, receipt.NodeID)
+		if !ok || receipt.GraphRunID != snapshot.GraphRunID ||
 			receipt.Attempt != node.Attempt || receipt.ProjectLaneSHA256 != node.ProjectLaneSHA256 {
 			return nil, errInvalidCandidate
 		}
+		if seen[receipt.NodeID] {
+			return nil, errInvalidCandidate // at most one receipt per node
+		}
+		seen[receipt.NodeID] = true
 		predecessors = append(predecessors, PredecessorTerminalReceipt{
 			PredecessorNodeID:     receipt.NodeID,
 			PredecessorAttempt:    receipt.Attempt,
@@ -135,6 +157,18 @@ func verifyPredecessorPrefix(
 		})
 	}
 	return predecessors, nil
+}
+
+func scheduledNodeFor(
+	schedule graphschedule.ExecutionSchedule,
+	nodeID string,
+) (graphschedule.ScheduledNode, bool) {
+	for _, node := range schedule.Nodes {
+		if node.NodeID == nodeID {
+			return node, true
+		}
+	}
+	return graphschedule.ScheduledNode{}, false
 }
 
 // successorPredecessorsCovered checks that every direct predecessor of the
