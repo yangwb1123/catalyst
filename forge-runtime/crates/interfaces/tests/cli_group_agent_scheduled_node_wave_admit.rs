@@ -177,6 +177,28 @@ fn wave_admit_materializes_every_ready_node_from_one_wave() {
     let contract_id = text(&wave[0]["contract_id"]);
     assert!(!contract_id.is_empty());
     assert_wave_contract_visible(&fixture, &contract_id);
+    assert_wave_contract_carries_execution_options(&fixture, &contract_id);
+}
+
+/// `assert_wave_contract_carries_execution_options` verifies the admitted
+/// candidate carries the operator's real execution options — the wave-admit
+/// pass-through (review Finding 2), never literals.
+fn assert_wave_contract_carries_execution_options(fixture: &Fixture, contract_id: &str) {
+    let show = command(
+        fixture.state.path(),
+        fixture.cwd.path(),
+        &[
+            "group", "graph", "run", "scheduled-contract", "successor", "show",
+            contract_id, "--include-contract",
+        ],
+    )
+    .output()
+    .expect("show wave contract with candidate");
+    let shown = successful_json(&show);
+    let contract = &shown["inspection"]["contract"];
+    assert_eq!(contract["provider"]["endpoint"], "https://api.openai.com/v1/responses");
+    assert_eq!(contract["provider"]["model"], "gpt-5.6-sol");
+    assert_eq!(contract["budgets"]["pricing_snapshot_sha256"], PRICING);
 }
 
 ///  verifies the admitted successor candidate is

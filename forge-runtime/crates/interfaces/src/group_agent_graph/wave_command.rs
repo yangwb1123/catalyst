@@ -141,10 +141,14 @@ fn materialize_node(
         // base): a re-run with the same --idempotency-key replays admitted
         // nodes instead of rejecting them (Finding 3).
         idempotency_key: {
+            // Bound the derived key: base + "-" + node_id must stay within
+            // the 256-byte idempotency-key limit (Stage-02 Finding 4).
             let base = ctx
                 .idempotency_key
                 .map_or_else(|| generated_idempotency_key("scheduled-wave-admit"), str::to_owned);
-            format!("{base}-{node_id}")
+            let budget = 256usize.saturating_sub(node_id.len() + 1);
+            let bounded: String = base.chars().take(budget).collect();
+            format!("{bounded}-{node_id}")
         },
         admitted_at_ms: unix_time_millis(),
         predecessor_content: None,

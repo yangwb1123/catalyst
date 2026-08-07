@@ -48,16 +48,18 @@ const INSERT_REQUEST_SQL: &str = "INSERT INTO group_agent_graph_scheduled_node_p
          AND run.dispatch_authority_released=0
          AND run.last_event_seq=?24 AND event.event_sha256=?25
          AND (
-           EXISTS(
-             SELECT 1 FROM group_agent_graph_scheduled_node_contract_candidates AS contract
-             WHERE contract.graph_run_id=run.id AND contract.id=?4
-               AND contract.schedule_id=?3 AND contract.contract_sha256=?10
-           )
-           OR
-           EXISTS(
-             SELECT 1 FROM group_agent_graph_scheduled_node_successor_candidates AS successor
-             WHERE successor.graph_run_id=run.id AND successor.id=?4
-               AND successor.schedule_id=?3 AND successor.contract_sha256=?10
+           (
+             EXISTS(
+               SELECT 1 FROM group_agent_graph_scheduled_node_contract_candidates AS contract
+               WHERE contract.graph_run_id=run.id AND contract.id=?4
+                 AND contract.schedule_id=?3 AND contract.contract_sha256=?10
+             )
+             OR
+             EXISTS(
+               SELECT 1 FROM group_agent_graph_scheduled_node_successor_candidates AS successor
+               WHERE successor.graph_run_id=run.id AND successor.id=?4
+                 AND successor.schedule_id=?3 AND successor.contract_sha256=?10
+             )
            )
            AND (
              EXISTS(

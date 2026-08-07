@@ -774,6 +774,24 @@ key `{key}-{node_id}`,重跑 Replayed 而非 rejected。
 `forge accept` 为 **ACCEPTED**;Rust 923 tests;gate/arch/clippy 全绿。
 评审产物:docs/reviews/reviews/wave-storage-context/stage-04.out.md。
 
+## Sprint 79（✅ 完成）— Stage 02 安全评审 5 项 + pass-through 验证
+
+第三轮独立评审(Stage 02 安全协议,wave 存储 + 编排):
+(1) **F1(High)**:v17→v18/v21→v22 迁移在**有 dispatch 历史**的库上 FK 失败
+(测试从未用有数据库)—— 修复:迁移事务内 `PRAGMA defer_foreign_keys = ON`
+(COMMIT 时统一校验最终一致状态)。
+(2) **F2(Medium)**:successor admit 的 predecessor 证据**不绑定 graph_run_id**
+(跨 run 证据重用,Go 侧已校验)—— 修复:lifecycle 的 run == candidate 的
+run 检查。
+(3) **F3(Low)**:INSERT_REQUEST_SQL 的 `A OR B AND C` 优先级 bug → 括号。
+(4) **F4(Low)**:派生 idempotency key 溢出 256 字节 → bound。
+(5) **F5(Info)**:数据承载迁移测试 —— 完整 FK 父链构造成本过高,诚实记录
+N/A(修复已按评审建议实现,空库迁移回归全过)。
+(6) **F2 验证测试**(Stage 04 遗留):wave-admit 候选携带执行选项断言
+(provider.model/endpoint/pricing == 传入值,非字面量)。
+`forge accept` 为 **ACCEPTED**;Rust 924 tests;gate/arch/clippy 全绿。
+评审产物:docs/reviews/reviews/wave-storage-context/stage-02.out.md。
+
 ## 下一前沿(需外部资源 / 后续阶段 / 投机增强 / 明确非目标,非本环境可完整验证)
 - **Graph 下一协议切片**:Sprint 59 只完成 scheduled ordinal-zero 的独立 claim/send/terminal sidecar；仍没有真实 successor/wave advancement、verified per-node/per-attempt receipt 驱动的非初始 contract-v2，也没有 predecessor dataflow。后续必须另立 successor 选择、receipt consumption、跨 node disclosure/consent 与 byte-bound 契约，不能从 ordering edge 推断。另一个独立协议仍是 legacy v4 hard-crash no-send adjudication：必须证明旧 executor 已停止，不能用 lease/时间流逝猜测后自动释放或重发。
 - **真点火** `--agent-cmd=claude`:**multi-agent running to completion 已坐实**(Sprint 25:真 claude 多-agent 跑到 converge MET,增量级 + 版本级)。完整旋钮:四维资源护栏 + 成本三维(phase/时间/美元)+ 任务注入 + 写权限 + 模型路由 + 工作目录 + retry + loop-back;诚实分工:agent 自治增量绿、人确认版本竣工。docs/ignition.md 有完整配方 + 实测

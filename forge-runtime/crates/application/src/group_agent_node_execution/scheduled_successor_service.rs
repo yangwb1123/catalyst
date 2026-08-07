@@ -323,6 +323,15 @@ impl GroupAgentScheduledNodeSuccessorService {
                 .lifecycles
                 .inspect_group_agent_scheduled_node_lifecycle(&receipt.provider_request_id)
                 .map_err(GroupAgentScheduledNodeContractServiceError::from)?;
+            // Stage-02 Finding 2: the durable lifecycle must belong to the
+            // SAME Graph Run as the candidate — a genuine receipt from
+            // another run of the same graph must not satisfy this run's
+            // predecessor set.
+            if inspection.graph_run.run.graph_run_id != candidate.graph_run_id {
+                return Err(invalid(
+                    "predecessor lifecycle belongs to a different Graph Run",
+                ));
+            }
             verify_receipt_binding(&inspection, receipt)?;
         }
         Ok(())
@@ -399,6 +408,9 @@ fn verify_receipt_binding(
         .terminal_receipt
         .as_ref()
         .ok_or_else(|| corrupt("terminalized lifecycle has no persisted receipt"))?;
+    // Stage-02 Finding 2: predecessor evidence must belong to the SAME
+    // Graph Run — a genuine receipt from another run of the same graph must
+    // not satisfy this candidate's predecessor set.
     let valid = stored.node_id == receipt.predecessor_node_id
         && stored.attempt == receipt.predecessor_attempt
         && stored.receipt_id == receipt.terminal_receipt_id

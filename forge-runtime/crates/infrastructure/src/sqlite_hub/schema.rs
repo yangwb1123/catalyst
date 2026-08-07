@@ -185,6 +185,11 @@ fn migrate_or_validate_with_before_final(
     before_final: impl FnOnce(&Connection) -> Result<(), OpenAttemptError>,
 ) -> Result<(), OpenAttemptError> {
     connection.execute_batch("BEGIN IMMEDIATE")?;
+    // Data-bearing rebuilds DROP parent tables whose children still carry
+    // rows; under FK enforcement the implicit DELETE violates ON DELETE
+    // RESTRICT mid-batch. Deferring re-checks every FK against the final
+    // (consistent) state at COMMIT (Stage-02 Finding 1).
+    connection.execute_batch("PRAGMA defer_foreign_keys = ON")?;
     let result = validate_locked_schema(connection, before_final);
     match result {
         Ok(()) => {
