@@ -743,6 +743,19 @@ every_matching_identity 改 per-node 槽位语义。
 **里程碑**:wave 并行从"计划+候选"打通到"多节点 provider-request 落库",
 effectful 多节点 dispatch 的存储层前提完成。
 
+## Sprint 77（✅ 完成）— ADR-0036 归档 + wave 全链路核对
+
+(1) **ADR-0036**(docs/adr/0036-wave-parallel-storage-and-orchestration.md):
+记录 v20–v22 三版迁移(候选 per-node 槽位、零 receipts 候选、effectful
+多节点 dispatch)、编排命令(ready-nodes / --target-node / wave-admit)、
+失败语义与备选方案(v21 单 batch 原因、binding 轻量自载避免递归)。
+(2) **per-run 假设核对**:Go graphdispatch 与 dispatch execute/release/
+readiness 链全部按 request_id 操作,无 per-run 单 request 假设;
+`has_graph_run_child`(删除保护)语义 = 任一子记录即阻止,多节点下仍正确。
+(3) **binding 多行路径验证**:双节点 provider-request 测试中 prepare 的
+create → run inspect → binding 遍历已隐式通过(10/10)。
+`forge accept` 为 **ACCEPTED**;Rust 923 tests。
+
 ## 下一前沿(需外部资源 / 后续阶段 / 投机增强 / 明确非目标,非本环境可完整验证)
 - **Graph 下一协议切片**:Sprint 59 只完成 scheduled ordinal-zero 的独立 claim/send/terminal sidecar；仍没有真实 successor/wave advancement、verified per-node/per-attempt receipt 驱动的非初始 contract-v2，也没有 predecessor dataflow。后续必须另立 successor 选择、receipt consumption、跨 node disclosure/consent 与 byte-bound 契约，不能从 ordering edge 推断。另一个独立协议仍是 legacy v4 hard-crash no-send adjudication：必须证明旧 executor 已停止，不能用 lease/时间流逝猜测后自动释放或重发。
 - **真点火** `--agent-cmd=claude`:**multi-agent running to completion 已坐实**(Sprint 25:真 claude 多-agent 跑到 converge MET,增量级 + 版本级)。完整旋钮:四维资源护栏 + 成本三维(phase/时间/美元)+ 任务注入 + 写权限 + 模型路由 + 工作目录 + retry + loop-back;诚实分工:agent 自治增量绿、人确认版本竣工。docs/ignition.md 有完整配方 + 实测
