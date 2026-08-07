@@ -120,8 +120,8 @@ fn required_schedule(
         .ok_or_else(|| corrupt("stored scheduled-node contract candidate has no schedule"))
 }
 
-pub(super) struct DecodedStoredCandidate {
-    pub(super) inspection: GroupAgentScheduledNodeContractInspection,
+pub(in crate::sqlite_hub) struct DecodedStoredCandidate {
+    pub(in crate::sqlite_hub) inspection: GroupAgentScheduledNodeContractInspection,
     extra: StoredExtra,
 }
 
@@ -136,7 +136,7 @@ struct StoredExtra {
     required_predecessor_node_count: i64,
 }
 
-pub(super) fn decode_stored(
+pub(in crate::sqlite_hub) fn decode_stored(
     stored: rows::RawStoredCandidate,
 ) -> Result<DecodedStoredCandidate, HubStoreError> {
     validate_stored_key(&stored.idempotency_key)?;

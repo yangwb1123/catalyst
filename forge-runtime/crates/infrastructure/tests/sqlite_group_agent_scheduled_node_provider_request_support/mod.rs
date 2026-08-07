@@ -124,3 +124,83 @@ fn model_request(source: &GroupAgentScheduledNodeContractInspection) -> ModelReq
         cancellation: Cancellation::default(),
     }
 }
+
+pub fn admit_backend_successor(
+    store: &forge_runtime_infrastructure::SqliteHubStore,
+    initial_admit: &forge_runtime_domain::AdmitGroupAgentScheduledNodeContractCandidate,
+) -> forge_runtime_domain::GroupAgentScheduledNodeContractInspection {
+    use forge_runtime_domain::{
+        GroupAgentScheduledNodeContractScope, GroupAgentScheduledNodeSuccessorStore,
+    };
+    let mut backend = initial_admit.candidate.clone();
+    backend.contract_scope = GroupAgentScheduledNodeContractScope::ScheduleSuccessorOnly;
+    let node = schedule_node(initial_admit, 1);
+    bind_backend_node(&mut backend, initial_admit, &node);
+    backend.request.predecessor_terminal_receipts.clear();
+    backend.request.required_predecessor_node_ids.clear();
+    backend.request.user_prompt = format!(
+        "{{\"v\":2,\"node_id\":\"{}\",\"task\":\"backend task\",\"acceptance\":\"ok\"}}",
+        node.node_id
+    );
+    resign_candidate_digests(&mut backend);
+    let backend_json = backend.canonical_json().expect("backend canonical JSON");
+    let mut backend_admit = initial_admit.clone();
+    backend_admit.idempotency_key = "scheduled-backend-key".into();
+    backend_admit.candidate = backend;
+    backend_admit.candidate_json = backend_json;
+    store
+        .admit_group_agent_scheduled_node_successor(&backend_admit)
+        .expect("admit backend successor")
+        .inspection
+}
+
+pub fn schedule_node(
+    initial_admit: &forge_runtime_domain::AdmitGroupAgentScheduledNodeContractCandidate,
+    ordinal: usize,
+) -> forge_runtime_domain::GroupAgentGraphExecutionScheduleNode {
+    initial_admit
+        .schedule
+        .nodes
+        .iter()
+        .find(|node| node.execution_ordinal == ordinal)
+        .expect("ordinal schedule node")
+        .clone()
+}
+
+pub fn bind_backend_node(
+    backend: &mut forge_runtime_domain::GroupAgentScheduledNodeContractCandidate,
+    initial_admit: &forge_runtime_domain::AdmitGroupAgentScheduledNodeContractCandidate,
+    node: &forge_runtime_domain::GroupAgentGraphExecutionScheduleNode,
+) {
+    backend.node.execution_ordinal = 1;
+    backend.node.node_id.clone_from(&node.node_id);
+    backend.node.authored_node_index = node.authored_node_index;
+    backend.node.topology_wave_index = node.topology_wave_index;
+    backend.node.project_lane_sha256.clone_from(&node.project_lane_sha256);
+    let project_id = initial_admit
+        .control_snapshot
+        .manifest
+        .nodes
+        .iter()
+        .find(|manifest_node| manifest_node.node_id == node.node_id)
+        .map(|manifest_node| manifest_node.project_id.clone())
+        .expect("backend manifest project");
+    backend.node.project_id.clone_from(&project_id);
+    backend.request.execution_ordinal = 1;
+    backend.request.node_id.clone_from(&node.node_id);
+}
+
+pub fn resign_candidate_digests(
+    candidate: &mut forge_runtime_domain::GroupAgentScheduledNodeContractCandidate,
+) {
+    candidate.request.user_prompt_bytes = candidate.request.user_prompt.len();
+    candidate.request.user_prompt_sha256 =
+        forge_runtime_domain::group_agent_prompt_sha256(&candidate.request.user_prompt);
+    let request_digest = candidate.request.expected_sha256().expect("request digest");
+    candidate.request.request_id = format!("scheduled-node-request-{request_digest}");
+    candidate.request.request_sha256 = request_digest;
+    let contract_digest = candidate.expected_sha256().expect("contract digest");
+    candidate.contract_id = format!("scheduled-node-contract-{contract_digest}");
+    candidate.contract_sha256 = contract_digest;
+}
+

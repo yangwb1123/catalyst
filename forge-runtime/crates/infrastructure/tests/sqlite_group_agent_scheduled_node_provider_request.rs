@@ -140,8 +140,12 @@ fn every_matching_identity_is_validated_before_a_different_key_conflict() {
     connection
         .execute_batch("PRAGMA foreign_keys=OFF")
         .expect("disable fixture foreign keys");
+    // The corrupt row matches the per-node slot: same Graph Run + node as
+    // the later mixed request, so the slot conflict must surface the
+    // corruption before any conflict error (v22 wave-parallel identity).
+    let corrupt_sql = corrupt_row_sql(&request.node_id);
     connection
-        .execute(DUPLICATE_CORRUPT_ROW_SQL, [&request.provider_request_id])
+        .execute(corrupt_sql.as_str(), [&request.provider_request_id])
         .expect("insert independently matching corrupt row");
     drop(connection);
     let mut mixed = request;
@@ -386,4 +390,75 @@ fn source_snapshot(connection: &rusqlite::Connection) -> Vec<String> {
         .expect("query source snapshot")
         .collect::<Result<_, _>>()
         .expect("read source snapshot")
+}
+
+/// Builds and admits the ordinal-1 (backend) zero-receipt successor
+/// candidate for the diamond fixture.
+#[test]
+fn two_nodes_in_one_run_prepare_provider_requests_through_v22() {
+    use sqlite_group_agent_graph_run_support as run_support;
+    use sqlite_group_agent_graph_execution_schedule_support as schedule_support;
+    use sqlite_group_agent_scheduled_node_contract_support as contract_support;
+    use sqlite_group_agent_scheduled_node_provider_request_support as request_support;
+    use forge_runtime_domain::{
+        GroupAgentGraphExecutionScheduleStore, GroupAgentGraphRunStore,
+        GroupAgentScheduledNodeContractStore,
+    };
+
+    // Diamond: frontend + backend are same-wave siblings (zero predecessors);
+    // both admit as successors and both get a provider request in one run.
+    let fixture = run_support::Fixture::diamond();
+    let _run = fixture
+        .store
+        .begin_group_agent_graph_run(&fixture.request("graph-run-1", "run-key", 30))
+        .expect("seed diamond Graph Run");
+    let schedule = schedule_support::request(&fixture, "schedule-key", 40);
+    fixture
+        .store
+        .admit_group_agent_graph_execution_schedule(&schedule)
+        .expect("admit schedule");
+    let initial_admit = contract_support::admission(schedule, "scheduled-contract-key", 50);
+    let initial = fixture
+        .store
+        .admit_group_agent_scheduled_node_contract(&initial_admit)
+        .expect("admit initial contract")
+        .inspection;
+    let backend_inspection = request_support::admit_backend_successor(&fixture.store, &initial_admit);
+
+    // Both provider requests land in the same run (v22 per-node slots; v18
+    // per-run UNIQUE would deadlock the second).
+    let initial_request = request_support::request(&initial, "scheduled-provider-key-initial", 60);
+    fixture
+        .store
+        .prepare_group_agent_scheduled_node_provider_request(&initial_request)
+        .expect("initial-node provider request persists");
+    let backend_request =
+        request_support::request(&backend_inspection, "scheduled-provider-key-backend", 70);
+    let stored = fixture
+        .store
+        .prepare_group_agent_scheduled_node_provider_request(&backend_request)
+        .expect("second-node provider request persists in the same run");
+    assert_eq!(stored.inspection.record.execution_ordinal, 1);
+    assert_eq!(stored.inspection.record.node_id, "backend");
+}
+
+
+///  inserts a provider-request row that matches the per-node
+/// slot of the given node (v22 wave-parallel identity) but is corrupt.
+fn corrupt_row_sql(node_id: &str) -> String {
+    format!(
+        "INSERT INTO group_agent_graph_scheduled_node_provider_requests
+         SELECT 'corrupt-provider-request', 'graph-run-corrupt', 'schedule-corrupt',
+           'contract-corrupt', provider_request_version, codec_protocol_version,
+           execution_ordinal, '{node_id}', attempt, scheduled_contract_sha256,
+           'logical-request-corrupt', logical_request_sha256, schedule_sha256,
+           project_lane_sha256, provider_kind, endpoint, model, destination_sha256,
+           pricing_snapshot_sha256, provider_request_blob, provider_request_bytes,
+           provider_request_sha256, prepared_request_sha256, expected_last_event_seq,
+           expected_last_event_sha256, provider_request_prepared, provider_request_sent,
+           lifecycle_contract_admitted, execution_authority_released,
+           dispatch_authority_released, project_lane_claimed, progress_observed,
+           successor_advance_authorized, 'corrupt-provider-key', created_at_ms
+         FROM group_agent_graph_scheduled_node_provider_requests WHERE id=?1"
+    )
 }

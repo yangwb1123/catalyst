@@ -240,7 +240,7 @@ fn v15_physical_columns_and_catalog_counts_are_locked() {
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .expect("catalog counts");
-    assert_eq!((tables, implicit_indexes, explicit_indexes), (33, 88, 32));
+    assert_eq!((tables, implicit_indexes, explicit_indexes), (33, 86, 32));
     drop((connection, root));
 }
 
@@ -306,7 +306,7 @@ fn malformed(original: &str, replacement: &str) -> String {
 }
 
 fn assert_current_shape(connection: &Connection) {
-    assert_eq!(schema_version(connection), 21);
+    assert_eq!(schema_version(connection), 22);
     assert!(schema_object_exists(connection, "table", REQUEST_TABLE));
     assert!(schema_object_exists(
         connection,

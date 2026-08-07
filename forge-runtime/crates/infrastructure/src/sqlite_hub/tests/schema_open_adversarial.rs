@@ -110,7 +110,7 @@ const INDEX_ORIGIN_GOLDEN: &[(&str, (usize, usize, usize))] = &[
     ),
     (
         "group_agent_graph_scheduled_node_provider_requests",
-        (1, 7, 2),
+        (1, 5, 2),
     ),
 ];
 
@@ -187,7 +187,7 @@ fn raw_autoindex_owner_corruption_is_rejected_without_repair() {
 
     assert_open_is_corrupt(&database, "raw autoindex owner corruption");
     let unchanged = Connection::open(&database).expect("reopen raw-corrupt fixture");
-    assert_eq!(schema_version(&unchanged), 21);
+    assert_eq!(schema_version(&unchanged), 22);
     assert_eq!(schema_snapshot(&unchanged), before);
     assert_eq!(table_definition(&unchanged, "groups"), table_sql);
     drop((unchanged, root));
@@ -203,7 +203,7 @@ fn sqlite_prefixed_trigger_is_rejected_without_repair() {
 
     assert_open_is_corrupt(&database, "sqlite-prefixed trigger");
     let unchanged = Connection::open(&database).expect("reopen rejected trigger fixture");
-    assert_eq!(schema_version(&unchanged), 21);
+    assert_eq!(schema_version(&unchanged), 22);
     assert_eq!(schema_snapshot(&unchanged), before);
     assert!(schema_object_named(&unchanged, "sqlite_hidden_panel_child"));
     drop((unchanged, root));
@@ -221,7 +221,7 @@ fn v15_structural_index_inventory_matches_the_release_golden() {
         totals.1 += actual.1;
         totals.2 += actual.2;
     }
-    assert_eq!(totals, (31, 48, 29));
+    assert_eq!(totals, (31, 46, 29));
     drop((connection, root));
 }
 

@@ -60,6 +60,8 @@ mod schema_v19_sql;
 mod schema_v20_sql;
 #[path = "schema_contract/v21_sql.rs"]
 mod schema_v21_sql;
+#[path = "schema_contract/v22_sql.rs"]
+mod schema_v22_sql;
 mod schema_v9_sql;
 mod write;
 

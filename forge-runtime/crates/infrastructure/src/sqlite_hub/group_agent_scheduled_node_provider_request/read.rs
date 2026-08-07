@@ -45,7 +45,7 @@ pub(in crate::sqlite_hub) fn inspect_in_snapshot(
 pub(in crate::sqlite_hub) fn validate_graph_run_binding(
     connection: &Connection,
     run: &GroupAgentGraphRunInspection,
-    scheduled_contract: Option<&GroupAgentScheduledNodeContractInspection>,
+    _scheduled_contract: Option<&GroupAgentScheduledNodeContractInspection>,
 ) -> Result<Option<GroupAgentScheduledNodeProviderRequestInspection>, HubStoreError> {
     let version: i64 = connection
         .pragma_query_value(None, "user_version", |row| row.get(0))
@@ -53,24 +53,42 @@ pub(in crate::sqlite_hub) fn validate_graph_run_binding(
     if version < 15 {
         return Ok(None);
     }
-    let Some(stored) = rows::find_by_run(connection, &run.run.graph_run_id)? else {
+    // v22 (wave-parallel): a Graph Run carries one provider request per
+    // node. Every stored request must still bind to the run and its own
+    // contract (loaded by the row's scheduled_contract_id — never the
+    // caller-supplied single-dispatch contract, which is the initial node's
+    // in a multi-node run). Contracts are decoded LIGHTLY (no run re-inspect)
+    // so this validator cannot recurse back into itself; the first request
+    // is returned for the run's single-dispatch view.
+    let stored_all = rows::find_all_by_run(connection, &run.run.graph_run_id)?;
+    if stored_all.is_empty() {
         return Ok(None);
-    };
-    let scheduled_contract = if let Some(contract) = scheduled_contract {
-        contract.clone()
-    } else {
-        // The bound contract may live in the successor candidate table.
-        // Lightweight decode only: re-inspecting the Graph Run from here
-        // would recurse back into this validator.
-        let stored = successor_rows::find_all_by_run(connection, &run.run.graph_run_id)?
-            .into_iter()
-            .next()
-            .ok_or_else(|| {
-                corrupt("stored scheduled-node provider request has no scheduled contract")
-            })?;
-        group_agent_scheduled_node_successor::read::decode_stored(stored)?.inspection
-    };
-    validate_stored_with_contract(stored, scheduled_contract).map(Some)
+    }
+    let mut result = None;
+    for stored in stored_all {
+        let (record, body) = decode_stored(stored)?;
+        let contract = load_contract_lightweight(connection, &record.scheduled_contract_id)?;
+        result = Some(validate_decoded(record, body, contract)?);
+    }
+    Ok(result)
+}
+
+/// `load_contract_lightweight` decodes the bound contract from either table
+/// WITHOUT re-inspecting the Graph Run (which would recurse back into this
+/// validator). The caller validates the decoded inspection.
+fn load_contract_lightweight(
+    connection: &Connection,
+    scheduled_contract_id: &str,
+) -> Result<GroupAgentScheduledNodeContractInspection, HubStoreError> {
+    if let Some(stored) =
+        group_agent_scheduled_node_contract::rows::find_by_id(connection, scheduled_contract_id)?
+    {
+        return group_agent_scheduled_node_contract::read::decode_stored(stored)
+            .map(|decoded| decoded.inspection);
+    }
+    let stored = successor_rows::find_by_id(connection, scheduled_contract_id)?
+        .ok_or_else(|| corrupt("stored scheduled-node provider request has no scheduled contract"))?;
+    group_agent_scheduled_node_successor::read::decode_stored(stored).map(|decoded| decoded.inspection)
 }
 
 pub(in crate::sqlite_hub) fn has_graph_run_child(
@@ -111,13 +129,6 @@ fn load_source_contract(
     }
 }
 
-fn validate_stored_with_contract(
-    stored: rows::RawStoredRequest,
-    scheduled_contract: GroupAgentScheduledNodeContractInspection,
-) -> Result<GroupAgentScheduledNodeProviderRequestInspection, HubStoreError> {
-    let (record, body) = decode_stored(stored)?;
-    validate_decoded(record, body, scheduled_contract)
-}
 
 fn decode_stored(
     stored: rows::RawStoredRequest,
@@ -164,8 +175,8 @@ pub(super) fn validate_exact_provider_body(
         max_output_tokens: candidate.budgets.max_output_tokens,
         cancellation: Cancellation::default(),
     };
-    OpenAiResponsesProvider::validate_exact_request_bytes(&candidate.provider.model, &request, body)
-        .map_err(|error| {
+    let result = OpenAiResponsesProvider::validate_exact_request_bytes(&candidate.provider.model, &request, body);
+    result.map_err(|error| {
             corrupt(&format!(
                 "stored scheduled-node provider request failed exact codec validation: {error}"
             ))

@@ -24,7 +24,7 @@ const STORED_COLUMNS: &str = "id,graph_run_id,schedule_id,contract_version,node_
  topology_wave_index,required_predecessor_node_count,idempotency_key,contract_blob";
 
 #[derive(Clone)]
-pub(super) struct RawCandidateMetadata {
+pub(in crate::sqlite_hub) struct RawCandidateMetadata {
     pub id: String,
     pub graph_run_id: String,
     pub schedule_id: String,
@@ -51,8 +51,8 @@ pub(super) struct RawCandidateMetadata {
     pub created_at_ms: i64,
 }
 
-pub(super) struct RawStoredCandidate {
-    pub metadata: RawCandidateMetadata,
+pub(in crate::sqlite_hub) struct RawStoredCandidate {
+    pub(in crate::sqlite_hub) metadata: RawCandidateMetadata,
     pub graph_id: String,
     pub scheduler_protocol_version: i64,
     pub node_execution_protocol_version: i64,
@@ -65,7 +65,7 @@ pub(super) struct RawStoredCandidate {
     pub contract_blob: Vec<u8>,
 }
 
-pub(super) fn find_by_id(
+pub(in crate::sqlite_hub) fn find_by_id(
     connection: &Connection,
     contract_id: &str,
 ) -> Result<Option<RawStoredCandidate>, HubStoreError> {

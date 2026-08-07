@@ -65,7 +65,7 @@ pub(in crate::sqlite_hub) struct RawStoredCandidate {
     pub contract_blob: Vec<u8>,
 }
 
-pub(super) fn find_by_id(
+pub(in crate::sqlite_hub) fn find_by_id(
     connection: &Connection,
     contract_id: &str,
 ) -> Result<Option<RawStoredCandidate>, HubStoreError> {
@@ -78,24 +78,6 @@ pub(super) fn find_by_key(
 ) -> Result<Option<RawStoredCandidate>, HubStoreError> {
     query_one(connection, "idempotency_key", &[key])
 }
-
-/// Returns every successor candidate admitted for one Graph Run (v20 allows
-/// one candidate per node), in creation order.
-pub(in crate::sqlite_hub) fn find_all_by_run(
-    connection: &Connection,
-    graph_run_id: &str,
-) -> Result<Vec<RawStoredCandidate>, HubStoreError> {
-    let mut statement = connection
-        .prepare(&format!(
-            "SELECT {STORED_COLUMNS} FROM {TABLE} WHERE graph_run_id=?1"
-        ))
-        .map_err(read_error)?;
-    let rows = statement
-        .query_map([graph_run_id], stored_row)
-        .map_err(read_error)?;
-    rows.collect::<Result<Vec<_>, _>>().map_err(read_error)
-}
-
 
 pub(super) fn find_by_request_id(
     connection: &Connection,

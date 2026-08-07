@@ -129,28 +129,32 @@ pub(in crate::sqlite_hub) fn validate_graph_run_binding(
     if version < 16 {
         return Ok(());
     }
-    let Some(raw) = find_by_run(connection, &run.run.graph_run_id)? else {
-        return Ok(());
-    };
-    if raw.graph_run_id != run.run.graph_run_id || raw.attempt != 1 || raw.lane_active < 0 {
-        return Err(corrupt("scheduled lifecycle Graph Run binding is invalid"));
+    // v22 (wave-parallel): a Graph Run carries one dispatch lifecycle per
+    // node; every row must still bind to the run.
+    let all = find_all_by_run(connection, &run.run.graph_run_id)?;
+    for raw in &all {
+        if raw.graph_run_id != run.run.graph_run_id || raw.attempt != 1 || raw.lane_active < 0 {
+            return Err(corrupt("scheduled lifecycle Graph Run binding is invalid"));
+        }
+        validate_raw(raw)?;
     }
-    validate_raw(&raw)?;
     Ok(())
 }
 
-fn find_by_run(
+fn find_all_by_run(
     connection: &Connection,
     graph_run_id: &str,
-) -> Result<Option<RawLifecycle>, HubStoreError> {
-    connection
-        .query_row(
-            &format!("SELECT {COLUMNS} FROM {TABLE} WHERE graph_run_id=?1"),
-            [graph_run_id],
-            row,
-        )
-        .optional()
-        .map_err(read_error)
+) -> Result<Vec<RawLifecycle>, HubStoreError> {
+    let mut statement = connection
+        .prepare(&format!(
+            "SELECT {COLUMNS} FROM {TABLE} WHERE graph_run_id=?1 ORDER BY created_at_ms DESC,id DESC"
+        ))
+        .map_err(read_error)?;
+    statement
+        .query_map([graph_run_id], row)
+        .map_err(read_error)?
+        .map(|row| row.map_err(read_error))
+        .collect()
 }
 
 pub(super) fn reconstruct(

@@ -64,6 +64,7 @@ pub(super) struct RawRequestMetadata {
     pub created_at_ms: i64,
 }
 
+#[derive(Clone)]
 pub(super) struct RawStoredRequest {
     pub metadata: RawRequestMetadata,
     pub idempotency_key: String,
@@ -84,19 +85,7 @@ pub(super) fn find_by_key(
     query_one(connection, "idempotency_key", key)
 }
 
-pub(super) fn find_by_run(
-    connection: &Connection,
-    graph_run_id: &str,
-) -> Result<Option<RawStoredRequest>, HubStoreError> {
-    query_one(connection, "graph_run_id", graph_run_id)
-}
 
-pub(super) fn find_by_schedule(
-    connection: &Connection,
-    schedule_id: &str,
-) -> Result<Option<RawStoredRequest>, HubStoreError> {
-    query_one(connection, "schedule_id", schedule_id)
-}
 
 pub(super) fn find_by_contract(
     connection: &Connection,
@@ -170,6 +159,22 @@ pub(super) fn query_metadata(
             [limit],
         ),
     }
+}
+
+pub(super) fn find_all_by_run(
+    connection: &Connection,
+    graph_run_id: &str,
+) -> Result<Vec<RawStoredRequest>, HubStoreError> {
+    let mut statement = connection
+        .prepare(&format!(
+            "SELECT {STORED_COLUMNS} FROM {TABLE} WHERE graph_run_id=?1 ORDER BY created_at_ms DESC,id DESC"
+        ))
+        .map_err(read_error)?;
+    statement
+        .query_map([graph_run_id], stored_row)
+        .map_err(read_error)?
+        .map(|row| row.map_err(read_error))
+        .collect()
 }
 
 pub(super) fn exists_for_run(

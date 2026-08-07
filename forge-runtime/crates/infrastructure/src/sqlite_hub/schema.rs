@@ -39,10 +39,11 @@ use super::{
     schema_v19_sql::MIGRATE_V18_TO_V19_SQL,
     schema_v20_sql::MIGRATE_V19_TO_V20_SQL,
     schema_v21_sql::MIGRATE_V20_TO_V21_SQL,
+    schema_v22_sql::MIGRATE_V21_TO_V22_SQL,
     unavailable,
 };
 
-const SCHEMA_VERSION: i64 = 21;
+const SCHEMA_VERSION: i64 = 22;
 const CONNECTION_BUSY_TIMEOUT: Duration = Duration::from_millis(250);
 const OPEN_RETRY_TIMEOUT: Duration = Duration::from_secs(5);
 const OPEN_RETRY_DELAY: Duration = Duration::from_millis(10);
@@ -82,7 +83,7 @@ pub(super) fn open_existing_dispatch_preflight_read_only_database(
 ) -> Result<Connection, HubStoreError> {
     open_existing_validated_read_only_database(
         path,
-        &[11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21],
+        &[11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22],
         "schema version 11..=21",
     )
 }
@@ -284,6 +285,9 @@ fn migrate_late(connection: &Connection, version: i64) -> Result<(), OpenAttempt
     if version <= 20 {
         migrate_v20_to_v21(connection)?;
     }
+    if version <= 21 {
+        migrate_v21_to_v22(connection)?;
+    }
     Ok(())
 }
 
@@ -421,6 +425,11 @@ fn migrate_v19_to_v20(connection: &Connection) -> Result<(), OpenAttemptError> {
 
 fn migrate_v20_to_v21(connection: &Connection) -> Result<(), OpenAttemptError> {
     connection.execute_batch(MIGRATE_V20_TO_V21_SQL)?;
+    Ok(())
+}
+
+fn migrate_v21_to_v22(connection: &Connection) -> Result<(), OpenAttemptError> {
+    connection.execute_batch(MIGRATE_V21_TO_V22_SQL)?;
     Ok(())
 }
 

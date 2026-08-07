@@ -38,14 +38,6 @@ fn matches(
             "provider request ID",
         ),
         (
-            rows::find_by_run(transaction, &request.graph_run_id)?,
-            "Graph Run",
-        ),
-        (
-            rows::find_by_schedule(transaction, &request.schedule_id)?,
-            "schedule",
-        ),
-        (
             rows::find_by_contract(transaction, &request.scheduled_contract_id)?,
             "scheduled contract",
         ),

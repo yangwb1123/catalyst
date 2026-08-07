@@ -85,14 +85,14 @@ fn future_schema_version_is_rejected_without_mutation() {
     let (root, database) = legacy_v9_database();
     let connection = open_database(&database).expect("migrate future-version fixture");
     connection
-        .pragma_update(None, "user_version", 22)
+        .pragma_update(None, "user_version", 23)
         .expect("mark future schema");
     let before = schema_snapshot(&connection);
     drop(connection);
 
     assert_open_corrupt(&database);
     let unchanged = Connection::open(&database).expect("reopen future schema directly");
-    assert_eq!(schema_version(&unchanged), 22);
+    assert_eq!(schema_version(&unchanged), 23);
     assert_eq!(schema_snapshot(&unchanged), before);
     assert_legacy_graph_run(&unchanged);
     drop((unchanged, root));
@@ -181,7 +181,7 @@ fn malformed(original: &str, replacement: &str) -> String {
 }
 
 fn assert_v10_shape(connection: &Connection) {
-    assert_eq!(schema_version(connection), 21);
+    assert_eq!(schema_version(connection), 22);
     for table in [
         "group_agent_graph_runs",
         "group_agent_graph_run_events",
