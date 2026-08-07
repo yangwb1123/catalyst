@@ -133,7 +133,7 @@ CREATE INDEX group_agent_graph_scheduled_node_provider_requests_project_lane
   );
 CREATE INDEX group_agent_graph_scheduled_node_provider_requests_created
   ON group_agent_graph_scheduled_node_provider_requests(created_at_ms DESC, id DESC);
-PRAGMA user_version = 22;
+-- single-batch migration: user_version is set once at the end (ADR-0036)
 CREATE TABLE group_agent_graph_scheduled_node_dispatch_lifecycles_v22 (
   id TEXT NOT NULL PRIMARY KEY
     CHECK(typeof(id) = 'text' AND length(CAST(id AS BLOB)) BETWEEN 1 AND 128),

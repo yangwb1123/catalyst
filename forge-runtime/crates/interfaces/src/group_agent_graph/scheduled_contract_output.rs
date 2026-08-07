@@ -146,6 +146,7 @@ impl GroupAgentScheduledNodeContractCliOutput {
         }
     }
 
+
     pub fn admitted(
         disposition: AdmitGroupAgentScheduledNodeContractDisposition,
         inspection: GroupAgentScheduledNodeContractInspection,

@@ -15,6 +15,42 @@ use cli_group_agent_scheduled_node_contract_support::{
     admit_schedule, build_schedule, export_control, prepare_run,
 };
 const PRICING: &str = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
+
+/// Builds one wave-admit invocation with the full execution option set
+/// (fail-closed, no literals in candidates — review Finding 2).
+fn wave_admit_args(
+    graph_run_id: &str,
+    schedule_sha256: &str,
+    receipt_path: Option<&str>,
+) -> Vec<String> {
+    let mut args = vec![
+        "group".into(), "graph".into(), "run".into(), "scheduled-contract".into(),
+        "wave-admit".into(), graph_run_id.into(),
+        "--schedule-sha256".into(), schedule_sha256.into(),
+    ];
+    if let Some(receipt) = receipt_path {
+        args.push("--predecessor-receipt".into());
+        args.push(receipt.into());
+    }
+    args.extend(wave_execution_args());
+    args
+}
+
+/// Execution options every wave-admit call must carry (fail-closed, no
+/// literals in candidates — review Finding 2).
+fn wave_execution_args() -> Vec<String> {
+    vec![
+        "--endpoint".into(), "https://api.openai.com/v1/responses".into(),
+        "--model".into(), "gpt-5.6-sol".into(),
+        "--max-output-tokens".into(), "4096".into(),
+        "--max-model-output-bytes".into(), "65536".into(),
+        "--max-model-events".into(), "4096".into(),
+        "--timeout-ms".into(), "300000".into(),
+        "--max-cost-usd-micros".into(), "1000000".into(),
+        "--pricing-snapshot-sha256".into(), PRICING.into(),
+        "--max-result-bytes".into(), "262144".into(),
+    ]
+}
 use group_agent_graph_run_support::{Fixture, command};
 use group_agent_graph_support::{successful_json, text};
 
@@ -111,15 +147,12 @@ fn wave_admit_materializes_every_ready_node_from_one_wave() {
     let dir = TempDir::new().expect("tempdir");
     let receipt_path = write_temp(&dir, "receipt.json", &receipt);
 
+    let args = wave_admit_args(&graph_run_id, &schedule_sha256, Some(&receipt_path));
+    let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
     let output = command(
         fixture.state.path(),
         fixture.cwd.path(),
-        &[
-            "group", "graph", "run", "scheduled-contract", "wave-admit",
-            &graph_run_id,
-            "--schedule-sha256", &schedule_sha256,
-            "--predecessor-receipt", &receipt_path,
-        ],
+        &arg_refs,
     )
     .output()
     .expect("wave-admit");
@@ -134,8 +167,10 @@ fn wave_admit_materializes_every_ready_node_from_one_wave() {
     let wave = parsed["wave"].as_array().expect("wave array");
     let rejected = parsed["rejected"].as_array().expect("rejected array");
     // backend is a same-wave sibling of frontend with an empty
-    // direct-predecessor set: its candidate carries zero receipts and
-    // admits without any lifecycle dependency (ADR-0035 + v21).
+    // direct-predecessor set: the fabricated receipt passes the Go digest
+    // check and is accepted as consumed-set evidence but is NOT carried by
+    // the candidate (zero receipts), so admission has no lifecycle
+    // dependency and succeeds (ADR-0035 + v21).
     assert_eq!(rejected.len(), 0, "no rejections: {parsed}");
     assert_eq!(wave.len(), 1, "exactly one wave node admitted: {parsed}");
     assert_ne!(wave[0]["node_id"], node0);
@@ -163,14 +198,12 @@ fn wave_admit_requires_receipts_and_schedule() {
     let fixture = Fixture::new();
     let (graph_run_id, schedule_sha256, _) = prepared_wave(&fixture, "wave-admit-reject-run");
     // No receipts: rejected before any Go core call.
+    let args = wave_admit_args(&graph_run_id, &schedule_sha256, None);
+    let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
     let output = command(
         fixture.state.path(),
         fixture.cwd.path(),
-        &[
-            "group", "graph", "run", "scheduled-contract", "wave-admit",
-            &graph_run_id,
-            "--schedule-sha256", &schedule_sha256,
-        ],
+        &arg_refs,
     )
     .output()
     .expect("wave-admit without receipts");
@@ -210,15 +243,12 @@ fn wave_admit_rejects_drifted_receipt_without_admitting_anything() {
     receipt = drift.into_bytes();
     let dir = TempDir::new().expect("tempdir");
     let receipt_path = write_temp(&dir, "receipt.json", &receipt);
+    let args = wave_admit_args(&graph_run_id, &schedule_sha256, Some(&receipt_path));
+    let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
     let output = command(
         fixture.state.path(),
         fixture.cwd.path(),
-        &[
-            "group", "graph", "run", "scheduled-contract", "wave-admit",
-            &graph_run_id,
-            "--schedule-sha256", &schedule_sha256,
-            "--predecessor-receipt", &receipt_path,
-        ],
+        &arg_refs,
     )
     .output()
     .expect("wave-admit drifted receipt");

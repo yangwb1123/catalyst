@@ -20,6 +20,7 @@ use forge_runtime_infrastructure::SqliteHubStore;
 use crate::{
     args::{
         Args, GroupGraphRunScheduledContractCommand, GroupGraphRunScheduledContractSuccessorCommand,
+        WaveAdmitExecutionOptions,
     },
     state_path::{hub_database_path, idempotency_key, unix_time_millis},
 };
@@ -71,7 +72,9 @@ pub fn execute(
             predecessor_receipt_sources,
             schedule_sha256,
             go_core,
-        } => execute_wave(args, graph_run_id, predecessor_receipt_sources, schedule_sha256, go_core.as_deref()),
+            idempotency_key,
+            execution,
+        } => execute_wave(args, graph_run_id, predecessor_receipt_sources, schedule_sha256, go_core.as_deref(), idempotency_key.as_deref(), execution),
     }
 }
 
@@ -236,6 +239,8 @@ fn execute_wave(
     predecessor_receipt_sources: &[String],
     schedule_sha256: &str,
     go_core: Option<&str>,
+    idempotency_key: Option<&str>,
+    execution: &WaveAdmitExecutionOptions,
 ) -> Result<GroupAgentScheduledNodeContractCliOutput, Box<dyn Error>> {
     super::wave_command::execute_wave_admit(
         args,
@@ -243,6 +248,8 @@ fn execute_wave(
         predecessor_receipt_sources,
         schedule_sha256,
         go_core,
+        idempotency_key,
+        execution,
     )
 }
 

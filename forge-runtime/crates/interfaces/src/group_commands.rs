@@ -86,7 +86,26 @@ pub enum GroupGraphRunScheduledContractCommand {
         predecessor_receipt_sources: Vec<String>,
         schedule_sha256: String,
         go_core: Option<String>,
+        idempotency_key: Option<String>,
+        execution: Box<WaveAdmitExecutionOptions>,
     },
+}
+
+/// Execution options for wave-admit: mirrored from the Go core's
+/// graph-scheduled-node-contract flags so every candidate carries the
+/// operator's real endpoint/model/budget/pricing, never literals
+/// (review Finding 2).
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct WaveAdmitExecutionOptions {
+    pub endpoint: String,
+    pub model: String,
+    pub max_output_tokens: String,
+    pub max_model_output_bytes: String,
+    pub max_model_events: String,
+    pub timeout_ms: String,
+    pub max_cost_usd_micros: String,
+    pub pricing_snapshot_sha256: String,
+    pub max_result_bytes: String,
 }
 
 #[derive(Debug, Eq, PartialEq)]

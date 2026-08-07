@@ -145,9 +145,8 @@ func ReadySuccessorNodes(
 			ready = append(ready, node.NodeID)
 		}
 	}
-	if len(ready) == 0 {
-		return nil, errInvalidCandidate
-	}
+	// A fully-consumed graph legitimately has an empty next wave; report it
+	// as an empty plan (nil, nil), not as a planning fault.
 	return ready, nil
 }
 

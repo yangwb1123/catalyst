@@ -7,13 +7,16 @@
 //! per-node dispatch chain (prepare/authorize/execute) stays on the existing
 //! provider-request commands.
 
+use std::collections::VecDeque;
 use std::error::Error;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
+use crate::args::{next_value, WaveAdmitExecutionOptions};
+
 use crate::{
     args::Args,
-    state_path::{idempotency_key, unix_time_millis},
+    state_path::{idempotency_key as generated_idempotency_key, unix_time_millis},
 };
 
 use super::{
@@ -44,6 +47,8 @@ pub fn execute_wave_admit(
     receipt_sources: &[String],
     schedule_sha256: &str,
     go_core: Option<&str>,
+    idempotency_key: Option<&str>,
+    execution: &crate::args::WaveAdmitExecutionOptions,
 ) -> Result<GroupAgentScheduledNodeContractCliOutput, Box<dyn Error>> {
     let control = scheduled_contract_command::export_control(args, graph_run_id)?;
     if receipt_sources.is_empty() {
@@ -61,8 +66,16 @@ pub fn execute_wave_admit(
     let mut wave = Vec::new();
     let mut rejected = Vec::new();
     for node_id in ready {
-        match materialize_node(args, graph_run_id, &control, &node_id,
-                                receipt_sources, schedule_sha256, go_core) {
+        let ctx = MaterializeContext {
+            args,
+            control: &control,
+            receipt_sources,
+            schedule_sha256,
+            go_core,
+            idempotency_key,
+            execution,
+        };
+        match materialize_node(graph_run_id, &node_id, &ctx) {
             Ok(node) => wave.push(node),
             Err(err) => rejected.push(WaveAdmitNodeOutput {
                 node_id,
@@ -100,28 +113,44 @@ fn run_ready_nodes(
     Ok(parsed)
 }
 
+/// Shared materialization context (keeps `materialize_node` within the
+/// argument budget).
+struct MaterializeContext<'a> {
+    args: &'a Args,
+    control: &'a [u8],
+    receipt_sources: &'a [String],
+    schedule_sha256: &'a str,
+    go_core: Option<&'a str>,
+    idempotency_key: Option<&'a str>,
+    execution: &'a crate::args::WaveAdmitExecutionOptions,
+}
+
 /// `materialize_node` builds one successor candidate for a target node via the
 /// Go core and admits it into the hub.
 fn materialize_node(
-    args: &Args,
     graph_run_id: &str,
-    control: &[u8],
     node_id: &str,
-    receipt_sources: &[String],
-    schedule_sha256: &str,
-    go_core: Option<&str>,
+    ctx: &MaterializeContext<'_>,
 ) -> Result<WaveAdmitNodeOutput, Box<dyn Error>> {
-    let candidate = build_target_candidate(go_core, control, node_id,
-                                           receipt_sources, schedule_sha256)?;
+    let candidate = build_target_candidate(ctx.go_core, ctx.control, node_id,
+                                           ctx.receipt_sources, ctx.schedule_sha256, ctx.execution)?;
     let input = WaveAdmitInput {
         graph_run_id: graph_run_id.into(),
         contract_json: String::from_utf8(candidate)?,
-        idempotency_key: idempotency_key("scheduled-wave-admit"),
+        // Deterministic per-node key derived from the user key (or a fresh
+        // base): a re-run with the same --idempotency-key replays admitted
+        // nodes instead of rejecting them (Finding 3).
+        idempotency_key: {
+            let base = ctx
+                .idempotency_key
+                .map_or_else(|| generated_idempotency_key("scheduled-wave-admit"), str::to_owned);
+            format!("{base}-{node_id}")
+        },
         admitted_at_ms: unix_time_millis(),
         predecessor_content: None,
     };
     WaveSuccessorService::preflight_admit(&input)?;
-    let result = successor_service(args)?.admit(&input)?;
+    let result = successor_service(ctx.args)?.admit(&input)?;
     Ok(WaveAdmitNodeOutput {
         node_id: node_id.into(),
         disposition: format!("{:?}", result.disposition),
@@ -137,6 +166,7 @@ fn build_target_candidate(
     node_id: &str,
     receipt_sources: &[String],
     schedule_sha256: &str,
+    execution: &crate::args::WaveAdmitExecutionOptions,
 ) -> Result<Vec<u8>, Box<dyn Error>> {
     let mut go = go_command(go_core);
     go.args([
@@ -146,23 +176,23 @@ fn build_target_candidate(
         "--schedule-sha256",
         schedule_sha256,
         "--endpoint",
-        "https://api.openai.com/v1/responses",
+        &execution.endpoint,
         "--model",
-        "gpt-5.2",
+        &execution.model,
         "--max-output-tokens",
-        "4096",
+        &execution.max_output_tokens,
         "--max-model-output-bytes",
-        "65536",
+        &execution.max_model_output_bytes,
         "--max-model-events",
-        "4096",
+        &execution.max_model_events,
         "--timeout-ms",
-        "300000",
+        &execution.timeout_ms,
         "--max-cost-usd-micros",
-        "1000000",
+        &execution.max_cost_usd_micros,
         "--pricing-snapshot-sha256",
-        "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        &execution.pricing_snapshot_sha256,
         "--max-result-bytes",
-        "262144",
+        &execution.max_result_bytes,
         "--target-node",
         node_id,
     ]);
@@ -242,4 +272,40 @@ pub(crate) fn write_wave(
         writeln!(writer, "wave-admit {} — {}", node.node_id, node.disposition)?;
     }
     writeln!(writer, "wave: {} admitted, {} rejected", wave.len(), rejected.len())
+}
+
+/// Binds one wave-admit execution-option flag; returns false for unknown
+/// flags so the caller can reject them (review Finding 2: no literals).
+pub(crate) fn bind_wave_execution_flag(
+    flag: &str,
+    tokens: &mut VecDeque<String>,
+    execution: &mut WaveAdmitExecutionOptions,
+) -> Result<bool, String> {
+    let value = next_value(tokens, flag)?;
+    match flag {
+        "--endpoint" => execution.endpoint = value,
+        "--model" => execution.model = value,
+        "--max-output-tokens" => execution.max_output_tokens = value,
+        "--max-model-output-bytes" => execution.max_model_output_bytes = value,
+        "--max-model-events" => execution.max_model_events = value,
+        "--timeout-ms" => execution.timeout_ms = value,
+        "--max-cost-usd-micros" => execution.max_cost_usd_micros = value,
+        "--pricing-snapshot-sha256" => execution.pricing_snapshot_sha256 = value,
+        "--max-result-bytes" => execution.max_result_bytes = value,
+        _ => return Ok(false),
+    }
+    Ok(true)
+}
+
+
+pub(crate) fn wave_execution_complete(execution: &WaveAdmitExecutionOptions) -> bool {
+    !execution.endpoint.is_empty()
+        && !execution.model.is_empty()
+        && !execution.max_output_tokens.is_empty()
+        && !execution.max_model_output_bytes.is_empty()
+        && !execution.max_model_events.is_empty()
+        && !execution.timeout_ms.is_empty()
+        && !execution.max_cost_usd_micros.is_empty()
+        && !execution.pricing_snapshot_sha256.is_empty()
+        && !execution.max_result_bytes.is_empty()
 }

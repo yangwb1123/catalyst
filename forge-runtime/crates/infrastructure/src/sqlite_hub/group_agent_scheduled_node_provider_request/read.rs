@@ -46,31 +46,27 @@ pub(in crate::sqlite_hub) fn validate_graph_run_binding(
     connection: &Connection,
     run: &GroupAgentGraphRunInspection,
     _scheduled_contract: Option<&GroupAgentScheduledNodeContractInspection>,
-) -> Result<Option<GroupAgentScheduledNodeProviderRequestInspection>, HubStoreError> {
+) -> Result<(), HubStoreError> {
     let version: i64 = connection
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .map_err(read_error)?;
     if version < 15 {
-        return Ok(None);
+        return Ok(());
     }
     // v22 (wave-parallel): a Graph Run carries one provider request per
     // node. Every stored request must still bind to the run and its own
     // contract (loaded by the row's scheduled_contract_id — never the
     // caller-supplied single-dispatch contract, which is the initial node's
     // in a multi-node run). Contracts are decoded LIGHTLY (no run re-inspect)
-    // so this validator cannot recurse back into itself; the first request
-    // is returned for the run's single-dispatch view.
+    // so this validator cannot recurse back into itself. All rows are
+    // validated; there is no single-dispatch return value.
     let stored_all = rows::find_all_by_run(connection, &run.run.graph_run_id)?;
-    if stored_all.is_empty() {
-        return Ok(None);
-    }
-    let mut result = None;
     for stored in stored_all {
         let (record, body) = decode_stored(stored)?;
         let contract = load_contract_lightweight(connection, &record.scheduled_contract_id)?;
-        result = Some(validate_decoded(record, body, contract)?);
+        validate_decoded(record, body, contract)?;
     }
-    Ok(result)
+    Ok(())
 }
 
 /// `load_contract_lightweight` decodes the bound contract from either table
@@ -108,7 +104,11 @@ pub(super) fn validate_stored(
 }
 
 /// Loads the bound contract from either the initial or the successor
-/// candidate table.
+/// candidate table. This is the DEEP loader: it re-validates the contract
+/// against its control/schedule sources. The lightweight loader
+/// (`load_contract_lightweight`) must be used inside run-binding validation
+/// — the deep path re-inspects the Graph Run, which would recurse back into
+/// this validator (stack overflow; ADR-0036).
 fn load_source_contract(
     connection: &Connection,
     scheduled_contract_id: &str,

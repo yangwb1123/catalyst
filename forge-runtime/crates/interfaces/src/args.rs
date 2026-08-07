@@ -23,7 +23,7 @@ pub use group_commands::{
     GroupGraphRunDispatchCommand, GroupGraphRunScheduleCommand,
     GroupGraphRunScheduledContractCommand, GroupGraphRunScheduledContractProviderRequestCommand,
     GroupGraphRunScheduledContractSuccessorCommand, GroupPanelCommand, GroupRunCommand,
-    GroupSynthesisCommand,
+    GroupSynthesisCommand, WaveAdmitExecutionOptions,
 };
 
 #[derive(Debug, Eq, PartialEq)]
@@ -496,3 +496,4 @@ mod group_panel_tests;
 #[cfg(test)]
 #[path = "group_synthesis_args_tests.rs"]
 mod group_synthesis_tests;
+

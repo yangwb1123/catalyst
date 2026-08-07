@@ -756,6 +756,24 @@ readiness 链全部按 request_id 操作,无 per-run 单 request 假设;
 create → run inspect → binding 遍历已隐式通过(10/10)。
 `forge accept` 为 **ACCEPTED**;Rust 923 tests。
 
+## Sprint 78（✅ 完成）— Stage 04 实现评审 9 项修复
+
+第二轮独立评审(Stage 04,wave 存储 + 编排)发现 10 项,修复 9 项:
+(1) **F2(Medium)**:wave-admit 硬编码 provider/model/预算/假 pricing digest
+(cccc…)→ **结构性不可 dispatch**。修复:9 个执行选项 pass-through flags
+(镜像 Go core 命令),缺省 fail-closed(usage 错误)。
+(2) **F3(Medium)**:--idempotency-key 被接受但丢弃。修复:确定性 per-node
+key `{key}-{node_id}`,重跑 Replayed 而非 rejected。
+(3) **F1(Medium)**:validate_graph_run_binding 注释"返回第一个"实际返回
+最后一个。修复:改 Result<()>,遍历校验无返回值。
+(4) **F4**:rejected 非空 → 非零退出码(JSON 保留)。
+(5) **F5/F7/F8/F9/F10**:re-entry 消息 12..=22、ReadySuccessorNodes 空集
+返回 [] + exit 0、v22 迁移去重复 PRAGMA、测试注释、加载器共享文档
+(递归原因 ADR-0036)。
+**F6 留档**(fan-out fixture + 双节点 wave-admit E2E,~0.5 天)。
+`forge accept` 为 **ACCEPTED**;Rust 923 tests;gate/arch/clippy 全绿。
+评审产物:docs/reviews/reviews/wave-storage-context/stage-04.out.md。
+
 ## 下一前沿(需外部资源 / 后续阶段 / 投机增强 / 明确非目标,非本环境可完整验证)
 - **Graph 下一协议切片**:Sprint 59 只完成 scheduled ordinal-zero 的独立 claim/send/terminal sidecar；仍没有真实 successor/wave advancement、verified per-node/per-attempt receipt 驱动的非初始 contract-v2，也没有 predecessor dataflow。后续必须另立 successor 选择、receipt consumption、跨 node disclosure/consent 与 byte-bound 契约，不能从 ordering edge 推断。另一个独立协议仍是 legacy v4 hard-crash no-send adjudication：必须证明旧 executor 已停止，不能用 lease/时间流逝猜测后自动释放或重发。
 - **真点火** `--agent-cmd=claude`:**multi-agent running to completion 已坐实**(Sprint 25:真 claude 多-agent 跑到 converge MET,增量级 + 版本级)。完整旋钮:四维资源护栏 + 成本三维(phase/时间/美元)+ 任务注入 + 写权限 + 模型路由 + 工作目录 + retry + loop-back;诚实分工:agent 自治增量绿、人确认版本竣工。docs/ignition.md 有完整配方 + 实测

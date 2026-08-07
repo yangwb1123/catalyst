@@ -1,0 +1,30 @@
+# Wave-parallel 存储与编排实现评审上下文(Sprint 66-76)
+project: "ForgeOS"
+subsystem: "Wave-parallel storage (schema v20-v22) and orchestration"
+repo: "/home/u1/catalyst"
+files:
+  - forge-runtime/crates/infrastructure/src/sqlite_hub/schema_contract/v22_sql.rs
+  - forge-runtime/crates/infrastructure/src/sqlite_hub/schema_contract/full_contract.rs
+  - forge-runtime/crates/infrastructure/src/sqlite_hub/group_agent_scheduled_node_provider_request/read.rs
+  - forge-runtime/crates/infrastructure/src/sqlite_hub/group_agent_scheduled_node_provider_request/identity.rs
+  - forge-runtime/crates/infrastructure/src/sqlite_hub/group_agent_scheduled_node_lifecycle/read.rs
+  - forge-runtime/crates/infrastructure/src/sqlite_hub/group_agent_scheduled_node_successor/write.rs
+  - forge-runtime/crates/interfaces/src/group_agent_graph/wave_command.rs
+  - forge-runtime/crates/interfaces/tests/cli_group_agent_scheduled_node_wave_admit.rs
+rfcs:
+  - docs/adr/0036-wave-parallel-storage-and-orchestration.md
+  - docs/adr/0035-topologically-ready-successor-selection.md
+  - docs/adr/0031-passive-successor-contract-candidate.md
+architecture_summary: |
+  Schema v20 per-node candidate slots; v21 zero-receipt successor candidates
+  (ADR-0035 direct-predecessor evidence); v22 effectful multi-node dispatch
+  (provider-request/lifecycle per-node slots, run-binding validation
+  iterates rows with lightweight contract self-loading to avoid recursion).
+  Orchestration: ready-nodes + --target-node + wave-admit batch materialization.
+load_profile: "(not provided)"
+infra: "single host; SQLite WAL"
+slo_targets: "forge accept must stay ACCEPTED"
+sprint_goal: "Implementation-quality review of the v20-v22 storage chain and
+wave-admit orchestration; find correctness, honesty, or maintainability
+defects with evidence."
+team_size: "1-2"

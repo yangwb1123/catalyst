@@ -97,6 +97,15 @@ async fn run_group_agent_graph_run(args: &Args, command: &args::GroupGraphRunCom
         eprintln!("failed to write Group Agent Graph Run output: {error}");
         return ExitCode::FAILURE;
     }
+    // wave-admit partial failure: rejected nodes must be visible to
+    // automation through the exit code, not only the JSON (Finding 4).
+    if wave_rejected_count(&output) > 0 {
+        eprintln!(
+            "wave-admit: {} node(s) rejected; exit non-zero",
+            wave_rejected_count(&output)
+        );
+        return ExitCode::FAILURE;
+    }
     ExitCode::SUCCESS
 }
 
@@ -214,4 +223,19 @@ fn argument_error(error: &str) -> ExitCode {
         let _ = writeln!(stderr, "{}", group_context_output::terminal_text(error));
     }
     ExitCode::from(2)
+}
+
+
+///  returns the number of rejected wave nodes in the
+/// output, or zero for any other output shape.
+fn wave_rejected_count(output: &group_agent_graph::run_command::GroupAgentGraphRunCommandCliOutput) -> usize {
+    let group_agent_graph::run_command::GroupAgentGraphRunCommandCliOutput::ScheduledContract(boxed) = output else {
+        return 0;
+    };
+    let group_agent_graph::scheduled_contract_output::GroupAgentScheduledNodeContractCliOutput::Wave { rejected, .. } =
+        boxed.as_ref()
+    else {
+        return 0;
+    };
+    rejected.len()
 }

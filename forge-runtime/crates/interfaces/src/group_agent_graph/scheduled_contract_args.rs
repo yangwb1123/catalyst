@@ -5,7 +5,9 @@ use crate::args::{
     GroupGraphRunScheduledContractProviderRequestCommand,
     GroupGraphRunScheduledContractSuccessorCommand,
 };
+use crate::args::WaveAdmitExecutionOptions;
 
+use crate::group_agent_graph::wave_command;
 use super::{
     Command, GroupGraphRunCommand, duplicate, next_value, parse_limit, required_id, run_command,
     unknown, with_usage,
@@ -437,28 +439,27 @@ fn parse_wave_admit(
     let mut receipts: Vec<String> = Vec::new();
     let mut schedule_sha256: Option<String> = None;
     let mut go_core: Option<String> = None;
+    let mut execution = WaveAdmitExecutionOptions::default();
     while let Some(flag) = tokens.pop_front() {
         match flag.as_str() {
-            "--predecessor-receipt" => {
-                let value = next_value(tokens, "--predecessor-receipt")?;
-                receipts.push(value);
-            }
-            "--schedule-sha256" => {
-                schedule_sha256 = Some(next_value(tokens, "--schedule-sha256")?);
-            }
-            "--go-core" => {
-                go_core = Some(next_value(tokens, "--go-core")?);
-            }
-            "--idempotency-key" => {
-                let value = next_value(tokens, "--idempotency-key")?;
-                *idempotency_key = Some(value);
-            }
+            "--predecessor-receipt" => receipts.push(next_value(tokens, "--predecessor-receipt")?),
+            "--schedule-sha256" => schedule_sha256 = Some(next_value(tokens, "--schedule-sha256")?),
+            "--go-core" => go_core = Some(next_value(tokens, "--go-core")?),
+            "--idempotency-key" => *idempotency_key = Some(next_value(tokens, "--idempotency-key")?),
+            _ if wave_command::bind_wave_execution_flag(&flag, tokens, &mut execution)? => {}
             other => return Err(unknown("group graph run scheduled-contract wave-admit", other)),
         }
     }
     let schedule_sha256 = schedule_sha256.ok_or_else(|| {
         with_usage("group graph run scheduled-contract wave-admit requires --schedule-sha256")
     })?;
+    // Fail closed: every candidate must carry the operator's real execution
+    // options — no literals (review Finding 2).
+    if !wave_command::wave_execution_complete(&execution) {
+        return Err(with_usage(
+            "group graph run scheduled-contract wave-admit requires the full execution option set (--endpoint --model --max-output-tokens --max-model-output-bytes --max-model-events --timeout-ms --max-cost-usd-micros --pricing-snapshot-sha256 --max-result-bytes)",
+        ));
+    }
     Ok(Command::Group(GroupCommand::Graph(GroupGraphCommand::Run(
         GroupGraphRunCommand::ScheduledContract(
             GroupGraphRunScheduledContractCommand::WaveAdmit {
@@ -466,6 +467,8 @@ fn parse_wave_admit(
                 predecessor_receipt_sources: receipts,
                 schedule_sha256,
                 go_core,
+                idempotency_key: idempotency_key.clone(),
+                execution: Box::new(execution),
             },
         ),
     ))))
