@@ -17,6 +17,23 @@ use super::{
 
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 
+///  rejects an idempotent re-claim whose input
+/// disagrees with the stored lifecycle (mirrors the prepare/admit replay
+/// equality contract).
+fn ensure_replay_equality(
+    inspection: &crate::runtime_domain::GroupAgentScheduledNodeLifecycleInspection,
+    request: &ClaimGroupAgentScheduledNodeDispatch,
+) -> Result<(), HubStoreError> {
+    let exact = inspection.claim.dispatch_id == request.claim.dispatch_id
+        && inspection.claim.authorization_id == request.claim.authorization_id
+        && inspection.provider_request.provider_request_id
+            == request.provider_request.provider_request_id
+        && inspection.provider_request_body == request.provider_request_body;
+    exact.then_some(()).ok_or_else(|| {
+        conflict("idempotency key was reused with different scheduled dispatch claim input")
+    })
+}
+
 pub(super) fn claim(
     connection: &mut Connection,
     request: &ClaimGroupAgentScheduledNodeDispatch,
@@ -29,6 +46,10 @@ pub(super) fn claim(
         read::find_by_provider_request(&transaction, &request.provider_request.provider_request_id)?
     {
         let inspection = read::reconstruct(&transaction, &raw)?;
+        // Stage-03 Finding 4: replay-equality — a conflicting re-claim with
+        // the same provider request but different input must not silently
+        // return AlreadyClaimed.
+        ensure_replay_equality(&inspection, request)?;
         return Ok(ClaimGroupAgentScheduledNodeDispatchResult::AlreadyClaimed { inspection });
     }
     request

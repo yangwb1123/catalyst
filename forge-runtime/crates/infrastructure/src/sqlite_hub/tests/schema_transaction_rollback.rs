@@ -90,7 +90,7 @@ fn injected_final_validation_failure_rolls_back_complete_v1_migration_chain() {
 
     let error = migrate_with_before_final_fault_for_test(&connection, |migrated| {
         reached_final.set(true);
-        assert_eq!(schema_version(migrated), 22);
+        assert_eq!(schema_version(migrated), 23);
         for table in FINAL_TABLES {
             assert!(
                 schema_object_exists(migrated, "table", table),
@@ -108,8 +108,8 @@ fn injected_final_validation_failure_rolls_back_complete_v1_migration_chain() {
         panic!("final validator returned the wrong error class: {error:?}");
     };
     assert_eq!(
-        message, "Hub v22 main catalog has invalid object inventory",
-        "error must originate from the real final v22 catalog validator"
+        message, "Hub v23 main catalog has invalid object inventory",
+        "error must originate from the real final v23 catalog validator"
     );
 
     assert_v1_unchanged(&connection, &before_schema, &before_data);
@@ -140,4 +140,47 @@ fn malform_conversations_scope(connection: &Connection) {
                ON conversations(scope_kind, updated_at_ms DESC);",
         )
         .expect("malform a legacy v1 index");
+}
+
+#[test]
+fn defer_foreign_keys_allows_parent_rebuild_with_live_children_in_one_batch() {
+    // Stage-02 Finding 1 mechanism test: the v17->v18 / v21->v22 rebuilds
+    // DROP the parent provider-requests table while dispatch lifecycles
+    // still reference it. Under FK enforcement the implicit DELETE violates
+    // ON DELETE RESTRICT; PRAGMA defer_foreign_keys moves the check to the
+    // COMMIT, where the rebuilt parent makes the final state consistent.
+    let connection = Connection::open_in_memory().expect("memory connection");
+    connection
+        .execute_batch(
+            "CREATE TABLE parent (id TEXT PRIMARY KEY);
+             CREATE TABLE child (
+               id TEXT PRIMARY KEY,
+               parent_id TEXT NOT NULL REFERENCES parent(id) ON DELETE RESTRICT
+             );
+             INSERT INTO parent VALUES ('p1');
+             INSERT INTO child VALUES ('c1', 'p1');",
+        )
+        .expect("seed FK fixture");
+    connection
+        .execute_batch(
+            "BEGIN IMMEDIATE;
+             PRAGMA defer_foreign_keys = ON;
+             DROP TABLE parent;
+             CREATE TABLE parent (id TEXT PRIMARY KEY);
+             INSERT INTO parent VALUES ('p1');
+             COMMIT;",
+        )
+        .expect("parent rebuild with live children must commit under defer");
+    let count: i64 = connection
+        .query_row("SELECT COUNT(*) FROM child", [], |row| row.get(0))
+        .expect("count children");
+    assert_eq!(count, 1, "child row must survive the rebuild");
+    // Without defer, the same batch fails at the DROP.
+    connection
+        .execute_batch(
+            "BEGIN;
+             DROP TABLE parent;",
+        )
+        .expect_err("DROP parent with live children must fail under FK enforcement");
+    connection.execute_batch("ROLLBACK").expect("rollback");
 }

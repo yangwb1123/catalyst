@@ -792,6 +792,25 @@ N/A(修复已按评审建议实现,空库迁移回归全过)。
 `forge accept` 为 **ACCEPTED**;Rust 924 tests;gate/arch/clippy 全绿。
 评审产物:docs/reviews/reviews/wave-storage-context/stage-02.out.md。
 
+## Sprint 80（✅ 完成）— Stage 03 分布式评审 + SQLite v23
+
+第四轮独立评审(Stage 03 分布式/数据库)发现 High:adjudicate 是死的
+(ADR-0034 实现自 Sprint 65 起 UPDATE 引用不存在的 adjudicated_at_ms 列,
+且 v22 重建 lifecycle 表时丢失 v19 的 status 'adjudicated' —— 任何
+adjudicated 行会使 v22 迁移失败、库永久打不开)。
+(1) **v23 迁移**:lifecycle 表重建,status CHECK 恢复 4 状态 +
+adjudicated_at_ms 列(status='adjudicated' 时必填,否则 NULL);
+完整 schema 链(v23、digest、future 24、re-entry 12..=23)。
+(2) **adjudicate 激活验证**:UPDATE 的列/状态在 v23 表上被接受
+(0 行 UPDATE 验证 SQL 合法性)。
+(3) **F4(Medium)**:claim 幂等补 replay-equality 校验(同 key 不同输入 →
+Conflict,不再静默 AlreadyClaimed)。
+(4) **F5 机制测试**:defer_foreign_keys 使 DROP-parent-with-children 在
+单批次内成功(精确复现评审场景)。
+(5) **cli_usage** 补 wave-admit 完整用法。
+`forge accept` 为 **ACCEPTED**;Rust 925 tests。
+评审产物:docs/reviews/reviews/wave-storage-context/stage-03.out.md。
+
 ## 下一前沿(需外部资源 / 后续阶段 / 投机增强 / 明确非目标,非本环境可完整验证)
 - **Graph 下一协议切片**:Sprint 59 只完成 scheduled ordinal-zero 的独立 claim/send/terminal sidecar；仍没有真实 successor/wave advancement、verified per-node/per-attempt receipt 驱动的非初始 contract-v2，也没有 predecessor dataflow。后续必须另立 successor 选择、receipt consumption、跨 node disclosure/consent 与 byte-bound 契约，不能从 ordering edge 推断。另一个独立协议仍是 legacy v4 hard-crash no-send adjudication：必须证明旧 executor 已停止，不能用 lease/时间流逝猜测后自动释放或重发。
 - **真点火** `--agent-cmd=claude`:**multi-agent running to completion 已坐实**(Sprint 25:真 claude 多-agent 跑到 converge MET,增量级 + 版本级)。完整旋钮:四维资源护栏 + 成本三维(phase/时间/美元)+ 任务注入 + 写权限 + 模型路由 + 工作目录 + retry + loop-back;诚实分工:agent 自治增量绿、人确认版本竣工。docs/ignition.md 有完整配方 + 实测

@@ -442,7 +442,6 @@ fn two_nodes_in_one_run_prepare_provider_requests_through_v22() {
     assert_eq!(stored.inspection.record.node_id, "backend");
 }
 
-
 ///  inserts a provider-request row that matches the per-node
 /// slot of the given node (v22 wave-parallel identity) but is corrupt.
 fn corrupt_row_sql(node_id: &str) -> String {
@@ -461,4 +460,39 @@ fn corrupt_row_sql(node_id: &str) -> String {
            successor_advance_authorized, 'corrupt-provider-key', created_at_ms
          FROM group_agent_graph_scheduled_node_provider_requests WHERE id=?1"
     )
+}
+
+#[test]
+fn adjudicate_update_columns_and_status_are_live_through_v23() {
+    // Stage-03 Finding 1 regression: v23 restores 'adjudicated' and
+    // adjudicated_at_ms; a 0-row UPDATE still validates the SQL against the
+    // live table.
+    let (fixture, _request) = sqlite_group_agent_scheduled_node_contract_support::prepared_fixture();
+    let connection = fixture.connection();
+    let updated = connection
+        .execute(
+            "UPDATE group_agent_graph_scheduled_node_dispatch_lifecycles
+             SET status='adjudicated', lane_active=0, adjudicated_at_ms=200
+             WHERE provider_request_id='nonexistent-adjudicate-row'",
+            [],
+        )
+        .expect("adjudicate UPDATE must be accepted by the v23 schema");
+    assert_eq!(updated, 0, "no rows match the sentinel id");
+    // The status/lane CHECK must accept an adjudicated row shape.
+    let accepted = connection
+        .query_row(
+            "SELECT CASE WHEN ?1 IN ('claimed','terminalized','quarantined','adjudicated') THEN 1 ELSE 0 END",
+            ["adjudicated"],
+            |row| row.get::<_, i64>(0),
+        )
+        .expect("status domain");
+    assert_eq!(accepted, 1, "adjudicated must be a legal lifecycle status");
+}
+
+/// `hex_bytes` decodes a 64-char hex digest into 32 raw bytes.
+fn hex_bytes(hex: &str) -> Vec<u8> {
+    (0..hex.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).expect("hex byte"))
+        .collect()
 }

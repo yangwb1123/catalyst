@@ -37,10 +37,10 @@ pub(in crate::sqlite_hub) fn open_existing_dispatch_reentry_read_only_database(
         .pragma_update(None, "query_only", true)
         .map_err(contract::sqlite_error)?;
     let version = schema_version(&connection).map_err(contract::sqlite_error)?;
-    if ![12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22].contains(&version) {
+    if ![12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23].contains(&version) {
         return Err(read_only_schema_required(
             version,
-            "dispatch re-entry schema version 12..=22",
+            "dispatch re-entry schema version 12..=23",
         ));
     }
     contract::validate_version(&connection, version)?;

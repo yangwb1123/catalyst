@@ -23,10 +23,12 @@ const COLUMNS: &str = "id,graph_run_id,provider_request_id,authorization_id,auth
  release_control_json_bytes,authorization_json,authorization_json_bytes,pricing_json,\
  pricing_json_bytes,claim_event_json,claim_event_json_bytes,status,lane_active,artifact_json,\
  artifact_json_bytes,terminal_control_json,terminal_control_json_bytes,terminal_receipt_json,\
- terminal_receipt_json_bytes,created_at_ms,terminalized_at_ms";
+ terminal_receipt_json_bytes,created_at_ms,terminalized_at_ms,\
+ adjudicated_at_ms";
 
 pub(super) struct RawLifecycle {
     pub id: String,
+    pub adjudicated_at_ms: Option<i64>,
     pub graph_run_id: String,
     pub provider_request_id: String,
     pub authorization_id: String,
@@ -189,6 +191,9 @@ pub(super) fn reconstruct(
         terminal_receipt: parts.terminal_receipt,
         terminal_receipt_json: parts.terminal_receipt_json,
         status: parts.status,
+        adjudicated_at_ms: raw
+            .adjudicated_at_ms
+            .map(|value| u64::try_from(value).expect("adjudicated_at_ms must be non-negative")),
     };
     inspection
         .validate()
@@ -329,6 +334,7 @@ fn row(row: &Row<'_>) -> rusqlite::Result<RawLifecycle> {
         terminal_receipt_json_bytes: row.get(30)?,
         created_at_ms: row.get(31)?,
         terminalized_at_ms: row.get(32)?,
+        adjudicated_at_ms: row.get(33)?,
     })
 }
 

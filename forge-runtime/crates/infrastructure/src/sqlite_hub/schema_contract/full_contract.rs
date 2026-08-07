@@ -10,12 +10,15 @@ use super::super::{
     MIGRATE_V11_TO_V12_SQL, MIGRATE_V12_TO_V13_SQL, MIGRATE_V13_TO_V14_SQL, MIGRATE_V14_TO_V15_SQL,
     MIGRATE_V15_TO_V16_SQL, MIGRATE_V16_TO_V17_SQL, MIGRATE_V17_TO_V18_SQL, MIGRATE_V18_TO_V19_SQL,
     MIGRATE_V19_TO_V20_SQL, MIGRATE_V20_TO_V21_SQL, MIGRATE_V21_TO_V22_SQL,
+    MIGRATE_V22_TO_V23_SQL,
 };
 
 #[path = "full_contract/structure.rs"]
 mod structure;
 #[path = "full_contract/v22.rs"]
 mod v22;
+#[path = "full_contract/v23.rs"]
+mod v23;
 
 const OWNED_TABLES: &[&str] = &[
     "projects",
@@ -75,12 +78,13 @@ const SCHEMA_BATCHES: &[&str] = &[
     MIGRATE_V19_TO_V20_SQL,
     MIGRATE_V20_TO_V21_SQL,
     MIGRATE_V21_TO_V22_SQL,
+    MIGRATE_V22_TO_V23_SQL,
 ];
-const VERSION_TABLE_COUNTS: [usize; 23] = [
-    0, 5, 8, 9, 11, 14, 16, 19, 20, 22, 23, 24, 28, 29, 30, 31, 32, 33, 33, 33, 33, 33, 33,
+const VERSION_TABLE_COUNTS: [usize; 24] = [
+    0, 5, 8, 9, 11, 14, 16, 19, 20, 22, 23, 24, 28, 29, 30, 31, 32, 33, 33, 33, 33, 33, 33, 33,
 ];
-const VERSION_EXPLICIT_INDEX_COUNTS: [usize; 23] = [
-    0, 2, 3, 4, 6, 8, 10, 12, 14, 16, 18, 20, 24, 25, 27, 29, 31, 32, 32, 32, 32, 32, 32,
+const VERSION_EXPLICIT_INDEX_COUNTS: [usize; 24] = [
+    0, 2, 3, 4, 6, 8, 10, 12, 14, 16, 18, 20, 24, 25, 27, 29, 31, 32, 32, 32, 32, 32, 32, 32,
 ];
 const V6_IMPLICIT_INDEX_COUNT: usize = 29;
 const V7_IMPLICIT_INDEX_COUNT: usize = 33;
@@ -306,6 +310,7 @@ fn validate_release_structure(schema: &ExpectedSchema) -> Result<(), String> {
         20 => (V20_IMPLICIT_INDEX_COUNT, V20_STRUCTURAL_CONTRACT_SHA256),
         21 => (V21_IMPLICIT_INDEX_COUNT, V21_STRUCTURAL_CONTRACT_SHA256),
         22 => (v22::V22_IMPLICIT_INDEX_COUNT, v22::V22_STRUCTURAL_CONTRACT_SHA256),
+        23 => (v23::V23_IMPLICIT_INDEX_COUNT, v23::V23_STRUCTURAL_CONTRACT_SHA256),
         version => return Err(format!("Hub v{version} has no release structural contract")),
     };
     let implicit_indexes = schema

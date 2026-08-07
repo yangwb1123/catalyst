@@ -303,7 +303,7 @@ fn assert_malformed_v5_is_rejected(sql: &str) {
 }
 
 fn assert_current_schema(connection: &Connection) {
-    assert_eq!(schema_version(connection), 22);
+    assert_eq!(schema_version(connection), 23);
     for table in [
         "runs",
         "run_events",

@@ -274,6 +274,7 @@ pub struct GroupAgentScheduledNodeLifecycleInspection {
     pub terminal_receipt: Option<GroupAgentScheduledNodeTerminalReceipt>,
     pub terminal_receipt_json: Option<String>,
     pub status: GroupAgentScheduledNodeLifecycleStatus,
+    pub adjudicated_at_ms: Option<u64>,
 }
 
 #[derive(Debug, Eq, PartialEq)]
