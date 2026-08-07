@@ -270,3 +270,55 @@ fn wave_admit_rejects_drifted_receipt_without_admitting_anything() {
 
 #[allow(dead_code)]
 fn _unused(_: &Path) {}
+
+#[test]
+fn wave_admit_materializes_two_ready_nodes_in_one_wave() {
+    let fixture = Fixture::fan_out();
+    let (graph_run_id, schedule_sha256, schedule) = prepared_wave(&fixture, "wave-admit-fanout-run");
+    let graph_id = text(&schedule["graph_id"]);
+    let node0 = text(&schedule["nodes"][0]["node_id"]);
+    let receipt = build_receipt(
+        &graph_run_id,
+        &graph_id,
+        &node0,
+        &"a".repeat(64),
+        &text(&schedule["nodes"][0]["project_lane_sha256"]),
+    );
+    let dir = TempDir::new().expect("tempdir");
+    let receipt_path = write_temp(&dir, "receipt.json", &receipt);
+
+    let args = wave_admit_args(&graph_run_id, &schedule_sha256, Some(&receipt_path));
+    let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    let output = command(
+        fixture.state.path(),
+        fixture.cwd.path(),
+        &arg_refs,
+    )
+    .output()
+    .expect("wave-admit fan-out");
+    // The fan-out wave is planned correctly (both successors ready after
+    // frontend), and the fabricated receipt is accepted as consumed-set
+    // evidence; admission then fails the evidence chain for BOTH nodes
+    // (no frontend lifecycle exists — a real predecessor receipt comes from
+    // a completed dispatch), and the non-zero exit code surfaces the partial
+    // failure to automation (Finding 4).
+    assert!(!output.status.success(), "rejected wave must exit non-zero");
+    let parsed: Value =
+        serde_json::from_slice(&output.stdout).expect("wave-admit JSON on failure");
+    let wave = parsed["wave"].as_array().expect("wave array");
+    let rejected = parsed["rejected"].as_array().expect("rejected array");
+    assert_eq!(wave.len(), 0);
+    assert_eq!(rejected.len(), 2, "both fan-out nodes rejected: {parsed}");
+    let ids: Vec<&str> = rejected
+        .iter()
+        .map(|node| node["node_id"].as_str().expect("node id"))
+        .collect();
+    assert!(ids.contains(&"backend") && ids.contains(&"sso"), "rejected nodes: {ids:?}");
+    for node in rejected {
+        let reason = node["disposition"].as_str().expect("reason");
+        assert!(
+            reason.contains("was not found"),
+            "evidence-chain guard must name the missing lifecycle: {reason}"
+        );
+    }
+}

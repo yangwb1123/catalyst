@@ -46,9 +46,7 @@ impl Fixture {
         }
     }
 
-    /// Diamond (frontend, backend -> sso): frontend and backend are
-    /// same-wave siblings with empty predecessor sets — the zero-receipt
-    /// successor candidate shape of ADR-0035.
+    /// Diamond (frontend, backend -> sso): same-wave siblings, zero receipts.
     #[allow(dead_code)]
     pub fn diamond() -> Self {
         let root = TempDir::new().expect("diamond Graph Run root");
@@ -68,8 +66,7 @@ impl Fixture {
         }
     }
 
-    /// Three-node serial chain (frontend -> backend -> sso): supports two
-    /// successive successor candidates in one run.
+    /// Serial chain (frontend -> backend -> sso): two successive successors.
     #[allow(dead_code)]
     pub fn serial_three() -> Self {
         let root = TempDir::new().expect("serial-three Graph Run root");

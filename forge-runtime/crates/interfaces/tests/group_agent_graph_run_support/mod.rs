@@ -26,6 +26,7 @@ pub(super) struct Fixture {
     projects: TempDir,
     pub(super) cwd: TempDir,
     graph: Value,
+    fan_out: bool,
     sentinels: BTreeMap<&'static str, Vec<u8>>,
 }
 
@@ -43,6 +44,27 @@ impl Fixture {
             projects,
             cwd,
             graph,
+            fan_out: false,
+            sentinels,
+        }
+    }
+
+    /// Fan-out topology (frontend -> backend, sso): both successors become
+    /// ready once frontend is consumed — the two-ready-node wave shape
+    /// (review Finding 6).
+    pub(super) fn fan_out() -> Self {
+        let state = TempDir::new().expect("state directory");
+        let projects = TempDir::new().expect("projects directory");
+        let cwd = TempDir::new().expect("unrelated current directory");
+        let (group_run_id, project_ids, sentinels) =
+            setup_group_source(state.path(), projects.path(), cwd.path());
+        let graph = prepare_graph_fan_out(state.path(), cwd.path(), &group_run_id, &project_ids);
+        Self {
+            state,
+            projects,
+            cwd,
+            graph,
+            fan_out: true,
             sentinels,
         }
     }
@@ -52,7 +74,16 @@ impl Fixture {
     }
 
     pub(super) fn plan(&self) -> GroupAgentGraphCorePlan {
-        plan_for(&self.graph)
+        let mut plan = plan_for(&self.graph);
+        if self.fan_out {
+            plan.edges = vec![edge("frontend", "backend"), edge("frontend", "sso")];
+            plan.waves = vec![
+                vec!["frontend".into()],
+                vec!["backend".into(), "sso".into()],
+            ];
+            plan.plan_sha256 = plan.expected_sha256().expect("fan-out plan digest");
+        }
+        plan
     }
 
     pub(super) fn prepare(&self, plan: &GroupAgentGraphCorePlan, key: &str) -> Output {
@@ -178,6 +209,29 @@ fn prepare_graph(
     ))
 }
 
+fn prepare_graph_fan_out(
+    state: &Path,
+    cwd: &Path,
+    group_run_id: &str,
+    project_ids: &BTreeMap<&'static str, String>,
+) -> Value {
+    successful_json(&invoke_with_stdin(
+        state,
+        cwd,
+        &[
+            "group",
+            "graph",
+            "prepare",
+            group_run_id,
+            "--spec",
+            "-",
+            "--idempotency-key",
+            "graph-run-graph-fan-out",
+        ],
+        &serde_json::to_vec(&graph_spec_fan_out(project_ids)).expect("fan-out spec JSON"),
+    ))
+}
+
 fn plan_for(graph_output: &Value) -> GroupAgentGraphCorePlan {
     let graph = &graph_output["inspection"]["graph"];
     let mut plan = GroupAgentGraphCorePlan {
@@ -198,6 +252,26 @@ fn plan_for(graph_output: &Value) -> GroupAgentGraphCorePlan {
     };
     plan.plan_sha256 = plan.expected_sha256().expect("plan digest");
     plan
+}
+
+
+fn graph_spec_fan_out(projects: &BTreeMap<&'static str, String>) -> Value {
+    json!({
+        "v": 1,
+        "manager": {
+            "agent_profile": "integration-manager",
+            "instruction": "coordinate without executing"
+        },
+        "nodes": [
+            node("frontend", &projects["frontend"], "frontend"),
+            node("backend", &projects["backend"], "backend"),
+            node("sso", &projects["sso"], "sso")
+        ],
+        "edges": [
+            {"from_node_id": "frontend", "to_node_id": "backend"},
+            {"from_node_id": "frontend", "to_node_id": "sso"}
+        ]
+    })
 }
 
 fn graph_spec(projects: &BTreeMap<&'static str, String>) -> Value {
