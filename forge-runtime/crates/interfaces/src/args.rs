@@ -1,5 +1,4 @@
 use std::{collections::VecDeque, env, path::PathBuf};
-
 #[path = "group_analysis_args.rs"]
 mod group_analysis_args;
 #[path = "group_args.rs"]
@@ -14,9 +13,7 @@ mod group_panel_args;
 mod group_synthesis_args;
 #[path = "run_args.rs"]
 mod run_args;
-
 pub use run_args::RunCommand;
-
 pub use group_commands::{
     GroupAnalysisCommand, GroupCommand, GroupExecutionCommand, GroupGraphCommand,
     GroupGraphRunCommand, GroupGraphRunContractCommand, GroupGraphRunControlCommand,
@@ -25,7 +22,6 @@ pub use group_commands::{
     GroupGraphRunScheduledContractSuccessorCommand, GroupPanelCommand, GroupRunCommand,
     GroupSynthesisCommand, WaveAdmitExecutionOptions,
 };
-
 #[derive(Debug, Eq, PartialEq)]
 pub struct Args {
     pub state_dir: Option<PathBuf>,
@@ -39,6 +35,7 @@ pub struct Args {
 #[derive(Debug, Eq, PartialEq)]
 pub enum Command {
     Hub,
+    HubStatus, // readiness probe (no migration)
     Session(SessionCommand),
     Prompt(PromptCommand),
     Group(GroupCommand),
@@ -285,7 +282,7 @@ fn parse_command(
 fn is_command(value: &str) -> bool {
     matches!(
         value,
-        "session" | "prompt" | "group" | "run" | "demo" | "help"
+        "session" | "prompt" | "group" | "run" | "demo" | "help" | "status"
     )
 }
 
@@ -342,6 +339,10 @@ fn parse_named_command(
         "group" => group_args::parse(tokens, &mut options.idempotency_key),
         "run" => run_args::parse(tokens, options),
         "demo" => parse_demo(tokens, options),
+        "status" => {
+            require_empty(tokens)?;
+            Ok(Command::HubStatus)
+        }
         "help" => {
             require_empty(tokens)?;
             Ok(Command::Help)
@@ -496,4 +497,3 @@ mod group_panel_tests;
 #[cfg(test)]
 #[path = "group_synthesis_args_tests.rs"]
 mod group_synthesis_tests;
-

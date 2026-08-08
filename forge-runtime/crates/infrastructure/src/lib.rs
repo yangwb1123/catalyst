@@ -26,5 +26,5 @@ pub use openai_responses::{
 };
 pub use read_file::{AllowlistedReadFileTool, ReadFileTool};
 pub use scripted_provider::ScriptedProvider;
-pub use sqlite_hub::SqliteHubStore;
+pub use sqlite_hub::{CURRENT_SCHEMA_VERSION, SqliteHubStore, hub_schema_version};
 pub use workspace::CapStdWorkspaceFactory;

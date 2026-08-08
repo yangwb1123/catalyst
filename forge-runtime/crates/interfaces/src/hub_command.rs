@@ -30,12 +30,18 @@ use crate::{
 
 pub fn execute(args: &Args) -> Result<CliOutput, Box<dyn Error>> {
     let database = hub_database_path(args.state_dir.as_deref())?;
+    if matches!(args.command, Command::HubStatus) {
+        // Readiness probe: report BEFORE any store open, which would
+        // migrate the hub. The probe never migrates or creates.
+        return hub_status(args);
+    }
     let store = Arc::new(SqliteHubStore::open(database)?);
     let service = HubService::new(store.clone());
     let group_runs = GroupRunService::new(store.clone());
     let group_executions = GroupExecutionService::new(store.clone());
     match &args.command {
         Command::Hub => show_hub(&service, args.project.as_deref(), args.group.as_deref()),
+        Command::HubStatus => hub_status(args),
         Command::Session(command) => execute_session(
             &service,
             args.project.as_deref(),
@@ -331,4 +337,30 @@ fn prompt_content(argument: &str) -> Result<String, io::Error> {
     let limit = u64::try_from(MAX_PROMPT_BYTES + 1).expect("prompt limit fits in u64");
     io::stdin().take(limit).read_to_string(&mut content)?;
     Ok(content)
+}
+
+/// `hub_status` — readiness probe: reports the stored schema version, the
+/// expected (current) version, whether a migration is pending, and the
+/// number of pre-upgrade backups. Does NOT migrate or create the hub
+/// (Stage-06 High follow-up).
+fn hub_status(args: &Args) -> Result<CliOutput, Box<dyn Error>> {
+    let database = hub_database_path(args.state_dir.as_deref())?;
+    let stored = forge_runtime_infrastructure::hub_schema_version(&database)?;
+    let expected = forge_runtime_infrastructure::CURRENT_SCHEMA_VERSION;
+    let backups = database
+        .parent()
+        .map(|dir| dir.join("backups"))
+        .filter(|dir| dir.is_dir())
+        .and_then(|dir| std::fs::read_dir(dir).ok())
+        .map_or(0, |entries| entries.filter_map(Result::ok).count());
+    Ok(CliOutput {
+        v: 1,
+        kind: OutputKind::HubStatus {
+            schema_version: stored,
+            expected_schema_version: expected,
+            migration_pending: stored > 0 && stored < expected,
+            backups,
+            healthy: stored == expected || stored == 0,
+        },
+    })
 }

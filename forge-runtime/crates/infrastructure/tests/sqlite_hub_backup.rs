@@ -2,6 +2,16 @@ use tempfile::TempDir;
 
 use forge_runtime_infrastructure::SqliteHubStore;
 
+#[allow(dead_code)]
+mod sqlite_group_agent_graph_run_support;
+#[allow(dead_code)]
+mod sqlite_group_agent_graph_execution_schedule_support;
+#[allow(dead_code)]
+mod sqlite_group_agent_scheduled_node_contract_support;
+#[allow(dead_code)]
+mod sqlite_group_agent_scheduled_node_provider_request_support;
+
+
 fn fixture() -> (TempDir, SqliteHubStore) {
     let root = TempDir::new().expect("hub root");
     let store = SqliteHubStore::open(root.path().join("hub.sqlite3").as_path()).expect("open hub");

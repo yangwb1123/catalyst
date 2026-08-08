@@ -94,6 +94,28 @@ enum SqliteHubStoreOpenMode {
     ExistingDispatchReentryReadOnly,
 }
 
+/// Current hub schema version (the version `open` migrates to).
+pub const CURRENT_SCHEMA_VERSION: i64 = 23;
+
+/// Reads the stored schema version of an existing hub WITHOUT migrating or
+/// creating it — the readiness probe primitive (Stage-06 High follow-up).
+///
+/// # Errors
+///
+/// Returns a store error when the database cannot be opened or the
+/// pragma cannot be read.
+pub fn hub_schema_version(path: &Path) -> Result<i64, HubStoreError> {
+    if !path.exists() {
+        return Ok(0);
+    }
+    let connection = Connection::open(path).map_err(schema::sqlite_error)?;
+    let version = connection
+        .pragma_query_value(None, "user_version", |row| row.get(0))
+        .map_err(schema::sqlite_error)?;
+    Ok(version)
+}
+
+
 impl SqliteHubStore {
     /// Opens or creates a versioned local Hub database.
     ///

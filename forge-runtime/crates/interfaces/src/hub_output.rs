@@ -1,7 +1,5 @@
 use std::io::{self, Write};
-
 use serde::Serialize;
-
 use crate::runtime_domain::{
     BeginGroupExecutionDisposition, Conversation, ConversationScope, GroupProjectMember,
     GroupRunRecord, HubSnapshot, PrepareGroupRunDisposition, PromptRecord, RunInspection,
@@ -36,17 +34,22 @@ use crate::{
         GroupRunSnapshotView, write_group_run, write_group_run_list, write_group_run_prepared,
     },
 };
-
 #[derive(Debug, Serialize)]
 pub struct CliOutput {
     pub v: u16,
     #[serde(flatten)]
     pub kind: OutputKind,
 }
-
 #[derive(Debug, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum OutputKind {
+    HubStatus {
+        schema_version: i64,
+        expected_schema_version: i64,
+        migration_pending: bool,
+        backups: usize,
+        healthy: bool,
+    },
     Hub {
         snapshot: HubSnapshot,
         remote: RemoteStatus,
@@ -153,14 +156,12 @@ pub enum OutputKind {
         inspection: RunInspection,
     },
 }
-
 #[derive(Debug, Serialize)]
 pub struct PromptReceipt {
     pub id: String,
     pub conversation_id: String,
     pub created_at_ms: u64,
 }
-
 impl From<PromptRecord> for PromptReceipt {
     fn from(prompt: PromptRecord) -> Self {
         Self {
@@ -170,19 +171,16 @@ impl From<PromptRecord> for PromptReceipt {
         }
     }
 }
-
 #[derive(Clone, Copy, Debug, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RemoteStatus {
     NotConfigured,
 }
-
 impl CliOutput {
     pub fn new(kind: OutputKind) -> Self {
         Self { v: 1, kind }
     }
 }
-
 pub fn write_output(
     output: &CliOutput,
     json: bool,
@@ -195,9 +193,15 @@ pub fn write_output(
     }
     write_human(&output.kind, writer)
 }
-
 fn write_human(kind: &OutputKind, writer: &mut impl Write) -> Result<(), io::Error> {
     match kind {
+        OutputKind::HubStatus {
+            schema_version,
+            expected_schema_version,
+            migration_pending,
+            backups,
+            healthy,
+        } => write_hub_status(*schema_version, *expected_schema_version, *migration_pending, *backups, *healthy, writer),
         OutputKind::Hub { snapshot, remote } => write_hub(snapshot, *remote, writer),
         OutputKind::Sessions { scope, sessions } => write_sessions(scope, sessions, writer),
         OutputKind::SessionCreated { session } => {
@@ -206,11 +210,7 @@ fn write_human(kind: &OutputKind, writer: &mut impl Write) -> Result<(), io::Err
         OutputKind::PromptAdded { prompt } => write_prompt_added(prompt, writer),
         OutputKind::Prompts { prompts } => write_prompts(prompts, writer),
         OutputKind::GroupCreated { group } => write_group_created(group, writer),
-        OutputKind::GroupLinked { member } => writeln!(
-            writer,
-            "linked project {} to group {} as {}",
-            member.project_id, member.group_id, member.role
-        ),
+        OutputKind::GroupLinked { member } => write_group_linked(member, writer),
         OutputKind::GroupContext { context } => write_group_context(context, writer),
         OutputKind::GroupRunPrepared {
             disposition,
@@ -242,7 +242,13 @@ fn write_human(kind: &OutputKind, writer: &mut impl Write) -> Result<(), io::Err
         OutputKind::Run { inspection } => write_run(inspection, writer),
     }
 }
-
+fn write_group_linked(member: &GroupProjectMember, writer: &mut impl Write) -> Result<(), io::Error> {
+    writeln!(
+        writer,
+        "linked project {} to group {} as {}",
+        member.project_id, member.group_id, member.role
+    )
+}
 fn write_group_created(group: &SessionGroup, writer: &mut impl Write) -> Result<(), io::Error> {
     writeln!(
         writer,
@@ -250,7 +256,6 @@ fn write_group_created(group: &SessionGroup, writer: &mut impl Write) -> Result<
         group.id, group.name
     )
 }
-
 fn write_group_synthesis_kind(kind: &OutputKind, writer: &mut impl Write) -> Result<(), io::Error> {
     match kind {
         OutputKind::GroupPanelSynthesisPrepared {
@@ -270,7 +275,6 @@ fn write_group_synthesis_kind(kind: &OutputKind, writer: &mut impl Write) -> Res
         _ => unreachable!("caller routes only Group Panel Synthesis output"),
     }
 }
-
 fn write_prompt_added(prompt: &PromptReceipt, writer: &mut impl Write) -> Result<(), io::Error> {
     writeln!(
         writer,
@@ -278,7 +282,6 @@ fn write_prompt_added(prompt: &PromptReceipt, writer: &mut impl Write) -> Result
         prompt.id, prompt.conversation_id
     )
 }
-
 fn write_group_panel_kind(kind: &OutputKind, writer: &mut impl Write) -> Result<(), io::Error> {
     match kind {
         OutputKind::GroupAnalysisPanelPrepared { disposition, panel } => {
@@ -291,7 +294,6 @@ fn write_group_panel_kind(kind: &OutputKind, writer: &mut impl Write) -> Result<
         _ => unreachable!("caller routes only Group Analysis Panel output"),
     }
 }
-
 fn write_group_model_kind(kind: &OutputKind, writer: &mut impl Write) -> Result<(), io::Error> {
     match kind {
         OutputKind::GroupModelAnalysisPrepared {
@@ -311,7 +313,6 @@ fn write_group_model_kind(kind: &OutputKind, writer: &mut impl Write) -> Result<
         _ => unreachable!("caller routes only Group Model Analysis output"),
     }
 }
-
 fn write_hub(
     snapshot: &HubSnapshot,
     remote: RemoteStatus,
@@ -347,7 +348,6 @@ fn write_hub(
     }
     Ok(())
 }
-
 fn write_sessions(
     scope: &ConversationScope,
     sessions: &[Conversation],
@@ -368,7 +368,6 @@ fn write_sessions(
     }
     Ok(())
 }
-
 fn write_prompts(prompts: &[PromptRecord], writer: &mut impl Write) -> Result<(), io::Error> {
     writeln!(writer, "prompts: {}", prompts.len())?;
     for prompt in prompts {
@@ -459,6 +458,18 @@ fn remote_label(status: RemoteStatus) -> &'static str {
     }
 }
 
+fn write_hub_status(
+    schema_version: i64,
+    expected: i64,
+    migration_pending: bool,
+    backups: usize,
+    healthy: bool,
+    writer: &mut impl io::Write,
+) -> io::Result<()> {
+    writeln!(writer, "schema_version: {schema_version} (expected {expected})")?;
+    writeln!(writer, "migration_pending: {migration_pending}\nbackups: {backups}\nhealthy: {healthy}")
+}
+
 #[cfg(test)]
 mod tests {
     use forge_runtime_domain::{ConversationScope, HubSnapshot};
@@ -485,3 +496,4 @@ mod tests {
         assert_eq!(value["remote"], "not_configured");
     }
 }
+
