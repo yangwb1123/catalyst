@@ -450,7 +450,7 @@ fn repository_root() -> PathBuf {
 }
 
 fn assert_schema_failure(output: &Output) {
-    assert_failure(output, "current schema version 23");
+    assert_failure(output, "current schema version 24");
 }
 
 fn assert_failure(output: &Output, expected: &str) {

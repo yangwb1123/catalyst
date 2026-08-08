@@ -19,9 +19,10 @@ use crate::runtime_domain::{
     GroupAgentScheduledNodeDispatchClaimEvent, GroupAgentScheduledNodeDispatchReleaseControl,
     GroupAgentScheduledNodeLifecycleInspection, GroupAgentScheduledNodeLifecycleStore,
     GroupAgentScheduledNodeProviderFactory, GroupAgentScheduledNodeProviderRequestStore,
-    GroupAgentScheduledNodeTerminalArtifact, GroupAgentScheduledNodeTerminalArtifactKind,
-    GroupAgentScheduledNodeTerminalControl, GroupAgentScheduledNodeTerminalReceiptPort,
-    TerminalizeGroupAgentScheduledNodeDispatch, group_agent_scheduled_node_terminal_output_sha256,
+    GroupAgentScheduledNodeSuccessorStore, GroupAgentScheduledNodeTerminalArtifact,
+    GroupAgentScheduledNodeTerminalArtifactKind, GroupAgentScheduledNodeTerminalControl,
+    GroupAgentScheduledNodeTerminalReceiptPort, TerminalizeGroupAgentScheduledNodeDispatch,
+    group_agent_scheduled_node_terminal_output_sha256,
 };
 use crate::{
     GroupAgentNodeCredentialSource, GroupAgentNodeDispatchClaimMetadata,
@@ -102,6 +103,41 @@ impl GroupAgentScheduledNodeDispatchExecutionService {
         Self {
             release: GroupAgentScheduledNodeDispatchReleaseControlService::new(
                 graphs, runs, schedules, contracts, requests, codec,
+            ),
+            lifecycles,
+            providers,
+            credentials,
+            core,
+            metadata,
+        }
+    }
+
+    #[must_use]
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_with_successors(
+        graphs: Arc<dyn GroupAgentGraphStore>,
+        runs: Arc<dyn GroupAgentGraphRunStore>,
+        schedules: Arc<dyn forge_runtime_domain::GroupAgentGraphExecutionScheduleStore>,
+        contracts: Arc<dyn GroupAgentScheduledNodeContractStore>,
+        successors: Arc<dyn GroupAgentScheduledNodeSuccessorStore>,
+        requests: Arc<dyn GroupAgentScheduledNodeProviderRequestStore>,
+        codec: Arc<dyn GroupAgentNodeDispatchRequestCodec>,
+        lifecycles: Arc<dyn GroupAgentScheduledNodeLifecycleStore>,
+        providers: Arc<dyn GroupAgentScheduledNodeProviderFactory>,
+        credentials: Arc<dyn GroupAgentNodeCredentialSource>,
+        core: Arc<dyn GroupAgentScheduledNodeTerminalReceiptPort>,
+        metadata: Arc<dyn GroupAgentNodeDispatchMetadataSource>,
+    ) -> Self {
+        Self {
+            release: GroupAgentScheduledNodeDispatchReleaseControlService::new_with_successors(
+                graphs,
+                runs,
+                schedules,
+                contracts,
+                successors,
+                Arc::clone(&lifecycles),
+                requests,
+                codec,
             ),
             lifecycles,
             providers,

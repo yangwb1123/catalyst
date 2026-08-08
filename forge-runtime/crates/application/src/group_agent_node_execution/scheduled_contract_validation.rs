@@ -4,9 +4,14 @@ use crate::runtime_domain::{
     AdmitGroupAgentScheduledNodeContractCandidate, AdmitGroupAgentScheduledNodeContractDisposition,
     AdmitGroupAgentScheduledNodeContractResult, GROUP_AGENT_SCHEDULED_NODE_CONTRACT_VERSION,
     GroupAgentGraphExecutionScheduleInspection, GroupAgentGraphInspection,
-    GroupAgentGraphRunInspection, GroupAgentScheduledNodeContractCandidate,
-    GroupAgentScheduledNodeContractInspection, GroupAgentScheduledNodeContractRecord,
-    MAX_GROUP_AGENT_GRAPH_IDEMPOTENCY_KEY_BYTES, MAX_GROUP_AGENT_SCHEDULED_NODE_CONTRACT_BYTES,
+    GroupAgentGraphRunInspection, GroupAgentNodeTerminalOutcome,
+    GroupAgentScheduledNodeContractCandidate, GroupAgentScheduledNodeContractInspection,
+    GroupAgentScheduledNodeContractRecord, GroupAgentScheduledNodeContractScope,
+    GroupAgentScheduledNodeLifecycleInspection, GroupAgentScheduledNodeLifecycleStatus,
+    GroupAgentScheduledNodePredecessorOutcome, GroupAgentScheduledNodePredecessorReceipt,
+    GroupAgentScheduledNodeTerminalArtifact, GroupAgentScheduledNodeTerminalArtifactKind,
+    GroupAgentScheduledNodeTerminalReceipt, MAX_GROUP_AGENT_GRAPH_IDEMPOTENCY_KEY_BYTES,
+    MAX_GROUP_AGENT_SCHEDULED_NODE_CONTRACT_BYTES,
     MAX_GROUP_AGENT_SCHEDULED_NODE_CONTRACT_LIST_LIMIT,
 };
 
@@ -36,6 +41,14 @@ pub(super) fn parse_admit_input(
         return Err(invalid("contract Graph Run binding disagrees"));
     }
     Ok(candidate)
+}
+
+pub(super) fn validate_initial_scope(
+    candidate: &GroupAgentScheduledNodeContractCandidate,
+) -> Result<(), GroupAgentScheduledNodeContractServiceError> {
+    (candidate.contract_scope == GroupAgentScheduledNodeContractScope::ScheduleInitialNodeOnly)
+        .then_some(())
+        .ok_or_else(|| invalid("initial admission requires a schedule_initial_node_only candidate"))
 }
 
 pub(super) fn admission_request(
@@ -165,6 +178,23 @@ pub(super) fn validate_list(
     graph_run_id: Option<&str>,
     limit: usize,
 ) -> Result<(), GroupAgentScheduledNodeContractServiceError> {
+    validate_contract_list(records, graph_run_id, limit, true)
+}
+
+pub(super) fn validate_successor_list(
+    records: &[GroupAgentScheduledNodeContractRecord],
+    graph_run_id: Option<&str>,
+    limit: usize,
+) -> Result<(), GroupAgentScheduledNodeContractServiceError> {
+    validate_contract_list(records, graph_run_id, limit, false)
+}
+
+fn validate_contract_list(
+    records: &[GroupAgentScheduledNodeContractRecord],
+    graph_run_id: Option<&str>,
+    limit: usize,
+    unique_runs: bool,
+) -> Result<(), GroupAgentScheduledNodeContractServiceError> {
     if records.len() > limit {
         return Err(corrupt(
             "store returned more contract records than requested",
@@ -182,9 +212,10 @@ pub(super) fn validate_list(
             record.execution_ordinal,
             record.attempt,
         );
+        let duplicate_run = unique_runs && !runs.insert(record.graph_run_id.as_str());
         if graph_run_id.is_some_and(|id| id != record.graph_run_id)
             || !ids.insert(record.contract_id.as_str())
-            || !runs.insert(record.graph_run_id.as_str())
+            || duplicate_run
             || !schedule_slots.insert(slot)
         {
             return Err(corrupt(
@@ -225,4 +256,59 @@ fn unsupported_character(value: char) -> bool {
                 | '\u{2028}'..='\u{202e}'
                 | '\u{2066}'..='\u{2069}'
         )
+}
+
+pub(super) fn receipt_binding_matches(
+    stored: &GroupAgentScheduledNodeTerminalReceipt,
+    receipt: &GroupAgentScheduledNodePredecessorReceipt,
+) -> bool {
+    stored.node_id == receipt.predecessor_node_id
+        && stored.attempt == receipt.predecessor_attempt
+        && stored.receipt_id == receipt.terminal_receipt_id
+        && stored.receipt_sha256 == receipt.terminal_receipt_sha256
+        && stored.provider_request_id == receipt.provider_request_id
+        && stored.dispatch_id == receipt.dispatch_id
+        && stored.node_outcome == GroupAgentNodeTerminalOutcome::Completed
+        && stored.artifact_kind == GroupAgentScheduledNodeTerminalArtifactKind::Result
+        && !stored.retry_authorized
+        && stored.lane_release_authorized
+        && !stored.successor_advance_authorized
+        && receipt.node_outcome == GroupAgentScheduledNodePredecessorOutcome::Completed
+}
+
+pub(super) fn verify_content_presence(
+    candidate: &GroupAgentScheduledNodeContractCandidate,
+    supplied: Option<&str>,
+) -> Result<(), GroupAgentScheduledNodeContractServiceError> {
+    match (candidate.request.predecessor_content_included, supplied) {
+        (false, None) => Ok(()),
+        (false, Some(_)) => Err(invalid(
+            "predecessor content supplied for a candidate that excludes it",
+        )),
+        (true, Some(content)) if !content.is_empty() => Ok(()),
+        (true, _) => Err(invalid(
+            "successor candidate embeds predecessor content; --predecessor-content is required",
+        )),
+    }
+}
+
+pub(super) fn validated_terminal_result_artifact(
+    inspection: &GroupAgentScheduledNodeLifecycleInspection,
+) -> Result<&GroupAgentScheduledNodeTerminalArtifact, GroupAgentScheduledNodeContractServiceError> {
+    inspection
+        .validate()
+        .map_err(|error| corrupt(&error.to_string()))?;
+    if inspection.status != GroupAgentScheduledNodeLifecycleStatus::Terminalized {
+        return Err(invalid("predecessor lifecycle is not terminalized"));
+    }
+    let artifact = inspection
+        .artifact
+        .as_ref()
+        .ok_or_else(|| corrupt("terminalized lifecycle has no artifact for predecessor content"))?;
+    if artifact.artifact_kind != GroupAgentScheduledNodeTerminalArtifactKind::Result {
+        return Err(invalid(
+            "predecessor content can only be disclosed from a result-class artifact",
+        ));
+    }
+    Ok(artifact)
 }

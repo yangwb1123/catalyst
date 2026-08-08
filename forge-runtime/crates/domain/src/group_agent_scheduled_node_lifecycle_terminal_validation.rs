@@ -213,8 +213,11 @@ pub(crate) fn validate_receipt(
             } else {
                 GroupAgentScheduledNodeTerminalArtifactKind::Uncertainty
             }
-        && super::identifier(&receipt.artifact_id)
         && super::digest(&receipt.artifact_sha256)
+        && receipt.artifact_id
+            == super::super::group_agent_scheduled_node_terminal_artifact_id(
+                &receipt.artifact_sha256,
+            )
         && !receipt.retry_authorized
         && receipt.lane_release_authorized
         && !receipt.successor_advance_authorized

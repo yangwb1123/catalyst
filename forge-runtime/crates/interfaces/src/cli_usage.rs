@@ -38,9 +38,11 @@ pub const TEXT: &str = "usage:
     [--include-contract]
   forge-runtime [OPTIONS] group graph run scheduled-contract list [GRAPH_RUN_ID] [--limit N]
   forge-runtime [OPTIONS] group graph run scheduled-contract successor admit GRAPH_RUN_ID
+    --contract FILE|- [--predecessor-receipt FILE|-]...
+    [--predecessor-content FILE|-] [--idempotency-key KEY]
   forge-runtime [OPTIONS] group graph run scheduled-contract successor show SUCCESSOR_ID
   forge-runtime [OPTIONS] group graph run scheduled-contract wave-admit GRAPH_RUN_ID \
-    --schedule-sha256 SHA256 --predecessor-receipt FILE... [--idempotency-key KEY]
+    --schedule-sha256 SHA256 [--predecessor-receipt FILE]... [--idempotency-key KEY]
     --endpoint URL --model MODEL --max-output-tokens N --max-model-output-bytes N
     --max-model-events N --timeout-ms N --max-cost-usd-micros N
     --pricing-snapshot-sha256 SHA256 --max-result-bytes N [--go-core PATH]

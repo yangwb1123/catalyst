@@ -19,6 +19,9 @@ mod validation;
 #[path = "scheduled_contract_content_tests.rs"]
 mod content_tests;
 #[cfg(test)]
+#[path = "scheduled_contract_predecessor_tests.rs"]
+mod predecessor_tests;
+#[cfg(test)]
 #[path = "scheduled_contract_tests.rs"]
 mod tests;
 
@@ -29,8 +32,19 @@ pub const GROUP_AGENT_SCHEDULED_NODE_REQUEST_DIGEST_DOMAIN: &[u8] =
     b"forge.group-agent-scheduled-node-request.v2\0";
 pub const GROUP_AGENT_SCHEDULED_NODE_CONTRACT_DIGEST_DOMAIN: &[u8] =
     b"forge.group-agent-scheduled-node-contract.v2\0";
-pub const MAX_GROUP_AGENT_SCHEDULED_NODE_CONTRACT_BYTES: usize = 4 * 1024 * 1024;
+pub const MAX_GROUP_AGENT_SCHEDULED_NODE_CONTRACT_BYTES: usize = 8 * 1024 * 1024;
 pub const MAX_GROUP_AGENT_SCHEDULED_NODE_PREDECESSOR_OUTPUT_BYTES: usize = 1024 * 1024;
+/// Exact worst-case canonical JSON size of the content-bearing user Prompt.
+///
+/// Every permitted Prompt byte can require at most two JSON bytes (quotes,
+/// backslashes, and the permitted whitespace controls). The fixed compact
+/// `v`/`node_id`/`task`/`acceptance`/`predecessor_output` envelope is 70 bytes.
+pub const MAX_GROUP_AGENT_SCHEDULED_NODE_USER_PROMPT_BYTES: usize = 2
+    * (crate::MAX_GROUP_AGENT_GRAPH_IDENTIFIER_BYTES
+        + crate::MAX_GROUP_AGENT_GRAPH_NODE_TASK_BYTES
+        + crate::MAX_GROUP_AGENT_GRAPH_NODE_ACCEPTANCE_BYTES
+        + MAX_GROUP_AGENT_SCHEDULED_NODE_PREDECESSOR_OUTPUT_BYTES)
+    + 70;
 pub const MAX_GROUP_AGENT_SCHEDULED_NODE_CONTRACT_LIST_LIMIT: usize = 100;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]

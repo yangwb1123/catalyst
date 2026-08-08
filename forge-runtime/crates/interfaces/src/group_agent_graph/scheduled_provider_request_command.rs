@@ -277,7 +277,9 @@ fn read_service(
 }
 
 fn service(store: Arc<SqliteHubStore>) -> GroupAgentScheduledNodeProviderRequestService {
-    GroupAgentScheduledNodeProviderRequestService::new(
+    GroupAgentScheduledNodeProviderRequestService::new_with_successors(
+        store.clone(),
+        store.clone(),
         store.clone(),
         store.clone(),
         store.clone(),
@@ -292,14 +294,18 @@ fn release_service(
 ) -> Result<GroupAgentScheduledNodeDispatchReleaseControlService, Box<dyn Error>> {
     let database = hub_database_path(args.state_dir.as_deref())?;
     let store = Arc::new(SqliteHubStore::open_existing_current_read_only(database)?);
-    Ok(GroupAgentScheduledNodeDispatchReleaseControlService::new(
-        store.clone(),
-        store.clone(),
-        store.clone(),
-        store.clone(),
-        store,
-        Arc::new(OpenAiRequestCodec),
-    ))
+    Ok(
+        GroupAgentScheduledNodeDispatchReleaseControlService::new_with_successors(
+            store.clone(),
+            store.clone(),
+            store.clone(),
+            store.clone(),
+            store.clone(),
+            store.clone(),
+            store,
+            Arc::new(OpenAiRequestCodec),
+        ),
+    )
 }
 
 fn readiness_service(
@@ -307,15 +313,19 @@ fn readiness_service(
 ) -> Result<GroupAgentScheduledNodeDispatchReadinessService, Box<dyn Error>> {
     let database = hub_database_path(args.state_dir.as_deref())?;
     let store = Arc::new(SqliteHubStore::open_existing_current_read_only(database)?);
-    Ok(GroupAgentScheduledNodeDispatchReadinessService::new(
-        store.clone(),
-        store.clone(),
-        store.clone(),
-        store.clone(),
-        store,
-        Arc::new(OpenAiRequestCodec),
-        Arc::new(RegisteredGroupAgentNodeProviderFactory::new()),
-    ))
+    Ok(
+        GroupAgentScheduledNodeDispatchReadinessService::new_with_successors(
+            store.clone(),
+            store.clone(),
+            store.clone(),
+            store.clone(),
+            store.clone(),
+            store.clone(),
+            store,
+            Arc::new(OpenAiRequestCodec),
+            Arc::new(RegisteredGroupAgentNodeProviderFactory::new()),
+        ),
+    )
 }
 
 fn request_output(

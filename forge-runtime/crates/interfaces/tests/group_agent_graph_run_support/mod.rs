@@ -77,10 +77,10 @@ impl Fixture {
         let mut plan = plan_for(&self.graph);
         if self.fan_out {
             plan.edges = vec![edge("frontend", "backend"), edge("frontend", "sso")];
-            plan.waves = vec![
-                vec!["frontend".into()],
-                vec!["backend".into(), "sso".into()],
-            ];
+            plan.waves = vec![vec!["frontend".into()], vec![
+                "backend".into(),
+                "sso".into(),
+            ]];
             plan.plan_sha256 = plan.expected_sha256().expect("fan-out plan digest");
         }
         plan
@@ -133,18 +133,14 @@ fn setup_group_source(
     let group = run_json(state, cwd, &["group", "create", "Graph Run fixture"]);
     let group_id = text(&group["group"]["id"]);
     let (project_ids, sentinels) = link_projects(state, projects, cwd, &group_id);
-    let frozen = run_json(
-        state,
-        cwd,
-        &[
-            "group",
-            "run",
-            "prepare",
-            &group_id,
-            "--idempotency-key",
-            "graph-run-source",
-        ],
-    );
+    let frozen = run_json(state, cwd, &[
+        "group",
+        "run",
+        "prepare",
+        &group_id,
+        "--idempotency-key",
+        "graph-run-source",
+    ]);
     (
         text(&frozen["snapshot"]["run"]["run_id"]),
         project_ids,
@@ -168,18 +164,14 @@ fn link_projects(
         fs::create_dir(&directory).expect("project directory");
         let bytes = format!("{WORKSPACE_SECRET}-{role}").into_bytes();
         fs::write(directory.join("private.txt"), &bytes).expect("workspace sentinel");
-        let linked = run_json(
-            state,
-            cwd,
-            &[
-                "group",
-                "add",
-                group_id,
-                path_text(&directory),
-                "--role",
-                role,
-            ],
-        );
+        let linked = run_json(state, cwd, &[
+            "group",
+            "add",
+            group_id,
+            path_text(&directory),
+            "--role",
+            role,
+        ]);
         project_ids.insert(role, text(&linked["member"]["project_id"]));
         sentinels.insert(role, bytes);
     }
@@ -242,10 +234,9 @@ fn plan_for(graph_output: &Value) -> GroupAgentGraphCorePlan {
         graph_manifest_sha256: text(&graph["manifest_sha256"]),
         authored_node_ids: vec!["frontend".into(), "backend".into(), "sso".into()],
         edges: vec![edge("backend", "sso"), edge("frontend", "sso")],
-        waves: vec![
-            vec!["frontend".into(), "backend".into()],
-            vec!["sso".into()],
-        ],
+        waves: vec![vec!["frontend".into(), "backend".into()], vec![
+            "sso".into(),
+        ]],
         execution_contract_present: false,
         dispatch_authority_released: false,
         plan_sha256: "0".repeat(64),
@@ -253,7 +244,6 @@ fn plan_for(graph_output: &Value) -> GroupAgentGraphCorePlan {
     plan.plan_sha256 = plan.expected_sha256().expect("plan digest");
     plan
 }
-
 
 fn graph_spec_fan_out(projects: &BTreeMap<&'static str, String>) -> Value {
     json!({
@@ -343,7 +333,7 @@ pub(super) fn command(state: &Path, cwd: &Path, args: &[&str]) -> Command {
 }
 
 #[allow(dead_code)]
-    pub(super) fn human_command(state: &Path, cwd: &Path, args: &[&str]) -> Output {
+pub(super) fn human_command(state: &Path, cwd: &Path, args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_forge-runtime"))
         .current_dir(cwd)
         .env_remove("OPENAI_API_KEY")

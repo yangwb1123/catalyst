@@ -6,6 +6,7 @@ use super::{
     GroupAgentScheduledNodeExecutionNode, GroupAgentScheduledNodeRequest,
     MAX_GROUP_AGENT_SCHEDULED_NODE_CONTRACT_BYTES,
     MAX_GROUP_AGENT_SCHEDULED_NODE_PREDECESSOR_OUTPUT_BYTES,
+    MAX_GROUP_AGENT_SCHEDULED_NODE_USER_PROMPT_BYTES,
 };
 use crate::{
     GROUP_AGENT_GRAPH_EXECUTION_SCHEDULE_PROTOCOL_VERSION,
@@ -20,9 +21,6 @@ const REQUEST_ID_PREFIX: &str = "scheduled-node-request-";
 const PROMPT_ENVELOPE_BYTES: usize = 1_024;
 const MAX_SYSTEM_PROMPT_BYTES: usize =
     MAX_GROUP_AGENT_GRAPH_MANAGER_INSTRUCTION_BYTES + PROMPT_ENVELOPE_BYTES;
-const MAX_USER_PROMPT_BYTES: usize = MAX_GROUP_AGENT_GRAPH_NODE_TASK_BYTES
-    + MAX_GROUP_AGENT_GRAPH_NODE_ACCEPTANCE_BYTES
-    + PROMPT_ENVELOPE_BYTES;
 
 pub(super) fn validate_candidate(
     candidate: &GroupAgentScheduledNodeContractCandidate,
@@ -142,10 +140,14 @@ fn validate_request(
             &request.user_prompt,
             request.user_prompt_bytes,
             &request.user_prompt_sha256,
-            MAX_USER_PROMPT_BYTES,
+            MAX_GROUP_AGENT_SCHEDULED_NODE_USER_PROMPT_BYTES,
         )
         && predecessors_valid
-        && !request.predecessor_content_included
+        // ADR-0033 permits exact predecessor output only on a successor.
+        // `validate_user_prompt` below still requires the flag and embedded
+        // field to be present together and validates the disclosed bytes.
+        // The carried receipt authenticates the durable source of plaintext.
+        && content_receipt_valid(request, scope)
         && request.tools.is_empty()
         && digest(&request.request_sha256);
     if !valid || request.expected_sha256()? != request.request_sha256 {
@@ -158,9 +160,18 @@ fn validate_request(
     Ok(())
 }
 
+fn content_receipt_valid(
+    request: &GroupAgentScheduledNodeRequest,
+    scope: GroupAgentScheduledNodeContractScope,
+) -> bool {
+    !request.predecessor_content_included
+        || (scope == GroupAgentScheduledNodeContractScope::ScheduleSuccessorOnly
+            && !request.predecessor_terminal_receipts.is_empty())
+}
+
 /// Predecessor evidence rules: the initial candidate requires an empty set,
-/// while a successor candidate requires at least one consumed receipt and
-/// coverage of every required topological predecessor.
+/// while a successor candidate carries exactly one receipt per required
+/// direct predecessor. A same-wave sibling may carry two empty sets.
 fn predecessors_valid(
     request: &GroupAgentScheduledNodeRequest,
     scope: GroupAgentScheduledNodeContractScope,
@@ -171,21 +182,23 @@ fn predecessors_valid(
     }
     // ADR-0035: the candidate carries exactly its direct predecessors'
     // receipts — a wave sibling with an empty direct-predecessor set carries
-    // zero receipts. Every required predecessor must be covered by the
-    // carried evidence, and every carried receipt must be valid.
-    request
-        .required_predecessor_node_ids
-        .iter()
-        .all(|required| {
-            request
-                .predecessor_terminal_receipts
-                .iter()
-                .any(|receipt| &receipt.predecessor_node_id == required)
+    // zero receipts. Every required predecessor must have exactly one valid,
+    // completed receipt at the same position, with no unrelated or duplicate
+    // receipt IDs.
+    predecessor_sets_match(request)
+}
+
+fn predecessor_sets_match(request: &GroupAgentScheduledNodeRequest) -> bool {
+    let required = &request.required_predecessor_node_ids;
+    let receipts = &request.predecessor_terminal_receipts;
+    required.len() == receipts.len()
+        && required.iter().enumerate().all(|(index, predecessor)| {
+            super::super::validation::valid_identifier(predecessor)
+                && !required[..index].contains(predecessor)
         })
-        && request
-            .predecessor_terminal_receipts
-            .iter()
-            .all(valid_receipt)
+        && required.iter().zip(receipts).all(|(predecessor, receipt)| {
+            receipt.predecessor_node_id == *predecessor && valid_receipt(receipt)
+        })
 }
 
 /// Every consumed predecessor receipt must carry exact identity evidence and
@@ -193,11 +206,14 @@ fn predecessors_valid(
 fn valid_receipt(receipt: &crate::GroupAgentScheduledNodePredecessorReceipt) -> bool {
     super::super::validation::valid_identifier(&receipt.predecessor_node_id)
         && receipt.predecessor_attempt == 1
+        && receipt.terminal_event_seq == 0
+        && receipt.terminal_event_sha256.is_empty()
         && valid_content_id(
             &receipt.terminal_receipt_id,
             "scheduled-node-terminal-receipt-",
             &receipt.terminal_receipt_sha256,
         )
+        && receipt.node_outcome == crate::GroupAgentScheduledNodePredecessorOutcome::Completed
         && super::super::validation::valid_identifier(&receipt.provider_request_id)
         && super::super::validation::valid_identifier(&receipt.dispatch_id)
 }

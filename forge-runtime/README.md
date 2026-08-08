@@ -292,7 +292,7 @@ dataflow, and fail-fast/no-retry outcomes. It omits manager/task/acceptance,
 Project/member/profile, provider/model/credential, and result text.
 
 `group graph run schedule admit` independently rebuilds the exact control and
-stores the canonical artifact in current SQLite v16 (the schedule sidecar was
+stores the canonical artifact in current SQLite v24 (the schedule sidecar was
 introduced in v13) as one immutable row per Run.
 The transaction consumes no Graph Run journal sequence and leaves the Run,
 event head, Graph, Conversations, Prompts, credentials, providers, network,
@@ -311,31 +311,36 @@ ran. Single-node schedules are rejected.
 `forge graph-scheduled-node-contract` then rebuilds Core's exact schedule from
 that same control and accepts only the caller's claimed schedule digest. It
 does not read Hub state; Rust admission later requires that digest to match the
-stored schedule. Callers cannot name a node, ordinal, attempt, predecessor, or
-receipt. Core selects schedule ordinal zero and emits a canonical v2 candidate
-bound to the pristine sequence-1 head, exact Prompts/provider/budgets, empty
-predecessor-node and terminal-receipt arrays, and six false
-lifecycle/authority/progress flags.
+stored schedule. With neither receipts nor `--target-node`, Core selects ordinal
+zero and emits the content-free initial candidate. Either an explicit target
+or verified terminal-receipt input enters the successor path: Core selects a
+topology-ready successor and carries exactly the selected node's canonical
+direct-predecessor receipts. Thus an explicit ordinal>0 target with an empty
+direct-predecessor set may use zero receipts, while a target whose predecessors
+are not fully evidenced fails closed and never falls back to ordinal zero.
+Optional `--predecessor-content` embeds at most 1 MiB of exact UTF-8 result text
+only when an authenticating direct receipt is present; it binds the canonical
+first direct predecessor. Every candidate remains passive and keeps all six
+lifecycle/authority/progress flags false.
 
 `group graph run scheduled-contract admit` stores that artifact in current
-SQLite v16 (the candidate sidecar was introduced in v14) as an immutable passive row.
-Candidate v2 and legacy lifecycle contract v1
-are mutually exclusive under the same immediate-write serialization: either
-family may win a race, but both cannot coexist for one Run. Admission and exact
-same-key replay revalidate the current source, stored schedule, and pristine
-head before returning; divergent identity/input, stale state, or stored
-corruption fails closed. The Run and main journal remain byte-for-byte
-unchanged. Default show/list output hides the candidate, Prompts, node/member,
-Project lane, provider, budgets, predecessor fields, and replay key; only
-`show --include-contract` reveals the exact private artifact. Every view states
-`current_run_lifecycle_included=false`: candidate presence is not an admitted
-lifecycle contract, provider request, receipt, progress, authority, or
-successor decision. Terminal receipt v1 cannot serve as predecessor evidence,
-and multi-node dispatch remains fenced.
+SQLite v24 (initial sidecars began in v14; successor/per-node evolution spans
+v17–v24) as an immutable passive row. Initial candidate v2 and the legacy
+lifecycle contract remain mutually exclusive; successor rows use per-node and
+per-ordinal slots. Admission and exact replay revalidate the current source,
+stored schedule, direct-receipt set and durable predecessor lifecycles before
+returning; divergent identity/input, stale state or stored corruption fails
+closed. The Run and main journal remain byte-for-byte unchanged. Default
+show/list output hides candidate plaintext and private routing fields; only
+`show --include-contract` reveals the exact artifact. Go Core's
+`graph-scheduled-ready-nodes` lists the current topology-ready set, while
+`wave-admit` materializes those passive
+candidates with deterministic per-node idempotency keys; neither command by
+itself claims dispatch authority or execution progress.
 
 `group graph run scheduled-contract provider-request prepare` then fully
 revalidates that candidate and every source binding before using the production
-Responses codec as a deterministic, side-effect-free encoder. SQLite v16 stores
+Responses codec as a deterministic, side-effect-free encoder. SQLite v24 stores
 the exact compact canonical body in a separate immutable sidecar while the Run
 remains v1/seq 1 and the main journal remains unchanged. The candidate's own
 `provider_request_present=false` is an immutable creation-time field; request
@@ -344,8 +349,8 @@ claiming a lifecycle request. Default show/list output hides body, endpoint,
 model, Prompt, lane, pricing, digests and replay key; only
 `show --include-request` reveals the exact private bytes.
 
-This family has no send/authorize/ready/claim/execute/complete operation and is
-not part of legacy dispatch discovery. Preparation reads no consent or
+Preparation itself performs no send/authorize/ready/claim/execute/complete
+operation and is not part of legacy dispatch discovery. It reads no consent or
 credential, constructs no provider or transport, opens no network connection,
 accesses no workspace/tool, and releases no lifecycle/dispatch/lane/progress/
 receipt/successor authority. Legacy `dispatch execute` completes source,
@@ -366,7 +371,7 @@ forge-runtime group graph run scheduled-contract provider-request \
 
 This command repeats release and readiness validation after fresh consent, reads
 one header-safe credential, resolves the registered provider without a health
-request, and opens current SQLite schema v16 only at the effectful boundary.
+request, and opens current SQLite schema v24 only at the effectful boundary.
 Its immediate transaction claims the exact scheduled request and global Project
 lane. The one-shot provider stream is reduced to bounded result/uncertainty
 evidence; a pinned Go Core receives a scheduled terminal control and returns one
@@ -376,10 +381,12 @@ artifact-only quarantine and forbids retry/resend. Existing scheduled request
 rows remain isolated from legacy dispatch discovery, the scheduled Graph Run
 stays v1/seq-1, and no successor/wave/receipt dataflow is inferred. Default
 output is metadata-only; `--include-result` explicitly reveals the validated
-stored result. Protocol v1 has no retry, resume, lease, provider health check,
-or successor command.
+stored result. The one-shot lifecycle itself has no retry, resume, lease or
+provider health check; successor planning/admission is a separate receipt-bound
+command family described above.
 
-`forge graph-node-contract` is the only node selector: v1 always chooses
+For the legacy unscheduled chain, `forge graph-node-contract` remains the only
+node selector: v1 always chooses
 `plan.waves[0][0]` and freezes its exact Prompts, HTTPS destination/model,
 token/byte/event/time/cost/result budgets, zero tools/workspace/dataflow, and
 fail-closed retry policy. The caller cannot choose a node.
@@ -655,16 +662,16 @@ it does not prove that replaying an interrupted tool effect is safe. Run
 inspection reads its record, cursor, events, and bound Prompt from one SQLite
 snapshot so a concurrent append cannot look like corruption.
 
-The main SQLite catalog is exclusively Hub-owned. Every declared v0–v16 schema
+The main SQLite catalog is exclusively Hub-owned. Every declared v0–v24 schema
 is validated before migration DDL (v0 must be empty); the final migration step
-then validates the exact v16 scheduled-lifecycle catalog, DDL, columns, keys,
+then validates the exact v24 scheduled-lifecycle catalog, DDL, columns, keys,
 foreign keys, structural/index contract, and absence of
 extra views/triggers/tables before the immediate transaction commits.
-Published DDL and the independent structural contract are release-pinned;
-the published v1–v15 length-framed DDL SHA-256 is
-`3de756301993c122077feab587c102108fe337a2cef4920b9d756a5171aae393`
-and the v16 structural-contract SHA-256 is
-`0cef17f11eed4481d8cc97a1d40568677392df40f24577b1db61af63f39f6531`.
+Per-version exact DDL expectations are regenerated from the immutable migration
+batches, while each independent structural contract is release-pinned; exact
+DDL validators separately catch CHECK-only drift. v24 owns 33 tables, 32
+explicit indexes and 86 implicit index signatures. Its structural-contract SHA-256 is
+`15f4cafa582332205080e6cf7a9a484a679787d41e5c02e0300921c0dfc1bc18`.
 Unexpected state fails as corruption and is never auto-repaired.
 Environmental SQLite failures remain unavailable. This detects schema drift
 but is not a same-user tamper or TOCTOU boundary.

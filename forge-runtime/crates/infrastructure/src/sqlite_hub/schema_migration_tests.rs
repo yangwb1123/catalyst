@@ -19,6 +19,10 @@ use super::{
     schema_v13_sql::MIGRATE_V12_TO_V13_SQL,
     schema_v14_sql::MIGRATE_V13_TO_V14_SQL,
     schema_v15_sql::MIGRATE_V14_TO_V15_SQL,
+    schema_v21_sql::MIGRATE_V20_TO_V21_SQL,
+    schema_v22_sql::MIGRATE_V21_TO_V22_SQL,
+    schema_v23_sql::MIGRATE_V22_TO_V23_SQL,
+    schema_v24_sql::MIGRATE_V23_TO_V24_SQL,
 };
 
 #[path = "tests/schema_full_validation.rs"]
@@ -43,6 +47,8 @@ mod schema_v13_migration_tests;
 mod schema_v14_migration_tests;
 #[path = "tests/schema_v15_migration.rs"]
 mod schema_v15_migration_tests;
+#[path = "tests/schema_v24_migration.rs"]
+mod schema_v24_migration_tests;
 #[path = "tests/schema_v5_migration.rs"]
 mod schema_v5_migration_tests;
 #[path = "tests/schema_v6_migration.rs"]

@@ -3,11 +3,13 @@ use super::{
     GroupAgentScheduledNodeContractCandidate, GroupAgentScheduledNodeContractInspection,
     GroupAgentScheduledNodeContractRecord, GroupAgentScheduledNodeContractScope,
     GroupAgentScheduledNodeContractValidationError, MAX_GROUP_AGENT_SCHEDULED_NODE_CONTRACT_BYTES,
-    group_agent_scheduled_node_user_prompt,
+    group_agent_scheduled_node_predecessor_output, group_agent_scheduled_node_user_prompt,
+    group_agent_scheduled_node_user_prompt_with_output,
     validation::{digest, invalid},
 };
 use crate::{
     GroupAgentGraphControlSnapshot, GroupAgentGraphExecutionSchedule,
+    GroupAgentGraphExecutionScheduleNode, GroupAgentGraphNode,
     MAX_GROUP_AGENT_GRAPH_IDEMPOTENCY_KEY_BYTES, group_agent_node_system_prompt,
 };
 
@@ -29,7 +31,7 @@ pub(super) fn validate_against_sources(
             validate_initial_node(candidate, control, schedule)
         }
         GroupAgentScheduledNodeContractScope::ScheduleSuccessorOnly => {
-            validate_successor_node(candidate, schedule)
+            validate_successor_node(candidate, control, schedule)
         }
     }
 }
@@ -104,6 +106,7 @@ fn validate_initial_node(
 
 fn validate_successor_node(
     candidate: &GroupAgentScheduledNodeContractCandidate,
+    control: &GroupAgentGraphControlSnapshot,
     schedule: &GroupAgentGraphExecutionSchedule,
 ) -> Result<(), GroupAgentScheduledNodeContractValidationError> {
     let ordinal = candidate.node.execution_ordinal;
@@ -117,6 +120,12 @@ fn validate_successor_node(
         .iter()
         .find(|node| node.execution_ordinal == ordinal)
         .ok_or_else(|| invalid("scheduled successor ordinal is absent from the schedule"))?;
+    let source = control
+        .manifest
+        .nodes
+        .iter()
+        .find(|node| node.node_id == scheduled.node_id)
+        .ok_or_else(|| invalid("scheduled successor node is absent from the manifest"))?;
     let node = &candidate.node;
     let request = &candidate.request;
     let consumed = request
@@ -124,22 +133,71 @@ fn validate_successor_node(
         .iter()
         .map(|receipt| receipt.predecessor_node_id.as_str())
         .collect::<Vec<_>>();
-    let predecessors_covered = scheduled
-        .direct_predecessor_node_ids
-        .iter()
-        .all(|predecessor| consumed.contains(&predecessor.as_str()));
-    let valid = scheduled.node_id == node.node_id
-        && node.authored_node_index == scheduled.authored_node_index
-        && node.topology_wave_index == scheduled.topology_wave_index
-        && node.attempt == scheduled.attempt
-        && node.project_lane_sha256 == scheduled.project_lane_sha256
-        && predecessors_covered
+    let predecessors_exact = predecessor_sets_match_schedule(
+        &scheduled.direct_predecessor_node_ids,
+        &request.required_predecessor_node_ids,
+        &consumed,
+    );
+    let valid = successor_node_matches_source(node, scheduled, source)
+        && predecessors_exact
         && request.execution_ordinal == node.execution_ordinal
         && request.node_id == node.node_id
-        && request.attempt == node.attempt;
+        && request.attempt == node.attempt
+        && successor_prompts_match(candidate, control, source)?;
     valid
         .then_some(())
         .ok_or_else(|| invalid("scheduled contract successor-node binding disagrees"))
+}
+
+fn successor_node_matches_source(
+    node: &super::GroupAgentScheduledNodeExecutionNode,
+    scheduled: &GroupAgentGraphExecutionScheduleNode,
+    source: &GroupAgentGraphNode,
+) -> bool {
+    scheduled.node_id == node.node_id
+        && node.authored_node_index == scheduled.authored_node_index
+        && node.topology_wave_index == scheduled.topology_wave_index
+        && node.attempt == scheduled.attempt
+        && node.project_id == source.project_id
+        && node.member_role == source.member_role
+        && node.agent_profile == source.agent_profile
+        && node.project_lane_sha256 == scheduled.project_lane_sha256
+}
+
+fn successor_prompts_match(
+    candidate: &GroupAgentScheduledNodeContractCandidate,
+    control: &GroupAgentGraphControlSnapshot,
+    source: &GroupAgentGraphNode,
+) -> Result<bool, GroupAgentScheduledNodeContractValidationError> {
+    let output = group_agent_scheduled_node_predecessor_output(&candidate.request.user_prompt)?;
+    let expected_user = match output.as_deref() {
+        Some(value) => group_agent_scheduled_node_user_prompt_with_output(
+            &source.node_id,
+            &source.task,
+            &source.acceptance,
+            value,
+        )?,
+        None => group_agent_scheduled_node_user_prompt(
+            &source.node_id,
+            &source.task,
+            &source.acceptance,
+        )?,
+    };
+    Ok(candidate.request.system_prompt
+        == group_agent_node_system_prompt(&control.manifest.manager.instruction)
+        && candidate.request.user_prompt == expected_user)
+}
+
+fn predecessor_sets_match_schedule(
+    scheduled: &[String],
+    required: &[String],
+    consumed: &[&str],
+) -> bool {
+    scheduled == required
+        && scheduled
+            .iter()
+            .map(String::as_str)
+            .eq(consumed.iter().copied())
 }
 
 pub(super) fn validate_record(
@@ -266,8 +324,8 @@ fn content_id(value: &str, prefix: &str, sha256: &str) -> bool {
 /// zero-or-more receipts (a same-wave sibling with no direct predecessors
 /// carries zero).
 fn ordinal_slot_valid(record: &GroupAgentScheduledNodeContractRecord) -> bool {
-    if record.predecessor_receipt_count == 0 {
-        true
+    if record.execution_ordinal == 0 {
+        record.predecessor_receipt_count == 0
     } else {
         (1..=31).contains(&record.execution_ordinal)
     }

@@ -3,13 +3,14 @@ use std::sync::Arc;
 use crate::runtime_domain::{
     GroupAgentGraphExecutionScheduleStore, GroupAgentGraphRunStore, GroupAgentGraphStore,
     GroupAgentScheduledNodeContractInspection, GroupAgentScheduledNodeContractStore,
-    GroupAgentScheduledNodeProviderRequestInspection, GroupAgentScheduledNodeProviderRequestRecord,
-    GroupAgentScheduledNodeProviderRequestStore,
+    GroupAgentScheduledNodeLifecycleStore, GroupAgentScheduledNodeProviderRequestInspection,
+    GroupAgentScheduledNodeProviderRequestRecord, GroupAgentScheduledNodeProviderRequestStore,
+    GroupAgentScheduledNodeSuccessorStore,
 };
 
 use super::{
     GroupAgentNodeDispatchRequestCodec, GroupAgentScheduledNodeContractService,
-    GroupAgentScheduledNodeProviderRequestServiceError,
+    GroupAgentScheduledNodeProviderRequestServiceError, GroupAgentScheduledNodeSuccessorService,
     PrepareGroupAgentScheduledNodeProviderRequestResult,
     scheduled_provider_request_error::{codec_input_error, corrupt},
     scheduled_provider_request_validation::{
@@ -28,6 +29,7 @@ pub struct PrepareGroupAgentScheduledNodeProviderRequestInput {
 pub struct GroupAgentScheduledNodeProviderRequestService {
     runs: Arc<dyn GroupAgentGraphRunStore>,
     scheduled_contracts: GroupAgentScheduledNodeContractService,
+    successor_contracts: Option<GroupAgentScheduledNodeSuccessorService>,
     provider_requests: Arc<dyn GroupAgentScheduledNodeProviderRequestStore>,
     codec: Arc<dyn GroupAgentNodeDispatchRequestCodec>,
 }
@@ -50,6 +52,39 @@ impl GroupAgentScheduledNodeProviderRequestService {
                 schedules,
                 scheduled_contracts,
             ),
+            successor_contracts: None,
+            provider_requests,
+            codec,
+        }
+    }
+
+    #[must_use]
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_with_successors(
+        graphs: Arc<dyn GroupAgentGraphStore>,
+        runs: Arc<dyn GroupAgentGraphRunStore>,
+        schedules: Arc<dyn GroupAgentGraphExecutionScheduleStore>,
+        scheduled_contracts: Arc<dyn GroupAgentScheduledNodeContractStore>,
+        successor_contracts: Arc<dyn GroupAgentScheduledNodeSuccessorStore>,
+        lifecycles: Arc<dyn GroupAgentScheduledNodeLifecycleStore>,
+        provider_requests: Arc<dyn GroupAgentScheduledNodeProviderRequestStore>,
+        codec: Arc<dyn GroupAgentNodeDispatchRequestCodec>,
+    ) -> Self {
+        Self {
+            runs: Arc::clone(&runs),
+            scheduled_contracts: GroupAgentScheduledNodeContractService::new(
+                Arc::clone(&graphs),
+                Arc::clone(&runs),
+                Arc::clone(&schedules),
+                scheduled_contracts,
+            ),
+            successor_contracts: Some(GroupAgentScheduledNodeSuccessorService::new(
+                graphs,
+                runs,
+                schedules,
+                successor_contracts,
+                lifecycles,
+            )),
             provider_requests,
             codec,
         }
@@ -108,9 +143,7 @@ impl GroupAgentScheduledNodeProviderRequestService {
         GroupAgentScheduledNodeProviderRequestServiceError,
     > {
         Self::preflight_prepare(input)?;
-        let source = self
-            .scheduled_contracts
-            .inspect(&input.scheduled_contract_id)?;
+        let source = self.inspect_source(&input.scheduled_contract_id)?;
         self.require_pristine_run(&source)?;
         let logical = model_request(&source.candidate);
         let body = self
@@ -183,9 +216,7 @@ impl GroupAgentScheduledNodeProviderRequestService {
         &self,
         inspection: &GroupAgentScheduledNodeProviderRequestInspection,
     ) -> Result<(), GroupAgentScheduledNodeProviderRequestServiceError> {
-        let source = self
-            .scheduled_contracts
-            .inspect(&inspection.record.scheduled_contract_id)?;
+        let source = self.inspect_source(&inspection.record.scheduled_contract_id)?;
         self.require_pristine_run(&source)?;
         if source != inspection.scheduled_contract {
             return Err(corrupt(
@@ -214,5 +245,28 @@ impl GroupAgentScheduledNodeProviderRequestService {
             .inspect_group_agent_graph_run(&source.record.graph_run_id)
             .map_err(GroupAgentScheduledNodeProviderRequestServiceError::from)?;
         validate_pristine_run(&source.record.graph_run_id, run)
+    }
+
+    fn inspect_source(
+        &self,
+        contract_id: &str,
+    ) -> Result<
+        GroupAgentScheduledNodeContractInspection,
+        GroupAgentScheduledNodeProviderRequestServiceError,
+    > {
+        match self.scheduled_contracts.inspect(contract_id) {
+            Ok(source) => Ok(source),
+            Err(super::GroupAgentScheduledNodeContractServiceError::NotFound { .. }) => self
+                .successor_contracts
+                .as_ref()
+                .ok_or_else(
+                    || GroupAgentScheduledNodeProviderRequestServiceError::NotFound {
+                        message: format!("scheduled contract '{contract_id}' was not found"),
+                    },
+                )?
+                .inspect(contract_id)
+                .map_err(Into::into),
+            Err(error) => Err(error.into()),
+        }
     }
 }

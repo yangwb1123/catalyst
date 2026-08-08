@@ -311,7 +311,8 @@ fn execution_service(
     let database = hub_database_path(args.state_dir.as_deref())?;
     let store = Arc::new(SqliteHubStore::open(database)?);
     let providers = Arc::new(RegisteredGroupAgentNodeProviderFactory::new());
-    Ok(GroupAgentScheduledNodeDispatchExecutionService::new(
+    Ok(GroupAgentScheduledNodeDispatchExecutionService::new_with_successors(
+        store.clone(),
         store.clone(),
         store.clone(),
         store.clone(),
@@ -338,7 +339,9 @@ fn validate_execute_preflight(
     }
     let database = hub_database_path(args.state_dir.as_deref())?;
     let store = Arc::new(SqliteHubStore::open_existing_current_read_only(database)?);
-    GroupAgentScheduledNodeDispatchReadinessService::new(
+    GroupAgentScheduledNodeDispatchReadinessService::new_with_successors(
+        store.clone(),
+        store.clone(),
         store.clone(),
         store.clone(),
         store.clone(),

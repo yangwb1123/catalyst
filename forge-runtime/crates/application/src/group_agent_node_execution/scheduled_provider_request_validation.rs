@@ -244,8 +244,6 @@ pub(super) fn validate_list(
         ));
     }
     let mut ids = BTreeSet::new();
-    let mut runs = BTreeSet::new();
-    let mut schedules = BTreeSet::new();
     let mut contracts = BTreeSet::new();
     let mut logical_requests = BTreeSet::new();
     let mut run_slots = BTreeSet::new();
@@ -256,8 +254,6 @@ pub(super) fn validate_list(
             .map_err(|error| corrupt(&error.to_string()))?;
         if graph_run_id.is_some_and(|id| id != record.graph_run_id)
             || !ids.insert(record.provider_request_id.as_str())
-            || !runs.insert(record.graph_run_id.as_str())
-            || !schedules.insert(record.schedule_id.as_str())
             || !contracts.insert(record.scheduled_contract_id.as_str())
             || !logical_requests.insert(record.logical_request_id.as_str())
             || !run_slots.insert((

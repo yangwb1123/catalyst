@@ -4,7 +4,8 @@ use super::*;
 use crate::{
     GroupAgentGraphControlSnapshot, GroupAgentGraphExecutionSchedule,
     MAX_GROUP_AGENT_GRAPH_NODE_ACCEPTANCE_BYTES, MAX_GROUP_AGENT_GRAPH_NODE_TASK_BYTES,
-    group_agent_project_lane_sha256, group_agent_prompt_sha256,
+    MAX_GROUP_AGENT_SCHEDULED_NODE_USER_PROMPT_BYTES, group_agent_project_lane_sha256,
+    group_agent_prompt_sha256,
 };
 
 #[test]
@@ -111,7 +112,7 @@ fn decoder_rejects_unstructured_user_prompt_with_resigned_identities() {
 }
 
 #[test]
-fn decoder_rejects_escape_expanded_user_prompt_above_core_bound() {
+fn decoder_accepts_escape_expanded_content_free_user_prompt() {
     let (mut candidate, _, _) = fixture();
     candidate.request.user_prompt = group_agent_scheduled_node_user_prompt(
         &candidate.node.node_id,
@@ -119,13 +120,17 @@ fn decoder_rejects_escape_expanded_user_prompt_above_core_bound() {
         &"\"".repeat(MAX_GROUP_AGENT_GRAPH_NODE_ACCEPTANCE_BYTES),
     )
     .expect("escaped user Prompt");
-    let core_bound =
-        MAX_GROUP_AGENT_GRAPH_NODE_TASK_BYTES + MAX_GROUP_AGENT_GRAPH_NODE_ACCEPTANCE_BYTES + 1_024;
-    assert!(candidate.request.user_prompt.len() > core_bound);
+    assert!(
+        candidate.request.user_prompt.len() <= MAX_GROUP_AGENT_SCHEDULED_NODE_USER_PROMPT_BYTES
+    );
     resign_prompt_and_candidate(&mut candidate);
 
     let json = candidate.canonical_json().expect("self-consistent JSON");
-    assert!(GroupAgentScheduledNodeContractCandidate::decode_exact(&json).is_err());
+    assert_eq!(
+        GroupAgentScheduledNodeContractCandidate::decode_exact(&json)
+            .expect("bounded escaped Prompt"),
+        candidate
+    );
 }
 
 fn intrinsic_source_substitutions(
@@ -319,6 +324,8 @@ pub(super) fn resign_prompt_and_candidate(
     candidate: &mut GroupAgentScheduledNodeContractCandidate,
 ) {
     let request = &mut candidate.request;
+    request.system_prompt_bytes = request.system_prompt.len();
+    request.system_prompt_sha256 = group_agent_prompt_sha256(&request.system_prompt);
     request.user_prompt_bytes = request.user_prompt.len();
     request.user_prompt_sha256 = group_agent_prompt_sha256(&request.user_prompt);
     resign_request(request);
@@ -344,46 +351,6 @@ fn assert_intrinsic_but_source_rejected(
             .validate_against_control_and_schedule(control, schedule)
             .is_err()
     );
-}
-
-#[test]
-fn successor_candidate_with_verified_receipts_validates() {
-    let (mut candidate, _, schedule) = fixture();
-    let backend = schedule
-        .nodes
-        .iter()
-        .find(|node| node.execution_ordinal == 1)
-        .expect("ordinal-1 node");
-    let frontend = schedule.nodes[0].clone();
-    // 构造 successor:ordinal 1、backend 节点、消费 frontend 的 receipt
-    candidate.contract_scope = GroupAgentScheduledNodeContractScope::ScheduleSuccessorOnly;
-    candidate.node.execution_ordinal = 1;
-    candidate.node.node_id = backend.node_id.clone();
-    candidate.node.project_id = "backend-project".into();
-    candidate.node.project_lane_sha256 =
-        group_agent_project_lane_sha256(&candidate.node.project_id);
-    candidate.request.execution_ordinal = 1;
-    candidate.request.node_id = backend.node_id.clone();
-    candidate.request.user_prompt = format!(
-        "{{\"v\":2,\"node_id\":\"{}\",\"task\":\"t\",\"acceptance\":\"a\"}}",
-        backend.node_id
-    );
-    candidate.request.predecessor_terminal_receipts =
-        vec![crate::GroupAgentScheduledNodePredecessorReceipt {
-            predecessor_node_id: frontend.node_id.clone(),
-            predecessor_attempt: 1,
-            terminal_event_seq: 0,
-            terminal_event_sha256: String::new(),
-            terminal_receipt_id: format!("scheduled-node-terminal-receipt-{}", "a".repeat(64)),
-            terminal_receipt_sha256: "a".repeat(64),
-            node_outcome: crate::GroupAgentScheduledNodePredecessorOutcome::Completed,
-            provider_request_id: "scheduled-node-provider-request-frontend".into(),
-            dispatch_id: "dispatch-frontend".into(),
-        }];
-    resign_prompt_and_candidate(&mut candidate);
-    candidate
-        .validate()
-        .expect("successor candidate must validate");
 }
 
 #[test]

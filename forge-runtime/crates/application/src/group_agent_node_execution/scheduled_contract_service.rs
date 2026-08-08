@@ -12,8 +12,8 @@ use super::{
     scheduled_contract_error::corrupt,
     scheduled_contract_validation::{
         admission_request, checked_graph, checked_inspection, checked_run, checked_schedule,
-        parse_admit_input, validate_admit_result, validate_identifier, validate_list,
-        validate_list_input, validate_sources,
+        parse_admit_input, validate_admit_result, validate_identifier, validate_initial_scope,
+        validate_list, validate_list_input, validate_sources,
     },
 };
 
@@ -57,7 +57,7 @@ impl GroupAgentScheduledNodeContractService {
     pub fn preflight_admit(
         input: &AdmitGroupAgentScheduledNodeContractInput,
     ) -> Result<(), GroupAgentScheduledNodeContractServiceError> {
-        parse_admit_input(input).map(|_| ())
+        validate_initial_scope(&parse_admit_input(input)?)
     }
 
     /// Validates an inspection identifier before a caller opens storage.
@@ -96,6 +96,7 @@ impl GroupAgentScheduledNodeContractService {
         GroupAgentScheduledNodeContractServiceError,
     > {
         let candidate = parse_admit_input(input)?;
+        validate_initial_scope(&candidate)?;
         let run = self.load_run(&input.graph_run_id)?;
         let graph = self.load_graph(&run.run.graph_id)?;
         let control = super::snapshot::export(&run, &graph)?;
@@ -126,6 +127,7 @@ impl GroupAgentScheduledNodeContractService {
             .inspect_group_agent_scheduled_node_contract(contract_id)
             .map_err(GroupAgentScheduledNodeContractServiceError::from)?;
         let inspection = checked_inspection(inspection)?;
+        validate_initial_scope(&inspection.candidate)?;
         if inspection.record.contract_id != contract_id {
             return Err(corrupt(
                 "store returned a different scheduled contract identity",

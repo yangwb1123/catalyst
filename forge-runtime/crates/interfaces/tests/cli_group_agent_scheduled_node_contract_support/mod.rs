@@ -25,11 +25,14 @@ pub(super) fn prepare_run(fixture: &Fixture, key: &str) -> String {
 }
 
 pub(super) fn export_control(fixture: &Fixture, graph_run_id: &str) -> Vec<u8> {
-    let output = command(
-        fixture.state.path(),
-        fixture.cwd.path(),
-        &["group", "graph", "run", "control", "export", graph_run_id],
-    )
+    let output = command(fixture.state.path(), fixture.cwd.path(), &[
+        "group",
+        "graph",
+        "run",
+        "control",
+        "export",
+        graph_run_id,
+    ])
     .output()
     .expect("export control");
     assert_success(&output);
@@ -160,22 +163,18 @@ pub(super) fn admit_candidate(fixture: &Fixture, run: &str, key: &str, bytes: &[
 }
 
 pub(super) fn invoke_candidate(fixture: &Fixture, run: &str, key: &str, bytes: &[u8]) -> Output {
-    let mut child = command(
-        fixture.state.path(),
-        fixture.cwd.path(),
-        &[
-            "group",
-            "graph",
-            "run",
-            "scheduled-contract",
-            "admit",
-            run,
-            "--contract",
-            "-",
-            "--idempotency-key",
-            key,
-        ],
-    )
+    let mut child = command(fixture.state.path(), fixture.cwd.path(), &[
+        "group",
+        "graph",
+        "run",
+        "scheduled-contract",
+        "admit",
+        run,
+        "--contract",
+        "-",
+        "--idempotency-key",
+        key,
+    ])
     .env("OPENAI_API_KEY", CREDENTIAL_SENTINEL)
     .env_remove("ANTHROPIC_API_KEY")
     .stdin(Stdio::piped())

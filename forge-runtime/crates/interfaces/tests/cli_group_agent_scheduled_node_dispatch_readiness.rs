@@ -143,7 +143,7 @@ fn missing_and_v14_hubs_are_not_created_or_migrated() {
     checkpoint(prepared.fixture.state.path());
     let before = state_file_bytes(prepared.fixture.state.path());
     let output = invoke_readiness(&prepared, "authorization.json", "pricing.json", &[]);
-    assert_failure(&output, "current schema version 23");
+    assert_failure(&output, "current schema version 24");
     assert_eq!(state_file_bytes(prepared.fixture.state.path()), before);
     let connection = Connection::open(database).unwrap();
     let version: i64 = connection

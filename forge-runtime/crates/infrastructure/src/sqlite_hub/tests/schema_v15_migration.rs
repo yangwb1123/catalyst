@@ -306,7 +306,7 @@ fn malformed(original: &str, replacement: &str) -> String {
 }
 
 fn assert_current_shape(connection: &Connection) {
-    assert_eq!(schema_version(connection), 23);
+    assert_eq!(schema_version(connection), 24);
     assert!(schema_object_exists(connection, "table", REQUEST_TABLE));
     assert!(schema_object_exists(
         connection,

@@ -7,12 +7,15 @@
 //! per-node dispatch chain (prepare/authorize/execute) stays on the existing
 //! provider-request commands.
 
-use std::collections::VecDeque;
+use std::collections::{BTreeSet, VecDeque};
 use std::error::Error;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
-use crate::args::{next_value, WaveAdmitExecutionOptions};
+use crate::args::{
+    Command as CliCommand, GroupCommand, GroupGraphCommand, GroupGraphRunCommand,
+    GroupGraphRunScheduledContractCommand, WaveAdmitExecutionOptions, next_value,
+};
 
 use crate::{
     args::Args,
@@ -20,11 +23,10 @@ use crate::{
 };
 
 use super::{
-    scheduled_contract_command::{
-        self, successor_service, WaveAdmitInput, WaveSuccessorService,
-    },
+    scheduled_contract_command::{self, WaveAdmitInput, WaveSuccessorService, successor_service},
     scheduled_contract_output::GroupAgentScheduledNodeContractCliOutput,
 };
+use crate::args::group_graph_args::{duplicate, required_id, unknown, with_usage};
 
 /// One admitted wave node.
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -50,11 +52,9 @@ pub fn execute_wave_admit(
     idempotency_key: Option<&str>,
     execution: &crate::args::WaveAdmitExecutionOptions,
 ) -> Result<GroupAgentScheduledNodeContractCliOutput, Box<dyn Error>> {
+    let receipt_sources = canonical_receipt_sources(receipt_sources)?;
     let control = scheduled_contract_command::export_control(args, graph_run_id)?;
-    if receipt_sources.is_empty() {
-        return Err("wave-admit requires at least one --predecessor-receipt".into());
-    }
-    let ready = run_ready_nodes(&control, receipt_sources, schedule_sha256, go_core)?;
+    let ready = run_ready_nodes(&control, &receipt_sources, schedule_sha256, go_core)?;
     if ready.is_empty() {
         return Ok(GroupAgentScheduledNodeContractCliOutput::wave(
             WaveAdmitOutput {
@@ -69,7 +69,7 @@ pub fn execute_wave_admit(
         let ctx = MaterializeContext {
             args,
             control: &control,
-            receipt_sources,
+            receipt_sources: &receipt_sources,
             schedule_sha256,
             go_core,
             idempotency_key,
@@ -132,24 +132,27 @@ fn materialize_node(
     node_id: &str,
     ctx: &MaterializeContext<'_>,
 ) -> Result<WaveAdmitNodeOutput, Box<dyn Error>> {
-    let candidate = build_target_candidate(ctx.go_core, ctx.control, node_id,
-                                           ctx.receipt_sources, ctx.schedule_sha256, ctx.execution)?;
+    let candidate = build_target_candidate(
+        ctx.go_core,
+        ctx.control,
+        node_id,
+        ctx.receipt_sources,
+        ctx.schedule_sha256,
+        ctx.execution,
+    )?;
     let input = WaveAdmitInput {
         graph_run_id: graph_run_id.into(),
         contract_json: String::from_utf8(candidate)?,
         // Deterministic per-node key derived from the user key (or a fresh
         // base): a re-run with the same --idempotency-key replays admitted
         // nodes instead of rejecting them (Finding 3).
-        idempotency_key: {
-            // Bound the derived key: base + "-" + node_id must stay within
-            // the 256-byte idempotency-key limit (Stage-02 Finding 4).
-            let base = ctx
-                .idempotency_key
-                .map_or_else(|| generated_idempotency_key("scheduled-wave-admit"), str::to_owned);
-            let budget = 256usize.saturating_sub(node_id.len() + 1);
-            let bounded: String = base.chars().take(budget).collect();
-            format!("{bounded}-{node_id}")
-        },
+        idempotency_key: derive_wave_idempotency_key(
+            &ctx.idempotency_key.map_or_else(
+                || generated_idempotency_key("scheduled-wave-admit"),
+                str::to_owned,
+            ),
+            node_id,
+        ),
         admitted_at_ms: unix_time_millis(),
         predecessor_content: None,
     };
@@ -160,6 +163,39 @@ fn materialize_node(
         disposition: format!("{:?}", result.disposition),
         contract_id: result.inspection.record.contract_id,
     })
+}
+
+pub(crate) fn derive_wave_idempotency_key(base: &str, node_id: &str) -> String {
+    let suffix = format!("-{node_id}");
+    let budget = 256usize.saturating_sub(suffix.len());
+    let mut end = base.len().min(budget);
+    while !base.is_char_boundary(end) {
+        end -= 1;
+    }
+    format!("{}{suffix}", &base[..end])
+}
+
+fn canonical_receipt_sources(sources: &[String]) -> Result<Vec<String>, Box<dyn Error>> {
+    sources
+        .iter()
+        .map(|source| {
+            if source == "-" {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "wave-admit predecessor receipts cannot read from stdin",
+                )
+                .into());
+            }
+            let path = std::fs::canonicalize(source)?;
+            path.into_os_string().into_string().map_err(|_| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "wave-admit predecessor receipt path is not UTF-8",
+                )
+                .into()
+            })
+        })
+        .collect()
 }
 
 /// `build_target_candidate` runs `graph-scheduled-node-contract` with
@@ -251,14 +287,15 @@ fn go_command(go_core: Option<&str>) -> Command {
                 candidate = Some(joined);
             }
         }
-        let fallback = std::env::current_dir().unwrap_or_default().join("forge-core");
+        let fallback = std::env::current_dir()
+            .unwrap_or_default()
+            .join("forge-core");
         candidate.unwrap_or(fallback).display().to_string()
     });
     let mut cmd = Command::new("go");
     cmd.current_dir(core_dir).args(["run", "./cmd/forge"]);
     cmd
 }
-
 
 ///  renders the wave-admit summary (human output path).
 pub(crate) fn write_wave(
@@ -275,7 +312,12 @@ pub(crate) fn write_wave(
     for node in rejected {
         writeln!(writer, "wave-admit {} — {}", node.node_id, node.disposition)?;
     }
-    writeln!(writer, "wave: {} admitted, {} rejected", wave.len(), rejected.len())
+    writeln!(
+        writer,
+        "wave: {} admitted, {} rejected",
+        wave.len(),
+        rejected.len()
+    )
 }
 
 /// Binds one wave-admit execution-option flag; returns false for unknown
@@ -301,6 +343,20 @@ pub(crate) fn bind_wave_execution_flag(
     Ok(true)
 }
 
+pub(crate) fn is_wave_execution_flag(flag: &str) -> bool {
+    matches!(
+        flag,
+        "--endpoint"
+            | "--model"
+            | "--max-output-tokens"
+            | "--max-model-output-bytes"
+            | "--max-model-events"
+            | "--timeout-ms"
+            | "--max-cost-usd-micros"
+            | "--pricing-snapshot-sha256"
+            | "--max-result-bytes"
+    )
+}
 
 pub(crate) fn wave_execution_complete(execution: &WaveAdmitExecutionOptions) -> bool {
     !execution.endpoint.is_empty()
@@ -313,3 +369,93 @@ pub(crate) fn wave_execution_complete(execution: &WaveAdmitExecutionOptions) -> 
         && !execution.pricing_snapshot_sha256.is_empty()
         && !execution.max_result_bytes.is_empty()
 }
+
+pub(crate) fn parse_wave_admit(
+    tokens: &mut VecDeque<String>,
+    idempotency_key: &mut Option<String>,
+) -> Result<CliCommand, String> {
+    if idempotency_key.as_deref() == Some("") {
+        return Err(with_usage("wave-admit idempotency key cannot be empty"));
+    }
+    let graph_run_id = required_id(tokens, "wave-admit", "GRAPH_RUN_ID")?;
+    let options = parse_wave_options(tokens, idempotency_key)?;
+    let schedule_sha256 = options.schedule_sha256.ok_or_else(|| {
+        with_usage("group graph run scheduled-contract wave-admit requires --schedule-sha256")
+    })?;
+    if !wave_execution_complete(&options.execution) {
+        return Err(with_usage(
+            "group graph run scheduled-contract wave-admit requires the full execution option set (--endpoint --model --max-output-tokens --max-model-output-bytes --max-model-events --timeout-ms --max-cost-usd-micros --pricing-snapshot-sha256 --max-result-bytes)",
+        ));
+    }
+    Ok(CliCommand::Group(GroupCommand::Graph(
+        GroupGraphCommand::Run(GroupGraphRunCommand::ScheduledContract(
+            GroupGraphRunScheduledContractCommand::WaveAdmit {
+                graph_run_id,
+                predecessor_receipt_sources: options.receipts,
+                schedule_sha256,
+                go_core: options.go_core,
+                idempotency_key: idempotency_key.clone(),
+                execution: Box::new(options.execution),
+            },
+        )),
+    )))
+}
+
+#[derive(Default)]
+struct WaveAdmitOptions {
+    receipts: Vec<String>,
+    schedule_sha256: Option<String>,
+    go_core: Option<String>,
+    execution: WaveAdmitExecutionOptions,
+}
+
+fn parse_wave_options(
+    tokens: &mut VecDeque<String>,
+    idempotency_key: &mut Option<String>,
+) -> Result<WaveAdmitOptions, String> {
+    let mut options = WaveAdmitOptions::default();
+    let mut seen = BTreeSet::new();
+    while let Some(flag) = tokens.pop_front() {
+        if flag == "--predecessor-receipt" {
+            let source = next_value(tokens, "--predecessor-receipt")?;
+            if source.is_empty() || source == "-" {
+                return Err(with_usage(
+                    "wave-admit predecessor receipts require a file path, not stdin",
+                ));
+            }
+            options.receipts.push(source);
+            continue;
+        }
+        if !seen.insert(flag.clone()) {
+            return Err(duplicate(&flag));
+        }
+        match flag.as_str() {
+            "--schedule-sha256" => {
+                options.schedule_sha256 = Some(next_value(tokens, "--schedule-sha256")?);
+            }
+            "--go-core" => options.go_core = Some(next_value(tokens, "--go-core")?),
+            "--idempotency-key" if idempotency_key.is_none() => {
+                let key = next_value(tokens, "--idempotency-key")?;
+                if key.is_empty() {
+                    return Err(with_usage("wave-admit idempotency key cannot be empty"));
+                }
+                *idempotency_key = Some(key);
+            }
+            "--idempotency-key" => return Err(duplicate("--idempotency-key")),
+            _ if is_wave_execution_flag(&flag) => {
+                bind_wave_execution_flag(&flag, tokens, &mut options.execution)?;
+            }
+            other => {
+                return Err(unknown(
+                    "group graph run scheduled-contract wave-admit",
+                    other,
+                ));
+            }
+        }
+    }
+    Ok(options)
+}
+
+#[cfg(test)]
+#[path = "tests/wave_command.rs"]
+mod tests;

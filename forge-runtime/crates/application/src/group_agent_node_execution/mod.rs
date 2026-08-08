@@ -30,6 +30,9 @@ mod scheduled_release_service;
 #[path = "scheduled_release_tests.rs"]
 mod scheduled_release_tests;
 mod scheduled_successor_service;
+#[cfg(test)]
+#[path = "scheduled_successor_service_tests.rs"]
+mod scheduled_successor_service_tests;
 mod service;
 mod snapshot;
 mod validation;
@@ -55,6 +58,8 @@ pub use crate::runtime_domain::{
     GroupAgentScheduledNodeContractInspection, GroupAgentScheduledNodeContractRecord,
     MAX_GROUP_AGENT_SCHEDULED_NODE_CONTRACT_BYTES,
     MAX_GROUP_AGENT_SCHEDULED_NODE_CONTRACT_LIST_LIMIT,
+    MAX_GROUP_AGENT_SCHEDULED_NODE_PREDECESSOR_OUTPUT_BYTES,
+    MAX_GROUP_AGENT_SCHEDULED_NODE_USER_PROMPT_BYTES,
 };
 pub use crate::runtime_domain::{
     GROUP_AGENT_NODE_DISPATCH_AUTHORIZATION_PROTOCOL_VERSION,

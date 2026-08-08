@@ -124,14 +124,6 @@ impl SpyHub {
         self.contract.record.contract_id.clone()
     }
 
-    pub(crate) fn set_contract(&mut self, contract: GroupAgentScheduledNodeContractInspection) {
-        self.contract = contract;
-    }
-
-    pub(crate) fn contract(&self) -> GroupAgentScheduledNodeContractInspection {
-        self.contract.clone()
-    }
-
     pub(crate) fn mutation_calls(&self) -> usize {
         self.mutation_calls.load(Ordering::SeqCst)
     }

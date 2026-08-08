@@ -7,8 +7,9 @@ use crate::runtime_domain::{
     GroupAgentGraphExecutionScheduleInspection, GroupAgentGraphExecutionScheduleStore,
     GroupAgentGraphRunInspection, GroupAgentGraphRunStore, GroupAgentGraphStore,
     GroupAgentScheduledNodeContractStore, GroupAgentScheduledNodeDispatchAuthorization,
-    GroupAgentScheduledNodeDispatchReleaseControl,
+    GroupAgentScheduledNodeDispatchReleaseControl, GroupAgentScheduledNodeLifecycleStore,
     GroupAgentScheduledNodeProviderRequestInspection, GroupAgentScheduledNodeProviderRequestStore,
+    GroupAgentScheduledNodeSuccessorStore,
 };
 
 use super::{
@@ -74,6 +75,36 @@ impl GroupAgentScheduledNodeDispatchReleaseControlService {
             Arc::clone(&runs),
             Arc::clone(&schedules),
             scheduled_contracts,
+            provider_requests,
+            codec,
+        );
+        Self {
+            graphs,
+            runs,
+            schedules,
+            provider_requests: request_service,
+        }
+    }
+
+    #[must_use]
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_with_successors(
+        graphs: Arc<dyn GroupAgentGraphStore>,
+        runs: Arc<dyn GroupAgentGraphRunStore>,
+        schedules: Arc<dyn GroupAgentGraphExecutionScheduleStore>,
+        scheduled_contracts: Arc<dyn GroupAgentScheduledNodeContractStore>,
+        successor_contracts: Arc<dyn GroupAgentScheduledNodeSuccessorStore>,
+        lifecycles: Arc<dyn GroupAgentScheduledNodeLifecycleStore>,
+        provider_requests: Arc<dyn GroupAgentScheduledNodeProviderRequestStore>,
+        codec: Arc<dyn GroupAgentNodeDispatchRequestCodec>,
+    ) -> Self {
+        let request_service = GroupAgentScheduledNodeProviderRequestService::new_with_successors(
+            Arc::clone(&graphs),
+            Arc::clone(&runs),
+            Arc::clone(&schedules),
+            scheduled_contracts,
+            successor_contracts,
+            lifecycles,
             provider_requests,
             codec,
         );

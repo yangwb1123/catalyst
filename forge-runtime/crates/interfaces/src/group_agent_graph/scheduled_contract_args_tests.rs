@@ -381,20 +381,30 @@ fn parses_successor_admit() {
 }
 
 #[test]
-fn successor_admit_requires_predecessor_receipts() {
-    assert!(
-        parse(&[
-            "group",
-            "graph",
-            "run",
-            "scheduled-contract",
-            "successor",
-            "admit",
-            "graph-run-fixture-v1",
-            "--contract",
-            "candidate.json",
-        ])
-        .expect_err("successor admit without receipts rejects")
-        .contains("at least one --predecessor-receipt")
-    );
+fn successor_admit_allows_an_empty_same_wave_predecessor_set() {
+    let parsed = parse(&[
+        "group",
+        "graph",
+        "run",
+        "scheduled-contract",
+        "successor",
+        "admit",
+        "graph-run-fixture-v1",
+        "--contract",
+        "candidate.json",
+    ])
+    .expect("same-wave successor admit parses without direct receipts");
+    assert!(matches!(
+        parsed.command,
+        Command::Group(GroupCommand::Graph(GroupGraphCommand::Run(
+            GroupGraphRunCommand::ScheduledContract(
+                GroupGraphRunScheduledContractCommand::Successor(
+                    GroupGraphRunScheduledContractSuccessorCommand::Admit {
+                        predecessor_receipt_sources,
+                        ..
+                    }
+                )
+            )
+        ))) if predecessor_receipt_sources.is_empty()
+    ));
 }

@@ -6,7 +6,8 @@ use crate::runtime_domain::{
     GroupAgentGraphExecutionScheduleStore, GroupAgentGraphRunStore, GroupAgentGraphStore,
     GroupAgentNodePricingQuote, GroupAgentNodePricingSnapshot,
     GroupAgentScheduledNodeContractStore, GroupAgentScheduledNodeDestinationRegistry,
-    GroupAgentScheduledNodeDispatchAuthorization, GroupAgentScheduledNodeProviderRequestStore,
+    GroupAgentScheduledNodeDispatchAuthorization, GroupAgentScheduledNodeLifecycleStore,
+    GroupAgentScheduledNodeProviderRequestStore, GroupAgentScheduledNodeSuccessorStore,
 };
 
 use super::{
@@ -52,6 +53,34 @@ impl GroupAgentScheduledNodeDispatchReadinessService {
                 runs,
                 schedules,
                 scheduled_contracts,
+                provider_requests,
+                codec,
+            ),
+            destinations,
+        }
+    }
+
+    #[must_use]
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_with_successors(
+        graphs: Arc<dyn GroupAgentGraphStore>,
+        runs: Arc<dyn GroupAgentGraphRunStore>,
+        schedules: Arc<dyn GroupAgentGraphExecutionScheduleStore>,
+        scheduled_contracts: Arc<dyn GroupAgentScheduledNodeContractStore>,
+        successor_contracts: Arc<dyn GroupAgentScheduledNodeSuccessorStore>,
+        lifecycles: Arc<dyn GroupAgentScheduledNodeLifecycleStore>,
+        provider_requests: Arc<dyn GroupAgentScheduledNodeProviderRequestStore>,
+        codec: Arc<dyn GroupAgentNodeDispatchRequestCodec>,
+        destinations: Arc<dyn GroupAgentScheduledNodeDestinationRegistry>,
+    ) -> Self {
+        Self {
+            release: GroupAgentScheduledNodeDispatchReleaseControlService::new_with_successors(
+                graphs,
+                runs,
+                schedules,
+                scheduled_contracts,
+                successor_contracts,
+                lifecycles,
                 provider_requests,
                 codec,
             ),
