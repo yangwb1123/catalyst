@@ -1,0 +1,156 @@
+# Rule registry: which ui-spec files apply to which task.
+#
+# The deterministic half of rule selection (pbatch/rule_matcher.py):
+# a task is classified along three axes — scale (demo/standard/production),
+# page type (form/table/detail/workbench/immersive/auth) and risk
+# (high-risk business actions) — and the matcher emits a bounded rule
+# manifest. Prompts inject ONLY the manifest (paths + why); the agent
+# loads the listed files on demand, like the memory manifest pattern.
+#
+# Tiers (demo < standard < production):
+#   demo       - small demos/prototypes: visual core only
+#   standard   - normal pages: + async/form/error/defect rules
+#   production - enterprise/go-live: + architecture/observability budgets
+# Default tier is standard; demos must be marked (demo/示例/原型...).
+
+scale:
+  demo: [demo, 示例, 演示, 原型, prototype, playground, 练习, 小demo, test page]
+  production: [生产, 上线, 正式, 企业, production, enterprise, prod, 公司]
+
+# Requirement complexity signals (assessor scale_signal): what counts as
+# real frontend complexity.
+signals:
+  form: [表单, 新建页, 编辑页, 填写, 提交页, form]
+  table: [表格, 列表, 分页, 批量, table, list]
+  flow: [审批流, 流程, 多步骤, 向导, 状态流转, workflow]
+  module: [工作台, 大屏, 多模块, 多角色, 多端, dashboard, portal]
+
+signal_weights:
+  form: 1
+  table: 1
+  flow: 2
+  module: 2
+
+page_types:
+  form: [form, 表单, 新建, 编辑页, 提交页]
+  table: [table, 表格, 列表, 分页, 批量, 查询页]
+  detail: [detail, 详情]
+  workbench: [workbench, 工作台, dashboard, 仪表盘, 看板]
+  immersive: [特效, 3d, 沉浸, 动画, 落地页, landing, 官网, 营销]
+  auth: [登录, login, 注册, register]
+
+risk:
+  high: [支付, 审批, 删除, 提交, 作废, 转账, 订单, 采购, 退款, 登录, 认证,
+         payment, approve, delete, submit, transfer, refund, login, auth]
+
+rules:
+  visual-core:
+    description: 8pt 间距 token 与反例清单（任何前端任务必读）
+    files: [ui-specs/spacing.md, ui-specs/anti-patterns.md]
+    min_tier: demo
+    required: true
+    level: invariant   # 宪法层：不参与权重竞争，违反即淘汰方案（AADM §12）
+  geometry:
+    description: >-
+      几何构图：先构图后写码——隐形对齐轴、线条语义（留白>分隔>边框）、
+      圆角/线条层级家族、光学修正显式化（uigeometry 门禁）
+    files: [ui-specs/geometry.md]
+    min_tier: demo
+    required: true
+  business-ui-contract:
+    description: >-
+      业务 UI 契约：角色×任务×数据×交互×视觉五层映射、状态矩阵、
+      并发/错误/权限/数据语义、反模式清单（评审角色裁决依据）
+    files: [ui-specs/business-ui-contract.md]
+    min_tier: standard
+    page_types: [form, table, detail, workbench]
+    required: false
+  component-spec:
+    description: 组件尺寸/状态/行为规范
+    files: [ui-specs/component-spec.md]
+    min_tier: demo
+  layout-patterns:
+    description: 页面骨架模板（列表/详情/表单/工作台）
+    files: [ui-specs/layout-patterns.md]
+    min_tier: demo
+    page_types: [form, table, detail, workbench]
+  business-profile:
+    description: 业务风格配置（密度/动效/布局偏好）
+    files_template: ui-specs/business-profiles/{profile}.md
+    min_tier: demo
+    profiles: [erp, cms, oa, dashboard, immersive, marketing, mobile]
+  design-intelligence-product:
+    description: >-
+      产品思维（Who→Why→What→How、角色模型、JTBD、异常优先、Attention
+      Ranking、3 秒规则）
+    files: [ui-specs/design-intelligence/01-product-thinking.md]
+    min_tier: demo
+    required: true
+    level: heuristic
+  design-intelligence-color:
+    description: >-
+      色彩智能（场景→心理→信息权重→色彩语言；企业/SaaS/AI/大屏/Dark 范式；
+      Design Token；Icon+Color 联合语义；禁止随机色/默认蓝/滥用渐变）
+    files: [ui-specs/design-intelligence/02-color-intelligence.md]
+    min_tier: standard
+    required: true
+  design-intelligence-priority:
+    description: >-
+      信息优先级（视觉焦点、KPI 大数字、异常优先、数据价值决定面积、
+      3 秒理解页面价值）
+    files: [ui-specs/design-intelligence/03-information-priority.md]
+    min_tier: demo
+    required: true
+  design-intelligence-cognitive:
+    description: 认知负担与心理模型（渐进式展示/错误预防/空状态教学/信任）
+    files: [ui-specs/design-intelligence/04-cognitive-load.md]
+    min_tier: standard
+  design-intelligence-emotional:
+    description: 情绪设计（本能/行为/反思层、掌控感、完成感、品牌气质）
+    files: [ui-specs/design-intelligence/05-emotional-design.md]
+    min_tier: production
+  design-intelligence-data:
+    description: 数据表达（大数字/健康度/语义色图表/决策建议）
+    files: [ui-specs/design-intelligence/06-data-expression.md]
+    min_tier: standard
+    page_types: [workbench, table]
+  animation-overshoot-clamp:
+    description: >-
+      回弹曲线（easeOutBack/elastic）overshoot 值域纪律：用于 opacity/布局
+      必须 clamp(0,1)；scale 可保留回弹。实战：StatusChip 弹入动画崩溃
+    files: [ui-specs/design-intelligence/05-emotional-design.md]
+    min_tier: demo
+    required: true
+  async-data:
+    description: 防抖/节流决策表、竞态、幂等、重试矩阵
+    files: [ui-specs/engineering/async-data.md]
+    min_tier: standard
+  form-table-state:
+    description: 表单字段策略、表格选择/分页一致性、状态放置
+    files: [ui-specs/engineering/form-table-state.md]
+    min_tier: standard
+    page_types: [form, table]
+    suppress_on: [demo]   # demo 档显式抑制（激活/抑制机制，AADM §14）
+  interaction-patterns:
+    description: 操作分级/反馈闭环/弹窗vs抽屉/批量报告/删除确认/异步任务
+    files: [ui-specs/engineering/interaction-patterns.md]
+    min_tier: standard
+    page_types: [form, table, detail, workbench]
+  error-recovery:
+    description: 错误分类→用户动作、409 冲突、超时 uncertain、降级
+    files: [ui-specs/engineering/error-recovery.md]
+    min_tier: standard
+    risk: [high]
+    required_when_risk: true
+  defect-patterns:
+    description: 12 种缺陷模式档案（竞态/重复提交/泄漏/脏数据...）
+    files: [ui-specs/engineering/defect-patterns.md]
+    min_tier: standard
+    risk: [high]
+    required_when_risk: true
+  architecture-budgets:
+    description: 依赖方向、上帝文件、复杂度预算、shared 准入
+    files: [ui-specs/engineering/architecture-budgets.md]
+    min_tier: production
+    level: policy   # 组织策略：默认强制，正式例外流程可豁免（AADM §12）
+    suppress_on: [demo]   # demo 档显式抑制（激活/抑制机制，AADM §14）
