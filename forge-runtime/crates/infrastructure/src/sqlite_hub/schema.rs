@@ -76,7 +76,7 @@ pub(super) fn open_database(path: &Path) -> Result<Connection, HubStoreError> {
 pub(super) fn open_existing_current_read_only_database(
     path: &Path,
 ) -> Result<Connection, HubStoreError> {
-    open_existing_validated_read_only_database(path, &[SCHEMA_VERSION], "current schema version 18")
+    open_existing_validated_read_only_database(path, &[SCHEMA_VERSION], "current schema version 23")
 }
 
 pub(super) fn open_existing_dispatch_preflight_read_only_database(
@@ -85,7 +85,7 @@ pub(super) fn open_existing_dispatch_preflight_read_only_database(
     open_existing_validated_read_only_database(
         path,
         &[11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23],
-        "schema version 11..=21",
+        "schema version 11..=23",
     )
 }
 

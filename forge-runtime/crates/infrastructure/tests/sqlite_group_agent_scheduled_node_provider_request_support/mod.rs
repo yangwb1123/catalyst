@@ -8,6 +8,7 @@ use forge_runtime_domain::{
 use forge_runtime_infrastructure::OpenAiResponsesProvider;
 
 use super::{
+    sqlite_group_agent_graph_execution_schedule_support as schedule_support,
     sqlite_group_agent_graph_run_support::Fixture,
     sqlite_group_agent_scheduled_node_contract_support as contract_support,
 };
@@ -204,3 +205,42 @@ pub fn resign_candidate_digests(
     candidate.contract_sha256 = contract_digest;
 }
 
+
+/// Builds the diamond run + schedule + initial contract + zero-receipt
+/// backend successor and returns the two contract inspections.
+pub fn diamond_run_with_two_contracts(
+    fixture: &Fixture,
+) -> (
+    forge_runtime_domain::GroupAgentScheduledNodeContractInspection,
+    forge_runtime_domain::GroupAgentScheduledNodeContractInspection,
+) {
+    use forge_runtime_domain::{
+        GroupAgentGraphExecutionScheduleStore, GroupAgentGraphRunStore,
+        GroupAgentScheduledNodeContractStore,
+    };
+    let _run = fixture
+        .store
+        .begin_group_agent_graph_run(&fixture.request("graph-run-1", "run-key", 30))
+        .expect("seed diamond Graph Run");
+    let schedule = schedule_support::request(fixture, "schedule-key", 40);
+    fixture
+        .store
+        .admit_group_agent_graph_execution_schedule(&schedule)
+        .expect("admit schedule");
+    let initial_admit = contract_support::admission(schedule, "scheduled-contract-key", 50);
+    let initial = fixture
+        .store
+        .admit_group_agent_scheduled_node_contract(&initial_admit)
+        .expect("admit initial contract")
+        .inspection;
+    let backend = admit_backend_successor(&fixture.store, &initial_admit);
+    (initial, backend)
+}
+
+/// `hex_bytes` decodes a 64-char hex digest into 32 raw bytes.
+fn hex_bytes(hex: &str) -> Vec<u8> {
+    (0..hex.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).expect("hex byte"))
+        .collect()
+}

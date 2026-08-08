@@ -811,6 +811,18 @@ Conflict,不再静默 AlreadyClaimed)。
 `forge accept` 为 **ACCEPTED**;Rust 925 tests。
 评审产物:docs/reviews/reviews/wave-storage-context/stage-03.out.md。
 
+## Sprint 81（✅ 完成）— 多写并发测试 + Stage 03 遗留清理
+
+(1) **多写并发测试**(Stage 03 F2):diamond 双节点(initial + zero-receipt
+backend)的 provider-request 从**两个线程并发 prepare** —— 两行同时落库,
+ordinal [0,1] 齐全,wave 并行并发安全实证(BEGIN IMMEDIATE + WAL 单写者
+串行化正确)。
+(2) **版本文案清理**(Stage 03 Low):只读打开错误消息
+"current schema version 18"/"11..=21" → 23;CLI 测试断言同步。
+(3) **共享 fixture**:diamond_run_with_two_contracts 提取到 support
+(并发/adjudicate/双节点测试复用)。
+`forge accept` 为 **ACCEPTED**;Rust 927 tests。
+
 ## 下一前沿(需外部资源 / 后续阶段 / 投机增强 / 明确非目标,非本环境可完整验证)
 - **Graph 下一协议切片**:Sprint 59 只完成 scheduled ordinal-zero 的独立 claim/send/terminal sidecar；仍没有真实 successor/wave advancement、verified per-node/per-attempt receipt 驱动的非初始 contract-v2，也没有 predecessor dataflow。后续必须另立 successor 选择、receipt consumption、跨 node disclosure/consent 与 byte-bound 契约，不能从 ordering edge 推断。另一个独立协议仍是 legacy v4 hard-crash no-send adjudication：必须证明旧 executor 已停止，不能用 lease/时间流逝猜测后自动释放或重发。
 - **真点火** `--agent-cmd=claude`:**multi-agent running to completion 已坐实**(Sprint 25:真 claude 多-agent 跑到 converge MET,增量级 + 版本级)。完整旋钮:四维资源护栏 + 成本三维(phase/时间/美元)+ 任务注入 + 写权限 + 模型路由 + 工作目录 + retry + loop-back;诚实分工:agent 自治增量绿、人确认版本竣工。docs/ignition.md 有完整配方 + 实测
