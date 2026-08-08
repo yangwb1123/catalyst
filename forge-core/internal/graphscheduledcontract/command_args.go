@@ -34,11 +34,26 @@ func parseCommandOptions(args []string) (commandOptions, error) {
 		return commandOptions{}, err
 	}
 	valid := flags.NArg() == 0 && len(seen) == 11 && options.control != "" &&
-		isLowerHexDigest(options.scheduleSHA256) && validExecutionOptions(options.execution)
+		isLowerHexDigest(options.scheduleSHA256) && validExecutionOptions(options.execution) &&
+		(len(options.predecessorSources) > 0 || options.predecessorContentSource == "") &&
+		commandStdinSourceCount(options) <= 1
 	if !valid {
 		return commandOptions{}, errInvalidCandidate
 	}
 	return options, nil
+}
+
+func commandStdinSourceCount(options commandOptions) int {
+	count := 0
+	for _, source := range append(
+		[]string{options.control, options.predecessorContentSource},
+		options.predecessorSources...,
+	) {
+		if source == "-" {
+			count++
+		}
+	}
+	return count
 }
 
 func bindRepeatStringFlag(
@@ -58,7 +73,7 @@ func bindOptionalStringFlag(
 	target *string,
 ) {
 	flags.Func(name, "", func(value string) error {
-		if *target != "" {
+		if *target != "" || value == "" {
 			return errInvalidCandidate
 		}
 		*target = value

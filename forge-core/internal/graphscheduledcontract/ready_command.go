@@ -5,7 +5,6 @@ import (
 	"errors"
 	"flag"
 	"io"
-	"strings"
 
 	"forgeos/forge-core/internal/scheduledterminal"
 )
@@ -77,11 +76,20 @@ func parseReadyCommandOptions(args []string) (readyCommandOptions, error) {
 	if err := flags.Parse(args); err != nil {
 		return options, err
 	}
-	if options.control == "" || options.scheduleSHA256 == "" {
-		return options, errInvalidCandidate
-	}
-	if strings.TrimSpace(options.scheduleSHA256) != options.scheduleSHA256 {
+	valid := flags.NArg() == 0 && len(seen) == 2 && options.control != "" &&
+		isLowerHexDigest(options.scheduleSHA256) && readyCommandStdinSourceCount(options) <= 1
+	if !valid {
 		return options, errInvalidCandidate
 	}
 	return options, nil
+}
+
+func readyCommandStdinSourceCount(options readyCommandOptions) int {
+	count := 0
+	for _, source := range append([]string{options.control}, options.predecessorSources...) {
+		if source == "-" {
+			count++
+		}
+	}
+	return count
 }

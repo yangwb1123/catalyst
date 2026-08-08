@@ -93,18 +93,20 @@ func selectReadyNode(
 }
 
 // filterDirectPredecessors keeps only the receipts of the candidate node's
-// direct predecessors, in receipt order — the ADR-0035 evidence binding.
+// direct predecessors, in the schedule's canonical predecessor order. Input
+// receipts may arrive in any order, but candidate content binds the first
+// scheduled direct predecessor deterministically.
 func filterDirectPredecessors(
 	node graphschedule.ScheduledNode,
 	predecessors []PredecessorTerminalReceipt,
 ) []PredecessorTerminalReceipt {
-	direct := make(map[string]bool, len(node.DirectPredecessorNodeIDs))
-	for _, id := range node.DirectPredecessorNodeIDs {
-		direct[id] = true
-	}
-	filtered := make([]PredecessorTerminalReceipt, 0, len(direct))
+	byNode := make(map[string]PredecessorTerminalReceipt, len(predecessors))
 	for _, receipt := range predecessors {
-		if direct[receipt.PredecessorNodeID] {
+		byNode[receipt.PredecessorNodeID] = receipt
+	}
+	filtered := make([]PredecessorTerminalReceipt, 0, len(node.DirectPredecessorNodeIDs))
+	for _, predecessorID := range node.DirectPredecessorNodeIDs {
+		if receipt, ok := byNode[predecessorID]; ok {
 			filtered = append(filtered, receipt)
 		}
 	}
@@ -186,25 +188,24 @@ func successorCandidate(
 	return value, nil
 }
 
-// verifyPredecessorPrefix requires the receipts to match the exact serial
-// prefix of the schedule: receipt i must bind schedule.Nodes[i] by node,
-// attempt, Graph Run, and Project lane, and no receipt may be duplicated. It
-// returns the candidate's predecessor-evidence shape for each receipt. The
-// scheduled sidecar does not consume the Graph Run journal, so the reserved
-// event-seq fields stay zero/empty rather than inventing journal evidence.
+// verifyReceipts requires every consumed receipt to bind one exact scheduled
+// node by identity, attempt, Graph Run, and project lane, with no duplicates.
+// Input order is immaterial. The scheduled sidecar does not consume the Graph
+// Run journal, so reserved event fields remain zero/empty.
 func verifyReceipts(
 	snapshot graphdispatch.ControlSnapshot,
 	schedule graphschedule.ExecutionSchedule,
 	receipts []scheduledterminal.Receipt,
 ) ([]PredecessorTerminalReceipt, error) {
-	if len(receipts) == 0 || len(receipts) >= len(schedule.Nodes) {
+	if len(receipts) > len(schedule.Nodes) {
 		return nil, errInvalidCandidate
 	}
 	predecessors := make([]PredecessorTerminalReceipt, 0, len(receipts))
 	seen := make(map[string]bool, len(receipts))
 	for _, receipt := range receipts {
 		node, ok := scheduledNodeFor(schedule, receipt.NodeID)
-		if !ok || receipt.GraphRunID != snapshot.GraphRunID ||
+		if !ok || !validConsumedTerminalReceipt(receipt) ||
+			receipt.GraphRunID != snapshot.GraphRunID || receipt.GraphID != snapshot.GraphID ||
 			receipt.Attempt != node.Attempt || receipt.ProjectLaneSHA256 != node.ProjectLaneSHA256 {
 			return nil, errInvalidCandidate
 		}
@@ -227,6 +228,17 @@ func verifyReceipts(
 	return predecessors, nil
 }
 
+func validConsumedTerminalReceipt(receipt scheduledterminal.Receipt) bool {
+	encoded, err := scheduledterminal.MarshalReceipt(receipt)
+	if err != nil {
+		return false
+	}
+	validated, err := scheduledterminal.DecodeReceipt(encoded)
+	return err == nil && validated == receipt && receipt.NodeOutcome == "completed" &&
+		receipt.ArtifactKind == "result" && !receipt.RetryAuthorized &&
+		receipt.LaneReleaseAuthorized && !receipt.SuccessorAdvanceAuthorized
+}
+
 func scheduledNodeFor(
 	schedule graphschedule.ExecutionSchedule,
 	nodeID string,
@@ -239,7 +251,6 @@ func scheduledNodeFor(
 	return graphschedule.ScheduledNode{}, false
 }
 
-
 func buildSuccessorRequest(
 	graphRunID string,
 	schedule graphschedule.ExecutionSchedule,
@@ -250,10 +261,17 @@ func buildSuccessorRequest(
 	predecessorContent string,
 ) (ScheduledNodeRequest, error) {
 	// ADR-0035: the candidate carries exactly its direct predecessors'
-	// receipts. Same-wave siblings are evidence of progress but are not
-	// carried by this candidate's request (a wave-sibling with an empty
-	// direct-predecessor set carries zero receipts).
+	// receipts in schedule order. Same-wave siblings are evidence of progress
+	// but are not carried by this candidate's request (a wave-sibling with an
+	// empty direct-predecessor set carries zero receipts). If content is
+	// present, it is therefore bound to the first direct predecessor.
 	predecessors = filterDirectPredecessors(node, predecessors)
+	if predecessorContent != "" && len(predecessors) == 0 {
+		// Disclosed output is authenticated through one of the selected
+		// node's direct predecessor receipts. A same-wave sibling has no
+		// such receipt, so it cannot carry predecessor plaintext.
+		return ScheduledNodeRequest{}, errInvalidCandidate
+	}
 	user, err := canonicalBytes(userPrompt{
 		V: RequestVersion, NodeID: source.NodeID, Task: source.Task, Acceptance: source.Acceptance,
 		PredecessorOutput: predecessorContent,

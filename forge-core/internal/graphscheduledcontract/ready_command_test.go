@@ -51,18 +51,69 @@ func TestReadyCommandListsWaveParallelPlan(t *testing.T) {
 	_ = snapshot
 }
 
-func TestReadyCommandWithoutReceiptsFails(t *testing.T) {
-	scheduleSHA256 := mustSchedule(t).ScheduleSHA256
+func TestReadyCommandWithoutReceiptsListsZeroPredecessorSibling(t *testing.T) {
+	schedule := mustSchedule(t)
 	dir := t.TempDir()
 	controlPath := writeTemp(t, dir, "control.json", controlCanonicalJSON(t))
 	var stdout, stderr bytes.Buffer
 	code := ReadyCommand(
-		[]string{"--control", controlPath, "--schedule-sha256", scheduleSHA256},
+		[]string{"--control", controlPath, "--schedule-sha256", schedule.ScheduleSHA256},
 		strings.NewReader(""),
 		&stdout, &stderr,
 	)
-	if code == 0 {
-		t.Fatal("ReadyCommand without receipts must fail (no consumed predecessor)")
+	var ready []string
+	if err := json.Unmarshal(stdout.Bytes(), &ready); code != 0 || err != nil ||
+		len(ready) != 1 || ready[0] != schedule.Nodes[1].NodeID {
+		t.Fatalf("ReadyCommand empty set: code=%d ready=%v stderr=%q err=%v", code, ready, stderr.String(), err)
+	}
+}
+
+func TestReadyCommandRejectsAmbiguousStdinAndTrailingArguments(t *testing.T) {
+	digest := mustSchedule(t).ScheduleSHA256
+	for _, args := range [][]string{
+		{"--control", "-", "--schedule-sha256", digest, "--predecessor-receipt", "-"},
+		{"--control", "-", "--schedule-sha256", digest, "trailing"},
+		{"--control", "-", "--schedule-sha256", strings.ToUpper(digest)},
+	} {
+		var stdout, stderr bytes.Buffer
+		if code := ReadyCommand(args, strings.NewReader(""), &stdout, &stderr); code != 2 || stdout.Len() != 0 {
+			t.Fatalf("args=%v code=%d stdout=%q stderr=%q", args, code, stdout.String(), stderr.String())
+		}
+	}
+}
+
+func TestContractCommandTargetNodeAllowsZeroReceipts(t *testing.T) {
+	schedule := mustSchedule(t)
+	options := readSourceFixture(t).Input.ExecutionOptions
+	dir := t.TempDir()
+	controlPath := writeTemp(t, dir, "control.json", controlCanonicalJSON(t))
+	args := append(
+		fixtureCommandArgs(options, controlPath),
+		"--target-node", schedule.Nodes[1].NodeID,
+	)
+	var stdout, stderr bytes.Buffer
+	code := Command(args, strings.NewReader(""), &stdout, &stderr)
+	candidate, err := DecodeCandidate(bytes.NewReader(stdout.Bytes()))
+	if code != 0 || err != nil || candidate.ContractScope != successorContractScope ||
+		candidate.Node.NodeID != schedule.Nodes[1].NodeID ||
+		len(candidate.Request.PredecessorTerminalReceipts) != 0 {
+		t.Fatalf("zero-receipt target: code=%d candidate=%#v stderr=%q err=%v", code, candidate, stderr.String(), err)
+	}
+}
+
+func TestContractCommandTargetNodeRejectsMissingDirectReceipts(t *testing.T) {
+	schedule := mustSchedule(t)
+	options := readSourceFixture(t).Input.ExecutionOptions
+	dir := t.TempDir()
+	controlPath := writeTemp(t, dir, "control.json", controlCanonicalJSON(t))
+	args := append(
+		fixtureCommandArgs(options, controlPath),
+		"--target-node", schedule.Nodes[2].NodeID,
+	)
+	var stdout, stderr bytes.Buffer
+	code := Command(args, strings.NewReader(""), &stdout, &stderr)
+	if code == 0 || stdout.Len() != 0 {
+		t.Fatalf("missing direct receipts: code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
 	}
 }
 

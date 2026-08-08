@@ -13,10 +13,17 @@ import (
 // successorReceipt builds one valid ordinal-zero predecessor receipt bound to
 // the fixture control and the first scheduled node.
 func successorReceipt(t *testing.T) scheduledterminal.Receipt {
+	return successorReceiptForNode(t, 0)
+}
+
+func successorReceiptForNode(t *testing.T, nodeIndex int) scheduledterminal.Receipt {
 	t.Helper()
 	snapshot := fixtureSnapshot(t)
 	schedule := mustSchedule(t)
-	node := schedule.Nodes[0]
+	if nodeIndex < 0 || nodeIndex >= len(schedule.Nodes) {
+		t.Fatalf("scheduled node index %d is out of range", nodeIndex)
+	}
+	node := schedule.Nodes[nodeIndex]
 	receipt := scheduledterminal.Receipt{
 		V: 1, SchedulerProtocolVersion: 1, TerminalReceiptProtocol: 1,
 		TerminalControlSHA256: strings.Repeat("a", 64),
@@ -103,7 +110,14 @@ func TestBuildSuccessorRejectsDriftedReceipts(t *testing.T) {
 	}{
 		{"wrong node", func(r *scheduledterminal.Receipt) { r.NodeID = "other-node" }},
 		{"wrong graph run", func(r *scheduledterminal.Receipt) { r.GraphRunID = "other-run" }},
+		{"wrong graph", func(r *scheduledterminal.Receipt) { r.GraphID = "other-graph" }},
 		{"wrong lane", func(r *scheduledterminal.Receipt) { r.ProjectLaneSHA256 = strings.Repeat("0", 64) }},
+		{"failed outcome", func(r *scheduledterminal.Receipt) {
+			r.ArtifactKind, r.NodeOutcome = "uncertainty", "failed"
+		}},
+		{"failed uncertain outcome", func(r *scheduledterminal.Receipt) {
+			r.ArtifactKind, r.NodeOutcome = "uncertainty", "failed_uncertain"
+		}},
 	}
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
@@ -123,6 +137,19 @@ func TestBuildSuccessorRejectsDriftedReceipts(t *testing.T) {
 				t.Fatal("BuildSuccessor accepted a drifted receipt")
 			}
 		})
+	}
+}
+
+func TestBuildSuccessorRejectsUnvalidatedTypedReceipt(t *testing.T) {
+	snapshot := fixtureSnapshot(t)
+	schedule := mustSchedule(t)
+	receipt := successorReceipt(t)
+	receipt.ReceiptSHA256 = strings.Repeat("0", 64)
+	if _, err := BuildSuccessor(
+		snapshot, schedule.ScheduleSHA256, readSourceFixture(t).Input.ExecutionOptions.options(),
+		[]scheduledterminal.Receipt{receipt}, "", "",
+	); err == nil {
+		t.Fatal("BuildSuccessor accepted a typed receipt with a stale content identity")
 	}
 }
 
@@ -163,13 +190,27 @@ func TestBuildSuccessorRejectsOutOfOrderAndProtocolViolations(t *testing.T) {
 	}
 }
 
-func TestBuildSuccessorRejectsEmptyAndFullConsumption(t *testing.T) {
+func TestBuildSuccessorAllowsEmptySetForZeroPredecessorSibling(t *testing.T) {
 	snapshot := fixtureSnapshot(t)
 	schedule := mustSchedule(t)
 	options := readSourceFixture(t).Input.ExecutionOptions.options()
-	if _, err := BuildSuccessor(snapshot, schedule.ScheduleSHA256, options, nil, "", ""); err == nil {
-		t.Fatal("BuildSuccessor accepted an empty predecessor set")
+	candidate, err := BuildSuccessor(
+		snapshot, schedule.ScheduleSHA256, options, nil, "", schedule.Nodes[1].NodeID,
+	)
+	if err != nil {
+		t.Fatalf("BuildSuccessor empty direct-predecessor set: %v", err)
 	}
+	if candidate.Node.NodeID != schedule.Nodes[1].NodeID ||
+		len(candidate.Request.RequiredPredecessorNodeIDs) != 0 ||
+		len(candidate.Request.PredecessorTerminalReceipts) != 0 {
+		t.Fatalf("same-wave candidate is not empty/empty: %#v", candidate.Request)
+	}
+}
+
+func TestBuildSuccessorRejectsFullConsumption(t *testing.T) {
+	snapshot := fixtureSnapshot(t)
+	schedule := mustSchedule(t)
+	options := readSourceFixture(t).Input.ExecutionOptions.options()
 	receipts := make([]scheduledterminal.Receipt, 0, len(schedule.Nodes))
 	for index := range schedule.Nodes {
 		receipt := successorReceipt(t)
@@ -230,42 +271,6 @@ func writeTemp(t *testing.T, dir, name string, data []byte) string {
 		t.Fatalf("write %s: %v", name, err)
 	}
 	return path
-}
-
-func TestBuildSuccessorEmbedsPredecessorContent(t *testing.T) {
-	snapshot := fixtureSnapshot(t)
-	schedule := mustSchedule(t)
-	options := readSourceFixture(t).Input.ExecutionOptions.options()
-	receipt := successorReceipt(t)
-	content := "frontend produced: login flow verified, token refresh works"
-	candidate, err := BuildSuccessor(
-		snapshot, schedule.ScheduleSHA256, options, []scheduledterminal.Receipt{receipt}, content, "",
-	)
-	if err != nil {
-		t.Fatalf("BuildSuccessor: %v", err)
-	}
-	if !candidate.Request.PredecessorContentIncluded {
-		t.Fatal("predecessor content flag must be true when content is embedded")
-	}
-	if !strings.Contains(candidate.Request.UserPrompt, content) {
-		t.Fatalf("user prompt must embed the predecessor output, got %q", candidate.Request.UserPrompt)
-	}
-	if !strings.Contains(candidate.Request.UserPrompt, "predecessor_output") {
-		t.Fatal("user prompt must carry the predecessor_output field")
-	}
-	// 无内容时字段必须省略(向后兼容)
-	plain, err := BuildSuccessor(
-		snapshot, schedule.ScheduleSHA256, options, []scheduledterminal.Receipt{receipt}, "", "",
-	)
-	if err != nil {
-		t.Fatalf("BuildSuccessor plain: %v", err)
-	}
-	if plain.Request.PredecessorContentIncluded {
-		t.Fatal("plain successor must keep predecessor content excluded")
-	}
-	if strings.Contains(plain.Request.UserPrompt, "predecessor_output") {
-		t.Fatal("plain successor prompt must omit the predecessor_output field")
-	}
 }
 
 func TestBuildSuccessorRejectsOutOfOrderReceiptBeforeInitial(t *testing.T) {
@@ -355,10 +360,13 @@ func TestBuildSuccessorSelectsReadyWaveSibling(t *testing.T) {
 func TestReadySuccessorNodesListsWaveParallelPlan(t *testing.T) {
 	snapshot := fixtureSnapshot(t)
 	schedule := mustSchedule(t)
-	// 无 receipts(initial 已做后)??ReadySuccessorNodes 需要 receipts 非空。
+	ready, err := ReadySuccessorNodes(snapshot, schedule.ScheduleSHA256, nil)
+	if err != nil || len(ready) != 1 || ready[0] != schedule.Nodes[1].NodeID {
+		t.Fatalf("ready from empty consumed set = %v, err=%v", ready, err)
+	}
 	// diamond:消费 frontend 后,就绪 = backend(serial 序第一个);消费 backend 后,就绪 = sso。
 	frontend := successorReceipt(t)
-	ready, err := ReadySuccessorNodes(snapshot, schedule.ScheduleSHA256, []scheduledterminal.Receipt{frontend})
+	ready, err = ReadySuccessorNodes(snapshot, schedule.ScheduleSHA256, []scheduledterminal.Receipt{frontend})
 	if err != nil {
 		t.Fatalf("ReadySuccessorNodes: %v", err)
 	}
@@ -384,5 +392,11 @@ func TestReadySuccessorNodesListsWaveParallelPlan(t *testing.T) {
 	}
 	if len(ready) != 1 || ready[0] != schedule.Nodes[2].NodeID {
 		t.Fatalf("ready after frontend+backend = %v, want [%s]", ready, schedule.Nodes[2].NodeID)
+	}
+	sso := successorReceiptForNode(t, 2)
+	ready, err = ReadySuccessorNodes(snapshot, schedule.ScheduleSHA256,
+		[]scheduledterminal.Receipt{frontend, backendDecoded, sso})
+	if err != nil || len(ready) != 0 {
+		t.Fatalf("ready after full consumption = %v, err=%v", ready, err)
 	}
 }

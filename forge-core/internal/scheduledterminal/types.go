@@ -344,19 +344,18 @@ func DecodeReceipt(data []byte) (Receipt, error) {
 	}
 	if !validIdentifier(value.GraphRunID) || !validIdentifier(value.GraphID) ||
 		!validIdentifier(value.NodeID) || !validIdentifier(value.DispatchID) ||
-		!validIdentifier(value.ProviderRequestID) {
+		!validIdentifier(value.ProviderRequestID) || !validIdentifier(value.ArtifactID) {
 		return Receipt{}, errors.New("receipt identity is invalid")
 	}
 	if !validDigest(value.TerminalControlSHA256) || !validDigest(value.ProjectLaneSHA256) ||
 		!validDigest(value.ArtifactSHA256) {
 		return Receipt{}, errors.New("receipt digest is invalid")
 	}
-	if value.ArtifactKind != "result" && value.ArtifactKind != "uncertainty" {
-		return Receipt{}, errors.New("receipt artifact kind is invalid")
+	if value.ArtifactID != "scheduled-node-terminal-artifact-"+value.ArtifactSHA256 {
+		return Receipt{}, errors.New("receipt artifact identity is invalid")
 	}
-	if value.NodeOutcome != "completed" && value.NodeOutcome != "failed" &&
-		value.NodeOutcome != "failed_uncertain" {
-		return Receipt{}, errors.New("receipt outcome is invalid")
+	if !validReceiptOutcome(value) {
+		return Receipt{}, errors.New("receipt outcome or release facts are invalid")
 	}
 	if value.RetryAuthorized || value.SuccessorAdvanceAuthorized {
 		return Receipt{}, errors.New("receipt carries forbidden authority")
@@ -398,19 +397,18 @@ func MarshalReceipt(value Receipt) ([]byte, error) {
 	}
 	if !validIdentifier(value.GraphRunID) || !validIdentifier(value.GraphID) ||
 		!validIdentifier(value.NodeID) || !validIdentifier(value.DispatchID) ||
-		!validIdentifier(value.ProviderRequestID) {
+		!validIdentifier(value.ProviderRequestID) || !validIdentifier(value.ArtifactID) {
 		return nil, errors.New("receipt identity is invalid")
 	}
 	if !validDigest(value.TerminalControlSHA256) || !validDigest(value.ProjectLaneSHA256) ||
 		!validDigest(value.ArtifactSHA256) {
 		return nil, errors.New("receipt digest is invalid")
 	}
-	if value.ArtifactKind != "result" && value.ArtifactKind != "uncertainty" {
-		return nil, errors.New("receipt artifact kind is invalid")
+	if value.ArtifactID != "scheduled-node-terminal-artifact-"+value.ArtifactSHA256 {
+		return nil, errors.New("receipt artifact identity is invalid")
 	}
-	if value.NodeOutcome != "completed" && value.NodeOutcome != "failed" &&
-		value.NodeOutcome != "failed_uncertain" {
-		return nil, errors.New("receipt outcome is invalid")
+	if !validReceiptOutcome(value) {
+		return nil, errors.New("receipt outcome or release facts are invalid")
 	}
 	if value.RetryAuthorized || value.SuccessorAdvanceAuthorized {
 		return nil, errors.New("receipt carries forbidden authority")
@@ -422,4 +420,15 @@ func MarshalReceipt(value Receipt) ([]byte, error) {
 	value.ReceiptSHA256 = digest
 	value.ReceiptID = "scheduled-node-terminal-receipt-" + digest
 	return marshalReceipt(value)
+}
+
+func validReceiptOutcome(value Receipt) bool {
+	if !value.LaneReleaseAuthorized {
+		return false
+	}
+	if value.NodeOutcome == "completed" {
+		return value.ArtifactKind == "result"
+	}
+	return (value.NodeOutcome == "failed" || value.NodeOutcome == "failed_uncertain") &&
+		value.ArtifactKind == "uncertainty"
 }

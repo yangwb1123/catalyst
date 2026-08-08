@@ -18,13 +18,15 @@ const commandUsage = `usage:
     --max-output-tokens N --max-model-output-bytes N --max-model-events N
     --timeout-ms N --max-cost-usd-micros N
     --pricing-snapshot-sha256 SHA256 --max-result-bytes N
-    [--predecessor-receipt FILE|-]... [--target-node NODE_ID]
+    [--predecessor-receipt FILE|-]... [--predecessor-content FILE|-]
+    [--target-node NODE_ID]
 
 warning:
-  The control and candidate are private. Without --predecessor-receipt the
-  output is an initial-node-only passive candidate. With one or more receipts
-  it is a successor candidate. Neither grants successor authority, and the
-  candidate grants no lifecycle, dispatch, workspace, or tool authority.
+  The control and candidate are private. Without --predecessor-receipt or
+  --target-node the output is an initial-node-only passive candidate. A target
+  selects a ready successor even when its direct-predecessor set is empty.
+  Each passive candidate grants no lifecycle, dispatch, workspace, tool, or
+  successor authority.
 `
 
 // Command runs the effect-free scheduled candidate CLI adapter.
@@ -42,7 +44,7 @@ func Command(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return commandFailure(stderr, 1, "invalid control snapshot")
 	}
 	var candidate ScheduledNodeContractCandidate
-	if len(options.predecessorSources) == 0 {
+	if len(options.predecessorSources) == 0 && options.targetNode == "" {
 		candidate, err = BuildInitial(snapshot, options.scheduleSHA256, options.execution)
 	} else {
 		receipts, readErr := readPredecessorReceipts(options.predecessorSources, stdin)
@@ -79,14 +81,8 @@ func Command(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 // readPredecessorContent reads one bounded exact UTF-8 predecessor result
 // text; it is embedded verbatim into the successor user Prompt.
 func readPredecessorContent(source string, stdin io.Reader) (string, error) {
-	var data []byte
-	var err error
-	if source == "-" {
-		data, err = io.ReadAll(io.LimitReader(stdin, 1024*1024+1))
-	} else {
-		data, err = os.ReadFile(source)
-	}
-	if err != nil || len(data) == 0 || len(data) > 1024*1024 {
+	data, err := readBoundedSource(source, stdin, MaxPredecessorOutputBytes)
+	if err != nil || len(data) == 0 || len(data) > MaxPredecessorOutputBytes {
 		return "", errInvalidCandidate
 	}
 	if !utf8.Valid(data) {
@@ -105,17 +101,13 @@ func readPredecessorReceipts(
 	stdinUsed := false
 	receipts := make([]scheduledterminal.Receipt, 0, len(sources))
 	for _, source := range sources {
-		var data []byte
-		var err error
 		if source == "-" {
 			if stdinUsed {
 				return nil, errInvalidCandidate
 			}
 			stdinUsed = true
-			data, err = io.ReadAll(io.LimitReader(stdin, 64*1024+1))
-		} else {
-			data, err = os.ReadFile(source)
 		}
+		data, err := readBoundedSource(source, stdin, 64*1024)
 		if err != nil || len(data) == 0 || len(data) > 64*1024 {
 			return nil, errInvalidCandidate
 		}
@@ -126,6 +118,25 @@ func readPredecessorReceipts(
 		receipts = append(receipts, receipt)
 	}
 	return receipts, nil
+}
+
+func readBoundedSource(source string, stdin io.Reader, maximum int) ([]byte, error) {
+	if source == "-" {
+		return io.ReadAll(io.LimitReader(stdin, int64(maximum)+1))
+	}
+	file, err := os.Open(source)
+	if err != nil {
+		return nil, err
+	}
+	data, readErr := io.ReadAll(io.LimitReader(file, int64(maximum)+1))
+	closeErr := file.Close()
+	if readErr != nil {
+		return nil, readErr
+	}
+	if closeErr != nil {
+		return nil, closeErr
+	}
+	return data, nil
 }
 
 func readControl(source string, stdin io.Reader) (graphdispatch.ControlSnapshot, error) {

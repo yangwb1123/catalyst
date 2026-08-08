@@ -50,7 +50,9 @@ func validScheduleIdentity(value ScheduledNodeContractCandidate) bool {
 func validNode(node CandidateNode, scope string) bool {
 	ordinalValid, waveValid := node.ExecutionOrdinal == 0, node.TopologyWaveIndex == 0
 	if scope == successorContractScope {
-		ordinalValid, waveValid = node.ExecutionOrdinal >= 1, node.TopologyWaveIndex <= maxTopologyWaveIndex
+		ordinalValid = node.ExecutionOrdinal >= 1 &&
+			node.ExecutionOrdinal <= maxSuccessorOrdinal
+		waveValid = node.TopologyWaveIndex <= maxTopologyWaveIndex
 	}
 	return ordinalValid && node.AuthoredNodeIndex <= maxAuthoredNodeIndex && waveValid && node.Attempt == 1 &&
 		validIdentifier(node.NodeID, 128) && validIdentifier(node.ProjectID, 128) &&
@@ -85,10 +87,12 @@ func validRequest(
 		// ADR-0035: the candidate carries exactly its direct predecessors'
 		// receipts — a wave sibling with an empty direct-predecessor set
 		// carries zero receipts, while every required predecessor must be
-		// covered by the carried evidence.
+		// covered by the carried evidence. Disclosed predecessor plaintext
+		// must have at least one carried receipt to authenticate its source.
 		bound = bound &&
-			predecessorsCoverReceipts(request.RequiredPredecessorNodeIDs,
-				request.PredecessorTerminalReceipts)
+			predecessorsMatchReceipts(request.RequiredPredecessorNodeIDs,
+				request.PredecessorTerminalReceipts) &&
+			(!request.PredecessorContentIncluded || len(request.PredecessorTerminalReceipts) > 0)
 	}
 	if !bound || !validPrompts(request) || !isLowerHexDigest(request.RequestSHA256) {
 		return false
@@ -97,23 +101,39 @@ func validRequest(
 	return err == nil && digest == request.RequestSHA256 && request.RequestID == requestIDPrefix+digest
 }
 
-// predecessorsCoverReceipts checks that every required topological
-// predecessor has a consumed terminal receipt. A serial successor may have an
-// empty required set (wave siblings), while the evidence prefix is non-empty.
-func predecessorsCoverReceipts(
+// predecessorsMatchReceipts requires a one-to-one ordered evidence sequence:
+// every required direct predecessor has exactly one completed receipt at the
+// same position, with no unrelated or duplicate IDs. A same-wave sibling may
+// have two empty sequences.
+func predecessorsMatchReceipts(
 	required []string,
 	receipts []PredecessorTerminalReceipt,
 ) bool {
-	consumed := make(map[string]bool, len(receipts))
-	for _, receipt := range receipts {
-		consumed[receipt.PredecessorNodeID] = true
+	if len(required) != len(receipts) {
+		return false
 	}
-	for _, predecessorID := range required {
-		if !consumed[predecessorID] {
+	requiredSet := make(map[string]bool, len(required))
+	for index, predecessorID := range required {
+		if !validIdentifier(predecessorID, maxIdentifierBytes) || requiredSet[predecessorID] {
+			return false
+		}
+		requiredSet[predecessorID] = true
+		receipt := receipts[index]
+		if receipt.PredecessorNodeID != predecessorID || !validPredecessorReceipt(receipt) {
 			return false
 		}
 	}
 	return true
+}
+
+func validPredecessorReceipt(receipt PredecessorTerminalReceipt) bool {
+	return validIdentifier(receipt.PredecessorNodeID, maxIdentifierBytes) &&
+		receipt.PredecessorAttempt == 1 && receipt.TerminalEventSeq == 0 &&
+		receipt.TerminalEventSHA256 == "" && isLowerHexDigest(receipt.TerminalReceiptSHA256) &&
+		receipt.TerminalReceiptID == terminalReceiptIDPrefix+receipt.TerminalReceiptSHA256 &&
+		receipt.NodeOutcome == "completed" &&
+		validIdentifier(receipt.ProviderRequestID, maxIdentifierBytes) &&
+		validIdentifier(receipt.DispatchID, maxIdentifierBytes)
 }
 
 func validPrompts(request ScheduledNodeRequest) bool {
@@ -122,14 +142,17 @@ func validPrompts(request ScheduledNodeRequest) bool {
 		validProse(request.SystemPrompt, maxProseBytes+1_024)
 	userValid := uint64(len(request.UserPrompt)) == request.UserPromptBytes &&
 		byteDigest(request.UserPrompt) == request.UserPromptSHA256 &&
-		len(request.UserPrompt) <= 2*maxProseBytes+1_024
+		len(request.UserPrompt) <= MaxUserPromptBytes
 	if !systemValid || !userValid {
 		return false
 	}
 	decoded, err := decodeExact[userPrompt]([]byte(request.UserPrompt))
+	contentPresent := decoded.PredecessorOutput != ""
+	contentValid := !contentPresent || validProse(decoded.PredecessorOutput, MaxPredecessorOutputBytes)
 	return err == nil && decoded.V == RequestVersion && decoded.NodeID == request.NodeID &&
-		validIdentifier(decoded.NodeID, 128) && validProse(decoded.Task, maxProseBytes) &&
-		validProse(decoded.Acceptance, maxProseBytes)
+		validIdentifier(decoded.NodeID, maxIdentifierBytes) && validProse(decoded.Task, maxProseBytes) &&
+		validProse(decoded.Acceptance, maxProseBytes) &&
+		request.PredecessorContentIncluded == contentPresent && contentValid
 }
 
 func validPolicies(value ScheduledNodeContractCandidate) bool {

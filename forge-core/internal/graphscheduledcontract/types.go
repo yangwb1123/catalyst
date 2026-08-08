@@ -14,19 +14,27 @@ const (
 	CandidateVersion             uint16 = 2
 	NodeExecutionProtocolVersion uint16 = 2
 	RequestVersion               uint16 = 2
-	MaxCandidateBytes                   = 4 * 1024 * 1024
+	MaxCandidateBytes                   = 8 * 1024 * 1024
+	MaxPredecessorOutputBytes           = 1024 * 1024
 )
 
 const (
-	contractScope        = "schedule_initial_node_only"
-	projectLaneDomain    = "forge.group-agent-project-lane.v1\x00"
-	requestDigestDomain  = "forge.group-agent-scheduled-node-request.v2\x00"
-	contractDigestDomain = "forge.group-agent-scheduled-node-contract.v2\x00"
-	requestIDPrefix      = "scheduled-node-request-"
-	contractIDPrefix     = "scheduled-node-contract-"
+	contractScope           = "schedule_initial_node_only"
+	projectLaneDomain       = "forge.group-agent-project-lane.v1\x00"
+	requestDigestDomain     = "forge.group-agent-scheduled-node-request.v2\x00"
+	contractDigestDomain    = "forge.group-agent-scheduled-node-contract.v2\x00"
+	requestIDPrefix         = "scheduled-node-request-"
+	contractIDPrefix        = "scheduled-node-contract-"
+	terminalReceiptIDPrefix = "scheduled-node-terminal-receipt-"
 )
 
-const maxProseBytes = 64 * 1024
+const (
+	maxIdentifierBytes = 128
+	maxProseBytes      = 64 * 1024
+	// Every permitted Prompt byte can require at most two JSON bytes. The
+	// compact content-bearing Prompt envelope contributes exactly 70 bytes.
+	MaxUserPromptBytes = 2*(maxIdentifierBytes+2*maxProseBytes+MaxPredecessorOutputBytes) + 70
+)
 
 var errInvalidCandidate = errors.New("invalid scheduled node contract candidate")
 

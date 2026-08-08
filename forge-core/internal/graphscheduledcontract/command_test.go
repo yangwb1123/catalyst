@@ -37,7 +37,8 @@ func assertCommand(t *testing.T, args []string, input string, want []byte) {
 func TestCommandRejectsArgumentsAndPrivateInputWithoutEcho(t *testing.T) {
 	valid := fixtureCommandArgs(readSourceFixture(t).Input.ExecutionOptions, "-")
 	cases := [][]string{nil, append(valid, "extra"), append(valid, "--control", "-"),
-		append([]string(nil), valid[2:]...), {"--unknown"}}
+		append([]string(nil), valid[2:]...), append(valid, "--predecessor-receipt", "-"),
+		{"--unknown"}}
 	for _, args := range cases {
 		var stdout, stderr bytes.Buffer
 		code := Command(args, strings.NewReader("DO_NOT_ECHO"), &stdout, &stderr)
@@ -49,6 +50,22 @@ func TestCommandRejectsArgumentsAndPrivateInputWithoutEcho(t *testing.T) {
 	code := Command(valid, strings.NewReader("DO_NOT_ECHO"), &stdout, &stderr)
 	if code != 1 || stdout.Len() != 0 || strings.Contains(stderr.String(), "DO_NOT_ECHO") {
 		t.Fatalf("invalid control code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+}
+
+func TestCommandNeverTreatsContentWithoutReceiptAsInitial(t *testing.T) {
+	valid := fixtureCommandArgs(readSourceFixture(t).Input.ExecutionOptions, "-")
+	backend := mustSchedule(t).Nodes[1].NodeID
+	for _, args := range [][]string{
+		append(append([]string(nil), valid...), "--predecessor-content", "-"),
+		append(append([]string(nil), valid...), "--target-node", backend,
+			"--predecessor-content", "-"),
+	} {
+		var stdout, stderr bytes.Buffer
+		code := Command(args, bytes.NewReader(controlCanonicalJSON(t)), &stdout, &stderr)
+		if code != 2 || stdout.Len() != 0 {
+			t.Fatalf("content without receipt: code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+		}
 	}
 }
 
@@ -72,10 +89,35 @@ func TestCommandRejectsWrongScheduleAndShortWrite(t *testing.T) {
 func TestCommandHelpStatesInitialPassiveFence(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := Command([]string{"--help"}, strings.NewReader("secret"), &stdout, &stderr)
-	for _, phrase := range []string{"initial-node-only", "grants no lifecycle", "successor authority"} {
+	for _, phrase := range []string{
+		"initial-node-only", "grants no lifecycle", "successor authority",
+		"--predecessor-content FILE|-",
+	} {
 		if code != 0 || stdout.Len() != 0 || !strings.Contains(stderr.String(), phrase) {
 			t.Fatalf("help missing %q: code=%d stdout=%q stderr=%q", phrase, code, stdout.String(), stderr.String())
 		}
+	}
+}
+
+func TestReadPredecessorContentEnforcesFileAndStdinBounds(t *testing.T) {
+	exact := strings.Repeat("x", MaxPredecessorOutputBytes)
+	path := filepath.Join(t.TempDir(), "predecessor.txt")
+	if err := os.WriteFile(path, []byte(exact), 0o600); err != nil {
+		t.Fatalf("write predecessor content: %v", err)
+	}
+	for name, source := range map[string]string{"file": path, "stdin": "-"} {
+		t.Run(name, func(t *testing.T) {
+			content, err := readPredecessorContent(source, strings.NewReader(exact))
+			if err != nil || content != exact {
+				t.Fatalf("exact bound: bytes=%d err=%v", len(content), err)
+			}
+		})
+	}
+	if err := os.WriteFile(path, []byte(exact+"x"), 0o600); err != nil {
+		t.Fatalf("write oversized predecessor content: %v", err)
+	}
+	if _, err := readPredecessorContent(path, strings.NewReader("")); err == nil {
+		t.Fatal("oversized predecessor content file was accepted")
 	}
 }
 
