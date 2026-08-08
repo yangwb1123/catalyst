@@ -1,0 +1,10 @@
+Binding contract written to `ai-campaign/state/runs/bound-the-gate-harness-bridge-subprocesses-with--798f6166/artifacts/design-a77de8a6/task-1-binding-contract.md` (companion to the 18-line `task-1-design.md`; it supersedes it for the implement stage). No repo source touched — state artifact only, so no gate run needed.
+
+**What it pins (all verified against live code):**
+
+- **Exact Go signatures** — `execbound` (Options v2 + Validate, Capture/CaptureCombined/CaptureSplit, Spec, Run, Result + TimedOut/Rendered/Observed, FromBytes, GroupKillAvailable, 15 exports, 4 stdlib-only files); `gate` With-variants all taking `ctx` first per A1.1, `type Options = execbound.Options` alias (drift-proof), `ResolveOptions(CLIInput)` pure lattice function, exact legacy wrapper bodies, `Engine.RunGate` untouched.
+- **Package layout** — `internal/execbound` with WaitDelay in *common* code (the non-unix backstop fix), unix/other build-tagged group-kill files; cmd/forge stays at 31/32 production files (all seams in-place).
+- **Reconciliation** — arch reviewer's "zero → negative sentinel" vs concurrency's "negative rejected, `Unbounded` bool": Options v2 wins on mechanism (sign-error footgun proof), arch's requirement (orchestrator zero = no-deadline) preserved via `Timeout ≤ 0 → Unbounded: true` mapping table; testing Pin 12's "garbage → default" cells amended by hardening §3–4 (garbage → fail-loud error; `"0"` → Unbounded; `-1` → error).
+- **Lattice** — full flag > env > default table incl. `""` = unset, env skipped when flag set, knob provenance (`Options.Knob`), and the structural+behavioral regression pin that `forge run/evolve --timeout` never reaches gate options (`o.gateOpts` resolved only from `FORGE_GATE_TIMEOUT`, T13).
+- **Semantics table** — 12 rows (verdict/output/never columns), exact marker literal, timeout text templates, ProbeAll error shapes, wall-clock ≤ deadline + 2 s, memory ≤ 4 × 2 × cap.
+- **Test consolidation** — T1–T18 named tests mapping T1–T4 (direction checks), T5–T11 (concurrency additions), T12–T18 (the 18 pins), R1–R7 × test matrix, stub-shape rules, and the Pin 18 anti-vacuous-pass recipe for the acceptance stage.
