@@ -51,6 +51,10 @@ func cmdEvolve(args []string) int {
 	if err := fs.Parse(flagArgs); err != nil {
 		return 2
 	}
+	if err := validateSandboxMemory(o.sandboxMemoryMB); err != nil {
+		fmt.Fprintf(os.Stderr, "forge evolve: %v\n", err)
+		return 2
+	}
 	o.root = gate.RepoRoot(o.root)
 	if code := rejectPendingPromotionAtEntry("forge evolve", o.root); code != 0 {
 		return code

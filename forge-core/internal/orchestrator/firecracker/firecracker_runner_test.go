@@ -2,11 +2,13 @@ package firecracker
 
 import (
 	"context"
+	"errors"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"forgeos/forge-core/internal/orchestrator/sandbox"
 )
 
 func TestGuestInitScriptQuotesArgvAndRecordsExit(t *testing.T) {
@@ -26,8 +28,6 @@ func TestGuestInitScriptQuotesArgvAndRecordsExit(t *testing.T) {
 }
 
 func TestGuestOutputExtractsBetweenMarkers(t *testing.T) {
-	dir := t.TempDir()
-	logPath := filepath.Join(dir, "firecracker.log")
 	content := strings.Join([]string{
 		"[    0.000000] Linux version 4.14.174 booting",
 		"FORGE-GUEST-START",
@@ -35,16 +35,42 @@ func TestGuestOutputExtractsBetweenMarkers(t *testing.T) {
 		"LEFT] RIGHT",
 		"FORGE-GUEST-DONE",
 	}, "\n")
-	if err := os.WriteFile(logPath, []byte(content), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	got := guestOutput(logPath)
+	got := guestOutput(content)
 	want := strings.Join([]string{
 		"guest line one",
 		"LEFT] RIGHT",
 	}, "\n")
 	if got != want {
 		t.Fatalf("guestOutput = %q, want %q", got, want)
+	}
+}
+
+func TestSerialCaptureBoundsMemoryAndSignalsExplicitFailure(t *testing.T) {
+	serial := newSerialCapture(8)
+	if _, err := serial.Write([]byte("FORGE-GUEST-START\nrunaway")); err != nil {
+		t.Fatal(err)
+	}
+	retained, total := serial.snapshot()
+	if len(retained) != 8 || total != len("FORGE-GUEST-START\nrunaway") {
+		t.Fatalf("retained=%d total=%d", len(retained), total)
+	}
+	_, err := (&FirecrackerRunner{PollInterval: time.Hour}).waitForMarker(
+		context.Background(), "unused-debugfs", "unused-rootfs", serial, time.Hour,
+	)
+	var limitErr *sandbox.OutputLimitError
+	if !errors.As(err, &limitErr) {
+		t.Fatalf("overflow error = %v", err)
+	}
+	if limitErr.Limit != 8 || limitErr.Total != total {
+		t.Fatalf("overflow detail = %+v", limitErr)
+	}
+}
+
+func TestRunnerRejectsInvalidMemoryBeforeHostPrerequisites(t *testing.T) {
+	runner := &FirecrackerRunner{MemoryMB: 63}
+	_, _, err := runner.Run(context.Background(), []string{"true"}, "", 0)
+	if err == nil || !strings.Contains(err.Error(), "memory must be between") {
+		t.Fatalf("invalid memory error = %v", err)
 	}
 }
 
@@ -103,7 +129,6 @@ func TestFirecrackerRunnerLiveMicroVM(t *testing.T) {
 	}
 	t.Logf("live microVM verified: %q", output)
 }
-
 
 // TestFirecrackerRunnerLiveMicroVMStdin proves the prompt delivery path in
 // a real microVM: /forge-stdin is injected into the rootfs and the guest

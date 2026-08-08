@@ -18,6 +18,7 @@ import (
 	"forgeos/forge-core/internal/asset"
 	"forgeos/forge-core/internal/gate"
 	"forgeos/forge-core/internal/orchestrator"
+	"forgeos/forge-core/internal/orchestrator/sandbox"
 )
 
 // forgeVersion is the semantic version of forge-core, injected at build time
@@ -120,6 +121,8 @@ type runOpts struct {
 	sandbox       string
 	sandboxImage  string
 	sandboxKernel string
+	// sandboxMemoryMB is the hard RAM ceiling for either sandbox runner.
+	sandboxMemoryMB int
 	// Restricted release/proposal stages require a pinned executable and digest.
 	releaseAgentPath   string
 	releaseAgentSHA256 string
@@ -227,6 +230,7 @@ func bindRunOpts(fs *flag.FlagSet, o *runOpts) {
 	fs.StringVar(&o.sandbox, "sandbox", "", "isolate agent commands: docker|firecracker (requires --sandbox-image; firecracker also requires --sandbox-kernel)")
 	fs.StringVar(&o.sandboxImage, "sandbox-image", "", "docker image or firecracker rootdir template for --sandbox")
 	fs.StringVar(&o.sandboxKernel, "sandbox-kernel", "", "firecracker vmlinux.bin path for --sandbox=firecracker")
+	fs.IntVar(&o.sandboxMemoryMB, "sandbox-memory-mb", sandbox.DefaultMemoryMB, "sandbox RAM limit in MiB (64..32768; default 512)")
 	fs.StringVar(&o.agentCmd, "agent-cmd", "claude", "command for --executor=command (e.g. claude, echo)")
 	fs.StringVar(&o.releaseAgentPath, "release-agent-path", "", "absolute trusted Claude executable for command-mode release or proposal-only Evolve (required with --release-agent-sha256)")
 	fs.StringVar(&o.releaseAgentSHA256, "release-agent-sha256", "", "operator-pinned SHA-256 of --release-agent-path for restricted command execution")
@@ -312,6 +316,10 @@ func cmdRun(args []string) int {
 		return 2
 	}
 	if err := fs.Parse(flagArgs); err != nil {
+		return 2
+	}
+	if err := validateSandboxMemory(o.sandboxMemoryMB); err != nil {
+		fmt.Fprintf(os.Stderr, "forge run: %v\n", err)
 		return 2
 	}
 	if o.chain && o.maxChainStages < 1 {
@@ -451,8 +459,16 @@ func sandboxConfig(o runOpts) *orchestrator.SandboxConfig {
 		return nil
 	}
 	return &orchestrator.SandboxConfig{
-		Type:   o.sandbox,
-		Image:  o.sandboxImage,
-		Kernel: o.sandboxKernel,
+		Type:     o.sandbox,
+		Image:    o.sandboxImage,
+		Kernel:   o.sandboxKernel,
+		MemoryMB: o.sandboxMemoryMB,
 	}
+}
+
+func validateSandboxMemory(memoryMB int) error {
+	if memoryMB < sandbox.MinMemoryMB || memoryMB > sandbox.MaxMemoryMB {
+		return fmt.Errorf("--sandbox-memory-mb must be between %d and %d", sandbox.MinMemoryMB, sandbox.MaxMemoryMB)
+	}
+	return nil
 }

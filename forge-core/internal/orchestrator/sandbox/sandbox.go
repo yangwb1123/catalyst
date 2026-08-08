@@ -7,8 +7,45 @@ package sandbox
 
 import (
 	"context"
+	"fmt"
 	"time"
 )
+
+const (
+	// DefaultMemoryMB is the safe RAM limit used when a runner is created
+	// without an explicit limit.
+	DefaultMemoryMB = 512
+	// MinMemoryMB and MaxMemoryMB reject nonsensical or dangerously broad
+	// sandbox configurations before a process or VM is started.
+	MinMemoryMB = 64
+	MaxMemoryMB = 32 * 1024
+	// DefaultMaxOutputBytes matches CommandExecutor's retained-output default.
+	DefaultMaxOutputBytes = 10 << 20
+)
+
+// EffectiveMemoryMB resolves zero to the safe default and validates explicit
+// limits. It is shared by every runner so Docker and Firecracker cannot drift.
+func EffectiveMemoryMB(configured int) (int, error) {
+	if configured == 0 {
+		return DefaultMemoryMB, nil
+	}
+	if configured < MinMemoryMB || configured > MaxMemoryMB {
+		return 0, fmt.Errorf("sandbox memory must be between %d and %d MiB", MinMemoryMB, MaxMemoryMB)
+	}
+	return configured, nil
+}
+
+// OutputLimitError reports that a sandbox produced more output than its
+// bounded host capture could retain. Total is the observed lower bound when
+// the runner stops immediately after overflow.
+type OutputLimitError struct {
+	Limit int
+	Total int
+}
+
+func (e *OutputLimitError) Error() string {
+	return fmt.Sprintf("sandbox output exceeded %d-byte limit (observed %d bytes)", e.Limit, e.Total)
+}
 
 // Runner executes a command inside an isolated environment. Run returns the
 // captured output, the guest exit code (0 on success), and an infrastructure

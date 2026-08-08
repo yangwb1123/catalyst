@@ -3,12 +3,16 @@ package orchestrator
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os/exec"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"forgeos/forge-core/internal/asset"
+	"forgeos/forge-core/internal/orchestrator/docker"
+	"forgeos/forge-core/internal/orchestrator/firecracker"
 	"forgeos/forge-core/internal/orchestrator/sandbox"
 )
 
@@ -94,6 +98,21 @@ func TestSandboxInfraFaultIsKindConfig(t *testing.T) {
 	}
 }
 
+func TestSandboxOutputOverflowIsObservableKindFailed(t *testing.T) {
+	runner := &fakeRunner{
+		output: "retained", err: &sandbox.OutputLimitError{Limit: 8, Total: 12},
+	}
+	executor := sandboxedExecutor(runner)
+	err := executor.Execute(context.Background(), asset.Phase{Name: "sandbox-phase"}, "run")
+	var execErr *ExecError
+	if !errors.As(err, &execErr) || execErr.Kind != KindFailed {
+		t.Fatalf("output overflow must be KindFailed, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "observed 12 bytes") {
+		t.Fatalf("output overflow detail missing: %v", err)
+	}
+}
+
 func TestSandboxTimeoutIsKindTimeout(t *testing.T) {
 	// A deadline-exceeded context must classify as a retryable timeout.
 	ctx, cancel := context.WithTimeout(context.Background(), time.Nanosecond)
@@ -108,6 +127,18 @@ func TestSandboxTimeoutIsKindTimeout(t *testing.T) {
 	}
 	if execErr.Kind != KindTimeout {
 		t.Fatalf("kind = %v, want KindTimeout", execErr.Kind)
+	}
+}
+
+func TestSandboxRunnerDeadlineIsKindTimeoutWhileParentIsLive(t *testing.T) {
+	runner := &fakeRunner{err: fmt.Errorf("runner timed out: %w", context.DeadlineExceeded)}
+	executor := sandboxedExecutor(runner)
+	err := executor.Execute(
+		context.Background(), asset.Phase{Name: "sandbox-phase"}, "run",
+	)
+	var execErr *ExecError
+	if !errors.As(err, &execErr) || execErr.Kind != KindTimeout {
+		t.Fatalf("wrapped runner deadline must be KindTimeout, got %v", err)
 	}
 }
 
@@ -189,6 +220,88 @@ func TestSandboxAutoWireFirecrackerRequiresKernelAndRootdir(t *testing.T) {
 	}
 }
 
+func TestSandboxAutoWireFirecrackerCarriesMemoryLimit(t *testing.T) {
+	executor := CommandExecutor{MaxOutputBytes: 4096, Sandbox: &SandboxConfig{
+		Type:     "firecracker",
+		Kernel:   "/vmlinux.bin",
+		Image:    "/rootdir",
+		MemoryMB: 768,
+	}}
+	runner, err := executor.sandboxRunner()
+	if err != nil {
+		t.Fatalf("sandboxRunner: %v", err)
+	}
+	firecrackerRunner, ok := runner.(*firecracker.FirecrackerRunner)
+	if !ok {
+		t.Fatalf("runner type = %T, want *firecracker.FirecrackerRunner", runner)
+	}
+	if firecrackerRunner.MemoryMB != 768 {
+		t.Fatalf("runner MemoryMB = %d, want 768", firecrackerRunner.MemoryMB)
+	}
+	if firecrackerRunner.MaxOutputBytes != 4096 {
+		t.Fatalf("runner MaxOutputBytes = %d, want 4096", firecrackerRunner.MaxOutputBytes)
+	}
+}
+
+func TestSandboxAutoWireDockerCarriesDefaultMemoryAndExecutorOutputLimit(t *testing.T) {
+	executor := CommandExecutor{MaxOutputBytes: 8192, Sandbox: &SandboxConfig{
+		Type: "docker", Image: "sandbox-image",
+	}}
+	runner, err := executor.sandboxRunner()
+	if err != nil {
+		t.Fatalf("sandboxRunner: %v", err)
+	}
+	dockerRunner, ok := runner.(*docker.Runner)
+	if !ok {
+		t.Fatalf("runner type = %T, want *docker.Runner", runner)
+	}
+	if dockerRunner.MemoryMB != sandbox.DefaultMemoryMB {
+		t.Fatalf("runner MemoryMB = %d, want %d", dockerRunner.MemoryMB, sandbox.DefaultMemoryMB)
+	}
+	if dockerRunner.MaxOutputBytes != 8192 {
+		t.Fatalf("runner MaxOutputBytes = %d, want 8192", dockerRunner.MaxOutputBytes)
+	}
+}
+
+func TestSandboxAutoWireRejectsInvalidMemoryBeforeRunnerCreation(t *testing.T) {
+	executor := CommandExecutor{Sandbox: &SandboxConfig{
+		Type: "docker", Image: "sandbox-image", MemoryMB: sandbox.MinMemoryMB - 1,
+	}}
+	if _, err := executor.sandboxRunner(); err == nil || !strings.Contains(err.Error(), "memory must be between") {
+		t.Fatalf("invalid memory error = %v", err)
+	}
+}
+
+func TestSandboxAutoWireIsReceiverLocalUnderConcurrency(t *testing.T) {
+	config := &SandboxConfig{Type: "docker", Image: "sandbox-image"}
+	executor := CommandExecutor{Sandbox: config}
+	const workers = 32
+	var wait sync.WaitGroup
+	wait.Add(workers)
+	errors := make(chan error, workers)
+	for range workers {
+		go func() {
+			defer wait.Done()
+			local, err := executor.withSandboxRunner("parallel-phase")
+			if err != nil {
+				errors <- err
+				return
+			}
+			if local.Sandbox == config || local.Sandbox.Runner == nil {
+				errors <- fmt.Errorf("auto-wired sandbox was not receiver-local")
+			}
+		}()
+	}
+	wait.Wait()
+	close(errors)
+	for err := range errors {
+		t.Fatal(err)
+	}
+	if config.Runner != nil {
+		t.Fatal("shared SandboxConfig was mutated")
+	}
+}
+
 // TestSandboxCancellationIsKindFailed proves a cancelled context is the
 // caller's verdict (KindFailed), not a retryable timeout (review F5).
 func TestSandboxCancellationIsKindFailed(t *testing.T) {
@@ -203,6 +316,18 @@ func TestSandboxCancellationIsKindFailed(t *testing.T) {
 	}
 	if execErr.Kind != KindFailed {
 		t.Fatalf("kind = %v, want KindFailed on cancellation", execErr.Kind)
+	}
+}
+
+func TestSandboxRunnerCancellationIsKindFailedWhileParentIsLive(t *testing.T) {
+	runner := &fakeRunner{err: fmt.Errorf("runner cancelled: %w", context.Canceled)}
+	executor := sandboxedExecutor(runner)
+	err := executor.Execute(
+		context.Background(), asset.Phase{Name: "sandbox-phase"}, "run",
+	)
+	var execErr *ExecError
+	if !errors.As(err, &execErr) || execErr.Kind != KindFailed {
+		t.Fatalf("wrapped runner cancellation must be KindFailed, got %v", err)
 	}
 }
 

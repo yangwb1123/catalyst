@@ -153,8 +153,10 @@ func (c CommandExecutor) Execute(ctx context.Context, p asset.Phase, mode string
 			return configErr(p.Name, err)
 		}
 	}
-	if err := c.sandboxConfigError(p.Name); err != nil {
-		return err
+	var sandboxErr error
+	c, sandboxErr = c.withSandboxRunner(p.Name)
+	if sandboxErr != nil {
+		return sandboxErr
 	}
 	if err := c.environmentConfigError(p.Name); err != nil {
 		return err

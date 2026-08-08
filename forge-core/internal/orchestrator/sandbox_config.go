@@ -39,23 +39,26 @@ func (c CommandExecutor) sandboxNone() bool {
 	return runtime == "" || strings.EqualFold(runtime, "none")
 }
 
-// sandboxConfigError enforces the isolation boundary. A declared sandbox is a
-// safety requirement, not a hint: until a runtime is wired, falling back to the
-// host would violate the workflow contract and must be a permanent config error.
-func (c CommandExecutor) sandboxConfigError(phase string) error {
+// withSandboxRunner enforces the isolation boundary and installs an auto-wired
+// runner on a receiver-local SandboxConfig copy. RunParallel shares one
+// CommandExecutor across goroutines, so mutating the caller's config here would
+// race concurrent executions and could tear the Runner interface value.
+func (c CommandExecutor) withSandboxRunner(phase string) (CommandExecutor, error) {
 	if c.Sandbox == nil {
-		return nil
+		return c, nil
 	}
 	runtime := strings.TrimSpace(c.Sandbox.Type)
 	if runtime == "" || strings.EqualFold(runtime, "none") {
-		return nil
+		return c, nil
 	}
 	runner, err := c.sandboxRunner()
 	if err != nil {
-		return configErr(phase, err)
+		return c, configErr(phase, err)
 	}
-	c.Sandbox.Runner = runner
-	return nil
+	local := *c.Sandbox
+	local.Runner = runner
+	c.Sandbox = &local
+	return c, nil
 }
 
 // sandboxRunner returns the wired runner for the declared Type, auto-wiring
@@ -63,6 +66,10 @@ func (c CommandExecutor) sandboxConfigError(phase string) error {
 // incomplete firecracker configuration fail closed with a permanent config
 // fault.
 func (c CommandExecutor) sandboxRunner() (sandbox.Runner, error) {
+	memoryMB, err := sandbox.EffectiveMemoryMB(c.Sandbox.MemoryMB)
+	if err != nil {
+		return nil, err
+	}
 	if c.Sandbox.Runner != nil {
 		return c.Sandbox.Runner, nil
 	}
@@ -72,12 +79,17 @@ func (c CommandExecutor) sandboxRunner() (sandbox.Runner, error) {
 		if strings.TrimSpace(c.Sandbox.Image) == "" {
 			return nil, fmt.Errorf("sandbox %q requested but no image is configured; refusing host execution", runtime)
 		}
-		return &docker.Runner{Image: c.Sandbox.Image, MemoryMB: c.Sandbox.MemoryMB}, nil
+		return &docker.Runner{
+			Image: c.Sandbox.Image, MemoryMB: memoryMB, MaxOutputBytes: c.maxOutputBytes(),
+		}, nil
 	case "firecracker":
 		if strings.TrimSpace(c.Sandbox.Kernel) == "" || strings.TrimSpace(c.Sandbox.Image) == "" {
 			return nil, fmt.Errorf("sandbox %q requested but kernel/rootdir are not configured; refusing host execution", runtime)
 		}
-		return &firecracker.FirecrackerRunner{Kernel: c.Sandbox.Kernel, RootDir: c.Sandbox.Image}, nil
+		return &firecracker.FirecrackerRunner{
+			Kernel: c.Sandbox.Kernel, RootDir: c.Sandbox.Image,
+			MemoryMB: memoryMB, MaxOutputBytes: c.maxOutputBytes(),
+		}, nil
 	default:
 		return nil, fmt.Errorf("sandbox %q requested but no sandbox runner is installed; refusing host execution", runtime)
 	}
@@ -136,13 +148,18 @@ func (c CommandExecutor) executeSandboxed(
 	res := execbound.FromBytes([]byte(output), c.MaxOutputBytes)
 	res.CtxErr = runCtx.Err()
 	if err != nil {
+		var outputLimit *sandbox.OutputLimitError
+		if errors.As(err, &outputLimit) {
+			return &ExecError{Phase: phase, Kind: KindFailed, Err: err}
+		}
 		// Typed classification parity with the host path: only a deadline
 		// is retryable; a cancellation is the caller's verdict, not a
 		// timeout (review F5). No message-string matching.
-		if errors.Is(runCtx.Err(), context.DeadlineExceeded) {
+		if errors.Is(err, context.DeadlineExceeded) ||
+			errors.Is(runCtx.Err(), context.DeadlineExceeded) {
 			return &ExecError{Phase: phase, Kind: KindTimeout, Err: err}
 		}
-		if runCtx.Err() != nil {
+		if errors.Is(err, context.Canceled) || runCtx.Err() != nil {
 			return &ExecError{Phase: phase, Kind: KindFailed, Err: err}
 		}
 		return &ExecError{Phase: phase, Kind: KindConfig, Err: err}
