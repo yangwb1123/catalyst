@@ -6,7 +6,7 @@ keyword greed: a small internal tool (L0) gets no product push; a platform
 or commercial product (L2/L3) triggers implicit-requirement chains, open
 source readiness and commercial readiness.
 
-Key restraint rules (from product-specs/product-thinking.md):
+Key restraint rules (bundled in methodologies/product-readiness.md):
 - the implicit-requirement chains produce QUESTIONS to confirm, never
   features to implement without confirmation
 - low-cost reservations (tenant_id in queries/indexes, org context in
@@ -24,6 +24,7 @@ from __future__ import annotations
 
 from typing import Optional
 
+from .paths import bundled_reference
 from .relevance import _keyword_hit
 
 LEVELS = ("L0_local_feature", "L1_reusable_module", "L2_platform_capability",
@@ -81,18 +82,13 @@ _SCENARIOS = {
     ),
 }
 
-# Product spec files by level (L0 gets none — restraint).
+# Product guidance by level (L0 gets none — restraint).
+_PRODUCT_GUIDE = bundled_reference("methodologies/product-readiness.md")
 _SPECS_BY_LEVEL = {
     "L0_local_feature": [],
-    "L1_reusable_module": ["product-specs/product-thinking.md",
-                           "product-specs/completion-evidence.md"],
-    "L2_platform_capability": ["product-specs/product-thinking.md",
-                               "product-specs/commercial-readiness.md",
-                               "product-specs/completion-evidence.md"],
-    "L3_product_feature": ["product-specs/product-thinking.md",
-                           "product-specs/commercial-readiness.md",
-                           "product-specs/open-source-readiness.md",
-                           "product-specs/completion-evidence.md"],
+    "L1_reusable_module": [_PRODUCT_GUIDE],
+    "L2_platform_capability": [_PRODUCT_GUIDE],
+    "L3_product_feature": [_PRODUCT_GUIDE],
 }
 
 

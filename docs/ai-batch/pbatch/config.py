@@ -11,6 +11,9 @@ from functools import lru_cache
 from pathlib import Path
 from typing import NamedTuple, Optional
 
+from .paths import (IS_FORGE_PROJECT, PATH_BASE,
+                    project_or_bundled_reference)
+
 try:
     import yaml
 except ImportError:
@@ -22,6 +25,7 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 log = logging.getLogger("pi-batch")
+
 
 def _find_batch_config() -> Optional[dict]:
     """Locate and parse pi-batch.yaml: the entry script directory
@@ -332,12 +336,14 @@ RATE_LIMIT_PROVIDERS = {
 # that runs BEFORE execution and routes frontend UI tasks to the UI
 # generation pipeline (--classify / `pi-batch.py classify`).
 CLASSIFIER_KEYWORDS = _string_setting(_CLASSIFIER_CFG, "keywords", "")
-CLASSIFIER_FRONTEND_PIPELINE = _string_setting(
-    _CLASSIFIER_CFG, "frontend_pipeline",
-    "examples/frontend-implementation-pipeline.yaml", allow_empty=False)
-CLASSIFIER_BACKEND_PIPELINE = _string_setting(
-    _CLASSIFIER_CFG, "backend_pipeline",
-    "examples/backend-implementation-pipeline.yaml", allow_empty=False)
+CLASSIFIER_FRONTEND_PIPELINE = project_or_bundled_reference(
+    _string_setting(_CLASSIFIER_CFG, "frontend_pipeline",
+                    ".agent/workflows/build.yml", allow_empty=False),
+    "methodologies/build-routing.md")
+CLASSIFIER_BACKEND_PIPELINE = project_or_bundled_reference(
+    _string_setting(_CLASSIFIER_CFG, "backend_pipeline",
+                    ".agent/workflows/build.yml", allow_empty=False),
+    "methodologies/build-routing.md")
 # Minimum top score for a confident classification (2 = one strong hit).
 CLASSIFIER_MIN_SCORE = _int_setting(_CLASSIFIER_CFG, "min_score", 2, 1)
 # Route when this share of a batch's tasks classify as frontend UI.

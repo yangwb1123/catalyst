@@ -37,7 +37,21 @@ from .product import product_manifest
 from .rule_matcher import match_rules
 from .text_io import read_text_bounded
 
-EVAL_DIR = Path("evals")
+EVAL_DIR = Path(__file__).resolve().parent.parent / "evals"
+
+
+def _parse_eval_file(path: Path) -> object:
+    """Parse a bundled eval fixture with or without optional PyYAML.
+
+    JSON is a YAML subset, so committed fixtures use that syntax and remain
+    readable through the standard library when PyYAML is unavailable.
+    """
+    text = read_text_bounded(path, config.INPUT_MAX_BYTES, "eval file")
+    try:
+        return yaml.safe_load(text) if yaml else json.loads(text)
+    except Exception as exc:
+        log.error("Invalid eval suite %s: %s", path, exc)
+        sys.exit(2)
 
 
 def load_eval_files() -> list:
@@ -46,9 +60,12 @@ def load_eval_files() -> list:
     if not EVAL_DIR.is_dir():
         log.error("No evals/ directory — create evals/*.yaml case files")
         sys.exit(2)
-    for path in sorted(EVAL_DIR.glob("*.yaml")):
-        data = yaml.safe_load(read_text_bounded(
-            path, config.INPUT_MAX_BYTES, "eval file")) or {}
+    paths = sorted(EVAL_DIR.glob("*.yaml"))
+    if not paths:
+        log.error("No eval fixtures in %s", EVAL_DIR)
+        sys.exit(2)
+    for path in paths:
+        data = _parse_eval_file(path) or {}
         if not isinstance(data, dict) or not isinstance(data.get("cases"), list):
             log.error("Invalid eval suite %s: needs 'cases' list", path)
             sys.exit(2)
@@ -59,14 +76,16 @@ def load_eval_files() -> list:
 
 def _assert_value(key: str, input_text: str) -> object:
     """Dispatch one assertion key to the live analyzer."""
-    if key in ("task_type", "platform", "profile", "confident"):
+    if key in ("task_type", "platform", "profile", "confident", "system_type"):
         cls = classify_text(input_text)
         return {"task_type": cls.task_type, "platform": cls.platform,
-                "profile": cls.profile, "confident": cls.confident}[key]
-    if key in ("tier", "risk", "page_types"):
+                "profile": cls.profile, "confident": cls.confident,
+                "system_type": cls.system_type}[key]
+    if key in ("tier", "risk", "page_types", "domain"):
         matched = match_rules(input_text)
         return {"tier": matched["tier"], "risk": matched["risk"],
-                "page_types": matched["page_types"]}[key]
+                "page_types": matched["page_types"],
+                "domain": matched["domain"]}[key]
     if key in ("has_rule", "lacks_rule"):
         return {item["id"] for item in match_rules(input_text)["rules"]}
     if key == "product_level":
@@ -126,7 +145,7 @@ def _suite_domains(suite: dict) -> list:
     for case in cases:
         if not isinstance(case, dict):
             continue
-        expect = case.get("expect", {})
+        expect = case.get("assert", {})
         for key in ("task_type", "system_type", "domain", "tier",
                    "matched_tier", "effective_tier"):
             value = expect.get(key) if isinstance(expect, dict) else None
@@ -135,14 +154,10 @@ def _suite_domains(suite: dict) -> list:
     return domains[:5]
 
 
-def _print_coverage(total: int, failed: list) -> None:
-    """Per-suite case counts + domain coverage (data-expression)."""
-    coverage = []
-    for suite in load_eval_files():
-        coverage.append({"suite": suite.get("name", "?"),
-                         "cases": _count_cases(suite),
-                         "domains": _suite_domains(suite)})
-    if "--json" in sys.argv:
+def _print_coverage(total: int, failed: list, coverage: list,
+                    want_json: bool) -> None:
+    """Actual executed-suite case counts and domain coverage."""
+    if want_json:
         print(json.dumps({"total": total, "failed": len(failed),
                           "failures": failed, "coverage": coverage},
                          ensure_ascii=False, indent=2))
@@ -170,21 +185,32 @@ def eval_main(argv: list) -> None:
         "--coverage", action="store_true",
         help="print per-suite case counts and domain coverage")
     args = parser.parse_args(argv)
-    total, failed = 0, []
+    total, failed, coverage = 0, [], []
     for suite in load_eval_files():
         if args.quick and suite.get("name") not in {"rules", "classifier"}:
             continue
-        for case_id, ok, detail in run_suite(suite, args.filter):
+        selected = {**suite, "cases": [
+            case for case in suite["cases"]
+            if not args.filter or str(case.get("id", "?")) == args.filter
+        ]}
+        if not selected["cases"]:
+            continue
+        coverage.append({"suite": selected.get("name", "?"),
+                         "cases": _count_cases(selected),
+                         "domains": _suite_domains(selected)})
+        for case_id, ok, detail in run_suite(selected):
             total += 1
             status = "PASS" if ok else "FAIL"
             log.info("EVAL %s/%s: %s", suite["name"], case_id, status)
             if not ok:
                 failed.append(f"{suite['name']}/{case_id}: {detail}")
                 log.error("EVAL %s/%s FAIL: %s", suite["name"], case_id, detail)
+    if total == 0:
+        log.error("EVAL: no cases matched")
+        sys.exit(2)
     if args.coverage:
-        _print_coverage(total, failed)
-        return
-    if args.json:
+        _print_coverage(total, failed, coverage, args.json)
+    elif args.json:
         print(json.dumps({"total": total, "failed": len(failed),
                           "failures": failed}, ensure_ascii=False, indent=2))
     if failed:

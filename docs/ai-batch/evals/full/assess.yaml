@@ -1,4 +1,5 @@
-# Assessor + product/workflow regression suite — run: pi-batch eval
+# Full-project reference suite. It is intentionally not loaded by the
+# zero-dependency top-level eval runner.
 name: assess
 cases:
   - id: login-is-high-risk-not-trivial

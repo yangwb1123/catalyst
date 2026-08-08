@@ -1,0 +1,21 @@
+{
+  "name": "assessor",
+  "cases": [
+    {
+      "id": "platform_workflow",
+      "input": "构建多租户 SaaS 订单审批 API，管理员通过数据库接口发起流程，失败时重试并以测试通过作为验收标准",
+      "assert": {
+        "product_level": "L3_product_feature",
+        "workflow_level": "L3_platform"
+      }
+    },
+    {
+      "id": "local_script",
+      "input": "内部临时脚本：清理一份记录",
+      "assert": {
+        "product_level": "L0_local_feature",
+        "workflow_level": "L0_direct"
+      }
+    }
+  ]
+}

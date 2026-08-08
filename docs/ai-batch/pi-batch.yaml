@@ -1,11 +1,12 @@
-# Declarative defaults for pi-batch.py. Optional — pi-batch.py runs fine
-# without this file, falling back to the values below. Copy pi-batch.py +
-# this file into another project and edit `agent.bin` to point at whatever
-# CLI agent you use (pi, claude, codex, gemini, opencode, ...); no code
-# changes needed.
+# Declarative defaults retained from the broader runner configuration.
+# The shipped offline port consumes only its input, classifier, rules,
+# product/system-type and eval settings. Agent/session/rate/memory/logging/
+# prompt/command sections below are inert upstream-runner examples: the four
+# public subcommands do not spawn an agent or execute them. This file is
+# optional; absent keys fall back to the offline defaults.
 
 agent:
-  # The CLI binary invoked for every task. Must accept:
+  # Runner-only example. A future task runner's CLI binary would need to accept:
   #   <bin> -p PROMPT [--model M] [--provider P] [--thinking T] [--tools T] [--exclude-tools T]
   bin: pi
   default_model: ""     # empty = the agent's own default
@@ -103,10 +104,13 @@ commands:
   timeout: 600
   output_max_bytes: 262144
 
-# Named engineering gates, referenced via --validate NAME[,NAME...] or a
-# task/stage validate field. Commands run against each generated artifact
-# before it is committed; {output} and {cwd} placeholders are substituted at
-# run time. Add project gates here instead of repeating shell strings.
+# INERT IN THIS PORT: the four shipped offline subcommands do not expose
+# --validate and never execute this registry. It is retained only as an
+# upstream/target-project runner example; a future runner or the target
+# repository must supply every referenced script before enabling an entry.
+# In a runner-enabled deployment, named engineering gates are referenced via
+# --validate NAME[,NAME...] or a task/stage validate field and run before an
+# artifact is committed; {output} and {cwd} are substituted at run time.
 #
 # Entries may be a command string (as below) or a mapping:
 #   cmd:   shell command with {output}/{cwd} placeholders
@@ -145,10 +149,6 @@ validators:
   clirepo:
     cmd: "python3 cli.py check"
     scope: repo
-  # 目标仓库无 scripts/check-completion-report.py 时用绝对路径指向本工具集。
-  completion_go:
-    cmd: "python /home/u1/ai-batch-runner/scripts/check-completion-report.py {output}"
-
   # UI generation gates: AI-generated TSX/Dart spacing/color/style problems
   # are specification problems, so these deterministic checks reject
   # artifacts mechanically (fail closed -> retry feedback loop). Attach via
@@ -172,8 +172,8 @@ validators:
   # god-service signals, scattered status assignment, domain->infra imports
   # are mechanically enforced; pattern necessity goes to the review roles.
   backendquality: "python {cwd}/scripts/check-backend-quality.py --dir {cwd}/src --strict --json -o {cwd}/docs/ui/refactor/backend-quality.json"
-  # Definition-of-Done gate: the artifact must carry an honest completion
-  # report (commands executed vs not_executed, no fabricated passes).
+  # Runner-only example: the artifact must carry an honest completion report.
+  # This script is intentionally not part of the offline four-command port.
   completion: "python {cwd}/scripts/check-completion-report.py {output}"
   # H line (LLM-as-judge): a judge gate must answer VERDICT: PASS|FAIL - reason;
   # fail closed on bare/missing verdicts. scripts/judge.py wraps the agent.
@@ -191,13 +191,11 @@ validators:
 classifier:
   # Optional keyword map override (default: pbatch/task_keywords.yaml).
   keywords: ""
-  # Pipeline for frontend-dominated batches; resolved against cwd, the
-  # entry script dir, then the package dir. Missing file fails loudly.
-  # Real implementation into the project (ui-generation-pipeline.yaml stays
-  # as the artifact-style template).
-  frontend_pipeline: examples/frontend-implementation-pipeline.yaml
-  # Pipeline for backend-dominated batches (symmetrical to frontend).
-  backend_pipeline: examples/backend-implementation-pipeline.yaml
+  # ForgeOS owns execution through its declared workflows. Classification is
+  # only a routing hint; both domains enter the real Build workflow, whose
+  # role/mode policy supplies the domain-specific implementation context.
+  frontend_pipeline: .agent/workflows/build.yml
+  backend_pipeline: .agent/workflows/build.yml
   # Minimum top score for a confident classification (2 = one strong hit).
   min_score: 2
   # Route when this share of a batch's tasks classify as frontend UI.

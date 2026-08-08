@@ -29,7 +29,9 @@ from typing import Optional
 from . import config
 from .classifier import TaskClassification, classify_text
 from .config import log, yaml
+from .paths import bundled_reference
 from .relevance import _keyword_hit
+from .system_type_methodology import SYSTEM_TYPE_METHODOLOGY
 from .text_io import read_text_bounded
 
 TIER_ORDER = {"demo": 0, "standard": 1, "production": 2}
@@ -44,6 +46,8 @@ DOMAIN_REGISTRIES = {
     "generic": [],
 }
 DEFAULT_DOMAIN = "generic"
+
+_UI_BASELINE = bundled_reference("methodologies/ui-baseline.md")
 
 _DEFAULT_REGISTRY = {
     "scale": {
@@ -63,12 +67,12 @@ _DEFAULT_REGISTRY = {
     "signal_weights": {},
     "use_case_types": {},
     "rules": {
-        "visual-core": {"files": ["ui-specs/spacing.md", "ui-specs/anti-patterns.md"],
+        "visual-core": {"files": [_UI_BASELINE],
                         "min_tier": "demo", "required": True,
                         "description": "8pt 间距 token 与反例清单"},
-        "component-spec": {"files": ["ui-specs/component-spec.md"], "min_tier": "demo",
+        "component-spec": {"files": [_UI_BASELINE], "min_tier": "demo",
                            "description": "组件尺寸/状态/行为规范"},
-        "business-profile": {"files_template": "ui-specs/business-profiles/{profile}.md",
+        "business-profile": {"files": [_UI_BASELINE],
                              "min_tier": "demo", "description": "业务风格配置"},
     },
 }
@@ -146,8 +150,6 @@ def _rule_skip_reason(rule: dict, tier_rank: int, page_types: list,
         return "not high-risk"
     return ""
 
-from pbatch.system_type_methodology import SYSTEM_TYPE_METHODOLOGY
-
 def match_rules(text: str, classification: Optional[TaskClassification] = None,
                 registry: Optional[dict] = None) -> dict:
     """Deterministic rule manifest for a task text (domain-aware: the
@@ -192,7 +194,8 @@ def match_rules(text: str, classification: Optional[TaskClassification] = None,
         })
     _inject_system_type_methodology(cls, rules)
     rules.sort(key=lambda item: (0 if item["required"] else 1, item["tier"]))
-    return {"tier": tier, "page_types": page_types, "risk": "high" if high_risk else "low",
+    return {"path_base": config.PATH_BASE,
+            "tier": tier, "page_types": page_types, "risk": "high" if high_risk else "low",
             "profile": profile, "rules": rules, "skipped": skipped,
             "domain": domain_for(text, cls),
             "system_type": getattr(cls, "system_type", "") or "deterministic"}
@@ -325,6 +328,7 @@ def format_manifest(matched: dict, limit: int = 8) -> str:
     """Human/markdown manifest for prompt injection (bounded)."""
     lines = [f"## Applicable UI rules (deterministic manifest, tier={matched['tier']}, "
              f"risk={matched['risk']}, profile={matched['profile'] or 'generic'})"]
+    lines.append(f"Path base: {matched.get('path_base', config.PATH_BASE)}")
     # 信任感：system_type 证据透明（AI 建议带依据——认知负担 §7）
     system_type = matched.get("system_type", "")
     if system_type and system_type != "deterministic":
@@ -392,14 +396,18 @@ def _check_rule(rule_id: str, rule, violations: list) -> None:
         violations.append(f"rule '{rule_id}': missing 'files' or "
                           f"'files_template'")
     for file in files:
-        if not Path(str(file)).exists():
+        if not _rule_file_exists(file):
             violations.append(f"rule '{rule_id}': missing file {file}")
     if template:
         for profile in rule.get("profiles", []):
             target = str(template).replace("{profile}", str(profile))
-            if not Path(target).exists():
+            if not _rule_file_exists(target):
                 violations.append(f"rule '{rule_id}': missing profile file "
                                   f"{target}")
+
+def _rule_file_exists(source) -> bool:
+    path = Path(str(source))
+    return (path if path.is_absolute() else Path(config.PATH_BASE) / path).is_file()
 
 def check_registry(registry: dict) -> list:
     """Schema integrity of one rule registry: rule fields, tiers, files."""
@@ -417,12 +425,8 @@ def check_registry(registry: dict) -> list:
     return violations
 
 def _check_registries_cli() -> None:
-    """--check: validate schema integrity of both domain registries."""
-    for domain, path in (("frontend", "ui-specs/rules.yaml"),
-                         ("backend", "backend-specs/rules.yaml")):
-        if not Path(path).exists():
-            log.error("registry not found: %s", path)
-            sys.exit(1)
+    """--check: validate both effective built-in/overlay registries."""
+    for domain in ("frontend_ui", "backend"):
         violations = check_registry(load_registry(domain=domain))
         if violations:
             for item in violations:

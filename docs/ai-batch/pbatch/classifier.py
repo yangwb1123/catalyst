@@ -380,6 +380,7 @@ def classify_main(argv: list) -> None:
     route = should_route_frontend(per_task, config.CLASSIFIER_FRONTEND_RATIO)
     if args.json:
         payload = {
+            "path_base": config.PATH_BASE,
             "dominant": dominant.to_dict(),
             "route_frontend": route,
             "frontend_pipeline": config.CLASSIFIER_FRONTEND_PIPELINE if route else "",
@@ -387,6 +388,9 @@ def classify_main(argv: list) -> None:
         }
         print(json.dumps(payload, ensure_ascii=False, indent=2))
         return
+    print(f"Path base: {config.PATH_BASE}")
     for index, item in enumerate(per_task, 1):
         print(format_classification(item, index))
-    print(f"dominant: {dominant.task_type}; route to frontend pipeline: {route}")
+    pipeline = config.CLASSIFIER_FRONTEND_PIPELINE if route else "-"
+    print(f"dominant: {dominant.task_type}; route to frontend pipeline: {route}; "
+          f"pipeline: {pipeline}")
