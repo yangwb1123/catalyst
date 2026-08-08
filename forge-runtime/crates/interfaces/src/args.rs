@@ -85,6 +85,83 @@ impl Args {
     }
 }
 
+fn parse_global_options(tokens: &mut VecDeque<String>) -> Result<GlobalOptions, String> {
+    let mut options = GlobalOptions::default();
+    loop {
+        match tokens.front().map(String::as_str) {
+            Some("--state-dir") => {
+                tokens.pop_front();
+                options.state_dir = Some(PathBuf::from(next_value(tokens, "--state-dir")?));
+            }
+            Some("-C" | "--project" | "--workspace") => {
+                let option = tokens.pop_front().expect("matched token exists");
+                options.project = Some(PathBuf::from(next_value(tokens, &option)?));
+                options.legacy_demo |= option == "--workspace";
+            }
+            Some("--group") => { tokens.pop_front(); options.group = Some(next_value(tokens, "--group")?); }
+            Some("--idempotency-key") if options.idempotency_key.is_none() => {
+                tokens.pop_front();
+                options.idempotency_key = Some(next_value(tokens, "--idempotency-key")?);
+            }
+            Some("--idempotency-key") => {
+                return Err(format!(
+                    "--idempotency-key was specified more than once\n\n{}",
+                    usage()
+                ));
+            }
+            Some("--read") => { tokens.pop_front(); options.read_path = Some(next_value(tokens, "--read")?); options.legacy_demo = true; }
+            Some("--json") => { tokens.pop_front(); options.json = true; }
+            Some("--help" | "-h") => {
+                tokens.clear();
+                tokens.push_back("help".into());
+                return Ok(options);
+            }
+            Some(value) if value.starts_with('-') => {
+                return Err(format!("unknown option '{value}'\n\n{}", usage()));
+            }
+            _ => return Ok(options),
+        }
+    }
+}
+
+fn parse_command(
+    tokens: &mut VecDeque<String>,
+    options: &mut GlobalOptions,
+) -> Result<Command, String> {
+    let Some(first) = tokens.pop_front() else {
+        return Ok(Command::Hub);
+    };
+    if is_command(&first) {
+        return parse_named_command(&first, tokens, options);
+    }
+    if options.legacy_demo {
+        tokens.push_front(first);
+        return parse_demo(tokens, options);
+    }
+    if options.project.is_some() || options.group.is_some() {
+        return Err(format!("unexpected argument '{first}'\n\n{}", usage()));
+    }
+    options.project = Some(PathBuf::from(first));
+    let Some(command) = tokens.pop_front() else {
+        return Ok(Command::Hub);
+    };
+    if !is_command(&command) {
+        return Err(format!(
+            "expected a command after the project path, got '{command}'\n\n{}",
+            usage()
+        ));
+    }
+    parse_named_command(&command, tokens, options)
+}
+
+fn is_command(value: &str) -> bool {
+    matches!(
+        value,
+        "session" | "prompt" | "group" | "run" | "demo" | "help" | "status"
+    )
+}
+
+
 pub(crate) fn parse_tokens(tokens: impl IntoIterator<Item = String>) -> Result<Args, String> {
     let mut tokens: VecDeque<_> = tokens.into_iter().collect();
     let mut options = parse_global_options(&mut tokens)?;
@@ -140,40 +217,6 @@ fn validate_options(options: &GlobalOptions, command: &Command) -> Result<(), St
     validate_execution_options(options, command)
 }
 
-fn validate_execution_options(options: &GlobalOptions, command: &Command) -> Result<(), String> {
-    if matches!(command, Command::Run(RunCommand::Start { live: true, .. }))
-        && options.idempotency_key.is_none()
-    {
-        return Err(format!(
-            "--live requires an explicit --idempotency-key\n\n{}",
-            usage()
-        ));
-    }
-    if options.read_path.is_some()
-        && !matches!(
-            command,
-            Command::Demo(_) | Command::Run(RunCommand::Start { .. })
-        )
-    {
-        return Err(format!(
-            "--read is only valid for demo or run start\n\n{}",
-            usage()
-        ));
-    }
-    if options.idempotency_key.is_some()
-        && let Some(message) = dispatch_claim_key_error(command)
-    {
-        return Err(format!("{message}\n\n{}", usage()));
-    }
-    if options.idempotency_key.is_some() && !accepts_idempotency_key(command) {
-        return Err(format!(
-            "--idempotency-key is only valid for mutating commands\n\n{}",
-            usage()
-        ));
-    }
-    Ok(())
-}
-
 fn dispatch_claim_key_error(command: &Command) -> Option<&'static str> {
     match command {
         Command::Group(GroupCommand::Analysis(GroupAnalysisCommand::Send { .. })) => Some(
@@ -188,6 +231,11 @@ fn dispatch_claim_key_error(command: &Command) -> Option<&'static str> {
             "--idempotency-key is not valid for graph dispatch execute; GRAPH_RUN_ID owns the single dispatch claim",
         ),
         Command::Group(GroupCommand::Graph(GroupGraphCommand::Run(
+            GroupGraphRunCommand::Dispatch(GroupGraphRunDispatchCommand::Adjudicate { .. }),
+        ))) => Some(
+            "--idempotency-key is not valid for graph dispatch adjudicate; GRAPH_RUN_ID owns the single dispatch claim",
+        ),
+        Command::Group(GroupCommand::Graph(GroupGraphCommand::Run(
             GroupGraphRunCommand::ScheduledContract(
                 GroupGraphRunScheduledContractCommand::ProviderRequest(
                     GroupGraphRunScheduledContractProviderRequestCommand::Execute { .. },
@@ -198,92 +246,6 @@ fn dispatch_claim_key_error(command: &Command) -> Option<&'static str> {
         ),
         _ => None,
     }
-}
-
-fn parse_global_options(tokens: &mut VecDeque<String>) -> Result<GlobalOptions, String> {
-    let mut options = GlobalOptions::default();
-    loop {
-        match tokens.front().map(String::as_str) {
-            Some("--state-dir") => {
-                tokens.pop_front();
-                options.state_dir = Some(PathBuf::from(next_value(tokens, "--state-dir")?));
-            }
-            Some("-C" | "--project" | "--workspace") => {
-                let option = tokens.pop_front().expect("matched token exists");
-                options.project = Some(PathBuf::from(next_value(tokens, &option)?));
-                options.legacy_demo |= option == "--workspace";
-            }
-            Some("--group") => {
-                tokens.pop_front();
-                options.group = Some(next_value(tokens, "--group")?);
-            }
-            Some("--idempotency-key") if options.idempotency_key.is_none() => {
-                tokens.pop_front();
-                options.idempotency_key = Some(next_value(tokens, "--idempotency-key")?);
-            }
-            Some("--idempotency-key") => {
-                return Err(format!(
-                    "--idempotency-key was specified more than once\n\n{}",
-                    usage()
-                ));
-            }
-            Some("--read") => {
-                tokens.pop_front();
-                options.read_path = Some(next_value(tokens, "--read")?);
-                options.legacy_demo = true;
-            }
-            Some("--json") => {
-                tokens.pop_front();
-                options.json = true;
-            }
-            Some("--help" | "-h") => {
-                tokens.clear();
-                tokens.push_back("help".into());
-                return Ok(options);
-            }
-            Some(value) if value.starts_with('-') => {
-                return Err(format!("unknown option '{value}'\n\n{}", usage()));
-            }
-            _ => return Ok(options),
-        }
-    }
-}
-
-fn parse_command(
-    tokens: &mut VecDeque<String>,
-    options: &mut GlobalOptions,
-) -> Result<Command, String> {
-    let Some(first) = tokens.pop_front() else {
-        return Ok(Command::Hub);
-    };
-    if is_command(&first) {
-        return parse_named_command(&first, tokens, options);
-    }
-    if options.legacy_demo {
-        tokens.push_front(first);
-        return parse_demo(tokens, options);
-    }
-    if options.project.is_some() || options.group.is_some() {
-        return Err(format!("unexpected argument '{first}'\n\n{}", usage()));
-    }
-    options.project = Some(PathBuf::from(first));
-    let Some(command) = tokens.pop_front() else {
-        return Ok(Command::Hub);
-    };
-    if !is_command(&command) {
-        return Err(format!(
-            "expected a command after the project path, got '{command}'\n\n{}",
-            usage()
-        ));
-    }
-    parse_named_command(&command, tokens, options)
-}
-
-fn is_command(value: &str) -> bool {
-    matches!(
-        value,
-        "session" | "prompt" | "group" | "run" | "demo" | "help" | "status"
-    )
 }
 
 fn accepts_idempotency_key(command: &Command) -> bool {
@@ -326,6 +288,41 @@ fn accepts_idempotency_key(command: &Command) -> bool {
             )
             | Command::Run(RunCommand::Start { .. })
     )
+}
+
+
+fn validate_execution_options(options: &GlobalOptions, command: &Command) -> Result<(), String> {
+    if matches!(command, Command::Run(RunCommand::Start { live: true, .. }))
+        && options.idempotency_key.is_none()
+    {
+        return Err(format!(
+            "--live requires an explicit --idempotency-key\n\n{}",
+            usage()
+        ));
+    }
+    if options.read_path.is_some()
+        && !matches!(
+            command,
+            Command::Demo(_) | Command::Run(RunCommand::Start { .. })
+        )
+    {
+        return Err(format!(
+            "--read is only valid for demo or run start\n\n{}",
+            usage()
+        ));
+    }
+    if options.idempotency_key.is_some()
+        && let Some(message) = dispatch_claim_key_error(command)
+    {
+        return Err(format!("{message}\n\n{}", usage()));
+    }
+    if options.idempotency_key.is_some() && !accepts_idempotency_key(command) {
+        return Err(format!(
+            "--idempotency-key is only valid for mutating commands\n\n{}",
+            usage()
+        ));
+    }
+    Ok(())
 }
 
 fn parse_named_command(

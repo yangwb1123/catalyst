@@ -10,9 +10,9 @@ mod sqlite_group_agent_node_lifecycle_support;
 use std::sync::{Arc, Barrier};
 
 use forge_runtime_domain::{
-    ClaimGroupAgentNodeDispatchResult, GroupAgentGraphRunStatus, GroupAgentGraphRunStore,
-    GroupAgentNodeDispatchRequestStore, GroupAgentNodeExecutionContractStore,
-    GroupAgentNodeLifecycleStore, HubStoreError,
+    ClaimGroupAgentNodeDispatchResult, GROUP_AGENT_GRAPH_RUN_TERMINAL_VERSION,
+    GroupAgentGraphRunStatus, GroupAgentGraphRunStore, GroupAgentNodeDispatchRequestStore,
+    GroupAgentNodeExecutionContractStore, GroupAgentNodeLifecycleStore, HubStoreError,
 };
 
 use sqlite_group_agent_node_lifecycle_support::{
@@ -82,19 +82,17 @@ fn terminalization_persists_evidence_and_releases_lane_in_one_transition() {
         .terminalize_group_agent_node_dispatch(&terminal)
         .expect("terminalize dispatch");
 
-    assert_eq!(
-        result.inspection.graph_run.run.status,
-        GroupAgentGraphRunStatus::FailedUncertain
-    );
+    // Direct run-level post-state assertions (design §7.6 / P-4): the CAS
+    // result is locally self-evident, not only transitively verified.
+    let run = &result.inspection.graph_run.run;
+    assert_eq!(run.status, GroupAgentGraphRunStatus::FailedUncertain);
+    assert_eq!(run.v, GROUP_AGENT_GRAPH_RUN_TERMINAL_VERSION);
+    assert_eq!(run.last_event_seq, 5);
+    assert_eq!(result.inspection.graph_run.events.len(), 5);
+    assert_eq!(run.journal_bytes, claimed.graph_run.run.journal_bytes + terminal.event_json.len());
     assert!(result.inspection.active_lane.is_none());
-    assert_eq!(
-        result.inspection.artifact.as_ref(),
-        Some(&terminal.control.artifact)
-    );
-    assert_eq!(
-        result.inspection.terminal_receipt.as_ref(),
-        Some(&terminal.receipt)
-    );
+    assert_eq!(result.inspection.artifact.as_ref(), Some(&terminal.control.artifact));
+    assert_eq!(result.inspection.terminal_receipt.as_ref(), Some(&terminal.receipt));
     assert!(matches!(
         source
             .fixture

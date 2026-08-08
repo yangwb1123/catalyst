@@ -25,6 +25,14 @@ use rusqlite::Connection;
 use super::*;
 
 impl Fixture {
+    pub(crate) fn lifecycle_inspection(&self) -> GroupAgentNodeLifecycleInspection {
+        let database = self.state.path().join("hub.sqlite3");
+        let store = Arc::new(SqliteHubStore::open(database).expect("open test Hub"));
+        store
+            .inspect_group_agent_node_lifecycle(&self.graph_run_id)
+            .expect("inspect stranded v4 lifecycle")
+    }
+
     pub(crate) fn strand_v4_with_local_provider(&self) {
         let database = self.state.path().join("hub.sqlite3");
         let store = Arc::new(SqliteHubStore::open(database).expect("open test Hub"));
@@ -37,7 +45,7 @@ impl Fixture {
             Arc::new(LocalProviderFactory),
             Arc::new(LocalCredential),
             Arc::new(RejectingCore),
-            Arc::new(FixedMetadata),
+            Arc::new(RealTimeMetadata),
         );
         let input = ExecuteGroupAgentNodeDispatchInput {
             graph_run_id: self.graph_run_id.clone(),
@@ -179,9 +187,16 @@ impl GroupAgentNodeCredentialSource for LocalCredential {
     }
 }
 
-struct FixedMetadata;
+/// Real-time claim metadata with deterministic identities.
+///
+/// The claim's `released_at_ms` must be at or after the dispatch request's
+/// `created_at_ms` (real wall clock at fixture preparation) and the adjudication
+/// remedy must observe `artifact.created_at_ms >= claim.released_at_ms` — so a
+/// fixed past or future constant is invalid for this fixture. Real time is the
+/// only honest choice; the identities stay deterministic for reproducibility.
+struct RealTimeMetadata;
 
-impl GroupAgentNodeDispatchMetadataSource for FixedMetadata {
+impl GroupAgentNodeDispatchMetadataSource for RealTimeMetadata {
     fn claim_metadata(
         &self,
     ) -> Result<GroupAgentNodeDispatchClaimMetadata, GroupAgentNodeDispatchMetadataSourceError>
@@ -189,13 +204,24 @@ impl GroupAgentNodeDispatchMetadataSource for FixedMetadata {
         Ok(GroupAgentNodeDispatchClaimMetadata {
             dispatch_id: "dispatch-cli-quarantine".into(),
             lane_ownership_id: "lane-owner-cli-quarantine".into(),
-            released_at_ms: 2_000_000_000_000,
+            released_at_ms: now_ms()?,
         })
     }
 
     fn terminal_time_ms(&self) -> Result<u64, GroupAgentNodeDispatchMetadataSourceError> {
-        Ok(2_000_000_000_010)
+        now_ms()
     }
+}
+
+fn now_ms() -> Result<u64, GroupAgentNodeDispatchMetadataSourceError> {
+    let milliseconds = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|_| GroupAgentNodeDispatchMetadataSourceError)?
+        .as_millis();
+    u64::try_from(milliseconds)
+        .ok()
+        .filter(|value| i64::try_from(*value).is_ok())
+        .ok_or(GroupAgentNodeDispatchMetadataSourceError)
 }
 
 struct RejectingCore;

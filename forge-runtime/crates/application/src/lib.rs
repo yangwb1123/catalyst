@@ -8,6 +8,8 @@ mod group_agent_graph_run_validation;
 mod group_agent_graph_service;
 mod group_agent_graph_validation;
 mod group_agent_node_dispatch_execution;
+#[path = "group_agent_node_dispatch_adjudication/service.rs"]
+mod group_agent_node_dispatch_adjudication;
 mod group_agent_node_execution;
 mod group_agent_scheduled_node_dispatch_execution;
 mod group_analysis_panel_service;
@@ -58,6 +60,11 @@ pub use group_agent_graph_run_service::{
 };
 pub use group_agent_graph_service::{
     GroupAgentGraphService, GroupAgentGraphServiceError, PrepareGroupAgentGraphInput,
+};
+pub use group_agent_node_dispatch_adjudication::{
+    AdjudicateGroupAgentNodeDispatchInput, AdjudicateGroupAgentNodeDispatchResult,
+    AdjudicationRefused, GroupAgentNodeDispatchAdjudicationService,
+    GroupAgentNodeDispatchAdjudicationServiceError,
 };
 pub use group_agent_node_dispatch_execution::{
     ExecuteGroupAgentNodeDispatchInput, ExecuteGroupAgentNodeDispatchResult,

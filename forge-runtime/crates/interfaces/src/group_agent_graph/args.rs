@@ -73,6 +73,7 @@ fn parse_run_dispatch(
         Some("authorization") => parse_dispatch_authorization(tokens),
         Some("readiness") => dispatch_execute_args::parse_readiness(tokens),
         Some("execute") => dispatch_execute_args::parse(tokens),
+        Some("adjudicate") => dispatch_execute_args::parse_adjudicate(tokens),
         Some(_) => Err(unknown_dispatch("group graph run dispatch")),
         None => Err(with_usage("group graph run dispatch command is required")),
     }

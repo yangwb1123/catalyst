@@ -272,3 +272,69 @@ pub(crate) fn validate_receipt_against_control(
         .then_some(())
         .ok_or_else(|| super::invalid("scheduled receipt disagrees with control"))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::super::GroupAgentScheduledNodeTerminalArtifact;
+    use super::*;
+    use crate::GroupAgentScheduledNodeTerminalArtifactKind;
+
+    /// The all-false no-evidence shape the v4 family accepts for a hard crash
+    /// (`provider_poll_started ∨ (¬terminal_seen ∧ ¬stream_eof_seen)`).
+    fn no_evidence_artifact(
+        class: GroupAgentNodeTerminalClassification,
+    ) -> GroupAgentScheduledNodeTerminalArtifact {
+        GroupAgentScheduledNodeTerminalArtifact {
+            v: 1,
+            terminal_artifact_protocol_version: 1,
+            artifact_kind: GroupAgentScheduledNodeTerminalArtifactKind::Uncertainty,
+            graph_run_id: String::new(),
+            node_id: String::new(),
+            attempt: 1,
+            dispatch_id: String::new(),
+            provider_request_id: String::new(),
+            claim_event_sha256: String::new(),
+            authorization_sha256: String::new(),
+            provider_request_sha256: String::new(),
+            request_body_sha256: String::new(),
+            pricing_snapshot_sha256: String::new(),
+            lane_ownership_id: String::new(),
+            project_lane_sha256: String::new(),
+            provider_poll_started: false,
+            terminal_seen: false,
+            stream_eof_seen: false,
+            classification: class,
+            output_text: String::new(),
+            output_bytes: 0,
+            output_sha256: String::new(),
+            usage_observed: false,
+            input_tokens: 0,
+            output_tokens: 0,
+            actual_cost_calculated: false,
+            actual_cost_usd_micros: 0,
+            retry_authorized: false,
+            created_at_ms: 0,
+            artifact_id: String::new(),
+            artifact_bytes: 0,
+            artifact_sha256: String::new(),
+        }
+    }
+
+    /// ADR-0034's pid-sidecar adjudication owns the scheduled family; its
+    /// closed-world uncertainty list must keep rejecting `HardCrash` even in
+    /// the all-false no-evidence shape the v4 family accepts (A-scheduled-fence).
+    #[test]
+    fn hard_crash_is_not_a_scheduled_family_uncertainty_class() {
+        let hard_crash = no_evidence_artifact(GroupAgentNodeTerminalClassification::HardCrash);
+        assert!(!artifact_uncertainty_evidence(&hard_crash));
+        assert!(!artifact_result_evidence(&hard_crash));
+        assert!(validate_artifact(&hard_crash).is_err());
+
+        let provider_error =
+            no_evidence_artifact(GroupAgentNodeTerminalClassification::ProviderError);
+        assert!(
+            artifact_uncertainty_evidence(&provider_error),
+            "the no-evidence shape must stay valid for scheduled uncertainty classes"
+        );
+    }
+}

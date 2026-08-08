@@ -1,18 +1,11 @@
-use std::{
-    error::Error,
-    fs::File,
-    io::{self, Read, Write},
-    path::PathBuf,
-    sync::Arc,
-};
+use std::{error::Error, io::{self, Write}, path::PathBuf, sync::Arc};
 
-use crate::runtime_domain::Cancellation;
 use forge_runtime_application::{
-    ExecuteGroupAgentNodeDispatchInput, GroupAgentNodeDispatchExecutionService,
-    GroupAgentNodeDispatchExecutionServiceError, GroupAgentNodeDispatchReadinessService,
+    AdjudicateGroupAgentNodeDispatchInput, AdjudicateGroupAgentNodeDispatchResult,
+    AdjudicationRefused, GroupAgentNodeDispatchAdjudicationService,
+    GroupAgentNodeDispatchAdjudicationServiceError, GroupAgentNodeDispatchReadinessService,
     GroupAgentNodeDispatchReleaseControlService, GroupAgentNodeDispatchRequestService,
-    MAX_GROUP_AGENT_NODE_DISPATCH_AUTHORIZATION_BYTES, PrepareGroupAgentNodeDispatchRequestInput,
-    validate_group_agent_node_dispatch_topology,
+    PrepareGroupAgentNodeDispatchRequestInput,
 };
 use forge_runtime_infrastructure::{
     PinnedCoreTerminalBridge, RegisteredGroupAgentNodeProviderFactory, SqliteHubStore,
@@ -21,14 +14,19 @@ use forge_runtime_infrastructure::{
 use crate::{
     args::{Args, GroupGraphRunDispatchCommand},
     openai_prepared_dispatch::OpenAiRequestCodec,
+    runtime_domain::{
+        GroupAgentGraphRunStatus, GroupAgentNodeDispatchAuthorization,
+        GroupAgentNodeDispatchClaim, GroupAgentNodeLifecycleInspection,
+        GroupAgentNodePricingSnapshot,
+    },
     state_path::{hub_database_path, idempotency_key, unix_time_millis},
 };
 
 use super::{
     dispatch_authorization_output::{self, GroupAgentNodeDispatchAuthorizationCliOutput},
     dispatch_execution_adapters::{
-        self, GroupAgentNodeDispatchExecutionCliOutput, PreparedDispatchDependencies,
-        SystemDispatchMetadataSource,
+        self, GroupAgentNodeDispatchExecutionCliOutput, SystemDispatchMetadataSource,
+        read_authorization, read_pricing,
     },
     dispatch_output::{self, GroupAgentNodeDispatchRequestCliOutput},
     dispatch_readiness_output::{self, GroupAgentNodeDispatchReadinessCliOutput},
@@ -42,19 +40,19 @@ pub enum GroupAgentGraphRunDispatchCommandCliOutput {
     Execution(Box<GroupAgentNodeDispatchExecutionCliOutput>),
 }
 
-struct DispatchInputs {
+pub(super) struct DispatchInputs {
     authorization_json: Option<String>,
     pricing_json: Option<String>,
 }
 
 impl DispatchInputs {
-    fn authorization(&self) -> &str {
+    pub(super) fn authorization(&self) -> &str {
         self.authorization_json
             .as_deref()
             .expect("authorization was read before service construction")
     }
 
-    fn pricing(&self) -> &str {
+    pub(super) fn pricing(&self) -> &str {
         self.pricing_json
             .as_deref()
             .expect("pricing was read before service construction")
@@ -68,6 +66,9 @@ pub async fn execute(
     if let Some(existing) = inspect_existing_execution(args, command)? {
         return Ok(existing);
     }
+    // Adjudicate ordering (design §7.4): stranded guard (read-only DB) before
+    // any stdin read, so a non-stranded run fails before consuming stdin.
+    adjudication_stranded_guard(args, command)?;
     let inputs = read_inputs(command)?;
     execute_with_inputs(args, command, &inputs).await
 }
@@ -114,12 +115,17 @@ fn read_inputs(command: &GroupGraphRunDispatchCommand) -> Result<DispatchInputs,
         | GroupGraphRunDispatchCommand::Execute {
             authorization_source,
             ..
+        }
+        | GroupGraphRunDispatchCommand::Adjudicate {
+            authorization_source,
+            ..
         } => Some(read_authorization(authorization_source)?),
         _ => None,
     };
     let pricing_json = match command {
         GroupGraphRunDispatchCommand::ReadinessVerify { pricing_source, .. }
-        | GroupGraphRunDispatchCommand::Execute { pricing_source, .. } => {
+        | GroupGraphRunDispatchCommand::Execute { pricing_source, .. }
+        | GroupGraphRunDispatchCommand::Adjudicate { pricing_source, .. } => {
             Some(read_pricing(pricing_source)?)
         }
         _ => None,
@@ -144,7 +150,7 @@ async fn execute_with_inputs(
             include_result,
             ..
         } => {
-            execute_dispatch(
+            dispatch_execution_adapters::execute_dispatch(
                 args,
                 graph_run_id,
                 inputs,
@@ -155,6 +161,12 @@ async fn execute_with_inputs(
             )
             .await
         }
+        GroupGraphRunDispatchCommand::Adjudicate {
+            graph_run_id,
+            core_bin,
+            core_bin_sha256,
+            ..
+        } => execute_adjudicate(args, graph_run_id, inputs, core_bin, core_bin_sha256),
         _ => execute_effect_free(args, command, inputs),
     }
 }
@@ -194,7 +206,8 @@ fn execute_effect_free(
         GroupGraphRunDispatchCommand::ReadinessVerify { graph_run_id, .. } => {
             verify_readiness(args, graph_run_id, inputs.authorization(), inputs.pricing())
         }
-        GroupGraphRunDispatchCommand::Execute { .. } => {
+        GroupGraphRunDispatchCommand::Execute { .. }
+        | GroupGraphRunDispatchCommand::Adjudicate { .. } => {
             unreachable!("handled before local routing")
         }
     }
@@ -265,103 +278,6 @@ pub fn write_output(
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn execute_dispatch(
-    args: &Args,
-    graph_run_id: &str,
-    inputs: &DispatchInputs,
-    core_bin: &str,
-    core_bin_sha256: &str,
-    confirm_off_machine: bool,
-    include_result: bool,
-) -> Result<GroupAgentGraphRunDispatchCommandCliOutput, Box<dyn Error>> {
-    validate_execute_preflight(
-        args,
-        graph_run_id,
-        inputs.authorization(),
-        inputs.pricing(),
-        confirm_off_machine,
-    )?;
-    let bridge = Arc::new(PinnedCoreTerminalBridge::new(
-        PathBuf::from(core_bin),
-        core_bin_sha256.into(),
-    )?);
-    let dependencies =
-        PreparedDispatchDependencies::prepare(inputs.authorization(), inputs.pricing())?;
-    let service = execution_service(args, bridge, dependencies)?;
-    let result = service
-        .execute(&ExecuteGroupAgentNodeDispatchInput {
-            graph_run_id: graph_run_id.into(),
-            authorization_json: inputs
-                .authorization_json
-                .clone()
-                .expect("execute authorization was read before bridge preflight"),
-            pricing_json: inputs
-                .pricing_json
-                .clone()
-                .expect("execute pricing was read before bridge preflight"),
-            confirm_off_machine,
-            cancellation: Cancellation::default(),
-        })
-        .await?;
-    Ok(GroupAgentGraphRunDispatchCommandCliOutput::Execution(
-        Box::new(GroupAgentNodeDispatchExecutionCliOutput::from_result(
-            result,
-            include_result,
-        )),
-    ))
-}
-
-fn execution_service(
-    args: &Args,
-    bridge: Arc<PinnedCoreTerminalBridge>,
-    dependencies: PreparedDispatchDependencies,
-) -> Result<GroupAgentNodeDispatchExecutionService, Box<dyn Error>> {
-    let database = hub_database_path(args.state_dir.as_deref())?;
-    let store = Arc::new(SqliteHubStore::open(database)?);
-    Ok(GroupAgentNodeDispatchExecutionService::new(
-        store.clone(),
-        store.clone(),
-        store.clone(),
-        store,
-        Arc::new(OpenAiRequestCodec),
-        dependencies.providers,
-        dependencies.credentials,
-        bridge,
-        Arc::new(SystemDispatchMetadataSource),
-    ))
-}
-
-fn validate_execute_preflight(
-    args: &Args,
-    graph_run_id: &str,
-    authorization_json: &str,
-    pricing_json: &str,
-    confirm_off_machine: bool,
-) -> Result<(), Box<dyn Error>> {
-    let database = hub_database_path(args.state_dir.as_deref())?;
-    let store = Arc::new(SqliteHubStore::open_existing_dispatch_preflight_read_only(
-        database,
-    )?);
-    let service = GroupAgentNodeDispatchReleaseControlService::new(
-        store.clone(),
-        store.clone(),
-        Arc::new(OpenAiRequestCodec),
-    );
-    let exported = service.export(graph_run_id)?;
-    validate_group_agent_node_dispatch_topology(&exported.release_control)?;
-    if !confirm_off_machine {
-        return Err(GroupAgentNodeDispatchExecutionServiceError::ConsentRequired.into());
-    }
-    GroupAgentNodeDispatchReadinessService::new(
-        store.clone(),
-        store,
-        Arc::new(OpenAiRequestCodec),
-        Arc::new(RegisteredGroupAgentNodeProviderFactory::new()),
-    )
-    .verify(graph_run_id, authorization_json, pricing_json)?;
-    Ok(())
-}
-
 fn request_output(
     output: GroupAgentNodeDispatchRequestCliOutput,
 ) -> GroupAgentGraphRunDispatchCommandCliOutput {
@@ -418,68 +334,155 @@ fn readiness_service(
     ))
 }
 
-fn read_authorization(source: &str) -> Result<String, Box<dyn Error>> {
-    let bytes = if source == "-" {
-        read_authorization_bounded(io::stdin().lock())?
-    } else {
-        read_authorization_bounded(File::open(source)?)?
+/// Refuses pre-stdin when the run is not a stranded hard-crash claim.
+///
+/// This is the read-only ordering guard (design §7.4 step 1): it must run
+/// before any stdin read and before any subprocess spawn. The service repeats
+/// the guard authoritatively; this layer only guarantees ordering.
+fn adjudication_stranded_guard(
+    args: &Args,
+    command: &GroupGraphRunDispatchCommand,
+) -> Result<(), Box<dyn Error>> {
+    let GroupGraphRunDispatchCommand::Adjudicate { graph_run_id, .. } = command else {
+        return Ok(());
     };
-    String::from_utf8(bytes)
-        .map_err(|_| invalid_input("Node Dispatch Authorization must be UTF-8").into())
+    read_stranded_inspection(args, graph_run_id)?;
+    Ok(())
 }
 
-fn read_pricing(source: &str) -> Result<String, Box<dyn Error>> {
-    let bytes = if source == "-" {
-        read_pricing_bounded(io::stdin().lock())?
-    } else {
-        read_pricing_bounded(File::open(source)?)?
+/// Reads the stranded lifecycle through a read-only connection, or refuses.
+fn read_stranded_inspection(
+    args: &Args,
+    graph_run_id: &str,
+) -> Result<GroupAgentNodeLifecycleInspection, Box<dyn Error>> {
+    let database = hub_database_path(args.state_dir.as_deref())?;
+    if !database.try_exists()? {
+        return Err(not_stranded(graph_run_id, "no Hub database exists"));
+    }
+    let store = SqliteHubStore::open_existing_dispatch_inspection_read_only(database)?;
+    let Some(inspection) = store.inspect_existing_group_agent_node_lifecycle(graph_run_id)? else {
+        return Err(not_stranded(graph_run_id, "run has no stranded dispatch claim"));
     };
-    String::from_utf8(bytes)
-        .map_err(|_| invalid_input("Node pricing snapshot must be UTF-8").into())
-}
-
-fn read_authorization_bounded(reader: impl Read) -> Result<Vec<u8>, io::Error> {
-    let limit = MAX_GROUP_AGENT_NODE_DISPATCH_AUTHORIZATION_BYTES
-        .checked_add(1)
-        .expect("Node Dispatch Authorization bound fits usize");
-    let mut bytes = Vec::new();
-    reader
-        .take(u64::try_from(limit).expect("Node Dispatch Authorization bound fits u64"))
-        .read_to_end(&mut bytes)?;
-    if bytes.len() > MAX_GROUP_AGENT_NODE_DISPATCH_AUTHORIZATION_BYTES {
-        return Err(invalid_input(
-            "Node Dispatch Authorization exceeds its byte limit",
-        ));
+    let stranded = inspection.graph_run.run.status == GroupAgentGraphRunStatus::DispatchUnknown
+        && inspection.active_lane.is_some()
+        && inspection.artifact.is_none()
+        && inspection.terminal_receipt.is_none();
+    if stranded {
+        return Ok(inspection);
     }
-    Ok(bytes)
+    Err(not_stranded(
+        graph_run_id,
+        &format!(
+            "status={}, lane_active={}, artifact_present={}, receipt_present={}",
+            status_text(inspection.graph_run.run.status),
+            inspection.active_lane.is_some(),
+            inspection.artifact.is_some(),
+            inspection.terminal_receipt.is_some(),
+        ),
+    ))
 }
 
-fn read_pricing_bounded(reader: impl Read) -> Result<Vec<u8>, io::Error> {
-    read_bounded_artifact(
-        reader,
-        crate::runtime_domain::MAX_GROUP_AGENT_NODE_PRICING_SNAPSHOT_BYTES,
-        "Node pricing snapshot exceeds its byte limit",
-    )
-}
-
-fn read_bounded_artifact(
-    reader: impl Read,
-    maximum: usize,
-    message: &str,
-) -> Result<Vec<u8>, io::Error> {
-    let limit = maximum.checked_add(1).expect("artifact bound fits usize");
-    let mut bytes = Vec::new();
-    reader
-        .take(u64::try_from(limit).expect("artifact bound fits u64"))
-        .read_to_end(&mut bytes)?;
-    if bytes.len() > maximum {
-        return Err(invalid_input(message));
+fn not_stranded(graph_run_id: &str, observed: &str) -> Box<dyn Error> {
+    AdjudicationRefused::NotStranded {
+        reason: format!("{graph_run_id} is not a stranded hard-crash claim ({observed})"),
     }
-    Ok(bytes)
+    .into()
 }
 
-fn invalid_input(message: &str) -> io::Error {
-    io::Error::new(io::ErrorKind::InvalidInput, message)
+fn status_text(status: GroupAgentGraphRunStatus) -> &'static str {
+    match status {
+        GroupAgentGraphRunStatus::AwaitingExecutionContract => "awaiting_execution_contract",
+        GroupAgentGraphRunStatus::AwaitingCoreDispatch => "awaiting_core_dispatch",
+        GroupAgentGraphRunStatus::AwaitingDispatchAuthorization => {
+            "awaiting_dispatch_authorization"
+        }
+        GroupAgentGraphRunStatus::DispatchUnknown => "dispatch_unknown",
+        GroupAgentGraphRunStatus::Completed => "completed",
+        GroupAgentGraphRunStatus::Failed => "failed",
+        GroupAgentGraphRunStatus::FailedUncertain => "failed_uncertain",
+    }
+}
+
+/// Compares the operator bodies against the persisted claim digests before any
+/// subprocess spawn, so a wrong body is diagnosable instead of a deep redacted
+/// Core failure (design §7.3 preflight).
+fn adjudication_digest_preflight(
+    claim: &GroupAgentNodeDispatchClaim,
+    inputs: &DispatchInputs,
+) -> Result<(), Box<dyn Error>> {
+    let authorization = GroupAgentNodeDispatchAuthorization::decode_exact(inputs.authorization())
+        .map_err(|_| GroupAgentNodeDispatchAdjudicationServiceError::InvalidInput)?;
+    if authorization.authorization_sha256 != claim.authorization_sha256 {
+        return Err(AdjudicationRefused::DigestMismatch {
+            field: "authorization",
+        }
+        .into());
+    }
+    let pricing = GroupAgentNodePricingSnapshot::decode_exact(inputs.pricing())
+        .map_err(|_| GroupAgentNodeDispatchAdjudicationServiceError::InvalidInput)?;
+    if pricing.pricing_snapshot_sha256 != claim.pricing_snapshot_sha256 {
+        return Err(AdjudicationRefused::DigestMismatch {
+            field: "pricing",
+        }
+        .into());
+    }
+    Ok(())
+}
+
+fn execute_adjudicate(
+    args: &Args,
+    graph_run_id: &str,
+    inputs: &DispatchInputs,
+    core_bin: &str,
+    core_bin_sha256: &str,
+) -> Result<GroupAgentGraphRunDispatchCommandCliOutput, Box<dyn Error>> {
+    // Re-guard after the stdin read (state may have changed), then the digest
+    // preflight, then the bridge preflight subprocess, then the Core decide
+    // subprocess: no subprocess is spawned before stdin is fully consumed.
+    let inspection = read_stranded_inspection(args, graph_run_id)?;
+    adjudication_digest_preflight(&inspection.claim, inputs)?;
+    let bridge = Arc::new(PinnedCoreTerminalBridge::new(
+        PathBuf::from(core_bin),
+        core_bin_sha256.into(),
+    )?);
+    let service = adjudication_service(args, bridge)?;
+    let result = service.adjudicate(&AdjudicateGroupAgentNodeDispatchInput {
+        graph_run_id: graph_run_id.into(),
+        authorization_json: inputs
+            .authorization_json
+            .clone()
+            .expect("adjudicate authorization was read before bridge preflight"),
+        pricing_json: inputs
+            .pricing_json
+            .clone()
+            .expect("adjudicate pricing was read before bridge preflight"),
+    })?;
+    let AdjudicateGroupAgentNodeDispatchResult::Adjudicated(inspection) = result;
+    Ok(GroupAgentGraphRunDispatchCommandCliOutput::Execution(
+        Box::new(GroupAgentNodeDispatchExecutionCliOutput::from_adjudicated(
+            inspection,
+        )),
+    ))
+}
+
+/// Wiring for the no-send adjudication service: store/codec/bridge/metadata
+/// only. It must never call `execution_service()` and must never call
+/// `PreparedDispatchDependencies::prepare` (which reads `OPENAI_API_KEY`); the
+/// type-level no-credential guarantee depends on this function.
+fn adjudication_service(
+    args: &Args,
+    bridge: Arc<PinnedCoreTerminalBridge>,
+) -> Result<GroupAgentNodeDispatchAdjudicationService, Box<dyn Error>> {
+    let database = hub_database_path(args.state_dir.as_deref())?;
+    let store = Arc::new(SqliteHubStore::open(database)?);
+    Ok(GroupAgentNodeDispatchAdjudicationService::new(
+        store.clone(),
+        store.clone(),
+        store.clone(),
+        Arc::new(OpenAiRequestCodec),
+        bridge,
+        Arc::new(SystemDispatchMetadataSource),
+    ))
 }
 
 #[cfg(test)]

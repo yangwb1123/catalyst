@@ -3,8 +3,8 @@ use std::time::Duration;
 use rusqlite::{Connection, Transaction, TransactionBehavior, params};
 
 use crate::runtime_domain::{
-    GroupAgentGraphRunStatus, GroupAgentNodeLifecycleInspection,
-    GroupAgentNodeTerminalArtifactKind, HubEntity, HubStoreError,
+    GROUP_AGENT_GRAPH_RUN_TERMINAL_VERSION, GroupAgentGraphRunStatus,
+    GroupAgentNodeLifecycleInspection, GroupAgentNodeTerminalArtifactKind, HubEntity, HubStoreError,
     TerminalizeGroupAgentNodeDispatch, TerminalizeGroupAgentNodeDispatchResult,
 };
 
@@ -289,11 +289,25 @@ fn ensure_persisted(
     inspection: &GroupAgentNodeLifecycleInspection,
     request: &TerminalizeGroupAgentNodeDispatch,
 ) -> Result<(), HubStoreError> {
+    // Localized run-level post-state assertions (design §7.6): the CAS result
+    // must be terminal at v5/seq-5 with the exact journal delta and event
+    // count. These double the transitive readback chain (`reconstruct`:
+    // `load_events` re-summation, `valid_terminal_record_state`, `validate_state_shape`,
+    // `inspection.validate()` exact status/v/seq/event binding) so the CAS
+    // post-state is self-evident to a reader of this file alone.
+    let expected_journal = request.control.graph_run.journal_bytes
+        .checked_add(request.event_json.len())
+        .ok_or_else(|| corrupt("terminal journal byte count overflows"))?;
     let exact = inspection.active_lane.is_none()
         && inspection.artifact.as_ref() == Some(&request.control.artifact)
         && inspection.artifact_json.as_deref() == Some(request.artifact_json.as_str())
         && inspection.terminal_receipt.as_ref() == Some(&request.receipt)
         && inspection.terminal_receipt_json.as_deref() == Some(request.receipt_json.as_str())
+        && inspection.graph_run.run.status == request.receipt.graph_status
+        && inspection.graph_run.run.v == GROUP_AGENT_GRAPH_RUN_TERMINAL_VERSION
+        && inspection.graph_run.run.last_event_seq == 5
+        && inspection.graph_run.run.journal_bytes == expected_journal
+        && inspection.graph_run.events.len() == 5
         && inspection.graph_run.events.get(4) == Some(&request.event)
         && inspection.graph_run.event_jsons.get(4) == Some(&request.event_json);
     exact

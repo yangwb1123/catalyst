@@ -232,7 +232,7 @@ fn artifact_candidate(
     }
 }
 
-pub(super) fn build_terminal_control(
+pub(crate) fn build_terminal_control(
     release: &crate::runtime_domain::GroupAgentNodeDispatchReleaseControl,
     authorization: GroupAgentNodeDispatchAuthorization,
     pricing: GroupAgentNodePricingSnapshot,
@@ -263,7 +263,7 @@ pub(super) fn build_terminal_control(
     Ok(control)
 }
 
-pub(super) fn build_terminalize_request(
+pub(crate) fn build_terminalize_request(
     control: GroupAgentNodeTerminalControl,
     envelope: GroupAgentNodeCoreTerminalReceiptEnvelope,
     terminalized_at_ms: u64,

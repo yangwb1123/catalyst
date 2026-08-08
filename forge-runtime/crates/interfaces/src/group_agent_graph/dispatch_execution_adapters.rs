@@ -5,13 +5,27 @@ use std::{
     time::SystemTime,
 };
 
+use std::{fs::File, io::Read, path::PathBuf};
+
 use forge_runtime_application::{
-    GroupAgentNodeCredentialSource, GroupAgentNodeCredentialSourceError,
-    GroupAgentNodeDispatchClaimMetadata, GroupAgentNodeDispatchExecutionServiceError,
+    ExecuteGroupAgentNodeDispatchInput, GroupAgentNodeCredentialSource,
+    GroupAgentNodeCredentialSourceError, GroupAgentNodeDispatchClaimMetadata,
+    GroupAgentNodeDispatchExecutionService, GroupAgentNodeDispatchExecutionServiceError,
     GroupAgentNodeDispatchMetadataSource, GroupAgentNodeDispatchMetadataSourceError,
+    GroupAgentNodeDispatchReadinessService, GroupAgentNodeDispatchReleaseControlService,
+    MAX_GROUP_AGENT_NODE_DISPATCH_AUTHORIZATION_BYTES, validate_group_agent_node_dispatch_topology,
 };
-use forge_runtime_infrastructure::RegisteredGroupAgentNodeProviderFactory;
+use forge_runtime_infrastructure::{PinnedCoreTerminalBridge, RegisteredGroupAgentNodeProviderFactory, SqliteHubStore};
 use rand::TryRngCore;
+
+use crate::{
+    args::Args,
+    openai_prepared_dispatch::OpenAiRequestCodec,
+    runtime_domain::Cancellation,
+    state_path::hub_database_path,
+};
+
+use super::dispatch_command::{DispatchInputs, GroupAgentGraphRunDispatchCommandCliOutput};
 
 use crate::runtime_domain::{
     GroupAgentNodeDispatchAuthorization, GroupAgentNodeDispatchProviderFactory,
@@ -215,12 +229,21 @@ impl GroupAgentNodeDispatchExecutionCliOutput {
             ExecuteGroupAgentNodeDispatchResult::Terminalized(inspection) => (inspection, true),
             ExecuteGroupAgentNodeDispatchResult::AlreadyClaimed(inspection) => (inspection, false),
         };
-        Self::from_inspection(inspection, performed, include_result)
+        Self::from_inspection(inspection, performed, performed, include_result)
+    }
+
+    /// Adjudication output: the same inspection JSON as a terminalized
+    /// execution. `dispatch_performed_this_invocation` is false (no provider
+    /// request was ever sent) and `database_written_this_invocation` is true
+    /// (the terminalize CAS committed); no result text is ever produced.
+    pub fn from_adjudicated(inspection: GroupAgentNodeLifecycleInspection) -> Self {
+        Self::from_inspection(inspection, false, true, false)
     }
 
     fn from_inspection(
         inspection: GroupAgentNodeLifecycleInspection,
-        performed: bool,
+        dispatch_performed: bool,
+        database_written: bool,
         include_result: bool,
     ) -> Self {
         let artifact = inspection.artifact.as_ref();
@@ -240,8 +263,8 @@ impl GroupAgentNodeDispatchExecutionCliOutput {
             stream_eof_seen: artifact.is_some_and(|value| value.stream_eof_seen),
             lane_active: inspection.active_lane.is_some(),
             retry_authorized: false,
-            dispatch_performed_this_invocation: performed,
-            database_written_this_invocation: performed,
+            dispatch_performed_this_invocation: dispatch_performed,
+            database_written_this_invocation: database_written,
             metadata_only: result_text.is_none(),
             result_text,
         }
@@ -285,6 +308,165 @@ fn status_text(status: GroupAgentGraphRunStatus) -> &'static str {
         GroupAgentGraphRunStatus::Failed => "failed",
         GroupAgentGraphRunStatus::FailedUncertain => "failed_uncertain",
     }
+}
+
+
+pub(super) async fn execute_dispatch(
+    args: &Args,
+    graph_run_id: &str,
+    inputs: &DispatchInputs,
+    core_bin: &str,
+    core_bin_sha256: &str,
+    confirm_off_machine: bool,
+    include_result: bool,
+) -> Result<GroupAgentGraphRunDispatchCommandCliOutput, Box<dyn Error>> {
+    validate_execute_preflight(
+        args,
+        graph_run_id,
+        inputs.authorization(),
+        inputs.pricing(),
+        confirm_off_machine,
+    )?;
+    let bridge = Arc::new(PinnedCoreTerminalBridge::new(
+        PathBuf::from(core_bin),
+        core_bin_sha256.into(),
+    )?);
+    let dependencies =
+        PreparedDispatchDependencies::prepare(inputs.authorization(), inputs.pricing())?;
+    let service = execution_service(args, bridge, dependencies)?;
+    let result = service
+        .execute(&ExecuteGroupAgentNodeDispatchInput {
+            graph_run_id: graph_run_id.into(),
+            authorization_json: inputs.authorization().to_owned(),
+            pricing_json: inputs.pricing().to_owned(),
+            confirm_off_machine,
+            cancellation: Cancellation::default(),
+        })
+        .await?;
+    Ok(GroupAgentGraphRunDispatchCommandCliOutput::Execution(
+        Box::new(GroupAgentNodeDispatchExecutionCliOutput::from_result(
+            result,
+            include_result,
+        )),
+    ))
+}
+
+fn execution_service(
+    args: &Args,
+    bridge: Arc<PinnedCoreTerminalBridge>,
+    dependencies: PreparedDispatchDependencies,
+) -> Result<GroupAgentNodeDispatchExecutionService, Box<dyn Error>> {
+    let database = hub_database_path(args.state_dir.as_deref())?;
+    let store = Arc::new(SqliteHubStore::open(database)?);
+    Ok(GroupAgentNodeDispatchExecutionService::new(
+        store.clone(),
+        store.clone(),
+        store.clone(),
+        store,
+        Arc::new(OpenAiRequestCodec),
+        dependencies.providers,
+        dependencies.credentials,
+        bridge,
+        Arc::new(SystemDispatchMetadataSource),
+    ))
+}
+
+fn validate_execute_preflight(
+    args: &Args,
+    graph_run_id: &str,
+    authorization_json: &str,
+    pricing_json: &str,
+    confirm_off_machine: bool,
+) -> Result<(), Box<dyn Error>> {
+    let database = hub_database_path(args.state_dir.as_deref())?;
+    let store = Arc::new(SqliteHubStore::open_existing_dispatch_preflight_read_only(
+        database,
+    )?);
+    let service = GroupAgentNodeDispatchReleaseControlService::new(
+        store.clone(),
+        store.clone(),
+        Arc::new(OpenAiRequestCodec),
+    );
+    let exported = service.export(graph_run_id)?;
+    validate_group_agent_node_dispatch_topology(&exported.release_control)?;
+    if !confirm_off_machine {
+        return Err(GroupAgentNodeDispatchExecutionServiceError::ConsentRequired.into());
+    }
+    GroupAgentNodeDispatchReadinessService::new(
+        store.clone(),
+        store,
+        Arc::new(OpenAiRequestCodec),
+        Arc::new(RegisteredGroupAgentNodeProviderFactory::new()),
+    )
+    .verify(graph_run_id, authorization_json, pricing_json)?;
+    Ok(())
+}
+
+
+/// Reads one bounded exact UTF-8 dispatch authorization artifact.
+pub(super) fn read_authorization(source: &str) -> Result<String, Box<dyn Error>> {
+    let bytes = if source == "-" {
+        read_authorization_bounded(io::stdin().lock())?
+    } else {
+        read_authorization_bounded(File::open(source)?)?
+    };
+    String::from_utf8(bytes)
+        .map_err(|_| invalid_input("Node Dispatch Authorization must be UTF-8").into())
+}
+
+/// Reads one bounded exact UTF-8 pricing snapshot artifact.
+pub(super) fn read_pricing(source: &str) -> Result<String, Box<dyn Error>> {
+    let bytes = if source == "-" {
+        read_pricing_bounded(io::stdin().lock())?
+    } else {
+        read_pricing_bounded(File::open(source)?)?
+    };
+    String::from_utf8(bytes)
+        .map_err(|_| invalid_input("Node pricing snapshot must be UTF-8").into())
+}
+
+pub(super) fn read_authorization_bounded(reader: impl Read) -> Result<Vec<u8>, io::Error> {
+    let limit = MAX_GROUP_AGENT_NODE_DISPATCH_AUTHORIZATION_BYTES
+        .checked_add(1)
+        .expect("Node Dispatch Authorization bound fits usize");
+    let mut bytes = Vec::new();
+    reader
+        .take(u64::try_from(limit).expect("Node Dispatch Authorization bound fits u64"))
+        .read_to_end(&mut bytes)?;
+    if bytes.len() > MAX_GROUP_AGENT_NODE_DISPATCH_AUTHORIZATION_BYTES {
+        return Err(invalid_input(
+            "Node Dispatch Authorization exceeds its byte limit",
+        ));
+    }
+    Ok(bytes)
+}
+
+pub(super) fn read_pricing_bounded(reader: impl Read) -> Result<Vec<u8>, io::Error> {
+    read_bounded_artifact(
+        reader,
+        crate::runtime_domain::MAX_GROUP_AGENT_NODE_PRICING_SNAPSHOT_BYTES,
+        "Node pricing snapshot exceeds its byte limit",
+    )
+}
+
+fn read_bounded_artifact(
+    reader: impl Read,
+    maximum: usize,
+    message: &str,
+) -> Result<Vec<u8>, io::Error> {
+    let limit = maximum.checked_add(1).expect("artifact bound fits usize");
+    let mut bytes = Vec::new();
+    reader
+        .take(u64::try_from(limit).expect("artifact bound fits u64"))
+        .read_to_end(&mut bytes)?;
+    if bytes.len() > maximum {
+        return Err(invalid_input(message));
+    }
+    Ok(bytes)
+}
+
+fn invalid_input(message: &str) -> io::Error {
+    io::Error::new(io::ErrorKind::InvalidInput, message)
 }
 
 #[cfg(test)]

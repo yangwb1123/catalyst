@@ -192,6 +192,7 @@ fn every_fixed_uncertainty_class_is_closed_world_and_nonretryable() {
         GroupAgentNodeTerminalClassification::ProtocolError,
         GroupAgentNodeTerminalClassification::TrailingData,
         GroupAgentNodeTerminalClassification::LocalLimit,
+        GroupAgentNodeTerminalClassification::HardCrash,
     ] {
         let artifact = uncertainty(&baseline, class);
         artifact

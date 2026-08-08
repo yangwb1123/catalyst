@@ -15,6 +15,19 @@ pub(super) fn parse(tokens: &mut VecDeque<String>) -> Result<Command, String> {
     values.finish(graph_run_id)
 }
 
+pub(super) fn parse_adjudicate(tokens: &mut VecDeque<String>) -> Result<Command, String> {
+    let graph_run_id = super::required_id(
+        tokens,
+        "group graph run dispatch adjudicate",
+        "GRAPH_RUN_ID",
+    )?;
+    let mut values = ExecuteValues::default();
+    while let Some(option) = tokens.pop_front() {
+        parse_option(tokens, &option, &mut values)?;
+    }
+    values.finish_adjudicate(graph_run_id)
+}
+
 #[derive(Default)]
 struct ExecuteValues {
     authorization: Option<String>,
@@ -52,8 +65,13 @@ fn parse_option(
 
 impl ExecuteValues {
     fn finish(self, graph_run_id: String) -> Result<Command, String> {
-        let authorization_source = required(self.authorization, "--authorization FILE|-")?;
-        let pricing_source = required(self.pricing, "--pricing FILE|-")?;
+        let authorization_source = required(
+            self.authorization,
+            "--authorization FILE|-",
+            "group graph run dispatch execute",
+        )?;
+        let pricing_source =
+            required(self.pricing, "--pricing FILE|-", "group graph run dispatch execute")?;
         if authorization_source == "-" && pricing_source == "-" {
             return Err(with_usage(
                 "dispatch execute accepts standard input for only one artifact",
@@ -64,17 +82,73 @@ impl ExecuteValues {
                 graph_run_id,
                 authorization_source,
                 pricing_source,
-                core_bin: required(self.core_bin, "--core-bin ABSOLUTE_FILE")?,
-                core_bin_sha256: required(self.core_sha256, "--core-bin-sha256 SHA256")?,
+                core_bin: required(
+                    self.core_bin,
+                    "--core-bin ABSOLUTE_FILE",
+                    "group graph run dispatch execute",
+                )?,
+                core_bin_sha256: required(
+                    self.core_sha256,
+                    "--core-bin-sha256 SHA256",
+                    "group graph run dispatch execute",
+                )?,
                 confirm_off_machine: self.confirm,
                 include_result: self.include_result,
             },
         )))
     }
+
+    /// Adjudication takes the same exact-artifact flags as execute minus
+    /// consent/result visibility: nothing leaves the machine and no result text
+    /// is produced (the remedy writes a terminal `failed_uncertain` state).
+    fn finish_adjudicate(self, graph_run_id: String) -> Result<Command, String> {
+        let authorization_source = required(
+            self.authorization,
+            "--authorization FILE|-",
+            "group graph run dispatch adjudicate",
+        )?;
+        let pricing_source = required(
+            self.pricing,
+            "--pricing FILE|-",
+            "group graph run dispatch adjudicate",
+        )?;
+        if authorization_source == "-" && pricing_source == "-" {
+            return Err(with_usage(
+                "dispatch adjudicate accepts standard input for only one artifact",
+            ));
+        }
+        if self.confirm {
+            return Err(with_usage(
+                "dispatch adjudicate does not accept --confirm-off-machine; nothing leaves the machine",
+            ));
+        }
+        if self.include_result {
+            return Err(with_usage(
+                "dispatch adjudicate does not accept --include-result; no result text is produced",
+            ));
+        }
+        Ok(run_command(GroupGraphRunCommand::Dispatch(
+            GroupGraphRunDispatchCommand::Adjudicate {
+                graph_run_id,
+                authorization_source,
+                pricing_source,
+                core_bin: required(
+                    self.core_bin,
+                    "--core-bin ABSOLUTE_FILE",
+                    "group graph run dispatch adjudicate",
+                )?,
+                core_bin_sha256: required(
+                    self.core_sha256,
+                    "--core-bin-sha256 SHA256",
+                    "group graph run dispatch adjudicate",
+                )?,
+            },
+        )))
+    }
 }
 
-fn required(value: Option<String>, option: &str) -> Result<String, String> {
-    value.ok_or_else(|| with_usage(&format!("dispatch execute requires {option}")))
+fn required(value: Option<String>, option: &str, operation: &str) -> Result<String, String> {
+    value.ok_or_else(|| with_usage(&format!("{operation} requires {option}")))
 }
 
 pub(super) fn parse_readiness(tokens: &mut VecDeque<String>) -> Result<Command, String> {

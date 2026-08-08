@@ -20,14 +20,13 @@ use crate::group_agent_node_execution_support::{
     FixtureBundle, MemoryContractHub, single_node_fixture,
 };
 
-pub(super) struct PreparedExecution {
-    pub(super) fixture: FixtureBundle,
-    pub(super) hub: Arc<MemoryContractHub>,
-    pub(super) codec: Arc<ExactJsonCodec>,
-    pub(super) authorization_json: String,
-    pub(super) pricing_json: String,
+pub(crate) struct PreparedExecution {
+    pub(crate) fixture: FixtureBundle,
+    pub(crate) hub: Arc<MemoryContractHub>,
+    pub(crate) codec: Arc<ExactJsonCodec>,
+    pub(crate) authorization_json: String,
+    pub(crate) pricing_json: String,
 }
-
 #[derive(Serialize)]
 struct ProviderBody<'a> {
     include: [&'static str; 1],
@@ -47,7 +46,7 @@ struct ProviderInput<'a> {
     r#type: &'static str,
 }
 
-pub(super) struct ExactJsonCodec;
+pub(crate) struct ExactJsonCodec;
 
 impl GroupAgentNodeDispatchRequestCodec for ExactJsonCodec {
     fn encode_request(
@@ -87,7 +86,7 @@ impl GroupAgentNodeDispatchRequestCodec for ExactJsonCodec {
     }
 }
 
-pub(super) fn prepare() -> PreparedExecution {
+pub(crate) fn prepare() -> PreparedExecution {
     prepare_with_result_limit(None)
 }
 

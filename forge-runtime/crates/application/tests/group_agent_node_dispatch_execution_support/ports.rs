@@ -23,13 +23,14 @@ use forge_runtime_domain::{
 };
 use futures_util::stream;
 
-use super::data::{prepare, prepare_with_max_result_bytes};
+use super::data::{ExactJsonCodec, prepare, prepare_with_max_result_bytes};
 use crate::group_agent_node_execution_support::MemoryContractHub;
 
 pub(crate) struct ExecutionHarness {
     pub(crate) service: Arc<GroupAgentNodeDispatchExecutionService>,
     pub(crate) input: ExecuteGroupAgentNodeDispatchInput,
     pub(crate) hub: Arc<MemoryContractHub>,
+    pub(crate) codec: Arc<ExactJsonCodec>,
     pub(crate) provider_calls: Arc<AtomicUsize>,
     pub(crate) credential_reads: Arc<AtomicUsize>,
     pub(crate) core_calls: Arc<AtomicUsize>,
@@ -66,6 +67,8 @@ impl ExecutionHarness {
         let provider_calls = Arc::new(AtomicUsize::new(0));
         let credential_reads = Arc::new(AtomicUsize::new(0));
         let core_calls = Arc::new(AtomicUsize::new(0));
+        let hub = prepared.hub.clone();
+        let codec = prepared.codec.clone();
         let providers = deterministic_factory(
             events,
             provider_calls.clone(),
@@ -80,15 +83,8 @@ impl ExecutionHarness {
             calls: core_calls.clone(),
         });
         let service = Arc::new(GroupAgentNodeDispatchExecutionService::new(
-            prepared.hub.clone(),
-            prepared.hub.clone(),
-            prepared.hub.clone(),
-            prepared.hub.clone(),
-            prepared.codec,
-            providers,
-            credentials,
-            core,
-            Arc::new(DeterministicMetadata),
+            hub.clone(), hub.clone(), hub.clone(), hub.clone(), codec.clone(),
+            providers, credentials, core, Arc::new(DeterministicMetadata),
         ));
         Self {
             service,
@@ -99,7 +95,8 @@ impl ExecutionHarness {
                 confirm_off_machine: true,
                 cancellation: Cancellation::default(),
             },
-            hub: prepared.hub,
+            hub,
+            codec,
             provider_calls,
             credential_reads,
             core_calls,
@@ -203,7 +200,7 @@ impl GroupAgentNodeCredentialSource for DeterministicCredential {
     }
 }
 
-struct DeterministicMetadata;
+pub(crate) struct DeterministicMetadata;
 
 impl GroupAgentNodeDispatchMetadataSource for DeterministicMetadata {
     fn claim_metadata(
@@ -222,9 +219,9 @@ impl GroupAgentNodeDispatchMetadataSource for DeterministicMetadata {
     }
 }
 
-struct DeterministicCore {
-    reject: bool,
-    calls: Arc<AtomicUsize>,
+pub(crate) struct DeterministicCore {
+    pub(crate) reject: bool,
+    pub(crate) calls: Arc<AtomicUsize>,
 }
 
 impl GroupAgentNodeCoreTerminalReceiptPort for DeterministicCore {
@@ -252,7 +249,7 @@ impl GroupAgentNodeCoreTerminalReceiptPort for DeterministicCore {
     }
 }
 
-fn receipt(control: &GroupAgentNodeTerminalControl) -> GroupAgentNodeTerminalReceipt {
+pub(crate) fn receipt(control: &GroupAgentNodeTerminalControl) -> GroupAgentNodeTerminalReceipt {
     let (node_outcome, graph_status) = outcome(control.artifact.classification);
     GroupAgentNodeTerminalReceipt {
         v: GROUP_AGENT_NODE_TERMINAL_RECEIPT_VERSION,

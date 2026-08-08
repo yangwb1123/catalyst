@@ -62,6 +62,7 @@ pub enum GroupAgentNodeTerminalClassification {
     ProtocolError,
     TrailingData,
     LocalLimit,
+    HardCrash,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]

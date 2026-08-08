@@ -216,6 +216,13 @@ pub enum GroupGraphRunDispatchCommand {
         confirm_off_machine: bool,
         include_result: bool,
     },
+    Adjudicate {
+        graph_run_id: String,
+        authorization_source: String,
+        pricing_source: String,
+        core_bin: String,
+        core_bin_sha256: String,
+    },
 }
 
 #[derive(Debug, Eq, PartialEq)]

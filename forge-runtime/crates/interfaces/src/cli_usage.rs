@@ -74,6 +74,9 @@ pub const TEXT: &str = "usage:
                 --authorization FILE|- --pricing FILE|-
                 --core-bin ABSOLUTE_FILE --core-bin-sha256 SHA256
                 --confirm-off-machine [--include-result]
+  forge-runtime [OPTIONS] group graph run dispatch adjudicate GRAPH_RUN_ID
+                --authorization FILE|- --pricing FILE|-
+                --core-bin ABSOLUTE_FILE --core-bin-sha256 SHA256
   forge-runtime [OPTIONS] group graph run show GRAPH_RUN_ID [--include-plan]
   forge-runtime [OPTIONS] group graph run list [GRAPH_ID] [--limit N]
   forge-runtime [OPTIONS] group analysis prepare GROUP_RUN_ID
@@ -202,14 +205,25 @@ pub const TEXT: &str = "usage:
   Core executable before reading OPENAI_API_KEY. This effectful command is Linux-only:
   Core runs from sealed, digest-verified anonymous executable bytes. --confirm-off-machine permits
   exactly one frozen request to the registered provider. A durable claim forbids
-  automatic resend; a hard crash can quarantine the Project lane. Result text is
+  automatic resend; a hard crash can quarantine the Project lane. A
+  hard-crash-quarantined claim can be remedied with `group graph run dispatch
+  adjudicate` (no-send, operator-invoked, pinned Core required). Result text is
   hidden unless --include-result is explicit. Multi-node execution is not yet supported.
+  Dispatch adjudicate is the Linux-only no-send remedy for a hard-crash-quarantined
+  v4 claim (SIGKILL/OOM stranded the executor after its durable claim). It requires
+  the exact authorization/pricing bodies (digests are cross-checked against the
+  claim before any Core subprocess) and a pinned Core built with hard_crash
+  support; an old Core is refused with a re-pin hint. It reads no credential,
+  sends nothing, and writes only the single atomic terminalize transaction that
+  records a deterministic failed_uncertain terminal and releases the Project
+  lane. Re-entry on any non-stranded claim is refused with zero mutation.
   Group analysis prepare locally revalidates one frozen Group Run and persists
   the exact bounded OpenAI request-body bytes. It reads no API key and sends nothing.
   Group analysis send can release those frozen Prompt excerpts and metadata
   off-machine only when --confirm-off-machine is present and OPENAI_API_KEY is set.
   A released dispatch that lacks a terminal result is dispatch_unknown and is
-  never retried automatically. Prepare a new analysis to make another attempt.
+  never retried automatically. A hard-crash-quarantined claim can be adjudicated
+  with `group graph run dispatch adjudicate`. Prepare a new analysis to make another attempt.
   Group analysis is one model turn with zero tools/workspace and no automatic
   Conversation, task, or memory writeback. Results are local plaintext and may
   repeat source content; --include-result explicitly reveals the final projection.

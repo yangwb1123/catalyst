@@ -10,7 +10,7 @@ use crate::runtime_domain::{
 use crate::{GroupAgentNodeDispatchReleaseControlService, GroupAgentNodeDispatchRequestCodec};
 
 #[path = "group_agent_node_dispatch_execution/build.rs"]
-mod build;
+pub(crate) mod build;
 #[path = "group_agent_node_dispatch_execution/collector.rs"]
 mod collector;
 #[path = "group_agent_node_dispatch_execution/error.rs"]

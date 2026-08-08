@@ -10,7 +10,7 @@ var uncertaintyClasses = map[string]struct{}{
 	"provider_error": {}, "http_error": {}, "transport_error": {},
 	"timeout": {}, "cancelled": {}, "eof_before_terminal": {},
 	"missing_usage": {}, "tool_call": {}, "protocol_error": {},
-	"trailing_data": {}, "local_limit": {},
+	"trailing_data": {}, "local_limit": {}, "hard_crash": {},
 }
 
 func validateArtifact(artifact TerminalArtifact, control TerminalControl) error {

@@ -123,6 +123,7 @@ fn valid_uncertainty(artifact: &GroupAgentNodeTerminalArtifact) -> bool {
             | GroupAgentNodeTerminalClassification::ProtocolError
             | GroupAgentNodeTerminalClassification::TrailingData
             | GroupAgentNodeTerminalClassification::LocalLimit
+            | GroupAgentNodeTerminalClassification::HardCrash
     );
     let chronology =
         artifact.provider_poll_started || (!artifact.terminal_seen && !artifact.stream_eof_seen);

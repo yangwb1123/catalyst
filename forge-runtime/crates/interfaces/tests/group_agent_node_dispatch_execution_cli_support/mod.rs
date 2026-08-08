@@ -8,7 +8,7 @@ use std::{
 
 use forge_runtime_domain::{
     GROUP_AGENT_GRAPH_CORE_PLAN_VERSION, GROUP_AGENT_GRAPH_SCHEDULER_PROTOCOL_VERSION,
-    GroupAgentGraphCorePlan,
+    GroupAgentGraphCorePlan, GroupAgentNodeLifecycleInspection,
 };
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -31,7 +31,7 @@ pub(super) struct Fixture {
     project: TempDir,
     sentinel: Vec<u8>,
     pub(super) graph_run_id: String,
-    authorization_path: PathBuf,
+    pub(super) authorization_path: PathBuf,
     pricing_path: PathBuf,
     core_bin: PathBuf,
     core_sha256: String,
@@ -74,6 +74,30 @@ impl Fixture {
 
     pub(super) fn execute_include_result(&self, consent: bool, credential: Option<&str>) -> Output {
         self.execute_with_result_visibility(consent, credential, true)
+    }
+
+    pub(super) fn adjudicate(&self, credential: Option<&str>) -> Output {
+        let mut process = runtime_command(self.state.path(), self.cwd.path());
+        process.args([
+            "group",
+            "graph",
+            "run",
+            "dispatch",
+            "adjudicate",
+            &self.graph_run_id,
+            "--authorization",
+            path_text(&self.authorization_path),
+            "--pricing",
+            path_text(&self.pricing_path),
+            "--core-bin",
+            path_text(&self.core_bin),
+            "--core-bin-sha256",
+            &self.core_sha256,
+        ]);
+        if let Some(value) = credential {
+            process.env("OPENAI_API_KEY", value);
+        }
+        process.output().expect("adjudicate dispatch CLI")
     }
 
     fn execute_with_result_visibility(
