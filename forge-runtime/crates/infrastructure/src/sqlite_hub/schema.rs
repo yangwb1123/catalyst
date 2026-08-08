@@ -144,6 +144,13 @@ fn open_database_once(path: &Path) -> Result<Connection, OpenAttemptError> {
     let connection = Connection::open(path)?;
     connection.busy_timeout(CONNECTION_BUSY_TIMEOUT)?;
     reject_unsupported_schema(&connection)?;
+    let version = schema_version(&connection)?;
+    if version > 0 && version < SCHEMA_VERSION {
+        // Production-readiness condition: a migration is irreversible, so
+        // snapshot an EXISTING hub before the first upgrade opens it
+        // (review stage-06 High). Fresh hubs (version 0) need no backup.
+        backup_before_upgrade(path, version)?;
+    }
     configure(&connection)?;
     migrate_or_validate(&connection)?;
     Ok(connection)
@@ -470,3 +477,22 @@ use location::verify_private_directory_permissions;
 #[cfg(all(test, unix))]
 #[path = "tests/schema_permissions.rs"]
 mod tests;
+
+fn backup_before_upgrade(path: &Path, version: i64) -> Result<(), OpenAttemptError> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| unavailable("hub database has no parent directory"))?;
+    let backup_root = parent.join("backups");
+    std::fs::create_dir_all(&backup_root)
+        .map_err(|error| unavailable(format!("create backups dir: {error}")))?;
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let name = format!("hub-v{version}-before-upgrade-{stamp}.sqlite3");
+    let target = backup_root.join(name);
+    std::fs::copy(path, &target).map_err(|error| {
+        unavailable(format!("backup-before-upgrade failed: {error}"))
+    })?;
+    Ok(())
+}

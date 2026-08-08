@@ -1,0 +1,25 @@
+# 生产就绪评审上下文
+project: "ForgeOS"
+subsystem: "Hub schema lifecycle, dispatch protocol, sandbox runners — production readiness"
+repo: "/home/u1/catalyst"
+files:
+  - forge-runtime/crates/infrastructure/src/sqlite_hub/schema.rs
+  - forge-runtime/crates/infrastructure/src/sqlite_hub/schema_contract/full_contract.rs
+  - forge-runtime/crates/interfaces/src/group_agent_graph/wave_command.rs
+  - forge-core/internal/orchestrator/sandbox_config.go
+  - docs/external-resource-verification.md
+  - .agent/ROADMAP.md
+rfcs:
+  - docs/adr/0036-wave-parallel-storage-and-orchestration.md
+  - docs/adr/0034-hard-crash-adjudication.md
+architecture_summary: |
+  Single-host SQLite hub (WAL, synchronous=FULL), schema v23 chain with
+  structural digests, wave-parallel successor protocol (v20-v23), sandbox
+  runners (firecracker/docker). Production readiness: deployment,
+  backup/recovery, migration, monitoring, ops docs.
+load_profile: "(not provided)"
+infra: "single host; KVM + Docker verified"
+slo_targets: "forge accept must stay ACCEPTED"
+sprint_goal: "Production-readiness review: deployment, backup/recovery,
+migration operations, monitoring, and documentation gaps."
+team_size: "1-2"

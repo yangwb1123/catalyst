@@ -863,6 +863,22 @@ F12(sandbox 包零测试)与 F14(隔离强度)记录为后续。
 `forge accept` 为 **ACCEPTED**;Go 全量 0 FAIL。
 评审产物:docs/reviews/reviews/sandbox-context/stage-04.out.md。
 
+## Sprint 84（✅ 完成）— Stage 06 生产就绪评审修复
+
+第六轮独立评审(生产就绪:部署/备份/恢复/迁移/运维)CONDITIONAL GO,
+条件项修复:
+(1) **High — backup-before-upgrade**:不可逆迁移前自动快照现有 hub 到
+`state/backups/hub-v<N>-before-upgrade-<ts>.sqlite3`(新建库 version=0
+不备份);测试:降级到 v14 → 打开迁移 → 断言备份存在且版本 14。
+(2) **Medium — docker exit-125**:daemon 故障(125)不再作为 guest 判定,
+分类为 config fault。
+(3) **High — readiness/日志**与 **Medium — 有数据迁移测试/--allow-migrate
+门**记录为后续(需要 CLI/部署层设计)。
+(4) **F1 真实验证**:docker stdin(-i 标志)与 firecracker 真 VM stdin
+(1.45s boot)均回显 prompt —— prompt 传递链路在两种隔离运行时实证。
+`forge accept` 为 **ACCEPTED**;Rust 929 tests;Go 全量 0 FAIL。
+评审产物:docs/reviews/reviews/production-context/stage-06.out.md。
+
 ## 下一前沿(需外部资源 / 后续阶段 / 投机增强 / 明确非目标,非本环境可完整验证)
 - **Graph 下一协议切片**:Sprint 59 只完成 scheduled ordinal-zero 的独立 claim/send/terminal sidecar；仍没有真实 successor/wave advancement、verified per-node/per-attempt receipt 驱动的非初始 contract-v2，也没有 predecessor dataflow。后续必须另立 successor 选择、receipt consumption、跨 node disclosure/consent 与 byte-bound 契约，不能从 ordering edge 推断。另一个独立协议仍是 legacy v4 hard-crash no-send adjudication：必须证明旧 executor 已停止，不能用 lease/时间流逝猜测后自动释放或重发。
 - **真点火** `--agent-cmd=claude`:**multi-agent running to completion 已坐实**(Sprint 25:真 claude 多-agent 跑到 converge MET,增量级 + 版本级)。完整旋钮:四维资源护栏 + 成本三维(phase/时间/美元)+ 任务注入 + 写权限 + 模型路由 + 工作目录 + retry + loop-back;诚实分工:agent 自治增量绿、人确认版本竣工。docs/ignition.md 有完整配方 + 实测

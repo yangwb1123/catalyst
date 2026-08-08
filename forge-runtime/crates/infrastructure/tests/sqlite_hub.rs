@@ -480,3 +480,4 @@ fn make_private_directory(path: &Path) {
 
 #[cfg(not(unix))]
 fn make_private_directory(_path: &Path) {}
+

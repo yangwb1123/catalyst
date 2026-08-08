@@ -89,6 +89,12 @@ func (r *Runner) Run(
 	}
 	if err != nil {
 		if exit, ok := err.(*exec.ExitError); ok {
+			// Exit 125 is the docker daemon's own fault (client/daemon/pull
+			// error), not the guest's verdict — it must never surface as a
+			// guest exit code (review stage-06 Medium).
+			if exit.ExitCode() == 125 {
+				return string(out.buf), 0, configFault(fmt.Errorf("docker daemon fault (exit 125): %w", err))
+			}
 			return string(out.buf), exit.ExitCode(), nil
 		}
 		return string(out.buf), 0, configFault(fmt.Errorf("docker run: %w", err))
