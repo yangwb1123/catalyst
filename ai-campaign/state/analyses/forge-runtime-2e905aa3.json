@@ -1,0 +1,71 @@
+Based on my analysis of forge-runtime (Rust 4-crate workspace: domain/application/infrastructure/interfaces), the CI gate, ADRs, and the functional requirements audit, here are the highest-value improvement directions:
+
+```json
+[
+  {
+    "title": "Effect-free adjudication command for hard-crash-quarantined dispatch claims and Project lanes",
+    "problem": "The only effectful dispatch surface claims a durable single-winner authority and Project lane before sending; if the process dies via SIGKILL/OOM (only catchable signals are folded into a terminal), the lane stays quarantined forever with no CLI remedy. Users are told to 'prepare a new analysis to make another attempt', but the stranded claim/lane remains — permanent dead-end for that Project's graph dispatch until manual DB surgery.",
+    "value": 9,
+    "risk_reduction": 9,
+    "effort": 5,
+    "confidence": 9,
+    "evidence": [
+      "forge-runtime/crates/interfaces/src/cli_usage.rs:211",
+      "forge-runtime/crates/interfaces/src/cli_usage.rs:202",
+      "forge-runtime/crates/interfaces/src/group_agent_graph/scheduled_provider_request_dispatch.rs:283",
+      "forge-runtime/crates/application/src/group_agent_node_dispatch_execution/error.rs:18",
+      "forge-runtime/crates/interfaces/src/args.rs:36",
+      "forge-runtime/crates/interfaces/tests/group_agent_node_dispatch_execution_cli_support/quarantine.rs",
+      "docs/FUNCTIONAL_REQUIREMENTS_AUDIT.md:215"
+    ],
+    "acceptance": [
+      "New subcommand (e.g. `group graph run dispatch adjudicate`) exists in crates/interfaces/src/group_agent_graph/dispatch_command.rs and is listed in cli_usage.rs",
+      "cargo test -p forge-runtime-cli --offline passes: stranded v4 claim (fixture from group_agent_node_dispatch_execution_cli_support/quarantine.rs) can be adjudicated to a failed terminal with seq/head CAS and the Project lane is released",
+      "Adjudication is effect-free (no provider request, no resend) and re-adjudication of an already-terminal claim is rejected",
+      "cargo clippy --all-targets --all-features --offline -- -D warnings is clean"
+    ]
+  },
+  {
+    "title": "Durable Run resume: continue an incomplete/PendingTool Run from its last committed journal event",
+    "problem": "The journal already persists RunRecoveryState::Incomplete and PendingTool with the full pending tool-call set, but `run start` is the only entry point and reconcile_terminal hard-fails with 'automatic resume is disabled'. A crash mid-run loses the conversation: the user must re-create a session, re-add the prompt, and re-run from scratch, even though every committed event and the pending tool state are durable and replayable.",
+    "value": 7,
+    "risk_reduction": 6,
+    "effort": 7,
+    "confidence": 8,
+    "evidence": [
+      "forge-runtime/crates/interfaces/src/run_command.rs:272",
+      "forge-runtime/crates/interfaces/src/run_args.rs:34",
+      "forge-runtime/crates/domain/src/run_journal.rs:23",
+      "forge-runtime/crates/application/src/run_service.rs:75",
+      "docs/FUNCTIONAL_REQUIREMENTS_AUDIT.md:215"
+    ],
+    "acceptance": [
+      "New `run resume RUN_ID` subcommand in crates/interfaces/src/run_args.rs parses and routes to RunService",
+      "cargo test -p forge-runtime-cli --offline passes: an interrupted Run (Incomplete) replays the journal and continues, emitting only strictly-increasing events with no re-execution of committed tool calls",
+      "PendingTool resume re-validates the persisted tool call against current capabilities and fails closed (no execution) if the tool is no longer authorized",
+      "Resume of a Terminal Run is rejected idempotently with the existing outcome"
+    ]
+  },
+  {
+    "title": "Property-based/fuzz tests over the hand-written codecs, bound validators, and SSE parser",
+    "problem": "The module's safety posture rests on dozens of hand-written byte-bound checks, JSON codecs, and a hand-rolled SSE parser, but all tests are table-driven/golden (proposed: no proptest/quickcheck/cargo-fuzz anywhere in the workspace). Truncation, off-by-one, and multi-byte boundary bugs in codecs (e.g. group_model_analysis_codec, group_agent_graph_run_codec, openai_responses/sse.rs) would bypass limits or corrupt digest/round-trip integrity exactly where the module claims byte-exact guarantees.",
+    "value": 6,
+    "risk_reduction": 6,
+    "effort": 3,
+    "confidence": 8,
+    "evidence": [
+      "forge-runtime/Cargo.toml",
+      "forge-runtime/crates/application/src/group_model_analysis_codec.rs",
+      "forge-runtime/crates/domain/src/group_agent_graph_run_codec.rs",
+      "forge-runtime/crates/infrastructure/src/openai_responses/sse.rs",
+      "forge-runtime/crates/domain/tests/group_agent_node_dispatch_golden.rs"
+    ],
+    "acceptance": [
+      "proptest added as dev-dependency in forge-runtime/Cargo.toml (locked, offline-buildable)",
+      "cargo test -p forge-runtime-domain --offline passes: randomized round-trip tests (encode→decode→re-encode) over group_agent_graph_run and group_model_analysis codecs for at least 10k generated inputs including max-boundary and multi-byte UTF-8 strings",
+      "cargo test -p forge-runtime-infrastructure --offline passes: property test that sse.rs framing rejects/never over-allocates beyond MAX bounds for adversarial chunk splits (proposed behavior: overflow flag or error, never panic)",
+      "cargo clippy --all-targets --all-features --offline -- -D warnings is clean"
+    ]
+  }
+]
+```

@@ -71,8 +71,10 @@ stages:
           Do not commit. Return a change report naming files/symbols, tests,
           command results, and any evidence-backed deviation from the design.
           {input_content}
-        # Implementing + running full repo gates exceeds 900s on real repos.
-        timeout: 1800
+        # Implementing + running full repo gates exceeds 900s on real repos;
+        # ForgeOS acceptance alone can take ~10 min, so give implement room
+        # to finish gates and leave a usable change report.
+        timeout: 3600
         output: docs/auto/implementation.md
 
   - name: acceptance

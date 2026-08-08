@@ -61,3 +61,10 @@ provably dead same-host executor unblocks the lane. The artifact and its
 digests are unchanged, the scheduled Run stays v1/seq-1, no receipt or result
 is fabricated, and no successor advance or resend occurs. Remote/hard-crash
 adjudication across machines and the legacy v4 family keep their own fences.
+
+[amended 2026-08-08] The legacy v4-family fence is now closed by
+`group graph run dispatch adjudicate` (no-send, operator-invoked, pinned Core
+with `hard_crash` support): the v4 claim is terminalized to a deterministic
+`failed_uncertain` state through the single terminalize CAS, releasing the
+Project lane. The scheduled family's pid-sidecar adjudication above is
+unchanged; the two families remain separate commands with separate fences.
