@@ -24,11 +24,31 @@ func TestBuild_EmptyContextOmitsSection(t *testing.T) {
 	}
 }
 
+// testRepoRoot finds the checkout containing this package so tests that bind to
+// the real ADR and constraint corpus do not depend on one developer's path.
+func testRepoRoot(t *testing.T) string {
+	t.Helper()
+	dir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("get working directory: %v", err)
+	}
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "forge-core", "go.mod")); err == nil {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			t.Fatalf("ForgeOS repo root not found above %q", dir)
+		}
+		dir = parent
+	}
+}
+
 // Gather reads the real repo: retrieved ADR titles and the ALWAYS-injected hard
 // constraints must both surface so a real agent prompt carries actual project
 // ground truth, not just a role. A non-empty query keeps the ADR lane populated.
 func TestGather_RealRepoHasADRsAndConstraints(t *testing.T) {
-	joined := strings.Join(Gather("/home/u1/catalyst", "go core stack"), "\n")
+	joined := strings.Join(Gather(testRepoRoot(t), "go core stack"), "\n")
 	if !strings.Contains(joined, "ADR 0001") {
 		t.Errorf("expected ADR titles in context; got: %.200s", joined)
 	}
@@ -44,7 +64,7 @@ func TestGather_RealRepoHasADRsAndConstraints(t *testing.T) {
 // every ADR, so retrieval cannot drop one — but the hard-constraint guarantee is
 // the load-bearing assertion regardless of corpus size.
 func TestGather_RetrievesADRsAndAlwaysKeepsHardConstraints(t *testing.T) {
-	ctx := Gather("/home/u1/catalyst", "stack polyglot go")
+	ctx := Gather(testRepoRoot(t), "stack polyglot go")
 	joined := strings.Join(ctx, "\n")
 	// Retrieval lane: the query terms match an ADR title, so an ADR is selected.
 	if !strings.Contains(joined, "ADR 0002") {
@@ -67,7 +87,7 @@ func TestGather_RetrievesADRsAndAlwaysKeepsHardConstraints(t *testing.T) {
 // constraints — only the retrieved ADR lane goes quiet. This pins the invariant
 // that hard constraints never depend on a usable query.
 func TestGather_EmptyQueryStillInjectsHardConstraints(t *testing.T) {
-	joined := strings.Join(Gather("/home/u1/catalyst", ""), "\n")
+	joined := strings.Join(Gather(testRepoRoot(t), ""), "\n")
 	if !strings.Contains(joined, "500") {
 		t.Errorf("hard constraints must inject even with an empty query; got: %.300s", joined)
 	}

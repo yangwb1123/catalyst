@@ -38,7 +38,11 @@ func TestBuildPrompt_MissingCardDegrades(t *testing.T) {
 // injection. A prompt built from the REAL repo must still carry the leading
 // AGENTS.md constraints (the 500-line cap), exactly as before retrieval+memory.
 func TestBuildPrompt_StillInjectsHardConstraints(t *testing.T) {
-	got := buildPrompt("/home/u1/catalyst", asset.Phase{Name: "reviewer", Agent: "reviewer"}, "balanced", unbudgetedTier("balanced"), nil, nil, nil, nil)
+	root := repoRoot()
+	if root == "" {
+		t.Fatal("ForgeOS repo root not found")
+	}
+	got := buildPrompt(root, asset.Phase{Name: "reviewer", Agent: "reviewer"}, "balanced", unbudgetedTier("balanced"), nil, nil, nil, nil)
 	if !strings.Contains(got, "Engineering constraints") || !strings.Contains(got, "500") {
 		t.Errorf("hard constraints must still inject after the Context Engine upgrade; got: %.400s", got)
 	}

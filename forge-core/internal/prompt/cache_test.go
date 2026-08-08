@@ -117,11 +117,12 @@ func TestGatherCached_RoadmapNeverStaleButInvariantLanesCached(t *testing.T) {
 // never WHAT the prompt says. Verified against the real repo (the same corpus Gather's own
 // tests use) AND a temp repo, so both a populated and a synthetic layout are pinned.
 func TestGatherCached_EqualsGather(t *testing.T) {
+	repo := testRepoRoot(t)
 	cases := []struct {
 		name, root, query string
 	}{
-		{"real-repo", "/home/u1/catalyst", "stack polyglot go"},
-		{"real-repo-other-query", "/home/u1/catalyst", "reviewer reviewer"},
+		{"real-repo", repo, "stack polyglot go"},
+		{"real-repo-other-query", repo, "reviewer reviewer"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
