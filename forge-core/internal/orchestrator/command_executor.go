@@ -4,12 +4,12 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"strconv"
 	"strings"
 	"time"
 
 	"forgeos/forge-core/internal/asset"
+	"forgeos/forge-core/internal/execbound"
 )
 
 // defaultMaxAgentDepth bounds nested agent spawns before the recursion guard
@@ -21,12 +21,6 @@ const defaultMaxAgentDepth = 2
 // agentDepthEnv names the inherited counter tracking agent-call nesting across
 // process boundaries; each spawn sets it to parent+1 on the child's environment.
 const agentDepthEnv = "FORGE_AGENT_DEPTH"
-
-// defaultMaxOutputBytes caps the stdout+stderr the executor RETAINS from one agent
-// command (see CommandExecutor.MaxOutputBytes). 10 MiB is generous for a phase's
-// log yet bounds a runaway agent's output so it cannot OOM the orchestrator the way
-// an unbounded CombinedOutput would. Override per executor with MaxOutputBytes.
-const defaultMaxOutputBytes = 10 << 20
 
 // CommandExecutor runs an external command per agent phase — the real bridge
 // beyond DryRunExecutor. Build produces the argv for a phase under a mode
@@ -145,6 +139,11 @@ type CommandExecutor struct {
 // lets callers tell a retryable timeout from a permanent config fault from the
 // agent's own non-zero exit (see ExecError). ctx propagates cancellation so a
 // parent SIGINT/SIGTERM stops the child process via its process group.
+//
+// The bounded-run mechanics — deadline, process-group teardown, capped output —
+// live in internal/execbound (the shared leaf extraction); this executor maps
+// its documented Timeout semantics onto execbound.Options via
+// execboundOptions() and funnels every result through finish.
 func (c CommandExecutor) Execute(ctx context.Context, p asset.Phase, mode string) error {
 	if c.Build == nil {
 		return configErr(p.Name, nil) // nil Build: nothing to run, permanent.
@@ -181,13 +180,8 @@ func (c CommandExecutor) Execute(ctx context.Context, p asset.Phase, mode string
 		return recursionErr(p.Name, depth, max)
 	}
 
-	// A zero Timeout means "no deadline": context.WithTimeout(0) would fire at
-	// once, so fall back to a plain cancelable context. cancel is always deferred.
-	runCtx, runCancel := c.commandContext(ctx)
-	defer runCancel()
-
-	out, latency, runErr := c.runMeasured(runCtx, argv, depth, input, useStdin)
-	return c.finish(p.Name, argv, out, runErr, runCtx.Err(), latency)
+	res, latency := c.runMeasured(ctx, argv, depth, input, useStdin)
+	return c.finish(p.Name, argv, res, latency)
 }
 
 func (c CommandExecutor) prepareInput(phase string, argv []string) ([]string, string, bool, error) {
@@ -201,9 +195,26 @@ func (c CommandExecutor) prepareInput(phase string, argv []string) ([]string, st
 	return runArgv, argv[len(argv)-1], true, nil
 }
 
+// execboundOptions maps this executor's documented Timeout semantics onto the
+// shared bounded-run options. The load-bearing mapping: Timeout == 0 means "no
+// deadline" (command_executor.go's documented back-compat default), which
+// execbound expresses as the EXPLICIT Unbounded bool — never a negative
+// Timeout, which execbound's Validate rejects (a sign error would silently
+// reintroduce the very hang this guard removes). MaxOutputBytes maps as-is;
+// 0 → execbound's safe default (10 MiB), the same effective cap as before.
+func (c CommandExecutor) execboundOptions() execbound.Options {
+	opts := execbound.Options{MaxOutputBytes: c.MaxOutputBytes, Log: c.Log}
+	if c.Timeout <= 0 {
+		opts.Unbounded = true // zero = no deadline (documented back-compat)
+	} else {
+		opts.Timeout = c.Timeout
+	}
+	return opts
+}
+
 // runMeasured constructs the bounded, process-grouped command for argv and runs it under
 // ctx, bracketing cmd.Run() with the injectable clock to MEASURE its wall-clock latency. It
-// returns the captured output, the run error, and the measured duration. Split out of Execute
+// returns the bounded run result and the measured duration. Split out of Execute
 // so that stays within the function-length ceiling; the construction and the timing are one
 // unit (the latency must bracket exactly this run), so they live together here.
 //
@@ -211,52 +222,42 @@ func (c CommandExecutor) prepareInput(phase string, argv []string) ([]string, st
 // so the scorecard's p95 is genuinely per-model (not the iteration-shared span). The clock read
 // is OS-level and generic (no claude/vendor knowledge); this layer only knows WHEN the command
 // started and finished, never what model it billed.
-func (c CommandExecutor) runMeasured(ctx context.Context, argv []string, depth int, input string, useStdin bool) (*cappedBuffer, time.Duration, error) {
-	// exec.CommandContext's default cancel SIGKILLs the DIRECT child only. That is
-	// insufficient once `claude -p` forks grandchildren via its own tools (Bash ->
-	// git/test/build): those grandchildren inherit the command's stdout/stderr pipe,
-	// so after the direct child is killed cmd.Run() would block until they close it —
-	// a surviving grandchild thus defeats the Timeout. setupProcessGroup (unix) puts
-	// the child in its own process group and overrides Cancel to SIGKILL the whole
-	// group (-pgid), with a WaitDelay backstop, so the deadline is reliably enforced.
-	// On non-unix it is a no-op and the direct-child-only kill stands (honest platform
-	// difference; Windows Job Object is future work — see command_executor_other.go).
-	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
-	setupProcessGroup(cmd)
-	cmd.Dir = c.Dir // empty -> inherit forge's cwd (os/exec default)
-	// Propagate an incremented depth so a nested forge inherits it; childEnv
-	// REPLACES any inherited key (duplicate-key resolution is unspecified across libcs).
-	cmd.Env = c.childEnv(depth)
+func (c CommandExecutor) runMeasured(ctx context.Context, argv []string, depth int, input string, useStdin bool) (execbound.Result, time.Duration) {
+	// execbound.Run owns the bounded-run mechanics: a deadline derived from ctx
+	// (Timeout > 0) or the Unbounded escape (Timeout == 0), process-group
+	// teardown on unix (Setpgid + SIGKILL(-pgid) + WaitDelay backstop) so a
+	// tripped deadline is reliably enforced even when `claude -p` forks
+	// grandchildren via its own tools (Bash -> git/test/build) that inherit the
+	// command's stdout/stderr pipe, and capped output retention with the honest
+	// truncation marker. The SAME pointer for Stdout+Stderr (CaptureCombined)
+	// lets os/exec serialize the writes, exactly as CombinedOutput merges the
+	// two streams.
+	spec := execbound.Spec{Dir: c.Dir, Env: c.childEnv(depth)} // empty Dir -> inherit forge's cwd
 	if useStdin {
-		cmd.Stdin = strings.NewReader(input)
+		spec.Stdin = strings.NewReader(input)
 	}
-	// Bound the captured output: a runaway agent's unbounded stdout would OOM the
-	// orchestrator under CombinedOutput. cappedBuffer retains at most the cap and
-	// drains the rest; the SAME pointer for Stdout+Stderr lets os/exec serialize the
-	// writes (no lock needed), exactly as CombinedOutput merges the two streams.
-	out := &cappedBuffer{cap: c.maxOutputBytes()}
-	cmd.Stdout, cmd.Stderr = out, out
 	// Bracket the run with the injectable clock — the wall-clock span is the phase's latency.
 	start := c.now()
-	runErr := cmd.Run()
-	return out, c.now().Sub(start), runErr
+	res := execbound.Run(ctx, argv, c.execboundOptions(), execbound.CaptureCombined, spec)
+	return res, c.now().Sub(start)
 }
 
 // finish handles a completed command: it hands the raw output AND measured latency to the
 // optional sink, logs a possibly-rendered view, and (on failure) classifies the error —
 // consulting the optional overload judge. Split out of Execute so each stays within the
 // function-length ceiling; the behavior is unchanged except for the new latency the sink
-// receives. ctxErr is ctx.Err() captured at the call site (the deadline cause); latency is
-// the wall-clock span bracketing cmd.Run() (see Now).
-func (c CommandExecutor) finish(phase string, argv []string, out *cappedBuffer, runErr, ctxErr error, latency time.Duration) error {
+// receives. res carries the retained output, the run error, and the ctx error captured at
+// the end of the run (the deadline cause); latency is the wall-clock span bracketing the run
+// (see Now).
+func (c CommandExecutor) finish(phase string, argv []string, res execbound.Result, latency time.Duration) error {
 	// Both observe and the log renderer are nil-safe and identity-by-default, so the no-hook
 	// path is byte-for-byte unchanged.
-	observed := out.observed()
-	rendered := out.rendered()
+	observed := res.Observed()
+	rendered := res.Rendered()
 	c.observe(phase, observed, latency)
 	visible := c.renderForLog(rendered)
 	c.logf("phase %s: ran %q -> %s", phase, strings.Join(argv, " "), visible)
-	if runErr == nil {
+	if res.Err == nil {
 		if c.ValidateRawOutput != nil {
 			if err := c.ValidateRawOutput(phase, rendered); err != nil {
 				return &ExecError{Phase: phase, Kind: KindFailed, Err: fmt.Errorf("raw output contract: %w", err)}
@@ -273,7 +274,7 @@ func (c CommandExecutor) finish(phase string, argv []string, out *cappedBuffer, 
 	// (e.g. a vendor 529). nil-safe: with no hook the verdict is false, so classifyRunErr keeps
 	// its original KindFailed branch — byte-for-byte unchanged.
 	isOverload := c.ClassifyOverload != nil && c.ClassifyOverload(rendered)
-	return classifyRunErr(phase, runErr, ctxErr, isOverload)
+	return classifyRunErr(phase, res.Err, res.CtxErr, isOverload)
 }
 
 // RestoreValidatedOutput revalidates a durable provider-neutral phase result and
@@ -363,61 +364,4 @@ func (c CommandExecutor) maxDepth() int {
 		return c.MaxDepth
 	}
 	return defaultMaxAgentDepth
-}
-
-// maxOutputBytes is the effective cap on retained command output: the configured
-// MaxOutputBytes, or the safe default when unset/non-positive.
-func (c CommandExecutor) maxOutputBytes() int {
-	if c.MaxOutputBytes > 0 {
-		return c.MaxOutputBytes
-	}
-	return defaultMaxOutputBytes
-}
-
-// cappedBuffer is an io.Writer that retains at most cap bytes of what is written,
-// silently discarding the overflow — so a runaway agent's UNBOUNDED stdout/stderr
-// cannot OOM the orchestrator the way an unbounded CombinedOutput would. It tracks
-// the TOTAL bytes seen so truncation is reported honestly. Write never errors or
-// short-writes (a short write would make os/exec treat the pipe as broken and could
-// wedge the child mid-stream); it lets the agent run to its natural end (or the
-// Timeout) while simply not retaining the excess. Used as BOTH cmd.Stdout and
-// cmd.Stderr (the same pointer), os/exec serializes the writes, so no lock is needed.
-type cappedBuffer struct {
-	cap   int
-	buf   []byte
-	total int
-}
-
-func (b *cappedBuffer) Write(p []byte) (int, error) {
-	b.total += len(p)
-	if room := b.cap - len(b.buf); room > 0 {
-		if len(p) <= room {
-			b.buf = append(b.buf, p...)
-		} else {
-			b.buf = append(b.buf, p[:room]...)
-		}
-	}
-	return len(p), nil
-}
-
-// rendered returns the retained output, trimmed, with an honest truncation note
-// when the agent wrote more than was retained — so a clipped log is never mistaken
-// for the agent's full output.
-func (b *cappedBuffer) rendered() string {
-	s := strings.TrimSpace(string(b.buf))
-	if b.total > len(b.buf) {
-		s += fmt.Sprintf(" …[output truncated: retained %d of %d bytes (--max-output-bytes)]", len(b.buf), b.total)
-	}
-	return s
-}
-
-// observed preserves every retained byte for machine parsers. In particular,
-// leading/trailing whitespace cannot be erased into an exact verdict token.
-// A truncation marker remains non-empty evidence that the capture was incomplete.
-func (b *cappedBuffer) observed() string {
-	s := string(b.buf)
-	if b.total > len(b.buf) {
-		s += fmt.Sprintf(" …[output truncated: retained %d of %d bytes (--max-output-bytes)]", len(b.buf), b.total)
-	}
-	return s
 }

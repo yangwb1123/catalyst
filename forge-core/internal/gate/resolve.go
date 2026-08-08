@@ -11,6 +11,7 @@
 package gate
 
 import (
+	"context"
 	"fmt"
 
 	"forgeos/forge-core/internal/converge"
@@ -62,37 +63,7 @@ func exemptsNoTool(lifecycle string) bool {
 // proven, so the verdict is false. This upgrades the old "zero gates is not green"
 // to "zero NON-NA gates is not green". Zero required gates is likewise not green.
 func GatesGreen(root string, names []string, probe, categories map[string]string, lifecycle string) (bool, converge.GateProof) {
-	var proof converge.GateProof
-	if len(names) == 0 {
-		return false, proof
-	}
-	provenCount := 0 // non-NA gates that PASSED (the vacuous-green guard's numerator)
-	green := true
-	for _, name := range names {
-		res := ResolveGate(root, name, probe)
-		switch res.Status {
-		case StatusPass:
-			provenCount++
-			proof.Proven = append(proof.Proven, name)
-		case StatusNA:
-			cat := gateCategory(name, probe, categories)
-			if !exemptNA(cat, lifecycle) {
-				green = false // an un-waivable N/A (no_tool@production, or unknown) blocks
-			} else {
-				proof.Exemptions = append(proof.Exemptions, converge.GateExemption{
-					Name: name, Category: cat, Reason: naReason(res, cat),
-				})
-			}
-		default: // StatusFail — never exemptible
-			green = false
-		}
-	}
-	// Vacuous guard: a green verdict must rest on at least one proven (non-NA PASS)
-	// gate; all-N/A (even fully exempted) proves nothing.
-	if provenCount == 0 {
-		green = false
-	}
-	return green, proof
+	return GatesGreenWith(context.Background(), root, names, probe, categories, lifecycle, Options{})
 }
 
 // exemptNA applies the category half of the matrix: an "inapplicable" N/A is waived
@@ -165,22 +136,7 @@ func HarnessRunner(repoRoot string, probe map[string]string) func(string) Result
 // An acceptance-backed gate whose criterion is missing from the probe map (or
 // whose probe failed) resolves to N/A — honest "not checked", never a pass.
 func ResolveGate(repoRoot, name string, probe map[string]string) Result {
-	switch name {
-	case "complexity":
-		return Gate(repoRoot)
-	case "arch":
-		return Check(repoRoot)
-	case "test":
-		return combinedGate(name, probe, "test_pass", "app_test_pass")
-	case "lint":
-		return probedGate(name, probe, "lint")
-	case "build":
-		return probedGate(name, probe, "build")
-	case "security":
-		return combinedGate(name, probe, "security_findings", "dependency_vulnerabilities")
-	default:
-		return probedGate(name, probe, name)
-	}
+	return ResolveGateWith(context.Background(), repoRoot, name, probe, Options{})
 }
 
 // probedGate reads one acceptance criterion's status from the probe map and

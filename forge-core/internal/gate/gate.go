@@ -11,10 +11,8 @@
 package gate
 
 import (
-	"encoding/json"
-	"fmt"
+	"context"
 	"os"
-	"os/exec"
 	"strings"
 )
 
@@ -57,23 +55,6 @@ func RepoRoot(root string) string {
 	return "."
 }
 
-// run executes argv[0] with the remaining args, capturing combined output, and
-// reports OK == (exit code 0). It sets the working directory only when dir is
-// non-empty; the harness wrappers (Gate/Check/Accept) pass the resolved repo
-// root so the scripts resolve their relative paths there. A command that fails
-// to start is reported as not-OK with the error text rather than panicking.
-func run(name, dir string, argv ...string) Result {
-	if len(argv) == 0 {
-		return newResult(name, false, "gate: empty argv")
-	}
-	cmd := exec.Command(argv[0], argv[1:]...)
-	if dir != "" {
-		cmd.Dir = dir
-	}
-	out, err := cmd.CombinedOutput()
-	return newResult(name, err == nil, strings.TrimSpace(string(out)))
-}
-
 // newResult builds a Result for a process gate, deriving the tri-state Status
 // from the exit success: a process gate is PASS (ran, exit 0) or FAIL (ran,
 // non-zero / failed to start). NA never originates here — it only arises from
@@ -88,26 +69,26 @@ func newResult(name string, ok bool, output string) Result {
 
 // Gate runs the structural gate: `node harness/gate.mjs` from the repo root.
 // gate.mjs reads its policy and walks files relative to process.cwd(), so the
-// working directory must be the root.
+// working directory must be the root. Bounded by the safe defaults (10m
+// deadline, 10 MiB output cap) — see GateWith for an explicit ctx/Options.
 func Gate(root string) Result {
-	r := RepoRoot(root)
-	return run("gate", r, "node", "harness/gate.mjs")
+	return GateWith(context.Background(), root, Options{})
 }
 
 // Check runs the governance-integrity gate: `python3 harness/check.py <root>`.
 // check.py takes the repo root as its first argument (defaulting to cwd), so
-// the explicit "." matches the working directory we set.
+// the explicit "." matches the working directory we set. Bounded by the safe
+// defaults — see CheckWith for an explicit ctx/Options.
 func Check(root string) Result {
-	r := RepoRoot(root)
-	return run("check", r, "python3", "harness/check.py", ".")
+	return CheckWith(context.Background(), root, Options{})
 }
 
 // Accept runs the acceptance gate: `node harness/acceptance.mjs` from the repo
 // root. acceptance.mjs derives the root from its own script location, but we
-// still anchor cwd at the root for the suites it spawns.
+// still anchor cwd at the root for the suites it spawns. Bounded by the safe
+// defaults — see AcceptWith for an explicit ctx/Options.
 func Accept(root string) Result {
-	r := RepoRoot(root)
-	return run("accept", r, "node", "harness/acceptance.mjs")
+	return AcceptWith(context.Background(), root, Options{})
 }
 
 // probeRow mirrors one element of acceptance.mjs's `--json` array. Category is the
@@ -136,37 +117,15 @@ type probeRow struct {
 // FAIL is a legitimate, parseable verdict); only a missing tool or unparseable
 // output is an error.
 func ProbeAll(root string) (statuses map[string]string, categories map[string]string, err error) {
-	r := RepoRoot(root)
-	cmd := exec.Command("node", "harness/acceptance.mjs", "--json")
-	cmd.Dir = r
-	out, err := cmd.Output()
-	if err != nil {
-		// An ExitError still carries valid JSON on stdout (REJECTED but honest);
-		// only treat a start failure / no-stdout case as fatal.
-		if ee, ok := err.(*exec.ExitError); !ok || len(out) == 0 {
-			return nil, nil, fmt.Errorf("gate: acceptance --json failed: %w (%s)", err, exitStderr(ee))
-		}
-	}
-	var rows []probeRow
-	if err := json.Unmarshal(out, &rows); err != nil {
-		return nil, nil, fmt.Errorf("gate: parsing acceptance --json: %w", err)
-	}
-	statuses = make(map[string]string, len(rows))
-	categories = make(map[string]string, len(rows))
-	for _, row := range rows {
-		statuses[row.Criterion] = normStatus(row.Status)
-		categories[row.Criterion] = row.Category
-	}
-	return statuses, categories, nil
+	return ProbeAllWith(context.Background(), root, Options{})
 }
 
-// exitStderr returns an ExitError's captured stderr, or "" when none — kept
-// nil-safe so the error path can format it unconditionally.
-func exitStderr(ee *exec.ExitError) string {
-	if ee == nil {
-		return ""
-	}
-	return strings.TrimSpace(string(ee.Stderr))
+// exitStderr returns a split-captured stderr's trimmed text, or "" when none —
+// nil-safe so the error path can format it unconditionally (the legacy
+// ExitError.Stderr counterpart; ProbeAllWith sources it from the bounded
+// CaptureSplit result).
+func exitStderr(stderr []byte) string {
+	return strings.TrimSpace(string(stderr))
 }
 
 // normStatus maps acceptance.mjs's status spelling onto gate's tri-state. The

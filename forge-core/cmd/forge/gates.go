@@ -16,6 +16,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -37,23 +38,20 @@ import (
 // gate is FAIL and none is N/A — "green" means every required gate was CHECKED
 // and PASSED, never merely "nothing failed".
 //
-// The same fresh acceptance map (criterion -> PASS/FAIL/NA) is also handed to
-// Signals.Criteria, so a workflow can converge on an INDIVIDUAL acceptance
-// criterion (e.g. test_pass) and not only the coarse GatesGreen aggregate. A nil
-// probe (broken/absent) leaves Criteria nil, and every per-criterion check degrades
-// to unmet (absence of a verdict is never satisfaction).
-//
-// verdicts (nil-safe) is the run's *verdictLedger — the same one Engine.AgentVerdict
-// reads back — consulted here via reviewStatus() to populate Signals.ReviewStatus.
-// gateSet optionally supplies the exact mode-filtered gates the engine executed;
-// callers without an execution ledger retain the workflow-declared fallback.
-func gatherSignals(root string, wf asset.Workflow, probe, categories map[string]string, lifecycle string, approved bool, verdicts *verdictLedger, gateSet ...[]string) converge.Signals {
+// ctx/opts bound the LIVE gate spawns the convergence check can trigger
+// (complexity/arch via gate.GatesGreenWith). The same fresh acceptance map
+// (criterion -> PASS/FAIL/NA) also feeds Signals.Criteria (a workflow can
+// converge on an INDIVIDUAL criterion too); a nil probe leaves Criteria nil and
+// every per-criterion check unmet. verdicts (nil-safe) drives ReviewStatus via
+// reviewStatus(); gateSet optionally supplies the exact mode-filtered gates the
+// engine executed (else the workflow-declared fallback).
+func gatherSignals(ctx context.Context, opts gate.Options, root string, wf asset.Workflow, probe, categories map[string]string, lifecycle string, approved bool, verdicts *verdictLedger, gateSet ...[]string) converge.Signals {
 	md, _ := os.ReadFile(filepath.Join(root, ".agent", "ROADMAP.md"))
 	names := requiredGates(wf)
 	if len(gateSet) > 0 {
 		names = gateSet[0]
 	}
-	green, proof := gate.GatesGreen(root, names, probe, categories, lifecycle)
+	green, proof := gate.GatesGreenWith(ctx, root, names, probe, categories, lifecycle, opts)
 	sig := converge.Signals{
 		RoadmapCompletion:     converge.RoadmapCompletion(string(md)),
 		GatesGreen:            green,
@@ -287,27 +285,29 @@ func requiredGates(wf asset.Workflow) []string {
 // BOTH the status and category maps and marks the cache stale so the next
 // iteration re-probes. This avoids double-spawning within an iteration while
 // staying fresh across iterations, and keeps statuses+categories from the SAME run.
+// ctx/opts ride the probe so every live spawn is bounded and Ctrl-C reaches the
+// process group (A1.2 closure capture).
 type loopProbe struct {
-	// mu guards the cache so concurrent gate phases under `forge evolve --parallel`
-	// (≥2 gate phases in one wave) prime it exactly once instead of racing. current()
-	// runs single-threaded after the wave, but locks too for a clean, subtlety-free
-	// contract. The serial path takes the uncontended lock — byte-for-byte unchanged.
+	// mu guards the cache: concurrent gate phases under `forge evolve --parallel`
+	// (≥2 in one wave) prime it exactly once instead of racing; current() locks too.
 	mu         sync.Mutex
+	ctx        context.Context
 	root       string
+	opts       gate.Options
 	cached     map[string]string
 	categories map[string]string
 	primed     bool
 }
 
 // refresh runs gate.ProbeAll once per iteration (caching both the status and
-// category maps) and returns the status map — the gate-resolution view, which only
-// needs statuses. A probe error degrades both maps to nil (downstream treats absent
-// criteria as N/A with an empty, non-exemptible category).
+// category maps) and returns the status map — the gate-resolution view, which
+// only needs statuses. A probe error degrades both maps to nil (downstream
+// treats absent criteria as N/A with an empty, non-exemptible category).
 func (p *loopProbe) refresh() map[string]string {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if !p.primed {
-		statuses, categories, err := gate.ProbeAll(p.root)
+		statuses, categories, err := gate.ProbeAllWith(p.ctx, p.root, p.opts)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "forge evolve: acceptance probe unavailable (%v); gates degrade to N/A\n", err)
 			statuses, categories = nil, nil

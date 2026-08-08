@@ -205,17 +205,12 @@ func phaseTierResolver(mode string, spendRatio func() float64, cards []routing.S
 
 // logPhaseHistory queries HistoryTiebreak for this phase and returns the selected
 // model, which phaseTierResolver uses as the actual routing decision for
-// non-safety-floor agents (v1.5 upgrade):
-//   - non-floor agents: candidates = routing.CandidatesForTier(adj) = [adj,
-//     ...cheaper]. HistoryTiebreak selects the highest-quality qualifying candidate;
-//     a cheaper model wins only with sufficient history AND better quality_score.
-//     Cold start / thin data -> falls back to adj (candidates[0]);
-//   - safety-floor agents (reviewer/architect/cto): candidates stay [adj] — Opus can
-//     never be overridden by scorecard data;
-//   - an UNMAPPED agent (harness/gate phase) is SKIPPED, adj returned unchanged.
-//
-// logln nil -> no log output, picked still returned. cards empty (cold start) ->
-// falls back to adj with an honest "no scorecard -> tier_default" reason.
+// non-safety-floor agents (v1.5 upgrade): non-floor agents pick the best candidate
+// from [adj, ...cheaper] (cheaper wins only with sufficient history AND better
+// quality); safety-floor agents (reviewer/architect/cto) stay on [adj]; an
+// UNMAPPED agent (harness/gate phase) is SKIPPED, adj returned unchanged.
+// logln nil -> no log output; cards empty (cold start) -> adj with an honest
+// "no scorecard -> tier_default" reason.
 func logPhaseHistory(p asset.Phase, adj string, cards []routing.Scorecard, logln func(string)) string {
 	taskType, ok := attribution.TaskTypeForAgent(p.Agent)
 	if !ok {
@@ -313,8 +308,7 @@ func riskAdjustedTier(base, riskLevel string) string {
 // per-function line budget, no behavior change. Opens the run's trace (append, same
 // .forge/trace.jsonl evolve uses, git-ignored, so real claude cost is never billed
 // unseen), runs the doctor's pre-run diagnostics into it, then opens the run-level
-// budget — fail-closed on either step. The returned closeTrace is nil only alongside
-// a non-nil err.
+// budget — fail-closed on either step.
 func openRunResources(root, runBudgetUSD string, logln func(string), runIDs ...string) (*trace.Tracer, func(), *runBudget, error) {
 	tracer, closeTrace, err := openTracer(root)
 	if err != nil {
@@ -336,10 +330,14 @@ func openRunResources(root, runBudgetUSD string, logln func(string), runIDs ...s
 // orchestrator actually executes after mode filtering. Agent success invalidates
 // the snapshot; the next gate (or convergence, when no later gate exists) refreshes
 // it. Convergence reuses the gate snapshot when no agent wrote after that gate.
+// ctx/opts ride the probe so every live spawn (ProbeAll + complexity/arch gates)
+// is bounded by the invocation's gate deadline/output cap.
 type runProbe struct {
 	mu         sync.Mutex
+	ctx        context.Context
 	root       string
-	load       func(string) (map[string]string, map[string]string, error)
+	opts       gate.Options
+	load       func(context.Context, string, gate.Options) (map[string]string, map[string]string, error)
 	statuses   map[string]string
 	categories map[string]string
 	gates      []string
@@ -347,15 +345,15 @@ type runProbe struct {
 	primed     bool
 }
 
-func newRunProbe(root string) *runProbe {
-	return &runProbe{root: root, load: gate.ProbeAll, seen: map[string]bool{}}
+func newRunProbe(ctx context.Context, root string, opts gate.Options) *runProbe {
+	return &runProbe{ctx: ctx, root: root, opts: opts, load: gate.ProbeAllWith, seen: map[string]bool{}}
 }
 
 func (p *runProbe) refresh() map[string]string {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if !p.primed {
-		statuses, categories, err := p.load(p.root)
+		statuses, categories, err := p.load(p.ctx, p.root, p.opts)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "forge run: acceptance probe unavailable (%v); gates degrade to N/A\n", err)
 			statuses, categories = nil, nil
@@ -378,7 +376,7 @@ func (p *runProbe) runGate(name string) gate.Result {
 		p.gates = append(p.gates, name)
 	}
 	p.mu.Unlock()
-	return gate.ResolveGate(p.root, name, p.refresh())
+	return gate.ResolveGateWith(p.ctx, p.root, name, p.refresh(), p.opts)
 }
 
 func (p *runProbe) current() (map[string]string, map[string]string) {
@@ -411,12 +409,19 @@ func (e runProbeExecutor) Execute(ctx context.Context, p asset.Phase, mode strin
 
 // execEngine wires the real harness gates + the selected agent executor and
 // runs the workflow, returning 0 on a clean run and 1 on the first failure.
-// ctx carries cancellation so the engine can abort cleanly on SIGINT.
-//
-// Honesty: each stage probes only after agent work, then shares that snapshot
-// between its gate phase and convergence until another agent succeeds. Chained
-// stages therefore never inherit the prior stage's acceptance result.
+// ctx carries cancellation so the engine can abort cleanly on SIGINT. Honesty:
+// each stage probes only after agent work, then shares that snapshot between
+// its gate phase and convergence until another agent succeeds. Chained stages
+// therefore never inherit the prior stage's acceptance result.
 func execEngine(ctx context.Context, firstWf asset.Workflow, o runOpts) int {
+	// Gate options resolve ONCE before any spawn: FORGE_GATE_TIMEOUT only — never
+	// o.timeout, the per-AGENT knob (regression pin). A bad env fails up front.
+	gateOpts, err := gate.ResolveOptions(gate.CLIInput{EnvTimeout: os.Getenv(gate.EnvTimeout)})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "forge run: %v\n", err)
+		return 1
+	}
+	o.gateOpts = gateOpts
 	lock := acquireRunLockForOptions(o, "forge run")
 	if lock == nil {
 		return 1
@@ -456,7 +461,7 @@ func execEngine(ctx context.Context, firstWf asset.Workflow, o runOpts) int {
 // rejection was acted on and may be consumed only after its own state commit.
 func execOneStage(ctx context.Context, wf asset.Workflow, o runOpts, logln func(string), lifecycle string, tracer *trace.Tracer, budget *runBudget, chargeAgentCall func(int) (int, bool)) (bool, bool, int) {
 	pol := mode.Effective(o.mode, lifecycle)
-	boundary := resolveStageHostBoundary(wf, o, lifecycle, logln)
+	boundary := resolveStageHostBoundary(ctx, wf, o, lifecycle, logln)
 	eng, verdicts, _ := buildRunEngine(wf, o, logln, costEmitter(tracer, logln),
 		boundary.runGate, pol, budget, boundary.autoRisk, boundary.autoRiskReasons,
 		boundary.autoDims, boundary.autoDimsReasons, tracer.RunID)
@@ -484,7 +489,7 @@ func execOneStage(ctx context.Context, wf asset.Workflow, o runOpts, logln func(
 		actualGates = boundary.probe.actualGates()
 	}
 	met := reportStageConvergence(
-		wf, o.root, probe, categories, lifecycle, o.approved,
+		ctx, o.gateOpts, wf, o.root, probe, categories, lifecycle, o.approved,
 		verdicts, actualGates, boundary.proposalStage, boundary.releaseStage,
 	)
 	if boundary.hostCommands {

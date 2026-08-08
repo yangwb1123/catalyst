@@ -92,15 +92,22 @@ func captureChainOutput(t *testing.T, fn func() int) (int, string) {
 	outR, outW, _ := os.Pipe()
 	errR, errW, _ := os.Pipe()
 	os.Stdout, os.Stderr = outW, errW
+	// Concurrent drains: a synchronous read-after-close deadlocks once the
+	// captured output exceeds the pipe buffer (64 KiB) — the truncation
+	// tests emit > 65 KiB on purpose.
+	stdoutCh := make(chan string, 1)
+	stderrCh := make(chan string, 1)
+	go func() { b, _ := io.ReadAll(outR); stdoutCh <- string(b) }()
+	go func() { b, _ := io.ReadAll(errR); stderrCh <- string(b) }()
 	code := fn()
 	outW.Close()
 	errW.Close()
 	os.Stdout, os.Stderr = oldOut, oldErr
-	stdout, _ := io.ReadAll(outR)
-	stderr, _ := io.ReadAll(errR)
+	stdout := <-stdoutCh
+	stderr := <-stderrCh
 	outR.Close()
 	errR.Close()
-	return code, string(stdout) + string(stderr)
+	return code, stdout + stderr
 }
 
 func mustChainState(t *testing.T, root string) chainState {

@@ -22,11 +22,11 @@ import (
 // subcommands keeps run's body a short lookup under the function-line budget.
 // gate/check/accept close over delegate + the harness gate.* function they wrap.
 var subcommands = map[string]func([]string) int{
-	"run":                 cmdRun,
-	"gate":                func(rest []string) int { return delegate(gate.Gate, rest) },
-	"check":               func(rest []string) int { return delegate(gate.Check, rest) },
-	"accept":              func(rest []string) int { return delegate(gate.Accept, rest) },
-	"evolve":              cmdEvolve,
+	"run":    cmdRun,
+	"gate":   func(rest []string) int { return delegate(gate.GateWith, rest) },
+	"check":  func(rest []string) int { return delegate(gate.CheckWith, rest) },
+	"accept": func(rest []string) int { return delegate(gate.AcceptWith, rest) },
+	"evolve": cmdEvolve,
 	"route":               cmdRoute,
 	"migrate":             cmdMigrate,
 	"detect":              cmdDetect,
@@ -111,7 +111,7 @@ usage:
   forge graph-execution-schedule --control FILE|-
   forge graph-scheduled-node-contract --control FILE|- --schedule-sha256 SHA256 --endpoint HTTPS_URL --model MODEL --max-output-tokens N --max-model-output-bytes N --max-model-events N --timeout-ms N --max-cost-usd-micros N --pricing-snapshot-sha256 SHA256 --max-result-bytes N
   forge graph-scheduled-node-dispatch-authorize --control FILE|-
-  forge gate|check|accept [--root DIR]
+  forge gate|check|accept [--root DIR] [--timeout D] [--max-output-bytes N]
 `)
 }
 

@@ -1,12 +1,14 @@
 package main
 
 import (
+	"context"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"forgeos/forge-core/internal/asset"
 	"forgeos/forge-core/internal/converge"
+	"forgeos/forge-core/internal/gate"
 )
 
 // exemptWorkflow builds a workflow whose single phase requires the given gates —
@@ -38,7 +40,7 @@ func TestGatesStatus_AdapterlessEndToEnd(t *testing.T) {
 		{Metric: "gates_status", Operator: "==", Value: "green"},
 	}}
 
-	sig := gatherSignals(root, wf, probe, cats, "mvp", false, nil)
+	sig := gatherSignals(context.Background(), gate.Options{}, root, wf, probe, cats, "mvp", false, nil)
 	results, met := converge.Converge(wf.Stop, sig)
 	if !met {
 		t.Fatalf("gates_status must converge for an adapter-less mvp project; results=%+v", results)

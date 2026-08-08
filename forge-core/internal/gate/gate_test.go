@@ -1,6 +1,7 @@
 package gate
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -39,7 +40,7 @@ func findRepoRoot() string {
 
 func TestRun_OK(t *testing.T) {
 	tru := mustTool(t, "true")
-	r := run("ok", "", tru)
+	r := runWith(context.Background(), "ok", "", Options{}, tru)
 	if !r.OK {
 		t.Errorf("run(true).OK = false, output=%q", r.Output)
 	}
@@ -50,31 +51,32 @@ func TestRun_OK(t *testing.T) {
 
 func TestRun_NotOK(t *testing.T) {
 	fal := mustTool(t, "false")
-	r := run("fail", "", fal)
+	r := runWith(context.Background(), "fail", "", Options{}, fal)
 	if r.OK {
 		t.Error("run(false).OK = true, want false")
 	}
 }
 
 func TestRun_EmptyArgv(t *testing.T) {
-	r := run("empty", "")
+	r := runWith(context.Background(), "empty", "", Options{})
 	if r.OK {
 		t.Error("empty argv should be not-OK")
 	}
 }
 
 func TestRun_MissingBinary(t *testing.T) {
-	r := run("missing", "", "forge-no-such-binary-xyz")
+	r := runWith(context.Background(), "missing", "", Options{}, "forge-no-such-binary-xyz")
 	if r.OK {
 		t.Error("missing binary should be not-OK, not a panic")
 	}
 }
 
-// run honors an explicit working directory only when one is given; an empty dir
-// leaves the process cwd untouched.
+// runWith honors an explicit working directory only when one is given; an
+// empty root leaves the process cwd untouched (RepoRoot("") resolves to
+// ".", which is the same directory).
 func TestRun_SetsDirWhenGiven(t *testing.T) {
 	pwd := mustTool(t, "pwd")
-	r := run("dir", "/", pwd)
+	r := runWith(context.Background(), "dir", "/", Options{}, pwd)
 	if !r.OK {
 		t.Fatalf("run(pwd) in / failed: %q", r.Output)
 	}

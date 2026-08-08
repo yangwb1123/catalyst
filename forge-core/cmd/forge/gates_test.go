@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -10,6 +11,7 @@ import (
 
 	"forgeos/forge-core/internal/asset"
 	"forgeos/forge-core/internal/converge"
+	"forgeos/forge-core/internal/gate"
 )
 
 // gatherSignals must hand the SAME acceptance probe map it already used for the
@@ -36,7 +38,7 @@ func TestGatherSignals_PopulatesCriteriaFromProbe(t *testing.T) {
 		{Name: "verify", RequiredGates: []string{"test"}},
 	}}
 
-	sig := gatherSignals(root, wf, probe, nil, "mvp", false, nil)
+	sig := gatherSignals(context.Background(), gate.Options{}, root, wf, probe, nil, "mvp", false, nil)
 
 	// The probe map must be carried through verbatim — same length and values.
 	if len(sig.Criteria) != len(probe) {
@@ -72,20 +74,20 @@ func TestGatherSignals_PerCriterionConvergenceEndToEnd(t *testing.T) {
 	wf := asset.Workflow{Phases: []asset.Phase{{Name: "verify", RequiredGates: []string{"test"}}}}
 
 	// PASS probe -> the criterion is Met and the conjunction converges.
-	pass := gatherSignals(root, wf, map[string]string{"test_pass": "PASS"}, nil, "mvp", false, nil)
+	pass := gatherSignals(context.Background(), gate.Options{}, root, wf, map[string]string{"test_pass": "PASS"}, nil, "mvp", false, nil)
 	results, met := converge.Evaluate(stop, pass)
 	if !met || !results[0].Met {
 		t.Errorf("test_pass=PASS should converge per-criterion; got met=%v results=%+v", met, results)
 	}
 
 	// FAIL probe -> unmet; the SAME reused probe map drives the verdict honestly.
-	fail := gatherSignals(root, wf, map[string]string{"test_pass": "FAIL"}, nil, "mvp", false, nil)
+	fail := gatherSignals(context.Background(), gate.Options{}, root, wf, map[string]string{"test_pass": "FAIL"}, nil, "mvp", false, nil)
 	if _, met := converge.Evaluate(stop, fail); met {
 		t.Error("test_pass=FAIL must NOT converge")
 	}
 
 	// Absent verdict (nil/broken probe) -> unmet (absence is never satisfaction).
-	absent := gatherSignals(root, wf, nil, nil, "mvp", false, nil)
+	absent := gatherSignals(context.Background(), gate.Options{}, root, wf, nil, nil, "mvp", false, nil)
 	if _, met := converge.Evaluate(stop, absent); met {
 		t.Error("absent test_pass verdict must NOT converge (honest unmet)")
 	}
@@ -100,7 +102,7 @@ func TestGatherSignals_PerCriterionConvergenceEndToEnd(t *testing.T) {
 func TestGatherSignals_MissingRoadmapStillWiresCriteria(t *testing.T) {
 	root := t.TempDir() // no .agent/ROADMAP.md at all
 	probe := map[string]string{"test_pass": "PASS"}
-	sig := gatherSignals(root, asset.Workflow{}, probe, nil, "mvp", false, nil)
+	sig := gatherSignals(context.Background(), gate.Options{}, root, asset.Workflow{}, probe, nil, "mvp", false, nil)
 	if sig.RoadmapCompletion != 0 {
 		t.Errorf("RoadmapCompletion = %v, want 0 (no ROADMAP)", sig.RoadmapCompletion)
 	}
@@ -143,10 +145,10 @@ func TestHumanApproved_FlagOrMarkerOrNeither(t *testing.T) {
 // so a human_gate's convergence is driven by it (and only it).
 func TestGatherSignals_CarriesHumanApproved(t *testing.T) {
 	root := t.TempDir()
-	if sig := gatherSignals(root, asset.Workflow{}, nil, nil, "mvp", true, nil); !sig.HumanApproved {
+	if sig := gatherSignals(context.Background(), gate.Options{}, root, asset.Workflow{}, nil, nil, "mvp", true, nil); !sig.HumanApproved {
 		t.Error("gatherSignals(approved=true) must set Signals.HumanApproved")
 	}
-	if sig := gatherSignals(root, asset.Workflow{}, nil, nil, "mvp", false, nil); sig.HumanApproved {
+	if sig := gatherSignals(context.Background(), gate.Options{}, root, asset.Workflow{}, nil, nil, "mvp", false, nil); sig.HumanApproved {
 		t.Error("gatherSignals(approved=false) must leave Signals.HumanApproved false")
 	}
 }
@@ -205,7 +207,7 @@ func TestGatherSignals_ReviewStatusEndToEnd(t *testing.T) {
 	}}
 
 	// No verdict recorded yet -> unmet, honest "no review phase data" detail.
-	unset := gatherSignals(root, wf, nil, nil, "mvp", false, newVerdictLedger())
+	unset := gatherSignals(context.Background(), gate.Options{}, root, wf, nil, nil, "mvp", false, newVerdictLedger())
 	if _, met := converge.Evaluate(wf.Stop.AllOf, unset); met {
 		t.Error("an unrecorded executive-review verdict must NOT converge")
 	}
@@ -213,7 +215,7 @@ func TestGatherSignals_ReviewStatusEndToEnd(t *testing.T) {
 	// APPROVE_WITH_SIMPLIFICATION recorded -> "approved" -> converges.
 	approved := newVerdictLedger()
 	approved.record("executive-review", VerdictApproveWithSimplification)
-	sig := gatherSignals(root, wf, nil, nil, "mvp", false, approved)
+	sig := gatherSignals(context.Background(), gate.Options{}, root, wf, nil, nil, "mvp", false, approved)
 	if sig.ReviewStatus != "approved" {
 		t.Errorf("Signals.ReviewStatus = %q, want %q", sig.ReviewStatus, "approved")
 	}
@@ -224,7 +226,7 @@ func TestGatherSignals_ReviewStatusEndToEnd(t *testing.T) {
 	// REDESIGN recorded -> meaningful non-"approved" detail, still unmet.
 	redesign := newVerdictLedger()
 	redesign.record("executive-review", VerdictRedesign)
-	sig2 := gatherSignals(root, wf, nil, nil, "mvp", false, redesign)
+	sig2 := gatherSignals(context.Background(), gate.Options{}, root, wf, nil, nil, "mvp", false, redesign)
 	results, met := converge.Evaluate(wf.Stop.AllOf, sig2)
 	if met {
 		t.Error("review_status==approved must NOT converge on REDESIGN")
@@ -291,7 +293,7 @@ func TestGatherSignals_RequirementConfidenceEndToEnd(t *testing.T) {
 	}}
 
 	// No verdict recorded yet -> unmet, honest "no discover phase data" detail.
-	unset := gatherSignals(root, wf, nil, nil, "mvp", false, newVerdictLedger())
+	unset := gatherSignals(context.Background(), gate.Options{}, root, wf, nil, nil, "mvp", false, newVerdictLedger())
 	if _, met := converge.Evaluate(wf.Stop.AllOf, unset); met {
 		t.Error("an unrecorded requirement-discovery confidence must NOT converge")
 	}
@@ -299,7 +301,7 @@ func TestGatherSignals_RequirementConfidenceEndToEnd(t *testing.T) {
 	// 85 recorded -> >= 80 -> converges.
 	confident := newVerdictLedger()
 	confident.record(requirementDiscoveryPhase, "85")
-	sig := gatherSignals(root, wf, nil, nil, "mvp", false, confident)
+	sig := gatherSignals(context.Background(), gate.Options{}, root, wf, nil, nil, "mvp", false, confident)
 	if sig.RequirementConfidence != 85 {
 		t.Errorf("Signals.RequirementConfidence = %v, want 85", sig.RequirementConfidence)
 	}
@@ -310,7 +312,7 @@ func TestGatherSignals_RequirementConfidenceEndToEnd(t *testing.T) {
 	// 50 recorded -> below threshold, still unmet.
 	unsure := newVerdictLedger()
 	unsure.record(requirementDiscoveryPhase, "50")
-	sig2 := gatherSignals(root, wf, nil, nil, "mvp", false, unsure)
+	sig2 := gatherSignals(context.Background(), gate.Options{}, root, wf, nil, nil, "mvp", false, unsure)
 	results, met := converge.Evaluate(wf.Stop.AllOf, sig2)
 	if met {
 		t.Error("requirement_confidence>=80 must NOT converge on a 50 score")
@@ -408,7 +410,7 @@ func humanGateWorkflow() asset.Workflow {
 func TestReportConvergence_HumanGate_Awaiting(t *testing.T) {
 	root := t.TempDir() // no --approved, no .forge/design.approved marker
 	out := captureStdout(t, func() {
-		reportConvergence(humanGateWorkflow(), root, nil, nil, "mvp", false, nil)
+		reportConvergence(context.Background(), gate.Options{}, humanGateWorkflow(), root, nil, nil, "mvp", false, nil)
 	})
 	if !strings.Contains(out, "awaiting human approval (non-bypassable)") {
 		t.Errorf("unapproved human_gate must report the awaiting message; got:\n%s", out)
@@ -426,7 +428,7 @@ func TestReportConvergence_HumanGate_Awaiting(t *testing.T) {
 func TestReportConvergence_HumanGate_Approved(t *testing.T) {
 	// Approval via the flag.
 	flagOut := captureStdout(t, func() {
-		reportConvergence(humanGateWorkflow(), t.TempDir(), nil, nil, "mvp", true, nil)
+		reportConvergence(context.Background(), gate.Options{}, humanGateWorkflow(), t.TempDir(), nil, nil, "mvp", true, nil)
 	})
 	for _, want := range []string{"MET (human_gate)", "approved", "next_stage=build"} {
 		if !strings.Contains(flagOut, want) {
@@ -439,7 +441,7 @@ func TestReportConvergence_HumanGate_Approved(t *testing.T) {
 	mkdir(t, filepath.Dir(approvalPath(root, "design")))
 	writeFile(t, approvalPath(root, "design"), "")
 	markerOut := captureStdout(t, func() {
-		reportConvergence(humanGateWorkflow(), root, nil, nil, "mvp", false, nil)
+		reportConvergence(context.Background(), gate.Options{}, humanGateWorkflow(), root, nil, nil, "mvp", false, nil)
 	})
 	if !strings.Contains(markerOut, "approved → unlocks next_stage=build") {
 		t.Errorf("marker-approved report must unlock next_stage; got:\n%s", markerOut)

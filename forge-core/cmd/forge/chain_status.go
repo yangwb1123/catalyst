@@ -1,12 +1,14 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
 
 	"forgeos/forge-core/internal/asset"
 	"forgeos/forge-core/internal/converge"
+	"forgeos/forge-core/internal/gate"
 )
 
 // validateChainRunOptionConflicts runs before persisted workflow reconstruction
@@ -133,17 +135,18 @@ func printChainStatusText(root string) {
 }
 
 // reportConvergence evaluates the stop condition against the same live signals
-// used by gate phases and returns whether the workflow may advance.
-func reportConvergence(wf asset.Workflow, root string, probe, categories map[string]string, lifecycle string, approvedFlag bool, verdicts *verdictLedger, gateSet ...[]string) bool {
+// used by gate phases and returns whether the workflow may advance. ctx/opts
+// bound the live gate spawns gatherSignals can trigger (R6 site 4).
+func reportConvergence(ctx context.Context, opts gate.Options, wf asset.Workflow, root string, probe, categories map[string]string, lifecycle string, approvedFlag bool, verdicts *verdictLedger, gateSet ...[]string) bool {
 	if wf.Stop.Type == "" {
 		return false
 	}
 	approved := humanApproved(root, wf.Stage, approvedFlag)
-	signals := gatherSignals(root, wf, probe, categories, lifecycle, approved, verdicts, gateSet...)
+	signals := gatherSignals(ctx, opts, root, wf, probe, categories, lifecycle, approved, verdicts, gateSet...)
 	return reportConvergenceSignals(wf, signals)
 }
 
-func reportStageConvergence(wf asset.Workflow, root string, probe, categories map[string]string, lifecycle string, approvedFlag bool, verdicts *verdictLedger, gates []string, proposalStage, releaseStage bool) bool {
+func reportStageConvergence(ctx context.Context, opts gate.Options, wf asset.Workflow, root string, probe, categories map[string]string, lifecycle string, approvedFlag bool, verdicts *verdictLedger, gates []string, proposalStage, releaseStage bool) bool {
 	switch {
 	case proposalStage:
 		approved := humanApproved(root, wf.Stage, approvedFlag)
@@ -153,7 +156,7 @@ func reportStageConvergence(wf asset.Workflow, root string, probe, categories ma
 			HumanApproved: humanApproved(root, wf.Stage, approvedFlag),
 		})
 	default:
-		return reportConvergence(wf, root, probe, categories, lifecycle, approvedFlag, verdicts, gates)
+		return reportConvergence(ctx, opts, wf, root, probe, categories, lifecycle, approvedFlag, verdicts, gates)
 	}
 }
 

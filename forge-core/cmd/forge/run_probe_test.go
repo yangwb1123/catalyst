@@ -27,8 +27,8 @@ func TestRunProbeRefreshesAfterAgentMutationAndConvergenceReusesIt(t *testing.T)
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			state, calls := tc.before, 0
-			p := newRunProbe(t.TempDir())
-			p.load = func(string) (map[string]string, map[string]string, error) {
+			p := newRunProbe(context.Background(), t.TempDir(), gate.Options{})
+			p.load = func(context.Context, string, gate.Options) (map[string]string, map[string]string, error) {
 				calls++
 				return map[string]string{"lint": state}, map[string]string{"lint": "applicable"}, nil
 			}
@@ -56,8 +56,8 @@ func TestRunProbeRefreshesAfterAgentMutationAndConvergenceReusesIt(t *testing.T)
 
 func TestRunProbeConvergenceRefreshesWhenAgentRunsAfterLastGate(t *testing.T) {
 	state, calls := gate.StatusPass, 0
-	p := newRunProbe(t.TempDir())
-	p.load = func(string) (map[string]string, map[string]string, error) {
+	p := newRunProbe(context.Background(), t.TempDir(), gate.Options{})
+	p.load = func(context.Context, string, gate.Options) (map[string]string, map[string]string, error) {
 		calls++
 		return map[string]string{"lint": state}, nil, nil
 	}
@@ -93,8 +93,8 @@ func TestRunProbeModeFilteredGateSetDrivesConvergence(t *testing.T) {
 		t.Fatalf("load workflow %s: %v", all, err)
 	}
 	calls := 0
-	p := newRunProbe(t.TempDir())
-	p.load = func(string) (map[string]string, map[string]string, error) {
+	p := newRunProbe(context.Background(), t.TempDir(), gate.Options{})
+	p.load = func(context.Context, string, gate.Options) (map[string]string, map[string]string, error) {
 		calls++
 		return map[string]string{
 			"lint": gate.StatusPass, "build": gate.StatusPass,
@@ -114,7 +114,7 @@ func TestRunProbeModeFilteredGateSetDrivesConvergence(t *testing.T) {
 	if len(actual) != 2 || actual[0] != "lint" || actual[1] != "build" {
 		t.Fatalf("actual gates = %v, want [lint build]", actual)
 	}
-	sig := gatherSignals(p.root, wf, statuses, categories, "idea", false, nil, actual)
+	sig := gatherSignals(context.Background(), gate.Options{}, p.root, wf, statuses, categories, "idea", false, nil, actual)
 	if !sig.GatesGreen {
 		t.Error("convergence must be green from executed [lint build]; excluded failing gates must not reappear")
 	}

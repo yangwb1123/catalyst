@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"forgeos/forge-core/internal/routing"
 	"os"
@@ -100,7 +101,14 @@ type stageHostBoundary struct {
 	runGate         func(string) gate.Result
 }
 
-func resolveStageHostBoundary(wf asset.Workflow, o runOpts, lifecycle string, logln func(string)) stageHostBoundary {
+// resolveStageHostBoundary decides how this stage's gates run: restricted
+// (release/proposal) stages get a fail-closed runner that never spawns; host
+// stages get the live probe. ctx is the invocation's signal-aware context and
+// opts the resolved gate options — both ride the probe via closure capture so
+// every live spawn (ProbeAll + the complexity/arch gates ResolveGateWith
+// runs) is bounded and Ctrl-C reaches the process group, with ZERO signature
+// change to orchestrator.Engine.RunGate.
+func resolveStageHostBoundary(ctx context.Context, wf asset.Workflow, o runOpts, lifecycle string, logln func(string)) stageHostBoundary {
 	boundary := stageHostBoundary{
 		releaseStage:  releaseApprovalStage(wf.Stage),
 		proposalStage: proposalOnlyEvolve(wf, o, lifecycle),
@@ -118,15 +126,18 @@ func resolveStageHostBoundary(wf asset.Workflow, o runOpts, lifecycle string, lo
 	boundary.autoRisk, boundary.autoRiskReasons = resolveAutoRisk(o.root)
 	logAutoRisk(logln, "forge run", boundary.autoRisk, boundary.autoRiskReasons)
 	boundary.autoDims, boundary.autoDimsReasons = resolveAutoDims(o.root)
-	boundary.probe = newRunProbe(o.root)
+	boundary.probe = newRunProbe(ctx, o.root, o.gateOpts)
 	boundary.runGate = boundary.probe.runGate
 	return boundary
 }
 
-func proposalEvolveGateRunner(root string, probe *loopProbe, restricted bool) func(string) gate.Result {
+// proposalEvolveGateRunner builds the evolve loop's gate runner: a refreshing
+// probe when the loop may run host commands, else the fail-closed restricted
+// runner. ctx/opts ride the closure so live spawns are bounded and cancellable.
+func proposalEvolveGateRunner(ctx context.Context, root string, probe *loopProbe, restricted bool, opts gate.Options) func(string) gate.Result {
 	if !restricted {
 		return func(name string) gate.Result {
-			return gate.ResolveGate(root, name, probe.refresh())
+			return gate.ResolveGateWith(ctx, root, name, probe.refresh(), opts)
 		}
 	}
 	return func(name string) gate.Result {

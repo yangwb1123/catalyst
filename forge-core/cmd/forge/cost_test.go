@@ -426,7 +426,7 @@ func TestBuildLoop_ThreadsCostSinkIntoExecutor(t *testing.T) {
 	wf := asset.Workflow{Stage: "evolve", Stop: asset.StopCondition{Type: "external"},
 		Phases: []asset.Phase{{Name: "implementer", Agent: "implementer"}}}
 	wantModel := orchestrator.PhaseTier(wf.Phases[0], "balanced")
-	loop, _, _, _ := buildLoop(wf, o, 1, func(string) {}, costEmitter(trace.NewTracer(&buf), func(string) {}), &runBudget{}, "", nil)
+	loop, _, _, _ := buildLoop(context.Background(), wf, o, 1, func(string) {}, costEmitter(trace.NewTracer(&buf), func(string) {}), &runBudget{}, "", nil)
 
 	ce, ok := loop.Engine.Exec.(orchestrator.CommandExecutor)
 	if !ok {

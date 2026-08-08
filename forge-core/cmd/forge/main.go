@@ -8,9 +8,11 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"forgeos/forge-core/internal/asset"
@@ -56,14 +58,34 @@ func main() {
 	os.Exit(run(os.Args[1:]))
 }
 
-// delegate runs one harness gate, prints its output, and maps OK to exit code.
-func delegate(fn func(root string) gate.Result, args []string) int {
+// delegate runs one harness gate with the bounded With-variants, prints its
+// output, and maps OK to exit code. Signal ctx: Ctrl-C/SIGTERM cancel the
+// gate's process group (hardening A1.2) — this REPLACES today's accidental
+// group-shared Ctrl-C, which the new Setpgid would otherwise break. The
+// --timeout/--max-output-bytes flags feed gate.ResolveOptions (flag > env >
+// default); a config error names the offending source+value and exits 2.
+func delegate(fn func(ctx context.Context, root string, opts gate.Options) gate.Result, args []string) int {
 	fs := flag.NewFlagSet("gate", flag.ContinueOnError)
 	root := fs.String("root", "", "repo root (default $FORGE_REPO_ROOT or .)")
+	timeout := fs.Duration("timeout", gate.DefaultTimeout, "gate deadline (0 = unbounded; default 10m)")
+	maxBytes := fs.Int("max-output-bytes", gate.DefaultMaxOutputBytes, "cap on retained gate output (0 = default 10MiB)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-	res := fn(*root)
+	opts, err := gate.ResolveOptions(gate.CLIInput{
+		TimeoutSet:  flagSet(fs, "timeout"),
+		Timeout:     *timeout,
+		EnvTimeout:  os.Getenv(gate.EnvTimeout), // fallback when the flag is unset
+		MaxBytesSet: flagSet(fs, "max-output-bytes"),
+		MaxBytes:    *maxBytes,
+	})
+	if err != nil { // names the var+value; exit 2
+		fmt.Fprintf(os.Stderr, "forge %s: %v\n", fs.Name(), err)
+		return 2
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	res := fn(ctx, *root, opts)
 	if res.Output != "" {
 		fmt.Println(res.Output)
 	}
@@ -141,6 +163,15 @@ type runOpts struct {
 	// the backward-compatible default). Plumbed into CommandExecutor.Timeout so a
 	// wedged agent is killed and surfaces as a retryable Timeout, not a hang.
 	timeout time.Duration
+	// gateOpts is the resolved gate-deadline/output-cap configuration for THIS
+	// invocation's gate spawns (the acceptance probe, live complexity/arch gates,
+	// and the standalone gate|check|accept path). Resolved ONCE per invocation by
+	// execEngine/execLoop from $FORGE_GATE_TIMEOUT (gate.ResolveOptions) BEFORE any
+	// spawn; standalone subcommands resolve their own from flags+env in delegate.
+	// ★ The regression pin: o.timeout (the per-AGENT knob above) must NEVER be read
+	// to derive gateOpts — the ONLY gate config source is ResolveOptions, so a
+	// user's --timeout=30s for agents can never silently cap the acceptance suite.★
+	gateOpts gate.Options
 	// maxRetries is the per-agent-phase retry ceiling for RETRYABLE failures (0 =
 	// no retries, backward-compatible default: first error aborts). Plumbed into
 	// Engine.MaxRetries so a transient timeout retries while a permanent failure aborts.

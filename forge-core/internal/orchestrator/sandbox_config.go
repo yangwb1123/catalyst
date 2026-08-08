@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"forgeos/forge-core/internal/execbound"
 	"forgeos/forge-core/internal/orchestrator/docker"
 	"forgeos/forge-core/internal/orchestrator/firecracker"
 	"forgeos/forge-core/internal/orchestrator/sandbox"
@@ -82,6 +83,18 @@ func (c CommandExecutor) sandboxRunner() (sandbox.Runner, error) {
 	}
 }
 
+// commandDeadlineCtx derives a run context with the executor's documented
+// Timeout semantics (zero = no deadline, the back-compat default) — the
+// sandbox path's analogue of execbound's internal deadline derivation (the
+// sandbox runner needs a ctx + timeout PAIR, so it cannot ride execbound.Run
+// directly). Positive Timeout → a deadline; zero/negative → merely cancelable.
+func (c CommandExecutor) commandDeadlineCtx(parent context.Context) (context.Context, context.CancelFunc) {
+	if c.Timeout > 0 {
+		return context.WithTimeout(parent, c.Timeout)
+	}
+	return context.WithCancel(parent)
+}
+
 // executeSandboxedDispatch builds the sandboxed run: a dedicated context
 // with the configured timeout, the stripped prompt delivered as guest
 // stdin (F1: a claude-family agent with no prompt is a dead phase).
@@ -92,7 +105,7 @@ func (c CommandExecutor) executeSandboxedDispatch(
 	input string,
 	useStdin bool,
 ) error {
-	runCtx, runCancel := c.commandContext(ctx)
+	runCtx, runCancel := c.commandDeadlineCtx(ctx)
 	defer runCancel()
 	timeout := time.Duration(c.Sandbox.TimeoutSec) * time.Second
 	prompt := ""
@@ -107,7 +120,9 @@ func (c CommandExecutor) executeSandboxedDispatch(
 // observation, output contracts, and error classification stay uniform. A
 // clean non-zero guest exit becomes a KindFailed run; infrastructure faults
 // (config, timeout) map onto their own kinds without fabricating an agent
-// verdict.
+// verdict. The guest output rides execbound.FromBytes (the shared capped-
+// retention + honest truncation marker), with the run ctx error preserved so
+// finish's classification is byte-identical to the host path.
 func (c CommandExecutor) executeSandboxed(
 	runCtx context.Context,
 	phase string,
@@ -118,8 +133,8 @@ func (c CommandExecutor) executeSandboxed(
 	start := c.now()
 	output, code, err := c.Sandbox.Runner.Run(runCtx, argv, stdin, timeout)
 	latency := c.now().Sub(start)
-	out := &cappedBuffer{cap: c.maxOutputBytes()}
-	_, _ = out.Write([]byte(output))
+	res := execbound.FromBytes([]byte(output), c.MaxOutputBytes)
+	res.CtxErr = runCtx.Err()
 	if err != nil {
 		// Typed classification parity with the host path: only a deadline
 		// is retryable; a cancellation is the caller's verdict, not a
@@ -133,7 +148,7 @@ func (c CommandExecutor) executeSandboxed(
 		return &ExecError{Phase: phase, Kind: KindConfig, Err: err}
 	}
 	if code != 0 {
-		err = &exec.ExitError{}
+		res.Err = &exec.ExitError{}
 	}
-	return c.finish(phase, argv, out, err, runCtx.Err(), latency)
+	return c.finish(phase, argv, res, latency)
 }

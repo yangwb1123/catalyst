@@ -16,10 +16,6 @@ import (
 	"forgeos/forge-core/internal/asset"
 )
 
-// grandchildCmd builds a representative *exec.Cmd (used by the setupProcessGroup unit
-// test) — a single argv is enough; the test inspects the wired fields, not a run.
-func grandchildCmd() *exec.Cmd { return exec.Command("sh", "-c", "true") }
-
 // runWithoutProcessGroup reproduces the PRE-FIX path: a bare exec.CommandContext with
 // NO setupProcessGroup, so cancellation falls back to os/exec's direct-child-only kill.
 // It starts the command, waits for the grandchild to record its pid, then cancels the
@@ -180,32 +176,15 @@ func TestCommandExecutor_ProcessGroup_TimeoutReturnsPromptly(t *testing.T) {
 	}
 	// Must return within Timeout(300ms) + WaitDelay(2s) + generous slack — and FAR
 	// under the grandchild's 30s sleep, proving Run did not wait the grandchild out.
-	budget := 300*time.Millisecond + processGroupGrace + 5*time.Second
+	// (WaitDelay is execbound's portable pipe-close backstop; its literal is mirrored
+	// here for the orchestrator-side budget assertion.)
+	const waitDelay = 2 * time.Second
+	budget := 300*time.Millisecond + waitDelay + 5*time.Second
 	if elapsed >= budget {
 		t.Errorf("timeout did not return promptly: %v >= budget %v (Run hung on the inherited pipe)", elapsed, budget)
 	}
 	if elapsed >= 25*time.Second {
 		t.Errorf("Run waited the grandchild's full sleep out (%v) — the process-group fix did not take effect", elapsed)
-	}
-}
-
-// setupProcessGroup unit: on unix it must wire all three mechanisms — a new process
-// group (Setpgid), a non-default group-kill Cancel, and a positive WaitDelay backstop.
-func TestSetupProcessGroup_WiresGroupKillAndWaitDelay(t *testing.T) {
-	cmd := grandchildCmd()
-	setupProcessGroup(cmd)
-
-	if cmd.SysProcAttr == nil || !cmd.SysProcAttr.Setpgid {
-		t.Error("must set SysProcAttr.Setpgid=true so the child leads a new process group")
-	}
-	if cmd.Cancel == nil {
-		t.Error("must install a Cancel that group-kills (overriding os/exec's direct-child-only default)")
-	}
-	if cmd.WaitDelay <= 0 {
-		t.Errorf("must set a positive WaitDelay backstop; got %v", cmd.WaitDelay)
-	}
-	if cmd.WaitDelay != processGroupGrace {
-		t.Errorf("WaitDelay = %v, want the documented grace %v", cmd.WaitDelay, processGroupGrace)
 	}
 }
 

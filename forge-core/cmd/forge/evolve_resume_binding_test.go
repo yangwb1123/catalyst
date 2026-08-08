@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -84,7 +85,7 @@ func TestProposalOnlyLoopHasNoRepositoryGateRunner(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	loop, _, _, _ := buildLoop(wf, runOpts{
+	loop, _, _, _ := buildLoop(context.Background(), wf, runOpts{
 		root: root, mode: "explorer", lifecycle: "idea", executor: "dry",
 	}, 1, func(string) {}, nil, budget, "", nil)
 	if result := loop.Engine.RunGate("test"); result.Status != "FAIL" {
