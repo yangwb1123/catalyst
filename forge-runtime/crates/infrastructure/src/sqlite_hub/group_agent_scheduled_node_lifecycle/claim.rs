@@ -55,7 +55,7 @@ pub(super) fn claim(
     request
         .validate()
         .map_err(|error| conflict(&error.message))?;
-    let graph_run = group_agent_graph_run::read::inspect_in_snapshot(
+    let graph_run = group_agent_graph_run::read::inspect_pristine_in_snapshot(
         &transaction,
         &request.claim.graph_run_id,
     )?;
@@ -84,7 +84,7 @@ pub(super) fn claim(
 }
 
 fn validate_pristine_run(
-    run: &crate::runtime_domain::GroupAgentGraphRunInspection,
+    run: &group_agent_graph_run::read::PristineRunSnapshot,
     request: &ClaimGroupAgentScheduledNodeDispatch,
 ) -> Result<(), HubStoreError> {
     let expected = &request.release_control.graph_run;
@@ -93,7 +93,7 @@ fn validate_pristine_run(
         && run.run == *expected
         && run.run.last_event_seq == 1
         && !run.run.dispatch_authority_released
-        && run.events.len() == 1;
+        && run.event_count == 1;
     valid
         .then_some(())
         .ok_or_else(|| conflict("scheduled claim requires exact pristine v1/seq-1 Graph Run"))

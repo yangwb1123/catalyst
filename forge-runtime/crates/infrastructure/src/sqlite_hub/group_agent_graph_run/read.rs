@@ -60,6 +60,32 @@ where
     validate_stored(connection, stored)
 }
 
+/// Lightweight pristine-run snapshot for the claim gate: run record +
+/// event count WITHOUT the child-binding validation chain (which decodes
+/// every sibling provider-request body, up to 16 MiB each — Stage-03
+/// Finding 3: O(nodes x body) per lifecycle op). The binding chain remains
+/// on the full `inspect_in_snapshot` path.
+pub(in crate::sqlite_hub) struct PristineRunSnapshot {
+    pub run: GroupAgentGraphRunRecord,
+    pub event_count: usize,
+}
+
+pub(in crate::sqlite_hub) fn inspect_pristine_in_snapshot(
+    connection: &Connection,
+    graph_run_id: &str,
+) -> Result<PristineRunSnapshot, HubStoreError> {
+    let Some(stored) = rows::find_by_id(connection, graph_run_id)? else {
+        return Err(missing_run_error(connection, graph_run_id)?);
+    };
+    validate_stored_key(&stored.idempotency_key)?;
+    let record = metadata_record(stored.metadata)?;
+    let (events, _event_jsons) = load_events(connection, &record)?;
+    Ok(PristineRunSnapshot {
+        run: record,
+        event_count: events.len(),
+    })
+}
+
 fn missing_run_error(
     connection: &Connection,
     graph_run_id: &str,
