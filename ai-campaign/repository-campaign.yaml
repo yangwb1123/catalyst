@@ -1,0 +1,73 @@
+# Project-level discovery -> analysis -> selection -> full SDLC implementation.
+name: repository-improvements
+
+analysis:
+  # 强化:输出必须是纯 JSON 数组(第一个字符 "["),任何叙述/前言/后记
+  # 都会使解析失败并整轮重跑。
+  prompt: >-
+    Analyze module '{module}' at {module_path} in the repository. Your ENTIRE
+    reply must be exactly one JSON array — the first character must be '[' and
+    the last ']'. No prose before or after. Each object: title, problem, value
+    (1-10), risk_reduction (1-10), effort (1-10), confidence (1-10), evidence
+    (JSON array of REAL existing file/symbol paths verified in the repo),
+    acceptance (JSON array of testable checks). Do not modify code. Unverified
+    claims are marked proposed.
+  candidate_limit: 3
+  jobs: 2
+discovery:
+  roots:
+    - forge-core
+    - forge-runtime
+    - harness
+  exclude:
+    - tests
+    - docs
+    - ai-batch
+    - ai-campaign
+    - reviews
+    - target
+    - node_modules
+    - vendor
+    - .git
+    - .github
+    - .agent
+    - __pycache__
+  max_depth: 1
+  # Standalone repositories without the Snaplink layer names are scanned by
+  # their top-level source directories instead.
+  fallback_top_level: true
+
+analysis:
+  jobs: 4
+  retries: 2
+  candidate_limit: 3
+  prompt: |
+    Analyze module '{module}' at {module_path} and its related interfaces in the repository.
+    Return ONLY a JSON array with at most {candidate_limit} high-value improvement directions, sorted by value.
+    Each object must contain: title, problem, value (1-10), risk_reduction (1-10), effort (1-10), confidence (1-10), evidence (array of existing file/symbol paths), and acceptance (array of testable checks).
+    evidence and acceptance MUST be JSON arrays of strings, e.g.:
+    {"title": "...", "problem": "...", "value": 7, "risk_reduction": 6, "effort": 2, "confidence": 8,
+     "evidence": ["internal/storage/local_read.go:42"], "acceptance": ["go test ./internal/storage -run TestX passes"]}
+    Do not modify code. Claims without repository evidence must be identified as proposed, not verified.
+
+selection:
+  max_directions: 1
+  minimum_score: 0
+
+implementation:
+  pipeline: ai-campaign/repository-campaign-pipeline.yaml
+  requirement_stage: requirements
+  concurrency: 1
+  # Hard wall-clock limit for each isolated direction pipeline.
+  timeout: 14400
+  worktree_root: ai-campaign/worktrees
+
+state:
+  output_dir: ai-campaign/state
+  state_file: ai-campaign/state/state.jsonl
+  summary_file: ai-campaign/state/SUMMARY.md
+  line_max_bytes: 262144
+
+estimates:
+  analysis_minutes: 3
+  pipeline_minutes: 20

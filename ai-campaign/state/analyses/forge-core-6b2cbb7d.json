@@ -1,0 +1,68 @@
+[
+  {
+    "title": "Bound the gate/harness bridge subprocesses with context deadline, timeout, and output cap (reuse the orchestrator's bounded-run pattern)",
+    "problem": "The gate bridge shells out to node/python harness scripts with plain exec.Command + CombinedOutput / cmd.Output() — no context, no deadline, no output cap — and this runs on the critical path of `forge run` (runProbe.refresh → gate.ProbeAll executes the entire acceptance suite: gate.mjs, check.py, node --test, go build/test). A wedged harness hangs `forge run`/`forge gate|check|accept` indefinitely, and unbounded CombinedOutput can exhaust memory; the same-class git/python shim execs in cmd/forge (git diff --stat/--name-only, yamlpath python3) are equally unbounded. The orchestrator already solved exactly this class (Timeout + cappedBuffer + process-group cancel in command_executor.go) but the gate bridge did not get the same treatment.",
+    "value": 8,
+    "risk_reduction": 8,
+    "effort": 4,
+    "confidence": 9,
+    "evidence": [
+      "forge-core/internal/gate/gate.go:65-75",
+      "forge-core/internal/gate/gate.go:138-149",
+      "forge-core/cmd/forge/engine_build.go:351",
+      "forge-core/cmd/forge/engine_build.go:354-366",
+      "forge-core/cmd/forge/gates.go:349",
+      "forge-core/cmd/forge/gates.go:423",
+      "forge-core/internal/yamlpath/yamlpath.go:134",
+      "forge-core/cmd/forge/cli_dispatch.go:26-28",
+      "forge-core/internal/orchestrator/command_executor.go:215-224",
+      "forge-core/internal/orchestrator/command_executor.go:280-310"
+    ],
+    "acceptance": [
+      "go test ./forge-core/internal/gate -run 'TestGate.*(Timeout|Deadline)' passes with a stub harness script that sleeps longer than the injected deadline; Gate returns a FAIL Result within the deadline instead of hanging",
+      "new test: a stub acceptance.mjs emitting more than the configured cap bytes makes ProbeAll fail/truncate honestly instead of buffering unbounded output",
+      "go test ./forge-core/internal/gate ./forge-core/cmd/forge passes with the bounded bridge wired in",
+      "`forge accept` against a wedged harness process aborts with a timeout error within the deadline rather than blocking forever"
+    ]
+  },
+  {
+    "title": "Close the durability gap in statefs.AtomicWrite: fsync the parent directory after rename, as commitTrackedTemp already does",
+    "problem": "AtomicWrite (the writer behind checkpoint.Save) does temp-file + fsync-bytes + rename but never syncs the containing directory, so on power loss the renamed checkpoint/state file can vanish entirely — losing the resume state a long autonomous run depends on. The repo already implements the correct pattern (commitTrackedTemp calls SyncDir after rename, and SyncDir exists at statefs.go:418), so this is a known, asymmetric, honestly-documented gap rather than an unknown risk; the cost of closing it is one call plus a doc update.",
+    "value": 6,
+    "risk_reduction": 6,
+    "effort": 2,
+    "confidence": 9,
+    "evidence": [
+      "forge-core/internal/statefs/statefs.go:257-295",
+      "forge-core/internal/statefs/statefs.go:385-395",
+      "forge-core/internal/statefs/statefs.go:418-440",
+      "forge-core/internal/persist/checkpoint.go:114-119"
+    ],
+    "acceptance": [
+      "new unit test asserts AtomicWrite invokes SyncDir on the parent directory after the rename (injectable sync hook or direct test of the new path)",
+      "go test ./forge-core/internal/statefs ./forge-core/internal/persist passes",
+      "checkpoint Save test with retain>0 history still passes after the dir-sync addition",
+      "checkpoint.go doc comment updated so the 'not a power-loss durability guarantee' caveat is removed or narrowed to honest remaining limits"
+    ]
+  },
+  {
+    "title": "Make firecracker sandbox boot helper binaries context- and timeout-bound (mke2fs, debugfs, firecracker launch)",
+    "problem": "In the firecracker sandbox path the external helper invocations are unbounded: buildRootfs runs mke2fs via CombinedOutput with no context and executes BEFORE the runCtx timeout is even created (prepareWorkspace precedes the WithTimeout in Run), readMarker runs debugfs synchronously inside the waitForMarker poll loop where a blocked child prevents the ctx select from firing, and launchVM starts firecracker without exec.CommandContext (manual kill only). A wedged mke2fs/debugfs therefore defeats the sandbox phase Timeout and parent cancellation — the same hang class the orchestrator's process-group handling was built to prevent.",
+    "value": 6,
+    "risk_reduction": 6,
+    "effort": 3,
+    "confidence": 8,
+    "evidence": [
+      "forge-core/internal/orchestrator/firecracker/firecracker_runner.go:103-114",
+      "forge-core/internal/orchestrator/firecracker/firecracker_runner.go:176-193",
+      "forge-core/internal/orchestrator/firecracker/firecracker_runner.go:313-320",
+      "forge-core/internal/orchestrator/firecracker/firecracker_runner.go:401-410"
+    ],
+    "acceptance": [
+      "new test: buildRootfs with a stub mke2fs that sleeps returns a bounded error within the injected deadline instead of blocking",
+      "new test: waitForMarker with a stub debugfs that blocks returns on ctx cancellation within a bounded time instead of stalling the poll loop",
+      "go test ./forge-core/internal/orchestrator/... passes",
+      "sandboxed run with a wedged rootfs-builder fails closed with a timeout-class error rather than hanging the phase"
+    ]
+  }
+]

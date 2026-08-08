@@ -11,3 +11,4 @@ coverage/
 
 # compiled forge-core binary (build with `go build ./cmd/forge`)
 forge-core/forge
+.pi-batch/

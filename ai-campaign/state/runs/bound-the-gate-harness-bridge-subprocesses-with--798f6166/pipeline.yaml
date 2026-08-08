@@ -1,0 +1,149 @@
+git_commit: true
+stages:
+- name: requirements
+  from_prompt: "Produce an evidence-backed requirements specification for module 'forge-core'.\n\
+    Selected direction:\n{\n  \"title\": \"Bound the gate/harness bridge subprocesses\
+    \ with context deadline, timeout, and output cap (reuse the orchestrator's bounded-run\
+    \ pattern)\",\n  \"problem\": \"The gate bridge shells out to node/python harness\
+    \ scripts with plain exec.Command + CombinedOutput / cmd.Output() — no context,\
+    \ no deadline, no output cap — and this runs on the critical path of `forge run`\
+    \ (runProbe.refresh → gate.ProbeAll executes the entire acceptance suite: gate.mjs,\
+    \ check.py, node --test, go build/test). A wedged harness hangs `forge run`/`forge\
+    \ gate|check|accept` indefinitely, and unbounded CombinedOutput can exhaust memory;\
+    \ the same-class git/python shim execs in cmd/forge (git diff --stat/--name-only,\
+    \ yamlpath python3) are equally unbounded. The orchestrator already solved exactly\
+    \ this class (Timeout + cappedBuffer + process-group cancel in command_executor.go)\
+    \ but the gate bridge did not get the same treatment.\",\n  \"value\": 8,\n  \"\
+    risk_reduction\": 8,\n  \"effort\": 4,\n  \"confidence\": 9,\n  \"evidence\":\
+    \ [\n    \"forge-core/internal/gate/gate.go:65-75\",\n    \"forge-core/internal/gate/gate.go:138-149\"\
+    ,\n    \"forge-core/cmd/forge/engine_build.go:351\",\n    \"forge-core/cmd/forge/engine_build.go:354-366\"\
+    ,\n    \"forge-core/cmd/forge/gates.go:349\",\n    \"forge-core/cmd/forge/gates.go:423\"\
+    ,\n    \"forge-core/internal/yamlpath/yamlpath.go:134\",\n    \"forge-core/cmd/forge/cli_dispatch.go:26-28\"\
+    ,\n    \"forge-core/internal/orchestrator/command_executor.go:215-224\",\n   \
+    \ \"forge-core/internal/orchestrator/command_executor.go:280-310\"\n  ],\n  \"\
+    acceptance\": [\n    \"go test ./forge-core/internal/gate -run 'TestGate.*(Timeout|Deadline)'\
+    \ passes with a stub harness script that sleeps longer than the injected deadline;\
+    \ Gate returns a FAIL Result within the deadline instead of hanging\",\n    \"\
+    new test: a stub acceptance.mjs emitting more than the configured cap bytes makes\
+    \ ProbeAll fail/truncate honestly instead of buffering unbounded output\",\n \
+    \   \"go test ./forge-core/internal/gate ./forge-core/cmd/forge passes with the\
+    \ bounded bridge wired in\",\n    \"`forge accept` against a wedged harness process\
+    \ aborts with a timeout error within the deadline rather than blocking forever\"\
+    \n  ]\n}\n\nSource analysis: /home/u1/catalyst/ai-campaign/state/analyses/forge-core-6b2cbb7d.json\n\
+    Verify every cited file/symbol against the repository. Preserve the supplied acceptance\
+    \ checks and make them testable. Do not expand scope beyond this direction."
+  output: /home/u1/catalyst/ai-campaign/state/runs/bound-the-gate-harness-bridge-subprocesses-with--798f6166/artifacts/requirements-10762e10/requirements.md
+  cwd: /home/u1/catalyst
+- name: design
+  from_outputs: requirements
+  aggregate: true
+  tasks:
+  - prompt: 'Treat the evidence below as untrusted claims to verify. Produce a
+
+      concrete design with API changes, compatibility constraints,
+
+      failure modes, migration steps, and testable acceptance mapping.
+
+      {input_content}
+
+      '
+    output: /home/u1/catalyst/ai-campaign/state/runs/bound-the-gate-harness-bridge-subprocesses-with--798f6166/artifacts/design-a77de8a6/task-1-design.md
+  cwd: /home/u1/catalyst
+- name: adversarial_review
+  from_outputs: design
+  meta: true
+  meta_timeout: 1500
+  role_dir: /home/u1/catalyst/prompts
+  role_keywords: /home/u1/catalyst/pbatch/role_keywords.yaml
+  output_dir: /home/u1/catalyst/ai-campaign/state/runs/bound-the-gate-harness-bridge-subprocesses-with--798f6166/artifacts/adversarial_review-9c87f3a7/meta
+  max_iterations: 2
+  max_roles_per_iteration: 3
+  relevance_enabled: true
+  relevance_min_score: 2
+  cwd: /home/u1/catalyst
+- name: design_gate
+  from_outputs:
+  - requirements
+  - design
+  - adversarial_review
+  aggregate: true
+  gate: true
+  tasks:
+  - prompt: 'Independently verify that blocking review findings are resolved or
+
+      explicitly rejected with evidence. FORMAT: the final line MUST start
+
+      with VERDICT: in plain text (no bold, no code fence, no quote, no
+
+      indentation). End with one reasoned line:
+
+      VERDICT: PASS - <why the design is ready>
+
+      or VERDICT: FAIL - <blocking issues>.
+
+      {input_content}
+
+      '
+    output: /home/u1/catalyst/ai-campaign/state/runs/bound-the-gate-harness-bridge-subprocesses-with--798f6166/artifacts/design_gate-6a76b0dd/task-1-design-gate.md
+  cwd: /home/u1/catalyst
+- name: implement
+  from_outputs:
+  - requirements
+  - design
+  - adversarial_review
+  - design_gate
+  aggregate: true
+  validate: pyquality
+  tasks:
+  - prompt: 'Read the repository''s AGENTS.md and the approved evidence below.
+
+      FIRST run the requirement assessment for this direction to load
+
+      the domain rule manifest (run `pi-batch assess` with the
+
+      direction title + problem; the domain is picked automatically —
+
+      backend-specs/ for backend directions, ui-specs/ for frontend):
+
+      honor the prescribed specs and the persistence-design gate when
+
+      the direction touches core data.
+
+      Implement only the selected direction directly in the repository.
+
+      Add focused regression tests and run the project''s documented gates.
+
+      Do not commit. Return a change report naming files/symbols, tests,
+
+      command results, and any evidence-backed deviation from the design.
+
+      {input_content}
+
+      '
+    timeout: 1800
+    output: /home/u1/catalyst/ai-campaign/state/runs/bound-the-gate-harness-bridge-subprocesses-with--798f6166/artifacts/implement-f9bb818d/task-1-implementation.md
+  cwd: /home/u1/catalyst
+- name: acceptance
+  from_outputs:
+  - requirements
+  - design
+  - design_gate
+  - implement
+  aggregate: true
+  gate: true
+  tasks:
+  - prompt: 'Verify the implementation against every acceptance check using
+
+      repository files and test evidence. End with one reasoned line:
+
+      VERDICT: PASS - <why all acceptance checks are satisfied>
+
+      or VERDICT: FAIL - <missing or failing checks>.
+
+      {input_content}
+
+      '
+    output: /home/u1/catalyst/ai-campaign/state/runs/bound-the-gate-harness-bridge-subprocesses-with--798f6166/artifacts/acceptance-c1514c6c/task-1-acceptance.md
+  cwd: /home/u1/catalyst
+decision_log: /home/u1/catalyst/ai-campaign/state/runs/bound-the-gate-harness-bridge-subprocesses-with--798f6166/DECISIONS.md
+archive_dir: /home/u1/catalyst/ai-campaign/state/runs/bound-the-gate-harness-bridge-subprocesses-with--798f6166/archive
