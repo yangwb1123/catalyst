@@ -103,3 +103,39 @@ func TestFirecrackerRunnerLiveMicroVM(t *testing.T) {
 	}
 	t.Logf("live microVM verified: %q", output)
 }
+
+
+// TestFirecrackerRunnerLiveMicroVMStdin proves the prompt delivery path in
+// a real microVM: /forge-stdin is injected into the rootfs and the guest
+// redirects it to the command's stdin (review F1 verification).
+func TestFirecrackerRunnerLiveMicroVMStdin(t *testing.T) {
+	kernel := os.Getenv("FORGE_FIRECRACKER_KERNEL")
+	rootdir := os.Getenv("FORGE_FIRECRACKER_ROOTDIR")
+	if kernel == "" || rootdir == "" {
+		t.Skip("FORGE_FIRECRACKER_KERNEL/FORGE_FIRECRACKER_ROOTDIR unset; skipping live microVM test")
+	}
+	runner := &FirecrackerRunner{
+		Binary:  os.Getenv("FORGE_FIRECRACKER_BINARY"),
+		DebugFS: os.Getenv("FORGE_FIRECRACKER_DEBUGFS"),
+		Mke2fs:  os.Getenv("FORGE_FIRECRACKER_MKE2FS"),
+		Kernel:  kernel,
+		RootDir: rootdir,
+		Logf:    t.Logf,
+	}
+	output, code, err := runner.Run(
+		context.Background(),
+		[]string{"/bin/cat"},
+		"FORGELIVE-VM-STDIN-PROMPT",
+		120*time.Second,
+	)
+	if err != nil {
+		t.Fatalf("live microVM stdin run: %v", err)
+	}
+	if code != 0 {
+		t.Fatalf("guest exit = %d, want 0", code)
+	}
+	if !strings.Contains(output, "FORGELIVE-VM-STDIN-PROMPT") {
+		t.Fatalf("guest output missing prompt echo: %q", output)
+	}
+	t.Logf("live microVM stdin verified: %q", output)
+}

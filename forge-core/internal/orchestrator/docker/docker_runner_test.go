@@ -91,3 +91,33 @@ func TestRunnerLiveContainerNonZeroExit(t *testing.T) {
 	}
 	_ = output
 }
+
+// TestRunnerLiveContainerStdin proves the prompt delivery path: guest
+// reads its stdin and echoes it back (review F1 verification).
+func TestRunnerLiveContainerStdin(t *testing.T) {
+	image := os.Getenv("FORGE_DOCKER_IMAGE")
+	if image == "" {
+		probe := runProbe()
+		if probe != nil {
+			t.Skipf("docker daemon unavailable: %v", probe)
+		}
+		image = "alpine:latest"
+	}
+	runner := &Runner{Image: image}
+	output, code, err := runner.Run(
+		context.Background(),
+		[]string{"/bin/cat"},
+		"FORGELIVE-STDIN-PROMPT",
+		60*time.Second,
+	)
+	if err != nil {
+		t.Fatalf("live container stdin run: %v", err)
+	}
+	if code != 0 {
+		t.Fatalf("container exit = %d, want 0", code)
+	}
+	if !strings.Contains(output, "FORGELIVE-STDIN-PROMPT") {
+		t.Fatalf("container output missing prompt echo: %q", output)
+	}
+	t.Logf("live container stdin verified: %q", output)
+}

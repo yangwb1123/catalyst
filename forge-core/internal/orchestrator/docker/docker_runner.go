@@ -111,7 +111,7 @@ func buildRunCommand(
 	argv []string,
 	stdin string,
 ) (*exec.Cmd, *cappedWriter) {
-	cmd := exec.CommandContext(runCtx, binary, runArgs(r, argv)...)
+	cmd := exec.CommandContext(runCtx, binary, runArgs(r, argv, stdin)...)
 	if stdin != "" {
 		cmd.Stdin = strings.NewReader(stdin)
 	}
@@ -127,8 +127,12 @@ func buildRunCommand(
 
 // runArgs builds the docker run argv with a named, memory-capped,
 // network-isolated container.
-func runArgs(r *Runner, argv []string) []string {
+func runArgs(r *Runner, argv []string, stdin string) []string {
 	args := []string{"run", "--rm", "--name", containerName(), "--network", "none"}
+	if stdin != "" {
+		// -i keeps stdin attached; without it the guest's stdin is /dev/null.
+		args = append(args, "-i")
+	}
 	if r.MemoryMB > 0 {
 		args = append(args, "--memory", fmt.Sprintf("%dm", r.MemoryMB))
 	}
