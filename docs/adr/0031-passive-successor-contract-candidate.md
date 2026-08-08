@@ -21,6 +21,17 @@ content-addressed successor contract exists today.
 
 ## Decision
 
+> **Current v24 clarification (2026-08-08):** the schema-v17 serial-prefix and
+> one-candidate-per-Run details below are historical. ADR-0035/0036 supersede
+> them with topology-ready, per-node slots: caller receipt files may arrive in
+> any order, but Core emits the complete direct-predecessor set in canonical
+> schedule order and Rust matches the supplied full receipts as an exact set.
+> Only strict durable `completed`/result receipts can satisfy a non-empty
+> predecessor; an explicit ordinal>0 target with no direct predecessors may be
+> selected with zero receipts. ADR-0033 separately permits ≤1 MiB content bound
+> to the canonical first direct receipt. None of these passive paths grants
+> dispatch or successor-advance authority.
+
 Add one passive, content-addressed successor contract candidate v2 for the
 next serial node after a contiguous prefix of verified terminal receipts.
 The predecessor receipt is evidence, never a provider-Prompt input:

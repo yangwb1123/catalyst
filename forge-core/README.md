@@ -159,12 +159,19 @@ remain on the separate terminal lifecycle.
 
 `graph-scheduled-node-contract` independently rebuilds that schedule from the
 same exact control and accepts only its lowercase digest—not a caller-supplied
-schedule, node, ordinal, attempt, or receipt. It selects ordinal zero, binds the
-pristine sequence-1 head and exact Prompts/provider/budgets, and requires empty
-predecessor-node and terminal-receipt arrays. The canonical v2 output is a
-passive initial-node candidate: it creates no lifecycle contract or provider
-request, observes no progress, grants no authority, and cannot advance a
-successor. Terminal receipt v1 is not valid predecessor evidence.
+schedule, ordinal, or attempt. With neither receipts nor `--target-node`, it
+selects ordinal zero and emits the content-free initial candidate. A target or
+one or more full scheduled terminal receipts enters the successor path: Core
+strictly accepts only exact `completed`/result receipts, canonicalizes the
+candidate to the schedule's complete direct-predecessor order, and requires the
+selected node to be topology-ready. An explicit zero-receipt target is valid
+only for an ordinal>0 node whose direct-predecessor set is empty; it never falls
+back to the initial candidate. Optional `--predecessor-content` is ≤1 MiB exact
+UTF-8, requires an authenticating direct receipt, and binds the canonical first
+direct predecessor. `graph-scheduled-ready-nodes` exposes the same selection
+rule. Every canonical v2 candidate remains passive: it creates no lifecycle or
+provider request, observes no progress, grants no authority, and cannot by
+itself advance a successor.
 
 `graph-node-pricing-snapshot` fixes the production destination to the official
 OpenAI Responses endpoint and emits an immutable local pricing assertion. Its
@@ -221,7 +228,8 @@ These are real, intentional gaps — flagged here rather than hidden:
   bound as their expected clean stop. Recognized signals include roadmap and
   gate state, requirement confidence, review status, and named acceptance
   criteria; unknown metrics remain fail-closed.
-- **No remote deploy or sandbox runtime is claimed.** Deploy/rollback workflows
+- **No remote deploy is claimed; sandbox execution is explicit and local.**
+  Deploy/rollback workflows
   generate and validate `docs/release/**`; external CI/operators perform the
   real action after human approval. Release phases reject `--agent-env`, custom
   `--agent-allowed-tools`, non-`claude` executables, writable phase declarations,
@@ -243,8 +251,19 @@ These are real, intentional gaps — flagged here rather than hidden:
   the current stage's fixed release-artifact-set digest (Deploy: its five files;
   Rollback: the release manifest plus four rollback files), so a later source
   or bound-stage artifact change invalidates approval. Freshness is contextual
-  equality, not a wall-clock TTL. A requested non-`none` sandbox fails closed until an
-  out-of-band runner (for example Firecracker) is installed and wired.
+  equality, not a wall-clock TTL. Ordinary command execution can opt into
+  `--sandbox docker` or `--sandbox firecracker`; both runners are wired through
+  the same fail-closed interface and enforce bounded input/output, timeout and
+  memory configuration. `--sandbox-memory-mb` defaults to 512 MiB and accepts
+  64–32768 MiB; retained output inherits `--max-output-bytes` (default 10 MiB)
+  and overflow is explicit. Docker readiness shares the run deadline and a
+  named container gets an independent bounded cleanup attempt; Firecracker's
+  deadline includes prerequisite/rootfs work, serial capture is in-memory and
+  bounded, and rootfs template copying rejects special files and unsafe
+  injection links. This is currently an isolated argv/stdin command
+  runner, not a complete coding-workspace exchange protocol: no repository
+  snapshot/mount, scoped secret channel, or declared artifact sync-back is
+  claimed by the runner interface.
 
 See [ADR 0005](../docs/adr/0005-declarative-production-delivery-boundary.md),
 the [release artifact contract](../docs/release/README.md), and the

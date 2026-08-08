@@ -1,0 +1,132 @@
+api_version: forgeos.design/v1
+kind: CapabilitySkillOwnershipMap
+status: planning_only
+executable: false
+source_catalog: capability-catalog.v1.yml
+skill_specification: skill-specifications.md
+mapping_rules:
+  - "Every unique fine capability referenced by lifecycle nodes has exactly one primary Skill package owner."
+  - "A Skill may consume another package through an explicit dependency, but secondary use does not duplicate primary ownership."
+  - "Kernel ABI and Device Fabric runtime capabilities are registered separately; this map covers lifecycle role capabilities only."
+  - "Adapters and validators must reject missing, duplicate-primary, unknown-package, and dangling capability entries."
+
+packages:
+  - skill: change-intake-orchestration
+    implementation_wave: 1
+    includes: [work-intake, convergence]
+  - skill: evidence-claim-management
+    implementation_wave: 1
+    includes: [evidence-scan]
+  - skill: project-snapshot
+    implementation_wave: 1
+    includes: [project-snapshot]
+  - skill: context-engineering
+    implementation_wave: 1
+    includes: [context-engineering]
+  - skill: policy-authority
+    implementation_wave: 1
+    includes: [policy-evaluation, approval]
+
+  - skill: knowledge-graph-curation
+    implementation_wave: 2
+    includes: [knowledge-curation]
+  - skill: change-impact-cost-risk
+    implementation_wave: 2
+    includes: [change-impact-analysis, change-cost, risk-triage, risk-planning]
+
+  - skill: adr-governance
+    implementation_wave: 3
+    includes: [adr]
+  - skill: technical-debt-health
+    implementation_wave: 3
+    includes: [software-health, technical-debt, architecture-fitness, dependency-lifecycle]
+
+  - skill: requirements-engineering
+    implementation_wave: 4
+    includes: [requirements-elicitation, business-analysis, scenario-modeling, nfr, acceptance-criteria, traceability]
+  - skill: business-process-state
+    implementation_wave: 4
+    includes: [state-modeling, state-machine]
+  - skill: product-design
+    implementation_wave: 4
+    includes: [product-discovery, jtbd, journey-mapping, prioritization, product-state-machine, analytics, experimentation, rollout-design]
+  - skill: ux-research
+    implementation_wave: 4
+    includes: [user-research, usability-testing]
+  - skill: information-interaction-design
+    implementation_wave: 4
+    includes: [information-architecture, interaction-design, content-design]
+  - skill: design-system-accessibility
+    implementation_wave: 4
+    includes: [visual-design, design-system, accessibility]
+  - skill: domain-modeling
+    implementation_wave: 4
+    includes: [domain-analysis, ddd, event-storming, invariant-modeling, context-mapping, consistency-design]
+  - skill: architecture-tradeoff
+    implementation_wave: 4
+    includes: [current-state-reconstruction, c4, modular-architecture, tradeoff-analysis, migration-architecture]
+  - skill: distributed-reliability-design
+    implementation_wave: 4
+    includes: [distributed-systems, observability-design]
+  - skill: data-modeling-transactions
+    implementation_wave: 4
+    includes: [data-modeling, schema-review, query-index-analysis, transaction-design, data-quality, privacy-data-lifecycle]
+  - skill: data-migration-lifecycle
+    implementation_wave: 4
+    includes: [migration-engineering, migration, backup-recovery]
+  - skill: api-contract-design
+    implementation_wave: 4
+    includes: [api-design, openapi-asyncapi-proto, compatibility, error-modeling, contract-testing]
+  - skill: event-integration-design
+    implementation_wave: 4
+    includes: [event-contract, idempotency, integration, integration-security]
+  - skill: delivery-planning
+    implementation_wave: 4
+    includes: [work-breakdown, vertical-slicing, dag-planning, estimation, test-release-planning, raci]
+  - skill: backend-engineering
+    implementation_wave: 4
+    includes: [backend-engineering]
+  - skill: frontend-client-engineering
+    implementation_wave: 4
+    includes: [frontend-engineering, client-engineering]
+  - skill: secure-coding
+    implementation_wave: 4
+    includes: [secure-coding]
+  - skill: observability-engineering
+    implementation_wave: 4
+    includes: [observability]
+  - skill: test-engineering
+    implementation_wave: 4
+    includes: [testing, test-strategy, unit-integration-contract-e2e, exploratory, property-fuzz, test-data-environment, defect-management, test-review]
+  - skill: god-object-refactoring
+    implementation_wave: 4
+    includes: [complexity-coupling, refactoring, small-step-refactoring]
+  - skill: pattern-selection
+    implementation_wave: 4
+    includes: [pattern-selection]
+  - skill: performance-capacity
+    implementation_wave: 4
+    includes: [benchmarking, profiling, database-performance, load-capacity, cost-performance, capacity]
+  - skill: reliability-chaos
+    implementation_wave: 4
+    includes: [slo, resilience, chaos, concurrency]
+
+  - skill: review-conflict-adjudication
+    implementation_wave: 5
+    includes: [review-normalization, conflict-adjudication]
+  - skill: code-review
+    implementation_wave: 5
+    includes: [code-review, static-analysis, compatibility-review, architecture-conformance]
+  - skill: security-privacy-compliance
+    implementation_wave: 5
+    includes: [threat-modeling, owasp, identity-access, secure-protocol, privacy-engineering, compliance-mapping, supply-chain, security-testing]
+  - skill: release-engineering
+    implementation_wave: 5
+    includes: [release-management, artifact-provenance, ci-cd, migration-orchestration, progressive-delivery, feature-flags, rollback]
+
+  - skill: sre-readiness-incident
+    implementation_wave: 6
+    includes: [service-management, slo-error-budget, alerting, incident-command, diagnostics, backup-dr, postmortem, toil-automation]
+  - skill: reflection-evolution
+    implementation_wave: 6
+    includes: [meta-reflection, assumption-audit, causal-analysis, experiment-design, counterfactual-reasoning, portfolio-prioritization]

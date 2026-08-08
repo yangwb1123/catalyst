@@ -25,9 +25,14 @@ Go selector is serial.
 Replace the serial-prefix selector with a topologically-ready selector while
 keeping every identity binding and the same candidate shape:
 
-- `verifyReceipts` requires each receipt to bind a schedule node (graph run,
-  lane, node id, attempt), with no duplicates and at most one receipt per
-  node. Receipts may arrive in any order and need not be a prefix.
+- Go `verifyReceipts` is offline: it requires each canonical receipt to bind a
+  schedule node (graph run, graph, lane, node id, attempt and content
+  identities) and to carry the strict `completed`/result-shaped form, with no
+  duplicates and at most one receipt per node. Rust admission and re-entry are
+  the layer that then requires those exact bytes/identities to match durable
+  terminalized lifecycles. Receipts may arrive in any order and need not be a
+  prefix; the empty set is valid when selecting an explicit ordinal>0 node
+  whose direct predecessor set is empty.
 - `selectReadyNode` picks the first node in the schedule's serial
   (wave-then-authored) order whose direct predecessors are all consumed and
   which itself is not yet consumed. Its execution ordinal is used for the

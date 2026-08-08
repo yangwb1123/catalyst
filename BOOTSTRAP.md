@@ -13,10 +13,10 @@ ForgeOS = **AI-native 软件工厂**:站在 Claude Code / Codex / Gemini CLI 等
 - **目的地**:Go-核心 polyglot(`forge-core`=Go · `forge-ai`=Python · `forge-runtime`=Rust · `forge-web`=TS)。
 - **v0–v1**:编排骑 Claude Code 原生能力(subagents/hooks/skills);
   只写**声明式**(agent 卡 / workflow / policy)+ 薄胶水(`harness/gate.mjs` 现用 Node,够用)。
-- **v2(现状)**:`forge-core/` Go 控制平面已落地；`forge-runtime/` 新增 Rust 原生 Agent Loop
-  与 local-first Conversation Hub(SQLite Project/Conversation/Group/Prompt ledger)首切片,默认不调真实
-  LLM。真实 CLI 执行器仍需显式 `--executor command --agent-cmd claude`;Rust 的真实 provider、自动
-  历史回放/Run 恢复、远程账号同步、写工具与沙箱仍未实现。
+- **v2(现状)**:`forge-core/` Go 控制平面已落地；`forge-runtime/` 已具备 Rust 原生 Agent Loop、
+  local-first Conversation Hub、durable Project Run 与 Group/Graph 协议，默认仍为离线确定性执行。
+  真实 CLI/Responses 均需显式启用；Go 执行器已可选 Docker/Firecracker sandbox。
+  顶层整图自动执行、Run 安全续跑/分支、远程账号同步与受控写/进程工具仍未实现。
 - 时序与理由见 [`.agent/DECISIONS.md`](.agent/DECISIONS.md)(D1–D2)。
 
 ## 工程原则 (Principles)

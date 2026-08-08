@@ -16,5 +16,5 @@ overrides:
 
 features:
   discover: minimal               # v1 最小 Discover:confidence + Human gate
-  routing: claude-tier-only       # v1 限 Claude 档(Haiku/Sonnet/Opus);跨厂商池 = v3 (D4)
-  sandbox: false                  # 带外 Sandbox runner = v3;现无强隔离执行
+  routing: multidimensional-tier  # 六维自动评分已接 run/evolve；跨厂商生产池仍属 v3 (D4)
+  sandbox: true                   # Go 执行器已接 Docker/Firecracker；完整工作区交换契约仍待后续

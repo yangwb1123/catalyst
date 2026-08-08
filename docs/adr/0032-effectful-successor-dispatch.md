@@ -16,7 +16,9 @@ claim/terminalize internals, so the ordinal wall lives only in the passive
 validation chain. The ADR-0024 multi-node fence applies to the legacy
 single-node family; the scheduled family already fenced multi-node execution
 behind the successor protocol itself (a successor candidate cannot exist
-without consumed predecessor receipts).
+without consumed predecessor receipts under the rule adopted at that time;
+ADR-0035 later added explicit zero-receipt successors for ordinal>0 nodes whose
+direct-predecessor set is empty).
 
 ## Decision
 
@@ -26,8 +28,13 @@ binding. The successor candidate's ordinal and predecessor coverage are the
 gate: admission validates the candidate against `schedule.nodes[ordinal]`
 (matching node, authored index, wave, attempt, Project lane, and prompts),
 requires the candidate's consumed receipts to cover the node's direct
-predecessors, and requires `execution_ordinal >= 1` for any candidate whose
-predecessor receipt count is non-zero.
+predecessors, and requires every successor-scope candidate to use ordinal
+`1..=31`.
+
+> **Current v24 clarification (ADR-0035/0036):** receipt count does not identify
+> scope. Initial scope is ordinal zero with zero receipts. Successor scope is
+> ordinal `1..=31` and carries exactly its selected node's direct-predecessor
+> set, which may also be empty for an explicitly targeted same-wave sibling.
 
 Concretely:
 
@@ -35,9 +42,9 @@ Concretely:
   byte-identical to today (`ordinal == 0`, empty predecessors, `initial_node`),
   while the successor path validates the serial-schedule selection, the
   direct-predecessor coverage, and the Project-lane digest.
-- `validate_record` treats `predecessor_receipt_count == 0` as the initial
-  contract (`ordinal == 0`) and a non-zero count as a successor contract
-  (`ordinal >= 1`, `count >= 1`).
+- `validate_record` branches on contract scope: initial means ordinal zero and
+  zero receipts; successor means ordinal `1..=31` and an exact direct-
+  predecessor receipt count in `0..=31`.
 - The provider-request record and dispatch release control accept any ordinal
   `1..=31` in addition to zero; the claimed dispatch remains one frozen
   request per node/attempt with the node's own Project lane.
@@ -64,4 +71,5 @@ because ordinal zero and an empty predecessor set remain valid on every path.
 No new authority is granted: the successor candidate's effect flags stay
 false until a fresh consent/authorization/pricing execute call, and the
 ADR-0030 terminal fence (no lease, no resend, no auto-advance) is untouched.
-Predecessor content disclosure remains a later protocol.
+At adoption time predecessor content disclosure remained a later protocol;
+ADR-0033 has since delivered its separately consented, bounded form.

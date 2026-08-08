@@ -14,6 +14,9 @@ ForgeOS 不替代 Claude Code / Codex / Gemini CLI / OpenCode / OpenHands ——
 - Go 编排/链状态/审批控制面:[`forge-core/`](forge-core/)
 - Rust 本地会话 Hub、durable Project Run 与默认离线/显式 live Agent Runtime:
   [`forge-runtime/`](forge-runtime/)
+- 已采纳的企业级 AI Engineering OS 目标规划（00–16 节点、AADM/Meta Reflection、140→38 Capability/Skill
+  ownership、default-off Device Fabric）:
+  [`docs/design/ai-engineering-os/`](docs/design/ai-engineering-os/)（`planning_only`，不代表 runtime 已实现）
 - 生产交付边界:[`docs/release/README.md`](docs/release/README.md)（只生成/验证交付包；
   不访问云/K8s 凭证，不执行远程部署）
 
@@ -32,61 +35,23 @@ provider、工具或 workspace，也不代表已经完成分析或讨论。
 可恢复的本地 execution receipt。这个首切片只验证冻结输入并持久化证据：
 不调用模型/provider，不读取 workspace，不开放工具或网络，也不产出分析、
 讨论或任务结论。
-Graph 首节点还可通过 Go 生成 immutable `operator_asserted` pricing snapshot，
-再由 Rust `group graph run dispatch readiness verify` 把当前 release authorization、
-固定官方 destination、exact pricing bytes 与 frozen cost budget 合并复验。该命令
-保持 current SQLite v15/Run v3 不变，不读凭证、不构造 provider、不 claim/send/result/advance；
-定价也不带 vendor attestation，不代表实时厂商价格或账单保证。
-多节点 Graph 可把同一份 exact private control 交给 Go
-`graph-execution-schedule`，冻结 serial authored-order、Project lane identity、
-直接前驱 receipt slots 与 fail-fast policy；Rust `group graph run schedule admit/show/list`
-只在 SQLite v15 保存 immutable sidecar，不占用 Graph 主 journal seq，也不创建 contract、
-观察 progress、推进 successor 或接触 credential/provider/network/workspace/tool/result。
-它是后续多节点协议的可验证策略前置条件，不代表 frontend/backend/SSO 已经执行。
-已冻结的 scheduled initial-node request 可通过 Rust
-`scheduled-contract provider-request release-control export` 导出私有 canonical control，
-交给 Go `graph-scheduled-node-dispatch-authorize --control FILE|-` 生成 content-addressed
-decision，再由 Rust `scheduled-contract provider-request authorization verify` 对 fresh Hub
-state 复验。control/authorization 含 Prompt、Project、provider 与 request binding，应只走受保护的
-pipe/file；verify 输出会脱敏。该握手只授权未来的 exact lifecycle admission、execution-authority
-release 与 dispatch-authority release，
-当前仍未 admission、consent、claim、send、记录 receipt 或推进 successor。
-同一 request 还可通过 `scheduled-contract provider-request readiness verify` 同时提交
-exact authorization 与既有 Go `graph-node-pricing-snapshot` 工件；Rust 会重新读取 current
-v15 Hub，复验官方 registered destination、逐项向上取整的整数成本上界与 frozen budget。
-结果只含脱敏元数据，pricing 仍是 operator assertion、没有 vendor attestation；命令不缓存
-readiness，也不读取 credential、构造 provider、联网、claim lane、send、落库或推进 successor。
-对 scheduled ordinal-zero 初始节点，Sprint 59 已增加独立的 effectful sidecar 生命周期：
-`scheduled-contract provider-request dispatch execute REQUEST_ID` 要求 fresh consent、
-exact authorization/pricing、header-safe credential 与 SHA-256 固定的 Go Core binary，
-在 SQLite v16 中原子 claim Project lane，单次发送后把 bounded result/uncertainty、
-terminal control/receipt 一起落库；Core 或提交失败进入不可重发的 quarantine。它不修改
-scheduled Run 的 v1/seq-1 journal，也不推进 frontend/backend/SSO successor；多节点推进、
-resume、lease 与 remote exactly-once 仍未开放。effectful dispatch 每次仍须在原子 claim
-前 fresh 重做所有检查。
-对 scheduled ordinal-zero 的 terminal receipt，Sprint 60 增加了 successor 前置：
-`scheduled-contract predecessor-receipt export PROVIDER_REQUEST_ID` 从 v16 侧车导出
-exact canonical receipt（仅限 terminalized 状态），`forge graph-scheduled-node-contract
---predecessor-receipt FILE...` 由 Go Core 验证 receipts 构成 serial schedule 的连续前缀
-并生成 ordinal-N 的 successor candidate（scope=schedule_successor_only，predecessor
-receipt 只作证据、`predecessor_content_included=false`），Rust
-`scheduled-contract successor admit/show/list` 在 SQLite v17 中原子保存该不可变候选，
-且 admission 逐字节复验每个 receipt 与 durable terminalized lifecycle 一致。该链路
-不 dispatch、不 claim lane、不读 credential、不推进 wave/successor；跨 node 内容
-disclosure/consent 与 effectful successor dispatch 仍属后续协议。
-对严格单节点 Graph，`group graph run dispatch execute` 再要求本次 fresh consent、
-exact authorization/pricing 与 SHA-256 固定的 Go Core binary；该 effectful 命令当前
-仅支持 Linux，并从密封、复验后的匿名 executable memfd 执行 Core。SQLite v15 沿用
-v12 lifecycle 表原子 claim
-全 Hub Project lane，只在 approved service path 把 non-`Clone` exact request authority
-交给一个赢家（可信 store adapter 属于进程内 TCB）；一次派发后 bounded
-收集 result/uncertainty，由 Go Core 生成 terminal receipt，最终事务同时持久化证据、
-追加 seq 5 并释放 lane。claim 后崩溃或 Core/commit 失败会保留 v4 quarantine 且禁止
-自动重发；当前协议不执行 frontend/backend/SSO 等多节点 Graph。claim、result 或
-bounded partial output、artifact 与 receipt 都以本地 SQLite plaintext 保存；默认输出
-只含 metadata，只有 `--include-result` 才揭示完整复验后的结果。fresh consent 仅授权
-这一份 exact request，不授权 workspace/tool、Conversation/Prompt/memory/task writeback、
-其他 node 或 retry；它只保证 Hub-local single-consumption，不声称 remote exactly-once。
+Graph 协议当前使用 SQLite v24。legacy 首节点 authorization 路径使用 main Run v3；scheduled
+多节点链则刻意保持 main Run v1/seq-1，并把逐节点状态保存在独立 sidecar。Go Core 负责冻结
+canonical plan、serial schedule、per-node contract/request/authorization/pricing 与 terminal
+receipt；Rust Hub 对同一份 exact bytes 做 fresh-state 复验并持久化 per-node lifecycle。非初始
+节点携带的直接前驱 evidence 只接受 exact durable `completed`/result 型 receipt；空直接前驱的
+显式目标可携带零 receipt。显式 `--predecessor-content` 会把有界正文纳入 successor Prompt，
+并在 admission 时持久化复验；后续 off-machine dispatch 仍需独立的
+`--confirm-predecessor-content` 授权。wave-ready/admit、逐节点单次 provider dispatch 与本地 hard-crash
+adjudication 已具备，所有 effectful dispatch 仍须 fresh consent、固定 Core binary、Project lane
+单赢家和 bounded terminal result。
+
+这套协议尚未提供顶层“自动跑完整张图”的循环、branching/resume 或远程 exactly-once；
+Graph 的进度仍由 operator/外层编排逐节点驱动。Prompt、前驱正文、result 与 receipt 会以
+本地 SQLite plaintext 保存，默认 CLI 视图隐藏正文；consent 只授权当前 exact request，
+不扩大到 workspace/tool、其他节点或自动 retry。`operator_asserted` pricing 也不代表实时
+厂商报价、账单保证或 vendor attestation。
+
 `group analysis prepare GROUP_RUN_ID` 可在本地冻结一份精确、零工具的
 OpenAI Responses 请求；只有后续 `group analysis send ANALYSIS_ID
 --confirm-off-machine` 才读取环境凭证并释放一次外发。SQLite claim 一旦提交，

@@ -31,10 +31,17 @@ candidates, every current golden, digest, and byte stays identical.
   (paired with `--predecessor-receipt`): the exact predecessor result text is
   embedded in the user Prompt's `predecessor_output` field, the request's
   `predecessor_content_included` becomes true, and the prompt digest covers the
-  embedded bytes. The content must be valid UTF-8 and bounded.
+  embedded bytes. When a node has multiple direct predecessors, the content is
+  bound to the first receipt in canonical schedule direct-predecessor order.
+  The content must be valid UTF-8 and bounded.
 - Rust decodes the prompt strictly: when `predecessor_content_included` is
   true the `predecessor_output` field must be present, and vice versa; the
   prompt stays exact canonical JSON.
+- The 1 MiB field limit is reachable even for maximally JSON-escaped prose.
+  Go and Rust share the exact worst-case user-Prompt formula, the candidate
+  envelope is bounded at 8 MiB, and SQLite v24 raises only the successor
+  candidate storage columns to that same limit. Historical schema DDL and the
+  content-free initial-candidate storage bound remain unchanged.
 - Admission requires `--predecessor-content FILE|-` whenever the candidate
   carries predecessor content, and re-verifies the embedded bytes
   byte-for-byte against the durable terminalized lifecycle artifact of the

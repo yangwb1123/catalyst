@@ -894,13 +894,119 @@ digest 域/边界/不变量/身份前缀的唯一定义(变更流程:先 ADR,双
 任何一侧漂移 → 测试失败 → forge accept 拒绝。
 `forge accept` 为 **ACCEPTED**;Rust 932 tests;Go 0 FAIL。
 
+## Sprint 86（实现完成；⚠️ 默认验收受宿主 Rust 工具链与既有 Go lint 基线阻断）— AI 可移植性、successor 证据闭环与 Sandbox 资源边界
+
+(1) **AI 离线工具可移植性**:`docs/ai-batch` 补齐 system-type methodology、
+内建 eval fixtures、build-routing fallback 与统一 canonical `path_base`。rules
+check 现在校验 effective built-in/overlay registry；四个公开子命令从任意 cwd
+运行，完整复制到无 `.agent` 的临时目录后仍可在 `python -S` 下完成
+classify/rules/assess/eval。外部绝对 validator 被移除；runner-only validator/
+agent 配置明确标为本移植不执行的样例，不能冒充 standalone 能力。
+
+(2) **有界 predecessor dataflow / storage**:前驱正文固定 ≤1 MiB，Prompt 按
+最坏 UTF-8/模板开销精确守界，successor candidate 固定 ≤8 MiB；SQLite v24
+只提升 successor row，initial candidate 保持 4 MiB。v24 同时把 successor
+ordinal、required/receipt count 等式写入当前 DDL CHECK，迁移前后继续按 exact
+catalog/DDL contract 失败关闭。
+
+(3) **scheduled successor 生产闭环**:Go 离线只接受 canonical、identity-bound 的
+`completed`/result-shaped receipt，调用方 receipt 文件可任意顺序，但 candidate 始终按
+schedule 的完整直接前驱顺序 canonicalize；缺失、重复、无关、failed、伪造
+artifact identity 全拒绝。显式 `--target-node` 使空直接前驱的 ordinal>0 节点可在
+零 receipt 上就绪，且绝不回退为 initial；正文只绑定 canonical 第一直接前驱。
+Rust admission/re-entry 再要求 receipt 与 durable terminalized lifecycle exact match，
+并复验 manifest 的 Project/member/profile、system/user Prompt 与 ordinal 1..31。真实 CLI/SQLite 链已覆盖
+wave admission → successor show → provider-request prepare/show；production
+prepare/release/readiness/effectful dispatch 都可解析 initial 或 successor，且多节点
+list 允许共享 Run/schedule、只拒绝重复 node/ordinal slot。
+
+(4) **Sandbox 资源与并发边界**:`--sandbox-memory-mb` 默认 512 MiB，范围
+64..32768；Docker/Firecracker 都继承 executor output cap（默认 10 MiB）并显式
+报告 overflow。Docker readiness 共用总 deadline，named container 由独立 2s
+cleanup context 精确回收。Firecracker 从 prerequisite/rootfs build 起算总 deadline，
+PATH 工具解析与 `/dev/kvm` read/write 前提失败关闭，serial 只作 bounded in-memory
+capture；模板 regular file 分块、可取消复制，FIFO/device/socket 与注入 symlink
+拒绝。并行 auto-wire 只写 receiver-local config，不再竞态修改共享 Runner interface。
+
+(5) **fresh-context 收口**:独立 reviewer/protocol 子审计推动修复了 successor
+source binding、真实 SQLite provider 链、共享 Run/schedule list、wave 相对路径与
+stdin/重复 flag、Unicode idempotency、Docker preflight deadline、sandbox typed error
+classification、Firecracker template 与 auto-wire race；最终报告
+Blocker/Major/Minor = 0。
+
+验证：AI smoke 9/9、Python harness 74/74、Node arch/scaffold 72/72；Go
+`test ./...`、`vet ./...`、`build ./...` 与 graph/sandbox runner race 全绿。Rust
+隔离复验 domain 58/58、application 45/45、CLI unit 150/150、wave/provider-request
+E2E 5/5，相关 strict clippy 全绿。protocol 子审计通过生产 v1→v24 schema open，
+证明新 DDL 可解析并完成整链迁移；但主 checkout 的 v24 adversarial 定向用例因
+离线未缓存 `assert-json-diff 2.0.2` 而未启动。默认 `forge accept` 最终为
+6 PASS / 4 FAIL / 1 N/A：test/typecheck/build 的 Go 路径通过，Rust 路径被 PATH 上
+Cargo 1.83 无法解析 edition 2024 / 项目 `rust-version = 1.93` 阻断；lint 还同时
+暴露 harness 从无 `go.mod` 的仓库根调用 golangci-lint（exit 7），而在
+`forge-core/` 正确运行会报告 62 个既有 HEAD finding。当前增量在该模块内以
+`golangci-lint run --new-from-rev=HEAD ./...` 复验为 0 issue。这些阻断均未伪报 PASS，
+也没有联网、降低 manifest 工具链要求或顺手扩张成全仓历史 lint 清理。
+
+## Sprint 87（规划落地，runtime 未实现）— AI Engineering OS 全流程能力与治理知识模型
+
+用户要求把长期维护型 AI 软件工程团队的全部流程节点、具体职能、Skill、工程规则和演化机制固化为可实施规划。
+本 Sprint 先做架构与需求采纳，不把“写了文档”冒充代码能力：
+
+(1) **能力中心化组织**:ADR 0037 决定用「00–16 生命周期决策节点 × 可复用 Capability/Skill × 显式
+CapabilityGrant」装配临时 Agent，拒绝按职能名称无限增殖永久 Agent。规划、实现、审查、批准、生产操作分权；
+低风险流程可裁剪，高风险职责分离。
+
+(2) **完整节点 SOP + Reflection**:`docs/design/ai-engineering-os/` 逐项定义 Orchestrator、Requirement/BA、Product、UX/UI、
+Domain、Architecture、Data、API、Planning、Development、Review/Refactoring、Security/Privacy、QA、
+Performance/Reliability、Release、Operations/SRE、Reflection/Evolution 的入口、输入、细项职能、Skill、产物、规则、门禁、
+禁止项、权限、升级、退出、交接与记忆写回；另以 38 个可组合 Skill 包逐项列出 trigger、output、rule、automation、
+forbidden 和统一 production-ready Checklist。Meta Reflection 每次 R0、L2 R1、L3/L4 R2，evidence-first Critic 只提交
+Claim/Debt/Eval/Rule/ADR/New WorkIntent proposal 与 RoutingReceipt，不直接自改系统。
+
+(3) **AADM 决策内核与能力收敛**:ADR 0038 把 CognitiveAtom、TransactionProposal/AuthorizedTransactionSpec、append-only
+Attempt/receipt、InteractionEvent、Capability/Artifact ABI、typed hypergraph、Rule Field、pre/effective DiscretionEnvelope、
+constraint/Pareto、rolling Controller 与 DecisionCapsule 固化为目标 Kernel。140 个 lifecycle fine capabilities 已由
+`capability-skill-map.v1.yml` 完整、无重复地映射到 38 个 Skill primary owner；CLI/Web/API 未来只作 adapter。
+
+(4) **治理知识模型**:规划 Evidence/Claim、可重建 System Knowledge Graph、两阶段 ImpactPreScan→final Assessment Join、ADR v2、
+Technical Debt、typed Engineering Constitution、Software Health、content-addressed Context、CapabilityGrant、
+Approval/RiskAcceptance、KnowledgeUpdate proposal/receipt、Review/Conflict、封闭 Transition 状态机与 RuntimeObservation/
+EvolutionCandidate。Fact/Decision/Inference/Assumption/Proposal/Unknown 分层；缺边必须 UNKNOWN，Agent/PDP/Approver/Operator
+权威与认识上限闭合。
+
+(5) **工程规范**:God File 用 size/complexity/change coupling/cohesion/responsibility/effect/test pain 联合判定；
+重构按变化原因、characterization test、seam 和渐进迁移。OOP、DI、AOP、DDD、Strategy、Event、Repository、CQRS、
+数据迁移与前端拆分均有适用/不适用条件；当前 500/50/零循环继续是硬门，其余指标默认 review trigger。
+
+(6) **Device Fabric 预留**:ADR 0039 采用 default-off ExecutionTarget/Attempt/Artifact/Lease/Fencing/Placement/Reconciliation
+抽象，先保持 Local adapter，再分期 Inventory/Observe、verified-sandbox SSH、mTLS Runner、Scheduler、safe migration，
+Federation 最后。身份、attestation、数据驻留、egress、LOST/INCONCLUSIVE、workspace delta/CAS 与外部 OperatorReceipt/G8
+均失败关闭；现有 Docker/Firecracker 不是远程 Fabric。
+
+(7) **分期与诚实边界**:ROADMAP 采纳 Wave 0B–7，先 Governance/Decision Kernel、Context/Registry/Local ABI，再 Graph/
+Impact、Engineering Memory、Skill/Review、Reflection/Evolution，最后 default-off Device Fabric/企业扩展；`.agent` 保持可执行
+主干，不另建第二 DAG。所有新目录明示 `planning_only/executable:false`；功能需求审计新增 ADR 0037–0039 的
+`ADOPTED-PLANNED`，远程生产 effect 边界不变。
+
+验证：规划目录严格解析为 17 个 `00–16` 节点、每节点 14 个统一字段；145 个 capability references/140 个唯一 fine
+capabilities 精确映射到 38 个 Skill primary owner（无 missing/extra/duplicate）；14 个设计/ADR Markdown 的本地链接均解析，
+全部新增设计产物 ≤500 行，`git diff --check` 通过。`node harness/gate.mjs` PASS（1303 files），
+`python3 -B harness/check.py` PASS（12 checks），`go test -count=1 ./...` 全绿，完整 acceptance 中 forge-core 1379 tests、
+examples 22+47 tests 通过。
+
+完整 `node harness/acceptance.mjs` 诚实结果仍为 6 PASS / 4 FAIL / 1 N/A：test/typecheck/build 的 Rust 路径被 PATH 上 Cargo
+1.83 无法解析 edition2024（项目要求 Rust/Cargo 1.93）阻断；lint 同时有仓库根 golangci-lint exit 7、ruff/eslint 未安装与
+同一 Cargo 解析失败；coverage 维持 N/A。与本轮 planning-only 文档无因果关系，未通过降级 manifest、联网或伪报 PASS
+规避。fresh-context 终审最终 APPROVED，Blocker/Major/Minor = 0；本轮没有创建空壳 Agent/Skill、没有改 runtime、没有调用付费模型、连接
+远程设备或外部生产系统。
+
 ## 下一前沿(需外部资源 / 后续阶段 / 投机增强 / 明确非目标,非本环境可完整验证)
-- **Graph 下一协议切片**:Sprint 59 只完成 scheduled ordinal-zero 的独立 claim/send/terminal sidecar；仍没有真实 successor/wave advancement、verified per-node/per-attempt receipt 驱动的非初始 contract-v2，也没有 predecessor dataflow。后续必须另立 successor 选择、receipt consumption、跨 node disclosure/consent 与 byte-bound 契约，不能从 ordering edge 推断。另一个独立协议仍是 legacy v4 hard-crash no-send adjudication：必须证明旧 executor 已停止，不能用 lease/时间流逝猜测后自动释放或重发。
+- **Graph 下一协议切片**:SQLite v17–v24 已交付 successor candidate、per-node request/lifecycle、receipt/content dataflow、wave-ready/admit、本地 hard-crash adjudication与 8 MiB successor candidate 持久化上限；下一步是顶层整图执行循环、并发 wave 的失败传播/恢复以及安全 resume/branching。不得把当前逐节点 operator 驱动或 Hub-local single-consumption 冒充远程 exactly-once。
 - **真点火** `--agent-cmd=claude`:**multi-agent running to completion 已坐实**(Sprint 25:真 claude 多-agent 跑到 converge MET,增量级 + 版本级)。完整旋钮:四维资源护栏 + 成本三维(phase/时间/美元)+ 任务注入 + 写权限 + 模型路由 + 工作目录 + retry + loop-back;诚实分工:agent 自治增量绿、人确认版本竣工。docs/ignition.md 有完整配方 + 实测
-- **需外部资源(框架已就绪)**:~~SCA/CVE 漏洞库 OSV/NVD(差 DB)~~ **已解决,见 Sprint 32**。~~Firecracker 沙箱 / LiteLLM 跨厂商~~ **2026-08-05 本机部署验证完成,见 `docs/external-resource-verification.md`**:`/dev/kvm` ACL 可写,Firecracker v1.7.0 已装并真实启动 microVM(内核+rootfs+guest init+poweroff 全链路,KVM 后端);LiteLLM 跨厂商路由已实测(deepseek @ :4000 + 本地 Ollama @ :11434 双后端路由,厂商 B 完整推理成功,厂商 A 路由正确但上游月度限额)。两者从 BLOCKED-EXTERNAL 划为 host-VERIFIED;将 sandbox runner / 跨厂商池接入 forge-core 执行器仍是架构级接线工作(非本环境验证障碍)。〔真 cost/latency telemetry **已达成**——S26 真 claude 补齐真 token/cost/latency 数据,scorecard 三维真值落盘〕
+- **外部资源状态**:~~SCA/CVE 漏洞库~~、~~Firecracker 主机前提~~与~~LiteLLM 双后端主机验证~~均已解决；Go Docker/Firecracker runner 也已接入执行器。剩余项是完整 coding-workspace 交换/隔离硬化与生产 provider registry/policy，它们属于后续产品契约，不再是本机外部资源阻塞。〔真 cost/latency telemetry **已达成**——S26 真 claude 补齐真 token/cost/latency 数据,scorecard 三维真值落盘〕
 - **投机增强(做即违反反 gold-plating 纪律)**:embedding 语义检索(TF-IDF 已工作,增量仅真点火时体现)
 - **后续阶段**:Web UI/`forge-web` 仍属于 v3 目标架构，但不在当前 CLI/声明式核心交付阶段
-- **独立大特性,非接线小修(Sprint 30 复核后从 GAP 改判)**:`internal/routing` 的完整多维评分器(complexity/dependency/context/business-impact)接入真实执行路径(目前只喂手动 `forge route` CLI)——包自身文档已自我标注为「v2+ Router service」。
+- **生产跨厂商路由**:`internal/routing` 六维评分已接入 run/evolve；本机 LiteLLM 双后端只证明网关前提。生产 provider registry、健康/容量/成本策略和 operator 治理仍属 v3，不能从一次主机验证推断已经交付。
 - **明确后续契约**:`on_approved` 当前只路由；若未来要在批准时物化 `.agent/*`，必须先采纳 producer/source mapping、新鲜度与原子提交契约，不能恢复已被 `forge check` 禁止的无主 `on_approved.emit`。
 - **`readonly`/`on_rejected` 的真 claude 进程验证——用户已明确决策终止于此(2026-07-03)**:两机制均已真实实现(非声明未接线);readonly 路径限定按官方文档契约构造 + 单测坐实 argv、on_rejected 用 fake-agent 脚本端到端坐实目标阶段、失败保留与成功消费语义,但都未过真实付费 `claude` 进程验证运行时行为。征询用户是否授权花真实 API 预算推进最后一道经验验证,用户选择「单测已足够,就此打住」——非遗留缺口,是知情决策后的终态;若未来有人想补这道验证,预算授权需重新征询。
 - **需求清单本身**:`docs/FUNCTIONAL_REQUIREMENTS_AUDIT.md`(Sprint 30 起 + Sprint 31 修订)是本仓当前唯一的显式功能需求清单,derived from 项目自己的声明源头;后续 sprint 如声明新机制,应同步补一行,不要让清单本身漂移回「不存在」。

@@ -59,7 +59,7 @@ ADR-0035 的证据绑定:候选只携带**直接前驱**的 receipts;同 wave �
 - `forge graph-scheduled-node-contract --target-node NODE_ID`:为指定节点
   生成候选(物化)。
 - `group graph run scheduled-contract wave-admit GRAPH_RUN_ID
-  --schedule-sha256 … --predecessor-receipt …`:一次计划 → 逐节点物化 →
+  --schedule-sha256 … [--predecessor-receipt …]`:一次计划 → 逐节点物化 →
   admit 落库。
 
 ## 后果

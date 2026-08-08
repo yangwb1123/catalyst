@@ -1,0 +1,417 @@
+api_version: forgeos.design/v1
+kind: AIEngineeringCapabilityCatalog
+status: planning_only
+executable: false
+decision_ref: ADR-0037
+extension_decision_refs: [ADR-0038, ADR-0039]
+runtime_note: >-
+  This catalog is an adopted planning artifact. No workflow, permission, gate,
+  or runtime behavior may be inferred until schemas, validators, adapters, and
+  tests are implemented.
+
+canonical_vocabulary:
+  context: ContextPackage
+  grant: CapabilityGrant
+  approval: ApprovalRecord
+  knowledge_write: KnowledgeUpdateProposal
+  historical_aliases_rejected_by_v1: [ContextManifest, AuthorityGrant, AgentCapabilityGrant]
+
+control_plane_joins:
+  planning_authorization_join:
+    owner: non_agent_governance_kernel_pdp
+    occurs_after: [node_00_routing]
+    consumes: [GrantRequest, authenticated_bootstrap_identity, policy]
+    emits: [CapabilityGrant, GrantIssuanceReceipt]
+    rule: "Grants only discovery/design/planning reads, artifact/proposal writes, and optional placement.plan; never reserve or execute."
+  assessment_join:
+    owner: governance-kernel-readonly-impact-assessor
+    occurs_after: [applicable_nodes_02_through_07]
+    consumes: [ImpactPreScan, frozen_design_artifacts, GraphSnapshot]
+    emits: [ChangeImpactReport, ChangeCostEstimate, RiskAssessment, AssessmentReceipt]
+    rule: "G3 accepts only final artifacts bound to one source/context/design digest; the pre-scan cannot satisfy it."
+  authorization_join:
+    owner: non_agent_governance_kernel_pdp
+    occurs_after: [node_08_plan_finalization]
+    consumes: [GrantRequestSet, risk_and_approval_requirements, policy]
+    emits: [CapabilityGrant, GrantIssuanceReceipt]
+    rule: "Agents request grants; only the Kernel/PDP signs them. Production execution grants remain external."
+  operator_result_join:
+    owner: non_agent_operator_receipt_verifier
+    occurs_after: [external_operator_execution]
+    consumes: [OperatorHandoff, external_operator_grant_and_approval, external_result_evidence]
+    emits: [OperatorReceipt]
+    rule: "Verifies and imports an externally signed, exact release/environment-bound result; Node 14 and Fabric cannot sign or fabricate it."
+
+authority_semantics:
+  default: deny
+  memory_updates_mean: KnowledgeUpdateProposal
+  proposal_effect: knowledge.propose
+  apply_effect_owner: governance-kernel-service-principal
+  epistemic_ceiling: "Nodes propose candidate facts/inferences/assumptions/lessons; they cannot confirm business facts, accept decisions, waive policy, or mutate hard rules."
+
+risk_levels:
+  L0: {name: trivial, description: "No behavior change; documentation or copy only."}
+  L1: {name: local, description: "Single module; no public contract or data impact."}
+  L2: {name: feature, description: "End-to-end feature or cross-layer behavior."}
+  L3: {name: systemic, description: "Cross-module, database, public API, security, or SLO impact."}
+  L4: {name: critical, description: "Production data, payment, tenant, privacy, regulation, or irreversible effect."}
+
+universal_node_contract:
+  required_fields:
+    - purpose
+    - entry_criteria
+    - inputs
+    - activities
+    - capabilities
+    - outputs
+    - rules
+    - quality_gates
+    - forbidden
+    - authority
+    - escalation
+    - exit_criteria
+    - handoff
+    - memory_updates
+  artifact_binding:
+    - source_revision
+    - source_tree_sha256
+    - policy_sha256
+    - context_sha256
+    - evidence_ids
+    - status
+    - owner
+    - freshness
+  epistemic_types: [fact, constraint, decision, inference, assumption, hypothesis, lesson, proposal, unknown]
+  conditional_item_schema:
+    allowed_fields: [inputs, outputs, quality_gates]
+    scalar_form: "Always applicable item."
+    artifact_form: {required_keys: [artifact, applies_when]}
+    gate_form: {required_keys: [gate, applies_when, else], else_value: ApplicabilityDecision}
+    resolution_rule: "Resolve predicates before gate evaluation; a false gate predicate requires a signed, evidence-bound ApplicabilityDecision with an N/A TransitionReceipt and cannot be treated as PASS."
+
+gates:
+  G0: {name: intake_ready, requires: [work_intent, baseline_ref, risk_preclassification, planning_grant_issuance_receipts]}
+  G1: {name: requirement_ready, requires: [scope, non_goals, rules, measurable_acceptance, unknowns]}
+  G2: {name: solution_ready, requires: [product, ux_if_applicable, domain_model_if_applicable]}
+  G3: {name: design_ready, requires: [architecture, data_if_applicable, api_if_applicable, final_impact_cost_risk, assessment_receipt]}
+  G4: {name: plan_ready, requires: [execution_dag, work_packages, tests, rollout, capability_grants, grant_issuance_receipts]}
+  G5: {name: build_ready, requires: [change_manifest, current_gate_evidence, self_review]}
+  G6: {name: review_ready, requires: [fresh_reviews, no_blocking_findings, qa_verdict]}
+  G7: {name: release_ready, requires: [immutable_artifacts, migration, rollback, observability, approval]}
+  G8: {name: production_verified, requires: [operator_receipt, observation_window, business_and_data_validation]}
+  G9: {name: knowledge_updated, requires: [reflection_receipt, graph_delta, adr_compliance, debt_delta, health_delta, knowledge_update_receipts]}
+
+nodes:
+  - id: "00"
+    name: intake-orchestration
+    owner_lens: engineering-lead
+    purpose: "Create a bounded, recoverable, evidence-backed Change Run."
+    entry_criteria: [user_or_runtime_intent_exists]
+    inputs: [work_intent_raw, project_snapshot, constitution, adrs, debt, health, policies]
+    activities:
+      - classify_work_and_materiality
+      - freeze_baseline_and_epistemic_state
+      - produce_impact_pre_scan_for_routing_only
+      - select_minimal_nodes_and_build_dag
+      - assemble_context_and_request_authority
+      - run_post_design_assessment_join
+      - persist_journal_budget_and_recovery
+      - control_convergence_and_targeted_rework
+    capabilities: [work-intake, project-snapshot, change-impact-analysis, risk-triage, context-engineering, dag-planning, policy-evaluation, convergence]
+    outputs: [WorkIntent, ProjectSnapshotRef, ImpactPreScan, ExecutionPlan, ContextPackage, GrantRequest, RunJournal, ChangeImpactReport, ChangeCostEstimate, RiskAssessment, AssessmentReceipt]
+    rules: [default_deny, separation_of_duties, cache_digest_binding, unknown_load_bearing_fails_closed]
+    quality_gates: [G0, dag_acyclic, references_resolve, authority_is_scoped]
+    forbidden: [write_product_code, self_grant, self_approve, invent_domain_fact]
+    authority: [read_project, write_control_state, write_planning_artifacts, knowledge.propose]
+    escalation: [irreversible_effect, production, real_cost, external_message, scope_expansion, conflicting_authority]
+    exit_criteria: [all_discovery_design_and_planning_nodes_have_contract_owner_budget_and_kernel_issued_planning_grant]
+    handoff: ["01", "08", specialized_fast_path]
+    memory_updates: [run_state, impact_edges, context_selection_evidence]
+
+  - id: "01"
+    name: requirement-business-analysis
+    owner_lens: business-analyst
+    purpose: "Create an unambiguous and testable requirement baseline."
+    entry_criteria: [G0]
+    inputs: [WorkIntent, stakeholder_evidence, current_behavior, external_constraints]
+    activities: [identify_actors_goals_value, build_glossary, model_normal_exception_boundary_permission_concurrency, catalog_rules_and_states, quantify_nfr, write_given_when_then, trace_requirement_rule_test, manage_questions_assumptions_confidence]
+    capabilities: [requirements-elicitation, business-analysis, scenario-modeling, state-modeling, nfr, acceptance-criteria, traceability]
+    outputs: [RequirementBaseline, BusinessRuleCatalog, Glossary, ScenarioMatrix, NFRBudget, AcceptanceCriteria, OpenQuestions, TraceabilityMatrix]
+    rules: [every_must_has_acceptance, every_rule_has_id_and_source, facts_are_evidenced, ambiguity_is_not_defaulted]
+    quality_gates: [G1, critical_requirement_traceability_100]
+    forbidden: [choose_technology, invent_business_rule, fabricate_research, write_code]
+    authority: [read_evidence, write_discovery_artifacts, knowledge.propose]
+    escalation: [missing_business_owner, conflicting_rules, privacy_or_regulatory_scope, unmeasurable_success]
+    exit_criteria: [scope_non_goals_acceptance_and_material_unknowns_are_explicit]
+    handoff: ["02", "03", "04", "11"]
+    memory_updates: [business_facts, glossary, assumptions, rejected_interpretations]
+
+  - id: "02"
+    name: product
+    owner_lens: product-manager
+    purpose: "Choose a valuable, measurable, staged product solution."
+    entry_criteria: [G1]
+    inputs: [RequirementBaseline, research_evidence, product_strategy, usage_and_support_constraints]
+    activities: [model_jtbd_and_journey, prioritize_value_risk_learning, define_product_state_and_roles, stage_mvp_and_future, define_kpi_guardrails_and_analytics, plan_flag_rollout_deprecation_feedback, run_counterfactual_scope_check]
+    capabilities: [product-discovery, jtbd, journey-mapping, prioritization, product-state-machine, analytics, experimentation, rollout-design]
+    outputs: [ProductBrief, FeatureMap, UserJourney, ProductStateMachine, RoleCapabilityMatrix, MetricPlan, RolloutPlan]
+    rules: [feature_maps_to_user_problem, mvp_closes_real_journey, future_seam_has_evidence_and_cost_cap]
+    quality_gates: [product_value_and_measurement_review]
+    forbidden: [choose_implementation, promote_speculative_future_to_scope, use_competitor_as_value_proof]
+    authority: [write_product_artifacts, knowledge.propose]
+    escalation: [unclear_roi, product_line_conflict, material_behavior_change]
+    exit_criteria: [value_scope_metrics_and_rollout_are_decidable]
+    handoff: ["03", "04", "08"]
+    memory_updates: [product_decisions, hypotheses, experiment_results, scope_history]
+
+  - id: "03"
+    name: ux-ui-design
+    owner_lens: ux-designer
+    purpose: "Make real user tasks usable, accessible, and implementation-ready."
+    entry_criteria: [G1, product_context_if_applicable]
+    inputs: [ProductBrief, personas_and_scenarios, device_environment, design_system]
+    activities: [validate_research_evidence, design_information_architecture, model_task_flows_and_recovery, specify_all_interaction_states, design_high_risk_actions, define_visual_tokens_and_responsive_behavior, verify_accessibility_and_i18n, usability_test_and_handoff]
+    capabilities: [user-research, information-architecture, interaction-design, content-design, visual-design, design-system, accessibility, usability-testing]
+    outputs: [ResearchSummary, IA, TaskFlow, ScreenInventory, Prototype, InteractionStateMatrix, DesignSystemDelta, AccessibilityMatrix, UXAcceptance]
+    rules: [all_critical_states_defined, keyboard_and_semantics, reuse_before_new_component, research_fact_separate_from_design_inference]
+    quality_gates: [ux_review, accessibility_review, G2]
+    forbidden: [fabricate_research, change_business_rule, hide_unknown_in_mockup, write_production_ui]
+    authority: [write_design_artifacts, knowledge.propose]
+    escalation: [unsafe_interaction, accessibility_blocker, unresolved_business_rule]
+    exit_criteria: [requirements_map_to_flow_state_component_and_acceptance]
+    handoff: ["07", "09", "12"]
+    memory_updates: [validated_user_facts, interaction_decisions, design_system_delta]
+
+  - id: "04"
+    name: domain-engineering
+    owner_lens: domain-expert
+    purpose: "Assign business language, behavior, invariants, and ownership to explicit boundaries."
+    entry_criteria: [G1]
+    inputs: [RequirementBaseline, BusinessRuleCatalog, ProductStateMachine, current_domain_model]
+    activities: [build_ubiquitous_language, identify_subdomains_and_contexts, model_entities_values_aggregates, assign_invariants_and_transactions, define_commands_events_policies, decide_consistency_and_idempotency, map_context_translation, test_with_examples_and_counterexamples]
+    capabilities: [domain-analysis, ddd, event-storming, invariant-modeling, context-mapping, state-machine, consistency-design]
+    outputs: [UbiquitousLanguage, ContextMap, AggregateCatalog, InvariantCatalog, CommandEventCatalog, ConsistencyMatrix]
+    rules: [one_authoritative_owner_per_business_fact, aggregate_by_invariant_not_table, simple_crud_stays_simple]
+    quality_gates: [domain_rule_traceability, context_ownership_review, G2]
+    forbidden: [ddd_ceremony_for_crud, choose_middleware, derive_domain_from_orm]
+    authority: [write_domain_design_artifacts, knowledge.propose]
+    escalation: [cross_owner_invariant, consistency_availability_conflict, unresolved_language]
+    exit_criteria: [critical_rules_have_owner_boundary_and_test_examples]
+    handoff: ["05", "06", "07"]
+    memory_updates: [domain_nodes_edges, invariants, terminology, event_semantics]
+
+  - id: "05"
+    name: architecture
+    owner_lens: architect
+    purpose: "Choose the lowest necessary complexity and an evolvable migration path."
+    entry_criteria: [G1, relevant_G2_artifacts]
+    inputs: [requirements, product, domain, current_architecture, adrs, debt, slo, team_and_lifecycle]
+    activities: [reconstruct_current_state, classify_drivers_constraints_unknowns, compare_options, design_boundaries_and_dependency_direction, design_cross_cutting_and_failure_behavior, stage_lifecycle_evolution, design_compatibility_migration_rollback, record_adr_and_fitness_functions]
+    capabilities: [current-state-reconstruction, c4, modular-architecture, tradeoff-analysis, adr, distributed-systems, resilience, observability-design, migration-architecture]
+    outputs: [CurrentTargetArchitecture, C4, DependencyDataFlow, OptionMatrix, NFRAllocation, EvolutionPlan, ADR, FitnessFunctions]
+    rules: [evidence_backed_drivers, dependencies_point_inward, infrastructure_has_owner_and_trigger, no_day_one_gold_plating]
+    quality_gates: [architecture_review, security_distributed_performance_review_when_material, human_gate_when_high_risk]
+    forbidden: [write_implementation, technology_preference_as_constraint, speculative_microservices_cqrs_event_sourcing]
+    authority: [write_design_and_adr, knowledge.propose]
+    escalation: [public_contract, irreversible_choice, adr_conflict, major_cost]
+    exit_criteria: [tradeoffs_decided_and_incremental_migration_is_verifiable]
+    handoff: ["06", "07", "08", "11", "13"]
+    memory_updates: [adr, boundaries, constraints, fitness_rules]
+
+  - id: "06"
+    name: data-architecture
+    owner_lens: data-architect
+    purpose: "Protect data correctness, lifecycle, migration, performance, and recovery."
+    entry_criteria: [domain_and_architecture_context]
+    inputs: [domain_model, data_classification, workload, scale, schema, queries, runtime_metrics]
+    activities: [assign_data_ownership_and_lifecycle, model_conceptual_logical_physical_schema, define_keys_constraints_nulls, design_transactions_locks_idempotency, derive_indexes_from_workload, design_capacity_backup_recovery, plan_expand_backfill_contract, validate_privacy_and_audit]
+    capabilities: [data-modeling, schema-review, query-index-analysis, transaction-design, migration-engineering, data-quality, backup-recovery, privacy-data-lifecycle]
+    outputs: [SchemaContract, DataDictionary, OwnershipClassification, QueryIndexMatrix, TransactionMatrix, MigrationPlan, RetentionRecoveryPlan]
+    rules: [backward_compatible_observable_migration, constraints_protect_invariants, workload_evidence_for_index]
+    quality_gates: [schema_review, migration_upgrade_downgrade_interrupt_tests, data_security_review]
+    forbidden: [direct_production_ddl, unbounded_migration, default_hard_delete_core_asset, service_scattered_sql]
+    authority: [write_data_design, generate_migration, validate_in_nonproduction_when_granted, knowledge.propose]
+    escalation: [data_loss, long_lock, irreversible_transform, residency_or_retention_conflict]
+    exit_criteria: [schema_migration_validation_and_recovery_are_executable]
+    handoff: ["07", "08", "09", "12", "14"]
+    memory_updates: [data_nodes_edges, ownership, lineage, migration_risk]
+
+  - id: "07"
+    name: api-integration
+    owner_lens: api-architect
+    purpose: "Freeze secure, compatible, observable interaction contracts."
+    entry_criteria: [use_cases_and_boundaries_exist]
+    inputs: [requirements, ux, domain_commands_events, architecture, data, consumer_registry]
+    activities: [identify_consumers_and_trust, choose_protocol_semantics, define_schema_errors_validation, define_auth_tenant_idempotency_pagination_limits, design_versions_and_deprecation, design_event_delivery_retry_replay, design_timeout_backpressure_partial_failure, define_contract_tests_and_observability]
+    capabilities: [api-design, openapi-asyncapi-proto, compatibility, idempotency, error-modeling, event-contract, integration-security, contract-testing]
+    outputs: [APIEventSchema, ConsumerCompatibilityMatrix, ErrorCatalog, AuthMatrix, IdempotencyRetryContract, DeprecationPlan, ContractTests]
+    rules: [backward_compatibility_by_default, every_write_has_retry_semantics, no_internal_persistence_leak]
+    quality_gates: [schema_lint, breaking_change_check, contract_tests]
+    forbidden: [business_rules_in_presentation, http_200_for_all_errors, unbounded_list, unproven_exactly_once]
+    authority: [write_contract_artifacts, knowledge.propose]
+    escalation: [public_breaking_change, cross_org_consumer, identity_scope_change, delivery_semantics_conflict]
+    exit_criteria: [producer_consumer_success_failure_and_compatibility_are_testable]
+    handoff: ["08", "09", "11", "12"]
+    memory_updates: [api_event_nodes_edges, consumers, deprecation_timeline]
+
+  - id: "08"
+    name: planning
+    owner_lens: planner
+    purpose: "Create safe vertical increments and an executable dependency DAG."
+    entry_criteria: [G3]
+    inputs: [approved_designs, ChangeImpactReport, ChangeCostEstimate, RiskAssessment, AssessmentReceipt, findings, debt, budget, capability_inventory]
+    activities: [vertical_slice, trace_requirements_to_tasks_tests, build_dag_waves_and_critical_path, isolate_unknown_spikes, order_compatibility_and_migrations, plan_security_test_observability_release_knowledge, refine_execution_estimate_and_risk_treatments, assign_dor_dod_owner_and_submit_grant_requests]
+    capabilities: [work-breakdown, vertical-slicing, dag-planning, estimation, change-cost, risk-planning, test-release-planning, raci]
+    outputs: [DeliveryPlan, ExecutionDAG, WorkPackage, RACI, DoRDoD, TestMatrix, EstimateRefinement, RiskTreatmentPlan, GrantRequestSet]
+    rules: [include_non_code_work, every_task_has_input_output_owner_validation, no_fake_precision]
+    quality_gates: [G4, dag_acyclic, must_traceability, grants_present]
+    forbidden: [write_code, invent_design, omit_migration_test_release_work]
+    authority: [write_plan_and_control_state, knowledge.propose]
+    escalation: [ownerless_dependency, budget_overrun, unsafe_parallel_conflict, load_bearing_unknown]
+    exit_criteria: [all_execution_nodes_are_ready_and_kernel_grant_receipts_exist]
+    handoff: ["09", "10", "11", "12", "13", "14"]
+    memory_updates: [estimate_basis, dependency_pattern, planning_assumptions]
+
+  - id: "09"
+    name: development
+    owner_lens: implementer
+    purpose: "Implement the smallest complete compatible change with current evidence."
+    entry_criteria: [G4, scoped_capability_grant]
+    inputs: [WorkPackage, ContextPackage, contracts, code_snapshot, test_gate_commands]
+    activities: [revalidate_scope_and_context, build_characterization_or_failing_test, implement_small_slice, preserve_ownership_and_dependency_direction, handle_errors_cancellation_limits_concurrency, preserve_compatibility, add_observability, test_and_self_review, run_current_gates, emit_change_manifest]
+    capabilities: [backend-engineering, frontend-engineering, client-engineering, secure-coding, testing, observability, migration, integration, small-step-refactoring]
+    outputs: [Code, Tests, ContractDelta, MigrationDelta, ObservabilityDelta, ChangeManifest, GateEvidence]
+    rules: [scope_limited_write, no_new_cycle, public_contract_declared, current_evidence_only, dependencies_vetted]
+    quality_gates: [G5, format, lint, typecheck, test, build, security, architecture]
+    forbidden: [production_access, secret_access, self_change_requirement, weaken_gate, hide_correctness_in_todo, unrelated_rewrite]
+    authority: [read_project, write_assigned_paths, execute_approved_local_commands, knowledge.propose]
+    escalation: [requirement_or_adr_conflict, breaking_contract, data_loss, supply_chain_risk, blast_radius_growth]
+    exit_criteria: [current_gates_pass_and_manifest_is_complete]
+    handoff: ["10", "11", "12", "13"]
+    memory_updates: [code_map_delta, validated_claims, explicit_debt]
+
+  - id: "10"
+    name: code-review-refactoring
+    owner_lens: fresh-reviewer
+    purpose: "Independently verify behavior and maintainability; design gradual refactoring by reason to change."
+    entry_criteria: [G5, reviewer_independent_from_implementer]
+    inputs: [requirements, decisions, impact, diff_and_affected_code, raw_gate_test_evidence, debt, constitution]
+    activities: [reconstruct_expected_behavior, review_correctness_and_failures, review_architecture_coupling_cohesion, assess_tests_and_observability, analyze_god_risk_and_responsibilities, normalize_findings, design_safe_refactor_if_needed, reverify_after_fix]
+    capabilities: [code-review, static-analysis, architecture-conformance, complexity-coupling, test-review, refactoring, pattern-selection, compatibility-review, review-normalization, conflict-adjudication]
+    outputs: [ReviewCase, Findings, Verdict, ResponsibilityMap, RefactorProposal, ClosureEvidence]
+    rules: [fresh_context, evidence_for_findings, style_is_not_blocker, threshold_is_trigger_except_hard_gate]
+    quality_gates: [required_review_contract, no_blocker_or_major, affected_gates_rerun]
+    forbidden: [write_code_as_reviewer, self_approval, expand_scope, mechanical_file_split, preference_driven_rewrite]
+    authority: [read_project, execute_approved_read_only_checks, write_review_artifact, knowledge.propose]
+    escalation: [public_contract_change, architecture_violation, no_behavior_safety_net, reviewer_conflict]
+    exit_criteria: [required_findings_closed_or_authoritatively_time_bound]
+    handoff: ["12", "14", "09"]
+    memory_updates: [findings, smell, exception, debt, fitness_rule_candidate]
+
+  - id: "11"
+    name: security-privacy-compliance
+    owner_lens: security-engineer
+    purpose: "Verify threats, controls, privacy, supply chain, and residual risk."
+    entry_criteria: [security_relevant_design_or_change]
+    inputs: [data_flows, trust_boundaries, requirements, architecture, data, api, code_config_dependencies, threat_registry]
+    activities: [update_threat_model, verify_identity_authorization_tenant, inspect_injection_and_abuse, inspect_secret_crypto_logging, assess_privacy_lifecycle, assess_supply_chain_sbom, design_security_tests, record_controls_exceptions_residual_risk]
+    capabilities: [threat-modeling, owasp, identity-access, secure-protocol, privacy-engineering, compliance-mapping, supply-chain, security-testing]
+    outputs: [ThreatModel, SecurityPrivacyRequirements, ControlMatrix, ScanTestEvidence, SecurityFindings, ResidualRiskVerdict]
+    rules: [default_deny, server_side_authorization, no_secret_in_context, domain_risk_critical_high_must_close_or_have_authorized_risk_acceptance]
+    quality_gates: [security_review, privacy_review_when_applicable, sca_sast_secret_scan]
+    forbidden: [read_real_secret, unauthorized_production_attack, custom_crypto, permanent_break_glass]
+    authority: [read_code_config_scans, approved_nonproduction_security_tests, knowledge.propose]
+    escalation: [exploited_vulnerability, cross_tenant, data_exposure, regulation_violation]
+    exit_criteria: [blocking_risk_closed_or_formally_accepted]
+    handoff: ["12", "14", "15"]
+    memory_updates: [threats, controls, vulnerabilities, exceptions, abuse_patterns]
+
+  - id: "12"
+    name: qa-verification
+    owner_lens: qa
+    purpose: "Provide independent risk-driven evidence of requirement satisfaction."
+    entry_criteria: [G5, testable_acceptance]
+    inputs: [TraceabilityMatrix, product_ux_api_contracts, ChangeManifest, RiskAssessment, RiskTreatmentPlan, test_environment_contract]
+    activities: [design_test_strategy, cover_unit_integration_contract_e2e, cover_negative_boundary_permission_concurrency_recovery, verify_migration_compatibility_flags, run_exploratory_accessibility_cross_checks, govern_test_data_fixture_environment, report_defects_and_regression, emit_current_trace]
+    capabilities: [test-strategy, unit-integration-contract-e2e, exploratory, property-fuzz, concurrency, accessibility, test-data-environment, defect-management]
+    outputs: [TestPlan, TestTraceMatrix, TestEvidence, DefectReport, FlakeRegister, QAVerdict]
+    rules: [critical_traceability_100, behavior_assertions, failures_visible, load_bearing_not_na, strict_verdict]
+    quality_gates: [qa_v1, regression, acceptance]
+    forbidden: [skip_failure_for_release, stale_pass, shared_polluted_fixture, production_personal_data]
+    authority: [approved_test_environment, synthetic_or_masked_data, write_test_evidence, knowledge.propose]
+    escalation: [acceptance_conflict, severe_unreproducible_defect, environment_parity_gap, unowned_residual_risk]
+    exit_criteria: [required_tests_pass_and_residual_risk_is_explicit]
+    handoff: ["14", "09"]
+    memory_updates: [regression_suite, defect_patterns, environment_facts, flake_debt]
+
+  - id: "13"
+    name: performance-reliability
+    owner_lens: performance-sre
+    purpose: "Prove budgets and recovery under representative load and failure."
+    entry_criteria: [performance_or_reliability_relevant_change]
+    inputs: [slo_nfr, workload_profile, architecture, data, api, ChangeManifest, baseline, topology]
+    activities: [define_sli_slo_budgets, build_representative_workload, profile_then_load_stress_soak, inspect_query_allocation_lock_queue, inspect_timeout_retry_backpressure, define_cache_semantics, inject_failure_and_verify_recovery, model_capacity_cost_regression]
+    capabilities: [slo, benchmarking, profiling, database-performance, concurrency, load-capacity, resilience, chaos, cost-performance]
+    outputs: [SLOBudget, BenchmarkProfile, CapacityModel, FailureMatrix, OptimizationDecision, ReliabilityVerdict]
+    rules: [measure_before_optimize, report_distribution_errors_saturation_recovery, no_unbounded_resource, no_blind_nonidempotent_retry]
+    quality_gates: [performance_budget, reliability_review, regression_benchmark]
+    forbidden: [microbenchmark_as_system_proof, production_load_without_approval, intuition_only_cache_index_queue]
+    authority: [performance_environment, production_read_only_observation, knowledge.propose]
+    escalation: [slo_failure, capacity_cost_anomaly, fault_amplification, consistency_change]
+    exit_criteria: [budget_recovery_and_alert_behavior_have_evidence]
+    handoff: ["14", "15", "09"]
+    memory_updates: [baseline, bottlenecks, capacity, invalidated_assumptions]
+
+  - id: "14"
+    name: release-change-management
+    owner_lens: release-engineer
+    purpose: "Prepare an immutable, auditable, stoppable, reversible production handoff."
+    entry_criteria: [G6]
+    inputs: [ChangeManifest, review_verdicts, immutable_artifacts, sbom_provenance, migration, slo_alerts, approvals]
+    activities: [verify_source_build_artifact_identity, prepare_manifest_version_flags, order_migration_and_compatibility, design_progressive_rollout_and_stop, prepare_pre_post_validation, prepare_rollback_and_communication, decide_go_no_go, handoff_and_request_operator_result_join]
+    capabilities: [release-management, artifact-provenance, ci-cd, migration-orchestration, progressive-delivery, feature-flags, rollback, approval]
+    outputs: [ReleaseManifest, ReleasePackage, GoNoGoChecklist, MigrationValidationRollbackRunbook, ReleaseNotes, ApprovalRecord, OperatorHandoff, {artifact: OperatorReceipt, applies_when: external_execution}]
+    rules: [same_artifact_promoted, freshness_binding, zero_blocking_findings, executable_rollback, auditable_approval, operator_receipt_only_from_non_agent_join]
+    quality_gates: [G7, release_validation_contract, human_approval]
+    forbidden: [hold_production_credentials, remote_deploy_or_rollback, self_attest_success, unrecorded_manual_change]
+    authority: [write_release_package, run_local_validation, request_human_approval, request_operator_result_import, knowledge.propose]
+    escalation: [gate_failure, environment_drift, backup_unavailable, approval_expired, risk_change]
+    exit_criteria: [operator_result_or_explicit_nonproduction_handoff_is_recorded_honestly]
+    handoff: [external_operator, "15"]
+    memory_updates: [release_identity, approval, operator_result, anomalies]
+
+  - id: "15"
+    name: operations-sre-incident
+    owner_lens: sre
+    purpose: "Operate to SLO, recover safely, and return production evidence."
+    entry_criteria: [released_service_or_incident]
+    inputs: [service_catalog, release_identity, {artifact: OperatorReceipt, applies_when: release_or_operator_action}, slo, topology, alerts, runbooks, backup_dr, owner_oncall]
+    activities: [maintain_service_slo_runbook_graph, collect_bounded_runtime_evidence, govern_actionable_alerts, manage_capacity_backup_dr, control_config_flags_and_toil, classify_and_command_incident, contain_restore_validate, postmortem_and_assign_actions]
+    capabilities: [service-management, observability, slo-error-budget, alerting, incident-command, diagnostics, backup-dr, capacity, postmortem, toil-automation]
+    outputs: [ServiceCatalog, RuntimeObservation, SLODashboard, AlertRunbook, IncidentTimeline, RecoveryEvidence, Postmortem, ActionItems]
+    rules: [runtime_evidence_bound_to_release, actionable_owned_alerts, break_glass_time_bound_audited, recovery_requires_business_and_data_validation, G8_only_for_release_or_recovery_verification, incident_intake_does_not_wait_for_new_operator_receipt]
+    quality_gates: [{gate: G8, applies_when: release_or_recovery_verification, else: ApplicabilityDecision}, incident_closure, temporary_authority_revoked]
+    forbidden: [agent_unapproved_production_write, secret_or_pii_in_diagnostics, uncertain_effect_auto_retry, permanent_workaround]
+    authority: [production_read_only_observation, request_external_operator_for_scoped_runbook_actions, knowledge.propose]
+    escalation: [sev1_sev2, data_integrity, security_privacy, cross_tenant, failed_recovery, unknown_external_effect]
+    exit_criteria: [service_and_data_verified_communications_done_actions_owned]
+    handoff: ["16", "00", "11"]
+    memory_updates: [runtime_topology, failure_modes, slo_baseline, incident, validated_or_invalidated_claims]
+
+  - id: "16"
+    name: evolution-knowledge-debt
+    owner_lens: evolution-engineer
+    purpose: "Turn evidence and history into falsifiable, prioritized future changes."
+    entry_criteria: [new_runtime_delivery_or_repository_evidence]
+    inputs: [graph_snapshot, gate_review_defect_incident_trends, slo_cost_usage_feedback, dependency_lifecycle, adrs, debt, estimates_actuals]
+    activities: [run_risk_scaled_meta_reflection, audit_goal_requirements_assumptions_decisions_failure_modes_and_complexity, scan_engineering_dimensions, calculate_health_coverage_trend, measure_debt_interest, check_adr_compliance_and_freshness, analyze_rework_and_failure, form_hypothesis_counterfactual_experiment, prioritize_value_risk_interest_reversibility, submit_claim_adr_debt_rule_eval_proposals, emit_new_work_intent]
+    capabilities: [meta-reflection, assumption-audit, evidence-scan, software-health, technical-debt, architecture-fitness, dependency-lifecycle, causal-analysis, experiment-design, counterfactual-reasoning, portfolio-prioritization, knowledge-curation]
+    outputs: [ReflectionReport, AssumptionAudit, DecisionPathAudit, SoftwareHealthSnapshot, TrendDriftReport, TechnicalDebtRegister, ADRCompliance, KnowledgeFreshnessReport, CandidateRule, EvalCandidate, EvolutionCandidate, EvolutionProposal, KnowledgeUpdateProposal]
+    rules: [r0_for_every_change_r1_for_l2_r2_for_l3_l4, critic_evidence_first_and_independent, critical_blocker_overrides_score, all_na_unknown_not_green, debt_requires_owner_trigger_acceptance, rule_learning_is_proposal_only, high_risk_propose_only]
+    quality_gates: [G9, evidence_coverage, knowledge_update_consistency]
+    forbidden: [aesthetic_rewrite, correlation_as_cause, direct_solution_from_single_metric, mutate_accepted_adr, implicit_implementation_authority]
+    authority: [read_repository_and_governed_telemetry, write_reflection_evolution_rule_eval_and_knowledge_proposals, knowledge.propose]
+    escalation: [sustained_health_decline, critical_dependency_eol, recurring_incident, adr_fact_conflict, debt_threshold]
+    exit_criteria: [candidate_is_adopted_rejected_or_queued_with_reason]
+    handoff: ["00"]
+    memory_updates: [health_baseline, debt_state, claim_validation, superseded_decision, planning_lessons]
