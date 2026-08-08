@@ -2,6 +2,7 @@ package orchestrator
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -37,6 +38,9 @@ func (c CommandExecutor) sandboxNone() bool {
 	return runtime == "" || strings.EqualFold(runtime, "none")
 }
 
+// sandboxConfigError enforces the isolation boundary. A declared sandbox is a
+// safety requirement, not a hint: until a runtime is wired, falling back to the
+// host would violate the workflow contract and must be a permanent config error.
 func (c CommandExecutor) sandboxConfigError(phase string) error {
 	if c.Sandbox == nil {
 		return nil
@@ -78,6 +82,26 @@ func (c CommandExecutor) sandboxRunner() (sandbox.Runner, error) {
 	}
 }
 
+// executeSandboxedDispatch builds the sandboxed run: a dedicated context
+// with the configured timeout, the stripped prompt delivered as guest
+// stdin (F1: a claude-family agent with no prompt is a dead phase).
+func (c CommandExecutor) executeSandboxedDispatch(
+	ctx context.Context,
+	phase string,
+	argv []string,
+	input string,
+	useStdin bool,
+) error {
+	runCtx, runCancel := c.commandContext(ctx)
+	defer runCancel()
+	timeout := time.Duration(c.Sandbox.TimeoutSec) * time.Second
+	prompt := ""
+	if useStdin {
+		prompt = input
+	}
+	return c.executeSandboxed(runCtx, phase, argv, prompt, timeout)
+}
+
 // executeSandboxed runs the phase through the wired sandbox runner instead of
 // the host shell, then funnels the outcome through the same finish pipeline so
 // observation, output contracts, and error classification stay uniform. A
@@ -88,16 +112,23 @@ func (c CommandExecutor) executeSandboxed(
 	runCtx context.Context,
 	phase string,
 	argv []string,
+	stdin string,
 	timeout time.Duration,
 ) error {
 	start := c.now()
-	output, code, err := c.Sandbox.Runner.Run(runCtx, argv, timeout)
+	output, code, err := c.Sandbox.Runner.Run(runCtx, argv, stdin, timeout)
 	latency := c.now().Sub(start)
 	out := &cappedBuffer{cap: c.maxOutputBytes()}
 	_, _ = out.Write([]byte(output))
 	if err != nil {
-		if runCtx.Err() != nil || strings.Contains(err.Error(), "timed out") {
+		// Typed classification parity with the host path: only a deadline
+		// is retryable; a cancellation is the caller's verdict, not a
+		// timeout (review F5). No message-string matching.
+		if errors.Is(runCtx.Err(), context.DeadlineExceeded) {
 			return &ExecError{Phase: phase, Kind: KindTimeout, Err: err}
+		}
+		if runCtx.Err() != nil {
+			return &ExecError{Phase: phase, Kind: KindFailed, Err: err}
 		}
 		return &ExecError{Phase: phase, Kind: KindConfig, Err: err}
 	}

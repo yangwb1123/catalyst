@@ -842,6 +842,27 @@ authorization/pricing 为 Go 生成结构,store 层无构造器,application 层
 已有)—— 诚实标记 N/A(与数据承载迁移测试同类)。并发/adjudicate 测试
 (2 个)在新文件保持通过。
 
+## Sprint 83（✅ 完成）— Sandbox 专项评审 13 项修复
+
+对未评审的 sandbox 领域做第五轮独立评审(firecracker/docker runner +
+CLI 接线),发现 14 项(4 High 全真实),修复 13 项:
+(1) **F1(High)**:sandbox 执行**丢弃 claude prompt** —— prepareInput 剥离的
+stdin 从未传给 runner(sandbox 对主要用途是死的)。修复:Runner 接口加
+stdin 参数,4 处实现 + 接线;docker cmd.Stdin、firecracker /forge-stdin
+注入 + guest 重定向;PromptViaStdin 接线测试。
+(2) **F2(High)**:guestOutput 剥任意 "] " 破坏输出(实机验证
+"LEFT] RIGHT"→"RIGHT")。修复:只剥内核时间戳前缀(正则式数字)。
+(3) **F3(High)**:sandbox 绕过 MaxOutputBytes(docker 无界 Buffer、
+firecracker 无界 serial.log)。修复:cappedWriter + 64MiB 限读。
+(4) **F4(High)**:MemoryMB 声明但从未应用。修复:machine-config PUT
+(mem_size_mib)。
+(5) **F5-F7(Medium)**:取消→KindFailed(typed errors.Is)、marker 读错
+有界重试、docker 超时孤儿容器清理(docker rm -f,实测 --rm 不停止)。
+(6) **F8-F11/F13**:死代码/死分支/注释错位/dry executor 警告/ROADMAP。
+F12(sandbox 包零测试)与 F14(隔离强度)记录为后续。
+`forge accept` 为 **ACCEPTED**;Go 全量 0 FAIL。
+评审产物:docs/reviews/reviews/sandbox-context/stage-04.out.md。
+
 ## 下一前沿(需外部资源 / 后续阶段 / 投机增强 / 明确非目标,非本环境可完整验证)
 - **Graph 下一协议切片**:Sprint 59 只完成 scheduled ordinal-zero 的独立 claim/send/terminal sidecar；仍没有真实 successor/wave advancement、verified per-node/per-attempt receipt 驱动的非初始 contract-v2，也没有 predecessor dataflow。后续必须另立 successor 选择、receipt consumption、跨 node disclosure/consent 与 byte-bound 契约，不能从 ordering edge 推断。另一个独立协议仍是 legacy v4 hard-crash no-send adjudication：必须证明旧 executor 已停止，不能用 lease/时间流逝猜测后自动释放或重发。
 - **真点火** `--agent-cmd=claude`:**multi-agent running to completion 已坐实**(Sprint 25:真 claude 多-agent 跑到 converge MET,增量级 + 版本级)。完整旋钮:四维资源护栏 + 成本三维(phase/时间/美元)+ 任务注入 + 写权限 + 模型路由 + 工作目录 + retry + loop-back;诚实分工:agent 自治增量绿、人确认版本竣工。docs/ignition.md 有完整配方 + 实测

@@ -48,7 +48,8 @@
 **明确遗留缺口(诚实标注,不夸大):**
 - Agent 阶段默认 dry-run(`DryRunExecutor` 只叙述,安全默认);真实执行器需显式 `--executor command`。Claude prompt 走 stdin，子进程环境最小化；额外变量须 `--agent-env` 精确授权。未经本轮用户授权不重复烧付费模型预算。
 - 原生 Go YAML 子集解析器为主，`harness/yaml2json.py` 仅作兼容回退；未知格式/契约版本均失败关闭。
-- 独立 `agent-os` 仓库仍按 ADR 0003 等待远程位置与批准；Web UI/完整多厂商 Router 属 v3。Firecracker runner 与跨厂商 LiteLLM 验证受当前主机能力/第二厂商凭证阻塞，详见功能审计。
+- 独立 `agent-os` 仓库仍按 ADR 0003 等待远程位置与批准；Web UI/完整多厂商 Router 属 v3。Firecracker runner 已接入并本机 KVM 实测(见 docs/external-resource-verification.md)；
+跨厂商 LiteLLM 验证已用本地 Ollama 完成(第二厂商付费凭证仍缺)。
 - 远程部署/回滚是明确非目标：ForgeOS 只生成和验证声明式交付包，外部 CI/operator 实施并由人写结构化 approval marker；command-mode release 当前因开放 FD pin 契约只支持 Linux，其他平台失败关闭。
 
 ## v3 — AI 软件工厂

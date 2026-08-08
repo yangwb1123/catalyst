@@ -23,7 +23,7 @@ func TestShellJoinQuotesArgv(t *testing.T) {
 
 func TestRunnerWithoutImageFailsClosed(t *testing.T) {
 	runner := &Runner{Binary: "definitely-missing-docker-binary"}
-	_, _, err := runner.Run(context.Background(), []string{"echo", "hi"}, 0)
+	_, _, err := runner.Run(context.Background(), []string{"echo", "hi"}, "", 0)
 	if err == nil {
 		t.Fatal("runner without image must fail closed")
 	}
@@ -52,6 +52,7 @@ func TestRunnerLiveContainer(t *testing.T) {
 	output, code, err := runner.Run(
 		context.Background(),
 		[]string{"/bin/echo", "FORGELIVE-DOCKER-OK"},
+		"",
 		60*time.Second,
 	)
 	if err != nil {
@@ -79,6 +80,7 @@ func TestRunnerLiveContainerNonZeroExit(t *testing.T) {
 	output, code, err := runner.Run(
 		context.Background(),
 		[]string{"/bin/sh", "-c", "exit 7"},
+		"",
 		60*time.Second,
 	)
 	if err != nil {

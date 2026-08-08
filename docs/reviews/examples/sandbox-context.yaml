@@ -1,0 +1,28 @@
+# Sandbox runner 专项评审上下文(Sprint 68-71)
+project: "ForgeOS"
+subsystem: "Sandbox isolation runners (Firecracker microVM + Docker) and CLI wiring"
+repo: "/home/u1/catalyst"
+files:
+  - forge-core/internal/orchestrator/firecracker/firecracker_runner.go
+  - forge-core/internal/orchestrator/docker/docker_runner.go
+  - forge-core/internal/orchestrator/sandbox_config.go
+  - forge-core/internal/orchestrator/sandbox/sandbox.go
+  - forge-core/cmd/forge/main.go
+  - forge-core/cmd/forge/executor.go
+  - forge-core/internal/orchestrator/firecracker/firecracker_runner_test.go
+  - forge-core/internal/orchestrator/docker/docker_runner_test.go
+rfcs:
+  - docs/external-resource-verification.md
+architecture_summary: |
+  sandbox.Runner contract (Run(ctx, argv, timeout) -> output/exit/err) with
+  two wired implementations: FirecrackerRunner (mke2fs fresh ext4 per run,
+  guest /init injection, marker read-back via debugfs, serial capture) and
+  DockerRunner (docker run --rm --network none). Auto-wiring from
+  SandboxConfig {Type, Image, Kernel}; fail-closed without a runner. CLI:
+  --sandbox/--sandbox-image/--sandbox-kernel on run/evolve.
+load_profile: "(not provided)"
+infra: "single host; KVM + Docker verified"
+slo_targets: "forge accept must stay ACCEPTED"
+sprint_goal: "Review the sandbox runners and CLI wiring for correctness,
+security boundaries, and honesty defects."
+team_size: "1-2"

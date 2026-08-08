@@ -1,7 +1,6 @@
 package docker
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"os/exec"
@@ -26,6 +25,29 @@ type Runner struct {
 	MemoryMB int
 	// Logf receives runner diagnostics; nil disables them.
 	Logf func(format string, args ...any)
+	// MaxOutputBytes bounds captured output (0 = 1 MiB); overflow is
+	// drained and discarded so a runaway guest cannot OOM the host
+	// (review F3).
+	MaxOutputBytes int
+}
+
+// cappedWriter retains at most cap bytes and drains the rest.
+type cappedWriter struct {
+	cap   int
+	buf   []byte
+	total int
+}
+
+func (w *cappedWriter) Write(p []byte) (int, error) {
+	w.total += len(p)
+	if room := w.cap - len(w.buf); room > 0 {
+		if len(p) <= room {
+			w.buf = append(w.buf, p...)
+		} else {
+			w.buf = append(w.buf, p[:room]...)
+		}
+	}
+	return len(p), nil
 }
 
 // Run executes argv inside a fresh container. A nil error with a non-zero
@@ -34,6 +56,7 @@ type Runner struct {
 func (r *Runner) Run(
 	ctx context.Context,
 	argv []string,
+	stdin string,
 	timeout time.Duration,
 ) (string, int, error) {
 	binary := r.Binary
@@ -49,33 +72,67 @@ func (r *Runner) Run(
 		runCtx, cancel = context.WithTimeout(ctx, timeout)
 		defer cancel()
 	}
-	args := []string{"run", "--rm", "--network", "none"}
-	if r.MemoryMB > 0 {
-		args = append(args, "--memory", fmt.Sprintf("%dm", r.MemoryMB))
-	}
-	args = append(args, r.Image, "/bin/sh", "-c", shellJoin(argv))
-	cmd := exec.CommandContext(runCtx, binary, args...)
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	cmd.Stderr = &out
+	cmd, out := buildRunCommand(runCtx, binary, r, argv, stdin)
 	if r.Logf != nil {
 		r.Logf("docker: running %q in %s", strings.Join(argv, " "), r.Image)
 	}
 	started := time.Now()
 	err := cmd.Run()
+	if runCtx.Err() != nil {
+		// The client was killed on timeout: --rm does not stop the
+		// container, so remove it explicitly to avoid orphans (review F7).
+		_ = exec.Command(binary, "rm", "-f", containerName()).Run()
+		return string(out.buf), 0, fmt.Errorf("docker container timed out after %s", timeout)
+	}
 	if r.Logf != nil {
 		r.Logf("docker: container exited after %s", time.Since(started).Round(time.Millisecond))
 	}
 	if err != nil {
-		if runCtx.Err() != nil {
-			return out.String(), 0, fmt.Errorf("docker container timed out after %s", timeout)
-		}
 		if exit, ok := err.(*exec.ExitError); ok {
-			return out.String(), exit.ExitCode(), nil
+			return string(out.buf), exit.ExitCode(), nil
 		}
-		return out.String(), 0, configFault(fmt.Errorf("docker run: %w", err))
+		return string(out.buf), 0, configFault(fmt.Errorf("docker run: %w", err))
 	}
-	return out.String(), 0, nil
+	return string(out.buf), 0, nil
+}
+
+// containerName derives a stable per-invocation container name so the
+// timeout cleanup can address the exact container.
+func containerName() string {
+	return fmt.Sprintf("forge-sandbox-%d", time.Now().UnixNano())
+}
+
+// buildRunCommand constructs the bounded docker command with stdin and
+// capped output wiring.
+func buildRunCommand(
+	runCtx context.Context,
+	binary string,
+	r *Runner,
+	argv []string,
+	stdin string,
+) (*exec.Cmd, *cappedWriter) {
+	cmd := exec.CommandContext(runCtx, binary, runArgs(r, argv)...)
+	if stdin != "" {
+		cmd.Stdin = strings.NewReader(stdin)
+	}
+	cap := r.MaxOutputBytes
+	if cap <= 0 {
+		cap = 1 << 20
+	}
+	out := &cappedWriter{cap: cap}
+	cmd.Stdout = out
+	cmd.Stderr = out
+	return cmd, out
+}
+
+// runArgs builds the docker run argv with a named, memory-capped,
+// network-isolated container.
+func runArgs(r *Runner, argv []string) []string {
+	args := []string{"run", "--rm", "--name", containerName(), "--network", "none"}
+	if r.MemoryMB > 0 {
+		args = append(args, "--memory", fmt.Sprintf("%dm", r.MemoryMB))
+	}
+	return append(args, r.Image, "/bin/sh", "-c", shellJoin(argv))
 }
 
 // checkReady verifies the runner's prerequisites: an image is configured and

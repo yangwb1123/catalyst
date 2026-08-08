@@ -10,7 +10,7 @@ import (
 )
 
 func TestGuestInitScriptQuotesArgvAndRecordsExit(t *testing.T) {
-	script := guestInitScript([]string{"/bin/echo", "hello 'world'"})
+	script := guestInitScript([]string{"/bin/echo", "hello 'world'"}, "")
 	if !strings.Contains(script, "mount -t proc none /proc") {
 		t.Fatal("init script must mount proc")
 	}
@@ -29,16 +29,20 @@ func TestGuestOutputExtractsBetweenMarkers(t *testing.T) {
 	dir := t.TempDir()
 	logPath := filepath.Join(dir, "firecracker.log")
 	content := strings.Join([]string{
-		"2026-08-05T18:00:00 [anonymous-instance:main] booting",
-		"2026-08-05T18:00:01 [anonymous-instance:serial] FORGE-GUEST-START",
-		"2026-08-05T18:00:02 [anonymous-instance:serial] guest line one",
-		"2026-08-05T18:00:03 [anonymous-instance:serial] FORGE-GUEST-DONE",
+		"[    0.000000] Linux version 4.14.174 booting",
+		"FORGE-GUEST-START",
+		"[    0.010000] guest line one",
+		"LEFT] RIGHT",
+		"FORGE-GUEST-DONE",
 	}, "\n")
 	if err := os.WriteFile(logPath, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	got := guestOutput(logPath)
-	want := "guest line one"
+	want := strings.Join([]string{
+		"guest line one",
+		"LEFT] RIGHT",
+	}, "\n")
 	if got != want {
 		t.Fatalf("guestOutput = %q, want %q", got, want)
 	}
@@ -85,6 +89,7 @@ func TestFirecrackerRunnerLiveMicroVM(t *testing.T) {
 	output, code, err := runner.Run(
 		context.Background(),
 		[]string{"/bin/echo", "FORGELIVE-VM-OK"},
+		"",
 		120*time.Second,
 	)
 	if err != nil {

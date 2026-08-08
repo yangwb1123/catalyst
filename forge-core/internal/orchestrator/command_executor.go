@@ -169,10 +169,7 @@ func (c CommandExecutor) Execute(ctx context.Context, p asset.Phase, mode string
 		return err
 	}
 	if c.Sandbox != nil && c.Sandbox.Runner != nil && !c.sandboxNone() {
-		runCtx, runCancel := c.commandContext(ctx)
-		defer runCancel()
-		timeout := time.Duration(c.Sandbox.TimeoutSec) * time.Second
-		return c.executeSandboxed(runCtx, p.Name, argv, timeout)
+		return c.executeSandboxedDispatch(ctx, p.Name, argv, input, useStdin)
 	}
 
 	// Recursion guard: once the inherited agent-call depth reaches the cap, refuse
@@ -193,9 +190,6 @@ func (c CommandExecutor) Execute(ctx context.Context, p asset.Phase, mode string
 	return c.finish(p.Name, argv, out, runErr, runCtx.Err(), latency)
 }
 
-// sandboxConfigError enforces the isolation boundary. A declared sandbox is a
-// safety requirement, not a hint: until a runtime is wired, falling back to the
-// host would violate the workflow contract and must be a permanent config error.
 func (c CommandExecutor) prepareInput(phase string, argv []string) ([]string, string, bool, error) {
 	if !c.PromptViaStdin {
 		return argv, "", false, nil

@@ -26,6 +26,9 @@ import (
 // callable the orchestrator invokes per phase.
 func agentExecutor(o runOpts, logln func(string), costSink func(phase, model string, usd float64, latency time.Duration), tierOf func(p asset.Phase) string, phaseModel func(phase string) string, ctxCache *prompt.ContextCache, gates *gateLedger, phaseOut *phaseOutputLedger, feedsForward func(phase string) bool, verdicts *verdictLedger, findings *reviewFindingsLedger, onFailTarget func(phase string) (string, bool), priorEmits func(phase string) []string, outputHooks ...executorHooks) orchestrator.AgentExecutor {
 	if o.executor != "command" {
+		if strings.TrimSpace(o.sandbox) != "" {
+			logln(fmt.Sprintf("warning: --sandbox %s is ignored because --executor is %q (isolation requires command execution)", o.sandbox, o.executor))
+		}
 		return orchestrator.DryRunExecutor{Log: logln}
 	}
 	isClaude := isClaudeExecutable(o.agentCmd)

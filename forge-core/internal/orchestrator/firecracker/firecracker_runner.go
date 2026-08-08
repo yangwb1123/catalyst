@@ -51,23 +51,27 @@ type FirecrackerRunner struct {
 // guestInitScript renders the injected /init: mount the virtual filesystems,
 // run the requested command, persist its exit code to /forge-exit, then power
 // off. The command is shell-quoted so argv survives the busybox /bin/sh.
-func guestInitScript(argv []string) string {
+func guestInitScript(argv []string, stdin string) string {
 	var quoted []string
 	for _, arg := range argv {
 		quoted = append(quoted, "'"+strings.ReplaceAll(arg, "'", `'"'"'`)+"'")
 	}
 	command := strings.Join(quoted, " ")
+	stdinRedirect := ""
+	if stdin != "" {
+		stdinRedirect = "< /forge-stdin"
+	}
 	return fmt.Sprintf(`#!/bin/sh
 mount -t proc none /proc
 mount -t sysfs none /sys
 mount -t devtmpfs devtmpfs /dev
 echo "FORGE-GUEST-START"
-%s
+%s %s
 echo $? > /forge-exit
 sync
 echo "FORGE-GUEST-DONE"
 poweroff -f
-`, command)
+`, command, stdinRedirect)
 }
 
 // Run executes argv inside a fresh microVM. It returns the guest stdout (from
@@ -78,6 +82,7 @@ poweroff -f
 func (r *FirecrackerRunner) Run(
 	ctx context.Context,
 	argv []string,
+	stdin string,
 	timeout time.Duration,
 ) (string, int, error) {
 	firecracker := r.Binary
@@ -97,7 +102,7 @@ func (r *FirecrackerRunner) Run(
 	}
 	defer os.RemoveAll(dir)
 	rootfs := filepath.Join(dir, "rootfs.ext4")
-	if err := r.prepareWorkspace(dir, argv); err != nil {
+	if err := r.prepareWorkspace(dir, argv, stdin); err != nil {
 		return "", 0, err
 	}
 	started := time.Now()
@@ -125,14 +130,19 @@ func (r *FirecrackerRunner) Run(
 
 // prepareWorkspace copies the template, injects the init script, and builds
 // a fresh ext4 image from the copy.
-func (r *FirecrackerRunner) prepareWorkspace(dir string, argv []string) error {
+func (r *FirecrackerRunner) prepareWorkspace(dir string, argv []string, stdin string) error {
 	rootfs := filepath.Join(dir, "rootfs.ext4")
 	rootdir := filepath.Join(dir, "root")
 	if err := copyTree(r.RootDir, rootdir); err != nil {
 		return fmt.Errorf("vm rootdir copy: %w", err)
 	}
+	if stdin != "" {
+		if err := os.WriteFile(filepath.Join(rootdir, "forge-stdin"), []byte(stdin), 0o600); err != nil {
+			return fmt.Errorf("vm stdin: %w", err)
+		}
+	}
 	initScript := filepath.Join(rootdir, "init")
-	if err := os.WriteFile(initScript, []byte(guestInitScript(argv)), 0o755); err != nil {
+	if err := os.WriteFile(initScript, []byte(guestInitScript(argv, stdin)), 0o755); err != nil {
 		return fmt.Errorf("vm init script: %w", err)
 	}
 	if err := buildRootfs(r.Mke2fs, rootdir, rootfs); err != nil {
@@ -183,7 +193,7 @@ func (r *FirecrackerRunner) launchVM(
 		_ = cmd.Process.Kill()
 		_, _ = cmd.Process.Wait()
 	}
-	if err := waitForSocket(ctx, sock, cmd); err != nil {
+	if err := waitForSocket(ctx, sock); err != nil {
 		stop()
 		return nil, "", err
 	}
@@ -217,15 +227,12 @@ func (r *FirecrackerRunner) checkReady(firecracker, debugfs string) error {
 
 // waitForSocket waits for the Firecracker control API socket to appear,
 // surfacing an early VMM crash (missing KVM, bad kernel) as a config fault.
-func waitForSocket(ctx context.Context, sock string, cmd *exec.Cmd) error {
+func waitForSocket(ctx context.Context, sock string) error {
 	interval := 100 * time.Millisecond
 	deadline := time.Now().Add(10 * time.Second)
 	for {
 		if _, err := os.Stat(sock); err == nil {
 			return nil
-		}
-		if cmd.ProcessState != nil && cmd.ProcessState.Exited() {
-			return configFault(errors.New("firecracker exited before serving its API socket"))
 		}
 		if time.Now().After(deadline) {
 			return configFault(errors.New("firecracker API socket did not appear"))
@@ -264,6 +271,14 @@ func (r *FirecrackerRunner) boot(
 	)
 	if err := putAPI(ctx, client, "http://firecracker/drives/rootfs", drive); err != nil {
 		return configFault(fmt.Errorf("firecracker drive: %w", err))
+	}
+	memSize := r.MemoryMB
+	if memSize <= 0 {
+		memSize = 128
+	}
+	if err := putAPI(ctx, client, "http://firecracker/machine-config",
+		fmt.Sprintf(`{"mem_size_mib": %d, "vcpu_count": 1}`, memSize)); err != nil {
+		return configFault(fmt.Errorf("firecracker machine-config: %w", err))
 	}
 	if err := putAPI(ctx, client, "http://firecracker/actions", `{"action_type": "InstanceStart"}`); err != nil {
 		return configFault(fmt.Errorf("firecracker start: %w", err))
@@ -355,7 +370,7 @@ func (r *FirecrackerRunner) waitForMarker(
 			return 0, ctx.Err()
 		case <-time.After(interval):
 		}
-		code, found, err := readMarker(debugfs, rootfs)
+		code, found, err := readMarkerWithRetry(debugfs, rootfs)
 		if err != nil {
 			return 0, configFault(fmt.Errorf("firecracker marker read: %w", err))
 		}
@@ -363,6 +378,22 @@ func (r *FirecrackerRunner) waitForMarker(
 			return code, nil
 		}
 	}
+}
+
+// readMarkerWithRetry fetches the marker with a bounded retry: the guest is
+// concurrently writing the live ext4 image, so transient debugfs errors must
+// not escalate to a permanent config fault (review F6).
+func readMarkerWithRetry(debugfs, rootfs string) (int, bool, error) {
+	var lastErr error
+	for attempt := 0; attempt < 3; attempt++ {
+		code, found, err := readMarker(debugfs, rootfs)
+		if err == nil {
+			return code, found, nil
+		}
+		lastErr = err
+		time.Sleep(100 * time.Millisecond)
+	}
+	return 0, false, lastErr
 }
 
 // readMarker fetches /forge-exit from the rootfs image; found=false while the
@@ -398,13 +429,18 @@ func parseMarkerText(raw string) (int, bool, error) {
 }
 
 // guestOutput extracts guest stdout from the Firecracker serial log: the
-// section between the FORGE-GUEST-START and FORGE-GUEST-DONE markers.
+// section between the FORGE-GUEST-START and FORGE-GUEST-DONE markers. The
+// log is read with a bound so a runaway guest cannot OOM the host
+// (review F3).
 func guestOutput(logPath string) string {
-	raw, err := os.ReadFile(logPath)
+	file, err := os.Open(logPath)
 	if err != nil {
 		return ""
 	}
-	log := string(raw)
+	defer file.Close()
+	bounded := make([]byte, 64*1024*1024+1)
+	n, _ := file.Read(bounded)
+	log := string(bounded[:n])
 	start := strings.Index(log, "FORGE-GUEST-START")
 	if start < 0 {
 		return ""
@@ -417,30 +453,12 @@ func guestOutput(logPath string) string {
 	lines := strings.Split(section, "\n")
 	var kept []string
 	for _, line := range lines {
-		if i := strings.Index(line, "] "); i >= 0 {
-			line = line[i+2:]
-		}
-		kept = append(kept, line)
+		// Strip ONLY a leading kernel timestamp ("[    0.123456] ..."),
+		// never an arbitrary "] " inside guest output (Stage review F2:
+		// "LEFT] RIGHT" must survive verbatim).
+		kept = append(kept, stripKernelTimestamp(line))
 	}
 	return strings.TrimSpace(strings.Join(kept, "\n"))
-}
-
-func copyFile(from, to string) error {
-	source, err := os.Open(from)
-	if err != nil {
-		return err
-	}
-	defer source.Close()
-	target, err := os.Create(to)
-	if err != nil {
-		return err
-	}
-	_, copyErr := io.Copy(target, source)
-	closeErr := target.Close()
-	if copyErr != nil {
-		return copyErr
-	}
-	return closeErr
 }
 
 // configFault wraps an infrastructure fault so the executor classifies it as

@@ -16,6 +16,7 @@ import (
 // output, exit code, and error.
 type fakeRunner struct {
 	argv    []string
+	stdin   string
 	timeout time.Duration
 	output  string
 	code    int
@@ -26,10 +27,12 @@ type fakeRunner struct {
 func (f *fakeRunner) Run(
 	_ context.Context,
 	argv []string,
+	stdin string,
 	timeout time.Duration,
 ) (string, int, error) {
 	f.calls++
 	f.argv = argv
+	f.stdin = stdin
 	f.timeout = timeout
 	return f.output, f.code, f.err
 }
@@ -92,9 +95,13 @@ func TestSandboxInfraFaultIsKindConfig(t *testing.T) {
 }
 
 func TestSandboxTimeoutIsKindTimeout(t *testing.T) {
-	runner := &fakeRunner{err: errors.New("firecracker guest timed out after 7s")}
+	// A deadline-exceeded context must classify as a retryable timeout.
+	ctx, cancel := context.WithTimeout(context.Background(), time.Nanosecond)
+	defer cancel()
+	<-ctx.Done()
+	runner := &fakeRunner{err: context.DeadlineExceeded}
 	executor := sandboxedExecutor(runner)
-	err := executor.Execute(context.Background(), asset.Phase{Name: "sandbox-phase"}, "run")
+	err := executor.Execute(ctx, asset.Phase{Name: "sandbox-phase"}, "run")
 	var execErr *ExecError
 	if !errors.As(err, &execErr) {
 		t.Fatalf("expected ExecError, got %v", err)
@@ -179,5 +186,50 @@ func TestSandboxAutoWireFirecrackerRequiresKernelAndRootdir(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "refusing host execution") {
 		t.Fatalf("error must refuse host execution: %v", err)
+	}
+}
+
+// TestSandboxCancellationIsKindFailed proves a cancelled context is the
+// caller's verdict (KindFailed), not a retryable timeout (review F5).
+func TestSandboxCancellationIsKindFailed(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	runner := &fakeRunner{err: context.Canceled}
+	executor := sandboxedExecutor(runner)
+	err := executor.Execute(ctx, asset.Phase{Name: "sandbox-phase"}, "run")
+	var execErr *ExecError
+	if !errors.As(err, &execErr) {
+		t.Fatalf("expected ExecError, got %v", err)
+	}
+	if execErr.Kind != KindFailed {
+		t.Fatalf("kind = %v, want KindFailed on cancellation", execErr.Kind)
+	}
+}
+
+// TestSandboxDeliversPromptViaStdin proves the stripped claude prompt
+// reaches the runner (review F1): with PromptViaStdin the executor must
+// hand the prompt to the sandbox, not drop it.
+func TestSandboxDeliversPromptViaStdin(t *testing.T) {
+	runner := &fakeRunner{output: "guest output", code: 0}
+	executor := CommandExecutor{
+		Build: func(_ asset.Phase, _ string) []string {
+			return []string{"claude", "--model", "x", "-p", "THE-PROMPT"}
+		},
+		PromptViaStdin: true,
+		Sandbox: &SandboxConfig{
+			Type:       "firecracker",
+			TimeoutSec: 7,
+			Runner:     runner,
+		},
+	}
+	err := executor.Execute(context.Background(), asset.Phase{Name: "sandbox-phase"}, "run")
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if runner.stdin != "THE-PROMPT" {
+		t.Fatalf("runner stdin = %q, want the stripped prompt", runner.stdin)
+	}
+	if got := strings.Join(runner.argv, " "); got != "claude --model x -p" {
+		t.Fatalf("runner argv = %q, want prompt-free argv", got)
 	}
 }
