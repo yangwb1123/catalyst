@@ -879,6 +879,21 @@ F12(sandbox 包零测试)与 F14(隔离强度)记录为后续。
 `forge accept` 为 **ACCEPTED**;Rust 929 tests;Go 全量 0 FAIL。
 评审产物:docs/reviews/reviews/production-context/stage-06.out.md。
 
+## Sprint 85（✅ 完成）— 双语言单一事实源(spec md 驱动实现)
+
+forge-core(Go)与 forge-runtime(Rust)的 scheduled successor 协议由
+**同一份权威 spec** 驱动:
+(1) **docs/contracts/scheduled-successor-protocol.md**:协议版本/域分离
+digest 域/边界/不变量/身份前缀的唯一定义(变更流程:先 ADR,双侧测试
+同步,三者不一致 = 缺陷)。
+(2) **harness/spec_check.py**:md 表格 → 键值解析器(标题/分隔行/空行
+处理;bounds 表输出 min/max;已入 scaffold COPIED_FILES 清单)。
+(3) **Go 一致性测试**(5 个):版本/域/边界/前缀常量 vs spec;validate.go
+边界字面量提取为命名常量(maxSuccessorOrdinal 等)。
+(4) **Rust 一致性测试**(3 个):版本/域/字节边界 vs 同一 spec。
+任何一侧漂移 → 测试失败 → forge accept 拒绝。
+`forge accept` 为 **ACCEPTED**;Rust 932 tests;Go 0 FAIL。
+
 ## 下一前沿(需外部资源 / 后续阶段 / 投机增强 / 明确非目标,非本环境可完整验证)
 - **Graph 下一协议切片**:Sprint 59 只完成 scheduled ordinal-zero 的独立 claim/send/terminal sidecar；仍没有真实 successor/wave advancement、verified per-node/per-attempt receipt 驱动的非初始 contract-v2，也没有 predecessor dataflow。后续必须另立 successor 选择、receipt consumption、跨 node disclosure/consent 与 byte-bound 契约，不能从 ordering edge 推断。另一个独立协议仍是 legacy v4 hard-crash no-send adjudication：必须证明旧 executor 已停止，不能用 lease/时间流逝猜测后自动释放或重发。
 - **真点火** `--agent-cmd=claude`:**multi-agent running to completion 已坐实**(Sprint 25:真 claude 多-agent 跑到 converge MET,增量级 + 版本级)。完整旋钮:四维资源护栏 + 成本三维(phase/时间/美元)+ 任务注入 + 写权限 + 模型路由 + 工作目录 + retry + loop-back;诚实分工:agent 自治增量绿、人确认版本竣工。docs/ignition.md 有完整配方 + 实测

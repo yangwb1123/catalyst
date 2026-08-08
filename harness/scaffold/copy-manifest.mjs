@@ -68,6 +68,7 @@ export const COPIED_FILES = [
   join('harness', 'scorecard.mjs'),
   join('harness', 'scorecard-update.mjs'),
   join('harness', 'secret-scan.mjs'),
+  join('harness', 'spec_check.py'),
   join('harness', 'sca.mjs'), // imported by acceptance.mjs's dependency_vulnerabilities criterion
   join('harness', 'sca_fetch.mjs'), // operator-run OSV refresh tool for sca.mjs's DB; imports sca.mjs
   // select-tests.mjs is the incremental (advisory) test selector — a fast edit-time

@@ -50,14 +50,23 @@ func validScheduleIdentity(value ScheduledNodeContractCandidate) bool {
 func validNode(node CandidateNode, scope string) bool {
 	ordinalValid, waveValid := node.ExecutionOrdinal == 0, node.TopologyWaveIndex == 0
 	if scope == successorContractScope {
-		ordinalValid, waveValid = node.ExecutionOrdinal >= 1, node.TopologyWaveIndex <= 31
+		ordinalValid, waveValid = node.ExecutionOrdinal >= 1, node.TopologyWaveIndex <= maxTopologyWaveIndex
 	}
-	return ordinalValid && node.AuthoredNodeIndex < 32 && waveValid && node.Attempt == 1 &&
+	return ordinalValid && node.AuthoredNodeIndex <= maxAuthoredNodeIndex && waveValid && node.Attempt == 1 &&
 		validIdentifier(node.NodeID, 128) && validIdentifier(node.ProjectID, 128) &&
 		validIdentifier(node.MemberRole, 64) && validIdentifier(node.AgentProfile, 128) &&
 		node.ProjectLaneSHA256 == rawDomainDigest(projectLaneDomain, node.ProjectID) &&
 		node.SameProjectPolicy == "exclusive_until_terminal"
 }
+
+// 边界常量与 docs/contracts/scheduled-successor-protocol.md 的 Bounds 表
+// 同源(单一事实源,spec_contract_test.go 校验一致性)。
+const (
+	maxSuccessorOrdinal  = 31
+	maxTopologyWaveIndex = 31
+	maxAuthoredNodeIndex = 31
+	maxPredecessorCount  = 31
+)
 
 func validRequest(
 	request ScheduledNodeRequest,
