@@ -1,0 +1,134 @@
+api_version: forgeos.agent-engineering/v1
+kind: DetectorRegistry
+status: active_contract
+owner: governance
+
+states: [enforced, shadow, planned, retired]
+result_contract: acceptance-criterion/v1
+
+detectors:
+  - id: harness.governance
+    version: 1.0.0
+    state: enforced
+    rule_refs: [GOV-001]
+    implementation:
+      argv: [python3, harness/check.py]
+      cwd: repo_root
+      shell: false
+    invocation:
+      owner: forge_accept
+      adapter: acceptance.probeArch
+      acceptance_criterion: arch_violations
+      load_bearing: true
+    fail_closed: true
+    tests:
+      positive: { path: harness/test_check.py, contains: test_real_repo_passes }
+      negative: { path: harness/test_check.py, contains: test_detects_broken_workflow_ref }
+
+  - id: harness.structure
+    version: 1.0.0
+    state: enforced
+    rule_refs: [QUAL-001]
+    implementation:
+      argv: [node, harness/gate.mjs]
+      cwd: repo_root
+      shell: false
+    invocation:
+      owner: forge_accept
+      adapter: acceptance.probeComplexity
+      acceptance_criterion: complexity_violations
+      load_bearing: true
+    fail_closed: true
+    tests:
+      positive: { path: harness/test_gate.mjs, contains: "checkFileSizes passes" }
+      negative: { path: harness/test_gate.mjs, contains: "checkFileSizes flags" }
+
+  - id: harness.architecture
+    version: 1.0.0
+    state: enforced
+    rule_refs: [ARCH-001, QUAL-001]
+    implementation:
+      argv: [node, harness/arch/arch-check.mjs]
+      cwd: repo_root
+      shell: false
+    invocation:
+      owner: forge_accept
+      adapter: acceptance.probeArchitecture
+      acceptance_criterion: architecture
+      load_bearing: true
+    fail_closed: true
+    tests:
+      positive: { path: harness/arch/test_arch-check.mjs, contains: "layering: a clean inward-pointing model has no violations" }
+      negative: { path: harness/arch/test_arch-check.mjs, contains: "layering: domain importing infrastructure IS flagged" }
+
+  - id: harness.secret_scan
+    version: 1.0.0
+    state: enforced
+    rule_refs: [SEC-001]
+    implementation:
+      argv: [node, harness/secret-scan.mjs]
+      cwd: repo_root
+      shell: false
+    invocation:
+      owner: forge_accept
+      adapter: acceptance.probeSecurity
+      acceptance_criterion: security_findings
+      load_bearing: true
+    fail_closed: true
+    tests:
+      positive: { path: harness/test_secret-scan.mjs, contains: "scanRepo over the real repo finds ZERO hardcoded secrets" }
+      negative: { path: harness/test_secret-scan.mjs, contains: "a high-entropy secret assignment is detected" }
+
+  - id: completion.evidence_package
+    version: 1.0.0
+    state: shadow
+    rule_refs: [TRUTH-001]
+    implementation:
+      argv: [python3, harness/agent_engineering_check.py, repo_root, evidence_package]
+      cwd: repo_root
+      shell: false
+    invocation:
+      owner: operator
+      adapter: standalone.completionEvidence
+      acceptance_criterion: null
+      load_bearing: false
+    fail_closed: true
+    tests:
+      positive: { path: harness/test_agent_engineering_check.py, contains: structured_receipt_accepted }
+      negative: { path: harness/test_agent_engineering_check.py, contains: decision_field_rejected }
+
+  - id: backend.decision_package
+    version: 1.0.0
+    state: shadow
+    rule_refs: [DATA-002, MODEL-001, REL-001, EVOLVE-001]
+    implementation:
+      argv: [python3, harness/backend_decision_check.py, repo_root, backend_decision_package]
+      cwd: repo_root
+      shell: false
+    invocation:
+      owner: operator
+      adapter: standalone.backendDecisionPackage
+      acceptance_criterion: null
+      load_bearing: false
+    fail_closed: true
+    tests:
+      positive: { path: harness/test_backend_decision_check.py, contains: test_valid_backend_package_is_accepted }
+      negative: { path: harness/test_backend_decision_check.py, contains: test_triggered_persistence_cannot_claim_not_applicable }
+
+  - id: frontend.design_package
+    version: 1.0.0
+    state: shadow
+    rule_refs: [TRUTH-001, DESIGN-001, REVIEW-001]
+    implementation:
+      argv: [python3, harness/frontend_design_check.py, repo_root, frontend_design_package]
+      cwd: repo_root
+      shell: false
+    invocation:
+      owner: operator
+      adapter: standalone.frontendDesignPackage
+      acceptance_criterion: null
+      load_bearing: false
+    fail_closed: true
+    tests:
+      positive: { path: harness/test_frontend_design_check.py, contains: test_valid_package_is_structurally_valid }
+      negative: { path: harness/test_frontend_design_check.py, contains: test_triggered_dimension_cannot_escape_as_na }

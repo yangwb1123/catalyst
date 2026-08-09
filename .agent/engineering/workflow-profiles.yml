@@ -1,0 +1,62 @@
+api_version: forgeos.agent-engineering/v1
+kind: GovernanceProfileRegistry
+status: active_contract
+runtime_binding: routing_policy_only
+owner: governance
+
+materiality_levels: [L0, L1, L2, L3, L4]
+gate_catalog: [lint, test, build, complexity, arch, security]
+risk_floor: { L0: W0_direct, L1: W1_standard, L2: W2_assured, L3: W3_systemic, L4: W3_systemic }
+
+profiles:
+  - id: W0_direct
+    rank: 0
+    required_workflows: [build]
+    required_gates: [lint, build]
+    required_reviewers: []
+    proof_obligations: [changed_scope, command_evidence, governance_validation, structural_gate]
+    human_gate_required: false
+    autonomy: { information: 0.70, planning: 0.60, execution: 0.90, learning: 0.10 }
+    stop_conditions:
+      success: [acceptance_satisfied, required_proofs_present]
+      blocked: [hard_constraint_conflict, authority_missing]
+      max_repair_attempts: 3
+
+  - id: W1_standard
+    rank: 1
+    required_workflows: [build]
+    required_gates: [lint, test, build, complexity]
+    required_reviewers: [reviewer, qa]
+    proof_obligations: [changed_scope, command_evidence, governance_validation, structural_gate, regression_evidence, review_verdict]
+    human_gate_required: false
+    autonomy: { information: 0.80, planning: 0.75, execution: 0.75, learning: 0.15 }
+    stop_conditions:
+      success: [acceptance_satisfied, required_proofs_present, findings_closed]
+      blocked: [same_failure_repeated, hard_constraint_conflict, authority_missing]
+      max_repair_attempts: 5
+
+  - id: W2_assured
+    rank: 2
+    required_workflows: [discover, design, review, build]
+    required_gates: [lint, test, build, complexity, arch, security]
+    required_reviewers: [reviewer, qa, architect, security-engineer]
+    proof_obligations: [changed_scope, command_evidence, governance_validation, structural_gate, regression_evidence, review_verdict, impact_report, rollback_plan]
+    human_gate_required: true
+    autonomy: { information: 0.90, planning: 0.85, execution: 0.45, learning: 0.10 }
+    stop_conditions:
+      success: [acceptance_satisfied, required_proofs_present, findings_closed, human_approval]
+      blocked: [same_failure_repeated, hard_constraint_conflict, authority_missing, rollback_missing]
+      max_repair_attempts: 5
+
+  - id: W3_systemic
+    rank: 3
+    required_workflows: [discover, design, review, build, deploy, evolve]
+    required_gates: [lint, test, build, complexity, arch, security]
+    required_reviewers: [reviewer, qa, architect, security-engineer, performance-engineer, cto, release-engineer]
+    proof_obligations: [changed_scope, command_evidence, governance_validation, structural_gate, regression_evidence, review_verdict, impact_report, rollback_plan, architecture_decision, release_boundary_evidence, operator_evidence]
+    human_gate_required: true
+    autonomy: { information: 0.95, planning: 0.90, execution: 0.20, learning: 0.05 }
+    stop_conditions:
+      success: [acceptance_satisfied, required_proofs_present, findings_closed, human_approval, operator_evidence]
+      blocked: [same_failure_repeated, hard_constraint_conflict, authority_missing, rollback_missing, external_effect_unknown]
+      max_repair_attempts: 5

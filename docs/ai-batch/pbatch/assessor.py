@@ -34,6 +34,7 @@ from typing import Optional
 from . import config
 from .classifier import classify_text
 from .config import log, yaml
+from .output_contract import format_output_contract, output_envelope
 from .relevance import _keyword_hit
 from .rule_matcher import (TIER_ORDER, domain_for, format_manifest,
                            load_registry, match_rules, reconcile)
@@ -186,6 +187,7 @@ def prescription(text: str, registry: Optional[dict] = None) -> dict:
     present = [name for name, _, ok in dimensions if ok]
     missing = [name for name, _, ok in dimensions if not ok]
     return {
+        **output_envelope(),
         "path_base": config.PATH_BASE,
         "requirement": " ".join((text or "").split())[:120],
         "classification": {
@@ -212,6 +214,7 @@ def format_assessment(assessment: dict) -> str:
     """Human-readable assessment report."""
     lines = ["## 需求评估（资深经验处方）"]
     lines.append(f"Path base: {assessment.get('path_base', config.PATH_BASE)}")
+    lines.append(format_output_contract())
     lines.append(f"需求: {assessment['requirement']}")
     cls = assessment["classification"]
     lines.append(

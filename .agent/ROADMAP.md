@@ -12,7 +12,7 @@
 
 ## v1 — 闭环 + Claude 档路由 (✅ 完成)
 - [x] 13 agent 卡 + 9 skill 卡 + 7 workflow(含独立 deploy/rollback) + mode×lifecycle 矩阵 + 路由策略 + 评估 schema
-- [x] `forge check` 资产校验器(`harness/check.py`,当前 12 项治理检查)
+- [x] `forge check` 资产校验器(`harness/check.py`,当前 13 项治理检查，含 Agent Engineering v1 聚合校验)
 - [x] 验证脊柱已跑通:plan→implementer×2→gate→reviewer(fresh)→fix 全 spine;workflow↔角色卡 SoT 漂移已消除
 - [x] `forge accept` —— acceptance Stop 闸门(`harness/acceptance.mjs` 聚合 11 类判据，递归发现 harness tests，并对 Go/Node/Python/Rust/Java 项目要求可观察的正测试数；**n/a 项诚实可见,绝不伪造通过**)
 - [x] **Dogfood:首个真实应用 `examples/url-shortener` 经完整 pipeline(architect→3 implementer→fresh reviewer→fix)端到端建成并保持套件全绿,被 `forge accept` 实际 gate**;reviewer 揪出"app 未被 accept 覆盖"治理洞并已补。**Build→Review→Accept 脊柱在真实产品上验证成立。**
@@ -56,9 +56,12 @@
 ## v3 — AI 软件工厂
 完整 coding-workspace Sandbox 契约 + 生产跨厂商池(LiteLLM)+ 预算治理 + 完整 Discover + Web UI。Docker/Firecracker runner 与 LiteLLM 主机验证已前置交付；动态迁移已由 ADR 0016 前置交付。
 
-### AI Engineering OS 治理知识层（ADR 0037–0039；已采纳规划，尚未实现）
-- **DONE — Wave 0A 蓝图冻结**:能力中心化的「生命周期节点 × Skill × 显式权限」模型、00–16 节点 SOP、AADM 决策 ABI、Meta Reflection、default-off Device Fabric、Evidence/Claim/KG/Impact/Debt/Health/Review 契约、条件化 OOP/DI/AOP/DDD/事件驱动规范和规划期机读目录已归档于 `docs/design/ai-engineering-os/`；该目录明确 `planning_only`，不冒充 runtime 能力。
-- **PLANNED — Wave 0B–1 Governance/Decision Kernel**:严格 Governance Envelope、Evidence/Claim、ContextPackage、CapabilityGrant/Approval、封闭 Transition ledger、KnowledgeUpdate proposal/receipt，以及 Atom/DecisionTransaction/Event/Capability/Artifact ABI、最小 Registry、shadow AADM/Controller；跨 Go/Rust/Python canonical golden、旧 Memory/ADR 保守导入与 L3/L4 strict review。
+### AI Engineering OS 治理知识层（ADR 0037–0042；蓝图 + 三个 shadow 契约切片）
+- **DONE — Wave 0A 蓝图冻结**:能力中心化的「生命周期节点 × Skill × 显式权限」模型、00–16 节点 SOP、AADM 决策 ABI、Meta Reflection、default-off Device Fabric、Evidence/Claim/KG/Impact/Debt/Health/Review 契约、条件化 OOP/DI/AOP/DDD/事件驱动规范和规划期机读目录已归档于 `docs/design/ai-engineering-os/`；其中目标态与未勾选路线仍为 `planning_only`，ADR 0040–0042 的 shadow 合同切片按各自边界执行且不冒充完整 runtime。
+- **DONE — Wave 0B Agent Engineering shadow 契约**:ADR 0040 在 `.agent/engineering` 固化 activation、14 学科、11 条分级规则、`forge accept` detector registry、typed Context 路由和 W0–W3 保障下限；TaskEvidencePackage 禁止自写完成裁决并要求 source-bound 结构化观察。严格 validator 拒绝重复 YAML key、anchor/alias、悬挂/逃逸路径、虚假 automatic detector、Context 语义降级与 profile 整体降级，并作为 `forge check` 第 13 项随 scaffold/legacy upgrade 继承。它只执行合同/接线完整性，不改变 runtime 路由或完成权威。
+- **DONE — Wave 0C Backend decision shadow 契约**:ADR 0041 固化 16 类 L1–L4/W1–W3 后端触发下限、14 维决策序列、条件化 DTO/Domain/Persistence/Read 模型角色、持久化与不可逆决策关卡、十张密集 Skill adapter 和无自批权 BackendDecisionPackage。安全/数据/后端 Context route、独立 validator、50 个 package 对抗用例及 init/legacy-upgrade 回归已接入；policy/Schema 与逐项仓库证据绑定真实字节，proof type/class/subject、readiness dependency、ADR 与 Reviewer 关系被校验。完整 tree/context provenance 和受信 producer/reviewer attestation 仍待 runtime；当前 detector 明示 `shadow/load_bearing:false`，不冒充 pre-code runtime gate。
+- **DONE — Wave 0D Frontend design shadow 契约**:ADR 0042 固化 20 类前端风险触发下限、14 维 AFDS 决策、12 个产品 Profile、14 个页面 Pattern、flow/state/action/permission 结构与引用合同及多源证据边界。三张 canonical Skill、user-experience Context route、无自批权 FrontendDesignPackage、PNG/subject/digest 对抗 validator 及 init/legacy-upgrade 回归已接入；完整业务语义/可达性、截图与 trace 的真实 producer、Reviewer 身份、自动影响识别和 pre-code authority 仍待项目证据或可信 runtime。
+- **PLANNED — Wave 0E–1 Governance/Decision Kernel**:严格 Governance Envelope、Evidence/Claim、ContextPackage、CapabilityGrant/Approval、封闭 Transition ledger、KnowledgeUpdate proposal/receipt，以及 Atom/DecisionTransaction/Event/Capability/Artifact ABI、最小 Registry、shadow AADM/Controller；跨 Go/Rust/Python canonical golden、旧 Memory/ADR 保守导入与 L3/L4 strict review。
 - **PLANNED — Wave 2 Impact Closure**:可重建 System Knowledge Graph、coverage/staleness、Change Impact/Cost/Risk、按 materiality 派生最小角色/gate/human approval/DAG；缺边必须 UNKNOWN。
 - **PLANNED — Wave 3 Engineering Memory**:ADR v2/compliance、Technical Debt、typed Engineering Constitution、复杂度/耦合 adapter、Software Health/coverage/trend/blocker。
 - **PLANNED — Wave 4–5 Capability Organization**:140 个 fine capability 依 `capability-skill-map.v1.yml` 唯一映射到 38 包，再生成 `.agent`/`docs/reviews`/`docs/ai-batch` adapters，补齐正式角色能力与严格 Review/冲突裁决；复用现有 DAG，不建第二编排器。

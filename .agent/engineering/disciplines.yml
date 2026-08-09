@@ -1,0 +1,65 @@
+api_version: forgeos.agent-engineering/v1
+kind: DisciplineRegistry
+status: active_contract
+runtime_binding: validation_only
+owner: architecture
+
+allowed_states: [enforced, partial, planned]
+
+disciplines:
+  - id: prompt
+    purpose: Express bounded intent, constraints, expected output and stop conditions.
+    state: partial
+    assets: [.ai/prompts, .agent/AGENTS.md]
+  - id: context
+    purpose: Select the smallest relevant, fresh and provenance-bound working context.
+    state: partial
+    assets: [.agent/engineering/context-routes.yml]
+  - id: memory
+    purpose: Preserve task, project and organizational knowledge without promoting inference to fact.
+    state: planned
+    assets: [.agent/workflows/evolve.yml, .agent/engineering/rules.yml]
+  - id: tool
+    purpose: Expose narrow typed actions with explicit effects, permissions and evidence.
+    state: partial
+    assets: [harness, .agent/skills]
+  - id: planning
+    purpose: Decompose work into bounded, dependency-aware and acceptance-checkable increments.
+    state: partial
+    assets: [.agent/workflows/build.yml, .agent/skills/testing.md]
+  - id: loop
+    purpose: Iterate through execution, verification, repair and bounded convergence.
+    state: partial
+    assets: [.agent/workflows/build.yml, .agent/workflows/evolve.yml]
+  - id: reflection
+    purpose: Audit goals, assumptions, alternatives and unintended consequences using evidence.
+    state: planned
+    assets: [.agent/workflows/evolve.yml, .ai/prompts/08-post-sprint-review.md]
+  - id: graph
+    purpose: Represent task dependencies and eventually evidence-backed system impact relations.
+    state: partial
+    assets: [.agent/workflows, .agent/skills/cognitive-architecture.md]
+  - id: harness
+    purpose: Constrain tools, workspace, permissions and termination outside model reasoning.
+    state: enforced
+    assets: [harness, .agent/policies/modes.yml]
+  - id: evaluation
+    purpose: Measure outcomes with executable gates, regression suites and explicit N/A states.
+    state: enforced
+    assets: [.agent/eval, harness/acceptance.mjs]
+  - id: knowledge
+    purpose: Maintain sourced rules, ADRs and engineering knowledge with version and ownership.
+    state: partial
+    assets: [.agent/engineering/rules.yml, .agent/AGENTS.md]
+  - id: evolution
+    purpose: Turn repeated, evidenced outcomes into governed improvement proposals.
+    state: partial
+    assets: [.agent/workflows/evolve.yml, .ai/prompts/08-post-sprint-review.md]
+  - id: state
+    purpose: Persist causal execution state, checkpoints and recovery without relying on model memory.
+    state: planned
+    assets: [.agent/workflows/build.yml]
+  - id: contract
+    purpose: Stabilize typed boundaries among agents, workflows, tools, artifacts and evidence.
+    state: partial
+    assets: [.agent/eval/completion-evidence.schema.yml, .agent/eval/acceptance.schema.yml]

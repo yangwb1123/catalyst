@@ -1000,6 +1000,122 @@ examples 22+47 tests 通过。
 规避。fresh-context 终审最终 APPROVED，Blocker/Major/Minor = 0；本轮没有创建空壳 Agent/Skill、没有改 runtime、没有调用付费模型、连接
 远程设备或外部生产系统。
 
+## Sprint 88（✅ contract/shadow 切片完成；runtime 路由仍未启用）— Machine-readable Agent Engineering 规范
+
+用户要求把 Prompt/Context/Memory/Tool/Planning/Loop/Reflection/Graph/Harness/Evaluation/Knowledge/Evolution/State/Contract
+Engineering 从长 Prompt 收敛为 Agent 可稳定消费、系统可检测、结果可审计、经验可治理的工程规范。ADR 0040 继续复用
+`.agent` 主干、既有 Capability/Skill catalog 和 `forge accept` 单一完成权威，不建立平行 `.agent-engineering` 或第二 DAG。
+
+(1) **七类 shadow 合同**:`activation.yml` 冻结 v1 refs/默认值；`disciplines.yml` 精确记录 14 学科状态；`rules.yml` 提供 11 条
+分级原子规则；`detectors.yml` 把 automatic Error 绑定到 `forge accept` 真实 load-bearing probe；`context-routes.yml` 使用 typed
+predicate、固定 route order/信任/required/deny 合并代数和 budget 失败语义；`workflow-profiles.yml` 固化 W0–W3 的独立保障
+下限；TaskEvidencePackage 只保存 source-bound 结构化观察。两个既有 planning-only Capability/Skill catalog 被直接引用并检查
+140 个 capability 的唯一 primary ownership，不另造能力命名空间。
+
+(2) **单一完成真值**:证据包顶层禁止 `status/completed/accepted/verdict`，执行观察必须包含 argv、exit-code 语义、output digest
+和同源 tree digest，未执行/N/A 必须给原因；它仍不等于可信执行证明，也不产生放行结论。standalone package validator 保持
+shadow，TRUTH-001 因尚未接入 `forge accept` 诚实降为 Review；只有 `forge accept` 能输出 ACCEPTED/REJECTED。
+
+(3) **detector/Context/profile 对抗收紧**:仅“checker 路径存在”不再算执法；validator 固定 automatic detector 的 argv、adapter、
+criterion、load-bearing/fail-closed 接线和正反测试，并静态确认 probe 在 `acceptance.collect()` 中实际调用。Context 拒绝自由 keyword、
+绝对/`..`/shell glob、未知 predicate/lane/overflow 策略与 instruction-lane 越权；W0–W3 除相邻单调外还各有不可整体删除的保障
+floor，gate vocabulary 直接复用 `modes.yml`。
+
+(4) **旧项目可升级**:`activation.yml` 规定缺少 project-level `engineering_spec` 的 ADR-0040 前项目默认为 shadow；
+`forge-upgrade` 仍不触碰 identity `project.yml`，却会复制新合同、catalog、validator 和 tests。专门回归从移除全部新资产和绑定的
+legacy fixture 升级，证明 `project.yml` 字节不变且升级后 `forge check` 通过。fresh scaffold 则生成显式 canonical binding。
+
+(5) **事实纠偏与研究依据**:`docs/ai-batch/mechanism/REFLECTION.md` 曾把不存在的 `pi-batch reflect`、R0–R2 runtime 和 ledger
+写成已实现，现已改为候选接口。ADR 0040 记录 OpenAI Harness/Agent Loop、Anthropic Context/Tool/Effective Agents/Eval、
+GitHub scoped instructions、MCP typed tools与 LangGraph persistence 的一手资料，并保持 `AGENTS.md` 为短路由入口。
+
+最终验证：Agent Engineering 对抗测试 **52/52**、完整 Python **126/126**、完整 Node（含 scaffold/upgrade）**379/379**、
+Forge Core `go test -count=1 ./...`、`forge check`（13 checks）、`forge gate`（1474 files）、8 项 architecture check 与
+`git diff --check` 全绿；fresh scaffold 与 legacy upgrade 回归均通过。fresh-context Reviewer 用 13 个恶意 mutation 复核
+execution/learning autonomy、stop/human gate/repair、Context base/budget/trust/security trigger、probe argv/forced PASS、Evidence
+identity bounds 和 automatic Rule 反转，均被 validator 失败关闭；终审 Blocker/Major = 0。
+
+完整 `node harness/acceptance.mjs --json` 诚实结果仍为 **6 PASS / 4 FAIL / 1 N/A**：`test_pass`/`typecheck`/`build` 的 Rust
+路径被宿主 Cargo 1.83 无法解析 edition 2024（项目要求 Rust/Cargo 1.93）阻断；`lint` 同时记录 golangci-lint exit 7、
+ruff/eslint 未安装和同一 Cargo 解析失败；coverage 为 N/A。Go、两个 example app、结构、治理、架构、secret 与 SCA 均真
+PASS。未通过降级 manifest、忽略项目或伪报 PASS 规避宿主限制。
+
+## Sprint 89（✅ contract/shadow 切片完成；pre-code runtime gate 未启用）— Backend Engineering Decision Standard
+
+用户要求把资深后端、数据、分布式系统和长期架构经验从长篇建议收敛为 Agent 可执行的思考规范，尤其把持久化对象、
+数据身份、业务不变量、事务/并发、网络可靠性、10×/100× 容量和演进成本放到编码之前。ADR 0041 延续 ADR 0040 的
+单一治理主干与诚实边界，没有创建第二套 DAG、完成权威或一批空壳 Agent。
+
+(1) **后端决策合同**:`backend-decision-gates.yml` 固化 16 类触发器及逐类 L1–L4/W1–W3 下限、14 步因果顺序、14 个决策维度、
+低可逆决策控制和十维 Production Readiness vocabulary。每个维度只能 `addressed/not_applicable/blocked`；触发器要求的
+维度不能 N/A，主键/所有权/契约/权限等承重未知必须保留 blocked。
+
+(2) **条件化模型边界**:Request DTO、Command、Domain、Persistence、Read、Response 与 External Service 被定义为语义角色，
+而非强制目录。只有 owner、变化原因、安全分类或公共/持久化耦合不同时默认分离；简单内部 CRUD 可使用较少角色，但禁止
+公共 API 直接暴露 ORM。OOP、FP/柯里化、DI、AOP、DDD、CQRS/事件等均要求适用证据，不能以“最佳实践”机械套用。
+
+(3) **持久化前置关卡**:规范要求先确定业务/内部/外部/幂等身份、金额/单位/时间/NULL、状态/历史/快照、关系/约束、
+访问路径/索引、并发、租户/隐私、删除/归档/修复和 expand–migrate–contract，再生成 ORM/DDL；并把 deadline、唯一重试层、
+未知结果、背压、容量、可观测性、RPO/RTO、团队认知、TCO 与删除路径纳入同一决策包。
+
+(4) **十张密集 Skill adapter**:新增 backend、domain、data/transaction、migration、API contract、distributed reliability、
+performance/capacity、observability、secure coding 与 architecture tradeoff；每张都有触发、输入、SOP、输出、禁止项、
+自动化/验收和一手参考。data/backend Context route 按路径/capability 装载它们，未把每个知识名词变成永久 Agent。
+
+(5) **无自批权 package 与对抗 validator**:`backend-decision-package.schema.yml` 记录 source tree/context digest，并把 policy、Schema、
+逐项仓库文件证据、proof type/class/subject、事实/推理、假设、readiness 与 residual risks 分开绑定；递归禁止 `completed/accepted/approved/verdict/gate_result`。
+独立 checker 校验 policy、Schema、Skill 和 package，覆盖缺/重复维度、触发维度伪 N/A、虚构/错摘要 proof、事实假设混淆、
+低可逆/不可逆 kind 的 ADR 与 Reviewer 绑定缺失、readiness 越过 blocked decision、畸形输入 traceback、触发 floor 降级和伪完成等 mutation；
+`harness/check.py`、fresh scaffold 和 legacy upgrade 都继承验证。
+
+(6) **诚实边界**:detector 明示 `state:shadow`、`load_bearing:false`，当前只校验规范资产和手工提供的 package；逐项仓库文件
+会被解析并重算字节摘要，但完整 source tree/context digest 尚未由 runtime 重算，系统也尚未从 diff 自动编译 package、签发
+Evidence/Claim/Grant 或在 Coding 前 fail-closed。proof class/producer/Reviewer 仍是摘要绑定声明而非 runtime attestation；分类只报告结构有效/阻塞/未就绪/跳过待复核，最终完成仍只属于 `forge accept`。
+
+验证：后端 package 专项 50 个测试、Agent Engineering 路由/合同专项 56 个测试、组合治理检查、8 项 architecture check、
+fresh init 与 legacy upgrade 回归均通过。完整仓库验收及宿主工具链限制记录在本 Sprint 后续验证结果中。
+
+## Sprint 90（✅ contract/shadow 切片完成；可信视觉与 pre-code runtime authority 未启用）— Frontend Design Decision Standard
+
+用户要求把产品场景、信息架构、视觉风格、页面模式、操作链路、状态机、权限、Design Token、无障碍、响应式、动效、
+React/Vue/Flutter/React Native 实现与截图审查从超长 Prompt 收敛为企业级 AFDS。ADR 0042 延续现有 Kernel、Context route、
+Capability ownership 与 `forge accept` 单一完成权威，没有为 CMS/ERP/颜色/框架创建平行 Agent 或第二套 DAG。
+
+(1) **可执行前端决策合同**:`frontend-design-gates.yml` 固化 20 类 L1–L4/W1–W3 风险 floor、五层规则权威、15 步设计顺序、
+14 个决策维度、假设阻断阈值和十维 readiness。固定 8pt、14px、44px、390/1024/1440 与视觉 90 分均被纠正为 Profile、
+平台或 advisory 选择，不冒充跨平台标准；WCAG、APG、DTCG、React、Vue、Flutter、RN 与 Playwright 的权威边界分开记录。
+
+(2) **Profile×Pattern，而非 Skill 爆炸**:`frontend-profiles.yml` 提供 12 个产品 Profile 与 14 个页面 Pattern，CMS/OA/ERP/MES/
+CRM/Analytics/Commerce/Marketing/Immersive/Data Wall/AI UI 的任务、密度、风险和动效策略与 list/form/workbench/wizard/editor/
+dashboard/agent-chat 等结构正交组合。三张 canonical Skill adapter 分别负责信息与交互、Design System 与无障碍、框架客户端实现；
+user-experience Context route 按路径/capability 装载，React Native 分类优先于 React。
+
+(3) **操作链路与状态先于代码**:FrontendDesignPackage 要求业务任务、事实/假设、主/替代/错误/取消/恢复 flow、显式 state/action、
+权限/数据/system guard、失败保留输入、异步重复/未知结果与高风险恢复。action 由业务状态×权限×数据条件×系统状态决定；
+截图、视觉 diff 和高分不能覆盖主任务失败、越权、焦点陷阱、无障碍失败或数据丢失。
+
+(4) **证据诚实与对抗 validator**:artifact 与 proof claim 分离并 exact-subject 绑定；verification case 与 claim artifact 集合必须
+完全一致；逐项限制路径、字节、SHA-256、source revision、claim class/result，PNG 校验 chunk/CRC、critical chunk、PLTE/IDAT、
+有界解压、scanline、32MP 和 viewport×DPR，禁止非 source artifact 跨 subject 复用或用同字节不同 ID 重复证明。50 个专项测试
+覆盖 policy/schema 漂移、floor 降级、Profile override 风险、维度缺失/重复、假设冒充事实、状态/flow 悬挂、高风险缺恢复、
+自审、摘要/路径逃逸、截图伪造/复用、not_executed 冒充正证据、公开 API 畸形输入与深层嵌套无 traceback；输出只允许
+结构有效/阻塞/未就绪/跳过待复核，不产生批准或完成。
+
+(5) **集成与旧 UI 资产收敛**:shadow detector、Context route、`forge check`、fresh scaffold 和 legacy upgrade 已接入；AFDS helper
+收进 `harness/frontend_design/`，保留根 CLI adapter，避免突破 package 认知预算。旧 `docs/ai-batch` 修复 repo-root 规则路径、
+React Native 最长匹配，并补 CRM/Commerce/AI Agent Profile 与 wizard/editor/canvas/chat/master-detail/settings/timeline/map Pattern。
+
+(6) **诚实边界**:当前 checker 能证明合同、声明交叉引用和本地 artifact 当前字节，不证明 screenshot/trace 真由声明工具产生，也不证明
+Reviewer 是独立真实主体；Context route 尚非 runtime selector，系统不会自动从 diff 编译 package 或在 coding 前签发权限。可信 Runner、
+append-only ledger、签名 receipt、自动影响识别与 load-bearing gate 留给 Governance/Decision Kernel，最终完成仍只属于 `forge accept`。
+
+验证：前端专项 **50/50**、完整 harness Python **247/247**、完整 harness Node（含 scaffold/upgrade）**379/379**、旧 UI
+tests **15/15**、scaffold **34/34**、`forge check` 13 项、gate（1540 files）、architecture 8 项（1088 source files）和
+`git diff --check` 均通过；Forge Core 普通测试/竞态/vet/build 全绿（acceptance 观察 1422 tests）。完整 acceptance 诚实为
+**6 PASS / 4 FAIL / 1 N/A**：
+宿主 Cargo 1.83 无法解析项目 Rust 2024（要求 Cargo 1.93），因而 test/typecheck/build 失败；lint 另有 golangci-lint exit 7、
+ruff/eslint 缺失及同一 Cargo 失败，coverage 为 N/A。未降低 Rust edition、架构预算或任何门禁以伪造通过。
+
 ## 下一前沿(需外部资源 / 后续阶段 / 投机增强 / 明确非目标,非本环境可完整验证)
 - **Graph 下一协议切片**:SQLite v17–v24 已交付 successor candidate、per-node request/lifecycle、receipt/content dataflow、wave-ready/admit、本地 hard-crash adjudication与 8 MiB successor candidate 持久化上限；下一步是顶层整图执行循环、并发 wave 的失败传播/恢复以及安全 resume/branching。不得把当前逐节点 operator 驱动或 Hub-local single-consumption 冒充远程 exactly-once。
 - **真点火** `--agent-cmd=claude`:**multi-agent running to completion 已坐实**(Sprint 25:真 claude 多-agent 跑到 converge MET,增量级 + 版本级)。完整旋钮:四维资源护栏 + 成本三维(phase/时间/美元)+ 任务注入 + 写权限 + 模型路由 + 工作目录 + retry + loop-back;诚实分工:agent 自治增量绿、人确认版本竣工。docs/ignition.md 有完整配方 + 实测

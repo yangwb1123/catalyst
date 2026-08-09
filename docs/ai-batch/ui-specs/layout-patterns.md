@@ -62,7 +62,74 @@ Stepper (当前步骤高亮 + 可返回)
 └─ Result (成功/失败 + 下一步)
 ```
 
-## 6. 通用规则
+## 6. 编辑器页 (editor)
+
+```text
+Header (状态 + 保存/预览/发布)
+├─ Primary Editor
+├─ Contextual Settings
+├─ Validation Summary
+└─ Version / Unsaved State
+```
+
+## 7. 画布页 (canvas)
+
+```text
+Toolbar
+├─ Resource Palette
+├─ Canvas (缩放/选择/连线)
+├─ Property Inspector
+└─ Status Bar (自动保存/校验/撤销重做)
+```
+
+## 8. 对话页 (chat)
+
+```text
+Conversation Navigation
+├─ Message / Result Stream
+├─ Tool and Task Progress
+├─ Evidence / Artifact Panel
+└─ Composer (输入/附件/停止/继续)
+```
+
+## 9. 主从页 (master-detail)
+
+```text
+Master List (筛选 + 选择状态)
+└─ Detail Pane (摘要 + 分区 + 上下条导航)
+```
+
+## 10. 设置页 (settings)
+
+```text
+Settings Navigation
+├─ Section Description
+├─ Grouped Controls
+├─ Scope / Inheritance Indicator
+└─ Save, Reset and Validation Feedback
+```
+
+## 11. 时间线页 (timeline)
+
+```text
+Header + Filters
+└─ Chronological Events
+   ├─ Actor / Time / Event Type
+   ├─ Summary and Detail
+   └─ Load-more / Cursor State
+```
+
+## 12. 地图页 (map)
+
+```text
+Search and Layer Controls
+├─ Map Canvas
+├─ Marker / Cluster States
+├─ Selected-object Detail
+└─ List or Accessible Non-map Alternative
+```
+
+## 13. 通用规则
 
 - **一个页面一个主任务**：主要按钮唯一、视觉等级最高。
 - **操作分级**：一级（保存/提交/发布）、二级（预览/导出/暂存）、

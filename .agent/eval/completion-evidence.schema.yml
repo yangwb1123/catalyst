@@ -1,0 +1,96 @@
+api_version: forgeos.agent-engineering/v1
+kind: TaskEvidencePackageSchema
+status: active_contract
+owner: governance
+schema_format: forgeos.simple-schema/v1
+
+package:
+  additional_properties: false
+  required_fields:
+    - task_id
+    - summary
+    - source_revision
+    - source_tree_sha256
+    - changed_files
+    - requirements_covered
+    - verification_receipts
+    - residual_risks
+    - assumptions
+  fields:
+    task_id: { type: string, non_empty: true, max_length: 128 }
+    summary: { type: string, non_empty: true, max_length: 4096 }
+    source_revision: { type: string, non_empty: true, max_length: 128 }
+    source_tree_sha256: { type: sha256 }
+    changed_files: { type: list, items: repo_relative_path, max_items: 512 }
+    requirements_covered: { type: list, items: string, max_items: 512 }
+    verification_receipts: { type: list, items: verification_receipt, min_items: 1, max_items: 128 }
+    residual_risks: { type: list, items: string, max_items: 128 }
+    assumptions: { type: list, items: string, max_items: 128 }
+
+verification_receipt:
+  additional_properties: false
+  required_fields:
+    - id
+    - detector_id
+    - detector_version
+    - source_tree_sha256
+    - status
+    - argv
+    - cwd
+    - exit_code
+    - output_sha256
+    - reason
+  fields:
+    id: { type: string, non_empty: true, max_length: 128 }
+    detector_id: { type: string, non_empty: true, max_length: 128 }
+    detector_version: { type: semver }
+    source_tree_sha256: { type: sha256 }
+    status: { type: enum, values: [passed, failed, not_executed, not_applicable] }
+    argv: { type: list, items: string, max_items: 64 }
+    cwd: { type: repo_relative_path_or_dot }
+    exit_code: { type: integer_or_null }
+    output_sha256: { type: sha256_or_null }
+    reason: { type: string, max_length: 4096 }
+
+invariants:
+  - id: decision_fields_forbidden
+    rule: Evidence packages cannot contain status, verdict, completed or accepted decision fields.
+  - id: executed_receipt_is_structured
+    rule: Passed and failed observations require argv, exit-code semantics and an output digest.
+  - id: non_execution_requires_reason
+    rule: Not-executed and not-applicable observations carry a reason and no fabricated execution data.
+  - id: source_binding_matches
+    rule: Every receipt is bound to the package source tree digest.
+  - id: no_duplicate_receipt_ids
+    rule: Receipt identifiers are unique within one package.
+
+example:
+  task_id: example-change
+  summary: Captured evidence for a local change; completion remains a forge accept decision.
+  source_revision: 0123456789abcdef0123456789abcdef01234567
+  source_tree_sha256: "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+  changed_files: [src/example.ts]
+  requirements_covered: [REQ-1]
+  verification_receipts:
+    - id: unit-1
+      detector_id: project.unit_test
+      detector_version: 1.0.0
+      source_tree_sha256: "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+      status: passed
+      argv: [npm, test]
+      cwd: .
+      exit_code: 0
+      output_sha256: "sha256:abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
+      reason: ""
+    - id: e2e-1
+      detector_id: project.e2e
+      detector_version: 1.0.0
+      source_tree_sha256: "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+      status: not_applicable
+      argv: []
+      cwd: .
+      exit_code: null
+      output_sha256: null
+      reason: This change has no browser surface.
+  residual_risks: []
+  assumptions: []

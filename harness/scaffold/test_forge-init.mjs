@@ -13,7 +13,9 @@ import {
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { dirname, join, relative, sep } from 'node:path';
+import {
+  dirname, join, relative, resolve, sep,
+} from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 
@@ -67,6 +69,22 @@ const COPIED_ENFORCERS = [
 // self-test (acceptance's test_pass runs these, so the harness self-governs).
 const COPIED_HARNESS = [
   join('harness', 'check.py'),
+  join('harness', 'agent_engineering_check.py'),
+  join('harness', 'backend_decision_contract.py'),
+  join('harness', 'backend_decision_check.py'),
+  join('harness', 'backend_evidence_check.py'),
+  join('harness', 'backend_package_check.py'),
+  join('harness', 'frontend_design', '__init__.py'),
+  join('harness', 'frontend_design', 'contract.py'),
+  join('harness', 'frontend_design', 'governance.py'),
+  join('harness', 'frontend_design_check.py'),
+  join('harness', 'frontend_design', 'evidence.py'),
+  join('harness', 'frontend_design', 'model.py'),
+  join('harness', 'frontend_design', 'package.py'),
+  join('harness', 'completion_evidence_check.py'),
+  join('harness', 'engineering_detector_check.py'),
+  join('harness', 'engineering_check_support.py'),
+  join('harness', 'engineering_routing_check.py'),
   join('harness', 'release_boundary_check.py'),
   join('harness', 'workflow_control_check.py'),
   join('harness', 'acceptance.mjs'),
@@ -84,6 +102,11 @@ const COPIED_HARNESS = [
   join('harness', 'scorecard.mjs'),
   join('harness', 'scorecard-update.mjs'),
   join('harness', 'test_check.py'),
+  join('harness', 'test_agent_engineering_check.py'),
+  join('harness', 'test_backend_decision_check.py'),
+  join('harness', 'test_frontend_design_adversarial.py'),
+  join('harness', 'test_frontend_design_check.py'),
+  join('harness', 'test_legacy_ai_batch_contract.py'),
   join('harness', 'test_release_boundary_check.py'),
   join('harness', 'test_workflow_control_check.py'),
   join('harness', 'test_yaml2json.py'),
@@ -102,13 +125,31 @@ const COPIED_HARNESS = [
 // and acceptance.mjs consumes (without them check.py FAILs / has no schema).
 const COPIED_ASSETS = [
   join('docs', 'release', 'README.md'),
+  join('docs', 'design', 'ai-engineering-os', 'capability-catalog.v1.yml'),
+  join('docs', 'design', 'ai-engineering-os', 'capability-skill-map.v1.yml'),
+  join('docs', 'design', 'ai-engineering-os', 'backend-decision-standard.md'),
+  join('docs', 'design', 'ai-engineering-os', 'frontend-design-standard.md'),
+  join('docs', 'adr', '0042-frontend-design-decision-contract.md'),
   join('.agent', 'agents', 'architect.md'),
   join('.agent', 'agents', 'release-engineer.md'),
   join('.agent', 'skills', 'clean-architecture.md'),
+  join('.agent', 'skills', 'backend-engineering.md'),
+  join('.agent', 'skills', 'information-interaction-design.md'),
+  join('.agent', 'skills', 'design-system-accessibility.md'),
+  join('.agent', 'skills', 'frontend-client-engineering.md'),
   join('.agent', 'workflows', 'build.yml'),
   join('.agent', 'workflows', 'deploy.yml'),
   join('.agent', 'workflows', 'rollback.yml'),
   join('.agent', 'eval', 'acceptance.schema.yml'),
+  join('.agent', 'eval', 'completion-evidence.schema.yml'),
+  join('.agent', 'eval', 'backend-decision-package.schema.yml'),
+  join('.agent', 'eval', 'frontend-design-package.schema.yml'),
+  join('.agent', 'engineering', 'activation.yml'),
+  join('.agent', 'engineering', 'backend-decision-gates.yml'),
+  join('.agent', 'engineering', 'frontend-design-gates.yml'),
+  join('.agent', 'engineering', 'frontend-profiles.yml'),
+  join('.agent', 'engineering', 'detectors.yml'),
+  join('.agent', 'engineering', 'rules.yml'),
   join('.agent', 'routing', 'policy.yml'),
   join('.agent', 'policies', 'modes.yml'),
 ];
@@ -132,6 +173,70 @@ const GENERATED_FILES = [
   '.gitignore',
   SCAFFOLD_STATE_FILE,
 ];
+
+// Extract inline and reference-style Markdown destinations. This deliberately
+// checks file reachability only: fragment correctness belongs to a Markdown
+// linter, while scaffold integrity must prove every copied local file target is
+// present in the generated project. `url` is the documented placeholder used by
+// the researcher role card for per-result citations, not a repository path.
+function markdownDestinations(markdown) {
+  const destinations = [];
+  for (const match of markdown.matchAll(/!?\[[^\]\n]*\]\(([^)\n]+)\)/g)) {
+    destinations.push(match[1]);
+  }
+  for (const match of markdown.matchAll(/^\s*\[[^\]\n]+\]:\s*(\S+)/gm)) {
+    destinations.push(match[1]);
+  }
+  return destinations;
+}
+
+function localMarkdownTarget(rawDestination) {
+  let destination = rawDestination.trim();
+  if (destination.startsWith('<')) {
+    const closing = destination.indexOf('>');
+    if (closing === -1) return null;
+    destination = destination.slice(1, closing);
+  } else {
+    destination = destination.split(/\s+(?=["'])/, 1)[0];
+  }
+  if (
+    destination === ''
+    || destination.toLowerCase() === 'url'
+    || destination.startsWith('#')
+    || destination.startsWith('/')
+    || destination.startsWith('//')
+    || /^[A-Za-z][A-Za-z0-9+.-]*:/.test(destination)
+  ) return null;
+  const withoutFragment = destination.split('#', 1)[0].split('?', 1)[0];
+  if (withoutFragment === '') return null;
+  try {
+    return decodeURIComponent(withoutFragment);
+  } catch {
+    return withoutFragment;
+  }
+}
+
+function copiedMarkdownLinkIssues(target) {
+  const state = JSON.parse(readFileSync(join(target, SCAFFOLD_STATE_FILE), 'utf8'));
+  assert.ok(Array.isArray(state.copied), `${SCAFFOLD_STATE_FILE} must contain copied[]`);
+  const targetRoot = resolve(target);
+  const issues = [];
+  for (const rel of state.copied.filter((path) => path.endsWith('.md'))) {
+    const source = join(targetRoot, rel);
+    const markdown = readFileSync(source, 'utf8');
+    for (const rawDestination of markdownDestinations(markdown)) {
+      const local = localMarkdownTarget(rawDestination);
+      if (local === null) continue;
+      const destination = resolve(dirname(source), local);
+      const staysInsideTarget = destination === targetRoot
+        || destination.startsWith(`${targetRoot}${sep}`);
+      if (!staysInsideTarget || !existsSync(destination)) {
+        issues.push(`${rel} -> ${rawDestination}`);
+      }
+    }
+  }
+  return issues;
+}
 
 test('forge-init scaffolds COMPLETE governance and the project is ACCEPTED', (t) => {
   const dir = mkdtempSync(join(tmpdir(), 'forge-init-'));
@@ -172,6 +277,15 @@ test('forge-init scaffolds COMPLETE governance and the project is ACCEPTED', (t)
       `copied ${rel} must be byte-identical to source`,
     );
   }
+
+  // (4b) Every local relative link in copied Markdown resolves inside the
+  // scaffold. This catches documentation dependencies omitted from the copy
+  // manifest even when the source repository itself contains the target.
+  assert.deepEqual(
+    copiedMarkdownLinkIssues(target),
+    [],
+    'copied Markdown contains dangling or escaping local links',
+  );
 
   // (5) ★ THE IRON PROOF: running the FULL acceptance gate on the fresh project
   // returns ACCEPTED — the complete governance (not just the enforcer triad) runs

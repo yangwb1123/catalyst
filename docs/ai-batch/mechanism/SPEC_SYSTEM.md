@@ -8,7 +8,7 @@
 
 | 层 | 目录 | 内容 |
 |---|---|---|
-| 前端视觉 | `ui-specs/` | spacing（8pt token）/ component / layout-patterns / anti-patterns / business-profiles×7（erp/cms/oa/dashboard/immersive/marketing/mobile） |
+| 前端视觉 | `ui-specs/` | spacing（8pt token）/ component / layout-patterns / anti-patterns / legacy business-profiles×10（erp/cms/oa/crm/commerce/ai-agent/dashboard/immersive/marketing/mobile） |
 | 前端工程 | `ui-specs/engineering/` | async-data（防抖/竞态/幂等决策表）、form-table-state、interaction-patterns、error-recovery、architecture-budgets、defect-patterns（12 事故档案） |
 | 后端架构 | `backend-specs/` | architecture / design-patterns（决策表+过度设计红线）/ domain-modeling / evolution / oop-and-di / ddd（分级）/ algorithms-data-structures / complexity-and-scale / persistence-modeling（强制关卡）/ production-readiness / agent-guardrails / architecture-constitution / testing / system-engineering / network-engineering |
 | 产品思维 | `product-specs/` | product-thinking（L0-L3 分级+推演链）/ commercial-readiness（低成本预留vs高成本实现）/ open-source-readiness / completion-evidence（证据报告） |
@@ -18,7 +18,7 @@
 
 | 注册表 | 域 | 轴 |
 |---|---|---|
-| `ui-specs/rules.yaml` | 前端 | scale（demo<standard<production）× page_type（form/table/detail/workbench/immersive/auth）× risk |
+| `ui-specs/rules.yaml` | 前端 | scale（demo<standard<production）× legacy page_type×14（form/table/detail/workbench/wizard/editor/canvas/chat/master-detail/settings/timeline/map/immersive/auth）× risk |
 | `backend-specs/rules.yaml` | 后端 | 同上（use_case_types：crud/workflow/integration/query + 算法场景 search/sort/graph/schedule/cache/range）|
 
 每条规则：`id / description / files / min_tier / page_types / risk /

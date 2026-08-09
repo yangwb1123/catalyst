@@ -60,6 +60,13 @@ function canonicalHistoricalPath(rel) {
     return segments.join(sep);
   }
   if (clean === 'docs/release/README.md') return segments.join(sep);
+  if (
+    clean === 'docs/design/ai-engineering-os/capability-catalog.v1.yml'
+    || clean === 'docs/design/ai-engineering-os/capability-skill-map.v1.yml'
+    || clean === 'docs/design/ai-engineering-os/backend-decision-standard.md'
+    || clean === 'docs/design/ai-engineering-os/frontend-design-standard.md'
+    || clean === 'docs/adr/0042-frontend-design-decision-contract.md'
+  ) return segments.join(sep);
   return HISTORICAL_ROOTS.some((dir) => clean.startsWith(`${dir}/`))
     ? segments.join(sep)
     : null;

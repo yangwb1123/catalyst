@@ -1,0 +1,31 @@
+api_version: forgeos.agent-engineering/v1
+kind: EngineeringActivation
+status: active_contract
+owner: governance
+
+version: 1
+default_activation: shadow
+legacy_missing_project_binding: shadow
+enforce_supported: false
+completion_authority: forge_accept
+
+canonical_refs:
+  activation: .agent/engineering/activation.yml
+  disciplines: .agent/engineering/disciplines.yml
+  rules: .agent/engineering/rules.yml
+  detectors: .agent/engineering/detectors.yml
+  context_routes: .agent/engineering/context-routes.yml
+  workflow_profiles: .agent/engineering/workflow-profiles.yml
+  capability_catalog: docs/design/ai-engineering-os/capability-catalog.v1.yml
+  capability_skill_map: docs/design/ai-engineering-os/capability-skill-map.v1.yml
+  acceptance_policy: .agent/eval/acceptance.schema.yml
+  completion_contract: .agent/eval/completion-evidence.schema.yml
+
+canonical_extension_refs:
+  backend_policy: .agent/engineering/backend-decision-gates.yml
+  backend_package: .agent/eval/backend-decision-package.schema.yml
+  backend_standard: docs/design/ai-engineering-os/backend-decision-standard.md
+  frontend_policy: .agent/engineering/frontend-design-gates.yml
+  frontend_profiles: .agent/engineering/frontend-profiles.yml
+  frontend_package: .agent/eval/frontend-design-package.schema.yml
+  frontend_standard: docs/design/ai-engineering-os/frontend-design-standard.md

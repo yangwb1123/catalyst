@@ -9,7 +9,10 @@ the source of truth even when the app is broken. It is intentionally polyglot.
 | Command | Runtime | Purpose |
 | --- | --- | --- |
 | `node harness/gate.mjs` | Node.js | Structural gate: per-file line cap (code files) + root file count. Reads `harness/policies.yml`. |
-| `python3 harness/check.py [repo_root]` | Python 3 + **PyYAML** | Governance integrity (`forge check`): validates `.agent/` YAML, agent-card sections, workflow `agent:`/`skill:` references, routing/mode tiers, acceptance schema. |
+| `python3 harness/check.py [repo_root]` | Python 3 + **PyYAML** | Governance integrity (`forge check`): validates `.agent/` YAML, references, routing/modes, acceptance, and the Agent Engineering registries. |
+| `python3 harness/agent_engineering_check.py [repo_root] [evidence-package.yml]` | Python 3 + **PyYAML** | Validates v1 activation/discipline/rule/detector/context/workflow contracts and, optionally, one source-bound evidence package. It never mints completion. |
+| `python3 harness/backend_decision_check.py [repo_root] [backend-package.yml]` | Python 3 + **PyYAML** | Validates the byte-pinned backend policy/Skill/schema contract and, optionally, one BackendDecisionPackage whose bounded repository evidence is digest-, proof-type-, class- and subject-checked. Producer/reviewer identity and whole-tree/context provenance remain declarative; it is shadow-only and never mints approval or completion. |
+| `python3 harness/frontend_design_check.py [repo_root] [frontend-package.yml]` | Python 3 + **PyYAML** | Validates the byte-pinned AFDS policy/Profile/Pattern/Skill/schema contract and, optionally, one FrontendDesignPackage with flow/state/action, exact-subject proof, bounded artifact and PNG capture checks. Provenance remains declarative; it is shadow-only and never mints approval or completion. |
 | `node harness/acceptance.mjs` | Node.js | Full acceptance: harness/app/project tests plus lint, typecheck, build, coverage and security/SCA probes. |
 
 ## Dependencies
@@ -32,6 +35,9 @@ the source of truth even when the app is broken. It is intentionally polyglot.
 ```sh
 node --test harness/test_gate.mjs     # Node gate pure-function + import-safety tests
 python3 harness/test_check.py         # governance checker tests (stdlib unittest only)
+python3 -m unittest harness.test_agent_engineering_check
+python3 -m unittest harness.test_backend_decision_check
+python3 -m unittest harness.test_frontend_design_check
 ```
 
 ## Conventions
@@ -41,3 +47,6 @@ python3 harness/test_check.py         # governance checker tests (stdlib unittes
   (`.agent/agents/<stem>.md`) or the `harness` pseudo-agent. `check.py` enforces
   this as a pure membership check — no alias indirection — so workflow/card
   drift cannot be silently frozen into the checker.
+- Agent Engineering v1 is `shadow`: its schemas and references are enforced,
+  while context selection and W0-W3 routing remain policy-only. `forge accept`
+  stays the sole completion authority.

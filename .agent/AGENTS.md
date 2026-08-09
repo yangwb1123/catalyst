@@ -29,6 +29,21 @@
 - **复杂设计记 ADR**:架构决策、非显而易见的权衡、跨 sprint 的推理写入 `docs/adr/`
 - **真点火需显式授权**:LLM 调用的真实预算消耗需获得用户明确许可,默认 dry-run 安全
 
+## 机器可读规范入口
+
+- `engineering/activation.yml`:v1 shadow 默认值和 canonical refs；旧项目无显式绑定时也安全降级为 shadow
+- `engineering/disciplines.yml`:14 个 Prompt/Context/Memory/Tool/Planning/Loop/Reflection/Graph/Harness/Eval/Knowledge/Evolution/State/Contract 学科状态
+- `engineering/rules.yml` + `engineering/detectors.yml`:原子规则、强度、例外与 detector；Error 只能绑定 `forge accept` 的真实载重探针
+- `engineering/context-routes.yml`:typed predicate、固定合并代数、预算阻断/省略回执和不可信内容 lane（当前仅 shadow policy）
+- `engineering/workflow-profiles.yml`:L0–L4 风险到 W0–W3 保障下限；只增强既有 workflow，不创建第二套 DAG
+- `eval/completion-evidence.schema.yml`:只封装 source-bound 结构化执行观察，禁止写 `completed/accepted/verdict`；最终裁决只归 `forge accept`
+- `engineering/backend-decision-gates.yml`:后端逐触发器 L1–L4/W1–W3 的业务不变量、模型边界、持久化、契约、算法、并发、可靠性、安全、容量、运维、迁移和演进决策合同（当前 shadow）
+- `eval/backend-decision-package.schema.yml`:要求 14 个维度逐项 `addressed/not_applicable/blocked`，区分事实/假设/证据；不得自行批准或宣告完成
+- `skills/backend-engineering.md` 及其 Domain/Data/API/Reliability/Security/Performance/Ops adapters：按路径和 capability 路由，不要求简单 CRUD 机械生成全部模型层
+- `engineering/frontend-design-gates.yml` + `frontend-profiles.yml`:前端场景/Profile/Page Pattern、业务链路、状态×权限×数据×系统动作、Token、响应式、可访问性、动效/性能和视觉证据合同（当前 shadow）
+- `eval/frontend-design-package.schema.yml`:分离 artifact 与 proof claim，截图绑定 source/build/fixture/environment；只判结构有效性，不授予 UI 质量或完成裁决
+- `skills/{information-interaction-design,design-system-accessibility,frontend-client-engineering}.md`:复用现有 capability ownership；产品风格是 Profile，React/Vue/Flutter/RN 是条件化平台映射，不制造平行 Skill 树
+
 ## 阅读顺序
 
-`BOOTSTRAP → .agent/{PROJECT · ARCHITECTURE · ROADMAP · CURRENT_SPRINT} → 本文件 → 代码`
+`BOOTSTRAP → .agent/{PROJECT · ARCHITECTURE · ROADMAP · CURRENT_SPRINT} → 本文件 → engineering/context-routes.yml → 任务相关知识 → 代码`

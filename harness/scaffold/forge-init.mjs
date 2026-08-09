@@ -10,7 +10,7 @@
 //
 // COPIED verbatim (the 70% — universal, inheritable governance):
 //   * Red-lines              .agent/AGENTS.md
-//   * Governance assets      .agent/{agents,skills,workflows,eval,routing,policies}/
+//   * Governance assets      .agent/{agents,skills,workflows,eval,routing,policies,engineering}/
 //       — the declarative role cards / skills / workflows / acceptance schema /
 //         routing policy / mode table that check.py + acceptance.mjs validate &
 //         consume. Without them check.py FAILs and acceptance has no schema.
@@ -159,6 +159,22 @@ lifecycle: ${lifecycle}            # idea | mvp | growth | production
 overrides:
   max_file_lines: 500         # 对齐 harness/policies.yml(真相之源)
   max_root_files: 15
+
+engineering_spec:
+  version: 1
+  activation: shadow          # contracts validate; runtime routing remains unchanged
+  refs:
+    activation: .agent/engineering/activation.yml
+    disciplines: .agent/engineering/disciplines.yml
+    rules: .agent/engineering/rules.yml
+    detectors: .agent/engineering/detectors.yml
+    context_routes: .agent/engineering/context-routes.yml
+    workflow_profiles: .agent/engineering/workflow-profiles.yml
+    capability_catalog: docs/design/ai-engineering-os/capability-catalog.v1.yml
+    capability_skill_map: docs/design/ai-engineering-os/capability-skill-map.v1.yml
+    acceptance_policy: .agent/eval/acceptance.schema.yml
+    completion_contract: .agent/eval/completion-evidence.schema.yml
+  completion_authority: forge_accept
 `;
 }
 
@@ -201,7 +217,8 @@ export function renderClaudeMd(name) {
 - \`agents/\`     角色卡 (architect / planner / implementer / reviewer / qa / …)
 - \`skills/\`     可复用技能 (clean-architecture / testing / code-review / …)
 - \`workflows/\`  生命周期工作流 (discover / design / review / build / deploy / rollback / evolve)
-- \`eval/\`       验收 schema (acceptance.schema.yml —— Stop 闸门的机器可判定 DoD)
+- \`engineering/\` activation、14 学科、规则/detector、typed Context 路由与 W0-W3 保障契约(shadow)
+- \`eval/\`       验收 + source-bound TaskEvidencePackage schema（不能自授 completed）
 - \`routing/\`    模型路由策略 · \`policies/\` mode 表
 
 \`deploy\` / \`rollback\` 只生成并验证声明式 \`docs/release/*\` 交付物；真实远程操作与

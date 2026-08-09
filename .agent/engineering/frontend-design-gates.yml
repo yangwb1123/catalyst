@@ -1,0 +1,353 @@
+api_version: forgeos.agent-engineering/v1
+kind: FrontendDesignPolicy
+status: active_contract
+runtime_binding: pre_code_shadow_review_only
+owner: product-design-engineering
+version: 1
+completion_authority: forge_accept
+
+applicability:
+  activation: any_trigger
+  workflow_floor: W1_standard
+  minimum_materiality: L1
+  triggers:
+    - frontend_behavior
+    - component_change
+    - page_or_route
+    - form_or_table
+    - business_workflow
+    - shared_token_or_component
+    - responsive_adaptive
+    - accessibility
+    - visual_regression
+    - cross_platform_ui
+    - localization_or_rtl
+    - public_brand_surface
+    - data_intensive
+    - immersive_3d
+    - multi_role_permission
+    - high_risk_action
+    - authentication_or_payment
+    - destructive_user_data
+    - regulated_commitment
+    - safety_critical_surface
+  trigger_floors:
+    frontend_behavior: { materiality: L1, workflow: W1_standard }
+    component_change: { materiality: L1, workflow: W1_standard }
+    page_or_route: { materiality: L2, workflow: W2_assured }
+    form_or_table: { materiality: L2, workflow: W2_assured }
+    business_workflow: { materiality: L2, workflow: W2_assured }
+    shared_token_or_component: { materiality: L3, workflow: W3_systemic }
+    responsive_adaptive: { materiality: L2, workflow: W2_assured }
+    accessibility: { materiality: L2, workflow: W2_assured }
+    visual_regression: { materiality: L2, workflow: W2_assured }
+    cross_platform_ui: { materiality: L2, workflow: W2_assured }
+    localization_or_rtl: { materiality: L2, workflow: W2_assured }
+    public_brand_surface: { materiality: L2, workflow: W2_assured }
+    data_intensive: { materiality: L2, workflow: W2_assured }
+    immersive_3d: { materiality: L2, workflow: W2_assured }
+    multi_role_permission: { materiality: L3, workflow: W3_systemic }
+    high_risk_action: { materiality: L3, workflow: W3_systemic }
+    authentication_or_payment: { materiality: L4, workflow: W3_systemic }
+    destructive_user_data: { materiality: L4, workflow: W3_systemic }
+    regulated_commitment: { materiality: L4, workflow: W3_systemic }
+    safety_critical_surface: { materiality: L4, workflow: W3_systemic }
+  skip_requires: [reason, source_refs, independent_reviewer]
+  unknown_load_bearing_decision: block
+
+decision_sequence:
+  - understand_business_goal
+  - classify_scenario
+  - map_information_architecture
+  - model_operation_flows
+  - model_state_permission_actions
+  - select_profile_and_pattern
+  - resolve_design_tokens
+  - define_responsive_and_input_behavior
+  - design_accessibility
+  - allocate_motion_and_performance_budgets
+  - map_framework_state_and_components
+  - implement
+  - verify_behavior
+  - verify_visuals
+  - release_and_evolve
+
+rule_layers:
+  precedence: [standard, platform_contract, organization_policy, profile_heuristic, advisory]
+  definitions:
+    standard: normative_external_requirement
+    platform_contract: adopted_platform_behavior
+    organization_policy: versioned_internal_requirement
+    profile_heuristic: overridable_scenario_default
+    advisory: non_blocking_recommendation
+  invariants:
+    - lower_precedence_cannot_weaken_higher_precedence
+    - profile_values_are_not_universal_standards
+    - exceptions_require_scope_reason_expiry_and_compensating_proof
+
+classification:
+  required_fields:
+    - product_type
+    - business_domain
+    - page_pattern
+    - profile_id
+    - platform
+    - density
+    - motion_level
+    - operation_frequency
+    - data_density
+    - risk_level
+    - primary_user
+    - primary_task
+  fact_or_assumption_required: true
+  profile_catalog: .agent/engineering/frontend-profiles.yml
+  unknown_profile: block
+  unknown_page_pattern: block
+  risk_floors:
+    low: { materiality: L1, workflow: W1_standard }
+    medium: { materiality: L2, workflow: W2_assured }
+    high: { materiality: L3, workflow: W3_systemic }
+    critical: { materiality: L4, workflow: W3_systemic }
+
+assumption_control:
+  risk_formula: (1-confidence)*impact_if_wrong*(1-reversibility)
+  load_bearing_threshold: 0.15
+  at_or_above_threshold: affected_dimensions_block_until_verified
+  inference_requires_assumption_record: true
+
+dimension_statuses: [addressed, not_applicable, blocked]
+dimensions:
+  - id: business_task
+    owner_skill: information-interaction-design
+    questions:
+      - What user outcome, actor, task, success metric, permissions and non-goals are authoritative?
+      - Is the requested screen a solution hypothesis rather than the underlying need?
+      - Which harmful or irreversible outcomes require prevention or recovery?
+    proof_types: [requirement_trace, task_outcome_map]
+
+  - id: scenario_profile
+    owner_skill: information-interaction-design
+    questions:
+      - Which product profile, page pattern, platform, density, motion and risk class apply?
+      - Which classification fields are facts and which are assumptions?
+      - Does a profile heuristic conflict with a standard or platform contract?
+    proof_types: [scenario_classification, profile_selection]
+
+  - id: information_architecture
+    owner_skill: information-interaction-design
+    questions:
+      - What information is primary, secondary, contextual or deferred for this task?
+      - Are navigation, headings, relationships, entry and exit paths coherent?
+      - Does the structure follow user language rather than database structure?
+    proof_types: [information_architecture_map, navigation_contract]
+
+  - id: operation_flows
+    owner_skill: information-interaction-design
+    questions:
+      - What are the main, alternate, cancellation, back-navigation and error flows?
+      - Which context, filters, edits and focus must survive each transition?
+      - Can every path terminate, recover or explicitly escalate without a dead end?
+    proof_types: [operation_flow, recovery_flow]
+
+  - id: state_permission_action
+    owner_skill: information-interaction-design
+    questions:
+      - Which business states and transitions are authoritative?
+      - Is every action derived from state, permission, data guards and system state?
+      - What feedback, audit and recovery follow each effectful action?
+    proof_types: [state_action_matrix, permission_action_review]
+
+  - id: async_feedback_recovery
+    owner_skill: information-interaction-design
+    questions:
+      - Which loading, empty, error, stale, conflict, offline and partial-success states apply?
+      - Are duplicate submission, cancellation, retry and out-of-order responses safe?
+      - Is user input preserved after failure and are long tasks resumable or observable?
+    proof_types: [async_state_model, feedback_recovery_matrix]
+
+  - id: design_language_tokens
+    owner_skill: design-system-accessibility
+    questions:
+      - What is the authoritative token source, version, resolver context and digest?
+      - Are primitive, semantic and component roles explicit without treating naming conventions as DTCG law?
+      - Can themes, contrast, reduced motion, deprecation and platform mapping resolve without cycles?
+    proof_types: [token_resolution_manifest, design_language_contract]
+
+  - id: layout_component_composition
+    owner_skill: design-system-accessibility
+    questions:
+      - Which page pattern and approved components realize the information hierarchy?
+      - Is density appropriate while preserving semantic separation and operability?
+      - Are deviations from existing components or patterns justified and governed?
+    proof_types: [component_mapping, layout_specification]
+
+  - id: responsive_adaptive_input
+    owner_skill: frontend-client-engineering
+    questions:
+      - Which content-driven breakpoints, containers, orientations and window classes apply?
+      - Does the experience remain usable across keyboard, pointer, touch and platform input conventions?
+      - Are reflow exceptions scoped to intrinsically two-dimensional regions?
+    proof_types: [responsive_matrix, input_modality_matrix]
+
+  - id: accessibility_semantics
+    owner_skill: design-system-accessibility
+    questions:
+      - Are semantics, names, relationships, keyboard behavior, focus order and status announcements correct?
+      - Are contrast, zoom, reflow, target sizing and non-color cues evaluated at the claimed conformance level?
+      - Which checks require assistive technology or human evaluation beyond automation?
+    proof_types: [accessibility_spec, accessibility_test_plan]
+
+  - id: motion_performance
+    owner_skill: frontend-client-engineering
+    questions:
+      - Does motion communicate state or hierarchy and honor reduced-motion preferences?
+      - What interaction, loading, rendering, memory and bundle budgets apply to this profile?
+      - Are virtualization, memoization, lazy loading or 3D degradation justified by measurement?
+    proof_types: [motion_budget, performance_budget]
+
+  - id: framework_state_data
+    owner_skill: frontend-client-engineering
+    questions:
+      - Which state belongs to server, URL, form, workflow, local view or cache ownership?
+      - Are request cancellation, stale responses, optimistic updates and state identity handled safely?
+      - Does the framework mapping preserve native semantics and project conventions?
+    proof_types: [framework_mapping, state_ownership_map]
+
+  - id: interaction_verification
+    owner_skill: frontend-client-engineering
+    questions:
+      - Does each load-bearing flow and state transition map to a reproducible behavior test?
+      - Are keyboard, focus, permission, failure, concurrency and context-preservation paths tested?
+      - Are execution claims bound to current source, build, fixture and trace artifacts?
+    proof_types: [interaction_test_matrix, interaction_execution_receipts]
+
+  - id: visual_quality
+    owner_skill: design-system-accessibility
+    questions:
+      - Are hierarchy, alignment, density, whitespace, typography and state cues coherent for the profile?
+      - Are screenshots bound to deterministic capture contexts and reviewed independently?
+      - Is visual scoring advisory while behavioral and accessibility failures remain hard failures?
+    proof_types: [capture_manifest, independent_visual_review]
+
+flow_contract:
+  flow_kinds: [primary, alternative, error, cancel, recovery]
+  required_kinds: [primary]
+  mutating_required_kinds: [error, recovery]
+  form_required_kinds: [cancel]
+  high_risk_required_kinds: [cancel, error, recovery]
+  action_derivation: business_state_x_permission_x_data_guard_x_system_state
+  step_action_mapping: required
+  transition_test_mapping: required_when_addressed
+  high_risk_effects: [destructive, external_commit, legal_commitment, financial_commitment]
+  high_risk_controls: [prevent_or_review_or_reversible, independent_review, audit, recovery]
+
+verification:
+  sequence:
+    - schema_and_flow_validation
+    - static_and_type_checks
+    - component_and_integration_tests
+    - interaction_flow_tests
+    - accessibility_automation
+    - keyboard_and_focus_tests
+    - deterministic_capture
+    - visual_diff
+    - independent_visual_review
+    - human_or_assistive_technology_review_when_risk_requires
+  visual_score_authority: advisory_only
+  screenshot_diff_claim: pixel_regression_only
+  accessibility_automation_claim: partial_detection_only
+  capture_context_fields:
+    - surface_id
+    - state_id
+    - platform
+    - viewport
+    - dpr
+    - theme
+    - locale
+    - timezone
+    - color_scheme
+    - reduced_motion
+    - text_scale
+    - fonts_digest
+    - fixture_id
+    - source_tree_sha256
+    - build_sha256
+
+readiness:
+  dimensions:
+    - business_and_task
+    - information_and_flow
+    - state_and_recovery
+    - visual_and_tokens
+    - responsive_and_input
+    - accessibility
+    - motion_and_performance
+    - framework_quality
+    - interaction_evidence
+    - visual_evidence
+  allowed_results: [ready, not_ready, not_applicable]
+  proof_types:
+    business_and_task: [requirement_trace, task_outcome_map]
+    information_and_flow: [information_architecture_map, operation_flow]
+    state_and_recovery: [state_action_matrix, feedback_recovery_matrix]
+    visual_and_tokens: [token_resolution_manifest, layout_specification]
+    responsive_and_input: [responsive_matrix, input_modality_matrix]
+    accessibility: [accessibility_spec, accessibility_execution_receipts]
+    motion_and_performance: [motion_budget, performance_measurement]
+    framework_quality: [framework_mapping, static_execution_receipts]
+    interaction_evidence: [interaction_test_matrix, interaction_execution_receipts]
+    visual_evidence: [capture_manifest, visual_diff_receipts, independent_visual_review]
+  decision_dependencies:
+    business_and_task: [business_task, scenario_profile]
+    information_and_flow: [information_architecture, operation_flows]
+    state_and_recovery: [state_permission_action, async_feedback_recovery]
+    visual_and_tokens: [design_language_tokens, layout_component_composition]
+    responsive_and_input: [responsive_adaptive_input]
+    accessibility: [accessibility_semantics]
+    motion_and_performance: [motion_performance]
+    framework_quality: [framework_state_data]
+    interaction_evidence: [interaction_verification]
+    visual_evidence: [visual_quality]
+  not_applicable_requires: [reason, proof_refs]
+  final_decision_owner: forge_accept
+
+evidence_contract:
+  max_package_bytes: 393216
+  max_artifact_bytes: 8388608
+  artifact_integrity: digest_bound
+  provenance_trust: declarative_only
+  subject_binding: exact
+  cross_subject_claim_reuse: prohibited
+  capture_artifact_reuse: prohibited
+  screenshot_format: png
+  screenshot_max_pixels: 32000000
+  result_classification: structurally_valid_only
+
+invariants:
+  - id: FE-INV-001
+    rule: A design package cannot approve, accept or complete its own change.
+  - id: FE-INV-002
+    rule: Facts, inferences, assumptions, artifacts and proof claims remain distinct.
+  - id: FE-INV-003
+    rule: Coding cannot precede the business task, flow, state/action and profile decisions for an applicable change.
+  - id: FE-INV-004
+    rule: A visual score or screenshot diff cannot override a failed task flow, accessibility check or data-loss condition.
+  - id: FE-INV-005
+    rule: Fixed pixels, breakpoints, spacing grids and motion durations are profile or project policy unless a cited platform contract says otherwise.
+  - id: FE-INV-006
+    rule: Component actions derive from business state, permission, data guards and system state, not location alone.
+  - id: FE-INV-007
+    rule: Failure cannot discard user-authored state without an explicit, evidenced product decision.
+  - id: FE-INV-008
+    rule: A digest verifies bytes, not who produced them or whether the declared tool actually ran.
+
+primary_sources:
+  - { id: wcag-22, url: https://www.w3.org/TR/WCAG22/ }
+  - { id: wai-apg, url: https://www.w3.org/WAI/ARIA/apg/about/introduction/ }
+  - { id: dtcg-format-2025-10, url: https://www.designtokens.org/tr/2025.10/format/ }
+  - { id: playwright-snapshots, url: https://playwright.dev/docs/test-snapshots }
+  - { id: playwright-accessibility, url: https://playwright.dev/docs/accessibility-testing }
+  - { id: react-state, url: https://react.dev/learn/choosing-the-state-structure }
+  - { id: vue-accessibility, url: https://vuejs.org/guide/best-practices/accessibility.html }
+  - { id: flutter-adaptive, url: https://docs.flutter.dev/ui/adaptive-responsive }
+  - { id: react-native-accessibility, url: https://reactnative.dev/docs/accessibility }

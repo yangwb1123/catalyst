@@ -18,3 +18,21 @@ features:
   discover: minimal               # v1 最小 Discover:confidence + Human gate
   routing: multidimensional-tier  # 六维自动评分已接 run/evolve；跨厂商生产池仍属 v3 (D4)
   sandbox: true                   # Go 执行器已接 Docker/Firecracker；完整工作区交换契约仍待后续
+
+# Agent Engineering v1 先以 shadow 方式提供可验证规则/路由/证据契约；
+# 它不改变现有 workflow、权限或 forge accept 的最终裁决权。
+engineering_spec:
+  version: 1
+  activation: shadow              # off | shadow | enforce；runtime adapter 完成前保持 shadow
+  refs:
+    activation: .agent/engineering/activation.yml
+    disciplines: .agent/engineering/disciplines.yml
+    rules: .agent/engineering/rules.yml
+    detectors: .agent/engineering/detectors.yml
+    context_routes: .agent/engineering/context-routes.yml
+    workflow_profiles: .agent/engineering/workflow-profiles.yml
+    capability_catalog: docs/design/ai-engineering-os/capability-catalog.v1.yml
+    capability_skill_map: docs/design/ai-engineering-os/capability-skill-map.v1.yml
+    acceptance_policy: .agent/eval/acceptance.schema.yml
+    completion_contract: .agent/eval/completion-evidence.schema.yml
+  completion_authority: forge_accept
