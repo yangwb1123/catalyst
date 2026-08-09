@@ -17,13 +17,16 @@ ADR-0042 以同一主干增加 14 维前端决策 policy、Profile/Pattern catal
 user-experience Context route 和对抗 validator。它同样保持 shadow：只校验合同与声明绑定，不认证工具/Reviewer provenance。
 ADR-0043 又增加不改变 capability ownership 的前端代码架构治理 Skill、显式项目模块合同和 compiler-backed TypeScript
 shadow detector；Vue/Dart 目标在缺少编译器 adapter 时 inconclusive，静态复杂度只触发审查，不冒充语义内聚证明。
+ADR-0044 在既有 AFDS 内增加不拥有 fine capability 的 `ui-geometry` supporting Skill、digest-bound business UI composition
+和 capture-bound geometry report。它校验角色/任务/数据到区域、轴、分组、Token 和响应式处置的结构闭合，但仍不认证
+浏览器/原生 Runner、视觉 Reviewer 或审美结论。
 
 | 节点 | 当前覆盖 | 已有基础 | 主要缺口 |
 |---:|---|---|---|
 | 00 Orchestrator | 强 | DAG、预算、checkpoint、回边、收敛、路由 | 图级影响/成本、通用 capability grant、typed context |
 | 01 Requirement | 部分 | PM、PRD、confidence | 独立 BA schema、场景/规则/追踪硬契约 |
 | 02 Product | 部分 | Discover/product design | journey/state/KPI/rollout 决策台账 |
-| 03 UX/UI | shadow | AFDS policy/catalog/package、三张 Skill、Context route、flow/state/visual evidence validator | 自动影响识别、可信 capture/review receipt 与 pre-code runtime gate |
+| 03 UX/UI | shadow | AFDS policy/catalog/package、三张 canonical Skill + geometry supporting Skill、Context route、flow/state/business-composition/geometry-report/visual evidence validator | 自动影响识别、可信 capture/geometry/review receipt 与 pre-code runtime gate |
 | 04 Domain | shadow | architect bounded context、domain-modeling Skill、14 维后端 package | runtime 自动提取 invariant/context 与可信 evidence binding |
 | 05 Architecture | 强 | architect/CTO/ADR/human gate | ADR 机器元数据、current-state graph、compliance/freshness |
 | 06 Data | shadow | data/transaction/migration Skills、持久化前置报告与 N/A 规则 | pre-code runtime gate、Schema/query-plan/restore 的可信执行证据 |
@@ -72,6 +75,7 @@ Canonical capability/governance schemas
 - [x] 交付 ADR-0041 后端 shadow 决策合同、条件化模型角色、持久化关卡、十张 Skill adapter、Context route、package validator 与 adversarial/scaffold 回归；
 - [x] 交付 ADR-0042 前端 shadow 决策合同、Profile/Pattern catalog、flow/state/action/permission 结构与引用关卡、三张 Skill adapter、Context route、package/evidence validator 与 adversarial/scaffold 回归；完整业务语义和图可达性仍需项目执行证据或独立审查；
 - [x] 交付 ADR-0043 前端代码架构 Skill、项目 module/dependency/public API 合同、Compiler API 驱动的 TypeScript shadow detector、精确 baseline/waiver 与 adversarial/scaffold 回归；Vue/Dart adapter、语义内聚和 load-bearing promotion 仍待真实项目证据；
+- [x] 交付 ADR-0044 业务绑定 UI 几何合同：不新增 capability owner，以 versioned composition source artifact 绑定角色/任务/状态/数据语义与 region/axis/group/spacing/stroke/shape/reflow，并以同 capture context 的声明式 geometry report 保存原始 observation；可信 Runner/Reviewer attestation 仍待 runtime；
 - [ ] 定义严格的 Governance Envelope、Evidence/Claim、ConstitutionRule、Grant、TransitionReceipt JSON Schema；
 - [ ] 冻结 CognitiveAtom、DecisionTransaction、InteractionEvent、Capability invocation、Artifact/Execution receipt Kernel ABI；
 - [ ] 定义 canonical bytes/digest domains、大小/数量上限、错误代码和版本迁移策略；

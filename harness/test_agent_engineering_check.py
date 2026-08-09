@@ -379,6 +379,15 @@ class SpecValidationTest(unittest.TestCase):
         path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
         self.assertTrue(any("weakens required context" in issue for issue in self.issues()))
 
+    def test_frontend_route_cannot_drop_ui_geometry_skill(self):
+        path = self.agent_root / "engineering" / "context-routes.yml"
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        route = next(item for item in data["routes"] if item["id"] == "user-experience")
+        route["include"] = [item for item in route["include"]
+                            if item["ref"] != ".agent/skills/ui-geometry.md"]
+        path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+        self.assertTrue(any("weakens required context" in issue for issue in self.issues()))
+
     def test_completion_schema_type_drift_is_rejected(self):
         path = self.agent_root / "eval" / "completion-evidence.schema.yml"
         replace_once(path, "verification_receipts: { type: list, items: verification_receipt",

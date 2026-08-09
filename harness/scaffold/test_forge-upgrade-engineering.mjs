@@ -25,6 +25,7 @@ const LEGACY_ENGINEERING_FILES = [
     'secure-coding', 'information-interaction-design', 'design-system-accessibility',
     'frontend-client-engineering',
     'frontend-code-architecture',
+    'ui-geometry',
   ].map((name) => join('.agent', 'skills', `${name}.md`)),
   join('.arch', 'frontend-architecture.v1.json'),
   join('.arch', 'frontend-architecture-baseline.v1.json'),
@@ -32,6 +33,7 @@ const LEGACY_ENGINEERING_FILES = [
   join('docs', 'design', 'ai-engineering-os'),
   join('docs', 'adr', '0042-frontend-design-decision-contract.md'),
   join('docs', 'adr', '0043-frontend-code-architecture-governance.md'),
+  join('docs', 'adr', '0044-business-ui-geometry-contract.md'),
   ...[
     'agent_engineering_check.py', 'backend_decision_contract.py',
     'backend_decision_check.py', 'backend_evidence_check.py', 'backend_package_check.py',
@@ -39,11 +41,15 @@ const LEGACY_ENGINEERING_FILES = [
     'engineering_check_support.py', 'engineering_detector_check.py',
     'engineering_routing_check.py', 'test_agent_engineering_check.py',
     'test_backend_decision_check.py', 'test_frontend_design_adversarial.py',
-    'test_frontend_design_check.py', 'test_legacy_ai_batch_contract.py',
+    'test_frontend_business_ui_composition_boundaries.py',
+    'test_frontend_business_ui_geometry.py', 'test_frontend_geometry_coordinate_contract.py',
+    'test_frontend_design_check.py',
+    'frontend_design_test_support.py', 'test_legacy_ai_batch_contract.py',
   ].map((name) => join('harness', name)),
   ...['check.mjs', 'contract.mjs', 'graph.mjs', 'typescript-adapter.mjs', 'test_frontend-architecture.mjs']
     .map((name) => join('harness', 'frontend-architecture', name)),
-  ...['__init__.py', 'contract.py', 'governance.py', 'evidence.py', 'model.py', 'package.py']
+  ...['__init__.py', 'contract.py', 'composition.py', 'composition_support.py', 'geometry.py',
+    'governance.py', 'evidence.py', 'model.py', 'package.py']
     .map((name) => join('harness', 'frontend_design', name)),
 ];
 
@@ -77,9 +83,11 @@ test('legacy project upgrades to shadow contracts without rewriting project iden
   assert.equal(existsSync(join(target, '.agent', 'eval', 'frontend-design-package.schema.yml')), true);
   assert.equal(existsSync(join(target, '.agent', 'skills', 'frontend-client-engineering.md')), true);
   assert.equal(existsSync(join(target, '.agent', 'skills', 'frontend-code-architecture.md')), true);
+  assert.equal(existsSync(join(target, '.agent', 'skills', 'ui-geometry.md')), true);
   assert.equal(existsSync(join(target, '.agent', 'skills', 'backend-engineering.md')), true);
   assert.equal(existsSync(join(target, 'docs', 'adr', '0042-frontend-design-decision-contract.md')), true);
   assert.equal(existsSync(join(target, 'docs', 'adr', '0043-frontend-code-architecture-governance.md')), true);
+  assert.equal(existsSync(join(target, 'docs', 'adr', '0044-business-ui-geometry-contract.md')), true);
   assert.equal(existsSync(join(target, '.arch', 'frontend-architecture.v1.json')), true);
   assert.equal(existsSync(join(target, 'harness', 'frontend-architecture', 'check.mjs')), true);
   assert.equal(existsSync(join(target, 'harness', 'engineering_detector_check.py')), true);
@@ -89,12 +97,19 @@ test('legacy project upgrades to shadow contracts without rewriting project iden
   assert.equal(existsSync(join(target, 'harness', 'backend_package_check.py')), true);
   assert.equal(existsSync(join(target, 'harness', 'frontend_design', '__init__.py')), true);
   assert.equal(existsSync(join(target, 'harness', 'frontend_design', 'contract.py')), true);
+  assert.equal(existsSync(join(target, 'harness', 'frontend_design', 'composition.py')), true);
+  assert.equal(existsSync(join(target, 'harness', 'frontend_design', 'composition_support.py')), true);
+  assert.equal(existsSync(join(target, 'harness', 'frontend_design', 'geometry.py')), true);
   assert.equal(existsSync(join(target, 'harness', 'frontend_design', 'governance.py')), true);
   assert.equal(existsSync(join(target, 'harness', 'frontend_design_check.py')), true);
   assert.equal(existsSync(join(target, 'harness', 'frontend_design', 'evidence.py')), true);
   assert.equal(existsSync(join(target, 'harness', 'frontend_design', 'model.py')), true);
   assert.equal(existsSync(join(target, 'harness', 'frontend_design', 'package.py')), true);
+  assert.equal(existsSync(join(target, 'harness', 'frontend_design_test_support.py')), true);
   assert.equal(existsSync(join(target, 'harness', 'test_frontend_design_adversarial.py')), true);
+  assert.equal(existsSync(join(target, 'harness', 'test_frontend_business_ui_composition_boundaries.py')), true);
+  assert.equal(existsSync(join(target, 'harness', 'test_frontend_business_ui_geometry.py')), true);
+  assert.equal(existsSync(join(target, 'harness', 'test_frontend_geometry_coordinate_contract.py')), true);
   assert.equal(existsSync(join(target, 'harness', 'test_legacy_ai_batch_contract.py')), true);
   const check = spawnSync('python3', ['-B', 'harness/check.py', '.'], {
     cwd: target, encoding: 'utf8',

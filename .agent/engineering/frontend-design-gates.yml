@@ -63,6 +63,7 @@ decision_sequence:
   - model_state_permission_actions
   - select_profile_and_pattern
   - resolve_design_tokens
+  - compose_business_ui_geometry
   - define_responsive_and_input_behavior
   - design_accessibility
   - allocate_motion_and_performance_budgets
@@ -123,6 +124,7 @@ dimensions:
       - What user outcome, actor, task, success metric, permissions and non-goals are authoritative?
       - Is the requested screen a solution hypothesis rather than the underlying need?
       - Which harmful or irreversible outcomes require prevention or recovery?
+      - Which role work-mode, decision questions and task priorities shape the surface without duplicating authorization truth?
     proof_types: [requirement_trace, task_outcome_map]
 
   - id: scenario_profile
@@ -139,6 +141,7 @@ dimensions:
       - What information is primary, secondary, contextual or deferred for this task?
       - Are navigation, headings, relationships, entry and exit paths coherent?
       - Does the structure follow user language rather than database structure?
+      - Are business facts, computed judgments and AI recommendations distinguished with source, freshness, unit, uncertainty and null semantics?
     proof_types: [information_architecture_map, navigation_contract]
 
   - id: operation_flows
@@ -163,6 +166,7 @@ dimensions:
       - Which loading, empty, error, stale, conflict, offline and partial-success states apply?
       - Are duplicate submission, cancellation, retry and out-of-order responses safe?
       - Is user input preserved after failure and are long tasks resumable or observable?
+      - Which page states affect each region, do action-bearing states name canonical business states, and does every state declared recoverable have an executable recovery action for each covered state?
     proof_types: [async_state_model, feedback_recovery_matrix]
 
   - id: design_language_tokens
@@ -179,7 +183,10 @@ dimensions:
       - Which page pattern and approved components realize the information hierarchy?
       - Is density appropriate while preserving semantic separation and operability?
       - Are deviations from existing components or patterns justified and governed?
-    proof_types: [component_mapping, layout_specification]
+      - Do load-bearing regions, axes, groups, negative-space relations, strokes, shapes and responsive dispositions trace to an existing role, flow, action, data meaning or feedback state?
+      - Are axis member_refs an exact set, reciprocated by every region, group and load-bearing element axis declaration within the same ownership subtree?
+      - Are spacing, stroke, shape and optical corrections symbolic project/Profile references rather than unexplained raw geometry?
+    proof_types: [component_mapping, layout_specification, business_ui_composition]
 
   - id: responsive_adaptive_input
     owner_skill: frontend-client-engineering
@@ -227,6 +234,7 @@ dimensions:
       - Are hierarchy, alignment, density, whitespace, typography and state cues coherent for the profile?
       - Are screenshots bound to deterministic capture contexts and reviewed independently?
       - Is visual scoring advisory while behavioral and accessibility failures remain hard failures?
+      - Do DOM measurements expose raw observations and policy-sourced tolerances without claiming to prove visual balance or optical judgement?
     proof_types: [capture_manifest, independent_visual_review]
 
 flow_contract:
@@ -244,12 +252,14 @@ flow_contract:
 verification:
   sequence:
     - schema_and_flow_validation
+    - business_ui_composition_validation
     - static_and_type_checks
     - component_and_integration_tests
     - interaction_flow_tests
     - accessibility_automation
     - keyboard_and_focus_tests
     - deterministic_capture
+    - geometry_measurement
     - visual_diff
     - independent_visual_review
     - human_or_assistive_technology_review_when_risk_requires
@@ -340,6 +350,12 @@ invariants:
     rule: Failure cannot discard user-authored state without an explicit, evidenced product decision.
   - id: FE-INV-008
     rule: A digest verifies bytes, not who produced them or whether the declared tool actually ran.
+  - id: FE-INV-009
+    rule: Geometry composes existing business role, flow, state, action and data meaning; role views require load-bearing traces, page-state recovery is executable from every declared canonical business state, and exact axis membership is reciprocal without creating a second source of business or authorization truth.
+  - id: FE-INV-010
+    rule: Business facts, computed judgments and AI recommendations remain visually and semantically distinguishable, including freshness, uncertainty, access and null meaning.
+  - id: FE-INV-011
+    rule: Geometry reports expose exact context and raw assertions; visual readiness requires passed required assertions, and scores cannot hide a failed, inconclusive or unexecuted requirement.
 
 primary_sources:
   - { id: wcag-22, url: https://www.w3.org/TR/WCAG22/ }

@@ -7,6 +7,7 @@
 用于新 UI pattern/component/token/theme、场景 Profile、视觉验收、国际化/RTL、键盘/焦点、对比、缩放或辅助技术变化。
 它唯一拥有 visual-design、design-system 和 accessibility；token/profile、组件状态、a11y 和 visual review 是条件化 lens。
 业务 flow/IA 由 `information-interaction-design` 提供，框架实现与性能由 `frontend-client-engineering` 负责。
+涉及页面构图时调用 supporting `ui-geometry`，本 Skill 仍拥有 token、shape language、光学判断、a11y 和 visual review。
 
 ## 输入契约 (Inputs)
 
@@ -27,6 +28,8 @@
 5. 为 Web 或 native 平台定义语义、名称、键盘/焦点、辅助技术、对比、缩放、target 和 status announcement 义务。
 6. 检查颜色非唯一表达、长文本、locale、RTL、高对比与 reduced-motion context；高风险 flow 增加人工/辅助技术复核。
 7. 形成 token/component delta、accessibility matrix、visual acceptance 和 evidence plan，交实现 Skill。
+8. 审查 composition 中 axis/group/negative-space/stroke/shape/optical 引用是否来自项目 token/policy/Profile，并用截图判断
+   视觉重心、阅读动线和光学关系；DOM 矩形不得替代该判断。
 
 ## 输出契约 (Outputs)
 
@@ -37,6 +40,7 @@
 - token context/alias/delta、component reuse/delta、Interaction Visual State Matrix。
 - Accessibility/i18n/RTL matrix：标准或平台条款、适用 flow、验证方式、人工义务。
 - Visual acceptance、baseline requirements、advisory findings 和未验证项。
+- 对 `business_ui_composition` 的 token/shape/optical/visual Review；几何总分保持 advisory。
 - 不输出视觉总分式完成判定，也不修改业务状态或权限。
 
 ## 规则、禁止与权限 (Rules & boundaries)
@@ -59,7 +63,8 @@
 ## 直接参考 (References)
 
 - `docs/design/ai-engineering-os/frontend-design-standard.md#2-五层规则权威`
-- `docs/design/ai-engineering-os/frontend-design-standard.md#7-信息架构与-design-system-治理`
-- `docs/design/ai-engineering-os/frontend-design-standard.md#8-accessibilityresponsive-与-motion`
+- `docs/design/ai-engineering-os/frontend-design-standard.md#8-信息架构与-design-system-治理`
+- `docs/design/ai-engineering-os/frontend-design-standard.md#9-accessibilityresponsive-与-motion`
+- `.agent/skills/ui-geometry.md`
 - W3C, [WCAG 2.2](https://www.w3.org/TR/WCAG22/) 与 [ARIA APG](https://www.w3.org/WAI/ARIA/apg/)
 - W3C DTCG, [Format Module 2025.10](https://www.w3.org/community/reports/design-tokens/CG-FINAL-format-20251028/)

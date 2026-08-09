@@ -64,6 +64,7 @@ export const COPIED_FILES = [
   // local documentation links.
   join('docs', 'adr', '0042-frontend-design-decision-contract.md'),
   join('docs', 'adr', '0043-frontend-code-architecture-governance.md'),
+  join('docs', 'adr', '0044-business-ui-geometry-contract.md'),
   // harness tools
   join('harness', 'gate.mjs'),
   join('harness', 'policies.yml'),
@@ -75,11 +76,15 @@ export const COPIED_FILES = [
   join('harness', 'backend_package_check.py'), // source-resolving BackendDecisionPackage instance semantics
   join('harness', 'frontend_design', '__init__.py'), // package marker required by package-style imports and copied self-tests
   join('harness', 'frontend_design', 'contract.py'), // canonical AFDS trigger/dimension/profile vocabulary and byte pins
+  join('harness', 'frontend_design', 'composition.py'), // business-role/task/data composition and presentation-reference validation
+  join('harness', 'frontend_design', 'composition_support.py'), // shared bounded JSON, reference, and scalar helpers
+  join('harness', 'frontend_design', 'geometry.py'), // capture-context-bound declarative geometry-report validation
   join('harness', 'frontend_design', 'governance.py'), // cross-record profile, override, risk, and review governance
   join('harness', 'frontend_design_check.py'), // FrontendDesignPackage contract + instance CLI (shadow)
   join('harness', 'frontend_design', 'evidence.py'), // artifact/proof separation and bounded PNG/digest checks
   join('harness', 'frontend_design', 'model.py'), // classification, flow, state/action and capture-context semantics
   join('harness', 'frontend_design', 'package.py'), // source-resolving FrontendDesignPackage instance semantics
+  join('harness', 'frontend_design_test_support.py'), // shared source-bound AFDS fixture builder
   join('harness', 'frontend-architecture', 'check.mjs'), // standalone shadow frontend architecture detector
   join('harness', 'frontend-architecture', 'contract.mjs'), // strict project contract/baseline/waiver validation
   join('harness', 'frontend-architecture', 'graph.mjs'), // ownership, direction, public API, SCC and review metrics
@@ -136,6 +141,9 @@ export const COPIED_FILES = [
   join('harness', 'test_agent_engineering_check.py'),
   join('harness', 'test_backend_decision_check.py'),
   join('harness', 'test_frontend_design_adversarial.py'),
+  join('harness', 'test_frontend_business_ui_composition_boundaries.py'),
+  join('harness', 'test_frontend_business_ui_geometry.py'),
+  join('harness', 'test_frontend_geometry_coordinate_contract.py'),
   join('harness', 'test_frontend_design_check.py'),
   join('harness', 'frontend-architecture', 'test_frontend-architecture.mjs'),
   join('harness', 'test_legacy_ai_batch_contract.py'),

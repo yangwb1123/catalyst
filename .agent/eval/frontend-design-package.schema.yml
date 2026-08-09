@@ -177,6 +177,46 @@ records:
   risk_record:
     required_fields: [id, severity, statement, mitigation, proof_claim_ids]
     severities: [low, medium, high, critical]
+  business_ui_composition_record:
+    media_type: application/vnd.forgeos.business-ui-composition+json
+    api_version: forgeos.business-ui-composition/v1
+    required_fields:
+      - api_version
+      - id
+      - surface_id
+      - views
+      - data_semantics
+      - page_states
+      - regions
+      - axes
+      - groups
+      - spacing_relations
+      - strokes
+      - shape_rules
+      - responsive_variants
+      - load_bearing_elements
+      - optical_adjustments
+    relationship: digest_bound_source_artifact_referenced_by_layout_component_composition
+    axis_member_semantics: exact reciprocal membership for region axis_refs element axis_refs and group primary_axis_ref within the axis scope subtree
+    page_state_semantics: action-bearing records require non-empty business_state_ids; a pure waiting or display state may precede a business object; when recovery_action_ids is non-empty every covered business state has a recovery action whose canonical source_state matches it
+  data_semantics_record:
+    kinds: [business_fact, computed_judgment, ai_recommendation, derived_display]
+    null_semantics: [value, zero, unknown, unavailable, unauthorized, not_applicable, not_calculated]
+    human_confirmation: [not_applicable, optional, required]
+  geometry_report_record:
+    media_type: application/vnd.forgeos.ui-geometry-report+json
+    api_version: forgeos.ui-geometry-report/v1
+    required_fields: [api_version, contract_sha256, case_id, source_tree_sha256, build_sha256, fixture_id, environment_sha256, coordinate_space, runner, assertions]
+    at_least_one_required_assertion: true
+    assertion_results: [passed, failed, inconclusive, not_executed]
+    authority: declarative_execution_observation_only
+  geometry_coordinate_space_record:
+    required_fields: [unit, origin, axis_orientation, device_pixels_per_unit]
+    units: [css_px, logical_dp, device_px]
+    origins: [capture_viewport_top_left]
+    axis_orientations: [x_right_y_down]
+    scale_binding: css_px and logical_dp require device_pixels_per_unit equal to the capture environment DPR; device_px requires exactly 1
+    numeric_scope: every observation value and tolerance value in the report uses this one coordinate space
 
 semantic_rules:
   - id: exact_dimension_coverage
@@ -215,3 +255,9 @@ semantic_rules:
     rule: not_applicable requires rationale and applicability review proof
   - id: digest_is_not_identity
     rule: validation classifies structure and byte integrity only, never tool or reviewer authenticity
+  - id: business_ui_composition_binding
+    rule: applicable page and layout changes provide a versioned composition source artifact bound to the exact layout decision; multi-role view-flow pairs have load-bearing spatial traces; action-bearing page states bind non-empty canonical business states and declared recovery covers every such state while pure waiting or display states may precede the business object; axis member_refs exactly reciprocate region element and group axis declarations inside the ownership subtree; no record creates new authorization truth
+  - id: geometry_measurement_binding
+    rule: visual readiness for a composed surface binds a geometry tool-output report to the exact capture source build fixture environment and composition digest; the report declares one capture-origin coordinate space whose unit-to-device-pixel scale agrees with the capture DPR, all observation and tolerance values use that space, and every required assertion passes; failures inconclusive or not-executed results cannot be hidden by a score or claim wording
+  - id: data_semantics_honesty
+    rule: business facts computed judgments derived displays and AI recommendations declare authority definition unit time freshness access uncertainty explanation confirmation and explicit null semantics rather than sharing one ambiguous empty representation

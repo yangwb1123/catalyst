@@ -333,8 +333,12 @@ def _verification_case_record_issues(record, label, artifacts, claims, flow_ids,
             issues.extend(_capture_dimension_issues(record, refs, artifacts, label, repo_root))
     proof = {"interaction_execution_receipts"} if kind == "interaction" \
         else {"capture_receipt", "visual_diff_receipts"}
-    issues.extend(subject_claim_issues(record.get("proof_claim_ids"), f"{label}.proof_claim_ids",
-                                       claims, "verification_case", case_id, proof))
+    allowed_negative = {"geometry_measurement_receipts"} if kind == "capture" else set()
+    issues.extend(subject_claim_issues(
+        record.get("proof_claim_ids"), f"{label}.proof_claim_ids", claims,
+        "verification_case", case_id, proof,
+        allowed_negative_types=allowed_negative,
+    ))
     issues.extend(_case_claim_binding_issues(record, claims, label))
     return issues
 

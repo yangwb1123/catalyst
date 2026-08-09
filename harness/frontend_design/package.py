@@ -4,22 +4,10 @@ import math
 
 from engineering_check_support import unique_id_issues, unknown_field_issues
 from .contract import (
-    ASSUMPTION_BLOCK_THRESHOLD,
-    DECISION_KINDS,
-    DIMENSION_OWNERS,
-    DIMENSION_PROOF_TYPES,
-    FORBIDDEN_KEYS,
-    MATERIALITY_RANK,
-    POLICY_SHA256,
-    PROFILE_SHA256,
-    READINESS_DECISION_DEPENDENCIES,
-    READINESS_DIMENSIONS,
-    READINESS_PROOF_TYPES,
-    SCHEMA_SHA256,
-    TRIGGER_DIMENSIONS,
-    TRIGGER_FLOORS,
-    TRIGGERS,
-    WORKFLOW_RANK,
+    ASSUMPTION_BLOCK_THRESHOLD, DECISION_KINDS, DIMENSION_OWNERS, DIMENSION_PROOF_TYPES,
+    FORBIDDEN_KEYS, MATERIALITY_RANK, POLICY_SHA256, PROFILE_SHA256,
+    READINESS_DECISION_DEPENDENCIES, READINESS_DIMENSIONS, READINESS_PROOF_TYPES,
+    SCHEMA_SHA256, TRIGGER_DIMENSIONS, TRIGGER_FLOORS, TRIGGERS, WORKFLOW_RANK,
 )
 from .evidence import (
     DIGEST,
@@ -27,13 +15,10 @@ from .evidence import (
     claim_refs_issues,
     subject_claim_issues,
 )
+from .composition import composition_issues
+from .geometry import geometry_report_issues
 from .governance import controlled_decision_issues, experience_issues, profile_override_issues
-from .model import (
-    classification_issues,
-    flow_issues,
-    state_model_issues,
-    verification_case_issues,
-)
+from .model import classification_issues, flow_issues, state_model_issues, verification_case_issues
 
 PACKAGE_FIELDS = {
     "api_version", "task_id", "source_revision", "source_tree_sha256",
@@ -446,6 +431,10 @@ def _validate_frontend_package(package, repo_root):
     raw_flows = package.get("flows")
     flow_ids = {item.get("id") for item in raw_flows if isinstance(item, dict)
                 and isinstance(item.get("id"), str)} if isinstance(raw_flows, list) else set()
+    composition_findings, compositions = composition_issues(
+        package, repo_root, artifacts, claims, state_ids, actions, high_risk,
+    )
+    issues.extend(composition_findings)
     issues.extend(verification_case_issues(package.get("verification_cases"), artifacts, claims,
                                            flow_ids, state_ids, package.get("source_tree_sha256"),
                                            repo_root))
@@ -458,6 +447,7 @@ def _validate_frontend_package(package, repo_root):
     readiness_issues, readiness = _readiness_issues(package.get("readiness"), claims, decisions)
     issues.extend(readiness_issues)
     issues.extend(_verification_readiness_issues(package.get("verification_cases"), readiness))
+    issues.extend(geometry_report_issues(package, repo_root, artifacts, claims, compositions))
     issues.extend(_principal_review_issues(package, claims))
     issues.extend(_applicability_issues(package, claims))
     issues.extend(_risk_issues(package.get("residual_risks"), claims))

@@ -1146,6 +1146,39 @@ TypeScript 漏扫/借用宿主 compiler、partial ownership 以及 check-then-wr
 完整 acceptance 仍诚实为 **6 PASS / 4 FAIL / 1 N/A**：宿主 Cargo 1.83 无法解析项目 Rust 2024
 （要求 Cargo 1.93），lint 另有 golangci-lint exit 7、ruff/eslint 缺失，coverage 为 N/A；未降低工具链、manifest 或门禁伪造通过。
 
+## Sprint 92（✅ AFDS 声明式扩展完成；真实 Geometry Runner 与可信来源未启用）— Business UI Geometry Contract
+
+用户要求 UI Agent 不再从组件树和 CSS 开始，而要先理解业务场景、使用角色、工作模式、任务路径、业务对象/状态、数据语义与风险，
+再把这些关系编译为可追溯的几何构图、交互和代码。ADR 0044 扩展 ADR 0042 的 AFDS 主干；它没有创建第四个 capability owner、
+平行 package 或新的完成权威。
+
+(1) **ownership 不漂移**:`ui-geometry` 是条件化 supporting procedural Skill，只编排既有产物。角色/任务/信息架构/flow/state/action 仍归
+`information-interaction-design`，Token/shape/optical/visual judgment 仍归 `design-system-accessibility`，框架实现与项目真实 Runner 仍归
+`frontend-client-engineering`；产品类型继续使用 Profile×Pattern，不按 CMS/ERP/工作模式复制 Skill 树。
+
+(2) **业务约束先于几何**:FrontendDesignPackage v1 顶层形状保持不变；layout decision 通过 exact `business_ui_composition` proof 绑定
+`application/vnd.forgeos.business-ui-composition+json` source artifact。composition 复用既有 flow/state/action，并显式描述 view/work mode、
+fact/computed/AI recommendation/derived display 数据语义、page state、region/axis/group、spacing/stroke/shape、responsive disposition、
+load-bearing element 与 optical adjustment；裸尺寸/阈值必须追溯到项目或 Profile policy，不能冒充跨平台普适值。
+
+(3) **report 不是执行权威**:项目配置的真实 Runner 可以附加 `application/vnd.forgeos.ui-geometry-report+json`，通过
+`geometry_measurement_receipts` 绑定 exact composition、source/build/fixture/environment、runner、原始观察、policy tolerance 与结果。
+`fail`、`inconclusive`、`not_executed` 或缺失测量不能被总分、截图或 pass 文案掩盖；Web DOM 模型也不自动泛化为原生平台。
+
+(4) **确定性 validator 的诚实边界**:`harness/frontend_design/{composition,composition_support,geometry}.py` 只做有界 strict-JSON、引用、摘要、上下文和
+声明一致性检查，不启动浏览器/原生客户端，不验证视觉重心、阅读动线、光学校正、业务任务成败或 producer/reviewer 身份。
+Context route、AFDS schema/policy、shadow checker、专项回归与 scaffold/legacy-upgrade 沿用既有治理主干；当前 detector 仍
+`shadow/load_bearing:false`，唯一完成权威仍是 `forge accept`。
+
+本轮接线实跑 composition/geometry/coordinate 专项 **57/57**、其余 AFDS 合同/对抗 **51/51**、Agent Engineering **64/64**
+（复审相关合计 **172/172**）、递归 Python **311/311**、完整 Node **398/398**、scaffold/upgrade 定向 **11/11**、
+`forge check` **13/13**、gate（1569 files）、architecture **8/8**（1100 source files）与 `git diff --check`，均通过。
+fresh-context Reviewer 先后复现并推动关闭负证据、subject coverage、trigger semantic floor、spatial ownership、幽灵角色、
+recovery source/逐状态覆盖、axis reciprocity 和 L4 risk trigger 缺口；最终复审无 Blocker/Major/Minor，建议 ACCEPT。
+完整 acceptance 仍诚实为 **6 PASS / 4 FAIL / 1 N/A**：宿主 Cargo 1.83 无法解析项目 Rust 2024，lint 另有
+golangci-lint exit 7、ruff/eslint 缺失，coverage 为 N/A；未降低工具链、manifest 或门禁伪造通过。这些结果只证明本地
+合同/引用/对抗回归，不升级为浏览器执行、可信 producer 或 UI 质量证明。
+
 ## 下一前沿(需外部资源 / 后续阶段 / 投机增强 / 明确非目标,非本环境可完整验证)
 - **Graph 下一协议切片**:SQLite v17–v24 已交付 successor candidate、per-node request/lifecycle、receipt/content dataflow、wave-ready/admit、本地 hard-crash adjudication与 8 MiB successor candidate 持久化上限；下一步是顶层整图执行循环、并发 wave 的失败传播/恢复以及安全 resume/branching。不得把当前逐节点 operator 驱动或 Hub-local single-consumption 冒充远程 exactly-once。
 - **真点火** `--agent-cmd=claude`:**multi-agent running to completion 已坐实**(Sprint 25:真 claude 多-agent 跑到 converge MET,增量级 + 版本级)。完整旋钮:四维资源护栏 + 成本三维(phase/时间/美元)+ 任务注入 + 写权限 + 模型路由 + 工作目录 + retry + loop-back;诚实分工:agent 自治增量绿、人确认版本竣工。docs/ignition.md 有完整配方 + 实测

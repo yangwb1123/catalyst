@@ -93,10 +93,10 @@ routes:
         - { field: changed_path, operator: glob_any, values: ["**/ui/**", "**/components/**", "**/pages/**", "**/screens/**", "**/views/**", "**/routes/**", "**/widgets/**", "**/features/**", "**/entities/**", "**/shared/ui/**", "**/shared/api/**", "**/styles/**", "**/theme/**", "**/tokens/**", "**/*.tsx", "**/*.jsx", "**/*.vue", "**/*.dart", "**/*.css", "**/*.scss", "**/*.sass", "**/*.less"] }
         - { field: capability_id, operator: in, values: [information-architecture, interaction-design, content-design, visual-design, design-system, accessibility, usability-testing, frontend-engineering, client-engineering] }
     include:
-      - { ref: .ai/prompts/00-product-discovery.md, lane: untrusted_data, required: false, max_bytes: 131072 }
       - { ref: .agent/skills/code-review.md, lane: instruction, required: true, max_bytes: 131072 }
       - { ref: .agent/skills/information-interaction-design.md, lane: instruction, required: true, max_bytes: 131072 }
       - { ref: .agent/skills/design-system-accessibility.md, lane: instruction, required: true, max_bytes: 131072 }
+      - { ref: .agent/skills/ui-geometry.md, lane: instruction, required: true, max_bytes: 131072 }
       - { ref: .agent/skills/frontend-client-engineering.md, lane: instruction, required: true, max_bytes: 131072 }
       - { ref: .agent/skills/frontend-code-architecture.md, lane: instruction, required: true, max_bytes: 131072 }
       - { ref: .agent/engineering/frontend-design-gates.yml, lane: instruction, required: true, max_bytes: 131072 }

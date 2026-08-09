@@ -28,13 +28,20 @@ planning-only AI Engineering OS catalog.
   contracts, and evidence honesty boundaries. `../eval/frontend-design-package.schema.yml`
   keeps artifacts separate from proof claims and binds render evidence to a declared
   capture context without claiming authenticated tool or reviewer provenance.
+- `../skills/ui-geometry.md` is a conditional supporting procedural adapter, not a
+  fourth capability owner. The existing AFDS package can bind a strict
+  `business_ui_composition` source artifact and optional
+  `geometry_measurement_receipts`; those records express business-to-layout
+  relationships and declared runner observations, not authenticated browser/native
+  execution or a visual-quality verdict.
 
 `python3 -B harness/check.py` validates these contracts. The validator proves
 schema integrity, canonical capability ownership, real detector wiring, closed
 context/trust/budget semantics, bounded profile autonomy and evidence-package
 structure. `python3 -B harness/backend_decision_check.py . <package.yml>` can
 validate one backend package; `python3 -B harness/frontend_design_check.py . <package.yml>`
-can validate one frontend package. Both detectors remain shadow and non-load-bearing.
+can validate one frontend package, including bounded composition/report structure,
+cross-references and digest bindings. Both detectors remain shadow and non-load-bearing.
 A structured receipt and declared producer/reviewer identity are still not cryptographic proof that a command ran or a distinct principal reviewed it;
 `forge accept` remains the only completion authority. The validator does not
 claim that the future AADM solver, context runtime, capability runtime,

@@ -12,7 +12,7 @@ the source of truth even when the app is broken. It is intentionally polyglot.
 | `python3 harness/check.py [repo_root]` | Python 3 + **PyYAML** | Governance integrity (`forge check`): validates `.agent/` YAML, references, routing/modes, acceptance, and the Agent Engineering registries. |
 | `python3 harness/agent_engineering_check.py [repo_root] [evidence-package.yml]` | Python 3 + **PyYAML** | Validates v1 activation/discipline/rule/detector/context/workflow contracts and, optionally, one source-bound evidence package. It never mints completion. |
 | `python3 harness/backend_decision_check.py [repo_root] [backend-package.yml]` | Python 3 + **PyYAML** | Validates the byte-pinned backend policy/Skill/schema contract and, optionally, one BackendDecisionPackage whose bounded repository evidence is digest-, proof-type-, class- and subject-checked. Producer/reviewer identity and whole-tree/context provenance remain declarative; it is shadow-only and never mints approval or completion. |
-| `python3 harness/frontend_design_check.py [repo_root] [frontend-package.yml]` | Python 3 + **PyYAML** | Validates the byte-pinned AFDS policy/Profile/Pattern/Skill/schema contract and, optionally, one FrontendDesignPackage with flow/state/action, exact-subject proof, bounded artifact and PNG capture checks. Provenance remains declarative; it is shadow-only and never mints approval or completion. |
+| `python3 harness/frontend_design_check.py [repo_root] [frontend-package.yml]` | Python 3 + **PyYAML** | Validates the byte-pinned AFDS policy/Profile/Pattern/Skill/schema contract and, optionally, one FrontendDesignPackage with flow/state/action, exact-subject proof, bounded artifact/PNG checks, a `business_ui_composition`, and optional `geometry_measurement_receipts`. Composition/report validation is declarative: it neither runs a browser/native client nor mints visual-quality, approval or completion claims. |
 | `node harness/acceptance.mjs` | Node.js | Full acceptance: harness/app/project tests plus lint, typecheck, build, coverage and security/SCA probes. |
 
 ## Dependencies
@@ -38,6 +38,8 @@ python3 harness/test_check.py         # governance checker tests (stdlib unittes
 python3 -m unittest harness.test_agent_engineering_check
 python3 -m unittest harness.test_backend_decision_check
 python3 -m unittest harness.test_frontend_design_check
+python3 -m unittest harness.test_frontend_business_ui_geometry
+python3 -m unittest harness.test_frontend_business_ui_composition_boundaries
 ```
 
 ## Conventions
@@ -50,3 +52,9 @@ python3 -m unittest harness.test_frontend_design_check
 - Agent Engineering v1 is `shadow`: its schemas and references are enforced,
   while context selection and W0-W3 routing remain policy-only. `forge accept`
   stays the sole completion authority.
+- Business UI Geometry uses the same shadow AFDS package and existing capability
+  owners. `harness/frontend_design/composition.py` checks bounded composition
+  structure and references; `harness/frontend_design/geometry.py` checks declared
+  report bindings and observations. Neither helper is a browser/native runner or
+  trusted provenance service, and fail/inconclusive/not-executed observations
+  cannot be converted into a positive verdict by an advisory score.

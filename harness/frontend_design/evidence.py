@@ -41,6 +41,7 @@ PROOF_KIND_REQUIREMENTS = {
     "accessibility_execution_receipts": {"accessibility_report"},
     "static_execution_receipts": {"tool_output"},
     "performance_measurement": {"tool_output", "trace"},
+    "geometry_measurement_receipts": {"tool_output"},
     "independent_visual_review": {"review_output"},
     "independent_review": {"review_output"},
     "permission_action_review": {"review_output"},
@@ -381,11 +382,12 @@ def claim_refs_issues(refs, label, claims, *, positive=False, non_empty=False):
     return issues
 
 
-def subject_claim_issues(refs, label, claims, subject_type, subject_id, required_types):
-    issues = claim_refs_issues(refs, label, claims, positive=True, non_empty=True)
+def subject_claim_issues(refs, label, claims, subject_type, subject_id, required_types,
+                         *, allowed_negative_types=frozenset()):
+    issues = claim_refs_issues(refs, label, claims, non_empty=True)
     if not isinstance(refs, list) or not all(isinstance(ref, str) for ref in refs):
         return issues
-    matched = set()
+    matched, disallowed_negative = set(), []
     for ref in refs:
         record = claims.get(ref)
         if not isinstance(record, dict):
@@ -395,7 +397,13 @@ def subject_claim_issues(refs, label, claims, subject_type, subject_id, required
             continue
         values = record.get("proof_types")
         if isinstance(values, list) and all(isinstance(item, str) for item in values):
-            matched.update(values)
+            typed_values = set(values)
+            if record.get("result") in GOOD_RESULTS:
+                matched.update(typed_values)
+            elif not typed_values or not typed_values <= set(allowed_negative_types):
+                disallowed_negative.append(ref)
+    if disallowed_negative:
+        issues.append(f"{label}: requires observed/passed claims, got {sorted(disallowed_negative)}")
     missing = set(required_types) - matched
     if missing:
         issues.append(f"{label}: missing required proof types {sorted(missing)}")

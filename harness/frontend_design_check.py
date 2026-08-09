@@ -14,11 +14,13 @@ from engineering_check_support import (
 )
 from frontend_design.contract import (
     ASSUMPTION_BLOCK_THRESHOLD,
+    BUSINESS_UI_COMPOSITION_MEDIA_TYPE,
     CLASSIFICATION_FIELDS,
     DIMENSION_OWNERS,
     DIMENSION_PROOF_TYPES,
     EXECUTION_PROOF_TYPES,
     FORBIDDEN_KEYS,
+    GEOMETRY_REPORT_MEDIA_TYPE,
     MAX_ARTIFACT_BYTES,
     PAGE_PATTERN_IDS,
     POLICY_REF,
@@ -43,7 +45,7 @@ from frontend_design.package import PACKAGE_FIELDS, classify_frontend_package, v
 
 SKILL_REFS = {
     "information-interaction-design", "design-system-accessibility",
-    "frontend-client-engineering",
+    "frontend-client-engineering", "ui-geometry",
 }
 SKILL_SECTIONS = (
     "职责与触发", "输入契约", "执行 SOP", "输出契约",
@@ -74,6 +76,8 @@ SEMANTIC_RULE_IDS = {
     "screenshot_png_integrity",
     "visual_cannot_override_behavior", "independent_review",
     "readiness_dependency", "n_a_requires_evidence", "digest_is_not_identity",
+    "business_ui_composition_binding", "geometry_measurement_binding",
+    "data_semantics_honesty",
 }
 
 

@@ -7,9 +7,9 @@ SCHEMA_REF = ".agent/eval/frontend-design-package.schema.yml"
 STANDARD_REF = "docs/design/ai-engineering-os/frontend-design-standard.md"
 
 # Filled only by an explicit v1 governance update after canonical YAML changes.
-POLICY_SHA256 = "1420a35a9c59e39f09f05631fc56bbc50041c13736f62eefec15f65877ec3eb2"
+POLICY_SHA256 = "20e9514477576f1af3f98e9500cf3ff099c8d73551a22aa337e1e903e9a494a8"
 PROFILE_SHA256 = "bb688bb987945106ca2bd53383d73a77d58fcb14a877babf3606dd173224a76e"
-SCHEMA_SHA256 = "2058b45ddfdd8f028e3142fb3235379a026597a9ebf527cb9cb3f383dee03cf6"
+SCHEMA_SHA256 = "6626c7abfebbaa96a1c212104af1607c769af382f2bad456c2434ce5e0a468f1"
 
 TRIGGER_FLOORS = {
     "frontend_behavior": ("L1", "W1_standard"),
@@ -41,7 +41,8 @@ SEQUENCE = [
     "understand_business_goal", "classify_scenario",
     "map_information_architecture", "model_operation_flows",
     "model_state_permission_actions", "select_profile_and_pattern",
-    "resolve_design_tokens", "define_responsive_and_input_behavior",
+    "resolve_design_tokens", "compose_business_ui_geometry",
+    "define_responsive_and_input_behavior",
     "design_accessibility", "allocate_motion_and_performance_budgets",
     "map_framework_state_and_components", "implement",
     "verify_behavior", "verify_visuals", "release_and_evolve",
@@ -72,7 +73,9 @@ DIMENSION_PROOF_TYPES = {
     "state_permission_action": {"state_action_matrix", "permission_action_review"},
     "async_feedback_recovery": {"async_state_model", "feedback_recovery_matrix"},
     "design_language_tokens": {"token_resolution_manifest", "design_language_contract"},
-    "layout_component_composition": {"component_mapping", "layout_specification"},
+    "layout_component_composition": {
+        "component_mapping", "layout_specification", "business_ui_composition",
+    },
     "responsive_adaptive_input": {"responsive_matrix", "input_modality_matrix"},
     "accessibility_semantics": {"accessibility_spec", "accessibility_test_plan"},
     "motion_performance": {"motion_budget", "performance_budget"},
@@ -175,13 +178,16 @@ READINESS_DECISION_DEPENDENCIES = {
 EXECUTION_PROOF_TYPES = {
     "interaction_execution_receipts", "accessibility_execution_receipts",
     "performance_measurement", "static_execution_receipts", "visual_diff_receipts",
-    "capture_receipt", "assumption_verification",
+    "capture_receipt", "geometry_measurement_receipts", "assumption_verification",
 }
 REVIEW_PROOF_TYPES = {
     "permission_action_review", "independent_visual_review",
     "applicability_assessment", "independent_review", "profile_override_review",
 }
-SPECIAL_PROOF_TYPES = {"source_fact", "classification_fact", "capture_receipt"} \
+SPECIAL_PROOF_TYPES = {
+    "source_fact", "classification_fact", "capture_receipt",
+    "geometry_measurement_receipts",
+} \
     | REVIEW_PROOF_TYPES | {"assumption_verification", "architecture_decision_record"}
 PROOF_TYPES = set().union(*DIMENSION_PROOF_TYPES.values(), *READINESS_PROOF_TYPES.values(), SPECIAL_PROOF_TYPES)
 CLAIM_CLASS_PROOF_TYPES = {
@@ -213,6 +219,15 @@ HIGH_RISK_EFFECTS = EFFECT_CLASSES - {"read_only", "reversible_write"}
 DECISION_KINDS = {"shared_token", "shared_component", "public_interaction_contract", "auth_surface", "other"}
 VERIFICATION_KINDS = {"interaction", "capture"}
 MAX_ARTIFACT_BYTES = 8 * 1024 * 1024
+BUSINESS_UI_COMPOSITION_MEDIA_TYPE = "application/vnd.forgeos.business-ui-composition+json"
+GEOMETRY_REPORT_MEDIA_TYPE = "application/vnd.forgeos.ui-geometry-report+json"
+COMPOSITION_TRIGGERS = {
+    "page_or_route", "form_or_table", "shared_token_or_component",
+    "responsive_adaptive", "visual_regression", "public_brand_surface",
+    "data_intensive", "immersive_3d", "multi_role_permission",
+    "high_risk_action", "authentication_or_payment", "destructive_user_data",
+    "regulated_commitment", "safety_critical_surface",
+}
 ASSUMPTION_BLOCK_THRESHOLD = 0.15
 FORBIDDEN_KEYS = {"completed", "accepted", "approved", "verdict", "gate_result", "quality_passed"}
 RISK_FLOORS = {

@@ -9,6 +9,8 @@
 是按目标栈激活的 lens。缺 IA/flow/state 合同时先调用 `information-interaction-design`；缺 token/a11y 合同时先调用
 `design-system-accessibility`。涉及 route/feature/shared/public client contract、跨模块 import、God Page 或结构迁移时，必须先调用
 `frontend-code-architecture`；它是独立治理入口，但不改变本 Skill 对 client implementation 的 primary ownership。
+涉及 page/layout/responsive/data-intensive/immersive 构图时先消费 `ui-geometry` 的 versioned composition artifact；本 Skill 只负责
+按项目组件/token 编译，并在真实 Web/native runner 中生成环境绑定的测量证据。
 
 ## 输入契约 (Inputs)
 
@@ -34,12 +36,15 @@
    不能让后端字段、HTTP client 或服务端授权责任散落在组件。
 9. 构建/发布相关变更记录 runtime、package manager、lockfile、compiler/bundler、环境配置、产物 digest、Feature Flag、缓存兼容、
    telemetry、灰度、回滚和清理 owner；前端环境变量一律视为公开信息。
+10. 若项目存在 geometry runner，将 DOM/platform observations 与同一 capture 的 composition/source/build/fixture/environment 绑定；
+    required assertion 非通过时不得用平均分或截图相似覆盖，不存在 runner 时明确 `not_executed`。
 
 ## 输出契约 (Outputs)
 
 - 授权范围内的 feature components、state/API adapters、styles/token usage 和必要测试。
 - changed-file/contract manifest、真实命令与环境回执、截图/golden/trace locator、性能结果和未执行项。
 - requirement/flow/transition → test/evidence trace、残余风险、兼容和回滚说明。
+- 适用时输出 `ui-geometry-report/v1` tool artifact；报告含原始 measurement 和 policy-sourced tolerance，不含自批结论。
 - 保留 schema-shaped 分类，例如
   `platform: { value: web_responsive, claim_type: fact, confidence: 1.0, proof_claim_id: claim-platform, assumption_id: "" }`，
   不把 `tsx/vue/dart/rn` 写入 AFDS platform 字段。
@@ -65,9 +70,10 @@
 ## 直接参考 (References)
 
 - `.agent/skills/frontend-code-architecture.md`
+- `.agent/skills/ui-geometry.md`
 - `docs/design/ai-engineering-os/frontend-code-architecture-standard.md`
-- `docs/design/ai-engineering-os/frontend-design-standard.md#9-平台与框架映射`
-- `docs/design/ai-engineering-os/frontend-design-standard.md#10-evidence-pipeline`
+- `docs/design/ai-engineering-os/frontend-design-standard.md#10-平台与框架映射`
+- `docs/design/ai-engineering-os/frontend-design-standard.md#11-evidence-pipeline`
 - React, [Components and Hooks must be pure](https://react.dev/reference/rules/components-and-hooks-must-be-pure)
 - Vue, [Accessibility](https://vuejs.org/guide/best-practices/accessibility.html) 与 [Performance](https://vuejs.org/guide/best-practices/performance)
 - Flutter, [Adaptive and responsive design](https://docs.flutter.dev/ui/adaptive-responsive/general) 与 [Testing overview](https://docs.flutter.dev/testing/overview)

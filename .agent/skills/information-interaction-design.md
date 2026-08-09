@@ -8,6 +8,8 @@
 information-architecture、interaction-design 和 content-design 能力；任务分类、产品 flow、页面 IA、业务状态机是本 Skill
 按需激活的 lens，不再创建平行 Skill。纯视觉 token 调整交给 `design-system-accessibility`，框架代码交给
 `frontend-client-engineering`。
+当页面结构、响应重排或视觉关系变化时，将已确认的角色/任务/flow/state/action/data presentation 交给 supporting
+`ui-geometry`；后者只能编排空间关系，不能反向修改业务真值。
 
 ## 输入契约 (Inputs)
 
@@ -27,6 +29,8 @@ information-architecture、interaction-design 和 content-design 能力；任务
 6. 从 `list/detail/form/workbench/wizard/editor/approval/dashboard/landing/immersive/data_wall/agent_chat/visual_editor/timeline`
    中选择最低充分 canonical Pattern，并记录删除的模板区段。
 7. 将内容层级、flow、state/action/permission 和 proof obligations 交给设计系统与实现 Skill；重大业务未知回流需求/产品 owner。
+8. 对业务 fact、computed judgment、AI recommendation 和 derived display 声明来源、口径、单位、时效、权限、空值与确认语义，
+   再交 `ui-geometry` 做 load-bearing visual trace。
 
 ## 输出契约 (Outputs)
 
@@ -34,6 +38,7 @@ information-architecture、interaction-design 和 content-design 能力；任务
   `{value, claim_type, confidence, proof_claim_id, assumption_id}`，不得输出裸字符串。例如
   `page_pattern: { value: workbench, claim_type: inference, confidence: 0.86, proof_claim_id: "", assumption_id: assumption-pattern }`。
 - IA/navigation map、screen inventory、content hierarchy 和对象术语。
+- 角色 work-mode、业务判断问题、数据呈现语义与 page-state/region 影响输入；不复制服务端授权或领域状态定义。
 - `TaskFlow[]`、`InteractionStateMatrix`、state/transition/action/permission matrix。
 - 错误、取消、恢复、上下文保留、焦点交接与可验证 acceptance scenarios。
 - 输出是设计草案，不包含 `accepted/completed/approved/verdict`。
@@ -60,4 +65,5 @@ information-architecture、interaction-design 和 content-design 能力；任务
 - `docs/design/ai-engineering-os/frontend-design-standard.md#4-ui-decision-contract`
 - `docs/design/ai-engineering-os/frontend-design-standard.md#5-场景-profile-与页面-pattern`
 - `docs/design/ai-engineering-os/frontend-design-standard.md#6-flowstateaction-与-permission`
+- `.agent/skills/ui-geometry.md`
 - W3C, [SCXML 1.0](https://www.w3.org/TR/scxml/)（仅在项目选择该交换格式时读取）
