@@ -64,6 +64,13 @@
 #              contract cannot fit artifact_provenance.go under the 500-line gate
 #              and has a distinct responsibility, raising actual 30 → 31.
 #              max_files 31 → 32 preserves the established one-file headroom.
+#              RECALIBRATED 2026-08-10: ADR-0047 adds one universal CognitiveAtom
+#              projection CLI and one adversarial contract test at the harness root;
+#              projection/fixture logic is already split into the cohesive
+#              harness/cognitive_atom_contract package. The measured global ceiling
+#              is now harness at 33 files, so max_files 32 → 34 preserves exactly
+#              one file of headroom without folding the independent contract into a
+#              generic checker or weakening any other architecture threshold.
 #   fanin:     max 28 PRODUCTION importing files (Rust domain);
 #              forge-core/internal/asset is 26. Tests excluded. RECALIBRATED 2026-07-29:
 #              Rust `crate/self/super` imports are same-crate cohesion, not inbound
@@ -84,7 +91,7 @@ root:
 
 # ── Per-package / per-directory budget ────────────────────────────────────
 package:
-  max_files: 32       # actual 31 (cmd/forge incl. chain/release/ADR contracts) + headroom 1
+  max_files: 34       # actual 33 (harness with CognitiveAtom CLI/test) + headroom 1
   max_exports: 30     # actual 28 (orchestrator and mode) + headroom — recalibrated 2026-07-27
 
 # ── Per-file budget ───────────────────────────────────────────────────────

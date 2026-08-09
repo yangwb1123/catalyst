@@ -1262,6 +1262,39 @@ receipt 不得声称 `stored|exact_replay` 或 durability。
 14/14、scaffold init 8/8、upgrade 3/3、`forge check` 13/13、architecture 8/8、gate 与 `git diff --check` 均通过。独立 fresh-context
 复审结论为 **APPROVE**，完整 `forge accept` 为 **ACCEPTED**。这些证据只关闭 ADR 0046 / Wave 0F-B–1。
 
+## Sprint 95（✅ pure shadow projection 切片完成；完整 Kernel ABI/authority/effect/persistence 未启用）— CognitiveAtom v1
+
+本轮用 ADR 0047 把 ADR 0038 的 CognitiveAtom 目标概念缩成第一个可执行、可逆、无副作用的 ABI 切片。它只从经
+ADR 0045 重新验证的 exact canonical KnowledgeClaim record set 做确定性重投影，不从 prompt/model 创建新事实，
+不读写 ADR 0046 journal/SQLite，也不扩张 `forge accept` 的完成权。
+
+(1) **七类封闭投影**:`fact|constraint|decision|inference|assumption|hypothesis|unknown` 同名投影；
+`lesson|proposal` 可进入 source closure，但不生成 Atom。输入必须是 1–256 条、不超过 1 MiB 的 closed exact
+Governance record set；无可投影 Claim、dangling/wrong-kind/subject/cycle/supersession/digest 异常均失败关闭。
+
+(2) **确定性 wire、闭包与 identity**:`forgeos.aadm.cognitive-atom/v1` 固定顶层形状、closed enum、signed int64、
+UTF-8/canonical JSON 与字节上限；source Claim metadata、proposition、state、reference arrays、validity 及 confidence 按合同
+逐字段投影。Atom/source-closure/set 使用分离 digest domain，Atom ID 另绑定 task/context/policy/source tree/revision 与
+source Claim digest；任一载重字节漂移都不能通过重投影验证。
+
+(3) **单一合同与跨语言参考实现**:独立 schema/golden、registry v4 和 ADR 以 SHA-256 pin 绑定；Python universal
+checker、Go repository codec 与 Rust domain codec 在同一 fixture 上必须得到完全相同的 payload/Atom/closure/set 字节、
+ID 和 digest。`forge check`、shadow detector/activation、fresh scaffold 和 legacy exact-allowlist upgrade 已接入 schema、fixture、
+Python checker/package/tests；scaffold 不安装 Go/Rust binary 或持久化 runtime。
+
+(4) **唯一正结果与边界**:结果只能为 `PROJECTED_SHADOW`，并明示
+`no truth, authority, instruction, hard-guard, transition, completion or effect attestation`。`authority_ref=null`、
+`hardness=none`、`instruction_allowed=false`、`projection_mode=shadow` 不能由输入覆盖。该切片不认证 principal/
+collector/reviewer，不使声明成为 truth/instruction/hard guard，不授予 Grant/Approval，不推进 transition/completion，
+不执行 effect，不写 Knowledge、GovernanceRecordJournal 或任何其他持久化。完整 Atom/DecisionTransaction/
+InteractionEvent/Capability/Artifact/receipt ABI、prompt/model compiler、journal adapter、solver、Registry、Controller 与
+Reflection runtime 仍属 planned。
+
+(5) **定向验证**:Python CognitiveAtom/governance integration **38/38**、Go package tests、Rust 1.93 定向 **8/8**、
+Python golden/instance checker、`forge check` **13/13**、architecture **8/8** 均通过；schema/golden/registry 当前字节的 pinned
+SHA-256 一致。这些结果只证明当前 pure shadow projection 合同、字节及引用接线，不升级为任何完整
+Kernel、权威、副作用或持久化能力声明。
+
 ## 下一前沿(需外部资源 / 后续阶段 / 投机增强 / 明确非目标,非本环境可完整验证)
 - **Graph 下一协议切片**:SQLite v17–v24 已交付 successor candidate、per-node request/lifecycle、receipt/content dataflow、wave-ready/admit、本地 hard-crash adjudication与 8 MiB successor candidate 持久化上限；下一步是顶层整图执行循环、并发 wave 的失败传播/恢复以及安全 resume/branching。不得把当前逐节点 operator 驱动或 Hub-local single-consumption 冒充远程 exactly-once。
 - **真点火** `--agent-cmd=claude`:**multi-agent running to completion 已坐实**(Sprint 25:真 claude 多-agent 跑到 converge MET,增量级 + 版本级)。完整旋钮:四维资源护栏 + 成本三维(phase/时间/美元)+ 任务注入 + 写权限 + 模型路由 + 工作目录 + retry + loop-back;诚实分工:agent 自治增量绿、人确认版本竣工。docs/ignition.md 有完整配方 + 实测

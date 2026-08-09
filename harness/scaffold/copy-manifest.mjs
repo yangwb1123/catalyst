@@ -68,9 +68,12 @@ export const COPIED_FILES = [
   join('docs', 'adr', '0044-business-ui-geometry-contract.md'),
   join('docs', 'adr', '0045-canonical-evidence-claim-contract.md'),
   join('docs', 'adr', '0046-local-governance-record-journal.md'),
+  join('docs', 'adr', '0047-shadow-cognitive-atom-projection-v1.md'),
   join('docs', 'contracts', 'governance-evidence-claim-v1.schema.json'),
   join('docs', 'contracts', 'governance-record-journal-v1.schema.json'),
+  join('docs', 'contracts', 'cognitive-atom-projection-v1.schema.json'),
   join('docs', 'contracts', 'fixtures', 'governance-evidence-claim-v1.json'),
+  join('docs', 'contracts', 'fixtures', 'cognitive-atom-projection-v1.json'),
   // harness tools
   join('harness', 'gate.mjs'),
   join('harness', 'policies.yml'),
@@ -84,6 +87,11 @@ export const COPIED_FILES = [
   join('harness', 'governance_contract', 'record_set.py'),
   join('harness', 'governance_contract', 'semantics.py'),
   join('harness', 'governance_contract', 'shape.py'),
+  join('harness', 'cognitive_atom_contract_check.py'), // strict CognitiveAtom shadow reprojection and byte comparator
+  join('harness', 'cognitive_atom_contract', '__init__.py'),
+  join('harness', 'cognitive_atom_contract', 'constants.py'),
+  join('harness', 'cognitive_atom_contract', 'fixture.py'),
+  join('harness', 'cognitive_atom_contract', 'projection.py'),
   join('harness', 'backend_decision_contract.py'), // canonical backend trigger/dimension/floor vocabulary and byte pins
   join('harness', 'backend_decision_check.py'), // BackendDecisionPackage contract + instance validator (shadow)
   join('harness', 'backend_evidence_check.py'), // typed/subject-bound bounded evidence resolution
@@ -156,6 +164,7 @@ export const COPIED_FILES = [
   join('harness', 'test_check_bounded_input.py'),
   join('harness', 'test_agent_engineering_check.py'),
   join('harness', 'test_governance_contract_check.py'),
+  join('harness', 'test_cognitive_atom_contract_check.py'),
   join('harness', 'test_governance_engineering_integration.py'),
   join('harness', 'test_backend_decision_check.py'),
   join('harness', 'test_frontend_design_adversarial.py'),

@@ -1,18 +1,50 @@
 api_version: forgeos.agent-engineering/v1
 kind: GovernanceContractRegistry
 status: active_contract
-runtime_binding: cross_language_codec_local_journal_shadow
+runtime_binding: cross_language_codec_local_journal_atom_projection_shadow
 owner: governance
-version: 3
+version: 4
 completion_authority: forge_accept
 
 scope:
   shipped_kinds: [EvidenceRecord, KnowledgeClaim]
+  shipped_projections: [CognitiveAtom]
   planned_kinds: [ContextPackage, CapabilityGrant, ApprovalRecord, TransitionReceipt, KnowledgeUpdateProposal]
   persistence: local_append_only_exact_evidence_claim_journal
   authority_attestation: unavailable
   trusted_instruction_lane: unavailable
   production_effects: forbidden
+
+cognitive_atom_projection:
+  api_version: forgeos.aadm.cognitive-atom/v1
+  mode: deterministic_claim_to_atom_shadow
+  source_kinds: [KnowledgeClaim]
+  projectable_claim_types: [assumption, constraint, decision, fact, hypothesis, inference, unknown]
+  ignored_claim_types: [lesson, proposal]
+  constants:
+    authority_ref: null
+    hardness: none
+    instruction_allowed: false
+    projection_mode: shadow
+  source_record_set:
+    exact_canonical_required: true
+    closed_world_required: true
+    max_records: 256
+    max_bytes: 1048576
+  closure_edges: [contradicting_evidence, derived_from_claim, supporting_evidence, supersedes]
+  identity:
+    atom_id_domain: "forgeos.aadm.cognitive-atom-id.v1\0"
+    atom_digest_domain: "forgeos.aadm.cognitive-atom.v1\0"
+    atom_set_digest_domain: "forgeos.aadm.cognitive-atom-set.v1\0"
+    source_closure_digest_domain: "forgeos.governance.record-set.v1\0"
+    length_framing: unsigned_u64_big_endian
+  limits:
+    max_atom_bytes: 131072
+    max_atom_set_bytes: 1048576
+    max_atoms: 256
+  positive_result: PROJECTED_SHADOW
+  attests: []
+  persistence: none
 
 canonicalization:
   format: forgeos.canonical-json/v1
@@ -146,14 +178,20 @@ canonical_refs:
   golden_fixture: docs/contracts/fixtures/governance-evidence-claim-v1.json
   skill: .agent/skills/evidence-claim-management.md
   checker: harness/governance_contract_check.py
+  cognitive_atom_schema: docs/contracts/cognitive-atom-projection-v1.schema.json
+  cognitive_atom_golden_fixture: docs/contracts/fixtures/cognitive-atom-projection-v1.json
+  cognitive_atom_checker: harness/cognitive_atom_contract_check.py
   decision: docs/adr/0045-canonical-evidence-claim-contract.md
   journal_decision: docs/adr/0046-local-governance-record-journal.md
+  cognitive_atom_decision: docs/adr/0047-shadow-cognitive-atom-projection-v1.md
   standard: docs/design/ai-engineering-os/governance-contracts.md
 
 contract_pins:
   schema_sha256: b2f8824c95012d94e71b4643756890a7a23f67dc1b9e0e8ecacf979b016864e8
   journal_schema_sha256: 36b0eae0649ea4bb1f2d83fcddae20750513e167bceae82bae8244acbf884fc8
   golden_fixture_sha256: db111600f93e63b3533b1f06b14d7520eb4cbec0e4c6d0e3a6e0fd7e2740824a
+  cognitive_atom_schema_sha256: 175bf0274f79447452cad74e72b7605d33628f79dea4869de9caa324f1b23952
+  cognitive_atom_golden_fixture_sha256: 1c45ecf10d256dfd38357d6a9f04d1455c69350a8d0ae10f2322b4f3aa6995aa
 
 reference_implementations:
   python:
@@ -165,6 +203,15 @@ reference_implementations:
   rust:
     ref: forge-runtime/crates/domain/src/governance_contract
     projection: catalyst_repository_only
+  cognitive_atom_python:
+    ref: harness/cognitive_atom_contract_check.py
+    projection: universal_scaffold
+  cognitive_atom_go:
+    ref: forge-core/internal/cognitiveatomcontract
+    projection: catalyst_repository_only
+  cognitive_atom_rust:
+    ref: forge-runtime/crates/domain/src/cognitive_atom_contract
+    projection: catalyst_repository_only
 
 non_capabilities:
   - no truth ledger authoritative current-knowledge view or semantic lifecycle projection
@@ -174,3 +221,5 @@ non_capabilities:
   - no ContextPackage CapabilityGrant Approval or Transition runtime
   - no knowledge apply or legacy Memory and ADR promotion
   - no pre-code block completion verdict or production effect
+  - CognitiveAtom v1 is a pure Claim projection with no truth authority instruction hard-guard transition completion or effect attestation
+  - no prompt or model atom compiler full Kernel ABI atom persistence or journal adapter

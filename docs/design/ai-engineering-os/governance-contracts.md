@@ -2,12 +2,13 @@
 
 > 状态：演进契约。0F-A 已交付 EvidenceRecord/KnowledgeClaim strict schema、跨语言 canonical codec 与纯 shadow validator；
 > ADR-0046 的 0F-B–1 本地 exact-record journal 已在 SQLite v25/runtime/CLI/compatibility 边界内完成，并通过独立复审与 `forge accept`。
-> 第 2 节中标注“已交付”的两种 v1 记录属于当前合同；第 1、3 节及其后内容仍是目标态，不声明 truth/authority、Context、
-> Grant、Transition、语义 lifecycle/conflict/freshness view 或知识写回 runtime 已支持。旧 free-text memory 不得静默升级。
+> ADR-0047 另已交付七类 KnowledgeClaim→CognitiveAtom 的确定性 pure shadow projection；它不是新治理记录，不进入 journal。
+> 第 2 节中标注“已交付”的两种 v1 记录与下述 CognitiveAtom v1 投影属于当前合同；第 1、3 节及其后内容仍是目标态，
+> 不声明 truth/authority、Context、Grant、Transition、语义 lifecycle/conflict/freshness view 或知识写回 runtime 已支持。旧 free-text memory 不得静默升级。
 
-## 0. 当前实现边界（Wave 0F-A 与 0F-B–1 已完成；其余目标态未实现）
+## 0. 当前实现边界（0F-A、0F-B–1 与 ADR-0047 pure shadow projection 已完成；其余目标态未实现）
 
-当前唯一可执行的治理记录是 `EvidenceRecord` 和 `KnowledgeClaim` v1：
+当前可执行的 governance record kind 仍只有 `EvidenceRecord` 和 `KnowledgeClaim` v1：
 
 - strict wire schema：`docs/contracts/governance-evidence-claim-v1.schema.json`；
 - canonical/identity/state policy：`.agent/engineering/governance-contracts.yml`；
@@ -27,6 +28,33 @@ STRUCTURALLY_VALID (shadow; no truth or authority attestation)
 ```
 
 Checker 不写 Hub、不导入 Memory/ADR、不签发 authority，也不执行 knowledge apply、lifecycle transition 或 production effect。
+
+### ADR-0047：CognitiveAtom v1 pure shadow projection
+
+[ADR-0047](../../adr/0047-shadow-cognitive-atom-projection-v1.md) 在不改变 Evidence/Claim v1 wire 或 journal v1 的前提下，增加
+`forgeos.aadm.cognitive-atom/v1` 的确定性 KnowledgeClaim→CognitiveAtom 重投影。投影前必须对整个 exact canonical
+closed record set 重新执行 ADR-0045 的 shadow admissibility、reference、subject、supersession、cycle 与 digest 验证。
+
+只有 `fact`、`constraint`、`decision`、`inference`、`assumption`、`hypothesis`、`unknown` 七类 Claim 生成 Atom；
+`lesson` 和 `proposal` 只可作 source closure 成员。每个 Atom 逐字段复制已验证的 source identity、proposition、
+epistemic state、references、validity 与适用的 integer confidence，并强制
+`projection_mode=shadow`、`hardness=none`、`authority_ref=null`、`instruction_allowed=false`。schema、golden 与 universal checker 为：
+
+- `docs/contracts/cognitive-atom-projection-v1.schema.json`；
+- `docs/contracts/fixtures/cognitive-atom-projection-v1.json`；
+- `harness/cognitive_atom_contract_check.py`。
+
+它们的摘要与 Python/Go/Rust 参考路径由 `.agent/engineering/governance-contracts.yml` v4 固定。唯一正结果是：
+
+```text
+PROJECTED_SHADOW
+(no truth, authority, instruction, hard-guard, transition, completion or effect attestation)
+```
+
+CognitiveAtom v1 只证明 pure reprojection 的 canonical bytes、identity、digest 和 source closure 一致；它不认证 principal/
+collector/reviewer，不确认 truth，不发出 instruction/hard guard/Grant/Approval，不推进 transition/completion，不执行 effect。
+它不是 `EvidenceRecord|KnowledgeClaim` 的第三种 journal record，不写 GovernanceRecordJournal、SQLite、Knowledge 或其他持久化。
+prompt/model compiler、journal adapter、新 Atom source/type、hardness/authority 与完整 Kernel ABI 均仍是后续版本化目标。
 
 ### 0F-B–1：本地 GovernanceRecordJournal v1
 
@@ -56,6 +84,7 @@ hard gate。Inspection 默认只返回 batch/ordinal/identity/digest/byte-count/
 ## 1. 通用 Governance Envelope（目标态，未实现）
 
 目标上，Atom、Claim、Evidence、GraphSnapshot、Report、Grant、Review、Approval、KnowledgeUpdate 和 Transition 共享一组信封职责。
+ADR-0047 的 CognitiveAtom v1 只是独立 Claim 投影 wire，不表示该通用信封或完整 Kernel ABI 已实现。
 下图只是**不可序列化的概念图**，不是 `forgeos.governance/v1` wire shape，也不得输入当前 checker；任何共同信封实现都必须采用新版本并另作兼容决策：
 
 ```yaml

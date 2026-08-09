@@ -85,9 +85,13 @@ EXTENSION_REFS = {
     "governance_contract_schema": "docs/contracts/governance-evidence-claim-v1.schema.json",
     "governance_journal_schema": "docs/contracts/governance-record-journal-v1.schema.json",
     "governance_contract_fixture": "docs/contracts/fixtures/governance-evidence-claim-v1.json",
+    "cognitive_atom_schema": "docs/contracts/cognitive-atom-projection-v1.schema.json",
+    "cognitive_atom_fixture": "docs/contracts/fixtures/cognitive-atom-projection-v1.json",
+    "cognitive_atom_checker": "harness/cognitive_atom_contract_check.py",
     "governance_contract_skill": ".agent/skills/evidence-claim-management.md",
     "governance_contract_decision": "docs/adr/0045-canonical-evidence-claim-contract.md",
     "governance_journal_decision": "docs/adr/0046-local-governance-record-journal.md",
+    "cognitive_atom_decision": "docs/adr/0047-shadow-cognitive-atom-projection-v1.md",
     "governance_contract_standard": "docs/design/ai-engineering-os/governance-contracts.md",
 }
 DISCIPLINES = {

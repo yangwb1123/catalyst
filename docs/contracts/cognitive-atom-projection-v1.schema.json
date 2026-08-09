@@ -1,0 +1,251 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forgeos.dev/contracts/cognitive-atom-projection-v1.schema.json",
+  "title": "ForgeOS Shadow CognitiveAtom Projection v1",
+  "description": "Strict wire shape for deterministic, authority-free KnowledgeClaim to CognitiveAtom projection. Exact canonical bytes, digest, identity, source-closure and byte-for-byte projection rules are enforced by the CognitiveAtom contract validator.",
+  "type": "array",
+  "minItems": 1,
+  "maxItems": 256,
+  "items": { "$ref": "#/$defs/cognitive_atom" },
+  "x-forgeos-canonicalization": {
+    "format": "forgeos.canonical-json/v1",
+    "atom_digest_domain": "forgeos.aadm.cognitive-atom.v1\u0000",
+    "atom_id_domain": "forgeos.aadm.cognitive-atom-id.v1\u0000",
+    "atom_set_digest_domain": "forgeos.aadm.cognitive-atom-set.v1\u0000",
+    "source_closure_digest_domain": "forgeos.governance.record-set.v1\u0000",
+    "self_digest_rule": "integrity.canonical_sha256 is empty while hashing"
+  },
+  "x-forgeos-limits": {
+    "max_atom_bytes": 131072,
+    "max_atom_set_bytes": 1048576,
+    "max_atoms": 256,
+    "max_source_records": 256,
+    "max_source_record_set_bytes": 1048576,
+    "max_depth": 16,
+    "max_object_fields": 64,
+    "max_array_items": 256,
+    "max_string_bytes": 16384,
+    "integer_domain": "signed_int64"
+  },
+  "x-forgeos-projection": {
+    "mode": "shadow",
+    "source_kind": "KnowledgeClaim",
+    "projectable_claim_types": [
+      "assumption",
+      "constraint",
+      "decision",
+      "fact",
+      "hypothesis",
+      "inference",
+      "unknown"
+    ],
+    "ignored_claim_types": ["lesson", "proposal"],
+    "hardness": "none",
+    "authority_ref": null,
+    "instruction_allowed": false,
+    "persistence": "none",
+    "positive_result": "PROJECTED_SHADOW",
+    "attestations": []
+  },
+  "$defs": {
+    "hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "integrity_hash": {
+      "type": "string",
+      "pattern": "^(?:|[a-f0-9]{64})$"
+    },
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160,
+      "pattern": "^[a-z0-9][a-z0-9._:/-]*$"
+    },
+    "atom_identifier": {
+      "type": "string",
+      "pattern": "^atom-[a-f0-9]{64}$"
+    },
+    "unix_ms": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9223372036854775807
+    },
+    "nullable_unix_ms": {
+      "oneOf": [
+        { "$ref": "#/$defs/unix_ms" },
+        { "type": "null" }
+      ]
+    },
+    "identifier_list": {
+      "type": "array",
+      "maxItems": 256,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/identifier" }
+    },
+    "integrity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["canonical_sha256", "canonicalization"],
+      "properties": {
+        "canonical_sha256": { "$ref": "#/$defs/integrity_hash" },
+        "canonicalization": { "const": "forgeos.canonical-json/v1" }
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "atom_id",
+        "context_sha256",
+        "policy_sha256",
+        "project_id",
+        "scope",
+        "source_revision",
+        "source_tree_sha256",
+        "task_id"
+      ],
+      "properties": {
+        "atom_id": { "$ref": "#/$defs/atom_identifier" },
+        "context_sha256": { "$ref": "#/$defs/hash" },
+        "policy_sha256": { "$ref": "#/$defs/hash" },
+        "project_id": { "$ref": "#/$defs/identifier" },
+        "scope": { "$ref": "#/$defs/identifier" },
+        "source_revision": { "$ref": "#/$defs/identifier" },
+        "source_tree_sha256": { "$ref": "#/$defs/hash" },
+        "task_id": { "$ref": "#/$defs/identifier" }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "canonical_sha256",
+        "claim_aggregate_id",
+        "claim_record_id",
+        "claim_sequence",
+        "closure_byte_count",
+        "closure_record_count",
+        "closure_sha256",
+        "record_kind"
+      ],
+      "properties": {
+        "canonical_sha256": { "$ref": "#/$defs/hash" },
+        "claim_aggregate_id": { "$ref": "#/$defs/identifier" },
+        "claim_record_id": { "$ref": "#/$defs/identifier" },
+        "claim_sequence": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807
+        },
+        "closure_byte_count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1048576
+        },
+        "closure_record_count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 256
+        },
+        "closure_sha256": { "$ref": "#/$defs/hash" },
+        "record_kind": { "const": "KnowledgeClaim" }
+      }
+    },
+    "proposition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["object_type", "object_value", "predicate", "subject"],
+      "properties": {
+        "object_type": {
+          "enum": ["artifact_ref", "boolean", "integer", "null", "string"]
+        },
+        "object_value": {
+          "oneOf": [
+            { "type": "boolean" },
+            {
+              "type": "integer",
+              "minimum": -9223372036854775808,
+              "maximum": 9223372036854775807
+            },
+            { "type": "null" },
+            { "type": "string", "maxLength": 16384 }
+          ]
+        },
+        "predicate": { "$ref": "#/$defs/identifier" },
+        "subject": { "$ref": "#/$defs/identifier" }
+      }
+    },
+    "validity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["valid_from_unix_ms", "valid_until_unix_ms"],
+      "properties": {
+        "valid_from_unix_ms": { "$ref": "#/$defs/unix_ms" },
+        "valid_until_unix_ms": { "$ref": "#/$defs/nullable_unix_ms" }
+      }
+    },
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "atom_type",
+        "authority_ref",
+        "contradicting_evidence_record_ids",
+        "derived_from_claim_record_ids",
+        "epistemic_state",
+        "hardness",
+        "instruction_allowed",
+        "projection_confidence_micros",
+        "projection_mode",
+        "proposition",
+        "supporting_evidence_record_ids",
+        "validity"
+      ],
+      "properties": {
+        "atom_type": {
+          "enum": [
+            "assumption",
+            "constraint",
+            "decision",
+            "fact",
+            "hypothesis",
+            "inference",
+            "unknown"
+          ]
+        },
+        "authority_ref": { "type": "null" },
+        "contradicting_evidence_record_ids": { "$ref": "#/$defs/identifier_list" },
+        "derived_from_claim_record_ids": { "$ref": "#/$defs/identifier_list" },
+        "epistemic_state": {
+          "enum": ["candidate", "contested", "investigating", "open", "proposed", "testing"]
+        },
+        "hardness": { "const": "none" },
+        "instruction_allowed": { "const": false },
+        "projection_confidence_micros": {
+          "oneOf": [
+            { "type": "integer", "minimum": 0, "maximum": 1000000 },
+            { "type": "null" }
+          ]
+        },
+        "projection_mode": { "const": "shadow" },
+        "proposition": { "$ref": "#/$defs/proposition" },
+        "supporting_evidence_record_ids": { "$ref": "#/$defs/identifier_list" },
+        "validity": { "$ref": "#/$defs/validity" }
+      }
+    },
+    "cognitive_atom": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["api_version", "integrity", "kind", "metadata", "source", "spec"],
+      "properties": {
+        "api_version": { "const": "forgeos.aadm.cognitive-atom/v1" },
+        "integrity": { "$ref": "#/$defs/integrity" },
+        "kind": { "const": "CognitiveAtom" },
+        "metadata": { "$ref": "#/$defs/metadata" },
+        "source": { "$ref": "#/$defs/source" },
+        "spec": { "$ref": "#/$defs/spec" }
+      }
+    }
+  }
+}

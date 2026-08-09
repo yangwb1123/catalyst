@@ -74,7 +74,7 @@ pub(super) fn decode_canonical_record_batch(
     Ok(records)
 }
 
-pub(super) fn canonical_record_set_json(
+pub(crate) fn canonical_record_set_json(
     records: &[GovernanceRecord],
 ) -> Result<String, GovernanceContractError> {
     let canonical = canonical_json(records)?;
@@ -84,7 +84,9 @@ pub(super) fn canonical_record_set_json(
     Ok(canonical)
 }
 
-fn canonical_json(value: &(impl Serialize + ?Sized)) -> Result<String, GovernanceContractError> {
+pub(crate) fn canonical_json(
+    value: &(impl Serialize + ?Sized),
+) -> Result<String, GovernanceContractError> {
     let value = serde_json::to_value(value)
         .map_err(|error| invalid(format!("value cannot be encoded as JSON: {error}")))?;
     let mut output = String::new();
@@ -218,7 +220,7 @@ fn require_exact(input: &[u8], canonical: &str, kind: &str) -> Result<(), Govern
     }
 }
 
-fn lower_hex(bytes: &[u8]) -> String {
+pub(crate) fn lower_hex(bytes: &[u8]) -> String {
     const HEX: &[u8; 16] = b"0123456789abcdef";
     let mut output = String::with_capacity(bytes.len() * 2);
     for byte in bytes {

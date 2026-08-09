@@ -37,9 +37,12 @@ const LEGACY_ENGINEERING_FILES = [
   join('docs', 'adr', '0044-business-ui-geometry-contract.md'),
   join('docs', 'adr', '0045-canonical-evidence-claim-contract.md'),
   join('docs', 'adr', '0046-local-governance-record-journal.md'),
+  join('docs', 'adr', '0047-shadow-cognitive-atom-projection-v1.md'),
   join('docs', 'contracts', 'governance-evidence-claim-v1.schema.json'),
   join('docs', 'contracts', 'governance-record-journal-v1.schema.json'),
+  join('docs', 'contracts', 'cognitive-atom-projection-v1.schema.json'),
   join('docs', 'contracts', 'fixtures', 'governance-evidence-claim-v1.json'),
+  join('docs', 'contracts', 'fixtures', 'cognitive-atom-projection-v1.json'),
   ...[
     'agent_engineering_check.py', 'backend_decision_contract.py',
     'governance_engineering_check.py',
@@ -54,9 +57,11 @@ const LEGACY_ENGINEERING_FILES = [
     'test_frontend_design_check.py',
     'frontend_design_test_support.py', 'test_legacy_ai_batch_contract.py',
     'governance_contract_check.py', 'test_governance_contract_check.py',
+    'cognitive_atom_contract_check.py', 'test_cognitive_atom_contract_check.py',
     'test_governance_engineering_integration.py',
   ].map((name) => join('harness', name)),
   join('harness', 'governance_contract'),
+  join('harness', 'cognitive_atom_contract'),
   ...['check.mjs', 'contract.mjs', 'graph.mjs', 'typescript-adapter.mjs', 'test_frontend-architecture.mjs']
     .map((name) => join('harness', 'frontend-architecture', name)),
   ...['__init__.py', 'contract.py', 'composition.py', 'composition_support.py', 'geometry.py',
@@ -102,9 +107,12 @@ test('legacy project upgrades to shadow contracts without rewriting project iden
   assert.equal(existsSync(join(target, 'docs', 'adr', '0044-business-ui-geometry-contract.md')), true);
   assert.equal(existsSync(join(target, 'docs', 'adr', '0045-canonical-evidence-claim-contract.md')), true);
   assert.equal(existsSync(join(target, 'docs', 'adr', '0046-local-governance-record-journal.md')), true);
+  assert.equal(existsSync(join(target, 'docs', 'adr', '0047-shadow-cognitive-atom-projection-v1.md')), true);
   assert.equal(existsSync(join(target, 'docs', 'contracts', 'governance-evidence-claim-v1.schema.json')), true);
   assert.equal(existsSync(join(target, 'docs', 'contracts', 'governance-record-journal-v1.schema.json')), true);
+  assert.equal(existsSync(join(target, 'docs', 'contracts', 'cognitive-atom-projection-v1.schema.json')), true);
   assert.equal(existsSync(join(target, 'docs', 'contracts', 'fixtures', 'governance-evidence-claim-v1.json')), true);
+  assert.equal(existsSync(join(target, 'docs', 'contracts', 'fixtures', 'cognitive-atom-projection-v1.json')), true);
   const journalSkill = readFileSync(
     join(target, '.agent', 'skills', 'evidence-claim-management.md'), 'utf8',
   );
@@ -138,7 +146,10 @@ test('legacy project upgrades to shadow contracts without rewriting project iden
   assert.equal(existsSync(join(target, 'harness', 'governance_contract_check.py')), true);
   assert.equal(existsSync(join(target, 'harness', 'governance_engineering_check.py')), true);
   assert.equal(existsSync(join(target, 'harness', 'governance_contract', 'codec.py')), true);
+  assert.equal(existsSync(join(target, 'harness', 'cognitive_atom_contract_check.py')), true);
+  assert.equal(existsSync(join(target, 'harness', 'cognitive_atom_contract', 'projection.py')), true);
   assert.equal(existsSync(join(target, 'harness', 'test_governance_contract_check.py')), true);
+  assert.equal(existsSync(join(target, 'harness', 'test_cognitive_atom_contract_check.py')), true);
   const check = spawnSync('python3', ['-B', 'harness/check.py', '.'], {
     cwd: target, encoding: 'utf8',
   });

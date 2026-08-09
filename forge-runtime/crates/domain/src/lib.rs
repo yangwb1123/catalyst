@@ -1,3 +1,4 @@
+pub mod cognitive_atom_contract;
 mod event;
 pub mod governance_contract;
 mod governance_record_journal;

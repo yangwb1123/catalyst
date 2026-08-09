@@ -115,6 +115,24 @@ detectors:
       positive: { path: harness/test_governance_contract_check.py, contains: test_golden_record_set_is_structurally_valid }
       negative: { path: harness/test_governance_contract_check.py, contains: test_authoritative_state_is_rejected }
 
+  - id: aadm.cognitive_atom_projection
+    version: 1.0.0
+    state: shadow
+    rule_refs: [TRUTH-002]
+    implementation:
+      argv: [python3, harness/cognitive_atom_contract_check.py, repo_root, task_id, governance_record_set, cognitive_atom_set]
+      cwd: repo_root
+      shell: false
+    invocation:
+      owner: operator
+      adapter: standalone.cognitiveAtomProjection
+      acceptance_criterion: null
+      load_bearing: false
+    fail_closed: true
+    tests:
+      positive: { path: harness/test_cognitive_atom_contract_check.py, contains: test_golden_projection_is_projected_shadow }
+      negative: { path: harness/test_cognitive_atom_contract_check.py, contains: test_projection_drift_is_rejected }
+
   - id: backend.decision_package
     version: 1.0.0
     state: shadow

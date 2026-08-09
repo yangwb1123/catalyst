@@ -4,27 +4,16 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import {
-  mkdtempSync,
-  mkdirSync,
-  rmSync,
-  existsSync,
-  readFileSync,
-  readdirSync,
-  symlinkSync,
-  writeFileSync,
+  existsSync, mkdirSync, mkdtempSync, readFileSync,
+  readdirSync, rmSync, symlinkSync, writeFileSync,
 } from 'node:fs';
-import {
-  dirname, join, relative, resolve, sep,
-} from 'node:path';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 
 import {
-  COPIED_FILES,
-  GOVERNANCE_DIRS,
-  HARNESS_NOT_COPIED,
-  PROJECT_INSTANCE_FILES,
-  SCAFFOLD_STATE_FILE,
+  COPIED_FILES, GOVERNANCE_DIRS, HARNESS_NOT_COPIED,
+  PROJECT_INSTANCE_FILES, SCAFFOLD_STATE_FILE,
 } from './forge-init.mjs';
 
 // This test lives in harness/scaffold/, so its own dir is the sub-package and the
@@ -91,6 +80,11 @@ const COPIED_HARNESS = [
   join('harness', 'engineering_check_support.py'),
   join('harness', 'engineering_routing_check.py'),
   join('harness', 'governance_engineering_check.py'),
+  join('harness', 'cognitive_atom_contract_check.py'),
+  join('harness', 'cognitive_atom_contract', '__init__.py'),
+  join('harness', 'cognitive_atom_contract', 'constants.py'),
+  join('harness', 'cognitive_atom_contract', 'fixture.py'),
+  join('harness', 'cognitive_atom_contract', 'projection.py'),
   join('harness', 'release_boundary_check.py'),
   join('harness', 'workflow_control_check.py'),
   join('harness', 'acceptance.mjs'),
@@ -110,6 +104,7 @@ const COPIED_HARNESS = [
   join('harness', 'test_check.py'),
   join('harness', 'test_check_bounded_input.py'),
   join('harness', 'test_agent_engineering_check.py'),
+  join('harness', 'test_cognitive_atom_contract_check.py'),
   join('harness', 'test_backend_decision_check.py'),
   join('harness', 'test_frontend_design_adversarial.py'),
   join('harness', 'test_frontend_business_ui_composition_boundaries.py'),
@@ -142,7 +137,10 @@ const COPIED_ASSETS = [
   join('docs', 'adr', '0043-frontend-code-architecture-governance.md'),
   join('docs', 'adr', '0044-business-ui-geometry-contract.md'),
   join('docs', 'adr', '0046-local-governance-record-journal.md'),
+  join('docs', 'adr', '0047-shadow-cognitive-atom-projection-v1.md'),
   join('docs', 'contracts', 'governance-record-journal-v1.schema.json'),
+  join('docs', 'contracts', 'cognitive-atom-projection-v1.schema.json'),
+  join('docs', 'contracts', 'fixtures', 'cognitive-atom-projection-v1.json'),
   join('.agent', 'agents', 'architect.md'),
   join('.agent', 'agents', 'release-engineer.md'),
   join('.agent', 'skills', 'clean-architecture.md'),

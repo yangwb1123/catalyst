@@ -30,6 +30,29 @@ const HISTORICAL_ROOTS = [
   join('.ai', 'prompts'),
 ].map((dir) => dir.replace(/\\/g, '/'));
 
+const HISTORICAL_STANDALONE = new Set([
+  '.agent/AGENTS.md',
+  '.arch/rules.yaml',
+  'docs/release/README.md',
+  'docs/design/ai-engineering-os/capability-catalog.v1.yml',
+  'docs/design/ai-engineering-os/capability-skill-map.v1.yml',
+  'docs/design/ai-engineering-os/backend-decision-standard.md',
+  'docs/design/ai-engineering-os/frontend-design-standard.md',
+  'docs/design/ai-engineering-os/frontend-code-architecture-standard.md',
+  'docs/design/ai-engineering-os/governance-contracts.md',
+  'docs/adr/0042-frontend-design-decision-contract.md',
+  'docs/adr/0043-frontend-code-architecture-governance.md',
+  'docs/adr/0044-business-ui-geometry-contract.md',
+  'docs/adr/0045-canonical-evidence-claim-contract.md',
+  'docs/adr/0046-local-governance-record-journal.md',
+  'docs/adr/0047-shadow-cognitive-atom-projection-v1.md',
+  'docs/contracts/governance-evidence-claim-v1.schema.json',
+  'docs/contracts/governance-record-journal-v1.schema.json',
+  'docs/contracts/cognitive-atom-projection-v1.schema.json',
+  'docs/contracts/fixtures/governance-evidence-claim-v1.json',
+  'docs/contracts/fixtures/cognitive-atom-projection-v1.json',
+]);
+
 // Accept POSIX or Windows separators so a scaffold can move between hosts, but
 // reject every empty/dot/dot-dot segment before converting to the current host.
 // Windows removes trailing dots/spaces from ordinary path segments, so reject
@@ -56,29 +79,7 @@ function canonicalHistoricalPath(rel) {
   ) return null;
   const clean = segments.join('/');
   if (clean.startsWith('harness/')) return segments.join(sep);
-  if (
-    clean === '.agent/AGENTS.md'
-    || clean === '.arch/rules.yaml'
-  ) {
-    return segments.join(sep);
-  }
-  if (clean === 'docs/release/README.md') return segments.join(sep);
-  if (
-    clean === 'docs/design/ai-engineering-os/capability-catalog.v1.yml'
-    || clean === 'docs/design/ai-engineering-os/capability-skill-map.v1.yml'
-    || clean === 'docs/design/ai-engineering-os/backend-decision-standard.md'
-    || clean === 'docs/design/ai-engineering-os/frontend-design-standard.md'
-    || clean === 'docs/design/ai-engineering-os/frontend-code-architecture-standard.md'
-    || clean === 'docs/design/ai-engineering-os/governance-contracts.md'
-    || clean === 'docs/adr/0042-frontend-design-decision-contract.md'
-    || clean === 'docs/adr/0043-frontend-code-architecture-governance.md'
-    || clean === 'docs/adr/0044-business-ui-geometry-contract.md'
-    || clean === 'docs/adr/0045-canonical-evidence-claim-contract.md'
-    || clean === 'docs/adr/0046-local-governance-record-journal.md'
-    || clean === 'docs/contracts/governance-evidence-claim-v1.schema.json'
-    || clean === 'docs/contracts/governance-record-journal-v1.schema.json'
-    || clean === 'docs/contracts/fixtures/governance-evidence-claim-v1.json'
-  ) return segments.join(sep);
+  if (HISTORICAL_STANDALONE.has(clean)) return segments.join(sep);
   return HISTORICAL_ROOTS.some((dir) => clean.startsWith(`${dir}/`))
     ? segments.join(sep)
     : null;
