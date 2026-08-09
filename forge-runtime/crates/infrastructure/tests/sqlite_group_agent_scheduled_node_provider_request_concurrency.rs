@@ -9,7 +9,7 @@ mod sqlite_group_agent_scheduled_node_provider_request_support;
 
 
 #[test]
-fn adjudicate_update_columns_and_status_are_live_through_v23() {
+fn adjudicate_update_columns_and_status_remain_live_in_current_schema() {
     // Stage-03 Finding 1 regression: v23 restores 'adjudicated' +
     // adjudicated_at_ms; a 0-row UPDATE validates the SQL on the live table.
     let (fixture, _request) = sqlite_group_agent_scheduled_node_contract_support::prepared_fixture();
@@ -21,7 +21,7 @@ fn adjudicate_update_columns_and_status_are_live_through_v23() {
              WHERE provider_request_id='nonexistent-adjudicate-row'",
             [],
         )
-        .expect("adjudicate UPDATE must be accepted by the v23 schema");
+        .expect("adjudicate UPDATE must be accepted by the current schema");
     assert_eq!(updated, 0, "no rows match the sentinel id");
     // The status/lane CHECK must accept an adjudicated row shape.
     let accepted = connection

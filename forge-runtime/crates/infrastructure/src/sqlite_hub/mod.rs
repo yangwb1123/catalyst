@@ -97,7 +97,7 @@ enum SqliteHubStoreOpenMode {
 }
 
 /// Current hub schema version (the version `open` migrates to).
-pub const CURRENT_SCHEMA_VERSION: i64 = 23;
+pub const CURRENT_SCHEMA_VERSION: i64 = schema::SCHEMA_VERSION;
 
 /// Reads the stored schema version of an existing hub WITHOUT migrating or
 /// creating it — the readiness probe primitive (Stage-06 High follow-up).
@@ -116,7 +116,6 @@ pub fn hub_schema_version(path: &Path) -> Result<i64, HubStoreError> {
         .map_err(schema::sqlite_error)?;
     Ok(version)
 }
-
 
 impl SqliteHubStore {
     /// Opens or creates a versioned local Hub database.
@@ -154,7 +153,7 @@ impl SqliteHubStore {
         })
     }
 
-    /// Opens an exact existing v11 through v16 Hub for dispatch topology preflight only.
+    /// Opens an exact existing v11 through v24 Hub for dispatch topology preflight only.
     ///
     /// This mode is immutable and cannot create, migrate, chmod, or write Hub state.
     ///
@@ -174,8 +173,8 @@ impl SqliteHubStore {
 
     /// Opens existing dispatch state for a no-send re-entry diagnosis.
     ///
-    /// A clean exact v11 through v16 database keeps the immutable preflight path. When
-    /// v12 through v16 has a hot WAL, the fallback reads the existing WAL/SHM pair without
+    /// A clean exact v11 through v24 database keeps the immutable preflight path. When
+    /// v12 through v24 has a hot WAL, the fallback reads the existing WAL/SHM pair without
     /// changing logical Hub content; `SQLite` may update transient SHM read locks.
     ///
     /// # Errors

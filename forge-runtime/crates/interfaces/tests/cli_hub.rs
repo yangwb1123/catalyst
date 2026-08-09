@@ -134,6 +134,17 @@ fn no_path_is_global_and_a_path_enters_a_project_hub() {
 }
 
 #[test]
+fn hub_status_reports_a_new_current_schema_as_healthy() {
+    let state = TempDir::new().expect("state directory");
+    run_json(&["--state-dir", path_text(state.path()), "--json"]);
+
+    let status = run_json(&["--state-dir", path_text(state.path()), "--json", "status"]);
+    assert_eq!(status["schema_version"], status["expected_schema_version"]);
+    assert_eq!(status["migration_pending"], false);
+    assert_eq!(status["healthy"], true);
+}
+
+#[test]
 fn session_prompt_and_global_memory_persist_across_processes() {
     let state = TempDir::new().expect("state directory");
     let project = TempDir::new().expect("project directory");

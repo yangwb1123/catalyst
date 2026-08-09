@@ -42,10 +42,9 @@ use super::{
     schema_v22_sql::MIGRATE_V21_TO_V22_SQL,
     schema_v23_sql::MIGRATE_V22_TO_V23_SQL,
     schema_v24_sql::MIGRATE_V23_TO_V24_SQL,
-    unavailable,
 };
 
-const SCHEMA_VERSION: i64 = 24;
+pub(super) const SCHEMA_VERSION: i64 = 24;
 const CONNECTION_BUSY_TIMEOUT: Duration = Duration::from_millis(250);
 const OPEN_RETRY_TIMEOUT: Duration = Duration::from_secs(5);
 const OPEN_RETRY_DELAY: Duration = Duration::from_millis(10);
@@ -150,7 +149,7 @@ fn open_database_once(path: &Path) -> Result<Connection, OpenAttemptError> {
         // Production-readiness condition: a migration is irreversible, so
         // snapshot an EXISTING hub before the first upgrade opens it
         // (review stage-06 High). Fresh hubs (version 0) need no backup.
-        backup_before_upgrade(path, version)?;
+        location::backup_before_upgrade(path, version)?;
     }
     configure(&connection)?;
     migrate_or_validate(&connection)?;
@@ -486,22 +485,3 @@ use location::verify_private_directory_permissions;
 #[cfg(all(test, unix))]
 #[path = "tests/schema_permissions.rs"]
 mod tests;
-
-fn backup_before_upgrade(path: &Path, version: i64) -> Result<(), OpenAttemptError> {
-    let parent = path
-        .parent()
-        .ok_or_else(|| unavailable("hub database has no parent directory"))?;
-    let backup_root = parent.join("backups");
-    std::fs::create_dir_all(&backup_root)
-        .map_err(|error| unavailable(format!("create backups dir: {error}")))?;
-    let stamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
-    let name = format!("hub-v{version}-before-upgrade-{stamp}.sqlite3");
-    let target = backup_root.join(name);
-    std::fs::copy(path, &target).map_err(|error| {
-        unavailable(format!("backup-before-upgrade failed: {error}"))
-    })?;
-    Ok(())
-}

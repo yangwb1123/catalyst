@@ -80,7 +80,7 @@ func (c CommandExecutor) sandboxRunner() (sandbox.Runner, error) {
 			return nil, fmt.Errorf("sandbox %q requested but no image is configured; refusing host execution", runtime)
 		}
 		return &docker.Runner{
-			Image: c.Sandbox.Image, MemoryMB: memoryMB, MaxOutputBytes: c.maxOutputBytes(),
+			Image: c.Sandbox.Image, MemoryMB: memoryMB, MaxOutputBytes: c.MaxOutputBytes,
 		}, nil
 	case "firecracker":
 		if strings.TrimSpace(c.Sandbox.Kernel) == "" || strings.TrimSpace(c.Sandbox.Image) == "" {
@@ -88,7 +88,7 @@ func (c CommandExecutor) sandboxRunner() (sandbox.Runner, error) {
 		}
 		return &firecracker.FirecrackerRunner{
 			Kernel: c.Sandbox.Kernel, RootDir: c.Sandbox.Image,
-			MemoryMB: memoryMB, MaxOutputBytes: c.maxOutputBytes(),
+			MemoryMB: memoryMB, MaxOutputBytes: c.MaxOutputBytes,
 		}, nil
 	default:
 		return nil, fmt.Errorf("sandbox %q requested but no sandbox runner is installed; refusing host execution", runtime)

@@ -2,7 +2,7 @@ use std::{
     fs,
     io::Read,
     path::{Path, PathBuf},
-    time::SystemTime,
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 use super::{HubStoreError, unavailable};
@@ -22,6 +22,25 @@ pub(super) fn prepare(path: &Path) -> Result<(), HubStoreError> {
 pub(super) fn restrict(path: &Path) -> Result<(), HubStoreError> {
     restrict_file_permissions(path)?;
     restrict_auxiliary_permissions(path)
+}
+
+/// Snapshots an existing Hub before an irreversible schema upgrade.
+pub(super) fn backup_before_upgrade(path: &Path, version: i64) -> Result<(), HubStoreError> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| unavailable("hub database has no parent directory"))?;
+    let backup_root = parent.join("backups");
+    fs::create_dir_all(&backup_root)
+        .map_err(|error| unavailable(format!("create backups dir: {error}")))?;
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or(0);
+    let name = format!("hub-v{version}-before-upgrade-{stamp}.sqlite3");
+    let target = backup_root.join(name);
+    fs::copy(path, &target)
+        .map_err(|error| unavailable(format!("backup-before-upgrade failed: {error}")))?;
+    Ok(())
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

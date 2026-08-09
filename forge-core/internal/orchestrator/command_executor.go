@@ -64,7 +64,7 @@ type CommandExecutor struct {
 	// that runs away (a bug or a loop emitting unbounded output) would OOM the
 	// orchestrator under an unbounded CombinedOutput; the executor instead retains
 	// at most this many bytes, drains the rest, and reports truncation honestly.
-	// Zero selects the safe default (defaultMaxOutputBytes, 10 MiB). The resource
+	// Zero selects the safe default (execbound.DefaultMaxOutputBytes, 10 MiB). The resource
 	// guard's third dimension alongside MaxDepth (depth) and Timeout (wall-clock).
 	MaxOutputBytes int
 	// EnvAllow names additional parent environment variables the child may
