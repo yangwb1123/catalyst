@@ -191,11 +191,11 @@ fn expected_locator(evidence_type: EvidenceType) -> LocatorType {
 
 fn safe_repo_path(path: &str) -> bool {
     let bytes = path.as_bytes();
-    !path.is_empty()
-        && !path.starts_with('/')
-        && !path.ends_with('/')
-        && !path.contains('\\')
-        && !(bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':')
+    !(path.is_empty()
+        || path.starts_with('/')
+        || path.ends_with('/')
+        || path.contains('\\')
+        || bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':')
         && path
             .split('/')
             .all(|segment| !segment.is_empty() && segment != "." && segment != "..")

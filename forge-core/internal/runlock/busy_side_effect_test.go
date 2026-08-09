@@ -51,7 +51,7 @@ func TestBusyContendedProbePreservesLockBytesModeAndMtime(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Acquire: %v", err)
 	}
-	defer lock.Release()
+	releaseOnCleanup(t, lock)
 	before := snapshotLockFile(t, lock.Path)
 
 	busy, err := Busy(root)

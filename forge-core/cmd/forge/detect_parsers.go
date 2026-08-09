@@ -366,7 +366,7 @@ func readProjectYML(path string) (lifecycle, mode string, ok bool) {
 	if err != nil {
 		return "", "", false
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	sc := bufio.NewScanner(f)
 	for sc.Scan() {
 		line := strings.TrimSpace(sc.Text())

@@ -294,18 +294,6 @@ func (c CommandExecutor) RestoreValidatedOutput(p asset.Phase, output string) er
 	return nil
 }
 
-// commandContext returns a context derived from parent, governing one command run,
-// plus its cancel. With a positive Timeout it carries a deadline derived from parent;
-// with the zero default it is merely cancelable (no deadline) to preserve the original
-// unbounded behavior. Using parent instead of context.Background() lets a parent
-// cancellation (SIGINT) propagate to the running command.
-func (c CommandExecutor) commandContext(parent context.Context) (context.Context, context.CancelFunc) {
-	if c.Timeout > 0 {
-		return context.WithTimeout(parent, c.Timeout)
-	}
-	return context.WithCancel(parent)
-}
-
 func (c CommandExecutor) logf(format string, args ...any) {
 	if c.Log != nil {
 		c.Log(fmt.Sprintf(format, args...))

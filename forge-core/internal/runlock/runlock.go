@@ -66,7 +66,7 @@ func Acquire(root string) (*Lock, error) {
 		return nil, fmt.Errorf("runlock: open %s: %w", path, err)
 	}
 	if err := tryLock(f); err != nil {
-		f.Close()
+		_ = f.Close()
 		if errors.Is(err, errLockHeld) {
 			return nil, fmt.Errorf(
 				"runlock: %s is already active — another Forge mutation holds it; "+
@@ -100,7 +100,7 @@ func Busy(root string) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("runlock: probe %s: %w", path, err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	if err := tryLock(file); err != nil {
 		if errors.Is(err, errLockHeld) {
 			return true, nil
@@ -136,5 +136,5 @@ func (l *Lock) Release() error {
 func stampLockMeta(f *os.File) {
 	_ = f.Truncate(0)
 	_, _ = f.Seek(0, 0)
-	fmt.Fprintf(f, "pid=%d started=%s\n", os.Getpid(), time.Now().UTC().Format(time.RFC3339))
+	_, _ = fmt.Fprintf(f, "pid=%d started=%s\n", os.Getpid(), time.Now().UTC().Format(time.RFC3339))
 }

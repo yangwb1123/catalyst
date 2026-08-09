@@ -28,8 +28,8 @@ func validateRunBindings(control ReleaseControl) error {
 		run.GraphManifestSHA256 == control.Plan.GraphManifestSHA256 &&
 		run.PlanSHA256 == control.Plan.PlanSHA256 &&
 		run.SchedulerProtocolVersion == control.Plan.SchedulerProtocolVersion &&
-		control.Plan.ExecutionContractPresent == false &&
-		control.Plan.DispatchAuthorityReleased == false
+		!control.Plan.ExecutionContractPresent &&
+		!control.Plan.DispatchAuthorityReleased
 	if !valid {
 		return errInvalidControl
 	}

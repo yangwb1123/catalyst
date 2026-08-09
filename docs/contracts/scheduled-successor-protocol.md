@@ -33,8 +33,12 @@
 | predecessor_receipt_count | 0 | 31 | 候选携带的直接前驱 receipt 数(ADR-0035) |
 | required_predecessor_count | 0 | 31 | 拓扑前驱数 |
 | idempotency_key_bytes | 1 | 256 | 幂等键 |
-| contract_bytes | 1 | 4194304 | 候选 canonical 字节(4 MiB) |
+| contract_bytes | 1 | 8388608 | 候选 canonical envelope 字节(8 MiB；v24 successor 上限) |
 | predecessor_output_bytes | 1 | 1048576 | 前驱内容披露(1 MiB) |
+
+`contract_bytes` 是 v2 candidate codec 的总上限。初始节点候选不携带前驱正文，
+其既有 4 MiB admission/storage 兼容边界保持不变；8 MiB 只用于容纳 v24
+successor candidate 在最坏 JSON 转义下的有界前驱正文。
 
 ## Invariants
 

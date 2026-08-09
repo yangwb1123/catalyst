@@ -42,6 +42,7 @@ use super::{
     schema_v22_sql::MIGRATE_V21_TO_V22_SQL,
     schema_v23_sql::MIGRATE_V22_TO_V23_SQL,
     schema_v24_sql::MIGRATE_V23_TO_V24_SQL,
+    unavailable,
 };
 
 pub(super) const SCHEMA_VERSION: i64 = 24;

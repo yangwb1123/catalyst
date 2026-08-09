@@ -382,8 +382,11 @@ func captureStdout(t *testing.T, fn func()) string {
 	}
 	os.Stdout = w
 	fn()
-	w.Close()
+	closeErr := w.Close()
 	os.Stdout = old
+	if closeErr != nil {
+		t.Fatalf("close captured stdout: %v", closeErr)
+	}
 	out, err := io.ReadAll(r)
 	if err != nil {
 		t.Fatalf("read captured stdout: %v", err)

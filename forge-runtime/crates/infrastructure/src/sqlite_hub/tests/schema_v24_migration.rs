@@ -1,4 +1,6 @@
-use forge_runtime_domain::GroupAgentScheduledNodeContractStore;
+use forge_runtime_domain::{
+    GroupAgentGraphExecutionScheduleStore, GroupAgentScheduledNodeContractStore,
+};
 use rusqlite::{Connection, params, types::Value};
 
 use crate::runtime_domain::HubStoreError;
@@ -55,7 +57,7 @@ fn v23_rejects_successor_contract_larger_than_four_mib() {
 
 #[test]
 fn v24_successor_contract_bound_accepts_four_mib_plus_one_and_eight_mib_only() {
-    let fixture = sqlite_group_agent_graph_execution_schedule_support::prepared_fixture();
+    let fixture = scheduled_fixture();
     let connection = fixture.connection();
 
     insert_successor(
@@ -97,7 +99,7 @@ fn v24_successor_contract_bound_accepts_four_mib_plus_one_and_eight_mib_only() {
 
 #[test]
 fn v24_successor_rejects_predecessor_count_and_ordinal_drift() {
-    let fixture = sqlite_group_agent_graph_execution_schedule_support::prepared_fixture();
+    let fixture = scheduled_fixture();
     let connection = fixture.connection();
     insert_successor(&connection, "exact-slot", 257, 257).expect("seed exact successor row");
     for update in [
@@ -177,7 +179,7 @@ fn final_validation_fault_rolls_v23_to_v24_back_atomically() {
 }
 
 fn v23_fixture() -> super::sqlite_group_agent_graph_run_support::Fixture {
-    let fixture = sqlite_group_agent_graph_execution_schedule_support::prepared_fixture();
+    let fixture = scheduled_fixture();
     let connection = fixture.connection();
     connection
         .execute_batch(MIGRATE_V20_TO_V21_SQL)
@@ -190,6 +192,20 @@ fn v23_fixture() -> super::sqlite_group_agent_graph_run_support::Fixture {
         .expect("restore exact v23 schema");
     assert_eq!(schema_version(&connection), 23);
     drop(connection);
+    fixture
+}
+
+fn scheduled_fixture() -> super::sqlite_group_agent_graph_run_support::Fixture {
+    let fixture = sqlite_group_agent_graph_execution_schedule_support::prepared_fixture();
+    let request = sqlite_group_agent_graph_execution_schedule_support::request(
+        &fixture,
+        "schema-v24-schedule",
+        40,
+    );
+    fixture
+        .store
+        .admit_group_agent_graph_execution_schedule(&request)
+        .expect("seed execution schedule");
     fixture
 }
 

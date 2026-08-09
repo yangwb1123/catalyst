@@ -101,7 +101,11 @@ func TestReleaseMemfdSealsBlockExistingWritableAlias(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer memfd.Close()
+	defer func() {
+		if err := memfd.Close(); err != nil {
+			t.Errorf("close memfd: %v", err)
+		}
+	}()
 	if _, err := memfd.Write([]byte{0x7f, 'E', 'L', 'F'}); err != nil {
 		t.Fatal(err)
 	}
@@ -109,7 +113,11 @@ func TestReleaseMemfdSealsBlockExistingWritableAlias(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer alias.Close()
+	defer func() {
+		if err := alias.Close(); err != nil {
+			t.Errorf("close alias: %v", err)
+		}
+	}()
 	if err := sealReleaseMemfd(memfd); err != nil {
 		t.Fatal(err)
 	}
@@ -237,7 +245,11 @@ func TestPreparedReleaseExecutableIsSealedAndIndependentOfSourcePath(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer pinned.Close()
+	defer func() {
+		if err := pinned.Close(); err != nil {
+			t.Errorf("close pinned executable: %v", err)
+		}
+	}()
 	seals, err := releaseMemfdSeals(pinned)
 	if err != nil {
 		t.Fatal(err)

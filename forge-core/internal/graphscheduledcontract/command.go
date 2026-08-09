@@ -147,7 +147,7 @@ func readControl(source string, stdin io.Reader) (graphdispatch.ControlSnapshot,
 	if err != nil {
 		return graphdispatch.ControlSnapshot{}, errInvalidCandidate
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	return graphdispatch.DecodeControl(file)
 }
 

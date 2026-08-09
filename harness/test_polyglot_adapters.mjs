@@ -163,6 +163,37 @@ test('nested Rust workspace is discovered and executed from its own manifest roo
   });
 });
 
+test('Go lint is planned and executed from the nested module root', () => {
+  withTemp('nested-go-lint-', (root) => {
+    const core = join(root, 'forge-core');
+    write(core, 'go.mod', 'module example.test/core\ngo 1.22\n');
+    write(core, 'main.go', 'package core\n');
+    const calls = [];
+    const row = probeLint(root, successfulExec(calls));
+    assert.equal(row.status, PASS);
+    assert.deepEqual(calls, [
+      { cmd: 'golangci-lint', args: ['--version'], env: {}, cwd: core },
+      { cmd: 'golangci-lint', args: ['run', './...'], env: {}, cwd: core },
+    ]);
+  });
+});
+
+test('Go lint violations from a nested module remain an honest failure', () => {
+  withTemp('nested-go-lint-failure-', (root) => {
+    const core = join(root, 'forge-core');
+    write(core, 'go.mod', 'module example.test/core\ngo 1.22\n');
+    write(core, 'main.go', 'package core\n');
+    const row = probeLint(root, (cmd, args, env, cwd) => {
+      assert.equal(cwd, core);
+      if (args[0] === '--version') return { ok: true, code: 0, out: 'v2' };
+      return { ok: false, code: 3, out: 'main.go:1: lint violation' };
+    });
+    assert.equal(row.status, FAIL);
+    assert.match(row.detail, /golangci-lint run \.\/\.\.\. FAIL \(exit 3\)/);
+    assert.match(row.detail, /lint violation/);
+  });
+});
+
 test('Rust/Java root and source walkers surface deterministic readdir failures', () => {
   withTemp('polyglot-unreadable-', (root) => {
     rustFixture(root);

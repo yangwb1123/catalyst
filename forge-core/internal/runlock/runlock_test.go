@@ -35,7 +35,7 @@ func TestAcquire_CreatesForgeDirIfMissing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Acquire: %v", err)
 	}
-	defer lock.Release()
+	releaseOnCleanup(t, lock)
 
 	dir := filepath.Join(root, ".forge")
 	st, err := os.Stat(dir)
@@ -80,7 +80,9 @@ func TestAcquire_RejectsForgeDirectorySymlink(t *testing.T) {
 		t.Skipf("symlink unavailable: %v", err)
 	}
 	if lock, err := Acquire(root); err == nil {
-		lock.Release()
+		if releaseErr := lock.Release(); releaseErr != nil {
+			t.Fatalf("release lock from rejected directory symlink: %v", releaseErr)
+		}
 		t.Fatal(".forge directory symlink was accepted")
 	}
 }
@@ -99,7 +101,9 @@ func TestAcquire_RejectsRunLockSymlinkWithoutClobber(t *testing.T) {
 		t.Skipf("symlink unavailable: %v", err)
 	}
 	if lock, err := Acquire(root); err == nil {
-		lock.Release()
+		if releaseErr := lock.Release(); releaseErr != nil {
+			t.Fatalf("release lock from rejected lock symlink: %v", releaseErr)
+		}
 		t.Fatal("run.lock symlink was accepted")
 	}
 	data, err := os.ReadFile(sentinel)
@@ -122,14 +126,16 @@ func TestAcquire_SecondAttemptFailsFast(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first Acquire: %v", err)
 	}
-	defer first.Release()
+	releaseOnCleanup(t, first)
 
 	start := time.Now()
 	second, err := Acquire(root)
 	elapsed := time.Since(start)
 
 	if err == nil {
-		second.Release()
+		if releaseErr := second.Release(); releaseErr != nil {
+			t.Fatalf("release unexpected second lock: %v", releaseErr)
+		}
 		t.Fatal("second Acquire succeeded while the first still holds the lock")
 	}
 	if elapsed > 200*time.Millisecond {
@@ -201,11 +207,20 @@ func TestAcquire_DifferentRootsNoContention(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Acquire rootA: %v", err)
 	}
-	defer lockA.Release()
+	releaseOnCleanup(t, lockA)
 
 	lockB, err := Acquire(rootB)
 	if err != nil {
 		t.Fatalf("Acquire rootB (should be independent of rootA's held lock): %v", err)
 	}
-	defer lockB.Release()
+	releaseOnCleanup(t, lockB)
+}
+
+func releaseOnCleanup(t *testing.T, lock *Lock) {
+	t.Helper()
+	t.Cleanup(func() {
+		if err := lock.Release(); err != nil {
+			t.Errorf("release lock: %v", err)
+		}
+	})
 }

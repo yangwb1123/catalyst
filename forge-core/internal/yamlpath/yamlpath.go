@@ -113,7 +113,7 @@ func resolveRef(repoRoot string, r Ref, baseDir string) (any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("yamlpath: open %s: %w", absFile, err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	val, err := yaml2json.Decode(f)
 	if err == nil {
 		data, marshalErr := json.Marshal(val)
@@ -130,7 +130,7 @@ func resolveRef(repoRoot string, r Ref, baseDir string) (any, error) {
 	if _, statErr := os.Stat(shim); statErr != nil {
 		return nil, fmt.Errorf("yamlpath: go parser failed and python shim not found at %s: %v (go parse err: %v)", shim, statErr, err)
 	}
-	f.Close()
+	_ = f.Close()
 	out, execErr := exec.Command("python3", shim, absFile).Output()
 	if execErr != nil {
 		return nil, fmt.Errorf("yamlpath: go parser failed (%v) and python shim also failed: %w", err, execErr)

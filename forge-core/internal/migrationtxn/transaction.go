@@ -101,7 +101,7 @@ func applyOperation(
 	if err != nil {
 		return Result{}, fmt.Errorf("migrationtxn: acquire repository mutation lock: %w", err)
 	}
-	defer lock.Release()
+	defer func() { _ = lock.Release() }()
 	return applyOperationLocked(root, operation, prepare, ops)
 }
 

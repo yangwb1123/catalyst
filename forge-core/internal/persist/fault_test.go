@@ -38,10 +38,12 @@ func TestSave_CorruptedLastLine(t *testing.T) {
 		t.Fatalf("open for append: %v", err)
 	}
 	if _, err := f.WriteString(`{"broken`); err != nil {
-		f.Close()
+		_ = f.Close()
 		t.Fatalf("append corrupt: %v", err)
 	}
-	f.Close()
+	if err := f.Close(); err != nil {
+		t.Fatalf("close corrupted checkpoint: %v", err)
+	}
 
 	// Load must see a malformed file and report as an error.
 	_, found, err := Load(path)

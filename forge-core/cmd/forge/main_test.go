@@ -245,8 +245,11 @@ func TestBuildPrompt_UsesTemplateMissingFileWarns(t *testing.T) {
 	p := asset.Phase{Name: "security-review", Agent: "security-engineer", UsesTemplate: ".ai/prompts/nonexistent.md"}
 	got := buildPromptWithEmits(root, p, "balanced", unbudgetedTier("balanced"), nil, nil, nil, nil, nil)
 	// Restore stderr before reading the pipe.
-	w.Close()
+	closeErr := w.Close()
 	os.Stderr = oldStderr
+	if closeErr != nil {
+		t.Fatalf("close captured stderr: %v", closeErr)
+	}
 	var stderrBuf bytes.Buffer
 	if _, err := stderrBuf.ReadFrom(r); err != nil {
 		t.Fatalf("read stderr pipe: %v", err)
@@ -354,8 +357,11 @@ func captureUsageStderr(t *testing.T) string {
 	}
 	os.Stderr = w
 	usage()
-	w.Close()
+	closeErr := w.Close()
 	os.Stderr = oldStderr
+	if closeErr != nil {
+		t.Fatalf("close captured stderr: %v", closeErr)
+	}
 	var buf bytes.Buffer
 	if _, err := buf.ReadFrom(r); err != nil {
 		t.Fatalf("read stderr pipe: %v", err)

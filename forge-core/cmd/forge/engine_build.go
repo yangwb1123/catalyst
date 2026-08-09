@@ -426,7 +426,7 @@ func execEngine(ctx context.Context, firstWf asset.Workflow, o runOpts) int {
 	if lock == nil {
 		return 1
 	}
-	defer lock.Release()
+	defer func() { _ = lock.Release() }()
 	logln := func(s string) { fmt.Println(s) }
 	lifecycle := resolveLifecycle(o)
 	firstWf, resume, err := prepareChainResume(firstWf, o)

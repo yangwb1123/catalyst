@@ -76,7 +76,7 @@ func readControl(source string, stdin io.Reader) (ReleaseControl, error) {
 	if err != nil {
 		return ReleaseControl{}, errInvalidControl
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	return DecodeControl(file)
 }
 

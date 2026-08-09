@@ -212,7 +212,7 @@ func Append(path string, e Entry) error {
 	// Single Write of a whole '\n'-terminated line: under O_APPEND this is the
 	// atomic record boundary, so no lock is needed to keep lines from interleaving.
 	if _, err := f.Write(line); err != nil {
-		f.Close()
+		_ = f.Close()
 		return fmt.Errorf("memory: append entry: %w", err)
 	}
 	if err := f.Close(); err != nil {

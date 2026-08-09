@@ -81,7 +81,7 @@ func validateOpenedEvidence(full, name string, line int, expected os.FileInfo) e
 	if err != nil {
 		return fmt.Errorf("path %q is not readable: %w", name, err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	info, err := file.Stat()
 	if err != nil {
 		return fmt.Errorf("path %q cannot be inspected: %w", name, err)

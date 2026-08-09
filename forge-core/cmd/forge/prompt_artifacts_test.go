@@ -92,8 +92,11 @@ func TestBuildPrompt_SecondaryTemplateMissingFileWarns(t *testing.T) {
 
 	p := asset.Phase{Name: "performance-reliability-review", Agent: "performance-engineer", SecondaryTemplate: ".ai/prompts/nonexistent2.md"}
 	got := buildPromptWithEmits(root, p, "balanced", unbudgetedTier("balanced"), nil, nil, nil, nil, nil)
-	w.Close()
+	closeErr := w.Close()
 	os.Stderr = oldStderr
+	if closeErr != nil {
+		t.Fatalf("close captured stderr: %v", closeErr)
+	}
 	var stderrBuf bytes.Buffer
 	if _, err := stderrBuf.ReadFrom(r); err != nil {
 		t.Fatalf("read stderr pipe: %v", err)
@@ -207,17 +210,17 @@ func TestNextADRSequence(t *testing.T) {
 		t.Errorf("nextADRSequence(empty) = %d, want 1", got)
 	}
 	// Test 2: mixed naming conventions.
-	os.WriteFile(filepath.Join(dir, "0001-first-decision.md"), []byte("#1"), 0o644)
-	os.WriteFile(filepath.Join(dir, "ADR-0003-third-adr.md"), []byte("#3"), 0o644)
-	os.WriteFile(filepath.Join(dir, "0002-second-decision.md"), []byte("#2"), 0o644)
-	os.WriteFile(filepath.Join(dir, "README.md"), []byte("not an ADR"), 0o644)
+	writeFile(t, filepath.Join(dir, "0001-first-decision.md"), "#1")
+	writeFile(t, filepath.Join(dir, "ADR-0003-third-adr.md"), "#3")
+	writeFile(t, filepath.Join(dir, "0002-second-decision.md"), "#2")
+	writeFile(t, filepath.Join(dir, "README.md"), "not an ADR")
 	if got := nextADRSequence(dir); got != 4 {
 		t.Errorf("nextADRSequence(mixed) = %d, want 4 (max 3 + 1)", got)
 	}
 	// Test 3: non-ADR files (no .md extension) must be ignored.
 	dir2 := t.TempDir()
-	os.WriteFile(filepath.Join(dir2, "notes.txt"), []byte("text"), 0o644)
-	os.WriteFile(filepath.Join(dir2, "ADR-0005-decision.md"), []byte("#5"), 0o644)
+	writeFile(t, filepath.Join(dir2, "notes.txt"), "text")
+	writeFile(t, filepath.Join(dir2, "ADR-0005-decision.md"), "#5")
 	if got := nextADRSequence(dir2); got != 6 {
 		t.Errorf("nextADRSequence(no-md-ignored) = %d, want 6", got)
 	}

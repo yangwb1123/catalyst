@@ -20,7 +20,7 @@ func TestMigrationAPIsRespectSharedRepositoryLockWithoutMutation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("hold repository lock: %v", err)
 	}
-	defer lock.Release()
+	t.Cleanup(func() { releaseTestLock(t, lock) })
 	lockBefore := readTestFile(t, lock.Path)
 
 	calls := []struct {
@@ -56,6 +56,13 @@ func TestMigrationAPIsRespectSharedRepositoryLockWithoutMutation(t *testing.T) {
 	}
 	if _, err := os.Lstat(filepath.Join(root, ".forge", "migrations")); !os.IsNotExist(err) {
 		t.Fatalf("contention created migration state: %v", err)
+	}
+}
+
+func releaseTestLock(t *testing.T, lock *runlock.Lock) {
+	t.Helper()
+	if err := lock.Release(); err != nil {
+		t.Errorf("release repository lock: %v", err)
 	}
 }
 

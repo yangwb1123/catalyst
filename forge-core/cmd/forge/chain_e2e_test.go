@@ -100,13 +100,21 @@ func captureChainOutput(t *testing.T, fn func() int) (int, string) {
 	go func() { b, _ := io.ReadAll(outR); stdoutCh <- string(b) }()
 	go func() { b, _ := io.ReadAll(errR); stderrCh <- string(b) }()
 	code := fn()
-	outW.Close()
-	errW.Close()
+	if err := outW.Close(); err != nil {
+		t.Errorf("close stdout writer: %v", err)
+	}
+	if err := errW.Close(); err != nil {
+		t.Errorf("close stderr writer: %v", err)
+	}
 	os.Stdout, os.Stderr = oldOut, oldErr
 	stdout := <-stdoutCh
 	stderr := <-stderrCh
-	outR.Close()
-	errR.Close()
+	if err := outR.Close(); err != nil {
+		t.Errorf("close stdout reader: %v", err)
+	}
+	if err := errR.Close(); err != nil {
+		t.Errorf("close stderr reader: %v", err)
+	}
 	return code, stdout + stderr
 }
 
