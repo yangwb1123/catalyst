@@ -6,6 +6,7 @@ use crate::{HubStoreError, Usage};
 mod journal;
 #[path = "group_model_analysis_validation.rs"]
 mod validation;
+pub use validation::endpoint_allowed;
 
 pub const GROUP_MODEL_ANALYSIS_VERSION: u16 = 1;
 pub const GROUP_MODEL_ANALYSIS_PROTOCOL_VERSION: u16 = 1;

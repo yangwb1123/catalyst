@@ -82,11 +82,24 @@ const DOWNGRADE_V17_TO_V10_SQL: &str = "PRAGMA foreign_keys=OFF;
                  SELECT SUM(event_bytes) FROM group_agent_graph_run_events
                  WHERE graph_run_id=group_agent_graph_runs.id
                );";
+// v25 widened the endpoint CHECK on the analyses/syntheses tables; a
+// downgraded fixture must restore the historical definitions so the
+// pre-migration contract check matches the recorded catalogs.
+const RESTORE_HISTORICAL_ANALYSES_SQL: &str =
+    include_str!("../../../infrastructure/tests/restore_historical_analyses.sql");
+
+fn restore_historical_analyses(connection: &rusqlite::Connection) {
+    connection
+        .execute_batch(RESTORE_HISTORICAL_ANALYSES_SQL)
+        .expect("restore historical analyses definitions");
+}
+
 fn downgrade_hub_to_v11(database: &Path) {
     let connection = rusqlite::Connection::open(database).expect("open current Hub for fixture");
     connection
         .execute_batch(DOWNGRADE_V17_TO_V10_SQL)
         .expect("prepare v10-shaped fixture");
+    restore_historical_analyses(&connection);
     connection
         .execute_batch(v11_migration_sql())
         .expect("rebuild exact v11 schema");

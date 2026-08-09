@@ -1,4 +1,3 @@
-#[cfg(test)]
 use std::net::IpAddr;
 
 use reqwest::{Client, Url};
@@ -24,11 +23,43 @@ pub(super) fn responses_endpoint(
     }
     match endpoint_policy {
         EndpointPolicy::Official => validate_official_base_url(&url)?,
+        // Self-hosted gateways (LiteLLM/Ollama/one-api behind an explicit
+        // OPENAI_BASE_URL opt-in): HTTPS anywhere, or HTTP restricted to
+        // loopback — a plaintext non-loopback endpoint stays refused.
+        EndpointPolicy::SelfHosted => validate_self_hosted_base_url(&url)?,
         #[cfg(test)]
         EndpointPolicy::TestLoopback => validate_test_base_url(&url)?,
     }
     url.set_path("/v1/responses");
     Ok(url)
+}
+
+
+fn validate_self_hosted_base_url(url: &Url) -> Result<(), ProviderError> {
+    let loopback = is_loopback_host(url.host_str().unwrap_or(""));
+    if url.scheme() == "https" {
+        if url.port().is_some() {
+            return Err(config_error(
+                "self-hosted base_url must not carry an explicit port with https",
+            ));
+        }
+    } else if url.scheme() == "http" {
+        if !loopback {
+            return Err(config_error(
+                "self-hosted http base_url must be a loopback host",
+            ));
+        }
+    } else {
+        return Err(config_error(
+            "self-hosted base_url must be http(s) (loopback http allowed, https anywhere)",
+        ));
+    }
+    if !matches!(url.path(), "/v1" | "/v1/") {
+        return Err(config_error(
+            "self-hosted base_url must end in /v1",
+        ));
+    }
+    Ok(())
 }
 
 fn validate_official_base_url(url: &Url) -> Result<(), ProviderError> {
@@ -57,7 +88,6 @@ fn validate_test_base_url(url: &Url) -> Result<(), ProviderError> {
     Ok(())
 }
 
-#[cfg(test)]
 fn is_loopback_host(host: &str) -> bool {
     host == "localhost"
         || host
@@ -76,6 +106,49 @@ pub(super) fn build_client(endpoint_policy: EndpointPolicy) -> Result<Client, Pr
         .read_timeout(READ_TIMEOUT)
         .build()
         .map_err(|_| config_error("failed to construct the HTTP client"))
+}
+
+#[cfg(test)]
+mod self_hosted_policy_tests {
+    use super::{
+        EndpointPolicy, responses_endpoint,
+    };
+
+    fn accepts(base_url: &str) -> bool {
+        responses_endpoint(base_url, EndpointPolicy::SelfHosted).is_ok()
+    }
+
+    #[test]
+    fn loopback_http_v1_is_accepted() {
+        assert!(accepts("http://127.0.0.1:4001/v1"));
+        assert!(accepts("http://localhost:11434/v1"));
+    }
+
+    #[test]
+    fn arbitrary_https_v1_is_accepted() {
+        assert!(accepts("https://llm.internal.example/v1"));
+    }
+
+    #[test]
+    fn plaintext_non_loopback_is_refused() {
+        assert!(!accepts("http://llm.internal.example/v1"));
+    }
+
+    #[test]
+    fn wrong_path_is_refused() {
+        assert!(!accepts("http://127.0.0.1:4001"));
+        assert!(!accepts("https://llm.internal.example/v1/extra"));
+    }
+
+    #[test]
+    fn official_policy_still_refuses_self_hosted_urls() {
+        assert!(responses_endpoint("http://127.0.0.1:4001/v1", EndpointPolicy::Official).is_err());
+        assert!(responses_endpoint(
+            "https://llm.internal.example/v1",
+            EndpointPolicy::Official,
+        )
+        .is_err());
+    }
 }
 
 #[cfg(test)]

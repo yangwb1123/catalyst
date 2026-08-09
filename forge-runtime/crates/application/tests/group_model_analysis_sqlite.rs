@@ -110,6 +110,7 @@ fn prepare_input() -> PrepareGroupModelAnalysisInput {
         analysis_id: ANALYSIS_ID.into(),
         group_run_id: GROUP_RUN_ID.into(),
         model: MODEL.into(),
+        endpoint: GROUP_MODEL_ANALYSIS_PROVIDER_ENDPOINT.to_owned(),
         max_output_tokens: 64,
         idempotency_key: "analysis-key".into(),
         created_at_ms: 20,

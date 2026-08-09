@@ -1,6 +1,6 @@
 use super::{
     GROUP_MODEL_ANALYSIS_CONFIG_DIGEST_DOMAIN, GROUP_MODEL_ANALYSIS_EVENT_DIGEST_DOMAIN,
-    GROUP_MODEL_ANALYSIS_PROVIDER_ENDPOINT, GROUP_MODEL_ANALYSIS_REQUEST_DIGEST_DOMAIN,
+    GROUP_MODEL_ANALYSIS_REQUEST_DIGEST_DOMAIN,
     GROUP_MODEL_ANALYSIS_RESULT_DIGEST_DOMAIN, GROUP_MODEL_ANALYSIS_SYSTEM_PROMPT_DIGEST_DOMAIN,
     GROUP_MODEL_ANALYSIS_SYSTEM_PROMPT_VERSION, GROUP_MODEL_ANALYSIS_VERSION,
     GroupModelAnalysisConfig, GroupModelAnalysisEvent, GroupModelAnalysisJournalCursor,
@@ -244,7 +244,9 @@ pub(super) fn system_prompt_digest(prompt: &str) -> [u8; 32] {
 fn validate_request_config(config: &GroupModelAnalysisRequestConfig) -> Result<(), HubStoreError> {
     let valid = config.v == GROUP_MODEL_ANALYSIS_VERSION
         && config.provider == GroupModelAnalysisProvider::OpenAiResponses
-        && config.endpoint == GROUP_MODEL_ANALYSIS_PROVIDER_ENDPOINT
+        && forge_runtime_domain::endpoint_allowed(
+            &config.endpoint,
+        )
         && valid_text(&config.model, MAX_GROUP_MODEL_ANALYSIS_MODEL_BYTES)
         && config.system_prompt_version == GROUP_MODEL_ANALYSIS_SYSTEM_PROMPT_VERSION
         && valid_text(

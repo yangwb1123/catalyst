@@ -54,6 +54,7 @@ pub(crate) fn prepare_input(max_output_tokens: u32) -> PrepareGroupModelAnalysis
         analysis_id: ANALYSIS_ID.into(),
         group_run_id: GROUP_RUN_ID.into(),
         model: "gpt-test".into(),
+        endpoint: GROUP_MODEL_ANALYSIS_PROVIDER_ENDPOINT.to_owned(),
         max_output_tokens,
         idempotency_key: "analysis-key".into(),
         created_at_ms: 10,

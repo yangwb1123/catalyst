@@ -13,6 +13,18 @@ use crate::runtime_domain::{
 
 pub(crate) const DEFAULT_OPENAI_MODEL: &str = "gpt-5.6-sol";
 const OPENAI_BASE_URL: &str = "https://api.openai.com/v1";
+const OPENAI_BASE_URL_ENV: &str = "OPENAI_BASE_URL";
+
+/// `effective_openai_base_url` honours an explicit `OPENAI_BASE_URL` opt-in for a
+/// self-hosted `/v1` gateway (`LiteLLM`/`Ollama`); the official endpoint is the
+/// default. Provider-side endpoint policy validates the value (https
+/// anywhere, http loopback-only).
+pub(crate) fn effective_openai_base_url() -> String {
+    env::var(OPENAI_BASE_URL_ENV)
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| OPENAI_BASE_URL.to_owned())
+}
 
 pub(crate) struct OpenAiPreparedProvider {
     inner: OpenAiResponsesProvider,
@@ -28,7 +40,15 @@ impl OpenAiPreparedProvider {
             );
         }
         Ok(Self {
-            inner: OpenAiResponsesProvider::new(OPENAI_BASE_URL, model, api_key)?,
+            inner: if effective_openai_base_url() == OPENAI_BASE_URL {
+                OpenAiResponsesProvider::new(OPENAI_BASE_URL, model, api_key)?
+            } else {
+                OpenAiResponsesProvider::new_self_hosted(
+                    effective_openai_base_url(),
+                    model,
+                    api_key,
+                )?
+            },
         })
     }
 

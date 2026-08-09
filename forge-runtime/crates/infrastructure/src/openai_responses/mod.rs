@@ -43,16 +43,13 @@ mod tests;
 #[cfg(test)]
 #[path = "tests/live_gateway.rs"]
 mod live_gateway_tests;
-
 use std::time::Duration;
-
 use crate::runtime_domain::{
     Cancellation, ModelEvent, ModelEventStream, ModelProvider, ModelRequest, PreparedModelProvider,
     PreparedModelRequest, ProviderError,
 };
 use futures_util::{StreamExt, stream};
 use reqwest::{Client, Response, Url, header};
-
 use self::{
     endpoint::{build_client, responses_endpoint},
     request::{
@@ -62,20 +59,20 @@ use self::{
     },
     sse::SseDecoder,
 };
-
 const ERROR_BODY_LIMIT: usize = 64 * 1024;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(600);
 const READ_TIMEOUT: Duration = Duration::from_secs(60);
-
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(crate) enum EndpointPolicy {
     #[default]
     Official,
+    /// Explicit opt-in for a self-hosted `/v1` gateway (`LiteLLM`, `Ollama`, ...),
+    /// selected ONLY when the caller passes a non-official base URL.
+    SelfHosted,
     #[cfg(test)]
     TestLoopback,
 }
-
 #[derive(Clone)]
 pub struct OpenAiResponsesProvider {
     client: Client,
@@ -103,6 +100,27 @@ impl OpenAiResponsesProvider {
             model.into(),
             api_key.into(),
             EndpointPolicy::Official,
+        )
+    }
+
+    /// Constructs a provider pinned to an explicitly-chosen self-hosted
+    /// gateway (`LiteLLM`/`Ollama` behind `OPENAI_BASE_URL`): base URL must
+    /// end in `/v1`, `HTTPS` anywhere, `HTTP` loopback-only — an explicit
+    /// opt-in; the zero-config default stays official-only.
+    ///
+    /// # Errors
+    ///
+    /// Config error for a malformed/unsafe base URL, empty model or key.
+    pub fn new_self_hosted(
+        base_url: impl AsRef<str>,
+        model: impl Into<String>,
+        api_key: impl Into<String>,
+    ) -> Result<Self, ProviderError> {
+        Self::build(
+            base_url.as_ref(),
+            model.into(),
+            api_key.into(),
+            EndpointPolicy::SelfHosted,
         )
     }
 

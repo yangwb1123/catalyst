@@ -11,6 +11,12 @@ use super::{
     schema_version, table_columns,
 };
 
+const V25_REBUILT_OBJECTS: [&str; 10] = [
+    "group_model_analyses", "group_model_analysis_events", "group_model_analysis_results",
+    "group_panel_syntheses", "group_panel_synthesis_events", "group_panel_synthesis_results",
+    "group_model_analyses_group_run", "group_model_analyses_created",
+    "group_panel_syntheses_panel", "group_panel_syntheses_created",
+];
 const SCHEDULE_TABLE: &str = "group_agent_graph_execution_schedules";
 const SCHEDULE_INDEX: &str = "group_agent_graph_execution_schedules_created";
 const SCHEDULED_CONTRACT_TABLE: &str = "group_agent_graph_scheduled_node_contract_candidates";
@@ -307,7 +313,7 @@ fn malformed(original: &str, replacement: &str) -> String {
 }
 
 fn assert_v13_shape(connection: &Connection) {
-    assert_eq!(schema_version(connection), 24);
+    assert_eq!(schema_version(connection), 25);
     assert!(schema_object_exists(connection, "table", SCHEDULE_TABLE));
     assert!(schema_object_exists(connection, "index", SCHEDULE_INDEX));
     assert_eq!(row_count(connection, SCHEDULE_TABLE), 0);
@@ -336,7 +342,8 @@ fn old_schema(snapshot: &[SchemaRow]) -> Vec<SchemaRow> {
     snapshot
         .iter()
         .filter(|(_, name, _, _)| {
-            name != SCHEDULE_TABLE
+            !V25_REBUILT_OBJECTS.contains(&name.as_str())
+                && name != SCHEDULE_TABLE
                 && name != SCHEDULE_INDEX
                 && name != SCHEDULED_CONTRACT_TABLE
                 && !SCHEDULED_CONTRACT_INDEXES.contains(&name.as_str())

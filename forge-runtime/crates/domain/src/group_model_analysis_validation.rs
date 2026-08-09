@@ -167,6 +167,16 @@ pub(super) fn validate_record(
         .ok_or_else(|| analysis_error("invalid Group Model Analysis record"))
 }
 
+///  accepts the official endpoint, or any http(s) 
+/// endpoint chosen by an explicit caller opt-in (): the
+/// prepared dossier may only travel to a destination the operator pinned.
+#[must_use]
+pub fn endpoint_allowed(endpoint: &str) -> bool {
+    endpoint == GROUP_MODEL_ANALYSIS_PROVIDER_ENDPOINT
+        || (endpoint.starts_with("http://") || endpoint.starts_with("https://"))
+            && endpoint.ends_with("/v1/responses")
+}
+
 pub(super) fn validate_config(
     config: &GroupModelAnalysisConfig,
 ) -> Result<(), GroupModelAnalysisJournalError> {
@@ -175,7 +185,7 @@ pub(super) fn validate_config(
             config.provider,
             super::GroupModelAnalysisProvider::OpenAiResponses
         )
-        && config.endpoint == GROUP_MODEL_ANALYSIS_PROVIDER_ENDPOINT
+        && endpoint_allowed(&config.endpoint)
         && valid_text(&config.model, MAX_GROUP_MODEL_ANALYSIS_MODEL_BYTES)
         && config.system_prompt_version == GROUP_MODEL_ANALYSIS_SYSTEM_PROMPT_VERSION
         && is_lower_hex_digest(&config.system_prompt_sha256)
@@ -195,7 +205,7 @@ pub(super) fn validate_request_config(
             config.provider,
             super::GroupModelAnalysisProvider::OpenAiResponses
         )
-        && config.endpoint == GROUP_MODEL_ANALYSIS_PROVIDER_ENDPOINT
+        && endpoint_allowed(&config.endpoint)
         && valid_text(&config.model, MAX_GROUP_MODEL_ANALYSIS_MODEL_BYTES)
         && config.system_prompt_version == GROUP_MODEL_ANALYSIS_SYSTEM_PROMPT_VERSION
         && !config.system_prompt.trim().is_empty()

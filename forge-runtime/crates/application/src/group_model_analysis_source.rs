@@ -54,7 +54,11 @@ pub(crate) fn expected_request(
     snapshot: &GroupRunSnapshot,
     cancellation: Cancellation,
 ) -> Result<ModelRequest, GroupModelAnalysisServiceError> {
-    let config = request_config_for(&analysis.config.model, analysis.config.max_output_tokens);
+    let config = request_config_for(
+        &analysis.config.model,
+        analysis.config.max_output_tokens,
+        &analysis.config.endpoint,
+    );
     if public_config(&config) != analysis.config {
         return Err(GroupModelAnalysisServiceError::InconsistentStoreResult);
     }

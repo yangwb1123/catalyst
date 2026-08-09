@@ -1,24 +1,19 @@
 use std::{collections::BTreeMap, fs, path::Path};
-
 use forge_runtime_domain::{HubStore, HubStoreError};
 use forge_runtime_infrastructure::SqliteHubStore;
 use tempfile::TempDir;
-
 #[cfg(unix)]
 #[test]
 fn shared_database_file_is_rejected_without_chmod_or_other_changes() {
     use std::os::unix::fs::PermissionsExt;
-
     let (root, store) = fixture();
     drop(store);
     let database = root.path().join("hub.sqlite3");
     fs::set_permissions(&database, fs::Permissions::from_mode(0o644))
         .expect("make database shared");
     let before = state_files(root.path());
-
     let error = SqliteHubStore::open_existing_current_read_only(&database)
         .expect_err("shared database file is rejected without chmod");
-
     assert!(matches!(error, HubStoreError::Unavailable { .. }));
     assert_eq!(state_files(root.path()), before);
     assert_eq!(
@@ -30,7 +25,6 @@ fn shared_database_file_is_rejected_without_chmod_or_other_changes() {
         0o644
     );
 }
-
 #[test]
 fn clean_rollback_mode_is_rejected_without_changes() {
     let (root, store) = fixture();
@@ -43,14 +37,11 @@ fn clean_rollback_mode_is_rejected_without_changes() {
     drop(connection);
     assert!(!root.path().join("hub.sqlite3-journal").exists());
     let before = state_files(root.path());
-
     let error = SqliteHubStore::open_existing_current_read_only(&database)
         .expect_err("clean rollback-mode Hub is rejected");
-
     assert!(matches!(error, HubStoreError::Corrupt { .. }));
     assert_eq!(state_files(root.path()), before);
 }
-
 #[test]
 fn hot_rollback_journal_is_rejected_before_immutable_read() {
     let (root, store) = fixture();
@@ -74,16 +65,13 @@ fn hot_rollback_journal_is_rejected_before_immutable_read() {
     assert!(root.path().join("hub.sqlite3-journal").exists());
     assert_ne!(fs::read(&database).expect("read dirty main"), committed);
     let before = state_files(root.path());
-
     let error = SqliteHubStore::open_existing_current_read_only(&database)
         .expect_err("hot rollback journal is rejected before immutable open");
-
     assert!(matches!(error, HubStoreError::Unavailable { .. }));
     assert!(error.to_string().contains("journal"));
     assert_eq!(state_files(root.path()), before);
     writer.execute_batch("ROLLBACK").expect("rollback fixture");
 }
-
 #[test]
 fn dispatch_reentry_rejects_incomplete_or_malformed_wal_sidecars_without_changes() {
     let cases = [
@@ -104,14 +92,11 @@ fn dispatch_reentry_rejects_incomplete_or_malformed_wal_sidecars_without_changes
             write_private(&root.path().join("hub.sqlite3-shm"), &bytes);
         }
         let before = state_files(root.path());
-
         let result = SqliteHubStore::open_existing_dispatch_inspection_read_only(&database);
-
         assert!(result.is_err(), "accepted malformed sidecars: {name}");
         assert_eq!(state_files(root.path()), before, "changed state: {name}");
     }
 }
-
 #[test]
 fn dispatch_reentry_preserves_corrupt_classification_from_hot_wal() {
     let (root, store) = fixture();
@@ -128,23 +113,19 @@ fn dispatch_reentry_preserves_corrupt_classification_from_hot_wal() {
     let wal = root.path().join("hub.sqlite3-wal");
     let main_before = fs::read(&database).expect("read main before re-entry");
     let wal_before = fs::read(&wal).expect("read WAL before re-entry");
-
     let error = SqliteHubStore::open_existing_dispatch_inspection_read_only(&database)
         .expect_err("rogue hot-WAL schema must be corrupt");
-
     assert!(matches!(error, HubStoreError::Corrupt { .. }), "{error}");
     assert_eq!(fs::read(&database).expect("read main after"), main_before);
     assert_eq!(fs::read(&wal).expect("read WAL after"), wal_before);
     drop(writer);
 }
-
 #[test]
 fn dispatch_reentry_reads_real_hot_v12_through_v16_wals_without_logical_changes() {
     for version in [12, 13, 14, 15, 16] {
         assert_hot_wal_reentry(version);
     }
 }
-
 fn assert_hot_wal_reentry(version: i64) {
     let (root, store) = fixture();
     drop(store);
@@ -166,18 +147,15 @@ fn assert_hot_wal_reentry(version: i64) {
     assert!(wal.exists() && shm.exists(), "missing hot SQLite sidecars");
     let main_before = fs::read(&database).expect("read main before re-entry");
     let wal_before = fs::read(&wal).expect("read WAL before re-entry");
-
     let reader = SqliteHubStore::open_existing_dispatch_inspection_read_only(&database)
         .expect("open exact hot-WAL dispatch re-entry");
     let groups = reader.list_groups().expect("read through hot WAL");
     assert!(groups.iter().any(|group| group.id == "hot-group"));
     drop(reader);
-
     assert_eq!(fs::read(&database).expect("read main after"), main_before);
     assert_eq!(fs::read(&wal).expect("read WAL after"), wal_before);
     drop(writer);
 }
-
 fn restore_schema_version(connection: &rusqlite::Connection, version: i64) {
     if version < 17 {
         restore_v16_schema(connection);
@@ -212,34 +190,36 @@ fn restore_schema_version(connection: &rusqlite::Connection, version: i64) {
             )
             .expect("restore exact v12 schema");
     }
+    if version <= 16 {
+        connection
+            .execute_batch(RESTORE_HISTORICAL_ANALYSES_SQL)
+            .expect("restore historical analyses definitions");
+    }
 }
-
+// v25 widened the endpoint CHECK on the analyses/syntheses tables; a
+// downgraded fixture must restore the historical definitions.
+const RESTORE_HISTORICAL_ANALYSES_SQL: &str = include_str!("restore_historical_analyses.sql");
 fn valid_wal_header() -> [u8; 32] {
     let mut header = [0_u8; 32];
     header[..4].copy_from_slice(&[0x37, 0x7f, 0x06, 0x82]);
     header
 }
-
 fn write_private(path: &Path, bytes: &[u8]) {
     fs::write(path, bytes).expect("write private sidecar fixture");
     restrict_file(path);
 }
-
 #[cfg(unix)]
 fn restrict_file(path: &Path) {
     use std::os::unix::fs::PermissionsExt;
     fs::set_permissions(path, fs::Permissions::from_mode(0o600)).expect("private sidecar mode");
 }
-
 #[cfg(not(unix))]
 fn restrict_file(_path: &Path) {}
-
 fn fixture() -> (TempDir, SqliteHubStore) {
     let root = TempDir::new().expect("temporary root");
     let store = SqliteHubStore::open(root.path().join("hub.sqlite3")).expect("open Hub");
     (root, store)
 }
-
 fn state_files(directory: &Path) -> BTreeMap<String, Vec<u8>> {
     fs::read_dir(directory)
         .expect("read state directory")
@@ -251,7 +231,6 @@ fn state_files(directory: &Path) -> BTreeMap<String, Vec<u8>> {
         })
         .collect()
 }
-
 fn v16_lifecycle_sql() -> &'static str {
     const SOURCE: &str = include_str!("../src/sqlite_hub/schema_contract/v16_sql.rs");
     SOURCE
@@ -289,7 +268,6 @@ fn restore_v16_schema(connection: &rusqlite::Connection) {
         .pragma_update(None, "user_version", 16)
         .expect("mark v16 schema");
 }
-
 fn restore_v15_schema(connection: &rusqlite::Connection) {
     connection
         .execute_batch(

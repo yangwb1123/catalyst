@@ -56,6 +56,19 @@ pub async fn execute(
     }
 }
 
+/// `effective_analysis_endpoint` freezes the provider destination into a
+/// prepared analysis: `OPENAI_BASE_URL` opt-in (self-hosted `/v1` gateway) or the
+/// official endpoint, in `/v1/responses` form to match the provider's own
+/// endpoint identity.
+fn effective_analysis_endpoint() -> String {
+    let base = crate::openai_prepared_dispatch::effective_openai_base_url();
+    if base.ends_with("/responses") {
+        base
+    } else {
+        format!("{base}/responses")
+    }
+}
+
 fn prepare(
     args: &Args,
     service: &GroupModelAnalysisService,
@@ -67,6 +80,7 @@ fn prepare(
         analysis_id: unique_id("group-analysis"),
         group_run_id: group_run_id.into(),
         model: model.unwrap_or(DEFAULT_OPENAI_MODEL).into(),
+        endpoint: effective_analysis_endpoint(),
         max_output_tokens,
         idempotency_key: args
             .idempotency_key

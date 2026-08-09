@@ -220,6 +220,7 @@ pub use group_model_analysis::{
     MAX_GROUP_MODEL_ANALYSIS_RESULT_BYTES, MAX_GROUP_MODEL_ANALYSIS_SYSTEM_PROMPT_BYTES,
     PrepareGroupModelAnalysis, PrepareGroupModelAnalysisDisposition,
     PrepareGroupModelAnalysisResult,
+    endpoint_allowed,
 };
 pub use group_panel_synthesis::{
     ClaimGroupPanelSynthesisDispatch, ClaimGroupPanelSynthesisDispatchResult,

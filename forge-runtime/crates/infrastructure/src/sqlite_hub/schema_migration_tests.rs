@@ -1,8 +1,6 @@
 use rusqlite::Connection;
 use tempfile::TempDir;
-
 use crate::runtime_domain::HubStoreError;
-
 use super::{
     schema::{
         migrate_with_before_final_fault_for_test, open_database,
@@ -24,9 +22,9 @@ use super::{
     schema_v23_sql::MIGRATE_V22_TO_V23_SQL,
     schema_v24_sql::MIGRATE_V23_TO_V24_SQL,
 };
-
 #[path = "tests/schema_full_validation.rs"]
 mod schema_full_validation_tests;
+pub(super) const RESTORE_HISTORICAL_ANALYSES_SQL: &str = include_str!("tests/restore_historical_analyses.sql");
 #[path = "tests/schema_migration_support.rs"]
 mod schema_migration_support;
 #[path = "tests/schema_open_adversarial.rs"]
@@ -68,11 +66,9 @@ mod sqlite_group_agent_graph_run_support;
 #[path = "../../tests/sqlite_group_agent_scheduled_node_contract_support/mod.rs"]
 #[allow(dead_code, clippy::duplicate_mod)]
 mod sqlite_group_agent_scheduled_node_contract_support;
-
 use schema_migration_support::{
     restrict_fixture_root, schema_object_exists, schema_version, table_columns,
 };
-
 #[test]
 fn v1_future_group_runs_blocker_is_rejected_before_migration_chain() {
     let (root, database) = legacy_v1_database();
@@ -81,7 +77,6 @@ fn v1_future_group_runs_blocker_is_rejected_before_migration_chain() {
         .execute_batch("CREATE TABLE group_runs(blocker TEXT)")
         .expect("install future v3 table blocker");
     drop(blocker);
-
     let error = open_database(&database).expect_err("v1 prefix rejects future v3 table");
     assert!(matches!(error, HubStoreError::Corrupt { .. }));
     let unchanged = Connection::open(&database).expect("reopen unchanged v1 database");
@@ -103,7 +98,6 @@ fn v1_future_group_runs_blocker_is_rejected_before_migration_chain() {
     assert_eq!(prompt, "preserve me");
     drop((unchanged, root));
 }
-
 #[test]
 fn v1_future_group_executions_blocker_is_rejected_before_migration_chain() {
     let (root, database) = legacy_v1_database();
@@ -112,7 +106,6 @@ fn v1_future_group_executions_blocker_is_rejected_before_migration_chain() {
         .execute_batch("CREATE TABLE group_executions(blocker TEXT)")
         .expect("install future v4 table blocker");
     drop(blocker);
-
     let error = open_database(&database).expect_err("v1 prefix rejects future v4 table");
     assert!(matches!(error, HubStoreError::Corrupt { .. }));
     let unchanged = Connection::open(&database).expect("reopen unchanged v1 database");
@@ -150,7 +143,6 @@ fn v1_future_group_executions_blocker_is_rejected_before_migration_chain() {
     assert_eq!(prompt, "preserve me");
     drop((unchanged, root));
 }
-
 #[test]
 fn v3_future_group_executions_blocker_is_rejected_before_migration() {
     let (root, database) = legacy_v3_database();
@@ -159,7 +151,6 @@ fn v3_future_group_executions_blocker_is_rejected_before_migration() {
         .execute_batch("CREATE TABLE group_executions(blocker TEXT)")
         .expect("install future v4 table blocker");
     drop(blocker);
-
     let error = open_database(&database).expect_err("v3 prefix rejects future v4 table");
     assert!(matches!(error, HubStoreError::Corrupt { .. }));
     let unchanged = Connection::open(&database).expect("reopen unchanged v3 database");
@@ -173,7 +164,6 @@ fn v3_future_group_executions_blocker_is_rejected_before_migration() {
     }
     drop((unchanged, root));
 }
-
 fn assert_v4_schema(connection: &Connection) {
     assert_eq!(schema_version(connection), 4);
     for table in [
@@ -190,7 +180,6 @@ fn assert_v4_schema(connection: &Connection) {
         );
     }
 }
-
 fn assert_v3_schema(connection: &Connection) {
     assert_eq!(schema_version(connection), 3);
     for table in ["runs", "run_events", "run_assistant_prompts", "group_runs"] {
@@ -205,7 +194,6 @@ fn assert_v3_schema(connection: &Connection) {
         "group_runs_group"
     ));
 }
-
 fn schema_object_named(connection: &Connection, name: &str) -> bool {
     connection
         .query_row(
@@ -215,7 +203,6 @@ fn schema_object_named(connection: &Connection, name: &str) -> bool {
         )
         .expect("schema object name query")
 }
-
 fn assert_legacy_run(connection: &Connection) {
     let run: (String, String, String, i64, String) = connection
         .query_row(
@@ -245,7 +232,6 @@ fn assert_legacy_run(connection: &Connection) {
     );
     assert_legacy_event_and_assistant(connection);
 }
-
 fn assert_legacy_event_and_assistant(connection: &Connection) {
     let event: String = connection
         .query_row(
@@ -274,7 +260,6 @@ fn assert_legacy_event_and_assistant(connection: &Connection) {
         )
     );
 }
-
 fn legacy_v1_database() -> (TempDir, std::path::PathBuf) {
     let root = TempDir::new().expect("legacy Hub root");
     restrict_fixture_root(&root);
@@ -287,7 +272,6 @@ fn legacy_v1_database() -> (TempDir, std::path::PathBuf) {
     drop(connection);
     (root, database)
 }
-
 fn legacy_v2_database() -> (TempDir, std::path::PathBuf) {
     let (root, database) = legacy_v1_database();
     let connection = Connection::open(&database).expect("open v1 fixture");
@@ -298,7 +282,6 @@ fn legacy_v2_database() -> (TempDir, std::path::PathBuf) {
     drop(connection);
     (root, database)
 }
-
 fn legacy_v3_database() -> (TempDir, std::path::PathBuf) {
     let (root, database) = legacy_v2_database();
     let connection = Connection::open(&database).expect("open v2 fixture");
@@ -309,7 +292,6 @@ fn legacy_v3_database() -> (TempDir, std::path::PathBuf) {
     drop(connection);
     (root, database)
 }
-
 fn legacy_v4_database() -> (TempDir, std::path::PathBuf) {
     let (root, database) = legacy_v3_database();
     let connection = Connection::open(&database).expect("open v3 fixture");
@@ -320,7 +302,6 @@ fn legacy_v4_database() -> (TempDir, std::path::PathBuf) {
     drop(connection);
     (root, database)
 }
-
 fn legacy_v5_database() -> (TempDir, std::path::PathBuf) {
     let (root, database) = legacy_v4_database();
     let connection = Connection::open(&database).expect("open v4 fixture");
@@ -331,7 +312,6 @@ fn legacy_v5_database() -> (TempDir, std::path::PathBuf) {
     drop(connection);
     (root, database)
 }
-
 fn legacy_v6_database() -> (TempDir, std::path::PathBuf) {
     let (root, database) = legacy_v5_database();
     let connection = Connection::open(&database).expect("open v5 fixture");
@@ -342,7 +322,6 @@ fn legacy_v6_database() -> (TempDir, std::path::PathBuf) {
     drop(connection);
     (root, database)
 }
-
 fn seed_v1_records(connection: &Connection) {
     connection
         .execute_batch(
@@ -361,7 +340,6 @@ fn seed_v1_records(connection: &Connection) {
         )
         .expect("seed v1 records");
 }
-
 fn seed_v2_run(connection: &Connection) {
     connection
         .execute_batch(
@@ -384,7 +362,6 @@ fn seed_v2_run(connection: &Connection) {
         )
         .expect("seed v2 Run records");
 }
-
 fn seed_v3_group_run(connection: &Connection) {
     connection
         .execute_batch(
@@ -400,7 +377,6 @@ fn seed_v3_group_run(connection: &Connection) {
         )
         .expect("seed v3 Group Run");
 }
-
 fn seed_v4_group_execution(connection: &Connection) {
     connection
         .execute_batch(
@@ -420,7 +396,6 @@ fn seed_v4_group_execution(connection: &Connection) {
         )
         .expect("seed v4 Group Execution");
 }
-
 fn seed_v5_analysis(connection: &Connection) {
     connection
         .execute_batch(
@@ -445,7 +420,6 @@ fn seed_v5_analysis(connection: &Connection) {
         )
         .expect("seed v5 model analysis");
 }
-
 fn seed_v6_panel(connection: &Connection) {
     connection
         .execute_batch(

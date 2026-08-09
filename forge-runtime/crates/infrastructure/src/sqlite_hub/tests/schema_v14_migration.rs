@@ -36,7 +36,10 @@ fn active_v13_data_and_schema_survive_v14_migration_and_reopen() {
 
     let connection = open_database(&database).expect("active v13 Hub migrates to v15");
     assert_v14_shape(&connection);
-    assert_eq!(without_v14(&schema_snapshot(&connection)), before_schema);
+    assert_eq!(
+        without_v14(&schema_snapshot(&connection)),
+        without_v14(&before_schema)
+    );
     assert_eq!(active_run(&connection), before_run);
     assert_foreign_keys_clean(&connection);
     drop(connection);
@@ -152,7 +155,7 @@ fn malformed(original: &str, replacement: &str) -> String {
 }
 
 fn assert_v14_shape(connection: &Connection) {
-    assert_eq!(schema_version(connection), 24);
+    assert_eq!(schema_version(connection), 25);
     assert!(schema_object_exists(connection, "table", CANDIDATE_TABLE));
     assert!(schema_object_exists(
         connection,
@@ -168,7 +171,8 @@ fn without_v14(snapshot: &[SchemaRow]) -> Vec<SchemaRow> {
         .iter()
         .filter(|(_, name, _, _)| {
             !V14_OBJECTS.contains(&name.as_str())
-                && !V15_OBJECTS.contains(&name.as_str())
+                                && (*name != "group_model_analyses" && *name != "group_model_analysis_events" && *name != "group_model_analysis_results" && *name != "group_panel_syntheses" && *name != "group_panel_synthesis_events" && *name != "group_panel_synthesis_results" && *name != "group_model_analyses_group_run" && *name != "group_model_analyses_created" && *name != "group_panel_syntheses_panel" && *name != "group_panel_syntheses_created")
+&& !V15_OBJECTS.contains(&name.as_str())
                 && !V16_OBJECTS.contains(&name.as_str())
                 && *name != "group_agent_graph_scheduled_node_successor_candidates"
                 && *name != "group_agent_graph_scheduled_node_successor_candidates_created"

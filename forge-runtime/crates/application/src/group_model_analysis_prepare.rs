@@ -1,6 +1,6 @@
 use forge_runtime_domain::{
     Cancellation, GROUP_MODEL_ANALYSIS_CONFIG_DIGEST_DOMAIN,
-    GROUP_MODEL_ANALYSIS_PROVIDER_ENDPOINT, GROUP_MODEL_ANALYSIS_REQUEST_DIGEST_DOMAIN,
+    GROUP_MODEL_ANALYSIS_REQUEST_DIGEST_DOMAIN,
     GROUP_MODEL_ANALYSIS_SYSTEM_PROMPT_DIGEST_DOMAIN, GROUP_MODEL_ANALYSIS_SYSTEM_PROMPT_VERSION,
     GROUP_MODEL_ANALYSIS_VERSION, GroupModelAnalysisConfig, GroupModelAnalysisProvider,
     GroupModelAnalysisRequestConfig, GroupModelAnalysisSource, GroupRunSnapshot,
@@ -50,6 +50,11 @@ pub struct PrepareGroupModelAnalysisInput {
     pub analysis_id: String,
     pub group_run_id: String,
     pub model: String,
+    /// Provider destination frozen into the prepared request: the caller's
+    /// effective base URL (`OPENAI_BASE_URL` opt-in or the official endpoint),
+    /// already in `/v1/responses` form. The empty value is not allowed; the
+    /// domain constant remains the fallback for non-CLI callers.
+    pub endpoint: String,
     pub max_output_tokens: u32,
     pub idempotency_key: String,
     pub created_at_ms: u64,
@@ -81,7 +86,7 @@ fn build_candidate(
     source: GroupModelAnalysisSource,
     codec: &dyn GroupModelAnalysisRequestCodec,
 ) -> Result<PrepareGroupModelAnalysis, GroupModelAnalysisServiceError> {
-    let request_config = request_config_for(&input.model, input.max_output_tokens);
+    let request_config = request_config_for(&input.model, input.max_output_tokens, &input.endpoint);
     request_config
         .validate()
         .map_err(|_| GroupModelAnalysisServiceError::InvalidInput)?;
@@ -139,11 +144,12 @@ fn candidate(
 pub(crate) fn request_config_for(
     model: &str,
     max_output_tokens: u32,
+    endpoint: &str,
 ) -> GroupModelAnalysisRequestConfig {
     GroupModelAnalysisRequestConfig {
         v: GROUP_MODEL_ANALYSIS_VERSION,
         provider: GroupModelAnalysisProvider::OpenAiResponses,
-        endpoint: GROUP_MODEL_ANALYSIS_PROVIDER_ENDPOINT.into(),
+        endpoint: endpoint.to_owned(),
         model: model.into(),
         system_prompt_version: GROUP_MODEL_ANALYSIS_SYSTEM_PROMPT_VERSION,
         system_prompt: GROUP_MODEL_ANALYSIS_SYSTEM_PROMPT.into(),

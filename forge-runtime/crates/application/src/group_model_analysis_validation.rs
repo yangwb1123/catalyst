@@ -29,6 +29,8 @@ pub(crate) fn validate_prepare_input(
             &input.idempotency_key,
             MAX_GROUP_MODEL_ANALYSIS_IDEMPOTENCY_KEY_BYTES,
         )
+        && input.endpoint.starts_with("http://")
+            || input.endpoint.starts_with("https://")
         && (1..=MAX_GROUP_MODEL_ANALYSIS_OUTPUT_TOKENS).contains(&input.max_output_tokens)
         && i64::try_from(input.created_at_ms).is_ok();
     valid
@@ -212,7 +214,11 @@ fn rebuild_inspection(
 }
 
 fn application_config_matches(record: &GroupModelAnalysisRecord) -> bool {
-    let request_config = request_config_for(&record.config.model, record.config.max_output_tokens);
+    let request_config = request_config_for(
+        &record.config.model,
+        record.config.max_output_tokens,
+        &record.config.endpoint,
+    );
     if record.config != public_config(&request_config) {
         return false;
     }

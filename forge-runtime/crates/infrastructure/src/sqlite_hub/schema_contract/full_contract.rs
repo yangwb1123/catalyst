@@ -1,18 +1,15 @@
 use std::sync::OnceLock;
-
 use rusqlite::{Connection, Error as SqliteError, ErrorCode, OptionalExtension};
 use sha2::{Digest, Sha256};
-
 use super::super::{
     HubStoreError, CREATE_V1_SCHEMA_SQL, MIGRATE_V10_TO_V11_SQL, MIGRATE_V11_TO_V12_SQL,
     MIGRATE_V12_TO_V13_SQL, MIGRATE_V13_TO_V14_SQL, MIGRATE_V14_TO_V15_SQL, MIGRATE_V15_TO_V16_SQL,
     MIGRATE_V16_TO_V17_SQL, MIGRATE_V17_TO_V18_SQL, MIGRATE_V18_TO_V19_SQL, MIGRATE_V19_TO_V20_SQL,
     MIGRATE_V1_TO_V2_SQL, MIGRATE_V20_TO_V21_SQL, MIGRATE_V21_TO_V22_SQL, MIGRATE_V22_TO_V23_SQL,
-    MIGRATE_V23_TO_V24_SQL, MIGRATE_V2_TO_V3_SQL, MIGRATE_V3_TO_V4_SQL, MIGRATE_V4_TO_V5_SQL,
+    MIGRATE_V23_TO_V24_SQL, MIGRATE_V24_TO_V25_SQL, MIGRATE_V2_TO_V3_SQL, MIGRATE_V3_TO_V4_SQL, MIGRATE_V4_TO_V5_SQL,
     MIGRATE_V5_TO_V6_SQL, MIGRATE_V6_TO_V7_SQL, MIGRATE_V7_TO_V8_SQL, MIGRATE_V8_TO_V9_SQL,
     MIGRATE_V9_TO_V10_SQL,
 };
-
 #[path = "full_contract/legacy_digest.rs"]
 mod legacy_digest;
 #[path = "full_contract/structure.rs"]
@@ -23,14 +20,21 @@ mod v22;
 mod v23;
 #[path = "full_contract/v24.rs"]
 mod v24;
-
+#[path = "full_contract/v25.rs"]
+mod v25;
 use legacy_digest::{
     V10_STRUCTURAL_CONTRACT_SHA256, V11_STRUCTURAL_CONTRACT_SHA256, V12_STRUCTURAL_CONTRACT_SHA256,
     V13_STRUCTURAL_CONTRACT_SHA256, V14_STRUCTURAL_CONTRACT_SHA256, V15_STRUCTURAL_CONTRACT_SHA256,
-    V16_STRUCTURAL_CONTRACT_SHA256, V6_STRUCTURAL_CONTRACT_SHA256, V7_STRUCTURAL_CONTRACT_SHA256,
-    V8_STRUCTURAL_CONTRACT_SHA256, V9_STRUCTURAL_CONTRACT_SHA256,
+    V16_STRUCTURAL_CONTRACT_SHA256, V6_IMPLICIT_INDEX_COUNT, V6_STRUCTURAL_CONTRACT_SHA256,
+    V7_IMPLICIT_INDEX_COUNT, V7_STRUCTURAL_CONTRACT_SHA256, V8_IMPLICIT_INDEX_COUNT,
+    V8_STRUCTURAL_CONTRACT_SHA256, V9_IMPLICIT_INDEX_COUNT, V9_STRUCTURAL_CONTRACT_SHA256,
+    V10_IMPLICIT_INDEX_COUNT, V11_IMPLICIT_INDEX_COUNT, V12_IMPLICIT_INDEX_COUNT,
+    V13_IMPLICIT_INDEX_COUNT, V14_IMPLICIT_INDEX_COUNT, V15_IMPLICIT_INDEX_COUNT,
+    V16_IMPLICIT_INDEX_COUNT, V17_IMPLICIT_INDEX_COUNT, V17_STRUCTURAL_CONTRACT_SHA256,
+    V18_IMPLICIT_INDEX_COUNT, V18_STRUCTURAL_CONTRACT_SHA256, V19_IMPLICIT_INDEX_COUNT,
+    V19_STRUCTURAL_CONTRACT_SHA256, V20_IMPLICIT_INDEX_COUNT, V20_STRUCTURAL_CONTRACT_SHA256,
+    V21_IMPLICIT_INDEX_COUNT, V21_STRUCTURAL_CONTRACT_SHA256,
 };
-
 const OWNED_TABLES: &[&str] = &[
     "projects",
     "groups",
@@ -91,71 +95,31 @@ const SCHEMA_BATCHES: &[&str] = &[
     MIGRATE_V21_TO_V22_SQL,
     MIGRATE_V22_TO_V23_SQL,
     MIGRATE_V23_TO_V24_SQL,
+    MIGRATE_V24_TO_V25_SQL,
 ];
-const VERSION_TABLE_COUNTS: [usize; 25] = [
-    0, 5, 8, 9, 11, 14, 16, 19, 20, 22, 23, 24, 28, 29, 30, 31, 32, 33, 33, 33, 33, 33, 33, 33, 33,
+const VERSION_TABLE_COUNTS: [usize; 26] = [
+    0, 5, 8, 9, 11, 14, 16, 19, 20, 22, 23, 24, 28, 29, 30, 31, 32, 33, 33, 33, 33, 33, 33, 33, 33, 33,
 ];
-const VERSION_EXPLICIT_INDEX_COUNTS: [usize; 25] = [
-    0, 2, 3, 4, 6, 8, 10, 12, 14, 16, 18, 20, 24, 25, 27, 29, 31, 32, 32, 32, 32, 32, 32, 32, 32,
-];
-const V6_IMPLICIT_INDEX_COUNT: usize = 29;
-const V7_IMPLICIT_INDEX_COUNT: usize = 33;
-const V8_IMPLICIT_INDEX_COUNT: usize = 35;
-const V9_IMPLICIT_INDEX_COUNT: usize = 38;
-const V10_IMPLICIT_INDEX_COUNT: usize = 41;
-const V11_IMPLICIT_INDEX_COUNT: usize = 45;
-const V12_IMPLICIT_INDEX_COUNT: usize = 61;
-const V13_IMPLICIT_INDEX_COUNT: usize = 64;
-const V14_IMPLICIT_INDEX_COUNT: usize = 71;
-const V15_IMPLICIT_INDEX_COUNT: usize = 79;
-const V16_IMPLICIT_INDEX_COUNT: usize = 83;
-const V17_IMPLICIT_INDEX_COUNT: usize = 90;
-const V18_IMPLICIT_INDEX_COUNT: usize = 90;
-const V19_IMPLICIT_INDEX_COUNT: usize = 90;
-const V20_IMPLICIT_INDEX_COUNT: usize = 88;
-const V21_IMPLICIT_INDEX_COUNT: usize = 88;
-const V20_STRUCTURAL_CONTRACT_SHA256: [u8; 32] = [
-    0x72, 0x5f, 0x48, 0xee, 0x23, 0x01, 0x00, 0x56, 0x92, 0x1a, 0x9b, 0x71, 0xeb, 0x31, 0xab, 0x8e,
-    0xd0, 0xa0, 0x24, 0x09, 0x9e, 0xff, 0x2a, 0xfd, 0xf0, 0x00, 0x37, 0x1e, 0x53, 0xc7, 0xef, 0xbf,
-];
-const V21_STRUCTURAL_CONTRACT_SHA256: [u8; 32] = [
-    0x72, 0x5f, 0x48, 0xee, 0x23, 0x01, 0x00, 0x56, 0x92, 0x1a, 0x9b, 0x71, 0xeb, 0x31, 0xab, 0x8e,
-    0xd0, 0xa0, 0x24, 0x09, 0x9e, 0xff, 0x2a, 0xfd, 0xf0, 0x00, 0x37, 0x1e, 0x53, 0xc7, 0xef, 0xbf,
-];
-const V19_STRUCTURAL_CONTRACT_SHA256: [u8; 32] = [
-    0x5a, 0x99, 0x8b, 0xf2, 0x31, 0x6c, 0xcd, 0x31, 0xb4, 0x26, 0x1e, 0x70, 0xf1, 0xe0, 0x1b, 0x68,
-    0x5c, 0x26, 0xd6, 0x92, 0x18, 0x51, 0x88, 0x02, 0xff, 0xb1, 0x98, 0x56, 0xb7, 0x2a, 0x8c, 0x65,
-];
-const V18_STRUCTURAL_CONTRACT_SHA256: [u8; 32] = [
-    0x5a, 0x99, 0x8b, 0xf2, 0x31, 0x6c, 0xcd, 0x31, 0xb4, 0x26, 0x1e, 0x70, 0xf1, 0xe0, 0x1b, 0x68,
-    0x5c, 0x26, 0xd6, 0x92, 0x18, 0x51, 0x88, 0x02, 0xff, 0xb1, 0x98, 0x56, 0xb7, 0x2a, 0x8c, 0x65,
-];
-const V17_STRUCTURAL_CONTRACT_SHA256: [u8; 32] = [
-    0x01, 0x22, 0x6b, 0xac, 0x74, 0xd8, 0x00, 0xd9, 0x3d, 0xa3, 0x3d, 0x75, 0xa6, 0xeb, 0x7a, 0x4e,
-    0x53, 0x78, 0xae, 0x8d, 0x2f, 0xe9, 0xd2, 0x6e, 0xcd, 0xef, 0xc6, 0x0b, 0x58, 0xc9, 0x71, 0xe4,
+const VERSION_EXPLICIT_INDEX_COUNTS: [usize; 26] = [
+    0, 2, 3, 4, 6, 8, 10, 12, 14, 16, 18, 20, 24, 25, 27, 29, 31, 32, 32, 32, 32, 32, 32, 32, 32, 32,
 ];
 const STRUCTURAL_DIGEST_DOMAIN: &[u8] = b"forge-hub-structural-contract-v1\0";
-
 static EXPECTED_SCHEMAS: OnceLock<Result<Vec<ExpectedSchema>, String>> = OnceLock::new();
-
 struct ExpectedSchema {
     version: usize,
     catalog: CatalogSignature,
     tables: Vec<ExpectedTable>,
 }
-
 struct ExpectedTable {
     name: &'static str,
     sql: String,
     signature: structure::TableSignature,
     indexes: Vec<ExpectedIndex>,
 }
-
 struct ExpectedIndex {
     name: String,
     sql: String,
 }
-
 #[derive(Default, PartialEq, Eq)]
 struct CatalogSignature {
     tables: Vec<String>,
@@ -165,7 +129,6 @@ struct CatalogSignature {
     triggers: Vec<String>,
     other_objects: Vec<(String, String)>,
 }
-
 pub(super) fn validate_version(connection: &Connection, version: i64) -> Result<(), HubStoreError> {
     let index = usize::try_from(version)
         .ok()
@@ -178,7 +141,6 @@ pub(super) fn validate_version(connection: &Connection, version: i64) -> Result<
     }
     Ok(())
 }
-
 fn validate_catalog(
     connection: &Connection,
     version: i64,
@@ -186,11 +148,36 @@ fn validate_catalog(
 ) -> Result<(), HubStoreError> {
     let actual = catalog(connection).map_err(sqlite_error)?;
     if &actual != expected {
+        #[cfg(test)]
+        {
+            let missing_tables: Vec<_> = expected
+                .tables
+                .iter()
+                .filter(|name| !actual.tables.contains(name))
+                .collect();
+            let extra_tables: Vec<_> = actual
+                .tables
+                .iter()
+                .filter(|name| !expected.tables.contains(name))
+                .collect();
+            let missing_indexes: Vec<_> = expected
+                .explicit_indexes
+                .iter()
+                .filter(|name| !actual.explicit_indexes.contains(name))
+                .collect();
+            let extra_indexes: Vec<_> = actual
+                .explicit_indexes
+                .iter()
+                .filter(|name| !expected.explicit_indexes.contains(name))
+                .collect();
+            eprintln!(
+                "DEBUG catalog v{version}: missing_tables={missing_tables:?} extra_tables={extra_tables:?} missing_indexes={missing_indexes:?} extra_indexes={extra_indexes:?}"
+            );
+        }
         return Err(invalid(version, "main catalog", "object inventory"));
     }
     Ok(())
 }
-
 fn validate_table(
     connection: &Connection,
     version: i64,
@@ -203,7 +190,6 @@ fn validate_table(
     }
     validate_indexes(connection, version, expected, &actual.explicit_indexes)
 }
-
 fn validate_indexes(
     connection: &Connection,
     version: i64,
@@ -223,7 +209,6 @@ fn validate_indexes(
     }
     Ok(())
 }
-
 fn validate_definition(
     connection: &Connection,
     version: i64,
@@ -237,14 +222,12 @@ fn validate_definition(
     }
     Ok(())
 }
-
 fn expected_schemas() -> Result<&'static [ExpectedSchema], HubStoreError> {
     match EXPECTED_SCHEMAS.get_or_init(load_expected_schemas) {
         Ok(schemas) => Ok(schemas),
         Err(message) => Err(unavailable(message)),
     }
 }
-
 fn load_expected_schemas() -> Result<Vec<ExpectedSchema>, String> {
     let connection = Connection::open_in_memory().map_err(stringify)?;
     let mut schemas = Vec::with_capacity(SCHEMA_BATCHES.len() + 1);
@@ -258,7 +241,6 @@ fn load_expected_schemas() -> Result<Vec<ExpectedSchema>, String> {
     }
     Ok(schemas)
 }
-
 fn load_expected_schema(connection: &Connection, version: usize) -> Result<ExpectedSchema, String> {
     let table_count = VERSION_TABLE_COUNTS[version];
     let tables = OWNED_TABLES[..table_count]
@@ -276,7 +258,6 @@ fn load_expected_schema(connection: &Connection, version: usize) -> Result<Expec
     }
     Ok(schema)
 }
-
 fn validate_generated_contract(schema: &ExpectedSchema) -> Result<(), String> {
     let mut table_names = OWNED_TABLES[..VERSION_TABLE_COUNTS[schema.version]]
         .iter()
@@ -300,7 +281,6 @@ fn validate_generated_contract(schema: &ExpectedSchema) -> Result<(), String> {
         .then_some(())
         .ok_or_else(|| format!("generated Hub v{} catalog is invalid", schema.version))
 }
-
 fn validate_release_structure(schema: &ExpectedSchema) -> Result<(), String> {
     let (expected_indexes, expected_digest) = release_structural_contract(schema.version)?;
     let implicit_indexes = schema
@@ -325,7 +305,6 @@ fn validate_release_structure(schema: &ExpectedSchema) -> Result<(), String> {
     }
     Ok(())
 }
-
 fn release_structural_contract(version: usize) -> Result<(usize, [u8; 32]), String> {
     Ok(match version {
         6 => (V6_IMPLICIT_INDEX_COUNT, V6_STRUCTURAL_CONTRACT_SHA256),
@@ -355,6 +334,10 @@ fn release_structural_contract(version: usize) -> Result<(usize, [u8; 32]), Stri
         24 => (
             v24::V24_IMPLICIT_INDEX_COUNT,
             v24::V24_STRUCTURAL_CONTRACT_SHA256,
+        ),
+        25 => (
+            v25::V25_IMPLICIT_INDEX_COUNT,
+            v25::V25_STRUCTURAL_CONTRACT_SHA256,
         ),
         version => {
             return Err(format!("Hub v{version} has no release structural contract"));
@@ -489,4 +472,28 @@ fn unavailable(error: impl std::fmt::Display) -> HubStoreError {
 
 fn stringify(error: impl std::fmt::Display) -> String {
     error.to_string()
+}
+
+
+
+#[cfg(test)]
+mod catalog_diff_tool {
+    use super::*;
+    use crate::runtime_domain::HubStoreError;
+
+    #[test]
+    fn diff_v11_catalog_vs_current_downgrade() {
+        // 复现 interfaces 降级路径的最小版:当前库 → DROP v17+ 表 → v11
+        // 简化:直接对比 v11 期望 catalog 与"当前库降级后"的 catalog。
+        // 这里只打印 v11 期望 catalog,供人工比对。
+        let schemas = load_expected_schemas().expect("expected schemas");
+        let v11 = &schemas[11];
+        eprintln!("V11 tables ({}) {:?}", v11.catalog.tables.len(), v11.catalog.tables);
+        eprintln!(
+            "V11 indexes ({}) {:?}",
+            v11.catalog.explicit_indexes.len(),
+            v11.catalog.explicit_indexes
+        );
+        let _ = HubStoreError::Unavailable { message: String::new() };
+    }
 }

@@ -124,6 +124,9 @@ fn populated_v14_candidate_and_all_prior_schema_survive_v15_migration_and_reopen
             V16_INDEXES[0], V16_INDEXES[1],
         ))
         .expect("downgrade empty v15 suffix to exact v14");
+    legacy
+        .execute_batch(super::RESTORE_HISTORICAL_ANALYSES_SQL)
+        .expect("restore historical analyses definitions for downgraded fixture");
     let before_schema = schema_snapshot(&legacy);
     assert_eq!(schema_version(&legacy), 14);
     drop(legacy);
@@ -132,7 +135,7 @@ fn populated_v14_candidate_and_all_prior_schema_survive_v15_migration_and_reopen
     assert_current_shape(&migrated);
     assert_eq!(
         without_v15_and_v16(&schema_snapshot(&migrated)),
-        before_schema
+        without_v15_and_v16(&before_schema)
     );
     assert_eq!(candidate_row(&migrated), before_candidate);
     assert_foreign_keys_clean(&migrated);
@@ -156,7 +159,7 @@ fn active_v14_data_survive_v15_migration_without_rebuilding_old_tables() {
     assert_current_shape(&migrated);
     assert_eq!(
         without_v15_and_v16(&schema_snapshot(&migrated)),
-        before_schema
+        without_v15_and_v16(&before_schema)
     );
     assert_eq!(active_run(&migrated), before_run);
     assert_foreign_keys_clean(&migrated);
@@ -306,7 +309,7 @@ fn malformed(original: &str, replacement: &str) -> String {
 }
 
 fn assert_current_shape(connection: &Connection) {
-    assert_eq!(schema_version(connection), 24);
+    assert_eq!(schema_version(connection), 25);
     assert!(schema_object_exists(connection, "table", REQUEST_TABLE));
     assert!(schema_object_exists(
         connection,
@@ -326,7 +329,8 @@ fn without_v15_and_v16(snapshot: &[SchemaRow]) -> Vec<SchemaRow> {
         .iter()
         .filter(|(_, name, _, _)| {
             !V15_OBJECTS.contains(&name.as_str())
-                && *name != V16_TABLE
+                                && (*name != "group_model_analyses" && *name != "group_model_analysis_events" && *name != "group_model_analysis_results" && *name != "group_panel_syntheses" && *name != "group_panel_synthesis_events" && *name != "group_panel_synthesis_results" && *name != "group_model_analyses_group_run" && *name != "group_model_analyses_created" && *name != "group_panel_syntheses_panel" && *name != "group_panel_syntheses_created")
+&& *name != V16_TABLE
                 && !V16_INDEXES.contains(&name.as_str())
                 && *name != "group_agent_graph_scheduled_node_successor_candidates"
                 && *name != "group_agent_graph_scheduled_node_successor_candidates_created"

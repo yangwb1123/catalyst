@@ -29,12 +29,12 @@ fn v23_successor_row_survives_v24_migration_and_reopen_byte_for_byte() {
     drop(connection);
 
     let migrated = open_database(&fixture.database).expect("migrate exact v23 fixture to v24");
-    assert_eq!(schema_version(&migrated), 24);
+    assert_eq!(schema_version(&migrated), 25);
     assert_eq!(successor_row(&migrated), before);
     drop(migrated);
 
     let reopened = open_database(&fixture.database).expect("reopen migrated v24 fixture");
-    assert_eq!(schema_version(&reopened), 24);
+    assert_eq!(schema_version(&reopened), 25);
     assert_eq!(successor_row(&reopened), before);
     drop((reopened, fixture));
 }
@@ -60,7 +60,7 @@ fn v24_successor_contract_bound_accepts_four_mib_plus_one_and_eight_mib_only() {
     let fixture = v23_fixture();
     drop(fixture.connection());
     let connection = open_database(&fixture.database).expect("migrate v23 fixture to v24");
-    assert_eq!(schema_version(&connection), 24);
+    assert_eq!(schema_version(&connection), 25);
 
     insert_successor(
         &connection,
@@ -104,7 +104,7 @@ fn v24_successor_rejects_predecessor_count_and_ordinal_drift() {
     let fixture = v23_fixture();
     drop(fixture.connection());
     let connection = open_database(&fixture.database).expect("migrate v23 fixture to v24");
-    assert_eq!(schema_version(&connection), 24);
+    assert_eq!(schema_version(&connection), 25);
     insert_successor(&connection, "exact-slot", 257, 257).expect("seed exact successor row");
     for update in [
         format!("UPDATE {SUCCESSOR_TABLE} SET required_predecessor_node_count=1"),
@@ -144,7 +144,12 @@ fn v24_keeps_initial_candidate_contract_bound_at_four_mib() {
 #[test]
 fn malformed_current_v24_objects_are_rejected_without_repair() {
     assert_current_v24_rejected_without_repair("malformed bound literal", |connection| {
-        let malformed = MIGRATE_V23_TO_V24_SQL.replace("8388608", "8388607");
+        // Replaying the v24 migration would also reset user_version to 24,
+        // turning the fixture into a LEGAL v24 hub (which then migrates);
+        // strip the version marker so only the malformed table lands.
+        let malformed = MIGRATE_V23_TO_V24_SQL
+            .replace("8388608", "8388607")
+            .replace("PRAGMA user_version = 24;", "");
         connection.execute_batch(&malformed)
     });
     assert_current_v24_rejected_without_repair("missing successor index", |connection| {
@@ -164,7 +169,7 @@ fn final_validation_fault_rolls_v23_to_v24_back_atomically() {
     let before_row = successor_row(&connection);
 
     let error = migrate_with_before_final_fault_for_test(&connection, |migrated| {
-        assert_eq!(schema_version(migrated), 24);
+        assert_eq!(schema_version(migrated), 25);
         assert_eq!(successor_row(migrated), before_row);
         migrated.execute_batch("CREATE TABLE rogue_v24_final_fault(id TEXT)")
     })
@@ -203,6 +208,9 @@ fn v23_fixture() -> super::sqlite_group_agent_graph_run_support::Fixture {
     connection
         .execute_batch(MIGRATE_V22_TO_V23_SQL)
         .expect("restore exact v23 schema");
+    connection
+        .execute_batch(super::RESTORE_HISTORICAL_ANALYSES_SQL)
+        .expect("restore historical analyses definitions for downgraded fixture");
     assert_eq!(schema_version(&connection), 23);
     drop(connection);
     fixture
@@ -302,7 +310,7 @@ fn assert_current_v24_rejected_without_repair(
     let fixture = sqlite_group_agent_graph_execution_schedule_support::prepared_fixture();
     let connection = fixture.connection();
     mutate(&connection).unwrap_or_else(|error| panic!("forge {name}: {error}"));
-    assert_eq!(schema_version(&connection), 24);
+    assert_eq!(schema_version(&connection), 25);
     let before: Vec<SchemaRow> = schema_snapshot(&connection);
     drop(connection);
 
@@ -315,7 +323,7 @@ fn assert_current_v24_rejected_without_repair(
     );
 
     let unchanged = Connection::open(&fixture.database).expect("reopen rejected v24 fixture");
-    assert_eq!(schema_version(&unchanged), 24, "{name}");
+    assert_eq!(schema_version(&unchanged), 25, "{name}");
     assert_eq!(schema_snapshot(&unchanged), before, "{name}");
     drop((unchanged, fixture));
 }

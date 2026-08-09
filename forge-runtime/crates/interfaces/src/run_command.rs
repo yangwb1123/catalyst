@@ -38,6 +38,18 @@ struct RunSetup {
 
 const MAX_HISTORY_CONTENT_BYTES: usize = 512 * 1024;
 const OPENAI_BASE_URL: &str = "https://api.openai.com/v1";
+const OPENAI_BASE_URL_ENV: &str = "OPENAI_BASE_URL";
+
+/// `effective_openai_base_url` honours an explicit `OPENAI_BASE_URL` opt-in for a
+/// self-hosted `/v1` gateway (`LiteLLM`/`Ollama`), falling back to the official
+/// endpoint. The env value is validated downstream by the provider's
+/// endpoint policy (https anywhere, http loopback-only).
+fn effective_openai_base_url() -> String {
+    env::var(OPENAI_BASE_URL_ENV)
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| OPENAI_BASE_URL.to_owned())
+}
 const DEFAULT_OPENAI_MODEL: &str = "gpt-5.6-sol";
 const READ_SYSTEM_PROMPT: &str = "Use only the available read-only tools to answer the user.";
 const NO_TOOL_SYSTEM_PROMPT: &str =
@@ -178,7 +190,7 @@ fn execution_for(options: &StartOptions<'_>) -> RunExecution {
     RunExecution {
         provider: if options.live {
             RunProvider::OpenAiResponses {
-                endpoint: OPENAI_BASE_URL.into(),
+                endpoint: effective_openai_base_url(),
                 model: options.model.unwrap_or(DEFAULT_OPENAI_MODEL).into(),
             }
         } else {
@@ -253,9 +265,12 @@ fn provider_for(execution: &RunExecution) -> Result<Arc<dyn ModelProvider>, Box<
             if api_key.trim().is_empty() {
                 return Err("OPENAI_API_KEY must not be empty for --live execution".into());
             }
-            Ok(Arc::new(OpenAiResponsesProvider::new(
-                endpoint, model, api_key,
-            )?))
+            let provider = if endpoint == OPENAI_BASE_URL {
+                OpenAiResponsesProvider::new(endpoint, model, api_key)?
+            } else {
+                OpenAiResponsesProvider::new_self_hosted(endpoint, model, api_key)?
+            };
+            Ok(Arc::new(provider))
         }
     }
 }

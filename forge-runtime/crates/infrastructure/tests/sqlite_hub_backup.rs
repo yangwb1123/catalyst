@@ -12,6 +12,9 @@ mod sqlite_group_agent_scheduled_node_contract_support;
 mod sqlite_group_agent_scheduled_node_provider_request_support;
 
 
+// v25 widened the endpoint CHECK on the analyses/syntheses tables; a
+// downgraded fixture must restore the historical definitions.
+const RESTORE_HISTORICAL_ANALYSES_SQL: &str = include_str!("restore_historical_analyses.sql");
 fn fixture() -> (TempDir, SqliteHubStore) {
     let root = TempDir::new().expect("hub root");
     let store = SqliteHubStore::open(root.path().join("hub.sqlite3").as_path()).expect("open hub");
@@ -19,6 +22,7 @@ fn fixture() -> (TempDir, SqliteHubStore) {
 }
 
 #[test]
+
 fn upgrade_backs_up_the_old_hub_before_migration() {
     // Production-readiness condition (stage-06 High): an irreversible
     // migration must snapshot the pre-upgrade hub first. Downgrade a hub
@@ -37,6 +41,9 @@ fn upgrade_backs_up_the_old_hub_before_migration() {
              PRAGMA user_version=14;",
         )
         .expect("downgrade to v14");
+    connection
+        .execute_batch(RESTORE_HISTORICAL_ANALYSES_SQL)
+        .expect("restore historical analyses definitions");
     drop(connection);
 
     SqliteHubStore::open(&database).expect("migrate hub to current");
