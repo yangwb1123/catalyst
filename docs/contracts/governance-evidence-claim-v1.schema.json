@@ -1,0 +1,421 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forgeos.dev/contracts/governance-evidence-claim-v1.schema.json",
+  "title": "ForgeOS Governance Evidence and Claim v1",
+  "description": "Strict wire shapes. Cross-record, canonical-byte, digest, state-matrix and shadow-authority rules are enforced by the governance contract validator.",
+  "oneOf": [
+    { "$ref": "#/$defs/evidence_record" },
+    { "$ref": "#/$defs/knowledge_claim" }
+  ],
+  "$defs": {
+    "hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "integrity_hash": {
+      "type": "string",
+      "pattern": "^(?:|[a-f0-9]{64})$"
+    },
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160,
+      "pattern": "^[a-z0-9][a-z0-9._:/-]*$"
+    },
+    "text": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "unix_ms": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9223372036854775807
+    },
+    "nullable_unix_ms": {
+      "oneOf": [
+        { "$ref": "#/$defs/unix_ms" },
+        { "type": "null" }
+      ]
+    },
+    "identifier_list": {
+      "type": "array",
+      "maxItems": 256,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/identifier" }
+    },
+    "nonempty_identifier_list": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 256,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/identifier" }
+    },
+    "principal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "authority_domain",
+        "principal_id",
+        "principal_type",
+        "role",
+        "run_id"
+      ],
+      "properties": {
+        "authority_domain": { "$ref": "#/$defs/identifier" },
+        "principal_id": { "$ref": "#/$defs/identifier" },
+        "principal_type": {
+          "enum": ["agent", "human", "operator", "service", "tool"]
+        },
+        "role": { "$ref": "#/$defs/identifier" },
+        "run_id": { "$ref": "#/$defs/identifier" }
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "aggregate_id",
+        "context_sha256",
+        "created_at_unix_ms",
+        "created_by",
+        "policy_sha256",
+        "project_id",
+        "record_id",
+        "scope",
+        "sequence",
+        "source_revision",
+        "source_tree_sha256",
+        "supersedes_record_ids"
+      ],
+      "properties": {
+        "aggregate_id": { "$ref": "#/$defs/identifier" },
+        "context_sha256": { "$ref": "#/$defs/hash" },
+        "created_at_unix_ms": { "$ref": "#/$defs/unix_ms" },
+        "created_by": { "$ref": "#/$defs/principal" },
+        "policy_sha256": { "$ref": "#/$defs/hash" },
+        "project_id": { "$ref": "#/$defs/identifier" },
+        "record_id": { "$ref": "#/$defs/identifier" },
+        "scope": { "$ref": "#/$defs/identifier" },
+        "sequence": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807
+        },
+        "source_revision": { "$ref": "#/$defs/identifier" },
+        "source_tree_sha256": { "$ref": "#/$defs/hash" },
+        "supersedes_record_ids": { "$ref": "#/$defs/identifier_list" }
+      }
+    },
+    "integrity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["canonical_sha256", "canonicalization"],
+      "properties": {
+        "canonical_sha256": { "$ref": "#/$defs/integrity_hash" },
+        "canonicalization": { "const": "forgeos.canonical-json/v1" }
+      }
+    },
+    "source_snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["snapshot_id", "snapshot_sha256", "snapshot_type"],
+      "properties": {
+        "snapshot_id": { "$ref": "#/$defs/identifier" },
+        "snapshot_sha256": { "$ref": "#/$defs/hash" },
+        "snapshot_type": {
+          "enum": ["artifact", "external", "repository", "runtime"]
+        }
+      }
+    },
+    "collector": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "collector_id",
+        "collector_type",
+        "collector_version",
+        "parameters_sha256",
+        "run_id"
+      ],
+      "properties": {
+        "collector_id": { "$ref": "#/$defs/identifier" },
+        "collector_type": {
+          "enum": ["human", "operator", "service", "tool"]
+        },
+        "collector_version": { "$ref": "#/$defs/identifier" },
+        "parameters_sha256": { "$ref": "#/$defs/hash" },
+        "run_id": { "$ref": "#/$defs/identifier" }
+      }
+    },
+    "nullable_integer": {
+      "oneOf": [
+        {
+          "type": "integer",
+          "minimum": -9223372036854775808,
+          "maximum": 9223372036854775807
+        },
+        { "type": "null" }
+      ]
+    },
+    "locator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "content_sha256",
+        "exit_code",
+        "line_end",
+        "line_start",
+        "locator_ref",
+        "locator_type"
+      ],
+      "properties": {
+        "content_sha256": { "$ref": "#/$defs/hash" },
+        "exit_code": { "$ref": "#/$defs/nullable_integer" },
+        "line_end": { "$ref": "#/$defs/nullable_integer" },
+        "line_start": { "$ref": "#/$defs/nullable_integer" },
+        "locator_ref": { "$ref": "#/$defs/text" },
+        "locator_type": {
+          "enum": ["artifact", "attestation", "command", "external", "metric", "repo"]
+        }
+      }
+    },
+    "evidence_spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "artifact_sha256",
+        "collector",
+        "content_role",
+        "directness",
+        "evidence_type",
+        "locator",
+        "observed_at_unix_ms",
+        "sensitivity",
+        "source_snapshot",
+        "source_trust",
+        "subjects"
+      ],
+      "properties": {
+        "artifact_sha256": {
+          "oneOf": [
+            { "$ref": "#/$defs/hash" },
+            { "type": "null" }
+          ]
+        },
+        "collector": { "$ref": "#/$defs/collector" },
+        "content_role": { "enum": ["trusted_control", "untrusted_data"] },
+        "directness": { "enum": ["attested", "derived", "direct"] },
+        "evidence_type": {
+          "enum": [
+            "artifact",
+            "external_source",
+            "gate_result",
+            "human_attestation",
+            "repo_locator",
+            "runtime_metric",
+            "test_run"
+          ]
+        },
+        "locator": { "$ref": "#/$defs/locator" },
+        "observed_at_unix_ms": { "$ref": "#/$defs/unix_ms" },
+        "sensitivity": { "enum": ["confidential", "internal", "public", "restricted"] },
+        "source_snapshot": { "$ref": "#/$defs/source_snapshot" },
+        "source_trust": { "enum": ["authoritative", "controlled", "observed", "untrusted"] },
+        "subjects": { "$ref": "#/$defs/nonempty_identifier_list" }
+      }
+    },
+    "evidence_status": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reason_codes", "state", "valid_from_unix_ms", "valid_until_unix_ms"],
+      "properties": {
+        "reason_codes": { "$ref": "#/$defs/identifier_list" },
+        "state": { "enum": ["expired", "invalid", "unavailable", "valid"] },
+        "valid_from_unix_ms": { "$ref": "#/$defs/unix_ms" },
+        "valid_until_unix_ms": { "$ref": "#/$defs/nullable_unix_ms" }
+      }
+    },
+    "evidence_record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["api_version", "integrity", "kind", "metadata", "spec", "status"],
+      "properties": {
+        "api_version": { "const": "forgeos.governance/v1" },
+        "integrity": { "$ref": "#/$defs/integrity" },
+        "kind": { "const": "EvidenceRecord" },
+        "metadata": { "$ref": "#/$defs/metadata" },
+        "spec": { "$ref": "#/$defs/evidence_spec" },
+        "status": { "$ref": "#/$defs/evidence_status" }
+      }
+    },
+    "claim_owner": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["principal_id", "principal_type"],
+      "properties": {
+        "principal_id": { "$ref": "#/$defs/identifier" },
+        "principal_type": { "enum": ["agent", "human", "operator", "service", "tool"] }
+      }
+    },
+    "validation_plan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["due_at_unix_ms", "impact_if_false", "method", "owner_id", "required_evidence_types"],
+      "properties": {
+        "due_at_unix_ms": { "$ref": "#/$defs/unix_ms" },
+        "impact_if_false": { "$ref": "#/$defs/text" },
+        "method": { "$ref": "#/$defs/text" },
+        "owner_id": { "$ref": "#/$defs/identifier" },
+        "required_evidence_types": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 7,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "artifact",
+              "external_source",
+              "gate_result",
+              "human_attestation",
+              "repo_locator",
+              "runtime_metric",
+              "test_run"
+            ]
+          }
+        }
+      }
+    },
+    "decision_authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["adr_ref", "approval_ref"],
+      "properties": {
+        "adr_ref": { "$ref": "#/$defs/identifier" },
+        "approval_ref": { "$ref": "#/$defs/identifier" }
+      }
+    },
+    "claim_spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "claim_type",
+        "confidence_micros",
+        "contradicting_evidence_record_ids",
+        "decision_authority",
+        "derived_from_claim_record_ids",
+        "object_type",
+        "object_value",
+        "owner",
+        "predicate",
+        "queue_ref",
+        "reasoning",
+        "review_by_unix_ms",
+        "subject",
+        "supporting_evidence_record_ids",
+        "validation_plan"
+      ],
+      "properties": {
+        "claim_type": {
+          "enum": ["assumption", "constraint", "decision", "fact", "hypothesis", "inference", "lesson", "proposal", "unknown"]
+        },
+        "confidence_micros": {
+          "oneOf": [
+            { "type": "integer", "minimum": 0, "maximum": 1000000 },
+            { "type": "null" }
+          ]
+        },
+        "contradicting_evidence_record_ids": { "$ref": "#/$defs/identifier_list" },
+        "decision_authority": {
+          "oneOf": [
+            { "$ref": "#/$defs/decision_authority" },
+            { "type": "null" }
+          ]
+        },
+        "derived_from_claim_record_ids": { "$ref": "#/$defs/identifier_list" },
+        "object_type": { "enum": ["artifact_ref", "boolean", "integer", "null", "string"] },
+        "object_value": {
+          "oneOf": [
+            { "type": "boolean" },
+            { "type": "integer", "minimum": -9223372036854775808, "maximum": 9223372036854775807 },
+            { "type": "null" },
+            { "type": "string", "maxLength": 16384 }
+          ]
+        },
+        "owner": { "$ref": "#/$defs/claim_owner" },
+        "predicate": { "$ref": "#/$defs/identifier" },
+        "queue_ref": {
+          "oneOf": [
+            { "$ref": "#/$defs/identifier" },
+            { "type": "null" }
+          ]
+        },
+        "reasoning": { "$ref": "#/$defs/text" },
+        "review_by_unix_ms": { "$ref": "#/$defs/nullable_unix_ms" },
+        "subject": { "$ref": "#/$defs/identifier" },
+        "supporting_evidence_record_ids": { "$ref": "#/$defs/identifier_list" },
+        "validation_plan": {
+          "oneOf": [
+            { "$ref": "#/$defs/validation_plan" },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
+    "claim_status": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reason_codes", "state", "valid_from_unix_ms", "valid_until_unix_ms"],
+      "properties": {
+        "reason_codes": { "$ref": "#/$defs/identifier_list" },
+        "state": {
+          "enum": [
+            "accepted",
+            "accepted_risk",
+            "active",
+            "adopted",
+            "candidate",
+            "confirmed",
+            "contested",
+            "deprecated",
+            "draft",
+            "expired",
+            "investigating",
+            "invalidated",
+            "observed",
+            "open",
+            "promoted",
+            "proposed",
+            "rejected",
+            "repeated",
+            "resolved",
+            "retracted",
+            "retired",
+            "stale",
+            "submitted",
+            "superseded",
+            "supported",
+            "testing",
+            "validated",
+            "waived"
+          ]
+        },
+        "valid_from_unix_ms": { "$ref": "#/$defs/unix_ms" },
+        "valid_until_unix_ms": { "$ref": "#/$defs/nullable_unix_ms" }
+      }
+    },
+    "knowledge_claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["api_version", "integrity", "kind", "metadata", "spec", "status"],
+      "properties": {
+        "api_version": { "const": "forgeos.governance/v1" },
+        "integrity": { "$ref": "#/$defs/integrity" },
+        "kind": { "const": "KnowledgeClaim" },
+        "metadata": { "$ref": "#/$defs/metadata" },
+        "spec": { "$ref": "#/$defs/claim_spec" },
+        "status": { "$ref": "#/$defs/claim_status" }
+      }
+    }
+  }
+}

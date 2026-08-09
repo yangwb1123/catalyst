@@ -1,0 +1,124 @@
+api_version: forgeos.agent-engineering/v1
+kind: GovernanceContractRegistry
+status: active_contract
+runtime_binding: cross_language_codec_shadow
+owner: governance
+version: 1
+completion_authority: forge_accept
+
+scope:
+  shipped_kinds: [EvidenceRecord, KnowledgeClaim]
+  planned_kinds: [ContextPackage, CapabilityGrant, ApprovalRecord, TransitionReceipt, KnowledgeUpdateProposal]
+  persistence: forbidden
+  authority_attestation: unavailable
+  trusted_instruction_lane: unavailable
+  production_effects: forbidden
+
+canonicalization:
+  format: forgeos.canonical-json/v1
+  object_keys: ascii_snake_case_sorted
+  input_form: exact_compact_utf8
+  unicode: preserve_exact_scalars_without_normalization
+  forbidden_unicode: [ascii_control, bidi_control, line_separator, paragraph_separator]
+  integers: signed_64_bit_only
+  floats: forbidden
+  max_record_bytes: 131072
+  max_record_set_bytes: 1048576
+  max_depth: 16
+  max_object_fields: 64
+  max_array_items: 256
+  max_string_bytes: 16384
+  digest_encoding: lowercase_hex_without_prefix
+  self_digest_rule: canonicalize_with_integrity_canonical_sha256_empty
+  digest_domains:
+    EvidenceRecord: "forgeos.governance.evidence-record.v1\0"
+    KnowledgeClaim: "forgeos.governance.knowledge-claim.v1\0"
+
+identity:
+  record_id: immutable_record_identity
+  aggregate_id: stable_logical_identity
+  sequence: positive_monotonic_version
+  supersedes: exact_prior_record_ids_same_aggregate
+  canonical_sha256: content_identity_not_record_identity
+  idempotency_key: not_defined_in_this_slice
+
+claim_states:
+  fact: [candidate, confirmed, contested, stale, retracted, superseded]
+  constraint: [candidate, active, waived, expired, superseded]
+  decision: [proposed, accepted, rejected, deprecated, superseded]
+  inference: [candidate, supported, contested, invalidated, expired]
+  assumption: [open, testing, validated, invalidated, expired]
+  hypothesis: [open, testing, validated, invalidated, expired]
+  lesson: [candidate, observed, repeated, retired, promoted]
+  proposal: [draft, submitted, adopted, rejected, superseded]
+  unknown: [open, investigating, resolved, accepted_risk]
+
+shadow_admissibility:
+  fact: [candidate, contested]
+  constraint: [candidate]
+  decision: [proposed]
+  inference: [candidate]
+  assumption: [open, testing]
+  hypothesis: [open, testing]
+  lesson: [candidate]
+  proposal: [draft, submitted]
+  unknown: [open, investigating]
+  authoritative_state_result: reject_authority_unavailable
+  confirmed_fact_result: reject_even_with_declared_direct_evidence
+  hard_gate_eligible_claim_types: []
+
+evidence_semantics:
+  types: [repo_locator, test_run, gate_result, runtime_metric, external_source, human_attestation, artifact]
+  states: [valid, invalid, unavailable, expired]
+  directness: [direct, derived, attested]
+  sensitivities: [public, internal, confidential, restricted]
+  source_trust: [untrusted, observed, controlled, authoritative]
+  shadow_allowed_source_trust: [untrusted, observed]
+  content_roles: [untrusted_data, trusted_control]
+  shadow_allowed_content_roles: [untrusted_data]
+  locator_by_type:
+    repo_locator: repo
+    test_run: command
+    gate_result: command
+    runtime_metric: metric
+    external_source: external
+    human_attestation: attestation
+    artifact: artifact
+
+legacy:
+  rejected_kind_aliases: [Evidence, Claim, ContextManifest, AuthorityGrant, AgentCapabilityGrant]
+  memory_import: not_implemented
+  adr_import: not_implemented
+  missing_confidence_default: forbidden
+  legacy_status_is_authority: false
+
+canonical_refs:
+  schema: docs/contracts/governance-evidence-claim-v1.schema.json
+  golden_fixture: docs/contracts/fixtures/governance-evidence-claim-v1.json
+  skill: .agent/skills/evidence-claim-management.md
+  checker: harness/governance_contract_check.py
+  decision: docs/adr/0045-canonical-evidence-claim-contract.md
+  standard: docs/design/ai-engineering-os/governance-contracts.md
+
+contract_pins:
+  schema_sha256: b2f8824c95012d94e71b4643756890a7a23f67dc1b9e0e8ecacf979b016864e8
+  golden_fixture_sha256: db111600f93e63b3533b1f06b14d7520eb4cbec0e4c6d0e3a6e0fd7e2740824a
+
+reference_implementations:
+  python:
+    ref: harness/governance_contract_check.py
+    projection: universal_scaffold
+  go:
+    ref: forge-core/internal/governancecontract
+    projection: catalyst_repository_only
+  rust:
+    ref: forge-runtime/crates/domain/src/governance_contract
+    projection: catalyst_repository_only
+
+non_capabilities:
+  - no append-only ledger or materialized truth view
+  - no authenticated principal collector reviewer or authority
+  - no confirmed fact accepted decision waiver or hard-gate satisfaction
+  - no ContextPackage CapabilityGrant Approval or Transition runtime
+  - no knowledge apply or legacy Memory and ADR promotion
+  - no pre-code block completion verdict or production effect

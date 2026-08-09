@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Shared strict parsing and reference helpers for engineering contracts."""
+import os
 from pathlib import Path
 
 import yaml
@@ -36,11 +37,22 @@ _UniqueKeyLoader.add_constructor(
 )
 
 
+def read_bounded_spec(path):
+    try:
+        with path.open("rb") as stream:
+            if os.fstat(stream.fileno()).st_size > MAX_SPEC_BYTES:
+                raise ValueError(f"file exceeds {MAX_SPEC_BYTES} bytes")
+            raw = stream.read(MAX_SPEC_BYTES + 1)
+    except MemoryError as error:
+        raise ValueError("bounded spec read exhausted memory") from error
+    if len(raw) > MAX_SPEC_BYTES:
+        raise ValueError(f"file exceeds {MAX_SPEC_BYTES} bytes")
+    return raw
+
+
 def load_yaml(path):
     try:
-        raw = path.read_bytes()
-        if len(raw) > MAX_SPEC_BYTES:
-            raise ValueError(f"file exceeds {MAX_SPEC_BYTES} bytes")
+        raw = read_bounded_spec(path)
         text = raw.decode("utf-8")
         token_types = (yaml.tokens.AnchorToken, yaml.tokens.AliasToken)
         if any(isinstance(token, token_types) for token in yaml.scan(text)):

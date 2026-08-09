@@ -97,6 +97,24 @@ detectors:
       positive: { path: harness/test_agent_engineering_check.py, contains: structured_receipt_accepted }
       negative: { path: harness/test_agent_engineering_check.py, contains: decision_field_rejected }
 
+  - id: governance.evidence_claim_contract
+    version: 1.0.0
+    state: shadow
+    rule_refs: [TRUTH-002]
+    implementation:
+      argv: [python3, harness/governance_contract_check.py, repo_root, governance_record_set]
+      cwd: repo_root
+      shell: false
+    invocation:
+      owner: operator
+      adapter: standalone.governanceEvidenceClaim
+      acceptance_criterion: null
+      load_bearing: false
+    fail_closed: true
+    tests:
+      positive: { path: harness/test_governance_contract_check.py, contains: test_golden_record_set_is_structurally_valid }
+      negative: { path: harness/test_governance_contract_check.py, contains: test_authoritative_state_is_rejected }
+
   - id: backend.decision_package
     version: 1.0.0
     state: shadow

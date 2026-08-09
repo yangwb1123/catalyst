@@ -69,9 +69,13 @@ function canonicalHistoricalPath(rel) {
     || clean === 'docs/design/ai-engineering-os/backend-decision-standard.md'
     || clean === 'docs/design/ai-engineering-os/frontend-design-standard.md'
     || clean === 'docs/design/ai-engineering-os/frontend-code-architecture-standard.md'
+    || clean === 'docs/design/ai-engineering-os/governance-contracts.md'
     || clean === 'docs/adr/0042-frontend-design-decision-contract.md'
     || clean === 'docs/adr/0043-frontend-code-architecture-governance.md'
     || clean === 'docs/adr/0044-business-ui-geometry-contract.md'
+    || clean === 'docs/adr/0045-canonical-evidence-claim-contract.md'
+    || clean === 'docs/contracts/governance-evidence-claim-v1.schema.json'
+    || clean === 'docs/contracts/fixtures/governance-evidence-claim-v1.json'
   ) return segments.join(sep);
   return HISTORICAL_ROOTS.some((dir) => clean.startsWith(`${dir}/`))
     ? segments.join(sep)

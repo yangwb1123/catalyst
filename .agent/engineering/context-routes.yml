@@ -39,7 +39,11 @@ routes:
         - { field: task_type, operator: in, values: [governance, agent_engineering] }
     include:
       - { ref: .agent/engineering/rules.yml, lane: instruction, required: true, max_bytes: 131072 }
+      - { ref: .agent/engineering/governance-contracts.yml, lane: instruction, required: true, max_bytes: 65536 }
+      - { ref: .agent/skills/evidence-claim-management.md, lane: instruction, required: true, max_bytes: 65536 }
       - { ref: .agent/policies/modes.yml, lane: trusted_context, required: true, max_bytes: 131072 }
+      - { ref: docs/contracts/governance-evidence-claim-v1.schema.json, lane: trusted_context, required: true, max_bytes: 131072 }
+      - { ref: docs/design/ai-engineering-os/governance-contracts.md, lane: trusted_context, required: true, max_bytes: 131072 }
       - { ref: harness/policies.yml, lane: trusted_context, required: true, max_bytes: 65536 }
 
   - id: architecture-boundary

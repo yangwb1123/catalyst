@@ -44,6 +44,7 @@
 - `eval/frontend-design-package.schema.yml`:分离 artifact 与 proof claim，截图绑定 source/build/fixture/environment；只判结构有效性，不授予 UI 质量或完成裁决
 - `skills/{information-interaction-design,design-system-accessibility,frontend-client-engineering}.md`:复用现有 capability ownership；产品风格是 Profile，React/Vue/Flutter/RN 是条件化平台映射，不制造平行 Skill 树
 - `skills/ui-geometry.md`:条件化 supporting procedural adapter；用 `business_ui_composition` 把角色/任务/状态/数据语义绑定到区域、轴、分组、间距、线条、形状与响应式关系，并可接收声明式 `geometry_measurement_receipts`。它不新增 capability owner，也不证明浏览器/原生 Runner 真执行、视觉质量或完成
+- `engineering/governance-contracts.yml` + `skills/evidence-claim-management.md`:EvidenceRecord/KnowledgeClaim v1 的 identity、canonical bytes、digest、state 与 shadow admissibility；只证明结构/引用一致，不确认事实、不授予 authority、不写知识或生命周期
 
 ## 阅读顺序
 

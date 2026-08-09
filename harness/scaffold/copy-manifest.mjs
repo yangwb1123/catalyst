@@ -59,17 +59,29 @@ export const COPIED_FILES = [
   join('docs', 'design', 'ai-engineering-os', 'backend-decision-standard.md'),
   join('docs', 'design', 'ai-engineering-os', 'frontend-design-standard.md'),
   join('docs', 'design', 'ai-engineering-os', 'frontend-code-architecture-standard.md'),
+  join('docs', 'design', 'ai-engineering-os', 'governance-contracts.md'),
   // The copied AFDS standard links this accepted decision. Keep the governing
   // rationale in the same projection so generated projects have no dangling
   // local documentation links.
   join('docs', 'adr', '0042-frontend-design-decision-contract.md'),
   join('docs', 'adr', '0043-frontend-code-architecture-governance.md'),
   join('docs', 'adr', '0044-business-ui-geometry-contract.md'),
+  join('docs', 'adr', '0045-canonical-evidence-claim-contract.md'),
+  join('docs', 'contracts', 'governance-evidence-claim-v1.schema.json'),
+  join('docs', 'contracts', 'fixtures', 'governance-evidence-claim-v1.json'),
   // harness tools
   join('harness', 'gate.mjs'),
   join('harness', 'policies.yml'),
   join('harness', 'check.py'),
   join('harness', 'agent_engineering_check.py'), // imported by check.py; validates scoped Agent Engineering contracts
+  join('harness', 'governance_contract_check.py'), // strict EvidenceRecord/KnowledgeClaim shadow codec and validator
+  join('harness', 'governance_contract', '__init__.py'),
+  join('harness', 'governance_contract', 'codec.py'),
+  join('harness', 'governance_contract', 'constants.py'),
+  join('harness', 'governance_contract', 'fixture.py'),
+  join('harness', 'governance_contract', 'record_set.py'),
+  join('harness', 'governance_contract', 'semantics.py'),
+  join('harness', 'governance_contract', 'shape.py'),
   join('harness', 'backend_decision_contract.py'), // canonical backend trigger/dimension/floor vocabulary and byte pins
   join('harness', 'backend_decision_check.py'), // BackendDecisionPackage contract + instance validator (shadow)
   join('harness', 'backend_evidence_check.py'), // typed/subject-bound bounded evidence resolution
@@ -93,6 +105,7 @@ export const COPIED_FILES = [
   join('harness', 'engineering_detector_check.py'), // activation/capability/detector wiring validator
   join('harness', 'engineering_check_support.py'), // strict YAML and repository-reference primitives
   join('harness', 'engineering_routing_check.py'), // context-route and assurance-profile validation
+  join('harness', 'governance_engineering_check.py'), // Evidence/Claim registry, pin, Skill, and detector integration
   join('harness', 'mode_gating_check.py'), // imported by check.py; without it check.py fails to import
   join('harness', 'release_boundary_check.py'), // imported by check.py; pins docs-only deploy/rollback trust boundary
   join('harness', 'workflow_control_check.py'), // imported by check.py; fails closed on dangling/unsupported workflow control
@@ -138,7 +151,10 @@ export const COPIED_FILES = [
   // test_enforce.mjs (pins the warn|block enforce resolution in the copied adapters.mjs)
   // was once dropped here — the drift test_forge-init.mjs's manifest guard now forbids.
   join('harness', 'test_check.py'),
+  join('harness', 'test_check_bounded_input.py'),
   join('harness', 'test_agent_engineering_check.py'),
+  join('harness', 'test_governance_contract_check.py'),
+  join('harness', 'test_governance_engineering_integration.py'),
   join('harness', 'test_backend_decision_check.py'),
   join('harness', 'test_frontend_design_adversarial.py'),
   join('harness', 'test_frontend_business_ui_composition_boundaries.py'),

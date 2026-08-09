@@ -1,4 +1,5 @@
 mod event;
+pub mod governance_contract;
 mod group_agent_graph;
 mod group_agent_graph_run;
 mod group_agent_node_execution;

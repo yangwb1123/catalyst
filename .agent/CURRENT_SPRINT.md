@@ -1179,6 +1179,50 @@ recovery source/逐状态覆盖、axis reciprocity 和 L4 risk trigger 缺口；
 golangci-lint exit 7、ruff/eslint 缺失，coverage 为 N/A；未降低工具链、manifest 或门禁伪造通过。这些结果只证明本地
 合同/引用/对抗回归，不升级为浏览器执行、可信 producer 或 UI 质量证明。
 
+## Sprint 93（✅ canonical shadow kernel 完成；truth/authority/Hub 与 load-bearing promotion 未启用）— Evidence / Claim Governance Contract
+
+用户要求把证据、声明、来源、派生关系与验证状态从自由文本提升为跨语言、可迁移、可审计的治理合同。本轮以 ADR 0045 冻结
+`forgeos.canonical-json/v1`，保持 shadow/non-load-bearing：结构有效不等于事实为真、来源可信、声明获批或任务完成，唯一完成权威仍是
+`forge accept`，也未引入新的 Hub、签名身份或持久化真值系统。
+
+(1) **严格身份与 canonical wire**:EvidenceRecord 与 KnowledgeClaim 使用 ASCII snake_case、键排序、compact UTF-8、禁止 Unicode
+控制/双向字符、signed int64、无浮点、无隐式 Unicode normalization；记录、集合、深度、字段、数组和字符串均有硬上限。摘要固定为
+`SHA-256(domain + NUL + canonical record with empty self digest)`，使用小写十六进制；业务 subject、数据库式 ID、来源 locator 与
+claim derivation 分开，跨 subject 派生允许，但自引用和环被拒绝。正向输出精确为
+`STRUCTURALLY_VALID (shadow; no truth or authority attestation)`。
+
+(2) **跨语言 codec 与单一合同**:JSON Schema、golden fixture、Python package/CLI、Go package及 Rust domain module 使用同一 v1 语义；
+schema/fixture/registry 摘要固定，两个 golden record digest 分别为
+`dc6963537f59e0594e6d5d1651e16070b81365ff379acc5ec09956b18e4b17b4` 与
+`953b14819b50db73cdb3e1b523303c7c669a7e9bbeeacefcd89c4b25681da8ec`。Skill 经三组全新请求前向测试后，能区分 golden wrapper 与
+checker record-set，按仓库前提选择 Python/Go/Rust 命令，并在缺少 `go.mod`/`Cargo.toml` 或受支持 Rust 1.93 时诚实标记未执行；
+`--ignore-rust-version` 只允许诊断，不算正式通过。
+
+(3) **有界输入与失效关闭**:普通 CLI、golden/schema/fixture pin 检查、composed governance detector 及 engineering YAML 入口均先
+`fstat` 再最多读取上限+1 字节；超长整数 lexeme、深层 JSON、超大文件和 `MemoryError` 只产生受控错误，不 traceback 或无界分配。
+repo locator 同时拒绝 POSIX 逃逸、绝对路径、反斜杠和 `C:/...`/`C:...` drive-qualified 路径。producer 在填入 64 字符 digest 前检查
+最终 sealed record 上限，Python/Go/Rust 对 `MAX-64+1` 边界一致；Go typed-wire roundtrip 阻止 required integer `null` 被零值吞掉。
+
+(4) **声明图与版本诚实**:claims 只能引用同一 record-set 中存在的证据或声明，引用图必须无环；subject 表示业务主体/图节点，不冒充
+claim record ID。未来 provenance envelope 被明确列为新版本候选，不能以 v1 `kind` 写入，避免同版本 wire collision。当前 verifier 只
+证明字节、schema、摘要和图结构，不证明 evidence 内容、外部 producer、reviewer 身份、时效或业务结论。
+
+(5) **接线、scaffold 与兼容**:`governance-contracts.yml`、Context route、shadow detector/rule、`forge check`、fresh scaffold 与
+legacy exact-allowlist upgrade 已接入；scaffold 同步 standard/ADR/schema/fixture/Skill/Python package/tests，并移除不存在的 ADR 0037
+引用。为守住 500 行工程预算，governance wiring 从 `agent_engineering_check.py` 拆入高内聚 helper，而非压缩代码；`check.py` 的旧
+YAML anchor 行为保持兼容，严格 engineering-spec loader 仍拒绝 anchor/alias。
+
+(6) **复审推动的缺陷闭合**:独立复审与对抗 fuzz 关闭了 Python malformed/extreme shape 崩溃、文档 v1 冲突与 subject 歧义、Go
+required-int null、sealed-size 边界、Windows drive locator、所有正式入口的有界读取、稀疏/内存异常 YAML、旧 checker anchor
+回归和 scaffold dangling reference。第三轮全新上下文冻结树复审又复现 JSON parse/canonical/digest `MemoryError` 会穿透两个公开 CLI
+模式；codec、record-set、golden 与 CLI 边界及注入回归全部补齐后，复审重跑结论 **ACCEPT**，0 Blocker / 0 Major / 0 Minor。
+
+最终验证：递归 Python **350/350**、完整 Node **398/398**、Go `test`/`test -race`/`vet`/`build` 全绿；Rust governance 在已安装
+1.92 + `--ignore-rust-version` 下 **13/13** 仅作诊断，不能冒充项目要求的受支持 Rust 1.93 结果。`forge check` **13/13**、gate
+（1618 files）、architecture **8/8**（1132 source files）和 `git diff --check` 均通过。完整 acceptance 诚实为
+**6 PASS / 4 FAIL / 1 N/A**：宿主默认 Cargo 1.83 无法解析 Rust 2024/项目要求 1.93，lint 另有 golangci-lint exit 7、
+ruff/eslint 缺失及相同 Cargo 阻塞，coverage 为 N/A；没有降低工具链、manifest、schema 或门禁来伪造完成。
+
 ## 下一前沿(需外部资源 / 后续阶段 / 投机增强 / 明确非目标,非本环境可完整验证)
 - **Graph 下一协议切片**:SQLite v17–v24 已交付 successor candidate、per-node request/lifecycle、receipt/content dataflow、wave-ready/admit、本地 hard-crash adjudication与 8 MiB successor candidate 持久化上限；下一步是顶层整图执行循环、并发 wave 的失败传播/恢复以及安全 resume/branching。不得把当前逐节点 operator 驱动或 Hub-local single-consumption 冒充远程 exactly-once。
 - **真点火** `--agent-cmd=claude`:**multi-agent running to completion 已坐实**(Sprint 25:真 claude 多-agent 跑到 converge MET,增量级 + 版本级)。完整旋钮:四维资源护栏 + 成本三维(phase/时间/美元)+ 任务注入 + 写权限 + 模型路由 + 工作目录 + retry + loop-back;诚实分工:agent 自治增量绿、人确认版本竣工。docs/ignition.md 有完整配方 + 实测

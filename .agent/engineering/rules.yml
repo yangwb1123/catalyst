@@ -25,6 +25,23 @@ rules:
     owner: governance
     version: 1.0.0
 
+  - id: TRUTH-002
+    title: Knowledge claims cannot outrun evidence or authority
+    level: invariant
+    severity: warning
+    scope: [governance, evidence, knowledge]
+    trigger: { artifacts: [evidence_record, knowledge_claim] }
+    rationale: A deterministic record shape or declared observation cannot authenticate its producer, confirm truth or mint decision authority.
+    requirements: [Separate observations from claims, preserve conflicts and validate canonical bytes, references, provenance declarations and kind-scoped state.]
+    forbidden: [Promote a shadow claim to confirmed, accepted, active or waived, or use it to satisfy a hard gate.]
+    verification:
+      mode: review
+      reviewer_refs: [governance.evidence_claim_contract, reviewer.governance_authority]
+      proof_types: [governance_record_set, canonical_digest, independent_authority_review]
+    exceptions: { allowed: false }
+    owner: governance
+    version: 1.0.0
+
   - id: SEC-001
     title: Secrets must not enter source, logs or snapshots
     level: invariant

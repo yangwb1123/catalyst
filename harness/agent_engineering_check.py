@@ -37,6 +37,7 @@ from engineering_routing_check import (
     check_engineering_context_routes as _check_engineering_context_routes,
     check_engineering_workflow_profiles as _check_engineering_workflow_profiles,
 )
+from governance_engineering_check import check_governance_evidence_claim_contract
 
 
 SPEC_FILES = {
@@ -53,6 +54,7 @@ SPEC_FILES = {
     "frontend_profiles": "engineering/frontend-profiles.yml",
     "frontend_package": "eval/frontend-design-package.schema.yml",
     "frontend_architecture_policy": "engineering/frontend-code-architecture.yml",
+    "governance_contracts": "engineering/governance-contracts.yml",
 }
 PROJECT_REFS = {
     "activation": ".agent/engineering/activation.yml",
@@ -79,6 +81,12 @@ EXTENSION_REFS = {
     "frontend_architecture_baseline": ".arch/frontend-architecture-baseline.v1.json",
     "frontend_architecture_waivers": ".arch/frontend-architecture-waivers.v1.json",
     "frontend_architecture_standard": "docs/design/ai-engineering-os/frontend-code-architecture-standard.md",
+    "governance_contract_registry": ".agent/engineering/governance-contracts.yml",
+    "governance_contract_schema": "docs/contracts/governance-evidence-claim-v1.schema.json",
+    "governance_contract_fixture": "docs/contracts/fixtures/governance-evidence-claim-v1.json",
+    "governance_contract_skill": ".agent/skills/evidence-claim-management.md",
+    "governance_contract_decision": "docs/adr/0045-canonical-evidence-claim-contract.md",
+    "governance_contract_standard": "docs/design/ai-engineering-os/governance-contracts.md",
 }
 DISCIPLINES = {
     "prompt", "context", "memory", "tool", "planning", "loop",
@@ -103,8 +111,6 @@ FRONTEND_ARCH_POLICY_FIELDS = {
     "review_lenses", "god_file_risk", "exception_contract",
     "evidence_contract", "canonical_refs",
 }
-
-
 def check_engineering_files(agent_root):
     issues = []
     for name, relative in SPEC_FILES.items():
@@ -400,6 +406,7 @@ def check_agent_engineering_spec(agent_root):
         check_engineering_context_routes, check_engineering_workflow_profiles,
         check_completion_evidence_schema, check_backend_decision_contract,
         check_frontend_design_contract, check_frontend_code_architecture_contract,
+        check_governance_evidence_claim_contract,
     )
     return [issue for check in checks for issue in check(agent_root)]
 

@@ -20,6 +20,8 @@ shadow detector；Vue/Dart 目标在缺少编译器 adapter 时 inconclusive，�
 ADR-0044 在既有 AFDS 内增加不拥有 fine capability 的 `ui-geometry` supporting Skill、digest-bound business UI composition
 和 capture-bound geometry report。它校验角色/任务/数据到区域、轴、分组、Token 和响应式处置的结构闭合，但仍不认证
 浏览器/原生 Runner、视觉 Reviewer 或审美结论。
+ADR-0045 交付 0F-A strict EvidenceRecord/KnowledgeClaim v1、canonical digest、Go/Rust/Python golden 与 universal shadow checker；
+它不提供 ledger、authenticated identity、Context/Grant/Approval/Transition、knowledge apply 或 hard-gate authority。
 
 | 节点 | 当前覆盖 | 已有基础 | 主要缺口 |
 |---:|---|---|---|
@@ -76,19 +78,20 @@ Canonical capability/governance schemas
 - [x] 交付 ADR-0042 前端 shadow 决策合同、Profile/Pattern catalog、flow/state/action/permission 结构与引用关卡、三张 Skill adapter、Context route、package/evidence validator 与 adversarial/scaffold 回归；完整业务语义和图可达性仍需项目执行证据或独立审查；
 - [x] 交付 ADR-0043 前端代码架构 Skill、项目 module/dependency/public API 合同、Compiler API 驱动的 TypeScript shadow detector、精确 baseline/waiver 与 adversarial/scaffold 回归；Vue/Dart adapter、语义内聚和 load-bearing promotion 仍待真实项目证据；
 - [x] 交付 ADR-0044 业务绑定 UI 几何合同：不新增 capability owner，以 versioned composition source artifact 绑定角色/任务/状态/数据语义与 region/axis/group/spacing/stroke/shape/reflow，并以同 capture context 的声明式 geometry report 保存原始 observation；可信 Runner/Reviewer attestation 仍待 runtime；
-- [ ] 定义严格的 Governance Envelope、Evidence/Claim、ConstitutionRule、Grant、TransitionReceipt JSON Schema；
+- [x] 交付 ADR-0045 的 strict EvidenceRecord/KnowledgeClaim v1 schema、identity/state matrix、无权限 shadow admissibility 和 Skill adapter；完整 Envelope、ConstitutionRule、Grant、TransitionReceipt 仍未实现；
 - [ ] 冻结 CognitiveAtom、DecisionTransaction、InteractionEvent、Capability invocation、Artifact/Execution receipt Kernel ABI；
-- [ ] 定义 canonical bytes/digest domains、大小/数量上限、错误代码和版本迁移策略；
-- [ ] 建跨 Go/Rust/Python golden 与 malformed/duplicate/unknown/oversize adversarial fixtures；
+- [x] 冻结 Evidence/Claim canonical bytes、kind digest domain、大小/数量上限和 v1 兼容边界；统一 Kernel 错误代码和持久化迁移仍待后续；
+- [x] 建 Evidence/Claim 跨 Go/Rust/Python golden 与 malformed/duplicate/unknown/oversize/authority adversarial 回归；
 - [ ] 设计旧 memory/ADR 的只读导入：默认 `unverified_legacy`，绝不自动确认。
 
-**完成判据。** 相同输入跨语言产生相同 canonical digest；未知/重复字段失败；无 Evidence 的 confirmed Fact、用 Assumption
-满足 hard gate、过期 Grant/Approval、非法状态跳转全部被拒绝。
+**Wave 0F-A 已达判据。** 相同 Evidence/Claim 输入跨语言产生相同 canonical bytes/digest，未知/重复字段、无 Evidence 的 Fact
+候选、所有 confirmed/accepted/waived authority 状态和 Assumption hard-gate 资格均失败关闭。过期 Grant/Approval 与 runtime 状态跳转
+仍无实现，不得从本切片推断已经拒绝。
 
 ## 4. Wave 1 — Evidence、Claim、Context 与权限内核（最高优先）
 
 - [ ] 实现 append-only Evidence/Claim ledger 与 current materialized view；
-- [ ] 实现 KnowledgeClaim 状态、冲突、supersede、freshness 和 validation plan；
+- [ ] 在 0F-A 严格记录之上实现 durable KnowledgeClaim lifecycle transition、current/conflict materialized view、freshness enforcement 与 validation job scheduling；
 - [ ] 实现 `ContextPackage v1` 的选择、遗漏、redaction、token budget、digest 和 cache invalidation；
 - [ ] 把当前 artifact provenance、Evolve locator 和 gate/test result 适配为 Evidence；
 - [ ] 实现 `CapabilityGrant v1`、最小 effect vocabulary、preflight/postflight 与 audit receipts；

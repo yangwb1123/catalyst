@@ -90,6 +90,7 @@ const COPIED_HARNESS = [
   join('harness', 'engineering_detector_check.py'),
   join('harness', 'engineering_check_support.py'),
   join('harness', 'engineering_routing_check.py'),
+  join('harness', 'governance_engineering_check.py'),
   join('harness', 'release_boundary_check.py'),
   join('harness', 'workflow_control_check.py'),
   join('harness', 'acceptance.mjs'),
@@ -107,6 +108,7 @@ const COPIED_HARNESS = [
   join('harness', 'scorecard.mjs'),
   join('harness', 'scorecard-update.mjs'),
   join('harness', 'test_check.py'),
+  join('harness', 'test_check_bounded_input.py'),
   join('harness', 'test_agent_engineering_check.py'),
   join('harness', 'test_backend_decision_check.py'),
   join('harness', 'test_frontend_design_adversarial.py'),
@@ -307,6 +309,10 @@ test('forge-init scaffolds COMPLETE governance and the project is ACCEPTED', (t)
     copiedMarkdownLinkIssues(target),
     [],
     'copied Markdown contains dangling or escaping local links',
+  );
+  assert.doesNotMatch(
+    readFileSync(join(target, '.agent', 'skills', 'evidence-claim-management.md'), 'utf8'),
+    /docs\/adr\/0037-capability-centric-ai-engineering-operating-model\.md/,
   );
 
   // (5) ★ THE IRON PROOF: running the FULL acceptance gate on the fresh project

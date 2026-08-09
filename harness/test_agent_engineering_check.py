@@ -25,7 +25,7 @@ def make_temp_repo():
     root = Path(tempfile.mkdtemp(prefix="forge-engineering-"))
     for relative in (
         ".agent", ".ai", ".arch", "harness", "docs/release",
-        "docs/design/ai-engineering-os",
+        "docs/design/ai-engineering-os", "docs/adr", "docs/contracts",
     ):
         _copy_tree(REPO_ROOT / relative, root / relative)
     return root

@@ -34,6 +34,10 @@ planning-only AI Engineering OS catalog.
   `geometry_measurement_receipts`; those records express business-to-layout
   relationships and declared runner observations, not authenticated browser/native
   execution or a visual-quality verdict.
+- `governance-contracts.yml` and `../skills/evidence-claim-management.md` define
+  strict EvidenceRecord/KnowledgeClaim identity, canonical bytes, state matrices and
+  shadow admissibility. The universal checker rejects authority-bearing states and
+  never turns structural validity into truth, approval, completion or knowledge writeback.
 
 `python3 -B harness/check.py` validates these contracts. The validator proves
 schema integrity, canonical capability ownership, real detector wiring, closed
@@ -42,6 +46,8 @@ structure. `python3 -B harness/backend_decision_check.py . <package.yml>` can
 validate one backend package; `python3 -B harness/frontend_design_check.py . <package.yml>`
 can validate one frontend package, including bounded composition/report structure,
 cross-references and digest bindings. Both detectors remain shadow and non-load-bearing.
+`python3 -B harness/governance_contract_check.py . <canonical-record-set.json>` validates
+one exact compact Evidence/Claim set and returns only an authority-free structural result.
 A structured receipt and declared producer/reviewer identity are still not cryptographic proof that a command ran or a distinct principal reviewed it;
 `forge accept` remains the only completion authority. The validator does not
 claim that the future AADM solver, context runtime, capability runtime,

@@ -34,3 +34,9 @@ canonical_extension_refs:
   frontend_architecture_baseline: .arch/frontend-architecture-baseline.v1.json
   frontend_architecture_waivers: .arch/frontend-architecture-waivers.v1.json
   frontend_architecture_standard: docs/design/ai-engineering-os/frontend-code-architecture-standard.md
+  governance_contract_registry: .agent/engineering/governance-contracts.yml
+  governance_contract_schema: docs/contracts/governance-evidence-claim-v1.schema.json
+  governance_contract_fixture: docs/contracts/fixtures/governance-evidence-claim-v1.json
+  governance_contract_skill: .agent/skills/evidence-claim-management.md
+  governance_contract_decision: docs/adr/0045-canonical-evidence-claim-contract.md
+  governance_contract_standard: docs/design/ai-engineering-os/governance-contracts.md
