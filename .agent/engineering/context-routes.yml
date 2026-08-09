@@ -90,7 +90,7 @@ routes:
     match:
       op: any
       predicates:
-        - { field: changed_path, operator: glob_any, values: ["**/ui/**", "**/components/**", "**/pages/**", "**/screens/**", "**/views/**", "**/routes/**", "**/widgets/**", "**/*.tsx", "**/*.jsx", "**/*.vue", "**/*.dart"] }
+        - { field: changed_path, operator: glob_any, values: ["**/ui/**", "**/components/**", "**/pages/**", "**/screens/**", "**/views/**", "**/routes/**", "**/widgets/**", "**/features/**", "**/entities/**", "**/shared/ui/**", "**/shared/api/**", "**/styles/**", "**/theme/**", "**/tokens/**", "**/*.tsx", "**/*.jsx", "**/*.vue", "**/*.dart", "**/*.css", "**/*.scss", "**/*.sass", "**/*.less"] }
         - { field: capability_id, operator: in, values: [information-architecture, interaction-design, content-design, visual-design, design-system, accessibility, usability-testing, frontend-engineering, client-engineering] }
     include:
       - { ref: .ai/prompts/00-product-discovery.md, lane: untrusted_data, required: false, max_bytes: 131072 }
@@ -98,10 +98,16 @@ routes:
       - { ref: .agent/skills/information-interaction-design.md, lane: instruction, required: true, max_bytes: 131072 }
       - { ref: .agent/skills/design-system-accessibility.md, lane: instruction, required: true, max_bytes: 131072 }
       - { ref: .agent/skills/frontend-client-engineering.md, lane: instruction, required: true, max_bytes: 131072 }
+      - { ref: .agent/skills/frontend-code-architecture.md, lane: instruction, required: true, max_bytes: 131072 }
       - { ref: .agent/engineering/frontend-design-gates.yml, lane: instruction, required: true, max_bytes: 131072 }
+      - { ref: .agent/engineering/frontend-code-architecture.yml, lane: instruction, required: true, max_bytes: 131072 }
       - { ref: .agent/engineering/frontend-profiles.yml, lane: trusted_context, required: true, max_bytes: 131072 }
       - { ref: .agent/eval/frontend-design-package.schema.yml, lane: trusted_context, required: true, max_bytes: 131072 }
+      - { ref: .arch/frontend-architecture.v1.json, lane: trusted_context, required: true, max_bytes: 131072 }
+      - { ref: .arch/frontend-architecture-baseline.v1.json, lane: trusted_context, required: true, max_bytes: 131072 }
+      - { ref: .arch/frontend-architecture-waivers.v1.json, lane: trusted_context, required: true, max_bytes: 131072 }
       - { ref: docs/design/ai-engineering-os/frontend-design-standard.md, lane: trusted_context, required: true, max_bytes: 131072 }
+      - { ref: docs/design/ai-engineering-os/frontend-code-architecture-standard.md, lane: trusted_context, required: true, max_bytes: 131072 }
 
   - id: release-boundary
     priority: 120

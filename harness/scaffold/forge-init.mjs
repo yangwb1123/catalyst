@@ -66,10 +66,14 @@ import {
   GOVERNANCE_DIRS,
   COPIED_FILES,
   HARNESS_NOT_COPIED,
+  PROJECT_INSTANCE_FILES,
   SCAFFOLD_STATE_FILE,
 } from './copy-manifest.mjs';
 
-export { GOVERNANCE_DIRS, COPIED_FILES, HARNESS_NOT_COPIED, SCAFFOLD_STATE_FILE };
+export {
+  GOVERNANCE_DIRS, COPIED_FILES, HARNESS_NOT_COPIED, PROJECT_INSTANCE_FILES,
+  SCAFFOLD_STATE_FILE,
+};
 
 // The script's own location locates the ForgeOS SOURCE repo root so we copy the
 // REAL tools. This tool lives in harness/scaffold/, so the repo root is TWO levels
@@ -360,7 +364,7 @@ function lexicalExists(path) {
 
 function assertSafeTarget(targetDir, force) {
   const planned = [...new Set([
-    ...copiedProjection(), ...GENERATED_FILES, SCAFFOLD_STATE_FILE,
+    ...copiedProjection(), ...PROJECT_INSTANCE_FILES, ...GENERATED_FILES, SCAFFOLD_STATE_FILE,
   ])];
   assertNoSymlinkComponents(targetDir, 'target directory');
   for (const rel of planned) {
@@ -420,9 +424,10 @@ function writeGeneratedProjectFiles(cfg, targetDir, created) {
 }
 
 // Scaffold the whole project. Returns the list of created relative paths.
-// Three data-driven phases: (1) copy whole governance-asset trees, (2) copy the
-// explicit file manifest (red-lines + full harness), (3) generate project
-// identity + CC adapter + CI. Everything copied resolves paths from its own
+// Four data-driven phases: (1) copy whole governance-asset trees, (2) copy the
+// explicit file manifest (red-lines + full harness), (3) seed project-owned
+// architecture instances, (4) generate project identity + CC adapter + CI.
+// Everything copied resolves paths from its own
 // on-disk location, so the fresh project runs the FULL acceptance gate.
 export function scaffold(cfg) {
   const targetDir = resolve(cfg.target);
@@ -432,6 +437,7 @@ export function scaffold(cfg) {
 
   for (const relDir of GOVERNANCE_DIRS) copyTree(relDir, SOURCE_ROOT, targetDir, created);
   for (const rel of COPIED_FILES) copyFromSource(rel, SOURCE_ROOT, targetDir, created);
+  for (const rel of PROJECT_INSTANCE_FILES) copyFromSource(rel, SOURCE_ROOT, targetDir, created);
   // Seed app + test so the load-bearing app_test_pass criterion is a REAL pass.
   writeGeneratedProjectFiles(cfg, targetDir, created);
 

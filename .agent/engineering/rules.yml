@@ -76,6 +76,23 @@ rules:
     owner: architecture
     version: 1.0.0
 
+  - id: FEARCH-001
+    title: Frontend module boundaries require explicit ownership and evidence
+    level: policy
+    severity: warning
+    scope: [frontend, client, source]
+    trigger: { changes: [route, page, feature, module, shared_state, public_client_contract, imports] }
+    rationale: Client structure decays when business changes cross undeclared boundaries or internal surfaces become accidental contracts.
+    requirements: [Declare the active architecture target, module ownership, allowed dependency matrix, public entrypoints and state data effect owners.]
+    forbidden: [Treat path heuristics or a God score as proof of semantic quality, or bypass a boundary through deep imports, global state, event buses or suppressions.]
+    verification:
+      mode: review
+      reviewer_refs: [reviewer.frontend_architecture]
+      proof_types: [frontend_architecture_report, module_responsibility_map, independent_review]
+    exceptions: { allowed: true, process: Use an exact fingerprinted time-bounded waiver with independent approval and removal trigger. }
+    owner: architecture
+    version: 1.0.0
+
   - id: GOV-001
     title: Governance references must resolve before execution
     level: contract

@@ -132,3 +132,21 @@ detectors:
     tests:
       positive: { path: harness/test_frontend_design_check.py, contains: test_valid_package_is_structurally_valid }
       negative: { path: harness/test_frontend_design_check.py, contains: test_triggered_dimension_cannot_escape_as_na }
+
+  - id: frontend.code_architecture
+    version: 1.0.0
+    state: shadow
+    rule_refs: [FEARCH-001]
+    implementation:
+      argv: [node, harness/frontend-architecture/check.mjs]
+      cwd: repo_root
+      shell: false
+    invocation:
+      owner: operator
+      adapter: standalone.frontendCodeArchitecture
+      acceptance_criterion: null
+      load_bearing: false
+    fail_closed: true
+    tests:
+      positive: { path: harness/frontend-architecture/test_frontend-architecture.mjs, contains: graph allows declared direction through a public entrypoint }
+      negative: { path: harness/frontend-architecture/test_frontend-architecture.mjs, contains: cross-module deep import and reverse edge are deterministic blockers }

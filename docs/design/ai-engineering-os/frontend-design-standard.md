@@ -269,6 +269,16 @@ FrontendDesignPackage v1 的 canonical `platform` 只有 `web_desktop`、`web_re
 `cross_platform`。React、Vue、Flutter 与 React Native 是实现 adapter/stack，不是 platform ID；例如 React 响应式 Web 使用
 `web_responsive`，Flutter 同时面向 iOS/Android 时使用 `cross_platform`，并在项目事实中另行记录 framework/version。
 
+### 9.0 Client Code Architecture
+
+当变更涉及 route/page/feature/shared/public client contract、跨模块 import、God Page 或结构迁移时，条件化装载
+`frontend-code-architecture`。先声明或确认项目自己的 architecture profile，再输出 module responsibility/owner/public API、
+state/data/effect ownership 和计划/实际 change surface；不得把 feature-sliced、Flutter clean 或任意固定目录层级当作所有项目的标准。
+
+确定的反向依赖、cycle 和 deep import 由独立 shadow detector 报告；God File、目录/API 数量、shared 准入与 change amplification
+仍需独立语义审查。完整合同、例外、baseline 与逐步提升门禁条件见
+[Frontend Code Architecture Standard](frontend-code-architecture-standard.md)。
+
 ### 9.1 React
 
 组件和 Hook 的 render 保持纯；Effect 用于同步外部系统，不用于保存可由 props/state 推导的数据；避免矛盾、冗余和重复 state；

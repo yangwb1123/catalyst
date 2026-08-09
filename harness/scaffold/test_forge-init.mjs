@@ -23,6 +23,7 @@ import {
   COPIED_FILES,
   GOVERNANCE_DIRS,
   HARNESS_NOT_COPIED,
+  PROJECT_INSTANCE_FILES,
   SCAFFOLD_STATE_FILE,
 } from './forge-init.mjs';
 
@@ -129,7 +130,9 @@ const COPIED_ASSETS = [
   join('docs', 'design', 'ai-engineering-os', 'capability-skill-map.v1.yml'),
   join('docs', 'design', 'ai-engineering-os', 'backend-decision-standard.md'),
   join('docs', 'design', 'ai-engineering-os', 'frontend-design-standard.md'),
+  join('docs', 'design', 'ai-engineering-os', 'frontend-code-architecture-standard.md'),
   join('docs', 'adr', '0042-frontend-design-decision-contract.md'),
+  join('docs', 'adr', '0043-frontend-code-architecture-governance.md'),
   join('.agent', 'agents', 'architect.md'),
   join('.agent', 'agents', 'release-engineer.md'),
   join('.agent', 'skills', 'clean-architecture.md'),
@@ -137,6 +140,7 @@ const COPIED_ASSETS = [
   join('.agent', 'skills', 'information-interaction-design.md'),
   join('.agent', 'skills', 'design-system-accessibility.md'),
   join('.agent', 'skills', 'frontend-client-engineering.md'),
+  join('.agent', 'skills', 'frontend-code-architecture.md'),
   join('.agent', 'workflows', 'build.yml'),
   join('.agent', 'workflows', 'deploy.yml'),
   join('.agent', 'workflows', 'rollback.yml'),
@@ -147,7 +151,11 @@ const COPIED_ASSETS = [
   join('.agent', 'engineering', 'activation.yml'),
   join('.agent', 'engineering', 'backend-decision-gates.yml'),
   join('.agent', 'engineering', 'frontend-design-gates.yml'),
+  join('.agent', 'engineering', 'frontend-code-architecture.yml'),
   join('.agent', 'engineering', 'frontend-profiles.yml'),
+  join('.arch', 'frontend-architecture.v1.json'),
+  join('.arch', 'frontend-architecture-baseline.v1.json'),
+  join('.arch', 'frontend-architecture-waivers.v1.json'),
   join('.agent', 'engineering', 'detectors.yml'),
   join('.agent', 'engineering', 'rules.yml'),
   join('.agent', 'routing', 'policy.yml'),
@@ -255,6 +263,11 @@ test('forge-init scaffolds COMPLETE governance and the project is ACCEPTED', (t)
   assert.match(readFileSync(join(target, '.agent', 'project.yml'), 'utf8'), /acme-svc/);
   assert.match(readFileSync(join(target, '.agent', 'PROJECT.md'), 'utf8'), /acme-svc/);
   assert.match(readFileSync(join(target, 'CLAUDE.md'), 'utf8'), /acme-svc/);
+  const scaffoldState = JSON.parse(readFileSync(join(target, SCAFFOLD_STATE_FILE), 'utf8'));
+  for (const rel of PROJECT_INSTANCE_FILES) {
+    assert.ok(existsSync(join(target, rel)), `missing project instance: ${rel}`);
+    assert.equal(scaffoldState.copied.includes(rel), false, `${rel} must not enter the upgrade ledger`);
+  }
 
   // (3) the generated CI gate runs `forge accept` (acceptance.mjs).
   assert.match(

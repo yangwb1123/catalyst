@@ -1116,6 +1116,36 @@ tests **15/15**、scaffold **34/34**、`forge check` 13 项、gate（1540 files�
 宿主 Cargo 1.83 无法解析项目 Rust 2024（要求 Cargo 1.93），因而 test/typecheck/build 失败；lint 另有 golangci-lint exit 7、
 ruff/eslint 缺失及同一 Cargo 失败，coverage 为 N/A。未降低 Rust edition、架构预算或任何门禁以伪造通过。
 
+## Sprint 91（✅ compiler-backed shadow 切片完成；Vue/Dart 与 load-bearing promotion 未启用）— Frontend Code Architecture Governance
+
+用户要求把高内聚低耦合、模块/public API、上帝文件、目录/复杂度、API/缓存/权限/错误/构建/发布等前端工程经验从零散阈值
+固化为独立治理流程。ADR 0043 增加 `frontend-code-architecture` procedural Skill，但不创建新的 fine capability、第四个 AFDS owner
+或平行 Agent 树；frontend-client、architecture、review 与 god refactoring 的 canonical ownership 保持不变，其余系统问题继续作为条件化 lens。
+
+(1) **显式项目合同**:`.arch/frontend-architecture.v1.json` 要求 target、Compiler adapter、source/project root、完整/部分 ownership、
+module/module-set、layer allowlist 与 public/test entrypoint；空 targets 只能得到 `not_applicable`。baseline 与 waiver 独立且 exact；方向、
+所有权、循环和配置完整性既不能 baseline 也不能 waiver，通配、自批、过期和无删除触发器的例外失败关闭。
+
+(2) **Compiler-backed detector**:`frontend.code_architecture` 使用项目 TypeScript Compiler API 与 tsconfig 解析 AST、alias、extensionless、
+index、re-export/dynamic literal 和 test source，不用 regex 猜 import。图层执行 ownership/direction/deep-import/production-to-test/Tarjan SCC；
+未解析内部 import 或不可用 adapter 返回 inconclusive。Vue/Dart adapter 尚未实现，配置目标时不会伪报 PASS。
+
+(3) **复杂度不冒充语义**:LOC、declaration/import/export、state/effect/handler/branch、目录、模块文件数和 public API 数只输出 raw
+review signal；God finding 至少命中三个信号族，且最终阻断仍需独立责任图、变化或行为证据。代码架构报告只允许
+pass/fail/inconclusive/not_applicable，detector 明示 shadow/non-load-bearing，完成权威仍仅 `forge accept`。
+
+(4) **接线与继承**:policy/Skill/standard 已进入 user-experience Context route、detector/rule registry、`forge check`、fresh init 和
+legacy upgrade；项目所有的 JSON 主合同/基线/waiver 在 init 时播种，legacy 缺失时补齐，已有文件在 upgrade 中逐字节保留。路径触发覆盖
+feature/entity/shared UI/API、CSS/SCSS/Sass/Less、theme 与 token。ADR、路线图、
+功能清单和 AFDS/client Skill 已同步，未创建 API/error/CSS/build/release 等空壳 Skill。
+
+验证：前端架构专项 **17/17**、Agent Engineering **63/63**、完整 Python **252/252**、完整 Node **398/398**、scaffold/legacy
+专项 **28/28**、`forge check` 13 项、gate（1553 files）、architecture 8 项（1093 source files）、Go 普通测试/竞态/vet/build 与
+`git diff --check` 均通过。fresh-context Reviewer 三轮驳回并推动关闭 project-instance 覆盖、非可豁免规则降级、
+TypeScript 漏扫/借用宿主 compiler、partial ownership 以及 check-then-write TOCTOU；最终 **APPROVED**，无 Blocker/Major。
+完整 acceptance 仍诚实为 **6 PASS / 4 FAIL / 1 N/A**：宿主 Cargo 1.83 无法解析项目 Rust 2024
+（要求 Cargo 1.93），lint 另有 golangci-lint exit 7、ruff/eslint 缺失，coverage 为 N/A；未降低工具链、manifest 或门禁伪造通过。
+
 ## 下一前沿(需外部资源 / 后续阶段 / 投机增强 / 明确非目标,非本环境可完整验证)
 - **Graph 下一协议切片**:SQLite v17–v24 已交付 successor candidate、per-node request/lifecycle、receipt/content dataflow、wave-ready/admit、本地 hard-crash adjudication与 8 MiB successor candidate 持久化上限；下一步是顶层整图执行循环、并发 wave 的失败传播/恢复以及安全 resume/branching。不得把当前逐节点 operator 驱动或 Hub-local single-consumption 冒充远程 exactly-once。
 - **真点火** `--agent-cmd=claude`:**multi-agent running to completion 已坐实**(Sprint 25:真 claude 多-agent 跑到 converge MET,增量级 + 版本级)。完整旋钮:四维资源护栏 + 成本三维(phase/时间/美元)+ 任务注入 + 写权限 + 模型路由 + 工作目录 + retry + loop-back;诚实分工:agent 自治增量绿、人确认版本竣工。docs/ignition.md 有完整配方 + 实测

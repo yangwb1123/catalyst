@@ -7,13 +7,15 @@
 用于 React/TSX、Vue、Flutter、React Native 或其他 client 的页面、组件、状态、API adapter、响应式、动效、交互验证和性能变化。
 它唯一拥有 frontend-engineering/client-engineering；framework mapping、responsive/motion/performance 和 interaction validation
 是按目标栈激活的 lens。缺 IA/flow/state 合同时先调用 `information-interaction-design`；缺 token/a11y 合同时先调用
-`design-system-accessibility`。
+`design-system-accessibility`。涉及 route/feature/shared/public client contract、跨模块 import、God Page 或结构迁移时，必须先调用
+`frontend-code-architecture`；它是独立治理入口，但不改变本 Skill 对 client implementation 的 primary ownership。
 
 ## 输入契约 (Inputs)
 
 - 需求/验收、schema-shaped `FrontendDesignPackage.classification`、IA、TaskFlow、state/action/permission matrix 和 proof obligations；
   分类中的 `profile_id/page_pattern/platform` 必须是 canonical ID，不接受 legacy alias 或裸字符串。
 - 项目 stack/version、现有组件/token、API/事件契约、目录约定、测试命令、浏览器/设备支持矩阵和性能预算。
+- module/public-entry 与 state/data/effect ownership、API/error/cache mapping、锁文件/工具链/runtime config 和 release/rollback 事实。
 - source/context 与权限范围；未确认的 API、组件或框架能力不得虚构。高风险权限/状态未知时停止实现。
 - 按目标框架只读取 AFDS 相应 adapter 段和官方资料，不同时装载 React、Vue、Flutter 与 RN 细节。
 
@@ -28,6 +30,10 @@
 5. 实现响应式/locale/RTL/reduced-motion 和失败后数据保留；异步/批量 action 防重复并展示部分结果和恢复路径。
 6. 按测量处理 bundle、render、network、memory、list virtualization 和动画；不机械 memo/lazy/virtualize。
 7. 运行项目已有静态、类型、组件、E2E、a11y、screenshot/golden 和性能检查；审查 diff 并记录未执行义务。
+8. API/Event DTO、error code、permission、pagination、cache invalidation、retry/cancel/idempotency 经显式 adapter/matrix 映射；
+   不能让后端字段、HTTP client 或服务端授权责任散落在组件。
+9. 构建/发布相关变更记录 runtime、package manager、lockfile、compiler/bundler、环境配置、产物 digest、Feature Flag、缓存兼容、
+   telemetry、灰度、回滚和清理 owner；前端环境变量一律视为公开信息。
 
 ## 输出契约 (Outputs)
 
@@ -43,6 +49,8 @@
 
 - 禁把前端权限判断当最终授权、API 直接散落在展示组件、业务计算藏在 render/effect、随机/不稳定 list key、保存失败丢输入。
 - 禁非语义交互元素缺键盘/名称/焦点、硬编码未批准视觉值、无界并发/列表、无测量性能优化和低风险任务全局重写。
+- 禁每次请求新建 client、无 timeout/cancel 的请求、非幂等自动重试、任意全局 cache invalidation、敏感数据进入 URL/storage/log；
+  CSS cascade/scoping/layer、SSR/hydration、browser support、weak-network/realtime/multi-tab 仅在触发时装载相应 lens 并验证。
 - inline style、具体断点、memo 或 virtualization 是否禁止由项目 policy/证据决定，不冒充框架官方规则。
 - 只能修改任务授权路径；安装依赖、调用外部服务、真机、生产和发布需要相应权限。
 
@@ -56,6 +64,8 @@
 
 ## 直接参考 (References)
 
+- `.agent/skills/frontend-code-architecture.md`
+- `docs/design/ai-engineering-os/frontend-code-architecture-standard.md`
 - `docs/design/ai-engineering-os/frontend-design-standard.md#9-平台与框架映射`
 - `docs/design/ai-engineering-os/frontend-design-standard.md#10-evidence-pipeline`
 - React, [Components and Hooks must be pure](https://react.dev/reference/rules/components-and-hooks-must-be-pure)

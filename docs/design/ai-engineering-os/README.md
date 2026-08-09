@@ -1,12 +1,13 @@
 # AI Engineering OS：能力中心化的软件工程组织蓝图
 
-> 状态：**目标设计仍以规划为主；首个 contract/shadow 治理切片已实现**。决策见
+> 状态：**目标设计仍以规划为主；四个 contract/shadow 治理切片已实现**。决策见
 > [ADR-0037](../../adr/0037-capability-centric-ai-engineering-operating-model.md)、
 > [ADR-0038](../../adr/0038-aadm-decision-kernel-and-meta-reflection.md)、
 > [ADR-0039](../../adr/0039-default-off-device-aware-execution-fabric.md)、
 > [ADR-0040](../../adr/0040-machine-readable-agent-engineering-governance.md)、
 > [ADR-0041](../../adr/0041-backend-decision-contract-and-persistence-gate.md)、
-> [ADR-0042](../../adr/0042-frontend-design-decision-contract.md)；当前覆盖与分期见
+> [ADR-0042](../../adr/0042-frontend-design-decision-contract.md)、
+> [ADR-0043](../../adr/0043-frontend-code-architecture-governance.md)；当前覆盖与分期见
 > [implementation-roadmap.md](implementation-roadmap.md)。运行时代码、测试和现有 `.agent/` 契约仍是当前事实源。
 
 当前已交付的窄切片位于 `.agent/engineering/`：activation、14 学科状态、原子规则、`forge accept` detector 接线、
@@ -22,6 +23,11 @@ ADR-0042 交付了前端设计 shadow slice：[AFDS](frontend-design-standard.md
 FrontendDesignPackage schema 与三张沿用既有 capability ownership 的 canonical Skill adapter。分类、IA、flow/state/action/permission、
 Design System、跨平台映射与多源证据已接入 Context route、shadow detector、对抗 validator、scaffold 和 legacy upgrade；它仍没有
 自动 diff compiler、可信视觉服务、pre-code runtime authority 或完成权威。
+
+ADR-0043 增加独立但不抢占 capability ownership 的
+[前端代码架构治理](frontend-code-architecture-standard.md)：项目显式声明模块所有权、依赖矩阵和 public/test entrypoint；
+TypeScript 由项目 Compiler API 解析真实 import graph，Vue/Dart 在适配器缺失时诚实返回 inconclusive。确定性边界与
+God/目录/API 预算等审查信号分离，detector 保持 shadow，不替代 `forge accept`。
 
 ## 1. 目标
 
@@ -187,6 +193,7 @@ WorkIntent + ProjectSnapshot
 - [engineering-standards.md](engineering-standards.md)：God File、复杂度、OOP/DI/AOP/DDD、数据与前端重构；
 - [backend-decision-standard.md](backend-decision-standard.md)：后端业务/领域/模型角色、持久化、算法、网络、并发、迁移、生产就绪与长期架构决策；
 - [frontend-design-standard.md](frontend-design-standard.md)：AFDS 规则权威、场景 Profile/页面 Pattern、flow/state/permission、跨平台适配与证据链；
+- [frontend-code-architecture-standard.md](frontend-code-architecture-standard.md)：前端模块所有权、依赖/public API、状态/effect 归属、复杂度证据与例外治理；
 - [skill-specifications.md](skill-specifications.md)：38 个可组合 Skill 包的触发、产物、规则、自动化与禁止项；
 - [capability-skill-map.v1.yml](capability-skill-map.v1.yml)：140 个细粒度 capability 到 38 个包的唯一主 ownership；
 - [aadm-decision-kernel.md](aadm-decision-kernel.md)：原子决策、规则场、裁量包络、Capability ABI 与滚动控制；

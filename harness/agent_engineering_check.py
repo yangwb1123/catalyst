@@ -8,6 +8,7 @@ it does not pretend that planned AADM, reflection or device runtimes exist.
 import hashlib
 import json
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -51,6 +52,7 @@ SPEC_FILES = {
     "frontend_policy": "engineering/frontend-design-gates.yml",
     "frontend_profiles": "engineering/frontend-profiles.yml",
     "frontend_package": "eval/frontend-design-package.schema.yml",
+    "frontend_architecture_policy": "engineering/frontend-code-architecture.yml",
 }
 PROJECT_REFS = {
     "activation": ".agent/engineering/activation.yml",
@@ -72,6 +74,11 @@ EXTENSION_REFS = {
     "frontend_profiles": ".agent/engineering/frontend-profiles.yml",
     "frontend_package": ".agent/eval/frontend-design-package.schema.yml",
     "frontend_standard": "docs/design/ai-engineering-os/frontend-design-standard.md",
+    "frontend_architecture_policy": ".agent/engineering/frontend-code-architecture.yml",
+    "frontend_architecture_contract": ".arch/frontend-architecture.v1.json",
+    "frontend_architecture_baseline": ".arch/frontend-architecture-baseline.v1.json",
+    "frontend_architecture_waivers": ".arch/frontend-architecture-waivers.v1.json",
+    "frontend_architecture_standard": "docs/design/ai-engineering-os/frontend-code-architecture-standard.md",
 }
 DISCIPLINES = {
     "prompt", "context", "memory", "tool", "planning", "loop",
@@ -87,6 +94,14 @@ PROTECTED_RULE_DIGESTS = {
     "ARCH-001": "59f527997f552053e78549731447d37a83c3facdcebddeff0dda5cedb9fa221b",
     "QUAL-001": "b0c5358218fe557587f2e0ff2a1331ff9f31bddb77ac8efe72adc696c59a0f90",
     "GOV-001": "82a2ddf7d268bbac46bec8c14328ed083f683b6fd423e9a57bc764fbb9d04ee7",
+}
+FRONTEND_ARCH_POLICY_SHA256 = "2bc6dcd6e40b670cfea0a52e5ba248ffca74adba75b4216eceb7db2028b583ab"
+FRONTEND_ARCH_POLICY_FIELDS = {
+    "api_version", "kind", "status", "runtime_binding", "owner", "version",
+    "completion_authority", "capability_relationship", "applicability",
+    "decision_sequence", "architecture_profiles", "hard_invariants",
+    "review_lenses", "god_file_risk", "exception_contract",
+    "evidence_contract", "canonical_refs",
 }
 
 
@@ -313,6 +328,66 @@ def check_frontend_design_contract(agent_root):
     return _check_frontend_design_contract(agent_root.parent)
 
 
+def _frontend_architecture_policy_issues(agent_root):
+    path = agent_root / SPEC_FILES["frontend_architecture_policy"]
+    data, err = _load_yaml(path)
+    if err:
+        return [f"{path}: invalid YAML ({err})"]
+    issues = _mapping(data, path, "frontend code architecture policy")
+    if issues:
+        return issues
+    issues.extend(_unknown_fields(data, FRONTEND_ARCH_POLICY_FIELDS, path))
+    issues.extend(_header_issues(data, path, "FrontendCodeArchitecturePolicy"))
+    if set(data) != FRONTEND_ARCH_POLICY_FIELDS:
+        issues.append(f"{path}: frontend architecture policy fields drifted")
+    expected = {
+        "runtime_binding": "standalone_shadow_detector_plus_review",
+        "completion_authority": "forge_accept", "version": 1,
+        "canonical_refs": {
+            "skill": ".agent/skills/frontend-code-architecture.md",
+            "architecture_contract": ".arch/frontend-architecture.v1.json",
+            "architecture_baseline": ".arch/frontend-architecture-baseline.v1.json",
+            "architecture_waivers": ".arch/frontend-architecture-waivers.v1.json",
+            "detector": "harness/frontend-architecture/check.mjs",
+            "detector_contract": "harness/frontend-architecture/contract.mjs",
+            "standard": "docs/design/ai-engineering-os/frontend-code-architecture-standard.md",
+            "review_skill": ".agent/skills/code-review.md",
+            "refactor_skill": ".agent/skills/god-object-refactoring.md",
+        },
+    }
+    for field, value in expected.items():
+        if data.get(field) != value:
+            issues.append(f"{path}: {field} must remain the canonical v1 value")
+    if hashlib.sha256(path.read_bytes()).hexdigest() != FRONTEND_ARCH_POLICY_SHA256:
+        issues.append(f"{path}: protected frontend architecture policy changed without a v1 update")
+    return issues
+
+
+def check_frontend_code_architecture_contract(agent_root):
+    issues = _frontend_architecture_policy_issues(agent_root)
+    repo_root = agent_root.parent
+    skill = repo_root / ".agent" / "skills" / "frontend-code-architecture.md"
+    markers = ["职责与触发", "执行 SOP", "自动硬约束", "审查启发式", "例外合同", "完成条件"]
+    if not skill.is_file():
+        issues.append(f"{skill}: required frontend architecture Skill missing")
+    else:
+        text = skill.read_text(encoding="utf-8")
+        for marker in markers:
+            if not re.search(rf"^##\s+.*{re.escape(marker)}", text, re.MULTILINE):
+                issues.append(f"{skill}: missing required section {marker!r}")
+    try:
+        result = subprocess.run(
+            ["node", "harness/frontend-architecture/check.mjs", "--contract-only", str(repo_root)],
+            cwd=repo_root, capture_output=True, text=True, timeout=30, check=False,
+        )
+        if result.returncode != 0:
+            detail = (result.stdout + result.stderr).strip().replace("\n", "; ")
+            issues.append(f"frontend architecture contract validator failed: {detail}")
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        issues.append(f"frontend architecture contract validator unavailable: {exc}")
+    return issues
+
+
 def check_agent_engineering_spec(agent_root):
     """One composed check for ``harness/check.py``'s CHECKS registry."""
     issues = check_engineering_files(agent_root)
@@ -324,7 +399,7 @@ def check_agent_engineering_spec(agent_root):
         check_capability_ownership, check_engineering_rules,
         check_engineering_context_routes, check_engineering_workflow_profiles,
         check_completion_evidence_schema, check_backend_decision_contract,
-        check_frontend_design_contract,
+        check_frontend_design_contract, check_frontend_code_architecture_contract,
     )
     return [issue for check in checks for issue in check(agent_root)]
 

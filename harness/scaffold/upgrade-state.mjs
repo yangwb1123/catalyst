@@ -56,7 +56,10 @@ function canonicalHistoricalPath(rel) {
   ) return null;
   const clean = segments.join('/');
   if (clean.startsWith('harness/')) return segments.join(sep);
-  if (clean === '.agent/AGENTS.md' || clean === '.arch/rules.yaml') {
+  if (
+    clean === '.agent/AGENTS.md'
+    || clean === '.arch/rules.yaml'
+  ) {
     return segments.join(sep);
   }
   if (clean === 'docs/release/README.md') return segments.join(sep);
@@ -65,7 +68,9 @@ function canonicalHistoricalPath(rel) {
     || clean === 'docs/design/ai-engineering-os/capability-skill-map.v1.yml'
     || clean === 'docs/design/ai-engineering-os/backend-decision-standard.md'
     || clean === 'docs/design/ai-engineering-os/frontend-design-standard.md'
+    || clean === 'docs/design/ai-engineering-os/frontend-code-architecture-standard.md'
     || clean === 'docs/adr/0042-frontend-design-decision-contract.md'
+    || clean === 'docs/adr/0043-frontend-code-architecture-governance.md'
   ) return segments.join(sep);
   return HISTORICAL_ROOTS.some((dir) => clean.startsWith(`${dir}/`))
     ? segments.join(sep)

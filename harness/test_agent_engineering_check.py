@@ -202,6 +202,28 @@ class SpecValidationTest(unittest.TestCase):
         path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
         self.assertTrue(any("canonical_extension_refs" in issue for issue in self.issues()))
 
+    def test_frontend_architecture_extension_cannot_leave_registry(self):
+        path = self.agent_root / "engineering" / "activation.yml"
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        del data["canonical_extension_refs"]["frontend_architecture_contract"]
+        path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+        self.assertTrue(any("canonical_extension_refs" in issue for issue in self.issues()))
+
+    def test_frontend_architecture_policy_drift_is_rejected(self):
+        path = self.agent_root / "engineering" / "frontend-code-architecture.yml"
+        replace_once(path, "completion_authority: forge_accept", "completion_authority: self")
+        self.assertTrue(any("frontend architecture policy" in issue for issue in self.issues()))
+
+    def test_frontend_architecture_json_malformed_is_rejected(self):
+        path = self.repo / ".arch" / "frontend-architecture.v1.json"
+        path.write_text('{"schema":', encoding="utf-8")
+        self.assertTrue(any("contract validator failed" in issue for issue in self.issues()))
+
+    def test_frontend_architecture_skill_floor_is_required(self):
+        path = self.agent_root / "skills" / "frontend-code-architecture.md"
+        replace_once(path, "## 例外合同 (Exceptions)", "## Removed exceptions")
+        self.assertTrue(any("missing required section '例外合同'" in issue for issue in self.issues()))
+
     def test_fake_automatic_detector_path_is_rejected(self):
         path = self.agent_root / "engineering" / "detectors.yml"
         replace_once(path, "[python3, harness/check.py]", "[python3, .agent/AGENTS.md]")
@@ -345,6 +367,15 @@ class SpecValidationTest(unittest.TestCase):
         route = next(item for item in data["routes"] if item["id"] == "user-experience")
         route["include"] = [item for item in route["include"]
                             if item["ref"] != ".agent/skills/information-interaction-design.md"]
+        path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+        self.assertTrue(any("weakens required context" in issue for issue in self.issues()))
+
+    def test_frontend_route_cannot_drop_code_architecture_skill(self):
+        path = self.agent_root / "engineering" / "context-routes.yml"
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        route = next(item for item in data["routes"] if item["id"] == "user-experience")
+        route["include"] = [item for item in route["include"]
+                            if item["ref"] != ".agent/skills/frontend-code-architecture.md"]
         path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
         self.assertTrue(any("weakens required context" in issue for issue in self.issues()))
 

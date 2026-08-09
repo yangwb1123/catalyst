@@ -73,7 +73,7 @@
 |---|---|---|---|---|
 | `delivery-planning` | Design ready；vertical slice、DAG/waves、DoR/DoD、成本/测试/发布 | DeliveryPlan、Work Packages、RACI、Test Matrix | DAG/trace/grant validator；range+confidence estimate | 只规划编码、伪精确工时、写冲突并行 |
 | `backend-engineering` | 后端 use case/domain/data/API change | application/domain/adapter code、tests、manifest | transaction/effect/error/concurrency/limit checks | Controller→DB、业务层 new client、长事务外调 |
-| `frontend-client-engineering` | Web/mobile/client behavior | feature components、state/API adapter、a11y/perf tests | all states、contract types、bundle/render/network budget | 前端权限当授权、God Page、碎片组件 |
+| `frontend-client-engineering` | Web/mobile/client behavior；按需调用独立 code-architecture lens | feature components、state/API/error/cache adapter、build/release manifest、a11y/perf tests | all states、contract types、bundle/render/network budget、architecture report | 前端权限当授权、God Page、深层 import、碎片组件 |
 | `secure-coding` | 任一输入/身份/数据/外部 effect 代码 | security tests、control delta、safe error/log behavior | input/path/size/auth/secret/SCA checks | custom crypto、secret/log PII、静默降级 |
 | `observability-engineering` | 新 use case/dependency/failure mode | logs/metrics/traces/audit、dashboard/alert delta | correlation、cardinality、sensitivity、actionability | 只打日志、泄密、高基数无界标签 |
 | `test-engineering` | 新行为/bug/refactor/migration | risk test plan、unit/integration/contract/E2E、trace/defect | current result、negative/boundary/race/fuzz、flake registry | 覆盖率=正确、删失败测试、旧 PASS |

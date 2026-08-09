@@ -29,6 +29,16 @@ export const GOVERNANCE_DIRS = [
 // metadata, not part of the copied 70%, and therefore is never source-overwritten.
 export const SCAFFOLD_STATE_FILE = join('.agent', 'scaffold-state.json');
 
+// Project-owned detector instances are seeded once but are NOT part of the
+// upgrade-synchronized 70%. Their targets, debt baseline and approved waivers
+// evolve with the governed project. forge-upgrade may add a missing instance to
+// a legacy project, but it must never overwrite an existing one.
+export const PROJECT_INSTANCE_FILES = [
+  join('.arch', 'frontend-architecture.v1.json'),
+  join('.arch', 'frontend-architecture-baseline.v1.json'),
+  join('.arch', 'frontend-architecture-waivers.v1.json'),
+];
+
 // Individual files copied verbatim: the red-lines, the architecture rules, and
 // the FULL harness — every TOOL plus its SELF-TEST, so check + accept both RUN in
 // the fresh project and self-govern (the harness runs its own tests under
@@ -48,10 +58,12 @@ export const COPIED_FILES = [
   join('docs', 'design', 'ai-engineering-os', 'capability-skill-map.v1.yml'),
   join('docs', 'design', 'ai-engineering-os', 'backend-decision-standard.md'),
   join('docs', 'design', 'ai-engineering-os', 'frontend-design-standard.md'),
+  join('docs', 'design', 'ai-engineering-os', 'frontend-code-architecture-standard.md'),
   // The copied AFDS standard links this accepted decision. Keep the governing
   // rationale in the same projection so generated projects have no dangling
   // local documentation links.
   join('docs', 'adr', '0042-frontend-design-decision-contract.md'),
+  join('docs', 'adr', '0043-frontend-code-architecture-governance.md'),
   // harness tools
   join('harness', 'gate.mjs'),
   join('harness', 'policies.yml'),
@@ -68,6 +80,10 @@ export const COPIED_FILES = [
   join('harness', 'frontend_design', 'evidence.py'), // artifact/proof separation and bounded PNG/digest checks
   join('harness', 'frontend_design', 'model.py'), // classification, flow, state/action and capture-context semantics
   join('harness', 'frontend_design', 'package.py'), // source-resolving FrontendDesignPackage instance semantics
+  join('harness', 'frontend-architecture', 'check.mjs'), // standalone shadow frontend architecture detector
+  join('harness', 'frontend-architecture', 'contract.mjs'), // strict project contract/baseline/waiver validation
+  join('harness', 'frontend-architecture', 'graph.mjs'), // ownership, direction, public API, SCC and review metrics
+  join('harness', 'frontend-architecture', 'typescript-adapter.mjs'), // compiler-backed TS/TSX import model
   join('harness', 'completion_evidence_check.py'), // instance-level completion honesty validator
   join('harness', 'engineering_detector_check.py'), // activation/capability/detector wiring validator
   join('harness', 'engineering_check_support.py'), // strict YAML and repository-reference primitives
@@ -121,6 +137,7 @@ export const COPIED_FILES = [
   join('harness', 'test_backend_decision_check.py'),
   join('harness', 'test_frontend_design_adversarial.py'),
   join('harness', 'test_frontend_design_check.py'),
+  join('harness', 'frontend-architecture', 'test_frontend-architecture.mjs'),
   join('harness', 'test_legacy_ai_batch_contract.py'),
   join('harness', 'test_mode_gating_check.py'),
   join('harness', 'test_release_boundary_check.py'),

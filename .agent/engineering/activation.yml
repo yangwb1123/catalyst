@@ -29,3 +29,8 @@ canonical_extension_refs:
   frontend_profiles: .agent/engineering/frontend-profiles.yml
   frontend_package: .agent/eval/frontend-design-package.schema.yml
   frontend_standard: docs/design/ai-engineering-os/frontend-design-standard.md
+  frontend_architecture_policy: .agent/engineering/frontend-code-architecture.yml
+  frontend_architecture_contract: .arch/frontend-architecture.v1.json
+  frontend_architecture_baseline: .arch/frontend-architecture-baseline.v1.json
+  frontend_architecture_waivers: .arch/frontend-architecture-waivers.v1.json
+  frontend_architecture_standard: docs/design/ai-engineering-os/frontend-code-architecture-standard.md

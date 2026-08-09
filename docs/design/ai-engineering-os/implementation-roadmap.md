@@ -15,6 +15,8 @@ ADR-0041 在相同边界内增加 14 维后端决策 policy、BackendDecisionPac
 Context route 和对抗 validator。它仍是 shadow：尚不会从 diff 自动生成 package，也不会在 coding 前取得阻断权。
 ADR-0042 以同一主干增加 14 维前端决策 policy、Profile/Pattern catalog、FrontendDesignPackage、三张 canonical Skill adapter、
 user-experience Context route 和对抗 validator。它同样保持 shadow：只校验合同与声明绑定，不认证工具/Reviewer provenance。
+ADR-0043 又增加不改变 capability ownership 的前端代码架构治理 Skill、显式项目模块合同和 compiler-backed TypeScript
+shadow detector；Vue/Dart 目标在缺少编译器 adapter 时 inconclusive，静态复杂度只触发审查，不冒充语义内聚证明。
 
 | 节点 | 当前覆盖 | 已有基础 | 主要缺口 |
 |---:|---|---|---|
@@ -69,6 +71,7 @@ Canonical capability/governance schemas
 - [x] 交付 ADR-0040 shadow 规范入口、严格 YAML/引用校验、载重 detector 接线、typed Context/保障下限、无裁决权证据包与 scaffold/legacy-upgrade 继承；
 - [x] 交付 ADR-0041 后端 shadow 决策合同、条件化模型角色、持久化关卡、十张 Skill adapter、Context route、package validator 与 adversarial/scaffold 回归；
 - [x] 交付 ADR-0042 前端 shadow 决策合同、Profile/Pattern catalog、flow/state/action/permission 结构与引用关卡、三张 Skill adapter、Context route、package/evidence validator 与 adversarial/scaffold 回归；完整业务语义和图可达性仍需项目执行证据或独立审查；
+- [x] 交付 ADR-0043 前端代码架构 Skill、项目 module/dependency/public API 合同、Compiler API 驱动的 TypeScript shadow detector、精确 baseline/waiver 与 adversarial/scaffold 回归；Vue/Dart adapter、语义内聚和 load-bearing promotion 仍待真实项目证据；
 - [ ] 定义严格的 Governance Envelope、Evidence/Claim、ConstitutionRule、Grant、TransitionReceipt JSON Schema；
 - [ ] 冻结 CognitiveAtom、DecisionTransaction、InteractionEvent、Capability invocation、Artifact/Execution receipt Kernel ABI；
 - [ ] 定义 canonical bytes/digest domains、大小/数量上限、错误代码和版本迁移策略；
