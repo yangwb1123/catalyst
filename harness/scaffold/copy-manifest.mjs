@@ -69,11 +69,14 @@ export const COPIED_FILES = [
   join('docs', 'adr', '0045-canonical-evidence-claim-contract.md'),
   join('docs', 'adr', '0046-local-governance-record-journal.md'),
   join('docs', 'adr', '0047-shadow-cognitive-atom-projection-v1.md'),
+  join('docs', 'adr', '0048-artifact-provenance-evidence-adapter-v1.md'),
   join('docs', 'contracts', 'governance-evidence-claim-v1.schema.json'),
   join('docs', 'contracts', 'governance-record-journal-v1.schema.json'),
   join('docs', 'contracts', 'cognitive-atom-projection-v1.schema.json'),
+  join('docs', 'contracts', 'artifact-evidence-adapter-v1.schema.json'),
   join('docs', 'contracts', 'fixtures', 'governance-evidence-claim-v1.json'),
   join('docs', 'contracts', 'fixtures', 'cognitive-atom-projection-v1.json'),
+  join('docs', 'contracts', 'fixtures', 'artifact-evidence-adapter-v1.json'),
   // harness tools
   join('harness', 'gate.mjs'),
   join('harness', 'policies.yml'),
@@ -92,6 +95,12 @@ export const COPIED_FILES = [
   join('harness', 'cognitive_atom_contract', 'constants.py'),
   join('harness', 'cognitive_atom_contract', 'fixture.py'),
   join('harness', 'cognitive_atom_contract', 'projection.py'),
+  join('harness', 'artifact_evidence_adapter_check.py'), // pure Artifact v1 to EvidenceRecord shadow adapter
+  join('harness', 'artifact_evidence_adapter', '__init__.py'),
+  join('harness', 'artifact_evidence_adapter', 'adapter.py'),
+  join('harness', 'artifact_evidence_adapter', 'codec.py'),
+  join('harness', 'artifact_evidence_adapter', 'constants.py'),
+  join('harness', 'artifact_evidence_adapter', 'fixture.py'),
   join('harness', 'backend_decision_contract.py'), // canonical backend trigger/dimension/floor vocabulary and byte pins
   join('harness', 'backend_decision_check.py'), // BackendDecisionPackage contract + instance validator (shadow)
   join('harness', 'backend_evidence_check.py'), // typed/subject-bound bounded evidence resolution
@@ -165,6 +174,7 @@ export const COPIED_FILES = [
   join('harness', 'test_agent_engineering_check.py'),
   join('harness', 'test_governance_contract_check.py'),
   join('harness', 'test_cognitive_atom_contract_check.py'),
+  join('harness', 'test_artifact_evidence_adapter_check.py'),
   join('harness', 'test_governance_engineering_integration.py'),
   join('harness', 'test_backend_decision_check.py'),
   join('harness', 'test_frontend_design_adversarial.py'),
@@ -225,4 +235,5 @@ export const HARNESS_NOT_COPIED = [
   // copy-manifest.mjs itself is this data module — scaffold/upgrade-time only,
   // same rationale as scaffold-fs.mjs (never carried into a generated project).
   join('harness', 'scaffold', 'copy-manifest.mjs'),
+  join('harness', 'scaffold', 'forge-init-test-assets.mjs'),
 ];

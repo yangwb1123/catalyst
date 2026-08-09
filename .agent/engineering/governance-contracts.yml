@@ -1,14 +1,15 @@
 api_version: forgeos.agent-engineering/v1
 kind: GovernanceContractRegistry
 status: active_contract
-runtime_binding: cross_language_codec_local_journal_atom_projection_shadow
+runtime_binding: cross_language_codec_local_journal_atom_projection_artifact_adapter_shadow
 owner: governance
-version: 4
+version: 5
 completion_authority: forge_accept
 
 scope:
   shipped_kinds: [EvidenceRecord, KnowledgeClaim]
   shipped_projections: [CognitiveAtom]
+  shipped_adapters: [artifact_provenance_to_evidence]
   planned_kinds: [ContextPackage, CapabilityGrant, ApprovalRecord, TransitionReceipt, KnowledgeUpdateProposal]
   persistence: local_append_only_exact_evidence_claim_journal
   authority_attestation: unavailable
@@ -43,6 +44,48 @@ cognitive_atom_projection:
     max_atom_set_bytes: 1048576
     max_atoms: 256
   positive_result: PROJECTED_SHADOW
+  attests: []
+  persistence: none
+
+artifact_evidence_adapter:
+  api_version: forgeos.governance.artifact-evidence-adapter/v1
+  mode: deterministic_artifact_provenance_to_evidence_shadow
+  source_kind: forgeos.artifact.v1
+  output_kind: EvidenceRecord
+  source_fields: [_format, agent, created_at, model, path, phase, prompt_sha256, run_id, sha256, size, workflow]
+  binding_fields: [aggregate_id, context_sha256, policy_sha256, project_id, scope, sensitivity, sequence, source_revision, source_tree_sha256, subjects, supersedes_record_ids]
+  exact_request:
+    canonical_required: true
+    compact_utf8_required: true
+    artifact_key_exception: request.artifact._format
+    legacy_empty_format: reject
+    reads_current_artifact: false
+  identity:
+    source_digest_domain: "forgeos.governance.artifact-provenance-source.v1\0"
+    request_digest_domain: "forgeos.governance.artifact-evidence-adapter.request.v1\0"
+    evidence_record_digest_domain: "forgeos.governance.evidence-record.v1\0"
+    record_id_prefix: artifact-evidence-
+    snapshot_id_prefix: artifact-snapshot-
+    timestamp_projection: floor_nonnegative_instant_to_unix_milliseconds
+  constants:
+    principal_id: forgeos.artifact-evidence-adapter
+    principal_type: tool
+    authority_domain: shadow
+    role: evidence-adapter
+    collector_version: v1
+    evidence_type: artifact
+    directness: direct
+    source_trust: observed
+    content_role: untrusted_data
+    status: valid
+  limits:
+    max_request_bytes: 131072
+    max_depth: 16
+    max_object_fields: 64
+    max_array_items: 256
+    max_string_bytes: 16384
+    integer_domain: signed_int64
+  positive_result: ADAPTED_SHADOW (no truth, authority, claim, atom, persistence, or effect attestation)
   attests: []
   persistence: none
 
@@ -181,9 +224,13 @@ canonical_refs:
   cognitive_atom_schema: docs/contracts/cognitive-atom-projection-v1.schema.json
   cognitive_atom_golden_fixture: docs/contracts/fixtures/cognitive-atom-projection-v1.json
   cognitive_atom_checker: harness/cognitive_atom_contract_check.py
+  artifact_evidence_adapter_schema: docs/contracts/artifact-evidence-adapter-v1.schema.json
+  artifact_evidence_adapter_golden_fixture: docs/contracts/fixtures/artifact-evidence-adapter-v1.json
+  artifact_evidence_adapter_checker: harness/artifact_evidence_adapter_check.py
   decision: docs/adr/0045-canonical-evidence-claim-contract.md
   journal_decision: docs/adr/0046-local-governance-record-journal.md
   cognitive_atom_decision: docs/adr/0047-shadow-cognitive-atom-projection-v1.md
+  artifact_evidence_adapter_decision: docs/adr/0048-artifact-provenance-evidence-adapter-v1.md
   standard: docs/design/ai-engineering-os/governance-contracts.md
 
 contract_pins:
@@ -192,6 +239,8 @@ contract_pins:
   golden_fixture_sha256: db111600f93e63b3533b1f06b14d7520eb4cbec0e4c6d0e3a6e0fd7e2740824a
   cognitive_atom_schema_sha256: 175bf0274f79447452cad74e72b7605d33628f79dea4869de9caa324f1b23952
   cognitive_atom_golden_fixture_sha256: 1c45ecf10d256dfd38357d6a9f04d1455c69350a8d0ae10f2322b4f3aa6995aa
+  artifact_evidence_adapter_schema_sha256: c43a743011f98c2311c511fe097efe7cd5a7c2010c2999be91cdef72938bd2bd
+  artifact_evidence_adapter_golden_fixture_sha256: c74a2590f6ed72ce82c52542d06246f830d08c2b7c096fa27dd5879c171a986c
 
 reference_implementations:
   python:
@@ -212,6 +261,15 @@ reference_implementations:
   cognitive_atom_rust:
     ref: forge-runtime/crates/domain/src/cognitive_atom_contract
     projection: catalyst_repository_only
+  artifact_evidence_adapter_python:
+    ref: harness/artifact_evidence_adapter_check.py
+    projection: universal_scaffold
+  artifact_evidence_adapter_go:
+    ref: forge-core/internal/artifactevidencecontract
+    projection: catalyst_repository_only
+  artifact_evidence_adapter_rust:
+    ref: forge-runtime/crates/domain/src/artifact_evidence_contract
+    projection: catalyst_repository_only
 
 non_capabilities:
   - no truth ledger authoritative current-knowledge view or semantic lifecycle projection
@@ -223,3 +281,4 @@ non_capabilities:
   - no pre-code block completion verdict or production effect
   - CognitiveAtom v1 is a pure Claim projection with no truth authority instruction hard-guard transition completion or effect attestation
   - no prompt or model atom compiler full Kernel ABI atom persistence or journal adapter
+  - Artifact provenance adapter does not read artifact content authenticate producer or collector attest truth authority claim atom completion persistence or effect

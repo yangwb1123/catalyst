@@ -3,10 +3,11 @@
 > 状态：演进契约。0F-A 已交付 EvidenceRecord/KnowledgeClaim strict schema、跨语言 canonical codec 与纯 shadow validator；
 > ADR-0046 的 0F-B–1 本地 exact-record journal 已在 SQLite v25/runtime/CLI/compatibility 边界内完成，并通过独立复审与 `forge accept`。
 > ADR-0047 另已交付七类 KnowledgeClaim→CognitiveAtom 的确定性 pure shadow projection；它不是新治理记录，不进入 journal。
-> 第 2 节中标注“已交付”的两种 v1 记录与下述 CognitiveAtom v1 投影属于当前合同；第 1、3 节及其后内容仍是目标态，
+> ADR-0048 已交付 strict artifact-v1→EvidenceRecord pure shadow adapter；它不读取当前文件、不追加 journal，SQLite 保持 v25。
+> 第 2 节中标注“已交付”的两种 v1 记录、下述 source adapter 与 CognitiveAtom v1 投影属于当前合同；第 1、3 节及其后内容仍是目标态，
 > 不声明 truth/authority、Context、Grant、Transition、语义 lifecycle/conflict/freshness view 或知识写回 runtime 已支持。旧 free-text memory 不得静默升级。
 
-## 0. 当前实现边界（0F-A、0F-B–1 与 ADR-0047 pure shadow projection 已完成；其余目标态未实现）
+## 0. 当前实现边界（0F-A、0F-B–1、ADR-0047 projection 与 ADR-0048 adapter 已完成；其余目标态未实现）
 
 当前可执行的 governance record kind 仍只有 `EvidenceRecord` 和 `KnowledgeClaim` v1：
 
@@ -29,6 +30,37 @@ STRUCTURALLY_VALID (shadow; no truth or authority attestation)
 
 Checker 不写 Hub、不导入 Memory/ADR、不签发 authority，也不执行 knowledge apply、lifecycle transition 或 production effect。
 
+### ADR-0048：Artifact provenance → EvidenceRecord v1 pure shadow adapter
+
+[ADR-0048](../../adr/0048-artifact-provenance-evidence-adapter-v1.md) 增加首个 source adapter，但不增加新的 governance record kind 或
+改变 EvidenceRecord v1 wire。输入必须是 exact compact canonical
+`forgeos.governance.artifact-evidence-adapter/v1` request：`artifact` 精确包含 `_format=forgeos.artifact.v1` 等十一字段，历史空
+`_format` 被拒绝；`binding` 显式提供 aggregate/project/scope/context/policy/source-tree/revision/sequence/sensitivity/subjects/supersedes。
+duplicate/unknown/noncanonical/float/overflow、控制或 bidi Unicode、非 normalized repo-relative path、非法时间/hash/identifier/list 均失败关闭。
+
+adapter 分别以 `forgeos.governance.artifact-provenance-source.v1\0` 和
+`forgeos.governance.artifact-evidence-adapter.request.v1\0` 对 canonical artifact 与完整 request 做 SHA-256 domain separation。它把 artifact
+时间点向下取整到非负 Unix 毫秒，固定 shadow tool principal/collector，绑定 artifact content/path、source snapshot 与调用方 subjects/
+sensitivity，生成 status=`valid` 的 existing strict EvidenceRecord；完整输出再由 ADR-0045 validator 重新计算 self digest，并执行 exact
+re-adaptation comparison。
+
+Schema、golden 与 Universal checker 为：
+
+- `docs/contracts/artifact-evidence-adapter-v1.schema.json`；
+- `docs/contracts/fixtures/artifact-evidence-adapter-v1.json`；
+- `harness/artifact_evidence_adapter_check.py`。
+
+Python、Go、Rust 独立实现必须对同一 fixture 产生逐字节相同的 canonical source/request/Evidence 与 digest。唯一正结果是：
+
+```text
+ADAPTED_SHADOW (no truth, authority, claim, atom, persistence, or effect attestation)
+```
+
+adapter 不读取 artifact path 的当前文件，不证明 manifest 来自受信 Store，不认证 agent/model/principal/collector，不创建
+KnowledgeClaim/CognitiveAtom，不满足 hard gate，不 append GovernanceRecordJournal、不写 SQLite/Memory/Knowledge，也不产生 network/process/
+device/production effect。若调用方随后要求 durability，必须另行使用 ADR-0046 journal 并取得其 `stored|exact_replay` receipt；
+`ADAPTED_SHADOW` 不能冒充 persistence。该切片没有 migration/backfill，Hub schema 和 SQLite 保持 v25；Evolve/gate/test source adapter 仍需独立版本。
+
 ### ADR-0047：CognitiveAtom v1 pure shadow projection
 
 [ADR-0047](../../adr/0047-shadow-cognitive-atom-projection-v1.md) 在不改变 Evidence/Claim v1 wire 或 journal v1 的前提下，增加
@@ -44,7 +76,7 @@ epistemic state、references、validity 与适用的 integer confidence，并强
 - `docs/contracts/fixtures/cognitive-atom-projection-v1.json`；
 - `harness/cognitive_atom_contract_check.py`。
 
-它们的摘要与 Python/Go/Rust 参考路径由 `.agent/engineering/governance-contracts.yml` v4 固定。唯一正结果是：
+它们的摘要与 Python/Go/Rust 参考路径由 `.agent/engineering/governance-contracts.yml` v5 固定。唯一正结果是：
 
 ```text
 PROJECTED_SHADOW
@@ -84,7 +116,8 @@ hard gate。Inspection 默认只返回 batch/ordinal/identity/digest/byte-count/
 ## 1. 通用 Governance Envelope（目标态，未实现）
 
 目标上，Atom、Claim、Evidence、GraphSnapshot、Report、Grant、Review、Approval、KnowledgeUpdate 和 Transition 共享一组信封职责。
-ADR-0047 的 CognitiveAtom v1 只是独立 Claim 投影 wire，不表示该通用信封或完整 Kernel ABI 已实现。
+ADR-0047 的 CognitiveAtom v1 只是独立 Claim 投影 wire，ADR-0048 也只是把一种 provenance source 映射到既有 Evidence wire；
+二者都不表示该通用信封或完整 Kernel ABI 已实现。
 下图只是**不可序列化的概念图**，不是 `forgeos.governance/v1` wire shape，也不得输入当前 checker；任何共同信封实现都必须采用新版本并另作兼容决策：
 
 ```yaml

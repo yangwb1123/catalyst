@@ -15,6 +15,7 @@ import {
   COPIED_FILES, GOVERNANCE_DIRS, HARNESS_NOT_COPIED,
   PROJECT_INSTANCE_FILES, SCAFFOLD_STATE_FILE,
 } from './forge-init.mjs';
+import { COPIED_VERBATIM } from './forge-init-test-assets.mjs';
 
 // This test lives in harness/scaffold/, so its own dir is the sub-package and the
 // repo root is TWO levels up. HARNESS_DIR is the REAL harness/ (one level up) — the
@@ -40,139 +41,6 @@ function pyYamlAvailable(cwd) {
   const r = spawnSync('python3', ['-c', 'import yaml'], { cwd, encoding: 'utf8' });
   return r.status === 0;
 }
-
-// --- the universal governance a fresh project must INHERIT verbatim ---------
-
-// (a) The host-independent ENFORCERS — each resolves paths from its own location.
-const COPIED_ENFORCERS = [
-  join('.agent', 'AGENTS.md'),
-  join('harness', 'gate.mjs'),
-  join('harness', 'policies.yml'),
-  join('harness', 'arch', 'arch-check.mjs'),
-  join('harness', 'arch', 'scan.mjs'),
-  join('harness', 'arch', 'scan-functions.mjs'),
-  join('harness', 'secret-scan.mjs'),
-  join('.arch', 'rules.yaml'),
-];
-
-// (b) The rest of the FULL harness — check + accept + their inputs + EVERY
-// self-test (acceptance's test_pass runs these, so the harness self-governs).
-const COPIED_HARNESS = [
-  join('harness', 'check.py'),
-  join('harness', 'agent_engineering_check.py'),
-  join('harness', 'backend_decision_contract.py'),
-  join('harness', 'backend_decision_check.py'),
-  join('harness', 'backend_evidence_check.py'),
-  join('harness', 'backend_package_check.py'),
-  join('harness', 'frontend_design', '__init__.py'),
-  join('harness', 'frontend_design', 'contract.py'),
-  join('harness', 'frontend_design', 'composition.py'),
-  join('harness', 'frontend_design', 'composition_support.py'),
-  join('harness', 'frontend_design', 'geometry.py'),
-  join('harness', 'frontend_design', 'governance.py'),
-  join('harness', 'frontend_design_check.py'),
-  join('harness', 'frontend_design', 'evidence.py'),
-  join('harness', 'frontend_design', 'model.py'),
-  join('harness', 'frontend_design', 'package.py'),
-  join('harness', 'frontend_design_test_support.py'),
-  join('harness', 'completion_evidence_check.py'),
-  join('harness', 'engineering_detector_check.py'),
-  join('harness', 'engineering_check_support.py'),
-  join('harness', 'engineering_routing_check.py'),
-  join('harness', 'governance_engineering_check.py'),
-  join('harness', 'cognitive_atom_contract_check.py'),
-  join('harness', 'cognitive_atom_contract', '__init__.py'),
-  join('harness', 'cognitive_atom_contract', 'constants.py'),
-  join('harness', 'cognitive_atom_contract', 'fixture.py'),
-  join('harness', 'cognitive_atom_contract', 'projection.py'),
-  join('harness', 'release_boundary_check.py'),
-  join('harness', 'workflow_control_check.py'),
-  join('harness', 'acceptance.mjs'),
-  // Common + Rust/Java project adapters, declarations, and self-tests are all
-  // inherited verbatim so a fresh project retains the same polyglot verdicts.
-  join('harness', 'adapters.mjs'),
-  join('harness', 'adapters', 'detection.mjs'),
-  join('harness', 'adapters', 'project.mjs'),
-  join('harness', 'adapters', 'go.yml'),
-  join('harness', 'adapters', 'java.yml'),
-  join('harness', 'adapters', 'python.yml'),
-  join('harness', 'adapters', 'rust.yml'),
-  join('harness', 'adapters', 'typescript.yml'),
-  join('harness', 'yaml2json.py'),
-  join('harness', 'scorecard.mjs'),
-  join('harness', 'scorecard-update.mjs'),
-  join('harness', 'test_check.py'),
-  join('harness', 'test_check_bounded_input.py'),
-  join('harness', 'test_agent_engineering_check.py'),
-  join('harness', 'test_cognitive_atom_contract_check.py'),
-  join('harness', 'test_backend_decision_check.py'),
-  join('harness', 'test_frontend_design_adversarial.py'),
-  join('harness', 'test_frontend_business_ui_composition_boundaries.py'),
-  join('harness', 'test_frontend_business_ui_geometry.py'),
-  join('harness', 'test_frontend_geometry_coordinate_contract.py'),
-  join('harness', 'test_frontend_design_check.py'),
-  join('harness', 'test_legacy_ai_batch_contract.py'),
-  join('harness', 'test_release_boundary_check.py'),
-  join('harness', 'test_workflow_control_check.py'),
-  join('harness', 'test_yaml2json.py'),
-  join('harness', 'test_acceptance.mjs'),
-  join('harness', 'test_adapters.mjs'),
-  join('harness', 'test_polyglot_adapters.mjs'),
-  join('harness', 'test_gate.mjs'),
-  join('harness', 'test_scorecard.mjs'),
-  join('harness', 'test_scorecard-update.mjs'),
-  join('harness', 'test_secret-scan.mjs'),
-  join('harness', 'arch', 'test_arch-check.mjs'),
-];
-// (c) Representative copied governance ASSETS consumed by check.py/acceptance.mjs.
-const COPIED_ASSETS = [
-  join('docs', 'release', 'README.md'),
-  join('docs', 'design', 'ai-engineering-os', 'capability-catalog.v1.yml'),
-  join('docs', 'design', 'ai-engineering-os', 'capability-skill-map.v1.yml'),
-  join('docs', 'design', 'ai-engineering-os', 'backend-decision-standard.md'),
-  join('docs', 'design', 'ai-engineering-os', 'frontend-design-standard.md'),
-  join('docs', 'design', 'ai-engineering-os', 'frontend-code-architecture-standard.md'),
-  join('docs', 'design', 'ai-engineering-os', 'governance-contracts.md'),
-  join('docs', 'adr', '0042-frontend-design-decision-contract.md'),
-  join('docs', 'adr', '0043-frontend-code-architecture-governance.md'),
-  join('docs', 'adr', '0044-business-ui-geometry-contract.md'),
-  join('docs', 'adr', '0046-local-governance-record-journal.md'),
-  join('docs', 'adr', '0047-shadow-cognitive-atom-projection-v1.md'),
-  join('docs', 'contracts', 'governance-record-journal-v1.schema.json'),
-  join('docs', 'contracts', 'cognitive-atom-projection-v1.schema.json'),
-  join('docs', 'contracts', 'fixtures', 'cognitive-atom-projection-v1.json'),
-  join('.agent', 'agents', 'architect.md'),
-  join('.agent', 'agents', 'release-engineer.md'),
-  join('.agent', 'skills', 'clean-architecture.md'),
-  join('.agent', 'skills', 'backend-engineering.md'),
-  join('.agent', 'skills', 'information-interaction-design.md'),
-  join('.agent', 'skills', 'design-system-accessibility.md'),
-  join('.agent', 'skills', 'frontend-client-engineering.md'),
-  join('.agent', 'skills', 'frontend-code-architecture.md'),
-  join('.agent', 'skills', 'ui-geometry.md'),
-  join('.agent', 'workflows', 'build.yml'),
-  join('.agent', 'workflows', 'deploy.yml'),
-  join('.agent', 'workflows', 'rollback.yml'),
-  join('.agent', 'eval', 'acceptance.schema.yml'),
-  join('.agent', 'eval', 'completion-evidence.schema.yml'),
-  join('.agent', 'eval', 'backend-decision-package.schema.yml'),
-  join('.agent', 'eval', 'frontend-design-package.schema.yml'),
-  join('.agent', 'engineering', 'activation.yml'),
-  join('.agent', 'engineering', 'backend-decision-gates.yml'),
-  join('.agent', 'engineering', 'frontend-design-gates.yml'),
-  join('.agent', 'engineering', 'frontend-code-architecture.yml'),
-  join('.agent', 'engineering', 'frontend-profiles.yml'),
-  join('.arch', 'frontend-architecture.v1.json'),
-  join('.arch', 'frontend-architecture-baseline.v1.json'),
-  join('.arch', 'frontend-architecture-waivers.v1.json'),
-  join('.agent', 'engineering', 'detectors.yml'),
-  join('.agent', 'engineering', 'rules.yml'),
-  join('.agent', 'routing', 'policy.yml'),
-  join('.agent', 'policies', 'modes.yml'),
-];
-
-// Everything copied VERBATIM must be byte-identical to its source.
-const COPIED_VERBATIM = [...COPIED_ENFORCERS, ...COPIED_HARNESS, ...COPIED_ASSETS];
 
 // GENERATED files (project identity + CC adapter + CI + seed app) — present, not
 // byte-equal to any source.

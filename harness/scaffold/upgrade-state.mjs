@@ -46,11 +46,14 @@ const HISTORICAL_STANDALONE = new Set([
   'docs/adr/0045-canonical-evidence-claim-contract.md',
   'docs/adr/0046-local-governance-record-journal.md',
   'docs/adr/0047-shadow-cognitive-atom-projection-v1.md',
+  'docs/adr/0048-artifact-provenance-evidence-adapter-v1.md',
   'docs/contracts/governance-evidence-claim-v1.schema.json',
   'docs/contracts/governance-record-journal-v1.schema.json',
   'docs/contracts/cognitive-atom-projection-v1.schema.json',
+  'docs/contracts/artifact-evidence-adapter-v1.schema.json',
   'docs/contracts/fixtures/governance-evidence-claim-v1.json',
   'docs/contracts/fixtures/cognitive-atom-projection-v1.json',
+  'docs/contracts/fixtures/artifact-evidence-adapter-v1.json',
 ]);
 
 // Accept POSIX or Windows separators so a scaffold can move between hosts, but

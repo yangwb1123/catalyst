@@ -1,3 +1,4 @@
+pub mod artifact_evidence_contract;
 pub mod cognitive_atom_contract;
 mod event;
 pub mod governance_contract;
