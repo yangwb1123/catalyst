@@ -41,18 +41,35 @@ func TestPhaseOutputContractRejectsMissingOrEmptyArtifact(t *testing.T) {
 		Name: "security", Agent: "security-engineer", Emits: []string{"docs/review/security.md"},
 	}}}
 	validate := phaseOutputContract(root, wf)
-	if err := validate("security", "done"); err == nil || !strings.Contains(err.Error(), "missing") {
+	path := filepath.Join(root, "docs", "review", "security.md")
+	// Missing artifact + EMPTY agent output stays a hard error (nothing to
+	// materialize — never a silent pass).
+	if err := validate("security", ""); err == nil || !strings.Contains(err.Error(), "missing") {
 		t.Fatalf("missing artifact error = %v", err)
 	}
-	path := filepath.Join(root, "docs", "review", "security.md")
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatal(err)
+	// Missing artifact + non-empty agent output is materialized into the
+	// DECLARED emit path (agent-agnostic contract: a generic agent returns the
+	// report on stdout instead of writing the file itself).
+	if err := validate("security", "finding: none"); err != nil {
+		t.Fatalf("materialized emit: %v", err)
 	}
+	content, err := os.ReadFile(path)
+	if err != nil || string(content) != "finding: none" {
+		t.Fatalf("materialized content = %q, err = %v", content, err)
+	}
+	// An existing EMPTY file still fails (empty artifact is not evidence).
 	if err := os.WriteFile(path, nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := validate("security", "done"); err == nil || !strings.Contains(err.Error(), "empty") {
 		t.Fatalf("empty artifact error = %v", err)
+	}
+	// Escape attempts are refused: nothing is written outside the root.
+	escape := asset.Workflow{Stage: "review", Phases: []asset.Phase{{
+		Name: "security", Agent: "security-engineer", Emits: []string{"../outside.md"},
+	}}}
+	if err := phaseOutputContract(root, escape)("security", "x"); err == nil {
+		t.Fatalf("escape emit must be rejected")
 	}
 }
 

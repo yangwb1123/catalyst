@@ -80,6 +80,12 @@ func TestSpecBoundsMatchGoConstants(t *testing.T) {
 	if got := uint64(maxTopologyWaveIndex); got != specUint(t, "bounds", "successor.execution_ordinal.max") {
 		t.Fatalf("maxTopologyWaveIndex = %d, spec says %d", got, specUint(t, "bounds", "successor.execution_ordinal.max"))
 	}
+	if got := uint64(MaxCandidateBytes); got != specUint(t, "bounds", "contract_bytes.max") {
+		t.Fatalf("MaxCandidateBytes = %d, spec says %d", got, specUint(t, "bounds", "contract_bytes.max"))
+	}
+	if got := uint64(MaxPredecessorOutputBytes); got != specUint(t, "bounds", "predecessor_output_bytes.max") {
+		t.Fatalf("MaxPredecessorOutputBytes = %d, spec says %d", got, specUint(t, "bounds", "predecessor_output_bytes.max"))
+	}
 }
 
 func TestSpecIdentityPrefixesMatchGo(t *testing.T) {

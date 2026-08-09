@@ -22,6 +22,7 @@ pub(super) fn open_existing_dispatch_reentry_read_only_database(
 
 use super::{
     HubStoreError,
+    unavailable,
     schema_sql::{
         CREATE_V1_SCHEMA_SQL, MIGRATE_V1_TO_V2_SQL, MIGRATE_V2_TO_V3_SQL, MIGRATE_V3_TO_V4_SQL,
         MIGRATE_V4_TO_V5_SQL, MIGRATE_V5_TO_V6_SQL, MIGRATE_V6_TO_V7_SQL, MIGRATE_V7_TO_V8_SQL,

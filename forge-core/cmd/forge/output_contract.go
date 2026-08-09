@@ -184,8 +184,8 @@ func validatePhaseOutput(root, stage string, p asset.Phase, output, scanDepth st
 	}
 	for _, emit := range p.Emits {
 		if prov == nil {
-			if err := validateEmittedFile(root, emit); err != nil {
-				return fmt.Errorf("phase %s emit %q: %w", p.Name, emit, err)
+			if err := requirePhaseEmit(root, p, emit, output); err != nil {
+				return err
 			}
 		}
 	}
@@ -198,6 +198,64 @@ func validatePhaseOutput(root, stage string, p asset.Phase, output, scanDepth st
 		}
 	}
 	return nil
+}
+
+// materializeEmittedFile writes the phase output into a declared emit path
+// when the agent did not create it (see validatePhaseOutput). The path must
+// be repo-relative, resolve inside the repository (symlink-checked), and the
+// parent directory is created on demand; the file is created 0644.
+func materializeEmittedFile(root, emit, content string) error {
+	full, err := resolveRepoRelative(root, emit)
+	if err != nil {
+		return err
+	}
+	if _, err := os.Lstat(full); err == nil {
+		// Already present (even if empty): never overwrite — the existing
+		// artifact keeps its own verdict (e.g. "required artifact is empty").
+		return fmt.Errorf("emit already exists: %s", emit)
+	}
+	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(full, []byte(content), 0o644)
+}
+
+// resolveRepoRelative resolves a repo-relative emit path inside the root,
+// rejecting absolute paths, escapes, and symlink escapes.
+func resolveRepoRelative(root, emit string) (string, error) {
+	if emit == "" || filepath.IsAbs(emit) {
+		return "", fmt.Errorf("must be a non-empty repo-relative path")
+	}
+	rootAbs, err := filepath.Abs(root)
+	if err != nil {
+		return "", err
+	}
+	full, err := filepath.Abs(filepath.Join(rootAbs, emit))
+	if err != nil {
+		return "", err
+	}
+	rel, err := filepath.Rel(rootAbs, full)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("path escapes repository")
+	}
+	return full, nil
+}
+
+// requirePhaseEmit validates a declared emit, with the agent-agnostic
+// fallback: a claude-family agent writes its declared emits itself; a generic
+// agent (pi, codex, ...) often returns the report on stdout instead.
+// Materialize the phase output into the DECLARED emit path (exact whitelist,
+// escape-checked, never overwriting an existing file) so the artifact
+// contract holds for both. Refused writes (empty output, escape, IO error)
+// keep the original error — never a silent pass.
+func requirePhaseEmit(root string, p asset.Phase, emit, output string) error {
+	if err := validateEmittedFile(root, emit); err == nil {
+		return nil
+	} else if output != "" && materializeEmittedFile(root, emit, output) == nil {
+		return nil
+	} else {
+		return fmt.Errorf("phase %s emit %q: %w", p.Name, emit, err)
+	}
 }
 
 func validateEmittedFile(root, emit string) error {

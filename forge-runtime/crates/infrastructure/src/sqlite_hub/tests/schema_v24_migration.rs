@@ -1,4 +1,6 @@
-use forge_runtime_domain::GroupAgentScheduledNodeContractStore;
+use forge_runtime_domain::{
+    GroupAgentGraphExecutionScheduleStore, GroupAgentScheduledNodeContractStore,
+};
 use rusqlite::{Connection, params, types::Value};
 
 use crate::runtime_domain::HubStoreError;
@@ -55,8 +57,10 @@ fn v23_rejects_successor_contract_larger_than_four_mib() {
 
 #[test]
 fn v24_successor_contract_bound_accepts_four_mib_plus_one_and_eight_mib_only() {
-    let fixture = sqlite_group_agent_graph_execution_schedule_support::prepared_fixture();
-    let connection = fixture.connection();
+    let fixture = v23_fixture();
+    drop(fixture.connection());
+    let connection = open_database(&fixture.database).expect("migrate v23 fixture to v24");
+    assert_eq!(schema_version(&connection), 24);
 
     insert_successor(
         &connection,
@@ -97,8 +101,10 @@ fn v24_successor_contract_bound_accepts_four_mib_plus_one_and_eight_mib_only() {
 
 #[test]
 fn v24_successor_rejects_predecessor_count_and_ordinal_drift() {
-    let fixture = sqlite_group_agent_graph_execution_schedule_support::prepared_fixture();
-    let connection = fixture.connection();
+    let fixture = v23_fixture();
+    drop(fixture.connection());
+    let connection = open_database(&fixture.database).expect("migrate v23 fixture to v24");
+    assert_eq!(schema_version(&connection), 24);
     insert_successor(&connection, "exact-slot", 257, 257).expect("seed exact successor row");
     for update in [
         format!("UPDATE {SUCCESSOR_TABLE} SET required_predecessor_node_count=1"),
@@ -178,6 +184,15 @@ fn final_validation_fault_rolls_v23_to_v24_back_atomically() {
 
 fn v23_fixture() -> super::sqlite_group_agent_graph_run_support::Fixture {
     let fixture = sqlite_group_agent_graph_execution_schedule_support::prepared_fixture();
+    // insert_successor is an INSERT ... SELECT whose source is
+    // group_agent_graph_execution_schedules: seed one schedule row so the
+    // SELECT has a source (the prepared fixture only begins the Graph Run).
+    fixture
+        .store
+        .admit_group_agent_graph_execution_schedule(
+            &sqlite_group_agent_graph_execution_schedule_support::request(&fixture, "schedule-key", 40),
+        )
+        .expect("seed source schedule row");
     let connection = fixture.connection();
     connection
         .execute_batch(MIGRATE_V20_TO_V21_SQL)

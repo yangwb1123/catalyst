@@ -60,6 +60,7 @@ export const MANIFESTS = {
   'go.mod': { kind: 'go.mod', ecosystem: 'Go' },
   'package.json': { kind: 'package.json', ecosystem: 'npm' },
   'requirements.txt': { kind: 'requirements.txt', ecosystem: 'PyPI' },
+  'Cargo.lock': { kind: 'Cargo.lock', ecosystem: 'crates.io' },
 };
 
 // --- pure core: semver compare ----------------------------------------------
@@ -213,7 +214,24 @@ export function parseManifest(text, kind) {
   if (kind === 'go.mod') return parseGoMod(src);
   if (kind === 'package.json') return parsePackageJson(src);
   if (kind === 'requirements.txt') return parseRequirements(src);
+  if (kind === 'Cargo.lock') return parseCargoLock(src);
   return [];
+}
+
+// parseCargoLock: [[package]] blocks carry name + version; the lockfile is the
+// resolved dependency set (Rust has no separate lock — this IS the manifest
+// cargo ships for reproducibility). Non-package entries (metadata, checksum)
+// are ignored by the block grammar.
+export function parseCargoLock(text) {
+  const deps = [];
+  const re = /\[\[package\]\][\s\S]*?(?=\[\[package\]\]|\[metadata\]|$)/g;
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    const name = /^name = "([^"]+)"/m.exec(m[0]);
+    const version = /^version = "([^"]+)"/m.exec(m[0]);
+    if (name && version) deps.push({ name: name[1], version: version[1], ecosystem: 'crates.io' });
+  }
+  return deps;
 }
 
 // --- pure core: advisory matching -------------------------------------------

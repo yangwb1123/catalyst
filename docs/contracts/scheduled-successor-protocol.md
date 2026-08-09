@@ -33,7 +33,7 @@
 | predecessor_receipt_count | 0 | 31 | 候选携带的直接前驱 receipt 数(ADR-0035) |
 | required_predecessor_count | 0 | 31 | 拓扑前驱数 |
 | idempotency_key_bytes | 1 | 256 | 幂等键 |
-| contract_bytes | 1 | 4194304 | 候选 canonical 字节(4 MiB) |
+| contract_bytes | 1 | 8388608 | 候选 canonical 字节(8 MiB) |
 | predecessor_output_bytes | 1 | 1048576 | 前驱内容披露(1 MiB) |
 
 ## Invariants
