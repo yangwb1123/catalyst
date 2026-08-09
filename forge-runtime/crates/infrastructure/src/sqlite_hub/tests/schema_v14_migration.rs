@@ -152,7 +152,7 @@ fn malformed(original: &str, replacement: &str) -> String {
 }
 
 fn assert_v14_shape(connection: &Connection) {
-    assert_eq!(schema_version(connection), 24);
+    assert_eq!(schema_version(connection), 25);
     assert!(schema_object_exists(connection, "table", CANDIDATE_TABLE));
     assert!(schema_object_exists(
         connection,
@@ -172,6 +172,15 @@ fn without_v14(snapshot: &[SchemaRow]) -> Vec<SchemaRow> {
                 && !V16_OBJECTS.contains(&name.as_str())
                 && *name != "group_agent_graph_scheduled_node_successor_candidates"
                 && *name != "group_agent_graph_scheduled_node_successor_candidates_created"
+                && !matches!(
+                    name.as_str(),
+                    "governance_record_append_batches"
+                        | "governance_records"
+                        | "governance_records_aggregate_appended"
+                        | "governance_records_appended"
+                        | "governance_records_kind_appended"
+                        | "governance_structural_heads"
+                )
         })
         .cloned()
         .collect()

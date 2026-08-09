@@ -1,6 +1,7 @@
 mod args;
 mod cli_usage;
 mod demo;
+mod governance_journal;
 mod group_agent_graph;
 mod group_analysis_panel_command;
 mod group_analysis_panel_output;
@@ -15,6 +16,7 @@ mod hub_command;
 mod hub_output;
 mod openai_prepared_dispatch;
 mod run_command;
+mod runtime_application;
 mod state_path;
 
 use std::{
@@ -34,12 +36,17 @@ async fn main() -> ExitCode {
         Ok(args) => args,
         Err(error) => return argument_error(&error),
     };
+    dispatch(&args).await
+}
+
+async fn dispatch(args: &Args) -> ExitCode {
     match &args.command {
         Command::Help => {
             println!("{}", usage());
             ExitCode::SUCCESS
         }
         Command::Demo(demo_args) => run_demo(demo_args, args.project.as_deref()).await,
+        Command::Governance(command) => run_governance_journal(args, command),
         Command::Run(args::RunCommand::Start {
             conversation_id,
             prompt_id,
@@ -50,7 +57,7 @@ async fn main() -> ExitCode {
             max_output_tokens,
         }) => {
             run_persisted(
-                &args,
+                args,
                 run_command::StartOptions {
                     conversation_id,
                     prompt_id,
@@ -64,19 +71,19 @@ async fn main() -> ExitCode {
             .await
         }
         Command::Group(args::GroupCommand::Analysis(command)) => {
-            run_group_model_analysis(&args, command).await
+            run_group_model_analysis(args, command).await
         }
         Command::Group(args::GroupCommand::Graph(args::GroupGraphCommand::Run(command))) => {
-            Box::pin(run_group_agent_graph_run(&args, command)).await
+            Box::pin(run_group_agent_graph_run(args, command)).await
         }
-        Command::Group(args::GroupCommand::Graph(command)) => run_group_agent_graph(&args, command),
+        Command::Group(args::GroupCommand::Graph(command)) => run_group_agent_graph(args, command),
         Command::Group(args::GroupCommand::Panel(command)) => {
-            run_group_analysis_panel(&args, command)
+            run_group_analysis_panel(args, command)
         }
         Command::Group(args::GroupCommand::Synthesis(command)) => {
-            run_group_panel_synthesis(&args, command).await
+            run_group_panel_synthesis(args, command).await
         }
-        _ => run_hub(&args),
+        _ => run_hub(args),
     }
 }
 
@@ -171,6 +178,23 @@ fn run_hub(args: &Args) -> ExitCode {
         }
     };
     write_cli_output(args, &output)
+}
+
+fn run_governance_journal(args: &Args, command: &args::GovernanceCommand) -> ExitCode {
+    let output = match governance_journal::execute(args, command) {
+        Ok(output) => output,
+        Err(error) => {
+            eprintln!("Governance record journal command failed: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    if let Err(error) =
+        governance_journal::write_output(&output, args.json, &mut io::stdout().lock())
+    {
+        eprintln!("failed to write governance record journal output: {error}");
+        return ExitCode::FAILURE;
+    }
+    ExitCode::SUCCESS
 }
 
 fn write_cli_output(args: &Args, output: &hub_output::CliOutput) -> ExitCode {

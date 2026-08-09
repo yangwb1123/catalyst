@@ -409,7 +409,7 @@ fn effect_free_open_rejects_non_current_and_corrupt_databases_without_changes() 
     assert!(
         error
             .to_string()
-            .contains("current schema version 24; found 10")
+            .contains("current schema version 25; found 10")
     );
     assert_eq!(state_files(root.path()), before);
 
@@ -480,4 +480,3 @@ fn make_private_directory(path: &Path) {
 
 #[cfg(not(unix))]
 fn make_private_directory(_path: &Path) {}
-

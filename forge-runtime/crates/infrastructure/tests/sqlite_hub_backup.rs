@@ -22,8 +22,8 @@ fn fixture() -> (TempDir, SqliteHubStore) {
 fn upgrade_backs_up_the_old_hub_before_migration() {
     // Production-readiness condition (stage-06 High): an irreversible
     // migration must snapshot the pre-upgrade hub first. Downgrade a hub
-    // to v16, then open it and prove a backups/ snapshot exists at the old
-    // version.
+    // to the exact additive predecessor, then open it and prove a backups/
+    // snapshot exists at the old version.
     let (root, store) = fixture();
     drop(store);
     let database = root.path().join("hub.sqlite3");
@@ -31,12 +31,12 @@ fn upgrade_backs_up_the_old_hub_before_migration() {
     connection
         .execute_batch(
             "PRAGMA foreign_keys=OFF;
-             DROP TABLE group_agent_graph_scheduled_node_dispatch_lifecycles;
-             DROP TABLE group_agent_graph_scheduled_node_successor_candidates;
-             DROP TABLE group_agent_graph_scheduled_node_provider_requests;
-             PRAGMA user_version=14;",
+             DROP TABLE governance_structural_heads;
+             DROP TABLE governance_records;
+             DROP TABLE governance_record_append_batches;
+             PRAGMA user_version=24;",
         )
-        .expect("downgrade to v14");
+        .expect("downgrade to v24");
     drop(connection);
 
     SqliteHubStore::open(&database).expect("migrate hub to current");
@@ -48,7 +48,7 @@ fn upgrade_backs_up_the_old_hub_before_migration() {
         .collect();
     assert_eq!(entries.len(), 1, "exactly one pre-upgrade backup: {entries:?}");
     assert!(
-        entries[0].contains("v14-before-upgrade"),
+        entries[0].contains("v24-before-upgrade"),
         "backup must pin the pre-upgrade version: {entries:?}"
     );
     let backup_path = backups.join(&entries[0]);
@@ -56,5 +56,5 @@ fn upgrade_backs_up_the_old_hub_before_migration() {
         .expect("open backup")
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .expect("backup version");
-    assert_eq!(version, 14, "backup must preserve the old schema version");
+    assert_eq!(version, 24, "backup must preserve the old schema version");
 }

@@ -55,6 +55,14 @@ pub(super) fn decode_canonical_record(
 pub(super) fn decode_canonical_record_set(
     bytes: &[u8],
 ) -> Result<Vec<GovernanceRecord>, GovernanceContractError> {
+    let records = decode_canonical_record_batch(bytes)?;
+    super::validate_record_set(&records)?;
+    Ok(records)
+}
+
+pub(super) fn decode_canonical_record_batch(
+    bytes: &[u8],
+) -> Result<Vec<GovernanceRecord>, GovernanceContractError> {
     if bytes.len() > MAX_RECORD_SET_BYTES {
         return Err(invalid("record set exceeds the canonical byte limit"));
     }
@@ -62,7 +70,7 @@ pub(super) fn decode_canonical_record_set(
         .map_err(|error| invalid(format!("record set is invalid JSON: {error}")))?;
     let canonical = canonical_record_set_json(&records)?;
     require_exact(bytes, &canonical, "record set")?;
-    super::validate_record_set(&records)?;
+    super::validation::validate_record_batch(&records)?;
     Ok(records)
 }
 

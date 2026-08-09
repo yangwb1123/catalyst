@@ -36,8 +36,12 @@ planning-only AI Engineering OS catalog.
   execution or a visual-quality verdict.
 - `governance-contracts.yml` and `../skills/evidence-claim-management.md` define
   strict EvidenceRecord/KnowledgeClaim identity, canonical bytes, state matrices and
-  shadow admissibility. The universal checker rejects authority-bearing states and
-  never turns structural validity into truth, approval, completion or knowledge writeback.
+  shadow admissibility plus a narrow local exact-record append journal. The journal's
+  1,024-record/16,777,216-byte/256-depth closure bounds are resource-exhaustion
+  admissibility limits. Scaffold copies governance assets but no Rust `forge-runtime`;
+  unavailable or incompatible runtime execution is `not_executed`. `stored`,
+  `exact_replay` and the rebuildable structural head never become truth, freshness,
+  conflict resolution, approval, completion or knowledge writeback.
 
 `python3 -B harness/check.py` validates these contracts. The validator proves
 schema integrity, canonical capability ownership, real detector wiring, closed
@@ -48,6 +52,8 @@ can validate one frontend package, including bounded composition/report structur
 cross-references and digest bindings. Both detectors remain shadow and non-load-bearing.
 `python3 -B harness/governance_contract_check.py . <canonical-record-set.json>` validates
 one exact compact Evidence/Claim set and returns only an authority-free structural result.
+A journal append separately preserves already-valid exact bytes; metadata-only reads and
+`structural_sequence_only` heads do not reinterpret record semantics.
 A structured receipt and declared producer/reviewer identity are still not cryptographic proof that a command ran or a distinct principal reviewed it;
 `forge accept` remains the only completion authority. The validator does not
 claim that the future AADM solver, context runtime, capability runtime,

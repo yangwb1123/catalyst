@@ -80,7 +80,7 @@ Knowledge-Engine · **Evaluation-Engine** · **Sandbox(载重墙)** · Web-UI
 >
 > **Gateway · 完整 Knowledge-Engine · Web-UI 仍为路线图；Go Docker/Firecracker runner 已落地，完整 coding-workspace 交换仍待后续。**
 
-## AI Engineering OS 治理知识层（0F-A Evidence/Claim shadow 已实现；其余为目标）
+## AI Engineering OS 治理知识层（0F-A 与 0F-B–1 local journal 已实现；其余为目标）
 
 ADR 0037 将下一层组织冻结为「生命周期决策节点 × 可复用 Capability/Skill × 显式 CapabilityGrant」：Agent
 instance 只是一次 Run 中的临时装配，不因角色名自动取得权限。目标 Governance Kernel 先统一
@@ -93,7 +93,12 @@ ExecutionTarget/Attempt/Artifact/Lease 定义成独立、默认 OFF 的 Device F
 Execution Fabric 只执行获准 TaskSpec，Evidence/Verifier 和 Governance Kernel 独立裁决结果与学习，避免同一 Agent 自决自验。
 
 ADR 0045 已实现严格 EvidenceRecord/KnowledgeClaim v1、跨 Go/Rust/Python canonical golden 与 universal shadow checker；它只验证
-候选记录的字节、摘要、状态和引用，不认证身份、不形成 durable truth、不授权、不推进 lifecycle。完整 00–16 节点 SOP、工程模式适用条件、治理数据契约和分阶段验收见
+候选记录的字节、摘要、状态和引用，不认证身份、不形成 durable truth、不授权、不推进 lifecycle。ADR 0046 冻结本地
+GovernanceRecordJournal v1：只原子追加 exact v1 bytes、返回 `stored|exact_replay`、默认读取 metadata，并维护可重建的
+`structural_sequence_only` head；引用闭包最多 1,024 dependency records、16,777,216 candidate+closure bytes 和 256 derivation edges，三者只作
+resource-exhaustion admissibility。Rust domain/application/store、SQLite v25、CLI、migration/compatibility 与对抗门禁已完成，并经独立复审和
+`forge accept` 验收；scaffold 只继承治理资产，不安装 `forge-runtime`，缺兼容 binary 时必须记 `not_executed`。该完成状态不扩张
+contract 边界，structural head 仍不表示 truth、authority、freshness、conflict resolution 或 current knowledge。完整 00–16 节点 SOP、工程模式适用条件、治理数据契约和分阶段验收见
 [`docs/design/ai-engineering-os/`](../docs/design/ai-engineering-os/README.md)。该目录和其中
 `capability-catalog.v1.yml`、AADM/Reflection/Device 文档当前都是 `planning_only`；完整 Knowledge-Engine、通用
 CapabilityGrant、严格 ContextPackage、Meta Reflection、Capability Registry 与远程 Device Fabric 均尚未实现，不得从

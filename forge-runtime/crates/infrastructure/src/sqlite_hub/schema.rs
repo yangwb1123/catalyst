@@ -42,10 +42,11 @@ use super::{
     schema_v22_sql::MIGRATE_V21_TO_V22_SQL,
     schema_v23_sql::MIGRATE_V22_TO_V23_SQL,
     schema_v24_sql::MIGRATE_V23_TO_V24_SQL,
+    schema_v25_sql::MIGRATE_V24_TO_V25_SQL,
     unavailable,
 };
 
-pub(super) const SCHEMA_VERSION: i64 = 24;
+pub(super) const SCHEMA_VERSION: i64 = 25;
 const CONNECTION_BUSY_TIMEOUT: Duration = Duration::from_millis(250);
 const OPEN_RETRY_TIMEOUT: Duration = Duration::from_secs(5);
 const OPEN_RETRY_DELAY: Duration = Duration::from_millis(10);
@@ -77,7 +78,7 @@ pub(super) fn open_database(path: &Path) -> Result<Connection, HubStoreError> {
 pub(super) fn open_existing_current_read_only_database(
     path: &Path,
 ) -> Result<Connection, HubStoreError> {
-    open_existing_validated_read_only_database(path, &[SCHEMA_VERSION], "current schema version 24")
+    open_existing_validated_read_only_database(path, &[SCHEMA_VERSION], "current schema version 25")
 }
 
 pub(super) fn open_existing_dispatch_preflight_read_only_database(
@@ -85,8 +86,8 @@ pub(super) fn open_existing_dispatch_preflight_read_only_database(
 ) -> Result<Connection, HubStoreError> {
     open_existing_validated_read_only_database(
         path,
-        &[11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24],
-        "schema version 11..=24",
+        &[11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25],
+        "schema version 11..=25",
     )
 }
 
@@ -229,7 +230,8 @@ fn validate_locked_schema(
 fn migrate_to_current(connection: &Connection, version: i64) -> Result<(), OpenAttemptError> {
     create_if_empty(connection, version)?;
     migrate_early(connection, version)?;
-    migrate_late(connection, version)
+    migrate_late(connection, version)?;
+    migrate_latest(connection, version)
 }
 
 /// Migrations v1 through v9 (the legacy Conversation/Hub generations).
@@ -287,6 +289,11 @@ fn migrate_late(connection: &Connection, version: i64) -> Result<(), OpenAttempt
     if version <= 16 {
         migrate_v16_to_v17(connection)?;
     }
+    Ok(())
+}
+
+/// Migrations v18 onward (the execution and governance generations).
+fn migrate_latest(connection: &Connection, version: i64) -> Result<(), OpenAttemptError> {
     if version <= 17 {
         migrate_v17_to_v18(connection)?;
     }
@@ -307,6 +314,9 @@ fn migrate_late(connection: &Connection, version: i64) -> Result<(), OpenAttempt
     }
     if version <= 23 {
         migrate_v23_to_v24(connection)?;
+    }
+    if version <= 24 {
+        connection.execute_batch(MIGRATE_V24_TO_V25_SQL)?;
     }
     Ok(())
 }

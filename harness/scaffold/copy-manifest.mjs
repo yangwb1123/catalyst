@@ -67,7 +67,9 @@ export const COPIED_FILES = [
   join('docs', 'adr', '0043-frontend-code-architecture-governance.md'),
   join('docs', 'adr', '0044-business-ui-geometry-contract.md'),
   join('docs', 'adr', '0045-canonical-evidence-claim-contract.md'),
+  join('docs', 'adr', '0046-local-governance-record-journal.md'),
   join('docs', 'contracts', 'governance-evidence-claim-v1.schema.json'),
+  join('docs', 'contracts', 'governance-record-journal-v1.schema.json'),
   join('docs', 'contracts', 'fixtures', 'governance-evidence-claim-v1.json'),
   // harness tools
   join('harness', 'gate.mjs'),

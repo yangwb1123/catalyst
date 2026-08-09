@@ -83,9 +83,11 @@ EXTENSION_REFS = {
     "frontend_architecture_standard": "docs/design/ai-engineering-os/frontend-code-architecture-standard.md",
     "governance_contract_registry": ".agent/engineering/governance-contracts.yml",
     "governance_contract_schema": "docs/contracts/governance-evidence-claim-v1.schema.json",
+    "governance_journal_schema": "docs/contracts/governance-record-journal-v1.schema.json",
     "governance_contract_fixture": "docs/contracts/fixtures/governance-evidence-claim-v1.json",
     "governance_contract_skill": ".agent/skills/evidence-claim-management.md",
     "governance_contract_decision": "docs/adr/0045-canonical-evidence-claim-contract.md",
+    "governance_journal_decision": "docs/adr/0046-local-governance-record-journal.md",
     "governance_contract_standard": "docs/design/ai-engineering-os/governance-contracts.md",
 }
 DISCIPLINES = {

@@ -1,4 +1,8 @@
 use std::{collections::VecDeque, env, path::PathBuf};
+#[path = "args/basic.rs"]
+mod basic_args;
+#[path = "governance_journal/args.rs"]
+mod governance_journal_args;
 #[path = "group_analysis_args.rs"]
 mod group_analysis_args;
 #[path = "group_args.rs"]
@@ -13,6 +17,8 @@ mod group_panel_args;
 mod group_synthesis_args;
 #[path = "run_args.rs"]
 mod run_args;
+pub use basic_args::{PromptCommand, SessionCommand};
+pub use governance_journal_args::{GovernanceCommand, GovernanceJournalCommand};
 pub use run_args::RunCommand;
 pub use group_commands::{
     GroupAnalysisCommand, GroupCommand, GroupExecutionCommand, GroupGraphCommand,
@@ -38,28 +44,11 @@ pub enum Command {
     HubStatus, // readiness probe (no migration)
     Session(SessionCommand),
     Prompt(PromptCommand),
+    Governance(GovernanceCommand),
     Group(GroupCommand),
     Run(RunCommand),
     Demo(DemoArgs),
     Help,
-}
-
-#[derive(Debug, Eq, PartialEq)]
-pub enum SessionCommand {
-    List,
-    New { title: String },
-}
-
-#[derive(Debug, Eq, PartialEq)]
-pub enum PromptCommand {
-    Add {
-        conversation_id: String,
-        text: String,
-    },
-    List {
-        conversation_id: Option<String>,
-        limit: usize,
-    },
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -157,7 +146,7 @@ fn parse_command(
 fn is_command(value: &str) -> bool {
     matches!(
         value,
-        "session" | "prompt" | "group" | "run" | "demo" | "help" | "status"
+        "session" | "prompt" | "governance" | "group" | "run" | "demo" | "help" | "status"
     )
 }
 
@@ -188,6 +177,7 @@ fn validate_options(options: &GlobalOptions, command: &Command) -> Result<(), St
         && matches!(
             command,
             Command::Prompt(_)
+                | Command::Governance(_)
                 | Command::Group(_)
                 | Command::Run(RunCommand::List { .. } | RunCommand::Show { .. })
         )
@@ -287,11 +277,26 @@ fn accepts_idempotency_key(command: &Command) -> bool {
                     | GroupCommand::Synthesis(GroupSynthesisCommand::Prepare { .. })
             )
             | Command::Run(RunCommand::Start { .. })
+            | Command::Governance(GovernanceCommand::Journal(
+                GovernanceJournalCommand::Append { .. },
+            ))
     )
 }
 
 
 fn validate_execution_options(options: &GlobalOptions, command: &Command) -> Result<(), String> {
+    if matches!(
+        command,
+        Command::Governance(GovernanceCommand::Journal(
+            GovernanceJournalCommand::Append { .. }
+        ))
+    ) && options.idempotency_key.is_none()
+    {
+        return Err(format!(
+            "governance journal append requires an explicit --idempotency-key\n\n{}",
+            usage()
+        ));
+    }
     if matches!(command, Command::Run(RunCommand::Start { live: true, .. }))
         && options.idempotency_key.is_none()
     {
@@ -331,8 +336,9 @@ fn parse_named_command(
     options: &mut GlobalOptions,
 ) -> Result<Command, String> {
     match command {
-        "session" => parse_session(tokens),
-        "prompt" => parse_prompt(tokens),
+        "session" => basic_args::parse_session(tokens),
+        "prompt" => basic_args::parse_prompt(tokens),
+        "governance" => governance_journal_args::parse(tokens),
         "group" => group_args::parse(tokens, &mut options.idempotency_key),
         "run" => run_args::parse(tokens, options),
         "demo" => parse_demo(tokens, options),
@@ -365,58 +371,6 @@ fn parse_optional_id_and_limit(
     }
     require_empty(tokens)?;
     Ok((id, limit))
-}
-
-fn parse_session(tokens: &mut VecDeque<String>) -> Result<Command, String> {
-    match tokens.pop_front().as_deref() {
-        Some("list") => {
-            require_empty(tokens)?;
-            Ok(Command::Session(SessionCommand::List))
-        }
-        Some("new") => {
-            let title = parse_optional_title(tokens)?;
-            Ok(Command::Session(SessionCommand::New { title }))
-        }
-        Some(value) => Err(format!("unknown session command '{value}'\n\n{}", usage())),
-        None => Err(format!("session command is required\n\n{}", usage())),
-    }
-}
-
-fn parse_optional_title(tokens: &mut VecDeque<String>) -> Result<String, String> {
-    if tokens.front().is_some_and(|value| value == "--title") {
-        tokens.pop_front();
-        let title = next_value(tokens, "--title")?;
-        require_empty(tokens)?;
-        return Ok(title);
-    }
-    if tokens.is_empty() {
-        return Ok("New conversation".into());
-    }
-    Ok(drain_text(tokens))
-}
-
-fn parse_prompt(tokens: &mut VecDeque<String>) -> Result<Command, String> {
-    match tokens.pop_front().as_deref() {
-        Some("add") => {
-            let conversation_id = next_value(tokens, "prompt add")?;
-            let text = required_text(tokens, "prompt text")?;
-            Ok(Command::Prompt(PromptCommand::Add {
-                conversation_id,
-                text,
-            }))
-        }
-        Some("list") => parse_prompt_list(tokens),
-        Some(value) => Err(format!("unknown prompt command '{value}'\n\n{}", usage())),
-        None => Err(format!("prompt command is required\n\n{}", usage())),
-    }
-}
-
-fn parse_prompt_list(tokens: &mut VecDeque<String>) -> Result<Command, String> {
-    let (conversation_id, limit) = parse_optional_id_and_limit(tokens)?;
-    Ok(Command::Prompt(PromptCommand::List {
-        conversation_id,
-        limit,
-    }))
 }
 
 fn parse_demo(
@@ -491,6 +445,9 @@ mod tests;
 #[path = "group_panel_args_tests.rs"]
 mod group_panel_tests;
 
+#[cfg(test)]
+#[path = "governance_journal/args_tests.rs"]
+mod governance_journal_tests;
 #[cfg(test)]
 #[path = "group_synthesis_args_tests.rs"]
 mod group_synthesis_tests;

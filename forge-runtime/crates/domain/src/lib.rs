@@ -1,5 +1,6 @@
 mod event;
 pub mod governance_contract;
+mod governance_record_journal;
 mod group_agent_graph;
 mod group_agent_graph_run;
 mod group_agent_node_execution;
@@ -23,6 +24,7 @@ mod tool;
 pub use event::{
     Cancellation, EventSink, EventSinkError, PROTOCOL_VERSION, RuntimeEvent, RuntimeEventKind,
 };
+pub use governance_record_journal::*;
 pub use group_agent_graph::{
     GROUP_AGENT_GRAPH_MANIFEST_DIGEST_DOMAIN, GROUP_AGENT_GRAPH_VERSION, GroupAgentGraphEdge,
     GroupAgentGraphInspection, GroupAgentGraphManager, GroupAgentGraphManifest,

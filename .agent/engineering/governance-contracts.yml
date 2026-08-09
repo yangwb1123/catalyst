@@ -1,15 +1,15 @@
 api_version: forgeos.agent-engineering/v1
 kind: GovernanceContractRegistry
 status: active_contract
-runtime_binding: cross_language_codec_shadow
+runtime_binding: cross_language_codec_local_journal_shadow
 owner: governance
-version: 1
+version: 3
 completion_authority: forge_accept
 
 scope:
   shipped_kinds: [EvidenceRecord, KnowledgeClaim]
   planned_kinds: [ContextPackage, CapabilityGrant, ApprovalRecord, TransitionReceipt, KnowledgeUpdateProposal]
-  persistence: forbidden
+  persistence: local_append_only_exact_evidence_claim_journal
   authority_attestation: unavailable
   trusted_instruction_lane: unavailable
   production_effects: forbidden
@@ -40,7 +40,7 @@ identity:
   sequence: positive_monotonic_version
   supersedes: exact_prior_record_ids_same_aggregate
   canonical_sha256: content_identity_not_record_identity
-  idempotency_key: not_defined_in_this_slice
+  idempotency_key: caller_supplied_batch_replay_key
 
 claim_states:
   fact: [candidate, confirmed, contested, stale, retracted, superseded]
@@ -85,6 +85,54 @@ evidence_semantics:
     human_attestation: attestation
     artifact: artifact
 
+journal:
+  api_version: forgeos.governance-journal/v1
+  record_kinds: [EvidenceRecord, KnowledgeClaim]
+  append_semantics: atomic_bounded_exact_record_set
+  limits:
+    max_records: 256
+    max_record_set_bytes: 1048576
+    max_idempotency_key_bytes: 256
+    max_dependency_records: 1024
+    max_dependency_bytes: 16777216
+    max_derivation_depth: 256
+    reference_closure_classification: resource_exhaustion_admissibility
+  idempotency:
+    first_disposition: stored
+    exact_replay_disposition: exact_replay
+    changed_request_result: conflict
+    different_key_same_records_result: conflict
+    replay_preserves_original_append_time: true
+  digests:
+    record_set_domain: "forgeos.governance.record-set.v1\0"
+    append_request_domain: "forgeos.governance.record-journal.append-request.v1\0"
+    request_framing: u64be_key_length_then_key_then_u64be_record_set_length_then_record_set
+    batch_id: governance-record-batch-prefix_plus_request_sha256
+  inspection:
+    default: metadata_only
+    exact_record_reveal: explicit_only
+  structural_head:
+    key: [record_kind, aggregate_id]
+    interpretation: structural_sequence_only
+    rebuildable_from_exact_records: true
+    truth: false
+    authority: false
+    freshness: false
+    conflict_resolution: false
+    hard_gate_eligible: false
+  storage:
+    schema: sqlite_hub_v25_additive_empty
+    legacy_backfill: forbidden
+    read_migration: forbidden
+  runtime_delivery:
+    command: forge-runtime
+    compatible_api: forgeos.governance-journal/v1
+    compatible_binary_required: true
+    scaffold_inherits: [contract, skill, shadow_checker]
+    scaffold_installs_rust_binary: false
+    unavailable_result: not_executed
+    persistence_claim_requires_receipt: true
+
 legacy:
   rejected_kind_aliases: [Evidence, Claim, ContextManifest, AuthorityGrant, AgentCapabilityGrant]
   memory_import: not_implemented
@@ -94,14 +142,17 @@ legacy:
 
 canonical_refs:
   schema: docs/contracts/governance-evidence-claim-v1.schema.json
+  journal_schema: docs/contracts/governance-record-journal-v1.schema.json
   golden_fixture: docs/contracts/fixtures/governance-evidence-claim-v1.json
   skill: .agent/skills/evidence-claim-management.md
   checker: harness/governance_contract_check.py
   decision: docs/adr/0045-canonical-evidence-claim-contract.md
+  journal_decision: docs/adr/0046-local-governance-record-journal.md
   standard: docs/design/ai-engineering-os/governance-contracts.md
 
 contract_pins:
   schema_sha256: b2f8824c95012d94e71b4643756890a7a23f67dc1b9e0e8ecacf979b016864e8
+  journal_schema_sha256: 36b0eae0649ea4bb1f2d83fcddae20750513e167bceae82bae8244acbf884fc8
   golden_fixture_sha256: db111600f93e63b3533b1f06b14d7520eb4cbec0e4c6d0e3a6e0fd7e2740824a
 
 reference_implementations:
@@ -116,7 +167,8 @@ reference_implementations:
     projection: catalyst_repository_only
 
 non_capabilities:
-  - no append-only ledger or materialized truth view
+  - no truth ledger authoritative current-knowledge view or semantic lifecycle projection
+  - no conflict arbitration freshness interpretation or validity-window evaluation
   - no authenticated principal collector reviewer or authority
   - no confirmed fact accepted decision waiver or hard-gate satisfaction
   - no ContextPackage CapabilityGrant Approval or Transition runtime

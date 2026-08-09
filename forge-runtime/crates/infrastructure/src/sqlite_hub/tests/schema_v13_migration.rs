@@ -307,7 +307,7 @@ fn malformed(original: &str, replacement: &str) -> String {
 }
 
 fn assert_v13_shape(connection: &Connection) {
-    assert_eq!(schema_version(connection), 24);
+    assert_eq!(schema_version(connection), 25);
     assert!(schema_object_exists(connection, "table", SCHEDULE_TABLE));
     assert!(schema_object_exists(connection, "index", SCHEDULE_INDEX));
     assert_eq!(row_count(connection, SCHEDULE_TABLE), 0);
@@ -343,6 +343,15 @@ fn old_schema(snapshot: &[SchemaRow]) -> Vec<SchemaRow> {
                 && !SCHEDULED_PROVIDER_REQUEST_OBJECTS.contains(&name.as_str())
                 && !SCHEDULED_DISPATCH_LIFECYCLE_OBJECTS.contains(&name.as_str())
                 && !SUCCESSOR_CANDIDATE_OBJECTS.contains(&name.as_str())
+                && !matches!(
+                    name.as_str(),
+                    "governance_record_append_batches"
+                        | "governance_records"
+                        | "governance_records_aggregate_appended"
+                        | "governance_records_appended"
+                        | "governance_records_kind_appended"
+                        | "governance_structural_heads"
+                )
         })
         .cloned()
         .collect()

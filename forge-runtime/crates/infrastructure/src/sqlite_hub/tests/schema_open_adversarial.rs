@@ -72,6 +72,12 @@ const POST_PROJECT_OBJECTS: &[&str] = &[
     "group_agent_graph_scheduled_node_provider_requests",
     "group_agent_graph_scheduled_node_provider_requests_project_lane",
     "group_agent_graph_scheduled_node_provider_requests_created",
+    "governance_record_append_batches",
+    "governance_records",
+    "governance_records_aggregate_appended",
+    "governance_records_appended",
+    "governance_records_kind_appended",
+    "governance_structural_heads",
 ];
 
 const INDEX_ORIGIN_GOLDEN: &[(&str, (usize, usize, usize))] = &[
@@ -187,7 +193,7 @@ fn raw_autoindex_owner_corruption_is_rejected_without_repair() {
 
     assert_open_is_corrupt(&database, "raw autoindex owner corruption");
     let unchanged = Connection::open(&database).expect("reopen raw-corrupt fixture");
-    assert_eq!(schema_version(&unchanged), 24);
+    assert_eq!(schema_version(&unchanged), 25);
     assert_eq!(schema_snapshot(&unchanged), before);
     assert_eq!(table_definition(&unchanged, "groups"), table_sql);
     drop((unchanged, root));
@@ -203,7 +209,7 @@ fn sqlite_prefixed_trigger_is_rejected_without_repair() {
 
     assert_open_is_corrupt(&database, "sqlite-prefixed trigger");
     let unchanged = Connection::open(&database).expect("reopen rejected trigger fixture");
-    assert_eq!(schema_version(&unchanged), 24);
+    assert_eq!(schema_version(&unchanged), 25);
     assert_eq!(schema_snapshot(&unchanged), before);
     assert!(schema_object_named(&unchanged, "sqlite_hidden_panel_child"));
     drop((unchanged, root));

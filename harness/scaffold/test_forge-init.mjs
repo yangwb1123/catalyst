@@ -129,10 +129,7 @@ const COPIED_HARNESS = [
   join('harness', 'test_secret-scan.mjs'),
   join('harness', 'arch', 'test_arch-check.mjs'),
 ];
-
-// (c) Representative governance ASSETS from each copied .agent/ tree — the
-// declarative cards/skills/workflows/eval/routing/policies check.py validates
-// and acceptance.mjs consumes (without them check.py FAILs / has no schema).
+// (c) Representative copied governance ASSETS consumed by check.py/acceptance.mjs.
 const COPIED_ASSETS = [
   join('docs', 'release', 'README.md'),
   join('docs', 'design', 'ai-engineering-os', 'capability-catalog.v1.yml'),
@@ -140,9 +137,12 @@ const COPIED_ASSETS = [
   join('docs', 'design', 'ai-engineering-os', 'backend-decision-standard.md'),
   join('docs', 'design', 'ai-engineering-os', 'frontend-design-standard.md'),
   join('docs', 'design', 'ai-engineering-os', 'frontend-code-architecture-standard.md'),
+  join('docs', 'design', 'ai-engineering-os', 'governance-contracts.md'),
   join('docs', 'adr', '0042-frontend-design-decision-contract.md'),
   join('docs', 'adr', '0043-frontend-code-architecture-governance.md'),
   join('docs', 'adr', '0044-business-ui-geometry-contract.md'),
+  join('docs', 'adr', '0046-local-governance-record-journal.md'),
+  join('docs', 'contracts', 'governance-record-journal-v1.schema.json'),
   join('.agent', 'agents', 'architect.md'),
   join('.agent', 'agents', 'release-engineer.md'),
   join('.agent', 'skills', 'clean-architecture.md'),
@@ -302,9 +302,7 @@ test('forge-init scaffolds COMPLETE governance and the project is ACCEPTED', (t)
     );
   }
 
-  // (4b) Every local relative link in copied Markdown resolves inside the
-  // scaffold. This catches documentation dependencies omitted from the copy
-  // manifest even when the source repository itself contains the target.
+  // (4b) Copied Markdown links must resolve inside the scaffold.
   assert.deepEqual(
     copiedMarkdownLinkIssues(target),
     [],
@@ -314,13 +312,15 @@ test('forge-init scaffolds COMPLETE governance and the project is ACCEPTED', (t)
     readFileSync(join(target, '.agent', 'skills', 'evidence-claim-management.md'), 'utf8'),
     /docs\/adr\/0037-capability-centric-ai-engineering-operating-model\.md/,
   );
+  const journalSkillPath = join(target, '.agent', 'skills', 'evidence-claim-management.md');
+  const journalSkill = readFileSync(journalSkillPath, 'utf8');
+  assert.match(journalSkill, /forge-runtime governance journal show/);
+  assert.match(journalSkill, /not_executed/);
+  assert.doesNotMatch(journalSkill, /\bforge governance journal\b/);
+  const copiedRuntime = scaffoldState.copied.some((rel) => rel.startsWith('forge-runtime/'));
+  assert.equal(copiedRuntime, false, 'scaffold must not install the Rust runtime');
 
-  // (5) ★ THE IRON PROOF: running the FULL acceptance gate on the fresh project
-  // returns ACCEPTED — the complete governance (not just the enforcer triad) runs
-  // end to end. PyYAML (check.py's only dep) is an ENVIRONMENT prerequisite the CI
-  // installs; if it is absent we skip THIS assertion with a reason (the verdict
-  // would falsely REJECT on check.py's honest exit-2), keeping the test
-  // deterministic. The structure assertions above always ran regardless.
+  // (5) Run the full acceptance gate; only its external PyYAML prerequisite may skip.
   if (!pyYamlAvailable(target)) {
     t.skip('PyYAML unavailable to python3 — acceptance ACCEPTED assertion skipped (env prereq; CI installs it)');
     return;

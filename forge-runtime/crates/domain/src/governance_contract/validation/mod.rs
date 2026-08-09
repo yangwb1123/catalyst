@@ -27,3 +27,9 @@ pub(super) fn validate_record_set(
 ) -> Result<(), GovernanceContractError> {
     record_set::validate(records)
 }
+
+pub(super) fn validate_record_batch(
+    records: &[GovernanceRecord],
+) -> Result<(), GovernanceContractError> {
+    record_set::validate_batch(records)
+}

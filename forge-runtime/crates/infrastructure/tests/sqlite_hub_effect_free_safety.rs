@@ -179,6 +179,7 @@ fn assert_hot_wal_reentry(version: i64) {
 }
 
 fn restore_schema_version(connection: &rusqlite::Connection, version: i64) {
+    restore_v24_schema(connection);
     if version < 17 {
         restore_v16_schema(connection);
     }
@@ -212,6 +213,17 @@ fn restore_schema_version(connection: &rusqlite::Connection, version: i64) {
             )
             .expect("restore exact v12 schema");
     }
+}
+
+fn restore_v24_schema(connection: &rusqlite::Connection) {
+    connection
+        .execute_batch(
+            "DROP TABLE governance_structural_heads;
+             DROP TABLE governance_records;
+             DROP TABLE governance_record_append_batches;
+             PRAGMA user_version=24;",
+        )
+        .expect("restore exact v24 schema");
 }
 
 fn valid_wal_header() -> [u8; 32] {

@@ -1,10 +1,11 @@
 # 治理与知识契约
 
 > 状态：演进契约。0F-A 已交付 EvidenceRecord/KnowledgeClaim strict schema、跨语言 canonical codec 与纯 shadow validator；
-> 第 2 节中标注“已交付”的两种 v1 记录属于当前合同；第 1、3 节及其后内容仍是目标态，不声明 ledger、authority、
-> Context、Grant、Transition 或知识写回 runtime 已支持。旧 free-text memory 不得静默升级。
+> ADR-0046 的 0F-B–1 本地 exact-record journal 已在 SQLite v25/runtime/CLI/compatibility 边界内完成，并通过独立复审与 `forge accept`。
+> 第 2 节中标注“已交付”的两种 v1 记录属于当前合同；第 1、3 节及其后内容仍是目标态，不声明 truth/authority、Context、
+> Grant、Transition、语义 lifecycle/conflict/freshness view 或知识写回 runtime 已支持。旧 free-text memory 不得静默升级。
 
-## 0. 当前实现边界（Wave 0F-A）
+## 0. 当前实现边界（Wave 0F-A 与 0F-B–1 已完成；其余目标态未实现）
 
 当前唯一可执行的治理记录是 `EvidenceRecord` 和 `KnowledgeClaim` v1：
 
@@ -19,13 +20,38 @@
 置信度为 `confidence_micros`，canonical SHA-256 是无前缀小写 hex。当前只接收 registry `shadow_admissibility` 精确矩阵内的状态、
 `untrusted_data` 和 `untrusted|observed` source trust；结构有效不等于事实、身份、批准、完成或 hard-gate 资格。
 
-CLI 的唯一正结果是：
+纯 checker 的唯一正结果是：
 
 ```text
 STRUCTURALLY_VALID (shadow; no truth or authority attestation)
 ```
 
-它不写 Hub、不导入 Memory/ADR、不签发 authority，也不执行 knowledge apply、lifecycle transition 或 production effect。
+Checker 不写 Hub、不导入 Memory/ADR、不签发 authority，也不执行 knowledge apply、lifecycle transition 或 production effect。
+
+### 0F-B–1：本地 GovernanceRecordJournal v1
+
+[ADR-0046](../../adr/0046-local-governance-record-journal.md) 与
+`docs/contracts/governance-record-journal-v1.schema.json` 定义 narrow local journal：一次 append 接收 1–256 条、总计不超过 1 MiB 的 exact
+canonical record set 和不超过 256 UTF-8 bytes 的 idempotency key；先在事务外完成 v1 codec/语义验证，再原子保存 batch、exact records 与
+可重建 structural head。首写 receipt 为 `stored`，同 key/同 bytes 返回原 append metadata 和 `exact_replay`；同 key/不同 bytes 或换 key 重复
+同 records 均 conflict，不产生部分写入。
+
+引用闭包的 public admissibility limits 是：最多 1,024 条 distinct stored dependency records；候选批次与已加载 dependency closure 的 canonical
+bytes 合计最多 16,777,216；从候选沿 `derived_from_claim_record_ids` 到传递性 premise 最多 256 条边。三者只用于防资源耗尽；通过限制不证明
+Evidence 充分、Claim 正确、producer 可信或状态具有 authority，超限则在原子 append 前失败关闭。
+
+`GovernanceStructuralHead` 只表示 `(record_kind, aggregate_id)` 下已保存的最高连续 sequence，固定
+`interpretation=structural_sequence_only`。它不解释 Claim status、Evidence validity、时效、冲突、producer/collector 身份、知识采纳、authority 或
+hard gate。Inspection 默认只返回 batch/ordinal/identity/digest/byte-count/time metadata；exact record 必须显式 `--include-record`，且 reveal 后仍按
+不可信数据处理。
+
+持久化迁移只允许 additive SQLite v25 empty tables，不回填 ADR/Memory/旧 Hub 数据。Read-only journal 命令要求 current v25 且不创建/迁移；append
+可把受支持的 v24 数据库迁到 v25。该狭窄 runtime、migration、CLI、compatibility 与 adversarial tests 已完成并通过独立复审和
+`forge accept`；这只关闭 0F-B–1 structural persistence，不实现 truth/lifecycle/conflict/freshness/authority。
+
+`forge-init`/`forge-upgrade` 只分发 contract、Skill 和 shadow checker 资产，不安装 Rust `forge-runtime` executable 或 SQLite journal。只有检测到项目批准、
+兼容 `forgeos.governance-journal/v1` 的 `forge-runtime` 后，Agent 才能运行 `forge-runtime governance journal ...`；缺失或不兼容必须记
+`not_executed`，没有匹配的 `stored|exact_replay` receipt 就不得声称已持久化。
 
 ## 1. 通用 Governance Envelope（目标态，未实现）
 
@@ -90,8 +116,9 @@ instruction atom 才可控制执行。高风险外部内容先隔离/审查，�
 | `status.valid_* / metadata.supersedes_record_ids` | 过期或被替代 claim 不进入强约束 Context |
 
 当前 shadow 门禁：即使声明了 direct Evidence，也拒绝 `fact.confirmed`；Assumption/Inference/Proposal/Unknown 和所有其它 Claim
-均不能满足 hard gate；Decision authority 只保留未来字段形状，不代表批准。Unknown 必须进入 question/risk queue。未来若启用
-confirmed/accepted/waived，必须先交付 authenticated identity、Approval/Grant、SoD、ledger/replay/revocation，并另作版本决策。
+均不能满足 hard gate；Decision authority 只保留未来字段形状，不代表批准。Unknown 必须进入 question/risk queue。0F-B–1 exact journal 与
+replay 仍不足以启用 confirmed/accepted/waived；必须先交付 authenticated identity、Approval/Grant、SoD、语义 lifecycle/conflict/freshness、
+revocation，并另作版本决策。
 
 合法的 claim type × state 是封闭矩阵：Fact 为 `candidate/confirmed/contested/stale/retracted/superseded`；Constraint 为
 `candidate/active/waived/expired/superseded`；Decision 为 `proposed/accepted/rejected/deprecated/superseded`；Inference 为

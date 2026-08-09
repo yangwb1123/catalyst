@@ -3,6 +3,7 @@ mod conversation_history;
 mod emitter;
 mod engine;
 mod error;
+mod governance_record_journal;
 mod group_agent_graph_run_service;
 mod group_agent_graph_run_validation;
 mod group_agent_graph_service;
@@ -46,6 +47,10 @@ pub use forge_runtime_domain::{
     DEFAULT_GROUP_CONTEXT_CONTENT_BYTES, GROUP_AGENT_GRAPH_VERSION, GROUP_EXECUTION_VERSION,
     GROUP_RUN_VERSION, MAX_GROUP_AGENT_GRAPH_LIST_LIMIT, MAX_GROUP_CONTEXT_CONTENT_BYTES,
     MAX_GROUP_EXECUTION_LIST_LIMIT, MAX_GROUP_MODEL_ANALYSIS_LIST_LIMIT, MAX_GROUP_RUN_LIST_LIMIT,
+};
+pub use governance_record_journal::{
+    AppendGovernanceRecordBatchInput, GovernanceRecordJournalService,
+    GovernanceRecordJournalServiceError,
 };
 pub use group_agent_graph_run_service::{
     BeginGroupAgentGraphRunDisposition, BeginGroupAgentGraphRunResult,

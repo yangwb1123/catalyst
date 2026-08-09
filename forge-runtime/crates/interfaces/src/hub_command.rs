@@ -5,9 +5,6 @@ use std::{
     sync::Arc,
 };
 
-use forge_runtime_application::{
-    GroupExecutionService, GroupRunService, HubService, MAX_PROMPT_BYTES, RunService,
-};
 use forge_runtime_infrastructure::SqliteHubStore;
 
 use crate::{
@@ -19,6 +16,9 @@ use crate::{
     group_execution_output::GroupExecutionInspectionView,
     group_run_output::GroupRunSnapshotView,
     hub_output::{CliOutput, OutputKind, RemoteStatus},
+    runtime_application::{
+        GroupExecutionService, GroupRunService, HubService, MAX_PROMPT_BYTES, RunService,
+    },
     runtime_domain::{
         BeginGroupExecution, ConversationScope, GROUP_EXECUTION_VERSION, GROUP_RUN_VERSION,
         GroupContextPolicy, GroupExecutionMode, PrepareGroupRun,
@@ -60,6 +60,9 @@ pub fn execute(args: &Args) -> Result<CliOutput, Box<dyn Error>> {
             command,
         ),
         Command::Run(command) => execute_run(&RunService::new(store), command),
+        Command::Governance(_) => {
+            Err("governance journal must use the dedicated journal path".into())
+        }
         Command::Demo(_) | Command::Help => Err("command is not a Hub operation".into()),
     }
 }

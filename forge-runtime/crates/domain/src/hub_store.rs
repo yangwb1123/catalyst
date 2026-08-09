@@ -170,6 +170,7 @@ pub enum HubEntity {
     GroupAgentNodeExecutionContract,
     GroupAgentNodeDispatchRequest,
     GroupAgentNodeLifecycle,
+    GovernanceRecord,
     GroupProjectMember,
 }
 

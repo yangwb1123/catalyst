@@ -74,7 +74,9 @@ function canonicalHistoricalPath(rel) {
     || clean === 'docs/adr/0043-frontend-code-architecture-governance.md'
     || clean === 'docs/adr/0044-business-ui-geometry-contract.md'
     || clean === 'docs/adr/0045-canonical-evidence-claim-contract.md'
+    || clean === 'docs/adr/0046-local-governance-record-journal.md'
     || clean === 'docs/contracts/governance-evidence-claim-v1.schema.json'
+    || clean === 'docs/contracts/governance-record-journal-v1.schema.json'
     || clean === 'docs/contracts/fixtures/governance-evidence-claim-v1.json'
   ) return segments.join(sep);
   return HISTORICAL_ROOTS.some((dir) => clean.startsWith(`${dir}/`))

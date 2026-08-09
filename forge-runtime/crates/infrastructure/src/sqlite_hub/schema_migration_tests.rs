@@ -23,6 +23,7 @@ use super::{
     schema_v22_sql::MIGRATE_V21_TO_V22_SQL,
     schema_v23_sql::MIGRATE_V22_TO_V23_SQL,
     schema_v24_sql::MIGRATE_V23_TO_V24_SQL,
+    schema_v25_sql::MIGRATE_V24_TO_V25_SQL,
 };
 
 #[path = "tests/schema_full_validation.rs"]
@@ -49,6 +50,8 @@ mod schema_v14_migration_tests;
 mod schema_v15_migration_tests;
 #[path = "tests/schema_v24_migration.rs"]
 mod schema_v24_migration_tests;
+#[path = "tests/schema_v25_migration.rs"]
+mod schema_v25_migration_tests;
 #[path = "tests/schema_v5_migration.rs"]
 mod schema_v5_migration_tests;
 #[path = "tests/schema_v6_migration.rs"]

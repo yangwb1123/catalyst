@@ -3,6 +3,15 @@ use std::collections::{BTreeMap, BTreeSet};
 use super::super::{GovernanceContractError, GovernanceRecord, codec, invalid};
 
 pub(super) fn validate(records: &[GovernanceRecord]) -> Result<(), GovernanceContractError> {
+    validate_batch(records)?;
+    let by_id = index_by_id(records);
+    validate_supersession(records, &by_id)?;
+    validate_reference_cycles(records, &by_id)?;
+    validate_claim_references(records, &by_id)?;
+    validate_derivation_cycles(records, &by_id)
+}
+
+pub(super) fn validate_batch(records: &[GovernanceRecord]) -> Result<(), GovernanceContractError> {
     if records.is_empty() {
         return Err(invalid("record set must not be empty"));
     }
@@ -10,12 +19,7 @@ pub(super) fn validate(records: &[GovernanceRecord]) -> Result<(), GovernanceCon
     for record in records {
         record.validate()?;
     }
-    validate_identities(records)?;
-    let by_id = index_by_id(records);
-    validate_supersession(records, &by_id)?;
-    validate_reference_cycles(records, &by_id)?;
-    validate_claim_references(records, &by_id)?;
-    validate_derivation_cycles(records, &by_id)
+    validate_identities(records)
 }
 
 fn validate_identities(records: &[GovernanceRecord]) -> Result<(), GovernanceContractError> {

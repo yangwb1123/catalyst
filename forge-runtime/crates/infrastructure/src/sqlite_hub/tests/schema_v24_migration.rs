@@ -21,20 +21,20 @@ const V23_MAX_BYTES: i64 = 4 * 1024 * 1024;
 const V24_MAX_BYTES: i64 = 8 * 1024 * 1024;
 
 #[test]
-fn v23_successor_row_survives_v24_migration_and_reopen_byte_for_byte() {
+fn v23_successor_row_survives_v24_and_v25_migration_byte_for_byte() {
     let fixture = v23_fixture();
     let connection = fixture.connection();
     insert_successor(&connection, "preserved", 257, 257).expect("seed v23 successor row");
     let before = successor_row(&connection);
     drop(connection);
 
-    let migrated = open_database(&fixture.database).expect("migrate exact v23 fixture to v24");
-    assert_eq!(schema_version(&migrated), 24);
+    let migrated = open_database(&fixture.database).expect("migrate exact v23 fixture to v25");
+    assert_eq!(schema_version(&migrated), 25);
     assert_eq!(successor_row(&migrated), before);
     drop(migrated);
 
-    let reopened = open_database(&fixture.database).expect("reopen migrated v24 fixture");
-    assert_eq!(schema_version(&reopened), 24);
+    let reopened = open_database(&fixture.database).expect("reopen migrated v25 fixture");
+    assert_eq!(schema_version(&reopened), 25);
     assert_eq!(successor_row(&reopened), before);
     drop((reopened, fixture));
 }
@@ -144,15 +144,17 @@ fn malformed_current_v24_objects_are_rejected_without_repair() {
         connection.execute_batch(&malformed)
     });
     assert_current_v24_rejected_without_repair("missing successor index", |connection| {
+        connection.execute_batch(MIGRATE_V23_TO_V24_SQL)?;
         connection.execute_batch(&format!("DROP INDEX {SUCCESSOR_CREATED_INDEX}"))
     });
     assert_current_v24_rejected_without_repair("rogue object", |connection| {
+        connection.execute_batch(MIGRATE_V23_TO_V24_SQL)?;
         connection.execute_batch("CREATE TABLE rogue_v24_table(id TEXT)")
     });
 }
 
 #[test]
-fn final_validation_fault_rolls_v23_to_v24_back_atomically() {
+fn final_validation_fault_rolls_v23_to_v25_back_atomically() {
     let fixture = v23_fixture();
     let connection = fixture.connection();
     insert_successor(&connection, "rollback", 513, 513).expect("seed rollback successor row");
@@ -160,17 +162,17 @@ fn final_validation_fault_rolls_v23_to_v24_back_atomically() {
     let before_row = successor_row(&connection);
 
     let error = migrate_with_before_final_fault_for_test(&connection, |migrated| {
-        assert_eq!(schema_version(migrated), 24);
+        assert_eq!(schema_version(migrated), 25);
         assert_eq!(successor_row(migrated), before_row);
-        migrated.execute_batch("CREATE TABLE rogue_v24_final_fault(id TEXT)")
+        migrated.execute_batch("CREATE TABLE rogue_v25_final_fault(id TEXT)")
     })
-    .expect_err("final v24 validation rejects injected rogue object");
+    .expect_err("final v25 validation rejects injected rogue object");
 
     assert!(matches!(error, HubStoreError::Corrupt { .. }));
     assert_eq!(schema_version(&connection), 23);
     assert_eq!(schema_snapshot(&connection), before_schema);
     assert_eq!(successor_row(&connection), before_row);
-    assert!(!schema_object_named(&connection, "rogue_v24_final_fault"));
+    assert!(!schema_object_named(&connection, "rogue_v25_final_fault"));
     assert!(!schema_object_named(
         &connection,
         "group_agent_graph_scheduled_node_successor_candidates_v24"
@@ -181,6 +183,7 @@ fn final_validation_fault_rolls_v23_to_v24_back_atomically() {
 fn v23_fixture() -> super::sqlite_group_agent_graph_run_support::Fixture {
     let fixture = scheduled_fixture();
     let connection = fixture.connection();
+    restore_exact_v24(&connection);
     connection
         .execute_batch(MIGRATE_V20_TO_V21_SQL)
         .expect("restore exact v21 successor table");
@@ -207,6 +210,17 @@ fn scheduled_fixture() -> super::sqlite_group_agent_graph_run_support::Fixture {
         .admit_group_agent_graph_execution_schedule(&request)
         .expect("seed execution schedule");
     fixture
+}
+
+fn restore_exact_v24(connection: &Connection) {
+    connection
+        .execute_batch(
+            "DROP TABLE governance_structural_heads;
+             DROP TABLE governance_records;
+             DROP TABLE governance_record_append_batches;
+             PRAGMA user_version = 24;",
+        )
+        .expect("restore exact v24 schema");
 }
 
 fn insert_successor(
@@ -300,7 +314,7 @@ fn assert_current_v24_rejected_without_repair(
     name: &str,
     mutate: impl FnOnce(&Connection) -> rusqlite::Result<()>,
 ) {
-    let fixture = sqlite_group_agent_graph_execution_schedule_support::prepared_fixture();
+    let fixture = v23_fixture();
     let connection = fixture.connection();
     mutate(&connection).unwrap_or_else(|error| panic!("forge {name}: {error}"));
     assert_eq!(schema_version(&connection), 24);

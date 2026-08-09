@@ -4,6 +4,11 @@ pub const TEXT: &str = "usage:
   forge-runtime [OPTIONS] [PATH|-C PATH|--group GROUP_ID] session new [--title TITLE]
   forge-runtime [OPTIONS] prompt add SESSION_ID PROMPT|-
   forge-runtime [OPTIONS] prompt list [SESSION_ID] [--limit N]
+  forge-runtime [OPTIONS] --idempotency-key KEY governance journal append --file PATH|-
+  forge-runtime [OPTIONS] governance journal show RECORD_ID [--include-record]
+  forge-runtime [OPTIONS] governance journal list [--kind EvidenceRecord|KnowledgeClaim]
+                [--aggregate-id ID] [--limit N] [--include-record]
+  forge-runtime [OPTIONS] governance journal head KIND AGGREGATE_ID
   forge-runtime [OPTIONS] group create NAME
   forge-runtime [OPTIONS] group add GROUP_ID PATH [--role ROLE]
   forge-runtime [OPTIONS] group context GROUP_ID [--include-content] [--max-bytes N]
@@ -117,6 +122,10 @@ pub const TEXT: &str = "usage:
   file contents are journaled locally in plaintext and may appear in run show.
   Without --allow-read, live exposes no tools and grants no WorkspaceRead capability.
   For prompt add, '-' reads UTF-8 prompt content from standard input.
+  Governance journal append validates one exact record set before opening the Hub.
+  Journal reads require an existing current-schema Hub and never create or migrate it.
+  Journal show/list omit exact record content unless --include-record is explicit.
+  A structural head reports sequence position only, never truth, freshness, or authority.
   Group context is local-only and reads persisted Prompt history, never project files.
   Context output omits Prompt content unless --include-content is explicit.
   Group run prepare freezes context locally; it does not execute or contact a model.
@@ -240,4 +249,4 @@ pub const TEXT: &str = "usage:
   automatically. The result is one single-model synthesis, not discussion, consensus,
   factual verification, tool work, workspace access, or writeback. Result text is
   hidden unless --include-result is explicit; Prompt, input, and request stay hidden.
-  A PATH named session/prompt/group/run/demo/help must use ./PATH or -C PATH.";
+  A PATH named session/prompt/governance/group/run/demo/help must use ./PATH or -C PATH.";

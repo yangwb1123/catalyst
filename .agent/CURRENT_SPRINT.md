@@ -1223,6 +1223,45 @@ required-int null、sealed-size 边界、Windows drive locator、所有正式入
 **6 PASS / 4 FAIL / 1 N/A**：宿主默认 Cargo 1.83 无法解析 Rust 2024/项目要求 1.93，lint 另有 golangci-lint exit 7、
 ruff/eslint 缺失及相同 Cargo 阻塞，coverage 为 N/A；没有降低工具链、manifest、schema 或门禁来伪造完成。
 
+## Sprint 94（✅ 完成）— Local GovernanceRecordJournal v1
+
+本轮把 ADR 0045 后最小可逆的 durability seam 单独拆成 ADR 0046，而不是一次引入 truth ledger、知识 lifecycle、authority 或完整
+Governance Envelope。ADR 0046 的狭窄本地 structural journal slice 已完成 Rust domain/application/store、SQLite v25、CLI、
+migration/compatibility、对抗测试与 scaffold/upgrade 接线，并经独立 fresh-context 复审和 `forge accept` 验收；这不交付或暗示
+truth、knowledge lifecycle、conflict/freshness view、authority 或完整 Governance Envelope。
+
+(1) **exact append identity**:`GovernanceRecordAppendRequest` 只携带 caller idempotency key 与一个 exact canonical v1 record-set string；单批
+1–256 records、总计 ≤1 MiB、key ≤256 UTF-8 bytes。record-set 与 request 使用独立 digest domain 和无歧义 u64be length framing，batch ID 从
+request SHA-256 确定派生；append time 不进入 identity。
+
+(2) **atomic replay/conflict contract**:首写 receipt 只能是 `stored`，同 key/同 exact bytes 只能返回原 append metadata 加
+`exact_replay`；同 key/不同 bytes、换 key 重放既有 records、record ID byte divergence、kind/aggregate/sequence 冲突均失败关闭。完整 batch、records 与
+projection 必须一次提交或完全不写，所有 v1 引用对 existing+batch union 验证。
+
+(3) **structural head 非 truth**:默认 show/list 只返回 batch/ordinal/identity/digest/byte-count/time metadata，只有显式 `--include-record` reveal exact
+record。`GovernanceStructuralHead(interpretation=structural_sequence_only)` 只表示已保存的最高连续 sequence，可从 immutable rows 重建；不得解释为
+current fact、active knowledge、valid/fresh evidence、conflict winner、authority、approval 或 hard-gate verdict。
+
+(4) **additive compatibility**:持久化目标为 SQLite v25 additive empty tables，不 backfill ADR/Memory/旧 Hub 记录；受支持 v24 只可由 mutation append
+路径迁移，read-only journal 命令要求 current v25 且不得创建/迁移。旧 binary 对 v25 必须拒绝而非降级。Schema corruption、byte/digest mismatch、
+sequence gap 或 projection divergence 均失败关闭，immutable records 不自动修复或删除。
+
+(5) **治理资产已接线**:`governance-contracts.yml` 升到 policy v3，保留 Evidence/Claim v1 wire/golden 与全部 shadow authority restriction，并新增
+journal schema pin、ADR/standard/Skill、protected-policy checker 与 init/upgrade copy contract。Scaffold/upgrade 回归已通过，但只继承治理资产，
+不安装 Rust runtime。
+
+(6) **引用闭包 admission 已公开冻结**:policy v3 与 journal schema extension 固定最多 1,024 条 distinct stored dependency records、候选批次加已加载
+closure 合计 16,777,216 canonical bytes、`derived_from_claim_record_ids` 最多 256 条边。三者只用于防资源耗尽，不代表证据充分、推理正确、truth 或
+authority；超限必须在 atomic append 前失败关闭。
+
+(7) **scaffold 不冒充 runtime**:`forge-init`/`forge-upgrade` 只继承 contract、Skill 与 shadow checker，不安装 Rust `forge-runtime` binary 或 SQLite
+journal。命令名统一为 `forge-runtime governance journal`；只有检测到项目批准且兼容 v1 的 executable 才可执行，否则结果为 `not_executed`，没有匹配
+receipt 不得声称 `stored|exact_replay` 或 durability。
+
+(8) **完成证据**:Rust 全 workspace `cargo test --all-targets --all-features`、strict Clippy 与 changed-file rustfmt 全绿；Governance integration
+14/14、scaffold init 8/8、upgrade 3/3、`forge check` 13/13、architecture 8/8、gate 与 `git diff --check` 均通过。独立 fresh-context
+复审结论为 **APPROVE**，完整 `forge accept` 为 **ACCEPTED**。这些证据只关闭 ADR 0046 / Wave 0F-B–1。
+
 ## 下一前沿(需外部资源 / 后续阶段 / 投机增强 / 明确非目标,非本环境可完整验证)
 - **Graph 下一协议切片**:SQLite v17–v24 已交付 successor candidate、per-node request/lifecycle、receipt/content dataflow、wave-ready/admit、本地 hard-crash adjudication与 8 MiB successor candidate 持久化上限；下一步是顶层整图执行循环、并发 wave 的失败传播/恢复以及安全 resume/branching。不得把当前逐节点 operator 驱动或 Hub-local single-consumption 冒充远程 exactly-once。
 - **真点火** `--agent-cmd=claude`:**multi-agent running to completion 已坐实**(Sprint 25:真 claude 多-agent 跑到 converge MET,增量级 + 版本级)。完整旋钮:四维资源护栏 + 成本三维(phase/时间/美元)+ 任务注入 + 写权限 + 模型路由 + 工作目录 + retry + loop-back;诚实分工:agent 自治增量绿、人确认版本竣工。docs/ignition.md 有完整配方 + 实测

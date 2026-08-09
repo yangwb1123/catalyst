@@ -36,7 +36,9 @@ const LEGACY_ENGINEERING_FILES = [
   join('docs', 'adr', '0043-frontend-code-architecture-governance.md'),
   join('docs', 'adr', '0044-business-ui-geometry-contract.md'),
   join('docs', 'adr', '0045-canonical-evidence-claim-contract.md'),
+  join('docs', 'adr', '0046-local-governance-record-journal.md'),
   join('docs', 'contracts', 'governance-evidence-claim-v1.schema.json'),
+  join('docs', 'contracts', 'governance-record-journal-v1.schema.json'),
   join('docs', 'contracts', 'fixtures', 'governance-evidence-claim-v1.json'),
   ...[
     'agent_engineering_check.py', 'backend_decision_contract.py',
@@ -99,8 +101,17 @@ test('legacy project upgrades to shadow contracts without rewriting project iden
   assert.equal(existsSync(join(target, 'docs', 'adr', '0043-frontend-code-architecture-governance.md')), true);
   assert.equal(existsSync(join(target, 'docs', 'adr', '0044-business-ui-geometry-contract.md')), true);
   assert.equal(existsSync(join(target, 'docs', 'adr', '0045-canonical-evidence-claim-contract.md')), true);
+  assert.equal(existsSync(join(target, 'docs', 'adr', '0046-local-governance-record-journal.md')), true);
   assert.equal(existsSync(join(target, 'docs', 'contracts', 'governance-evidence-claim-v1.schema.json')), true);
+  assert.equal(existsSync(join(target, 'docs', 'contracts', 'governance-record-journal-v1.schema.json')), true);
   assert.equal(existsSync(join(target, 'docs', 'contracts', 'fixtures', 'governance-evidence-claim-v1.json')), true);
+  const journalSkill = readFileSync(
+    join(target, '.agent', 'skills', 'evidence-claim-management.md'), 'utf8',
+  );
+  assert.match(journalSkill, /forge-runtime governance journal show/);
+  assert.match(journalSkill, /not_executed/);
+  assert.equal(existsSync(join(target, 'forge-runtime')), false,
+    'upgrade must not install the Rust journal runtime');
   assert.equal(existsSync(join(target, '.arch', 'frontend-architecture.v1.json')), true);
   assert.equal(existsSync(join(target, 'harness', 'frontend-architecture', 'check.mjs')), true);
   assert.equal(existsSync(join(target, 'harness', 'engineering_detector_check.py')), true);

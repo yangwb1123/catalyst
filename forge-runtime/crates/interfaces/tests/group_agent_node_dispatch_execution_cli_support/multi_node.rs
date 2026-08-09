@@ -62,6 +62,9 @@ const DOWNGRADE_V17_TO_V10_SQL: &str = "PRAGMA foreign_keys=OFF;
                SELECT * FROM group_agent_graph_node_dispatch_requests;
              CREATE TEMP TABLE saved_seq3 AS
                SELECT * FROM group_agent_graph_run_events WHERE seq=3;
+             DROP TABLE governance_structural_heads;
+             DROP TABLE governance_records;
+             DROP TABLE governance_record_append_batches;
              DROP INDEX group_agent_graph_scheduled_node_successor_candidates_created;
              DROP TABLE group_agent_graph_scheduled_node_successor_candidates;
              DROP INDEX group_agent_graph_scheduled_node_dispatch_lifecycles_project_lane_active;

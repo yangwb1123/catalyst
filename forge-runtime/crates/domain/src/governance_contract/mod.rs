@@ -127,6 +127,20 @@ pub fn decode_canonical_record_set(
     codec::decode_canonical_record_set(bytes)
 }
 
+/// Decodes an exact canonical append batch while leaving external references unresolved.
+///
+/// This preserves the closed-world semantics of [`decode_canonical_record_set`]. Journal
+/// implementations must resolve and validate every external reference atomically before storage.
+///
+/// # Errors
+///
+/// Returns an error for invalid records, ordering, identity, limits, or non-canonical bytes.
+pub fn decode_canonical_record_batch(
+    bytes: &[u8],
+) -> Result<Vec<GovernanceRecord>, GovernanceContractError> {
+    codec::decode_canonical_record_batch(bytes)
+}
+
 /// Validates a nonempty, ordered set of shadow records.
 ///
 /// # Errors
