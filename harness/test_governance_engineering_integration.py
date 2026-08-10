@@ -151,21 +151,21 @@ class GovernanceEngineeringIntegrationTest(unittest.TestCase):
     def test_registry_freezes_exact_cognitive_atom_projection(self):
         path = self.agent_root / "engineering" / "governance-contracts.yml"
         data = yaml.safe_load(path.read_text(encoding="utf-8"))
-        self.assertEqual(data["version"], 6)
+        self.assertEqual(data["version"], 7)
         self.assertEqual(data["cognitive_atom_projection"],
                          governance.COGNITIVE_ATOM_PROJECTION)
 
     def test_registry_freezes_exact_artifact_evidence_adapter(self):
         path = self.agent_root / "engineering" / "governance-contracts.yml"
         data = yaml.safe_load(path.read_text(encoding="utf-8"))
-        self.assertEqual(data["version"], 6)
+        self.assertEqual(data["version"], 7)
         self.assertEqual(data["artifact_evidence_adapter"],
                          governance.ARTIFACT_EVIDENCE_ADAPTER)
 
     def test_registry_freezes_exact_command_observation_adapter(self):
         path = self.agent_root / "engineering" / "governance-contracts.yml"
         data = yaml.safe_load(path.read_text(encoding="utf-8"))
-        self.assertEqual(data["version"], 6)
+        self.assertEqual(data["version"], 7)
         self.assertEqual(data["command_observation_evidence_adapter"],
                          governance.COMMAND_OBSERVATION_EVIDENCE_ADAPTER)
 

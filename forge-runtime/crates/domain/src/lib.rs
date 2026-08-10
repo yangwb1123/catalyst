@@ -2,6 +2,7 @@ pub mod artifact_evidence_contract;
 pub mod cognitive_atom_contract;
 pub mod command_observation_evidence_contract;
 mod event;
+pub mod evolve_repo_locator_evidence_contract;
 pub mod governance_contract;
 mod governance_record_journal;
 mod group_agent_graph;

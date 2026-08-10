@@ -30,7 +30,9 @@ ADR-0048 交付 Wave 1 的首个 source adapter：strict exact `forgeos.artifact
 不认证来源或身份、不创建 Claim/Atom、不持久化或执行 effect，SQLite 仍为 v25。
 ADR-0049 随后交付独立 command-observation adapter：strict exact argv/source/producer/time/exit/stream summary + Governance binding
 映射为既有 `gate_result|test_run` EvidenceRecord。它只接受真实 exited projection，不执行命令、不把 exit=0 或 PASS 文本当作 criterion verdict，
-不认证 digest profile/producer、不持久化或执行 effect；Evolve locator 和真实 producer 接线仍是后续独立边界。
+不认证 digest profile/producer、不持久化或执行 effect；真实 command producer 接线仍是后续独立边界。
+ADR-0050 又交付独立 Evolve repository-locator adapter：caller-declared exact locator/content/scan-context/producer/source + Governance binding
+映射为既有 `repo_locator` EvidenceRecord。它不读取当前 repo/report、不验证 digest preimage、不确认 scan judgment/completion；真实 Evolve producer 接线仍待后续。
 
 | 节点 | 当前覆盖 | 已有基础 | 主要缺口 |
 |---:|---|---|---|
@@ -43,7 +45,7 @@ ADR-0049 随后交付独立 command-observation adapter：strict exact argv/sour
 | 06 Data | shadow | data/transaction/migration Skills、持久化前置报告与 N/A 规则 | pre-code runtime gate、Schema/query-plan/restore 的可信执行证据 |
 | 07 API | shadow | API contract Skill、compatibility/idempotency/error 决策维度 | contract registry、消费者清单与自动 compatibility gate |
 | 08 Planning | 强 | task contract、DAG、Build/Evolve | impact/cost/risk 驱动的角色和权限派生 |
-| 09 Development | shadow+runtime 基础 | implementer、polyglot gates、backend/frontend Skill 与 Context route、strict artifact/command-observation→Evidence pure adapters | Evolve source adapter、command producer integration、package 自动生成/授权与真实 pre-code block |
+| 09 Development | shadow+runtime 基础 | implementer、polyglot gates、backend/frontend Skill 与 Context route、strict artifact/command-observation/Evolve-locator→Evidence pure adapters | command/Evolve producer integration、package 自动生成/授权与真实 pre-code block |
 | 10 Review/Refactor | 部分 | fresh reviewer、回流、重构 skills | ordinary verdict 严格化、God/responsibility/模式决策证据 |
 | 11 Security | 强 | STRIDE、security role/skill、secret/SCA | privacy/compliance 与开发期控制统一契约 |
 | 12 QA | 强 | QA、testing、`qa_v1` fail-closed | risk-based trace/mutation/flake/environment registry |
@@ -54,7 +56,7 @@ ADR-0049 随后交付独立 command-observation adapter：strict exact argv/sour
 
 执行平面当前也只有本地 process、Docker/Firecracker 等基础，不存在 Device Registry、远程 Runner/Placement/Lease/Migration；
 完整 coding-workspace exchange 与 Rust runtime OS sandbox 集成仍是缺口。除 ADR-0047 明确限定的 Claim→Atom pure shadow
-投影与 ADR-0048/0049 的 artifact/command-observation→Evidence pure shadow adapters 外，AADM、Reflection 和 Device Fabric 文档都属于
+投影与 ADR-0048–0050 的 artifact/command-observation/Evolve-locator→Evidence pure shadow adapters 外，AADM、Reflection 和 Device Fabric 文档都属于
 目标态，不得从命令名称、已有 runner、投影或适配结果推断已经交付。
 
 最危险的三个先决缺口：
@@ -111,7 +113,7 @@ instruction、hard guard、transition、completion、effect 或 persistence；De
 - [ ] 实现 `ContextPackage v1` 的选择、遗漏、redaction、token budget、digest 和 cache invalidation；
 - [x] 把 exact `forgeos.artifact.v1` provenance 通过 ADR-0048 strict pure shadow adapter 适配为 Evidence；
 - [x] 把 exact `forgeos.command-observation/v1` 通过 ADR-0049 strict pure shadow adapter 适配为 gate/test Evidence；
-- [ ] 为 Evolve locator 另行版本化 Evidence source adapter；不得把它强塞进 artifact 或 command adapter；
+- [x] 通过 ADR-0050 为 Evolve repository locator 另行版本化 strict pure shadow Evidence source adapter；
 - [ ] 冻结无秘密 environment/tool/source-tree digest profile，并把真实 gate/test producer 接到 exact command-observation envelope；
 - [ ] 实现 `CapabilityGrant v1`、最小 effect vocabulary、preflight/postflight 与 audit receipts；
 - [ ] 实现非 Agent Governance Kernel/PDP trust root、bootstrap GrantRequest、plan-finalization issuance 与 ApprovalRecord；
@@ -135,6 +137,12 @@ canonical command/observation/request/Evidence bytes 与 digest，Universal chec
 `ADAPTED_SHADOW (observation mapping only; no execution, pass, completion, truth, authority, claim, atom, persistence, or effect attestation)`；
 timeout/cancel 不被伪造成 exit，exit=0 不被伪造成 PASS，adapter 不执行命令、不验证 stream preimage/producer/digest profile，也不写
 journal/SQLite。SQLite v25 和所有既有 wire 均未改变。
+
+**ADR-0050 第三个 source-adapter 窄切片已达判据。** 同一 caller-declared exact Evolve locator observation + binding request 跨
+Python/Go/Rust 产生相同 canonical locator/source/request/Evidence bytes 与 digest，Universal checker 能 exact re-adapt。结果仅为
+`ADAPTED_SHADOW (locator mapping only; no file/report verification, scan judgment, completion, truth, authority, claim, atom, persistence, or effect attestation)`；
+adapter 不读取 current repo/report、不解析 symlink、不验证 file/report/tree/parameters digest preimage、不确认 scan judgment/completion，
+也不写 journal/SQLite。SQLite v25 与所有既有 wire 均未改变；真实 Evolve producer integration 仍待独立版本。
 
 **完成判据。** Coding Agent 越路径、Reviewer 写代码、Migration 直接 apply production、Release 访问 credential 均被拒绝；
 Agent 不能签发 Grant 或确认业务事实；源或 context 漂移使批准失效；不可信正文不能进入 instruction lane；非法状态跳转、

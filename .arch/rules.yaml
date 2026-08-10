@@ -84,6 +84,11 @@
 #              into cohesive sub-packages, while tests stay outside this metric.
 #              The measured harness ceiling is now 35 non-test files, so
 #              max_files 35 → 36 preserves exactly one file of headroom.
+# 2026-08-10: ADR-0050 adds the pure Evolve repository-locator → Evidence
+#              adapter CLI at the harness root; implementation remains inside
+#              harness/evolve_repo_locator_evidence_adapter. The measured
+#              harness ceiling is now 36 non-test files, so max_files 36 → 37
+#              preserves exactly one file of headroom.
 #   fanin:     max 28 PRODUCTION importing files (Rust domain);
 #              forge-core/internal/asset is 26. Tests excluded. RECALIBRATED 2026-07-29:
 #              Rust `crate/self/super` imports are same-crate cohesion, not inbound
@@ -104,7 +109,7 @@ root:
 
 # ── Per-package / per-directory budget ────────────────────────────────────
 package:
-  max_files: 36       # actual 35 non-test harness files (Command observation adapter CLI included) + headroom 1
+  max_files: 37       # actual 36 non-test harness files (Evolve locator adapter CLI included) + headroom 1
   max_exports: 30     # actual 28 (orchestrator and mode) + headroom — recalibrated 2026-07-27
 
 # ── Per-file budget ───────────────────────────────────────────────────────

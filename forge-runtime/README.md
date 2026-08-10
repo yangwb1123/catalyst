@@ -759,8 +759,9 @@ cargo check --workspace --all-targets --all-features --offline
 cargo build --workspace --all-targets --all-features --offline
 ```
 
-CI pins Rust 1.93.0, fetches versions recorded in `Cargo.lock`, and runs the
-quality commands without network access. `rusqlite` is pinned to the
+The repository-local `rust-toolchain.toml` and CI both pin Rust 1.93.0; CI
+fetches versions recorded in `Cargo.lock` and runs the quality commands without
+network access. `rusqlite` is pinned to the
 Rust-1.93-compatible 0.39 line.
 
 Architecture:

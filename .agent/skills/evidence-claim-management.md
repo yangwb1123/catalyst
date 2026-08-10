@@ -2,7 +2,7 @@
 
 ## 职责与触发
 
-当任务需要把一个 exact artifact provenance 或 command observation 适配为 Evidence、记录或本地持久化新的观察、事实候选、推断、假设、未知、
+当任务需要把一个 exact artifact provenance、command observation 或 Evolve repository locator observation 适配为 Evidence、记录或本地持久化新的观察、事实候选、推断、假设、未知、
 冲突或失效关系时，使用本 Skill。目标是区分 EvidenceRecord 与 KnowledgeClaim，按 ADR-0048 生成 pure shadow artifact Evidence，
 生成 strict-codec 候选记录，并仅在调用方另外明确要求 durability 时使用窄 append-only journal。普通代码实现、完成裁决、权限签发、
 知识采纳和生命周期解释不属于本 Skill。
@@ -15,6 +15,8 @@
   source-tree/revision/sequence/sensitivity/subjects/supersedes binding；历史空 `_format` 不可进入 adapter；
 - 若来源是 command observation，提供 exact `forgeos.command-observation/v1` envelope 与显式 Governance binding；只有 `exited` 可投影，
   timeout/cancel 保留为 source observation 但不得伪造 exit code；environment/tool/tree digest 仍是 opaque producer declaration；
+- 若来源是 Evolve repository locator，提供 exact `forgeos.evolve-repo-locator/v1` observation 与显式 Governance binding；observation 必须
+  保存 whole-file digest/bytes、path/line/detail、report digest、dimension/relation、producer、观察时间和 source revision/tree；
 - Claim 的 subject、predicate、value、owner、验证计划和有效期；
 - 若引用既有记录，提供 exact `record_id`，不得只给标题或自由文本名称。
 - 需要持久化时，提供稳定的调用方 idempotency key；不得用时间戳或每次随机值绕过 replay。
@@ -52,9 +54,17 @@ re-adaptation comparison。artifact content digest、source snapshot digest、re
 command、observation 与完整 request 分别做 domain-separated digest，再确定性生成 existing EvidenceRecord v1。combined digest 仅表示
 producer-observed drain-event 顺序；exit=0、`gate_result|test_run` 和 producer/环境声明均不是身份、criterion verdict 或完成权威。
 
+### Evolve repository locator adapter 分支
+
+当输入来自 `evolve_scan_v1` 的 finding、clear 或 opportunity locator 时，构造 exact
+`forgeos.governance.evolve-repo-locator-evidence-adapter/v1` request。不要把旧 `{path,line,detail}` 直接塞进 Evidence；先由调用方显式提供
+content、report、producer、time 与 source 声明。adapter 不会读取当前 repository path，也不会验证 file/report/tree/parameters digest preimage；
+它只分别 digest locator、完整 observation 与完整 request，并生成 existing `repo_locator` EvidenceRecord。line=0 映射为 null pair，正行映射为
+相同 start/end；finding、clear、opportunity 只进入不可信 source identity，不是 Evidence 状态或事实判断。`unavailable` 没有 locator，不能适配。
+
 ## 输出契约
 
-Artifact provenance 与 command observation adapter 分支各输出 exactly one `EvidenceRecord` v1 JSON object；普通 record-set/journal 分支才输出按
+Artifact provenance、command observation 与 Evolve locator adapter 分支各输出 exactly one `EvidenceRecord` v1 JSON object；普通 record-set/journal 分支才输出按
 `metadata.record_id` 排序、非空的 `EvidenceRecord`/`KnowledgeClaim` v1 JSON 数组，并使用
 `docs/contracts/governance-evidence-claim-v1.schema.json`。两种输出的字节都必须是 exact compact canonical JSON，且记录必须绑定
 source/context/policy 摘要和独立 digest domain。checker 只允许返回结构有效或错误，不产生 trusted、confirmed、approved、accepted、completed
@@ -72,6 +82,11 @@ Command adapter 的唯一正结果是
 它不会执行命令、不会验证 stream preimage、不会认证 producer/digest profile，也不把 exit=0 当 PASS；不会创建 Claim/Atom、不会 append journal、
 写 SQLite 或产生 effect。`created_by.run_id=command-adaptation-<request_sha256>` 只是 deterministic correlation id，不是 execution receipt。
 
+Evolve locator adapter 的唯一正结果是
+`ADAPTED_SHADOW (locator mapping only; no file/report verification, scan judgment, completion, truth, authority, claim, atom, persistence, or effect attestation)`。
+它不会读取当前 repository path，不会验证 file/report/tree/parameters digest preimage，不会确认 finding、clear 或 opportunity；不会创建 Claim/Atom、不会 append journal、写 SQLite 或产生 effect。
+request-derived run ID 只是 deterministic correlation，不是 scan/capture receipt。
+
 ## 规则、禁止与权限
 
 - Evidence 只证明特定观察，不证明整个系统正确。
@@ -82,6 +97,7 @@ Command adapter 的唯一正结果是
 - 禁止把 `stored`、`exact_replay`、最大 sequence 或 structural head 改写成 accepted、confirmed、active、fresh、trusted 或 approved。
 - 禁止把 artifact `agent`/`model` 当作认证 principal，禁止用当前路径内容冒充历史 observation，禁止把 `ADAPTED_SHADOW` 当作已持久化 receipt。
 - 禁止把 timeout/cancel/signal 编成负 exit sentinel，禁止用外层命令观察冒充内部 detector receipt，禁止跨未版本化 digest profile 比较 opaque hash。
+- 禁止把 Evolve `finding|clear|opportunity` 映射成 Evidence valid/invalid 真值，禁止用 current path 回填历史 content digest 或 report membership。
 - 不使用历史 alias：`Evidence`、`Claim`、`ContextManifest`、`AuthorityGrant`、`AgentCapabilityGrant`。
 
 ## 自动化与验收
@@ -114,6 +130,16 @@ Command adapter golden 使用
 `docs/contracts/fixtures/command-observation-evidence-adapter-v1.json` 的 canonical command/observation/request/Evidence bytes 与四个 digest
 逐字节一致。该纯 adapter 不改变 SQLite v25，不允许 migration/backfill/自动 journal append；工具链缺失时如实记 `not_executed`。
 
+Evolve locator adapter golden 使用
+`python3 -B harness/evolve_repo_locator_evidence_adapter_check.py --golden <repo-root>`；验证具体输出使用
+`python3 -B harness/evolve_repo_locator_evidence_adapter_check.py <repo-root> <request.json> <evidence-record.json>`。跨语言回归分别运行
+`python3 -B -m unittest harness.test_evolve_repo_locator_evidence_adapter_check`、
+`(cd forge-core && go test -count=1 ./internal/evolverepolocatorevidencecontract)` 和
+`(cd forge-runtime && cargo test -p forge-runtime-domain evolve_repo_locator_evidence_contract)`。三者必须与
+`docs/contracts/fixtures/evolve-repo-locator-evidence-adapter-v1.json` 的 canonical locator/observation/request/Evidence bytes 和四个 digest
+逐字节一致。不会创建 Claim/Atom、不会 append journal；该纯 adapter 不改变 SQLite v25，也不允许 migration/backfill/真实 Evolve producer
+接线。工具链缺失时如实记 `not_executed`。
+
 Scaffold/upgrade 只继承治理 contract、Skill 和 shadow checker，不安装 Rust `forge-runtime` binary 或 SQLite journal。持久化前先检测项目批准且
 与 `forgeos.governance-journal/v1` 兼容的 `forge-runtime`（至少解析到预期 executable，并确认 help 暴露 append/show/list/head surface）；缺失、版本不兼容
 或无法验证时记为 `not_executed`，不得声称已持久化。检测通过后运行
@@ -130,9 +156,12 @@ conflict/corruption，不得通过换 key 制造第二批次。只有匹配 rece
 - `docs/adr/0046-local-governance-record-journal.md`
 - `docs/adr/0048-artifact-provenance-evidence-adapter-v1.md`
 - `docs/adr/0049-command-observation-evidence-adapter-v1.md`
+- `docs/adr/0050-evolve-repo-locator-evidence-adapter-v1.md`
 - `docs/contracts/artifact-evidence-adapter-v1.schema.json`
 - `docs/contracts/fixtures/artifact-evidence-adapter-v1.json`
 - `docs/contracts/command-observation-evidence-adapter-v1.schema.json`
 - `docs/contracts/fixtures/command-observation-evidence-adapter-v1.json`
+- `docs/contracts/evolve-repo-locator-evidence-adapter-v1.schema.json`
+- `docs/contracts/fixtures/evolve-repo-locator-evidence-adapter-v1.json`
 - `docs/contracts/governance-record-journal-v1.schema.json`
 - `.agent/engineering/governance-contracts.yml`

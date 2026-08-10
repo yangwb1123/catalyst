@@ -94,12 +94,16 @@ EXTENSION_REFS = {
     "command_observation_evidence_adapter_schema": "docs/contracts/command-observation-evidence-adapter-v1.schema.json",
     "command_observation_evidence_adapter_fixture": "docs/contracts/fixtures/command-observation-evidence-adapter-v1.json",
     "command_observation_evidence_adapter_checker": "harness/command_observation_evidence_adapter_check.py",
+    "evolve_repo_locator_evidence_adapter_schema": "docs/contracts/evolve-repo-locator-evidence-adapter-v1.schema.json",
+    "evolve_repo_locator_evidence_adapter_fixture": "docs/contracts/fixtures/evolve-repo-locator-evidence-adapter-v1.json",
+    "evolve_repo_locator_evidence_adapter_checker": "harness/evolve_repo_locator_evidence_adapter_check.py",
     "governance_contract_skill": ".agent/skills/evidence-claim-management.md",
     "governance_contract_decision": "docs/adr/0045-canonical-evidence-claim-contract.md",
     "governance_journal_decision": "docs/adr/0046-local-governance-record-journal.md",
     "cognitive_atom_decision": "docs/adr/0047-shadow-cognitive-atom-projection-v1.md",
     "artifact_evidence_adapter_decision": "docs/adr/0048-artifact-provenance-evidence-adapter-v1.md",
     "command_observation_evidence_adapter_decision": "docs/adr/0049-command-observation-evidence-adapter-v1.md",
+    "evolve_repo_locator_evidence_adapter_decision": "docs/adr/0050-evolve-repo-locator-evidence-adapter-v1.md",
     "governance_contract_standard": "docs/design/ai-engineering-os/governance-contracts.md",
 }
 DISCIPLINES = {

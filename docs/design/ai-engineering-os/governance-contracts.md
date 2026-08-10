@@ -6,10 +6,11 @@
 > ADR-0048 已交付 strict artifact-v1→EvidenceRecord pure shadow adapter；它不读取当前文件、不追加 journal，SQLite 保持 v25。
 > ADR-0049 已交付 strict command-observation→gate/test EvidenceRecord pure shadow adapter；它不执行命令、不把 exit=0 当 PASS、
 > 不追加 journal，SQLite 仍保持 v25。
+> ADR-0050 已交付 strict Evolve repo-locator→EvidenceRecord pure shadow adapter；它不读取当前 repo/report 或确认扫描结论。
 > 第 2 节中标注“已交付”的两种 v1 记录、下述 source adapter 与 CognitiveAtom v1 投影属于当前合同；第 1、3 节及其后内容仍是目标态，
 > 不声明 truth/authority、Context、Grant、Transition、语义 lifecycle/conflict/freshness view 或知识写回 runtime 已支持。旧 free-text memory 不得静默升级。
 
-## 0. 当前实现边界（0F-A、0F-B–1、ADR-0047 projection 与 ADR-0048/0049 adapters 已完成；其余目标态未实现）
+## 0. 当前实现边界（0F-A、0F-B–1、ADR-0047 projection 与 ADR-0048–0050 adapters 已完成；其余目标态未实现）
 
 当前可执行的 governance record kind 仍只有 `EvidenceRecord` 和 `KnowledgeClaim` v1：
 
@@ -62,7 +63,7 @@ adapter 不读取 artifact path 的当前文件，不证明 manifest 来自受�
 KnowledgeClaim/CognitiveAtom，不满足 hard gate，不 append GovernanceRecordJournal、不写 SQLite/Memory/Knowledge，也不产生 network/process/
 device/production effect。若调用方随后要求 durability，必须另行使用 ADR-0046 journal 并取得其 `stored|exact_replay` receipt；
 `ADAPTED_SHADOW` 不能冒充 persistence。该切片没有 migration/backfill，Hub schema 和 SQLite 保持 v25；gate/test observation 由
-ADR-0049 的独立版本承担，Evolve locator 仍需另行设计。
+ADR-0049 的独立版本承担，Evolve locator 则由 ADR-0050 的独立 pure shadow adapter 承担。
 
 ### ADR-0049：Command observation → Gate/Test EvidenceRecord v1 pure shadow adapter
 
@@ -90,7 +91,16 @@ ADAPTED_SHADOW (observation mapping only; no execution, pass, completion, truth,
 adapter 不 spawn 命令、不读取 cwd/stdin/output/current tree、不验证 stream preimage、environment/tool/tree digest profile 或 producer 身份，
 也不把 exit=0/PASS 文本映射为 gate authority。它不创建 Claim/Atom、不满足 hard gate、不 append journal、不写 SQLite/Knowledge，
 不产生 process/network/device/production effect。该切片没有 migration/backfill；真实 gate/execbound producer integration 必须先冻结版本化、
-无秘密 digest-preimage profile，Evolve locator 则使用另一 source contract。
+无秘密 digest-preimage profile，Evolve locator 使用 ADR-0050 的独立 source contract。
+
+### ADR-0050：Evolve repository locator → EvidenceRecord v1 pure shadow adapter
+
+[ADR-0050](../../adr/0050-evolve-repo-locator-evidence-adapter-v1.md) 把 caller-declared exact repo locator/content/scan context/producer/source
+observation 与显式 Governance binding 确定性映射为既有 `repo_locator` EvidenceRecord；locator/source/request/Evidence 使用分离 digest domain。
+Schema/golden/checker 是 `docs/contracts/evolve-repo-locator-evidence-adapter-v1.schema.json`、`docs/contracts/fixtures/evolve-repo-locator-evidence-adapter-v1.json`
+与 `harness/evolve_repo_locator_evidence_adapter_check.py`；唯一正结果为 `ADAPTED_SHADOW (locator mapping only; no file/report verification, scan judgment, completion, truth, authority, claim, atom, persistence, or effect attestation)`。
+它不读取 current repo/report、不解析 symlink、不验证 digest preimage、不确认 scan judgment/completion，不创建 Claim/Atom、不满足 hard gate、
+不 append journal、不写 SQLite/Knowledge 或产生 effect；真实 Evolve producer integration 另行版本化。
 
 ### ADR-0047：CognitiveAtom v1 pure shadow projection
 
@@ -107,7 +117,7 @@ epistemic state、references、validity 与适用的 integer confidence，并强
 - `docs/contracts/fixtures/cognitive-atom-projection-v1.json`；
 - `harness/cognitive_atom_contract_check.py`。
 
-它们的摘要与 Python/Go/Rust 参考路径由 `.agent/engineering/governance-contracts.yml` v6 固定。唯一正结果是：
+它们的摘要与 Python/Go/Rust 参考路径由 `.agent/engineering/governance-contracts.yml` v7 固定。唯一正结果是：
 
 ```text
 PROJECTED_SHADOW
@@ -147,7 +157,7 @@ hard gate。Inspection 默认只返回 batch/ordinal/identity/digest/byte-count/
 ## 1. 通用 Governance Envelope（目标态，未实现）
 
 目标上，Atom、Claim、Evidence、GraphSnapshot、Report、Grant、Review、Approval、KnowledgeUpdate 和 Transition 共享一组信封职责。
-ADR-0047 的 CognitiveAtom v1 只是独立 Claim 投影 wire，ADR-0048/0049 也只是把两种互不相同的 source 映射到既有 Evidence wire；
+ADR-0047 的 CognitiveAtom v1 只是独立 Claim 投影 wire，ADR-0048–0050 也只是把三种互不相同的 source 映射到既有 Evidence wire；
 它们都不表示该通用信封或完整 Kernel ABI 已实现。
 下图只是**不可序列化的概念图**，不是 `forgeos.governance/v1` wire shape，也不得输入当前 checker；任何共同信封实现都必须采用新版本并另作兼容决策：
 

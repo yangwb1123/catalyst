@@ -40,15 +40,18 @@ const LEGACY_ENGINEERING_FILES = [
   join('docs', 'adr', '0047-shadow-cognitive-atom-projection-v1.md'),
   join('docs', 'adr', '0048-artifact-provenance-evidence-adapter-v1.md'),
   join('docs', 'adr', '0049-command-observation-evidence-adapter-v1.md'),
+  join('docs', 'adr', '0050-evolve-repo-locator-evidence-adapter-v1.md'),
   join('docs', 'contracts', 'governance-evidence-claim-v1.schema.json'),
   join('docs', 'contracts', 'governance-record-journal-v1.schema.json'),
   join('docs', 'contracts', 'cognitive-atom-projection-v1.schema.json'),
   join('docs', 'contracts', 'artifact-evidence-adapter-v1.schema.json'),
   join('docs', 'contracts', 'command-observation-evidence-adapter-v1.schema.json'),
+  join('docs', 'contracts', 'evolve-repo-locator-evidence-adapter-v1.schema.json'),
   join('docs', 'contracts', 'fixtures', 'governance-evidence-claim-v1.json'),
   join('docs', 'contracts', 'fixtures', 'cognitive-atom-projection-v1.json'),
   join('docs', 'contracts', 'fixtures', 'artifact-evidence-adapter-v1.json'),
   join('docs', 'contracts', 'fixtures', 'command-observation-evidence-adapter-v1.json'),
+  join('docs', 'contracts', 'fixtures', 'evolve-repo-locator-evidence-adapter-v1.json'),
   ...[
     'agent_engineering_check.py', 'backend_decision_contract.py',
     'governance_engineering_check.py',
@@ -67,12 +70,16 @@ const LEGACY_ENGINEERING_FILES = [
     'artifact_evidence_adapter_check.py', 'test_artifact_evidence_adapter_check.py',
     'command_observation_evidence_adapter_check.py',
     'test_command_observation_evidence_adapter_check.py',
+    'evolve_repo_locator_evidence_adapter_check.py',
+    'test_evolve_repo_locator_evidence_adapter_check.py',
     'test_governance_engineering_integration.py',
+    'test_governance_evolve_locator_integration.py',
   ].map((name) => join('harness', name)),
   join('harness', 'governance_contract'),
   join('harness', 'cognitive_atom_contract'),
   join('harness', 'artifact_evidence_adapter'),
   join('harness', 'command_observation_evidence_adapter'),
+  join('harness', 'evolve_repo_locator_evidence_adapter'),
   join('harness', 'governance_engineering'),
   ...['check.mjs', 'contract.mjs', 'graph.mjs', 'typescript-adapter.mjs', 'test_frontend-architecture.mjs']
     .map((name) => join('harness', 'frontend-architecture', name)),
@@ -122,15 +129,18 @@ test('legacy project upgrades to shadow contracts without rewriting project iden
   assert.equal(existsSync(join(target, 'docs', 'adr', '0047-shadow-cognitive-atom-projection-v1.md')), true);
   assert.equal(existsSync(join(target, 'docs', 'adr', '0048-artifact-provenance-evidence-adapter-v1.md')), true);
   assert.equal(existsSync(join(target, 'docs', 'adr', '0049-command-observation-evidence-adapter-v1.md')), true);
+  assert.equal(existsSync(join(target, 'docs', 'adr', '0050-evolve-repo-locator-evidence-adapter-v1.md')), true);
   assert.equal(existsSync(join(target, 'docs', 'contracts', 'governance-evidence-claim-v1.schema.json')), true);
   assert.equal(existsSync(join(target, 'docs', 'contracts', 'governance-record-journal-v1.schema.json')), true);
   assert.equal(existsSync(join(target, 'docs', 'contracts', 'cognitive-atom-projection-v1.schema.json')), true);
   assert.equal(existsSync(join(target, 'docs', 'contracts', 'artifact-evidence-adapter-v1.schema.json')), true);
   assert.equal(existsSync(join(target, 'docs', 'contracts', 'command-observation-evidence-adapter-v1.schema.json')), true);
+  assert.equal(existsSync(join(target, 'docs', 'contracts', 'evolve-repo-locator-evidence-adapter-v1.schema.json')), true);
   assert.equal(existsSync(join(target, 'docs', 'contracts', 'fixtures', 'governance-evidence-claim-v1.json')), true);
   assert.equal(existsSync(join(target, 'docs', 'contracts', 'fixtures', 'cognitive-atom-projection-v1.json')), true);
   assert.equal(existsSync(join(target, 'docs', 'contracts', 'fixtures', 'artifact-evidence-adapter-v1.json')), true);
   assert.equal(existsSync(join(target, 'docs', 'contracts', 'fixtures', 'command-observation-evidence-adapter-v1.json')), true);
+  assert.equal(existsSync(join(target, 'docs', 'contracts', 'fixtures', 'evolve-repo-locator-evidence-adapter-v1.json')), true);
   const journalSkill = readFileSync(
     join(target, '.agent', 'skills', 'evidence-claim-management.md'), 'utf8',
   );
@@ -170,12 +180,17 @@ test('legacy project upgrades to shadow contracts without rewriting project iden
   assert.equal(existsSync(join(target, 'harness', 'artifact_evidence_adapter', 'adapter.py')), true);
   assert.equal(existsSync(join(target, 'harness', 'command_observation_evidence_adapter_check.py')), true);
   assert.equal(existsSync(join(target, 'harness', 'command_observation_evidence_adapter', 'adapter.py')), true);
+  assert.equal(existsSync(join(target, 'harness', 'evolve_repo_locator_evidence_adapter_check.py')), true);
+  assert.equal(existsSync(join(target, 'harness', 'evolve_repo_locator_evidence_adapter', 'adapter.py')), true);
   assert.equal(existsSync(join(target, 'harness', 'governance_engineering', 'source_adapters.py')), true);
+  assert.equal(existsSync(join(target, 'harness', 'governance_engineering', 'evolve_locator_adapter.py')), true);
   assert.equal(existsSync(join(target, 'harness', 'test_governance_contract_check.py')), true);
   assert.equal(existsSync(join(target, 'harness', 'test_cognitive_atom_contract_check.py')), true);
   assert.equal(existsSync(join(target, 'harness', 'test_artifact_evidence_adapter_check.py')), true);
   assert.equal(existsSync(join(target, 'harness', 'test_command_observation_evidence_adapter_check.py')), true);
+  assert.equal(existsSync(join(target, 'harness', 'test_evolve_repo_locator_evidence_adapter_check.py')), true);
   assert.equal(existsSync(join(target, 'harness', 'test_governance_engineering_integration.py')), true);
+  assert.equal(existsSync(join(target, 'harness', 'test_governance_evolve_locator_integration.py')), true);
   const check = spawnSync('python3', ['-B', 'harness/check.py', '.'], {
     cwd: target, encoding: 'utf8',
   });

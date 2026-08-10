@@ -1,15 +1,15 @@
 api_version: forgeos.agent-engineering/v1
 kind: GovernanceContractRegistry
 status: active_contract
-runtime_binding: cross_language_codec_local_journal_atom_projection_artifact_command_adapters_shadow
+runtime_binding: cross_language_codec_local_journal_atom_projection_artifact_command_evolve_locator_adapters_shadow
 owner: governance
-version: 6
+version: 7
 completion_authority: forge_accept
 
 scope:
   shipped_kinds: [EvidenceRecord, KnowledgeClaim]
   shipped_projections: [CognitiveAtom]
-  shipped_adapters: [artifact_provenance_to_evidence, command_observation_to_evidence]
+  shipped_adapters: [artifact_provenance_to_evidence, command_observation_to_evidence, evolve_repo_locator_to_evidence]
   planned_kinds: [ContextPackage, CapabilityGrant, ApprovalRecord, TransitionReceipt, KnowledgeUpdateProposal]
   persistence: local_append_only_exact_evidence_claim_journal
   authority_attestation: unavailable
@@ -139,6 +139,60 @@ command_observation_evidence_adapter:
     integer_domain: signed_int64
     exit_code_domain: portable_nonnegative_signed_int32
   positive_result: ADAPTED_SHADOW (observation mapping only; no execution, pass, completion, truth, authority, claim, atom, persistence, or effect attestation)
+  attests: []
+  persistence: none
+
+evolve_repo_locator_evidence_adapter:
+  api_version: forgeos.governance.evolve-repo-locator-evidence-adapter/v1
+  mode: deterministic_evolve_repo_locator_to_evidence_shadow
+  source_kind: forgeos.evolve-repo-locator/v1
+  output_kind: EvidenceRecord
+  source_fields: [api_version, canonicalization, content, locator, observed_at_unix_ms, producer, scan_context, source]
+  binding_fields: [aggregate_id, context_sha256, policy_sha256, project_id, scope, sensitivity, sequence, subjects, supersedes_record_ids]
+  exact_request:
+    canonical_required: true
+    compact_utf8_required: true
+    observation_anchor: "#EvolveRepoLocatorV1"
+    reads_current_repository_file: false
+    verifies_content_or_report_preimage: false
+    relation_values: [clear, finding, opportunity]
+    opportunity_id_profile: evolve_scan_v1_ascii_64
+    unavailable_projectable: false
+  identity:
+    locator_digest_domain: "forgeos.governance.evolve-repo-locator.locator.v1\0"
+    source_digest_domain: "forgeos.governance.evolve-repo-locator-source.v1\0"
+    request_digest_domain: "forgeos.governance.evolve-repo-locator-evidence-adapter.request.v1\0"
+    evidence_record_digest_domain: "forgeos.governance.evidence-record.v1\0"
+    record_id_prefix: evolve-locator-evidence-
+    snapshot_id_prefix: evolve-locator-
+    principal_run_id_prefix: evolve-locator-adaptation-
+  constants:
+    principal_id: forgeos.evolve-repo-locator-evidence-adapter
+    principal_type: tool
+    authority_domain: shadow
+    role: evidence-adapter
+    collector_from: producer_declaration
+    evidence_type: repo_locator
+    locator_type: repo
+    line_projection: zero_to_null_pair_positive_to_equal_pair
+    directness: direct
+    source_trust: observed
+    content_role: untrusted_data
+    source_snapshot_type: repository
+    artifact_sha256: observation.content.sha256
+    status: valid
+  limits:
+    max_request_bytes: 131072
+    max_depth: 16
+    max_object_fields: 64
+    max_array_items: 256
+    max_string_bytes: 16384
+    max_detail_bytes: 512
+    max_path_scalars: 4096
+    max_opportunity_id_bytes: 64
+    max_content_bytes: 1048576
+    integer_domain: signed_int64
+  positive_result: ADAPTED_SHADOW (locator mapping only; no file/report verification, scan judgment, completion, truth, authority, claim, atom, persistence, or effect attestation)
   attests: []
   persistence: none
 
@@ -283,11 +337,15 @@ canonical_refs:
   command_observation_evidence_adapter_schema: docs/contracts/command-observation-evidence-adapter-v1.schema.json
   command_observation_evidence_adapter_golden_fixture: docs/contracts/fixtures/command-observation-evidence-adapter-v1.json
   command_observation_evidence_adapter_checker: harness/command_observation_evidence_adapter_check.py
+  evolve_repo_locator_evidence_adapter_schema: docs/contracts/evolve-repo-locator-evidence-adapter-v1.schema.json
+  evolve_repo_locator_evidence_adapter_golden_fixture: docs/contracts/fixtures/evolve-repo-locator-evidence-adapter-v1.json
+  evolve_repo_locator_evidence_adapter_checker: harness/evolve_repo_locator_evidence_adapter_check.py
   decision: docs/adr/0045-canonical-evidence-claim-contract.md
   journal_decision: docs/adr/0046-local-governance-record-journal.md
   cognitive_atom_decision: docs/adr/0047-shadow-cognitive-atom-projection-v1.md
   artifact_evidence_adapter_decision: docs/adr/0048-artifact-provenance-evidence-adapter-v1.md
   command_observation_evidence_adapter_decision: docs/adr/0049-command-observation-evidence-adapter-v1.md
+  evolve_repo_locator_evidence_adapter_decision: docs/adr/0050-evolve-repo-locator-evidence-adapter-v1.md
   standard: docs/design/ai-engineering-os/governance-contracts.md
 
 contract_pins:
@@ -300,6 +358,8 @@ contract_pins:
   artifact_evidence_adapter_golden_fixture_sha256: c74a2590f6ed72ce82c52542d06246f830d08c2b7c096fa27dd5879c171a986c
   command_observation_evidence_adapter_schema_sha256: e20339bbefe8cde731d4a1e0fc164259ac89c8930338dc7cc88b80aa8846dd9a
   command_observation_evidence_adapter_golden_fixture_sha256: ce888feac319cb40ae7f11f74c007d48391f0c30db942d3ce3dd0a1af2aa3a7c
+  evolve_repo_locator_evidence_adapter_schema_sha256: c05ac75241f4439344aec4493f0b30934f5dbe97eef3f59a238ad9c9e50cf5c2
+  evolve_repo_locator_evidence_adapter_golden_fixture_sha256: 4a61743c64acc8d3ccadbe6755934a262c6ef8f5b5be46e46e2556420317c2a9
 
 reference_implementations:
   python:
@@ -338,6 +398,15 @@ reference_implementations:
   command_observation_evidence_adapter_rust:
     ref: forge-runtime/crates/domain/src/command_observation_evidence_contract
     projection: catalyst_repository_only
+  evolve_repo_locator_evidence_adapter_python:
+    ref: harness/evolve_repo_locator_evidence_adapter_check.py
+    projection: universal_scaffold
+  evolve_repo_locator_evidence_adapter_go:
+    ref: forge-core/internal/evolverepolocatorevidencecontract
+    projection: catalyst_repository_only
+  evolve_repo_locator_evidence_adapter_rust:
+    ref: forge-runtime/crates/domain/src/evolve_repo_locator_evidence_contract
+    projection: catalyst_repository_only
 
 non_capabilities:
   - no truth ledger authoritative current-knowledge view or semantic lifecycle projection
@@ -351,3 +420,4 @@ non_capabilities:
   - no prompt or model atom compiler full Kernel ABI atom persistence or journal adapter
   - Artifact provenance adapter does not read artifact content authenticate producer or collector attest truth authority claim atom completion persistence or effect
   - Command observation adapter does not execute commands verify output preimages authenticate producer or digest profiles attest pass completion truth authority claim atom persistence or effect
+  - Evolve repository locator adapter does not read repository files or reports verify digest preimages authenticate producer confirm scan judgments attest completion truth authority claim atom persistence or effect

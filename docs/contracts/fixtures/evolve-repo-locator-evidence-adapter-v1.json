@@ -1,0 +1,65 @@
+{
+  "api_version": "forgeos.governance.evolve-repo-locator-evidence-adapter.fixture/v1",
+  "expected": {
+    "canonical_evidence_record_json": "{\"api_version\":\"forgeos.governance/v1\",\"integrity\":{\"canonical_sha256\":\"bee9874f9d748007596ad6bde8d070ebb5b98f72bbe5271c1d9d945304e63b2b\",\"canonicalization\":\"forgeos.canonical-json/v1\"},\"kind\":\"EvidenceRecord\",\"metadata\":{\"aggregate_id\":\"evolve-scan-run-0050\",\"context_sha256\":\"b36573e655563951dd8bfc7e39d22b731e87158d1f4823c747b6f8d7811ddf76\",\"created_at_unix_ms\":1786345200123,\"created_by\":{\"authority_domain\":\"shadow\",\"principal_id\":\"forgeos.evolve-repo-locator-evidence-adapter\",\"principal_type\":\"tool\",\"role\":\"evidence-adapter\",\"run_id\":\"evolve-locator-adaptation-0282a90aee1ad1be3d3ac32f2cf1e3f7a91000a6a76428c077bf73158d413827\"},\"policy_sha256\":\"dfd49d85c782753a04b415971f7b72e31e3ab7e3c0809f8ee90bf2e8d738bba3\",\"project_id\":\"project-catalyst\",\"record_id\":\"evolve-locator-evidence-0282a90aee1ad1be3d3ac32f2cf1e3f7a91000a6a76428c077bf73158d413827\",\"scope\":\"project\",\"sequence\":1,\"source_revision\":\"fixture-revision-0050\",\"source_tree_sha256\":\"11e5274826974e30bbd843866f6fef8b057347a9936deafcea8c71175a5412de\",\"supersedes_record_ids\":[]},\"spec\":{\"artifact_sha256\":\"73795a292274ea40d1b39b93e0d1dd272dd2a97d95414d0f4a52b8f8459c60e9\",\"collector\":{\"collector_id\":\"forgeos.fixture-evolve-scanner\",\"collector_type\":\"tool\",\"collector_version\":\"v1\",\"parameters_sha256\":\"b77a4f3e09422fd5fef18c711fdcc9f4e9de5f8efbef5dd4a3744319065d6bc8\",\"run_id\":\"run-evolve-0050\"},\"content_role\":\"untrusted_data\",\"directness\":\"direct\",\"evidence_type\":\"repo_locator\",\"locator\":{\"content_sha256\":\"73795a292274ea40d1b39b93e0d1dd272dd2a97d95414d0f4a52b8f8459c60e9\",\"exit_code\":null,\"line_end\":114,\"line_start\":114,\"locator_ref\":\".arch/rules.yaml\",\"locator_type\":\"repo\"},\"observed_at_unix_ms\":1786345200123,\"sensitivity\":\"internal\",\"source_snapshot\":{\"snapshot_id\":\"evolve-locator-7be39c63a98df7c5765738d5251696377806ba19e92d16af8417994fee211a21\",\"snapshot_sha256\":\"7be39c63a98df7c5765738d5251696377806ba19e92d16af8417994fee211a21\",\"snapshot_type\":\"repository\"},\"source_trust\":\"observed\",\"subjects\":[\"evolve:architecture-drift\",\"run:evolve-0050\"]},\"status\":{\"reason_codes\":[],\"state\":\"valid\",\"valid_from_unix_ms\":1786345200123,\"valid_until_unix_ms\":null}}",
+    "canonical_locator_json": "{\"detail\":\"The architecture budget is a repository-local scan input.\",\"line\":114,\"path\":\".arch/rules.yaml\"}",
+    "canonical_observation_json": "{\"api_version\":\"forgeos.evolve-repo-locator/v1\",\"canonicalization\":\"forgeos.canonical-json/v1\",\"content\":{\"bytes\":169,\"sha256\":\"73795a292274ea40d1b39b93e0d1dd272dd2a97d95414d0f4a52b8f8459c60e9\"},\"locator\":{\"detail\":\"The architecture budget is a repository-local scan input.\",\"line\":114,\"path\":\".arch/rules.yaml\"},\"observed_at_unix_ms\":1786345200123,\"producer\":{\"parameters_sha256\":\"b77a4f3e09422fd5fef18c711fdcc9f4e9de5f8efbef5dd4a3744319065d6bc8\",\"producer_id\":\"forgeos.fixture-evolve-scanner\",\"producer_type\":\"tool\",\"producer_version\":\"v1\",\"run_id\":\"run-evolve-0050\"},\"scan_context\":{\"contract\":\"evolve_scan_v1\",\"depth\":\"thorough\",\"dimension\":\"architecture_drift\",\"opportunity_id\":\"architecture-budget-0050\",\"relation\":\"opportunity\",\"report_sha256\":\"a3c5aed2b16d6125e0f542c3388f872cf54bbc1b2989791b8af451728339d3df\"},\"source\":{\"source_revision\":\"fixture-revision-0050\",\"source_tree_sha256\":\"11e5274826974e30bbd843866f6fef8b057347a9936deafcea8c71175a5412de\"}}",
+    "canonical_request_json": "{\"api_version\":\"forgeos.governance.evolve-repo-locator-evidence-adapter/v1\",\"binding\":{\"aggregate_id\":\"evolve-scan-run-0050\",\"context_sha256\":\"b36573e655563951dd8bfc7e39d22b731e87158d1f4823c747b6f8d7811ddf76\",\"policy_sha256\":\"dfd49d85c782753a04b415971f7b72e31e3ab7e3c0809f8ee90bf2e8d738bba3\",\"project_id\":\"project-catalyst\",\"scope\":\"project\",\"sensitivity\":\"internal\",\"sequence\":1,\"subjects\":[\"evolve:architecture-drift\",\"run:evolve-0050\"],\"supersedes_record_ids\":[]},\"canonicalization\":\"forgeos.canonical-json/v1\",\"observation\":{\"api_version\":\"forgeos.evolve-repo-locator/v1\",\"canonicalization\":\"forgeos.canonical-json/v1\",\"content\":{\"bytes\":169,\"sha256\":\"73795a292274ea40d1b39b93e0d1dd272dd2a97d95414d0f4a52b8f8459c60e9\"},\"locator\":{\"detail\":\"The architecture budget is a repository-local scan input.\",\"line\":114,\"path\":\".arch/rules.yaml\"},\"observed_at_unix_ms\":1786345200123,\"producer\":{\"parameters_sha256\":\"b77a4f3e09422fd5fef18c711fdcc9f4e9de5f8efbef5dd4a3744319065d6bc8\",\"producer_id\":\"forgeos.fixture-evolve-scanner\",\"producer_type\":\"tool\",\"producer_version\":\"v1\",\"run_id\":\"run-evolve-0050\"},\"scan_context\":{\"contract\":\"evolve_scan_v1\",\"depth\":\"thorough\",\"dimension\":\"architecture_drift\",\"opportunity_id\":\"architecture-budget-0050\",\"relation\":\"opportunity\",\"report_sha256\":\"a3c5aed2b16d6125e0f542c3388f872cf54bbc1b2989791b8af451728339d3df\"},\"source\":{\"source_revision\":\"fixture-revision-0050\",\"source_tree_sha256\":\"11e5274826974e30bbd843866f6fef8b057347a9936deafcea8c71175a5412de\"}}}",
+    "evidence_record_sha256": "bee9874f9d748007596ad6bde8d070ebb5b98f72bbe5271c1d9d945304e63b2b",
+    "locator_sha256": "bea0461f0c007a5bb605e66ae054db31d6496f1a23c855d123acc6fc81d7299b",
+    "request_sha256": "0282a90aee1ad1be3d3ac32f2cf1e3f7a91000a6a76428c077bf73158d413827",
+    "result": "ADAPTED_SHADOW (locator mapping only; no file/report verification, scan judgment, completion, truth, authority, claim, atom, persistence, or effect attestation)",
+    "source_snapshot_sha256": "7be39c63a98df7c5765738d5251696377806ba19e92d16af8417994fee211a21"
+  },
+  "request": {
+    "api_version": "forgeos.governance.evolve-repo-locator-evidence-adapter/v1",
+    "binding": {
+      "aggregate_id": "evolve-scan-run-0050",
+      "context_sha256": "b36573e655563951dd8bfc7e39d22b731e87158d1f4823c747b6f8d7811ddf76",
+      "policy_sha256": "dfd49d85c782753a04b415971f7b72e31e3ab7e3c0809f8ee90bf2e8d738bba3",
+      "project_id": "project-catalyst",
+      "scope": "project",
+      "sensitivity": "internal",
+      "sequence": 1,
+      "subjects": [
+        "evolve:architecture-drift",
+        "run:evolve-0050"
+      ],
+      "supersedes_record_ids": []
+    },
+    "canonicalization": "forgeos.canonical-json/v1",
+    "observation": {
+      "api_version": "forgeos.evolve-repo-locator/v1",
+      "canonicalization": "forgeos.canonical-json/v1",
+      "content": {
+        "bytes": 169,
+        "sha256": "73795a292274ea40d1b39b93e0d1dd272dd2a97d95414d0f4a52b8f8459c60e9"
+      },
+      "locator": {
+        "detail": "The architecture budget is a repository-local scan input.",
+        "line": 114,
+        "path": ".arch/rules.yaml"
+      },
+      "observed_at_unix_ms": 1786345200123,
+      "producer": {
+        "parameters_sha256": "b77a4f3e09422fd5fef18c711fdcc9f4e9de5f8efbef5dd4a3744319065d6bc8",
+        "producer_id": "forgeos.fixture-evolve-scanner",
+        "producer_type": "tool",
+        "producer_version": "v1",
+        "run_id": "run-evolve-0050"
+      },
+      "scan_context": {
+        "contract": "evolve_scan_v1",
+        "depth": "thorough",
+        "dimension": "architecture_drift",
+        "opportunity_id": "architecture-budget-0050",
+        "relation": "opportunity",
+        "report_sha256": "a3c5aed2b16d6125e0f542c3388f872cf54bbc1b2989791b8af451728339d3df"
+      },
+      "source": {
+        "source_revision": "fixture-revision-0050",
+        "source_tree_sha256": "11e5274826974e30bbd843866f6fef8b057347a9936deafcea8c71175a5412de"
+      }
+    }
+  }
+}

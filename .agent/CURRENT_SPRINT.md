@@ -1360,6 +1360,40 @@ scaffold/upgrade/security、`forge check` **13/13**、gate（1764 files）、arc
 `git diff --check` 均通过；最终 **`forge accept: ACCEPTED`**（9 PASS、0 FAIL、2 个诚实 N/A）。以上只证明 pure shadow mapping、
 字节、兼容和分发正确，不升级为命令真的执行、stream 真实、producer 身份、gate PASS、完成权威、durability 或 effect 证明。
 
+## Sprint 98（✅ pure shadow source adapter 完成；文件/报告验证、扫描裁决、producer 身份、持久化与 effect 未启用）— Evolve Repository Locator → EvidenceRecord v1
+
+本轮以 ADR 0050 交付 Wave 1 的第三个独立 source adapter：把 caller-declared exact Evolve repository locator observation 与显式
+Governance binding 确定性映射为既有 `repo_locator` EvidenceRecord v1。它不读取 current repo path/report，不解析 symlink，不验证
+file/report/tree/parameters digest preimage，不确认 finding/clear/opportunity、scan coverage/completion 或 candidate 价值；SQLite 保持 v25，
+无 migration、backfill、auto-append 或 read/write side effect。
+
+(1) **closed-world observation 与身份分离**：request、binding、content、locator、producer、scan context 和 source 均为 exact shape；
+duplicate/unknown/noncanonical/float/int64 overflow、控制/bidi Unicode、非规范/逃逸/drive/protected-root path、空白或超过 4,096 Unicode
+scalar 的 path、非法 line/detail/hash/list/relation/opportunity ID 均失败关闭。Opportunity ID 保持 `evolve_scan_v1` 的 1–64 bytes ASCII
+词汇；line 0 无损映射为 null range。locator、完整 observation、完整 request 和 sealed Evidence 分别使用独立 domain-separated SHA-256，
+record/snapshot/run identity 由 request/source digest 确定派生，任一 observation 或 binding 载重漂移都会改变对应身份。
+
+(2) **确定性 shadow mapping**：Evidence 固定为 direct/observed/untrusted-data/valid 的现有 `repo_locator`；created-by 是 request-derived
+shadow adapter principal，collector 只复制 producer 声明，不能冒充已认证身份。content digest 同时进入 artifact compatibility slot 与 locator，
+source snapshot 绑定完整 observation；最终 record 必须重跑 ADR 0045 strict validator 并与 pure re-adaptation 逐字节相同。唯一正结果为
+`ADAPTED_SHADOW (locator mapping only; no file/report verification, scan judgment, completion, truth, authority, claim, atom, persistence, or effect attestation)`。
+
+(3) **单一跨语言合同与继承**：Schema、golden、registry v7 与 ADR 通过 SHA-256 pin 冻结；Python universal checker、Go repository package 与
+Rust domain module 对 canonical locator/observation/request/Evidence bytes、三条 source/request digest 与 Evidence self digest 完全一致。
+Evidence/Claim Skill、shadow detector、activation/canonical refs、治理 checker、fresh scaffold 和 legacy exact-allowlist upgrade 已接线；scaffold
+只复制 ADR/Schema/golden/Python checker/package/tests，不安装 Go/Rust runtime、真实 Evolve producer 或 persistence。
+
+(4) **验收推动的缺陷闭合**：独立 contract、跨语言和 scaffold reviewer 均 **APPROVE/CLEAN**。复审推动三语言统一非空白/4,096-scalar
+path、Unicode `Cc`、Evolve opportunity vocabulary 与 Rust 256-list fail-closed；cold checker 不生成 `__pycache__`。最终聚合验收又发现并关闭
+Go ST1005 诊断文案和宿主默认 Cargo 1.83 漏选项目 Rust 1.93 两项真实问题；新增 repository-local `rust-toolchain.toml` 与 CI/manifest
+保持 1.93.0 一致，不靠临时环境变量伪造通过。
+
+(5) **最终证据**：递归 Python **471/471**、显式 Node **400/400**、Forge Core **1,500 observed tests**、go-taskd **22**、url-shortener
+**47**，Rust workspace/各 manifest test 批次、strict Clippy、typecheck、build 与定向 rustfmt 全绿；Go full test/vet/build 与 golangci-lint
+全绿。`forge check` **13/13**、gate（1810 files）、architecture **8/8**（1278 source files）和 `git diff --check` 均通过；完整
+`forge accept` 为 **ACCEPTED**（9 PASS、0 FAIL、2 个诚实 N/A：未安装 ruff/eslint 的聚合 lint 与未配置 coverage，不冒充已执行）。
+以上只证明 pure shadow mapping、字节、边界与分发正确，不升级为文件/报告真实性、Evolve scan 裁决、知识采纳、durability 或完成证明。
+
 ## 下一前沿(需外部资源 / 后续阶段 / 投机增强 / 明确非目标,非本环境可完整验证)
 - **Graph 下一协议切片**:SQLite v17–v24 已交付 successor candidate、per-node request/lifecycle、receipt/content dataflow、wave-ready/admit、本地 hard-crash adjudication与 8 MiB successor candidate 持久化上限；下一步是顶层整图执行循环、并发 wave 的失败传播/恢复以及安全 resume/branching。不得把当前逐节点 operator 驱动或 Hub-local single-consumption 冒充远程 exactly-once。
 - **真点火** `--agent-cmd=claude`:**multi-agent running to completion 已坐实**(Sprint 25:真 claude 多-agent 跑到 converge MET,增量级 + 版本级)。完整旋钮:四维资源护栏 + 成本三维(phase/时间/美元)+ 任务注入 + 写权限 + 模型路由 + 工作目录 + retry + loop-back;诚实分工:agent 自治增量绿、人确认版本竣工。docs/ignition.md 有完整配方 + 实测

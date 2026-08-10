@@ -26,6 +26,21 @@ from .source_adapters import (
     command_detector_issues,
     command_skill_marker_issues,
 )
+from .evolve_locator_adapter import (
+    EVOLVE_LOCATOR_CANONICAL_REFS,
+    EVOLVE_LOCATOR_EVIDENCE_DETECTOR,
+    EVOLVE_LOCATOR_SCHEMA_CANONICALIZATION,
+    EVOLVE_LOCATOR_SCHEMA_LIMITS,
+    EVOLVE_LOCATOR_SCHEMA_MAPPING,
+    EVOLVE_LOCATOR_SCHEMA_SEMANTIC_VALIDATION,
+    EVOLVE_LOCATOR_SKILL_MARKERS,
+    EVOLVE_LOCATOR_SUCCESS,
+    EVOLVE_REPO_LOCATOR_EVIDENCE_ADAPTER,
+    evolve_locator_adapter_registry_issues,
+    evolve_locator_adapter_schema_issues,
+    evolve_locator_detector_issues,
+    evolve_locator_skill_marker_issues,
+)
 
 
 __all__ = [
@@ -45,6 +60,15 @@ __all__ = [
     "COMMAND_SCHEMA_SEMANTIC_VALIDATION",
     "COMMAND_SKILL_MARKERS",
     "COMMAND_SUCCESS",
+    "EVOLVE_LOCATOR_CANONICAL_REFS",
+    "EVOLVE_LOCATOR_EVIDENCE_DETECTOR",
+    "EVOLVE_LOCATOR_SCHEMA_CANONICALIZATION",
+    "EVOLVE_LOCATOR_SCHEMA_LIMITS",
+    "EVOLVE_LOCATOR_SCHEMA_MAPPING",
+    "EVOLVE_LOCATOR_SCHEMA_SEMANTIC_VALIDATION",
+    "EVOLVE_LOCATOR_SKILL_MARKERS",
+    "EVOLVE_LOCATOR_SUCCESS",
+    "EVOLVE_REPO_LOCATOR_EVIDENCE_ADAPTER",
     "artifact_adapter_registry_issues",
     "artifact_adapter_schema_issues",
     "artifact_detector_issues",
@@ -53,4 +77,8 @@ __all__ = [
     "command_adapter_schema_issues",
     "command_detector_issues",
     "command_skill_marker_issues",
+    "evolve_locator_adapter_registry_issues",
+    "evolve_locator_adapter_schema_issues",
+    "evolve_locator_detector_issues",
+    "evolve_locator_skill_marker_issues",
 ]

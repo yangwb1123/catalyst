@@ -19,6 +19,9 @@ from artifact_evidence_adapter_check import (
 from command_observation_evidence_adapter_check import (
     validate_golden_fixture as validate_command_evidence_golden_fixture,
 )
+from evolve_repo_locator_evidence_adapter_check import (
+    validate_golden_fixture as validate_evolve_locator_golden_fixture,
+)
 from governance_engineering import (
     ARTIFACT_CANONICAL_REFS,
     ARTIFACT_EVIDENCE_ADAPTER,
@@ -36,6 +39,15 @@ from governance_engineering import (
     COMMAND_SCHEMA_SEMANTIC_VALIDATION,
     COMMAND_SKILL_MARKERS,
     COMMAND_SUCCESS,
+    EVOLVE_LOCATOR_CANONICAL_REFS,
+    EVOLVE_LOCATOR_EVIDENCE_DETECTOR,
+    EVOLVE_LOCATOR_SCHEMA_CANONICALIZATION,
+    EVOLVE_LOCATOR_SCHEMA_LIMITS,
+    EVOLVE_LOCATOR_SCHEMA_MAPPING,
+    EVOLVE_LOCATOR_SCHEMA_SEMANTIC_VALIDATION,
+    EVOLVE_LOCATOR_SKILL_MARKERS,
+    EVOLVE_LOCATOR_SUCCESS,
+    EVOLVE_REPO_LOCATOR_EVIDENCE_ADAPTER,
     artifact_adapter_registry_issues as _artifact_adapter_registry_issues,
     artifact_adapter_schema_issues as _artifact_adapter_schema_issues,
     artifact_detector_issues,
@@ -44,17 +56,22 @@ from governance_engineering import (
     command_adapter_schema_issues as _command_adapter_schema_issues,
     command_detector_issues,
     command_skill_marker_issues,
+    evolve_locator_adapter_registry_issues as _evolve_locator_adapter_registry_issues,
+    evolve_locator_adapter_schema_issues as _evolve_locator_adapter_schema_issues,
+    evolve_locator_detector_issues,
+    evolve_locator_skill_marker_issues,
 )
 
 
 POLICY_RELATIVE = "engineering/governance-contracts.yml"
-POLICY_SHA256 = "82df80f5ea6230e977f4f96f0f52328d000ee248c4e581a0105b35f41faaea08"
+POLICY_SHA256 = "b9dc9112876374f9c168ecbc2b545b36234e79d5a963a982b031679f20e68c6f"
 POLICY_FIELDS = {
     "api_version", "kind", "status", "runtime_binding", "owner", "version",
     "completion_authority", "scope", "canonicalization", "identity",
     "claim_states", "shadow_admissibility", "evidence_semantics", "journal",
     "cognitive_atom_projection", "artifact_evidence_adapter",
     "command_observation_evidence_adapter", "legacy",
+    "evolve_repo_locator_evidence_adapter",
     "canonical_refs", "contract_pins", "reference_implementations",
     "non_capabilities",
 }
@@ -75,6 +92,10 @@ PIN_TARGETS = {
         "docs/contracts/command-observation-evidence-adapter-v1.schema.json",
     "command_observation_evidence_adapter_golden_fixture_sha256":
         "docs/contracts/fixtures/command-observation-evidence-adapter-v1.json",
+    "evolve_repo_locator_evidence_adapter_schema_sha256":
+        "docs/contracts/evolve-repo-locator-evidence-adapter-v1.schema.json",
+    "evolve_repo_locator_evidence_adapter_golden_fixture_sha256":
+        "docs/contracts/fixtures/evolve-repo-locator-evidence-adapter-v1.json",
 }
 SKILL_RELATIVE = ".agent/skills/evidence-claim-management.md"
 SKILL_MARKERS = [
@@ -205,6 +226,7 @@ def _skill_issues(repo_root):
         issues.append(f"{path}: reference-closure resource limits are missing")
     issues.extend(artifact_skill_marker_issues(text, path))
     issues.extend(command_skill_marker_issues(text, path))
+    issues.extend(evolve_locator_skill_marker_issues(text, path))
     return issues
 
 
@@ -293,6 +315,20 @@ def _detector_issues(agent_root):
             issues.append("CognitiveAtom projection detector requires exact projection arguments")
     issues.extend(artifact_detector_issues(detectors))
     issues.extend(command_detector_issues(detectors))
+    issues.extend(evolve_locator_detector_issues(detectors))
+    return issues
+
+
+def _source_adapter_issues(data, path, repo_root):
+    issues = []
+    for registry_check, schema_check in (
+        (_artifact_adapter_registry_issues, _artifact_adapter_schema_issues),
+        (_command_adapter_registry_issues, _command_adapter_schema_issues),
+        (_evolve_locator_adapter_registry_issues,
+         _evolve_locator_adapter_schema_issues),
+    ):
+        issues.extend(registry_check(data, path))
+        issues.extend(schema_check(repo_root))
     return issues
 
 
@@ -312,22 +348,19 @@ def check_governance_evidence_claim_contract(agent_root):
         "status": "active_contract",
         "runtime_binding": (
             "cross_language_codec_local_journal_atom_projection_"
-            "artifact_command_adapters_shadow"
+            "artifact_command_evolve_locator_adapters_shadow"
         ),
-        "version": 6, "completion_authority": "forge_accept",
+        "version": 7, "completion_authority": "forge_accept",
     }
     for field, value in expected.items():
         if data.get(field) != value:
-            issues.append(f"{path}: {field} must remain the canonical v6 value")
+            issues.append(f"{path}: {field} must remain the canonical v7 value")
     repo_root = agent_root.parent
     issues.extend(_journal_registry_issues(data, path))
     issues.extend(_journal_schema_issues(repo_root))
     issues.extend(_cognitive_registry_issues(data, path))
     issues.extend(_cognitive_schema_issues(repo_root))
-    issues.extend(_artifact_adapter_registry_issues(data, path))
-    issues.extend(_artifact_adapter_schema_issues(repo_root))
-    issues.extend(_command_adapter_registry_issues(data, path))
-    issues.extend(_command_adapter_schema_issues(repo_root))
+    issues.extend(_source_adapter_issues(data, path, repo_root))
     pins = data.get("contract_pins") if isinstance(data.get("contract_pins"), dict) else {}
     issues.extend(_pin_issues(repo_root, path, pins))
     try:
@@ -343,4 +376,5 @@ def check_governance_evidence_claim_contract(agent_root):
     issues.extend(validate_cognitive_atom_golden_fixture(repo_root))
     issues.extend(validate_artifact_evidence_golden_fixture(repo_root))
     issues.extend(validate_command_evidence_golden_fixture(repo_root))
+    issues.extend(validate_evolve_locator_golden_fixture(repo_root))
     return issues
