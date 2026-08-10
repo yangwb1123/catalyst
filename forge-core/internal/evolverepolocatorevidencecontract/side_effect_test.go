@@ -1,0 +1,92 @@
+package evolverepolocatorevidencecontract
+
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"reflect"
+	"testing"
+)
+
+type fileSnapshot struct {
+	digest  string
+	mode    fs.FileMode
+	modTime int64
+	size    int64
+}
+
+func TestAdaptHasNoRepositoryReportOrDatabaseSideEffect(t *testing.T) {
+	root := t.TempDir()
+	forgeDir := filepath.Join(root, ".forge")
+	if err := os.Mkdir(forgeDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for path, data := range map[string][]byte{
+		filepath.Join(root, ".arch", "rules.yaml"): []byte("sentinel repository bytes"),
+		filepath.Join(root, "scan-report.json"):    []byte("sentinel report bytes"),
+		filepath.Join(forgeDir, "governance.db"):   []byte("sentinel database bytes"),
+	} {
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	before := snapshotFiles(t, root)
+	t.Chdir(root)
+	if _, err := Adapt(validRequest()); err != nil {
+		t.Fatalf("Adapt: %v", err)
+	}
+	after := snapshotFiles(t, root)
+	if !reflect.DeepEqual(after, before) {
+		t.Fatalf("filesystem changed\nbefore: %#v\nafter:  %#v", before, after)
+	}
+}
+
+func TestAdaptDoesNotRequireLocatorToExist(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	request := validRequest()
+	request.Observation.Locator.Path = "missing/path.yaml"
+	if _, err := Adapt(request); err != nil {
+		t.Fatalf("pure adaptation unexpectedly read locator: %v", err)
+	}
+}
+
+func snapshotFiles(t *testing.T, root string) map[string]fileSnapshot {
+	t.Helper()
+	result := make(map[string]fileSnapshot)
+	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		digest := sha256.Sum256(data)
+		relative, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		result[relative] = fileSnapshot{
+			digest: hex.EncodeToString(digest[:]), mode: info.Mode(),
+			modTime: info.ModTime().UnixNano(), size: info.Size(),
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("snapshot files: %v", err)
+	}
+	return result
+}

@@ -1,0 +1,201 @@
+{
+  "api_version": "forgeos.governance.local-evolve-repo-locator-observation-production.fixture/v1",
+  "expected": {
+    "canonical_observation_jsons": [
+      "{\"api_version\":\"forgeos.evolve-repo-locator/v1\",\"canonicalization\":\"forgeos.canonical-json/v1\",\"content\":{\"bytes\":36,\"sha256\":\"80f0f7c506dc82d1608e2db4c4ccc4db5d35d5eef078b64b55eb81e84c3088b8\"},\"locator\":{\"detail\":\"Analyze is a concrete refactoring locator.\",\"line\":3,\"path\":\"src/analyzer.go\"},\"observed_at_unix_ms\":1786428000123,\"producer\":{\"parameters_sha256\":\"893358775d5e488208f46ee0384384df6a4000686c1513e7cb9790539005e679\",\"producer_id\":\"forgeos.local-evolve-repo-locator-observer\",\"producer_type\":\"tool\",\"producer_version\":\"v1\",\"run_id\":\"run-evolve-observation-0052\"},\"scan_context\":{\"contract\":\"evolve_scan_v1\",\"depth\":\"standard\",\"dimension\":\"code\",\"opportunity_id\":null,\"relation\":\"finding\",\"report_sha256\":\"be43593e9e6b8e7e64f3710559a46c3087b4f179e1cb09176099078fd79c0a7a\"},\"source\":{\"source_revision\":\"git-sha1:2222222222222222222222222222222222222222\",\"source_tree_sha256\":\"7862de481c2a575aed401f3593096d3eaac02a3d6d26942491a2dd13a9ff4096\"}}",
+      "{\"api_version\":\"forgeos.evolve-repo-locator/v1\",\"canonicalization\":\"forgeos.canonical-json/v1\",\"content\":{\"bytes\":31,\"sha256\":\"02077b8d166633e07340e0a3a3c0c9043a238ac8d96e1c6bfe925c81aa9d8b65\"},\"locator\":{\"detail\":\"Security boundary is explicitly documented.\",\"line\":0,\"path\":\"docs/security.md\"},\"observed_at_unix_ms\":1786428000123,\"producer\":{\"parameters_sha256\":\"893358775d5e488208f46ee0384384df6a4000686c1513e7cb9790539005e679\",\"producer_id\":\"forgeos.local-evolve-repo-locator-observer\",\"producer_type\":\"tool\",\"producer_version\":\"v1\",\"run_id\":\"run-evolve-observation-0052\"},\"scan_context\":{\"contract\":\"evolve_scan_v1\",\"depth\":\"standard\",\"dimension\":\"security\",\"opportunity_id\":null,\"relation\":\"clear\",\"report_sha256\":\"be43593e9e6b8e7e64f3710559a46c3087b4f179e1cb09176099078fd79c0a7a\"},\"source\":{\"source_revision\":\"git-sha1:2222222222222222222222222222222222222222\",\"source_tree_sha256\":\"7862de481c2a575aed401f3593096d3eaac02a3d6d26942491a2dd13a9ff4096\"}}",
+      "{\"api_version\":\"forgeos.evolve-repo-locator/v1\",\"canonicalization\":\"forgeos.canonical-json/v1\",\"content\":{\"bytes\":36,\"sha256\":\"80f0f7c506dc82d1608e2db4c4ccc4db5d35d5eef078b64b55eb81e84c3088b8\"},\"locator\":{\"detail\":\"The same path remains a distinct opportunity locator.\",\"line\":3,\"path\":\"src/analyzer.go\"},\"observed_at_unix_ms\":1786428000123,\"producer\":{\"parameters_sha256\":\"893358775d5e488208f46ee0384384df6a4000686c1513e7cb9790539005e679\",\"producer_id\":\"forgeos.local-evolve-repo-locator-observer\",\"producer_type\":\"tool\",\"producer_version\":\"v1\",\"run_id\":\"run-evolve-observation-0052\"},\"scan_context\":{\"contract\":\"evolve_scan_v1\",\"depth\":\"standard\",\"dimension\":\"code\",\"opportunity_id\":\"split-analyzer\",\"relation\":\"opportunity\",\"report_sha256\":\"be43593e9e6b8e7e64f3710559a46c3087b4f179e1cb09176099078fd79c0a7a\"},\"source\":{\"source_revision\":\"git-sha1:2222222222222222222222222222222222222222\",\"source_tree_sha256\":\"7862de481c2a575aed401f3593096d3eaac02a3d6d26942491a2dd13a9ff4096\"}}"
+    ],
+    "canonical_parameters_manifest_json": "{\"api_version\":\"forgeos.evolve-capture.parameters/v1\",\"canonicalization\":\"forgeos.canonical-json/v1\",\"contract\":\"evolve_scan_v1\",\"expected_depth\":\"standard\",\"report_profile_id\":\"evolve-scan-canonical-marker-v1\",\"source_profile_id\":\"git-worktree-source-tree-v1\"}",
+    "canonical_production_json": "{\"api_version\":\"forgeos.governance.local-evolve-repo-locator-observation-production/v1\",\"canonicalization\":\"forgeos.canonical-json/v1\",\"observations\":[{\"api_version\":\"forgeos.evolve-repo-locator/v1\",\"canonicalization\":\"forgeos.canonical-json/v1\",\"content\":{\"bytes\":36,\"sha256\":\"80f0f7c506dc82d1608e2db4c4ccc4db5d35d5eef078b64b55eb81e84c3088b8\"},\"locator\":{\"detail\":\"Analyze is a concrete refactoring locator.\",\"line\":3,\"path\":\"src/analyzer.go\"},\"observed_at_unix_ms\":1786428000123,\"producer\":{\"parameters_sha256\":\"893358775d5e488208f46ee0384384df6a4000686c1513e7cb9790539005e679\",\"producer_id\":\"forgeos.local-evolve-repo-locator-observer\",\"producer_type\":\"tool\",\"producer_version\":\"v1\",\"run_id\":\"run-evolve-observation-0052\"},\"scan_context\":{\"contract\":\"evolve_scan_v1\",\"depth\":\"standard\",\"dimension\":\"code\",\"opportunity_id\":null,\"relation\":\"finding\",\"report_sha256\":\"be43593e9e6b8e7e64f3710559a46c3087b4f179e1cb09176099078fd79c0a7a\"},\"source\":{\"source_revision\":\"git-sha1:2222222222222222222222222222222222222222\",\"source_tree_sha256\":\"7862de481c2a575aed401f3593096d3eaac02a3d6d26942491a2dd13a9ff4096\"}},{\"api_version\":\"forgeos.evolve-repo-locator/v1\",\"canonicalization\":\"forgeos.canonical-json/v1\",\"content\":{\"bytes\":31,\"sha256\":\"02077b8d166633e07340e0a3a3c0c9043a238ac8d96e1c6bfe925c81aa9d8b65\"},\"locator\":{\"detail\":\"Security boundary is explicitly documented.\",\"line\":0,\"path\":\"docs/security.md\"},\"observed_at_unix_ms\":1786428000123,\"producer\":{\"parameters_sha256\":\"893358775d5e488208f46ee0384384df6a4000686c1513e7cb9790539005e679\",\"producer_id\":\"forgeos.local-evolve-repo-locator-observer\",\"producer_type\":\"tool\",\"producer_version\":\"v1\",\"run_id\":\"run-evolve-observation-0052\"},\"scan_context\":{\"contract\":\"evolve_scan_v1\",\"depth\":\"standard\",\"dimension\":\"security\",\"opportunity_id\":null,\"relation\":\"clear\",\"report_sha256\":\"be43593e9e6b8e7e64f3710559a46c3087b4f179e1cb09176099078fd79c0a7a\"},\"source\":{\"source_revision\":\"git-sha1:2222222222222222222222222222222222222222\",\"source_tree_sha256\":\"7862de481c2a575aed401f3593096d3eaac02a3d6d26942491a2dd13a9ff4096\"}},{\"api_version\":\"forgeos.evolve-repo-locator/v1\",\"canonicalization\":\"forgeos.canonical-json/v1\",\"content\":{\"bytes\":36,\"sha256\":\"80f0f7c506dc82d1608e2db4c4ccc4db5d35d5eef078b64b55eb81e84c3088b8\"},\"locator\":{\"detail\":\"The same path remains a distinct opportunity locator.\",\"line\":3,\"path\":\"src/analyzer.go\"},\"observed_at_unix_ms\":1786428000123,\"producer\":{\"parameters_sha256\":\"893358775d5e488208f46ee0384384df6a4000686c1513e7cb9790539005e679\",\"producer_id\":\"forgeos.local-evolve-repo-locator-observer\",\"producer_type\":\"tool\",\"producer_version\":\"v1\",\"run_id\":\"run-evolve-observation-0052\"},\"scan_context\":{\"contract\":\"evolve_scan_v1\",\"depth\":\"standard\",\"dimension\":\"code\",\"opportunity_id\":\"split-analyzer\",\"relation\":\"opportunity\",\"report_sha256\":\"be43593e9e6b8e7e64f3710559a46c3087b4f179e1cb09176099078fd79c0a7a\"},\"source\":{\"source_revision\":\"git-sha1:2222222222222222222222222222222222222222\",\"source_tree_sha256\":\"7862de481c2a575aed401f3593096d3eaac02a3d6d26942491a2dd13a9ff4096\"}}],\"parameters_manifest\":{\"api_version\":\"forgeos.evolve-capture.parameters/v1\",\"canonicalization\":\"forgeos.canonical-json/v1\",\"contract\":\"evolve_scan_v1\",\"expected_depth\":\"standard\",\"report_profile_id\":\"evolve-scan-canonical-marker-v1\",\"source_profile_id\":\"git-worktree-source-tree-v1\"},\"report_manifest\":{\"api_version\":\"forgeos.evolve-capture.report/v1\",\"bytes\":638,\"canonical_report\":\"EVOLVE_SCAN_V1: {\\\"version\\\":\\\"evolve_scan_v1\\\",\\\"depth\\\":\\\"standard\\\",\\\"dimensions\\\":[{\\\"name\\\":\\\"code\\\",\\\"status\\\":\\\"finding\\\",\\\"evidence\\\":[{\\\"path\\\":\\\"src/analyzer.go\\\",\\\"line\\\":3,\\\"detail\\\":\\\"Analyze is a concrete refactoring locator.\\\"}]},{\\\"name\\\":\\\"security\\\",\\\"status\\\":\\\"clear\\\",\\\"evidence\\\":[{\\\"path\\\":\\\"docs/security.md\\\",\\\"detail\\\":\\\"Security boundary is explicitly documented.\\\"}]}],\\\"opportunities\\\":[{\\\"id\\\":\\\"split-analyzer\\\",\\\"dimension\\\":\\\"code\\\",\\\"title\\\":\\\"Split analyzer responsibilities\\\",\\\"evidence\\\":[{\\\"path\\\":\\\"src/analyzer.go\\\",\\\"line\\\":3,\\\"detail\\\":\\\"The same path remains a distinct opportunity locator.\\\"}],\\\"obvious\\\":false,\\\"candidate_task\\\":\\\"Split Analyze and add focused tests.\\\"}]}\",\"canonicalization\":\"forgeos.canonical-json/v1\",\"profile_id\":\"evolve-scan-canonical-marker-v1\",\"sha256\":\"be43593e9e6b8e7e64f3710559a46c3087b4f179e1cb09176099078fd79c0a7a\"},\"source_manifest\":{\"api_version\":\"forgeos.command-capture.source-tree/v1\",\"canonicalization\":\"forgeos.canonical-json/v1\",\"entries\":[{\"bytes\":15,\"content_sha256\":\"06651b81355d9b908f33efda33b1436a6116b1c0758a3726c9ea1b7847a2ef39\",\"executable\":false,\"index_mode\":\"120000\",\"kind\":\"symlink\",\"path\":\"analyzer-link\",\"symlink_target\":\"src/analyzer.go\",\"tracking\":\"tracked\"},{\"bytes\":31,\"content_sha256\":\"02077b8d166633e07340e0a3a3c0c9043a238ac8d96e1c6bfe925c81aa9d8b65\",\"executable\":false,\"index_mode\":\"100644\",\"kind\":\"regular\",\"path\":\"docs/security.md\",\"symlink_target\":null,\"tracking\":\"tracked\"},{\"bytes\":0,\"content_sha256\":null,\"executable\":null,\"index_mode\":\"100644\",\"kind\":\"deleted\",\"path\":\"old.txt\",\"symlink_target\":null,\"tracking\":\"tracked\"},{\"bytes\":36,\"content_sha256\":\"80f0f7c506dc82d1608e2db4c4ccc4db5d35d5eef078b64b55eb81e84c3088b8\",\"executable\":false,\"index_mode\":null,\"kind\":\"regular\",\"path\":\"src/analyzer.go\",\"symlink_target\":null,\"tracking\":\"untracked\"}],\"profile_id\":\"git-worktree-source-tree-v1\",\"source_revision\":\"git-sha1:2222222222222222222222222222222222222222\"}}",
+    "canonical_report_manifest_json": "{\"api_version\":\"forgeos.evolve-capture.report/v1\",\"bytes\":638,\"canonical_report\":\"EVOLVE_SCAN_V1: {\\\"version\\\":\\\"evolve_scan_v1\\\",\\\"depth\\\":\\\"standard\\\",\\\"dimensions\\\":[{\\\"name\\\":\\\"code\\\",\\\"status\\\":\\\"finding\\\",\\\"evidence\\\":[{\\\"path\\\":\\\"src/analyzer.go\\\",\\\"line\\\":3,\\\"detail\\\":\\\"Analyze is a concrete refactoring locator.\\\"}]},{\\\"name\\\":\\\"security\\\",\\\"status\\\":\\\"clear\\\",\\\"evidence\\\":[{\\\"path\\\":\\\"docs/security.md\\\",\\\"detail\\\":\\\"Security boundary is explicitly documented.\\\"}]}],\\\"opportunities\\\":[{\\\"id\\\":\\\"split-analyzer\\\",\\\"dimension\\\":\\\"code\\\",\\\"title\\\":\\\"Split analyzer responsibilities\\\",\\\"evidence\\\":[{\\\"path\\\":\\\"src/analyzer.go\\\",\\\"line\\\":3,\\\"detail\\\":\\\"The same path remains a distinct opportunity locator.\\\"}],\\\"obvious\\\":false,\\\"candidate_task\\\":\\\"Split Analyze and add focused tests.\\\"}]}\",\"canonicalization\":\"forgeos.canonical-json/v1\",\"profile_id\":\"evolve-scan-canonical-marker-v1\",\"sha256\":\"be43593e9e6b8e7e64f3710559a46c3087b4f179e1cb09176099078fd79c0a7a\"}",
+    "canonical_source_manifest_json": "{\"api_version\":\"forgeos.command-capture.source-tree/v1\",\"canonicalization\":\"forgeos.canonical-json/v1\",\"entries\":[{\"bytes\":15,\"content_sha256\":\"06651b81355d9b908f33efda33b1436a6116b1c0758a3726c9ea1b7847a2ef39\",\"executable\":false,\"index_mode\":\"120000\",\"kind\":\"symlink\",\"path\":\"analyzer-link\",\"symlink_target\":\"src/analyzer.go\",\"tracking\":\"tracked\"},{\"bytes\":31,\"content_sha256\":\"02077b8d166633e07340e0a3a3c0c9043a238ac8d96e1c6bfe925c81aa9d8b65\",\"executable\":false,\"index_mode\":\"100644\",\"kind\":\"regular\",\"path\":\"docs/security.md\",\"symlink_target\":null,\"tracking\":\"tracked\"},{\"bytes\":0,\"content_sha256\":null,\"executable\":null,\"index_mode\":\"100644\",\"kind\":\"deleted\",\"path\":\"old.txt\",\"symlink_target\":null,\"tracking\":\"tracked\"},{\"bytes\":36,\"content_sha256\":\"80f0f7c506dc82d1608e2db4c4ccc4db5d35d5eef078b64b55eb81e84c3088b8\",\"executable\":false,\"index_mode\":null,\"kind\":\"regular\",\"path\":\"src/analyzer.go\",\"symlink_target\":null,\"tracking\":\"untracked\"}],\"profile_id\":\"git-worktree-source-tree-v1\",\"source_revision\":\"git-sha1:2222222222222222222222222222222222222222\"}",
+    "parameters_sha256": "893358775d5e488208f46ee0384384df6a4000686c1513e7cb9790539005e679",
+    "production_sha256": "0bcb1ecedb4b9c277795b60ad8dbd9f9a4a579a87c29cdd8af7fc11312bb76f3",
+    "report_sha256": "be43593e9e6b8e7e64f3710559a46c3087b4f179e1cb09176099078fd79c0a7a",
+    "result": "CAPTURED_LOCAL_EVOLVE_LOCATOR_SET (local report/source capture only; locator set may be empty; no scan judgment, completion, truth, authority, claim, atom, persistence, or effect attestation)",
+    "source_tree_sha256": "7862de481c2a575aed401f3593096d3eaac02a3d6d26942491a2dd13a9ff4096"
+  },
+  "fixture_semantics": "PURE_CONTRACT_FIXTURE (deterministic bytes only; no live repository capture, scan judgment, completion, truth, authority, identity, persistence, or effect attestation)",
+  "preimages": {
+    "source_regular_files": [
+      {
+        "path": "docs/security.md",
+        "utf8": "Security boundary is reviewed.\n"
+      },
+      {
+        "path": "src/analyzer.go",
+        "utf8": "package analyzer\n\nfunc Analyze() {}\n"
+      }
+    ]
+  },
+  "production": {
+    "api_version": "forgeos.governance.local-evolve-repo-locator-observation-production/v1",
+    "canonicalization": "forgeos.canonical-json/v1",
+    "observations": [
+      {
+        "api_version": "forgeos.evolve-repo-locator/v1",
+        "canonicalization": "forgeos.canonical-json/v1",
+        "content": {
+          "bytes": 36,
+          "sha256": "80f0f7c506dc82d1608e2db4c4ccc4db5d35d5eef078b64b55eb81e84c3088b8"
+        },
+        "locator": {
+          "detail": "Analyze is a concrete refactoring locator.",
+          "line": 3,
+          "path": "src/analyzer.go"
+        },
+        "observed_at_unix_ms": 1786428000123,
+        "producer": {
+          "parameters_sha256": "893358775d5e488208f46ee0384384df6a4000686c1513e7cb9790539005e679",
+          "producer_id": "forgeos.local-evolve-repo-locator-observer",
+          "producer_type": "tool",
+          "producer_version": "v1",
+          "run_id": "run-evolve-observation-0052"
+        },
+        "scan_context": {
+          "contract": "evolve_scan_v1",
+          "depth": "standard",
+          "dimension": "code",
+          "opportunity_id": null,
+          "relation": "finding",
+          "report_sha256": "be43593e9e6b8e7e64f3710559a46c3087b4f179e1cb09176099078fd79c0a7a"
+        },
+        "source": {
+          "source_revision": "git-sha1:2222222222222222222222222222222222222222",
+          "source_tree_sha256": "7862de481c2a575aed401f3593096d3eaac02a3d6d26942491a2dd13a9ff4096"
+        }
+      },
+      {
+        "api_version": "forgeos.evolve-repo-locator/v1",
+        "canonicalization": "forgeos.canonical-json/v1",
+        "content": {
+          "bytes": 31,
+          "sha256": "02077b8d166633e07340e0a3a3c0c9043a238ac8d96e1c6bfe925c81aa9d8b65"
+        },
+        "locator": {
+          "detail": "Security boundary is explicitly documented.",
+          "line": 0,
+          "path": "docs/security.md"
+        },
+        "observed_at_unix_ms": 1786428000123,
+        "producer": {
+          "parameters_sha256": "893358775d5e488208f46ee0384384df6a4000686c1513e7cb9790539005e679",
+          "producer_id": "forgeos.local-evolve-repo-locator-observer",
+          "producer_type": "tool",
+          "producer_version": "v1",
+          "run_id": "run-evolve-observation-0052"
+        },
+        "scan_context": {
+          "contract": "evolve_scan_v1",
+          "depth": "standard",
+          "dimension": "security",
+          "opportunity_id": null,
+          "relation": "clear",
+          "report_sha256": "be43593e9e6b8e7e64f3710559a46c3087b4f179e1cb09176099078fd79c0a7a"
+        },
+        "source": {
+          "source_revision": "git-sha1:2222222222222222222222222222222222222222",
+          "source_tree_sha256": "7862de481c2a575aed401f3593096d3eaac02a3d6d26942491a2dd13a9ff4096"
+        }
+      },
+      {
+        "api_version": "forgeos.evolve-repo-locator/v1",
+        "canonicalization": "forgeos.canonical-json/v1",
+        "content": {
+          "bytes": 36,
+          "sha256": "80f0f7c506dc82d1608e2db4c4ccc4db5d35d5eef078b64b55eb81e84c3088b8"
+        },
+        "locator": {
+          "detail": "The same path remains a distinct opportunity locator.",
+          "line": 3,
+          "path": "src/analyzer.go"
+        },
+        "observed_at_unix_ms": 1786428000123,
+        "producer": {
+          "parameters_sha256": "893358775d5e488208f46ee0384384df6a4000686c1513e7cb9790539005e679",
+          "producer_id": "forgeos.local-evolve-repo-locator-observer",
+          "producer_type": "tool",
+          "producer_version": "v1",
+          "run_id": "run-evolve-observation-0052"
+        },
+        "scan_context": {
+          "contract": "evolve_scan_v1",
+          "depth": "standard",
+          "dimension": "code",
+          "opportunity_id": "split-analyzer",
+          "relation": "opportunity",
+          "report_sha256": "be43593e9e6b8e7e64f3710559a46c3087b4f179e1cb09176099078fd79c0a7a"
+        },
+        "source": {
+          "source_revision": "git-sha1:2222222222222222222222222222222222222222",
+          "source_tree_sha256": "7862de481c2a575aed401f3593096d3eaac02a3d6d26942491a2dd13a9ff4096"
+        }
+      }
+    ],
+    "parameters_manifest": {
+      "api_version": "forgeos.evolve-capture.parameters/v1",
+      "canonicalization": "forgeos.canonical-json/v1",
+      "contract": "evolve_scan_v1",
+      "expected_depth": "standard",
+      "report_profile_id": "evolve-scan-canonical-marker-v1",
+      "source_profile_id": "git-worktree-source-tree-v1"
+    },
+    "report_manifest": {
+      "api_version": "forgeos.evolve-capture.report/v1",
+      "bytes": 638,
+      "canonical_report": "EVOLVE_SCAN_V1: {\"version\":\"evolve_scan_v1\",\"depth\":\"standard\",\"dimensions\":[{\"name\":\"code\",\"status\":\"finding\",\"evidence\":[{\"path\":\"src/analyzer.go\",\"line\":3,\"detail\":\"Analyze is a concrete refactoring locator.\"}]},{\"name\":\"security\",\"status\":\"clear\",\"evidence\":[{\"path\":\"docs/security.md\",\"detail\":\"Security boundary is explicitly documented.\"}]}],\"opportunities\":[{\"id\":\"split-analyzer\",\"dimension\":\"code\",\"title\":\"Split analyzer responsibilities\",\"evidence\":[{\"path\":\"src/analyzer.go\",\"line\":3,\"detail\":\"The same path remains a distinct opportunity locator.\"}],\"obvious\":false,\"candidate_task\":\"Split Analyze and add focused tests.\"}]}",
+      "canonicalization": "forgeos.canonical-json/v1",
+      "profile_id": "evolve-scan-canonical-marker-v1",
+      "sha256": "be43593e9e6b8e7e64f3710559a46c3087b4f179e1cb09176099078fd79c0a7a"
+    },
+    "source_manifest": {
+      "api_version": "forgeos.command-capture.source-tree/v1",
+      "canonicalization": "forgeos.canonical-json/v1",
+      "entries": [
+        {
+          "bytes": 15,
+          "content_sha256": "06651b81355d9b908f33efda33b1436a6116b1c0758a3726c9ea1b7847a2ef39",
+          "executable": false,
+          "index_mode": "120000",
+          "kind": "symlink",
+          "path": "analyzer-link",
+          "symlink_target": "src/analyzer.go",
+          "tracking": "tracked"
+        },
+        {
+          "bytes": 31,
+          "content_sha256": "02077b8d166633e07340e0a3a3c0c9043a238ac8d96e1c6bfe925c81aa9d8b65",
+          "executable": false,
+          "index_mode": "100644",
+          "kind": "regular",
+          "path": "docs/security.md",
+          "symlink_target": null,
+          "tracking": "tracked"
+        },
+        {
+          "bytes": 0,
+          "content_sha256": null,
+          "executable": null,
+          "index_mode": "100644",
+          "kind": "deleted",
+          "path": "old.txt",
+          "symlink_target": null,
+          "tracking": "tracked"
+        },
+        {
+          "bytes": 36,
+          "content_sha256": "80f0f7c506dc82d1608e2db4c4ccc4db5d35d5eef078b64b55eb81e84c3088b8",
+          "executable": false,
+          "index_mode": null,
+          "kind": "regular",
+          "path": "src/analyzer.go",
+          "symlink_target": null,
+          "tracking": "untracked"
+        }
+      ],
+      "profile_id": "git-worktree-source-tree-v1",
+      "source_revision": "git-sha1:2222222222222222222222222222222222222222"
+    }
+  }
+}

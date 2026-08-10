@@ -56,6 +56,37 @@ class GovernanceEngineeringIntegrationTest(unittest.TestCase):
         self.assertTrue(any("cognitive_atom_golden_fixture_sha256" in issue
                             for issue in self.issues()))
 
+    def test_artifact_evidence_adapter_schema_pin_is_enforced(self):
+        path = self.repo / "docs" / "contracts" / "artifact-evidence-adapter-v1.schema.json"
+        replace_once(path, '"title": "ForgeOS', '"title": "Drifted ForgeOS')
+        self.assertTrue(any("artifact_evidence_adapter_schema_sha256" in issue
+                            for issue in self.issues()))
+
+    def test_artifact_evidence_adapter_golden_pin_is_enforced(self):
+        path = (self.repo / "docs" / "contracts" / "fixtures" /
+                "artifact-evidence-adapter-v1.json")
+        replace_once(path, '"run_id": "run-artifact-0048"',
+                     '"run_id": "run-artifact-drifted"')
+        self.assertTrue(any("artifact_evidence_adapter_golden_fixture_sha256" in issue
+                            for issue in self.issues()))
+
+    def test_command_observation_adapter_schema_pin_is_enforced(self):
+        path = (self.repo / "docs" / "contracts" /
+                "command-observation-evidence-adapter-v1.schema.json")
+        replace_once(path, '"title": "ForgeOS', '"title": "Drifted ForgeOS')
+        self.assertTrue(any("command_observation_evidence_adapter_schema_sha256" in issue
+                            for issue in self.issues()))
+
+    def test_command_observation_adapter_golden_pin_is_enforced(self):
+        path = (self.repo / "docs" / "contracts" / "fixtures" /
+                "command-observation-evidence-adapter-v1.json")
+        replace_once(path, '"run_id": "run-command-0049"',
+                     '"run_id": "run-command-drifted"')
+        self.assertTrue(any(
+            "command_observation_evidence_adapter_golden_fixture_sha256" in issue
+            for issue in self.issues()
+        ))
+
     def test_missing_journal_schema_is_rejected(self):
         path = self.repo / "docs" / "contracts" / "governance-record-journal-v1.schema.json"
         path.unlink()
@@ -67,6 +98,23 @@ class GovernanceEngineeringIntegrationTest(unittest.TestCase):
         issues = self.issues()
         self.assertTrue(any("required pin target missing" in issue and
                             "cognitive-atom-projection-v1.schema.json" in issue
+                            for issue in issues), issues)
+
+    def test_missing_artifact_evidence_adapter_schema_is_rejected(self):
+        path = self.repo / "docs" / "contracts" / "artifact-evidence-adapter-v1.schema.json"
+        path.unlink()
+        issues = self.issues()
+        self.assertTrue(any("required pin target missing" in issue and
+                            "artifact-evidence-adapter-v1.schema.json" in issue
+                            for issue in issues), issues)
+
+    def test_missing_command_observation_adapter_schema_is_rejected(self):
+        path = (self.repo / "docs" / "contracts" /
+                "command-observation-evidence-adapter-v1.schema.json")
+        path.unlink()
+        issues = self.issues()
+        self.assertTrue(any("required pin target missing" in issue and
+                            "command-observation-evidence-adapter-v1.schema.json" in issue
                             for issue in issues), issues)
 
     def test_journal_schema_registers_the_bounded_list_envelope(self):
@@ -103,9 +151,23 @@ class GovernanceEngineeringIntegrationTest(unittest.TestCase):
     def test_registry_freezes_exact_cognitive_atom_projection(self):
         path = self.agent_root / "engineering" / "governance-contracts.yml"
         data = yaml.safe_load(path.read_text(encoding="utf-8"))
-        self.assertEqual(data["version"], 4)
+        self.assertEqual(data["version"], 9)
         self.assertEqual(data["cognitive_atom_projection"],
                          governance.COGNITIVE_ATOM_PROJECTION)
+
+    def test_registry_freezes_exact_artifact_evidence_adapter(self):
+        path = self.agent_root / "engineering" / "governance-contracts.yml"
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        self.assertEqual(data["version"], 9)
+        self.assertEqual(data["artifact_evidence_adapter"],
+                         governance.ARTIFACT_EVIDENCE_ADAPTER)
+
+    def test_registry_freezes_exact_command_observation_adapter(self):
+        path = self.agent_root / "engineering" / "governance-contracts.yml"
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        self.assertEqual(data["version"], 9)
+        self.assertEqual(data["command_observation_evidence_adapter"],
+                         governance.COMMAND_OBSERVATION_EVIDENCE_ADAPTER)
 
     def test_cognitive_atom_projection_registry_drift_is_rejected(self):
         path = self.agent_root / "engineering" / "governance-contracts.yml"
@@ -123,6 +185,41 @@ class GovernanceEngineeringIntegrationTest(unittest.TestCase):
         self.assertTrue(any("x-forgeos-limits drifted" in issue for issue in issues),
                         issues)
 
+    def test_artifact_evidence_adapter_registry_drift_is_rejected(self):
+        path = self.agent_root / "engineering" / "governance-contracts.yml"
+        replace_once(path, "    max_request_bytes: 131072",
+                     "    max_request_bytes: 131071")
+        issues = self.issues()
+        self.assertTrue(any("artifact_evidence_adapter contract drifted" in issue
+                            for issue in issues), issues)
+
+    def test_artifact_evidence_adapter_schema_extension_drift_is_rejected(self):
+        path = self.repo / "docs" / "contracts" / "artifact-evidence-adapter-v1.schema.json"
+        schema = json.loads(path.read_text(encoding="utf-8"))
+        schema["x-forgeos-mapping"]["source_trust"] = "authoritative"
+        path.write_text(json.dumps(schema, ensure_ascii=False), encoding="utf-8")
+        issues = self.issues()
+        self.assertTrue(any("x-forgeos-mapping drifted" in issue for issue in issues),
+                        issues)
+
+    def test_command_observation_adapter_registry_drift_is_rejected(self):
+        path = self.agent_root / "engineering" / "governance-contracts.yml"
+        replace_once(path, "    projectable_termination: exited",
+                     "    projectable_termination: timed_out")
+        issues = self.issues()
+        self.assertTrue(any("command_observation_evidence_adapter contract drifted" in issue
+                            for issue in issues), issues)
+
+    def test_command_observation_schema_extension_drift_is_rejected(self):
+        path = (self.repo / "docs" / "contracts" /
+                "command-observation-evidence-adapter-v1.schema.json")
+        schema = json.loads(path.read_text(encoding="utf-8"))
+        schema["x-forgeos-mapping"]["source_trust"] = "authoritative"
+        path.write_text(json.dumps(schema, ensure_ascii=False), encoding="utf-8")
+        issues = self.issues()
+        self.assertTrue(any("x-forgeos-mapping drifted" in issue for issue in issues),
+                        issues)
+
     def test_cognitive_atom_golden_validator_is_integrated(self):
         path = (self.repo / "docs" / "contracts" / "fixtures" /
                 "cognitive-atom-projection-v1.json")
@@ -131,6 +228,26 @@ class GovernanceEngineeringIntegrationTest(unittest.TestCase):
         path.write_text(json.dumps(fixture, ensure_ascii=False), encoding="utf-8")
         issues = self.issues()
         self.assertTrue(any("golden.expected.atom_id: golden value mismatch" in issue
+                            for issue in issues), issues)
+
+    def test_artifact_evidence_adapter_golden_validator_is_integrated(self):
+        path = (self.repo / "docs" / "contracts" / "fixtures" /
+                "artifact-evidence-adapter-v1.json")
+        fixture = json.loads(path.read_text(encoding="utf-8"))
+        fixture["expected"]["request_sha256"] = "0" * 64
+        path.write_text(json.dumps(fixture, ensure_ascii=False), encoding="utf-8")
+        issues = self.issues()
+        self.assertTrue(any("golden.expected.request_sha256" in issue
+                            for issue in issues), issues)
+
+    def test_command_observation_golden_validator_is_integrated(self):
+        path = (self.repo / "docs" / "contracts" / "fixtures" /
+                "command-observation-evidence-adapter-v1.json")
+        fixture = json.loads(path.read_text(encoding="utf-8"))
+        fixture["expected"]["request_sha256"] = "0" * 64
+        path.write_text(json.dumps(fixture, ensure_ascii=False), encoding="utf-8")
+        issues = self.issues()
+        self.assertTrue(any("golden.expected.request_sha256" in issue
                             for issue in issues), issues)
 
     def test_reference_closure_limit_drift_is_rejected(self):
@@ -144,6 +261,48 @@ class GovernanceEngineeringIntegrationTest(unittest.TestCase):
         replace_once(path, "forge-runtime governance journal show",
                      "forge governance journal show")
         self.assertTrue(any("compatible forge-runtime CLI" in issue for issue in self.issues()))
+
+    def test_skill_requires_artifact_adapter_branch(self):
+        path = self.agent_root / "skills" / "evidence-claim-management.md"
+        replace_once(path, "### Artifact provenance adapter 分支",
+                     "### Removed artifact provenance branch")
+        issues = self.issues()
+        self.assertTrue(any("artifact Evidence adapter guidance" in issue
+                            for issue in issues), issues)
+
+    def test_skill_requires_artifact_adapter_non_capability_boundary(self):
+        path = self.agent_root / "skills" / "evidence-claim-management.md"
+        replace_once(
+            path,
+            "ADAPTED_SHADOW (no truth, authority, claim, atom, persistence, or effect attestation)",
+            "ADAPTED_SHADOW",
+        )
+        issues = self.issues()
+        self.assertTrue(any("artifact Evidence adapter guidance" in issue
+                            for issue in issues), issues)
+
+    def test_skill_cannot_claim_artifact_adapter_persistence(self):
+        path = self.agent_root / "skills" / "evidence-claim-management.md"
+        replace_once(path, "不会创建 Claim/CognitiveAtom，不会 append journal",
+                     "不会创建 Claim/CognitiveAtom，会 append journal")
+        issues = self.issues()
+        self.assertTrue(any("artifact Evidence adapter guidance" in issue
+                            for issue in issues), issues)
+
+    def test_skill_requires_command_observation_adapter_branch(self):
+        path = self.agent_root / "skills" / "evidence-claim-management.md"
+        replace_once(path, "### Command observation adapter 分支",
+                     "### Removed command observation branch")
+        issues = self.issues()
+        self.assertTrue(any("command observation Evidence adapter guidance" in issue
+                            for issue in issues), issues)
+
+    def test_skill_requires_command_observation_non_capability_boundary(self):
+        path = self.agent_root / "skills" / "evidence-claim-management.md"
+        replace_once(path, governance.COMMAND_SUCCESS, "ADAPTED_SHADOW")
+        issues = self.issues()
+        self.assertTrue(any("command observation Evidence adapter guidance" in issue
+                            for issue in issues), issues)
 
     def test_oversized_contract_json_is_rejected_before_hashing(self):
         path = self.repo / "docs" / "contracts" / "governance-evidence-claim-v1.schema.json"
@@ -184,6 +343,65 @@ class GovernanceEngineeringIntegrationTest(unittest.TestCase):
         path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
         issues = self.issues()
         self.assertTrue(any("requires exact projection arguments" in issue
+                            for issue in issues), issues)
+
+    def test_artifact_evidence_detector_requires_exact_adapter_arguments(self):
+        path = self.agent_root / "engineering" / "detectors.yml"
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        detector = next(item for item in data["detectors"]
+                        if item["id"] == "governance.artifact_evidence_adapter")
+        detector["implementation"]["argv"].pop()
+        path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+        issues = self.issues()
+        self.assertTrue(any("requires exact adapter arguments" in issue
+                            for issue in issues), issues)
+
+    def test_artifact_evidence_detector_must_remain_shadow(self):
+        path = self.agent_root / "engineering" / "detectors.yml"
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        detector = next(item for item in data["detectors"]
+                        if item["id"] == "governance.artifact_evidence_adapter")
+        detector["state"] = "planned"
+        path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+        issues = self.issues()
+        self.assertTrue(any("requires the exact shadow binding" in issue
+                            for issue in issues), issues)
+
+    def test_artifact_evidence_detector_cannot_become_load_bearing(self):
+        path = self.agent_root / "engineering" / "detectors.yml"
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        detector = next(item for item in data["detectors"]
+                        if item["id"] == "governance.artifact_evidence_adapter")
+        detector["invocation"]["owner"] = "forge_accept"
+        detector["invocation"]["adapter"] = "acceptance.probeArchitecture"
+        detector["invocation"]["acceptance_criterion"] = "architecture"
+        detector["invocation"]["load_bearing"] = True
+        path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+        issues = self.issues()
+        self.assertTrue(any("requires the exact shadow binding" in issue
+                            for issue in issues), issues)
+
+    def test_command_observation_detector_requires_exact_adapter_arguments(self):
+        path = self.agent_root / "engineering" / "detectors.yml"
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        detector = next(item for item in data["detectors"]
+                        if item["id"] == "governance.command_observation_evidence_adapter")
+        detector["implementation"]["argv"].pop()
+        path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+        issues = self.issues()
+        self.assertTrue(any("requires exact adapter arguments" in issue
+                            for issue in issues), issues)
+
+    def test_command_observation_detector_must_remain_shadow_non_load_bearing(self):
+        path = self.agent_root / "engineering" / "detectors.yml"
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        detector = next(item for item in data["detectors"]
+                        if item["id"] == "governance.command_observation_evidence_adapter")
+        detector["invocation"]["owner"] = "forge_accept"
+        detector["invocation"]["load_bearing"] = True
+        path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+        issues = self.issues()
+        self.assertTrue(any("requires the exact shadow binding" in issue
                             for issue in issues), issues)
 
 

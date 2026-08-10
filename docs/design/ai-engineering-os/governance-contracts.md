@@ -3,10 +3,15 @@
 > 状态：演进契约。0F-A 已交付 EvidenceRecord/KnowledgeClaim strict schema、跨语言 canonical codec 与纯 shadow validator；
 > ADR-0046 的 0F-B–1 本地 exact-record journal 已在 SQLite v25/runtime/CLI/compatibility 边界内完成，并通过独立复审与 `forge accept`。
 > ADR-0047 另已交付七类 KnowledgeClaim→CognitiveAtom 的确定性 pure shadow projection；它不是新治理记录，不进入 journal。
-> 第 2 节中标注“已交付”的两种 v1 记录与下述 CognitiveAtom v1 投影属于当前合同；第 1、3 节及其后内容仍是目标态，
+> ADR-0048 已交付 strict artifact-v1→EvidenceRecord pure shadow adapter；它不读取当前文件、不追加 journal，SQLite 保持 v25。
+> ADR-0049 已交付 strict command-observation→gate/test EvidenceRecord pure shadow adapter；它不执行命令、不把 exit=0 当 PASS、
+> 不追加 journal，SQLite 仍保持 v25。
+> ADR-0050 已交付 strict Evolve repo-locator→EvidenceRecord pure shadow adapter；它不读取当前 repo/report 或确认扫描结论。
+> ADR-0051 与 ADR-0052 已分别交付显式 opt-in 的 Unix local gate command 与 local Evolve locator observation producer；两者默认 capture 关闭，且不签发 PASS、扫描结论或完成裁决。
+> 第 2 节中标注“已交付”的两种 v1 记录、下述 source adapter、local producer 与 CognitiveAtom v1 投影属于当前合同；第 1、3 节及其后内容仍是目标态，
 > 不声明 truth/authority、Context、Grant、Transition、语义 lifecycle/conflict/freshness view 或知识写回 runtime 已支持。旧 free-text memory 不得静默升级。
 
-## 0. 当前实现边界（0F-A、0F-B–1 与 ADR-0047 pure shadow projection 已完成；其余目标态未实现）
+## 0. 当前实现边界（0F-A、0F-B–1、ADR-0047 projection、ADR-0048–0050 adapters 与 ADR-0051–0052 local producers 已完成；其余目标态未实现）
 
 当前可执行的 governance record kind 仍只有 `EvidenceRecord` 和 `KnowledgeClaim` v1：
 
@@ -29,6 +34,76 @@ STRUCTURALLY_VALID (shadow; no truth or authority attestation)
 
 Checker 不写 Hub、不导入 Memory/ADR、不签发 authority，也不执行 knowledge apply、lifecycle transition 或 production effect。
 
+### ADR-0048：Artifact provenance → EvidenceRecord v1 pure shadow adapter
+
+[ADR-0048](../../adr/0048-artifact-provenance-evidence-adapter-v1.md) 增加首个 source adapter，但不增加新的 governance record kind 或
+改变 EvidenceRecord v1 wire。输入必须是 exact compact canonical
+`forgeos.governance.artifact-evidence-adapter/v1` request：`artifact` 精确包含 `_format=forgeos.artifact.v1` 等十一字段，历史空
+`_format` 被拒绝；`binding` 显式提供 aggregate/project/scope/context/policy/source-tree/revision/sequence/sensitivity/subjects/supersedes。
+duplicate/unknown/noncanonical/float/overflow、控制或 bidi Unicode、非 normalized repo-relative path、非法时间/hash/identifier/list 均失败关闭。
+
+adapter 分别以 `forgeos.governance.artifact-provenance-source.v1\0` 和
+`forgeos.governance.artifact-evidence-adapter.request.v1\0` 对 canonical artifact 与完整 request 做 SHA-256 domain separation。它把 artifact
+时间点向下取整到非负 Unix 毫秒，固定 shadow tool principal/collector，绑定 artifact content/path、source snapshot 与调用方 subjects/
+sensitivity，生成 status=`valid` 的 existing strict EvidenceRecord；完整输出再由 ADR-0045 validator 重新计算 self digest，并执行 exact
+re-adaptation comparison。
+
+Schema、golden 与 Universal checker 为：
+
+- `docs/contracts/artifact-evidence-adapter-v1.schema.json`；
+- `docs/contracts/fixtures/artifact-evidence-adapter-v1.json`；
+- `harness/artifact_evidence_adapter_check.py`。
+
+Python、Go、Rust 独立实现必须对同一 fixture 产生逐字节相同的 canonical source/request/Evidence 与 digest。唯一正结果是：
+
+```text
+ADAPTED_SHADOW (no truth, authority, claim, atom, persistence, or effect attestation)
+```
+
+adapter 不读取 artifact path 的当前文件，不证明 manifest 来自受信 Store，不认证 agent/model/principal/collector，不创建
+KnowledgeClaim/CognitiveAtom，不满足 hard gate，不 append GovernanceRecordJournal、不写 SQLite/Memory/Knowledge，也不产生 network/process/
+device/production effect。若调用方随后要求 durability，必须另行使用 ADR-0046 journal 并取得其 `stored|exact_replay` receipt；
+`ADAPTED_SHADOW` 不能冒充 persistence。该切片没有 migration/backfill，Hub schema 和 SQLite 保持 v25；gate/test observation 由
+ADR-0049 的独立版本承担，Evolve locator 则由 ADR-0050 的独立 pure shadow adapter 承担。
+
+### ADR-0049：Command observation → Gate/Test EvidenceRecord v1 pure shadow adapter
+
+[ADR-0049](../../adr/0049-command-observation-evidence-adapter-v1.md) 冻结 exact
+`forgeos.command-observation/v1` envelope 和显式 Governance binding，再确定性映射为既有 `gate_result|test_run` EvidenceRecord。
+observation 绑定 direct-exec argv、normalized cwd、opaque environment/tool/source-tree digest 声明、producer/run、整数毫秒时间、真实 exit、
+stdout/stderr/combined 的 full/retained 摘要与截断计数。combined 只表示 producer 记录的 drain-event 顺序，不证明 OS emission 顺序；
+`gate_result|test_run` 也只是 caller-declared 分类，不包含 criterion verdict。
+
+Observation wire 能诚实保存 `exited|timed_out|cancelled`，但现有 Evidence command locator 只能无损保存真实非负 exit code，所以 adapter
+只投影 `exited`；timeout/cancel/signal/spawn-failed 不得用负 sentinel 或猜测值伪装。command、observation、完整 request 和最终 Evidence
+分别使用独立 digest domain；created-by 使用 request-derived `command-adaptation-<request_sha256>`，collector 仅复制 producer 声明。
+Schema、golden 与 Universal checker 为：
+
+- `docs/contracts/command-observation-evidence-adapter-v1.schema.json`；
+- `docs/contracts/fixtures/command-observation-evidence-adapter-v1.json`；
+- `harness/command_observation_evidence_adapter_check.py`。
+
+Python、Go、Rust 独立实现必须产生逐字节相同的 canonical command/observation/request/Evidence 和四类 digest。唯一正结果是：
+
+```text
+ADAPTED_SHADOW (observation mapping only; no execution, pass, completion, truth, authority, claim, atom, persistence, or effect attestation)
+```
+
+adapter 不 spawn 命令、不读取 cwd/stdin/output/current tree、不验证 stream preimage、environment/tool/tree digest profile 或 producer 身份，
+也不把 exit=0/PASS 文本映射为 gate authority。它不创建 Claim/Atom、不满足 hard gate、不 append journal、不写 SQLite/Knowledge，
+不产生 process/network/device/production effect。ADR-0051 另以显式 observed API 交付 secret-scrubbed environment、resolved executable、
+bounded-interval Git working-source 与 raw stream capture；它会执行固定本地命令但不提供 sandbox/effect containment，只产生 local observation
+package。ADR-0052 的 Evolve producer 另绑定完整 canonical report preimage、共享 `git-worktree-source-tree-v1` bounded-interval 非原子 source observation 与 zero-or-more locator（跨 relation/path 不去重）；固定 read-only Git subprocess 不认证 binary 或证明 sandbox/egress/effect，且不自动调用 ADR-0050。
+
+### ADR-0050：Evolve repository locator → EvidenceRecord v1 pure shadow adapter
+
+[ADR-0050](../../adr/0050-evolve-repo-locator-evidence-adapter-v1.md) 把 caller-declared exact repo locator/content/scan context/producer/source
+observation 与显式 Governance binding 确定性映射为既有 `repo_locator` EvidenceRecord；locator/source/request/Evidence 使用分离 digest domain。
+Schema/golden/checker 是 `docs/contracts/evolve-repo-locator-evidence-adapter-v1.schema.json`、`docs/contracts/fixtures/evolve-repo-locator-evidence-adapter-v1.json`
+与 `harness/evolve_repo_locator_evidence_adapter_check.py`；唯一正结果为 `ADAPTED_SHADOW (locator mapping only; no file/report verification, scan judgment, completion, truth, authority, claim, atom, persistence, or effect attestation)`。
+它不读取 current repo/report、不解析 symlink、不验证 digest preimage、不确认 scan judgment/completion，不创建 Claim/Atom、不满足 hard gate、
+不 append journal、不写 SQLite/Knowledge 或产生 effect；ADR-0052 producer 的交付不把这些非能力升级为真实验证或 authority。
+
 ### ADR-0047：CognitiveAtom v1 pure shadow projection
 
 [ADR-0047](../../adr/0047-shadow-cognitive-atom-projection-v1.md) 在不改变 Evidence/Claim v1 wire 或 journal v1 的前提下，增加
@@ -44,7 +119,7 @@ epistemic state、references、validity 与适用的 integer confidence，并强
 - `docs/contracts/fixtures/cognitive-atom-projection-v1.json`；
 - `harness/cognitive_atom_contract_check.py`。
 
-它们的摘要与 Python/Go/Rust 参考路径由 `.agent/engineering/governance-contracts.yml` v4 固定。唯一正结果是：
+它们的摘要与 Python/Go/Rust 参考路径由 `.agent/engineering/governance-contracts.yml` v7 固定。唯一正结果是：
 
 ```text
 PROJECTED_SHADOW
@@ -85,7 +160,8 @@ structural persistence，不实现 truth/lifecycle/conflict/freshness/authority�
 ## 1. 通用 Governance Envelope（目标态，未实现）
 
 目标上，Atom、Claim、Evidence、GraphSnapshot、Report、Grant、Review、Approval、KnowledgeUpdate 和 Transition 共享一组信封职责。
-ADR-0047 的 CognitiveAtom v1 只是独立 Claim 投影 wire，不表示该通用信封或完整 Kernel ABI 已实现。
+ADR-0047 的 CognitiveAtom v1 只是独立 Claim 投影 wire，ADR-0048–0050 也只是把三种互不相同的 source 映射到既有 Evidence wire；
+它们都不表示该通用信封或完整 Kernel ABI 已实现。
 下图只是**不可序列化的概念图**，不是 `forgeos.governance/v1` wire shape，也不得输入当前 checker；任何共同信封实现都必须采用新版本并另作兼容决策：
 
 ```yaml

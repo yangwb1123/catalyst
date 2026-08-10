@@ -92,6 +92,12 @@ type Evidence struct {
 	Detail string `json:"detail"`
 }
 
+type evidenceIdentity struct {
+	path   string
+	line   int
+	detail string
+}
+
 // Dimensions returns the canonical full-dimension vocabulary.
 func Dimensions() []string {
 	return append([]string(nil), dimensions...)
@@ -353,9 +359,9 @@ func validateEvidenceSet(root string, evidence []Evidence) error {
 	if len(evidence) > maxEvidencePerRecord {
 		return fmt.Errorf("evidence count = %d, max %d", len(evidence), maxEvidencePerRecord)
 	}
-	seen := make(map[string]bool, len(evidence))
+	seen := make(map[evidenceIdentity]bool, len(evidence))
 	for i, item := range evidence {
-		key := fmt.Sprintf("%s:%d:%s", item.Path, item.Line, item.Detail)
+		key := evidenceIdentity{path: item.Path, line: item.Line, detail: item.Detail}
 		if seen[key] {
 			return fmt.Errorf("evidence[%d] duplicates an earlier locator", i)
 		}

@@ -1296,6 +1296,133 @@ Python golden/instance checker、`forge check` **13/13**、architecture **8/8** 
 SHA-256 一致。这些结果只证明当前 pure shadow projection 合同、字节及引用接线，不升级为任何完整
 Kernel、权威、副作用或持久化能力声明。
 
+## Sprint 96（✅ pure shadow source adapter 完成；身份认证、truth/authority、持久化与 effect 未启用）— Artifact Provenance → EvidenceRecord v1
+
+本轮以 ADR 0048 把既有 `forgeos.artifact.v1` provenance observation 接入 ADR 0045 EvidenceRecord v1，但只交付一个纯函数、确定性、
+read-only 的 shadow adapter。它不读取 artifact path 当前内容，不认证 manifest/agent/model/collector，不创建 Claim/CognitiveAtom，
+不 append journal、不写 SQLite，也不产生 authority、completion 或 effect；SQLite 保持 v25，无 migration/backfill。
+
+(1) **四模型边界与 exact request**:输入固定为 `api_version + artifact + binding + canonicalization`，artifact/binding 分别要求 exact 十一字段；
+历史空 `_format`、未知/缺失字段、非 canonical UTF-8、浮点、int64 越界、Unicode 控制/双向字符、非规范 repo-relative path、无界数组/
+字符串/请求均失败关闭。时间只接受 exact RFC3339Nano（1–9 位小数、合法 Z/offset），向下取整到非负 Unix 毫秒。
+
+(2) **identity 与 mapping 分离**:source、完整 request、EvidenceRecord 使用三个独立 SHA-256 domain；record/snapshot ID 分别从 request/source
+digest 确定派生。输出固定为 artifact/direct/observed/untrusted-data/valid Evidence，tool principal/collector 仅为 shadow 声明；final record
+必须重新通过既有 Governance v1 strict validator，并与 exact re-adaptation 逐字节一致。唯一正结果为
+`ADAPTED_SHADOW (no truth, authority, claim, atom, persistence, or effect attestation)`。
+
+(3) **单一跨语言合同**:Schema、golden fixture、registry v5 与 ADR 通过 SHA-256 pin 冻结；Python universal checker、Go repository package、
+Rust domain module 对 canonical source/request/Evidence bytes、source/request/Evidence digest 与毫秒时间完全一致。Python 公开 digest helper 也先做
+strict request validation，sealed output defensive-copy mutable arrays，非法 sensitivity 和“单项合法但总字节超限”输入不再逃逸或 traceback。
+
+(4) **治理和继承**:Evidence/Claim Skill 明确 artifact branch 输出单个 EvidenceRecord object、普通 record-set/journal 才输出排序数组；shadow
+detector 的完整 state/rule/argv/invocation/tests/non-load-bearing 边界与 Skill 的 no-auth/no-current-read/no-persistence 文案进入 drift gate。fresh
+scaffold 与 legacy exact-allowlist upgrade 同步 ADR/Schema/fixture/Python package/checker/tests，但仍不安装 Rust runtime 或持久化能力。
+
+(5) **独立复审与验证**:跨语言/边界 reviewer 与治理/scaffold reviewer 最终均 **APPROVE/CLEAN**，0 Blocker/Major/Minor/Nit；复审推动关闭
+Python sensitivity TypeError、总请求字节上限、输出数组别名、digest helper 宽松、Skill 输出歧义、detector/Skill 漂移和架构预算误计。
+递归 Python **419/419**、scaffold/upgrade/security **36/36**、Go 全仓 `test` + `vet`、Rust 1.93 全 workspace test、strict Clippy 与
+changed-file rustfmt 均通过；`forge check` **13/13**、gate（1720 files）、architecture **8/8**（1213 source files）与
+`git diff --check` 通过。以上只证明 pure shadow adapter 与接线正确，不升级为 provenance 真实性、当前文件一致性、知识采纳、durability 或完成证明。
+
+## Sprint 97（✅ pure shadow source adapter 完成；命令执行、PASS/完成裁决、身份认证、持久化与 effect 未启用）— Command Observation → Gate/Test EvidenceRecord v1
+
+本轮以 ADR 0049 交付 Wave 1 的第二个独立 source adapter：把 caller 提供的 exact command observation + 显式 Governance binding
+确定性映射为既有 `gate_result|test_run` EvidenceRecord v1。它不 spawn 命令、不读取 cwd/stdin/output/current tree、不验证 stream
+preimage 或 producer/digest profile，也不把 exit=0、PASS 文本或 caller-declared evidence type 当成 criterion verdict；SQLite 仍为 v25，
+无 migration/backfill/auto-append。
+
+(1) **exact observation 与 honest terminal boundary**：request、observation、command/producer/source/streams/termination 都是 closed-world shape；
+duplicate/unknown/noncanonical/float/int64 overflow、控制/bidi Unicode、非 normalized cwd、非法 argv/stdin/timeout/hash/time/list、stream
+count/hash/truncation 矛盾与所有 size/depth/scalar 上限均失败关闭。Observation wire 可表达 `exited|timed_out|cancelled`，但现有 Evidence
+command locator 只能无损保存真实非负 signed-int32 exit，所以 adapter 只投影 exited；timeout/cancel、负 sentinel、signaled/spawn-failed
+不得伪装为 process exit。
+
+(2) **四层 identity 与 deterministic mapping**：command、完整 observation、完整 request、sealed Evidence 各用独立 domain-separated SHA-256；
+record/snapshot ID 分别从 request/source digest 派生。created-by 固定 shadow tool 且 run 为
+`command-adaptation-<request_sha256>`，collector 只复制 producer 声明并以 command digest 绑定参数；runtime snapshot 与历史 Evidence v1
+`artifact_sha256` 兼容槽均保存 observation source digest，不把 source 改称 Artifact。combined stream 只表示 producer 记录的 drain-event
+chunk 顺序，不证明 OS emission 顺序。最终 record 必须重跑既有 Governance v1 strict validator，并与 pure re-adaptation 逐字节相同。
+
+(3) **单一跨语言合同与治理漂移门禁**：Schema、golden、registry v6 与 ADR 通过 SHA-256 pin 冻结；Python universal checker、Go repository
+package 与 Rust domain module 对 canonical command/observation/request/Evidence bytes 和四类 digest 完全一致。Evidence/Claim Skill、shadow
+detector、activation/canonical refs、Schema extension、pins、golden recomputation 与 non-load-bearing/no-execution/no-pass/no-persistence 边界均有
+正反治理测试；原 governance checker 按职责拆出 `governance_engineering/source_adapters.py`，未创建新的上帝文件。
+
+(4) **scaffold/upgrade 与兼容边界**：fresh init 和 legacy exact-allowlist upgrade 同步 ADR/Schema/fixture/Python checker/package/tests 及其治理
+helper；Go/Rust 实现仍明确为 Catalyst repository-only，scaffold 不安装 runtime、producer integration 或 persistence。架构预算仅随一个 universal
+root checker 从 35 调到 36，实测 35 个非测试 harness 文件并保留一个 headroom；既有 Evidence/Claim、journal、CognitiveAtom 与 artifact adapter
+golden 均保持不变。
+
+(5) **独立复审与最终验收**：三份互相独立的跨语言 strictness、Rust/治理接线、fresh scaffold/upgrade 复审均
+**APPROVE/CLEAN**，合计 0 Blocker/Major/Minor/Nit。递归 Python **442/442**、Node **400/400**、Go Core **1,485 observed tests**、
+Rust workspace（domain **116**、application **50**、infrastructure **217**、interfaces **158** 等）与 strict Clippy、Go vet/build、
+scaffold/upgrade/security、`forge check` **13/13**、gate（1764 files）、architecture **8/8**（1245 source files）和
+`git diff --check` 均通过；最终 **`forge accept: ACCEPTED`**（9 PASS、0 FAIL、2 个诚实 N/A）。以上只证明 pure shadow mapping、
+字节、兼容和分发正确，不升级为命令真的执行、stream 真实、producer 身份、gate PASS、完成权威、durability 或 effect 证明。
+
+## Sprint 98（✅ pure shadow source adapter 完成；文件/报告验证、扫描裁决、producer 身份、持久化与 effect 未启用）— Evolve Repository Locator → EvidenceRecord v1
+
+本轮以 ADR 0050 交付 Wave 1 的第三个独立 source adapter：把 caller-declared exact Evolve repository locator observation 与显式
+Governance binding 确定性映射为既有 `repo_locator` EvidenceRecord v1。它不读取 current repo path/report，不解析 symlink，不验证
+file/report/tree/parameters digest preimage，不确认 finding/clear/opportunity、scan coverage/completion 或 candidate 价值；SQLite 保持 v25，
+无 migration、backfill、auto-append 或 read/write side effect。
+
+(1) **closed-world observation 与身份分离**：request、binding、content、locator、producer、scan context 和 source 均为 exact shape；
+duplicate/unknown/noncanonical/float/int64 overflow、控制/bidi Unicode、非规范/逃逸/drive/protected-root path、空白或超过 4,096 Unicode
+scalar 的 path、非法 line/detail/hash/list/relation/opportunity ID 均失败关闭。Opportunity ID 保持 `evolve_scan_v1` 的 1–64 bytes ASCII
+词汇；line 0 无损映射为 null range。locator、完整 observation、完整 request 和 sealed Evidence 分别使用独立 domain-separated SHA-256，
+record/snapshot/run identity 由 request/source digest 确定派生，任一 observation 或 binding 载重漂移都会改变对应身份。
+
+(2) **确定性 shadow mapping**：Evidence 固定为 direct/observed/untrusted-data/valid 的现有 `repo_locator`；created-by 是 request-derived
+shadow adapter principal，collector 只复制 producer 声明，不能冒充已认证身份。content digest 同时进入 artifact compatibility slot 与 locator，
+source snapshot 绑定完整 observation；最终 record 必须重跑 ADR 0045 strict validator 并与 pure re-adaptation 逐字节相同。唯一正结果为
+`ADAPTED_SHADOW (locator mapping only; no file/report verification, scan judgment, completion, truth, authority, claim, atom, persistence, or effect attestation)`。
+
+(3) **单一跨语言合同与继承**：Schema、golden、registry v7 与 ADR 通过 SHA-256 pin 冻结；Python universal checker、Go repository package 与
+Rust domain module 对 canonical locator/observation/request/Evidence bytes、三条 source/request digest 与 Evidence self digest 完全一致。
+Evidence/Claim Skill、shadow detector、activation/canonical refs、治理 checker、fresh scaffold 和 legacy exact-allowlist upgrade 已接线；scaffold
+只复制 ADR/Schema/golden/Python checker/package/tests，不安装 Go/Rust runtime、真实 Evolve producer 或 persistence。
+
+(4) **验收推动的缺陷闭合**：独立 contract、跨语言和 scaffold reviewer 均 **APPROVE/CLEAN**。复审推动三语言统一非空白/4,096-scalar
+path、Unicode `Cc`、Evolve opportunity vocabulary 与 Rust 256-list fail-closed；cold checker 不生成 `__pycache__`。最终聚合验收又发现并关闭
+Go ST1005 诊断文案和宿主默认 Cargo 1.83 漏选项目 Rust 1.93 两项真实问题；新增 repository-local `rust-toolchain.toml` 与 CI/manifest
+保持 1.93.0 一致，不靠临时环境变量伪造通过。
+
+(5) **最终证据**：递归 Python **471/471**、显式 Node **400/400**、Forge Core **1,500 observed tests**、go-taskd **22**、url-shortener
+**47**，Rust workspace/各 manifest test 批次、strict Clippy、typecheck、build 与定向 rustfmt 全绿；Go full test/vet/build 与 golangci-lint
+全绿。`forge check` **13/13**、gate（1810 files）、architecture **8/8**（1278 source files）和 `git diff --check` 均通过；完整
+`forge accept` 为 **ACCEPTED**（9 PASS、0 FAIL、2 个诚实 N/A：未安装 ruff/eslint 的聚合 lint 与未配置 coverage，不冒充已执行）。
+以上只证明 pure shadow mapping、字节、边界与分发正确，不升级为文件/报告真实性、Evolve scan 裁决、知识采纳、durability 或完成证明。
+
+## Sprint 99（✅ 本地 gate command observation producer 完成；不签发 PASS、身份、authority 或 effect 证明）— ADR 0051
+
+本轮交付显式 opt-in、Unix-only 的四条固定本地 gate/check/accept/probe command observation producer。它把 canonical Git root、实际
+scrubbed child environment、PATH-resolved top-level executable bytes、bounded-interval working-source inventory/entry observation、raw streams、
+termination 与 production identity 收敛为 strict package；普通 gate API 继续保持 capture-disabled byte-compatible 行为。共享
+`gitworktreesource` 保持 endpoint pre/post equality 的区间观察语义，不冒充原子 snapshot、execution pin、authenticated Git 或 effect containment。
+
+Schema、exact golden、Python checker、Go runtime、scaffold/upgrade、race/低 FD/TOCTOU/Unicode/路径与资源边界测试、两份独立 CLEAN 复审及
+真实 `forge accept` 均已完成；交付 commit 为 `91170f7`。唯一正结果仍是 `OBSERVED_LOCAL_PROCESS`，不得把 exit zero、输出文本、source
+revision 或 fixture 解释为 PASS、criterion、completion、truth、identity、authority、persistence 或 external-effect receipt。
+
+## Sprint 100（✅ Local Evolve locator observation producer 完成；不确认扫描判断、完成、真值或持久化）— ADR 0052
+
+本轮在不修改 ADR 0050 observation/Evidence wire 的前提下交付显式 opt-in、Unix-only producer：绑定完整 canonical
+`EVOLVE_SCAN_V1: ` report preimage、固定 parameters、共享 `git-worktree-source-tree-v1` bounded-interval source observation，以及按
+dimension/relation/opportunity/report 顺序产生的 zero-or-more exact locator observations。同一 path 跨 relation/opportunity 的出现不会去重；
+每条 observation 绑定完整 bounded regular-file bytes/hash、同一 capture timestamp、report/source/parameters identity。
+
+实现将 ADR 0051 source capture 抽为中立 `gitworktreesource` 包，同时保持旧 command golden/wire 不变。复审推动关闭 report-only
+U+2028/U+2029、引用行外非法 UTF-8、恰好 1 MiB 无换行证据、冒号拼接去重碰撞及 Python CLI 在 16 MiB 解码前无界读取等真实边界；
+Python universal checker 使用 opened-FD bounded read，Go/Python 对 canonical bytes、顺序、multiplicity 和失败关闭语义一致。
+
+定向 Python **26/26**、全仓 Python **518/518**、全量 Go test/vet/build/lint、focused race、ADR 0051 regression、architecture **8/8**、
+scaffold/upgrade、golden 与 `git diff --check` 已通过，Go contract、整体切片和 Python bounded-read 三份独立 fresh-context review 均
+**CLEAN**。Registry v9 将 ADR 0051/0052 同列 `shipped_producers`，`staged_producers` 为空；最终 completion authority 仍只来自本提交上
+实际执行的 `forge accept`，失败时不得提交或维持 DONE。Producer 固定 read-only Git argv 但不认证 binary，也不提供 sandbox/egress/effect
+containment；它不自动调用 ADR 0050、不创建 Claim/Atom、不 append journal、不写 SQLite/Knowledge，SQLite 仍为 v25。
+
 ## 下一前沿(需外部资源 / 后续阶段 / 投机增强 / 明确非目标,非本环境可完整验证)
 - **Graph 下一协议切片**:SQLite v17–v24 已交付 successor candidate、per-node request/lifecycle、receipt/content dataflow、wave-ready/admit、本地 hard-crash adjudication与 8 MiB successor candidate 持久化上限；下一步是顶层整图执行循环、并发 wave 的失败传播/恢复以及安全 resume/branching。不得把当前逐节点 operator 驱动或 Hub-local single-consumption 冒充远程 exactly-once。
 - **真点火** `--agent-cmd=claude`:**multi-agent running to completion 已坐实**(Sprint 25:真 claude 多-agent 跑到 converge MET,增量级 + 版本级)。完整旋钮:四维资源护栏 + 成本三维(phase/时间/美元)+ 任务注入 + 写权限 + 模型路由 + 工作目录 + retry + loop-back;诚实分工:agent 自治增量绿、人确认版本竣工。docs/ignition.md 有完整配方 + 实测

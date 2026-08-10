@@ -1,0 +1,45 @@
+{
+  "api_version": "forgeos.governance.artifact-evidence-adapter.fixture/v1",
+  "expected": {
+    "canonical_evidence_record_json": "{\"api_version\":\"forgeos.governance/v1\",\"integrity\":{\"canonical_sha256\":\"b62bb55d60aad7e7068ff3dc44796368bbecddb010f0cb3b03d5e593dee69c0d\",\"canonicalization\":\"forgeos.canonical-json/v1\"},\"kind\":\"EvidenceRecord\",\"metadata\":{\"aggregate_id\":\"artifact-run-artifact-0048\",\"context_sha256\":\"03b1f9b00e76a3c0ed1c5256ef6d715f2e12613d246c600693cdf14a4ca4ccc9\",\"created_at_unix_ms\":1786341896789,\"created_by\":{\"authority_domain\":\"shadow\",\"principal_id\":\"forgeos.artifact-evidence-adapter\",\"principal_type\":\"tool\",\"role\":\"evidence-adapter\",\"run_id\":\"run-artifact-0048\"},\"policy_sha256\":\"57ccec5e5c18d08dc1f94b16a500d29307748a022709cf0291bc368b5f01178b\",\"project_id\":\"project-catalyst\",\"record_id\":\"artifact-evidence-92214aaf197c4f3fea64932af541ac29f121cbdedb2f8cf9d36b50a68c22b02a\",\"scope\":\"project\",\"sequence\":1,\"source_revision\":\"c17e670\",\"source_tree_sha256\":\"2626e7e41a587604f62594ee4581c533fbd1d8e0be5b6edc9e9b7eea132a6b73\",\"supersedes_record_ids\":[]},\"spec\":{\"artifact_sha256\":\"7baf27fbde4b69070b1cacbef01cac89f44bea26a1426354c1dc9984033b041f\",\"collector\":{\"collector_id\":\"forgeos.artifact-evidence-adapter\",\"collector_type\":\"tool\",\"collector_version\":\"v1\",\"parameters_sha256\":\"92214aaf197c4f3fea64932af541ac29f121cbdedb2f8cf9d36b50a68c22b02a\",\"run_id\":\"run-artifact-0048\"},\"content_role\":\"untrusted_data\",\"directness\":\"direct\",\"evidence_type\":\"artifact\",\"locator\":{\"content_sha256\":\"7baf27fbde4b69070b1cacbef01cac89f44bea26a1426354c1dc9984033b041f\",\"exit_code\":null,\"line_end\":null,\"line_start\":null,\"locator_ref\":\"docs/release/artifact-report.json\",\"locator_type\":\"artifact\"},\"observed_at_unix_ms\":1786341896789,\"sensitivity\":\"internal\",\"source_snapshot\":{\"snapshot_id\":\"artifact-snapshot-b6a0ec2425c2d4bf8b88cee2037598159c10753008f0d061d5192a9a760f2141\",\"snapshot_sha256\":\"b6a0ec2425c2d4bf8b88cee2037598159c10753008f0d061d5192a9a760f2141\",\"snapshot_type\":\"artifact\"},\"source_trust\":\"observed\",\"subjects\":[\"artifact:release-report\",\"run:artifact-0048\"]},\"status\":{\"reason_codes\":[],\"state\":\"valid\",\"valid_from_unix_ms\":1786341896789,\"valid_until_unix_ms\":null}}",
+    "canonical_request_json": "{\"api_version\":\"forgeos.governance.artifact-evidence-adapter/v1\",\"artifact\":{\"_format\":\"forgeos.artifact.v1\",\"agent\":\"implementer\",\"created_at\":\"2026-08-10T06:04:56.789123Z\",\"model\":\"sonnet-4\",\"path\":\"docs/release/artifact-report.json\",\"phase\":\"implementer\",\"prompt_sha256\":\"194713ad972b9125a463802fa203cc68e814e7b681bece09a1975df5efd0fa11\",\"run_id\":\"run-artifact-0048\",\"sha256\":\"7baf27fbde4b69070b1cacbef01cac89f44bea26a1426354c1dc9984033b041f\",\"size\":16,\"workflow\":\"build\"},\"binding\":{\"aggregate_id\":\"artifact-run-artifact-0048\",\"context_sha256\":\"03b1f9b00e76a3c0ed1c5256ef6d715f2e12613d246c600693cdf14a4ca4ccc9\",\"policy_sha256\":\"57ccec5e5c18d08dc1f94b16a500d29307748a022709cf0291bc368b5f01178b\",\"project_id\":\"project-catalyst\",\"scope\":\"project\",\"sensitivity\":\"internal\",\"sequence\":1,\"source_revision\":\"c17e670\",\"source_tree_sha256\":\"2626e7e41a587604f62594ee4581c533fbd1d8e0be5b6edc9e9b7eea132a6b73\",\"subjects\":[\"artifact:release-report\",\"run:artifact-0048\"],\"supersedes_record_ids\":[]},\"canonicalization\":\"forgeos.canonical-json/v1\"}",
+    "canonical_source_json": "{\"_format\":\"forgeos.artifact.v1\",\"agent\":\"implementer\",\"created_at\":\"2026-08-10T06:04:56.789123Z\",\"model\":\"sonnet-4\",\"path\":\"docs/release/artifact-report.json\",\"phase\":\"implementer\",\"prompt_sha256\":\"194713ad972b9125a463802fa203cc68e814e7b681bece09a1975df5efd0fa11\",\"run_id\":\"run-artifact-0048\",\"sha256\":\"7baf27fbde4b69070b1cacbef01cac89f44bea26a1426354c1dc9984033b041f\",\"size\":16,\"workflow\":\"build\"}",
+    "evidence_record_sha256": "b62bb55d60aad7e7068ff3dc44796368bbecddb010f0cb3b03d5e593dee69c0d",
+    "request_sha256": "92214aaf197c4f3fea64932af541ac29f121cbdedb2f8cf9d36b50a68c22b02a",
+    "result": "ADAPTED_SHADOW (no truth, authority, claim, atom, persistence, or effect attestation)",
+    "source_snapshot_sha256": "b6a0ec2425c2d4bf8b88cee2037598159c10753008f0d061d5192a9a760f2141"
+  },
+  "request": {
+    "api_version": "forgeos.governance.artifact-evidence-adapter/v1",
+    "artifact": {
+      "_format": "forgeos.artifact.v1",
+      "agent": "implementer",
+      "created_at": "2026-08-10T06:04:56.789123Z",
+      "model": "sonnet-4",
+      "path": "docs/release/artifact-report.json",
+      "phase": "implementer",
+      "prompt_sha256": "194713ad972b9125a463802fa203cc68e814e7b681bece09a1975df5efd0fa11",
+      "run_id": "run-artifact-0048",
+      "sha256": "7baf27fbde4b69070b1cacbef01cac89f44bea26a1426354c1dc9984033b041f",
+      "size": 16,
+      "workflow": "build"
+    },
+    "binding": {
+      "aggregate_id": "artifact-run-artifact-0048",
+      "context_sha256": "03b1f9b00e76a3c0ed1c5256ef6d715f2e12613d246c600693cdf14a4ca4ccc9",
+      "policy_sha256": "57ccec5e5c18d08dc1f94b16a500d29307748a022709cf0291bc368b5f01178b",
+      "project_id": "project-catalyst",
+      "scope": "project",
+      "sensitivity": "internal",
+      "sequence": 1,
+      "source_revision": "c17e670",
+      "source_tree_sha256": "2626e7e41a587604f62594ee4581c533fbd1d8e0be5b6edc9e9b7eea132a6b73",
+      "subjects": [
+        "artifact:release-report",
+        "run:artifact-0048"
+      ],
+      "supersedes_record_ids": []
+    },
+    "canonicalization": "forgeos.canonical-json/v1"
+  }
+}

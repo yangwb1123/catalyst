@@ -1,0 +1,168 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forgeos.local/contracts/artifact-evidence-adapter-v1.schema.json",
+  "title": "ForgeOS Artifact Provenance Evidence Adapter Request v1",
+  "description": "Pure deterministic shadow adapter input. Validation does not attest truth, authority, identity, persistence, completion, or effect.",
+  "x-forgeos-canonicalization": {
+    "format": "forgeos.canonical-json/v1",
+    "exact_compact_utf8_input": true,
+    "artifact_key_exception": "request.artifact._format",
+    "source_digest_domain": "forgeos.governance.artifact-provenance-source.v1\u0000",
+    "request_digest_domain": "forgeos.governance.artifact-evidence-adapter.request.v1\u0000",
+    "evidence_record_digest_domain": "forgeos.governance.evidence-record.v1\u0000",
+    "timestamp_projection": "floor_nonnegative_instant_to_unix_milliseconds"
+  },
+  "x-forgeos-limits": {
+    "max_request_bytes": 131072,
+    "max_depth": 16,
+    "max_object_fields": 64,
+    "max_array_items": 256,
+    "max_string_bytes": 16384,
+    "integer_domain": "signed_int64"
+  },
+  "x-forgeos-mapping": {
+    "result": "ADAPTED_SHADOW (no truth, authority, claim, atom, persistence, or effect attestation)",
+    "input_kind": "forgeos.artifact.v1",
+    "output_kind": "EvidenceRecord",
+    "record_id_prefix": "artifact-evidence-",
+    "snapshot_id_prefix": "artifact-snapshot-",
+    "principal_id": "forgeos.artifact-evidence-adapter",
+    "principal_type": "tool",
+    "authority_domain": "shadow",
+    "role": "evidence-adapter",
+    "collector_version": "v1",
+    "evidence_type": "artifact",
+    "directness": "direct",
+    "source_trust": "observed",
+    "content_role": "untrusted_data",
+    "status": "valid",
+    "persistence": "none",
+    "attestations": []
+  },
+  "$ref": "#/$defs/request",
+  "$defs": {
+    "hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160,
+      "pattern": "^[a-z0-9][a-z0-9._:/-]*$"
+    },
+    "boundedText": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096,
+      "pattern": "\\S"
+    },
+    "artifactPath": {
+      "allOf": [
+        { "$ref": "#/$defs/boundedText" },
+        {
+          "pattern": "^(?!/)(?![A-Za-z]:)(?!.*\\\\)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)(?!.*\\/$).+$"
+        }
+      ]
+    },
+    "identifierArray": {
+      "type": "array",
+      "maxItems": 256,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/identifier" }
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "_format",
+        "agent",
+        "created_at",
+        "model",
+        "path",
+        "phase",
+        "prompt_sha256",
+        "run_id",
+        "sha256",
+        "size",
+        "workflow"
+      ],
+      "properties": {
+        "_format": { "const": "forgeos.artifact.v1" },
+        "agent": { "$ref": "#/$defs/boundedText" },
+        "created_at": {
+          "type": "string",
+          "format": "date-time",
+          "minLength": 20,
+          "maxLength": 40
+        },
+        "model": { "$ref": "#/$defs/boundedText" },
+        "path": { "$ref": "#/$defs/artifactPath" },
+        "phase": { "$ref": "#/$defs/boundedText" },
+        "prompt_sha256": { "$ref": "#/$defs/hash" },
+        "run_id": { "$ref": "#/$defs/identifier" },
+        "sha256": { "$ref": "#/$defs/hash" },
+        "size": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807
+        },
+        "workflow": { "$ref": "#/$defs/boundedText" }
+      }
+    },
+    "binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "aggregate_id",
+        "context_sha256",
+        "policy_sha256",
+        "project_id",
+        "scope",
+        "sensitivity",
+        "sequence",
+        "source_revision",
+        "source_tree_sha256",
+        "subjects",
+        "supersedes_record_ids"
+      ],
+      "properties": {
+        "aggregate_id": { "$ref": "#/$defs/identifier" },
+        "context_sha256": { "$ref": "#/$defs/hash" },
+        "policy_sha256": { "$ref": "#/$defs/hash" },
+        "project_id": { "$ref": "#/$defs/identifier" },
+        "scope": { "$ref": "#/$defs/identifier" },
+        "sensitivity": {
+          "enum": ["public", "internal", "confidential", "restricted"]
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807
+        },
+        "source_revision": { "$ref": "#/$defs/identifier" },
+        "source_tree_sha256": { "$ref": "#/$defs/hash" },
+        "subjects": {
+          "allOf": [
+            { "$ref": "#/$defs/identifierArray" },
+            { "minItems": 1 }
+          ]
+        },
+        "supersedes_record_ids": { "$ref": "#/$defs/identifierArray" }
+      }
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["api_version", "artifact", "binding", "canonicalization"],
+      "properties": {
+        "api_version": {
+          "const": "forgeos.governance.artifact-evidence-adapter/v1"
+        },
+        "artifact": { "$ref": "#/$defs/artifact" },
+        "binding": { "$ref": "#/$defs/binding" },
+        "canonicalization": { "const": "forgeos.canonical-json/v1" }
+      }
+    }
+  }
+}

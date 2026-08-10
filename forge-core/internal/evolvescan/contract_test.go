@@ -55,6 +55,33 @@ func TestValidatePartialProfilesDoNotInventCoverageThresholds(t *testing.T) {
 	}
 }
 
+func TestValidateAllowsDistinctEvidenceWithColonBoundary(t *testing.T) {
+	root := t.TempDir()
+	for path, content := range map[string]string{"evidence/a": "one\n", "evidence/a:1": "one\ntwo\n"} {
+		full := filepath.Join(root, path)
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	report := Report{
+		Version: ContractV1,
+		Depth:   DepthStandard,
+		Dimensions: []Dimension{{
+			Name: "code", Status: StatusClear,
+			Evidence: []Evidence{
+				{Path: "evidence/a:1", Line: 2, Detail: "x"},
+				{Path: "evidence/a", Line: 1, Detail: "2:x"},
+			},
+		}},
+	}
+	if _, err := Validate(root, encodedReport(t, report), DepthStandard); err != nil {
+		t.Fatalf("distinct evidence tuples collided: %v", err)
+	}
+}
+
 func TestValidateOpportunisticRequiresObviousOpportunity(t *testing.T) {
 	root := evidenceRepo(t)
 	report := opportunisticReport(true)

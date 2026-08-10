@@ -1,0 +1,279 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forgeos.local/contracts/evolve-repo-locator-evidence-adapter-v1.schema.json",
+  "title": "ForgeOS Evolve Repository Locator Evidence Adapter Request v1",
+  "description": "Pure deterministic shadow adapter input. Schema validation alone is insufficient. Validation does not read a repository file or report and does not attest a scan judgment, completion, truth, authority, identity, persistence, or effect.",
+  "$comment": "Shape-only constraints cannot express exact canonical bytes, UTF-8 byte limits, UTF-8 array ordering, protected path segments, relation/opportunity coupling, or digest preimages.",
+  "x-forgeos-canonicalization": {
+    "format": "forgeos.canonical-json/v1",
+    "exact_compact_utf8_input": true,
+    "locator_digest_domain": "forgeos.governance.evolve-repo-locator.locator.v1\u0000",
+    "source_digest_domain": "forgeos.governance.evolve-repo-locator-source.v1\u0000",
+    "request_digest_domain": "forgeos.governance.evolve-repo-locator-evidence-adapter.request.v1\u0000",
+    "evidence_record_digest_domain": "forgeos.governance.evidence-record.v1\u0000"
+  },
+  "x-forgeos-limits": {
+    "max_request_bytes": 131072,
+    "max_depth": 16,
+    "max_object_fields": 64,
+    "max_array_items": 256,
+    "max_string_bytes": 16384,
+    "max_detail_bytes": 512,
+    "max_path_scalars": 4096,
+    "max_opportunity_id_bytes": 64,
+    "max_content_bytes": 1048576,
+    "integer_domain": "signed_int64"
+  },
+  "x-forgeos-semantic-validation": {
+    "schema_alone_sufficient": false,
+    "observation_ref": "#EvolveRepoLocatorV1",
+    "authoritative_checks": [
+      "exact_compact_canonical_utf8",
+      "bounded_unicode_and_utf8_bytes",
+      "sorted_unique_identifier_arrays",
+      "canonical_ascii_casefold_protected_repository_path",
+      "evolve_locator_control_and_identifier_vocabulary",
+      "relation_opportunity_id_matrix"
+    ],
+    "reads_current_repository_file": false,
+    "verifies_content_or_report_preimage": false
+  },
+  "x-forgeos-mapping": {
+    "result": "ADAPTED_SHADOW (locator mapping only; no file/report verification, scan judgment, completion, truth, authority, claim, atom, persistence, or effect attestation)",
+    "input_kind": "forgeos.evolve-repo-locator/v1",
+    "output_kind": "EvidenceRecord",
+    "record_id_prefix": "evolve-locator-evidence-",
+    "snapshot_id_prefix": "evolve-locator-",
+    "principal_id": "forgeos.evolve-repo-locator-evidence-adapter",
+    "principal_type": "tool",
+    "authority_domain": "shadow",
+    "role": "evidence-adapter",
+    "principal_run_id": "evolve-locator-adaptation-<request_sha256>",
+    "collector_from": "producer_declaration",
+    "evidence_type": "repo_locator",
+    "locator_type": "repo",
+    "line_projection": "zero_to_null_pair_positive_to_equal_pair",
+    "directness": "direct",
+    "source_trust": "observed",
+    "content_role": "untrusted_data",
+    "source_snapshot_type": "repository",
+    "artifact_sha256": "observation.content.sha256",
+    "status": "valid",
+    "persistence": "none",
+    "attestations": []
+  },
+  "$ref": "#/$defs/request",
+  "$defs": {
+    "hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160,
+      "pattern": "^[a-z0-9][a-z0-9._:/-]*$"
+    },
+    "evolveIdentifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z0-9][a-z0-9._-]*$"
+    },
+    "boundedText": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096,
+      "pattern": "\\S"
+    },
+    "detail": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "\\S"
+    },
+    "repoPath": {
+      "allOf": [
+        { "$ref": "#/$defs/boundedText" },
+        {
+          "pattern": "^(?!/)(?![A-Za-z]:)(?!.*\\\\)(?!(?:\\.git|\\.forge)(?:/|$))(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)(?!.*\\/$).+$"
+        }
+      ]
+    },
+    "identifierArray": {
+      "type": "array",
+      "maxItems": 256,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/identifier" }
+    },
+    "content": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bytes", "sha256"],
+      "properties": {
+        "bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1048576
+        },
+        "sha256": { "$ref": "#/$defs/hash" }
+      }
+    },
+    "locator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["detail", "line", "path"],
+      "properties": {
+        "detail": { "$ref": "#/$defs/detail" },
+        "line": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9223372036854775807
+        },
+        "path": { "$ref": "#/$defs/repoPath" }
+      }
+    },
+    "producer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "parameters_sha256",
+        "producer_id",
+        "producer_type",
+        "producer_version",
+        "run_id"
+      ],
+      "properties": {
+        "parameters_sha256": { "$ref": "#/$defs/hash" },
+        "producer_id": { "$ref": "#/$defs/identifier" },
+        "producer_type": { "enum": ["service", "tool"] },
+        "producer_version": { "$ref": "#/$defs/identifier" },
+        "run_id": { "$ref": "#/$defs/identifier" }
+      }
+    },
+    "scanContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contract",
+        "depth",
+        "dimension",
+        "opportunity_id",
+        "relation",
+        "report_sha256"
+      ],
+      "properties": {
+        "contract": { "const": "evolve_scan_v1" },
+        "depth": {
+          "enum": ["advisory", "opportunistic", "standard", "thorough"]
+        },
+        "dimension": {
+          "enum": [
+            "code",
+            "dependencies",
+            "security",
+            "performance",
+            "architecture_drift",
+            "test_coverage"
+          ]
+        },
+        "opportunity_id": {
+          "oneOf": [
+            { "$ref": "#/$defs/evolveIdentifier" },
+            { "type": "null" }
+          ]
+        },
+        "relation": { "enum": ["clear", "finding", "opportunity"] },
+        "report_sha256": { "$ref": "#/$defs/hash" }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_revision", "source_tree_sha256"],
+      "properties": {
+        "source_revision": { "$ref": "#/$defs/identifier" },
+        "source_tree_sha256": { "$ref": "#/$defs/hash" }
+      }
+    },
+    "observation": {
+      "$anchor": "EvolveRepoLocatorV1",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "api_version",
+        "canonicalization",
+        "content",
+        "locator",
+        "observed_at_unix_ms",
+        "producer",
+        "scan_context",
+        "source"
+      ],
+      "properties": {
+        "api_version": { "const": "forgeos.evolve-repo-locator/v1" },
+        "canonicalization": { "const": "forgeos.canonical-json/v1" },
+        "content": { "$ref": "#/$defs/content" },
+        "locator": { "$ref": "#/$defs/locator" },
+        "observed_at_unix_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9223372036854775807
+        },
+        "producer": { "$ref": "#/$defs/producer" },
+        "scan_context": { "$ref": "#/$defs/scanContext" },
+        "source": { "$ref": "#/$defs/source" }
+      }
+    },
+    "binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "aggregate_id",
+        "context_sha256",
+        "policy_sha256",
+        "project_id",
+        "scope",
+        "sensitivity",
+        "sequence",
+        "subjects",
+        "supersedes_record_ids"
+      ],
+      "properties": {
+        "aggregate_id": { "$ref": "#/$defs/identifier" },
+        "context_sha256": { "$ref": "#/$defs/hash" },
+        "policy_sha256": { "$ref": "#/$defs/hash" },
+        "project_id": { "$ref": "#/$defs/identifier" },
+        "scope": { "$ref": "#/$defs/identifier" },
+        "sensitivity": {
+          "enum": ["public", "internal", "confidential", "restricted"]
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807
+        },
+        "subjects": {
+          "allOf": [
+            { "$ref": "#/$defs/identifierArray" },
+            { "minItems": 1 }
+          ]
+        },
+        "supersedes_record_ids": { "$ref": "#/$defs/identifierArray" }
+      }
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["api_version", "binding", "canonicalization", "observation"],
+      "properties": {
+        "api_version": {
+          "const": "forgeos.governance.evolve-repo-locator-evidence-adapter/v1"
+        },
+        "binding": { "$ref": "#/$defs/binding" },
+        "canonicalization": { "const": "forgeos.canonical-json/v1" },
+        "observation": { "$ref": "#/$defs/observation" }
+      }
+    }
+  }
+}

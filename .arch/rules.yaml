@@ -71,6 +71,24 @@
 #              is now harness at 33 files, so max_files 32 → 34 preserves exactly
 #              one file of headroom without folding the independent contract into a
 #              generic checker or weakening any other architecture threshold.
+#              RECALIBRATED 2026-08-10: ADR-0048 adds one universal Artifact→
+#              Evidence adapter CLI and one adversarial contract test at the
+#              harness root; implementation logic remains in the cohesive
+#              harness/artifact_evidence_adapter package. The measured ceiling is
+#              now harness at 34 non-test files (the architecture metric excludes
+#              tests), so max_files 34 → 35 preserves the same
+#              one-file headroom without weakening another threshold.
+#              RECALIBRATED 2026-08-10: ADR-0049 adds one universal command-
+#              observation → Evidence adapter CLI at the harness root; the
+#              implementation and source-adapter governance checks remain split
+#              into cohesive sub-packages, while tests stay outside this metric.
+#              The measured harness ceiling is now 35 non-test files, so
+#              max_files 35 → 36 preserves exactly one file of headroom.
+# 2026-08-10: ADR-0050 adds the pure Evolve repository-locator → Evidence
+#              adapter CLI at the harness root; implementation remains inside
+#              harness/evolve_repo_locator_evidence_adapter. The measured
+#              harness ceiling is now 36 non-test files, so max_files 36 → 37
+#              preserves exactly one file of headroom.
 #   fanin:     max 28 PRODUCTION importing files (Rust domain);
 #              forge-core/internal/asset is 26. Tests excluded. RECALIBRATED 2026-07-29:
 #              Rust `crate/self/super` imports are same-crate cohesion, not inbound
@@ -91,7 +109,7 @@ root:
 
 # ── Per-package / per-directory budget ────────────────────────────────────
 package:
-  max_files: 34       # actual 33 (harness with CognitiveAtom CLI/test) + headroom 1
+  max_files: 37       # actual 36 non-test harness files (Evolve locator adapter CLI included) + headroom 1
   max_exports: 30     # actual 28 (orchestrator and mode) + headroom — recalibrated 2026-07-27
 
 # ── Per-file budget ───────────────────────────────────────────────────────

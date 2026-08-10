@@ -1,0 +1,315 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forgeos.local/contracts/command-observation-evidence-adapter-v1.schema.json",
+  "title": "ForgeOS Command Observation Evidence Adapter Request v1",
+  "description": "Command observation shape plus a pure gate/test EvidenceRecord mapping. The CommandObservationV1 anchor accepts exited, timed_out and cancelled; the request root projects exited only. Schema validation alone is insufficient: strict semantic and exact-canonical validators remain authoritative. Validation does not execute a command or attest pass, completion, truth, authority, identity, persistence, or effect.",
+  "$comment": "Shape-only constraints cannot express exact canonical bytes, UTF-8 byte limits, sorted-by-UTF8 arrays, time ordering, stream count relations, or empty/full/retained digest semantics.",
+  "x-forgeos-canonicalization": {
+    "format": "forgeos.canonical-json/v1",
+    "exact_compact_utf8_input": true,
+    "command_digest_domain": "forgeos.governance.command-observation.command.v1\u0000",
+    "source_digest_domain": "forgeos.governance.command-observation-source.v1\u0000",
+    "request_digest_domain": "forgeos.governance.command-observation-evidence-adapter.request.v1\u0000",
+    "evidence_record_digest_domain": "forgeos.governance.evidence-record.v1\u0000"
+  },
+  "x-forgeos-limits": {
+    "max_request_bytes": 131072,
+    "max_depth": 16,
+    "max_object_fields": 64,
+    "max_array_items": 256,
+    "max_argv_items": 64,
+    "max_text_scalars": 4096,
+    "max_string_bytes": 16384,
+    "max_timeout_ms": 86400000,
+    "integer_domain": "signed_int64",
+    "exit_code_domain": "portable_nonnegative_signed_int32"
+  },
+  "x-forgeos-semantic-validation": {
+    "schema_alone_sufficient": false,
+    "observation_ref": "#CommandObservationV1",
+    "observation_terminations": ["cancelled", "exited", "timed_out"],
+    "request_projectable_terminations": ["exited"],
+    "authoritative_checks": [
+      "exact_compact_canonical_utf8",
+      "bounded_unicode_and_utf8_bytes",
+      "sorted_unique_identifier_arrays",
+      "nondecreasing_time",
+      "stream_count_and_digest_relations",
+      "empty_stdin_and_stream_digests"
+    ]
+  },
+  "x-forgeos-mapping": {
+    "result": "ADAPTED_SHADOW (observation mapping only; no execution, pass, completion, truth, authority, claim, atom, persistence, or effect attestation)",
+    "input_kind": "forgeos.command-observation/v1",
+    "output_kind": "EvidenceRecord",
+    "projectable_termination": "exited",
+    "record_id_prefix": "command-evidence-",
+    "snapshot_id_prefix": "command-observation-",
+    "principal_id": "forgeos.command-observation-evidence-adapter",
+    "principal_type": "tool",
+    "authority_domain": "shadow",
+    "role": "evidence-adapter",
+    "evidence_types": ["gate_result", "test_run"],
+    "directness": "direct",
+    "source_trust": "observed",
+    "content_role": "untrusted_data",
+    "source_snapshot_type": "runtime",
+    "artifact_sha256": "source_snapshot_sha256",
+    "principal_run_id": "command-adaptation-<request_sha256>",
+    "status": "valid",
+    "persistence": "none",
+    "attestations": []
+  },
+  "$ref": "#/$defs/request",
+  "$defs": {
+    "hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160,
+      "pattern": "^[a-z0-9][a-z0-9._:/-]*$"
+    },
+    "boundedString": {
+      "type": "string",
+      "maxLength": 4096
+    },
+    "cwd": {
+      "allOf": [
+        { "type": "string", "minLength": 1, "maxLength": 4096 },
+        {
+          "pattern": "^(?:\\.|(?!/)(?![A-Za-z]:)(?!.*\\\\)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)(?!.*\\/$).+)$"
+        }
+      ]
+    },
+    "identifierArray": {
+      "type": "array",
+      "maxItems": 256,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/identifier" }
+    },
+    "nullableTimeout": {
+      "oneOf": [
+        { "type": "integer", "minimum": 1, "maximum": 86400000 },
+        { "type": "null" }
+      ]
+    },
+    "command": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "argv",
+        "cwd",
+        "environment_sha256",
+        "stdin_bytes",
+        "stdin_sha256",
+        "timeout_ms",
+        "tool_snapshot_sha256"
+      ],
+      "properties": {
+        "argv": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "prefixItems": [
+            {
+              "allOf": [
+                { "$ref": "#/$defs/boundedString" },
+                { "minLength": 1 }
+              ]
+            }
+          ],
+          "items": { "$ref": "#/$defs/boundedString" }
+        },
+        "cwd": { "$ref": "#/$defs/cwd" },
+        "environment_sha256": { "$ref": "#/$defs/hash" },
+        "stdin_bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9223372036854775807
+        },
+        "stdin_sha256": { "$ref": "#/$defs/hash" },
+        "timeout_ms": { "$ref": "#/$defs/nullableTimeout" },
+        "tool_snapshot_sha256": { "$ref": "#/$defs/hash" }
+      }
+    },
+    "producer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["producer_id", "producer_type", "producer_version", "run_id"],
+      "properties": {
+        "producer_id": { "$ref": "#/$defs/identifier" },
+        "producer_type": { "enum": ["service", "tool"] },
+        "producer_version": { "$ref": "#/$defs/identifier" },
+        "run_id": { "$ref": "#/$defs/identifier" }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_revision", "source_tree_sha256"],
+      "properties": {
+        "source_revision": { "$ref": "#/$defs/identifier" },
+        "source_tree_sha256": { "$ref": "#/$defs/hash" }
+      }
+    },
+    "stream": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bytes", "retained_bytes", "retained_sha256", "sha256"],
+      "properties": {
+        "bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9223372036854775807
+        },
+        "retained_bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9223372036854775807
+        },
+        "retained_sha256": { "$ref": "#/$defs/hash" },
+        "sha256": { "$ref": "#/$defs/hash" }
+      }
+    },
+    "streams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["combined", "stderr", "stdout"],
+      "properties": {
+        "combined": { "$ref": "#/$defs/stream" },
+        "stderr": { "$ref": "#/$defs/stream" },
+        "stdout": { "$ref": "#/$defs/stream" }
+      }
+    },
+    "termination": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["exit_code", "kind"],
+          "properties": {
+            "exit_code": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            },
+            "kind": { "const": "exited" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["exit_code", "kind"],
+          "properties": {
+            "exit_code": { "type": "null" },
+            "kind": { "enum": ["cancelled", "timed_out"] }
+          }
+        }
+      ]
+    },
+    "observation": {
+      "$anchor": "CommandObservationV1",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "api_version",
+        "canonicalization",
+        "command",
+        "ended_at_unix_ms",
+        "evidence_type",
+        "producer",
+        "source",
+        "started_at_unix_ms",
+        "streams",
+        "termination"
+      ],
+      "properties": {
+        "api_version": { "const": "forgeos.command-observation/v1" },
+        "canonicalization": { "const": "forgeos.canonical-json/v1" },
+        "command": { "$ref": "#/$defs/command" },
+        "ended_at_unix_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9223372036854775807
+        },
+        "evidence_type": { "enum": ["gate_result", "test_run"] },
+        "producer": { "$ref": "#/$defs/producer" },
+        "source": { "$ref": "#/$defs/source" },
+        "started_at_unix_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9223372036854775807
+        },
+        "streams": { "$ref": "#/$defs/streams" },
+        "termination": { "$ref": "#/$defs/termination" }
+      }
+    },
+    "binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "aggregate_id",
+        "context_sha256",
+        "policy_sha256",
+        "project_id",
+        "scope",
+        "sensitivity",
+        "sequence",
+        "subjects",
+        "supersedes_record_ids"
+      ],
+      "properties": {
+        "aggregate_id": { "$ref": "#/$defs/identifier" },
+        "context_sha256": { "$ref": "#/$defs/hash" },
+        "policy_sha256": { "$ref": "#/$defs/hash" },
+        "project_id": { "$ref": "#/$defs/identifier" },
+        "scope": { "$ref": "#/$defs/identifier" },
+        "sensitivity": {
+          "enum": ["public", "internal", "confidential", "restricted"]
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807
+        },
+        "subjects": {
+          "allOf": [
+            { "$ref": "#/$defs/identifierArray" },
+            { "minItems": 1 }
+          ]
+        },
+        "supersedes_record_ids": { "$ref": "#/$defs/identifierArray" }
+      }
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["api_version", "binding", "canonicalization", "observation"],
+      "properties": {
+        "api_version": {
+          "const": "forgeos.governance.command-observation-evidence-adapter/v1"
+        },
+        "binding": { "$ref": "#/$defs/binding" },
+        "canonicalization": { "const": "forgeos.canonical-json/v1" },
+        "observation": {
+          "allOf": [
+            { "$ref": "#/$defs/observation" },
+            {
+              "properties": {
+                "termination": {
+                  "type": "object",
+                  "properties": {
+                    "kind": { "const": "exited" }
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}

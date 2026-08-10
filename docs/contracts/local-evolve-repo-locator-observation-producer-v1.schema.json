@@ -1,0 +1,411 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forgeos.local/contracts/local-evolve-repo-locator-observation-producer-v1.schema.json",
+  "title": "ForgeOS Local Evolve Repository Locator Observation Production v1",
+  "description": "Exact explicit-opt-in Unix-local capture of one canonical Evolve scan report, one bounded-interval Git working-source manifest, and zero or more ADR-0050 locator observations. It grants no scan judgment, completion, truth, authority, identity, persistence or effect attestation.",
+  "$comment": "Schema alone cannot enforce exact canonical bytes, report JSON preimage canonicality, UTF-8 byte caps, source domain digests, report-to-observation order/multiplicity, locator-to-source mapping, or live capture behavior.",
+  "x-forgeos-canonicalization": {
+    "format": "forgeos.canonical-json/v1",
+    "exact_compact_utf8_input": true,
+    "parameters_digest_domain": "forgeos.governance.local-evolve-repo-locator-parameters.v1\u0000",
+    "report_digest_profile": "raw_sha256_of_complete_canonical_marker_line",
+    "source_digest_domain": "forgeos.governance.local-command-source-tree-profile.v1\u0000",
+    "production_digest_domain": "forgeos.governance.local-evolve-repo-locator-observation-production.v1\u0000"
+  },
+  "x-forgeos-limits": {
+    "max_canonical_production_bytes": 16777216,
+    "max_observations": 240,
+    "max_report_payload_bytes": 65536,
+    "max_report_bytes": 65552,
+    "max_report_opportunities": 24,
+    "max_evidence_per_relation": 8,
+    "max_evidence_file_bytes": 1048576,
+    "max_source_entries": 65536,
+    "max_individual_source_file_bytes": 1073741824,
+    "max_source_content_bytes": 8589934592,
+    "max_text_scalars": 4096,
+    "max_text_bytes": 16384,
+    "max_run_id_bytes": 160,
+    "integer_domain": "signed_int64"
+  },
+  "x-forgeos-runtime-platform": {
+    "supported_family": "unix",
+    "capture_default": "disabled",
+    "non_unix_behavior": "fail_closed_before_repository_or_process_observation",
+    "git_commands": "fixed_read_only_rev_parse_and_ls_files_only",
+    "git_child_environment": "fixed_home_lang_lc_all_path_and_git_flags_only",
+    "parent_environment": "ignored_except_explicit_single_path_input"
+  },
+  "x-forgeos-semantic-validation": {
+    "schema_alone_sufficient": false,
+    "observation_ref": "#EvolveRepoLocatorV1",
+    "authoritative_checks": [
+      "exact_compact_canonical_utf8",
+      "forbidden_unicode_float_bool_integer_and_bounded_text",
+      "parameters_fixed_profile_and_domain_digest",
+      "complete_canonical_report_marker_preimage_bytes_and_digest",
+      "report_shape_depth_dimension_relation_and_opportunity_matrix",
+      "report_dimensions_and_opportunities_canonical_order",
+      "shared_source_revision_entries_profile_and_domain_digest",
+      "source_entries_sorted_unique_and_complete_for_enumerated_inventory",
+      "report_locator_maps_to_bounded_regular_source_entry",
+      "observations_exact_report_order_and_cross_relation_multiplicity",
+      "observation_content_source_report_parameters_and_capture_binding"
+    ]
+  },
+  "x-forgeos-capability-boundary": {
+    "result": "CAPTURED_LOCAL_EVOLVE_LOCATOR_SET (local report/source capture only; locator set may be empty; no scan judgment, completion, truth, authority, claim, atom, persistence, or effect attestation)",
+    "capture_default": "disabled",
+    "go_runtime_wiring": "explicit_opt_in_catalyst_go_api",
+    "governance_binding": "caller_supplied_only",
+    "automatic_adr0050_binding": false,
+    "locator_set_cardinality": "zero_or_more_preserving_cross_relation_duplicates",
+    "source_snapshot_semantics": "bounded_interval_inventory_and_entry_observation_not_atomic_filesystem_snapshot_or_execution_time_source_pinning",
+    "git_binary_authentication": false,
+    "sandbox_egress_and_external_effect_containment": false,
+    "persistence": "none",
+    "journal_append": false,
+    "sqlite_schema": 25,
+    "attestations": []
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "api_version",
+    "canonicalization",
+    "observations",
+    "parameters_manifest",
+    "report_manifest",
+    "source_manifest"
+  ],
+  "properties": {
+    "api_version": {
+      "const": "forgeos.governance.local-evolve-repo-locator-observation-production/v1"
+    },
+    "canonicalization": { "const": "forgeos.canonical-json/v1" },
+    "observations": {
+      "type": "array",
+      "maxItems": 240,
+      "items": { "$ref": "#/$defs/observation" }
+    },
+    "parameters_manifest": { "$ref": "#/$defs/parametersManifest" },
+    "report_manifest": { "$ref": "#/$defs/reportManifest" },
+    "source_manifest": { "$ref": "#/$defs/sourceManifest" }
+  },
+  "$defs": {
+    "hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160,
+      "pattern": "^[a-z0-9][a-z0-9._:/-]*$"
+    },
+    "evolveIdentifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z0-9][a-z0-9._-]*$"
+    },
+    "boundedString": { "type": "string", "maxLength": 4096 },
+    "nonemptyBoundedString": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "repoPath": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096,
+      "pattern": "^(?!/)(?![A-Za-z]:)(?!.*\\\\)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)(?!.*\/$).+$"
+    },
+    "sourceRevision": {
+      "oneOf": [
+        { "type": "string", "pattern": "^git-sha1:[a-f0-9]{40}$" },
+        { "type": "string", "pattern": "^git-sha256:[a-f0-9]{64}$" }
+      ]
+    },
+    "parametersManifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "api_version",
+        "canonicalization",
+        "contract",
+        "expected_depth",
+        "report_profile_id",
+        "source_profile_id"
+      ],
+      "properties": {
+        "api_version": { "const": "forgeos.evolve-capture.parameters/v1" },
+        "canonicalization": { "const": "forgeos.canonical-json/v1" },
+        "contract": { "const": "evolve_scan_v1" },
+        "expected_depth": {
+          "enum": ["advisory", "opportunistic", "standard", "thorough"]
+        },
+        "report_profile_id": { "const": "evolve-scan-canonical-marker-v1" },
+        "source_profile_id": { "const": "git-worktree-source-tree-v1" }
+      }
+    },
+    "reportManifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "api_version",
+        "bytes",
+        "canonical_report",
+        "canonicalization",
+        "profile_id",
+        "sha256"
+      ],
+      "properties": {
+        "api_version": { "const": "forgeos.evolve-capture.report/v1" },
+        "bytes": { "type": "integer", "minimum": 1, "maximum": 65552 },
+        "canonical_report": {
+          "type": "string",
+          "minLength": 17,
+          "maxLength": 65552,
+          "pattern": "^EVOLVE_SCAN_V1: \\{.*\\}$"
+        },
+        "canonicalization": { "const": "forgeos.canonical-json/v1" },
+        "profile_id": { "const": "evolve-scan-canonical-marker-v1" },
+        "sha256": { "$ref": "#/$defs/hash" }
+      }
+    },
+    "nullableHash": {
+      "oneOf": [{ "$ref": "#/$defs/hash" }, { "type": "null" }]
+    },
+    "nullableBoolean": {
+      "oneOf": [{ "type": "boolean" }, { "type": "null" }]
+    },
+    "nullableIndexMode": {
+      "oneOf": [
+        { "enum": ["100644", "100755", "120000"] },
+        { "type": "null" }
+      ]
+    },
+    "nullableString": {
+      "oneOf": [
+        { "$ref": "#/$defs/nonemptyBoundedString" },
+        { "type": "null" }
+      ]
+    },
+    "sourceEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bytes",
+        "content_sha256",
+        "executable",
+        "index_mode",
+        "kind",
+        "path",
+        "symlink_target",
+        "tracking"
+      ],
+      "properties": {
+        "bytes": { "type": "integer", "minimum": 0, "maximum": 1073741824 },
+        "content_sha256": { "$ref": "#/$defs/nullableHash" },
+        "executable": { "$ref": "#/$defs/nullableBoolean" },
+        "index_mode": { "$ref": "#/$defs/nullableIndexMode" },
+        "kind": { "enum": ["deleted", "regular", "symlink"] },
+        "path": { "$ref": "#/$defs/repoPath" },
+        "symlink_target": { "$ref": "#/$defs/nullableString" },
+        "tracking": { "enum": ["tracked", "untracked"] }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "regular" } } },
+          "then": {
+            "properties": {
+              "content_sha256": { "$ref": "#/$defs/hash" },
+              "executable": { "type": "boolean" },
+              "symlink_target": { "type": "null" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "symlink" } } },
+          "then": {
+            "properties": {
+              "content_sha256": { "$ref": "#/$defs/hash" },
+              "executable": { "const": false },
+              "symlink_target": { "$ref": "#/$defs/nonemptyBoundedString" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "deleted" } } },
+          "then": {
+            "properties": {
+              "bytes": { "const": 0 },
+              "content_sha256": { "type": "null" },
+              "executable": { "type": "null" },
+              "symlink_target": { "type": "null" },
+              "tracking": { "const": "tracked" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "tracking": { "const": "untracked" } } },
+          "then": {
+            "properties": {
+              "index_mode": { "type": "null" },
+              "kind": { "enum": ["regular", "symlink"] }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": { "const": "regular" },
+              "tracking": { "const": "tracked" }
+            }
+          },
+          "then": {
+            "properties": { "index_mode": { "enum": ["100644", "100755"] } }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": { "const": "symlink" },
+              "tracking": { "const": "tracked" }
+            }
+          },
+          "then": { "properties": { "index_mode": { "const": "120000" } } }
+        }
+      ]
+    },
+    "sourceManifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "api_version",
+        "canonicalization",
+        "entries",
+        "profile_id",
+        "source_revision"
+      ],
+      "properties": {
+        "api_version": { "const": "forgeos.command-capture.source-tree/v1" },
+        "canonicalization": { "const": "forgeos.canonical-json/v1" },
+        "entries": {
+          "type": "array",
+          "maxItems": 65536,
+          "items": { "$ref": "#/$defs/sourceEntry" }
+        },
+        "profile_id": { "const": "git-worktree-source-tree-v1" },
+        "source_revision": { "$ref": "#/$defs/sourceRevision" }
+      }
+    },
+    "content": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bytes", "sha256"],
+      "properties": {
+        "bytes": { "type": "integer", "minimum": 1, "maximum": 1048576 },
+        "sha256": { "$ref": "#/$defs/hash" }
+      }
+    },
+    "locator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["detail", "line", "path"],
+      "properties": {
+        "detail": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "line": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9223372036854775807
+        },
+        "path": { "$ref": "#/$defs/repoPath" }
+      }
+    },
+    "producer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "parameters_sha256",
+        "producer_id",
+        "producer_type",
+        "producer_version",
+        "run_id"
+      ],
+      "properties": {
+        "parameters_sha256": { "$ref": "#/$defs/hash" },
+        "producer_id": { "const": "forgeos.local-evolve-repo-locator-observer" },
+        "producer_type": { "const": "tool" },
+        "producer_version": { "const": "v1" },
+        "run_id": { "$ref": "#/$defs/identifier" }
+      }
+    },
+    "scanContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contract",
+        "depth",
+        "dimension",
+        "opportunity_id",
+        "relation",
+        "report_sha256"
+      ],
+      "properties": {
+        "contract": { "const": "evolve_scan_v1" },
+        "depth": {
+          "enum": ["advisory", "opportunistic", "standard", "thorough"]
+        },
+        "dimension": { "enum": [
+          "code", "dependencies", "security", "performance",
+          "architecture_drift", "test_coverage"
+        ] },
+        "opportunity_id": {
+          "oneOf": [
+            { "$ref": "#/$defs/evolveIdentifier" },
+            { "type": "null" }
+          ]
+        },
+        "relation": { "enum": ["clear", "finding", "opportunity"] },
+        "report_sha256": { "$ref": "#/$defs/hash" }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_revision", "source_tree_sha256"],
+      "properties": {
+        "source_revision": { "$ref": "#/$defs/sourceRevision" },
+        "source_tree_sha256": { "$ref": "#/$defs/hash" }
+      }
+    },
+    "observation": {
+      "$anchor": "EvolveRepoLocatorV1",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "api_version",
+        "canonicalization",
+        "content",
+        "locator",
+        "observed_at_unix_ms",
+        "producer",
+        "scan_context",
+        "source"
+      ],
+      "properties": {
+        "api_version": { "const": "forgeos.evolve-repo-locator/v1" },
+        "canonicalization": { "const": "forgeos.canonical-json/v1" },
+        "content": { "$ref": "#/$defs/content" },
+        "locator": { "$ref": "#/$defs/locator" },
+        "observed_at_unix_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9223372036854775807
+        },
+        "producer": { "$ref": "#/$defs/producer" },
+        "scan_context": { "$ref": "#/$defs/scanContext" },
+        "source": { "$ref": "#/$defs/source" }
+      }
+    }
+  }
+}
