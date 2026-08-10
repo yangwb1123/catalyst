@@ -2,10 +2,11 @@ package evolvescan
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"path"
-	"path/filepath"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -17,42 +18,19 @@ const (
 )
 
 func validateEvidencePath(root, name string, line int) error {
+	return validateEvidencePathObserved(root, name, line, nil)
+}
+
+func validateEvidencePathObserved(root, name string, line int, observer evidencePathObserver) error {
 	if err := validateEvidencePathText(name); err != nil {
 		return err
 	}
-	rootAbs, err := filepath.Abs(root)
+	opened, err := openEvidencePath(root, name, observer)
 	if err != nil {
-		return fmt.Errorf("resolve repository root: %w", err)
+		return err
 	}
-	rootInfo, err := os.Lstat(rootAbs)
-	if err != nil || !rootInfo.IsDir() || rootInfo.Mode()&os.ModeSymlink != 0 {
-		return fmt.Errorf("repository root must be an available non-symlink directory")
-	}
-	current := rootAbs
-	parts := strings.Split(name, "/")
-	var finalInfo os.FileInfo
-	for i, part := range parts {
-		current = filepath.Join(current, part)
-		info, err := os.Lstat(current)
-		if err != nil {
-			return fmt.Errorf("path %q is unavailable: %w", name, err)
-		}
-		if info.Mode()&os.ModeSymlink != 0 {
-			return fmt.Errorf("path %q traverses a symlink", name)
-		}
-		if i < len(parts)-1 && !info.IsDir() {
-			return fmt.Errorf("path %q has a non-directory prefix", name)
-		}
-		finalInfo = info
-	}
-	if finalInfo == nil || !finalInfo.Mode().IsRegular() {
-		return fmt.Errorf("path %q is not a regular file", name)
-	}
-	rel, err := filepath.Rel(rootAbs, current)
-	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return fmt.Errorf("path %q escapes repository", name)
-	}
-	return validateOpenedEvidence(current, name, line, finalInfo)
+	defer opened.close()
+	return validateOpenedEvidence(opened, name, line)
 }
 
 func validateEvidencePathText(name string) error {
@@ -76,17 +54,9 @@ func validateEvidencePathText(name string) error {
 	return nil
 }
 
-func validateOpenedEvidence(full, name string, line int, expected os.FileInfo) error {
-	file, err := os.Open(full)
-	if err != nil {
-		return fmt.Errorf("path %q is not readable: %w", name, err)
-	}
-	defer func() { _ = file.Close() }()
-	info, err := file.Stat()
-	if err != nil {
-		return fmt.Errorf("path %q cannot be inspected: %w", name, err)
-	}
-	if !info.Mode().IsRegular() || !os.SameFile(expected, info) {
+func validateOpenedEvidence(opened *openedEvidencePath, name string, line int) error {
+	info := opened.expected
+	if !info.Mode().IsRegular() {
 		return fmt.Errorf("path %q changed identity while being validated", name)
 	}
 	if info.Size() <= 0 {
@@ -95,12 +65,25 @@ func validateOpenedEvidence(full, name string, line int, expected os.FileInfo) e
 	if info.Size() > maxEvidenceFileBytes {
 		return fmt.Errorf("path %q exceeds the %d-byte evidence read limit", name, maxEvidenceFileBytes)
 	}
-	return validateEvidenceLine(file, name, line)
+	if err := validateEvidenceLine(opened.file, name, line, info.Size()); err != nil {
+		return err
+	}
+	return opened.verify()
 }
 
-func validateEvidenceLine(file *os.File, name string, wanted int) error {
-	scanner := bufio.NewScanner(file)
-	scanner.Buffer(make([]byte, 64*1024), maxEvidenceLineBytes)
+func validateEvidenceLine(file *os.File, name string, wanted int, expectedBytes int64) error {
+	data, err := io.ReadAll(io.LimitReader(file, maxEvidenceFileBytes+1))
+	if err != nil {
+		return fmt.Errorf("path %q cannot be read as bounded text evidence: %w", name, err)
+	}
+	if int64(len(data)) != expectedBytes || int64(len(data)) > maxEvidenceFileBytes {
+		return fmt.Errorf("path %q changed size while being validated", name)
+	}
+	if !utf8.Valid(data) {
+		return fmt.Errorf("path %q is not a complete UTF-8 text file", name)
+	}
+	scanner := bufio.NewScanner(bytes.NewReader(data))
+	scanner.Buffer(make([]byte, 64*1024), maxEvidenceLineBytes+1)
 	for current := 1; scanner.Scan(); current++ {
 		text := scanner.Text()
 		if wanted == 0 {

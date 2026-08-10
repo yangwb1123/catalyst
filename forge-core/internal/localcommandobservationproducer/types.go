@@ -4,13 +4,16 @@
 // completion, truth, authority, identity, persistence, or external effects.
 package localcommandobservationproducer
 
-import commandcontract "forgeos/forge-core/internal/commandobservationevidencecontract"
+import (
+	commandcontract "forgeos/forge-core/internal/commandobservationevidencecontract"
+	"forgeos/forge-core/internal/gitworktreesource"
+)
 
 const (
 	ProductionAPIVersion  = "forgeos.governance.local-gate-command-observation-production/v1"
 	EnvironmentAPIVersion = "forgeos.command-capture.environment/v1"
 	ToolAPIVersion        = "forgeos.command-capture.tool/v1"
-	SourceTreeAPIVersion  = "forgeos.command-capture.source-tree/v1"
+	SourceTreeAPIVersion  = gitworktreesource.APIVersion
 	Canonicalization      = "forgeos.canonical-json/v1"
 	ProducerID            = "forgeos.local-gate-command-observer"
 	ProducerVersion       = "v1"
@@ -18,7 +21,7 @@ const (
 
 	environmentProfileID = "scrubbed-parent-environment-v1"
 	toolProfileID        = "resolved-top-level-executable-v1"
-	sourceTreeProfileID  = "git-worktree-source-tree-v1"
+	sourceTreeProfileID  = gitworktreesource.ProfileID
 	emptySHA256          = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 )
 
@@ -52,24 +55,8 @@ type ToolManifest struct {
 	SymlinkHops      []SymlinkHop `json:"symlink_hops"`
 }
 
-type SourceEntry struct {
-	Bytes         int64   `json:"bytes"`
-	ContentSHA256 *string `json:"content_sha256"`
-	Executable    *bool   `json:"executable"`
-	IndexMode     *string `json:"index_mode"`
-	Kind          string  `json:"kind"`
-	Path          string  `json:"path"`
-	SymlinkTarget *string `json:"symlink_target"`
-	Tracking      string  `json:"tracking"`
-}
-
-type SourceManifest struct {
-	APIVersion       string        `json:"api_version"`
-	Canonicalization string        `json:"canonicalization"`
-	Entries          []SourceEntry `json:"entries"`
-	ProfileID        string        `json:"profile_id"`
-	SourceRevision   string        `json:"source_revision"`
-}
+type SourceEntry = gitworktreesource.SourceEntry
+type SourceManifest = gitworktreesource.SourceManifest
 
 type commandProfile struct {
 	Argv         []string

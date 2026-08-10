@@ -3,10 +3,10 @@ package localcommandobservationproducer
 import (
 	"fmt"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	commandcontract "forgeos/forge-core/internal/commandobservationevidencecontract"
+	"forgeos/forge-core/internal/gitworktreesource"
 )
 
 func validateToolBinding(
@@ -93,44 +93,9 @@ func validateAbsoluteToolPath(label, value string) error {
 }
 
 func validateSourceBinding(manifest SourceManifest, observation commandcontract.Observation) error {
-	if err := validateSourceManifest(manifest); err != nil {
-		return err
-	}
-	_, digest, err := digestManifest(sourceDigestDomain, manifest)
-	if err != nil || digest != observation.Source.SourceTreeSHA256 ||
+	if err := gitworktreesource.Validate(manifest, observation.Source.SourceTreeSHA256); err != nil ||
 		manifest.SourceRevision != observation.Source.SourceRevision {
 		return fmt.Errorf("production source manifest binding mismatch")
-	}
-	return nil
-}
-
-func validateSourceManifest(manifest SourceManifest) error {
-	if manifest.APIVersion != SourceTreeAPIVersion || manifest.Canonicalization != Canonicalization ||
-		manifest.ProfileID != sourceTreeProfileID || !validSourceRevision(manifest.SourceRevision) {
-		return fmt.Errorf("production source manifest fixed fields drifted")
-	}
-	if manifest.Entries == nil || len(manifest.Entries) > maxSourceEntries {
-		return fmt.Errorf("production source entries are invalid")
-	}
-	paths := make([]string, len(manifest.Entries))
-	var total int64
-	for index, entry := range manifest.Entries {
-		if err := validateSourceManifestEntry(entry); err != nil {
-			return err
-		}
-		if entry.Bytes > maxSourceBytes-total {
-			return fmt.Errorf("production source manifest exceeds byte limit")
-		}
-		total += entry.Bytes
-		paths[index] = entry.Path
-	}
-	if !sort.StringsAreSorted(paths) {
-		return fmt.Errorf("production source entries are not path sorted")
-	}
-	for index := 1; index < len(paths); index++ {
-		if paths[index] == paths[index-1] {
-			return fmt.Errorf("production source entries contain duplicate path %q", paths[index])
-		}
 	}
 	return nil
 }

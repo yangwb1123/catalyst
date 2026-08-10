@@ -8,12 +8,14 @@ import (
 	"fmt"
 	"unicode"
 	"unicode/utf8"
+
+	"forgeos/forge-core/internal/gitworktreesource"
 )
 
 const (
 	environmentDigestDomain = "forgeos.governance.local-command-environment-profile.v1"
 	toolDigestDomain        = "forgeos.governance.local-command-tool-profile.v1"
-	sourceDigestDomain      = "forgeos.governance.local-command-source-tree-profile.v1"
+	sourceDigestDomain      = gitworktreesource.DigestDomain
 	productionDigestDomain  = "forgeos.governance.local-command-observation-production.v1"
 	maxManifestBytes        = 16 << 20
 	maxTextBytes            = 16_384
@@ -83,4 +85,3 @@ func sha256Bytes(value []byte) string {
 }
 
 func stringPointer(value string) *string { return &value }
-func boolPointer(value bool) *bool       { return &value }

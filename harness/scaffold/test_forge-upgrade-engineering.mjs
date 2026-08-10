@@ -42,6 +42,7 @@ const LEGACY_ENGINEERING_FILES = [
   join('docs', 'adr', '0049-command-observation-evidence-adapter-v1.md'),
   join('docs', 'adr', '0050-evolve-repo-locator-evidence-adapter-v1.md'),
   join('docs', 'adr', '0051-local-gate-command-observation-producer-v1.md'),
+  join('docs', 'adr', '0052-local-evolve-repo-locator-observation-producer-v1.md'),
   join('docs', 'contracts', 'governance-evidence-claim-v1.schema.json'),
   join('docs', 'contracts', 'governance-record-journal-v1.schema.json'),
   join('docs', 'contracts', 'cognitive-atom-projection-v1.schema.json'),
@@ -49,12 +50,14 @@ const LEGACY_ENGINEERING_FILES = [
   join('docs', 'contracts', 'command-observation-evidence-adapter-v1.schema.json'),
   join('docs', 'contracts', 'evolve-repo-locator-evidence-adapter-v1.schema.json'),
   join('docs', 'contracts', 'local-gate-command-observation-producer-v1.schema.json'),
+  join('docs', 'contracts', 'local-evolve-repo-locator-observation-producer-v1.schema.json'),
   join('docs', 'contracts', 'fixtures', 'governance-evidence-claim-v1.json'),
   join('docs', 'contracts', 'fixtures', 'cognitive-atom-projection-v1.json'),
   join('docs', 'contracts', 'fixtures', 'artifact-evidence-adapter-v1.json'),
   join('docs', 'contracts', 'fixtures', 'command-observation-evidence-adapter-v1.json'),
   join('docs', 'contracts', 'fixtures', 'evolve-repo-locator-evidence-adapter-v1.json'),
   join('docs', 'contracts', 'fixtures', 'local-gate-command-observation-producer-v1.json'),
+  join('docs', 'contracts', 'fixtures', 'local-evolve-repo-locator-observation-producer-v1.json'),
   ...[
     'agent_engineering_check.py', 'backend_decision_contract.py',
     'governance_engineering_check.py',
@@ -87,6 +90,7 @@ const LEGACY_ENGINEERING_FILES = [
   join('harness', 'command_observation_evidence_adapter'),
   join('harness', 'evolve_repo_locator_evidence_adapter'),
   join('harness', 'local_command_observation_producer'),
+  join('harness', 'evolve_locator_observation_producer'),
   join('harness', 'governance_engineering'),
   ...['check.mjs', 'contract.mjs', 'graph.mjs', 'typescript-adapter.mjs', 'test_frontend-architecture.mjs']
     .map((name) => join('harness', 'frontend-architecture', name)),
@@ -138,6 +142,7 @@ test('legacy project upgrades to shadow contracts without rewriting project iden
   assert.equal(existsSync(join(target, 'docs', 'adr', '0049-command-observation-evidence-adapter-v1.md')), true);
   assert.equal(existsSync(join(target, 'docs', 'adr', '0050-evolve-repo-locator-evidence-adapter-v1.md')), true);
   assert.equal(existsSync(join(target, 'docs', 'adr', '0051-local-gate-command-observation-producer-v1.md')), true);
+  assert.equal(existsSync(join(target, 'docs', 'adr', '0052-local-evolve-repo-locator-observation-producer-v1.md')), true);
   assert.equal(existsSync(join(target, 'docs', 'contracts', 'governance-evidence-claim-v1.schema.json')), true);
   assert.equal(existsSync(join(target, 'docs', 'contracts', 'governance-record-journal-v1.schema.json')), true);
   assert.equal(existsSync(join(target, 'docs', 'contracts', 'cognitive-atom-projection-v1.schema.json')), true);
@@ -145,12 +150,14 @@ test('legacy project upgrades to shadow contracts without rewriting project iden
   assert.equal(existsSync(join(target, 'docs', 'contracts', 'command-observation-evidence-adapter-v1.schema.json')), true);
   assert.equal(existsSync(join(target, 'docs', 'contracts', 'evolve-repo-locator-evidence-adapter-v1.schema.json')), true);
   assert.equal(existsSync(join(target, 'docs', 'contracts', 'local-gate-command-observation-producer-v1.schema.json')), true);
+  assert.equal(existsSync(join(target, 'docs', 'contracts', 'local-evolve-repo-locator-observation-producer-v1.schema.json')), true);
   assert.equal(existsSync(join(target, 'docs', 'contracts', 'fixtures', 'governance-evidence-claim-v1.json')), true);
   assert.equal(existsSync(join(target, 'docs', 'contracts', 'fixtures', 'cognitive-atom-projection-v1.json')), true);
   assert.equal(existsSync(join(target, 'docs', 'contracts', 'fixtures', 'artifact-evidence-adapter-v1.json')), true);
   assert.equal(existsSync(join(target, 'docs', 'contracts', 'fixtures', 'command-observation-evidence-adapter-v1.json')), true);
   assert.equal(existsSync(join(target, 'docs', 'contracts', 'fixtures', 'evolve-repo-locator-evidence-adapter-v1.json')), true);
   assert.equal(existsSync(join(target, 'docs', 'contracts', 'fixtures', 'local-gate-command-observation-producer-v1.json')), true);
+  assert.equal(existsSync(join(target, 'docs', 'contracts', 'fixtures', 'local-evolve-repo-locator-observation-producer-v1.json')), true);
   const journalSkill = readFileSync(
     join(target, '.agent', 'skills', 'evidence-claim-management.md'), 'utf8',
   );
@@ -158,6 +165,7 @@ test('legacy project upgrades to shadow contracts without rewriting project iden
   assert.match(journalSkill, /not_executed/);
   assert.match(journalSkill, /GateObservedWith/);
   assert.match(journalSkill, /PURE_CONTRACT_FIXTURE/);
+  assert.match(journalSkill, /CAPTURED_LOCAL_EVOLVE_LOCATOR_SET/);
   assert.equal(existsSync(join(target, 'forge-runtime')), false,
     'upgrade must not install the Rust journal runtime');
   assert.equal(existsSync(join(target, '.arch', 'frontend-architecture.v1.json')), true);
@@ -196,9 +204,12 @@ test('legacy project upgrades to shadow contracts without rewriting project iden
   assert.equal(existsSync(join(target, 'harness', 'evolve_repo_locator_evidence_adapter', 'adapter.py')), true);
   assert.equal(existsSync(join(target, 'harness', 'local_command_observation_producer_check.py')), true);
   assert.equal(existsSync(join(target, 'harness', 'local_command_observation_producer', 'fixture.py')), true);
+  assert.equal(existsSync(join(target, 'harness', 'evolve_locator_observation_producer', 'check.py')), true);
+  assert.equal(existsSync(join(target, 'harness', 'evolve_locator_observation_producer', 'test_governance.py')), true);
   assert.equal(existsSync(join(target, 'harness', 'governance_engineering', 'source_adapters.py')), true);
   assert.equal(existsSync(join(target, 'harness', 'governance_engineering', 'evolve_locator_adapter.py')), true);
   assert.equal(existsSync(join(target, 'harness', 'governance_engineering', 'local_command_observation_producer.py')), true);
+  assert.equal(existsSync(join(target, 'harness', 'governance_engineering', 'evolve_locator_observation_producer.py')), true);
   assert.equal(existsSync(join(target, 'harness', 'test_governance_contract_check.py')), true);
   assert.equal(existsSync(join(target, 'harness', 'test_cognitive_atom_contract_check.py')), true);
   assert.equal(existsSync(join(target, 'harness', 'test_artifact_evidence_adapter_check.py')), true);

@@ -1394,6 +1394,34 @@ Go ST1005 诊断文案和宿主默认 Cargo 1.83 漏选项目 Rust 1.93 两项�
 `forge accept` 为 **ACCEPTED**（9 PASS、0 FAIL、2 个诚实 N/A：未安装 ruff/eslint 的聚合 lint 与未配置 coverage，不冒充已执行）。
 以上只证明 pure shadow mapping、字节、边界与分发正确，不升级为文件/报告真实性、Evolve scan 裁决、知识采纳、durability 或完成证明。
 
+## Sprint 99（✅ 本地 gate command observation producer 完成；不签发 PASS、身份、authority 或 effect 证明）— ADR 0051
+
+本轮交付显式 opt-in、Unix-only 的四条固定本地 gate/check/accept/probe command observation producer。它把 canonical Git root、实际
+scrubbed child environment、PATH-resolved top-level executable bytes、bounded-interval working-source inventory/entry observation、raw streams、
+termination 与 production identity 收敛为 strict package；普通 gate API 继续保持 capture-disabled byte-compatible 行为。共享
+`gitworktreesource` 保持 endpoint pre/post equality 的区间观察语义，不冒充原子 snapshot、execution pin、authenticated Git 或 effect containment。
+
+Schema、exact golden、Python checker、Go runtime、scaffold/upgrade、race/低 FD/TOCTOU/Unicode/路径与资源边界测试、两份独立 CLEAN 复审及
+真实 `forge accept` 均已完成；交付 commit 为 `91170f7`。唯一正结果仍是 `OBSERVED_LOCAL_PROCESS`，不得把 exit zero、输出文本、source
+revision 或 fixture 解释为 PASS、criterion、completion、truth、identity、authority、persistence 或 external-effect receipt。
+
+## Sprint 100（✅ Local Evolve locator observation producer 完成；不确认扫描判断、完成、真值或持久化）— ADR 0052
+
+本轮在不修改 ADR 0050 observation/Evidence wire 的前提下交付显式 opt-in、Unix-only producer：绑定完整 canonical
+`EVOLVE_SCAN_V1: ` report preimage、固定 parameters、共享 `git-worktree-source-tree-v1` bounded-interval source observation，以及按
+dimension/relation/opportunity/report 顺序产生的 zero-or-more exact locator observations。同一 path 跨 relation/opportunity 的出现不会去重；
+每条 observation 绑定完整 bounded regular-file bytes/hash、同一 capture timestamp、report/source/parameters identity。
+
+实现将 ADR 0051 source capture 抽为中立 `gitworktreesource` 包，同时保持旧 command golden/wire 不变。复审推动关闭 report-only
+U+2028/U+2029、引用行外非法 UTF-8、恰好 1 MiB 无换行证据、冒号拼接去重碰撞及 Python CLI 在 16 MiB 解码前无界读取等真实边界；
+Python universal checker 使用 opened-FD bounded read，Go/Python 对 canonical bytes、顺序、multiplicity 和失败关闭语义一致。
+
+定向 Python **26/26**、全仓 Python **518/518**、全量 Go test/vet/build/lint、focused race、ADR 0051 regression、architecture **8/8**、
+scaffold/upgrade、golden 与 `git diff --check` 已通过，Go contract、整体切片和 Python bounded-read 三份独立 fresh-context review 均
+**CLEAN**。Registry v9 将 ADR 0051/0052 同列 `shipped_producers`，`staged_producers` 为空；最终 completion authority 仍只来自本提交上
+实际执行的 `forge accept`，失败时不得提交或维持 DONE。Producer 固定 read-only Git argv 但不认证 binary，也不提供 sandbox/egress/effect
+containment；它不自动调用 ADR 0050、不创建 Claim/Atom、不 append journal、不写 SQLite/Knowledge，SQLite 仍为 v25。
+
 ## 下一前沿(需外部资源 / 后续阶段 / 投机增强 / 明确非目标,非本环境可完整验证)
 - **Graph 下一协议切片**:SQLite v17–v24 已交付 successor candidate、per-node request/lifecycle、receipt/content dataflow、wave-ready/admit、本地 hard-crash adjudication与 8 MiB successor candidate 持久化上限；下一步是顶层整图执行循环、并发 wave 的失败传播/恢复以及安全 resume/branching。不得把当前逐节点 operator 驱动或 Hub-local single-consumption 冒充远程 exactly-once。
 - **真点火** `--agent-cmd=claude`:**multi-agent running to completion 已坐实**(Sprint 25:真 claude 多-agent 跑到 converge MET,增量级 + 版本级)。完整旋钮:四维资源护栏 + 成本三维(phase/时间/美元)+ 任务注入 + 写权限 + 模型路由 + 工作目录 + retry + loop-back;诚实分工:agent 自治增量绿、人确认版本竣工。docs/ignition.md 有完整配方 + 实测

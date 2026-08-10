@@ -50,6 +50,7 @@ const HISTORICAL_STANDALONE = new Set([
   'docs/adr/0049-command-observation-evidence-adapter-v1.md',
   'docs/adr/0050-evolve-repo-locator-evidence-adapter-v1.md',
   'docs/adr/0051-local-gate-command-observation-producer-v1.md',
+  'docs/adr/0052-local-evolve-repo-locator-observation-producer-v1.md',
   'docs/contracts/governance-evidence-claim-v1.schema.json',
   'docs/contracts/governance-record-journal-v1.schema.json',
   'docs/contracts/cognitive-atom-projection-v1.schema.json',
@@ -57,12 +58,14 @@ const HISTORICAL_STANDALONE = new Set([
   'docs/contracts/command-observation-evidence-adapter-v1.schema.json',
   'docs/contracts/evolve-repo-locator-evidence-adapter-v1.schema.json',
   'docs/contracts/local-gate-command-observation-producer-v1.schema.json',
+  'docs/contracts/local-evolve-repo-locator-observation-producer-v1.schema.json',
   'docs/contracts/fixtures/governance-evidence-claim-v1.json',
   'docs/contracts/fixtures/cognitive-atom-projection-v1.json',
   'docs/contracts/fixtures/artifact-evidence-adapter-v1.json',
   'docs/contracts/fixtures/command-observation-evidence-adapter-v1.json',
   'docs/contracts/fixtures/evolve-repo-locator-evidence-adapter-v1.json',
   'docs/contracts/fixtures/local-gate-command-observation-producer-v1.json',
+  'docs/contracts/fixtures/local-evolve-repo-locator-observation-producer-v1.json',
 ]);
 
 // Accept POSIX or Windows separators so a scaffold can move between hosts, but

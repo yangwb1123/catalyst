@@ -86,10 +86,29 @@ content、report、producer、time 与 source 声明。adapter 不会读取当�
 它只分别 digest locator、完整 observation 与完整 request，并生成 existing `repo_locator` EvidenceRecord。line=0 映射为 null pair，正行映射为
 相同 start/end；finding、clear、opportunity 只进入不可信 source identity，不是 Evidence 状态或事实判断。`unavailable` 没有 locator，不能适配。
 
+### Local Evolve locator observation producer 分支
+
+只有任务显式要求捕获一个已返回的本地 `evolve_scan_v1` report 时才进入此分支；普通 Evolve validation 保持 capture disabled，且下游
+scaffold 不安装 Catalyst-only Go producer。输入必须是完整 scan output、effective depth、canonical repository root 与 caller run ID；
+producer 保存完整 `EVOLVE_SCAN_V1: {compact JSON}` marker line preimage，复用 `git-worktree-source-tree-v1` 及其既有 digest domain，并对
+每个 report locator 读取完整 bounded regular-file content。report 中全为 unavailable 且无 opportunity 时 observation array 可以为空；
+这不表示 PASS、完整或无问题。
+
+observation 必须先按 canonical dimension rank 和各 evidence 原顺序生成，再按 opportunity ID byte order 和各 evidence 原顺序生成。
+同一 locator 在 finding/clear/opportunity 或不同 relation 出现时必须各自保留，跨 relation/path 不去重。每项绑定 exact report、parameters、
+source revision/tree、content bytes/digest、run ID 与一个共享 local timestamp；不自动调用 ADR-0050，也不生成 Governance binding 或 Evidence。
+
+source pre/post 只是 Git inventory+entry reads 的 bounded-interval 端点观察，不是原子 snapshot 或 execution-time source pin。producer 只从
+parent 取恰好一个 PATH，忽略 TMPDIR 和其余值；Git child 使用固定 HOME/LANG/LC_ALL/PATH/GIT_*，但 Git binary 未认证，且没有 sandbox、
+egress/device/external-effect containment。调用方必须另行授权并隔离该本地执行，不能把 fixed read-only argv 或
+`CAPTURED_LOCAL_EVOLVE_LOCATOR_SET` 当成无副作用证明。
+
 ## 输出契约
 
-Local producer 分支输出 exact `forgeos.governance.local-gate-command-observation-production/v1` package、domain-separated production SHA-256 和固定
-`OBSERVED_LOCAL_PROCESS` 非能力结果；不输出 Evidence、Claim、receipt 或 gate verdict。Artifact provenance、command observation 与 Evolve locator adapter 分支各输出 exactly one `EvidenceRecord` v1 JSON object；普通 record-set/journal 分支才输出按
+Local gate producer 分支输出 exact `forgeos.governance.local-gate-command-observation-production/v1` package、domain-separated production SHA-256 和固定
+`OBSERVED_LOCAL_PROCESS` 非能力结果。Local Evolve producer 分支输出 exact
+`forgeos.governance.local-evolve-repo-locator-observation-production/v1`、production SHA-256 和固定
+`CAPTURED_LOCAL_EVOLVE_LOCATOR_SET`；两者都不输出 Evidence、Claim、receipt 或 verdict。Artifact provenance、command observation 与 Evolve locator adapter 分支各输出 exactly one `EvidenceRecord` v1 JSON object；普通 record-set/journal 分支才输出按
 `metadata.record_id` 排序、非空的 `EvidenceRecord`/`KnowledgeClaim` v1 JSON 数组，并使用
 `docs/contracts/governance-evidence-claim-v1.schema.json`。这些输出的适用 canonical bytes 必须是 exact compact canonical JSON，且治理记录必须绑定
 source/context/policy 摘要和独立 digest domain。checker 只允许返回结构有效或错误，不产生 trusted、confirmed、approved、accepted、completed
@@ -125,6 +144,8 @@ request-derived run ID 只是 deterministic correlation，不是 scan/capture re
 - 禁止把 Evolve `finding|clear|opportunity` 映射成 Evidence valid/invalid 真值，禁止用 current path 回填历史 content digest 或 report membership。
 - 禁止默认开启 local capture、接受任意命令/环境/工作目录、在日志泄露 environment values，或把 local producer package 当作身份认证、
   executable pin、clean-tree 证明、remote attestation、journal receipt 或 `forge accept` 裁决。
+- 禁止把 Evolve producer 的 fixed read-only Git argv 当作 binary authentication/sandbox/effect 证明，禁止跨 relation 合并 locator，或把空
+  observation set 当作 all-clear；在没有 caller Governance binding 时禁止自动调用 ADR-0050。
 - 不使用历史 alias：`Evidence`、`Claim`、`ContextManifest`、`AuthorityGrant`、`AgentCapabilityGrant`。
 
 ## 自动化与验收
@@ -178,6 +199,14 @@ observed API 会执行仓库控制的本地 gate/check/accept 命令；producer 
 也不授权、阻止、隔离或证明命令可能产生的外部 effect。调用方必须在 opt-in 前另行完成命令授权和所需隔离，不能把
 `OBSERVED_LOCAL_PROCESS` 当成 effect 安全或无副作用证明。
 
+Local Evolve producer golden 使用
+`python3 -B harness/evolve_locator_observation_producer/check.py --golden <repo-root>`；验证 exact production file 使用
+`python3 -B harness/evolve_locator_observation_producer/check.py <production.json>`。Catalyst 源仓运行
+`(cd forge-core && go test -count=1 ./internal/evolvelocatorobservationproducer ./internal/gitworktreesource ./internal/evolverepolocatorevidencecontract)`，
+并与 `docs/contracts/fixtures/local-evolve-repo-locator-observation-producer-v1.json` 的 parameters/report/source/三条 observation/production
+canonical bytes 与 digests 逐字节比较。fixture 是 pure contract bytes，不是 live repository capture；scaffold 只复制 Python checker，缺少
+兼容 Go producer 时记 `not_executed`。本分支不改变 SQLite v25，不允许 migration/backfill/automatic ADR-0050 binding/journal append。
+
 Scaffold/upgrade 只继承治理 contract、Skill 和 shadow checker，不安装 Rust `forge-runtime` binary 或 SQLite journal。持久化前先检测项目批准且
 与 `forgeos.governance-journal/v1` 兼容的 `forge-runtime`（至少解析到预期 executable，并确认 help 暴露 append/show/list/head surface）；缺失、版本不兼容
 或无法验证时记为 `not_executed`，不得声称已持久化。检测通过后运行
@@ -196,6 +225,7 @@ conflict/corruption，不得通过换 key 制造第二批次。只有匹配 rece
 - `docs/adr/0049-command-observation-evidence-adapter-v1.md`
 - `docs/adr/0050-evolve-repo-locator-evidence-adapter-v1.md`
 - `docs/adr/0051-local-gate-command-observation-producer-v1.md`
+- `docs/adr/0052-local-evolve-repo-locator-observation-producer-v1.md`
 - `docs/contracts/artifact-evidence-adapter-v1.schema.json`
 - `docs/contracts/fixtures/artifact-evidence-adapter-v1.json`
 - `docs/contracts/command-observation-evidence-adapter-v1.schema.json`
@@ -204,5 +234,7 @@ conflict/corruption，不得通过换 key 制造第二批次。只有匹配 rece
 - `docs/contracts/fixtures/evolve-repo-locator-evidence-adapter-v1.json`
 - `docs/contracts/local-gate-command-observation-producer-v1.schema.json`
 - `docs/contracts/fixtures/local-gate-command-observation-producer-v1.json`
+- `docs/contracts/local-evolve-repo-locator-observation-producer-v1.schema.json`
+- `docs/contracts/fixtures/local-evolve-repo-locator-observation-producer-v1.json`
 - `docs/contracts/governance-record-journal-v1.schema.json`
 - `.agent/engineering/governance-contracts.yml`

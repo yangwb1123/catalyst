@@ -100,6 +100,9 @@ EXTENSION_REFS = {
     "local_gate_command_observation_producer_schema": "docs/contracts/local-gate-command-observation-producer-v1.schema.json",
     "local_gate_command_observation_producer_fixture": "docs/contracts/fixtures/local-gate-command-observation-producer-v1.json",
     "local_gate_command_observation_producer_checker": "harness/local_command_observation_producer_check.py",
+    "local_evolve_repo_locator_observation_producer_schema": "docs/contracts/local-evolve-repo-locator-observation-producer-v1.schema.json",
+    "local_evolve_repo_locator_observation_producer_fixture": "docs/contracts/fixtures/local-evolve-repo-locator-observation-producer-v1.json",
+    "local_evolve_repo_locator_observation_producer_checker": "harness/evolve_locator_observation_producer/check.py",
     "governance_contract_skill": ".agent/skills/evidence-claim-management.md",
     "governance_contract_decision": "docs/adr/0045-canonical-evidence-claim-contract.md",
     "governance_journal_decision": "docs/adr/0046-local-governance-record-journal.md",
@@ -108,6 +111,7 @@ EXTENSION_REFS = {
     "command_observation_evidence_adapter_decision": "docs/adr/0049-command-observation-evidence-adapter-v1.md",
     "evolve_repo_locator_evidence_adapter_decision": "docs/adr/0050-evolve-repo-locator-evidence-adapter-v1.md",
     "local_gate_command_observation_producer_decision": "docs/adr/0051-local-gate-command-observation-producer-v1.md",
+    "local_evolve_repo_locator_observation_producer_decision": "docs/adr/0052-local-evolve-repo-locator-observation-producer-v1.md",
     "governance_contract_standard": "docs/design/ai-engineering-os/governance-contracts.md",
 }
 DISCIPLINES = {

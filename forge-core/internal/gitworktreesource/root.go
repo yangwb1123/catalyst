@@ -1,17 +1,11 @@
-package localcommandobservationproducer
+package gitworktreesource
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"strings"
 )
 
-// sourceTreeRoot and sourceParent keep directory handles anchored beneath the
-// canonical repository root. Every intermediate component is required to be a
-// real directory. Holding each parent open prevents a namespace replacement
-// from redirecting a leaf read, while the repeated Lstat checks fail closed if
-// any component changes during the snapshot.
 type sourceTreeRoot struct {
 	handle   *os.Root
 	identity os.FileInfo
@@ -209,10 +203,7 @@ func (parent *sourceParent) verifyRegularLeaf(expected os.FileInfo) error {
 	if err != nil || !current.Mode().IsRegular() || !stableSourceFile(expected, current) {
 		return fmt.Errorf("source path %q changed while hashing", parent.path)
 	}
-	if err := parent.verify(); err != nil {
-		return err
-	}
-	return nil
+	return parent.verify()
 }
 
 func (parent *sourceParent) verifySymlinkLeaf(expected os.FileInfo) error {
@@ -220,10 +211,7 @@ func (parent *sourceParent) verifySymlinkLeaf(expected os.FileInfo) error {
 	if err != nil || current.Mode()&os.ModeSymlink == 0 || !stableSourceFile(expected, current) {
 		return fmt.Errorf("source symlink %q changed while reading", parent.path)
 	}
-	if err := parent.verify(); err != nil {
-		return err
-	}
-	return nil
+	return parent.verify()
 }
 
 func (parent *sourceParent) verifyMissingLeaf() error {
@@ -253,22 +241,4 @@ func stableSourceFile(expected, current os.FileInfo) bool {
 	return expected != nil && current != nil && os.SameFile(expected, current) &&
 		expected.Size() == current.Size() && expected.Mode() == current.Mode() &&
 		expected.ModTime().Equal(current.ModTime())
-}
-
-func hashOpenedSourceFile(ctx context.Context, path string, file *os.File, before os.FileInfo) (string, int64, error) {
-	if before.Size() > maxIndividualFileBytes {
-		return "", 0, fmt.Errorf("file %q exceeds %d bytes", path, maxIndividualFileBytes)
-	}
-	digest, count, err := hashReaderWithLimit(ctx, path, file, maxIndividualFileBytes)
-	if err != nil {
-		return "", 0, err
-	}
-	after, err := file.Stat()
-	if err != nil {
-		return "", 0, fmt.Errorf("stat source path %q after hashing: %w", path, err)
-	}
-	if count != before.Size() || !stableSourceFile(before, after) {
-		return "", 0, fmt.Errorf("source path %q changed while hashing", path)
-	}
-	return digest, count, nil
 }

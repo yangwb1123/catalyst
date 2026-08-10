@@ -56,6 +56,21 @@ from .local_command_observation_producer import (
     local_command_producer_schema_issues,
     local_command_producer_skill_marker_issues,
 )
+from .evolve_locator_observation_producer import (
+    EVOLVE_LOCATOR_PRODUCER_CANONICAL_REFS,
+    EVOLVE_LOCATOR_PRODUCER_CHECKER_REFERENCE_IMPLEMENTATION,
+    EVOLVE_LOCATOR_PRODUCER_REFERENCE_IMPLEMENTATION,
+    EVOLVE_LOCATOR_PRODUCER_SCHEMA_CANONICALIZATION,
+    EVOLVE_LOCATOR_PRODUCER_SCHEMA_CAPABILITY_BOUNDARY,
+    EVOLVE_LOCATOR_PRODUCER_SCHEMA_LIMITS,
+    EVOLVE_LOCATOR_PRODUCER_SCHEMA_SEMANTIC_VALIDATION,
+    EVOLVE_LOCATOR_PRODUCER_SKILL_MARKERS,
+    EVOLVE_LOCATOR_PRODUCER_SUCCESS,
+    LOCAL_EVOLVE_LOCATOR_OBSERVATION_PRODUCER,
+    evolve_locator_producer_registry_issues,
+    evolve_locator_producer_schema_issues,
+    evolve_locator_producer_skill_marker_issues,
+)
 
 
 __all__ = [
@@ -94,6 +109,16 @@ __all__ = [
     "LOCAL_COMMAND_PRODUCER_SKILL_MARKERS",
     "LOCAL_COMMAND_PRODUCER_SUCCESS",
     "LOCAL_GATE_COMMAND_OBSERVATION_PRODUCER",
+    "EVOLVE_LOCATOR_PRODUCER_CANONICAL_REFS",
+    "EVOLVE_LOCATOR_PRODUCER_CHECKER_REFERENCE_IMPLEMENTATION",
+    "EVOLVE_LOCATOR_PRODUCER_REFERENCE_IMPLEMENTATION",
+    "EVOLVE_LOCATOR_PRODUCER_SCHEMA_CANONICALIZATION",
+    "EVOLVE_LOCATOR_PRODUCER_SCHEMA_CAPABILITY_BOUNDARY",
+    "EVOLVE_LOCATOR_PRODUCER_SCHEMA_LIMITS",
+    "EVOLVE_LOCATOR_PRODUCER_SCHEMA_SEMANTIC_VALIDATION",
+    "EVOLVE_LOCATOR_PRODUCER_SKILL_MARKERS",
+    "EVOLVE_LOCATOR_PRODUCER_SUCCESS",
+    "LOCAL_EVOLVE_LOCATOR_OBSERVATION_PRODUCER",
     "artifact_adapter_registry_issues",
     "artifact_adapter_schema_issues",
     "artifact_detector_issues",
@@ -109,4 +134,7 @@ __all__ = [
     "local_command_producer_registry_issues",
     "local_command_producer_schema_issues",
     "local_command_producer_skill_marker_issues",
+    "evolve_locator_producer_registry_issues",
+    "evolve_locator_producer_schema_issues",
+    "evolve_locator_producer_skill_marker_issues",
 ]

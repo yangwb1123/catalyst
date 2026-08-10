@@ -7,11 +7,11 @@
 > ADR-0049 已交付 strict command-observation→gate/test EvidenceRecord pure shadow adapter；它不执行命令、不把 exit=0 当 PASS、
 > 不追加 journal，SQLite 仍保持 v25。
 > ADR-0050 已交付 strict Evolve repo-locator→EvidenceRecord pure shadow adapter；它不读取当前 repo/report 或确认扫描结论。
-> ADR-0051 已交付显式 opt-in 的 Unix local gate command observation producer；默认 capture 关闭，且不签发 PASS 或完成裁决。
+> ADR-0051 与 ADR-0052 已分别交付显式 opt-in 的 Unix local gate command 与 local Evolve locator observation producer；两者默认 capture 关闭，且不签发 PASS、扫描结论或完成裁决。
 > 第 2 节中标注“已交付”的两种 v1 记录、下述 source adapter、local producer 与 CognitiveAtom v1 投影属于当前合同；第 1、3 节及其后内容仍是目标态，
 > 不声明 truth/authority、Context、Grant、Transition、语义 lifecycle/conflict/freshness view 或知识写回 runtime 已支持。旧 free-text memory 不得静默升级。
 
-## 0. 当前实现边界（0F-A、0F-B–1、ADR-0047 projection、ADR-0048–0050 adapters 与 ADR-0051 local producer 已完成；其余目标态未实现）
+## 0. 当前实现边界（0F-A、0F-B–1、ADR-0047 projection、ADR-0048–0050 adapters 与 ADR-0051–0052 local producers 已完成；其余目标态未实现）
 
 当前可执行的 governance record kind 仍只有 `EvidenceRecord` 和 `KnowledgeClaim` v1：
 
@@ -93,7 +93,7 @@ adapter 不 spawn 命令、不读取 cwd/stdin/output/current tree、不验证 s
 也不把 exit=0/PASS 文本映射为 gate authority。它不创建 Claim/Atom、不满足 hard gate、不 append journal、不写 SQLite/Knowledge，
 不产生 process/network/device/production effect。ADR-0051 另以显式 observed API 交付 secret-scrubbed environment、resolved executable、
 bounded-interval Git working-source 与 raw stream capture；它会执行固定本地命令但不提供 sandbox/effect containment，只产生 local observation
-package，Evolve locator 仍使用 ADR-0050 的独立 source contract。
+package。ADR-0052 的 Evolve producer 另绑定完整 canonical report preimage、共享 `git-worktree-source-tree-v1` bounded-interval 非原子 source observation 与 zero-or-more locator（跨 relation/path 不去重）；固定 read-only Git subprocess 不认证 binary 或证明 sandbox/egress/effect，且不自动调用 ADR-0050。
 
 ### ADR-0050：Evolve repository locator → EvidenceRecord v1 pure shadow adapter
 
@@ -102,7 +102,7 @@ observation 与显式 Governance binding 确定性映射为既有 `repo_locator`
 Schema/golden/checker 是 `docs/contracts/evolve-repo-locator-evidence-adapter-v1.schema.json`、`docs/contracts/fixtures/evolve-repo-locator-evidence-adapter-v1.json`
 与 `harness/evolve_repo_locator_evidence_adapter_check.py`；唯一正结果为 `ADAPTED_SHADOW (locator mapping only; no file/report verification, scan judgment, completion, truth, authority, claim, atom, persistence, or effect attestation)`。
 它不读取 current repo/report、不解析 symlink、不验证 digest preimage、不确认 scan judgment/completion，不创建 Claim/Atom、不满足 hard gate、
-不 append journal、不写 SQLite/Knowledge 或产生 effect；真实 Evolve producer integration 另行版本化。
+不 append journal、不写 SQLite/Knowledge 或产生 effect；ADR-0052 producer 的交付不把这些非能力升级为真实验证或 authority。
 
 ### ADR-0047：CognitiveAtom v1 pure shadow projection
 

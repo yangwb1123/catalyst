@@ -3,7 +3,6 @@ package localcommandobservationproducer
 import (
 	"fmt"
 	"reflect"
-	"strings"
 
 	commandcontract "forgeos/forge-core/internal/commandobservationevidencecontract"
 )
@@ -70,14 +69,4 @@ func validateEnvironmentBinding(
 
 func validDigest(value string) bool {
 	return len(value) == 64 && lowerHex(value)
-}
-
-func validSourceRevision(value string) bool {
-	if strings.HasPrefix(value, "git-sha1:") {
-		return len(value) == len("git-sha1:")+40 && lowerHex(strings.TrimPrefix(value, "git-sha1:"))
-	}
-	if strings.HasPrefix(value, "git-sha256:") {
-		return len(value) == len("git-sha256:")+64 && lowerHex(strings.TrimPrefix(value, "git-sha256:"))
-	}
-	return false
 }

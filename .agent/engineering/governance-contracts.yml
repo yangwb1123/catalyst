@@ -1,16 +1,17 @@
 api_version: forgeos.agent-engineering/v1
 kind: GovernanceContractRegistry
 status: active_contract
-runtime_binding: cross_language_codec_local_journal_atom_projection_artifact_command_evolve_locator_adapters_local_gate_command_producer_shadow
+runtime_binding: cross_language_codec_local_journal_atom_projection_artifact_command_evolve_locator_adapters_local_gate_command_and_evolve_locator_producers_shadow
 owner: governance
-version: 8
+version: 9
 completion_authority: forge_accept
 
 scope:
   shipped_kinds: [EvidenceRecord, KnowledgeClaim]
   shipped_projections: [CognitiveAtom]
   shipped_adapters: [artifact_provenance_to_evidence, command_observation_to_evidence, evolve_repo_locator_to_evidence]
-  shipped_producers: [local_gate_command_observation_producer]
+  shipped_producers: [local_gate_command_observation_producer, local_evolve_repo_locator_observation_producer]
+  staged_producers: []
   planned_kinds: [ContextPackage, CapabilityGrant, ApprovalRecord, TransitionReceipt, KnowledgeUpdateProposal]
   persistence: local_append_only_exact_evidence_claim_journal
   authority_attestation: unavailable
@@ -255,6 +256,68 @@ local_gate_command_observation_producer:
   attests: []
   persistence: none
 
+local_evolve_repo_locator_observation_producer:
+  api_version: forgeos.governance.local-evolve-repo-locator-observation-production/v1
+  mode: explicit_opt_in_unix_local_evolve_locator_observation_production
+  output_kind: forgeos.governance.local-evolve-repo-locator-observation-production/v1
+  observation_kind: forgeos.evolve-repo-locator/v1
+  exact_capture:
+    capture_default: disabled
+    go_runtime_wiring: explicit_opt_in_catalyst_go_api
+    report_input: already_returned_complete_evolve_scan_output
+    locator_set: zero_or_more_preserving_cross_relation_duplicates
+    one_timestamp_per_set: true
+    non_unix_result: fail_closed_before_repository_or_process_observation
+  profiles:
+    parameters:
+      api_version: forgeos.evolve-capture.parameters/v1
+      contract: evolve_scan_v1
+      report_profile_id: evolve-scan-canonical-marker-v1
+      source_profile_id: git-worktree-source-tree-v1
+    report:
+      api_version: forgeos.evolve-capture.report/v1
+      profile_id: evolve-scan-canonical-marker-v1
+      coverage: complete_canonical_marker_line_preimage
+    source:
+      api_version: forgeos.command-capture.source-tree/v1
+      profile_id: git-worktree-source-tree-v1
+      coverage: tracked_stage0_and_nonignored_untracked
+  local_execution:
+    parent_environment: ignore_all_except_exactly_one_path
+    tmpdir_forwarded: false
+    git_child_environment: fixed_home_lang_lc_all_path_and_git_flags_only
+    git_commands: fixed_read_only_rev_parse_and_ls_files_only
+    git_binary_authenticated: false
+    sandbox_egress_effect_containment: false
+  identity:
+    parameters_digest_domain: "forgeos.governance.local-evolve-repo-locator-parameters.v1\0"
+    report_digest_profile: raw_sha256_of_complete_canonical_marker_line
+    source_digest_domain: "forgeos.governance.local-command-source-tree-profile.v1\0"
+    production_digest_domain: "forgeos.governance.local-evolve-repo-locator-observation-production.v1\0"
+  constants:
+    canonicalization: forgeos.canonical-json/v1
+    producer_id: forgeos.local-evolve-repo-locator-observer
+    producer_type: tool
+    producer_version: v1
+  limits:
+    max_canonical_production_bytes: 16777216
+    max_observations: 240
+    max_report_payload_bytes: 65536
+    max_report_bytes: 65552
+    max_report_opportunities: 24
+    max_evidence_per_relation: 8
+    max_evidence_file_bytes: 1048576
+    max_source_entries: 65536
+    max_individual_source_file_bytes: 1073741824
+    max_source_content_bytes: 8589934592
+    max_text_scalars: 4096
+    max_text_bytes: 16384
+    max_run_id_bytes: 160
+    integer_domain: signed_int64
+  positive_result: CAPTURED_LOCAL_EVOLVE_LOCATOR_SET (local report/source capture only; locator set may be empty; no scan judgment, completion, truth, authority, claim, atom, persistence, or effect attestation)
+  attests: []
+  persistence: none
+
 canonicalization:
   format: forgeos.canonical-json/v1
   object_keys: ascii_snake_case_sorted
@@ -402,6 +465,9 @@ canonical_refs:
   local_gate_command_observation_producer_schema: docs/contracts/local-gate-command-observation-producer-v1.schema.json
   local_gate_command_observation_producer_golden_fixture: docs/contracts/fixtures/local-gate-command-observation-producer-v1.json
   local_gate_command_observation_producer_checker: harness/local_command_observation_producer_check.py
+  local_evolve_repo_locator_observation_producer_schema: docs/contracts/local-evolve-repo-locator-observation-producer-v1.schema.json
+  local_evolve_repo_locator_observation_producer_golden_fixture: docs/contracts/fixtures/local-evolve-repo-locator-observation-producer-v1.json
+  local_evolve_repo_locator_observation_producer_checker: harness/evolve_locator_observation_producer/check.py
   decision: docs/adr/0045-canonical-evidence-claim-contract.md
   journal_decision: docs/adr/0046-local-governance-record-journal.md
   cognitive_atom_decision: docs/adr/0047-shadow-cognitive-atom-projection-v1.md
@@ -409,6 +475,7 @@ canonical_refs:
   command_observation_evidence_adapter_decision: docs/adr/0049-command-observation-evidence-adapter-v1.md
   evolve_repo_locator_evidence_adapter_decision: docs/adr/0050-evolve-repo-locator-evidence-adapter-v1.md
   local_gate_command_observation_producer_decision: docs/adr/0051-local-gate-command-observation-producer-v1.md
+  local_evolve_repo_locator_observation_producer_decision: docs/adr/0052-local-evolve-repo-locator-observation-producer-v1.md
   standard: docs/design/ai-engineering-os/governance-contracts.md
 
 contract_pins:
@@ -425,6 +492,8 @@ contract_pins:
   evolve_repo_locator_evidence_adapter_golden_fixture_sha256: 4a61743c64acc8d3ccadbe6755934a262c6ef8f5b5be46e46e2556420317c2a9
   local_gate_command_observation_producer_schema_sha256: 2ff3f20560cab93f8b882c2338fb2e944c034001358b186880a2a26817f100e2
   local_gate_command_observation_producer_golden_fixture_sha256: fd7bd8b2afae2f93a1c4756bfc3f84397d82401edb19fe337849cec5c6a5ac6b
+  local_evolve_repo_locator_observation_producer_schema_sha256: 10e9715b7c15cdecb288a522412c826ba61ca4f31e6e5d5e5a108a6fb2d39d45
+  local_evolve_repo_locator_observation_producer_golden_fixture_sha256: fcd6647602eec90db3310f99f42574796998942821255d2bcdab138006991a64
 
 reference_implementations:
   python:
@@ -478,6 +547,12 @@ reference_implementations:
   local_gate_command_observation_producer_python_checker:
     ref: harness/local_command_observation_producer_check.py
     projection: universal_scaffold
+  local_evolve_locator_observation_producer_go:
+    ref: forge-core/internal/evolvelocatorobservationproducer
+    projection: catalyst_repository_only
+  local_evolve_locator_observation_producer_python_checker:
+    ref: harness/evolve_locator_observation_producer/check.py
+    projection: universal_scaffold
 
 non_capabilities:
   - no truth ledger authoritative current-knowledge view or semantic lifecycle projection
@@ -493,3 +568,4 @@ non_capabilities:
   - Command observation adapter does not execute commands verify output preimages authenticate producer or digest profiles attest pass completion truth authority claim atom persistence or effect
   - Evolve repository locator adapter does not read repository files or reports verify digest preimages authenticate producer confirm scan judgments attest completion truth authority claim atom persistence or effect
   - Local gate command observation producer is explicit opt-in Unix local capture only and does not attest pass criterion completion truth authority identity persistence or external effects
+  - Local Evolve locator observation producer is explicit opt-in Unix local capture only and does not authenticate Git attest scan judgment completion truth authority persistence or external effects or automatically bind ADR-0050 Evidence

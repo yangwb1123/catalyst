@@ -202,12 +202,13 @@ def local_command_producer_registry_issues(data, path):
     if (
         not isinstance(scope, dict)
         or scope.get("shipped_producers") != [
-            "local_gate_command_observation_producer"
+            "local_gate_command_observation_producer",
+            "local_evolve_repo_locator_observation_producer",
         ]
-        or "staged_producers" in scope
+        or scope.get("staged_producers") != []
     ):
         issues.append(
-            f"{path}: scope.shipped_producers must freeze the delivered local producer"
+            f"{path}: delivered producer scope drifted"
         )
     implementations = (
         data.get("reference_implementations") if isinstance(data, dict) else None

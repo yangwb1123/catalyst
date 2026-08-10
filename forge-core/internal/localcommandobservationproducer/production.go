@@ -8,6 +8,7 @@ import (
 	"reflect"
 
 	commandcontract "forgeos/forge-core/internal/commandobservationevidencecontract"
+	"forgeos/forge-core/internal/gitworktreesource"
 )
 
 // prepareProfiles freezes the pre-execution command, child environment,
@@ -141,34 +142,7 @@ func cloneToolManifest(value ToolManifest) ToolManifest {
 }
 
 func cloneSourceManifest(value SourceManifest) SourceManifest {
-	entries := make([]SourceEntry, len(value.Entries))
-	for index, entry := range value.Entries {
-		entries[index] = cloneSourceEntry(entry)
-	}
-	value.Entries = entries
-	return value
-}
-
-func cloneSourceEntry(value SourceEntry) SourceEntry {
-	value.ContentSHA256 = cloneString(value.ContentSHA256)
-	value.Executable = cloneBool(value.Executable)
-	value.IndexMode = cloneString(value.IndexMode)
-	value.SymlinkTarget = cloneString(value.SymlinkTarget)
-	return value
-}
-
-func cloneString(value *string) *string {
-	if value == nil {
-		return nil
-	}
-	return stringPointer(*value)
-}
-
-func cloneBool(value *bool) *bool {
-	if value == nil {
-		return nil
-	}
-	return boolPointer(*value)
+	return gitworktreesource.CloneManifest(value)
 }
 
 func cloneInt64(value *int64) *int64 {
