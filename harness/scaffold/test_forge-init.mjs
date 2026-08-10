@@ -184,13 +184,15 @@ test('forge-init scaffolds COMPLETE governance and the project is ACCEPTED', (t)
   assert.match(journalSkill, /not_executed/);
   assert.match(journalSkill, /GateObservedWith/);
   assert.match(journalSkill, /PURE_CONTRACT_FIXTURE/);
+  assert.match(journalSkill, /OBSERVED_LOCAL_GO_PACKAGE_DEPENDENCY_GRAPH/);
   assert.doesNotMatch(journalSkill, /\bforge governance journal\b/);
   const copiedRuntime = scaffoldState.copied.some((rel) => rel.startsWith('forge-runtime/'));
   assert.equal(copiedRuntime, false, 'scaffold must not install the Rust runtime');
-  const copiedGoProducer = scaffoldState.copied.some(
-    (rel) => rel.startsWith('forge-core/internal/localcommandobservationproducer/'),
+  const copiedForgeCoreRuntime = scaffoldState.copied.some(
+    (rel) => rel === 'forge-core' || rel.startsWith('forge-core/'),
   );
-  assert.equal(copiedGoProducer, false, 'scaffold must not install the Catalyst-only Go producer');
+  assert.equal(copiedForgeCoreRuntime, false,
+    'scaffold must not install any Catalyst-only Go producer runtime');
 
   // (5) Run the full acceptance gate; only its external PyYAML prerequisite may skip.
   if (!pyYamlAvailable(target)) {

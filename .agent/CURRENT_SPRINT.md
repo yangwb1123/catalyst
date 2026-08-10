@@ -1423,6 +1423,20 @@ scaffold/upgrade、golden 与 `git diff --check` 已通过，Go contract、整�
 实际执行的 `forge accept`，失败时不得提交或维持 DONE。Producer 固定 read-only Git argv 但不认证 binary，也不提供 sandbox/egress/effect
 containment；它不自动调用 ADR 0050、不创建 Claim/Atom、不 append journal、不写 SQLite/Knowledge，SQLite 仍为 v25。
 
+## Sprint 101（✅ DONE；Local Go package dependency graph observation producer）— ADR 0053
+
+本轮交付显式 opt-in、Unix-local 的 selected Go module lexical dependency observation。合同复用
+`git-worktree-source-tree-v1` bounded-interval source，以 `selected-module-all-regular-go-files-union-v1` 和 Go 标准库 parser 记录
+module/package/file、compile/test import、external/unresolved classification、coverage 与 diagnostics；单文件 parse failure 不得泄露部分事实。
+
+该候选不运行 `go list|build|test|mod`，不读取 module cache 或网络，不解析真实 GOOS/GOARCH/build tags、`go.work`、
+`require|replace|vendor`、dependency availability 或 compiler reachability，也不证明 graph completeness、architecture judgment 或 Impact Closure。
+它不创建 Evidence/Claim/Atom/Context/Grant/Impact/Cost/Risk、不 append journal、不写 SQLite，且不签发 completion/truth/authority/effect。
+
+Registry v10 将 ADR 0051/0052/0053 同列 `shipped_producers`，`staged_producers` 为空。Schema、golden、Python checker、Go producer、
+governance/Skill/scaffold 接线、跨语言/对抗/资源边界测试已完成，两份独立 fresh-context review 均为 CLEAN；完整 `forge accept` 是最终
+completion authority，未真实 ACCEPTED 时不得提交。fixture 永远只是 deterministic contract bytes，不是 live parse/build/architecture receipt。
+
 ## 下一前沿(需外部资源 / 后续阶段 / 投机增强 / 明确非目标,非本环境可完整验证)
 - **Graph 下一协议切片**:SQLite v17–v24 已交付 successor candidate、per-node request/lifecycle、receipt/content dataflow、wave-ready/admit、本地 hard-crash adjudication与 8 MiB successor candidate 持久化上限；下一步是顶层整图执行循环、并发 wave 的失败传播/恢复以及安全 resume/branching。不得把当前逐节点 operator 驱动或 Hub-local single-consumption 冒充远程 exactly-once。
 - **真点火** `--agent-cmd=claude`:**multi-agent running to completion 已坐实**(Sprint 25:真 claude 多-agent 跑到 converge MET,增量级 + 版本级)。完整旋钮:四维资源护栏 + 成本三维(phase/时间/美元)+ 任务注入 + 写权限 + 模型路由 + 工作目录 + retry + loop-back;诚实分工:agent 自治增量绿、人确认版本竣工。docs/ignition.md 有完整配方 + 实测

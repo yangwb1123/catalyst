@@ -69,7 +69,10 @@ func Capture(ctx context.Context, root string, environment []string) (Snapshot, 
 	if err := Validate(manifest, digest); err != nil {
 		return Snapshot{}, fmt.Errorf("validate captured source manifest: %w", err)
 	}
-	return Snapshot{Root: canonicalRoot, Manifest: manifest, SHA256: digest}, nil
+	return Snapshot{
+		Root: canonicalRoot, Manifest: manifest, SHA256: digest,
+		captureManifestSHA256: digest, captureRootIdentity: treeRoot.identity,
+	}, nil
 }
 
 func validateRepositoryRoot(ctx context.Context, root string, environment []string) (string, string, error) {
@@ -135,22 +138,9 @@ func sourceInventory(ctx context.Context, root, gitPath string, environment []st
 	if err != nil {
 		return nil, fmt.Errorf("enumerate untracked source: %w", err)
 	}
-	for _, path := range splitNUL(untracked) {
-		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("enumerate untracked source: %w", err)
-		}
-		if err := validateInventoryPath(path, false); err != nil {
-			return nil, err
-		}
-		if pathWithin(path, ".forge") {
-			continue
-		}
-		if _, exists := seen[path]; !exists {
-			records = append(records, inventoryRecord{path: path, tracking: "untracked"})
-		}
-	}
-	if len(records) > maxSourceEntries {
-		return nil, fmt.Errorf("source inventory exceeds %d entries", maxSourceEntries)
+	records, err = appendUntrackedInventory(ctx, untracked, records, seen)
+	if err != nil {
+		return nil, err
 	}
 	sort.Slice(records, func(i, j int) bool { return records[i].path < records[j].path })
 	return records, nil
@@ -159,34 +149,81 @@ func sourceInventory(ctx context.Context, root, gitPath string, environment []st
 func parseTrackedInventory(ctx context.Context, raw []byte) ([]inventoryRecord, map[string]struct{}, error) {
 	records := make([]inventoryRecord, 0)
 	seen := make(map[string]struct{})
-	for _, item := range splitNUL(raw) {
+	err := forEachNUL(raw, func(item []byte) error {
 		if err := ctx.Err(); err != nil {
-			return nil, nil, fmt.Errorf("parse tracked source inventory: %w", err)
+			return fmt.Errorf("parse tracked source inventory: %w", err)
 		}
-		tab := strings.IndexByte(item, '\t')
-		if tab < 0 {
-			return nil, nil, fmt.Errorf("malformed tracked source inventory")
+		if len(records) >= maxSourceEntries {
+			return fmt.Errorf("source inventory exceeds %d entries", maxSourceEntries)
 		}
-		fields, path := strings.Fields(item[:tab]), item[tab+1:]
-		if len(fields) != 3 || fields[2] != "0" {
-			return nil, nil, fmt.Errorf("tracked path %q has unresolved or malformed index stage", path)
+		record, err := parseTrackedInventoryItem(string(item))
+		if err != nil {
+			return err
 		}
-		if fields[0] == "160000" {
-			return nil, nil, fmt.Errorf("tracked path %q is a forbidden gitlink", path)
+		if _, exists := seen[record.path]; exists {
+			return fmt.Errorf("duplicate tracked source path %q", record.path)
 		}
-		if fields[0] != "100644" && fields[0] != "100755" && fields[0] != "120000" {
-			return nil, nil, fmt.Errorf("tracked path %q has unsupported index mode %q", path, fields[0])
-		}
-		if err := validateInventoryPath(path, true); err != nil {
-			return nil, nil, err
-		}
-		if _, exists := seen[path]; exists {
-			return nil, nil, fmt.Errorf("duplicate tracked source path %q", path)
-		}
-		seen[path] = struct{}{}
-		records = append(records, inventoryRecord{indexMode: fields[0], path: path, tracking: "tracked"})
+		seen[record.path] = struct{}{}
+		records = append(records, record)
+		return nil
+	})
+	if err != nil {
+		return nil, nil, err
 	}
 	return records, seen, nil
+}
+
+func parseTrackedInventoryItem(item string) (inventoryRecord, error) {
+	tab := strings.IndexByte(item, '\t')
+	if tab < 0 {
+		return inventoryRecord{}, fmt.Errorf("malformed tracked source inventory")
+	}
+	fields, path := strings.Fields(item[:tab]), item[tab+1:]
+	if len(fields) != 3 || fields[2] != "0" {
+		return inventoryRecord{}, fmt.Errorf(
+			"tracked path %q has unresolved or malformed index stage", path)
+	}
+	if fields[0] == "160000" {
+		return inventoryRecord{}, fmt.Errorf("tracked path %q is a forbidden gitlink", path)
+	}
+	if fields[0] != "100644" && fields[0] != "100755" && fields[0] != "120000" {
+		return inventoryRecord{}, fmt.Errorf(
+			"tracked path %q has unsupported index mode %q", path, fields[0])
+	}
+	if err := validateInventoryPath(path, true); err != nil {
+		return inventoryRecord{}, err
+	}
+	return inventoryRecord{indexMode: fields[0], path: path, tracking: "tracked"}, nil
+}
+
+func appendUntrackedInventory(
+	ctx context.Context,
+	raw []byte,
+	records []inventoryRecord,
+	seen map[string]struct{},
+) ([]inventoryRecord, error) {
+	err := forEachNUL(raw, func(item []byte) error {
+		if err := ctx.Err(); err != nil {
+			return fmt.Errorf("enumerate untracked source: %w", err)
+		}
+		path := string(item)
+		if err := validateInventoryPath(path, false); err != nil {
+			return err
+		}
+		if pathWithin(path, ".forge") {
+			return nil
+		}
+		if _, exists := seen[path]; exists {
+			return nil
+		}
+		if len(records) >= maxSourceEntries {
+			return fmt.Errorf("source inventory exceeds %d entries", maxSourceEntries)
+		}
+		seen[path] = struct{}{}
+		records = append(records, inventoryRecord{path: path, tracking: "untracked"})
+		return nil
+	})
+	return records, err
 }
 
 func hardenedGitOutput(ctx context.Context, root, gitPath string, environment []string, args ...string) ([]byte, error) {
@@ -231,12 +268,19 @@ func hardenedGitEnvironment(environment []string) []string {
 	return result
 }
 
-func splitNUL(value []byte) []string {
-	result := make([]string, 0)
-	for _, item := range bytes.Split(value, []byte{0}) {
-		if len(item) != 0 {
-			result = append(result, string(item))
+func forEachNUL(value []byte, visit func([]byte) error) error {
+	for offset := 0; offset < len(value); {
+		end := bytes.IndexByte(value[offset:], 0)
+		if end < 0 {
+			end = len(value) - offset
 		}
+		item := value[offset : offset+end]
+		if len(item) != 0 {
+			if err := visit(item); err != nil {
+				return err
+			}
+		}
+		offset += end + 1
 	}
-	return result
+	return nil
 }

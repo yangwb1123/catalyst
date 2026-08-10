@@ -19,6 +19,8 @@
   和执行 deadline；不得提供任意 argv、ambient cwd、stdin 或自定义 evidence type；
 - 若来源是 Evolve repository locator，提供 exact `forgeos.evolve-repo-locator/v1` observation 与显式 Governance binding；observation 必须
   保存 whole-file digest/bytes、path/line/detail、report digest、dimension/relation、producer、观察时间和 source revision/tree；
+- 若任务明确要求 ADR-0053 local Go dependency capture，提供 canonical repository root、selected module directory 与合法 run ID；
+  不得把 GOOS/GOARCH/build tags、`go.work`、`require|replace|vendor` 或 module-cache 状态伪装成已解析输入；
 - Claim 的 subject、predicate、value、owner、验证计划和有效期；
 - 若引用既有记录，提供 exact `record_id`，不得只给标题或自由文本名称。
 - 需要持久化时，提供稳定的调用方 idempotency key；不得用时间戳或每次随机值绕过 replay。
@@ -103,12 +105,32 @@ parent 取恰好一个 PATH，忽略 TMPDIR 和其余值；Git child 使用固�
 egress/device/external-effect containment。调用方必须另行授权并隔离该本地执行，不能把 fixed read-only argv 或
 `CAPTURED_LOCAL_EVOLVE_LOCATOR_SET` 当成无副作用证明。
 
+### Local Go package dependency graph observation producer 分支
+
+仅当任务显式要求观察一个 selected Go module 的 lexical import graph 时使用 ADR-0053 分支；该窄 producer 已交付，但其交付状态不扩大
+下述非能力边界。使用共享 `git-worktree-source-tree-v1` bounded-interval source profile，在 selected module subtree 中
+按 `selected-module-all-regular-go-files-union-v1` 选择 regular `.go` files，并以
+`go-parser-imports-only-no-partial-facts-v1` 解析 package/import header。单文件解析失败只形成 bounded diagnostic，不得保留该文件的部分事实。
+
+按固定顺序保存 module/package/file、compile/test import occurrence、dependency edge、external/unresolved classification、coverage 与 diagnostics；
+同一 import 的 source paths 不得丢失。`OBSERVED_LOCAL_GO_PACKAGE_DEPENDENCY_GRAPH` 只说明这些 lexical bytes 和分类按合同被观察，不表示
+selected build。不得执行 `go list|build|test|mod`，不得读取 module cache 或联网，也不得解释 GOOS/GOARCH/build tag、`go.work`、
+`require|replace|vendor`、dependency availability、compiler reachability、architecture judgment、impact closure 或 graph completeness。
+runtime platform 必须固定 `supported_family=unix`、`go_commands=none`、`module_cache_access=none` 与
+`network_access=none_by_profile`；非 Unix 在任何 repository/process/file observation 前失败关闭。
+
+source pre/post equality 仍只是 inventory 与 entry reads 的 bounded-interval 端点观察，不是原子 snapshot。固定 read-only Git argv 不认证 Git
+binary，也不提供 sandbox/egress/effect containment。不得由该 package 自动生成 Evidence/Claim/Atom/Context/Grant/Impact/Cost/Risk、append
+journal 或写 SQLite；需要任何后续 Governance admission 时由调用方另行提供版本化 adapter 与 binding。
+
 ## 输出契约
 
 Local gate producer 分支输出 exact `forgeos.governance.local-gate-command-observation-production/v1` package、domain-separated production SHA-256 和固定
 `OBSERVED_LOCAL_PROCESS` 非能力结果。Local Evolve producer 分支输出 exact
 `forgeos.governance.local-evolve-repo-locator-observation-production/v1`、production SHA-256 和固定
-`CAPTURED_LOCAL_EVOLVE_LOCATOR_SET`；两者都不输出 Evidence、Claim、receipt 或 verdict。Artifact provenance、command observation 与 Evolve locator adapter 分支各输出 exactly one `EvidenceRecord` v1 JSON object；普通 record-set/journal 分支才输出按
+`CAPTURED_LOCAL_EVOLVE_LOCATOR_SET`。Local Go package dependency graph 分支输出 exact
+`forgeos.governance.local-go-package-dependency-graph-observation-production/v1`、production SHA-256 和固定
+`OBSERVED_LOCAL_GO_PACKAGE_DEPENDENCY_GRAPH`。三种 local producer 都不输出 Evidence、Claim、receipt 或 verdict。Artifact provenance、command observation 与 Evolve locator adapter 分支各输出 exactly one `EvidenceRecord` v1 JSON object；普通 record-set/journal 分支才输出按
 `metadata.record_id` 排序、非空的 `EvidenceRecord`/`KnowledgeClaim` v1 JSON 数组，并使用
 `docs/contracts/governance-evidence-claim-v1.schema.json`。这些输出的适用 canonical bytes 必须是 exact compact canonical JSON，且治理记录必须绑定
 source/context/policy 摘要和独立 digest domain。checker 只允许返回结构有效或错误，不产生 trusted、confirmed、approved、accepted、completed
@@ -146,6 +168,8 @@ request-derived run ID 只是 deterministic correlation，不是 scan/capture re
   executable pin、clean-tree 证明、remote attestation、journal receipt 或 `forge accept` 裁决。
 - 禁止把 Evolve producer 的 fixed read-only Git argv 当作 binary authentication/sandbox/effect 证明，禁止跨 relation 合并 locator，或把空
   observation set 当作 all-clear；在没有 caller Governance binding 时禁止自动调用 ADR-0050。
+- 禁止把 ADR-0053 lexical all-Go-files union 称为 selected build、完整 dependency graph、compile/test success、architecture judgment 或 impact
+  closure；禁止运行 Go toolchain、读取 module cache、解析 GOOS/GOARCH/build tags/`go.work`/`require|replace|vendor`，或自动创建 Governance records。
 - 不使用历史 alias：`Evidence`、`Claim`、`ContextManifest`、`AuthorityGrant`、`AgentCapabilityGrant`。
 
 ## 自动化与验收
@@ -167,7 +191,7 @@ Artifact adapter golden 使用
 `(cd forge-core && go test -count=1 ./internal/artifactevidencecontract)` 和
 `(cd forge-runtime && cargo test -p forge-runtime-domain artifact_evidence_contract)`。三者必须与
 `docs/contracts/fixtures/artifact-evidence-adapter-v1.json` 的 canonical source/request/Evidence bytes 和 digests 逐字节一致；工具链缺失时如实记
-`not_executed`。本 adapter 不改变 SQLite v25，也不需要或允许 migration/backfill。
+`not_executed`。本 adapter 不改变当前 Hub SQLite schema，也不需要或允许 migration/backfill。
 
 Command adapter golden 使用
 `python3 -B harness/command_observation_evidence_adapter_check.py --golden <repo-root>`；验证具体输出使用
@@ -176,7 +200,7 @@ Command adapter golden 使用
 `(cd forge-core && go test -count=1 ./internal/commandobservationevidencecontract)` 和
 `(cd forge-runtime && cargo test -p forge-runtime-domain command_observation_evidence_contract)`。三者必须与
 `docs/contracts/fixtures/command-observation-evidence-adapter-v1.json` 的 canonical command/observation/request/Evidence bytes 与四个 digest
-逐字节一致。该纯 adapter 不改变 SQLite v25，不允许 migration/backfill/自动 journal append；工具链缺失时如实记 `not_executed`。
+逐字节一致。该纯 adapter 不改变当前 Hub SQLite schema，不允许 migration/backfill/自动 journal append；工具链缺失时如实记 `not_executed`。
 
 Evolve locator adapter golden 使用
 `python3 -B harness/evolve_repo_locator_evidence_adapter_check.py --golden <repo-root>`；验证具体输出使用
@@ -185,7 +209,7 @@ Evolve locator adapter golden 使用
 `(cd forge-core && go test -count=1 ./internal/evolverepolocatorevidencecontract)` 和
 `(cd forge-runtime && cargo test -p forge-runtime-domain evolve_repo_locator_evidence_contract)`。三者必须与
 `docs/contracts/fixtures/evolve-repo-locator-evidence-adapter-v1.json` 的 canonical locator/observation/request/Evidence bytes 和四个 digest
-逐字节一致。不会创建 Claim/Atom、不会 append journal；该纯 adapter 不改变 SQLite v25，也不允许 migration/backfill/真实 Evolve producer
+逐字节一致。不会创建 Claim/Atom、不会 append journal；该纯 adapter 不改变当前 Hub SQLite schema，也不允许 migration/backfill/真实 Evolve producer
 接线。工具链缺失时如实记 `not_executed`。
 
 Local producer contract fixture 只允许使用
@@ -205,7 +229,16 @@ Local Evolve producer golden 使用
 `(cd forge-core && go test -count=1 ./internal/evolvelocatorobservationproducer ./internal/gitworktreesource ./internal/evolverepolocatorevidencecontract)`，
 并与 `docs/contracts/fixtures/local-evolve-repo-locator-observation-producer-v1.json` 的 parameters/report/source/三条 observation/production
 canonical bytes 与 digests 逐字节比较。fixture 是 pure contract bytes，不是 live repository capture；scaffold 只复制 Python checker，缺少
-兼容 Go producer 时记 `not_executed`。本分支不改变 SQLite v25，不允许 migration/backfill/automatic ADR-0050 binding/journal append。
+兼容 Go producer 时记 `not_executed`。本 producer/checker 不改变当前 Hub SQLite schema，不允许 migration/backfill/automatic ADR-0050 binding/journal append。
+
+Local Go package dependency graph producer golden 使用
+`python3 -B harness/go_package_dependency_graph_observation_producer/check.py --golden <repo-root>`；验证 exact production file 使用
+`python3 -B harness/go_package_dependency_graph_observation_producer/check.py <production.json>`。Catalyst 源仓运行
+`(cd forge-core && go test -count=1 ./internal/gopackagedependencyobservationproducer ./internal/gitworktreesource)`，并与
+`docs/contracts/fixtures/local-go-package-dependency-graph-observation-producer-v1.json` 的 parameters/source/graph/production canonical bytes 与
+digests 逐字节比较。fixture 只提供 pure contract bytes，不是 live parse、selected build、compiler 或 architecture receipt；scaffold 只复制
+Python checker，缺少兼容 Go producer 时记 `not_executed`。本 ADR-0053 producer/checker 不更改任何 SQLite schema，也不执行
+migration/backfill/journal append 或自动 Evidence binding；journal 版本边界仍遵循下文当前 v26 的 `forge-runtime` 规则。
 
 Scaffold/upgrade 只继承治理 contract、Skill 和 shadow checker，不安装 Rust `forge-runtime` binary 或 SQLite journal。持久化前先检测项目批准且
 与 `forgeos.governance-journal/v1` 兼容的 `forge-runtime`（至少解析到预期 executable，并确认 help 暴露 append/show/list/head surface）；缺失、版本不兼容
@@ -227,6 +260,7 @@ Scaffold/upgrade 只继承治理 contract、Skill 和 shadow checker，不安装
 - `docs/adr/0050-evolve-repo-locator-evidence-adapter-v1.md`
 - `docs/adr/0051-local-gate-command-observation-producer-v1.md`
 - `docs/adr/0052-local-evolve-repo-locator-observation-producer-v1.md`
+- `docs/adr/0053-local-go-package-dependency-graph-observation-producer-v1.md`
 - `docs/contracts/artifact-evidence-adapter-v1.schema.json`
 - `docs/contracts/fixtures/artifact-evidence-adapter-v1.json`
 - `docs/contracts/command-observation-evidence-adapter-v1.schema.json`
@@ -237,5 +271,7 @@ Scaffold/upgrade 只继承治理 contract、Skill 和 shadow checker，不安装
 - `docs/contracts/fixtures/local-gate-command-observation-producer-v1.json`
 - `docs/contracts/local-evolve-repo-locator-observation-producer-v1.schema.json`
 - `docs/contracts/fixtures/local-evolve-repo-locator-observation-producer-v1.json`
+- `docs/contracts/local-go-package-dependency-graph-observation-producer-v1.schema.json`
+- `docs/contracts/fixtures/local-go-package-dependency-graph-observation-producer-v1.json`
 - `docs/contracts/governance-record-journal-v1.schema.json`
 - `.agent/engineering/governance-contracts.yml`

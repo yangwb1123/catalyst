@@ -1,6 +1,7 @@
 package gitworktreesource
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -28,6 +29,7 @@ type missingSourceParent struct {
 
 type sourceParent struct {
 	bindings []sourceParentBinding
+	ctx      context.Context
 	leaf     string
 	leafRoot *os.Root
 	missing  *missingSourceParent
@@ -68,23 +70,38 @@ func (root *sourceTreeRoot) verify() error {
 	return nil
 }
 
-func openSourceParent(root *sourceTreeRoot, path string) (*sourceParent, error) {
+func openSourceParent(ctx context.Context, root *sourceTreeRoot, path string) (*sourceParent, error) {
 	components := strings.Split(path, "/")
 	parent := &sourceParent{
-		leaf: components[len(components)-1], leafRoot: root.handle, path: path, tree: root,
+		ctx: ctx, leaf: components[len(components)-1], leafRoot: root.handle,
+		path: path, tree: root,
 	}
 	if err := parent.verify(); err != nil {
 		return nil, err
 	}
 	current := root.handle
+	var prefixBuilder strings.Builder
+	prefixBuilder.Grow(len(path))
 	for index, component := range components[:len(components)-1] {
-		prefix := strings.Join(components[:index+1], "/")
+		if err := ctx.Err(); err != nil {
+			parent.close()
+			return nil, fmt.Errorf("inspect source path %q: %w", path, err)
+		}
+		if index != 0 {
+			prefixBuilder.WriteByte('/')
+		}
+		prefixBuilder.WriteString(component)
+		prefix := prefixBuilder.String()
 		before, missing, err := parent.inspectComponent(current, component, prefix)
 		if err != nil {
 			parent.close()
 			return nil, err
 		}
 		if missing {
+			if err := parent.verify(); err != nil {
+				parent.close()
+				return nil, err
+			}
 			return parent, nil
 		}
 		child, err := parent.bindComponent(current, component, prefix, before)
@@ -109,9 +126,6 @@ func (parent *sourceParent) inspectComponent(
 	before, err := current.Lstat(component)
 	if os.IsNotExist(err) {
 		parent.missing = &missingSourceParent{name: component, parent: current, path: prefix}
-		if err := parent.verify(); err != nil {
-			return nil, false, err
-		}
 		return nil, true, nil
 	}
 	if err != nil {
@@ -122,9 +136,6 @@ func (parent *sourceParent) inspectComponent(
 	}
 	if !before.IsDir() {
 		return nil, false, fmt.Errorf("source path %q has non-directory parent %q", parent.path, prefix)
-	}
-	if err := parent.verify(); err != nil {
-		return nil, false, err
 	}
 	return before, false, nil
 }
@@ -155,10 +166,16 @@ func (parent *sourceParent) bindComponent(
 }
 
 func (parent *sourceParent) verify() error {
+	if err := parent.ctx.Err(); err != nil {
+		return fmt.Errorf("inspect source path %q: %w", parent.path, err)
+	}
 	if err := parent.tree.verify(); err != nil {
 		return err
 	}
 	for _, binding := range parent.bindings {
+		if err := parent.ctx.Err(); err != nil {
+			return fmt.Errorf("inspect source path %q: %w", parent.path, err)
+		}
 		current, currentErr := binding.parent.Lstat(binding.name)
 		opened, openErr := binding.child.Lstat(".")
 		if currentErr != nil || openErr != nil ||

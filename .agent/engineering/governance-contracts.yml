@@ -1,16 +1,16 @@
 api_version: forgeos.agent-engineering/v1
 kind: GovernanceContractRegistry
 status: active_contract
-runtime_binding: cross_language_codec_local_journal_atom_projection_artifact_command_evolve_locator_adapters_local_gate_command_and_evolve_locator_producers_shadow
+runtime_binding: cross_language_codec_local_journal_atom_projection_artifact_command_evolve_locator_adapters_local_gate_command_evolve_locator_and_go_package_dependency_graph_producers_shadow
 owner: governance
-version: 9
+version: 10
 completion_authority: forge_accept
 
 scope:
   shipped_kinds: [EvidenceRecord, KnowledgeClaim]
   shipped_projections: [CognitiveAtom]
   shipped_adapters: [artifact_provenance_to_evidence, command_observation_to_evidence, evolve_repo_locator_to_evidence]
-  shipped_producers: [local_gate_command_observation_producer, local_evolve_repo_locator_observation_producer]
+  shipped_producers: [local_gate_command_observation_producer, local_evolve_repo_locator_observation_producer, local_go_package_dependency_graph_observation_producer]
   staged_producers: []
   planned_kinds: [ContextPackage, CapabilityGrant, ApprovalRecord, TransitionReceipt, KnowledgeUpdateProposal]
   persistence: local_append_only_exact_evidence_claim_journal
@@ -318,6 +318,82 @@ local_evolve_repo_locator_observation_producer:
   attests: []
   persistence: none
 
+local_go_package_dependency_graph_observation_producer:
+  api_version: forgeos.governance.local-go-package-dependency-graph-observation-production/v1
+  mode: explicit_opt_in_unix_local_go_package_dependency_graph_observation_production
+  output_kind: forgeos.governance.local-go-package-dependency-graph-observation-production/v1
+  observation_kind: forgeos.go-package-dependency-graph-observation/v1
+  exact_capture:
+    capture_default: disabled
+    go_runtime_wiring: explicit_opt_in_catalyst_go_api
+    module_selection: caller_supplied_regular_go_mod_in_shared_source
+    file_selection_profile_id: selected-module-all-regular-go-files-union-v1
+    parser_profile_id: go-parser-imports-only-no-partial-facts-v1
+    import_resolution_profile_id: selected-module-lexical-import-resolution-v1
+    source_interval: pre_and_post_source_exact_equality_required
+    one_timestamp_per_graph: true
+    non_unix_result: fail_closed_before_repository_process_or_file_observation
+  profiles:
+    parameters:
+      api_version: forgeos.go-package-dependency-capture.parameters/v1
+      file_selection_profile_id: selected-module-all-regular-go-files-union-v1
+      import_resolution_profile_id: selected-module-lexical-import-resolution-v1
+      module_profile_id: selected-go-mod-module-directive-v1
+      parser_profile_id: go-parser-imports-only-no-partial-facts-v1
+      source_profile_id: git-worktree-source-tree-v1
+    graph:
+      api_version: forgeos.go-package-dependency-graph-observation/v1
+      profile_id: selected-go-module-lexical-dependency-graph-v1
+      coverage: selected_source_partition_and_stable_diagnostics
+    source:
+      api_version: forgeos.command-capture.source-tree/v1
+      profile_id: git-worktree-source-tree-v1
+      coverage: tracked_stage0_and_nonignored_untracked
+  runtime_platform:
+    capture_default: disabled
+    supported_family: unix
+    non_unix_behavior: fail_closed_before_repository_process_or_file_observation
+    parent_environment: ignored_except_explicit_single_path_input
+    git_child_environment: fixed_home_lang_lc_all_path_and_git_flags_only
+    git_commands: fixed_read_only_rev_parse_and_ls_files_only
+    git_binary_authentication: false
+    go_commands: none
+    module_cache_access: none
+    network_access: none_by_profile
+    sandbox_egress_and_external_effect_containment: false
+  identity:
+    parameters_digest_domain: "forgeos.governance.local-go-package-dependency-graph-parameters.v1\0"
+    graph_digest_domain: "forgeos.governance.local-go-package-dependency-graph-observation.v1\0"
+    source_digest_domain: "forgeos.governance.local-command-source-tree-profile.v1\0"
+    production_digest_domain: "forgeos.governance.local-go-package-dependency-graph-observation-production.v1\0"
+  constants:
+    canonicalization: forgeos.canonical-json/v1
+    producer_id: forgeos.local-go-package-dependency-graph-observer
+    producer_type: tool
+    producer_version: v1
+  limits:
+    max_canonical_production_bytes: 16777216
+    max_go_mod_bytes: 1048576
+    max_go_file_parser_bytes: 4194304
+    max_aggregate_parser_input_bytes: 67108864
+    max_selected_regular_go_files: 16384
+    max_nested_modules: 1024
+    max_imports_per_file: 1024
+    max_import_occurrences: 65536
+    max_packages: 16384
+    max_dependency_edges: 65536
+    max_diagnostics: 16384
+    max_source_entries: 65536
+    max_individual_source_file_bytes: 1073741824
+    max_source_content_bytes: 8589934592
+    max_text_scalars: 4096
+    max_text_bytes: 16384
+    max_run_id_bytes: 160
+    integer_domain: signed_int64
+  positive_result: OBSERVED_LOCAL_GO_PACKAGE_DEPENDENCY_GRAPH (all-regular-Go-file lexical import-header/source observation only; no selected build, dependency availability, compile success, architecture judgment, impact closure, completeness, truth, authority, claim, atom, persistence, or effect attestation)
+  attests: []
+  persistence: none
+
 canonicalization:
   format: forgeos.canonical-json/v1
   object_keys: ascii_snake_case_sorted
@@ -468,6 +544,9 @@ canonical_refs:
   local_evolve_repo_locator_observation_producer_schema: docs/contracts/local-evolve-repo-locator-observation-producer-v1.schema.json
   local_evolve_repo_locator_observation_producer_golden_fixture: docs/contracts/fixtures/local-evolve-repo-locator-observation-producer-v1.json
   local_evolve_repo_locator_observation_producer_checker: harness/evolve_locator_observation_producer/check.py
+  local_go_package_dependency_graph_observation_producer_schema: docs/contracts/local-go-package-dependency-graph-observation-producer-v1.schema.json
+  local_go_package_dependency_graph_observation_producer_golden_fixture: docs/contracts/fixtures/local-go-package-dependency-graph-observation-producer-v1.json
+  local_go_package_dependency_graph_observation_producer_checker: harness/go_package_dependency_graph_observation_producer/check.py
   decision: docs/adr/0045-canonical-evidence-claim-contract.md
   journal_decision: docs/adr/0046-local-governance-record-journal.md
   cognitive_atom_decision: docs/adr/0047-shadow-cognitive-atom-projection-v1.md
@@ -476,6 +555,7 @@ canonical_refs:
   evolve_repo_locator_evidence_adapter_decision: docs/adr/0050-evolve-repo-locator-evidence-adapter-v1.md
   local_gate_command_observation_producer_decision: docs/adr/0051-local-gate-command-observation-producer-v1.md
   local_evolve_repo_locator_observation_producer_decision: docs/adr/0052-local-evolve-repo-locator-observation-producer-v1.md
+  local_go_package_dependency_graph_observation_producer_decision: docs/adr/0053-local-go-package-dependency-graph-observation-producer-v1.md
   standard: docs/design/ai-engineering-os/governance-contracts.md
 
 contract_pins:
@@ -494,6 +574,8 @@ contract_pins:
   local_gate_command_observation_producer_golden_fixture_sha256: fd7bd8b2afae2f93a1c4756bfc3f84397d82401edb19fe337849cec5c6a5ac6b
   local_evolve_repo_locator_observation_producer_schema_sha256: 10e9715b7c15cdecb288a522412c826ba61ca4f31e6e5d5e5a108a6fb2d39d45
   local_evolve_repo_locator_observation_producer_golden_fixture_sha256: fcd6647602eec90db3310f99f42574796998942821255d2bcdab138006991a64
+  local_go_package_dependency_graph_observation_producer_schema_sha256: bc14c57fa4e7109218a2fdc6870ff876f326646d1af3abc82c344a86503e9e4e
+  local_go_package_dependency_graph_observation_producer_golden_fixture_sha256: d5cb584626239f24bd1e233b226504c5ff64c565d2c8251d44f4e1633e411cfd
 
 reference_implementations:
   python:
@@ -553,6 +635,12 @@ reference_implementations:
   local_evolve_locator_observation_producer_python_checker:
     ref: harness/evolve_locator_observation_producer/check.py
     projection: universal_scaffold
+  local_go_package_dependency_graph_observation_producer_go:
+    ref: forge-core/internal/gopackagedependencyobservationproducer
+    projection: catalyst_repository_only
+  local_go_package_dependency_graph_observation_producer_python_checker:
+    ref: harness/go_package_dependency_graph_observation_producer/check.py
+    projection: universal_scaffold
 
 non_capabilities:
   - no truth ledger authoritative current-knowledge view or semantic lifecycle projection
@@ -569,3 +657,4 @@ non_capabilities:
   - Evolve repository locator adapter does not read repository files or reports verify digest preimages authenticate producer confirm scan judgments attest completion truth authority claim atom persistence or effect
   - Local gate command observation producer is explicit opt-in Unix local capture only and does not attest pass criterion completion truth authority identity persistence or external effects
   - Local Evolve locator observation producer is explicit opt-in Unix local capture only and does not authenticate Git attest scan judgment completion truth authority persistence or external effects or automatically bind ADR-0050 Evidence
+  - Local Go package dependency graph observation producer is explicit opt-in Unix lexical source observation only; it executes no Go toolchain command, resolves no actual GOOS/GOARCH/build tags/cgo/module cache/workspace/vendor/replace semantics, and attests no dependency availability, selected build, compile/test/runtime reachability, graph completeness, architecture judgment, impact closure, truth or authority; it does not authenticate Git, create Evidence/Claim/Atom/Context/Grant/Impact/Cost/Risk, append journal, write SQLite, persist data, or contain sandbox/egress/external effects

@@ -205,6 +205,7 @@ def evolve_locator_producer_registry_issues(data, path):
             scope.get("staged_producers") != [] or
             scope.get("shipped_producers") != [
                 "local_gate_command_observation_producer", key,
+                "local_go_package_dependency_graph_observation_producer",
             ]):
         issues.append(f"{path}: shipped/staged producer scope drifted")
     implementations = (data.get("reference_implementations")

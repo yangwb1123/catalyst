@@ -25,10 +25,10 @@ class GovernanceEvolveLocatorIntegrationTest(unittest.TestCase):
     def issues(self):
         return engineering.check_agent_engineering_spec(self.agent_root)
 
-    def test_registry_freezes_exact_v9_adapter(self):
+    def test_registry_freezes_exact_v10_adapter(self):
         path = self.agent_root / "engineering" / "governance-contracts.yml"
         data = yaml.safe_load(path.read_text(encoding="utf-8"))
-        self.assertEqual(data["version"], 9)
+        self.assertEqual(data["version"], 10)
         self.assertEqual(
             data["evolve_repo_locator_evidence_adapter"],
             governance.EVOLVE_REPO_LOCATOR_EVIDENCE_ADAPTER,

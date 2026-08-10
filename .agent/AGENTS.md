@@ -44,7 +44,7 @@
 - `eval/frontend-design-package.schema.yml`:分离 artifact 与 proof claim，截图绑定 source/build/fixture/environment；只判结构有效性，不授予 UI 质量或完成裁决
 - `skills/{information-interaction-design,design-system-accessibility,frontend-client-engineering}.md`:复用现有 capability ownership；产品风格是 Profile，React/Vue/Flutter/RN 是条件化平台映射，不制造平行 Skill 树
 - `skills/ui-geometry.md`:条件化 supporting procedural adapter；用 `business_ui_composition` 把角色/任务/状态/数据语义绑定到区域、轴、分组、间距、线条、形状与响应式关系，并可接收声明式 `geometry_measurement_receipts`。它不新增 capability owner，也不证明浏览器/原生 Runner 真执行、视觉质量或完成
-- `engineering/governance-contracts.yml` + `skills/evidence-claim-management.md`:EvidenceRecord/KnowledgeClaim v1 identity/canonical/state、本地 exact append journal 与 versioned pure adapters；已交付的 ADR-0051 local gate 与 ADR-0052 local Evolve locator observation 都只允许显式 opt-in 的 Catalyst Go API，默认 capture 关闭且不签发 PASS/scan judgment/completion/persistence；ADR-0052 保留完整 canonical report、共享 bounded-interval source 与跨 relation multiplicity，但不认证 Git 或自动绑定 ADR-0050；引用闭包的 1024 records/16 MiB/256 depth 只防资源耗尽；scaffold 不安装 runtime，缺兼容 binary 时必须 `not_executed`
+- `engineering/governance-contracts.yml` + `skills/evidence-claim-management.md`:EvidenceRecord/KnowledgeClaim v1 identity/canonical/state、本地 exact append journal 与 versioned pure adapters；已交付的 ADR-0051 local gate、ADR-0052 local Evolve locator 与 ADR-0053 `selected-module-all-regular-go-files-union-v1` dependency graph observation 都只允许显式 opt-in 的 Catalyst Go API。三者默认 capture 关闭，不签发 PASS/scan/build/architecture judgment、completion 或 persistence；共享 source 只是 bounded-interval observation，不认证 Git。引用闭包的 1024 records/16 MiB/256 depth 只防资源耗尽；scaffold 不安装 runtime，缺兼容 binary 时必须 `not_executed`
 
 ## 阅读顺序
 

@@ -204,11 +204,12 @@ def local_command_producer_registry_issues(data, path):
         or scope.get("shipped_producers") != [
             "local_gate_command_observation_producer",
             "local_evolve_repo_locator_observation_producer",
+            "local_go_package_dependency_graph_observation_producer",
         ]
         or scope.get("staged_producers") != []
     ):
         issues.append(
-            f"{path}: delivered producer scope drifted"
+            f"{path}: shipped/staged producer scope drifted"
         )
     implementations = (
         data.get("reference_implementations") if isinstance(data, dict) else None

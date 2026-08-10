@@ -28,6 +28,9 @@ from local_command_observation_producer_check import (
 from evolve_locator_observation_producer import (
     validate_golden_fixture as validate_evolve_locator_producer_golden_fixture,
 )
+from go_package_dependency_graph_observation_producer import (
+    validate_golden_fixture as validate_go_dependency_producer_golden_fixture,
+)
 from governance_engineering import (
     ARTIFACT_CANONICAL_REFS,
     ARTIFACT_EVIDENCE_ADAPTER,
@@ -74,6 +77,19 @@ from governance_engineering import (
     EVOLVE_LOCATOR_PRODUCER_SKILL_MARKERS,
     EVOLVE_LOCATOR_PRODUCER_SUCCESS,
     LOCAL_EVOLVE_LOCATOR_OBSERVATION_PRODUCER,
+    GO_PACKAGE_DEPENDENCY_GRAPH_PRODUCER_CANONICAL_REFS,
+    GO_PACKAGE_DEPENDENCY_GRAPH_PRODUCER_CHECKER_REFERENCE_IMPLEMENTATION,
+    GO_PACKAGE_DEPENDENCY_GRAPH_PRODUCER_NON_CAPABILITY,
+    GO_PACKAGE_DEPENDENCY_GRAPH_PRODUCER_REFERENCE_IMPLEMENTATION,
+    GO_PACKAGE_DEPENDENCY_GRAPH_PRODUCER_RUNTIME_PLATFORM,
+    GO_PACKAGE_DEPENDENCY_GRAPH_PRODUCER_SCHEMA_CANONICALIZATION,
+    GO_PACKAGE_DEPENDENCY_GRAPH_PRODUCER_SCHEMA_CAPABILITY_BOUNDARY,
+    GO_PACKAGE_DEPENDENCY_GRAPH_PRODUCER_SCHEMA_LIMITS,
+    GO_PACKAGE_DEPENDENCY_GRAPH_PRODUCER_SCHEMA_RUNTIME_PLATFORM,
+    GO_PACKAGE_DEPENDENCY_GRAPH_PRODUCER_SCHEMA_SEMANTIC_VALIDATION,
+    GO_PACKAGE_DEPENDENCY_GRAPH_PRODUCER_SKILL_MARKERS,
+    GO_PACKAGE_DEPENDENCY_GRAPH_PRODUCER_SUCCESS,
+    LOCAL_GO_PACKAGE_DEPENDENCY_GRAPH_OBSERVATION_PRODUCER,
     artifact_adapter_registry_issues as _artifact_adapter_registry_issues,
     artifact_adapter_schema_issues as _artifact_adapter_schema_issues,
     artifact_detector_issues,
@@ -92,11 +108,14 @@ from governance_engineering import (
     evolve_locator_producer_registry_issues as _evolve_locator_producer_registry_issues,
     evolve_locator_producer_schema_issues as _evolve_locator_producer_schema_issues,
     evolve_locator_producer_skill_marker_issues,
+    go_package_dependency_graph_producer_registry_issues as _go_dependency_registry_issues,
+    go_package_dependency_graph_producer_schema_issues as _go_dependency_schema_issues,
+    go_package_dependency_graph_producer_skill_marker_issues,
 )
 
 
 POLICY_RELATIVE = "engineering/governance-contracts.yml"
-POLICY_SHA256 = "332a5bd654093efaf63679700bc1c2d53bdb65b06a1c81acc4ea86f5d0b9d46d"
+POLICY_SHA256 = "b7e35ab10ce502e797b39966919a7b54bf0b8cdfc884d0324ee185ff6cc57711"
 POLICY_FIELDS = {
     "api_version", "kind", "status", "runtime_binding", "owner", "version",
     "completion_authority", "scope", "canonicalization", "identity",
@@ -106,6 +125,7 @@ POLICY_FIELDS = {
     "evolve_repo_locator_evidence_adapter",
     "local_gate_command_observation_producer",
     "local_evolve_repo_locator_observation_producer",
+    "local_go_package_dependency_graph_observation_producer",
     "canonical_refs", "contract_pins", "reference_implementations",
     "non_capabilities",
 }
@@ -138,11 +158,24 @@ PIN_TARGETS = {
         "docs/contracts/local-evolve-repo-locator-observation-producer-v1.schema.json",
     "local_evolve_repo_locator_observation_producer_golden_fixture_sha256":
         "docs/contracts/fixtures/local-evolve-repo-locator-observation-producer-v1.json",
+    "local_go_package_dependency_graph_observation_producer_schema_sha256":
+        "docs/contracts/local-go-package-dependency-graph-observation-producer-v1.schema.json",
+    "local_go_package_dependency_graph_observation_producer_golden_fixture_sha256":
+        "docs/contracts/fixtures/local-go-package-dependency-graph-observation-producer-v1.json",
 }
 SKILL_RELATIVE = ".agent/skills/evidence-claim-management.md"
 SKILL_MARKERS = [
     "职责与触发", "输入契约", "执行 SOP", "输出契约", "规则、禁止与权限", "自动化与验收",
 ]
+GOLDEN_VALIDATORS = (
+    validate_golden_fixture, validate_cognitive_atom_golden_fixture,
+    validate_artifact_evidence_golden_fixture,
+    validate_command_evidence_golden_fixture,
+    validate_evolve_locator_golden_fixture,
+    validate_local_command_producer_golden_fixture,
+    validate_evolve_locator_producer_golden_fixture,
+    validate_go_dependency_producer_golden_fixture,
+)
 REFERENCE_CLOSURE_LIMITS = {
     "max_dependency_records": 1024,
     "max_dependency_bytes": 16777216,
@@ -271,6 +304,7 @@ def _skill_issues(repo_root):
     issues.extend(evolve_locator_skill_marker_issues(text, path))
     issues.extend(local_command_producer_skill_marker_issues(text, path))
     issues.extend(evolve_locator_producer_skill_marker_issues(text, path))
+    issues.extend(go_package_dependency_graph_producer_skill_marker_issues(text, path))
     return issues
 
 
@@ -377,6 +411,8 @@ def _governance_extension_issues(data, path, repo_root):
     issues.extend(_local_command_producer_schema_issues(repo_root))
     issues.extend(_evolve_locator_producer_registry_issues(data, path))
     issues.extend(_evolve_locator_producer_schema_issues(repo_root))
+    issues.extend(_go_dependency_registry_issues(data, path))
+    issues.extend(_go_dependency_schema_issues(repo_root))
     return issues
 
 
@@ -397,13 +433,14 @@ def check_governance_evidence_claim_contract(agent_root):
         "runtime_binding": (
             "cross_language_codec_local_journal_atom_projection_"
             "artifact_command_evolve_locator_adapters_local_gate_"
-            "command_and_evolve_locator_producers_shadow"
+            "command_evolve_locator_and_go_package_dependency_graph_"
+            "producers_shadow"
         ),
-        "version": 9, "completion_authority": "forge_accept",
+        "version": 10, "completion_authority": "forge_accept",
     }
     for field, value in expected.items():
         if data.get(field) != value:
-            issues.append(f"{path}: {field} must remain the canonical v9 value")
+            issues.append(f"{path}: {field} must remain the canonical v10 value")
     repo_root = agent_root.parent
     issues.extend(_journal_registry_issues(data, path))
     issues.extend(_journal_schema_issues(repo_root))
@@ -421,11 +458,6 @@ def check_governance_evidence_claim_contract(agent_root):
             issues.append(f"{path}: protected governance contract policy changed without a version update")
     issues.extend(_skill_issues(repo_root))
     issues.extend(_detector_issues(agent_root))
-    issues.extend(validate_golden_fixture(repo_root))
-    issues.extend(validate_cognitive_atom_golden_fixture(repo_root))
-    issues.extend(validate_artifact_evidence_golden_fixture(repo_root))
-    issues.extend(validate_command_evidence_golden_fixture(repo_root))
-    issues.extend(validate_evolve_locator_golden_fixture(repo_root))
-    issues.extend(validate_local_command_producer_golden_fixture(repo_root))
-    issues.extend(validate_evolve_locator_producer_golden_fixture(repo_root))
+    for validator in GOLDEN_VALIDATORS:
+        issues.extend(validator(repo_root))
     return issues

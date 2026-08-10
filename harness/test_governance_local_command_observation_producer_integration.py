@@ -25,10 +25,10 @@ class GovernanceLocalCommandProducerIntegrationTest(unittest.TestCase):
     def issues(self):
         return engineering.check_agent_engineering_spec(self.agent_root)
 
-    def test_registry_freezes_exact_v9_shipped_producer(self):
+    def test_registry_freezes_exact_v10_shipped_scope(self):
         path = self.agent_root / "engineering" / "governance-contracts.yml"
         data = yaml.safe_load(path.read_text(encoding="utf-8"))
-        self.assertEqual(data["version"], 9)
+        self.assertEqual(data["version"], 10)
         self.assertEqual(
             data["local_gate_command_observation_producer"],
             governance.LOCAL_GATE_COMMAND_OBSERVATION_PRODUCER,
@@ -38,9 +38,13 @@ class GovernanceLocalCommandProducerIntegrationTest(unittest.TestCase):
             [
                 "local_gate_command_observation_producer",
                 "local_evolve_repo_locator_observation_producer",
+                "local_go_package_dependency_graph_observation_producer",
             ],
         )
-        self.assertEqual(data["scope"]["staged_producers"], [])
+        self.assertEqual(
+            data["scope"]["staged_producers"],
+            [],
+        )
 
     def test_schema_pin_is_enforced(self):
         path = (

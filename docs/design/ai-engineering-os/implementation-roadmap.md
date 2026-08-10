@@ -30,9 +30,9 @@ ADR-0048 交付 Wave 1 的首个 source adapter：strict exact `forgeos.artifact
 不认证来源或身份、不创建 Claim/Atom、不持久化或执行 effect，SQLite 仍为 v25。
 ADR-0049 随后交付独立 command-observation adapter：strict exact argv/source/producer/time/exit/stream summary + Governance binding
 映射为既有 `gate_result|test_run` EvidenceRecord。它只接受真实 exited projection，不执行命令、不把 exit=0 或 PASS 文本当作 criterion verdict，
-不认证 digest profile/producer、不持久化或执行 effect；真实 command producer 接线仍是后续独立边界。
+不认证 digest profile/producer、不持久化或执行 effect；ADR-0051 已另行交付显式 opt-in 的受限 Unix local gate command producer。
 ADR-0050 又交付独立 Evolve repository-locator adapter：caller-declared exact locator/content/scan-context/producer/source + Governance binding
-映射为既有 `repo_locator` EvidenceRecord。它不读取当前 repo/report、不验证 digest preimage、不确认 scan judgment/completion；真实 Evolve producer 接线仍待后续。
+映射为既有 `repo_locator` EvidenceRecord。它不读取当前 repo/report、不验证 digest preimage、不确认 scan judgment/completion；ADR-0052 已另行交付显式 opt-in 的 local Evolve locator producer。ADR-0053 也已交付 selected-module lexical Go dependency graph producer，但它不等于 Wave 2 authoritative graph 或 impact closure。
 
 | 节点 | 当前覆盖 | 已有基础 | 主要缺口 |
 |---:|---|---|---|
@@ -45,7 +45,7 @@ ADR-0050 又交付独立 Evolve repository-locator adapter：caller-declared exa
 | 06 Data | shadow | data/transaction/migration Skills、持久化前置报告与 N/A 规则 | pre-code runtime gate、Schema/query-plan/restore 的可信执行证据 |
 | 07 API | shadow | API contract Skill、compatibility/idempotency/error 决策维度 | contract registry、消费者清单与自动 compatibility gate |
 | 08 Planning | 强 | task contract、DAG、Build/Evolve | impact/cost/risk 驱动的角色和权限派生 |
-| 09 Development | shadow+runtime 基础 | implementer、polyglot gates、backend/frontend Skill 与 Context route、strict artifact/command-observation/Evolve-locator→Evidence pure adapters | command/Evolve producer integration、package 自动生成/授权与真实 pre-code block |
+| 09 Development | shadow+runtime 基础 | implementer、polyglot gates、backend/frontend Skill 与 Context route、strict source adapters、ADR-0051/0052/0053 local producers | generalized producer→Evidence binding、selected-build dependency truth、package 自动生成/授权与真实 pre-code block |
 | 10 Review/Refactor | 部分 | fresh reviewer、回流、重构 skills | ordinary verdict 严格化、God/responsibility/模式决策证据 |
 | 11 Security | 强 | STRIDE、security role/skill、secret/SCA | privacy/compliance 与开发期控制统一契约 |
 | 12 QA | 强 | QA、testing、`qa_v1` fail-closed | risk-based trace/mutation/flake/environment registry |
@@ -114,7 +114,9 @@ instruction、hard guard、transition、completion、effect 或 persistence；De
 - [x] 把 exact `forgeos.artifact.v1` provenance 通过 ADR-0048 strict pure shadow adapter 适配为 Evidence；
 - [x] 把 exact `forgeos.command-observation/v1` 通过 ADR-0049 strict pure shadow adapter 适配为 gate/test Evidence；
 - [x] 通过 ADR-0050 为 Evolve repository locator 另行版本化 strict pure shadow Evidence source adapter；
-- [ ] 冻结无秘密 environment/tool/source-tree digest profile，并把真实 gate/test producer 接到 exact command-observation envelope；
+- [x] 由 ADR-0051 冻结 scrubbed environment/tool/source-tree profile，并以显式 opt-in API 接入四类 fixed local gate command observation；
+- [x] 由 ADR-0052 捕获完整 canonical Evolve report、共享 bounded-interval source 与 zero-or-more exact locator observation；
+- [x] 完成 ADR-0053 `selected-module-all-regular-go-files-union-v1` lexical dependency observation、独立 review 与 acceptance 接线；不得把它升级为 selected build 或 Impact Closure；
 - [ ] 实现 `CapabilityGrant v1`、最小 effect vocabulary、preflight/postflight 与 audit receipts；
 - [ ] 实现非 Agent Governance Kernel/PDP trust root、bootstrap GrantRequest、plan-finalization issuance 与 ApprovalRecord；
 - [ ] 实现封闭 Transition 状态表、append-only ledger、非法边 enforcement、N/A applicability、rework/resume/quarantine recovery；
@@ -142,13 +144,16 @@ journal/SQLite。SQLite v25 和所有既有 wire 均未改变。
 Python/Go/Rust 产生相同 canonical locator/source/request/Evidence bytes 与 digest，Universal checker 能 exact re-adapt。结果仅为
 `ADAPTED_SHADOW (locator mapping only; no file/report verification, scan judgment, completion, truth, authority, claim, atom, persistence, or effect attestation)`；
 adapter 不读取 current repo/report、不解析 symlink、不验证 file/report/tree/parameters digest preimage、不确认 scan judgment/completion，
-也不写 journal/SQLite。SQLite v25 与所有既有 wire 均未改变；真实 Evolve producer integration 仍待独立版本。
+也不写 journal/SQLite。SQLite v25 与所有既有 wire 均未改变；ADR-0052 producer 的交付不扩大该 pure adapter 的 authority。
 
 **完成判据。** Coding Agent 越路径、Reviewer 写代码、Migration 直接 apply production、Release 访问 credential 均被拒绝；
 Agent 不能签发 Grant 或确认业务事实；源或 context 漂移使批准失效；不可信正文不能进入 instruction lane；非法状态跳转、
 过期 approval、恢复重放已消费 Grant 和无 receipt 的 knowledge apply 全部拒绝。
 
 ## 5. Wave 2 — Knowledge Graph 与变更影响闭包
+
+ADR-0053 已交付 producer 只观察 selected module 的 lexical package/import surface；它不解析 selected build、compile/runtime reachability、
+API/DB/test/deployment/owner 边或跨源 identity，因此不能满足本 Wave 的 `GraphSnapshot`、coverage/staleness、impact traversal、Cost/Risk 或 authority 判据。
 
 - [ ] 定义 stable node identity、edge taxonomy、extractor provenance 和 `GraphSnapshot v1`；
 - [ ] 从模块/import/call、API/event schema、DB migration/schema、test、deployment、ADR/owner 建确定性 extractor；

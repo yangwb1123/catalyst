@@ -30,7 +30,7 @@ func inspectInventory(ctx context.Context, root *sourceTreeRoot, records []inven
 }
 
 func inspectSourceEntry(ctx context.Context, root *sourceTreeRoot, record inventoryRecord) (SourceEntry, error) {
-	parent, err := openSourceParent(root, record.path)
+	parent, err := openSourceParent(ctx, root, record.path)
 	if err != nil {
 		return SourceEntry{}, err
 	}

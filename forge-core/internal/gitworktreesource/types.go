@@ -2,6 +2,8 @@
 // source profile shared by local command observations and Evolve evidence.
 package gitworktreesource
 
+import "os"
+
 const (
 	APIVersion       = "forgeos.command-capture.source-tree/v1"
 	Canonicalization = "forgeos.canonical-json/v1"
@@ -32,6 +34,16 @@ type Snapshot struct {
 	Root     string
 	Manifest SourceManifest
 	SHA256   string
+
+	captureManifestSHA256 string
+	captureRootIdentity   os.FileInfo
+}
+
+// SameCapturedRoot reports whether two snapshots were captured from the same
+// stable repository root directory identity, not merely the same path.
+func SameCapturedRoot(first, second Snapshot) bool {
+	return first.Root == second.Root &&
+		stableSourceDirectory(first.captureRootIdentity, second.captureRootIdentity)
 }
 
 func CloneManifest(value SourceManifest) SourceManifest {

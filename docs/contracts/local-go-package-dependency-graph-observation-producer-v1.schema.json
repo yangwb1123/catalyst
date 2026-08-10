@@ -1,0 +1,413 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forgeos.local/contracts/local-go-package-dependency-graph-observation-producer-v1.schema.json",
+  "title": "ForgeOS Local Go Package Dependency Graph Observation Production v1",
+  "description": "Exact explicit-opt-in local observation of all regular Go files in one selected module subtree, lexical package/import headers, source inventory, nested-module boundaries, and candidate dependency resolution. It grants no selected-build, dependency-availability, compile-success, architecture, impact, truth, authority, persistence, or effect attestation.",
+  "$comment": "Schema alone cannot enforce exact canonical bytes, digest bindings, source-derived nested-module boundaries, selection accounting, package grouping, or lexical edge resolution. The bounded Python checker enforces those production-internal deterministic properties; --golden additionally checks all four domain digests. Neither schema nor checker establishes live capture behavior, and the checker intentionally does not parse Go.",
+  "x-forgeos-canonicalization": {
+    "format": "forgeos.canonical-json/v1",
+    "exact_compact_utf8_input": true,
+    "parameters_digest_domain": "forgeos.governance.local-go-package-dependency-graph-parameters.v1\u0000",
+    "graph_digest_domain": "forgeos.governance.local-go-package-dependency-graph-observation.v1\u0000",
+    "source_digest_domain": "forgeos.governance.local-command-source-tree-profile.v1\u0000",
+    "production_digest_domain": "forgeos.governance.local-go-package-dependency-graph-observation-production.v1\u0000"
+  },
+  "x-forgeos-limits": {
+    "max_canonical_production_bytes": 16777216,
+    "max_go_mod_bytes": 1048576,
+    "max_go_file_parser_bytes": 4194304,
+    "max_aggregate_parser_input_bytes": 67108864,
+    "max_selected_regular_go_files": 16384,
+    "max_nested_modules": 1024,
+    "max_imports_per_file": 1024,
+    "max_import_occurrences": 65536,
+    "max_packages": 16384,
+    "max_dependency_edges": 65536,
+    "max_diagnostics": 16384,
+    "max_source_entries": 65536,
+    "max_individual_source_file_bytes": 1073741824,
+    "max_source_content_bytes": 8589934592,
+    "max_text_scalars": 4096,
+    "max_text_bytes": 16384,
+    "max_run_id_bytes": 160,
+    "integer_domain": "signed_int64"
+  },
+  "x-forgeos-runtime-platform": {
+    "supported_family": "unix",
+    "capture_default": "disabled",
+    "non_unix_behavior": "fail_closed_before_repository_process_or_file_observation",
+    "git_commands": "fixed_read_only_rev_parse_and_ls_files_only",
+    "go_commands": "none",
+    "module_cache_access": "none",
+    "network_access": "none_by_profile",
+    "git_child_environment": "fixed_home_lang_lc_all_path_and_git_flags_only",
+    "parent_environment": "ignored_except_explicit_single_path_input",
+    "git_binary_authentication": false,
+    "sandbox_egress_and_external_effect_containment": false
+  },
+  "x-forgeos-semantic-validation": {
+    "schema_alone_sufficient": false,
+    "python_checker_parses_go": false,
+    "authoritative_checks": [
+      "exact_compact_canonical_utf8_and_bounded_values",
+      "fixed_parameter_profiles_and_domain_digest",
+      "shared_source_profile_and_domain_digest",
+      "selected_go_mod_regular_source_metadata_binding_and_canonical_observed_module_path",
+      "source_derived_regular_and_symlink_nested_module_boundaries",
+      "selected_regular_go_file_partition_and_coverage_accounting",
+      "source_bound_success_files_and_one_diagnostic_per_failed_file",
+      "file_derived_package_grouping_and_test_only_null_import_path",
+      "lexical_import_occurrence_aggregation_and_candidate_resolution",
+      "graph_source_parameters_producer_and_timestamp_binding"
+    ]
+  },
+  "x-forgeos-capability-boundary": {
+    "result": "OBSERVED_LOCAL_GO_PACKAGE_DEPENDENCY_GRAPH (all-regular-Go-file lexical import-header/source observation only; no selected build, dependency availability, compile success, architecture judgment, impact closure, completeness, truth, authority, claim, atom, persistence, or effect attestation)",
+    "capture_default": "disabled",
+    "go_runtime_wiring": "explicit_opt_in_catalyst_go_api",
+    "source_snapshot_semantics": "pre_and_post_equal_bounded_interval_inventory_and_file_observation_not_atomic_filesystem_snapshot",
+    "resolution_semantics": "lexical_candidates_only_not_dependency_or_compile_resolution",
+    "selected_build_semantics": "none",
+    "goos_goarch_build_tags_cgo_semantics": "not_evaluated",
+    "workspace_vendor_replace_module_graph_semantics": "not_resolved",
+    "compile_test_runtime_reachability": "not_evaluated",
+    "architecture_judgment": "none",
+    "impact_analysis_or_closure": "none",
+    "git_binary_authentication": false,
+    "sandbox_egress_and_external_effect_containment": false,
+    "governance_binding": "caller_supplied_only",
+    "automatic_evidence_binding": false,
+    "persistence": "none",
+    "journal_append": false,
+    "sqlite_schema": 26,
+    "attestations": []
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "api_version", "canonicalization", "graph_observation",
+    "parameters_manifest", "source_manifest"
+  ],
+  "properties": {
+    "api_version": {
+      "const": "forgeos.governance.local-go-package-dependency-graph-observation-production/v1"
+    },
+    "canonicalization": { "const": "forgeos.canonical-json/v1" },
+    "graph_observation": { "$ref": "#/$defs/graphObservation" },
+    "parameters_manifest": { "$ref": "#/$defs/parametersManifest" },
+    "source_manifest": { "$ref": "#/$defs/sourceManifest" }
+  },
+  "$defs": {
+    "hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "boundedString": { "type": "string", "minLength": 1, "maxLength": 4096 },
+    "identifier": {
+      "type": "string", "minLength": 1, "maxLength": 160,
+      "pattern": "^[a-z0-9][a-z0-9._:/-]*$"
+    },
+    "goPackageIdentifier": {
+      "type": "string", "minLength": 1, "maxLength": 4096,
+      "pattern": "^(?!(?:break|case|chan|const|continue|default|defer|else|fallthrough|for|func|go|goto|if|import|interface|map|package|range|return|select|struct|switch|type|var)$)[A-Za-z_][A-Za-z0-9_]*$"
+    },
+    "repoPath": {
+      "type": "string", "minLength": 1, "maxLength": 4096,
+      "pattern": "^(?!/)(?![A-Za-z]:)(?!.*\\\\)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)(?!.*\/$).+$"
+    },
+    "repoDirectory": {
+      "oneOf": [
+        { "const": "." },
+        { "$ref": "#/$defs/repoPath" }
+      ]
+    },
+    "nullableString": {
+      "oneOf": [{ "$ref": "#/$defs/boundedString" }, { "type": "null" }]
+    },
+    "nullableHash": {
+      "oneOf": [{ "$ref": "#/$defs/hash" }, { "type": "null" }]
+    },
+    "nullableBoolean": {
+      "oneOf": [{ "type": "boolean" }, { "type": "null" }]
+    },
+    "nullableIndexMode": {
+      "oneOf": [{ "enum": ["100644", "100755", "120000"] }, { "type": "null" }]
+    },
+    "sourceRevision": {
+      "oneOf": [
+        { "type": "string", "pattern": "^git-sha1:[a-f0-9]{40}$" },
+        { "type": "string", "pattern": "^git-sha256:[a-f0-9]{64}$" }
+      ]
+    },
+    "parametersManifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "api_version", "canonicalization", "file_selection_profile_id",
+        "import_resolution_profile_id", "module_directory", "module_profile_id",
+        "parser_profile_id", "source_profile_id"
+      ],
+      "properties": {
+        "api_version": { "const": "forgeos.go-package-dependency-capture.parameters/v1" },
+        "canonicalization": { "const": "forgeos.canonical-json/v1" },
+        "file_selection_profile_id": {
+          "const": "selected-module-all-regular-go-files-union-v1"
+        },
+        "import_resolution_profile_id": {
+          "const": "selected-module-lexical-import-resolution-v1"
+        },
+        "module_directory": { "$ref": "#/$defs/repoDirectory" },
+        "module_profile_id": { "const": "selected-go-mod-module-directive-v1" },
+        "parser_profile_id": { "const": "go-parser-imports-only-no-partial-facts-v1" },
+        "source_profile_id": { "const": "git-worktree-source-tree-v1" }
+      }
+    },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "go_entries_excluded_by_nested_module", "go_entries_excluded_nonregular",
+        "go_entries_in_selected_subtree", "regular_go_files_parsed",
+        "regular_go_files_selected", "regular_go_files_with_diagnostics"
+      ],
+      "properties": {
+        "go_entries_excluded_by_nested_module": { "type": "integer", "minimum": 0 },
+        "go_entries_excluded_nonregular": { "type": "integer", "minimum": 0 },
+        "go_entries_in_selected_subtree": { "type": "integer", "minimum": 0 },
+        "regular_go_files_parsed": { "type": "integer", "minimum": 0, "maximum": 16384 },
+        "regular_go_files_selected": { "type": "integer", "minimum": 0, "maximum": 16384 },
+        "regular_go_files_with_diagnostics": { "type": "integer", "minimum": 0, "maximum": 16384 }
+      }
+    },
+    "nestedModule": {
+      "type": "object", "additionalProperties": false,
+      "required": ["directory", "go_mod_path", "kind"],
+      "properties": {
+        "directory": { "$ref": "#/$defs/repoDirectory" },
+        "go_mod_path": { "$ref": "#/$defs/repoPath" },
+        "kind": { "enum": ["regular", "symlink"] }
+      }
+    },
+    "module": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "directory", "go_mod_bytes", "go_mod_content_sha256", "go_mod_path",
+        "module_path", "nested_modules"
+      ],
+      "properties": {
+        "directory": { "$ref": "#/$defs/repoDirectory" },
+        "go_mod_bytes": { "type": "integer", "minimum": 1, "maximum": 1048576 },
+        "go_mod_content_sha256": { "$ref": "#/$defs/hash" },
+        "go_mod_path": { "$ref": "#/$defs/repoPath" },
+        "module_path": { "$ref": "#/$defs/boundedString" },
+        "nested_modules": {
+          "type": "array", "maxItems": 1024,
+          "items": { "$ref": "#/$defs/nestedModule" }
+        }
+      }
+    },
+    "file": {
+      "type": "object", "additionalProperties": false,
+      "required": ["bytes", "content_sha256", "imports", "package_name", "path", "role"],
+      "properties": {
+        "bytes": { "type": "integer", "minimum": 0, "maximum": 4194304 },
+        "content_sha256": { "$ref": "#/$defs/hash" },
+        "imports": {
+          "type": "array", "maxItems": 1024,
+          "items": { "$ref": "#/$defs/boundedString" }
+        },
+        "package_name": { "$ref": "#/$defs/goPackageIdentifier" },
+        "path": { "$ref": "#/$defs/repoPath" },
+        "role": { "enum": ["compile", "test"] }
+      }
+    },
+    "diagnostic": {
+      "type": "object", "additionalProperties": false,
+      "required": ["code", "path"],
+      "properties": {
+        "code": {
+          "enum": [
+            "go_file_exceeds_parser_limit", "go_file_import_limit_exceeded",
+            "go_file_invalid_utf8", "go_file_parse_error", "go_file_unsupported_text"
+          ]
+        },
+        "path": { "$ref": "#/$defs/repoPath" }
+      }
+    },
+    "package": {
+      "type": "object", "additionalProperties": false,
+      "required": ["compile_files", "directory", "import_path", "name", "test_files"],
+      "properties": {
+        "compile_files": {
+          "type": "array", "maxItems": 16384,
+          "items": { "$ref": "#/$defs/repoPath" }
+        },
+        "directory": { "$ref": "#/$defs/repoDirectory" },
+        "import_path": { "$ref": "#/$defs/nullableString" },
+        "name": { "$ref": "#/$defs/goPackageIdentifier" },
+        "test_files": {
+          "type": "array", "maxItems": 16384,
+          "items": { "$ref": "#/$defs/repoPath" }
+        }
+      }
+    },
+    "dependency": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "from_directory", "from_package_name", "import_path", "relation",
+        "resolution", "resolution_detail", "role", "source_paths",
+        "target_directory", "target_package_name"
+      ],
+      "properties": {
+        "from_directory": { "$ref": "#/$defs/repoDirectory" },
+        "from_package_name": { "$ref": "#/$defs/goPackageIdentifier" },
+        "import_path": { "$ref": "#/$defs/boundedString" },
+        "relation": { "const": "depends_on" },
+        "resolution": {
+          "enum": [
+            "local", "stdlib_candidate", "external_candidate", "unresolved_local",
+            "ambiguous_local", "nested_module_boundary", "cgo_pseudo", "unsupported"
+          ]
+        },
+        "resolution_detail": { "$ref": "#/$defs/nullableString" },
+        "role": { "enum": ["compile", "test"] },
+        "source_paths": {
+          "type": "array", "minItems": 1, "maxItems": 16384,
+          "items": { "$ref": "#/$defs/repoPath" }
+        },
+        "target_directory": {
+          "oneOf": [{ "$ref": "#/$defs/repoDirectory" }, { "type": "null" }]
+        },
+        "target_package_name": {
+          "oneOf": [{ "$ref": "#/$defs/goPackageIdentifier" }, { "type": "null" }]
+        }
+      }
+    },
+    "producer": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "parameters_sha256", "producer_id", "producer_type", "producer_version", "run_id"
+      ],
+      "properties": {
+        "parameters_sha256": { "$ref": "#/$defs/hash" },
+        "producer_id": { "const": "forgeos.local-go-package-dependency-graph-observer" },
+        "producer_type": { "const": "tool" },
+        "producer_version": { "const": "v1" },
+        "run_id": { "$ref": "#/$defs/identifier" }
+      }
+    },
+    "sourceBinding": {
+      "type": "object", "additionalProperties": false,
+      "required": ["source_revision", "source_tree_sha256"],
+      "properties": {
+        "source_revision": { "$ref": "#/$defs/sourceRevision" },
+        "source_tree_sha256": { "$ref": "#/$defs/hash" }
+      }
+    },
+    "graphObservation": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "api_version", "canonicalization", "coverage", "dependencies",
+        "diagnostics", "files", "module", "observed_at_unix_ms", "packages",
+        "producer", "profile_id", "source"
+      ],
+      "properties": {
+        "api_version": { "const": "forgeos.go-package-dependency-graph-observation/v1" },
+        "canonicalization": { "const": "forgeos.canonical-json/v1" },
+        "coverage": { "$ref": "#/$defs/coverage" },
+        "dependencies": {
+          "type": "array", "maxItems": 65536,
+          "items": { "$ref": "#/$defs/dependency" }
+        },
+        "diagnostics": {
+          "type": "array", "maxItems": 16384,
+          "items": { "$ref": "#/$defs/diagnostic" }
+        },
+        "files": {
+          "type": "array", "maxItems": 16384,
+          "items": { "$ref": "#/$defs/file" }
+        },
+        "module": { "$ref": "#/$defs/module" },
+        "observed_at_unix_ms": { "type": "integer", "minimum": 0 },
+        "packages": {
+          "type": "array", "maxItems": 16384,
+          "items": { "$ref": "#/$defs/package" }
+        },
+        "producer": { "$ref": "#/$defs/producer" },
+        "profile_id": { "const": "selected-go-module-lexical-dependency-graph-v1" },
+        "source": { "$ref": "#/$defs/sourceBinding" }
+      }
+    },
+    "sourceEntry": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "bytes", "content_sha256", "executable", "index_mode", "kind",
+        "path", "symlink_target", "tracking"
+      ],
+      "properties": {
+        "bytes": { "type": "integer", "minimum": 0, "maximum": 1073741824 },
+        "content_sha256": { "$ref": "#/$defs/nullableHash" },
+        "executable": { "$ref": "#/$defs/nullableBoolean" },
+        "index_mode": { "$ref": "#/$defs/nullableIndexMode" },
+        "kind": { "enum": ["deleted", "regular", "symlink"] },
+        "path": { "$ref": "#/$defs/repoPath" },
+        "symlink_target": { "$ref": "#/$defs/nullableString" },
+        "tracking": { "enum": ["tracked", "untracked"] }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "regular" } } },
+          "then": { "properties": {
+            "content_sha256": { "$ref": "#/$defs/hash" },
+            "executable": { "type": "boolean" }, "symlink_target": { "type": "null" }
+          } }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "symlink" } } },
+          "then": { "properties": {
+            "content_sha256": { "$ref": "#/$defs/hash" },
+            "executable": { "const": false },
+            "symlink_target": { "$ref": "#/$defs/boundedString" }
+          } }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "deleted" } } },
+          "then": { "properties": {
+            "bytes": { "const": 0 }, "content_sha256": { "type": "null" },
+            "executable": { "type": "null" }, "symlink_target": { "type": "null" },
+            "tracking": { "const": "tracked" }
+          } }
+        },
+        {
+          "if": { "properties": { "tracking": { "const": "untracked" } } },
+          "then": { "properties": {
+            "index_mode": { "type": "null" }, "kind": { "enum": ["regular", "symlink"] }
+          } }
+        },
+        {
+          "if": { "properties": {
+            "kind": { "const": "regular" }, "tracking": { "const": "tracked" }
+          } },
+          "then": { "properties": { "index_mode": { "enum": ["100644", "100755"] } } }
+        },
+        {
+          "if": { "properties": {
+            "kind": { "const": "symlink" }, "tracking": { "const": "tracked" }
+          } },
+          "then": { "properties": { "index_mode": { "const": "120000" } } }
+        }
+      ]
+    },
+    "sourceManifest": {
+      "type": "object", "additionalProperties": false,
+      "required": ["api_version", "canonicalization", "entries", "profile_id", "source_revision"],
+      "properties": {
+        "api_version": { "const": "forgeos.command-capture.source-tree/v1" },
+        "canonicalization": { "const": "forgeos.canonical-json/v1" },
+        "entries": {
+          "type": "array", "maxItems": 65536,
+          "items": { "$ref": "#/$defs/sourceEntry" }
+        },
+        "profile_id": { "const": "git-worktree-source-tree-v1" },
+        "source_revision": { "$ref": "#/$defs/sourceRevision" }
+      }
+    }
+  }
+}
