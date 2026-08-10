@@ -1,15 +1,16 @@
 api_version: forgeos.agent-engineering/v1
 kind: GovernanceContractRegistry
 status: active_contract
-runtime_binding: cross_language_codec_local_journal_atom_projection_artifact_command_evolve_locator_adapters_shadow
+runtime_binding: cross_language_codec_local_journal_atom_projection_artifact_command_evolve_locator_adapters_local_gate_command_producer_shadow
 owner: governance
-version: 7
+version: 8
 completion_authority: forge_accept
 
 scope:
   shipped_kinds: [EvidenceRecord, KnowledgeClaim]
   shipped_projections: [CognitiveAtom]
   shipped_adapters: [artifact_provenance_to_evidence, command_observation_to_evidence, evolve_repo_locator_to_evidence]
+  shipped_producers: [local_gate_command_observation_producer]
   planned_kinds: [ContextPackage, CapabilityGrant, ApprovalRecord, TransitionReceipt, KnowledgeUpdateProposal]
   persistence: local_append_only_exact_evidence_claim_journal
   authority_attestation: unavailable
@@ -196,6 +197,64 @@ evolve_repo_locator_evidence_adapter:
   attests: []
   persistence: none
 
+local_gate_command_observation_producer:
+  api_version: forgeos.governance.local-gate-command-observation-production/v1
+  mode: explicit_opt_in_unix_local_process_observation_production
+  output_kind: forgeos.governance.local-gate-command-observation-production/v1
+  observation_kind: forgeos.command-observation/v1
+  command_classes:
+    gate: [node, harness/gate.mjs]
+    check: [python3, harness/check.py, .]
+    accept: [node, harness/acceptance.mjs]
+    probe_all: [node, harness/acceptance.mjs, --json]
+  exact_execution:
+    logical_cwd: .
+    stdin: empty
+    evidence_type: gate_result
+    capture_default: disabled
+    go_runtime_wiring: explicit_opt_in_in_memory_gate_api
+    one_observation_per_spawn: true
+    non_unix_result: fail_closed_before_spawn
+  profiles:
+    environment:
+      api_version: forgeos.command-capture.environment/v1
+      profile_id: scrubbed-parent-environment-v1
+      actual_child_environment_matches_manifest: true
+    tool:
+      api_version: forgeos.command-capture.tool/v1
+      profile_id: resolved-top-level-executable-v1
+      coverage: top_level_executable_only
+    source:
+      api_version: forgeos.command-capture.source-tree/v1
+      profile_id: git-worktree-source-tree-v1
+      coverage: tracked_stage0_and_nonignored_untracked
+  identity:
+    environment_digest_domain: "forgeos.governance.local-command-environment-profile.v1\0"
+    tool_digest_domain: "forgeos.governance.local-command-tool-profile.v1\0"
+    source_digest_domain: "forgeos.governance.local-command-source-tree-profile.v1\0"
+    production_digest_domain: "forgeos.governance.local-command-observation-production.v1\0"
+  constants:
+    producer_id: forgeos.local-gate-command-observer
+    producer_type: tool
+    producer_version: v1
+    canonicalization: forgeos.canonical-json/v1
+  limits:
+    max_canonical_manifest_bytes: 16777216
+    max_observation_bytes: 131072
+    max_environment_variables: 256
+    max_source_entries: 65536
+    max_individual_file_bytes: 1073741824
+    max_source_content_bytes: 8589934592
+    max_symlink_hops: 32
+    max_text_scalars: 4096
+    max_text_bytes: 16384
+    max_timeout_ms: 86400000
+    integer_domain: signed_int64
+    exit_code_domain: portable_nonnegative_signed_int32
+  positive_result: OBSERVED_LOCAL_PROCESS (local process capture only; no pass, criterion, completion, truth, authority, identity, persistence, or external-effect attestation)
+  attests: []
+  persistence: none
+
 canonicalization:
   format: forgeos.canonical-json/v1
   object_keys: ascii_snake_case_sorted
@@ -340,12 +399,16 @@ canonical_refs:
   evolve_repo_locator_evidence_adapter_schema: docs/contracts/evolve-repo-locator-evidence-adapter-v1.schema.json
   evolve_repo_locator_evidence_adapter_golden_fixture: docs/contracts/fixtures/evolve-repo-locator-evidence-adapter-v1.json
   evolve_repo_locator_evidence_adapter_checker: harness/evolve_repo_locator_evidence_adapter_check.py
+  local_gate_command_observation_producer_schema: docs/contracts/local-gate-command-observation-producer-v1.schema.json
+  local_gate_command_observation_producer_golden_fixture: docs/contracts/fixtures/local-gate-command-observation-producer-v1.json
+  local_gate_command_observation_producer_checker: harness/local_command_observation_producer_check.py
   decision: docs/adr/0045-canonical-evidence-claim-contract.md
   journal_decision: docs/adr/0046-local-governance-record-journal.md
   cognitive_atom_decision: docs/adr/0047-shadow-cognitive-atom-projection-v1.md
   artifact_evidence_adapter_decision: docs/adr/0048-artifact-provenance-evidence-adapter-v1.md
   command_observation_evidence_adapter_decision: docs/adr/0049-command-observation-evidence-adapter-v1.md
   evolve_repo_locator_evidence_adapter_decision: docs/adr/0050-evolve-repo-locator-evidence-adapter-v1.md
+  local_gate_command_observation_producer_decision: docs/adr/0051-local-gate-command-observation-producer-v1.md
   standard: docs/design/ai-engineering-os/governance-contracts.md
 
 contract_pins:
@@ -360,6 +423,8 @@ contract_pins:
   command_observation_evidence_adapter_golden_fixture_sha256: ce888feac319cb40ae7f11f74c007d48391f0c30db942d3ce3dd0a1af2aa3a7c
   evolve_repo_locator_evidence_adapter_schema_sha256: c05ac75241f4439344aec4493f0b30934f5dbe97eef3f59a238ad9c9e50cf5c2
   evolve_repo_locator_evidence_adapter_golden_fixture_sha256: 4a61743c64acc8d3ccadbe6755934a262c6ef8f5b5be46e46e2556420317c2a9
+  local_gate_command_observation_producer_schema_sha256: 2ff3f20560cab93f8b882c2338fb2e944c034001358b186880a2a26817f100e2
+  local_gate_command_observation_producer_golden_fixture_sha256: fd7bd8b2afae2f93a1c4756bfc3f84397d82401edb19fe337849cec5c6a5ac6b
 
 reference_implementations:
   python:
@@ -407,6 +472,12 @@ reference_implementations:
   evolve_repo_locator_evidence_adapter_rust:
     ref: forge-runtime/crates/domain/src/evolve_repo_locator_evidence_contract
     projection: catalyst_repository_only
+  local_gate_command_observation_producer_go:
+    ref: forge-core/internal/localcommandobservationproducer
+    projection: catalyst_repository_only
+  local_gate_command_observation_producer_python_checker:
+    ref: harness/local_command_observation_producer_check.py
+    projection: universal_scaffold
 
 non_capabilities:
   - no truth ledger authoritative current-knowledge view or semantic lifecycle projection
@@ -421,3 +492,4 @@ non_capabilities:
   - Artifact provenance adapter does not read artifact content authenticate producer or collector attest truth authority claim atom completion persistence or effect
   - Command observation adapter does not execute commands verify output preimages authenticate producer or digest profiles attest pass completion truth authority claim atom persistence or effect
   - Evolve repository locator adapter does not read repository files or reports verify digest preimages authenticate producer confirm scan judgments attest completion truth authority claim atom persistence or effect
+  - Local gate command observation producer is explicit opt-in Unix local capture only and does not attest pass criterion completion truth authority identity persistence or external effects

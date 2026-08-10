@@ -88,6 +88,13 @@ type Spec struct {
 	Dir   string    // working directory; "" = inherit forge's cwd
 	Env   []string  // child environment; nil = inherit parent (os/exec default)
 	Stdin io.Reader // child stdin; nil = os/exec default
+	// ExecutablePath, when non-empty, is the already-resolved executable used
+	// for this run while argv[0] remains the caller-declared process name. It
+	// is primarily useful to producers that resolve and snapshot a tool before
+	// execution. Clearing exec.Cmd.Err is required because exec.CommandContext
+	// may already have recorded a failed LookPath for argv[0]. Empty preserves
+	// the exact legacy lookup behavior.
+	ExecutablePath string
 }
 
 // Run executes argv with the bounded-run mechanics under ctx and opts:
@@ -111,6 +118,10 @@ func Run(ctx context.Context, argv []string, opts Options, capture Capture, spec
 	runCtx, runCancel := deadlineContext(ctx, opts)
 	defer runCancel()
 	cmd := exec.CommandContext(runCtx, argv[0], argv[1:]...)
+	if spec.ExecutablePath != "" {
+		cmd.Path = spec.ExecutablePath
+		cmd.Err = nil
+	}
 	setupProcessGroup(cmd)
 	if spec.Dir != "" {
 		cmd.Dir = spec.Dir
@@ -128,8 +139,8 @@ func Run(ctx context.Context, argv []string, opts Options, capture Capture, spec
 		runErr := cmd.Run()
 		res := Result{
 			Stdout: stdout.buf, Stderr: stderr.buf, Err: runErr,
-			CtxErr: runCtx.Err(),
-			Total:  int64(stdout.total) + int64(stderr.total),
+			CtxErr:   runCtx.Err(),
+			Total:    int64(stdout.total) + int64(stderr.total),
 			Retained: len(stdout.buf) + len(stderr.buf),
 		}
 		res.logDegradation(opts)

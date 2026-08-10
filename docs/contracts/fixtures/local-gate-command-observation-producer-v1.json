@@ -1,0 +1,154 @@
+{
+  "api_version": "forgeos.governance.local-gate-command-observation-production.fixture/v1",
+  "expected": {
+    "canonical_environment_manifest_json": "{\"api_version\":\"forgeos.command-capture.environment/v1\",\"canonicalization\":\"forgeos.canonical-json/v1\",\"profile_id\":\"scrubbed-parent-environment-v1\",\"variables\":[{\"name\":\"LANG\",\"value\":\"C\"},{\"name\":\"PATH\",\"value\":\"/fixture/bin\"}]}",
+    "canonical_observation_json": "{\"api_version\":\"forgeos.command-observation/v1\",\"canonicalization\":\"forgeos.canonical-json/v1\",\"command\":{\"argv\":[\"node\",\"harness/gate.mjs\"],\"cwd\":\".\",\"environment_sha256\":\"d91eb0a89f53aee65ffc2984500f4a3f8b6b91fafb24c214a490da1bf1a4f19a\",\"stdin_bytes\":0,\"stdin_sha256\":\"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\",\"timeout_ms\":600000,\"tool_snapshot_sha256\":\"0e381541522c024e83f1a06e7ab00a3538338430313750d2c28d1c9d94ac0ed9\"},\"ended_at_unix_ms\":1786341896789,\"evidence_type\":\"gate_result\",\"producer\":{\"producer_id\":\"forgeos.local-gate-command-observer\",\"producer_type\":\"tool\",\"producer_version\":\"v1\",\"run_id\":\"fixture-contract-0051\"},\"source\":{\"source_revision\":\"git-sha1:1111111111111111111111111111111111111111\",\"source_tree_sha256\":\"d22800d2631353fd224b0f655a601ace3b89c76107d9cbf522aad65af8581629\"},\"started_at_unix_ms\":1786341896000,\"streams\":{\"combined\":{\"bytes\":0,\"retained_bytes\":0,\"retained_sha256\":\"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\",\"sha256\":\"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\"},\"stderr\":{\"bytes\":0,\"retained_bytes\":0,\"retained_sha256\":\"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\",\"sha256\":\"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\"},\"stdout\":{\"bytes\":0,\"retained_bytes\":0,\"retained_sha256\":\"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\",\"sha256\":\"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\"}},\"termination\":{\"exit_code\":0,\"kind\":\"exited\"}}",
+    "canonical_production_json": "{\"api_version\":\"forgeos.governance.local-gate-command-observation-production/v1\",\"canonicalization\":\"forgeos.canonical-json/v1\",\"environment_manifest\":{\"api_version\":\"forgeos.command-capture.environment/v1\",\"canonicalization\":\"forgeos.canonical-json/v1\",\"profile_id\":\"scrubbed-parent-environment-v1\",\"variables\":[{\"name\":\"LANG\",\"value\":\"C\"},{\"name\":\"PATH\",\"value\":\"/fixture/bin\"}]},\"observation\":{\"api_version\":\"forgeos.command-observation/v1\",\"canonicalization\":\"forgeos.canonical-json/v1\",\"command\":{\"argv\":[\"node\",\"harness/gate.mjs\"],\"cwd\":\".\",\"environment_sha256\":\"d91eb0a89f53aee65ffc2984500f4a3f8b6b91fafb24c214a490da1bf1a4f19a\",\"stdin_bytes\":0,\"stdin_sha256\":\"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\",\"timeout_ms\":600000,\"tool_snapshot_sha256\":\"0e381541522c024e83f1a06e7ab00a3538338430313750d2c28d1c9d94ac0ed9\"},\"ended_at_unix_ms\":1786341896789,\"evidence_type\":\"gate_result\",\"producer\":{\"producer_id\":\"forgeos.local-gate-command-observer\",\"producer_type\":\"tool\",\"producer_version\":\"v1\",\"run_id\":\"fixture-contract-0051\"},\"source\":{\"source_revision\":\"git-sha1:1111111111111111111111111111111111111111\",\"source_tree_sha256\":\"d22800d2631353fd224b0f655a601ace3b89c76107d9cbf522aad65af8581629\"},\"started_at_unix_ms\":1786341896000,\"streams\":{\"combined\":{\"bytes\":0,\"retained_bytes\":0,\"retained_sha256\":\"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\",\"sha256\":\"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\"},\"stderr\":{\"bytes\":0,\"retained_bytes\":0,\"retained_sha256\":\"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\",\"sha256\":\"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\"},\"stdout\":{\"bytes\":0,\"retained_bytes\":0,\"retained_sha256\":\"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\",\"sha256\":\"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\"}},\"termination\":{\"exit_code\":0,\"kind\":\"exited\"}},\"source_manifest\":{\"api_version\":\"forgeos.command-capture.source-tree/v1\",\"canonicalization\":\"forgeos.canonical-json/v1\",\"entries\":[{\"bytes\":16,\"content_sha256\":\"ebf3b6b5105312112b72b20164169561c85ad911b11ec6224111e2e872a905d5\",\"executable\":false,\"index_mode\":null,\"kind\":\"regular\",\"path\":\"docs/release/fixture.md\",\"symlink_target\":null,\"tracking\":\"untracked\"},{\"bytes\":16,\"content_sha256\":\"80199dcea909c381b294f719d271e806eec51d6e6b5279711690d0c1e6c8fce7\",\"executable\":false,\"index_mode\":\"120000\",\"kind\":\"symlink\",\"path\":\"gate-link.mjs\",\"symlink_target\":\"harness/gate.mjs\",\"tracking\":\"tracked\"},{\"bytes\":20,\"content_sha256\":\"8a120f6514dc4df5a12368dc2c70f9e269ebb3d00ddd1835e467d5312fdc08cc\",\"executable\":false,\"index_mode\":\"100644\",\"kind\":\"regular\",\"path\":\"harness/gate.mjs\",\"symlink_target\":null,\"tracking\":\"tracked\"}],\"profile_id\":\"git-worktree-source-tree-v1\",\"source_revision\":\"git-sha1:1111111111111111111111111111111111111111\"},\"tool_manifest\":{\"api_version\":\"forgeos.command-capture.tool/v1\",\"bytes\":16,\"canonicalization\":\"forgeos.canonical-json/v1\",\"final_path\":\"/fixture/bin/node\",\"mode\":493,\"profile_id\":\"resolved-top-level-executable-v1\",\"requested_path\":\"node\",\"resolved_path\":\"/fixture/bin/node\",\"sha256\":\"1d8adaea3f14aee94730adfe47c6f2d32cd9e08211c99d31e1dffc1bc4e7168d\",\"symlink_hops\":[]}}",
+    "canonical_source_manifest_json": "{\"api_version\":\"forgeos.command-capture.source-tree/v1\",\"canonicalization\":\"forgeos.canonical-json/v1\",\"entries\":[{\"bytes\":16,\"content_sha256\":\"ebf3b6b5105312112b72b20164169561c85ad911b11ec6224111e2e872a905d5\",\"executable\":false,\"index_mode\":null,\"kind\":\"regular\",\"path\":\"docs/release/fixture.md\",\"symlink_target\":null,\"tracking\":\"untracked\"},{\"bytes\":16,\"content_sha256\":\"80199dcea909c381b294f719d271e806eec51d6e6b5279711690d0c1e6c8fce7\",\"executable\":false,\"index_mode\":\"120000\",\"kind\":\"symlink\",\"path\":\"gate-link.mjs\",\"symlink_target\":\"harness/gate.mjs\",\"tracking\":\"tracked\"},{\"bytes\":20,\"content_sha256\":\"8a120f6514dc4df5a12368dc2c70f9e269ebb3d00ddd1835e467d5312fdc08cc\",\"executable\":false,\"index_mode\":\"100644\",\"kind\":\"regular\",\"path\":\"harness/gate.mjs\",\"symlink_target\":null,\"tracking\":\"tracked\"}],\"profile_id\":\"git-worktree-source-tree-v1\",\"source_revision\":\"git-sha1:1111111111111111111111111111111111111111\"}",
+    "canonical_tool_manifest_json": "{\"api_version\":\"forgeos.command-capture.tool/v1\",\"bytes\":16,\"canonicalization\":\"forgeos.canonical-json/v1\",\"final_path\":\"/fixture/bin/node\",\"mode\":493,\"profile_id\":\"resolved-top-level-executable-v1\",\"requested_path\":\"node\",\"resolved_path\":\"/fixture/bin/node\",\"sha256\":\"1d8adaea3f14aee94730adfe47c6f2d32cd9e08211c99d31e1dffc1bc4e7168d\",\"symlink_hops\":[]}",
+    "environment_sha256": "d91eb0a89f53aee65ffc2984500f4a3f8b6b91fafb24c214a490da1bf1a4f19a",
+    "production_sha256": "fe0a9a88e0d52c2d2fb713247f00f657958c5722615814a2b5c6c6ebd586f583",
+    "result": "OBSERVED_LOCAL_PROCESS (local process capture only; no pass, criterion, completion, truth, authority, identity, persistence, or external-effect attestation)",
+    "source_tree_sha256": "d22800d2631353fd224b0f655a601ace3b89c76107d9cbf522aad65af8581629",
+    "tool_snapshot_sha256": "0e381541522c024e83f1a06e7ab00a3538338430313750d2c28d1c9d94ac0ed9"
+  },
+  "fixture_semantics": "PURE_CONTRACT_FIXTURE (deterministic bytes only; no live process execution, pass, criterion, completion, truth, authority, identity, persistence, or external-effect attestation)",
+  "preimages": {
+    "source_regular_files": [
+      {
+        "path": "docs/release/fixture.md",
+        "utf8": "fixture release\n"
+      },
+      {
+        "path": "harness/gate.mjs",
+        "utf8": "fixture gate source\n"
+      }
+    ],
+    "tool": {
+      "final_path": "/fixture/bin/node",
+      "utf8": "fixture-node-v1\n"
+    }
+  },
+  "production": {
+    "api_version": "forgeos.governance.local-gate-command-observation-production/v1",
+    "canonicalization": "forgeos.canonical-json/v1",
+    "environment_manifest": {
+      "api_version": "forgeos.command-capture.environment/v1",
+      "canonicalization": "forgeos.canonical-json/v1",
+      "profile_id": "scrubbed-parent-environment-v1",
+      "variables": [
+        {
+          "name": "LANG",
+          "value": "C"
+        },
+        {
+          "name": "PATH",
+          "value": "/fixture/bin"
+        }
+      ]
+    },
+    "observation": {
+      "api_version": "forgeos.command-observation/v1",
+      "canonicalization": "forgeos.canonical-json/v1",
+      "command": {
+        "argv": [
+          "node",
+          "harness/gate.mjs"
+        ],
+        "cwd": ".",
+        "environment_sha256": "d91eb0a89f53aee65ffc2984500f4a3f8b6b91fafb24c214a490da1bf1a4f19a",
+        "stdin_bytes": 0,
+        "stdin_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "timeout_ms": 600000,
+        "tool_snapshot_sha256": "0e381541522c024e83f1a06e7ab00a3538338430313750d2c28d1c9d94ac0ed9"
+      },
+      "ended_at_unix_ms": 1786341896789,
+      "evidence_type": "gate_result",
+      "producer": {
+        "producer_id": "forgeos.local-gate-command-observer",
+        "producer_type": "tool",
+        "producer_version": "v1",
+        "run_id": "fixture-contract-0051"
+      },
+      "source": {
+        "source_revision": "git-sha1:1111111111111111111111111111111111111111",
+        "source_tree_sha256": "d22800d2631353fd224b0f655a601ace3b89c76107d9cbf522aad65af8581629"
+      },
+      "started_at_unix_ms": 1786341896000,
+      "streams": {
+        "combined": {
+          "bytes": 0,
+          "retained_bytes": 0,
+          "retained_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "stderr": {
+          "bytes": 0,
+          "retained_bytes": 0,
+          "retained_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "stdout": {
+          "bytes": 0,
+          "retained_bytes": 0,
+          "retained_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "termination": {
+        "exit_code": 0,
+        "kind": "exited"
+      }
+    },
+    "source_manifest": {
+      "api_version": "forgeos.command-capture.source-tree/v1",
+      "canonicalization": "forgeos.canonical-json/v1",
+      "entries": [
+        {
+          "bytes": 16,
+          "content_sha256": "ebf3b6b5105312112b72b20164169561c85ad911b11ec6224111e2e872a905d5",
+          "executable": false,
+          "index_mode": null,
+          "kind": "regular",
+          "path": "docs/release/fixture.md",
+          "symlink_target": null,
+          "tracking": "untracked"
+        },
+        {
+          "bytes": 16,
+          "content_sha256": "80199dcea909c381b294f719d271e806eec51d6e6b5279711690d0c1e6c8fce7",
+          "executable": false,
+          "index_mode": "120000",
+          "kind": "symlink",
+          "path": "gate-link.mjs",
+          "symlink_target": "harness/gate.mjs",
+          "tracking": "tracked"
+        },
+        {
+          "bytes": 20,
+          "content_sha256": "8a120f6514dc4df5a12368dc2c70f9e269ebb3d00ddd1835e467d5312fdc08cc",
+          "executable": false,
+          "index_mode": "100644",
+          "kind": "regular",
+          "path": "harness/gate.mjs",
+          "symlink_target": null,
+          "tracking": "tracked"
+        }
+      ],
+      "profile_id": "git-worktree-source-tree-v1",
+      "source_revision": "git-sha1:1111111111111111111111111111111111111111"
+    },
+    "tool_manifest": {
+      "api_version": "forgeos.command-capture.tool/v1",
+      "bytes": 16,
+      "canonicalization": "forgeos.canonical-json/v1",
+      "final_path": "/fixture/bin/node",
+      "mode": 493,
+      "profile_id": "resolved-top-level-executable-v1",
+      "requested_path": "node",
+      "resolved_path": "/fixture/bin/node",
+      "sha256": "1d8adaea3f14aee94730adfe47c6f2d32cd9e08211c99d31e1dffc1bc4e7168d",
+      "symlink_hops": []
+    }
+  }
+}

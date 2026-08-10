@@ -1,0 +1,494 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forgeos.local/contracts/local-gate-command-observation-producer-v1.schema.json",
+  "title": "ForgeOS Local Gate Command Observation Production v1",
+  "description": "Exact local process-observation production package for one gate/check/accept/acceptance-json spawn. It binds a secret-scrubbed explicit child environment, resolved top-level executable and bounded-interval Git working-source manifest to ADR-0049 CommandObservation v1. It grants no pass, criterion, completion, truth, authority, identity, persistence or external-effect attestation.",
+  "$comment": "Schema alone cannot enforce exact canonical bytes, UTF-8 byte caps, secret-name scrubbing, sorted unique arrays, manifest domain digests, source inventory correspondence, time ordering, stream count relations, drain completeness or full/retained digest preimages.",
+  "x-forgeos-canonicalization": {
+    "format": "forgeos.canonical-json/v1",
+    "exact_compact_utf8_input": true,
+    "environment_digest_domain": "forgeos.governance.local-command-environment-profile.v1\u0000",
+    "tool_digest_domain": "forgeos.governance.local-command-tool-profile.v1\u0000",
+    "source_digest_domain": "forgeos.governance.local-command-source-tree-profile.v1\u0000",
+    "production_digest_domain": "forgeos.governance.local-command-observation-production.v1\u0000"
+  },
+  "x-forgeos-limits": {
+    "max_canonical_manifest_bytes": 16777216,
+    "max_observation_bytes": 131072,
+    "max_environment_variables": 256,
+    "max_source_entries": 65536,
+    "max_individual_file_bytes": 1073741824,
+    "max_source_content_bytes": 8589934592,
+    "max_symlink_hops": 32,
+    "max_text_scalars": 4096,
+    "max_text_bytes": 16384,
+    "max_timeout_ms": 86400000,
+    "integer_domain": "signed_int64",
+    "exit_code_domain": "portable_nonnegative_signed_int32"
+  },
+  "x-forgeos-runtime-platform": {
+    "supported_family": "unix",
+    "non_unix_behavior": "fail_closed_before_profile_snapshot_or_process_spawn",
+    "windows_profile": "not_defined_in_v1"
+  },
+  "x-forgeos-semantic-validation": {
+    "schema_alone_sufficient": false,
+    "observation_ref": "#CommandObservationV1",
+    "authoritative_checks": [
+      "exact_compact_canonical_utf8",
+      "forbidden_unicode_and_bounded_text",
+      "local_command_class_exact_argv",
+      "environment_names_valid_sorted_unique_and_path_present",
+      "secret_cloud_auth_and_proxy_names_absent",
+      "environment_manifest_digest_matches_command",
+      "tool_paths_symlink_chain_mode_bytes_and_digest",
+      "tool_manifest_digest_matches_command",
+      "source_revision_object_format",
+      "source_entries_sorted_unique_and_complete_for_enumerated_inventory",
+      "tracked_index_and_worktree_kind_compatible",
+      "tracked_forge_and_gitlink_rejected_untracked_forge_excluded_release_included",
+      "source_manifest_digest_and_revision_match_observation",
+      "nondecreasing_time",
+      "stream_count_and_digest_relations",
+      "empty_stdin_and_stream_digests",
+      "execution_started_drain_complete_and_projectable_termination"
+    ]
+  },
+  "x-forgeos-capability-boundary": {
+    "result": "OBSERVED_LOCAL_PROCESS (local process capture only; no pass, criterion, completion, truth, authority, identity, persistence, or external-effect attestation)",
+    "capture_default": "disabled",
+    "go_runtime_wiring": "explicit_opt_in_in_memory_gate_api",
+    "governance_binding": "caller_supplied_only",
+    "persistence": "none",
+    "source_snapshot_semantics": "bounded_interval_inventory_and_entry_observation_not_atomic_filesystem_snapshot_or_execution_time_source_pinning",
+    "journal_append": false,
+    "sqlite_schema": 25,
+    "attestations": []
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "api_version",
+    "canonicalization",
+    "environment_manifest",
+    "observation",
+    "source_manifest",
+    "tool_manifest"
+  ],
+  "properties": {
+    "api_version": { "const": "forgeos.governance.local-gate-command-observation-production/v1" },
+    "canonicalization": { "const": "forgeos.canonical-json/v1" },
+    "environment_manifest": { "$ref": "#/$defs/environmentManifest" },
+    "observation": { "$ref": "#/$defs/productionObservation" },
+    "source_manifest": { "$ref": "#/$defs/sourceManifest" },
+    "tool_manifest": { "$ref": "#/$defs/toolManifest" }
+  },
+  "$defs": {
+    "hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160,
+      "pattern": "^[a-z0-9][a-z0-9._:/-]*$"
+    },
+    "boundedString": { "type": "string", "maxLength": 4096 },
+    "nonemptyBoundedString": { "type": "string", "minLength": 1, "maxLength": 4096 },
+    "sourceRevision": {
+      "oneOf": [
+        { "type": "string", "pattern": "^git-sha1:[a-f0-9]{40}$" },
+        { "type": "string", "pattern": "^git-sha256:[a-f0-9]{64}$" }
+      ]
+    },
+    "repoPath": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096,
+      "pattern": "^(?!/)(?![A-Za-z]:)(?!.*\\\\)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)(?!.*\/$).+$"
+    },
+    "environmentVariable": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "value"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096,
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+        },
+        "value": { "$ref": "#/$defs/boundedString" }
+      }
+    },
+    "environmentManifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["api_version", "canonicalization", "profile_id", "variables"],
+      "properties": {
+        "api_version": { "const": "forgeos.command-capture.environment/v1" },
+        "canonicalization": { "const": "forgeos.canonical-json/v1" },
+        "profile_id": { "const": "scrubbed-parent-environment-v1" },
+        "variables": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "items": { "$ref": "#/$defs/environmentVariable" }
+        }
+      }
+    },
+    "symlinkHop": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "target"],
+      "properties": {
+        "path": { "$ref": "#/$defs/nonemptyBoundedString" },
+        "target": { "$ref": "#/$defs/nonemptyBoundedString" }
+      }
+    },
+    "toolManifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "api_version",
+        "bytes",
+        "canonicalization",
+        "final_path",
+        "mode",
+        "profile_id",
+        "requested_path",
+        "resolved_path",
+        "sha256",
+        "symlink_hops"
+      ],
+      "properties": {
+        "api_version": { "const": "forgeos.command-capture.tool/v1" },
+        "bytes": { "type": "integer", "minimum": 0, "maximum": 1073741824 },
+        "canonicalization": { "const": "forgeos.canonical-json/v1" },
+        "final_path": { "$ref": "#/$defs/nonemptyBoundedString" },
+        "mode": { "type": "integer", "minimum": 0, "maximum": 511 },
+        "profile_id": { "const": "resolved-top-level-executable-v1" },
+        "requested_path": { "enum": ["node", "python3"] },
+        "resolved_path": { "$ref": "#/$defs/nonemptyBoundedString" },
+        "sha256": { "$ref": "#/$defs/hash" },
+        "symlink_hops": {
+          "type": "array",
+          "maxItems": 32,
+          "items": { "$ref": "#/$defs/symlinkHop" }
+        }
+      }
+    },
+    "nullableHash": {
+      "oneOf": [{ "$ref": "#/$defs/hash" }, { "type": "null" }]
+    },
+    "nullableBoolean": {
+      "oneOf": [{ "type": "boolean" }, { "type": "null" }]
+    },
+    "nullableIndexMode": {
+      "oneOf": [
+        { "enum": ["100644", "100755", "120000"] },
+        { "type": "null" }
+      ]
+    },
+    "nullableString": {
+      "oneOf": [{ "$ref": "#/$defs/nonemptyBoundedString" }, { "type": "null" }]
+    },
+    "sourceEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bytes",
+        "content_sha256",
+        "executable",
+        "index_mode",
+        "kind",
+        "path",
+        "symlink_target",
+        "tracking"
+      ],
+      "properties": {
+        "bytes": { "type": "integer", "minimum": 0, "maximum": 1073741824 },
+        "content_sha256": { "$ref": "#/$defs/nullableHash" },
+        "executable": { "$ref": "#/$defs/nullableBoolean" },
+        "index_mode": { "$ref": "#/$defs/nullableIndexMode" },
+        "kind": { "enum": ["deleted", "regular", "symlink"] },
+        "path": { "$ref": "#/$defs/repoPath" },
+        "symlink_target": { "$ref": "#/$defs/nullableString" },
+        "tracking": { "enum": ["tracked", "untracked"] }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "regular" } } },
+          "then": {
+            "properties": {
+              "content_sha256": { "$ref": "#/$defs/hash" },
+              "executable": { "type": "boolean" },
+              "symlink_target": { "type": "null" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "symlink" } } },
+          "then": {
+            "properties": {
+              "content_sha256": { "$ref": "#/$defs/hash" },
+              "executable": { "const": false },
+              "symlink_target": { "$ref": "#/$defs/nonemptyBoundedString" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "deleted" } } },
+          "then": {
+            "properties": {
+              "bytes": { "const": 0 },
+              "content_sha256": { "type": "null" },
+              "executable": { "type": "null" },
+              "symlink_target": { "type": "null" },
+              "tracking": { "const": "tracked" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "tracking": { "const": "untracked" } } },
+          "then": {
+            "properties": {
+              "index_mode": { "type": "null" },
+              "kind": { "enum": ["regular", "symlink"] }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": { "const": "regular" },
+              "tracking": { "const": "tracked" }
+            }
+          },
+          "then": { "properties": { "index_mode": { "enum": ["100644", "100755"] } } }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": { "const": "symlink" },
+              "tracking": { "const": "tracked" }
+            }
+          },
+          "then": { "properties": { "index_mode": { "const": "120000" } } }
+        }
+      ]
+    },
+    "sourceManifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["api_version", "canonicalization", "entries", "profile_id", "source_revision"],
+      "properties": {
+        "api_version": { "const": "forgeos.command-capture.source-tree/v1" },
+        "canonicalization": { "const": "forgeos.canonical-json/v1" },
+        "entries": {
+          "type": "array",
+          "maxItems": 65536,
+          "items": { "$ref": "#/$defs/sourceEntry" }
+        },
+        "profile_id": { "const": "git-worktree-source-tree-v1" },
+        "source_revision": { "$ref": "#/$defs/sourceRevision" }
+      }
+    },
+    "cwd": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096,
+      "pattern": "^(?:\\.|(?!/)(?![A-Za-z]:)(?!.*\\\\)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)(?!.*\/$).+)$"
+    },
+    "nullableTimeout": {
+      "oneOf": [
+        { "type": "integer", "minimum": 1, "maximum": 86400000 },
+        { "type": "null" }
+      ]
+    },
+    "command": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "argv",
+        "cwd",
+        "environment_sha256",
+        "stdin_bytes",
+        "stdin_sha256",
+        "timeout_ms",
+        "tool_snapshot_sha256"
+      ],
+      "properties": {
+        "argv": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": { "$ref": "#/$defs/boundedString" }
+        },
+        "cwd": { "$ref": "#/$defs/cwd" },
+        "environment_sha256": { "$ref": "#/$defs/hash" },
+        "stdin_bytes": { "type": "integer", "minimum": 0, "maximum": 9223372036854775807 },
+        "stdin_sha256": { "$ref": "#/$defs/hash" },
+        "timeout_ms": { "$ref": "#/$defs/nullableTimeout" },
+        "tool_snapshot_sha256": { "$ref": "#/$defs/hash" }
+      }
+    },
+    "localGateArgv": {
+      "oneOf": [
+        {
+          "prefixItems": [{ "const": "node" }, { "const": "harness/gate.mjs" }],
+          "items": false,
+          "minItems": 2,
+          "maxItems": 2
+        },
+        {
+          "prefixItems": [{ "const": "python3" }, { "const": "harness/check.py" }, { "const": "." }],
+          "items": false,
+          "minItems": 3,
+          "maxItems": 3
+        },
+        {
+          "prefixItems": [{ "const": "node" }, { "const": "harness/acceptance.mjs" }],
+          "items": false,
+          "minItems": 2,
+          "maxItems": 2
+        },
+        {
+          "prefixItems": [{ "const": "node" }, { "const": "harness/acceptance.mjs" }, { "const": "--json" }],
+          "items": false,
+          "minItems": 3,
+          "maxItems": 3
+        }
+      ]
+    },
+    "localGateCommand": {
+      "allOf": [
+        { "$ref": "#/$defs/command" },
+        {
+          "properties": {
+            "argv": { "$ref": "#/$defs/localGateArgv" },
+            "cwd": { "const": "." },
+            "stdin_bytes": { "const": 0 },
+            "stdin_sha256": {
+              "const": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            }
+          }
+        }
+      ]
+    },
+    "producer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["producer_id", "producer_type", "producer_version", "run_id"],
+      "properties": {
+        "producer_id": { "$ref": "#/$defs/identifier" },
+        "producer_type": { "enum": ["service", "tool"] },
+        "producer_version": { "$ref": "#/$defs/identifier" },
+        "run_id": { "$ref": "#/$defs/identifier" }
+      }
+    },
+    "localProducer": {
+      "allOf": [
+        { "$ref": "#/$defs/producer" },
+        {
+          "properties": {
+            "producer_id": { "const": "forgeos.local-gate-command-observer" },
+            "producer_type": { "const": "tool" },
+            "producer_version": { "const": "v1" }
+          }
+        }
+      ]
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_revision", "source_tree_sha256"],
+      "properties": {
+        "source_revision": { "$ref": "#/$defs/sourceRevision" },
+        "source_tree_sha256": { "$ref": "#/$defs/hash" }
+      }
+    },
+    "stream": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bytes", "retained_bytes", "retained_sha256", "sha256"],
+      "properties": {
+        "bytes": { "type": "integer", "minimum": 0, "maximum": 9223372036854775807 },
+        "retained_bytes": { "type": "integer", "minimum": 0, "maximum": 9223372036854775807 },
+        "retained_sha256": { "$ref": "#/$defs/hash" },
+        "sha256": { "$ref": "#/$defs/hash" }
+      }
+    },
+    "streams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["combined", "stderr", "stdout"],
+      "properties": {
+        "combined": { "$ref": "#/$defs/stream" },
+        "stderr": { "$ref": "#/$defs/stream" },
+        "stdout": { "$ref": "#/$defs/stream" }
+      }
+    },
+    "termination": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["exit_code", "kind"],
+          "properties": {
+            "exit_code": { "type": "integer", "minimum": 0, "maximum": 2147483647 },
+            "kind": { "const": "exited" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["exit_code", "kind"],
+          "properties": {
+            "exit_code": { "type": "null" },
+            "kind": { "enum": ["cancelled", "timed_out"] }
+          }
+        }
+      ]
+    },
+    "observation": {
+      "$anchor": "CommandObservationV1",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "api_version",
+        "canonicalization",
+        "command",
+        "ended_at_unix_ms",
+        "evidence_type",
+        "producer",
+        "source",
+        "started_at_unix_ms",
+        "streams",
+        "termination"
+      ],
+      "properties": {
+        "api_version": { "const": "forgeos.command-observation/v1" },
+        "canonicalization": { "const": "forgeos.canonical-json/v1" },
+        "command": { "$ref": "#/$defs/command" },
+        "ended_at_unix_ms": { "type": "integer", "minimum": 0, "maximum": 9223372036854775807 },
+        "evidence_type": { "enum": ["gate_result", "test_run"] },
+        "producer": { "$ref": "#/$defs/producer" },
+        "source": { "$ref": "#/$defs/source" },
+        "started_at_unix_ms": { "type": "integer", "minimum": 0, "maximum": 9223372036854775807 },
+        "streams": { "$ref": "#/$defs/streams" },
+        "termination": { "$ref": "#/$defs/termination" }
+      }
+    },
+    "productionObservation": {
+      "allOf": [
+        { "$ref": "#/$defs/observation" },
+        {
+          "properties": {
+            "command": { "$ref": "#/$defs/localGateCommand" },
+            "evidence_type": { "const": "gate_result" },
+            "producer": { "$ref": "#/$defs/localProducer" }
+          }
+        }
+      ]
+    }
+  }
+}

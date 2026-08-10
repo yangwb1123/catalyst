@@ -72,17 +72,20 @@ export const COPIED_FILES = [
   join('docs', 'adr', '0048-artifact-provenance-evidence-adapter-v1.md'),
   join('docs', 'adr', '0049-command-observation-evidence-adapter-v1.md'),
   join('docs', 'adr', '0050-evolve-repo-locator-evidence-adapter-v1.md'),
+  join('docs', 'adr', '0051-local-gate-command-observation-producer-v1.md'),
   join('docs', 'contracts', 'governance-evidence-claim-v1.schema.json'),
   join('docs', 'contracts', 'governance-record-journal-v1.schema.json'),
   join('docs', 'contracts', 'cognitive-atom-projection-v1.schema.json'),
   join('docs', 'contracts', 'artifact-evidence-adapter-v1.schema.json'),
   join('docs', 'contracts', 'command-observation-evidence-adapter-v1.schema.json'),
   join('docs', 'contracts', 'evolve-repo-locator-evidence-adapter-v1.schema.json'),
+  join('docs', 'contracts', 'local-gate-command-observation-producer-v1.schema.json'),
   join('docs', 'contracts', 'fixtures', 'governance-evidence-claim-v1.json'),
   join('docs', 'contracts', 'fixtures', 'cognitive-atom-projection-v1.json'),
   join('docs', 'contracts', 'fixtures', 'artifact-evidence-adapter-v1.json'),
   join('docs', 'contracts', 'fixtures', 'command-observation-evidence-adapter-v1.json'),
   join('docs', 'contracts', 'fixtures', 'evolve-repo-locator-evidence-adapter-v1.json'),
+  join('docs', 'contracts', 'fixtures', 'local-gate-command-observation-producer-v1.json'),
   // harness tools
   join('harness', 'gate.mjs'),
   join('harness', 'policies.yml'),
@@ -119,6 +122,13 @@ export const COPIED_FILES = [
   join('harness', 'evolve_repo_locator_evidence_adapter', 'codec.py'),
   join('harness', 'evolve_repo_locator_evidence_adapter', 'constants.py'),
   join('harness', 'evolve_repo_locator_evidence_adapter', 'fixture.py'),
+  join('harness', 'local_command_observation_producer_check.py'), // ADR-0051 pure contract-fixture validator
+  join('harness', 'local_command_observation_producer', '__init__.py'),
+  join('harness', 'local_command_observation_producer', 'codec.py'),
+  join('harness', 'local_command_observation_producer', 'constants.py'),
+  join('harness', 'local_command_observation_producer', 'fixture.py'),
+  join('harness', 'local_command_observation_producer', 'profiles.py'),
+  join('harness', 'local_command_observation_producer', 'semantics.py'),
   join('harness', 'backend_decision_contract.py'), // canonical backend trigger/dimension/floor vocabulary and byte pins
   join('harness', 'backend_decision_check.py'), // BackendDecisionPackage contract + instance validator (shadow)
   join('harness', 'backend_evidence_check.py'), // typed/subject-bound bounded evidence resolution
@@ -146,6 +156,7 @@ export const COPIED_FILES = [
   join('harness', 'governance_engineering', '__init__.py'),
   join('harness', 'governance_engineering', 'source_adapters.py'), // versioned source-adapter registry/schema checks split from the root gate
   join('harness', 'governance_engineering', 'evolve_locator_adapter.py'), // ADR-0050 registry/schema/detector/Skill freeze
+  join('harness', 'governance_engineering', 'local_command_observation_producer.py'), // ADR-0051 producer registry/schema/Skill freeze
   join('harness', 'mode_gating_check.py'), // imported by check.py; without it check.py fails to import
   join('harness', 'release_boundary_check.py'), // imported by check.py; pins docs-only deploy/rollback trust boundary
   join('harness', 'workflow_control_check.py'), // imported by check.py; fails closed on dangling/unsupported workflow control
@@ -198,8 +209,10 @@ export const COPIED_FILES = [
   join('harness', 'test_artifact_evidence_adapter_check.py'),
   join('harness', 'test_command_observation_evidence_adapter_check.py'),
   join('harness', 'test_evolve_repo_locator_evidence_adapter_check.py'),
+  join('harness', 'test_local_command_observation_producer_check.py'),
   join('harness', 'test_governance_engineering_integration.py'),
   join('harness', 'test_governance_evolve_locator_integration.py'),
+  join('harness', 'test_governance_local_command_observation_producer_integration.py'),
   join('harness', 'test_backend_decision_check.py'),
   join('harness', 'test_frontend_design_adversarial.py'),
   join('harness', 'test_frontend_business_ui_composition_boundaries.py'),

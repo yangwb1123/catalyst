@@ -21,6 +21,32 @@ func TestDecodeRequestRoundTripsExactCanonicalBytes(t *testing.T) {
 	}
 }
 
+func TestCanonicalObservationJSONMatchesSealedRequestObservation(t *testing.T) {
+	request := validRequest()
+	got, err := CanonicalObservationJSON(request.Observation)
+	if err != nil {
+		t.Fatalf("CanonicalObservationJSON: %v", err)
+	}
+	want, err := canonicalObservationJSON(request.Observation)
+	if err != nil {
+		t.Fatalf("canonicalObservationJSON: %v", err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Fatalf("public standalone encoder drifted\ngot:  %s\nwant: %s", got, want)
+	}
+	if len(got) == 0 {
+		t.Fatal("standalone observation bytes must be nonempty")
+	}
+	got[0] = 'x'
+	again, err := CanonicalObservationJSON(request.Observation)
+	if err != nil {
+		t.Fatalf("CanonicalObservationJSON second call: %v", err)
+	}
+	if bytes.Equal(got, again) {
+		t.Fatal("caller mutation must not alias a later canonical observation result")
+	}
+}
+
 func TestDecodeRequestRejectsAdversarialJSON(t *testing.T) {
 	raw := string(canonicalValidRequest(t))
 	tests := []struct{ name, input, want string }{

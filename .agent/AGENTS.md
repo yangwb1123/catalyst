@@ -44,7 +44,7 @@
 - `eval/frontend-design-package.schema.yml`:分离 artifact 与 proof claim，截图绑定 source/build/fixture/environment；只判结构有效性，不授予 UI 质量或完成裁决
 - `skills/{information-interaction-design,design-system-accessibility,frontend-client-engineering}.md`:复用现有 capability ownership；产品风格是 Profile，React/Vue/Flutter/RN 是条件化平台映射，不制造平行 Skill 树
 - `skills/ui-geometry.md`:条件化 supporting procedural adapter；用 `business_ui_composition` 把角色/任务/状态/数据语义绑定到区域、轴、分组、间距、线条、形状与响应式关系，并可接收声明式 `geometry_measurement_receipts`。它不新增 capability owner，也不证明浏览器/原生 Runner 真执行、视觉质量或完成
-- `engineering/governance-contracts.yml` + `skills/evidence-claim-management.md`:EvidenceRecord/KnowledgeClaim v1 identity/canonical/state 与本地 exact append journal；引用闭包的 1024 records/16 MiB/256 depth 只防资源耗尽；scaffold 不安装 `forge-runtime`，缺兼容 binary 时 persistence 必须 `not_executed`；receipt/head 只证明持久化结构
+- `engineering/governance-contracts.yml` + `skills/evidence-claim-management.md`:EvidenceRecord/KnowledgeClaim v1 identity/canonical/state、本地 exact append journal 与 versioned pure adapters；ADR-0051 local gate observation 只允许显式 opt-in 的 Catalyst Go in-memory API，默认 capture 关闭且不签发 PASS/completion/persistence；引用闭包的 1024 records/16 MiB/256 depth 只防资源耗尽；scaffold 不安装 runtime，缺兼容 binary 时必须 `not_executed`
 
 ## 阅读顺序
 

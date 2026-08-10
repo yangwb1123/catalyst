@@ -2,7 +2,7 @@
 
 ## 职责与触发
 
-当任务需要把一个 exact artifact provenance、command observation 或 Evolve repository locator observation 适配为 Evidence、记录或本地持久化新的观察、事实候选、推断、假设、未知、
+当任务需要显式采集一个受限的本地 gate command observation、把一个 exact artifact provenance、command observation 或 Evolve repository locator observation 适配为 Evidence、记录或本地持久化新的观察、事实候选、推断、假设、未知、
 冲突或失效关系时，使用本 Skill。目标是区分 EvidenceRecord 与 KnowledgeClaim，按 ADR-0048 生成 pure shadow artifact Evidence，
 生成 strict-codec 候选记录，并仅在调用方另外明确要求 durability 时使用窄 append-only journal。普通代码实现、完成裁决、权限签发、
 知识采纳和生命周期解释不属于本 Skill。
@@ -15,6 +15,8 @@
   source-tree/revision/sequence/sensitivity/subjects/supersedes binding；历史空 `_format` 不可进入 adapter；
 - 若来源是 command observation，提供 exact `forgeos.command-observation/v1` envelope 与显式 Governance binding；只有 `exited` 可投影，
   timeout/cancel 保留为 source observation 但不得伪造 exit code；environment/tool/tree digest 仍是 opaque producer declaration；
+- 若任务明确要求 ADR-0051 local capture，提供 canonical repository root、合法 run ID、`gate|check|accept|probe_all` 中一个 closed command class
+  和执行 deadline；不得提供任意 argv、ambient cwd、stdin 或自定义 evidence type；
 - 若来源是 Evolve repository locator，提供 exact `forgeos.evolve-repo-locator/v1` observation 与显式 Governance binding；observation 必须
   保存 whole-file digest/bytes、path/line/detail、report digest、dimension/relation、producer、观察时间和 source revision/tree；
 - Claim 的 subject、predicate、value、owner、验证计划和有效期；
@@ -54,6 +56,28 @@ re-adaptation comparison。artifact content digest、source snapshot digest、re
 command、observation 与完整 request 分别做 domain-separated digest，再确定性生成 existing EvidenceRecord v1。combined digest 仅表示
 producer-observed drain-event 顺序；exit=0、`gate_result|test_run` 和 producer/环境声明均不是身份、criterion verdict 或完成权威。
 
+### Local gate command observation producer 分支
+
+只有任务显式要求观察当前本地 `gate|check|accept|acceptance --json` process 时才进入此分支；普通 `GateWith`、`CheckWith`、`AcceptWith`
+和 `ProbeAllWith` 必须保持 capture disabled 的 legacy path。Catalyst Go runtime 只允许调用 `GateObservedWith`、`CheckObservedWith`、
+`AcceptObservedWith` 或 `ProbeAllObservedWith`，并把调用方 run ID 绑定到一次真实 spawn；不得把 `acceptance --json` 的多个 criterion
+复制成多条 process observation。
+
+producer 必须使用与 manifest 相同的 secret/cloud/auth/proxy-name scrubbed child environment，解析并摘要实际顶层 executable，枚举完整 Git
+working-source profile，并从 execution boundary 捕获 raw stdout、stderr 与 producer-serialized combined drain bytes。display trim、解析结果和截断
+marker 不得进入 digest preimage。spawn/signaled/wait/drain/profile-drift 失败时 production 必须为空，但实际 command Result 与 observation error 必须
+分别保留；timeout/cancel 可形成 source observation，仍不能由 ADR-0049 adapter 投影。
+
+pre/post source manifest equality 只比较两次 Git inventory + 逐项读取形成的有界区间观察；它们不是原子文件系统快照，也不 pin 执行期间的
+path/content。inventory 后才出现的 entry、已读 entry 的后续变化或协调的本地替换后恢复可能不在对应 manifest 中，即使端点相等也不得解释为
+clean-tree、source pinning 或“执行期间从未短暂漂移”的证明。需要强保证时先 quiesce writers，或另用经过批准的 filesystem snapshot/
+sandbox/CAS/FD-bound execution profile。
+
+golden 的 `fixture_semantics=PURE_CONTRACT_FIXTURE (deterministic bytes only; no live process execution, pass, criterion, completion, truth, authority, identity, persistence, or external-effect attestation)`
+只证明 exact contract bytes/digests 可重放，不声称 fixture 曾 live spawn、认证工具链或观察当前
+repository。producer 不会把 exit=0 当作 PASS，也不签发 criterion、completion、truth、authority、identity、persistence 或 external-effect
+attestation；需要 Evidence 时，调用方仍须另行提供 ADR-0049 Governance binding 并调用 pure adapter。
+
 ### Evolve repository locator adapter 分支
 
 当输入来自 `evolve_scan_v1` 的 finding、clear 或 opportunity locator 时，构造 exact
@@ -64,9 +88,10 @@ content、report、producer、time 与 source 声明。adapter 不会读取当�
 
 ## 输出契约
 
-Artifact provenance、command observation 与 Evolve locator adapter 分支各输出 exactly one `EvidenceRecord` v1 JSON object；普通 record-set/journal 分支才输出按
+Local producer 分支输出 exact `forgeos.governance.local-gate-command-observation-production/v1` package、domain-separated production SHA-256 和固定
+`OBSERVED_LOCAL_PROCESS` 非能力结果；不输出 Evidence、Claim、receipt 或 gate verdict。Artifact provenance、command observation 与 Evolve locator adapter 分支各输出 exactly one `EvidenceRecord` v1 JSON object；普通 record-set/journal 分支才输出按
 `metadata.record_id` 排序、非空的 `EvidenceRecord`/`KnowledgeClaim` v1 JSON 数组，并使用
-`docs/contracts/governance-evidence-claim-v1.schema.json`。两种输出的字节都必须是 exact compact canonical JSON，且记录必须绑定
+`docs/contracts/governance-evidence-claim-v1.schema.json`。这些输出的适用 canonical bytes 必须是 exact compact canonical JSON，且治理记录必须绑定
 source/context/policy 摘要和独立 digest domain。checker 只允许返回结构有效或错误，不产生 trusted、confirmed、approved、accepted、completed
 等裁决。
 
@@ -98,6 +123,8 @@ request-derived run ID 只是 deterministic correlation，不是 scan/capture re
 - 禁止把 artifact `agent`/`model` 当作认证 principal，禁止用当前路径内容冒充历史 observation，禁止把 `ADAPTED_SHADOW` 当作已持久化 receipt。
 - 禁止把 timeout/cancel/signal 编成负 exit sentinel，禁止用外层命令观察冒充内部 detector receipt，禁止跨未版本化 digest profile 比较 opaque hash。
 - 禁止把 Evolve `finding|clear|opportunity` 映射成 Evidence valid/invalid 真值，禁止用 current path 回填历史 content digest 或 report membership。
+- 禁止默认开启 local capture、接受任意命令/环境/工作目录、在日志泄露 environment values，或把 local producer package 当作身份认证、
+  executable pin、clean-tree 证明、remote attestation、journal receipt 或 `forge accept` 裁决。
 - 不使用历史 alias：`Evidence`、`Claim`、`ContextManifest`、`AuthorityGrant`、`AgentCapabilityGrant`。
 
 ## 自动化与验收
@@ -140,6 +167,17 @@ Evolve locator adapter golden 使用
 逐字节一致。不会创建 Claim/Atom、不会 append journal；该纯 adapter 不改变 SQLite v25，也不允许 migration/backfill/真实 Evolve producer
 接线。工具链缺失时如实记 `not_executed`。
 
+Local producer contract fixture 只允许使用
+`docs/contracts/fixtures/local-gate-command-observation-producer-v1.json` 中明确标记的
+`fixture_semantics=PURE_CONTRACT_FIXTURE (deterministic bytes only; no live process execution, pass, criterion, completion, truth, authority, identity, persistence, or external-effect attestation)`；它不是 live execution receipt。
+在 Catalyst 源仓运行 `(cd forge-core && go test -count=1 ./internal/localcommandobservationproducer ./internal/execbound ./internal/gate)`，并由
+Agent Engineering gate 校验 schema extensions、fixture byte pin、registry、Skill 与 scaffold 引用。实际观察必须显式调用 observed API，并另行
+报告 command Result、production 是否生成及 observation error；不得用 fixture 代替当前命令执行。Scaffold/upgrade 只复制 ADR、Schema、fixture、
+Skill 和 shadow governance checker，不安装 Catalyst-only Go producer，因此下游缺少兼容 runtime 时记为 `not_executed`。
+observed API 会执行仓库控制的本地 gate/check/accept 命令；producer 本身不提供 sandbox、egress、device 或 production-effect containment，
+也不授权、阻止、隔离或证明命令可能产生的外部 effect。调用方必须在 opt-in 前另行完成命令授权和所需隔离，不能把
+`OBSERVED_LOCAL_PROCESS` 当成 effect 安全或无副作用证明。
+
 Scaffold/upgrade 只继承治理 contract、Skill 和 shadow checker，不安装 Rust `forge-runtime` binary 或 SQLite journal。持久化前先检测项目批准且
 与 `forgeos.governance-journal/v1` 兼容的 `forge-runtime`（至少解析到预期 executable，并确认 help 暴露 append/show/list/head surface）；缺失、版本不兼容
 或无法验证时记为 `not_executed`，不得声称已持久化。检测通过后运行
@@ -157,11 +195,14 @@ conflict/corruption，不得通过换 key 制造第二批次。只有匹配 rece
 - `docs/adr/0048-artifact-provenance-evidence-adapter-v1.md`
 - `docs/adr/0049-command-observation-evidence-adapter-v1.md`
 - `docs/adr/0050-evolve-repo-locator-evidence-adapter-v1.md`
+- `docs/adr/0051-local-gate-command-observation-producer-v1.md`
 - `docs/contracts/artifact-evidence-adapter-v1.schema.json`
 - `docs/contracts/fixtures/artifact-evidence-adapter-v1.json`
 - `docs/contracts/command-observation-evidence-adapter-v1.schema.json`
 - `docs/contracts/fixtures/command-observation-evidence-adapter-v1.json`
 - `docs/contracts/evolve-repo-locator-evidence-adapter-v1.schema.json`
 - `docs/contracts/fixtures/evolve-repo-locator-evidence-adapter-v1.json`
+- `docs/contracts/local-gate-command-observation-producer-v1.schema.json`
+- `docs/contracts/fixtures/local-gate-command-observation-producer-v1.json`
 - `docs/contracts/governance-record-journal-v1.schema.json`
 - `.agent/engineering/governance-contracts.yml`

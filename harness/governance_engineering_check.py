@@ -22,6 +22,9 @@ from command_observation_evidence_adapter_check import (
 from evolve_repo_locator_evidence_adapter_check import (
     validate_golden_fixture as validate_evolve_locator_golden_fixture,
 )
+from local_command_observation_producer_check import (
+    validate_golden_fixture as validate_local_command_producer_golden_fixture,
+)
 from governance_engineering import (
     ARTIFACT_CANONICAL_REFS,
     ARTIFACT_EVIDENCE_ADAPTER,
@@ -48,6 +51,16 @@ from governance_engineering import (
     EVOLVE_LOCATOR_SKILL_MARKERS,
     EVOLVE_LOCATOR_SUCCESS,
     EVOLVE_REPO_LOCATOR_EVIDENCE_ADAPTER,
+    LOCAL_COMMAND_PRODUCER_CANONICAL_REFS,
+    LOCAL_COMMAND_PRODUCER_CHECKER_REFERENCE_IMPLEMENTATION,
+    LOCAL_COMMAND_PRODUCER_REFERENCE_IMPLEMENTATION,
+    LOCAL_COMMAND_PRODUCER_SCHEMA_CANONICALIZATION,
+    LOCAL_COMMAND_PRODUCER_SCHEMA_CAPABILITY_BOUNDARY,
+    LOCAL_COMMAND_PRODUCER_SCHEMA_LIMITS,
+    LOCAL_COMMAND_PRODUCER_SCHEMA_SEMANTIC_VALIDATION,
+    LOCAL_COMMAND_PRODUCER_SKILL_MARKERS,
+    LOCAL_COMMAND_PRODUCER_SUCCESS,
+    LOCAL_GATE_COMMAND_OBSERVATION_PRODUCER,
     artifact_adapter_registry_issues as _artifact_adapter_registry_issues,
     artifact_adapter_schema_issues as _artifact_adapter_schema_issues,
     artifact_detector_issues,
@@ -60,11 +73,14 @@ from governance_engineering import (
     evolve_locator_adapter_schema_issues as _evolve_locator_adapter_schema_issues,
     evolve_locator_detector_issues,
     evolve_locator_skill_marker_issues,
+    local_command_producer_registry_issues as _local_command_producer_registry_issues,
+    local_command_producer_schema_issues as _local_command_producer_schema_issues,
+    local_command_producer_skill_marker_issues,
 )
 
 
 POLICY_RELATIVE = "engineering/governance-contracts.yml"
-POLICY_SHA256 = "b9dc9112876374f9c168ecbc2b545b36234e79d5a963a982b031679f20e68c6f"
+POLICY_SHA256 = "ee98d37462cecad23988a6258241b17436f8af4097e67379d13ab05da35ecadf"
 POLICY_FIELDS = {
     "api_version", "kind", "status", "runtime_binding", "owner", "version",
     "completion_authority", "scope", "canonicalization", "identity",
@@ -72,6 +88,7 @@ POLICY_FIELDS = {
     "cognitive_atom_projection", "artifact_evidence_adapter",
     "command_observation_evidence_adapter", "legacy",
     "evolve_repo_locator_evidence_adapter",
+    "local_gate_command_observation_producer",
     "canonical_refs", "contract_pins", "reference_implementations",
     "non_capabilities",
 }
@@ -96,6 +113,10 @@ PIN_TARGETS = {
         "docs/contracts/evolve-repo-locator-evidence-adapter-v1.schema.json",
     "evolve_repo_locator_evidence_adapter_golden_fixture_sha256":
         "docs/contracts/fixtures/evolve-repo-locator-evidence-adapter-v1.json",
+    "local_gate_command_observation_producer_schema_sha256":
+        "docs/contracts/local-gate-command-observation-producer-v1.schema.json",
+    "local_gate_command_observation_producer_golden_fixture_sha256":
+        "docs/contracts/fixtures/local-gate-command-observation-producer-v1.json",
 }
 SKILL_RELATIVE = ".agent/skills/evidence-claim-management.md"
 SKILL_MARKERS = [
@@ -227,6 +248,7 @@ def _skill_issues(repo_root):
     issues.extend(artifact_skill_marker_issues(text, path))
     issues.extend(command_skill_marker_issues(text, path))
     issues.extend(evolve_locator_skill_marker_issues(text, path))
+    issues.extend(local_command_producer_skill_marker_issues(text, path))
     return issues
 
 
@@ -319,7 +341,7 @@ def _detector_issues(agent_root):
     return issues
 
 
-def _source_adapter_issues(data, path, repo_root):
+def _governance_extension_issues(data, path, repo_root):
     issues = []
     for registry_check, schema_check in (
         (_artifact_adapter_registry_issues, _artifact_adapter_schema_issues),
@@ -329,6 +351,8 @@ def _source_adapter_issues(data, path, repo_root):
     ):
         issues.extend(registry_check(data, path))
         issues.extend(schema_check(repo_root))
+    issues.extend(_local_command_producer_registry_issues(data, path))
+    issues.extend(_local_command_producer_schema_issues(repo_root))
     return issues
 
 
@@ -348,19 +372,20 @@ def check_governance_evidence_claim_contract(agent_root):
         "status": "active_contract",
         "runtime_binding": (
             "cross_language_codec_local_journal_atom_projection_"
-            "artifact_command_evolve_locator_adapters_shadow"
+            "artifact_command_evolve_locator_adapters_local_gate_"
+            "command_producer_shadow"
         ),
-        "version": 7, "completion_authority": "forge_accept",
+        "version": 8, "completion_authority": "forge_accept",
     }
     for field, value in expected.items():
         if data.get(field) != value:
-            issues.append(f"{path}: {field} must remain the canonical v7 value")
+            issues.append(f"{path}: {field} must remain the canonical v8 value")
     repo_root = agent_root.parent
     issues.extend(_journal_registry_issues(data, path))
     issues.extend(_journal_schema_issues(repo_root))
     issues.extend(_cognitive_registry_issues(data, path))
     issues.extend(_cognitive_schema_issues(repo_root))
-    issues.extend(_source_adapter_issues(data, path, repo_root))
+    issues.extend(_governance_extension_issues(data, path, repo_root))
     pins = data.get("contract_pins") if isinstance(data.get("contract_pins"), dict) else {}
     issues.extend(_pin_issues(repo_root, path, pins))
     try:
@@ -377,4 +402,5 @@ def check_governance_evidence_claim_contract(agent_root):
     issues.extend(validate_artifact_evidence_golden_fixture(repo_root))
     issues.extend(validate_command_evidence_golden_fixture(repo_root))
     issues.extend(validate_evolve_locator_golden_fixture(repo_root))
+    issues.extend(validate_local_command_producer_golden_fixture(repo_root))
     return issues

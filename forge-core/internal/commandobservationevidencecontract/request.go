@@ -72,6 +72,20 @@ func canonicalObservationJSON(observation Observation) ([]byte, error) {
 	return canonicalBounded(observationNode(observation), "observation")
 }
 
+// CanonicalObservationJSON returns the exact compact canonical bytes for one
+// standalone command observation. Unlike Adapt, this API intentionally accepts
+// honest timed_out and cancelled terminations: local capture producers need to
+// seal those observations even though EvidenceRecord v1 can project only a
+// real process exit. The returned slice is newly allocated and carries no
+// execution, verdict, persistence, or authority semantics.
+func CanonicalObservationJSON(observation Observation) ([]byte, error) {
+	encoded, err := canonicalObservationJSON(observation)
+	if err != nil {
+		return nil, err
+	}
+	return append([]byte(nil), encoded...), nil
+}
+
 func canonicalCommandJSON(command Command) ([]byte, error) {
 	if err := validateCommand(command); err != nil {
 		return nil, err
