@@ -37,6 +37,9 @@ const FINAL_TABLES: &[&str] = &[
     "group_agent_graph_execution_schedules",
     "group_agent_graph_scheduled_node_contract_candidates",
     "group_agent_graph_scheduled_node_provider_requests",
+    "governance_record_append_batches",
+    "governance_records",
+    "governance_structural_heads",
 ];
 
 #[test]
@@ -90,7 +93,7 @@ fn injected_final_validation_failure_rolls_back_complete_v1_migration_chain() {
 
     let error = migrate_with_before_final_fault_for_test(&connection, |migrated| {
         reached_final.set(true);
-        assert_eq!(schema_version(migrated), 25);
+        assert_eq!(schema_version(migrated), 26);
         for table in FINAL_TABLES {
             assert!(
                 schema_object_exists(migrated, "table", table),
@@ -99,7 +102,7 @@ fn injected_final_validation_failure_rolls_back_complete_v1_migration_chain() {
         }
         migrated.execute_batch(FINAL_VALIDATION_FAULT_SQL)
     })
-    .expect_err("real final v24 validation must reject the injected rogue table");
+    .expect_err("real final v26 validation must reject the injected rogue table");
     assert!(
         reached_final.get(),
         "before-final fault hook was not reached"
@@ -108,8 +111,8 @@ fn injected_final_validation_failure_rolls_back_complete_v1_migration_chain() {
         panic!("final validator returned the wrong error class: {error:?}");
     };
     assert_eq!(
-        message, "Hub v25 main catalog has invalid object inventory",
-        "error must originate from the real final v25 catalog validator"
+        message, "Hub v26 main catalog has invalid object inventory",
+        "error must originate from the real final v26 catalog validator"
     );
 
     assert_v1_unchanged(&connection, &before_schema, &before_data);

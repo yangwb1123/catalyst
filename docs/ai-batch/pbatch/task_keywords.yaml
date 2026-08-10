@@ -169,6 +169,25 @@ profiles:
     - 待办
     - 流程
     - 通知公告
+  crm:
+    - crm
+    - 客户管理
+    - 客户跟进
+    - 商机
+    - 销售线索
+  commerce:
+    - ecommerce
+    - e-commerce
+    - 电商
+    - 商城
+    - 购物车
+    - 结算页
+  ai-agent:
+    - ai 对话
+    - agent 对话
+    - 对话应用
+    - 智能体界面
+    - 工具调用状态
   dashboard:
     - dashboard
     - 大屏

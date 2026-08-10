@@ -1,4 +1,4 @@
-// Rust/Java project-command planning and execution for acceptance probes.
+// Manifest-aware project-command planning and execution for acceptance probes.
 //
 // Plans are data, not shell strings at the execution boundary: every command is
 // split into a fixed executable plus argv and is passed to spawnSync with no
@@ -19,6 +19,9 @@ import { executeCommandPlan } from './project-execution.mjs';
 const ADAPTERS_DIR = dirname(fileURLToPath(import.meta.url));
 
 export const PROJECT_ADAPTER_LANGS = ['rust', 'java'];
+// Go lint must run from each go.mod root; invoking it from a repository root
+// without a module is an infrastructure error, not a verdict on Go sources.
+export const PROJECT_LINT_LANGS = ['go', ...PROJECT_ADAPTER_LANGS];
 export const PROJECT_OPERATIONS = ['test', 'lint', 'typecheck', 'build'];
 export { executeCommandPlan, observedTestCount } from './project-execution.mjs';
 
@@ -79,6 +82,7 @@ function hasAny(root, names, context = null) {
 }
 
 function hasProjectManifest(root, lang, context = null) {
+  if (lang === 'go') return regularFile(join(root, 'go.mod'), context);
   if (lang === 'rust') return regularFile(join(root, 'Cargo.toml'), context);
   if (lang === 'java') {
     return JAVA_PROFILES.some((profile) => hasAny(root, profile.manifests, context));
@@ -239,6 +243,25 @@ function rustPlan(root, operation, context = null) {
   return commandPlan(root, 'rust', operation, null, 'cargo');
 }
 
+function goPlan(root, operation, context = null) {
+  const manifest = regularFile(join(root, 'go.mod'), context);
+  const source = hasLanguageSource(root, 'go', sourceWalkOptions(context));
+  if (!manifest && !source) {
+    return unavailablePlan(
+      root, 'go', operation, false,
+      'no source languages detected: no Go project',
+    );
+  }
+  if (!manifest) {
+    return unavailablePlan(
+      root, 'go', operation, true,
+      'Go source detected but go.mod is missing',
+    );
+  }
+  const expected = operation === 'lint' ? 'golangci-lint' : 'go';
+  return commandPlan(root, 'go', operation, null, expected);
+}
+
 export function selectJavaProfile(root, context = null) {
   const states = JAVA_PROFILES.map((profile) => ({
     ...profile,
@@ -278,6 +301,7 @@ function commandPlanForContext(root, lang, operation, context) {
   if (!PROJECT_OPERATIONS.includes(operation)) {
     throw new Error(`unsupported project adapter operation '${operation}'`);
   }
+  if (lang === 'go') return goPlan(root, operation, context);
   if (lang === 'rust') return rustPlan(root, operation, context);
   if (lang === 'java') return javaPlan(root, operation, context);
   throw new Error(`unsupported project adapter language '${lang}'`);
@@ -457,7 +481,8 @@ function unownedNativeSourcePlans(root, roots, files) {
 export function probeProjectOperations(root, operation, exec, discoveryIO = readdirSync) {
   const context = createDiscoveryContext(root, discoveryIO);
   const rows = [];
-  for (const lang of PROJECT_ADAPTER_LANGS) {
+  const languages = operation === 'lint' ? PROJECT_LINT_LANGS : PROJECT_ADAPTER_LANGS;
+  for (const lang of languages) {
     for (const plan of commandPlansForContext(root, lang, operation, context)) {
       if (plan.applicable) rows.push(executeCommandPlan(plan, exec));
     }

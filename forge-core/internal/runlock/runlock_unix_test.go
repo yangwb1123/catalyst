@@ -78,8 +78,8 @@ func TestAcquire_ProcessDeathReleasesLock(t *testing.T) {
 	}
 	defer func() {
 		if cmd.Process != nil {
-			cmd.Process.Kill()
-			cmd.Wait()
+			_ = cmd.Process.Kill()
+			_ = cmd.Wait()
 		}
 	}()
 
@@ -92,20 +92,24 @@ func TestAcquire_ProcessDeathReleasesLock(t *testing.T) {
 	// the lock — otherwise the death-releases-it assertion below would be
 	// vacuously true (lock never actually contended in the first place).
 	if held, err := Acquire(root); err == nil {
-		held.Release()
+		if releaseErr := held.Release(); releaseErr != nil {
+			t.Fatalf("release unexpectedly acquired lock: %v", releaseErr)
+		}
 		t.Fatal("Acquire succeeded while the helper still holds the lock — test construction broken")
 	}
 
 	if err := cmd.Process.Kill(); err != nil { // SIGKILL: not a graceful exit
 		t.Fatalf("SIGKILL helper: %v", err)
 	}
-	cmd.Wait()
+	_ = cmd.Wait()
 
 	lock, err := acquireWithRetry(root, 2*time.Second)
 	if err != nil {
 		t.Fatalf("Acquire after helper SIGKILL: %v (kernel should release the flock on any process death)", err)
 	}
-	lock.Release()
+	if err := lock.Release(); err != nil {
+		t.Fatalf("release lock after helper death: %v", err)
+	}
 }
 
 // acquireWithRetry polls Acquire until it succeeds or timeout elapses. The

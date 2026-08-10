@@ -80,7 +80,7 @@ func readControl(source string, stdin io.Reader) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	return readBounded(file, maxControlBytes)
 }
 

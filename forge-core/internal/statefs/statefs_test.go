@@ -101,7 +101,9 @@ func TestStateLeavesRejectHardlinksWithoutChangingOutsideFile(t *testing.T) {
 		}
 	}
 	if file, err := OpenRegular(paths[0], os.O_RDWR, 0o600); err == nil {
-		file.Close()
+		if closeErr := file.Close(); closeErr != nil {
+			t.Fatalf("close unexpectedly accepted hard link: %v", closeErr)
+		}
 		t.Fatal("OpenRegular accepted a hard link")
 	}
 	if _, _, err := ReadRegular(paths[1], 1024); err == nil {

@@ -7,7 +7,18 @@ import {
 } from './acceptance-kernel.mjs';
 
 const SKIP_DIRS = new Set(['__pycache__', 'node_modules', 'target']);
-const REQUIRED_PYTHON = ['test_check.py', 'test_yaml2json.py'];
+const REQUIRED_PYTHON = [
+  'test_check.py',
+  'test_agent_engineering_check.py',
+  'test_backend_decision_check.py',
+  'test_frontend_design_adversarial.py',
+  'test_frontend_business_ui_composition_boundaries.py',
+  'test_frontend_business_ui_geometry.py',
+  'test_frontend_geometry_coordinate_contract.py',
+  'test_frontend_design_check.py',
+  'test_legacy_ai_batch_contract.py',
+  'test_yaml2json.py',
+];
 
 // Import a Python suite without triggering its __main__ block, run all unittest
 // cases, then execute module-level pytest-style test_* callables. A file that

@@ -19,7 +19,7 @@ func TestPendingAndPreviewProbeOversizedIntentWithoutReadingOrChmod(t *testing.T
 		t.Fatalf("create oversized pending intent: %v", err)
 	}
 	if err := file.Truncate(stateMaxBytes + 1); err != nil {
-		file.Close()
+		_ = file.Close()
 		t.Fatalf("truncate oversized pending intent: %v", err)
 	}
 	if err := file.Close(); err != nil {

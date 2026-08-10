@@ -1,10 +1,46 @@
 # AI Engineering OS：能力中心化的软件工程组织蓝图
 
-> 状态：**已采纳的目标设计，不是已实现能力**。决策见
+> 状态：**目标设计仍以规划为主；五个 contract/shadow 治理切片及一个 AFDS 扩展已实现**。决策见
 > [ADR-0037](../../adr/0037-capability-centric-ai-engineering-operating-model.md)、
 > [ADR-0038](../../adr/0038-aadm-decision-kernel-and-meta-reflection.md)、
-> [ADR-0039](../../adr/0039-default-off-device-aware-execution-fabric.md)；当前覆盖与分期见
+> [ADR-0039](../../adr/0039-default-off-device-aware-execution-fabric.md)、
+> [ADR-0040](../../adr/0040-machine-readable-agent-engineering-governance.md)、
+> [ADR-0041](../../adr/0041-backend-decision-contract-and-persistence-gate.md)、
+> [ADR-0042](../../adr/0042-frontend-design-decision-contract.md)、
+> [ADR-0043](../../adr/0043-frontend-code-architecture-governance.md)、
+> [ADR-0044](../../adr/0044-business-ui-geometry-contract.md)、
+> [ADR-0045](../../adr/0045-canonical-evidence-claim-contract.md)；当前覆盖与分期见
 > [implementation-roadmap.md](implementation-roadmap.md)。运行时代码、测试和现有 `.agent/` 契约仍是当前事实源。
+
+当前已交付的窄切片位于 `.agent/engineering/`：activation、14 学科状态、原子规则、`forge accept` detector 接线、
+typed Context 路由、W0–W3 保障覆盖层和 TaskEvidencePackage 契约由 `harness/check.py` 机器校验，并随 scaffold/legacy
+upgrade 继承。其 `activation: shadow` 只强制合同和接线完整性；Context selector runtime、Capability invocation
+Registry、AADM solver、R0–R2 Reflection 和 Device Fabric 仍未实现。TaskEvidencePackage 不含完成判定。
+
+ADR-0041 又交付了一个窄的后端 shadow 切片：14 维 BackendDecisionPolicy、无裁决权 BackendDecisionPackage、十张密集
+Skill adapter、data/backend Context route 和独立对抗 validator。它把持久化与低可逆决策前置，但不会从 diff 自动生成
+package，也尚未成为 coding 前的 runtime gate；详细标准见 [backend-decision-standard.md](backend-decision-standard.md)。
+
+ADR-0042 交付了前端设计 shadow slice：[AFDS](frontend-design-standard.md)、byte-pinned policy、Profile/Pattern catalog、
+FrontendDesignPackage schema 与三张沿用既有 capability ownership 的 canonical Skill adapter。分类、IA、flow/state/action/permission、
+Design System、跨平台映射与多源证据已接入 Context route、shadow detector、对抗 validator、scaffold 和 legacy upgrade；它仍没有
+自动 diff compiler、可信视觉服务、pre-code runtime authority 或完成权威。
+
+ADR-0043 增加独立但不抢占 capability ownership 的
+[前端代码架构治理](frontend-code-architecture-standard.md)：项目显式声明模块所有权、依赖矩阵和 public/test entrypoint；
+TypeScript 由项目 Compiler API 解析真实 import graph，Vue/Dart 在适配器缺失时诚实返回 inconclusive。确定性边界与
+God/目录/API 预算等审查信号分离，detector 保持 shadow，不替代 `forge accept`。
+
+ADR-0044 又在 AFDS 内增加 Business UI Geometry 扩展：条件化 `ui-geometry` 只是一张 supporting procedural Skill，既有三张
+canonical Skill 的 capability ownership 不变。layout decision 可绑定 digest-pinned `business_ui_composition`，把角色、任务、状态、
+数据语义和操作风险追溯到区域、轴、分组、间距、线条、形状及响应式关系；项目真实 Runner 还可提供可选
+`geometry_measurement_receipts`。当前 validator 只校验严格 JSON、引用、摘要和声明一致性，report 也只是声明式执行观察；二者均不
+证明浏览器/原生 Runner 真执行、视觉平衡、光学校正、任务成功或可信 producer/reviewer，最终完成仍只属于 `forge accept`。
+
+ADR-0045 交付 Governance/Decision Kernel 的 0F-A 前置片：[Evidence/Claim v1](governance-contracts.md) strict schema、
+`record_id/aggregate_id/sequence` 身份、kind-separated canonical SHA-256、Go/Rust/Python golden 与 universal shadow checker。
+它只允许 registry `shadow_admissibility` 精确矩阵内的 Claim 和 untrusted/observed Evidence，明确拒绝自证 confirmed/accepted/waived、Hub 写入、旧 Memory/ADR
+自动升级、Grant/Approval/Transition 与 hard-gate 效力；后续 0F–1 仍需 authenticated identity、ledger、replay/revocation 和 SoD。
 
 ## 1. 目标
 
@@ -168,6 +204,9 @@ WorkIntent + ProjectSnapshot
 - [operations-evolution-sop.md](operations-evolution-sop.md)：15–16 与持续治理；
 - [governance-contracts.md](governance-contracts.md)：知识图谱、影响分析、ADR、技术债、权限、Review Loop；
 - [engineering-standards.md](engineering-standards.md)：God File、复杂度、OOP/DI/AOP/DDD、数据与前端重构；
+- [backend-decision-standard.md](backend-decision-standard.md)：后端业务/领域/模型角色、持久化、算法、网络、并发、迁移、生产就绪与长期架构决策；
+- [frontend-design-standard.md](frontend-design-standard.md)：AFDS 规则权威、场景 Profile/页面 Pattern、flow/state/permission、跨平台适配、Business UI Geometry composition/report 与证据边界；
+- [frontend-code-architecture-standard.md](frontend-code-architecture-standard.md)：前端模块所有权、依赖/public API、状态/effect 归属、复杂度证据与例外治理；
 - [skill-specifications.md](skill-specifications.md)：38 个可组合 Skill 包的触发、产物、规则、自动化与禁止项；
 - [capability-skill-map.v1.yml](capability-skill-map.v1.yml)：140 个细粒度 capability 到 38 个包的唯一主 ownership；
 - [aadm-decision-kernel.md](aadm-decision-kernel.md)：原子决策、规则场、裁量包络、Capability ABI 与滚动控制；

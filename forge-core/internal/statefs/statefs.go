@@ -143,20 +143,20 @@ func OpenRegular(path string, flag int, perm os.FileMode) (*os.File, error) {
 	}
 	opened, err := file.Stat()
 	if err != nil || !opened.Mode().IsRegular() || !singleLink(opened) {
-		file.Close()
+		_ = file.Close()
 		return nil, fmt.Errorf("statefs: opened leaf %s is not a regular single-link file", path)
 	}
 	if present && !os.SameFile(before, opened) {
-		file.Close()
+		_ = file.Close()
 		return nil, fmt.Errorf("statefs: %s changed while opening", path)
 	}
 	current, nowPresent, err := InspectRegular(path)
 	if err != nil || !nowPresent || !os.SameFile(opened, current) {
-		file.Close()
+		_ = file.Close()
 		return nil, fmt.Errorf("statefs: %s identity changed while opening", path)
 	}
 	if err := file.Chmod(perm); err != nil {
-		file.Close()
+		_ = file.Close()
 		return nil, fmt.Errorf("statefs: secure %s: %w", path, err)
 	}
 	return file, nil
@@ -179,12 +179,12 @@ func OpenRegularReadOnly(path string) (*os.File, error) {
 	opened, err := file.Stat()
 	if err != nil || !opened.Mode().IsRegular() || !singleLink(opened) ||
 		!os.SameFile(before, opened) {
-		file.Close()
+		_ = file.Close()
 		return nil, fmt.Errorf("statefs: state leaf %s changed while opening", path)
 	}
 	current, stillPresent, err := InspectRegular(path)
 	if err != nil || !stillPresent || !os.SameFile(opened, current) {
-		file.Close()
+		_ = file.Close()
 		return nil, fmt.Errorf("statefs: state leaf %s identity changed while opening", path)
 	}
 	return file, nil
@@ -204,7 +204,7 @@ func ReadRegular(path string, maxBytes int64) ([]byte, bool, error) {
 	if err != nil {
 		return nil, true, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	reader := io.Reader(file)
 	if maxBytes > 0 {
 		reader = io.LimitReader(file, maxBytes+1)
@@ -233,7 +233,7 @@ func ReadRegularUnmodified(path string, maxBytes int64) ([]byte, bool, error) {
 	if err != nil {
 		return nil, true, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	reader := io.Reader(file)
 	if maxBytes > 0 {
 		reader = io.LimitReader(file, maxBytes+1)
@@ -267,7 +267,7 @@ func AtomicWrite(path string, data []byte, perm os.FileMode) error {
 		return fmt.Errorf("statefs: create temporary file for %s: %w", path, err)
 	}
 	tempPath := temp.Name()
-	defer os.Remove(tempPath)
+	defer func() { _ = os.Remove(tempPath) }()
 	if err := writeTemp(temp, data, perm); err != nil {
 		return fmt.Errorf("statefs: prepare %s: %w", path, err)
 	}
@@ -304,7 +304,7 @@ func ReadTracked(path string, maxBytes int64) ([]byte, os.FileMode, bool, error)
 	if err != nil {
 		return nil, 0, true, fmt.Errorf("statefs: open tracked file %s: %w", path, err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	opened, err := file.Stat()
 	if err != nil || !opened.Mode().IsRegular() || !singleLink(opened) ||
 		!os.SameFile(info, opened) {
@@ -360,7 +360,7 @@ func AtomicWriteTrackedIfUnchanged(
 		return fmt.Errorf("statefs: create tracked temporary file for %s: %w", path, err)
 	}
 	tempPath := temp.Name()
-	defer os.Remove(tempPath)
+	defer func() { _ = os.Remove(tempPath) }()
 	if err := writeTemp(temp, data, perm); err != nil {
 		return fmt.Errorf("statefs: prepare tracked file %s: %w", path, err)
 	}
@@ -429,7 +429,7 @@ func SyncDir(path string) error {
 	if err != nil {
 		return fmt.Errorf("statefs: open directory %s: %w", path, err)
 	}
-	defer dir.Close()
+	defer func() { _ = dir.Close() }()
 	opened, err := dir.Stat()
 	if err != nil || !opened.IsDir() || !os.SameFile(info, opened) {
 		return fmt.Errorf("statefs: directory %s changed while opening", path)
@@ -442,15 +442,15 @@ func SyncDir(path string) error {
 
 func writeTemp(file *os.File, data []byte, perm os.FileMode) error {
 	if err := file.Chmod(perm); err != nil {
-		file.Close()
+		_ = file.Close()
 		return err
 	}
 	if _, err := file.Write(data); err != nil {
-		file.Close()
+		_ = file.Close()
 		return err
 	}
 	if err := file.Sync(); err != nil {
-		file.Close()
+		_ = file.Close()
 		return err
 	}
 	return file.Close()

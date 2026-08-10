@@ -1,4 +1,9 @@
-use std::{error::Error, io::{self, Write}, path::PathBuf, sync::Arc};
+use std::{
+    error::Error,
+    io::{self, Write},
+    path::PathBuf,
+    sync::Arc,
+};
 
 use forge_runtime_application::{
     AdjudicateGroupAgentNodeDispatchInput, AdjudicateGroupAgentNodeDispatchResult,
@@ -15,9 +20,8 @@ use crate::{
     args::{Args, GroupGraphRunDispatchCommand},
     openai_prepared_dispatch::OpenAiRequestCodec,
     runtime_domain::{
-        GroupAgentGraphRunStatus, GroupAgentNodeDispatchAuthorization,
-        GroupAgentNodeDispatchClaim, GroupAgentNodeLifecycleInspection,
-        GroupAgentNodePricingSnapshot,
+        GroupAgentGraphRunStatus, GroupAgentNodeDispatchAuthorization, GroupAgentNodeDispatchClaim,
+        GroupAgentNodeLifecycleInspection, GroupAgentNodePricingSnapshot,
     },
     state_path::{hub_database_path, idempotency_key, unix_time_millis},
 };
@@ -361,7 +365,10 @@ fn read_stranded_inspection(
     }
     let store = SqliteHubStore::open_existing_dispatch_inspection_read_only(database)?;
     let Some(inspection) = store.inspect_existing_group_agent_node_lifecycle(graph_run_id)? else {
-        return Err(not_stranded(graph_run_id, "run has no stranded dispatch claim"));
+        return Err(not_stranded(
+            graph_run_id,
+            "run has no stranded dispatch claim",
+        ));
     };
     let stranded = inspection.graph_run.run.status == GroupAgentGraphRunStatus::DispatchUnknown
         && inspection.active_lane.is_some()
@@ -410,8 +417,9 @@ fn adjudication_digest_preflight(
     claim: &GroupAgentNodeDispatchClaim,
     inputs: &DispatchInputs,
 ) -> Result<(), Box<dyn Error>> {
-    let authorization = GroupAgentNodeDispatchAuthorization::decode_exact(inputs.authorization())
-        .map_err(|_| GroupAgentNodeDispatchAdjudicationServiceError::InvalidInput)?;
+    let authorization =
+        GroupAgentNodeDispatchAuthorization::decode_exact(inputs.authorization())
+            .map_err(|_| GroupAgentNodeDispatchAdjudicationServiceError::InvalidInput)?;
     if authorization.authorization_sha256 != claim.authorization_sha256 {
         return Err(AdjudicationRefused::DigestMismatch {
             field: "authorization",
@@ -421,10 +429,7 @@ fn adjudication_digest_preflight(
     let pricing = GroupAgentNodePricingSnapshot::decode_exact(inputs.pricing())
         .map_err(|_| GroupAgentNodeDispatchAdjudicationServiceError::InvalidInput)?;
     if pricing.pricing_snapshot_sha256 != claim.pricing_snapshot_sha256 {
-        return Err(AdjudicationRefused::DigestMismatch {
-            field: "pricing",
-        }
-        .into());
+        return Err(AdjudicationRefused::DigestMismatch { field: "pricing" }.into());
     }
     Ok(())
 }

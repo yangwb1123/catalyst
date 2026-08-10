@@ -23,7 +23,7 @@ use forge_runtime_domain::{
 };
 use futures_util::stream;
 
-use super::data::{ExactJsonCodec, prepare, prepare_with_max_result_bytes};
+use super::data::{ExactJsonCodec, PreparedExecution, prepare, prepare_with_max_result_bytes};
 use crate::group_agent_node_execution_support::MemoryContractHub;
 
 pub(crate) struct ExecutionHarness {
@@ -64,6 +64,7 @@ impl ExecutionHarness {
         synchronize_builds: bool,
     ) -> Self {
         let prepared = max_result_bytes.map_or_else(prepare, prepare_with_max_result_bytes);
+        let input = execution_input(&prepared);
         let provider_calls = Arc::new(AtomicUsize::new(0));
         let credential_reads = Arc::new(AtomicUsize::new(0));
         let core_calls = Arc::new(AtomicUsize::new(0));
@@ -83,24 +84,35 @@ impl ExecutionHarness {
             calls: core_calls.clone(),
         });
         let service = Arc::new(GroupAgentNodeDispatchExecutionService::new(
-            hub.clone(), hub.clone(), hub.clone(), hub.clone(), codec.clone(),
-            providers, credentials, core, Arc::new(DeterministicMetadata),
+            hub.clone(),
+            hub.clone(),
+            hub.clone(),
+            hub.clone(),
+            codec.clone(),
+            providers,
+            credentials,
+            core,
+            Arc::new(DeterministicMetadata),
         ));
         Self {
             service,
-            input: ExecuteGroupAgentNodeDispatchInput {
-                graph_run_id: prepared.fixture.run.run.graph_run_id,
-                authorization_json: prepared.authorization_json,
-                pricing_json: prepared.pricing_json,
-                confirm_off_machine: true,
-                cancellation: Cancellation::default(),
-            },
+            input,
             hub,
             codec,
             provider_calls,
             credential_reads,
             core_calls,
         }
+    }
+}
+
+fn execution_input(prepared: &PreparedExecution) -> ExecuteGroupAgentNodeDispatchInput {
+    ExecuteGroupAgentNodeDispatchInput {
+        graph_run_id: prepared.fixture.run.run.graph_run_id.clone(),
+        authorization_json: prepared.authorization_json.clone(),
+        pricing_json: prepared.pricing_json.clone(),
+        confirm_off_machine: true,
+        cancellation: Cancellation::default(),
     }
 }
 

@@ -1,0 +1,158 @@
+api_version: forgeos.agent-engineering/v1
+kind: ContextRouteRegistry
+status: active_contract
+runtime_binding: selection_policy_only
+owner: governance
+
+selection:
+  strategy: deterministic_bounded_union
+  route_order: priority_desc_then_id_asc
+  match_snapshot: frozen_task_profile
+  path_semantics: repo_relative_posix_case_sensitive
+  max_files: 24
+  max_total_bytes: 524288
+  on_required_missing: block
+  on_required_overflow: block
+  on_optional_overflow: omit_with_receipt
+  required_metadata: [source_path, source_revision, selected_reason, freshness, content_sha256, trust_lane]
+  omit_log_required: true
+  untrusted_content_behavior: data_only_never_instruction
+  secret_redaction_required: true
+  merge:
+    deny_precedence: absolute
+    required_precedence: required_wins
+    trust_precedence: least_trusted_wins
+    byte_limit: minimum_wins
+  deny_globs: ["**/.env", "**/.env.*", "**/*private-key*", "**/.ssh/**"]
+  base_required:
+    - { ref: .agent/AGENTS.md, lane: instruction, required: true, max_bytes: 65536 }
+    - { ref: .agent/PROJECT.md, lane: trusted_context, required: true, max_bytes: 131072 }
+    - { ref: .agent/project.yml, lane: trusted_context, required: true, max_bytes: 65536 }
+
+routes:
+  - id: governance
+    priority: 100
+    match:
+      op: any
+      predicates:
+        - { field: changed_path, operator: glob_any, values: [.agent/**, harness/**] }
+        - { field: task_type, operator: in, values: [governance, agent_engineering] }
+    include:
+      - { ref: .agent/engineering/rules.yml, lane: instruction, required: true, max_bytes: 131072 }
+      - { ref: .agent/engineering/governance-contracts.yml, lane: instruction, required: true, max_bytes: 65536 }
+      - { ref: .agent/skills/evidence-claim-management.md, lane: instruction, required: true, max_bytes: 65536 }
+      - { ref: .agent/policies/modes.yml, lane: trusted_context, required: true, max_bytes: 131072 }
+      - { ref: docs/contracts/governance-evidence-claim-v1.schema.json, lane: trusted_context, required: true, max_bytes: 131072 }
+      - { ref: docs/design/ai-engineering-os/governance-contracts.md, lane: trusted_context, required: true, max_bytes: 131072 }
+      - { ref: harness/policies.yml, lane: trusted_context, required: true, max_bytes: 65536 }
+
+  - id: architecture-boundary
+    priority: 90
+    match:
+      op: any
+      predicates:
+        - { field: changed_path, operator: glob_any, values: ["**/domain/**", "**/application/**", "**/infrastructure/**", "**/interfaces/**"] }
+        - { field: capability_id, operator: in, values: [modular-architecture, architecture-conformance, change-impact-analysis] }
+    include:
+      - { ref: .agent/skills/clean-architecture.md, lane: instruction, required: true, max_bytes: 131072 }
+      - { ref: .agent/skills/domain-modeling.md, lane: instruction, required: true, max_bytes: 131072 }
+      - { ref: .agent/skills/architecture-tradeoff.md, lane: instruction, required: true, max_bytes: 131072 }
+      - { ref: .agent/engineering/backend-decision-gates.yml, lane: instruction, required: true, max_bytes: 131072 }
+      - { ref: .agent/eval/backend-decision-package.schema.yml, lane: trusted_context, required: true, max_bytes: 131072 }
+      - { ref: .arch/rules.yaml, lane: trusted_context, required: true, max_bytes: 65536 }
+
+  - id: implementation
+    priority: 50
+    match:
+      op: any
+      predicates:
+        - { field: changed_path, operator: glob_any, values: [src/**, lib/**, app/**, packages/**] }
+        - { field: task_type, operator: in, values: [feature, bug_fix, refactor] }
+    include:
+      - { ref: .agent/skills/code-review.md, lane: instruction, required: true, max_bytes: 131072 }
+      - { ref: .agent/skills/testing.md, lane: instruction, required: true, max_bytes: 131072 }
+      - { ref: .agent/workflows/build.yml, lane: trusted_context, required: true, max_bytes: 131072 }
+
+  - id: security-change
+    priority: 110
+    match:
+      op: any
+      predicates:
+        - { field: changed_path, operator: glob_any, values: ["**/auth/**", "**/security/**", "**/identity/**"] }
+        - { field: task_type, operator: in, values: [security, authentication, authorization] }
+        - { field: materiality, operator: in, values: [L4] }
+    include:
+      - { ref: .agent/skills/security-review.md, lane: instruction, required: true, max_bytes: 131072 }
+      - { ref: .agent/skills/secure-coding.md, lane: instruction, required: true, max_bytes: 131072 }
+      - { ref: .agent/engineering/backend-decision-gates.yml, lane: instruction, required: true, max_bytes: 131072 }
+      - { ref: .agent/eval/backend-decision-package.schema.yml, lane: trusted_context, required: true, max_bytes: 131072 }
+      - { ref: .ai/prompts/02-security-rfc-review.md, lane: untrusted_data, required: false, max_bytes: 131072 }
+      - { ref: harness/secret-scan.mjs, lane: trusted_context, required: true, max_bytes: 131072 }
+
+  - id: user-experience
+    priority: 70
+    match:
+      op: any
+      predicates:
+        - { field: changed_path, operator: glob_any, values: ["**/ui/**", "**/components/**", "**/pages/**", "**/screens/**", "**/views/**", "**/routes/**", "**/widgets/**", "**/features/**", "**/entities/**", "**/shared/ui/**", "**/shared/api/**", "**/styles/**", "**/theme/**", "**/tokens/**", "**/*.tsx", "**/*.jsx", "**/*.vue", "**/*.dart", "**/*.css", "**/*.scss", "**/*.sass", "**/*.less"] }
+        - { field: capability_id, operator: in, values: [information-architecture, interaction-design, content-design, visual-design, design-system, accessibility, usability-testing, frontend-engineering, client-engineering] }
+    include:
+      - { ref: .agent/skills/code-review.md, lane: instruction, required: true, max_bytes: 131072 }
+      - { ref: .agent/skills/information-interaction-design.md, lane: instruction, required: true, max_bytes: 131072 }
+      - { ref: .agent/skills/design-system-accessibility.md, lane: instruction, required: true, max_bytes: 131072 }
+      - { ref: .agent/skills/ui-geometry.md, lane: instruction, required: true, max_bytes: 131072 }
+      - { ref: .agent/skills/frontend-client-engineering.md, lane: instruction, required: true, max_bytes: 131072 }
+      - { ref: .agent/skills/frontend-code-architecture.md, lane: instruction, required: true, max_bytes: 131072 }
+      - { ref: .agent/engineering/frontend-design-gates.yml, lane: instruction, required: true, max_bytes: 131072 }
+      - { ref: .agent/engineering/frontend-code-architecture.yml, lane: instruction, required: true, max_bytes: 131072 }
+      - { ref: .agent/engineering/frontend-profiles.yml, lane: trusted_context, required: true, max_bytes: 131072 }
+      - { ref: .agent/eval/frontend-design-package.schema.yml, lane: trusted_context, required: true, max_bytes: 131072 }
+      - { ref: .arch/frontend-architecture.v1.json, lane: trusted_context, required: true, max_bytes: 131072 }
+      - { ref: .arch/frontend-architecture-baseline.v1.json, lane: trusted_context, required: true, max_bytes: 131072 }
+      - { ref: .arch/frontend-architecture-waivers.v1.json, lane: trusted_context, required: true, max_bytes: 131072 }
+      - { ref: docs/design/ai-engineering-os/frontend-design-standard.md, lane: trusted_context, required: true, max_bytes: 131072 }
+      - { ref: docs/design/ai-engineering-os/frontend-code-architecture-standard.md, lane: trusted_context, required: true, max_bytes: 131072 }
+
+  - id: release-boundary
+    priority: 120
+    match:
+      op: any
+      predicates:
+        - { field: changed_path, operator: glob_any, values: [docs/release/**, .agent/workflows/deploy.yml, .agent/workflows/rollback.yml] }
+        - { field: task_type, operator: in, values: [deploy, release, rollback, production_change] }
+    include:
+      - { ref: .agent/workflows/deploy.yml, lane: instruction, required: true, max_bytes: 131072 }
+      - { ref: .agent/workflows/rollback.yml, lane: instruction, required: true, max_bytes: 131072 }
+      - { ref: docs/release/README.md, lane: trusted_context, required: true, max_bytes: 131072 }
+
+  - id: data-and-contract
+    priority: 100
+    match:
+      op: any
+      predicates:
+        - { field: changed_path, operator: glob_any, values: ["**/migrations/**", "**/schema/**", "**/database/**", "**/db/**", "**/sql/**", "**/dao/**", "**/persistence/**", "**/repositories/**", "**/entities/**", "**/models/**", "**/api/**", "**/contracts/**", "**/proto/**", "**/events/**"] }
+        - { field: capability_id, operator: in, values: [data-modeling, schema-review, query-index-analysis, transaction-design, migration-engineering, data-quality, api-design, event-contract, compatibility, idempotency, error-modeling, contract-testing] }
+    include:
+      - { ref: .ai/prompts/01-architecture-review.md, lane: untrusted_data, required: false, max_bytes: 131072 }
+      - { ref: .agent/skills/data-modeling-transactions.md, lane: instruction, required: true, max_bytes: 131072 }
+      - { ref: .agent/skills/data-migration-lifecycle.md, lane: instruction, required: true, max_bytes: 131072 }
+      - { ref: .agent/skills/api-contract-design.md, lane: instruction, required: true, max_bytes: 131072 }
+      - { ref: .agent/skills/testing.md, lane: instruction, required: true, max_bytes: 131072 }
+      - { ref: .agent/engineering/backend-decision-gates.yml, lane: instruction, required: true, max_bytes: 131072 }
+      - { ref: .agent/eval/backend-decision-package.schema.yml, lane: trusted_context, required: true, max_bytes: 131072 }
+      - { ref: .agent/eval/completion-evidence.schema.yml, lane: trusted_context, required: true, max_bytes: 131072 }
+
+  - id: backend-runtime
+    priority: 95
+    match:
+      op: any
+      predicates:
+        - { field: changed_path, operator: glob_any, values: ["**/internal/**", "**/services/**", "**/controllers/**", "**/handlers/**", "**/models/**", "**/repositories/**", "**/persistence/**", "**/clients/**", "**/jobs/**", "**/workers/**", "**/queues/**", "**/cache/**"] }
+        - { field: capability_id, operator: in, values: [backend-engineering, distributed-systems, concurrency, observability, benchmarking] }
+    include:
+      - { ref: .agent/skills/backend-engineering.md, lane: instruction, required: true, max_bytes: 131072 }
+      - { ref: .agent/skills/distributed-reliability-design.md, lane: instruction, required: true, max_bytes: 131072 }
+      - { ref: .agent/skills/performance-capacity.md, lane: instruction, required: true, max_bytes: 131072 }
+      - { ref: .agent/skills/observability-engineering.md, lane: instruction, required: true, max_bytes: 131072 }
+      - { ref: .agent/engineering/backend-decision-gates.yml, lane: instruction, required: true, max_bytes: 131072 }
+      - { ref: .agent/eval/backend-decision-package.schema.yml, lane: trusted_context, required: true, max_bytes: 131072 }

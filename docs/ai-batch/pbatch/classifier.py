@@ -7,9 +7,9 @@ Scoring mirrors pbatch.relevance: CJK terms match by substring, Latin terms
 by word boundaries, 2 points per hit, capped at 10 per type. A platform
 hit (tsx/dart/vue/react-native) adds a +2 boost to frontend_ui because
 "implement this page in flutter" is overwhelmingly a UI task even when the
-rest of the sentence is business wording. Profile hits (erp/cms/oa/
-dashboard/immersive/marketing/mobile) add +1 each (cap +4): "a marketing
-landing page" is a UI signal even with no generic UI word.
+rest of the sentence is business wording. Profile hits (erp/cms/oa/crm/
+commerce/ai-agent/dashboard/immersive/marketing/mobile) add +1 each (cap +4):
+"a marketing landing page" is a UI signal even with no generic UI word.
 
 Zero-score input classifies as unknown (never frontend on a tie). Routing
 is a hint, not a gate: a false positive just adds spec/review stages via
@@ -26,6 +26,7 @@ from typing import Optional
 
 from . import config
 from .config import log, yaml
+from .output_contract import format_output_contract, output_envelope
 from .relevance import _keyword_hit
 from .text_io import read_text_bounded
 
@@ -92,6 +93,9 @@ _DEFAULT_KEYWORDS: dict = {
         "erp": ["erp", "mes", "排程", "库存", "采购单", "工单", "单据"],
         "cms": ["cms", "内容管理", "文章", "审核", "发布"],
         "oa": ["oa", "审批", "待办", "流程", "通知公告"],
+        "crm": ["crm", "客户管理", "客户跟进", "商机", "销售线索"],
+        "commerce": ["ecommerce", "e-commerce", "电商", "商城", "购物车", "结算页"],
+        "ai-agent": ["ai 对话", "agent 对话", "对话应用", "智能体界面", "工具调用状态"],
         "dashboard": ["dashboard", "大屏", "图表", "数据可视化", "看板"],
         "immersive": ["特效", "3d", "沉浸", "动画", "滚动叙事", "粒子"],
         "marketing": ["官网", "落地页", "营销", "转化", "landing"],
@@ -166,12 +170,18 @@ def load_keywords(path: str = "") -> dict:
 
 
 def _best_match(text: str, section: dict, lowered: str = "") -> tuple[str, tuple]:
-    """Best-scoring entry in a keyword section (platform/profile maps)."""
-    best, best_hits = UNKNOWN, ()
+    """Best entry by hit count, then by most-specific matched phrase.
+
+    Specificity resolves overlapping vocabulary without a hard-coded platform
+    exception: ``react native`` must beat the shorter ``react`` match while
+    all non-overlapping classifications retain their previous result.
+    """
+    best, best_hits, best_specificity = UNKNOWN, (), -1
     for name, terms in section.items():
         hits = tuple(str(term) for term in terms if _keyword_hit(lowered, str(term)))
-        if len(hits) > len(best_hits):
-            best, best_hits = name, hits
+        specificity = max((len(hit) for hit in hits), default=-1)
+        if (len(hits), specificity) > (len(best_hits), best_specificity):
+            best, best_hits, best_specificity = name, hits, specificity
     return best, best_hits
 
 
@@ -380,6 +390,7 @@ def classify_main(argv: list) -> None:
     route = should_route_frontend(per_task, config.CLASSIFIER_FRONTEND_RATIO)
     if args.json:
         payload = {
+            **output_envelope(),
             "path_base": config.PATH_BASE,
             "dominant": dominant.to_dict(),
             "route_frontend": route,
@@ -389,6 +400,7 @@ def classify_main(argv: list) -> None:
         print(json.dumps(payload, ensure_ascii=False, indent=2))
         return
     print(f"Path base: {config.PATH_BASE}")
+    print(format_output_contract())
     for index, item in enumerate(per_task, 1):
         print(format_classification(item, index))
     pipeline = config.CLASSIFIER_FRONTEND_PIPELINE if route else "-"

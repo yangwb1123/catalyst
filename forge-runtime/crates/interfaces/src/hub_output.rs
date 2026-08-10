@@ -1,5 +1,6 @@
-use std::io::{self, Write};
-use serde::Serialize;
+#[path = "hub_output_group_human.rs"]
+mod group_human;
+
 use crate::runtime_domain::{
     BeginGroupExecutionDisposition, Conversation, ConversationScope, GroupProjectMember,
     GroupRunRecord, HubSnapshot, PrepareGroupRunDisposition, PromptRecord, RunInspection,
@@ -34,6 +35,8 @@ use crate::{
         GroupRunSnapshotView, write_group_run, write_group_run_list, write_group_run_prepared,
     },
 };
+use serde::Serialize;
+use std::io::{self, Write};
 #[derive(Debug, Serialize)]
 pub struct CliOutput {
     pub v: u16,
@@ -201,7 +204,14 @@ fn write_human(kind: &OutputKind, writer: &mut impl Write) -> Result<(), io::Err
             migration_pending,
             backups,
             healthy,
-        } => write_hub_status(*schema_version, *expected_schema_version, *migration_pending, *backups, *healthy, writer),
+        } => write_hub_status(
+            *schema_version,
+            *expected_schema_version,
+            *migration_pending,
+            *backups,
+            *healthy,
+            writer,
+        ),
         OutputKind::Hub { snapshot, remote } => write_hub(snapshot, *remote, writer),
         OutputKind::Sessions { scope, sessions } => write_sessions(scope, sessions, writer),
         OutputKind::SessionCreated { session } => {
@@ -211,38 +221,33 @@ fn write_human(kind: &OutputKind, writer: &mut impl Write) -> Result<(), io::Err
         OutputKind::Prompts { prompts } => write_prompts(prompts, writer),
         OutputKind::GroupCreated { group } => write_group_created(group, writer),
         OutputKind::GroupLinked { member } => write_group_linked(member, writer),
-        OutputKind::GroupContext { context } => write_group_context(context, writer),
-        OutputKind::GroupRunPrepared {
-            disposition,
-            snapshot,
-        } => write_group_run_prepared(*disposition, snapshot, writer),
-        OutputKind::GroupRun { snapshot } => write_group_run(snapshot, writer),
-        OutputKind::GroupRuns { runs } => write_group_run_list(runs, writer),
-        OutputKind::GroupExecutionStarted {
-            disposition,
-            inspection,
-        } => write_group_execution_started(*disposition, inspection, writer),
-        OutputKind::GroupExecution { inspection } => write_group_execution(inspection, writer),
-        OutputKind::GroupExecutions { executions, .. } => {
-            write_group_execution_list(executions, writer)
-        }
-        OutputKind::GroupModelAnalysisPrepared { .. }
+        OutputKind::GroupContext { .. }
+        | OutputKind::GroupRunPrepared { .. }
+        | OutputKind::GroupRun { .. }
+        | OutputKind::GroupRuns { .. }
+        | OutputKind::GroupExecutionStarted { .. }
+        | OutputKind::GroupExecution { .. }
+        | OutputKind::GroupExecutions { .. }
+        | OutputKind::GroupModelAnalysisPrepared { .. }
         | OutputKind::GroupModelAnalysisSent { .. }
         | OutputKind::GroupModelAnalysis { .. }
-        | OutputKind::GroupModelAnalyses { .. } => write_group_model_kind(kind, writer),
-        OutputKind::GroupAnalysisPanelPrepared { .. }
+        | OutputKind::GroupModelAnalyses { .. }
+        | OutputKind::GroupAnalysisPanelPrepared { .. }
         | OutputKind::GroupAnalysisPanel { .. }
-        | OutputKind::GroupAnalysisPanels { .. } => write_group_panel_kind(kind, writer),
-        OutputKind::GroupPanelSynthesisPrepared { .. }
+        | OutputKind::GroupAnalysisPanels { .. }
+        | OutputKind::GroupPanelSynthesisPrepared { .. }
         | OutputKind::GroupPanelSynthesisSent { .. }
         | OutputKind::GroupPanelSynthesis { .. }
-        | OutputKind::GroupPanelSyntheses { .. } => write_group_synthesis_kind(kind, writer),
-        OutputKind::Groups { groups } => write_groups(groups, writer),
-        OutputKind::Runs { runs } => write_runs(runs, writer),
-        OutputKind::Run { inspection } => write_run(inspection, writer),
+        | OutputKind::GroupPanelSyntheses { .. }
+        | OutputKind::Groups { .. }
+        | OutputKind::Runs { .. }
+        | OutputKind::Run { .. } => group_human::write(kind, writer),
     }
 }
-fn write_group_linked(member: &GroupProjectMember, writer: &mut impl Write) -> Result<(), io::Error> {
+fn write_group_linked(
+    member: &GroupProjectMember,
+    writer: &mut impl Write,
+) -> Result<(), io::Error> {
     writeln!(
         writer,
         "linked project {} to group {} as {}",
@@ -466,34 +471,16 @@ fn write_hub_status(
     healthy: bool,
     writer: &mut impl io::Write,
 ) -> io::Result<()> {
-    writeln!(writer, "schema_version: {schema_version} (expected {expected})")?;
-    writeln!(writer, "migration_pending: {migration_pending}\nbackups: {backups}\nhealthy: {healthy}")
+    writeln!(
+        writer,
+        "schema_version: {schema_version} (expected {expected})"
+    )?;
+    writeln!(
+        writer,
+        "migration_pending: {migration_pending}\nbackups: {backups}\nhealthy: {healthy}"
+    )
 }
 
 #[cfg(test)]
-mod tests {
-    use forge_runtime_domain::{ConversationScope, HubSnapshot};
-
-    use super::{CliOutput, OutputKind, RemoteStatus, write_output};
-
-    #[test]
-    fn json_output_has_a_version_and_type() {
-        let output = CliOutput::new(OutputKind::Hub {
-            snapshot: HubSnapshot {
-                scope: ConversationScope::Global,
-                projects: vec![],
-                conversations: vec![],
-                groups: vec![],
-                group_project_members: vec![],
-            },
-            remote: RemoteStatus::NotConfigured,
-        });
-        let mut bytes = Vec::new();
-        write_output(&output, true, &mut bytes).expect("render JSON");
-        let value: serde_json::Value = serde_json::from_slice(&bytes).expect("valid JSON");
-        assert_eq!(value["v"], 1);
-        assert_eq!(value["type"], "hub");
-        assert_eq!(value["remote"], "not_configured");
-    }
-}
-
+#[path = "hub_output_tests.rs"]
+mod tests;

@@ -167,9 +167,9 @@ pub(super) fn validate_record(
         .ok_or_else(|| analysis_error("invalid Group Model Analysis record"))
 }
 
-///  accepts the official endpoint, or any http(s) 
-/// endpoint chosen by an explicit caller opt-in (): the
-/// prepared dossier may only travel to a destination the operator pinned.
+/// Group Model Analysis accepts the official endpoint, or an HTTP(S) endpoint
+/// chosen through explicit caller opt-in (`OPENAI_BASE_URL`): the prepared
+/// dossier may only travel to a destination the operator pinned.
 #[must_use]
 pub fn endpoint_allowed(endpoint: &str) -> bool {
     endpoint == GROUP_MODEL_ANALYSIS_PROVIDER_ENDPOINT

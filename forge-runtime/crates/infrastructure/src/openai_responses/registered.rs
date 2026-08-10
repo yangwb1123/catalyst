@@ -17,7 +17,6 @@ pub struct RegisteredGroupAgentNodeProviderFactory {
     endpoint_policy: EndpointPolicy,
 }
 
-
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RegisteredGroupAgentNodeProviderReadiness {
     authorization_sha256: String,

@@ -149,10 +149,10 @@ validators:
   clirepo:
     cmd: "python3 cli.py check"
     scope: repo
-  # UI generation gates: AI-generated TSX/Dart spacing/color/style problems
-  # are specification problems, so these deterministic checks reject
-  # artifacts mechanically (fail closed -> retry feedback loop). Attach via
-  # stage `validate: uispacing,uicolor,uistyle` on UI generation stages.
+  # Runner-only UI validator examples. If a separate authorized runner has
+  # supplied these scripts and explicitly attaches
+  # `validate: uispacing,uicolor,uistyle`, that runner may reject artifacts;
+  # this offline port never executes or attests these checks.
   uispacing: "python {cwd}/scripts/check-ui-spec.py --mode spacing {output}"
   uicolor: "python {cwd}/scripts/check-ui-spec.py --mode color {output}"
   uistyle: "python {cwd}/scripts/check-ui-spec.py --mode style {output}"
@@ -185,15 +185,15 @@ validators:
   # {cwd}; {output} is substituted with the stage's output directory.
   # gofullbuild: {cmd: "go build ./... && go vet ./...", scope: repo}
 
-# Task type classifier: runs BEFORE execution (--classify / `classify`
-# subcommand). Frontend UI tasks route to the UI generation pipeline, which
-# applies the ui-specs + UI validators + meta UI review + verdict gate.
+# Task type classifier: the offline `classify` subcommand emits a routing hint
+# only. It does not execute the referenced workflow, AFDS/frontend validators,
+# meta UI review, or any verdict gate.
 classifier:
   # Optional keyword map override (default: pbatch/task_keywords.yaml).
   keywords: ""
-  # ForgeOS owns execution through its declared workflows. Classification is
-  # only a routing hint; both domains enter the real Build workflow, whose
-  # role/mode policy supplies the domain-specific implementation context.
+  # These paths are declarative runner hints. A separate authorized ForgeOS
+  # runtime may consume them; this offline port neither invokes nor validates
+  # the workflow and does not write FrontendDesignPackage/AFDS fields.
   frontend_pipeline: .agent/workflows/build.yml
   backend_pipeline: .agent/workflows/build.yml
   # Minimum top score for a confident classification (2 = one strong hit).

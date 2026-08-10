@@ -4,33 +4,51 @@
 
 ## 1. 当前基线与缺口
 
-ForgeOS 已有 13 张正式 `.agent/agents` 角色卡、9 张 `.agent/skills` 技能卡、7 条主工作流，以及 Go/Rust 控制与
+ForgeOS 已有正式 `.agent/agents` 角色卡、可路由 `.agent/skills` adapter、主工作流，以及 Go/Rust 控制与
 执行原语。`docs/reviews` 另有产品、BA、UX、架构、后端、数据库、SRE、DevOps、QA、合规等丰富审查 lens；
 `docs/ai-batch` 有离线确定性分类/评估能力。后三者尚未消费同一能力/证据契约。
+
+ADR-0040 已交付首个 shadow 切片：`.agent/engineering` 的 activation、14 学科、规则、载重 detector、typed Context
+路由、W0–W3 保障策略与无裁决权的 TaskEvidencePackage 由第 13 项 `forge check` 校验，并随 scaffold/legacy upgrade
+复制。这是合同与接线完整性，不是 Capability/AADM/Context/Reflection runtime；`forge accept` 仍是唯一完成裁决。
+ADR-0041 在相同边界内增加 14 维后端决策 policy、BackendDecisionPackage、十张密集 Skill adapter、data/backend
+Context route 和对抗 validator。它仍是 shadow：尚不会从 diff 自动生成 package，也不会在 coding 前取得阻断权。
+ADR-0042 以同一主干增加 14 维前端决策 policy、Profile/Pattern catalog、FrontendDesignPackage、三张 canonical Skill adapter、
+user-experience Context route 和对抗 validator。它同样保持 shadow：只校验合同与声明绑定，不认证工具/Reviewer provenance。
+ADR-0043 又增加不改变 capability ownership 的前端代码架构治理 Skill、显式项目模块合同和 compiler-backed TypeScript
+shadow detector；Vue/Dart 目标在缺少编译器 adapter 时 inconclusive，静态复杂度只触发审查，不冒充语义内聚证明。
+ADR-0044 在既有 AFDS 内增加不拥有 fine capability 的 `ui-geometry` supporting Skill、digest-bound business UI composition
+和 capture-bound geometry report。它校验角色/任务/数据到区域、轴、分组、Token 和响应式处置的结构闭合，但仍不认证
+浏览器/原生 Runner、视觉 Reviewer 或审美结论。
+ADR-0045 交付 0F-A strict EvidenceRecord/KnowledgeClaim v1、canonical digest、Go/Rust/Python golden 与 universal shadow checker；
+它不提供 ledger、authenticated identity、Context/Grant/Approval/Transition、knowledge apply 或 hard-gate authority。
+ADR-0046 随后交付 local exact-record journal，但只提供 structural persistence/head，不提供 semantic truth、current view 或 authority。
+ADR-0047 再交付七类 strict shadow KnowledgeClaim→CognitiveAtom 的确定性 pure projection；`lesson/proposal` 不投影，且该切片
+不提供完整 Atom/Kernel ABI、prompt/model compiler、truth/authority/transition/effect/completion attestation 或 persistence。
 
 | 节点 | 当前覆盖 | 已有基础 | 主要缺口 |
 |---:|---|---|---|
 | 00 Orchestrator | 强 | DAG、预算、checkpoint、回边、收敛、路由 | 图级影响/成本、通用 capability grant、typed context |
 | 01 Requirement | 部分 | PM、PRD、confidence | 独立 BA schema、场景/规则/追踪硬契约 |
 | 02 Product | 部分 | Discover/product design | journey/state/KPI/rollout 决策台账 |
-| 03 UX/UI | 参考级 | review roles、UI baseline | 正式 role/skill/workflow/artifact/accessibility gate |
-| 04 Domain | 部分 | architect bounded context、clean architecture | 独立 domain model/invariant/event/context contract |
+| 03 UX/UI | shadow | AFDS policy/catalog/package、三张 canonical Skill + geometry supporting Skill、Context route、flow/state/business-composition/geometry-report/visual evidence validator | 自动影响识别、可信 capture/geometry/review receipt 与 pre-code runtime gate |
+| 04 Domain | shadow | architect bounded context、domain-modeling Skill、14 维后端 package | runtime 自动提取 invariant/context 与可信 evidence binding |
 | 05 Architecture | 强 | architect/CTO/ADR/human gate | ADR 机器元数据、current-state graph、compliance/freshness |
-| 06 Data | 参考级 | database reviewer | 正式 schema/transaction/index/migration/retention contract |
-| 07 API | 弱 | architecture 中关键接口 | contract registry、compatibility/idempotency/error/event gates |
+| 06 Data | shadow | data/transaction/migration Skills、持久化前置报告与 N/A 规则 | pre-code runtime gate、Schema/query-plan/restore 的可信执行证据 |
+| 07 API | shadow | API contract Skill、compatibility/idempotency/error 决策维度 | contract registry、消费者清单与自动 compatibility gate |
 | 08 Planning | 强 | task contract、DAG、Build/Evolve | impact/cost/risk 驱动的角色和权限派生 |
-| 09 Development | 部分 | implementer + polyglot gates | backend/frontend/data specialization 与条件化工程规范 |
+| 09 Development | shadow+runtime 基础 | implementer、polyglot gates、backend/frontend Skill 与 Context route | package 自动生成/授权与真实 pre-code block |
 | 10 Review/Refactor | 部分 | fresh reviewer、回流、重构 skills | ordinary verdict 严格化、God/responsibility/模式决策证据 |
 | 11 Security | 强 | STRIDE、security role/skill、secret/SCA | privacy/compliance 与开发期控制统一契约 |
 | 12 QA | 强 | QA、testing、`qa_v1` fail-closed | risk-based trace/mutation/flake/environment registry |
-| 13 Performance | 部分 | design review/budget | runtime telemetry → diagnose → verify loop |
+| 13 Performance | shadow | performance-capacity Skill、10×/100× 失效阈值与 evidence 规则 | runtime telemetry → diagnose → benchmark → verify loop |
 | 14 Release | 强 | 声明式 package、freshness、human marker | 与通用 Grant/Claim/Graph 统一，仍保持外部执行边界 |
 | 15 Operations | 参考级 | SRE/DevOps reviewer、production readiness |正式 Ops/Incident/RuntimeObservation feed |
-| 16 Reflection/Evolution | 部分 | evidence scan、gap/roadmap/implement/review、三类 memory；Reflect 已部分映射 | 统一 Reflection/Assumption/Outcome/Routing 契约、深归因、受控学习 |
+| 16 Reflection/Evolution | 部分 | evidence scan、gap/roadmap/implement/review、三类 memory；Reflect 已部分映射；七类 Claim-backed shadow Atom pure projection | 通用 Atom compiler、统一 Reflection/Assumption/Outcome/Routing 契约、深归因、受控学习 |
 
 执行平面当前也只有本地 process、Docker/Firecracker 等基础，不存在 Device Registry、远程 Runner/Placement/Lease/Migration；
-完整 coding-workspace exchange 与 Rust runtime OS sandbox 集成仍是缺口。AADM、Reflection 和 Device Fabric 文档都属于目标态，
-不得从命令名称或已有 runner 推断已经交付。
+完整 coding-workspace exchange 与 Rust runtime OS sandbox 集成仍是缺口。除 ADR-0047 明确限定的 Claim→Atom pure shadow
+投影外，AADM、Reflection 和 Device Fabric 文档都属于目标态，不得从命令名称、已有 runner 或该投影推断已经交付。
 
 最危险的三个先决缺口：
 
@@ -58,19 +76,30 @@ Canonical capability/governance schemas
 - [x] 列出 00–16 全节点 SOP、工程规范、治理对象和规划期机读目录；
 - [x] 明确 current/proposed 边界和现有三体系的收敛方向；
 - [x] 采纳 AADM 决策 ABI、Meta Reflection 与 default-off Device Fabric 目标设计；
-- [ ] 定义严格的 Governance Envelope、Evidence/Claim、ConstitutionRule、Grant、TransitionReceipt JSON Schema；
-- [ ] 冻结 CognitiveAtom、DecisionTransaction、InteractionEvent、Capability invocation、Artifact/Execution receipt Kernel ABI；
-- [ ] 定义 canonical bytes/digest domains、大小/数量上限、错误代码和版本迁移策略；
-- [ ] 建跨 Go/Rust/Python golden 与 malformed/duplicate/unknown/oversize adversarial fixtures；
+- [x] 交付 ADR-0040 shadow 规范入口、严格 YAML/引用校验、载重 detector 接线、typed Context/保障下限、无裁决权证据包与 scaffold/legacy-upgrade 继承；
+- [x] 交付 ADR-0041 后端 shadow 决策合同、条件化模型角色、持久化关卡、十张 Skill adapter、Context route、package validator 与 adversarial/scaffold 回归；
+- [x] 交付 ADR-0042 前端 shadow 决策合同、Profile/Pattern catalog、flow/state/action/permission 结构与引用关卡、三张 Skill adapter、Context route、package/evidence validator 与 adversarial/scaffold 回归；完整业务语义和图可达性仍需项目执行证据或独立审查；
+- [x] 交付 ADR-0043 前端代码架构 Skill、项目 module/dependency/public API 合同、Compiler API 驱动的 TypeScript shadow detector、精确 baseline/waiver 与 adversarial/scaffold 回归；Vue/Dart adapter、语义内聚和 load-bearing promotion 仍待真实项目证据；
+- [x] 交付 ADR-0044 业务绑定 UI 几何合同：不新增 capability owner，以 versioned composition source artifact 绑定角色/任务/状态/数据语义与 region/axis/group/spacing/stroke/shape/reflow，并以同 capture context 的声明式 geometry report 保存原始 observation；可信 Runner/Reviewer attestation 仍待 runtime；
+- [x] 交付 ADR-0045 的 strict EvidenceRecord/KnowledgeClaim v1 schema、identity/state matrix、无权限 shadow admissibility 和 Skill adapter；完整 Envelope、ConstitutionRule、Grant、TransitionReceipt 仍未实现；
+- [x] 交付 ADR-0047 的七类 KnowledgeClaim→CognitiveAtom pure shadow 投影、exact source closure/canonical identity 与跨语言 golden/adversarial contract；`lesson/proposal` 明确不投影；
+- [ ] 冻结完整 Kernel ABI：扩展 CognitiveAtom source/type/authority/hardness，并定义 DecisionTransaction、InteractionEvent、CapabilityInvocation、Artifact/ExecutionReceipt；
+- [x] 冻结 Evidence/Claim canonical bytes、kind digest domain、大小/数量上限和 v1 兼容边界；统一 Kernel 错误代码和持久化迁移仍待后续；
+- [x] 建 Evidence/Claim 跨 Go/Rust/Python golden 与 malformed/duplicate/unknown/oversize/authority adversarial 回归；
 - [ ] 设计旧 memory/ADR 的只读导入：默认 `unverified_legacy`，绝不自动确认。
 
-**完成判据。** 相同输入跨语言产生相同 canonical digest；未知/重复字段失败；无 Evidence 的 confirmed Fact、用 Assumption
-满足 hard gate、过期 Grant/Approval、非法状态跳转全部被拒绝。
+**Wave 0F-A 已达判据。** 相同 Evidence/Claim 输入跨语言产生相同 canonical bytes/digest，未知/重复字段、无 Evidence 的 Fact
+候选、所有 confirmed/accepted/waived authority 状态和 Assumption hard-gate 资格均失败关闭。过期 Grant/Approval 与 runtime 状态跳转
+仍无实现，不得从本切片推断已经拒绝。
+
+**ADR-0047 窄切片已达判据。** 相同 task/binding/source Claim 跨 Python/Go/Rust 产生相同 Atom/closure/set bytes、identity
+与 digest，且只允许七类 shadow Claim；`lesson/proposal` 不生成 Atom。结果仅为 `PROJECTED_SHADOW`，不得推断 truth、authority、
+instruction、hard guard、transition、completion、effect 或 persistence；DecisionTransaction、Grant/Approval、PDP 与 Controller 仍未实现。
 
 ## 4. Wave 1 — Evidence、Claim、Context 与权限内核（最高优先）
 
 - [ ] 实现 append-only Evidence/Claim ledger 与 current materialized view；
-- [ ] 实现 KnowledgeClaim 状态、冲突、supersede、freshness 和 validation plan；
+- [ ] 在 0F-A 严格记录之上实现 durable KnowledgeClaim lifecycle transition、current/conflict materialized view、freshness enforcement 与 validation job scheduling；
 - [ ] 实现 `ContextPackage v1` 的选择、遗漏、redaction、token budget、digest 和 cache invalidation；
 - [ ] 把当前 artifact provenance、Evolve locator 和 gate/test result 适配为 Evidence；
 - [ ] 实现 `CapabilityGrant v1`、最小 effect vocabulary、preflight/postflight 与 audit receipts；
@@ -78,7 +107,7 @@ Canonical capability/governance schemas
 - [ ] 实现封闭 Transition 状态表、append-only ledger、非法边 enforcement、N/A applicability、rework/resume/quarantine recovery；
 - [ ] 实现 KnowledgeUpdateProposal→Kernel validation→Receipt，所有节点默认只有 `knowledge.propose`；
 - [ ] 实现最小 Capability Registry（ID/version/schema/effects/proofs/owner/implementations/tests），CLI/API 只做 adapter；
-- [ ] 先以 shadow/report-only 实现 Atom compiler、TaskProfile、Rule activation/suppression、DiscretionEnvelope 和 DecisionCapsule；
+- [ ] 在 ADR-0047 pure projector 之上，先以 shadow/report-only 实现 prompt/model→Atom compiler、TaskProfile、Rule activation/suppression、DiscretionEnvelope 和 DecisionCapsule；
 - [ ] 实现带 read-version/CAS/idempotency/attempt/commit-abort receipt 的 DecisionTransaction 与有界 rolling controller；
 - [ ] 先把本地调用适配为 ExecutionTarget/Attempt/ArtifactRef/EnvironmentDigest/Effect/Mobility，保持行为不变且远程模块 OFF；
 - [ ] 将 L3/L4 required review/verdict 改为 fail-closed，保留低风险兼容策略；
@@ -142,6 +171,7 @@ Agent 不能签发 Grant 或确认业务事实；源或 context 漂移使批准�
 和 fresh-context forward test。ForgeOS `.agent/skills` adapter 继续满足现有 `harness/check.py` 引用规则。
 
 - [ ] 建 capability registry schema、owner、version、trigger/not-applicable、input/output、rule/gate、permission；
+- [x] 建首批十张后端密集 Skill adapter，并以统一章节、直接参考和 validator 避免空壳 Skill；其 runtime invocation 仍待 Registry；
 - [ ] 校验 catalog fine capability → package primary owner 全覆盖且唯一，并从 mapping 生成 adapter 引用；
 - [ ] 按 `implementation_wave` 逐 package 实现 Skill，不一次创建全部空壳；
 - [ ] 从 `docs/reviews` 提炼通用规则，删除/隔离上游项目特有引用；

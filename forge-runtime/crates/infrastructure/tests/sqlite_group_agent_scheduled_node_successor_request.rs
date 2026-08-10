@@ -24,11 +24,7 @@ fn successor_admit_request(
     let mut successor = candidate.candidate.clone();
     successor.contract_scope = GroupAgentScheduledNodeContractScope::ScheduleSuccessorOnly;
     let backend = schedule_backend_node(candidate);
-    bind_manifest_node(&mut successor, candidate, &backend, 1);
-    successor
-        .request
-        .required_predecessor_node_ids
-        .push(candidate.schedule.initial_node.clone());
+    bind_successor_node(&mut successor, &backend, candidate);
     resign_successor_fields(
         &mut successor,
         &candidate.schedule.initial_node,
@@ -51,47 +47,6 @@ fn successor_admit_request(
     (admit, successor)
 }
 
-/// Resolves the ordinal-1 schedule node for the successor fixture.
-/// Binds a successor candidate to a schedule node, copying every manifest
-/// identity field v24's successor-node validation compares (project, role,
-/// agent profile, lane) plus the ordinal/node-id request fields.
-fn bind_manifest_node(
-    successor: &mut forge_runtime_domain::GroupAgentScheduledNodeContractCandidate,
-    candidate: &forge_runtime_domain::AdmitGroupAgentScheduledNodeContractCandidate,
-    scheduled: &forge_runtime_domain::GroupAgentGraphExecutionScheduleNode,
-    ordinal: usize,
-) {
-    successor.node.execution_ordinal = ordinal;
-    successor.node.node_id.clone_from(&scheduled.node_id);
-    successor.node.authored_node_index = scheduled.authored_node_index;
-    successor.node.topology_wave_index = scheduled.topology_wave_index;
-    successor
-        .node
-        .project_id
-        .clone_from(&manifest_project_id(candidate, &scheduled.node_id));
-    let manifest_node = candidate
-        .control_snapshot
-        .manifest
-        .nodes
-        .iter()
-        .find(|node| node.node_id == scheduled.node_id)
-        .expect("manifest scheduled node");
-    successor
-        .node
-        .member_role
-        .clone_from(&manifest_node.member_role);
-    successor
-        .node
-        .agent_profile
-        .clone_from(&manifest_node.agent_profile);
-    successor
-        .node
-        .project_lane_sha256
-        .clone_from(&scheduled.project_lane_sha256);
-    successor.request.execution_ordinal = ordinal;
-    successor.request.node_id.clone_from(&scheduled.node_id);
-}
-
 /// Re-signs a zero-receipt successor (canonical manifest prompt, cleared
 /// predecessor sets) after the wave-sibling mutation.
 fn resign_zero_receipt_fields(
@@ -100,10 +55,9 @@ fn resign_zero_receipt_fields(
     node_id: &str,
 ) {
     let (task, acceptance) = manifest_task(candidate, node_id);
-    successor.request.user_prompt = forge_runtime_domain::group_agent_scheduled_node_user_prompt(
-        node_id, &task, &acceptance,
-    )
-    .expect("canonical zero-receipt user Prompt");
+    successor.request.user_prompt =
+        forge_runtime_domain::group_agent_scheduled_node_user_prompt(node_id, &task, &acceptance)
+            .expect("canonical zero-receipt user Prompt");
     successor.request.user_prompt_bytes = successor.request.user_prompt.len();
     successor.request.user_prompt_sha256 =
         forge_runtime_domain::group_agent_prompt_sha256(&successor.request.user_prompt);
@@ -115,18 +69,47 @@ fn resign_zero_receipt_fields(
     successor.contract_sha256 = contract_digest;
 }
 
-fn manifest_project_id(
+/// Binds the ordinal-1 successor to every schedule and manifest identity field.
+fn bind_successor_node(
+    successor: &mut forge_runtime_domain::GroupAgentScheduledNodeContractCandidate,
+    backend: &forge_runtime_domain::GroupAgentGraphExecutionScheduleNode,
+    candidate: &forge_runtime_domain::AdmitGroupAgentScheduledNodeContractCandidate,
+) {
+    successor.node.execution_ordinal = 1;
+    successor.node.node_id.clone_from(&backend.node_id);
+    successor.node.authored_node_index = backend.authored_node_index;
+    successor.node.topology_wave_index = backend.topology_wave_index;
+    let source = manifest_node(candidate, &backend.node_id);
+    successor.node.project_id.clone_from(&source.project_id);
+    successor.node.member_role.clone_from(&source.member_role);
+    successor
+        .node
+        .agent_profile
+        .clone_from(&source.agent_profile);
+    successor
+        .node
+        .project_lane_sha256
+        .clone_from(&backend.project_lane_sha256);
+    successor.request.execution_ordinal = 1;
+    successor.request.node_id.clone_from(&backend.node_id);
+    successor
+        .request
+        .required_predecessor_node_ids
+        .clone_from(&backend.direct_predecessor_node_ids);
+}
+
+fn manifest_node(
     candidate: &forge_runtime_domain::AdmitGroupAgentScheduledNodeContractCandidate,
     node_id: &str,
-) -> String {
+) -> forge_runtime_domain::GroupAgentGraphNode {
     candidate
         .control_snapshot
         .manifest
         .nodes
         .iter()
         .find(|node| node.node_id == node_id)
-        .map(|node| node.project_id.clone())
-        .expect("manifest project")
+        .expect("manifest node")
+        .clone()
 }
 
 fn manifest_task(
@@ -166,12 +149,11 @@ fn resign_successor_fields(
 ) {
     use forge_runtime_domain::{
         GroupAgentScheduledNodePredecessorOutcome, GroupAgentScheduledNodePredecessorReceipt,
-        group_agent_prompt_sha256,
+        group_agent_prompt_sha256, group_agent_scheduled_node_user_prompt,
     };
-    successor.request.user_prompt = forge_runtime_domain::group_agent_scheduled_node_user_prompt(
-        &backend.node_id, &task.0, &task.1,
-    )
-    .expect("canonical successor user Prompt");
+    successor.request.user_prompt =
+        group_agent_scheduled_node_user_prompt(&backend.node_id, &task.0, &task.1)
+            .expect("canonical successor user Prompt");
     successor.request.predecessor_terminal_receipts =
         vec![GroupAgentScheduledNodePredecessorReceipt {
             predecessor_node_id: initial_node.to_owned(),
@@ -316,7 +298,22 @@ fn bind_sso_node(
     sso: &forge_runtime_domain::GroupAgentGraphExecutionScheduleNode,
     candidate: &forge_runtime_domain::AdmitGroupAgentScheduledNodeContractCandidate,
 ) {
-    bind_manifest_node(successor, candidate, sso, 2);
+    successor.node.execution_ordinal = 2;
+    successor.node.node_id.clone_from(&sso.node_id);
+    successor.node.authored_node_index = sso.authored_node_index;
+    successor.node.topology_wave_index = sso.topology_wave_index;
+    let source = manifest_node(candidate, &sso.node_id);
+    successor.node.project_id.clone_from(&source.project_id);
+    successor.node.member_role.clone_from(&source.member_role);
+    successor
+        .node
+        .agent_profile
+        .clone_from(&source.agent_profile);
+    successor
+        .node
+        .project_lane_sha256
+        .clone_from(&sso.project_lane_sha256);
+    successor.request.execution_ordinal = 2;
     successor.request.node_id.clone_from(&sso.node_id);
     successor.request.required_predecessor_node_ids = vec!["backend".to_owned()];
 }
@@ -347,7 +344,10 @@ fn resign_sso_digests(
     successor.request.user_prompt_bytes = successor.request.user_prompt.len();
     successor.request.user_prompt_sha256 =
         forge_runtime_domain::group_agent_prompt_sha256(&successor.request.user_prompt);
-    let request_digest = successor.request.expected_sha256().expect("sso request digest");
+    let request_digest = successor
+        .request
+        .expected_sha256()
+        .expect("sso request digest");
     successor.request.request_id = format!("scheduled-node-request-{request_digest}");
     successor.request.request_sha256 = request_digest;
     let contract_digest = successor.expected_sha256().expect("sso contract digest");
@@ -357,11 +357,9 @@ fn resign_sso_digests(
 
 #[test]
 fn same_run_admits_a_second_candidate_for_a_different_node_v21() {
-    use forge_runtime_domain::{
-        GroupAgentGraphExecutionScheduleStore, GroupAgentGraphRunStore,
-    };
-    use sqlite_group_agent_graph_run_support as run_support;
+    use forge_runtime_domain::{GroupAgentGraphExecutionScheduleStore, GroupAgentGraphRunStore};
     use sqlite_group_agent_graph_execution_schedule_support as schedule_support;
+    use sqlite_group_agent_graph_run_support as run_support;
     use sqlite_group_agent_scheduled_node_contract_support as contract_support;
     let fixture = run_support::Fixture::serial_three();
     let _run = fixture
@@ -391,12 +389,10 @@ fn same_run_admits_a_second_candidate_for_a_different_node_v21() {
 
 #[test]
 fn zero_receipt_wave_sibling_persists_through_v21() {
-    use sqlite_group_agent_graph_run_support as run_support;
+    use forge_runtime_domain::{GroupAgentGraphExecutionScheduleStore, GroupAgentGraphRunStore};
     use sqlite_group_agent_graph_execution_schedule_support as schedule_support;
+    use sqlite_group_agent_graph_run_support as run_support;
     use sqlite_group_agent_scheduled_node_contract_support as contract_support;
-    use forge_runtime_domain::{
-        GroupAgentGraphExecutionScheduleStore, GroupAgentGraphRunStore,
-    };
     let fixture = run_support::Fixture::diamond();
     let _run = fixture
         .store
@@ -413,8 +409,16 @@ fn zero_receipt_wave_sibling_persists_through_v21() {
     // receipts (ADR-0035). The v21 CHECK allows 0..=31.
     let (admit_backend, successor) = successor_admit_request(&candidate);
     let mut empty = admit_backend.clone();
-    empty.candidate.request.predecessor_terminal_receipts.clear();
-    empty.candidate.request.required_predecessor_node_ids.clear();
+    empty
+        .candidate
+        .request
+        .predecessor_terminal_receipts
+        .clear();
+    empty
+        .candidate
+        .request
+        .required_predecessor_node_ids
+        .clear();
     resign_zero_receipt_fields(&candidate, &mut empty.candidate, &successor.node.node_id);
     empty.candidate_json = empty
         .candidate

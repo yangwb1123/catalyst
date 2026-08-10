@@ -32,6 +32,41 @@ def bundled_reference(relative: str) -> str:
     return target.relative_to(PATH_BASE_PATH).as_posix()
 
 
+def resolve_public_reference(candidate: str) -> str:
+    """Return a path-base-relative reference in both supported layouts.
+
+    Registry files live beside ``pi-batch.py`` and intentionally use short
+    references such as ``ui-specs/spacing.md``.  In a standalone copy those
+    references are already relative to ``PATH_BASE_PATH``.  Inside ForgeOS,
+    however, the public path base is the repository root, so the same file
+    must be exposed as ``docs/ai-batch/ui-specs/spacing.md``.
+
+    Project-root references win.  This preserves entries such as
+    ``docs/ENGINEERING_PHILOSOPHY.md`` and only rebases a candidate when the
+    concrete file is shipped in the ai-batch bundle.
+    """
+    path = Path(candidate)
+    if path.is_absolute():
+        return path.resolve().as_posix()
+
+    project_target = (PATH_BASE_PATH / path).resolve()
+    try:
+        project_target.relative_to(PATH_BASE_PATH)
+    except ValueError:
+        return path.as_posix()
+    if project_target.is_file():
+        return path.as_posix()
+
+    bundled_target = (SCRIPT_ROOT / path).resolve()
+    try:
+        bundled_target.relative_to(SCRIPT_ROOT)
+    except ValueError:
+        return path.as_posix()
+    if bundled_target.is_file():
+        return bundled_target.relative_to(PATH_BASE_PATH).as_posix()
+    return path.as_posix()
+
+
 def project_or_bundled_reference(candidate: str, bundled: str) -> str:
     """Use a real project reference, otherwise its bundled standalone route."""
     path = Path(candidate)

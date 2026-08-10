@@ -1,5 +1,10 @@
 # Reflection Engine（Critic Layer / 二阶观察层）
 
+> **状态纠正（2026-08-09）**：本文是上游机制设计参考，不是当前 portable CLI
+> 的已实现能力。`docs/ai-batch/pi-batch.py` 目前只支持
+> `classify/rules/assess/eval`；下文的 `reflect` 命令、R0–R2 runtime 与
+> `.pi-batch/reflections.jsonl` 均为候选接口，不能执行或作为完成证据。
+
 > **定位**：系统已有 check（验证产物），但缺 critique（审视决策链本身）。
 > Reflection Engine 在 VERIFY 之后对"整个决策链"做二阶分析，并把发现
 > 对接 truth / learn / eval 闭环——它是 `events/capsule/truth/learn/
@@ -23,7 +28,7 @@
 运行结果 / 指标；输出 = 发现与动作。不输入 Executor 的自我解释——
 否则产生确认偏差（Executor 说合理 → Critic 说听起来合理）。
 
-本实现是**确定性启发式**（零 LLM 成本、可测试、fail closed），天然满足
+候选实现应优先采用**确定性启发式**（零 LLM 成本、可测试、fail closed），以满足
 该纪律；未来可叠加 LLM Critic 角色（meta 编排），但证据输入契约不变。
 
 ## 3. 强度分级（防"大炮打蚊子"）
@@ -62,10 +67,10 @@ Reflection findings
  └─ 新测试用例       → eval 回归用例（如：导出 10GB 用例）
 ```
 
-`--save` 把反思追加到 `.pi-batch/reflections.jsonl`（不可变账本，供
+候选 `--save` 可把反思追加到 `.pi-batch/reflections.jsonl`（不可变账本，供
 metrics/health/retro 聚合）。
 
-## 6. 用法
+## 6. 候选接口（当前不可执行）
 
 ```bash
 # R0 快速反思（默认，秒级）
@@ -83,7 +88,7 @@ pi-batch reflect full --task "..." --code src --evidence "测试输出"
 pi-batch reflect full --task "..." --code src --save --json
 ```
 
-退出码：`reflection_score >= 75` → 0；否则 1（critical 发现时脚本可阻断）。
+候选退出码：`reflection_score >= 75` → 0；否则 1（critical 发现时脚本可阻断）。
 
 ## 7. 与四文档的关系
 

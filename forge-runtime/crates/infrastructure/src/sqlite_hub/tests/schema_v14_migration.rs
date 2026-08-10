@@ -155,7 +155,7 @@ fn malformed(original: &str, replacement: &str) -> String {
 }
 
 fn assert_v14_shape(connection: &Connection) {
-    assert_eq!(schema_version(connection), 25);
+    assert_eq!(schema_version(connection), 26);
     assert!(schema_object_exists(connection, "table", CANDIDATE_TABLE));
     assert!(schema_object_exists(
         connection,
@@ -171,11 +171,29 @@ fn without_v14(snapshot: &[SchemaRow]) -> Vec<SchemaRow> {
         .iter()
         .filter(|(_, name, _, _)| {
             !V14_OBJECTS.contains(&name.as_str())
-                                && (*name != "group_model_analyses" && *name != "group_model_analysis_events" && *name != "group_model_analysis_results" && *name != "group_panel_syntheses" && *name != "group_panel_synthesis_events" && *name != "group_panel_synthesis_results" && *name != "group_model_analyses_group_run" && *name != "group_model_analyses_created" && *name != "group_panel_syntheses_panel" && *name != "group_panel_syntheses_created")
-&& !V15_OBJECTS.contains(&name.as_str())
+                && (*name != "group_model_analyses"
+                    && *name != "group_model_analysis_events"
+                    && *name != "group_model_analysis_results"
+                    && *name != "group_panel_syntheses"
+                    && *name != "group_panel_synthesis_events"
+                    && *name != "group_panel_synthesis_results"
+                    && *name != "group_model_analyses_group_run"
+                    && *name != "group_model_analyses_created"
+                    && *name != "group_panel_syntheses_panel"
+                    && *name != "group_panel_syntheses_created")
+                && !V15_OBJECTS.contains(&name.as_str())
                 && !V16_OBJECTS.contains(&name.as_str())
                 && *name != "group_agent_graph_scheduled_node_successor_candidates"
                 && *name != "group_agent_graph_scheduled_node_successor_candidates_created"
+                && !matches!(
+                    name.as_str(),
+                    "governance_record_append_batches"
+                        | "governance_records"
+                        | "governance_records_aggregate_appended"
+                        | "governance_records_appended"
+                        | "governance_records_kind_appended"
+                        | "governance_structural_heads"
+                )
         })
         .cloned()
         .collect()

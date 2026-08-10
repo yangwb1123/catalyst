@@ -21,20 +21,20 @@ const V23_MAX_BYTES: i64 = 4 * 1024 * 1024;
 const V24_MAX_BYTES: i64 = 8 * 1024 * 1024;
 
 #[test]
-fn v23_successor_row_survives_v24_migration_and_reopen_byte_for_byte() {
+fn v23_successor_row_survives_migration_to_v26_byte_for_byte() {
     let fixture = v23_fixture();
     let connection = fixture.connection();
     insert_successor(&connection, "preserved", 257, 257).expect("seed v23 successor row");
     let before = successor_row(&connection);
     drop(connection);
 
-    let migrated = open_database(&fixture.database).expect("migrate exact v23 fixture to v24");
-    assert_eq!(schema_version(&migrated), 25);
+    let migrated = open_database(&fixture.database).expect("migrate exact v23 fixture to v26");
+    assert_eq!(schema_version(&migrated), 26);
     assert_eq!(successor_row(&migrated), before);
     drop(migrated);
 
-    let reopened = open_database(&fixture.database).expect("reopen migrated v24 fixture");
-    assert_eq!(schema_version(&reopened), 25);
+    let reopened = open_database(&fixture.database).expect("reopen migrated v26 fixture");
+    assert_eq!(schema_version(&reopened), 26);
     assert_eq!(successor_row(&reopened), before);
     drop((reopened, fixture));
 }
@@ -57,10 +57,8 @@ fn v23_rejects_successor_contract_larger_than_four_mib() {
 
 #[test]
 fn v24_successor_contract_bound_accepts_four_mib_plus_one_and_eight_mib_only() {
-    let fixture = v23_fixture();
-    drop(fixture.connection());
-    let connection = open_database(&fixture.database).expect("migrate v23 fixture to v24");
-    assert_eq!(schema_version(&connection), 25);
+    let fixture = scheduled_fixture();
+    let connection = fixture.connection();
 
     insert_successor(
         &connection,
@@ -101,10 +99,8 @@ fn v24_successor_contract_bound_accepts_four_mib_plus_one_and_eight_mib_only() {
 
 #[test]
 fn v24_successor_rejects_predecessor_count_and_ordinal_drift() {
-    let fixture = v23_fixture();
-    drop(fixture.connection());
-    let connection = open_database(&fixture.database).expect("migrate v23 fixture to v24");
-    assert_eq!(schema_version(&connection), 25);
+    let fixture = scheduled_fixture();
+    let connection = fixture.connection();
     insert_successor(&connection, "exact-slot", 257, 257).expect("seed exact successor row");
     for update in [
         format!("UPDATE {SUCCESSOR_TABLE} SET required_predecessor_node_count=1"),
@@ -144,24 +140,21 @@ fn v24_keeps_initial_candidate_contract_bound_at_four_mib() {
 #[test]
 fn malformed_current_v24_objects_are_rejected_without_repair() {
     assert_current_v24_rejected_without_repair("malformed bound literal", |connection| {
-        // Replaying the v24 migration would also reset user_version to 24,
-        // turning the fixture into a LEGAL v24 hub (which then migrates);
-        // strip the version marker so only the malformed table lands.
-        let malformed = MIGRATE_V23_TO_V24_SQL
-            .replace("8388608", "8388607")
-            .replace("PRAGMA user_version = 24;", "");
+        let malformed = MIGRATE_V23_TO_V24_SQL.replace("8388608", "8388607");
         connection.execute_batch(&malformed)
     });
     assert_current_v24_rejected_without_repair("missing successor index", |connection| {
+        connection.execute_batch(MIGRATE_V23_TO_V24_SQL)?;
         connection.execute_batch(&format!("DROP INDEX {SUCCESSOR_CREATED_INDEX}"))
     });
     assert_current_v24_rejected_without_repair("rogue object", |connection| {
+        connection.execute_batch(MIGRATE_V23_TO_V24_SQL)?;
         connection.execute_batch("CREATE TABLE rogue_v24_table(id TEXT)")
     });
 }
 
 #[test]
-fn final_validation_fault_rolls_v23_to_v24_back_atomically() {
+fn final_validation_fault_rolls_v23_to_v26_back_atomically() {
     let fixture = v23_fixture();
     let connection = fixture.connection();
     insert_successor(&connection, "rollback", 513, 513).expect("seed rollback successor row");
@@ -169,17 +162,17 @@ fn final_validation_fault_rolls_v23_to_v24_back_atomically() {
     let before_row = successor_row(&connection);
 
     let error = migrate_with_before_final_fault_for_test(&connection, |migrated| {
-        assert_eq!(schema_version(migrated), 25);
+        assert_eq!(schema_version(migrated), 26);
         assert_eq!(successor_row(migrated), before_row);
-        migrated.execute_batch("CREATE TABLE rogue_v24_final_fault(id TEXT)")
+        migrated.execute_batch("CREATE TABLE rogue_v26_final_fault(id TEXT)")
     })
-    .expect_err("final v24 validation rejects injected rogue object");
+    .expect_err("final v26 validation rejects injected rogue object");
 
     assert!(matches!(error, HubStoreError::Corrupt { .. }));
     assert_eq!(schema_version(&connection), 23);
     assert_eq!(schema_snapshot(&connection), before_schema);
     assert_eq!(successor_row(&connection), before_row);
-    assert!(!schema_object_named(&connection, "rogue_v24_final_fault"));
+    assert!(!schema_object_named(&connection, "rogue_v26_final_fault"));
     assert!(!schema_object_named(
         &connection,
         "group_agent_graph_scheduled_node_successor_candidates_v24"
@@ -188,17 +181,9 @@ fn final_validation_fault_rolls_v23_to_v24_back_atomically() {
 }
 
 fn v23_fixture() -> super::sqlite_group_agent_graph_run_support::Fixture {
-    let fixture = sqlite_group_agent_graph_execution_schedule_support::prepared_fixture();
-    // insert_successor is an INSERT ... SELECT whose source is
-    // group_agent_graph_execution_schedules: seed one schedule row so the
-    // SELECT has a source (the prepared fixture only begins the Graph Run).
-    fixture
-        .store
-        .admit_group_agent_graph_execution_schedule(
-            &sqlite_group_agent_graph_execution_schedule_support::request(&fixture, "schedule-key", 40),
-        )
-        .expect("seed source schedule row");
+    let fixture = scheduled_fixture();
     let connection = fixture.connection();
+    restore_exact_v24(&connection);
     connection
         .execute_batch(MIGRATE_V20_TO_V21_SQL)
         .expect("restore exact v21 successor table");
@@ -214,6 +199,34 @@ fn v23_fixture() -> super::sqlite_group_agent_graph_run_support::Fixture {
     assert_eq!(schema_version(&connection), 23);
     drop(connection);
     fixture
+}
+
+fn scheduled_fixture() -> super::sqlite_group_agent_graph_run_support::Fixture {
+    let fixture = sqlite_group_agent_graph_execution_schedule_support::prepared_fixture();
+    let request = sqlite_group_agent_graph_execution_schedule_support::request(
+        &fixture,
+        "schema-v24-schedule",
+        40,
+    );
+    fixture
+        .store
+        .admit_group_agent_graph_execution_schedule(&request)
+        .expect("seed execution schedule");
+    fixture
+}
+
+fn restore_exact_v24(connection: &Connection) {
+    connection
+        .execute_batch(super::RESTORE_HISTORICAL_ANALYSES_SQL)
+        .expect("restore v24 endpoint definitions");
+    connection
+        .execute_batch(
+            "DROP TABLE governance_structural_heads;
+             DROP TABLE governance_records;
+             DROP TABLE governance_record_append_batches;
+             PRAGMA user_version = 24;",
+        )
+        .expect("restore exact v24 schema");
 }
 
 fn insert_successor(
@@ -307,10 +320,10 @@ fn assert_current_v24_rejected_without_repair(
     name: &str,
     mutate: impl FnOnce(&Connection) -> rusqlite::Result<()>,
 ) {
-    let fixture = sqlite_group_agent_graph_execution_schedule_support::prepared_fixture();
+    let fixture = v23_fixture();
     let connection = fixture.connection();
     mutate(&connection).unwrap_or_else(|error| panic!("forge {name}: {error}"));
-    assert_eq!(schema_version(&connection), 25);
+    assert_eq!(schema_version(&connection), 24);
     let before: Vec<SchemaRow> = schema_snapshot(&connection);
     drop(connection);
 
@@ -323,7 +336,7 @@ fn assert_current_v24_rejected_without_repair(
     );
 
     let unchanged = Connection::open(&fixture.database).expect("reopen rejected v24 fixture");
-    assert_eq!(schema_version(&unchanged), 25, "{name}");
+    assert_eq!(schema_version(&unchanged), 24, "{name}");
     assert_eq!(schema_snapshot(&unchanged), before, "{name}");
     drop((unchanged, fixture));
 }

@@ -170,15 +170,15 @@ func appendBatch(path string, batch []byte) error {
 	}
 	n, err := f.Write(batch)
 	if err != nil {
-		f.Close()
+		_ = f.Close()
 		return fmt.Errorf("artifact: append manifest: %w", err)
 	}
 	if n != len(batch) {
-		f.Close()
+		_ = f.Close()
 		return fmt.Errorf("artifact: append manifest: %w", io.ErrShortWrite)
 	}
 	if err := f.Sync(); err != nil {
-		f.Close()
+		_ = f.Close()
 		return fmt.Errorf("artifact: sync manifest: %w", err)
 	}
 	if err := f.Close(); err != nil {

@@ -228,10 +228,6 @@ func validateIntentRoadmap(intent promotionIntent) error {
 	return nil
 }
 
-func loadReceipt(root string, ops fileOps) (promotionReceipt, bool, error) {
-	return loadReceiptForOperation(root, promotionOperationID, ops)
-}
-
 func loadReceiptForOperation(
 	root, operation string,
 	ops fileOps,

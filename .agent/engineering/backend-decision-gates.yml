@@ -1,0 +1,299 @@
+api_version: forgeos.agent-engineering/v1
+kind: BackendDecisionPolicy
+status: active_contract
+runtime_binding: pre_code_shadow_review_only
+owner: architecture
+version: 1
+completion_authority: forge_accept
+
+applicability:
+  activation: any_trigger
+  workflow_floor: W1_standard
+  minimum_materiality: L1
+  triggers:
+    - backend_behavior
+    - core_domain
+    - persistence_schema
+    - public_contract
+    - event_contract
+    - external_effect
+    - concurrency
+    - multi_tenant
+    - security_privacy
+    - performance_capacity
+    - background_job
+    - distributed_boundary
+    - financial_effect
+    - authentication_core
+    - production_data
+    - destructive_migration
+  trigger_floors:
+    backend_behavior: { materiality: L1, workflow: W1_standard }
+    core_domain: { materiality: L2, workflow: W2_assured }
+    persistence_schema: { materiality: L2, workflow: W2_assured }
+    public_contract: { materiality: L2, workflow: W2_assured }
+    event_contract: { materiality: L2, workflow: W2_assured }
+    external_effect: { materiality: L2, workflow: W2_assured }
+    concurrency: { materiality: L2, workflow: W2_assured }
+    multi_tenant: { materiality: L3, workflow: W3_systemic }
+    security_privacy: { materiality: L3, workflow: W3_systemic }
+    performance_capacity: { materiality: L2, workflow: W2_assured }
+    background_job: { materiality: L2, workflow: W2_assured }
+    distributed_boundary: { materiality: L2, workflow: W2_assured }
+    financial_effect: { materiality: L4, workflow: W3_systemic }
+    authentication_core: { materiality: L4, workflow: W3_systemic }
+    production_data: { materiality: L4, workflow: W3_systemic }
+    destructive_migration: { materiality: L4, workflow: W3_systemic }
+  skip_requires: [reason, source_refs, reviewer]
+  unknown_load_bearing_decision: block
+
+decision_sequence:
+  - understand_goal
+  - model_invariants
+  - establish_boundaries
+  - design_persistence
+  - design_contracts
+  - select_algorithms
+  - design_consistency
+  - design_dependencies
+  - design_security
+  - allocate_nfr_budgets
+  - design_operations
+  - implement
+  - verify
+  - release_evolve
+
+model_boundaries:
+  semantic_roles: [request_dto, command, domain_model, persistence_model, read_model, response_dto, external_service_model]
+  default: separate_when_owner_or_change_reason_differs
+  role_activation:
+    request_dto: transport_boundary
+    command: behavior_or_write_boundary
+    domain_model: domain_complexity_requires_invariants
+    persistence_model: storage_boundary
+    read_model: query_projection_differs
+    response_dto: transport_boundary
+    external_service_model: external_boundary
+  direct_orm_exposure_to_public_contract: prohibited
+  reuse_exception_requires:
+    - identical_owner
+    - identical_change_reason
+    - identical_security_classification
+    - no_public_or_persistence_coupling
+    - reviewer_rationale
+
+dimension_statuses: [addressed, not_applicable, blocked]
+dimensions:
+  - id: business_invariants
+    owner_skill: domain-modeling
+    questions:
+      - What user outcome, actors, normal, failure and boundary flows are authoritative?
+      - Which invariants must survive retries, concurrency and partial failure?
+      - Where is each invariant enforced and how is it tested?
+    proof_types: [requirement_trace, invariant_catalog, counterexample_tests]
+
+  - id: domain_ownership
+    owner_skill: domain-modeling
+    questions:
+      - Which bounded context and owner are authoritative for each business fact?
+      - Which entity, value object, aggregate and state-machine boundaries are necessary?
+      - Is a transaction script sufficient, or is richer domain modeling justified?
+    proof_types: [context_map, aggregate_catalog, ownership_matrix]
+
+  - id: model_boundaries
+    owner_skill: backend-engineering
+    questions:
+      - How are transport, command, domain, persistence, read and external models isolated?
+      - Which mapper owns each conversion and validation boundary?
+      - Could a database, SDK or secret field leak into a public contract?
+    proof_types: [model_map, mapper_contract, exposure_review]
+
+  - id: persistence
+    owner_skill: data-modeling-transactions
+    questions:
+      - What are the internal identity, business key, external key and idempotency key?
+      - What are field semantics for money, quantity, unit, time, null, status and mutability?
+      - Which facts need constraints, snapshots, history, lineage, retention, deletion or repair?
+      - Which measured access paths justify relationships, indexes, projections or denormalization?
+    proof_types: [persistence_design, data_dictionary, query_index_matrix, integrity_constraints]
+
+  - id: contracts_compatibility
+    owner_skill: api-contract-design
+    questions:
+      - What are success, failure, pagination, idempotency and authorization semantics?
+      - Which consumers exist and can old and new versions coexist?
+      - How are API, event, file and schema versions deprecated and removed?
+    proof_types: [contract_diff, consumer_inventory, compatibility_tests]
+
+  - id: algorithms_structures
+    owner_skill: backend-engineering
+    questions:
+      - What are the read, write, ordering, range, approximation and memory access patterns?
+      - What are the expected and worst-case time, space, database and network costs?
+      - Does functional composition improve clarity without hiding effects or adding hot-path allocation?
+    proof_types: [complexity_analysis, access_pattern_matrix, benchmark_plan]
+
+  - id: transactions_concurrency
+    owner_skill: data-modeling-transactions
+    questions:
+      - What is the consistency boundary, isolation need and concurrency conflict behavior?
+      - Which database constraints, conditional writes, versions or locks preserve correctness?
+      - What does an unknown outcome mean and how are duplicate or reordered effects reconciled?
+    proof_types: [transaction_matrix, concurrency_strategy, race_and_idempotency_tests]
+
+  - id: distributed_reliability
+    owner_skill: distributed-reliability-design
+    questions:
+      - What are the end-to-end deadline, connection pool, retry owner and retry budget?
+      - How are backpressure, bounded queues, overload, dependency failure and partial success handled?
+      - Are delivery, ordering, deduplication, compensation and recovery semantics explicit?
+    proof_types: [failure_mode_matrix, retry_timeout_budget, recovery_tests]
+
+  - id: security_tenancy_privacy
+    owner_skill: secure-coding
+    questions:
+      - Where are identity, tenant, resource, field and trust boundaries enforced?
+      - What data is sensitive and how is it minimized, encrypted, masked, retained and deleted?
+      - Can input or work amplification cause injection, SSRF, unauthorized access or resource exhaustion?
+    proof_types: [threat_model, authorization_matrix, data_classification, security_tests]
+
+  - id: performance_capacity
+    owner_skill: performance-capacity
+    questions:
+      - What workload, data volume, QPS, concurrency, latency and saturation budgets apply now?
+      - What changes at 10x and 100x, and which measured threshold triggers evolution?
+      - Is every optimization tied to a baseline, profile, query plan or representative benchmark?
+    proof_types: [capacity_model, baseline_measurement, scale_trigger_table]
+
+  - id: observability_operations
+    owner_skill: observability-engineering
+    questions:
+      - Which logs, metrics, traces and audit records prove technical and business outcomes?
+      - Are cardinality, PII, alert ownership, graceful shutdown and operator workflows bounded?
+      - Can operators inspect, reconcile, retry, compensate and repair without ad-hoc database edits?
+    proof_types: [telemetry_plan, alert_runbook, operator_recovery_path]
+
+  - id: migration_recovery
+    owner_skill: data-migration-lifecycle
+    questions:
+      - Can old and new code coexist through expand, backfill, cutover and contract?
+      - What are lock, duration, resume, validation, abort, rollback and forward-fix criteria?
+      - Are RPO, RTO, restoration tests, archival and corruption-repair paths proven?
+    proof_types: [migration_plan, rollback_or_forward_fix, restore_evidence]
+
+  - id: evolution_economics
+    owner_skill: architecture-tradeoff
+    questions:
+      - Which decisions are hard to reverse, and what simpler option was rejected with evidence?
+      - How do team ownership, cognitive load, operational skill and total cost constrain the design?
+      - How can the capability, contract, data and feature flag later be migrated or deleted?
+    proof_types: [option_matrix, adr, ownership_and_cost_review, exit_plan]
+
+  - id: verification_release
+    owner_skill: backend-engineering
+    questions:
+      - Which unit, integration, contract, property, fuzz, race, failure and load tests are required?
+      - Which release, feature-flag, observation and rollback controls match the risk?
+      - Which checks actually ran, which are N/A with evidence, and what residual risk remains?
+    proof_types: [test_matrix, execution_receipts, release_observation_plan]
+
+irreversible_decision_controls:
+  applies_to:
+    - database_identity
+    - data_ownership
+    - public_contract
+    - event_semantics
+    - tenant_model
+    - authorization_model
+    - service_boundary
+    - partition_strategy
+  package_fields: [decision_kinds, reversibility, migration_cost, blast_radius, adr_ref, reviewer_id, revisit_trigger]
+  trigger_bindings:
+    public_contract: { dimension: contracts_compatibility, decision_kind: public_contract }
+    event_contract: { dimension: contracts_compatibility, decision_kind: event_semantics }
+    multi_tenant: { dimension: security_tenancy_privacy, decision_kind: tenant_model }
+    authentication_core: { dimension: security_tenancy_privacy, decision_kind: authorization_model }
+    distributed_boundary: { dimension: evolution_economics, decision_kind: service_boundary }
+    destructive_migration: { dimension: persistence, decision_kind: database_identity }
+  requires: [two_alternatives, migration_cost, blast_radius, adr_ref, independent_reviewer, revisit_trigger]
+
+production_readiness:
+  dimensions:
+    - requirements
+    - architecture
+    - domain_and_persistence
+    - algorithms_and_performance
+    - concurrency_and_consistency
+    - network_and_dependencies
+    - security_and_privacy
+    - observability_and_operations
+    - testing_and_evidence
+    - release_and_recovery
+  allowed_results: [ready, not_ready, not_applicable]
+  proof_types:
+    requirements: [requirement_trace]
+    architecture: [context_map, option_matrix]
+    domain_and_persistence: [invariant_catalog, persistence_design, integrity_constraints]
+    algorithms_and_performance: [complexity_analysis, baseline_measurement]
+    concurrency_and_consistency: [transaction_matrix, race_and_idempotency_tests]
+    network_and_dependencies: [retry_timeout_budget, recovery_tests]
+    security_and_privacy: [threat_model, authorization_matrix, security_tests]
+    observability_and_operations: [telemetry_plan, alert_runbook, operator_recovery_path]
+    testing_and_evidence: [test_matrix, execution_receipts]
+    release_and_recovery: [release_observation_plan, rollback_or_forward_fix, restore_evidence]
+  decision_dependencies:
+    requirements: [business_invariants]
+    architecture: [domain_ownership, model_boundaries, evolution_economics]
+    domain_and_persistence: [domain_ownership, persistence]
+    algorithms_and_performance: [algorithms_structures, performance_capacity]
+    concurrency_and_consistency: [transactions_concurrency]
+    network_and_dependencies: [distributed_reliability]
+    security_and_privacy: [security_tenancy_privacy]
+    observability_and_operations: [observability_operations]
+    testing_and_evidence: [verification_release]
+    release_and_recovery: [migration_recovery, verification_release]
+  not_applicable_requires: [reason, evidence_refs]
+  final_decision_owner: forge_accept
+
+evidence_contract:
+  max_file_bytes: 8388608
+  subject_binding: exact
+  cross_class_locator_reuse: prohibited
+  identity_trust: digest_bound_declaration_only
+  classes:
+    source_artifact:
+      producers: [user, repository]
+      allowed_results: [observed]
+      proof_types: [access_pattern_matrix, adr, aggregate_catalog, alert_runbook, authorization_matrix, benchmark_plan, capacity_model, complexity_analysis, concurrency_strategy, consumer_inventory, context_map, contract_diff, data_classification, data_dictionary, exit_plan, exposure_review, failure_mode_matrix, integrity_constraints, invariant_catalog, mapper_contract, migration_plan, model_map, operator_recovery_path, option_matrix, ownership_and_cost_review, ownership_matrix, persistence_design, query_index_matrix, release_observation_plan, requirement_trace, retry_timeout_budget, rollback_or_forward_fix, scale_trigger_table, source_fact, telemetry_plan, test_matrix, threat_model, transaction_matrix]
+    tool_receipt:
+      producers: [tool]
+      allowed_results: [passed, failed, not_executed, inconclusive]
+      proof_types: [assumption_verification, baseline_measurement, compatibility_tests, counterexample_tests, execution_receipts, race_and_idempotency_tests, recovery_tests, restore_evidence, security_tests]
+    review_receipt:
+      producers: [operator]
+      allowed_results: [observed]
+      proof_types: [applicability_assessment, independent_review]
+
+invariants:
+  - id: no_code_before_load_bearing_unknowns_resolved
+    rule: A load-bearing unknown blocks implementation; it cannot be converted to a silent default.
+  - id: persistence_is_architecture
+    rule: Core persistence identity, constraints, history and migration are designed before ORM generation.
+  - id: evidence_not_narrative
+    rule: A checklist answer or model assertion is not execution evidence.
+  - id: n_a_is_a_claim
+    rule: Not-applicable requires a reason and source-bound proof.
+  - id: no_self_completion
+    rule: The package may record design decisions but cannot declare completion or acceptance.
+  - id: lowest_sufficient_complexity
+    rule: Prefer the simplest design that satisfies measured requirements and preserves an evidence-backed evolution path.
+
+primary_sources:
+  - { id: http-semantics, url: "https://datatracker.ietf.org/doc/html/rfc9110" }
+  - { id: http-problem-details, url: "https://datatracker.ietf.org/doc/html/rfc9457" }
+  - { id: postgresql-constraints, url: "https://www.postgresql.org/docs/current/ddl-constraints.html" }
+  - { id: postgresql-isolation, url: "https://www.postgresql.org/docs/current/transaction-iso.html" }
+  - { id: google-sre-cascading-failures, url: "https://sre.google/sre-book/addressing-cascading-failures/" }
+  - { id: opentelemetry-semantic-conventions, url: "https://opentelemetry.io/docs/specs/semconv/" }
+  - { id: owasp-api-security-2023, url: "https://owasp.org/API-Security/editions/2023/en/0x11-t10/" }
+  - { id: kubernetes-pod-lifecycle, url: "https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/" }

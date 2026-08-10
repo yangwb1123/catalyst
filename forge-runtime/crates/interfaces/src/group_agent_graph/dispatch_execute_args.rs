@@ -70,8 +70,11 @@ impl ExecuteValues {
             "--authorization FILE|-",
             "group graph run dispatch execute",
         )?;
-        let pricing_source =
-            required(self.pricing, "--pricing FILE|-", "group graph run dispatch execute")?;
+        let pricing_source = required(
+            self.pricing,
+            "--pricing FILE|-",
+            "group graph run dispatch execute",
+        )?;
         if authorization_source == "-" && pricing_source == "-" {
             return Err(with_usage(
                 "dispatch execute accepts standard input for only one artifact",

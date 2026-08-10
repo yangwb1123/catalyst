@@ -101,7 +101,7 @@ func TestRunParallel_RespectsDependencyWaveOrder(t *testing.T) {
 		t.Fatalf("all 4 phases must run; got %v", rec.executed)
 	}
 	// a is wave 0 (before everything); d is the last wave (after b and c).
-	if !(pos["a"] < pos["b"] && pos["a"] < pos["c"] && pos["b"] < pos["d"] && pos["c"] < pos["d"]) {
+	if pos["a"] >= pos["b"] || pos["a"] >= pos["c"] || pos["b"] >= pos["d"] || pos["c"] >= pos["d"] {
 		t.Errorf("dependency wave order violated; executed=%v", rec.executed)
 	}
 }

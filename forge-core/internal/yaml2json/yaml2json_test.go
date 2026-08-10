@@ -237,7 +237,11 @@ func TestDecode_ModesYML(t *testing.T) {
 	if err != nil {
 		t.Skipf("modes.yml not found: %v", err)
 	}
-	defer f.Close()
+	t.Cleanup(func() {
+		if err := f.Close(); err != nil {
+			t.Errorf("close modes.yml: %v", err)
+		}
+	})
 
 	got, err := Decode(f)
 	if err != nil {
@@ -273,7 +277,11 @@ func TestDecode_WorkflowBuildYML(t *testing.T) {
 	if err != nil {
 		t.Skipf("build.yml not found: %v", err)
 	}
-	defer f.Close()
+	t.Cleanup(func() {
+		if err := f.Close(); err != nil {
+			t.Errorf("close build.yml: %v", err)
+		}
+	})
 
 	got, err := Decode(f)
 	if err != nil {
@@ -300,7 +308,11 @@ func TestDecode_PoliciesYML(t *testing.T) {
 	if err != nil {
 		t.Skipf("policies.yml not found: %v", err)
 	}
-	defer f.Close()
+	t.Cleanup(func() {
+		if err := f.Close(); err != nil {
+			t.Errorf("close policies.yml: %v", err)
+		}
+	})
 
 	got, err := Decode(f)
 	if err != nil {
@@ -335,14 +347,15 @@ func TestToJSON_MatchesPythonShim(t *testing.T) {
 			if err != nil {
 				t.Skipf("%s not found: %v", rel, err)
 			}
-			defer f.Close()
-
 			// Decode with our Go YAML parser.
-			goVal, err := Decode(f)
-			if err != nil {
-				t.Fatalf("Go YAML decode: %v", err)
+			goVal, decodeErr := Decode(f)
+			closeErr := f.Close()
+			if decodeErr != nil {
+				t.Fatalf("Go YAML decode: %v", decodeErr)
 			}
-			f.Close()
+			if closeErr != nil {
+				t.Fatalf("close %s: %v", rel, closeErr)
+			}
 
 			// Also decode with the Python shim for comparison.
 			shimPath := filepath.Join(root, "harness", "yaml2json.py")

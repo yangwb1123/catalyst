@@ -1,15 +1,15 @@
 use std::sync::Arc;
 
 use crate::runtime_domain::{
-    GroupAgentGraphStore, GroupAgentNodeCoreTerminalReceiptPort, GroupAgentNodeDispatchRequestStore,
-    GroupAgentNodeLifecycleInspection, GroupAgentNodeLifecycleStore,
+    GroupAgentGraphStore, GroupAgentNodeCoreTerminalReceiptPort,
+    GroupAgentNodeDispatchRequestStore, GroupAgentNodeLifecycleInspection,
+    GroupAgentNodeLifecycleStore,
 };
 
 use crate::{
     GroupAgentNodeDispatchMetadataSource, GroupAgentNodeDispatchReleaseControlService,
     GroupAgentNodeDispatchRequestCodec,
 };
-
 
 #[path = "error.rs"]
 mod error;
@@ -91,7 +91,6 @@ impl GroupAgentNodeDispatchAdjudicationService {
 
 #[path = "build.rs"]
 mod build;
-use build::build_hard_crash_artifact;
 use crate::group_agent_node_dispatch_execution::build::{
     build_terminal_control, build_terminalize_request,
 };
@@ -100,16 +99,13 @@ use crate::runtime_domain::{
     GroupAgentNodeTerminalControl, HubStoreError, HubStoreError::Conflict,
     MAX_GROUP_AGENT_NODE_DISPATCH_AUTHORIZATION_BYTES, TerminalizeGroupAgentNodeDispatch,
 };
-
-
+use build::build_hard_crash_artifact;
 
 pub(super) fn adjudicate(
     service: &GroupAgentNodeDispatchAdjudicationService,
     input: &AdjudicateGroupAgentNodeDispatchInput,
-) -> Result<
-    AdjudicateGroupAgentNodeDispatchResult,
-    GroupAgentNodeDispatchAdjudicationServiceError,
-> {
+) -> Result<AdjudicateGroupAgentNodeDispatchResult, GroupAgentNodeDispatchAdjudicationServiceError>
+{
     let inspection = service
         .lifecycles
         .inspect_group_agent_node_lifecycle(&input.graph_run_id)
@@ -163,12 +159,13 @@ fn decide(
     control: GroupAgentNodeTerminalControl,
     terminalized_at_ms: u64,
 ) -> Result<TerminalizeGroupAgentNodeDispatch, GroupAgentNodeDispatchAdjudicationServiceError> {
-    let envelope = service
-        .core
-        .decide(&control)
-        .map_err(|error| AdjudicationRefused::CoreRefused {
-            detail: error.message,
-        })?;
+    let envelope =
+        service
+            .core
+            .decide(&control)
+            .map_err(|error| AdjudicationRefused::CoreRefused {
+                detail: error.message,
+            })?;
     build_terminalize_request(control, envelope, terminalized_at_ms).map_err(|_| {
         AdjudicationRefused::CoreRefused {
             detail: "Core receipt does not match the hard-crash control".into(),
@@ -180,10 +177,8 @@ fn decide(
 fn persist_terminal(
     service: &GroupAgentNodeDispatchAdjudicationService,
     terminal: &TerminalizeGroupAgentNodeDispatch,
-) -> Result<
-    AdjudicateGroupAgentNodeDispatchResult,
-    GroupAgentNodeDispatchAdjudicationServiceError,
-> {
+) -> Result<AdjudicateGroupAgentNodeDispatchResult, GroupAgentNodeDispatchAdjudicationServiceError>
+{
     let result = service
         .lifecycles
         .terminalize_group_agent_node_dispatch(terminal)
@@ -222,9 +217,7 @@ fn ensure_stranded(
     .into())
 }
 
-fn store_error(
-    error: HubStoreError,
-) -> GroupAgentNodeDispatchAdjudicationServiceError {
+fn store_error(error: HubStoreError) -> GroupAgentNodeDispatchAdjudicationServiceError {
     match error {
         HubStoreError::NotFound { .. } => AdjudicationRefused::NotStranded {
             reason: "run has no stranded dispatch claim".into(),
@@ -236,17 +229,15 @@ fn store_error(
 
 fn decode_authorization(
     input: &AdjudicateGroupAgentNodeDispatchInput,
-) -> Result<GroupAgentNodeDispatchAuthorization, GroupAgentNodeDispatchAdjudicationServiceError>
-{
+) -> Result<GroupAgentNodeDispatchAuthorization, GroupAgentNodeDispatchAdjudicationServiceError> {
     if !(1..=MAX_GROUP_AGENT_NODE_DISPATCH_AUTHORIZATION_BYTES)
         .contains(&input.authorization_json.len())
     {
         return Err(GroupAgentNodeDispatchAdjudicationServiceError::InvalidInput);
     }
-    let authorization = GroupAgentNodeDispatchAuthorization::decode_exact(
-        &input.authorization_json,
-    )
-    .map_err(|_| GroupAgentNodeDispatchAdjudicationServiceError::InvalidInput)?;
+    let authorization =
+        GroupAgentNodeDispatchAuthorization::decode_exact(&input.authorization_json)
+            .map_err(|_| GroupAgentNodeDispatchAdjudicationServiceError::InvalidInput)?;
     authorization
         .validate()
         .map_err(|_| GroupAgentNodeDispatchAdjudicationServiceError::InvalidInput)?;

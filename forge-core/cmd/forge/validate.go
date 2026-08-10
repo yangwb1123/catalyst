@@ -61,7 +61,7 @@ func parseYAMLFile(root, relPath string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	val, err := yaml2json.Decode(f)
 	if err == nil {
 		data, marshalErr := json.Marshal(val)
@@ -70,10 +70,10 @@ func parseYAMLFile(root, relPath string) ([]byte, error) {
 		}
 	}
 	// Fallback to Python shim.
-	f.Close()
+	_ = f.Close()
 	shim := filepath.Join(root, "harness", "yaml2json.py")
 	if _, err := os.Stat(shim); err != nil {
-		return nil, fmt.Errorf("Go parser failed (%v) and python shim missing", err)
+		return nil, fmt.Errorf("go parser failed (%v) and python shim missing", err)
 	}
 	return exec.Command("python3", shim, path).Output()
 }

@@ -15,13 +15,13 @@ use forge_runtime_application::{
     GroupAgentNodeDispatchReadinessService, GroupAgentNodeDispatchReleaseControlService,
     MAX_GROUP_AGENT_NODE_DISPATCH_AUTHORIZATION_BYTES, validate_group_agent_node_dispatch_topology,
 };
-use forge_runtime_infrastructure::{PinnedCoreTerminalBridge, RegisteredGroupAgentNodeProviderFactory, SqliteHubStore};
+use forge_runtime_infrastructure::{
+    PinnedCoreTerminalBridge, RegisteredGroupAgentNodeProviderFactory, SqliteHubStore,
+};
 use rand::TryRngCore;
 
 use crate::{
-    args::Args,
-    openai_prepared_dispatch::OpenAiRequestCodec,
-    runtime_domain::Cancellation,
+    args::Args, openai_prepared_dispatch::OpenAiRequestCodec, runtime_domain::Cancellation,
     state_path::hub_database_path,
 };
 
@@ -310,7 +310,6 @@ fn status_text(status: GroupAgentGraphRunStatus) -> &'static str {
     }
 }
 
-
 pub(super) async fn execute_dispatch(
     args: &Args,
     graph_run_id: &str,
@@ -401,7 +400,6 @@ fn validate_execute_preflight(
     .verify(graph_run_id, authorization_json, pricing_json)?;
     Ok(())
 }
-
 
 /// Reads one bounded exact UTF-8 dispatch authorization artifact.
 pub(super) fn read_authorization(source: &str) -> Result<String, Box<dyn Error>> {

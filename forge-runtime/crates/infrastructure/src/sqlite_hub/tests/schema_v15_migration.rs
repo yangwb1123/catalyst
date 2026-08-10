@@ -120,6 +120,9 @@ fn populated_v14_candidate_and_all_prior_schema_survive_v15_migration_and_reopen
              DROP INDEX {};
              DROP TABLE {V16_TABLE};
              DROP TABLE group_agent_graph_scheduled_node_successor_candidates;
+             DROP TABLE governance_structural_heads;
+             DROP TABLE governance_records;
+             DROP TABLE governance_record_append_batches;
              PRAGMA user_version=14;",
             V16_INDEXES[0], V16_INDEXES[1],
         ))
@@ -227,7 +230,7 @@ fn malformed_v15_definitions_and_rogue_objects_are_rejected() {
 }
 
 #[test]
-fn v15_physical_columns_and_catalog_counts_are_locked() {
+fn current_physical_columns_and_catalog_counts_are_locked() {
     let (root, database) = legacy_active_v14_database();
     let connection = open_database(&database).expect("migrate contract fixture");
     assert_current_shape(&connection);
@@ -243,7 +246,7 @@ fn v15_physical_columns_and_catalog_counts_are_locked() {
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .expect("catalog counts");
-    assert_eq!((tables, implicit_indexes, explicit_indexes), (33, 86, 32));
+    assert_eq!((tables, implicit_indexes, explicit_indexes), (36, 93, 35));
     drop((connection, root));
 }
 
@@ -309,7 +312,7 @@ fn malformed(original: &str, replacement: &str) -> String {
 }
 
 fn assert_current_shape(connection: &Connection) {
-    assert_eq!(schema_version(connection), 25);
+    assert_eq!(schema_version(connection), 26);
     assert!(schema_object_exists(connection, "table", REQUEST_TABLE));
     assert!(schema_object_exists(
         connection,
@@ -329,11 +332,29 @@ fn without_v15_and_v16(snapshot: &[SchemaRow]) -> Vec<SchemaRow> {
         .iter()
         .filter(|(_, name, _, _)| {
             !V15_OBJECTS.contains(&name.as_str())
-                                && (*name != "group_model_analyses" && *name != "group_model_analysis_events" && *name != "group_model_analysis_results" && *name != "group_panel_syntheses" && *name != "group_panel_synthesis_events" && *name != "group_panel_synthesis_results" && *name != "group_model_analyses_group_run" && *name != "group_model_analyses_created" && *name != "group_panel_syntheses_panel" && *name != "group_panel_syntheses_created")
-&& *name != V16_TABLE
+                && (*name != "group_model_analyses"
+                    && *name != "group_model_analysis_events"
+                    && *name != "group_model_analysis_results"
+                    && *name != "group_panel_syntheses"
+                    && *name != "group_panel_synthesis_events"
+                    && *name != "group_panel_synthesis_results"
+                    && *name != "group_model_analyses_group_run"
+                    && *name != "group_model_analyses_created"
+                    && *name != "group_panel_syntheses_panel"
+                    && *name != "group_panel_syntheses_created")
+                && *name != V16_TABLE
                 && !V16_INDEXES.contains(&name.as_str())
                 && *name != "group_agent_graph_scheduled_node_successor_candidates"
                 && *name != "group_agent_graph_scheduled_node_successor_candidates_created"
+                && !matches!(
+                    name.as_str(),
+                    "governance_record_append_batches"
+                        | "governance_records"
+                        | "governance_records_aggregate_appended"
+                        | "governance_records_appended"
+                        | "governance_records_kind_appended"
+                        | "governance_structural_heads"
+                )
         })
         .cloned()
         .collect()

@@ -25,7 +25,7 @@ import {
   coverageArtifact,
 } from './adapters.mjs';
 import {
-  PROJECT_ADAPTER_LANGS,
+  PROJECT_LINT_LANGS,
   probeProjectOperations,
 } from './adapters/project.mjs';
 
@@ -99,8 +99,10 @@ function probeLintLang(lang, root, exec) {
 export function probeLint(root = ROOT, exec = run) {
   const langs = detectLanguages(root);
   if (langs.length === 0) return result('lint', NA, 'no source languages detected');
+  // Manifest-aware languages are planned below so each command receives the
+  // project root as cwd instead of an arbitrary repository root.
   const per = langs
-    .filter((lang) => !PROJECT_ADAPTER_LANGS.includes(lang))
+    .filter((lang) => !PROJECT_LINT_LANGS.includes(lang))
     .map((lang) => probeLintLang(lang, root, exec));
   per.push(...probeProjectOperations(root, 'lint', exec));
   const detail = per.map((p) => p.detail).join('; ');

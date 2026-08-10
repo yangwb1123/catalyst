@@ -82,9 +82,12 @@ fn load_contract_lightweight(
         return group_agent_scheduled_node_contract::read::decode_stored(stored)
             .map(|decoded| decoded.inspection);
     }
-    let stored = successor_rows::find_by_id(connection, scheduled_contract_id)?
-        .ok_or_else(|| corrupt("stored scheduled-node provider request has no scheduled contract"))?;
-    group_agent_scheduled_node_successor::read::decode_stored(stored).map(|decoded| decoded.inspection)
+    let stored =
+        successor_rows::find_by_id(connection, scheduled_contract_id)?.ok_or_else(|| {
+            corrupt("stored scheduled-node provider request has no scheduled contract")
+        })?;
+    group_agent_scheduled_node_successor::read::decode_stored(stored)
+        .map(|decoded| decoded.inspection)
 }
 
 pub(in crate::sqlite_hub) fn has_graph_run_child(
@@ -128,7 +131,6 @@ fn load_source_contract(
         Err(other) => Err(other),
     }
 }
-
 
 fn decode_stored(
     stored: rows::RawStoredRequest,
@@ -175,12 +177,16 @@ pub(super) fn validate_exact_provider_body(
         max_output_tokens: candidate.budgets.max_output_tokens,
         cancellation: Cancellation::default(),
     };
-    let result = OpenAiResponsesProvider::validate_exact_request_bytes(&candidate.provider.model, &request, body);
+    let result = OpenAiResponsesProvider::validate_exact_request_bytes(
+        &candidate.provider.model,
+        &request,
+        body,
+    );
     result.map_err(|error| {
-            corrupt(&format!(
-                "stored scheduled-node provider request failed exact codec validation: {error}"
-            ))
-        })
+        corrupt(&format!(
+            "stored scheduled-node provider request failed exact codec validation: {error}"
+        ))
+    })
 }
 
 pub(super) fn list(

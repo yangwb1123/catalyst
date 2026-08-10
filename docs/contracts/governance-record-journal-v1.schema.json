@@ -1,0 +1,202 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forgeos.dev/contracts/governance-record-journal-v1.schema.json",
+  "title": "ForgeOS Governance Record Journal v1",
+  "description": "Machine shapes for a local append-only EvidenceRecord/KnowledgeClaim journal. Structural metadata is not truth, authority, freshness, approval or completion.",
+  "x-forgeos-reference-closure-limits": {
+    "classification": "resource_exhaustion_admissibility",
+    "max_dependency_records": 1024,
+    "max_dependency_bytes": 16777216,
+    "max_derivation_depth": 256
+  },
+  "oneOf": [
+    { "$ref": "#/$defs/append_request" },
+    { "$ref": "#/$defs/append_receipt" },
+    { "$ref": "#/$defs/record_inspection" },
+    { "$ref": "#/$defs/record_inspection_list" },
+    { "$ref": "#/$defs/structural_head" }
+  ],
+  "$defs": {
+    "hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160,
+      "pattern": "^[a-z0-9][a-z0-9._:/-]*$"
+    },
+    "batch_id": {
+      "type": "string",
+      "pattern": "^governance-record-batch-[a-f0-9]{64}$"
+    },
+    "record_kind": {
+      "enum": ["EvidenceRecord", "KnowledgeClaim"]
+    },
+    "unix_ms": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9223372036854775807
+    },
+    "record_ids": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 256,
+      "uniqueItems": true,
+      "description": "Record IDs in canonical record-set order, which is ascending byte order.",
+      "items": { "$ref": "#/$defs/identifier" }
+    },
+    "append_request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "api_version",
+        "canonical_record_set_json",
+        "idempotency_key",
+        "kind"
+      ],
+      "properties": {
+        "api_version": { "const": "forgeos.governance-journal/v1" },
+        "canonical_record_set_json": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 1048576,
+          "description": "Exact compact canonical EvidenceRecord/KnowledgeClaim array. Before opening the Hub, the runtime enforces the 1 MiB UTF-8 byte bound, exact v1 records, shadow admissibility and batch-local identity constraints. Durable cross-batch references are resolved inside the atomic write transaction before insertion."
+        },
+        "idempotency_key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "description": "Caller-supplied non-blank replay key. The runtime enforces at most 256 UTF-8 bytes and rejects forbidden control or bidi characters."
+        },
+        "kind": { "const": "GovernanceRecordAppendRequest" }
+      }
+    },
+    "append_receipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "api_version",
+        "appended_at_unix_ms",
+        "batch_id",
+        "disposition",
+        "kind",
+        "record_count",
+        "record_ids",
+        "record_set_sha256",
+        "request_sha256"
+      ],
+      "properties": {
+        "api_version": { "const": "forgeos.governance-journal/v1" },
+        "appended_at_unix_ms": { "$ref": "#/$defs/unix_ms" },
+        "batch_id": { "$ref": "#/$defs/batch_id" },
+        "disposition": { "enum": ["exact_replay", "stored"] },
+        "kind": { "const": "GovernanceRecordAppendReceipt" },
+        "record_count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 256
+        },
+        "record_ids": { "$ref": "#/$defs/record_ids" },
+        "record_set_sha256": { "$ref": "#/$defs/hash" },
+        "request_sha256": { "$ref": "#/$defs/hash" }
+      }
+    },
+    "record_inspection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "api_version",
+        "appended_at_unix_ms",
+        "aggregate_id",
+        "batch_id",
+        "batch_ordinal",
+        "canonical_record_bytes",
+        "canonical_sha256",
+        "created_at_unix_ms",
+        "kind",
+        "record_id",
+        "record_kind",
+        "sequence"
+      ],
+      "properties": {
+        "api_version": { "const": "forgeos.governance-journal/v1" },
+        "appended_at_unix_ms": { "$ref": "#/$defs/unix_ms" },
+        "aggregate_id": { "$ref": "#/$defs/identifier" },
+        "batch_id": { "$ref": "#/$defs/batch_id" },
+        "batch_ordinal": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 255
+        },
+        "canonical_record_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 131072
+        },
+        "canonical_record_json": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 131072,
+          "description": "Present only after an explicit content-reveal request; metadata-only inspection omits this member. The runtime enforces the UTF-8 byte bound."
+        },
+        "canonical_sha256": { "$ref": "#/$defs/hash" },
+        "created_at_unix_ms": { "$ref": "#/$defs/unix_ms" },
+        "kind": { "const": "GovernanceRecordInspection" },
+        "record_id": { "$ref": "#/$defs/identifier" },
+        "record_kind": { "$ref": "#/$defs/record_kind" },
+        "sequence": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807
+        }
+      }
+    },
+    "record_inspection_list": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["api_version", "kind", "records"],
+      "properties": {
+        "api_version": { "const": "forgeos.governance-journal/v1" },
+        "kind": { "const": "GovernanceRecordInspectionList" },
+        "records": {
+          "type": "array",
+          "maxItems": 100,
+          "description": "Bounded metadata or explicitly revealed records, ordered by appended_at_unix_ms descending and then record_id descending by UTF-8 byte order.",
+          "items": { "$ref": "#/$defs/record_inspection" }
+        }
+      }
+    },
+    "structural_head": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "aggregate_id",
+        "api_version",
+        "canonical_sha256",
+        "interpretation",
+        "kind",
+        "record_id",
+        "record_kind",
+        "sequence",
+        "updated_at_unix_ms"
+      ],
+      "properties": {
+        "aggregate_id": { "$ref": "#/$defs/identifier" },
+        "api_version": { "const": "forgeos.governance-journal/v1" },
+        "canonical_sha256": { "$ref": "#/$defs/hash" },
+        "interpretation": { "const": "structural_sequence_only" },
+        "kind": { "const": "GovernanceStructuralHead" },
+        "record_id": { "$ref": "#/$defs/identifier" },
+        "record_kind": { "$ref": "#/$defs/record_kind" },
+        "sequence": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807
+        },
+        "updated_at_unix_ms": { "$ref": "#/$defs/unix_ms" }
+      }
+    }
+  }
+}

@@ -8,13 +8,30 @@ mod group_agent_graph_support;
 mod group_agent_node_dispatch_execution_cli_support;
 
 use forge_runtime_domain::{
-    GROUP_AGENT_GRAPH_RUN_TERMINAL_VERSION, GroupAgentGraphRunEventKind,
-    GroupAgentGraphRunStatus, GroupAgentNodeDispatchAuthorization,
-    GroupAgentNodeLifecycleInspection, GroupAgentNodeTerminalArtifactKind,
-    GroupAgentNodeTerminalClassification, group_agent_node_dispatch_authorization_id,
+    GROUP_AGENT_GRAPH_RUN_TERMINAL_VERSION, GroupAgentGraphRunEventKind, GroupAgentGraphRunStatus,
+    GroupAgentNodeDispatchAuthorization, GroupAgentNodeLifecycleInspection,
+    GroupAgentNodeTerminalArtifactKind, GroupAgentNodeTerminalClassification,
+    group_agent_node_dispatch_authorization_id,
 };
 use group_agent_graph_support::path_text;
 use group_agent_node_dispatch_execution_cli_support::{CREDENTIAL_SECRET, Fixture, TASK_SECRET};
+
+const FULL_FLAGS: [&str; 14] = [
+    "group",
+    "graph",
+    "run",
+    "dispatch",
+    "adjudicate",
+    "run-1",
+    "--authorization",
+    "a.json",
+    "--pricing",
+    "p.json",
+    "--core-bin",
+    "/bin/true",
+    "--core-bin-sha256",
+    "0000000000000000000000000000000000000000000000000000000000000000",
+];
 
 #[test]
 fn help_and_missing_flags_expose_adjudicate_boundaries_without_state_access() {
@@ -31,9 +48,7 @@ fn help_and_missing_flags_expose_adjudicate_boundaries_without_state_access() {
     assert!(help.contains(
         "A\n  hard-crash-quarantined claim can be remedied with `group graph run dispatch\n  adjudicate`"
     ));
-    assert!(help.contains(
-        "with `group graph run dispatch adjudicate`. Prepare a new analysis"
-    ));
+    assert!(help.contains("with `group graph run dispatch adjudicate`. Prepare a new analysis"));
 
     let state = TempDir::new().expect("state directory");
     let output = Command::new(env!("CARGO_BIN_EXE_forge-runtime"))
@@ -61,12 +76,6 @@ fn run_adjudicate(state: &TempDir, extra: &[&str]) -> std::process::Output {
 #[test]
 fn parse_level_rejections_cover_dual_stdin_idempotency_key_and_execute_only_flags() {
     let state = TempDir::new().expect("state directory");
-    let full_flags = [
-        "group", "graph", "run", "dispatch", "adjudicate", "run-1", "--authorization", "a.json",
-        "--pricing", "p.json", "--core-bin", "/bin/true", "--core-bin-sha256",
-        "0000000000000000000000000000000000000000000000000000000000000000",
-    ];
-
     let dual_stdin = run_adjudicate(&state, &["--authorization", "-", "--pricing", "-"]);
     assert_eq!(dual_stdin.status.code(), Some(2));
     let error = String::from_utf8_lossy(&dual_stdin.stderr);
@@ -76,8 +85,14 @@ fn parse_level_rejections_cover_dual_stdin_idempotency_key_and_execute_only_flag
     );
 
     let idempotency = Command::new(env!("CARGO_BIN_EXE_forge-runtime"))
-        .args(["--state-dir", path_text(state.path()), "--idempotency-key", "adjudicate-key", "--json"])
-        .args(full_flags)
+        .args([
+            "--state-dir",
+            path_text(state.path()),
+            "--idempotency-key",
+            "adjudicate-key",
+            "--json",
+        ])
+        .args(FULL_FLAGS)
         .output()
         .expect("run idempotency-key adjudicate");
     assert_eq!(idempotency.status.code(), Some(2));
@@ -89,7 +104,7 @@ fn parse_level_rejections_cover_dual_stdin_idempotency_key_and_execute_only_flag
 
     let consent = Command::new(env!("CARGO_BIN_EXE_forge-runtime"))
         .args(["--state-dir", path_text(state.path()), "--json"])
-        .args(full_flags)
+        .args(FULL_FLAGS)
         .arg("--confirm-off-machine")
         .output()
         .expect("run consent adjudicate");
@@ -137,23 +152,47 @@ fn adjudication_remedies_a_stranded_v4_claim_with_the_real_pinned_core() {
 /// Direct run-level + evidence post-state assertions (design A2 / §7.6): the
 /// CAS result is locally self-evident, not only transitively verified.
 fn assert_terminal_run(inspection: &GroupAgentNodeLifecycleInspection, journal_before: usize) {
-    assert_eq!(inspection.graph_run.run.status, GroupAgentGraphRunStatus::FailedUncertain);
-    assert_eq!(inspection.graph_run.run.v, GROUP_AGENT_GRAPH_RUN_TERMINAL_VERSION);
+    assert_eq!(
+        inspection.graph_run.run.status,
+        GroupAgentGraphRunStatus::FailedUncertain
+    );
+    assert_eq!(
+        inspection.graph_run.run.v,
+        GROUP_AGENT_GRAPH_RUN_TERMINAL_VERSION
+    );
     assert_eq!(inspection.graph_run.run.last_event_seq, 5);
     assert_eq!(inspection.graph_run.events.len(), 5);
-    assert_eq!(inspection.graph_run.run.journal_bytes, journal_before + inspection.graph_run.event_jsons[4].len());
+    assert_eq!(
+        inspection.graph_run.run.journal_bytes,
+        journal_before + inspection.graph_run.event_jsons[4].len()
+    );
     assert!(inspection.active_lane.is_none());
 
+    assert_terminal_evidence(inspection);
+}
+
+fn assert_terminal_evidence(inspection: &GroupAgentNodeLifecycleInspection) {
     let artifact = inspection.artifact.as_ref().expect("hard-crash artifact");
-    assert_eq!(artifact.artifact_kind, GroupAgentNodeTerminalArtifactKind::Uncertainty);
-    assert_eq!(artifact.classification, GroupAgentNodeTerminalClassification::HardCrash);
-    assert!(!artifact.provider_poll_started && !artifact.terminal_seen && !artifact.stream_eof_seen);
+    assert_eq!(
+        artifact.artifact_kind,
+        GroupAgentNodeTerminalArtifactKind::Uncertainty
+    );
+    assert_eq!(
+        artifact.classification,
+        GroupAgentNodeTerminalClassification::HardCrash
+    );
+    assert!(
+        !artifact.provider_poll_started && !artifact.terminal_seen && !artifact.stream_eof_seen
+    );
     assert!(!artifact.usage_observed && !artifact.actual_cost_calculated);
     assert!(!artifact.retry_authorized);
     assert!(artifact.created_at_ms >= inspection.claim.released_at_ms);
 
     let receipt = inspection.terminal_receipt.as_ref().expect("Core receipt");
-    assert_eq!(receipt.graph_status, GroupAgentGraphRunStatus::FailedUncertain);
+    assert_eq!(
+        receipt.graph_status,
+        GroupAgentGraphRunStatus::FailedUncertain
+    );
     assert_eq!(receipt.expected_last_event_seq, 4);
     assert!(receipt.lane_release_authorized);
     assert!(!receipt.retry_authorized);
@@ -242,7 +281,8 @@ fn readjudication_and_digest_mismatch_are_refused_with_zero_mutation() {
     assert!(mismatch.stdout.is_empty());
     let error = String::from_utf8_lossy(&mismatch.stderr);
     assert!(
-        error.contains("adjudication refused: authorization body does not match the claimed digest"),
+        error
+            .contains("adjudication refused: authorization body does not match the claimed digest"),
         "{error}"
     );
     assert!(!error.contains("Core refused"));
@@ -304,27 +344,37 @@ fn execute_reentry_after_adjudication_returns_the_stored_inspection() {
         "execute re-entry failed: {}",
         String::from_utf8_lossy(&reentry.stderr)
     );
-    let json: serde_json::Value = serde_json::from_slice(&reentry.stdout).expect("JSON output");
+    assert_stored_reentry_output(&reentry.stdout);
+
+    // The stored inspection — not the new inputs — is returned, with no new
+    // events and unchanged claim/authorization/pricing digests.
+    let after = fixture.lifecycle_inspection();
+    assert_eq!(after, stored);
+    assert_eq!(
+        after.claim.authorization_sha256,
+        stored.claim.authorization_sha256
+    );
+    assert_eq!(
+        after.claim.pricing_snapshot_sha256,
+        stored.claim.pricing_snapshot_sha256
+    );
+    assert_eq!(after.graph_run.events, stored.graph_run.events);
+    assert_eq!(
+        after.graph_run.run.journal_bytes,
+        stored.graph_run.run.journal_bytes
+    );
+    assert_eq!(fixture.state_bytes(), state_before);
+    fixture.assert_workspace_unchanged();
+}
+
+fn assert_stored_reentry_output(stdout: &[u8]) {
+    let json: serde_json::Value = serde_json::from_slice(stdout).expect("JSON output");
     assert_eq!(json["graph_status"], "failed_uncertain");
     assert_eq!(json["classification"], "hard_crash");
     assert_eq!(json["lane_active"], false);
     assert_eq!(json["dispatch_performed_this_invocation"], false);
     assert_eq!(json["database_written_this_invocation"], false);
     assert_eq!(json["metadata_only"], true);
-
-    // The stored inspection — not the new inputs — is returned, with no new
-    // events and unchanged claim/authorization/pricing digests.
-    let after = fixture.lifecycle_inspection();
-    assert_eq!(after, stored);
-    assert_eq!(after.claim.authorization_sha256, stored.claim.authorization_sha256);
-    assert_eq!(
-        after.claim.pricing_snapshot_sha256,
-        stored.claim.pricing_snapshot_sha256
-    );
-    assert_eq!(after.graph_run.events, stored.graph_run.events);
-    assert_eq!(after.graph_run.run.journal_bytes, stored.graph_run.run.journal_bytes);
-    assert_eq!(fixture.state_bytes(), state_before);
-    fixture.assert_workspace_unchanged();
 }
 
 /// Re-signs the fixture authorization with a different budget so the canonical

@@ -128,7 +128,7 @@ func readControl(source string, stdin io.Reader) (ControlSnapshot, error) {
 	if err != nil {
 		return ControlSnapshot{}, errInvalidControl
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	return DecodeControl(file)
 }
 

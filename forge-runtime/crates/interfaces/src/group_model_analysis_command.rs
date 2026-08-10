@@ -12,7 +12,10 @@ use crate::{
         GroupModelAnalysisInspectionView, GroupModelAnalysisSendDisposition,
     },
     hub_output::{CliOutput, OutputKind},
-    openai_prepared_dispatch::{DEFAULT_OPENAI_MODEL, OpenAiPreparedProvider, OpenAiRequestCodec},
+    openai_prepared_dispatch::{
+        DEFAULT_OPENAI_MODEL, OpenAiPreparedProvider, OpenAiRequestCodec,
+        analysis_endpoint_for_base_url, effective_openai_base_url,
+    },
     runtime_domain::{
         Cancellation, ClaimGroupModelAnalysisDispatch, GROUP_MODEL_ANALYSIS_CONSENT_VERSION,
         GroupModelAnalysisInspection, GroupModelAnalysisStatus, PrepareGroupModelAnalysisResult,
@@ -60,13 +63,8 @@ pub async fn execute(
 /// prepared analysis: `OPENAI_BASE_URL` opt-in (self-hosted `/v1` gateway) or the
 /// official endpoint, in `/v1/responses` form to match the provider's own
 /// endpoint identity.
-fn effective_analysis_endpoint() -> String {
-    let base = crate::openai_prepared_dispatch::effective_openai_base_url();
-    if base.ends_with("/responses") {
-        base
-    } else {
-        format!("{base}/responses")
-    }
+fn effective_analysis_endpoint() -> Result<String, Box<dyn Error>> {
+    Ok(analysis_endpoint_for_base_url(&effective_openai_base_url())?)
 }
 
 fn prepare(
@@ -80,7 +78,7 @@ fn prepare(
         analysis_id: unique_id("group-analysis"),
         group_run_id: group_run_id.into(),
         model: model.unwrap_or(DEFAULT_OPENAI_MODEL).into(),
-        endpoint: effective_analysis_endpoint(),
+        endpoint: effective_analysis_endpoint()?,
         max_output_tokens,
         idempotency_key: args
             .idempotency_key

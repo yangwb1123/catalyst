@@ -4,24 +4,16 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import {
-  mkdtempSync,
-  mkdirSync,
-  rmSync,
-  existsSync,
-  readFileSync,
-  readdirSync,
-  symlinkSync,
-  writeFileSync,
+  existsSync, mkdirSync, mkdtempSync, readFileSync,
+  readdirSync, rmSync, symlinkSync, writeFileSync,
 } from 'node:fs';
-import { dirname, join, relative, sep } from 'node:path';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 
 import {
-  COPIED_FILES,
-  GOVERNANCE_DIRS,
-  HARNESS_NOT_COPIED,
-  SCAFFOLD_STATE_FILE,
+  COPIED_FILES, GOVERNANCE_DIRS, HARNESS_NOT_COPIED,
+  PROJECT_INSTANCE_FILES, SCAFFOLD_STATE_FILE,
 } from './forge-init.mjs';
 
 // This test lives in harness/scaffold/, so its own dir is the sub-package and the
@@ -67,6 +59,32 @@ const COPIED_ENFORCERS = [
 // self-test (acceptance's test_pass runs these, so the harness self-governs).
 const COPIED_HARNESS = [
   join('harness', 'check.py'),
+  join('harness', 'agent_engineering_check.py'),
+  join('harness', 'backend_decision_contract.py'),
+  join('harness', 'backend_decision_check.py'),
+  join('harness', 'backend_evidence_check.py'),
+  join('harness', 'backend_package_check.py'),
+  join('harness', 'frontend_design', '__init__.py'),
+  join('harness', 'frontend_design', 'contract.py'),
+  join('harness', 'frontend_design', 'composition.py'),
+  join('harness', 'frontend_design', 'composition_support.py'),
+  join('harness', 'frontend_design', 'geometry.py'),
+  join('harness', 'frontend_design', 'governance.py'),
+  join('harness', 'frontend_design_check.py'),
+  join('harness', 'frontend_design', 'evidence.py'),
+  join('harness', 'frontend_design', 'model.py'),
+  join('harness', 'frontend_design', 'package.py'),
+  join('harness', 'frontend_design_test_support.py'),
+  join('harness', 'completion_evidence_check.py'),
+  join('harness', 'engineering_detector_check.py'),
+  join('harness', 'engineering_check_support.py'),
+  join('harness', 'engineering_routing_check.py'),
+  join('harness', 'governance_engineering_check.py'),
+  join('harness', 'cognitive_atom_contract_check.py'),
+  join('harness', 'cognitive_atom_contract', '__init__.py'),
+  join('harness', 'cognitive_atom_contract', 'constants.py'),
+  join('harness', 'cognitive_atom_contract', 'fixture.py'),
+  join('harness', 'cognitive_atom_contract', 'projection.py'),
   join('harness', 'release_boundary_check.py'),
   join('harness', 'workflow_control_check.py'),
   join('harness', 'acceptance.mjs'),
@@ -84,6 +102,16 @@ const COPIED_HARNESS = [
   join('harness', 'scorecard.mjs'),
   join('harness', 'scorecard-update.mjs'),
   join('harness', 'test_check.py'),
+  join('harness', 'test_check_bounded_input.py'),
+  join('harness', 'test_agent_engineering_check.py'),
+  join('harness', 'test_cognitive_atom_contract_check.py'),
+  join('harness', 'test_backend_decision_check.py'),
+  join('harness', 'test_frontend_design_adversarial.py'),
+  join('harness', 'test_frontend_business_ui_composition_boundaries.py'),
+  join('harness', 'test_frontend_business_ui_geometry.py'),
+  join('harness', 'test_frontend_geometry_coordinate_contract.py'),
+  join('harness', 'test_frontend_design_check.py'),
+  join('harness', 'test_legacy_ai_batch_contract.py'),
   join('harness', 'test_release_boundary_check.py'),
   join('harness', 'test_workflow_control_check.py'),
   join('harness', 'test_yaml2json.py'),
@@ -96,19 +124,49 @@ const COPIED_HARNESS = [
   join('harness', 'test_secret-scan.mjs'),
   join('harness', 'arch', 'test_arch-check.mjs'),
 ];
-
-// (c) Representative governance ASSETS from each copied .agent/ tree — the
-// declarative cards/skills/workflows/eval/routing/policies check.py validates
-// and acceptance.mjs consumes (without them check.py FAILs / has no schema).
+// (c) Representative copied governance ASSETS consumed by check.py/acceptance.mjs.
 const COPIED_ASSETS = [
   join('docs', 'release', 'README.md'),
+  join('docs', 'design', 'ai-engineering-os', 'capability-catalog.v1.yml'),
+  join('docs', 'design', 'ai-engineering-os', 'capability-skill-map.v1.yml'),
+  join('docs', 'design', 'ai-engineering-os', 'backend-decision-standard.md'),
+  join('docs', 'design', 'ai-engineering-os', 'frontend-design-standard.md'),
+  join('docs', 'design', 'ai-engineering-os', 'frontend-code-architecture-standard.md'),
+  join('docs', 'design', 'ai-engineering-os', 'governance-contracts.md'),
+  join('docs', 'adr', '0042-frontend-design-decision-contract.md'),
+  join('docs', 'adr', '0043-frontend-code-architecture-governance.md'),
+  join('docs', 'adr', '0044-business-ui-geometry-contract.md'),
+  join('docs', 'adr', '0046-local-governance-record-journal.md'),
+  join('docs', 'adr', '0047-shadow-cognitive-atom-projection-v1.md'),
+  join('docs', 'contracts', 'governance-record-journal-v1.schema.json'),
+  join('docs', 'contracts', 'cognitive-atom-projection-v1.schema.json'),
+  join('docs', 'contracts', 'fixtures', 'cognitive-atom-projection-v1.json'),
   join('.agent', 'agents', 'architect.md'),
   join('.agent', 'agents', 'release-engineer.md'),
   join('.agent', 'skills', 'clean-architecture.md'),
+  join('.agent', 'skills', 'backend-engineering.md'),
+  join('.agent', 'skills', 'information-interaction-design.md'),
+  join('.agent', 'skills', 'design-system-accessibility.md'),
+  join('.agent', 'skills', 'frontend-client-engineering.md'),
+  join('.agent', 'skills', 'frontend-code-architecture.md'),
+  join('.agent', 'skills', 'ui-geometry.md'),
   join('.agent', 'workflows', 'build.yml'),
   join('.agent', 'workflows', 'deploy.yml'),
   join('.agent', 'workflows', 'rollback.yml'),
   join('.agent', 'eval', 'acceptance.schema.yml'),
+  join('.agent', 'eval', 'completion-evidence.schema.yml'),
+  join('.agent', 'eval', 'backend-decision-package.schema.yml'),
+  join('.agent', 'eval', 'frontend-design-package.schema.yml'),
+  join('.agent', 'engineering', 'activation.yml'),
+  join('.agent', 'engineering', 'backend-decision-gates.yml'),
+  join('.agent', 'engineering', 'frontend-design-gates.yml'),
+  join('.agent', 'engineering', 'frontend-code-architecture.yml'),
+  join('.agent', 'engineering', 'frontend-profiles.yml'),
+  join('.arch', 'frontend-architecture.v1.json'),
+  join('.arch', 'frontend-architecture-baseline.v1.json'),
+  join('.arch', 'frontend-architecture-waivers.v1.json'),
+  join('.agent', 'engineering', 'detectors.yml'),
+  join('.agent', 'engineering', 'rules.yml'),
   join('.agent', 'routing', 'policy.yml'),
   join('.agent', 'policies', 'modes.yml'),
 ];
@@ -133,6 +191,70 @@ const GENERATED_FILES = [
   SCAFFOLD_STATE_FILE,
 ];
 
+// Extract inline and reference-style Markdown destinations. This deliberately
+// checks file reachability only: fragment correctness belongs to a Markdown
+// linter, while scaffold integrity must prove every copied local file target is
+// present in the generated project. `url` is the documented placeholder used by
+// the researcher role card for per-result citations, not a repository path.
+function markdownDestinations(markdown) {
+  const destinations = [];
+  for (const match of markdown.matchAll(/!?\[[^\]\n]*\]\(([^)\n]+)\)/g)) {
+    destinations.push(match[1]);
+  }
+  for (const match of markdown.matchAll(/^\s*\[[^\]\n]+\]:\s*(\S+)/gm)) {
+    destinations.push(match[1]);
+  }
+  return destinations;
+}
+
+function localMarkdownTarget(rawDestination) {
+  let destination = rawDestination.trim();
+  if (destination.startsWith('<')) {
+    const closing = destination.indexOf('>');
+    if (closing === -1) return null;
+    destination = destination.slice(1, closing);
+  } else {
+    destination = destination.split(/\s+(?=["'])/, 1)[0];
+  }
+  if (
+    destination === ''
+    || destination.toLowerCase() === 'url'
+    || destination.startsWith('#')
+    || destination.startsWith('/')
+    || destination.startsWith('//')
+    || /^[A-Za-z][A-Za-z0-9+.-]*:/.test(destination)
+  ) return null;
+  const withoutFragment = destination.split('#', 1)[0].split('?', 1)[0];
+  if (withoutFragment === '') return null;
+  try {
+    return decodeURIComponent(withoutFragment);
+  } catch {
+    return withoutFragment;
+  }
+}
+
+function copiedMarkdownLinkIssues(target) {
+  const state = JSON.parse(readFileSync(join(target, SCAFFOLD_STATE_FILE), 'utf8'));
+  assert.ok(Array.isArray(state.copied), `${SCAFFOLD_STATE_FILE} must contain copied[]`);
+  const targetRoot = resolve(target);
+  const issues = [];
+  for (const rel of state.copied.filter((path) => path.endsWith('.md'))) {
+    const source = join(targetRoot, rel);
+    const markdown = readFileSync(source, 'utf8');
+    for (const rawDestination of markdownDestinations(markdown)) {
+      const local = localMarkdownTarget(rawDestination);
+      if (local === null) continue;
+      const destination = resolve(dirname(source), local);
+      const staysInsideTarget = destination === targetRoot
+        || destination.startsWith(`${targetRoot}${sep}`);
+      if (!staysInsideTarget || !existsSync(destination)) {
+        issues.push(`${rel} -> ${rawDestination}`);
+      }
+    }
+  }
+  return issues;
+}
+
 test('forge-init scaffolds COMPLETE governance and the project is ACCEPTED', (t) => {
   const dir = mkdtempSync(join(tmpdir(), 'forge-init-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
@@ -150,6 +272,11 @@ test('forge-init scaffolds COMPLETE governance and the project is ACCEPTED', (t)
   assert.match(readFileSync(join(target, '.agent', 'project.yml'), 'utf8'), /acme-svc/);
   assert.match(readFileSync(join(target, '.agent', 'PROJECT.md'), 'utf8'), /acme-svc/);
   assert.match(readFileSync(join(target, 'CLAUDE.md'), 'utf8'), /acme-svc/);
+  const scaffoldState = JSON.parse(readFileSync(join(target, SCAFFOLD_STATE_FILE), 'utf8'));
+  for (const rel of PROJECT_INSTANCE_FILES) {
+    assert.ok(existsSync(join(target, rel)), `missing project instance: ${rel}`);
+    assert.equal(scaffoldState.copied.includes(rel), false, `${rel} must not enter the upgrade ledger`);
+  }
 
   // (3) the generated CI gate runs `forge accept` (acceptance.mjs).
   assert.match(
@@ -173,12 +300,25 @@ test('forge-init scaffolds COMPLETE governance and the project is ACCEPTED', (t)
     );
   }
 
-  // (5) ★ THE IRON PROOF: running the FULL acceptance gate on the fresh project
-  // returns ACCEPTED — the complete governance (not just the enforcer triad) runs
-  // end to end. PyYAML (check.py's only dep) is an ENVIRONMENT prerequisite the CI
-  // installs; if it is absent we skip THIS assertion with a reason (the verdict
-  // would falsely REJECT on check.py's honest exit-2), keeping the test
-  // deterministic. The structure assertions above always ran regardless.
+  // (4b) Copied Markdown links must resolve inside the scaffold.
+  assert.deepEqual(
+    copiedMarkdownLinkIssues(target),
+    [],
+    'copied Markdown contains dangling or escaping local links',
+  );
+  assert.doesNotMatch(
+    readFileSync(join(target, '.agent', 'skills', 'evidence-claim-management.md'), 'utf8'),
+    /docs\/adr\/0037-capability-centric-ai-engineering-operating-model\.md/,
+  );
+  const journalSkillPath = join(target, '.agent', 'skills', 'evidence-claim-management.md');
+  const journalSkill = readFileSync(journalSkillPath, 'utf8');
+  assert.match(journalSkill, /forge-runtime governance journal show/);
+  assert.match(journalSkill, /not_executed/);
+  assert.doesNotMatch(journalSkill, /\bforge governance journal\b/);
+  const copiedRuntime = scaffoldState.copied.some((rel) => rel.startsWith('forge-runtime/'));
+  assert.equal(copiedRuntime, false, 'scaffold must not install the Rust runtime');
+
+  // (5) Run the full acceptance gate; only its external PyYAML prerequisite may skip.
   if (!pyYamlAvailable(target)) {
     t.skip('PyYAML unavailable to python3 — acceptance ACCEPTED assertion skipped (env prereq; CI installs it)');
     return;

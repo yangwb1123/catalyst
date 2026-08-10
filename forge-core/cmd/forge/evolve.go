@@ -215,7 +215,7 @@ func execLoop(ctx context.Context, wf asset.Workflow, o runOpts, maxIter int, ma
 	if lock == nil {
 		return 1
 	}
-	defer lock.Release()
+	defer func() { _ = lock.Release() }()
 	logln := func(s string) { fmt.Println(s) }
 	resumed, err := prepareLoopResume(wf, &o, resume)
 	if err != nil { // malformed checkpoint: fail closed, never silently restart.

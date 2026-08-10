@@ -1,16 +1,18 @@
+use rusqlite::{Connection, Error as SqliteError, ErrorCode, OpenFlags};
 use std::{
     path::Path,
     thread,
     time::{Duration, Instant},
 };
-use rusqlite::{Connection, Error as SqliteError, ErrorCode, OpenFlags};
 use url::Url;
+
 #[path = "schema_contract.rs"]
 mod contract;
 #[path = "schema_location.rs"]
 mod location;
 #[path = "schema_contract/reentry.rs"]
 mod reentry;
+
 pub(super) fn open_existing_dispatch_reentry_read_only_database(
     path: &Path,
 ) -> Result<Connection, HubStoreError> {
@@ -18,7 +20,6 @@ pub(super) fn open_existing_dispatch_reentry_read_only_database(
 }
 use super::{
     HubStoreError,
-    unavailable,
     schema_sql::{
         CREATE_V1_SCHEMA_SQL, MIGRATE_V1_TO_V2_SQL, MIGRATE_V2_TO_V3_SQL, MIGRATE_V3_TO_V4_SQL,
         MIGRATE_V4_TO_V5_SQL, MIGRATE_V5_TO_V6_SQL, MIGRATE_V6_TO_V7_SQL, MIGRATE_V7_TO_V8_SQL,
@@ -40,8 +41,11 @@ use super::{
     schema_v23_sql::MIGRATE_V22_TO_V23_SQL,
     schema_v24_sql::MIGRATE_V23_TO_V24_SQL,
     schema_v25_sql::MIGRATE_V24_TO_V25_SQL,
+    schema_v26_sql::MIGRATE_V25_TO_V26_SQL,
+    unavailable,
 };
-pub(super) const SCHEMA_VERSION: i64 = 25;
+
+pub(super) const SCHEMA_VERSION: i64 = 26;
 const CONNECTION_BUSY_TIMEOUT: Duration = Duration::from_millis(250);
 const OPEN_RETRY_TIMEOUT: Duration = Duration::from_secs(5);
 const OPEN_RETRY_DELAY: Duration = Duration::from_millis(10);
@@ -70,15 +74,17 @@ pub(super) fn open_database(path: &Path) -> Result<Connection, HubStoreError> {
 pub(super) fn open_existing_current_read_only_database(
     path: &Path,
 ) -> Result<Connection, HubStoreError> {
-    open_existing_validated_read_only_database(path, &[SCHEMA_VERSION], "current schema version 25")
+    open_existing_validated_read_only_database(path, &[SCHEMA_VERSION], "current schema version 26")
 }
 pub(super) fn open_existing_dispatch_preflight_read_only_database(
     path: &Path,
 ) -> Result<Connection, HubStoreError> {
     open_existing_validated_read_only_database(
         path,
-        &[11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25],
-        "schema version 11..=25",
+        &[
+            11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
+        ],
+        "schema version 11..=26",
     )
 }
 fn open_existing_validated_read_only_database(
@@ -103,7 +109,7 @@ fn open_existing_validated_read_only_database(
     if !accepted_versions.contains(&version) {
         return Err(read_only_schema_required(version, requirement));
     }
-    contract::validate_version(&connection, version)?;
+    contract::validate_migration_source(&connection, version)?;
     let after = location::inspect_existing_read_only(path)?;
     if before != after {
         return Err(HubStoreError::Unavailable {
@@ -199,62 +205,57 @@ fn validate_locked_schema(
     before_final: impl FnOnce(&Connection) -> Result<(), OpenAttemptError>,
 ) -> Result<(), OpenAttemptError> {
     let version = schema_version(connection)?;
-    contract::validate_version(connection, version)?;
+    let endpoint_only_v25 = contract::validate_migration_source(connection, version)?;
     if version == SCHEMA_VERSION {
         return Ok(());
     }
-    migrate_to_current(connection, version)?;
+    if endpoint_only_v25 {
+        migrate_endpoint_only_v25_to_v26(connection)?;
+    } else {
+        migrate_to_current(connection, version)?;
+    }
     before_final(connection)?;
     contract::validate_version(connection, SCHEMA_VERSION).map_err(Into::into)
+}
+
+fn migrate_endpoint_only_v25_to_v26(connection: &Connection) -> Result<(), OpenAttemptError> {
+    connection.execute_batch(MIGRATE_V24_TO_V25_SQL)?;
+    connection.execute_batch("PRAGMA user_version = 26")?;
+    Ok(())
 }
 
 fn migrate_to_current(connection: &Connection, version: i64) -> Result<(), OpenAttemptError> {
     create_if_empty(connection, version)?;
     migrate_early(connection, version)?;
-    migrate_late(connection, version)
+    migrate_late(connection, version)?;
+    migrate_latest(connection, version)
 }
 
 /// Migrations v1 through v9 (the legacy Conversation/Hub generations).
 fn migrate_early(connection: &Connection, version: i64) -> Result<(), OpenAttemptError> {
     if version <= 1 {
-
         migrate_v1_to_v2(connection)?;
-
     }
     if version <= 2 {
-
         migrate_v2_to_v3(connection)?;
-
     }
     if version <= 3 {
-
         migrate_v3_to_v4(connection)?;
-
     }
     if version <= 4 {
-
         migrate_v4_to_v5(connection)?;
-
     }
     if version <= 5 {
-
         migrate_v5_to_v6(connection)?;
-
     }
     if version <= 6 {
-
         migrate_v6_to_v7(connection)?;
-
     }
     if version <= 7 {
-
         migrate_v7_to_v8(connection)?;
-
     }
     if version <= 8 {
-
         migrate_v8_to_v9(connection)?;
-
     }
     Ok(())
 }
@@ -282,14 +283,14 @@ fn migrate_late(connection: &Connection, version: i64) -> Result<(), OpenAttempt
     if version <= 15 {
         migrate_v15_to_v16(connection)?;
     }
-    migrate_late_tail(connection, version)
-}
-
-/// Migrations v16 through v25 (the scheduled-successor / dispatch generations).
-fn migrate_late_tail(connection: &Connection, version: i64) -> Result<(), OpenAttemptError> {
     if version <= 16 {
         migrate_v16_to_v17(connection)?;
     }
+    Ok(())
+}
+
+/// Migrations v18 onward (the execution and governance generations).
+fn migrate_latest(connection: &Connection, version: i64) -> Result<(), OpenAttemptError> {
     if version <= 17 {
         migrate_v17_to_v18(connection)?;
     }
@@ -312,7 +313,10 @@ fn migrate_late_tail(connection: &Connection, version: i64) -> Result<(), OpenAt
         migrate_v23_to_v24(connection)?;
     }
     if version <= 24 {
-        migrate_v24_to_v25(connection)?;
+        connection.execute_batch(MIGRATE_V24_TO_V25_SQL)?;
+    }
+    if version <= 25 {
+        connection.execute_batch(MIGRATE_V25_TO_V26_SQL)?;
     }
     Ok(())
 }
@@ -466,11 +470,6 @@ fn migrate_v22_to_v23(connection: &Connection) -> Result<(), OpenAttemptError> {
 
 fn migrate_v23_to_v24(connection: &Connection) -> Result<(), OpenAttemptError> {
     connection.execute_batch(MIGRATE_V23_TO_V24_SQL)?;
-    Ok(())
-}
-
-fn migrate_v24_to_v25(connection: &Connection) -> Result<(), OpenAttemptError> {
-    connection.execute_batch(MIGRATE_V24_TO_V25_SQL)?;
     Ok(())
 }
 

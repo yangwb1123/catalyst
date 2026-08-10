@@ -125,7 +125,7 @@ func distinctScorecardPairsForRun(wf asset.Workflow, tracePath, runID string) []
 	if err != nil {
 		return nil // no trace (or unreadable): nothing billed to attribute
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	seen := map[scorecardPair]bool{}
 	var pairs []scorecardPair
 	sc := bufio.NewScanner(f)
@@ -165,7 +165,7 @@ func phasesForPair(wf asset.Workflow, pair scorecardPair) []string {
 	return phases
 }
 
-// runScorecardUpdate shells the runnable learning-loop step for ONE pair:
+// The scorecard update helpers shell the runnable learning-loop step for ONE pair:
 //
 //	node harness/scorecard-update.mjs --model <m> --task-type <tt> \
 //	     --trace <root>/.forge/trace.jsonl --out <root>/.agent/routing/scorecards.json \
@@ -183,10 +183,6 @@ func phasesForPair(wf asset.Workflow, pair scorecardPair) []string {
 // stderr WARNING with the captured output, then returns — the loop moves to the next pair
 // and the run's exit code is untouched. The scorecard is enrichment; a producer hiccup
 // must never abort or re-color the run.
-func runScorecardUpdate(root string, p scorecardPair, logln func(string), iterations int, reworked bool) {
-	runScorecardUpdateWithOut(root, p, scorecardPath(root), logln, iterations, reworked)
-}
-
 // runScorecardUpdateWithOut is like runScorecardUpdate but writes to an explicit
 // output path instead of the default scorecardPath(root). Used by forge scorecard
 // rebuild to write to an arbitrary --out file.
@@ -241,7 +237,7 @@ func traceHasModelCostForRun(path, runID string) bool {
 	if err != nil {
 		return false // no trace (or unreadable) -> treat as "no real cost", skip wind-down
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024) // tolerate long trace lines
 	for sc.Scan() {

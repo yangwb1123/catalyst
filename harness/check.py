@@ -39,6 +39,8 @@ except ImportError:  # pragma: no cover - clear actionable error, not a crash
 from mode_gating_check import check_workflow_mode_gating  # noqa: E402 — after yaml guard
 from release_boundary_check import check_release_boundary  # noqa: E402 — after yaml guard
 from workflow_control_check import check_workflow_control_flow  # noqa: E402 — after yaml guard
+from agent_engineering_check import check_agent_engineering_spec  # noqa: E402 — after yaml guard
+from engineering_check_support import read_bounded_spec  # noqa: E402 — after yaml guard
 # --- domain constants (data-driven) ------------------------------------------
 
 VALID_TIERS = {"Haiku", "Sonnet", "Opus"}  # v1: Claude only (DECISIONS D4)
@@ -82,11 +84,11 @@ PRIORITY_RANKS = {1, 2, 3}
 # --- helpers -----------------------------------------------------------------
 
 def _load_yaml(path):
-    """Parse one YAML file; return (data, error_message_or_None)."""
+    """Parse bounded YAML while preserving this checker's safe-load semantics."""
     try:
-        with path.open(encoding="utf-8") as fh:
-            return yaml.safe_load(fh), None
-    except (yaml.YAMLError, OSError) as exc:
+        raw = read_bounded_spec(path)
+        return yaml.safe_load(raw.decode("utf-8")), None
+    except (yaml.YAMLError, OSError, UnicodeDecodeError, ValueError, RecursionError) as exc:
         return None, str(exc).replace("\n", " ")
 
 
@@ -436,6 +438,7 @@ CHECKS = [
     check_workflow_verdict_contracts,
     check_workflow_control_flow,
     check_release_boundary,
+    check_agent_engineering_spec,
 ]
 
 def _collect_phases(node):

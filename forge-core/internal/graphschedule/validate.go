@@ -103,7 +103,7 @@ func validPredecessors(nodes []ScheduledNode, ordinals map[string]uint16) bool {
 }
 
 func validInitialFrontier(value ExecutionSchedule) bool {
-	if value.InitialFrontier == nil || len(value.InitialFrontier) == 0 ||
+	if len(value.InitialFrontier) == 0 ||
 		value.InitialNode != value.Nodes[0].NodeID || value.InitialFrontier[0] != value.InitialNode {
 		return false
 	}

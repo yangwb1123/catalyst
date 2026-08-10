@@ -267,7 +267,7 @@ func readReleaseFileBytes(root, relative string) ([]byte, bool, error) {
 	if err != nil {
 		return nil, false, fmt.Errorf("open release file %q: %w", relative, err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	opened, err := file.Stat()
 	if err != nil || !os.SameFile(before, opened) || !releaseRegularSingleLink(opened) {
 		return nil, false, fmt.Errorf("release file %q changed while opening", relative)

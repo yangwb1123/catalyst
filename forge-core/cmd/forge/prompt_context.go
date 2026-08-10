@@ -220,7 +220,8 @@ func observeFor(isClaude bool, costSink func(phase, model string, usd float64, l
 	return func(phase, output string, latency time.Duration) {
 		sanitized := sanitizeAgentOutput(output)
 		if phaseOut != nil && feedsForward != nil && feedsForward(phase) {
-			recordForwardedPhaseOutput(
+			// The raw validator owns failure; conversion failure leaves this ledger empty.
+			_ = recordForwardedPhaseOutput(
 				phaseOut, phase, unwrapClaudeResult(sanitized), contractLookups,
 			)
 		}

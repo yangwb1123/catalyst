@@ -1,0 +1,145 @@
+{
+  "api_version": "forgeos.aadm.cognitive-atom-golden/v1",
+  "canonicalization": "forgeos.canonical-json/v1",
+  "digest_domains": {
+    "atom": "forgeos.aadm.cognitive-atom.v1",
+    "atom_id": "forgeos.aadm.cognitive-atom-id.v1",
+    "atom_set": "forgeos.aadm.cognitive-atom-set.v1",
+    "source_closure": "forgeos.governance.record-set.v1"
+  },
+  "expected": {
+    "atom_id": "atom-99045a525632c18aec6b1c783ba1925e4603b4378b389e5ce86621ab25b145ae",
+    "atom_set_sha256": "c0078321dd632937f5b2d541ae763d88015fd2f7adec62d15e071c279dcadcf1",
+    "canonical_atom_json": "{\"api_version\":\"forgeos.aadm.cognitive-atom/v1\",\"integrity\":{\"canonical_sha256\":\"3905ee9fd8293924644dd5d9a1da522ffe944dc58db51a26ee6c584e1335ce20\",\"canonicalization\":\"forgeos.canonical-json/v1\"},\"kind\":\"CognitiveAtom\",\"metadata\":{\"atom_id\":\"atom-99045a525632c18aec6b1c783ba1925e4603b4378b389e5ce86621ab25b145ae\",\"context_sha256\":\"1111111111111111111111111111111111111111111111111111111111111111\",\"policy_sha256\":\"2222222222222222222222222222222222222222222222222222222222222222\",\"project_id\":\"catalyst\",\"scope\":\"module:harness\",\"source_revision\":\"654befb\",\"source_tree_sha256\":\"3333333333333333333333333333333333333333333333333333333333333333\",\"task_id\":\"fixture-task-001\"},\"source\":{\"canonical_sha256\":\"953b14819b50db73cdb3e1b523303c7c669a7e9bbeeacefcd89c4b25681da8ec\",\"claim_aggregate_id\":\"claim-harness-check\",\"claim_record_id\":\"kcr-0001\",\"claim_sequence\":1,\"closure_byte_count\":3411,\"closure_record_count\":2,\"closure_sha256\":\"d895441903bf26d4f68402e7f85a377f1d59127941e20ab2f411756d6d8c9650\",\"record_kind\":\"KnowledgeClaim\"},\"spec\":{\"atom_type\":\"fact\",\"authority_ref\":null,\"contradicting_evidence_record_ids\":[],\"derived_from_claim_record_ids\":[],\"epistemic_state\":\"candidate\",\"hardness\":\"none\",\"instruction_allowed\":false,\"projection_confidence_micros\":null,\"projection_mode\":\"shadow\",\"proposition\":{\"object_type\":\"string\",\"object_value\":\"构建通过 <>& 😀\",\"predicate\":\"has-structural-check-result\",\"subject\":\"module:harness\"},\"supporting_evidence_record_ids\":[\"evr-0001\"],\"validity\":{\"valid_from_unix_ms\":1700000001000,\"valid_until_unix_ms\":1700086400000}}}",
+    "canonical_atom_payload_json": "{\"api_version\":\"forgeos.aadm.cognitive-atom/v1\",\"integrity\":{\"canonical_sha256\":\"\",\"canonicalization\":\"forgeos.canonical-json/v1\"},\"kind\":\"CognitiveAtom\",\"metadata\":{\"atom_id\":\"atom-99045a525632c18aec6b1c783ba1925e4603b4378b389e5ce86621ab25b145ae\",\"context_sha256\":\"1111111111111111111111111111111111111111111111111111111111111111\",\"policy_sha256\":\"2222222222222222222222222222222222222222222222222222222222222222\",\"project_id\":\"catalyst\",\"scope\":\"module:harness\",\"source_revision\":\"654befb\",\"source_tree_sha256\":\"3333333333333333333333333333333333333333333333333333333333333333\",\"task_id\":\"fixture-task-001\"},\"source\":{\"canonical_sha256\":\"953b14819b50db73cdb3e1b523303c7c669a7e9bbeeacefcd89c4b25681da8ec\",\"claim_aggregate_id\":\"claim-harness-check\",\"claim_record_id\":\"kcr-0001\",\"claim_sequence\":1,\"closure_byte_count\":3411,\"closure_record_count\":2,\"closure_sha256\":\"d895441903bf26d4f68402e7f85a377f1d59127941e20ab2f411756d6d8c9650\",\"record_kind\":\"KnowledgeClaim\"},\"spec\":{\"atom_type\":\"fact\",\"authority_ref\":null,\"contradicting_evidence_record_ids\":[],\"derived_from_claim_record_ids\":[],\"epistemic_state\":\"candidate\",\"hardness\":\"none\",\"instruction_allowed\":false,\"projection_confidence_micros\":null,\"projection_mode\":\"shadow\",\"proposition\":{\"object_type\":\"string\",\"object_value\":\"构建通过 <>& 😀\",\"predicate\":\"has-structural-check-result\",\"subject\":\"module:harness\"},\"supporting_evidence_record_ids\":[\"evr-0001\"],\"validity\":{\"valid_from_unix_ms\":1700000001000,\"valid_until_unix_ms\":1700086400000}}}",
+    "canonical_atom_set_json": "[{\"api_version\":\"forgeos.aadm.cognitive-atom/v1\",\"integrity\":{\"canonical_sha256\":\"3905ee9fd8293924644dd5d9a1da522ffe944dc58db51a26ee6c584e1335ce20\",\"canonicalization\":\"forgeos.canonical-json/v1\"},\"kind\":\"CognitiveAtom\",\"metadata\":{\"atom_id\":\"atom-99045a525632c18aec6b1c783ba1925e4603b4378b389e5ce86621ab25b145ae\",\"context_sha256\":\"1111111111111111111111111111111111111111111111111111111111111111\",\"policy_sha256\":\"2222222222222222222222222222222222222222222222222222222222222222\",\"project_id\":\"catalyst\",\"scope\":\"module:harness\",\"source_revision\":\"654befb\",\"source_tree_sha256\":\"3333333333333333333333333333333333333333333333333333333333333333\",\"task_id\":\"fixture-task-001\"},\"source\":{\"canonical_sha256\":\"953b14819b50db73cdb3e1b523303c7c669a7e9bbeeacefcd89c4b25681da8ec\",\"claim_aggregate_id\":\"claim-harness-check\",\"claim_record_id\":\"kcr-0001\",\"claim_sequence\":1,\"closure_byte_count\":3411,\"closure_record_count\":2,\"closure_sha256\":\"d895441903bf26d4f68402e7f85a377f1d59127941e20ab2f411756d6d8c9650\",\"record_kind\":\"KnowledgeClaim\"},\"spec\":{\"atom_type\":\"fact\",\"authority_ref\":null,\"contradicting_evidence_record_ids\":[],\"derived_from_claim_record_ids\":[],\"epistemic_state\":\"candidate\",\"hardness\":\"none\",\"instruction_allowed\":false,\"projection_confidence_micros\":null,\"projection_mode\":\"shadow\",\"proposition\":{\"object_type\":\"string\",\"object_value\":\"构建通过 <>& 😀\",\"predicate\":\"has-structural-check-result\",\"subject\":\"module:harness\"},\"supporting_evidence_record_ids\":[\"evr-0001\"],\"validity\":{\"valid_from_unix_ms\":1700000001000,\"valid_until_unix_ms\":1700086400000}}}]",
+    "canonical_atom_sha256": "3905ee9fd8293924644dd5d9a1da522ffe944dc58db51a26ee6c584e1335ce20",
+    "canonical_source_closure_json": "[{\"api_version\":\"forgeos.governance/v1\",\"integrity\":{\"canonical_sha256\":\"dc6963537f59e0594e6d5d1651e16070b81365ff379acc5ec09956b18e4b17b4\",\"canonicalization\":\"forgeos.canonical-json/v1\"},\"kind\":\"EvidenceRecord\",\"metadata\":{\"aggregate_id\":\"evidence-check-pass\",\"context_sha256\":\"1111111111111111111111111111111111111111111111111111111111111111\",\"created_at_unix_ms\":1700000000000,\"created_by\":{\"authority_domain\":\"declared-shadow\",\"principal_id\":\"fixture-tool\",\"principal_type\":\"tool\",\"role\":\"fixture-producer\",\"run_id\":\"fixture-run-001\"},\"policy_sha256\":\"2222222222222222222222222222222222222222222222222222222222222222\",\"project_id\":\"catalyst\",\"record_id\":\"evr-0001\",\"scope\":\"module:harness\",\"sequence\":1,\"source_revision\":\"654befb\",\"source_tree_sha256\":\"3333333333333333333333333333333333333333333333333333333333333333\",\"supersedes_record_ids\":[]},\"spec\":{\"artifact_sha256\":\"4444444444444444444444444444444444444444444444444444444444444444\",\"collector\":{\"collector_id\":\"python-checker\",\"collector_type\":\"tool\",\"collector_version\":\"v1\",\"parameters_sha256\":\"5555555555555555555555555555555555555555555555555555555555555555\",\"run_id\":\"fixture-run-001\"},\"content_role\":\"untrusted_data\",\"directness\":\"direct\",\"evidence_type\":\"test_run\",\"locator\":{\"content_sha256\":\"6666666666666666666666666666666666666666666666666666666666666666\",\"exit_code\":0,\"line_end\":null,\"line_start\":null,\"locator_ref\":\"python3 -B harness/agent_engineering_check.py .\",\"locator_type\":\"command\"},\"observed_at_unix_ms\":1700000000000,\"sensitivity\":\"internal\",\"source_snapshot\":{\"snapshot_id\":\"snapshot-fixture-001\",\"snapshot_sha256\":\"7777777777777777777777777777777777777777777777777777777777777777\",\"snapshot_type\":\"repository\"},\"source_trust\":\"observed\",\"subjects\":[\"module:harness\"]},\"status\":{\"reason_codes\":[],\"state\":\"valid\",\"valid_from_unix_ms\":1700000000000,\"valid_until_unix_ms\":null}},{\"api_version\":\"forgeos.governance/v1\",\"integrity\":{\"canonical_sha256\":\"953b14819b50db73cdb3e1b523303c7c669a7e9bbeeacefcd89c4b25681da8ec\",\"canonicalization\":\"forgeos.canonical-json/v1\"},\"kind\":\"KnowledgeClaim\",\"metadata\":{\"aggregate_id\":\"claim-harness-check\",\"context_sha256\":\"1111111111111111111111111111111111111111111111111111111111111111\",\"created_at_unix_ms\":1700000001000,\"created_by\":{\"authority_domain\":\"declared-shadow\",\"principal_id\":\"fixture-agent\",\"principal_type\":\"agent\",\"role\":\"claim-author\",\"run_id\":\"fixture-run-001\"},\"policy_sha256\":\"2222222222222222222222222222222222222222222222222222222222222222\",\"project_id\":\"catalyst\",\"record_id\":\"kcr-0001\",\"scope\":\"module:harness\",\"sequence\":1,\"source_revision\":\"654befb\",\"source_tree_sha256\":\"3333333333333333333333333333333333333333333333333333333333333333\",\"supersedes_record_ids\":[]},\"spec\":{\"claim_type\":\"fact\",\"confidence_micros\":null,\"contradicting_evidence_record_ids\":[],\"decision_authority\":null,\"derived_from_claim_record_ids\":[],\"object_type\":\"string\",\"object_value\":\"构建通过 <>& 😀\",\"owner\":{\"principal_id\":\"governance-review\",\"principal_type\":\"human\"},\"predicate\":\"has-structural-check-result\",\"queue_ref\":null,\"reasoning\":\"候选事实仅引用一次受限测试观察；它不等于完成、可信或已批准。\",\"review_by_unix_ms\":1700086400000,\"subject\":\"module:harness\",\"supporting_evidence_record_ids\":[\"evr-0001\"],\"validation_plan\":null},\"status\":{\"reason_codes\":[],\"state\":\"candidate\",\"valid_from_unix_ms\":1700000001000,\"valid_until_unix_ms\":1700086400000}}]",
+    "source_closure_sha256": "d895441903bf26d4f68402e7f85a377f1d59127941e20ab2f411756d6d8c9650"
+  },
+  "source_records": [
+    {
+      "api_version": "forgeos.governance/v1",
+      "integrity": {
+        "canonical_sha256": "dc6963537f59e0594e6d5d1651e16070b81365ff379acc5ec09956b18e4b17b4",
+        "canonicalization": "forgeos.canonical-json/v1"
+      },
+      "kind": "EvidenceRecord",
+      "metadata": {
+        "aggregate_id": "evidence-check-pass",
+        "context_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "created_at_unix_ms": 1700000000000,
+        "created_by": {
+          "authority_domain": "declared-shadow",
+          "principal_id": "fixture-tool",
+          "principal_type": "tool",
+          "role": "fixture-producer",
+          "run_id": "fixture-run-001"
+        },
+        "policy_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "project_id": "catalyst",
+        "record_id": "evr-0001",
+        "scope": "module:harness",
+        "sequence": 1,
+        "source_revision": "654befb",
+        "source_tree_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+        "supersedes_record_ids": []
+      },
+      "spec": {
+        "artifact_sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+        "collector": {
+          "collector_id": "python-checker",
+          "collector_type": "tool",
+          "collector_version": "v1",
+          "parameters_sha256": "5555555555555555555555555555555555555555555555555555555555555555",
+          "run_id": "fixture-run-001"
+        },
+        "content_role": "untrusted_data",
+        "directness": "direct",
+        "evidence_type": "test_run",
+        "locator": {
+          "content_sha256": "6666666666666666666666666666666666666666666666666666666666666666",
+          "exit_code": 0,
+          "line_end": null,
+          "line_start": null,
+          "locator_ref": "python3 -B harness/agent_engineering_check.py .",
+          "locator_type": "command"
+        },
+        "observed_at_unix_ms": 1700000000000,
+        "sensitivity": "internal",
+        "source_snapshot": {
+          "snapshot_id": "snapshot-fixture-001",
+          "snapshot_sha256": "7777777777777777777777777777777777777777777777777777777777777777",
+          "snapshot_type": "repository"
+        },
+        "source_trust": "observed",
+        "subjects": [
+          "module:harness"
+        ]
+      },
+      "status": {
+        "reason_codes": [],
+        "state": "valid",
+        "valid_from_unix_ms": 1700000000000,
+        "valid_until_unix_ms": null
+      }
+    },
+    {
+      "api_version": "forgeos.governance/v1",
+      "integrity": {
+        "canonical_sha256": "953b14819b50db73cdb3e1b523303c7c669a7e9bbeeacefcd89c4b25681da8ec",
+        "canonicalization": "forgeos.canonical-json/v1"
+      },
+      "kind": "KnowledgeClaim",
+      "metadata": {
+        "aggregate_id": "claim-harness-check",
+        "context_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "created_at_unix_ms": 1700000001000,
+        "created_by": {
+          "authority_domain": "declared-shadow",
+          "principal_id": "fixture-agent",
+          "principal_type": "agent",
+          "role": "claim-author",
+          "run_id": "fixture-run-001"
+        },
+        "policy_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "project_id": "catalyst",
+        "record_id": "kcr-0001",
+        "scope": "module:harness",
+        "sequence": 1,
+        "source_revision": "654befb",
+        "source_tree_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+        "supersedes_record_ids": []
+      },
+      "spec": {
+        "claim_type": "fact",
+        "confidence_micros": null,
+        "contradicting_evidence_record_ids": [],
+        "decision_authority": null,
+        "derived_from_claim_record_ids": [],
+        "object_type": "string",
+        "object_value": "构建通过 <>& 😀",
+        "owner": {
+          "principal_id": "governance-review",
+          "principal_type": "human"
+        },
+        "predicate": "has-structural-check-result",
+        "queue_ref": null,
+        "reasoning": "候选事实仅引用一次受限测试观察；它不等于完成、可信或已批准。",
+        "review_by_unix_ms": 1700086400000,
+        "subject": "module:harness",
+        "supporting_evidence_record_ids": [
+          "evr-0001"
+        ],
+        "validation_plan": null
+      },
+      "status": {
+        "reason_codes": [],
+        "state": "candidate",
+        "valid_from_unix_ms": 1700000001000,
+        "valid_until_unix_ms": 1700086400000
+      }
+    }
+  ],
+  "task_id": "fixture-task-001"
+}

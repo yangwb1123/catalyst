@@ -53,7 +53,12 @@ fn supplied_completed_receipt_must_match_every_bound_identity() {
         GroupAgentScheduledNodePredecessorOutcome::Completed,
     );
     assert!(
-        validate_supplied_receipts("graph-run", std::slice::from_ref(&expected), std::slice::from_ref(&supplied)).is_ok()
+        validate_supplied_receipts(
+            "graph-run",
+            std::slice::from_ref(&expected),
+            std::slice::from_ref(&supplied),
+        )
+        .is_ok()
     );
 
     let mut mismatched = expected;
@@ -96,13 +101,17 @@ fn duplicate_missing_and_unrelated_supplied_receipts_are_rejected() {
     ];
 
     assert!(
-        validate_supplied_receipts("graph-run", &expected, &[
-            frontend.clone(),
-            frontend.clone()
-        ],)
+        validate_supplied_receipts(
+            "graph-run",
+            &expected,
+            &[frontend.clone(), frontend.clone()],
+        )
         .is_err()
     );
-    assert!(validate_supplied_receipts("graph-run", &expected, std::slice::from_ref(&frontend)).is_err());
+    assert!(
+        validate_supplied_receipts("graph-run", &expected, std::slice::from_ref(&frontend))
+            .is_err()
+    );
     assert!(validate_supplied_receipts("graph-run", &expected, &[frontend, unrelated]).is_err());
 }
 

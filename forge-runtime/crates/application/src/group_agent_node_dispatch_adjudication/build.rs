@@ -1,8 +1,9 @@
 use crate::runtime_domain::{
-    GROUP_AGENT_NODE_TERMINAL_ARTIFACT_PROTOCOL_VERSION, GROUP_AGENT_NODE_TERMINAL_ARTIFACT_VERSION,
-    GroupAgentNodeDispatchClaim, GroupAgentNodeTerminalArtifact,
-    GroupAgentNodeTerminalArtifactKind, GroupAgentNodeTerminalClassification,
-    group_agent_node_terminal_artifact_id, group_agent_node_terminal_output_sha256,
+    GROUP_AGENT_NODE_TERMINAL_ARTIFACT_PROTOCOL_VERSION,
+    GROUP_AGENT_NODE_TERMINAL_ARTIFACT_VERSION, GroupAgentNodeDispatchClaim,
+    GroupAgentNodeTerminalArtifact, GroupAgentNodeTerminalArtifactKind,
+    GroupAgentNodeTerminalClassification, group_agent_node_terminal_artifact_id,
+    group_agent_node_terminal_output_sha256,
 };
 
 use super::GroupAgentNodeDispatchAdjudicationServiceError;

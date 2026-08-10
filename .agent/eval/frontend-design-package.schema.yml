@@ -1,0 +1,263 @@
+api_version: forgeos.agent-engineering/v1
+kind: FrontendDesignPackageContract
+status: active_contract
+runtime_binding: artifact_validation_only
+owner: product-design-engineering
+
+artifact:
+  name: FrontendDesignPackage
+  version: 1
+  max_bytes: 393216
+  evidence_file_max_bytes: 8388608
+  result_classification: structurally_valid_only
+  required_fields:
+    - api_version
+    - task_id
+    - source_revision
+    - source_tree_sha256
+    - context_sha256
+    - requirements_sha256
+    - policy_sha256
+    - profile_catalog_sha256
+    - schema_sha256
+    - principals
+    - materiality
+    - workflow_profile
+    - change_kinds
+    - applicability
+    - review
+    - classification
+    - profile_overrides
+    - flows
+    - state_model
+    - decisions
+    - readiness
+    - verification_cases
+    - assumptions
+    - evidence_artifacts
+    - proof_claims
+    - residual_risks
+  forbidden_fields: [completed, accepted, approved, verdict, gate_result, quality_passed]
+
+fields:
+  api_version: { type: const, value: forgeos.frontend-design/v1 }
+  task_id: { type: string, non_empty: true, max_length: 128 }
+  source_revision: { type: string, non_empty: true, max_length: 256 }
+  source_tree_sha256: { type: digest, algorithm: sha256 }
+  context_sha256: { type: digest, algorithm: sha256 }
+  requirements_sha256: { type: digest, algorithm: sha256 }
+  policy_sha256: { type: pinned_digest, target: frontend-design-gates.yml }
+  profile_catalog_sha256: { type: pinned_digest, target: frontend-profiles.yml }
+  schema_sha256: { type: pinned_digest, target: self }
+  principals: { type: principal_record }
+  materiality: { type: enum, values: [L1, L2, L3, L4] }
+  workflow_profile: { type: enum, values: [W1_standard, W2_assured, W3_systemic] }
+  change_kinds: { type: list, min_items: 1, unique: true, items: trigger_id }
+  applicability: { type: applicability_record }
+  review: { type: review_record }
+  classification: { type: classification_record }
+  profile_overrides: { type: list, max_items: 2, unique_by: field, items: profile_override_record }
+  flows: { type: list, min_items: 1, max_items: 64, items: flow_record }
+  state_model: { type: state_model_record }
+  decisions: { type: list, exact_dimension_coverage: true, items: decision_record }
+  readiness: { type: list, exact_dimension_coverage: true, items: readiness_record }
+  verification_cases: { type: list, max_items: 128, items: verification_case }
+  assumptions: { type: list, max_items: 128, items: assumption_record }
+  evidence_artifacts: { type: list, min_items: 1, max_items: 512, items: evidence_artifact }
+  proof_claims: { type: list, min_items: 1, max_items: 512, items: proof_claim }
+  residual_risks: { type: list, max_items: 128, items: risk_record }
+
+records:
+  principal_record:
+    required_fields: [package_author_id, implementer_id]
+  applicability_record:
+    required_fields: [status, reason, source_claim_ids, reviewer_id, reviewer_independent]
+    statuses: [required, skip_requested]
+  review_record:
+    required_fields: [reviewer_id, independent, proof_claim_ids]
+    independent: true
+  classified_value:
+    required_fields: [value, claim_type, confidence, proof_claim_id, assumption_id]
+    claim_types: [fact, inference]
+  classification_record:
+    required_fields:
+      - product_type
+      - business_domain
+      - page_pattern
+      - profile_id
+      - platform
+      - density
+      - motion_level
+      - operation_frequency
+      - data_density
+      - risk_level
+      - primary_user
+      - primary_task
+      - rationale
+  profile_override_record:
+    required_fields: [field, default, selected, reason, scope, risk, compensating_proof_claim_ids, reviewer_id, expires_at]
+    fields: [density, motion_level]
+  flow_record:
+    required_fields:
+      - id
+      - kind
+      - actor
+      - goal
+      - entry
+      - trigger
+      - preconditions
+      - steps
+      - terminal_outcome
+      - context_preservation
+      - permissions
+      - risk_level
+      - proof_claim_ids
+    kinds: [primary, alternative, error, cancel, recovery]
+  flow_step:
+    required_fields: [action_id, expected_feedback, expected_state, context_preserved]
+  state_model_record:
+    required_fields: [id, initial_state, states, proof_claim_ids]
+  state_record:
+    required_fields: [id, label, terminal, actions]
+  action_record:
+    required_fields:
+      - id
+      - label
+      - effect_class
+      - permissions
+      - data_guards
+      - system_guards
+      - next_states
+      - feedback
+      - recovery
+    effect_classes: [read_only, reversible_write, destructive, external_commit, legal_commitment, financial_commitment]
+  decision_record:
+    required_fields:
+      - id
+      - status
+      - facts
+      - decision
+      - alternatives
+      - rationale
+      - proof_claim_ids
+      - open_questions
+      - residual_risks
+      - reversibility
+      - decision_kinds
+      - migration_cost
+      - blast_radius
+      - adr_ref
+      - reviewer_id
+      - revisit_trigger
+    statuses: [addressed, not_applicable, blocked]
+    decision_kinds: [shared_token, shared_component, public_interaction_contract, auth_surface, other]
+  sourced_claim:
+    required_fields: [claim_type, statement, proof_claim_id, confidence]
+    claim_types: [fact]
+  readiness_record:
+    required_fields: [id, result, rationale, proof_claim_ids]
+    results: [ready, not_ready, not_applicable]
+  verification_case:
+    required_fields: [id, kind, subject_id, source_tree_sha256, build_sha256, fixture_id, environment, artifact_ids, proof_claim_ids]
+    kinds: [interaction, capture]
+  environment_record:
+    required_fields: [platform, runtime, viewport, dpr, theme, locale, timezone, color_scheme, reduced_motion, text_scale, fonts_digest]
+  assumption_record:
+    required_fields: [id, statement, confidence, impact_if_wrong, reversibility, affected_dimensions, verification_plan, proof_claim_ids, status]
+    statuses: [unverified, accepted, verified, rejected]
+  evidence_artifact:
+    required_fields: [id, kind, media_type, locator, content_sha256, bytes, source_revision, integrity, provenance, producer, producer_id]
+    kinds: [source, tool_output, review_output, screenshot, trace, visual_diff, accessibility_report]
+    integrity: digest_bound
+    provenance: declarative
+  proof_claim:
+    required_fields: [id, claim_class, proof_types, subject_type, subject_id, artifact_ids, claimant, claimant_id, result]
+    classes: [source_observation, execution_observation, review_observation]
+    results: [observed, passed, failed, not_executed, inconclusive]
+  risk_record:
+    required_fields: [id, severity, statement, mitigation, proof_claim_ids]
+    severities: [low, medium, high, critical]
+  business_ui_composition_record:
+    media_type: application/vnd.forgeos.business-ui-composition+json
+    api_version: forgeos.business-ui-composition/v1
+    required_fields:
+      - api_version
+      - id
+      - surface_id
+      - views
+      - data_semantics
+      - page_states
+      - regions
+      - axes
+      - groups
+      - spacing_relations
+      - strokes
+      - shape_rules
+      - responsive_variants
+      - load_bearing_elements
+      - optical_adjustments
+    relationship: digest_bound_source_artifact_referenced_by_layout_component_composition
+    axis_member_semantics: exact reciprocal membership for region axis_refs element axis_refs and group primary_axis_ref within the axis scope subtree
+    page_state_semantics: action-bearing records require non-empty business_state_ids; a pure waiting or display state may precede a business object; when recovery_action_ids is non-empty every covered business state has a recovery action whose canonical source_state matches it
+  data_semantics_record:
+    kinds: [business_fact, computed_judgment, ai_recommendation, derived_display]
+    null_semantics: [value, zero, unknown, unavailable, unauthorized, not_applicable, not_calculated]
+    human_confirmation: [not_applicable, optional, required]
+  geometry_report_record:
+    media_type: application/vnd.forgeos.ui-geometry-report+json
+    api_version: forgeos.ui-geometry-report/v1
+    required_fields: [api_version, contract_sha256, case_id, source_tree_sha256, build_sha256, fixture_id, environment_sha256, coordinate_space, runner, assertions]
+    at_least_one_required_assertion: true
+    assertion_results: [passed, failed, inconclusive, not_executed]
+    authority: declarative_execution_observation_only
+  geometry_coordinate_space_record:
+    required_fields: [unit, origin, axis_orientation, device_pixels_per_unit]
+    units: [css_px, logical_dp, device_px]
+    origins: [capture_viewport_top_left]
+    axis_orientations: [x_right_y_down]
+    scale_binding: css_px and logical_dp require device_pixels_per_unit equal to the capture environment DPR; device_px requires exactly 1
+    numeric_scope: every observation value and tolerance value in the report uses this one coordinate space
+
+semantic_rules:
+  - id: exact_dimension_coverage
+    rule: decisions and readiness cover every canonical dimension exactly once
+  - id: no_completion_authority
+    rule: forbidden completion fields are rejected recursively
+  - id: classification_provenance
+    rule: each classification fact resolves to a source observation and each inference resolves to an assumption
+  - id: profile_and_pattern_catalog
+    rule: profile_id and page_pattern resolve to the pinned catalog; density or motion deviations require an exact typed profile override whose risk contributes to the effective risk floor; catalog product_types and preferred_patterns are routing heuristics while a source-bound explicit project profile takes precedence
+  - id: triggered_dimensions_cannot_be_na
+    rule: trigger-bound dimensions cannot be not_applicable
+  - id: flow_path_completeness
+    rule: flow records satisfy required structure and exact subject-bound proof; the package has a primary path and conditionally required mutation form high-risk and recovery declarations; whole-graph reachability remains a project or reviewer proof
+  - id: state_action_integrity
+    rule: declared initial and next state references resolve and effectful action records contain permission data system feedback and recovery fields; business authorization reachability and runtime behavior remain project or reviewer proofs
+  - id: high_risk_action_controls
+    rule: destructive external legal and financial effects activate their risk floor and cannot omit review and recovery
+  - id: proof_claim_artifact_resolution
+    rule: proof claims resolve bounded digest-checked repository artifacts and exact subjects
+  - id: evidence_class_separation
+    rule: source execution and review claims use only allowed proof and result classes
+  - id: verification_context_binding
+    rule: interaction and capture cases structurally declare source build fixture environment artifacts and exact-subject claims; every case artifact set exactly matches its subject-bound claim artifacts; v1 does not authenticate those declarations or tool execution
+  - id: capture_reuse_prohibited
+    rule: identical screenshot or visual-diff bytes cannot prove multiple capture cases even under different artifact ids
+  - id: screenshot_png_integrity
+    rule: screenshot artifacts are bounded structurally decodable PNG files whose pixel size equals declared viewport times DPR
+  - id: visual_cannot_override_behavior
+    rule: visual score and review cannot satisfy interaction accessibility or failure-recovery proofs
+  - id: independent_review
+    rule: reviewer differs from package author and implementer; skip and controlled-decision reviewers match it; declarative reviewer claims and artifacts are internally identity-consistent
+  - id: readiness_dependency
+    rule: ready requires addressed dependent decisions and positive typed claims
+  - id: n_a_requires_evidence
+    rule: not_applicable requires rationale and applicability review proof
+  - id: digest_is_not_identity
+    rule: validation classifies structure and byte integrity only, never tool or reviewer authenticity
+  - id: business_ui_composition_binding
+    rule: applicable page and layout changes provide a versioned composition source artifact bound to the exact layout decision; multi-role view-flow pairs have load-bearing spatial traces; action-bearing page states bind non-empty canonical business states and declared recovery covers every such state while pure waiting or display states may precede the business object; axis member_refs exactly reciprocate region element and group axis declarations inside the ownership subtree; no record creates new authorization truth
+  - id: geometry_measurement_binding
+    rule: visual readiness for a composed surface binds a geometry tool-output report to the exact capture source build fixture environment and composition digest; the report declares one capture-origin coordinate space whose unit-to-device-pixel scale agrees with the capture DPR, all observation and tolerance values use that space, and every required assertion passes; failures inconclusive or not-executed results cannot be hidden by a score or claim wording
+  - id: data_semantics_honesty
+    rule: business facts computed judgments derived displays and AI recommendations declare authority definition unit time freshness access uncertainty explanation confirmation and explicit null semantics rather than sharing one ambiguous empty representation

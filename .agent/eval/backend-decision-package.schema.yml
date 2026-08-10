@@ -1,0 +1,193 @@
+api_version: forgeos.agent-engineering/v1
+kind: BackendDecisionPackageContract
+status: active_contract
+runtime_binding: artifact_validation_only
+owner: architecture
+
+artifact:
+  name: BackendDecisionPackage
+  version: 1
+  max_bytes: 262144
+  evidence_file_max_bytes: 8388608
+  required_fields:
+    - api_version
+    - task_id
+    - source_revision
+    - source_tree_sha256
+    - context_sha256
+    - requirements_sha256
+    - policy_sha256
+    - schema_sha256
+    - principals
+    - materiality
+    - workflow_profile
+    - change_kinds
+    - applicability
+    - review
+    - decisions
+    - readiness
+    - assumptions
+    - evidence
+    - residual_risks
+  forbidden_fields: [completed, accepted, approved, verdict, gate_result]
+
+fields:
+  api_version: { type: const, value: forgeos.backend-decision/v1 }
+  task_id: { type: string, non_empty: true, max_length: 128 }
+  source_revision: { type: string, non_empty: true, max_length: 256 }
+  source_tree_sha256: { type: digest, algorithm: sha256 }
+  context_sha256: { type: digest, algorithm: sha256 }
+  requirements_sha256: { type: digest, algorithm: sha256 }
+  policy_sha256: { type: pinned_digest, target: backend-decision-gates.yml }
+  schema_sha256: { type: pinned_digest, target: self }
+  principals: { type: principal_record }
+  materiality: { type: enum, values: [L1, L2, L3, L4] }
+  workflow_profile: { type: enum, values: [W1_standard, W2_assured, W3_systemic] }
+  change_kinds: { type: list, min_items: 1, unique: true, items: trigger_id }
+  applicability: { type: applicability_record }
+  review: { type: review_record }
+  decisions: { type: list, items: decision_record, exact_dimension_coverage: true }
+  readiness: { type: list, items: readiness_record, exact_dimension_coverage: true }
+  assumptions: { type: list, items: assumption_record, max_items: 128 }
+  evidence: { type: list, items: evidence_record, min_items: 1, max_items: 256 }
+  residual_risks: { type: list, items: risk_record, max_items: 128 }
+
+records:
+  principal_record:
+    required_fields: [package_author_id, implementer_id]
+    fields:
+      package_author_id: { type: string, non_empty: true, max_length: 128 }
+      implementer_id: { type: string, non_empty: true, max_length: 128 }
+
+  applicability_record:
+    required_fields: [status, reason, source_evidence_ids, reviewer_id, reviewer_independent]
+    fields:
+      status: { type: enum, values: [required, skip_requested] }
+      reason: { type: string, max_length: 4096 }
+      source_evidence_ids: { type: list, items: evidence_id, unique: true, max_items: 64 }
+      reviewer_id: { type: string, max_length: 128 }
+      reviewer_independent: { type: boolean }
+
+  review_record:
+    required_fields: [reviewer_id, independent, evidence_ids]
+    fields:
+      reviewer_id: { type: string, non_empty: true, max_length: 128 }
+      independent: { type: boolean, const: true }
+      evidence_ids: { type: list, items: evidence_id, min_items: 1, unique: true, max_items: 64 }
+
+  decision_record:
+    required_fields:
+      - id
+      - status
+      - facts
+      - decision
+      - alternatives
+      - rationale
+      - proof_refs
+      - open_questions
+      - residual_risks
+      - decision_kinds
+      - reversibility
+      - migration_cost
+      - blast_radius
+      - adr_ref
+      - reviewer_id
+      - revisit_trigger
+    fields:
+      id: { type: dimension_id }
+      status: { type: enum, values: [addressed, not_applicable, blocked] }
+      facts: { type: list, items: sourced_claim, max_items: 128 }
+      decision: { type: string, max_length: 8192 }
+      alternatives: { type: list, items: string, max_items: 32 }
+      rationale: { type: string, max_length: 8192 }
+      proof_refs: { type: list, items: evidence_id, unique: true, max_items: 128 }
+      open_questions: { type: list, items: string, max_items: 64 }
+      residual_risks: { type: list, items: string, max_items: 64 }
+      decision_kinds: { type: list, items: irreversible_kind_or_other, min_items: 1, unique: true, max_items: 8 }
+      reversibility: { type: enum, values: [high, medium, low, not_applicable] }
+      migration_cost: { type: string, max_length: 4096 }
+      blast_radius: { type: string, max_length: 4096 }
+      adr_ref: { type: string, max_length: 512 }
+      reviewer_id: { type: string, max_length: 128 }
+      revisit_trigger: { type: string, max_length: 4096 }
+
+  sourced_claim:
+    required_fields: [claim_type, statement, evidence_id, confidence]
+    fields:
+      claim_type: { type: enum, values: [fact, inference] }
+      statement: { type: string, non_empty: true, max_length: 4096 }
+      evidence_id: { type: evidence_id }
+      confidence: { type: number, minimum: 0.0, maximum: 1.0 }
+
+  assumption_record:
+    required_fields:
+      - id
+      - statement
+      - confidence
+      - impact_if_wrong
+      - reversibility
+      - affected_dimensions
+      - verification_plan
+      - proof_refs
+      - status
+    fields:
+      id: { type: string, non_empty: true, max_length: 128 }
+      statement: { type: string, non_empty: true, max_length: 4096 }
+      confidence: { type: number, minimum: 0.0, maximum: 1.0 }
+      impact_if_wrong: { type: number, minimum: 0.0, maximum: 1.0 }
+      reversibility: { type: number, minimum: 0.0, maximum: 1.0 }
+      affected_dimensions: { type: list, items: dimension_id, min_items: 1, unique: true }
+      verification_plan: { type: string, non_empty: true, max_length: 4096 }
+      proof_refs: { type: list, items: evidence_id, unique: true, max_items: 64 }
+      status: { type: enum, values: [unverified, accepted, verified, rejected] }
+
+  evidence_record:
+    required_fields: [id, kind, evidence_class, proof_types, subject_type, subject_id, locator, content_sha256, source_revision, producer, producer_id, result]
+    fields:
+      id: { type: string, non_empty: true, max_length: 128 }
+      kind: { type: const, value: repository_file }
+      evidence_class: { type: enum, values: [source_artifact, tool_receipt, review_receipt] }
+      proof_types: { type: list, items: proof_type, min_items: 1, unique: true, max_items: 64 }
+      subject_type: { type: enum, values: [decision, readiness, assumption, risk, review, applicability] }
+      subject_id: { type: string, non_empty: true, max_length: 128 }
+      locator: { type: repo_relative_regular_file }
+      content_sha256: { type: digest, algorithm: sha256 }
+      source_revision: { type: string, non_empty: true, max_length: 256 }
+      producer: { type: enum, values: [user, repository, tool, operator] }
+      producer_id: { type: string, non_empty: true, max_length: 128 }
+      result: { type: enum, values: [observed, passed, failed, not_executed, inconclusive] }
+
+  risk_record:
+    required_fields: [id, severity, statement, mitigation, proof_refs]
+    fields:
+      id: { type: string, non_empty: true, max_length: 128 }
+      severity: { type: enum, values: [low, medium, high, critical] }
+      statement: { type: string, non_empty: true, max_length: 4096 }
+      mitigation: { type: string, non_empty: true, max_length: 4096 }
+      proof_refs: { type: list, items: evidence_id, unique: true, max_items: 64 }
+
+  readiness_record:
+    required_fields: [id, result, rationale, proof_refs]
+    fields:
+      id: { type: readiness_dimension_id }
+      result: { type: enum, values: [ready, not_ready, not_applicable] }
+      rationale: { type: string, non_empty: true, max_length: 4096 }
+      proof_refs: { type: list, items: evidence_id, unique: true, max_items: 64 }
+
+semantic_rules:
+  - { id: exact_dimension_coverage, rule: Every decision and readiness dimension appears exactly once. }
+  - { id: addressed_requires_verified_evidence, rule: Addressed dimensions require current positive evidence and at least one alternative. }
+  - { id: not_applicable_is_evidenced, rule: Not-applicable requires positive evidence and cannot claim a decision. }
+  - { id: blocked_is_honest, rule: Blocked requires an open question and cannot claim a decision. }
+  - { id: evidence_is_resolved, rule: Every evidence locator is a bounded current repository regular file whose digest is streamed and recomputed by the CLI. }
+  - { id: proof_type_matches_subject, rule: Evidence class proof type and subject must satisfy the exact decision readiness review or applicability obligation it closes. }
+  - { id: assumptions_are_not_facts, rule: An unverified or accepted assumption cannot close a dimension as a fact. }
+  - { id: risky_assumptions_block, rule: High-risk unverified or rejected assumptions keep affected dimensions blocked or not ready. }
+  - { id: trigger_floors_apply, rule: Materiality and workflow meet every activated trigger floor. }
+  - { id: low_reversibility_is_controlled, rule: Low-reversibility or irreversible-kind decisions carry alternatives migration cost blast radius a resolved ADR the package independent reviewer and a revisit trigger. }
+  - { id: reviewer_is_independent, rule: The named reviewer differs from package author and implementer and review evidence is reviewer-scoped. }
+  - { id: readiness_is_not_completion, rule: Readiness is classified separately and never grants approval or completion. }
+  - { id: readiness_depends_on_decisions, rule: Ready requires every canonical decision dependency to be addressed. }
+  - { id: policy_and_schema_are_pinned, rule: The package binds the exact v1 policy and schema byte digests. }
+  - { id: critical_risk_is_not_ready, rule: Critical residual risk makes the package not ready. }
+  - { id: no_completion_authority, rule: The package cannot declare completion approval acceptance or a gate verdict. }

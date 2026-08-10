@@ -14,8 +14,8 @@ use forge_runtime_application::{
     GroupAgentNodeDispatchAdjudicationServiceError, GroupAgentNodeDispatchExecutionServiceError,
 };
 use forge_runtime_domain::{
-    GROUP_AGENT_GRAPH_RUN_TERMINAL_VERSION, ClaimGroupAgentNodeDispatch,
-    ClaimGroupAgentNodeDispatchResult, GroupAgentGraphRunEventKind, GroupAgentGraphRunStatus,
+    ClaimGroupAgentNodeDispatch, ClaimGroupAgentNodeDispatchResult,
+    GROUP_AGENT_GRAPH_RUN_TERMINAL_VERSION, GroupAgentGraphRunEventKind, GroupAgentGraphRunStatus,
     GroupAgentNodeDispatchAuthorization, GroupAgentNodeLifecycleInspection,
     GroupAgentNodeLifecycleStore, GroupAgentNodeTerminalArtifactKind,
     GroupAgentNodeTerminalClassification, GroupAgentNodeTerminalOutcome, HubStoreError,
@@ -72,7 +72,6 @@ async fn stranded() -> AdjudicationHarness {
     }
 }
 
-
 fn assert_terminal_state(inspection: &GroupAgentNodeLifecycleInspection) {
     assert_run_terminal(&inspection.graph_run.run);
     assert_hard_crash_evidence(inspection);
@@ -89,8 +88,14 @@ fn assert_hard_crash_evidence(inspection: &GroupAgentNodeLifecycleInspection) {
     assert!(inspection.active_lane.is_none());
 
     let artifact = inspection.artifact.as_ref().expect("hard-crash artifact");
-    assert_eq!(artifact.artifact_kind, GroupAgentNodeTerminalArtifactKind::Uncertainty);
-    assert_eq!(artifact.classification, GroupAgentNodeTerminalClassification::HardCrash);
+    assert_eq!(
+        artifact.artifact_kind,
+        GroupAgentNodeTerminalArtifactKind::Uncertainty
+    );
+    assert_eq!(
+        artifact.classification,
+        GroupAgentNodeTerminalClassification::HardCrash
+    );
     assert!(!artifact.provider_poll_started);
     assert!(!artifact.terminal_seen);
     assert!(!artifact.stream_eof_seen);
@@ -100,12 +105,15 @@ fn assert_hard_crash_evidence(inspection: &GroupAgentNodeLifecycleInspection) {
     assert!(!artifact.retry_authorized);
     assert!(artifact.created_at_ms >= inspection.claim.released_at_ms);
 
-    let receipt = inspection
-        .terminal_receipt
-        .as_ref()
-        .expect("Core receipt");
-    assert_eq!(receipt.node_outcome, GroupAgentNodeTerminalOutcome::FailedUncertain);
-    assert_eq!(receipt.graph_status, GroupAgentGraphRunStatus::FailedUncertain);
+    let receipt = inspection.terminal_receipt.as_ref().expect("Core receipt");
+    assert_eq!(
+        receipt.node_outcome,
+        GroupAgentNodeTerminalOutcome::FailedUncertain
+    );
+    assert_eq!(
+        receipt.graph_status,
+        GroupAgentGraphRunStatus::FailedUncertain
+    );
     assert_eq!(receipt.expected_last_event_seq, 4);
     assert!(receipt.lane_release_authorized);
     assert!(!receipt.retry_authorized);
@@ -137,9 +145,10 @@ async fn adjudication_writes_a_deterministic_failed_uncertain_terminal_without_s
     assert_terminal_state(&inspection);
     assert_eq!(harness.core_calls.load(Ordering::Acquire), 1);
 
-    let replay = harness.service.adjudicate(&harness.input).expect_err(
-        "re-adjudication of a terminal claim must be refused",
-    );
+    let replay = harness
+        .service
+        .adjudicate(&harness.input)
+        .expect_err("re-adjudication of a terminal claim must be refused");
     assert!(matches!(
         replay,
         GroupAgentNodeDispatchAdjudicationServiceError::Refused(
@@ -172,9 +181,7 @@ async fn a_concurrent_terminalizer_maps_to_cas_conflict_and_the_winner_commits()
         .expect_err("the live executor wins the CAS");
     assert!(matches!(
         error,
-        GroupAgentNodeDispatchAdjudicationServiceError::Refused(
-            AdjudicationRefused::CasConflict
-        )
+        GroupAgentNodeDispatchAdjudicationServiceError::Refused(AdjudicationRefused::CasConflict)
     ));
 
     // The winner's committed terminal state is intact and authoritative.
@@ -241,7 +248,9 @@ async fn wrong_operator_bodies_are_refused_as_digest_mismatch_before_any_core_ca
     assert!(matches!(
         error,
         GroupAgentNodeDispatchAdjudicationServiceError::Refused(
-            AdjudicationRefused::DigestMismatch { field: "authorization" }
+            AdjudicationRefused::DigestMismatch {
+                field: "authorization"
+            }
         )
     ));
     assert_eq!(harness.core_calls.load(Ordering::Acquire), 0);

@@ -85,7 +85,7 @@ func readSpec(source string, stdin io.Reader) (Spec, error) {
 	if err != nil {
 		return Spec{}, errInvalidSpec
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	return Decode(file)
 }
 

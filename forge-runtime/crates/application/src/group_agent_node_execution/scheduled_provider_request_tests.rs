@@ -79,11 +79,10 @@ fn service_uses_only_the_pure_codec_and_persists_its_exact_bytes() {
     request.scheduled_contract_id = hub.contract_id();
     let result = service.prepare(&request).expect("prepare through service");
 
-    assert_eq!(codec.calls(), [
-        "encode",
-        "validate_exact",
-        "validate_exact"
-    ]);
+    assert_eq!(
+        codec.calls(),
+        ["encode", "validate_exact", "validate_exact"]
+    );
     assert_eq!(hub.captured_body(), BODY);
     assert_eq!(result.inspection.provider_request_body, BODY);
 }
@@ -93,9 +92,12 @@ fn model_and_preparation_are_derived_only_from_the_validated_candidate() {
     let source = source();
     let model = model_request(&source.candidate);
     assert_eq!(model.system_prompt, source.candidate.request.system_prompt);
-    assert_eq!(model.messages, vec![Message::User {
-        text: source.candidate.request.user_prompt.clone()
-    }]);
+    assert_eq!(
+        model.messages,
+        vec![Message::User {
+            text: source.candidate.request.user_prompt.clone()
+        }]
+    );
     assert!(model.tools.is_empty());
     assert_eq!(
         model.max_output_tokens,

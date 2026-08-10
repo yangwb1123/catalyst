@@ -1,0 +1,210 @@
+{
+  "api_version": "forgeos.legacy-ai-batch.crosswalk/v1",
+  "kind": "LegacyAiBatchAfdsCrosswalk",
+  "source": {
+    "namespace": "forgeos.legacy-ai-batch",
+    "version": 1,
+    "afds_direct_write": false
+  },
+  "target": {
+    "namespace": "forgeos.frontend-design",
+    "version": 1,
+    "api_version": "forgeos.frontend-design/v1"
+  },
+  "policy": {
+    "purpose": "candidate_hint_only",
+    "exact_mapping_direct_write": false,
+    "ambiguous_mapping_action": "second_classification_required",
+    "ambiguous_mapping_rationale_required": true,
+    "unmapped_action": "blocked",
+    "classified_value_required": true,
+    "canonical_catalog": ".agent/engineering/frontend-profiles.yml",
+    "canonical_schema": ".agent/eval/frontend-design-package.schema.yml"
+  },
+  "profiles": {
+    "erp": {
+      "mapping": "exact",
+      "candidates": ["erp_mes_dense"],
+      "second_classification_required": false,
+      "rationale_required": true
+    },
+    "cms": {
+      "mapping": "exact",
+      "candidates": ["cms_editorial"],
+      "second_classification_required": false,
+      "rationale_required": true
+    },
+    "oa": {
+      "mapping": "exact",
+      "candidates": ["oa_workflow"],
+      "second_classification_required": false,
+      "rationale_required": true
+    },
+    "crm": {
+      "mapping": "exact",
+      "candidates": ["crm_relationship"],
+      "second_classification_required": false,
+      "rationale_required": true
+    },
+    "commerce": {
+      "mapping": "exact",
+      "candidates": ["commerce_transaction"],
+      "second_classification_required": false,
+      "rationale_required": true
+    },
+    "ai-agent": {
+      "mapping": "exact",
+      "candidates": ["ai_agent_workspace"],
+      "second_classification_required": false,
+      "rationale_required": true
+    },
+    "dashboard": {
+      "mapping": "ambiguous",
+      "candidates": ["analytics_decision", "data_wall"],
+      "second_classification_required": true,
+      "rationale_required": true
+    },
+    "immersive": {
+      "mapping": "exact",
+      "candidates": ["immersive_story"],
+      "second_classification_required": false,
+      "rationale_required": true
+    },
+    "marketing": {
+      "mapping": "exact",
+      "candidates": ["marketing_conversion"],
+      "second_classification_required": false,
+      "rationale_required": true
+    },
+    "mobile": {
+      "mapping": "exact",
+      "candidates": ["mobile_task"],
+      "second_classification_required": false,
+      "rationale_required": true
+    },
+    "unknown": {
+      "mapping": "unmapped",
+      "candidates": [],
+      "second_classification_required": true,
+      "rationale_required": true
+    }
+  },
+  "page_types": {
+    "form": {
+      "mapping": "exact",
+      "candidates": ["form"],
+      "second_classification_required": false,
+      "rationale_required": true
+    },
+    "table": {
+      "mapping": "ambiguous",
+      "candidates": ["list", "workbench"],
+      "second_classification_required": true,
+      "rationale_required": true
+    },
+    "detail": {
+      "mapping": "exact",
+      "candidates": ["detail"],
+      "second_classification_required": false,
+      "rationale_required": true
+    },
+    "workbench": {
+      "mapping": "exact",
+      "candidates": ["workbench"],
+      "second_classification_required": false,
+      "rationale_required": true
+    },
+    "wizard": {
+      "mapping": "exact",
+      "candidates": ["wizard"],
+      "second_classification_required": false,
+      "rationale_required": true
+    },
+    "editor": {
+      "mapping": "ambiguous",
+      "candidates": ["editor", "visual_editor"],
+      "second_classification_required": true,
+      "rationale_required": true
+    },
+    "canvas": {
+      "mapping": "exact",
+      "candidates": ["visual_editor"],
+      "second_classification_required": false,
+      "rationale_required": true
+    },
+    "chat": {
+      "mapping": "exact",
+      "candidates": ["agent_chat"],
+      "second_classification_required": false,
+      "rationale_required": true
+    },
+    "master-detail": {
+      "mapping": "ambiguous",
+      "candidates": ["list", "detail", "workbench"],
+      "second_classification_required": true,
+      "rationale_required": true
+    },
+    "settings": {
+      "mapping": "ambiguous",
+      "candidates": ["form", "detail"],
+      "second_classification_required": true,
+      "rationale_required": true
+    },
+    "timeline": {
+      "mapping": "exact",
+      "candidates": ["timeline"],
+      "second_classification_required": false,
+      "rationale_required": true
+    },
+    "map": {
+      "mapping": "ambiguous",
+      "candidates": ["dashboard", "workbench", "detail"],
+      "second_classification_required": true,
+      "rationale_required": true
+    },
+    "immersive": {
+      "mapping": "ambiguous",
+      "candidates": ["immersive", "landing"],
+      "second_classification_required": true,
+      "rationale_required": true
+    },
+    "auth": {
+      "mapping": "ambiguous",
+      "candidates": ["form", "wizard"],
+      "second_classification_required": true,
+      "rationale_required": true
+    }
+  },
+  "platforms": {
+    "tsx": {
+      "mapping": "ambiguous",
+      "candidates": ["web_desktop", "web_responsive"],
+      "second_classification_required": true,
+      "rationale_required": true
+    },
+    "vue": {
+      "mapping": "ambiguous",
+      "candidates": ["web_desktop", "web_responsive"],
+      "second_classification_required": true,
+      "rationale_required": true
+    },
+    "dart": {
+      "mapping": "ambiguous",
+      "candidates": ["ios", "android", "cross_platform"],
+      "second_classification_required": true,
+      "rationale_required": true
+    },
+    "rn": {
+      "mapping": "ambiguous",
+      "candidates": ["ios", "android", "cross_platform"],
+      "second_classification_required": true,
+      "rationale_required": true
+    },
+    "unknown": {
+      "mapping": "unmapped",
+      "candidates": [],
+      "second_classification_required": true,
+      "rationale_required": true
+    }
+  }
+}

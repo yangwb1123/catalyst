@@ -101,24 +101,24 @@ fn ensure_same_writeback(
 
 fn hub_error(error: HubStoreError) -> RunStoreError {
     match error {
-        HubStoreError::NotFound { entity, id } => RunStoreError::NotFound {
-            entity: run_entity(entity),
-            id,
+        HubStoreError::NotFound { entity, id } => match run_entity(entity) {
+            Some(entity) => RunStoreError::NotFound { entity, id },
+            None => unexpected_entity(entity),
         },
-        HubStoreError::Conflict { entity, message } => RunStoreError::Conflict {
-            entity: run_entity(entity),
-            message,
+        HubStoreError::Conflict { entity, message } => match run_entity(entity) {
+            Some(entity) => RunStoreError::Conflict { entity, message },
+            None => unexpected_entity(entity),
         },
         HubStoreError::Unavailable { message } => RunStoreError::Unavailable { message },
         HubStoreError::Corrupt { message } => RunStoreError::Corrupt { message },
     }
 }
 
-fn run_entity(entity: HubEntity) -> RunEntity {
+fn run_entity(entity: HubEntity) -> Option<RunEntity> {
     match entity {
-        HubEntity::Project => RunEntity::Project,
-        HubEntity::Conversation => RunEntity::Conversation,
-        HubEntity::Prompt => RunEntity::Prompt,
+        HubEntity::Project => Some(RunEntity::Project),
+        HubEntity::Conversation => Some(RunEntity::Conversation),
+        HubEntity::Prompt => Some(RunEntity::Prompt),
         HubEntity::Group
         | HubEntity::GroupProjectMember
         | HubEntity::GroupRun
@@ -134,8 +134,15 @@ fn run_entity(entity: HubEntity) -> RunEntity {
         | HubEntity::GroupAgentNodeExecutionContract
         | HubEntity::GroupAgentNodeDispatchRequest
         | HubEntity::GroupAgentNodeLifecycle
-        | HubEntity::GroupAgentScheduledNodeLifecycle => RunEntity::Run,
+        | HubEntity::GroupAgentScheduledNodeLifecycle
+        | HubEntity::GovernanceRecord => None,
     }
+}
+
+fn unexpected_entity(entity: HubEntity) -> RunStoreError {
+    corrupt(&format!(
+        "Run assistant writeback received unexpected Hub entity {entity:?}"
+    ))
 }
 
 fn conflict(entity: RunEntity, message: &str) -> RunStoreError {
@@ -154,5 +161,23 @@ fn corrupt(message: &str) -> RunStoreError {
 fn unavailable(error: impl std::fmt::Display) -> RunStoreError {
     RunStoreError::Unavailable {
         message: error.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unrelated_hub_entity_is_not_misreported_as_a_run() {
+        let error = HubStoreError::Conflict {
+            entity: HubEntity::GovernanceRecord,
+            message: "unreachable foreign error".into(),
+        };
+        let mapped = hub_error(error);
+        let RunStoreError::Corrupt { message } = mapped else {
+            panic!("unexpected Hub entity must be corruption");
+        };
+        assert!(message.contains("GovernanceRecord"), "{message}");
     }
 }

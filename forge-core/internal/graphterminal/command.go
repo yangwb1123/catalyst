@@ -83,7 +83,7 @@ func readControl(source string, stdin io.Reader) (TerminalControl, error) {
 	if err != nil {
 		return TerminalControl{}, errInvalidControl
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	return DecodeControl(file)
 }
 

@@ -24,14 +24,29 @@ fn invoke_with_api_key(
     arguments: &[&str],
     api_key: Option<&str>,
 ) -> std::process::Output {
+    invoke_with_openai_env(state, cwd, json, arguments, api_key, None)
+}
+
+fn invoke_with_openai_env(
+    state: &Path,
+    cwd: &Path,
+    json: bool,
+    arguments: &[&str],
+    api_key: Option<&str>,
+    base_url: Option<&str>,
+) -> std::process::Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_forge-runtime"));
     command
         .current_dir(cwd)
         .env_remove("OPENAI_API_KEY")
+        .env_remove("OPENAI_BASE_URL")
         .arg("--state-dir")
         .arg(state);
     if let Some(api_key) = api_key {
         command.env("OPENAI_API_KEY", api_key);
+    }
+    if let Some(base_url) = base_url {
+        command.env("OPENAI_BASE_URL", base_url);
     }
     if json {
         command.arg("--json");
@@ -40,7 +55,21 @@ fn invoke_with_api_key(
 }
 
 fn run_json(state: &Path, cwd: &Path, arguments: &[&str]) -> Value {
-    let output = invoke(state, cwd, true, arguments);
+    parse_json_output(&invoke(state, cwd, true, arguments))
+}
+
+fn run_json_with_base_url(state: &Path, cwd: &Path, arguments: &[&str], base_url: &str) -> Value {
+    parse_json_output(&invoke_with_openai_env(
+        state,
+        cwd,
+        true,
+        arguments,
+        None,
+        Some(base_url),
+    ))
+}
+
+fn parse_json_output(output: &std::process::Output) -> Value {
     assert!(
         output.status.success(),
         "command failed:\n{}",
@@ -131,6 +160,33 @@ fn prepare_is_local_exact_idempotent_and_private_by_default() {
     assert_request_contract(&fixture, analysis_id);
     assert_private(&first);
     assert_private(&replay);
+}
+
+#[test]
+fn prepare_normalizes_a_trailing_slash_self_hosted_base() {
+    let fixture = Fixture::new();
+    let prepared = run_json_with_base_url(
+        fixture.state.path(),
+        fixture.cwd.path(),
+        &[
+            "group",
+            "analysis",
+            "prepare",
+            &fixture.group_run_id,
+            "--model",
+            "test-model",
+            "--max-output-tokens",
+            "1024",
+            "--idempotency-key",
+            "trailing-base-analysis-key",
+        ],
+        "https://llm.internal.example/v1/",
+    );
+
+    assert_eq!(
+        prepared["inspection"]["analysis"]["config"]["endpoint"],
+        "https://llm.internal.example/v1/responses"
+    );
 }
 
 #[test]

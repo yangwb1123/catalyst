@@ -63,7 +63,7 @@ locator 可机器复验，但不把 Agent 的“clear”判断或机会价值冒
 ## 引擎 (Engines)
 Gateway · Orchestrator · Agent-Runtime · **Model-Router** · Context-Engine · Memory-Engine ·
 Knowledge-Engine · **Evaluation-Engine** · **Sandbox(载重墙)** · Web-UI
-> **v2 现状**:forge-core Go 运行时当前 **36 包**（35 个 internal + `cmd/forge`，纯标准库零依赖；仅含测试的 `internal/adr` 不计入运行时包）,已落地 5 个核心引擎与可工作的本地 Agent-Runtime 切片:
+> **v2 现状**:forge-core Go 运行时当前 **38 包**（37 个 internal（含嵌套包）+ `cmd/forge`，纯标准库零依赖；仅含测试的 `internal/adr` 不计入运行时包）,已落地 5 个核心引擎与可工作的本地 Agent-Runtime 切片:
 > **Orchestrator**(`internal/orchestrator`)· **Model-Router**(`routing`)· **Context-Engine**(`prompt`)·
 > **Memory-Engine**(`memory`)· **Evaluation-Engine**(`converge`);Agent-Runtime 已具备本地命令执行、预算/超时/进程组、最小环境、stdin prompt、产物溯源与 run lock。`forge run --chain` 以版本化状态跨 Discover→Design→Review→Build→Deploy→Evolve 持久恢复，拒绝/cycle/max-stage/策略 halt 均失败关闭。
 > `forge-runtime/` 现有 Rust 原生多轮模型/工具循环、SQLite local-first Conversation Hub 与 durable Project Run：无路径 Global、有路径 Project、Group 联动；execution-bound Project Run、append-only event journal、O(1) 增量语义 cursor、同快照 inspection、严格有界 causal user/assistant history、Run 原子授权 assistant 写回、terminal/incomplete/pending-tool 判定均跨进程持久化。Group dossier 可被原子冻结为独立 prepared Group Run，幂等重放精确旧快照且不查询最新历史；独立 Group Execution 能纯本地验证冻结输入并恢复 content-free integrity receipt。其后的 two-phase Group analysis 在 SQLite v5 先原子准备 exact、零工具、`store:false` 请求，再经当次显式同意、claim 前凭证/目标预检和单赢家 authority 至多外发一次；claim 后不自动重发，只有完整 provider terminal 能原子提交结果，默认输出隐藏正文。SQLite v6 又能把同一 frozen source 的 2–8 份 completed 分析按声明顺序冻结为本地 canonical panel，同 key 精确重放并在 show 时重验所有来源，默认不显示结果正文；这仍只是并排组装。SQLite v7 再以独立 consent/claim/result journal 对一个 exact panel 做单模型综合：唯一 user message 是 canonical panel manifest，不重发原始 dossier，单赢家外发且 uncertainty 不自动重试，固定本地 artifact/no-writeback，并明确不冒充讨论、共识或事实验证。SQLite v8 进一步持久化 exact Group Run 上的 manager 指令、frozen member task assignments、dependency edges 与 deterministic waves，作为 `forge-core` 唯一调度器和 Rust 单任务 Agent Loop 之间的 immutable interchange artifact；SQLite v9 被动接收 Go `forge graph-plan` 生成的 canonical Core Plan并冻结 `awaiting_execution_contract` Run；SQLite v10 再由 Rust 导出 exact private control snapshot、Go 唯一选择 `plan.waves[0][0]` 并生成 canonical Node Execution Contract、Rust 以 seq/head CAS 登记唯一契约和第二事件，把 Run 推到 `awaiting_core_dispatch`；SQLite v11 使用现有 Responses 纯 codec 固定 exact provider body 与 content-addressed Node Dispatch Request，再以 seq-2/head CAS 追加第三事件并停在 `awaiting_dispatch_authorization`。Go 仍是唯一调度 owner；v11 准备链不释放 authority，也不把 topology waves、契约或 request presence 冒充执行。SQLite v12 只对严格单节点/单 wave/零 edge Graph 开放完整 effectful 生命周期：seq-3/head 与 Hub-global Project lane 原子 claim 后一次消费 exact body，bounded 收集 terminal/EOF 或 uncertainty，Go Core 从真实 v4 control 产生 terminal receipt，Rust 再原子保存 artifact/receipt、追加 seq 5、释放 lane 并进入 completed/failed/failed_uncertain。默认 deterministic/offline；显式 Project Run `--live` 默认零工具，仅 exact `--allow-read` 授权，并启用固定 HTTPS origin、无 redirect/隐式 retry、`store:false` 完整 validated output-item 回放、phase-aware final projection、terminal status/item identity 校验及 transport/SSE/token/output 全套上限；incomplete 永不释放工具。SQLite open→PRAGMA/WAL→schema 有统一 5 秒重试，DB/WAL/SHM 私有权限及 workspace capability 失败有并发/反例回归。后续 v17–v24 已交付非初始节点候选、per-node request/lifecycle 存储、predecessor receipt/content disclosure、wave-ready/admit、本地 hard-crash adjudication与 8 MiB successor candidate 持久化上限。当前仍缺顶层整图执行循环、resume/branching、远程账号与同步、共享 ACL/Group 多 Agent discussion、受控写/进程工具及 Rust runtime 自身的 OS 沙箱整合。
@@ -80,7 +80,7 @@ Knowledge-Engine · **Evaluation-Engine** · **Sandbox(载重墙)** · Web-UI
 >
 > **Gateway · 完整 Knowledge-Engine · Web-UI 仍为路线图；Go Docker/Firecracker runner 已落地，完整 coding-workspace 交换仍待后续。**
 
-## AI Engineering OS 治理知识层（目标，非现状）
+## AI Engineering OS 治理知识层（0F-A 与 0F-B–1 local journal 已实现；其余为目标）
 
 ADR 0037 将下一层组织冻结为「生命周期决策节点 × 可复用 Capability/Skill × 显式 CapabilityGrant」：Agent
 instance 只是一次 Run 中的临时装配，不因角色名自动取得权限。目标 Governance Kernel 先统一
@@ -92,7 +92,13 @@ DiscretionEnvelope/rolling controller），并在 Node16 加入 evidence-first R
 ExecutionTarget/Attempt/Artifact/Lease 定义成独立、默认 OFF 的 Device Fabric。Decision Kernel 只决定做什么/是否允许，
 Execution Fabric 只执行获准 TaskSpec，Evidence/Verifier 和 Governance Kernel 独立裁决结果与学习，避免同一 Agent 自决自验。
 
-完整 00–16 节点 SOP、工程模式适用条件、治理数据契约和分阶段验收见
+ADR 0045 已实现严格 EvidenceRecord/KnowledgeClaim v1、跨 Go/Rust/Python canonical golden 与 universal shadow checker；它只验证
+候选记录的字节、摘要、状态和引用，不认证身份、不形成 durable truth、不授权、不推进 lifecycle。ADR 0046 冻结本地
+GovernanceRecordJournal v1：只原子追加 exact v1 bytes、返回 `stored|exact_replay`、默认读取 metadata，并维护可重建的
+`structural_sequence_only` head；引用闭包最多 1,024 dependency records、16,777,216 candidate+closure bytes 和 256 derivation edges，三者只作
+resource-exhaustion admissibility。Rust domain/application/store、SQLite v25、CLI、migration/compatibility 与对抗门禁已完成，并经独立复审和
+`forge accept` 验收；scaffold 只继承治理资产，不安装 `forge-runtime`，缺兼容 binary 时必须记 `not_executed`。该完成状态不扩张
+contract 边界，structural head 仍不表示 truth、authority、freshness、conflict resolution 或 current knowledge。完整 00–16 节点 SOP、工程模式适用条件、治理数据契约和分阶段验收见
 [`docs/design/ai-engineering-os/`](../docs/design/ai-engineering-os/README.md)。该目录和其中
 `capability-catalog.v1.yml`、AADM/Reflection/Device 文档当前都是 `planning_only`；完整 Knowledge-Engine、通用
 CapabilityGrant、严格 ContextPackage、Meta Reflection、Capability Registry 与远程 Device Fabric 均尚未实现，不得从

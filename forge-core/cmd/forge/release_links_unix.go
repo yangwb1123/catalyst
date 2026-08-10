@@ -34,7 +34,7 @@ func releasePinnedExecutionSupport() error {
 	if err != nil {
 		return fmt.Errorf("release executable pinning requires memfd sealing: %w", err)
 	}
-	defer probe.Close()
+	defer func() { _ = probe.Close() }()
 	if err := sealReleaseMemfd(probe); err != nil {
 		return fmt.Errorf("release executable pinning requires memfd sealing: %w", err)
 	}
@@ -105,7 +105,7 @@ func verifyForgeGitRoot(root string) (bool, error) {
 	}
 	top := strings.TrimSpace(string(topRaw))
 	if top == "" {
-		return false, fmt.Errorf("Git returned an empty worktree toplevel")
+		return false, fmt.Errorf("git returned an empty worktree toplevel")
 	}
 	rootInfo, rootErr := os.Stat(resolvedRoot)
 	topInfo, topErr := os.Stat(top)
@@ -122,7 +122,7 @@ func nearestGitControlRoot(root string) (string, bool, error) {
 		if err == nil {
 			valid := validGitControl(control, info)
 			if cursor == root && !valid {
-				return "", false, fmt.Errorf("Git control path %q is not a valid real directory or gitfile", control)
+				return "", false, fmt.Errorf("git control path %q is not a valid real directory or gitfile", control)
 			}
 			if valid {
 				return cursor, true, nil
@@ -187,7 +187,7 @@ func readSmallGitFile(path string) (string, bool) {
 		return "", false
 	}
 	file := os.NewFile(uintptr(fd), path)
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	info, err := file.Stat()
 	if err != nil || !info.Mode().IsRegular() || !releaseRegularSingleLink(info) {
 		return "", false
@@ -267,7 +267,7 @@ func executePinnedReleaseAgent(args []string) error {
 	if err != nil {
 		return err
 	}
-	defer pinned.Close()
+	defer func() { _ = pinned.Close() }()
 	if err := inheritPinnedFD(pinned); err != nil {
 		return err
 	}
@@ -284,7 +284,7 @@ func preparePinnedReleaseExecutable(path, expectedSHA256 string) (*os.File, erro
 	if err != nil {
 		return nil, err
 	}
-	defer source.Close()
+	defer func() { _ = source.Close() }()
 	pinned, err := createReleaseMemfd()
 	if err != nil {
 		return nil, err
@@ -292,7 +292,7 @@ func preparePinnedReleaseExecutable(path, expectedSHA256 string) (*os.File, erro
 	keep := false
 	defer func() {
 		if !keep {
-			pinned.Close()
+			_ = pinned.Close()
 		}
 	}()
 	if err := populateAndSealReleaseMemfd(pinned, source); err != nil {
@@ -309,7 +309,7 @@ func preparePinnedReleaseExecutable(path, expectedSHA256 string) (*os.File, erro
 		return nil, err
 	}
 	if err := pinned.Close(); err != nil {
-		readOnly.Close()
+		_ = readOnly.Close()
 		return nil, fmt.Errorf("close writable release-agent memfd handle: %w", err)
 	}
 	pinned = readOnly
@@ -365,7 +365,7 @@ func createReleaseMemfd() (*os.File, error) {
 	}
 	file := os.NewFile(fd, "forge-release-agent")
 	if file == nil {
-		syscall.Close(int(fd))
+		_ = syscall.Close(int(fd))
 		return nil, fmt.Errorf("create release-agent memfd file handle")
 	}
 	return file, nil
@@ -428,12 +428,12 @@ func reopenSealedReleaseMemfd(file *os.File) (*os.File, error) {
 	before, beforeErr := file.Stat()
 	after, afterErr := readOnly.Stat()
 	if beforeErr != nil || afterErr != nil || !os.SameFile(before, after) {
-		readOnly.Close()
+		_ = readOnly.Close()
 		return nil, fmt.Errorf("sealed release-agent memfd identity changed while reopening")
 	}
 	seals, err := releaseMemfdSeals(readOnly)
 	if err != nil || seals&releaseSealMask != releaseSealMask {
-		readOnly.Close()
+		_ = readOnly.Close()
 		return nil, fmt.Errorf("reopened release-agent memfd lost required seals")
 	}
 	return readOnly, nil
@@ -482,7 +482,7 @@ func openPinnedReleaseSource(path string) (*os.File, error) {
 	opened, err := source.Stat()
 	if err != nil || !os.SameFile(before, opened) ||
 		!opened.Mode().IsRegular() || opened.Mode().Perm()&0o111 == 0 {
-		source.Close()
+		_ = source.Close()
 		return nil, fmt.Errorf("trusted claude executable changed while opening")
 	}
 	return source, nil

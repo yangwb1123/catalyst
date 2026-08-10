@@ -1,4 +1,7 @@
+pub mod cognitive_atom_contract;
 mod event;
+pub mod governance_contract;
+mod governance_record_journal;
 mod group_agent_graph;
 mod group_agent_graph_run;
 mod group_agent_node_execution;
@@ -22,6 +25,7 @@ mod tool;
 pub use event::{
     Cancellation, EventSink, EventSinkError, PROTOCOL_VERSION, RuntimeEvent, RuntimeEventKind,
 };
+pub use governance_record_journal::*;
 pub use group_agent_graph::{
     GROUP_AGENT_GRAPH_MANIFEST_DIGEST_DOMAIN, GROUP_AGENT_GRAPH_VERSION, GroupAgentGraphEdge,
     GroupAgentGraphInspection, GroupAgentGraphManager, GroupAgentGraphManifest,
@@ -219,8 +223,7 @@ pub use group_model_analysis::{
     MAX_GROUP_MODEL_ANALYSIS_OUTPUT_TOKENS, MAX_GROUP_MODEL_ANALYSIS_REQUEST_BYTES,
     MAX_GROUP_MODEL_ANALYSIS_RESULT_BYTES, MAX_GROUP_MODEL_ANALYSIS_SYSTEM_PROMPT_BYTES,
     PrepareGroupModelAnalysis, PrepareGroupModelAnalysisDisposition,
-    PrepareGroupModelAnalysisResult,
-    endpoint_allowed,
+    PrepareGroupModelAnalysisResult, endpoint_allowed,
 };
 pub use group_panel_synthesis::{
     ClaimGroupPanelSynthesisDispatch, ClaimGroupPanelSynthesisDispatchResult,

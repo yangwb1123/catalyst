@@ -6,12 +6,11 @@ use std::process::Command;
 
 use forge_runtime_domain::{
     GROUP_AGENT_GRAPH_SCHEDULER_PROTOCOL_VERSION,
-    GROUP_AGENT_SCHEDULED_NODE_CONTRACT_DIGEST_DOMAIN,
-    GROUP_AGENT_SCHEDULED_NODE_CONTRACT_VERSION,
+    GROUP_AGENT_SCHEDULED_NODE_CONTRACT_DIGEST_DOMAIN, GROUP_AGENT_SCHEDULED_NODE_CONTRACT_VERSION,
     GROUP_AGENT_SCHEDULED_NODE_EXECUTION_PROTOCOL_VERSION,
-    GROUP_AGENT_SCHEDULED_NODE_REQUEST_DIGEST_DOMAIN,
-    GROUP_AGENT_SCHEDULED_NODE_REQUEST_VERSION,
+    GROUP_AGENT_SCHEDULED_NODE_REQUEST_DIGEST_DOMAIN, GROUP_AGENT_SCHEDULED_NODE_REQUEST_VERSION,
     MAX_GROUP_AGENT_SCHEDULED_NODE_CONTRACT_BYTES,
+    MAX_GROUP_AGENT_SCHEDULED_NODE_PREDECESSOR_OUTPUT_BYTES,
 };
 
 fn spec_value(table: &str, key: &str) -> String {
@@ -22,7 +21,10 @@ fn spec_value(table: &str, key: &str) -> String {
         .output()
         .expect("run spec_check.py");
     assert!(output.status.success(), "spec_check {table}/{key} failed");
-    String::from_utf8(output.stdout).expect("spec value UTF-8").trim().to_owned()
+    String::from_utf8(output.stdout)
+        .expect("spec value UTF-8")
+        .trim()
+        .to_owned()
 }
 
 fn spec_uint(table: &str, key: &str) -> u64 {
@@ -75,9 +77,7 @@ fn spec_bounds_match_rust_constants() {
         spec_uint("bounds", "contract_bytes.max"),
     );
     assert_eq!(
-        MAX_GROUP_AGENT_SCHEDULED_NODE_CONTRACT_BYTES as u64,
-        spec_uint("bounds", "contract_bytes.max"),
+        MAX_GROUP_AGENT_SCHEDULED_NODE_PREDECESSOR_OUTPUT_BYTES as u64,
+        spec_uint("bounds", "predecessor_output_bytes.max"),
     );
-    // predecessor_output_bytes.max 由同 spec 文档约束(Go 侧同源校验)。
-    assert_eq!(spec_uint("bounds", "predecessor_output_bytes.max"), 1_048_576);
 }

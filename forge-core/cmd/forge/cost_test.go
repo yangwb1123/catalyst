@@ -460,7 +460,9 @@ func TestCheckpointHook_IterationEventCarriesNoCost(t *testing.T) {
 	hook := checkpointHook(runOpts{root: root, mode: "balanced"}, asset.Workflow{Stage: "evolve"},
 		trace.NewTracer(&buf), &runBudget{}, func(string) {}, nil, nil)
 
-	hook(2, converge.Signals{RoadmapCompletion: 0.75, GatesGreen: true}, 4200)
+	if err := hook(2, converge.Signals{RoadmapCompletion: 0.75, GatesGreen: true}, 4200); err != nil {
+		t.Fatalf("checkpoint hook: %v", err)
+	}
 
 	// The TRACE iteration event carries no cost (cost_usd_micros is a per-phase agent-event
 	// field). The checkpoint's SpentUsdMicros is a SEPARATE concern (checkpoint JSON, not the

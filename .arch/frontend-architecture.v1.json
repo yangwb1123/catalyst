@@ -1,0 +1,36 @@
+{
+  "schema": "forgeos.frontend-architecture/v1",
+  "mode": "shadow",
+  "targets": [],
+  "adapterSupport": {
+    "typescript": "available_when_project_typescript_resolves",
+    "vue": "planned_inconclusive_when_configured",
+    "dart": "planned_inconclusive_when_configured"
+  },
+  "budgetDefaults": {
+    "enforcement": "review",
+    "filesPerModule": 20,
+    "publicSymbols": 8,
+    "directModuleDependencies": 10,
+    "directoryDepth": 5,
+    "godSignalFamilies": 3,
+    "physicalLines": 300,
+    "topLevelDeclarations": 20,
+    "imports": 20,
+    "exports": 10,
+    "stateCalls": 12,
+    "effectCalls": 8,
+    "eventHandlers": 8,
+    "branchPoints": 15
+  },
+  "nonWaivableRules": [
+    "FEARCH-CONFIG-001",
+    "FEARCH-OWNERSHIP-001",
+    "FEARCH-DIRECTION-001",
+    "FEARCH-CYCLE-001"
+  ],
+  "waivableRules": [
+    "FEARCH-PUBLIC-001",
+    "FEARCH-BUDGET-001"
+  ]
+}

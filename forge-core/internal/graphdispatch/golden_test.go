@@ -131,14 +131,5 @@ func decodeFixtureSnapshot(t *testing.T, fixture sharedFixture) ControlSnapshot 
 }
 
 func (options fixtureOptions) options() ExecutionOptions {
-	return ExecutionOptions{
-		Endpoint: options.Endpoint, Model: options.Model,
-		MaxOutputTokens:       options.MaxOutputTokens,
-		MaxModelOutputBytes:   options.MaxModelOutputBytes,
-		MaxModelEvents:        options.MaxModelEvents,
-		TimeoutMilliseconds:   options.TimeoutMilliseconds,
-		MaxCostUSDMicros:      options.MaxCostUSDMicros,
-		PricingSnapshotSHA256: options.PricingSnapshotSHA256,
-		MaxResultBytes:        options.MaxResultBytes,
-	}
+	return ExecutionOptions(options)
 }

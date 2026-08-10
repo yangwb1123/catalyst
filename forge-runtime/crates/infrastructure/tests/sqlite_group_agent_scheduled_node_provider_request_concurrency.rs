@@ -1,18 +1,18 @@
 #[allow(dead_code)]
-mod sqlite_group_agent_graph_run_support;
-#[allow(dead_code)]
 mod sqlite_group_agent_graph_execution_schedule_support;
+#[allow(dead_code)]
+mod sqlite_group_agent_graph_run_support;
 #[allow(dead_code)]
 mod sqlite_group_agent_scheduled_node_contract_support;
 #[allow(dead_code)]
 mod sqlite_group_agent_scheduled_node_provider_request_support;
 
-
 #[test]
 fn adjudicate_update_columns_and_status_remain_live_in_current_schema() {
     // Stage-03 Finding 1 regression: v23 restores 'adjudicated' +
     // adjudicated_at_ms; a 0-row UPDATE validates the SQL on the live table.
-    let (fixture, _request) = sqlite_group_agent_scheduled_node_contract_support::prepared_fixture();
+    let (fixture, _request) =
+        sqlite_group_agent_scheduled_node_contract_support::prepared_fixture();
     let connection = fixture.connection();
     let updated = connection
         .execute(
@@ -34,8 +34,9 @@ fn adjudicate_update_columns_and_status_remain_live_in_current_schema() {
     assert_eq!(accepted, 1, "adjudicated must be a legal lifecycle status");
 }
 
-
-fn initial_admit_graph_run(initial: &forge_runtime_domain::GroupAgentScheduledNodeContractInspection) -> String {
+fn initial_admit_graph_run(
+    initial: &forge_runtime_domain::GroupAgentScheduledNodeContractInspection,
+) -> String {
     initial.record.graph_run_id.clone()
 }
 
@@ -58,9 +59,9 @@ fn assert_concurrent_request_count(
 
 #[test]
 fn two_nodes_prepare_provider_requests_concurrently_through_v22() {
+    use forge_runtime_domain::GroupAgentScheduledNodeProviderRequestStore;
     use sqlite_group_agent_graph_run_support as run_support;
     use sqlite_group_agent_scheduled_node_provider_request_support as request_support;
-    use forge_runtime_domain::GroupAgentScheduledNodeProviderRequestStore;
 
     // Diamond: initial (frontend) + zero-receipt backend successor share one
     // run; their provider requests are prepared from two threads at once —
@@ -88,7 +89,10 @@ fn two_nodes_prepare_provider_requests_concurrently_through_v22() {
             .record
             .execution_ordinal
     });
-    let mut ordinals = [thread_a.join().expect("thread a"), thread_b.join().expect("thread b")];
+    let mut ordinals = [
+        thread_a.join().expect("thread a"),
+        thread_b.join().expect("thread b"),
+    ];
     ordinals.sort_unstable();
     assert_eq!(ordinals, [0, 1], "both nodes' requests land in one run");
     assert_concurrent_request_count(&fixture, &initial_admit_graph_run(&initial), 2);

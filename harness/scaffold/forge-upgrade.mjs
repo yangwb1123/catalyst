@@ -17,14 +17,15 @@
 //       ► upgrade CANNOT fix this. Upgrade your `forge` binary separately (rebuild /
 //         reinstall it). This tool does not touch, and cannot change, binary behavior.
 //
-// ★ THE RED LINE — upgrade NEVER touches project IDENTITY (the 30%) ★
-// It mechanically iterates ONLY the two shared manifests (GOVERNANCE_DIRS +
-// COPIED_FILES, imported from forge-init — the SAME single source of truth the
-// scaffolder copies). It has NO render*/writeGenerated/identity code path at all,
-// so PROJECT/ROADMAP/CURRENT_SPRINT/project.yml/README/.gitignore/examples/ — the
-// user's task list, mode/lifecycle, prose — are unreachable by construction.
-// Overwriting them would be catastrophic data loss; the guarantee is that the code
-// literally cannot, reinforced by test #2 (written ∩ GENERATED_FILES = ∅).
+// ★ THE RED LINE — upgrade NEVER OVERWRITES project IDENTITY (the 30%) ★
+// Universal governance is mechanically limited to the two shared manifests
+// (GOVERNANCE_DIRS + COPIED_FILES). Three explicitly named `.arch` project
+// instances may be seeded when absent, but their O_EXCL create path preserves a
+// file that appears after planning and never truncates an existing instance.
+// PROJECT/ROADMAP/CURRENT_SPRINT/project.yml/README/.gitignore/examples/ remain
+// unreachable: there is no render*/writeGenerated identity code path. Tests prove
+// generated identity is disjoint, configured instances remain byte-identical,
+// and a concurrent create wins over a stale missing-instance plan.
 //
 // FAIL-SAFE: DRY by default — it reports the drift and writes NOTHING. Only an
 // explicit --apply mutates the project, and even then it first BACKS UP every file
@@ -48,6 +49,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 // Shared SINGLE SOURCE OF TRUTH: the same manifests forge-init copies, imported
 // (never re-transcribed) so scaffold and upgrade can never disagree on the 70%.
 import {
+  PROJECT_INSTANCE_FILES,
   SCAFFOLD_STATE_FILE,
   copiedProjection,
   renderScaffoldState,
@@ -55,6 +57,7 @@ import {
 import {
   assertNoSymlinkComponents,
   assertSafeRegularFile,
+  copyFileExclusiveNoFollow,
   copyFileNoFollow,
   readFileNoFollow,
   writeFileNoFollow,
@@ -65,8 +68,9 @@ import { removedFilesForProjection } from './upgrade-state.mjs';
 
 // manifestProjection(sourceRoot) -> the FLAT list of every relative path the 70%
 // covers: each GOVERNANCE_DIR expanded through enumerateTree (its concrete files)
-// plus the explicit COPIED_FILES. This — and ONLY this — is what upgrade ever
-// considers; identity files are not in either manifest, so they never appear.
+// plus the explicit COPIED_FILES. This is the complete overwrite/prune
+// projection. Project instances are outside it and use a separate, create-only
+// path; all other identity files never appear.
 export function manifestProjection(sourceRoot) {
   return copiedProjection(sourceRoot);
 }
@@ -247,7 +251,7 @@ function writeScaffoldState(targetDir, paths) {
 
 // printReport: the drift summary + per-file lines. THE WHOLE output in dry mode,
 // the preamble in apply mode, so the operator always sees exactly what will change.
-function printReport(drift, removed, { sha, apply }) {
+function printReport(drift, removed, projectInstances, { sha, apply }) {
   console.log(`forge-upgrade: ${apply ? 'APPLY' : 'DRY'} — synced from ${sha}`);
   console.log(
     `  changed: ${drift.changed.length}  added: ${drift.added.length}  ` +
@@ -255,7 +259,24 @@ function printReport(drift, removed, { sha, apply }) {
   );
   for (const rel of drift.changed) console.log(`  changed: ${rel}`);
   for (const rel of drift.added) console.log(`  added: ${rel}`);
+  for (const rel of projectInstances) console.log(`  initialize project instance if missing: ${rel}`);
   for (const rel of removed) console.log(`  removed: ${rel} (in project, gone from source)`);
+}
+
+function missingProjectInstances(targetDir) {
+  return PROJECT_INSTANCE_FILES.filter((rel) => !lexicalExists(join(targetDir, rel)));
+}
+
+export function seedProjectInstances(paths, sourceRoot, targetDir) {
+  let initialized = 0;
+  for (const rel of paths) {
+    const created = copyFileExclusiveNoFollow(
+      join(sourceRoot, rel), join(targetDir, rel),
+      `source ${rel}`, `project instance ${rel}`,
+    );
+    if (created) initialized += 1;
+  }
+  return initialized;
 }
 
 // printHonestScope: the standing disclaimer — upgrade resyncs the copied 70%; it
@@ -264,27 +285,29 @@ function printReport(drift, removed, { sha, apply }) {
 function printHonestScope() {
   console.log('');
   console.log('scope: I resync this project\'s COPIED harness + governance (the 70%).');
+  console.log('       Missing project-instance contracts are seeded once; existing instances are preserved.');
   console.log('       I do NOT change forge-core binary behavior — if a per-model');
   console.log('       latency/cost or other Go-runtime change is what you need,');
   console.log('       upgrade your `forge` binary separately (this tool cannot).');
 }
 
-function printApplySummary({ written, pruned, backedUp, backupDir, stateUpdated }) {
+function printApplySummary({ written, projectInitialized, pruned, backedUp, backupDir, stateUpdated }) {
   console.log('');
-  if (written === 0 && pruned === 0) {
+  if (written === 0 && projectInitialized === 0 && pruned === 0) {
     console.log(stateUpdated
       ? `forge-upgrade: APPLIED — governance already in sync; initialized ${SCAFFOLD_STATE_FILE}.`
       : 'forge-upgrade: APPLIED — already in sync; nothing written, nothing backed up.');
   } else {
     console.log(
       `forge-upgrade: APPLIED — ${written} file(s) resynced` +
+        (projectInitialized > 0 ? `; ${projectInitialized} project instance file(s) initialized` : '') +
         (pruned > 0 ? `; ${pruned} retired file(s) pruned` : '') +
         (backedUp > 0 ? `; ${backedUp} changed/pruned file(s) backed up to ${backupDir}` : ''),
     );
   }
 }
 
-function applyUpgrade(cfg, now, sourceRoot, targetDir, drift, removed) {
+function applyUpgrade(cfg, now, sourceRoot, targetDir, drift, removed, projectInstances) {
   const backupDir = cfg.backup
     ? join(targetDir, '.forge', 'upgrade-backup', backupTimestamp(now))
     : null;
@@ -308,6 +331,7 @@ function applyUpgrade(cfg, now, sourceRoot, targetDir, drift, removed) {
     backupDir,
   );
   const applied = applyDrift(drift, { sourceRoot, targetDir, backupDir });
+  const projectInitialized = seedProjectInstances(projectInstances, sourceRoot, targetDir);
   const pruned = cfg.prune
     ? pruneRemoved(removed, { targetDir, backupDir })
     : { pruned: 0, backedUp: 0 };
@@ -317,6 +341,7 @@ function applyUpgrade(cfg, now, sourceRoot, targetDir, drift, removed) {
   const stateUpdated = writeScaffoldState(targetDir, statePaths);
   const outcome = {
     written: applied.written,
+    projectInitialized,
     pruned: pruned.pruned,
     backedUp: applied.backedUp + pruned.backedUp,
     backupDir,
@@ -341,18 +366,28 @@ export function run(cfg, now = new Date()) {
   for (const rel of manifestProjection(sourceRoot)) {
     assertNoSymlinkComponents(join(targetDir, rel), rel);
   }
+  for (const rel of PROJECT_INSTANCE_FILES) {
+    assertSafeRegularFile(join(sourceRoot, rel), `source ${rel}`);
+    const destination = join(targetDir, rel);
+    assertNoSymlinkComponents(destination, rel);
+    if (lexicalExists(destination)) assertSafeRegularFile(destination, `project instance ${rel}`);
+  }
   const drift = classifyDrift(sourceRoot, targetDir);
   const removed = removedFiles(sourceRoot, targetDir);
+  const projectInstances = missingProjectInstances(targetDir);
   for (const rel of removed) assertNoSymlinkComponents(join(targetDir, rel), rel);
-  printReport(drift, removed, { sha: sourceSha(sourceRoot), apply: cfg.apply });
+  printReport(drift, removed, projectInstances, { sha: sourceSha(sourceRoot), apply: cfg.apply });
 
   if (!cfg.apply) {
     console.log('');
     console.log('forge-upgrade: DRY run — nothing written. Re-run with --apply to resync.');
     printHonestScope();
-    return { drift, removed, written: 0, pruned: 0, backedUp: 0, applied: false };
+    return {
+      drift, removed, projectInstances, written: 0, projectInitialized: 0,
+      pruned: 0, backedUp: 0, applied: false,
+    };
   }
-  return applyUpgrade(cfg, now, sourceRoot, targetDir, drift, removed);
+  return applyUpgrade(cfg, now, sourceRoot, targetDir, drift, removed, projectInstances);
 }
 
 function main(argv) {

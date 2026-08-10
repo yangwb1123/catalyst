@@ -86,13 +86,13 @@ fn shadowed_pragma_index_list_is_rejected_without_repair() {
 
 fn assert_valid_migration(fixture: (TempDir, std::path::PathBuf), seed_level: u8) {
     let (root, database) = fixture;
-    let connection = open_database(&database).expect("valid schema migrates to v24");
-    assert_eq!(schema_version(&connection), 25);
+    let connection = open_database(&database).expect("valid schema migrates to v26");
+    assert_eq!(schema_version(&connection), 26);
     assert_seed_data(&connection, seed_level);
     drop(connection);
 
-    let reopened = open_database(&database).expect("valid v24 schema reopens");
-    assert_eq!(schema_version(&reopened), 25);
+    let reopened = open_database(&database).expect("valid v26 schema reopens");
+    assert_eq!(schema_version(&reopened), 26);
     assert_seed_data(&reopened, seed_level);
     drop((reopened, root));
 }
@@ -317,6 +317,12 @@ pub(super) fn assert_post_v1_objects_absent(connection: &Connection) {
         "group_agent_graph_scheduled_node_provider_requests",
         "group_agent_graph_scheduled_node_provider_requests_project_lane",
         "group_agent_graph_scheduled_node_provider_requests_created",
+        "governance_record_append_batches",
+        "governance_records",
+        "governance_records_aggregate_appended",
+        "governance_records_appended",
+        "governance_records_kind_appended",
+        "governance_structural_heads",
     ] {
         assert!(!schema_object_named(connection, name), "unexpected {name}");
     }

@@ -105,7 +105,7 @@ func (r *FirecrackerRunner) Run(
 	if err != nil {
 		return "", 0, fmt.Errorf("vm workspace: %w", err)
 	}
-	defer os.RemoveAll(dir)
+	defer func() { _ = os.RemoveAll(dir) }()
 	rootfs := filepath.Join(dir, "rootfs.ext4")
 	if err := r.prepareWorkspace(runCtx, dir, argv, stdin, mke2fs); err != nil {
 		return "", 0, err
@@ -290,7 +290,7 @@ func putAPI(ctx context.Context, client *http.Client, url, body string) error {
 	if err != nil {
 		return err
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	_, _ = io.Copy(io.Discard, response.Body)
 	if response.StatusCode != http.StatusNoContent {
 		return fmt.Errorf("api %s: status %d", url, response.StatusCode)

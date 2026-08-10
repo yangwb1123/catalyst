@@ -4,6 +4,7 @@ use forge_runtime_domain::{
     GroupAgentScheduledNodeContractStore, Message, ModelRequest,
     PrepareGroupAgentScheduledNodeProviderRequest, group_agent_node_destination_sha256,
     group_agent_node_provider_request_sha256, group_agent_scheduled_node_provider_request_id,
+    group_agent_scheduled_node_user_prompt,
 };
 use forge_runtime_infrastructure::OpenAiResponsesProvider;
 
@@ -139,19 +140,16 @@ pub fn admit_backend_successor(
     bind_backend_node(&mut backend, initial_admit, &node);
     backend.request.predecessor_terminal_receipts.clear();
     backend.request.required_predecessor_node_ids.clear();
-    let backend_source = initial_admit
+    let source = initial_admit
         .control_snapshot
         .manifest
         .nodes
         .iter()
-        .find(|manifest_node| manifest_node.node_id == node.node_id)
+        .find(|source| source.node_id == node.node_id)
         .expect("backend manifest node");
-    backend.request.user_prompt = forge_runtime_domain::group_agent_scheduled_node_user_prompt(
-        &backend_source.node_id,
-        &backend_source.task,
-        &backend_source.acceptance,
-    )
-    .expect("canonical backend user prompt");
+    backend.request.user_prompt =
+        group_agent_scheduled_node_user_prompt(&source.node_id, &source.task, &source.acceptance)
+            .expect("backend canonical user Prompt");
     resign_candidate_digests(&mut backend);
     let backend_json = backend.canonical_json().expect("backend canonical JSON");
     let mut backend_admit = initial_admit.clone();
@@ -186,28 +184,20 @@ pub fn bind_backend_node(
     backend.node.node_id.clone_from(&node.node_id);
     backend.node.authored_node_index = node.authored_node_index;
     backend.node.topology_wave_index = node.topology_wave_index;
-    backend.node.project_lane_sha256.clone_from(&node.project_lane_sha256);
-    let project_id = initial_admit
-        .control_snapshot
-        .manifest
-        .nodes
-        .iter()
-        .find(|manifest_node| manifest_node.node_id == node.node_id)
-        .map(|manifest_node| manifest_node.project_id.clone())
-        .expect("backend manifest project");
-    backend.node.project_id.clone_from(&project_id);
-    let backend_source = initial_admit
+    backend
+        .node
+        .project_lane_sha256
+        .clone_from(&node.project_lane_sha256);
+    let source = initial_admit
         .control_snapshot
         .manifest
         .nodes
         .iter()
         .find(|manifest_node| manifest_node.node_id == node.node_id)
         .expect("backend manifest node");
-    backend.node.member_role.clone_from(&backend_source.member_role);
-    backend
-        .node
-        .agent_profile
-        .clone_from(&backend_source.agent_profile);
+    backend.node.project_id.clone_from(&source.project_id);
+    backend.node.member_role.clone_from(&source.member_role);
+    backend.node.agent_profile.clone_from(&source.agent_profile);
     backend.request.execution_ordinal = 1;
     backend.request.node_id.clone_from(&node.node_id);
 }
@@ -225,7 +215,6 @@ pub fn resign_candidate_digests(
     candidate.contract_id = format!("scheduled-node-contract-{contract_digest}");
     candidate.contract_sha256 = contract_digest;
 }
-
 
 /// Builds the diamond run + schedule + initial contract + zero-receipt
 /// backend successor and returns the two contract inspections.

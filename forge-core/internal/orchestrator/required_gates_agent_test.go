@@ -58,7 +58,7 @@ func loadShippedWorkflow(t *testing.T, name string) asset.Workflow {
 		path := filepath.Join(dir, ".agent", "workflows", name+".yml")
 		file, openErr := os.Open(path)
 		if openErr == nil {
-			defer file.Close()
+			defer func() { _ = file.Close() }()
 			data, convertErr := yaml2json.ToJSON(file)
 			if convertErr != nil {
 				t.Fatalf("parse shipped %s workflow: %v", name, convertErr)

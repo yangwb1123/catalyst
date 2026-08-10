@@ -85,8 +85,6 @@ pub(super) fn find_by_key(
     query_one(connection, "idempotency_key", key)
 }
 
-
-
 pub(super) fn find_by_contract(
     connection: &Connection,
     scheduled_contract_id: &str,

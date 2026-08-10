@@ -1,0 +1,298 @@
+api_version: forgeos.agent-engineering/v1
+kind: EngineeringRuleRegistry
+status: active_contract
+owner: architecture
+
+levels: [invariant, contract, policy, heuristic, suggestion]
+severities: [error, warning, advice]
+enforcement_modes: [automatic, review, planned]
+
+rules:
+  - id: TRUTH-001
+    title: Completion evidence packages must not self-authorize completion
+    level: invariant
+    severity: warning
+    scope: [repository, evidence_package]
+    trigger: { artifacts: [task_evidence_package] }
+    rationale: Only forge accept may decide completion; a package records observations but cannot mint a verdict.
+    requirements: [Use structured receipts bound to source revision and leave the completion decision to forge accept.]
+    forbidden: [Write completed, accepted or equivalent decision fields into an evidence package.]
+    verification:
+      mode: review
+      reviewer_refs: [completion.evidence_package]
+      proof_types: [structured_evidence_package, forge_accept_verdict]
+    exceptions: { allowed: false }
+    owner: governance
+    version: 1.0.0
+
+  - id: TRUTH-002
+    title: Knowledge claims cannot outrun evidence or authority
+    level: invariant
+    severity: warning
+    scope: [governance, evidence, knowledge]
+    trigger: { artifacts: [evidence_record, knowledge_claim] }
+    rationale: A deterministic record shape or declared observation cannot authenticate its producer, confirm truth or mint decision authority.
+    requirements: [Separate observations from claims, preserve conflicts and validate canonical bytes, references, provenance declarations and kind-scoped state.]
+    forbidden: [Promote a shadow claim to confirmed, accepted, active or waived, or use it to satisfy a hard gate.]
+    verification:
+      mode: review
+      reviewer_refs: [governance.evidence_claim_contract, reviewer.governance_authority]
+      proof_types: [governance_record_set, canonical_digest, independent_authority_review]
+    exceptions: { allowed: false }
+    owner: governance
+    version: 1.0.0
+
+  - id: SEC-001
+    title: Secrets must not enter source, logs or snapshots
+    level: invariant
+    severity: error
+    scope: [repository]
+    trigger: { changes: [code, configuration, documentation, fixture] }
+    rationale: Repository history and test output are durable disclosure channels.
+    requirements: [Use out-of-band secret brokers or environment references.]
+    forbidden: [Commit credentials, private keys or live tokens.]
+    verification:
+      mode: automatic
+      detector_refs: [harness.secret_scan]
+      proof_types: [gate_result]
+    exceptions: { allowed: false }
+    owner: security
+    version: 1.0.0
+
+  - id: ARCH-001
+    title: Dependencies must follow declared architecture boundaries
+    level: contract
+    severity: error
+    scope: [source]
+    trigger: { changes: [imports, packages, modules] }
+    rationale: Stable dependency direction limits change cost and hidden coupling.
+    requirements: [Keep domain independent of application, interfaces and infrastructure.]
+    forbidden: [Introduce circular dependencies or inward-to-outward imports.]
+    verification:
+      mode: automatic
+      detector_refs: [harness.architecture]
+      proof_types: [gate_result]
+    exceptions: { allowed: false }
+    owner: architecture
+    version: 1.0.0
+
+  - id: QUAL-001
+    title: Complexity thresholds trigger enforced containment
+    level: policy
+    severity: error
+    scope: [source]
+    trigger: { changes: [code] }
+    rationale: Oversized files and functions concentrate unrelated change reasons.
+    requirements: [Keep code within the active mode and lifecycle thresholds.]
+    forbidden: [Hide generated or minified source to evade a size check.]
+    verification:
+      mode: automatic
+      detector_refs: [harness.structure, harness.architecture]
+      proof_types: [gate_result]
+    exceptions: { allowed: false }
+    owner: architecture
+    version: 1.0.0
+
+  - id: FEARCH-001
+    title: Frontend module boundaries require explicit ownership and evidence
+    level: policy
+    severity: warning
+    scope: [frontend, client, source]
+    trigger: { changes: [route, page, feature, module, shared_state, public_client_contract, imports] }
+    rationale: Client structure decays when business changes cross undeclared boundaries or internal surfaces become accidental contracts.
+    requirements: [Declare the active architecture target, module ownership, allowed dependency matrix, public entrypoints and state data effect owners.]
+    forbidden: [Treat path heuristics or a God score as proof of semantic quality, or bypass a boundary through deep imports, global state, event buses or suppressions.]
+    verification:
+      mode: review
+      reviewer_refs: [reviewer.frontend_architecture]
+      proof_types: [frontend_architecture_report, module_responsibility_map, independent_review]
+    exceptions: { allowed: true, process: Use an exact fingerprinted time-bounded waiver with independent approval and removal trigger. }
+    owner: architecture
+    version: 1.0.0
+
+  - id: GOV-001
+    title: Governance references must resolve before execution
+    level: contract
+    severity: error
+    scope: [governance]
+    trigger: { changes: [.agent, harness] }
+    rationale: Dangling roles, skills, workflows or policies make enforcement ambiguous.
+    requirements: [Keep all machine-readable governance references resolvable.]
+    forbidden: [Silently ignore unknown schema versions or references.]
+    verification:
+      mode: automatic
+      detector_refs: [harness.governance]
+      proof_types: [governance_validation]
+    exceptions: { allowed: false }
+    owner: governance
+    version: 1.0.0
+
+  - id: SCOPE-001
+    title: Changes stay inside the authorized task boundary
+    level: contract
+    severity: warning
+    scope: [task, repository]
+    trigger: { changes: [any] }
+    rationale: Unrequested cleanup increases merge risk and invalidates impact analysis.
+    requirements: [List out-of-scope behavior and justify every affected module.]
+    forbidden: [Add unrelated behavior under the label of cleanup.]
+    verification:
+      mode: review
+      reviewer_refs: [reviewer.scope_diff]
+      proof_types: [review_finding]
+    exceptions: { allowed: true, process: Record rationale and obtain task-owner approval. }
+    owner: product
+    version: 1.0.0
+
+  - id: DATA-001
+    title: Data changes require compatibility and rollback analysis
+    level: policy
+    severity: warning
+    scope: [database, persistence]
+    trigger: { changes: [schema, migration, serialization] }
+    rationale: A small schema edit can create irreversible or cross-version failures.
+    requirements: [Specify migration order, historical-data handling, compatibility and rollback.]
+    forbidden: [Treat ALTER or destructive rewrite as an isolated code edit.]
+    verification:
+      mode: review
+      reviewer_refs: [reviewer.data_migration]
+      proof_types: [migration_review]
+    exceptions: { allowed: true, process: Document N/A evidence for non-persistent changes. }
+    owner: architecture
+    version: 1.0.0
+
+  - id: EFFECT-001
+    title: Retried external effects require explicit delivery semantics
+    level: policy
+    severity: warning
+    scope: [integration, runtime]
+    trigger: { operations: [write, publish, notify, deploy] }
+    rationale: Timeouts and lost acknowledgements make duplicate execution normal.
+    requirements: [Declare idempotency, reconciliation, compensation or a human gate.]
+    forbidden: [Promise exactly-once behavior without a proved protocol.]
+    verification:
+      mode: review
+      reviewer_refs: [reviewer.effect_semantics]
+      proof_types: [failure_mode_review]
+    exceptions: { allowed: true, process: Prove the operation is pure or read-only. }
+    owner: architecture
+    version: 1.0.0
+
+  - id: DESIGN-001
+    title: Choose the lowest sufficient complexity
+    level: heuristic
+    severity: advice
+    scope: [design, source]
+    trigger: { changes: [architecture, abstraction] }
+    rationale: Patterns are tools for demonstrated change pressure, not goals by themselves.
+    requirements: [State the observed change reason and rejected simpler option.]
+    forbidden: [Apply DDD, AOP, DI, events or microservices without a matching force.]
+    verification:
+      mode: review
+      reviewer_refs: [reviewer.over_design]
+      proof_types: [option_review]
+    exceptions: { allowed: true, process: Record the evidence-backed trade-off. }
+    owner: architecture
+    version: 1.0.0
+
+  - id: REVIEW-001
+    title: Material changes receive independent evidence-first review
+    level: policy
+    severity: warning
+    scope: [task]
+    trigger: { materiality: [L1, L2, L3, L4] }
+    rationale: An implementer reviewing its own narrative preserves confirmation bias.
+    requirements: [Use the profile-required fresh reviewer and route findings to an owner.]
+    forbidden: [Use implementation rationale as proof that behavior is correct.]
+    verification:
+      mode: review
+      reviewer_refs: [reviewer.independence]
+      proof_types: [review_verdict, test_evidence]
+    exceptions: { allowed: true, process: L1 exceptions require an explicit risk record. }
+    owner: governance
+    version: 1.0.0
+
+  - id: DATA-002
+    title: Core persistence design precedes ORM and migration generation
+    level: policy
+    severity: warning
+    scope: [backend, domain, persistence]
+    trigger: { changes: [core_domain, schema, orm_entity, durable_serialization] }
+    rationale: Identity, constraints, history and lifecycle are expensive to repair after durable data exists.
+    requirements: [Produce a source-bound persistence decision covering identity, field semantics, constraints, access paths, concurrency, lifecycle and migration.]
+    forbidden: [Treat a generated ORM entity or migration as the persistence design.]
+    verification:
+      mode: review
+      reviewer_refs: [reviewer.backend_persistence]
+      proof_types: [backend_decision_package, persistence_design]
+    exceptions: { allowed: true, process: Prove there is no durable or serialized state surface and record an evidence-bound N/A. }
+    owner: architecture
+    version: 1.0.0
+
+  - id: MODEL-001
+    title: Transport domain persistence and read roles remain semantically isolated
+    level: policy
+    severity: warning
+    scope: [backend, contract, domain, persistence]
+    trigger: { changes: [public_contract, domain_model, persistence_model, read_projection] }
+    rationale: Reusing one runtime type across unrelated owners and change axes leaks schema, secrets and framework concerns.
+    requirements: [Map each active model role and make conversions explicit at ownership boundaries.]
+    forbidden: [Expose ORM entities through public APIs or use read projections as domain write inputs.]
+    verification:
+      mode: review
+      reviewer_refs: [reviewer.model_boundaries]
+      proof_types: [model_map, mapper_contract, exposure_review]
+    exceptions: { allowed: true, process: "Prove identical owner, change reason, sensitivity and lifecycle for the reused roles." }
+    owner: architecture
+    version: 1.0.0
+
+  - id: REL-001
+    title: Remote dependencies require bounded failure semantics
+    level: policy
+    severity: warning
+    scope: [network, integration, background_job]
+    trigger: { changes: [http, rpc, message, cache, external_effect] }
+    rationale: Deadlines, retries and queues without shared budgets amplify overload and duplicate effects.
+    requirements: [Declare deadline propagation, retry ownership, idempotency, capacity bounds, backpressure and reconciliation.]
+    forbidden: [Use unbounded retries, concurrency or queues, or retry an unknown irreversible effect automatically.]
+    verification:
+      mode: review
+      reviewer_refs: [reviewer.distributed_reliability]
+      proof_types: [failure_mode_matrix, retry_timeout_budget, recovery_tests]
+    exceptions: { allowed: true, process: "Prove the operation is process-local, pure and has no remote dependency." }
+    owner: architecture
+    version: 1.0.0
+
+  - id: EVOLVE-001
+    title: Low-reversibility decisions require migration and exit controls
+    level: policy
+    severity: warning
+    scope: [architecture, data, contract]
+    trigger: { decisions: [database_identity, data_ownership, public_contract, event_semantics, tenant_model, authorization_model, service_boundary, partition_strategy] }
+    rationale: Durable identities and published semantics constrain the system long after implementation details are replaced.
+    requirements: [Compare alternatives and record migration cost, blast radius, ADR, owner, revisit trigger and deletion path.]
+    forbidden: [Commit a low-reversibility choice from preference or unverified future demand.]
+    verification:
+      mode: review
+      reviewer_refs: [reviewer.architecture_tradeoff]
+      proof_types: [option_matrix, adr, evolution_exit_plan]
+    exceptions: { allowed: true, process: Demonstrate high reversibility and bounded local scope with evidence. }
+    owner: architecture
+    version: 1.0.0
+
+  - id: LEARN-001
+    title: One outcome cannot rewrite organization policy
+    level: policy
+    severity: warning
+    scope: [learning, rules]
+    trigger: { changes: [knowledge, rule_weight, policy] }
+    rationale: A single success or failure may be accidental and non-generalizable.
+    requirements: [Promote observation through candidate, shadow and governed approval stages.]
+    forbidden: [Let an Agent directly mutate hard rules or confirmed facts.]
+    verification:
+      mode: planned
+      reviewer_refs: [governance.knowledge_update_receipt]
+      proof_types: [proposal, approval, transition_receipt]
+    exceptions: { allowed: false }
+    owner: governance
+    version: 1.0.0

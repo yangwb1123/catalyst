@@ -1,8 +1,8 @@
 # AADM：原子化自适应决策内核
 
-> 状态：已采纳的目标模型，`planning_only`。本文定义 Decision Kernel 的稳定语义，不声明当前 runtime 已有 Atom
-> compiler、约束求解器、Pareto planner、Controller 或学习器。AADM 位于 00–16 节点之下；它不绕过治理状态机、
-> CapabilityGrant、Review、Release 或外部 operator。
+> 状态：已采纳的目标模型；除 ADR-0047 明确限定的七类 KnowledgeClaim→CognitiveAtom pure shadow 投影外，仍为
+> `planning_only`。本文不声明当前 runtime 已有 prompt/model Atom compiler、完整 Kernel ABI、约束求解器、Pareto planner、
+> Controller 或学习器。AADM 位于 00–16 节点之下；它不绕过治理状态机、CapabilityGrant、Review、Release 或外部 operator。
 
 ## 1. 统一模型与边界
 
@@ -31,6 +31,11 @@ ExecutionTarget 是物理/服务执行位置。五者不得合并成一个“万
 ## 2. 最小语义单元：CognitiveAtom v1
 
 Atom 是当前任务中的单一命题投影：
+
+> 当前可执行边界由 ADR-0047 单独冻结：只对 `fact|constraint|decision|inference|assumption|hypothesis|unknown` 七类 strict
+> shadow KnowledgeClaim 做确定性纯投影，`lesson|proposal` 不生成 Atom；confidence 使用整数 `projection_confidence_micros`。
+> 下列 YAML 仍是完整目标模型草图，不是该 wire contract。该投影没有 truth/authority/transition/effect/completion 语义，
+> 不持久化，也不代表完整 CognitiveAtom/DecisionTransaction/Capability ABI 已交付。
 
 ```yaml
 atom_id: atom-...

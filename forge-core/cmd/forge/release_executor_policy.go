@@ -168,7 +168,7 @@ func validatePinnedInterpreter(path string) error {
 	if err != nil {
 		return fmt.Errorf("inspect trusted claude executable header: %w", err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	header := make([]byte, 4)
 	n, err := file.Read(header)
 	if err != nil && err != io.EOF {
@@ -186,7 +186,7 @@ func fileSHA256(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	hash := sha256.New()
 	if _, err := io.Copy(hash, file); err != nil {
 		return "", err

@@ -34,7 +34,9 @@ func TestCheckpointHook_PersistsAndTraces(t *testing.T) {
 	hook := checkpointHook(o, wf, trace.NewTracer(&buf), &runBudget{}, func(s string) { logs = append(logs, s) }, nil, nil)
 
 	const wantDurationMs int64 = 4200 // a known measured-iteration duration the loop would pass.
-	hook(2, converge.Signals{RoadmapCompletion: 0.75, GatesGreen: true}, wantDurationMs)
+	if err := hook(2, converge.Signals{RoadmapCompletion: 0.75, GatesGreen: true}, wantDurationMs); err != nil {
+		t.Fatalf("checkpoint hook: %v", err)
+	}
 
 	cp, found, err := persist.Load(checkpointPath(root))
 	if err != nil || !found {
@@ -77,7 +79,9 @@ func TestCheckpointHook_AppendsMemoryEntry(t *testing.T) {
 	hook := checkpointHook(runOpts{root: root, mode: "balanced"}, asset.Workflow{Stage: "evolve"},
 		trace.NewTracer(&buf), &runBudget{}, func(string) {}, nil, nil)
 
-	hook(3, converge.Signals{RoadmapCompletion: 0.4, GatesGreen: false}, 0)
+	if err := hook(3, converge.Signals{RoadmapCompletion: 0.4, GatesGreen: false}, 0); err != nil {
+		t.Fatalf("checkpoint hook: %v", err)
+	}
 
 	entries, err := memory.Load(memoryPath(root))
 	if err != nil {
@@ -121,7 +125,9 @@ func TestCheckpointHook_FirstIterNoRecurringDecision(t *testing.T) {
 	hook := checkpointHook(runOpts{root: root, mode: "balanced"}, asset.Workflow{Stage: "evolve"},
 		trace.NewTracer(&buf), &runBudget{}, func(string) {}, nil, nil)
 
-	hook(1, converge.Signals{RoadmapCompletion: 0.3, GatesGreen: false}, 0)
+	if err := hook(1, converge.Signals{RoadmapCompletion: 0.3, GatesGreen: false}, 0); err != nil {
+		t.Fatalf("checkpoint hook: %v", err)
+	}
 
 	entries, err := memory.Load(memoryPath(root))
 	if err != nil {

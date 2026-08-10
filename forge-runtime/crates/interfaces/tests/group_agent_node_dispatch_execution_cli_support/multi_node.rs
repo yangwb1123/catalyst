@@ -62,6 +62,9 @@ const DOWNGRADE_V17_TO_V10_SQL: &str = "PRAGMA foreign_keys=OFF;
                SELECT * FROM group_agent_graph_node_dispatch_requests;
              CREATE TEMP TABLE saved_seq3 AS
                SELECT * FROM group_agent_graph_run_events WHERE seq=3;
+             DROP TABLE governance_structural_heads;
+             DROP TABLE governance_records;
+             DROP TABLE governance_record_append_batches;
              DROP INDEX group_agent_graph_scheduled_node_successor_candidates_created;
              DROP TABLE group_agent_graph_scheduled_node_successor_candidates;
              DROP INDEX group_agent_graph_scheduled_node_dispatch_lifecycles_project_lane_active;
@@ -82,7 +85,7 @@ const DOWNGRADE_V17_TO_V10_SQL: &str = "PRAGMA foreign_keys=OFF;
                  SELECT SUM(event_bytes) FROM group_agent_graph_run_events
                  WHERE graph_run_id=group_agent_graph_runs.id
                );";
-// v25 widened the endpoint CHECK on the analyses/syntheses tables; a
+// v26 widened the endpoint CHECK on the analyses/syntheses tables; a
 // downgraded fixture must restore the historical definitions so the
 // pre-migration contract check matches the recorded catalogs.
 const RESTORE_HISTORICAL_ANALYSES_SQL: &str =

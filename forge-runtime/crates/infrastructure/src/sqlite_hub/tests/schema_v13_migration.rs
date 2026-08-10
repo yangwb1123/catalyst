@@ -11,11 +11,17 @@ use super::{
     schema_version, table_columns,
 };
 
-const V25_REBUILT_OBJECTS: [&str; 10] = [
-    "group_model_analyses", "group_model_analysis_events", "group_model_analysis_results",
-    "group_panel_syntheses", "group_panel_synthesis_events", "group_panel_synthesis_results",
-    "group_model_analyses_group_run", "group_model_analyses_created",
-    "group_panel_syntheses_panel", "group_panel_syntheses_created",
+const V26_REBUILT_OBJECTS: [&str; 10] = [
+    "group_model_analyses",
+    "group_model_analysis_events",
+    "group_model_analysis_results",
+    "group_panel_syntheses",
+    "group_panel_synthesis_events",
+    "group_panel_synthesis_results",
+    "group_model_analyses_group_run",
+    "group_model_analyses_created",
+    "group_panel_syntheses_panel",
+    "group_panel_syntheses_created",
 ];
 const SCHEDULE_TABLE: &str = "group_agent_graph_execution_schedules";
 const SCHEDULE_INDEX: &str = "group_agent_graph_execution_schedules_created";
@@ -313,7 +319,7 @@ fn malformed(original: &str, replacement: &str) -> String {
 }
 
 fn assert_v13_shape(connection: &Connection) {
-    assert_eq!(schema_version(connection), 25);
+    assert_eq!(schema_version(connection), 26);
     assert!(schema_object_exists(connection, "table", SCHEDULE_TABLE));
     assert!(schema_object_exists(connection, "index", SCHEDULE_INDEX));
     assert_eq!(row_count(connection, SCHEDULE_TABLE), 0);
@@ -342,7 +348,7 @@ fn old_schema(snapshot: &[SchemaRow]) -> Vec<SchemaRow> {
     snapshot
         .iter()
         .filter(|(_, name, _, _)| {
-            !V25_REBUILT_OBJECTS.contains(&name.as_str())
+            !V26_REBUILT_OBJECTS.contains(&name.as_str())
                 && name != SCHEDULE_TABLE
                 && name != SCHEDULE_INDEX
                 && name != SCHEDULED_CONTRACT_TABLE
@@ -350,6 +356,15 @@ fn old_schema(snapshot: &[SchemaRow]) -> Vec<SchemaRow> {
                 && !SCHEDULED_PROVIDER_REQUEST_OBJECTS.contains(&name.as_str())
                 && !SCHEDULED_DISPATCH_LIFECYCLE_OBJECTS.contains(&name.as_str())
                 && !SUCCESSOR_CANDIDATE_OBJECTS.contains(&name.as_str())
+                && !matches!(
+                    name.as_str(),
+                    "governance_record_append_batches"
+                        | "governance_records"
+                        | "governance_records_aggregate_appended"
+                        | "governance_records_appended"
+                        | "governance_records_kind_appended"
+                        | "governance_structural_heads"
+                )
         })
         .cloned()
         .collect()

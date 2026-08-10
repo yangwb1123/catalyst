@@ -26,6 +26,16 @@ pub(crate) fn effective_openai_base_url() -> String {
         .unwrap_or_else(|| OPENAI_BASE_URL.to_owned())
 }
 
+/// Resolves the exact endpoint identity frozen during prepare through the
+/// same parser and destination policy used when constructing the sender.
+pub(crate) fn analysis_endpoint_for_base_url(base_url: &str) -> Result<String, ProviderError> {
+    if base_url == OPENAI_BASE_URL {
+        OpenAiResponsesProvider::resolve_official_endpoint(base_url)
+    } else {
+        OpenAiResponsesProvider::resolve_self_hosted_endpoint(base_url)
+    }
+}
+
 pub(crate) struct OpenAiPreparedProvider {
     inner: OpenAiResponsesProvider,
 }
@@ -39,15 +49,16 @@ impl OpenAiPreparedProvider {
                 "OPENAI_API_KEY must not be empty after explicit off-machine consent".into(),
             );
         }
+        let base_url = effective_openai_base_url();
+        Self::from_base_url(&base_url, model, api_key)
+    }
+
+    fn from_base_url(base_url: &str, model: &str, api_key: String) -> Result<Self, Box<dyn Error>> {
         Ok(Self {
-            inner: if effective_openai_base_url() == OPENAI_BASE_URL {
-                OpenAiResponsesProvider::new(OPENAI_BASE_URL, model, api_key)?
+            inner: if base_url == OPENAI_BASE_URL {
+                OpenAiResponsesProvider::new(base_url, model, api_key)?
             } else {
-                OpenAiResponsesProvider::new_self_hosted(
-                    effective_openai_base_url(),
-                    model,
-                    api_key,
-                )?
+                OpenAiResponsesProvider::new_self_hosted(base_url, model, api_key)?
             },
         })
     }
@@ -132,5 +143,30 @@ impl GroupModelAnalysisRequestCodec for OpenAiRequestCodec {
         actual: &[u8],
     ) -> Result<(), ProviderError> {
         OpenAiResponsesProvider::validate_exact_request_bytes(model, expected, actual)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{OpenAiPreparedProvider, analysis_endpoint_for_base_url};
+
+    #[test]
+    fn self_hosted_base_variants_freeze_the_endpoint_served_at_send() {
+        for base_url in ["http://127.0.0.1:4001/v1", "http://127.0.0.1:4001/v1/"] {
+            let frozen = analysis_endpoint_for_base_url(base_url).expect("prepared endpoint");
+            let provider =
+                OpenAiPreparedProvider::from_base_url(base_url, "test-model", "test-key".into())
+                    .expect("send provider");
+
+            assert_eq!(frozen, "http://127.0.0.1:4001/v1/responses");
+            assert_eq!(provider.endpoint(), frozen);
+        }
+    }
+
+    #[test]
+    fn a_responses_endpoint_cannot_masquerade_as_a_provider_base() {
+        assert!(
+            analysis_endpoint_for_base_url("https://llm.internal.example/v1/responses").is_err()
+        );
     }
 }

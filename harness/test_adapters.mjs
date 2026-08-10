@@ -172,11 +172,15 @@ test('probeLint returns a well-formed, honest result on the real repo', () => {
   assert.equal(r.criterion, 'lint');
   // Aggregate must be one of the three honest statuses (never a faked value).
   assert.ok([PASS, FAIL, NA].includes(r.status), `unexpected status ${r.status}`);
-  // This repo ships no linter config, so no language can produce a real clean
-  // run -> the criterion must NOT be a (faked) PASS, and a missing/unconfigured
-  // linter must NOT be a FAIL. Honest outcome here is N/A.
-  assert.equal(r.status, NA, `repo has no configured linter -> lint must be N/A (got ${r.status}: ${r.detail})`);
-  assert.ok(r.detail.length > 0, 'N/A must carry an honest reason');
+  // Host tools may change; deterministic verdicts are covered by fixtures.
+  assert.ok(typeof r.detail === 'string' && r.detail.length > 0,
+    `${r.status} must carry an honest explanation`);
+  if (r.status === FAIL) {
+    assert.match(r.detail, /(?:fail|exit|error)/i, 'FAIL must identify an observed failure');
+  }
+  if (r.status === NA) {
+    assert.match(r.detail, /(?:not installed|unconfigured|no lint command|no source)/i, 'N-A must explain why');
+  }
 });
 
 // === APP TEST SELECTION: declaration-driven runner with honest fallback ======

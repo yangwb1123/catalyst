@@ -141,7 +141,7 @@ func TestClassify_ReasonLeadsWithLevel(t *testing.T) {
 // Rank / Higher: severity ordering and the "raise, never lower" combine used by
 // the manual-override merge in route.go.
 func TestRankAndHigher(t *testing.T) {
-	if !(Rank(Low) < Rank(Medium) && Rank(Medium) < Rank(High) && Rank(High) < Rank(Critical)) {
+	if Rank(Low) >= Rank(Medium) || Rank(Medium) >= Rank(High) || Rank(High) >= Rank(Critical) {
 		t.Fatalf("Rank ordering broken: low=%d medium=%d high=%d critical=%d",
 			Rank(Low), Rank(Medium), Rank(High), Rank(Critical))
 	}

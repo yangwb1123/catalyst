@@ -1,19 +1,25 @@
 use std::sync::OnceLock;
+
 use rusqlite::{Connection, Error as SqliteError, ErrorCode, OptionalExtension};
 use sha2::{Digest, Sha256};
+
 use super::super::{
-    HubStoreError, CREATE_V1_SCHEMA_SQL, MIGRATE_V10_TO_V11_SQL, MIGRATE_V11_TO_V12_SQL,
-    MIGRATE_V12_TO_V13_SQL, MIGRATE_V13_TO_V14_SQL, MIGRATE_V14_TO_V15_SQL, MIGRATE_V15_TO_V16_SQL,
-    MIGRATE_V16_TO_V17_SQL, MIGRATE_V17_TO_V18_SQL, MIGRATE_V18_TO_V19_SQL, MIGRATE_V19_TO_V20_SQL,
-    MIGRATE_V1_TO_V2_SQL, MIGRATE_V20_TO_V21_SQL, MIGRATE_V21_TO_V22_SQL, MIGRATE_V22_TO_V23_SQL,
-    MIGRATE_V23_TO_V24_SQL, MIGRATE_V24_TO_V25_SQL, MIGRATE_V2_TO_V3_SQL, MIGRATE_V3_TO_V4_SQL, MIGRATE_V4_TO_V5_SQL,
-    MIGRATE_V5_TO_V6_SQL, MIGRATE_V6_TO_V7_SQL, MIGRATE_V7_TO_V8_SQL, MIGRATE_V8_TO_V9_SQL,
-    MIGRATE_V9_TO_V10_SQL,
+    CREATE_V1_SCHEMA_SQL, HubStoreError, MIGRATE_V1_TO_V2_SQL, MIGRATE_V2_TO_V3_SQL,
+    MIGRATE_V3_TO_V4_SQL, MIGRATE_V4_TO_V5_SQL, MIGRATE_V5_TO_V6_SQL, MIGRATE_V6_TO_V7_SQL,
+    MIGRATE_V7_TO_V8_SQL, MIGRATE_V8_TO_V9_SQL, MIGRATE_V9_TO_V10_SQL, MIGRATE_V10_TO_V11_SQL,
+    MIGRATE_V11_TO_V12_SQL, MIGRATE_V12_TO_V13_SQL, MIGRATE_V13_TO_V14_SQL, MIGRATE_V14_TO_V15_SQL,
+    MIGRATE_V15_TO_V16_SQL, MIGRATE_V16_TO_V17_SQL, MIGRATE_V17_TO_V18_SQL, MIGRATE_V18_TO_V19_SQL,
+    MIGRATE_V19_TO_V20_SQL, MIGRATE_V20_TO_V21_SQL, MIGRATE_V21_TO_V22_SQL, MIGRATE_V22_TO_V23_SQL,
+    MIGRATE_V23_TO_V24_SQL, MIGRATE_V24_TO_V25_SQL, MIGRATE_V25_TO_V26_SQL,
 };
+#[path = "full_contract/divergent_v25.rs"]
+mod divergent_v25;
 #[path = "full_contract/legacy_digest.rs"]
 mod legacy_digest;
 #[path = "full_contract/structure.rs"]
 mod structure;
+#[path = "full_contract/v17_v21.rs"]
+mod v17_v21;
 #[path = "full_contract/v22.rs"]
 mod v22;
 #[path = "full_contract/v23.rs"]
@@ -22,19 +28,24 @@ mod v23;
 mod v24;
 #[path = "full_contract/v25.rs"]
 mod v25;
+
 use legacy_digest::{
-    V10_STRUCTURAL_CONTRACT_SHA256, V11_STRUCTURAL_CONTRACT_SHA256, V12_STRUCTURAL_CONTRACT_SHA256,
-    V13_STRUCTURAL_CONTRACT_SHA256, V14_STRUCTURAL_CONTRACT_SHA256, V15_STRUCTURAL_CONTRACT_SHA256,
-    V16_STRUCTURAL_CONTRACT_SHA256, V6_IMPLICIT_INDEX_COUNT, V6_STRUCTURAL_CONTRACT_SHA256,
-    V7_IMPLICIT_INDEX_COUNT, V7_STRUCTURAL_CONTRACT_SHA256, V8_IMPLICIT_INDEX_COUNT,
-    V8_STRUCTURAL_CONTRACT_SHA256, V9_IMPLICIT_INDEX_COUNT, V9_STRUCTURAL_CONTRACT_SHA256,
-    V10_IMPLICIT_INDEX_COUNT, V11_IMPLICIT_INDEX_COUNT, V12_IMPLICIT_INDEX_COUNT,
-    V13_IMPLICIT_INDEX_COUNT, V14_IMPLICIT_INDEX_COUNT, V15_IMPLICIT_INDEX_COUNT,
-    V16_IMPLICIT_INDEX_COUNT, V17_IMPLICIT_INDEX_COUNT, V17_STRUCTURAL_CONTRACT_SHA256,
-    V18_IMPLICIT_INDEX_COUNT, V18_STRUCTURAL_CONTRACT_SHA256, V19_IMPLICIT_INDEX_COUNT,
-    V19_STRUCTURAL_CONTRACT_SHA256, V20_IMPLICIT_INDEX_COUNT, V20_STRUCTURAL_CONTRACT_SHA256,
-    V21_IMPLICIT_INDEX_COUNT, V21_STRUCTURAL_CONTRACT_SHA256,
+    V6_IMPLICIT_INDEX_COUNT, V6_STRUCTURAL_CONTRACT_SHA256, V7_IMPLICIT_INDEX_COUNT,
+    V7_STRUCTURAL_CONTRACT_SHA256, V8_IMPLICIT_INDEX_COUNT, V8_STRUCTURAL_CONTRACT_SHA256,
+    V9_IMPLICIT_INDEX_COUNT, V9_STRUCTURAL_CONTRACT_SHA256, V10_IMPLICIT_INDEX_COUNT,
+    V10_STRUCTURAL_CONTRACT_SHA256, V11_IMPLICIT_INDEX_COUNT, V11_STRUCTURAL_CONTRACT_SHA256,
+    V12_IMPLICIT_INDEX_COUNT, V12_STRUCTURAL_CONTRACT_SHA256, V13_IMPLICIT_INDEX_COUNT,
+    V13_STRUCTURAL_CONTRACT_SHA256, V14_IMPLICIT_INDEX_COUNT, V14_STRUCTURAL_CONTRACT_SHA256,
+    V15_IMPLICIT_INDEX_COUNT, V15_STRUCTURAL_CONTRACT_SHA256, V16_IMPLICIT_INDEX_COUNT,
+    V16_STRUCTURAL_CONTRACT_SHA256,
 };
+use v17_v21::{
+    V17_IMPLICIT_INDEX_COUNT, V17_STRUCTURAL_CONTRACT_SHA256, V18_IMPLICIT_INDEX_COUNT,
+    V18_STRUCTURAL_CONTRACT_SHA256, V19_IMPLICIT_INDEX_COUNT, V19_STRUCTURAL_CONTRACT_SHA256,
+    V20_IMPLICIT_INDEX_COUNT, V20_STRUCTURAL_CONTRACT_SHA256, V21_IMPLICIT_INDEX_COUNT,
+    V21_STRUCTURAL_CONTRACT_SHA256,
+};
+
 const OWNED_TABLES: &[&str] = &[
     "projects",
     "groups",
@@ -69,6 +80,9 @@ const OWNED_TABLES: &[&str] = &[
     "group_agent_graph_scheduled_node_provider_requests",
     "group_agent_graph_scheduled_node_dispatch_lifecycles",
     "group_agent_graph_scheduled_node_successor_candidates",
+    "governance_record_append_batches",
+    "governance_records",
+    "governance_structural_heads",
 ];
 const SCHEMA_BATCHES: &[&str] = &[
     CREATE_V1_SCHEMA_SQL,
@@ -96,15 +110,20 @@ const SCHEMA_BATCHES: &[&str] = &[
     MIGRATE_V22_TO_V23_SQL,
     MIGRATE_V23_TO_V24_SQL,
     MIGRATE_V24_TO_V25_SQL,
+    MIGRATE_V25_TO_V26_SQL,
 ];
-const VERSION_TABLE_COUNTS: [usize; 26] = [
-    0, 5, 8, 9, 11, 14, 16, 19, 20, 22, 23, 24, 28, 29, 30, 31, 32, 33, 33, 33, 33, 33, 33, 33, 33, 33,
+const VERSION_TABLE_COUNTS: [usize; 27] = [
+    0, 5, 8, 9, 11, 14, 16, 19, 20, 22, 23, 24, 28, 29, 30, 31, 32, 33, 33, 33, 33, 33, 33, 33, 33,
+    36, 36,
 ];
-const VERSION_EXPLICIT_INDEX_COUNTS: [usize; 26] = [
-    0, 2, 3, 4, 6, 8, 10, 12, 14, 16, 18, 20, 24, 25, 27, 29, 31, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+const VERSION_EXPLICIT_INDEX_COUNTS: [usize; 27] = [
+    0, 2, 3, 4, 6, 8, 10, 12, 14, 16, 18, 20, 24, 25, 27, 29, 31, 32, 32, 32, 32, 32, 32, 32, 32,
+    35, 35,
 ];
 const STRUCTURAL_DIGEST_DOMAIN: &[u8] = b"forge-hub-structural-contract-v1\0";
+
 static EXPECTED_SCHEMAS: OnceLock<Result<Vec<ExpectedSchema>, String>> = OnceLock::new();
+
 struct ExpectedSchema {
     version: usize,
     catalog: CatalogSignature,
@@ -120,6 +139,7 @@ struct ExpectedIndex {
     name: String,
     sql: String,
 }
+
 #[derive(Default, PartialEq, Eq)]
 struct CatalogSignature {
     tables: Vec<String>,
@@ -129,6 +149,7 @@ struct CatalogSignature {
     triggers: Vec<String>,
     other_objects: Vec<(String, String)>,
 }
+
 pub(super) fn validate_version(connection: &Connection, version: i64) -> Result<(), HubStoreError> {
     let index = usize::try_from(version)
         .ok()
@@ -141,6 +162,10 @@ pub(super) fn validate_version(connection: &Connection, version: i64) -> Result<
     }
     Ok(())
 }
+
+pub(super) fn validate_endpoint_only_v25(connection: &Connection) -> Result<(), HubStoreError> {
+    divergent_v25::validate(connection)
+}
 fn validate_catalog(
     connection: &Connection,
     version: i64,
@@ -148,32 +173,6 @@ fn validate_catalog(
 ) -> Result<(), HubStoreError> {
     let actual = catalog(connection).map_err(sqlite_error)?;
     if &actual != expected {
-        #[cfg(test)]
-        {
-            let missing_tables: Vec<_> = expected
-                .tables
-                .iter()
-                .filter(|name| !actual.tables.contains(name))
-                .collect();
-            let extra_tables: Vec<_> = actual
-                .tables
-                .iter()
-                .filter(|name| !expected.tables.contains(name))
-                .collect();
-            let missing_indexes: Vec<_> = expected
-                .explicit_indexes
-                .iter()
-                .filter(|name| !actual.explicit_indexes.contains(name))
-                .collect();
-            let extra_indexes: Vec<_> = actual
-                .explicit_indexes
-                .iter()
-                .filter(|name| !expected.explicit_indexes.contains(name))
-                .collect();
-            eprintln!(
-                "DEBUG catalog v{version}: missing_tables={missing_tables:?} extra_tables={extra_tables:?} missing_indexes={missing_indexes:?} extra_indexes={extra_indexes:?}"
-            );
-        }
         return Err(invalid(version, "main catalog", "object inventory"));
     }
     Ok(())
@@ -335,7 +334,7 @@ fn release_structural_contract(version: usize) -> Result<(usize, [u8; 32]), Stri
             v24::V24_IMPLICIT_INDEX_COUNT,
             v24::V24_STRUCTURAL_CONTRACT_SHA256,
         ),
-        25 => (
+        25 | 26 => (
             v25::V25_IMPLICIT_INDEX_COUNT,
             v25::V25_STRUCTURAL_CONTRACT_SHA256,
         ),
@@ -472,28 +471,4 @@ fn unavailable(error: impl std::fmt::Display) -> HubStoreError {
 
 fn stringify(error: impl std::fmt::Display) -> String {
     error.to_string()
-}
-
-
-
-#[cfg(test)]
-mod catalog_diff_tool {
-    use super::*;
-    use crate::runtime_domain::HubStoreError;
-
-    #[test]
-    fn diff_v11_catalog_vs_current_downgrade() {
-        // 复现 interfaces 降级路径的最小版:当前库 → DROP v17+ 表 → v11
-        // 简化:直接对比 v11 期望 catalog 与"当前库降级后"的 catalog。
-        // 这里只打印 v11 期望 catalog,供人工比对。
-        let schemas = load_expected_schemas().expect("expected schemas");
-        let v11 = &schemas[11];
-        eprintln!("V11 tables ({}) {:?}", v11.catalog.tables.len(), v11.catalog.tables);
-        eprintln!(
-            "V11 indexes ({}) {:?}",
-            v11.catalog.explicit_indexes.len(),
-            v11.catalog.explicit_indexes
-        );
-        let _ = HubStoreError::Unavailable { message: String::new() };
-    }
 }

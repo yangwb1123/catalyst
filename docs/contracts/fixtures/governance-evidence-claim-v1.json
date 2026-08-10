@@ -1,0 +1,141 @@
+{
+  "api_version": "forgeos.governance-golden/v1",
+  "canonicalization": "forgeos.canonical-json/v1",
+  "records": [
+    {
+      "digest_domain": "forgeos.governance.evidence-record.v1",
+      "expected": {
+        "canonical_payload_json": "{\"api_version\":\"forgeos.governance/v1\",\"integrity\":{\"canonical_sha256\":\"\",\"canonicalization\":\"forgeos.canonical-json/v1\"},\"kind\":\"EvidenceRecord\",\"metadata\":{\"aggregate_id\":\"evidence-check-pass\",\"context_sha256\":\"1111111111111111111111111111111111111111111111111111111111111111\",\"created_at_unix_ms\":1700000000000,\"created_by\":{\"authority_domain\":\"declared-shadow\",\"principal_id\":\"fixture-tool\",\"principal_type\":\"tool\",\"role\":\"fixture-producer\",\"run_id\":\"fixture-run-001\"},\"policy_sha256\":\"2222222222222222222222222222222222222222222222222222222222222222\",\"project_id\":\"catalyst\",\"record_id\":\"evr-0001\",\"scope\":\"module:harness\",\"sequence\":1,\"source_revision\":\"654befb\",\"source_tree_sha256\":\"3333333333333333333333333333333333333333333333333333333333333333\",\"supersedes_record_ids\":[]},\"spec\":{\"artifact_sha256\":\"4444444444444444444444444444444444444444444444444444444444444444\",\"collector\":{\"collector_id\":\"python-checker\",\"collector_type\":\"tool\",\"collector_version\":\"v1\",\"parameters_sha256\":\"5555555555555555555555555555555555555555555555555555555555555555\",\"run_id\":\"fixture-run-001\"},\"content_role\":\"untrusted_data\",\"directness\":\"direct\",\"evidence_type\":\"test_run\",\"locator\":{\"content_sha256\":\"6666666666666666666666666666666666666666666666666666666666666666\",\"exit_code\":0,\"line_end\":null,\"line_start\":null,\"locator_ref\":\"python3 -B harness/agent_engineering_check.py .\",\"locator_type\":\"command\"},\"observed_at_unix_ms\":1700000000000,\"sensitivity\":\"internal\",\"source_snapshot\":{\"snapshot_id\":\"snapshot-fixture-001\",\"snapshot_sha256\":\"7777777777777777777777777777777777777777777777777777777777777777\",\"snapshot_type\":\"repository\"},\"source_trust\":\"observed\",\"subjects\":[\"module:harness\"]},\"status\":{\"reason_codes\":[],\"state\":\"valid\",\"valid_from_unix_ms\":1700000000000,\"valid_until_unix_ms\":null}}",
+        "canonical_record_json": "{\"api_version\":\"forgeos.governance/v1\",\"integrity\":{\"canonical_sha256\":\"dc6963537f59e0594e6d5d1651e16070b81365ff379acc5ec09956b18e4b17b4\",\"canonicalization\":\"forgeos.canonical-json/v1\"},\"kind\":\"EvidenceRecord\",\"metadata\":{\"aggregate_id\":\"evidence-check-pass\",\"context_sha256\":\"1111111111111111111111111111111111111111111111111111111111111111\",\"created_at_unix_ms\":1700000000000,\"created_by\":{\"authority_domain\":\"declared-shadow\",\"principal_id\":\"fixture-tool\",\"principal_type\":\"tool\",\"role\":\"fixture-producer\",\"run_id\":\"fixture-run-001\"},\"policy_sha256\":\"2222222222222222222222222222222222222222222222222222222222222222\",\"project_id\":\"catalyst\",\"record_id\":\"evr-0001\",\"scope\":\"module:harness\",\"sequence\":1,\"source_revision\":\"654befb\",\"source_tree_sha256\":\"3333333333333333333333333333333333333333333333333333333333333333\",\"supersedes_record_ids\":[]},\"spec\":{\"artifact_sha256\":\"4444444444444444444444444444444444444444444444444444444444444444\",\"collector\":{\"collector_id\":\"python-checker\",\"collector_type\":\"tool\",\"collector_version\":\"v1\",\"parameters_sha256\":\"5555555555555555555555555555555555555555555555555555555555555555\",\"run_id\":\"fixture-run-001\"},\"content_role\":\"untrusted_data\",\"directness\":\"direct\",\"evidence_type\":\"test_run\",\"locator\":{\"content_sha256\":\"6666666666666666666666666666666666666666666666666666666666666666\",\"exit_code\":0,\"line_end\":null,\"line_start\":null,\"locator_ref\":\"python3 -B harness/agent_engineering_check.py .\",\"locator_type\":\"command\"},\"observed_at_unix_ms\":1700000000000,\"sensitivity\":\"internal\",\"source_snapshot\":{\"snapshot_id\":\"snapshot-fixture-001\",\"snapshot_sha256\":\"7777777777777777777777777777777777777777777777777777777777777777\",\"snapshot_type\":\"repository\"},\"source_trust\":\"observed\",\"subjects\":[\"module:harness\"]},\"status\":{\"reason_codes\":[],\"state\":\"valid\",\"valid_from_unix_ms\":1700000000000,\"valid_until_unix_ms\":null}}",
+        "canonical_sha256": "dc6963537f59e0594e6d5d1651e16070b81365ff379acc5ec09956b18e4b17b4"
+      },
+      "record": {
+        "api_version": "forgeos.governance/v1",
+        "integrity": {
+          "canonical_sha256": "dc6963537f59e0594e6d5d1651e16070b81365ff379acc5ec09956b18e4b17b4",
+          "canonicalization": "forgeos.canonical-json/v1"
+        },
+        "kind": "EvidenceRecord",
+        "metadata": {
+          "aggregate_id": "evidence-check-pass",
+          "context_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+          "created_at_unix_ms": 1700000000000,
+          "created_by": {
+            "authority_domain": "declared-shadow",
+            "principal_id": "fixture-tool",
+            "principal_type": "tool",
+            "role": "fixture-producer",
+            "run_id": "fixture-run-001"
+          },
+          "policy_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+          "project_id": "catalyst",
+          "record_id": "evr-0001",
+          "scope": "module:harness",
+          "sequence": 1,
+          "source_revision": "654befb",
+          "source_tree_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+          "supersedes_record_ids": []
+        },
+        "spec": {
+          "artifact_sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+          "collector": {
+            "collector_id": "python-checker",
+            "collector_type": "tool",
+            "collector_version": "v1",
+            "parameters_sha256": "5555555555555555555555555555555555555555555555555555555555555555",
+            "run_id": "fixture-run-001"
+          },
+          "content_role": "untrusted_data",
+          "directness": "direct",
+          "evidence_type": "test_run",
+          "locator": {
+            "content_sha256": "6666666666666666666666666666666666666666666666666666666666666666",
+            "exit_code": 0,
+            "line_end": null,
+            "line_start": null,
+            "locator_ref": "python3 -B harness/agent_engineering_check.py .",
+            "locator_type": "command"
+          },
+          "observed_at_unix_ms": 1700000000000,
+          "sensitivity": "internal",
+          "source_snapshot": {
+            "snapshot_id": "snapshot-fixture-001",
+            "snapshot_sha256": "7777777777777777777777777777777777777777777777777777777777777777",
+            "snapshot_type": "repository"
+          },
+          "source_trust": "observed",
+          "subjects": ["module:harness"]
+        },
+        "status": {
+          "reason_codes": [],
+          "state": "valid",
+          "valid_from_unix_ms": 1700000000000,
+          "valid_until_unix_ms": null
+        }
+      }
+    },
+    {
+      "digest_domain": "forgeos.governance.knowledge-claim.v1",
+      "expected": {
+        "canonical_payload_json": "{\"api_version\":\"forgeos.governance/v1\",\"integrity\":{\"canonical_sha256\":\"\",\"canonicalization\":\"forgeos.canonical-json/v1\"},\"kind\":\"KnowledgeClaim\",\"metadata\":{\"aggregate_id\":\"claim-harness-check\",\"context_sha256\":\"1111111111111111111111111111111111111111111111111111111111111111\",\"created_at_unix_ms\":1700000001000,\"created_by\":{\"authority_domain\":\"declared-shadow\",\"principal_id\":\"fixture-agent\",\"principal_type\":\"agent\",\"role\":\"claim-author\",\"run_id\":\"fixture-run-001\"},\"policy_sha256\":\"2222222222222222222222222222222222222222222222222222222222222222\",\"project_id\":\"catalyst\",\"record_id\":\"kcr-0001\",\"scope\":\"module:harness\",\"sequence\":1,\"source_revision\":\"654befb\",\"source_tree_sha256\":\"3333333333333333333333333333333333333333333333333333333333333333\",\"supersedes_record_ids\":[]},\"spec\":{\"claim_type\":\"fact\",\"confidence_micros\":null,\"contradicting_evidence_record_ids\":[],\"decision_authority\":null,\"derived_from_claim_record_ids\":[],\"object_type\":\"string\",\"object_value\":\"构建通过 <>& 😀\",\"owner\":{\"principal_id\":\"governance-review\",\"principal_type\":\"human\"},\"predicate\":\"has-structural-check-result\",\"queue_ref\":null,\"reasoning\":\"候选事实仅引用一次受限测试观察；它不等于完成、可信或已批准。\",\"review_by_unix_ms\":1700086400000,\"subject\":\"module:harness\",\"supporting_evidence_record_ids\":[\"evr-0001\"],\"validation_plan\":null},\"status\":{\"reason_codes\":[],\"state\":\"candidate\",\"valid_from_unix_ms\":1700000001000,\"valid_until_unix_ms\":1700086400000}}",
+        "canonical_record_json": "{\"api_version\":\"forgeos.governance/v1\",\"integrity\":{\"canonical_sha256\":\"953b14819b50db73cdb3e1b523303c7c669a7e9bbeeacefcd89c4b25681da8ec\",\"canonicalization\":\"forgeos.canonical-json/v1\"},\"kind\":\"KnowledgeClaim\",\"metadata\":{\"aggregate_id\":\"claim-harness-check\",\"context_sha256\":\"1111111111111111111111111111111111111111111111111111111111111111\",\"created_at_unix_ms\":1700000001000,\"created_by\":{\"authority_domain\":\"declared-shadow\",\"principal_id\":\"fixture-agent\",\"principal_type\":\"agent\",\"role\":\"claim-author\",\"run_id\":\"fixture-run-001\"},\"policy_sha256\":\"2222222222222222222222222222222222222222222222222222222222222222\",\"project_id\":\"catalyst\",\"record_id\":\"kcr-0001\",\"scope\":\"module:harness\",\"sequence\":1,\"source_revision\":\"654befb\",\"source_tree_sha256\":\"3333333333333333333333333333333333333333333333333333333333333333\",\"supersedes_record_ids\":[]},\"spec\":{\"claim_type\":\"fact\",\"confidence_micros\":null,\"contradicting_evidence_record_ids\":[],\"decision_authority\":null,\"derived_from_claim_record_ids\":[],\"object_type\":\"string\",\"object_value\":\"构建通过 <>& 😀\",\"owner\":{\"principal_id\":\"governance-review\",\"principal_type\":\"human\"},\"predicate\":\"has-structural-check-result\",\"queue_ref\":null,\"reasoning\":\"候选事实仅引用一次受限测试观察；它不等于完成、可信或已批准。\",\"review_by_unix_ms\":1700086400000,\"subject\":\"module:harness\",\"supporting_evidence_record_ids\":[\"evr-0001\"],\"validation_plan\":null},\"status\":{\"reason_codes\":[],\"state\":\"candidate\",\"valid_from_unix_ms\":1700000001000,\"valid_until_unix_ms\":1700086400000}}",
+        "canonical_sha256": "953b14819b50db73cdb3e1b523303c7c669a7e9bbeeacefcd89c4b25681da8ec"
+      },
+      "record": {
+        "api_version": "forgeos.governance/v1",
+        "integrity": {
+          "canonical_sha256": "953b14819b50db73cdb3e1b523303c7c669a7e9bbeeacefcd89c4b25681da8ec",
+          "canonicalization": "forgeos.canonical-json/v1"
+        },
+        "kind": "KnowledgeClaim",
+        "metadata": {
+          "aggregate_id": "claim-harness-check",
+          "context_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+          "created_at_unix_ms": 1700000001000,
+          "created_by": {
+            "authority_domain": "declared-shadow",
+            "principal_id": "fixture-agent",
+            "principal_type": "agent",
+            "role": "claim-author",
+            "run_id": "fixture-run-001"
+          },
+          "policy_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+          "project_id": "catalyst",
+          "record_id": "kcr-0001",
+          "scope": "module:harness",
+          "sequence": 1,
+          "source_revision": "654befb",
+          "source_tree_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+          "supersedes_record_ids": []
+        },
+        "spec": {
+          "claim_type": "fact",
+          "confidence_micros": null,
+          "contradicting_evidence_record_ids": [],
+          "decision_authority": null,
+          "derived_from_claim_record_ids": [],
+          "object_type": "string",
+          "object_value": "构建通过 <>& 😀",
+          "owner": {
+            "principal_id": "governance-review",
+            "principal_type": "human"
+          },
+          "predicate": "has-structural-check-result",
+          "queue_ref": null,
+          "reasoning": "候选事实仅引用一次受限测试观察；它不等于完成、可信或已批准。",
+          "review_by_unix_ms": 1700086400000,
+          "subject": "module:harness",
+          "supporting_evidence_record_ids": ["evr-0001"],
+          "validation_plan": null
+        },
+        "status": {
+          "reason_codes": [],
+          "state": "candidate",
+          "valid_from_unix_ms": 1700000001000,
+          "valid_until_unix_ms": 1700086400000
+        }
+      }
+    }
+  ],
+  "schema_ref": "docs/contracts/governance-evidence-claim-v1.schema.json"
+}

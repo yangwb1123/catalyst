@@ -20,6 +20,7 @@ export const GOVERNANCE_DIRS = [
   join('.agent', 'eval'),
   join('.agent', 'routing'),
   join('.agent', 'policies'),
+  join('.agent', 'engineering'),
   join('.ai', 'prompts'),
 ];
 
@@ -27,6 +28,16 @@ export const GOVERNANCE_DIRS = [
 // retired copied file from a user's unrelated file. This state is project
 // metadata, not part of the copied 70%, and therefore is never source-overwritten.
 export const SCAFFOLD_STATE_FILE = join('.agent', 'scaffold-state.json');
+
+// Project-owned detector instances are seeded once but are NOT part of the
+// upgrade-synchronized 70%. Their targets, debt baseline and approved waivers
+// evolve with the governed project. forge-upgrade may add a missing instance to
+// a legacy project, but it must never overwrite an existing one.
+export const PROJECT_INSTANCE_FILES = [
+  join('.arch', 'frontend-architecture.v1.json'),
+  join('.arch', 'frontend-architecture-baseline.v1.json'),
+  join('.arch', 'frontend-architecture-waivers.v1.json'),
+];
 
 // Individual files copied verbatim: the red-lines, the architecture rules, and
 // the FULL harness — every TOOL plus its SELF-TEST, so check + accept both RUN in
@@ -40,10 +51,71 @@ export const COPIED_FILES = [
   // The runtime release executor requires this real (non-symlink) directory
   // before it grants exact Edit permission for an immutable phase emit set.
   join('docs', 'release', 'README.md'),
+  // Canonical planning-only capability vocabulary and its one-owner Skill map.
+  // Agent Engineering references these existing catalogs instead of inventing
+  // a parallel capability namespace; copying keeps fresh/updated projects valid.
+  join('docs', 'design', 'ai-engineering-os', 'capability-catalog.v1.yml'),
+  join('docs', 'design', 'ai-engineering-os', 'capability-skill-map.v1.yml'),
+  join('docs', 'design', 'ai-engineering-os', 'backend-decision-standard.md'),
+  join('docs', 'design', 'ai-engineering-os', 'frontend-design-standard.md'),
+  join('docs', 'design', 'ai-engineering-os', 'frontend-code-architecture-standard.md'),
+  join('docs', 'design', 'ai-engineering-os', 'governance-contracts.md'),
+  // The copied AFDS standard links this accepted decision. Keep the governing
+  // rationale in the same projection so generated projects have no dangling
+  // local documentation links.
+  join('docs', 'adr', '0042-frontend-design-decision-contract.md'),
+  join('docs', 'adr', '0043-frontend-code-architecture-governance.md'),
+  join('docs', 'adr', '0044-business-ui-geometry-contract.md'),
+  join('docs', 'adr', '0045-canonical-evidence-claim-contract.md'),
+  join('docs', 'adr', '0046-local-governance-record-journal.md'),
+  join('docs', 'adr', '0047-shadow-cognitive-atom-projection-v1.md'),
+  join('docs', 'contracts', 'governance-evidence-claim-v1.schema.json'),
+  join('docs', 'contracts', 'governance-record-journal-v1.schema.json'),
+  join('docs', 'contracts', 'cognitive-atom-projection-v1.schema.json'),
+  join('docs', 'contracts', 'fixtures', 'governance-evidence-claim-v1.json'),
+  join('docs', 'contracts', 'fixtures', 'cognitive-atom-projection-v1.json'),
   // harness tools
   join('harness', 'gate.mjs'),
   join('harness', 'policies.yml'),
   join('harness', 'check.py'),
+  join('harness', 'agent_engineering_check.py'), // imported by check.py; validates scoped Agent Engineering contracts
+  join('harness', 'governance_contract_check.py'), // strict EvidenceRecord/KnowledgeClaim shadow codec and validator
+  join('harness', 'governance_contract', '__init__.py'),
+  join('harness', 'governance_contract', 'codec.py'),
+  join('harness', 'governance_contract', 'constants.py'),
+  join('harness', 'governance_contract', 'fixture.py'),
+  join('harness', 'governance_contract', 'record_set.py'),
+  join('harness', 'governance_contract', 'semantics.py'),
+  join('harness', 'governance_contract', 'shape.py'),
+  join('harness', 'cognitive_atom_contract_check.py'), // strict CognitiveAtom shadow reprojection and byte comparator
+  join('harness', 'cognitive_atom_contract', '__init__.py'),
+  join('harness', 'cognitive_atom_contract', 'constants.py'),
+  join('harness', 'cognitive_atom_contract', 'fixture.py'),
+  join('harness', 'cognitive_atom_contract', 'projection.py'),
+  join('harness', 'backend_decision_contract.py'), // canonical backend trigger/dimension/floor vocabulary and byte pins
+  join('harness', 'backend_decision_check.py'), // BackendDecisionPackage contract + instance validator (shadow)
+  join('harness', 'backend_evidence_check.py'), // typed/subject-bound bounded evidence resolution
+  join('harness', 'backend_package_check.py'), // source-resolving BackendDecisionPackage instance semantics
+  join('harness', 'frontend_design', '__init__.py'), // package marker required by package-style imports and copied self-tests
+  join('harness', 'frontend_design', 'contract.py'), // canonical AFDS trigger/dimension/profile vocabulary and byte pins
+  join('harness', 'frontend_design', 'composition.py'), // business-role/task/data composition and presentation-reference validation
+  join('harness', 'frontend_design', 'composition_support.py'), // shared bounded JSON, reference, and scalar helpers
+  join('harness', 'frontend_design', 'geometry.py'), // capture-context-bound declarative geometry-report validation
+  join('harness', 'frontend_design', 'governance.py'), // cross-record profile, override, risk, and review governance
+  join('harness', 'frontend_design_check.py'), // FrontendDesignPackage contract + instance CLI (shadow)
+  join('harness', 'frontend_design', 'evidence.py'), // artifact/proof separation and bounded PNG/digest checks
+  join('harness', 'frontend_design', 'model.py'), // classification, flow, state/action and capture-context semantics
+  join('harness', 'frontend_design', 'package.py'), // source-resolving FrontendDesignPackage instance semantics
+  join('harness', 'frontend_design_test_support.py'), // shared source-bound AFDS fixture builder
+  join('harness', 'frontend-architecture', 'check.mjs'), // standalone shadow frontend architecture detector
+  join('harness', 'frontend-architecture', 'contract.mjs'), // strict project contract/baseline/waiver validation
+  join('harness', 'frontend-architecture', 'graph.mjs'), // ownership, direction, public API, SCC and review metrics
+  join('harness', 'frontend-architecture', 'typescript-adapter.mjs'), // compiler-backed TS/TSX import model
+  join('harness', 'completion_evidence_check.py'), // instance-level completion honesty validator
+  join('harness', 'engineering_detector_check.py'), // activation/capability/detector wiring validator
+  join('harness', 'engineering_check_support.py'), // strict YAML and repository-reference primitives
+  join('harness', 'engineering_routing_check.py'), // context-route and assurance-profile validation
+  join('harness', 'governance_engineering_check.py'), // Evidence/Claim registry, pin, Skill, and detector integration
   join('harness', 'mode_gating_check.py'), // imported by check.py; without it check.py fails to import
   join('harness', 'release_boundary_check.py'), // imported by check.py; pins docs-only deploy/rollback trust boundary
   join('harness', 'workflow_control_check.py'), // imported by check.py; fails closed on dangling/unsupported workflow control
@@ -89,6 +161,19 @@ export const COPIED_FILES = [
   // test_enforce.mjs (pins the warn|block enforce resolution in the copied adapters.mjs)
   // was once dropped here — the drift test_forge-init.mjs's manifest guard now forbids.
   join('harness', 'test_check.py'),
+  join('harness', 'test_check_bounded_input.py'),
+  join('harness', 'test_agent_engineering_check.py'),
+  join('harness', 'test_governance_contract_check.py'),
+  join('harness', 'test_cognitive_atom_contract_check.py'),
+  join('harness', 'test_governance_engineering_integration.py'),
+  join('harness', 'test_backend_decision_check.py'),
+  join('harness', 'test_frontend_design_adversarial.py'),
+  join('harness', 'test_frontend_business_ui_composition_boundaries.py'),
+  join('harness', 'test_frontend_business_ui_geometry.py'),
+  join('harness', 'test_frontend_geometry_coordinate_contract.py'),
+  join('harness', 'test_frontend_design_check.py'),
+  join('harness', 'frontend-architecture', 'test_frontend-architecture.mjs'),
+  join('harness', 'test_legacy_ai_batch_contract.py'),
   join('harness', 'test_mode_gating_check.py'),
   join('harness', 'test_release_boundary_check.py'),
   join('harness', 'test_workflow_control_check.py'),
@@ -135,6 +220,7 @@ export const HARNESS_NOT_COPIED = [
   join('harness', 'scaffold', 'forge-upgrade.mjs'),
   join('harness', 'scaffold', 'upgrade-state.mjs'),
   join('harness', 'scaffold', 'test_forge-upgrade.mjs'),
+  join('harness', 'scaffold', 'test_forge-upgrade-engineering.mjs'),
   join('harness', 'scaffold', 'test_scaffold_security.mjs'),
   // copy-manifest.mjs itself is this data module — scaffold/upgrade-time only,
   // same rationale as scaffold-fs.mjs (never carried into a generated project).

@@ -35,21 +35,14 @@ pub use registered::{
     RegisteredGroupAgentNodeProviderFactoryError, RegisteredGroupAgentNodeProviderReadiness,
 };
 #[cfg(test)]
+#[path = "tests/live_gateway.rs"]
+mod live_gateway_tests;
+#[cfg(test)]
 #[path = "tests/terminal_semantics.rs"]
 mod terminal_semantics_tests;
 #[cfg(test)]
 #[path = "tests/transport.rs"]
 mod tests;
-#[cfg(test)]
-#[path = "tests/live_gateway.rs"]
-mod live_gateway_tests;
-use std::time::Duration;
-use crate::runtime_domain::{
-    Cancellation, ModelEvent, ModelEventStream, ModelProvider, ModelRequest, PreparedModelProvider,
-    PreparedModelRequest, ProviderError,
-};
-use futures_util::{StreamExt, stream};
-use reqwest::{Client, Response, Url, header};
 use self::{
     endpoint::{build_client, responses_endpoint},
     request::{
@@ -59,6 +52,13 @@ use self::{
     },
     sse::SseDecoder,
 };
+use crate::runtime_domain::{
+    Cancellation, ModelEvent, ModelEventStream, ModelProvider, ModelRequest, PreparedModelProvider,
+    PreparedModelRequest, ProviderError,
+};
+use futures_util::{StreamExt, stream};
+use reqwest::{Client, Response, Url, header};
+use std::time::Duration;
 const ERROR_BODY_LIMIT: usize = 64 * 1024;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(600);

@@ -14,8 +14,12 @@ import unittest
 
 
 AI_BATCH_DIR = Path(__file__).resolve().parents[1]
+REPO_ROOT = AI_BATCH_DIR.parents[1]
 SCRIPT = AI_BATCH_DIR / "pi-batch.py"
 REQUIREMENT = Path(__file__).resolve().parent / "fixtures" / "requirement.md"
+CROSSWALK = AI_BATCH_DIR / "afds-crosswalk.v1.yml"
+TASK_KEYWORDS = AI_BATCH_DIR / "pbatch" / "task_keywords.yaml"
+UI_RULES = AI_BATCH_DIR / "ui-specs" / "rules.yaml"
 
 
 class CLISmokeTest(unittest.TestCase):
@@ -36,7 +40,36 @@ class CLISmokeTest(unittest.TestCase):
         return completed
 
     def run_cli(self, *args: str) -> dict:
-        return json.loads(self.run_cli_output(*args).stdout)
+        result = json.loads(self.run_cli_output(*args).stdout)
+        self.assert_legacy_output(result)
+        return result
+
+    def assert_legacy_output(self, result: dict) -> None:
+        self.assertEqual(result.get("namespace"), "forgeos.legacy-ai-batch")
+        self.assertEqual(result.get("version"), 1)
+        self.assertIs(result.get("afds_direct_write"), False)
+
+    def run_repo_cli_output(self, *args: str) -> subprocess.CompletedProcess:
+        """Run the installed-tree CLI with optional packages enabled.
+
+        The regular smoke helper deliberately uses ``-S`` and a temporary
+        directory to prove the copied zero-dependency fallback.  This helper
+        exercises the other public layout: the YAML registries loaded from a
+        Forge repository whose public path base is the repository root.
+        """
+        env = os.environ.copy()
+        env["PYTHONDONTWRITEBYTECODE"] = "1"
+        completed = subprocess.run(
+            [sys.executable, str(SCRIPT), *args],
+            cwd=REPO_ROOT,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        return completed
 
     def assert_output_path(self, result: dict, source: str) -> Path:
         base = Path(result["path_base"])
@@ -89,6 +122,118 @@ class CLISmokeTest(unittest.TestCase):
     def test_rules_check_validates_effective_bundled_registries(self) -> None:
         self.run_cli_output("rules", "--check")
 
+    def test_rules_check_resolves_bundled_files_from_repo_root(self) -> None:
+        try:
+            import yaml  # noqa: F401 - confirms the real registries load
+        except ImportError:
+            self.skipTest("PyYAML is required for the installed-tree contract")
+
+        self.run_repo_cli_output("rules", "--check")
+        result = json.loads(self.run_repo_cli_output(
+            "rules", "企业订单支付审批页面", "--json").stdout)
+        self.assert_legacy_output(result)
+        self.assertEqual(Path(result["path_base"]), REPO_ROOT.resolve())
+        sources = [source for rule in result["rules"]
+                   for source in rule["files"]]
+        self.assertTrue(sources)
+        for source in sources:
+            self.assertFalse(Path(source).is_absolute(), source)
+            self.assertTrue((REPO_ROOT / source).is_file(), source)
+
+    def test_react_native_beats_overlapping_react_platform(self) -> None:
+        result = self.run_cli(
+            "classify", "用 React Native 实现移动端表单页面", "--json")
+        self.assertEqual(result["dominant"]["task_type"], "frontend_ui")
+        self.assertEqual(result["dominant"]["platform"], "rn")
+        self.assertEqual(result["dominant"]["profile"], "mobile")
+
+    def test_frontend_business_profiles_cover_common_product_types(self) -> None:
+        cases = {
+            "CRM 客户跟进页面": "crm",
+            "电商购物车页面": "commerce",
+            "AI 对话 Agent 页面": "ai-agent",
+        }
+        for prompt, expected in cases.items():
+            with self.subTest(prompt=prompt):
+                result = self.run_cli("classify", prompt, "--json")
+                self.assertEqual(result["dominant"]["task_type"], "frontend_ui")
+                self.assertEqual(result["dominant"]["profile"], expected)
+
+    def test_afds_crosswalk_requires_reclassification_for_ambiguity(self) -> None:
+        crosswalk = json.loads(CROSSWALK.read_text(encoding="utf-8"))
+        self.assertEqual(crosswalk["source"], {
+            "namespace": "forgeos.legacy-ai-batch",
+            "version": 1,
+            "afds_direct_write": False,
+        })
+        self.assertFalse(crosswalk["policy"]["exact_mapping_direct_write"])
+        self.assertEqual(crosswalk["policy"]["ambiguous_mapping_action"],
+                         "second_classification_required")
+        self.assertEqual(set(crosswalk["profiles"]) - {"unknown"}, {
+            "erp", "cms", "oa", "crm", "commerce", "ai-agent",
+            "dashboard", "immersive", "marketing", "mobile",
+        })
+        self.assertEqual(set(crosswalk["page_types"]), {
+            "form", "table", "detail", "workbench", "wizard", "editor",
+            "canvas", "chat", "master-detail", "settings", "timeline",
+            "map", "immersive", "auth",
+        })
+        self.assertEqual(set(crosswalk["platforms"]) - {"unknown"},
+                         {"tsx", "vue", "dart", "rn"})
+        for group in ("profiles", "page_types", "platforms"):
+            for legacy_id, entry in crosswalk[group].items():
+                with self.subTest(group=group, legacy_id=legacy_id,
+                                  contract="rationale"):
+                    self.assertTrue(entry["rationale_required"])
+                if entry["mapping"] == "ambiguous":
+                    with self.subTest(group=group, legacy_id=legacy_id):
+                        self.assertTrue(entry["second_classification_required"])
+                        self.assertTrue(entry["rationale_required"])
+                        self.assertGreaterEqual(len(entry["candidates"]), 2)
+
+    def test_afds_crosswalk_candidates_exist_in_canonical_catalog(self) -> None:
+        try:
+            import yaml
+        except ImportError:
+            self.skipTest("PyYAML is required to parse the canonical catalog")
+        crosswalk = json.loads(CROSSWALK.read_text(encoding="utf-8"))
+        keywords = yaml.safe_load(TASK_KEYWORDS.read_text(encoding="utf-8"))
+        legacy_rules = yaml.safe_load(UI_RULES.read_text(encoding="utf-8"))
+        self.assertEqual(set(crosswalk["profiles"]) - {"unknown"},
+                         set(keywords["profiles"]))
+        self.assertEqual(set(crosswalk["platforms"]) - {"unknown"},
+                         set(keywords["platforms"]))
+        self.assertEqual(set(crosswalk["page_types"]),
+                         set(legacy_rules["page_types"]))
+        catalog_path = REPO_ROOT / crosswalk["policy"]["canonical_catalog"]
+        catalog = yaml.safe_load(catalog_path.read_text(encoding="utf-8"))
+        canonical = {
+            "profiles": {item["id"] for item in catalog["profiles"]},
+            "page_types": {item["id"] for item in catalog["page_patterns"]},
+            "platforms": set(catalog["platforms"]),
+        }
+        for group, allowed in canonical.items():
+            for legacy_id, entry in crosswalk[group].items():
+                with self.subTest(group=group, legacy_id=legacy_id):
+                    self.assertTrue(set(entry["candidates"]) <= allowed)
+
+    def test_rules_recognize_extended_page_patterns(self) -> None:
+        cases = {
+            "实现多步骤向导页面": "wizard",
+            "实现 CMS 内容编辑器页面": "editor",
+            "实现流程设计器画布页面": "canvas",
+            "实现 AI 对话页面": "chat",
+            "实现主从列表详情页面": "master-detail",
+            "实现系统设置页面": "settings",
+            "实现客户活动时间线页面": "timeline",
+            "实现 GIS 地图页面": "map",
+        }
+        for prompt, expected in cases.items():
+            with self.subTest(prompt=prompt):
+                result = self.run_cli("rules", prompt, "--json")
+                self.assertEqual(result["domain"], "frontend_ui")
+                self.assertIn(expected, result["page_types"])
+
     def test_human_outputs_declare_canonical_path_base(self) -> None:
         commands = (
             ("classify", "用 Flutter 实现 ERP 排程列表页"),
@@ -98,6 +243,8 @@ class CLISmokeTest(unittest.TestCase):
         for command in commands:
             with self.subTest(command=command[0]):
                 output = self.run_cli_output(*command).stdout
+                self.assertIn("namespace=forgeos.legacy-ai-batch", output)
+                self.assertIn("afds_direct_write=false", output)
                 match = re.search(r"(?m)^Path base: (.+)$", output)
                 self.assertIsNotNone(match, output)
                 base = Path(match.group(1))
@@ -139,7 +286,9 @@ class CLISmokeTest(unittest.TestCase):
                     timeout=15, check=False,
                 )
                 self.assertEqual(completed.returncode, 0, completed.stderr)
-                return json.loads(completed.stdout)
+                result = json.loads(completed.stdout)
+                self.assert_legacy_output(result)
+                return result
 
             classified = copied_cli("classify", "实现 Flutter 表单页面", "--json")
             self.assertEqual(Path(classified["path_base"]), copied.resolve())

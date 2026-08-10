@@ -34,7 +34,11 @@ func do(t *testing.T, method, url, body string) (int, string) {
 	if err != nil {
 		t.Fatalf("%s %s: %v", method, url, err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			t.Errorf("close response body: %v", err)
+		}
+	}()
 	b, _ := io.ReadAll(resp.Body)
 	return resp.StatusCode, string(b)
 }

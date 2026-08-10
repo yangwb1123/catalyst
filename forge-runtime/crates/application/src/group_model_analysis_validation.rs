@@ -8,7 +8,7 @@ use forge_runtime_domain::{
     MAX_GROUP_MODEL_ANALYSIS_ID_BYTES, MAX_GROUP_MODEL_ANALYSIS_IDEMPOTENCY_KEY_BYTES,
     MAX_GROUP_MODEL_ANALYSIS_MODEL_BYTES, MAX_GROUP_MODEL_ANALYSIS_OUTPUT_TOKENS,
     PrepareGroupModelAnalysis, PrepareGroupModelAnalysisDisposition,
-    PrepareGroupModelAnalysisResult,
+    PrepareGroupModelAnalysisResult, endpoint_allowed,
 };
 
 use crate::{
@@ -29,8 +29,7 @@ pub(crate) fn validate_prepare_input(
             &input.idempotency_key,
             MAX_GROUP_MODEL_ANALYSIS_IDEMPOTENCY_KEY_BYTES,
         )
-        && input.endpoint.starts_with("http://")
-            || input.endpoint.starts_with("https://")
+        && endpoint_allowed(&input.endpoint)
         && (1..=MAX_GROUP_MODEL_ANALYSIS_OUTPUT_TOKENS).contains(&input.max_output_tokens)
         && i64::try_from(input.created_at_ms).is_ok();
     valid

@@ -4,8 +4,8 @@ use rusqlite::{Connection, Transaction, TransactionBehavior, params};
 
 use crate::runtime_domain::{
     GROUP_AGENT_GRAPH_RUN_TERMINAL_VERSION, GroupAgentGraphRunStatus,
-    GroupAgentNodeLifecycleInspection, GroupAgentNodeTerminalArtifactKind, HubEntity, HubStoreError,
-    TerminalizeGroupAgentNodeDispatch, TerminalizeGroupAgentNodeDispatchResult,
+    GroupAgentNodeLifecycleInspection, GroupAgentNodeTerminalArtifactKind, HubEntity,
+    HubStoreError, TerminalizeGroupAgentNodeDispatch, TerminalizeGroupAgentNodeDispatchResult,
 };
 
 use super::{
@@ -295,7 +295,10 @@ fn ensure_persisted(
     // `load_events` re-summation, `valid_terminal_record_state`, `validate_state_shape`,
     // `inspection.validate()` exact status/v/seq/event binding) so the CAS
     // post-state is self-evident to a reader of this file alone.
-    let expected_journal = request.control.graph_run.journal_bytes
+    let expected_journal = request
+        .control
+        .graph_run
+        .journal_bytes
         .checked_add(request.event_json.len())
         .ok_or_else(|| corrupt("terminal journal byte count overflows"))?;
     let exact = inspection.active_lane.is_none()

@@ -215,16 +215,20 @@ fn wave_admit_materializes_every_ready_node_from_one_wave() {
 /// candidate carries the operator's real execution options — the wave-admit
 /// pass-through (review Finding 2), never literals.
 fn assert_wave_contract_carries_execution_options(fixture: &Fixture, contract_id: &str) {
-    let show = command(fixture.state.path(), fixture.cwd.path(), &[
-        "group",
-        "graph",
-        "run",
-        "scheduled-contract",
-        "successor",
-        "show",
-        contract_id,
-        "--include-contract",
-    ])
+    let show = command(
+        fixture.state.path(),
+        fixture.cwd.path(),
+        &[
+            "group",
+            "graph",
+            "run",
+            "scheduled-contract",
+            "successor",
+            "show",
+            contract_id,
+            "--include-contract",
+        ],
+    )
     .output()
     .expect("show wave contract with candidate");
     let shown = successful_json(&show);
@@ -240,15 +244,19 @@ fn assert_wave_contract_carries_execution_options(fixture: &Fixture, contract_id
 ///  verifies the admitted successor candidate is
 /// queryable through the successor show command.
 fn assert_wave_contract_visible(fixture: &Fixture, contract_id: &str) {
-    let show = command(fixture.state.path(), fixture.cwd.path(), &[
-        "group",
-        "graph",
-        "run",
-        "scheduled-contract",
-        "successor",
-        "show",
-        contract_id,
-    ])
+    let show = command(
+        fixture.state.path(),
+        fixture.cwd.path(),
+        &[
+            "group",
+            "graph",
+            "run",
+            "scheduled-contract",
+            "successor",
+            "show",
+            contract_id,
+        ],
+    )
     .output()
     .expect("show admitted wave contract");
     let shown = successful_json(&show);
@@ -277,17 +285,21 @@ fn wave_admit_accepts_zero_receipts_for_same_wave_sibling() {
 }
 
 fn assert_successor_provider_request_prepares(fixture: &Fixture, contract_id: &str) {
-    let prepared = command(fixture.state.path(), fixture.cwd.path(), &[
-        "group",
-        "graph",
-        "run",
-        "scheduled-contract",
-        "provider-request",
-        "prepare",
-        contract_id,
-        "--idempotency-key",
-        "zero-receipt-successor-provider-request",
-    ])
+    let prepared = command(
+        fixture.state.path(),
+        fixture.cwd.path(),
+        &[
+            "group",
+            "graph",
+            "run",
+            "scheduled-contract",
+            "provider-request",
+            "prepare",
+            contract_id,
+            "--idempotency-key",
+            "zero-receipt-successor-provider-request",
+        ],
+    )
     .output()
     .expect("prepare successor provider request");
     let prepared = successful_json(&prepared);
@@ -296,15 +308,19 @@ fn assert_successor_provider_request_prepares(fixture: &Fixture, contract_id: &s
         contract_id
     );
     let request_id = text(&prepared["inspection"]["record"]["provider_request_id"]);
-    let shown = command(fixture.state.path(), fixture.cwd.path(), &[
-        "group",
-        "graph",
-        "run",
-        "scheduled-contract",
-        "provider-request",
-        "show",
-        &request_id,
-    ])
+    let shown = command(
+        fixture.state.path(),
+        fixture.cwd.path(),
+        &[
+            "group",
+            "graph",
+            "run",
+            "scheduled-contract",
+            "provider-request",
+            "show",
+            &request_id,
+        ],
+    )
     .output()
     .expect("inspect successor provider request");
     let shown = successful_json(&shown);
@@ -318,15 +334,19 @@ fn assert_successor_provider_request_prepares(fixture: &Fixture, contract_id: &s
 fn wave_admit_rejects_unknown_flag() {
     let fixture = Fixture::new();
     let (graph_run_id, _, _) = prepared_wave(&fixture, "wave-admit-unknown-flag-run");
-    let output = command(fixture.state.path(), fixture.cwd.path(), &[
-        "group",
-        "graph",
-        "run",
-        "scheduled-contract",
-        "wave-admit",
-        &graph_run_id,
-        "--bogus",
-    ])
+    let output = command(
+        fixture.state.path(),
+        fixture.cwd.path(),
+        &[
+            "group",
+            "graph",
+            "run",
+            "scheduled-contract",
+            "wave-admit",
+            &graph_run_id,
+            "--bogus",
+        ],
+    )
     .output()
     .expect("wave-admit bogus flag");
     assert!(!output.status.success());
@@ -363,14 +383,18 @@ fn wave_admit_rejects_drifted_receipt_without_admitting_anything() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("go core"), "{stderr}");
     // Nothing admitted: contract list is empty for the run.
-    let list = command(fixture.state.path(), fixture.cwd.path(), &[
-        "group",
-        "graph",
-        "run",
-        "scheduled-contract",
-        "list",
-        &graph_run_id,
-    ])
+    let list = command(
+        fixture.state.path(),
+        fixture.cwd.path(),
+        &[
+            "group",
+            "graph",
+            "run",
+            "scheduled-contract",
+            "list",
+            &graph_run_id,
+        ],
+    )
     .output()
     .expect("list contracts after rejected wave");
     let listed = successful_json(&list);

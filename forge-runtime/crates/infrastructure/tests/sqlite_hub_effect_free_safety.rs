@@ -1,6 +1,6 @@
-use std::{collections::BTreeMap, fs, path::Path};
 use forge_runtime_domain::{HubStore, HubStoreError};
 use forge_runtime_infrastructure::SqliteHubStore;
+use std::{collections::BTreeMap, fs, path::Path};
 use tempfile::TempDir;
 #[cfg(unix)]
 #[test]
@@ -157,6 +157,10 @@ fn assert_hot_wal_reentry(version: i64) {
     drop(writer);
 }
 fn restore_schema_version(connection: &rusqlite::Connection, version: i64) {
+    connection
+        .execute_batch(RESTORE_HISTORICAL_ANALYSES_SQL)
+        .expect("restore pre-v26 analyses definitions");
+    restore_v24_schema(connection);
     if version < 17 {
         restore_v16_schema(connection);
     }
@@ -190,15 +194,21 @@ fn restore_schema_version(connection: &rusqlite::Connection, version: i64) {
             )
             .expect("restore exact v12 schema");
     }
-    if version <= 16 {
-        connection
-            .execute_batch(RESTORE_HISTORICAL_ANALYSES_SQL)
-            .expect("restore historical analyses definitions");
-    }
 }
-// v25 widened the endpoint CHECK on the analyses/syntheses tables; a
+// v26 widened the endpoint CHECK on the analyses/syntheses tables; a
 // downgraded fixture must restore the historical definitions.
 const RESTORE_HISTORICAL_ANALYSES_SQL: &str = include_str!("restore_historical_analyses.sql");
+
+fn restore_v24_schema(connection: &rusqlite::Connection) {
+    connection
+        .execute_batch(
+            "DROP TABLE governance_structural_heads;
+             DROP TABLE governance_records;
+             DROP TABLE governance_record_append_batches;
+             PRAGMA user_version=24;",
+        )
+        .expect("restore exact v24 schema");
+}
 fn valid_wal_header() -> [u8; 32] {
     let mut header = [0_u8; 32];
     header[..4].copy_from_slice(&[0x37, 0x7f, 0x06, 0x82]);

@@ -1,10 +1,8 @@
-use rusqlite::Connection;
-use tempfile::TempDir;
-use crate::runtime_domain::HubStoreError;
 use super::{
     schema::{
         migrate_with_before_final_fault_for_test, open_database,
         open_existing_dispatch_preflight_read_only_database,
+        open_existing_dispatch_reentry_read_only_database,
     },
     schema_sql::{
         CREATE_V1_SCHEMA_SQL, MIGRATE_V1_TO_V2_SQL, MIGRATE_V2_TO_V3_SQL, MIGRATE_V3_TO_V4_SQL,
@@ -21,10 +19,15 @@ use super::{
     schema_v22_sql::MIGRATE_V21_TO_V22_SQL,
     schema_v23_sql::MIGRATE_V22_TO_V23_SQL,
     schema_v24_sql::MIGRATE_V23_TO_V24_SQL,
+    schema_v25_sql::MIGRATE_V24_TO_V25_SQL,
 };
+use crate::runtime_domain::HubStoreError;
+use rusqlite::Connection;
+use tempfile::TempDir;
 #[path = "tests/schema_full_validation.rs"]
 mod schema_full_validation_tests;
-pub(super) const RESTORE_HISTORICAL_ANALYSES_SQL: &str = include_str!("tests/restore_historical_analyses.sql");
+pub(super) const RESTORE_HISTORICAL_ANALYSES_SQL: &str =
+    include_str!("tests/restore_historical_analyses.sql");
 #[path = "tests/schema_migration_support.rs"]
 mod schema_migration_support;
 #[path = "tests/schema_open_adversarial.rs"]
@@ -47,6 +50,10 @@ mod schema_v14_migration_tests;
 mod schema_v15_migration_tests;
 #[path = "tests/schema_v24_migration.rs"]
 mod schema_v24_migration_tests;
+#[path = "tests/schema_v25_migration.rs"]
+mod schema_v25_migration_tests;
+#[path = "tests/schema_v26_migration.rs"]
+mod schema_v26_migration_tests;
 #[path = "tests/schema_v5_migration.rs"]
 mod schema_v5_migration_tests;
 #[path = "tests/schema_v6_migration.rs"]

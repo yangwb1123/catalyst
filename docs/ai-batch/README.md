@@ -4,6 +4,9 @@
 `classify/rules/assess/eval` 离线分析子集。Sprint 73 先落地评审框架与高维分析，后续批次补齐工程规范、
 产品思维、机制文档、门禁脚本、回归套件与 UI 规范；ForgeOS 的权威运行入口仍是 `.agent/` 与 `harness/`。
 
+所有 JSON 输出声明 `namespace: forgeos.legacy-ai-batch`、`version: 1` 和 `afds_direct_write: false`。这些字段明确表示本目录是
+legacy 分析命名空间，不是 AFDS producer；输出不得直接填充或写入 `FrontendDesignPackage`。
+
 ## 一、资产地图与对照
 
 | ai-batch-runner 资产 | 本仓库位置 | ForgeOS 等价物 / 用途 |
@@ -27,6 +30,7 @@
 - `evals/*.yaml`：从任意工作目录均按脚本位置加载的 JSON-as-YAML portable fixture；
 - `evals/full/`：保留完整项目资产基线，需先实现显式 full-profile/schema adapter，默认不执行；
 - `methodologies/`：产品、UI、系统类型和 build routing 的最小离线基线。
+- `afds-crosswalk.v1.yml`：legacy profile/page/platform 到 AFDS canonical ID 的显式提示映射，不授予直接写入权限。
 
 ## 二、明确不移植
 
@@ -69,10 +73,22 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover \
 reference 同样相对该目录解析，standalone-copy smoke test 会验证所有返回文件真实存在。三种 human 输出也打印相同的
 `Path base`；自定义 registry 文件必须相对这个 base。
 
-## 五、诚实边界
+## 五、AFDS 跨命名空间边界
+
+`classify` 的 `profile`（如 `erp`）、`platform`（如 `tsx/dart/vue/rn`）以及 `rules` 的 `page_types` 属于
+`forgeos.legacy-ai-batch`，不是 AFDS canonical vocabulary。消费者只能通过 `afds-crosswalk.v1.yml` 获取候选提示，再构造
+schema-shaped `classified_value`、来源/假设与分类 `rationale`。
+
+- `mapping: exact` 只说明 legacy 值有单一 canonical 候选，仍不能直接写 package；
+- `mapping: ambiguous` 必须执行第二次 AFDS 分类，保存 `rationale`，并用 proof-backed fact 或 assumption-backed inference 表达；
+- `mapping: unmapped` 必须阻塞并请求足够信息，不能默认写成 `generic_saas`；
+- crosswalk 不执行 workflow、frontend validator、meta review 或完成裁决。
+
+## 六、诚实边界
 
 - `backend-specs/`、`product-specs/` 和 `mechanism/` 是知识与运营参照，不自动成为 ForgeOS 当前事实或硬规则；
 - 部分业务示例保留原项目语境，使用时必须重新验证；
 - `ui-specs/` 是后续 Web UI 的规范资产，当前没有前端 runtime 消费者；
 - 离线分析不等于 runner、pipeline、Agent 执行或生产门禁；
+- legacy 输出即使有 exact crosswalk 也不能直接写 AFDS；歧义映射没有二次分类和理由时必须 fail closed；
 - frontend/UI 关键词仍可能压过后端语义，最终以工作流分级、证据和完整性检查为准。

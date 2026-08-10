@@ -89,10 +89,19 @@ fn terminalization_persists_evidence_and_releases_lane_in_one_transition() {
     assert_eq!(run.v, GROUP_AGENT_GRAPH_RUN_TERMINAL_VERSION);
     assert_eq!(run.last_event_seq, 5);
     assert_eq!(result.inspection.graph_run.events.len(), 5);
-    assert_eq!(run.journal_bytes, claimed.graph_run.run.journal_bytes + terminal.event_json.len());
+    assert_eq!(
+        run.journal_bytes,
+        claimed.graph_run.run.journal_bytes + terminal.event_json.len()
+    );
     assert!(result.inspection.active_lane.is_none());
-    assert_eq!(result.inspection.artifact.as_ref(), Some(&terminal.control.artifact));
-    assert_eq!(result.inspection.terminal_receipt.as_ref(), Some(&terminal.receipt));
+    assert_eq!(
+        result.inspection.artifact.as_ref(),
+        Some(&terminal.control.artifact)
+    );
+    assert_eq!(
+        result.inspection.terminal_receipt.as_ref(),
+        Some(&terminal.receipt)
+    );
     assert!(matches!(
         source
             .fixture

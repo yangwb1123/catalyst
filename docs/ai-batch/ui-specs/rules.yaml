@@ -2,7 +2,8 @@
 #
 # The deterministic half of rule selection (pbatch/rule_matcher.py):
 # a task is classified along three axes — scale (demo/standard/production),
-# page type (form/table/detail/workbench/immersive/auth) and risk
+# page type (form/table/detail/workbench/wizard/editor/canvas/chat/
+# master-detail/settings/timeline/map/immersive/auth) and risk
 # (high-risk business actions) — and the matcher emits a bounded rule
 # manifest. Prompts inject ONLY the manifest (paths + why); the agent
 # loads the listed files on demand, like the memory manifest pattern.
@@ -36,6 +37,14 @@ page_types:
   table: [table, 表格, 列表, 分页, 批量, 查询页]
   detail: [detail, 详情]
   workbench: [workbench, 工作台, dashboard, 仪表盘, 看板]
+  wizard: [wizard, stepper, 向导, 多步骤]
+  editor: [editor, 内容编辑器, 可视化编辑器]
+  canvas: [canvas, 画布, 流程设计器, 节点编辑器]
+  chat: [chat ui, ai 对话, agent 对话, 聊天界面]
+  master-detail: [master-detail, master detail, 主从, 分栏详情]
+  settings: [settings, 设置页, 配置页]
+  timeline: [timeline, 时间线, 活动流]
+  map: [map view, 地图页面, gis 页面]
   immersive: [特效, 3d, 沉浸, 动画, 落地页, landing, 官网, 营销]
   auth: [登录, login, 注册, register]
 
@@ -63,7 +72,8 @@ rules:
       并发/错误/权限/数据语义、反模式清单（评审角色裁决依据）
     files: [ui-specs/business-ui-contract.md]
     min_tier: standard
-    page_types: [form, table, detail, workbench]
+    page_types: [form, table, detail, workbench, wizard, editor, canvas,
+                 chat, master-detail, settings, timeline, map]
     required: false
   component-spec:
     description: 组件尺寸/状态/行为规范
@@ -73,12 +83,14 @@ rules:
     description: 页面骨架模板（列表/详情/表单/工作台）
     files: [ui-specs/layout-patterns.md]
     min_tier: demo
-    page_types: [form, table, detail, workbench]
+    page_types: [form, table, detail, workbench, wizard, editor, canvas,
+                 chat, master-detail, settings, timeline, map]
   business-profile:
     description: 业务风格配置（密度/动效/布局偏好）
     files_template: ui-specs/business-profiles/{profile}.md
     min_tier: demo
-    profiles: [erp, cms, oa, dashboard, immersive, marketing, mobile]
+    profiles: [erp, cms, oa, crm, commerce, ai-agent, dashboard, immersive,
+               marketing, mobile]
   design-intelligence-product:
     description: >-
       产品思维（Who→Why→What→How、角色模型、JTBD、异常优先、Attention
@@ -135,7 +147,8 @@ rules:
     description: 操作分级/反馈闭环/弹窗vs抽屉/批量报告/删除确认/异步任务
     files: [ui-specs/engineering/interaction-patterns.md]
     min_tier: standard
-    page_types: [form, table, detail, workbench]
+    page_types: [form, table, detail, workbench, wizard, editor, canvas,
+                 chat, master-detail, settings, timeline, map]
   error-recovery:
     description: 错误分类→用户动作、409 冲突、超时 uncertain、降级
     files: [ui-specs/engineering/error-recovery.md]

@@ -1,16 +1,16 @@
 use super::{
     GROUP_MODEL_ANALYSIS_CONFIG_DIGEST_DOMAIN, GROUP_MODEL_ANALYSIS_EVENT_DIGEST_DOMAIN,
-    GROUP_MODEL_ANALYSIS_REQUEST_DIGEST_DOMAIN,
-    GROUP_MODEL_ANALYSIS_RESULT_DIGEST_DOMAIN, GROUP_MODEL_ANALYSIS_SYSTEM_PROMPT_DIGEST_DOMAIN,
-    GROUP_MODEL_ANALYSIS_SYSTEM_PROMPT_VERSION, GROUP_MODEL_ANALYSIS_VERSION,
-    GroupModelAnalysisConfig, GroupModelAnalysisEvent, GroupModelAnalysisJournalCursor,
-    GroupModelAnalysisProvider, GroupModelAnalysisRecord, GroupModelAnalysisRequestConfig,
-    GroupModelAnalysisResult, GroupModelAnalysisResultArtifact, HubEntity, HubStoreError,
-    MAX_GROUP_MODEL_ANALYSIS_CONFIG_JSON_BYTES, MAX_GROUP_MODEL_ANALYSIS_CURSOR_JSON_BYTES,
-    MAX_GROUP_MODEL_ANALYSIS_EVENT_JSON_BYTES, MAX_GROUP_MODEL_ANALYSIS_MODEL_BYTES,
-    MAX_GROUP_MODEL_ANALYSIS_MODEL_EVENTS, MAX_GROUP_MODEL_ANALYSIS_OUTPUT_BYTES,
-    MAX_GROUP_MODEL_ANALYSIS_OUTPUT_TOKENS, MAX_GROUP_MODEL_ANALYSIS_REQUEST_BYTES,
-    MAX_GROUP_MODEL_ANALYSIS_RESULT_BYTES, MAX_GROUP_MODEL_ANALYSIS_SYSTEM_PROMPT_BYTES,
+    GROUP_MODEL_ANALYSIS_REQUEST_DIGEST_DOMAIN, GROUP_MODEL_ANALYSIS_RESULT_DIGEST_DOMAIN,
+    GROUP_MODEL_ANALYSIS_SYSTEM_PROMPT_DIGEST_DOMAIN, GROUP_MODEL_ANALYSIS_SYSTEM_PROMPT_VERSION,
+    GROUP_MODEL_ANALYSIS_VERSION, GroupModelAnalysisConfig, GroupModelAnalysisEvent,
+    GroupModelAnalysisJournalCursor, GroupModelAnalysisProvider, GroupModelAnalysisRecord,
+    GroupModelAnalysisRequestConfig, GroupModelAnalysisResult, GroupModelAnalysisResultArtifact,
+    HubEntity, HubStoreError, MAX_GROUP_MODEL_ANALYSIS_CONFIG_JSON_BYTES,
+    MAX_GROUP_MODEL_ANALYSIS_CURSOR_JSON_BYTES, MAX_GROUP_MODEL_ANALYSIS_EVENT_JSON_BYTES,
+    MAX_GROUP_MODEL_ANALYSIS_MODEL_BYTES, MAX_GROUP_MODEL_ANALYSIS_MODEL_EVENTS,
+    MAX_GROUP_MODEL_ANALYSIS_OUTPUT_BYTES, MAX_GROUP_MODEL_ANALYSIS_OUTPUT_TOKENS,
+    MAX_GROUP_MODEL_ANALYSIS_REQUEST_BYTES, MAX_GROUP_MODEL_ANALYSIS_RESULT_BYTES,
+    MAX_GROUP_MODEL_ANALYSIS_SYSTEM_PROMPT_BYTES,
 };
 
 use super::{
@@ -244,9 +244,7 @@ pub(super) fn system_prompt_digest(prompt: &str) -> [u8; 32] {
 fn validate_request_config(config: &GroupModelAnalysisRequestConfig) -> Result<(), HubStoreError> {
     let valid = config.v == GROUP_MODEL_ANALYSIS_VERSION
         && config.provider == GroupModelAnalysisProvider::OpenAiResponses
-        && forge_runtime_domain::endpoint_allowed(
-            &config.endpoint,
-        )
+        && forge_runtime_domain::endpoint_allowed(&config.endpoint)
         && valid_text(&config.model, MAX_GROUP_MODEL_ANALYSIS_MODEL_BYTES)
         && config.system_prompt_version == GROUP_MODEL_ANALYSIS_SYSTEM_PROMPT_VERSION
         && valid_text(

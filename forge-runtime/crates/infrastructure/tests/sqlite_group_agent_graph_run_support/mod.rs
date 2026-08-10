@@ -195,7 +195,9 @@ fn graph_request_diamond(
         },
     ];
     edges.sort_by(|a, b| {
-        a.from_node_id.cmp(&b.from_node_id).then(a.to_node_id.cmp(&b.to_node_id))
+        a.from_node_id
+            .cmp(&b.from_node_id)
+            .then(a.to_node_id.cmp(&b.to_node_id))
     });
     let waves = compute_group_agent_graph_waves(&nodes, &edges).expect("diamond DAG waves");
     let manifest = graph_manifest(snapshot, nodes, edges, waves);
@@ -247,7 +249,9 @@ fn graph_request_three(
         },
     ];
     edges.sort_by(|a, b| {
-        a.from_node_id.cmp(&b.from_node_id).then(a.to_node_id.cmp(&b.to_node_id))
+        a.from_node_id
+            .cmp(&b.from_node_id)
+            .then(a.to_node_id.cmp(&b.to_node_id))
     });
     let waves = compute_group_agent_graph_waves(&nodes, &edges).expect("serial-three DAG waves");
     let manifest = graph_manifest(snapshot, nodes, edges, waves);

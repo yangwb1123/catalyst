@@ -29,14 +29,6 @@ package risk
 
 import "strings"
 
-// surface pairs a set of path-substring needles with the human-readable reason
-// emitted when any of them matches. Needles are matched case-insensitively
-// against the lower-cased path. Ordered so reasons come out deterministically.
-type surface struct {
-	needles []string
-	reason  string
-}
-
 // paymentNeedles etc. are the substring heuristics per sensitive surface. They
 // mirror the four Signals booleans risk.Classify already understands. Kept as
 // named package vars (not inline) so the mapping is auditable in one place and

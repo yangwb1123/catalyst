@@ -2,6 +2,7 @@ mod atomic_link;
 #[cfg(test)]
 #[path = "tests/error_classification.rs"]
 mod error_classification_tests;
+mod governance_record_journal;
 mod group_agent_graph;
 mod group_agent_graph_run;
 mod group_agent_node_execution_contract;
@@ -68,6 +69,8 @@ mod schema_v23_sql;
 mod schema_v24_sql;
 #[path = "schema_contract/v25_sql.rs"]
 mod schema_v25_sql;
+#[path = "schema_contract/v26_sql.rs"]
+mod schema_v26_sql;
 mod schema_v9_sql;
 mod write;
 
@@ -155,7 +158,7 @@ impl SqliteHubStore {
         })
     }
 
-    /// Opens an exact existing v11 through v24 Hub for dispatch topology preflight only.
+    /// Opens an exact existing v11 through v26 Hub for dispatch topology preflight only.
     ///
     /// This mode is immutable and cannot create, migrate, chmod, or write Hub state.
     ///
@@ -175,8 +178,8 @@ impl SqliteHubStore {
 
     /// Opens existing dispatch state for a no-send re-entry diagnosis.
     ///
-    /// A clean exact v11 through v24 database keeps the immutable preflight path. When
-    /// v12 through v24 has a hot WAL, the fallback reads the existing WAL/SHM pair without
+    /// A clean exact v11 through v26 database keeps the immutable preflight path. When
+    /// v12 through v26 has a hot WAL, the fallback reads the existing WAL/SHM pair without
     /// changing logical Hub content; `SQLite` may update transient SHM read locks.
     ///
     /// # Errors

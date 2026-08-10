@@ -92,7 +92,7 @@ func ExtractRebuildPairs(traceFile string, phaseTaskTypes map[string]string) ([]
 	if err != nil {
 		return nil, fmt.Errorf("open trace: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	seen := map[ScorecardPair]bool{}
 	var pairs []ScorecardPair

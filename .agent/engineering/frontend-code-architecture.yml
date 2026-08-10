@@ -1,0 +1,180 @@
+api_version: forgeos.agent-engineering/v1
+kind: FrontendCodeArchitecturePolicy
+status: active_contract
+runtime_binding: standalone_shadow_detector_plus_review
+owner: architecture
+version: 1
+completion_authority: forge_accept
+
+capability_relationship:
+  primary_ownership_unchanged: true
+  primary_owners:
+    frontend-engineering: frontend-client-engineering
+    client-engineering: frontend-client-engineering
+    modular-architecture: architecture-tradeoff
+    architecture-conformance: code-review
+    complexity-coupling: god-object-refactoring
+  this_skill_role: conditional_cross_cutting_governance
+  consumes:
+    - frontend-client-engineering
+    - architecture-tradeoff
+    - code-review
+    - god-object-refactoring
+
+applicability:
+  activation: any_trigger
+  minimum_materiality: L1
+  triggers:
+    - route_or_page_boundary
+    - feature_or_module_boundary
+    - cross_module_import
+    - shared_state_query_cache_or_api
+    - public_client_contract
+    - dependency_cycle_or_reverse_edge
+    - god_file_or_change_amplification
+    - client_structure_migration
+  leaf_copy_or_style_change_may_be_na: true
+  unknown_architecture_profile: blocked_for_hard_claims
+
+decision_sequence:
+  - reconstruct_current_structure
+  - identify_change_reasons
+  - select_or_confirm_profile
+  - map_modules_and_owners
+  - assign_state_data_and_effects
+  - design_minimal_public_apis
+  - inspect_dependencies_and_cycles
+  - assess_multi_signal_complexity
+  - choose_smallest_sufficient_refactor
+  - plan_compatibility_and_exit
+  - implement
+  - run_fitness_checks
+  - obtain_independent_review
+
+architecture_profiles:
+  - id: feature_sliced_client
+    activation: explicit_or_unambiguous_signature
+    applies_to: [typescript, javascript, react, vue, react_native]
+    layers_outer_to_inner: [app, pages, widgets, features, entities, shared]
+    same_layer_cross_slice: forbidden
+    cross_slice_public_entry: required
+  - id: flutter_feature_clean
+    activation: explicit_or_unambiguous_signature
+    applies_to: [dart, flutter]
+    layers_outer_to_inner: [presentation, application, domain]
+    adapter_layer: data
+    domain_outward_dependency: forbidden
+    cross_feature_public_entry: required
+  - id: custom_declared
+    activation: explicit_only
+    applies_to: [any_client]
+    requires: [source_roots, layer_aliases, forbidden_edges, slice_boundaries, public_entries]
+  - id: unconfigured
+    activation: default_when_no_signature
+    hard_claim: not_configured
+    semantic_review: required_when_triggered
+
+hard_invariants:
+  contract_source: .arch/frontend-architecture.v1.json
+  detector: frontend.code_architecture
+  detector_state: shadow
+  checks:
+    - id: no_cycles
+      fact_type: resolved_import_graph
+    - id: declared_direction
+      fact_type: resolved_or_declared_alias_import
+    - id: slice_isolation
+      fact_type: source_and_target_slice
+    - id: public_entry_only
+      fact_type: cross_boundary_import_target
+    - id: valid_exception
+      fact_type: scoped_exception_record
+  unparsed_or_unknown_edge: inconclusive
+  profile_not_activated: report_not_configured
+
+review_lenses:
+  - id: responsibility_cohesion
+    evidence: [one_sentence_responsibility, reason_to_change_map]
+  - id: state_data_effect_ownership
+    evidence: [state_ownership_map, adapter_boundary_map]
+  - id: shared_admission
+    evidence: [real_cross_business_consumers, stable_business_free_contract]
+  - id: public_api_budget
+    evidence: [public_exports, consumer_map, internal_surface_review]
+  - id: god_file_risk
+    evidence: [static_proxy_metrics, responsibility_map, change_history_or_diff]
+  - id: directory_cognitive_load
+    evidence: [depth_and_sibling_metrics, navigation_review]
+  - id: change_amplification
+    evidence: [planned_actual_change_surface, cochange_evidence]
+  - id: over_architecture
+    evidence: [simpler_rejected_option, demonstrated_variation_or_boundary]
+
+god_file_risk:
+  scoring_authority: review_trigger_only
+  machine_proxy_source: frontend.code_architecture
+  semantic_signals:
+    - multiple_independent_business_flows
+    - mixed_ui_io_policy_mapping_validation
+    - unrelated_state_lifecycles
+    - recurring_cross_region_edits
+  decisions:
+    normal: 0_to_2
+    review: 3_to_4
+    refactor_plan: 5_to_7
+    block: 8_plus_with_independent_semantic_evidence
+  line_count_alone_can_block: false
+
+exception_contract:
+  source: .arch/frontend-architecture-waivers.v1.json
+  required_fields:
+    - id
+    - ruleId
+    - findingFingerprint
+    - source
+    - target
+    - reason
+    - riskOwner
+    - approver
+    - compensatingProofs
+    - debtLink
+    - createdAt
+    - expiresAt
+    - removalTrigger
+    - maxOccurrences
+  machine_forbidden:
+    - repository_wide_wildcard
+    - self_approval
+    - missing_expiry
+    - expired_exception
+    - duration_over_90_days
+  reviewer_forbidden:
+    - preference_only_reason
+  invalid_exception: fail_closed
+
+evidence_contract:
+  required_outputs:
+    - architecture_profile
+    - module_responsibility_owner_map
+    - dependency_and_public_api_map
+    - state_data_effect_ownership
+    - planned_and_actual_change_surface
+    - hard_check_receipt
+    - independent_review_findings
+    - exceptions_and_residual_risk
+  detector_limits:
+    - import_and_path_checks_do_not_prove_semantic_cohesion
+    - regex_metrics_are_proxies_not_business_flow_counts
+    - not_configured_is_not_passed
+  completion_decision_forbidden: true
+
+canonical_refs:
+  skill: .agent/skills/frontend-code-architecture.md
+  architecture_contract: .arch/frontend-architecture.v1.json
+  architecture_baseline: .arch/frontend-architecture-baseline.v1.json
+  architecture_waivers: .arch/frontend-architecture-waivers.v1.json
+  detector: harness/frontend-architecture/check.mjs
+  detector_contract: harness/frontend-architecture/contract.mjs
+  standard: docs/design/ai-engineering-os/frontend-code-architecture-standard.md
+  review_skill: .agent/skills/code-review.md
+  refactor_skill: .agent/skills/god-object-refactoring.md

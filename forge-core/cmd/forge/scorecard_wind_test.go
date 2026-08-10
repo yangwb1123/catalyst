@@ -336,18 +336,6 @@ func TestScorecard_SummaryEdgeCases(t *testing.T) {
 // (globbing/loading real .agent/workflows/*.yml off disk) and
 // parseScorecardRebuildFlags's flag wiring.
 
-// evolveYmlPhaseAgent mirrors .agent/workflows/evolve.yml's real phase/agent
-// pairs (the flagship autonomous-loop workflow) — its phase NAMES deliberately
-// differ from their AGENT roles, unlike build.yml where they happen to coincide.
-var evolveYmlPhaseAgent = map[string]string{
-	"scan":           "explorer", // unmapped role (harness/observe-only); contributes no pair
-	"gap-analysis":   "architect",
-	"roadmap-update": "planner",
-	"implement":      "implementer",
-	"review":         "reviewer",
-	"evaluate":       "qa",
-}
-
 // writeEvolveShapedWorkflow drops a MINIMAL evolve.yml-shaped workflow (same
 // phase/agent pairs as the real .agent/workflows/evolve.yml, phases nested
 // under `loop:` per its `type: loop` standing-loop shape) at

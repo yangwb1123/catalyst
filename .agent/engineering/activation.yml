@@ -1,0 +1,48 @@
+api_version: forgeos.agent-engineering/v1
+kind: EngineeringActivation
+status: active_contract
+owner: governance
+
+version: 1
+default_activation: shadow
+legacy_missing_project_binding: shadow
+enforce_supported: false
+completion_authority: forge_accept
+
+canonical_refs:
+  activation: .agent/engineering/activation.yml
+  disciplines: .agent/engineering/disciplines.yml
+  rules: .agent/engineering/rules.yml
+  detectors: .agent/engineering/detectors.yml
+  context_routes: .agent/engineering/context-routes.yml
+  workflow_profiles: .agent/engineering/workflow-profiles.yml
+  capability_catalog: docs/design/ai-engineering-os/capability-catalog.v1.yml
+  capability_skill_map: docs/design/ai-engineering-os/capability-skill-map.v1.yml
+  acceptance_policy: .agent/eval/acceptance.schema.yml
+  completion_contract: .agent/eval/completion-evidence.schema.yml
+
+canonical_extension_refs:
+  backend_policy: .agent/engineering/backend-decision-gates.yml
+  backend_package: .agent/eval/backend-decision-package.schema.yml
+  backend_standard: docs/design/ai-engineering-os/backend-decision-standard.md
+  frontend_policy: .agent/engineering/frontend-design-gates.yml
+  frontend_profiles: .agent/engineering/frontend-profiles.yml
+  frontend_package: .agent/eval/frontend-design-package.schema.yml
+  frontend_standard: docs/design/ai-engineering-os/frontend-design-standard.md
+  frontend_architecture_policy: .agent/engineering/frontend-code-architecture.yml
+  frontend_architecture_contract: .arch/frontend-architecture.v1.json
+  frontend_architecture_baseline: .arch/frontend-architecture-baseline.v1.json
+  frontend_architecture_waivers: .arch/frontend-architecture-waivers.v1.json
+  frontend_architecture_standard: docs/design/ai-engineering-os/frontend-code-architecture-standard.md
+  governance_contract_registry: .agent/engineering/governance-contracts.yml
+  governance_contract_schema: docs/contracts/governance-evidence-claim-v1.schema.json
+  governance_journal_schema: docs/contracts/governance-record-journal-v1.schema.json
+  governance_contract_fixture: docs/contracts/fixtures/governance-evidence-claim-v1.json
+  cognitive_atom_schema: docs/contracts/cognitive-atom-projection-v1.schema.json
+  cognitive_atom_fixture: docs/contracts/fixtures/cognitive-atom-projection-v1.json
+  cognitive_atom_checker: harness/cognitive_atom_contract_check.py
+  governance_contract_skill: .agent/skills/evidence-claim-management.md
+  governance_contract_decision: docs/adr/0045-canonical-evidence-claim-contract.md
+  governance_journal_decision: docs/adr/0046-local-governance-record-journal.md
+  cognitive_atom_decision: docs/adr/0047-shadow-cognitive-atom-projection-v1.md
+  governance_contract_standard: docs/design/ai-engineering-os/governance-contracts.md

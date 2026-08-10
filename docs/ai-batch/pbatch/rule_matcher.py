@@ -6,7 +6,8 @@ the emitted candidate set). A task is classified along three axes:
 
 - scale:    demo < standard < production (default standard; demos must be
             marked with demo/示例/原型 keywords)
-- page_type: form/table/detail/workbench/immersive/auth (matched keywords)
+- page_type: form/table/detail/workbench/wizard/editor/canvas/chat/
+  master-detail/settings/timeline/map/immersive/auth (matched keywords)
 - risk:     high-risk business actions (pay/approve/delete/submit...)
 
 `match_rules` returns a bounded manifest: rule id, tier, matched evidence,
@@ -29,7 +30,8 @@ from typing import Optional
 from . import config
 from .classifier import TaskClassification, classify_text
 from .config import log, yaml
-from .paths import bundled_reference
+from .paths import bundled_reference, resolve_public_reference
+from .output_contract import format_output_contract, output_envelope
 from .relevance import _keyword_hit
 from .system_type_methodology import SYSTEM_TYPE_METHODOLOGY
 from .text_io import read_text_bounded
@@ -59,6 +61,14 @@ _DEFAULT_REGISTRY = {
         "table": ["表格", "列表", "分页", "批量", "table"],
         "detail": ["详情", "detail"],
         "workbench": ["工作台", "仪表盘", "看板", "dashboard"],
+        "wizard": ["向导", "多步骤", "stepper", "wizard"],
+        "editor": ["内容编辑器", "可视化编辑器", "editor"],
+        "canvas": ["画布", "流程设计器", "节点编辑器", "canvas"],
+        "chat": ["ai 对话", "agent 对话", "聊天界面", "chat ui"],
+        "master-detail": ["主从", "分栏详情", "master detail", "master-detail"],
+        "settings": ["设置页", "配置页", "settings"],
+        "timeline": ["时间线", "活动流", "timeline"],
+        "map": ["地图页面", "gis 页面", "map view"],
         "immersive": ["特效", "落地页", "官网", "营销", "动画"],
         "auth": ["登录", "注册", "login", "register"],
     },
@@ -194,7 +204,7 @@ def match_rules(text: str, classification: Optional[TaskClassification] = None,
         })
     _inject_system_type_methodology(cls, rules)
     rules.sort(key=lambda item: (0 if item["required"] else 1, item["tier"]))
-    return {"path_base": config.PATH_BASE,
+    return {**output_envelope(), "path_base": config.PATH_BASE,
             "tier": tier, "page_types": page_types, "risk": "high" if high_risk else "low",
             "profile": profile, "rules": rules, "skipped": skipped,
             "domain": domain_for(text, cls),
@@ -225,8 +235,10 @@ def _resolve_files(rule: dict, profile: str) -> list:
     """Rule files; profiles rules resolve the {profile} template."""
     template = rule.get("files_template")
     if template and profile:
-        return [template.replace("{profile}", profile)]
-    return list(rule.get("files", []))
+        return [resolve_public_reference(
+            template.replace("{profile}", profile))]
+    return [resolve_public_reference(source)
+            for source in rule.get("files", [])]
 
 def _business_terms(text: str, registry: dict, limit: int = 12) -> list:
     """Salient CJK business terms from the task, excluding vocabulary that
@@ -329,6 +341,7 @@ def format_manifest(matched: dict, limit: int = 8) -> str:
     lines = [f"## Applicable UI rules (deterministic manifest, tier={matched['tier']}, "
              f"risk={matched['risk']}, profile={matched['profile'] or 'generic'})"]
     lines.append(f"Path base: {matched.get('path_base', config.PATH_BASE)}")
+    lines.append(format_output_contract())
     # 信任感：system_type 证据透明（AI 建议带依据——认知负担 §7）
     system_type = matched.get("system_type", "")
     if system_type and system_type != "deterministic":
@@ -406,7 +419,7 @@ def _check_rule(rule_id: str, rule, violations: list) -> None:
                                   f"{target}")
 
 def _rule_file_exists(source) -> bool:
-    path = Path(str(source))
+    path = Path(resolve_public_reference(str(source)))
     return (path if path.is_absolute() else Path(config.PATH_BASE) / path).is_file()
 
 def check_registry(registry: dict) -> list:

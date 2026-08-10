@@ -1,0 +1,211 @@
+api_version: forgeos.agent-engineering/v1
+kind: FrontendProfileCatalog
+status: active_contract
+runtime_binding: selection_policy_only
+owner: product-design-engineering
+version: 1
+
+selection:
+  explicit_project_profile_wins: true
+  inferred_profile_requires_assumption: true
+  multiple_candidates_require_rationale: true
+  unknown_profile: block
+  heuristic_override_requires: [field, default, selected, reason, scope, risk, compensating_proof_claim_ids, reviewer_id, expires_at]
+  standards_precedence: absolute
+
+density_levels: [comfortable, standard, compact, immersive, fixed_canvas]
+motion_levels: [0, 1, 2, 3]
+platforms: [web_desktop, web_responsive, ios, android, cross_platform]
+
+profiles:
+  - id: cms_editorial
+    product_types: [cms, publishing, content_management]
+    density: standard
+    motion_level: 1
+    primary_surfaces: [content_list, editor, settings_sidebar, version_history]
+    preferred_patterns: [list, editor, detail, approval]
+    required_lenses: [draft_safety, autosave, preview, publishing_state, version_recovery]
+    prohibited_defaults: [publish_without_review, discard_unsaved_content, decorative_motion]
+
+  - id: oa_workflow
+    product_types: [oa, internal_workflow, collaboration]
+    density: standard
+    motion_level: 1
+    primary_surfaces: [workbench, task_queue, approval_detail, process_timeline]
+    preferred_patterns: [workbench, approval, form, detail]
+    required_lenses: [current_step, next_step, reason_capture, delegation, audit_trail]
+    prohibited_defaults: [ambiguous_approval_effect, reject_without_reason, hidden_flow_position]
+
+  - id: erp_mes_dense
+    product_types: [erp, mes, finance_operations, scheduling, inventory]
+    density: compact
+    motion_level: 0
+    primary_surfaces: [table, workbench, split_detail, dense_form]
+    preferred_patterns: [list, workbench, form, detail, approval]
+    required_lenses: [high_frequency, batch_effects, conflict_handling, edit_preservation, audit]
+    prohibited_defaults: [marketing_whitespace, navigation_for_every_action, color_only_status]
+
+  - id: crm_relationship
+    product_types: [crm, customer_success, sales]
+    density: standard
+    motion_level: 1
+    primary_surfaces: [entity_header, relationship_graph, activity_timeline, next_action]
+    preferred_patterns: [detail, list, workbench, timeline]
+    required_lenses: [ownership_change, stage_reason, follow_up, relationship_context]
+    prohibited_defaults: [orphan_activity, stage_change_without_history]
+
+  - id: analytics_decision
+    product_types: [analytics, business_intelligence, observability]
+    density: standard
+    motion_level: 1
+    primary_surfaces: [global_filter, metric_summary, chart, anomaly, detail_table]
+    preferred_patterns: [dashboard, list, detail]
+    required_lenses: [data_freshness, units, filter_scope, drill_down, export_context]
+    prohibited_defaults: [decoration_only_chart, mixed_metric_definition, hidden_filter_effect]
+
+  - id: commerce_transaction
+    product_types: [commerce, marketplace, retail]
+    density: standard
+    motion_level: 1
+    primary_surfaces: [catalog, cart, checkout, order_status]
+    preferred_patterns: [list, detail, form, wizard]
+    required_lenses: [price_truth, inventory_change, payment_recovery, commitment_review]
+    prohibited_defaults: [hidden_total_change, duplicate_commitment, unrecoverable_checkout]
+
+  - id: mobile_task
+    product_types: [mobile_application, field_service, consumer_app]
+    density: comfortable
+    motion_level: 1
+    primary_surfaces: [task_list, focused_detail, bottom_navigation, native_form]
+    preferred_patterns: [list, detail, form, wizard]
+    required_lenses: [touch, orientation, safe_area, offline, platform_semantics]
+    prohibited_defaults: [desktop_layout_shrink, hover_only_action, web_semantics_assumption]
+
+  - id: marketing_conversion
+    product_types: [marketing, landing_page, product_site]
+    density: comfortable
+    motion_level: 2
+    primary_surfaces: [hero, value_story, proof, offer, conversion_action]
+    preferred_patterns: [landing, form]
+    required_lenses: [single_primary_conversion, content_priority, mobile_first_value, form_minimization]
+    prohibited_defaults: [competing_primary_ctas, motion_over_content, unexplained_submit]
+
+  - id: immersive_story
+    product_types: [immersive, brand_experience, interactive_story, three_d]
+    density: immersive
+    motion_level: 3
+    primary_surfaces: [loading, guided_scene, exploration, narrative, conversion]
+    preferred_patterns: [immersive, detail]
+    required_lenses: [skip, pause, discoverability, reduced_motion, performance_degradation, load_failure]
+    prohibited_defaults: [forced_audio, animation_only_content, blocked_input_during_intro]
+
+  - id: data_wall
+    product_types: [data_wall, operations_center, fixed_display]
+    density: fixed_canvas
+    motion_level: 1
+    primary_surfaces: [key_metrics, trends, alerts, topology, freshness]
+    preferred_patterns: [data_wall, dashboard]
+    required_lenses: [viewing_distance, fixed_resolution, refresh_stability, stale_indicator, alert_priority]
+    prohibited_defaults: [scroll_for_primary_data, flashing_refresh, desktop_text_scale]
+
+  - id: ai_agent_workspace
+    product_types: [ai_chat, agent_workspace, copilot]
+    density: standard
+    motion_level: 1
+    primary_surfaces: [conversation, tool_activity, task_progress, artifacts, composer]
+    preferred_patterns: [agent_chat, workbench, detail]
+    required_lenses: [execution_state, interruption, correction, source_attribution, high_risk_confirmation]
+    prohibited_defaults: [hidden_tool_failure, indistinguishable_wait_state, unconfirmed_high_risk_write]
+
+  - id: generic_saas
+    product_types: [saas, web_application, unknown_but_bounded]
+    density: standard
+    motion_level: 1
+    primary_surfaces: [navigation, content, task_action, feedback]
+    preferred_patterns: [list, detail, form, workbench]
+    required_lenses: [primary_task, state_visibility, recoverability, responsive_behavior]
+    prohibited_defaults: [profile_free_styling, missing_failure_state]
+
+page_patterns:
+  - id: list
+    required_regions: [heading, query_or_scope, collection, actions, result_summary]
+    required_paths: [open_item, empty, query_failure, return_with_context]
+  - id: detail
+    required_regions: [identity, current_state, primary_action, facts, related_activity]
+    required_paths: [load, act, back_or_exit, stale_or_missing]
+  - id: form
+    required_regions: [purpose, grouped_fields, validation, submission_actions]
+    required_paths: [edit, validate, submit, cancel, failure_preserves_input]
+  - id: workbench
+    required_regions: [scope, queue_or_canvas, detail_context, action_area, status]
+    required_paths: [select, manipulate, save_or_commit, conflict, resume]
+  - id: wizard
+    required_regions: [progress, current_step, navigation, summary]
+    required_paths: [forward, back, resume, validate, final_review]
+  - id: editor
+    required_regions: [content_surface, settings, save_state, preview_or_result]
+    required_paths: [edit, autosave_or_save, leave_dirty, preview, recover_version]
+  - id: approval
+    required_regions: [request_context, current_step, evidence, decision_actions, history]
+    required_paths: [approve, reject, withdraw_or_return, conflict, audit]
+  - id: dashboard
+    required_regions: [scope_and_freshness, key_metrics, explanations, details]
+    required_paths: [filter, inspect, drill_down, empty, stale_or_failure]
+  - id: landing
+    required_regions: [value, explanation, proof, primary_conversion]
+    required_paths: [understand, convert, submission_feedback, exit]
+  - id: immersive
+    required_regions: [load_progress, guidance, experience, accessible_content, exit_or_convert]
+    required_paths: [enter, skip, explore, reduce_motion, degrade, load_failure]
+  - id: data_wall
+    required_regions: [freshness, key_status, trend, alert, operational_context]
+    required_paths: [refresh, stale, alert, pause_rotation, degraded_data]
+  - id: agent_chat
+    required_regions: [conversation, execution_state, progress, results, input]
+    required_paths: [request, execute, interrupt, correct, tool_failure, complete]
+  - id: visual_editor
+    required_regions: [resource_palette, canvas, properties, tools, status]
+    required_paths: [create, select, edit, undo_redo, save, recover]
+  - id: timeline
+    required_regions: [scope, ordered_events, event_detail, filters]
+    required_paths: [load, inspect, filter, paginate_or_stream, missing_event]
+
+token_policy:
+  exchange_format: project_adopted_dtcg-2025.10_or_versioned_adapter
+  dtcg_adoption: conditional_project_contract
+  source_of_truth_required: true
+  resolver_context_required: true
+  circular_reference: block
+  deprecated_use: block_new_usage
+  raw_value_policy: organization_defined
+  naming_layers: organization_policy_not_dtcg_requirement
+  spacing_grid: profile_heuristic_not_standard
+
+accessibility_policy:
+  web_target: wcag-2.2-aa
+  web_minimum_target: wcag_2_2_sc_2_5_8
+  enhanced_target: profile_or_platform_policy
+  reflow_test_width_css_px: 320
+  text_resize_percent: 200
+  fixed_minimum_font_size: none
+  apg_status: non_normative_adoptable_pattern_guidance
+  automated_scan_claim: partial_only
+
+verification_policy:
+  hard_failure_detection: checker_structure_plus_project_execution_or_independent_review
+  hard_failures:
+    - primary_task_unreachable
+    - user_input_lost_on_failure
+    - inaccessible_keyboard_path
+    - hidden_or_obscured_focus
+    - unauthorized_action_available
+    - high_risk_effect_without_control
+    - dead_end_state
+    - unresolved_token_reference
+  advisory_signals:
+    - visual_score
+    - aesthetic_balance
+    - whitespace_preference
+    - profile_density_preference
+  screenshot_baseline_change: independent_review_required
+  calibrated_visual_threshold: project_specific_not_global

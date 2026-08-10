@@ -71,6 +71,29 @@ fn prepare_is_local_and_persists_the_fixed_exact_request() {
 }
 
 #[test]
+fn prepare_rejects_invalid_self_hosted_inputs_before_encoding() {
+    let loopback_harness = harness();
+    let mut invalid_http = prepare_input(64);
+    invalid_http.endpoint = "http://127.0.0.1:4000/v1/responses".into();
+    invalid_http.created_at_ms = u64::MAX;
+    assert!(matches!(
+        loopback_harness.service.prepare(&invalid_http),
+        Err(GroupModelAnalysisServiceError::InvalidInput)
+    ));
+    assert_eq!(loopback_harness.codec.encode_calls(), 0);
+
+    let remote_harness = harness();
+    let mut invalid_https = prepare_input(64);
+    invalid_https.endpoint = "https://llm.internal.example/v1/responses".into();
+    invalid_https.analysis_id.clear();
+    assert!(matches!(
+        remote_harness.service.prepare(&invalid_https),
+        Err(GroupModelAnalysisServiceError::InvalidInput)
+    ));
+    assert_eq!(remote_harness.codec.encode_calls(), 0);
+}
+
+#[test]
 fn inspect_and_list_reject_altered_application_owned_config() {
     let harness = prepared_harness(64);
     harness.analyses.corrupt_system_prompt_sha256();

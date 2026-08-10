@@ -396,14 +396,14 @@ fn source_snapshot(connection: &rusqlite::Connection) -> Vec<String> {
 /// candidate for the diamond fixture.
 #[test]
 fn two_nodes_in_one_run_prepare_provider_requests_through_v22() {
-    use sqlite_group_agent_graph_run_support as run_support;
-    use sqlite_group_agent_graph_execution_schedule_support as schedule_support;
-    use sqlite_group_agent_scheduled_node_contract_support as contract_support;
-    use sqlite_group_agent_scheduled_node_provider_request_support as request_support;
     use forge_runtime_domain::{
         GroupAgentGraphExecutionScheduleStore, GroupAgentGraphRunStore,
         GroupAgentScheduledNodeContractStore,
     };
+    use sqlite_group_agent_graph_execution_schedule_support as schedule_support;
+    use sqlite_group_agent_graph_run_support as run_support;
+    use sqlite_group_agent_scheduled_node_contract_support as contract_support;
+    use sqlite_group_agent_scheduled_node_provider_request_support as request_support;
 
     // Diamond: frontend + backend are same-wave siblings (zero predecessors);
     // both admit as successors and both get a provider request in one run.
@@ -423,7 +423,8 @@ fn two_nodes_in_one_run_prepare_provider_requests_through_v22() {
         .admit_group_agent_scheduled_node_contract(&initial_admit)
         .expect("admit initial contract")
         .inspection;
-    let backend_inspection = request_support::admit_backend_successor(&fixture.store, &initial_admit);
+    let backend_inspection =
+        request_support::admit_backend_successor(&fixture.store, &initial_admit);
 
     // Both provider requests land in the same run (v22 per-node slots; v18
     // per-run UNIQUE would deadlock the second).
@@ -467,7 +468,8 @@ fn adjudicate_update_columns_and_status_remain_live_in_current_schema() {
     // Stage-03 Finding 1 regression: v23 restores 'adjudicated' and
     // adjudicated_at_ms; a 0-row UPDATE still validates the SQL against the
     // live table.
-    let (fixture, _request) = sqlite_group_agent_scheduled_node_contract_support::prepared_fixture();
+    let (fixture, _request) =
+        sqlite_group_agent_scheduled_node_contract_support::prepared_fixture();
     let connection = fixture.connection();
     let updated = connection
         .execute(
@@ -487,12 +489,4 @@ fn adjudicate_update_columns_and_status_remain_live_in_current_schema() {
         )
         .expect("status domain");
     assert_eq!(accepted, 1, "adjudicated must be a legal lifecycle status");
-}
-
-/// `hex_bytes` decodes a 64-char hex digest into 32 raw bytes.
-fn hex_bytes(hex: &str) -> Vec<u8> {
-    (0..hex.len())
-        .step_by(2)
-        .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).expect("hex byte"))
-        .collect()
 }

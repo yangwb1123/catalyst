@@ -33,6 +33,7 @@ from . import config
 from .assessor import workflow_level
 from .classifier import classify_text
 from .config import log, yaml
+from .output_contract import format_output_contract, output_envelope
 from .product import product_manifest
 from .rule_matcher import match_rules
 from .text_io import read_text_bounded
@@ -158,7 +159,7 @@ def _print_coverage(total: int, failed: list, coverage: list,
                     want_json: bool) -> None:
     """Actual executed-suite case counts and domain coverage."""
     if want_json:
-        print(json.dumps({"total": total, "failed": len(failed),
+        print(json.dumps({**output_envelope(), "total": total, "failed": len(failed),
                           "failures": failed, "coverage": coverage},
                          ensure_ascii=False, indent=2))
     else:
@@ -185,6 +186,8 @@ def eval_main(argv: list) -> None:
         "--coverage", action="store_true",
         help="print per-suite case counts and domain coverage")
     args = parser.parse_args(argv)
+    if not args.json:
+        print(format_output_contract())
     total, failed, coverage = 0, [], []
     for suite in load_eval_files():
         if args.quick and suite.get("name") not in {"rules", "classifier"}:
@@ -211,7 +214,7 @@ def eval_main(argv: list) -> None:
     if args.coverage:
         _print_coverage(total, failed, coverage, args.json)
     elif args.json:
-        print(json.dumps({"total": total, "failed": len(failed),
+        print(json.dumps({**output_envelope(), "total": total, "failed": len(failed),
                           "failures": failed}, ensure_ascii=False, indent=2))
     if failed:
         log.error("EVAL: %d/%d failed", len(failed), total)

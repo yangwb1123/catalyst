@@ -7,8 +7,9 @@
 // upgrade enumerating a tree differently than scaffold copied it would mean a
 // project that can never reach byte-identical-to-source).
 //
-// Three primitives over a `sourceRoot` (the ForgeOS SOURCE repo) and a `targetDir`:
+// Four primitives over a `sourceRoot` (the ForgeOS SOURCE repo) and a `targetDir`:
 //   * copyFromSource(rel, ...)  — copy one file, creating parent dirs.
+//   * copyFileExclusiveNoFollow(...) — seed once without truncating a race winner.
 //   * copyTree(relDir, ...)     — recursively copy a whole dir (skips __pycache__).
 //   * enumerateTree(relDir, sourceRoot) -> rel[]  — the PURE projection of what
 //       copyTree WOULD copy (same __pycache__ skip rule), with NO writes. upgrade
@@ -181,10 +182,57 @@ export function writeFileNoFollow(path, content, label = path, sourceMode = null
   }
 }
 
+// Seed a project-owned file exactly once. O_EXCL closes the gap between an
+// earlier "missing" observation and this write: if another process creates the
+// file first, validate that leaf through the same no-follow path and preserve
+// its bytes. Existing files are never truncated by this primitive.
+export function writeFileExclusiveNoFollow(
+  path, content, label = path, sourceMode = null,
+) {
+  const parent = dirname(path);
+  assertNoSymlinkComponents(parent, `${label} parent`);
+  assertNoSymlinkComponents(path, label);
+  mkdirSync(parent, { recursive: true });
+  assertNoSymlinkComponents(parent, `${label} parent`);
+  assertNoSymlinkComponents(path, label);
+  let fd;
+  try {
+    fd = openRegularNoFollow(
+      path,
+      constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL,
+      sourceMode ?? 0o666,
+      label,
+    );
+  } catch (err) {
+    if (err?.code !== 'EEXIST') throw err;
+    readFileNoFollow(path, label);
+    return false;
+  }
+  try {
+    writeFileSync(fd, content);
+    if (sourceMode !== null && process.platform !== 'win32') {
+      fchmodSync(fd, sourceMode & 0o777);
+    }
+  } finally {
+    closeSync(fd);
+  }
+  return true;
+}
+
 export function copyFileNoFollow(source, destination, sourceLabel, destinationLabel) {
   const sourceStat = regularFile(source, sourceLabel);
   const content = readFileNoFollow(source, sourceLabel);
   writeFileNoFollow(destination, content, destinationLabel, sourceStat.mode);
+}
+
+export function copyFileExclusiveNoFollow(
+  source, destination, sourceLabel, destinationLabel,
+) {
+  const sourceStat = regularFile(source, sourceLabel);
+  const content = readFileNoFollow(source, sourceLabel);
+  return writeFileExclusiveNoFollow(
+    destination, content, destinationLabel, sourceStat.mode,
+  );
 }
 
 // Copy one file from <sourceRoot>/<relPath> into <targetDir>/<relPath>, creating

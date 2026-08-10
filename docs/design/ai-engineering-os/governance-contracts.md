@@ -1,35 +1,100 @@
 # 治理与知识契约
 
-> 状态：目标契约。本文定义语义和验收，不声明 runtime 已支持。正式实现必须严格 schema、canonical encoding、
-> 大小上限、迁移与对抗测试；旧 free-text memory 不得静默升级为 confirmed fact。
+> 状态：演进契约。0F-A 已交付 EvidenceRecord/KnowledgeClaim strict schema、跨语言 canonical codec 与纯 shadow validator；
+> ADR-0046 的 0F-B–1 本地 exact-record journal 已在 SQLite v25/runtime/CLI/compatibility 边界内完成，并通过独立复审与 `forge accept`。
+> ADR-0047 另已交付七类 KnowledgeClaim→CognitiveAtom 的确定性 pure shadow projection；它不是新治理记录，不进入 journal。
+> 第 2 节中标注“已交付”的两种 v1 记录与下述 CognitiveAtom v1 投影属于当前合同；第 1、3 节及其后内容仍是目标态，
+> 不声明 truth/authority、Context、Grant、Transition、语义 lifecycle/conflict/freshness view 或知识写回 runtime 已支持。旧 free-text memory 不得静默升级。
 
-## 1. 通用 Governance Envelope
+## 0. 当前实现边界（0F-A、0F-B–1 与 ADR-0047 pure shadow projection 已完成；其余目标态未实现）
 
-所有 Atom、Claim、Evidence、GraphSnapshot、Report、Grant、Review、Approval、KnowledgeUpdate 和 Transition 使用共同信封：
+当前可执行的 governance record kind 仍只有 `EvidenceRecord` 和 `KnowledgeClaim` v1：
+
+- strict wire schema：`docs/contracts/governance-evidence-claim-v1.schema.json`；
+- canonical/identity/state policy：`.agent/engineering/governance-contracts.yml`；
+- cross-language golden：`docs/contracts/fixtures/governance-evidence-claim-v1.json`；
+- version decision：[ADR-0045](../../adr/0045-canonical-evidence-claim-contract.md)；
+- universal checker：`harness/governance_contract_check.py`。
+
+记录使用 `record_id`（不可变记录）、`aggregate_id`（稳定逻辑身份）、`sequence`（正整数版本）和
+`supersedes_record_ids`（同 kind/aggregate 的精确旧记录）；digest 是内容身份，不是记录 ID。时间为整数毫秒，
+置信度为 `confidence_micros`，canonical SHA-256 是无前缀小写 hex。当前只接收 registry `shadow_admissibility` 精确矩阵内的状态、
+`untrusted_data` 和 `untrusted|observed` source trust；结构有效不等于事实、身份、批准、完成或 hard-gate 资格。
+
+纯 checker 的唯一正结果是：
+
+```text
+STRUCTURALLY_VALID (shadow; no truth or authority attestation)
+```
+
+Checker 不写 Hub、不导入 Memory/ADR、不签发 authority，也不执行 knowledge apply、lifecycle transition 或 production effect。
+
+### ADR-0047：CognitiveAtom v1 pure shadow projection
+
+[ADR-0047](../../adr/0047-shadow-cognitive-atom-projection-v1.md) 在不改变 Evidence/Claim v1 wire 或 journal v1 的前提下，增加
+`forgeos.aadm.cognitive-atom/v1` 的确定性 KnowledgeClaim→CognitiveAtom 重投影。投影前必须对整个 exact canonical
+closed record set 重新执行 ADR-0045 的 shadow admissibility、reference、subject、supersession、cycle 与 digest 验证。
+
+只有 `fact`、`constraint`、`decision`、`inference`、`assumption`、`hypothesis`、`unknown` 七类 Claim 生成 Atom；
+`lesson` 和 `proposal` 只可作 source closure 成员。每个 Atom 逐字段复制已验证的 source identity、proposition、
+epistemic state、references、validity 与适用的 integer confidence，并强制
+`projection_mode=shadow`、`hardness=none`、`authority_ref=null`、`instruction_allowed=false`。schema、golden 与 universal checker 为：
+
+- `docs/contracts/cognitive-atom-projection-v1.schema.json`；
+- `docs/contracts/fixtures/cognitive-atom-projection-v1.json`；
+- `harness/cognitive_atom_contract_check.py`。
+
+它们的摘要与 Python/Go/Rust 参考路径由 `.agent/engineering/governance-contracts.yml` v4 固定。唯一正结果是：
+
+```text
+PROJECTED_SHADOW
+(no truth, authority, instruction, hard-guard, transition, completion or effect attestation)
+```
+
+CognitiveAtom v1 只证明 pure reprojection 的 canonical bytes、identity、digest 和 source closure 一致；它不认证 principal/
+collector/reviewer，不确认 truth，不发出 instruction/hard guard/Grant/Approval，不推进 transition/completion，不执行 effect。
+它不是 `EvidenceRecord|KnowledgeClaim` 的第三种 journal record，不写 GovernanceRecordJournal、SQLite、Knowledge 或其他持久化。
+prompt/model compiler、journal adapter、新 Atom source/type、hardness/authority 与完整 Kernel ABI 均仍是后续版本化目标。
+
+### 0F-B–1：本地 GovernanceRecordJournal v1
+
+[ADR-0046](../../adr/0046-local-governance-record-journal.md) 与
+`docs/contracts/governance-record-journal-v1.schema.json` 定义 narrow local journal：一次 append 接收 1–256 条、总计不超过 1 MiB 的 exact
+canonical record set 和不超过 256 UTF-8 bytes 的 idempotency key；先在事务外完成 v1 codec/语义验证，再原子保存 batch、exact records 与
+可重建 structural head。首写 receipt 为 `stored`，同 key/同 bytes 返回原 append metadata 和 `exact_replay`；同 key/不同 bytes 或换 key 重复
+同 records 均 conflict，不产生部分写入。
+
+引用闭包的 public admissibility limits 是：最多 1,024 条 distinct stored dependency records；候选批次与已加载 dependency closure 的 canonical
+bytes 合计最多 16,777,216；从候选沿 `derived_from_claim_record_ids` 到传递性 premise 最多 256 条边。三者只用于防资源耗尽；通过限制不证明
+Evidence 充分、Claim 正确、producer 可信或状态具有 authority，超限则在原子 append 前失败关闭。
+
+`GovernanceStructuralHead` 只表示 `(record_kind, aggregate_id)` 下已保存的最高连续 sequence，固定
+`interpretation=structural_sequence_only`。它不解释 Claim status、Evidence validity、时效、冲突、producer/collector 身份、知识采纳、authority 或
+hard gate。Inspection 默认只返回 batch/ordinal/identity/digest/byte-count/time metadata；exact record 必须显式 `--include-record`，且 reveal 后仍按
+不可信数据处理。
+
+Journal persistence 本身只在 SQLite v25 additive 创建 empty tables，不回填 ADR/Memory/旧 Hub 数据；合并后的 current schema 是随后放宽 endpoint
+pinning 的 v26。Read-only journal 命令要求 current v26 且不创建/迁移；append 可把受支持的 v24、canonical journal v25 或历史 endpoint-only v25
+迁移到 v26。该狭窄 runtime、migration、CLI、compatibility 与 adversarial tests 已完成并通过独立复审和 `forge accept`；这只关闭 0F-B–1
+structural persistence，不实现 truth/lifecycle/conflict/freshness/authority。
+
+`forge-init`/`forge-upgrade` 只分发 contract、Skill 和 shadow checker 资产，不安装 Rust `forge-runtime` executable 或 SQLite journal。只有检测到项目批准、
+兼容 `forgeos.governance-journal/v1` 的 `forge-runtime` 后，Agent 才能运行 `forge-runtime governance journal ...`；缺失或不兼容必须记
+`not_executed`，没有匹配的 `stored|exact_replay` receipt 就不得声称已持久化。
+
+## 1. 通用 Governance Envelope（目标态，未实现）
+
+目标上，Atom、Claim、Evidence、GraphSnapshot、Report、Grant、Review、Approval、KnowledgeUpdate 和 Transition 共享一组信封职责。
+ADR-0047 的 CognitiveAtom v1 只是独立 Claim 投影 wire，不表示该通用信封或完整 Kernel ABI 已实现。
+下图只是**不可序列化的概念图**，不是 `forgeos.governance/v1` wire shape，也不得输入当前 checker；任何共同信封实现都必须采用新版本并另作兼容决策：
 
 ```yaml
-api_version: forgeos.governance/v1
-kind: EvidenceRecord
-metadata:
-  id: ev-...
-  project_id: forgeos
-  scope: subsystem/change/node
-  created_at: RFC3339
-  created_by: {principal_type: agent|service|human|operator, principal_id: ..., run_id: ..., role: ..., authority_domain: ...}
-  source_revision: ...
-  source_tree_sha256: ...
-  policy_sha256: ...
-  context_sha256: ...
-  supersedes: []
-spec: {}
-status:
-  state: draft
-  reason_codes: []
-  evidence_ids: []
-  valid_from: ...
-  valid_until: ...
-integrity:
-  canonical_sha256: ...
+future_envelope_concept:
+  versioned_identity: immutable record + stable aggregate + sequence
+  provenance_binding: project + scope + source + policy + context + principal + run
+  kind_specific_payload: strict version-owned schema
+  lifecycle_state: kind-scoped state + reasons + validity window
+  integrity_binding: version-owned canonicalization + domain-separated digest
 ```
 
 规则：严格拒绝未知/重复字段；ID 和 digest 有 domain separation；摘要排除自身后计算；载重输入任一 digest 改变，
@@ -42,40 +107,48 @@ ExecutionTarget 是不同实体，名称不能互相暗示权限或物理位置�
 
 ## 2. 认识论模型：Evidence 不等于 Fact
 
-### EvidenceRecord v1
+### 已交付 EvidenceRecord v1
 
 | 字段 | 规则 |
 |---|---|
-| `evidence_id/type` | `repo_locator/test_run/gate_result/runtime_metric/external_source/human_attestation/artifact` |
-| `subjects` | 支持/反驳哪些 claim 或 graph node |
-| `collector` | tool/agent、版本、run、确定性参数 |
+| `metadata.record_id` | 不可变记录的有界 identifier；与 `aggregate_id`、`sequence` 和内容 digest 分工 |
+| `spec.evidence_type` | `repo_locator/test_run/gate_result/runtime_metric/external_source/human_attestation/artifact` |
+| `subjects` | Evidence 覆盖的 subject / graph-node identifier；必须覆盖被引用 Claim 的 `spec.subject`，不是 Claim record ID |
+| `collector` | `human/operator/service/tool`、collector ID/version、run 与参数 SHA-256；只是声明，不是身份认证 |
 | `observed_at/source_snapshot` | 观察时间与代码/环境/部署版本 |
-| `locator` | repo path+symbol+line+content hash；command argv digest+cwd+exit；metric query+window+sample+unit；URL+publisher+retrieved_at+digest |
-| `validation_status` | `valid/invalid/unavailable/expired`；缺工具只能 unavailable，不能 PASS |
-| `freshness/sensitivity/expires_at` | 新鲜度策略和 `public/internal/confidential/restricted` |
+| `locator` | 严格六字段：`locator_type/locator_ref/content_sha256/exit_code/line_start/line_end`；type 必须与 evidence type 映射，repo 行号对可选 |
+| `status.state/reason_codes` | `valid/invalid/unavailable/expired`；缺工具只能 unavailable，不能 PASS |
+| `status.valid_* / spec.sensitivity` | 有效窗口和 `public/internal/confidential/restricted` |
 | `source_trust/content_role` | trust domain/level、`trusted_control/untrusted_data`；外部、仓库正文、日志默认 `untrusted_data`，不得解释为指令 |
 | `artifact_sha256` | 原始有界证据产物摘要，正文按权限另存 |
+
+#### Post-v1 locator enrichment（目标态，尚未版本化）
+
+symbol、command argv digest/cwd、metric query/window/sample/unit、publisher/retrieved-at 等更丰富定位信息尚不是 v1 字段。
+若未来需要，必须通过新版本或独立有摘要的 locator artifact 引入，不得把这些名称塞进 strict v1 记录。
 
 Evidence 只说明“观察到了什么”。一个 test PASS 支持特定行为 claim，不证明整个模块正确；一个文档存在不证明实现符合。
 `directness` 必须编码为 `direct/derived/attested`，并由 evidence type × collector policy 决定，不能靠自由文本声称“直接”。
 不可信正文中的“忽略规则/运行命令”等内容始终是数据；只有由受信 policy lane、当前用户授权或签名控制产物产生的
 instruction atom 才可控制执行。高风险外部内容先隔离/审查，任何 snippet 都不能覆盖宪法、Grant 或任务合同。
 
-### KnowledgeClaim v1
+### 已交付 KnowledgeClaim v1
 
 | 字段 | 规则 |
 |---|---|
 | `claim_type` | `fact/constraint/decision/inference/assumption/hypothesis/lesson/proposal/unknown` |
-| `subject/predicate/object/scope` | 可稳定查询的主语、关系和值 |
-| `epistemic_state` | fact: candidate/confirmed/contested/stale/retracted/superseded；assumption/hypothesis: open/testing/validated/invalidated/expired |
-| `supporting/contradicting_evidence_ids` | 证据双向绑定；冲突不能静默覆盖 |
-| `derived_from_claim_ids/reasoning` | inference 保留前提与推导，不伪装为直接观察 |
-| `confidence` | 只允许 assumption/hypothesis/inference 显式使用；省略不等于 1.0 |
-| `owner/validation_plan/review_by` | 假设必须说明由谁、何时、怎样验证以及若为假有什么影响 |
-| `validity_window/supersedes` | 过期或被替代 claim 不进入强约束 Context |
+| `spec.subject/predicate/object_type/object_value` | 可稳定查询的主语、关系、类型和值；object type 必须与值一致 |
+| `status.state` | 唯一 kind-scoped state；不得再复制一份 `epistemic_state` |
+| `spec.supporting/contradicting_evidence_record_ids` | 证据引用分离、排序、互斥；冲突不能静默覆盖 |
+| `spec.derived_from_claim_record_ids/reasoning` | inference 保留前提与推导，不伪装为直接观察 |
+| `spec.confidence_micros` | 只允许 assumption/hypothesis/inference 显式使用；整数 0..1,000,000，null 不等于 1.0 |
+| `spec.owner/validation_plan/review_by_unix_ms` | 假设必须说明由谁、何时、怎样验证以及若为假有什么影响 |
+| `status.valid_* / metadata.supersedes_record_ids` | 过期或被替代 claim 不进入强约束 Context |
 
-门禁：`fact.confirmed` 至少一条当前有效的直接 Evidence；Assumption/Inference 不能满足 hard gate；Decision 指向已批准
-ADR/approval；Proposal 不能被任务规划当已采纳范围；Unknown 必须进入 question/risk queue。
+当前 shadow 门禁：即使声明了 direct Evidence，也拒绝 `fact.confirmed`；Assumption/Inference/Proposal/Unknown 和所有其它 Claim
+均不能满足 hard gate；Decision authority 只保留未来字段形状，不代表批准。Unknown 必须进入 question/risk queue。0F-B–1 exact journal 与
+replay 仍不足以启用 confirmed/accepted/waived；必须先交付 authenticated identity、Approval/Grant、SoD、语义 lifecycle/conflict/freshness、
+revocation，并另作版本决策。
 
 合法的 claim type × state 是封闭矩阵：Fact 为 `candidate/confirmed/contested/stale/retracted/superseded`；Constraint 为
 `candidate/active/waived/expired/superseded`；Decision 为 `proposed/accepted/rejected/deprecated/superseded`；Inference 为

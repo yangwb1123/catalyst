@@ -1,6 +1,12 @@
 # Completion Evidence Spec — 完成证据报告（Definition of Done）
 
-Agent 完成任务的唯一合法形式是提交**证据报告**，不是一句"已完成"。
+> **范围与权威性（2026-08-09 纠偏）**：本文是 `ai-batch` 的 portable artifact-format
+> 参考，不是 ForgeOS 当前完成裁决协议，也不证明声明的命令确实执行过。legacy
+> `check-completion-report.py` 只校验报告形状与自述字段；ForgeOS 的 canonical 观察格式是
+> `.agent/eval/completion-evidence.schema.yml`，且只有 `forge accept` 可以输出
+> `ACCEPTED/REJECTED`。二者不可互相冒充。
+
+在这个 portable artifact 协议内，Agent 必须提交**证据报告**，不能只说“已完成”。
 
 ## 1. completion_report 结构（必须输出）
 

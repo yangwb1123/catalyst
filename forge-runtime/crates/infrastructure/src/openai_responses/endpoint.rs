@@ -2,8 +2,35 @@ use std::net::IpAddr;
 
 use reqwest::{Client, Url};
 
-use super::{CONNECT_TIMEOUT, EndpointPolicy, READ_TIMEOUT, REQUEST_TIMEOUT, config_error};
+use super::{
+    CONNECT_TIMEOUT, EndpointPolicy, OpenAiResponsesProvider, READ_TIMEOUT, REQUEST_TIMEOUT,
+    config_error,
+};
 use crate::runtime_domain::ProviderError;
+
+impl OpenAiResponsesProvider {
+    /// Resolves the exact Responses endpoint for an official `/v1` base URL
+    /// without constructing a client or reading credentials.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when `base_url` is not the official `OpenAI` `/v1` URL.
+    pub fn resolve_official_endpoint(base_url: &str) -> Result<String, ProviderError> {
+        responses_endpoint(base_url, EndpointPolicy::Official).map(|url| url.to_string())
+    }
+
+    /// Resolves the exact Responses endpoint for an explicitly selected
+    /// self-hosted `/v1` base URL without constructing a client or reading
+    /// credentials.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when `base_url` violates the self-hosted endpoint
+    /// policy.
+    pub fn resolve_self_hosted_endpoint(base_url: &str) -> Result<String, ProviderError> {
+        responses_endpoint(base_url, EndpointPolicy::SelfHosted).map(|url| url.to_string())
+    }
+}
 
 pub(super) fn responses_endpoint(
     base_url: &str,
@@ -34,7 +61,6 @@ pub(super) fn responses_endpoint(
     Ok(url)
 }
 
-
 fn validate_self_hosted_base_url(url: &Url) -> Result<(), ProviderError> {
     let loopback = is_loopback_host(url.host_str().unwrap_or(""));
     if url.scheme() == "https" {
@@ -55,9 +81,7 @@ fn validate_self_hosted_base_url(url: &Url) -> Result<(), ProviderError> {
         ));
     }
     if !matches!(url.path(), "/v1" | "/v1/") {
-        return Err(config_error(
-            "self-hosted base_url must end in /v1",
-        ));
+        return Err(config_error("self-hosted base_url must end in /v1"));
     }
     Ok(())
 }
@@ -110,9 +134,7 @@ pub(super) fn build_client(endpoint_policy: EndpointPolicy) -> Result<Client, Pr
 
 #[cfg(test)]
 mod self_hosted_policy_tests {
-    use super::{
-        EndpointPolicy, responses_endpoint,
-    };
+    use super::{EndpointPolicy, responses_endpoint};
 
     fn accepts(base_url: &str) -> bool {
         responses_endpoint(base_url, EndpointPolicy::SelfHosted).is_ok()
@@ -143,11 +165,10 @@ mod self_hosted_policy_tests {
     #[test]
     fn official_policy_still_refuses_self_hosted_urls() {
         assert!(responses_endpoint("http://127.0.0.1:4001/v1", EndpointPolicy::Official).is_err());
-        assert!(responses_endpoint(
-            "https://llm.internal.example/v1",
-            EndpointPolicy::Official,
-        )
-        .is_err());
+        assert!(
+            responses_endpoint("https://llm.internal.example/v1", EndpointPolicy::Official,)
+                .is_err()
+        );
     }
 }
 

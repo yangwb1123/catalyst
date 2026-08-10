@@ -4,15 +4,17 @@
 // deterministic wiremock suite; this test is the host-verified external
 // resource counterpart (see docs/external-resource-verification.md).
 
-use forge_runtime_domain::{Cancellation, Message, ModelEvent, ModelProvider, ModelRequest, ProviderError};
+use forge_runtime_domain::{
+    Cancellation, Message, ModelEvent, ModelProvider, ModelRequest, ProviderError,
+};
 use futures_util::StreamExt;
 
 use super::OpenAiResponsesProvider;
 
 fn request() -> ModelRequest {
     ModelRequest {
-        system_prompt:
-            "You are a smoke-test oracle. Reply with only the exact word FORGELIVE.".into(),
+        system_prompt: "You are a smoke-test oracle. Reply with only the exact word FORGELIVE."
+            .into(),
         messages: vec![Message::User {
             text: "What is the verification word?".into(),
         }],
@@ -45,14 +47,11 @@ async fn live_gateway_reasoning_round_trip_via_local_gateway() {
         eprintln!("skipped: FORGE_LIVE_GATEWAY_ENDPOINT unset (no live gateway)");
         return;
     };
-    let model = std::env::var("FORGE_LIVE_GATEWAY_MODEL")
-        .unwrap_or_else(|_| "local-qwen".to_string());
-    let provider = OpenAiResponsesProvider::new_insecure_for_test(
-        endpoint,
-        model,
-        "forge-live-smoke-key",
-    )
-    .expect("valid live gateway provider");
+    let model =
+        std::env::var("FORGE_LIVE_GATEWAY_MODEL").unwrap_or_else(|_| "local-qwen".to_string());
+    let provider =
+        OpenAiResponsesProvider::new_insecure_for_test(endpoint, model, "forge-live-smoke-key")
+            .expect("valid live gateway provider");
 
     let (text, error) = streamed_text(&provider).await;
     assert!(

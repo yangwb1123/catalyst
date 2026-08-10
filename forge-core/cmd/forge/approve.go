@@ -491,6 +491,6 @@ func digestReleaseFiles(root string, files []string) (string, error) {
 }
 
 func writeDigestPart(dst io.Writer, name string, data []byte) {
-	fmt.Fprintf(dst, "%d:%s:%d:", len(name), name, len(data))
+	_, _ = fmt.Fprintf(dst, "%d:%s:%d:", len(name), name, len(data))
 	_, _ = dst.Write(data)
 }
