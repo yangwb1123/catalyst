@@ -151,6 +151,24 @@ detectors:
       positive: { path: harness/test_artifact_evidence_adapter_check.py, contains: test_golden_fixture_is_adapted_shadow }
       negative: { path: harness/test_artifact_evidence_adapter_check.py, contains: test_projection_drift_is_rejected }
 
+  - id: governance.command_observation_evidence_adapter
+    version: 1.0.0
+    state: shadow
+    rule_refs: [TRUTH-002]
+    implementation:
+      argv: [python3, harness/command_observation_evidence_adapter_check.py, repo_root, command_observation_evidence_request, evidence_record]
+      cwd: repo_root
+      shell: false
+    invocation:
+      owner: operator
+      adapter: standalone.commandObservationEvidenceAdapter
+      acceptance_criterion: null
+      load_bearing: false
+    fail_closed: true
+    tests:
+      positive: { path: harness/test_command_observation_evidence_adapter_check.py, contains: test_golden_fixture_is_adapted_shadow }
+      negative: { path: harness/test_command_observation_evidence_adapter_check.py, contains: test_projection_drift_is_rejected }
+
   - id: backend.decision_package
     version: 1.0.0
     state: shadow

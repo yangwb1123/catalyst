@@ -1,0 +1,86 @@
+{
+  "api_version": "forgeos.governance.command-observation-evidence-adapter.fixture/v1",
+  "expected": {
+    "canonical_command_json": "{\"argv\":[\"python3\",\"-B\",\"harness/check.py\"],\"cwd\":\".\",\"environment_sha256\":\"256bf02a4dc98f7d73dff56a4dc0be921704519a2a8c9013afe33c74008d9a4c\",\"stdin_bytes\":0,\"stdin_sha256\":\"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\",\"timeout_ms\":600000,\"tool_snapshot_sha256\":\"e29887560e3ce6d4e7078df1715718d69e1e13d2ba53218468f033960b86e45b\"}",
+    "canonical_evidence_record_json": "{\"api_version\":\"forgeos.governance/v1\",\"integrity\":{\"canonical_sha256\":\"12c59cbfb2e0eabba95405f7d30785964c03e9e6b9a26ed340b6a40625259f07\",\"canonicalization\":\"forgeos.canonical-json/v1\"},\"kind\":\"EvidenceRecord\",\"metadata\":{\"aggregate_id\":\"command-run-command-0049\",\"context_sha256\":\"ddd098324408a029b183c4e7fd3a5e2c1931aa887f13668e3fe54564826ffeae\",\"created_at_unix_ms\":1786341896789,\"created_by\":{\"authority_domain\":\"shadow\",\"principal_id\":\"forgeos.command-observation-evidence-adapter\",\"principal_type\":\"tool\",\"role\":\"evidence-adapter\",\"run_id\":\"command-adaptation-66055a7c9e7b7b7dc7310ab8803ac9088b6750cadc68d3e4d372a9b073567c65\"},\"policy_sha256\":\"bda2269702df060d9b375228e89f5f79d3f1f8c4b185d4b48052a934d49f9242\",\"project_id\":\"project-catalyst\",\"record_id\":\"command-evidence-66055a7c9e7b7b7dc7310ab8803ac9088b6750cadc68d3e4d372a9b073567c65\",\"scope\":\"project\",\"sequence\":1,\"source_revision\":\"fixture-revision-0049\",\"source_tree_sha256\":\"19b6e8c07f6dd4e6027f74c2d2fc2d004fe9ef62da29dfa9a20d134b3a34faac\",\"supersedes_record_ids\":[]},\"spec\":{\"artifact_sha256\":\"4b5062a9920c45d394b05758105cb5357c0bce2c50c8e6e3e9bee67ca7bde732\",\"collector\":{\"collector_id\":\"forgeos.fixture-command-runner\",\"collector_type\":\"tool\",\"collector_version\":\"v1\",\"parameters_sha256\":\"a8c02b766c0771e08b4d19163637eaf1ae7bc856807661569bb1127c853c8489\",\"run_id\":\"run-command-0049\"},\"content_role\":\"untrusted_data\",\"directness\":\"direct\",\"evidence_type\":\"gate_result\",\"locator\":{\"content_sha256\":\"742a11f4c19dec8bb412de70f03eafecf754bacdc1f00166bb482360633c752e\",\"exit_code\":0,\"line_end\":null,\"line_start\":null,\"locator_ref\":\"command-observation:4b5062a9920c45d394b05758105cb5357c0bce2c50c8e6e3e9bee67ca7bde732\",\"locator_type\":\"command\"},\"observed_at_unix_ms\":1786341896789,\"sensitivity\":\"internal\",\"source_snapshot\":{\"snapshot_id\":\"command-observation-4b5062a9920c45d394b05758105cb5357c0bce2c50c8e6e3e9bee67ca7bde732\",\"snapshot_sha256\":\"4b5062a9920c45d394b05758105cb5357c0bce2c50c8e6e3e9bee67ca7bde732\",\"snapshot_type\":\"runtime\"},\"source_trust\":\"observed\",\"subjects\":[\"gate:architecture\",\"run:command-0049\"]},\"status\":{\"reason_codes\":[],\"state\":\"valid\",\"valid_from_unix_ms\":1786341896789,\"valid_until_unix_ms\":null}}",
+    "canonical_observation_json": "{\"api_version\":\"forgeos.command-observation/v1\",\"canonicalization\":\"forgeos.canonical-json/v1\",\"command\":{\"argv\":[\"python3\",\"-B\",\"harness/check.py\"],\"cwd\":\".\",\"environment_sha256\":\"256bf02a4dc98f7d73dff56a4dc0be921704519a2a8c9013afe33c74008d9a4c\",\"stdin_bytes\":0,\"stdin_sha256\":\"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\",\"timeout_ms\":600000,\"tool_snapshot_sha256\":\"e29887560e3ce6d4e7078df1715718d69e1e13d2ba53218468f033960b86e45b\"},\"ended_at_unix_ms\":1786341896789,\"evidence_type\":\"gate_result\",\"producer\":{\"producer_id\":\"forgeos.fixture-command-runner\",\"producer_type\":\"tool\",\"producer_version\":\"v1\",\"run_id\":\"run-command-0049\"},\"source\":{\"source_revision\":\"fixture-revision-0049\",\"source_tree_sha256\":\"19b6e8c07f6dd4e6027f74c2d2fc2d004fe9ef62da29dfa9a20d134b3a34faac\"},\"started_at_unix_ms\":1786341896000,\"streams\":{\"combined\":{\"bytes\":13,\"retained_bytes\":10,\"retained_sha256\":\"59b6e71c928809a4a1162504f17462a7355e849500e3a449e955de5e85370948\",\"sha256\":\"742a11f4c19dec8bb412de70f03eafecf754bacdc1f00166bb482360633c752e\"},\"stderr\":{\"bytes\":5,\"retained_bytes\":5,\"retained_sha256\":\"7597e6b3a37792a557b9f88f3a8ed8a8eac0714b587cd1ffa321af61493d141e\",\"sha256\":\"7597e6b3a37792a557b9f88f3a8ed8a8eac0714b587cd1ffa321af61493d141e\"},\"stdout\":{\"bytes\":8,\"retained_bytes\":5,\"retained_sha256\":\"6d200be7503a3276fe2a6ded3c989085cec448c9148730052ebbe52ed0f856d3\",\"sha256\":\"b3e6157de5431fc37b169ab681eff1cfb752fb649c89f2a6939e43848bc0cabd\"}},\"termination\":{\"exit_code\":0,\"kind\":\"exited\"}}",
+    "canonical_request_json": "{\"api_version\":\"forgeos.governance.command-observation-evidence-adapter/v1\",\"binding\":{\"aggregate_id\":\"command-run-command-0049\",\"context_sha256\":\"ddd098324408a029b183c4e7fd3a5e2c1931aa887f13668e3fe54564826ffeae\",\"policy_sha256\":\"bda2269702df060d9b375228e89f5f79d3f1f8c4b185d4b48052a934d49f9242\",\"project_id\":\"project-catalyst\",\"scope\":\"project\",\"sensitivity\":\"internal\",\"sequence\":1,\"subjects\":[\"gate:architecture\",\"run:command-0049\"],\"supersedes_record_ids\":[]},\"canonicalization\":\"forgeos.canonical-json/v1\",\"observation\":{\"api_version\":\"forgeos.command-observation/v1\",\"canonicalization\":\"forgeos.canonical-json/v1\",\"command\":{\"argv\":[\"python3\",\"-B\",\"harness/check.py\"],\"cwd\":\".\",\"environment_sha256\":\"256bf02a4dc98f7d73dff56a4dc0be921704519a2a8c9013afe33c74008d9a4c\",\"stdin_bytes\":0,\"stdin_sha256\":\"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\",\"timeout_ms\":600000,\"tool_snapshot_sha256\":\"e29887560e3ce6d4e7078df1715718d69e1e13d2ba53218468f033960b86e45b\"},\"ended_at_unix_ms\":1786341896789,\"evidence_type\":\"gate_result\",\"producer\":{\"producer_id\":\"forgeos.fixture-command-runner\",\"producer_type\":\"tool\",\"producer_version\":\"v1\",\"run_id\":\"run-command-0049\"},\"source\":{\"source_revision\":\"fixture-revision-0049\",\"source_tree_sha256\":\"19b6e8c07f6dd4e6027f74c2d2fc2d004fe9ef62da29dfa9a20d134b3a34faac\"},\"started_at_unix_ms\":1786341896000,\"streams\":{\"combined\":{\"bytes\":13,\"retained_bytes\":10,\"retained_sha256\":\"59b6e71c928809a4a1162504f17462a7355e849500e3a449e955de5e85370948\",\"sha256\":\"742a11f4c19dec8bb412de70f03eafecf754bacdc1f00166bb482360633c752e\"},\"stderr\":{\"bytes\":5,\"retained_bytes\":5,\"retained_sha256\":\"7597e6b3a37792a557b9f88f3a8ed8a8eac0714b587cd1ffa321af61493d141e\",\"sha256\":\"7597e6b3a37792a557b9f88f3a8ed8a8eac0714b587cd1ffa321af61493d141e\"},\"stdout\":{\"bytes\":8,\"retained_bytes\":5,\"retained_sha256\":\"6d200be7503a3276fe2a6ded3c989085cec448c9148730052ebbe52ed0f856d3\",\"sha256\":\"b3e6157de5431fc37b169ab681eff1cfb752fb649c89f2a6939e43848bc0cabd\"}},\"termination\":{\"exit_code\":0,\"kind\":\"exited\"}}}",
+    "command_sha256": "a8c02b766c0771e08b4d19163637eaf1ae7bc856807661569bb1127c853c8489",
+    "evidence_record_sha256": "12c59cbfb2e0eabba95405f7d30785964c03e9e6b9a26ed340b6a40625259f07",
+    "request_sha256": "66055a7c9e7b7b7dc7310ab8803ac9088b6750cadc68d3e4d372a9b073567c65",
+    "result": "ADAPTED_SHADOW (observation mapping only; no execution, pass, completion, truth, authority, claim, atom, persistence, or effect attestation)",
+    "source_snapshot_sha256": "4b5062a9920c45d394b05758105cb5357c0bce2c50c8e6e3e9bee67ca7bde732"
+  },
+  "request": {
+    "api_version": "forgeos.governance.command-observation-evidence-adapter/v1",
+    "binding": {
+      "aggregate_id": "command-run-command-0049",
+      "context_sha256": "ddd098324408a029b183c4e7fd3a5e2c1931aa887f13668e3fe54564826ffeae",
+      "policy_sha256": "bda2269702df060d9b375228e89f5f79d3f1f8c4b185d4b48052a934d49f9242",
+      "project_id": "project-catalyst",
+      "scope": "project",
+      "sensitivity": "internal",
+      "sequence": 1,
+      "subjects": [
+        "gate:architecture",
+        "run:command-0049"
+      ],
+      "supersedes_record_ids": []
+    },
+    "canonicalization": "forgeos.canonical-json/v1",
+    "observation": {
+      "api_version": "forgeos.command-observation/v1",
+      "canonicalization": "forgeos.canonical-json/v1",
+      "command": {
+        "argv": [
+          "python3",
+          "-B",
+          "harness/check.py"
+        ],
+        "cwd": ".",
+        "environment_sha256": "256bf02a4dc98f7d73dff56a4dc0be921704519a2a8c9013afe33c74008d9a4c",
+        "stdin_bytes": 0,
+        "stdin_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "timeout_ms": 600000,
+        "tool_snapshot_sha256": "e29887560e3ce6d4e7078df1715718d69e1e13d2ba53218468f033960b86e45b"
+      },
+      "ended_at_unix_ms": 1786341896789,
+      "evidence_type": "gate_result",
+      "producer": {
+        "producer_id": "forgeos.fixture-command-runner",
+        "producer_type": "tool",
+        "producer_version": "v1",
+        "run_id": "run-command-0049"
+      },
+      "source": {
+        "source_revision": "fixture-revision-0049",
+        "source_tree_sha256": "19b6e8c07f6dd4e6027f74c2d2fc2d004fe9ef62da29dfa9a20d134b3a34faac"
+      },
+      "started_at_unix_ms": 1786341896000,
+      "streams": {
+        "combined": {
+          "bytes": 13,
+          "retained_bytes": 10,
+          "retained_sha256": "59b6e71c928809a4a1162504f17462a7355e849500e3a449e955de5e85370948",
+          "sha256": "742a11f4c19dec8bb412de70f03eafecf754bacdc1f00166bb482360633c752e"
+        },
+        "stderr": {
+          "bytes": 5,
+          "retained_bytes": 5,
+          "retained_sha256": "7597e6b3a37792a557b9f88f3a8ed8a8eac0714b587cd1ffa321af61493d141e",
+          "sha256": "7597e6b3a37792a557b9f88f3a8ed8a8eac0714b587cd1ffa321af61493d141e"
+        },
+        "stdout": {
+          "bytes": 8,
+          "retained_bytes": 5,
+          "retained_sha256": "6d200be7503a3276fe2a6ded3c989085cec448c9148730052ebbe52ed0f856d3",
+          "sha256": "b3e6157de5431fc37b169ab681eff1cfb752fb649c89f2a6939e43848bc0cabd"
+        }
+      },
+      "termination": {
+        "exit_code": 0,
+        "kind": "exited"
+      }
+    }
+  }
+}

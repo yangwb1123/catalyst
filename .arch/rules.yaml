@@ -78,6 +78,12 @@
 #              now harness at 34 non-test files (the architecture metric excludes
 #              tests), so max_files 34 → 35 preserves the same
 #              one-file headroom without weakening another threshold.
+#              RECALIBRATED 2026-08-10: ADR-0049 adds one universal command-
+#              observation → Evidence adapter CLI at the harness root; the
+#              implementation and source-adapter governance checks remain split
+#              into cohesive sub-packages, while tests stay outside this metric.
+#              The measured harness ceiling is now 35 non-test files, so
+#              max_files 35 → 36 preserves exactly one file of headroom.
 #   fanin:     max 28 PRODUCTION importing files (Rust domain);
 #              forge-core/internal/asset is 26. Tests excluded. RECALIBRATED 2026-07-29:
 #              Rust `crate/self/super` imports are same-crate cohesion, not inbound
@@ -98,7 +104,7 @@ root:
 
 # ── Per-package / per-directory budget ────────────────────────────────────
 package:
-  max_files: 35       # actual 34 non-test harness files (Artifact adapter CLI included) + headroom 1
+  max_files: 36       # actual 35 non-test harness files (Command observation adapter CLI included) + headroom 1
   max_exports: 30     # actual 28 (orchestrator and mode) + headroom — recalibrated 2026-07-27
 
 # ── Per-file budget ───────────────────────────────────────────────────────

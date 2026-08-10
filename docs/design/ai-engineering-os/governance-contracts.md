@@ -4,10 +4,12 @@
 > ADR-0046 的 0F-B–1 本地 exact-record journal 已在 SQLite v25/runtime/CLI/compatibility 边界内完成，并通过独立复审与 `forge accept`。
 > ADR-0047 另已交付七类 KnowledgeClaim→CognitiveAtom 的确定性 pure shadow projection；它不是新治理记录，不进入 journal。
 > ADR-0048 已交付 strict artifact-v1→EvidenceRecord pure shadow adapter；它不读取当前文件、不追加 journal，SQLite 保持 v25。
+> ADR-0049 已交付 strict command-observation→gate/test EvidenceRecord pure shadow adapter；它不执行命令、不把 exit=0 当 PASS、
+> 不追加 journal，SQLite 仍保持 v25。
 > 第 2 节中标注“已交付”的两种 v1 记录、下述 source adapter 与 CognitiveAtom v1 投影属于当前合同；第 1、3 节及其后内容仍是目标态，
 > 不声明 truth/authority、Context、Grant、Transition、语义 lifecycle/conflict/freshness view 或知识写回 runtime 已支持。旧 free-text memory 不得静默升级。
 
-## 0. 当前实现边界（0F-A、0F-B–1、ADR-0047 projection 与 ADR-0048 adapter 已完成；其余目标态未实现）
+## 0. 当前实现边界（0F-A、0F-B–1、ADR-0047 projection 与 ADR-0048/0049 adapters 已完成；其余目标态未实现）
 
 当前可执行的 governance record kind 仍只有 `EvidenceRecord` 和 `KnowledgeClaim` v1：
 
@@ -59,7 +61,36 @@ ADAPTED_SHADOW (no truth, authority, claim, atom, persistence, or effect attesta
 adapter 不读取 artifact path 的当前文件，不证明 manifest 来自受信 Store，不认证 agent/model/principal/collector，不创建
 KnowledgeClaim/CognitiveAtom，不满足 hard gate，不 append GovernanceRecordJournal、不写 SQLite/Memory/Knowledge，也不产生 network/process/
 device/production effect。若调用方随后要求 durability，必须另行使用 ADR-0046 journal 并取得其 `stored|exact_replay` receipt；
-`ADAPTED_SHADOW` 不能冒充 persistence。该切片没有 migration/backfill，Hub schema 和 SQLite 保持 v25；Evolve/gate/test source adapter 仍需独立版本。
+`ADAPTED_SHADOW` 不能冒充 persistence。该切片没有 migration/backfill，Hub schema 和 SQLite 保持 v25；gate/test observation 由
+ADR-0049 的独立版本承担，Evolve locator 仍需另行设计。
+
+### ADR-0049：Command observation → Gate/Test EvidenceRecord v1 pure shadow adapter
+
+[ADR-0049](../../adr/0049-command-observation-evidence-adapter-v1.md) 冻结 exact
+`forgeos.command-observation/v1` envelope 和显式 Governance binding，再确定性映射为既有 `gate_result|test_run` EvidenceRecord。
+observation 绑定 direct-exec argv、normalized cwd、opaque environment/tool/source-tree digest 声明、producer/run、整数毫秒时间、真实 exit、
+stdout/stderr/combined 的 full/retained 摘要与截断计数。combined 只表示 producer 记录的 drain-event 顺序，不证明 OS emission 顺序；
+`gate_result|test_run` 也只是 caller-declared 分类，不包含 criterion verdict。
+
+Observation wire 能诚实保存 `exited|timed_out|cancelled`，但现有 Evidence command locator 只能无损保存真实非负 exit code，所以 adapter
+只投影 `exited`；timeout/cancel/signal/spawn-failed 不得用负 sentinel 或猜测值伪装。command、observation、完整 request 和最终 Evidence
+分别使用独立 digest domain；created-by 使用 request-derived `command-adaptation-<request_sha256>`，collector 仅复制 producer 声明。
+Schema、golden 与 Universal checker 为：
+
+- `docs/contracts/command-observation-evidence-adapter-v1.schema.json`；
+- `docs/contracts/fixtures/command-observation-evidence-adapter-v1.json`；
+- `harness/command_observation_evidence_adapter_check.py`。
+
+Python、Go、Rust 独立实现必须产生逐字节相同的 canonical command/observation/request/Evidence 和四类 digest。唯一正结果是：
+
+```text
+ADAPTED_SHADOW (observation mapping only; no execution, pass, completion, truth, authority, claim, atom, persistence, or effect attestation)
+```
+
+adapter 不 spawn 命令、不读取 cwd/stdin/output/current tree、不验证 stream preimage、environment/tool/tree digest profile 或 producer 身份，
+也不把 exit=0/PASS 文本映射为 gate authority。它不创建 Claim/Atom、不满足 hard gate、不 append journal、不写 SQLite/Knowledge，
+不产生 process/network/device/production effect。该切片没有 migration/backfill；真实 gate/execbound producer integration 必须先冻结版本化、
+无秘密 digest-preimage profile，Evolve locator 则使用另一 source contract。
 
 ### ADR-0047：CognitiveAtom v1 pure shadow projection
 
@@ -76,7 +107,7 @@ epistemic state、references、validity 与适用的 integer confidence，并强
 - `docs/contracts/fixtures/cognitive-atom-projection-v1.json`；
 - `harness/cognitive_atom_contract_check.py`。
 
-它们的摘要与 Python/Go/Rust 参考路径由 `.agent/engineering/governance-contracts.yml` v5 固定。唯一正结果是：
+它们的摘要与 Python/Go/Rust 参考路径由 `.agent/engineering/governance-contracts.yml` v6 固定。唯一正结果是：
 
 ```text
 PROJECTED_SHADOW
@@ -116,8 +147,8 @@ hard gate。Inspection 默认只返回 batch/ordinal/identity/digest/byte-count/
 ## 1. 通用 Governance Envelope（目标态，未实现）
 
 目标上，Atom、Claim、Evidence、GraphSnapshot、Report、Grant、Review、Approval、KnowledgeUpdate 和 Transition 共享一组信封职责。
-ADR-0047 的 CognitiveAtom v1 只是独立 Claim 投影 wire，ADR-0048 也只是把一种 provenance source 映射到既有 Evidence wire；
-二者都不表示该通用信封或完整 Kernel ABI 已实现。
+ADR-0047 的 CognitiveAtom v1 只是独立 Claim 投影 wire，ADR-0048/0049 也只是把两种互不相同的 source 映射到既有 Evidence wire；
+它们都不表示该通用信封或完整 Kernel ABI 已实现。
 下图只是**不可序列化的概念图**，不是 `forgeos.governance/v1` wire shape，也不得输入当前 checker；任何共同信封实现都必须采用新版本并另作兼容决策：
 
 ```yaml

@@ -1,15 +1,15 @@
 api_version: forgeos.agent-engineering/v1
 kind: GovernanceContractRegistry
 status: active_contract
-runtime_binding: cross_language_codec_local_journal_atom_projection_artifact_adapter_shadow
+runtime_binding: cross_language_codec_local_journal_atom_projection_artifact_command_adapters_shadow
 owner: governance
-version: 5
+version: 6
 completion_authority: forge_accept
 
 scope:
   shipped_kinds: [EvidenceRecord, KnowledgeClaim]
   shipped_projections: [CognitiveAtom]
-  shipped_adapters: [artifact_provenance_to_evidence]
+  shipped_adapters: [artifact_provenance_to_evidence, command_observation_to_evidence]
   planned_kinds: [ContextPackage, CapabilityGrant, ApprovalRecord, TransitionReceipt, KnowledgeUpdateProposal]
   persistence: local_append_only_exact_evidence_claim_journal
   authority_attestation: unavailable
@@ -86,6 +86,59 @@ artifact_evidence_adapter:
     max_string_bytes: 16384
     integer_domain: signed_int64
   positive_result: ADAPTED_SHADOW (no truth, authority, claim, atom, persistence, or effect attestation)
+  attests: []
+  persistence: none
+
+command_observation_evidence_adapter:
+  api_version: forgeos.governance.command-observation-evidence-adapter/v1
+  mode: deterministic_command_observation_to_evidence_shadow
+  source_kind: forgeos.command-observation/v1
+  output_kind: EvidenceRecord
+  source_fields: [api_version, canonicalization, command, ended_at_unix_ms, evidence_type, producer, source, started_at_unix_ms, streams, termination]
+  binding_fields: [aggregate_id, context_sha256, policy_sha256, project_id, scope, sensitivity, sequence, subjects, supersedes_record_ids]
+  exact_request:
+    canonical_required: true
+    compact_utf8_required: true
+    observation_anchor: "#CommandObservationV1"
+    observation_terminations: [cancelled, exited, timed_out]
+    projectable_termination: exited
+    executes_command: false
+    reads_current_process: false
+    digest_preimage_profile: not_frozen_opaque_producer_declaration
+  identity:
+    command_digest_domain: "forgeos.governance.command-observation.command.v1\0"
+    source_digest_domain: "forgeos.governance.command-observation-source.v1\0"
+    request_digest_domain: "forgeos.governance.command-observation-evidence-adapter.request.v1\0"
+    evidence_record_digest_domain: "forgeos.governance.evidence-record.v1\0"
+    record_id_prefix: command-evidence-
+    snapshot_id_prefix: command-observation-
+    principal_run_id_prefix: command-adaptation-
+  constants:
+    principal_id: forgeos.command-observation-evidence-adapter
+    principal_type: tool
+    authority_domain: shadow
+    role: evidence-adapter
+    collector_from: producer_declaration
+    collector_parameters: command_sha256
+    artifact_sha256: source_snapshot_sha256
+    evidence_types: [gate_result, test_run]
+    directness: direct
+    source_trust: observed
+    content_role: untrusted_data
+    source_snapshot_type: runtime
+    status: valid
+  limits:
+    max_request_bytes: 131072
+    max_depth: 16
+    max_object_fields: 64
+    max_array_items: 256
+    max_argv_items: 64
+    max_text_scalars: 4096
+    max_string_bytes: 16384
+    max_timeout_ms: 86400000
+    integer_domain: signed_int64
+    exit_code_domain: portable_nonnegative_signed_int32
+  positive_result: ADAPTED_SHADOW (observation mapping only; no execution, pass, completion, truth, authority, claim, atom, persistence, or effect attestation)
   attests: []
   persistence: none
 
@@ -227,10 +280,14 @@ canonical_refs:
   artifact_evidence_adapter_schema: docs/contracts/artifact-evidence-adapter-v1.schema.json
   artifact_evidence_adapter_golden_fixture: docs/contracts/fixtures/artifact-evidence-adapter-v1.json
   artifact_evidence_adapter_checker: harness/artifact_evidence_adapter_check.py
+  command_observation_evidence_adapter_schema: docs/contracts/command-observation-evidence-adapter-v1.schema.json
+  command_observation_evidence_adapter_golden_fixture: docs/contracts/fixtures/command-observation-evidence-adapter-v1.json
+  command_observation_evidence_adapter_checker: harness/command_observation_evidence_adapter_check.py
   decision: docs/adr/0045-canonical-evidence-claim-contract.md
   journal_decision: docs/adr/0046-local-governance-record-journal.md
   cognitive_atom_decision: docs/adr/0047-shadow-cognitive-atom-projection-v1.md
   artifact_evidence_adapter_decision: docs/adr/0048-artifact-provenance-evidence-adapter-v1.md
+  command_observation_evidence_adapter_decision: docs/adr/0049-command-observation-evidence-adapter-v1.md
   standard: docs/design/ai-engineering-os/governance-contracts.md
 
 contract_pins:
@@ -241,6 +298,8 @@ contract_pins:
   cognitive_atom_golden_fixture_sha256: 1c45ecf10d256dfd38357d6a9f04d1455c69350a8d0ae10f2322b4f3aa6995aa
   artifact_evidence_adapter_schema_sha256: c43a743011f98c2311c511fe097efe7cd5a7c2010c2999be91cdef72938bd2bd
   artifact_evidence_adapter_golden_fixture_sha256: c74a2590f6ed72ce82c52542d06246f830d08c2b7c096fa27dd5879c171a986c
+  command_observation_evidence_adapter_schema_sha256: e20339bbefe8cde731d4a1e0fc164259ac89c8930338dc7cc88b80aa8846dd9a
+  command_observation_evidence_adapter_golden_fixture_sha256: ce888feac319cb40ae7f11f74c007d48391f0c30db942d3ce3dd0a1af2aa3a7c
 
 reference_implementations:
   python:
@@ -270,6 +329,15 @@ reference_implementations:
   artifact_evidence_adapter_rust:
     ref: forge-runtime/crates/domain/src/artifact_evidence_contract
     projection: catalyst_repository_only
+  command_observation_evidence_adapter_python:
+    ref: harness/command_observation_evidence_adapter_check.py
+    projection: universal_scaffold
+  command_observation_evidence_adapter_go:
+    ref: forge-core/internal/commandobservationevidencecontract
+    projection: catalyst_repository_only
+  command_observation_evidence_adapter_rust:
+    ref: forge-runtime/crates/domain/src/command_observation_evidence_contract
+    projection: catalyst_repository_only
 
 non_capabilities:
   - no truth ledger authoritative current-knowledge view or semantic lifecycle projection
@@ -282,3 +350,4 @@ non_capabilities:
   - CognitiveAtom v1 is a pure Claim projection with no truth authority instruction hard-guard transition completion or effect attestation
   - no prompt or model atom compiler full Kernel ABI atom persistence or journal adapter
   - Artifact provenance adapter does not read artifact content authenticate producer or collector attest truth authority claim atom completion persistence or effect
+  - Command observation adapter does not execute commands verify output preimages authenticate producer or digest profiles attest pass completion truth authority claim atom persistence or effect

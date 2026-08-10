@@ -2,7 +2,7 @@
 
 ## 职责与触发
 
-当任务需要把一个 exact artifact provenance observation 适配为 Evidence、记录或本地持久化新的观察、事实候选、推断、假设、未知、
+当任务需要把一个 exact artifact provenance 或 command observation 适配为 Evidence、记录或本地持久化新的观察、事实候选、推断、假设、未知、
 冲突或失效关系时，使用本 Skill。目标是区分 EvidenceRecord 与 KnowledgeClaim，按 ADR-0048 生成 pure shadow artifact Evidence，
 生成 strict-codec 候选记录，并仅在调用方另外明确要求 durability 时使用窄 append-only journal。普通代码实现、完成裁决、权限签发、
 知识采纳和生命周期解释不属于本 Skill。
@@ -13,6 +13,8 @@
 - 精确观察产物或其有界 locator；
 - 若来源是 ForgeOS artifact provenance，提供 exact 十一字段 `forgeos.artifact.v1` record，以及显式 aggregate/project/scope/context/policy/
   source-tree/revision/sequence/sensitivity/subjects/supersedes binding；历史空 `_format` 不可进入 adapter；
+- 若来源是 command observation，提供 exact `forgeos.command-observation/v1` envelope 与显式 Governance binding；只有 `exited` 可投影，
+  timeout/cancel 保留为 source observation 但不得伪造 exit code；environment/tool/tree digest 仍是 opaque producer declaration；
 - Claim 的 subject、predicate、value、owner、验证计划和有效期；
 - 若引用既有记录，提供 exact `record_id`，不得只给标题或自由文本名称。
 - 需要持久化时，提供稳定的调用方 idempotency key；不得用时间戳或每次随机值绕过 replay。
@@ -42,9 +44,17 @@ adapter 分别对 canonical artifact source 和完整 canonical request 做 doma
 固定 shadow tool principal/collector，并生成 existing `EvidenceRecord` v1；最终 Evidence 必须再次通过 ADR-0045 strict validator 和 exact
 re-adaptation comparison。artifact content digest、source snapshot digest、request digest、record ID 与 aggregate ID 不得互换。
 
+### Command observation adapter 分支
+
+当输入是有界 command observation 时，构造 exact
+`forgeos.governance.command-observation-evidence-adapter/v1` request；不得从 `gate.Result`、PASS 文本、trace detail 或外层 acceptance 调用反推
+内部 detector receipt。adapter 不执行命令、不读取 cwd/stdin/output/current tree，也不会验证 stream preimage；它只对 caller 提供的
+command、observation 与完整 request 分别做 domain-separated digest，再确定性生成 existing EvidenceRecord v1。combined digest 仅表示
+producer-observed drain-event 顺序；exit=0、`gate_result|test_run` 和 producer/环境声明均不是身份、criterion verdict 或完成权威。
+
 ## 输出契约
 
-Artifact provenance adapter 分支输出 exactly one `EvidenceRecord` v1 JSON object；普通 record-set/journal 分支才输出按
+Artifact provenance 与 command observation adapter 分支各输出 exactly one `EvidenceRecord` v1 JSON object；普通 record-set/journal 分支才输出按
 `metadata.record_id` 排序、非空的 `EvidenceRecord`/`KnowledgeClaim` v1 JSON 数组，并使用
 `docs/contracts/governance-evidence-claim-v1.schema.json`。两种输出的字节都必须是 exact compact canonical JSON，且记录必须绑定
 source/context/policy 摘要和独立 digest domain。checker 只允许返回结构有效或错误，不产生 trusted、confirmed、approved、accepted、completed
@@ -57,6 +67,11 @@ Artifact adapter 的唯一正结果是
 `ADAPTED_SHADOW (no truth, authority, claim, atom, persistence, or effect attestation)`。它只证明 request→Evidence 的确定性 strict mapping；
 不会认证 manifest/agent/model/collector，不会读取当前文件，不会创建 Claim/CognitiveAtom，不会 append journal、写 SQLite 或产生 effect。
 
+Command adapter 的唯一正结果是
+`ADAPTED_SHADOW (observation mapping only; no execution, pass, completion, truth, authority, claim, atom, persistence, or effect attestation)`。
+它不会执行命令、不会验证 stream preimage、不会认证 producer/digest profile，也不把 exit=0 当 PASS；不会创建 Claim/Atom、不会 append journal、
+写 SQLite 或产生 effect。`created_by.run_id=command-adaptation-<request_sha256>` 只是 deterministic correlation id，不是 execution receipt。
+
 ## 规则、禁止与权限
 
 - Evidence 只证明特定观察，不证明整个系统正确。
@@ -66,6 +81,7 @@ Artifact adapter 的唯一正结果是
 - 只允许 ADR-0046 定义的本地 exact-record journal；禁止 Truth/current-knowledge ledger、语义生命周期投影、Grant、Approval、Transition 或生产环境。
 - 禁止把 `stored`、`exact_replay`、最大 sequence 或 structural head 改写成 accepted、confirmed、active、fresh、trusted 或 approved。
 - 禁止把 artifact `agent`/`model` 当作认证 principal，禁止用当前路径内容冒充历史 observation，禁止把 `ADAPTED_SHADOW` 当作已持久化 receipt。
+- 禁止把 timeout/cancel/signal 编成负 exit sentinel，禁止用外层命令观察冒充内部 detector receipt，禁止跨未版本化 digest profile 比较 opaque hash。
 - 不使用历史 alias：`Evidence`、`Claim`、`ContextManifest`、`AuthorityGrant`、`AgentCapabilityGrant`。
 
 ## 自动化与验收
@@ -89,6 +105,15 @@ Artifact adapter golden 使用
 `docs/contracts/fixtures/artifact-evidence-adapter-v1.json` 的 canonical source/request/Evidence bytes 和 digests 逐字节一致；工具链缺失时如实记
 `not_executed`。本 adapter 不改变 SQLite v25，也不需要或允许 migration/backfill。
 
+Command adapter golden 使用
+`python3 -B harness/command_observation_evidence_adapter_check.py --golden <repo-root>`；验证具体输出使用
+`python3 -B harness/command_observation_evidence_adapter_check.py <repo-root> <request.json> <evidence-record.json>`。跨语言回归分别运行
+`python3 -B -m unittest harness.test_command_observation_evidence_adapter_check`、
+`(cd forge-core && go test -count=1 ./internal/commandobservationevidencecontract)` 和
+`(cd forge-runtime && cargo test -p forge-runtime-domain command_observation_evidence_contract)`。三者必须与
+`docs/contracts/fixtures/command-observation-evidence-adapter-v1.json` 的 canonical command/observation/request/Evidence bytes 与四个 digest
+逐字节一致。该纯 adapter 不改变 SQLite v25，不允许 migration/backfill/自动 journal append；工具链缺失时如实记 `not_executed`。
+
 Scaffold/upgrade 只继承治理 contract、Skill 和 shadow checker，不安装 Rust `forge-runtime` binary 或 SQLite journal。持久化前先检测项目批准且
 与 `forgeos.governance-journal/v1` 兼容的 `forge-runtime`（至少解析到预期 executable，并确认 help 暴露 append/show/list/head surface）；缺失、版本不兼容
 或无法验证时记为 `not_executed`，不得声称已持久化。检测通过后运行
@@ -104,7 +129,10 @@ conflict/corruption，不得通过换 key 制造第二批次。只有匹配 rece
 - `docs/adr/0045-canonical-evidence-claim-contract.md`
 - `docs/adr/0046-local-governance-record-journal.md`
 - `docs/adr/0048-artifact-provenance-evidence-adapter-v1.md`
+- `docs/adr/0049-command-observation-evidence-adapter-v1.md`
 - `docs/contracts/artifact-evidence-adapter-v1.schema.json`
 - `docs/contracts/fixtures/artifact-evidence-adapter-v1.json`
+- `docs/contracts/command-observation-evidence-adapter-v1.schema.json`
+- `docs/contracts/fixtures/command-observation-evidence-adapter-v1.json`
 - `docs/contracts/governance-record-journal-v1.schema.json`
 - `.agent/engineering/governance-contracts.yml`

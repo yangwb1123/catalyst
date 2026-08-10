@@ -1324,6 +1324,42 @@ Python sensitivity TypeError、总请求字节上限、输出数组别名、dige
 changed-file rustfmt 均通过；`forge check` **13/13**、gate（1720 files）、architecture **8/8**（1213 source files）与
 `git diff --check` 通过。以上只证明 pure shadow adapter 与接线正确，不升级为 provenance 真实性、当前文件一致性、知识采纳、durability 或完成证明。
 
+## Sprint 97（✅ pure shadow source adapter 完成；命令执行、PASS/完成裁决、身份认证、持久化与 effect 未启用）— Command Observation → Gate/Test EvidenceRecord v1
+
+本轮以 ADR 0049 交付 Wave 1 的第二个独立 source adapter：把 caller 提供的 exact command observation + 显式 Governance binding
+确定性映射为既有 `gate_result|test_run` EvidenceRecord v1。它不 spawn 命令、不读取 cwd/stdin/output/current tree、不验证 stream
+preimage 或 producer/digest profile，也不把 exit=0、PASS 文本或 caller-declared evidence type 当成 criterion verdict；SQLite 仍为 v25，
+无 migration/backfill/auto-append。
+
+(1) **exact observation 与 honest terminal boundary**：request、observation、command/producer/source/streams/termination 都是 closed-world shape；
+duplicate/unknown/noncanonical/float/int64 overflow、控制/bidi Unicode、非 normalized cwd、非法 argv/stdin/timeout/hash/time/list、stream
+count/hash/truncation 矛盾与所有 size/depth/scalar 上限均失败关闭。Observation wire 可表达 `exited|timed_out|cancelled`，但现有 Evidence
+command locator 只能无损保存真实非负 signed-int32 exit，所以 adapter 只投影 exited；timeout/cancel、负 sentinel、signaled/spawn-failed
+不得伪装为 process exit。
+
+(2) **四层 identity 与 deterministic mapping**：command、完整 observation、完整 request、sealed Evidence 各用独立 domain-separated SHA-256；
+record/snapshot ID 分别从 request/source digest 派生。created-by 固定 shadow tool 且 run 为
+`command-adaptation-<request_sha256>`，collector 只复制 producer 声明并以 command digest 绑定参数；runtime snapshot 与历史 Evidence v1
+`artifact_sha256` 兼容槽均保存 observation source digest，不把 source 改称 Artifact。combined stream 只表示 producer 记录的 drain-event
+chunk 顺序，不证明 OS emission 顺序。最终 record 必须重跑既有 Governance v1 strict validator，并与 pure re-adaptation 逐字节相同。
+
+(3) **单一跨语言合同与治理漂移门禁**：Schema、golden、registry v6 与 ADR 通过 SHA-256 pin 冻结；Python universal checker、Go repository
+package 与 Rust domain module 对 canonical command/observation/request/Evidence bytes 和四类 digest 完全一致。Evidence/Claim Skill、shadow
+detector、activation/canonical refs、Schema extension、pins、golden recomputation 与 non-load-bearing/no-execution/no-pass/no-persistence 边界均有
+正反治理测试；原 governance checker 按职责拆出 `governance_engineering/source_adapters.py`，未创建新的上帝文件。
+
+(4) **scaffold/upgrade 与兼容边界**：fresh init 和 legacy exact-allowlist upgrade 同步 ADR/Schema/fixture/Python checker/package/tests 及其治理
+helper；Go/Rust 实现仍明确为 Catalyst repository-only，scaffold 不安装 runtime、producer integration 或 persistence。架构预算仅随一个 universal
+root checker 从 35 调到 36，实测 35 个非测试 harness 文件并保留一个 headroom；既有 Evidence/Claim、journal、CognitiveAtom 与 artifact adapter
+golden 均保持不变。
+
+(5) **独立复审与最终验收**：三份互相独立的跨语言 strictness、Rust/治理接线、fresh scaffold/upgrade 复审均
+**APPROVE/CLEAN**，合计 0 Blocker/Major/Minor/Nit。递归 Python **442/442**、Node **400/400**、Go Core **1,485 observed tests**、
+Rust workspace（domain **116**、application **50**、infrastructure **217**、interfaces **158** 等）与 strict Clippy、Go vet/build、
+scaffold/upgrade/security、`forge check` **13/13**、gate（1764 files）、architecture **8/8**（1245 source files）和
+`git diff --check` 均通过；最终 **`forge accept: ACCEPTED`**（9 PASS、0 FAIL、2 个诚实 N/A）。以上只证明 pure shadow mapping、
+字节、兼容和分发正确，不升级为命令真的执行、stream 真实、producer 身份、gate PASS、完成权威、durability 或 effect 证明。
+
 ## 下一前沿(需外部资源 / 后续阶段 / 投机增强 / 明确非目标,非本环境可完整验证)
 - **Graph 下一协议切片**:SQLite v17–v24 已交付 successor candidate、per-node request/lifecycle、receipt/content dataflow、wave-ready/admit、本地 hard-crash adjudication与 8 MiB successor candidate 持久化上限；下一步是顶层整图执行循环、并发 wave 的失败传播/恢复以及安全 resume/branching。不得把当前逐节点 operator 驱动或 Hub-local single-consumption 冒充远程 exactly-once。
 - **真点火** `--agent-cmd=claude`:**multi-agent running to completion 已坐实**(Sprint 25:真 claude 多-agent 跑到 converge MET,增量级 + 版本级)。完整旋钮:四维资源护栏 + 成本三维(phase/时间/美元)+ 任务注入 + 写权限 + 模型路由 + 工作目录 + retry + loop-back;诚实分工:agent 自治增量绿、人确认版本竣工。docs/ignition.md 有完整配方 + 实测

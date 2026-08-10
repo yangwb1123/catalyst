@@ -16,15 +16,45 @@ from cognitive_atom_contract_check import (
 from artifact_evidence_adapter_check import (
     validate_golden_fixture as validate_artifact_evidence_golden_fixture,
 )
+from command_observation_evidence_adapter_check import (
+    validate_golden_fixture as validate_command_evidence_golden_fixture,
+)
+from governance_engineering import (
+    ARTIFACT_CANONICAL_REFS,
+    ARTIFACT_EVIDENCE_ADAPTER,
+    ARTIFACT_EVIDENCE_DETECTOR,
+    ARTIFACT_SCHEMA_CANONICALIZATION,
+    ARTIFACT_SCHEMA_LIMITS,
+    ARTIFACT_SCHEMA_MAPPING,
+    ARTIFACT_SKILL_MARKERS,
+    COMMAND_CANONICAL_REFS,
+    COMMAND_EVIDENCE_DETECTOR,
+    COMMAND_OBSERVATION_EVIDENCE_ADAPTER,
+    COMMAND_SCHEMA_CANONICALIZATION,
+    COMMAND_SCHEMA_LIMITS,
+    COMMAND_SCHEMA_MAPPING,
+    COMMAND_SCHEMA_SEMANTIC_VALIDATION,
+    COMMAND_SKILL_MARKERS,
+    COMMAND_SUCCESS,
+    artifact_adapter_registry_issues as _artifact_adapter_registry_issues,
+    artifact_adapter_schema_issues as _artifact_adapter_schema_issues,
+    artifact_detector_issues,
+    artifact_skill_marker_issues,
+    command_adapter_registry_issues as _command_adapter_registry_issues,
+    command_adapter_schema_issues as _command_adapter_schema_issues,
+    command_detector_issues,
+    command_skill_marker_issues,
+)
 
 
 POLICY_RELATIVE = "engineering/governance-contracts.yml"
-POLICY_SHA256 = "ad10b65dd6c047ef93f35fbe1fb458bcecf7d410f767978bcceae8f271421581"
+POLICY_SHA256 = "82df80f5ea6230e977f4f96f0f52328d000ee248c4e581a0105b35f41faaea08"
 POLICY_FIELDS = {
     "api_version", "kind", "status", "runtime_binding", "owner", "version",
     "completion_authority", "scope", "canonicalization", "identity",
     "claim_states", "shadow_admissibility", "evidence_semantics", "journal",
-    "cognitive_atom_projection", "artifact_evidence_adapter", "legacy",
+    "cognitive_atom_projection", "artifact_evidence_adapter",
+    "command_observation_evidence_adapter", "legacy",
     "canonical_refs", "contract_pins", "reference_implementations",
     "non_capabilities",
 }
@@ -41,23 +71,15 @@ PIN_TARGETS = {
         "docs/contracts/artifact-evidence-adapter-v1.schema.json",
     "artifact_evidence_adapter_golden_fixture_sha256":
         "docs/contracts/fixtures/artifact-evidence-adapter-v1.json",
+    "command_observation_evidence_adapter_schema_sha256":
+        "docs/contracts/command-observation-evidence-adapter-v1.schema.json",
+    "command_observation_evidence_adapter_golden_fixture_sha256":
+        "docs/contracts/fixtures/command-observation-evidence-adapter-v1.json",
 }
 SKILL_RELATIVE = ".agent/skills/evidence-claim-management.md"
 SKILL_MARKERS = [
     "职责与触发", "输入契约", "执行 SOP", "输出契约", "规则、禁止与权限", "自动化与验收",
 ]
-ARTIFACT_SKILL_MARKERS = (
-    "### Artifact provenance adapter 分支",
-    "python3 -B harness/artifact_evidence_adapter_check.py --golden <repo-root>",
-    ("python3 -B harness/artifact_evidence_adapter_check.py <repo-root> "
-     "<request.json> <evidence-record.json>"),
-    ("ADAPTED_SHADOW (no truth, authority, claim, atom, persistence, or effect "
-     "attestation)"),
-    "不会认证 manifest/agent/model/collector",
-    "不会读取当前文件",
-    "不要读取 artifact path 的当前文件",
-    "不会 append journal",
-)
 REFERENCE_CLOSURE_LIMITS = {
     "max_dependency_records": 1024,
     "max_dependency_bytes": 16777216,
@@ -143,138 +165,6 @@ COGNITIVE_CANONICAL_REFS = {
     "cognitive_atom_checker": "harness/cognitive_atom_contract_check.py",
     "cognitive_atom_decision": "docs/adr/0047-shadow-cognitive-atom-projection-v1.md",
 }
-ARTIFACT_EVIDENCE_ADAPTER = {
-    "api_version": "forgeos.governance.artifact-evidence-adapter/v1",
-    "mode": "deterministic_artifact_provenance_to_evidence_shadow",
-    "source_kind": "forgeos.artifact.v1",
-    "output_kind": "EvidenceRecord",
-    "source_fields": [
-        "_format", "agent", "created_at", "model", "path", "phase",
-        "prompt_sha256", "run_id", "sha256", "size", "workflow",
-    ],
-    "binding_fields": [
-        "aggregate_id", "context_sha256", "policy_sha256", "project_id", "scope",
-        "sensitivity", "sequence", "source_revision", "source_tree_sha256",
-        "subjects", "supersedes_record_ids",
-    ],
-    "exact_request": {
-        "canonical_required": True,
-        "compact_utf8_required": True,
-        "artifact_key_exception": "request.artifact._format",
-        "legacy_empty_format": "reject",
-        "reads_current_artifact": False,
-    },
-    "identity": {
-        "source_digest_domain": "forgeos.governance.artifact-provenance-source.v1\0",
-        "request_digest_domain":
-            "forgeos.governance.artifact-evidence-adapter.request.v1\0",
-        "evidence_record_digest_domain": "forgeos.governance.evidence-record.v1\0",
-        "record_id_prefix": "artifact-evidence-",
-        "snapshot_id_prefix": "artifact-snapshot-",
-        "timestamp_projection": "floor_nonnegative_instant_to_unix_milliseconds",
-    },
-    "constants": {
-        "principal_id": "forgeos.artifact-evidence-adapter",
-        "principal_type": "tool",
-        "authority_domain": "shadow",
-        "role": "evidence-adapter",
-        "collector_version": "v1",
-        "evidence_type": "artifact",
-        "directness": "direct",
-        "source_trust": "observed",
-        "content_role": "untrusted_data",
-        "status": "valid",
-    },
-    "limits": {
-        "max_request_bytes": 131072,
-        "max_depth": 16,
-        "max_object_fields": 64,
-        "max_array_items": 256,
-        "max_string_bytes": 16384,
-        "integer_domain": "signed_int64",
-    },
-    "positive_result": (
-        "ADAPTED_SHADOW (no truth, authority, claim, atom, persistence, or effect "
-        "attestation)"
-    ),
-    "attests": [],
-    "persistence": "none",
-}
-ARTIFACT_SCHEMA_CANONICALIZATION = {
-    "format": "forgeos.canonical-json/v1",
-    "exact_compact_utf8_input": True,
-    "artifact_key_exception": "request.artifact._format",
-    "source_digest_domain": "forgeos.governance.artifact-provenance-source.v1\0",
-    "request_digest_domain":
-        "forgeos.governance.artifact-evidence-adapter.request.v1\0",
-    "evidence_record_digest_domain": "forgeos.governance.evidence-record.v1\0",
-    "timestamp_projection": "floor_nonnegative_instant_to_unix_milliseconds",
-}
-ARTIFACT_SCHEMA_LIMITS = ARTIFACT_EVIDENCE_ADAPTER["limits"]
-ARTIFACT_SCHEMA_MAPPING = {
-    "result": (
-        "ADAPTED_SHADOW (no truth, authority, claim, atom, persistence, or effect "
-        "attestation)"
-    ),
-    "input_kind": "forgeos.artifact.v1",
-    "output_kind": "EvidenceRecord",
-    "record_id_prefix": "artifact-evidence-",
-    "snapshot_id_prefix": "artifact-snapshot-",
-    "principal_id": "forgeos.artifact-evidence-adapter",
-    "principal_type": "tool",
-    "authority_domain": "shadow",
-    "role": "evidence-adapter",
-    "collector_version": "v1",
-    "evidence_type": "artifact",
-    "directness": "direct",
-    "source_trust": "observed",
-    "content_role": "untrusted_data",
-    "status": "valid",
-    "persistence": "none",
-    "attestations": [],
-}
-ARTIFACT_CANONICAL_REFS = {
-    "artifact_evidence_adapter_schema":
-        "docs/contracts/artifact-evidence-adapter-v1.schema.json",
-    "artifact_evidence_adapter_golden_fixture":
-        "docs/contracts/fixtures/artifact-evidence-adapter-v1.json",
-    "artifact_evidence_adapter_checker": "harness/artifact_evidence_adapter_check.py",
-    "artifact_evidence_adapter_decision":
-        "docs/adr/0048-artifact-provenance-evidence-adapter-v1.md",
-}
-ARTIFACT_EVIDENCE_DETECTOR = {
-    "id": "governance.artifact_evidence_adapter",
-    "version": "1.0.0",
-    "state": "shadow",
-    "rule_refs": ["TRUTH-002"],
-    "implementation": {
-        "argv": [
-            "python3", "harness/artifact_evidence_adapter_check.py", "repo_root",
-            "artifact_evidence_request", "evidence_record",
-        ],
-        "cwd": "repo_root",
-        "shell": False,
-    },
-    "invocation": {
-        "owner": "operator",
-        "adapter": "standalone.artifactEvidenceAdapter",
-        "acceptance_criterion": None,
-        "load_bearing": False,
-    },
-    "fail_closed": True,
-    "tests": {
-        "positive": {
-            "path": "harness/test_artifact_evidence_adapter_check.py",
-            "contains": "test_golden_fixture_is_adapted_shadow",
-        },
-        "negative": {
-            "path": "harness/test_artifact_evidence_adapter_check.py",
-            "contains": "test_projection_drift_is_rejected",
-        },
-    },
-}
-
-
 def _pin_issues(repo_root, policy_path, pins):
     issues = []
     for field, relative in PIN_TARGETS.items():
@@ -313,8 +203,8 @@ def _skill_issues(repo_root):
         issues.append(f"{path}: scaffold must not claim an installed journal runtime")
     if not all(value in text for value in ("1,024", "16,777,216", "admissibility limits")):
         issues.append(f"{path}: reference-closure resource limits are missing")
-    if any(marker not in text for marker in ARTIFACT_SKILL_MARKERS):
-        issues.append(f"{path}: artifact Evidence adapter guidance or non-capability boundary is missing")
+    issues.extend(artifact_skill_marker_issues(text, path))
+    issues.extend(command_skill_marker_issues(text, path))
     return issues
 
 
@@ -374,37 +264,6 @@ def _cognitive_schema_issues(repo_root):
             if schema.get(field) != value]
 
 
-def _artifact_adapter_registry_issues(data, path):
-    adapter = data.get("artifact_evidence_adapter") if isinstance(data, dict) else None
-    issues = []
-    if adapter != ARTIFACT_EVIDENCE_ADAPTER:
-        issues.append(f"{path}: artifact_evidence_adapter contract drifted")
-    refs = data.get("canonical_refs") if isinstance(data, dict) else None
-    if not isinstance(refs, dict):
-        issues.append(f"{path}: canonical_refs must be a mapping")
-    else:
-        for field, expected in ARTIFACT_CANONICAL_REFS.items():
-            if refs.get(field) != expected:
-                issues.append(f"{path}: canonical_refs.{field} must remain {expected!r}")
-    return issues
-
-
-def _artifact_adapter_schema_issues(repo_root):
-    relative = PIN_TARGETS["artifact_evidence_adapter_schema_sha256"]
-    path = repo_root / relative
-    try:
-        schema = json.loads(read_bounded_file(path, label=relative))
-    except (OSError, ContractError, UnicodeDecodeError, json.JSONDecodeError) as error:
-        return [f"{path}: cannot validate artifact Evidence adapter Schema: {error}"]
-    expected = {
-        "x-forgeos-canonicalization": ARTIFACT_SCHEMA_CANONICALIZATION,
-        "x-forgeos-limits": ARTIFACT_SCHEMA_LIMITS,
-        "x-forgeos-mapping": ARTIFACT_SCHEMA_MAPPING,
-    }
-    return [f"{path}: {field} drifted" for field, value in expected.items()
-            if schema.get(field) != value]
-
-
 def _detector_issues(agent_root):
     detectors = detector_index(agent_root, "engineering/detectors.yml")
     evidence = detectors.get("governance.evidence_claim_contract")
@@ -416,11 +275,6 @@ def _detector_issues(agent_root):
     atom_argv = [
         "python3", "harness/cognitive_atom_contract_check.py", "repo_root", "task_id",
         "governance_record_set", "cognitive_atom_set",
-    ]
-    artifact = detectors.get("governance.artifact_evidence_adapter")
-    artifact_argv = [
-        "python3", "harness/artifact_evidence_adapter_check.py", "repo_root",
-        "artifact_evidence_request", "evidence_record",
     ]
     issues = []
     if not isinstance(evidence, dict):
@@ -437,14 +291,8 @@ def _detector_issues(agent_root):
         implementation = atom.get("implementation")
         if not isinstance(implementation, dict) or implementation.get("argv") != atom_argv:
             issues.append("CognitiveAtom projection detector requires exact projection arguments")
-    if not isinstance(artifact, dict):
-        issues.append("artifact Evidence adapter detector is missing")
-    else:
-        implementation = artifact.get("implementation")
-        if not isinstance(implementation, dict) or implementation.get("argv") != artifact_argv:
-            issues.append("artifact Evidence adapter detector requires exact adapter arguments")
-        if artifact != ARTIFACT_EVIDENCE_DETECTOR:
-            issues.append("artifact Evidence adapter detector requires the exact shadow binding")
+    issues.extend(artifact_detector_issues(detectors))
+    issues.extend(command_detector_issues(detectors))
     return issues
 
 
@@ -463,13 +311,14 @@ def check_governance_evidence_claim_contract(agent_root):
     expected = {
         "status": "active_contract",
         "runtime_binding": (
-            "cross_language_codec_local_journal_atom_projection_artifact_adapter_shadow"
+            "cross_language_codec_local_journal_atom_projection_"
+            "artifact_command_adapters_shadow"
         ),
-        "version": 5, "completion_authority": "forge_accept",
+        "version": 6, "completion_authority": "forge_accept",
     }
     for field, value in expected.items():
         if data.get(field) != value:
-            issues.append(f"{path}: {field} must remain the canonical v5 value")
+            issues.append(f"{path}: {field} must remain the canonical v6 value")
     repo_root = agent_root.parent
     issues.extend(_journal_registry_issues(data, path))
     issues.extend(_journal_schema_issues(repo_root))
@@ -477,6 +326,8 @@ def check_governance_evidence_claim_contract(agent_root):
     issues.extend(_cognitive_schema_issues(repo_root))
     issues.extend(_artifact_adapter_registry_issues(data, path))
     issues.extend(_artifact_adapter_schema_issues(repo_root))
+    issues.extend(_command_adapter_registry_issues(data, path))
+    issues.extend(_command_adapter_schema_issues(repo_root))
     pins = data.get("contract_pins") if isinstance(data.get("contract_pins"), dict) else {}
     issues.extend(_pin_issues(repo_root, path, pins))
     try:
@@ -491,4 +342,5 @@ def check_governance_evidence_claim_contract(agent_root):
     issues.extend(validate_golden_fixture(repo_root))
     issues.extend(validate_cognitive_atom_golden_fixture(repo_root))
     issues.extend(validate_artifact_evidence_golden_fixture(repo_root))
+    issues.extend(validate_command_evidence_golden_fixture(repo_root))
     return issues

@@ -1,5 +1,6 @@
 pub mod artifact_evidence_contract;
 pub mod cognitive_atom_contract;
+pub mod command_observation_evidence_contract;
 mod event;
 pub mod governance_contract;
 mod governance_record_journal;
