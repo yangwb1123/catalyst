@@ -8,10 +8,12 @@
 > 不追加 journal，SQLite 仍保持 v25。
 > ADR-0050 已交付 strict Evolve repo-locator→EvidenceRecord pure shadow adapter；它不读取当前 repo/report 或确认扫描结论。
 > ADR-0051、ADR-0052 与 ADR-0053 已交付显式 opt-in Unix local gate/Evolve/Go lexical dependency observation producer，默认 capture 关闭且不签发 PASS、扫描结论、selected build、architecture/impact judgment 或完成裁决。
+> ADR-0054 已在 SQLite v27/runtime/CLI 交付可重建 local semantic view、authority-free lifecycle subset、显式 caller-time
+> validity/freshness 标签、冲突候选与 Assumption/Hypothesis validation schedule；它不签发 truth、winner、verdict、Grant 或 transition authority。
 > 第 2 节中标注“已交付”的两种 v1 记录、下述 source adapter、local producer 与 CognitiveAtom v1 投影属于当前合同；第 1、3 节及其后内容仍是目标态，
-> 不声明 truth/authority、Context、Grant、Transition、语义 lifecycle/conflict/freshness view 或知识写回 runtime 已支持。旧 free-text memory 不得静默升级。
+> 不声明 truth/authority、Context、Grant、权威 Transition 或知识写回 runtime 已支持。旧 free-text memory 不得静默升级。
 
-## 0. 当前实现边界（0F-A、0F-B–1、ADR-0047 projection、ADR-0048–0050 adapters 与 ADR-0051–0053 local producers 已完成；其余目标态未实现）
+## 0. 当前实现边界（0F-A、0F-B–1、ADR-0047–0054 的限定切片已完成；其余目标态未实现）
 
 当前可执行的 governance record kind 仍只有 `EvidenceRecord` 和 `KnowledgeClaim` v1：
 
@@ -120,7 +122,7 @@ epistemic state、references、validity 与适用的 integer confidence，并强
 - `docs/contracts/fixtures/cognitive-atom-projection-v1.json`；
 - `harness/cognitive_atom_contract_check.py`。
 
-它们的摘要与 Python/Go/Rust 参考路径由 `.agent/engineering/governance-contracts.yml` v7 固定。唯一正结果是：
+它们的摘要与 Python/Go/Rust 参考路径由当前 `.agent/engineering/governance-contracts.yml` v11 固定。唯一正结果是：
 
 ```text
 PROJECTED_SHADOW
@@ -149,14 +151,50 @@ Evidence 充分、Claim 正确、producer 可信或状态具有 authority，超�
 hard gate。Inspection 默认只返回 batch/ordinal/identity/digest/byte-count/time metadata；exact record 必须显式 `--include-record`，且 reveal 后仍按
 不可信数据处理。
 
-Journal persistence 本身只在 SQLite v25 additive 创建 empty tables，不回填 ADR/Memory/旧 Hub 数据；合并后的 current schema 是随后放宽 endpoint
-pinning 的 v26。Read-only journal 命令要求 current v26 且不创建/迁移；append 可把受支持的 v24、canonical journal v25 或历史 endpoint-only v25
-迁移到 v26。该狭窄 runtime、migration、CLI、compatibility 与 adversarial tests 已完成并通过独立复审和 `forge accept`；这只关闭 0F-B–1
-structural persistence，不实现 truth/lifecycle/conflict/freshness/authority。
+Journal persistence 本身在 SQLite v25 additive 创建 empty tables，不回填 ADR/Memory/旧 Hub 数据；v26 随后只放宽 endpoint pinning，ADR-0054
+再把 current schema 提升为 v27。Read-only journal/semantic 命令要求 current v27 且不迁移；append 可把受支持的 v24、canonical journal
+v25、历史 endpoint-only v25 或 v26 原子迁移到 v27。普通 journal read 继续使用拒绝 sidecar 的 immutable opener；semantic read 使用 exact-v27
+`mode=ro + query_only` live opener 和单一 Deferred snapshot，不执行 Hub 逻辑写，但 SQLite 可创建/移除 transient empty WAL/SHM sidecar 或协调 SHM
+read-lock bytes，因此 fully read-only filesystem 可以返回 unavailable。ADR-0046 的狭窄 runtime、migration、CLI、compatibility 与 adversarial tests 已完成并通过
+独立复审和 `forge accept`；它本身只关闭 0F-B–1 structural persistence，semantic 行为由下面独立版本承担。
 
 `forge-init`/`forge-upgrade` 只分发 contract、Skill 和 shadow checker 资产，不安装 Rust `forge-runtime` executable 或 SQLite journal。只有检测到项目批准、
 兼容 `forgeos.governance-journal/v1` 的 `forge-runtime` 后，Agent 才能运行 `forge-runtime governance journal ...`；缺失或不兼容必须记
 `not_executed`，没有匹配的 `stored|exact_replay` receipt 就不得声称已持久化。
+
+### ADR-0054：Local Governance Semantic View v1
+
+[ADR-0054](../../adr/0054-local-governance-semantic-view-v1.md)、
+`docs/contracts/governance-semantic-view-v1.schema.json` 与对应 golden fixture 在 exact journal 之上冻结
+`forgeos.governance-semantic-view/v1`。每个 structural aggregate tail 都重投影为带 exact record identity/digest、project/scope、declared state、
+validity interval 与 update time 的 semantic head；Claim 另带 type/subject/predicate、object/conflict-key digest、review time 和完整 validation plan。
+投影 digest 使用独立 domain，materialized row 不是唯一语义来源：read/replay/successor append 会从 exact immutable record 重算并逐字段比对，缺失、
+多余或漂移均按 corruption 失败关闭。
+
+SQLite v27 在同一 append transaction 写 exact records、structural heads、semantic heads 与 validation jobs；v26→v27 会先重验全部 durable batch、
+每个 aggregate 的完整历史与 reference relation，再从 exact journal records 原子 backfill；任何 relation/lifecycle/digest/cardinality/schema/
+final-validation 错误都完整回滚到 v26。Public read 不迁移数据库，内部 rebuild 不作为 CLI mutation 暴露。当前 CLI 为：
+
+```text
+forge-runtime governance journal view KIND AGGREGATE_ID --as-of-unix-ms N
+forge-runtime governance journal conflicts --as-of-unix-ms N [--limit N]
+forge-runtime governance journal validation-jobs --as-of-unix-ms N [--due-only] [--limit N]
+```
+
+所有 read 始终选择 exact current structural tail；`as_of_unix_ms` 只评价该 tail 的 declared interval，绝不回选历史 sequence。调用方必须显式提供
+非负 caller time，禁止隐式 wall clock。Temporal precedence 固定为 `not_yet_valid`、`validity_expired`、
+`validation_overdue`、`review_overdue`、`fresh`；这些词只比较记录声明的时间。Conflict 只分组同 type/project/scope/subject/predicate 且 active-at-time、
+object digest 不同的 Claim tail，不选择 winner。Validation job 只为当前 Assumption/Hypothesis 的完整计划确定性排期，不执行方法、不采集 Evidence、
+不认证 owner，也不签发 verdict。Public list/group 上限为 100，Claim-head integrity scan 上限为 10,000。单 aggregate 的完整 history、transitive
+reference closure 与所有 owning-batch siblings 共用 1,024 unique records/16 MiB canonical bytes；multi-head scan 另共用 65,536 records/256 MiB/
+1,000,000 work units。任何超限都报告 unavailable，不能返回 partial/empty、corrupt 或“无冲突”。
+
+Durable lifecycle 只覆盖 ADR-0045 无 authority 的 subset：sequence one 可取该 Claim type 已允许的任一 shadow state，successor 支持 same-state
+continuity、Fact `candidate↔contested`、
+Assumption/Hypothesis `open→testing`、Proposal `draft→submitted`、Unknown `open→investigating`；semantic identity 字段不可在 successor 中漂移。
+confirmed/accepted/active/waived/validated/resolved/adopted 等需要 authority 的 promotion 仍被拒绝。所有公开结果固定
+`interpretation=semantic_projection_only_no_truth_or_authority`，不能满足 hard gate、确认事实、采纳知识、批准 Decision、授权 effect 或替代
+`forge accept`。
 
 ## 1. 通用 Governance Envelope（目标态，未实现）
 

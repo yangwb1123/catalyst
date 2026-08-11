@@ -5,8 +5,8 @@ use rusqlite::{Connection, TransactionBehavior};
 
 use crate::runtime_domain::governance_contract::GovernanceRecord;
 use crate::runtime_domain::{
-    AppendGovernanceRecordBatch, GovernanceRecordKind, GovernanceStructuralHead, HubStoreError,
-    is_governance_record_identifier, validate_governance_record_append,
+    GOVERNANCE_RECORD_JOURNAL_VERSION, GovernanceRecordKind, GovernanceStructuralHead,
+    HubStoreError, is_governance_record_identifier, validate_governance_stored_record_relations,
 };
 
 use super::{error, rows, stored};
@@ -56,12 +56,22 @@ pub(super) fn rebuild(connection: &mut Connection) -> Result<usize, HubStoreErro
     let transaction = connection
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(error::read)?;
-    validate_durable_batches(&transaction)?;
-    rows::prepare_rebuilt_heads(&transaction)?;
-    scan_rebuilt_heads(&transaction)?;
-    let count = rows::replace_heads_from_rebuild(&transaction)?;
+    let count = rebuild_locked(&transaction)?;
+    let semantic_count = super::semantic::rebuild_materialized_locked(&transaction)?;
+    if semantic_count != count {
+        return Err(error::corrupt(
+            "semantic rebuild count diverges from structural rebuild",
+        ));
+    }
     transaction.commit().map_err(error::read)?;
     Ok(count)
+}
+
+pub(crate) fn rebuild_locked(connection: &Connection) -> Result<usize, HubStoreError> {
+    validate_durable_batches(connection)?;
+    rows::prepare_rebuilt_heads(connection)?;
+    scan_rebuilt_heads(connection)?;
+    rows::replace_heads_from_rebuild(connection)
 }
 
 fn validate_durable_batches(connection: &Connection) -> Result<(), HubStoreError> {
@@ -75,7 +85,7 @@ fn validate_durable_batches(connection: &Connection) -> Result<(), HubStoreError
     }
 }
 
-fn exact_head(
+pub(super) fn exact_head(
     connection: &Connection,
     kind: GovernanceRecordKind,
     aggregate_id: &str,
@@ -169,16 +179,15 @@ impl ProjectionBuilder {
         {
             return Err(error::corrupt("stored governance sequence overflowed"));
         }
-        let request = rebuild_request(decoded)?;
         let heads: Vec<_> = current.iter().cloned().collect();
         let dependencies =
             super::closure::load_stored(connection, std::slice::from_ref(&decoded.record), &heads)?;
-        let mut next = validate_governance_record_append(&request, &dependencies, &heads)
-            .map_err(|problem| error::corrupt(problem.message))?;
-        if next.len() != 1 {
-            return Err(error::corrupt("rebuild produced an inexact head set"));
-        }
-        self.head = next.pop();
+        validate_governance_stored_record_relations(
+            std::slice::from_ref(&decoded.record),
+            &dependencies,
+        )
+        .map_err(|problem| error::corrupt(problem.message))?;
+        self.head = Some(rebuilt_head(decoded, current.as_ref())?);
         Ok(())
     }
 
@@ -200,20 +209,37 @@ fn same_aggregate(head: &GovernanceStructuralHead, record: &GovernanceRecord) ->
         && head.aggregate_id == metadata.aggregate_id
 }
 
-fn rebuild_request(
+fn rebuilt_head(
     decoded: &stored::DecodedRecord,
-) -> Result<AppendGovernanceRecordBatch, HubStoreError> {
-    let canonical = decoded
-        .inspection
-        .canonical_record_json
-        .as_deref()
-        .ok_or_else(|| error::corrupt("rebuild did not load canonical record bytes"))?;
-    AppendGovernanceRecordBatch::from_canonical_record_set(
-        format!("[{canonical}]"),
-        format!("rebuild:{}", decoded.inspection.metadata.record_id),
-        decoded.inspection.metadata.appended_at_ms,
-    )
-    .map_err(|problem| error::corrupt(problem.message))
+    prior: Option<&GovernanceStructuralHead>,
+) -> Result<GovernanceStructuralHead, HubStoreError> {
+    let metadata = &decoded.inspection.metadata;
+    let record_metadata = decoded.record.metadata();
+    let expected = prior.map_or(1_i128, |head| i128::from(head.sequence) + 1);
+    let follows = i128::from(metadata.sequence) == expected
+        && prior.is_none_or(|head| {
+            record_metadata
+                .supersedes_record_ids
+                .binary_search_by(|candidate| candidate.as_str().cmp(head.record_id.as_str()))
+                .is_ok()
+        });
+    if !follows {
+        return Err(error::corrupt(
+            "stored governance record does not continue its aggregate exactly",
+        ));
+    }
+    let head = GovernanceStructuralHead {
+        v: GOVERNANCE_RECORD_JOURNAL_VERSION,
+        record_kind: GovernanceRecordKind::from(&decoded.record),
+        aggregate_id: metadata.aggregate_id.clone(),
+        record_id: metadata.record_id.clone(),
+        sequence: metadata.sequence,
+        canonical_sha256: metadata.canonical_sha256.clone(),
+        updated_at_ms: metadata.appended_at_ms,
+    };
+    head.validate()
+        .map_err(|problem| error::corrupt(problem.message))?;
+    Ok(head)
 }
 
 fn validate_aggregate_input(aggregate_id: &str) -> Result<(), HubStoreError> {

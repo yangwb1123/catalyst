@@ -251,6 +251,23 @@ fn shared_derivation_subgraph_rejects_a_later_257_edge_candidate() {
     assert!(error.message.contains("depth limit"), "{error:?}");
 }
 
+#[test]
+fn stored_relation_boundary_validates_decoded_records_without_an_append_request() {
+    let records = fixture_records();
+    validate_governance_stored_record_relations(&records[1..], &records[..1])
+        .expect("stored Claim resolves its exact Evidence dependency");
+
+    let mut mismatched = records[0].clone();
+    let GovernanceRecord::Evidence(evidence) = &mut mismatched else {
+        unreachable!()
+    };
+    evidence.spec.subjects = vec!["module:other".into()];
+    reseal(&mut mismatched);
+    let error = validate_governance_stored_record_relations(&records[1..], &[mismatched])
+        .expect_err("subject-mismatched stored Evidence is rejected");
+    assert!(error.message.contains("does not cover"), "{error:?}");
+}
+
 fn shared_derivation_graph(
     extend_later_candidate: bool,
 ) -> (Vec<GovernanceRecord>, Vec<GovernanceRecord>) {

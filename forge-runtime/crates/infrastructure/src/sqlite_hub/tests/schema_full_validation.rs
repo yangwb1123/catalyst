@@ -86,13 +86,13 @@ fn shadowed_pragma_index_list_is_rejected_without_repair() {
 
 fn assert_valid_migration(fixture: (TempDir, std::path::PathBuf), seed_level: u8) {
     let (root, database) = fixture;
-    let connection = open_database(&database).expect("valid schema migrates to v26");
-    assert_eq!(schema_version(&connection), 26);
+    let connection = open_database(&database).expect("valid schema migrates to current");
+    assert_eq!(schema_version(&connection), super::SCHEMA_VERSION);
     assert_seed_data(&connection, seed_level);
     drop(connection);
 
-    let reopened = open_database(&database).expect("valid v26 schema reopens");
-    assert_eq!(schema_version(&reopened), 26);
+    let reopened = open_database(&database).expect("valid current schema reopens");
+    assert_eq!(schema_version(&reopened), super::SCHEMA_VERSION);
     assert_seed_data(&reopened, seed_level);
     drop((reopened, root));
 }
@@ -278,52 +278,60 @@ pub(super) fn v1_data_snapshot(connection: &Connection) -> Vec<String> {
         .expect("read v1 data snapshot")
 }
 
+const POST_V1_SCHEMA_OBJECTS: &[&str] = &[
+    "runs",
+    "run_events",
+    "run_assistant_prompts",
+    "runs_conversation",
+    "group_runs",
+    "group_runs_group",
+    "group_executions",
+    "group_execution_events",
+    "group_executions_group_run",
+    "group_executions_created",
+    "group_model_analyses",
+    "group_model_analysis_events",
+    "group_model_analysis_results",
+    "group_model_analyses_group_run",
+    "group_model_analyses_created",
+    "group_analysis_panels",
+    "group_analysis_panel_analyses",
+    "group_analysis_panels_group_run",
+    "group_analysis_panels_created",
+    "group_panel_syntheses",
+    "group_panel_synthesis_events",
+    "group_panel_synthesis_results",
+    "group_panel_syntheses_panel",
+    "group_panel_syntheses_created",
+    "group_agent_graphs",
+    "group_agent_graphs_group_run",
+    "group_agent_graphs_created",
+    "group_agent_graph_runs",
+    "group_agent_graph_run_events",
+    "group_agent_graph_runs_graph",
+    "group_agent_graph_runs_created",
+    "group_agent_graph_node_execution_contracts",
+    "group_agent_graph_node_contracts_project_lane",
+    "group_agent_graph_node_contracts_created",
+    "group_agent_graph_scheduled_node_provider_requests",
+    "group_agent_graph_scheduled_node_provider_requests_project_lane",
+    "group_agent_graph_scheduled_node_provider_requests_created",
+    "governance_record_append_batches",
+    "governance_records",
+    "governance_records_aggregate_appended",
+    "governance_records_appended",
+    "governance_records_kind_appended",
+    "governance_structural_heads",
+    "governance_semantic_heads",
+    "governance_claim_semantic_views",
+    "governance_claim_validation_jobs",
+    "governance_semantic_heads_state_validity",
+    "governance_claim_semantic_conflicts",
+    "governance_claim_validation_jobs_due",
+];
+
 pub(super) fn assert_post_v1_objects_absent(connection: &Connection) {
-    for name in [
-        "runs",
-        "run_events",
-        "run_assistant_prompts",
-        "runs_conversation",
-        "group_runs",
-        "group_runs_group",
-        "group_executions",
-        "group_execution_events",
-        "group_executions_group_run",
-        "group_executions_created",
-        "group_model_analyses",
-        "group_model_analysis_events",
-        "group_model_analysis_results",
-        "group_model_analyses_group_run",
-        "group_model_analyses_created",
-        "group_analysis_panels",
-        "group_analysis_panel_analyses",
-        "group_analysis_panels_group_run",
-        "group_analysis_panels_created",
-        "group_panel_syntheses",
-        "group_panel_synthesis_events",
-        "group_panel_synthesis_results",
-        "group_panel_syntheses_panel",
-        "group_panel_syntheses_created",
-        "group_agent_graphs",
-        "group_agent_graphs_group_run",
-        "group_agent_graphs_created",
-        "group_agent_graph_runs",
-        "group_agent_graph_run_events",
-        "group_agent_graph_runs_graph",
-        "group_agent_graph_runs_created",
-        "group_agent_graph_node_execution_contracts",
-        "group_agent_graph_node_contracts_project_lane",
-        "group_agent_graph_node_contracts_created",
-        "group_agent_graph_scheduled_node_provider_requests",
-        "group_agent_graph_scheduled_node_provider_requests_project_lane",
-        "group_agent_graph_scheduled_node_provider_requests_created",
-        "governance_record_append_batches",
-        "governance_records",
-        "governance_records_aggregate_appended",
-        "governance_records_appended",
-        "governance_records_kind_appended",
-        "governance_structural_heads",
-    ] {
+    for name in POST_V1_SCHEMA_OBJECTS {
         assert!(!schema_object_named(connection, name), "unexpected {name}");
     }
 }

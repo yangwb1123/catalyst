@@ -5,6 +5,8 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use rusqlite::Connection;
+
 use super::{HubStoreError, unavailable};
 
 const SQLITE_HEADER_BYTES: usize = 20;
@@ -25,21 +27,32 @@ pub(super) fn restrict(path: &Path) -> Result<(), HubStoreError> {
 }
 
 /// Snapshots an existing Hub before an irreversible schema upgrade.
-pub(super) fn backup_before_upgrade(path: &Path, version: i64) -> Result<(), HubStoreError> {
+pub(super) fn backup_before_upgrade(
+    connection: &Connection,
+    path: &Path,
+    version: i64,
+) -> Result<(), HubStoreError> {
     let parent = path
         .parent()
         .ok_or_else(|| unavailable("hub database has no parent directory"))?;
     let backup_root = parent.join("backups");
-    fs::create_dir_all(&backup_root)
-        .map_err(|error| unavailable(format!("create backups dir: {error}")))?;
+    prepare_private_directory(&backup_root)?;
     let stamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_secs())
+        .map(|duration| duration.as_nanos())
         .unwrap_or(0);
     let name = format!("hub-v{version}-before-upgrade-{stamp}.sqlite3");
     let target = backup_root.join(name);
-    fs::copy(path, &target)
-        .map_err(|error| unavailable(format!("backup-before-upgrade failed: {error}")))?;
+    let target_text = target
+        .to_str()
+        .ok_or_else(|| unavailable("backup path is not valid UTF-8"))?;
+    if let Err(error) = connection.execute("VACUUM INTO ?1", [target_text]) {
+        let _ = fs::remove_file(&target);
+        return Err(unavailable(format!(
+            "consistent backup-before-upgrade failed: {error}"
+        )));
+    }
+    restrict_file_permissions(&target)?;
     Ok(())
 }
 

@@ -4,11 +4,15 @@ use serde::Serialize;
 
 use crate::group_context_output::terminal_text;
 use crate::runtime_domain::{
-    AppendGovernanceRecordBatchResult, GovernanceRecordAppendDisposition,
-    GovernanceRecordInspection, GovernanceRecordKind, GovernanceStructuralHead,
+    AppendGovernanceRecordBatchResult, GovernanceClaimConflictGroup,
+    GovernanceRecordAppendDisposition, GovernanceRecordInspection, GovernanceRecordKind,
+    GovernanceSemanticAssessment, GovernanceSemanticProjection, GovernanceStructuralHead,
+    GovernanceTemporalState, GovernanceValidationJob,
 };
 
 const PUBLIC_API_VERSION: &str = "forgeos.governance-journal/v1";
+const SEMANTIC_PUBLIC_API_VERSION: &str = "forgeos.governance-semantic-view/v1";
+const SEMANTIC_INTERPRETATION: &str = "semantic_projection_only_no_truth_or_authority";
 
 #[derive(Debug)]
 pub enum GovernanceJournalOutput {
@@ -16,6 +20,9 @@ pub enum GovernanceJournalOutput {
     Inspection(InspectionView),
     List(InspectionListView),
     Head(StructuralHeadView),
+    SemanticAssessment(Box<SemanticAssessmentView>),
+    ConflictList(ConflictListView),
+    ValidationJobList(ValidationJobListView),
 }
 
 #[derive(Debug, Serialize)]
@@ -67,6 +74,35 @@ pub struct StructuralHeadView {
     pub sequence: i64,
     pub canonical_sha256: String,
     pub updated_at_unix_ms: u64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SemanticAssessmentView {
+    pub api_version: &'static str,
+    pub kind: &'static str,
+    pub interpretation: &'static str,
+    pub semantic_view_version: u16,
+    pub projection: GovernanceSemanticProjection,
+    pub evaluated_at_unix_ms: i64,
+    pub temporal_state: GovernanceTemporalState,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ConflictListView {
+    pub api_version: &'static str,
+    pub kind: &'static str,
+    pub interpretation: &'static str,
+    pub evaluated_at_unix_ms: i64,
+    pub conflicts: Vec<GovernanceClaimConflictGroup>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ValidationJobListView {
+    pub api_version: &'static str,
+    pub kind: &'static str,
+    pub interpretation: &'static str,
+    pub evaluated_at_unix_ms: i64,
+    pub jobs: Vec<GovernanceValidationJob>,
 }
 
 impl From<AppendGovernanceRecordBatchResult> for AppendReceiptView {
@@ -133,6 +169,46 @@ impl From<GovernanceStructuralHead> for StructuralHeadView {
     }
 }
 
+impl From<GovernanceSemanticAssessment> for SemanticAssessmentView {
+    fn from(value: GovernanceSemanticAssessment) -> Self {
+        Self {
+            api_version: SEMANTIC_PUBLIC_API_VERSION,
+            kind: "GovernanceSemanticAssessment",
+            interpretation: SEMANTIC_INTERPRETATION,
+            semantic_view_version: value.v,
+            projection: value.projection,
+            evaluated_at_unix_ms: value.evaluated_at_unix_ms,
+            temporal_state: value.temporal_state,
+        }
+    }
+}
+
+impl ConflictListView {
+    #[must_use]
+    pub fn new(conflicts: Vec<GovernanceClaimConflictGroup>, evaluated_at_unix_ms: i64) -> Self {
+        Self {
+            api_version: SEMANTIC_PUBLIC_API_VERSION,
+            kind: "GovernanceClaimConflictList",
+            interpretation: SEMANTIC_INTERPRETATION,
+            evaluated_at_unix_ms,
+            conflicts,
+        }
+    }
+}
+
+impl ValidationJobListView {
+    #[must_use]
+    pub fn new(jobs: Vec<GovernanceValidationJob>, evaluated_at_unix_ms: i64) -> Self {
+        Self {
+            api_version: SEMANTIC_PUBLIC_API_VERSION,
+            kind: "GovernanceValidationJobList",
+            interpretation: SEMANTIC_INTERPRETATION,
+            evaluated_at_unix_ms,
+            jobs,
+        }
+    }
+}
+
 pub fn write_output(
     output: &GovernanceJournalOutput,
     json: bool,
@@ -152,6 +228,15 @@ fn write_json(output: &GovernanceJournalOutput, writer: &mut impl Write) -> Resu
         GovernanceJournalOutput::Inspection(value) => serde_json::to_writer_pretty(writer, value)?,
         GovernanceJournalOutput::List(value) => serde_json::to_writer_pretty(writer, value)?,
         GovernanceJournalOutput::Head(value) => serde_json::to_writer_pretty(writer, value)?,
+        GovernanceJournalOutput::SemanticAssessment(value) => {
+            serde_json::to_writer_pretty(writer, value)?;
+        }
+        GovernanceJournalOutput::ConflictList(value) => {
+            serde_json::to_writer_pretty(writer, value)?;
+        }
+        GovernanceJournalOutput::ValidationJobList(value) => {
+            serde_json::to_writer_pretty(writer, value)?;
+        }
     }
     Ok(())
 }
@@ -179,7 +264,66 @@ fn write_human(output: &GovernanceJournalOutput, writer: &mut impl Write) -> Res
             value.record_id,
             value.interpretation
         ),
+        GovernanceJournalOutput::SemanticAssessment(value) => {
+            write_semantic_assessment(value, writer)
+        }
+        GovernanceJournalOutput::ConflictList(value) => write_conflicts(value, writer),
+        GovernanceJournalOutput::ValidationJobList(value) => write_validation_jobs(value, writer),
     }
+}
+
+fn write_semantic_assessment(
+    value: &SemanticAssessmentView,
+    writer: &mut impl Write,
+) -> Result<(), io::Error> {
+    writeln!(
+        writer,
+        "{} {} sequence {} declared={} temporal={} as_of={} ({})",
+        value.projection.head.record_kind.as_str(),
+        value.projection.head.aggregate_id,
+        value.projection.head.sequence,
+        value.projection.head.declared_state,
+        temporal_state_name(value.temporal_state),
+        value.evaluated_at_unix_ms,
+        value.interpretation,
+    )
+}
+
+fn write_conflicts(value: &ConflictListView, writer: &mut impl Write) -> Result<(), io::Error> {
+    for group in &value.conflicts {
+        writeln!(
+            writer,
+            "conflict {} {:?} {} {} members={} as_of={} ({})",
+            group.conflict_key_sha256,
+            group.claim_type,
+            group.subject,
+            group.predicate,
+            group.members.len(),
+            value.evaluated_at_unix_ms,
+            value.interpretation,
+        )?;
+    }
+    Ok(())
+}
+
+fn write_validation_jobs(
+    value: &ValidationJobListView,
+    writer: &mut impl Write,
+) -> Result<(), io::Error> {
+    for job in &value.jobs {
+        writeln!(
+            writer,
+            "validation-job {} aggregate={} due_at={} due={} temporal={} as_of={} ({})",
+            job.job_id,
+            job.aggregate_id,
+            job.due_at_unix_ms,
+            job.due,
+            temporal_state_name(job.temporal_state),
+            value.evaluated_at_unix_ms,
+            value.interpretation,
+        )?;
+    }
+    Ok(())
 }
 
 fn write_inspection(value: &InspectionView, writer: &mut impl Write) -> Result<(), io::Error> {
@@ -202,6 +346,16 @@ const fn disposition_name(disposition: GovernanceRecordAppendDisposition) -> &'s
     match disposition {
         GovernanceRecordAppendDisposition::Stored => "stored",
         GovernanceRecordAppendDisposition::ExactReplay => "exact_replay",
+    }
+}
+
+const fn temporal_state_name(state: GovernanceTemporalState) -> &'static str {
+    match state {
+        GovernanceTemporalState::Fresh => "fresh",
+        GovernanceTemporalState::NotYetValid => "not_yet_valid",
+        GovernanceTemporalState::ReviewOverdue => "review_overdue",
+        GovernanceTemporalState::ValidationOverdue => "validation_overdue",
+        GovernanceTemporalState::ValidityExpired => "validity_expired",
     }
 }
 

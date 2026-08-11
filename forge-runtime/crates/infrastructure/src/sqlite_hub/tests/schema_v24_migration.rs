@@ -21,20 +21,20 @@ const V23_MAX_BYTES: i64 = 4 * 1024 * 1024;
 const V24_MAX_BYTES: i64 = 8 * 1024 * 1024;
 
 #[test]
-fn v23_successor_row_survives_migration_to_v26_byte_for_byte() {
+fn v23_successor_row_survives_migration_to_current_byte_for_byte() {
     let fixture = v23_fixture();
     let connection = fixture.connection();
     insert_successor(&connection, "preserved", 257, 257).expect("seed v23 successor row");
     let before = successor_row(&connection);
     drop(connection);
 
-    let migrated = open_database(&fixture.database).expect("migrate exact v23 fixture to v26");
-    assert_eq!(schema_version(&migrated), 26);
+    let migrated = open_database(&fixture.database).expect("migrate exact v23 fixture to current");
+    assert_eq!(schema_version(&migrated), super::SCHEMA_VERSION);
     assert_eq!(successor_row(&migrated), before);
     drop(migrated);
 
-    let reopened = open_database(&fixture.database).expect("reopen migrated v26 fixture");
-    assert_eq!(schema_version(&reopened), 26);
+    let reopened = open_database(&fixture.database).expect("reopen migrated current fixture");
+    assert_eq!(schema_version(&reopened), super::SCHEMA_VERSION);
     assert_eq!(successor_row(&reopened), before);
     drop((reopened, fixture));
 }
@@ -154,7 +154,7 @@ fn malformed_current_v24_objects_are_rejected_without_repair() {
 }
 
 #[test]
-fn final_validation_fault_rolls_v23_to_v26_back_atomically() {
+fn final_validation_fault_rolls_v23_to_current_back_atomically() {
     let fixture = v23_fixture();
     let connection = fixture.connection();
     insert_successor(&connection, "rollback", 513, 513).expect("seed rollback successor row");
@@ -162,7 +162,7 @@ fn final_validation_fault_rolls_v23_to_v26_back_atomically() {
     let before_row = successor_row(&connection);
 
     let error = migrate_with_before_final_fault_for_test(&connection, |migrated| {
-        assert_eq!(schema_version(migrated), 26);
+        assert_eq!(schema_version(migrated), super::SCHEMA_VERSION);
         assert_eq!(successor_row(migrated), before_row);
         migrated.execute_batch("CREATE TABLE rogue_v26_final_fault(id TEXT)")
     })
@@ -219,6 +219,9 @@ fn restore_exact_v24(connection: &Connection) {
     connection
         .execute_batch(super::RESTORE_HISTORICAL_ANALYSES_SQL)
         .expect("restore v24 endpoint definitions");
+    connection
+        .execute_batch(super::DROP_V27_SEMANTIC_VIEW_SQL)
+        .expect("drop v27 semantic projection");
     connection
         .execute_batch(
             "DROP TABLE governance_structural_heads;

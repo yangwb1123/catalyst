@@ -23,6 +23,12 @@ export const PASS = 'PASS';
 export const FAIL = 'FAIL';
 export const NA = 'N-A';
 
+// Child output is evidence, so keep substantially more than Node's 1 MiB
+// spawnSync default (which can turn a verbose but successful test run into
+// ENOBUFS). The cap remains explicit and finite: a runaway command must fail
+// closed rather than consume unbounded memory.
+export const COMMAND_OUTPUT_MAX_BYTES = 16 * 1024 * 1024;
+
 // --- low-level command runner ------------------------------------------------
 
 // Run a command; return {ok, code, out} where ok === exit 0. Centralised so every
@@ -38,8 +44,18 @@ export function run(cmd, args, extraEnv = {}, cwd = ROOT) {
   // the app-test count read 0 → a false "no app tests discovered").
   const env = { ...process.env, ...extraEnv };
   delete env.NODE_TEST_CONTEXT;
-  const res = spawnSync(cmd, args, { cwd, encoding: 'utf8', env });
-  if (res.error) return { ok: false, code: null, out: String(res.error.message) };
+  const res = spawnSync(cmd, args, {
+    cwd, encoding: 'utf8', env, maxBuffer: COMMAND_OUTPUT_MAX_BYTES,
+  });
+  if (res.error) {
+    // spawnSync can return useful partial stdout/stderr together with ENOBUFS.
+    // Preserve that evidence and append the execution error so commandDetail()
+    // retains both after its bounded head/tail clipping.
+    const captured = `${res.stdout || ''}${res.stderr || ''}`.trim();
+    const executionError = `${res.error.code || 'spawn error'}: ${res.error.message}`;
+    const out = captured ? `${captured}\n${executionError}` : executionError;
+    return { ok: false, code: res.status, out };
+  }
   const out = `${res.stdout || ''}${res.stderr || ''}`.trim();
   return { ok: res.status === 0, code: res.status, out };
 }

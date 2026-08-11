@@ -205,7 +205,10 @@ fn rebuild_rejects_zero_row_and_cross_aggregate_incomplete_batches() {
     append(&zero, &records[..1], "zero-row-batch", 100);
     zero.connection()
         .execute_batch(
-            "DELETE FROM governance_structural_heads;
+            "DELETE FROM governance_claim_validation_jobs;
+             DELETE FROM governance_claim_semantic_views;
+             DELETE FROM governance_semantic_heads;
+             DELETE FROM governance_structural_heads;
              DELETE FROM governance_records;",
         )
         .expect("remove the only durable record");
@@ -216,7 +219,9 @@ fn rebuild_rejects_zero_row_and_cross_aggregate_incomplete_batches() {
     partial
         .connection()
         .execute_batch(
-            "DELETE FROM governance_structural_heads WHERE record_id='kcr-0001';
+            "DELETE FROM governance_claim_semantic_views WHERE record_id='kcr-0001';
+             DELETE FROM governance_semantic_heads WHERE record_id='kcr-0001';
+             DELETE FROM governance_structural_heads WHERE record_id='kcr-0001';
              DELETE FROM governance_records WHERE record_id='kcr-0001';",
         )
         .expect("remove one cross-aggregate batch record");

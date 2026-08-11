@@ -116,6 +116,122 @@ fn duplicate_list_limit_is_rejected_explicitly() {
 }
 
 #[test]
+fn semantic_reads_require_an_explicit_nonnegative_evaluation_time() {
+    let view = parse(&[
+        "governance",
+        "journal",
+        "view",
+        "KnowledgeClaim",
+        "claim-a",
+        "--as-of-unix-ms",
+        "1700000002000",
+    ]);
+    assert_eq!(
+        view.command,
+        Command::Governance(GovernanceCommand::Journal(GovernanceJournalCommand::View {
+            record_kind: GovernanceRecordKind::KnowledgeClaim,
+            aggregate_id: "claim-a".into(),
+            as_of_unix_ms: 1_700_000_002_000,
+        }))
+    );
+
+    for tokens in [
+        vec!["governance", "journal", "view", "KnowledgeClaim", "claim-a"],
+        vec![
+            "governance",
+            "journal",
+            "conflicts",
+            "--as-of-unix-ms",
+            "-1",
+        ],
+        vec!["governance", "journal", "validation-jobs"],
+    ] {
+        assert!(parse_tokens(tokens.into_iter().map(str::to_owned)).is_err());
+    }
+}
+
+#[test]
+fn semantic_lists_accept_only_bounded_unique_options() {
+    let conflicts = parse(&[
+        "governance",
+        "journal",
+        "conflicts",
+        "--limit",
+        "7",
+        "--as-of-unix-ms",
+        "1700000002000",
+    ]);
+    assert_eq!(
+        conflicts.command,
+        Command::Governance(GovernanceCommand::Journal(
+            GovernanceJournalCommand::Conflicts {
+                as_of_unix_ms: 1_700_000_002_000,
+                limit: 7,
+            }
+        ))
+    );
+}
+
+#[test]
+fn semantic_validation_jobs_accept_due_only_and_a_bounded_limit() {
+    let jobs = parse(&[
+        "governance",
+        "journal",
+        "validation-jobs",
+        "--due-only",
+        "--as-of-unix-ms",
+        "1700000002000",
+        "--limit",
+        "3",
+    ]);
+    assert_eq!(
+        jobs.command,
+        Command::Governance(GovernanceCommand::Journal(
+            GovernanceJournalCommand::ValidationJobs {
+                as_of_unix_ms: 1_700_000_002_000,
+                due_only: true,
+                limit: 3,
+            }
+        ))
+    );
+}
+
+#[test]
+fn semantic_lists_reject_duplicate_or_unbounded_options() {
+    for tokens in [
+        vec![
+            "governance",
+            "journal",
+            "conflicts",
+            "--as-of-unix-ms",
+            "1",
+            "--as-of-unix-ms",
+            "2",
+        ],
+        vec![
+            "governance",
+            "journal",
+            "validation-jobs",
+            "--as-of-unix-ms",
+            "1",
+            "--due-only",
+            "--due-only",
+        ],
+        vec![
+            "governance",
+            "journal",
+            "conflicts",
+            "--as-of-unix-ms",
+            "1",
+            "--limit",
+            "101",
+        ],
+    ] {
+        assert!(parse_tokens(tokens.into_iter().map(str::to_owned)).is_err());
+    }
+}
+
+#[test]
 fn governance_reads_reject_project_and_group_selectors() {
     for prefix in [["-C", "/tmp/project"], ["--group", "group-1"]] {
         let tokens = prefix

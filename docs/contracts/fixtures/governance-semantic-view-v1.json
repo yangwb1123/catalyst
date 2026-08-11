@@ -1,0 +1,48 @@
+{
+  "api_version": "forgeos.governance-semantic-view-golden/v1",
+  "interpretation": "semantic_projection_only_no_truth_or_authority",
+  "source_record_ref": "docs/contracts/fixtures/governance-evidence-claim-v1.json#/records/1/record",
+  "projection_input": {
+    "updated_at_ms": 77,
+    "as_of_unix_ms": 1700000002000
+  },
+  "expected_assessment": {
+    "api_version": "forgeos.governance-semantic-view/v1",
+    "kind": "GovernanceSemanticAssessment",
+    "interpretation": "semantic_projection_only_no_truth_or_authority",
+    "semantic_view_version": 1,
+    "projection": {
+      "v": 1,
+      "head": {
+        "v": 1,
+        "record_kind": "KnowledgeClaim",
+        "aggregate_id": "claim-harness-check",
+        "record_id": "kcr-0001",
+        "sequence": 1,
+        "canonical_sha256": "953b14819b50db73cdb3e1b523303c7c669a7e9bbeeacefcd89c4b25681da8ec",
+        "project_id": "catalyst",
+        "scope": "module:harness",
+        "declared_state": "candidate",
+        "valid_from_unix_ms": 1700000001000,
+        "valid_until_unix_ms": 1700086400000,
+        "updated_at_ms": 77
+      },
+      "claim": {
+        "claim_type": "fact",
+        "subject": "module:harness",
+        "predicate": "has-structural-check-result",
+        "object_sha256": "1ac7d6dc7edb8d8a2e1fc46bbeddeac4a29dfef46189a9d00cf460fe8522d9e7",
+        "conflict_key_sha256": "18c4cde5df45ae97c4a1fed20c635898a2fd1aa647086773afb3efbac73d8ae0",
+        "review_by_unix_ms": 1700086400000,
+        "validation_due_unix_ms": null,
+        "validation_owner_id": null,
+        "validation_plan_sha256": null,
+        "required_evidence_types": []
+      },
+      "projection_sha256": "9754f24cb1c6f33d72492e1391c9bc70e44d5893020def288610b84f17e88fea"
+    },
+    "evaluated_at_unix_ms": 1700000002000,
+    "temporal_state": "fresh"
+  },
+  "schema_ref": "docs/contracts/governance-semantic-view-v1.schema.json"
+}

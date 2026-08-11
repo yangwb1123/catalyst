@@ -33,17 +33,17 @@ struct GoldenEntry {
 }
 
 #[test]
-fn canonical_and_endpoint_only_v25_lineages_converge_on_v26() {
+fn canonical_and_endpoint_only_v25_lineages_converge_on_current() {
     let (canonical, original_receipt) = canonical_v25_fixture();
     let endpoint_only = endpoint_only_v25_fixture();
 
     let canonical_current =
-        open_database(&canonical.database).expect("migrate canonical v25 to v26");
+        open_database(&canonical.database).expect("migrate canonical v25 to current");
     let endpoint_current =
-        open_database(&endpoint_only.database).expect("migrate endpoint-only v25 to v26");
+        open_database(&endpoint_only.database).expect("migrate endpoint-only v25 to current");
 
-    assert_eq!(schema_version(&canonical_current), 26);
-    assert_eq!(schema_version(&endpoint_current), 26);
+    assert_eq!(schema_version(&canonical_current), super::SCHEMA_VERSION);
+    assert_eq!(schema_version(&endpoint_current), super::SCHEMA_VERSION);
     assert_eq!(
         schema_snapshot(&canonical_current),
         schema_snapshot(&endpoint_current)
@@ -54,8 +54,8 @@ fn canonical_and_endpoint_only_v25_lineages_converge_on_v26() {
     }
     drop(canonical_current);
 
-    let canonical_reopened = open_database(&canonical.database).expect("reopen migrated v26");
-    assert_eq!(schema_version(&canonical_reopened), 26);
+    let canonical_reopened = open_database(&canonical.database).expect("reopen migrated current");
+    assert_eq!(schema_version(&canonical_reopened), super::SCHEMA_VERSION);
     drop(canonical_reopened);
 
     assert_canonical_journal_survives(&canonical.store, &original_receipt);
@@ -131,6 +131,9 @@ fn canonical_v25_fixture() -> (
     );
     let connection = fixture.connection();
     connection
+        .execute_batch(super::DROP_V27_SEMANTIC_VIEW_SQL)
+        .expect("drop v27 semantic projection");
+    connection
         .execute_batch(RESTORE_HISTORICAL_ANALYSES_SQL)
         .expect("restore canonical v25 endpoint definitions");
     connection
@@ -195,6 +198,9 @@ fn assert_canonical_journal_survives(
 fn endpoint_only_v25_fixture() -> super::sqlite_group_agent_graph_run_support::Fixture {
     let fixture = sqlite_group_agent_graph_execution_schedule_support::prepared_fixture();
     let connection = fixture.connection();
+    connection
+        .execute_batch(super::DROP_V27_SEMANTIC_VIEW_SQL)
+        .expect("drop v27 semantic projection");
     connection
         .execute_batch(&format!(
             "DROP TABLE {HEADS}; DROP TABLE {RECORDS}; DROP TABLE {BATCHES};

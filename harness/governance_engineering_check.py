@@ -112,14 +112,22 @@ from governance_engineering import (
     go_package_dependency_graph_producer_schema_issues as _go_dependency_schema_issues,
     go_package_dependency_graph_producer_skill_marker_issues,
 )
+from governance_engineering.semantic_view import (
+    SEMANTIC_VIEW,
+    fixture_issues as _semantic_view_fixture_issues,
+    registry_issues as _semantic_view_registry_issues,
+    schema_issues as _semantic_view_schema_issues,
+    skill_marker_issues as _semantic_view_skill_marker_issues,
+)
 
 
 POLICY_RELATIVE = "engineering/governance-contracts.yml"
-POLICY_SHA256 = "b7e35ab10ce502e797b39966919a7b54bf0b8cdfc884d0324ee185ff6cc57711"
+POLICY_SHA256 = "a086a3f601cfaa43cea8fa45a91748f5a3ef612c93e1d91dd16c0904eb79424b"
 POLICY_FIELDS = {
     "api_version", "kind", "status", "runtime_binding", "owner", "version",
     "completion_authority", "scope", "canonicalization", "identity",
     "claim_states", "shadow_admissibility", "evidence_semantics", "journal",
+    "semantic_view",
     "cognitive_atom_projection", "artifact_evidence_adapter",
     "command_observation_evidence_adapter", "legacy",
     "evolve_repo_locator_evidence_adapter",
@@ -132,8 +140,12 @@ POLICY_FIELDS = {
 PIN_TARGETS = {
     "schema_sha256": "docs/contracts/governance-evidence-claim-v1.schema.json",
     "journal_schema_sha256": "docs/contracts/governance-record-journal-v1.schema.json",
+    "semantic_view_schema_sha256":
+        "docs/contracts/governance-semantic-view-v1.schema.json",
     "golden_fixture_sha256":
         "docs/contracts/fixtures/governance-evidence-claim-v1.json",
+    "semantic_view_golden_fixture_sha256":
+        "docs/contracts/fixtures/governance-semantic-view-v1.json",
     "cognitive_atom_schema_sha256":
         "docs/contracts/cognitive-atom-projection-v1.schema.json",
     "cognitive_atom_golden_fixture_sha256":
@@ -292,9 +304,15 @@ def _skill_issues(repo_root):
         "forge-runtime --idempotency-key KEY governance journal append",
         "forge-runtime governance journal show", "forge-runtime governance journal list",
         "forge-runtime governance journal head",
+        "forge-runtime governance journal view",
+        "forge-runtime governance journal conflicts",
+        "forge-runtime governance journal validation-jobs",
     )
     if any(command not in text for command in commands) or "forge governance journal" in text:
         issues.append(f"{path}: journal automation requires the compatible forge-runtime CLI")
+    if ("--as-of-unix-ms" not in text or
+            "semantic_projection_only_no_truth_or_authority" not in text):
+        issues.append(f"{path}: semantic reads require explicit time and shadow interpretation")
     if "Scaffold/upgrade" not in text or "not_executed" not in text:
         issues.append(f"{path}: scaffold must not claim an installed journal runtime")
     if not all(value in text for value in ("1,024", "16,777,216", "admissibility limits")):
@@ -305,6 +323,7 @@ def _skill_issues(repo_root):
     issues.extend(local_command_producer_skill_marker_issues(text, path))
     issues.extend(evolve_locator_producer_skill_marker_issues(text, path))
     issues.extend(go_package_dependency_graph_producer_skill_marker_issues(text, path))
+    issues.extend(_semantic_view_skill_marker_issues(text, path))
     return issues
 
 
@@ -431,19 +450,22 @@ def check_governance_evidence_claim_contract(agent_root):
     expected = {
         "status": "active_contract",
         "runtime_binding": (
-            "cross_language_codec_local_journal_atom_projection_"
+            "cross_language_codec_local_journal_semantic_view_atom_projection_"
             "artifact_command_evolve_locator_adapters_local_gate_"
             "command_evolve_locator_and_go_package_dependency_graph_"
             "producers_shadow"
         ),
-        "version": 10, "completion_authority": "forge_accept",
+        "version": 11, "completion_authority": "forge_accept",
     }
     for field, value in expected.items():
         if data.get(field) != value:
-            issues.append(f"{path}: {field} must remain the canonical v10 value")
+            issues.append(f"{path}: {field} must remain the canonical v11 value")
     repo_root = agent_root.parent
     issues.extend(_journal_registry_issues(data, path))
     issues.extend(_journal_schema_issues(repo_root))
+    issues.extend(_semantic_view_registry_issues(data, path))
+    issues.extend(_semantic_view_schema_issues(repo_root))
+    issues.extend(_semantic_view_fixture_issues(repo_root))
     issues.extend(_cognitive_registry_issues(data, path))
     issues.extend(_cognitive_schema_issues(repo_root))
     issues.extend(_governance_extension_issues(data, path, repo_root))

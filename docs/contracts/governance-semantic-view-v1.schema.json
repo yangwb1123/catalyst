@@ -1,0 +1,440 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forgeos.dev/contracts/governance-semantic-view-v1.schema.json",
+  "title": "ForgeOS Governance Semantic View v1",
+  "description": "Strict public read envelopes for the deterministic local Evidence/Claim semantic projection. These shapes attest no truth, authority, approval, conflict winner, hard-gate result, or completion.",
+  "oneOf": [
+    { "$ref": "#/$defs/assessment" },
+    { "$ref": "#/$defs/conflict_list" },
+    { "$ref": "#/$defs/validation_job_list" }
+  ],
+  "x-forgeos-semantics": {
+    "interpretation": "semantic_projection_only_no_truth_or_authority",
+    "evaluation_time": "explicit_caller_supplied_unix_ms",
+    "record_selection": "always_current_structural_aggregate_tail",
+    "as_of_record_selection": "never_selects_historical_tail",
+    "conflicts": "candidates_only_no_winner",
+    "validation_jobs": "deterministic_schedule_only_no_execution_or_verdict"
+  },
+  "$defs": {
+    "hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160,
+      "pattern": "^[a-z0-9][a-z0-9._:/-]*$"
+    },
+    "unix_ms": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9223372036854775807
+    },
+    "nullable_unix_ms": {
+      "oneOf": [
+        { "$ref": "#/$defs/unix_ms" },
+        { "type": "null" }
+      ]
+    },
+    "record_kind": {
+      "enum": ["EvidenceRecord", "KnowledgeClaim"]
+    },
+    "claim_type": {
+      "enum": [
+        "assumption",
+        "constraint",
+        "decision",
+        "fact",
+        "hypothesis",
+        "inference",
+        "lesson",
+        "proposal",
+        "unknown"
+      ]
+    },
+    "evidence_type": {
+      "enum": [
+        "artifact",
+        "external_source",
+        "gate_result",
+        "human_attestation",
+        "repo_locator",
+        "runtime_metric",
+        "test_run"
+      ]
+    },
+    "temporal_state": {
+      "enum": [
+        "fresh",
+        "not_yet_valid",
+        "review_overdue",
+        "validation_overdue",
+        "validity_expired"
+      ]
+    },
+    "evidence_state": {
+      "enum": [
+        "expired",
+        "invalid",
+        "unavailable",
+        "valid"
+      ]
+    },
+    "shadow_claim_state": {
+      "enum": [
+        "candidate",
+        "contested",
+        "draft",
+        "investigating",
+        "open",
+        "proposed",
+        "submitted",
+        "testing"
+      ]
+    },
+    "fact_shadow_state": { "enum": ["candidate", "contested"] },
+    "candidate_shadow_state": { "const": "candidate" },
+    "decision_shadow_state": { "const": "proposed" },
+    "validation_shadow_state": { "enum": ["open", "testing"] },
+    "proposal_shadow_state": { "enum": ["draft", "submitted"] },
+    "unknown_shadow_state": { "enum": ["open", "investigating"] },
+    "semantic_head": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "v",
+        "record_kind",
+        "aggregate_id",
+        "record_id",
+        "sequence",
+        "canonical_sha256",
+        "project_id",
+        "scope",
+        "declared_state",
+        "valid_from_unix_ms",
+        "valid_until_unix_ms",
+        "updated_at_ms"
+      ],
+      "properties": {
+        "v": { "const": 1 },
+        "record_kind": { "$ref": "#/$defs/record_kind" },
+        "aggregate_id": { "$ref": "#/$defs/identifier" },
+        "record_id": { "$ref": "#/$defs/identifier" },
+        "sequence": { "type": "integer", "minimum": 1, "maximum": 9223372036854775807 },
+        "canonical_sha256": { "$ref": "#/$defs/hash" },
+        "project_id": { "$ref": "#/$defs/identifier" },
+        "scope": { "$ref": "#/$defs/identifier" },
+        "declared_state": {
+          "oneOf": [
+            { "$ref": "#/$defs/evidence_state" },
+            { "$ref": "#/$defs/shadow_claim_state" }
+          ]
+        },
+        "valid_from_unix_ms": { "$ref": "#/$defs/unix_ms" },
+        "valid_until_unix_ms": { "$ref": "#/$defs/nullable_unix_ms" },
+        "updated_at_ms": { "$ref": "#/$defs/unix_ms" }
+      }
+    },
+    "claim_fields": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "claim_type",
+        "subject",
+        "predicate",
+        "object_sha256",
+        "conflict_key_sha256",
+        "review_by_unix_ms",
+        "validation_due_unix_ms",
+        "validation_owner_id",
+        "validation_plan_sha256",
+        "required_evidence_types"
+      ],
+      "properties": {
+        "claim_type": { "$ref": "#/$defs/claim_type" },
+        "subject": { "$ref": "#/$defs/identifier" },
+        "predicate": { "$ref": "#/$defs/identifier" },
+        "object_sha256": { "$ref": "#/$defs/hash" },
+        "conflict_key_sha256": { "$ref": "#/$defs/hash" },
+        "review_by_unix_ms": { "$ref": "#/$defs/nullable_unix_ms" },
+        "validation_due_unix_ms": { "$ref": "#/$defs/nullable_unix_ms" },
+        "validation_owner_id": {
+          "oneOf": [
+            { "$ref": "#/$defs/identifier" },
+            { "type": "null" }
+          ]
+        },
+        "validation_plan_sha256": {
+          "oneOf": [
+            { "$ref": "#/$defs/hash" },
+            { "type": "null" }
+          ]
+        },
+        "required_evidence_types": {
+          "type": "array",
+          "maxItems": 7,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/evidence_type" }
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "validation_due_unix_ms": { "type": "null" },
+            "validation_owner_id": { "type": "null" },
+            "validation_plan_sha256": { "type": "null" },
+            "required_evidence_types": { "maxItems": 0 }
+          }
+        },
+        {
+          "properties": {
+            "validation_due_unix_ms": { "$ref": "#/$defs/unix_ms" },
+            "validation_owner_id": { "$ref": "#/$defs/identifier" },
+            "validation_plan_sha256": { "$ref": "#/$defs/hash" },
+            "required_evidence_types": { "minItems": 1 }
+          }
+        }
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": { "claim_type": { "enum": ["assumption", "hypothesis"] } },
+            "required": ["claim_type"]
+          },
+          "then": {
+            "properties": {
+              "validation_due_unix_ms": { "$ref": "#/$defs/unix_ms" },
+              "validation_owner_id": { "$ref": "#/$defs/identifier" },
+              "validation_plan_sha256": { "$ref": "#/$defs/hash" },
+              "required_evidence_types": { "minItems": 1 }
+            }
+          },
+          "else": {
+            "properties": {
+              "validation_due_unix_ms": { "type": "null" },
+              "validation_owner_id": { "type": "null" },
+              "validation_plan_sha256": { "type": "null" },
+              "required_evidence_types": { "maxItems": 0 }
+            }
+          }
+        }
+      ]
+    },
+    "projection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["v", "head", "claim", "projection_sha256"],
+      "properties": {
+        "v": { "const": 1 },
+        "head": { "$ref": "#/$defs/semantic_head" },
+        "claim": {
+          "oneOf": [
+            { "$ref": "#/$defs/claim_fields" },
+            { "type": "null" }
+          ]
+        },
+        "projection_sha256": { "$ref": "#/$defs/hash" }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "head": {
+                "properties": { "record_kind": { "const": "EvidenceRecord" } },
+                "required": ["record_kind"]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "claim": { "type": "null" },
+              "head": {
+                "properties": { "declared_state": { "$ref": "#/$defs/evidence_state" } }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "head": {
+                "properties": { "record_kind": { "const": "KnowledgeClaim" } },
+                "required": ["record_kind"]
+              }
+            }
+          },
+          "then": { "properties": { "claim": { "$ref": "#/$defs/claim_fields" } } }
+        },
+        { "if": { "properties": { "claim": { "type": "object", "properties": { "claim_type": { "const": "fact" } }, "required": ["claim_type"] } } }, "then": { "properties": { "head": { "properties": { "declared_state": { "$ref": "#/$defs/fact_shadow_state" } } } } } },
+        { "if": { "properties": { "claim": { "type": "object", "properties": { "claim_type": { "const": "constraint" } }, "required": ["claim_type"] } } }, "then": { "properties": { "head": { "properties": { "declared_state": { "$ref": "#/$defs/candidate_shadow_state" } } } } } },
+        { "if": { "properties": { "claim": { "type": "object", "properties": { "claim_type": { "const": "decision" } }, "required": ["claim_type"] } } }, "then": { "properties": { "head": { "properties": { "declared_state": { "$ref": "#/$defs/decision_shadow_state" } } } } } },
+        { "if": { "properties": { "claim": { "type": "object", "properties": { "claim_type": { "const": "inference" } }, "required": ["claim_type"] } } }, "then": { "properties": { "head": { "properties": { "declared_state": { "$ref": "#/$defs/candidate_shadow_state" } } } } } },
+        { "if": { "properties": { "claim": { "type": "object", "properties": { "claim_type": { "enum": ["assumption", "hypothesis"] } }, "required": ["claim_type"] } } }, "then": { "properties": { "head": { "properties": { "declared_state": { "$ref": "#/$defs/validation_shadow_state" } } } } } },
+        { "if": { "properties": { "claim": { "type": "object", "properties": { "claim_type": { "const": "lesson" } }, "required": ["claim_type"] } } }, "then": { "properties": { "head": { "properties": { "declared_state": { "$ref": "#/$defs/candidate_shadow_state" } } } } } },
+        { "if": { "properties": { "claim": { "type": "object", "properties": { "claim_type": { "const": "proposal" } }, "required": ["claim_type"] } } }, "then": { "properties": { "head": { "properties": { "declared_state": { "$ref": "#/$defs/proposal_shadow_state" } } } } } },
+        { "if": { "properties": { "claim": { "type": "object", "properties": { "claim_type": { "const": "unknown" } }, "required": ["claim_type"] } } }, "then": { "properties": { "head": { "properties": { "declared_state": { "$ref": "#/$defs/unknown_shadow_state" } } } } } }
+      ]
+    },
+    "assessment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "api_version",
+        "kind",
+        "interpretation",
+        "semantic_view_version",
+        "projection",
+        "evaluated_at_unix_ms",
+        "temporal_state"
+      ],
+      "properties": {
+        "api_version": { "const": "forgeos.governance-semantic-view/v1" },
+        "kind": { "const": "GovernanceSemanticAssessment" },
+        "interpretation": { "const": "semantic_projection_only_no_truth_or_authority" },
+        "semantic_view_version": { "const": 1 },
+        "projection": { "$ref": "#/$defs/projection" },
+        "evaluated_at_unix_ms": { "$ref": "#/$defs/unix_ms" },
+        "temporal_state": { "$ref": "#/$defs/temporal_state" }
+      }
+    },
+    "conflict_member": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "aggregate_id",
+        "record_id",
+        "sequence",
+        "declared_state",
+        "object_sha256",
+        "temporal_state"
+      ],
+      "properties": {
+        "aggregate_id": { "$ref": "#/$defs/identifier" },
+        "record_id": { "$ref": "#/$defs/identifier" },
+        "sequence": { "type": "integer", "minimum": 1, "maximum": 9223372036854775807 },
+        "declared_state": { "$ref": "#/$defs/shadow_claim_state" },
+        "object_sha256": { "$ref": "#/$defs/hash" },
+        "temporal_state": { "$ref": "#/$defs/temporal_state" }
+      }
+    },
+    "conflict_group": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "v",
+        "conflict_key_sha256",
+        "claim_type",
+        "project_id",
+        "scope",
+        "subject",
+        "predicate",
+        "evaluated_at_unix_ms",
+        "members"
+      ],
+      "properties": {
+        "v": { "const": 1 },
+        "conflict_key_sha256": { "$ref": "#/$defs/hash" },
+        "claim_type": { "$ref": "#/$defs/claim_type" },
+        "project_id": { "$ref": "#/$defs/identifier" },
+        "scope": { "$ref": "#/$defs/identifier" },
+        "subject": { "$ref": "#/$defs/identifier" },
+        "predicate": { "$ref": "#/$defs/identifier" },
+        "evaluated_at_unix_ms": { "$ref": "#/$defs/unix_ms" },
+        "members": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 100,
+          "items": { "$ref": "#/$defs/conflict_member" }
+        }
+      },
+      "allOf": [
+        { "if": { "properties": { "claim_type": { "const": "fact" } }, "required": ["claim_type"] }, "then": { "properties": { "members": { "items": { "properties": { "declared_state": { "$ref": "#/$defs/fact_shadow_state" } } } } } } },
+        { "if": { "properties": { "claim_type": { "enum": ["constraint", "inference", "lesson"] } }, "required": ["claim_type"] }, "then": { "properties": { "members": { "items": { "properties": { "declared_state": { "$ref": "#/$defs/candidate_shadow_state" } } } } } } },
+        { "if": { "properties": { "claim_type": { "const": "decision" } }, "required": ["claim_type"] }, "then": { "properties": { "members": { "items": { "properties": { "declared_state": { "$ref": "#/$defs/decision_shadow_state" } } } } } } },
+        { "if": { "properties": { "claim_type": { "enum": ["assumption", "hypothesis"] } }, "required": ["claim_type"] }, "then": { "properties": { "members": { "items": { "properties": { "declared_state": { "$ref": "#/$defs/validation_shadow_state" } } } } } } },
+        { "if": { "properties": { "claim_type": { "const": "proposal" } }, "required": ["claim_type"] }, "then": { "properties": { "members": { "items": { "properties": { "declared_state": { "$ref": "#/$defs/proposal_shadow_state" } } } } } } },
+        { "if": { "properties": { "claim_type": { "const": "unknown" } }, "required": ["claim_type"] }, "then": { "properties": { "members": { "items": { "properties": { "declared_state": { "$ref": "#/$defs/unknown_shadow_state" } } } } } } }
+      ]
+    },
+    "conflict_list": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["api_version", "kind", "interpretation", "evaluated_at_unix_ms", "conflicts"],
+      "properties": {
+        "api_version": { "const": "forgeos.governance-semantic-view/v1" },
+        "kind": { "const": "GovernanceClaimConflictList" },
+        "interpretation": { "const": "semantic_projection_only_no_truth_or_authority" },
+        "evaluated_at_unix_ms": { "$ref": "#/$defs/unix_ms" },
+        "conflicts": {
+          "type": "array",
+          "maxItems": 100,
+          "items": { "$ref": "#/$defs/conflict_group" }
+        }
+      }
+    },
+    "validation_job": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "v",
+        "job_id",
+        "aggregate_id",
+        "record_id",
+        "claim_type",
+        "due_at_unix_ms",
+        "owner_id",
+        "required_evidence_types",
+        "validation_plan_sha256",
+        "declared_state",
+        "evaluated_at_unix_ms",
+        "temporal_state",
+        "due"
+      ],
+      "properties": {
+        "v": { "const": 1 },
+        "job_id": {
+          "type": "string",
+          "pattern": "^governance-validation-job-[a-f0-9]{64}$"
+        },
+        "aggregate_id": { "$ref": "#/$defs/identifier" },
+        "record_id": { "$ref": "#/$defs/identifier" },
+        "claim_type": { "enum": ["assumption", "hypothesis"] },
+        "due_at_unix_ms": { "$ref": "#/$defs/unix_ms" },
+        "owner_id": { "$ref": "#/$defs/identifier" },
+        "required_evidence_types": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 7,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/evidence_type" }
+        },
+        "validation_plan_sha256": { "$ref": "#/$defs/hash" },
+        "declared_state": { "$ref": "#/$defs/shadow_claim_state" },
+        "evaluated_at_unix_ms": { "$ref": "#/$defs/unix_ms" },
+        "temporal_state": { "$ref": "#/$defs/temporal_state" },
+        "due": { "type": "boolean" }
+      },
+      "allOf": [
+        { "if": { "properties": { "claim_type": { "enum": ["assumption", "hypothesis"] } }, "required": ["claim_type"] }, "then": { "properties": { "declared_state": { "$ref": "#/$defs/validation_shadow_state" } } } }
+      ]
+    },
+    "validation_job_list": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["api_version", "kind", "interpretation", "evaluated_at_unix_ms", "jobs"],
+      "properties": {
+        "api_version": { "const": "forgeos.governance-semantic-view/v1" },
+        "kind": { "const": "GovernanceValidationJobList" },
+        "interpretation": { "const": "semantic_projection_only_no_truth_or_authority" },
+        "evaluated_at_unix_ms": { "$ref": "#/$defs/unix_ms" },
+        "jobs": {
+          "type": "array",
+          "maxItems": 100,
+          "items": { "$ref": "#/$defs/validation_job" }
+        }
+      }
+    }
+  }
+}

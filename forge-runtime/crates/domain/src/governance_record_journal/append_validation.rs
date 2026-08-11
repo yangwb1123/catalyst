@@ -47,6 +47,21 @@ pub fn validate_governance_record_relations(
     validate_candidate_relations(&candidates, dependency_closure)
 }
 
+/// Revalidates already-decoded stored records against their exact reference closure.
+///
+/// This narrow recovery boundary avoids constructing a synthetic append request while
+/// preserving the same budget, identity, relation, and derivation checks.
+///
+/// # Errors
+///
+/// Returns an error for invalid records, identities, references, subjects, or cycles.
+pub fn validate_governance_stored_record_relations(
+    candidates: &[GovernanceRecord],
+    dependency_closure: &[GovernanceRecord],
+) -> Result<(), GovernanceRecordJournalError> {
+    validate_candidate_relations(candidates, dependency_closure)
+}
+
 fn validate_candidate_relations(
     candidates: &[GovernanceRecord],
     dependency_closure: &[GovernanceRecord],

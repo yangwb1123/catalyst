@@ -75,8 +75,10 @@ export const COPIED_FILES = [
   join('docs', 'adr', '0051-local-gate-command-observation-producer-v1.md'),
   join('docs', 'adr', '0052-local-evolve-repo-locator-observation-producer-v1.md'),
   join('docs', 'adr', '0053-local-go-package-dependency-graph-observation-producer-v1.md'),
+  join('docs', 'adr', '0054-local-governance-semantic-view-v1.md'),
   join('docs', 'contracts', 'governance-evidence-claim-v1.schema.json'),
   join('docs', 'contracts', 'governance-record-journal-v1.schema.json'),
+  join('docs', 'contracts', 'governance-semantic-view-v1.schema.json'),
   join('docs', 'contracts', 'cognitive-atom-projection-v1.schema.json'),
   join('docs', 'contracts', 'artifact-evidence-adapter-v1.schema.json'),
   join('docs', 'contracts', 'command-observation-evidence-adapter-v1.schema.json'),
@@ -85,6 +87,7 @@ export const COPIED_FILES = [
   join('docs', 'contracts', 'local-evolve-repo-locator-observation-producer-v1.schema.json'),
   join('docs', 'contracts', 'local-go-package-dependency-graph-observation-producer-v1.schema.json'),
   join('docs', 'contracts', 'fixtures', 'governance-evidence-claim-v1.json'),
+  join('docs', 'contracts', 'fixtures', 'governance-semantic-view-v1.json'),
   join('docs', 'contracts', 'fixtures', 'cognitive-atom-projection-v1.json'),
   join('docs', 'contracts', 'fixtures', 'artifact-evidence-adapter-v1.json'),
   join('docs', 'contracts', 'fixtures', 'command-observation-evidence-adapter-v1.json'),
@@ -181,6 +184,8 @@ export const COPIED_FILES = [
   join('harness', 'governance_engineering_check.py'), // Evidence/Claim registry, pin, Skill, and detector integration
   join('harness', 'governance_engineering', '__init__.py'),
   join('harness', 'governance_engineering', 'source_adapters.py'), // versioned source-adapter registry/schema checks split from the root gate
+  join('harness', 'governance_engineering', 'semantic_view.py'), // ADR-0054 semantic-view registry/schema/golden freeze
+  join('harness', 'governance_engineering', 'test_semantic_view.py'), // copied ADR-0054 adversarial self-test
   join('harness', 'governance_engineering', 'evolve_locator_adapter.py'), // ADR-0050 registry/schema/detector/Skill freeze
   join('harness', 'governance_engineering', 'local_command_observation_producer.py'), // ADR-0051 producer registry/schema/Skill freeze
   join('harness', 'governance_engineering', 'evolve_locator_observation_producer.py'), // ADR-0052 shipped producer freeze

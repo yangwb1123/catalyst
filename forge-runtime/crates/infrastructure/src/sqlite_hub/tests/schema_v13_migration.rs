@@ -319,7 +319,7 @@ fn malformed(original: &str, replacement: &str) -> String {
 }
 
 fn assert_v13_shape(connection: &Connection) {
-    assert_eq!(schema_version(connection), 26);
+    assert_eq!(schema_version(connection), super::SCHEMA_VERSION);
     assert!(schema_object_exists(connection, "table", SCHEDULE_TABLE));
     assert!(schema_object_exists(connection, "index", SCHEDULE_INDEX));
     assert_eq!(row_count(connection, SCHEDULE_TABLE), 0);
@@ -364,6 +364,12 @@ fn old_schema(snapshot: &[SchemaRow]) -> Vec<SchemaRow> {
                         | "governance_records_appended"
                         | "governance_records_kind_appended"
                         | "governance_structural_heads"
+                        | "governance_semantic_heads"
+                        | "governance_claim_semantic_views"
+                        | "governance_claim_validation_jobs"
+                        | "governance_semantic_heads_state_validity"
+                        | "governance_claim_semantic_conflicts"
+                        | "governance_claim_validation_jobs_due"
                 )
         })
         .cloned()

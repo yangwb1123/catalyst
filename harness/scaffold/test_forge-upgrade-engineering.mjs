@@ -44,8 +44,10 @@ const LEGACY_ENGINEERING_FILES = [
   join('docs', 'adr', '0051-local-gate-command-observation-producer-v1.md'),
   join('docs', 'adr', '0052-local-evolve-repo-locator-observation-producer-v1.md'),
   join('docs', 'adr', '0053-local-go-package-dependency-graph-observation-producer-v1.md'),
+  join('docs', 'adr', '0054-local-governance-semantic-view-v1.md'),
   join('docs', 'contracts', 'governance-evidence-claim-v1.schema.json'),
   join('docs', 'contracts', 'governance-record-journal-v1.schema.json'),
+  join('docs', 'contracts', 'governance-semantic-view-v1.schema.json'),
   join('docs', 'contracts', 'cognitive-atom-projection-v1.schema.json'),
   join('docs', 'contracts', 'artifact-evidence-adapter-v1.schema.json'),
   join('docs', 'contracts', 'command-observation-evidence-adapter-v1.schema.json'),
@@ -54,6 +56,7 @@ const LEGACY_ENGINEERING_FILES = [
   join('docs', 'contracts', 'local-evolve-repo-locator-observation-producer-v1.schema.json'),
   join('docs', 'contracts', 'local-go-package-dependency-graph-observation-producer-v1.schema.json'),
   join('docs', 'contracts', 'fixtures', 'governance-evidence-claim-v1.json'),
+  join('docs', 'contracts', 'fixtures', 'governance-semantic-view-v1.json'),
   join('docs', 'contracts', 'fixtures', 'cognitive-atom-projection-v1.json'),
   join('docs', 'contracts', 'fixtures', 'artifact-evidence-adapter-v1.json'),
   join('docs', 'contracts', 'fixtures', 'command-observation-evidence-adapter-v1.json'),
@@ -148,8 +151,10 @@ test('legacy project upgrades to shadow contracts without rewriting project iden
   assert.equal(existsSync(join(target, 'docs', 'adr', '0051-local-gate-command-observation-producer-v1.md')), true);
   assert.equal(existsSync(join(target, 'docs', 'adr', '0052-local-evolve-repo-locator-observation-producer-v1.md')), true);
   assert.equal(existsSync(join(target, 'docs', 'adr', '0053-local-go-package-dependency-graph-observation-producer-v1.md')), true);
+  assert.equal(existsSync(join(target, 'docs', 'adr', '0054-local-governance-semantic-view-v1.md')), true);
   assert.equal(existsSync(join(target, 'docs', 'contracts', 'governance-evidence-claim-v1.schema.json')), true);
   assert.equal(existsSync(join(target, 'docs', 'contracts', 'governance-record-journal-v1.schema.json')), true);
+  assert.equal(existsSync(join(target, 'docs', 'contracts', 'governance-semantic-view-v1.schema.json')), true);
   assert.equal(existsSync(join(target, 'docs', 'contracts', 'cognitive-atom-projection-v1.schema.json')), true);
   assert.equal(existsSync(join(target, 'docs', 'contracts', 'artifact-evidence-adapter-v1.schema.json')), true);
   assert.equal(existsSync(join(target, 'docs', 'contracts', 'command-observation-evidence-adapter-v1.schema.json')), true);
@@ -158,6 +163,7 @@ test('legacy project upgrades to shadow contracts without rewriting project iden
   assert.equal(existsSync(join(target, 'docs', 'contracts', 'local-evolve-repo-locator-observation-producer-v1.schema.json')), true);
   assert.equal(existsSync(join(target, 'docs', 'contracts', 'local-go-package-dependency-graph-observation-producer-v1.schema.json')), true);
   assert.equal(existsSync(join(target, 'docs', 'contracts', 'fixtures', 'governance-evidence-claim-v1.json')), true);
+  assert.equal(existsSync(join(target, 'docs', 'contracts', 'fixtures', 'governance-semantic-view-v1.json')), true);
   assert.equal(existsSync(join(target, 'docs', 'contracts', 'fixtures', 'cognitive-atom-projection-v1.json')), true);
   assert.equal(existsSync(join(target, 'docs', 'contracts', 'fixtures', 'artifact-evidence-adapter-v1.json')), true);
   assert.equal(existsSync(join(target, 'docs', 'contracts', 'fixtures', 'command-observation-evidence-adapter-v1.json')), true);
@@ -219,6 +225,11 @@ test('legacy project upgrades to shadow contracts without rewriting project iden
   assert.equal(existsSync(join(target, 'harness', 'go_package_dependency_graph_observation_producer', 'check.py')), true);
   assert.equal(existsSync(join(target, 'harness', 'go_package_dependency_graph_observation_producer', 'test_contract.py')), true);
   assert.equal(existsSync(join(target, 'harness', 'governance_engineering', 'source_adapters.py')), true);
+  assert.equal(existsSync(join(target, 'harness', 'governance_engineering', 'semantic_view.py')), true);
+  const semanticSelfTest = join(
+    target, 'harness', 'governance_engineering', 'test_semantic_view.py',
+  );
+  assert.equal(existsSync(semanticSelfTest), true);
   assert.equal(existsSync(join(target, 'harness', 'governance_engineering', 'evolve_locator_adapter.py')), true);
   assert.equal(existsSync(join(target, 'harness', 'governance_engineering', 'local_command_observation_producer.py')), true);
   assert.equal(existsSync(join(target, 'harness', 'governance_engineering', 'evolve_locator_observation_producer.py')), true);
@@ -233,6 +244,20 @@ test('legacy project upgrades to shadow contracts without rewriting project iden
   assert.equal(existsSync(join(target, 'harness', 'test_governance_engineering_integration.py')), true);
   assert.equal(existsSync(join(target, 'harness', 'test_governance_evolve_locator_integration.py')), true);
   assert.equal(existsSync(join(target, 'harness', 'test_governance_local_command_observation_producer_integration.py')), true);
+  const semanticTest = spawnSync(
+    'python3', ['-B', 'harness/governance_engineering/test_semantic_view.py'],
+    { cwd: target, encoding: 'utf8' },
+  );
+  assert.equal(
+    semanticTest.status, 0,
+    `upgraded semantic-view self-test must pass\n${semanticTest.stdout}\n${semanticTest.stderr}`,
+  );
+  const semanticCheck = spawnSync(
+    'python3', ['-B', 'harness/governance_engineering/semantic_view.py', '.'],
+    { cwd: target, encoding: 'utf8' },
+  );
+  assert.equal(semanticCheck.status, 0, `${semanticCheck.stdout}\n${semanticCheck.stderr}`);
+  assert.match(semanticCheck.stdout, /semantic-view-check: PASS/);
   const check = spawnSync('python3', ['-B', 'harness/check.py', '.'], {
     cwd: target, encoding: 'utf8',
   });

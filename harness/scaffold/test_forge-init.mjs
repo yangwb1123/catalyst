@@ -185,7 +185,30 @@ test('forge-init scaffolds COMPLETE governance and the project is ACCEPTED', (t)
   assert.match(journalSkill, /GateObservedWith/);
   assert.match(journalSkill, /PURE_CONTRACT_FIXTURE/);
   assert.match(journalSkill, /OBSERVED_LOCAL_GO_PACKAGE_DEPENDENCY_GRAPH/);
+  assert.match(journalSkill, /forge-runtime governance journal view/);
+  assert.match(journalSkill, /forge-runtime governance journal conflicts/);
+  assert.match(journalSkill, /forge-runtime governance journal validation-jobs/);
+  assert.match(journalSkill, /--as-of-unix-ms/);
+  assert.match(journalSkill, /semantic_projection_only_no_truth_or_authority/);
   assert.doesNotMatch(journalSkill, /\bforge governance journal\b/);
+  const semanticSelfTest = join(
+    target, 'harness', 'governance_engineering', 'test_semantic_view.py',
+  );
+  assert.ok(existsSync(semanticSelfTest), 'semantic-view adversarial self-test must be copied');
+  const semanticTest = spawnSync(
+    'python3', ['-B', 'harness/governance_engineering/test_semantic_view.py'],
+    { cwd: target, encoding: 'utf8' },
+  );
+  assert.equal(
+    semanticTest.status, 0,
+    `copied semantic-view self-test must pass\n${semanticTest.stdout}\n${semanticTest.stderr}`,
+  );
+  const semanticCheck = spawnSync(
+    'python3', ['-B', 'harness/governance_engineering/semantic_view.py', '.'],
+    { cwd: target, encoding: 'utf8' },
+  );
+  assert.equal(semanticCheck.status, 0, `${semanticCheck.stdout}\n${semanticCheck.stderr}`);
+  assert.match(semanticCheck.stdout, /semantic-view-check: PASS/);
   const copiedRuntime = scaffoldState.copied.some((rel) => rel.startsWith('forge-runtime/'));
   assert.equal(copiedRuntime, false, 'scaffold must not install the Rust runtime');
   const copiedForgeCoreRuntime = scaffoldState.copied.some(

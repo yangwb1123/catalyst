@@ -4,6 +4,7 @@ mod emitter;
 mod engine;
 mod error;
 mod governance_record_journal;
+mod governance_semantic_view;
 mod group_agent_graph_run_service;
 mod group_agent_graph_run_validation;
 mod group_agent_graph_service;
@@ -51,6 +52,9 @@ pub use forge_runtime_domain::{
 pub use governance_record_journal::{
     AppendGovernanceRecordBatchInput, GovernanceRecordJournalService,
     GovernanceRecordJournalServiceError,
+};
+pub use governance_semantic_view::{
+    GovernanceSemanticViewService, GovernanceSemanticViewServiceError,
 };
 pub use group_agent_graph_run_service::{
     BeginGroupAgentGraphRunDisposition, BeginGroupAgentGraphRunResult,

@@ -26,6 +26,7 @@ mod group_panel_synthesis;
 mod group_run_codec;
 mod group_run_read;
 mod group_run_write;
+mod open;
 mod read;
 mod rows;
 mod run_integrity;
@@ -71,12 +72,13 @@ mod schema_v24_sql;
 mod schema_v25_sql;
 #[path = "schema_contract/v26_sql.rs"]
 mod schema_v26_sql;
+#[path = "schema_contract/v27_sql.rs"]
+mod schema_v27_sql;
 mod schema_v9_sql;
 mod write;
 
 use std::path::{Path, PathBuf};
 
-use forge_runtime_domain::GroupAgentNodeLifecycleInspection;
 use forge_runtime_domain::{
     BeginGroupExecution, BeginGroupExecutionResult, BeginRun, BeginRunResult, Conversation,
     ConversationScope, GroupContextPolicy, GroupContextSlice, GroupExecutionEvent,
@@ -87,18 +89,12 @@ use forge_runtime_domain::{
 };
 use rusqlite::{Connection, Error as SqliteError, ErrorCode};
 
+use open::SqliteHubStoreOpenMode;
+
 #[derive(Clone, Debug)]
 pub struct SqliteHubStore {
     database_path: PathBuf,
     open_mode: SqliteHubStoreOpenMode,
-}
-
-#[derive(Clone, Copy, Debug)]
-enum SqliteHubStoreOpenMode {
-    ReadWrite,
-    ExistingCurrentReadOnly,
-    ExistingDispatchPreflightReadOnly,
-    ExistingDispatchReentryReadOnly,
 }
 
 /// Current hub schema version (the version `open` migrates to).
@@ -120,131 +116,6 @@ pub fn hub_schema_version(path: &Path) -> Result<i64, HubStoreError> {
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .map_err(schema::sqlite_error)?;
     Ok(version)
-}
-
-impl SqliteHubStore {
-    /// Opens or creates a versioned local Hub database.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error when the path is unsafe, `SQLite` cannot open the file,
-    /// or the schema version is unsupported.
-    pub fn open(database_path: impl AsRef<Path>) -> Result<Self, HubStoreError> {
-        let database_path = database_path.as_ref().to_path_buf();
-        schema::open_database(&database_path)?;
-        Ok(Self {
-            database_path,
-            open_mode: SqliteHubStoreOpenMode::ReadWrite,
-        })
-    }
-
-    /// Opens an existing current-schema Hub database without changing any state files.
-    ///
-    /// This mode never creates a database, migrates a schema, changes file permissions,
-    /// or opens a database with live `SQLite` WAL/SHM/rollback-journal sidecars.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error when the database is missing, unsafe, non-current, corrupt,
-    /// concurrently changing, lacks a persistent WAL header, or has `SQLite` sidecars.
-    pub fn open_existing_current_read_only(
-        database_path: impl AsRef<Path>,
-    ) -> Result<Self, HubStoreError> {
-        let database_path = database_path.as_ref().to_path_buf();
-        schema::open_existing_current_read_only_database(&database_path)?;
-        Ok(Self {
-            database_path,
-            open_mode: SqliteHubStoreOpenMode::ExistingCurrentReadOnly,
-        })
-    }
-
-    /// Opens an exact existing v11 through v26 Hub for dispatch topology preflight only.
-    ///
-    /// This mode is immutable and cannot create, migrate, chmod, or write Hub state.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error for unsafe, missing, corrupt, unsupported, or active state.
-    pub fn open_existing_dispatch_preflight_read_only(
-        database_path: impl AsRef<Path>,
-    ) -> Result<Self, HubStoreError> {
-        let database_path = database_path.as_ref().to_path_buf();
-        schema::open_existing_dispatch_preflight_read_only_database(&database_path)?;
-        Ok(Self {
-            database_path,
-            open_mode: SqliteHubStoreOpenMode::ExistingDispatchPreflightReadOnly,
-        })
-    }
-
-    /// Opens existing dispatch state for a no-send re-entry diagnosis.
-    ///
-    /// A clean exact v11 through v26 database keeps the immutable preflight path. When
-    /// v12 through v26 has a hot WAL, the fallback reads the existing WAL/SHM pair without
-    /// changing logical Hub content; `SQLite` may update transient SHM read locks.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error for unsafe, missing, corrupt, unsupported, or changing state.
-    pub fn open_existing_dispatch_inspection_read_only(
-        database_path: impl AsRef<Path>,
-    ) -> Result<Self, HubStoreError> {
-        let database_path = database_path.as_ref().to_path_buf();
-        let open_mode =
-            match schema::open_existing_dispatch_preflight_read_only_database(&database_path) {
-                Ok(_) => SqliteHubStoreOpenMode::ExistingDispatchPreflightReadOnly,
-                Err(immutable_error) => {
-                    schema::open_existing_dispatch_reentry_read_only_database(&database_path)
-                        .map_err(|reentry_error| {
-                            prefer_corruption(immutable_error, reentry_error)
-                        })?;
-                    SqliteHubStoreOpenMode::ExistingDispatchReentryReadOnly
-                }
-            };
-        Ok(Self {
-            database_path,
-            open_mode,
-        })
-    }
-
-    /// Inspects a dispatch lifecycle, when one exists, in one deferred snapshot.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error for missing Runs, corrupt evidence, or unavailable storage.
-    pub fn inspect_existing_group_agent_node_lifecycle(
-        &self,
-        graph_run_id: &str,
-    ) -> Result<Option<GroupAgentNodeLifecycleInspection>, HubStoreError> {
-        group_agent_node_lifecycle::inspect_if_present(&mut self.connect()?, graph_run_id)
-    }
-
-    fn connect(&self) -> Result<Connection, HubStoreError> {
-        match self.open_mode {
-            SqliteHubStoreOpenMode::ReadWrite => schema::open_database(&self.database_path),
-            SqliteHubStoreOpenMode::ExistingCurrentReadOnly => {
-                schema::open_existing_current_read_only_database(&self.database_path)
-            }
-            SqliteHubStoreOpenMode::ExistingDispatchPreflightReadOnly => {
-                schema::open_existing_dispatch_preflight_read_only_database(&self.database_path)
-            }
-            SqliteHubStoreOpenMode::ExistingDispatchReentryReadOnly => {
-                schema::open_existing_dispatch_reentry_read_only_database(&self.database_path)
-            }
-        }
-    }
-}
-
-fn prefer_corruption(
-    immutable_error: HubStoreError,
-    reentry_error: HubStoreError,
-) -> HubStoreError {
-    if matches!(immutable_error, HubStoreError::Corrupt { .. }) {
-        return immutable_error;
-    }
-    if matches!(reentry_error, HubStoreError::Corrupt { .. }) {
-        return reentry_error;
-    }
-    immutable_error
 }
 
 impl HubStore for SqliteHubStore {

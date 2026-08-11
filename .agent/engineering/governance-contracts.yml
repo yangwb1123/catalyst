@@ -1,19 +1,19 @@
 api_version: forgeos.agent-engineering/v1
 kind: GovernanceContractRegistry
 status: active_contract
-runtime_binding: cross_language_codec_local_journal_atom_projection_artifact_command_evolve_locator_adapters_local_gate_command_evolve_locator_and_go_package_dependency_graph_producers_shadow
+runtime_binding: cross_language_codec_local_journal_semantic_view_atom_projection_artifact_command_evolve_locator_adapters_local_gate_command_evolve_locator_and_go_package_dependency_graph_producers_shadow
 owner: governance
-version: 10
+version: 11
 completion_authority: forge_accept
 
 scope:
   shipped_kinds: [EvidenceRecord, KnowledgeClaim]
-  shipped_projections: [CognitiveAtom]
+  shipped_projections: [CognitiveAtom, GovernanceSemanticView]
   shipped_adapters: [artifact_provenance_to_evidence, command_observation_to_evidence, evolve_repo_locator_to_evidence]
   shipped_producers: [local_gate_command_observation_producer, local_evolve_repo_locator_observation_producer, local_go_package_dependency_graph_observation_producer]
   staged_producers: []
   planned_kinds: [ContextPackage, CapabilityGrant, ApprovalRecord, TransitionReceipt, KnowledgeUpdateProposal]
-  persistence: local_append_only_exact_evidence_claim_journal
+  persistence: local_append_only_exact_evidence_claim_journal_with_rebuildable_semantic_view
   authority_attestation: unavailable
   trusted_instruction_lane: unavailable
   production_effects: forbidden
@@ -513,6 +513,88 @@ journal:
     unavailable_result: not_executed
     persistence_claim_requires_receipt: true
 
+semantic_view:
+  api_version: forgeos.governance-semantic-view/v1
+  mode: deterministic_rebuildable_local_journal_projection
+  interpretation: semantic_projection_only_no_truth_or_authority
+  source:
+    record_kinds: [EvidenceRecord, KnowledgeClaim]
+    current_record: always_current_structural_aggregate_tail
+    as_of_record_selection: never_selects_historical_tail
+    evaluation_time: explicit_caller_supplied_as_of_unix_ms
+    hidden_wall_clock: forbidden
+  lifecycle:
+    mode: durable_shadow_subset_only
+    stable_fields: [record_kind, aggregate_id, project_id, scope, claim_type, subject, predicate, object_type, object_value, owner]
+    sequence_one_state_policy: any_claim_type_admissible_authority_free_shadow_state
+    sequence_one_allowed_states:
+      fact: [candidate, contested]
+      constraint: [candidate]
+      decision: [proposed]
+      inference: [candidate]
+      assumption: [open, testing]
+      hypothesis: [open, testing]
+      lesson: [candidate]
+      proposal: [draft, submitted]
+      unknown: [open, investigating]
+    transitions:
+      fact: [candidate_to_candidate, candidate_to_contested, contested_to_candidate, contested_to_contested]
+      constraint: [candidate_to_candidate]
+      decision: [proposed_to_proposed]
+      inference: [candidate_to_candidate]
+      assumption: [open_to_open, open_to_testing, testing_to_testing]
+      hypothesis: [open_to_open, open_to_testing, testing_to_testing]
+      lesson: [candidate_to_candidate]
+      proposal: [draft_to_draft, draft_to_submitted, submitted_to_submitted]
+      unknown: [open_to_open, open_to_investigating, investigating_to_investigating]
+    authoritative_state_result: reject_authority_unavailable
+  temporal:
+    states: [fresh, not_yet_valid, review_overdue, validation_overdue, validity_expired]
+    precedence: [not_yet_valid, validity_expired, validation_overdue, review_overdue, fresh]
+    semantics: declared_time_comparison_only
+  conflicts:
+    key_fields: [claim_type, project_id, scope, subject, predicate]
+    candidates: active_claim_tails_with_distinct_object_digests
+    deterministic_order: conflict_key_then_aggregate_id_bytes
+    winner: none
+  validation_jobs:
+    claim_types: [assumption, hypothesis]
+    materialization: one_per_current_complete_validation_plan
+    due: explicit_as_of_reaches_due_while_active
+    execution: none
+    verdict: none
+  identity:
+    projection_digest_domain: "forgeos.governance.semantic-projection.v1\0"
+    conflict_key_digest_domain: "forgeos.governance.claim-conflict-key.v1\0"
+    object_digest_domain: "forgeos.governance.claim-object.v1\0"
+    validation_plan_digest_domain: "forgeos.governance.validation-plan.v1\0"
+    validation_job_digest_domain: "forgeos.governance.validation-job.v1\0"
+    validation_job_id_prefix: governance-validation-job-
+  storage:
+    schema: sqlite_hub_v27_additive_projection
+    append_transaction: exact_records_structural_heads_semantic_heads_and_jobs_atomic
+    v26_backfill: exact_journal_records_and_reference_relations
+    corruption: fail_closed_no_implicit_repair
+    public_read_migration: forbidden
+    public_read_connection: exact_v27_live_mode_ro_query_only
+    public_read_snapshot: single_deferred_transaction
+    public_read_logical_hub_writes: none
+    sqlite_sidecar_effects: may_create_or_remove_empty_wal_shm_and_coordinate_shm_locks
+    fully_read_only_filesystem_failure: unavailable
+  limits:
+    max_list_results: 100
+    max_conflict_members: 100
+    max_claim_head_scan: 10000
+    per_view_integrity_union: complete_history_reference_closure_and_full_owning_batches
+    max_view_unique_records: 1024
+    max_view_unique_canonical_bytes: 16777216
+    scan_integrity_union: all_unique_owning_batch_records_and_verification_work
+    max_scan_unique_records: 65536
+    max_scan_unique_canonical_bytes: 268435456
+    max_scan_work_units: 1000000
+  positive_result: PROJECTED_DECLARED_SEMANTICS
+  attests: []
+
 legacy:
   rejected_kind_aliases: [Evidence, Claim, ContextManifest, AuthorityGrant, AgentCapabilityGrant]
   memory_import: not_implemented
@@ -523,7 +605,10 @@ legacy:
 canonical_refs:
   schema: docs/contracts/governance-evidence-claim-v1.schema.json
   journal_schema: docs/contracts/governance-record-journal-v1.schema.json
+  semantic_view_schema: docs/contracts/governance-semantic-view-v1.schema.json
   golden_fixture: docs/contracts/fixtures/governance-evidence-claim-v1.json
+  semantic_view_golden_fixture: docs/contracts/fixtures/governance-semantic-view-v1.json
+  semantic_view_checker: harness/governance_engineering/semantic_view.py
   skill: .agent/skills/evidence-claim-management.md
   checker: harness/governance_contract_check.py
   cognitive_atom_schema: docs/contracts/cognitive-atom-projection-v1.schema.json
@@ -549,6 +634,7 @@ canonical_refs:
   local_go_package_dependency_graph_observation_producer_checker: harness/go_package_dependency_graph_observation_producer/check.py
   decision: docs/adr/0045-canonical-evidence-claim-contract.md
   journal_decision: docs/adr/0046-local-governance-record-journal.md
+  semantic_view_decision: docs/adr/0054-local-governance-semantic-view-v1.md
   cognitive_atom_decision: docs/adr/0047-shadow-cognitive-atom-projection-v1.md
   artifact_evidence_adapter_decision: docs/adr/0048-artifact-provenance-evidence-adapter-v1.md
   command_observation_evidence_adapter_decision: docs/adr/0049-command-observation-evidence-adapter-v1.md
@@ -561,7 +647,9 @@ canonical_refs:
 contract_pins:
   schema_sha256: b2f8824c95012d94e71b4643756890a7a23f67dc1b9e0e8ecacf979b016864e8
   journal_schema_sha256: 36b0eae0649ea4bb1f2d83fcddae20750513e167bceae82bae8244acbf884fc8
+  semantic_view_schema_sha256: 360fb89d1571920090eb28e54678e8aa96f5d007d5acec693beb67fbb8f963f3
   golden_fixture_sha256: db111600f93e63b3533b1f06b14d7520eb4cbec0e4c6d0e3a6e0fd7e2740824a
+  semantic_view_golden_fixture_sha256: a3b6fb9b397231a0647fca845f0118d060c77d975ead2dccb55819aeea6dd66a
   cognitive_atom_schema_sha256: 175bf0274f79447452cad74e72b7605d33628f79dea4869de9caa324f1b23952
   cognitive_atom_golden_fixture_sha256: 1c45ecf10d256dfd38357d6a9f04d1455c69350a8d0ae10f2322b4f3aa6995aa
   artifact_evidence_adapter_schema_sha256: c43a743011f98c2311c511fe097efe7cd5a7c2010c2999be91cdef72938bd2bd
@@ -586,6 +674,9 @@ reference_implementations:
     projection: catalyst_repository_only
   rust:
     ref: forge-runtime/crates/domain/src/governance_contract
+    projection: catalyst_repository_only
+  semantic_view_rust:
+    ref: forge-runtime/crates/domain/src/governance_record_journal/semantic_view
     projection: catalyst_repository_only
   cognitive_atom_python:
     ref: harness/cognitive_atom_contract_check.py
@@ -643,8 +734,10 @@ reference_implementations:
     projection: universal_scaffold
 
 non_capabilities:
-  - no truth ledger authoritative current-knowledge view or semantic lifecycle projection
-  - no conflict arbitration freshness interpretation or validity-window evaluation
+  - no truth ledger authoritative current-knowledge view or authoritative lifecycle promotion
+  - semantic freshness and validity labels compare declared times only and do not attest real-world freshness or truth
+  - conflict groups expose deterministic candidates only and perform no arbitration or winner selection
+  - validation jobs are deterministic schedules only and perform no execution evidence collection or verdict
   - no authenticated principal collector reviewer or authority
   - no confirmed fact accepted decision waiver or hard-gate satisfaction
   - no ContextPackage CapabilityGrant Approval or Transition runtime

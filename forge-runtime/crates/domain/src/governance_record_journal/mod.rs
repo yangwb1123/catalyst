@@ -1,5 +1,6 @@
 mod append_validation;
 mod model;
+mod semantic_view;
 mod store;
 mod validation;
 
@@ -7,8 +8,10 @@ use std::fmt;
 
 pub use append_validation::{
     validate_governance_record_append, validate_governance_record_relations,
+    validate_governance_stored_record_relations,
 };
 pub use model::*;
+pub use semantic_view::*;
 pub use store::GovernanceRecordJournalStore;
 pub use validation::is_governance_record_identifier;
 pub use validation::{

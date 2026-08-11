@@ -1,4 +1,4 @@
-use rusqlite::{Connection, OptionalExtension, Row, Transaction, params};
+use rusqlite::{Connection, OptionalExtension, Row, params};
 
 use crate::runtime_domain::governance_contract::{MAX_ARRAY_ITEMS, MAX_RECORD_SET_BYTES};
 use crate::runtime_domain::{GovernanceRecordKind, HubStoreError};
@@ -300,8 +300,30 @@ pub(super) fn aggregate_summary(
         .map_err(error::read)
 }
 
-pub(super) fn prepare_rebuilt_heads(transaction: &Transaction<'_>) -> Result<(), HubStoreError> {
-    transaction
+pub(super) fn aggregate_record_ids(
+    connection: &Connection,
+    kind: GovernanceRecordKind,
+    aggregate_id: &str,
+    limit: i64,
+) -> Result<Vec<String>, HubStoreError> {
+    let mut statement = connection
+        .prepare(
+            "SELECT record_id FROM governance_records
+             WHERE record_kind=?1 AND aggregate_id=?2
+             ORDER BY sequence,record_id LIMIT ?3",
+        )
+        .map_err(error::read)?;
+    statement
+        .query_map(params![kind.as_str(), aggregate_id, limit], |row| {
+            row.get(0)
+        })
+        .map_err(error::read)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(error::read)
+}
+
+pub(super) fn prepare_rebuilt_heads(connection: &Connection) -> Result<(), HubStoreError> {
+    connection
         .execute_batch(
             "DROP TABLE IF EXISTS temp.governance_rebuilt_heads;
              CREATE TEMP TABLE governance_rebuilt_heads(
@@ -340,20 +362,18 @@ pub(super) fn insert_rebuilt_head(
     Ok(())
 }
 
-pub(super) fn replace_heads_from_rebuild(
-    transaction: &Transaction<'_>,
-) -> Result<usize, HubStoreError> {
-    let count: i64 = transaction
+pub(super) fn replace_heads_from_rebuild(connection: &Connection) -> Result<usize, HubStoreError> {
+    let count: i64 = connection
         .query_row(
             "SELECT COUNT(*) FROM temp.governance_rebuilt_heads",
             [],
             |row| row.get(0),
         )
         .map_err(error::read)?;
-    transaction
+    connection
         .execute("DELETE FROM governance_structural_heads", [])
         .map_err(error::write)?;
-    transaction
+    connection
         .execute(
             "INSERT INTO governance_structural_heads(
                record_kind,aggregate_id,record_id,sequence,canonical_sha256,updated_at_ms
@@ -363,7 +383,7 @@ pub(super) fn replace_heads_from_rebuild(
             [],
         )
         .map_err(error::write)?;
-    transaction
+    connection
         .execute_batch("DROP TABLE temp.governance_rebuilt_heads")
         .map_err(error::write)?;
     error::stored_usize(count, "rebuilt head count")

@@ -1,6 +1,6 @@
 use super::{
     schema::{
-        migrate_with_before_final_fault_for_test, open_database,
+        SCHEMA_VERSION, migrate_with_before_final_fault_for_test, open_database,
         open_existing_dispatch_preflight_read_only_database,
         open_existing_dispatch_reentry_read_only_database,
     },
@@ -28,6 +28,9 @@ use tempfile::TempDir;
 mod schema_full_validation_tests;
 pub(super) const RESTORE_HISTORICAL_ANALYSES_SQL: &str =
     include_str!("tests/restore_historical_analyses.sql");
+pub(super) const DROP_V27_SEMANTIC_VIEW_SQL: &str = "DROP TABLE governance_claim_validation_jobs;
+     DROP TABLE governance_claim_semantic_views;
+     DROP TABLE governance_semantic_heads;";
 #[path = "tests/schema_migration_support.rs"]
 mod schema_migration_support;
 #[path = "tests/schema_open_adversarial.rs"]
@@ -54,6 +57,8 @@ mod schema_v24_migration_tests;
 mod schema_v25_migration_tests;
 #[path = "tests/schema_v26_migration.rs"]
 mod schema_v26_migration_tests;
+#[path = "tests/schema_v27_migration.rs"]
+mod schema_v27_migration_tests;
 #[path = "tests/schema_v5_migration.rs"]
 mod schema_v5_migration_tests;
 #[path = "tests/schema_v6_migration.rs"]

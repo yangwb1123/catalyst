@@ -38,10 +38,25 @@ planning-only AI Engineering OS catalog.
   strict EvidenceRecord/KnowledgeClaim identity, canonical bytes, state matrices and
   shadow admissibility plus a narrow local exact-record append journal. The journal's
   1,024-record/16,777,216-byte/256-depth closure bounds are resource-exhaustion
-  admissibility limits. Scaffold copies governance assets but no Rust `forge-runtime`;
-  unavailable or incompatible runtime execution is `not_executed`. `stored`,
-  `exact_replay` and the rebuildable structural head never become truth, freshness,
-  conflict resolution, approval, completion or knowledge writeback.
+  admissibility limits. Its v1 semantic view always evaluates the current structural
+  tail at explicit caller time, uses exact-v27 live `mode=ro`/`query_only` access and
+  one Deferred snapshot, and never selects a historical tail. Per-view history,
+  reference closure and complete owning batches share 1,024 records/16 MiB; multi-head
+  verification additionally shares 65,536 records/256 MiB/1,000,000 work units.
+  SQLite may coordinate SHM locks or create/remove empty WAL/SHM sidecars, so this is
+  logically Hub-read-only rather than filesystem-effect-free. Scaffold copies these
+  governance assets but no Rust `forge-runtime`; unavailable or incompatible runtime
+  execution is `not_executed`. `stored`, `exact_replay`, structural heads and semantic
+  projections never become truth, freshness, conflict resolution, approval, completion
+  or knowledge writeback.
+
+The semantic read surface is explicit and caller-time-bound:
+
+```text
+forge-runtime governance journal view KIND AGGREGATE_ID --as-of-unix-ms N
+forge-runtime governance journal conflicts --as-of-unix-ms N [--limit N]
+forge-runtime governance journal validation-jobs --as-of-unix-ms N [--due-only] [--limit N]
+```
 
 `python3 -B harness/check.py` validates these contracts. The validator proves
 schema integrity, canonical capability ownership, real detector wiring, closed
@@ -52,6 +67,10 @@ can validate one frontend package, including bounded composition/report structur
 cross-references and digest bindings. Both detectors remain shadow and non-load-bearing.
 `python3 -B harness/governance_contract_check.py . <canonical-record-set.json>` validates
 one exact compact Evidence/Claim set and returns only an authority-free structural result.
+A separate bounded integration checker,
+`python3 -B harness/governance_engineering/semantic_view.py .`, validates the canonical
+semantic registry, Schema structure, golden binding and Skill markers; it is not a
+generic arbitrary-output instance validator.
 A journal append separately preserves already-valid exact bytes; metadata-only reads and
 `structural_sequence_only` heads do not reinterpret record semantics.
 A structured receipt and declared producer/reviewer identity are still not cryptographic proof that a command ran or a distinct principal reviewed it;

@@ -42,6 +42,19 @@ class GovernanceEngineeringIntegrationTest(unittest.TestCase):
         replace_once(path, '"title": "ForgeOS', '"title": "Drifted ForgeOS')
         self.assertTrue(any("journal_schema_sha256" in issue for issue in self.issues()))
 
+    def test_semantic_view_schema_pin_is_enforced(self):
+        path = self.repo / "docs" / "contracts" / "governance-semantic-view-v1.schema.json"
+        replace_once(path, '"title": "ForgeOS', '"title": "Drifted ForgeOS')
+        self.assertTrue(any("semantic_view_schema_sha256" in issue
+                            for issue in self.issues()))
+
+    def test_semantic_view_golden_pin_is_enforced(self):
+        path = (self.repo / "docs" / "contracts" / "fixtures" /
+                "governance-semantic-view-v1.json")
+        replace_once(path, '"updated_at_ms": 77', '"updated_at_ms": 78')
+        self.assertTrue(any("semantic_view_golden_fixture_sha256" in issue
+                            for issue in self.issues()))
+
     def test_cognitive_atom_schema_pin_is_enforced(self):
         path = self.repo / "docs" / "contracts" / "cognitive-atom-projection-v1.schema.json"
         replace_once(path, '"title": "ForgeOS', '"title": "Drifted ForgeOS')
@@ -148,24 +161,76 @@ class GovernanceEngineeringIntegrationTest(unittest.TestCase):
             self.assertEqual(limits[field], expected)
         self.assertEqual(data["journal"]["runtime_delivery"], governance.RUNTIME_DELIVERY)
 
+    def test_registry_freezes_exact_semantic_view_projection(self):
+        path = self.agent_root / "engineering" / "governance-contracts.yml"
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        self.assertEqual(data["version"], 11)
+        self.assertEqual(data["semantic_view"], governance.SEMANTIC_VIEW)
+        self.assertEqual(
+            data["canonical_refs"]["semantic_view_checker"],
+            "harness/governance_engineering/semantic_view.py",
+        )
+        self.assertNotEqual(
+            data["canonical_refs"]["semantic_view_checker"],
+            data["canonical_refs"]["checker"],
+        )
+
+    def test_semantic_view_checker_ref_drift_is_rejected(self):
+        path = self.agent_root / "engineering" / "governance-contracts.yml"
+        replace_once(
+            path,
+            "  semantic_view_checker: harness/governance_engineering/semantic_view.py",
+            "  semantic_view_checker: harness/governance_contract_check.py",
+        )
+        issues = self.issues()
+        self.assertTrue(any("canonical_refs.semantic_view_checker" in issue
+                            for issue in issues), issues)
+
+    def test_semantic_view_registry_drift_is_rejected(self):
+        path = self.agent_root / "engineering" / "governance-contracts.yml"
+        replace_once(path, "    max_claim_head_scan: 10000",
+                     "    max_claim_head_scan: 9999")
+        issues = self.issues()
+        self.assertTrue(any("semantic_view contract drifted" in issue
+                            for issue in issues), issues)
+
+    def test_semantic_view_schema_semantics_drift_is_rejected(self):
+        path = self.repo / "docs" / "contracts" / "governance-semantic-view-v1.schema.json"
+        schema = json.loads(path.read_text(encoding="utf-8"))
+        schema["x-forgeos-semantics"]["conflicts"] = "winner_selected"
+        path.write_text(json.dumps(schema, ensure_ascii=False), encoding="utf-8")
+        issues = self.issues()
+        self.assertTrue(any("x-forgeos-semantics drifted" in issue
+                            for issue in issues), issues)
+
+    def test_semantic_view_golden_semantics_drift_is_rejected(self):
+        path = (self.repo / "docs" / "contracts" / "fixtures" /
+                "governance-semantic-view-v1.json")
+        fixture = json.loads(path.read_text(encoding="utf-8"))
+        fixture["expected_assessment"]["projection"]["projection_sha256"] = "0" * 64
+        path.write_text(json.dumps(fixture, ensure_ascii=False), encoding="utf-8")
+        issues = self.issues()
+        self.assertTrue(any("expected_projection drifted" in issue
+                            for issue in issues), issues)
+
     def test_registry_freezes_exact_cognitive_atom_projection(self):
         path = self.agent_root / "engineering" / "governance-contracts.yml"
         data = yaml.safe_load(path.read_text(encoding="utf-8"))
-        self.assertEqual(data["version"], 10)
+        self.assertEqual(data["version"], 11)
         self.assertEqual(data["cognitive_atom_projection"],
                          governance.COGNITIVE_ATOM_PROJECTION)
 
     def test_registry_freezes_exact_artifact_evidence_adapter(self):
         path = self.agent_root / "engineering" / "governance-contracts.yml"
         data = yaml.safe_load(path.read_text(encoding="utf-8"))
-        self.assertEqual(data["version"], 10)
+        self.assertEqual(data["version"], 11)
         self.assertEqual(data["artifact_evidence_adapter"],
                          governance.ARTIFACT_EVIDENCE_ADAPTER)
 
     def test_registry_freezes_exact_command_observation_adapter(self):
         path = self.agent_root / "engineering" / "governance-contracts.yml"
         data = yaml.safe_load(path.read_text(encoding="utf-8"))
-        self.assertEqual(data["version"], 10)
+        self.assertEqual(data["version"], 11)
         self.assertEqual(data["command_observation_evidence_adapter"],
                          governance.COMMAND_OBSERVATION_EVIDENCE_ADAPTER)
 
@@ -261,6 +326,22 @@ class GovernanceEngineeringIntegrationTest(unittest.TestCase):
         replace_once(path, "forge-runtime governance journal show",
                      "forge governance journal show")
         self.assertTrue(any("compatible forge-runtime CLI" in issue for issue in self.issues()))
+
+    def test_skill_semantic_reads_require_explicit_as_of_time(self):
+        path = self.agent_root / "skills" / "evidence-claim-management.md"
+        text = path.read_text(encoding="utf-8").replace("--as-of-unix-ms", "--implicit-now")
+        path.write_text(text, encoding="utf-8")
+        issues = self.issues()
+        self.assertTrue(any("explicit time and shadow interpretation" in issue
+                            for issue in issues), issues)
+
+    def test_skill_semantic_reads_require_shadow_interpretation(self):
+        path = self.agent_root / "skills" / "evidence-claim-management.md"
+        replace_once(path, "semantic_projection_only_no_truth_or_authority",
+                     "semantic_projection_with_authority")
+        issues = self.issues()
+        self.assertTrue(any("explicit time and shadow interpretation" in issue
+                            for issue in issues), issues)
 
     def test_skill_requires_artifact_adapter_branch(self):
         path = self.agent_root / "skills" / "evidence-claim-management.md"

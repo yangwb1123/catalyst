@@ -17,18 +17,18 @@ const KIND_INDEX: &str = "governance_records_kind_appended";
 type ScheduleRow = (String, String, Vec<u8>, i64);
 
 #[test]
-fn v24_data_survives_v25_and_v26_migrations_and_journal_starts_empty() {
+fn v24_data_survives_current_migrations_and_journal_starts_empty() {
     let fixture = exact_v24_fixture();
     let before = schedule_rows(&fixture.connection());
 
-    let migrated = open_database(&fixture.database).expect("migrate exact v24 fixture to v26");
-    assert_eq!(schema_version(&migrated), 26);
+    let migrated = open_database(&fixture.database).expect("migrate exact v24 fixture to current");
+    assert_eq!(schema_version(&migrated), super::SCHEMA_VERSION);
     assert_eq!(schedule_rows(&migrated), before);
     assert_journal_empty(&migrated);
     drop(migrated);
 
-    let reopened = open_database(&fixture.database).expect("reopen migrated v26 fixture");
-    assert_eq!(schema_version(&reopened), 26);
+    let reopened = open_database(&fixture.database).expect("reopen migrated current fixture");
+    assert_eq!(schema_version(&reopened), super::SCHEMA_VERSION);
     assert_eq!(schedule_rows(&reopened), before);
     assert_journal_empty(&reopened);
     drop((reopened, fixture));
@@ -124,14 +124,14 @@ fn malformed_canonical_v25_objects_are_rejected_without_repair() {
 }
 
 #[test]
-fn final_validation_fault_rolls_v24_to_v26_back_atomically() {
+fn final_validation_fault_rolls_v24_to_current_back_atomically() {
     let fixture = exact_v24_fixture();
     let connection = fixture.connection();
     let before_schema = schema_snapshot(&connection);
     let before_rows = schedule_rows(&connection);
 
     let error = migrate_with_before_final_fault_for_test(&connection, |migrated| {
-        assert_eq!(schema_version(migrated), 26);
+        assert_eq!(schema_version(migrated), super::SCHEMA_VERSION);
         assert_journal_empty(migrated);
         migrated.execute_batch("CREATE TABLE rogue_v26_final_fault(id TEXT)")
     })
@@ -161,6 +161,9 @@ fn exact_v24_fixture() -> super::sqlite_group_agent_graph_run_support::Fixture {
     connection
         .execute_batch(super::RESTORE_HISTORICAL_ANALYSES_SQL)
         .expect("restore v24 endpoint definitions");
+    connection
+        .execute_batch(super::DROP_V27_SEMANTIC_VIEW_SQL)
+        .expect("drop v27 semantic projection");
     connection
         .execute_batch(
             "PRAGMA foreign_keys = ON;

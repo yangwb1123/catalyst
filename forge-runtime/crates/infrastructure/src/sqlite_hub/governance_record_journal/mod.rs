@@ -3,6 +3,7 @@ mod error;
 mod projection;
 mod read;
 mod rows;
+pub(super) mod semantic;
 mod stored;
 mod write;
 

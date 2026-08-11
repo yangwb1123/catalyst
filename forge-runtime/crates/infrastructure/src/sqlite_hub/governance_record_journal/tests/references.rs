@@ -2,8 +2,8 @@ use rusqlite::params;
 
 use crate::runtime_domain::governance_contract::GovernanceRecord;
 use crate::runtime_domain::{
-    GovernanceRecordAppendDisposition, GovernanceRecordJournalStore, GovernanceRecordKind,
-    HubStoreError, MAX_GOVERNANCE_RECORD_REFERENCE_DEPTH,
+    AppendGovernanceRecordBatch, GovernanceRecordJournalStore, GovernanceRecordKind, HubStoreError,
+    MAX_GOVERNANCE_RECORD_REFERENCE_DEPTH,
 };
 
 use super::fixtures::{
@@ -91,67 +91,63 @@ fn sequence_gap_conflicts_and_stale_head_is_corruption() {
 }
 
 #[test]
-fn supersession_and_replay_do_not_follow_unrelated_head_derivations() {
+fn supersession_and_replay_validate_current_head_derivations_atomically() {
     let fixture = StoreFixture::new();
     let records = golden_records();
-    append(&fixture, &records[..1], "closure-evidence", 100);
+    let (first, second) = current_chain_with_missing_ancestor(&fixture, &records);
+    assert_corrupt_request_without_writes(&fixture, &request(&[first], "closure-first", 999));
+    let third = claim_successor(&second, "kcr-chain-0003", Vec::new());
+    assert_corrupt_request_without_writes(&fixture, &request(&[third], "closure-third", 500));
+}
+
+fn current_chain_with_missing_ancestor(
+    fixture: &StoreFixture,
+    records: &[GovernanceRecord],
+) -> (GovernanceRecord, GovernanceRecord) {
+    append(fixture, &records[..1], "closure-evidence", 100);
+    let ancestor = claim_variant(&records[1], "kcr-ancestor", "claim-ancestor", Vec::new());
+    append(
+        fixture,
+        std::slice::from_ref(&ancestor),
+        "closure-ancestor",
+        150,
+    );
     let dependency = claim_variant(
         &records[1],
         "kcr-dependency",
         "claim-dependency",
-        Vec::new(),
+        vec![ancestor.metadata().record_id.clone()],
     );
     append(
-        &fixture,
+        fixture,
         std::slice::from_ref(&dependency),
         "closure-dependency",
         200,
     );
     let first = claim_variant(&records[1], "kcr-chain-0001", "claim-chain", Vec::new());
-    append(&fixture, std::slice::from_ref(&first), "closure-first", 300);
+    append(fixture, std::slice::from_ref(&first), "closure-first", 300);
     let second = claim_successor(
         &first,
         "kcr-chain-0002",
         vec![dependency.metadata().record_id.clone()],
     );
     append(
-        &fixture,
+        fixture,
         std::slice::from_ref(&second),
         "closure-second",
         400,
     );
-    corrupt_claim_derivation(&fixture, &dependency, "kcr-missing-ancestor");
-
-    let replay = fixture
-        .store
-        .append_governance_record_batch(&request(&[first], "closure-first", 999))
-        .expect("advanced head ancestry is irrelevant to old replay");
-    assert_eq!(
-        replay.disposition,
-        GovernanceRecordAppendDisposition::ExactReplay
-    );
-    let third = claim_successor(&second, "kcr-chain-0003", Vec::new());
-    append(&fixture, &[third], "closure-third", 500);
-
-    assert_explicit_derivation_rejects(&fixture, &records[1], &dependency);
-}
-
-fn assert_explicit_derivation_rejects(
-    fixture: &StoreFixture,
-    template: &GovernanceRecord,
-    dependency: &GovernanceRecord,
-) {
-    let explicit = claim_variant(
-        template,
-        "kcr-explicit-derived",
-        "claim-explicit-derived",
-        vec![dependency.metadata().record_id.clone()],
-    );
-    let error = fixture
-        .store
-        .append_governance_record_batch(&request(&[explicit], "closure-explicit", 600))
-        .expect_err("explicit derivation follows and rejects dangling ancestry");
-    assert!(matches!(error, HubStoreError::Corrupt { .. }), "{error:?}");
+    fixture
+        .connection()
+        .execute_batch(
+            "PRAGMA foreign_keys=OFF;
+             DELETE FROM governance_claim_semantic_views WHERE aggregate_id='claim-ancestor';
+             DELETE FROM governance_semantic_heads WHERE aggregate_id='claim-ancestor';
+             DELETE FROM governance_structural_heads WHERE aggregate_id='claim-ancestor';
+             DELETE FROM governance_records WHERE record_id='kcr-ancestor';",
+        )
+        .expect("remove referenced ancestor from every identity projection");
+    (first, second)
 }
 
 #[test]
@@ -372,11 +368,18 @@ fn assert_corrupt_append_without_writes(
         "claim-dependency-new",
         Vec::new(),
     );
+    assert_corrupt_request_without_writes(fixture, &request(&[candidate], key, 500));
+}
+
+fn assert_corrupt_request_without_writes(
+    fixture: &StoreFixture,
+    append_request: &AppendGovernanceRecordBatch,
+) {
     let before_records = row_count(&fixture.connection(), "governance_records");
     let before_batches = row_count(&fixture.connection(), "governance_record_append_batches");
     let error = fixture
         .store
-        .append_governance_record_batch(&request(&[candidate], key, 500))
+        .append_governance_record_batch(append_request)
         .expect_err("corrupt dependency batch blocks append");
     assert!(matches!(error, HubStoreError::Corrupt { .. }), "{error:?}");
     assert_eq!(

@@ -21,7 +21,9 @@ import {
   probeTypecheck,
   readProjectLifecycle,
 } from './acceptance.mjs';
-import { INAPPLICABLE, NO_TOOL, withCategory } from './acceptance-kernel.mjs';
+import {
+  COMMAND_OUTPUT_MAX_BYTES, INAPPLICABLE, NO_TOOL, run, withCategory,
+} from './acceptance-kernel.mjs';
 
 function acceptanceRows(extra) {
   return [
@@ -64,6 +66,27 @@ test('forge-core probes run go test/build/vet from the module and propagate fail
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('command runner keeps verbose evidence within a finite fail-closed buffer', () => {
+  const aboveNodeDefault = 1024 * 1024 + 4096;
+  const verbose = run(process.execPath, [
+    '-e', `process.stdout.write('v'.repeat(${aboveNodeDefault}))`,
+  ]);
+  assert.equal(verbose.ok, true, verbose.out.slice(-200));
+  assert.equal(verbose.out.length, aboveNodeDefault);
+
+  const overflow = run(process.execPath, [
+    '-e', `process.stdout.write('x'.repeat(${COMMAND_OUTPUT_MAX_BYTES + 65536}))`,
+  ]);
+  assert.equal(overflow.ok, false, 'output beyond the finite cap must fail closed');
+  assert.equal(overflow.code, null);
+  assert.match(overflow.out, /ENOBUFS/);
+  assert.match(overflow.out, /^x+/, 'partial command evidence must survive ENOBUFS');
+  assert.ok(
+    overflow.out.length <= COMMAND_OUTPUT_MAX_BYTES + 1024 * 1024,
+    'captured evidence must remain bounded near the configured limit',
+  );
 });
 
 test('projects without forge-core get honest inapplicable build/typecheck N/A', () => {

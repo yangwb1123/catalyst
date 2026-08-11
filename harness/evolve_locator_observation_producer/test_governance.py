@@ -28,7 +28,7 @@ class EvolveLocatorProducerGovernanceTest(unittest.TestCase):
     def test_registry_freezes_exact_v10_shipped_scope(self):
         path = self.agent_root / "engineering" / "governance-contracts.yml"
         data = yaml.safe_load(path.read_text(encoding="utf-8"))
-        self.assertEqual(data["version"], 10)
+        self.assertEqual(data["version"], 11)
         self.assertEqual(
             data["local_evolve_repo_locator_observation_producer"],
             governance.LOCAL_EVOLVE_LOCATOR_OBSERVATION_PRODUCER,

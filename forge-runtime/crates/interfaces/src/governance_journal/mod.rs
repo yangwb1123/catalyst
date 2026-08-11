@@ -13,11 +13,20 @@ pub use output::{GovernanceJournalOutput, write_output};
 
 use crate::{
     args::{Args, GovernanceCommand, GovernanceJournalCommand},
-    runtime_application::{AppendGovernanceRecordBatchInput, GovernanceRecordJournalService},
-    runtime_domain::{GovernanceRecordListFilter, governance_contract::MAX_RECORD_SET_BYTES},
+    runtime_application::{
+        AppendGovernanceRecordBatchInput, GovernanceRecordJournalService,
+        GovernanceSemanticViewService,
+    },
+    runtime_domain::{
+        GovernanceRecordListFilter, GovernanceSemanticListFilter, GovernanceValidationJobFilter,
+        governance_contract::MAX_RECORD_SET_BYTES,
+    },
     state_path::{hub_database_path, unix_time_millis},
 };
-use output::{AppendReceiptView, InspectionListView, InspectionView, StructuralHeadView};
+use output::{
+    AppendReceiptView, ConflictListView, InspectionListView, InspectionView,
+    SemanticAssessmentView, StructuralHeadView, ValidationJobListView,
+};
 
 pub fn execute(
     args: &Args,
@@ -48,6 +57,20 @@ pub fn execute(
             record_kind,
             aggregate_id,
         } => head(args, *record_kind, aggregate_id),
+        GovernanceJournalCommand::View {
+            record_kind,
+            aggregate_id,
+            as_of_unix_ms,
+        } => view(args, *record_kind, aggregate_id, *as_of_unix_ms),
+        GovernanceJournalCommand::Conflicts {
+            as_of_unix_ms,
+            limit,
+        } => conflicts(args, *as_of_unix_ms, *limit),
+        GovernanceJournalCommand::ValidationJobs {
+            as_of_unix_ms,
+            due_only,
+            limit,
+        } => validation_jobs(args, *as_of_unix_ms, *due_only, *limit),
     }
 }
 
@@ -109,10 +132,66 @@ fn head(
     )))
 }
 
+fn view(
+    args: &Args,
+    record_kind: crate::runtime_domain::GovernanceRecordKind,
+    aggregate_id: &str,
+    as_of_unix_ms: i64,
+) -> Result<GovernanceJournalOutput, Box<dyn Error>> {
+    GovernanceSemanticViewService::preflight_inspect(aggregate_id, as_of_unix_ms)?;
+    let assessment =
+        semantic_read_service(args)?.inspect(record_kind, aggregate_id, as_of_unix_ms)?;
+    Ok(GovernanceJournalOutput::SemanticAssessment(Box::new(
+        SemanticAssessmentView::from(assessment),
+    )))
+}
+
+fn conflicts(
+    args: &Args,
+    as_of_unix_ms: i64,
+    limit: usize,
+) -> Result<GovernanceJournalOutput, Box<dyn Error>> {
+    let filter = GovernanceSemanticListFilter {
+        as_of_unix_ms,
+        limit,
+    };
+    GovernanceSemanticViewService::preflight_conflicts(&filter)?;
+    let values = semantic_read_service(args)?.list_conflicts(&filter)?;
+    Ok(GovernanceJournalOutput::ConflictList(
+        ConflictListView::new(values, as_of_unix_ms),
+    ))
+}
+
+fn validation_jobs(
+    args: &Args,
+    as_of_unix_ms: i64,
+    due_only: bool,
+    limit: usize,
+) -> Result<GovernanceJournalOutput, Box<dyn Error>> {
+    let filter = GovernanceValidationJobFilter {
+        as_of_unix_ms,
+        due_only,
+        limit,
+    };
+    GovernanceSemanticViewService::preflight_validation_jobs(&filter)?;
+    let values = semantic_read_service(args)?.list_validation_jobs(&filter)?;
+    Ok(GovernanceJournalOutput::ValidationJobList(
+        ValidationJobListView::new(values, as_of_unix_ms),
+    ))
+}
+
 fn read_service(args: &Args) -> Result<GovernanceRecordJournalService, Box<dyn Error>> {
     let database = hub_database_path(args.state_dir.as_deref())?;
     let store = Arc::new(SqliteHubStore::open_existing_current_read_only(database)?);
     Ok(GovernanceRecordJournalService::new(store))
+}
+
+fn semantic_read_service(args: &Args) -> Result<GovernanceSemanticViewService, Box<dyn Error>> {
+    let database = hub_database_path(args.state_dir.as_deref())?;
+    let store = Arc::new(SqliteHubStore::open_existing_current_live_read_only(
+        database,
+    )?);
+    Ok(GovernanceSemanticViewService::new(store))
 }
 
 fn read_record_set(path: &Path) -> Result<String, Box<dyn Error>> {

@@ -1,4 +1,4 @@
-//! Validates live v12-v26 files before a no-send dispatch re-entry inspection.
+//! Validates exact live Hub files for read-only snapshot consumers.
 
 use std::{
     fs,
@@ -19,9 +19,32 @@ const WAL_HEADER_BYTES: usize = 32;
 const WAL_MAGIC_BIG_ENDIAN_CHECKSUM: [u8; 4] = [0x37, 0x7f, 0x06, 0x82];
 const WAL_MAGIC_LITTLE_ENDIAN_CHECKSUM: [u8; 4] = [0x37, 0x7f, 0x06, 0x83];
 const SHM_MINIMUM_BYTES: u64 = 32_768;
+const DISPATCH_REENTRY_VERSIONS: &[i64] = &[
+    12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27,
+];
+
+pub(in crate::sqlite_hub) fn open_existing_current_live_read_only_database(
+    path: &Path,
+) -> Result<Connection, HubStoreError> {
+    open_existing_live_read_only_database(path, &[27], "current schema version 27", true)
+}
 
 pub(in crate::sqlite_hub) fn open_existing_dispatch_reentry_read_only_database(
     path: &Path,
+) -> Result<Connection, HubStoreError> {
+    open_existing_live_read_only_database(
+        path,
+        DISPATCH_REENTRY_VERSIONS,
+        "dispatch re-entry schema version 12..=27",
+        false,
+    )
+}
+
+fn open_existing_live_read_only_database(
+    path: &Path,
+    accepted_versions: &[i64],
+    requirement: &str,
+    upgrade_supported: bool,
 ) -> Result<Connection, HubStoreError> {
     let before = LiveDatabaseIdentity::inspect(path)?;
     let uri = read_only_file_uri(&before.canonical_path)?;
@@ -37,20 +60,43 @@ pub(in crate::sqlite_hub) fn open_existing_dispatch_reentry_read_only_database(
         .pragma_update(None, "query_only", true)
         .map_err(contract::sqlite_error)?;
     let version = schema_version(&connection).map_err(contract::sqlite_error)?;
-    if ![12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26].contains(&version) {
-        return Err(read_only_schema_required(
-            version,
-            "dispatch re-entry schema version 12..=26",
-        ));
-    }
-    contract::validate_migration_source(&connection, version)?;
-    let after = LiveDatabaseIdentity::inspect(path)?;
-    if before != after {
+    validate_live_schema(
+        &connection,
+        version,
+        accepted_versions,
+        requirement,
+        upgrade_supported,
+    )?;
+    let clean_before = before.wal.as_ref().is_none_or(|wal| wal.length == 0);
+    let after = LiveDatabaseIdentity::inspect_after_open(path, clean_before)?;
+    if !before.stable_after_open(&after) {
         return Err(HubStoreError::Unavailable {
-            message: "Hub main database or WAL changed during dispatch re-entry inspection".into(),
+            message: "Hub main database or WAL changed during live read-only inspection".into(),
         });
     }
     Ok(connection)
+}
+
+fn validate_live_schema(
+    connection: &Connection,
+    version: i64,
+    accepted_versions: &[i64],
+    requirement: &str,
+    upgrade_supported: bool,
+) -> Result<(), HubStoreError> {
+    if accepted_versions.contains(&version) {
+        contract::validate_migration_source(connection, version)?;
+        return Ok(());
+    }
+    if upgrade_supported && (1..27).contains(&version) {
+        contract::validate_migration_source(connection, version)?;
+        return Err(HubStoreError::Unavailable {
+            message: format!(
+                "live Hub read requires {requirement}; found valid v{version}; upgrade required"
+            ),
+        });
+    }
+    Err(read_only_schema_required(version, requirement))
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -63,6 +109,14 @@ struct LiveDatabaseIdentity {
 
 impl LiveDatabaseIdentity {
     fn inspect(path: &Path) -> Result<Self, HubStoreError> {
+        Self::inspect_with_empty_wal(path, true)
+    }
+
+    fn inspect_after_open(path: &Path, clean_before: bool) -> Result<Self, HubStoreError> {
+        Self::inspect_with_empty_wal(path, clean_before)
+    }
+
+    fn inspect_with_empty_wal(path: &Path, allow_empty_wal: bool) -> Result<Self, HubStoreError> {
         location::verify_existing_private_parent(path)?;
         let metadata = location::checked_database_metadata(path)?;
         location::verify_private_file_permissions(path, &metadata)?;
@@ -78,7 +132,11 @@ impl LiveDatabaseIdentity {
         let shm = matching_sidecar(path, &canonical_path, "-shm")?;
         match (&wal, &shm) {
             (Some(wal), Some(shm)) => {
-                validate_wal(&location::auxiliary_path(&canonical_path, "-wal"), wal)?;
+                validate_wal(
+                    &location::auxiliary_path(&canonical_path, "-wal"),
+                    wal,
+                    allow_empty_wal,
+                )?;
                 if shm.length < SHM_MINIMUM_BYTES {
                     return Err(invalid_sidecar("SQLite SHM is truncated"));
                 }
@@ -86,7 +144,7 @@ impl LiveDatabaseIdentity {
             (None, None) => {}
             _ => {
                 return Err(invalid_sidecar(
-                    "SQLite dispatch re-entry requires WAL and SHM sidecars together",
+                    "SQLite live read-only inspection requires WAL and SHM sidecars together",
                 ));
             }
         }
@@ -96,6 +154,18 @@ impl LiveDatabaseIdentity {
             wal,
             shm: shm.map(StableFileIdentity::object),
         })
+    }
+
+    fn stable_after_open(&self, after: &Self) -> bool {
+        if self == after {
+            return true;
+        }
+        self.canonical_path == after.canonical_path
+            && self.database == after.database
+            && self.wal.is_none()
+            && self.shm.is_none()
+            && after.wal.as_ref().is_some_and(|wal| wal.length == 0)
+            && after.shm.is_some()
     }
 }
 
@@ -179,7 +249,7 @@ fn reject_rollback_journal(path: &Path, canonical_path: &Path) -> Result<(), Hub
         match fs::symlink_metadata(&journal) {
             Ok(_) => {
                 return Err(invalid_sidecar(
-                    "SQLite rollback journal is not valid for WAL re-entry",
+                    "SQLite rollback journal is not valid for live WAL inspection",
                 ));
             }
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
@@ -189,7 +259,16 @@ fn reject_rollback_journal(path: &Path, canonical_path: &Path) -> Result<(), Hub
     Ok(())
 }
 
-fn validate_wal(path: &Path, identity: &StableFileIdentity) -> Result<(), HubStoreError> {
+fn validate_wal(
+    path: &Path,
+    identity: &StableFileIdentity,
+    allow_empty: bool,
+) -> Result<(), HubStoreError> {
+    // A read-only WAL connection can leave a zero-length WAL beside its full SHM.
+    // The pair is a clean coordination placeholder; non-zero WALs need a real header.
+    if allow_empty && identity.length == 0 {
+        return Ok(());
+    }
     if identity.length < WAL_HEADER_BYTES as u64 {
         return Err(invalid_sidecar("SQLite WAL is truncated"));
     }
@@ -221,7 +300,7 @@ fn read_only_file_uri(path: &Path) -> Result<Url, HubStoreError> {
 fn changed(path: &Path) -> HubStoreError {
     HubStoreError::Unavailable {
         message: format!(
-            "Hub dispatch re-entry files changed while their identity was checked: {}",
+            "Hub live read-only files changed while their identity was checked: {}",
             path.display()
         ),
     }

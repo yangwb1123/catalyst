@@ -9,6 +9,11 @@ pub const TEXT: &str = "usage:
   forge-runtime [OPTIONS] governance journal list [--kind EvidenceRecord|KnowledgeClaim]
                 [--aggregate-id ID] [--limit N] [--include-record]
   forge-runtime [OPTIONS] governance journal head KIND AGGREGATE_ID
+  forge-runtime [OPTIONS] governance journal view KIND AGGREGATE_ID
+                --as-of-unix-ms N
+  forge-runtime [OPTIONS] governance journal conflicts --as-of-unix-ms N [--limit N]
+  forge-runtime [OPTIONS] governance journal validation-jobs --as-of-unix-ms N
+                [--due-only] [--limit N]
   forge-runtime [OPTIONS] group create NAME
   forge-runtime [OPTIONS] group add GROUP_ID PATH [--role ROLE]
   forge-runtime [OPTIONS] group context GROUP_ID [--include-content] [--max-bytes N]
@@ -124,8 +129,12 @@ pub const TEXT: &str = "usage:
   For prompt add, '-' reads UTF-8 prompt content from standard input.
   Governance journal append validates one exact record set before opening the Hub.
   Journal reads require an existing current-schema Hub and never create or migrate it.
+  Ordinary show/list/head reads use the immutable sidecar-rejecting path. Semantic
+  reads use exact-v27 live mode=ro/query_only and may coordinate transient WAL/SHM.
   Journal show/list omit exact record content unless --include-record is explicit.
   A structural head reports sequence position only, never truth, freshness, or authority.
+  Semantic view reads require explicit caller time and report deterministic projection,
+  conflict candidates, or validation scheduling only—never truth or authority.
   Group context is local-only and reads persisted Prompt history, never project files.
   Context output omits Prompt content unless --include-content is explicit.
   Group run prepare freezes context locally; it does not execute or contact a model.

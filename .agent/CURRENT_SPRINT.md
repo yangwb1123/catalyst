@@ -1437,6 +1437,47 @@ Registry v10 将 ADR 0051/0052/0053 同列 `shipped_producers`，`staged_produce
 governance/Skill/scaffold 接线、跨语言/对抗/资源边界测试已完成，两份独立 fresh-context review 均为 CLEAN；完整 `forge accept` 是最终
 completion authority，未真实 ACCEPTED 时不得提交。fixture 永远只是 deterministic contract bytes，不是 live parse/build/architecture receipt。
 
+## Sprint 102（✅ DONE；Local Governance Semantic View v1）— ADR 0054
+
+本轮在 ADR 0045/0046 的不可变 GovernanceRecord journal 与 structural head 之上，交付本地、只读、无权威的 semantic view：
+`view`、`conflicts`、`validation-jobs` 均要求显式非负 `--as-of-unix-ms`，永远评估当前 structural aggregate tail，
+不得按时间选择历史版本，也不签发 truth、winner、adjudication、approval、completion、freshness 或 effect。Claim type 与
+authority-free shadow state、sequence-one 全合法初态及后继边、conflict/job identity、validation plan 与 canonical assessment digest
+均由共享 domain 规则重验；业务事实、声明区间位置、冲突声明、校验计划与系统建议保持分离。
+
+(1) **SQLite v27 与 live read boundary**：v26→v27 只新增三张 materialized semantic 表及索引，迁移在同一原子事务内重验完整 batch、
+aggregate history、reference relation、lifecycle、head/materialization/parity 后 backfill；dangling/wrong-subject/cycle、非法历史 transition、
+digest/cardinality drift 均回滚。升级前备份改为 SQLite-consistent 单文件 snapshot，包含 committed hot-WAL pages。semantic read 使用
+exact-v27 `mode=ro` + `query_only` 的单一 Deferred snapshot，不迁移、不做 Hub 逻辑写；SQLite 可能创建/删除空 WAL/SHM 或协调 SHM
+read-lock bytes，完全只读文件系统可返回 Unavailable。普通 `show/list/head` 继续保持 immutable、拒绝 sidecar 的既有契约。
+
+(2) **完整性与有界资源**：单 view 在共享预算内验证完整 aggregate history、transitive reference closure 与所有 owning batch sibling 的
+unique union（最多 1,024 records/16 MiB）；multi-head scan 共享 65,536 unique records/256 MiB/1,000,000 work units，Claim census
+最多 10,000，公开列表/冲突组最多 100。immutable tails、structural heads、semantic heads、Claim child 与 expected/materialized jobs
+执行全局双向 identity parity；超限为 Unavailable，缺失/额外/漂移为 Corrupt，禁止返回 partial、empty 或虚假 no-conflict。append 与
+exact replay 同样先验证当前 aggregate 的完整 history/closure，再允许写入或重放；rebuild/migration 使用完整 durable 全量校验，不把公开
+scan 上限误施加到合法的大型历史库。
+
+(3) **契约、治理与分发**：Schema、golden、registry v11、ADR、canonical human standard、runtime/engineering README、backup runbook、
+Evidence/Claim Skill、activation、standalone semantic checker 与 fresh/upgrade scaffold 已对齐。Golden source 使用可解析 JSON Pointer，
+checker 与 Rust fixture test 都绑定 source record 的 metadata/id/sequence/digest。当前 pins 为 schema
+`360fb89d1571920090eb28e54678e8aa96f5d007d5acec693beb67fbb8f963f3`、fixture
+`a3b6fb9b397231a0647fca845f0118d060c77d975ead2dccb55819aeea6dd66a`、governance policy
+`a086a3f601cfaa43cea8fa45a91748f5a3ef612c93e1d91dd16c0904eb79424b`；scaffold 复制并实际运行 semantic checker 与其对抗测试，
+不安装或冒充 repository-only Rust persistence runtime。
+
+(4) **复审推动的缺陷闭合**：两份 fresh-context contract/runtime review 最终均 **CLEAN**，0 P0–P3。复审推动关闭 immutable opener
+误用于 live semantic read、tail-only replay/append、balanced missing+extra parity 绕过、owning-batch amplification、unbounded history decode、
+v26 relation backfill 漏验、authority-like Claim states、unbound conflict/job identity、无效 fixture fragment、过期 v24 文档与 hot-WAL 裸复制
+备份等真实问题。接受门禁首次还暴露 Node `spawnSync` 默认输出缓冲和仓库内 TMPDIR 污染测试隔离：runner 现使用显式 16 MiB 有界
+缓冲，越界保留诊断并失败关闭；最终验收使用 repository-external `/tmp`，未放宽 legacy 或 Go 测试语义。
+
+(5) **最终验证**：Rust 1.93 workspace/all-targets、strict all-feature Clippy、fmt、Go full test/vet/build/lint、architecture **8/8**、
+`forge check` **13/13**、semantic adversarial/operational checker、fresh init/legacy upgrade、hot-WAL/live snapshot/concurrent writer/atomic
+migration/rollback/backup 与 `git diff --check` 均通过；两份独立复审为 CLEAN。完整 `forge accept` 为 **ACCEPTED**（Python
+**589**、Node **402**、Forge Core Go **1,628 observed tests**；9 PASS、0 FAIL、2 个诚实 N/A）。以上只证明本地 deterministic
+semantic interpretation 与一致性边界，不把声明、AI 建议或 projection 升级成知识真值、冲突裁决、执行授权或完成证明。
+
 ## 下一前沿(需外部资源 / 后续阶段 / 投机增强 / 明确非目标,非本环境可完整验证)
 - **Graph 下一协议切片**:SQLite v17–v24 已交付 successor candidate、per-node request/lifecycle、receipt/content dataflow、wave-ready/admit、本地 hard-crash adjudication与 8 MiB successor candidate 持久化上限；下一步是顶层整图执行循环、并发 wave 的失败传播/恢复以及安全 resume/branching。不得把当前逐节点 operator 驱动或 Hub-local single-consumption 冒充远程 exactly-once。
 - **真点火** `--agent-cmd=claude`:**multi-agent running to completion 已坐实**(Sprint 25:真 claude 多-agent 跑到 converge MET,增量级 + 版本级)。完整旋钮:四维资源护栏 + 成本三维(phase/时间/美元)+ 任务注入 + 写权限 + 模型路由 + 工作目录 + retry + loop-back;诚实分工:agent 自治增量绿、人确认版本竣工。docs/ignition.md 有完整配方 + 实测

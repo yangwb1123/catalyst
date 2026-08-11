@@ -29,9 +29,9 @@ class GoDependencyProducerGovernanceTest(unittest.TestCase):
         path = self.agent_root / "engineering" / "governance-contracts.yml"
         return path, yaml.safe_load(path.read_text(encoding="utf-8"))
 
-    def test_registry_freezes_exact_v10_shipped_producer(self):
+    def test_registry_freezes_exact_v11_shipped_producer(self):
         _, data = self.policy()
-        self.assertEqual(data["version"], 10)
+        self.assertEqual(data["version"], 11)
         self.assertEqual(
             data["local_go_package_dependency_graph_observation_producer"],
             governance.LOCAL_GO_PACKAGE_DEPENDENCY_GRAPH_OBSERVATION_PRODUCER,

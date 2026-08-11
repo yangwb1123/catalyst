@@ -47,6 +47,13 @@ class SpecValidationTest(unittest.TestCase):
     def issues(self):
         return engineering.check_agent_engineering_spec(self.agent_root)
 
+    def assert_activation_ref_required(self, key):
+        path = self.agent_root / "engineering" / "activation.yml"
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        del data["canonical_extension_refs"][key]
+        path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+        self.assertTrue(any("canonical_extension_refs" in issue for issue in self.issues()))
+
     def test_live_contract_copy_passes(self):
         self.assertEqual(self.issues(), [])
 
@@ -189,25 +196,19 @@ class SpecValidationTest(unittest.TestCase):
         self.assertEqual(self.issues(), [])
 
     def test_backend_extension_cannot_leave_canonical_registry(self):
-        path = self.agent_root / "engineering" / "activation.yml"
-        data = yaml.safe_load(path.read_text(encoding="utf-8"))
-        del data["canonical_extension_refs"]["backend_policy"]
-        path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
-        self.assertTrue(any("canonical_extension_refs" in issue for issue in self.issues()))
+        self.assert_activation_ref_required("backend_policy")
 
     def test_frontend_extension_cannot_leave_canonical_registry(self):
-        path = self.agent_root / "engineering" / "activation.yml"
-        data = yaml.safe_load(path.read_text(encoding="utf-8"))
-        del data["canonical_extension_refs"]["frontend_profiles"]
-        path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
-        self.assertTrue(any("canonical_extension_refs" in issue for issue in self.issues()))
+        self.assert_activation_ref_required("frontend_profiles")
 
     def test_frontend_architecture_extension_cannot_leave_registry(self):
-        path = self.agent_root / "engineering" / "activation.yml"
-        data = yaml.safe_load(path.read_text(encoding="utf-8"))
-        del data["canonical_extension_refs"]["frontend_architecture_contract"]
-        path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
-        self.assertTrue(any("canonical_extension_refs" in issue for issue in self.issues()))
+        self.assert_activation_ref_required("frontend_architecture_contract")
+
+    def test_governance_semantic_view_decision_cannot_leave_registry(self):
+        self.assert_activation_ref_required("governance_semantic_view_decision")
+
+    def test_governance_semantic_view_checker_cannot_leave_registry(self):
+        self.assert_activation_ref_required("governance_semantic_view_checker")
 
     def test_frontend_architecture_policy_drift_is_rejected(self):
         path = self.agent_root / "engineering" / "frontend-code-architecture.yml"

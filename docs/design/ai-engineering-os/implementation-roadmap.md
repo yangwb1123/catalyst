@@ -33,6 +33,8 @@ ADR-0049 随后交付独立 command-observation adapter：strict exact argv/sour
 不认证 digest profile/producer、不持久化或执行 effect；ADR-0051 已另行交付显式 opt-in 的受限 Unix local gate command producer。
 ADR-0050 又交付独立 Evolve repository-locator adapter：caller-declared exact locator/content/scan-context/producer/source + Governance binding
 映射为既有 `repo_locator` EvidenceRecord。它不读取当前 repo/report、不验证 digest preimage、不确认 scan judgment/completion；ADR-0052 已另行交付显式 opt-in 的 local Evolve locator producer。ADR-0053 也已交付 selected-module lexical Go dependency graph producer，但它不等于 Wave 2 authoritative graph 或 impact closure。
+ADR-0054 已交付 local Governance semantic view v1：SQLite v27 从 exact journal 原子 materialize declared aggregate tail、authority-free lifecycle subset、
+显式 caller-time temporal labels、冲突候选与 Assumption/Hypothesis validation schedule。它不选择 truth/winner、不执行 validation、不签发 authority。
 
 | 节点 | 当前覆盖 | 已有基础 | 主要缺口 |
 |---:|---|---|---|
@@ -56,7 +58,7 @@ ADR-0050 又交付独立 Evolve repository-locator adapter：caller-declared exa
 
 执行平面当前也只有本地 process、Docker/Firecracker 等基础，不存在 Device Registry、远程 Runner/Placement/Lease/Migration；
 完整 coding-workspace exchange 与 Rust runtime OS sandbox 集成仍是缺口。除 ADR-0047 明确限定的 Claim→Atom pure shadow
-投影与 ADR-0048–0050 的 artifact/command-observation/Evolve-locator→Evidence pure shadow adapters 外，AADM、Reflection 和 Device Fabric 文档都属于
+投影、ADR-0048–0050 的 source→Evidence pure shadow adapters 与 ADR-0054 declared semantic view 外，AADM、Reflection 和 Device Fabric 文档都属于
 目标态，不得从命令名称、已有 runner、投影或适配结果推断已经交付。
 
 最危险的三个先决缺口：
@@ -108,8 +110,10 @@ instruction、hard guard、transition、completion、effect 或 persistence；De
 ## 4. Wave 1 — Evidence、Claim、Context 与权限内核（最高优先）
 
 - [x] 实现 ADR-0046 narrow local append-only exact-record journal 与 structural head；
-- [ ] 在 journal 之上实现 semantic current materialized view；
-- [ ] 在 0F-A 严格记录之上实现 durable KnowledgeClaim lifecycle transition、current/conflict materialized view、freshness enforcement 与 validation job scheduling；
+- [x] 由 ADR-0054 在 journal 之上实现 deterministic semantic current materialized view；
+- [x] 由 ADR-0054 在 0F-A 严格记录之上实现 durable authority-free KnowledgeClaim lifecycle subset、current/conflict candidate view、
+  declared-time freshness/validity evaluation 与 validation job scheduling；
+- [ ] 在 Grant/PDP/Approval trust root 之后实现 confirmed/accepted/active/waived/validated/resolved/adopted 等 authority-bearing lifecycle promotion；
 - [ ] 实现 `ContextPackage v1` 的选择、遗漏、redaction、token budget、digest 和 cache invalidation；
 - [x] 把 exact `forgeos.artifact.v1` provenance 通过 ADR-0048 strict pure shadow adapter 适配为 Evidence；
 - [x] 把 exact `forgeos.command-observation/v1` 通过 ADR-0049 strict pure shadow adapter 适配为 gate/test Evidence；
@@ -145,6 +149,14 @@ Python/Go/Rust 产生相同 canonical locator/source/request/Evidence bytes 与 
 `ADAPTED_SHADOW (locator mapping only; no file/report verification, scan judgment, completion, truth, authority, claim, atom, persistence, or effect attestation)`；
 adapter 不读取 current repo/report、不解析 symlink、不验证 file/report/tree/parameters digest preimage、不确认 scan judgment/completion，
 也不写 journal/SQLite。SQLite v25 与所有既有 wire 均未改变；ADR-0052 producer 的交付不扩大该 pure adapter 的 authority。
+
+**ADR-0054 semantic-view 窄切片已达判据。** Exact current journal tail 在 domain/application/SQLite/CLI 中产生相同的 v1 projection 与 golden
+digest；`as_of_unix_ms` 只评价该 tail，不回选历史记录。append、exact replay、v26→v27 backfill、read 和 rebuild 均从 immutable records 重算，
+backfill/rebuild 还重验完整 history/reference relations，并对 materialized exact-key/cardinality/columns 失败关闭。Public semantic read 使用 exact-v27
+`mode=ro + query_only` live opener 和单一 Deferred snapshot；它不逻辑写 Hub，但 SQLite 可以协调 SHM 或创建/移除 transient empty sidecar。
+单 aggregate 与 multi-head scan 分别受 1,024/16 MiB 及 65,536/256 MiB/1,000,000 work budgets 约束。所有 public read 显式接收
+`as_of_unix_ms`，冲突只列 candidate，validation job 只排期；允许的 durable transition 限于 shadow subset。结果固定
+`semantic_projection_only_no_truth_or_authority`，不得推断 confirmed fact、accepted Decision、validation verdict、hard gate、knowledge apply 或 effect。
 
 **完成判据。** Coding Agent 越路径、Reviewer 写代码、Migration 直接 apply production、Release 访问 credential 均被拒绝；
 Agent 不能签发 Grant 或确认业务事实；源或 context 漂移使批准失效；不可信正文不能进入 instruction lane；非法状态跳转、

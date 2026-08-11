@@ -9,11 +9,18 @@ use crate::runtime_domain::{
     GOVERNANCE_RECORD_JOURNAL_VERSION, GovernanceRecordAppendDisposition,
     GovernanceRecordAppendReceipt, GovernanceStructuralHead, HubStoreError,
     validate_governance_record_append, validate_governance_record_relations,
+    validate_governance_semantic_append,
 };
 
-use super::{closure, error, projection, rows, stored};
+use super::{closure, error, projection, rows, semantic, stored};
 
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
+
+pub(super) struct DecodedStoredBatch {
+    pub records: Vec<stored::DecodedRecord>,
+    request: AppendGovernanceRecordBatch,
+    receipt: GovernanceRecordAppendReceipt,
+}
 
 pub(super) fn append(
     connection: &mut Connection,
@@ -57,12 +64,16 @@ fn create(
             "governance aggregate sequence space is exhausted",
         ));
     }
+    semantic::validate_prior_projections(transaction, &heads)?;
     let dependencies = closure::load(transaction, candidates, &heads)?;
+    validate_governance_semantic_append(candidates, &dependencies, &heads)
+        .map_err(|problem| error::conflict(problem.message))?;
     let next_heads = validate_governance_record_append(request, &dependencies, &heads)
         .map_err(|problem| error::conflict(problem.message))?;
     insert_batch(transaction, request, candidates.len())?;
     insert_records(transaction, request, candidates)?;
     upsert_heads(transaction, &next_heads)?;
+    semantic::refresh_after_append(transaction, candidates, request.appended_at_ms)?;
     let stored = rows::find_batch_by_id(transaction, &request.batch_id)?
         .ok_or_else(|| error::corrupt("created governance append batch disappeared"))?;
     let (_, receipt) = decode_stored_batch(transaction, &stored)?;
@@ -102,13 +113,22 @@ fn validate_replay_relations(
     projection::heads_for_append(transaction, &candidates)?;
     let dependencies = closure::load_stored(transaction, &candidates, &[])?;
     validate_governance_record_relations(request, &dependencies)
-        .map_err(|problem| error::corrupt(problem.message))
+        .map_err(|problem| error::corrupt(problem.message))?;
+    semantic::validate_current_for_candidates(transaction, &candidates)
 }
 
 pub(super) fn decode_stored_batch(
     connection: &Connection,
     raw: &rows::RawBatch,
 ) -> Result<(AppendGovernanceRecordBatch, GovernanceRecordAppendReceipt), HubStoreError> {
+    let decoded = decode_stored_batch_full(connection, raw)?;
+    Ok((decoded.request, decoded.receipt))
+}
+
+pub(super) fn decode_stored_batch_full(
+    connection: &Connection,
+    raw: &rows::RawBatch,
+) -> Result<DecodedStoredBatch, HubStoreError> {
     let stored_records = rows::records_for_batch(connection, &raw.batch_id)?;
     let decoded = decode_batch_records(stored_records, &raw.batch_id)?;
     let canonical = format!(
@@ -132,7 +152,11 @@ pub(super) fn decode_stored_batch(
     .map_err(|problem| error::corrupt(problem.message))?;
     validate_batch_columns(raw, &request, decoded.len())?;
     let receipt = receipt(&request, &decoded)?;
-    Ok((request, receipt))
+    Ok(DecodedStoredBatch {
+        records: decoded,
+        request,
+        receipt,
+    })
 }
 
 pub(super) fn validate_stored_batch_once(

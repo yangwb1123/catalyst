@@ -1,6 +1,6 @@
 # AI Engineering OS：能力中心化的软件工程组织蓝图
 
-> 状态：**目标设计仍以规划为主；五个 contract/shadow 治理切片及一个 AFDS 扩展已实现**。决策见
+> 状态：**目标设计仍以规划为主；已采纳的窄 contract/shadow 与 producer 切片持续按独立 ADR 交付**。决策见
 > [ADR-0037](../../adr/0037-capability-centric-ai-engineering-operating-model.md)、
 > [ADR-0038](../../adr/0038-aadm-decision-kernel-and-meta-reflection.md)、
 > [ADR-0039](../../adr/0039-default-off-device-aware-execution-fabric.md)、
@@ -9,7 +9,9 @@
 > [ADR-0042](../../adr/0042-frontend-design-decision-contract.md)、
 > [ADR-0043](../../adr/0043-frontend-code-architecture-governance.md)、
 > [ADR-0044](../../adr/0044-business-ui-geometry-contract.md)、
-> [ADR-0045](../../adr/0045-canonical-evidence-claim-contract.md)；当前覆盖与分期见
+> [ADR-0045](../../adr/0045-canonical-evidence-claim-contract.md)、
+> [ADR-0046](../../adr/0046-local-governance-record-journal.md) 至
+> [ADR-0054](../../adr/0054-local-governance-semantic-view-v1.md)；当前覆盖与分期见
 > [implementation-roadmap.md](implementation-roadmap.md)。运行时代码、测试和现有 `.agent/` 契约仍是当前事实源。
 
 当前已交付的窄切片位于 `.agent/engineering/`：activation、14 学科状态、原子规则、`forge accept` detector 接线、
@@ -41,6 +43,12 @@ ADR-0045 交付 Governance/Decision Kernel 的 0F-A 前置片：[Evidence/Claim 
 `record_id/aggregate_id/sequence` 身份、kind-separated canonical SHA-256、Go/Rust/Python golden 与 universal shadow checker。
 它只允许 registry `shadow_admissibility` 精确矩阵内的 Claim 和 untrusted/observed Evidence，明确拒绝自证 confirmed/accepted/waived、Hub 写入、旧 Memory/ADR
 自动升级、Grant/Approval/Transition 与 hard-gate 效力；后续 0F–1 仍需 authenticated identity、ledger、replay/revocation 和 SoD。
+
+ADR-0046 至 ADR-0053 在该 canonical wire 之上分别交付 local exact-record journal、CognitiveAtom/三类 Evidence shadow adapter，
+以及 local gate、Evolve locator 和 Go package dependency observation producers。ADR-0054 再增加 exact-v27、显式 caller-time、始终选择
+current structural tail 的本地 semantic projection；其 `journal view`、`journal conflicts` 与 `journal validation-jobs` 只表达 declared semantics，
+不选择 truth/winner，不签发 authority，也不替代 `forge accept`。完整命令、资源预算和 live-read sidecar 语义见
+[governance-contracts.md](governance-contracts.md)。
 
 ## 1. 目标
 

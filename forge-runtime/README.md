@@ -292,7 +292,7 @@ dataflow, and fail-fast/no-retry outcomes. It omits manager/task/acceptance,
 Project/member/profile, provider/model/credential, and result text.
 
 `group graph run schedule admit` independently rebuilds the exact control and
-stores the canonical artifact in current SQLite v24 (the schedule sidecar was
+stores the canonical artifact in current SQLite v27 (the schedule sidecar was
 introduced in v13) as one immutable row per Run.
 The transaction consumes no Graph Run journal sequence and leaves the Run,
 event head, Graph, Conversations, Prompts, credentials, providers, network,
@@ -324,7 +324,7 @@ first direct predecessor. Every candidate remains passive and keeps all six
 lifecycle/authority/progress flags false.
 
 `group graph run scheduled-contract admit` stores that artifact in current
-SQLite v24 (initial sidecars began in v14; successor/per-node evolution spans
+SQLite v27 (initial sidecars began in v14; successor/per-node evolution spans
 v17–v24) as an immutable passive row. Initial candidate v2 and the legacy
 lifecycle contract remain mutually exclusive; successor rows use per-node and
 per-ordinal slots. Admission and exact replay revalidate the current source,
@@ -340,7 +340,7 @@ itself claims dispatch authority or execution progress.
 
 `group graph run scheduled-contract provider-request prepare` then fully
 revalidates that candidate and every source binding before using the production
-Responses codec as a deterministic, side-effect-free encoder. SQLite v24 stores
+Responses codec as a deterministic, side-effect-free encoder. SQLite v27 stores
 the exact compact canonical body in a separate immutable sidecar while the Run
 remains v1/seq 1 and the main journal remains unchanged. The candidate's own
 `provider_request_present=false` is an immutable creation-time field; request
@@ -371,7 +371,7 @@ forge-runtime group graph run scheduled-contract provider-request \
 
 This command repeats release and readiness validation after fresh consent, reads
 one header-safe credential, resolves the registered provider without a health
-request, and opens current SQLite schema v24 only at the effectful boundary.
+request, and opens current SQLite schema v27 only at the effectful boundary.
 Its immediate transaction claims the exact scheduled request and global Project
 lane. The one-shot provider stream is reduced to bounded result/uncertainty
 evidence; a pinned Go Core receives a scheduled terminal control and returns one
@@ -662,19 +662,44 @@ it does not prove that replaying an interrupted tool effect is safe. Run
 inspection reads its record, cursor, events, and bound Prompt from one SQLite
 snapshot so a concurrent append cannot look like corruption.
 
-The main SQLite catalog is exclusively Hub-owned. Every declared v0–v24 schema
+The main SQLite catalog is exclusively Hub-owned. Every declared v0–v27 schema
 is validated before migration DDL (v0 must be empty); the final migration step
-then validates the exact v24 scheduled-lifecycle catalog, DDL, columns, keys,
+then validates the exact v27 governance-semantic-view catalog, DDL, columns, keys,
 foreign keys, structural/index contract, and absence of
 extra views/triggers/tables before the immediate transaction commits.
 Per-version exact DDL expectations are regenerated from the immutable migration
 batches, while each independent structural contract is release-pinned; exact
-DDL validators separately catch CHECK-only drift. v24 owns 33 tables, 32
-explicit indexes and 86 implicit index signatures. Its structural-contract SHA-256 is
-`15f4cafa582332205080e6cf7a9a484a679787d41e5c02e0300921c0dfc1bc18`.
+DDL validators separately catch CHECK-only drift. v27 owns 39 tables, 38
+explicit indexes and 100 implicit index signatures. Its structural-contract SHA-256 is
+`0b2d43826834a219858fcd44fc052092b998a382acb87689228eb9a4e2d9d2f8`.
 Unexpected state fails as corruption and is never auto-repaired.
 Environmental SQLite failures remain unavailable. This detects schema drift
 but is not a same-user tamper or TOCTOU boundary.
+
+## Local governance journal and semantic view
+
+The governance journal stores already-valid canonical `EvidenceRecord` and
+`KnowledgeClaim` bytes plus a rebuildable structural head. `append` is the only
+journal mutation; ordinary `show`, `list`, and `head` use the immutable,
+sidecar-rejecting current-schema reader. The v1 declared-semantic read surface is:
+
+```text
+forge-runtime governance journal view KIND AGGREGATE_ID --as-of-unix-ms N
+forge-runtime governance journal conflicts --as-of-unix-ms N [--limit N]
+forge-runtime governance journal validation-jobs --as-of-unix-ms N [--due-only] [--limit N]
+```
+
+These commands always select the exact current structural tail; caller-supplied
+`as_of_unix_ms` evaluates that tail and never selects history. They open an existing
+exact-v27 database with live SQLite `mode=ro` plus `query_only` and use one Deferred
+snapshot. They do not migrate or logically write Hub rows, but SQLite may coordinate
+SHM locks or create/remove empty WAL/SHM sidecars; a fully read-only filesystem may
+therefore return unavailable. Each inspected aggregate shares a 1,024-record/16-MiB
+budget across complete history, transitive references, and complete owning batches;
+multi-head scans additionally share 65,536 records/256 MiB/1,000,000 work units.
+Crossing a bound cannot become a partial/empty result. Every result remains a
+declared projection only: it does not establish truth, authority, a conflict winner,
+a validation verdict, knowledge adoption, hard-gate satisfaction, or completion.
 
 ## Durable Project Run
 

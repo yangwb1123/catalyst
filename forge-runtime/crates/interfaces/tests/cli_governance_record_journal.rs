@@ -252,6 +252,13 @@ fn malformed_read_inputs_fail_before_the_database_is_opened() {
         vec!["show", "bad\nid"],
         vec!["list", "--aggregate-id", ""],
         vec!["head", "EvidenceRecord", "bad\nid"],
+        vec![
+            "view",
+            "KnowledgeClaim",
+            "bad\nid",
+            "--as-of-unix-ms",
+            "1700000002000",
+        ],
     ] {
         let output = journal_read(&state, &suffix);
         assert!(!output.status.success(), "invalid read must fail");
@@ -372,7 +379,7 @@ fn structural_head_is_explicitly_sequence_only() {
 }
 
 #[test]
-fn reads_refuse_v24_without_migration_but_append_migrates_it_to_v26() {
+fn reads_refuse_v24_without_migration_but_append_migrates_it_to_current() {
     let state = private_state();
     json(invoke(&["--state-dir", path_text(state.path()), "--json"]));
     let database = state.path().join("hub.sqlite3");
@@ -382,7 +389,7 @@ fn reads_refuse_v24_without_migration_but_append_migrates_it_to_v26() {
     assert_eq!(stored_version(&database), 24);
     let file = write_set(&state, &record_set(&canonical_records()));
     assert_receipt(&json(append_file(&state, "migration-key", &file)), "stored");
-    assert_eq!(stored_version(&database), 26);
+    assert_eq!(stored_version(&database), 27);
 }
 
 fn assert_receipt(value: &Value, disposition: &str) {
@@ -440,7 +447,10 @@ fn downgrade_empty_current_to_v24(database: &Path) {
         .expect("restore v24 endpoint definitions");
     connection
         .execute_batch(
-            "DROP TABLE governance_structural_heads;
+            "DROP TABLE governance_claim_validation_jobs;
+             DROP TABLE governance_claim_semantic_views;
+             DROP TABLE governance_semantic_heads;
+             DROP TABLE governance_structural_heads;
              DROP TABLE governance_records;
              DROP TABLE governance_record_append_batches;
              PRAGMA user_version = 24;",

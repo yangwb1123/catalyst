@@ -18,6 +18,12 @@ pub(super) fn open_existing_dispatch_reentry_read_only_database(
 ) -> Result<Connection, HubStoreError> {
     reentry::open_existing_dispatch_reentry_read_only_database(path)
 }
+
+pub(super) fn open_existing_current_live_read_only_database(
+    path: &Path,
+) -> Result<Connection, HubStoreError> {
+    reentry::open_existing_current_live_read_only_database(path)
+}
 use super::{
     HubStoreError,
     schema_sql::{
@@ -42,10 +48,11 @@ use super::{
     schema_v24_sql::MIGRATE_V23_TO_V24_SQL,
     schema_v25_sql::MIGRATE_V24_TO_V25_SQL,
     schema_v26_sql::MIGRATE_V25_TO_V26_SQL,
+    schema_v27_sql::MIGRATE_V26_TO_V27_SQL,
     unavailable,
 };
 
-pub(super) const SCHEMA_VERSION: i64 = 26;
+pub(super) const SCHEMA_VERSION: i64 = 27;
 const CONNECTION_BUSY_TIMEOUT: Duration = Duration::from_millis(250);
 const OPEN_RETRY_TIMEOUT: Duration = Duration::from_secs(5);
 const OPEN_RETRY_DELAY: Duration = Duration::from_millis(10);
@@ -74,7 +81,7 @@ pub(super) fn open_database(path: &Path) -> Result<Connection, HubStoreError> {
 pub(super) fn open_existing_current_read_only_database(
     path: &Path,
 ) -> Result<Connection, HubStoreError> {
-    open_existing_validated_read_only_database(path, &[SCHEMA_VERSION], "current schema version 26")
+    open_existing_validated_read_only_database(path, &[SCHEMA_VERSION], "current schema version 27")
 }
 pub(super) fn open_existing_dispatch_preflight_read_only_database(
     path: &Path,
@@ -82,9 +89,9 @@ pub(super) fn open_existing_dispatch_preflight_read_only_database(
     open_existing_validated_read_only_database(
         path,
         &[
-            11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
+            11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27,
         ],
-        "schema version 11..=26",
+        "schema version 11..=27",
     )
 }
 fn open_existing_validated_read_only_database(
@@ -144,7 +151,7 @@ fn open_database_once(path: &Path) -> Result<Connection, OpenAttemptError> {
         // Production-readiness condition: a migration is irreversible, so
         // snapshot an EXISTING hub before the first upgrade opens it
         // (review stage-06 High). Fresh hubs (version 0) need no backup.
-        location::backup_before_upgrade(path, version)?;
+        location::backup_before_upgrade(&connection, path, version)?;
     }
     configure(&connection)?;
     migrate_or_validate(&connection)?;
@@ -210,7 +217,7 @@ fn validate_locked_schema(
         return Ok(());
     }
     if endpoint_only_v25 {
-        migrate_endpoint_only_v25_to_v26(connection)?;
+        migrate_endpoint_only_v25_to_current(connection)?;
     } else {
         migrate_to_current(connection, version)?;
     }
@@ -218,9 +225,12 @@ fn validate_locked_schema(
     contract::validate_version(connection, SCHEMA_VERSION).map_err(Into::into)
 }
 
-fn migrate_endpoint_only_v25_to_v26(connection: &Connection) -> Result<(), OpenAttemptError> {
+fn migrate_endpoint_only_v25_to_current(connection: &Connection) -> Result<(), OpenAttemptError> {
     connection.execute_batch(MIGRATE_V24_TO_V25_SQL)?;
     connection.execute_batch("PRAGMA user_version = 26")?;
+    connection.execute_batch(MIGRATE_V26_TO_V27_SQL)?;
+    super::governance_record_journal::semantic::rebuild_locked(connection)
+        .map_err(OpenAttemptError::Store)?;
     Ok(())
 }
 
@@ -231,92 +241,97 @@ fn migrate_to_current(connection: &Connection, version: i64) -> Result<(), OpenA
     migrate_latest(connection, version)
 }
 
-/// Migrations v1 through v9 (the legacy Conversation/Hub generations).
+/// Upgrades legacy v1 through v8 sources to v9.
 fn migrate_early(connection: &Connection, version: i64) -> Result<(), OpenAttemptError> {
     if version <= 1 {
-        migrate_v1_to_v2(connection)?;
+        connection.execute_batch(MIGRATE_V1_TO_V2_SQL)?;
     }
     if version <= 2 {
-        migrate_v2_to_v3(connection)?;
+        connection.execute_batch(MIGRATE_V2_TO_V3_SQL)?;
     }
     if version <= 3 {
-        migrate_v3_to_v4(connection)?;
+        connection.execute_batch(MIGRATE_V3_TO_V4_SQL)?;
     }
     if version <= 4 {
-        migrate_v4_to_v5(connection)?;
+        connection.execute_batch(MIGRATE_V4_TO_V5_SQL)?;
     }
     if version <= 5 {
-        migrate_v5_to_v6(connection)?;
+        connection.execute_batch(MIGRATE_V5_TO_V6_SQL)?;
     }
     if version <= 6 {
-        migrate_v6_to_v7(connection)?;
+        connection.execute_batch(MIGRATE_V6_TO_V7_SQL)?;
     }
     if version <= 7 {
-        migrate_v7_to_v8(connection)?;
+        connection.execute_batch(MIGRATE_V7_TO_V8_SQL)?;
     }
     if version <= 8 {
-        migrate_v8_to_v9(connection)?;
+        connection.execute_batch(MIGRATE_V8_TO_V9_SQL)?;
     }
     Ok(())
 }
 
-/// Migrations v10 through v17 (the Graph/Agent generations).
+/// Upgrades Graph/Agent v9 through v16 sources to v17.
 fn migrate_late(connection: &Connection, version: i64) -> Result<(), OpenAttemptError> {
     if version <= 9 {
-        migrate_v9_to_v10(connection)?;
+        connection.execute_batch(MIGRATE_V9_TO_V10_SQL)?;
     }
     if version <= 10 {
-        migrate_v10_to_v11(connection)?;
+        connection.execute_batch(MIGRATE_V10_TO_V11_SQL)?;
     }
     if version <= 11 {
-        migrate_v11_to_v12(connection)?;
+        connection.execute_batch(MIGRATE_V11_TO_V12_SQL)?;
     }
     if version <= 12 {
-        migrate_v12_to_v13(connection)?;
+        connection.execute_batch(MIGRATE_V12_TO_V13_SQL)?;
     }
     if version <= 13 {
-        migrate_v13_to_v14(connection)?;
+        connection.execute_batch(MIGRATE_V13_TO_V14_SQL)?;
     }
     if version <= 14 {
-        migrate_v14_to_v15(connection)?;
+        connection.execute_batch(MIGRATE_V14_TO_V15_SQL)?;
     }
     if version <= 15 {
-        migrate_v15_to_v16(connection)?;
+        connection.execute_batch(MIGRATE_V15_TO_V16_SQL)?;
     }
     if version <= 16 {
-        migrate_v16_to_v17(connection)?;
+        connection.execute_batch(MIGRATE_V16_TO_V17_SQL)?;
     }
     Ok(())
 }
 
-/// Migrations v18 onward (the execution and governance generations).
+/// Upgrades execution/governance v17 through v26 sources to current v27.
 fn migrate_latest(connection: &Connection, version: i64) -> Result<(), OpenAttemptError> {
     if version <= 17 {
-        migrate_v17_to_v18(connection)?;
+        connection.execute_batch(MIGRATE_V17_TO_V18_SQL)?;
     }
     if version <= 18 {
-        migrate_v18_to_v19(connection)?;
+        connection.execute_batch(MIGRATE_V18_TO_V19_SQL)?;
     }
     if version <= 19 {
-        migrate_v19_to_v20(connection)?;
+        connection.execute_batch(MIGRATE_V19_TO_V20_SQL)?;
     }
     if version <= 20 {
-        migrate_v20_to_v21(connection)?;
+        connection.execute_batch(MIGRATE_V20_TO_V21_SQL)?;
     }
     if version <= 21 {
-        migrate_v21_to_v22(connection)?;
+        connection.execute_batch(MIGRATE_V21_TO_V22_SQL)?;
     }
     if version <= 22 {
-        migrate_v22_to_v23(connection)?;
+        connection.execute_batch(MIGRATE_V22_TO_V23_SQL)?;
     }
     if version <= 23 {
-        migrate_v23_to_v24(connection)?;
+        connection.execute_batch(MIGRATE_V23_TO_V24_SQL)?;
     }
     if version <= 24 {
         connection.execute_batch(MIGRATE_V24_TO_V25_SQL)?;
     }
     if version <= 25 {
         connection.execute_batch(MIGRATE_V25_TO_V26_SQL)?;
+    }
+    if version <= 26 {
+        connection.execute_batch(MIGRATE_V26_TO_V27_SQL)?;
+        super::governance_record_journal::semantic::rebuild_locked(connection)
+            .map_err(OpenAttemptError::Store)?;
     }
     Ok(())
 }
@@ -356,121 +371,6 @@ fn unsupported_schema(version: i64) -> OpenAttemptError {
 
 fn create_v1_schema(connection: &Connection) -> Result<(), SqliteError> {
     connection.execute_batch(CREATE_V1_SCHEMA_SQL)
-}
-
-fn migrate_v1_to_v2(connection: &Connection) -> Result<(), OpenAttemptError> {
-    connection.execute_batch(MIGRATE_V1_TO_V2_SQL)?;
-    Ok(())
-}
-
-fn migrate_v2_to_v3(connection: &Connection) -> Result<(), OpenAttemptError> {
-    connection.execute_batch(MIGRATE_V2_TO_V3_SQL)?;
-    Ok(())
-}
-
-fn migrate_v3_to_v4(connection: &Connection) -> Result<(), OpenAttemptError> {
-    connection.execute_batch(MIGRATE_V3_TO_V4_SQL)?;
-    Ok(())
-}
-
-fn migrate_v4_to_v5(connection: &Connection) -> Result<(), OpenAttemptError> {
-    connection.execute_batch(MIGRATE_V4_TO_V5_SQL)?;
-    Ok(())
-}
-
-fn migrate_v5_to_v6(connection: &Connection) -> Result<(), OpenAttemptError> {
-    connection.execute_batch(MIGRATE_V5_TO_V6_SQL)?;
-    Ok(())
-}
-
-fn migrate_v6_to_v7(connection: &Connection) -> Result<(), OpenAttemptError> {
-    connection.execute_batch(MIGRATE_V6_TO_V7_SQL)?;
-    Ok(())
-}
-
-fn migrate_v7_to_v8(connection: &Connection) -> Result<(), OpenAttemptError> {
-    connection.execute_batch(MIGRATE_V7_TO_V8_SQL)?;
-    Ok(())
-}
-
-fn migrate_v8_to_v9(connection: &Connection) -> Result<(), OpenAttemptError> {
-    connection.execute_batch(MIGRATE_V8_TO_V9_SQL)?;
-    Ok(())
-}
-
-fn migrate_v9_to_v10(connection: &Connection) -> Result<(), OpenAttemptError> {
-    connection.execute_batch(MIGRATE_V9_TO_V10_SQL)?;
-    Ok(())
-}
-
-fn migrate_v10_to_v11(connection: &Connection) -> Result<(), OpenAttemptError> {
-    connection.execute_batch(MIGRATE_V10_TO_V11_SQL)?;
-    Ok(())
-}
-
-fn migrate_v11_to_v12(connection: &Connection) -> Result<(), OpenAttemptError> {
-    connection.execute_batch(MIGRATE_V11_TO_V12_SQL)?;
-    Ok(())
-}
-
-fn migrate_v12_to_v13(connection: &Connection) -> Result<(), OpenAttemptError> {
-    connection.execute_batch(MIGRATE_V12_TO_V13_SQL)?;
-    Ok(())
-}
-
-fn migrate_v13_to_v14(connection: &Connection) -> Result<(), OpenAttemptError> {
-    connection.execute_batch(MIGRATE_V13_TO_V14_SQL)?;
-    Ok(())
-}
-
-fn migrate_v14_to_v15(connection: &Connection) -> Result<(), OpenAttemptError> {
-    connection.execute_batch(MIGRATE_V14_TO_V15_SQL)?;
-    Ok(())
-}
-
-fn migrate_v15_to_v16(connection: &Connection) -> Result<(), OpenAttemptError> {
-    connection.execute_batch(MIGRATE_V15_TO_V16_SQL)?;
-    Ok(())
-}
-
-fn migrate_v16_to_v17(connection: &Connection) -> Result<(), OpenAttemptError> {
-    connection.execute_batch(MIGRATE_V16_TO_V17_SQL)?;
-    Ok(())
-}
-
-fn migrate_v17_to_v18(connection: &Connection) -> Result<(), OpenAttemptError> {
-    connection.execute_batch(MIGRATE_V17_TO_V18_SQL)?;
-    Ok(())
-}
-
-fn migrate_v18_to_v19(connection: &Connection) -> Result<(), OpenAttemptError> {
-    connection.execute_batch(MIGRATE_V18_TO_V19_SQL)?;
-    Ok(())
-}
-
-fn migrate_v19_to_v20(connection: &Connection) -> Result<(), OpenAttemptError> {
-    connection.execute_batch(MIGRATE_V19_TO_V20_SQL)?;
-    Ok(())
-}
-
-fn migrate_v20_to_v21(connection: &Connection) -> Result<(), OpenAttemptError> {
-    connection.execute_batch(MIGRATE_V20_TO_V21_SQL)?;
-    Ok(())
-}
-
-fn migrate_v21_to_v22(connection: &Connection) -> Result<(), OpenAttemptError> {
-    connection.execute_batch(MIGRATE_V21_TO_V22_SQL)?;
-    Ok(())
-}
-
-fn migrate_v22_to_v23(connection: &Connection) -> Result<(), OpenAttemptError> {
-    connection.execute_batch(MIGRATE_V22_TO_V23_SQL)?;
-    Ok(())
-}
-
-fn migrate_v23_to_v24(connection: &Connection) -> Result<(), OpenAttemptError> {
-    connection.execute_batch(MIGRATE_V23_TO_V24_SQL)?;
-    Ok(())
 }
 
 enum OpenAttemptError {

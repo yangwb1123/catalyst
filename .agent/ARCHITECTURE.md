@@ -98,7 +98,10 @@ GovernanceRecordJournal v1：只原子追加 exact v1 bytes、返回 `stored|exa
 `structural_sequence_only` head；引用闭包最多 1,024 dependency records、16,777,216 candidate+closure bytes 和 256 derivation edges，三者只作
 resource-exhaustion admissibility。Rust domain/application/store、SQLite v25、CLI、migration/compatibility 与对抗门禁已完成，并经独立复审和
 `forge accept` 验收；scaffold 只继承治理资产，不安装 `forge-runtime`，缺兼容 binary 时必须记 `not_executed`。该完成状态不扩张
-contract 边界，structural head 仍不表示 truth、authority、freshness、conflict resolution 或 current knowledge。完整 00–16 节点 SOP、工程模式适用条件、治理数据契约和分阶段验收见
+contract 边界，structural head 仍不表示 truth、authority、freshness、conflict resolution 或 current knowledge。ADR 0054 在其上增加
+SQLite v27 可重建 declared semantic view：显式 caller-time temporal labels、authority-free lifecycle subset、conflict candidates 与
+Assumption/Hypothesis validation schedules；exact records 仍是重算源，结果固定无 truth/authority，不选择 winner、执行 validation 或推进权威状态。
+完整 00–16 节点 SOP、工程模式适用条件、治理数据契约和分阶段验收见
 [`docs/design/ai-engineering-os/`](../docs/design/ai-engineering-os/README.md)。该目录和其中
 `capability-catalog.v1.yml`、AADM/Reflection/Device 文档当前都是 `planning_only`；完整 Knowledge-Engine、通用
 CapabilityGrant、严格 ContextPackage、Meta Reflection、Capability Registry 与远程 Device Fabric 均尚未实现，不得从
