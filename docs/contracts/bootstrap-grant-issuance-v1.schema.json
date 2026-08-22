@@ -1,0 +1,370 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forgeos.dev/contracts/bootstrap-grant-issuance-v1.schema.json",
+  "title": "ForgeOS authenticated bootstrap repository-read Grant issuance v1",
+  "description": "Closed signed Policy, Request, Grant, durable Receipt and Ledger golden. Schema validity alone does not authenticate the externally pinned root or Ed25519 signatures.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["grant", "ledger", "policy", "receipt", "request", "result", "signature_profile", "trust_root"],
+  "properties": {
+    "grant": { "$ref": "#/$defs/nullable_grant" },
+    "ledger": { "$ref": "#/$defs/ledger" },
+    "policy": { "$ref": "#/$defs/policy" },
+    "receipt": { "$ref": "#/$defs/receipt" },
+    "request": { "$ref": "#/$defs/request" },
+    "result": { "$ref": "#/$defs/result" },
+    "signature_profile": { "$ref": "#/$defs/signature_profile" },
+    "trust_root": { "$ref": "#/$defs/trust_root" }
+  },
+  "x-forgeos-canonicalization": {
+    "format": "forgeos.canonical-json/v1",
+    "self_digest_rule": "set the artifact self-digest to empty and, for signed artifacts, signature.signature_base64url to empty",
+    "signature_message": "artifact-specific signature domain including terminal NUL followed by raw 32 digest bytes",
+    "digest_domains": {
+      "signature_profile": "forgeos.ed25519-domain-sha256-profile.v1\u0000",
+      "trust_root": "forgeos.governance-trust-root.v1\u0000",
+      "policy": "forgeos.bootstrap-grant-policy.v1\u0000",
+      "request": "forgeos.bootstrap-grant-request.v1\u0000",
+      "record_key": "forgeos.grant-issuance-record-key.v1\u0000 followed by exact idempotency key bytes",
+      "grant_envelope": "forgeos.capability-grant.envelope.v1\u0000",
+      "receipt": "forgeos.grant-issuance-receipt.v1\u0000",
+      "ledger": "forgeos.grant-issuance-ledger.v1\u0000"
+    },
+    "signature_domains": {
+      "policy": "forgeos.bootstrap-grant-policy.signature.v1\u0000",
+      "request": "forgeos.bootstrap-grant-request.signature.v1\u0000",
+      "grant": "forgeos.capability-grant.signature.v1\u0000",
+      "receipt": "forgeos.grant-issuance-receipt.signature.v1\u0000",
+      "ledger": "forgeos.grant-issuance-ledger.signature.v1\u0000"
+    }
+  },
+  "x-forgeos-authority-semantics": {
+    "runtime_profile": "authenticated_bootstrap_repo_read_grant_issuance_v1",
+    "contract_profile_id": "bootstrap_planning_repo_read_only_v1",
+    "root_source": "operator_pinned_external_to_request",
+      "policy_scope_request_relation": "exact_canonical_equality_no_coverage_inference",
+      "idempotency_conflict": "same_record_key_with_different_policy_or_request_fails_without_receipt",
+      "trust_root_rotation": "not_in_v1_external_repin_required",
+    "authenticated_policy_denial": "signed_receipt_with_null_grant_and_policy_denied",
+    "malformed_or_untrusted": "error_without_receipt",
+    "ed25519_verifier": "forge-kernel_go_runtime_not_universal_python_checker",
+    "same_euid_isolation": false,
+    "production_effects": false
+  },
+  "x-forgeos-limits": {
+    "max_signature_profile_bytes": 16384,
+    "max_trust_root_bytes": 262144,
+    "max_policy_bytes": 524288,
+    "max_request_bytes": 1048576,
+    "max_grant_bytes": 1048576,
+    "max_receipt_bytes": 262144,
+    "max_result_bytes": 2097152,
+    "max_ledger_bytes": 16777216,
+    "max_golden_bytes": 20971520,
+    "max_json_depth": 16,
+    "max_object_fields": 64,
+    "max_array_items": 256,
+    "max_string_bytes": 16384,
+    "max_source_revision_bytes": 160,
+    "max_policy_validity_ms": 86400000,
+    "max_request_validity_ms": 300000,
+    "max_grant_ttl_ms": 3600000,
+    "idempotency_key_bytes": "16..128 closed visible ASCII",
+    "integer_domain": "signed_int64"
+  },
+  "$defs": {
+    "hash": {
+      "type": "string", "minLength": 64, "maxLength": 64,
+      "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+    },
+    "nullable_hash": { "oneOf": [{ "$ref": "#/$defs/hash" }, { "type": "null" }] },
+    "text": {
+      "type": "string", "minLength": 1, "maxLength": 16384,
+      "not": { "pattern": "[\\u0000-\\u001f\\u007f\\u061c\\u200e\\u200f\\u2028-\\u202e\\u2066-\\u2069\\ud800-\\udfff]" }
+    },
+    "short_text": { "allOf": [{ "$ref": "#/$defs/text" }, { "maxLength": 160 }] },
+    "profile_id": { "const": "bootstrap_planning_repo_read_only_v1" },
+    "unix_ms": { "type": "integer", "minimum": 0, "maximum": 9223372036854775807 },
+    "public_key": {
+      "type": "string", "minLength": 43, "maxLength": 43,
+      "pattern": "^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048](?![\\s\\S])"
+    },
+    "signature_bytes": {
+      "type": "string", "minLength": 86, "maxLength": 86,
+      "pattern": "^[A-Za-z0-9_-]{85}[AQgw](?![\\s\\S])"
+    },
+    "signature": {
+      "type": "object", "additionalProperties": false,
+      "required": ["key_id", "profile_id", "profile_sha256", "signature_base64url"],
+      "properties": {
+        "key_id": { "$ref": "#/$defs/short_text" },
+        "profile_id": { "const": "forgeos.ed25519-domain-sha256/v1" },
+        "profile_sha256": { "$ref": "#/$defs/hash" },
+        "signature_base64url": { "$ref": "#/$defs/signature_bytes" }
+      }
+    },
+    "principal": {
+      "type": "object", "additionalProperties": false,
+      "required": ["authority_domain", "principal_id", "principal_type"],
+      "properties": {
+        "authority_domain": { "$ref": "#/$defs/short_text" },
+        "principal_id": { "$ref": "#/$defs/short_text" },
+        "principal_type": { "enum": ["agent", "service"] }
+      }
+    },
+    "signature_profile": {
+      "type": "object", "additionalProperties": false,
+      "required": ["algorithm", "api_version", "canonicalization", "digest_algorithm", "kind", "message_preimage", "profile_id", "profile_sha256", "public_key_encoding", "signature_encoding"],
+      "properties": {
+        "algorithm": { "const": "Ed25519" },
+        "api_version": { "const": "forgeos.ed25519-domain-sha256-profile/v1" },
+        "canonicalization": { "const": "forgeos.canonical-json/v1" },
+        "digest_algorithm": { "const": "SHA-256" },
+        "kind": { "const": "SignatureProfile" },
+        "message_preimage": { "const": "domain_separator_utf8_nul_then_raw_32_byte_sha256_digest" },
+        "profile_id": { "const": "forgeos.ed25519-domain-sha256/v1" },
+        "profile_sha256": { "$ref": "#/$defs/hash" },
+        "public_key_encoding": { "const": "base64url_unpadded_32_bytes" },
+        "signature_encoding": { "const": "base64url_unpadded_64_bytes" }
+      }
+    },
+    "root_key": {
+      "type": "object", "additionalProperties": false,
+      "required": ["key_id", "principal", "public_key_base64url", "usage"],
+      "properties": {
+        "key_id": { "$ref": "#/$defs/short_text" },
+        "principal": { "$ref": "#/$defs/principal" },
+        "public_key_base64url": { "$ref": "#/$defs/public_key" },
+        "usage": { "enum": ["grant_issue", "policy_sign", "request_auth"] }
+      }
+    },
+    "trust_root": {
+      "type": "object", "additionalProperties": false,
+      "required": ["api_version", "canonicalization", "keys", "kind", "profile_id", "root_sha256", "signature_profile_sha256", "trust_domain", "trust_epoch"],
+      "properties": {
+        "api_version": { "const": "forgeos.governance-trust-root/v1" },
+        "canonicalization": { "const": "forgeos.canonical-json/v1" },
+        "keys": {
+          "type": "array", "minItems": 3, "maxItems": 3,
+          "prefixItems": [
+            { "allOf": [{ "$ref": "#/$defs/root_key" }, { "properties": { "usage": { "const": "grant_issue" } } }] },
+            { "allOf": [{ "$ref": "#/$defs/root_key" }, { "properties": { "usage": { "const": "policy_sign" } } }] },
+            { "allOf": [{ "$ref": "#/$defs/root_key" }, { "properties": { "usage": { "const": "request_auth" } } }] }
+          ],
+          "items": false
+        },
+        "kind": { "const": "GovernanceTrustRoot" },
+        "profile_id": { "$ref": "#/$defs/profile_id" },
+        "root_sha256": { "$ref": "#/$defs/hash" },
+        "signature_profile_sha256": { "$ref": "#/$defs/hash" },
+        "trust_domain": { "$ref": "#/$defs/short_text" },
+        "trust_epoch": { "type": "integer", "minimum": 1, "maximum": 9223372036854775807 }
+      }
+    },
+    "capability": {
+      "type": "object", "additionalProperties": false,
+      "required": ["capability_contract_sha256", "capability_id", "capability_version"],
+      "properties": {
+        "capability_contract_sha256": { "$ref": "#/$defs/hash" },
+        "capability_id": { "const": "repository-reader" },
+        "capability_version": { "const": "1" }
+      }
+    },
+    "task_binding": {
+      "type": "object", "additionalProperties": false,
+      "required": ["attempt_id", "change_id", "environment_class", "environment_id", "node_id", "project_id", "role", "run_id", "target_id", "task_id"],
+      "properties": {
+        "attempt_id": { "type": "null" },
+        "change_id": { "$ref": "#/$defs/short_text" },
+        "environment_class": { "enum": ["development", "local", "test"] },
+        "environment_id": { "$ref": "#/$defs/short_text" },
+        "node_id": { "$ref": "#/$defs/short_text" },
+        "project_id": { "$ref": "#/$defs/short_text" },
+        "role": { "$ref": "#/$defs/short_text" },
+        "run_id": { "$ref": "#/$defs/short_text" },
+        "target_id": { "type": "null" },
+        "task_id": { "$ref": "#/$defs/short_text" }
+      }
+    },
+    "repo_path": {
+      "type": "object", "additionalProperties": false,
+      "required": ["match", "path", "scope_kind"],
+      "properties": {
+        "match": { "const": "exact" },
+        "path": {
+          "allOf": [
+            { "$ref": "#/$defs/text" },
+            { "maxLength": 4096, "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)(?!.*[\\\\*?\\[\\]{}])[^/]+(?:/[^/]+)*(?!/)(?![\\s\\S])" }
+          ]
+        },
+        "scope_kind": { "const": "repo_path" }
+      }
+    },
+    "scope": {
+      "type": "object", "additionalProperties": false,
+      "required": ["allow", "deny", "effect_id"],
+      "properties": {
+        "allow": {
+          "type": "array", "minItems": 1, "maxItems": 1,
+          "items": {
+            "type": "object", "additionalProperties": false,
+            "required": ["resources"],
+            "properties": { "resources": { "type": "array", "minItems": 1, "maxItems": 16, "items": { "$ref": "#/$defs/repo_path" } } }
+          }
+        },
+        "deny": { "type": "array", "maxItems": 0 },
+        "effect_id": { "const": "repo.read" }
+      }
+    },
+    "budget": {
+      "type": "object", "additionalProperties": false,
+      "required": ["max_calls", "max_cost_usd_micros", "max_input_tokens", "max_network_bytes", "max_output_bytes", "max_output_tokens", "timeout_ms"],
+      "properties": {
+        "max_calls": { "const": 1 },
+        "max_cost_usd_micros": { "const": 0 },
+        "max_input_tokens": { "const": 0 },
+        "max_network_bytes": { "const": 0 },
+        "max_output_bytes": { "type": "integer", "minimum": 0, "maximum": 1048576 },
+        "max_output_tokens": { "const": 0 },
+        "timeout_ms": { "type": "integer", "minimum": 1, "maximum": 300000 }
+      }
+    },
+    "request_bindings": {
+      "type": "object", "additionalProperties": false,
+      "required": ["context_sha256", "source_revision", "source_tree_sha256"],
+      "properties": {
+        "context_sha256": { "$ref": "#/$defs/hash" },
+        "source_revision": { "$ref": "#/$defs/short_text" },
+        "source_tree_sha256": { "$ref": "#/$defs/hash" }
+      }
+    },
+    "policy_validity": {
+      "type": "object", "additionalProperties": false,
+      "required": ["expires_at_unix_ms", "not_before_unix_ms"],
+      "properties": {
+        "expires_at_unix_ms": { "$ref": "#/$defs/unix_ms" },
+        "not_before_unix_ms": { "$ref": "#/$defs/unix_ms" }
+      }
+    },
+    "policy": {
+      "type": "object", "additionalProperties": false,
+      "required": ["api_version", "budget", "canonicalization", "capability", "disposition", "effect_id", "kind", "max_ttl_ms", "policy_id", "policy_sha256", "profile_id", "scope", "signature", "subject", "task_binding", "trust_epoch", "trust_root_sha256", "validity"],
+      "properties": {
+        "api_version": { "const": "forgeos.bootstrap-grant-policy/v1" },
+        "budget": { "$ref": "#/$defs/budget" },
+        "canonicalization": { "const": "forgeos.canonical-json/v1" },
+        "capability": { "$ref": "#/$defs/capability" },
+        "disposition": { "enum": ["allow", "deny"] },
+        "effect_id": { "const": "repo.read" },
+        "kind": { "const": "BootstrapGrantPolicy" },
+        "max_ttl_ms": { "type": "integer", "minimum": 1, "maximum": 3600000 },
+        "policy_id": { "$ref": "#/$defs/short_text" },
+        "policy_sha256": { "$ref": "#/$defs/hash" },
+        "profile_id": { "$ref": "#/$defs/profile_id" },
+        "scope": { "$ref": "#/$defs/scope" },
+        "signature": { "$ref": "#/$defs/signature" },
+        "subject": { "$ref": "#/$defs/principal" },
+        "task_binding": { "$ref": "#/$defs/task_binding" },
+        "trust_epoch": { "type": "integer", "minimum": 1, "maximum": 9223372036854775807 },
+        "trust_root_sha256": { "$ref": "#/$defs/hash" },
+        "validity": { "$ref": "#/$defs/policy_validity" }
+      }
+    },
+    "request": {
+      "type": "object", "additionalProperties": false,
+      "required": ["api_version", "bindings", "budget", "canonicalization", "capability", "effect_id", "expires_at_unix_ms", "idempotency_key", "kind", "policy_sha256", "profile_id", "request_sha256", "requested_at_unix_ms", "requested_ttl_ms", "scope", "signature", "subject", "task_binding", "trust_epoch", "trust_root_sha256"],
+      "properties": {
+        "api_version": { "const": "forgeos.bootstrap-grant-request/v1" },
+        "bindings": { "$ref": "#/$defs/request_bindings" },
+        "budget": { "$ref": "#/$defs/budget" },
+        "canonicalization": { "const": "forgeos.canonical-json/v1" },
+        "capability": { "$ref": "#/$defs/capability" },
+        "effect_id": { "const": "repo.read" },
+        "expires_at_unix_ms": { "$ref": "#/$defs/unix_ms" },
+        "idempotency_key": { "type": "string", "minLength": 16, "maxLength": 128, "pattern": "^[A-Za-z0-9._:@+\\-]{16,128}(?![\\s\\S])" },
+        "kind": { "const": "BootstrapGrantRequest" },
+        "policy_sha256": { "$ref": "#/$defs/hash" },
+        "profile_id": { "$ref": "#/$defs/profile_id" },
+        "request_sha256": { "$ref": "#/$defs/hash" },
+        "requested_at_unix_ms": { "$ref": "#/$defs/unix_ms" },
+        "requested_ttl_ms": { "type": "integer", "minimum": 1, "maximum": 3600000 },
+        "scope": { "$ref": "#/$defs/scope" },
+        "signature": { "$ref": "#/$defs/signature" },
+        "subject": { "$ref": "#/$defs/principal" },
+        "task_binding": { "$ref": "#/$defs/task_binding" },
+        "trust_epoch": { "type": "integer", "minimum": 1, "maximum": 9223372036854775807 },
+        "trust_root_sha256": { "$ref": "#/$defs/hash" }
+      }
+    },
+    "nullable_grant": {
+      "oneOf": [
+        { "$ref": "https://forgeos.dev/contracts/capability-grant-v1.schema.json#/$defs/grant" },
+        { "type": "null" }
+      ]
+    },
+    "receipt": {
+      "type": "object", "additionalProperties": false,
+      "required": ["api_version", "canonicalization", "decision", "denial_reason", "grant_envelope_sha256", "grant_id", "grant_sha256", "kind", "ledger_sequence", "policy_sha256", "prior_receipt_sha256", "profile_id", "receipt_sha256", "record_key_sha256", "request_sha256", "signature", "stored_at_unix_ms", "trust_epoch", "trust_root_sha256"],
+      "properties": {
+        "api_version": { "const": "forgeos.grant-issuance-receipt/v1" },
+        "canonicalization": { "const": "forgeos.canonical-json/v1" },
+        "decision": { "enum": ["denied", "issued"] },
+        "denial_reason": { "oneOf": [{ "const": "policy_denied" }, { "type": "null" }] },
+        "grant_envelope_sha256": { "$ref": "#/$defs/nullable_hash" },
+        "grant_id": { "oneOf": [{ "type": "string", "pattern": "^capability-grant-[0-9a-f]{64}(?![\\s\\S])" }, { "type": "null" }] },
+        "grant_sha256": { "$ref": "#/$defs/nullable_hash" },
+        "kind": { "const": "GrantIssuanceReceipt" },
+        "ledger_sequence": { "type": "integer", "minimum": 1, "maximum": 9223372036854775807 },
+        "policy_sha256": { "$ref": "#/$defs/hash" },
+        "prior_receipt_sha256": { "$ref": "#/$defs/nullable_hash" },
+        "profile_id": { "$ref": "#/$defs/profile_id" },
+        "receipt_sha256": { "$ref": "#/$defs/hash" },
+        "record_key_sha256": { "$ref": "#/$defs/hash" },
+        "request_sha256": { "$ref": "#/$defs/hash" },
+        "signature": { "$ref": "#/$defs/signature" },
+        "stored_at_unix_ms": { "$ref": "#/$defs/unix_ms" },
+        "trust_epoch": { "type": "integer", "minimum": 1, "maximum": 9223372036854775807 },
+        "trust_root_sha256": { "$ref": "#/$defs/hash" }
+      }
+    },
+    "ledger_entry": {
+      "type": "object", "additionalProperties": false,
+      "required": ["grant", "policy", "receipt", "request", "sequence"],
+      "properties": {
+        "grant": { "$ref": "#/$defs/nullable_grant" },
+        "policy": { "$ref": "#/$defs/policy" },
+        "receipt": { "$ref": "#/$defs/receipt" },
+        "request": { "$ref": "#/$defs/request" },
+        "sequence": { "type": "integer", "minimum": 1, "maximum": 9223372036854775807 }
+      }
+    },
+    "ledger": {
+      "type": "object", "additionalProperties": false,
+      "required": ["api_version", "canonicalization", "clock_high_water_unix_ms", "entries", "kind", "ledger_sha256", "profile_id", "signature", "trust_epoch", "trust_root_sha256"],
+      "properties": {
+        "api_version": { "const": "forgeos.grant-issuance-ledger/v1" },
+        "canonicalization": { "const": "forgeos.canonical-json/v1" },
+        "clock_high_water_unix_ms": { "$ref": "#/$defs/unix_ms" },
+        "entries": { "type": "array", "minItems": 1, "maxItems": 256, "items": { "$ref": "#/$defs/ledger_entry" } },
+        "kind": { "const": "GrantIssuanceLedger" },
+        "ledger_sha256": { "$ref": "#/$defs/hash" },
+        "profile_id": { "$ref": "#/$defs/profile_id" },
+        "signature": { "$ref": "#/$defs/signature" },
+        "trust_epoch": { "type": "integer", "minimum": 1, "maximum": 9223372036854775807 },
+        "trust_root_sha256": { "$ref": "#/$defs/hash" }
+      }
+    },
+    "result": {
+      "type": "object", "additionalProperties": false,
+      "required": ["api_version", "canonicalization", "delivery_disposition", "grant", "kind", "receipt"],
+      "properties": {
+        "api_version": { "const": "forgeos.bootstrap-grant-issuance-result/v1" },
+        "canonicalization": { "const": "forgeos.canonical-json/v1" },
+        "delivery_disposition": { "enum": ["exact_replay", "stored"] },
+        "grant": { "$ref": "#/$defs/nullable_grant" },
+        "kind": { "const": "BootstrapGrantIssuanceResult" },
+        "receipt": { "$ref": "#/$defs/receipt" }
+      }
+    }
+  }
+}

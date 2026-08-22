@@ -1,0 +1,285 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forgeos.dev/contracts/bootstrap-repo-read-execution-v1.schema.json",
+  "title": "ForgeOS authenticated bootstrap repository-read execution v1",
+  "description": "Closed execution authority, exact expected-byte manifest, signed invocation and usage history, raw first delivery, and content-free durable replay metadata. Schema validity does not authenticate signatures, root pins, durability, repository identity, or effects.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["completed_receipt", "effect_intent_receipt", "execution_policy", "execution_result", "execution_trust_root", "expected_manifest", "first_delivery", "grant", "grant_issuance_receipt", "invocation", "issuance_ledger", "issuance_policy", "issuance_request", "issuance_trust_root", "reserved_receipt", "result_metadata", "signature_profile", "usage_ledger"],
+  "properties": {
+    "completed_receipt": { "$ref": "#/$defs/receipt" },
+    "effect_intent_receipt": { "$ref": "#/$defs/receipt" },
+    "execution_policy": { "$ref": "#/$defs/execution_policy" },
+    "execution_result": { "$ref": "#/$defs/execution_result" },
+    "execution_trust_root": { "$ref": "#/$defs/execution_trust_root" },
+    "expected_manifest": { "$ref": "#/$defs/manifest" },
+    "first_delivery": { "$ref": "#/$defs/delivery" },
+    "grant": { "$ref": "https://forgeos.dev/contracts/capability-grant-v1.schema.json#/$defs/grant" },
+    "grant_issuance_receipt": { "$ref": "https://forgeos.dev/contracts/bootstrap-grant-issuance-v1.schema.json#/$defs/receipt" },
+    "invocation": { "$ref": "#/$defs/invocation" },
+    "issuance_ledger": { "$ref": "https://forgeos.dev/contracts/bootstrap-grant-issuance-v1.schema.json#/$defs/ledger" },
+    "issuance_policy": { "$ref": "https://forgeos.dev/contracts/bootstrap-grant-issuance-v1.schema.json#/$defs/policy" },
+    "issuance_request": { "$ref": "https://forgeos.dev/contracts/bootstrap-grant-issuance-v1.schema.json#/$defs/request" },
+    "issuance_trust_root": { "$ref": "https://forgeos.dev/contracts/bootstrap-grant-issuance-v1.schema.json#/$defs/trust_root" },
+    "reserved_receipt": { "$ref": "#/$defs/receipt" },
+    "result_metadata": { "$ref": "#/$defs/result_metadata" },
+    "signature_profile": { "$ref": "https://forgeos.dev/contracts/bootstrap-grant-issuance-v1.schema.json#/$defs/signature_profile" },
+    "usage_ledger": { "$ref": "#/$defs/usage_ledger" }
+  },
+  "x-forgeos-canonicalization": {
+    "format": "forgeos.canonical-json/v1",
+    "self_digest_rule": "set the artifact self-digest to empty; also set derived ID empty where present and signature.signature_base64url empty for signed artifacts",
+    "plain_content_hash": "SHA-256 of exact decoded raw bytes",
+    "content_encoding": "canonical unpadded base64url; NUL and non-UTF-8 bytes are valid",
+    "digest_domains": {
+      "execution_trust_root": "forgeos.bootstrap-repo-read-execution-trust-root.v1\u0000",
+      "manifest": "forgeos.repo-read-expected-manifest.v1\u0000",
+      "execution_policy": "forgeos.bootstrap-repo-read-execution-policy.v1\u0000",
+      "requested_action": "forgeos.capability-requested-action.v1\u0000",
+      "idempotency_record_key": "forgeos.bootstrap-repo-read-idempotency-record-key.v1\u0000 followed by exact ASCII idempotency key bytes",
+      "invocation": "forgeos.bootstrap-repo-read-invocation.v1\u0000",
+      "execution_result": "forgeos.bootstrap-repo-read-execution-result.v1\u0000",
+      "result_metadata": "forgeos.bootstrap-repo-read-result-metadata.v1\u0000",
+      "usage_receipt": "forgeos.bootstrap-repo-read-usage-receipt.v1\u0000",
+      "usage_ledger": "forgeos.bootstrap-repo-read-usage-ledger.v1\u0000"
+    },
+    "signature_domains": {
+      "execution_policy": "forgeos.bootstrap-repo-read-execution-policy.signature.v1\u0000",
+      "invocation": "forgeos.bootstrap-repo-read-invocation.signature.v1\u0000",
+      "usage_receipt": "forgeos.bootstrap-repo-read-usage-receipt.signature.v1\u0000",
+      "usage_ledger": "forgeos.bootstrap-repo-read-usage-ledger.signature.v1\u0000"
+    }
+  },
+  "x-forgeos-authority-semantics": {
+    "profile_id": "authenticated_bootstrap_repo_read_execution_v1",
+    "execution_root": "externally_pinned_and_distinct_from_adr0057_issuance_root",
+    "execution_key_usages": ["execution_policy_sign", "execution_receipt_sign", "execution_request_auth"],
+    "execution_receipt_sign_scope": "exactly domain-separated UsageReceipt and complete UsageLedger snapshot signatures; no Policy Invocation issuance artifact or other document",
+    "issuance_disposition": "authorizes_grant_issuance_only_not_execution",
+    "execution_consent": "signed allow/activate_once ExecutionPolicy required",
+    "context": "opaque_context_sha256_binding_only_no_ContextPackage_reassembly",
+    "source": "opaque source_tree_sha256 and source_revision bindings; no GitWorktreeSource reinterpretation",
+    "manifest_paths": "exact canonical repository-relative paths excluding case-insensitive .git and .forge top-level control directories",
+    "filesystem": "Linux openat2 on a closed directly-visible ext2/3/4 XFS Btrfs tmpfs overlayfs or ZFS superblock allowlist; directly-visible FUSE NFS and unlisted superblocks fail closed; regular leaves require st_nlink=1",
+    "filesystem_locality_attestation": "none; fstatfs does not authenticate overlay backing or physical storage locality; local backing is an operator deployment prerequisite and network_bytes zero only excludes an explicit network request by this effect",
+    "repository_metadata_write": "leaf opens and post-read reopens require O_NOATIME; unsupported or unauthorized O_NOATIME fails closed with no atime-mutating fallback",
+    "special_file_open_boundary": "confined O_PATH precheck requires regular exact-size single-link before active O_NONBLOCK O_NOCTTY open and same-inode revalidation; static special nodes never receive active open; concurrent replacement can still rendezvous FIFO or trigger driver open, so deployment must exclude special nodes CAP_MKNOD and concurrent untrusted namespace writers and v1 does not attest driver or process isolation",
+    "platform_probe_order": "pre-reservation platform selection is a pure build-tag check with no filesystem access; bound repository openat2 and visible-superblock preflight occurs after durable reservation and before effect_intent",
+    "cooperative_timeout": "pinned content reader checks before between and after statfs openat2 stat read and reopen; repository identity composite is checked before and after as a whole; blocked kernel operations may exceed budget but late return is timeout-preferred",
+    "usage_groups": "global receipt chain containing consecutive reserved_no_repo_io -> effect_intent -> terminal groups; terminal permits a fresh unique Grant group",
+    "restart": "an active tail is quarantined and never resumed",
+    "exact_replay": "two identity leaves contain either the canonical Policy+Invocation pair or both 64-byte lowercase self-digests; ledger lookup happens before manifest/repository/clock/key access and returns receipt plus metadata and null execution_result",
+    "root_key_rotation_and_state_migration": "unsupported_in_v1; pinned execution root receipt key and usage-ledger namespace are indivisible; no clear rebase or cross-root spent-history inheritance; continuity requires a new profile ADR and externally witnessed migration",
+    "fixture_keys": "test_only_structural_marker; production forbidden",
+    "python_checker": "structural_digest_relation_state_only_no_Ed25519_authentication_or_effect",
+    "approval_or_production_effects": false
+  },
+  "x-forgeos-limits": {
+    "max_root_bytes": 262144,
+    "max_manifest_bytes": 262144,
+    "max_policy_bytes": 524288,
+    "max_invocation_bytes": 524288,
+    "max_receipt_bytes": 262144,
+    "max_result_bytes": 2097152,
+    "max_metadata_bytes": 262144,
+    "max_delivery_bytes": 3145728,
+    "max_ledger_bytes": 16777216,
+    "max_golden_bytes": 41943040,
+    "max_paths": 16,
+    "max_path_bytes": 4096,
+    "max_path_components": 256,
+    "max_file_bytes": 1048576,
+    "max_raw_output_bytes": 1048576,
+    "max_usage_entries": 256,
+    "reservation_entry_overhead_bytes": 4096,
+    "orphan_entry_overhead_bytes": 1024,
+    "max_freshness_and_timeout_ms": 300000,
+    "max_json_depth": 16,
+    "max_object_fields": 64,
+    "max_array_items": 256,
+    "max_string_bytes": 16384,
+    "content_base64url_exception_max_chars": 1398102,
+    "integer_domain": "signed_int64"
+  },
+  "$defs": {
+    "hash": { "type": "string", "minLength": 64, "maxLength": 64, "pattern": "^[0-9a-f]{64}(?![\\s\\S])" },
+    "nullable_hash": { "oneOf": [{ "$ref": "#/$defs/hash" }, { "type": "null" }] },
+    "unix_ms": { "type": "integer", "minimum": 0, "maximum": 9223372036854775807 },
+    "epoch": { "type": "integer", "minimum": 1, "maximum": 9223372036854775807 },
+    "sequence": { "type": "integer", "minimum": 1, "maximum": 256 },
+    "text": { "type": "string", "minLength": 1, "maxLength": 16384, "not": { "pattern": "[\\u0000-\\u001f\\u007f\\u061c\\u200e\\u200f\\u2028-\\u202e\\u2066-\\u2069\\ud800-\\udfff]" } },
+    "short_text": { "allOf": [{ "$ref": "#/$defs/text" }, { "maxLength": 160 }] },
+    "profile_id": { "const": "authenticated_bootstrap_repo_read_execution_v1" },
+    "canonicalization": { "const": "forgeos.canonical-json/v1" },
+    "idempotency": { "type": "string", "minLength": 16, "maxLength": 128, "pattern": "^[A-Za-z0-9._:@+\\-]{16,128}(?![\\s\\S])" },
+    "signature": { "$ref": "https://forgeos.dev/contracts/bootstrap-grant-issuance-v1.schema.json#/$defs/signature" },
+    "principal": {
+      "type": "object", "additionalProperties": false,
+      "required": ["authority_domain", "principal_id", "principal_type"],
+      "properties": { "authority_domain": { "$ref": "#/$defs/short_text" }, "principal_id": { "$ref": "#/$defs/short_text" }, "principal_type": { "enum": ["agent", "service"] } }
+    },
+    "capability": { "$ref": "https://forgeos.dev/contracts/bootstrap-grant-issuance-v1.schema.json#/$defs/capability" },
+    "task_binding": { "$ref": "https://forgeos.dev/contracts/bootstrap-grant-issuance-v1.schema.json#/$defs/task_binding" },
+    "budget": { "$ref": "https://forgeos.dev/contracts/bootstrap-grant-issuance-v1.schema.json#/$defs/budget" },
+    "path": { "allOf": [{ "$ref": "#/$defs/text" }, { "maxLength": 4096, "pattern": "^(?!(?:[^/]+/){256})(?!\\.(?:[Gg][Ii][Tt]|[Ff][Oo][Rr][Gg][Ee])(?:/|$))(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)(?!.*[\\\\*?\\[\\]{}])[^/]+(?:/[^/]+)*(?!/)(?![\\s\\S])" }] },
+    "repo_path": {
+      "type": "object", "additionalProperties": false,
+      "required": ["match", "path", "scope_kind"],
+      "properties": { "match": { "const": "exact" }, "path": { "$ref": "#/$defs/path" }, "scope_kind": { "const": "repo_path" } }
+    },
+    "requested_usage": {
+      "type": "object", "additionalProperties": false,
+      "required": ["call_count", "cost_usd_micros", "input_tokens", "network_bytes", "output_bytes", "output_tokens", "timeout_ms"],
+      "properties": { "call_count": { "const": 1 }, "cost_usd_micros": { "const": 0 }, "input_tokens": { "const": 0 }, "network_bytes": { "const": 0 }, "output_bytes": { "type": "integer", "minimum": 0, "maximum": 1048576 }, "output_tokens": { "const": 0 }, "timeout_ms": { "type": "integer", "minimum": 1, "maximum": 300000 } }
+    },
+    "requested_action": {
+      "type": "object", "additionalProperties": false,
+      "required": ["effect_id", "resources", "usage"],
+      "properties": { "effect_id": { "const": "repo.read" }, "resources": { "type": "array", "minItems": 1, "maxItems": 16, "uniqueItems": true, "items": { "$ref": "#/$defs/repo_path" } }, "usage": { "$ref": "#/$defs/requested_usage" } }
+    },
+    "bindings": {
+      "type": "object", "additionalProperties": false,
+      "required": ["context_sha256", "source_revision", "source_tree_sha256"],
+      "properties": { "context_sha256": { "$ref": "#/$defs/hash" }, "source_revision": { "$ref": "#/$defs/short_text" }, "source_tree_sha256": { "$ref": "#/$defs/hash" } }
+    },
+    "validity": {
+      "type": "object", "additionalProperties": false,
+      "required": ["expires_at_unix_ms", "not_before_unix_ms"],
+      "properties": { "expires_at_unix_ms": { "$ref": "#/$defs/unix_ms" }, "not_before_unix_ms": { "$ref": "#/$defs/unix_ms" } }
+    },
+    "service_principal": {
+      "type": "object", "additionalProperties": false,
+      "required": ["authority_domain", "principal_id", "principal_type"],
+      "properties": { "authority_domain": { "$ref": "#/$defs/short_text" }, "principal_id": { "$ref": "#/$defs/short_text" }, "principal_type": { "const": "service" } }
+    },
+    "agent_principal": {
+      "type": "object", "additionalProperties": false,
+      "required": ["authority_domain", "principal_id", "principal_type"],
+      "properties": { "authority_domain": { "$ref": "#/$defs/short_text" }, "principal_id": { "$ref": "#/$defs/short_text" }, "principal_type": { "const": "agent" } }
+    },
+    "root_key": {
+      "type": "object", "additionalProperties": false,
+      "required": ["key_id", "principal", "public_key_base64url", "usage"],
+      "properties": {
+        "key_id": { "$ref": "#/$defs/short_text" }, "principal": { "oneOf": [{ "$ref": "#/$defs/service_principal" }, { "$ref": "#/$defs/agent_principal" }] },
+        "public_key_base64url": { "type": "string", "minLength": 43, "maxLength": 43, "pattern": "^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048](?![\\s\\S])" },
+        "usage": { "enum": ["execution_policy_sign", "execution_receipt_sign", "execution_request_auth"] }
+      }
+    },
+    "execution_trust_root": {
+      "type": "object", "additionalProperties": false,
+      "required": ["api_version", "canonicalization", "issuance_trust_epoch", "issuance_trust_root_sha256", "keys", "kind", "profile_id", "root_sha256", "signature_profile_sha256", "trust_domain", "trust_epoch"],
+      "properties": {
+        "api_version": { "const": "forgeos.bootstrap-repo-read-execution-trust-root/v1" }, "canonicalization": { "$ref": "#/$defs/canonicalization" },
+        "issuance_trust_epoch": { "$ref": "#/$defs/epoch" }, "issuance_trust_root_sha256": { "$ref": "#/$defs/hash" },
+        "keys": { "type": "array", "minItems": 3, "maxItems": 3, "uniqueItems": true, "prefixItems": [
+          { "allOf": [{ "$ref": "#/$defs/root_key" }, { "properties": { "principal": { "$ref": "#/$defs/service_principal" }, "usage": { "const": "execution_policy_sign" } } }] },
+          { "allOf": [{ "$ref": "#/$defs/root_key" }, { "properties": { "principal": { "$ref": "#/$defs/service_principal" }, "usage": { "const": "execution_receipt_sign" } } }] },
+          { "allOf": [{ "$ref": "#/$defs/root_key" }, { "properties": { "principal": { "$ref": "#/$defs/agent_principal" }, "usage": { "const": "execution_request_auth" } } }] }
+        ], "items": false },
+        "kind": { "const": "BootstrapRepoReadExecutionTrustRoot" }, "profile_id": { "$ref": "#/$defs/profile_id" }, "root_sha256": { "$ref": "#/$defs/hash" },
+        "signature_profile_sha256": { "$ref": "#/$defs/hash" }, "trust_domain": { "$ref": "#/$defs/short_text" }, "trust_epoch": { "$ref": "#/$defs/epoch" }
+      }
+    },
+    "manifest_entry": {
+      "type": "object", "additionalProperties": false,
+      "required": ["content_bytes", "content_sha256", "kind", "path"],
+      "properties": { "content_bytes": { "type": "integer", "minimum": 0, "maximum": 1048576 }, "content_sha256": { "$ref": "#/$defs/hash" }, "kind": { "const": "regular" }, "path": { "$ref": "#/$defs/path" } }
+    },
+    "manifest": {
+      "type": "object", "additionalProperties": false,
+      "required": ["api_version", "canonicalization", "entries", "kind", "manifest_sha256"],
+      "properties": { "api_version": { "const": "forgeos.repo-read-expected-manifest/v1" }, "canonicalization": { "$ref": "#/$defs/canonicalization" }, "entries": { "type": "array", "minItems": 1, "maxItems": 16, "uniqueItems": true, "items": { "$ref": "#/$defs/manifest_entry" } }, "kind": { "const": "RepoReadExpectedManifest" }, "manifest_sha256": { "$ref": "#/$defs/hash" } }
+    },
+    "execution_policy": {
+      "type": "object", "additionalProperties": false,
+      "required": ["activation", "api_version", "bindings", "budget", "canonicalization", "capability", "disposition", "effect_id", "execution_policy_id", "execution_policy_sha256", "execution_trust_epoch", "execution_trust_root_sha256", "grant_envelope_sha256", "grant_id", "grant_issuance_ledger_sequence", "grant_issuance_receipt_sha256", "grant_policy_sha256", "grant_request_sha256", "grant_sha256", "idempotency_key", "issuance_trust_epoch", "issuance_trust_root_sha256", "kind", "manifest_sha256", "profile_id", "requested_action", "requested_action_sha256", "signature", "subject", "task_binding", "validity"],
+      "properties": {
+        "activation": { "enum": ["activate_once", "do_not_activate"] }, "api_version": { "const": "forgeos.bootstrap-repo-read-execution-policy/v1" }, "bindings": { "$ref": "#/$defs/bindings" }, "budget": { "$ref": "#/$defs/budget" }, "canonicalization": { "$ref": "#/$defs/canonicalization" }, "capability": { "$ref": "#/$defs/capability" }, "disposition": { "enum": ["allow", "deny"] }, "effect_id": { "const": "repo.read" },
+        "execution_policy_id": { "$ref": "#/$defs/short_text" }, "execution_policy_sha256": { "$ref": "#/$defs/hash" }, "execution_trust_epoch": { "$ref": "#/$defs/epoch" }, "execution_trust_root_sha256": { "$ref": "#/$defs/hash" }, "grant_envelope_sha256": { "$ref": "#/$defs/hash" }, "grant_id": { "type": "string", "pattern": "^capability-grant-[0-9a-f]{64}(?![\\s\\S])" }, "grant_issuance_ledger_sequence": { "$ref": "#/$defs/sequence" }, "grant_issuance_receipt_sha256": { "$ref": "#/$defs/hash" }, "grant_policy_sha256": { "$ref": "#/$defs/hash" }, "grant_request_sha256": { "$ref": "#/$defs/hash" }, "grant_sha256": { "$ref": "#/$defs/hash" },
+        "idempotency_key": { "$ref": "#/$defs/idempotency" }, "issuance_trust_epoch": { "$ref": "#/$defs/epoch" }, "issuance_trust_root_sha256": { "$ref": "#/$defs/hash" }, "kind": { "const": "BootstrapRepoReadExecutionPolicy" }, "manifest_sha256": { "$ref": "#/$defs/hash" }, "profile_id": { "$ref": "#/$defs/profile_id" }, "requested_action": { "$ref": "#/$defs/requested_action" }, "requested_action_sha256": { "$ref": "#/$defs/hash" }, "signature": { "$ref": "#/$defs/signature" }, "subject": { "$ref": "#/$defs/principal" }, "task_binding": { "$ref": "#/$defs/task_binding" }, "validity": { "$ref": "#/$defs/validity" }
+      },
+      "oneOf": [
+        { "properties": { "activation": { "const": "activate_once" }, "disposition": { "const": "allow" } } },
+        { "properties": { "activation": { "const": "do_not_activate" }, "disposition": { "const": "deny" } } }
+      ]
+    },
+    "invocation": {
+      "type": "object", "additionalProperties": false,
+      "required": ["api_version", "bindings", "canonicalization", "capability", "execution_policy_sha256", "execution_trust_epoch", "execution_trust_root_sha256", "expires_at_unix_ms", "grant_envelope_sha256", "grant_id", "grant_issuance_ledger_sequence", "grant_issuance_receipt_sha256", "grant_policy_sha256", "grant_request_sha256", "grant_sha256", "idempotency_key", "invocation_id", "invocation_sha256", "issuance_trust_epoch", "issuance_trust_root_sha256", "kind", "manifest_sha256", "profile_id", "requested_action", "requested_action_sha256", "requested_at_unix_ms", "signature", "subject", "task_binding"],
+      "properties": {
+        "api_version": { "const": "forgeos.bootstrap-repo-read-invocation/v1" }, "bindings": { "$ref": "#/$defs/bindings" }, "canonicalization": { "$ref": "#/$defs/canonicalization" }, "capability": { "$ref": "#/$defs/capability" }, "execution_policy_sha256": { "$ref": "#/$defs/hash" }, "execution_trust_epoch": { "$ref": "#/$defs/epoch" }, "execution_trust_root_sha256": { "$ref": "#/$defs/hash" }, "expires_at_unix_ms": { "$ref": "#/$defs/unix_ms" }, "grant_envelope_sha256": { "$ref": "#/$defs/hash" }, "grant_id": { "type": "string", "pattern": "^capability-grant-[0-9a-f]{64}(?![\\s\\S])" }, "grant_issuance_ledger_sequence": { "$ref": "#/$defs/sequence" }, "grant_issuance_receipt_sha256": { "$ref": "#/$defs/hash" }, "grant_policy_sha256": { "$ref": "#/$defs/hash" }, "grant_request_sha256": { "$ref": "#/$defs/hash" }, "grant_sha256": { "$ref": "#/$defs/hash" },
+        "idempotency_key": { "$ref": "#/$defs/idempotency" }, "invocation_id": { "type": "string", "pattern": "^bootstrap-repo-read-invocation-[0-9a-f]{64}(?![\\s\\S])" }, "invocation_sha256": { "$ref": "#/$defs/hash" }, "issuance_trust_epoch": { "$ref": "#/$defs/epoch" }, "issuance_trust_root_sha256": { "$ref": "#/$defs/hash" }, "kind": { "const": "BootstrapRepoReadInvocation" }, "manifest_sha256": { "$ref": "#/$defs/hash" }, "profile_id": { "$ref": "#/$defs/profile_id" }, "requested_action": { "$ref": "#/$defs/requested_action" }, "requested_action_sha256": { "$ref": "#/$defs/hash" }, "requested_at_unix_ms": { "$ref": "#/$defs/unix_ms" }, "signature": { "$ref": "#/$defs/signature" }, "subject": { "$ref": "#/$defs/principal" }, "task_binding": { "$ref": "#/$defs/task_binding" }
+      }
+    },
+    "reason": { "oneOf": [{ "enum": ["content_mismatch", "cooperative_timeout_exceeded", "effect_outcome_uncertain", "orphaned_effect_intent", "orphaned_reserved_no_repo_io", "repository_identity_changed", "repository_read_failed"] }, { "type": "null" }] },
+    "receipt": {
+      "type": "object", "additionalProperties": false,
+      "required": ["api_version", "canonicalization", "effect_intent_receipt_sha256", "execution_policy_sha256", "execution_result_sha256", "execution_trust_epoch", "execution_trust_root_sha256", "grant_envelope_sha256", "grant_id", "grant_issuance_receipt_sha256", "grant_sha256", "idempotency_record_key_sha256", "invocation_id", "invocation_sha256", "issuance_trust_epoch", "issuance_trust_root_sha256", "kind", "ledger_sequence", "manifest_sha256", "prior_usage_receipt_sha256", "profile_id", "reason_code", "receipt_sha256", "recorded_at_unix_ms", "requested_action_sha256", "reservation_receipt_sha256", "result_metadata_sha256", "signature", "state"],
+      "properties": {
+        "api_version": { "const": "forgeos.bootstrap-repo-read-usage-receipt/v1" }, "canonicalization": { "$ref": "#/$defs/canonicalization" }, "effect_intent_receipt_sha256": { "$ref": "#/$defs/nullable_hash" }, "execution_policy_sha256": { "$ref": "#/$defs/hash" }, "execution_result_sha256": { "$ref": "#/$defs/nullable_hash" }, "execution_trust_epoch": { "$ref": "#/$defs/epoch" }, "execution_trust_root_sha256": { "$ref": "#/$defs/hash" }, "grant_envelope_sha256": { "$ref": "#/$defs/hash" }, "grant_id": { "type": "string", "pattern": "^capability-grant-[0-9a-f]{64}(?![\\s\\S])" }, "grant_issuance_receipt_sha256": { "$ref": "#/$defs/hash" }, "grant_sha256": { "$ref": "#/$defs/hash" }, "idempotency_record_key_sha256": { "$ref": "#/$defs/hash" }, "invocation_id": { "type": "string", "pattern": "^bootstrap-repo-read-invocation-[0-9a-f]{64}(?![\\s\\S])" }, "invocation_sha256": { "$ref": "#/$defs/hash" }, "issuance_trust_epoch": { "$ref": "#/$defs/epoch" }, "issuance_trust_root_sha256": { "$ref": "#/$defs/hash" },
+        "kind": { "const": "BootstrapRepoReadUsageReceipt" }, "ledger_sequence": { "$ref": "#/$defs/sequence" }, "manifest_sha256": { "$ref": "#/$defs/hash" }, "prior_usage_receipt_sha256": { "$ref": "#/$defs/nullable_hash" }, "profile_id": { "$ref": "#/$defs/profile_id" }, "reason_code": { "$ref": "#/$defs/reason" }, "receipt_sha256": { "$ref": "#/$defs/hash" }, "recorded_at_unix_ms": { "$ref": "#/$defs/unix_ms" }, "requested_action_sha256": { "$ref": "#/$defs/hash" }, "reservation_receipt_sha256": { "$ref": "#/$defs/nullable_hash" }, "result_metadata_sha256": { "$ref": "#/$defs/nullable_hash" }, "signature": { "$ref": "#/$defs/signature" }, "state": { "enum": ["completed", "effect_intent", "failed_consumed", "quarantined", "reserved_no_repo_io"] }
+      },
+      "oneOf": [
+        { "properties": { "effect_intent_receipt_sha256": { "type": "null" }, "execution_result_sha256": { "type": "null" }, "reason_code": { "type": "null" }, "reservation_receipt_sha256": { "type": "null" }, "result_metadata_sha256": { "type": "null" }, "state": { "const": "reserved_no_repo_io" } } },
+        { "properties": { "effect_intent_receipt_sha256": { "type": "null" }, "execution_result_sha256": { "type": "null" }, "reason_code": { "type": "null" }, "reservation_receipt_sha256": { "$ref": "#/$defs/hash" }, "result_metadata_sha256": { "type": "null" }, "state": { "const": "effect_intent" } } },
+        { "properties": { "effect_intent_receipt_sha256": { "$ref": "#/$defs/hash" }, "execution_result_sha256": { "$ref": "#/$defs/hash" }, "reason_code": { "type": "null" }, "reservation_receipt_sha256": { "$ref": "#/$defs/hash" }, "result_metadata_sha256": { "$ref": "#/$defs/hash" }, "state": { "const": "completed" } } },
+        { "properties": { "effect_intent_receipt_sha256": { "$ref": "#/$defs/hash" }, "execution_result_sha256": { "type": "null" }, "reason_code": { "enum": ["content_mismatch", "cooperative_timeout_exceeded", "repository_identity_changed", "repository_read_failed"] }, "reservation_receipt_sha256": { "$ref": "#/$defs/hash" }, "result_metadata_sha256": { "type": "null" }, "state": { "const": "failed_consumed" } } },
+        { "properties": { "execution_result_sha256": { "type": "null" }, "reason_code": { "enum": ["effect_outcome_uncertain", "orphaned_effect_intent", "orphaned_reserved_no_repo_io"] }, "reservation_receipt_sha256": { "$ref": "#/$defs/hash" }, "result_metadata_sha256": { "type": "null" }, "state": { "const": "quarantined" } } }
+      ]
+    },
+    "observed_usage": {
+      "type": "object", "additionalProperties": false,
+      "required": ["call_count", "cost_usd_micros", "elapsed_ms", "input_tokens", "network_bytes", "output_bytes", "output_tokens"],
+      "properties": { "call_count": { "const": 1 }, "cost_usd_micros": { "const": 0 }, "elapsed_ms": { "type": "integer", "minimum": 0, "maximum": 300000 }, "input_tokens": { "const": 0 }, "network_bytes": { "const": 0 }, "output_bytes": { "type": "integer", "minimum": 0, "maximum": 1048576 }, "output_tokens": { "const": 0 } }
+    },
+    "raw_read": {
+      "type": "object", "additionalProperties": false,
+      "required": ["content_base64url", "content_bytes", "content_sha256", "path"],
+      "properties": { "content_base64url": { "type": "string", "maxLength": 1398102, "pattern": "^(?:[A-Za-z0-9_-]{4})*(?:[A-Za-z0-9_-][AQgw]|[A-Za-z0-9_-]{2}[AEIMQUYcgkosw048])?(?![\\s\\S])" }, "content_bytes": { "type": "integer", "minimum": 0, "maximum": 1048576 }, "content_sha256": { "$ref": "#/$defs/hash" }, "path": { "$ref": "#/$defs/path" } }
+    },
+    "metadata_read": {
+      "type": "object", "additionalProperties": false,
+      "required": ["content_bytes", "content_sha256", "path"],
+      "properties": { "content_bytes": { "type": "integer", "minimum": 0, "maximum": 1048576 }, "content_sha256": { "$ref": "#/$defs/hash" }, "path": { "$ref": "#/$defs/path" } }
+    },
+    "execution_result": {
+      "type": "object", "additionalProperties": false,
+      "required": ["api_version", "canonicalization", "completed_at_unix_ms", "content_bytes", "execution_policy_sha256", "execution_result_id", "execution_result_sha256", "execution_trust_epoch", "execution_trust_root_sha256", "grant_envelope_sha256", "grant_id", "grant_sha256", "invocation_id", "invocation_sha256", "issuance_trust_epoch", "issuance_trust_root_sha256", "kind", "manifest_sha256", "observation_semantics", "observed_usage", "profile_id", "reads", "requested_action_sha256"],
+      "properties": {
+        "api_version": { "const": "forgeos.bootstrap-repo-read-execution-result/v1" }, "canonicalization": { "$ref": "#/$defs/canonicalization" }, "completed_at_unix_ms": { "$ref": "#/$defs/unix_ms" }, "content_bytes": { "type": "integer", "minimum": 0, "maximum": 1048576 }, "execution_policy_sha256": { "$ref": "#/$defs/hash" }, "execution_result_id": { "type": "string", "pattern": "^bootstrap-repo-read-result-[0-9a-f]{64}(?![\\s\\S])" }, "execution_result_sha256": { "$ref": "#/$defs/hash" }, "execution_trust_epoch": { "$ref": "#/$defs/epoch" }, "execution_trust_root_sha256": { "$ref": "#/$defs/hash" }, "grant_envelope_sha256": { "$ref": "#/$defs/hash" }, "grant_id": { "type": "string", "pattern": "^capability-grant-[0-9a-f]{64}(?![\\s\\S])" }, "grant_sha256": { "$ref": "#/$defs/hash" }, "invocation_id": { "type": "string", "pattern": "^bootstrap-repo-read-invocation-[0-9a-f]{64}(?![\\s\\S])" }, "invocation_sha256": { "$ref": "#/$defs/hash" }, "issuance_trust_epoch": { "$ref": "#/$defs/epoch" }, "issuance_trust_root_sha256": { "$ref": "#/$defs/hash" }, "kind": { "const": "BootstrapRepoReadExecutionResult" }, "manifest_sha256": { "$ref": "#/$defs/hash" }, "observation_semantics": { "const": "manifest_bound_ordered_non_atomic_raw_file_reads" }, "observed_usage": { "$ref": "#/$defs/observed_usage" }, "profile_id": { "$ref": "#/$defs/profile_id" }, "reads": { "type": "array", "minItems": 1, "maxItems": 16, "uniqueItems": true, "items": { "$ref": "#/$defs/raw_read" } }, "requested_action_sha256": { "$ref": "#/$defs/hash" }
+      }
+    },
+    "result_metadata": {
+      "type": "object", "additionalProperties": false,
+      "required": ["api_version", "canonicalization", "content_bytes", "execution_result_id", "execution_result_sha256", "kind", "manifest_sha256", "metadata_sha256", "observed_usage", "read_count", "reads"],
+      "properties": { "api_version": { "const": "forgeos.bootstrap-repo-read-result-metadata/v1" }, "canonicalization": { "$ref": "#/$defs/canonicalization" }, "content_bytes": { "type": "integer", "minimum": 0, "maximum": 1048576 }, "execution_result_id": { "type": "string", "pattern": "^bootstrap-repo-read-result-[0-9a-f]{64}(?![\\s\\S])" }, "execution_result_sha256": { "$ref": "#/$defs/hash" }, "kind": { "const": "BootstrapRepoReadResultMetadata" }, "manifest_sha256": { "$ref": "#/$defs/hash" }, "metadata_sha256": { "$ref": "#/$defs/hash" }, "observed_usage": { "$ref": "#/$defs/observed_usage" }, "read_count": { "type": "integer", "minimum": 1, "maximum": 16 }, "reads": { "type": "array", "minItems": 1, "maxItems": 16, "uniqueItems": true, "items": { "$ref": "#/$defs/metadata_read" } } }
+    },
+    "delivery": {
+      "type": "object", "additionalProperties": false,
+      "required": ["api_version", "canonicalization", "delivery_disposition", "execution_result", "kind", "receipt", "result_metadata"],
+      "properties": { "api_version": { "const": "forgeos.bootstrap-repo-read-execution-delivery/v1" }, "canonicalization": { "$ref": "#/$defs/canonicalization" }, "delivery_disposition": { "enum": ["exact_replay", "first_delivery"] }, "execution_result": { "oneOf": [{ "$ref": "#/$defs/execution_result" }, { "type": "null" }] }, "kind": { "const": "BootstrapRepoReadExecutionDelivery" }, "receipt": { "$ref": "#/$defs/receipt" }, "result_metadata": { "oneOf": [{ "$ref": "#/$defs/result_metadata" }, { "type": "null" }] } },
+      "oneOf": [
+        { "properties": { "delivery_disposition": { "const": "first_delivery" }, "execution_result": { "$ref": "#/$defs/execution_result" }, "receipt": { "properties": { "state": { "const": "completed" } } }, "result_metadata": { "$ref": "#/$defs/result_metadata" } } },
+        { "properties": { "delivery_disposition": { "const": "exact_replay" }, "execution_result": { "type": "null" }, "receipt": { "properties": { "state": { "const": "completed" } } }, "result_metadata": { "$ref": "#/$defs/result_metadata" } } },
+        { "properties": { "delivery_disposition": { "const": "exact_replay" }, "execution_result": { "type": "null" }, "receipt": { "properties": { "state": { "enum": ["failed_consumed", "quarantined"] } } }, "result_metadata": { "type": "null" } } }
+      ]
+    },
+    "ledger_entry": {
+      "type": "object", "additionalProperties": false,
+      "required": ["execution_policy", "invocation", "manifest", "receipt", "result_metadata", "sequence"],
+      "properties": { "execution_policy": { "oneOf": [{ "$ref": "#/$defs/execution_policy" }, { "type": "null" }] }, "invocation": { "oneOf": [{ "$ref": "#/$defs/invocation" }, { "type": "null" }] }, "manifest": { "oneOf": [{ "$ref": "#/$defs/manifest" }, { "type": "null" }] }, "receipt": { "$ref": "#/$defs/receipt" }, "result_metadata": { "oneOf": [{ "$ref": "#/$defs/result_metadata" }, { "type": "null" }] }, "sequence": { "$ref": "#/$defs/sequence" } },
+      "oneOf": [
+        { "properties": { "execution_policy": { "$ref": "#/$defs/execution_policy" }, "invocation": { "$ref": "#/$defs/invocation" }, "manifest": { "$ref": "#/$defs/manifest" }, "receipt": { "properties": { "state": { "const": "reserved_no_repo_io" } } }, "result_metadata": { "type": "null" } } },
+        { "properties": { "execution_policy": { "type": "null" }, "invocation": { "type": "null" }, "manifest": { "type": "null" }, "receipt": { "properties": { "state": { "const": "completed" } } }, "result_metadata": { "$ref": "#/$defs/result_metadata" } } },
+        { "properties": { "execution_policy": { "type": "null" }, "invocation": { "type": "null" }, "manifest": { "type": "null" }, "receipt": { "properties": { "state": { "enum": ["effect_intent", "failed_consumed", "quarantined"] } } }, "result_metadata": { "type": "null" } } }
+      ]
+    },
+    "usage_ledger": {
+      "type": "object", "additionalProperties": false,
+      "required": ["api_version", "canonicalization", "clock_high_water_unix_ms", "entries", "kind", "ledger_sha256", "profile_id", "signature", "trust_epoch", "trust_root_sha256"],
+      "properties": { "api_version": { "const": "forgeos.bootstrap-repo-read-usage-ledger/v1" }, "canonicalization": { "$ref": "#/$defs/canonicalization" }, "clock_high_water_unix_ms": { "$ref": "#/$defs/unix_ms" }, "entries": { "type": "array", "minItems": 1, "maxItems": 256, "items": { "$ref": "#/$defs/ledger_entry" } }, "kind": { "const": "BootstrapRepoReadUsageLedger" }, "ledger_sha256": { "$ref": "#/$defs/hash" }, "profile_id": { "$ref": "#/$defs/profile_id" }, "signature": { "$ref": "#/$defs/signature" }, "trust_epoch": { "$ref": "#/$defs/epoch" }, "trust_root_sha256": { "$ref": "#/$defs/hash" } },
+      "x-forgeos-invariants": ["global sequence and prior_usage_receipt_sha256 chain with nondecreasing recorded_at_unix_ms", "clock_high_water_unix_ms is at least every observed receipt and Invocation request time", "reservation recorded_at is inside Invocation freshness; intent and terminal may cross expiry", "reservation preflight uses current snapshot + actual embedded documents + three maximum receipts + maximum metadata + 4096 bytes", "active tail preserves one maximum receipt + 1024 bytes for quarantine", "consecutive reserved -> intent -> terminal groups with at most one active tail", "terminal permits a new reservation", "Grant envelope and idempotency record key globally unique", "reservation embeds exact policy, invocation, and manifest and resolves one issued ADR-0057 record", "non-reservation inputs null; completed alone stores content-free metadata", "no compaction"]
+    }
+  }
+}
