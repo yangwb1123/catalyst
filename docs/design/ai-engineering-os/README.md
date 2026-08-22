@@ -11,13 +11,31 @@
 > [ADR-0044](../../adr/0044-business-ui-geometry-contract.md)、
 > [ADR-0045](../../adr/0045-canonical-evidence-claim-contract.md)、
 > [ADR-0046](../../adr/0046-local-governance-record-journal.md) 至
-> [ADR-0054](../../adr/0054-local-governance-semantic-view-v1.md)；当前覆盖与分期见
+> [ADR-0061](../../adr/0061-knowledge-update-proposal-v1-contract-only.md) 与
+> [ADR-0068](../../adr/ADR-0068-authority-neutral-capability-registry-v1.md)；当前覆盖与分期见
 > [implementation-roadmap.md](implementation-roadmap.md)。运行时代码、测试和现有 `.agent/` 契约仍是当前事实源。
 
 当前已交付的窄切片位于 `.agent/engineering/`：activation、14 学科状态、原子规则、`forge accept` detector 接线、
 typed Context 路由、W0–W3 保障覆盖层和 TaskEvidencePackage 契约由 `harness/check.py` 机器校验，并随 scaffold/legacy
-upgrade 继承。其 `activation: shadow` 只强制合同和接线完整性；Context selector runtime、Capability invocation
-Registry、AADM solver、R0–R2 Reflection 和 Device Fabric 仍未实现。TaskEvidencePackage 不含完成判定。
+upgrade 继承。其 `activation: shadow` 只强制合同和接线完整性；ADR-0068 已交付唯一 staged entry 的 exact
+Capability Registry validator/resolver，ADR-0069 已交付 140-item logical-only ownership projection，但 CapabilityInvocation、physical Skill/adapter generation、Grant/PDP、
+plugin/runtime routing、AADM solver、R0–R2 Reflection 和 Device Fabric 仍未实现。TaskEvidencePackage 不含完成判定。
+
+ADR-0067 Proposed-only ADR v2 另为“新建 Proposed 文档”交付严格 frontmatter/body/digest wire、Python checker、Go `writes_adr` 候选验证、golden、registry v22、Skill 与 scaffold。Universal checker 不扫描 repository；Go 仍对 ADR 目录做既有 baseline-integrity fingerprint，但不会把旧 ADR 当作 v2 parse/retro-validation/migration 对象。owner/approver/Claim/Evidence/affected-node 仍只是 caller/author 声明；该切片也不生成 ApprovalRecord、Graph coverage、Accepted 状态、immutability/supersession/compliance、persistence 或 lifecycle authority。
+
+ADR-0068 authority-neutral Capability Registry v1 保持 ADR `proposed` 与 wire `staged`。Go/Python strict evaluator、显式输入 CLI、physical checker 和 exact golden 只验证/解析 `local-go-package-impact-prescan/1`；`resolved_exact` 不认证 Registry/owner/test/implementation，不读取 ambient repository/catalog，不选择或执行 implementation，也不产生 Grant/PDP、CapabilityInvocation、plugin/runtime-routing、persistence、transition 或 effect authority。
+
+ADR-0069 Planning Capability Ownership Projection v1 同样保持 ADR `proposed`，但已交付独立 Python/Go pure projector、exact golden、`forge capability-ownership project --catalog FILE|- --mapping FILE|-` 与 source-only scaffold。它只证明 supplied exact planning sources 中 140 unique capabilities 对 38 declared packages 完整且唯一的 primary-owner coverage，并派生 unresolved logical `.agent/skills/*.md` refs；不解析/生成物理 Skill/host adapter、不修改 ADR-0068 Registry，也不产生 owner authentication、Grant/PDP、CapabilityInvocation、runtime routing 或 effect authority。
+
+ADR-0070 Local Project Source Snapshot v1 继续保持 ADR `proposed`，并只实现 38-package parent 下的 `project-snapshot` 窄子项。Linux-only Go producer 对 tracked stage-zero 与 nonignored-untracked worktree 做 fixed-policy two-endpoint observation；source-portable pure Python decoder、exact golden、portable closed Skill、`.agent` adapter 与 fresh/legacy scaffold 已交付。它不是 atomic/current/complete/secret-free Project 或 Graph snapshot；Git/HEAD 未认证，scaffold 不复制 runtime 或安装宿主 Skill，unsupported host 或 runtime 不存在为 exit 3/`not_executed`，已存在但不兼容/执行失败为 exit 1，也不产生 Registry/Grant/PDP/CapabilityInvocation/routing/persistence/effect authority。
+
+ADR-0071 Portable Context Engineering Skill 继续保持 ADR `proposed`，并只实现同一 38-package parent 下的 `context-engineering` 窄子项。Closed 16-file source package、零参数 exact-stdin adapter、strict manifest checker、registry v26 shadow wiring 与 fresh/legacy scaffold 已交付；ADR-0055 Schema/golden/wire 和 Python/Go/Rust semantics 不变。它不发现 source、调用 provider/model、编译 live prompt、安装 host Skill、认证 publisher 或提供 check-to-use atomicity、Grant/PDP/Approval、truth/instruction/completion/persistence/routing/effect authority；parent 与其余 36 items 保持开放。
+
+ADR-0072 Portable Evidence Claim Validation Skill 继续保持 ADR `proposed`，并只实现同一 parent 下的 `evidence-claim-management` 窄子项。Closed 18-file source package、零参数 explicit-EOF exact-stdin validator、strict manifest checker、registry v27 shadow wiring 与 source-only fresh/legacy scaffold 已交付；ADR-0045 Schema/golden/wire 和 Python/Go/Rust semantics 不变。它只验证 already-authored bytes，不观察或 author/repair/persist records，不访问 journal/semantic view/proposal，不安装 host Skill 或提供 truth/instruction/Grant/PDP/Approval/completion/routing/transition/execution/effect authority；parent 与其余 35 items 保持开放。
+
+ADR-0073 Portable Policy Authority Declaration Assessment Skill 继续保持 ADR `proposed`，并只实现同一 parent 下的 `policy-authority` 窄子项。Closed 30-file source package、两个独立零参数 explicit-EOF exact-stdin adapter、strict manifest checker、registry v28 shadow wiring 与 source-only fresh/legacy scaffold 已交付；ADR-0056/0059 Schema/golden/wire 和 Python/Go/Rust semantics 不变。它不新增 combined envelope，不签发或激活 Grant、不使 Approval 生效、不访问 live policy/identity/approval/revocation/usage state、不调用 Kernel/PDP/PEP/ADR-0057/0058 runtime，且不安装 host Skill 或提供 authorization/permission/persistence/routing/transition/execution/effect authority；parent 与其余 34 items 保持开放。
+
+ADR-0074 Portable ADR Governance Proposed Document Validation Skill 继续保持 ADR `proposed`，并只实现同一 parent 下的 `adr-governance` 窄子项。Closed 25-file source package、exactly-one-basename-argument explicit-EOF exact-stdin validator、strict manifest checker、registry v29 shadow wiring 与 source-only fresh/legacy scaffold 已交付；ADR-0067 Schema/golden/wire 与 Python/Go semantics 不变。Caller basename 仅为独立 lexical label，不证明 physical file/repository identity；package 不新增 envelope，不扫描 repository，不 author/repair/reseal/accept/supersede/persist ADR，不复制 Go `writes_adr` runtime，不安装 host Skill 或提供 identity/approval/truth/compliance/lifecycle/execution/effect authority；parent 与其余 33 items 保持开放。
 
 ADR-0041 又交付了一个窄的后端 shadow 切片：14 维 BackendDecisionPolicy、无裁决权 BackendDecisionPackage、十张密集
 Skill adapter、data/backend Context route 和独立对抗 validator。它把持久化与低可逆决策前置，但不会从 diff 自动生成
@@ -46,8 +64,33 @@ ADR-0045 交付 Governance/Decision Kernel 的 0F-A 前置片：[Evidence/Claim 
 
 ADR-0046 至 ADR-0053 在该 canonical wire 之上分别交付 local exact-record journal、CognitiveAtom/三类 Evidence shadow adapter，
 以及 local gate、Evolve locator 和 Go package dependency observation producers。ADR-0054 再增加 exact-v27、显式 caller-time、始终选择
-current structural tail 的本地 semantic projection；其 `journal view`、`journal conflicts` 与 `journal validation-jobs` 只表达 declared semantics，
-不选择 truth/winner，不签发 authority，也不替代 `forge accept`。完整命令、资源预算和 live-read sidecar 语义见
+current structural tail 的本地 semantic projection；ADR-0055 增加只消费 exact caller request 的 authority-free ContextPackage pure builder，
+固定 typed lanes、required-first/optional omission、redaction/token/digest/cache revalidation，但不读取 source、调用 provider 或持久化。
+ADR-0056 再冻结 strict `CapabilityGrant v1` contract-only envelope、最小 effect/scope vocabulary 和 authority-neutral declared assessment；其 pure evaluator 不认证
+issuer/proof/principal/policy/Approval。ADR-0057 只增加 operator 部署的独立非 Agent `forge-kernel` 的单一 authenticated bootstrap repo-read profile：repo 外
+pinned root/key/state、signed policy/request、`repository-reader/v1` + `repo.read` exact paths、小预算/TTL、local/development/test，以及 signed Grant + durable signed receipt。
+ADR-0058 再交付一个窄执行 profile：独立 execution root、signed policy/invocation、Linux-only `openat2` manifest-bound exact-byte read、
+single-use reservation/intent/terminal ledger、no-raw persistence 与 receipt-only replay。Timeout 是 cooperative，管理员仍可替换整个 signed state 回滚，
+best-effort buffer clear 不证明 secure erasure/process isolation/HSM。`0600`/effective-UID 不等于 OS principal/HSM 隔离，scaffold 不安装 runtime/keys；
+ADR-0059 再交付 ApprovalRecord v1 contract-only 的 exact wire、declared assessment 与 Grant reference 投影，但不认证或产生 effective
+approval；其 Accepted 状态不扩大 runtime authority。ADR-0060 已交付 TransitionReceipt v1 contract-only slice：只冻结 exact state graph、
+receipt/predecessor/recovery declared assessment 与 Grant/Approval reference comparison，既不认证 current state/precondition，也不写 ledger 或推进 transition；
+其 Accepted 状态同样不扩大 runtime authority。ADR-0061 已交付 strict KnowledgeUpdateProposal/target/request/assessment、exact
+Evidence/Claim reachable closure、create/supersede declarations 与 Grant/Context/artifact declared compatibility，并已通过正式 `forge accept`；它
+不认证 proposer/Grant/Context/Evidence，不读取 current head、仲裁 conflict/freshness/policy，不产生 truth/adoption/authorization/permission/
+persistence/apply/receipt/execution/effect，其 Accepted 状态不扩大 Knowledge/runtime authority。完整 plan-finalization/authenticated Approval/revocation/general PDP/authority-bearing Transition/Knowledge apply/effects 仍未交付。
+ADR-0062 另在 exact ADR-0053 observation 上交付 authority-free local Go package reverse ImpactPreScan、完整 induced local edges 与
+deterministic shortest witnesses；package gap 显式 UNKNOWN，system impact 恒为 UNKNOWN。它不读取 live repository、不产生
+ADR-0065 已交付 caller-bytes-only 的 partial GraphSnapshot module/package projector/checker；ADR-0066 又以独立 transport/profile 增加
+package-scoped lexical test source-set nodes 与 module→test edges，同时保持旧 profile/Schema/golden 不变。Go/test coverage 是互斥 PARTIAL
+partition，system/freshness 仍 UNKNOWN；source set 不表示 test case、execution、result、coverage 或 verification。两者都不是完整
+GraphSnapshot/final ChangeImpact/Cost/Risk，也不满足 G3 或 Assessment Join；完整 system Impact Closure 仍未交付。
+ADR-0063 只把 caller-declared L3/L4 Build 的 `reviewer_v1` 收紧为 required、exact-final-line、串行定向回修且
+resume/chain 不可降级的 fail-closed boundary；L0–L2 与 `materiality_not_bound` 仍为 advisory/fail-open 兼容。materiality 不被
+自动推断或认证，role/model/provider identity、review quality、cryptographic SoD 与 source/context/policy/artifact digest binding
+仍未交付；checkpoint/chain 只提供 crash consistency，same-UID/admin state replacement/rollback 不在防护范围。旧 runtime 不识别
+该 contract 时必须拒绝，scaffold 只复制治理资产而不安装 host runtime。
+这些边界也不替代 `forge accept`，后者只是完成裁决而非 issuer/execution authority。完整边界、命令与资源预算见
 [governance-contracts.md](governance-contracts.md)。
 
 ## 1. 目标
@@ -222,3 +265,31 @@ WorkIntent + ProjectSnapshot
 - [device-aware-execution-fabric.md](device-aware-execution-fabric.md)：default-off 执行目标、放置、lease、证据与恢复；
 - [implementation-roadmap.md](implementation-roadmap.md)：现状覆盖、分期、Skill backlog 与验收场景；
 - [capability-catalog.v1.yml](capability-catalog.v1.yml)：规划期机读节点目录。
+
+ADR-0075 Portable Knowledge Graph Curation source-distributes only the two existing ADR-0065/0066 exact-request partial GraphSnapshot projectors. It preserves their independent wires, PARTIAL/UNKNOWN semantics and non-authority boundary and adds no wrapper, route, live capture, persistence or impact conclusion.
+
+ADR-0076 Portable Change Impact Cost Risk source-distributes only the existing ADR-0062 exact-request lexical ImpactPreScan projector. It preserves UNKNOWN system impact and adds no raw graph wrapper, route, live capture, complete Impact/Cost/Risk, persistence or authority.
+
+ADR-0078 WorkIntent v1 Proposed Candidate Governance records only the unchanged ADR-0077 Python/Go/Rust exact structural parity in Registry v32, a checker-only shadow and a source-only Python distribution boundary. It preserves all runtime scope arrays, leaves Go/Rust Catalyst-only and adds no acceptance, semantic authority, G0 closure, route, lifecycle, persistence or effect.
+
+ADR-0080 Authenticated ADR Approval v1 Proposed Candidate Governance records only ADR-0079 caller-supplied structure/digests/relations in Registry v33, one checker-only shadow and dependency-free Python source-only distribution. It preserves the complete runtime scope mapping and adds no Ed25519 verification, authentication, authorization, receipt issuance, external-root/time/revocation currentness, CAS, durability, Accepted lifecycle, G0 closure, route, runtime, persistence or effect; no future Go service, keys or state are copied.
+
+ADR-0083 Authenticated ADR Lifecycle v1 Proposed Candidate Governance records ADR-0081 only as Catalyst-repository Go authority evidence and distributes only the ADR-0082 dependency-free Python structural candidate. Registry v34 keeps the complete scope SHA-256 unchanged and adds one checker-only shadow, no Skill, route or runtime. Generated projects receive no Go authority, production key or state, and validation grants no lifecycle transition, Accepted source, compliance, permission or effect authority.
+
+ADR-0085 Authenticated ADR Lifecycle Authority Evidence records the frozen ADR-0084 exact44 Go implementation only as Catalyst-repository evidence. Registry v35 keeps the complete scope SHA-256 and existing checker-only shadow unchanged; source-only exact4 distribution copies decisions and governance checks, never Go authority, keys, state, route, Skill or runtime.
+
+### ADR-0087 Legacy Governance Read Import
+
+Registry v36 records ADR-0086's exact supplied-byte Memory/ADR projector only as an unverified read-only candidate. The complete scope digest remains unchanged. The checker-only shadow declares its honest zero-argument argv; an operator must pipe the request and close EOF. Source distribution is Python-only and excludes the Catalyst Go parity package, routes, Skills, runtime, persistence and authority.
+
+### ADR-0089 Kernel Operational Reference Governance
+
+Registry v37 preserves the complete scope digest and records ADR-0088 only as a structural operational-reference subclosure. Its checker-only shadow validates the pinned golden with exact argv; generated projects receive Python source while Go/Rust parity and runtime registration remain Catalyst-only. Fourteen false attestations deny authority and effect semantics, and the full Kernel ABI item remains open pending CognitiveAtom expansion, DecisionTransaction and cross-closure work.
+
+### ADR-0091 Kernel Decision Reference Governance
+
+Registry v38 preserves the complete scope mapping and digest while recording ADR-0090 only as a structural reference family: CognitiveAtom v2, DecisionTransaction v1 and one-way references to the operational records. Its checker-only shadow validates the pinned golden with exact argv; exact19 generated source is Python-only, while Catalyst exact13 Go, flat exact9 Rust and the shared `lib.rs` registration remain repository-only. All 22 attestations are false, declared authority and hardness are ineffective, and instructions stay disabled. No Skill, route, runtime, PDP or controller is added. The narrow structural reference-family repository slice passed formal `forge accept` and is complete; both ADRs remain Proposed, ADR-0038 remains ADOPTED-PARTIAL, and DecisionCapsule, AuthorizedTransactionSpec, authenticated PDP and the rolling controller remain open.
+
+### ADR-0093 Decision Capsule Structural Replay Governance
+
+Registry v39 preserves the complete scope mapping and digest while recording ADR-0092 only as a pending four-object structural replay repository Candidate. Its checker-only shadow validates the pinned golden with exact argv; exact19 generated source is Python-only, while Catalyst exact15 Go, exact14 Rust and shared `lib.rs` registration remain repository-only. All 32 attestations, both replay controls and all seven completion claims are false. No Skill, route, runtime, model/rule/history/Reflection consumer, persistence, PDP or controller is added. ADR-0092/0093 always remain Proposed/null; the narrow item remains unchecked until independent review and formal `forge accept`, while ADR-0038, full DecisionCapsule and AuthorizedTransactionSpec stay open.

@@ -115,6 +115,82 @@ detectors:
       positive: { path: harness/test_governance_contract_check.py, contains: test_golden_record_set_is_structurally_valid }
       negative: { path: harness/test_governance_contract_check.py, contains: test_authoritative_state_is_rejected }
 
+  - id: governance.evidence_claim_portable_package
+    version: 1.0.0
+    state: shadow
+    rule_refs: [TRUTH-002, SEC-001]
+    implementation:
+      argv: [python3, -I, -B, skills/evidence-claim-management/scripts/check_package.py]
+      cwd: repo_root
+      shell: false
+    invocation:
+      owner: operator
+      adapter: standalone.evidenceClaimPortablePackage
+      acceptance_criterion: null
+      load_bearing: false
+    fail_closed: true
+    tests:
+      positive: { path: skills/evidence-claim-management/tests/test_package_integrity.py, contains: test_valid_closed_package }
+      negative: { path: skills/evidence-claim-management/tests/test_package_integrity.py, contains: test_missing_descriptor_primitives_fail_closed }
+
+  - id: governance.policy_authority_portable_package
+    version: 1.0.0
+    state: shadow
+    rule_refs: [TRUTH-002, SEC-001]
+    implementation:
+      argv: [python3, -I, -B, skills/policy-authority/scripts/check_package.py]
+      cwd: repo_root
+      shell: false
+    invocation:
+      owner: operator
+      adapter: standalone.policyAuthorityPortablePackage
+      acceptance_criterion: null
+      load_bearing: false
+    fail_closed: true
+    tests:
+      positive: { path: skills/policy-authority/tests/test_package_integrity.py, contains: test_valid_closed_package }
+      negative: { path: skills/policy-authority/tests/test_package_integrity.py, contains: test_missing_descriptor_primitives_fail_closed }
+
+  - id: governance.adr_governance_portable_package
+    version: 1.0.0
+    state: shadow
+    rule_refs: [TRUTH-002, SEC-001]
+    implementation:
+      argv: [python3, -I, -B, skills/adr-governance/scripts/check_package.py]
+      cwd: repo_root
+      shell: false
+    invocation:
+      owner: operator
+      adapter: standalone.adrGovernancePortablePackage
+      acceptance_criterion: null
+      load_bearing: false
+    fail_closed: true
+    tests:
+      positive: { path: skills/adr-governance/tests/test_package_integrity.py, contains: test_valid_closed_package }
+      negative: { path: skills/adr-governance/tests/test_package_integrity.py, contains: test_missing_descriptor_primitives_fail_closed }
+
+  - id: governance.knowledge_graph_curation_portable_package
+    version: 1.0.0
+    state: shadow
+    rule_refs: [TRUTH-002, SEC-001]
+    implementation: { argv: [python3, -I, -B, skills/knowledge-graph-curation/scripts/check_package.py], cwd: repo_root, shell: false }
+    invocation: { owner: operator, adapter: standalone.knowledgeGraphCurationPortablePackage, acceptance_criterion: null, load_bearing: false }
+    fail_closed: true
+    tests:
+      positive: { path: skills/knowledge-graph-curation/tests/test_package_integrity.py, contains: test_valid_closed_package }
+      negative: { path: skills/knowledge-graph-curation/tests/test_package_integrity.py, contains: test_missing_descriptor_primitives_fail_closed }
+
+  - id: governance.change_impact_cost_risk_portable_package
+    version: 1.0.0
+    state: shadow
+    rule_refs: [TRUTH-002, SEC-001]
+    implementation: { argv: [python3, -I, -B, skills/change-impact-cost-risk/scripts/check_package.py], cwd: repo_root, shell: false }
+    invocation: { owner: operator, adapter: standalone.changeImpactCostRiskPortablePackage, acceptance_criterion: null, load_bearing: false }
+    fail_closed: true
+    tests:
+      positive: { path: skills/change-impact-cost-risk/tests/test_package_integrity.py, contains: test_valid_closed_package }
+      negative: { path: skills/change-impact-cost-risk/tests/test_package_integrity.py, contains: test_missing_descriptor_primitives_fail_closed }
+
   - id: aadm.cognitive_atom_projection
     version: 1.0.0
     state: shadow
@@ -132,6 +208,294 @@ detectors:
     tests:
       positive: { path: harness/test_cognitive_atom_contract_check.py, contains: test_golden_projection_is_projected_shadow }
       negative: { path: harness/test_cognitive_atom_contract_check.py, contains: test_projection_drift_is_rejected }
+
+  - id: governance.context_package_contract
+    version: 1.0.0
+    state: shadow
+    rule_refs: [TRUTH-002, SEC-001]
+    implementation:
+      argv: [python3, harness/context_package_contract_check.py, repo_root, context_package_build_request, context_package]
+      cwd: repo_root
+      shell: false
+    invocation:
+      owner: operator
+      adapter: standalone.contextPackage
+      acceptance_criterion: null
+      load_bearing: false
+    fail_closed: true
+    tests:
+      positive: { path: harness/test_context_package_contract_check.py, contains: test_golden_fixture_is_assembled_shadow }
+      negative: { path: harness/test_context_package_contract_check.py, contains: test_untrusted_instruction_lane_is_rejected }
+
+  - id: governance.context_engineering_portable_package
+    version: 1.0.0
+    state: shadow
+    rule_refs: [TRUTH-002, SEC-001]
+    implementation:
+      argv: [python3, -I, -B, skills/context-engineering/scripts/check_package.py]
+      cwd: repo_root
+      shell: false
+    invocation:
+      owner: operator
+      adapter: standalone.contextEngineeringPortablePackage
+      acceptance_criterion: null
+      load_bearing: false
+    fail_closed: true
+    tests:
+      positive: { path: skills/context-engineering/tests/test_portable_scripts.py, contains: test_valid_closed_package }
+      negative: { path: skills/context-engineering/tests/test_portable_scripts.py, contains: test_unavailable_descriptor_primitives_fail_closed }
+
+  - id: governance.capability_grant_contract
+    version: 1.0.0
+    state: shadow
+    rule_refs: [TRUTH-002]
+    implementation:
+      argv: [python3, harness/capability_grant_contract_check.py, repo_root, capability_grant_assessment_request, capability_grant_assessment]
+      cwd: repo_root
+      shell: false
+    invocation:
+      owner: operator
+      adapter: standalone.capabilityGrantContract
+      acceptance_criterion: null
+      load_bearing: false
+    fail_closed: true
+    tests:
+      positive: { path: harness/test_capability_grant_contract_check.py, contains: test_golden_fixture_is_assessed_declarations_only }
+      negative: { path: harness/test_capability_grant_contract_check.py, contains: test_authority_escalation_is_rejected }
+
+  - id: governance.approval_record_contract
+    version: 1.0.0
+    state: shadow
+    rule_refs: [TRUTH-002]
+    implementation:
+      argv: [python3, harness/approval_record_contract_check.py, repo_root, approval_record_assessment_request, approval_record_assessment]
+      cwd: repo_root
+      shell: false
+    invocation:
+      owner: operator
+      adapter: standalone.approvalRecordContract
+      acceptance_criterion: null
+      load_bearing: false
+    fail_closed: true
+    tests:
+      positive: { path: harness/test_approval_record_contract_check.py, contains: test_golden_digests_and_result_are_frozen }
+      negative: { path: harness/test_approval_record_contract_check.py, contains: test_authority_escalation_is_rejected }
+
+  - id: governance.transition_receipt_contract
+    version: 1.0.0
+    state: shadow
+    rule_refs: [TRUTH-002]
+    implementation:
+      argv: [python3, harness/transition_receipt_contract_check.py, repo_root, transition_receipt_assessment_request, transition_receipt_assessment]
+      cwd: repo_root
+      shell: false
+    invocation:
+      owner: operator
+      adapter: standalone.transitionReceiptContract
+      acceptance_criterion: null
+      load_bearing: false
+    fail_closed: true
+    tests:
+      positive: { path: harness/test_transition_receipt_contract_check.py, contains: test_frozen_golden_schema_and_all_five_hashes }
+      negative: { path: harness/test_transition_receipt_contract_check.py, contains: test_authority_escalation_and_assessment_drift_fail_closed }
+
+  - id: governance.knowledge_update_proposal_contract
+    version: 1.0.0
+    state: shadow
+    rule_refs: [TRUTH-002]
+    implementation:
+      argv: [python3, harness/knowledge_update_proposal_contract_check.py, repo_root, knowledge_update_proposal_assessment_request, knowledge_update_proposal_assessment]
+      cwd: repo_root
+      shell: false
+    invocation:
+      owner: operator
+      adapter: standalone.knowledgeUpdateProposalContract
+      acceptance_criterion: null
+      load_bearing: false
+    fail_closed: true
+    tests:
+      positive: { path: harness/test_knowledge_update_proposal_contract_check.py, contains: test_all_five_domain_separated_hashes_are_frozen }
+      negative: { path: harness/test_knowledge_update_proposal_contract_check.py, contains: test_authority_escalation_and_reassembly_drift_fail_closed }
+
+  - id: governance.graph_snapshot_contract
+    version: 1.0.0
+    state: shadow
+    rule_refs: [TRUTH-002]
+    implementation:
+      argv: [python3, harness/graph_snapshot_contract_check.py, repo_root, graph_snapshot]
+      cwd: repo_root
+      shell: false
+    invocation:
+      owner: operator
+      adapter: standalone.graphSnapshotContract
+      acceptance_criterion: null
+      load_bearing: false
+    fail_closed: true
+    tests:
+      positive: { path: harness/governance_engineering/test_graph_snapshot.py, contains: test_registry_classifies_partial_projector_without_authority }
+      negative: { path: harness/governance_engineering/test_graph_snapshot.py, contains: test_scope_authority_and_non_capability_drift_fail_closed }
+
+  - id: governance.architecture_decision_record_v2
+    version: 1.0.0
+    state: shadow
+    rule_refs: [TRUTH-002]
+    implementation:
+      argv: [python3, harness/architecture_decision_record_v2_check.py, --golden, repo_root]
+      cwd: repo_root
+      shell: false
+    invocation:
+      owner: operator
+      adapter: standalone.architectureDecisionRecordV2
+      acceptance_criterion: null
+      load_bearing: false
+    fail_closed: true
+    tests:
+      positive: { path: harness/governance_engineering/test_architecture_decision_record_v2.py, contains: test_registry_classifies_proposed_only_evaluator_without_authority }
+      negative: { path: harness/governance_engineering/test_architecture_decision_record_v2.py, contains: test_scope_authority_and_non_capability_drift_fail_closed }
+
+  - id: governance.capability_registry_contract
+    version: 1.0.0
+    state: shadow
+    rule_refs: [TRUTH-002]
+    implementation:
+      argv: [python3, harness/capability_registry_contract/check.py, --golden, repo_root]
+      cwd: repo_root
+      shell: false
+    invocation:
+      owner: operator
+      adapter: standalone.capabilityRegistryContract
+      acceptance_criterion: null
+      load_bearing: false
+    fail_closed: true
+    tests:
+      positive: { path: harness/governance_engineering/test_capability_registry.py, contains: test_registry_classifies_exact_resolver_without_authority }
+      negative: { path: harness/governance_engineering/test_capability_registry.py, contains: test_scope_authority_and_catalog_drift_fail_closed }
+
+  - id: governance.planning_capability_ownership
+    version: 1.0.0
+    state: shadow
+    rule_refs: [TRUTH-002]
+    implementation:
+      argv: [python3, harness/planning_capability_ownership_projection/check.py, --golden, repo_root]
+      cwd: repo_root
+      shell: false
+    invocation:
+      owner: operator
+      adapter: standalone.planningCapabilityOwnership
+      acceptance_criterion: null
+      load_bearing: false
+    fail_closed: true
+    tests:
+      positive: { path: harness/governance_engineering/test_planning_capability_ownership.py, contains: test_registry_classifies_planning_projector_without_authority }
+      negative: { path: harness/governance_engineering/test_planning_capability_ownership.py, contains: test_scope_physical_authority_and_roadmap_drift_fail_closed }
+
+  - id: governance.project_source_snapshot
+    version: 1.0.0
+    state: shadow
+    rule_refs: [TRUTH-002]
+    implementation:
+      argv: [python3, harness/project_source_snapshot_contract/check.py, --golden, repo_root]
+      cwd: repo_root
+      shell: false
+    invocation:
+      owner: operator
+      adapter: standalone.projectSourceSnapshot
+      acceptance_criterion: null
+      load_bearing: false
+    fail_closed: true
+    tests:
+      positive: { path: harness/governance_engineering/test_project_source_snapshot.py, contains: test_registry_classifies_evaluator_and_linux_producer_without_authority }
+      negative: { path: harness/governance_engineering/test_project_source_snapshot.py, contains: test_authority_platform_and_scaffold_drift_fail_closed }
+
+  - id: governance.work_intent_v1_candidate_contract
+    version: 1.0.0
+    state: shadow
+    rule_refs: [TRUTH-002]
+    implementation:
+      argv: [python3, harness/work_intent_contract_check.py, --golden, repo_root]
+      cwd: repo_root
+      shell: false
+    invocation:
+      owner: operator
+      adapter: standalone.workIntentV1CandidateContract
+      acceptance_criterion: null
+      load_bearing: false
+    fail_closed: true
+    tests:
+      positive: { path: harness/governance_engineering/test_work_intent_candidate.py, contains: test_registry_is_v39_scope_neutral_candidate_only }
+      negative: { path: harness/governance_engineering/test_work_intent_candidate.py, contains: test_scope_route_authority_and_pin_drift_fail_closed }
+
+  - id: governance.authenticated_adr_approval_v1_candidate
+    version: 1.0.0
+    state: shadow
+    rule_refs: [TRUTH-002, SEC-001]
+    implementation:
+      argv: [python3, harness/authenticated_adr_approval_contract_check.py, --golden, repo_root]
+      cwd: repo_root
+      shell: false
+    invocation:
+      owner: operator
+      adapter: standalone.authenticatedADRApprovalV1Candidate
+      acceptance_criterion: null
+      load_bearing: false
+    fail_closed: true
+    tests:
+      positive: { path: harness/governance_engineering/test_authenticated_adr_approval_candidate.py, contains: test_registry_is_v39_scope_neutral_structural_candidate_only }
+      negative: { path: harness/governance_engineering/test_authenticated_adr_approval_candidate.py, contains: test_scope_route_authority_and_pin_drift_fail_closed }
+
+  - id: governance.authenticated_adr_lifecycle_v1_candidate
+    version: 1.0.0
+    state: shadow
+    rule_refs: [TRUTH-002, SEC-001]
+    implementation:
+      argv: [python3, harness/authenticated_adr_lifecycle_contract_check.py, --golden, repo_root]
+      cwd: repo_root
+      shell: false
+    invocation:
+      owner: operator
+      adapter: standalone.authenticatedADRLifecycleV1Candidate
+      acceptance_criterion: null
+      load_bearing: false
+    fail_closed: true
+    tests:
+      positive: { path: harness/governance_engineering/test_authenticated_adr_lifecycle_candidate.py, contains: test_registry_is_v39_scope_neutral_lifecycle_candidate_and_go_evidence }
+      negative: { path: harness/governance_engineering/test_authenticated_adr_lifecycle_candidate.py, contains: test_scope_route_authority_go_distribution_and_pin_drift_fail_closed }
+
+  - id: governance.bootstrap_grant_issuance_contract
+    version: 1.0.0
+    state: shadow
+    rule_refs: [TRUTH-002, SEC-001]
+    implementation:
+      argv: [python3, harness/bootstrap_grant_issuance_contract/check.py, --golden, repo_root]
+      cwd: repo_root
+      shell: false
+    invocation:
+      owner: operator
+      adapter: standalone.bootstrapGrantIssuanceContract
+      acceptance_criterion: null
+      load_bearing: false
+    fail_closed: true
+    tests:
+      positive: { path: harness/governance_engineering/test_bootstrap_grant_issuance.py, contains: test_current_profile_is_narrow_and_structural_detector_is_shadow }
+      negative: { path: harness/governance_engineering/test_bootstrap_grant_issuance.py, contains: test_runtime_profile_scope_escalation_is_rejected }
+
+  - id: governance.bootstrap_repo_read_execution_contract
+    version: 1.0.0
+    state: shadow
+    rule_refs: [TRUTH-002, SEC-001]
+    implementation:
+      argv: [python3, harness/bootstrap_repo_read_execution_contract/check.py, --golden, repo_root]
+      cwd: repo_root
+      shell: false
+    invocation:
+      owner: operator
+      adapter: standalone.bootstrapRepoReadExecutionContract
+      acceptance_criterion: null
+      load_bearing: false
+    fail_closed: true
+    tests:
+      positive: { path: harness/governance_engineering/test_bootstrap_repo_read_execution.py, contains: test_shipped_profile_and_shadow_detector_are_frozen }
+      negative: { path: harness/governance_engineering/test_bootstrap_repo_read_execution.py, contains: test_replay_cannot_recover_or_persist_raw_content }
 
   - id: governance.artifact_evidence_adapter
     version: 1.0.0
@@ -240,3 +604,75 @@ detectors:
     tests:
       positive: { path: harness/frontend-architecture/test_frontend-architecture.mjs, contains: graph allows declared direction through a public entrypoint }
       negative: { path: harness/frontend-architecture/test_frontend-architecture.mjs, contains: cross-module deep import and reverse edge are deterministic blockers }
+
+  - id: governance.legacy_governance_read_import_v1_candidate
+    version: 1.0.0
+    state: shadow
+    rule_refs: [TRUTH-001, TRUTH-002]
+    implementation:
+      argv: [python3, harness/legacy_governance_read_import_contract_check.py]
+      cwd: repo_root
+      shell: false
+    invocation:
+      owner: operator
+      adapter: standalone.legacyGovernanceReadImportV1ExplicitStdin
+      acceptance_criterion: null
+      load_bearing: false
+    fail_closed: true
+    tests:
+      positive: { path: harness/governance_engineering/test_legacy_governance_read_import_candidate.py, contains: test_registry_is_v39_scope_neutral_unverified_candidate }
+      negative: { path: harness/governance_engineering/test_legacy_governance_read_import_candidate.py, contains: test_scope_argv_authority_and_distribution_drift_fail_closed }
+
+  - id: governance.kernel_operational_reference_core_v1_candidate
+    version: 1.0.0
+    state: shadow
+    rule_refs: [TRUTH-001, TRUTH-002]
+    implementation:
+      argv: [python3, harness/kernel_operational_contract_check.py, --golden, .]
+      cwd: repo_root
+      shell: false
+    invocation:
+      owner: operator
+      adapter: standalone.kernelOperationalReferenceCoreV1PinnedGolden
+      acceptance_criterion: null
+      load_bearing: false
+    fail_closed: true
+    tests:
+      positive: { path: harness/governance_engineering/test_kernel_operational_reference_candidate.py, contains: test_registry_is_v39_scope_neutral_structural_candidate }
+      negative: { path: harness/governance_engineering/test_kernel_operational_reference_candidate.py, contains: test_scope_argv_authority_and_distribution_drift_fail_closed }
+
+  - id: governance.kernel_decision_reference_core_v1_candidate
+    version: 1.0.0
+    state: shadow
+    rule_refs: [TRUTH-001, TRUTH-002]
+    implementation:
+      argv: [python3, harness/kernel_decision_contract_check.py, --golden, .]
+      cwd: repo_root
+      shell: false
+    invocation:
+      owner: operator
+      adapter: standalone.kernelDecisionReferenceCoreV1PinnedGolden
+      acceptance_criterion: null
+      load_bearing: false
+    fail_closed: true
+    tests:
+      positive: { path: harness/governance_engineering/test_kernel_decision_reference_candidate.py, contains: test_registry_is_v39_scope_neutral_structural_candidate }
+      negative: { path: harness/governance_engineering/test_kernel_decision_reference_candidate.py, contains: test_scope_argv_authority_and_distribution_drift_fail_closed }
+
+  - id: governance.decision_capsule_structural_replay_core_v1_candidate
+    version: 1.0.0
+    state: shadow
+    rule_refs: [TRUTH-001, TRUTH-002]
+    implementation:
+      argv: [python3, harness/decision_capsule_contract_check.py, --golden, .]
+      cwd: repo_root
+      shell: false
+    invocation:
+      owner: operator
+      adapter: standalone.decisionCapsuleStructuralReplayCoreV1PinnedGolden
+      acceptance_criterion: null
+      load_bearing: false
+    fail_closed: true
+    tests:
+      positive: { path: harness/governance_engineering/test_decision_capsule_structural_replay_candidate.py, contains: test_registry_is_v39_scope_neutral_structural_candidate }
+      negative: { path: harness/governance_engineering/test_decision_capsule_structural_replay_candidate.py, contains: test_scope_argv_authority_completion_and_distribution_drift_fail_closed }

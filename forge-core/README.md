@@ -94,6 +94,33 @@ go -C forge-core run ./cmd/forge check  --root "$PWD"   # python3 harness/check.
 go -C forge-core run ./cmd/forge accept --root "$PWD"   # node harness/acceptance.mjs
 ```
 
+## Isolated coding sessions
+
+`forge session` implements the local ADR-0094 boundary: one coding session is
+one `session/<id>` branch plus one external worktree. The Coding Agent may mark
+its clean committed branch ready, but only a controller running from the clean
+primary worktree invokes `integrate-next`:
+
+```sh
+forge session start --repo /workspace/project --id sess-example
+
+# Run the Coding Agent in the `worktree` path printed by start, then commit.
+forge session ready --worktree /workspace/.forge-worktrees/project/sess-example \
+  --id sess-example
+
+# Controller-only: FIFO select, rebase on current local main, full accept,
+# recheck exact refs, fast-forward main, then remove worktree and branch.
+forge session integrate-next --repo /workspace/project
+
+forge session status --repo /workspace/project --id sess-example
+```
+
+The queue is local and serialized by the repository Forge lock. Validation or
+rebase failure retains the worktree and records an explicit repairable state.
+This command does not fetch, push, open a PR, authenticate controller identity,
+or turn a worktree into an OS sandbox; the Harness must deny Coding Agents
+access to the primary worktree and `integrate-next`.
+
 ## Group Agent Graph control artifacts
 
 The Go binary is also the sole scheduler for persisted Group Agent Graphs. It

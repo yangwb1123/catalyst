@@ -1478,6 +1478,272 @@ migration/rollback/backup 与 `git diff --check` 均通过；两份独立复审�
 **589**、Node **402**、Forge Core Go **1,628 observed tests**；9 PASS、0 FAIL、2 个诚实 N/A）。以上只证明本地 deterministic
 semantic interpretation 与一致性边界，不把声明、AI 建议或 projection 升级成知识真值、冲突裁决、执行授权或完成证明。
 
+## Sprint 103（✅ DONE；Shadow ContextPackage v1 pure contract）— ADR 0055
+
+本轮把 Wave 0F-B–3a 的 Context 前置能力收缩为无权威、无副作用的 strict `ContextPackageBuildRequest v1`/`ContextPackage v1`。
+Caller 必须显式绑定 task/change/node/role、source revision/tree、policy/routes、评价时间、budget 与 tokenizer identity；builder 先对所有
+available source 应用 caller-declared UTF-8 byte redaction，再按 eligibility、source max 与 required-first 固定顺序选择。Optional source 只可带
+唯一 omission reason 退出；`instruction_candidates`、`trusted_context`、`untrusted_data` 使用 typed JSON lane，所有 snippet 固定
+`instruction_allowed=false`。repository/web/log/issue/tool output/artifact/other 不能自升 lane 或 trust。
+
+Python、Go、Rust 独立实现共享 exact golden；raw source content 使用 plain SHA-256，request/cache、projected content、snippet、projection 与 context
+分别使用六类 domain-separated digest。TokenCounter 每次调用前重验 identity，并只接收 exact canonical projection bytes；required budget 失败关闭，cache hit 先重算
+request key 再完整重装配。Strict package decoder 在三语言均拒绝 duplicate/unknown/float/noncanonical/oversize、trust-lane 提升、越界
+redaction/truncation receipt 与 accounting drift。Schema、fixture、registry v12 pins、Context Skill/detector/routes、scaffold/init/upgrade 和事实源已同步。
+
+复审已推动关闭 required token 只做批末计数、ineligible redaction receipt 先后矛盾、cache-key 检查顺序、Go package byte ingress、Schema 尾随
+LF anchor、standalone decoder lane 提升和跨语言 receipt bounds 等缺陷。当前 Python 24 tests、Go ContextPackage 定向及 Forge Core 全包、Rust
+ContextPackage 16 tests 及 workspace all-targets/all-features、strict domain Clippy、scaffold init/upgrade、`forge check` 13/13、architecture 8/8、
+file gate 与 `git diff --check` 均通过；独立复核为 CLEAN。完整 `forge accept` 在本轮树上以 **ACCEPTED** 通过（Python **613**、Node
+**402**、Forge Core Go **1,652 observed tests**；五组 Rust all-targets/all-features 全绿；9 PASS、0 FAIL、2 个诚实 N/A）。
+
+该正结果仅为 `ASSEMBLED_SHADOW (no truth, authority, instruction, permission, approval, completion, persistence, or effect attestation)`。
+Builder 无 repository/network/process/provider/database I/O，不认证 source/freshness/redaction completeness，不调用模型、不写 journal/Hub；真实
+Context Router、semantic retrieval、prompt compiler、production tokenizer、Grant/PDP/Approval 和 durable context store 仍是后续独立合同。
+
+## Sprint 104（✅ DONE；CapabilityGrant v1 contract-only）— ADR 0056
+
+本轮交付 Wave 0F-B–3b-1 的无权威、无副作用 strict `CapabilityGrant v1` envelope 与 declared assessment。四个 exact API、21 项
+single-effect closed vocabulary、typed allow/deny scope、budget、subject/task/capability/source/context/policy binding、caller-time validity、SoD、
+usage policy 及 production declaration 约束已由 Schema/ADR 冻结。Allow clause 是 OR alternative，clause 内 resource 联合约束且禁止跨 clause
+拼接；flat deny 先于 allow。`migration.generate` environment 是 presence-matched exact qualifier，`process.exec` command timeout 与
+proposed usage timeout 必须一致。
+
+Python、Go、Rust 独立 strict decoder/evaluator 共用 exact golden，统一 canonical JSON、五类 domain-separated digest/preimage、资源顺序、
+deny precedence、no-cross-clause、phase/production/profile/cardinality、nullable binding、budget/time 与 reason self-consistency。复审推动关闭 split
+timeout budget、IPv4-mapped IPv6、IPv6 zone ID、DNS-tagged dotted IPv4、Unicode moving secret alias、effect/scope mismatch、deep JSON
+recursion、programmatic cyclic object、full-document byte ceiling/self-digest preimage 边界及 optional environment qualifier 等失败关闭缺口。
+
+Registry v13 将 `CapabilityGrant` 仅列于 `shipped_contract_only_kinds`，不进 `shipped_kinds`/`planned_kinds`；Policy/Authority Skill、
+shadow non-load-bearing detector、routes、scaffold init/upgrade 与事实源已同步。当前 pins 为 schema
+`dd26568ec430ae5e444ae851ba2b58087528a17e84794137268be3860d9c3209`、fixture
+`0261a682bddca2f27976a9cd663350e8cf222685389fecc7ad8ae536083fef35`、governance policy
+`de4edc116498bd5d193df6146442d4b75a0d2e23615fd9d4db29b8cb7fa686a5`。定向验证为 Python **33 tests**、Go package race/vet、
+Rust **24 tests** 与 strict Clippy；无 `jsonschema` 的 universal scaffold 仍执行 contract/golden 自测，仅诚实跳过外部 Draft Schema 校验。
+两路 fresh-context 独立复核在最终 Base64URL canonical 修复及 pins 更新后均为 **CLEAN**。最终树使用本机字节版本一致的
+Rust 1.93.0 执行完整 `forge accept --timeout 60m`，结果为 **ACCEPTED**：Python **655**、Node **402**、Forge Core Go
+**1,681 observed tests**，五组 Rust all-targets/all-features 全绿；**9 PASS、0 FAIL、2 N/A**，两个 N/A 均未伪装为通过。
+
+唯一正结果仍是 `ASSESSED_DECLARATIONS_ONLY`；issuer/proof/principal/policy/Approval authentication、PDP decision、revocation/usage、
+pre/postflight、audit receipt、persistence、execution、authorization、permission 与 effect attestation 均未实现。声明关系、Schema 合法或
+Skill 结果不得冒充有效 Grant 或生产权限。
+
+## Sprint 105（✅ DONE；Authenticated bootstrap repo-read Grant issuance）— ADR 0057
+
+本轮把 ADR 0056 的 declaration-only Grant 向真实 authority 推进一个严格封闭的 profile。独立非 Agent `forge-kernel` 只接受 operator 在
+repository 外显式 pin 的 `GovernanceTrustRoot v1`，以三把 principal/public-key/usage 均互异的 Ed25519 key 分别认证 signed Policy、signed
+GrantRequest 与 Kernel issuance；唯一允许的 Grant 是 `bootstrap_planning`、`repository-reader/v1`、单一 `repo.read`、1..16 个 exact path、
+小预算/TTL 及 `local|development|test`。成功产生 signed ADR 0056 CapabilityGrant、signed `GrantIssuanceReceipt` 和完整 signed durable ledger；
+同 idempotency key + byte-exact request 只返回原签名记录，冲突、clock rollback、错误 pin/key/profile/signature/relation 全部失败关闭。
+
+持久化使用真实 nonblocking flock、bounded canonical snapshot、CAS、temp fsync、rename、directory fsync 与 strict readback；rename 后不确定性固定
+`PERSISTENCE_UNCERTAIN`。Runtime 仅支持 Unix，非 Unix 在读 authority input/key 前失败。Authority/state directory 必须 exact `0700`；
+叶子为 euid-owned、single-link、无特殊权限位的 exact `0600` regular file。Authority/repository resolved endpoint 按 ancestor filesystem
+identity 双向不重叠，caller repository absolute source、首次 resolved path 与 opened directory identity 全 session 绑定；root identity traversal
+用真实 `NONBLOCK|DIRECTORY|NOFOLLOW` opener，大小写/Unicode alias、source symlink retarget、rename replacement 与 FIFO swap 都有 fail-closed 回归。
+
+复审推动关闭了 public golden fixture key 被生产 runtime 接受、跨 Policy/Request signing、full-document byte ceiling、source revision 16 KiB/160-byte
+跨 ADR 漂移、特殊 mode bit、secret buffer error-path remanence、post-rename uncertainty、stdout short-write/replay、APFS casefold/normalization、repository
+source TOCTOU 与 blocking FIFO 等真实问题。Golden keys 只能用于 contract test；生产 binary 对 exact fixture root、任一 fixture public key 与 fixture issuer
+key 独立拒绝。两路 fresh-context security/integration review 与一份专门 root-identity review 最终均为 **CLEAN**，0 P0–P3。
+
+Registry v14 只新增 `authenticated_bootstrap_repo_read_grant_issuance_v1` narrow runtime profile；CapabilityGrant kind 仍仅在
+`shipped_contract_only_kinds`。当前 pins 为 governance policy
+`5c3f4413c1f4bbaeb76a57412a50c63d51b5a6f4ddd23e668628d807edb2f5a7`、schema
+`4b68e8bc989f457e602108920a570f9876be8b7bd21e6e1151852314951fdde5`、fixture
+`60a234a15080f7c08367ea53f7a3cbfee6722c8ac015bbb09132bdcbdb31b011`。Scaffold/upgrade 只复制 contract/checker，不安装 Kernel、root、key 或 state；
+无兼容外部 runtime 固定为 `not_executed`。
+
+最终实现/事实源冻结树的完整 `forge accept --timeout 60m` 为 **ACCEPTED**：recursive Python **39 files / 688 tests**、Node
+**21 files / 402 tests**、Forge Core Go **1,757 observed tests**，五组 Rust all-targets/all-features test/check/build 与 strict Clippy 全绿；
+architecture 8/8、go vet/build、SCA、secret scan、scaffold 和治理闸门均通过，合计 **9 PASS、0 FAIL、2 N/A**，N/A 未冒充 satisfied。
+
+本 profile 只认证并持久化 Grant **签发**，不执行 repository read，也不提供 plan finalization、Approval、revocation、usage/reservation、
+pre/postflight、PEP/effect、ContextPackage/provider、Transition/Knowledge、key provisioning/rotation、staging/production、remote/HA/multitenant authority。
+本地 `0600`/euid 不是 OS principal/HSM 隔离；ledger high-water 只相对当前 snapshot，不能抵抗管理员回放旧 signed state；`forge accept` 是完成权威，
+绝不是 Grant issuer。
+
+## Sprint 106（✅ DONE；Authenticated bootstrap repo-read execution）— ADR 0058
+
+本轮在 ADR 0057 issuance 后增加唯一的 authenticated repo-read execution profile。独立、repo 外 externally pinned execution root 绑定 exact
+issuance root/epoch，但三把 `execution_policy_sign|execution_receipt_sign|execution_request_auth` key 与所有 issuance key 分离；signed execution policy
+与 signed invocation 必须 byte-exact 匹配。`allow/activate_once` 才可预留，signed `deny/do_not_activate` 不触碰 repository 或 usage state。
+
+Linux amd64/arm64 runtime 只经 `openat2` + `BENEATH|NO_XDEV|NO_SYMLINKS|NO_MAGICLINKS` 读取 1..16 个排序 exact manifest leaf，逐项校验 regular
+file、raw byte length 与 SHA-256。Durable single-use group 固定为 `reserved_no_repo_io -> effect_intent -> completed|failed_consumed|quarantined`；每步
+persist + strict reopen，active orphan 永不 resume/reread，只可 signed quarantine。Reservation 必须处于 fresh Invocation window；已开始的 intent/terminal
+可越过 expiry，但成功 `elapsed_ms` 仍不得超过 timeout。Reservation 早于任何 repository metadata I/O；每个 signed transition 单独取 wall-clock sample，
+clock failure 不伪造旧时间而保留 active tail。Reader 对具体 syscall 前间后检查 timeout，grantstate identity revalidation 只做 composite 前后检查；
+blocked op 可越预算，返回后 timeout 优先。Cooperative timeout 不冒充 OS hard deadline。
+
+Usage ledger 永不持久化 `content_base64url`。首次 completed delivery 仅在 terminal strict reopen 后返回 receipt、content-free metadata 与 raw result；后续
+canonical pair 或双 64hex terminal replay 在 manifest/repository/clock/receipt-seed access 前返回同 receipt/metadata 与 null raw，digest miss/mixed
+失败关闭，failure/quarantine 只返回 receipt。
+Crash/short write 后 raw 不可恢复。Mutable bytes 只 best-effort clear；Go strings、GC、kernel/downstream copies 不提供 secure erasure，也无 process
+isolation/HSM attestation。Signed high-water 不能抵抗管理员整体替换为旧 snapshot。Pinned root、receipt key 与 usage namespace 不可分割；v1 不支持
+rotation、epoch migration 或 state clear/rebase，fresh root/state 不继承 spent history。连续性轮换需要新 profile/ADR 与外部见证的完整 history migration。
+
+Registry v15 将 ADR 0057 issuance 与 ADR 0058 execution 两个窄 profile 同列在 `shipped_runtime_profiles`，并保持
+`candidate_runtime_profiles` 为空；`CapabilityGrant` 仍仅是
+`shipped_contract_only_kinds`。Schema/fixture pins 分别为 `6eb96621f8160bf8b7e8658d3d51dbe1b66f915df4da0eb70d0d412d250e889b` 与
+`309b3da66c64669239ce40bd086cdcbb518d59dc7fd5e1bad60d6acf9107480d`。Fixture root/任一 fixture public key 在 production decoder 中必须拒绝。
+晋级后 Registry v15 的 protected policy SHA-256 为 `9b8d3e088419a962a9fa9a7050154b5c7f0590752527947cbf32e2b29e3867ce`。
+
+## Sprint 107（✅ DONE；ApprovalRecord v1 contract-only）— ADR 0059
+
+ADR 0059 已按 strict contract-only 边界交付：`ApprovalRecord`、declared target/request/assessment、detached-proof content identity 与 ADR 0056
+`ApprovalRef` 三元组投影已在 Python/Go/Rust 接线。Registry 已升级为 v16，将 `[ApprovalRecord, CapabilityGrant]` 同列
+`shipped_contract_only_kinds` 并从 `planned_kinds` 移除 ApprovalRecord；这只表示 wire/纯 evaluator 的交付分类，不代表 runtime authority。
+
+Shadow detector 保持 non-load-bearing，governance route 以 trusted schema + instruction Skill 接线；registry 实际超过 64 KiB 后，只把该 required
+source 的 per-file ceiling 提升到 128 KiB，总 Context budget 不变。Universal init/upgrade 复制 ADR/schema/fixture/Python checker/tests/governance
+wiring，但不复制 Go/Rust implementation、authority registry、key、revocation/condition/risk state、approval store 或任何 runtime。
+
+`.forge/<stage>.approved`、`--approved`、`actor_hint`、workflow/session/environment/ambient clock 均禁止导入。Approver/authority/proof/SoD
+authentication、condition/RiskAcceptance/revocation validation、effective approval、PDP/authorization、permission、persistence、transition 与 effect
+仍全部 unavailable；CapabilityGrant 的 `approval_state` 继续固定为 `not_evaluated`。Schema/fixture pins 分别为
+`bc11d2b066bac35252bff6739798c3e30a508ed31fca0306b9cf1cdc0ef9ab64` 与
+`501320b9f65775091e67ba22c6e7faa5b5ecaa1f1b472a1a196da93c7ab81978`；Registry v16 protected policy SHA-256 为
+`d08435217e563a0bbf9bef14a88dfad4652fabd009838dfc2e7f848991c3df03`。Scaffold/upgrade 只复制
+ADR/schema/fixture/Python structural checker/governance tests，不安装 Go binary、root、key 或 state；无兼容 runtime 为 `not_executed`。
+Independent adjudication 已闭合 declared target 内部 SoD 一致性，且未改变 wire/schema/fixture。正式 candidate-tree `forge accept` 为
+**ACCEPTED**：**9 PASS、0 FAIL、2 N/A**；N/A 未计作 satisfied。Recursive Python 为
+**45 files / 744 tests**，Node 为 **21 files / 402 tests**，五组 Rust observed tests 为 **248 / 54 / 202 / 248 / 164**，
+Go 与 Node examples 分别为 **22 / 47**，Forge Core Go 为 **1,818 observed tests**。Python/TS/Go lint 因工具缺失或未配置诚实为 N/A，
+coverage 因无可解析报告诚实为 N/A；五组 Rust strict Clippy `-D warnings` 均通过。该完成裁决只验收合同切片，不认证 Approval、激活 Grant
+或产生 authorization/permission/effect authority。首次 sandbox 内尝试因 `spawnSync EPERM` 终止，明确不是验收证据；上述正式事实仅来自
+sandbox 外、scrubbed environment 的有效完整 run。
+
+## Sprint 108（✅ DONE；TransitionReceipt v1 contract-only）— ADR 0060
+
+ADR 0060 已按 strict contract-only 边界交付 `TransitionStateVocabulary`、`TransitionReceipt`、declared target/request/assessment、显式 predecessor、
+applicability/rework/resume relations 与 ADR 0056/0059 reference compatibility。Registry v17 将 `TransitionReceipt` 列入
+`shipped_contract_only_kinds`，`planned_kinds` 仅余 `KnowledgeUpdateProposal`；该分类只表示 wire/纯 evaluator 已交付，不是 shipped runtime 或权威状态机。
+Schema/fixture pins 分别为 `94962069c93f55129506b9d4b45f1f9db6d9425ecbdbaef9c06fcbe155e43cbf` 与
+`dac0b6d8921aaecaf138c5b62924c8a3b9ac8f9c531a67f2be358d47c1c30da9`；晋级后的 Registry v17 protected policy SHA-256 为
+`2c70e6e5a2045a744bf4f1f572dfd63de4328a6da27f3669972387510400637a`。Shadow detector 保持 non-load-bearing，trusted schema route 与
+Policy/Authority Skill 已接线；universal scaffold 只复制 ADR/schema/fixture/Python checker/tests/governance wiring，不安装 Go/Rust runtime、controller、
+ledger、key/state 或 transition executor。Listed edge、PASS/NA、reference equality、caller-time continuity 均不认证 current state、precondition、
+waiver、Grant 或 Approval，不产生 authorization/permission/persistence/transition/completion/effect。
+
+正式 candidate-tree `forge accept` 为 **ACCEPTED**：**9 PASS、0 FAIL、2 N/A**；N/A 未计作 satisfied。Recursive Python 为
+**48 files / 778 tests**，Node 为 **21 files / 402 tests**，Forge Core Go 为 **1,837 observed tests**，Go 与 Node examples 分别为
+**22 / 47**，五组 Rust observed tests 为 **248 / 54 / 227 / 248 / 164**。该证据来自 sandbox 外、清除
+`OPENAI_API_KEY`/`OPENAI_BASE_URL`/`ANTHROPIC_API_KEY` 的宿主完整 run；sandbox `spawnSync EPERM` 与中断 run 均未计入验收证据。
+Accepted/DONE 只验收 strict wire、跨语言重现、纯 evaluator 与治理/scaffold 接线，不认证 controller/current state/precondition/waiver/Grant/Approval，
+不 append ledger、持久化、推进 transition、完成任务或产生 effect。
+
+## Sprint 109（✅ DONE；KnowledgeUpdateProposal v1 contract-only）— ADR 0061
+
+ADR 0061 已按 strict contract-only 边界交付 `KnowledgeUpdateProposal`、七字段 declared target、request/assessment identity、exact ADR 0045
+EvidenceRecord/KnowledgeClaim reachable closure，以及按 aggregate 排序的 `create|supersede` mutation。Schema/fixture pins 分别为
+`5825658017a9debf197cd82a0df4d553bf101ed20b1a35f6ff3e9d07064e4c4b` 与
+`2808e44b27df5f7b183ae7da3847d5780a3f66887d6b49e5fb4544a069a7ad5f`；golden 的 record-set/proposal/target/request/assessment
+digests 分别为 `c14c11c126c1b76ac1affb3421f2ffea20f5c8567fc43f9caef7bed3683c5c7f`、
+`a4c08d011e3bfb6c08e9d9f5806f39830406478c16f93bad6c8ecde5d3b519b1`、
+`34e367580f5f2ddbf780911d8fb6d73e89949f0231f220444537e30b49eeff85`、
+`d0c325f29617e3a164fec4f897c31bbee2bec316c008ba52740477290c05b413`、
+`e30a494f0e911cf1b312babd1b296786da00760f797857f7b4f0697fa506b037`。
+
+Registry v18 把 `KnowledgeUpdateProposal` 加入 `shipped_contract_only_kinds` 并清空 `planned_kinds`；这只表示 v1 wire/纯 evaluator
+实现已冻结，绝不表示 runtime、adoption 或 apply 已交付。晋级后的 Registry v18 protected policy SHA-256 为
+`5170cc701cfaa648395764740ee06b552bd99caa738116fda19eda85885c0d7e`。Shadow detector non-load-bearing，trusted schema route、Evidence/Claim Skill 与
+universal init/upgrade 只复制 ADR/schema/fixture/Python checker/tests/governance wiring，不复制 Catalyst-only Go/Rust、journal/database/current-head state、
+keys、Kernel、Knowledge apply 或 receipt。Declared Grant/Context/artifact compatibility 不认证 proposer/Grant/Context/Evidence，不评价 truth/current
+head/conflict/freshness/policy/authority，且所有 truth/adoption/authorization/permission/persistence/apply/receipt/execution/effect 都不可用。
+
+正式 candidate-tree `forge accept` 为 **ACCEPTED**：**9 PASS、0 FAIL、2 N/A**；N/A 未计作 satisfied。Recursive Python 为
+**51 files / 809 tests**，Node 为 **22 files / 406 tests**，Forge Core Go 为 **1,857 observed tests**，Go 与 Node examples 分别为
+**22 / 47**，五组 Rust observed tests 为 **258 / 54 / 258 / 248 / 164**。证据来自 sandbox 外、清除
+`OPENAI_API_KEY`/`OPENAI_BASE_URL`/`ANTHROPIC_API_KEY` 的完整宿主 run；保留日志
+`/tmp/forgeos-adr0061-candidate-acceptance.log` SHA-256 为
+`7d0dfa3941608ab8595fe8bf1d0468b8a21e791db17509291a8d953ca1a48492`。Accepted/DONE 只验收 exact wire、跨语言重现、纯 evaluator
+与治理/scaffold 接线，不认证或应用任何知识更新，也不产生 Knowledge/runtime authority。
+
+## Sprint 110（✅ DONE；L3/L4 Build Reviewer strict verdict）— ADR 0063
+
+本切片把 Build Reviewer 的严格性限定在 caller-declared `--materiality L3|L4`：canonical workflow 以唯一
+`verdict_contract: reviewer_v1` 选择合同，runtime 在 Agent 启动前验证 readonly/fresh-context/不可写、位于 QA 前且定向回到更早
+implementer 的安全 shape，并覆盖 mode skip。strict phase 只接受成功 executor payload 的 exact final non-empty
+`VERDICT: APPROVE|REQUEST_CHANGES`；缺失/畸形、dry-run、executor error、从 Reviewer 之后起跑、parallel 或恢复降级均不得放行。
+L0–L2 与 `materiality_not_bound` 继续走既有 advisory/fail-open 兼容；省略 materiality 不是低风险判定，runtime 不从 diff/mode/
+lifecycle 自动推断。
+
+checkpoint/chain 绑定只服务 crash/recovery consistency；same-UID/admin 仍可删除、替换或回滚 state，不能称为认证或防篡改。
+本切片也不认证 Reviewer/implementer/model/provider 身份，不证明 review quality 或 cryptographic SoD，不把 verdict 绑定到
+source/context/policy/artifact digest。旧 runtime 对 unknown `reviewer_v1` 应失败关闭；universal init/upgrade 只传播 ADR、workflow、
+role card 与 ledger，不安装或替换 host Go/Rust/Kernel/runtime。完整 ReviewCase、normalized finding、independence proof、human
+adjudication 和 digest-bound approval 仍属后续 Wave。
+
+正式 scrubbed-environment `forge accept` 为 **ACCEPTED**：**9 PASS、0 FAIL、2 N/A**；N/A 未计作 satisfied。Recursive
+Python 为 **55 files / 845 tests**，Node 为 **22 files / 423 tests**，Forge Core Go 为 **1,941 observed tests**，Go 与 Node
+examples 分别为 **22 / 47**，五组 Rust observed tests 为 **258 / 54 / 258 / 248 / 164**。Python machine coverage 为
+**90.126189%**；聚合 coverage 因 Rust 未配置 coverage tool、Vitest 缺失及顶层 Go 无 module/config 而诚实为 N/A。Go full/race/vet、
+Rust all-targets/all-features test/check/build 与 strict Clippy、arch 8/8、2615-file gate、13 项治理检查和 `git diff --check` 均通过。
+独立复审发现的 earliest-QA、原生 YAML/JSON duplicate/full-consumption、尾随位置参数、chain stale workflow、Claude case-alias
+envelope 与 missing-QA 绕过均已以 fail-closed 回归关闭；最终合同复核在澄清旧持久化格式对所有等级均 diagnostic-only 后无剩余
+correctness mismatch。该完成只验收 caller-declared L3/L4 的本地严格转移；不认证 materiality、Reviewer/provider/身份/质量/SoD，
+也不把 verdict 绑定到 source/context/policy/artifact digest。
+
+## Sprint 111（✅ DONE；local digest-bound Agent output/review/approval）— ADR 0064
+
+本轮已采纳并整体交付 ADR 0064。完成范围被显式拆为 A–D：A 覆盖 Discover/Design/Review/Build/
+Deploy/Rollback/Evolve 七个 canonical workflow 中所有 accepted command-mode Agent output；B 把 caller-declared L3/L4 Build
+从 `reviewer_v1` 迁到 challenge-bearing `reviewer_v2`，并在 QA 前后复验 freshness；C 让 Design/Deploy/Rollback positive
+approval 只接受 current receipt-bound ApprovalContext；D 把 journal head/receipt/context 引用绑定到 checkpoint/chain v5 并传播
+scaffold/upgrade。四块 runtime、迁移、独立复审均已关闭，implementation-roadmap 对应项已勾选。
+
+冻结 wire 使用 `output_binding_contract: local_digest_v1`、hardened `forgeos.product-source-state/v1`、exact prebinding
+prompt-context SHA、完整 effective local runtime-policy projection、input/output declared-artifact manifests、每 attempt 32-byte CSPRNG
+challenge，以及 `.forge/agent-output-receipts.jsonl` 中 chain-linked `forgeos.agent-output-receipt/v1`。Command success 必须依次完成
+exact raw validation、semantic/artifact validation、source/policy/artifact postflight、receipt commit，最后才可发布 accepted Observe；
+因此旧实现中 Observe 早于 validator、Raw validator 收到 trimmed Rendered 的两个顺序缺口属于本 Sprint 必须关闭的 runtime 工作，
+不是文档存在即完成。
+
+本 ADR 不把 local receipt/context/marker 冒充 ADR-0059 ApprovalRecord、ReviewCase、身份、cryptographic SoD、signed PDP/Grant、
+semantic truth、atomic repository snapshot、tamper-proof resume 或 effect authority。旧 host 忽略新 selector 所得结果不构成本 ADR
+证据；旧 checkpoint/chain/marker/release receipt 对 opt-in positive path 只可诊断，不能猜测升级。独立最终复审已确认 A/B/C/D
+实现面无剩余 P0/P1/P2；完整 acceptance 证据由本轮最终 candidate run 记录，不扩大上述本地 observation/control 边界。
+
+## Sprint 112（✅ DONE；authority-free GraphSnapshot v1 foundation）— ADR 0065
+
+本轮冻结通用 `GraphSnapshot v1` stable project-scoped semantic-name identity、31 node/20 relation taxonomy 的方向/endpoint/axes、
+source/extractor provenance、closed node/edge/unresolved/crosswalk/coverage/freshness shape，并交付当前唯一
+`adr-0053-selected-go-module-lexical-partial-graph-snapshot-v1` profile。它只消费 caller-supplied exact ADR-0053 graph bytes；Go/Python
+pure projector、显式输入 CLI、strict full-reconstruction checker、exact golden、registry v20、Skill 与 universal fresh/legacy scaffold 已接线。
+
+Rich golden 精确产生 9 nodes、12 resolved edges、3 unresolved nodes、11 unresolved edges 与 8 个 ADR-0062 crosswalk；所有未观察
+surface、system knowledge 和 freshness 保持 PARTIAL/UNKNOWN。独立复审发现并关闭 generic array 误用 edge 81,920 特例、字段字符串限界、
+future-profile error classification、aggregate locator precheck 与 crosswalk identity collision；Go/Python 对 exact envelope 逐字节相同。
+该交付不是 live producer、selected build、authenticated provenance、完整 System Knowledge Graph、Impact/Cost/Risk、G3、Assessment Join、
+persistence 或 authority；Rust与多 surface extractor仍未交付。后续 lexical test-source 扩展必须使用独立 profile，不能改写 ADR-0065
+golden，也不能把 `_test.go` 存在冒充 test discovery/execution/PASS。
+
+## Sprint 113（✅ DONE；Local Go lexical test-source GraphSnapshot profile）— ADR 0066
+
+本轮以独立 request/envelope API 和
+`adr-0053-selected-go-module-lexical-package-test-source-partial-graph-snapshot-v1` 显式 profile 扩展 ADR 0065 foundation。
+每个且仅每个 `test_files` 非空的 ADR-0053 package 生成一个 package-scoped lexical test source-set node 与一条 module→test
+structural `contains` edge；`p`/`p_test` 保持独立，diagnostic 不猜 package，且不生成 package→test、`verified_by` 或 `observed_by`。
+
+Go/Python pure projector、显式 CLI dispatch、strict full-reconstruction checker、第二 exact golden、当时的 registry v21（现为 v22）、Skill 与 universal fresh/legacy
+scaffold 已接线。Rich golden 精确产生 11 nodes、14 resolved edges、3 unresolved nodes、11 unresolved edges 与 8 个 ADR-0062 crosswalk；
+Go surface 为 9 nodes/10 edges，test surface 为 2 nodes/4 edges，两者构成 resolved records 的互斥 PARTIAL partition。ADR 0065 的
+API/Schema/golden bytes保持不变；scaffold 不安装 Catalyst-only Go host runtime，legacy upgrade ledger 纳入 ADR 0066/Schema/fixture 与共享 Python。
+
+该 profile 只证明 exact lexical source-set projection，不解析 test declaration/case，不 compile/run tests，不产生 PASS/FAIL、coverage、flakiness、
+verified subject、truth、authority、completion、persistence、execution、Impact/Cost/Risk、G3、Assessment Join 或 effect。system knowledge 与
+freshness 恒 UNKNOWN；Rust 与 Wave 2 多 surface extractor 总项仍未交付。
+
+最终 scrubbed-environment `forge accept` 为 **ACCEPTED**：**9 PASS、0 FAIL、2 N/A**；N/A 未计作 satisfied。Recursive
+Python 为 **59 files / 890 tests**，Node 为 **22 files / 423 tests**，Forge Core Go 为 **2,114 observed tests**，Go 与 Node
+examples 分别为 **22 / 47**，五组 Rust observed tests 为 **258 / 54 / 258 / 248 / 164**。Python machine coverage 为
+**90.30259623992838%**；Rust coverage tool、Vitest、顶层 Go module/config 缺失的 coverage 项诚实为 N/A。Go full/race/vet、
+Rust all-targets/all-features test/check/build 与 strict Clippy、arch 8/8、2,749-file gate、13 项治理检查、fresh 8/8、legacy
+upgrade 3/3 与 `git diff --check` 均通过；独立最终复审为 CLEAN。验收命令显式清除了
+`OPENAI_API_KEY`/`OPENAI_BASE_URL`/`ANTHROPIC_API_KEY`，没有调用付费 provider。该完成仅关闭 ADR 0066 的窄 lexical
+test-source profile，不改变前述 UNKNOWN/非 authority 边界，也不勾选 Wave 2 多 surface extractor 总项。
+
 ## 下一前沿(需外部资源 / 后续阶段 / 投机增强 / 明确非目标,非本环境可完整验证)
 - **Graph 下一协议切片**:SQLite v17–v24 已交付 successor candidate、per-node request/lifecycle、receipt/content dataflow、wave-ready/admit、本地 hard-crash adjudication与 8 MiB successor candidate 持久化上限；下一步是顶层整图执行循环、并发 wave 的失败传播/恢复以及安全 resume/branching。不得把当前逐节点 operator 驱动或 Hub-local single-consumption 冒充远程 exactly-once。
 - **真点火** `--agent-cmd=claude`:**multi-agent running to completion 已坐实**(Sprint 25:真 claude 多-agent 跑到 converge MET,增量级 + 版本级)。完整旋钮:四维资源护栏 + 成本三维(phase/时间/美元)+ 任务注入 + 写权限 + 模型路由 + 工作目录 + retry + loop-back;诚实分工:agent 自治增量绿、人确认版本竣工。docs/ignition.md 有完整配方 + 实测
@@ -1496,3 +1762,223 @@ Sprint 31 的“loop-back 开始即消费 rejection”也是历史行为；当�
 成功完成 rework 后消费。
 
 **stop_condition:** roadmap 完成度 / 闸门全绿(非「继续 N 轮」)。
+
+## Sprint 114（✅ DONE；Proposed-only ADR v2）— ADR 0067
+
+交付 `forgeos.architecture-decision-record/v2` 的新建 Proposed 文档边界：exact compact canonical JSON frontmatter、固定且非空 Markdown body、filename/ADR ID/H1 title 绑定、sorted declarations、validation-owner closure、normalized implementation locators 与 body/self domain-separated digests。Universal Python checker 只读显式文件或 byte-pinned physical golden；Catalyst Go 保留 `writes_adr` 既有 baseline integrity snapshot，但只对 current attempt 唯一新增候选做 v2 验证，旧 ADR 不做 v2 parse、retro-validation、migration 或 rewrite。
+
+Registry v22、activation/context routes、shadow/non-load-bearing detector、ADR Governance Skill、governance integration 与 fresh/legacy scaffold 已接线。owner/approver、Claim/Evidence、affected Graph node 都是 caller/author declarations，不认证 identity/SoD/ApprovalRecord，不解析 truth 或 graph coverage。正结果只表示 proposed document structure/bytes valid；Accepted immutability/supersession/compliance、persistence、lifecycle transition、execution/effect 与 legacy query/migration 仍明确未交付。
+
+最终独立 fresh review 对 valid→valid 字节漂移、retry baseline/target retarget、mode-gated disabled 路径、lexical H2 和 legacy byte-scan 边界均给出 CLEAN。去除外部模型密钥后的完整 acceptance 通过：61 个 Python suite/915 tests、22 个 Node suite/423 tests、forge-core 2,136 tests、examples 69 tests、多组 Rust all-target/all-feature tests，以及 gate/arch/security/SCA/typecheck/build；缺失或未配置的 lint/coverage 工具保持诚实 N/A。冻结 pins：policy `700b88aaf1543f190764004396bb13e76475d2e67373bbc743310df04b58e35f`、Schema `ff3f00b1060b2d777b142947ef1ec9c0920782613d941aa672aecd242cf0341b`、golden `b37dba8cc6d2750bb0ed73c7ee5b3ae61ad25551ec258584ed14618f1cb5c194`。
+
+## Sprint 115（✅ DONE；authority-neutral Capability Registry v1 evaluator）— ADR 0068
+
+冻结一个显式、只读、content-addressed 的 Capability Registry 与 pure declared-resolution 边界。首个 physical entry 只绑定已交付的 `local-go-package-impact-prescan/1` Go/Python实现、Schema、golden 与测试；它不注册 broader `change-impact-analysis`，也不把历史 `repository-reader/1` 的 opaque `888…` contract reference 视为真实内容摘要。Registry/owner/test/implementation 均不认证，resolution 固定无 authorization/permission/invocation/effect/transition/runtime-routing/persistence attestation。
+
+交付范围是 Go/Python strict canonical validator/resolver、单一 `forge capability-registry` 显式输入 CLI、physical checker、three-case cross-language golden、registry v23、Skill/activation/routes/shadow detector/governance/scaffold 接线。ADR v2 frontmatter 继续是 `proposed`，Registry wire 继续是 `staged`；治理 delivery 元数据不伪造 acceptance 或 lifecycle promotion。Registry semantic pin 为 `23b9acd4133598cd1404c78c71f694b4a99c398652e95c21896a507be5ecacf4`，policy pin 为 `d999e1f7054868d99ede5f4d6f491ed819c2b5dd800a5542343b688c05c31cce`，Schema pin 为 `f5c5c5abc68e9c5f5d80dce66bb5b97e4e4dedc8cc69189bcc28612991f1ea81`，golden pin 为 `0ce4929ad82ce70ef0520be80b7bd3eaf47f5ff1205d0a53e12fbe1115ed11b5`。
+
+明确仍开放：140-item planning catalog projection/coverage、catalog→package adapter generation、CapabilityInvocation、Grant/PDP、implementation selection/execution、plugin lifecycle 与 runtime routing。只关闭 implementation roadmap 的“最小 Capability Registry”和 Wave 4 registry schema 两项。
+
+**stop_condition:** Schema/ADR、Python/Go exact resolver、physical golden/checker、fresh/legacy scaffold、governance pins、独立 fresh review 与 scrubbed acceptance 全绿；不得以本切片关闭 catalog adapter generation、Grant/PDP、CapabilityInvocation、plugin lifecycle 或 runtime routing。
+
+## Sprint 116（✅ DONE；Planning Capability Ownership Projection v1）— ADR 0069
+
+从 caller-supplied exact planning catalog 与 mapping bytes 交付 bounded pure projection。Python/Go 独立 strict YAML parser/projector 对同一 physical golden 逐字节重建 request、140 bindings 与 projection，覆盖 17 nodes、145 occurrences、140 unique fine capabilities、38 declared packages，且每个 capability 恰有一个 primary owner；重复生命周期使用保留全部 node IDs 与 occurrence count。产品 CLI 精确为 `forge capability-ownership project --catalog FILE|- --mapping FILE|-`，option 可交换且恰一 stdin；usage=2，input/semantic=1，前三类失败在首个 stdout write 前保持 stdout 零字节，成功为 canonical projection+LF，底层 partial write 失败则产物无效。
+
+Registry v24、Schema/source/golden pins、non-owner governance Skill、activation/routes/shadow detector、治理回归和 source-only fresh/legacy scaffold 已接线。Scaffold 复制 exact sources 与 universal Python checker，但不复制 Catalyst Go runtime、不从 38 owner names 生成物理 Skill/adapter；已有同名 Markdown 也保持 `physical_resolution:not_performed`/`skill_availability:not_evaluated`。ADR 仍为 Proposed，ADR 0068 singleton Registry 不变；只关闭 implementation roadmap 的 complete unique primary-owner coverage + logical adapter refs 一项。Package implementations、physical adapters/portable Skills、capability↔role↔workflow↔artifact↔gate↔permission cross-reference、Grant/PDP、CapabilityInvocation、plugin/runtime routing、persistence/transition/effect仍开放。
+
+冻结 identity：catalog `33000/bc6efe535539c5f129af51486d8e81b9844b5ee6448fae2bce649fc159658d74`，mapping `5924/bfb2277fe66cd9f0c609b5be10ad77ad0969603edd19e5a6ccbe38b8e3409462`，golden `172733/3d0a877bef0939cff5752fc5d602e0d3a90e19639308801008f9d2d9ff139f36`，request `3639c4d3ad21db93db254b7da2643d492ca39c4dda5438de426379cd70718cfa`，projection `53754ded32379d6520f3bd2b9d2956238731ad40c11124be457b724b4c150fa2`，Schema `a2ed6eb754c07478eeaaf2ae73a889ba985553c4220a7b6771be9e6a36078083`，governance policy v24 `b583e7097baa8a7aadfacb873318a40acfa3aaf70a6d3f074f6e4107a7c315df`。ADR v2 body/self/physical 为 `c1dbafc35a9cab89e827de7e89ad8f253b8a145eba0aece661b5b3198d45755d` / `95982bd03ce7bc5d12fe56a6eb7c18b533fef1798c66eea490bb62ef9b530386` / `070768f67e57ec2f5cdfda12b9448c6f74427d34b8c177d8abd59189aeb3b546`，状态仍为 `proposed`。
+
+**stop_condition:** Python/Go golden、Schema/ADR v2、registry v24/governance、source-only fresh/legacy scaffold、focused gate/arch、fresh review 与 full acceptance 全绿；不得把 logical locator、同名文件或完成裁决冒充 physical Skill、Registry mutation 或 runtime authority。
+
+## Sprint 117（✅ DONE；`project-snapshot` narrow package slice）— ADR 0070
+
+ADR 0070 保持 Proposed-only，交付 Linux-only `forge project-snapshot capture` live producer、
+strict Go decoder 与独立 Python checker/golden，以及 closed source-distributed
+`skills/project-snapshot/` portable package和 `.agent` adapter。两次完整 Git worktree endpoint
+observation 只绑定 allowed single-link regular bytes、tracked-absent facts、hashed pre-read
+sensitive/control/symlink exclusions、ignored count 与 exact 12-surface coverage；结果固定
+non-atomic，currentness/freshness/system completeness UNKNOWN，Git/HEAD 未认证，path policy 不是
+content DLP，authority/permission/truth/persistence/effect 全 false。
+
+Governance Registry v25 同时将 strict checker 列为 shipped evaluator、Linux capture 列为 shipped
+local producer；shadow detector、activation/routes/disciplines、audit/decision/index 与 roadmap
+nested item 已接线。Fresh/legacy scaffold 复制 portable package、adapter、ADR、Schema、golden、
+Python checker/tests，但不复制 Catalyst Go runtime、不安装 host Skill、不授予 filesystem/process
+permission；unsupported host 或 runtime 不存在固定 exit 3/`not_executed`，已存在但不兼容/执行失败
+固定 exit 1，且禁止 fallback。Implementation roadmap 的
+38-package parent 与其余 37 packages、Graph/config/deployment semantics、formal roles/cross-reference
+runtime、plugin lifecycle、Grant/PDP/CapabilityInvocation/routing/persistence/effect 继续开放。
+
+**stop_condition:** Schema/golden/ADR/portable-manifest/governance pins、Go/Python/package/Skill checks、
+fresh and legacy scaffold、fresh dangerous/normal review、focused gate/arch 与 scrubbed full acceptance
+全绿；只勾 `project-snapshot` nested item，父 38-package 项保持未勾。
+
+## Sprint 118（✅ DONE；`context-engineering` narrow package slice）— ADR 0071
+
+ADR 0071 保持 Proposed-only，把 ADR 0055 已冻结的 authority-free ContextPackage v1 Python
+implementation 包装为 closed 16-file `skills/context-engineering/` source package、零参数 exact canonical
+stdin assembler 和 strict physical manifest checker。Registry v26、activation、shadow/non-load-bearing detector、
+routes/disciplines、docs/audit 与 roadmap nested item 已接线；Schema/golden/wire/bounds/digest domains 及
+Python/Go/Rust semantics 不变。
+
+Fresh/legacy scaffold 复制 ADR、closed package 与既有 universal ContextPackage assets，但不复制 Catalyst
+Go/Rust runtimes、不安装 host Skill。Package 不发现 repository/ambient source，不调用 provider/model，
+不编译 live prompt，不认证 publisher，不提供 atomic check-to-use、Grant/PDP/Approval、truth/instruction、
+completion、persistence、runtime routing 或 effect authority。`-I` 排除 script/current directory、
+`PYTHONPATH` 与 user site，但不隔离 system site、stdlib、interpreter startup 或 host。只勾
+`context-engineering` nested item；38-package parent 与其余 36 package items 保持未勾。
+
+冻结 identity：Schema `2e2a934393026c96ebe7e2098462303192fd345aae10eebcf79544a69d7621e3`，
+golden `1a1c9866f7472055736866be9007040cc8e3d938bb04244bd04fd3bec2aa4b55`，portable manifest
+`7590df136eb828ba3ffe4892efffa2ab4a77fb87dff8a1bffccdde2d015852c5`，ADR body/self/physical
+`92f2a415e51fac94f3ce61203b7eb3152efb4e18a0233f91e2fc00558cf4b84d` /
+`ed72467dddb730de425278d49c8c6bdb9e6f8a82904c8fa5a8eda6ce339fd101` /
+`455f097be6c6e8e658d7a92a60d9e50b08ef89300aa13accccac4bbf67098c84`。
+
+**stop_condition:** package checker/tests、official Skill validation、ADR strict、registry v26 pins、focused
+governance/agent/scaffold/gate/arch 与独立 fresh normal/dangerous + fresh/legacy acceptance 全绿；不得把
+source package delivery 冒充 live prompt/provider/model/PDP/authority/runtime/persistence。
+
+## Sprint 119（✅ DONE；`evidence-claim-management` narrow package slice）— ADR 0072
+
+ADR 0072 保持 Proposed-only，把 ADR 0045 已冻结的 authority-free EvidenceRecord/
+KnowledgeClaim v1 Python validator 包装为 closed 18-file `skills/evidence-claim-management/`
+source package、零参数 explicit-EOF exact canonical stdin adapter 和 strict physical manifest checker。
+Registry v27、activation、shadow/non-load-bearing detector、disciplines、docs/audit 与 roadmap nested
+item 已接线；portable prose 不进入 authenticated context routes，ADR-0045 Schema/golden/wire/
+bounds/digest domains 及 Python/Go/Rust semantics 不变。
+
+Fresh/legacy scaffold 只复制 ADR、closed package 与 governance checker/test，不安装 host
+Skill。Package 只验证 already-authored record-set bytes，不观察或 author、修复、排序、
+补 digest、返回或持久化 records，不访问 ambient source/journal/semantic view/proposal，
+不提供 atomic check-to-use、truth/instruction/Grant/PDP/Approval/completion/routing/transition/
+execution/effect authority。`-I` 排除 script/current directory、`PYTHONPATH` 与 user site，但不
+隔离 system site、stdlib、interpreter startup 或 host。只勾 `evidence-claim-management`
+nested item；38-package parent 与其余 35 package items 保持未勾。
+
+冻结 identity：Schema `b2f8824c95012d94e71b4643756890a7a23f67dc1b9e0e8ecacf979b016864e8`，
+golden `db111600f93e63b3533b1f06b14d7520eb4cbec0e4c6d0e3a6e0fd7e2740824a`，ADR 0045
+physical `a04479075dc60828176cd7e68857dcc4f3fc92bb4ae4b567f2caddd93f478b81`，portable
+manifest `b5d0d15497f47d4310729e7eadf2df506b0c90a1ae982b30b5b453536e98c771`。ADR 0072
+body/self/physical 为 `9aa8871ca9024c163ac83677a7c6f289c0579e1b4a92c8535e950b1d34b4c895` /
+`4aa14c22cb0c49a701764b611af045baaeabdb4af6a3144a75423fecd076e741` /
+`5ed33ea8d0a7e44e0ff401fad438c0fce0a875914da1187a64cb6cc3452b4929`，registry v27 policy pin 为
+`eeba777fff4439e02b19623b66ea336ba1a08e865cd798a487e5a70a1b443991`。
+
+**stop_condition:** package checker/tests、ADR strict、registry v27 pins、focused governance/agent/scaffold/
+gate/arch 与独立 fresh normal/dangerous + fresh/legacy acceptance 全绿；不得把 structural
+validation 冒充 record authorship、truth、provider/model/PDP/authority/runtime/persistence。
+
+## Sprint 120（✅ DONE；`policy-authority` narrow package source-governance slice）— ADR 0073
+
+ADR 0073 保持 Proposed-only，把 ADR 0056 CapabilityGrant 与 ADR 0059 ApprovalRecord 已冻结的
+authority-neutral pure declared evaluators 包装为 closed 30-file `skills/policy-authority/` source
+package、两个独立零参数 explicit-EOF exact canonical stdin adapter 和 strict physical checker。
+Registry v28、activation、shadow/non-load-bearing detector、disciplines、docs/audit 与 roadmap nested
+item 已接线；portable prose 不进入 authenticated context routes，两个 Schema/golden/wire/bounds/
+digest domains 及 Python/Go/Rust semantics 不变，scope 未扩大。
+
+Package 不新增 combined envelope，不签发/批准/激活/撤销/预留/消费/持久化/执行，不读 ambient
+repository/environment/clock/identity/policy/approval/revocation/usage/runtime，不调用 ADR-0057/0058、
+Kernel/PDP/PEP 或 executor，不提供 atomic check-to-use、effective Approval、authorization、permission、
+completion、routing、transition 或 effect authority。`-I/-B` 只约束 Python import/bytecode 边界，
+不认证 system site、stdlib、interpreter、host 或 publisher。Source-only fresh/legacy scaffold 只复制 source、
+不安装 host Skill/runtime；只勾
+`policy-authority` nested item，38-package parent 与其余 34 package items 保持未勾。
+
+冻结 identity：Grant Schema/golden `dd26568ec430ae5e444ae851ba2b58087528a17e84794137268be3860d9c3209` /
+`0261a682bddca2f27976a9cd663350e8cf222685389fecc7ad8ae536083fef35`，Approval Schema/golden
+`bc11d2b066bac35252bff6739798c3e30a508ed31fca0306b9cf1cdc0ef9ab64` /
+`501320b9f65775091e67ba22c6e7faa5b5ecaa1f1b472a1a196da93c7ab81978`，portable manifest
+`feb21737424b0133e8b57f553ff342b51583917f83e1d47b4b83cd6c3a667132`。ADR 0073 body/self/physical
+为 `729fd91714d43244f3ac23f182007289ee4cd21a4abd0bf7fe51253eefadbf86` /
+`a92f4ef3d22ceab5264316863e396182eadc84a9530803a43af3ed723144cecd` /
+`cb1a9adff937e39f3d42b052e19e7e0e1516968da967948508b45dd735bed619`；registry v28
+policy pin 为 `458403f3aa8c6c1250d8602cbd44723c1112bbb06611d60859eb0d2263eb78ed`。
+
+**stop_condition:** package checker/tests、unchanged Python/Go/Rust pure contract suites、ADR strict、
+registry v28 pins、focused governance/agent/check/gate/arch 与 source-only fresh/legacy scaffold 全绿；
+不得把 source copy 或 declared relation 冒充 host installation、policy/effective Approval/authority/runtime/effect。
+
+## Sprint 121（✅ DONE；`adr-governance` narrow package source-governance slice）— ADR 0074
+
+ADR 0074 保持 Proposed-only，把 ADR 0067 已冻结的 Proposed-document pure validator 包装为
+closed 25-file `skills/adr-governance/` source package、exactly-one-basename-argument explicit-EOF
+exact document stdin adapter 和 strict physical checker。Registry v29、activation、shadow/non-load-bearing
+detector、disciplines、docs/audit 与 roadmap nested item 已接线；portable prose 不进入 authenticated
+context routes，ADR-0067 Schema/golden/wire/bounds/digest domains 及 Python/Go semantics 不变，scope 未扩大。
+
+Caller-supplied basename 仅是独立 lexical label，不证明 physical file、repository path 或 identity。
+Package 不新增 request envelope，不扫描 repository，不 author、repair、normalize、reseal、accept、
+supersede 或 persist ADR，不复制 Catalyst Go `writes_adr` runtime，不提供 atomic check-to-use、identity、
+ownership、approval、truth、Graph、compliance、immutability、lifecycle、completion、execution 或 effect authority。
+`-I/-B` 只约束 Python import/bytecode 边界，不认证 system site、stdlib、interpreter、host 或 publisher。
+Source-only fresh/legacy scaffold 只复制 source、不安装 host Skill/runtime；只勾 `adr-governance` nested
+item，38-package parent 与其余 33 package items 保持未勾。
+
+冻结 identity：Schema/golden `ff3f00b1060b2d777b142947ef1ec9c0920782613d941aa672aecd242cf0341b` /
+`b37dba8cc6d2750bb0ed73c7ee5b3ae61ad25551ec258584ed14618f1cb5c194`，ADR 0067 physical
+`78c7d484cfb0e448c4c896440d4ea272a8e32a60f947539a3ad739baaeead71e`，portable manifest
+`88fb16e51af69cb3a2bc38fe2dcae7893a24cee744b85a06eafff70ae841dd3c`。ADR 0074 body/self/physical
+为 `a18646f93391a1413d690853a35e5a2ca6a17eb498dcf970696e3606074fb875` /
+`15c996fc2286a011a1b99f1d859b506cd6658b0f0e40afbaf97af767dcfb7d65` /
+`21d452845cf0f2889fcc5fa22f450cc4a40d5fb694f5b1f202d4b3cfd79f2eb2`；registry v29 policy pin
+为 `60a94a2aba34a8d04fb95e9eea51deeffcbc22f871824678a79e8347d282e2df`。
+
+**stop_condition:** package checker/tests、unchanged Python/Go ADR validators、ADR strict、registry v29
+pins、focused governance/agent/check/gate/arch 与 source-only fresh/legacy scaffold 全绿；不得把 lexical
+basename、structural marker 或 source copy 冒充 physical identity、acceptance/compliance、host installation、
+lifecycle/runtime/persistence/effect authority。
+
+### Sprint 122 — Portable `knowledge-graph-curation` partial projectors（DONE）
+
+ADR-0075/Registry v30 以 `c9b8397658c3bcecb474966a3efd155f0af550be4fe7319dcdbf23a63cec2008` manifest pin 分发 closed 46-file source package。两个 zero-argument explicit-EOF adapters 分别复用 ADR-0065/0066 的 exact eight-field request 与既有 envelope；不新增 wrapper/union/dispatcher/profile ABI、authenticated route、live producer/runtime、graph store、impact 或 authority。Coverage 保持 PARTIAL，system/freshness 保持 UNKNOWN，test source-set 不表示 test execution/outcome/coverage/verification。
+
+### Sprint 123 — Portable `change-impact-cost-risk` lexical prescan（DONE）
+
+ADR-0076/Registry v31 以 `d46202beacc000c6fbdc14afb1c5996476af90d9c0e8927da6f1bf56bf354ad5` manifest pin 分发 closed 32-file source package。唯一 zero-argument explicit-EOF adapter 只消费 ADR-0062 已有 exact seven-field canonical request，并输出已有 envelope；不接受 raw/parsed graph、fixture/envelope wrapper、union、dispatcher 或 mode。Schema/golden pins 为 `a4592c63a938c090ccc4d6c8187bba8f37909ef6c2d2253fd06f656623c2bb25` / `bc364e387705651d307a3ff18137b857a3fad2c518685a358bba169a835a68d9`；ADR-0076 body/self/physical 为 `c1097bc6db2f88058f7b4d2af1aeacee0400b035545e01bed0499199525880a5` / `63aa497ce38b8d1182d128cd4227eb45690f9c01cd7c7dbae7c328028418398e` / `d7df301a4236be84e866a05c54089e79507db13ffba08ab85f955d27c3dc8b01`。
+
+Lexical closure 只在 caller-supplied ADR-0053 observation 内按 ADR-0062 完整；system impact 恒 UNKNOWN，zero dependents 不等于 no-impact/safe/low Cost/low Risk。Package 不 capture live repo/graph/build/test/runtime/cross-surface，不提供完整 Impact/Cost/Risk/materiality/safety、route、host installation、persistence 或 authority；仅勾 nested item，其余 31 个 package items 与 Wave 2 Impact Closure 保持开放。
+
+### Sprint 124 — WorkIntent v1 Proposed candidate governance（CHECKED）
+
+ADR-0077 以 Python/Go/Rust exact golden parity 冻结 authority-neutral WorkIntent v1 Proposed candidate；Schema/golden/record pins 为 `3b02fab59eae8767c86caaa73d0830adcbd92825045b7f27db0c3eca5ee10e01` / `8e80553677ebf9f6548a15be4c3cb4ccc8aa6825010a20f2e890e91d1cd7ed7b` / `2fe0424d30405a8b1d716afc99bbd38d602375f3316fd1c54c472890d520a225`。ADR-0078 另行提出 Registry v32 candidate-only metadata、checker-only shadow 与 source-only Python distribution；Go/Rust 保持 Catalyst-only，scope arrays 不变，context route 中没有 WorkIntent。
+
+WorkIntent v1 Proposed candidate 不被接受为 semantic authority，不认证 origin/requester/owner，不 resolve refs，不评估 freshness/materiality/scope，不关闭 G0，不创建 route/runtime/evaluator/producer/consumer、Run、RunJournal、lifecycle、Approval、Grant、persistence 或 effect。该证据项不勾选 `change-intake-orchestration` package，parent 与其余 31 个 package items 保持开放。
+
+### Sprint 125 — Authenticated ADR approval v1 Proposed prerequisite（CHECKED）
+
+ADR-0079 冻结 caller-supplied structure/digests/relations 和 dependency-free Python structural core；ADR-0080 另行提出 Registry v33 candidate-only metadata、checker-only shadow 与 Python source-only distribution。Schema/golden/proposal physical pins 为 `9882e45816f3c3a6e2d84ba09d942848dcc1eae90d3d5193b9cf18b6ebe27198` / `936b989856ff733e2de848ba9907c10f9f626aa188648fc60372775e44dbc7b5` / `6beabf33656998b942036b63c90db99c6a5f9b138cf2e5bd4a5372ec8e1ad1f2`，scope mapping canonical SHA-256 保持 `8ba82b638e8031f0d1be2b9ea6d522a4b9cf064a4ed532e1f0d3281f2dfe874c`。
+
+该 Proposed prerequisite 不验证 Ed25519、不认证或授权、不签发 receipt、不消费或证明 external root pin、trusted time/revocation currentness，不提供 CAS/durability/Accepted lifecycle、G0 closure、Skill、route、scope/evaluator/producer/runtime、persistence 或 effect；不复制 future Go service、production keys/state。Full authenticated approval、ADR lifecycle 与 package rollout 保持开放。
+
+### Sprint 126 — Authenticated ADR lifecycle v1 Proposed candidate（CHECKED shared governance）
+
+ADR-0081 Go approval authority 已经独立 StoredAuthorization seam review，但 Registry v34 只记录其 Catalyst-repository-only evidence；ADR-0082/0083 冻结 lifecycle Python structural candidate、Schema/golden/three proposals、exact20 core pins 与一个 checker-only shadow。Scope canonical SHA-256 保持 `8ba82b638e8031f0d1be2b9ea6d522a4b9cf064a4ed532e1f0d3281f2dfe874c`，无 Skill、route、kind/evaluator/producer/runtime。
+
+生成项目只允许 Python source closure，不复制 Go authority、production root/key/state。Full authority-bearing lifecycle、repository mutation、Accepted source、atomic durable publication、architecture compliance、G0 与 per-package rollout 仍开放。
+
+### Sprint 127 — Registry v35 lifecycle authority evidence（Proposed shared governance）
+
+ADR-0084 exact44 Go lifecycle authority 已独立冻结，ADR-0085 只把它登记为 Catalyst-repository-only evidence。Registry v35 保持完整 scope hash、既有 checker-only shadow 与无 route/Skill/runtime 边界；generated 只接收 exact4 governance source，缺 Go 时仅跳过 Catalyst implementation 审计。
+
+### Sprint 128 — Registry v36 legacy governance read import（Proposed shared governance）
+
+ADR-0086 exact15 pure core 已独立冻结；ADR-0087 登记 exact supplied Memory/ADR bytes 到 `unverified_legacy` read-only view 的 source-only Python candidate。Registry v36 保持完整 scope digest，checker-only shadow 仅声明真实零参数 argv；operator 显式 pipe request 并关闭 EOF。Catalyst exact10 Go parity、ambient path reader、database、state、route、Skill、service、runtime 与 authority 均不分发；exact18 fresh 与真实 Registry v35 upgrade scaffold 已闭合，implementation roadmap checkbox 已完成。
+
+### Sprint 129 — Registry v37 Kernel operational reference（Proposed shared governance）
+
+ADR-0088 exact15 dependency-free Python core、Catalyst exact11 Go/exact13 Rust module parity 与 ADR/Schema/golden 已冻结；共享 Rust `lib.rs` 只要求 operational registration 恰好一次，不整文件 pin。ADR-0089 只登记五类 operational reference records 加 nonsemantic acyclic closure。Registry v37 保持 scope digest，detector 精确运行 pinned-golden argv；source distribution 为 Python exact18，绝不复制 Go/Rust 或 runtime registration。Fresh generated core 33/skip2、governance 12/skip2、真实 v36 added18/changed34/second0 与旧 v35/v34/v33 inverse 均闭合。十四项 authority/effect attestations 为 false，完整 Kernel ABI parent 保持开放。
+
+### Sprint 130 — Registry v38 Kernel decision reference（✅ DONE；Proposed ADRs）
+
+ADR-0090 exact16 dependency-free Python core、Catalyst exact13 Go、flat exact9 Rust parity 与 ADR/Schema/golden 已冻结；共享 Rust `lib.rs` 只要求 decision registration 恰好一次，不整文件 pin。ADR-0091 仅登记 CognitiveAtom v2、DecisionTransaction v1 及对 operational records 的单向 structural reference closure。Registry v38 保持完整 scope digest，detector 精确运行 pinned-golden argv；source distribution 为 Python exact19，绝不复制 Go/Rust 或 runtime registration。22 项 attestations 均为 false，declared authority/hardness 不生效，instruction disabled；无 Skill、route、runtime、PDP/controller。两份 ADR 继续 Proposed；repository-slice 治理已通过正式 `forge accept`，窄 roadmap 项完成。ADR-0038 仍 ADOPTED-PARTIAL，DecisionCapsule、AuthorizedTransactionSpec、authenticated PDP 与 rolling controller 保持开放。
+
+正式 Candidate 验收为 **ACCEPTED**（9 pass、0 fail、2 个诚实 N/A）：Python 92 files / 1323 tests，Node 32 files / 460 tests，Go 2466 tests，Rust 五组 observed tests 334 / 54 / 334 / 248 / 164，examples 22 / 47，真实覆盖率 83.45830729709088%。隔离凭证日志 `/tmp/forgeos-adr0091-candidate-acceptance-rerun.log` SHA-256 为 `9892543e5f82bcf82d10e1ea1bed4ce98c07709e4e729ceb8423dae12d6897b3`；pre/post provenance 四项全等。晋级后 Registry v38 policy physical SHA-256 为 `63b44231ae33a9788177db0d348b94d76ef368a8bcec2c9d67f4dabc7dace271`，decision governance module 为 `a8d4ff8c2085b990bfb6c827968fc0402f5fde886f04611d3bac6aad0b07306b`，exact19 aggregate 为 `ad7220c2c02012cab4eb4a36adc0419142b9bbc7612496165197ea994e217b46`；ADR-0090/0091 bytes 与 exact16 均未改变。
+
+### Sprint 131 — Registry v39 Decision Capsule structural replay（CHECKED Candidate；PENDING acceptance）
+
+ADR-0092 exact16 dependency-free Python core、Catalyst exact15 Go、exact14 Rust parity 与 ADR/Schema/golden 已冻结；共享 Rust `lib.rs` 只要求 registration 恰好一次，不整文件 pin。ADR-0093 仅登记 `StructuralReplayManifest → DecisionCapsule → EvaluationBranch → StructuralReplayClosure` 的 caller-supplied validate/reseal/compare DAG；专用的后挂载 ReflectionReport refs unresolved 且 outer-only，上游 ArtifactRefs 保持 opaque/uninterpreted。Registry v39 保持完整 scope digest，detector 精确运行 pinned-golden argv；source distribution 为 Python exact19，绝不复制 Go/Rust 或 runtime registration。
+
+32 项 attestations、effect replay/history rewrite 与七项 completion 全 false；无 Skill、route、runtime、model/rule/world-state/history/Reflection consumer、persistence、PDP/controller。ADR-0092/0093 始终 Proposed/null；repository-slice roadmap checkbox 保持 `[ ]`，等待 independent review、fresh/upgrade scaffold 与正式 `forge accept`。ADR-0038 仍 ADOPTED-PARTIAL，完整 DecisionCapsule、AuthorizedTransactionSpec、authenticated PDP 与 rolling controller 保持开放。

@@ -7,6 +7,7 @@ id: rollback
 stage: rollback
 title: 已识别发布风险 → 经外部执行并由人确认的回滚
 readonly: true
+output_binding_contract: local_digest_v1 # accepted command output writes local digest-bound receipts
 description: >
   按需生成回滚计划、runbook 与 checklist，并验证目标版本、数据影响、停止阈值和
   证据引用。ForgeOS 不访问凭证、不执行远程回滚，且本 stage 没有 next_stage。

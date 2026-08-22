@@ -168,6 +168,9 @@ func TestFromBytes_CapsAndMarks(t *testing.T) {
 	if len(res.Stdout) != 65536 {
 		t.Errorf("Stdout retained %d bytes, want cap 65536", len(res.Stdout))
 	}
+	if res.Total <= int64(res.Retained) {
+		t.Error("capped FromBytes must expose discarded bytes in Total/Retained")
+	}
 }
 
 func TestFromBytes_UnderCap_NoMarker(t *testing.T) {
@@ -177,5 +180,8 @@ func TestFromBytes_UnderCap_NoMarker(t *testing.T) {
 	}
 	if strings.Contains(res.Rendered(), "truncated") {
 		t.Error("under-cap FromBytes must not mark truncation")
+	}
+	if res.Total != int64(res.Retained) {
+		t.Error("under-cap FromBytes must expose equal Total/Retained")
 	}
 }

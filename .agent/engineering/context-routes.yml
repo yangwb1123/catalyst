@@ -39,10 +39,31 @@ routes:
         - { field: task_type, operator: in, values: [governance, agent_engineering] }
     include:
       - { ref: .agent/engineering/rules.yml, lane: instruction, required: true, max_bytes: 131072 }
-      - { ref: .agent/engineering/governance-contracts.yml, lane: instruction, required: true, max_bytes: 65536 }
+      - { ref: .agent/engineering/governance-contracts.yml, lane: instruction, required: true, max_bytes: 131072 }
       - { ref: .agent/skills/evidence-claim-management.md, lane: instruction, required: true, max_bytes: 65536 }
+      - { ref: .agent/skills/context-engineering.md, lane: instruction, required: true, max_bytes: 65536 }
+      - { ref: .agent/skills/policy-authority.md, lane: instruction, required: true, max_bytes: 65536 }
+      - { ref: .agent/skills/knowledge-graph-curation.md, lane: instruction, required: true, max_bytes: 65536 }
+      - { ref: .agent/skills/change-impact-cost-risk.md, lane: instruction, required: true, max_bytes: 65536 }
+      - { ref: .agent/skills/adr-governance.md, lane: instruction, required: true, max_bytes: 65536 }
+      - { ref: .agent/skills/capability-registry.md, lane: instruction, required: true, max_bytes: 65536 }
+      - { ref: .agent/skills/capability-ownership-projection.md, lane: instruction, required: true, max_bytes: 65536 }
+      - { ref: .agent/skills/project-snapshot.md, lane: instruction, required: true, max_bytes: 65536 }
       - { ref: .agent/policies/modes.yml, lane: trusted_context, required: true, max_bytes: 131072 }
       - { ref: docs/contracts/governance-evidence-claim-v1.schema.json, lane: trusted_context, required: true, max_bytes: 131072 }
+      - { ref: docs/contracts/context-package-v1.schema.json, lane: trusted_context, required: true, max_bytes: 131072 }
+      - { ref: docs/contracts/capability-grant-v1.schema.json, lane: trusted_context, required: true, max_bytes: 131072 }
+      - { ref: docs/contracts/approval-record-v1.schema.json, lane: trusted_context, required: true, max_bytes: 131072 }
+      - { ref: docs/contracts/transition-receipt-v1.schema.json, lane: trusted_context, required: true, max_bytes: 131072 }
+      - { ref: docs/contracts/knowledge-update-proposal-v1.schema.json, lane: trusted_context, required: true, max_bytes: 131072 }
+      - { ref: docs/contracts/bootstrap-grant-issuance-v1.schema.json, lane: trusted_context, required: true, max_bytes: 131072 }
+      - { ref: docs/contracts/bootstrap-repo-read-execution-v1.schema.json, lane: trusted_context, required: true, max_bytes: 131072 }
+      - { ref: docs/contracts/local-go-package-impact-prescan-v1.schema.json, lane: trusted_context, required: true, max_bytes: 131072 }
+      - { ref: docs/contracts/graph-snapshot-v1.schema.json, lane: trusted_context, required: true, max_bytes: 131072 }
+      - { ref: docs/contracts/architecture-decision-record-v2.schema.json, lane: trusted_context, required: true, max_bytes: 131072 }
+      - { ref: docs/contracts/capability-registry-v1.schema.json, lane: trusted_context, required: true, max_bytes: 131072 }
+      - { ref: docs/contracts/planning-capability-ownership-projection-v1.schema.json, lane: trusted_context, required: true, max_bytes: 131072 }
+      - { ref: docs/contracts/project-source-snapshot-v1.schema.json, lane: trusted_context, required: true, max_bytes: 131072 }
       - { ref: docs/design/ai-engineering-os/governance-contracts.md, lane: trusted_context, required: true, max_bytes: 131072 }
       - { ref: harness/policies.yml, lane: trusted_context, required: true, max_bytes: 65536 }
 
@@ -57,9 +78,21 @@ routes:
       - { ref: .agent/skills/clean-architecture.md, lane: instruction, required: true, max_bytes: 131072 }
       - { ref: .agent/skills/domain-modeling.md, lane: instruction, required: true, max_bytes: 131072 }
       - { ref: .agent/skills/architecture-tradeoff.md, lane: instruction, required: true, max_bytes: 131072 }
+      - { ref: .agent/skills/knowledge-graph-curation.md, lane: instruction, required: true, max_bytes: 65536 }
+      - { ref: .agent/skills/change-impact-cost-risk.md, lane: instruction, required: true, max_bytes: 65536 }
+      - { ref: .agent/skills/adr-governance.md, lane: instruction, required: true, max_bytes: 65536 }
+      - { ref: .agent/skills/capability-registry.md, lane: instruction, required: true, max_bytes: 65536 }
+      - { ref: .agent/skills/capability-ownership-projection.md, lane: instruction, required: true, max_bytes: 65536 }
+      - { ref: .agent/skills/project-snapshot.md, lane: instruction, required: true, max_bytes: 65536 }
       - { ref: .agent/engineering/backend-decision-gates.yml, lane: instruction, required: true, max_bytes: 131072 }
       - { ref: .agent/eval/backend-decision-package.schema.yml, lane: trusted_context, required: true, max_bytes: 131072 }
       - { ref: .arch/rules.yaml, lane: trusted_context, required: true, max_bytes: 65536 }
+      - { ref: docs/contracts/local-go-package-impact-prescan-v1.schema.json, lane: trusted_context, required: true, max_bytes: 131072 }
+      - { ref: docs/contracts/graph-snapshot-v1.schema.json, lane: trusted_context, required: true, max_bytes: 131072 }
+      - { ref: docs/contracts/architecture-decision-record-v2.schema.json, lane: trusted_context, required: true, max_bytes: 131072 }
+      - { ref: docs/contracts/capability-registry-v1.schema.json, lane: trusted_context, required: true, max_bytes: 131072 }
+      - { ref: docs/contracts/planning-capability-ownership-projection-v1.schema.json, lane: trusted_context, required: true, max_bytes: 131072 }
+      - { ref: docs/contracts/project-source-snapshot-v1.schema.json, lane: trusted_context, required: true, max_bytes: 131072 }
 
   - id: implementation
     priority: 50

@@ -14,7 +14,7 @@ disciplines:
   - id: context
     purpose: Select the smallest relevant, fresh and provenance-bound working context.
     state: partial
-    assets: [.agent/engineering/context-routes.yml]
+    assets: [.agent/engineering/context-routes.yml, .agent/skills/context-engineering.md, skills/context-engineering, docs/contracts/context-package-v1.schema.json]
   - id: memory
     purpose: Preserve task, project and organizational knowledge without promoting inference to fact.
     state: planned
@@ -22,7 +22,7 @@ disciplines:
   - id: tool
     purpose: Expose narrow typed actions with explicit effects, permissions and evidence.
     state: partial
-    assets: [harness, .agent/skills]
+    assets: [harness, .agent/skills, skills/project-snapshot, skills/context-engineering, skills/evidence-claim-management, skills/policy-authority, skills/adr-governance, skills/knowledge-graph-curation, skills/change-impact-cost-risk]
   - id: planning
     purpose: Decompose work into bounded, dependency-aware and acceptance-checkable increments.
     state: partial
@@ -36,9 +36,9 @@ disciplines:
     state: planned
     assets: [.agent/workflows/evolve.yml, .ai/prompts/08-post-sprint-review.md]
   - id: graph
-    purpose: Represent task dependencies and eventually evidence-backed system impact relations.
+    purpose: Represent task dependencies and provenance-bound partial system relations without hiding missing coverage.
     state: partial
-    assets: [.agent/workflows, .agent/skills/cognitive-architecture.md]
+    assets: [.agent/workflows, .agent/skills/cognitive-architecture.md, .agent/skills/knowledge-graph-curation.md, skills/knowledge-graph-curation/SKILL.md, docs/contracts/graph-snapshot-v1.schema.json]
   - id: harness
     purpose: Constrain tools, workspace, permissions and termination outside model reasoning.
     state: enforced
@@ -50,7 +50,7 @@ disciplines:
   - id: knowledge
     purpose: Maintain sourced rules, ADRs and engineering knowledge with version and ownership.
     state: partial
-    assets: [.agent/engineering/rules.yml, .agent/AGENTS.md]
+    assets: [.agent/engineering/rules.yml, .agent/AGENTS.md, .agent/skills/adr-governance.md, docs/contracts/architecture-decision-record-v2.schema.json]
   - id: evolution
     purpose: Turn repeated, evidenced outcomes into governed improvement proposals.
     state: partial
@@ -62,4 +62,4 @@ disciplines:
   - id: contract
     purpose: Stabilize typed boundaries among agents, workflows, tools, artifacts and evidence.
     state: partial
-    assets: [.agent/eval/completion-evidence.schema.yml, .agent/eval/acceptance.schema.yml]
+    assets: [.agent/eval/completion-evidence.schema.yml, .agent/eval/acceptance.schema.yml, .agent/skills/capability-registry.md, .agent/skills/capability-ownership-projection.md, .agent/skills/project-snapshot.md, .agent/skills/context-engineering.md, .agent/skills/evidence-claim-management.md, .agent/skills/policy-authority.md, .agent/skills/adr-governance.md, .agent/skills/knowledge-graph-curation.md, .agent/skills/change-impact-cost-risk.md, skills/context-engineering/SKILL.md, skills/evidence-claim-management/SKILL.md, skills/policy-authority/SKILL.md, skills/adr-governance/SKILL.md, skills/knowledge-graph-curation/SKILL.md, skills/change-impact-cost-risk/SKILL.md, docs/contracts/architecture-decision-record-v2.schema.json, docs/contracts/capability-registry-v1.schema.json, docs/contracts/planning-capability-ownership-projection-v1.schema.json, docs/contracts/project-source-snapshot-v1.schema.json, docs/contracts/context-package-v1.schema.json, docs/contracts/capability-grant-v1.schema.json, docs/contracts/approval-record-v1.schema.json, docs/contracts/work-intent-v1.schema.json, harness/work_intent_contract_check.py, docs/contracts/authenticated-architecture-decision-approval-v1.schema.json, harness/authenticated_adr_approval_contract_check.py, docs/contracts/authenticated-architecture-decision-lifecycle-v1.schema.json, harness/authenticated_adr_lifecycle_contract_check.py, docs/adr/ADR-0084-authenticated-architecture-decision-lifecycle-authority-service-v1.md, docs/adr/ADR-0085-authenticated-architecture-decision-lifecycle-authority-evidence-and-source-distribution.md, docs/contracts/legacy-governance-read-import-v1.schema.json, docs/contracts/fixtures/legacy-governance-read-import-memory-v1.jsonl, docs/contracts/fixtures/legacy-governance-read-import-ADR-0001.md, docs/contracts/fixtures/legacy-governance-read-import-ADR-0002.md, docs/contracts/fixtures/legacy-governance-read-import-request-v1.json, docs/contracts/fixtures/legacy-governance-read-import-view-v1.json, harness/legacy_governance_read_import_contract_check.py, docs/adr/ADR-0086-legacy-governance-read-only-import-v1.md, docs/adr/ADR-0087-legacy-governance-read-import-governance-and-source-distribution.md, docs/contracts/kernel-operational-reference-core-v1.schema.json, docs/contracts/fixtures/kernel-operational-reference-closure-v1.json, harness/kernel_operational_contract_check.py, docs/adr/ADR-0088-kernel-operational-reference-core-v1.md, docs/adr/ADR-0089-kernel-operational-reference-governance-and-source-distribution.md, docs/contracts/kernel-decision-reference-core-v1.schema.json, docs/contracts/fixtures/kernel-decision-reference-closure-v1.json, harness/kernel_decision_contract_check.py, docs/adr/ADR-0090-kernel-decision-reference-core-v1.md, docs/adr/ADR-0091-kernel-decision-reference-governance-and-source-distribution.md, docs/contracts/decision-capsule-structural-replay-core-v1.schema.json, docs/contracts/fixtures/decision-capsule-structural-replay-v1.json, harness/decision_capsule_contract_check.py, docs/adr/ADR-0092-decision-capsule-structural-replay-core-v1.md, docs/adr/ADR-0093-decision-capsule-structural-replay-governance-and-source-distribution.md]

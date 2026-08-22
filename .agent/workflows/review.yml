@@ -13,6 +13,7 @@ id: review
 stage: review
 title: 已批架构 → 全维评审通过 (approved architecture → all-dimensions reviewed)
 readonly: true                         # 全段只读分析,不写产物代码 / read-only analysis, no product code
+output_binding_contract: local_digest_v1 # accepted command output writes local digest-bound receipts
 description: >
   对已批准的架构做安全/分布式/性能/生产就绪多维评审,在写任何代码之前找出设计缺陷。
   Deep review of approved architecture across security, distributed systems, performance,

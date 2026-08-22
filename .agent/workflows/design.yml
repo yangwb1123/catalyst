@@ -11,6 +11,7 @@ id: design
 stage: design
 title: 需求 (PRD) → 已批准的架构方案 (approved architecture)
 readonly: false                        # phase 可写声明产物；approval 本身只路由 / phases emit; approval routes only
+output_binding_contract: local_digest_v1 # accepted command output writes local digest-bound receipts
 description: >
   按 lifecycle 推导架构(单体→服务→事件驱动,分阶段演进,非峰值 QPS 镀金),
   产出 1 页方案 + 成本 + 风险,送人审。Derive architecture staged by lifecycle, then

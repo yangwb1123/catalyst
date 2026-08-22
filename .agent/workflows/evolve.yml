@@ -10,6 +10,7 @@ id: evolve
 stage: evolve
 title: 已发布系统 → 自驱动持续改进 (self-driven continuous improvement)
 readonly: false                        # implement 子段写码 / writes code in the implement phase
+output_binding_contract: local_digest_v1 # accepted command output writes local digest-bound receipts
 type: loop                             # 长循环,非一次性脊柱段 / a standing loop, not a one-shot
 description: >
   对已存在系统持续扫描、找差距、更新 ROADMAP、实现、过闸、评审、评估,再回到扫描。

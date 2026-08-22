@@ -163,6 +163,7 @@ func newObservedCommand(ctx context.Context, argv []string, spec Spec) *exec.Cmd
 	}
 	setupProcessGroup(cmd)
 	cmd.Dir, cmd.Env, cmd.Stdin = spec.Dir, spec.Env, spec.Stdin
+	cmd.ExtraFiles = append([]*os.File(nil), spec.ExtraFiles...)
 	return cmd
 }
 

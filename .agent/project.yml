@@ -5,6 +5,7 @@
 extends: []                       # 全局 agent-os 仓库 = v2,暂无可继承的上游 (none yet)
 
 project: forgeos
+repository_flavor: catalyst_source # explicit source-repository identity; never scaffold-copied
 language: polyglot                # 当前主要声明式/markdown;目标 Go 核心 (target: Go core)
 architecture: control-plane/data-plane   # 目标态;v0–v1 仅 Context + Harness 子集
 mode: engineering                 # 全闸门 (explorer | balanced | engineering | cto)

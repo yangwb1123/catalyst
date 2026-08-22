@@ -65,7 +65,8 @@ ADR-0054 已交付 local Governance semantic view v1：SQLite v27 从 exact jour
 
 1. 现有 free-text Memory 不能作为企业事实账本，且旧省略 confidence 的语义不能继承到 confirmed fact；
 2. 当前 Context 只覆盖有限 ROADMAP/ADR 标题/规则，未绑定影响子图、事实/假设、权限与遗漏；
-3. 普通 reviewer/CTO verdict 的部分路径仍比严格 QA 更宽松，L3/L4 变更不能沿用 fail-open 行为。
+3. ADR-0063 关闭 caller-declared L3/L4 Build Reviewer 的 fail-open；ADR-0064 已交付 local digest-binding A–D。
+   未认证的 materiality 低报、普通 CTO/其它 review、finding/SoD 与 authority-bearing approval 仍比目标闭环更宽松。
 
 ## 2. 收敛策略
 
@@ -94,10 +95,13 @@ Canonical capability/governance schemas
 - [x] 交付 ADR-0044 业务绑定 UI 几何合同：不新增 capability owner，以 versioned composition source artifact 绑定角色/任务/状态/数据语义与 region/axis/group/spacing/stroke/shape/reflow，并以同 capture context 的声明式 geometry report 保存原始 observation；可信 Runner/Reviewer attestation 仍待 runtime；
 - [x] 交付 ADR-0045 的 strict EvidenceRecord/KnowledgeClaim v1 schema、identity/state matrix、无权限 shadow admissibility 和 Skill adapter；完整 Envelope、ConstitutionRule、Grant、TransitionReceipt 仍未实现；
 - [x] 交付 ADR-0047 的七类 KnowledgeClaim→CognitiveAtom pure shadow 投影、exact source closure/canonical identity 与跨语言 golden/adversarial contract；`lesson/proposal` 明确不投影；
-- [ ] 冻结完整 Kernel ABI：扩展 CognitiveAtom source/type/authority/hardness，并定义 DecisionTransaction、InteractionEvent、CapabilityInvocation、Artifact/ExecutionReceipt；
+- [x] WorkIntent v1 Proposed candidate evidence：ADR-0077/0078 仅冻结 Python/Go/Rust exact golden parity、Registry v32 candidate-only metadata、checker-only shadow 与 source-only Python distribution 边界；保持 scope arrays 不变，不关闭 G0，不接受 semantic authority，不新增 route、producer、evaluator、consumer、Run、RunJournal、lifecycle、Approval、Grant、persistence 或 effect；
+- [x] Authenticated ADR approval v1 Proposed structural prerequisite evidence：ADR-0079/0080 与 Registry v33 仅冻结 caller-supplied structure/digests/relations 的 dependency-free Python candidate、checker-only shadow 与 source-only Python distribution；不验证 Ed25519，不认证或授权，不签发 receipt，不消费或证明 external root pin、trusted time/revocation currentness，不提供 CAS/durability/Accepted，不新增 future Go service、keys/state、Skill、route、scope/evaluator/producer/runtime，不关闭 G0；full authenticated approval 与 ADR lifecycle 保持开放，package rollout 保持开放；
+- [x] 冻结 Kernel structural reference-family ABI（structural only）：扩展 CognitiveAtom source/type/authority/hardness，并定义 DecisionTransaction 及其对 InteractionEvent、CapabilityInvocation、ArtifactReceipt、ExecutionReceipt 的单向引用闭包；
+- [ ] 交付 Decision Capsule structural replay repository slice（structural only）：分发 ADR-0092 四对象 pure validate/reseal/compare closure；
 - [x] 冻结 Evidence/Claim canonical bytes、kind digest domain、大小/数量上限和 v1 兼容边界；统一 Kernel 错误代码和持久化迁移仍待后续；
 - [x] 建 Evidence/Claim 跨 Go/Rust/Python golden 与 malformed/duplicate/unknown/oversize/authority adversarial 回归；
-- [ ] 设计旧 memory/ADR 的只读导入：默认 `unverified_legacy`，绝不自动确认。
+- [x] 设计旧 memory/ADR 的只读导入：默认 `unverified_legacy`，绝不自动确认。
 
 **Wave 0F-A 已达判据。** 相同 Evidence/Claim 输入跨语言产生相同 canonical bytes/digest，未知/重复字段、无 Evidence 的 Fact
 候选、所有 confirmed/accepted/waived authority 状态和 Assumption hard-gate 资格均失败关闭。过期 Grant/Approval 与 runtime 状态跳转
@@ -114,23 +118,33 @@ instruction、hard guard、transition、completion、effect 或 persistence；De
 - [x] 由 ADR-0054 在 0F-A 严格记录之上实现 durable authority-free KnowledgeClaim lifecycle subset、current/conflict candidate view、
   declared-time freshness/validity evaluation 与 validation job scheduling；
 - [ ] 在 Grant/PDP/Approval trust root 之后实现 confirmed/accepted/active/waived/validated/resolved/adopted 等 authority-bearing lifecycle promotion；
-- [ ] 实现 `ContextPackage v1` 的选择、遗漏、redaction、token budget、digest 和 cache invalidation；
+- [x] 由 ADR-0055 实现 authority-free `ContextPackage v1` 的选择、遗漏、redaction、token budget、digest 和 cache full revalidation；provider prompt、source authentication、Grant/PDP 与持久化仍未接入；
 - [x] 把 exact `forgeos.artifact.v1` provenance 通过 ADR-0048 strict pure shadow adapter 适配为 Evidence；
 - [x] 把 exact `forgeos.command-observation/v1` 通过 ADR-0049 strict pure shadow adapter 适配为 gate/test Evidence；
 - [x] 通过 ADR-0050 为 Evolve repository locator 另行版本化 strict pure shadow Evidence source adapter；
 - [x] 由 ADR-0051 冻结 scrubbed environment/tool/source-tree profile，并以显式 opt-in API 接入四类 fixed local gate command observation；
 - [x] 由 ADR-0052 捕获完整 canonical Evolve report、共享 bounded-interval source 与 zero-or-more exact locator observation；
 - [x] 完成 ADR-0053 `selected-module-all-regular-go-files-union-v1` lexical dependency observation、独立 review 与 acceptance 接线；不得把它升级为 selected build 或 Impact Closure；
-- [ ] 实现 `CapabilityGrant v1`、最小 effect vocabulary、preflight/postflight 与 audit receipts；
-- [ ] 实现非 Agent Governance Kernel/PDP trust root、bootstrap GrantRequest、plan-finalization issuance 与 ApprovalRecord；
+- [x] 由 ADR-0062 交付 exact ADR-0053 graph 上的 local package reverse ImpactPreScan：seed partition、完整 induced local-edge closure、deterministic shortest witness 与 fail-closed UNKNOWN；不得升级为 system impact 或 final Assessment Join；
+- [x] 由 ADR-0056 实现 contract-only `CapabilityGrant v1` envelope、最小 effect/scope vocabulary 与 authority-neutral declared assessment；
+- [x] 由 ADR-0057 实现独立非 Agent `forge-kernel` 的单一 `authenticated_bootstrap_repo_read_grant_issuance_v1`：只认证 repo 外 operator-pinned root、signed policy/request，并只签发 bootstrap `repository-reader/v1` + `repo.read` Grant 与 durable signed issuance receipt；
+- [x] ADR-0058 已交付 `authenticated_bootstrap_repo_read_execution_v1`：独立 execution root、Linux-only `openat2` exact-byte manifest read、single-use durable usage ledger 与 receipt-only replay；
+- [x] ADR-0059 ApprovalRecord v1 contract-only 已交付并通过 `forge accept`；它只比较 caller-declared record/target/time/reference，不认证或产生 effective approval；
+- [x] ADR-0060 TransitionReceipt v1 contract-only 已交付并通过 `forge accept`；它只比较 caller-declared graph/receipt/predecessor/recovery/time/Grant/Approval references，不写 ledger 或推进 transition；
+- [x] ADR-0061 KnowledgeUpdateProposal v1 contract-only 已交付并通过 `forge accept`；它冻结 proposal/target/request/assessment、exact Evidence/Claim closure、create/supersede declarations 与 Grant/Context/artifact declared compatibility，但不认证、不持久化、不 adopt/apply，也不生成 receipt；
+- [ ] 实现 plan-finalization、其余 effects/capabilities/environments、authenticated Approval/revocation/usage/reservation、preflight/postflight、PEP/effect 与完整 audit lifecycle；
+- [ ] 完成 Governance Kernel/PDP、ContextPackage/provider/Transition/Knowledge integration、key provisioning/rotation、remote/HA/multitenancy；不得把本地 `0600`/effective-UID 或 same-UID test 当作 OS principal/HSM 隔离；
 - [ ] 实现封闭 Transition 状态表、append-only ledger、非法边 enforcement、N/A applicability、rework/resume/quarantine recovery；
-- [ ] 实现 KnowledgeUpdateProposal→Kernel validation→Receipt，所有节点默认只有 `knowledge.propose`；
-- [ ] 实现最小 Capability Registry（ID/version/schema/effects/proofs/owner/implementations/tests），CLI/API 只做 adapter；
-- [ ] 在 ADR-0047 pure projector 之上，先以 shadow/report-only 实现 prompt/model→Atom compiler、TaskProfile、Rule activation/suppression、DiscretionEnvelope 和 DecisionCapsule；
+- [ ] 在 ADR-0061 pure proposal wire 之上实现 authenticated KnowledgeUpdateProposal→Kernel current-head/CAS/conflict validation→Receipt，所有节点默认只有 `knowledge.propose`，只有独立 Kernel service 可持有 `knowledge.apply`；
+- [x] 实现最小 Capability Registry（ID/version/schema/effects/proofs/owner/implementations/tests），CLI/API 只做 adapter；
+- [ ] 在 ADR-0047 pure projector 之上，先以 shadow/report-only 实现 prompt/model→Atom compiler、TaskProfile、Rule activation/suppression、DiscretionEnvelope、DecisionCapsule 与 AuthorizedTransactionSpec；
 - [ ] 实现带 read-version/CAS/idempotency/attempt/commit-abort receipt 的 DecisionTransaction 与有界 rolling controller；
 - [ ] 先把本地调用适配为 ExecutionTarget/Attempt/ArtifactRef/EnvironmentDigest/Effect/Mobility，保持行为不变且远程模块 OFF；
-- [ ] 将 L3/L4 required review/verdict 改为 fail-closed，保留低风险兼容策略；
-- [ ] 让 approval/review/Agent output 绑定 source/context/policy/artifact digests；
+- [x] 由 ADR-0063 将 caller-declared L3/L4 Build `reviewer_v1` 改为 fail-closed，并保留 L0–L2/
+  `materiality_not_bound` advisory 兼容；该声明不认证、不自动推断，也不证明 reviewer identity/quality/SoD/digest binding；
+- [x] 让 approval/review/Agent output 绑定 source/context/policy/artifact digests；ADR-0064 已交付 A（七个 canonical
+  command output）/B（L3/L4 reviewer_v2）/C（Design/Deploy/Rollback positive approval）/D（resume/scaffold），但仅为
+  same-UID local observation/control consistency，不是 authenticated ApprovalRecord/PDP/SoD/effect authority；
 - [ ] 增加查询：为什么这个事实成立、哪些假设开放、这个 Agent 看到了什么/没看到什么、被授予什么。
 
 **ADR-0048 首个 source-adapter 窄切片已达判据。** 同一 exact artifact-v1 + binding request 跨 Python/Go/Rust 产生相同 canonical
@@ -158,19 +172,51 @@ backfill/rebuild 还重验完整 history/reference relations，并对 materializ
 `as_of_unix_ms`，冲突只列 candidate，validation job 只排期；允许的 durable transition 限于 shadow subset。结果固定
 `semantic_projection_only_no_truth_or_authority`，不得推断 confirmed fact、accepted Decision、validation verdict、hard gate、knowledge apply 或 effect。
 
+**ADR-0055 ContextPackage 窄切片已达判据。** 同一 exact build request 经 Python/Go/Rust 产生逐字节相同的 typed lanes、omissions、
+redaction/truncation receipts、accounting、projection/context/cache digests；required context 与 pinned token budget 失败关闭，cache hit 必须完整重装配。
+结果仅为 `ASSEMBLED_SHADOW`；它不读取当前仓库、认证 source、调用模型、写 journal/Hub，亦不授予 truth、instruction、permission、approval、completion 或 effect。
+
+**ADR-0056 CapabilityGrant contract-only 窄切片已达判据。** 同一 exact Grant/assessment request 经 Python/Go/Rust 产生逐字节相同的
+canonical bytes、digests 与 declared relations；deny、scope/binding/budget/time drift 只形成声明关系或失败，不产生 authorization decision。
+它不认证 issuer/proof/principal/policy/Approval，不评价 revocation/usage，不做 pre/postflight、receipt、persistence、execution 或 effect attestation。
+
+**ADR-0057 authenticated bootstrap repo-read 窄切片已达判据。** Operator 部署的独立非 Agent `forge-kernel` 只接受 repo 外 pinned
+trust root/key/state、signed policy 与 signed GrantRequest，只为 `bootstrap_planning_repo_read_only_v1` 合同 profile 签发 `repository-reader/v1`、
+单一 `repo.read`、exact path、小预算/TTL、`local|development|test` 的 signed Grant 与 durable signed issuance receipt；terminal result 只有
+`stored|exact_replay`，不证明 read effect 已发生。Runtime 仅支持 Unix；非 Unix 在读取 authority input/key 前失败关闭。Authority root/state
+必须位于 repo 外，resolved endpoints 按 ancestor filesystem identity 双向不重叠；caller repository source、首次 resolved path 与 opened
+directory identity 在整个 session 稳定绑定。Authority 使用无 symlink ancestor 的 absolute canonical root、exact `0700` directory，以及 closed relative、
+effective-UID-owned、single-link、无特殊权限位的 exact `0600` regular leaves。上述本地文件检查与 same-UID test 不等于 OS principal/HSM/
+production trust boundary。
+Scaffold/upgrade 仅复制 contract/checker，缺兼容外部 `forge-kernel` 时为 `not_executed`；完整 Kernel/PDP 生命周期仍未交付。
+
+**ADR-0058 authenticated bootstrap repo-read execution 已按窄边界交付。** 它以独立 execution root 和 signed policy/invocation 约束 exact ADR-0057
+Grant，只在 Linux amd64/arm64 用 `openat2` 读取 manifest-bound raw bytes。Reservation、intent 与 terminal 均 durable persist/reopen；active tail 不
+resume/reread，ledger 不保存 raw，replay 只返回 receipt/metadata。Cooperative timeout 不等于 hard deadline，管理员仍可整体替换 signed state 回滚；
+best-effort mutable-buffer clear 不证明 secure erasure/process isolation/HSM。Scaffold 不复制 runtime/keys/state，缺 runtime 为 `not_executed`。
+
+**ADR-0059 ApprovalRecord contract-only 已按窄边界交付。** 它冻结 exact record/target/request/assessment identity、caller-time
+declared relations 与 CapabilityGrant ApprovalRef 投影，但不导入本地 marker/flag/actor hint，不认证 approver/authority/proof/SoD，不验证
+condition/RiskAcceptance/revocation，也不产生 effective approval、authorization、permission、persistence、transition 或 effect。
+该窄 profile 已通过 `forge accept`；完成裁决不等于 issuer 或 execution authority。
+
 **完成判据。** Coding Agent 越路径、Reviewer 写代码、Migration 直接 apply production、Release 访问 credential 均被拒绝；
 Agent 不能签发 Grant 或确认业务事实；源或 context 漂移使批准失效；不可信正文不能进入 instruction lane；非法状态跳转、
 过期 approval、恢复重放已消费 Grant 和无 receipt 的 knowledge apply 全部拒绝。
 
 ## 5. Wave 2 — Knowledge Graph 与变更影响闭包
 
-ADR-0053 已交付 producer 只观察 selected module 的 lexical package/import surface；它不解析 selected build、compile/runtime reachability、
-API/DB/test/deployment/owner 边或跨源 identity，因此不能满足本 Wave 的 `GraphSnapshot`、coverage/staleness、impact traversal、Cost/Risk 或 authority 判据。
+ADR-0053 已交付 producer 只观察 selected module 的 lexical package/import surface；ADR-0062 进一步只在这一份 exact observation 内交付
+local package reverse reachability prescan、完整 induced edge set 与 shortest witness。二者都不解析 selected build、compile/runtime reachability、
+API/DB/test/deployment/owner 边或跨源 identity，因此不能满足本 Wave 的 `GraphSnapshot`、coverage/staleness、system impact traversal、Cost/Risk 或 authority 判据。
 
-- [ ] 定义 stable node identity、edge taxonomy、extractor provenance 和 `GraphSnapshot v1`；
+- [x] 定义 stable node identity、edge taxonomy、extractor provenance 和 `GraphSnapshot v1`；ADR-0065 同时交付一个 exact
+  ADR-0053 module/package lexical PARTIAL/UNKNOWN profile，但不等于完整 System Knowledge Graph；
+- [x] 交付 ADR-0066 的独立 Local Go lexical test-source 窄 profile：每个 nonempty `test_files` package 只形成 source-set `test` node 与
+  module→test structural edge，Go/test coverage 互斥且均为 PARTIAL；不解析/执行 test，不声称 result、coverage 或 verification，且不关闭下方多 surface extractor 总项；
 - [ ] 从模块/import/call、API/event schema、DB migration/schema、test、deployment、ADR/owner 建确定性 extractor；
 - [ ] 记录 extractor coverage、unresolved edge、staleness；先静态/合同图，暂不以 embedding 当事实；
-- [ ] 实现 seed → direct/transitive impact path traversal 和 evidence binding；
+- [ ] 在完整 GraphSnapshot 上实现跨 surface 的 seed → direct/transitive impact path traversal 和 evidence binding；ADR-0062 仅覆盖 local Go package lexical 子图；
 - [ ] 实现 compatibility、reversibility、migration、security/privacy、operation、test surfaces；
 - [ ] 实现 Cost 与 Risk 独立量化及 materiality floor；
 - [ ] 根据 impact/risk 派生最小角色、gates、human approval 和 DAG constraints；
@@ -181,7 +227,7 @@ API/DB/test/deployment/owner 边或跨源 identity，因此不能满足本 Wave 
 
 ## 6. Wave 3 — ADR、技术债、工程宪法与健康度
 
-- [ ] 为新 ADR 增加 v2 frontmatter、owner/approver、claim/evidence、affected nodes、revisit/validation；
+- [x] 为新 ADR 增加 v2 frontmatter、owner/approver、claim/evidence、affected nodes、revisit/validation；仅交付 Proposed-only strict document contract，声明引用不认证、不解析；
 - [ ] 实现 Accepted ADR immutable + supersede 状态机和 Architecture Compliance；
 - [ ] 合并 `.agent/DECISIONS` 与 ADR 的查询视图，但保留原始权威记录和迁移 provenance；
 - [ ] 实现 `TechnicalDebtItem v1` 的 principal/interest/owner/due trigger/acceptance/waiver；
@@ -217,10 +263,17 @@ API/DB/test/deployment/owner 边或跨源 identity，因此不能满足本 Wave 
 `references/`，确定性动作放经过测试的 `scripts/`，模板放 `assets/`，并生成 `agents/openai.yaml`；必须运行结构 validator
 和 fresh-context forward test。ForgeOS `.agent/skills` adapter 继续满足现有 `harness/check.py` 引用规则。
 
-- [ ] 建 capability registry schema、owner、version、trigger/not-applicable、input/output、rule/gate、permission；
+- [x] 建 capability registry schema、owner、version、trigger/not-applicable、input/output、rule/gate、permission；
 - [x] 建首批十张后端密集 Skill adapter，并以统一章节、直接参考和 validator 避免空壳 Skill；其 runtime invocation 仍待 Registry；
-- [ ] 校验 catalog fine capability → package primary owner 全覆盖且唯一，并从 mapping 生成 adapter 引用；
+- [x] 校验 catalog fine capability → package primary owner 全覆盖且唯一，并从 mapping 生成 adapter 引用；
 - [ ] 按 `implementation_wave` 逐 package 实现 Skill，不一次创建全部空壳；
+  - [x] `project-snapshot` 窄切片：Linux-only bounded local Git worktree source observation、source-portable pure decoder、closed Skill package 与 fresh/legacy scaffold；保持 non-atomic、coverage partial/unknown、无 secret/authority/effect 证明；
+  - [x] `context-engineering` 窄切片：将 ADR-0055 caller-supplied exact ContextPackage pure builder 包装为 closed 16-file Skill、零参数 stdin adapter、strict manifest checker 与 fresh/legacy scaffold；不交付 live source/provider/model/tokenizer/prompt、host installation、Grant/PDP/Approval、truth/instruction/persistence/routing/effect authority；
+  - [x] `evidence-claim-management` 窄切片：将 ADR-0045 already-authored exact record-set pure validator 包装为 closed 18-file Skill、零参数 explicit-EOF stdin adapter、strict manifest checker 与 source-only fresh/legacy scaffold；不交付 observation/authorship/repair/journal/semantic view/proposal、host installation、truth/instruction/Grant/PDP/Approval/persistence/routing/transition/execution/effect authority；
+  - [x] `policy-authority` 窄切片：将 ADR-0056/0059 两个 authority-neutral pure declared evaluator 包装为 closed 30-file Skill、两个独立零参数 explicit-EOF stdin adapter、strict manifest checker、registry v28 governance 与 source-only fresh/legacy scaffold；不新增 combined envelope，不交付 issuance/effective Approval/live policy/identity/revocation/usage、Kernel/PDP/PEP、host installation、authorization/persistence/routing/transition/execution/effect authority；
+  - [x] `adr-governance` 窄切片：将 ADR-0067 Proposed-document pure validator 包装为 closed 25-file Skill、exactly-one-basename-argument explicit-EOF stdin adapter、strict manifest checker、registry v29 governance 与 source-only fresh/legacy scaffold；basename 仅为 caller lexical label，不证明 physical identity；不新增 domain envelope，不交付 repository scan、authoring/repair/reseal、Accepted lifecycle/compliance、DECISIONS query、legacy import、Go `writes_adr` runtime、host installation、persistence/execution/effect authority；
+  - [x] `knowledge-graph-curation` 窄切片：将 ADR-0065/0066 两个 existing exact-request partial projectors 包装为 closed 46-file Skill、两个独立 zero-argument explicit-EOF stdin adapters、strict manifest checker、registry v30 governance 与 source-only fresh/legacy scaffold；不新增 wrapper/union/dispatcher/profile ABI、live capture、runtime route、host installation、graph persistence、test outcome/coverage/verification、impact 或 authority；parent 与其余 32 个 package items 保持开放；
+  - [x] `change-impact-cost-risk` 窄切片：将 ADR-0062 existing exact seven-field lexical ImpactPreScan projector 包装为 closed 32-file Skill、一个 zero-argument explicit-EOF stdin adapter、strict manifest checker、Registry v31 governance 与 source-only fresh/legacy scaffold；system impact 保持 UNKNOWN，不新增 raw graph/wrapper/union/dispatcher/mode、live capture、runtime route、host installation、完整 Impact/Cost/Risk/materiality/safety、persistence 或 authority；parent 与其余 31 个 package items 保持开放；
 - [ ] 从 `docs/reviews` 提炼通用规则，删除/隔离上游项目特有引用；
 - [ ] 为缺失的 BA、UX、Domain、Data、API、Backend、Frontend、SRE、Evolution 添加正式 role adapter；
 - [ ] 增量扩展现有 discover/design/review/build/deploy/evolve，不另建第二 DAG engine；
@@ -233,7 +286,8 @@ capability 能被悬挂引用检查抓到；forward test 能输出规定 artifac
 
 ## 8. Wave 5 — Review Loop、冲突裁决与发布闭环
 
-- [ ] 实现 `ReviewCase`、independence proof、normalized finding 和 strict required verdict；
+- [ ] 实现 `ReviewCase`、independence proof 和 normalized finding；ADR-0063 只交付 caller-declared L3/L4 Build 的
+  strict required verdict orchestration，不满足本项其余合同；
 - [ ] Architecture/Security/Data/QA/Performance 按 impact 并行 review；
 - [ ] Fix 只回流明确 owner，重跑 affected gates + regression，fresh re-review closure；
 - [ ] 实现 constraint-first `ConflictResolution`，保存 dissent/revisit，不用多数票；
@@ -241,8 +295,10 @@ capability 能被悬挂引用检查抓到；forward test 能输出规定 artifac
 - [ ] 统一 release package 与 Claim/Grant/Approval/Graph identity，保持远程生产执行带外；
 - [ ] loop/call/cost 有界；耗尽只能 BLOCKED/REJECTED，不能放行。
 
-**完成判据。** 实现者不能成为 required reviewer；畸形/缺失 verdict fail-closed；Critical finding 不能被多数票或健康总分
-覆盖；REQUEST_CHANGES 回到精确 task；过期批准和换包重放都被拒绝。
+**完成判据。** ADR-0063 已使 caller-declared L3/L4 Build 的畸形/缺失 verdict 失败关闭并定向回 implementer；ADR-0064
+已交付 challenge/receipt/freshness 的 exact-change binding，但 `agent: reviewer`/fresh-context 仍不是身份或
+cryptographic SoD 证明。完整 Wave 仍要求实现者不能成为
+required reviewer；Critical finding 不能被多数票或健康总分覆盖；REQUEST_CHANGES 回到精确 task；过期批准和换包重放都被拒绝。
 
 ## 9. Wave 6 — 运行反馈与安全演化
 
@@ -356,3 +412,6 @@ code/env/input/target/attempt；生产结果仅接受外部签名 `OperatorRecei
 - full gates 真实运行，缺工具诚实 N/A；
 - fresh-context independent review 无未解决 Blocker/Major；
 - Roadmap、功能需求审计、ADR、debt/knowledge 同步更新。
+
+- [x] Authenticated ADR lifecycle v1 Proposed candidate evidence：ADR-0081 Go approval authority 只登记为 Catalyst-only evidence；ADR-0082/0083 与 Registry v34 冻结 Python structural candidate、exact pins、scope-neutral metadata 和一个 checker-only shadow。Source distribution 不复制 Go authority、production keys/state，且不关闭 G0；authority-bearing lifecycle promotion、authenticated Approval/revocation/usage/reservation、Accepted ADR immutable + supersede 与按 `implementation_wave` 逐 package 均保持开放；
+- [x] ADR-0084 authority evidence and source-only governance：ADR-0084 exact44 Go lifecycle authority remains Catalyst-only；ADR-0085 与 Registry v35 只分发 exact4 governance source，完整 scope digest 与 checker-only shadow 不变。Go authority remains Catalyst-only，不复制 root/key/seed/state/receipt/ledger，不新增 route/Skill/runtime，且不关闭 G0；

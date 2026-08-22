@@ -8,6 +8,7 @@ id: deploy
 stage: deploy
 title: 已验收构建 → 经外部执行并由人确认的发布
 readonly: true
+output_binding_contract: local_digest_v1 # accepted command output writes local digest-bound receipts
 description: >
   生成 release manifest、部署计划、runbook 与 Go/No-Go checklist，并验证其
   完整性和证据引用。外部 CI/operator 负责实际应用；ForgeOS 停在 human gate，

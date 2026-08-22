@@ -15,6 +15,7 @@ id: build
 stage: build
 title: 已批准架构 → 完成且全绿的实现 (roadmap-complete, all-gates-green)
 readonly: false                        # BUILD 写代码 / writes code
+output_binding_contract: local_digest_v1 # accepted command output writes local digest-bound receipts
 description: >
   按 ROADMAP 逐项实现,每个增量过 harness 闸门 → 独立 Reviewer → QA。
   Implement each roadmap item; every increment passes harness gates → fresh-context reviewer → QA.
@@ -73,13 +74,15 @@ phases:
     agent: reviewer
     readonly: true                      # 只评审,不改 / reviews, does not edit
     fresh_context: true                 # 必须独立 fresh-context Agent,不让实现者审自己 / never self-review
+    verdict_contract: reviewer_v2       # L3/L4 exact binding echo + verdict; lower/unbound remains advisory
     model_tier: opus                    # 所有 Reviewer 用 Opus / all reviewers use top tier
     required_gates: []                  # Reviewer 是人/AI 判断层,非工具闸门 / judgment layer, not a tool gate
     uses_template: .ai/prompts/04-implementation-review.md
     required_when: ../policies/modes.yml#workflow_depth.reviewer   # explorer 下可省 / skippable under explorer
     description: >
       判设计/可维护性/是否真违阈值/禁改区。阈值是「触发审查」信号,非自动 fail。
-      Judge design, maintainability, real-vs-nominal violations, frozen zones.
+      Judge design, maintainability, real-vs-nominal violations, frozen zones. reviewer_v2 binds
+      L3/L4 decisions to this attempt; L0–L2/unbound retain advisory behavior.
     on_fail:
       action: loop_back
       target_phase: implementer

@@ -89,8 +89,73 @@
 #              harness/evolve_repo_locator_evidence_adapter. The measured
 #              harness ceiling is now 36 non-test files, so max_files 36 → 37
 #              preserves exactly one file of headroom.
-#   fanin:     max 28 PRODUCTION importing files (Rust domain);
-#              forge-core/internal/asset is 26. Tests excluded. RECALIBRATED 2026-07-29:
+# 2026-08-11: ADR-0055 adds one universal ContextPackage contract CLI while
+#              assembler/codec logic stays in a cohesive sub-package. The
+#              measured harness ceiling is now 37 non-test files, so
+#              max_files 37 → 38 preserves exactly one file of headroom.
+# 2026-08-11: ADR-0056 adds one universal CapabilityGrant contract-only CLI;
+#              its codec/evaluator and the extracted context-route floors stay
+#              in cohesive sub-packages. The measured harness ceiling becomes
+#              39 non-test files, so max_files 38 → 40 preserves the existing
+#              convention of exactly one file of headroom. Further growth still
+#              requires extraction or an evidence-backed recalibration.
+# 2026-08-11: ADR-0059 adds one universal ApprovalRecord contract-only CLI;
+#              codec/evaluator logic and the Agent Engineering reference data
+#              remain in cohesive sub-packages. The measured harness ceiling is
+#              now 40 non-test files, so max_files 40 → 41 preserves exactly
+#              one file of headroom.
+# 2026-08-12: Candidate ADR-0061 adds one universal KnowledgeUpdateProposal
+#              contract-only CLI; codec/evaluator logic remains in its cohesive
+#              sub-package. The architecture scanner measures harness at 42
+#              non-test files, so max_files 42 → 43 preserves exactly one file
+#              of headroom without changing a runtime or authority boundary.
+# 2026-08-12: ADR-0062's checker and ADR-0063's extracted workflow-verdict
+#              checker bring the measured harness root to 44 non-test files.
+#              Both implementations remain in cohesive sub-packages/modules;
+#              max_files 43 → 45 preserves exactly one file of headroom.
+# 2026-08-12: ADR-0065 adds the universal GraphSnapshot checker while projector
+#              logic remains in its cohesive sub-package. The architecture scanner
+#              measures harness at 45 files; max_files 45 → 46 keeps headroom 1.
+# 2026-08-14: ADR-0077 adds one universal WorkIntent candidate checker while
+#              semantic and governance logic remain in cohesive sub-packages.
+#              The scanner measures harness at 47 non-test files; 46 → 48
+#              preserves exactly one file of headroom.
+# 2026-08-14: ADR-0079 adds one universal authenticated ADR approval candidate
+#              checker while the structural implementation remains in its
+#              cohesive sub-package. The scanner measures harness at 48
+#              non-test files; 48 → 49 preserves one file of headroom.
+# 2026-08-14: ADR-0086 and Proposed ADR-0088 each add one universal pure
+#              contract checker at the harness root; their validator, fixture,
+#              and graph logic remain in cohesive sub-packages. The scanner
+#              measures harness at 51 non-test files, so max_files 50 → 52
+#              preserves exactly one file of headroom.
+# 2026-08-15: ADR-0089 adds one cohesive governance integration module while
+#              distributing the already-counted ADR-0088 checker. The scanner
+#              measures harness at 52 non-test files, so max_files 52 → 53
+#              preserves exactly one file of headroom.
+# 2026-08-15: Proposed ADR-0090 adds one universal pure Kernel-decision
+#              contract checker while its validators and graph logic remain in
+#              a cohesive sub-package. The scanner's current exact closure is
+#              52 non-test files, so retaining max_files 53 preserves one-file
+#              headroom.
+# 2026-08-18: Proposed ADR-0091 adds one cohesive Kernel-decision governance
+#              integration module while distributing the already-counted
+#              ADR-0090 checker. The scanner measures harness at 53 non-test
+#              files, so max_files 53 → 54 preserves one-file headroom.
+# 2026-08-20: Proposed ADR-0093 adds one cohesive Decision Capsule governance
+#              integration module and three scaffold-owned source distribution
+#              files. The scanner measures harness at 55 non-test files, so
+#              max_files 54 → 56 preserves one-file headroom.
+# 2026-08-21: independent review hardening separates descriptor-pinned parent
+#              boundaries, added-file reservations, and scaffold-ledger
+#              reservations into three focused transaction modules. The scanner
+#              measures harness/scaffold at 58 non-test files, so max_files
+#              56 → 59 preserves the established one-file headroom.
+#   fanin:     max 37 PRODUCTION importing files (forge-core/internal/asset);
+#              tests excluded. RECALIBRATED 2026-08-12: strict reviewer/output-binding
+#              runtime seams add small focused cmd files around the intentional innermost
+#              workflow carrier; 37 → 39 preserves exactly two files of headroom.
+#              RECALIBRATED 2026-07-29:
 #              Rust `crate/self/super` imports are same-crate cohesion, not inbound
 #              consumers; external Cargo-crate imports remain counted.
 #   cognitive: 4 top-level source modules
@@ -101,6 +166,10 @@
 # DRIFT-GUARD: file.max_lines and root.max_files MUST equal harness/policies.yml.
 # arch-check.mjs verifies this equality every run, so the two sources of truth
 # cannot silently diverge. See `必须与 harness/policies.yml 一致` markers below.
+# 2026-08-21: second-review hardening extracts durable transaction/stage authority
+#              into one focused scaffold transaction module. The scanner measures
+#              harness/scaffold at 59 non-test files, so max_files 59 → 60 keeps
+#              the established one-file headroom.
 
 # ── Repository root budget ────────────────────────────────────────────────
 root:
@@ -109,7 +178,7 @@ root:
 
 # ── Per-package / per-directory budget ────────────────────────────────────
 package:
-  max_files: 37       # actual 36 non-test harness files (Evolve locator adapter CLI included) + headroom 1
+  max_files: 60       # actual 59 non-test harness/scaffold files + headroom 1
   max_exports: 30     # actual 28 (orchestrator and mode) + headroom — recalibrated 2026-07-27
 
 # ── Per-file budget ───────────────────────────────────────────────────────
@@ -118,7 +187,7 @@ file:
 
 # ── Fan-in budget (how many PRODUCTION files import one target) ───────────
 fanin:
-  max_importers: 30   # actual 28 (Rust domain), 26 (Go internal/asset); tests excluded — RECALIBRATED 2026-07-27 after .rs scanning closed the prior blind spot. Both are intentional innermost APIs.
+  max_importers: 39   # actual 37 (Go internal/asset); tests excluded — intentional innermost workflow carrier with two files of headroom.
 
 # ── Cognitive-load budget (top-level source modules to hold in your head) ──
 cognitive:

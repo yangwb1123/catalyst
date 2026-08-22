@@ -1,22 +1,123 @@
 api_version: forgeos.agent-engineering/v1
 kind: GovernanceContractRegistry
 status: active_contract
-runtime_binding: cross_language_codec_local_journal_semantic_view_atom_projection_artifact_command_evolve_locator_adapters_local_gate_command_evolve_locator_and_go_package_dependency_graph_producers_shadow
+runtime_binding: cross_language_codec_local_journal_semantic_view_atom_projection_context_package_capability_grant_approval_record_transition_receipt_and_knowledge_update_proposal_contract_only_authenticated_bootstrap_repo_read_grant_issuance_authenticated_bootstrap_repo_read_execution_artifact_command_evolve_locator_adapters_local_gate_command_evolve_locator_and_go_package_dependency_graph_producers_shadow_local_go_package_impact_prescan_graph_snapshot_partial_projector_and_proposed_adr_v2_capability_registry_exact_resolver_and_planning_capability_ownership_projection_and_project_source_snapshot_evaluators_with_linux_local_project_source_snapshot_producer_and_portable_context_engineering_skill_and_portable_evidence_claim_validation_skill_and_portable_policy_authority_declaration_assessment_skill_and_portable_adr_governance_proposed_document_validation_skill_and_portable_knowledge_graph_curation_partial_projection_skill_and_portable_change_impact_cost_risk_lexical_prescan_projection_skill_and_proposed_work_intent_v1_candidate_contract_source_distribution_only_and_proposed_authenticated_adr_approval_v1_structural_prerequisite_candidate_source_distribution_only_with_catalyst_repository_only_go_authority_evidence_and_proposed_authenticated_adr_lifecycle_v1_structural_candidate_source_distribution_only_with_catalyst_repository_only_authenticated_adr_lifecycle_v1_go_authority_evidence_and_source_only_governance_distribution_and_proposed_legacy_governance_read_import_v1_unverified_read_only_candidate_with_source_only_python_distribution_and_catalyst_repository_only_go_parity_and_proposed_kernel_operational_reference_core_v1_structural_candidate_with_source_only_python_distribution_and_catalyst_repository_only_go_and_rust_parity_and_proposed_kernel_decision_reference_core_v1_structural_candidate_with_source_only_python_distribution_and_catalyst_repository_only_go_and_rust_parity_and_proposed_decision_capsule_structural_replay_core_v1_structural_candidate_with_source_only_python_distribution_and_catalyst_repository_only_go_and_rust_parity
 owner: governance
-version: 11
+version: 39
 completion_authority: forge_accept
 
 scope:
-  shipped_kinds: [EvidenceRecord, KnowledgeClaim]
-  shipped_projections: [CognitiveAtom, GovernanceSemanticView]
+  shipped_kinds: [EvidenceRecord, KnowledgeClaim, ContextPackage]
+  shipped_contract_only_kinds: [ApprovalRecord, CapabilityGrant, KnowledgeUpdateProposal, TransitionReceipt]
+  shipped_runtime_profiles: [authenticated_bootstrap_repo_read_grant_issuance_v1, authenticated_bootstrap_repo_read_execution_v1]
+  candidate_runtime_profiles: []
+  shipped_projections: [CognitiveAtom, GovernanceSemanticView, GraphSnapshot]
   shipped_adapters: [artifact_provenance_to_evidence, command_observation_to_evidence, evolve_repo_locator_to_evidence]
-  shipped_producers: [local_gate_command_observation_producer, local_evolve_repo_locator_observation_producer, local_go_package_dependency_graph_observation_producer]
+  shipped_producers: [local_gate_command_observation_producer, local_evolve_repo_locator_observation_producer, local_go_package_dependency_graph_observation_producer, local_project_source_snapshot_producer]
+  shipped_projectors: [graph_snapshot, graph_snapshot_test_source]
+  shipped_evaluators: [local_go_package_impact_prescan, graph_snapshot, graph_snapshot_test_source, architecture_decision_record_v2, capability_registry, planning_capability_ownership, project_source_snapshot]
   staged_producers: []
-  planned_kinds: [ContextPackage, CapabilityGrant, ApprovalRecord, TransitionReceipt, KnowledgeUpdateProposal]
+  planned_kinds: []
   persistence: local_append_only_exact_evidence_claim_journal_with_rebuildable_semantic_view
-  authority_attestation: unavailable
+  authority_attestation: available_only_in_shipped_runtime_profiles
   trusted_instruction_lane: unavailable
   production_effects: forbidden
+
+evidence_claim_portable_validation:
+  record_api_version: forgeos.governance/v1
+  delivery: shipped_pure_contract_and_closed_portable_skill
+  mode: authority_free_exact_record_set_structural_validation
+  semantic_authority: ADR-0045_only
+  input:
+    source: caller_supplied_exact_canonical_record_set_bytes
+    explicit_eof_required: true
+    min_records: 1
+    max_records: 256
+    max_input_bytes: 1048576
+    overflow_detection_bytes: 1
+    fixture_envelope_is_adapter_input: false
+  result:
+    success_exit: 0
+    success_stdout_marker: STRUCTURALLY_VALID (shadow; no truth or authority attestation)
+    success_stdout_framing: marker_plus_one_lf
+    success_stderr: empty
+    record_output: none
+    rejection_exit: 1
+    usage_exit: 2
+  portable_package:
+    source_distributed: true
+    closed_manifest_required: true
+    validator_argv: [python3, -I, -B, skills/evidence-claim-management/scripts/validate.py]
+    validator_arguments: zero
+    validator_input: exact_canonical_stdin_through_explicit_eof
+    checker_argv: [python3, -I, -B, skills/evidence-claim-management/scripts/check_package.py]
+    checker_package_root_argument: zero_or_one
+    vendored_python_parity: exact_ADR_0045_reference_implementation
+    fixture_envelope_is_adapter_input: false
+    authors_defaults_repairs_sorts_inserts_digests_or_seals: false
+    repository_environment_network_clock_provider_model_database_subprocess_reads: false
+    journal_semantic_view_or_knowledge_update_proposal_access: false
+    copies_catalyst_go_or_rust_runtime: false
+    installs_host_skill: false
+    python_isolation_boundary: excludes_script_current_directory_pythonpath_and_user_site_only
+    system_site_stdlib_interpreter_startup_host_publisher: not_disabled_authenticated_or_isolated
+    package_integrity_nofollow_unavailable_result: exit_1_fail_closed
+    check_to_use_atomicity: not_provided
+  attests: []
+  persistence: none
+
+policy_authority_portable_declaration_assessment:
+  delivery: shipped_pure_contracts_and_closed_portable_skill
+  mode: authority_neutral_caller_supplied_declaration_assessment_only
+  semantic_authorities: [ADR-0056_only, ADR-0059_only]
+  input:
+    source: caller_supplied_exact_canonical_request_bytes
+    explicit_eof_required: true
+    max_input_bytes: 2097152
+    overflow_detection_bytes: 1
+    combined_dispatch_envelope: forbidden
+  operations:
+    capability_grant:
+      request_api_version: forgeos.capability-grant-declared-assessment-request/v1
+      assessment_api_version: forgeos.capability-grant-declared-assessment/v1
+      adapter_argv: [python3, -I, -B, skills/policy-authority/scripts/assess_declared_capability_grant.py]
+      result_marker: ASSESSED_DECLARATIONS_ONLY (no issuer authentication, policy decision, approval, revocation, usage, preflight, authorization, permission, persistence, execution, or effect attestation)
+    approval_record:
+      request_api_version: forgeos.approval-record-declared-assessment-request/v1
+      assessment_api_version: forgeos.approval-record-declared-assessment/v1
+      adapter_argv: [python3, -I, -B, skills/policy-authority/scripts/assess_declared_approval_record.py]
+      result_marker: ASSESSED_APPROVAL_DECLARATIONS_ONLY (no approver or authority authentication, attestation or SoD proof verification, condition or RiskAcceptance validation, revocation evaluation, policy decision, effective approval, authorization, permission, persistence, transition, execution, or effect attestation)
+  process:
+    adapter_arguments: zero
+    success_exit: 0
+    success_stdout: exact_canonical_computed_assessment_plus_one_lf
+    success_stderr: empty
+    rejection_exit: 1
+    usage_exit: 2
+    pre_output_failure_stdout: empty
+    output_failure_may_be_partial_or_indeterminate: true
+    success_requires_exit_zero_and_exact_bytes: true
+  portable_package:
+    source_distributed: true
+    closed_manifest_required: true
+    checker_argv: [python3, -I, -B, skills/policy-authority/scripts/check_package.py]
+    checker_package_root_argument: zero_or_one
+    vendored_python_parity: exact_ADR_0056_and_ADR_0059_reference_implementations
+    repository_environment_network_clock_identity_policy_approval_store_ledger_reads: false
+    copies_catalyst_go_or_rust_runtime: false
+    installs_host_skill: false
+    python_isolation_boundary: excludes_script_current_directory_pythonpath_and_user_site_only
+    system_site_stdlib_interpreter_startup_host_publisher: not_disabled_authenticated_or_isolated
+    package_integrity_nofollow_unavailable_result: exit_1_fail_closed
+    check_to_use_atomicity: not_provided
+  authority:
+    policy_decision: none
+    authorization_decision: none
+    unavailable_states: not_evaluated
+    assessment_defined_attestation_fields: false
+    execution: unavailable_and_unattested
+  attests: []
+  persistence: none
 
 cognitive_atom_projection:
   api_version: forgeos.aadm.cognitive-atom/v1
@@ -394,6 +495,939 @@ local_go_package_dependency_graph_observation_producer:
   attests: []
   persistence: none
 
+local_go_package_impact_prescan:
+  api_version: forgeos.governance.local-go-package-impact-prescan/v1
+  mode: deterministic_pure_local_bytes_only
+  input_kind: exact_adr_0053_graph_observation_and_changed_paths
+  output_kind: forgeos.governance.local-go-package-impact-prescan-report/v1
+  closure_semantics: exact_local_edge_reverse_fixed_point_with_deterministic_shortest_witness
+  system_impact_status: unknown
+  canonicalization:
+    format: forgeos.canonical-json/v1
+    exact_compact_utf8_input: true
+    graph_observation_digest_domain: "forgeos.governance.local-go-package-dependency-graph-observation.v1\0"
+    request_digest_domain: "forgeos.governance.local-go-package-impact-prescan-request.v1\0"
+    node_digest_domain: "forgeos.governance.local-go-package-impact-prescan-node.v1\0"
+    edge_digest_domain: "forgeos.governance.local-go-package-impact-prescan-edge.v1\0"
+    report_digest_domain: "forgeos.governance.local-go-package-impact-prescan-report.v1\0"
+    envelope_digest_domain: "forgeos.governance.local-go-package-impact-prescan.v1\0"
+    self_digest_rules:
+      - request_sha256 hashes the complete canonical request with request_sha256 replaced by the empty string
+      - node_sha256 hashes the canonical directory/import_path/module_path/package_name identity projection
+      - edge_sha256 hashes the canonical from_node_id/import_path/relation/role/source_paths/to_node_id identity projection
+      - report_sha256 hashes the complete canonical report with report_sha256 replaced by the empty string
+      - envelope_sha256 hashes the complete canonical envelope with envelope_sha256 replaced by the empty string
+  limits:
+    max_graph_observation_decoded_bytes: 16777216
+    max_graph_observation_base64url_bytes: 22369622
+    max_request_bytes: 25165824
+    max_report_bytes: 16777216
+    max_envelope_bytes: 50331648
+    max_changed_paths: 256
+    max_resolved_seeds: 256
+    max_unresolved_seeds: 256
+    max_reachable_nodes: 16384
+    max_reachable_edges: 65536
+    max_source_paths_per_edge: 16384
+    max_witness_hops_per_node: 1024
+    max_aggregate_witness_hops: 65536
+    max_path_scalars: 4096
+    max_path_utf8_bytes: 16384
+    max_run_id_bytes: 160
+    max_json_depth: 16
+    integer_domain: signed_int64
+    runtime_string_length_unit: utf8_bytes
+    schema_max_length_unit: unicode_code_points
+    schema_length_keywords_are_non_authoritative_approximations: true
+  local_execution:
+    execution_mode: deterministic_pure_local_bytes_only
+    filesystem_access: false
+    repository_access: false
+    implicit_adr_0053_capture: false
+    clock_access: false
+    environment_access: false
+    credential_access: false
+    process_access: false
+    provider_access: false
+    network_access: false
+    database_access: false
+    persistence: none
+  authority_semantics:
+    delivery: shipped_pure_local_runtime_and_strict_checker
+    system_impact_status: unknown
+    selected_build_attestation: false
+    dependency_availability_attestation: false
+    compile_or_runtime_reachability_attestation: false
+    truth_attestation: false
+    authority_attestation: false
+    completion_attestation: false
+    permission_attestation: false
+    persistence_attestation: false
+    execution_attestation: false
+    effect_attestation: false
+    positive_result: LOCAL_GO_PACKAGE_IMPACT_PRESCAN_ONLY (exact ADR-0053 lexical reverse dependency closure; system impact unknown; no selected-build, truth, authority, completion, persistence, execution, or effect attestation)
+    attestations: []
+  semantic_validation:
+    schema_alone_sufficient: false
+    required_checks:
+      - unpadded_canonical_base64url_decodes_within_limit_and_round_trips_exactly
+      - decoded_observation_is_exact_canonical_adr_0053_graph_observation
+      - graph_observation_domain_digest_and_producer_run_id_match_request
+      - changed_paths_are_strict_utf8_byte_sorted_unique_canonical_repo_paths
+      - changed_paths_partition_exactly_across_resolved_and_unresolved_seeds
+      - node_and_edge_identities_recompute_from_exact_observation_fields
+      - reachable_nodes_and_edges_are_the_exact_reverse_local_edge_fixed_point
+      - every_reachable_node_has_one_deterministic_shortest_witness
+      - closure_status_and_reason_set_recompute_exactly
+      - system_impact_is_fixed_unknown_with_the_complete_reason_set
+      - request_report_and_envelope_self_digests_recompute_exactly
+      - all_count_byte_depth_and_aggregate_witness_limits_fail_closed
+  positive_result: LOCAL_GO_PACKAGE_IMPACT_PRESCAN_ONLY (exact ADR-0053 lexical reverse dependency closure; system impact unknown; no selected-build, truth, authority, completion, persistence, execution, or effect attestation)
+  attests: []
+  persistence: none
+
+graph_snapshot:
+  api_version: forgeos.governance.local-go-graph-snapshot-projection/v1
+  snapshot_api_version: forgeos.governance.graph-snapshot/v1
+  projector_profile_id: adr-0053-selected-go-module-lexical-partial-graph-snapshot-v1
+  mode: deterministic_pure_local_projector_and_evaluator
+  input_kind: exact_canonical_adr_0053_graph_observation_caller_bytes
+  output_kind: authority_free_partial_graph_snapshot
+  projection_scope:
+    node_types: [module, package]
+    resolved_relations: [contains, depends_on]
+    coverage_surface_count: 11
+    coverage_status: partial
+    freshness_status: unknown
+    system_knowledge_status: unknown
+    identity_semantics: caller_declared_project_scoped_semantic_name_stable_only
+    unresolved_mapping: exact_bijection_from_input_gaps
+    adr_0062_crosswalk: deterministic_non_equivalent_identity_mapping
+  local_execution:
+    filesystem_access: false
+    repository_access: false
+    implicit_adr_0053_capture: false
+    clock_access: false
+    environment_access: false
+    credential_access: false
+    process_access: false
+    provider_access: false
+    network_access: false
+    database_access: false
+    persistence: none
+  authority_semantics:
+    delivery: shipped_go_and_python_pure_projector_strict_checker
+    source_or_project_identity_authentication: false
+    selected_build_attestation: false
+    cross_surface_completeness_attestation: false
+    freshness_attestation: false
+    truth_attestation: false
+    authority_attestation: false
+    completion_attestation: false
+    permission_attestation: false
+    persistence_attestation: false
+    execution_attestation: false
+    impact_attestation: false
+    effect_attestation: false
+    satisfies_g3_or_assessment_join: false
+    positive_result: PROJECTED_PARTIAL_GRAPH_SNAPSHOT (exact ADR-0053 selected-module lexical module/package subgraph only; coverage partial and system/freshness unknown; no selected-build, cross-surface completeness, truth, authority, completion, persistence, execution, impact, or effect attestation)
+    attestations: []
+  semantic_validation:
+    schema_alone_sufficient: false
+    exact_input_reconstruction_required: true
+    identity_record_set_and_envelope_digests_recomputed: true
+    node_edge_crosswalk_and_unresolved_bijections_recomputed: true
+    coverage_freshness_and_unknown_reasons_recomputed: true
+    complete_canonical_envelope_byte_comparison: true
+    collision_dangling_endpoint_and_limit_fail_closed: true
+  positive_result: PROJECTED_PARTIAL_GRAPH_SNAPSHOT (exact ADR-0053 selected-module lexical module/package subgraph only; coverage partial and system/freshness unknown; no selected-build, cross-surface completeness, truth, authority, completion, persistence, execution, impact, or effect attestation)
+  attests: []
+  persistence: none
+
+graph_snapshot_test_source:
+  api_version: forgeos.governance.local-go-test-source-graph-snapshot-projection/v1
+  snapshot_api_version: forgeos.governance.graph-snapshot/v1
+  projector_profile_id: adr-0053-selected-go-module-lexical-package-test-source-partial-graph-snapshot-v1
+  mode: deterministic_pure_local_projector_and_evaluator
+  input_kind: exact_canonical_adr_0053_graph_observation_caller_bytes
+  output_kind: authority_free_partial_graph_snapshot
+  projection_scope:
+    node_types: [module, package, test]
+    resolved_relations: [contains, depends_on]
+    partial_surfaces: [go_module_package_lexical, test_verification]
+    coverage_surface_count: 11
+    coverage_status: partial
+    freshness_status: unknown
+    system_knowledge_status: unknown
+    identity_semantics: caller_declared_project_scoped_semantic_name_stable_only
+    test_identity_semantics: lexical_test_source_set_not_test_case_or_execution
+    cross_profile_stable_ids: true
+    profile_bound_full_records: true
+    unresolved_mapping: exact_bijection_from_input_gaps
+    adr_0062_crosswalk: deterministic_package_only_non_equivalent_identity_mapping
+  local_execution:
+    filesystem_access: false
+    repository_access: false
+    implicit_adr_0053_capture: false
+    clock_access: false
+    environment_access: false
+    credential_access: false
+    process_access: false
+    provider_access: false
+    network_access: false
+    database_access: false
+    persistence: none
+  authority_semantics:
+    delivery: shipped_go_and_python_pure_projector_strict_checker
+    source_or_project_identity_authentication: false
+    selected_build_attestation: false
+    cross_surface_completeness_attestation: false
+    freshness_attestation: false
+    test_case_identity_attestation: false
+    test_execution_or_outcome_attestation: false
+    verified_subject_attestation: false
+    truth_attestation: false
+    authority_attestation: false
+    completion_attestation: false
+    permission_attestation: false
+    persistence_attestation: false
+    execution_attestation: false
+    verification_attestation: false
+    impact_attestation: false
+    effect_attestation: false
+    satisfies_g3_or_assessment_join: false
+    positive_result: PROJECTED_PARTIAL_GRAPH_SNAPSHOT (exact ADR-0053 selected-module lexical module/package/test-source subgraph only; test nodes are source sets, not tests or outcomes; coverage partial and system/freshness unknown; no selected-build, cross-surface completeness, truth, authority, completion, persistence, execution, verification, impact, or effect attestation)
+    attestations: []
+  semantic_validation:
+    schema_alone_sufficient: false
+    exact_input_reconstruction_required: true
+    dedicated_transport_profile_negotiation_required: true
+    legacy_adr_0065_profile_and_golden_unchanged: true
+    test_node_and_module_contains_edge_bijections_recomputed: true
+    disjoint_go_and_test_coverage_partition_recomputed: true
+    identity_record_set_and_envelope_digests_recomputed: true
+    node_edge_crosswalk_and_unresolved_bijections_recomputed: true
+    coverage_freshness_and_unknown_reasons_recomputed: true
+    complete_canonical_envelope_byte_comparison: true
+    collision_dangling_endpoint_and_limit_fail_closed: true
+  positive_result: PROJECTED_PARTIAL_GRAPH_SNAPSHOT (exact ADR-0053 selected-module lexical module/package/test-source subgraph only; test nodes are source sets, not tests or outcomes; coverage partial and system/freshness unknown; no selected-build, cross-surface completeness, truth, authority, completion, persistence, execution, verification, impact, or effect attestation)
+  attests: []
+  persistence: none
+
+knowledge_graph_curation_portable_projection:
+  delivery: shipped_existing_projectors_and_closed_portable_skill
+  mode: source_distributed_two_existing_partial_projection_wires
+  semantic_authorities: [ADR-0065_only, ADR-0066_only]
+  input:
+    source: caller_supplied_exact_canonical_request_bytes
+    explicit_eof_required: true
+    max_input_bytes: 25165824
+    overflow_detection_bytes: 1
+    wrapper_union_dispatch_or_profile_argument: forbidden
+  operations:
+    module_package:
+      request_api_version: forgeos.governance.local-go-graph-snapshot-projection-request/v1
+      projector_profile_id: adr-0053-selected-go-module-lexical-partial-graph-snapshot-v1
+      adapter_argv: [python3, -I, -B, skills/knowledge-graph-curation/scripts/project_module_package_snapshot.py]
+      result_marker: PROJECTED_PARTIAL_GRAPH_SNAPSHOT (exact ADR-0053 selected-module lexical module/package subgraph only; coverage partial and system/freshness unknown; no selected-build, cross-surface completeness, truth, authority, completion, persistence, execution, impact, or effect attestation)
+    go_test_source:
+      request_api_version: forgeos.governance.local-go-test-source-graph-snapshot-projection-request/v1
+      projector_profile_id: adr-0053-selected-go-module-lexical-package-test-source-partial-graph-snapshot-v1
+      adapter_argv: [python3, -I, -B, skills/knowledge-graph-curation/scripts/project_go_test_source_snapshot.py]
+      result_marker: PROJECTED_PARTIAL_GRAPH_SNAPSHOT (exact ADR-0053 selected-module lexical module/package/test-source subgraph only; test nodes are source sets, not tests or outcomes; coverage partial and system/freshness unknown; no selected-build, cross-surface completeness, truth, authority, completion, persistence, execution, verification, impact, or effect attestation)
+  process:
+    arguments: zero
+    stdin: exact_existing_request_bytes_through_explicit_eof
+    embedded_request_must_reencode_to_exact_stdin: true
+    success_exit: 0
+    success_stdout_framing: exact_canonical_existing_envelope_plus_one_lf
+    success_stderr: empty
+    rejection_exit: 1
+    usage_exit: 2
+    pre_output_failure_stdout: empty
+    output_failure_may_be_partial_or_indeterminate: true
+    success_requires_exit_zero_and_exact_bytes: true
+    max_output_bytes: 100663296
+  portable_package:
+    source_distributed: true
+    closed_manifest_required: true
+    checker_argv: [python3, -I, -B, skills/knowledge-graph-curation/scripts/check_package.py]
+    checker_package_root_argument: zero_or_one
+    semantic_leaf_parity: exact_26_named_ADR_0065_and_ADR_0066_runtime_leaves
+    lean_initializer_count: 4
+    lean_initializers_are_not_full_source_tree_parity: true
+    live_repository_build_test_or_graph_capture: false
+    adds_projector_evaluator_producer_runtime_profile_or_route: false
+    installs_host_skill: false
+    python_isolation_boundary: excludes_script_current_directory_pythonpath_and_user_site_only
+    system_site_stdlib_interpreter_startup_host_publisher: not_disabled_authenticated_or_isolated
+    package_integrity_nofollow_unavailable_result: exit_1_fail_closed
+    check_to_use_atomicity: not_provided
+  authority:
+    caller_graph_project_repository_or_publisher: not_authenticated
+    coverage_and_system_knowledge: partial_and_unknown
+    test_source_nodes: lexical_source_sets_not_tests_outcomes_or_coverage
+    impact_verification_acceptance_or_compliance: unavailable
+  attests: []
+  persistence: none
+
+change_impact_cost_risk_portable_projection:
+  delivery: shipped_existing_lexical_prescan_and_closed_portable_skill
+  mode: source_distributed_existing_ADR_0062_exact_request_projection
+  semantic_authority: ADR-0062_only
+  input:
+    source: caller_supplied_exact_canonical_request_bytes
+    api_version: forgeos.governance.local-go-package-impact-prescan-request/v1
+    exact_fields: [api_version, canonicalization, changed_paths, graph_observation_base64url, graph_observation_sha256, request_sha256, run_id]
+    explicit_eof_required: true
+    max_input_bytes: 25165824
+    overflow_detection_bytes: 1
+    raw_graph_fixture_envelope_wrapper_union_dispatch_or_mode: forbidden
+  operation:
+    adapter_argv: [python3, -I, -B, skills/change-impact-cost-risk/scripts/project_local_go_package_impact_prescan.py]
+    output_api_version: forgeos.governance.local-go-package-impact-prescan/v1
+    result_marker: LOCAL_GO_PACKAGE_IMPACT_PRESCAN_ONLY (exact ADR-0053 lexical reverse dependency closure; system impact unknown; no selected-build, truth, authority, completion, persistence, execution, or effect attestation)
+  process:
+    arguments: zero
+    stdin: exact_existing_request_bytes_through_explicit_eof
+    embedded_request_must_reencode_to_exact_stdin: true
+    max_output_bytes: 50331648
+    success_exit: 0
+    rejection_exit: 1
+    usage_exit: 2
+    success_stderr: empty
+    success_stdout_framing: exact_canonical_existing_envelope_plus_one_lf
+    pre_output_failure_stdout: empty
+    output_failure_may_be_partial_or_indeterminate: true
+    success_requires_exit_zero_and_exact_bytes: true
+  portable_package:
+    source_distributed: true
+    closed_manifest_required: true
+    checker_argv: [python3, -I, -B, skills/change-impact-cost-risk/scripts/check_package.py]
+    checker_package_root_argument: zero_or_one
+    schema_and_golden_are_exact_source_copies: true
+    semantic_leaf_parity: exact_15_named_runtime_semantic_leaves_required_by_ADR_0062
+    lean_initializer_count: 4
+    lean_initializers_are_not_full_source_tree_parity: true
+    live_repository_or_graph_capture: false
+    adds_evaluator_producer_runtime_profile_or_route: false
+    installs_host_skill: false
+    python_isolation_boundary: excludes_script_current_directory_pythonpath_and_user_site_only
+    system_site_stdlib_interpreter_startup_host_publisher: not_disabled_authenticated_or_isolated
+    package_integrity_nofollow_unavailable_result: exit_1_fail_closed
+    check_to_use_atomicity: not_provided
+  authority:
+    caller_graph_project_repository_or_publisher: not_authenticated
+    lexical_package_closure: exact_only_within_supplied_ADR_0053_observation
+    system_impact: unknown
+    full_change_impact_cost_risk_materiality_or_safety: unavailable
+    selected_build_compile_test_runtime_or_cross_surface: unavailable
+  attests: []
+  persistence: none
+
+work_intent_v1_candidate_contract:
+  api_version: forgeos.work-intent/v1
+  kind: WorkIntent
+  decision_status: proposed
+  delivery: cross_language_proposed_candidate_semantic_evidence_with_source_only_python_distribution
+  mode: exact_caller_supplied_structural_validation_only
+  identity:
+    canonicalization: forgeos.canonical-json/v1
+    digest_domain: "forgeos.work-intent.v1\0"
+    golden_record_sha256: 2fe0424d30405a8b1d716afc99bbd38d602375f3316fd1c54c472890d520a225
+    schema_alone_sufficient: false
+  candidate_implementations:
+    python: strict_semantic_core_and_golden_checker_source_distributed
+    go: strict_semantic_core_catalyst_repository_only_not_scaffolded
+    rust: strict_semantic_core_catalyst_repository_only_not_scaffolded
+    exact_golden_parity: true
+  source_distribution:
+    copies_python_semantic_core_and_checker: true
+    copies_go: false
+    copies_rust: false
+    installs_skill_or_adapter: false
+    adds_authenticated_route: false
+    adds_kind_evaluator_producer_or_runtime_profile: false
+  authority_semantics:
+    origin_authentication: false
+    requester_or_owner_authentication: false
+    reference_resolution: false
+    freshness_materiality_or_scope_assessment: false
+    g0_closure: false
+    semantic_authority: false
+    run_or_run_journal_existence: false
+    lifecycle_approval_permission_or_grant: false
+    routing_or_runtime_consumer: false
+    persistence_execution_or_effect: false
+  positive_result: STRUCTURALLY_VALID_DECLARED_WORK_INTENT_V1 (exact caller-supplied declaration only; no origin authentication, reference resolution, G0, routing, Run or RunJournal existence, lifecycle, approval, authentication, authority, completion, effect, execution, freshness, materiality, ownership, permission, persistence, scope, or truth attestation)
+  attests: []
+  persistence: none
+
+authenticated_adr_approval_v1_candidate_contract:
+  profile_id: authenticated_architecture_decision_approval_v1
+  decision_status: proposed
+  delivery: proposed_structural_prerequisite_candidate_with_source_only_python_distribution
+  mode: exact_caller_supplied_offline_structural_validation_only
+  identity:
+    canonicalization: forgeos.canonical-json/v1
+    proposal_physical_sha256: 6beabf33656998b942036b63c90db99c6a5f9b138cf2e5bd4a5372ec8e1ad1f2
+    proposal_body_sha256: 9a798ab129919d51d8b2a3c842d281b19c1d1667a180ef8cbd4f690465730a63
+    proposal_self_sha256: 1d2579dafcf152c302e22cfa4d6932e248f1171eef812297f601b60ce7ed208f
+    schema_alone_sufficient: false
+  candidate_implementation:
+    python: dependency_free_strict_structural_core_and_golden_checker
+    go_contract_and_authority: catalyst_repository_only_under_ADR_0081_not_scaffolded
+    exact_golden_reconstruction: true
+  source_distribution:
+    copies_python_structural_core_and_checker: true
+    copies_schema_golden_proposal_and_proposed_decisions: true
+    copies_go_contract_or_authority: false
+    copies_production_keys_or_state: false
+    installs_skill_or_adapter: false
+    adds_authenticated_route: false
+    adds_kind_evaluator_producer_or_runtime_profile: false
+  authority_semantics:
+    applies_to: source_distributed_python_candidate_only
+    ed25519_or_sod_proof_verification: false
+    root_key_principal_proposal_or_publisher_authentication: false
+    authorization: false
+    receipt_signing_minting_or_issuance: false
+    external_root_or_epoch_pin_consumption: false
+    trusted_time_currentness: false
+    revocation_currentness: false
+    cas_durability_or_rollback_resistance: false
+    adr_acceptance_or_lifecycle_transition: false
+    semantic_authority: false
+    g0_closure: false
+    persistence_execution_or_effect: false
+  positive_result: STRUCTURALLY_VALID_AUTHENTICATED_ADR_APPROVAL_V1_CANDIDATE (declared structure/digests/relations only; no authentication, authorization, acceptance, persistence, effect, root-pin, time-currentness, revocation-currentness, CAS, or durability attestation)
+  attests: []
+  persistence: none
+
+authenticated_adr_approval_v1_go_authority_evidence:
+  profile_id: authenticated_architecture_decision_approval_v1
+  decision_status: proposed
+  delivery: catalyst_repository_only_go_authority_evidence_not_source_distributed
+  semantic_authority: ADR-0081_only
+  implementation:
+    contract: forge-core/internal/authenticatedadrapprovalcontract
+    authority: forge-core/internal/authenticatedadrapprovalauthority
+    language_and_dependencies: go_standard_library_only
+    availability: catalyst_repository_internal_api_only_not_scaffolded
+  evidence:
+    exact_v1_structural_parity: true
+    external_root_epoch_time_and_revocation_pin_consumption: true
+    ed25519_policy_sod_request_receipt_and_ledger_verification: true
+    authorization_decision_and_state_signing: true
+    durable_cas_sync_atomic_rename_and_authenticated_reopen: true
+    exact_idempotent_replay_without_resigning_or_rewrite: true
+    stored_authorization_required_for_prerequisite_projection: true
+  boundary:
+    production_root_key_state_clock_revocation_or_transport_supplied: false
+    copies_go_contract_or_authority: false
+    copies_production_keys_or_state: false
+    adds_command_socket_route_registry_scope_or_runtime_profile: false
+    adr_acceptance_rejection_supersession_or_repository_mutation: false
+    lifecycle_permission_effect_or_g0_closure: false
+    administrator_rollback_resistance: false
+  positive_evidence: PROPOSED_CATALYST_ONLY_AUTHENTICATED_ADR_APPROVAL_V1_GO_AUTHORITY (authenticated only relative to explicit external trust inputs and opaque StoredAuthorization; no production provisioning, lifecycle transition, repository mutation, route, runtime registration, scaffold distribution, permission, effect, or G0 attestation)
+  attests: []
+  persistence: repository_external_authority_state_only_when_explicitly_provisioned_by_an_in_process_caller
+
+authenticated_adr_lifecycle_v1_candidate_contract:
+  profile_id: authenticated_architecture_decision_lifecycle_v1
+  decision_status: proposed
+  delivery: proposed_structural_prerequisite_candidate_with_source_only_python_distribution
+  mode: exact_caller_supplied_offline_structural_validation_only
+  identity:
+    canonicalization: forgeos.canonical-json/v1
+    proposal_head_a_physical_sha256: 6c9cd0e4b95c968bb280d51b72d74f08a79620077d72611b5634a77b181a0a0b
+    proposal_head_b_physical_sha256: a76e566c7e18801dbc70c42b8b04ce9190cbc3d18892c80cd40c2ff4ec448bf0
+    proposal_join_physical_sha256: c96d2ef2db3311c16572ed5d753c2435193ab58a1abb7c1fc8a9c45d4d9c5dee
+    schema_alone_sufficient: false
+  candidate_implementation:
+    python: dependency_free_strict_structural_core_and_golden_checker
+    go_lifecycle_authority: absent_not_scaffolded
+    exact_golden_reconstruction: true
+  source_distribution:
+    copies_python_structural_core_and_checker: true
+    copies_schema_golden_proposals_and_proposed_decisions: true
+    reuses_authenticated_approval_python_prerequisite_closure: true
+    copies_go_contract_or_authority: false
+    copies_production_keys_or_state: false
+    installs_skill_or_adapter: false
+    adds_authenticated_route: false
+    adds_kind_evaluator_producer_or_runtime_profile: false
+  authority_semantics:
+    ed25519_or_signature_verification: false
+    external_root_epoch_time_or_revocation_currentness: false
+    authorization_or_stored_authorization_authentication: false
+    adr_acceptance_rejection_or_supersession_execution: false
+    repository_source_mutation_or_accepted_document_generation: false
+    atomicity_cas_durability_or_rollback_resistance: false
+    architecture_compliance_or_immutability_enforcement: false
+    semantic_authority_permission_effect_or_g0_closure: false
+    persistence_execution_or_effect: false
+  positive_result: STRUCTURALLY_VALID_AUTHENTICATED_ADR_LIFECYCLE_V1_CANDIDATE (declared exact bytes/digests/relations only; no Ed25519, external-root, trusted-time, revocation-currentness, authorization, repository-mutation, Accepted-source, atomicity, persistence, CAS, durability, rollback-resistance, architecture-compliance, permission, or effect attestation)
+  attests: []
+  persistence: none
+
+authenticated_adr_lifecycle_v1_go_authority_evidence:
+  profile_id: authenticated_architecture_decision_lifecycle_v1
+  decision_status: proposed
+  delivery: catalyst_repository_only_go_lifecycle_authority_evidence_not_source_distributed
+  semantic_authority: ADR-0084_only
+  implementation:
+    contract: forge-core/internal/authenticatedadrlifecyclecontract
+    authority: forge-core/internal/authenticatedadrlifecycleauthority
+    language_and_dependencies: go_standard_library_only
+    availability: catalyst_repository_internal_api_only_not_scaffolded
+  evidence:
+    exact_frozen_v1_structural_parity: true
+    opaque_stored_authorization_required_for_fresh_transition: true
+    independent_approval_and_lifecycle_trust_facts: true
+    ed25519_request_receipt_and_state_verification_and_signing: true
+    atomic_multi_target_acceptance_and_supersession: true
+    durable_locked_cas_sync_atomic_rename_and_authenticated_reopen: true
+    exact_idempotent_replay_without_resigning_or_rewrite: true
+    historical_existing_lock_only_replay_without_authority_writes: true
+  boundary:
+    production_root_key_seed_state_clock_revocation_or_transport_supplied: false
+    copies_go_contract_or_authority: false
+    copies_production_keys_seed_state_receipt_or_ledger: false
+    adds_command_socket_route_registry_scope_or_runtime_profile: false
+    repository_source_mutation_or_accepted_document_generation: false
+    grant_permission_generalized_effect_or_g0_closure: false
+    architecture_compliance_or_administrator_rollback_resistance: false
+  positive_evidence: PROPOSED_CATALYST_ONLY_AUTHENTICATED_ADR_LIFECYCLE_V1_GO_AUTHORITY (authenticated only relative to explicit external trust and a real opaque StoredAuthorization; no production provisioning, repository source mutation, route, runtime registration, scaffolded Go, permission, generalized effect, architecture compliance, rollback resistance, or G0 attestation)
+  attests: []
+  persistence: repository_external_lifecycle_state_only_when_explicitly_provisioned_by_an_in_process_caller
+
+architecture_decision_record_v2:
+  api_version: forgeos.architecture-decision-record/v2
+  kind: ArchitectureDecisionRecord
+  delivery: strict_proposed_only_document_contract
+  mode: exact_explicit_document_validation
+  input_kind: caller_supplied_single_new_adr_v2_markdown_document
+  output_kind: structurally_valid_proposed_adr_v2
+  document_contract:
+    framing: lf_only_canonical_json_frontmatter_and_exact_markdown_body
+    status: proposed
+    accepted_at_unix_ms: null
+    acceptance_id: null
+    superseded_by: []
+    legacy_v2_parse_retro_validation_or_migration: forbidden
+    ambient_reference_resolution: none
+  declared_relations:
+    owner_refs: caller_or_author_declared_responsibility_only
+    approver_refs: caller_or_author_declared_required_review_only
+    claim_and_evidence_refs: shape_checked_without_resolution_or_truth
+    affected_node_ids: shape_checked_without_graph_resolution_or_coverage
+    implementation_refs: normalized_locator_only_without_file_read
+  local_execution:
+    universal_checker: explicit_file_or_pinned_golden_only
+    go_runtime_binding: current_writes_adr_candidate_only
+    universal_repository_scan: false
+    go_legacy_baseline_byte_scan: true
+    go_legacy_v2_parse_or_rewrite: false
+    clock_access: false
+    credential_access: false
+    provider_access: false
+    network_access: false
+    database_access: false
+    persistence: none
+  unavailable_runtime:
+    owner_or_approver_authentication: unavailable
+    approval_record_resolution: unavailable
+    separation_of_duty: unavailable
+    proposed_to_terminal_state_machine: unavailable
+    accepted_document_immutability: unavailable
+    claim_evidence_or_graph_resolution: unavailable
+    architecture_compliance: unavailable
+    lifecycle_or_supersession_transition: unavailable
+    legacy_migration_or_retro_validation: unavailable
+    graph_edge_or_coverage_production: unavailable
+    persistence_or_effect: unavailable
+  authority_semantics:
+    owner_or_approver_identity_attestation: false
+    approval_or_acceptance_attestation: false
+    approval_record_attestation: false
+    claim_evidence_or_graph_attestation: false
+    architecture_compliance_attestation: false
+    legacy_migration_attestation: false
+    persistence_attestation: false
+    transition_attestation: false
+    execution_attestation: false
+    effect_attestation: false
+    positive_result: STRUCTURALLY_VALID_PROPOSED_ADR_V2 (declared metadata and exact document bytes only; no identity, ownership, approver, evidence, claim, graph, acceptance, compliance, persistence, transition, execution, or effect attestation)
+    attestations: []
+  semantic_validation:
+    schema_alone_sufficient: false
+    exact_document_and_physical_basename_required: true
+    canonical_frontmatter_and_strict_unicode_required: true
+    body_heading_section_and_digest_binding_recomputed: true
+    sorted_unique_and_cross_reference_relations_recomputed: true
+    complete_document_bounds_fail_closed: true
+    current_writes_adr_attempt_only: true
+    existing_adr_documents_not_retro_validated: true
+  limits:
+    max_document_bytes: 262144
+    max_frontmatter_json_bytes: 65536
+    max_body_bytes: 196608
+    max_json_depth: 16
+    max_object_fields: 64
+    max_array_items: 64
+    max_document_name_utf8_bytes: 255
+    integer_domain: signed_int64
+    runtime_string_length_unit: utf8_bytes
+  positive_result: STRUCTURALLY_VALID_PROPOSED_ADR_V2 (declared metadata and exact document bytes only; no identity, ownership, approver, evidence, claim, graph, acceptance, compliance, persistence, transition, execution, or effect attestation)
+  attests: []
+  persistence: none
+
+adr_governance_portable_proposed_document_validation:
+  delivery: shipped_pure_contract_and_closed_portable_skill
+  mode: validation_only_caller_supplied_basename_and_exact_document_bytes
+  semantic_authority: ADR-0067_only
+  input:
+    source: caller_supplied_lexical_basename_and_exact_document_bytes
+    basename_argument: exactly_one
+    basename_semantics: lexical_label_only_not_physical_identity_or_proof
+    stdin: exact_document_bytes_through_explicit_eof
+    explicit_eof_required: true
+    max_document_bytes: 262144
+    overflow_detection_bytes: 1
+    request_envelope: none_preserves_ADR_0067_document_wire
+  process:
+    validator_argv: [python3, -I, -B, skills/adr-governance/scripts/validate_declared_proposed_adr.py, ADR-NNNN-slug.md]
+    success_exit: 0
+    success_stdout_marker: STRUCTURALLY_VALID_PROPOSED_ADR_V2 (declared metadata and exact document bytes only; no identity, ownership, approver, evidence, claim, graph, acceptance, compliance, persistence, transition, execution, or effect attestation)
+    success_stdout_framing: marker_plus_one_lf
+    success_stderr: empty
+    rejection_exit: 1
+    usage_exit: 2
+    pre_output_failure_stdout: empty
+    output_failure_may_be_partial_or_indeterminate: true
+    success_requires_exit_zero_and_exact_bytes: true
+  portable_package:
+    source_distributed: true
+    closed_manifest_required: true
+    checker_argv: [python3, -I, -B, skills/adr-governance/scripts/check_package.py]
+    checker_package_root_argument: zero_or_one
+    vendored_python_parity: exact_ADR_0067_reference_implementation
+    repository_workspace_environment_network_clock_identity_approval_claim_evidence_graph_policy_database_provider_model_subprocess_lifecycle_reads: false
+    authors_repairs_normalizes_sorts_reseals_accepts_or_supersedes: false
+    copies_catalyst_go_writes_adr_runtime: false
+    installs_host_skill: false
+    python_isolation_boundary: excludes_script_current_directory_pythonpath_and_user_site_only
+    system_site_stdlib_interpreter_startup_host_publisher: not_disabled_authenticated_or_isolated
+    package_integrity_nofollow_unavailable_result: exit_1_fail_closed
+    check_to_use_atomicity: not_provided
+  authority:
+    physical_filename_or_repository_identity: not_attested
+    owner_approver_claim_evidence_or_graph: not_authenticated_or_resolved
+    acceptance_compliance_or_lifecycle: unavailable
+  attests: []
+  persistence: none
+
+capability_registry:
+  api_version: forgeos.capability-registry/v1
+  delivery: shipped_go_python_pure_validator_resolver_physical_checker_and_cli
+  wire_status: staged_profile_no_lifecycle_authority
+  mode: authority_neutral_read_only_contract_catalog
+  coverage:
+    coverage_mode: explicit_entries_only_not_global_inventory
+    entry_count: 1
+    entry_key: local-go-package-impact-prescan/1
+    catalog_binding: null
+    planning_catalog_input: none
+    planning_catalog_projection: false
+    catalog_to_package_adapter_generation: false
+  identity:
+    registry_sha256: 23b9acd4133598cd1404c78c71f694b4a99c398652e95c21896a507be5ecacf4
+    canonicalization: forgeos.canonical-json/v1
+    digest_chain:
+    - content_set
+    - contract
+    - entry
+    - registry
+    - request
+    - assessment
+    exact_singleton_registry_bytes_required: true
+    semver_range_alias_latest_or_fallback: false
+  resolution:
+    input: explicit_canonical_registry_and_request_bytes_only
+    order:
+    - capability_id
+    - capability_version
+    - capability_contract_sha256
+    - optional_exact_contract_bytes
+    outcomes:
+    - capability_contract_digest_mismatch
+    - capability_id_not_found
+    - capability_version_not_found
+    - resolved_exact
+    expected_contract: nullable_exact_reference_projection
+    legacy_repository_reader: ordinary_unregistered_id_not_found
+    implementation_selection: false
+    rule_gate_proof_or_permission_evaluation: false
+  physical_validation:
+    explicit_declared_refs_only: true
+    recursive_set_completeness: true
+    regular_files_only: true
+    symlinks_and_special_files: reject
+    pre_and_post_identity_stability: true
+    max_walk_entries: 65536
+    pure_resolver_dereferences_content: false
+  local_execution:
+    repository_access_by_resolver: false
+    catalog_access: false
+    environment_access: false
+    clock_access: false
+    credential_access: false
+    process_access: false
+    provider_access: false
+    network_access: false
+    database_access: false
+    implementation_or_test_execution: false
+    persistence: none
+  authority_semantics:
+    registry_or_owner_authentication: not_evaluated
+    rule_gate_or_proof_applicability: not_evaluated
+    authorization_decision: none
+    capability_grant_activation: false
+    capability_invocation: false
+    permission_attestation: false
+    implementation_availability_attestation: false
+    test_pass_attestation: false
+    runtime_routing_attestation: false
+    transition_attestation: false
+    effect_attestation: false
+    plugin_loading_or_distribution: false
+    positive_result: RESOLVED_DECLARED_CAPABILITY_REFERENCE_ONLY (no registry or owner authentication, rule or gate applicability,
+      proof satisfaction, test pass, implementation availability, Grant activation, authorization, permission, invocation,
+      runtime routing, persistence, transition, execution, or effect attestation)
+    attestations: []
+  semantic_validation:
+    schema_alone_sufficient: false
+    strict_compact_canonical_json: true
+    domain_separated_identity_chain_recomputed: true
+    exact_singleton_semantics_reconstructed: true
+    exact_registry_byte_pin_required: true
+    complete_assessment_reassembly_required: true
+    duplicate_unknown_unicode_depth_cardinality_and_byte_drift_fail_closed: true
+    cross_language_golden_required: true
+  fixture:
+    physical_bytes: 28758
+    physical_sha256: 0ce4929ad82ce70ef0520be80b7bd3eaf47f5ff1205d0a53e12fbe1115ed11b5
+    framing: compact_canonical_json_then_exactly_one_lf
+    cases:
+    - legacy_repository_reader_not_registered
+    - registered_key_digest_mismatch
+    - resolved_exact
+  limits:
+    max_registry_bytes: 16777216
+    max_entry_bytes: 1048576
+    max_contract_bytes: 524288
+    max_content_set_bytes: 4194304
+    max_request_bytes: 262144
+    max_assessment_bytes: 262144
+    max_golden_bytes: 33554432
+    max_json_depth: 16
+    max_object_fields: 64
+    max_array_items: 256
+    max_string_utf8_bytes: 16384
+    max_identifier_utf8_bytes: 160
+    max_repository_path_utf8_bytes: 4096
+    max_content_files: 256
+    max_physical_walk_entries: 65536
+    max_entries: 1
+    integer_domain: signed_int64
+  positive_result: RESOLVED_DECLARED_CAPABILITY_REFERENCE_ONLY (no registry or owner authentication, rule or gate applicability,
+    proof satisfaction, test pass, implementation availability, Grant activation, authorization, permission, invocation, runtime
+    routing, persistence, transition, execution, or effect attestation)
+  attests: []
+  persistence: none
+
+planning_capability_ownership:
+  api_version: forgeos.planning-capability-ownership-projection/v1
+  request_api_version: forgeos.planning-capability-ownership-projection-request/v1
+  delivery: shipped_go_python_pure_projectors_golden_checker_cli_and_scaffold
+  adr_status: proposed
+  status: planning_only
+  mode: planning_only_declared_ownership_and_logical_adapter_refs
+  source_boundary:
+    input: two_caller_supplied_exact_yaml_byte_strings_only
+    catalog_document: capability-catalog.v1.yml
+    mapping_document: capability-skill-map.v1.yml
+    catalog_bytes: 33000
+    catalog_sha256: bc6efe535539c5f129af51486d8e81b9844b5ee6448fae2bce649fc159658d74
+    mapping_bytes: 5924
+    mapping_sha256: bfb2277fe66cd9f0c609b5be10ad77ad0969603edd19e5a6ccbe38b8e3409462
+    ambient_repository_search_or_fallback: false
+    source_authentication_or_currentness: not_evaluated
+  coverage:
+    catalog_node_count: 17
+    capability_occurrence_count: 145
+    unique_capability_count: 140
+    mapping_package_count: 38
+    mapped_capability_count: 140
+    binding_count: 140
+    primary_owner_cardinality: exactly_one_per_unique_capability
+    logical_adapter_derivation: .agent/skills/ + owner_skill + .md
+    physical_resolution: not_performed
+    skill_availability: not_evaluated
+  identity:
+    canonicalization: forgeos.canonical-json/v1
+    digest_chain: [exact_source_bytes, request, binding, projection]
+    request_sha256: 3639c4d3ad21db93db254b7da2643d492ca39c4dda5438de426379cd70718cfa
+    projection_sha256: 53754ded32379d6520f3bd2b9d2956238731ad40c11124be457b724b4c150fa2
+    fixture_bytes: 172733
+    fixture_sha256: 3d0a877bef0939cff5752fc5d602e0d3a90e19639308801008f9d2d9ff139f36
+  product_cli:
+    surface: forge capability-ownership project --catalog FILE|- --mapping FILE|-
+    option_order: interchangeable
+    stdin_sources: exactly_one
+    usage_exit_code: 2
+    input_or_semantic_exit_code: 1
+    pre_output_failure_classes: [argument, input, semantic]
+    pre_output_failure_stdout_bytes: 0
+    success_output: exact_compact_canonical_projection_plus_one_lf
+    stdout_write_failure_exit_code: 1
+    stdout_write_is_transactional: false
+    partial_write_is_valid_artifact: false
+    python_validate_and_golden_surfaces: universal_internal_checker_only
+  local_execution:
+    pure_projector_repository_access: false
+    logical_adapter_stat_open_parse_or_generation: false
+    registry_input_or_mutation: false
+    environment_clock_credential_process_provider_network_database_access: false
+    implementation_selection_or_execution: false
+    persistence: none
+  scaffold_boundary:
+    copies_exact_catalog_and_mapping_sources: true
+    copies_adr_schema_golden_python_projector_checker_and_tests: true
+    copies_catalyst_go_runtime: false
+    generates_declared_owner_skill_or_host_adapter_files: false
+    existing_same_name_markdown_counts_as_resolution: false
+  authority_semantics:
+    source_owner_or_repository_authentication: false
+    adapter_file_existence_or_skill_availability_attestation: false
+    registry_mutation: false
+    grant_or_pdp_activation: false
+    capability_invocation: false
+    implementation_selection: false
+    authorization_decision: none
+    permission_attestation: false
+    runtime_routing_attestation: false
+    persistence_transition_execution_or_effect_attestation: false
+    positive_result: PROJECTED_PLANNING_CAPABILITY_OWNERSHIP_ONLY (complete declared primary-owner coverage and logical adapter references
+      for the supplied planning sources only; no file existence, Skill availability, Registry mutation, authentication, authorization,
+      permission, invocation, routing, execution, persistence, transition, or effect attestation)
+    attestations: []
+  semantic_validation:
+    schema_alone_sufficient: false
+    strict_frozen_yaml_profile_and_closed_shapes: true
+    complete_unique_primary_owner_coverage_recomputed: true
+    all_occurrences_node_ids_bindings_logical_refs_and_digests_recomputed: true
+    complete_canonical_projection_byte_comparison: true
+    cross_language_exact_golden_required: true
+  positive_result: PROJECTED_PLANNING_CAPABILITY_OWNERSHIP_ONLY (complete declared primary-owner coverage and logical adapter references
+    for the supplied planning sources only; no file existence, Skill availability, Registry mutation, authentication, authorization,
+    permission, invocation, routing, execution, persistence, transition, or effect attestation)
+  attests: []
+  persistence: none
+
+project_source_snapshot:
+  api_version: forgeos.governance.local-project-source-snapshot-production/v1
+  request_api_version: forgeos.governance.local-project-source-snapshot-request/v1
+  snapshot_api_version: forgeos.project-source-snapshot/v1
+  delivery: shipped_linux_live_producer_portable_strict_checker_and_closed_skill
+  adr_status: proposed
+  mode: explicit_opt_in_bounded_local_git_worktree_observation
+  profile_id: local-git-worktree-bounded-sensitive-path-exclusion-v1
+  path_policy_id: forgeos.project-source-sensitive-path-policy/v1
+  capture:
+    public_root_input: clean_canonical_absolute_git_worktree_root
+    universe: tracked_stage_zero_plus_nonignored_untracked
+    consistency: bounded_interval_two_endpoint_exact_match
+    atomic: false
+    fixed_path_policy_only: true
+    protected_leaf_classification_before_collector_leaf_access: true
+    allowed_regular_files_require_single_link: true
+    symlink_target_read_or_disclosure: false
+    git_identity: unauthenticated_local_path_binary
+    git_network_containment: not_provided
+  runtime_platform:
+    live_producer_host: linux_only
+    capture_adapter_host: linux_only
+    unsupported_host_adapter_result: exit_3_not_executed_before_runtime_access
+    python_decoder_portability: source_portable_no_live_capture
+    python_entrypoint_startup: isolated_required_before_non_builtin_import
+  coverage:
+    surface_count: 12
+    surfaces:
+      - { surface: atomicity, status: unknown }
+      - { surface: configuration_semantics, status: not_performed }
+      - { surface: content_secret_scan, status: not_performed }
+      - { surface: currentness, status: unknown }
+      - { surface: deployment_semantics, status: not_performed }
+      - { surface: freshness, status: unknown }
+      - { surface: git_control_metadata, status: not_observed }
+      - { surface: graph_topology, status: not_performed }
+      - { surface: ignored_paths, status: partial }
+      - { surface: nested_repositories_and_submodules, status: not_observed }
+      - { surface: nonignored_untracked, status: partial }
+      - { surface: tracked_worktree, status: partial }
+    system_completeness: unknown
+  limits:
+    max_canonical_envelope_bytes: 33554432
+    max_final_sealed_manifest_bytes: 16777216
+    max_individual_regular_file_bytes: 67108864
+    max_git_executable_bytes: 67108864
+    max_git_command_stdout_bytes: 33554432
+    max_git_command_seconds: 30
+    max_product_command_seconds: 120
+    max_aggregate_regular_file_bytes: 1073741824
+    max_universe_records: 16384
+    max_excluded_records: 4096
+    max_ignored_path_count: 262144
+    max_path_utf8_bytes: 16384
+    max_path_unicode_scalars: 4096
+    max_path_components: 256
+    max_json_depth: 16
+    max_object_fields: 64
+    integer_domain: signed_int64
+  portable_package:
+    source_distributed: true
+    closed_manifest_required: true
+    copies_catalyst_go_runtime: false
+    installs_host_skill: false
+    grants_filesystem_or_process_permission: false
+    absent_named_runtime_result: exit_3_not_executed
+    existing_incompatible_or_execution_failure_result: exit_1_failure
+    package_integrity_nofollow_unavailable_result: exit_1_fail_closed
+    vendored_contract_loading: adapter_anchored_exact_file_location_without_sys_path_mutation
+    package_check_capture_consistency: separate_non_atomic_operations
+    package_check_authenticates_publisher: false
+    output_target: outside_captured_root
+    fallback_reader: forbidden
+  authority_semantics:
+    source_or_git_authentication: false
+    atomic_current_complete_or_secret_free_attestation: false
+    graph_snapshot_attestation: false
+    registry_mutation: false
+    grant_pdp_or_capability_invocation: false
+    permission_attestation: false
+    truth_attestation: false
+    persistence_attestation: false
+    runtime_routing_attestation: false
+    effect_attestation: false
+    positive_result: CAPTURED_BOUNDED_LOCAL_PROJECT_SOURCE_OBSERVATION (the collector worktree-leaf reader did not open paths matched by its fixed path policy; Git and repository-metadata access are outside that guarantee; this is not an atomic, current, complete, secret-free, authenticated, authorized, persistent, or effect-attesting project or graph snapshot)
+    attestations: []
+  positive_result: CAPTURED_BOUNDED_LOCAL_PROJECT_SOURCE_OBSERVATION (the collector worktree-leaf reader did not open paths matched by its fixed path policy; Git and repository-metadata access are outside that guarantee; this is not an atomic, current, complete, secret-free, authenticated, authorized, persistent, or effect-attesting project or graph snapshot)
+  attests: []
+  persistence: none
+
 canonicalization:
   format: forgeos.canonical-json/v1
   object_keys: ascii_snake_case_sorted
@@ -595,12 +1629,849 @@ semantic_view:
   positive_result: PROJECTED_DECLARED_SEMANTICS
   attests: []
 
+context_package:
+  api_version: forgeos.context-package/v1
+  request_api_version: forgeos.context-package-build-request/v1
+  delivery: shipped_pure_contract_and_closed_portable_skill
+  mode: authority_free_deterministic_context_projection
+  source:
+    input: exact_canonical_caller_supplied_build_request
+    repository_reads: none
+    hidden_wall_clock: forbidden
+    evaluation_time: explicit_source_binding_as_of_unix_ms
+    source_order: source_id_utf8_byte_order
+  selection:
+    required: fail_closed_and_budget_reserved_first
+    optional_order: category_rank_then_priority_desc_then_source_id_bytes
+    optional_overflow: omit_with_unique_receipt
+    ineligible_required: fail_closed
+    ineligible_optional: omit_with_unique_receipt
+    truncation: optional_utf8_prefix_at_source_limit_only
+  lanes:
+    values: [instruction_candidates, trusted_context, untrusted_data]
+    delimiter: structured_json_lane_no_text_delimiter
+    instruction_allowed: false
+    untrusted_instruction_or_trusted_escalation: reject
+    quarantined_content: omitted_from_package
+  redaction:
+    replacement: "[REDACTED]"
+    order: before_eligibility_truncation_selection_budget_digest_and_token_count
+    plan: caller_declared_ordered_non_overlapping_utf8_byte_ranges
+    secret_detection_completeness: not_attested
+    receipt_contains_preimage: false
+  token_accounting:
+    counter: injected_digest_pinned_identity
+    counted_bytes: exact_canonical_structured_projection
+    ambient_or_character_estimate_fallback: forbidden
+    reference_counter: forgeos.token-counter.utf8-bytes/v1
+  identity:
+    request_digest_domain: "forgeos.context-package-build-request.v1\0"
+    cache_key_digest_domain: "forgeos.context-package-cache-key.v1\0"
+    context_digest_domain: "forgeos.context-package.v1\0"
+    snippet_digest_domain: "forgeos.context-snippet.v1\0"
+    projected_content_digest_domain: "forgeos.context-content.v1\0"
+    projection_digest_domain: "forgeos.context-package-projection.v1\0"
+    cache_key_input: exact_canonical_build_request
+    context_self_digest_rule: context_sha256_empty_while_hashing
+    snippet_self_digest_rule: snippet_sha256_empty_while_hashing
+  limits:
+    max_request_bytes: 20971520
+    max_package_bytes: 2097152
+    max_sources: 64
+    max_selected_snippets: 24
+    max_content_bytes: 524288
+    max_tokens: 1000000
+    max_source_bytes: 131072
+    max_redaction_ranges: 256
+  positive_result: ASSEMBLED_SHADOW (no truth, authority, instruction, permission, approval, completion, persistence, or effect attestation)
+  attests: []
+  persistence: none
+  provider_prompt_integration: unavailable
+  grant_pdp_approval_integration: unavailable
+  portable_package:
+    source_distributed: true
+    closed_manifest_required: true
+    assembler_argv: [python3, -I, -B, skills/context-engineering/scripts/assemble.py]
+    assembler_input: exact_canonical_stdin_only
+    assembler_arguments: zero
+    checker_argv: [python3, -I, -B, skills/context-engineering/scripts/check_package.py]
+    checker_package_root_argument: zero_or_one
+    fixture_counter_only: forgeos.token-counter.utf8-bytes/v1
+    copies_catalyst_go_or_rust_runtime: false
+    installs_host_skill: false
+    reads_ambient_sources: false
+    invokes_provider_or_model: false
+    grant_pdp_authority: unavailable
+    persistence: none
+    python_isolation_boundary: excludes_script_current_directory_pythonpath_and_user_site_only
+    system_site_stdlib_interpreter_startup_host_publisher: not_disabled_authenticated_or_isolated
+    package_integrity_nofollow_unavailable_result: exit_1_fail_closed
+    check_to_use_atomicity: not_provided
+
+capability_grant:
+  api_version: forgeos.capability-grant/v1
+  request_api_version: forgeos.capability-grant-declared-assessment-request/v1
+  assessment_api_version: forgeos.capability-grant-declared-assessment/v1
+  delivery: strict_pure_contract_only
+  mode: authority_neutral_declared_envelope_only
+  input: exact_canonical_caller_supplied_grant_request_and_assessment
+  canonicalization: forgeos.canonical-json/v1
+  dynamic_authority_status_fields: forbidden
+  declared_relations:
+    binding: compared_without_authentication
+    budget: compared_without_reservation_or_consumption
+    capability: compared_without_registry_resolution
+    effect: compared_without_execution
+    scope: deny_precedence_declared_relation_only
+    subject: compared_without_identity_authentication
+    task: compared_without_runtime_admission
+    temporal: explicit_caller_time_declared_window_only
+  unavailable_runtime:
+    issuer_authentication: unavailable
+    principal_authentication: unavailable
+    policy_authentication: unavailable
+    authority_proof_verification: unavailable
+    policy_decision_point: unavailable
+    approval_validation: unavailable
+    revocation_evaluation: unavailable
+    usage_evaluation: unavailable
+    reservation_or_consumption: unavailable
+    preflight: unavailable
+    postflight: unavailable
+    audit_receipts: unavailable
+    context_package_integration: unavailable
+    persistence: unavailable
+    effect_execution: unavailable
+  assessment_constants:
+    authority_proof_state: not_evaluated
+    approval_state: not_evaluated
+    revocation_state: not_evaluated
+    usage_state: not_evaluated
+    authorization_decision: none
+    permission_attestation: false
+    effect_attestation: false
+  positive_result: ASSESSED_DECLARATIONS_ONLY (no issuer authentication, policy decision, approval, revocation, usage, preflight, authorization, permission, persistence, execution, or effect attestation)
+  attests: []
+  persistence: none
+  production_effects: forbidden
+
+approval_record:
+  api_version: forgeos.approval-record/v1
+  request_api_version: forgeos.approval-record-declared-assessment-request/v1
+  assessment_api_version: forgeos.approval-record-declared-assessment/v1
+  delivery: strict_pure_contract_only
+  mode: authority_neutral_declared_approval_only
+  input: exact_canonical_caller_supplied_record_request_and_assessment
+  canonicalization: forgeos.canonical-json/v1
+  marker_import: forbidden
+  declared_relations:
+    approver: compared_without_identity_authentication
+    authority_binding: compared_without_proof_verification
+    binding: compared_without_preimage_resolution
+    conditions: compared_without_validation
+    decision: compared_without_policy_decision
+    risk_acceptance: compared_without_validation
+    scope: compared_without_effect_authority
+    separation_of_duty: compared_without_proof_verification
+    subject: compared_without_identity_authentication
+    temporal: explicit_caller_time_declared_window_only
+    declared_revocation: explicit_caller_time_only_no_registry
+    capability_grant_projection: approval_id_approval_sha256_authority_domain_relation_only
+  unavailable_runtime:
+    approver_authentication: unavailable
+    authority_source_authentication: unavailable
+    authority_proof_verification: unavailable
+    separation_of_duty_proof_verification: unavailable
+    condition_validation: unavailable
+    risk_acceptance_validation: unavailable
+    revocation_registry_evaluation: unavailable
+    policy_decision_point: unavailable
+    effective_approval: unavailable
+    authorization: unavailable
+    permission: unavailable
+    persistence: unavailable
+    transition: unavailable
+    effect_execution: unavailable
+  assessment_constants:
+    approver_identity_state: not_evaluated
+    authority_proof_state: not_evaluated
+    condition_satisfaction_state: not_evaluated
+    effective_approval_state: not_evaluated
+    revocation_registry_state: not_evaluated
+    risk_acceptance_state: not_evaluated
+    separation_of_duty_proof_state: not_evaluated
+    policy_decision: none
+    authorization_decision: none
+    permission_attestation: false
+    effect_attestation: false
+    persistence_attestation: false
+    transition_attestation: false
+  positive_result: ASSESSED_APPROVAL_DECLARATIONS_ONLY (no approver or authority authentication, attestation or SoD proof verification, condition or RiskAcceptance validation, revocation evaluation, policy decision, effective approval, authorization, permission, persistence, transition, execution, or effect attestation)
+  attests: []
+  persistence: none
+  production_effects: forbidden
+
+transition_receipt:
+  api_version: forgeos.transition-receipt/v1
+  vocabulary_api_version: forgeos.transition-state-vocabulary/v1
+  request_api_version: forgeos.transition-receipt-declared-assessment-request/v1
+  assessment_api_version: forgeos.transition-receipt-declared-assessment/v1
+  delivery: strict_pure_contract_only
+  mode: authority_neutral_declared_transition_only
+  input: exact_canonical_caller_supplied_receipt_target_previous_request_and_assessment
+  canonicalization: forgeos.canonical-json/v1
+  workflow_or_marker_import: forbidden
+  declared_relations:
+    target: compared_without_state_authentication
+    edge: compared_against_frozen_declared_graph_only
+    chain: compared_against_explicit_caller_predecessor_only
+    continuity: compared_without_authoritative_current_state
+    preconditions: compared_without_truth_evaluation
+    applicability: compared_without_stage_authority
+    recovery: compared_without_rework_or_resume_execution
+    temporal: explicit_caller_time_only
+    capability_grant: compared_without_permission_or_transition_authority
+    approval_records: compared_without_effective_approval_or_transition_authority
+  unavailable_runtime:
+    controller_authentication: unavailable
+    actor_authentication: unavailable
+    authoritative_current_state: unavailable
+    policy_decision_point: unavailable
+    grant_or_approval_evaluation: unavailable
+    evidence_or_waiver_evaluation: unavailable
+    append_only_transition_ledger: unavailable
+    cas_idempotency_or_replay: unavailable
+    transition_execution: unavailable
+    persistence: unavailable
+    effect_execution: unavailable
+    completion_attestation: unavailable
+  assessment_constants:
+    controller_authentication_state: not_evaluated
+    grant_state: not_evaluated
+    approval_state: not_evaluated
+    evidence_state: not_evaluated
+    waiver_state: not_evaluated
+    precondition_truth_state: not_evaluated
+    ledger_state: not_evaluated
+    policy_decision: none
+    authorization_decision: none
+    permission_attestation: false
+    persistence_attestation: false
+    transition_attestation: false
+    execution_attestation: false
+    effect_attestation: false
+    completion_attestation: false
+  positive_result: ASSESSED_TRANSITION_DECLARATIONS_ONLY (no controller, actor, Grant, Approval, evidence, waiver, precondition or state authentication; no policy decision, authorization, persistence, transition, ledger, execution, effect or completion attestation)
+  attests: []
+  persistence: none
+  production_effects: forbidden
+
+knowledge_update_proposal:
+  api_version: forgeos.knowledge-update-proposal/v1
+  request_api_version: forgeos.knowledge-update-proposal-declared-assessment-request/v1
+  assessment_api_version: forgeos.knowledge-update-proposal-declared-assessment/v1
+  delivery: strict_pure_contract_only
+  mode: authority_neutral_declared_knowledge_update_only
+  input: exact_canonical_caller_supplied_proposal_target_and_assessment
+  canonicalization: forgeos.canonical-json/v1
+  proposal_semantics:
+    records: exact_reachable_after_claim_closure
+    mutations: sorted_unique_create_or_supersede_declarations
+    create: sequence_one_null_before_and_no_supersedes
+    supersede: exact_immediate_predecessor_stable_semantic_identity_and_shadow_lifecycle_only
+    knowledge_scope_hash: opaque_declared_binding_not_recomputed
+    current_head_or_conflict_lookup: none
+    apply_or_persistence: none
+  declared_relations:
+    binding: compared_without_source_or_context_authentication
+    grant_ref: compared_without_grant_authority
+    mutations: compared_without_current_knowledge_state
+    proposer: compared_without_identity_authentication
+    record_set: compared_without_evidence_truth
+    scope: compared_without_scope_authority
+    task_binding: compared_without_task_authority
+    temporal: explicit_caller_time_only
+  cross_contract_relations:
+    capability_grant: declared_compatibility_without_permission_or_apply_authority
+    context_package: caller_reassembled_comparison_without_source_or_instruction_authority
+    artifact_resources: declared_projection_without_artifact_authentication
+  unavailable_runtime:
+    proposer_authentication: unavailable
+    grant_or_context_authentication: unavailable
+    evidence_truth_or_freshness: unavailable
+    authoritative_current_knowledge: unavailable
+    conflict_arbitration: unavailable
+    policy_decision_point: unavailable
+    knowledge_update_receipt: unavailable
+    persistence_or_apply: unavailable
+    execution_or_effect: unavailable
+  assessment_constants:
+    proposer_authentication_state: not_evaluated
+    grant_state: not_evaluated
+    context_state: not_evaluated
+    evidence_state: not_evaluated
+    current_knowledge_state: not_evaluated
+    conflict_state: not_evaluated
+    freshness_state: not_evaluated
+    policy_decision: none
+    authorization_decision: none
+    truth_attestation: false
+    knowledge_adoption_attestation: false
+    permission_attestation: false
+    persistence_attestation: false
+    execution_attestation: false
+    effect_attestation: false
+  positive_result: ASSESSED_KNOWLEDGE_UPDATE_DECLARATIONS_ONLY (no proposer, Grant, Context, evidence, current-knowledge, conflict, freshness, policy or authority evaluation; no truth, adoption, authorization, permission, persistence, apply, receipt, execution or effect attestation)
+  attests: []
+  persistence: none
+  production_effects: forbidden
+
+bootstrap_grant_issuance:
+  runtime_profile_id: authenticated_bootstrap_repo_read_grant_issuance_v1
+  contract_profile_id: bootstrap_planning_repo_read_only_v1
+  delivery: catalyst_go_kernel_only
+  status: shipped_narrow_runtime_profile
+  api_versions:
+    signature_profile: forgeos.ed25519-domain-sha256-profile/v1
+    trust_root: forgeos.governance-trust-root/v1
+    policy: forgeos.bootstrap-grant-policy/v1
+    request: forgeos.bootstrap-grant-request/v1
+    grant: forgeos.capability-grant/v1
+    receipt: forgeos.grant-issuance-receipt/v1
+    ledger: forgeos.grant-issuance-ledger/v1
+    result: forgeos.bootstrap-grant-issuance-result/v1
+  authenticated_authority:
+    issuer: non_agent_forgeos_kernel
+    deployment_owner: external_operator
+    trust_root: externally_pinned_outside_repository
+    trust_root_signature: unsigned_bootstrap_material_exact_digest_operator_pinned
+    signed_inputs: [policy, request]
+    signed_outputs: [grant_when_issued, ledger, receipt]
+    signature_algorithm: ed25519_over_domain_separated_sha256
+    signature_profile_id: forgeos.ed25519-domain-sha256/v1
+    key_usages: [grant_issue, policy_sign, request_auth]
+    key_principals_and_public_keys_pairwise_distinct: true
+    grant_issue_and_policy_sign_principal_type: service
+    request_auth_principal_type: agent
+    agent_self_issuance: forbidden
+  scope:
+    issuance_phase: bootstrap_planning
+    capabilities: [repository-reader/v1]
+    effects: [repo.read]
+    environments: [development, local, test]
+    resources: canonical_exact_repo_paths_only
+    budgets: policy_bounded_small_ceiling
+    ttl: policy_bounded_short_window
+    transferable: false
+    decisions: [denied, issued]
+    authenticated_policy_denial: signed_receipt_with_null_grant_and_policy_denied
+    malformed_or_untrusted: error_without_receipt
+  persistence:
+    artifact: signed_complete_issuance_ledger_snapshot
+    receipt: durable_signed_grant_issuance_receipt_bound_into_ledger
+    ledger_results: [exact_replay, stored]
+    exact_replay_returns_original_receipt: true
+    clock_high_water_scope: relative_to_current_signed_snapshot_only
+    external_monotonic_anchor: unavailable
+    tpm_or_remote_witness: unavailable
+    replaceable_local_authority_state_rollback_resistance: unavailable
+    receipt_attests_effect_execution: false
+  runtime_boundary:
+    binary: forge-kernel
+    binary_separate_from_agent_host_cli: true
+    supported_host_family: unix
+    non_unix_behavior: fail_closed_before_authority_input_or_key
+    root_key_and_state_outside_repository: required
+    authority_root_path: absolute_canonical_all_ancestors_no_symlink
+    repository_authority_overlap: forbidden_both_directions_by_resolved_ancestor_file_identity
+    repository_source_binding: stable_absolute_source_resolution_and_opened_directory_identity_for_session
+    directory_mode: "0700"
+    local_file_mode: "0600"
+    effective_uid_check: required_on_unix
+    state_and_leaf_paths: closed_canonical_relative
+    leaf_identity: regular_single_link_no_special_mode_bits
+    file_mode_or_uid_is_os_principal_or_hsm_isolation: false
+    same_uid_test_attests_production_trust_boundary: false
+    production_tcb_requires: distinct_os_principal_or_external_secret_hsm_service
+    key_generation_or_provisioning: forbidden
+    known_public_fixture_authority: forbidden_exact_root_and_any_fixture_public_key
+  limits:
+    max_signature_profile_bytes: 16384
+    max_trust_root_bytes: 262144
+    max_policy_bytes: 524288
+    max_request_bytes: 1048576
+    max_grant_bytes: 1048576
+    max_receipt_bytes: 262144
+    max_result_bytes: 2097152
+    max_ledger_bytes: 16777216
+    max_golden_bytes: 20971520
+    max_json_depth: 16
+    max_object_fields: 64
+    max_array_items: 256
+    max_string_bytes: 16384
+    max_source_revision_bytes: 160
+    max_grant_ttl_ms: 3600000
+    max_policy_validity_ms: 86400000
+    max_request_validity_ms: 300000
+    max_timeout_ms: 300000
+    max_output_bytes: 1048576
+    max_ledger_entries: 256
+    integer_domain: signed_int64
+  unavailable_runtime:
+    plan_finalization: unavailable
+    other_twenty_effects: unavailable
+    other_capabilities: unavailable
+    staging_environment: unavailable
+    production_environment: unavailable
+    approval: unavailable
+    revocation: unavailable
+    usage: unavailable
+    reservation: unavailable
+    preflight: unavailable
+    postflight: unavailable
+    policy_enforcement_point: unavailable
+    effect_execution: unavailable
+    context_package_integration: unavailable
+    provider_integration: unavailable
+    transition_integration: unavailable
+    knowledge_integration: unavailable
+    key_provisioning: unavailable
+    key_rotation: unavailable
+    remote_operation: unavailable
+    high_availability: unavailable
+    multitenancy: unavailable
+    complete_governance_kernel_pdp: planned
+  scaffold:
+    inherits: [contract, fixture, shadow_structural_checker, governance_skill]
+    installs_forge_kernel: false
+    installs_trust_root_keys_or_state: false
+    unavailable_runtime_result: not_executed
+  structural_checker:
+    detector: shadow_structural_non_load_bearing
+    validates: canonical_shape_digest_and_declared_relations
+    authenticates_ed25519: false
+    authenticates_external_root_pin: false
+    attests_persistence_or_effect: false
+  completion_authority_is_issuer: false
+
+bootstrap_repo_read_execution:
+  runtime_profile_id: authenticated_bootstrap_repo_read_execution_v1
+  issuance_runtime_profile_id: authenticated_bootstrap_repo_read_grant_issuance_v1
+  delivery: catalyst_go_kernel_only
+  status: shipped_narrow_runtime_profile
+  authority:
+    executor: non_agent_forgeos_kernel
+    deployment_owner: external_operator
+    execution_trust_root: independently_pinned_outside_repository
+    binds_exact_issuance_root_and_epoch: true
+    execution_keys_distinct_from_issuance_keys: true
+    key_usages: [execution_policy_sign, execution_receipt_sign, execution_request_auth]
+    key_ids_principals_and_public_keys_pairwise_distinct: true
+    key_usage_artifacts:
+      execution_policy_sign: [execution_policy]
+      execution_receipt_sign: [usage_receipt, complete_usage_ledger_snapshot]
+      execution_request_auth: [invocation]
+    cross_usage_or_other_artifact_signing: forbidden
+    key_set_or_usage_expansion: new_profile_and_external_pin_required
+    signed_inputs: [execution_policy, invocation]
+    signed_outputs: [usage_ledger, usage_receipt]
+    policy_decisions: [allow_activate_once, deny_do_not_activate]
+    deny_reserves_usage: false
+  scope:
+    phase: bootstrap_planning
+    capabilities: [repository-reader/v1]
+    effects: [repo.read]
+    environments: [development, local, test]
+    resources: one_to_sixteen_sorted_exact_manifest_paths
+    manifest: exact_regular_file_bytes_and_sha256
+    aggregate_raw_content_max_bytes: 1048576
+    per_file_raw_content_max_bytes: 1048576
+    path_utf8_max_bytes: 4096
+    path_max_components: 256
+    top_level_control_directories_case_insensitive: [.forge, .git]
+    unicode_and_spaces: permitted_with_exact_utf8_byte_identity
+    control_and_bidi_characters: forbidden
+    raw_encoding: base64url_unpadded_first_delivery_only
+    context_and_source_bindings: opaque_exact_equality_only
+  usage_state:
+    transitions:
+      - reserved_no_repo_io->effect_intent
+      - reserved_no_repo_io->quarantined
+      - effect_intent->completed
+      - effect_intent->failed_consumed
+      - effect_intent->quarantined
+    single_use: true
+    reservation_time: inside_fresh_invocation_half_open_window
+    intent_or_terminal_after_reservation: may_cross_invocation_expiry
+    reservation_precedes_repository_io: true
+    reservation_precedes_bind_or_verify_repository_metadata_io: true
+    effect_intent_precedes_first_read: true
+    active_tail_resume_or_reread: forbidden
+    orphan_recovery: durable_signed_quarantine_only
+    failed_consumed_reasons: [content_mismatch, cooperative_timeout_exceeded, repository_identity_changed, repository_read_failed]
+    global_sequence_and_prior_receipt_chain: true
+    grant_and_idempotency_unique_globally: true
+    max_entries: 256
+    max_snapshot_bytes: 16777216
+    reservation_capacity_preflights_intent_and_terminal: true
+  persistence_and_replay:
+    artifact: signed_complete_usage_ledger_snapshot
+    terminal_persistence_and_strict_reopen_before_delivery: true
+    ledger_persists_raw_content: false
+    first_completed_delivery: receipt_metadata_and_raw_result
+    completed_replay: same_receipt_and_metadata_with_null_raw_result
+    failed_or_quarantined_replay: same_receipt_with_null_metadata_and_raw_result
+    replay_lookup_modes: [exact_canonical_policy_and_invocation_pair, both_raw_64_lower_hex_self_digests]
+    digest_lookup_scope: terminal_groups_including_miss
+    partial_or_conflicting_match: fail_closed
+    digest_only_miss_or_mixed_identity: fail_closed_before_manifest
+    replay_before: [manifest, repository, clock, receipt_seed]
+    crash_during_raw_delivery: raw_result_unrecoverable_no_reread
+    output_failure: terminal_persisted_delivery_uncertain_no_reread
+    commit_fault_matrix:
+      reservation_pre_publish: fresh_retry_may_complete_with_at_most_one_read
+      reservation_post_publish_uncertain: quarantine_without_read
+      intent_pre_publish: quarantine_without_read
+      intent_post_publish_uncertain: quarantine_without_read
+      terminal_pre_publish: quarantine_after_one_read
+      terminal_post_publish_uncertain: completed_replay_after_one_read
+    second_repository_read_after_any_commit_fault: forbidden
+  runtime_boundary:
+    binary: forge-kernel
+    supported_platforms: [linux_amd64, linux_arm64]
+    unsupported_platform_behavior: fail_closed_before_reservation
+    platform_check: pure_build_tag_goos_arch_without_cwd_or_filesystem_probe
+    bound_repository_preflight: visible_superblock_and_openat2_after_reservation_before_effect_intent
+    bound_repository_preflight_failure: signed_quarantine
+    authority_root_and_state_outside_repository: required
+    authority_root_path: absolute_canonical_all_ancestors_no_symlink
+    authority_repository_overlap: forbidden_both_directions_by_resolved_ancestor_file_identity
+    directory_mode: "0700"
+    local_file_mode: "0600"
+    effective_uid_check: required_on_linux
+    state_and_leaf_paths: closed_canonical_relative
+    authority_leaf_identity: regular_single_link_no_special_mode_bits
+    key_generation_or_provisioning: forbidden
+    repository_identity_bound_for_session: true
+    reader: linux_openat2_only_no_fallback
+    probe_open_flags: [O_PATH, O_CLOEXEC]
+    active_open_flags: [O_RDONLY, O_NONBLOCK, O_CLOEXEC, O_NOATIME, O_NOCTTY]
+    noatime_scope: initial_leaf_open_and_post_read_reopen
+    noatime_unavailable_behavior: fail_closed_without_atime_mutating_fallback
+    openat2_resolve: [RESOLVE_BENEATH, RESOLVE_NO_XDEV, RESOLVE_NO_SYMLINKS, RESOLVE_NO_MAGICLINKS]
+    filesystem: statfs_local_v1_magic_allowlist_only
+    filesystem_allowlist: [btrfs, ext2_ext3_ext4, overlayfs, tmpfs, xfs, zfs]
+    rejected_filesystems: [fuse, nfs, other_unlisted]
+    fstatfs_attests: directly_visible_superblock_magic_only
+    overlay_lower_upper_or_physical_locality_attested: false
+    local_backing_storage: operator_deployment_precondition
+    network_bytes_zero_semantics: no_explicit_network_request_by_effect_only
+    leaf_open_sequence: confined_probe_fstat_then_active_open_samefile_and_invariant_recheck
+    leaf_invariants: regular_single_link_exact_size_and_sha256
+    static_fifo_or_device_active_open: forbidden
+    nonblock_noctty_purpose: avoid_fifo_block_and_controlling_tty
+    atomic_regular_only_open: unavailable_on_linux
+    raced_device_open_driver_side_effect_before_fstat_rejection: possible
+    repository_without_device_nodes: operator_deployment_precondition
+    untrusted_writer_without_cap_mknod: operator_deployment_precondition
+    no_untrusted_namespace_writer_during_execution: operator_deployment_precondition
+    device_node_absence_or_driver_isolation_attested: false
+    repository_write_network_process_secret_or_target_effect: false
+    known_public_fixture_authority: forbidden_exact_root_and_any_fixture_public_key
+    fixture_private_seed_or_production_bypass: forbidden
+  timeout:
+    semantics: cooperative_not_hard_wall_clock
+    starts: after_durable_effect_intent_before_first_read
+    content_reader_checks: before_between_and_after_statfs_openat2_stat_read_and_reopen
+    grantstate_repository_revalidation_checks: composite_before_and_after_only
+    blocked_kernel_operation_may_overrun_budget: true
+    post_return_timeout_precedence: timeout_over_other_read_outcome
+    late_kernel_return: failed_consumed_cooperative_timeout_exceeded
+    successful_elapsed_ms: monotonic_duration_at_most_requested_timeout
+  transition_clock:
+    sampling: independent_wall_clock_sample_before_each_signed_transition
+    transitions: [reservation, effect_intent, quarantine, terminal]
+    high_water: advanced_by_each_successful_sample
+    failure: no_fabricated_old_time_reservation_unwritten_existing_active_tail_unchanged
+  memory_hygiene:
+    mutable_raw_buffers: best_effort_clear_after_delivery_attempt
+    secure_erasure_of_strings_gc_kernel_or_downstream_copies: false
+    process_isolation_or_hsm_attestation: false
+  rollback:
+    clock_high_water_scope: relative_to_current_signed_snapshot_only
+    administrator_complete_state_replacement_resistance: unavailable
+    tpm_remote_witness_or_external_counter: unavailable
+  lifecycle:
+    root_receipt_key_and_usage_namespace: indivisible_deployment
+    root_or_receipt_key_change_with_existing_ledger: fail_closed
+    fresh_root_and_state_inherit_spent_history: false
+    fresh_namespace_consumes_prior_namespace_grants: false
+    rotation_epoch_migration_or_state_clear_rebase: unsupported
+    continuous_rotation_requires: new_profile_and_adr_with_externally_witnessed_complete_single_use_history_migration
+  scaffold:
+    inherits: [adr, schema, fixture, python_structural_checker, governance_checker_and_tests]
+    installs_forge_kernel: false
+    installs_execution_binary_keys_roots_or_state: false
+    unavailable_runtime_result: not_executed
+  structural_checker:
+    detector: shadow_structural_non_load_bearing
+    validates: canonical_shape_digest_and_declared_relations
+    authenticates_ed25519_or_external_pin: false
+    attests_openat2_durability_clock_or_effect: false
+  unavailable_runtime:
+    approval: unavailable
+    revocation: unavailable
+    context_reassembly: unavailable
+    write_network_process_secret_target_effects: unavailable
+    staging_or_production: unavailable
+    generalized_kernel_pdp: planned
+    remote_ha_multitenant: unavailable
+    execution_root_or_signing_key_rotation: unavailable
+    trust_epoch_migration: unavailable
+    usage_state_clear_or_rebase: unavailable
+  completion_authority_is_execution_authority: false
+
 legacy:
   rejected_kind_aliases: [Evidence, Claim, ContextManifest, AuthorityGrant, AgentCapabilityGrant]
-  memory_import: not_implemented
-  adr_import: not_implemented
+  memory_import: explicit_supplied_bytes_unverified_read_only_projection_v1
+  adr_import: explicit_supplied_bytes_unverified_read_only_no_parse_projection_v1
   missing_confidence_default: forbidden
   legacy_status_is_authority: false
+
+legacy_governance_read_import_v1_candidate_contract:
+  profile_id: legacy_governance_read_import_v1
+  decision_status: proposed
+  delivery: source_distributed_dependency_free_python_pure_projector_with_catalyst_repository_only_go_parity
+  mode: exact_explicit_supplied_bytes_to_unverified_read_only_view
+  identity:
+    canonicalization: forgeos.canonical-json/v1
+    project_snapshot_binding_is_caller_declared_not_authenticated: true
+    request_and_candidate_identity_is_snapshot_bound: true
+    raw_source_reconstruction_required: true
+  input_boundary:
+    checker_argv: [python3, harness/legacy_governance_read_import_contract_check.py]
+    operator_supplies_exact_request_on_stdin_and_closes_eof: true
+    detector_registry_supplies_stdin_or_request_path: false
+    ambient_repository_path_clock_database_network_or_cache: false
+  implementation:
+    python: dependency_free_strict_pure_core_and_stdin_checker
+    go: catalyst_repository_only_cross_language_parity_not_scaffolded
+    exact_cross_language_golden: true
+  source_distribution:
+    copies_exact_fifteen_file_core_and_three_file_governance: true
+    copies_go_parity_package_or_runtime: false
+    installs_skill_route_adapter_service_or_product_command: false
+    adds_registry_scope_evaluator_producer_or_runtime_profile: false
+  view_result: PROJECTED_UNVERIFIED_LEGACY_READ_ONLY
+  positive_result: STRUCTURALLY_VALID_LEGACY_GOVERNANCE_READ_IMPORT_V1 (unverified legacy read-only projection only; no source authentication or completeness, confidence or status interpretation, conflict resolution, truth, authority, currentness, instruction, acceptance, persistence, winner, or runtime-effect attestation)
+  attestations:
+    acceptance: false
+    authority: false
+    confidence_interpretation: false
+    conflict_resolution: false
+    currentness: false
+    instruction_eligibility: false
+    persistence: false
+    runtime_effect: false
+    source_authentication: false
+    source_completeness: false
+    status_interpretation: false
+    truth: false
+    winner_selection: false
+  persistence: none
+
+kernel_operational_reference_core_v1_candidate_contract:
+  profile_id: kernel_operational_reference_core_v1
+  decision_status: proposed
+  delivery: source_distributed_dependency_free_python_pure_contract_with_catalyst_repository_only_go_and_rust_parity
+  mode: exact_caller_supplied_operational_reference_closure_validation
+  identity:
+    canonicalization: forgeos.canonical-json/v1
+    five_semantic_objects_and_one_nonsemantic_closure: true
+    domain_separated_record_and_closure_seals: true
+    opaque_bindings_are_caller_declared_not_authenticated: true
+  input_boundary:
+    checker_argv: [python3, harness/kernel_operational_contract_check.py, --golden, .]
+    detector_validates_only_the_pinned_golden: true
+    explicit_file_mode_is_standalone_not_registry_supplied: true
+    stdin_repository_discovery_clock_database_network_or_cache: false
+  implementation:
+    python: source_distributed_dependency_free_strict_pure_contract
+    go: catalyst_repository_only_cross_language_parity_not_scaffolded
+    rust: catalyst_repository_only_cross_language_parity_not_scaffolded
+    rust_registration: unique_module_declaration_not_whole_file_pinned
+    exact_three_language_golden: true
+  source_distribution:
+    copies_exact_fifteen_file_core_and_three_file_governance: true
+    copies_go_rust_or_runtime_registration: false
+    installs_skill_route_adapter_service_or_product_command: false
+    adds_registry_scope_kind_evaluator_producer_or_runtime_profile: false
+  completion:
+    operational_reference_subclosure_only: true
+    full_kernel_abi_complete: false
+    cognitive_atom_expansion_complete: false
+    decision_transaction_complete: false
+    cross_closure_semantics_complete: false
+  positive_result: STRUCTURALLY_VALID_KERNEL_OPERATIONAL_REFERENCE_CLOSURE_V1 (exact caller-supplied records and acyclic references only; no content provenance, principal, Grant, or source/context/environment/policy binding authentication; no authorization, permission, event append, persistence, transition, execution, outcome, completion, effect, or usage measurement attestation)
+  attestations:
+    authorization_attestation: false
+    binding_authentication_attestation: false
+    completion_attestation: false
+    content_provenance_attestation: false
+    effect_attestation: false
+    event_append_attestation: false
+    execution_attestation: false
+    grant_authentication_attestation: false
+    outcome_attestation: false
+    permission_attestation: false
+    persistence_attestation: false
+    principal_authentication_attestation: false
+    transition_attestation: false
+    usage_measurement_attestation: false
+  persistence: none
+
+kernel_decision_reference_core_v1_candidate_contract:
+  profile_id: kernel_decision_reference_core_v1
+  decision_status: proposed
+  delivery: source_distributed_dependency_free_python_pure_contract_with_catalyst_repository_only_go_and_rust_parity
+  mode: exact_caller_supplied_decision_and_operational_reference_closure_validation
+  identity:
+    canonicalization: forgeos.canonical-json/v1
+    cognitive_atom_v2_and_decision_transaction_v1: true
+    one_way_operational_cross_closure: true
+    domain_separated_atom_transaction_and_closure_seals: true
+    declared_sources_authority_hardness_and_bindings_are_not_authenticated: true
+  input_boundary:
+    checker_argv: [python3, harness/kernel_decision_contract_check.py, --golden, .]
+    detector_validates_only_the_pinned_golden: true
+    explicit_file_mode_is_standalone_not_registry_supplied: true
+    stdin_repository_discovery_clock_database_network_or_cache: false
+  implementation:
+    python: source_distributed_dependency_free_strict_pure_contract
+    go: catalyst_repository_only_cross_language_parity_not_scaffolded
+    rust: catalyst_repository_only_cross_language_parity_not_scaffolded
+    rust_registration: unique_module_declaration_not_whole_file_pinned
+    rust_pin_scope: flat_exact9_module_sources_only
+    exact_three_language_golden: true
+  source_distribution:
+    copies_exact_sixteen_file_core_and_three_file_governance: true
+    copies_go_rust_or_runtime_registration: false
+    installs_skill_route_adapter_service_product_command_pdp_or_controller: false
+    adds_registry_scope_kind_evaluator_producer_or_runtime_profile: false
+  completion:
+    kernel_structural_reference_family_abi_complete: true
+    broader_adr_0038_complete: false
+    decision_capsule_complete: false
+    authorized_transaction_spec_complete: false
+    authenticated_pdp_complete: false
+    controller_complete: false
+    authority_promotion_complete: false
+  effective_semantics:
+    effective_hardness: none
+    instruction_allowed: false
+    declared_authority_is_effective: false
+  positive_result: 'STRUCTURALLY_VALID_KERNEL_DECISION_REFERENCE_CLOSURE_V1 (exact caller-supplied cognitive, transaction and operational reference relations only; declared authority and hardness are ineffective; all twenty-two attestations are false: no Approval, principal, Grant or binding authentication; no source resolution, authority, authorization, CAS, completion, content provenance, effect, event append, execution, hard guard, instruction, outcome, permission, persistence, transition, truth, usage measurement or verifier independence attestation)'
+  attestations:
+    approval_authentication_attestation: false
+    authority_attestation: false
+    authorization_attestation: false
+    binding_authentication_attestation: false
+    cas_attestation: false
+    completion_attestation: false
+    content_provenance_attestation: false
+    effect_attestation: false
+    event_append_attestation: false
+    execution_attestation: false
+    grant_authentication_attestation: false
+    hard_guard_attestation: false
+    instruction_attestation: false
+    outcome_attestation: false
+    permission_attestation: false
+    persistence_attestation: false
+    principal_authentication_attestation: false
+    source_resolution_attestation: false
+    transition_attestation: false
+    truth_attestation: false
+    usage_measurement_attestation: false
+    verifier_independence_attestation: false
+  persistence: none
+
+decision_capsule_structural_replay_core_v1_candidate_contract:
+  profile_id: decision_capsule_structural_replay_core_v1
+  decision_status: proposed
+  delivery: source_distributed_dependency_free_python_pure_contract_with_catalyst_repository_only_go_and_rust_parity
+  mode: exact_caller_supplied_decision_capsule_structural_replay_closure_validation
+  identity:
+    four_object_one_way_structural_replay_dag: true
+    complete_ordered_manifest_projection: true
+    separately_sealed_compare_only_branch: true
+    dedicated_reflection_report_refs_are_unresolved_and_outer_attached: true
+    domain_separated_object_seals: true
+  input_boundary:
+    checker_argv: [python3, harness/decision_capsule_contract_check.py, --golden, .]
+    detector_validates_only_the_pinned_golden: true
+    explicit_file_mode_is_standalone_not_registry_supplied: true
+    stdin_repository_discovery_clock_database_network_or_cache: false
+  implementation:
+    python: source_distributed_dependency_free_strict_pure_contract
+    go: catalyst_repository_only_cross_language_parity_not_scaffolded
+    rust: catalyst_repository_only_cross_language_parity_not_scaffolded
+    rust_registration: unique_module_declaration_not_whole_file_pinned
+    rust_pin_scope: exact14_nested_module_sources_and_tests
+    exact_three_language_golden: true
+  source_distribution:
+    copies_exact_sixteen_file_core_and_three_file_governance: true
+    copies_go_rust_or_runtime_registration: false
+    installs_skill_route_adapter_service_product_command_pdp_controller_or_reflection_runtime: false
+    adds_registry_scope_kind_evaluator_producer_or_runtime_profile: false
+  completion:
+    decision_capsule_structural_replay_repository_slice_complete: false
+    broader_adr_0038_complete: false
+    decision_capsule_complete: false
+    authorized_transaction_spec_complete: false
+    authenticated_pdp_complete: false
+    controller_complete: false
+    authority_promotion_complete: false
+  effective_semantics:
+    comparison: exact_structural_reference_match_only
+    effect_replay_allowed: false
+    history_rewrite_allowed: false
+    instruction_allowed: false
+  positive_result: 'STRUCTURALLY_VALID_DECISION_CAPSULE_REPLAY_CLOSURE_V1 (exact caller-supplied DecisionCapsule and separately sealed deterministic structural comparison only; dedicated ReflectionReport ArtifactRefs are unresolved and attached only by the outer closure; upstream ArtifactRefs remain opaque and uninterpreted; no model, rule or world-state evaluation, effect replay, history rewrite, authorization, persistence, PDP or controller; all thirty-two replay attestations are false)'
+  attestations:
+    approval_authentication_attestation: false
+    attempt_history_completeness_attestation: false
+    authority_attestation: false
+    authorization_attestation: false
+    binding_authentication_attestation: false
+    capsule_completeness_attestation: false
+    cas_attestation: false
+    completion_attestation: false
+    content_provenance_attestation: false
+    effect_attestation: false
+    evaluation_execution_attestation: false
+    evaluator_independence_attestation: false
+    event_append_attestation: false
+    execution_attestation: false
+    external_history_resolution_attestation: false
+    grant_authentication_attestation: false
+    hard_guard_attestation: false
+    instruction_attestation: false
+    outcome_attestation: false
+    permission_attestation: false
+    persistence_attestation: false
+    principal_authentication_attestation: false
+    reflection_completeness_attestation: false
+    replay_equivalence_attestation: false
+    result_authentication_attestation: false
+    rule_evaluation_attestation: false
+    source_resolution_attestation: false
+    transition_attestation: false
+    truth_attestation: false
+    usage_measurement_attestation: false
+    verifier_independence_attestation: false
+    world_state_resolution_attestation: false
+  persistence: none
 
 canonical_refs:
   schema: docs/contracts/governance-evidence-claim-v1.schema.json
@@ -609,6 +2480,43 @@ canonical_refs:
   golden_fixture: docs/contracts/fixtures/governance-evidence-claim-v1.json
   semantic_view_golden_fixture: docs/contracts/fixtures/governance-semantic-view-v1.json
   semantic_view_checker: harness/governance_engineering/semantic_view.py
+  context_package_schema: docs/contracts/context-package-v1.schema.json
+  context_package_golden_fixture: docs/contracts/fixtures/context-package-v1.json
+  context_package_checker: harness/context_package_contract_check.py
+  context_package_skill: .agent/skills/context-engineering.md
+  context_package_portable_skill: skills/context-engineering/SKILL.md
+  context_package_package_manifest: skills/context-engineering/references/package-manifest.json
+  context_engineering_skill_decision: docs/adr/ADR-0071-portable-context-engineering-skill.md
+  evidence_claim_portable_skill: skills/evidence-claim-management/SKILL.md
+  evidence_claim_package_manifest: skills/evidence-claim-management/references/package-manifest.json
+  evidence_claim_validation_skill_decision: docs/adr/ADR-0072-portable-evidence-claim-validation-skill.md
+  policy_authority_portable_skill: skills/policy-authority/SKILL.md
+  policy_authority_package_manifest: skills/policy-authority/references/package-manifest.json
+  policy_authority_portable_decision: docs/adr/ADR-0073-portable-policy-authority-declaration-assessment-skill.md
+  adr_governance_portable_skill: skills/adr-governance/SKILL.md
+  adr_governance_package_manifest: skills/adr-governance/references/package-manifest.json
+  adr_governance_portable_decision: docs/adr/ADR-0074-portable-adr-governance-proposed-document-validation-skill.md
+  knowledge_graph_curation_portable_skill: skills/knowledge-graph-curation/SKILL.md
+  knowledge_graph_curation_package_manifest: skills/knowledge-graph-curation/references/package-manifest.json
+  knowledge_graph_curation_portable_decision: docs/adr/ADR-0075-portable-knowledge-graph-curation-partial-projectors-skill.md
+  change_impact_cost_risk_skill: .agent/skills/change-impact-cost-risk.md
+  change_impact_cost_risk_portable_skill: skills/change-impact-cost-risk/SKILL.md
+  change_impact_cost_risk_package_manifest: skills/change-impact-cost-risk/references/package-manifest.json
+  change_impact_cost_risk_portable_decision: docs/adr/ADR-0076-portable-change-impact-cost-risk-lexical-prescan-skill.md
+  capability_grant_schema: docs/contracts/capability-grant-v1.schema.json
+  capability_grant_golden_fixture: docs/contracts/fixtures/capability-grant-v1.json
+  capability_grant_checker: harness/capability_grant_contract_check.py
+  capability_grant_skill: .agent/skills/policy-authority.md
+  bootstrap_grant_issuance_schema: docs/contracts/bootstrap-grant-issuance-v1.schema.json
+  bootstrap_grant_issuance_golden_fixture: docs/contracts/fixtures/bootstrap-grant-issuance-v1.json
+  bootstrap_grant_issuance_checker: harness/bootstrap_grant_issuance_contract/check.py
+  bootstrap_grant_issuance_skill: .agent/skills/policy-authority.md
+  bootstrap_grant_issuance_decision: docs/adr/0057-authenticated-bootstrap-repo-read-grant-issuance.md
+  bootstrap_repo_read_execution_schema: docs/contracts/bootstrap-repo-read-execution-v1.schema.json
+  bootstrap_repo_read_execution_golden_fixture: docs/contracts/fixtures/bootstrap-repo-read-execution-v1.json
+  bootstrap_repo_read_execution_checker: harness/bootstrap_repo_read_execution_contract/check.py
+  bootstrap_repo_read_execution_skill: .agent/skills/policy-authority.md
+  bootstrap_repo_read_execution_decision: docs/adr/0058-authenticated-bootstrap-repo-read-execution.md
   skill: .agent/skills/evidence-claim-management.md
   checker: harness/governance_contract_check.py
   cognitive_atom_schema: docs/contracts/cognitive-atom-projection-v1.schema.json
@@ -632,9 +2540,106 @@ canonical_refs:
   local_go_package_dependency_graph_observation_producer_schema: docs/contracts/local-go-package-dependency-graph-observation-producer-v1.schema.json
   local_go_package_dependency_graph_observation_producer_golden_fixture: docs/contracts/fixtures/local-go-package-dependency-graph-observation-producer-v1.json
   local_go_package_dependency_graph_observation_producer_checker: harness/go_package_dependency_graph_observation_producer/check.py
+  local_go_package_impact_prescan_schema: docs/contracts/local-go-package-impact-prescan-v1.schema.json
+  local_go_package_impact_prescan_golden_fixture: docs/contracts/fixtures/local-go-package-impact-prescan-v1.json
+  local_go_package_impact_prescan_checker: harness/local_go_package_impact_prescan_contract_check.py
+  graph_snapshot_schema: docs/contracts/graph-snapshot-v1.schema.json
+  graph_snapshot_golden_fixture: docs/contracts/fixtures/graph-snapshot-v1.json
+  graph_snapshot_checker: harness/graph_snapshot_contract_check.py
+  graph_snapshot_skill: .agent/skills/knowledge-graph-curation.md
+  graph_snapshot_test_source_schema: docs/contracts/graph-snapshot-go-test-source-v1.schema.json
+  graph_snapshot_test_source_golden_fixture: docs/contracts/fixtures/graph-snapshot-go-test-source-v1.json
+  graph_snapshot_test_source_checker: harness/graph_snapshot_contract_check.py
+  graph_snapshot_test_source_skill: .agent/skills/knowledge-graph-curation.md
+  architecture_decision_record_v2_schema: docs/contracts/architecture-decision-record-v2.schema.json
+  architecture_decision_record_v2_golden_fixture: docs/contracts/fixtures/ADR-9001-proposed-boundary.md
+  architecture_decision_record_v2_checker: harness/architecture_decision_record_v2_check.py
+  architecture_decision_record_v2_skill: .agent/skills/adr-governance.md
+  capability_registry_schema: docs/contracts/capability-registry-v1.schema.json
+  capability_registry_golden_fixture: docs/contracts/fixtures/capability-registry-v1.json
+  capability_registry_checker: harness/capability_registry_contract/check.py
+  capability_registry_skill: .agent/skills/capability-registry.md
+  capability_registry_decision: docs/adr/ADR-0068-authority-neutral-capability-registry-v1.md
+  planning_capability_ownership_schema: docs/contracts/planning-capability-ownership-projection-v1.schema.json
+  planning_capability_ownership_golden_fixture: docs/contracts/fixtures/planning-capability-ownership-projection-v1.json
+  planning_capability_ownership_checker: harness/planning_capability_ownership_projection/check.py
+  planning_capability_ownership_skill: .agent/skills/capability-ownership-projection.md
+  planning_capability_ownership_decision: docs/adr/ADR-0069-planning-capability-ownership-projection-v1.md
+  planning_capability_ownership_catalog_source: docs/design/ai-engineering-os/capability-catalog.v1.yml
+  planning_capability_ownership_mapping_source: docs/design/ai-engineering-os/capability-skill-map.v1.yml
+  project_source_snapshot_schema: docs/contracts/project-source-snapshot-v1.schema.json
+  project_source_snapshot_golden_fixture: docs/contracts/fixtures/project-source-snapshot-v1.json
+  project_source_snapshot_checker: harness/project_source_snapshot_contract/check.py
+  project_source_snapshot_skill: .agent/skills/project-snapshot.md
+  project_source_snapshot_portable_skill: skills/project-snapshot/SKILL.md
+  project_source_snapshot_package_manifest: skills/project-snapshot/references/package-manifest.json
+  project_source_snapshot_decision: docs/adr/ADR-0070-local-project-source-snapshot-v1.md
+  work_intent_v1_schema: docs/contracts/work-intent-v1.schema.json
+  work_intent_v1_golden_fixture: docs/contracts/fixtures/work-intent-v1.json
+  work_intent_v1_checker: harness/work_intent_contract_check.py
+  work_intent_v1_semantic_decision: docs/adr/ADR-0077-authority-neutral-work-intent-v1-contract.md
+  work_intent_v1_candidate_governance_decision: docs/adr/ADR-0078-work-intent-v1-proposed-candidate-governance-and-source-distribution.md
+  authenticated_adr_approval_v1_schema: docs/contracts/authenticated-architecture-decision-approval-v1.schema.json
+  authenticated_adr_approval_v1_golden_fixture: docs/contracts/fixtures/authenticated-architecture-decision-approval-v1.json
+  authenticated_adr_approval_v1_proposal_fixture: docs/contracts/fixtures/ADR-9002-authenticated-approval-target.md
+  authenticated_adr_approval_v1_checker: harness/authenticated_adr_approval_contract_check.py
+  authenticated_adr_approval_v1_semantic_decision: docs/adr/ADR-0079-authenticated-architecture-decision-approval-v1-prerequisite.md
+  authenticated_adr_approval_v1_candidate_governance_decision: docs/adr/ADR-0080-authenticated-architecture-decision-approval-v1-proposed-candidate-governance-and-source-distribution.md
+  authenticated_adr_approval_v1_go_authority_decision: docs/adr/ADR-0081-authenticated-architecture-decision-approval-authorization-service-v1.md
+  authenticated_adr_lifecycle_v1_schema: docs/contracts/authenticated-architecture-decision-lifecycle-v1.schema.json
+  authenticated_adr_lifecycle_v1_golden_fixture: docs/contracts/fixtures/authenticated-architecture-decision-lifecycle-v1.json
+  authenticated_adr_lifecycle_v1_proposal_head_a_fixture: docs/contracts/fixtures/ADR-9003-lifecycle-head-a.md
+  authenticated_adr_lifecycle_v1_proposal_head_b_fixture: docs/contracts/fixtures/ADR-9004-lifecycle-head-b.md
+  authenticated_adr_lifecycle_v1_proposal_join_fixture: docs/contracts/fixtures/ADR-9005-lifecycle-join.md
+  authenticated_adr_lifecycle_v1_checker: harness/authenticated_adr_lifecycle_contract_check.py
+  authenticated_adr_lifecycle_v1_semantic_decision: docs/adr/ADR-0082-authenticated-architecture-decision-lifecycle-v1-prerequisite.md
+  authenticated_adr_lifecycle_v1_candidate_governance_decision: docs/adr/ADR-0083-authenticated-architecture-decision-lifecycle-v1-proposed-candidate-governance-and-source-distribution.md
+  authenticated_adr_lifecycle_v1_go_authority_decision: docs/adr/ADR-0084-authenticated-architecture-decision-lifecycle-authority-service-v1.md
+  authenticated_adr_lifecycle_v1_go_authority_governance_decision: docs/adr/ADR-0085-authenticated-architecture-decision-lifecycle-authority-evidence-and-source-distribution.md
+  legacy_governance_read_import_v1_schema: docs/contracts/legacy-governance-read-import-v1.schema.json
+  legacy_governance_read_import_v1_memory_fixture: docs/contracts/fixtures/legacy-governance-read-import-memory-v1.jsonl
+  legacy_governance_read_import_v1_adr_0001_fixture: docs/contracts/fixtures/legacy-governance-read-import-ADR-0001.md
+  legacy_governance_read_import_v1_adr_0002_fixture: docs/contracts/fixtures/legacy-governance-read-import-ADR-0002.md
+  legacy_governance_read_import_v1_request_fixture: docs/contracts/fixtures/legacy-governance-read-import-request-v1.json
+  legacy_governance_read_import_v1_view_fixture: docs/contracts/fixtures/legacy-governance-read-import-view-v1.json
+  legacy_governance_read_import_v1_checker: harness/legacy_governance_read_import_contract_check.py
+  legacy_governance_read_import_v1_semantic_decision: docs/adr/ADR-0086-legacy-governance-read-only-import-v1.md
+  legacy_governance_read_import_v1_governance_decision: docs/adr/ADR-0087-legacy-governance-read-import-governance-and-source-distribution.md
+  kernel_operational_reference_core_v1_schema: docs/contracts/kernel-operational-reference-core-v1.schema.json
+  kernel_operational_reference_core_v1_golden_fixture: docs/contracts/fixtures/kernel-operational-reference-closure-v1.json
+  kernel_operational_reference_core_v1_checker: harness/kernel_operational_contract_check.py
+  kernel_operational_reference_core_v1_semantic_decision: docs/adr/ADR-0088-kernel-operational-reference-core-v1.md
+  kernel_operational_reference_core_v1_governance_decision: docs/adr/ADR-0089-kernel-operational-reference-governance-and-source-distribution.md
+  kernel_decision_reference_core_v1_schema: docs/contracts/kernel-decision-reference-core-v1.schema.json
+  kernel_decision_reference_core_v1_golden_fixture: docs/contracts/fixtures/kernel-decision-reference-closure-v1.json
+  kernel_decision_reference_core_v1_checker: harness/kernel_decision_contract_check.py
+  kernel_decision_reference_core_v1_semantic_decision: docs/adr/ADR-0090-kernel-decision-reference-core-v1.md
+  kernel_decision_reference_core_v1_governance_decision: docs/adr/ADR-0091-kernel-decision-reference-governance-and-source-distribution.md
+  decision_capsule_structural_replay_core_v1_schema: docs/contracts/decision-capsule-structural-replay-core-v1.schema.json
+  decision_capsule_structural_replay_core_v1_golden_fixture: docs/contracts/fixtures/decision-capsule-structural-replay-v1.json
+  decision_capsule_structural_replay_core_v1_checker: harness/decision_capsule_contract_check.py
+  decision_capsule_structural_replay_core_v1_semantic_decision: docs/adr/ADR-0092-decision-capsule-structural-replay-core-v1.md
+  decision_capsule_structural_replay_core_v1_governance_decision: docs/adr/ADR-0093-decision-capsule-structural-replay-governance-and-source-distribution.md
   decision: docs/adr/0045-canonical-evidence-claim-contract.md
   journal_decision: docs/adr/0046-local-governance-record-journal.md
   semantic_view_decision: docs/adr/0054-local-governance-semantic-view-v1.md
+  context_package_decision: docs/adr/0055-shadow-context-package-v1.md
+  capability_grant_decision: docs/adr/0056-capability-grant-v1-contract-only.md
+  approval_record_schema: docs/contracts/approval-record-v1.schema.json
+  approval_record_golden_fixture: docs/contracts/fixtures/approval-record-v1.json
+  approval_record_checker: harness/approval_record_contract_check.py
+  approval_record_skill: .agent/skills/policy-authority.md
+  approval_record_decision: docs/adr/0059-approval-record-v1-contract-only.md
+  transition_receipt_schema: docs/contracts/transition-receipt-v1.schema.json
+  transition_receipt_golden_fixture: docs/contracts/fixtures/transition-receipt-v1.json
+  transition_receipt_checker: harness/transition_receipt_contract_check.py
+  transition_receipt_skill: .agent/skills/policy-authority.md
+  transition_receipt_decision: docs/adr/0060-transition-receipt-v1-contract-only.md
+  knowledge_update_proposal_schema: docs/contracts/knowledge-update-proposal-v1.schema.json
+  knowledge_update_proposal_golden_fixture: docs/contracts/fixtures/knowledge-update-proposal-v1.json
+  knowledge_update_proposal_checker: harness/knowledge_update_proposal_contract_check.py
+  knowledge_update_proposal_skill: .agent/skills/evidence-claim-management.md
+  knowledge_update_proposal_decision: docs/adr/0061-knowledge-update-proposal-v1-contract-only.md
   cognitive_atom_decision: docs/adr/0047-shadow-cognitive-atom-projection-v1.md
   artifact_evidence_adapter_decision: docs/adr/0048-artifact-provenance-evidence-adapter-v1.md
   command_observation_evidence_adapter_decision: docs/adr/0049-command-observation-evidence-adapter-v1.md
@@ -642,14 +2647,38 @@ canonical_refs:
   local_gate_command_observation_producer_decision: docs/adr/0051-local-gate-command-observation-producer-v1.md
   local_evolve_repo_locator_observation_producer_decision: docs/adr/0052-local-evolve-repo-locator-observation-producer-v1.md
   local_go_package_dependency_graph_observation_producer_decision: docs/adr/0053-local-go-package-dependency-graph-observation-producer-v1.md
+  local_go_package_impact_prescan_decision: docs/adr/0062-local-go-package-impact-prescan-v1.md
+  graph_snapshot_decision: docs/adr/0065-authority-free-graph-snapshot-v1-contract.md
+  graph_snapshot_test_source_decision: docs/adr/0066-local-go-lexical-test-source-graph-snapshot.md
+  architecture_decision_record_v2_decision: docs/adr/0067-proposed-only-adr-v2-frontmatter.md
   standard: docs/design/ai-engineering-os/governance-contracts.md
 
 contract_pins:
   schema_sha256: b2f8824c95012d94e71b4643756890a7a23f67dc1b9e0e8ecacf979b016864e8
   journal_schema_sha256: 36b0eae0649ea4bb1f2d83fcddae20750513e167bceae82bae8244acbf884fc8
   semantic_view_schema_sha256: 360fb89d1571920090eb28e54678e8aa96f5d007d5acec693beb67fbb8f963f3
+  context_package_schema_sha256: 2e2a934393026c96ebe7e2098462303192fd345aae10eebcf79544a69d7621e3
+  context_package_package_manifest_sha256: 7590df136eb828ba3ffe4892efffa2ab4a77fb87dff8a1bffccdde2d015852c5
+  evidence_claim_package_manifest_sha256: b5d0d15497f47d4310729e7eadf2df506b0c90a1ae982b30b5b453536e98c771
+  policy_authority_package_manifest_sha256: feb21737424b0133e8b57f553ff342b51583917f83e1d47b4b83cd6c3a667132
+  adr_governance_package_manifest_sha256: 88fb16e51af69cb3a2bc38fe2dcae7893a24cee744b85a06eafff70ae841dd3c
+  knowledge_graph_curation_package_manifest_sha256: c9b8397658c3bcecb474966a3efd155f0af550be4fe7319dcdbf23a63cec2008
+  change_impact_cost_risk_package_manifest_sha256: d46202beacc000c6fbdc14afb1c5996476af90d9c0e8927da6f1bf56bf354ad5
+  capability_grant_schema_sha256: dd26568ec430ae5e444ae851ba2b58087528a17e84794137268be3860d9c3209
+  approval_record_schema_sha256: bc11d2b066bac35252bff6739798c3e30a508ed31fca0306b9cf1cdc0ef9ab64
+  transition_receipt_schema_sha256: 94962069c93f55129506b9d4b45f1f9db6d9425ecbdbaef9c06fcbe155e43cbf
+  knowledge_update_proposal_schema_sha256: 5825658017a9debf197cd82a0df4d553bf101ed20b1a35f6ff3e9d07064e4c4b
+  bootstrap_grant_issuance_schema_sha256: 4b68e8bc989f457e602108920a570f9876be8b7bd21e6e1151852314951fdde5
+  bootstrap_repo_read_execution_schema_sha256: 6eb96621f8160bf8b7e8658d3d51dbe1b66f915df4da0eb70d0d412d250e889b
   golden_fixture_sha256: db111600f93e63b3533b1f06b14d7520eb4cbec0e4c6d0e3a6e0fd7e2740824a
   semantic_view_golden_fixture_sha256: a3b6fb9b397231a0647fca845f0118d060c77d975ead2dccb55819aeea6dd66a
+  context_package_golden_fixture_sha256: 1a1c9866f7472055736866be9007040cc8e3d938bb04244bd04fd3bec2aa4b55
+  capability_grant_golden_fixture_sha256: 0261a682bddca2f27976a9cd663350e8cf222685389fecc7ad8ae536083fef35
+  approval_record_golden_fixture_sha256: 501320b9f65775091e67ba22c6e7faa5b5ecaa1f1b472a1a196da93c7ab81978
+  transition_receipt_golden_fixture_sha256: dac0b6d8921aaecaf138c5b62924c8a3b9ac8f9c531a67f2be358d47c1c30da9
+  knowledge_update_proposal_golden_fixture_sha256: 2808e44b27df5f7b183ae7da3847d5780a3f66887d6b49e5fb4544a069a7ad5f
+  bootstrap_grant_issuance_golden_fixture_sha256: 60a234a15080f7c08367ea53f7a3cbfee6722c8ac015bbb09132bdcbdb31b011
+  bootstrap_repo_read_execution_golden_fixture_sha256: 309b3da66c64669239ce40bd086cdcbb518d59dc7fd5e1bad60d6acf9107480d
   cognitive_atom_schema_sha256: 175bf0274f79447452cad74e72b7605d33628f79dea4869de9caa324f1b23952
   cognitive_atom_golden_fixture_sha256: 1c45ecf10d256dfd38357d6a9f04d1455c69350a8d0ae10f2322b4f3aa6995aa
   artifact_evidence_adapter_schema_sha256: c43a743011f98c2311c511fe097efe7cd5a7c2010c2999be91cdef72938bd2bd
@@ -664,6 +2693,71 @@ contract_pins:
   local_evolve_repo_locator_observation_producer_golden_fixture_sha256: fcd6647602eec90db3310f99f42574796998942821255d2bcdab138006991a64
   local_go_package_dependency_graph_observation_producer_schema_sha256: bc14c57fa4e7109218a2fdc6870ff876f326646d1af3abc82c344a86503e9e4e
   local_go_package_dependency_graph_observation_producer_golden_fixture_sha256: d5cb584626239f24bd1e233b226504c5ff64c565d2c8251d44f4e1633e411cfd
+  local_go_package_impact_prescan_schema_sha256: a4592c63a938c090ccc4d6c8187bba8f37909ef6c2d2253fd06f656623c2bb25
+  local_go_package_impact_prescan_golden_fixture_sha256: bc364e387705651d307a3ff18137b857a3fad2c518685a358bba169a835a68d9
+  graph_snapshot_schema_sha256: 9dcaf66cff5b6d10338af6d295c75b2a5925604238cc276f80b68d3783d72bff
+  graph_snapshot_golden_fixture_sha256: 8ce8418e840c97ef28ed77dfd5112c4c4b7d7ae8d843b714674e102d6322b03e
+  graph_snapshot_test_source_schema_sha256: bfada8bb3d183061f2758bfc3645b56dc038b35d38c3c0b779a8ef32afcd17be
+  graph_snapshot_test_source_golden_fixture_sha256: df1b25a933ffa2503f750e2209c9866bfe126e273b28c1181bb211ce48cae5e9
+  architecture_decision_record_v2_schema_sha256: ff3f00b1060b2d777b142947ef1ec9c0920782613d941aa672aecd242cf0341b
+  architecture_decision_record_v2_golden_fixture_sha256: b37dba8cc6d2750bb0ed73c7ee5b3ae61ad25551ec258584ed14618f1cb5c194
+  capability_registry_schema_sha256: f5c5c5abc68e9c5f5d80dce66bb5b97e4e4dedc8cc69189bcc28612991f1ea81
+  capability_registry_golden_fixture_sha256: 0ce4929ad82ce70ef0520be80b7bd3eaf47f5ff1205d0a53e12fbe1115ed11b5
+  planning_capability_ownership_schema_sha256: a2ed6eb754c07478eeaaf2ae73a889ba985553c4220a7b6771be9e6a36078083
+  planning_capability_ownership_golden_fixture_sha256: 3d0a877bef0939cff5752fc5d602e0d3a90e19639308801008f9d2d9ff139f36
+  planning_capability_ownership_catalog_source_sha256: bc6efe535539c5f129af51486d8e81b9844b5ee6448fae2bce649fc159658d74
+  planning_capability_ownership_mapping_source_sha256: bfb2277fe66cd9f0c609b5be10ad77ad0969603edd19e5a6ccbe38b8e3409462
+  project_source_snapshot_schema_sha256: 7e281850579329356090dd19b9f66a8544f7af04c37ac01bca87bad1824a23b1
+  project_source_snapshot_golden_fixture_sha256: 4b23a9c5896a7b279fb4f7a17a4939791f94489c5311354c8b008fdfe665de89
+  project_source_snapshot_package_manifest_sha256: f91f927951b41d0c60c8c40e8e0c0299f4cb74e1468d395e01093d9a84f4a7e3
+  work_intent_v1_schema_sha256: 3b02fab59eae8767c86caaa73d0830adcbd92825045b7f27db0c3eca5ee10e01
+  work_intent_v1_golden_fixture_sha256: 8e80553677ebf9f6548a15be4c3cb4ccc8aa6825010a20f2e890e91d1cd7ed7b
+  authenticated_adr_approval_v1_schema_sha256: 9882e45816f3c3a6e2d84ba09d942848dcc1eae90d3d5193b9cf18b6ebe27198
+  authenticated_adr_approval_v1_golden_fixture_sha256: 936b989856ff733e2de848ba9907c10f9f626aa188648fc60372775e44dbc7b5
+  authenticated_adr_approval_v1_proposal_fixture_sha256: 6beabf33656998b942036b63c90db99c6a5f9b138cf2e5bd4a5372ec8e1ad1f2
+  authenticated_adr_lifecycle_v1_schema_sha256: 17f0f3f79680fd5d7825f574cc20f279f1fc9061ab33a73ef2e86e075d59bcf1
+  authenticated_adr_lifecycle_v1_golden_fixture_sha256: 47f8ceb9c4362f37fe5c48e17342a9ec3bedbb9ccfb87b585cabd3aa7c71dccb
+  authenticated_adr_lifecycle_v1_proposal_head_a_fixture_sha256: 6c9cd0e4b95c968bb280d51b72d74f08a79620077d72611b5634a77b181a0a0b
+  authenticated_adr_lifecycle_v1_proposal_head_b_fixture_sha256: a76e566c7e18801dbc70c42b8b04ce9190cbc3d18892c80cd40c2ff4ec448bf0
+  authenticated_adr_lifecycle_v1_proposal_join_fixture_sha256: c96d2ef2db3311c16572ed5d753c2435193ab58a1abb7c1fc8a9c45d4d9c5dee
+  authenticated_adr_lifecycle_v1_go_authority_decision_sha256: 5792739e70a6bdb6672ab5edbf9abe75a4c5ff16c4be770ac61e26a27e86dc48
+  authenticated_adr_lifecycle_v1_go_authority_manifest_sha256: 1a85aa0aa90414039815e90c7be53d56d0222c8a742e37f33ef9681586a00778
+  legacy_governance_read_import_v1_schema_sha256: 0bc8f6dca9898eebc6efefc2eca3c097fcf1f7a2d5ca5ea3dd11784585216083
+  legacy_governance_read_import_v1_memory_fixture_sha256: 18401766587cb448f605e39bdf43a8a45116247e5f98b65bddfbe9a9cf766ad1
+  legacy_governance_read_import_v1_adr_0001_fixture_sha256: 412064c813fcab0740827df6c6cd0eae2bb1b4837401d9224e1a29a5867b3fe4
+  legacy_governance_read_import_v1_adr_0002_fixture_sha256: a2a5bf66e3090557edd46e1fcc6bd45900d341fd84082dd5490275b0af01c08e
+  legacy_governance_read_import_v1_request_fixture_sha256: 661e024a100e34e86922c88e4bbc02cf86b57af411f2b8af772bfb4be659dccc
+  legacy_governance_read_import_v1_view_fixture_sha256: 6d864e4cb2f02930d8a27d10312ee22fb3695dc6d699ef15969d38ac4cee266c
+  legacy_governance_read_import_v1_decision_sha256: 6dbe26fd38c6d64294f673da9d132d4d28d6dec29d7283aceb26a5b03593701f
+  legacy_governance_read_import_v1_core_manifest_sha256: 3b3317439f2a0fd8ecba889d31f4f019fcb873ffa8106031424dc82bce713b7b
+  legacy_governance_read_import_v1_go_manifest_sha256: 72d8f40e8c04792c3d22ee3a6abd950ba4425d7e0958a87476b3d4e537b395a0
+  kernel_operational_reference_core_v1_schema_sha256: 4e166659b6e6ed39f157bb514565ebd589ae727183e179448839a974b3fbf2b0
+  kernel_operational_reference_core_v1_golden_fixture_sha256: 85f8d9887331fe95e52533c228e40b41750f04dfe10f3a7c77e5a4daff785f2f
+  kernel_operational_reference_core_v1_decision_sha256: e179c3451a28df68051e7dc5f907db5e097c2bca5baab4894700bebafdc9bb77
+  kernel_operational_reference_core_v1_closure_sha256: 1db702583b8dae850413b75b80d620a6031ad452071908e33ea551a4f5feae0e
+  kernel_operational_reference_core_v1_python_manifest_sha256: 7fe140626edb3fc613a9f986ba088c35faefa54b74970a52727d0abc46a8f08c
+  kernel_operational_reference_core_v1_source_manifest_sha256: e6b5dd47e35e00916ea2f112d00bb1e5c5c10be5b03895ef5f892c029e39a3fe
+  kernel_operational_reference_core_v1_go_manifest_sha256: 009b38f62eb434d66e862761be15b55e8d49a5bdf71a2b685a1f3e9758986709
+  kernel_operational_reference_core_v1_rust_module_manifest_sha256: 37e5a2ca8d9896f649a6eef9ba4f146ea5cdd92a1dcdaaa0f2ca5cf97021c2fc
+  kernel_decision_reference_core_v1_schema_sha256: 1add521e4533a0ad41e273d500fd449e9953799e57bdc8df10210d9ebb4238b9
+  kernel_decision_reference_core_v1_golden_fixture_sha256: 93f6225b745eacf966796cb671d723440890ae3ab02699dd40d6a078f539af1c
+  kernel_decision_reference_core_v1_decision_sha256: 5ebb9bcb4fbce5c0e613fe59de44c19fb7c359e506b6ee3b2a6d66e38afd3210
+  kernel_decision_reference_core_v1_closure_sha256: cdadf0e5fddbbda429939be4e68dc77dd0b52c0bb7e4fe955f1d485183908e58
+  kernel_decision_reference_core_v1_python_manifest_sha256: 0c2dd1383454f605cdcfdf42c6b1d2916d62deccedf8e5f1b05d018202125d8e
+  kernel_decision_reference_core_v1_source_manifest_sha256: acab4b66f5bf39161265c0d232cbe225e5d3881362620cdafdd8a2634891a7e1
+  kernel_decision_reference_core_v1_go_manifest_sha256: 1d32535593206275a101f0edbd58788cc5ae92cbddcb8170b7c653168eba8de0
+  kernel_decision_reference_core_v1_rust_flat_manifest_sha256: ce6d042e7b31ee4706626ee7d35e7214b9cd6994a36422cadcdff2ee6b16b187
+  decision_capsule_structural_replay_core_v1_schema_sha256: 6145c150c8be7ee3934e9d93aec6ab89ddbe4cb6ba77a69b88d2e586616eae1f
+  decision_capsule_structural_replay_core_v1_golden_fixture_sha256: d54494f49851cc4146905bbd64c0815fe7d79704476c0aeb1113f270d5cbb2d0
+  decision_capsule_structural_replay_core_v1_decision_sha256: 89c5fb87b1abdd7f8b3fe3cf7bc8759aa43739dfad5f4c79102ba2a26bb4e54b
+  decision_capsule_structural_replay_core_v1_manifest_sha256: 40d1fa34a2fc9b31856d3f16edd1cc346f47d0b447040539b667279f0f67365c
+  decision_capsule_structural_replay_core_v1_capsule_sha256: f02c172fb5d65a36841361a9969dd8ad79eae08c548d1c6d0bbea5a564276b59
+  decision_capsule_structural_replay_core_v1_branch_sha256: 4442cf99caa21eda32a1c4062cfe66b333dff5188f4b818a9c69bf5cb829949a
+  decision_capsule_structural_replay_core_v1_closure_sha256: 38f14574e9a9531371d55800f1f77bbdb79648a121c0f774a2a9c0083cf13497
+  decision_capsule_structural_replay_core_v1_python_manifest_sha256: 353c2cce2251225872fe672141e332a30a42eda2f6e37c9df423b246f351c2cc
+  decision_capsule_structural_replay_core_v1_source_manifest_sha256: 358b6e330789c123cbec6c23e51179f1b82de4ca88af0cb25e7c4ce1bf1cf45f
+  decision_capsule_structural_replay_core_v1_go_manifest_sha256: 5afddbe8ba871c41c7d4a2ff820309be67c589ba56b8227d7e4e34c6d9f570af
+  decision_capsule_structural_replay_core_v1_rust_module_manifest_sha256: 6cab30aca92abe0ddd863bf5b9c88132f9010e466f65b9d83e65124635107caf
 
 reference_implementations:
   python:
@@ -678,6 +2772,87 @@ reference_implementations:
   semantic_view_rust:
     ref: forge-runtime/crates/domain/src/governance_record_journal/semantic_view
     projection: catalyst_repository_only
+  context_package_python:
+    ref: harness/context_package_contract_check.py
+    projection: universal_scaffold
+  context_package_go:
+    ref: forge-core/internal/contextpackagecontract
+    projection: catalyst_repository_only
+  context_package_rust:
+    ref: forge-runtime/crates/domain/src/context_package_contract
+    projection: catalyst_repository_only
+  context_package_portable_skill:
+    ref: skills/context-engineering
+    projection: source_distributed_closed_pure_stdin_adapter_without_provider_or_runtime_authority
+  capability_grant_python:
+    ref: harness/capability_grant_contract_check.py
+    projection: universal_scaffold
+  capability_grant_go:
+    ref: forge-core/internal/capabilitygrantcontract
+    projection: catalyst_repository_only
+  capability_grant_rust:
+    ref: forge-runtime/crates/domain/src/capability_grant_contract
+    projection: catalyst_repository_only
+  approval_record_python:
+    ref: harness/approval_record_contract_check.py
+    projection: universal_scaffold
+  approval_record_go:
+    ref: forge-core/internal/approvalrecordcontract
+    projection: catalyst_repository_only
+  approval_record_rust:
+    ref: forge-runtime/crates/domain/src/approval_record_contract
+    projection: catalyst_repository_only
+  transition_receipt_python:
+    ref: harness/transition_receipt_contract_check.py
+    projection: universal_scaffold
+  transition_receipt_go:
+    ref: forge-core/internal/transitionreceiptcontract
+    projection: catalyst_repository_only
+  transition_receipt_rust:
+    ref: forge-runtime/crates/domain/src/transition_receipt_contract
+    projection: catalyst_repository_only
+  knowledge_update_proposal_python:
+    ref: harness/knowledge_update_proposal_contract_check.py
+    projection: universal_scaffold
+  knowledge_update_proposal_go:
+    ref: forge-core/internal/knowledgeupdateproposalcontract
+    projection: catalyst_repository_only
+  knowledge_update_proposal_rust:
+    ref: forge-runtime/crates/domain/src/knowledge_update_proposal_contract
+    projection: catalyst_repository_only
+  bootstrap_grant_issuance_python_checker:
+    ref: harness/bootstrap_grant_issuance_contract/check.py
+    projection: universal_scaffold_structural_only
+  bootstrap_grant_issuance_go:
+    ref: forge-core/internal/bootstrapgrantauthority
+    projection: catalyst_repository_only
+  bootstrap_grant_issuance_runtime_go:
+    ref: forge-core/internal/bootstrapgrantissuance
+    projection: catalyst_repository_only_not_scaffolded
+  bootstrap_grant_issuance_kernel_cli:
+    ref: forge-core/cmd/forge-kernel
+    projection: catalyst_repository_only_not_scaffolded
+  bootstrap_grant_issuance_state_go:
+    ref: forge-core/internal/grantstate
+    projection: catalyst_repository_only_wire_neutral_not_scaffolded
+  bootstrap_repo_read_execution_python_checker:
+    ref: harness/bootstrap_repo_read_execution_contract/check.py
+    projection: universal_scaffold_structural_only
+  bootstrap_repo_read_execution_authority_go:
+    ref: forge-core/internal/bootstraprepoexecutionauthority
+    projection: catalyst_repository_only_not_scaffolded
+  bootstrap_repo_read_execution_runtime_go:
+    ref: forge-core/internal/bootstrapreporeadexecution
+    projection: catalyst_repository_only_not_scaffolded
+  bootstrap_repo_read_execution_reader_go:
+    ref: forge-core/internal/pinnedreporead
+    projection: catalyst_repository_only_not_scaffolded
+  bootstrap_repo_read_execution_state_go:
+    ref: forge-core/internal/grantstate
+    projection: catalyst_repository_only_wire_neutral_not_scaffolded
+  bootstrap_repo_read_execution_kernel_cli:
+    ref: forge-core/cmd/forge-kernel
+    projection: catalyst_repository_only_not_scaffolded
   cognitive_atom_python:
     ref: harness/cognitive_atom_contract_check.py
     projection: universal_scaffold
@@ -732,15 +2907,170 @@ reference_implementations:
   local_go_package_dependency_graph_observation_producer_python_checker:
     ref: harness/go_package_dependency_graph_observation_producer/check.py
     projection: universal_scaffold
+  local_go_package_impact_prescan_go:
+    ref: forge-core/internal/goimpactprescan
+    projection: catalyst_repository_only_pure_bytes_evaluator
+  local_go_package_impact_prescan_python:
+    ref: harness/local_go_package_impact_prescan_contract
+    projection: universal_scaffold_pure_evaluator_and_strict_checker
+  graph_snapshot_go:
+    ref: forge-core/internal/graphsnapshot
+    projection: catalyst_repository_only_pure_bytes_projector
+  graph_snapshot_python:
+    ref: harness/graph_snapshot_contract
+    projection: universal_scaffold_pure_projector_and_strict_checker
+  graph_snapshot_test_source_go:
+    ref: forge-core/internal/graphsnapshot
+    projection: catalyst_repository_only_pure_bytes_projector
+  graph_snapshot_test_source_python:
+    ref: harness/graph_snapshot_contract
+    projection: universal_scaffold_pure_projector_and_strict_checker
+  architecture_decision_record_v2_python:
+    ref: harness/architecture_decision_record_v2
+    projection: universal_scaffold_strict_proposed_document_checker
+  architecture_decision_record_v2_go:
+    ref: forge-core/internal/adrv2
+    projection: catalyst_repository_only_current_writes_adr_candidate_validator
+  capability_registry_go:
+    ref: forge-core/internal/capabilityregistry
+    projection: catalyst_repository_only_pure_validator_resolver_and_cli
+  capability_registry_python:
+    ref: harness/capability_registry_contract
+    projection: universal_scaffold_pure_validator_resolver_and_physical_checker
+  planning_capability_ownership_go:
+    ref: forge-core/internal/planningownership
+    projection: catalyst_repository_only_pure_projector_and_product_cli
+  planning_capability_ownership_python:
+    ref: harness/planning_capability_ownership_projection
+    projection: universal_scaffold_pure_projector_and_internal_checker
+  project_source_snapshot_go:
+    ref: forge-core/internal/projectsnapshot
+    projection: catalyst_repository_only_strict_pure_decoder_and_linux_live_producer_not_scaffolded
+  project_source_snapshot_python:
+    ref: harness/project_source_snapshot_contract
+    projection: source_portable_strict_pure_decoder_and_golden_checker
+  project_source_snapshot_portable_skill:
+    ref: skills/project-snapshot
+    projection: source_distributed_closed_package_adapter_without_runtime
+  work_intent_v1_python:
+    ref: harness/work_intent_contract
+    projection: source_distributed_strict_proposed_candidate_semantic_core_and_golden_checker
+  work_intent_v1_go:
+    ref: forge-core/internal/workintentcontract
+    projection: catalyst_repository_only_strict_proposed_candidate_semantic_core_not_scaffolded
+  work_intent_v1_rust:
+    ref: forge-runtime/crates/domain/src/work_intent_contract
+    projection: catalyst_repository_only_strict_proposed_candidate_semantic_core_not_scaffolded
+  authenticated_adr_approval_v1_python:
+    ref: harness/authenticated_adr_approval_contract
+    projection: source_distributed_dependency_free_strict_proposed_structural_prerequisite_core_and_golden_checker
+  authenticated_adr_approval_v1_go_contract:
+    ref: forge-core/internal/authenticatedadrapprovalcontract
+    projection: catalyst_repository_only_proposed_exact_structural_contract_not_scaffolded
+  authenticated_adr_approval_v1_go_authority:
+    ref: forge-core/internal/authenticatedadrapprovalauthority
+    projection: catalyst_repository_only_proposed_external_trust_authenticated_authorization_and_durable_store_not_scaffolded
+  authenticated_adr_lifecycle_v1_python:
+    ref: harness/authenticated_adr_lifecycle_contract
+    projection: source_distributed_dependency_free_strict_proposed_structural_prerequisite_core_and_golden_checker
+  authenticated_adr_lifecycle_v1_go_contract:
+    ref: forge-core/internal/authenticatedadrlifecyclecontract
+    projection: catalyst_repository_only_exact_frozen_structural_contract_not_scaffolded
+  authenticated_adr_lifecycle_v1_go_authority:
+    ref: forge-core/internal/authenticatedadrlifecycleauthority
+    projection: catalyst_repository_only_stored_authorization_authenticated_lifecycle_authority_and_durable_store_not_scaffolded
+  legacy_governance_read_import_v1_python:
+    ref: harness/legacy_governance_read_import_contract
+    projection: source_distributed_dependency_free_strict_pure_core
+  legacy_governance_read_import_v1_python_checker:
+    ref: harness/legacy_governance_read_import_contract_check.py
+    projection: source_distributed_zero_argument_explicit_stdin_only
+  legacy_governance_read_import_v1_go:
+    ref: forge-core/internal/legacygovernanceimportcontract
+    projection: catalyst_repository_only_cross_language_parity_not_scaffolded
+  kernel_operational_reference_core_v1_python:
+    ref: harness/kernel_operational_contract
+    projection: source_distributed_dependency_free_strict_pure_contract
+  kernel_operational_reference_core_v1_python_checker:
+    ref: harness/kernel_operational_contract_check.py
+    projection: source_distributed_pinned_golden_or_explicit_file_checker
+  kernel_operational_reference_core_v1_go:
+    ref: forge-core/internal/kerneloperationalcontract
+    projection: catalyst_repository_only_cross_language_parity_not_scaffolded
+  kernel_operational_reference_core_v1_rust:
+    ref: forge-runtime/crates/domain/src/kernel_operational_contract
+    projection: catalyst_repository_only_exact13_module_parity_with_unpinned_unique_registration_not_scaffolded
+  kernel_decision_reference_core_v1_python:
+    ref: harness/kernel_decision_contract
+    projection: source_distributed_dependency_free_strict_pure_contract
+  kernel_decision_reference_core_v1_python_checker:
+    ref: harness/kernel_decision_contract_check.py
+    projection: source_distributed_pinned_golden_or_explicit_file_checker
+  kernel_decision_reference_core_v1_go:
+    ref: forge-core/internal/kerneldecisioncontract
+    projection: catalyst_repository_only_exact13_cross_language_parity_not_scaffolded
+  kernel_decision_reference_core_v1_rust:
+    ref: forge-runtime/crates/domain/src/kernel_decision_contract
+    projection: catalyst_repository_only_flat_exact9_parity_with_unpinned_unique_registration_not_scaffolded
+  decision_capsule_structural_replay_core_v1_python:
+    ref: harness/decision_capsule_contract
+    projection: source_distributed_dependency_free_strict_pure_contract
+  decision_capsule_structural_replay_core_v1_python_checker:
+    ref: harness/decision_capsule_contract_check.py
+    projection: source_distributed_pinned_golden_or_explicit_file_checker
+  decision_capsule_structural_replay_core_v1_go:
+    ref: forge-core/internal/decisioncapsulecontract
+    projection: catalyst_repository_only_exact15_cross_language_parity_not_scaffolded
+  decision_capsule_structural_replay_core_v1_rust:
+    ref: forge-runtime/crates/domain/src/decision_capsule_contract
+    projection: catalyst_repository_only_exact14_nested_module_parity_with_unpinned_unique_registration_not_scaffolded
+  evidence_claim_portable_skill:
+    ref: skills/evidence-claim-management
+    projection: source_distributed_closed_validation_only_stdin_adapter_without_authorship_persistence_or_authority
+  policy_authority_portable_skill:
+    ref: skills/policy-authority
+    projection: source_distributed_closed_dual_pure_stdin_adapters_without_live_policy_approval_or_authority
+  adr_governance_portable_skill:
+    ref: skills/adr-governance
+    projection: source_distributed_closed_proposed_document_validator_without_authoring_acceptance_lifecycle_or_authority
+  knowledge_graph_curation_portable_skill:
+    ref: skills/knowledge-graph-curation
+    projection: source_distributed_closed_two_existing_partial_projectors_without_live_capture_runtime_route_or_authority
+  change_impact_cost_risk_portable_skill:
+    ref: skills/change-impact-cost-risk
+    projection: source_distributed_closed_existing_ADR_0062_lexical_prescan_projector_without_live_capture_full_impact_cost_risk_runtime_route_or_authority
 
 non_capabilities:
   - no truth ledger authoritative current-knowledge view or authoritative lifecycle promotion
   - semantic freshness and validity labels compare declared times only and do not attest real-world freshness or truth
   - conflict groups expose deterministic candidates only and perform no arbitration or winner selection
   - validation jobs are deterministic schedules only and perform no execution evidence collection or verdict
-  - no authenticated principal collector reviewer or authority
+  - no authenticated principal collector reviewer or authority outside the exact ADR-0057 issuance and ADR-0058 repo-read execution profiles
   - no confirmed fact accepted decision waiver or hard-gate satisfaction
-  - no ContextPackage CapabilityGrant Approval or Transition runtime
+  - no authoritative ContextPackage provider-prompt complete CapabilityGrant Approval PDP Transition or KnowledgeUpdate runtime outside the exact ADR-0057 issuance and ADR-0058 repo-read execution profiles
+  - Portable Context Engineering assembles only caller-supplied exact bytes with the frozen fixture counter; it discovers no sources, invokes no provider or model, installs no prompt or host Skill, authenticates no publisher, provides no check-to-use atomicity, Grant, PDP, Approval, truth, instruction, completion, persistence, runtime routing, execution or effect authority
+  - Portable Evidence Claim validation accepts only already-authored caller-supplied exact bytes and performs structural validation only; it observes or authors nothing, repairs no records, emits no record bytes, reads no ambient repository environment network clock provider model database subprocess journal semantic view or proposal source, persists nothing, authenticates no provenance identity host publisher or interpreter, installs no host Skill, provides no atomic check-to-use binding, and grants no truth instruction completion Grant PDP Approval permission routing transition execution or effect authority
+  - Portable Policy Authority assessment compares only caller-supplied exact CapabilityGrant or ApprovalRecord declarations; it issues approves activates revokes reserves consumes persists or executes nothing, authenticates no issuer approver proof identity key policy host publisher or interpreter, invokes no ADR-0057 or ADR-0058 runtime Governance Kernel PDP PEP approval store revocation registry usage ledger or effect, installs no host Skill, provides no atomic check-to-use binding, and grants no effective approval authorization permission routing transition completion or production authority
+  - Portable ADR Governance validates only caller-supplied exact Proposed ADR v2 bytes against one caller-supplied lexical basename; the label proves no physical file or repository identity, and the package authors repairs normalizes reseals accepts supersedes persists or executes nothing, reads no ambient repository workspace environment clock identity ApprovalRecord Claim Evidence graph policy database network provider model or lifecycle state, installs no host Skill, provides no atomic check-to-use binding, and attests no identity ownership approver truth acceptance compliance immutability transition execution completion or effect authority
+  - Portable Knowledge Graph Curation only distributes the two unchanged ADR-0065 and ADR-0066 pure partial projectors over caller-supplied exact request bytes; it adds no third projector ABI wrapper union dispatcher profile route evaluator producer live repository build or test capture, authenticates no caller graph project repository host publisher or interpreter, keeps coverage partial and system freshness unknown, treats test nodes only as lexical source sets rather than tests outcomes verification or coverage, installs no host Skill, persists and executes nothing, provides no atomic check-to-use binding, and attests no truth authority completion acceptance compliance impact transition execution or effect
+  - Portable Change Impact Cost Risk only distributes the unchanged ADR-0062 pure lexical ImpactPreScan projector over one caller-supplied exact request; it accepts no raw or parsed graph fixture envelope wrapper union dispatcher or mode, invokes no ADR-0053 producer or live repository build test runtime or cross-surface capture, authenticates no caller graph project repository host publisher or interpreter, keeps system impact unknown, never promotes lexical complete_within_observation or zero dependents to system completeness safe no-impact low-Cost or low-Risk, provides no final ChangeImpactReport Cost Risk materiality gate or AssessmentReceipt, installs no host Skill, persists and executes nothing, provides no atomic check-to-use binding, and attests no truth identity ownership evidence claim authority approval acceptance compliance completion permission transition execution or effect
+  - WorkIntent v1 is only Proposed cross-language candidate structural validation of a caller-supplied lexical declaration; valid or digest parity does not authenticate origin, requester or owner, resolve references, determine freshness, materiality or scope, close G0, register, route, produce, evaluate or consume work, create Run, RunJournal or lifecycle, approve, authorize or permit, persist, execute or effect, install a Skill, or implement change-intake-orchestration; Go and Rust remain Catalyst-only and source distribution copies Python only
+  - Authenticated Architecture Decision Approval v1 is only a Proposed pure offline structural prerequisite over caller-supplied proof-shaped bytes; it does not verify Ed25519 or SoD proofs, authenticate roots, keys, principals, proposals or publishers, authorize, sign, mint or issue a receipt, consume an external root or epoch pin, establish trusted time or current revocation, provide durable CAS or rollback resistance, accept or transition an ADR, close G0, register a route, kind, evaluator, producer or runtime profile, persist, execute or effect, install a Skill or adapter, or implement ADR lifecycle; ADR-0081 Go contract and authority evidence remains Catalyst-repository-only, while source distribution copies Python only and no Go contract, authority, production keys or state
+  - ADR-0081 records a Proposed Catalyst-repository-only Go approval authority that can authenticate and durably store authorization relative to explicit external trust inputs, but Registry evidence does not provision a production root, key, state, clock, revocation publisher or transport, register a command, socket, route, scope or runtime profile, accept or mutate an ADR, close G0, or copy any Go authority, production key or state into source distribution
+  - Authenticated Architecture Decision Lifecycle v1 is only a Proposed dependency-free Python structural prerequisite over caller-supplied proof-shaped bytes; valid structure or a Go StoredAuthorization prerequisite does not verify lifecycle signatures, authenticate external root, time or revocation currentness, authorize or perform acceptance, rejection, atomic supersession or repository mutation, generate Accepted source, enforce immutability or architecture compliance, provide CAS, durability or rollback resistance, close G0, register a Skill, adapter, route, kind, evaluator, producer or runtime profile, persist, execute or effect; source distribution copies Python only and no Go contract, authority, production key or state
+  - ADR-0084 is only Proposed Catalyst-repository lifecycle authority evidence relative to explicit external trust and a real opaque StoredAuthorization; Registry v35 and source-only distribution provision no production root, key, seed, state, clock, revocation publisher, caller or transport, copy no Go contract or authority, receipt or ledger, add no command, socket, route, Skill, evaluator, producer, service, registry scope or runtime profile, do not rewrite source or generate an Accepted ADR, grant permission, create a generalized Effect, attest architecture compliance or administrator rollback resistance, or close G0
+  - ADR-0086/0087 only project caller-supplied legacy Memory and ADR bytes into an unverified read-only view; Registry v39 supplies no stdin data, source authentication or completeness, confidence or status interpretation, conflict resolution, truth, currentness, instruction, acceptance, winner, persistence or runtime effect, adds no Skill, route, evaluator, producer, service or runtime profile, and source distribution copies Python governance only, never the Catalyst Go parity package, ambient path reader, database, state or authority
+  - ADR-0088/0089 only validate exact caller-supplied Kernel operational reference declarations and an acyclic closure; Registry v39 authenticates no principal, Grant, artifact content, source/context/environment/policy binding, authorization, permission, event append, persistence, transition, execution, outcome, completion, effect or usage measurement, adds no Skill, route, kind, evaluator, producer, service or runtime profile, copies no Catalyst Go or Rust parity or runtime registration, and does not complete CognitiveAtom, DecisionTransaction or the full Kernel ABI
+  - ADR-0090/0091 only validate exact caller-supplied Kernel decision and operational reference declarations; Registry v39 keeps declared authority and hardness ineffective, instructions disabled and all twenty-two attestations false, authenticates no source, principal, Approval, Grant, artifact content or binding, performs no authorization, CAS, event append, persistence, transition, execution, outcome, completion, effect or usage measurement, adds no Skill, route, kind, evaluator, producer, service, PDP, controller or runtime profile, copies no Catalyst Go or Rust parity or runtime registration, and stages only the structural reference-family ABI candidate while ADR-0038, DecisionCapsule and AuthorizedTransactionSpec remain incomplete
+  - ADR-0092/0093 only validate an exact caller-supplied Decision Capsule structural replay DAG; Registry v39 keeps both replay controls and all thirty-two attestations false, resolves no external history or Reflection report, evaluates no model, rule or world state, authenticates no source, principal, authority, Approval, Grant, result or binding, performs no authorization, CAS, event append, persistence, transition, execution, outcome, completion, effect or usage measurement, adds no Skill, route, kind, evaluator, producer, service, PDP, controller, Reflection runtime or runtime profile, copies no Catalyst Go or Rust parity or registration, and stages only a structural replay repository candidate while ADR-0038, DecisionCapsule and AuthorizedTransactionSpec remain incomplete
+  - CapabilityGrant v1 is a strict contract-only envelope and declared-relation assessment with no issuer authentication policy decision approval revocation usage preflight authorization permission persistence execution effect or production authority
+  - ApprovalRecord v1 is a strict contract-only record projection and caller-time declared assessment; it imports no local marker flag actor hint session identity key policy condition risk revocation or workflow state and provides no authenticated approver authority proof SoD effective approval authorization permission persistence transition execution effect or production authority
+  - TransitionReceipt v1 is a strict contract-only state graph receipt and caller-time declared assessment; listed edges predecessor recovery applicability preconditions Grant and Approval reference equality provide no authenticated controller actor state truth waiver permission effective approval ledger persistence transition execution effect completion or production authority
+  - KnowledgeUpdateProposal v1 is a strict contract-only proposal record-closure mutation and caller-time declared assessment with no authenticated proposer Grant Context evidence truth current head conflict freshness policy or authority and no truth adoption authorization permission persistence apply receipt execution effect or production authority
+  - ADR-0057 authenticates and persists only bootstrap repository-reader/v1 repo.read Grant issuance; it performs no repository read or other effect and provides no plan finalization Approval revocation usage reservation preflight postflight PEP ContextPackage provider Transition Knowledge key lifecycle remote HA multitenant or production authority
+  - ADR-0058 authenticates only one manifest-bound Linux openat2 repo.read with single-use usage receipts; it provides no Approval revocation write network process secret target production Context reassembly general PDP remote HA or multitenant authority
+  - ADR-0058 raw buffers are only best-effort cleared and provide no secure erasure of strings GC kernel or downstream copies process isolation or HSM attestation
+  - local 0600 and effective UID checks are not OS principal HSM isolation or complete production trust proof; forge accept is completion authority and never a Grant issuer or execution authority
   - no knowledge apply or legacy Memory and ADR promotion
   - no pre-code block completion verdict or production effect
   - CognitiveAtom v1 is a pure Claim projection with no truth authority instruction hard-guard transition completion or effect attestation
@@ -751,3 +3081,10 @@ non_capabilities:
   - Local gate command observation producer is explicit opt-in Unix local capture only and does not attest pass criterion completion truth authority identity persistence or external effects
   - Local Evolve locator observation producer is explicit opt-in Unix local capture only and does not authenticate Git attest scan judgment completion truth authority persistence or external effects or automatically bind ADR-0050 Evidence
   - Local Go package dependency graph observation producer is explicit opt-in Unix lexical source observation only; it executes no Go toolchain command, resolves no actual GOOS/GOARCH/build tags/cgo/module cache/workspace/vendor/replace semantics, and attests no dependency availability, selected build, compile/test/runtime reachability, graph completeness, architecture judgment, impact closure, truth or authority; it does not authenticate Git, create Evidence/Claim/Atom/Context/Grant/Impact/Cost/Risk, append journal, write SQLite, persist data, or contain sandbox/egress/external effects
+  - Local Go Package ImpactPreScan v1 computes only the exact ADR-0053 local lexical reverse dependency closure from caller-supplied bytes; system impact remains unknown, and it performs no live capture, selected-build analysis, dependency availability check, GraphSnapshot or final ChangeImpactReport/Cost/Risk/AssessmentReceipt derivation, authority, completion, persistence, execution, or effect
+  - GraphSnapshot v1 projects only an exact caller-supplied ADR-0053 selected-Go-module lexical observation into a partial module/package graph; all other surfaces and freshness remain unknown, and it performs no live capture, selected-build or cross-surface analysis, authenticated provenance, truth, authority, permission, completion, persistence, execution, impact, Cost/Risk/AssessmentReceipt derivation, G3 or Assessment Join satisfaction, or effect
+  - GraphSnapshot Go lexical test-source profile v1 projects only exact caller-supplied ADR-0053 bytes into a partial module/package/test-source-set graph; test nodes are lexical source sets rather than test cases, executions, outcomes, coverage or verified-subject mappings, both Go and test surfaces remain partial, system/freshness remain unknown, and it performs no live capture, selected-build or cross-surface completeness analysis, authenticated provenance, truth, authority, permission, completion, persistence, execution, verification, impact, Cost/Risk/AssessmentReceipt derivation, G3 or Assessment Join satisfaction, or effect
+  - ArchitectureDecisionRecord v2 validates only one explicitly supplied new Proposed document and its declared reference shapes; writes_adr retains its existing legacy-baseline integrity snapshot but does not parse retro-validate or migrate legacy ADRs, authenticate owners or approvers, resolve ApprovalRecord Claim Evidence or Graph nodes, produce graph coverage or edges, accept or transition decisions, enforce immutability or compliance, persist lifecycle state, execute lifecycle actions, or attest authority completion or effect
+  - Capability Registry v1 validates and resolves exactly one physically bound local-go-package-impact-prescan/1 declaration; it does not import or project the planning-only 140-item catalog, generate catalog-to-package adapters, authenticate the Registry or owner, activate Grant/PDP, construct a CapabilityInvocation, evaluate/select/execute an implementation, load a plugin, route runtime work, persist state, authorize permission, advance a transition, dispatch an effect, or attest availability test pass or authority
+  - Planning Capability Ownership Projection v1 proves only complete unique declared primary-owner coverage and derives unresolved logical adapter refs from two caller-supplied exact planning sources; it does not authenticate sources or owners, resolve or generate files, Skill packages or host adapters, mutate the ADR-0068 Registry, activate Grant/PDP, construct CapabilityInvocation, select or execute implementations, load plugins, route runtime work, persist state, authorize permission, advance a transition, or attest execution or effect
+  - Project Source Snapshot v1 is only a Linux-produced two-endpoint bounded local Git worktree observation with fixed pre-read path exclusions and partial/unknown coverage; it does not authenticate Git, HEAD, repository, caller or host, scan allowed content for secrets, provide atomic/current/complete project or graph state, mutate the ADR-0068 Registry, activate Grant/PDP/CapabilityInvocation, install a host Skill, grant permission, persist current state, route runtime work, execute effects or attest truth

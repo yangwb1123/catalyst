@@ -10,6 +10,7 @@ id: discover
 stage: discover                       # 脊柱段 / spine stage
 title: Idea → 已验证的需求 (validated requirement)
 readonly: true                        # 全程只读:Discover 不写产物代码,只产出分析 / no code artifacts emitted
+output_binding_contract: local_digest_v1 # accepted command output writes local digest-bound receipts
 description: >
   把一句 Idea 推导成「带置信度的需求 + 竞品能力矩阵 + MVP/高级分层」。
   深度由 mode 裁决 (depth gated by mode):见下方 mode_gating —— explorer 整段跳过。

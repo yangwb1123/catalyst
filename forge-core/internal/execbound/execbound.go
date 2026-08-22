@@ -14,6 +14,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -85,9 +86,10 @@ const (
 // Spec is the per-run command configuration beyond argv. Zero value = os/exec
 // defaults (inherit cwd, inherit env, no stdin).
 type Spec struct {
-	Dir   string    // working directory; "" = inherit forge's cwd
-	Env   []string  // child environment; nil = inherit parent (os/exec default)
-	Stdin io.Reader // child stdin; nil = os/exec default
+	Dir        string     // working directory; "" = inherit forge's cwd
+	Env        []string   // child environment; nil = inherit parent (os/exec default)
+	Stdin      io.Reader  // child stdin; nil = os/exec default
+	ExtraFiles []*os.File // inherited descriptors beginning at fd 3; nil = none
 	// ExecutablePath, when non-empty, is the already-resolved executable used
 	// for this run while argv[0] remains the caller-declared process name. It
 	// is primarily useful to producers that resolve and snapshot a tool before
@@ -132,6 +134,7 @@ func Run(ctx context.Context, argv []string, opts Options, capture Capture, spec
 	if spec.Stdin != nil {
 		cmd.Stdin = spec.Stdin
 	}
+	cmd.ExtraFiles = append([]*os.File(nil), spec.ExtraFiles...)
 	if capture == CaptureSplit {
 		stdout := &cappedBuffer{cap: maxBytes(opts.MaxOutputBytes)}
 		stderr := &cappedBuffer{cap: maxBytes(opts.MaxOutputBytes)}

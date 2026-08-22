@@ -1,6 +1,10 @@
+pub mod approval_record_contract;
 pub mod artifact_evidence_contract;
+pub mod capability_grant_contract;
 pub mod cognitive_atom_contract;
 pub mod command_observation_evidence_contract;
+pub mod context_package_contract;
+pub mod decision_capsule_contract;
 mod event;
 pub mod evolve_repo_locator_evidence_contract;
 pub mod governance_contract;
@@ -19,11 +23,16 @@ mod group_model_analysis;
 mod group_panel_synthesis;
 mod hub;
 mod hub_store;
+pub mod kernel_decision_contract;
+pub mod kernel_operational_contract;
+pub mod knowledge_update_proposal_contract;
 mod model;
 mod run;
 mod run_journal;
 mod run_store;
 mod tool;
+pub mod transition_receipt_contract;
+pub mod work_intent_contract;
 
 pub use event::{
     Cancellation, EventSink, EventSinkError, PROTOCOL_VERSION, RuntimeEvent, RuntimeEventKind,
