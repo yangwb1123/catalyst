@@ -1,0 +1,343 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forgeos.dev/contracts/authenticated-architecture-decision-lifecycle-v1.schema.json",
+  "title": "Authenticated Architecture Decision Lifecycle v1 structural prerequisite",
+  "description": "Closed proof-shaped lifecycle state over immutable Proposed ADR v2 bytes. Structural validity verifies no Ed25519 signature, external root, trusted time, revocation currentness, durable authorization provenance, repository mutation, atomic persistence, Accepted source, architecture compliance, permission, or effect.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["api_version", "approval_trust_root", "canonicalization", "kind", "lifecycle_result", "lifecycle_state", "lifecycle_trust_root", "profile_id", "signature_profile"],
+  "properties": {
+    "api_version": {"const": "forgeos.authenticated-architecture-decision-lifecycle-bundle/v1"},
+    "approval_trust_root": {"$ref": "authenticated-architecture-decision-approval-v1.schema.json#/$defs/trust_root"},
+    "canonicalization": {"const": "forgeos.canonical-json/v1"},
+    "kind": {"const": "AuthenticatedArchitectureDecisionLifecycleBundle"},
+    "lifecycle_result": {"$ref": "#/$defs/result"},
+    "lifecycle_state": {"$ref": "#/$defs/state"},
+    "lifecycle_trust_root": {"$ref": "#/$defs/lifecycle_root"},
+    "profile_id": {"const": "authenticated_architecture_decision_lifecycle_v1"},
+    "signature_profile": {"$ref": "authenticated-architecture-decision-approval-v1.schema.json#/$defs/signature_profile"}
+  },
+  "x-forgeos-canonicalization": {
+    "format": "forgeos.canonical-json/v1",
+    "trust_root_domain": "forgeos.authenticated-architecture-decision-lifecycle.trust-root.v1\u0000",
+    "prerequisite_domain": "forgeos.authenticated-architecture-decision-lifecycle.acceptance-prerequisite.v1\u0000",
+    "request_domain": "forgeos.authenticated-architecture-decision-lifecycle.request.v1\u0000",
+    "acceptance_domain": "forgeos.authenticated-architecture-decision-lifecycle.acceptance-receipt.v1\u0000",
+    "supersession_domain": "forgeos.authenticated-architecture-decision-lifecycle.supersession-receipt.v1\u0000",
+    "entry_domain": "forgeos.authenticated-architecture-decision-lifecycle.entry.v1\u0000",
+    "ledger_domain": "forgeos.authenticated-architecture-decision-lifecycle.ledger.v1\u0000",
+    "head_set_domain": "forgeos.authenticated-architecture-decision-lifecycle.head-set.v1\u0000",
+    "view_domain": "forgeos.authenticated-architecture-decision-lifecycle.materialized-view.v1\u0000",
+    "state_domain": "forgeos.authenticated-architecture-decision-lifecycle.state.v1\u0000",
+    "record_key_domain": "forgeos.authenticated-architecture-decision-lifecycle.idempotency-record-key.v1\u0000",
+    "self_digest_rules": [
+      "each self-digest field is empty in its own preimage",
+      "request_id and request_sha256 are jointly empty",
+      "acceptance_id and acceptance_sha256 are jointly empty",
+      "supersession receipt_id and receipt_sha256 are jointly empty",
+      "signature.signature_base64url is empty for every signed-shaped lifecycle artifact",
+      "authorization_receipt_physical_sha256 is bare SHA-256 of exact canonical embedded ADR-0081 receipt bytes including signature bytes"
+    ]
+  },
+  "x-forgeos-signature-domains": {
+    "message_suffix": "raw_32_byte_artifact_sha256_digest",
+    "request": "forgeos.authenticated-architecture-decision-lifecycle.request.signature.v1\u0000",
+    "acceptance_receipt": "forgeos.authenticated-architecture-decision-lifecycle.acceptance-receipt.signature.v1\u0000",
+    "supersession_receipt": "forgeos.authenticated-architecture-decision-lifecycle.supersession-receipt.signature.v1\u0000",
+    "state": "forgeos.authenticated-architecture-decision-lifecycle.state.signature.v1\u0000"
+  },
+  "x-forgeos-limits": {
+    "max_profile_bytes": 16384,
+    "max_lifecycle_root_bytes": 65536,
+    "max_proposal_bytes": 262144,
+    "max_request_bytes": 1048576,
+    "max_acceptance_receipt_bytes": 262144,
+    "max_supersession_receipt_bytes": 262144,
+    "max_entry_bytes": 4194304,
+    "max_ledger_bytes": 67108864,
+    "max_view_bytes": 8388608,
+    "max_state_bytes": 83886080,
+    "max_bundle_and_golden_bytes": 100663296,
+    "max_entries": 256,
+    "max_decisions": 256,
+    "max_supersessions_per_entry": 64,
+    "max_json_depth": 16,
+    "max_object_fields": 64,
+    "max_array_items": 256,
+    "integer_domain": "signed_int64",
+    "composition_rule": "every enclosing byte ceiling applies even when all child maxima cannot coexist"
+  },
+  "x-forgeos-authority-semantics": {
+    "delivery": "pure_offline_structural_candidate_only",
+    "source_adr_status": "immutable_proposed_bytes_only",
+    "derived_lifecycle_status": "materialized_view_only",
+    "signature_verification": "not_implemented",
+    "external_root_pin": "not_consumed",
+    "trusted_time": "not_consumed",
+    "approval_durable_provenance": "not_established_by_serialized_prerequisite",
+    "generic_verified_bundle_is_consumable": false,
+    "repository_mutation": "not_implemented",
+    "atomicity_cas_persistence_durability": "not_attested",
+    "architecture_compliance": "not_evaluated",
+    "permission_attestation": false,
+    "effect_attestation": false,
+    "positive_result": "STRUCTURALLY_VALID_AUTHENTICATED_ADR_LIFECYCLE_V1_CANDIDATE (declared exact bytes/digests/relations only; no Ed25519, external-root, trusted-time, revocation-currentness, authorization, repository-mutation, Accepted-source, atomicity, persistence, CAS, durability, rollback-resistance, architecture-compliance, permission, or effect attestation)"
+  },
+  "$defs": {
+    "hash": {"type": "string", "minLength": 64, "maxLength": 64, "pattern": "^[0-9a-f]{64}$"},
+    "adr_id": {"type": "string", "pattern": "^ADR-(?:000[1-9]|00[1-9][0-9]|0[1-9][0-9]{2}|[1-9][0-9]{3})$"},
+    "text": {"type": "string", "minLength": 1, "maxLength": 160, "not": {"pattern": "[\\u0000-\\u001f\\u007f\\u061c\\u200e\\u200f\\u2028-\\u202e\\u2066-\\u2069\\ud800-\\udfff]"}},
+    "unix_ms": {"type": "integer", "minimum": 0, "maximum": 9223372036854775807},
+    "signature": {
+      "type": "object", "additionalProperties": false,
+      "required": ["key_id", "profile_id", "profile_sha256", "signature_base64url"],
+      "properties": {
+        "key_id": {"$ref": "#/$defs/text"},
+        "profile_id": {"const": "forgeos.ed25519-domain-sha256/v1"},
+        "profile_sha256": {"$ref": "#/$defs/hash"},
+        "signature_base64url": {"type": "string", "minLength": 86, "maxLength": 86, "pattern": "^[A-Za-z0-9_-]{85}[AQgw]$"}
+      }
+    },
+    "principal": {
+      "type": "object", "additionalProperties": false,
+      "required": ["authority_domain", "principal_id", "principal_type"],
+      "properties": {
+        "authority_domain": {"$ref": "#/$defs/text"},
+        "principal_id": {"$ref": "#/$defs/text"},
+        "principal_type": {"enum": ["agent", "human", "operator", "service"]}
+      }
+    },
+    "root_key": {
+      "type": "object", "additionalProperties": false,
+      "required": ["key_id", "principal", "public_key_base64url", "usage"],
+      "properties": {
+        "key_id": {"$ref": "#/$defs/text"},
+        "principal": {"$ref": "#/$defs/principal"},
+        "public_key_base64url": {"type": "string", "minLength": 43, "maxLength": 43, "pattern": "^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$"},
+        "usage": {"enum": ["architecture_decision_lifecycle_request_auth", "architecture_decision_lifecycle_state_sign"]}
+      }
+    },
+    "lifecycle_root": {
+      "type": "object", "additionalProperties": false,
+      "required": ["api_version", "canonicalization", "keys", "kind", "profile_id", "root_sha256", "signature_profile_sha256", "trust_domain", "trust_epoch"],
+      "properties": {
+        "api_version": {"const": "forgeos.architecture-decision-lifecycle-trust-root/v1"},
+        "canonicalization": {"const": "forgeos.canonical-json/v1"},
+        "keys": {"type": "array", "minItems": 2, "maxItems": 2, "uniqueItems": true, "items": {"$ref": "#/$defs/root_key"}},
+        "kind": {"const": "ArchitectureDecisionLifecycleTrustRoot"},
+        "profile_id": {"const": "authenticated_architecture_decision_lifecycle_v1"},
+        "root_sha256": {"$ref": "#/$defs/hash"},
+        "signature_profile_sha256": {"$ref": "#/$defs/hash"},
+        "trust_domain": {"$ref": "#/$defs/text"},
+        "trust_epoch": {"type": "integer", "minimum": 1, "maximum": 9223372036854775807}
+      }
+    },
+    "prerequisite": {
+      "type": "object", "additionalProperties": false,
+      "required": ["api_version", "approval_trust_epoch", "approval_trust_root_sha256", "authorization_ledger_clock_high_water_unix_ms", "authorization_ledger_last_sequence", "authorization_ledger_sha256", "authorization_ledger_signature", "authorization_receipt", "authorization_receipt_physical_sha256", "canonicalization", "kind", "observed_at_unix_ms", "prerequisite_sha256", "profile_id", "proposal_binding", "revocation_high_water_sequence", "revocation_high_water_sha256"],
+      "properties": {
+        "api_version": {"const": "forgeos.architecture-decision-acceptance-prerequisite/v1"},
+        "approval_trust_epoch": {"type": "integer", "minimum": 1, "maximum": 9223372036854775807},
+        "approval_trust_root_sha256": {"$ref": "#/$defs/hash"},
+        "authorization_ledger_clock_high_water_unix_ms": {"$ref": "#/$defs/unix_ms"},
+        "authorization_ledger_last_sequence": {"type": "integer", "minimum": 1, "maximum": 64},
+        "authorization_ledger_sha256": {"$ref": "#/$defs/hash"},
+        "authorization_ledger_signature": {"$ref": "#/$defs/signature"},
+        "authorization_receipt": {"$ref": "authenticated-architecture-decision-approval-v1.schema.json#/$defs/receipt"},
+        "authorization_receipt_physical_sha256": {"$ref": "#/$defs/hash"},
+        "canonicalization": {"const": "forgeos.canonical-json/v1"},
+        "kind": {"const": "ArchitectureDecisionAcceptancePrerequisite"},
+        "observed_at_unix_ms": {"$ref": "#/$defs/unix_ms"},
+        "prerequisite_sha256": {"$ref": "#/$defs/hash"},
+        "profile_id": {"const": "authenticated_architecture_decision_lifecycle_v1"},
+        "proposal_binding": {"$ref": "authenticated-architecture-decision-approval-v1.schema.json#/$defs/proposal_binding"},
+        "revocation_high_water_sequence": {"type": "integer", "minimum": 1, "maximum": 256},
+        "revocation_high_water_sha256": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "target": {
+      "type": "object", "additionalProperties": false,
+      "required": ["acceptance_id", "acceptance_sha256", "adr_id", "proposal_binding_sha256"],
+      "properties": {
+        "acceptance_id": {"type": "string", "pattern": "^architecture-decision-acceptance-[0-9a-f]{64}$"},
+        "acceptance_sha256": {"$ref": "#/$defs/hash"},
+        "adr_id": {"$ref": "#/$defs/adr_id"},
+        "proposal_binding_sha256": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "request": {
+      "type": "object", "additionalProperties": false,
+      "required": ["acceptance_prerequisite", "api_version", "canonicalization", "expected_current_head_set_sha256", "expected_ledger_sha256", "expected_next_sequence", "expires_at_unix_ms", "idempotency_key", "kind", "profile_id", "proposal_document_base64url", "request_id", "request_sha256", "requested_at_unix_ms", "signature", "supersession_targets", "trust_epoch", "trust_root_sha256"],
+      "properties": {
+        "acceptance_prerequisite": {"$ref": "#/$defs/prerequisite"},
+        "api_version": {"const": "forgeos.architecture-decision-lifecycle-transition-request/v1"},
+        "canonicalization": {"const": "forgeos.canonical-json/v1"},
+        "expected_current_head_set_sha256": {"$ref": "#/$defs/hash"},
+        "expected_ledger_sha256": {"oneOf": [{"$ref": "#/$defs/hash"}, {"type": "null"}]},
+        "expected_next_sequence": {"type": "integer", "minimum": 1, "maximum": 256},
+        "expires_at_unix_ms": {"$ref": "#/$defs/unix_ms"},
+        "idempotency_key": {"type": "string", "minLength": 16, "maxLength": 128, "pattern": "^[A-Za-z0-9._:@+\\-]+$"},
+        "kind": {"const": "ArchitectureDecisionLifecycleTransitionRequest"},
+        "profile_id": {"const": "authenticated_architecture_decision_lifecycle_v1"},
+        "proposal_document_base64url": {"type": "string", "minLength": 1, "maxLength": 349526, "pattern": "^[A-Za-z0-9_-]+$"},
+        "request_id": {"type": "string", "pattern": "^architecture-decision-lifecycle-request-[0-9a-f]{64}$"},
+        "request_sha256": {"$ref": "#/$defs/hash"},
+        "requested_at_unix_ms": {"$ref": "#/$defs/unix_ms"},
+        "signature": {"$ref": "#/$defs/signature"},
+        "supersession_targets": {"type": "array", "maxItems": 64, "uniqueItems": true, "items": {"$ref": "#/$defs/target"}},
+        "trust_epoch": {"type": "integer", "minimum": 1, "maximum": 9223372036854775807},
+        "trust_root_sha256": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "acceptance": {
+      "type": "object", "additionalProperties": false,
+      "required": ["acceptance_id", "acceptance_sha256", "accepted_at_unix_ms", "adr_id", "api_version", "authorization_receipt_physical_sha256", "authorization_receipt_sha256", "canonicalization", "kind", "ledger_sequence", "profile_id", "proposal_binding_sha256", "record_key_sha256", "request_sha256", "signature", "supersedes", "trust_epoch", "trust_root_sha256"],
+      "properties": {
+        "acceptance_id": {"type": "string", "pattern": "^architecture-decision-acceptance-[0-9a-f]{64}$"},
+        "acceptance_sha256": {"$ref": "#/$defs/hash"},
+        "accepted_at_unix_ms": {"$ref": "#/$defs/unix_ms"},
+        "adr_id": {"$ref": "#/$defs/adr_id"},
+        "api_version": {"const": "forgeos.architecture-decision-lifecycle-acceptance-receipt/v1"},
+        "authorization_receipt_physical_sha256": {"$ref": "#/$defs/hash"},
+        "authorization_receipt_sha256": {"$ref": "#/$defs/hash"},
+        "canonicalization": {"const": "forgeos.canonical-json/v1"},
+        "kind": {"const": "ArchitectureDecisionLifecycleAcceptanceReceipt"},
+        "ledger_sequence": {"type": "integer", "minimum": 1, "maximum": 256},
+        "profile_id": {"const": "authenticated_architecture_decision_lifecycle_v1"},
+        "proposal_binding_sha256": {"$ref": "#/$defs/hash"},
+        "record_key_sha256": {"$ref": "#/$defs/hash"},
+        "request_sha256": {"$ref": "#/$defs/hash"},
+        "signature": {"$ref": "#/$defs/signature"},
+        "supersedes": {"type": "array", "maxItems": 64, "uniqueItems": true, "items": {"$ref": "#/$defs/adr_id"}},
+        "trust_epoch": {"type": "integer", "minimum": 1, "maximum": 9223372036854775807},
+        "trust_root_sha256": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "supersession": {
+      "type": "object", "additionalProperties": false,
+      "required": ["api_version", "canonicalization", "kind", "ledger_sequence", "profile_id", "receipt_id", "receipt_sha256", "request_sha256", "signature", "superseded_at_unix_ms", "superseded_by_acceptance_id", "superseded_by_adr_id", "superseded_by_proposal_binding_sha256", "target_acceptance_id", "target_adr_id", "target_proposal_binding_sha256", "trust_epoch", "trust_root_sha256"],
+      "properties": {
+        "api_version": {"const": "forgeos.architecture-decision-lifecycle-supersession-receipt/v1"},
+        "canonicalization": {"const": "forgeos.canonical-json/v1"},
+        "kind": {"const": "ArchitectureDecisionLifecycleSupersessionReceipt"},
+        "ledger_sequence": {"type": "integer", "minimum": 1, "maximum": 256},
+        "profile_id": {"const": "authenticated_architecture_decision_lifecycle_v1"},
+        "receipt_id": {"type": "string", "pattern": "^architecture-decision-supersession-[0-9a-f]{64}$"},
+        "receipt_sha256": {"$ref": "#/$defs/hash"},
+        "request_sha256": {"$ref": "#/$defs/hash"},
+        "signature": {"$ref": "#/$defs/signature"},
+        "superseded_at_unix_ms": {"$ref": "#/$defs/unix_ms"},
+        "superseded_by_acceptance_id": {"type": "string", "pattern": "^architecture-decision-acceptance-[0-9a-f]{64}$"},
+        "superseded_by_adr_id": {"$ref": "#/$defs/adr_id"},
+        "superseded_by_proposal_binding_sha256": {"$ref": "#/$defs/hash"},
+        "target_acceptance_id": {"type": "string", "pattern": "^architecture-decision-acceptance-[0-9a-f]{64}$"},
+        "target_adr_id": {"$ref": "#/$defs/adr_id"},
+        "target_proposal_binding_sha256": {"$ref": "#/$defs/hash"},
+        "trust_epoch": {"type": "integer", "minimum": 1, "maximum": 9223372036854775807},
+        "trust_root_sha256": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "entry": {
+      "type": "object", "additionalProperties": false,
+      "required": ["acceptance_receipt", "api_version", "canonicalization", "entry_sha256", "kind", "prior_entry_sha256", "profile_id", "request", "resulting_current_head_set_sha256", "sequence", "supersession_receipts"],
+      "properties": {
+        "acceptance_receipt": {"$ref": "#/$defs/acceptance"},
+        "api_version": {"const": "forgeos.architecture-decision-lifecycle-ledger-entry/v1"},
+        "canonicalization": {"const": "forgeos.canonical-json/v1"},
+        "entry_sha256": {"$ref": "#/$defs/hash"},
+        "kind": {"const": "ArchitectureDecisionLifecycleLedgerEntry"},
+        "prior_entry_sha256": {"oneOf": [{"$ref": "#/$defs/hash"}, {"type": "null"}]},
+        "profile_id": {"const": "authenticated_architecture_decision_lifecycle_v1"},
+        "request": {"$ref": "#/$defs/request"},
+        "resulting_current_head_set_sha256": {"$ref": "#/$defs/hash"},
+        "sequence": {"type": "integer", "minimum": 1, "maximum": 256},
+        "supersession_receipts": {"type": "array", "maxItems": 64, "uniqueItems": true, "items": {"$ref": "#/$defs/supersession"}}
+      }
+    },
+    "ledger": {
+      "type": "object", "additionalProperties": false,
+      "required": ["api_version", "canonicalization", "current_head_set_sha256", "entries", "kind", "last_sequence", "ledger_sha256", "profile_id"],
+      "properties": {
+        "api_version": {"const": "forgeos.architecture-decision-lifecycle-ledger/v1"},
+        "canonicalization": {"const": "forgeos.canonical-json/v1"},
+        "current_head_set_sha256": {"$ref": "#/$defs/hash"},
+        "entries": {"type": "array", "minItems": 1, "maxItems": 256, "items": {"$ref": "#/$defs/entry"}},
+        "kind": {"const": "ArchitectureDecisionLifecycleLedger"},
+        "last_sequence": {"type": "integer", "minimum": 1, "maximum": 256},
+        "ledger_sha256": {"$ref": "#/$defs/hash"},
+        "profile_id": {"const": "authenticated_architecture_decision_lifecycle_v1"}
+      }
+    },
+    "decision": {
+      "type": "object", "additionalProperties": false,
+      "required": ["acceptance_id", "acceptance_sha256", "accepted_at_unix_ms", "adr_id", "authorization_receipt_physical_sha256", "authorization_receipt_sha256", "document_name", "expires_at_unix_ms", "proposal_binding_sha256", "proposed_at_unix_ms", "source_body_sha256", "source_physical_sha256", "source_self_sha256", "status", "superseded_at_unix_ms", "superseded_by", "supersession_receipt_sha256", "supersedes"],
+      "properties": {
+        "acceptance_id": {"type": "string", "pattern": "^architecture-decision-acceptance-[0-9a-f]{64}$"},
+        "acceptance_sha256": {"$ref": "#/$defs/hash"},
+        "accepted_at_unix_ms": {"$ref": "#/$defs/unix_ms"},
+        "adr_id": {"$ref": "#/$defs/adr_id"},
+        "authorization_receipt_physical_sha256": {"$ref": "#/$defs/hash"},
+        "authorization_receipt_sha256": {"$ref": "#/$defs/hash"},
+        "document_name": {"type": "string", "minLength": 12, "maxLength": 255, "pattern": "^ADR-[0-9]{4}-[a-z0-9]+(?:-[a-z0-9]+)*\\.md$"},
+        "expires_at_unix_ms": {"oneOf": [{"$ref": "#/$defs/unix_ms"}, {"type": "null"}]},
+        "proposal_binding_sha256": {"$ref": "#/$defs/hash"},
+        "proposed_at_unix_ms": {"$ref": "#/$defs/unix_ms"},
+        "source_body_sha256": {"$ref": "#/$defs/hash"},
+        "source_physical_sha256": {"$ref": "#/$defs/hash"},
+        "source_self_sha256": {"$ref": "#/$defs/hash"},
+        "status": {"enum": ["accepted", "superseded"]},
+        "superseded_at_unix_ms": {"oneOf": [{"$ref": "#/$defs/unix_ms"}, {"type": "null"}]},
+        "superseded_by": {"type": "array", "maxItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/adr_id"}},
+        "supersession_receipt_sha256": {"oneOf": [{"$ref": "#/$defs/hash"}, {"type": "null"}]},
+        "supersedes": {"type": "array", "maxItems": 64, "uniqueItems": true, "items": {"$ref": "#/$defs/adr_id"}}
+      }
+    },
+    "view": {
+      "type": "object", "additionalProperties": false,
+      "required": ["api_version", "canonicalization", "current_head_set_sha256", "decisions", "head_adr_ids", "kind", "last_sequence", "ledger_sha256", "profile_id", "view_sha256"],
+      "properties": {
+        "api_version": {"const": "forgeos.architecture-decision-lifecycle-materialized-view/v1"},
+        "canonicalization": {"const": "forgeos.canonical-json/v1"},
+        "current_head_set_sha256": {"$ref": "#/$defs/hash"},
+        "decisions": {"type": "array", "minItems": 1, "maxItems": 256, "items": {"$ref": "#/$defs/decision"}},
+        "head_adr_ids": {"type": "array", "minItems": 1, "maxItems": 256, "uniqueItems": true, "items": {"$ref": "#/$defs/adr_id"}},
+        "kind": {"const": "ArchitectureDecisionLifecycleMaterializedView"},
+        "last_sequence": {"type": "integer", "minimum": 1, "maximum": 256},
+        "ledger_sha256": {"$ref": "#/$defs/hash"},
+        "profile_id": {"const": "authenticated_architecture_decision_lifecycle_v1"},
+        "view_sha256": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "state": {
+      "type": "object", "additionalProperties": false,
+      "required": ["api_version", "canonicalization", "kind", "ledger", "materialized_view", "profile_id", "signature", "state_sha256", "trust_epoch", "trust_root_sha256"],
+      "properties": {
+        "api_version": {"const": "forgeos.architecture-decision-lifecycle-state/v1"},
+        "canonicalization": {"const": "forgeos.canonical-json/v1"},
+        "kind": {"const": "ArchitectureDecisionLifecycleState"},
+        "ledger": {"$ref": "#/$defs/ledger"},
+        "materialized_view": {"$ref": "#/$defs/view"},
+        "profile_id": {"const": "authenticated_architecture_decision_lifecycle_v1"},
+        "signature": {"$ref": "#/$defs/signature"},
+        "state_sha256": {"$ref": "#/$defs/hash"},
+        "trust_epoch": {"type": "integer", "minimum": 1, "maximum": 9223372036854775807},
+        "trust_root_sha256": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "result": {
+      "type": "object", "additionalProperties": false,
+      "required": ["api_version", "canonicalization", "delivery_disposition", "entry_sha256", "kind", "ledger_sha256", "materialized_view_sha256", "receipt", "state_sha256"],
+      "properties": {
+        "api_version": {"const": "forgeos.architecture-decision-lifecycle-transition-result/v1"},
+        "canonicalization": {"const": "forgeos.canonical-json/v1"},
+        "delivery_disposition": {"enum": ["exact_replay", "stored"]},
+        "entry_sha256": {"$ref": "#/$defs/hash"},
+        "kind": {"const": "ArchitectureDecisionLifecycleTransitionResult"},
+        "ledger_sha256": {"$ref": "#/$defs/hash"},
+        "materialized_view_sha256": {"$ref": "#/$defs/hash"},
+        "receipt": {"$ref": "#/$defs/acceptance"},
+        "state_sha256": {"$ref": "#/$defs/hash"}
+      }
+    }
+  }
+}

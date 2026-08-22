@@ -1,0 +1,240 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forgeos.dev/contracts/work-intent-v1.schema.json",
+  "title": "ForgeOS WorkIntent v1 authority-neutral Proposed candidate",
+  "description": "Exact caller-supplied lexical WorkIntent declaration. Structural validity authenticates no origin, resolves no reference, closes no gate, and grants no authority or runtime effect.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "api_version", "attestations", "binding", "canonicalization",
+    "declared_at_unix_ms", "declared_owner", "freshness", "intent", "kind",
+    "materiality", "origin", "references", "requester", "status",
+    "work_intent_id", "work_intent_sha256"
+  ],
+  "properties": {
+    "api_version": { "const": "forgeos.work-intent/v1" },
+    "attestations": { "$ref": "#/$defs/attestations" },
+    "binding": { "$ref": "#/$defs/binding" },
+    "canonicalization": { "const": "forgeos.canonical-json/v1" },
+    "declared_at_unix_ms": { "$ref": "#/$defs/unix_ms" },
+    "declared_owner": {
+      "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/principal" }]
+    },
+    "freshness": { "const": "not_evaluated" },
+    "intent": { "$ref": "#/$defs/intent" },
+    "kind": { "const": "WorkIntent" },
+    "materiality": { "$ref": "#/$defs/materiality" },
+    "origin": { "$ref": "#/$defs/origin" },
+    "references": { "$ref": "#/$defs/references" },
+    "requester": { "$ref": "#/$defs/principal" },
+    "status": { "const": "declared_unassessed" },
+    "work_intent_id": {
+      "type": "string",
+      "pattern": "^work-intent-[0-9a-f]{64}$",
+      "minLength": 76,
+      "maxLength": 76
+    },
+    "work_intent_sha256": { "$ref": "#/$defs/hash" }
+  },
+  "x-forgeos-canonicalization": {
+    "format": "forgeos.canonical-json/v1",
+    "instance_framing": "exact compact canonical UTF-8 JSON with no trailing LF",
+    "digest_domain_ascii": "forgeos.work-intent.v1\u0000",
+    "digest_rule": "SHA-256(domain bytes followed by the complete canonical record with only work_intent_id and work_intent_sha256 replaced by empty strings)",
+    "id_rule": "work-intent- followed by work_intent_sha256",
+    "blank_preimage_and_sealed_record_max_bytes": 262144
+  },
+  "x-forgeos-semantic-ordering": {
+    "narrative_arrays": "preserve authored order; each array is exact-string unique and is not sorted",
+    "narrative_total_max_items": 256,
+    "record_refs": "strictly sorted and unique by record_id UTF-8 bytes; claim and evidence record IDs are mutually disjoint",
+    "local_artifact_declarations": "strictly sorted and unique by complete canonical member bytes; artifact_kind plus artifact_ref pairs are unique even when hashes differ"
+  },
+  "x-forgeos-limits": {
+    "max_instance_bytes": 262144,
+    "max_json_depth": 8,
+    "max_object_fields": 32,
+    "max_array_items": 256,
+    "max_string_utf8_bytes": 16384,
+    "max_short_text_utf8_bytes": 160,
+    "max_reference_text_utf8_bytes": 4096,
+    "max_claim_record_refs": 64,
+    "max_evidence_record_refs": 64,
+    "max_combined_record_refs": 128,
+    "max_local_artifact_declarations": 32,
+    "integer_domain": "signed_int64",
+    "timestamps": "nonnegative signed_int64; deadline may precede declared_at"
+  },
+  "x-forgeos-authority-semantics": {
+    "delivery": "Proposed candidate semantic core only",
+    "caller_fields": "lexical declarations only",
+    "origin_authentication": false,
+    "reference_resolution": false,
+    "g0_closure": false,
+    "routing": false,
+    "run_or_run_journal_existence": false,
+    "lifecycle_transition": false,
+    "semantic_authority": false,
+    "positive_result": "STRUCTURALLY_VALID_DECLARED_WORK_INTENT_V1 (exact caller-supplied declaration only; no origin authentication, reference resolution, G0, routing, Run or RunJournal existence, lifecycle, approval, authentication, authority, completion, effect, execution, freshness, materiality, ownership, permission, persistence, scope, or truth attestation)"
+  },
+  "$defs": {
+    "hash": {
+      "type": "string", "minLength": 64, "maxLength": 64,
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "text": {
+      "type": "string", "minLength": 1, "maxLength": 16384,
+      "not": { "pattern": "[\\u0000-\\u001f\\u007f-\\u009f\\u061c\\u200e\\u200f\\u2028-\\u202e\\u2066-\\u2069\\ud800-\\udfff]" }
+    },
+    "short_text": {
+      "allOf": [{ "$ref": "#/$defs/text" }, { "maxLength": 160 }]
+    },
+    "identifier": {
+      "allOf": [
+        { "$ref": "#/$defs/text" },
+        { "maxLength": 160, "pattern": "^[a-z0-9][a-z0-9._:/-]{0,159}$" }
+      ]
+    },
+    "reference_text": {
+      "allOf": [{ "$ref": "#/$defs/text" }, { "maxLength": 4096 }]
+    },
+    "unix_ms": {
+      "type": "integer", "minimum": 0, "maximum": 9223372036854775807
+    },
+    "principal": {
+      "type": "object", "additionalProperties": false,
+      "required": ["authority_domain", "principal_id", "principal_type"],
+      "properties": {
+        "authority_domain": { "$ref": "#/$defs/short_text" },
+        "principal_id": { "$ref": "#/$defs/short_text" },
+        "principal_type": { "enum": ["agent", "human", "operator", "service"] }
+      }
+    },
+    "attestations": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "approval_attestation", "authentication_attestation", "authority_attestation",
+        "completion_attestation", "effect_attestation", "execution_attestation",
+        "freshness_attestation", "materiality_attestation", "ownership_attestation",
+        "permission_attestation", "persistence_attestation",
+        "reference_resolution_attestation", "scope_attestation", "truth_attestation"
+      ],
+      "properties": {
+        "approval_attestation": { "const": false },
+        "authentication_attestation": { "const": false },
+        "authority_attestation": { "const": false },
+        "completion_attestation": { "const": false },
+        "effect_attestation": { "const": false },
+        "execution_attestation": { "const": false },
+        "freshness_attestation": { "const": false },
+        "materiality_attestation": { "const": false },
+        "ownership_attestation": { "const": false },
+        "permission_attestation": { "const": false },
+        "persistence_attestation": { "const": false },
+        "reference_resolution_attestation": { "const": false },
+        "scope_attestation": { "const": false },
+        "truth_attestation": { "const": false }
+      }
+    },
+    "binding": {
+      "type": "object", "additionalProperties": false,
+      "required": ["change_id", "project_id", "run_id"],
+      "properties": {
+        "change_id": { "$ref": "#/$defs/short_text" },
+        "project_id": { "$ref": "#/$defs/short_text" },
+        "run_id": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/short_text" }] }
+      }
+    },
+    "narrative_array": {
+      "type": "array", "minItems": 0, "maxItems": 64, "uniqueItems": true,
+      "items": { "$ref": "#/$defs/text" }
+    },
+    "required_narrative_array": {
+      "type": "array", "minItems": 1, "maxItems": 64, "uniqueItems": true,
+      "items": { "$ref": "#/$defs/text" }
+    },
+    "intent": {
+      "type": "object", "additionalProperties": false,
+      "required": ["deadline_unix_ms", "external_constraints", "goal", "non_goals",
+                   "open_questions", "scope", "success_signals", "work_type"],
+      "properties": {
+        "deadline_unix_ms": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/unix_ms" }] },
+        "external_constraints": { "$ref": "#/$defs/narrative_array" },
+        "goal": { "$ref": "#/$defs/text" },
+        "non_goals": { "$ref": "#/$defs/narrative_array" },
+        "open_questions": { "$ref": "#/$defs/narrative_array" },
+        "scope": { "$ref": "#/$defs/required_narrative_array" },
+        "success_signals": { "$ref": "#/$defs/required_narrative_array" },
+        "work_type": { "enum": ["architecture_evolution", "defect", "feature",
+          "incident_response", "migration", "question", "refactor", "small_change"] }
+      }
+    },
+    "materiality": {
+      "type": "object", "additionalProperties": false,
+      "required": ["basis", "level"],
+      "properties": {
+        "basis": { "const": "caller_declaration_only" },
+        "level": { "enum": ["L0", "L1", "L2", "L3", "L4", "materiality_not_bound"] }
+      }
+    },
+    "origin": {
+      "type": "object", "additionalProperties": false,
+      "required": ["origin_kind", "origin_ref"],
+      "properties": {
+        "origin_kind": { "enum": ["incident", "operator_request", "other",
+          "reflection_proposal", "runtime_signal", "technical_debt", "user_request"] },
+        "origin_ref": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/reference_text" }] }
+      }
+    },
+    "record_ref": {
+      "type": "object", "additionalProperties": false,
+      "required": ["canonical_sha256", "record_id"],
+      "properties": {
+        "canonical_sha256": { "$ref": "#/$defs/hash" },
+        "record_id": { "$ref": "#/$defs/identifier" }
+      }
+    },
+    "artifact": {
+      "type": "object", "additionalProperties": false,
+      "required": ["artifact_kind", "artifact_ref", "artifact_sha256"],
+      "properties": {
+        "artifact_kind": { "$ref": "#/$defs/short_text" },
+        "artifact_ref": { "$ref": "#/$defs/reference_text" },
+        "artifact_sha256": { "$ref": "#/$defs/hash" }
+      }
+    },
+    "source_snapshot": {
+      "type": "object", "additionalProperties": false,
+      "required": ["snapshot_id", "snapshot_sha256", "snapshot_type"],
+      "properties": {
+        "snapshot_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "snapshot_sha256": { "$ref": "#/$defs/hash" },
+        "snapshot_type": { "enum": ["artifact", "external", "repository", "runtime"] }
+      }
+    },
+    "references": {
+      "type": "object", "additionalProperties": false,
+      "required": ["claim_record_refs", "evidence_record_refs",
+        "local_artifact_declarations", "local_source_snapshot_declaration"],
+      "properties": {
+        "claim_record_refs": {
+          "type": "array", "maxItems": 64, "uniqueItems": true,
+          "items": { "$ref": "#/$defs/record_ref" }
+        },
+        "evidence_record_refs": {
+          "type": "array", "maxItems": 64, "uniqueItems": true,
+          "items": { "$ref": "#/$defs/record_ref" }
+        },
+        "local_artifact_declarations": {
+          "type": "array", "maxItems": 32, "uniqueItems": true,
+          "items": { "$ref": "#/$defs/artifact" }
+        },
+        "local_source_snapshot_declaration": {
+          "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/source_snapshot" }]
+        }
+      }
+    }
+  }
+}
