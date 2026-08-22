@@ -1,0 +1,247 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forgeos.local/contracts/decision-capsule-structural-replay-core-v1.schema.json",
+  "title": "ForgeOS Decision Capsule structural replay core v1",
+  "description": "Structural shadow of the strict reference validators. Runtime validation additionally enforces canonical UTF-8 bytes, byte ceilings, domain-separated identities, exact ADR-0090 reseal equality, complete ordered manifest projection, branch binding, and the one-way capsule-to-branch-to-outer digest DAG.",
+  "$ref": "#/$defs/structural_replay_closure",
+  "x-forgeos-authority-semantics": {
+    "effect_replay_allowed": false,
+    "history_rewrite_allowed": false,
+    "positive_result": "STRUCTURALLY_VALID_DECISION_CAPSULE_REPLAY_CLOSURE_V1 (exact caller-supplied DecisionCapsule and separately sealed deterministic structural comparison only; dedicated ReflectionReport ArtifactRefs are unresolved and attached only by the outer closure; upstream ArtifactRefs remain opaque and uninterpreted; no model, rule or world-state evaluation, effect replay, history rewrite, authorization, persistence, PDP or controller; all thirty-two replay attestations are false)"
+  },
+  "x-forgeos-runtime-byte-limits": {
+    "structural_replay_manifest": 4194304,
+    "decision_capsule": 27262976,
+    "evaluation_branch": 65536,
+    "structural_replay_closure": 29360128,
+    "maximum_depth": 16,
+    "maximum_object_fields": 64,
+    "maximum_array_items": 256,
+    "maximum_string_utf8_bytes": 16384
+  },
+  "$defs": {
+    "hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+    },
+    "attestations": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "approval_authentication_attestation",
+        "attempt_history_completeness_attestation",
+        "authority_attestation",
+        "authorization_attestation",
+        "binding_authentication_attestation",
+        "capsule_completeness_attestation",
+        "cas_attestation",
+        "completion_attestation",
+        "content_provenance_attestation",
+        "effect_attestation",
+        "evaluation_execution_attestation",
+        "evaluator_independence_attestation",
+        "event_append_attestation",
+        "execution_attestation",
+        "external_history_resolution_attestation",
+        "grant_authentication_attestation",
+        "hard_guard_attestation",
+        "instruction_attestation",
+        "outcome_attestation",
+        "permission_attestation",
+        "persistence_attestation",
+        "principal_authentication_attestation",
+        "reflection_completeness_attestation",
+        "replay_equivalence_attestation",
+        "result_authentication_attestation",
+        "rule_evaluation_attestation",
+        "source_resolution_attestation",
+        "transition_attestation",
+        "truth_attestation",
+        "usage_measurement_attestation",
+        "verifier_independence_attestation",
+        "world_state_resolution_attestation"
+      ],
+      "properties": {
+        "approval_authentication_attestation": {"const": false},
+        "attempt_history_completeness_attestation": {"const": false},
+        "authority_attestation": {"const": false},
+        "authorization_attestation": {"const": false},
+        "binding_authentication_attestation": {"const": false},
+        "capsule_completeness_attestation": {"const": false},
+        "cas_attestation": {"const": false},
+        "completion_attestation": {"const": false},
+        "content_provenance_attestation": {"const": false},
+        "effect_attestation": {"const": false},
+        "evaluation_execution_attestation": {"const": false},
+        "evaluator_independence_attestation": {"const": false},
+        "event_append_attestation": {"const": false},
+        "execution_attestation": {"const": false},
+        "external_history_resolution_attestation": {"const": false},
+        "grant_authentication_attestation": {"const": false},
+        "hard_guard_attestation": {"const": false},
+        "instruction_attestation": {"const": false},
+        "outcome_attestation": {"const": false},
+        "permission_attestation": {"const": false},
+        "persistence_attestation": {"const": false},
+        "principal_authentication_attestation": {"const": false},
+        "reflection_completeness_attestation": {"const": false},
+        "replay_equivalence_attestation": {"const": false},
+        "result_authentication_attestation": {"const": false},
+        "rule_evaluation_attestation": {"const": false},
+        "source_resolution_attestation": {"const": false},
+        "transition_attestation": {"const": false},
+        "truth_attestation": {"const": false},
+        "usage_measurement_attestation": {"const": false},
+        "verifier_independence_attestation": {"const": false},
+        "world_state_resolution_attestation": {"const": false}
+      }
+    },
+    "atom_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["atom_id", "atom_sha256"],
+      "properties": {
+        "atom_id": {"type": "string", "pattern": "^cognitive-atom-[0-9a-f]{64}(?![\\s\\S])"},
+        "atom_sha256": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "decision_closure_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["closure_id", "closure_sha256"],
+      "properties": {
+        "closure_id": {"type": "string", "pattern": "^kernel-decision-reference-closure-[0-9a-f]{64}(?![\\s\\S])"},
+        "closure_sha256": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "operational_closure_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["closure_id", "closure_sha256"],
+      "properties": {
+        "closure_id": {"type": "string", "pattern": "^kernel-operational-reference-closure-[0-9a-f]{64}(?![\\s\\S])"},
+        "closure_sha256": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "transaction_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["decision_transaction_id", "decision_transaction_sha256"],
+      "properties": {
+        "decision_transaction_id": {"type": "string", "pattern": "^decision-transaction-[0-9a-f]{64}(?![\\s\\S])"},
+        "decision_transaction_sha256": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "manifest_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["manifest_id", "manifest_sha256"],
+      "properties": {
+        "manifest_id": {"type": "string", "pattern": "^structural-replay-manifest-[0-9a-f]{64}(?![\\s\\S])"},
+        "manifest_sha256": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "capsule_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["capsule_id", "capsule_sha256"],
+      "properties": {
+        "capsule_id": {"type": "string", "pattern": "^decision-capsule-[0-9a-f]{64}(?![\\s\\S])"},
+        "capsule_sha256": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "structural_replay_manifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "api_version", "artifact_receipt_refs", "artifact_refs", "attestations",
+        "canonicalization", "capability_invocation_refs", "decision_closure_ref",
+        "decision_transaction_ref", "effect_replay_allowed", "execution_receipt_refs",
+        "history_rewrite_allowed", "interaction_event_refs", "kind", "manifest_id",
+        "manifest_sha256", "operational_closure_ref", "postdecision_atom_refs",
+        "predecision_atom_refs", "replay_mode"
+      ],
+      "properties": {
+        "api_version": {"const": "forgeos.aadm.structural-replay-manifest/v1"},
+        "artifact_receipt_refs": {"type": "array", "maxItems": 64, "uniqueItems": true, "items": {"$ref": "kernel-operational-reference-core-v1.schema.json#/$defs/artifact_receipt_ref"}},
+        "artifact_refs": {"type": "array", "maxItems": 256, "uniqueItems": true, "items": {"$ref": "kernel-operational-reference-core-v1.schema.json#/$defs/artifact_ref"}},
+        "attestations": {"$ref": "#/$defs/attestations"},
+        "canonicalization": {"const": "forgeos.canonical-json/v1"},
+        "capability_invocation_refs": {"type": "array", "minItems": 1, "maxItems": 64, "uniqueItems": true, "items": {"$ref": "kernel-operational-reference-core-v1.schema.json#/$defs/invocation_ref"}},
+        "decision_closure_ref": {"$ref": "#/$defs/decision_closure_ref"},
+        "decision_transaction_ref": {"$ref": "#/$defs/transaction_ref"},
+        "effect_replay_allowed": {"const": false},
+        "execution_receipt_refs": {"type": "array", "minItems": 1, "maxItems": 64, "uniqueItems": true, "items": {"$ref": "kernel-operational-reference-core-v1.schema.json#/$defs/execution_receipt_ref"}},
+        "history_rewrite_allowed": {"const": false},
+        "interaction_event_refs": {"type": "array", "maxItems": 256, "uniqueItems": true, "items": {"$ref": "kernel-operational-reference-core-v1.schema.json#/$defs/event_ref"}},
+        "kind": {"const": "StructuralReplayManifest"},
+        "manifest_id": {"type": "string", "pattern": "^structural-replay-manifest-[0-9a-f]{64}(?![\\s\\S])"},
+        "manifest_sha256": {"$ref": "#/$defs/hash"},
+        "operational_closure_ref": {"$ref": "#/$defs/operational_closure_ref"},
+        "postdecision_atom_refs": {"type": "array", "maxItems": 256, "uniqueItems": true, "items": {"$ref": "#/$defs/atom_ref"}},
+        "predecision_atom_refs": {"type": "array", "minItems": 1, "maxItems": 256, "uniqueItems": true, "items": {"$ref": "#/$defs/atom_ref"}},
+        "replay_mode": {"const": "structural_validate_reseal_compare_only"}
+      }
+    },
+    "decision_capsule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["api_version", "attestations", "canonicalization", "capsule_id", "capsule_mode", "capsule_sha256", "decision_closure", "kind", "replay_manifest", "result"],
+      "properties": {
+        "api_version": {"const": "forgeos.aadm.decision-capsule/v1"},
+        "attestations": {"$ref": "#/$defs/attestations"},
+        "canonicalization": {"const": "forgeos.canonical-json/v1"},
+        "capsule_id": {"type": "string", "pattern": "^decision-capsule-[0-9a-f]{64}(?![\\s\\S])"},
+        "capsule_mode": {"const": "structural_replay_manifest_only"},
+        "capsule_sha256": {"$ref": "#/$defs/hash"},
+        "decision_closure": {"$ref": "kernel-decision-reference-core-v1.schema.json#/$defs/closure"},
+        "kind": {"const": "DecisionCapsule"},
+        "replay_manifest": {"$ref": "#/$defs/structural_replay_manifest"},
+        "result": {"const": "STRUCTURALLY_VALID_DECISION_CAPSULE_V1 (exact caller-supplied ADR-0090 closure and complete projection of the embedded caller-supplied closure only; replay is validate/reseal/compare only; no effect replay or history rewrite; all thirty-two replay attestations are false)"}
+      }
+    },
+    "evaluation_branch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["api_version", "attestations", "branch_id", "branch_mode", "branch_sha256", "canonicalization", "capsule_ref", "comparison_result", "decision_closure_ref", "effect_replay_allowed", "history_rewrite_allowed", "kind", "manifest_ref"],
+      "properties": {
+        "api_version": {"const": "forgeos.aadm.evaluation-branch/v1"},
+        "attestations": {"$ref": "#/$defs/attestations"},
+        "branch_id": {"type": "string", "pattern": "^evaluation-branch-[0-9a-f]{64}(?![\\s\\S])"},
+        "branch_mode": {"const": "structural_validate_reseal_compare_only"},
+        "branch_sha256": {"$ref": "#/$defs/hash"},
+        "canonicalization": {"const": "forgeos.canonical-json/v1"},
+        "capsule_ref": {"$ref": "#/$defs/capsule_ref"},
+        "comparison_result": {"const": "EXACT_STRUCTURAL_REFERENCE_MATCH_ONLY"},
+        "decision_closure_ref": {"$ref": "#/$defs/decision_closure_ref"},
+        "effect_replay_allowed": {"const": false},
+        "history_rewrite_allowed": {"const": false},
+        "kind": {"const": "EvaluationBranch"},
+        "manifest_ref": {"$ref": "#/$defs/manifest_ref"}
+      }
+    },
+    "reflection_report_ref": {
+      "allOf": [
+        {"$ref": "kernel-operational-reference-core-v1.schema.json#/$defs/artifact_ref"},
+        {"properties": {"artifact_kind": {"const": "reflection_report"}}}
+      ]
+    },
+    "structural_replay_closure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["api_version", "attestations", "canonicalization", "closure_id", "closure_sha256", "decision_capsule", "evaluation_branch", "kind", "reflection_report_artifact_refs", "result"],
+      "properties": {
+        "api_version": {"const": "forgeos.aadm.structural-replay-closure/v1"},
+        "attestations": {"$ref": "#/$defs/attestations"},
+        "canonicalization": {"const": "forgeos.canonical-json/v1"},
+        "closure_id": {"type": "string", "pattern": "^structural-replay-closure-[0-9a-f]{64}(?![\\s\\S])"},
+        "closure_sha256": {"$ref": "#/$defs/hash"},
+        "decision_capsule": {"$ref": "#/$defs/decision_capsule"},
+        "evaluation_branch": {"$ref": "#/$defs/evaluation_branch"},
+        "kind": {"const": "StructuralReplayClosure"},
+        "reflection_report_artifact_refs": {"type": "array", "maxItems": 32, "uniqueItems": true, "items": {"$ref": "#/$defs/reflection_report_ref"}},
+        "result": {"const": "STRUCTURALLY_VALID_DECISION_CAPSULE_REPLAY_CLOSURE_V1 (exact caller-supplied DecisionCapsule and separately sealed deterministic structural comparison only; dedicated ReflectionReport ArtifactRefs are unresolved and attached only by the outer closure; upstream ArtifactRefs remain opaque and uninterpreted; no model, rule or world-state evaluation, effect replay, history rewrite, authorization, persistence, PDP or controller; all thirty-two replay attestations are false)"}
+      }
+    }
+  }
+}

@@ -1,0 +1,382 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forgeos.local/contracts/kernel-decision-reference-core-v1.schema.json",
+  "title": "ForgeOS Kernel decision reference core v1",
+  "description": "Structural shadow of the strict Python, Go, and Rust validators. Runtime validators additionally enforce canonical UTF-8 bytes, UTF-8 byte ceilings, digest domains, ordering, source/type/hardness matrices, temporal relations, exact cross-record bindings, checked aggregate usage, and the complete acyclic reference closure.",
+  "$ref": "#/$defs/closure",
+  "x-forgeos-authority-semantics": {
+    "effective_hardness": "none",
+    "instruction_allowed": false,
+    "authority_promotion": false,
+    "positive_result": "STRUCTURALLY_VALID_KERNEL_DECISION_REFERENCE_CLOSURE_V1 (exact caller-supplied cognitive, transaction and operational reference relations only; declared authority and hardness are ineffective; all twenty-two attestations are false: no Approval, principal, Grant or binding authentication; no source resolution, authority, authorization, CAS, completion, content provenance, effect, event append, execution, hard guard, instruction, outcome, permission, persistence, transition, truth, usage measurement or verifier independence attestation)"
+  },
+  "$defs": {
+    "wire_text": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 16384,
+      "pattern": "^(?![\\s\\S]*[\\u0000-\\u001f\\u007f-\\u009f\\u061c\\u200e\\u200f\\u2028\\u2029\\u202a-\\u202e\\u2066-\\u2069\\ud800-\\udfff])[\\s\\S]+(?![\\s\\S])",
+      "description": "Strict validators count UTF-8 bytes and reject forbidden control and bidi scalars."
+    },
+    "short_text": {
+      "allOf": [{"$ref": "#/$defs/wire_text"}, {"maxLength": 160}],
+      "description": "Strict validators enforce at most 160 UTF-8 bytes."
+    },
+    "reference_text": {
+      "allOf": [{"$ref": "#/$defs/wire_text"}, {"maxLength": 4096}]
+    },
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160,
+      "pattern": "^[a-z0-9][a-z0-9._:/-]{0,159}(?![\\s\\S])"
+    },
+    "hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+    },
+    "unix_ms": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9223372036854775807
+    },
+    "attestations": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "approval_authentication_attestation", "authority_attestation",
+        "authorization_attestation", "binding_authentication_attestation",
+        "cas_attestation", "completion_attestation", "content_provenance_attestation",
+        "effect_attestation", "event_append_attestation", "execution_attestation",
+        "grant_authentication_attestation", "hard_guard_attestation",
+        "instruction_attestation", "outcome_attestation", "permission_attestation",
+        "persistence_attestation", "principal_authentication_attestation",
+        "source_resolution_attestation", "transition_attestation", "truth_attestation",
+        "usage_measurement_attestation", "verifier_independence_attestation"
+      ],
+      "properties": {
+        "approval_authentication_attestation": {"const": false},
+        "authority_attestation": {"const": false},
+        "authorization_attestation": {"const": false},
+        "binding_authentication_attestation": {"const": false},
+        "cas_attestation": {"const": false},
+        "completion_attestation": {"const": false},
+        "content_provenance_attestation": {"const": false},
+        "effect_attestation": {"const": false},
+        "event_append_attestation": {"const": false},
+        "execution_attestation": {"const": false},
+        "grant_authentication_attestation": {"const": false},
+        "hard_guard_attestation": {"const": false},
+        "instruction_attestation": {"const": false},
+        "outcome_attestation": {"const": false},
+        "permission_attestation": {"const": false},
+        "persistence_attestation": {"const": false},
+        "principal_authentication_attestation": {"const": false},
+        "source_resolution_attestation": {"const": false},
+        "transition_attestation": {"const": false},
+        "truth_attestation": {"const": false},
+        "usage_measurement_attestation": {"const": false},
+        "verifier_independence_attestation": {"const": false}
+      }
+    },
+    "atom_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["atom_id", "atom_sha256"],
+      "properties": {
+        "atom_id": {"type": "string", "pattern": "^cognitive-atom-[0-9a-f]{64}(?![\\s\\S])"},
+        "atom_sha256": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "legacy_atom_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["atom_id", "canonical_sha256"],
+      "properties": {
+        "atom_id": {"type": "string", "pattern": "^atom-[0-9a-f]{64}(?![\\s\\S])"},
+        "canonical_sha256": {"$ref": "#/$defs/hash"}
+      },
+      "description": "The ADR-0047 atom_id and canonical_sha256 are independently validated and are not aliases."
+    },
+    "evidence_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["canonical_sha256", "record_id"],
+      "properties": {
+        "canonical_sha256": {"$ref": "#/$defs/hash"},
+        "record_id": {"$ref": "#/$defs/short_text"}
+      }
+    },
+    "work_intent_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["work_intent_id", "work_intent_sha256"],
+      "properties": {
+        "work_intent_id": {"type": "string", "pattern": "^work-intent-[0-9a-f]{64}(?![\\s\\S])"},
+        "work_intent_sha256": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "approval_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["approval_id", "approval_sha256", "authority_domain"],
+      "properties": {
+        "approval_id": {"type": "string", "pattern": "^approval-record-[0-9a-f]{64}(?![\\s\\S])"},
+        "approval_sha256": {"$ref": "#/$defs/hash"},
+        "authority_domain": {"$ref": "#/$defs/short_text"}
+      }
+    },
+    "adr_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["adr_id", "adr_self_sha256"],
+      "properties": {
+        "adr_id": {"type": "string", "pattern": "^ADR-[0-9]{4,}(?![\\s\\S])"},
+        "adr_self_sha256": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["authority_kind", "authority_ref"],
+      "properties": {
+        "authority_kind": {
+          "enum": ["approval_record", "architecture_decision", "contract_artifact", "none"]
+        },
+        "authority_ref": {}
+      },
+      "allOf": [
+        {"if": {"properties": {"authority_kind": {"const": "none"}}},
+         "then": {"properties": {"authority_ref": {"type": "null"}}}},
+        {"if": {"properties": {"authority_kind": {"const": "approval_record"}}},
+         "then": {"properties": {"authority_ref": {"$ref": "#/$defs/approval_ref"}}}},
+        {"if": {"properties": {"authority_kind": {"const": "architecture_decision"}}},
+         "then": {"properties": {"authority_ref": {"$ref": "#/$defs/adr_ref"}}}},
+        {"if": {"properties": {"authority_kind": {"const": "contract_artifact"}}},
+         "then": {"properties": {"authority_ref": {"$ref": "kernel-operational-reference-core-v1.schema.json#/$defs/artifact_ref"}}}}
+      ]
+    },
+    "proposition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["object_type", "object_value", "predicate", "subject"],
+      "properties": {
+        "object_type": {"enum": ["artifact_ref", "boolean", "integer", "null", "string"]},
+        "object_value": {},
+        "predicate": {"$ref": "#/$defs/identifier"},
+        "subject": {"$ref": "#/$defs/identifier"}
+      },
+      "allOf": [
+        {"if": {"properties": {"object_type": {"const": "artifact_ref"}}},
+         "then": {"properties": {"object_value": {"$ref": "#/$defs/identifier"}}}},
+        {"if": {"properties": {"object_type": {"const": "boolean"}}},
+         "then": {"properties": {"object_value": {"type": "boolean"}}}},
+        {"if": {"properties": {"object_type": {"const": "integer"}}},
+         "then": {"properties": {"object_value": {"type": "integer", "minimum": -9223372036854775808, "maximum": 9223372036854775807}}}},
+        {"if": {"properties": {"object_type": {"const": "null"}}},
+         "then": {"properties": {"object_value": {"type": "null"}}}},
+        {"if": {"properties": {"object_type": {"const": "string"}}},
+         "then": {"properties": {"object_value": {"$ref": "#/$defs/wire_text"}}}}
+      ]
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["module", "object", "project"],
+      "properties": {
+        "module": {"oneOf": [{"$ref": "#/$defs/short_text"}, {"type": "null"}]},
+        "object": {"oneOf": [{"$ref": "#/$defs/short_text"}, {"type": "null"}]},
+        "project": {"$ref": "#/$defs/short_text"}
+      },
+      "description": "Runtime validators require project == task_binding.project_id and non-null object == proposition.subject. These are caller-declared equalities, not resolution attestations."
+    },
+    "validity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["valid_from_unix_ms", "valid_until_unix_ms"],
+      "properties": {
+        "valid_from_unix_ms": {"$ref": "#/$defs/unix_ms"},
+        "valid_until_unix_ms": {"oneOf": [{"$ref": "#/$defs/unix_ms"}, {"type": "null"}]}
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_kind", "source_phase", "source_ref", "source_selector"],
+      "properties": {
+        "source_kind": {"enum": ["artifact", "artifact_receipt", "capability_invocation", "cognitive_atom_v1", "evidence_record", "execution_receipt", "interaction_event", "work_intent"]},
+        "source_phase": {"enum": ["predecision", "postdecision"]},
+        "source_ref": {},
+        "source_selector": {
+          "oneOf": [
+            {"allOf": [{"$ref": "#/$defs/reference_text"}, {"pattern": "^(?:/(?:[^~/]|~[01])*)+(?![\\s\\S])"}]},
+            {"type": "null"}
+          ]
+        }
+      },
+      "allOf": [
+        {"if": {"properties": {"source_kind": {"const": "artifact"}}},
+         "then": {"properties": {"source_phase": {"const": "predecision"}, "source_ref": {"$ref": "kernel-operational-reference-core-v1.schema.json#/$defs/artifact_ref"}}}},
+        {"if": {"properties": {"source_kind": {"const": "cognitive_atom_v1"}}},
+         "then": {"properties": {"source_phase": {"const": "predecision"}, "source_ref": {"$ref": "#/$defs/legacy_atom_ref"}, "source_selector": {"type": "null"}}}},
+        {"if": {"properties": {"source_kind": {"const": "evidence_record"}}},
+         "then": {"properties": {"source_phase": {"const": "predecision"}, "source_ref": {"$ref": "#/$defs/evidence_ref"}}}},
+        {"if": {"properties": {"source_kind": {"const": "work_intent"}}},
+         "then": {"properties": {"source_phase": {"const": "predecision"}, "source_ref": {"$ref": "#/$defs/work_intent_ref"}}}},
+        {"if": {"properties": {"source_kind": {"const": "artifact_receipt"}}},
+         "then": {"properties": {"source_phase": {"const": "postdecision"}, "source_ref": {"$ref": "kernel-operational-reference-core-v1.schema.json#/$defs/artifact_receipt_ref"}}}},
+        {"if": {"properties": {"source_kind": {"const": "capability_invocation"}}},
+         "then": {"properties": {"source_phase": {"const": "postdecision"}, "source_ref": {"$ref": "kernel-operational-reference-core-v1.schema.json#/$defs/invocation_ref"}}}},
+        {"if": {"properties": {"source_kind": {"const": "interaction_event"}}},
+         "then": {"properties": {"source_phase": {"const": "postdecision"}, "source_ref": {"$ref": "kernel-operational-reference-core-v1.schema.json#/$defs/event_ref"}}}},
+        {"if": {"properties": {"source_kind": {"const": "execution_receipt"}}},
+         "then": {"properties": {"source_phase": {"const": "postdecision"}, "source_ref": {"$ref": "kernel-operational-reference-core-v1.schema.json#/$defs/execution_receipt_ref"}}}}
+      ]
+    },
+    "cognitive_atom": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "api_version", "atom_id", "atom_sha256", "atom_type", "attestations",
+        "bindings", "canonicalization", "confidence_micros", "declared_authority",
+        "declared_hardness", "effective_hardness", "epistemic_state",
+        "instruction_allowed", "kind", "proposition", "scope", "source",
+        "task_binding", "validity"
+      ],
+      "properties": {
+        "api_version": {"const": "forgeos.aadm.cognitive-atom/v2"},
+        "atom_id": {"type": "string", "pattern": "^cognitive-atom-[0-9a-f]{64}(?![\\s\\S])"},
+        "atom_sha256": {"$ref": "#/$defs/hash"},
+        "atom_type": {"enum": ["acceptance", "actor", "assumption", "constraint", "decision", "evidence", "fact", "goal", "hypothesis", "inference", "object", "observation", "operation", "preference", "risk", "unknown"]},
+        "attestations": {"$ref": "#/$defs/attestations"},
+        "bindings": {"$ref": "kernel-operational-reference-core-v1.schema.json#/$defs/bindings"},
+        "canonicalization": {"const": "forgeos.canonical-json/v1"},
+        "confidence_micros": {"oneOf": [{"type": "integer", "minimum": 0, "maximum": 1000000}, {"type": "null"}]},
+        "declared_authority": {"$ref": "#/$defs/authority"},
+        "declared_hardness": {"enum": ["advisory", "contract", "invariant", "none", "preferred", "required"]},
+        "effective_hardness": {"const": "none"},
+        "epistemic_state": {"enum": ["candidate", "contested", "declared", "investigating", "open", "proposed", "testing"]},
+        "instruction_allowed": {"const": false},
+        "kind": {"const": "CognitiveAtom"},
+        "proposition": {"$ref": "#/$defs/proposition"},
+        "scope": {"$ref": "#/$defs/scope"},
+        "source": {"$ref": "#/$defs/source"},
+        "task_binding": {"$ref": "kernel-operational-reference-core-v1.schema.json#/$defs/task_binding"},
+        "validity": {"$ref": "#/$defs/validity"}
+      }
+    },
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["max_calls", "max_cost_usd_micros", "max_input_tokens", "max_network_bytes", "max_output_bytes", "max_output_tokens", "timeout_ms"],
+      "properties": {
+        "max_calls": {"type": "integer", "minimum": 1, "maximum": 1000000000},
+        "max_cost_usd_micros": {"type": "integer", "minimum": 0, "maximum": 1000000000000000},
+        "max_input_tokens": {"type": "integer", "minimum": 0, "maximum": 1000000000},
+        "max_network_bytes": {"type": "integer", "minimum": 0, "maximum": 1073741824},
+        "max_output_bytes": {"type": "integer", "minimum": 0, "maximum": 1073741824},
+        "max_output_tokens": {"type": "integer", "minimum": 0, "maximum": 1000000000},
+        "timeout_ms": {"type": "integer", "minimum": 1, "maximum": 86400000}
+      }
+    },
+    "option": {
+      "type": "object", "additionalProperties": false,
+      "required": ["capability", "option_id", "requested_action_sha256"],
+      "properties": {
+        "capability": {"$ref": "kernel-operational-reference-core-v1.schema.json#/$defs/capability_identity"},
+        "option_id": {"$ref": "#/$defs/identifier"},
+        "requested_action_sha256": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "proof": {
+      "type": "object", "additionalProperties": false,
+      "required": ["obligation_id", "predicate_sha256", "required_evidence_kinds"],
+      "properties": {
+        "obligation_id": {"$ref": "#/$defs/identifier"},
+        "predicate_sha256": {"$ref": "#/$defs/hash"},
+        "required_evidence_kinds": {"type": "array", "minItems": 1, "maxItems": 16, "uniqueItems": true, "items": {"$ref": "#/$defs/identifier"}}
+      }
+    },
+    "precondition": {
+      "type": "object", "additionalProperties": false,
+      "required": ["expected_sha256", "precondition_id", "resource_ref"],
+      "properties": {
+        "expected_sha256": {"$ref": "#/$defs/hash"},
+        "precondition_id": {"$ref": "#/$defs/identifier"},
+        "resource_ref": {"$ref": "#/$defs/reference_text"}
+      }
+    },
+    "decision_transaction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["accountable_owner", "actor", "api_version", "attestations", "bindings", "budget", "canonicalization", "compensation", "completion_condition", "created_at_unix_ms", "decision_transaction_id", "decision_transaction_sha256", "goal_atom_ref", "guard_atom_refs", "idempotency_key", "kind", "options", "proof_obligations", "read_artifact_receipt_refs", "selected_option_id", "selection_basis_sha256", "task_binding", "transaction_mode", "trigger_atom_refs", "verifier", "write_preconditions", "write_slots"],
+      "properties": {
+        "accountable_owner": {"$ref": "kernel-operational-reference-core-v1.schema.json#/$defs/principal"},
+        "actor": {"$ref": "kernel-operational-reference-core-v1.schema.json#/$defs/principal"},
+        "api_version": {"const": "forgeos.aadm.decision-transaction/v1"},
+        "attestations": {"$ref": "#/$defs/attestations"},
+        "bindings": {"$ref": "kernel-operational-reference-core-v1.schema.json#/$defs/bindings"},
+        "budget": {"$ref": "#/$defs/budget"},
+        "canonicalization": {"const": "forgeos.canonical-json/v1"},
+        "compensation": {
+          "type": "object", "additionalProperties": false,
+          "required": ["applicability", "capability", "requested_action_sha256"],
+          "properties": {
+            "applicability": {"enum": ["not_applicable", "required"]},
+            "capability": {"oneOf": [{"$ref": "kernel-operational-reference-core-v1.schema.json#/$defs/capability_identity"}, {"type": "null"}]},
+            "requested_action_sha256": {"oneOf": [{"$ref": "#/$defs/hash"}, {"type": "null"}]}
+          }
+        },
+        "completion_condition": {
+          "type": "object", "additionalProperties": false,
+          "required": ["condition_ref", "condition_sha256"],
+          "properties": {"condition_ref": {"$ref": "#/$defs/reference_text"}, "condition_sha256": {"$ref": "#/$defs/hash"}}
+        },
+        "created_at_unix_ms": {"$ref": "#/$defs/unix_ms"},
+        "decision_transaction_id": {"type": "string", "pattern": "^decision-transaction-[0-9a-f]{64}(?![\\s\\S])"},
+        "decision_transaction_sha256": {"$ref": "#/$defs/hash"},
+        "goal_atom_ref": {"$ref": "#/$defs/atom_ref"},
+        "guard_atom_refs": {"type": "array", "maxItems": 64, "uniqueItems": true, "items": {"$ref": "#/$defs/atom_ref"}},
+        "idempotency_key": {"$ref": "#/$defs/identifier"},
+        "kind": {"const": "DecisionTransaction"},
+        "options": {"type": "array", "minItems": 1, "maxItems": 16, "uniqueItems": true, "items": {"$ref": "#/$defs/option"}},
+        "proof_obligations": {"type": "array", "minItems": 1, "maxItems": 32, "uniqueItems": true, "items": {"$ref": "#/$defs/proof"}},
+        "read_artifact_receipt_refs": {"type": "array", "maxItems": 32, "uniqueItems": true, "items": {"$ref": "kernel-operational-reference-core-v1.schema.json#/$defs/artifact_receipt_ref"}},
+        "selected_option_id": {"$ref": "#/$defs/identifier"},
+        "selection_basis_sha256": {"$ref": "#/$defs/hash"},
+        "task_binding": {"$ref": "kernel-operational-reference-core-v1.schema.json#/$defs/task_binding"},
+        "transaction_mode": {"const": "structural_proposal_only"},
+        "trigger_atom_refs": {"type": "array", "maxItems": 64, "uniqueItems": true, "items": {"$ref": "#/$defs/atom_ref"}},
+        "verifier": {
+          "type": "object", "additionalProperties": false,
+          "required": ["capability", "independence_basis_sha256", "principal", "timeout_ms"],
+          "properties": {
+            "capability": {"$ref": "kernel-operational-reference-core-v1.schema.json#/$defs/capability_identity"},
+            "independence_basis_sha256": {"$ref": "#/$defs/hash"},
+            "principal": {"$ref": "kernel-operational-reference-core-v1.schema.json#/$defs/principal"},
+            "timeout_ms": {"type": "integer", "minimum": 1, "maximum": 86400000}
+          }
+        },
+        "write_preconditions": {"type": "array", "maxItems": 32, "uniqueItems": true, "items": {"$ref": "#/$defs/precondition"}},
+        "write_slots": {"type": "array", "maxItems": 32, "uniqueItems": true, "items": {"$ref": "#/$defs/identifier"}}
+      }
+    },
+    "closure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["api_version", "attestations", "canonicalization", "closure_id", "closure_sha256", "cognitive_atoms", "decision_transaction", "kind", "operational_closure", "result"],
+      "properties": {
+        "api_version": {"const": "forgeos.kernel-decision-reference-closure/v1"},
+        "attestations": {"$ref": "#/$defs/attestations"},
+        "canonicalization": {"const": "forgeos.canonical-json/v1"},
+        "closure_id": {"type": "string", "pattern": "^kernel-decision-reference-closure-[0-9a-f]{64}(?![\\s\\S])"},
+        "closure_sha256": {"$ref": "#/$defs/hash"},
+        "cognitive_atoms": {"type": "array", "minItems": 1, "maxItems": 256, "uniqueItems": true, "items": {"$ref": "#/$defs/cognitive_atom"}},
+        "decision_transaction": {"$ref": "#/$defs/decision_transaction"},
+        "kind": {"const": "KernelDecisionReferenceClosure"},
+        "operational_closure": {"$ref": "kernel-operational-reference-core-v1.schema.json#/$defs/closure"},
+        "result": {"const": "STRUCTURALLY_VALID_KERNEL_DECISION_REFERENCE_CLOSURE_V1 (exact caller-supplied cognitive, transaction and operational reference relations only; declared authority and hardness are ineffective; all twenty-two attestations are false: no Approval, principal, Grant or binding authentication; no source resolution, authority, authorization, CAS, completion, content provenance, effect, event append, execution, hard guard, instruction, outcome, permission, persistence, transition, truth, usage measurement or verifier independence attestation)"}
+      }
+    }
+  }
+}

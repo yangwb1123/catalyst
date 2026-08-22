@@ -1,0 +1,329 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forgeos.local/contracts/kernel-operational-reference-core-v1.schema.json",
+  "title": "ForgeOS Kernel operational reference core v1",
+  "description": "Structural shadow of the strict Python, Go, and Rust validators. Runtime validators additionally enforce canonical UTF-8 bytes, UTF-8 byte ceilings, ordering, identities, digests, time relations, and the complete acyclic reference closure.",
+  "$ref": "#/$defs/closure",
+  "x-forgeos-authority-semantics": {
+    "positive_result": "STRUCTURALLY_VALID_KERNEL_OPERATIONAL_REFERENCE_CLOSURE_V1 (exact caller-supplied records and acyclic references only; no content provenance, principal, Grant, or source/context/environment/policy binding authentication; no authorization, permission, event append, persistence, transition, execution, outcome, completion, effect, or usage measurement attestation)",
+    "attestations": {
+      "authorization_attestation": false,
+      "binding_authentication_attestation": false,
+      "completion_attestation": false,
+      "content_provenance_attestation": false,
+      "effect_attestation": false,
+      "event_append_attestation": false,
+      "execution_attestation": false,
+      "grant_authentication_attestation": false,
+      "outcome_attestation": false,
+      "permission_attestation": false,
+      "persistence_attestation": false,
+      "principal_authentication_attestation": false,
+      "transition_attestation": false,
+      "usage_measurement_attestation": false
+    }
+  },
+  "$defs": {
+    "wire_text": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 16384,
+      "pattern": "^(?![\\s\\S]*[\\u0000-\\u001f\\u007f-\\u009f\\u061c\\u200e\\u200f\\u2028\\u2029\\u202a-\\u202e\\u2066-\\u2069\\ud800-\\udfff])[\\s\\S]+(?![\\s\\S])",
+      "description": "Code-point length is only a Schema shadow; strict decoders enforce the UTF-8 byte ceiling."
+    },
+    "short_text": {
+      "allOf": [{"$ref": "#/$defs/wire_text"}, {"maxLength": 160}],
+      "description": "Strict decoders enforce at most 160 UTF-8 bytes."
+    },
+    "reference_text": {
+      "allOf": [{"$ref": "#/$defs/wire_text"}, {"maxLength": 4096}],
+      "description": "Strict decoders enforce at most 4096 UTF-8 bytes."
+    },
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160,
+      "pattern": "^[a-z0-9][a-z0-9._:/-]{0,159}(?![\\s\\S])"
+    },
+    "hash": {
+      "type": "string",
+      "minLength": 64,
+      "maxLength": 64,
+      "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+    },
+    "unix_ms": {"type": "integer", "minimum": 0, "maximum": 9223372036854775807},
+    "attempt": {"type": "integer", "minimum": 1, "maximum": 64},
+    "attestations": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "authorization_attestation", "binding_authentication_attestation",
+        "completion_attestation", "content_provenance_attestation",
+        "effect_attestation", "event_append_attestation", "execution_attestation",
+        "grant_authentication_attestation", "outcome_attestation",
+        "permission_attestation", "persistence_attestation",
+        "principal_authentication_attestation", "transition_attestation",
+        "usage_measurement_attestation"
+      ],
+      "properties": {
+        "authorization_attestation": {"const": false},
+        "binding_authentication_attestation": {"const": false},
+        "completion_attestation": {"const": false},
+        "content_provenance_attestation": {"const": false},
+        "effect_attestation": {"const": false},
+        "event_append_attestation": {"const": false},
+        "execution_attestation": {"const": false},
+        "grant_authentication_attestation": {"const": false},
+        "outcome_attestation": {"const": false},
+        "permission_attestation": {"const": false},
+        "persistence_attestation": {"const": false},
+        "principal_authentication_attestation": {"const": false},
+        "transition_attestation": {"const": false},
+        "usage_measurement_attestation": {"const": false}
+      }
+    },
+    "principal": {
+      "type": "object", "additionalProperties": false,
+      "required": ["authority_domain", "principal_id", "principal_type"],
+      "properties": {
+        "authority_domain": {"$ref": "#/$defs/short_text"},
+        "principal_id": {"$ref": "#/$defs/short_text"},
+        "principal_type": {"enum": ["agent", "human", "operator", "service"]}
+      }
+    },
+    "task_binding": {
+      "type": "object", "additionalProperties": false,
+      "required": ["attempt_id", "change_id", "environment_class", "environment_id", "node_id", "project_id", "role", "run_id", "target_id", "task_id"],
+      "properties": {
+        "attempt_id": {"oneOf": [{"$ref": "#/$defs/short_text"}, {"type": "null"}]},
+        "change_id": {"$ref": "#/$defs/short_text"},
+        "environment_class": {"enum": ["development", "local", "production", "staging", "test"]},
+        "environment_id": {"$ref": "#/$defs/short_text"},
+        "node_id": {"$ref": "#/$defs/short_text"},
+        "project_id": {"$ref": "#/$defs/short_text"},
+        "role": {"$ref": "#/$defs/short_text"},
+        "run_id": {"$ref": "#/$defs/short_text"},
+        "target_id": {"oneOf": [{"$ref": "#/$defs/short_text"}, {"type": "null"}]},
+        "task_id": {"$ref": "#/$defs/short_text"}
+      }
+    },
+    "bindings": {
+      "type": "object", "additionalProperties": false,
+      "required": ["context_sha256", "environment_profile_id", "environment_sha256", "policy_sha256", "source_profile_id", "source_revision", "source_tree_sha256"],
+      "properties": {
+        "context_sha256": {"$ref": "#/$defs/hash"},
+        "environment_profile_id": {"$ref": "#/$defs/short_text"},
+        "environment_sha256": {"$ref": "#/$defs/hash"},
+        "policy_sha256": {"$ref": "#/$defs/hash"},
+        "source_profile_id": {"$ref": "#/$defs/short_text"},
+        "source_revision": {"$ref": "#/$defs/short_text"},
+        "source_tree_sha256": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "capability_identity": {
+      "type": "object", "additionalProperties": false,
+      "required": ["capability_contract_sha256", "capability_id", "capability_version"],
+      "properties": {
+        "capability_contract_sha256": {"$ref": "#/$defs/hash"},
+        "capability_id": {"$ref": "#/$defs/short_text"},
+        "capability_version": {"$ref": "#/$defs/short_text"}
+      }
+    },
+    "capability_grant_ref": {
+      "type": "object", "additionalProperties": false,
+      "required": ["authority_domain", "grant_id", "grant_sha256"],
+      "properties": {
+        "authority_domain": {"$ref": "#/$defs/short_text"},
+        "grant_id": {"type": "string", "minLength": 81, "maxLength": 81, "pattern": "^capability-grant-[0-9a-f]{64}(?![\\s\\S])"},
+        "grant_sha256": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "artifact_ref": {
+      "type": "object", "additionalProperties": false,
+      "required": ["artifact_kind", "artifact_ref", "artifact_sha256"],
+      "properties": {
+        "artifact_kind": {"$ref": "#/$defs/short_text"},
+        "artifact_ref": {"$ref": "#/$defs/reference_text"},
+        "artifact_sha256": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "artifact_receipt_ref": {
+      "type": "object", "additionalProperties": false,
+      "required": ["artifact_receipt_id", "artifact_receipt_sha256"],
+      "properties": {
+        "artifact_receipt_id": {"type": "string", "minLength": 81, "maxLength": 81, "pattern": "^artifact-receipt-[0-9a-f]{64}(?![\\s\\S])"},
+        "artifact_receipt_sha256": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "invocation_ref": {
+      "type": "object", "additionalProperties": false,
+      "required": ["invocation_id", "invocation_sha256"],
+      "properties": {
+        "invocation_id": {"type": "string", "minLength": 86, "maxLength": 86, "pattern": "^capability-invocation-[0-9a-f]{64}(?![\\s\\S])"},
+        "invocation_sha256": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "event_ref": {
+      "type": "object", "additionalProperties": false,
+      "required": ["event_id", "event_sha256"],
+      "properties": {
+        "event_id": {"type": "string", "minLength": 82, "maxLength": 82, "pattern": "^interaction-event-[0-9a-f]{64}(?![\\s\\S])"},
+        "event_sha256": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "execution_receipt_ref": {
+      "type": "object", "additionalProperties": false,
+      "required": ["execution_receipt_id", "execution_receipt_sha256"],
+      "properties": {
+        "execution_receipt_id": {"type": "string", "minLength": 82, "maxLength": 82, "pattern": "^execution-receipt-[0-9a-f]{64}(?![\\s\\S])"},
+        "execution_receipt_sha256": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "observed_usage": {
+      "type": "object", "additionalProperties": false,
+      "required": ["call_count", "cost_usd_micros", "elapsed_ms", "input_tokens", "network_bytes", "output_bytes", "output_tokens"],
+      "properties": {
+        "call_count": {"type": "integer", "minimum": 0, "maximum": 1000000000},
+        "cost_usd_micros": {"type": "integer", "minimum": 0, "maximum": 1000000000000000},
+        "elapsed_ms": {"type": "integer", "minimum": 0, "maximum": 86400000},
+        "input_tokens": {"type": "integer", "minimum": 0, "maximum": 1000000000},
+        "network_bytes": {"type": "integer", "minimum": 0, "maximum": 1073741824},
+        "output_bytes": {"type": "integer", "minimum": 0, "maximum": 1073741824},
+        "output_tokens": {"type": "integer", "minimum": 0, "maximum": 1000000000}
+      }
+    },
+    "artifact_receipt": {
+      "type": "object", "additionalProperties": false,
+      "required": ["api_version", "artifact", "artifact_receipt_id", "artifact_receipt_sha256", "attestations", "bindings", "canonicalization", "content_bytes", "created_at_unix_ms", "kind", "producer", "producer_invocation_ref", "receipt_role", "slot", "task_binding"],
+      "properties": {
+        "api_version": {"const": "forgeos.artifact-receipt/v1"},
+        "artifact": {"$ref": "#/$defs/artifact_ref"},
+        "artifact_receipt_id": {"type": "string", "minLength": 81, "maxLength": 81, "pattern": "^artifact-receipt-[0-9a-f]{64}(?![\\s\\S])"},
+        "artifact_receipt_sha256": {"$ref": "#/$defs/hash"},
+        "attestations": {"$ref": "#/$defs/attestations"},
+        "bindings": {"$ref": "#/$defs/bindings"},
+        "canonicalization": {"const": "forgeos.canonical-json/v1"},
+        "content_bytes": {"type": "integer", "minimum": 0, "maximum": 9223372036854775807},
+        "created_at_unix_ms": {"$ref": "#/$defs/unix_ms"},
+        "kind": {"const": "ArtifactReceipt"},
+        "producer": {"$ref": "#/$defs/principal"},
+        "producer_invocation_ref": {"oneOf": [{"$ref": "#/$defs/invocation_ref"}, {"type": "null"}]},
+        "receipt_role": {"enum": ["declared_input", "declared_output"]},
+        "slot": {"$ref": "#/$defs/identifier"},
+        "task_binding": {"$ref": "#/$defs/task_binding"}
+      },
+      "allOf": [
+        {"if": {"properties": {"receipt_role": {"const": "declared_input"}}}, "then": {"properties": {"producer_invocation_ref": {"type": "null"}}}},
+        {"if": {"properties": {"receipt_role": {"const": "declared_output"}}}, "then": {"properties": {"producer_invocation_ref": {"$ref": "#/$defs/invocation_ref"}}}}
+      ]
+    },
+    "capability_invocation": {
+      "type": "object", "additionalProperties": false,
+      "required": ["api_version", "attempt", "attestations", "bindings", "canonicalization", "capability", "capability_grant_ref", "correlation_id", "declared_output_slots", "idempotency_key", "input_artifact_receipt_refs", "invocation_id", "invocation_sha256", "kind", "prior_execution_receipt_ref", "requested_action_sha256", "requested_at_unix_ms", "subject", "task_binding"],
+      "properties": {
+        "api_version": {"const": "forgeos.capability-invocation/v1"},
+        "attempt": {"$ref": "#/$defs/attempt"},
+        "attestations": {"$ref": "#/$defs/attestations"},
+        "bindings": {"$ref": "#/$defs/bindings"},
+        "canonicalization": {"const": "forgeos.canonical-json/v1"},
+        "capability": {"$ref": "#/$defs/capability_identity"},
+        "capability_grant_ref": {"$ref": "#/$defs/capability_grant_ref"},
+        "correlation_id": {"$ref": "#/$defs/identifier"},
+        "declared_output_slots": {"type": "array", "maxItems": 32, "uniqueItems": true, "items": {"$ref": "#/$defs/identifier"}},
+        "idempotency_key": {"$ref": "#/$defs/identifier"},
+        "input_artifact_receipt_refs": {"type": "array", "maxItems": 32, "uniqueItems": true, "items": {"$ref": "#/$defs/artifact_receipt_ref"}},
+        "invocation_id": {"type": "string", "minLength": 86, "maxLength": 86, "pattern": "^capability-invocation-[0-9a-f]{64}(?![\\s\\S])"},
+        "invocation_sha256": {"$ref": "#/$defs/hash"},
+        "kind": {"const": "CapabilityInvocation"},
+        "prior_execution_receipt_ref": {"oneOf": [{"$ref": "#/$defs/execution_receipt_ref"}, {"type": "null"}]},
+        "requested_action_sha256": {"$ref": "#/$defs/hash"},
+        "requested_at_unix_ms": {"$ref": "#/$defs/unix_ms"},
+        "subject": {"$ref": "#/$defs/principal"},
+        "task_binding": {"$ref": "#/$defs/task_binding"}
+      },
+      "allOf": [
+        {"if": {"properties": {"attempt": {"const": 1}}}, "then": {"properties": {"prior_execution_receipt_ref": {"type": "null"}}}},
+        {"if": {"properties": {"attempt": {"minimum": 2}}}, "then": {"properties": {"prior_execution_receipt_ref": {"$ref": "#/$defs/execution_receipt_ref"}}}}
+      ]
+    },
+    "interaction_event": {
+      "type": "object", "additionalProperties": false,
+      "required": ["actor", "api_version", "artifact_refs", "attestations", "bindings", "canonicalization", "causation_event_ref", "confidence_micros", "correlation_id", "event_id", "event_sha256", "invocation_ref", "kind", "logical_sequence", "object_ref", "occurred_at_unix_ms", "target", "task_binding", "verb"],
+      "properties": {
+        "actor": {"$ref": "#/$defs/principal"},
+        "api_version": {"const": "forgeos.interaction-event/v1"},
+        "artifact_refs": {"type": "array", "maxItems": 32, "uniqueItems": true, "items": {"$ref": "#/$defs/artifact_ref"}},
+        "attestations": {"$ref": "#/$defs/attestations"},
+        "bindings": {"$ref": "#/$defs/bindings"},
+        "canonicalization": {"const": "forgeos.canonical-json/v1"},
+        "causation_event_ref": {"oneOf": [{"$ref": "#/$defs/event_ref"}, {"type": "null"}]},
+        "confidence_micros": {"oneOf": [{"type": "integer", "minimum": 0, "maximum": 1000000}, {"type": "null"}]},
+        "correlation_id": {"$ref": "#/$defs/identifier"},
+        "event_id": {"type": "string", "minLength": 82, "maxLength": 82, "pattern": "^interaction-event-[0-9a-f]{64}(?![\\s\\S])"},
+        "event_sha256": {"$ref": "#/$defs/hash"},
+        "invocation_ref": {"$ref": "#/$defs/invocation_ref"},
+        "kind": {"const": "InteractionEvent"},
+        "logical_sequence": {"type": "integer", "minimum": 1, "maximum": 256},
+        "object_ref": {"$ref": "#/$defs/reference_text"},
+        "occurred_at_unix_ms": {"$ref": "#/$defs/unix_ms"},
+        "target": {"oneOf": [{"$ref": "#/$defs/principal"}, {"type": "null"}]},
+        "task_binding": {"$ref": "#/$defs/task_binding"},
+        "verb": {"enum": ["approve", "execute", "observe", "propose", "reject", "request", "rollback", "verify"]}
+      },
+      "allOf": [
+        {"if": {"properties": {"logical_sequence": {"const": 1}}}, "then": {"properties": {"causation_event_ref": {"type": "null"}}}},
+        {"if": {"properties": {"logical_sequence": {"minimum": 2}}}, "then": {"properties": {"causation_event_ref": {"$ref": "#/$defs/event_ref"}}}}
+      ]
+    },
+    "execution_receipt": {
+      "type": "object", "additionalProperties": false,
+      "required": ["api_version", "attempt", "attestations", "bindings", "canonicalization", "correlation_id", "ended_at_unix_ms", "event_refs", "execution_receipt_id", "execution_receipt_sha256", "executor", "input_artifacts", "invocation_ref", "kind", "observed_usage", "outcome", "output_artifact_receipt_refs", "prior_execution_receipt_ref", "reason_codes", "started_at_unix_ms", "task_binding"],
+      "properties": {
+        "api_version": {"const": "forgeos.execution-receipt/v1"},
+        "attempt": {"$ref": "#/$defs/attempt"},
+        "attestations": {"$ref": "#/$defs/attestations"},
+        "bindings": {"$ref": "#/$defs/bindings"},
+        "canonicalization": {"const": "forgeos.canonical-json/v1"},
+        "correlation_id": {"$ref": "#/$defs/identifier"},
+        "ended_at_unix_ms": {"$ref": "#/$defs/unix_ms"},
+        "event_refs": {"type": "array", "maxItems": 256, "uniqueItems": true, "items": {"$ref": "#/$defs/event_ref"}},
+        "execution_receipt_id": {"type": "string", "minLength": 82, "maxLength": 82, "pattern": "^execution-receipt-[0-9a-f]{64}(?![\\s\\S])"},
+        "execution_receipt_sha256": {"$ref": "#/$defs/hash"},
+        "executor": {"$ref": "#/$defs/principal"},
+        "input_artifacts": {"type": "array", "maxItems": 32, "uniqueItems": true, "items": {"$ref": "#/$defs/artifact_ref"}},
+        "invocation_ref": {"$ref": "#/$defs/invocation_ref"},
+        "kind": {"const": "ExecutionReceipt"},
+        "observed_usage": {"$ref": "#/$defs/observed_usage"},
+        "outcome": {"enum": ["cancelled", "failed", "inconclusive", "lost", "succeeded"]},
+        "output_artifact_receipt_refs": {"type": "array", "maxItems": 32, "uniqueItems": true, "items": {"$ref": "#/$defs/artifact_receipt_ref"}},
+        "prior_execution_receipt_ref": {"oneOf": [{"$ref": "#/$defs/execution_receipt_ref"}, {"type": "null"}]},
+        "reason_codes": {"type": "array", "maxItems": 32, "uniqueItems": true, "items": {"$ref": "#/$defs/identifier"}},
+        "started_at_unix_ms": {"$ref": "#/$defs/unix_ms"},
+        "task_binding": {"$ref": "#/$defs/task_binding"}
+      },
+      "allOf": [
+        {"if": {"properties": {"attempt": {"const": 1}}}, "then": {"properties": {"prior_execution_receipt_ref": {"type": "null"}}}},
+        {"if": {"properties": {"attempt": {"minimum": 2}}}, "then": {"properties": {"prior_execution_receipt_ref": {"$ref": "#/$defs/execution_receipt_ref"}}}},
+        {"if": {"properties": {"outcome": {"const": "succeeded"}}}, "then": {"properties": {"reason_codes": {"maxItems": 0}}}, "else": {"properties": {"reason_codes": {"minItems": 1}}}}
+      ]
+    },
+    "closure": {
+      "type": "object", "additionalProperties": false,
+      "required": ["api_version", "artifact_receipts", "artifacts", "attestations", "canonicalization", "capability_invocations", "closure_id", "closure_sha256", "execution_receipts", "interaction_events", "kind", "result"],
+      "properties": {
+        "api_version": {"const": "forgeos.kernel-operational-reference-closure/v1"},
+        "artifact_receipts": {"type": "array", "maxItems": 64, "uniqueItems": true, "items": {"$ref": "#/$defs/artifact_receipt"}},
+        "artifacts": {"type": "array", "maxItems": 256, "uniqueItems": true, "items": {"$ref": "#/$defs/artifact_ref"}},
+        "attestations": {"$ref": "#/$defs/attestations"},
+        "canonicalization": {"const": "forgeos.canonical-json/v1"},
+        "capability_invocations": {"type": "array", "minItems": 1, "maxItems": 64, "uniqueItems": true, "items": {"$ref": "#/$defs/capability_invocation"}},
+        "closure_id": {"type": "string", "minLength": 101, "maxLength": 101, "pattern": "^kernel-operational-reference-closure-[0-9a-f]{64}(?![\\s\\S])"},
+        "closure_sha256": {"$ref": "#/$defs/hash"},
+        "execution_receipts": {"type": "array", "minItems": 1, "maxItems": 64, "uniqueItems": true, "items": {"$ref": "#/$defs/execution_receipt"}},
+        "interaction_events": {"type": "array", "maxItems": 256, "uniqueItems": true, "items": {"$ref": "#/$defs/interaction_event"}},
+        "kind": {"const": "KernelOperationalReferenceClosure"},
+        "result": {"const": "STRUCTURALLY_VALID_KERNEL_OPERATIONAL_REFERENCE_CLOSURE_V1 (exact caller-supplied records and acyclic references only; no content provenance, principal, Grant, or source/context/environment/policy binding authentication; no authorization, permission, event append, persistence, transition, execution, outcome, completion, effect, or usage measurement attestation)"}
+      }
+    }
+  }
+}

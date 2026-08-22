@@ -1,0 +1,4 @@
+{"kind":"decision","topic":"database-choice","detail":"Use SQLite for the local control plane.","iteration":1,"created_at_unix":1700000000}
+{"_format":"forgeos.memory.v1","kind":"decision","topic":"database-choice","detail":"Use PostgreSQL after an external scale review.","iteration":2,"source":"reviewer","confidence":0,"supersedes":"database-choice","created_at_unix":1700000100}
+{"_format":"forgeos.memory.v1","kind":"gap","topic":"approval-identity","detail":"The historical marker does not authenticate an approver.","iteration":3,"source":"harness","confidence":1e-7,"created_at_unix":1700000200}
+{"_format":"forgeos.memory.v1","kind":"lesson","topic":"replay","detail":"Keep every conflicting historical entry during migration.","iteration":4,"source":"evolve","confidence":1.000000,"created_at_unix":1700000300}

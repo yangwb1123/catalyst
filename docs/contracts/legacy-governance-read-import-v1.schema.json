@@ -1,0 +1,407 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forgeos.example/contracts/legacy-governance-read-import-v1.schema.json",
+  "title": "ForgeOS legacy governance read-only import v1",
+  "x-forgeos-authority-semantics": {
+    "positive_result": "STRUCTURALLY_VALID_LEGACY_GOVERNANCE_READ_IMPORT_V1 (unverified legacy read-only projection only; no source authentication or completeness, confidence or status interpretation, conflict resolution, truth, authority, currentness, instruction, acceptance, persistence, winner, or runtime-effect attestation)",
+    "attestations": {
+      "acceptance": false,
+      "authority": false,
+      "confidence_interpretation": false,
+      "conflict_resolution": false,
+      "currentness": false,
+      "instruction_eligibility": false,
+      "persistence": false,
+      "runtime_effect": false,
+      "source_authentication": false,
+      "source_completeness": false,
+      "status_interpretation": false,
+      "truth": false,
+      "winner_selection": false
+    }
+  },
+  "oneOf": [
+    {"$ref": "#/$defs/request"},
+    {"$ref": "#/$defs/view"}
+  ],
+  "$defs": {
+    "wire_text": {
+      "description": "Unicode scalar text excluding C0/DEL controls, directional formatting controls, and Unicode line/paragraph separators. Decoders remain authoritative for UTF-8 byte ceilings.",
+      "type": "string",
+      "not": {
+        "pattern": "[\\u0000-\\u001F\\u007F\\u061C\\u200E\\u200F\\u2028\\u2029\\u202A-\\u202E\\u2066-\\u2069\\uD800-\\uDFFF]"
+      }
+    },
+    "sha256": {
+      "$ref": "#/$defs/wire_text",
+      "type": "string",
+      "minLength": 64,
+      "maxLength": 64,
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "identifier": {
+      "$ref": "#/$defs/wire_text",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/@+\\-]*$"
+    },
+    "source_ref": {
+      "$ref": "#/$defs/wire_text",
+      "description": "maxLength counts Unicode code points; decoders enforce the authoritative 4096 UTF-8-byte ceiling.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "base64url": {
+      "$ref": "#/$defs/wire_text",
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 44739243,
+      "pattern": "^(?:[A-Za-z0-9_-]{4})*(?:[A-Za-z0-9_-][AQgw]|[A-Za-z0-9_-]{2}[AEIMQUYcgkosw048])?$"
+    },
+    "memory_line_base64url": {
+      "$ref": "#/$defs/base64url",
+      "maxLength": 22369622
+    },
+    "adr_base64url": {
+      "$ref": "#/$defs/base64url",
+      "maxLength": 1398102
+    },
+    "binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["project_id", "source_revision", "source_tree_sha256"],
+      "properties": {
+        "project_id": {"$ref": "#/$defs/identifier"},
+        "source_revision": {"$ref": "#/$defs/identifier"},
+        "source_tree_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "source": {
+      "oneOf": [
+        {"$ref": "#/$defs/memory_source"},
+        {"$ref": "#/$defs/adr_source"}
+      ]
+    },
+    "memory_source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "byte_count", "content_base64url", "content_sha256", "source_kind", "source_ref"
+      ],
+      "properties": {
+        "byte_count": {"type": "integer", "minimum": 1, "maximum": 33554432},
+        "content_base64url": {"$ref": "#/$defs/base64url"},
+        "content_sha256": {"$ref": "#/$defs/sha256"},
+        "source_kind": {"const": "forgeos_memory_jsonl_v1"},
+        "source_ref": {"$ref": "#/$defs/source_ref"}
+      }
+    },
+    "adr_source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "byte_count", "content_base64url", "content_sha256", "source_kind", "source_ref"
+      ],
+      "properties": {
+        "byte_count": {"type": "integer", "minimum": 1, "maximum": 1048576},
+        "content_base64url": {"$ref": "#/$defs/adr_base64url"},
+        "content_sha256": {"$ref": "#/$defs/sha256"},
+        "source_kind": {"const": "legacy_adr_markdown"},
+        "source_ref": {"$ref": "#/$defs/source_ref"}
+      }
+    },
+    "source_descriptor": {
+      "oneOf": [
+        {"$ref": "#/$defs/memory_source_descriptor"},
+        {"$ref": "#/$defs/adr_source_descriptor"}
+      ]
+    },
+    "memory_source_descriptor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["byte_count", "content_sha256", "source_kind", "source_ref"],
+      "properties": {
+        "byte_count": {"type": "integer", "minimum": 1, "maximum": 33554432},
+        "content_sha256": {"$ref": "#/$defs/sha256"},
+        "source_kind": {"const": "forgeos_memory_jsonl_v1"},
+        "source_ref": {"$ref": "#/$defs/source_ref"}
+      }
+    },
+    "adr_source_descriptor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["byte_count", "content_sha256", "source_kind", "source_ref"],
+      "properties": {
+        "byte_count": {"type": "integer", "minimum": 1, "maximum": 1048576},
+        "content_sha256": {"$ref": "#/$defs/sha256"},
+        "source_kind": {"const": "legacy_adr_markdown"},
+        "source_ref": {"$ref": "#/$defs/source_ref"}
+      }
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "api_version", "binding", "canonicalization", "kind", "request_sha256", "sources"
+      ],
+      "properties": {
+        "api_version": {"const": "forgeos.legacy-governance-read-import-request/v1"},
+        "binding": {"$ref": "#/$defs/binding"},
+        "canonicalization": {"const": "forgeos.canonical-json/v1"},
+        "kind": {"const": "legacy_governance_read_import_request"},
+        "request_sha256": {"$ref": "#/$defs/sha256"},
+        "sources": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 257,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/source"},
+          "allOf": [
+            {
+              "contains": {"$ref": "#/$defs/memory_source"},
+              "minContains": 0,
+              "maxContains": 1
+            },
+            {
+              "contains": {"$ref": "#/$defs/adr_source"},
+              "minContains": 0,
+              "maxContains": 256
+            }
+          ]
+        }
+      }
+    },
+    "confidence": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["presence", "raw_number_lexeme"],
+          "properties": {
+            "presence": {"const": "omitted"},
+            "raw_number_lexeme": {"type": "null"}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["presence", "raw_number_lexeme"],
+          "properties": {
+            "presence": {"const": "explicit"},
+            "raw_number_lexeme": {
+              "$ref": "#/$defs/wire_text",
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?([eE][+-]?[0-9]+)?$"
+            }
+          }
+        }
+      ]
+    },
+    "memory_candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "authority", "candidate_id", "candidate_sha256", "confidence", "created_at_unix",
+        "current", "declared_kind", "declared_source", "declared_supersedes",
+        "declared_topic", "detail", "hardness", "instruction_allowed", "iteration",
+        "legacy_format", "ordinal", "raw_byte_count", "raw_bytes_base64url",
+        "raw_sha256", "request_sha256", "source_kind", "source_ref", "trust_state"
+      ],
+      "properties": {
+        "authority": {"type": "null"},
+        "candidate_id": {"$ref": "#/$defs/sha256"},
+        "candidate_sha256": {"$ref": "#/$defs/sha256"},
+        "confidence": {"$ref": "#/$defs/confidence"},
+        "created_at_unix": {"type": "integer", "minimum": -9223372036854775808, "maximum": 9223372036854775807},
+        "current": {"const": false},
+        "declared_kind": {"enum": ["decision", "gap", "lesson"]},
+        "declared_source": {
+          "oneOf": [{"type": "null"}, {"$ref": "#/$defs/source_ref"}]
+        },
+        "declared_supersedes": {
+          "oneOf": [{"type": "null"}, {"$ref": "#/$defs/source_ref"}]
+        },
+        "declared_topic": {"$ref": "#/$defs/source_ref"},
+        "detail": {
+          "$ref": "#/$defs/wire_text",
+          "description": "maxLength counts Unicode code points; decoders enforce the authoritative 16777216 UTF-8-byte ceiling.",
+          "type": "string", "minLength": 1, "maxLength": 16777216
+        },
+        "hardness": {"const": "none"},
+        "instruction_allowed": {"const": false},
+        "iteration": {"type": "integer", "minimum": -9223372036854775808, "maximum": 9223372036854775807},
+        "legacy_format": {"enum": [null, "forgeos.memory.v1"]},
+        "ordinal": {"type": "integer", "minimum": 1, "maximum": 4096},
+        "raw_byte_count": {"type": "integer", "minimum": 1, "maximum": 16777216},
+        "raw_bytes_base64url": {"$ref": "#/$defs/memory_line_base64url"},
+        "raw_sha256": {"$ref": "#/$defs/sha256"},
+        "request_sha256": {"$ref": "#/$defs/sha256"},
+        "source_kind": {"const": "forgeos_memory_jsonl_v1"},
+        "source_ref": {"$ref": "#/$defs/source_ref"},
+        "trust_state": {"const": "unverified_legacy"}
+      }
+    },
+    "adr_candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "authority", "candidate_id", "candidate_sha256", "current", "document_name",
+        "hardness", "instruction_allowed", "ordinal", "parsing", "raw_byte_count",
+        "raw_bytes_base64url", "raw_sha256", "request_sha256", "source_kind",
+        "source_ref", "trust_state"
+      ],
+      "properties": {
+        "authority": {"type": "null"},
+        "candidate_id": {"$ref": "#/$defs/sha256"},
+        "candidate_sha256": {"$ref": "#/$defs/sha256"},
+        "current": {"const": false},
+        "document_name": {"$ref": "#/$defs/source_ref"},
+        "hardness": {"const": "none"},
+        "instruction_allowed": {"const": false},
+        "ordinal": {"const": 1},
+        "parsing": {"const": "not_performed"},
+        "raw_byte_count": {"type": "integer", "minimum": 1, "maximum": 1048576},
+        "raw_bytes_base64url": {"$ref": "#/$defs/adr_base64url"},
+        "raw_sha256": {"$ref": "#/$defs/sha256"},
+        "request_sha256": {"$ref": "#/$defs/sha256"},
+        "source_kind": {"const": "legacy_adr_markdown"},
+        "source_ref": {"$ref": "#/$defs/source_ref"},
+        "trust_state": {"const": "unverified_legacy"}
+      }
+    },
+    "conflict_set": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "conflict_set_id", "declared_kind", "declared_topic", "member_candidate_ids"
+      ],
+      "properties": {
+        "conflict_set_id": {"$ref": "#/$defs/sha256"},
+        "declared_kind": {"enum": ["decision", "gap", "lesson"]},
+        "declared_topic": {"$ref": "#/$defs/source_ref"},
+        "member_candidate_ids": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 4096,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/sha256"}
+        }
+      }
+    },
+    "supersession": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "declaration_id", "declared_supersedes", "declaring_candidate_id", "relation_state"
+      ],
+      "properties": {
+        "declaration_id": {"$ref": "#/$defs/sha256"},
+        "declared_supersedes": {"$ref": "#/$defs/source_ref"},
+        "declaring_candidate_id": {"$ref": "#/$defs/sha256"},
+        "relation_state": {"const": "unresolved_unverified_legacy"}
+      }
+    },
+    "attestations": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "acceptance", "authority", "confidence_interpretation", "conflict_resolution",
+        "currentness", "instruction_eligibility", "persistence", "runtime_effect",
+        "source_authentication", "source_completeness", "status_interpretation", "truth",
+        "winner_selection"
+      ],
+      "properties": {
+        "acceptance": {"const": false},
+        "authority": {"const": false},
+        "confidence_interpretation": {"const": false},
+        "conflict_resolution": {"const": false},
+        "currentness": {"const": false},
+        "instruction_eligibility": {"const": false},
+        "persistence": {"const": false},
+        "runtime_effect": {"const": false},
+        "source_authentication": {"const": false},
+        "source_completeness": {"const": false},
+        "status_interpretation": {"const": false},
+        "truth": {"const": false},
+        "winner_selection": {"const": false}
+      }
+    },
+    "view": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "api_version", "attestations", "binding", "candidates", "canonicalization",
+        "conflict_sets", "declared_supersessions", "kind", "request_sha256", "result",
+        "source_set_sha256", "sources", "view_sha256"
+      ],
+      "properties": {
+        "api_version": {"const": "forgeos.legacy-governance-read-import-view/v1"},
+        "attestations": {"$ref": "#/$defs/attestations"},
+        "binding": {"$ref": "#/$defs/binding"},
+        "candidates": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4352,
+          "uniqueItems": true,
+          "items": {
+            "oneOf": [
+              {"$ref": "#/$defs/memory_candidate"},
+              {"$ref": "#/$defs/adr_candidate"}
+            ]
+          },
+          "allOf": [
+            {
+              "contains": {"$ref": "#/$defs/memory_candidate"},
+              "minContains": 0,
+              "maxContains": 4096
+            },
+            {
+              "contains": {"$ref": "#/$defs/adr_candidate"},
+              "minContains": 0,
+              "maxContains": 256
+            }
+          ]
+        },
+        "canonicalization": {"const": "forgeos.canonical-json/v1"},
+        "conflict_sets": {
+          "type": "array",
+          "maxItems": 4096,
+          "items": {"$ref": "#/$defs/conflict_set"}
+        },
+        "declared_supersessions": {
+          "type": "array",
+          "maxItems": 4096,
+          "items": {"$ref": "#/$defs/supersession"}
+        },
+        "kind": {"const": "legacy_governance_read_import_view"},
+        "request_sha256": {"$ref": "#/$defs/sha256"},
+        "result": {"const": "PROJECTED_UNVERIFIED_LEGACY_READ_ONLY"},
+        "source_set_sha256": {"$ref": "#/$defs/sha256"},
+        "sources": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 257,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/source_descriptor"},
+          "allOf": [
+            {
+              "contains": {"$ref": "#/$defs/memory_source_descriptor"},
+              "minContains": 0,
+              "maxContains": 1
+            },
+            {
+              "contains": {"$ref": "#/$defs/adr_source_descriptor"},
+              "minContains": 0,
+              "maxContains": 256
+            }
+          ]
+        },
+        "view_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    }
+  }
+}
