@@ -1,0 +1,360 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forgeos.dev/contracts/approval-record-v1.schema.json",
+  "title": "ForgeOS ApprovalRecord v1 contract-only golden envelope",
+  "description": "Strict caller-declared ApprovalRecord, declared target, assessment request, authority-neutral assessment, and CapabilityGrant ApprovalRef projection. Validity never authenticates an approver or creates effective approval.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["approval_record", "assessment_request", "expected_approval_ref", "expected_assessment"],
+  "properties": {
+    "approval_record": { "$ref": "#/$defs/record" },
+    "assessment_request": { "$ref": "#/$defs/request" },
+    "expected_approval_ref": { "$ref": "#/$defs/approval_ref" },
+    "expected_assessment": { "$ref": "#/$defs/assessment" }
+  },
+  "x-forgeos-canonicalization": {
+    "format": "forgeos.canonical-json/v1",
+    "approval_record_digest_domain": "forgeos.approval-record.v1\u0000",
+    "declared_target_digest_domain": "forgeos.approval-declared-target.v1\u0000",
+    "assessment_request_digest_domain": "forgeos.approval-record-declared-assessment-request.v1\u0000",
+    "assessment_digest_domain": "forgeos.approval-record-declared-assessment.v1\u0000",
+    "self_digest_rules": [
+      "approval_id, approval_sha256, authority_proof.proof_base64url, and separation_of_duty.proof_base64url are empty while hashing the complete ApprovalRecord",
+      "the complete declared target has no self-digest field",
+      "request_sha256 is empty while hashing the complete assessment request, including both proof byte strings",
+      "assessment_sha256 is empty while hashing the complete declared assessment"
+    ]
+  },
+  "x-forgeos-limits": {
+    "max_record_bytes": 1048576,
+    "max_declared_target_bytes": 1048576,
+    "max_assessment_request_bytes": 2097152,
+    "max_assessment_bytes": 262144,
+    "max_golden_bytes": 4194304,
+    "max_json_depth": 16,
+    "max_object_fields": 64,
+    "max_array_items": 256,
+    "max_string_bytes": 16384,
+    "max_short_text_bytes": 160,
+    "max_proof_text_bytes": 16384,
+    "max_validity_ms": 86400000,
+    "integer_domain": "signed_int64"
+  },
+  "x-forgeos-authority-semantics": {
+    "delivery": "strict_pure_contract_only",
+    "assessment_mode": "authority_neutral_declared_approval_only",
+    "marker_import": "forbidden",
+    "local_approved_marker_is_approval_record": false,
+    "actor_hint_is_authenticated_identity": false,
+    "approver_authentication": "not_evaluated",
+    "authority_proof_verification": "not_evaluated",
+    "condition_satisfaction": "not_evaluated",
+    "risk_acceptance_validation": "not_evaluated",
+    "separation_of_duty_proof_verification": "not_evaluated",
+    "revocation_registry_evaluation": "not_evaluated",
+    "effective_approval": "not_evaluated",
+    "policy_decision": "none",
+    "authorization_decision": "none",
+    "permission_attestation": false,
+    "effect_attestation": false,
+    "persistence_attestation": false,
+    "transition_attestation": false,
+    "production_effects": "forbidden",
+    "positive_result": "ASSESSED_APPROVAL_DECLARATIONS_ONLY (no approver or authority authentication, attestation or SoD proof verification, condition or RiskAcceptance validation, revocation evaluation, policy decision, effective approval, authorization, permission, persistence, transition, execution, or effect attestation)",
+    "attestations": []
+  },
+  "$defs": {
+    "hash": {
+      "type": "string", "minLength": 64, "maxLength": 64,
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "text": {
+      "type": "string", "minLength": 1, "maxLength": 16384,
+      "not": { "pattern": "[\\u0000-\\u001f\\u007f\\u061c\\u200e\\u200f\\u2028-\\u202e\\u2066-\\u2069\\ud800-\\udfff]" }
+    },
+    "short_text": {
+      "allOf": [{ "$ref": "#/$defs/text" }, { "maxLength": 160 }]
+    },
+    "reference_text": {
+      "allOf": [{ "$ref": "#/$defs/text" }, { "maxLength": 4096 }]
+    },
+    "stable_reason": {
+      "type": "string", "minLength": 1, "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9._-]{0,159}(?![\\s\\S])"
+    },
+    "unix_ms": {
+      "type": "integer", "minimum": 0, "maximum": 9223372036854775807
+    },
+    "principal": {
+      "type": "object", "additionalProperties": false,
+      "required": ["authority_domain", "principal_id", "principal_type"],
+      "properties": {
+        "authority_domain": { "$ref": "#/$defs/short_text" },
+        "principal_id": { "$ref": "#/$defs/short_text" },
+        "principal_type": { "enum": ["agent", "human", "operator", "service"] }
+      }
+    },
+    "approver": {
+      "allOf": [
+        { "$ref": "#/$defs/principal" },
+        { "properties": { "principal_type": { "enum": ["human", "operator"] } } }
+      ]
+    },
+    "authority_source": {
+      "type": "object", "additionalProperties": false,
+      "required": ["authority_class", "authority_domain", "principal_id", "principal_type"],
+      "properties": {
+        "authority_class": { "enum": ["external_operator", "forgeos_kernel"] },
+        "authority_domain": { "$ref": "#/$defs/short_text" },
+        "principal_id": { "$ref": "#/$defs/short_text" },
+        "principal_type": { "enum": ["human", "operator", "service"] }
+      },
+      "allOf": [{
+        "if": { "properties": { "authority_class": { "const": "forgeos_kernel" } } },
+        "then": { "properties": { "principal_type": { "const": "service" } } },
+        "else": { "properties": { "principal_type": { "enum": ["human", "operator"] } } }
+      }]
+    },
+    "authority_binding": {
+      "type": "object", "additionalProperties": false,
+      "required": ["authority_source", "key_id", "proof_kind", "proof_profile_id", "proof_profile_sha256", "trust_domain", "trust_epoch"],
+      "properties": {
+        "authority_source": { "$ref": "#/$defs/authority_source" },
+        "key_id": { "$ref": "#/$defs/short_text" },
+        "proof_kind": { "enum": ["attestation", "signature"] },
+        "proof_profile_id": { "$ref": "#/$defs/short_text" },
+        "proof_profile_sha256": { "$ref": "#/$defs/hash" },
+        "trust_domain": { "$ref": "#/$defs/short_text" },
+        "trust_epoch": { "$ref": "#/$defs/unix_ms" }
+      }
+    },
+    "proof_text": {
+      "type": "string", "minLength": 16, "maxLength": 16384,
+      "pattern": "^(?:[A-Za-z0-9_-]{4})*(?:[A-Za-z0-9_-][AQgw]|[A-Za-z0-9_-]{2}[AEIMQUYcgkosw048])?(?![\\s\\S])"
+    },
+    "authority_proof": {
+      "type": "object", "additionalProperties": false,
+      "required": ["authority_source", "key_id", "proof_base64url", "proof_kind", "proof_profile_id", "proof_profile_sha256", "trust_domain", "trust_epoch"],
+      "properties": {
+        "authority_source": { "$ref": "#/$defs/authority_source" },
+        "key_id": { "$ref": "#/$defs/short_text" },
+        "proof_base64url": { "$ref": "#/$defs/proof_text" },
+        "proof_kind": { "enum": ["attestation", "signature"] },
+        "proof_profile_id": { "$ref": "#/$defs/short_text" },
+        "proof_profile_sha256": { "$ref": "#/$defs/hash" },
+        "trust_domain": { "$ref": "#/$defs/short_text" },
+        "trust_epoch": { "$ref": "#/$defs/unix_ms" }
+      }
+    },
+    "artifact": {
+      "type": "object", "additionalProperties": false,
+      "required": ["artifact_kind", "artifact_ref", "artifact_sha256"],
+      "properties": {
+        "artifact_kind": { "$ref": "#/$defs/short_text" },
+        "artifact_ref": { "$ref": "#/$defs/reference_text" },
+        "artifact_sha256": { "$ref": "#/$defs/hash" }
+      }
+    },
+    "bindings": {
+      "type": "object", "additionalProperties": false,
+      "required": ["artifacts", "context_sha256", "impact_sha256", "plan_sha256", "policy_sha256", "risk_sha256", "source_revision", "source_tree_sha256"],
+      "properties": {
+        "artifacts": { "type": "array", "minItems": 1, "maxItems": 32, "uniqueItems": true, "items": { "$ref": "#/$defs/artifact" } },
+        "context_sha256": { "$ref": "#/$defs/hash" },
+        "impact_sha256": { "$ref": "#/$defs/hash" },
+        "plan_sha256": { "$ref": "#/$defs/hash" },
+        "policy_sha256": { "$ref": "#/$defs/hash" },
+        "risk_sha256": { "$ref": "#/$defs/hash" },
+        "source_revision": { "$ref": "#/$defs/short_text" },
+        "source_tree_sha256": { "$ref": "#/$defs/hash" }
+      }
+    },
+    "condition": {
+      "type": "object", "additionalProperties": false,
+      "required": ["condition_id", "condition_ref", "condition_sha256"],
+      "properties": {
+        "condition_id": { "$ref": "#/$defs/short_text" },
+        "condition_ref": { "$ref": "#/$defs/reference_text" },
+        "condition_sha256": { "$ref": "#/$defs/hash" }
+      }
+    },
+    "risk_ref": {
+      "type": "object", "additionalProperties": false,
+      "required": ["authority_domain", "risk_acceptance_id", "risk_acceptance_sha256"],
+      "properties": {
+        "authority_domain": { "$ref": "#/$defs/short_text" },
+        "risk_acceptance_id": { "$ref": "#/$defs/short_text" },
+        "risk_acceptance_sha256": { "$ref": "#/$defs/hash" }
+      }
+    },
+    "scope": {
+      "type": "object", "additionalProperties": false,
+      "required": ["change_id", "effect_id", "environment_class", "environment_id", "gate_id", "materiality_level", "project_id", "scope_type"],
+      "properties": {
+        "change_id": { "$ref": "#/$defs/short_text" },
+        "effect_id": { "oneOf": [{ "enum": ["approval.decide", "approval.request", "knowledge.apply", "knowledge.propose", "migration.apply", "migration.generate", "network.read", "network.write", "placement.plan", "policy.propose", "policy.write", "process.exec", "release.execute", "release.plan", "repo.read", "repo.write", "secrets.read", "target.execute", "target.inventory", "target.probe", "target.reserve"] }, { "type": "null" }] },
+        "environment_class": { "enum": ["development", "local", "production", "staging", "test"] },
+        "environment_id": { "$ref": "#/$defs/short_text" },
+        "gate_id": { "oneOf": [{ "$ref": "#/$defs/short_text" }, { "type": "null" }] },
+        "materiality_level": { "enum": ["L0", "L1", "L2", "L3", "L4"] },
+        "project_id": { "$ref": "#/$defs/short_text" },
+        "scope_type": { "enum": ["effect", "gate"] }
+      },
+      "allOf": [{
+        "if": { "properties": { "scope_type": { "const": "gate" } } },
+        "then": { "properties": { "effect_id": { "type": "null" }, "gate_id": { "$ref": "#/$defs/short_text" } } },
+        "else": { "properties": { "effect_id": { "type": "string" }, "gate_id": { "type": "null" } } }
+      }]
+    },
+    "decision_basis": {
+      "type": "object", "additionalProperties": false,
+      "required": ["rationale_ref", "rationale_sha256", "reason_codes"],
+      "properties": {
+        "rationale_ref": { "$ref": "#/$defs/reference_text" },
+        "rationale_sha256": { "$ref": "#/$defs/hash" },
+        "reason_codes": { "type": "array", "minItems": 1, "maxItems": 16, "uniqueItems": true, "items": { "$ref": "#/$defs/stable_reason" } }
+      }
+    },
+    "sod_declaration": {
+      "type": "object", "additionalProperties": false,
+      "required": ["implementers", "proof_profile_id", "proof_profile_sha256", "requester", "required_distinctions"],
+      "properties": {
+        "implementers": { "type": "array", "maxItems": 32, "uniqueItems": true, "items": { "$ref": "#/$defs/principal" } },
+        "proof_profile_id": { "$ref": "#/$defs/short_text" },
+        "proof_profile_sha256": { "$ref": "#/$defs/hash" },
+        "requester": { "$ref": "#/$defs/principal" },
+        "required_distinctions": { "type": "array", "minItems": 1, "maxItems": 3, "uniqueItems": true, "items": { "enum": ["approver_not_implementer", "approver_not_requester", "approver_not_subject"] } }
+      }
+    },
+    "sod": {
+      "type": "object", "additionalProperties": false,
+      "required": ["implementers", "proof_base64url", "proof_profile_id", "proof_profile_sha256", "requester", "required_distinctions"],
+      "properties": {
+        "implementers": { "type": "array", "maxItems": 32, "uniqueItems": true, "items": { "$ref": "#/$defs/principal" } },
+        "proof_base64url": { "$ref": "#/$defs/proof_text" },
+        "proof_profile_id": { "$ref": "#/$defs/short_text" },
+        "proof_profile_sha256": { "$ref": "#/$defs/hash" },
+        "requester": { "$ref": "#/$defs/principal" },
+        "required_distinctions": { "type": "array", "minItems": 1, "maxItems": 3, "uniqueItems": true, "items": { "enum": ["approver_not_implementer", "approver_not_requester", "approver_not_subject"] } }
+      }
+    },
+    "validity": {
+      "type": "object", "additionalProperties": false,
+      "required": ["expires_at_unix_ms", "issued_at_unix_ms", "not_before_unix_ms", "revoked_at_unix_ms", "transferable"],
+      "properties": {
+        "expires_at_unix_ms": { "$ref": "#/$defs/unix_ms" },
+        "issued_at_unix_ms": { "$ref": "#/$defs/unix_ms" },
+        "not_before_unix_ms": { "$ref": "#/$defs/unix_ms" },
+        "revoked_at_unix_ms": { "oneOf": [{ "$ref": "#/$defs/unix_ms" }, { "type": "null" }] },
+        "transferable": { "const": false }
+      }
+    },
+    "record": {
+      "type": "object", "additionalProperties": false,
+      "required": ["api_version", "approval_id", "approval_sha256", "approver", "authority_proof", "bindings", "canonicalization", "conditions", "decision", "decision_basis", "effect_vocabulary_sha256", "kind", "risk_acceptance_refs", "scope", "separation_of_duty", "subject", "validity"],
+      "properties": {
+        "api_version": { "const": "forgeos.approval-record/v1" },
+        "approval_id": { "type": "string", "minLength": 80, "maxLength": 80, "pattern": "^approval-record-[0-9a-f]{64}$" },
+        "approval_sha256": { "$ref": "#/$defs/hash" },
+        "approver": { "$ref": "#/$defs/approver" },
+        "authority_proof": { "$ref": "#/$defs/authority_proof" },
+        "bindings": { "$ref": "#/$defs/bindings" },
+        "canonicalization": { "const": "forgeos.canonical-json/v1" },
+        "conditions": { "type": "array", "maxItems": 32, "uniqueItems": true, "items": { "$ref": "#/$defs/condition" } },
+        "decision": { "enum": ["abstain", "approve", "reject"] },
+        "decision_basis": { "$ref": "#/$defs/decision_basis" },
+        "effect_vocabulary_sha256": { "const": "a45de832e43ccdbebcb22f183575039d451594bfbc9ec713105c657a6adda49f" },
+        "kind": { "const": "ApprovalRecord" },
+        "risk_acceptance_refs": { "type": "array", "maxItems": 32, "uniqueItems": true, "items": { "$ref": "#/$defs/risk_ref" } },
+        "scope": { "$ref": "#/$defs/scope" },
+        "separation_of_duty": { "$ref": "#/$defs/sod" },
+        "subject": { "$ref": "#/$defs/principal" },
+        "validity": { "$ref": "#/$defs/validity" }
+      }
+    },
+    "target": {
+      "type": "object", "additionalProperties": false,
+      "required": ["approver", "authority_binding", "bindings", "conditions", "decision", "risk_acceptance_refs", "scope", "separation_of_duty_declaration", "subject"],
+      "properties": {
+        "approver": { "$ref": "#/$defs/approver" },
+        "authority_binding": { "$ref": "#/$defs/authority_binding" },
+        "bindings": { "$ref": "#/$defs/bindings" },
+        "conditions": { "type": "array", "maxItems": 32, "uniqueItems": true, "items": { "$ref": "#/$defs/condition" } },
+        "decision": { "enum": ["abstain", "approve", "reject"] },
+        "risk_acceptance_refs": { "type": "array", "maxItems": 32, "uniqueItems": true, "items": { "$ref": "#/$defs/risk_ref" } },
+        "scope": { "$ref": "#/$defs/scope" },
+        "separation_of_duty_declaration": { "$ref": "#/$defs/sod_declaration" },
+        "subject": { "$ref": "#/$defs/principal" }
+      }
+    },
+    "request": {
+      "type": "object", "additionalProperties": false,
+      "required": ["api_version", "approval_record", "canonicalization", "evaluated_at_unix_ms", "expected_target", "expected_target_sha256", "request_sha256"],
+      "properties": {
+        "api_version": { "const": "forgeos.approval-record-declared-assessment-request/v1" },
+        "approval_record": { "$ref": "#/$defs/record" },
+        "canonicalization": { "const": "forgeos.canonical-json/v1" },
+        "evaluated_at_unix_ms": { "$ref": "#/$defs/unix_ms" },
+        "expected_target": { "$ref": "#/$defs/target" },
+        "expected_target_sha256": { "$ref": "#/$defs/hash" },
+        "request_sha256": { "$ref": "#/$defs/hash" }
+      }
+    },
+    "relations": {
+      "type": "object", "additionalProperties": false,
+      "required": ["approver", "authority_binding", "binding", "conditions", "decision", "revocation", "risk_acceptance", "scope", "separation_of_duty", "subject", "temporal"],
+      "properties": {
+        "approver": { "enum": ["approver_mismatch", "same_declared_approver"] },
+        "authority_binding": { "enum": ["authority_binding_mismatch", "same_declared_authority_binding"] },
+        "binding": { "enum": ["binding_mismatch", "same_declared_binding"] },
+        "conditions": { "enum": ["conditions_mismatch", "same_declared_conditions"] },
+        "decision": { "enum": ["decision_mismatch", "same_declared_decision"] },
+        "revocation": { "enum": ["declared_revocation_time_not_reached", "declared_revocation_time_reached"] },
+        "risk_acceptance": { "enum": ["risk_acceptance_mismatch", "same_declared_risk_acceptance_refs"] },
+        "scope": { "enum": ["same_declared_scope", "scope_mismatch"] },
+        "separation_of_duty": { "enum": ["same_declared_separation_of_duty", "separation_of_duty_mismatch"] },
+        "subject": { "enum": ["same_declared_subject", "subject_mismatch"] },
+        "temporal": { "enum": ["inside_declared_window", "outside_declared_window"] }
+      }
+    },
+    "assessment": {
+      "type": "object", "additionalProperties": false,
+      "required": ["api_version", "approval_id", "approval_sha256", "approver_identity_state", "assessment_mode", "assessment_sha256", "authority_proof_state", "authorization_decision", "canonicalization", "condition_satisfaction_state", "effect_attestation", "effective_approval_state", "expected_target_sha256", "permission_attestation", "persistence_attestation", "policy_decision", "reason_codes", "relations", "request_sha256", "result", "revocation_registry_state", "risk_acceptance_state", "separation_of_duty_proof_state", "transition_attestation"],
+      "properties": {
+        "api_version": { "const": "forgeos.approval-record-declared-assessment/v1" },
+        "approval_id": { "type": "string", "minLength": 80, "maxLength": 80, "pattern": "^approval-record-[0-9a-f]{64}$" },
+        "approval_sha256": { "$ref": "#/$defs/hash" },
+        "approver_identity_state": { "const": "not_evaluated" },
+        "assessment_mode": { "const": "authority_neutral_declared_approval_only" },
+        "assessment_sha256": { "$ref": "#/$defs/hash" },
+        "authority_proof_state": { "const": "not_evaluated" },
+        "authorization_decision": { "const": "none" },
+        "canonicalization": { "const": "forgeos.canonical-json/v1" },
+        "condition_satisfaction_state": { "const": "not_evaluated" },
+        "effect_attestation": { "const": false },
+        "effective_approval_state": { "const": "not_evaluated" },
+        "expected_target_sha256": { "$ref": "#/$defs/hash" },
+        "permission_attestation": { "const": false },
+        "persistence_attestation": { "const": false },
+        "policy_decision": { "const": "none" },
+        "reason_codes": { "type": "array", "maxItems": 11, "uniqueItems": true, "items": { "enum": ["approver_mismatch", "authority_binding_mismatch", "binding_mismatch", "conditions_mismatch", "declared_revocation_time_reached", "decision_mismatch", "risk_acceptance_mismatch", "scope_mismatch", "separation_of_duty_mismatch", "subject_mismatch", "temporal_window_mismatch"] } },
+        "relations": { "$ref": "#/$defs/relations" },
+        "request_sha256": { "$ref": "#/$defs/hash" },
+        "result": { "const": "ASSESSED_APPROVAL_DECLARATIONS_ONLY (no approver or authority authentication, attestation or SoD proof verification, condition or RiskAcceptance validation, revocation evaluation, policy decision, effective approval, authorization, permission, persistence, transition, execution, or effect attestation)" },
+        "revocation_registry_state": { "const": "not_evaluated" },
+        "risk_acceptance_state": { "const": "not_evaluated" },
+        "separation_of_duty_proof_state": { "const": "not_evaluated" },
+        "transition_attestation": { "const": false }
+      }
+    },
+    "approval_ref": {
+      "type": "object", "additionalProperties": false,
+      "required": ["approval_id", "approval_sha256", "authority_domain"],
+      "properties": {
+        "approval_id": { "type": "string", "minLength": 80, "maxLength": 80, "pattern": "^approval-record-[0-9a-f]{64}$" },
+        "approval_sha256": { "$ref": "#/$defs/hash" },
+        "authority_domain": { "$ref": "#/$defs/short_text" }
+      }
+    }
+  }
+}

@@ -1,0 +1,278 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forgeos.dev/contracts/context-package-v1.schema.json",
+  "title": "ForgeOS ContextPackage v1 exact golden envelope",
+  "description": "Strict authority-free ContextPackage build request and expected deterministic projection. Byte bounds, canonical ordering, digest recomputation, UTF-8 redaction boundaries, token counting, and exact reassembly are enforced by the reference checker.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["expected_package", "request"],
+  "properties": {
+    "expected_package": { "$ref": "#/$defs/context_package" },
+    "request": { "$ref": "#/$defs/build_request" }
+  },
+  "x-forgeos-canonicalization": {
+    "format": "forgeos.canonical-json/v1",
+    "request_digest_domain": "forgeos.context-package-build-request.v1\u0000",
+    "cache_key_digest_domain": "forgeos.context-package-cache-key.v1\u0000",
+    "context_digest_domain": "forgeos.context-package.v1\u0000",
+    "snippet_digest_domain": "forgeos.context-snippet.v1\u0000",
+    "projected_content_digest_domain": "forgeos.context-content.v1\u0000",
+    "projection_digest_domain": "forgeos.context-package-projection.v1\u0000",
+    "self_digest_rules": [
+      "context_sha256 is empty while hashing the complete ContextPackage",
+      "snippet_sha256 is empty while hashing the complete snippet"
+    ]
+  },
+  "x-forgeos-limits": {
+    "max_request_bytes": 20971520,
+    "max_package_bytes": 2097152,
+    "max_candidate_sources": 64,
+    "max_selected_snippets": 24,
+    "max_content_bytes": 524288,
+    "max_tokens": 1000000,
+    "max_source_content_bytes": 131072,
+    "max_redaction_ranges": 256,
+    "max_json_depth": 16,
+    "max_object_fields": 32,
+    "max_array_items": 256,
+    "max_string_bytes": 131072,
+    "integer_domain": "signed_int64"
+  },
+  "x-forgeos-context-semantics": {
+    "mode": "authority_free_deterministic_context_projection",
+    "lanes": ["instruction_candidates", "trusted_context", "untrusted_data"],
+    "delimiter": "structured_json_lane_no_text_delimiter",
+    "instruction_allowed": false,
+    "redaction_before_budget": true,
+    "required_fail_closed": true,
+    "optional_omit_with_receipt": true,
+    "token_counter_pinned": true,
+    "source_order": "source_id_utf8_byte_ascending",
+    "positive_result": "ASSEMBLED_SHADOW (no truth, authority, instruction, permission, approval, completion, persistence, or effect attestation)",
+    "attestations": [],
+    "persistence": "none"
+  },
+  "$defs": {
+    "hash": { "type": "string", "minLength": 64, "maxLength": 64, "pattern": "^[a-f0-9]{64}$" },
+    "text": {
+      "type": "string", "minLength": 1, "maxLength": 4096,
+      "not": { "pattern": "[\\u0000-\\u001f\\u007f\\u061c\\u200e\\u200f\\u2028\\u2029\\u202a-\\u202e\\u2066-\\u2069]" }
+    },
+    "short_text": {
+      "allOf": [{ "$ref": "#/$defs/text" }, { "maxLength": 160 }]
+    },
+    "content": {
+      "type": "string", "minLength": 1, "maxLength": 131072,
+      "not": { "pattern": "[\\u0000-\\u0008\\u000b-\\u001f\\u007f\\u061c\\u200e\\u200f\\u2028\\u2029\\u202a-\\u202e\\u2066-\\u2069]" }
+    },
+    "unix_ms": { "type": "integer", "minimum": 0, "maximum": 9223372036854775807 },
+    "nullable_unix_ms": { "oneOf": [{ "$ref": "#/$defs/unix_ms" }, { "type": "null" }] },
+    "budget": {
+      "type": "object", "additionalProperties": false,
+      "required": ["max_content_bytes", "max_snippets", "max_tokens", "tokenizer_id", "tokenizer_sha256"],
+      "properties": {
+        "max_content_bytes": { "type": "integer", "minimum": 1, "maximum": 524288 },
+        "max_snippets": { "type": "integer", "minimum": 1, "maximum": 24 },
+        "max_tokens": { "type": "integer", "minimum": 1, "maximum": 1000000 },
+        "tokenizer_id": { "$ref": "#/$defs/short_text" },
+        "tokenizer_sha256": { "$ref": "#/$defs/hash" }
+      }
+    },
+    "task_binding": {
+      "type": "object", "additionalProperties": false,
+      "required": ["change_id", "node_id", "phase", "project_id", "role", "run_id", "task_id"],
+      "properties": {
+        "change_id": { "$ref": "#/$defs/short_text" },
+        "node_id": { "$ref": "#/$defs/short_text" },
+        "phase": { "$ref": "#/$defs/short_text" },
+        "project_id": { "$ref": "#/$defs/short_text" },
+        "role": { "$ref": "#/$defs/short_text" },
+        "run_id": { "$ref": "#/$defs/short_text" },
+        "task_id": { "$ref": "#/$defs/short_text" }
+      }
+    },
+    "source_binding": {
+      "type": "object", "additionalProperties": false,
+      "required": ["as_of_unix_ms", "policy_sha256", "routes_sha256", "source_revision", "source_tree_sha256"],
+      "properties": {
+        "as_of_unix_ms": { "$ref": "#/$defs/unix_ms" },
+        "policy_sha256": { "$ref": "#/$defs/hash" },
+        "routes_sha256": { "$ref": "#/$defs/hash" },
+        "source_revision": { "$ref": "#/$defs/short_text" },
+        "source_tree_sha256": { "$ref": "#/$defs/hash" }
+      }
+    },
+    "source": {
+      "type": "object", "additionalProperties": false,
+      "required": ["availability", "category", "content", "content_sha256", "declared_lane", "declared_trust", "disposition", "expires_at_unix_ms", "freshness", "injection_risk", "max_bytes", "priority", "required", "source_class", "source_id", "source_ref", "source_revision", "truncation"],
+      "properties": {
+        "availability": { "enum": ["available", "missing"] },
+        "category": { "enum": ["task", "requirement", "acceptance", "hard_constraint", "permission", "prohibition", "fact", "decision", "assumption", "unknown", "adr", "impact", "api_contract", "data_contract", "deployment_contract", "code", "test", "debt", "finding", "runtime_evidence", "history"] },
+        "content": { "oneOf": [{ "$ref": "#/$defs/content" }, { "type": "null" }] },
+        "content_sha256": { "oneOf": [{ "$ref": "#/$defs/hash" }, { "type": "null" }] },
+        "declared_lane": { "enum": ["instruction", "trusted_context", "untrusted_data"] },
+        "declared_trust": { "enum": ["system_policy", "user_authorized", "project_governance", "governance_record", "untrusted"] },
+        "disposition": { "enum": ["allow", "deny"] },
+        "expires_at_unix_ms": { "$ref": "#/$defs/nullable_unix_ms" },
+        "freshness": { "enum": ["fresh", "stale", "contested", "unknown"] },
+        "injection_risk": { "enum": ["none", "suspected"] },
+        "max_bytes": { "type": "integer", "minimum": 1, "maximum": 131072 },
+        "priority": { "type": "integer", "minimum": 0, "maximum": 1000 },
+        "required": { "type": "boolean" },
+        "source_class": { "enum": ["system_policy", "user_instruction", "repository", "web", "log", "issue", "tool_output", "governance_record", "artifact", "other"] },
+        "source_id": { "$ref": "#/$defs/short_text" },
+        "source_ref": { "$ref": "#/$defs/text" },
+        "source_revision": { "$ref": "#/$defs/short_text" },
+        "truncation": { "enum": ["forbidden", "utf8_prefix"] }
+      },
+      "allOf": [
+        { "if": { "properties": { "availability": { "const": "available" } } }, "then": { "properties": { "content": { "$ref": "#/$defs/content" }, "content_sha256": { "$ref": "#/$defs/hash" } } } },
+        { "if": { "properties": { "availability": { "const": "missing" } } }, "then": { "properties": { "content": { "type": "null" }, "content_sha256": { "type": "null" } } } },
+        { "not": { "properties": { "source_class": { "enum": ["repository", "web", "log", "issue", "tool_output", "artifact", "other"] }, "declared_lane": { "enum": ["instruction", "trusted_context"] } }, "required": ["source_class", "declared_lane"] } },
+        { "not": { "properties": { "source_class": { "enum": ["repository", "web", "log", "issue", "tool_output", "artifact", "other"] }, "declared_trust": { "enum": ["system_policy", "user_authorized", "project_governance", "governance_record"] } }, "required": ["source_class", "declared_trust"] } }
+      ]
+    },
+    "redaction_range": {
+      "type": "object", "additionalProperties": false,
+      "required": ["end_byte", "rule_id", "start_byte"],
+      "properties": {
+        "end_byte": { "type": "integer", "minimum": 1, "maximum": 131072 },
+        "rule_id": { "$ref": "#/$defs/short_text" },
+        "start_byte": { "type": "integer", "minimum": 0, "maximum": 131071 }
+      }
+    },
+    "redaction": {
+      "type": "object", "additionalProperties": false, "required": ["ranges", "source_id"],
+      "properties": {
+        "ranges": { "type": "array", "minItems": 1, "maxItems": 256, "items": { "$ref": "#/$defs/redaction_range" } },
+        "source_id": { "$ref": "#/$defs/short_text" }
+      }
+    },
+    "build_request": {
+      "type": "object", "additionalProperties": false,
+      "required": ["api_version", "budget", "canonicalization", "redactions", "source_binding", "sources", "task_binding"],
+      "properties": {
+        "api_version": { "const": "forgeos.context-package-build-request/v1" },
+        "budget": { "$ref": "#/$defs/budget" },
+        "canonicalization": { "const": "forgeos.canonical-json/v1" },
+        "redactions": { "type": "array", "maxItems": 64, "items": { "$ref": "#/$defs/redaction" } },
+        "source_binding": { "$ref": "#/$defs/source_binding" },
+        "sources": { "type": "array", "minItems": 1, "maxItems": 64, "items": { "$ref": "#/$defs/source" } },
+        "task_binding": { "$ref": "#/$defs/task_binding" }
+      }
+    },
+    "truncation_receipt": {
+      "type": "object", "additionalProperties": false,
+      "required": ["original_redacted_bytes", "reason", "retained_bytes"],
+      "properties": {
+        "original_redacted_bytes": { "type": "integer", "minimum": 1, "maximum": 524288 },
+        "reason": { "const": "source_max_bytes" },
+        "retained_bytes": { "type": "integer", "minimum": 1, "maximum": 131072 }
+      }
+    },
+    "snippet": {
+      "type": "object", "additionalProperties": false,
+      "required": ["category", "content", "declared_lane", "declared_trust", "delimiter", "instruction_allowed", "lane", "normalization", "projected_content_sha256", "required", "selection_reason", "snippet_sha256", "source_class", "source_content_sha256", "source_id", "source_ref", "source_revision", "truncation"],
+      "properties": {
+        "category": { "$ref": "#/$defs/source/properties/category" },
+        "content": { "$ref": "#/$defs/content" },
+        "declared_lane": { "$ref": "#/$defs/source/properties/declared_lane" },
+        "declared_trust": { "$ref": "#/$defs/source/properties/declared_trust" },
+        "delimiter": { "const": "structured_json_lane_no_text_delimiter" },
+        "instruction_allowed": { "const": false },
+        "lane": { "enum": ["instruction_candidates", "trusted_context", "untrusted_data"] },
+        "normalization": { "const": "exact_lf_utf8_after_declared_redactions" },
+        "projected_content_sha256": { "$ref": "#/$defs/hash" },
+        "required": { "type": "boolean" },
+        "selection_reason": { "enum": ["required_source", "priority_selection"] },
+        "snippet_sha256": { "$ref": "#/$defs/hash" },
+        "source_class": { "$ref": "#/$defs/source/properties/source_class" },
+        "source_content_sha256": { "$ref": "#/$defs/hash" },
+        "source_id": { "$ref": "#/$defs/short_text" },
+        "source_ref": { "$ref": "#/$defs/text" },
+        "source_revision": { "$ref": "#/$defs/short_text" },
+        "truncation": { "oneOf": [{ "$ref": "#/$defs/truncation_receipt" }, { "type": "null" }] }
+      },
+      "allOf": [
+        { "oneOf": [
+          { "properties": { "declared_lane": { "const": "untrusted_data" }, "lane": { "const": "untrusted_data" } } },
+          { "properties": { "declared_lane": { "const": "trusted_context" }, "lane": { "const": "trusted_context" } } },
+          { "properties": { "declared_lane": { "const": "instruction" }, "source_class": { "enum": ["system_policy", "user_instruction"] }, "lane": { "const": "instruction_candidates" } } },
+          { "properties": { "declared_lane": { "const": "instruction" }, "source_class": { "const": "governance_record" }, "lane": { "const": "trusted_context" } } }
+        ] },
+        { "if": { "properties": { "source_class": { "enum": ["repository", "web", "log", "issue", "tool_output", "artifact", "other"] } } },
+          "then": { "properties": { "declared_lane": { "const": "untrusted_data" }, "declared_trust": { "const": "untrusted" }, "lane": { "const": "untrusted_data" } } } },
+        { "if": { "properties": { "required": { "const": true } } },
+          "then": { "properties": { "selection_reason": { "const": "required_source" }, "truncation": { "type": "null" } } },
+          "else": { "properties": { "selection_reason": { "const": "priority_selection" } } } }
+      ]
+    },
+    "lanes": {
+      "type": "object", "additionalProperties": false,
+      "required": ["instruction_candidates", "trusted_context", "untrusted_data"],
+      "properties": {
+        "instruction_candidates": { "type": "array", "maxItems": 24, "items": { "$ref": "#/$defs/snippet" } },
+        "trusted_context": { "type": "array", "maxItems": 24, "items": { "$ref": "#/$defs/snippet" } },
+        "untrusted_data": { "type": "array", "maxItems": 24, "items": { "$ref": "#/$defs/snippet" } }
+      }
+    },
+    "omission": {
+      "type": "object", "additionalProperties": false, "required": ["reason", "source_id", "source_ref"],
+      "properties": {
+        "reason": { "enum": ["missing", "denied", "stale", "contested", "unknown_freshness", "expired", "quarantined_prompt_injection", "source_limit_exceeded", "snippet_budget_exceeded", "content_budget_exceeded", "token_budget_exceeded"] },
+        "source_id": { "$ref": "#/$defs/short_text" },
+        "source_ref": { "$ref": "#/$defs/text" }
+      }
+    },
+    "redaction_receipt": {
+      "type": "object", "additionalProperties": false, "required": ["ranges", "source_id"],
+      "properties": {
+        "ranges": { "type": "array", "minItems": 1, "maxItems": 256, "items": { "$ref": "#/$defs/redaction_range" } },
+        "source_id": { "$ref": "#/$defs/short_text" }
+      }
+    },
+    "accounting": {
+      "type": "object", "additionalProperties": false,
+      "required": ["actual_tokens", "candidate_count", "content_bytes", "omitted_source_count", "redacted_range_count", "selected_snippet_count", "truncated_snippet_count"],
+      "properties": {
+        "actual_tokens": { "type": "integer", "minimum": 0, "maximum": 1000000 },
+        "candidate_count": { "type": "integer", "minimum": 1, "maximum": 64 },
+        "content_bytes": { "type": "integer", "minimum": 0, "maximum": 524288 },
+        "omitted_source_count": { "type": "integer", "minimum": 0, "maximum": 64 },
+        "redacted_range_count": { "type": "integer", "minimum": 0, "maximum": 256 },
+        "selected_snippet_count": { "type": "integer", "minimum": 0, "maximum": 24 },
+        "truncated_snippet_count": { "type": "integer", "minimum": 0, "maximum": 24 }
+      }
+    },
+    "freshness_result": {
+      "type": "object", "additionalProperties": false,
+      "required": ["evaluated_at_unix_ms", "expires_at_unix_ms"],
+      "properties": {
+        "evaluated_at_unix_ms": { "$ref": "#/$defs/unix_ms" },
+        "expires_at_unix_ms": { "$ref": "#/$defs/nullable_unix_ms" }
+      }
+    },
+    "context_package": {
+      "type": "object", "additionalProperties": false,
+      "required": ["accounting", "api_version", "assembly_mode", "budget", "cache_key_sha256", "canonicalization", "context_sha256", "freshness", "lanes", "omissions", "projection_sha256", "redaction_receipts", "request_sha256", "result", "source_binding", "task_binding"],
+      "properties": {
+        "accounting": { "$ref": "#/$defs/accounting" },
+        "api_version": { "const": "forgeos.context-package/v1" },
+        "assembly_mode": { "const": "authority_free_deterministic_context_projection" },
+        "budget": { "$ref": "#/$defs/budget" },
+        "cache_key_sha256": { "$ref": "#/$defs/hash" },
+        "canonicalization": { "const": "forgeos.canonical-json/v1" },
+        "context_sha256": { "$ref": "#/$defs/hash" },
+        "freshness": { "$ref": "#/$defs/freshness_result" },
+        "lanes": { "$ref": "#/$defs/lanes" },
+        "omissions": { "type": "array", "maxItems": 64, "items": { "$ref": "#/$defs/omission" } },
+        "projection_sha256": { "$ref": "#/$defs/hash" },
+        "redaction_receipts": { "type": "array", "maxItems": 64, "items": { "$ref": "#/$defs/redaction_receipt" } },
+        "request_sha256": { "$ref": "#/$defs/hash" },
+        "result": { "const": "ASSEMBLED_SHADOW (no truth, authority, instruction, permission, approval, completion, persistence, or effect attestation)" },
+        "source_binding": { "$ref": "#/$defs/source_binding" },
+        "task_binding": { "$ref": "#/$defs/task_binding" }
+      }
+    }
+  }
+}

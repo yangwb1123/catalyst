@@ -1,0 +1,243 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forgeos.dev/contracts/transition-receipt-v1.schema.json",
+  "title": "ForgeOS TransitionReceipt v1 contract-only golden envelope",
+  "description": "Strict caller-declared Transition state vocabulary, receipt, target, assessment request, and authority-neutral assessment. No object authorizes or performs a transition.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["assessment_request", "expected_approval_refs", "expected_assessment", "expected_capability_grant_ref", "transition_receipt", "transition_vocabulary"],
+  "properties": {
+    "assessment_request": { "$ref": "#/$defs/request" },
+    "expected_approval_refs": { "type": "array", "maxItems": 32, "uniqueItems": true, "items": { "$ref": "#/$defs/approval_ref" } },
+    "expected_assessment": { "$ref": "#/$defs/assessment" },
+    "expected_capability_grant_ref": { "$ref": "#/$defs/grant_ref" },
+    "transition_receipt": { "$ref": "#/$defs/receipt" },
+    "transition_vocabulary": { "$ref": "#/$defs/vocabulary" }
+  },
+  "x-forgeos-canonicalization": {
+    "format": "forgeos.canonical-json/v1",
+    "transition_vocabulary_digest_domain": "forgeos.governance.transition-state-vocabulary.v1\u0000",
+    "transition_receipt_digest_domain": "forgeos.transition-receipt.v1\u0000",
+    "declared_target_digest_domain": "forgeos.transition-declared-target.v1\u0000",
+    "assessment_request_digest_domain": "forgeos.transition-receipt-declared-assessment-request.v1\u0000",
+    "assessment_digest_domain": "forgeos.transition-receipt-declared-assessment.v1\u0000",
+    "self_digest_rules": [
+      "vocabulary_sha256 is empty while hashing the complete vocabulary",
+      "receipt_id and receipt_sha256 are empty while hashing the complete TransitionReceipt",
+      "the complete declared target has no self-digest field",
+      "request_sha256 is empty while hashing the complete request",
+      "assessment_sha256 is empty while hashing the complete assessment"
+    ]
+  },
+  "x-forgeos-limits": {
+    "max_vocabulary_bytes": 262144,
+    "max_receipt_bytes": 1048576,
+    "max_previous_receipt_bytes": 1048576,
+    "max_declared_target_bytes": 1048576,
+    "max_assessment_request_bytes": 4194304,
+    "max_assessment_bytes": 262144,
+    "max_golden_bytes": 8388608,
+    "max_json_depth": 16,
+    "max_object_fields": 64,
+    "max_array_items": 256,
+    "max_string_bytes": 16384,
+    "max_short_text_bytes": 160,
+    "max_reference_text_bytes": 4096,
+    "max_preconditions": 64,
+    "max_evidence_refs_per_precondition": 32,
+    "max_total_evidence_refs": 256,
+    "max_reason_codes_per_nested_declaration": 16,
+    "max_total_reason_codes": 256,
+    "integer_domain": "signed_int64",
+    "runtime_string_length_unit": "utf8_bytes",
+    "schema_max_length_unit": "unicode_code_points",
+    "schema_length_keywords_are_non_authoritative_approximations": true
+  },
+  "x-forgeos-authority-semantics": {
+    "delivery": "strict_pure_contract_only",
+    "assessment_mode": "authority_neutral_declared_transition_only",
+    "ambient_workflow_or_marker_import": "forbidden",
+    "controller_authentication_state": "not_evaluated",
+    "grant_state": "not_evaluated",
+    "approval_state": "not_evaluated",
+    "evidence_state": "not_evaluated",
+    "waiver_state": "not_evaluated",
+    "precondition_truth_state": "not_evaluated",
+    "ledger_state": "not_evaluated",
+    "policy_decision": "none",
+    "authorization_decision": "none",
+    "permission_attestation": false,
+    "persistence_attestation": false,
+    "transition_attestation": false,
+    "execution_attestation": false,
+    "effect_attestation": false,
+    "completion_attestation": false,
+    "positive_result": "ASSESSED_TRANSITION_DECLARATIONS_ONLY (no controller, actor, Grant, Approval, evidence, waiver, precondition or state authentication; no policy decision, authorization, persistence, transition, ledger, execution, effect or completion attestation)",
+    "attestations": []
+  },
+  "x-forgeos-recovery-semantics": {
+    "initial": "sequence=1 requires null predecessor fields, null embedded previous receipt, and from_state=DRAFT",
+    "subsequent": "sequence>1 compares the explicit predecessor identity, sequence, work/project/change, state continuity, and nondecreasing declared time",
+    "changes_requested": "entry carries one rework_target; exit equals the explicit predecessor rework_target or BLOCKED, REJECTED, SUPERSEDED",
+    "suspension": "entry to NEEDS_INFO or BLOCKED carries resume_state; NEEDS_INFO to BLOCKED inherits it; exit resumes to the explicit predecessor resume_state or a listed escalation",
+    "authority": "all edge, recovery, chain, applicability, and precondition results are caller-declared relations only"
+  },
+  "$defs": {
+    "hash": { "type": "string", "minLength": 64, "maxLength": 64, "pattern": "^[0-9a-f]{64}$" },
+    "text": { "type": "string", "minLength": 1, "maxLength": 16384, "not": { "pattern": "[\\u0000-\\u001f\\u007f\\u061c\\u200e\\u200f\\u2028-\\u202e\\u2066-\\u2069\\ud800-\\udfff]" } },
+    "short_text": { "allOf": [{ "$ref": "#/$defs/text" }, { "maxLength": 160 }] },
+    "reference_text": { "allOf": [{ "$ref": "#/$defs/text" }, { "maxLength": 4096 }] },
+    "stable_reason": { "type": "string", "minLength": 1, "maxLength": 160, "pattern": "^[a-z][a-z0-9._-]{0,159}(?![\\s\\S])" },
+    "unix_ms": { "type": "integer", "minimum": 0, "maximum": 9223372036854775807 },
+    "state": { "enum": ["DRAFT", "NEEDS_EVIDENCE", "BASELINED", "DESIGN_DRAFTED", "ASSESSED", "DESIGNED", "PLANNED", "AUTHORIZED", "IMPLEMENTING", "VERIFYING", "REVIEWING", "CHANGES_REQUESTED", "RELEASE_READY", "RELEASING", "OBSERVING", "REFLECTING", "LEARNING", "CLOSED", "NEEDS_INFO", "BLOCKED", "QUARANTINED", "REJECTED", "SUPERSEDED"] },
+    "nullable_state": { "oneOf": [{ "$ref": "#/$defs/state" }, { "type": "null" }] },
+    "nullable_hash": { "oneOf": [{ "$ref": "#/$defs/hash" }, { "type": "null" }] },
+    "nullable_short": { "oneOf": [{ "$ref": "#/$defs/short_text" }, { "type": "null" }] },
+    "principal": {
+      "type": "object", "additionalProperties": false,
+      "required": ["authority_domain", "principal_id", "principal_type"],
+      "properties": { "authority_domain": { "$ref": "#/$defs/short_text" }, "principal_id": { "$ref": "#/$defs/short_text" }, "principal_type": { "enum": ["agent", "human", "operator", "service"] } }
+    },
+    "controller": {
+      "type": "object", "additionalProperties": false,
+      "required": ["authority_domain", "principal_id", "principal_type"],
+      "properties": { "authority_domain": { "$ref": "#/$defs/short_text" }, "principal_id": { "$ref": "#/$defs/short_text" }, "principal_type": { "enum": ["human", "operator", "service"] } }
+    },
+    "task_binding": {
+      "type": "object", "additionalProperties": false,
+      "required": ["attempt_id", "change_id", "environment_class", "environment_id", "node_id", "project_id", "role", "run_id", "target_id", "task_id"],
+      "properties": {
+        "attempt_id": { "$ref": "#/$defs/nullable_short" }, "change_id": { "$ref": "#/$defs/short_text" },
+        "environment_class": { "enum": ["development", "local", "production", "staging", "test"] }, "environment_id": { "$ref": "#/$defs/short_text" },
+        "node_id": { "$ref": "#/$defs/short_text" }, "project_id": { "$ref": "#/$defs/short_text" }, "role": { "$ref": "#/$defs/short_text" },
+        "run_id": { "$ref": "#/$defs/short_text" }, "target_id": { "$ref": "#/$defs/nullable_short" }, "task_id": { "$ref": "#/$defs/short_text" }
+      }
+    },
+    "artifact": {
+      "type": "object", "additionalProperties": false,
+      "required": ["artifact_kind", "artifact_ref", "artifact_sha256"],
+      "properties": { "artifact_kind": { "$ref": "#/$defs/short_text" }, "artifact_ref": { "$ref": "#/$defs/reference_text" }, "artifact_sha256": { "$ref": "#/$defs/hash" } }
+    },
+    "bindings": {
+      "type": "object", "additionalProperties": false,
+      "required": ["artifacts", "context_sha256", "impact_sha256", "plan_sha256", "policy_sha256", "risk_sha256", "source_revision", "source_tree_sha256"],
+      "properties": {
+        "artifacts": { "type": "array", "maxItems": 32, "uniqueItems": true, "items": { "$ref": "#/$defs/artifact" } },
+        "context_sha256": { "$ref": "#/$defs/hash" }, "impact_sha256": { "$ref": "#/$defs/nullable_hash" }, "plan_sha256": { "$ref": "#/$defs/nullable_hash" },
+        "policy_sha256": { "$ref": "#/$defs/hash" }, "risk_sha256": { "$ref": "#/$defs/nullable_hash" }, "source_revision": { "$ref": "#/$defs/short_text" }, "source_tree_sha256": { "$ref": "#/$defs/hash" }
+      }
+    },
+    "grant_ref": {
+      "type": "object", "additionalProperties": false,
+      "required": ["authority_domain", "grant_id", "grant_sha256"],
+      "properties": { "authority_domain": { "$ref": "#/$defs/short_text" }, "grant_id": { "type": "string", "minLength": 81, "maxLength": 81, "pattern": "^capability-grant-[0-9a-f]{64}$" }, "grant_sha256": { "$ref": "#/$defs/hash" } }
+    },
+    "approval_ref": {
+      "type": "object", "additionalProperties": false,
+      "required": ["approval_id", "approval_sha256", "authority_domain"],
+      "properties": { "approval_id": { "$ref": "#/$defs/short_text" }, "approval_sha256": { "$ref": "#/$defs/hash" }, "authority_domain": { "$ref": "#/$defs/short_text" } }
+    },
+    "waiver_ref": {
+      "type": "object", "additionalProperties": false,
+      "required": ["authority_domain", "waiver_id", "waiver_sha256"],
+      "properties": { "authority_domain": { "$ref": "#/$defs/short_text" }, "waiver_id": { "$ref": "#/$defs/short_text" }, "waiver_sha256": { "$ref": "#/$defs/hash" } }
+    },
+    "evidence_ref": {
+      "type": "object", "additionalProperties": false,
+      "required": ["canonical_sha256", "record_id"],
+      "properties": { "canonical_sha256": { "$ref": "#/$defs/hash" }, "record_id": { "$ref": "#/$defs/short_text" } }
+    },
+    "precondition": {
+      "type": "object", "additionalProperties": false,
+      "required": ["evidence_refs", "precondition_id", "reason_codes", "result"],
+      "properties": {
+        "evidence_refs": { "type": "array", "maxItems": 32, "uniqueItems": true, "items": { "$ref": "#/$defs/evidence_ref" } },
+        "precondition_id": { "$ref": "#/$defs/short_text" },
+        "reason_codes": { "type": "array", "maxItems": 16, "uniqueItems": true, "items": { "$ref": "#/$defs/stable_reason" } },
+        "result": { "enum": ["PASS", "FAIL", "NA", "UNKNOWN"] }
+      }
+    },
+    "applicability": {
+      "type": "object", "additionalProperties": false,
+      "required": ["decision", "evidence_refs", "reason_codes", "stage_id"],
+      "properties": {
+        "decision": { "enum": ["applicable", "not_applicable"] },
+        "evidence_refs": { "type": "array", "maxItems": 32, "uniqueItems": true, "items": { "$ref": "#/$defs/evidence_ref" } },
+        "reason_codes": { "type": "array", "maxItems": 16, "uniqueItems": true, "items": { "$ref": "#/$defs/stable_reason" } },
+        "stage_id": { "$ref": "#/$defs/short_text" }
+      }
+    },
+    "transition": {
+      "type": "object", "additionalProperties": false,
+      "required": ["declared_at_unix_ms", "from_state", "gate_id", "resume_state", "rework_target", "to_state"],
+      "properties": { "declared_at_unix_ms": { "$ref": "#/$defs/unix_ms" }, "from_state": { "$ref": "#/$defs/state" }, "gate_id": { "$ref": "#/$defs/nullable_short" }, "resume_state": { "$ref": "#/$defs/nullable_state" }, "rework_target": { "$ref": "#/$defs/nullable_state" }, "to_state": { "$ref": "#/$defs/state" } }
+    },
+    "receipt": {
+      "type": "object", "additionalProperties": false,
+      "required": ["actor", "api_version", "applicability", "approval_refs", "bindings", "canonicalization", "capability_grant_ref", "declared_controller", "kind", "preconditions", "previous_receipt_id", "previous_receipt_sha256", "reason_codes", "receipt_id", "receipt_sha256", "sequence", "task_binding", "transition", "transition_vocabulary_sha256", "waiver_refs", "work_id"],
+      "properties": {
+        "actor": { "$ref": "#/$defs/principal" }, "api_version": { "const": "forgeos.transition-receipt/v1" }, "applicability": { "$ref": "#/$defs/applicability" },
+        "approval_refs": { "type": "array", "maxItems": 32, "uniqueItems": true, "items": { "$ref": "#/$defs/approval_ref" } }, "bindings": { "$ref": "#/$defs/bindings" },
+        "canonicalization": { "const": "forgeos.canonical-json/v1" }, "capability_grant_ref": { "$ref": "#/$defs/grant_ref" }, "declared_controller": { "$ref": "#/$defs/controller" },
+        "kind": { "const": "TransitionReceipt" }, "preconditions": { "type": "array", "minItems": 1, "maxItems": 64, "uniqueItems": true, "items": { "$ref": "#/$defs/precondition" } },
+        "previous_receipt_id": { "oneOf": [{ "type": "string", "minLength": 83, "maxLength": 83, "pattern": "^transition-receipt-[0-9a-f]{64}$" }, { "type": "null" }] }, "previous_receipt_sha256": { "$ref": "#/$defs/nullable_hash" },
+        "reason_codes": { "type": "array", "maxItems": 256, "uniqueItems": true, "items": { "$ref": "#/$defs/stable_reason" } }, "receipt_id": { "type": "string", "minLength": 83, "maxLength": 83, "pattern": "^transition-receipt-[0-9a-f]{64}$" },
+        "receipt_sha256": { "$ref": "#/$defs/hash" }, "sequence": { "type": "integer", "minimum": 1, "maximum": 9223372036854775807 }, "task_binding": { "$ref": "#/$defs/task_binding" },
+        "transition": { "$ref": "#/$defs/transition" }, "transition_vocabulary_sha256": { "const": "cc354fb2b440d81514045b50266d41d3964b6440ed9d40afa17f5991519d7d0d" },
+        "waiver_refs": { "type": "array", "maxItems": 32, "uniqueItems": true, "items": { "$ref": "#/$defs/waiver_ref" } }, "work_id": { "$ref": "#/$defs/short_text" }
+      }
+    },
+    "target": {
+      "type": "object", "additionalProperties": false,
+      "required": ["actor", "applicability", "approval_refs", "bindings", "capability_grant_ref", "declared_controller", "preconditions", "previous_receipt_id", "previous_receipt_sha256", "reason_codes", "sequence", "task_binding", "transition", "transition_vocabulary_sha256", "waiver_refs", "work_id"],
+      "properties": {
+        "actor": { "$ref": "#/$defs/principal" }, "applicability": { "$ref": "#/$defs/applicability" }, "approval_refs": { "type": "array", "maxItems": 32, "uniqueItems": true, "items": { "$ref": "#/$defs/approval_ref" } },
+        "bindings": { "$ref": "#/$defs/bindings" }, "capability_grant_ref": { "$ref": "#/$defs/grant_ref" }, "declared_controller": { "$ref": "#/$defs/controller" },
+        "preconditions": { "type": "array", "minItems": 1, "maxItems": 64, "uniqueItems": true, "items": { "$ref": "#/$defs/precondition" } }, "previous_receipt_id": { "oneOf": [{ "type": "string", "minLength": 83, "maxLength": 83, "pattern": "^transition-receipt-[0-9a-f]{64}$" }, { "type": "null" }] },
+        "previous_receipt_sha256": { "$ref": "#/$defs/nullable_hash" }, "reason_codes": { "type": "array", "maxItems": 256, "uniqueItems": true, "items": { "$ref": "#/$defs/stable_reason" } },
+        "sequence": { "type": "integer", "minimum": 1, "maximum": 9223372036854775807 }, "task_binding": { "$ref": "#/$defs/task_binding" }, "transition": { "$ref": "#/$defs/transition" },
+        "transition_vocabulary_sha256": { "const": "cc354fb2b440d81514045b50266d41d3964b6440ed9d40afa17f5991519d7d0d" }, "waiver_refs": { "type": "array", "maxItems": 32, "uniqueItems": true, "items": { "$ref": "#/$defs/waiver_ref" } }, "work_id": { "$ref": "#/$defs/short_text" }
+      }
+    },
+    "vocabulary": {
+      "type": "object", "additionalProperties": false,
+      "required": ["api_version", "canonicalization", "edges", "kind", "rework_targets", "states", "terminal_states", "vocabulary_sha256"],
+      "properties": {
+        "api_version": { "const": "forgeos.transition-state-vocabulary/v1" }, "canonicalization": { "const": "forgeos.canonical-json/v1" }, "kind": { "const": "TransitionStateVocabulary" },
+        "states": { "const": ["DRAFT", "NEEDS_EVIDENCE", "BASELINED", "DESIGN_DRAFTED", "ASSESSED", "DESIGNED", "PLANNED", "AUTHORIZED", "IMPLEMENTING", "VERIFYING", "REVIEWING", "CHANGES_REQUESTED", "RELEASE_READY", "RELEASING", "OBSERVING", "REFLECTING", "LEARNING", "CLOSED", "NEEDS_INFO", "BLOCKED", "QUARANTINED", "REJECTED", "SUPERSEDED"] },
+        "terminal_states": { "const": ["CLOSED", "REJECTED", "SUPERSEDED"] }, "rework_targets": { "const": ["DESIGN_DRAFTED", "ASSESSED", "DESIGNED", "PLANNED", "IMPLEMENTING", "VERIFYING"] },
+        "edges": { "const": [
+          {"allowed_to_states":["NEEDS_EVIDENCE","NEEDS_INFO","REJECTED","SUPERSEDED"],"from_state":"DRAFT"},{"allowed_to_states":["BASELINED","NEEDS_INFO","BLOCKED","REJECTED","SUPERSEDED"],"from_state":"NEEDS_EVIDENCE"},{"allowed_to_states":["DESIGN_DRAFTED","NEEDS_INFO","BLOCKED","REJECTED","SUPERSEDED"],"from_state":"BASELINED"},{"allowed_to_states":["ASSESSED","NEEDS_INFO","BLOCKED","REJECTED","SUPERSEDED"],"from_state":"DESIGN_DRAFTED"},{"allowed_to_states":["DESIGN_DRAFTED","DESIGNED","NEEDS_INFO","BLOCKED","REJECTED","SUPERSEDED"],"from_state":"ASSESSED"},{"allowed_to_states":["PLANNED","NEEDS_INFO","BLOCKED","REJECTED","SUPERSEDED"],"from_state":"DESIGNED"},{"allowed_to_states":["DESIGNED","AUTHORIZED","NEEDS_INFO","BLOCKED","REJECTED","SUPERSEDED"],"from_state":"PLANNED"},{"allowed_to_states":["IMPLEMENTING","BLOCKED","QUARANTINED","SUPERSEDED"],"from_state":"AUTHORIZED"},{"allowed_to_states":["VERIFYING","CHANGES_REQUESTED","BLOCKED","QUARANTINED","SUPERSEDED"],"from_state":"IMPLEMENTING"},{"allowed_to_states":["REVIEWING","CHANGES_REQUESTED","BLOCKED","QUARANTINED","SUPERSEDED"],"from_state":"VERIFYING"},{"allowed_to_states":["RELEASE_READY","CHANGES_REQUESTED","BLOCKED","REJECTED","QUARANTINED","SUPERSEDED"],"from_state":"REVIEWING"},{"allowed_to_states":["DESIGN_DRAFTED","ASSESSED","DESIGNED","PLANNED","IMPLEMENTING","VERIFYING","BLOCKED","REJECTED","SUPERSEDED"],"from_state":"CHANGES_REQUESTED"},{"allowed_to_states":["RELEASING","BLOCKED","QUARANTINED","SUPERSEDED"],"from_state":"RELEASE_READY"},{"allowed_to_states":["OBSERVING","BLOCKED","QUARANTINED","SUPERSEDED"],"from_state":"RELEASING"},{"allowed_to_states":["REFLECTING","CHANGES_REQUESTED","BLOCKED","QUARANTINED","SUPERSEDED"],"from_state":"OBSERVING"},{"allowed_to_states":["LEARNING","CHANGES_REQUESTED","BLOCKED","SUPERSEDED"],"from_state":"REFLECTING"},{"allowed_to_states":["CLOSED","BLOCKED","SUPERSEDED"],"from_state":"LEARNING"},{"allowed_to_states":["BLOCKED","REJECTED","SUPERSEDED"],"from_state":"NEEDS_INFO"},{"allowed_to_states":["REJECTED","SUPERSEDED"],"from_state":"BLOCKED"},{"allowed_to_states":["BLOCKED","VERIFYING","REJECTED","SUPERSEDED"],"from_state":"QUARANTINED"}
+        ] },
+        "vocabulary_sha256": { "const": "cc354fb2b440d81514045b50266d41d3964b6440ed9d40afa17f5991519d7d0d" }
+      }
+    },
+    "request": {
+      "type": "object", "additionalProperties": false,
+      "required": ["api_version", "canonicalization", "evaluated_at_unix_ms", "expected_target", "expected_target_sha256", "previous_receipt", "request_sha256", "transition_receipt"],
+      "properties": { "api_version": { "const": "forgeos.transition-receipt-declared-assessment-request/v1" }, "canonicalization": { "const": "forgeos.canonical-json/v1" }, "evaluated_at_unix_ms": { "$ref": "#/$defs/unix_ms" }, "expected_target": { "$ref": "#/$defs/target" }, "expected_target_sha256": { "$ref": "#/$defs/hash" }, "previous_receipt": { "oneOf": [{ "$ref": "#/$defs/receipt" }, { "type": "null" }] }, "request_sha256": { "$ref": "#/$defs/hash" }, "transition_receipt": { "$ref": "#/$defs/receipt" } }
+    },
+    "relations": {
+      "type": "object", "additionalProperties": false,
+      "required": ["applicability", "chain", "continuity", "edge", "preconditions", "recovery", "target", "temporal"],
+      "properties": {
+        "applicability": { "const": "internally_consistent_declared_applicability" }, "chain": { "enum": ["initial_declared_chain", "predecessor_mismatch", "same_declared_predecessor"] },
+        "continuity": { "enum": ["same_declared_state_continuity", "state_continuity_mismatch"] }, "edge": { "enum": ["listed_declared_edge", "unlisted_declared_edge"] },
+        "preconditions": { "enum": ["declared_fail_or_unknown_present", "declared_pass_or_na_only"] }, "recovery": { "enum": ["internally_consistent_declared_recovery", "rework_or_resume_mismatch"] },
+        "target": { "enum": ["same_declared_target", "target_mismatch"] }, "temporal": { "enum": ["nondecreasing_declared_time", "temporal_declaration_mismatch"] }
+      }
+    },
+    "assessment": {
+      "type": "object", "additionalProperties": false,
+      "required": ["api_version", "approval_state", "assessment_mode", "assessment_sha256", "authorization_decision", "canonicalization", "completion_attestation", "controller_authentication_state", "effect_attestation", "evidence_state", "execution_attestation", "expected_target_sha256", "grant_state", "ledger_state", "permission_attestation", "persistence_attestation", "policy_decision", "precondition_truth_state", "reason_codes", "receipt_id", "receipt_sha256", "relations", "request_sha256", "result", "transition_attestation", "transition_vocabulary_sha256", "waiver_state"],
+      "properties": {
+        "api_version": { "const": "forgeos.transition-receipt-declared-assessment/v1" }, "approval_state": { "const": "not_evaluated" }, "assessment_mode": { "const": "authority_neutral_declared_transition_only" }, "assessment_sha256": { "$ref": "#/$defs/hash" }, "authorization_decision": { "const": "none" }, "canonicalization": { "const": "forgeos.canonical-json/v1" },
+        "completion_attestation": { "const": false }, "controller_authentication_state": { "const": "not_evaluated" }, "effect_attestation": { "const": false }, "evidence_state": { "const": "not_evaluated" }, "execution_attestation": { "const": false }, "expected_target_sha256": { "$ref": "#/$defs/hash" },
+        "grant_state": { "const": "not_evaluated" }, "ledger_state": { "const": "not_evaluated" }, "permission_attestation": { "const": false }, "persistence_attestation": { "const": false }, "policy_decision": { "const": "none" }, "precondition_truth_state": { "const": "not_evaluated" },
+        "reason_codes": { "type": "array", "maxItems": 7, "uniqueItems": true, "items": { "enum": ["declared_fail_or_unknown_present", "predecessor_mismatch", "rework_or_resume_mismatch", "state_continuity_mismatch", "target_mismatch", "temporal_declaration_mismatch", "unlisted_declared_edge"] } },
+        "receipt_id": { "type": "string", "minLength": 83, "maxLength": 83, "pattern": "^transition-receipt-[0-9a-f]{64}$" }, "receipt_sha256": { "$ref": "#/$defs/hash" }, "relations": { "$ref": "#/$defs/relations" }, "request_sha256": { "$ref": "#/$defs/hash" },
+        "result": { "const": "ASSESSED_TRANSITION_DECLARATIONS_ONLY (no controller, actor, Grant, Approval, evidence, waiver, precondition or state authentication; no policy decision, authorization, persistence, transition, ledger, execution, effect or completion attestation)" }, "transition_attestation": { "const": false }, "transition_vocabulary_sha256": { "const": "cc354fb2b440d81514045b50266d41d3964b6440ed9d40afa17f5991519d7d0d" }, "waiver_state": { "const": "not_evaluated" }
+      }
+    }
+  }
+}

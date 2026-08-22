@@ -1,0 +1,80 @@
+"""Frozen identifiers, state graph, and bounds for TransitionReceipt v1."""
+
+VOCABULARY_API = "forgeos.transition-state-vocabulary/v1"
+RECEIPT_API = "forgeos.transition-receipt/v1"
+REQUEST_API = "forgeos.transition-receipt-declared-assessment-request/v1"
+ASSESSMENT_API = "forgeos.transition-receipt-declared-assessment/v1"
+CANONICALIZATION = "forgeos.canonical-json/v1"
+VOCABULARY_KIND = "TransitionStateVocabulary"
+RECEIPT_KIND = "TransitionReceipt"
+MODE = "authority_neutral_declared_transition_only"
+
+VOCABULARY_DOMAIN = b"forgeos.governance.transition-state-vocabulary.v1\0"
+RECEIPT_DOMAIN = b"forgeos.transition-receipt.v1\0"
+TARGET_DOMAIN = b"forgeos.transition-declared-target.v1\0"
+REQUEST_DOMAIN = b"forgeos.transition-receipt-declared-assessment-request.v1\0"
+ASSESSMENT_DOMAIN = b"forgeos.transition-receipt-declared-assessment.v1\0"
+
+STATES = (
+    "DRAFT", "NEEDS_EVIDENCE", "BASELINED", "DESIGN_DRAFTED", "ASSESSED",
+    "DESIGNED", "PLANNED", "AUTHORIZED", "IMPLEMENTING", "VERIFYING",
+    "REVIEWING", "CHANGES_REQUESTED", "RELEASE_READY", "RELEASING",
+    "OBSERVING", "REFLECTING", "LEARNING", "CLOSED", "NEEDS_INFO",
+    "BLOCKED", "QUARANTINED", "REJECTED", "SUPERSEDED",
+)
+TERMINAL_STATES = ("CLOSED", "REJECTED", "SUPERSEDED")
+REWORK_TARGETS = (
+    "DESIGN_DRAFTED", "ASSESSED", "DESIGNED", "PLANNED", "IMPLEMENTING",
+    "VERIFYING",
+)
+EDGE_ITEMS = (
+    ("DRAFT", ("NEEDS_EVIDENCE", "NEEDS_INFO", "REJECTED", "SUPERSEDED")),
+    ("NEEDS_EVIDENCE", ("BASELINED", "NEEDS_INFO", "BLOCKED", "REJECTED", "SUPERSEDED")),
+    ("BASELINED", ("DESIGN_DRAFTED", "NEEDS_INFO", "BLOCKED", "REJECTED", "SUPERSEDED")),
+    ("DESIGN_DRAFTED", ("ASSESSED", "NEEDS_INFO", "BLOCKED", "REJECTED", "SUPERSEDED")),
+    ("ASSESSED", ("DESIGN_DRAFTED", "DESIGNED", "NEEDS_INFO", "BLOCKED", "REJECTED", "SUPERSEDED")),
+    ("DESIGNED", ("PLANNED", "NEEDS_INFO", "BLOCKED", "REJECTED", "SUPERSEDED")),
+    ("PLANNED", ("DESIGNED", "AUTHORIZED", "NEEDS_INFO", "BLOCKED", "REJECTED", "SUPERSEDED")),
+    ("AUTHORIZED", ("IMPLEMENTING", "BLOCKED", "QUARANTINED", "SUPERSEDED")),
+    ("IMPLEMENTING", ("VERIFYING", "CHANGES_REQUESTED", "BLOCKED", "QUARANTINED", "SUPERSEDED")),
+    ("VERIFYING", ("REVIEWING", "CHANGES_REQUESTED", "BLOCKED", "QUARANTINED", "SUPERSEDED")),
+    ("REVIEWING", ("RELEASE_READY", "CHANGES_REQUESTED", "BLOCKED", "REJECTED", "QUARANTINED", "SUPERSEDED")),
+    ("CHANGES_REQUESTED", REWORK_TARGETS + ("BLOCKED", "REJECTED", "SUPERSEDED")),
+    ("RELEASE_READY", ("RELEASING", "BLOCKED", "QUARANTINED", "SUPERSEDED")),
+    ("RELEASING", ("OBSERVING", "BLOCKED", "QUARANTINED", "SUPERSEDED")),
+    ("OBSERVING", ("REFLECTING", "CHANGES_REQUESTED", "BLOCKED", "QUARANTINED", "SUPERSEDED")),
+    ("REFLECTING", ("LEARNING", "CHANGES_REQUESTED", "BLOCKED", "SUPERSEDED")),
+    ("LEARNING", ("CLOSED", "BLOCKED", "SUPERSEDED")),
+    ("NEEDS_INFO", ("BLOCKED", "REJECTED", "SUPERSEDED")),
+    ("BLOCKED", ("REJECTED", "SUPERSEDED")),
+    ("QUARANTINED", ("BLOCKED", "VERIFYING", "REJECTED", "SUPERSEDED")),
+)
+EDGES = dict(EDGE_ITEMS)
+
+RESULT = (
+    "ASSESSED_TRANSITION_DECLARATIONS_ONLY (no controller, actor, Grant, Approval, "
+    "evidence, waiver, precondition or state authentication; no policy decision, "
+    "authorization, persistence, transition, ledger, execution, effect or completion "
+    "attestation)"
+)
+GRANT_RESULT = "ASSESSED_GRANT_TRANSITION_DECLARATIONS_ONLY (no permission or transition authority)"
+APPROVAL_RESULT = (
+    "ASSESSED_APPROVAL_TRANSITION_DECLARATIONS_ONLY "
+    "(no effective approval or transition authority)"
+)
+
+MAX_VOCABULARY_BYTES = 262_144
+MAX_RECEIPT_BYTES = 1_048_576
+MAX_TARGET_BYTES = 1_048_576
+MAX_REQUEST_BYTES = 4_194_304
+MAX_ASSESSMENT_BYTES = 262_144
+MAX_GOLDEN_BYTES = 8_388_608
+MAX_DEPTH = 16
+MAX_FIELDS = 64
+MAX_ARRAY = 256
+MAX_STRING_BYTES = 16_384
+MAX_SHORT_BYTES = 160
+MAX_REFERENCE_BYTES = 4_096
+MAX_TOTAL_EVIDENCE_REFS = 256
+MAX_TOTAL_REASON_CODES = 256
+
