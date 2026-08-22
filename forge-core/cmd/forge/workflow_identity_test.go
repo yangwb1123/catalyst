@@ -41,6 +41,46 @@ func TestShippedReleaseWorkflowsSatisfyRuntimeContract(t *testing.T) {
 	}
 }
 
+func TestBoundApprovalWorkflowLoaderRejectsAliases(t *testing.T) {
+	for _, kind := range []string{"leaf-symlink", "parent-symlink", "hardlink"} {
+		t.Run(kind, func(t *testing.T) {
+			root := t.TempDir()
+			directory := filepath.Join(root, ".agent", "workflows")
+			if kind == "parent-symlink" {
+				directory = filepath.Join(root, ".agent", "workflows-real")
+			}
+			if err := os.MkdirAll(directory, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			targetName := "target.yml"
+			if kind == "parent-symlink" {
+				targetName = "design.yml"
+			}
+			target := filepath.Join(directory, targetName)
+			workflow := filepath.Join(root, ".agent", "workflows", "design.yml")
+			body := []byte(`{"stage":"design","output_binding_contract":"local_digest_v1","phases":[{"name":"terminal","agent":"cto"}]}`)
+			if err := os.WriteFile(target, body, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			var err error
+			switch kind {
+			case "leaf-symlink":
+				err = os.Symlink(targetName, workflow)
+			case "parent-symlink":
+				err = os.Symlink("workflows-real", filepath.Dir(workflow))
+			case "hardlink":
+				err = os.Link(target, workflow)
+			}
+			if err != nil {
+				t.Skipf("%s unavailable: %v", kind, err)
+			}
+			if _, bound, err := loadBoundApprovalWorkflow(root, "design"); err == nil || bound {
+				t.Fatalf("%s accepted: bound=%v err=%v", kind, bound, err)
+			}
+		})
+	}
+}
+
 func TestReleaseWorkflowTamperingFailsClosed(t *testing.T) {
 	deploy := shippedWorkflowYAML(t, "deploy")
 	tests := []struct {

@@ -177,9 +177,9 @@ func TestCommandExecutor_RecursionGuardDefaultCap(t *testing.T) {
 	}
 }
 
-// A runaway agent's output is bounded: the executor retains at most MaxOutputBytes
-// and reports truncation, instead of OOMing on an unbounded CombinedOutput. seq
-// emits ~600 KB deterministically; a 1 KiB cap must clip it.
+// A runaway agent's output is bounded and fails closed: the executor retains at
+// most MaxOutputBytes and reports typed truncation instead of treating a clipped
+// machine result as complete. seq emits ~600 KB deterministically.
 func TestCommandExecutor_OutputCapTruncatesRunaway(t *testing.T) {
 	rec := &recorder{}
 	ex := CommandExecutor{
@@ -187,8 +187,11 @@ func TestCommandExecutor_OutputCapTruncatesRunaway(t *testing.T) {
 		MaxOutputBytes: 1024,
 		Log:            rec.log,
 	}
-	if err := ex.Execute(context.Background(), asset.Phase{Name: "x"}, "m"); err != nil {
-		t.Fatalf("seq exits 0; Execute should succeed: %v", err)
+	err := ex.Execute(context.Background(), asset.Phase{Name: "x"}, "m")
+	var failure *ExecError
+	if !errors.As(err, &failure) || failure.Kind != KindFailed ||
+		!strings.Contains(err.Error(), "retained 1024 of") {
+		t.Fatalf("clipped successful process must fail with exact truncation facts: %v", err)
 	}
 	last := rec.logs[len(rec.logs)-1]
 	// Retained log is bounded near the 1 KiB cap, NOT the ~600 KB seq produced —

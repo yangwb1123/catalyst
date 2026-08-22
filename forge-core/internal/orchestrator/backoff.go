@@ -50,6 +50,9 @@ func (e Engine) runAgentPhaseWithProgress(
 			return fmt.Errorf("phase %s: cancelled before attempt %d: %w", p.Name, attempt+1, ctx.Err())
 		default:
 		}
+		if err := e.validateAgentSpawn(p); err != nil {
+			return err
+		}
 		err := e.Exec.Execute(ctx, p, mode)
 		if err == nil {
 			return nil

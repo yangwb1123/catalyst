@@ -8,26 +8,34 @@ import (
 // ── Inline value parsing ──────────────────────────────────────────────────
 
 // parseInlineValue parses a value that appears inline after "key: value".
-func parseInlineValue(text string) any {
+func parseInlineValue(text string) (any, error) {
 	if text == "" {
-		return nil
+		return nil, nil
 	}
 	// Inline sequence
 	if strings.HasPrefix(text, "[") {
-		val, _, err := parseInlineSequence(text)
+		val, rest, err := parseInlineSequence(text)
 		if err == nil {
-			return val
+			if rest != "" {
+				return nil, fmt.Errorf("trailing content after inline sequence: %q", rest)
+			}
+			return val, nil
 		}
+		return nil, err
 	}
 	// Inline mapping
 	if strings.HasPrefix(text, "{") {
-		val, _, err := parseInlineMapping(text)
+		val, rest, err := parseInlineMapping(text)
 		if err == nil {
-			return val
+			if rest != "" {
+				return nil, fmt.Errorf("trailing content after inline mapping: %q", rest)
+			}
+			return val, nil
 		}
+		return nil, err
 	}
 	// Scalar
-	return parseScalar(text)
+	return parseScalar(text), nil
 }
 
 // parseInlineSequence parses [a, b, c] style sequences.
@@ -105,6 +113,9 @@ func parseInlineMapping(text string) (map[string]any, string, error) {
 		}
 		key := strings.TrimSpace(pair[:sepPos])
 		val := strings.TrimSpace(pair[sepPos+1:])
+		if _, exists := m[key]; exists {
+			return nil, text, fmt.Errorf("duplicate inline mapping key %q", key)
+		}
 		m[key] = parseScalar(val)
 	}
 	return m, rest, nil

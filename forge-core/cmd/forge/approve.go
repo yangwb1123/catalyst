@@ -155,6 +155,11 @@ func approvalMarkerPath(root, stage, suffix string) (string, error) {
 // atomically renamed into place. A failed preparation therefore preserves the
 // prior decision, while a successful transition never leaves both decisions.
 func writeApproval(root, stage string, approve bool) int {
+	if approve {
+		if code, handled := tryWriteBoundPositiveApproval(root, stage); handled {
+			return code
+		}
+	}
 	markerSuffix, oppositeSuffix, action := approvalDecisionShape(approve)
 	markerPath, err := approvalMarkerPath(root, stage, markerSuffix)
 	if err != nil {
@@ -258,7 +263,7 @@ func installDecisionMarker(dotForge, markerPath, oppositePath string, marker dec
 	if err := statefs.RemoveRegular(oppositePath); err != nil {
 		return fmt.Errorf("new marker installed but cannot supersede opposite marker %s: %w", oppositePath, err)
 	}
-	return nil
+	return persistApprovalMarkerRemoval(dotForge, statefs.SyncDir)
 }
 
 func approvalActorHint() string {
@@ -274,10 +279,6 @@ func releaseApprovalStage(stage string) bool {
 	return stage == "deploy" || stage == "rollback"
 }
 
-// validReleaseApproval rejects the generic one-shot --approved shortcut and
-// legacy/empty markers for production-changing stages. The local actor hint is
-// audit metadata, not cryptographic identity; external evidence remains human
-// responsibility at this trust boundary.
 func validReleaseApproval(root, stage string) bool {
 	if !validReleaseValidationReceipt(root, stage) {
 		return false

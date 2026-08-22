@@ -53,6 +53,9 @@ func (e Engine) gatesFor(p asset.Phase) []string {
 //
 // With gating inactive (zero policy) nothing is ever skipped — full back-compat.
 func (e Engine) skipByMode(p asset.Phase, stage string) bool {
+	if e.RequireAgentVerdict != nil && e.RequireAgentVerdict(p) {
+		return false
+	}
 	if !e.gatingActive() {
 		return false
 	}
@@ -156,6 +159,9 @@ func (e Engine) prepareSerialWorkflow(wf asset.Workflow, start int) (asset.Workf
 	if err := asset.ValidateWorkflowStructure(wf); err != nil {
 		return wf, false, fmt.Errorf("serial orchestration: invalid workflow structure: %w", err)
 	}
+	if err := e.validateRequiredVerdictStart(wf, start); err != nil {
+		return wf, false, err
+	}
 	if e.checkStageSkip(wf) {
 		return wf, true, nil
 	}
@@ -167,6 +173,18 @@ func (e Engine) prepareSerialWorkflow(wf asset.Workflow, start int) (asset.Workf
 		return wf, false, fmt.Errorf("serial orchestration: start phase %d outside executable range [0,%d]", start, len(filtered.Phases))
 	}
 	return filtered, false, nil
+}
+
+func (e Engine) validateRequiredVerdictStart(wf asset.Workflow, start int) error {
+	if e.RequireAgentVerdict == nil {
+		return nil
+	}
+	for index, phase := range wf.Phases {
+		if e.RequireAgentVerdict(phase) && start > index {
+			return fmt.Errorf("serial orchestration: start phase %d bypasses required verdict phase %s at %d", start, phase.Name, index)
+		}
+	}
+	return nil
 }
 
 func (e Engine) checkStageSkip(wf asset.Workflow) bool {

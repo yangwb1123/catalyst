@@ -161,23 +161,6 @@ func approvalPath(root, stage string) string {
 	return filepath.Join(forgeDir(root), stage+".approved")
 }
 
-// humanApproved resolves the approval SIGNAL for a stage: true if the operator
-// passed --approved OR a <root>/.forge/<stage>.approved marker exists. This is
-// the v1 approval check — NOT a durable cross-process wait (durable_wait is v2,
-// Temporal). It only reads the signal present right now; it does not block or
-// persist a pending wait. fail-closed: with neither source the result is false,
-// so an unapproved human_gate never auto-converges.
-func humanApproved(root, stage string, flag bool) bool {
-	if releaseApprovalStage(stage) {
-		return validReleaseApproval(root, stage)
-	}
-	if flag {
-		return true
-	}
-	present, err := markerExists(approvalPath(root, stage))
-	return err == nil && present
-}
-
 // rejectionPath is the on-disk human-REJECTION marker for a stage: its mere
 // EXISTENCE under <root>/.forge/<stage>.rejected is the rejection SIGNAL,
 // mirroring approvalPath exactly (same git-ignored .forge runtime dir; a

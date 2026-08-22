@@ -7,9 +7,9 @@ import (
 	"os/exec"
 )
 
-// ExecKind classifies why an agent command failed. The orchestrator's retry and
-// escalation logic keys off the *kind*, not the message text: a timeout is a
-// transient hiccup worth retrying, a missing binary or empty argv is a permanent
+// ExecKind classifies why an agent command or runtime boundary failed. Retry
+// and escalation key off the *kind*, not message text. A timeout is a transient
+// hiccup worth retrying; a missing binary or empty argv is a permanent
 // misconfiguration that retrying can only waste time on, and a clean non-zero
 // exit is the agent itself reporting failure. Classifying at the executor — the
 // only layer that can see exec.ErrNotFound vs context.DeadlineExceeded vs an
@@ -42,6 +42,9 @@ const (
 	// status (e.g. a claude/Anthropic 529) — that recognition is the caller's job, handed
 	// in as a bool (see classifyRunErr's isOverload parameter and CommandExecutor.ClassifyOverload).
 	KindOverloaded
+	// KindRuntimeValidation is a caller-owned freshness or verdict binding
+	// rejection. It is fail-closed and never retryable inside a phase.
+	KindRuntimeValidation
 )
 
 // String renders the kind for logs and error messages.
@@ -57,18 +60,19 @@ func (k ExecKind) String() string {
 		return "recursion-limit"
 	case KindOverloaded:
 		return "overloaded"
+	case KindRuntimeValidation:
+		return "runtime-validation"
 	default:
 		return "unknown"
 	}
 }
 
-// ExecError is the single typed error every CommandExecutor.Execute failure
-// path returns, so callers can errors.As it out and branch on Kind / Retryable
-// instead of string-matching. Phase names the failing phase for diagnosis, and
-// Err preserves the underlying cause (exec.ErrNotFound, an *exec.ExitError, a
-// context deadline error) for errors.Is / errors.As to keep working through it.
+// ExecError is the typed phase error returned by CommandExecutor and Engine
+// runtime-validation boundaries. Callers can errors.As it and branch on Kind /
+// Retryable instead of parsing the full message. Err preserves the cause for
+// errors.Is / errors.As traversal.
 type ExecError struct {
-	Phase string   // workflow phase whose command failed
+	Phase string   // workflow phase whose command or runtime boundary failed
 	Kind  ExecKind // classification driving retry/escalation
 	Err   error    // wrapped underlying cause; may be nil for pure-config faults
 }
@@ -120,6 +124,20 @@ func recursionErr(phase string, depth, max int) *ExecError {
 // wraps the underlying run error so errors.Is/As still reach the original cause.
 func overloadErr(phase string, cause error) *ExecError {
 	return &ExecError{Phase: phase, Kind: KindOverloaded, Err: cause}
+}
+
+// outputTruncatedErr uses the existing typed terminal ExecError vocabulary.
+// The retained prefix is useful for human logs only: it is not a complete agent
+// result and must never cross a machine-output contract or accepted commit.
+func outputTruncatedErr(phase string, retained int, total int64) *ExecError {
+	return &ExecError{
+		Phase: phase,
+		Kind:  KindFailed,
+		Err: fmt.Errorf(
+			"command output exceeded retention limit: retained %d of %d child bytes",
+			retained, total,
+		),
+	}
 }
 
 // classifyRunErr maps the error from running a command to an *ExecError. The order

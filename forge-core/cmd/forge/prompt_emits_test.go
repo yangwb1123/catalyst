@@ -53,6 +53,21 @@ func TestEmitsFilesFor_NilLookupIsSafe(t *testing.T) {
 	}
 }
 
+func TestFrozenEmitsNeverRereadLiveArtifact(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "plan.md")
+	if err := os.WriteFile(path, []byte("mutated-after-prepare"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	frozen := []string{contextMarker("emit:plan.md", "bytes-frozen-at-prepare")}
+	ctx := appendArtifactContext(nil, root, []string{"plan.md"}, "", "", nil, frozen)
+	joined := strings.Join(ctx, "\n")
+	if !strings.Contains(joined, "bytes-frozen-at-prepare") ||
+		strings.Contains(joined, "mutated-after-prepare") {
+		t.Fatalf("bound prompt did not use only frozen artifact bytes: %q", joined)
+	}
+}
+
 // End-to-end: a workflow where an earlier phase declares emits: [...] and the
 // declared file exists on disk must have its content actually appear in a
 // LATER phase's spawned prompt, driven through the full production chain

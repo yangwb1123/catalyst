@@ -7,6 +7,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"os"
 	"strings"
@@ -16,6 +17,7 @@ import (
 	"forgeos/forge-core/internal/asset"
 	"forgeos/forge-core/internal/attribution"
 	"forgeos/forge-core/internal/gate"
+	"forgeos/forge-core/internal/materiality"
 	"forgeos/forge-core/internal/mode"
 	"forgeos/forge-core/internal/orchestrator"
 	"forgeos/forge-core/internal/prompt"
@@ -42,16 +44,8 @@ import (
 // priorEmits (priorEmitsOf) resolves earlier phases' emits: content into the prompt. All
 // nil-safe; the generic executor stays oblivious to all of them.
 
-// buildRunEngine assembles the orchestrator.Engine shared by `forge run` (execEngine)
-// and `forge evolve` (buildLoop): the SAME four prompt/feedback ledgers wired to the same
-// seams, so the two entry points never drift. The FOUR ledgers, all per-run/iteration and
-// all nil-safe (prompt_context.go): gates (OnGateResult writes each gate's verdict, the
-// prompt reads it); phaseOut (the Observe sink writes a feeds_forward phase's output, a
-// later prompt reads it); verdicts (the Observe sink writes each reviewer's parsed VERDICT,
-// AgentVerdict reads it back for the directed loop-back); findings (on a REQUEST_CHANGES,
-// the Observe sink stashes the review notes for the loop-back target). feedsForwardOf/
-// onFailTargetOf close over wf so the Observe seam (handed only a phase NAME) can look
-// them up. runGate is injected (run uses gate.HarnessRunner, evolve a refreshing probe).
+// buildRunEngine assembles the shared run/evolve Engine and its prompt,
+// gate, verdict, finding, output-binding and provenance ledgers.
 //
 // budget (cost.go) is wired in THREE places: budget.feed WRAPS costSink so every billed
 // phase tallies the run total; BudgetExhaustedFunc() supplies the engine's hard-stop (nil
@@ -69,12 +63,13 @@ import (
 // Returns the assembled Engine plus the verdict/findings ledgers for callers to thread
 // rework+trajectory signals into wind-down/Reflect without re-building.
 func buildRunEngine(wf asset.Workflow, o runOpts, logln func(string), costSink func(phase, model string, usd float64, latency time.Duration), runGate func(name string) gate.Result, pol mode.Policy, budget *runBudget, autoRisk string, autoRiskReasons []string, autoDims map[string]float64, autoReasons []string, runIDs ...string) (orchestrator.Engine, *verdictLedger, *reviewFindingsLedger) {
-	return buildRunEngineWithPhaseOutput(wf, o, logln, costSink, runGate, pol,
+	engine, verdicts, findings, _, _ := buildRunEngineWithPhaseOutput(wf, o, logln, costSink, runGate, pol,
 		budget, autoRisk, autoRiskReasons, autoDims, autoReasons,
 		newPhaseOutputLedger(), runIDs...)
+	return engine, verdicts, findings
 }
 
-func buildRunEngineWithPhaseOutput(wf asset.Workflow, o runOpts, logln func(string), costSink func(phase, model string, usd float64, latency time.Duration), runGate func(name string) gate.Result, pol mode.Policy, budget *runBudget, autoRisk string, autoRiskReasons []string, autoDims map[string]float64, autoReasons []string, phaseOut *phaseOutputLedger, runIDs ...string) (orchestrator.Engine, *verdictLedger, *reviewFindingsLedger) {
+func buildRunEngineWithPhaseOutput(wf asset.Workflow, o runOpts, logln func(string), costSink func(phase, model string, usd float64, latency time.Duration), runGate func(name string) gate.Result, pol mode.Policy, budget *runBudget, autoRisk string, autoRiskReasons []string, autoDims map[string]float64, autoReasons []string, phaseOut *phaseOutputLedger, runIDs ...string) (orchestrator.Engine, *verdictLedger, *reviewFindingsLedger, func() error, *outputBindingRuntime) {
 	o.workflowStage = wf.Stage
 	gates := newGateLedger()
 	verdicts := newVerdictLedger()
@@ -94,33 +89,31 @@ func buildRunEngineWithPhaseOutput(wf asset.Workflow, o runOpts, logln func(stri
 	tierOf := taskAwareTierResolver(
 		phaseTierResolver(o.mode, budget.SpendRatio, cards, logln, autoRisk, autoRiskReasons, autoDims, autoReasons),
 		phaseOut, logln)
-	provenance := newArtifactProvenance(o.root, wf.Stage, firstRunID(runIDs), o.releaseAgentSHA256)
-	return orchestrator.Engine{
-		Exec: agentExecutor(o, logln, budget.feed(costSink), tierOf, phaseTierByName(wf, tierOf),
-			ctxCache, gates, phaseOut, feedsForwardOf(wf), verdicts, findings,
-			onFailTargetOf(wf), priorEmitsOf(wf), executorHooks{
-				ValidateOutput:     phaseOutputContractWithPolicy(o.root, wf, pol, provenance),
-				ValidateRawOutput:  workflowRawOutputContract(wf, o.agentCmd),
-				OnBuild:            provenance.recordBuild,
-				ModelFor:           provenance.modelFor,
-				VerdictContractFor: verdictContractOf(wf),
-				ScanContractFor:    scanContractOf(wf),
-				ScanDepth:          pol.EvolveDepth,
-			}),
-		RunGate:      runGate,
-		Log:          logln,
-		OnGateResult: gates.record,
-		AgentVerdict: loopbackVerdict(verdicts),
+	wiring := buildEngineRuntimeWiring(wf, o, pol, logln, budget.feed(costSink), tierOf,
+		phaseOut, enginePromptLedgers{context: ctxCache, gates: gates, verdicts: verdicts, findings: findings},
+		firstRunID(runIDs))
+	engine := orchestrator.Engine{
+		Exec:                 wiring.exec,
+		RunGate:              runGate,
+		Log:                  logln,
+		OnGateResult:         gates.record,
+		AgentVerdict:         loopbackVerdict(verdicts),
+		PhaseStart:           wiring.bindingExec.phaseStart,
+		ValidateAgentSpawn:   wiring.bindingExec.agentSpawn,
+		PhaseComplete:        wiring.bindingExec.phaseComplete,
+		ValidateAgentVerdict: wiring.bindingExec.validateVerdict,
+		WorkflowComplete:     wiring.bindingExec.workflowComplete,
 		RequireAgentVerdict: func(p asset.Phase) bool {
-			return releaseValidationPhase(wf.Stage, p)
+			return releaseValidationPhase(wf.Stage, p) || requiredBuildReviewer(wf, o, p)
 		},
-		OnRequiredVerdictApproved: releaseVerdictCommit(wf.Stage, provenance),
+		OnRequiredVerdictApproved: releaseVerdictCommit(wf.Stage, wiring.provenance),
 		BudgetExhausted:           budget.BudgetExhaustedFunc(),
 		MaxRetries:                o.maxRetries,
 		MaxLoopBack:               maxLoopBack,
 		MaxAgentCalls:             o.maxAgentCalls,
 		ModePolicy:                pol,
-	}, verdicts, findings
+	}
+	return engine, verdicts, findings, bindingCompletionValidator(wiring, wf), wiring.binding
 }
 
 func releaseVerdictCommit(stage string, provenance *artifactProvenance) func(asset.Phase) error {
@@ -407,93 +400,93 @@ func (e runProbeExecutor) Execute(ctx context.Context, p asset.Phase, mode strin
 	return nil
 }
 
-// execEngine wires the real harness gates + the selected agent executor and
-// runs the workflow, returning 0 on a clean run and 1 on the first failure.
-// ctx carries cancellation so the engine can abort cleanly on SIGINT. Honesty:
-// each stage probes only after agent work, then shares that snapshot between
-// its gate phase and convergence until another agent succeeds. Chained stages
-// therefore never inherit the prior stage's acceptance result.
-func execEngine(ctx context.Context, firstWf asset.Workflow, o runOpts) int {
-	// Gate options resolve ONCE before any spawn: FORGE_GATE_TIMEOUT only — never
-	// o.timeout, the per-AGENT knob (regression pin). A bad env fails up front.
-	gateOpts, err := gate.ResolveOptions(gate.CLIInput{EnvTimeout: os.Getenv(gate.EnvTimeout)})
+func freezeRunMateriality(fs *flag.FlagSet, o *runOpts) error {
+	o.materialityExplicit = flagSet(fs, "materiality")
+	value, err := materiality.FromCLI(o.materiality, o.materialityExplicit)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "forge run: %v\n", err)
-		return 1
+		return err
 	}
-	o.gateOpts = gateOpts
-	lock := acquireRunLockForOptions(o, "forge run")
-	if lock == nil {
-		return 1
-	}
-	defer func() { _ = lock.Release() }()
-	logln := func(s string) { fmt.Println(s) }
-	lifecycle := resolveLifecycle(o)
-	firstWf, resume, err := prepareChainResume(firstWf, o)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "forge run: cannot resume chain: %v\n", err)
-		return 1
-	}
-	runID := ""
-	if resume != nil {
-		runID = resume.RunID
-	}
-	tracer, closeTrace, budget, err := openRunResources(o.root, o.runBudgetUSD, logln, runID)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "forge run: %v\n", err)
-		return 1
-	}
-	defer closeTrace()
-	lifecycle, err = restoreChainRunOptions(&o, budget, resume, lifecycle)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "forge run: cannot resume chain: %v\n", err)
-		return 1
-	}
-	if resume != nil {
-		logln(fmt.Sprintf("forge run: resuming chain run_id=%s at stage=%s after completed=%v",
-			resume.RunID, resume.CurrentStage, resume.CompletedStages))
-	}
-	return runStageChain(ctx, firstWf, o, logln, lifecycle, tracer, budget, resume)
+	o.materiality = value
+	return nil
 }
 
-// execOneStage runs a single workflow stage and reports convergence. Returns
-// (met, rejected, 0) on success. rejected tells the caller that a durable
-// rejection was acted on and may be consumed only after its own state commit.
-func execOneStage(ctx context.Context, wf asset.Workflow, o runOpts, logln func(string), lifecycle string, tracer *trace.Tracer, budget *runBudget, chargeAgentCall func(int) (int, bool)) (bool, bool, int) {
-	pol := mode.Effective(o.mode, lifecycle)
-	boundary := resolveStageHostBoundary(ctx, wf, o, lifecycle, logln)
-	eng, verdicts, _ := buildRunEngine(wf, o, logln, costEmitter(tracer, logln),
-		boundary.runGate, pol, budget, boundary.autoRisk, boundary.autoRiskReasons,
-		boundary.autoDims, boundary.autoDimsReasons, tracer.RunID)
-	eng.ChargeAgentCall = chargeAgentCall
-	if boundary.hostCommands {
-		eng.Exec = runProbeExecutor{next: eng.Exec, probe: boundary.probe}
-	}
-	wireGateTrace(&eng, tracer, logln)
-	logRunBanner(wf, o, lifecycle, pol)
-
-	startPhase, rejected, err := resolveRejectionStartPhase(wf, o.root, logln)
+func normalizeRunMateriality(o *runOpts) error {
+	value, err := materiality.Normalize(o.materiality)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "forge run: %v\n", err)
-		return false, false, 1
+		return err
 	}
-	if err := runWorkflow(ctx, eng, wf, o, logln, startPhase); err != nil {
-		fmt.Fprintf(os.Stderr, "forge run: %v\n", err)
-		return false, rejected, 1
+	o.materiality = value
+	return nil
+}
+
+func strictBuildReview(wf asset.Workflow, o runOpts) bool {
+	return wf.Stage == "build" && materiality.RequiresStrictReview(o.materiality)
+}
+
+func materialityPolicy(wf asset.Workflow, o runOpts, policy mode.Policy) mode.Policy {
+	if strictBuildReview(wf, o) {
+		policy.Reviewer = true
 	}
-	fmt.Printf("forge run: stage=%s workflow completed\n", wf.Stage)
-	var probe, categories map[string]string
-	var actualGates []string
-	if boundary.hostCommands {
-		probe, categories = boundary.probe.current()
-		actualGates = boundary.probe.actualGates()
+	return policy
+}
+
+func validateMaterialityWorkflow(wf asset.Workflow, o runOpts) error {
+	if err := validateOutputBindingHost(wf, o); err != nil {
+		return err
 	}
-	met := reportStageConvergence(
-		ctx, o.gateOpts, wf, o.root, probe, categories, lifecycle, o.approved,
-		verdicts, actualGates, boundary.proposalStage, boundary.releaseStage,
-	)
-	if boundary.hostCommands {
-		windDownScorecardsForRun(wf, o, logln, 1, verdicts.wasReworked(), tracer.RunID)
+	if !strictBuildReview(wf, o) {
+		return nil
 	}
-	return met, rejected, 0
+	if err := asset.ValidateWorkflowStructure(wf); err != nil {
+		return fmt.Errorf("materiality %s strict Build workflow: %w", o.materiality, err)
+	}
+	reviewers, qaPhases := 0, 0
+	for _, phase := range wf.Phases {
+		if phase.VerdictContract == strictReviewerContract(wf) {
+			reviewers++
+		}
+		if phase.VerdictContract == asset.VerdictContractQAV1 {
+			qaPhases++
+		}
+	}
+	if reviewers != 1 {
+		return fmt.Errorf("materiality %s requires exactly one Build %s phase (found %d)",
+			o.materiality, strictReviewerContract(wf), reviewers)
+	}
+	if qaPhases == 0 {
+		return fmt.Errorf("materiality %s strict Build requires at least one %s phase",
+			o.materiality, asset.VerdictContractQAV1)
+	}
+	if o.parallel && declaresDependsOn(wf) {
+		return fmt.Errorf("materiality %s %s requires serial directed loop-back orchestration",
+			o.materiality, strictReviewerContract(wf))
+	}
+	return nil
+}
+
+func requiredBuildReviewer(wf asset.Workflow, o runOpts, phase asset.Phase) bool {
+	return strictBuildReview(wf, o) && phase.VerdictContract == strictReviewerContract(wf)
+}
+
+func strictReviewerContract(wf asset.Workflow) string {
+	if wf.OutputBindingContract == asset.OutputBindingContractLocalDigestV1 {
+		return asset.VerdictContractReviewerV2
+	}
+	return asset.VerdictContractReviewerV1
+}
+
+func effectiveVerdictContractOf(wf asset.Workflow, o runOpts) func(string) string {
+	return func(name string) string {
+		for _, phase := range wf.Phases {
+			if phase.Name != name {
+				continue
+			}
+			if (phase.VerdictContract == asset.VerdictContractReviewerV1 ||
+				phase.VerdictContract == asset.VerdictContractReviewerV2) && !strictBuildReview(wf, o) {
+				return ""
+			}
+			return phase.VerdictContract
+		}
+		return ""
+	}
 }

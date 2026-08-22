@@ -50,9 +50,12 @@ func Decode(r io.Reader) (any, error) {
 	if len(lines) == 0 {
 		return nil, nil
 	}
-	val, _, err := parseDocument(lines, 0)
+	val, pos, err := parseDocument(lines, 0)
 	if err != nil {
 		return nil, fmt.Errorf("yaml2json: line 1: %w", err)
+	}
+	if pos != len(lines) {
+		return nil, fmt.Errorf("yaml2json: line %d: unconsumed content %q", lines[pos].number, lines[pos].raw)
 	}
 	return val, nil
 }

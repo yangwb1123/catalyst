@@ -31,9 +31,8 @@ type releasePromptSpec struct {
 
 var releasePromptSpecs = map[string]releasePromptSpec{
 	"release-planning": {
-		stage:    "deploy",
-		purpose:  "Prepare the declarative deployment manifest, plan, runbook, and go/no-go checklist.",
-		optional: releaseApprovalFiles["deploy"][:4],
+		stage:   "deploy",
+		purpose: "Prepare the declarative deployment manifest, plan, runbook, and go/no-go checklist.",
 	},
 	"release-plan-validation": {
 		stage:    "deploy",
@@ -44,7 +43,6 @@ var releasePromptSpecs = map[string]releasePromptSpec{
 		stage:    "rollback",
 		purpose:  "Prepare the declarative rollback plan, runbook, and checklist against the deployment manifest.",
 		required: releaseApprovalFiles["deploy"][:1],
-		optional: releaseApprovalFiles["rollback"][:3],
 	},
 	"rollback-plan-validation": {
 		stage:   "rollback",

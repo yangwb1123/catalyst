@@ -76,12 +76,16 @@ func (e Engine) RunParallel(ctx context.Context, wf asset.Workflow, mode string)
 		return fmt.Errorf("parallel orchestration: invalid workflow structure: %w", err)
 	}
 	for _, p := range wf.Phases {
-		if p.VerdictContract == asset.VerdictContractQAV1 {
+		required := e.RequireAgentVerdict != nil && e.RequireAgentVerdict(p)
+		if p.VerdictContract == asset.VerdictContractQAV1 || required {
 			return fmt.Errorf(
 				"parallel orchestration: phase %s: verdict_contract %q requires serial directed loop-back orchestration",
 				p.Name, p.VerdictContract,
 			)
 		}
+	}
+	if e.runtimeValidationActive() {
+		return fmt.Errorf("parallel orchestration: runtime freshness or verdict validation hooks require serial orchestration")
 	}
 	if e.checkStageSkip(wf) {
 		return nil
@@ -109,6 +113,12 @@ func (e Engine) RunParallel(ctx context.Context, wf asset.Workflow, mode string)
 	}
 	e.reportStop(wf)
 	return nil
+}
+
+func (e Engine) runtimeValidationActive() bool {
+	return e.PhaseStart != nil || e.ValidateAgentSpawn != nil ||
+		e.PhaseComplete != nil || e.ValidateAgentVerdict != nil ||
+		e.WorkflowComplete != nil
 }
 
 // validateParallelScanHandoff ensures a contracted scan completes and validates

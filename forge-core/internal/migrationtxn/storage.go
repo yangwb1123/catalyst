@@ -68,10 +68,7 @@ func (realFileOps) readState(path string, maxBytes int64) ([]byte, bool, error) 
 }
 
 func (realFileOps) writeState(path string, data []byte) error {
-	if err := statefs.AtomicWrite(path, data, 0o600); err != nil {
-		return err
-	}
-	return statefs.SyncDir(filepath.Dir(path))
+	return statefs.AtomicWrite(path, data, 0o600)
 }
 
 func (realFileOps) removeState(path string) error {

@@ -339,7 +339,7 @@ func TestResumeStart_RejectsBindingDriftAndInvalidState(t *testing.T) {
 	valid := persist.Checkpoint{
 		FormatVersion: persist.CheckpointFormatCurrent,
 		Workflow:      "evolve", WorkflowDigest: "workflow-digest",
-		Mode: "explorer", Lifecycle: "idea",
+		Mode: "explorer", Lifecycle: "idea", Materiality: "materiality_not_bound",
 		Iteration: 2, RoadmapCompletion: 0.5, PhaseIndex: 2, SpentUsdMicros: 10,
 		AgentCalls: 2, MaxLoopBacks: maxLoopBack,
 		Reason: "phase complete", UpdatedAtUnix: 1_750_000_000,

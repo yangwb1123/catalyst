@@ -179,8 +179,11 @@ type Phase struct {
 	SecondaryTemplate string     `json:"secondary_template,omitempty"`
 }
 
-// VerdictContractQAV1 is the explicit, fail-closed Build QA handshake contract.
-const VerdictContractQAV1 = "qa_v1"
+const (
+	VerdictContractQAV1       = "qa_v1"
+	VerdictContractReviewerV1 = "reviewer_v1"
+	VerdictContractReviewerV2 = "reviewer_v2"
+)
 
 // WritesADR is the subset of a phase's writes_adr block forge-core reads:
 // Condition is the rule the asset authored (design.yml: "mode in
@@ -321,12 +324,13 @@ func (c *Criterion) UnmarshalJSON(data []byte) error {
 // schema fidelity and stage policy checks. A zero value (false) means "no
 // stage-wide read-only declaration", byte-for-byte back-compat.
 type Workflow struct {
-	ID       string        `json:"id,omitempty"`
-	Stage    string        `json:"stage"`
-	Phases   []Phase       `json:"phases"`
-	Loop     *LoopBody     `json:"loop"`
-	Stop     StopCondition `json:"stop_condition"`
-	Readonly bool          `json:"readonly,omitempty"`
+	ID                    string        `json:"id,omitempty"`
+	Stage                 string        `json:"stage"`
+	Phases                []Phase       `json:"phases"`
+	Loop                  *LoopBody     `json:"loop"`
+	Stop                  StopCondition `json:"stop_condition"`
+	Readonly              bool          `json:"readonly,omitempty"`
+	OutputBindingContract string        `json:"output_binding_contract,omitempty"`
 }
 
 // LoopBody is a standing-loop workflow's `loop:` block: the phases that form the
@@ -387,72 +391,11 @@ func ValidateWorkflowStructure(wf Workflow) error {
 	if err := validateVerdictTargets(wf, seenNames); err != nil {
 		return err
 	}
-	if err := validateScanContracts(wf); err != nil {
+	if err := validateOutputBindingContract(wf); err != nil {
 		return err
 	}
-	return nil
-}
-
-func validateVerdictContract(stage string, phase Phase) error {
-	if phase.VerdictContract == "" {
-		if stage == "build" && phase.Agent == "qa" {
-			return fmt.Errorf("asset: Build QA phase %q requires verdict_contract %q",
-				phase.Name, VerdictContractQAV1)
-		}
-		return nil
-	}
-	if phase.VerdictContract != VerdictContractQAV1 {
-		return fmt.Errorf("asset: phase %q has unsupported verdict_contract %q",
-			phase.Name, phase.VerdictContract)
-	}
-	if stage != "build" || phase.Agent != "qa" {
-		return fmt.Errorf("asset: phase %q verdict_contract %q requires stage build and agent qa",
-			phase.Name, phase.VerdictContract)
-	}
-	if phase.OnFail == nil || phase.OnFail.Action != "loop_back" ||
-		strings.TrimSpace(phase.OnFail.TargetPhase) == "" {
-		return fmt.Errorf("asset: phase %q verdict_contract %q requires on_fail.loop_back with a non-empty target_phase",
-			phase.Name, phase.VerdictContract)
-	}
-	if strings.TrimSpace(phase.RequiredWhen) != "" || len(phase.OptionalFor) > 0 {
-		return fmt.Errorf("asset: phase %q verdict_contract %q must not be mode-skippable",
-			phase.Name, phase.VerdictContract)
-	}
-	if !containsString(phase.RequiredGates, "test") {
-		return fmt.Errorf("asset: phase %q verdict_contract %q requires the independent test gate",
-			phase.Name, phase.VerdictContract)
-	}
-	return nil
-}
-
-func validateVerdictTargets(wf Workflow, phaseIndexes map[string]int) error {
-	for i, phase := range wf.Phases {
-		if phase.VerdictContract != VerdictContractQAV1 {
-			continue
-		}
-		target := phase.OnFail.TargetPhase
-		targetIndex, ok := phaseIndexes[target]
-		if !ok {
-			return fmt.Errorf("asset: phase %q verdict_contract %q target %q does not exist",
-				phase.Name, phase.VerdictContract, target)
-		}
-		if targetIndex >= i {
-			return fmt.Errorf("asset: phase %q verdict_contract %q target %q must be an earlier phase",
-				phase.Name, phase.VerdictContract, target)
-		}
-		if wf.Phases[targetIndex].Agent != "implementer" {
-			return fmt.Errorf("asset: phase %q verdict_contract %q target %q must use agent implementer",
-				phase.Name, phase.VerdictContract, target)
-		}
-		targetPhase := wf.Phases[targetIndex]
-		if targetPhase.Readonly {
-			return fmt.Errorf("asset: phase %q verdict_contract %q target %q must be writable",
-				phase.Name, phase.VerdictContract, target)
-		}
-		if strings.TrimSpace(targetPhase.RequiredWhen) != "" || len(targetPhase.OptionalFor) > 0 {
-			return fmt.Errorf("asset: phase %q verdict_contract %q target %q must not be mode-skippable",
-				phase.Name, phase.VerdictContract, target)
-		}
+	if err := validateScanContracts(wf); err != nil {
+		return err
 	}
 	return nil
 }
@@ -482,6 +425,9 @@ func normalizedEmitIdentity(emit string) string {
 // blank/duplicate phase names and duplicate per-phase emit targets are errors.
 func LoadWorkflowJSON(data []byte) (Workflow, error) {
 	var wf Workflow
+	if err := rejectDuplicateJSONKeys(data); err != nil {
+		return Workflow{}, fmt.Errorf("asset: invalid workflow JSON: %w", err)
+	}
 	if err := json.Unmarshal(data, &wf); err != nil {
 		return Workflow{}, fmt.Errorf("asset: invalid workflow JSON: %w", err)
 	}

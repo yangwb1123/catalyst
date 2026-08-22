@@ -105,28 +105,31 @@ func sourceInventoryPathExcluded(raw string, tracked bool) (bool, error) {
 }
 
 type artifactAttempt struct {
-	model           string
-	promptSHA256    string
-	sourceRevision  string
-	promptInputs    map[string]string
-	writesADR       *writesADRAttempt
-	approvalContext releaseApprovalContext
-	contextFrozen   bool
-	generation      uint64
-	baselines       map[string]releaseArtifactBaseline
-	releaseTree     releaseTreeSnapshot
-	prepareErr      error
+	model              string
+	promptSHA256       string
+	sourceRevision     string
+	promptInputs       map[string]string
+	writesADR          *writesADRAttempt
+	writesADRComplete  bool
+	writesADRCommitted writesADRValidation
+	approvalContext    releaseApprovalContext
+	contextFrozen      bool
+	generation         uint64
+	baselines          map[string]releaseArtifactBaseline
+	releaseTree        releaseTreeSnapshot
+	prepareErr         error
 }
 
 type artifactProvenance struct {
-	root     string
-	runID    string
-	workflow string
-	agentSHA string
-	store    *artifact.Store
-	mu       sync.RWMutex
-	attempts map[string]artifactAttempt
-	nextID   uint64
+	root                       string
+	runID                      string
+	workflow                   string
+	agentSHA                   string
+	store                      *artifact.Store
+	mu                         sync.RWMutex
+	attempts                   map[string]artifactAttempt
+	nextID                     uint64
+	beforeWritesADRFinalVerify func()
 }
 
 func newArtifactProvenance(root, workflow, runID string, releaseAgentSHA ...string) *artifactProvenance {
@@ -145,13 +148,7 @@ func (p *artifactProvenance) recordBuild(phase asset.Phase, model, promptText, s
 		model: model, promptSHA256: artifact.Digest([]byte(promptText)),
 		sourceRevision: sourceRevision, promptInputs: cloneReleaseInputDigests(promptInputs),
 	}
-	if phase.WritesADR != nil {
-		var err error
-		attempt.writesADR, err = prepareWritesADRAttempt(p.root, phase.WritesADR)
-		if err != nil {
-			attempt.prepareErr = err
-		}
-	}
+	p.prepareWritesADRBuild(phase, &attempt)
 	if releaseApprovalStage(p.workflow) && phase.Agent == "release-engineer" {
 		if sourceRevision == "" {
 			attempt.prepareErr = fmt.Errorf("missing prompt-frozen release source revision")
@@ -216,12 +213,12 @@ func (p *artifactProvenance) appendEmits(phase asset.Phase, emits []string) erro
 	if attempt.prepareErr != nil {
 		return fmt.Errorf("attempt preflight: %w", attempt.prepareErr)
 	}
-	adrEmit, err := validateWritesADRAttempt(p.root, attempt.writesADR)
+	adrValidation, err := validateWritesADRAttempt(p.root, attempt.writesADR)
 	if err != nil {
 		return fmt.Errorf("writes_adr postcondition: %w", err)
 	}
-	if adrEmit != "" {
-		emits = append(append([]string(nil), emits...), adrEmit)
+	if adrValidation.path != "" {
+		emits = appendUniqueArtifactPath(emits, adrValidation.path)
 	}
 	if releaseAttempt {
 		if err := p.verifyReleaseAttempt(attempt, phase.Emits); err != nil {
@@ -234,7 +231,7 @@ func (p *artifactProvenance) appendEmits(phase asset.Phase, emits []string) erro
 	}
 	records := make([]artifact.Record, 0, len(emits))
 	for _, emit := range emits {
-		rec, err := p.captureEmit(phase, emit, attempt, meta)
+		rec, err := p.captureAttemptEmit(phase, emit, attempt, meta, adrValidation)
 		if err != nil {
 			return err
 		}
@@ -244,15 +241,34 @@ func (p *artifactProvenance) appendEmits(phase asset.Phase, emits []string) erro
 	if err != nil {
 		return err
 	}
-	if err := p.store.Append(records...); err != nil {
+	if err := p.appendVerifiedArtifactRecords(adrValidation, records); err != nil {
 		return err
 	}
+	p.markWritesADRComplete(phase.Name, attempt.generation, adrValidation)
 	if context.SourceRevision != "" {
-		if err := p.setApprovalContext(phase.Name, attempt.generation, context); err != nil {
-			return err
-		}
+		return p.setApprovalContext(phase.Name, attempt.generation, context)
 	}
 	return nil
+}
+
+func (p *artifactProvenance) bindingOutputPaths(phase asset.Phase) ([]string, error) {
+	paths := append([]string(nil), phase.Emits...)
+	if phase.WritesADR == nil {
+		return paths, nil
+	}
+	attempt, ok := p.attempt(phase.Name)
+	if !ok {
+		return nil, fmt.Errorf("missing frozen writes_adr attempt")
+	}
+	validation, err := validateWritesADRAttempt(p.root, attempt.writesADR)
+	if err != nil {
+		return nil, err
+	}
+	if validation.path != "" {
+		paths = appendUniqueArtifactPath(paths, validation.path)
+	}
+	sort.Strings(paths)
+	return paths, nil
 }
 
 func (p *artifactProvenance) verifyReleaseAttempt(attempt artifactAttempt, emits []string) error {
@@ -412,10 +428,24 @@ func (p *artifactProvenance) writeValidationReceipt(phase asset.Phase) error {
 	if err := p.verifyReceiptContext(phase, attempt); err != nil {
 		return err
 	}
-	return writeReleaseValidationReceipt(p.root, p.workflow, assetPhaseReceipt{
+	phaseReceipt := assetPhaseReceipt{
 		Name: phase.Name, RunID: p.runID, Model: attempt.model,
 		AgentSHA256: p.agentSHA, PromptSHA256: attempt.promptSHA256,
-	}, attempt.approvalContext)
+	}
+	_, bound, err := loadBoundApprovalWorkflow(p.root, p.workflow)
+	if err != nil {
+		return fmt.Errorf("load release approval binding: %w", err)
+	}
+	if !bound {
+		return writeReleaseValidationReceipt(p.root, p.workflow, phaseReceipt, attempt.approvalContext)
+	}
+	verified, err := verifyBoundApprovalContext(p.root, p.workflow)
+	if err != nil {
+		return fmt.Errorf("verify release approval context: %w", err)
+	}
+	return writeBoundReleaseValidationReceipt(
+		p.root, p.workflow, phaseReceipt, attempt.approvalContext, verified,
+	)
 }
 
 func (p *artifactProvenance) verifyReceiptContext(phase asset.Phase, attempt artifactAttempt) error {

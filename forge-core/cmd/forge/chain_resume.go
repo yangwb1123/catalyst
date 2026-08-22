@@ -28,6 +28,9 @@ func prepareChainResume(first asset.Workflow, o runOpts) (asset.Workflow, *chain
 	if err != nil {
 		return asset.Workflow{}, nil, err
 	}
+	if found && first.Stage == "rollback" && state.Status == "completed" {
+		return prepareRollbackRecoveryBranch(first, o, state)
+	}
 	if !found || state.Status != "waiting_approval" {
 		return first, nil, nil
 	}
@@ -47,12 +50,12 @@ func prepareChainResume(first asset.Workflow, o runOpts) (asset.Workflow, *chain
 	if err != nil {
 		return asset.Workflow{}, nil, err
 	}
+	if err := validateBoundChainRecovery(o.root, state); err != nil {
+		return asset.Workflow{}, nil, fmt.Errorf("validate bound chain recovery: %w", err)
+	}
 	return current, &state, nil
 }
 
-// rebuildResumableChainPath treats workflow assets, not the persisted stage
-// strings, as the authority. CompletedStages must exactly precede CurrentStage;
-// standalone rollback has an empty prefix and corrupted paths fail closed.
 func rebuildResumableChainPath(root string, state chainState) (asset.Workflow, error) {
 	stage := state.EntryStage
 	expectedPrefix := make([]string, 0, len(state.CompletedStages))
@@ -62,9 +65,9 @@ func rebuildResumableChainPath(root string, state chainState) (asset.Workflow, e
 			return asset.Workflow{}, fmt.Errorf("persisted chain path contains a cycle at %q", stage)
 		}
 		seen[stage] = struct{}{}
-		wf, err := loadWorkflowNativeOnly(root, stage)
+		wf, err := loadBoundChainWorkflow(root, stage, state)
 		if err != nil {
-			return asset.Workflow{}, fmt.Errorf("load persisted chain stage %q: %w", stage, err)
+			return asset.Workflow{}, err
 		}
 		if stage == state.CurrentStage {
 			if wf.Stop.Type != converge.HumanGateType {
@@ -115,6 +118,7 @@ func restoreChainRunOptions(o *runOpts, budget *runBudget, state *chainState, re
 	}
 	o.mode = state.Mode
 	o.lifecycle = state.Lifecycle
+	o.materiality = state.Materiality
 	o.maxAgentCalls = state.MaxAgentCalls
 	o.maxChainStages = state.MaxChainStages
 	if err := budget.restore(state.BudgetCapMicros, state.SpentUsdMicros); err != nil {
@@ -136,14 +140,14 @@ func rejectionMarkerExists(root, stage string) (bool, error) {
 func execChainEvolve(ctx context.Context, wf asset.Workflow, o runOpts, logln func(string), tracer *trace.Tracer, budget *runBudget, calls *chainAgentCounter) int {
 	o.evolveProposalOnly = proposalOnlyEvolve(wf, o, o.lifecycle)
 	maxIter := mode.Effective(o.mode, o.lifecycle).EvolveMaxIter()
-	loop, verdicts, findings, phaseOut := buildTracedLoop(ctx, wf, o, maxIter, logln, tracer, budget)
+	loop, verdicts, findings, phaseOut, recovery := buildTracedLoop(ctx, wf, o, maxIter, logln, tracer, budget)
 	loop.Engine.ChargeAgentCall = calls.charge
-	loop.OnIteration = checkpointHook(o, wf, tracer, budget, logln, verdicts, findings)
-	loop.OnPhase = phaseCheckpointHook(o, wf, budget, phaseOut, logln)
+	loop.OnIteration = checkpointHook(o, wf, tracer, budget, logln, verdicts, findings, recovery)
+	loop.OnPhase = phaseCheckpointHook(o, wf, budget, phaseOut, logln, recovery)
 	fmt.Printf("forge run --chain: entering evolve LoopEngine stage=%s max-iter=%d (mode/lifecycle default)\n",
 		wf.Stage, maxIter)
 	outcome, err := loop.Run(wf, o.mode)
-	if !o.evolveProposalOnly {
+	if !o.evolveProposalOnly && allowScorecardWindDown(wf, o) {
 		windDownScorecardsForRun(wf, o, logln, outcome.Iterations, verdicts.wasReworked(), tracer.RunID)
 	}
 	if err != nil {

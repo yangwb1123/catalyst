@@ -74,22 +74,27 @@ type commandExecutorConfig struct {
 func (c commandExecutorConfig) executor() orchestrator.AgentExecutor {
 	restrictedEnv := restrictedAgentEnvironment(c.opts)
 	ex := orchestrator.CommandExecutor{
-		ValidateConfig:    c.validate,
-		Build:             c.build,
-		Sandbox:           sandboxConfig(c.opts),
-		Dir:               c.opts.root,
-		Timeout:           c.opts.timeout,
-		MaxDepth:          c.opts.maxAgentDepth,
-		MaxOutputBytes:    c.opts.maxOutputBytes,
-		EnvAllow:          agentEnvAllow(c.isClaude, restrictedEnv, c.opts.agentEnv),
-		RestrictedEnv:     restrictedEnv,
-		PromptViaStdin:    c.isClaude,
-		Log:               c.logln,
-		ValidateOutput:    c.hooks.ValidateOutput,
-		ValidateRawOutput: c.hooks.ValidateRawOutput,
+		ValidateConfig:        c.validate,
+		Build:                 c.build,
+		FinalizeCommand:       c.hooks.FinalizeCommand,
+		Sandbox:               sandboxConfig(c.opts),
+		Dir:                   c.opts.root,
+		Timeout:               c.opts.timeout,
+		MaxDepth:              c.opts.maxAgentDepth,
+		MaxOutputBytes:        c.opts.maxOutputBytes,
+		EnvAllow:              agentEnvAllow(c.isClaude, restrictedEnv, c.opts.agentEnv),
+		RestrictedEnv:         restrictedEnv,
+		PromptViaStdin:        c.isClaude,
+		Log:                   c.logln,
+		ValidateOutput:        c.hooks.ValidateOutput,
+		ValidateRawOutput:     c.hooks.ValidateRawOutput,
+		SemanticOutput:        c.hooks.SemanticOutput,
+		CommitValidatedOutput: c.hooks.CommitValidatedOutput,
 	}
 	phaseModel := preferPhaseModel(c.hooks.ModelFor, c.phaseModel)
 	ex.Observe = observeFor(c.isClaude, c.costSink, phaseModel, c.phaseOut, c.feedsForward, c.verdicts, c.findings, c.onFailTarget, c.hooks.VerdictContractFor, c.hooks.ScanContractFor)
+	ex.ObserveSemantic = semanticObserveFor(c.isClaude, c.phaseOut, c.feedsForward,
+		c.hooks.VerdictContractFor, c.hooks.ScanContractFor)
 	if c.isClaude {
 		ex.RenderLog = unwrapClaudeResult
 		ex.ClassifyOverload = classifyClaudeOverload
@@ -101,7 +106,10 @@ func restrictedAgentEnvironment(o runOpts) bool {
 	return o.evolveProposalOnly || o.workflowStage == "deploy" || o.workflowStage == "rollback"
 }
 
-func (c commandExecutorConfig) validate(p asset.Phase, _ string) error {
+func (c commandExecutorConfig) validate(p asset.Phase, runMode string) error {
+	if err := validateWritesADRPreSpawn(c.opts.root, runMode, c.lifecycle, p.WritesADR); err != nil {
+		return err
+	}
 	if err := validateProposalExecutor(p, c.opts, c.isClaude, c.releaseAgent); err != nil {
 		return err
 	}
@@ -115,7 +123,12 @@ func (c commandExecutorConfig) validate(p asset.Phase, _ string) error {
 	}
 	if p.Agent == "release-engineer" {
 		rework := len(c.findings.contextLines(p.Name)) > 0
-		return c.releasePrompts.prepare(c.opts.root, p, rework)
+		if err := c.releasePrompts.prepare(c.opts.root, p, rework); err != nil {
+			return err
+		}
+	}
+	if c.hooks.PrepareCommand != nil {
+		return c.hooks.PrepareCommand(p, runMode)
 	}
 	return nil
 }
@@ -145,40 +158,23 @@ func (c commandExecutorConfig) build(p asset.Phase, runMode string) []string {
 			return nil
 		}
 	} else {
-		text = buildPromptWithEmits(c.opts.root, p, runMode, frozenTier, c.ctxCache, c.gates, c.phaseOut, c.findings, emitsFilesFor(c.priorEmits, p.Name))
+		emits := emitsFilesFor(c.priorEmits, p.Name)
+		var frozen [][]string
+		if c.hooks.FrozenEmits != nil {
+			if blocks, ok := c.hooks.FrozenEmits(p); ok {
+				frozen = append(frozen, blocks)
+			}
+		}
+		text = buildPromptWithEmits(c.opts.root, p, runMode, frozenTier, c.ctxCache,
+			c.gates, c.phaseOut, c.findings, emits, frozen...)
 	}
 	text = appendEvolveScanPrompt(text, p, c.hooks.ScanDepth)
+	text = appendMaterialityPrompt(text, p, c.opts)
 	text = requiresToolsGuard(p, true, c.isClaude, c.opts.agentAllowedTools, c.logln, text)
 	if c.hooks.OnBuild != nil {
 		c.hooks.OnBuild(p, model, text, frozenSourceRevision, frozenReleaseInputs)
 	}
 	return append(argv, "-p", text)
-}
-
-type executorHooks struct {
-	ValidateOutput     func(phase, output string) error
-	ValidateRawOutput  func(phase, output string) error
-	OnBuild            func(phase asset.Phase, model, promptText, frozenSourceRevision string, frozenReleaseInputs map[string]string)
-	ModelFor           func(phase string) string
-	VerdictContractFor func(phase string) string
-	ScanContractFor    func(phase string) string
-	ScanDepth          string
-}
-
-func firstExecutorHooks(hooks []executorHooks) executorHooks {
-	if len(hooks) == 0 {
-		return executorHooks{}
-	}
-	return hooks[0]
-}
-
-func preferPhaseModel(primary, fallback func(string) string) func(string) string {
-	return func(name string) string {
-		if model := phaseModelOf(primary, name); model != "" {
-			return model
-		}
-		return phaseModelOf(fallback, name)
-	}
 }
 
 var claudeCredentialEnv = []string{

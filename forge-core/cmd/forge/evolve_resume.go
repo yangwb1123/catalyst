@@ -1,8 +1,6 @@
 package main
 
 import (
-	"crypto/sha256"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -12,8 +10,10 @@ import (
 
 	"forgeos/forge-core/internal/asset"
 	"forgeos/forge-core/internal/converge"
+	"forgeos/forge-core/internal/materiality"
 	"forgeos/forge-core/internal/mode"
 	"forgeos/forge-core/internal/orchestrator"
+	"forgeos/forge-core/internal/outputbinding"
 	"forgeos/forge-core/internal/persist"
 )
 
@@ -26,10 +26,35 @@ type loopResumeState struct {
 	phaseStart      int
 	gatesGreen      bool
 	scanReport      string
+	scanSemantic    string
 	maxAgentCalls   int
 	agentCalls      int
 	maxLoopBacks    int
 	loopBacks       int
+	materiality     string
+	runID           string
+	receiptHead     string
+	phaseReceipts   map[string]outputbinding.AgentOutputReceipt
+	phaseSemantics  map[string]string
+	scanReceipt     *outputbinding.AgentOutputReceipt
+}
+
+func parseEvolveFlags(fs *flag.FlagSet, args []string) int {
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if fs.NArg() != 0 {
+		fmt.Fprintln(os.Stderr, "forge evolve: unexpected trailing positional arguments")
+		return 2
+	}
+	return 0
+}
+
+func freezeEvolveRunOptions(fs *flag.FlagSet, o *runOpts) error {
+	if err := freezeRunMateriality(fs, o); err != nil {
+		return fmt.Errorf("--materiality: %w", err)
+	}
+	return validateSandboxMemory(o.sandboxMemoryMB)
 }
 
 func validateEvolveEntry(
@@ -52,6 +77,9 @@ func validateEvolveEntry(
 }
 
 func loadEvolveWorkflow(root, name string, o runOpts) (asset.Workflow, error) {
+	if name == "build" && (o.materiality == "L3" || o.materiality == "L4") {
+		return loadWorkflowNativeOnly(root, name)
+	}
 	policy := mode.Effective(o.mode, o.lifecycle)
 	if policy.BuildHalted() || policy.EvolveProposalOnly() {
 		return loadWorkflowNativeOnly(root, name)
@@ -74,8 +102,6 @@ func proposalOnlyEvolve(wf asset.Workflow, o runOpts, lifecycle string) bool {
 	return policy.BuildHalted() || policy.EvolveProposalOnly()
 }
 
-// prepareLoopResume freezes the policy identity used by both execution and
-// checkpoint validation before any trace, doctor check, budget, or agent exists.
 func prepareLoopResume(wf asset.Workflow, o *runOpts, resume bool) (loopResumeState, error) {
 	if o.lifecycle == "" {
 		o.lifecycle = resolveLifecycle(*o)
@@ -88,7 +114,9 @@ func prepareLoopResume(wf asset.Workflow, o *runOpts, resume bool) (loopResumeSt
 	}
 	binding := checkpointBinding{
 		Workflow: wf.Stage, WorkflowDigest: checkpointWorkflowDigest(wf),
-		Mode: o.mode, Lifecycle: o.lifecycle, PhaseLimit: phaseLimit,
+		WorkflowAsset: wf,
+		Mode:          o.mode, Lifecycle: o.lifecycle, Materiality: o.materiality,
+		MaterialityExplicit: resumeMaterialityExplicit(*o), PhaseLimit: phaseLimit,
 	}
 	state, err := loadLoopResumeState(o.root, resume, binding)
 	if err != nil {
@@ -132,7 +160,12 @@ func restoreResumeRunOptions(o *runOpts, state loopResumeState) error {
 		return fmt.Errorf("persisted loop-back cap=%d conflicts with runtime cap=%d",
 			state.maxLoopBacks, maxLoopBack)
 	}
+	if resumeMaterialityExplicit(*o) && o.materiality != state.materiality {
+		return fmt.Errorf("persisted --materiality=%s conflicts with requested %s",
+			state.materiality, o.materiality)
+	}
 	o.maxAgentCalls = state.maxAgentCalls
+	o.materiality = state.materiality
 	return nil
 }
 
@@ -166,33 +199,64 @@ func contractedScanBefore(wf asset.Workflow, phaseStart int) bool {
 	return false
 }
 
-type validatedOutputRestorer interface {
-	RestoreValidatedOutput(asset.Phase, string) error
-}
-
 func restoreContractedScanOutput(
 	executor orchestrator.AgentExecutor,
 	wf asset.Workflow,
 	phaseStart int,
-	report string,
+	semantic string,
+	receipts ...*outputbinding.AgentOutputReceipt,
 ) error {
 	if !contractedScanBefore(wf, phaseStart) {
 		return nil
-	}
-	restorer, ok := executor.(validatedOutputRestorer)
-	if !ok {
-		return fmt.Errorf("executor cannot restore a validated contracted scan report")
 	}
 	for _, phase := range wf.Phases {
 		if phase.ScanContract != asset.ScanContractEvolveV1 {
 			continue
 		}
-		if err := restorer.RestoreValidatedOutput(phase, report); err != nil {
+		if len(receipts) > 0 && receipts[0] != nil {
+			restorer, ok := executor.(validatedOutputRestorer)
+			if !ok {
+				return fmt.Errorf("executor cannot restore a receipt-bound contracted scan report")
+			}
+			if err := restorer.RestoreValidatedOutput(phase, semantic, *receipts[0]); err != nil {
+				return fmt.Errorf("restore contracted scan report: %w", err)
+			}
+			return nil
+		}
+		restorer, ok := executor.(validatedOutputRestorer)
+		if !ok {
+			return fmt.Errorf("executor cannot restore a validated contracted scan report")
+		}
+		if err := restorer.RestoreValidatedOutput(phase, semantic); err != nil {
 			return fmt.Errorf("restore contracted scan report: %w", err)
 		}
 		return nil
 	}
 	return fmt.Errorf("checkpoint carries a scan report but workflow has no contracted scan phase")
+}
+
+func restoreFeedForwardOutputs(executor orchestrator.AgentExecutor, wf asset.Workflow,
+	phaseStart int, semantic map[string]string, receipts map[string]outputbinding.AgentOutputReceipt) error {
+	restorer, ok := executor.(validatedOutputRestorer)
+	restored := 0
+	for index, phase := range wf.Phases {
+		if index >= phaseStart || !phaseNeedsDurableSemantic(phase) {
+			continue
+		}
+		output, present := semantic[phase.Name]
+		receipt, referenced := receipts[phase.Name]
+		if !ok || !present || !referenced {
+			return fmt.Errorf("executor cannot restore receipt-bound feed-forward output for %s", phase.Name)
+		}
+		if err := restorer.RestoreValidatedOutput(phase, output, receipt); err != nil {
+			return fmt.Errorf("restore feed-forward phase %s: %w", phase.Name, err)
+		}
+		restored++
+	}
+	if restored != len(semantic) {
+		return fmt.Errorf("checkpoint carries extra feed-forward semantic outputs")
+	}
+	return nil
 }
 
 func applyLoopResume(loop *orchestrator.LoopEngine, wf asset.Workflow, resumed loopResumeState) error {
@@ -208,45 +272,28 @@ func applyLoopResume(loop *orchestrator.LoopEngine, wf asset.Workflow, resumed l
 	loop.StartPhase, loop.ResumeGatesGreen = resumed.phaseStart, resumed.gatesGreen
 	loop.Engine.InitialAgentCalls = resumed.agentCalls
 	loop.Engine.InitialLoopBacks = resumed.loopBacks
-	return restoreContractedScanOutput(
-		loop.Engine.Exec, wf, resumed.phaseStart, resumed.scanReport,
-	)
+	if len(resumed.phaseSemantics) == 0 && resumed.scanReceipt == nil {
+		return restoreContractedScanOutput(loop.Engine.Exec, wf, resumed.phaseStart, resumed.scanReport)
+	}
+	return restoreFeedForwardOutputs(loop.Engine.Exec, wf, resumed.phaseStart,
+		resumed.phaseSemantics, resumed.phaseReceipts)
 }
 
-// phaseCheckpointHook builds the loop's iteration-aware durable-progress callback.
-// The engine calls it before every Agent spawn and again after a phase fails,
-// advances, or takes a directed loop-back. nextPhaseIdx is therefore the exact
-// resume target, while the counters and budget snapshot include all consumption
-// known at that transition. The last completed iteration's measured signals are
-// preserved from the iteration checkpoint. A write failure is fail-closed: running
-// more phases without a durable resource envelope would let a later resume replay
-// work and silently regain budget.
 func phaseCheckpointHook(
 	o runOpts,
 	wf asset.Workflow,
 	budget *runBudget,
 	phaseOut *phaseOutputLedger,
 	logln func(string),
+	recoveries ...*outputBindingRuntime,
 ) func(iter, nextPhaseIdx, agentCalls, loopBacks int) error {
 	workflowDigest := checkpointWorkflowDigest(wf)
 	lifecycle := resolveLifecycle(o)
+	boundMateriality := durableRunMateriality(o)
+	recovery := firstBindingRecovery(recoveries)
 	return func(iter, nextPhaseIdx, agentCalls, loopBacks int) error {
-		prev, _, _ := persist.Load(checkpointPath(o.root)) // not-found/malformed -> zero signals
-		if prev.FormatVersion != persist.CheckpointFormatCurrent ||
-			prev.Workflow != wf.Stage || prev.WorkflowDigest != workflowDigest ||
-			prev.Mode != o.mode || prev.Lifecycle != lifecycle {
-			prev = persist.Checkpoint{}
-		}
-		cp := persist.Checkpoint{
-			Workflow: wf.Stage, WorkflowDigest: workflowDigest,
-			Mode: o.mode, Lifecycle: lifecycle, Iteration: iter - 1,
-			RoadmapCompletion: prev.RoadmapCompletion, GatesGreen: prev.GatesGreen,
-			PhaseIndex: nextPhaseIdx, Reason: "durable phase progress (mid-iteration)",
-			UpdatedAtUnix: time.Now().Unix(), SpentUsdMicros: budget.SpentUsdMicros(),
-			BudgetCapMicros: budget.CapUsdMicros(),
-			MaxAgentCalls:   o.maxAgentCalls, AgentCalls: agentCalls,
-			MaxLoopBacks: maxLoopBack, LoopBacks: loopBacks,
-		}
+		cp := newPhaseCheckpoint(o, wf, budget, workflowDigest, lifecycle,
+			boundMateriality, iter, nextPhaseIdx, agentCalls, loopBacks)
 		report, required := checkpointScanReport(wf, phaseOut, cp.PhaseIndex)
 		if required && report == "" {
 			err := fmt.Errorf("validated scan report is unavailable at resume phase %d", cp.PhaseIndex)
@@ -254,6 +301,20 @@ func phaseCheckpointHook(
 			return err
 		}
 		cp.EvolveScanReport = report
+		if required {
+			semantic := report
+			if wf.OutputBindingContract == asset.OutputBindingContractLocalDigestV1 {
+				var ok bool
+				semantic, ok = recovery.recoverySemantic(scanPhaseName(wf))
+				if !ok {
+					return fmt.Errorf("exact validated scan semantic output is unavailable")
+				}
+			}
+			cp.EvolveScanSemanticOutput = semantic
+		}
+		if err := bindCheckpointRecovery(&cp, o.root, wf, o, recovery); err != nil {
+			return fmt.Errorf("bind checkpoint recovery: %w", err)
+		}
 		if err := persist.Save(checkpointPath(o.root), cp, 5); err != nil {
 			logln(fmt.Sprintf("forge evolve: ERROR phase checkpoint write failed; stopping before more work (recovery state NOT durable): %v", err))
 			return fmt.Errorf("persist durable phase progress: %w", err)
@@ -262,19 +323,38 @@ func phaseCheckpointHook(
 	}
 }
 
-func checkpointScanReport(wf asset.Workflow, phaseOut *phaseOutputLedger, phaseIndex int) (string, bool) {
-	for i, phase := range wf.Phases {
-		if phase.ScanContract != asset.ScanContractEvolveV1 || phaseIndex <= i {
-			continue
-		}
-		report, _ := phaseOut.output(phase.Name)
-		return report, true
+func newPhaseCheckpoint(o runOpts, wf asset.Workflow, budget *runBudget,
+	digest, lifecycle, boundMateriality string, iter, next, calls, loopBacks int) persist.Checkpoint {
+	prev, _, _ := persist.Load(checkpointPath(o.root))
+	if prev.FormatVersion != persist.CheckpointFormatCurrent || prev.Workflow != wf.Stage ||
+		prev.WorkflowDigest != digest || prev.Mode != o.mode || prev.Lifecycle != lifecycle ||
+		prev.Materiality != boundMateriality {
+		prev = persist.Checkpoint{}
 	}
-	return "", false
+	return persist.Checkpoint{
+		Workflow: wf.Stage, WorkflowDigest: digest, Mode: o.mode, Lifecycle: lifecycle,
+		Materiality: boundMateriality, Iteration: iter - 1, RoadmapCompletion: prev.RoadmapCompletion,
+		GatesGreen: prev.GatesGreen, PhaseIndex: next, Reason: "durable phase progress (mid-iteration)",
+		UpdatedAtUnix: time.Now().Unix(), SpentUsdMicros: budget.SpentUsdMicros(),
+		BudgetCapMicros: budget.CapUsdMicros(), MaxAgentCalls: o.maxAgentCalls, AgentCalls: calls,
+		MaxLoopBacks: maxLoopBack, LoopBacks: loopBacks,
+	}
 }
 
-// proposalLoopSignals is intentionally file/ledger-only: proposal authority
-// must not execute repository acceptance scripts after the agent prefix ends.
+func firstBindingRecovery(values []*outputBindingRuntime) *outputBindingRuntime {
+	if len(values) == 0 {
+		return nil
+	}
+	return values[0]
+}
+
+func durableRunMateriality(o runOpts) string {
+	if o.materiality == "" {
+		return materiality.Unbound
+	}
+	return o.materiality
+}
+
 func proposalLoopSignals(root string, wf asset.Workflow, approved bool, verdicts *verdictLedger) converge.Signals {
 	roadmap, _ := os.ReadFile(filepath.Join(root, ".agent", "ROADMAP.md"))
 	return converge.Signals{
@@ -288,17 +368,18 @@ func proposalLoopSignals(root string, wf asset.Workflow, approved bool, verdicts
 type checkpointBinding struct {
 	Workflow       string
 	WorkflowDigest string
+	WorkflowAsset  asset.Workflow
 	Mode           string
 	Lifecycle      string
+	Materiality    string
+	// MaterialityExplicit makes only a caller-supplied selector conflict with
+	// the durable value. Omission restores the checkpoint's exact declaration.
+	MaterialityExplicit bool
 	// PhaseLimit is the executable phase count after applying the same effective
 	// authority policy. PhaseIndex==PhaseLimit means the last phase completed.
 	PhaseLimit int
 }
 
-// resumeStart resolves the first iteration and persisted convergence/budget
-// state. Present state must exactly match the current workflow, mode, lifecycle,
-// and executable phase range; legacy unbound state remains readable but cannot
-// be resumed. Missing state is the only --resume case that starts fresh.
 func resumeStart(root string, resume bool, binding checkpointBinding) (start int, prev float64, spentMicros int64, phaseStart int, gatesGreen bool, scanReport string, err error) {
 	state, err := loadLoopResumeState(root, resume, binding)
 	return state.start, state.prev, state.spentMicros, state.phaseStart,
@@ -325,6 +406,10 @@ func loadLoopResumeState(
 	if err := validateResumeCheckpoint(cp, binding); err != nil {
 		return loopResumeState{}, fmt.Errorf("--resume: invalid checkpoint at %s: %w", checkpointPath(root), err)
 	}
+	recovery, err := validateBoundCheckpointRecovery(root, cp, binding)
+	if err != nil {
+		return loopResumeState{}, fmt.Errorf("--resume: invalid bound recovery at %s: %w", checkpointPath(root), err)
+	}
 	at := ""
 	if cp.PhaseIndex > 0 {
 		at = fmt.Sprintf(", phase %d", cp.PhaseIndex)
@@ -335,23 +420,31 @@ func loadLoopResumeState(
 		found: true, start: cp.Iteration + 1, prev: cp.RoadmapCompletion,
 		spentMicros: cp.SpentUsdMicros, budgetCapMicros: cp.BudgetCapMicros,
 		phaseStart: cp.PhaseIndex, gatesGreen: cp.GatesGreen,
-		scanReport: cp.EvolveScanReport, maxAgentCalls: cp.MaxAgentCalls,
-		agentCalls: cp.AgentCalls, maxLoopBacks: cp.MaxLoopBacks,
-		loopBacks: cp.LoopBacks,
+		scanReport: cp.EvolveScanReport, scanSemantic: cp.EvolveScanSemanticOutput,
+		maxAgentCalls: cp.MaxAgentCalls,
+		agentCalls:    cp.AgentCalls, maxLoopBacks: cp.MaxLoopBacks,
+		loopBacks: cp.LoopBacks, materiality: cp.Materiality,
+		runID: cp.RunID, receiptHead: cp.ReceiptHead,
+		phaseReceipts: recovery.receipts, scanReceipt: recovery.scan,
+		phaseSemantics: recovery.semantic,
 	}, nil
 }
 
 func validateResumeCheckpoint(cp persist.Checkpoint, want checkpointBinding) error {
+	boundMateriality, materialityErr := materiality.Normalize(want.Materiality)
 	if want.Workflow == "" || want.WorkflowDigest == "" ||
-		want.Mode == "" || want.Lifecycle == "" || want.PhaseLimit < 0 {
+		want.Mode == "" || want.Lifecycle == "" || want.PhaseLimit < 0 || materialityErr != nil {
 		return fmt.Errorf("current invocation has incomplete checkpoint binding")
 	}
-	if cp.FormatVersion != persist.CheckpointFormatCurrent {
+	bound := want.WorkflowAsset.OutputBindingContract == asset.OutputBindingContractLocalDigestV1
+	legacyUnbound := !bound && cp.FormatVersion == persist.CheckpointFormatLegacy
+	if cp.FormatVersion != persist.CheckpointFormatCurrent && !legacyUnbound {
 		return fmt.Errorf("checkpoint format %q is diagnostic-only; resume requires %q",
 			cp.FormatVersion, persist.CheckpointFormatCurrent)
 	}
-	if cp.Workflow == "" || cp.Mode == "" || cp.Lifecycle == "" {
-		return fmt.Errorf("checkpoint lacks required workflow/mode/lifecycle binding; legacy checkpoints cannot be resumed safely")
+	if cp.Workflow == "" || cp.Mode == "" || cp.Lifecycle == "" ||
+		!materiality.Valid(cp.Materiality) {
+		return fmt.Errorf("checkpoint lacks required workflow/mode/lifecycle/materiality binding; legacy checkpoints cannot be resumed safely")
 	}
 	if cp.WorkflowDigest == "" {
 		return fmt.Errorf("checkpoint lacks required workflow digest; legacy checkpoints cannot be resumed safely")
@@ -370,6 +463,10 @@ func validateResumeCheckpoint(cp persist.Checkpoint, want checkpointBinding) err
 	}
 	if cp.Lifecycle != want.Lifecycle {
 		return fmt.Errorf("lifecycle mismatch: checkpoint=%q invocation=%q", cp.Lifecycle, want.Lifecycle)
+	}
+	if want.MaterialityExplicit && cp.Materiality != boundMateriality {
+		return fmt.Errorf("materiality mismatch: checkpoint=%q invocation=%q",
+			cp.Materiality, boundMateriality)
 	}
 	if cp.Iteration < 0 {
 		return fmt.Errorf("iteration %d must be non-negative", cp.Iteration)
@@ -399,15 +496,4 @@ func validateResumeResourceProgress(cp persist.Checkpoint, phaseLimit int) error
 	default:
 		return nil
 	}
-}
-
-// checkpointWorkflowDigest binds resume indices to the complete normalized
-// workflow asset. Go's JSON encoder deterministically orders map keys; Workflow
-// contains only serializable contract data, so equal assets yield equal hashes.
-func checkpointWorkflowDigest(wf asset.Workflow) string {
-	data, err := json.Marshal(wf)
-	if err != nil {
-		return ""
-	}
-	return fmt.Sprintf("%x", sha256.Sum256(data))
 }

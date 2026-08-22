@@ -106,11 +106,15 @@ type runOpts struct {
 	// lifecycle freezes the project maturity used to resolve workflow policy.
 	// Empty means read .agent/project.yml, then fall back to mvp.
 	lifecycle string
+	// materiality is caller-declared only; empty is normalized to an honest
+	// persisted unbound sentinel and is never inferred from risk or mode.
+	materiality string
 	// Explicitness keeps CLI defaults distinguishable from deliberate default
 	// values when validating a persisted chain's immutable run envelope.
 	runFlagsCaptured       bool
 	modeExplicit           bool
 	lifecycleExplicit      bool
+	materialityExplicit    bool
 	maxAgentCallsExplicit  bool
 	maxChainStagesExplicit bool
 	runBudgetExplicit      bool
@@ -225,6 +229,7 @@ type runOpts struct {
 func bindRunOpts(fs *flag.FlagSet, o *runOpts) {
 	fs.StringVar(&o.mode, "mode", "", "engineering mode (explorer|balanced|engineering|cto); empty = read .agent/project.yml, else balanced")
 	fs.StringVar(&o.lifecycle, "lifecycle", "", "maturity modifier (idea|mvp|growth|production); empty = read .agent/project.yml, else mvp")
+	fs.StringVar(&o.materiality, "materiality", "", "caller-declared change materiality (L0|L1|L2|L3|L4); omitted remains unbound")
 	fs.StringVar(&o.root, "root", "", "repo root (default $FORGE_REPO_ROOT or .)")
 	fs.StringVar(&o.executor, "executor", "dry", "agent executor: dry|command")
 	fs.StringVar(&o.sandbox, "sandbox", "", "isolate agent commands: docker|firecracker (requires --sandbox-image; firecracker also requires --sandbox-kernel)")
@@ -318,6 +323,14 @@ func cmdRun(args []string) int {
 	if err := fs.Parse(flagArgs); err != nil {
 		return 2
 	}
+	if err := rejectUnexpectedPositionals(fs); err != nil {
+		fmt.Fprintf(os.Stderr, "forge run: %v\n", err)
+		return 2
+	}
+	if err := freezeRunMateriality(fs, &o); err != nil {
+		fmt.Fprintf(os.Stderr, "forge run: --materiality: %v\n", err)
+		return 2
+	}
 	if err := validateSandboxMemory(o.sandboxMemoryMB); err != nil {
 		fmt.Fprintf(os.Stderr, "forge run: %v\n", err)
 		return 2
@@ -352,6 +365,13 @@ func splitPositional(args []string) (name string, flags []string) {
 		return "", nil
 	}
 	return args[0], args[1:]
+}
+
+func rejectUnexpectedPositionals(fs *flag.FlagSet) error {
+	if fs.NArg() == 0 {
+		return nil
+	}
+	return fmt.Errorf("unexpected positional argument(s) after workflow: %q", fs.Args())
 }
 
 // reportConvergence evaluates the workflow's stop condition against live repo
@@ -409,6 +429,7 @@ func freezeRunOptions(fs *flag.FlagSet, o *runOpts) {
 	o.runFlagsCaptured = true
 	o.modeExplicit = flagSet(fs, "mode")
 	o.lifecycleExplicit = flagSet(fs, "lifecycle")
+	o.materialityExplicit = flagSet(fs, "materiality")
 	o.maxAgentCallsExplicit = flagSet(fs, "max-agent-calls")
 	o.maxChainStagesExplicit = flagSet(fs, "max-chain-stages")
 	o.runBudgetExplicit = flagSet(fs, "run-budget-usd")

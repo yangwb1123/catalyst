@@ -4,9 +4,18 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
+
+	"forgeos/forge-core/internal/materiality"
 )
+
+func TestCheckpointFormatCurrentIsV5(t *testing.T) {
+	if CheckpointFormatCurrent != "forgeos.checkpoint.v5" {
+		t.Fatalf("CheckpointFormatCurrent = %q, want v5", CheckpointFormatCurrent)
+	}
+}
 
 func TestCheckpointFormatRejectsUnknownGeneration(t *testing.T) {
 	if _, err := decode([]byte(`{"_format":"forgeos.checkpoint.v99","workflow":"build"}`)); err == nil ||
@@ -47,7 +56,38 @@ func TestCheckpointFormatAcceptsV2ForDiagnostics(t *testing.T) {
 	}
 }
 
-func TestCheckpointV3RequiresEveryExplicitNonNullField(t *testing.T) {
+func TestCheckpointFormatAcceptsV3WithoutMaterialityForDiagnosticsOnly(t *testing.T) {
+	got, err := decode([]byte(`{
+		"_format":"forgeos.checkpoint.v3",
+		"workflow":"evolve",
+		"workflow_digest":"old-digest",
+		"mode":"balanced",
+		"lifecycle":"mvp",
+		"iteration":2,
+		"roadmap_completion":0.5,
+		"gates_green":true,
+		"reason":"old checkpoint",
+		"updated_at_unix":1750000000,
+		"phase_index":1,
+		"budget_cap_micros":0,
+		"spent_usd_micros":0,
+		"max_agent_calls":0,
+		"agent_calls":0,
+		"max_loop_backs":0,
+		"loop_backs":0
+	}`))
+	if err != nil {
+		t.Fatalf("decode diagnostic v3 checkpoint: %v", err)
+	}
+	if got.FormatVersion != checkpointFormatV3 || got.Materiality != "" {
+		t.Fatalf("diagnostic v3 checkpoint changed: %+v", got)
+	}
+	if got.FormatVersion == CheckpointFormatCurrent {
+		t.Fatal("v3 checkpoint must not be considered resumable/current")
+	}
+}
+
+func TestCheckpointV4RequiresEveryExplicitNonNullField(t *testing.T) {
 	data, err := encode(currentCheckpoint("evolve", 0))
 	if err != nil {
 		t.Fatal(err)
@@ -56,7 +96,7 @@ func TestCheckpointV3RequiresEveryExplicitNonNullField(t *testing.T) {
 	if err := json.Unmarshal(data, &complete); err != nil {
 		t.Fatal(err)
 	}
-	for _, field := range checkpointV3RequiredFields {
+	for _, field := range checkpointV5RequiredFields {
 		t.Run("missing_"+field, func(t *testing.T) {
 			invalid := cloneRawFields(complete)
 			delete(invalid, field)
@@ -70,7 +110,85 @@ func TestCheckpointV3RequiresEveryExplicitNonNullField(t *testing.T) {
 	}
 }
 
-func TestCheckpointV3AcceptsExplicitZeroAndFalse(t *testing.T) {
+func TestCheckpointV4AcceptsEveryMaterialityValue(t *testing.T) {
+	for _, value := range []string{materiality.Unbound, "L0", "L1", "L2", "L3", "L4"} {
+		t.Run(value, func(t *testing.T) {
+			cp := currentCheckpoint("evolve", 0)
+			cp.Materiality = value
+			data, err := encode(cp)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, err := decode(data)
+			if err != nil {
+				t.Fatalf("decode materiality %q: %v", value, err)
+			}
+			if got.Materiality != value {
+				t.Fatalf("Materiality = %q, want %q", got.Materiality, value)
+			}
+		})
+	}
+}
+
+func TestCheckpointV4RejectsInvalidMateriality(t *testing.T) {
+	for _, value := range []string{"", "l3", " L3", "L5", "high"} {
+		t.Run(value, func(t *testing.T) {
+			cp := currentCheckpoint("evolve", 0)
+			cp.Materiality = value
+			data, err := encode(cp)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := decode(data); err == nil || !strings.Contains(err.Error(), "materiality") {
+				t.Fatalf("decode invalid materiality %q error = %v", value, err)
+			}
+		})
+	}
+}
+
+func TestCheckpointV4RejectsDuplicateRecoveryFields(t *testing.T) {
+	data, err := encode(currentCheckpoint("evolve", 2))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct{ name, prefix string }{
+		{"materiality", `{"materiality":"L4",`},
+		{"mode", `{"mode":"engineering",`},
+		{"iteration", `{"iteration":9,`},
+		{"phase_cursor", `{"phase_index":3,`},
+		{"workflow_digest", `{"workflow_digest":"other",`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mutated := append([]byte(tc.prefix), data[1:]...)
+			if _, err := decode(mutated); err == nil || !strings.Contains(err.Error(), "duplicate field") {
+				t.Fatalf("decode duplicate %s error = %v", tc.name, err)
+			}
+		})
+	}
+}
+
+func TestCheckpointV5RejectsNestedDuplicateAndUnsortedRecoveryKeys(t *testing.T) {
+	data, err := encode(currentCheckpoint("evolve", 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, replacement := range []string{
+		`"phase_output_receipts":{"evolve/a":"` + strings.Repeat("a", 64) +
+			`","evolve/a":"` + strings.Repeat("b", 64) + `"}`,
+		`"phase_semantic_outputs":{"evolve/z":"z","evolve/a":"a"}`,
+	} {
+		mutated := strings.Replace(string(data), `"phase_output_receipts": {}`, replacement, 1)
+		if strings.Contains(replacement, "phase_semantic_outputs") {
+			mutated = strings.Replace(string(data), `"phase_semantic_outputs": {}`, replacement, 1)
+		}
+		if _, err := decode([]byte(mutated)); err == nil ||
+			!strings.Contains(err.Error(), "sorted and unique") {
+			t.Fatalf("nested recovery map mutation error = %v", err)
+		}
+	}
+}
+
+func TestCheckpointV4AcceptsExplicitZeroAndFalse(t *testing.T) {
 	cp := currentCheckpoint("evolve", 0)
 	cp.RoadmapCompletion = 0
 	cp.GatesGreen = false
@@ -99,7 +217,7 @@ func TestCheckpointV3AcceptsExplicitZeroAndFalse(t *testing.T) {
 	}
 }
 
-func TestCheckpointV3RejectsNullOptionalScalarsButAllowsOmission(t *testing.T) {
+func TestCheckpointV4RejectsNullOptionalScalarsButAllowsOmission(t *testing.T) {
 	data, err := encode(currentCheckpoint("evolve", 0))
 	if err != nil {
 		t.Fatal(err)
@@ -108,7 +226,7 @@ func TestCheckpointV3RejectsNullOptionalScalarsButAllowsOmission(t *testing.T) {
 	if err := json.Unmarshal(data, &complete); err != nil {
 		t.Fatal(err)
 	}
-	for _, field := range checkpointV3OptionalScalarFields {
+	for _, field := range checkpointV5OptionalScalarFields {
 		t.Run(field, func(t *testing.T) {
 			invalid := cloneRawFields(complete)
 			invalid[field] = json.RawMessage("null")
@@ -120,7 +238,7 @@ func TestCheckpointV3RejectsNullOptionalScalarsButAllowsOmission(t *testing.T) {
 	}
 }
 
-func TestCheckpointV3ResourceEnvelopeRoundTrips(t *testing.T) {
+func TestCheckpointV4ResourceEnvelopeRoundTrips(t *testing.T) {
 	want := currentCheckpoint("evolve", 3)
 	want.PhaseIndex = 4
 	want.BudgetCapMicros = 9_000_000
@@ -130,6 +248,8 @@ func TestCheckpointV3ResourceEnvelopeRoundTrips(t *testing.T) {
 	want.MaxLoopBacks = 3
 	want.LoopBacks = 2
 	want.EvolveScanReport = `EVOLVE_SCAN_V1: {"version":"evolve_scan_v1"}`
+	want.EvolveScanSemanticOutput = want.EvolveScanReport
+	want.PhaseSemanticOutputs["evolve/scan"] = want.EvolveScanReport
 
 	data, err := encode(want)
 	if err != nil {
@@ -139,12 +259,12 @@ func TestCheckpointV3ResourceEnvelopeRoundTrips(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != want {
-		t.Fatalf("v3 resource envelope changed:\n got  %+v\n want %+v", got, want)
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("v4 resource envelope changed:\n got  %+v\n want %+v", got, want)
 	}
 }
 
-func TestCheckpointV3ZeroAgentCallMaxIsUnbounded(t *testing.T) {
+func TestCheckpointV4ZeroAgentCallMaxIsUnbounded(t *testing.T) {
 	cp := currentCheckpoint("evolve", 2)
 	cp.PhaseIndex = 1
 	cp.AgentCalls = 99
@@ -157,7 +277,7 @@ func TestCheckpointV3ZeroAgentCallMaxIsUnbounded(t *testing.T) {
 	}
 }
 
-func TestCheckpointV3RejectsInvalidResourceEnvelope(t *testing.T) {
+func TestCheckpointV4RejectsInvalidResourceEnvelope(t *testing.T) {
 	tests := []struct {
 		name   string
 		mutate func(*Checkpoint)
@@ -196,7 +316,7 @@ func TestCheckpointV3RejectsInvalidResourceEnvelope(t *testing.T) {
 	}
 }
 
-func TestCheckpointV3AllowsConsumedProgressBeforeFirstPhaseCompletes(t *testing.T) {
+func TestCheckpointV4AllowsConsumedProgressBeforeFirstPhaseCompletes(t *testing.T) {
 	cp := currentCheckpoint("evolve", 0)
 	cp.PhaseIndex = 0
 	cp.MaxAgentCalls, cp.AgentCalls = 4, 1
@@ -215,16 +335,29 @@ func TestCheckpointV3AllowsConsumedProgressBeforeFirstPhaseCompletes(t *testing.
 	}
 }
 
-func TestSaveRejectsIncompleteV3BeforeWriting(t *testing.T) {
+func TestSaveRejectsIncompleteV4BeforeWriting(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "checkpoint.json")
 	cp := currentCheckpoint("evolve", 1)
 	cp.WorkflowDigest = ""
 	err := Save(path, cp, 0)
 	if err == nil || !strings.Contains(err.Error(), "workflow_digest") {
-		t.Fatalf("Save incomplete v3 error = %v", err)
+		t.Fatalf("Save incomplete v4 error = %v", err)
 	}
 	if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
-		t.Fatalf("incomplete v3 must not be written; stat err=%v", statErr)
+		t.Fatalf("incomplete v4 must not be written; stat err=%v", statErr)
+	}
+}
+
+func TestSaveRejectsInvalidV4MaterialityBeforeWriting(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "checkpoint.json")
+	cp := currentCheckpoint("evolve", 1)
+	cp.Materiality = "l3"
+	err := Save(path, cp, 0)
+	if err == nil || !strings.Contains(err.Error(), "materiality") {
+		t.Fatalf("Save invalid materiality error = %v", err)
+	}
+	if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
+		t.Fatalf("invalid materiality checkpoint must not be written; stat err=%v", statErr)
 	}
 }
 
@@ -243,6 +376,6 @@ func assertCurrentCheckpointDecodeFails(t *testing.T, fields map[string]json.Raw
 		t.Fatal(err)
 	}
 	if _, err := decode(data); err == nil || !strings.Contains(err.Error(), want) {
-		t.Fatalf("decode v3 error = %v, want %q", err, want)
+		t.Fatalf("decode current checkpoint error = %v, want %q", err, want)
 	}
 }

@@ -285,8 +285,10 @@ func loadWorkflowNativeOnly(repoRoot, name string) (asset.Workflow, error) {
 
 // loadWorkflowForExecution removes the repo shim from direct and chained
 // restricted stages.
-func loadWorkflowForExecution(repoRoot, name, runMode, lifecycle string) (asset.Workflow, error) {
-	if restrictedWorkflowExecution(name, runMode, lifecycle) {
+func loadWorkflowForExecution(repoRoot, name, runMode, lifecycle string, materialities ...string) (asset.Workflow, error) {
+	highBuild := name == "build" && len(materialities) > 0 &&
+		(materialities[0] == "L3" || materialities[0] == "L4")
+	if highBuild || restrictedWorkflowExecution(name, runMode, lifecycle) {
 		return loadWorkflowNativeOnly(repoRoot, name)
 	}
 	return loadWorkflow(repoRoot, name)
@@ -309,7 +311,7 @@ func restrictedWorkflowExecution(name, runMode, lifecycle string) bool {
 // Native-only entry loading removes that executable pre-lock dependency.
 func loadWorkflowForRunEntry(repoRoot, name string, o runOpts) (asset.Workflow, error) {
 	if !o.chain {
-		return loadWorkflowForExecution(repoRoot, name, o.mode, o.lifecycle)
+		return loadWorkflowForExecution(repoRoot, name, o.mode, o.lifecycle, o.materiality)
 	}
 	if err := rejectTrackedForgeControlState(repoRoot); err != nil {
 		return asset.Workflow{}, err
@@ -365,13 +367,14 @@ func loadWorkflowWithFallback(repoRoot, name string, allowRepoShim bool) (asset.
 
 func parseNativeWorkflow(source []byte) (asset.Workflow, bool, error) {
 	var value any
-	jsonErr := json.Unmarshal(source, &value)
-	if jsonErr != nil {
-		var err error
-		value, err = yaml2json.Decode(bytes.NewReader(source))
-		if err != nil {
-			return asset.Workflow{}, false, nil
-		}
+	if json.Unmarshal(source, &value) == nil {
+		wf, err := asset.LoadWorkflowJSON(source)
+		return wf, true, err
+	}
+	var err error
+	value, err = yaml2json.Decode(bytes.NewReader(source))
+	if err != nil {
+		return asset.Workflow{}, false, nil
 	}
 	data, err := json.Marshal(value)
 	if err != nil {

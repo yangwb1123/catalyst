@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"forgeos/forge-core/internal/approvalcontext"
 	"forgeos/forge-core/internal/asset"
 	"forgeos/forge-core/internal/orchestrator"
 )
@@ -189,6 +190,7 @@ func TestChainResumeRejectsStaleProjectSelectorsUnlessOldValuesAreExplicit(t *te
 		"mode: engineering\nlifecycle: production\n")
 	state := resumableTestState("design", "review", []string{"design"})
 	state.Mode, state.Lifecycle = "explorer", "mvp"
+	bindResumableTestState(t, root, &state)
 	if err := saveChainState(root, state); err != nil {
 		t.Fatal(err)
 	}
@@ -217,4 +219,73 @@ func TestChainResumeRejectsStaleProjectSelectorsUnlessOldValuesAreExplicit(t *te
 		t.Fatalf("transient historical resume mutated project.yml\nbefore=%q\nafter=%q",
 			projectBefore, got)
 	}
+}
+
+func TestHistoricalDeployApprovalRequiresLiveV3AndV2Evidence(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*testing.T, approvalV3Fixture)
+	}{
+		{"missing-v2", func(t *testing.T, fixture approvalV3Fixture) {
+			path, _ := releaseValidationReceiptPath(fixture.root, "deploy")
+			if err := os.Remove(path); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"v1-downgrade", writeV1ReleaseReceiptForTest},
+		{"rejected-conflict", func(t *testing.T, fixture approvalV3Fixture) {
+			writeApprovalTestFile(t, rejectionPath(fixture.root, "deploy"), []byte("rejected"))
+		}},
+		{"marker-predates-context", predateHistoricalMarker},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			fixture := newApprovalV3Fixture(t, "deploy", nil,
+				map[string]string{"docs/release/deployment-validation.md": "VERDICT: APPROVE\n"})
+			installApprovalV3ForTest(t, fixture)
+			state, index := historicalApprovalFixtureState(t, fixture)
+			if err := verifyHistoricalApprovalContext(fixture.root, state, "deploy", index); err != nil {
+				t.Fatalf("fresh historical approval rejected: %v", err)
+			}
+			test.mutate(t, fixture)
+			if err := verifyHistoricalApprovalContext(fixture.root, state, "deploy", index); err == nil {
+				t.Fatal("stale historical approval evidence was accepted")
+			}
+		})
+	}
+}
+
+func historicalApprovalFixtureState(t *testing.T, fixture approvalV3Fixture) (chainState, recoveryReceiptIndex) {
+	t.Helper()
+	digest, err := approvalcontext.ContextSHA256(fixture.context)
+	if err != nil {
+		t.Fatal(err)
+	}
+	index, err := loadRecoveryReceiptIndex(fixture.root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return chainState{
+		ApprovalContexts: map[string]string{"deploy": digest},
+		StageReceipts:    map[string]string{"deploy": fixture.receipt.ReceiptSHA256},
+	}, index
+}
+
+func predateHistoricalMarker(t *testing.T, fixture approvalV3Fixture) {
+	t.Helper()
+	path := approvalPath(fixture.root, "deploy")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	marker, err := approvalcontext.DecodeCanonicalMarker(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	marker.CreatedAtUnixMS = fixture.context.CreatedAtUnixMS - 1
+	data, err = approvalcontext.CanonicalMarkerJSON(marker)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeApprovalTestFile(t, path, data)
 }

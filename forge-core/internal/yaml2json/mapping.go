@@ -43,6 +43,9 @@ func parseMapping(lines []line, pos int, parentIndent int) (map[string]any, int,
 			return nil, newPos, err
 		}
 		pos = newPos
+		if _, exists := m[key]; exists {
+			return nil, pos, fmt.Errorf("line %d: duplicate mapping key %q", l.number, key)
+		}
 		m[key] = val
 	}
 	if len(m) == 0 {
@@ -66,7 +69,8 @@ func resolveMappingValue(lines []line, l line, pos int, rest string, minIndent i
 	case rest == "":
 		return parseMultilineValue(lines, pos, minIndent)
 	default:
-		return parseInlineValue(rest), pos, nil
+		value, err := parseInlineValue(rest)
+		return value, pos, err
 	}
 }
 
@@ -95,7 +99,11 @@ func parseSimpleMapping(text string) (map[string]any, error) {
 	}
 	key := strings.TrimSpace(text[:sepPos])
 	rest := strings.TrimSpace(text[sepPos+1:])
-	m := map[string]any{key: parseInlineValue(rest)}
+	value, err := parseInlineValue(rest)
+	if err != nil {
+		return nil, err
+	}
+	m := map[string]any{key: value}
 	return m, nil
 }
 
@@ -127,6 +135,9 @@ func parseMappingContinuation(lines []line, pos int, parentIndent int, m map[str
 			return m, newPos, err
 		}
 		pos = newPos
+		if _, exists := m[key]; exists {
+			return m, pos, fmt.Errorf("line %d: duplicate mapping key %q", l.number, key)
+		}
 		m[key] = val
 	}
 	return m, pos, nil

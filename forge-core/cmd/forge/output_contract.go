@@ -60,6 +60,9 @@ type claudeResultEnvelope struct {
 
 func decodeClaudeResultEnvelope(output string) (claudeResultEnvelope, error) {
 	var envelope claudeResultEnvelope
+	if err := rejectDuplicateEnvelopeKeys(output); err != nil {
+		return envelope, err
+	}
 	if err := json.Unmarshal([]byte(strings.TrimSpace(output)), &envelope); err != nil {
 		return envelope, err
 	}
@@ -386,11 +389,41 @@ func combineRawOutputContracts(contracts ...func(phase, output string) error) fu
 	}
 }
 
-func workflowRawOutputContract(wf asset.Workflow, agentCommand string) func(phase, output string) error {
+func workflowRawOutputContract(wf asset.Workflow, o runOpts, agentCommand string) func(phase, output string) error {
 	return combineRawOutputContracts(
 		releaseRawOutputContract(wf),
 		evolveScanRawOutputContract(wf, isClaudeExecutable(agentCommand)),
+		strictReviewerRawOutputContract(wf, o, isClaudeExecutable(agentCommand)),
 	)
+}
+
+func strictReviewerRawOutputContract(wf asset.Workflow, o runOpts, requireEnvelope bool) func(string, string) error {
+	contractOf := effectiveVerdictContractOf(wf, o)
+	return func(phase, output string) error {
+		if contractOf(phase) != asset.VerdictContractReviewerV1 {
+			return nil
+		}
+		if _, ok := parseStrictReviewerVerdict(output, requireEnvelope); !ok {
+			return fmt.Errorf("%s requires an exact successful final reviewer verdict", asset.VerdictContractReviewerV1)
+		}
+		return nil
+	}
+}
+
+func appendMaterialityPrompt(text string, p asset.Phase, o runOpts) string {
+	if o.workflowStage != "build" || !isReviewerContract(p.VerdictContract) || o.materiality == "materiality_not_bound" {
+		return text
+	}
+	posture := "advisory compatibility posture"
+	if o.materiality == "L3" || o.materiality == "L4" {
+		posture = "strict " + p.VerdictContract + " fail-closed posture"
+	}
+	return text + "\n\n[context:caller-declared-materiality]\nmateriality=" + o.materiality +
+		" (caller-declared; not authenticated or inferred); " + posture + "."
+}
+
+func isReviewerContract(contract string) bool {
+	return contract == asset.VerdictContractReviewerV1 || contract == asset.VerdictContractReviewerV2
 }
 
 // recordForwardedPhaseOutput gives a valid structured scan its own complete,

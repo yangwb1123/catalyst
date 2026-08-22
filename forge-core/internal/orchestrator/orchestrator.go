@@ -121,6 +121,18 @@ type Engine struct {
 	// required verdict has been parsed and accepted by this state machine.
 	// Returning an error aborts before the phase checkpoint or next phase.
 	OnRequiredVerdictApproved func(phase asset.Phase) error
+	// Runtime validation callbacks are optional fail-closed serial boundaries.
+	// PhaseStart runs after skip selection and before any gate/agent work;
+	// ValidateAgentSpawn runs after front gates and immediately before every real
+	// executor attempt; PhaseComplete runs after clean gate-only/agent work and
+	// before transition. ValidateAgentVerdict runs for required, present tokens
+	// before approval or loop-back. WorkflowComplete runs after the final phase
+	// and before a successful stage return. Nil callbacks preserve legacy behavior.
+	PhaseStart           func(phase asset.Phase) error
+	ValidateAgentSpawn   func(phase asset.Phase) error
+	PhaseComplete        func(phase asset.Phase) error
+	ValidateAgentVerdict func(phase asset.Phase, token string) error
+	WorkflowComplete     func(workflow asset.Workflow) error
 	// BudgetExhausted is an OPTIONAL run-level stop puller — the third cost-bound
 	// dimension beside MaxAgentCalls (phase COUNT) and MaxLoopBack (loop-back count).
 	// Where those two count discrete events the engine itself tallies, this asks an
@@ -187,6 +199,11 @@ const (
 	reviewerRequestChanges = "REQUEST_CHANGES"
 )
 
+type workflowPhase = asset.Phase
+type workflow = asset.Workflow
+
+const strictQAVerdictContract = asset.VerdictContractQAV1
+
 // Run executes the workflow phase by phase under mode, applying the central
 // knob's Workflow-depth gating (e.ModePolicy) as it goes. It begins at phase 0;
 // RunFrom is the variant the loop uses to begin at a directed start phase.
@@ -243,37 +260,56 @@ func (e Engine) RunFrom(wf asset.Workflow, mode string, start int) error {
 			return fmt.Errorf("cancelled at phase %d: %w", i, err)
 		}
 		p := wf.Phases[i]
-		if len(p.RequiredGates) > 0 {
-			if gateErr := e.runGates(p, e.gatesFor(p)); gateErr != nil {
-				target, err := e.gateOutcome(wf, p, agentCalls, &loopBacks, gateErr)
-				if err != nil {
-					return err
-				}
-				i = target - 1 // -1 because the for-loop will ++ back to target
-				continue
-			}
-			if gateOnlyPhase(p) {
-				phasesRan++
-				continue
-			}
-		}
-		if e.skipByMode(p, wf.Stage) {
-			e.logf("phase %s skipped (mode gating: reviewer off)", p.Name)
-			continue
-		}
-		phasesRan++
-		target, jumped, err := e.runAgentTransition(wf, p, mode, i, &agentCalls, &loopBacks)
+		target, jumped, ran, err := e.runSerialPhase(
+			wf, p, mode, i, &agentCalls, &loopBacks,
+		)
 		if err != nil {
 			return err
+		}
+		if ran {
+			phasesRan++
 		}
 		if jumped {
 			i = target - 1 // -1 because the for-loop will ++ back to target
 			continue
 		}
 	}
+	if err := e.validateWorkflowComplete(wf); err != nil {
+		return err
+	}
 	e.warnIfVacuous(wf, phasesRan, start)
 	e.reportStop(wf)
 	return nil
+}
+
+func (e Engine) runSerialPhase(
+	wf asset.Workflow,
+	p asset.Phase,
+	mode string,
+	index int,
+	agentCalls, loopBacks *int,
+) (target int, jumped, ran bool, err error) {
+	if e.skipByMode(p, wf.Stage) {
+		e.logf("phase %s skipped (mode gating: reviewer off)", p.Name)
+		return 0, false, false, nil
+	}
+	if err := e.validatePhaseStart(p); err != nil {
+		return 0, false, false, err
+	}
+	if len(p.RequiredGates) > 0 {
+		if gateErr := e.runGates(p, e.gatesFor(p)); gateErr != nil {
+			target, err := e.gateOutcome(wf, p, *agentCalls, loopBacks, gateErr)
+			return target, err == nil, false, err
+		}
+		if gateOnlyPhase(p) {
+			err := e.validatePhaseComplete(p)
+			return 0, false, err == nil, err
+		}
+	}
+	target, jumped, err = e.runAgentTransition(
+		wf, p, mode, index, agentCalls, loopBacks,
+	)
+	return target, jumped, err == nil, err
 }
 
 // gateOnlyPhase distinguishes the one non-LLM workflow role from an agent phase
@@ -301,6 +337,9 @@ func (e Engine) runAgentTransition(
 	}
 	if err := e.runAgentPhaseWithProgress(e.ctx(), p, mode, onFailure); err != nil {
 		return 0, false, err
+	}
+	if err := e.validatePhaseComplete(p); err != nil {
+		return 0, false, e.checkpointAgentFailure(index, *agentCalls, *loopBacks, err)
 	}
 	target, jumped, err = e.agentOutcome(wf, p, loopBacks)
 	if err != nil {
@@ -337,57 +376,6 @@ func (e Engine) gateOutcome(
 		return 0, err
 	}
 	return target, nil
-}
-
-// agentOutcome applies two verdict postures after a clean AGENT phase. Legacy/advisory
-// reviewers remain fail-open: absent or malformed output proceeds, and an exhausted
-// REQUEST_CHANGES loop also proceeds. A phase declaring qa_v1, or selected by the
-// caller's RequireAgentVerdict hook, is fail-closed: its verdict must exist and be a
-// supported token; REQUEST_CHANGES must take the declared directed loop-back and aborts
-// when that jump is unavailable. Both postures share loopBackTo's bounded jump core.
-func (e Engine) agentOutcome(wf asset.Workflow, p asset.Phase, loopBacks *int) (target int, jumped bool, err error) {
-	strictQA := p.VerdictContract == asset.VerdictContractQAV1
-	externallyRequired := e.RequireAgentVerdict != nil && e.RequireAgentVerdict(p)
-	required := strictQA || externallyRequired
-	if e.AgentVerdict == nil {
-		if required {
-			return 0, false, fmt.Errorf("phase %s: required agent verdict is unavailable", p.Name)
-		}
-		return 0, false, nil // no puller wired (dry/echo, or no verdict source): proceed.
-	}
-	v, ok := e.AgentVerdict(p.Name)
-	if !ok {
-		if required {
-			return 0, false, fmt.Errorf("phase %s: required agent verdict is missing or malformed", p.Name)
-		}
-		return 0, false, nil // no/garbled advisory verdict: proceed forward.
-	}
-	switch v {
-	case reviewerApprove:
-		// Required approval evidence is a caller-owned release contract. Strict QA
-		// acceptance authorizes progress but must never mint a release receipt.
-		if externallyRequired && !strictQA && e.OnRequiredVerdictApproved != nil {
-			if err := e.OnRequiredVerdictApproved(p); err != nil {
-				return 0, false, fmt.Errorf("phase %s: commit required approval evidence: %w", p.Name, err)
-			}
-		}
-		return 0, false, nil
-	case reviewerRequestChanges:
-		reason := "reviewer verdict REQUEST_CHANGES"
-		if required {
-			reason = "required agent verdict REQUEST_CHANGES"
-		}
-		target, jumped = e.loopBackTo(wf, p, loopBacks, reason)
-		if required && !jumped {
-			return 0, false, fmt.Errorf("phase %s: REQUEST_CHANGES could not take its required directed loop-back", p.Name)
-		}
-		return target, jumped, nil
-	default:
-		if required {
-			return 0, false, fmt.Errorf("phase %s: unsupported required agent verdict %q", p.Name, v)
-		}
-		return 0, false, nil
-	}
 }
 
 // loopBackTo is the shared DIRECTED LOOP-BACK core for BOTH a failed gate and a

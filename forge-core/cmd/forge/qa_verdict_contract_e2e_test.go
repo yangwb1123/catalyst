@@ -63,7 +63,9 @@ func TestQAVerdictContractMalformedRealProcessOutputFailsClosed(t *testing.T) {
 	} {
 		t.Run(tc.name+" fails closed", func(t *testing.T) {
 			root, code, output := runQAVerdictCLI(t, fake, tc.qa, "approve")
-			if code != 1 || !strings.Contains(output, "required agent verdict is missing or malformed") {
+			failedClosed := strings.Contains(output, "required agent verdict is missing or malformed") ||
+				strings.Contains(output, "semantic output extraction")
+			if code != 1 || !failedClosed {
 				t.Fatalf("%s QA exit=%d, want fail-closed:\n%s", tc.name, code, output)
 			}
 			assertQAVerdictPhaseCalls(t, root, map[string]int{"qa": 1})
@@ -278,18 +280,51 @@ import (
 
 func main() {
 	data, _ := io.ReadAll(os.Stdin)
-	phase := phaseOf(string(data))
+	prompt := string(data) + " " + strings.Join(os.Args[1:], " ")
+	phase := phaseOf(prompt)
 	call := recordCall(phase)
 	config := readConfig()
 	if phase == "qa" && writeSpecialQAOutput(config["qa"]) {
 		return
 	}
+	if phase == "reviewer" && writeSpecialReviewerOutput(config["reviewer"]) {
+		return
+	}
 	result := resultFor(phase, call, config["qa"], config["reviewer"])
+	if phase == "reviewer" {
+		result = bindReviewerResult(prompt, result)
+	}
+	if phase == "reviewer" && config["reviewer"] == "nonzero" {
+		_, _ = io.WriteString(os.Stdout, result)
+		os.Exit(7)
+	}
+	if filepath.Base(os.Args[0]) != "claude" {
+		_, _ = io.WriteString(os.Stdout, result)
+		return
+	}
 	envelope := map[string]any{
 		"type": "result", "subtype": "success", "is_error": false,
 		"result": result, "total_cost_usd": 0,
 	}
 	_ = json.NewEncoder(os.Stdout).Encode(envelope)
+}
+
+func bindReviewerResult(prompt, result string) string {
+	marker := "FORGE_OUTPUT_BINDING_SHA256: "
+	index := strings.LastIndex(prompt, marker)
+	if index < 0 {
+		return result
+	}
+	tail := prompt[index+len(marker):]
+	binding, _, _ := strings.Cut(tail, "\n")
+	lines := strings.Split(result, "\n")
+	last := len(lines) - 1
+	for last >= 0 && lines[last] == "" { last-- }
+	if last < 0 || (lines[last] != "VERDICT: APPROVE" && lines[last] != "VERDICT: REQUEST_CHANGES") {
+		return result
+	}
+	lines = append(lines[:last], append([]string{"REVIEW_BINDING_SHA256: " + binding}, lines[last:]...)...)
+	return strings.Join(lines, "\n")
 }
 
 func writeSpecialQAOutput(mode string) bool {
@@ -306,6 +341,33 @@ func writeSpecialQAOutput(mode string) bool {
 	case "multiple_envelopes":
 		_ = json.NewEncoder(os.Stdout).Encode(success)
 		_ = json.NewEncoder(os.Stdout).Encode(success)
+	case "control_prefixed":
+		_, _ = io.WriteString(os.Stdout, "\x00")
+		_ = json.NewEncoder(os.Stdout).Encode(success)
+	default:
+		return false
+	}
+	return true
+}
+
+func writeSpecialReviewerOutput(mode string) bool {
+	success := map[string]any{
+		"type": "result", "subtype": "success", "is_error": false,
+		"result": "VERDICT: APPROVE",
+	}
+	switch mode {
+	case "plain_approve":
+		_, _ = io.WriteString(os.Stdout, "VERDICT: APPROVE")
+	case "error_envelope":
+		success["is_error"] = true
+		_ = json.NewEncoder(os.Stdout).Encode(success)
+	case "multiple_envelopes":
+		_ = json.NewEncoder(os.Stdout).Encode(success)
+		_ = json.NewEncoder(os.Stdout).Encode(success)
+	case "duplicate_envelope_key":
+		_, _ = io.WriteString(os.Stdout, "{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":true,\"is_error\":false,\"result\":\"VERDICT: APPROVE\"}")
+	case "case_alias_envelope":
+		_, _ = io.WriteString(os.Stdout, "{\"type\":\"error\",\"Type\":\"result\",\"subtype\":\"error\",\"Subtype\":\"success\",\"is_error\":true,\"Is_Error\":false,\"result\":\"bad\",\"Result\":\"VERDICT: APPROVE\"}")
 	case "control_prefixed":
 		_, _ = io.WriteString(os.Stdout, "\x00")
 		_ = json.NewEncoder(os.Stdout).Encode(success)
@@ -361,39 +423,41 @@ func resultFor(phase string, call int, qa, reviewer string) string {
 		_ = os.WriteFile(".agent/CURRENT_SPRINT.md", []byte("# QA contract E2E\n"), 0o600)
 		return "TASK_LIST:\n- [ ] T001: strict QA E2E — acceptance: pass — files: docs/fake.md — depends_on: none — model: sonnet — roadmap: v2"
 	case "reviewer":
-		switch reviewer {
-		case "missing":
-			return "advisory review complete"
-		case "reject_once":
-			if call == 1 {
-				return "review finding\nVERDICT: REQUEST_CHANGES"
-			}
-		}
-		return "VERDICT: APPROVE"
+		return reviewerResultFor(reviewer, call)
 	case "qa":
-		switch qa {
-		case "reject_once":
-			if call == 1 {
-				return "QA_VERDICT: REJECTED"
-			}
-			return "QA_VERDICT: ACCEPTED"
-		case "reject_always":
-			return "QA_VERDICT: REJECTED"
-		case "missing":
-			return "QA completed without a machine verdict"
-		case "malformed":
-			return "QA_VERDICT: MAYBE"
-		case "trailing":
-			return "QA_VERDICT: ACCEPTED\nnonempty trailing prose"
-		case "legacy_approve":
-			return "VERDICT: APPROVE"
-		case "wrapped_whitespace":
-			return " QA_VERDICT: ACCEPTED "
-		default:
-			return "QA evidence complete\nQA_VERDICT: ACCEPTED\n\n"
-		}
+		return qaResultFor(qa, call)
 	default:
 		return "phase complete"
+	}
+}
+
+func reviewerResultFor(mode string, call int) string {
+	switch mode {
+	case "missing": return "advisory review complete"
+	case "malformed": return "VERDICT: MAYBE"
+	case "trailing": return "VERDICT: APPROVE\nnonempty trailing prose"
+	case "wrapped_whitespace": return " VERDICT: APPROVE "
+	case "qa_token": return "QA_VERDICT: ACCEPTED"
+	case "conflicting": return "VERDICT: REQUEST_CHANGES\nVERDICT: APPROVE"
+	case "reject_once":
+		if call == 1 { return "review finding\nVERDICT: REQUEST_CHANGES" }
+	case "reject_always": return "VERDICT: REQUEST_CHANGES"
+	}
+	return "VERDICT: APPROVE"
+}
+
+func qaResultFor(mode string, call int) string {
+	switch mode {
+	case "reject_once":
+		if call == 1 { return "QA_VERDICT: REJECTED" }
+		return "QA_VERDICT: ACCEPTED"
+	case "reject_always": return "QA_VERDICT: REJECTED"
+	case "missing": return "QA completed without a machine verdict"
+	case "malformed": return "QA_VERDICT: MAYBE"
+	case "trailing": return "QA_VERDICT: ACCEPTED\nnonempty trailing prose"
+	case "legacy_approve": return "VERDICT: APPROVE"
+	case "wrapped_whitespace": return " QA_VERDICT: ACCEPTED "
+	default: return "QA evidence complete\nQA_VERDICT: ACCEPTED\n\n"
 	}
 }
 `

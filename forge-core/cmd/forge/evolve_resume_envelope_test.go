@@ -1,11 +1,15 @@
 package main
 
 import (
+	"encoding/json"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"forgeos/forge-core/internal/asset"
 	"forgeos/forge-core/internal/orchestrator"
+	"forgeos/forge-core/internal/outputbinding"
 	"forgeos/forge-core/internal/persist"
 )
 
@@ -15,7 +19,7 @@ func TestPrepareLoopResumeRestoresFrozenResourceEnvelope(t *testing.T) {
 	wf := evolveScanWorkflow()
 	if err := persist.Save(checkpointPath(root), persist.Checkpoint{
 		Workflow: "evolve", WorkflowDigest: checkpointWorkflowDigest(wf),
-		Mode: "engineering", Lifecycle: "mvp",
+		Mode: "engineering", Lifecycle: "mvp", Materiality: "materiality_not_bound",
 		Iteration: 2, RoadmapCompletion: 0.4,
 		Reason: "iteration complete", UpdatedAtUnix: 1_750_000_000,
 		SpentUsdMicros: 700_000, BudgetCapMicros: 1_500_000,
@@ -44,6 +48,82 @@ func TestPrepareLoopResumeRestoresFrozenResourceEnvelope(t *testing.T) {
 	if budget.CapUsdMicros() != 1_500_000 || budget.SpentUsdMicros() != 700_000 {
 		t.Fatalf("restored budget cap=%d spent=%d",
 			budget.CapUsdMicros(), budget.SpentUsdMicros())
+	}
+}
+
+func TestApplyLoopResumeRestoresAllFeedForwardOutputsInTraversalOrder(t *testing.T) {
+	wf := asset.Workflow{Phases: []asset.Phase{
+		{Name: "scan", FeedsForward: true}, {Name: "gap"},
+		{Name: "roadmap-update", FeedsForward: true}, {Name: "implement"},
+	}}
+	var observed []string
+	exec := orchestrator.CommandExecutor{
+		ValidateOutput: func(string, string) error { return nil },
+		ObserveSemantic: func(phase, output string) {
+			observed = append(observed, phase+"="+output)
+		},
+	}
+	loop := orchestrator.LoopEngine{Engine: orchestrator.Engine{Exec: exec}}
+	semantics := map[string]string{"scan": "scan-exact", "roadmap-update": "roadmap-exact"}
+	receipts := map[string]outputbinding.AgentOutputReceipt{
+		"scan":           semanticReceipt("scan", "scan-exact"),
+		"roadmap-update": semanticReceipt("roadmap-update", "roadmap-exact"),
+	}
+	state := loopResumeState{phaseStart: 3, phaseSemantics: semantics, phaseReceipts: receipts}
+	if err := applyLoopResume(&loop, wf, state); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(observed, ",") != "scan=scan-exact,roadmap-update=roadmap-exact" {
+		t.Fatalf("restored outputs = %v", observed)
+	}
+}
+
+func TestReceiptRestoreDoesNotReinterpretClaudeShapedSemanticJSON(t *testing.T) {
+	const semantic = `{"result":"inner"}`
+	var rawObserved, semanticObserved string
+	exec := orchestrator.CommandExecutor{
+		ValidateOutput:  func(string, string) error { return nil },
+		Observe:         func(_ string, output string, _ time.Duration) { rawObserved = unwrapClaudeResult(output) },
+		ObserveSemantic: func(_ string, output string) { semanticObserved = output },
+	}
+	phase := asset.Phase{Name: "roadmap-update"}
+	if err := exec.RestoreValidatedOutput(phase, semantic, semanticReceipt(phase.Name, semantic)); err != nil {
+		t.Fatal(err)
+	}
+	if rawObserved != "" || semanticObserved != semantic {
+		t.Fatalf("receipt restore raw=%q semantic=%q", rawObserved, semanticObserved)
+	}
+}
+
+func TestRecoveredFeedForwardMatchesLiveProviderNormalization(t *testing.T) {
+	for _, isClaude := range []bool{false, true} {
+		for _, semantic := range []string{`{"result":"inner"}`, " \x01 payload \n"} {
+			live, recovered := newPhaseOutputLedger(), newPhaseOutputLedger()
+			raw := semantic
+			if isClaude {
+				encoded, err := json.Marshal(map[string]any{"result": semantic})
+				if err != nil {
+					t.Fatal(err)
+				}
+				raw = string(encoded)
+			}
+			feeds := func(string) bool { return true }
+			observeFor(isClaude, nil, nil, live, feeds, nil, nil, nil)("plan", raw, 0)
+			semanticObserveFor(isClaude, recovered, feeds)("plan", semantic)
+			liveValue, _ := live.output("plan")
+			recoveredValue, _ := recovered.output("plan")
+			if liveValue != recoveredValue {
+				t.Fatalf("claude=%v semantic=%q live=%q recovered=%q",
+					isClaude, semantic, liveValue, recoveredValue)
+			}
+		}
+	}
+}
+
+func semanticReceipt(phase, output string) outputbinding.AgentOutputReceipt {
+	return outputbinding.AgentOutputReceipt{
+		Phase: phase, SemanticOutputBytes: int64(len(output)),
+		SemanticOutputSHA256: outputbinding.SHA256([]byte(output)),
 	}
 }
 
@@ -115,7 +195,7 @@ func TestValidateResumeCheckpointRejectsUnreachableResourceProgress(t *testing.T
 	base := persist.Checkpoint{
 		FormatVersion: persist.CheckpointFormatCurrent,
 		Workflow:      "evolve", WorkflowDigest: "digest",
-		Mode: "engineering", Lifecycle: "mvp",
+		Mode: "engineering", Lifecycle: "mvp", Materiality: "materiality_not_bound",
 		Iteration: 1, RoadmapCompletion: 0.4,
 		Reason: "durable phase progress", UpdatedAtUnix: 1_750_000_000,
 		PhaseIndex: 1, MaxLoopBacks: maxLoopBack,

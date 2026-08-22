@@ -277,8 +277,8 @@ func TestReleaseStageDoesNotExecuteRepositoryAcceptanceHarness(t *testing.T) {
 	code, output := captureChainOutput(t, func() int {
 		return cmdRun(shippedRunArgs("rollback", root, fake, true, false))
 	})
-	if code != exitChainIncomplete || !strings.Contains(output, "waiting for human approval") {
-		t.Fatalf("rollback with trap harness exit=%d:\n%s", code, output)
+	if code != 1 || !strings.Contains(output, "cross-stage release input") {
+		t.Fatalf("standalone rollback without chain-v5 provenance exit=%d:\n%s", code, output)
 	}
 	if _, err := os.Stat(sentinel); !os.IsNotExist(err) {
 		t.Fatalf("release stage executed repository acceptance harness: %v", err)
@@ -299,6 +299,29 @@ func TestReleaseMalformedVerdictCannotReachApproval(t *testing.T) {
 	}
 	if code := writeApproval(root, "deploy", true); code == 0 {
 		t.Fatal("malformed validation was approvable")
+	}
+}
+
+func TestBoundDeployApproveReceiptReferencesTerminalContext(t *testing.T) {
+	root, fake := shippedWorkflowFixture(t)
+	code, output := captureChainOutput(t, func() int {
+		return cmdRun(shippedRunArgs("deploy", root, fake, true, false))
+	})
+	if code != exitChainIncomplete || !strings.Contains(output, "waiting for human approval") {
+		t.Fatalf("bound deploy wait exit=%d:\n%s", code, output)
+	}
+	if err := verifyBoundReleaseValidationReceipt(root, "deploy"); err != nil {
+		t.Fatalf("bound v2 validation receipt rejected: %v", err)
+	}
+	path, _ := releaseValidationReceiptPath(root, "deploy")
+	data, err := os.ReadFile(path)
+	if err != nil || data[len(data)-1] == '\n' {
+		t.Fatalf("bound validation wire = %q, %v", data, err)
+	}
+	receipt, err := decodeBoundReleaseValidationReceipt(data)
+	if err != nil || receipt.Format != releaseValidationReceiptFormatV2 ||
+		receipt.AgentOutputReceiptSHA256 == "" || receipt.ApprovalContextSHA256 == "" {
+		t.Fatalf("bound validation receipt = %#v, %v", receipt, err)
 	}
 }
 
@@ -323,9 +346,7 @@ func TestReleasePersistentRequestChangesExhaustionFailsClosed(t *testing.T) {
 
 func TestRejectedReleaseFailureKeepsDurableWaitingCursor(t *testing.T) {
 	root, fake := shippedWorkflowFixture(t)
-	code, output := captureChainOutput(t, func() int {
-		return cmdRun(shippedRunArgs("design", root, fake, true, true))
-	})
+	code, output := advanceShippedChainToDeploy(t, root, fake, "balanced")
 	if code != exitChainIncomplete || !strings.Contains(output, "stage=deploy") {
 		t.Fatalf("initial deploy wait exit=%d:\n%s", code, output)
 	}

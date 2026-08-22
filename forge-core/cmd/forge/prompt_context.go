@@ -185,82 +185,73 @@ func emitsFilesFor(priorEmits func(name string) []string, name string) []string 
 	return priorEmits(name)
 }
 
-// observeFor builds the executor's Observe sink — the seam where cmd/forge (the only
-// vendor-aware layer) reacts to a finished phase's RAW output. It composes the
-// independent concerns below, so the sink fires for echo as well as claude (feed-forward
-// and the verdict state machine must work under the echo plumbing-check, not only a real
-// claude run):
-//   - feed-forward: when feedsForward(phase) is true, the phase's output (e.g. the
-//     planner's task split) is recorded into phaseOut for injection into later prompts;
-//   - verdict: the output's last line is parsed for the reviewer's VERDICT token and
-//     recorded into verdicts (read back by Engine.AgentVerdict to drive loop-back); on a
-//     REQUEST_CHANGES, the result text is also recorded into findings, keyed by this
-//     phase's on_fail TARGET (the implementer), for targeted-repair injection;
-//   - cost+latency: ONLY for claude, the output is parsed for total_cost_usd and a billed
-//     figure forwarded to costSink ALONG WITH the phase's routed model AND the executor's
-//     measured wall-clock latency — echo/stubs never carry that envelope, so they never bill
-//     (and so never stamp a latency either; the wind-down's gate-on-real-cost then skips a
-//     dry/echo run's scorecard entirely, so an un-billed phase's latency never reaches a
-//     row). The model is resolved via phaseModel (closing over wf+mode, the SAME
-//     orchestrator.PhaseTier handed to `claude --model`), because the Observe seam is given
-//     only (phase NAME, output, latency), never the Phase — the identical reason
-//     feedsForward/onFailTarget are injected lookups rather than read off a Phase. The
-//     latency comes straight from the generic executor (a plain wall-clock duration it
-//     measured), so this vendor-aware layer only RELAYS it to the cost stamp; it neither
-//     measures nor interprets it.
-//
-// Returns nil only when NO concern is live (not claude AND no other ledger wired),
-// preserving the byte-for-byte no-hook default path for a plain stub run. unwrapClaudeResult
-// (the log renderer) is applied by the caller, not here. The latency argument is ignored on
-// every non-cost concern (feed-forward, verdict) — only the billed claude path stamps it.
 func observeFor(isClaude bool, costSink func(phase, model string, usd float64, latency time.Duration), phaseModel func(phase string) string, phaseOut *phaseOutputLedger, feedsForward func(phase string) bool, verdicts *verdictLedger, findings *reviewFindingsLedger, onFailTarget func(phase string) (string, bool), contractLookups ...func(phase string) string) func(phase, output string, latency time.Duration) {
 	if !isClaude && phaseOut == nil && verdicts == nil && findings == nil {
 		return nil
 	}
 	return func(phase, output string, latency time.Duration) {
-		sanitized := sanitizeAgentOutput(output)
+		sanitized := normalizeObservedOutput(output, true)
 		if phaseOut != nil && feedsForward != nil && feedsForward(phase) {
 			// The raw validator owns failure; conversion failure leaves this ledger empty.
-			_ = recordForwardedPhaseOutput(
-				phaseOut, phase, unwrapClaudeResult(sanitized), contractLookups,
-			)
+			_ = recordForwardedPhaseOutput(phaseOut, phase, sanitized, contractLookups)
 		}
-		if verdicts != nil {
-			contract := verdictContractFor(contractLookups, phase)
-			if contract == asset.VerdictContractQAV1 {
-				// Strict QA parses the raw bytes so sanitization cannot erase a
-				// wrapper control character and turn a malformed line into an
-				// exact token. Findings remain sanitized before prompt reuse.
-				if v, ok := parseQAVerdictForExecutor(output, isClaude); ok {
-					verdicts.record(phase, v)
-					recordLoopbackFindings(phase, v, sanitized, findings, onFailTarget)
-				}
-			} else if v, ok := parseReviewerVerdict(sanitized); ok {
-				verdicts.record(phase, v)
-				recordLoopbackFindings(phase, v, sanitized, findings, onFailTarget)
-			} else if v, ok := parseExecutiveVerdict(sanitized); ok {
-				// The binary reviewer contract didn't match — try the CTO's 5-way
-				// executive-review contract (review.yml P4) into the SAME ledger, so
-				// Engine.AgentVerdict and reviewStatus (gates.go) read either kind back.
-				verdicts.record(phase, v)
-				recordLoopbackFindings(phase, v, sanitized, findings, onFailTarget)
-			} else if score, ok := parseConfidenceScore(sanitized); ok {
-				// Neither the binary nor the 5-way token contract matched — try the
-				// product-manager's numeric requirement-discovery contract (discover.yml
-				// P1's CONFIDENCE: <N> last line). Stored as the plain numeric string
-				// (e.g. "85") into the SAME ledger, so requirementConfidence (gates.go)
-				// reads it back through the identical verdictLedger.get lookup the other
-				// two tiers use — no findings side-effect (this phase carries no
-				// on_fail.loop_back; discover.yml routes an unmet confidence via its own
-				// stop_condition.on_unmet, not a phase jump).
-				verdicts.record(phase, fmt.Sprintf("%.0f", score))
-			}
-		}
+		observeVerdict(phase, output, sanitized, isClaude, verdicts, findings, onFailTarget, contractLookups)
 		if isClaude && costSink != nil {
 			if usd, ok := parseClaudeCostUsd(output); ok {
 				costSink(phase, phaseModelOf(phaseModel, phase), usd, latency)
 			}
 		}
+	}
+}
+
+func semanticObserveFor(isClaude bool, phaseOut *phaseOutputLedger, feedsForward func(string) bool,
+	contractLookups ...func(string) string) func(string, string) {
+	if phaseOut == nil || feedsForward == nil {
+		return nil
+	}
+	return func(phase, output string) {
+		if feedsForward(phase) {
+			output = normalizeObservedOutput(output, !isClaude)
+			_ = recordForwardedPhaseOutput(phaseOut, phase, output, contractLookups)
+		}
+	}
+}
+
+func normalizeObservedOutput(output string, unwrap bool) string {
+	if unwrap {
+		output = unwrapClaudeResult(output)
+	}
+	return sanitizeAgentOutput(output)
+}
+
+func observeVerdict(phase, output, sanitized string, isClaude bool, verdicts *verdictLedger, findings *reviewFindingsLedger, onFailTarget func(string) (string, bool), lookups []func(string) string) {
+	if verdicts == nil {
+		return
+	}
+	contract := verdictContractFor(lookups, phase)
+	if contract == asset.VerdictContractReviewerV1 || contract == asset.VerdictContractReviewerV2 {
+		if verdict, ok := parseStrictReviewerVerdict(output, isClaude); ok {
+			verdicts.record(phase, verdict)
+			recordLoopbackFindings(phase, verdict, sanitized, findings, onFailTarget)
+		}
+		return
+	}
+	if contract == asset.VerdictContractQAV1 {
+		// Raw bytes prevent sanitization from fabricating an exact QA token.
+		if verdict, ok := parseQAVerdictForExecutor(output, isClaude); ok {
+			verdicts.record(phase, verdict)
+			recordLoopbackFindings(phase, verdict, sanitized, findings, onFailTarget)
+		}
+		return
+	}
+	if verdict, ok := parseReviewerVerdict(sanitized); ok {
+		verdicts.record(phase, verdict)
+		recordLoopbackFindings(phase, verdict, sanitized, findings, onFailTarget)
+	} else if verdict, ok := parseExecutiveVerdict(sanitized); ok {
+		verdicts.record(phase, verdict)
+		recordLoopbackFindings(phase, verdict, sanitized, findings, onFailTarget)
+	} else if score, ok := parseConfidenceScore(sanitized); ok {
+		verdicts.record(phase, fmt.Sprintf("%.0f", score))
 	}
 }
 
@@ -374,7 +365,7 @@ func buildPrompt(repoRoot string, p asset.Phase, mode string, tierOf func(p asse
 // always-on emits/uses_template lanes) so this function — and each helper — stays
 // under the function-length budget; the append ORDER is unchanged from the original
 // single-function version.
-func buildPromptWithEmits(repoRoot string, p asset.Phase, mode string, tierOf func(p asset.Phase) string, cache *prompt.ContextCache, gates *gateLedger, phaseOut *phaseOutputLedger, findings *reviewFindingsLedger, emitsFiles []string) string {
+func buildPromptWithEmits(repoRoot string, p asset.Phase, mode string, tierOf func(p asset.Phase) string, cache *prompt.ContextCache, gates *gateLedger, phaseOut *phaseOutputLedger, findings *reviewFindingsLedger, emitsFiles []string, frozenEmits ...[]string) string {
 	tier := tierOf(p)
 	query := p.Name + " " + p.Agent
 	ctx := gatherContext(cache, repoRoot, query)
@@ -386,7 +377,8 @@ func buildPromptWithEmits(repoRoot string, p asset.Phase, mode string, tierOf fu
 		ctx = append(ctx, "## Current phase description\n"+p.Description)
 	}
 	ctx = appendFeedbackLanes(ctx, repoRoot, query, p, gates, phaseOut, findings)
-	ctx = appendArtifactContext(ctx, repoRoot, emitsFiles, p.UsesTemplate, p.SecondaryTemplate, p.WritesADR)
+	ctx = appendArtifactContext(ctx, repoRoot, emitsFiles, p.UsesTemplate,
+		p.SecondaryTemplate, p.WritesADR, frozenEmits...)
 	return prompt.Build(p.Agent, p.Name, mode, tier, readCard(repoRoot, p.Agent, cache), ctx)
 }
 

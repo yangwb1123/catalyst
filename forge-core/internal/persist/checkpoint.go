@@ -37,19 +37,26 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"unicode/utf8"
 
+	"forgeos/forge-core/internal/materiality"
 	"forgeos/forge-core/internal/statefs"
 )
 
 const (
-	checkpointFormatV1           = "forgeos.checkpoint.v1"
-	checkpointFormatV2           = "forgeos.checkpoint.v2"
-	checkpointMaxBytes           = 4 << 20
-	checkpointScanReportMaxBytes = 66 << 10
+	checkpointFormatV1 = "forgeos.checkpoint.v1"
+	checkpointFormatV2 = "forgeos.checkpoint.v2"
+	checkpointFormatV3 = "forgeos.checkpoint.v3"
+	checkpointFormatV4 = "forgeos.checkpoint.v4"
+	checkpointMaxBytes = 4 << 20
+	// RecoverySemanticOutputMaxBytes bounds every semantic body needed by resume.
+	RecoverySemanticOutputMaxBytes = 64 << 10
+	checkpointScanReportMaxBytes   = RecoverySemanticOutputMaxBytes
 	// CheckpointFormatCurrent is the only generation safe for autonomous resume.
 	// Older generations remain Load-readable so doctor/status can diagnose them.
-	CheckpointFormatCurrent = "forgeos.checkpoint.v3"
+	CheckpointFormatCurrent = "forgeos.checkpoint.v5"
+	// CheckpointFormatLegacy is resumable only for workflows that did not opt in
+	// to output binding; bound workflows require the v5 recovery references.
+	CheckpointFormatLegacy = checkpointFormatV4
 )
 
 type checkpointWriter func(string, []byte, os.FileMode) error
@@ -63,9 +70,9 @@ type checkpointSnapshot struct {
 // crash or clean stop. It is deliberately small: just enough to re-enter the
 // workflow at the right place and re-explain why it last stopped.
 //
-// FormatVersion is the on-disk format identifier (e.g. "forgeos.checkpoint.v3"),
+// FormatVersion is the on-disk format identifier (e.g. "forgeos.checkpoint.v4"),
 // so the loader can distinguish between format generations when a future
-// breaking change is needed. Empty/v1/v2 state remains readable for diagnostics,
+// breaking change is needed. Empty/v1/v2/v3 state remains readable for diagnostics,
 // while cmd/forge refuses to resume anything except the current generation.
 //
 // UpdatedAtUnix is injected by the caller rather than read from time.Now inside
@@ -75,8 +82,10 @@ type Checkpoint struct {
 	FormatVersion     string  `json:"_format,omitempty"`
 	Workflow          string  `json:"workflow"` // workflow asset being run (e.g. "build")
 	WorkflowDigest    string  `json:"workflow_digest,omitempty"`
+	RunID             string  `json:"run_id,omitempty"`
 	Mode              string  `json:"mode"`                // execution mode the loop was driving under
 	Lifecycle         string  `json:"lifecycle,omitempty"` // resolved lifecycle frozen for this run
+	Materiality       string  `json:"materiality"`         // caller-declared impact level, or the durable unbound sentinel
 	Iteration         int     `json:"iteration"`           // count of iterations already COMPLETED
 	RoadmapCompletion float64 `json:"roadmap_completion"`  // last observed completion fraction in [0,1]
 	// PhaseIndex is PHASE-granular resume progress WITHIN the in-progress iteration
@@ -85,17 +94,18 @@ type Checkpoint struct {
 	// the next iteration from phase 0" — byte-for-byte the pre-phase-granular behavior.
 	// A value > 0 is written after each agent phase completes mid-iteration, so a crash
 	// resumes at that phase instead of replaying every completed (billed) agent phase.
-	// v3 persists this field explicitly even when it is 0. Earlier formats may omit
-	// it and remain diagnostic-readable with the Go zero value.
+	// v3 and later persist this field explicitly even when it is 0. Earlier formats
+	// may omit it and remain diagnostic-readable with the Go zero value.
 	PhaseIndex    int    `json:"phase_index"`
 	GatesGreen    bool   `json:"gates_green"`     // whether all required gates were green at the snapshot
 	Reason        string `json:"reason"`          // why the loop last stopped (for resume context)
 	UpdatedAtUnix int64  `json:"updated_at_unix"` // caller-supplied snapshot time (Unix seconds)
-	// The v3 resource envelope is enough to restore one standalone Evolve
-	// iteration without resetting a cap or replaying already charged work. A zero
-	// budget cap is unset and zero max-agent-calls is unbounded; in contrast, zero
-	// max-loop-backs forbids loop-backs. All values are explicit JSON numbers so
-	// missing recovery state cannot masquerade as zero.
+	// v3 introduced the resource envelope needed to restore one standalone Evolve
+	// iteration without resetting a cap or replaying already charged work; v4 adds
+	// the materiality binding required for safe resume. A zero budget cap is unset
+	// and zero max-agent-calls is unbounded; in contrast, zero max-loop-backs forbids
+	// loop-backs. All values are explicit JSON numbers so missing recovery state
+	// cannot masquerade as zero.
 	BudgetCapMicros int64 `json:"budget_cap_micros"`
 	SpentUsdMicros  int64 `json:"spent_usd_micros"`
 	MaxAgentCalls   int   `json:"max_agent_calls"`
@@ -106,7 +116,13 @@ type Checkpoint struct {
 	// needed to resume after the contracted scan without replaying completed
 	// mutable/billed phases. WorkflowDigest, mode, lifecycle and PhaseIndex bind
 	// it to this exact in-progress iteration; iteration-boundary state omits it.
-	EvolveScanReport string `json:"evolve_scan_report,omitempty"`
+	EvolveScanReport         string            `json:"evolve_scan_report,omitempty"`
+	EvolveScanSemanticOutput string            `json:"evolve_scan_semantic_output,omitempty"`
+	PhaseSemanticOutputs     map[string]string `json:"phase_semantic_outputs"`
+	ReceiptHead              string            `json:"agent_output_receipt_head_sha256"`
+	PhaseReceipts            map[string]string `json:"phase_output_receipts"`
+	StageReceipts            map[string]string `json:"stage_output_receipts"`
+	ApprovalContexts         map[string]string `json:"stage_approval_contexts"`
 }
 
 // Save atomically persists cp to path as JSON.
@@ -115,8 +131,8 @@ type Checkpoint struct {
 // renames it over path. The temp file lives in the same directory as the target,
 // so a process crash leaves either the prior checkpoint or the new one whole,
 // never a truncated file. Parent directories are created as needed. The
-// containing directory is not fsynced, so this is not a power-loss durability
-// guarantee for filesystems that require a separate directory sync.
+// shared statefs primitive fsyncs the containing directory after rename, so a
+// successful return includes the directory-entry durability boundary.
 //
 // When retain > 0, up to retain historical checkpoints are preserved by copying
 // a validated snapshot of the prior checkpoint set before committing current.
@@ -132,26 +148,11 @@ func Save(path string, cp Checkpoint, retain int) error {
 }
 
 func saveWithWriter(path string, cp Checkpoint, retain int, write checkpointWriter) error {
-	if cp.FormatVersion == "" {
-		cp.FormatVersion = CheckpointFormatCurrent
-	}
-	if err := validateFormat(cp.FormatVersion); err != nil {
-		return err
-	}
-	if cp.FormatVersion == CheckpointFormatCurrent {
-		if err := validateCurrentCheckpoint(cp); err != nil {
-			return err
-		}
-	}
-	data, err := encode(cp)
+	prepared, data, err := prepareCheckpointSave(cp)
 	if err != nil {
 		return err
 	}
-	if cp.FormatVersion == CheckpointFormatCurrent {
-		if err := validateCurrentEncoding(data); err != nil {
-			return err
-		}
-	}
+	cp = prepared
 	if dir := filepath.Dir(path); dir != "" {
 		if err := statefs.EnsurePrivateDirTree(dir); err != nil {
 			return fmt.Errorf("persist: secure checkpoint dir: %w", err)
@@ -178,6 +179,36 @@ func saveWithWriter(path string, cp Checkpoint, retain int, write checkpointWrit
 		return withRollbackError(commitErr, restoreCheckpointSet(path, snapshots, 0))
 	}
 	return nil
+}
+
+func prepareCheckpointSave(cp Checkpoint) (Checkpoint, []byte, error) {
+	if cp.FormatVersion == "" {
+		cp.FormatVersion = CheckpointFormatCurrent
+	}
+	if err := validateFormat(cp.FormatVersion); err != nil {
+		return Checkpoint{}, nil, err
+	}
+	if cp.FormatVersion == CheckpointFormatCurrent {
+		normalized, err := materiality.Normalize(cp.Materiality)
+		if err != nil {
+			return Checkpoint{}, nil, fmt.Errorf("persist: checkpoint materiality: %w", err)
+		}
+		cp.Materiality = normalized
+		prepareCheckpointRecoveryMaps(&cp)
+		if err := validateCurrentCheckpoint(cp); err != nil {
+			return Checkpoint{}, nil, err
+		}
+	}
+	data, err := encode(cp)
+	if err != nil {
+		return Checkpoint{}, nil, err
+	}
+	if cp.FormatVersion == CheckpointFormatCurrent {
+		if err := validateCurrentEncoding(data); err != nil {
+			return Checkpoint{}, nil, err
+		}
+	}
+	return cp, data, nil
 }
 
 func snapshotCheckpointSet(path string, retain int) ([]checkpointSnapshot, error) {
@@ -299,17 +330,20 @@ func decode(data []byte) (Checkpoint, error) {
 
 func validateFormat(format string) error {
 	if format == "" || format == checkpointFormatV1 ||
-		format == checkpointFormatV2 || format == CheckpointFormatCurrent {
+		format == checkpointFormatV2 || format == checkpointFormatV3 || format == checkpointFormatV4 ||
+		format == CheckpointFormatCurrent {
 		return nil
 	}
 	return fmt.Errorf("persist: unsupported checkpoint format %q", format)
 }
 
-var checkpointV3RequiredFields = []string{
+var checkpointV5RequiredFields = []string{
 	"workflow",
 	"workflow_digest",
+	"run_id",
 	"mode",
 	"lifecycle",
+	"materiality",
 	"iteration",
 	"roadmap_completion",
 	"gates_green",
@@ -322,23 +356,32 @@ var checkpointV3RequiredFields = []string{
 	"agent_calls",
 	"max_loop_backs",
 	"loop_backs",
+	"agent_output_receipt_head_sha256",
+	"phase_semantic_outputs",
+	"phase_output_receipts",
+	"stage_output_receipts",
+	"stage_approval_contexts",
 }
 
-var checkpointV3OptionalScalarFields = []string{
+var checkpointV5OptionalScalarFields = []string{
 	"evolve_scan_report",
+	"evolve_scan_semantic_output",
 }
 
 // validateCurrentEncoding distinguishes a deliberately persisted zero/false
 // value from a missing or explicit-null field. encoding/json maps null into the
 // Go zero value for scalar fields, so validating only the decoded struct would
-// let a truncated v3 checkpoint masquerade as a legitimate iteration-zero
+// let a truncated v4 checkpoint masquerade as a legitimate iteration-zero
 // snapshot.
 func validateCurrentEncoding(data []byte) error {
+	if err := rejectDuplicateCheckpointFields(data); err != nil {
+		return err
+	}
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(data, &fields); err != nil {
 		return fmt.Errorf("persist: decode checkpoint fields: %w", err)
 	}
-	for _, name := range checkpointV3RequiredFields {
+	for _, name := range checkpointV5RequiredFields {
 		raw, ok := fields[name]
 		if !ok {
 			return fmt.Errorf("persist: checkpoint %s missing required field %q",
@@ -350,32 +393,30 @@ func validateCurrentEncoding(data []byte) error {
 				CheckpointFormatCurrent, name)
 		}
 	}
-	for _, name := range checkpointV3OptionalScalarFields {
+	for _, name := range checkpointV5OptionalScalarFields {
 		raw, ok := fields[name]
 		if ok && bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
 			return fmt.Errorf("persist: checkpoint %s optional scalar field %q is null",
 				CheckpointFormatCurrent, name)
 		}
 	}
-	return nil
+	return validateCheckpointReferenceObjects(fields)
 }
 
 func validateCurrentCheckpoint(cp Checkpoint) error {
 	if err := validateCheckpointSnapshot(cp); err != nil {
 		return err
 	}
+	if !materiality.Valid(cp.Materiality) {
+		return fmt.Errorf("persist: checkpoint materiality %q is invalid", cp.Materiality)
+	}
 	if err := validateCheckpointResources(cp); err != nil {
 		return err
 	}
-	switch {
-	case len(cp.EvolveScanReport) > checkpointScanReportMaxBytes ||
-		!utf8.ValidString(cp.EvolveScanReport):
-		return fmt.Errorf("persist: checkpoint evolve_scan_report must be valid UTF-8 with at most %d bytes",
-			checkpointScanReportMaxBytes)
-	case cp.PhaseIndex == 0 && cp.EvolveScanReport != "":
-		return fmt.Errorf("persist: checkpoint evolve_scan_report requires a positive phase_index")
+	if err := validateCheckpointRecoveryBindings(cp); err != nil {
+		return err
 	}
-	return nil
+	return validateCheckpointScanOutputs(cp)
 }
 
 func validateCheckpointSnapshot(cp Checkpoint) error {

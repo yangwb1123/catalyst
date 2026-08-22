@@ -48,10 +48,10 @@ func cmdEvolve(args []string) int {
 		usage()
 		return 2
 	}
-	if err := fs.Parse(flagArgs); err != nil {
-		return 2
+	if code := parseEvolveFlags(fs, flagArgs); code != 0 {
+		return code
 	}
-	if err := validateSandboxMemory(o.sandboxMemoryMB); err != nil {
+	if err := freezeEvolveRunOptions(fs, &o); err != nil {
 		fmt.Fprintf(os.Stderr, "forge evolve: %v\n", err)
 		return 2
 	}
@@ -184,18 +184,6 @@ func rejectHumanGate(stage string, root string) int {
 	return 1
 }
 
-// execLoop wires the loop engine (real gates + selected executor + live signals)
-// and runs it to convergence, a tripwire, or the safety bound, reporting how it
-// ended. For an external-stop workflow (e.g. evolve), reaching the safety bound is
-// the EXPECTED clean outcome and the CLI exits 0 — never a round-count failure.
-// Resilience + memory wiring: each iteration's post-measurement hook persists a
-// checkpoint, appends the round's trajectory to memory, and emits a trace event
-// under <root>/.forge/ — so a crashed run can --resume, later rounds recall what
-// happened, and the run stays auditable.
-// invocationGateOptions resolves the invocation's gate options ONCE, BEFORE
-// any spawn: the ONLY gate config source is ResolveOptions (from
-// FORGE_GATE_TIMEOUT) — never o.timeout, the per-AGENT knob (regression pin).
-// A bad env fails the loop up front, naming the variable and value.
 func invocationGateOptions(o runOpts) (runOpts, error) {
 	gateOpts, err := gate.ResolveOptions(gate.CLIInput{EnvTimeout: os.Getenv(gate.EnvTimeout)})
 	if err != nil {
@@ -211,6 +199,10 @@ func execLoop(ctx context.Context, wf asset.Workflow, o runOpts, maxIter int, ma
 		fmt.Fprintf(os.Stderr, "forge evolve: %v\n", err)
 		return 1
 	}
+	if err := validateOutputBindingHost(wf, o); err != nil {
+		fmt.Fprintf(os.Stderr, "forge evolve: %v\n", err)
+		return 1
+	}
 	lock := acquireRunLockForOptions(o, "forge evolve")
 	if lock == nil {
 		return 1
@@ -222,22 +214,21 @@ func execLoop(ctx context.Context, wf asset.Workflow, o runOpts, maxIter int, ma
 		fmt.Fprintf(os.Stderr, "forge evolve: %v\n", err)
 		return 1
 	}
-	tracer, closeTrace, err := openTracer(o.root)
+	tracer, closeTrace, err := openResumeTracer(o.root, resumed, logln)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "forge evolve: %v\n", err)
 		return 1
 	}
 	defer closeTrace()
-	// Auto-diagnostic: quick doctor checks before the evolve loop starts.
-	quickDoctorCheck(o.root, tracer, logln)
 	budget, err := newResumedRunBudget(o.runBudgetUSD, resumed)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "forge evolve: %v\n", err)
 		return 1
 	}
-	loop, verdicts, findings, phaseOut := buildTracedLoop(ctx, wf, o, maxIter, logln, tracer, budget)
-	loop.OnIteration = checkpointHook(o, wf, tracer, budget, logln, verdicts, findings)
-	loop.OnPhase = phaseCheckpointHook(o, wf, budget, phaseOut, logln)
+	loop, verdicts, findings, phaseOut, recovery := buildTracedLoop(ctx, wf, o, maxIter, logln, tracer, budget)
+	restoreCheckpointReceipts(recovery, resumed.phaseReceipts, resumed.receiptHead, resumed.phaseSemantics)
+	loop.OnIteration = checkpointHook(o, wf, tracer, budget, logln, verdicts, findings, recovery)
+	loop.OnPhase = phaseCheckpointHook(o, wf, budget, phaseOut, logln, recovery)
 	if err := applyLoopResume(&loop, wf, resumed); err != nil {
 		fmt.Fprintf(os.Stderr, "forge evolve: --resume: %v\n", err)
 		return 1
@@ -250,43 +241,45 @@ func execLoop(ctx context.Context, wf asset.Workflow, o runOpts, maxIter int, ma
 	return windDownAndReport(wf, o, logln, outcome, runErr, verdicts.wasReworked(), tracer.RunID)
 }
 
+func openResumeTracer(root string, resumed loopResumeState,
+	logln func(string)) (*trace.Tracer, func(), error) {
+	tracer, closeTrace, err := openTracer(root)
+	if err != nil {
+		return nil, nil, err
+	}
+	if resumed.runID != "" && resumed.runID != "run_id_not_bound" {
+		tracer.RunID = resumed.runID
+	}
+	quickDoctorCheck(root, tracer, logln)
+	return tracer, closeTrace, nil
+}
+
 // windDownAndReport attributes the loop's REAL billed cost into the scorecards
 // BEFORE closeTrace (flush-ordering invariant), gate-on-real-cost +
 // fail-loud-and-continue; dry/echo loops skip it, producer hiccups leave the
 // outcome exactly as Run set it, and outcome.Iterations + verdicts.wasReworked()
 // carry the attribution signals.
 func windDownAndReport(wf asset.Workflow, o runOpts, logln func(string), outcome orchestrator.LoopOutcome, runErr error, wasReworked bool, runID string) int {
-	if !o.evolveProposalOnly {
+	if !o.evolveProposalOnly && allowScorecardWindDown(wf, o) {
 		windDownScorecardsForRun(wf, o, logln, outcome.Iterations, wasReworked, runID)
 	}
 	return reportLoop(outcome, runErr)
 }
 
-// buildTracedLoop resolves auto-risk, builds the loop engine (buildLoop), wires its
-// gate results into the trace (mirroring execEngine's wireGateTrace in
-// engine_build.go), and sets the ctx/--parallel opt-in. Split out of execLoop
-// purely to keep that function under the per-function line budget.
-func buildTracedLoop(ctx context.Context, wf asset.Workflow, o runOpts, maxIter int, logln func(string), tracer *trace.Tracer, budget *runBudget) (orchestrator.LoopEngine, *verdictLedger, *reviewFindingsLedger, *phaseOutputLedger) {
+func buildTracedLoop(ctx context.Context, wf asset.Workflow, o runOpts, maxIter int, logln func(string), tracer *trace.Tracer, budget *runBudget) (orchestrator.LoopEngine, *verdictLedger, *reviewFindingsLedger, *phaseOutputLedger, *outputBindingRuntime) {
 	var autoRisk string
 	var autoRiskReasons []string
 	if !proposalOnlyEvolve(wf, o, resolveLifecycle(o)) {
 		autoRisk, autoRiskReasons = resolveAutoRisk(o.root)
 		logAutoRisk(logln, "forge evolve", autoRisk, autoRiskReasons)
 	}
-	loop, verdicts, findings, phaseOut := buildLoop(ctx, wf, o, maxIter, logln, costEmitter(tracer, logln), budget, autoRisk, autoRiskReasons, tracer.RunID)
+	loop, verdicts, findings, phaseOut, recovery := buildLoopWithRecovery(ctx, wf, o, maxIter, logln, costEmitter(tracer, logln), budget, autoRisk, autoRiskReasons, tracer.RunID)
 	wireGateTrace(&loop.Engine, tracer, logln)
 	loop.Ctx = ctx
 	loop.Parallel = parallelEnabled(o, wf, logln, "forge evolve") // depends_on-gated opt-in
-	return loop, verdicts, findings, phaseOut
+	return loop, verdicts, findings, phaseOut, recovery
 }
 
-// buildLoop constructs the loop engine: real gates + selected executor + live
-// signals, with one acceptance probe per iteration shared by that iteration's gate
-// phases and convergence check (refresh-before-reuse, no double-spawn). The engine
-// receives the FULL wf.Stop so convergence runs through converge.Converge (which
-// honors every stop shape — a human_gate that somehow reaches the loop is judged
-// by approval alone, never a satisfied all_of; depth-two defense, cmdEvolve already
-// refuses one up front).
 // costSink threads the SAME tracer execLoop already owns into the agent executor, so
 // a real claude phase's billed cost+latency lands as a trace-visible `kind:"agent"`
 // event, model-stamped and interleaved with the per-iteration events.
@@ -298,6 +291,12 @@ func buildTracedLoop(ctx context.Context, wf asset.Workflow, o runOpts, maxIter 
 // execLoop can thread rework+trajectory into the scorecard wind-down and the Reflect
 // memory step without rebuilding or re-exposing the Engine internals.
 func buildLoop(ctx context.Context, wf asset.Workflow, o runOpts, maxIter int, logln func(string), costSink func(phase, model string, usd float64, latency time.Duration), budget *runBudget, autoRisk string, autoRiskReasons []string, runIDs ...string) (orchestrator.LoopEngine, *verdictLedger, *reviewFindingsLedger, *phaseOutputLedger) {
+	loop, verdicts, findings, phaseOut, _ := buildLoopWithRecovery(ctx, wf, o, maxIter, logln,
+		costSink, budget, autoRisk, autoRiskReasons, runIDs...)
+	return loop, verdicts, findings, phaseOut
+}
+
+func buildLoopWithRecovery(ctx context.Context, wf asset.Workflow, o runOpts, maxIter int, logln func(string), costSink func(phase, model string, usd float64, latency time.Duration), budget *runBudget, autoRisk string, autoRiskReasons []string, runIDs ...string) (orchestrator.LoopEngine, *verdictLedger, *reviewFindingsLedger, *phaseOutputLedger, *outputBindingRuntime) {
 	probe := &loopProbe{root: o.root, ctx: ctx, opts: o.gateOpts}
 	// The Engine — with its four prompt/feedback ledgers — is built by the SAME
 	// buildRunEngine `forge run` uses, so the two paths never drift. The only
@@ -309,7 +308,7 @@ func buildLoop(ctx context.Context, wf asset.Workflow, o runOpts, maxIter int, l
 	proposalOnly := policy.BuildHalted() || policy.EvolveProposalOnly()
 	runGate := proposalEvolveGateRunner(ctx, o.root, probe, proposalOnly, o.gateOpts)
 	phaseOut := newPhaseOutputLedger()
-	eng, verdicts, findings := buildRunEngineWithPhaseOutput(wf, o, logln, costSink,
+	eng, verdicts, findings, _, recovery := buildRunEngineWithPhaseOutput(wf, o, logln, costSink,
 		runGate, policy, budget, autoRisk, autoRiskReasons, autoDims, autoDimsReasons,
 		phaseOut, runIDs...)
 	approved := humanApproved(o.root, wf.Stage, o.approved)
@@ -325,7 +324,7 @@ func buildLoop(ctx context.Context, wf asset.Workflow, o runOpts, maxIter int, l
 	loop := orchestrator.NewLoopEngine(
 		eng, wf.Stop, signals, maxIter, 2, logln,
 	)
-	return loop, verdicts, findings, phaseOut
+	return loop, verdicts, findings, phaseOut, recovery
 }
 
 // reportLoop prints how the loop ended and maps it to an exit code: a converged
@@ -352,9 +351,10 @@ func reportLoop(out orchestrator.LoopOutcome, err error) int {
 // append failures retain their independent fail-loud behavior. Accepts the
 // verdict/findings ledgers so it can extract structured Reflect-step lessons
 // alongside the trajectory entry.
-func checkpointHook(o runOpts, wf asset.Workflow, tracer *trace.Tracer, budget *runBudget, logln func(string), verdicts *verdictLedger, findings *reviewFindingsLedger) func(int, converge.Signals, int64) error {
+func checkpointHook(o runOpts, wf asset.Workflow, tracer *trace.Tracer, budget *runBudget, logln func(string), verdicts *verdictLedger, findings *reviewFindingsLedger, recoveries ...*outputBindingRuntime) func(int, converge.Signals, int64) error {
 	workflowDigest := checkpointWorkflowDigest(wf)
 	lifecycle := resolveLifecycle(o)
+	recovery := firstBindingRecovery(recoveries)
 	return func(i int, sig converge.Signals, durationMs int64) error {
 		// SpentUsdMicros records the run's cumulative billed cost AT THIS iteration so a
 		// later --resume re-seeds the budget instead of restarting the cap from $0 (the
@@ -363,14 +363,17 @@ func checkpointHook(o runOpts, wf asset.Workflow, tracer *trace.Tracer, budget *
 		// the COMPLETED iteration; phaseCheckpointHook records a FINER mid-iteration spend after
 		// each agent phase, so on resume the under-count is at most one in-flight phase's partial
 		// (cost.go seed/SpentUsdMicros documents it). An unbudgeted run feeds nothing, so this
-		// is 0; checkpoint v3 persists both the zero cap and zero spend explicitly.
+		// is 0; checkpoint v4 persists both the zero cap and zero spend explicitly.
 		cp := persist.Checkpoint{
 			Workflow: wf.Stage, WorkflowDigest: workflowDigest,
-			Mode: o.mode, Lifecycle: lifecycle, Iteration: i,
+			Mode: o.mode, Lifecycle: lifecycle, Materiality: durableRunMateriality(o), Iteration: i,
 			RoadmapCompletion: sig.RoadmapCompletion, GatesGreen: sig.GatesGreen,
 			Reason: "iteration complete", UpdatedAtUnix: time.Now().Unix(),
 			SpentUsdMicros: budget.SpentUsdMicros(), BudgetCapMicros: budget.CapUsdMicros(),
 			MaxAgentCalls: o.maxAgentCalls, MaxLoopBacks: maxLoopBack,
+		}
+		if err := bindCheckpointRecovery(&cp, o.root, wf, o, recovery); err != nil {
+			return fmt.Errorf("bind iteration checkpoint recovery: %w", err)
 		}
 		status, detail := "ok", checkpointDetail(sig)
 		saveErr := persist.Save(checkpointPath(o.root), cp, 5)

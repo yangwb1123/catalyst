@@ -17,6 +17,7 @@ func TestChainResumesWaitingGateWithoutRerunningCompletedWork(t *testing.T) {
 	first := humanChainWorkflow("design", "review", "design-agent")
 	writeChainAsset(t, root, "design", first)
 	writeChainAsset(t, root, "review", humanChainWorkflow("review", "", "review-agent"))
+	first = loadChainWorkflowForTest(t, root, "design")
 	o := chainOpts(root)
 	o.approved, o.maxAgentCalls, o.maxChainStages = true, 5, 5
 	o.mode, o.lifecycle = "engineering", "production"
@@ -56,8 +57,7 @@ func TestChainResumesWaitingGateWithoutRerunningCompletedWork(t *testing.T) {
 	if done.RunID != waiting.RunID || done.AgentCalls != waiting.AgentCalls ||
 		done.BudgetCapMicros != waiting.BudgetCapMicros ||
 		done.SpentUsdMicros != waiting.SpentUsdMicros ||
-		done.Mode != "engineering" || done.Lifecycle != "production" ||
-		done.MaxChainStages != 5 ||
+		done.Mode != "engineering" || done.Lifecycle != "production" || done.MaxChainStages != 5 ||
 		strings.Join(done.CompletedStages, ",") != "design,review" {
 		t.Fatalf("resumed state drifted: before=%+v after=%+v", waiting, done)
 	}
@@ -68,6 +68,7 @@ func TestChainResumeRestoresCTOPolicyBeforeBuild(t *testing.T) {
 	first := humanChainWorkflow("design", "review")
 	writeChainAsset(t, root, "design", first)
 	writeChainAsset(t, root, "review", humanChainWorkflow("review", "build"))
+	first = loadChainWorkflowForTest(t, root, "design")
 	o := chainOpts(root)
 	o.approved, o.mode = true, "cto"
 	if code, out := captureChainOutput(t, func() int {
@@ -100,6 +101,7 @@ func TestChainResumeRestoresProductionGatePolicy(t *testing.T) {
 	writeChainAsset(t, root, "design", first)
 	writeChainAsset(t, root, "review", humanChainWorkflow("review", "build", "review-agent"))
 	writeChainAsset(t, root, "build", humanChainWorkflow("build", "", "build-agent"))
+	first = loadChainWorkflowForTest(t, root, "design")
 	o := chainOpts(root)
 	o.approved, o.mode, o.lifecycle = true, "explorer", "production"
 	if code, out := captureChainOutput(t, func() int {
@@ -160,6 +162,7 @@ func TestChainResumeRejectsPolicyAndStageLimitConflicts(t *testing.T) {
 				Mode:            "engineering", Lifecycle: "production",
 				MaxChainStages: 5,
 			}
+			bindResumableTestState(t, root, &state)
 			if err := saveChainState(root, state); err != nil {
 				t.Fatal(err)
 			}
@@ -185,6 +188,7 @@ func TestChainResumeRestoresAgentCallCeiling(t *testing.T) {
 	writeChainAsset(t, root, "design", first)
 	writeChainAsset(t, root, "review", humanChainWorkflow("review", "build", "review-agent"))
 	writeChainAsset(t, root, "build", humanChainWorkflow("build", "", "build-agent"))
+	first = loadChainWorkflowForTest(t, root, "design")
 	approveChainStage(t, root, "build")
 	o := chainOpts(root)
 	o.approved, o.maxAgentCalls = true, 2
@@ -223,6 +227,7 @@ func TestChainResumePersistenceFailureKeepsDurableCursor(t *testing.T) {
 		CompletedStages: []string{"design"},
 		Mode:            "balanced", Lifecycle: "idea", MaxChainStages: defaultMaxChainStages,
 	}
+	bindResumableTestState(t, root, &waiting)
 	if err := saveChainState(root, waiting); err != nil {
 		t.Fatal(err)
 	}
@@ -288,6 +293,7 @@ func TestPrepareChainResumeRejectsNonHumanCurrentWorkflow(t *testing.T) {
 	writeChainAsset(t, root, "build", entry)
 	writeChainAsset(t, root, "evolve", externalChainWorkflow())
 	state := resumableTestState("build", "evolve", []string{"build"})
+	bindResumableTestState(t, root, &state)
 	if err := saveChainState(root, state); err != nil {
 		t.Fatal(err)
 	}
@@ -306,11 +312,11 @@ func TestPrepareChainResumeRejectsCorruptOrSkippedPath(t *testing.T) {
 	}{
 		{
 			name: "missing completed prefix", completed: []string{"design"},
-			reviewNext: "build", want: "exact path prefix [design review]",
+			reviewNext: "build", want: "lacks workflow digest for stage \"review\"",
 		},
 		{
 			name: "jumped current into prefix", completed: []string{"design", "build"},
-			reviewNext: "build", want: "exact path prefix [design review]",
+			reviewNext: "build", want: "lacks workflow digest for stage \"review\"",
 		},
 		{
 			name: "unreachable current", completed: []string{"design", "review"},
@@ -325,6 +331,7 @@ func TestPrepareChainResumeRejectsCorruptOrSkippedPath(t *testing.T) {
 			writeChainAsset(t, root, "review", humanChainWorkflow("review", tc.reviewNext))
 			writeChainAsset(t, root, "build", humanChainWorkflow("build", ""))
 			state := resumableTestState("design", "build", tc.completed)
+			bindAvailableResumableTestState(t, root, &state)
 			if err := saveChainState(root, state); err != nil {
 				t.Fatal(err)
 			}
@@ -342,6 +349,7 @@ func TestPrepareChainResumeRejectsDeclaredPathCycle(t *testing.T) {
 	writeChainAsset(t, root, "design", entry)
 	writeChainAsset(t, root, "review", humanChainWorkflow("review", "design"))
 	state := resumableTestState("design", "build", []string{"design", "review"})
+	bindAvailableResumableTestState(t, root, &state)
 	if err := saveChainState(root, state); err != nil {
 		t.Fatal(err)
 	}
@@ -351,7 +359,7 @@ func TestPrepareChainResumeRejectsDeclaredPathCycle(t *testing.T) {
 	}
 }
 
-func TestPrepareChainResumeAcceptsStandaloneRollbackPrefix(t *testing.T) {
+func TestPrepareChainResumeRejectsUnreferencedBoundRollbackPrefix(t *testing.T) {
 	root := t.TempDir()
 	source := filepath.Join(repoRoot(), ".agent", "workflows", "rollback.yml")
 	data, err := os.ReadFile(source)
@@ -370,15 +378,13 @@ func TestPrepareChainResumeAcceptsStandaloneRollbackPrefix(t *testing.T) {
 		t.Fatal(err)
 	}
 	state := resumableTestState("rollback", "rollback", nil)
+	bindResumableTestState(t, root, &state)
 	if err := saveChainState(root, state); err != nil {
 		t.Fatal(err)
 	}
-	current, resumed, err := prepareChainResume(rollback, chainOpts(root))
-	if err != nil {
-		t.Fatalf("standalone rollback rejected: %v", err)
-	}
-	if resumed == nil || current.Stage != "rollback" || len(resumed.CompletedStages) != 0 {
-		t.Fatalf("standalone rollback resume = current:%+v state:%+v", current, resumed)
+	_, _, err = prepareChainResume(rollback, chainOpts(root))
+	if err == nil || !strings.Contains(err.Error(), "selector binding") {
+		t.Fatalf("unreferenced bound rollback error = %v", err)
 	}
 }
 
@@ -423,6 +429,7 @@ func restrictedDeployResumeRepo(t *testing.T) string {
 	state := resumableTestState(
 		"discover", "deploy", []string{"discover", "design", "review", "build"},
 	)
+	bindResumableTestState(t, root, &state)
 	if err := saveChainState(root, state); err != nil {
 		t.Fatal(err)
 	}
@@ -457,15 +464,6 @@ func assertRestrictedResumeShimRejected(t *testing.T, code int, output, sentinel
 	}
 }
 
-func resumableTestState(entry, current string, completed []string) chainState {
-	return chainState{
-		RunID: "resume-test", Status: "waiting_approval",
-		EntryStage: entry, CurrentStage: current,
-		CompletedStages: append([]string(nil), completed...),
-		Mode:            "balanced", Lifecycle: "idea", MaxChainStages: defaultMaxChainStages,
-	}
-}
-
 func TestChainStateV1CannotResume(t *testing.T) {
 	root := t.TempDir()
 	if err := os.MkdirAll(forgeDir(root), 0o755); err != nil {
@@ -478,7 +476,7 @@ func TestChainStateV1CannotResume(t *testing.T) {
 	first := humanChainWorkflow("review", "")
 	if code, out := captureChainOutput(t, func() int {
 		return execEngine(context.Background(), first, chainOpts(root))
-	}); code != 1 || !strings.Contains(out, "unsupported chain state format") {
+	}); code != 1 || !strings.Contains(out, "diagnostic-only") {
 		t.Fatalf("legacy resume exit=%d output=%s", code, out)
 	}
 }

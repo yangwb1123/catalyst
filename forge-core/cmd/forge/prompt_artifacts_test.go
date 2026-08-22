@@ -171,6 +171,16 @@ func TestBuildPrompt_WritesAdrInjectsContext(t *testing.T) {
 	if !strings.Contains(got, "ADR-0002") {
 		t.Errorf("writes_adr context must suggest the next sequence number (0002), got:\n%s", got)
 	}
+	for _, required := range []string{
+		"forgeos.architecture-decision-record/v2",
+		"forgeos.architecture-decision-record-body.v2\\0",
+		"exactly one LF", "Every Unicode Cc control except LF is forbidden",
+		"never approval, authority, truth, graph completeness, or lifecycle transition",
+	} {
+		if !strings.Contains(got, required) {
+			t.Errorf("writes_adr v2 context is missing %q, got:\n%s", required, got)
+		}
+	}
 	// Without writes_adr, the block must be absent.
 	plain := buildPromptWithEmits(root, asset.Phase{Name: "solution-architect", Agent: "architect"}, "engineering", unbudgetedTier("engineering"), nil, nil, nil, nil, nil)
 	if strings.Contains(plain, "[context:writes_adr]") {
@@ -223,6 +233,45 @@ func TestNextADRSequence(t *testing.T) {
 	writeFile(t, filepath.Join(dir2, "ADR-0005-decision.md"), "#5")
 	if got := nextADRSequence(dir2); got != 6 {
 		t.Errorf("nextADRSequence(no-md-ignored) = %d, want 6", got)
+	}
+}
+
+func TestWritesAdrContextRejectsExhaustedSequence(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "docs", "adr")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(dir, "ADR-9999-last.md"), "legacy")
+	wa := &asset.WritesADR{Condition: "mode in [engineering, cto]", Target: "docs/adr/"}
+	if got := writesAdrContext(root, wa); got != "" {
+		t.Fatalf("exhausted writes_adr context = %q, want empty", got)
+	}
+}
+
+func TestAgentExecutorRejectsExhaustedADRBeforeBuildOrSpawn(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "docs", "adr")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(dir, "ADR-9999-last.md"), "legacy")
+	phase := asset.Phase{Name: "solution-architect", Agent: "architect", Readonly: true,
+		WritesADR: &asset.WritesADR{Condition: "mode in [engineering, cto]", Target: "docs/adr/"}}
+	executor := agentExecutor(runOpts{executor: "command", agentCmd: "false", root: root,
+		lifecycle: "mvp"}, func(string) {}, nil, unbudgetedTier(""), nil, nil, nil,
+		nil, nil, nil, nil, nil, nil).(orchestrator.CommandExecutor)
+	built := false
+	executor.Build = func(asset.Phase, string) []string {
+		built = true
+		return []string{"false"}
+	}
+	err := executor.Execute(context.Background(), phase, "engineering")
+	if err == nil || !strings.Contains(err.Error(), "sequence space") {
+		t.Fatalf("exhausted ADR executor error = %v", err)
+	}
+	if built {
+		t.Fatal("exhausted ADR reached Build/process boundary")
 	}
 }
 

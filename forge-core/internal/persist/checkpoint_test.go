@@ -3,8 +3,11 @@ package persist
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
+
+	"forgeos/forge-core/internal/materiality"
 )
 
 // sampleCheckpoint is a fully-populated checkpoint used across round-trip tests.
@@ -25,15 +28,21 @@ func sampleCheckpoint() Checkpoint {
 
 func currentCheckpoint(workflow string, iteration int) Checkpoint {
 	return Checkpoint{
-		FormatVersion:     CheckpointFormatCurrent,
-		Workflow:          workflow,
-		WorkflowDigest:    "test-workflow-digest",
-		Mode:              "balanced",
-		Lifecycle:         "mvp",
-		Iteration:         iteration,
-		RoadmapCompletion: 0.5,
-		Reason:            "test checkpoint",
-		UpdatedAtUnix:     1_750_000_000,
+		FormatVersion:        CheckpointFormatCurrent,
+		Workflow:             workflow,
+		WorkflowDigest:       "test-workflow-digest",
+		RunID:                "run_id_not_bound",
+		Mode:                 "balanced",
+		Lifecycle:            "mvp",
+		Materiality:          materiality.Unbound,
+		Iteration:            iteration,
+		RoadmapCompletion:    0.5,
+		Reason:               "test checkpoint",
+		UpdatedAtUnix:        1_750_000_000,
+		PhaseReceipts:        map[string]string{},
+		PhaseSemanticOutputs: map[string]string{},
+		StageReceipts:        map[string]string{},
+		ApprovalContexts:     map[string]string{},
 	}
 }
 
@@ -51,7 +60,7 @@ func TestSaveLoad_RoundTrip(t *testing.T) {
 	if !found {
 		t.Fatal("Load found = false, want true after Save")
 	}
-	if got != want {
+	if !reflect.DeepEqual(got, want) {
 		t.Errorf("round-trip mismatch:\n got  %+v\n want %+v", got, want)
 	}
 }
@@ -68,7 +77,7 @@ func TestLoad_Missing_NotAnError(t *testing.T) {
 	if found {
 		t.Error("found = true for a missing file, want false")
 	}
-	if got != (Checkpoint{}) {
+	if !reflect.DeepEqual(got, Checkpoint{}) {
 		t.Errorf("checkpoint = %+v, want zero value for missing file", got)
 	}
 }
@@ -88,7 +97,7 @@ func TestLoad_MalformedJSON_IsError(t *testing.T) {
 	if found {
 		t.Error("found = true for malformed JSON, want false")
 	}
-	if got != (Checkpoint{}) {
+	if !reflect.DeepEqual(got, Checkpoint{}) {
 		t.Errorf("checkpoint = %+v, want zero value on decode error", got)
 	}
 }
@@ -114,7 +123,7 @@ func TestSave_OverwriteIsAtomicAndClean(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load after overwrite: %v", err)
 	}
-	if !found || got != second {
+	if !found || !reflect.DeepEqual(got, second) {
 		t.Errorf("after overwrite got %+v (found=%v), want %+v", got, found, second)
 	}
 
@@ -146,7 +155,7 @@ func TestSave_CreatesMissingParentDirs(t *testing.T) {
 	if err != nil || !found {
 		t.Fatalf("Load after nested Save: found=%v err=%v", found, err)
 	}
-	if got != want {
+	if !reflect.DeepEqual(got, want) {
 		t.Errorf("nested round-trip mismatch:\n got  %+v\n want %+v", got, want)
 	}
 }
@@ -163,7 +172,7 @@ func TestEncodeDecode_RoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if got != want {
+	if !reflect.DeepEqual(got, want) {
 		t.Errorf("encode/decode mismatch:\n got  %+v\n want %+v", got, want)
 	}
 }
@@ -191,15 +200,15 @@ func TestEncodeDecode_SpentUsdMicrosRoundTrips(t *testing.T) {
 	if got.SpentUsdMicros != 1_234_567 {
 		t.Errorf("SpentUsdMicros round-trip = %d, want 1234567", got.SpentUsdMicros)
 	}
-	if got != want {
+	if !reflect.DeepEqual(got, want) {
 		t.Errorf("round-trip mismatch:\n got  %+v\n want %+v", got, want)
 	}
 }
 
 // PhaseIndex (the phase-granular resume position WITHIN the in-progress
-// iteration) must round-trip exactly. v3 also persists an explicit zero at a
+// iteration) must round-trip exactly. Current checkpoints persist an explicit zero at a
 // clean iteration boundary so missing recovery state cannot decode as zero.
-func TestEncodeDecode_PhaseIndexRoundTripsAndV3PersistsZero(t *testing.T) {
+func TestEncodeDecode_PhaseIndexRoundTripsAndV4PersistsZero(t *testing.T) {
 	mid := currentCheckpoint("evolve", 4)
 	mid.PhaseIndex = 3
 	data, err := encode(mid)
@@ -210,7 +219,7 @@ func TestEncodeDecode_PhaseIndexRoundTripsAndV3PersistsZero(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if got.PhaseIndex != 3 || got != mid {
+	if got.PhaseIndex != 3 || !reflect.DeepEqual(got, mid) {
 		t.Errorf("PhaseIndex round-trip = %+v, want PhaseIndex 3 / %+v", got, mid)
 	}
 	zero, err := encode(currentCheckpoint("evolve", 4))
@@ -218,7 +227,7 @@ func TestEncodeDecode_PhaseIndexRoundTripsAndV3PersistsZero(t *testing.T) {
 		t.Fatalf("encode zero: %v", err)
 	}
 	if !strings.Contains(string(zero), `"phase_index": 0`) {
-		t.Errorf("a v3 PhaseIndex-0 checkpoint must persist explicit zero; got:\n%s", zero)
+		t.Errorf("a v4 PhaseIndex-0 checkpoint must persist explicit zero; got:\n%s", zero)
 	}
 }
 
@@ -227,6 +236,8 @@ func TestEncodeDecode_EvolveScanReportRequiresMidIterationPosition(t *testing.T)
 	mid := currentCheckpoint("evolve", 4)
 	mid.PhaseIndex = 1
 	mid.EvolveScanReport = report
+	mid.EvolveScanSemanticOutput = report
+	mid.PhaseSemanticOutputs["evolve/scan"] = report
 	data, err := encode(mid)
 	if err != nil {
 		t.Fatal(err)
@@ -245,19 +256,25 @@ func TestEncodeDecode_EvolveScanReportRequiresMidIterationPosition(t *testing.T)
 	}
 }
 
-func TestCheckpointV3BoundsEvolveScanReport(t *testing.T) {
+func TestCheckpointV4BoundsEvolveScanReport(t *testing.T) {
 	cp := currentCheckpoint("evolve", 1)
 	cp.PhaseIndex, cp.AgentCalls = 1, 1
 	cp.EvolveScanReport = strings.Repeat("x", checkpointScanReportMaxBytes)
+	cp.EvolveScanSemanticOutput = cp.EvolveScanReport
+	cp.PhaseSemanticOutputs["evolve/scan"] = cp.EvolveScanReport
 	if err := validateCurrentCheckpoint(cp); err != nil {
 		t.Fatalf("exact-limit report rejected: %v", err)
 	}
 	cp.EvolveScanReport += "x"
+	cp.EvolveScanSemanticOutput = cp.EvolveScanReport
+	cp.PhaseSemanticOutputs["evolve/scan"] = cp.EvolveScanReport
 	if err := validateCurrentCheckpoint(cp); err == nil ||
 		!strings.Contains(err.Error(), "valid UTF-8") {
 		t.Fatalf("oversized report error = %v", err)
 	}
 	cp.EvolveScanReport = string([]byte{0xff})
+	cp.EvolveScanSemanticOutput = cp.EvolveScanReport
+	cp.PhaseSemanticOutputs["evolve/scan"] = cp.EvolveScanReport
 	if err := validateCurrentCheckpoint(cp); err == nil ||
 		!strings.Contains(err.Error(), "valid UTF-8") {
 		t.Fatalf("invalid UTF-8 report error = %v", err)
@@ -266,8 +283,8 @@ func TestCheckpointV3BoundsEvolveScanReport(t *testing.T) {
 
 // BACK-COMPAT FOR DIAGNOSTICS: a checkpoint written before spent_usd_micros
 // existed still decodes with zero spend. It remains inspectable by status/doctor,
-// while autonomous resume separately rejects every pre-v3 generation because it
-// lacks a complete resource envelope.
+// while autonomous resume separately rejects every pre-v4 generation because it
+// lacks the complete materiality-bound recovery envelope.
 func TestDecode_OldCheckpointWithoutSpent_DefaultsZero(t *testing.T) {
 	// An on-disk checkpoint exactly as the pre-PR encoder produced it: every old field,
 	// and crucially NO spent_usd_micros key at all.
@@ -293,15 +310,15 @@ func TestDecode_OldCheckpointWithoutSpent_DefaultsZero(t *testing.T) {
 	}
 }
 
-// v3's recovery envelope writes zero spend explicitly. Missing spend remains
+// v4's recovery envelope writes zero spend explicitly. Missing spend remains
 // accepted only for the diagnostic-readable legacy generations pinned above.
-func TestEncode_V3ZeroSpentIsExplicit(t *testing.T) {
+func TestEncode_V4ZeroSpentIsExplicit(t *testing.T) {
 	zero, err := encode(currentCheckpoint("evolve", 1))
 	if err != nil {
 		t.Fatalf("encode: %v", err)
 	}
 	if !strings.Contains(string(zero), `"spent_usd_micros": 0`) {
-		t.Errorf("a v3 zero-spend checkpoint must persist explicit zero; got:\n%s", zero)
+		t.Errorf("a v4 zero-spend checkpoint must persist explicit zero; got:\n%s", zero)
 	}
 	nonzero := currentCheckpoint("evolve", 1)
 	nonzero.SpentUsdMicros = 500
@@ -311,6 +328,29 @@ func TestEncode_V3ZeroSpentIsExplicit(t *testing.T) {
 	}
 	if !strings.Contains(string(data), `"spent_usd_micros": 500`) {
 		t.Errorf("a billed checkpoint must persist spent_usd_micros; got:\n%s", data)
+	}
+}
+
+func TestSave_V4NormalizesMissingMaterialityToUnbound(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "checkpoint.json")
+	cp := currentCheckpoint("evolve", 1)
+	cp.Materiality = ""
+	if err := Save(path, cp, 0); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	got, found, err := Load(path)
+	if err != nil || !found {
+		t.Fatalf("Load: found=%v err=%v", found, err)
+	}
+	if got.Materiality != materiality.Unbound {
+		t.Fatalf("Materiality = %q, want %q", got.Materiality, materiality.Unbound)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"materiality": "materiality_not_bound"`) {
+		t.Fatalf("saved v4 checkpoint does not persist the unbound sentinel:\n%s", data)
 	}
 }
 

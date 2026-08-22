@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"os"
 	"path/filepath"
@@ -250,5 +251,13 @@ func TestApproveListSurfacesLegacyConflict(t *testing.T) {
 	out := captureStdout(t, func() { code = cmdApproveList(root) })
 	if code != 1 || !strings.Contains(out, "review: CONFLICT (approved + rejected)") {
 		t.Fatalf("conflict list = %d, output:\n%s", code, out)
+	}
+}
+
+func TestPositiveApprovalPropagatesMarkerRemovalSyncFailure(t *testing.T) {
+	want := errors.New("injected directory sync failure")
+	err := persistApprovalMarkerRemoval(t.TempDir(), func(string) error { return want })
+	if !errors.Is(err, want) {
+		t.Fatalf("marker removal sync error = %v, want wrapped injected error", err)
 	}
 }

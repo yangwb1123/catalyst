@@ -334,48 +334,69 @@ func secondaryTemplateContext(repoRoot, templatePath string) string {
 	return templateContext(repoRoot, "secondary_template", templatePath)
 }
 
-// writesAdrContext returns a context block that tells the agent to produce an
-// Architecture Decision Record (ADR) in the declared target directory. It is
-// only meaningful for design-stage phases that declare writes_adr
-// (design.yml's solution-architect). The context block includes:
-//   - The ADR target directory (e.g. docs/adr/)
-//   - The file naming convention (ADR-XXXX-title.md)
-//   - The ADR structure (Context → Decision → Consequences)
-//
-// We scan the existing ADR directory to determine the next sequence number.
-// This helper is deliberately read-only: creating the directory while building
-// a prompt made dry-run-like inspection mutate the repo. The command executor
-// authorizes condition/mode/lifecycle before passing WritesADR here; this
-// defense-in-depth layer re-validates condition syntax and target containment.
+// writesAdrContext provides the exact proposed-only ADR v2 output profile. It
+// remains read-only and revalidates declaration syntax and target containment.
 func writesAdrContext(repoRoot string, wa *asset.WritesADR) string {
-	if wa == nil || wa.Target == "" {
+	relTarget, nextSeq, ok := writesADRContextTarget(repoRoot, wa)
+	if !ok {
 		return ""
+	}
+	block := fmt.Sprintf(`Produce exactly one structurally valid proposed-only ADR v2 document.
+
+Target directory: %s
+Naming convention: ADR-%%04d-lowercase-hyphen-slug.md (next available: ADR-%04d-*.md)
+Use the next number in adr_id, document_name, and H1. The slug need not derive from the title.
+
+Exact framing (the JSON metadata is ONE compact canonical line; replace digest placeholders):
+~~~text
+---
+{"acceptance_id":null,"accepted_at_unix_ms":null,"adr_id":"ADR-%[2]04d","affected_node_ids":[],"alternatives":[{"alternative_id":"candidate-chosen","description":"Describe the chosen alternative.","disposition":"candidate","rationale":"Explain why it is chosen."},{"alternative_id":"rejected-other","description":"Describe a rejected alternative.","disposition":"rejected","rationale":"Explain why it is rejected."}],"api_version":"forgeos.architecture-decision-record/v2","approver_refs":["role:architecture-reviewer"],"assumption_claim_ids":[],"body_sha256":"<64-lowercase-hex-body-digest>","canonicalization":"forgeos.canonical-json/v1","compatibility":"Describe compatibility.","consequences":["Describe one consequence."],"context_claim_ids":[],"decision":"Describe the decision.","decision_driver_claim_ids":[],"document_name":"ADR-%[2]04d-decision-title.md","evidence_record_ids":[],"expires_at_unix_ms":null,"implementation_refs":[],"kind":"ArchitectureDecisionRecord","owner_refs":["role:architect"],"proposed_at_unix_ms":0,"revisit_triggers":[{"condition":"Describe a revisit condition.","evidence_required":["Describe required evidence."],"trigger_id":"revisit-condition"}],"risks":[],"rollback":"Describe rollback.","rollout":"Describe rollout.","scope_refs":["repo:architecture"],"self_sha256":"<64-lowercase-hex-self-digest>","status":"proposed","superseded_by":[],"supersedes":[],"title":"Decision Title","validation_plan":[{"description":"Describe validation.","due_trigger":"Describe when validation is due.","evidence_required":["Describe required evidence."],"owner_ref":"role:architect","success_criteria":"Describe success.","validation_id":"decision-validation"}]}
+---
+
+# ADR-%[2]04d: Decision Title
+
+## Context
+Describe the context.
+
+## Decision
+Describe the decision.
+
+## Consequences
+Describe consequences.
+
+## Validation
+Describe validation.
+
+## Limitations
+State limitations, including that declared owner/approver refs are not authentication or approval.
+~~~
+
+The body is the exact bytes from H1 through its final LF. Compute body_sha256 as SHA-256("forgeos.architecture-decision-record-body.v2\0" || body). Then compute self_sha256 as SHA-256("forgeos.architecture-decision-record.v2\0" || canonical JSON with only self_sha256 empty and final body_sha256 present || "\0" || body). Re-emit the final canonical JSON with self_sha256 filled.
+All set arrays must arrive raw-UTF-8 sorted and unique; structured arrays sort by their *_id. owner_refs, approver_refs, scope_refs, alternatives, validation_plan, revisit_triggers, consequences, and each evidence_required array are nonempty. Claim, Evidence, graph, implementation, and risk refs may stay empty; never invent unresolved references. This validator recognizes structure and digest binding only, never approval, authority, truth, graph completeness, or lifecycle transition.`, relTarget, nextSeq)
+	block += `
+Body text uses LF only and ends with exactly one LF. Every Unicode Cc control except LF is forbidden, as are bidi controls and U+2028/U+2029. No line may end in space or tab. H1 is followed by exactly one blank line; the five required H2 sections use the shown order and exact blank-line separators. Each section body must be nonempty and equal its Unicode TrimSpace result; any other H2 is forbidden.`
+	return contextMarker("writes_adr", block)
+}
+
+func writesADRContextTarget(repoRoot string, wa *asset.WritesADR) (string, int, bool) {
+	if wa == nil || wa.Target == "" {
+		return "", 0, false
 	}
 	if _, err := parseWritesADRCondition(wa.Condition); err != nil {
 		fmt.Fprintf(os.Stderr, "forge: WARNING writes_adr %v\n", err)
-		return ""
+		return "", 0, false
 	}
-	targetDir, relTarget, err := containedADRTarget(repoRoot, wa.Target)
+	targetDir, relative, err := containedADRTarget(repoRoot, wa.Target)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "forge: WARNING %v\n", err)
-		return ""
+		return "", 0, false
 	}
-	// Count existing ADRs to suggest the next sequence number.
-	nextSeq := nextADRSequence(targetDir)
-	block := fmt.Sprintf(`You are expected to produce an Architecture Decision Record (ADR) for your design.
-
-Target directory: %s
-Naming convention: ADR-%%04d-title.md (next available: ADR-%04d-*.md)
-
-Structure your ADR with these sections:
-  - Title: A short, descriptive name
-  - Status: Proposed | Accepted | Deprecated | Superseded
-  - Context: Why this decision is needed, what forces are at play
-  - Decision: The chosen approach and rationale
-  - Consequences: Trade-offs, risks, and follow-up work
-
-Review existing ADRs in the target directory for style reference.`, relTarget, nextSeq)
-	return contextMarker("writes_adr", block)
+	next := nextADRSequence(targetDir)
+	if next > 9999 {
+		fmt.Fprintln(os.Stderr, "forge: WARNING writes_adr ADR v2 sequence space is exhausted")
+		return "", 0, false
+	}
+	return relative, next, true
 }
 
 // nextADRSequence scans the ADR target directory for existing ADR-XXXX-*.md
@@ -426,8 +447,14 @@ func nextADRSequence(dir string) int {
 //     with 06-production-readiness.md — one phase, two review dimensions). Same
 //     missing-file WARN-not-block behavior as uses_template. Empty when the phase
 //     declares no secondary_template (the default — byte-for-byte unchanged output).
-func appendArtifactContext(ctx []string, repoRoot string, emitsFiles []string, templatePath, secondaryTemplatePath string, wa *asset.WritesADR) []string {
-	if ec := emitsContext(repoRoot, emitsFiles, func(msg string) { fmt.Fprintln(os.Stderr, msg) }); len(ec) > 0 {
+func appendArtifactContext(ctx []string, repoRoot string, emitsFiles []string, templatePath, secondaryTemplatePath string, wa *asset.WritesADR, frozenEmits ...[]string) []string {
+	var ec []string
+	if len(frozenEmits) > 0 {
+		ec = append([]string(nil), frozenEmits[0]...)
+	} else {
+		ec = emitsContext(repoRoot, emitsFiles, func(msg string) { fmt.Fprintln(os.Stderr, msg) })
+	}
+	if len(ec) > 0 {
 		ctx = append(ctx, ec...)
 	}
 	if wac := writesAdrContext(repoRoot, wa); wac != "" {

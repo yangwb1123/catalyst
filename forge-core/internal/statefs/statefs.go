@@ -252,8 +252,9 @@ func ReadRegularUnmodified(path string, maxBytes int64) ([]byte, bool, error) {
 	return data, true, nil
 }
 
-// AtomicWrite publishes data using an unpredictable O_EXCL sibling and rename.
-// Existing target aliases are rejected before any target mutation.
+// AtomicWrite publishes data using an unpredictable O_EXCL sibling and rename,
+// then fsyncs the containing directory before reporting success. Existing
+// target aliases are rejected before any target mutation.
 func AtomicWrite(path string, data []byte, perm os.FileMode) error {
 	dir := filepath.Dir(path)
 	if err := EnsurePrivateDir(dir); err != nil {
@@ -280,6 +281,13 @@ func AtomicWrite(path string, data []byte, perm os.FileMode) error {
 	}
 	if err := os.Rename(tempPath, path); err != nil {
 		return fmt.Errorf("statefs: commit %s: %w", path, err)
+	}
+	// The rename is not reported as a successful publication until its parent
+	// directory entry is durable. Keeping this in the primitive gives callers
+	// one unambiguous commit point instead of a live file followed by a separate
+	// fallible SyncDir step.
+	if err := SyncDir(dir); err != nil {
+		return fmt.Errorf("statefs: sync directory for %s: %w", path, err)
 	}
 	published, present, err := InspectRegular(path)
 	if err != nil || !present || !os.SameFile(tempInfo, published) {

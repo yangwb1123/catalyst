@@ -1,6 +1,9 @@
 package yaml2json
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
 
 // ── Sequence parsing ──────────────────────────────────────────────────────
 
@@ -113,11 +116,7 @@ func seqItemInlineSequence(itemText string) (any, error) {
 		return nil, err
 	}
 	if rest != "" {
-		// There's content after the sequence — treat as mapping.
-		item, _, err := parseInlineItem(itemText)
-		if err == nil && item != nil {
-			return item, nil
-		}
+		return nil, fmt.Errorf("trailing content after inline sequence: %q", rest)
 	}
 	return val, nil
 }

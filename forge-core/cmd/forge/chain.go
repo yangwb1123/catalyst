@@ -8,17 +8,14 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
+	"strings"
 	"sync"
-	"time"
 
 	"forgeos/forge-core/internal/asset"
 	"forgeos/forge-core/internal/converge"
 	"forgeos/forge-core/internal/mode"
-	"forgeos/forge-core/internal/statefs"
 	"forgeos/forge-core/internal/trace"
 )
 
@@ -129,73 +126,6 @@ func (c *chainAgentCounter) seed(used int) {
 	c.used = used
 }
 
-const chainStateFormat = "forgeos.chain-state.v2"
-
-// chainState is the versioned durable chain cursor and diagnostic snapshot.
-type chainState struct {
-	Format          string   `json:"_format"`
-	RunID           string   `json:"run_id,omitempty"`
-	Status          string   `json:"status"`
-	EntryStage      string   `json:"entry_stage,omitempty"`
-	CurrentStage    string   `json:"current_stage,omitempty"`
-	CompletedStages []string `json:"completed_stages,omitempty"`
-	Mode            string   `json:"mode,omitempty"`
-	Lifecycle       string   `json:"lifecycle,omitempty"`
-	Reason          string   `json:"reason,omitempty"`
-	AgentCalls      int      `json:"agent_calls,omitempty"`
-	MaxAgentCalls   int      `json:"max_agent_calls,omitempty"`
-	MaxChainStages  int      `json:"max_chain_stages"`
-	SpentUsdMicros  int64    `json:"spent_usd_micros,omitempty"`
-	BudgetCapMicros int64    `json:"budget_cap_micros,omitempty"`
-	UpdatedAtUnix   int64    `json:"updated_at_unix"`
-}
-
-func chainStatePath(root string) string {
-	return filepath.Join(forgeDir(root), "chain-state.json")
-}
-
-func saveChainState(root string, state chainState) error {
-	state.Format, state.UpdatedAtUnix = chainStateFormat, time.Now().Unix()
-	data, err := json.MarshalIndent(state, "", "  ")
-	if err != nil {
-		return fmt.Errorf("encode chain state: %w", err)
-	}
-	path := chainStatePath(root)
-	if err := statefs.EnsurePrivateDir(filepath.Dir(path)); err != nil {
-		return fmt.Errorf("secure chain state directory: %w", err)
-	}
-	if err := statefs.RemoveRegular(path + ".tmp"); err != nil {
-		return fmt.Errorf("reject legacy chain state temp: %w", err)
-	}
-	if err := statefs.AtomicWrite(path, append(data, '\n'), 0o600); err != nil {
-		return fmt.Errorf("commit chain state: %w", err)
-	}
-	return nil
-}
-
-// persistChainState is the runtime persistence seam. Tests replace it to model
-// an interrupted atomic commit while direct state fixtures keep using
-// saveChainState.
-var persistChainState = saveChainState
-
-func loadChainState(root string) (chainState, bool, error) {
-	data, found, err := statefs.ReadRegular(chainStatePath(root), 1<<20)
-	if err != nil {
-		return chainState{}, false, fmt.Errorf("read chain state: %w", err)
-	}
-	if !found {
-		return chainState{}, false, nil
-	}
-	var state chainState
-	if err := json.Unmarshal(data, &state); err != nil {
-		return chainState{}, true, fmt.Errorf("decode chain state: %w", err)
-	}
-	if state.Format != chainStateFormat {
-		return state, true, fmt.Errorf("unsupported chain state format %q (want %q)", state.Format, chainStateFormat)
-	}
-	return state, true, nil
-}
-
 func (s *chainState) complete(stage string) {
 	for _, done := range s.CompletedStages {
 		if done == stage {
@@ -203,24 +133,6 @@ func (s *chainState) complete(stage string) {
 		}
 	}
 	s.CompletedStages = append(s.CompletedStages, stage)
-}
-
-func validateResumableChainState(state chainState) error {
-	switch {
-	case state.RunID == "":
-		return fmt.Errorf("persisted waiting chain has no run_id")
-	case state.EntryStage == "" || state.CurrentStage == "":
-		return fmt.Errorf("persisted waiting chain lacks entry/current stage")
-	case state.Mode == "" || state.Lifecycle == "":
-		return fmt.Errorf("persisted waiting chain lacks mode/lifecycle policy")
-	case state.AgentCalls < 0 || state.MaxAgentCalls < 0:
-		return fmt.Errorf("persisted waiting chain has negative agent-call state")
-	case state.MaxChainStages < 1:
-		return fmt.Errorf("persisted waiting chain has invalid max_chain_stages")
-	case state.SpentUsdMicros < 0 || state.BudgetCapMicros < 0:
-		return fmt.Errorf("persisted waiting chain has negative budget state")
-	}
-	return nil
 }
 
 func sameStageSequence(got, want []string) bool {
@@ -259,7 +171,7 @@ func runStageChain(ctx context.Context, first asset.Workflow, o runOpts, logln f
 		return code
 	}
 	if !o.chain {
-		_, rejected, code := execOneStage(ctx, first, o, logln, lifecycle, tracer, budget, nil)
+		_, rejected, code, _ := execOneStage(ctx, first, o, logln, lifecycle, tracer, budget, nil)
 		if code == 0 {
 			if err := consumeRejectionAfterSuccess(first, o.root, rejected, logln); err != nil {
 				fmt.Fprintf(os.Stderr, "forge run: %v\n", err)
@@ -270,8 +182,9 @@ func runStageChain(ctx context.Context, first asset.Workflow, o runOpts, logln f
 	}
 	state := chainState{
 		RunID: tracer.RunID, EntryStage: first.Stage,
-		Mode: o.mode, Lifecycle: lifecycle,
-		MaxAgentCalls: o.maxAgentCalls, MaxChainStages: o.maxChainStages,
+		Mode: o.mode, Lifecycle: lifecycle, Materiality: o.materiality,
+		WorkflowDigests: make(map[string]string),
+		MaxAgentCalls:   o.maxAgentCalls, MaxChainStages: o.maxChainStages,
 		BudgetCapMicros: budget.CapUsdMicros(),
 	}
 	if resume != nil {
@@ -287,7 +200,7 @@ func runStageChain(ctx context.Context, first asset.Workflow, o runOpts, logln f
 	r := &chainRuntime{
 		ctx: ctx, opts: o, logln: logln, lifecycle: lifecycle,
 		tracer: tracer, budget: budget, guard: guard, calls: calls, state: state,
-		resumingApproval: resume != nil,
+		resumingApproval: resume != nil && resume.Status == "waiting_approval",
 	}
 	return r.run(first, len(state.CompletedStages))
 }
@@ -300,7 +213,13 @@ func haltInitialStageByPolicy(first asset.Workflow, o runOpts, lifecycle string,
 	if allowed {
 		return 0, false
 	}
-	state := chainState{RunID: tracer.RunID, Status: "halted", CurrentStage: first.Stage, Reason: reason}
+	state := chainState{RunID: tracer.RunID, Status: "halted", CurrentStage: first.Stage,
+		Materiality: o.materiality, WorkflowDigests: make(map[string]string), Reason: reason}
+	bound := first.OutputBindingContract == asset.OutputBindingContractLocalDigestV1
+	if err := state.bindWorkflow(first.Stage, checkpointWorkflowDigest(first), bound); err != nil {
+		fmt.Fprintf(os.Stderr, "forge run: bind halted workflow: %v\n", err)
+		return 1, true
+	}
 	if err := persistChainState(o.root, state); err != nil {
 		fmt.Fprintf(os.Stderr, "forge run: persist policy halt: %v\n", err)
 		return 1, true
@@ -320,9 +239,35 @@ func (r *chainRuntime) run(first asset.Workflow, startIndex int) int {
 	}
 }
 
+func loadBoundChainWorkflow(root, stage string, state chainState) (asset.Workflow, error) {
+	wf, err := loadWorkflowNativeOnly(root, stage)
+	if err != nil {
+		return asset.Workflow{}, fmt.Errorf("load persisted chain stage %q: %w", stage, err)
+	}
+	if err := validatePersistedWorkflowDigest(state, wf.Stage, checkpointWorkflowDigest(wf)); err != nil {
+		return asset.Workflow{}, err
+	}
+	if wf.OutputBindingContract == asset.OutputBindingContractLocalDigestV1 && state.Format != chainStateFormat {
+		return asset.Workflow{}, fmt.Errorf(
+			"chain state format %q is diagnostic-only for bound workflow %q; resume requires %q",
+			state.Format, stage, chainStateFormat,
+		)
+	}
+	if state.Format == chainStateFormat &&
+		stageIn(state.BoundStages, stage) != (wf.OutputBindingContract == asset.OutputBindingContractLocalDigestV1) {
+		return asset.Workflow{}, fmt.Errorf("persisted chain selector binding differs for stage %q", stage)
+	}
+	return wf, nil
+}
+
 func (r *chainRuntime) runOne(wf asset.Workflow, stageIndex int) (asset.Workflow, int, bool) {
 	if err := r.guard.Enter(wf.Stage); err != nil {
 		return asset.Workflow{}, r.fail(wf.Stage, "chain traversal rejected: "+err.Error(), 1), true
+	}
+	bound := wf.OutputBindingContract == asset.OutputBindingContractLocalDigestV1
+	if err := r.state.bindWorkflow(wf.Stage, checkpointWorkflowDigest(wf), bound); err != nil {
+		fmt.Fprintf(os.Stderr, "forge run: chain workflow binding failed: %v\n", err)
+		return asset.Workflow{}, 1, true
 	}
 	stageOpts := r.opts
 	if stageIndex > 0 {
@@ -339,15 +284,22 @@ func (r *chainRuntime) runOne(wf asset.Workflow, stageIndex int) (asset.Workflow
 		result := r.runExternalEvolve(wf, stageOpts)
 		return result.next, result.code, result.done
 	}
-	met, rejected, code := execOneStage(r.ctx, wf, stageOpts, r.logln, r.lifecycle, r.tracer, r.budget, r.calls.charge)
+	met, rejected, code, validateCompletion := execOneStage(r.ctx, wf, stageOpts, r.logln, r.lifecycle, r.tracer, r.budget, r.calls.charge)
 	if code != 0 {
 		if rejected {
+			r.state.dropStageRecovery(wf.Stage)
 			return asset.Workflow{}, r.rejectedReworkFailed(wf, code), true
 		}
 		return asset.Workflow{}, r.fail(wf.Stage, fmt.Sprintf("stage execution failed with exit code %d", code), code), true
 	}
+	if err := r.bindStageRecovery(wf); err != nil {
+		return asset.Workflow{}, r.fail(wf.Stage, "durable output binding: "+err.Error(), 1), true
+	}
 	if !met {
 		return asset.Workflow{}, r.notConverged(wf, rejected), true
+	}
+	if err := runStageCompletionValidator(validateCompletion); err != nil {
+		return asset.Workflow{}, r.fail(wf.Stage, "chain completion freshness: "+err.Error(), 1), true
 	}
 	r.state.complete(wf.Stage)
 	next, nextCode, done := r.advance(wf)
@@ -357,6 +309,17 @@ func (r *chainRuntime) runOne(wf asset.Workflow, stageIndex int) (asset.Workflow
 		}
 	}
 	return next, nextCode, done
+}
+
+func (state *chainState) dropStageRecovery(stage string) {
+	state.ensureRecoveryMaps()
+	for key := range state.PhaseReceipts {
+		if strings.HasPrefix(key, stage+"/") {
+			delete(state.PhaseReceipts, key)
+		}
+	}
+	delete(state.StageReceipts, stage)
+	delete(state.ApprovalContexts, stage)
 }
 
 func (r *chainRuntime) resumeApprovalDecision(wf asset.Workflow, stageOpts runOpts) (chainStepResult, bool) {
@@ -369,6 +332,7 @@ func (r *chainRuntime) resumeApprovalDecision(wf asset.Workflow, stageOpts runOp
 		return chainStepResult{code: r.fail(wf.Stage, err.Error(), 1), done: true}, true
 	}
 	if rejected {
+		r.state.dropStageRecovery(wf.Stage)
 		return chainStepResult{}, false
 	}
 	met := humanApproved(r.opts.root, wf.Stage, stageOpts.approved)
@@ -389,6 +353,9 @@ func (r *chainRuntime) runExternalEvolve(wf asset.Workflow, stageOpts runOpts) c
 			code: r.fail(wf.Stage, fmt.Sprintf("evolve loop stopped with exit code %d", code), code),
 			done: true,
 		}
+	}
+	if err := r.bindStageRecovery(wf); err != nil {
+		return chainStepResult{code: r.fail(wf.Stage, "durable output binding: "+err.Error(), 1), done: true}
 	}
 	r.state.complete(wf.Stage)
 	if err := r.persist("completed", "", "evolve loop reached a clean external stop"); err != nil {
@@ -416,7 +383,7 @@ func (r *chainRuntime) advance(wf asset.Workflow) (asset.Workflow, int, bool) {
 		return asset.Workflow{}, 0, true
 	}
 	r.logln(fmt.Sprintf("forge run: chain advancing stage=%s → %s", wf.Stage, nextName))
-	next, err := loadWorkflowForExecution(r.opts.root, nextName, r.opts.mode, r.lifecycle)
+	next, err := loadWorkflowForExecution(r.opts.root, nextName, r.opts.mode, r.lifecycle, r.opts.materiality)
 	if err != nil {
 		return asset.Workflow{}, r.fail(nextName, fmt.Sprintf("cannot load next workflow %q: %v", nextName, err), 1), true
 	}
@@ -456,12 +423,19 @@ func (r *chainRuntime) rejectedReworkFailed(wf asset.Workflow, code int) int {
 
 func (r *chainRuntime) persist(status, current, reason string) error {
 	r.state.Status, r.state.CurrentStage, r.state.Reason = status, current, reason
-	r.state.Mode, r.state.Lifecycle = r.opts.mode, r.lifecycle
+	r.state.Mode, r.state.Lifecycle, r.state.Materiality = r.opts.mode, r.lifecycle, r.opts.materiality
 	r.state.AgentCalls = r.calls.count()
 	r.state.SpentUsdMicros = r.budget.SpentUsdMicros()
 	r.state.BudgetCapMicros = r.budget.CapUsdMicros()
 	r.state.MaxAgentCalls = r.opts.maxAgentCalls
 	r.state.MaxChainStages = r.opts.maxChainStages
+	if err := r.refreshReceiptHead(); err != nil {
+		return err
+	}
+	r.state.Format = chainStateFormat
+	if err := validateBoundChainRecovery(r.opts.root, r.state); err != nil {
+		return fmt.Errorf("validate chain recovery before commit: %w", err)
+	}
 	return persistChainState(r.opts.root, r.state)
 }
 

@@ -1,6 +1,9 @@
 package yaml2json
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
 
 // ── Parser ────────────────────────────────────────────────────────────────
 
@@ -40,27 +43,33 @@ func parseValue(lines []line, pos int, parentIndent int) (any, int, error) {
 		return parseMapping(lines, pos, parentIndent)
 	}
 
-	// Inline sequence: [a, b, c]
-	if strings.HasPrefix(text, "[") {
-		val, _, err := parseInlineSequence(text)
-		if err != nil {
-			return nil, pos, err
-		}
-		return val, pos + 1, nil
-	}
-
-	// Inline mapping: {key: val, ...}
-	if strings.HasPrefix(text, "{") {
-		val, _, err := parseInlineMapping(text)
-		if err != nil {
-			return nil, pos, err
-		}
-		return val, pos + 1, nil
+	if strings.HasPrefix(text, "[") || strings.HasPrefix(text, "{") {
+		val, err := parseExactInlineValue(text)
+		return val, pos + 1, err
 	}
 
 	// Scalar value.
 	val := parseScalar(text)
 	return val, pos + 1, nil
+}
+
+func parseExactInlineValue(text string) (any, error) {
+	var val any
+	sequence, rest, err := parseInlineSequence(text)
+	val = sequence
+	kind := "sequence"
+	if strings.HasPrefix(text, "{") {
+		mapping, mappingRest, mappingErr := parseInlineMapping(text)
+		val, rest, err = mapping, mappingRest, mappingErr
+		kind = "mapping"
+	}
+	if err != nil {
+		return nil, err
+	}
+	if rest != "" {
+		return nil, fmt.Errorf("trailing content after inline %s: %q", kind, rest)
+	}
+	return val, nil
 }
 
 // containsMapping checks if a line looks like a mapping key (contains " :" or ":" followed by space or end).

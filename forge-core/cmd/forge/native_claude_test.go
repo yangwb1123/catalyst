@@ -65,6 +65,7 @@ func buildNativeFakeClaude(t *testing.T, path, behavior string) {
 const nativeFakeClaudeSource = `package main
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -204,8 +205,49 @@ func writePhaseArtifacts(phase, prompt string) {
 func writeDesignADR(phase, prompt string) {
 	match := regexp.MustCompile("next available: ADR-([0-9]+)-\\*\\.md").FindStringSubmatch(prompt)
 	if len(match) == 2 {
-		appendArtifact("docs/adr/ADR-"+match[1]+"-deterministic-design.md", phase)
+		writeProposedADRV2("ADR-"+match[1], "Deterministic Design")
 	}
+}
+
+func writeProposedADRV2(adrID, title string) {
+	name := adrID + "-deterministic-design.md"
+	body := fmt.Sprintf("# %s: %s\n\n## Context\nThe deterministic fake needs an architecture decision.\n\n## Decision\nEmit exact proposed-only ADR v2 bytes.\n\n## Consequences\nWorkflow tests exercise strict ADR validation.\n\n## Validation\nRun the shipped workflow end-to-end test.\n\n## Limitations\nThis fixture carries no approval or authority.\n", adrID, title)
+	metadata := fakeADRMetadata(name, adrID, title)
+	metadata["body_sha256"] = fakeADRDigest("forgeos.architecture-decision-record-body.v2\x00", []byte(body))
+	blank, _ := json.Marshal(metadata)
+	metadata["self_sha256"] = fakeADRDigest("forgeos.architecture-decision-record.v2\x00",
+		append(append(blank, 0), []byte(body)...))
+	frontmatter, _ := json.Marshal(metadata)
+	path := filepath.Join("docs", "adr", name)
+	_ = os.MkdirAll(filepath.Dir(path), 0o755)
+	_ = os.WriteFile(path, []byte("---\n"+string(frontmatter)+"\n---\n\n"+body), 0o600)
+}
+
+func fakeADRMetadata(name, adrID, title string) map[string]any {
+	return map[string]any{
+		"acceptance_id": nil, "accepted_at_unix_ms": nil, "adr_id": adrID,
+		"affected_node_ids": []string{},
+		"alternatives": []map[string]any{
+			{"alternative_id": "candidate-v2", "description": "Use exact v2 bytes.", "disposition": "candidate", "rationale": "It is deterministic."},
+			{"alternative_id": "rejected-yaml", "description": "Use general YAML.", "disposition": "rejected", "rationale": "It is ambiguous."}},
+		"api_version": "forgeos.architecture-decision-record/v2", "approver_refs": []string{"role:reviewer"},
+		"assumption_claim_ids": []string{}, "body_sha256": "", "canonicalization": "forgeos.canonical-json/v1",
+		"compatibility": "Legacy ADRs remain unchanged.", "consequences": []string{"New ADRs have deterministic bytes."},
+		"context_claim_ids": []string{}, "decision": "Emit an exact proposed-only ADR v2 document.",
+		"decision_driver_claim_ids": []string{}, "document_name": name, "evidence_record_ids": []string{},
+		"expires_at_unix_ms": nil, "implementation_refs": []string{}, "kind": "ArchitectureDecisionRecord",
+		"owner_refs": []string{"role:architect"}, "proposed_at_unix_ms": int64(1),
+		"revisit_triggers": []map[string]any{{"condition": "The lifecycle contract changes.", "evidence_required": []string{"An adopted replacement contract."}, "trigger_id": "lifecycle-change"}},
+		"risks": []any{}, "rollback": "Stop emitting the test fixture.", "rollout": "Use it only in tests.",
+		"scope_refs": []string{"repo:architecture"}, "self_sha256": "", "status": "proposed",
+		"superseded_by": []string{}, "supersedes": []string{}, "title": title,
+		"validation_plan": []map[string]any{{"description": "Run the shipped workflow.", "due_trigger": "During the test.", "evidence_required": []string{"A passing end-to-end test."}, "owner_ref": "role:architect", "success_criteria": "The ADR is captured.", "validation_id": "workflow-test"}},
+	}
+}
+
+func fakeADRDigest(prefix string, data []byte) string {
+	digest := sha256.Sum256(append([]byte(prefix), data...))
+	return fmt.Sprintf("%x", digest[:])
 }
 
 func appendVerdict(path string) {

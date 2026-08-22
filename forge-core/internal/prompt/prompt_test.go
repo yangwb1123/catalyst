@@ -49,8 +49,8 @@ func testRepoRoot(t *testing.T) string {
 // ground truth, not just a role. A non-empty query keeps the ADR lane populated.
 func TestGather_RealRepoHasADRsAndConstraints(t *testing.T) {
 	joined := strings.Join(Gather(testRepoRoot(t), "go core stack"), "\n")
-	if !strings.Contains(joined, "ADR 0001") {
-		t.Errorf("expected ADR titles in context; got: %.200s", joined)
+	if !strings.Contains(joined, "ADR 0002") {
+		t.Errorf("expected the Go-stack ADR in context; got: %.200s", joined)
 	}
 	if !strings.Contains(joined, "500") {
 		t.Errorf("expected hard constraints (<=500 lines); got: %.300s", joined)
@@ -60,9 +60,8 @@ func TestGather_RealRepoHasADRsAndConstraints(t *testing.T) {
 // The Context Engine must inject hard constraints + RETRIEVED ADRs + memory. This
 // asserts the retrieval lane (a query matching the Go-stack ADR ranks it in) AND,
 // critically, that the first 6 NON-NEGOTIABLE hard constraints are STILL injected
-// (never filtered out by retrieval). With today's tiny ADR corpus top-K covers
-// every ADR, so retrieval cannot drop one — but the hard-constraint guarantee is
-// the load-bearing assertion regardless of corpus size.
+// (never filtered out by retrieval). The ADR corpus is larger than top-K, so the
+// query-specific assertion also prevents a relevant decision from being displaced.
 func TestGather_RetrievesADRsAndAlwaysKeepsHardConstraints(t *testing.T) {
 	ctx := Gather(testRepoRoot(t), "stack polyglot go")
 	joined := strings.Join(ctx, "\n")

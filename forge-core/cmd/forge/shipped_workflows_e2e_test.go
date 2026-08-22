@@ -54,9 +54,7 @@ func (e shippedWorkflowE2E) discover(t *testing.T) {
 
 func (e shippedWorkflowE2E) waitForDeploy(t *testing.T) chainState {
 	t.Helper()
-	code, out := captureChainOutput(t, func() int {
-		return cmdRun(shippedRunArgs("design", e.root, e.fake, true, true, "engineering"))
-	})
+	code, out := advanceShippedChainToDeploy(t, e.root, e.fake, "engineering")
 	if code != exitChainIncomplete ||
 		!strings.Contains(out, "waiting for human approval at stage=deploy") {
 		t.Fatalf("real spine first pass exit=%d, want deploy wait; output:\n%s", code, out)
@@ -70,6 +68,24 @@ func (e shippedWorkflowE2E) waitForDeploy(t *testing.T) chainState {
 	assertFilesNonEmpty(t, e.root, releaseApprovalFiles["deploy"])
 	assertSingleDesignADR(t, e.root)
 	return waiting
+}
+
+func advanceShippedChainToDeploy(t *testing.T, root, fake, selectedMode string) (int, string) {
+	t.Helper()
+	code, output := captureChainOutput(t, func() int {
+		return cmdRun(shippedRunArgs("design", root, fake, true, false, selectedMode))
+	})
+	if code != exitChainIncomplete || !strings.Contains(output, "approval at stage=design") {
+		t.Fatalf("bound Design did not stop for v3 approval: exit=%d\n%s", code, output)
+	}
+	captureStdout(t, func() {
+		if code := writeApproval(root, "design", true); code != 0 {
+			t.Fatalf("approve design = %d", code)
+		}
+	})
+	return captureChainOutput(t, func() int {
+		return cmdRun(shippedRunArgs("design", root, fake, true, false, selectedMode))
+	})
 }
 
 func (e shippedWorkflowE2E) rejectDeploy(t *testing.T, waiting chainState) {
@@ -120,7 +136,7 @@ func (e shippedWorkflowE2E) approveDeployAndEvolve(t *testing.T, waiting chainSt
 func (e shippedWorkflowE2E) rollback(t *testing.T) {
 	t.Helper()
 	code, out := captureChainOutput(t, func() int {
-		return cmdRun(shippedRunArgs("rollback", e.root, e.fake, true, false))
+		return cmdRun(shippedRunArgs("rollback", e.root, e.fake, true, false, "engineering"))
 	})
 	if code != exitChainIncomplete ||
 		!strings.Contains(out, "waiting for human approval at stage=rollback") {
@@ -146,7 +162,7 @@ func (e shippedWorkflowE2E) rejectAndApproveRollback(t *testing.T) {
 		}
 	})
 	code, out := captureChainOutput(t, func() int {
-		return cmdRun(shippedRunArgs("rollback", e.root, e.fake, true, false))
+		return cmdRun(shippedRunArgs("rollback", e.root, e.fake, true, false, "engineering"))
 	})
 	if code != exitChainIncomplete || !strings.Contains(out, "marker consumed") {
 		t.Fatalf("rollback rejection pass exit=%d; output:\n%s", code, out)
@@ -157,7 +173,7 @@ func (e shippedWorkflowE2E) rejectAndApproveRollback(t *testing.T) {
 		}
 	})
 	code, out = captureChainOutput(t, func() int {
-		return cmdRun(shippedRunArgs("rollback", e.root, e.fake, true, false))
+		return cmdRun(shippedRunArgs("rollback", e.root, e.fake, true, false, "engineering"))
 	})
 	if code != 0 {
 		t.Fatalf("approved rollback exit=%d; output:\n%s", code, out)

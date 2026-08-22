@@ -10,6 +10,7 @@ import (
 
 	"forgeos/forge-core/internal/asset"
 	"forgeos/forge-core/internal/execbound"
+	"forgeos/forge-core/internal/outputbinding"
 )
 
 // defaultMaxAgentDepth bounds nested agent spawns before the recursion guard
@@ -31,6 +32,11 @@ const agentDepthEnv = "FORGE_AGENT_DEPTH"
 type CommandExecutor struct {
 	// Build returns the argv to run for a phase. An empty result is an error.
 	Build func(p asset.Phase, mode string) []string
+	// FinalizeCommand is an OPTIONAL fallible boundary after Build and before any
+	// input rewriting or process creation. It may append a runtime-computed
+	// challenge/binding to the final prompt. Returning an error or empty argv
+	// fails closed as KindConfig and guarantees zero process spawn.
+	FinalizeCommand func(p asset.Phase, mode string, argv []string) ([]string, error)
 	// ValidateConfig is an OPTIONAL phase-aware authorization check run before
 	// Build constructs an argv. It lets a caller enforce workflow/agent security
 	// boundaries without teaching this generic process runner about a particular
@@ -79,8 +85,8 @@ type CommandExecutor struct {
 	// PATH. This is intentionally stronger than the ordinary minimal policy.
 	RestrictedEnv bool
 	Log           func(string)
-	// Observe, when set, receives a finished command's phase name, RAW captured output
-	// (post-truncation, pre-render), and the command's measured wall-clock LATENCY (the
+	// Observe, when set, receives a successfully VALIDATED command's phase name,
+	// complete untrimmed captured output and measured wall-clock LATENCY (the
 	// time cmd.Run() took — see Now). It is a generic output SINK: this spawner hands the
 	// bytes (and the duration) back to the caller and does NOT interpret them — the caller
 	// may parse an executor-specific structure out of the output (e.g. a claude `-p
@@ -89,8 +95,13 @@ type CommandExecutor struct {
 	// claude-specific): every command has one, exactly as every command has output, so it
 	// rides the SAME sink rather than a parallel callback — the caller attributes it to a
 	// model the same way it attributes the parsed cost. nil = not observed (the test/default
-	// path, byte-for-byte unchanged).
+	// path, byte-for-byte unchanged). Failed commands and outputs rejected by any
+	// machine contract are never observed, so verdict/feed-forward consumers cannot
+	// publish an unaccepted result.
 	Observe func(phase, output string, latency time.Duration)
+	// ObserveSemantic publishes an already extracted provider-neutral payload.
+	// Recovery uses it to avoid applying transport decoding a second time.
+	ObserveSemantic func(phase, output string)
 	// ValidateOutput is an OPTIONAL machine-contract check applied after a command
 	// exits successfully. It receives the same human-readable output RenderLog
 	// would print. A validation error turns the phase into a terminal KindFailed
@@ -102,6 +113,17 @@ type CommandExecutor struct {
 	// caller to enforce transport metadata (for example type/result/is_error)
 	// without changing the generic executor's vendor-neutral behavior.
 	ValidateRawOutput func(phase, output string) error
+	// CommitValidatedOutput is an OPTIONAL durable-commit hook. It runs only after
+	// the command exits successfully and both output validators accept, but before
+	// Observe publishes the result to any in-memory consumer. rawOutput is the exact
+	// untrimmed retained observation; output is the rendered machine-visible value.
+	// An error fails the phase closed and suppresses Observe. This is the transaction
+	// seam used by content-addressed output receipts.
+	CommitValidatedOutput func(phase, rawOutput, semanticOutput string, latency time.Duration) error
+	// SemanticOutput converts a validated transport observation into the exact
+	// provider-neutral payload whose digest and phase contract are committed.
+	// Nil uses the same rendered/log-visible value as legacy ValidateOutput.
+	SemanticOutput func(rawOutput string) (string, error)
 	// Now supplies the current time for the wall-clock LATENCY measurement bracketing
 	// cmd.Run() — the deterministic-test twin of Engine.Sleep / trace.Now. nil selects the
 	// production default (time.Now), so a real run measures the true agent-phase duration; a
@@ -148,10 +170,8 @@ func (c CommandExecutor) Execute(ctx context.Context, p asset.Phase, mode string
 	if c.Build == nil {
 		return configErr(p.Name, nil) // nil Build: nothing to run, permanent.
 	}
-	if c.ValidateConfig != nil {
-		if err := c.ValidateConfig(p, mode); err != nil {
-			return configErr(p.Name, err)
-		}
+	if err := c.validatePhaseConfig(p, mode); err != nil {
+		return err
 	}
 	var sandboxErr error
 	c, sandboxErr = c.withSandboxRunner(p.Name)
@@ -164,6 +184,16 @@ func (c CommandExecutor) Execute(ctx context.Context, p asset.Phase, mode string
 	argv := c.Build(p, mode)
 	if len(argv) == 0 {
 		return configErr(p.Name, nil) // empty argv: misconfigured, permanent.
+	}
+	if c.FinalizeCommand != nil {
+		var finalizeErr error
+		argv, finalizeErr = c.FinalizeCommand(p, mode, append([]string(nil), argv...))
+		if finalizeErr != nil {
+			return configErr(p.Name, fmt.Errorf("finalize command: %w", finalizeErr))
+		}
+		if len(argv) == 0 {
+			return configErr(p.Name, fmt.Errorf("finalize command returned empty argv"))
+		}
 	}
 	argv, input, useStdin, err := c.prepareInput(p.Name, argv)
 	if err != nil {
@@ -184,6 +214,16 @@ func (c CommandExecutor) Execute(ctx context.Context, p asset.Phase, mode string
 
 	res, latency := c.runMeasured(ctx, argv, depth, input, useStdin)
 	return c.finish(p.Name, argv, res, latency)
+}
+
+func (c CommandExecutor) validatePhaseConfig(p asset.Phase, mode string) error {
+	if c.ValidateConfig == nil {
+		return nil
+	}
+	if err := c.ValidateConfig(p, mode); err != nil {
+		return configErr(p.Name, err)
+	}
+	return nil
 }
 
 func (c CommandExecutor) prepareInput(phase string, argv []string) ([]string, string, bool, error) {
@@ -244,33 +284,19 @@ func (c CommandExecutor) runMeasured(ctx context.Context, argv []string, depth i
 	return res, c.now().Sub(start)
 }
 
-// finish handles a completed command: it hands the raw output AND measured latency to the
-// optional sink, logs a possibly-rendered view, and (on failure) classifies the error —
-// consulting the optional overload judge. Split out of Execute so each stays within the
-// function-length ceiling; the behavior is unchanged except for the new latency the sink
-// receives. res carries the retained output, the run error, and the ctx error captured at
-// the end of the run (the deadline cause); latency is the wall-clock span bracketing the run
-// (see Now).
+// finish validates and durably commits a successful output before publishing it
+// to Observe. Failed or rejected attempts are logged/classified but never enter
+// the accepted-output sink.
 func (c CommandExecutor) finish(phase string, argv []string, res execbound.Result, latency time.Duration) error {
-	// Both observe and the log renderer are nil-safe and identity-by-default, so the no-hook
-	// path is byte-for-byte unchanged.
 	observed := res.Observed()
 	rendered := res.Rendered()
-	c.observe(phase, observed, latency)
 	visible := c.renderForLog(rendered)
 	c.logf("phase %s: ran %q -> %s", phase, strings.Join(argv, " "), visible)
 	if res.Err == nil {
-		if c.ValidateRawOutput != nil {
-			if err := c.ValidateRawOutput(phase, rendered); err != nil {
-				return &ExecError{Phase: phase, Kind: KindFailed, Err: fmt.Errorf("raw output contract: %w", err)}
-			}
+		if res.Total > int64(res.Retained) {
+			return outputTruncatedErr(phase, res.Retained, res.Total)
 		}
-		if c.ValidateOutput != nil {
-			if err := c.ValidateOutput(phase, visible); err != nil {
-				return &ExecError{Phase: phase, Kind: KindFailed, Err: fmt.Errorf("output contract: %w", err)}
-			}
-		}
-		return nil
+		return c.acceptOutput(phase, observed, visible, latency)
 	}
 	// Ask the optional caller-injected judge whether this failure was a transient overload
 	// (e.g. a vendor 529). nil-safe: with no hook the verdict is false, so classifyRunErr keeps
@@ -279,18 +305,66 @@ func (c CommandExecutor) finish(phase string, argv []string, res execbound.Resul
 	return classifyRunErr(phase, res.Err, res.CtxErr, isOverload)
 }
 
+func (c CommandExecutor) acceptOutput(phase, observed, visible string, latency time.Duration) error {
+	if c.ValidateRawOutput != nil {
+		if err := c.ValidateRawOutput(phase, observed); err != nil {
+			return outputContractErr(phase, "raw output contract", err)
+		}
+	}
+	semantic, err := c.semanticOutput(observed, visible)
+	if err != nil {
+		return outputContractErr(phase, "semantic output extraction", err)
+	}
+	if c.ValidateOutput != nil {
+		if err := c.ValidateOutput(phase, semantic); err != nil {
+			return outputContractErr(phase, "output contract", err)
+		}
+	}
+	if c.CommitValidatedOutput != nil {
+		if err := c.CommitValidatedOutput(phase, observed, semantic, latency); err != nil {
+			return outputContractErr(phase, "validated output commit", err)
+		}
+	}
+	c.observe(phase, observed, latency)
+	return nil
+}
+
+func (c CommandExecutor) semanticOutput(observed, visible string) (string, error) {
+	if c.SemanticOutput == nil {
+		return visible, nil
+	}
+	return c.SemanticOutput(observed)
+}
+
+func outputContractErr(phase, label string, err error) error {
+	return &ExecError{Phase: phase, Kind: KindFailed, Err: fmt.Errorf("%s: %w", label, err)}
+}
+
 // RestoreValidatedOutput revalidates a durable provider-neutral phase result and
 // feeds it back through Observe without spawning an Agent. Evolve resume uses
 // this to rebuild an in-memory feed-forward ledger while preserving the
 // phase-granular guarantee that completed mutable/billed phases are not replayed.
-func (c CommandExecutor) RestoreValidatedOutput(p asset.Phase, output string) error {
+func (c CommandExecutor) RestoreValidatedOutput(
+	p asset.Phase, output string, receipts ...outputbinding.AgentOutputReceipt,
+) error {
+	if len(receipts) > 0 {
+		receipt := receipts[0]
+		if receipt.Phase != p.Name || int64(len([]byte(output))) != receipt.SemanticOutputBytes ||
+			outputbinding.SHA256([]byte(output)) != receipt.SemanticOutputSHA256 {
+			return fmt.Errorf("phase %s: restored output differs from receipt", p.Name)
+		}
+	}
 	if c.ValidateOutput == nil {
 		return fmt.Errorf("phase %s: output validator is unavailable", p.Name)
 	}
 	if err := c.ValidateOutput(p.Name, output); err != nil {
 		return fmt.Errorf("phase %s: restored output contract: %w", p.Name, err)
 	}
-	c.observe(p.Name, output, 0)
+	if len(receipts) > 0 && c.ObserveSemantic != nil {
+		c.ObserveSemantic(p.Name, output)
+	} else {
+		c.observe(p.Name, output, 0)
+	}
 	return nil
 }
 
