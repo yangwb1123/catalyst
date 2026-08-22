@@ -1,0 +1,407 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forgeos.dev/contracts/planning-capability-ownership-projection-v1.schema.json",
+  "title": "ForgeOS planning Capability ownership projection v1",
+  "description": "Closed projection envelope for complete primary-owner coverage and declared logical adapter references derived from two caller-supplied exact planning YAML byte strings.",
+  "$comment": "JSON Schema is structural only. A conforming projector must strictly decode the embedded RFC 4648 base64, bind and parse the exact raw YAML bytes with the frozen subset below, enforce complete and unique ownership, derive every field and digest, and preserve the authority-neutral planning-only boundary.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "api_version", "authority_semantics", "bindings", "canonicalization",
+    "coverage", "kind", "positive_result", "projection_mode",
+    "projection_sha256", "request", "request_sha256", "status"
+  ],
+  "properties": {
+    "api_version": {"const": "forgeos.planning-capability-ownership-projection/v1"},
+    "authority_semantics": {"$ref": "#/$defs/authoritySemantics"},
+    "bindings": {
+      "type": "array", "minItems": 1, "maxItems": 512,
+      "items": {"$ref": "#/$defs/binding"}
+    },
+    "canonicalization": {"const": "forgeos.canonical-json/v1"},
+    "coverage": {"$ref": "#/$defs/coverage"},
+    "kind": {"const": "PlanningCapabilityOwnershipProjection"},
+    "positive_result": {
+      "const": "PROJECTED_PLANNING_CAPABILITY_OWNERSHIP_ONLY (complete declared primary-owner coverage and logical adapter references for the supplied planning sources only; no file existence, Skill availability, Registry mutation, authentication, authorization, permission, invocation, routing, execution, persistence, transition, or effect attestation)"
+    },
+    "projection_mode": {"const": "planning_only_declared_ownership_and_logical_adapter_refs"},
+    "projection_sha256": {"$ref": "#/$defs/hash"},
+    "request": {"$ref": "#/$defs/request"},
+    "request_sha256": {"$ref": "#/$defs/hash"},
+    "status": {"const": "planning_only"}
+  },
+  "$defs": {
+    "authoritySemantics": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "adapter_file_existence", "adapter_skill_availability", "attestations",
+        "authentication_attestation", "authorization_decision",
+        "capability_invocation", "capability_registry_mutation",
+        "effect_attestation", "execution_attestation", "grant_or_pdp_activation",
+        "implementation_selection", "ownership_authority_attestation",
+        "permission_attestation", "persistence", "runtime_routing",
+        "source_authentication", "transition_attestation"
+      ],
+      "properties": {
+        "adapter_file_existence": {"const": "not_evaluated"},
+        "adapter_skill_availability": {"const": "not_evaluated"},
+        "attestations": {"const": []},
+        "authentication_attestation": {"const": false},
+        "authorization_decision": {"const": "none"},
+        "capability_invocation": {"const": false},
+        "capability_registry_mutation": {"const": false},
+        "effect_attestation": {"const": false},
+        "execution_attestation": {"const": false},
+        "grant_or_pdp_activation": {"const": false},
+        "implementation_selection": {"const": false},
+        "ownership_authority_attestation": {"const": false},
+        "permission_attestation": {"const": false},
+        "persistence": {"const": "none"},
+        "runtime_routing": {"const": false},
+        "source_authentication": {"const": false},
+        "transition_attestation": {"const": false}
+      }
+    },
+    "base64Catalog": {
+      "type": "string", "minLength": 4, "maxLength": 349528,
+      "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$"
+    },
+    "base64Mapping": {
+      "type": "string", "minLength": 4, "maxLength": 174764,
+      "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$"
+    },
+    "binding": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "binding_sha256", "capability_id", "catalog_node_ids",
+        "catalog_occurrence_count", "declared_logical_adapter_ref",
+        "implementation_wave", "owner_skill", "physical_resolution",
+        "request_sha256", "skill_availability"
+      ],
+      "properties": {
+        "binding_sha256": {"$ref": "#/$defs/hash"},
+        "capability_id": {"$ref": "#/$defs/identifier"},
+        "catalog_node_ids": {
+          "type": "array", "minItems": 1, "maxItems": 64,
+          "uniqueItems": true, "items": {"$ref": "#/$defs/nodeId"}
+        },
+        "catalog_occurrence_count": {"type": "integer", "minimum": 1, "maximum": 64},
+        "declared_logical_adapter_ref": {"$ref": "#/$defs/logicalAdapterRef"},
+        "implementation_wave": {"type": "integer", "minimum": 1, "maximum": 6},
+        "owner_skill": {"$ref": "#/$defs/identifier"},
+        "physical_resolution": {"const": "not_performed"},
+        "request_sha256": {"$ref": "#/$defs/hash"},
+        "skill_availability": {"const": "not_evaluated"}
+      }
+    },
+    "catalogSource": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "content_base64", "content_bytes", "content_encoding", "content_sha256",
+        "document_name", "media_type", "source_role"
+      ],
+      "properties": {
+        "content_base64": {"$ref": "#/$defs/base64Catalog"},
+        "content_bytes": {"type": "integer", "minimum": 1, "maximum": 262144},
+        "content_encoding": {"const": "base64-rfc4648-canonical"},
+        "content_sha256": {"$ref": "#/$defs/hash"},
+        "document_name": {"const": "capability-catalog.v1.yml"},
+        "media_type": {"const": "application/yaml"},
+        "source_role": {"const": "capability_catalog"}
+      }
+    },
+    "coverage": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "binding_count", "capability_occurrence_count", "catalog_node_count",
+        "mapped_capability_count", "mapping_package_count",
+        "unique_capability_count", "unmapped_capability_ids",
+        "unreferenced_mapping_capability_ids"
+      ],
+      "properties": {
+        "binding_count": {"type": "integer", "minimum": 1, "maximum": 512},
+        "capability_occurrence_count": {"type": "integer", "minimum": 1, "maximum": 4096},
+        "catalog_node_count": {"type": "integer", "minimum": 1, "maximum": 64},
+        "mapped_capability_count": {"type": "integer", "minimum": 1, "maximum": 512},
+        "mapping_package_count": {"type": "integer", "minimum": 1, "maximum": 64},
+        "unique_capability_count": {"type": "integer", "minimum": 1, "maximum": 512},
+        "unmapped_capability_ids": {"const": []},
+        "unreferenced_mapping_capability_ids": {"const": []}
+      }
+    },
+    "hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "identifier": {
+      "type": "string", "minLength": 1, "maxLength": 160,
+      "pattern": "^[a-z0-9][a-z0-9._:/-]*$"
+    },
+    "logicalAdapterRef": {
+      "type": "string", "minLength": 18, "maxLength": 192,
+      "pattern": "^\\.agent/skills/[a-z0-9][a-z0-9._-]*\\.md$"
+    },
+    "mappingSource": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "content_base64", "content_bytes", "content_encoding", "content_sha256",
+        "document_name", "media_type", "source_role"
+      ],
+      "properties": {
+        "content_base64": {"$ref": "#/$defs/base64Mapping"},
+        "content_bytes": {"type": "integer", "minimum": 1, "maximum": 131072},
+        "content_encoding": {"const": "base64-rfc4648-canonical"},
+        "content_sha256": {"$ref": "#/$defs/hash"},
+        "document_name": {"const": "capability-skill-map.v1.yml"},
+        "media_type": {"const": "application/yaml"},
+        "source_role": {"const": "capability_skill_map"}
+      }
+    },
+    "nodeId": {"type": "string", "pattern": "^[0-9]{2}$"},
+    "request": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "api_version", "canonicalization", "catalog_source", "kind",
+        "mapping_source", "request_sha256"
+      ],
+      "properties": {
+        "api_version": {"const": "forgeos.planning-capability-ownership-projection-request/v1"},
+        "canonicalization": {"const": "forgeos.canonical-json/v1"},
+        "catalog_source": {"$ref": "#/$defs/catalogSource"},
+        "kind": {"const": "PlanningCapabilityOwnershipProjectionRequest"},
+        "mapping_source": {"$ref": "#/$defs/mappingSource"},
+        "request_sha256": {"$ref": "#/$defs/hash"}
+      }
+    }
+  },
+  "x-forgeos-canonicalization": {
+    "format": "forgeos.canonical-json/v1",
+    "exact_compact_utf8_input_and_output": true,
+    "ascii_snake_case_keys_sorted_by_raw_utf8_bytes": true,
+    "integer_domain": "signed_int64",
+    "floats_and_bool_as_int_forbidden": true,
+    "duplicate_unknown_and_noncanonical_members_forbidden": true,
+    "unicode_normalization": "none",
+    "forbidden_unicode": ["Cc", "DEL", "bidi_controls", "surrogates", "U+2028", "U+2029"],
+    "runtime_string_length_unit": "utf8_bytes",
+    "schema_length_and_unique_keywords_are_non_authoritative_approximations": true,
+    "binding_order": "capability_id_raw_utf8_ascending_unique",
+    "catalog_node_id_order": "raw_utf8_ascending_unique",
+    "validators_never_sort_or_deduplicate_input_envelopes": true
+  },
+  "x-forgeos-yaml-source-profile": {
+    "source_bytes_are_canonical_yaml": false,
+    "identity": "exact_decoded_raw_bytes_only_without_yaml_reserialization",
+    "encoding": "ASCII_subset_of_UTF-8",
+    "framing": "ASCII_subset_only_LF_only_exactly_one_terminal_LF_no_BOM_or_trailing_horizontal_whitespace_all_C0_except_LF_plus_DEL_and_non_ASCII_rejected",
+    "indentation": "exactly_two_ASCII_spaces_per_nesting_step",
+    "full_stream_consumption_required": true,
+    "allowed_collections": ["space_indented_block_mapping", "space_indented_block_sequence_including_bare_nested_dash", "compact_block_sequence_mapping_entry", "flow_mapping_including_empty", "flow_sequence_including_empty"],
+    "block_node_placement": "the document root and every next nonblank exactly indented child after block key colon end-of-line or bare sequence dash must be a block mapping or block sequence; standalone plain, quoted, typed or flow values are forbidden there and are accepted only inline after key colon one-space or dash one-space",
+    "blank_line_handling": "blank physical lines are skipped at document start, between block entries, and between a block key colon end-of-line or bare dash and its next nonblank exactly indented child; a blank line terminates folded content",
+    "allowed_scalars": [
+      "plain_string", "double_quoted_string_without_escape_bytes",
+      "lowercase_true_false_null", "canonical_signed_int64_decimal",
+      "folded_block_scalar_greater_hyphen"
+    ],
+    "mapping_keys": "after complete no-escape double-quoted key decoding or as a plain key, every key matches [A-Za-z0-9][A-Za-z0-9._/-]*, is at most 16384 UTF-8 bytes, and << is forbidden",
+    "mapping_colon_spacing": "block mappings use key colon end-of-line only for a nested value or exactly colon one-ASCII-space immediate-nonspace inline value; flow mappings require exactly colon one-ASCII-space immediate-nonspace value",
+    "block_sequence_dash_spacing": "a sequence entry is either bare - with an exactly two-space-indented nested value on the next nonblank line or - followed by exactly one ASCII space and an immediate nonspace inline value; additional spaces after the dash are forbidden",
+    "plain_scalar_lexical_rule": "after block syntax-prefix removal a non-typed plain-string fallback is nonempty, has no edge padding, is at most 16384 UTF-8 bytes, has no leading byte in -?:,[]{}#&*!|>'%@`, has no trailing colon, and has no double quote; flow skips or trims ASCII spaces at token edges and preserves interior spaces",
+    "typed_scalar_precedence": "exact lowercase true false null and canonical signed-int64 decimal are recognized before plain-string fallback; canonical integer grammar is 0 or -?[1-9][0-9]* within signed-int64 range, so canonical negative values including -1 and MinInt64 are accepted despite the fallback leading-hyphen prohibition",
+    "complete_double_quoted_scalar_rule": "double quote may only delimit one complete scalar; embedded or unmatched double quote and every backslash or escape byte are forbidden",
+    "block_plain_scalar_delimiters": "internal square or curly brackets, comma, ASCII space and nonfinal colon are scalar data; in a block sequence item only, an outside-quote colon at bracket-or-brace nesting depth zero selects compact-mapping syntax and must satisfy the mapping-colon spacing rule, while nested colon remains scalar data",
+    "block_colon_nesting_counters": "independent square and curly counters classify outside-quote colons only, never fall below zero, and do not require balanced block-plain brackets; unmatched ] or } remains scalar data and leaves the corresponding depth zero, so a later colon is top-level",
+    "flow_plain_scalar_delimiters": "value-leading [ or { is a structural collection opener; otherwise internal [ and { are scalar data; outside double quotes comma, ] and } terminate the current flow token and are not internal scalar data; colon does not terminate a flow value but may not be final",
+    "flow_entry_separators": "each nonfinal flow-map or flow-sequence entry requires comma and each final entry requires its matching closing } or ]; trailing comma immediately before the closing delimiter is forbidden",
+    "compact_sequence_mapping_continuation": "after a block-sequence inline item selects compact-mapping syntax, skipped blank lines may be followed only by mapping pairs exactly two spaces beyond the sequence dash indentation; a sequence line or any differently indented continuation is forbidden",
+    "folded_block_scalar": "only >- with nonempty content indented exactly two spaces beyond its key; adjacent nonblank exact-indent lines fold with one ASCII space, a blank line terminates the scalar, the final line break is stripped, and the complete joined value is at most 16384 UTF-8 bytes",
+    "lexically_forbidden_bytes_outside_complete_double_quoted_scalar": ["#", "&", "*", "!", "'", "\\"],
+    "folded_content_lexical_rule": "all listed bytes are forbidden at every folded-content position even when surrounded by double quotes; each physical content line must have an even number of double quotes, and balanced double quotes without those bytes are literal data",
+    "double_quoted_scalar_data": "hash ampersand asterisk exclamation and single-quote bytes are data; backslash remains forbidden because escapes are unsupported",
+    "comment_syntax": "hash byte forbidden at every position outside a complete double-quoted scalar, not only where YAML would treat it as a comment indicator",
+    "document_marker_and_directive_context": "reject a complete indentation-stripped physical syntax line equal to --- or ... or beginning with percent; occurrences elsewhere follow ordinary scalar rules, so inline mapping or sequence scalar ... is accepted as a string; folded content retains its stricter exact per-content-line rules",
+    "forbidden_syntax": [
+      "anchors", "aliases", "merge_keys", "explicit_tags",
+      "whole_indentation_stripped_physical_line_directives_or_document_markers", "literal_or_other_block_scalar_styles",
+      "single_quoted_scalars", "escape_bytes", "implicit_timestamp_float_infinity_nan_or_yaml_1_1_boolean"
+    ],
+    "duplicate_mapping_keys": "reject_at_every_depth_before_construction",
+    "scalar_typing": "before plain-string fallback, only lowercase true false null and canonical signed-int64 decimal are typed; every other accepted plain scalar is a string; timestamp, broad numeric and YAML 1.1 legacy scalar spellings fail closed",
+    "token_accounting": "each collection, each mapping key and each scalar consumes one token; folded >- content consumes exactly one scalar token rather than one token per content line",
+    "depth_accounting": "root block collection has depth 1; each mapping value or sequence item node including scalar folded scalar flow value and block-or-flow collection increments depth by one; mapping keys consume no depth; maximum 16 is checked before child parse, so a node or empty flow collection at depth 16 is accepted while any nonempty child at depth 17 is rejected before parsing",
+    "generic_ignored_node_arrays": "accepted only as nonempty 1..512 arrays of frozen-profile YAML values under all global parser bounds; no additional item schema or semantics is invented",
+    "existing_generic_yaml2json_parser_alone_is_sufficient": false,
+    "python_safe_load_alone_is_sufficient": false
+  },
+  "x-forgeos-source-semantics": {
+    "catalog_header": {
+      "api_version": "forgeos.design/v1", "kind": "AIEngineeringCapabilityCatalog",
+      "status": "planning_only", "executable": false
+    },
+    "catalog_exact_top_level_fields": [
+      "api_version", "authority_semantics", "canonical_vocabulary",
+      "control_plane_joins", "decision_ref", "executable",
+      "extension_decision_refs", "gates", "kind", "nodes", "risk_levels",
+      "runtime_note", "status", "universal_node_contract"
+    ],
+    "catalog_node_exact_fields": [
+      "activities", "authority", "capabilities", "entry_criteria",
+      "escalation", "exit_criteria", "forbidden", "handoff", "id", "inputs",
+      "memory_updates", "name", "outputs", "owner_lens", "purpose",
+      "quality_gates", "rules"
+    ],
+    "mapping_header": {
+      "api_version": "forgeos.design/v1", "kind": "CapabilitySkillOwnershipMap",
+      "status": "planning_only", "executable": false,
+      "source_catalog": "capability-catalog.v1.yml"
+    },
+    "mapping_exact_top_level_fields": [
+      "api_version", "executable", "kind", "mapping_rules", "packages",
+      "skill_specification", "source_catalog", "status"
+    ],
+    "mapping_package_exact_fields": ["implementation_wave", "includes", "skill"],
+    "semantic_source_bounds": {
+      "catalog_nodes": "1_to_64_with_unique_two_digit_node_ids",
+      "capability_identifier": "1_to_160_UTF8_bytes_matching_[a-z0-9][a-z0-9._:/-]*",
+      "catalog_capability_coverage": "at_most_512_unique_and_at_most_4096_total_occurrences; each_node_capabilities_is_1_to_512_unique_identifiers",
+      "mapping_packages": "1_to_64_with_unique_skill_names",
+      "skill_name": "1_to_160_UTF8_bytes_matching_[a-z0-9][a-z0-9._-]*_and_derived_logical_adapter_ref_at_most_192_UTF8_bytes",
+      "implementation_wave": "integer_1_to_6",
+      "package_includes": "1_to_512_unique_capability_identifiers",
+      "mapping_capability_coverage": "at_most_512_globally_unique_primary_owned_capabilities",
+      "coverage_equality": "catalog_unique_capability_set_equals_mapping_includes_set"
+    },
+    "ignored_source_field_shapes": {
+      "catalog_mapping_fields": {
+        "fields": ["authority_semantics", "canonical_vocabulary", "control_plane_joins", "gates", "risk_levels", "universal_node_contract"],
+        "shape": "mapping_with_0_to_64_entries_under_all_global_frozen_YAML_bounds; zero entries require accepted empty flow mapping syntax; keys and values have no additional schema"
+      },
+      "catalog_string_fields": {
+        "fields": ["decision_ref", "runtime_note"],
+        "shape": "nonempty_string_1_to_16384_UTF8_bytes"
+      },
+      "catalog_string_array_fields": {
+        "fields": ["extension_decision_refs"],
+        "shape": "nonempty_array_1_to_512_of_nonempty_strings_each_1_to_16384_UTF8_bytes_without_additional_order_or_uniqueness_rule"
+      },
+      "catalog_node_string_fields": {
+        "fields": ["name", "owner_lens", "purpose"],
+        "shape": "nonempty_string_1_to_16384_UTF8_bytes"
+      },
+      "catalog_node_generic_array_fields": {
+        "fields": ["activities", "authority", "entry_criteria", "escalation", "exit_criteria", "forbidden", "handoff", "inputs", "memory_updates", "outputs", "quality_gates", "rules"],
+        "shape": "nonempty_array_1_to_512_of_arbitrary_frozen_profile_YAML_values_under_all_global_parser_bounds_without_additional_item_schema_order_or_uniqueness_rule"
+      },
+      "mapping_string_fields": {
+        "fields": ["skill_specification"],
+        "shape": "nonempty_string_1_to_16384_UTF8_bytes"
+      },
+      "mapping_string_array_fields": {
+        "fields": ["mapping_rules"],
+        "shape": "nonempty_array_1_to_512_of_nonempty_strings_each_1_to_16384_UTF8_bytes_without_additional_order_or_uniqueness_rule"
+      }
+    },
+    "ignored_field_interpretation": "none"
+  },
+  "x-forgeos-projection": {
+    "catalog_node_ids": "every distinct catalog node id containing the capability, retained and raw_utf8_sorted",
+    "catalog_occurrence_count": "exact total occurrences across nodes; duplicates within one node are invalid",
+    "primary_owner": "each unique catalog capability must occur in exactly one package includes list globally",
+    "coverage_equality": "unique catalog capability set equals unique mapping includes set with no missing or extra item",
+    "binding_derivation": "one binding per unique capability with exact owner skill and implementation wave",
+    "logical_adapter_derivation": ".agent/skills/ + owner_skill + .md",
+    "logical_adapter_meaning": "declared_locator_only_without_path_resolution_stat_read_or_availability_claim",
+    "current_source_observation": {
+      "catalog_bytes": 33000,
+      "catalog_nodes": 17,
+      "catalog_occurrences": 145,
+      "catalog_sha256": "bc6efe535539c5f129af51486d8e81b9844b5ee6448fae2bce649fc159658d74",
+      "mapping_bytes": 5924,
+      "mapping_packages": 38,
+      "mapping_sha256": "bfb2277fe66cd9f0c609b5be10ad77ad0969603edd19e5a6ccbe38b8e3409462",
+      "unique_capabilities_and_bindings": 140
+    }
+  },
+  "x-forgeos-digests": {
+    "source_content_sha256": "sha256_over_exact_decoded_raw_yaml_bytes_without_domain",
+    "request": {
+      "domain": "forgeos.planning-capability-ownership-projection-request.v1\u0000",
+      "preimage": "domain_then_compact_canonical_request_with_only_request_sha256_empty"
+    },
+    "binding": {
+      "domain": "forgeos.planning-capability-ownership-binding.v1\u0000",
+      "preimage": "domain_then_compact_canonical_binding_with_only_binding_sha256_empty_and_final_request_sha256_present"
+    },
+    "projection": {
+      "domain": "forgeos.planning-capability-ownership-projection.v1\u0000",
+      "preimage": "domain_then_compact_canonical_complete_projection_with_only_projection_sha256_empty"
+    },
+    "acyclic_order": ["exact_source_bytes", "request", "binding", "projection"],
+    "algorithm": "sha256_lowercase_hex",
+    "all_derived_fields_and_digests_must_recompute_before_success": true
+  },
+  "x-forgeos-semantic-validation": {
+    "schema_alone_sufficient": false,
+    "request_sha256_equals_request_member_and_root_copy": true,
+    "source_base64_is_rfc4648_canonical_and_round_trips_exactly": true,
+    "source_content_bytes_and_sha256_recompute": true,
+    "closed_yaml_shapes_and_frozen_subset_required": true,
+    "catalog_node_ids_unique_and_node_capabilities_unique": true,
+    "mapping_skill_ids_unique_and_global_capability_ownership_unique": true,
+    "catalog_and_mapping_capability_sets_equal": true,
+    "all_counts_bindings_adapter_refs_and_digests_rederived": true,
+    "complete_projection_canonical_bytes_must_match_reassembly": true,
+    "ambient_repository_path_environment_clock_credential_process_provider_network_or_database_access": "none"
+  },
+  "x-forgeos-limits": {
+    "max_request_bytes": 1048576,
+    "max_projection_bytes": 4194304,
+    "max_binding_bytes": 16384,
+    "max_catalog_source_bytes": 262144,
+    "max_mapping_source_bytes": 131072,
+    "max_yaml_depth": 16,
+    "max_yaml_mapping_fields": 64,
+    "max_yaml_sequence_items": 512,
+    "max_yaml_tokens": 65536,
+    "max_yaml_collections": 4096,
+    "max_yaml_scalar_utf8_bytes": 16384,
+    "max_json_depth": 16,
+    "max_json_object_fields": 64,
+    "max_json_array_items": 512,
+    "max_identifier_utf8_bytes": 160,
+    "max_logical_adapter_ref_utf8_bytes": 192,
+    "integer_domain": "signed_int64"
+  },
+  "x-forgeos-delivery": {
+    "adr_status": "proposed",
+    "delivered": ["independent_python_pure_projector_and_internal_checker", "independent_go_pure_projector_and_product_cli", "exact_cross_language_golden", "governance_shadow_detector", "source_only_universal_scaffold"],
+    "product_cli": "forge capability-ownership project --catalog FILE|- --mapping FILE|-",
+    "product_cli_option_order": "interchangeable",
+    "product_cli_stdin_sources": "exactly_one",
+    "stdin_framing": "a stdin source or internal-checker projection is complete only at explicit EOF; read through EOF within the selected bound while permitting at most one overflow-detection byte; temporary nonblocking exhaustion is incomplete and the Python checker fails closed with exit 1 and empty stdout",
+    "product_cli_exit_codes": {"usage": 2, "input_or_semantic": 1, "stdout_write_failure": 1},
+    "argument_input_and_semantic_validation_before_first_stdout_write": true,
+    "argument_input_and_semantic_failure_stdout_bytes": 0,
+    "success_stdout": "exact_compact_canonical_projection_then_one_LF",
+    "stdout_transactionality": "not_provided_partial_write_is_invalid_artifact",
+    "python_validate_and_golden_commands": "universal_internal_checker_only_not_product_forge_surface",
+    "named_file_input": "nonempty regular leaf with bytes within the selected catalog or mapping source bound; leaf symlink directory and special file are rejected; opened leaf identity type mode size and modification-time must remain stable across the bounded read",
+    "named_file_input_platform": "Unix additionally compares change-time; Windows relies on reparse-point no-follow CreateFile with read-only sharing plus common identity type mode size and modification-time checks and does not separately compare change-time; Go platforms without the required no-follow regular-file adapter fail closed",
+    "named_file_input_nonclaims": ["parent_component_symlinks_are_not_prohibited", "no_directory_confinement", "no_current_repository_source_attestation", "no_atomic_repository_snapshot", "no_stability_outside_the_individual_read"],
+    "scaffold_copies": ["exact_catalog_source", "exact_mapping_source", "adr", "schema", "golden", "python_projector_checker_and_tests", "governance_wiring"],
+    "scaffold_does_not_copy": ["catalyst_go_runtime"],
+    "scaffold_does_not_generate": ["declared_owner_skill_packages", "projection_derived_host_adapters"],
+    "existing_same_name_markdown_is_physical_resolution_or_availability_evidence": false,
+    "closed_roadmap_scope": "complete_unique_declared_primary_owner_coverage_and_logical_adapter_reference_derivation_only"
+  },
+  "x-forgeos-authority-semantics": {
+    "profile": "planning_only_pure_projection_from_explicit_exact_sources",
+    "positive_result": "PROJECTED_PLANNING_CAPABILITY_OWNERSHIP_ONLY (complete declared primary-owner coverage and logical adapter references for the supplied planning sources only; no file existence, Skill availability, Registry mutation, authentication, authorization, permission, invocation, routing, execution, persistence, transition, or effect attestation)",
+    "registry_input_or_mutation": false,
+    "registry_singleton_semantics_changed": false,
+    "skill_file_resolution_or_availability": false,
+    "runtime_adapter_generation": false,
+    "grant_pdp_or_capability_invocation": false,
+    "implementation_selection_or_execution": false,
+    "planning_owner_is_authenticated_authority": false,
+    "attestations": []
+  }
+}

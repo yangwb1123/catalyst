@@ -1,0 +1,493 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forgeos.dev/contracts/capability-registry-v1.schema.json",
+  "title": "ForgeOS authority-neutral Capability Registry v1",
+  "description": "Closed, bounded, read-only and content-addressed registry with one staged physical local-go-package-impact-prescan capability entry.",
+  "$comment": "JSON Schema is structural only. A conforming semantic validator must enforce canonical bytes, UTF-8 byte bounds and ordering, all domain-separated identities, exact singleton-entry semantics, physical content-set equality, request projection relations, deterministic assessment reassembly and the authority-neutral constants below.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "api_version", "canonicalization", "coverage_mode", "effect_vocabulary_sha256",
+    "entries", "kind", "registry_id", "registry_mode", "registry_sha256", "status"
+  ],
+  "properties": {
+    "api_version": {"const": "forgeos.capability-registry/v1"},
+    "canonicalization": {"const": "forgeos.canonical-json/v1"},
+    "coverage_mode": {"const": "explicit_entries_only_not_global_inventory"},
+    "effect_vocabulary_sha256": {"const": "a45de832e43ccdbebcb22f183575039d451594bfbc9ec713105c657a6adda49f"},
+    "entries": {
+      "type": "array", "minItems": 1, "maxItems": 1,
+      "items": {"$ref": "#/$defs/entry"}
+    },
+    "kind": {"const": "CapabilityRegistry"},
+    "registry_id": {"type": "string", "pattern": "^capability-registry-[a-f0-9]{64}$"},
+    "registry_mode": {"const": "authority_neutral_read_only_contract_catalog"},
+    "registry_sha256": {"$ref": "#/$defs/hash"},
+    "status": {"const": "staged"}
+  },
+  "$defs": {
+    "hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "identifier": {
+      "type": "string", "minLength": 1, "maxLength": 160,
+      "pattern": "^[a-z0-9][a-z0-9._:/-]*$"
+    },
+    "narrative": {"type": "string", "minLength": 1, "maxLength": 4096},
+    "repoPath": {
+      "type": "string", "minLength": 1, "maxLength": 4096,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.?(?:/|$))(?!.*\\\\)[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*$"
+    },
+    "selector": {
+      "oneOf": [
+        {"type": "null"},
+        {"type": "string", "maxLength": 4096, "pattern": "^#(?:/(?:[^~/]|~0|~1)*)*$"}
+      ]
+    },
+    "contentRef": {
+      "type": "object", "additionalProperties": false,
+      "required": ["content_bytes", "content_sha256", "media_type", "path", "selector"],
+      "properties": {
+        "content_bytes": {"type": "integer", "minimum": 0, "maximum": 16777216},
+        "content_sha256": {"$ref": "#/$defs/hash"},
+        "media_type": {
+          "enum": ["application/json", "application/schema+json", "text/markdown", "text/x-go", "text/x-python"]
+        },
+        "path": {"$ref": "#/$defs/repoPath"},
+        "selector": {"$ref": "#/$defs/selector"}
+      }
+    },
+    "contentSetSelection": {
+      "type": "object", "additionalProperties": false,
+      "required": ["mode", "root", "suffixes"],
+      "properties": {
+        "mode": {"enum": ["all_regular_files_recursive_with_suffixes", "explicit_files"]},
+        "root": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/repoPath"}]},
+        "suffixes": {
+          "type": "array", "maxItems": 16, "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1, "maxLength": 32, "pattern": "^\\.[a-z0-9]+$"}
+        }
+      }
+    },
+    "contentSet": {
+      "type": "object", "additionalProperties": false,
+      "required": ["files", "selection", "set_sha256"],
+      "properties": {
+        "files": {"type": "array", "minItems": 1, "maxItems": 256, "items": {"$ref": "#/$defs/contentRef"}},
+        "selection": {"$ref": "#/$defs/contentSetSelection"},
+        "set_sha256": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "schemaRef": {
+      "allOf": [
+        {"$ref": "#/$defs/contentRef"},
+        {"type": "object", "properties": {"media_type": {"const": "application/schema+json"}}}
+      ]
+    },
+    "predicate": {
+      "type": "object", "additionalProperties": false,
+      "required": ["document", "json_pointer", "operator", "value"],
+      "properties": {
+        "document": {"enum": ["input", "output"]},
+        "json_pointer": {"type": "string", "maxLength": 4096, "pattern": "^(?:/(?:[^~/]|~0|~1)*)*$"},
+        "operator": {"enum": ["absent", "equals", "not_equals", "present"]},
+        "value": {"oneOf": [{"type": "null"}, {"type": "string", "maxLength": 4096}]}
+      }
+    },
+    "predicateSet": {
+      "type": "object", "additionalProperties": false,
+      "required": ["mode", "predicates"],
+      "properties": {
+        "mode": {"enum": ["all", "any", "never"]},
+        "predicates": {"type": "array", "maxItems": 64, "items": {"$ref": "#/$defs/predicate"}}
+      }
+    },
+    "rule": {
+      "type": "object", "additionalProperties": false,
+      "required": ["enforcement_mode", "rule_id", "statement"],
+      "properties": {
+        "enforcement_mode": {"enum": ["guidance", "hard_gate", "review_trigger"]},
+        "rule_id": {"$ref": "#/$defs/identifier"},
+        "statement": {"$ref": "#/$defs/narrative"}
+      }
+    },
+    "qualityGate": {
+      "type": "object", "additionalProperties": false,
+      "required": ["gate_id", "required_test_ids"],
+      "properties": {
+        "gate_id": {"$ref": "#/$defs/identifier"},
+        "required_test_ids": {
+          "type": "array", "minItems": 1, "maxItems": 64, "uniqueItems": true,
+          "items": {"$ref": "#/$defs/identifier"}
+        }
+      }
+    },
+    "proofObligation": {
+      "type": "object", "additionalProperties": false,
+      "required": ["description", "obligation_id", "verification_refs"],
+      "properties": {
+        "description": {"$ref": "#/$defs/narrative"},
+        "obligation_id": {"$ref": "#/$defs/identifier"},
+        "verification_refs": {
+          "type": "array", "minItems": 1, "maxItems": 64,
+          "items": {"$ref": "#/$defs/contentRef"}
+        }
+      }
+    },
+    "failureMode": {
+      "type": "object", "additionalProperties": false,
+      "required": ["disposition", "failure_id", "result"],
+      "properties": {
+        "disposition": {"enum": ["fail_closed_no_output", "structured_negative_assessment"]},
+        "failure_id": {"$ref": "#/$defs/identifier"},
+        "result": {"$ref": "#/$defs/narrative"}
+      }
+    },
+    "observabilitySignal": {
+      "type": "object", "additionalProperties": false,
+      "required": ["signal_id", "signal_kind"],
+      "properties": {
+        "signal_id": {"$ref": "#/$defs/identifier"},
+        "signal_kind": {"enum": ["artifact", "event", "log", "metric", "trace"]}
+      }
+    },
+    "rollback": {
+      "type": "object", "additionalProperties": false,
+      "required": ["description", "mode"],
+      "properties": {
+        "description": {"$ref": "#/$defs/narrative"},
+        "mode": {"enum": ["compensation_declared", "external_operator_only", "not_required_no_effects", "rollback_declared"]}
+      }
+    },
+    "permissionRequirement": {
+      "type": "object", "additionalProperties": false,
+      "required": ["effect_id", "requirement_id", "scope_profile"],
+      "properties": {
+        "effect_id": {"$ref": "#/$defs/identifier"},
+        "requirement_id": {"$ref": "#/$defs/identifier"},
+        "scope_profile": {"$ref": "#/$defs/identifier"}
+      }
+    },
+    "contract": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "api_version", "canonicalization", "capability_contract_id", "capability_contract_sha256",
+        "capability_id", "capability_version", "domain", "effects", "failure_modes",
+        "input_schemas", "kind", "not_applicable", "observability", "output_schemas",
+        "permission_requirements", "postconditions", "preconditions", "proof_obligations",
+        "quality_gates", "risk_floor", "rollback_or_compensation", "rules", "trigger"
+      ],
+      "properties": {
+        "api_version": {"const": "forgeos.capability-contract/v1"},
+        "canonicalization": {"const": "forgeos.canonical-json/v1"},
+        "capability_contract_id": {"type": "string", "pattern": "^capability-contract-[a-f0-9]{64}$"},
+        "capability_contract_sha256": {"$ref": "#/$defs/hash"},
+        "capability_id": {"const": "local-go-package-impact-prescan"},
+        "capability_version": {"const": "1"},
+        "domain": {"enum": ["device", "execution", "governance", "planning", "reasoning", "verification"]},
+        "effects": {"type": "array", "maxItems": 64, "uniqueItems": true, "items": {"$ref": "#/$defs/identifier"}},
+        "failure_modes": {"type": "array", "minItems": 1, "maxItems": 64, "items": {"$ref": "#/$defs/failureMode"}},
+        "input_schemas": {"type": "array", "minItems": 1, "maxItems": 64, "items": {"$ref": "#/$defs/schemaRef"}},
+        "kind": {"const": "CapabilityContract"},
+        "not_applicable": {"$ref": "#/$defs/predicateSet"},
+        "observability": {"type": "array", "minItems": 1, "maxItems": 64, "items": {"$ref": "#/$defs/observabilitySignal"}},
+        "output_schemas": {"type": "array", "minItems": 1, "maxItems": 64, "items": {"$ref": "#/$defs/schemaRef"}},
+        "permission_requirements": {"type": "array", "maxItems": 64, "items": {"$ref": "#/$defs/permissionRequirement"}},
+        "postconditions": {"type": "array", "minItems": 1, "maxItems": 64, "uniqueItems": true, "items": {"$ref": "#/$defs/identifier"}},
+        "preconditions": {"type": "array", "minItems": 1, "maxItems": 64, "uniqueItems": true, "items": {"$ref": "#/$defs/identifier"}},
+        "proof_obligations": {"type": "array", "minItems": 1, "maxItems": 64, "items": {"$ref": "#/$defs/proofObligation"}},
+        "quality_gates": {"type": "array", "minItems": 1, "maxItems": 64, "items": {"$ref": "#/$defs/qualityGate"}},
+        "risk_floor": {"enum": ["L0", "L1", "L2", "L3", "L4"]},
+        "rollback_or_compensation": {"$ref": "#/$defs/rollback"},
+        "rules": {"type": "array", "minItems": 1, "maxItems": 64, "items": {"$ref": "#/$defs/rule"}},
+        "trigger": {"$ref": "#/$defs/predicateSet"}
+      }
+    },
+    "adapter": {
+      "type": "object", "additionalProperties": false,
+      "required": ["adapter_id", "adapter_kind", "entrypoint"],
+      "properties": {
+        "adapter_id": {"$ref": "#/$defs/identifier"},
+        "adapter_kind": {"enum": ["command_line", "library_api"]},
+        "entrypoint": {"type": "string", "minLength": 1, "maxLength": 4096}
+      }
+    },
+    "implementation": {
+      "type": "object", "additionalProperties": false,
+      "required": ["adapters", "implementation_id", "language", "runtime_profile", "source_set_sha256"],
+      "properties": {
+        "adapters": {"type": "array", "minItems": 1, "maxItems": 16, "items": {"$ref": "#/$defs/adapter"}},
+        "implementation_id": {"$ref": "#/$defs/identifier"},
+        "language": {"enum": ["go", "python"]},
+        "runtime_profile": {"$ref": "#/$defs/identifier"},
+        "source_set_sha256": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "test": {
+      "type": "object", "additionalProperties": false,
+      "required": ["covers_gate_ids", "entrypoint", "fixture_refs", "source_set_sha256", "test_id", "test_kinds"],
+      "properties": {
+        "covers_gate_ids": {"type": "array", "minItems": 1, "maxItems": 64, "uniqueItems": true, "items": {"$ref": "#/$defs/identifier"}},
+        "entrypoint": {"type": "string", "minLength": 1, "maxLength": 4096},
+        "fixture_refs": {"type": "array", "minItems": 1, "maxItems": 64, "items": {"$ref": "#/$defs/contentRef"}},
+        "source_set_sha256": {"$ref": "#/$defs/hash"},
+        "test_id": {"$ref": "#/$defs/identifier"},
+        "test_kinds": {
+          "type": "array", "minItems": 1, "maxItems": 8, "uniqueItems": true,
+          "items": {"enum": ["adversarial", "bounds", "cross_language_golden", "unit"]}
+        }
+      }
+    },
+    "owner": {
+      "type": "object", "additionalProperties": false,
+      "required": ["module", "team"],
+      "properties": {"module": {"$ref": "#/$defs/repoPath"}, "team": {"$ref": "#/$defs/identifier"}}
+    },
+    "entry": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "api_version", "canonicalization", "catalog_binding", "content_sets", "contract",
+        "entry_id", "entry_sha256", "implementations", "kind", "owner", "tests"
+      ],
+      "properties": {
+        "api_version": {"const": "forgeos.capability-registry-entry/v1"},
+        "canonicalization": {"const": "forgeos.canonical-json/v1"},
+        "catalog_binding": {"type": "null"},
+        "content_sets": {"type": "array", "minItems": 3, "maxItems": 3, "items": {"$ref": "#/$defs/contentSet"}},
+        "contract": {"$ref": "#/$defs/contract"},
+        "entry_id": {"type": "string", "pattern": "^capability-registry-entry-[a-f0-9]{64}$"},
+        "entry_sha256": {"$ref": "#/$defs/hash"},
+        "implementations": {"type": "array", "minItems": 2, "maxItems": 8, "items": {"$ref": "#/$defs/implementation"}},
+        "kind": {"const": "CapabilityRegistryEntry"},
+        "owner": {"$ref": "#/$defs/owner"},
+        "tests": {"type": "array", "minItems": 2, "maxItems": 8, "items": {"$ref": "#/$defs/test"}}
+      }
+    },
+    "capabilityReference": {
+      "type": "object", "additionalProperties": false,
+      "required": ["capability_contract_sha256", "capability_id", "capability_version", "origin"],
+      "properties": {
+        "capability_contract_sha256": {"$ref": "#/$defs/hash"},
+        "capability_id": {"$ref": "#/$defs/identifier"},
+        "capability_version": {"type": "string", "minLength": 1, "maxLength": 160, "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"},
+        "origin": {"enum": ["current_registry", "external_declared", "external_legacy"]}
+      }
+    },
+    "resolutionRequest": {
+      "type": "object", "additionalProperties": false,
+      "required": ["api_version", "canonicalization", "expected_contract", "expected_reference", "kind", "registry_sha256", "request_sha256"],
+      "properties": {
+        "api_version": {"const": "forgeos.capability-registry-declared-resolution-request/v1"},
+        "canonicalization": {"const": "forgeos.canonical-json/v1"},
+        "expected_contract": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/contract"}]},
+        "expected_reference": {"$ref": "#/$defs/capabilityReference"},
+        "kind": {"const": "CapabilityRegistryDeclaredResolutionRequest"},
+        "registry_sha256": {"$ref": "#/$defs/hash"},
+        "request_sha256": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "relations": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "domain", "effects", "failure_modes", "identity", "input_schemas", "not_applicable",
+        "observability", "output_schemas", "permission_requirements", "postconditions",
+        "preconditions", "proof_obligations", "quality_gates", "risk_floor",
+        "rollback_or_compensation", "rules", "trigger"
+      ],
+      "properties": {
+        "domain": {"type": "string"}, "effects": {"type": "string"},
+        "failure_modes": {"type": "string"}, "identity": {"type": "string"},
+        "input_schemas": {"type": "string"}, "not_applicable": {"type": "string"},
+        "observability": {"type": "string"}, "output_schemas": {"type": "string"},
+        "permission_requirements": {"type": "string"}, "postconditions": {"type": "string"},
+        "preconditions": {"type": "string"}, "proof_obligations": {"type": "string"},
+        "quality_gates": {"type": "string"}, "risk_floor": {"type": "string"},
+        "rollback_or_compensation": {"type": "string"}, "rules": {"type": "string"},
+        "trigger": {"type": "string"}
+      }
+    },
+    "resolutionAssessment": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "api_version", "assessment_mode", "assessment_sha256", "authorization_decision",
+        "canonicalization", "effect_attestation", "gate_applicability_state",
+        "implementation_availability_attestation", "invocation_attestation", "kind",
+        "matched_key_entry_id", "matched_key_entry_sha256", "owner_authentication_state",
+        "permission_attestation", "persistence_attestation", "proof_satisfaction_state",
+        "reason_codes", "registry_authentication_state", "registry_sha256", "relations",
+        "request_sha256", "resolution", "result", "rule_applicability_state",
+        "runtime_routing_attestation", "test_pass_attestation", "transition_attestation"
+      ],
+      "properties": {
+        "api_version": {"const": "forgeos.capability-registry-declared-resolution/v1"},
+        "assessment_mode": {"const": "authority_neutral_read_only_exact_declared_contract"},
+        "assessment_sha256": {"$ref": "#/$defs/hash"},
+        "authorization_decision": {"const": "none"},
+        "canonicalization": {"const": "forgeos.canonical-json/v1"},
+        "effect_attestation": {"const": false},
+        "gate_applicability_state": {"const": "not_evaluated"},
+        "implementation_availability_attestation": {"const": false},
+        "invocation_attestation": {"const": false},
+        "kind": {"const": "CapabilityRegistryDeclaredResolution"},
+        "matched_key_entry_id": {"oneOf": [{"type": "null"}, {"type": "string", "pattern": "^capability-registry-entry-[a-f0-9]{64}$"}]},
+        "matched_key_entry_sha256": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/hash"}]},
+        "owner_authentication_state": {"const": "not_evaluated"},
+        "permission_attestation": {"const": false},
+        "persistence_attestation": {"const": false},
+        "proof_satisfaction_state": {"const": "not_evaluated"},
+        "reason_codes": {"type": "array", "maxItems": 32, "uniqueItems": true, "items": {"$ref": "#/$defs/identifier"}},
+        "registry_authentication_state": {"const": "not_evaluated"},
+        "registry_sha256": {"$ref": "#/$defs/hash"},
+        "relations": {"$ref": "#/$defs/relations"},
+        "request_sha256": {"$ref": "#/$defs/hash"},
+        "resolution": {"enum": ["capability_contract_digest_mismatch", "capability_id_not_found", "capability_version_not_found", "resolved_exact"]},
+        "result": {"const": "RESOLVED_DECLARED_CAPABILITY_REFERENCE_ONLY (no registry or owner authentication, rule or gate applicability, proof satisfaction, test pass, implementation availability, Grant activation, authorization, permission, invocation, runtime routing, persistence, transition, execution, or effect attestation)"},
+        "rule_applicability_state": {"const": "not_evaluated"},
+        "runtime_routing_attestation": {"const": false},
+        "test_pass_attestation": {"const": false},
+        "transition_attestation": {"const": false}
+      }
+    }
+  },
+  "x-forgeos-canonicalization": {
+    "format": "forgeos.canonical-json/v1",
+    "exact_compact_utf8_input": true,
+    "ascii_snake_case_keys_sorted_by_raw_utf8_bytes": true,
+    "integer_domain": "signed_int64",
+    "floats_and_bool_as_int_forbidden": true,
+    "duplicate_unknown_and_noncanonical_members_forbidden": true,
+    "unicode_normalization": "none",
+    "forbidden_unicode": ["Cc", "DEL", "bidi_controls", "surrogates", "U+2028", "U+2029"],
+    "runtime_string_length_unit": "utf8_bytes",
+    "schema_length_and_unique_keywords_are_non_authoritative_approximations": true,
+    "set_arrays_already_sorted_unique_by_raw_utf8_bytes": true,
+    "structured_sets_already_sorted_unique_by_identity_or_canonical_bytes": true,
+    "set_identity_and_order": {"strings":"raw_utf8_bytes","entries":"contract.capability_id_then_contract.capability_version_then_entry_id_raw_utf8_bytes","content_sets":"compact_canonical_json_bytes","content_set_files":"compact_canonical_json_bytes_and_duplicate_path_selector_tuple_forbidden","content_refs":"compact_canonical_json_bytes_and_duplicate_path_selector_tuple_forbidden_in_each_containing_set","predicates":"compact_canonical_json_bytes","failure_modes":"failure_id_raw_utf8_bytes","input_schemas":"compact_canonical_json_bytes","observability":"signal_id_raw_utf8_bytes","output_schemas":"compact_canonical_json_bytes","permission_requirements":"requirement_id_raw_utf8_bytes","proof_obligations":"obligation_id_raw_utf8_bytes","quality_gates":"gate_id_raw_utf8_bytes","rules":"rule_id_raw_utf8_bytes","implementations":"implementation_id_raw_utf8_bytes","adapters":"adapter_id_raw_utf8_bytes","tests":"test_id_raw_utf8_bytes","fixture_refs":"compact_canonical_json_bytes","verification_refs":"compact_canonical_json_bytes"},
+    "silent_sort_or_deduplication": "forbidden"
+  },
+  "x-forgeos-digests": {
+    "algorithm": "sha256_lowercase_hex",
+    "content_set": {"domain": "forgeos.capability-registry.content-set.v1\u0000", "empty_fields": ["set_sha256"]},
+    "contract": {"domain": "forgeos.capability-contract.v1\u0000", "empty_fields": ["capability_contract_id", "capability_contract_sha256"], "id_prefix": "capability-contract-"},
+    "entry": {"domain": "forgeos.capability-registry-entry.v1\u0000", "empty_fields": ["entry_id", "entry_sha256"], "id_prefix": "capability-registry-entry-"},
+    "registry": {"domain": "forgeos.capability-registry.v1\u0000", "empty_fields": ["registry_id", "registry_sha256"], "id_prefix": "capability-registry-"},
+    "request": {"domain": "forgeos.capability-registry-declared-resolution-request.v1\u0000", "empty_fields": ["request_sha256"]},
+    "assessment": {"domain": "forgeos.capability-registry-declared-resolution.v1\u0000", "empty_fields": ["assessment_sha256"]},
+    "acyclic_order": ["content_set", "contract", "entry", "registry", "request", "assessment"],
+    "later_identity_reference_from_earlier_preimage": "forbidden",
+    "registry_contract_fixture_checker_adr_or_governance_pin_may_not_be_an_entry_implementation_or_test_ref": true
+  },
+  "x-forgeos-frozen-vocabularies": {
+    "capability_domains": ["device", "execution", "governance", "planning", "reasoning", "verification"],
+    "risk_floors": ["L0", "L1", "L2", "L3", "L4"],
+    "adapter_kinds": ["command_line", "library_api"],
+    "implementation_languages": ["go", "python"],
+    "delivered_languages": ["go", "python"],
+    "rust_delivery": "not_delivered_no_registry_consumer",
+    "enforcement_modes": ["guidance", "hard_gate", "review_trigger"],
+    "predicate_documents": ["input", "output"],
+    "predicate_operators": ["absent", "equals", "not_equals", "present"],
+    "predicate_modes": ["all", "any", "never"],
+    "test_kinds": ["adversarial", "bounds", "cross_language_golden", "unit"],
+    "effect_vocabulary_sha256": "a45de832e43ccdbebcb22f183575039d451594bfbc9ec713105c657a6adda49f",
+    "version_matching": "opaque_ascii_exact_no_semver_range_latest_alias_casefold_or_normalization"
+  },
+  "x-forgeos-frozen-entry": {
+    "entry_count": 1,
+    "capability_id": "local-go-package-impact-prescan",
+    "capability_version": "1",
+    "domain": "reasoning",
+    "risk_floor": "L1",
+    "catalog_binding": null,
+    "effects": [],
+    "permission_requirements": [],
+    "input_schema": {"path": "docs/contracts/local-go-package-impact-prescan-v1.schema.json", "content_bytes": 16230, "content_sha256": "a4592c63a938c090ccc4d6c8187bba8f37909ef6c2d2253fd06f656623c2bb25", "selector": "#/$defs/request"},
+    "output_schema": {"path": "docs/contracts/local-go-package-impact-prescan-v1.schema.json", "content_bytes": 16230, "content_sha256": "a4592c63a938c090ccc4d6c8187bba8f37909ef6c2d2253fd06f656623c2bb25", "selector": "#"},
+    "golden": {"path": "docs/contracts/fixtures/local-go-package-impact-prescan-v1.json", "content_bytes": 35564, "content_sha256": "bc364e387705651d307a3ff18137b857a3fad2c518685a358bba169a835a68d9"},
+    "content_sets": {
+      "go_package_all_go": {"file_count": 18, "content_bytes": 83167, "root": "forge-core/internal/goimpactprescan", "suffixes": [".go"], "set_sha256": "549818abbb33737c9198607e2d43b56efef50b476aac507446d5501f86b4de22"},
+      "python_package_all_py": {"file_count": 8, "content_bytes": 35348, "root": "harness/local_go_package_impact_prescan_contract", "suffixes": [".py"], "set_sha256": "effade443429146470a13b55341c73228fa8d718e88be47532260663fb534bd4"},
+      "python_cli_and_tests_explicit": {"file_count": 3, "content_bytes": 27574, "set_sha256": "3d7a072ffcaa6a222ae42ef6ac1b6135029ad5158fc38c70ce35f5afb3a28100"}
+    },
+    "required_implementation_ids": ["go", "python"],
+    "required_test_ids": ["go-contract-suite", "python-contract-suite"],
+    "system_impact": "always_unknown",
+    "positive_capability_result": "LOCAL_GO_PACKAGE_IMPACT_PRESCAN_ONLY",
+    "repository_reader_registered": false
+  },
+  "x-forgeos-semantic-validation": {
+    "schema_alone_sufficient": false,
+    "entry_key": "exact_capability_id_and_opaque_version",
+    "duplicate_entry_key": "fail_entire_registry_even_when_entry_bytes_match",
+    "physical_content_refs": "regular_files_exact_byte_length_and_sha256_with_pre_and_post_identity_stability",
+    "recursive_content_sets": "listed_files_must_equal_the_complete_matching_regular_file_set_under_root",
+    "physical_identity_stability": "repository_root_every_traversed_directory_and_every_read_entry_require_pre_and_post_device_inode_mode_size_mtime_ctime_identity_equality; opened_files additionally require descriptor_fstat equality",
+    "physical_walk_counting": "count_selection_root_once_and_each_observed_descendant_directory_entry_once_before_suffix_filter; reject before count exceeds max_physical_walk_entries",
+    "explicit_content_sets": "only_list_equality_is_asserted_not_directory_completeness",
+    "content_ref_symlink_or_special_file": "fail_closed",
+    "catalog_input": "none",
+    "catalog_binding_null_means": "kernel_or_foundation_capability_not_catalog_ownership",
+    "effect_and_permission_relation": "permission_requirements_must_be_empty_when_effects_are_empty",
+    "trigger_relation": "all_mode_nonempty_any_mode_nonempty_never_mode_empty_and_absent_or_present_require_null_value",
+    "not_applicable_relation": "same_predicate_set_rules_as_trigger",
+    "request_expected_contract": "nullable; when present it is limited to the v1 singleton local-go-package-impact-prescan/1 and its exact id_version_digest_projection_must_equal_expected_reference; unknown-id_or_unknown-version_structured_negative_comparisons_require_null",
+    "null_expected_contract": "structured_key_and_digest_resolution_only_and_every_relation_except_identity_is_not_evaluated",
+    "relation_keys": ["domain", "effects", "failure_modes", "identity", "input_schemas", "not_applicable", "observability", "output_schemas", "permission_requirements", "postconditions", "preconditions", "proof_obligations", "quality_gates", "risk_floor", "rollback_or_compensation", "rules", "trigger"],
+    "identity_relation_values": ["capability_contract_digest_mismatch", "capability_id_not_found", "capability_version_not_found", "same_declared_identity"],
+    "nonidentity_relation_value_rule": "for relation key K, exactly K_mismatch, not_evaluated, or same_declared_K",
+    "resolution_relation_matrix": {
+      "resolved_exact_with_contract": "identity same_declared_identity and all nonidentity relations same_declared_K",
+      "resolved_exact_without_contract": "identity same_declared_identity and all nonidentity relations not_evaluated",
+      "digest_mismatch": "identity capability_contract_digest_mismatch and all nonidentity relations not_evaluated",
+      "id_not_found": "identity capability_id_not_found and all nonidentity relations not_evaluated",
+      "version_not_found": "identity capability_version_not_found and all nonidentity relations not_evaluated",
+      "nonidentity_mismatch_values": "reserved_for_a_future_declared_comparator_and_never_emitted_by_v1_resolver"
+    },
+    "resolution_reason_codes": {
+      "resolved_exact": [],
+      "capability_contract_digest_mismatch": ["capability_contract_digest_mismatch"],
+      "capability_id_not_found": ["capability_id_not_found"],
+      "capability_version_not_found": ["capability_version_not_found"]
+    },
+    "resolution_order": ["capability_id", "capability_version", "capability_contract_sha256", "optional_exact_contract_bytes"],
+    "resolved_digest_equal_but_contract_bytes_differ": "fail_closed_as_internal_digest_inconsistency",
+    "external_legacy_888_digest": "ordinary_resolution_order_no_special_case; current singleton yields capability_id_not_found; a future version containing the exact key yields capability_contract_digest_mismatch unless its real digest equals the reference; no legacy-specific reason code and never permission",
+    "assessment_validation": "recompute_complete_relations_reasons_constants_and_require_byte_identical_canonical_reassembly",
+    "repository_or_network_read_by_pure_resolver": false,
+    "implementation_or_test_execution_by_resolver": false
+  },
+  "x-forgeos-golden": {"path": "docs/contracts/fixtures/capability-registry-v1.json", "physical_bytes": 28758, "physical_sha256": "0ce4929ad82ce70ef0520be80b7bd3eaf47f5ff1205d0a53e12fbe1115ed11b5", "physical_framing": "exact_compact_canonical_json_then_exactly_one_lf", "generic_object_bytes_include_terminal_lf": false, "loader_may_accept_missing_or_multiple_terminal_lf": false, "physical_sha256_pin_required_after_fixture_construction": true},
+  "x-forgeos-cli": {"command": "forge capability-registry", "subcommands": ["resolve", "validate"], "validate": "validate --registry FILE|-; emit exact validated registry bytes plus LF", "resolve": "resolve --registry FILE|- --request FILE|-; exactly one input may be -; emit exact assessment bytes plus LF", "stdin_framing": "read_through_explicit_EOF_with_the_selected_document_bound_and_at_most_one_overflow_detection_byte; temporary_nonblocking_exhaustion_is_incomplete_and_fails_closed", "usage_error": "unknown_repeated_missing_or_positional_arguments_exit_2_with_empty_stdout", "validation_error": "malformed_profile_or_semantic_error_exit_1_with_empty_stdout"},
+  "x-forgeos-authority-semantics": {
+    "delivery": "staged_contract_schema_and_read_only_resolution_semantics",
+    "positive_result": "RESOLVED_DECLARED_CAPABILITY_REFERENCE_ONLY (no registry or owner authentication, rule or gate applicability, proof satisfaction, test pass, implementation availability, Grant activation, authorization, permission, invocation, runtime routing, persistence, transition, execution, or effect attestation)",
+    "registry_and_owner_authentication": "not_evaluated",
+    "rules_gates_proofs": "not_evaluated",
+    "authorization_decision": "none",
+    "all_boolean_attestations": false,
+    "capability_grant_activation": false,
+    "capability_invocation": false,
+    "effect_dispatch": false,
+    "transition_or_controller": false,
+    "runtime_routing": false,
+    "persistence": "none",
+    "attestations": []
+  },
+  "x-forgeos-limits": {
+    "max_registry_bytes": 16777216,
+    "max_entry_bytes": 1048576,
+    "max_contract_bytes": 524288,
+    "max_content_set_bytes": 4194304,
+    "max_request_bytes": 262144,
+    "max_assessment_bytes": 262144,
+    "max_golden_bytes": 33554432,
+    "max_json_depth": 16,
+    "max_object_fields": 64,
+    "max_array_items": 256,
+    "max_string_utf8_bytes": 16384,
+    "max_identifier_utf8_bytes": 160,
+    "max_repository_path_utf8_bytes": 4096,
+    "max_content_files": 256,
+    "max_physical_walk_entries": 65536,
+    "max_entries": 1,
+    "integer_domain": "signed_int64"
+  }
+}
