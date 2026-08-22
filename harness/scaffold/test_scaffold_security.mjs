@@ -1,11 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  chmodSync,
   existsSync,
   linkSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
+  renameSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
@@ -15,6 +19,8 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import {
+  PROJECT_INSTANCE_FILES,
+  renderScaffoldState,
   scaffold,
   SCAFFOLD_STATE_FILE,
 } from './forge-init.mjs';
@@ -24,6 +30,9 @@ import {
 import {
   assertSafeSourceProjection,
   readFileNoFollow,
+  releaseFileExclusiveClaim,
+  snapshotFileNoFollow,
+  writeFileExclusiveNoFollow,
   writeFileNoFollow,
 } from './scaffold-fs.mjs';
 
@@ -45,6 +54,19 @@ function scaffoldProject(t, suffix) {
   return { root, target };
 }
 
+test('source snapshots reject in-place changes after their opening metadata', (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'forge-stable-source-read-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const source = join(root, 'source.mjs');
+  const initial = Buffer.from('// initial source bytes\n');
+  const replacement = Buffer.from('// replacement source bytes with a new size\n');
+  writeFileSync(source, initial);
+  assert.throws(() => snapshotFileNoFollow(
+    source, 'mutable source fixture', () => writeFileSync(source, replacement),
+  ), /changed file contents.*mutable source fixture/i);
+  assert.deepEqual(readFileSync(source), replacement);
+});
+
 test('upgrade rejects a hardlinked governed target without changing its outside inode', (t) => {
   const { root, target } = scaffoldProject(t, 'target-hardlink');
   const destination = join(target, 'harness', 'gate.mjs');
@@ -61,6 +83,95 @@ test('upgrade rejects a hardlinked governed target without changing its outside 
     /unsafe hardlink path.*gate\.mjs/i,
   );
   assert.ok(readFileSync(outside).equals(original));
+});
+
+test('changed-file publication rejects a hardlink added after preparation', (t) => {
+  const { root, target } = scaffoldProject(t, 'changed-hardlink-race');
+  const destination = join(target, 'harness', 'gate.mjs');
+  const outside = join(root, 'outside-gate.mjs');
+  const drift = Buffer.from('// pre-transaction changed bytes\n');
+  writeFileSync(destination, drift);
+
+  assert.throws(
+    () => runUpgrade(
+      { from: SOURCE_ROOT, target, apply: true, backup: false, prune: false },
+      new Date(),
+      { afterClassification() { linkSync(destination, outside); } },
+    ),
+    /refusing changed file path for changed target.*gate\.mjs/i,
+  );
+  assert.ok(readFileSync(destination).equals(drift));
+  assert.ok(readFileSync(outside).equals(drift), 'staged successor must never truncate the alias');
+});
+
+function assertRelocatedParentFails(t, kind) {
+  const { root, target } = scaffoldProject(t, `${kind}-parent-race`);
+  const relative = kind === 'changed'
+    ? join('harness', 'gate.mjs') : join('harness', 'retired-tool.mjs');
+  const destination = join(target, relative);
+  const prior = Buffer.from(`// ${kind} bytes in detached parent\n`);
+  writeFileSync(destination, prior);
+  const statePath = join(target, SCAFFOLD_STATE_FILE);
+  if (kind === 'removed') {
+    const copied = JSON.parse(readFileSync(statePath, 'utf8')).copied;
+    writeFileSync(statePath, renderScaffoldState([...copied, relative]));
+  }
+  const stateBefore = readFileSync(statePath);
+  const detached = join(root, `detached-${kind}-harness`);
+  const replacement = Buffer.from(`// replacement ${kind} parent bytes\n`);
+  assert.throws(
+    () => runUpgrade(
+      { from: SOURCE_ROOT, target, apply: true, backup: false, prune: kind === 'removed' },
+      new Date(),
+      { afterClassification() {
+        renameSync(dirname(destination), detached);
+        mkdirSync(dirname(destination));
+        writeFileSync(destination, replacement);
+      } },
+    ),
+    /refusing changed directory boundary/,
+  );
+  assert.ok(readFileSync(destination).equals(replacement));
+  assert.ok(readFileSync(join(detached, relative.split('/').at(-1))).equals(prior));
+  assert.ok(readFileSync(statePath).equals(stateBefore));
+}
+
+test('changed-file transaction rejects a relocated parent', (t) => {
+  assertRelocatedParentFails(t, 'changed');
+});
+
+test('prune transaction rejects a relocated parent', (t) => {
+  assertRelocatedParentFails(t, 'removed');
+});
+
+test('failed commit restores changed, pruned, project-instance and ledger paths', (t) => {
+  const { target } = scaffoldProject(t, 'complete-rollback');
+  const gate = join(target, 'harness', 'gate.mjs');
+  const gatePrior = Buffer.from('// changed bytes requiring rollback\n');
+  writeFileSync(gate, gatePrior);
+  const retiredRel = join('harness', 'retired-tool.mjs');
+  const retired = join(target, retiredRel);
+  const retiredPrior = Buffer.from('// retired bytes requiring rollback\n');
+  writeFileSync(retired, retiredPrior);
+  const projectInstance = join(target, PROJECT_INSTANCE_FILES[0]);
+  rmSync(projectInstance);
+  const statePath = join(target, SCAFFOLD_STATE_FILE);
+  const copied = JSON.parse(readFileSync(statePath, 'utf8')).copied;
+  writeFileSync(statePath, renderScaffoldState([...copied, retiredRel]));
+  const statePrior = readFileSync(statePath);
+
+  assert.throws(
+    () => runUpgrade(
+      { from: SOURCE_ROOT, target, apply: true, backup: false, prune: true },
+      new Date(),
+      { afterScaffoldStateWrite() { throw new Error('forced complete rollback'); } },
+    ),
+    /forced complete rollback/,
+  );
+  assert.ok(readFileSync(gate).equals(gatePrior));
+  assert.ok(readFileSync(retired).equals(retiredPrior));
+  assert.equal(existsSync(projectInstance), false);
+  assert.ok(readFileSync(statePath).equals(statePrior));
 });
 
 test('hardlinked scaffold state is rejected for both read and write', (t) => {
@@ -83,6 +194,76 @@ test('hardlinked scaffold state is rejected for both read and write', (t) => {
     /unsafe hardlink path.*scaffold-state\.json/i,
   );
   assert.ok(readFileSync(outside).equals(original));
+});
+
+test('upgrade trusts only exact safe ledger modes and never normalizes unsafe input', (t) => {
+  const { target } = scaffoldProject(t, 'state-mode');
+  const state = join(target, SCAFFOLD_STATE_FILE);
+  const original = readFileSync(state);
+  for (const mode of [0o600, 0o640, 0o644]) {
+    chmodSync(state, mode);
+    const safe = runUpgrade({
+      from: SOURCE_ROOT, target, apply: true, backup: false, prune: false,
+    });
+    assert.equal(safe.stateUpdated, false);
+    assert.equal(lstatSync(state).mode & 0o7777, mode);
+    assert.ok(readFileSync(state).equals(original));
+
+    const copied = JSON.parse(original).copied;
+    writeFileSync(state, renderScaffoldState([...copied, 'harness/retired-mode-test.mjs']));
+    chmodSync(state, mode);
+    const updated = runUpgrade({
+      from: SOURCE_ROOT, target, apply: true, backup: false, prune: true,
+    });
+    assert.equal(updated.stateUpdated, true);
+    assert.equal(lstatSync(state).mode & 0o7777, mode);
+    assert.ok(readFileSync(state).equals(original));
+  }
+
+  const gate = join(target, 'harness', 'gate.mjs');
+  const drift = Buffer.from('// unsafe ledger must preempt target writes\n');
+  writeFileSync(gate, drift);
+  for (const mode of [0o664, 0o646, 0o400, 0o4664]) {
+    chmodSync(state, mode);
+    assert.throws(
+      () => runUpgrade({
+        from: SOURCE_ROOT, target, apply: true, backup: false, prune: false,
+      }),
+      /scaffold-state\.json: unsafe mode/i,
+    );
+    assert.equal(lstatSync(state).mode & 0o7777, mode);
+    assert.ok(readFileSync(state).equals(original));
+    assert.ok(readFileSync(gate).equals(drift));
+  }
+});
+
+test('upgrade rejects unknown, duplicate and noncanonical ledger schemas before writes', (t) => {
+  const { target } = scaffoldProject(t, 'state-schema');
+  const statePath = join(target, SCAFFOLD_STATE_FILE);
+  const original = JSON.parse(readFileSync(statePath, 'utf8'));
+  const gate = join(target, 'harness', 'gate.mjs');
+  const drift = Buffer.from('// malformed ledger must preempt target writes\n');
+  writeFileSync(gate, drift);
+  const cases = [
+    [{ ...original, version: 2 }, /exact .*version: 1/i],
+    [{ ...original, extra: true }, /exact .*schema/i],
+    [{ ...original, copied: [...original.copied, original.copied[0]] }, /must be unique/i],
+    [{ ...original, copied: [...original.copied, 'harness\\gate.mjs'] }, /unsafe path/i],
+    [{ version: 1, copied: 'harness/gate.mjs' }, /exact .*copied/i],
+  ];
+  for (const [ledger, error] of cases) {
+    const encoded = Buffer.from(`${JSON.stringify(ledger, null, 2)}\n`);
+    writeFileSync(statePath, encoded);
+    chmodSync(statePath, 0o600);
+    assert.throws(
+      () => runUpgrade({
+        from: SOURCE_ROOT, target, apply: true, backup: false, prune: false,
+      }),
+      error,
+    );
+    assert.ok(readFileSync(statePath).equals(encoded));
+    assert.ok(readFileSync(gate).equals(drift));
+  }
 });
 
 test('forced init preflights every existing leaf before changing an earlier file', (t) => {
@@ -111,6 +292,40 @@ test('forced init preflights every existing leaf before changing an earlier file
   );
   assert.ok(readFileSync(early).equals(earlyBytes), 'late rejection must precede early overwrite');
   assert.ok(readFileSync(outside).equals(outsideBytes), 'external hardlink inode must not change');
+});
+
+test('failed exclusive staging never publishes a partial destination', (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'forge-exclusive-staging-failure-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const destination = join(root, 'governed.txt');
+
+  assert.throws(
+    () => writeFileExclusiveNoFollow(destination, null, 'governed staging failure'),
+    /data.*string|buffer|typedarray|dataview/i,
+  );
+  assert.equal(existsSync(destination), false);
+  assert.deepEqual(
+    readdirSync(root).filter((name) => name.startsWith('.forge-exclusive-')),
+    [],
+  );
+});
+
+test('exclusive publication transfers a descriptor-backed claim before cleanup', (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'forge-exclusive-owned-publication-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const destination = join(root, 'governed.txt');
+  const claim = writeFileExclusiveNoFollow(
+    destination, Buffer.from('owned publication\n'), 'owned publication', 0o600,
+  );
+  assert.notEqual(claim, null);
+  assert.equal(lstatSync(destination).nlink, 2);
+  assert.equal(existsSync(claim.sentinel), true);
+  releaseFileExclusiveClaim(claim, 'owned publication');
+  assert.equal(lstatSync(destination).nlink, 1);
+  assert.equal(existsSync(claim.sentinel), false);
+  assert.deepEqual(
+    readdirSync(root).filter((name) => name.startsWith('.forge-exclusive-')), [],
+  );
 });
 
 test('--prune rejects normalized, Win32-trimmed, and portable current aliases', (t) => {

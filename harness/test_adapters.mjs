@@ -37,6 +37,7 @@ import {
 } from './adapters.mjs';
 import { judgeLint, unconfigured, probeLint, probeCoverage, PASS, FAIL, NA } from './acceptance.mjs';
 import { parseRules } from './arch/scan.mjs';
+const noTool = () => ({ ok: false, code: 127, out: 'tool unavailable' });
 
 // --- loadAdapter: reads each shipped adapter's lint command ------------------
 
@@ -252,13 +253,14 @@ test('appTestPlan -> fallback with "no test command" when the adapter ships none
 
 test('loadAdapter exposes each shipped coverage command from the yml maps', () => {
   assert.equal(loadAdapter('go').coverage, 'go test -coverprofile=coverage.out ./...');
-  assert.equal(loadAdapter('python').coverage, 'pytest --cov --cov-report=json');
-  assert.equal(loadAdapter('typescript').coverage, 'vitest run --coverage');
+  assert.equal(loadAdapter('python').coverage, 'python3 -I -B harness/adapters/python_coverage_runner.py --import-mode=importlib -p no:cacheprovider --cov --cov-report=json:coverage.json -q');
+  assert.equal(loadAdapter('typescript').coverage,
+    'vitest run --coverage --coverage.reporter=json-summary');
 });
 
 test('coverageBinary extracts the coverage tool (first token) of each command', () => {
   assert.equal(coverageBinary('go test -coverprofile=coverage.out ./...'), 'go');
-  assert.equal(coverageBinary('pytest --cov --cov-report=json'), 'pytest');
+  assert.equal(coverageBinary(loadAdapter('python').coverage), 'python3');
   assert.equal(coverageBinary('vitest run --coverage'), 'vitest');
   assert.equal(coverageBinary(undefined), null, 'no coverage command -> null');
   assert.equal(coverageBinary(''), null);
@@ -297,6 +299,7 @@ test('coverageUnrunnable matches can-not-run signals but NOT a real coverage run
   assert.equal(coverageUnrunnable('no tests ran in 0.01s'), true);
   assert.equal(coverageUnrunnable('No test files found, exiting with code 1'), true);
   assert.equal(coverageUnrunnable('error: unrecognized arguments: --cov'), true);
+  assert.equal(coverageUnrunnable("python coverage unavailable: No module named pytest"), true);
   assert.equal(coverageUnrunnable('could not find config'), true);
   // A REAL coverage run that merely fell below threshold must NOT match (-> stays FAIL):
   assert.equal(coverageUnrunnable('coverage: 42.0% of statements'), false, 'a real low-coverage run is not "unrunnable"');
@@ -306,7 +309,6 @@ test('coverageUnrunnable matches can-not-run signals but NOT a real coverage run
 });
 
 // --- parseCoveragePercent: pull the overall % from common tool outputs -------
-
 test('parseCoveragePercent extracts the overall % (only %-signed figures; bare numbers -> null)', () => {
   // go: "coverage: 73.4% of statements".
   assert.equal(parseCoveragePercent('ok  \texample/pkg\t0.012s\tcoverage: 73.4% of statements'), 73.4);
@@ -325,7 +327,6 @@ test('parseCoveragePercent extracts the overall % (only %-signed figures; bare n
 });
 
 // --- judgeCoverage: the PURE honesty / fail-safe decision (no tool needed) ----
-
 test('judgeCoverage -> PASS when the tool ran and % >= threshold', () => {
   const v = judgeCoverage('go', 'go', true, { ok: true, code: 0, out: 'coverage: 82.0% of statements' }, 60);
   assert.equal(v.status, PASS);
@@ -360,11 +361,11 @@ test('judgeCoverage -> N/A when installed but COULD NOT RUN here (not a code ver
   assert.match(v.detail, /could not run here/);
 });
 
-test('judgeCoverage -> N/A when the tool ran but emitted no parseable % (can-not-determine)', () => {
-  const r = { ok: true, code: 0, out: 'tests passed; (no coverage summary line)' };
-  const v = judgeCoverage('typescript', 'vitest', true, r, 60);
-  assert.equal(v.status, NA, 'no parseable % is can-not-determine -> N/A, not a faked PASS/FAIL');
-  assert.match(v.detail, /no parseable coverage/);
+test('machine coverage reports fail closed and outrank unrelated no-test prose', () => {
+  assert.match(judgeCoverage('typescript', 'vitest', true, { ok: true, code: 0, out: '' }, 60).detail, /machine coverage report invalid or missing/);
+  for (const [lang, bin] of [['python', 'pytest'], ['typescript', 'vitest']]) {
+    assert.equal(judgeCoverage(lang, bin, true, { ok: true, code: 0, out: 'optional plugin: no tests found', coveragePercent: 20 }, 60).status, FAIL);
+  }
 });
 
 test('judgeCoverage -> N/A when the adapter has no coverage command (bin null)', () => {
@@ -472,28 +473,27 @@ test('resolveCoverageThreshold on THIS repo agrees with computeCoverageThreshold
   const expected = computeCoverageThreshold(modes, project.mode, project.lifecycle);
   assert.equal(resolveCoverageThreshold(REPO_ROOT), expected, `this repo (${project.mode}×${project.lifecycle}) resolves to its computed floor ${expected}`);
 });
-// NOTE: the sibling ENFORCE-strictness resolution exported by adapters.mjs (warn|
-// block knob) is unit-tested in test_enforce.mjs; gate end-to-end in test_gate.mjs.
-// --- probeCoverage over the REAL repo: honest aggregate verdict --------------
+// The real collect path owns actual tool execution; self-tests inject outcomes.
 test('probeCoverage returns a well-formed, honest result on the real repo', () => {
-  const r = probeCoverage();
+  const r = probeCoverage(REPO_ROOT, noTool);
   assert.equal(r.criterion, 'coverage');
   // Aggregate must be one of the three honest statuses (never a faked value).
   assert.ok([PASS, FAIL, NA].includes(r.status), `unexpected status ${r.status}`);
-  // This repo wires no runnable+configured coverage tool (go is installed but the
-  // repo root is not a Go module; pytest/vitest absent), so the honest outcome is
-  // N/A — NOT a faked PASS, and a missing/unrunnable tool must NOT FAIL.
+  // A missing tool is honestly N/A, never a faked PASS or FAIL.
   assert.equal(r.status, NA, `repo has no runnable coverage tool -> coverage must be N/A (got ${r.status}: ${r.detail})`);
   assert.ok(r.detail.length > 0, 'N/A must carry an honest reason');
 });
 
 test('probeCoverage does NOT pollute the repo with a coverage.out artifact', () => {
-  // The go coverage command drops `coverage.out` even when it fails; a gate must
-  // not leave artifacts in the tree it judges. probeCoverage cleans up one it
-  // created. (If a coverage.out already exists here, skip — never clobber it.)
-  const repoRoot = dirname(dirname(fileURLToPath(import.meta.url))); // harness/.. = repo root
-  const artifact = join(repoRoot, 'coverage.out');
-  if (existsSync(artifact)) return; // pre-existing (not ours) — don't touch/assert.
-  probeCoverage();
-  assert.ok(!existsSync(artifact), 'probeCoverage must remove the coverage.out it created (no repo pollution)');
+  inTmp((root) => {
+    writeFileSync(join(root, 'main.go'), 'package main\n');
+    const artifact = join(root, 'coverage.out');
+    const exec = (_cmd, args) => {
+      if (args[0] === 'version') return { ok: true, code: 0, out: 'go version' };
+      writeFileSync(artifact, 'synthetic coverage');
+      return { ok: false, code: 1, out: 'does not contain main module' };
+    };
+    assert.equal(probeCoverage(root, exec).status, NA);
+    assert.ok(!existsSync(artifact), 'probeCoverage must remove its coverage.out');
+  });
 });

@@ -42,7 +42,10 @@ export function run(cmd, args, extraEnv = {}, cwd = ROOT) {
   // fresh top-level run and prints its TAP summary to stdout, rather than
   // switching to child-reporter mode (which emits no `# tests N` and would make
   // the app-test count read 0 → a false "no app tests discovered").
-  const env = { ...process.env, ...extraEnv };
+  // Acceptance is observational: Python children (including those spawned by
+  // Node test suites) must not leave __pycache__ behind and thereby change the
+  // tree before later governance/architecture probes inspect it.
+  const env = { ...process.env, ...extraEnv, PYTHONDONTWRITEBYTECODE: '1' };
   delete env.NODE_TEST_CONTEXT;
   const res = spawnSync(cmd, args, {
     cwd, encoding: 'utf8', env, maxBuffer: COMMAND_OUTPUT_MAX_BYTES,

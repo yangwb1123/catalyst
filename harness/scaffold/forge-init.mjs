@@ -157,6 +157,7 @@ export function renderProjectYml(name, mode, lifecycle) {
 extends: []
 
 project: ${name}
+repository_flavor: scaffolded_project
 mode: ${mode}                 # explorer | balanced | engineering | cto
 lifecycle: ${lifecycle}            # idea | mvp | growth | production
 
@@ -397,9 +398,9 @@ function assertSafeTarget(targetDir, force) {
 }
 
 // Write a generated file into the target, creating parent dirs.
-function writeGenerated(relPath, content, targetDir, created) {
+function writeGenerated(relPath, content, targetDir, created, sourceMode = null) {
   const dest = join(targetDir, relPath);
-  writeFileNoFollow(dest, content, relPath);
+  writeFileNoFollow(dest, content, relPath, sourceMode);
   created.push(relPath);
 }
 
@@ -416,10 +417,10 @@ function writeGeneratedProjectFiles(cfg, targetDir, created) {
     [join('examples', 'starter', 'test', 'greet.test.mjs'), renderStarterAppTest()],
     ['README.md', renderReadmeMd(cfg.name)],
     ['.gitignore', renderGitignore()],
-    [SCAFFOLD_STATE_FILE, renderScaffoldState(copiedProjection())],
+    [SCAFFOLD_STATE_FILE, renderScaffoldState(copiedProjection()), 0o600],
   ];
-  for (const [relPath, content] of files) {
-    writeGenerated(relPath, content, targetDir, created);
+  for (const [relPath, content, sourceMode] of files) {
+    writeGenerated(relPath, content, targetDir, created, sourceMode);
   }
 }
 

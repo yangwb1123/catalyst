@@ -205,6 +205,12 @@ def _enforced_binding_issues(item, detector_id, argv, invocation, load_bearing, 
     return issues
 
 
+def _entrypoint_argument(argv):
+    if argv[:3] == ["python3", "-I", "-B"]:
+        return argv[3] if len(argv) > 3 else None
+    return argv[1] if len(argv) > 1 else None
+
+
 def _detector_shape_issues(item, path, repo_root, load_bearing):
     detector_id = item.get("id", "<unknown>")
     label = f"{path}: detector {detector_id!r}"
@@ -224,10 +230,11 @@ def _detector_shape_issues(item, path, repo_root, load_bearing):
     if not isinstance(argv, list) or not argv or not all(isinstance(v, str) and v for v in argv):
         issues.append(f"{label}: argv must be a non-empty string list")
     elif len(argv) > 1:
-        issue = repo_path_issue(repo_root, argv[1], f"{label} entrypoint")
+        entrypoint = _entrypoint_argument(argv)
+        issue = repo_path_issue(repo_root, entrypoint, f"{label} entrypoint")
         if issue:
             issues.append(issue)
-        elif not (repo_root / argv[1]).is_file():
+        elif not (repo_root / entrypoint).is_file():
             issues.append(f"{label}: entrypoint is not a regular file")
     invocation_fields = {"owner", "adapter", "acceptance_criterion", "load_bearing"}
     if not isinstance(invocation, dict) or set(invocation) != invocation_fields:

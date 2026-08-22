@@ -38,12 +38,11 @@
 //        [--apply] [--no-backup] [--prune]
 //   (default is DRY: print the drift report, write nothing)
 import {
-  existsSync,
   lstatSync,
-  unlinkSync,
 } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { join, relative, resolve, sep } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 // Shared SINGLE SOURCE OF TRUTH: the same manifests forge-init copies, imported
@@ -58,11 +57,22 @@ import {
   assertNoSymlinkComponents,
   assertSafeRegularFile,
   copyFileExclusiveNoFollow,
-  copyFileNoFollow,
-  readFileNoFollow,
-  writeFileNoFollow,
+  releaseFileExclusiveClaim,
+  snapshotFileNoFollow,
 } from './scaffold-fs.mjs';
-import { removedFilesForProjection } from './upgrade-state.mjs';
+import {
+  classifyDrift, classifyFrozenDrift, freezeSourceProjection,
+} from './upgrade-classification.mjs';
+import {
+  removedFilesForProjection,
+} from './upgrade-state.mjs';
+import {
+  withAddedReservations,
+} from './upgrade-added-reservations.mjs';
+import { recoverInterruptedUpgrade } from './upgrade-transaction-journal.mjs';
+import {
+  assertParentBoundary, captureParentBoundary, closeParentBoundary,
+} from './upgrade-path-boundary.mjs';
 
 // --- pure core (no writes; unit-testable) ------------------------------------
 
@@ -75,16 +85,6 @@ export function manifestProjection(sourceRoot) {
   return copiedProjection(sourceRoot);
 }
 
-// byteEqual(a, b): true iff the two files exist and are byte-identical. A missing
-// side is NOT equal (the caller distinguishes added/removed before calling). The
-// SAME deepEqual-on-bytes test test_forge-init uses for "copied == source".
-function byteEqual(aPath, bPath) {
-  if (!existsSync(aPath) || !existsSync(bPath)) return false;
-  const a = readFileNoFollow(aPath, `source file ${aPath}`);
-  const b = readFileNoFollow(bPath, `target file ${bPath}`);
-  return a.equals(b);
-}
-
 function lexicalExists(path) {
   try {
     lstatSync(path);
@@ -95,28 +95,47 @@ function lexicalExists(path) {
   }
 }
 
-// classifyDrift(sourceRoot, targetDir) -> { added, changed, unchanged } over the
-// manifest projection, each an array of relative paths (sorted, stable output):
-//   added     — in SOURCE, absent in the project (a new harness tool / asset).
-//   changed   — present in both but bytes differ (the project's copy lagged).
-//   unchanged — byte-identical already (idempotent: a re-run is all-unchanged).
-// PURE: only reads; classification is the whole job, the I/O apply path acts on it.
-export function classifyDrift(sourceRoot, targetDir) {
-  const added = [];
-  const changed = [];
-  const unchanged = [];
-  for (const rel of manifestProjection(sourceRoot)) {
-    const dst = join(targetDir, rel);
-    if (!existsSync(dst)) added.push(rel);
-    else if (byteEqual(join(sourceRoot, rel), dst)) unchanged.push(rel);
-    else changed.push(rel);
+function validateHooks(hooks) {
+  for (const name of [
+    'afterClassification',
+    'afterAddedReservation',
+    'afterBackupReservation',
+    'beforePriorDetach',
+    'beforeTransactionControlDetach',
+    'afterTransactionControlDetach',
+    'beforeUpgradeStageDirectoryDetach',
+    'beforeUpgradeStageFileCleanup',
+    'afterUpgradeStageDirectoryDetach',
+    'afterUpgradeStageDirectoryCreate',
+    'afterUpgradeStageIntentWrite',
+    'afterUpgradeStageNextSync',
+    'afterUpgradePriorClaimSync',
+    'afterPriorDetach',
+    'beforeAddedRollbackRename',
+    'beforeOwnedDirectoryQuarantineReservation',
+    'beforeOwnedDirectoryFinalDetach',
+    'afterScaffoldStateWrite',
+    'afterTransactionCommit',
+    'afterTransactionControlParentSync',
+    'afterTransactionControlPrivateSync',
+    'afterTransactionControlPublish',
+    'afterTransactionDurability',
+    'afterTransactionFinishMarker',
+    'afterTransactionJournalWrite',
+    'afterTransactionStart',
+    'afterApplyReport',
+    'afterSourceSnapshotRead',
+    'afterTargetClassificationRead',
+    'afterOwnedDirectoryQuarantine',
+    'afterOwnedDirectoryMarkerUnlink',
+  ]) {
+    if (hooks[name] !== undefined && typeof hooks[name] !== 'function') {
+      throw new Error(`${name} test hook must be a function`);
+    }
   }
-  return {
-    added: added.sort(),
-    changed: changed.sort(),
-    unchanged: unchanged.sort(),
-  };
 }
+
+export { classifyDrift, freezeSourceProjection };
 
 // --- I/O boundary ------------------------------------------------------------
 
@@ -145,14 +164,54 @@ export function parseArgs(argv) {
   return out;
 }
 
-// sourceSha(sourceRoot): the SOURCE repo's HEAD commit (read-only git), so the
-// report can honestly stamp "synced from <sha>". Returns a short sha or 'unknown'
-// (not a git repo / git absent) — never throws; the upgrade does not depend on it.
-function sourceSha(sourceRoot) {
-  const r = spawnSync('git', ['-C', sourceRoot, 'rev-parse', '--short', 'HEAD'], {
-    encoding: 'utf8',
-  });
-  return r.status === 0 ? r.stdout.trim() : 'unknown';
+// Report a commit only for a clean source. Dirty and untracked source bytes are
+// copied exactly, but must never be attributed to HEAD alone.
+function headProjectionMatches(sourceRoot, snapshots, options) {
+  const format = spawnSync(
+    'git', ['-C', sourceRoot, 'rev-parse', '--show-object-format'], options,
+  );
+  const tree = spawnSync(
+    'git', ['-C', sourceRoot, 'ls-tree', '-rz', '--full-tree', 'HEAD'], options,
+  );
+  const algorithm = format.stdout?.trim();
+  if (format.status !== 0 || tree.status !== 0 || !['sha1', 'sha256'].includes(algorithm)) {
+    return false;
+  }
+  const entries = new Map(tree.stdout.split('\0').filter(Boolean).map((row) => {
+    const [metadata, path] = row.split('\t');
+    const [mode, type, oid] = metadata.split(' ');
+    return [path, { mode, oid, type }];
+  }));
+  for (const [rel, snapshot] of snapshots) {
+    const entry = entries.get(rel);
+    const mode = snapshot.mode & 0o111 ? '100755' : '100644';
+    const oid = createHash(algorithm)
+      .update(`blob ${snapshot.bytes.length}\0`).update(snapshot.bytes).digest('hex');
+    if (entry?.type !== 'blob' || entry.mode !== mode || entry.oid !== oid) return false;
+  }
+  return true;
+}
+
+export function sourceProvenance(sourceRoot, snapshots = null) {
+  const options = { encoding: 'utf8', maxBuffer: 4 * 1024 * 1024 };
+  const head = spawnSync(
+    'git', ['-C', sourceRoot, 'rev-parse', '--short', 'HEAD'], options,
+  );
+  if (head.status !== 0) return 'working tree (Git provenance unavailable)';
+  const sha = head.stdout.trim();
+  const status = spawnSync(
+    'git', [
+      '-C', sourceRoot, 'status', '--porcelain=v1', '--untracked-files=all', '--ignored=matching',
+    ], options,
+  );
+  if (status.status !== 0) {
+    return `working tree based on HEAD ${sha} (dirty state unavailable)`;
+  }
+  const projectionClean = snapshots === null
+    || headProjectionMatches(sourceRoot, snapshots, options);
+  return status.stdout.length === 0 && projectionClean
+    ? `clean commit ${sha}`
+    : `dirty working tree based on HEAD ${sha}; copying exact working-tree bytes`;
 }
 
 // A path is retired only when the project's persisted prior projection names it,
@@ -168,50 +227,6 @@ function backupTimestamp(now) {
   return now.toISOString().replace(/:/g, '-');
 }
 
-// applyOne(rel, sourceRoot, targetDir, backupDir): overwrite the project's <rel>
-// with SOURCE's bytes, FIRST copying the existing project file (if any) into
-// backupDir/<rel> when backupDir is set. Returns true if a backup was taken. The
-// backup preserves the user's possibly-modified copy verbatim — zero loss.
-function applyOne(rel, sourceRoot, targetDir, backupDir) {
-  const dst = join(targetDir, rel);
-  let backedUp = false;
-  const destinationExists = lexicalExists(dst);
-  if (destinationExists && lstatSync(dst).isSymbolicLink()) {
-    throw new Error(`refusing to overwrite symlink: ${rel}`);
-  }
-  if (backupDir && destinationExists) {
-    const bak = join(backupDir, rel);
-    copyFileNoFollow(dst, bak, `target ${rel}`, `backup ${rel}`);
-    backedUp = true;
-  }
-  copyFileNoFollow(join(sourceRoot, rel), dst, `source ${rel}`, rel);
-  return backedUp;
-}
-
-// applyDrift(drift, paths): write every changed + added file from SOURCE into the
-// project (changed ones backed up first when backup is on). unchanged is NEVER
-// touched — so a re-run that finds all-unchanged writes nothing and backs up
-// nothing (idempotent). Returns { written, backedUp } counts for the report.
-// Added files have no project copy to back up; changed files do. Only reached
-// under --apply (main gates it), and only ever over manifest-projection paths —
-// the red line (no identity path) holds structurally.
-function applyDrift(drift, { sourceRoot, targetDir, backupDir }) {
-  let written = 0;
-  let backedUp = 0;
-  for (const rel of [...drift.changed, ...drift.added]) {
-    if (applyOne(rel, sourceRoot, targetDir, backupDir)) backedUp += 1;
-    written += 1;
-  }
-  return { written, backedUp };
-}
-
-function backupExisting(rel, targetDir, backupDir) {
-  if (!backupDir) return false;
-  const bak = join(backupDir, rel);
-  copyFileNoFollow(join(targetDir, rel), bak, `target ${rel}`, `backup ${rel}`);
-  return true;
-}
-
 // Validate the complete backup write set before the first governed overwrite.
 // A bad later leaf must not allow earlier files in the batch to be mutated.
 function preflightBackupLeaves(rels, backupDir) {
@@ -223,42 +238,18 @@ function preflightBackupLeaves(rels, backupDir) {
   }
 }
 
-function pruneRemoved(removed, { targetDir, backupDir }) {
-  let pruned = 0;
-  let backedUp = 0;
-  for (const rel of removed) {
-    const dst = join(targetDir, rel);
-    assertSafeRegularFile(dst, `target ${rel}`);
-    if (backupExisting(rel, targetDir, backupDir)) backedUp += 1;
-    assertNoSymlinkComponents(dst, rel);
-    assertSafeRegularFile(dst, `target ${rel}`);
-    unlinkSync(dst);
-    pruned += 1;
-  }
-  return { pruned, backedUp };
-}
-
-function writeScaffoldState(targetDir, paths) {
-  const dst = join(targetDir, SCAFFOLD_STATE_FILE);
-  const content = renderScaffoldState(paths);
-  if (lexicalExists(dst) && lstatSync(dst).isSymbolicLink()) {
-    throw new Error(`refusing to overwrite symlink: ${SCAFFOLD_STATE_FILE}`);
-  }
-  if (existsSync(dst) && readFileNoFollow(dst, SCAFFOLD_STATE_FILE, 'utf8') === content) return false;
-  writeFileNoFollow(dst, content, SCAFFOLD_STATE_FILE);
-  return true;
-}
-
 // printReport: the drift summary + per-file lines. THE WHOLE output in dry mode,
 // the preamble in apply mode, so the operator always sees exactly what will change.
-function printReport(drift, removed, projectInstances, { sha, apply }) {
-  console.log(`forge-upgrade: ${apply ? 'APPLY' : 'DRY'} — synced from ${sha}`);
+function printReport(drift, removed, projectInstances, { provenance, apply }) {
+  console.log(`forge-upgrade: ${apply ? 'APPLY' : 'DRY'} — source: ${provenance}`);
   console.log(
     `  changed: ${drift.changed.length}  added: ${drift.added.length}  ` +
-      `unchanged: ${drift.unchanged.length}  removed: ${removed.length}`,
+      `unchanged: ${drift.unchanged.length}  unowned: ${drift.unowned.length}  ` +
+      `removed: ${removed.length}`,
   );
   for (const rel of drift.changed) console.log(`  changed: ${rel}`);
   for (const rel of drift.added) console.log(`  added: ${rel}`);
+  for (const rel of drift.unowned) console.log(`  unowned conflict: ${rel}`);
   for (const rel of projectInstances) console.log(`  initialize project instance if missing: ${rel}`);
   for (const rel of removed) console.log(`  removed: ${rel} (in project, gone from source)`);
 }
@@ -270,32 +261,35 @@ function missingProjectInstances(targetDir) {
 export function seedProjectInstances(paths, sourceRoot, targetDir) {
   let initialized = 0;
   for (const rel of paths) {
-    const created = copyFileExclusiveNoFollow(
+    const claim = copyFileExclusiveNoFollow(
       join(sourceRoot, rel), join(targetDir, rel),
       `source ${rel}`, `project instance ${rel}`,
     );
-    if (created) initialized += 1;
+    if (claim !== null) {
+      releaseFileExclusiveClaim(claim, `project instance ${rel}`);
+      initialized += 1;
+    }
   }
   return initialized;
 }
 
 // printHonestScope: the standing disclaimer — upgrade resyncs the copied 70%; it
-// does NOT change forge-core binary behavior. Printed every run so the operator is
-// never misled into thinking a binary-behavior drift was fixed here.
+// does NOT change forge/forge-kernel runtime behavior or install authority material.
+// Printed every run so the operator is never misled about the trust boundary.
 function printHonestScope() {
   console.log('');
   console.log('scope: I resync this project\'s COPIED harness + governance (the 70%).');
   console.log('       Missing project-instance contracts are seeded once; existing instances are preserved.');
-  console.log('       I do NOT change forge-core binary behavior — if a per-model');
-  console.log('       latency/cost or other Go-runtime change is what you need,');
-  console.log('       upgrade your `forge` binary separately (this tool cannot).');
+  console.log('       I do NOT install or upgrade `forge` / `forge-kernel` binaries.');
+  console.log('       I never install trust roots, private keys, or runtime state.');
+  console.log('       Upgrade host runtimes separately; a missing compatible kernel is not_executed.');
 }
 
 function printApplySummary({ written, projectInitialized, pruned, backedUp, backupDir, stateUpdated }) {
   console.log('');
   if (written === 0 && projectInitialized === 0 && pruned === 0) {
     console.log(stateUpdated
-      ? `forge-upgrade: APPLIED — governance already in sync; initialized ${SCAFFOLD_STATE_FILE}.`
+      ? `forge-upgrade: APPLIED — governance already in sync; updated ${SCAFFOLD_STATE_FILE}.`
       : 'forge-upgrade: APPLIED — already in sync; nothing written, nothing backed up.');
   } else {
     console.log(
@@ -307,87 +301,145 @@ function printApplySummary({ written, projectInitialized, pruned, backedUp, back
   }
 }
 
-function applyUpgrade(cfg, now, sourceRoot, targetDir, drift, removed, projectInstances) {
-  const backupDir = cfg.backup
-    ? join(targetDir, '.forge', 'upgrade-backup', backupTimestamp(now))
-    : null;
-  if (backupDir) {
-    // Validate every lexical backup ancestor, including a pre-existing timestamp
-    // leaf, before the first backup or governed destination is touched.
-    assertNoSymlinkComponents(join(targetDir, '.forge'), 'backup .forge directory');
-    assertNoSymlinkComponents(
-      join(targetDir, '.forge', 'upgrade-backup'),
-      'backup root directory',
-    );
-    assertNoSymlinkComponents(backupDir, 'backup timestamp directory');
-  }
+function preparedBackupDirectory(cfg, now, targetDir) {
+  if (!cfg.backup) return null;
+  const backupDir = join(targetDir, '.forge', 'upgrade-backup', backupTimestamp(now));
+  assertNoSymlinkComponents(join(targetDir, '.forge'), 'backup .forge directory');
+  assertNoSymlinkComponents(
+    join(targetDir, '.forge', 'upgrade-backup'), 'backup root directory',
+  );
+  assertNoSymlinkComponents(backupDir, 'backup timestamp directory');
+  return backupDir;
+}
+
+function applyUpgrade(
+  cfg, now, sourceRoot, sourcePlan, targetDir, drift, removed, projectInstances,
+  hooks, expectedRoot, targetSnapshots,
+) {
+  const backupDir = preparedBackupDirectory(cfg, now, targetDir);
   if (cfg.prune) {
-    for (const rel of removed) {
-      assertSafeRegularFile(join(targetDir, rel), `target ${rel}`);
-    }
+    for (const rel of removed) assertSafeRegularFile(join(targetDir, rel), `target ${rel}`);
   }
   preflightBackupLeaves(
     [...drift.changed, ...(cfg.prune ? removed : [])],
     backupDir,
   );
-  const applied = applyDrift(drift, { sourceRoot, targetDir, backupDir });
-  const projectInitialized = seedProjectInstances(projectInstances, sourceRoot, targetDir);
-  const pruned = cfg.prune
-    ? pruneRemoved(removed, { targetDir, backupDir })
-    : { pruned: 0, backedUp: 0 };
-  // Retain unpruned retired paths so a later --prune still sees them.
-  const current = manifestProjection(sourceRoot);
+  const current = sourcePlan.projection;
   const statePaths = cfg.prune ? current : [...new Set([...current, ...removed])];
-  const stateUpdated = writeScaffoldState(targetDir, statePaths);
-  const outcome = {
-    written: applied.written,
-    projectInitialized,
-    pruned: pruned.pruned,
-    backedUp: applied.backedUp + pruned.backedUp,
+  const backupSources = backupDir
+    ? [...drift.changed, ...(cfg.prune ? removed : [])] : [];
+  const outcome = withAddedReservations({
+    added: drift.added,
+    backupRoot: backupDir === null
+      ? null : relative(targetDir, backupDir).split(sep).join('/'),
+    backups: backupSources,
+    changed: drift.changed,
+    hookPayload: { drift, sourceRoot, targetDir },
+    observed: [...drift.unchanged, ...(cfg.prune ? [] : removed)],
+    projectInstances,
+    removed: cfg.prune ? removed : [],
+    sourceSnapshots: sourcePlan.files,
+    stateContent: renderScaffoldState(statePaths),
+    statePath: join(targetDir, SCAFFOLD_STATE_FILE),
+    targetDir,
+    targetSnapshots,
+    expectedRoot,
+  }, hooks);
+  Object.assign(outcome, {
     backupDir,
-    stateUpdated,
-  };
+    pruned: cfg.prune ? removed.length : 0,
+    written: drift.added.length + drift.changed.length,
+  });
   printApplySummary(outcome);
   printHonestScope();
   return { drift, removed, ...outcome, applied: true };
 }
 
-// run(cfg, now): the orchestration. Classify drift, print the report + honest
-// scope, and — only on --apply — back up + write changed/added. Returns a result
-// object (for tests + the exit path). Pure of process.exit so it stays testable.
-export function run(cfg, now = new Date()) {
-  const sourceRoot = resolve(cfg.from);
-  const targetDir = resolve(cfg.target);
-  // Read and mutation paths are target-controlled. Validate the target itself,
-  // every existing ancestor, every current manifest destination, and the state
-  // ledger before classification can follow a link outside the project.
-  assertNoSymlinkComponents(targetDir, 'target directory');
+function preflightTargetPaths(targetDir, sourcePlan) {
   assertNoSymlinkComponents(join(targetDir, SCAFFOLD_STATE_FILE), SCAFFOLD_STATE_FILE);
-  for (const rel of manifestProjection(sourceRoot)) {
+  for (const rel of sourcePlan.projection) {
     assertNoSymlinkComponents(join(targetDir, rel), rel);
   }
   for (const rel of PROJECT_INSTANCE_FILES) {
-    assertSafeRegularFile(join(sourceRoot, rel), `source ${rel}`);
     const destination = join(targetDir, rel);
     assertNoSymlinkComponents(destination, rel);
-    if (lexicalExists(destination)) assertSafeRegularFile(destination, `project instance ${rel}`);
+    if (lexicalExists(destination)) {
+      assertSafeRegularFile(destination, `project instance ${rel}`);
+    }
   }
-  const drift = classifyDrift(sourceRoot, targetDir);
-  const removed = removedFiles(sourceRoot, targetDir);
-  const projectInstances = missingProjectInstances(targetDir);
-  for (const rel of removed) assertNoSymlinkComponents(join(targetDir, rel), rel);
-  printReport(drift, removed, projectInstances, { sha: sourceSha(sourceRoot), apply: cfg.apply });
+}
 
-  if (!cfg.apply) {
-    console.log('');
-    console.log('forge-upgrade: DRY run — nothing written. Re-run with --apply to resync.');
-    printHonestScope();
-    return {
-      drift, removed, projectInstances, written: 0, projectInitialized: 0,
-      pruned: 0, backedUp: 0, applied: false,
-    };
+function finishDryRun(drift, removed, projectInstances, hooks, sourceRoot, targetDir) {
+  hooks.afterClassification?.({ drift, sourceRoot, targetDir });
+  console.log('');
+  console.log('forge-upgrade: DRY run — nothing written. Re-run with --apply to resync.');
+  printHonestScope();
+  return {
+    drift, removed, projectInstances, written: 0, projectInitialized: 0,
+    pruned: 0, backedUp: 0, applied: false,
+  };
+}
+
+// run(cfg, now): the orchestration. Classify drift, print the report + honest
+// scope, and — only on --apply — back up + write changed/added. Returns a result
+// object (for tests + the exit path). Pure of process.exit so it stays testable.
+function runPinned(cfg, now, hooks, sourceRoot, targetDir, session) {
+  const root = session.components[0]; const expectedRoot = Object.freeze({ dev: root.dev, ino: root.ino });
+  const targetView = join(session.descriptorRoot, String(root.fd));
+  const sourcePlan = freezeSourceProjection(
+    sourceRoot, null, hooks.afterSourceSnapshotRead,
+  );
+  preflightTargetPaths(targetDir, sourcePlan);
+  assertParentBoundary(session);
+  const recovery = cfg.apply
+    ? recoverInterruptedUpgrade(targetDir, hooks, expectedRoot) : null;
+  if (recovery !== null) {
+    console.log(`forge-upgrade: recovered interrupted ${recovery.phase} transaction${
+      recovery.transactionId ? ` ${recovery.transactionId}` : ''}`);
   }
-  return applyUpgrade(cfg, now, sourceRoot, targetDir, drift, removed, projectInstances);
+  const classified = classifyFrozenDrift(
+    sourcePlan, targetView, hooks.afterTargetClassificationRead,
+  );
+  const { drift, snapshots: targetSnapshots } = classified;
+  const removed = removedFilesForProjection(sourcePlan.projection, targetView);
+  for (const rel of removed) {
+    targetSnapshots.set(
+      rel, snapshotFileNoFollow(join(targetView, rel), `retired target ${rel}`),
+    );
+  }
+  const projectInstances = missingProjectInstances(targetView);
+  assertParentBoundary(session);
+  for (const rel of removed) assertNoSymlinkComponents(join(targetDir, rel), rel);
+  printReport(drift, removed, projectInstances, {
+    provenance: sourceProvenance(sourceRoot, sourcePlan.files), apply: cfg.apply,
+  });
+  hooks.afterApplyReport?.({ drift, sourceRoot, targetDir });
+  assertParentBoundary(session);
+  if (cfg.apply && drift.unowned.length > 0) {
+    throw new Error(
+      `refusing to overwrite unowned scaffold path(s): ${drift.unowned.join(', ')}`,
+    );
+  }
+  if (!cfg.apply) return finishDryRun(
+    drift, removed, projectInstances, hooks, sourceRoot, targetDir,
+  );
+  return applyUpgrade(
+    cfg, now, sourceRoot, sourcePlan, targetDir, drift, removed,
+    projectInstances, hooks, expectedRoot, targetSnapshots,
+  );
+}
+
+export function run(cfg, now = new Date(), hooks = {}) {
+  validateHooks(hooks);
+  const sourceRoot = resolve(cfg.from);
+  const targetDir = resolve(cfg.target);
+  assertNoSymlinkComponents(targetDir, 'target directory');
+  const session = captureParentBoundary(
+    targetDir, join(targetDir, '.forge-upgrade-session'), 'upgrade target session',
+  );
+  try { return runPinned(cfg, now, hooks, sourceRoot, targetDir, session); } finally {
+    closeParentBoundary(session);
+  }
 }
 
 function main(argv) {

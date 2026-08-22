@@ -7,6 +7,12 @@ import {
 } from './acceptance-kernel.mjs';
 
 const SKIP_DIRS = new Set(['__pycache__', 'node_modules', 'target']);
+// v30 scaffold ledgers may retain this pre-rename helper when a safe plain
+// upgrade runs without --prune. Exclude only that exact historical path; every
+// other test_*.py remains fail-closed recursive test input.
+const RETIRED_PYTHON_HELPERS = new Set([
+  'agent_engineering/test_support.py',
+]);
 const REQUIRED_PYTHON = [
   'test_check.py',
   'test_agent_engineering_check.py',
@@ -71,11 +77,13 @@ export function discoverHarnessSuites(dir = HARNESS_DIR, readDir = readdirSync) 
     }
     for (const entry of entries) {
       const path = join(current, entry.name);
+      const relativePath = relative(dir, path).replace(/\\/g, '/');
       if (entry.isDirectory()) {
         if (!SKIP_DIRS.has(entry.name)) walk(path);
       } else if (entry.isFile() && /^test_.*\.(?:mjs|js|cjs)$/.test(entry.name)) {
         node.push(path);
-      } else if (entry.isFile() && /^test_.*\.py$/.test(entry.name)) {
+      } else if (entry.isFile() && /^test_.*\.py$/.test(entry.name)
+        && !RETIRED_PYTHON_HELPERS.has(relativePath)) {
         python.push(path);
       }
     }
@@ -95,7 +103,9 @@ export function runCountedNodeFiles(files, root = ROOT, exec = run) {
     '--test', '--test-reporter=tap',
     ...files.map((path) => relative(root, path).replace(/\\/g, '/')),
   ];
-  const r = exec('node', args, { FORGE_ACCEPT_INNER: '1' }, root);
+  const r = exec('node', args, {
+    FORGE_ACCEPT_INNER: '1', PYTHONDONTWRITEBYTECODE: '1',
+  }, root);
   const count = tapCount(r.out);
   return { ok: r.ok && count !== null && count > 0, count, files: files.length };
 }
@@ -105,7 +115,9 @@ export function runPythonSuites(dir = HARNESS_DIR, exec = run, discovery = disco
   const entries = [];
   let count = 0;
   for (const path of found) {
-    const r = exec('python3', ['-c', PYTHON_SUITE_RUNNER, path], {}, ROOT);
+    const r = exec('python3', ['-B', '-c', PYTHON_SUITE_RUNNER, path], {
+      PYTHONDONTWRITEBYTECODE: '1',
+    }, ROOT);
     const discovered = Number(
       (String(r.out ?? '').match(/(?:^|\n)FORGE_PY_TESTS=(\d+)/) ?? [])[1],
     );

@@ -4,33 +4,51 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import {
-  existsSync, mkdirSync, mkdtempSync, readFileSync,
+  existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync,
   readdirSync, rmSync, symlinkSync, writeFileSync,
 } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
-
 import {
   COPIED_FILES, GOVERNANCE_DIRS, HARNESS_NOT_COPIED,
   PROJECT_INSTANCE_FILES, SCAFFOLD_STATE_FILE,
 } from './forge-init.mjs';
 import { COPIED_VERBATIM } from './forge-init-test-assets.mjs';
-
-// This test lives in harness/scaffold/, so its own dir is the sub-package and the
-// repo root is TWO levels up. HARNESS_DIR is the REAL harness/ (one level up) — the
-// root the manifest-integrity guard walks (it must see EVERY harness source,
-// including this sub-package).
+import { assertStrictReviewerScaffold } from './strict-reviewer-scaffold-verification.mjs';
+import { assertGraphSnapshotScaffold } from './graph-snapshot-upgrade-verification.mjs';
+import { assertADRV2Scaffold } from './adr-v2-upgrade-verification.mjs';
+import { assertCapabilityRegistryScaffold } from './capability-registry-upgrade-verification.mjs';
+import { assertOwnershipProjectionScaffold } from './ownership-projection-upgrade-verification.mjs';
+import { assertProjectSnapshotScaffold } from './project-snapshot-upgrade-verification.mjs';
+import { assertContextEngineeringScaffold } from './context-engineering-upgrade-verification.mjs';
+import { assertEvidenceClaimScaffold } from './evidence-claim-upgrade-verification.mjs';
+import { assertPolicyAuthorityScaffold } from './policy-authority-upgrade-verification.mjs';
+import { assertADRGovernanceScaffold } from './adr-governance-upgrade-verification.mjs';
+import {
+  assertKnowledgeGraphCurationScaffold,
+} from './knowledge-graph-curation-upgrade-verification.mjs';
+import { assertChangeImpactCostRiskScaffold } from './change-impact-cost-risk-upgrade-verification.mjs';
+import { assertWorkIntentScaffold } from './work-intent-upgrade-verification.mjs';
+import { assertAuthenticatedADRApprovalScaffold } from './authenticated-adr-approval-upgrade-verification.mjs';
+import { assertAuthenticatedADRLifecycleScaffold } from './authenticated-adr-lifecycle-upgrade-verification.mjs';
+import {
+  assertAuthenticatedADRLifecycleAuthorityEvidenceScaffold,
+} from './authenticated-adr-lifecycle-authority-evidence-upgrade-verification.mjs';
+import { assertLegacyGovernanceReadImportScaffold } from './legacy-governance-read-import-upgrade-verification.mjs';
+import { assertKernelOperationalReferenceScaffold } from './kernel-operational-reference-upgrade-verification.mjs';
+import { assertKernelDecisionReferenceScaffold } from './kernel-decision-reference-upgrade-verification.mjs';
+import { assertDecisionCapsuleStructuralReplayScaffold } from './decision-capsule-structural-replay-upgrade-verification.mjs';
+// This test is two levels below the repository root; the integrity walk starts
+// at the real harness directory and includes this scaffold sub-package.
 const SCAFFOLD_DIR = dirname(fileURLToPath(import.meta.url));
 const HARNESS_DIR = dirname(SCAFFOLD_DIR);
 const SOURCE_ROOT = dirname(HARNESS_DIR);
 const INIT_PATH = join(SCAFFOLD_DIR, 'forge-init.mjs');
-
 // Run forge-init as a child process; returns spawnSync result.
 function runInit(args) {
   return spawnSync(process.execPath, [INIT_PATH, ...args], { encoding: 'utf8' });
 }
-
 // pyYamlAvailable: does the `python3` that the generated project's acceptance
 // would invoke (resolved from `cwd`) have PyYAML? check.py exits 2 without it,
 // failing arch_violations + test_pass — an ENVIRONMENT prerequisite (the CI
@@ -41,7 +59,6 @@ function pyYamlAvailable(cwd) {
   const r = spawnSync('python3', ['-c', 'import yaml'], { cwd, encoding: 'utf8' });
   return r.status === 0;
 }
-
 // GENERATED files (project identity + CC adapter + CI + seed app) — present, not
 // byte-equal to any source.
 const GENERATED_FILES = [
@@ -58,7 +75,6 @@ const GENERATED_FILES = [
   '.gitignore',
   SCAFFOLD_STATE_FILE,
 ];
-
 // Extract inline and reference-style Markdown destinations. This deliberately
 // checks file reachability only: fragment correctness belongs to a Markdown
 // linter, while scaffold integrity must prove every copied local file target is
@@ -74,7 +90,6 @@ function markdownDestinations(markdown) {
   }
   return destinations;
 }
-
 function localMarkdownTarget(rawDestination) {
   let destination = rawDestination.trim();
   if (destination.startsWith('<')) {
@@ -100,7 +115,6 @@ function localMarkdownTarget(rawDestination) {
     return withoutFragment;
   }
 }
-
 function copiedMarkdownLinkIssues(target) {
   const state = JSON.parse(readFileSync(join(target, SCAFFOLD_STATE_FILE), 'utf8'));
   assert.ok(Array.isArray(state.copied), `${SCAFFOLD_STATE_FILE} must contain copied[]`);
@@ -122,30 +136,53 @@ function copiedMarkdownLinkIssues(target) {
   }
   return issues;
 }
-
 test('forge-init scaffolds COMPLETE governance and the project is ACCEPTED', (t) => {
   const dir = mkdtempSync(join(tmpdir(), 'forge-init-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const target = join(dir, 'proj');
-
   const res = runInit([target, '--name', 'acme-svc']);
   assert.equal(res.status, 0, `init exit 0 expected; stderr:\n${res.stderr}`);
-
   // (1) every copied + generated file exists.
   for (const rel of [...COPIED_VERBATIM, ...GENERATED_FILES]) {
     assert.ok(existsSync(join(target, rel)), `missing scaffolded file: ${rel}`);
   }
-
   // (2) project identity carries the --name.
   assert.match(readFileSync(join(target, '.agent', 'project.yml'), 'utf8'), /acme-svc/);
+  assert.match(
+    readFileSync(join(target, '.agent', 'project.yml'), 'utf8'),
+    /repository_flavor: scaffolded_project/,
+  );
   assert.match(readFileSync(join(target, '.agent', 'PROJECT.md'), 'utf8'), /acme-svc/);
   assert.match(readFileSync(join(target, 'CLAUDE.md'), 'utf8'), /acme-svc/);
   const scaffoldState = JSON.parse(readFileSync(join(target, SCAFFOLD_STATE_FILE), 'utf8'));
+  assert.equal(lstatSync(join(target, SCAFFOLD_STATE_FILE)).mode & 0o777, 0o600);
+  for (const rel of COPIED_VERBATIM.filter((path) => !PROJECT_INSTANCE_FILES.includes(path))) {
+    assert.equal(scaffoldState.copied.includes(rel), true, `${rel} must enter the upgrade ledger`);
+  }
   for (const rel of PROJECT_INSTANCE_FILES) {
     assert.ok(existsSync(join(target, rel)), `missing project instance: ${rel}`);
     assert.equal(scaffoldState.copied.includes(rel), false, `${rel} must not enter the upgrade ledger`);
   }
-
+  assertStrictReviewerScaffold(target);
+  assertGraphSnapshotScaffold(target);
+  assertADRV2Scaffold(target);
+  assertCapabilityRegistryScaffold(target);
+  assertOwnershipProjectionScaffold(target);
+  assertProjectSnapshotScaffold(target);
+  assertContextEngineeringScaffold(target);
+  assertEvidenceClaimScaffold(target);
+  assertPolicyAuthorityScaffold(target);
+  assertADRGovernanceScaffold(target);
+  assertKnowledgeGraphCurationScaffold(target);
+  assertChangeImpactCostRiskScaffold(target);
+  assertWorkIntentScaffold(target);
+  assertAuthenticatedADRApprovalScaffold(target);
+  assertAuthenticatedADRLifecycleScaffold(target);
+  assertAuthenticatedADRLifecycleAuthorityEvidenceScaffold(target);
+  assertLegacyGovernanceReadImportScaffold(target);
+  assertKernelOperationalReferenceScaffold(target);
+  assertKernelDecisionReferenceScaffold(target);
+  assertDecisionCapsuleStructuralReplayScaffold(target);
   // (3) the generated CI gate runs `forge accept` (acceptance.mjs).
   assert.match(
     readFileSync(join(target, '.github', 'workflows', 'forge.yml'), 'utf8'),
@@ -156,7 +193,6 @@ test('forge-init scaffolds COMPLETE governance and the project is ACCEPTED', (t)
     /node-version: '22'/,
     'generated CI must satisfy harness/package.json node >=22',
   );
-
   // (4) every verbatim-copied file (enforcers + full harness + assets) is
   // byte-identical to its source — the fresh project inherits the REAL tools and
   // governance, not a fork.
@@ -167,7 +203,6 @@ test('forge-init scaffolds COMPLETE governance and the project is ACCEPTED', (t)
       `copied ${rel} must be byte-identical to source`,
     );
   }
-
   // (4b) Copied Markdown links must resolve inside the scaffold.
   assert.deepEqual(
     copiedMarkdownLinkIssues(target),
@@ -209,6 +244,61 @@ test('forge-init scaffolds COMPLETE governance and the project is ACCEPTED', (t)
   );
   assert.equal(semanticCheck.status, 0, `${semanticCheck.stdout}\n${semanticCheck.stderr}`);
   assert.match(semanticCheck.stdout, /semantic-view-check: PASS/);
+  const bootstrapGrantCheck = spawnSync(
+    'python3', ['-S', '-B', 'harness/bootstrap_grant_issuance_contract/check.py', '--golden', '.'],
+    { cwd: target, encoding: 'utf8' },
+  );
+  assert.equal(
+    bootstrapGrantCheck.status, 0,
+    `${bootstrapGrantCheck.stdout}\n${bootstrapGrantCheck.stderr}`,
+  );
+  assert.match(bootstrapGrantCheck.stdout, /Ed25519 NOT authenticated/);
+  const executionCheck = spawnSync(
+    'python3', ['-S', '-B', 'harness/bootstrap_repo_read_execution_contract/check.py', '--golden', '.'],
+    { cwd: target, encoding: 'utf8' },
+  );
+  assert.equal(
+    executionCheck.status, 0,
+    `${executionCheck.stdout}\n${executionCheck.stderr}`,
+  );
+  assert.match(executionCheck.stdout, /effect NOT authenticated/);
+  const approvalCheck = spawnSync(
+    'python3', ['-B', 'harness/approval_record_contract_check.py', '--golden', '.'],
+    { cwd: target, encoding: 'utf8' },
+  );
+  assert.equal(
+    approvalCheck.status, 0,
+    `${approvalCheck.stdout}\n${approvalCheck.stderr}`,
+  );
+  assert.match(approvalCheck.stdout, /declarations only; no authority/);
+  const transitionCheck = spawnSync(
+    'python3', ['-B', 'harness/transition_receipt_contract_check.py', '--golden', '.'],
+    { cwd: target, encoding: 'utf8' },
+  );
+  assert.equal(
+    transitionCheck.status, 0,
+    `${transitionCheck.stdout}\n${transitionCheck.stderr}`,
+  );
+  assert.match(transitionCheck.stdout, /declarations only; no transition authority/);
+  const knowledgeUpdateCheck = spawnSync(
+    'python3', ['-B', 'harness/knowledge_update_proposal_contract_check.py', '--golden', '.'],
+    { cwd: target, encoding: 'utf8' },
+  );
+  assert.equal(
+    knowledgeUpdateCheck.status, 0,
+    `${knowledgeUpdateCheck.stdout}\n${knowledgeUpdateCheck.stderr}`,
+  );
+  assert.match(knowledgeUpdateCheck.stdout, /declarations only; no adoption or apply authority/);
+  const impactPrescanCheck = spawnSync(
+    'python3', ['-B', 'harness/local_go_package_impact_prescan_contract_check.py',
+      '--golden', '.'],
+    { cwd: target, encoding: 'utf8' },
+  );
+  assert.equal(
+    impactPrescanCheck.status, 0,
+    `${impactPrescanCheck.stdout}\n${impactPrescanCheck.stderr}`,
+  );
+  assert.match(impactPrescanCheck.stdout, /system impact unknown; no authority/);
   const copiedRuntime = scaffoldState.copied.some((rel) => rel.startsWith('forge-runtime/'));
   assert.equal(copiedRuntime, false, 'scaffold must not install the Rust runtime');
   const copiedForgeCoreRuntime = scaffoldState.copied.some(
@@ -216,7 +306,11 @@ test('forge-init scaffolds COMPLETE governance and the project is ACCEPTED', (t)
   );
   assert.equal(copiedForgeCoreRuntime, false,
     'scaffold must not install any Catalyst-only Go producer runtime');
-
+  assert.equal(existsSync(join(target, 'forge-kernel')), false,
+    'scaffold must not install forge-kernel, trust roots, keys, or runtime state');
+  assert.equal(existsSync(join(target, 'forge')), false,
+    'scaffold must not install or replace the host forge executable');
+  if (process.env.FORGE_ACCEPT_INNER) return;
   // (5) Run the full acceptance gate; only its external PyYAML prerequisite may skip.
   if (!pyYamlAvailable(target)) {
     t.skip('PyYAML unavailable to python3 — acceptance ACCEPTED assertion skipped (env prereq; CI installs it)');
@@ -235,29 +329,24 @@ test('forge-init scaffolds COMPLETE governance and the project is ACCEPTED', (t)
   ]) {
     assert.match(acc.stdout, new RegExp(`\\[PASS\\] ${crit}`), `${crit} must PASS in the fresh project`);
   }
-  // HONESTY: criteria with no tool stay visible as N/A (never silently dropped).
-  assert.match(acc.stdout, /\[N-A \] coverage/);
+  // Coverage is PASS when installed/runnable, otherwise remains an honest N/A.
+  assert.match(acc.stdout, /\[(?:PASS|N-A )\] coverage/);
   assert.match(acc.stdout, /\[N-A \] build/);
 });
-
 test('forge-init refuses to clobber a non-empty .agent without --force; --force succeeds', (t) => {
   const dir = mkdtempSync(join(tmpdir(), 'forge-init-force-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const target = join(dir, 'proj');
-
   const first = runInit([target, '--name', 'acme-svc']);
   assert.equal(first.status, 0, `first init exit 0; stderr:\n${first.stderr}`);
-
   // re-init without --force is refused (non-zero) when .agent exists.
   const reinit = runInit([target, '--name', 'acme-svc']);
   assert.notEqual(reinit.status, 0, 're-init without --force must fail');
   assert.match(reinit.stderr, /--force/);
-
   // ...and --force succeeds.
   const forced = runInit([target, '--name', 'acme-svc', '--force']);
   assert.equal(forced.status, 0, `--force re-init must succeed; stderr:\n${forced.stderr}`);
 });
-
 test('forge-init preflights README/CI conflicts before writing anything', (t) => {
   const dir = mkdtempSync(join(tmpdir(), 'forge-init-conflict-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
@@ -266,7 +355,6 @@ test('forge-init preflights README/CI conflicts before writing anything', (t) =>
   mkdirSync(dirname(ci), { recursive: true });
   writeFileSync(join(target, 'README.md'), '# user readme\n');
   writeFileSync(ci, 'name: user-ci\n');
-
   const res = runInit([target, '--name', 'must-not-clobber']);
   assert.notEqual(res.status, 0, 'conflicting target must fail without --force');
   assert.match(res.stderr, /scaffold conflict/);
@@ -276,7 +364,6 @@ test('forge-init preflights README/CI conflicts before writing anything', (t) =>
   assert.equal(existsSync(join(target, '.agent')), false, 'preflight must happen before first write');
   assert.equal(existsSync(join(target, 'harness')), false, 'no copied harness may leak on failure');
 });
-
 test('forge-init refuses symlinked destination ancestors even with --force', (t) => {
   const dir = mkdtempSync(join(tmpdir(), 'forge-init-symlink-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
@@ -285,13 +372,11 @@ test('forge-init refuses symlinked destination ancestors even with --force', (t)
   mkdirSync(target, { recursive: true });
   mkdirSync(outside, { recursive: true });
   symlinkSync(outside, join(target, '.github'));
-
   const res = runInit([target, '--name', 'unsafe-link', '--force']);
   assert.notEqual(res.status, 0);
   assert.match(res.stderr, /unsafe symlink path.*\.github/i);
   assert.equal(existsSync(join(outside, 'workflows')), false, 'init must not write through the link');
 });
-
 test('forge-init refuses a symlink target and a symlink destination leaf', (t) => {
   const dir = mkdtempSync(join(tmpdir(), 'forge-init-target-link-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
@@ -299,12 +384,10 @@ test('forge-init refuses a symlink target and a symlink destination leaf', (t) =
   const target = join(dir, 'project-link');
   mkdirSync(outside);
   symlinkSync(outside, target);
-
   const linkedTarget = runInit([target, '--name', 'unsafe-target', '--force']);
   assert.notEqual(linkedTarget.status, 0);
   assert.match(linkedTarget.stderr, /unsafe symlink path.*target directory/i);
   assert.equal(readdirSync(outside).length, 0, 'a symlink target must remain untouched');
-
   rmSync(target);
   mkdirSync(target);
   const outsideReadme = join(outside, 'README.md');
@@ -315,7 +398,6 @@ test('forge-init refuses a symlink target and a symlink destination leaf', (t) =
   assert.match(linkedLeaf.stderr, /unsafe symlink path.*README\.md/i);
   assert.equal(readFileSync(outsideReadme, 'utf8'), '# external\n');
 });
-
 test('forge-init refuses a symlinked parent above the target directory', (t) => {
   const dir = mkdtempSync(join(tmpdir(), 'forge-init-parent-link-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
@@ -323,13 +405,11 @@ test('forge-init refuses a symlinked parent above the target directory', (t) => 
   const linkedParent = join(dir, 'linked-parent');
   mkdirSync(realParent);
   symlinkSync(realParent, linkedParent);
-
   const res = runInit([join(linkedParent, 'project'), '--name', 'unsafe-parent', '--force']);
   assert.notEqual(res.status, 0);
   assert.match(res.stderr, /unsafe symlink path.*target directory/i);
   assert.equal(readdirSync(realParent).length, 0, 'init must not create through a linked parent');
 });
-
 // --- MANIFEST-INTEGRITY guard: COPIED_FILES must not drift from harness/ ------
 // The blind spot this closes: COPIED_FILES is a HAND-MAINTAINED list with no
 // guard that it stays in sync as harness/ grows. It already drifted — the real
@@ -338,7 +418,6 @@ test('forge-init refuses a symlinked parent above the target directory', (t) => 
 // harness/ and asserts EVERY source file is either copied, covered by a copied
 // GOVERNANCE_DIR tree, or on the explicit HARNESS_NOT_COPIED whitelist — one
 // guard that both fixes the drift and prevents the next regression.
-
 // Recursively collect harness/ source files (.mjs/.py/.yml), returned as paths
 // RELATIVE to SOURCE_ROOT (e.g. "harness/arch/scan.mjs") so they line up with
 // the manifest's join('harness', ...) entries. Skips __pycache__ and READMEs
@@ -354,12 +433,10 @@ function walkHarnessSources(dir = HARNESS_DIR) {
   }
   return out;
 }
-
 // Is relPath covered by one of the copied GOVERNANCE_DIRS trees? (Future-proofs
 // the guard if a harness asset ever moves under a copied .agent/ subtree.)
 const underGovernanceDir = (relPath) =>
   GOVERNANCE_DIRS.some((d) => relPath === d || relPath.startsWith(d + sep));
-
 test('COPIED_FILES has no drift: every harness source is copied or whitelisted', () => {
   const copied = new Set(COPIED_FILES);
   const whitelist = new Set(HARNESS_NOT_COPIED);
@@ -368,7 +445,6 @@ test('COPIED_FILES has no drift: every harness source is copied or whitelisted',
   // vacuously passing) and the known drift fixture is now present in the manifest.
   assert.ok(sources.length > 10, `walk should find the harness sources; got ${sources.length}`);
   assert.ok(copied.has(join('harness', 'test_enforce.mjs')), 'the previously-dropped test_enforce.mjs must now be in COPIED_FILES');
-
   const missing = sources.filter(
     (rel) => !copied.has(rel) && !whitelist.has(rel) && !underGovernanceDir(rel),
   );
@@ -377,19 +453,16 @@ test('COPIED_FILES has no drift: every harness source is copied or whitelisted',
     `harness source(s) neither in COPIED_FILES nor whitelisted (drift — a scaffold ` +
     `would silently miss these):\n  ${missing.join('\n  ')}`,
   );
-
   // Honesty the other direction: the whitelist must name only REAL, present files
   // (a stale whitelist entry would hide a genuinely-missing copy behind a typo).
   for (const rel of whitelist) {
     assert.ok(existsSync(join(SOURCE_ROOT, rel)), `whitelisted ${rel} must exist (stale whitelist entry)`);
   }
 });
-
 test('forge-init exits non-zero on missing required args', () => {
   const noName = runInit([join(tmpdir(), 'forge-init-noname')]);
   assert.equal(noName.status, 2, 'missing --name must exit 2');
   assert.match(noName.stderr, /--name/);
-
   const noTarget = runInit(['--name', 'x']);
   assert.equal(noTarget.status, 2, 'missing <target-dir> must exit 2');
   assert.match(noTarget.stderr, /target-dir/);

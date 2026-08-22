@@ -3,39 +3,14 @@
 import shutil
 import subprocess
 import sys
-import tempfile
 import unittest
-from pathlib import Path
 
 import yaml
 
-HARNESS_DIR = Path(__file__).resolve().parent
-REPO_ROOT = HARNESS_DIR.parent
-CHECKER = HARNESS_DIR / "agent_engineering_check.py"
-sys.path.insert(0, str(HARNESS_DIR))
-import agent_engineering_check as engineering  # noqa: E402
-
-
-def _copy_tree(source, target):
-    target.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copytree(source, target)
-
-
-def make_temp_repo():
-    root = Path(tempfile.mkdtemp(prefix="forge-engineering-"))
-    for relative in (
-        ".agent", ".ai", ".arch", "harness", "docs/release",
-        "docs/design/ai-engineering-os", "docs/adr", "docs/contracts",
-    ):
-        _copy_tree(REPO_ROOT / relative, root / relative)
-    return root
-
-
-def replace_once(path, old, new):
-    text = path.read_text(encoding="utf-8")
-    if text.count(old) < 1:
-        raise AssertionError(f"fixture token not found: {old}")
-    path.write_text(text.replace(old, new, 1), encoding="utf-8")
+from agent_engineering.support import (
+    CHECKER, REPO_ROOT, _seed_fixture_binding, engineering, make_temp_repo,
+    replace_once,
+)
 
 
 class SpecValidationTest(unittest.TestCase):
@@ -56,6 +31,25 @@ class SpecValidationTest(unittest.TestCase):
 
     def test_live_contract_copy_passes(self):
         self.assertEqual(self.issues(), [])
+
+    def test_legacy_source_binding_is_seeded_only_in_the_temp_copy(self):
+        source = self.repo / "legacy-source"
+        target = self.repo / "legacy-temp-copy"
+        project = source / ".agent" / "project.yml"
+        project.parent.mkdir(parents=True)
+        legacy = b"project: legacy\nlifecycle: mvp\n"
+        project.write_bytes(legacy)
+        shutil.copytree(source, target)
+
+        _seed_fixture_binding(target)
+
+        self.assertEqual(project.read_bytes(), legacy)
+        seeded = yaml.safe_load(
+            (target / ".agent" / "project.yml").read_text(encoding="utf-8")
+        )["engineering_spec"]
+        self.assertEqual(seeded["activation"], "shadow")
+        self.assertEqual(seeded["refs"], engineering.PROJECT_REFS)
+        self.assertEqual(seeded["completion_authority"], "forge_accept")
 
     def test_missing_discipline_is_rejected(self):
         path = self.agent_root / "engineering" / "disciplines.yml"
@@ -493,7 +487,5 @@ class CompletionReportTest(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("agent-engineering-check: PASS", result.stdout)
-
-
 if __name__ == "__main__":
     unittest.main()

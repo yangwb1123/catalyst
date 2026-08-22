@@ -28,6 +28,13 @@ const HISTORICAL_ROOTS = [
   join('.agent', 'routing'),
   join('.agent', 'policies'),
   join('.ai', 'prompts'),
+  join('skills', 'project-snapshot'),
+  join('skills', 'context-engineering'),
+  join('skills', 'evidence-claim-management'),
+  join('skills', 'policy-authority'),
+  join('skills', 'adr-governance'),
+  join('skills', 'knowledge-graph-curation'),
+  join('skills', 'change-impact-cost-risk'),
 ].map((dir) => dir.replace(/\\/g, '/'));
 
 const HISTORICAL_STANDALONE = new Set([
@@ -53,9 +60,55 @@ const HISTORICAL_STANDALONE = new Set([
   'docs/adr/0052-local-evolve-repo-locator-observation-producer-v1.md',
   'docs/adr/0053-local-go-package-dependency-graph-observation-producer-v1.md',
   'docs/adr/0054-local-governance-semantic-view-v1.md',
+  'docs/adr/0055-shadow-context-package-v1.md',
+  'docs/adr/0056-capability-grant-v1-contract-only.md',
+  'docs/adr/0057-authenticated-bootstrap-repo-read-grant-issuance.md',
+  'docs/adr/0058-authenticated-bootstrap-repo-read-execution.md',
+  'docs/adr/0059-approval-record-v1-contract-only.md',
+  'docs/adr/0060-transition-receipt-v1-contract-only.md',
+  'docs/adr/0061-knowledge-update-proposal-v1-contract-only.md',
+  'docs/adr/0062-local-go-package-impact-prescan-v1.md',
+  'docs/adr/0063-l3-l4-build-reviewer-strict-verdict-v1.md',
+  'docs/adr/0064-local-digest-bound-agent-output-review-approval.md',
+  'docs/adr/0065-authority-free-graph-snapshot-v1-contract.md',
+  'docs/adr/0066-local-go-lexical-test-source-graph-snapshot.md',
+  'docs/adr/0067-proposed-only-adr-v2-frontmatter.md',
+  'docs/adr/ADR-0068-authority-neutral-capability-registry-v1.md',
+  'docs/adr/ADR-0069-planning-capability-ownership-projection-v1.md',
+  'docs/adr/ADR-0070-local-project-source-snapshot-v1.md',
+  'docs/adr/ADR-0071-portable-context-engineering-skill.md',
+  'docs/adr/ADR-0072-portable-evidence-claim-validation-skill.md',
+  'docs/adr/ADR-0073-portable-policy-authority-declaration-assessment-skill.md',
+  'docs/adr/ADR-0074-portable-adr-governance-proposed-document-validation-skill.md',
+  'docs/adr/ADR-0075-portable-knowledge-graph-curation-partial-projectors-skill.md',
+  'docs/adr/ADR-0076-portable-change-impact-cost-risk-lexical-prescan-skill.md',
+  'docs/adr/ADR-0077-authority-neutral-work-intent-v1-contract.md',
+  'docs/adr/ADR-0078-work-intent-v1-proposed-candidate-governance-and-source-distribution.md',
+  'docs/adr/ADR-0079-authenticated-architecture-decision-approval-v1-prerequisite.md',
+  'docs/adr/ADR-0080-authenticated-architecture-decision-approval-v1-proposed-candidate-governance-and-source-distribution.md',
+  'docs/adr/ADR-0081-authenticated-architecture-decision-approval-authorization-service-v1.md',
+  'docs/adr/ADR-0082-authenticated-architecture-decision-lifecycle-v1-prerequisite.md',
+  'docs/adr/ADR-0083-authenticated-architecture-decision-lifecycle-v1-proposed-candidate-governance-and-source-distribution.md',
+  'docs/adr/ADR-0084-authenticated-architecture-decision-lifecycle-authority-service-v1.md',
+  'docs/adr/ADR-0085-authenticated-architecture-decision-lifecycle-authority-evidence-and-source-distribution.md',
+  'docs/adr/ADR-0086-legacy-governance-read-only-import-v1.md',
+  'docs/adr/ADR-0087-legacy-governance-read-import-governance-and-source-distribution.md',
+  'docs/adr/ADR-0088-kernel-operational-reference-core-v1.md',
+  'docs/adr/ADR-0089-kernel-operational-reference-governance-and-source-distribution.md',
+  'docs/adr/ADR-0090-kernel-decision-reference-core-v1.md',
+  'docs/adr/ADR-0091-kernel-decision-reference-governance-and-source-distribution.md',
+  'docs/adr/ADR-0092-decision-capsule-structural-replay-core-v1.md',
+  'docs/adr/ADR-0093-decision-capsule-structural-replay-governance-and-source-distribution.md',
   'docs/contracts/governance-evidence-claim-v1.schema.json',
   'docs/contracts/governance-record-journal-v1.schema.json',
   'docs/contracts/governance-semantic-view-v1.schema.json',
+  'docs/contracts/context-package-v1.schema.json',
+  'docs/contracts/capability-grant-v1.schema.json',
+  'docs/contracts/approval-record-v1.schema.json',
+  'docs/contracts/transition-receipt-v1.schema.json',
+  'docs/contracts/knowledge-update-proposal-v1.schema.json',
+  'docs/contracts/bootstrap-grant-issuance-v1.schema.json',
+  'docs/contracts/bootstrap-repo-read-execution-v1.schema.json',
   'docs/contracts/cognitive-atom-projection-v1.schema.json',
   'docs/contracts/artifact-evidence-adapter-v1.schema.json',
   'docs/contracts/command-observation-evidence-adapter-v1.schema.json',
@@ -63,8 +116,29 @@ const HISTORICAL_STANDALONE = new Set([
   'docs/contracts/local-gate-command-observation-producer-v1.schema.json',
   'docs/contracts/local-evolve-repo-locator-observation-producer-v1.schema.json',
   'docs/contracts/local-go-package-dependency-graph-observation-producer-v1.schema.json',
+  'docs/contracts/local-go-package-impact-prescan-v1.schema.json',
+  'docs/contracts/graph-snapshot-v1.schema.json',
+  'docs/contracts/graph-snapshot-go-test-source-v1.schema.json',
+  'docs/contracts/architecture-decision-record-v2.schema.json',
+  'docs/contracts/capability-registry-v1.schema.json',
+  'docs/contracts/planning-capability-ownership-projection-v1.schema.json',
+  'docs/contracts/project-source-snapshot-v1.schema.json',
+  'docs/contracts/work-intent-v1.schema.json',
+  'docs/contracts/authenticated-architecture-decision-approval-v1.schema.json',
+  'docs/contracts/authenticated-architecture-decision-lifecycle-v1.schema.json',
+  'docs/contracts/legacy-governance-read-import-v1.schema.json',
+  'docs/contracts/kernel-operational-reference-core-v1.schema.json',
+  'docs/contracts/kernel-decision-reference-core-v1.schema.json',
+  'docs/contracts/decision-capsule-structural-replay-core-v1.schema.json',
   'docs/contracts/fixtures/governance-evidence-claim-v1.json',
   'docs/contracts/fixtures/governance-semantic-view-v1.json',
+  'docs/contracts/fixtures/context-package-v1.json',
+  'docs/contracts/fixtures/capability-grant-v1.json',
+  'docs/contracts/fixtures/approval-record-v1.json',
+  'docs/contracts/fixtures/transition-receipt-v1.json',
+  'docs/contracts/fixtures/knowledge-update-proposal-v1.json',
+  'docs/contracts/fixtures/bootstrap-grant-issuance-v1.json',
+  'docs/contracts/fixtures/bootstrap-repo-read-execution-v1.json',
   'docs/contracts/fixtures/cognitive-atom-projection-v1.json',
   'docs/contracts/fixtures/artifact-evidence-adapter-v1.json',
   'docs/contracts/fixtures/command-observation-evidence-adapter-v1.json',
@@ -72,6 +146,28 @@ const HISTORICAL_STANDALONE = new Set([
   'docs/contracts/fixtures/local-gate-command-observation-producer-v1.json',
   'docs/contracts/fixtures/local-evolve-repo-locator-observation-producer-v1.json',
   'docs/contracts/fixtures/local-go-package-dependency-graph-observation-producer-v1.json',
+  'docs/contracts/fixtures/local-go-package-impact-prescan-v1.json',
+  'docs/contracts/fixtures/graph-snapshot-v1.json',
+  'docs/contracts/fixtures/graph-snapshot-go-test-source-v1.json',
+  'docs/contracts/fixtures/ADR-9001-proposed-boundary.md',
+  'docs/contracts/fixtures/capability-registry-v1.json',
+  'docs/contracts/fixtures/planning-capability-ownership-projection-v1.json',
+  'docs/contracts/fixtures/project-source-snapshot-v1.json',
+  'docs/contracts/fixtures/work-intent-v1.json',
+  'docs/contracts/fixtures/authenticated-architecture-decision-approval-v1.json',
+  'docs/contracts/fixtures/ADR-9002-authenticated-approval-target.md',
+  'docs/contracts/fixtures/authenticated-architecture-decision-lifecycle-v1.json',
+  'docs/contracts/fixtures/ADR-9003-lifecycle-head-a.md',
+  'docs/contracts/fixtures/ADR-9004-lifecycle-head-b.md',
+  'docs/contracts/fixtures/ADR-9005-lifecycle-join.md',
+  'docs/contracts/fixtures/legacy-governance-read-import-ADR-0001.md',
+  'docs/contracts/fixtures/legacy-governance-read-import-ADR-0002.md',
+  'docs/contracts/fixtures/legacy-governance-read-import-memory-v1.jsonl',
+  'docs/contracts/fixtures/legacy-governance-read-import-request-v1.json',
+  'docs/contracts/fixtures/legacy-governance-read-import-view-v1.json',
+  'docs/contracts/fixtures/kernel-operational-reference-closure-v1.json',
+  'docs/contracts/fixtures/kernel-decision-reference-closure-v1.json',
+  'docs/contracts/fixtures/decision-capsule-structural-replay-v1.json',
 ]);
 
 // Accept POSIX or Windows separators so a scaffold can move between hosts, but
@@ -148,11 +244,19 @@ function samePathIdentity(a, b) {
 function readScaffoldState(targetDir) {
   const statePath = join(targetDir, SCAFFOLD_STATE_FILE);
   assertNoSymlinkComponents(statePath, SCAFFOLD_STATE_FILE);
+  let stateStat;
   try {
-    lstatSync(statePath);
+    stateStat = lstatSync(statePath);
   } catch (err) {
     if (err?.code === 'ENOENT' || err?.code === 'ENOTDIR') return [];
     throw new Error(`cannot safely inspect ${SCAFFOLD_STATE_FILE}: ${err.message}`);
+  }
+  stateStat = assertSafeRegularFile(statePath, SCAFFOLD_STATE_FILE);
+  const mode = stateStat.mode & 0o7777;
+  if (![0o600, 0o640, 0o644].includes(mode)) {
+    throw new Error(
+      `invalid ${SCAFFOLD_STATE_FILE}: unsafe mode 0${mode.toString(8)}`,
+    );
   }
   let parsed;
   try {
@@ -160,20 +264,36 @@ function readScaffoldState(targetDir) {
   } catch (err) {
     throw new Error(`invalid ${SCAFFOLD_STATE_FILE}: ${err.message}`);
   }
-  if (!Array.isArray(parsed?.copied)) {
-    throw new Error(`invalid ${SCAFFOLD_STATE_FILE}: expected copied[]`);
+  if (
+    parsed === null
+    || Array.isArray(parsed)
+    || typeof parsed !== 'object'
+    || Object.keys(parsed).sort().join(',') !== 'copied,version'
+    || parsed.version !== 1
+    || !Array.isArray(parsed.copied)
+  ) {
+    throw new Error(
+      `invalid ${SCAFFOLD_STATE_FILE}: expected exact {version: 1, copied: []} schema`,
+    );
   }
   const canonical = [];
   const unsafe = [];
   for (const rel of parsed.copied) {
     const clean = canonicalHistoricalPath(rel);
-    if (clean === null) unsafe.push(rel);
+    if (clean === null || clean !== rel) unsafe.push(rel);
     else canonical.push(clean);
   }
   if (unsafe.length > 0) {
     throw new Error(`unsafe path(s) in ${SCAFFOLD_STATE_FILE}: ${unsafe.join(', ')}`);
   }
-  return [...new Set(canonical)].sort();
+  if (new Set(canonical).size !== canonical.length) {
+    throw new Error(`invalid ${SCAFFOLD_STATE_FILE}: copied paths must be unique`);
+  }
+  return canonical.sort();
+}
+
+export function scaffoldOwnedFiles(targetDir) {
+  return readScaffoldState(targetDir);
 }
 
 function currentIdentityEntries(currentPaths, targetDir) {

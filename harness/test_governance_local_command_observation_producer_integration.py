@@ -13,7 +13,7 @@ HARNESS = Path(__file__).resolve().parent
 sys.path.insert(0, str(HARNESS))
 
 import governance_engineering_check as governance
-from test_agent_engineering_check import engineering, make_temp_repo, replace_once
+from agent_engineering.support import engineering, make_temp_repo, replace_once
 
 
 class GovernanceLocalCommandProducerIntegrationTest(unittest.TestCase):
@@ -28,7 +28,7 @@ class GovernanceLocalCommandProducerIntegrationTest(unittest.TestCase):
     def test_registry_freezes_exact_v11_shipped_scope(self):
         path = self.agent_root / "engineering" / "governance-contracts.yml"
         data = yaml.safe_load(path.read_text(encoding="utf-8"))
-        self.assertEqual(data["version"], 11)
+        self.assertEqual(data["version"], 39)
         self.assertEqual(
             data["local_gate_command_observation_producer"],
             governance.LOCAL_GATE_COMMAND_OBSERVATION_PRODUCER,
@@ -39,6 +39,7 @@ class GovernanceLocalCommandProducerIntegrationTest(unittest.TestCase):
                 "local_gate_command_observation_producer",
                 "local_evolve_repo_locator_observation_producer",
                 "local_go_package_dependency_graph_observation_producer",
+                "local_project_source_snapshot_producer",
             ],
         )
         self.assertEqual(

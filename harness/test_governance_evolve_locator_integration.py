@@ -13,7 +13,7 @@ HARNESS = Path(__file__).resolve().parent
 sys.path.insert(0, str(HARNESS))
 
 import governance_engineering_check as governance
-from test_agent_engineering_check import engineering, make_temp_repo, replace_once
+from agent_engineering.support import engineering, make_temp_repo, replace_once
 
 
 class GovernanceEvolveLocatorIntegrationTest(unittest.TestCase):
@@ -28,7 +28,7 @@ class GovernanceEvolveLocatorIntegrationTest(unittest.TestCase):
     def test_registry_freezes_exact_v11_adapter(self):
         path = self.agent_root / "engineering" / "governance-contracts.yml"
         data = yaml.safe_load(path.read_text(encoding="utf-8"))
-        self.assertEqual(data["version"], 11)
+        self.assertEqual(data["version"], 39)
         self.assertEqual(
             data["evolve_repo_locator_evidence_adapter"],
             governance.EVOLVE_REPO_LOCATOR_EVIDENCE_ADAPTER,

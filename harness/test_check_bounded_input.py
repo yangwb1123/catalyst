@@ -11,6 +11,7 @@ from unittest.mock import patch
 HARNESS_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(HARNESS_DIR))
 import check  # noqa: E402
+import engineering_check_support as support  # noqa: E402
 from test_check import make_temp_repo, run_cli  # noqa: E402
 
 
@@ -29,15 +30,15 @@ class CheckBoundedInputTest(unittest.TestCase):
         self.assertNotIn("Traceback", result.stderr)
 
     def test_formal_entry_controls_memory_failure(self):
-        real_open = Path.open
+        real_read = support.read_regular_file
 
         def fail_policy(path, *args, **kwargs):
-            if path == self.policy:
+            if Path(path) == self.policy:
                 raise MemoryError
-            return real_open(path, *args, **kwargs)
+            return real_read(path, *args, **kwargs)
 
         output = io.StringIO()
-        with patch.object(Path, "open", fail_policy), redirect_stdout(output):
+        with patch.object(support, "read_regular_file", fail_policy), redirect_stdout(output):
             result = check.main(["check.py", str(self.repo)])
         self.assertEqual(result, 1)
         self.assertIn("bounded spec read exhausted memory", output.getvalue())

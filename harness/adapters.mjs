@@ -66,8 +66,8 @@ export function lintBinary(lintCmd) {
 
 // coverageBinary: the executable a coverage command invokes — its first token
 // (e.g. "go test -coverprofile=coverage.out ./..." -> "go",
-// "pytest --cov --cov-report=json" -> "pytest", "vitest run --coverage" ->
-// "vitest"). Same first-token rule as lintBinary; kept as its own named export
+// "python3 -I -B ... --cov" -> "python3", "vitest run --coverage" -> "vitest").
+// Same first-token rule as lintBinary; kept as its own named export
 // so the coverage probe reads as a coverage probe (and so a future divergence —
 // e.g. a coverage command that is not first-token-addressable — has one place to
 // change). Pure; null when there is no coverage command.
@@ -103,9 +103,18 @@ export function coverageArtifact(coverageCmd) {
   if (!cmd) return null;
   const profile = cmd.match(/-coverprofile=(\S+)/);
   if (profile) return profile[1];
-  if (/--cov-report[=\s]+json/.test(cmd)) return 'coverage.json';
+  const pytestJson = cmd.match(/--cov-report(?:=|\s+)json(?::(\S+))?/);
+  if (pytestJson) return pytestJson[1] ?? 'coverage.json';
   if (/--coverage\b/.test(cmd)) return 'coverage';
   return null;
+}
+
+export function coverageArtifacts(coverageCmd) {
+  const cmd = typeof coverageCmd === 'string' ? coverageCmd : '';
+  const artifacts = /(?:^|\s)--cov(?=[=\s]|$)/.test(cmd) ? ['.coverage'] : [];
+  const primary = coverageArtifact(coverageCmd);
+  if (primary && !artifacts.includes(primary)) artifacts.push(primary);
+  return artifacts;
 }
 
 // --- app test selection (declaration-driven, with honest fallback) -----------
@@ -395,22 +404,18 @@ export function resolveMaxFileLines(root, fallback) {
 //   - go:     "does not contain main module", "no Go files", "no test files",
 //             "setup failed", "no required module", "build constraints exclude";
 //   - pytest: "no tests ran", "ERROR: file or directory not found",
-//             "unrecognized arguments" (the --cov plugin absent);
+//             "unrecognized arguments" or "No module named pytest";
 //   - vitest/nyc: "no test files found", "could not find config".
 // Conservative: only the clear can-not-run signals match — a real coverage run
 // that merely fell below the threshold does NOT match here (it stays a FAIL).
 export function coverageUnrunnable(out) {
   const t = out ?? '';
-  return /does\s+not\s+contain\s+main\s+module|no\s+required\s+module|build\s+constraints\s+exclude|setup\s+failed|no\s+(?:go|test)\s+files|no\s+tests?\s+(?:ran|found|to\s+run)|file\s+or\s+directory\s+not\s+found|no\s+test\s+files\s+found|unrecognized\s+arguments|could\s+not\s+find\s+(?:a\s+)?config|no\s+configuration/i.test(t);
+  return /does\s+not\s+contain\s+main\s+module|no\s+required\s+module|build\s+constraints\s+exclude|setup\s+failed|no\s+(?:go|test)\s+files|no\s+tests?\s+(?:ran|found|to\s+run)|file\s+or\s+directory\s+not\s+found|no\s+test\s+files\s+found|unrecognized\s+arguments|could\s+not\s+find\s+(?:a\s+)?config|no\s+configuration|no\s+module\s+named\s+['"]?pytest/i.test(t);
 }
 
-// parseCoveragePercent: best-effort extraction of an overall line-coverage
-// percentage from a coverage tool's stdout. Pure; returns a number 0..100 or
-// null when no percentage is present. HONESTY: only figures carrying an explicit
-// `%` SIGN are trusted — a bare table number (e.g. istanbul's "All files | 91.2
-// | 80 | ...") could be a line/branch COUNT, not a percentage, so it is NOT
-// parsed (-> null -> judgeCoverage treats it as can-not-determine -> N/A, never a
-// guess). Recognizes the common %-signed shapes:
+// parseCoveragePercent extracts an overall line-coverage percentage. It trusts
+// only `%`-signed figures: bare table numbers could be counts, so no guess is
+// made (null -> judgeCoverage maps can-not-determine to N/A). Common shapes:
 //   - go:      "coverage: 73.4% of statements";
 //   - pytest:  the coverage.py "TOTAL ... 85%" summary row;
 //   - generic: an "All files: 91.2% ..." style total.
@@ -419,8 +424,15 @@ export function coverageUnrunnable(out) {
 export function parseCoveragePercent(out) {
   const t = out ?? '';
   if (typeof t !== 'string' || t.length === 0) return null;
-  // Prefer an explicit total/overall line if one exists.
-  const totalLine = t.split('\n').reverse().find((l) => /total|all\s+files|^ok\b|coverage:/i.test(l));
+  const lines = t.split('\n');
+  // A real aggregate outranks package-local figures. Go's `go test ./...`
+  // emits one `ok ... coverage:` line per package, never an overall line; only
+  // `go tool cover -func=<profile>` emits the authoritative `total:` row.
+  const totalLine = lines.reverse().find((line) => /\btotal\b|\boverall\b|all\s+files/i.test(line));
+  if (!totalLine) {
+    const packageLines = t.split('\n').filter((line) => /\bcoverage:\s*\d+(?:\.\d+)?\s*%/i.test(line));
+    if (packageLines.length > 1) return null;
+  }
   const scan = totalLine ?? t;
   const matches = [...scan.matchAll(/(\d+(?:\.\d+)?)\s*%/g)];
   if (matches.length === 0) return null;
@@ -428,26 +440,28 @@ export function parseCoveragePercent(out) {
   return Number.isFinite(pct) ? pct : null;
 }
 
-// judgeCoverage: the PURE per-language coverage decision (no I/O), mirroring
-// judgeLint so the honesty / fail-safe branches are unit-testable with NO
-// coverage tool installed. Inputs:
-//   lang      — adapter language tag (for the detail string);
-//   bin       — the coverage binary, or null when the adapter has no coverage cmd;
-//   installed — did `<bin> --version` exit 0 (boolean);
-//   r         — the coverage command's run result {ok,code,out}, or null if not run;
-//   threshold — line-coverage floor to compare against (default 60).
-// Order (fail-SAFE): no coverage cmd / tool not installed -> N/A; tool installed
-// but could-not-run (coverageUnrunnable) -> N/A; ran but no parseable % ->
-// N/A; % >= threshold -> PASS; % < threshold -> FAIL. A MISSING tool is NEVER a
-// FAIL and a tool that could not run is NEVER a faked PASS.
+// Pure per-language decision: missing/unrunnable -> N/A; invalid report or a
+// failing completed run -> FAIL; otherwise compare its aggregate with threshold.
+// A missing tool is never a failure and an exited test failure is never a pass.
 export function judgeCoverage(lang, bin, installed, r, threshold = DEFAULT_COVERAGE_THRESHOLD) {
   if (!bin) return { lang, status: 'N-A', detail: `${lang}: coverage command/tool is not configured` };
   if (!installed) return { lang, status: 'N-A', detail: `${lang}: ${bin} not installed` };
   if (!r) return { lang, status: 'N-A', detail: `${lang}: ${bin} not run` };
-  if (coverageUnrunnable(r.out)) {
+  const machineReport = lang === 'python' || lang === 'typescript';
+  const pct = machineReport ? r.coveragePercent : parseCoveragePercent(r.out);
+  const validMachinePercent = machineReport && typeof pct === 'number' && Number.isFinite(pct) && pct >= 0 && pct <= 100;
+  const withoutGoNoTestPackages = String(r.out ?? '').replace(/no\s+test\s+files/ig, '');
+  const mixedGoPackages = lang === 'go' && pct !== null
+    && coverageUnrunnable(r.out) && !coverageUnrunnable(withoutGoNoTestPackages);
+  if (coverageUnrunnable(r.out) && !mixedGoPackages && !validMachinePercent) {
     return { lang, status: 'N-A', detail: `${lang}: ${bin} installed but could not run here (no module/tests/config) — not a coverage verdict` };
   }
-  const pct = parseCoveragePercent(r.out);
+  if (machineReport && !validMachinePercent) {
+    return { lang, status: 'FAIL', detail: `${lang}: ${bin} machine coverage report invalid or missing (${r.coverageError ?? 'no valid percentage'})` };
+  }
+  if (!r.ok) {
+    return { lang, status: 'FAIL', detail: `${lang}: ${bin} coverage command failed (exit ${r.code})` };
+  }
   if (pct === null) {
     return { lang, status: 'N-A', detail: `${lang}: ${bin} produced no parseable coverage % (exit ${r.code}) — not a verdict` };
   }
@@ -458,7 +472,6 @@ export function judgeCoverage(lang, bin, installed, r, threshold = DEFAULT_COVER
 }
 
 // --- I/O boundary ------------------------------------------------------------
-
 // loadAdapterDocument: parse one adapter without choosing a Java toolchain.
 export function loadAdapterDocument(lang) {
   if (!ADAPTER_LANGS.includes(lang)) {

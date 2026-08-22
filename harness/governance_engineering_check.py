@@ -3,7 +3,6 @@
 import hashlib
 import json
 import re
-
 from engineering_check_support import (
     header_issues, load_yaml, mapping_issues, unknown_field_issues,
 )
@@ -119,62 +118,53 @@ from governance_engineering.semantic_view import (
     schema_issues as _semantic_view_schema_issues,
     skill_marker_issues as _semantic_view_skill_marker_issues,
 )
-
-
-POLICY_RELATIVE = "engineering/governance-contracts.yml"
-POLICY_SHA256 = "a086a3f601cfaa43cea8fa45a91748f5a3ef612c93e1d91dd16c0904eb79424b"
-POLICY_FIELDS = {
-    "api_version", "kind", "status", "runtime_binding", "owner", "version",
-    "completion_authority", "scope", "canonicalization", "identity",
-    "claim_states", "shadow_admissibility", "evidence_semantics", "journal",
-    "semantic_view",
-    "cognitive_atom_projection", "artifact_evidence_adapter",
-    "command_observation_evidence_adapter", "legacy",
-    "evolve_repo_locator_evidence_adapter",
-    "local_gate_command_observation_producer",
-    "local_evolve_repo_locator_observation_producer",
-    "local_go_package_dependency_graph_observation_producer",
-    "canonical_refs", "contract_pins", "reference_implementations",
-    "non_capabilities",
-}
-PIN_TARGETS = {
-    "schema_sha256": "docs/contracts/governance-evidence-claim-v1.schema.json",
-    "journal_schema_sha256": "docs/contracts/governance-record-journal-v1.schema.json",
-    "semantic_view_schema_sha256":
-        "docs/contracts/governance-semantic-view-v1.schema.json",
-    "golden_fixture_sha256":
-        "docs/contracts/fixtures/governance-evidence-claim-v1.json",
-    "semantic_view_golden_fixture_sha256":
-        "docs/contracts/fixtures/governance-semantic-view-v1.json",
-    "cognitive_atom_schema_sha256":
-        "docs/contracts/cognitive-atom-projection-v1.schema.json",
-    "cognitive_atom_golden_fixture_sha256":
-        "docs/contracts/fixtures/cognitive-atom-projection-v1.json",
-    "artifact_evidence_adapter_schema_sha256":
-        "docs/contracts/artifact-evidence-adapter-v1.schema.json",
-    "artifact_evidence_adapter_golden_fixture_sha256":
-        "docs/contracts/fixtures/artifact-evidence-adapter-v1.json",
-    "command_observation_evidence_adapter_schema_sha256":
-        "docs/contracts/command-observation-evidence-adapter-v1.schema.json",
-    "command_observation_evidence_adapter_golden_fixture_sha256":
-        "docs/contracts/fixtures/command-observation-evidence-adapter-v1.json",
-    "evolve_repo_locator_evidence_adapter_schema_sha256":
-        "docs/contracts/evolve-repo-locator-evidence-adapter-v1.schema.json",
-    "evolve_repo_locator_evidence_adapter_golden_fixture_sha256":
-        "docs/contracts/fixtures/evolve-repo-locator-evidence-adapter-v1.json",
-    "local_gate_command_observation_producer_schema_sha256":
-        "docs/contracts/local-gate-command-observation-producer-v1.schema.json",
-    "local_gate_command_observation_producer_golden_fixture_sha256":
-        "docs/contracts/fixtures/local-gate-command-observation-producer-v1.json",
-    "local_evolve_repo_locator_observation_producer_schema_sha256":
-        "docs/contracts/local-evolve-repo-locator-observation-producer-v1.schema.json",
-    "local_evolve_repo_locator_observation_producer_golden_fixture_sha256":
-        "docs/contracts/fixtures/local-evolve-repo-locator-observation-producer-v1.json",
-    "local_go_package_dependency_graph_observation_producer_schema_sha256":
-        "docs/contracts/local-go-package-dependency-graph-observation-producer-v1.schema.json",
-    "local_go_package_dependency_graph_observation_producer_golden_fixture_sha256":
-        "docs/contracts/fixtures/local-go-package-dependency-graph-observation-producer-v1.json",
-}
+from governance_engineering.context_package import integration_issues as _context_package_issues
+from governance_engineering.evidence_claim_portable import integration_issues as _evidence_claim_portable_issues
+from governance_engineering.policy_authority_portable import integration_issues as _policy_authority_portable_issues
+from governance_engineering.adr_governance_portable import (
+    integration_issues as _adr_governance_portable_issues,
+)
+from governance_engineering.knowledge_graph_curation_portable import (
+    integration_issues as _kg_portable_issues,
+)
+from governance_engineering.change_impact_cost_risk_portable import integration_issues as _impact_portable_issues
+from governance_engineering.capability_grant import integration_issues as _capability_grant_issues
+from governance_engineering.approval_record import integration_issues as _approval_record_issues
+from governance_engineering.transition_receipt import integration_issues as _transition_receipt_issues
+from governance_engineering.knowledge_update_proposal import integration_issues as _knowledge_update_proposal_issues
+from governance_engineering.bootstrap_grant_issuance import integration_issues as _bootstrap_grant_issuance_issues
+from governance_engineering.bootstrap_repo_read_execution import integration_issues as _bootstrap_repo_read_execution_issues
+from governance_engineering.graph_snapshot import integration_issues as _graph_snapshot_issues
+from governance_engineering.architecture_decision_record_v2 import integration_issues as _architecture_decision_record_v2_issues
+from governance_engineering.capability_registry import (
+    integration_issues as _capability_registry_issues,
+)
+from governance_engineering.planning_capability_ownership import (
+    integration_issues as _planning_capability_ownership_issues,
+)
+from governance_engineering.project_source_snapshot import (
+    integration_issues as _project_source_snapshot_issues,
+)
+from governance_engineering.work_intent_candidate import integration_issues as _work_intent_candidate_issues
+from governance_engineering.authenticated_adr_approval_candidate import integration_issues as _authenticated_adr_approval_candidate_issues
+from governance_engineering.authenticated_adr_lifecycle_candidate import integration_issues as _authenticated_adr_lifecycle_candidate_issues
+from governance_engineering.authenticated_adr_lifecycle_authority_evidence import integration_issues as _authenticated_adr_lifecycle_authority_evidence_issues
+from governance_engineering.legacy_governance_read_import_candidate import integration_issues as _legacy_governance_read_import_issues
+from governance_engineering.kernel_operational_reference_candidate import integration_issues as _kernel_operational_reference_issues
+from governance_engineering.kernel_decision_reference_candidate import integration_issues as _kernel_decision_reference_issues
+from governance_engineering.decision_capsule_structural_replay_candidate import integration_issues as _decision_capsule_structural_replay_issues
+from governance_engineering.registry_contract import (
+    impact_prescan_integration_issues,
+    PIN_TARGETS,
+    POLICY_FIELDS,
+    POLICY_HEADER,
+    POLICY_RELATIVE,
+    POLICY_SHA256,
+)
+CANDIDATE_INTEGRATION_CHECKS = (
+    _work_intent_candidate_issues, _authenticated_adr_approval_candidate_issues, _authenticated_adr_lifecycle_candidate_issues, _authenticated_adr_lifecycle_authority_evidence_issues,
+    _legacy_governance_read_import_issues, _kernel_operational_reference_issues, _kernel_decision_reference_issues, _decision_capsule_structural_replay_issues,
+)
 SKILL_RELATIVE = ".agent/skills/evidence-claim-management.md"
 SKILL_MARKERS = [
     "职责与触发", "输入契约", "执行 SOP", "输出契约", "规则、禁止与权限", "自动化与验收",
@@ -289,7 +279,6 @@ def _pin_issues(repo_root, policy_path, pins):
             issues.append(f"{policy_path}: {field} does not match {relative}")
     return issues
 
-
 def _skill_issues(repo_root):
     path = repo_root / SKILL_RELATIVE
     if not path.is_file():
@@ -326,7 +315,6 @@ def _skill_issues(repo_root):
     issues.extend(_semantic_view_skill_marker_issues(text, path))
     return issues
 
-
 def _journal_registry_issues(data, path):
     journal = data.get("journal") if isinstance(data, dict) else None
     if not isinstance(journal, dict):
@@ -338,7 +326,6 @@ def _journal_registry_issues(data, path):
     if journal.get("runtime_delivery") != RUNTIME_DELIVERY:
         issues.append(f"{path}: journal runtime/scaffold delivery boundary drifted")
     return issues
-
 
 def _journal_schema_issues(repo_root):
     relative = PIN_TARGETS["journal_schema_sha256"]
@@ -416,7 +403,7 @@ def _detector_issues(agent_root):
     return issues
 
 
-def _governance_extension_issues(data, path, repo_root):
+def _governance_extension_issues(data, path, repo_root, agent_root):
     issues = []
     for registry_check, schema_check in (
         (_artifact_adapter_registry_issues, _artifact_adapter_schema_issues),
@@ -432,9 +419,34 @@ def _governance_extension_issues(data, path, repo_root):
     issues.extend(_evolve_locator_producer_schema_issues(repo_root))
     issues.extend(_go_dependency_registry_issues(data, path))
     issues.extend(_go_dependency_schema_issues(repo_root))
+    issues.extend(_graph_snapshot_issues(data, path, repo_root, agent_root))
+    issues.extend(_architecture_decision_record_v2_issues(
+        data, path, repo_root, agent_root,
+    ))
+    issues.extend(_capability_registry_issues(
+        data, path, repo_root, agent_root,
+    ))
+    issues.extend(_planning_capability_ownership_issues(
+        data, path, repo_root, agent_root,
+    ))
+    issues.extend(_project_source_snapshot_issues(
+        data, path, repo_root, agent_root,
+    ))
+    issues.extend(_evidence_claim_portable_issues(
+        data, path, repo_root, agent_root,
+    ))
+    issues.extend(_policy_authority_portable_issues(
+        data, path, repo_root, agent_root,
+    ))
+    issues.extend(_adr_governance_portable_issues(
+        data, path, repo_root, agent_root,
+    ))
+    issues.extend(_kg_portable_issues(data, path, repo_root, agent_root))
+    issues.extend(_impact_portable_issues(
+        data, path, repo_root, agent_root))
+    for candidate_check in CANDIDATE_INTEGRATION_CHECKS:
+        issues.extend(candidate_check(data, path, repo_root, agent_root))
     return issues
-
-
 def check_governance_evidence_claim_contract(agent_root):
     path = agent_root / POLICY_RELATIVE
     data, error = load_yaml(path)
@@ -447,28 +459,30 @@ def check_governance_evidence_claim_contract(agent_root):
     issues.extend(header_issues(data, path, "GovernanceContractRegistry"))
     if set(data) != POLICY_FIELDS:
         issues.append(f"{path}: governance contract policy fields drifted")
-    expected = {
-        "status": "active_contract",
-        "runtime_binding": (
-            "cross_language_codec_local_journal_semantic_view_atom_projection_"
-            "artifact_command_evolve_locator_adapters_local_gate_"
-            "command_evolve_locator_and_go_package_dependency_graph_"
-            "producers_shadow"
-        ),
-        "version": 11, "completion_authority": "forge_accept",
-    }
-    for field, value in expected.items():
+    for field, value in POLICY_HEADER.items():
         if data.get(field) != value:
-            issues.append(f"{path}: {field} must remain the canonical v11 value")
+            issues.append(f"{path}: {field} must remain the canonical v39 value")
     repo_root = agent_root.parent
     issues.extend(_journal_registry_issues(data, path))
     issues.extend(_journal_schema_issues(repo_root))
     issues.extend(_semantic_view_registry_issues(data, path))
     issues.extend(_semantic_view_schema_issues(repo_root))
     issues.extend(_semantic_view_fixture_issues(repo_root))
+    issues.extend(_context_package_issues(data, path, repo_root, agent_root))
+    issues.extend(_capability_grant_issues(data, path, repo_root, agent_root))
+    issues.extend(_approval_record_issues(data, path, repo_root, agent_root))
+    issues.extend(_transition_receipt_issues(data, path, repo_root, agent_root))
+    issues.extend(_knowledge_update_proposal_issues(
+        data, path, repo_root, agent_root,
+    ))
+    issues.extend(_bootstrap_grant_issuance_issues(data, path, repo_root, agent_root))
+    issues.extend(_bootstrap_repo_read_execution_issues(
+        data, path, repo_root, agent_root,
+    ))
     issues.extend(_cognitive_registry_issues(data, path))
     issues.extend(_cognitive_schema_issues(repo_root))
-    issues.extend(_governance_extension_issues(data, path, repo_root))
+    issues.extend(_governance_extension_issues(data, path, repo_root, agent_root))
+    issues.extend(impact_prescan_integration_issues(data, path, repo_root))
     pins = data.get("contract_pins") if isinstance(data.get("contract_pins"), dict) else {}
     issues.extend(_pin_issues(repo_root, path, pins))
     try:

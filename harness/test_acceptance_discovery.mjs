@@ -48,9 +48,54 @@ test('recursive discovery returns Node and Python suites from arbitrary subpacka
         'harness/new-subpackage/test_nested.mjs',
         'harness/test_root.mjs',
       ],
-      env: { FORGE_ACCEPT_INNER: '1' },
+      env: { FORGE_ACCEPT_INNER: '1', PYTHONDONTWRITEBYTECODE: '1' },
       cwd: root,
     });
+  });
+});
+
+test('recursive discovery ignores non-test fixture support modules', () => {
+  tempHarness((_root, harness) => {
+    const helpers = join(harness, 'agent_engineering');
+    mkdirSync(helpers);
+    writeFileSync(join(helpers, 'support.py'), 'def make_fixture(): return {}\n');
+    writeFileSync(join(helpers, 'test_contract.py'), 'def test_green(): pass\n');
+
+    const found = discoverHarnessSuites(harness);
+    assert.deepEqual(found.python, [join(helpers, 'test_contract.py')]);
+    assert.equal(found.python.includes(join(helpers, 'support.py')), false);
+  });
+});
+
+test('recursive discovery retires only the exact v30 helper path', () => {
+  tempHarness((_root, harness) => {
+    const retiredDir = join(harness, 'agent_engineering');
+    const activeDir = join(harness, 'another_package');
+    mkdirSync(retiredDir);
+    mkdirSync(activeDir);
+    const retired = join(retiredDir, 'test_support.py');
+    const active = join(activeDir, 'test_support.py');
+    writeFileSync(retired, 'def helper(): pass\n');
+    writeFileSync(active, 'def helper(): pass\n');
+
+    const found = discoverHarnessSuites(harness);
+    assert.equal(found.python.includes(retired), false);
+    assert.equal(found.python.includes(active), true);
+    const calls = [];
+    const result = runPythonSuites(
+      harness,
+      (cmd, args, env, cwd) => {
+        calls.push({ cmd, args, env, cwd });
+        return { ok: true, code: 0, out: 'FORGE_PY_TESTS=0\n' };
+      },
+      found,
+    );
+    assert.deepEqual(calls[0].env, { PYTHONDONTWRITEBYTECODE: '1' });
+    assert.deepEqual(calls[0].args.slice(0, 2), ['-B', '-c']);
+    assert.deepEqual(
+      result.entries.find(([name]) => name === 'another_package/test_support.py'),
+      ['another_package/test_support.py', false],
+    );
   });
 });
 

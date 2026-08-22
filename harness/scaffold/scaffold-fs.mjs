@@ -1,34 +1,22 @@
-// ForgeOS scaffold-fs — the shared SOURCE-tree copy/enumeration primitives used
-// by BOTH forge-init (scaffold a new project) and forge-upgrade (resync an
-// existing project's copied governance). Extracted so the copy semantics live in
-// ONE place: the recursive __pycache__-skipping walk that decides what a copied
-// governance-asset tree contains is a SINGLE source of truth, not duplicated
-// between the scaffolder and the upgrader (where they could silently drift —
-// upgrade enumerating a tree differently than scaffold copied it would mean a
-// project that can never reach byte-identical-to-source).
-//
-// Four primitives over a `sourceRoot` (the ForgeOS SOURCE repo) and a `targetDir`:
-//   * copyFromSource(rel, ...)  — copy one file, creating parent dirs.
-//   * copyFileExclusiveNoFollow(...) — seed once without truncating a race winner.
-//   * copyTree(relDir, ...)     — recursively copy a whole dir (skips __pycache__).
-//   * enumerateTree(relDir, sourceRoot) -> rel[]  — the PURE projection of what
-//       copyTree WOULD copy (same __pycache__ skip rule), with NO writes. upgrade
-//       expands GOVERNANCE_DIRS through this to know every file a tree contributes.
-//
-// Zero third-party deps (node: builtins only). This is a SCAFFOLD/UPGRADE-time
-// tool, not project runtime governance, so it is on forge-init's HARNESS_NOT_COPIED
-// whitelist (a generated project does not scaffold sub-projects).
+// Shared no-follow copy/enumeration primitives for scaffold and upgrade.
+// Source traversal and destination publication intentionally use one policy.
 import {
+  chmodSync,
   closeSync,
   constants,
   fchmodSync,
   fstatSync,
   ftruncateSync,
+  linkSync,
   lstatSync,
+  mkdtempSync,
   mkdirSync,
   openSync,
   readFileSync,
   readdirSync,
+  renameSync,
+  rmdirSync,
+  unlinkSync,
   writeFileSync,
 } from 'node:fs';
 import {
@@ -42,9 +30,20 @@ import {
 // targetDir/harness before any copy/prune can traverse them.
 export function assertNoSymlinkComponents(path, label = path) {
   const absolute = resolve(path);
+  const descriptor = absolute.match(
+    /^(\/(?:proc\/self\/fd|dev\/fd)\/((?:0|[1-9]\d*)))(?:\/(.*))?$/,
+  );
   const parsed = parse(absolute);
-  let cursor = parsed.root;
-  const parts = absolute.slice(parsed.root.length).split(/[\\/]/).filter(Boolean);
+  let cursor = descriptor?.[1] ?? parsed.root;
+  const parts = descriptor === null
+    ? absolute.slice(parsed.root.length).split(/[\\/]/).filter(Boolean)
+    : (descriptor[3] ?? '').split('/').filter(Boolean);
+  if (descriptor !== null) {
+    const fd = Number(descriptor[2]);
+    if (!Number.isSafeInteger(fd) || !fstatSync(fd).isDirectory()) {
+      throw new Error(`refusing unsafe descriptor root for ${label}: ${cursor}`);
+    }
+  }
   for (let i = 0; i < parts.length; i++) {
     cursor = join(cursor, parts[i]);
     let st;
@@ -139,13 +138,46 @@ function openRegularNoFollow(path, flags, mode, label) {
   }
 }
 
+function sameReadState(left, right) {
+  return ['dev', 'ino', 'mode', 'nlink', 'size', 'mtimeNs', 'ctimeNs']
+    .every((field) => left[field] === right[field]);
+}
+
+function readStableDescriptor(fd, path, label, encoding = null, afterMetadata = null) {
+  const before = validateRegularStat(fstatSync(fd, { bigint: true }), path, label);
+  const beforePath = validateRegularStat(lstatSync(path, { bigint: true }), path, label);
+  if (!sameReadState(before, beforePath)) {
+    throw new Error(`refusing changed file path for ${label}: ${path}`);
+  }
+  afterMetadata?.();
+  const value = encoding === null ? readFileSync(fd) : readFileSync(fd, encoding);
+  const after = validateRegularStat(fstatSync(fd, { bigint: true }), path, label);
+  const afterPath = validateRegularStat(lstatSync(path, { bigint: true }), path, label);
+  if (!sameReadState(before, after) || !sameReadState(before, afterPath)) {
+    throw new Error(`refusing changed file contents for ${label}: ${path}`);
+  }
+  return { stat: before, value };
+}
+
 export function readFileNoFollow(path, label = path, encoding = null) {
   const fd = openRegularNoFollow(path, constants.O_RDONLY, 0, label);
   try {
-    return encoding === null ? readFileSync(fd) : readFileSync(fd, encoding);
+    return readStableDescriptor(fd, path, label, encoding).value;
   } finally {
     closeSync(fd);
   }
+}
+
+export function snapshotFileNoFollow(path, label = path, afterMetadata = null) {
+  const fd = openRegularNoFollow(path, constants.O_RDONLY, 0, label);
+  try {
+    const { stat, value } = readStableDescriptor(fd, path, label, null, afterMetadata);
+    return Object.freeze({
+      bytes: value,
+      identity: Object.freeze({ dev: stat.dev, ino: stat.ino }),
+      mode: Number(stat.mode & 0o777n),
+    });
+  } finally { closeSync(fd); }
 }
 
 export function assertSafeRegularFile(path, label = path) {
@@ -171,21 +203,166 @@ export function writeFileNoFollow(path, content, label = path, sourceMode = null
     sourceMode ?? 0o666,
     label,
   );
+  let written;
   try {
     ftruncateSync(fd, 0);
     writeFileSync(fd, content);
     if (!existed && sourceMode !== null && process.platform !== 'win32') {
       fchmodSync(fd, sourceMode & 0o777);
     }
+    written = validateRegularStat(fstatSync(fd), path, label);
   } finally {
     closeSync(fd);
   }
+  return Object.freeze({ dev: written.dev, ino: written.ino });
 }
 
-// Seed a project-owned file exactly once. O_EXCL closes the gap between an
-// earlier "missing" observation and this write: if another process creates the
-// file first, validate that leaf through the same no-follow path and preserve
-// its bytes. Existing files are never truncated by this primitive.
+function restoreQuarantinedFile(
+  quarantine, path, identity, previous, label,
+) {
+  const current = lstatSync(quarantine);
+  if (!sameOpenedFile(identity, current)) {
+    try {
+      linkSync(quarantine, path);
+      unlinkSync(quarantine);
+    } catch (error) {
+      throw new Error(
+        `preserved replacement for ${label} at ${quarantine}: ${error.message}`,
+      );
+    }
+    throw new Error(`preserved concurrent replacement for ${label}`);
+  }
+  if (previous === null) {
+    unlinkSync(quarantine);
+    return;
+  }
+  writeFileNoFollow(quarantine, previous, label);
+  try {
+    linkSync(quarantine, path);
+  } catch (error) {
+    throw new Error(`preserved prior ${label} at ${quarantine}: ${error.message}`);
+  }
+  unlinkSync(quarantine);
+}
+
+// Undo a completed write without checking one pathname and later unlinking it.
+// rename(2) first captures whatever currently occupies the path inside a private
+// directory; only a captured inode matching the write descriptor is removed or
+// restored. A concurrent replacement is put back and never deleted.
+export function rollbackWrittenFileNoFollow(
+  path, identity, previous, label = path,
+) {
+  const parent = dirname(path);
+  assertNoSymlinkComponents(parent, `${label} parent`);
+  const directory = mkdtempSync(join(parent, '.forge-write-rollback-'));
+  chmodSync(directory, 0o700);
+  const quarantine = join(directory, 'written');
+  let failure = null;
+  try {
+    try {
+      renameSync(path, quarantine);
+    } catch (error) {
+      if (error?.code === 'ENOENT' && previous === null) return;
+      throw error;
+    }
+    restoreQuarantinedFile(quarantine, path, identity, previous, label);
+  } catch (error) {
+    failure = error;
+    throw error;
+  } finally {
+    try {
+      rmdirSync(directory);
+    } catch (error) {
+      if (failure === null && error?.code !== 'ENOENT') throw error;
+    }
+  }
+}
+
+function cleanupExclusiveStage(fd, temporary, directory) {
+  let cleanupError = null;
+  if (fd !== undefined) {
+    try { closeSync(fd); } catch (error) { cleanupError ??= error; }
+  }
+  try { unlinkSync(temporary); } catch (error) {
+    if (error?.code !== 'ENOENT') cleanupError ??= error;
+  }
+  try { rmdirSync(directory); } catch (error) {
+    if (error?.code !== 'ENOENT') cleanupError ??= error;
+  }
+  return cleanupError;
+}
+
+function exclusiveStage(parent, mode, label) {
+  const directory = mkdtempSync(join(parent, '.forge-exclusive-'));
+  chmodSync(directory, 0o700);
+  const temporary = join(directory, 'claim');
+  let fd;
+  try {
+    fd = openSync(
+      temporary,
+      constants.O_RDWR | constants.O_CREAT | constants.O_EXCL | NOFOLLOW | NONBLOCK,
+      mode,
+    );
+    const opened = validateRegularStat(
+      fstatSync(fd, { bigint: true }), temporary, label,
+    );
+    const lexical = validateRegularStat(
+      lstatSync(temporary, { bigint: true }), temporary, label,
+    );
+    if (!sameOpenedFile(opened, lexical)) {
+      throw new Error(`refusing changed exclusive stage for ${label}`);
+    }
+    return { directory, fd, temporary };
+  } catch (error) {
+    cleanupExclusiveStage(fd, temporary, directory);
+    throw error;
+  }
+}
+
+function publishExclusive(path, content, label, sourceMode, anchored = false) {
+  const parent = dirname(path);
+  const stage = exclusiveStage(parent, sourceMode ?? 0o666, label);
+  let created;
+  try {
+    writeFileSync(stage.fd, content);
+    if (sourceMode !== null && process.platform !== 'win32') {
+      fchmodSync(stage.fd, sourceMode & 0o777);
+    }
+    created = validateRegularStat(
+      fstatSync(stage.fd, { bigint: true }), stage.temporary, label,
+    );
+  } catch (error) {
+    const cleanupError = cleanupExclusiveStage(
+      stage.fd, stage.temporary, stage.directory);
+    if (cleanupError) {
+      throw new Error(`${error.message}; exclusive staging cleanup failed: ${cleanupError.message}`);
+    }
+    throw error;
+  }
+  try {
+    linkSync(stage.temporary, path);
+  } catch (error) {
+    const cleanupError = cleanupExclusiveStage(
+      stage.fd, stage.temporary, stage.directory);
+    if (cleanupError) {
+      throw new Error(`${error.message}; exclusive staging cleanup failed: ${cleanupError.message}`);
+    }
+    if (error?.code !== 'EEXIST') throw error;
+    if (anchored) validateRegularStat(lstatSync(path), path, label);
+    else readFileNoFollow(path, label);
+    return null;
+  }
+  return Object.freeze({
+    directory: stage.directory,
+    fd: stage.fd,
+    identity: Object.freeze({ dev: created.dev, ino: created.ino }),
+    sentinel: stage.temporary,
+  });
+}
+
+// Write into a private same-directory inode before atomically publishing it by
+// hard link. The returned claim retains the descriptor and private sentinel so
+// the caller owns rollback metadata before any post-publication cleanup.
 export function writeFileExclusiveNoFollow(
   path, content, label = path, sourceMode = null,
 ) {
@@ -195,43 +372,52 @@ export function writeFileExclusiveNoFollow(
   mkdirSync(parent, { recursive: true });
   assertNoSymlinkComponents(parent, `${label} parent`);
   assertNoSymlinkComponents(path, label);
-  let fd;
-  try {
-    fd = openRegularNoFollow(
-      path,
-      constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL,
-      sourceMode ?? 0o666,
-      label,
+  return publishExclusive(path, content, label, sourceMode);
+}
+
+export function writeFileExclusiveAnchoredNoFollow(
+  path, content, label = path, sourceMode = null,
+) {
+  return publishExclusive(path, content, label, sourceMode, true);
+}
+
+export function releaseFileExclusiveClaim(claim, label = 'exclusive file') {
+  const errors = [];
+  try { unlinkSync(claim.sentinel); } catch (error) {
+    if (error?.code !== 'ENOENT') errors.push(error);
+  }
+  try { closeSync(claim.fd); } catch (error) { errors.push(error); }
+  try { rmdirSync(claim.directory); } catch (error) {
+    if (error?.code !== 'ENOENT') errors.push(error);
+  }
+  if (errors.length > 0) {
+    throw new Error(
+      `${label} committed but claim cleanup failed; recovery directory ` +
+      `${claim.directory}: ${errors.map((error) => error.message).join('; ')}`,
     );
-  } catch (err) {
-    if (err?.code !== 'EEXIST') throw err;
-    readFileNoFollow(path, label);
-    return false;
   }
-  try {
-    writeFileSync(fd, content);
-    if (sourceMode !== null && process.platform !== 'win32') {
-      fchmodSync(fd, sourceMode & 0o777);
-    }
-  } finally {
-    closeSync(fd);
-  }
-  return true;
 }
 
 export function copyFileNoFollow(source, destination, sourceLabel, destinationLabel) {
-  const sourceStat = regularFile(source, sourceLabel);
-  const content = readFileNoFollow(source, sourceLabel);
-  writeFileNoFollow(destination, content, destinationLabel, sourceStat.mode);
+  const snapshot = snapshotFileNoFollow(source, sourceLabel);
+  writeFileNoFollow(destination, snapshot.bytes, destinationLabel, snapshot.mode);
 }
 
 export function copyFileExclusiveNoFollow(
   source, destination, sourceLabel, destinationLabel,
 ) {
-  const sourceStat = regularFile(source, sourceLabel);
-  const content = readFileNoFollow(source, sourceLabel);
+  const snapshot = snapshotFileNoFollow(source, sourceLabel);
   return writeFileExclusiveNoFollow(
-    destination, content, destinationLabel, sourceStat.mode,
+    destination, snapshot.bytes, destinationLabel, snapshot.mode,
+  );
+}
+
+export function copyFileExclusiveAnchoredNoFollow(
+  source, destination, sourceLabel, destinationLabel,
+) {
+  const snapshot = snapshotFileNoFollow(source, sourceLabel);
+  return writeFileExclusiveAnchoredNoFollow(
+    destination, snapshot.bytes, destinationLabel, snapshot.mode,
   );
 }
 
@@ -290,13 +476,7 @@ function regularFileOrDirectory(path, label) {
   return st;
 }
 
-// enumerateTree(relDir, sourceRoot) -> array of relative paths copyTree WOULD copy
-// from <sourceRoot>/<relDir>, in directory order, applying the SAME __pycache__
-// skip. PURE-ish: it reads the source dir structure but writes NOTHING — the
-// read-only twin of copyTree, so forge-upgrade can project GOVERNANCE_DIRS into
-// concrete files (to byte-compare each against the target) using the exact set
-// the scaffolder would have produced. Single source of truth for "what is in a
-// copied governance tree" — if copyTree's skip rule changes, change it once here.
+// Read-only twin of copyTree; keep its __pycache__ rule identical.
 export function enumerateTree(relDir, sourceRoot) {
   const out = [];
   const srcDir = join(sourceRoot, relDir);

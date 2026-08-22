@@ -31,7 +31,7 @@ const PROJECT_SKIP_DIRS = new Set([
   'dist', 'build', 'coverage', 'target', 'out', 'testdata', '__pycache__',
 ]);
 const TEST_PROJECT_SKIP_DIRS = new Set([
-  ...PROJECT_SKIP_DIRS, '.agent', '.ai', '.arch', '.github', 'docs', 'harness',
+  ...PROJECT_SKIP_DIRS, '.agent', '.ai', '.arch', '.github', 'docs', 'harness', 'skills',
 ]);
 
 const JAVA_PROFILES = [

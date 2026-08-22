@@ -16,7 +16,7 @@ commands:
   build:
     run: "python -m build"         # 库:打包;应用项目可改 no-op / 容器构建
   coverage:
-    run: "pytest --cov --cov-report=json"
+    run: "python3 -I -B harness/adapters/python_coverage_runner.py --import-mode=importlib -p no:cacheprovider --cov --cov-report=json:coverage.json -q"
     report: "coverage.json"
   complexity:                      # radon 测量 + xenon 守阈(CI 失败门)
     run: "xenon --max-absolute B --max-modules A --max-average A ."

@@ -8,15 +8,20 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { readFileSync, mkdtempSync, writeFileSync, rmSync, existsSync } from 'node:fs';
+import {
+  readFileSync, mkdirSync, mkdtempSync, writeFileSync, rmSync, existsSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import * as acc from './acceptance.mjs';
 import { resolveCoverageThreshold, judgeCoverage, computeCoverageThreshold } from './adapters.mjs';
+import { discoverProjectTestPlans } from './adapters/project.mjs';
 import { parseRules } from './arch/scan.mjs';
-import { categorize, withCategory, APPLICABLE, INAPPLICABLE, NO_TOOL, ROOT } from './acceptance-kernel.mjs';
+import {
+  categorize, withCategory, APPLICABLE, INAPPLICABLE, NO_TOOL, ROOT, run as runCommand,
+} from './acceptance-kernel.mjs';
 const {
   decide,
   PASS,
@@ -30,6 +35,7 @@ const {
   runCountedTest,
   runPythonSuites,
 } = acc;
+const noTool = () => ({ ok: false, code: 127, out: 'tool unavailable' });
 
 // allPass builds a results array where every load-bearing criterion is PASS,
 // then applies the given overrides — so a test can isolate ONE criterion's
@@ -60,6 +66,30 @@ test('importing acceptance.mjs produces no output and exits 0 (no side effects)'
   assert.equal(res.status, 0, `exit 0 expected; stderr:\n${res.stderr}`);
   assert.equal(res.stdout, '', `import must print nothing; got:\n${res.stdout}`);
   assert.equal(typeof decide, 'function');
+});
+
+test('acceptance command boundary suppresses Python bytecode in all descendants', () => {
+  const res = runCommand(process.execPath, ['-e',
+    'console.log(process.env.PYTHONDONTWRITEBYTECODE)'], { PYTHONDONTWRITEBYTECODE: '' });
+  assert.equal(res.ok, true);
+  assert.equal(res.out, '1');
+});
+
+test('portable Skill Python is not misclassified as unowned application source', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'acceptance-skill-source-'));
+  try {
+    const skill = join(dir, 'skills', 'portable', 'scripts');
+    mkdirSync(skill, { recursive: true });
+    writeFileSync(join(skill, 'capture.py'), 'pass\n');
+    let plans = discoverProjectTestPlans(dir);
+    assert.equal(plans.some((plan) => plan.label === 'python:unowned-source'), false);
+
+    writeFileSync(join(dir, 'orphan.py'), 'pass\n');
+    plans = discoverProjectTestPlans(dir);
+    assert.equal(plans.some((plan) => plan.label === 'python:unowned-source'), true);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 // --- integration: CLI exit must equal the pure lifecycle-aware verdict --------
@@ -103,18 +133,14 @@ test('acceptance CLI exit matches its lifecycle-aware pure verdict', { skip: Boo
 });
 
 // --- fail-CLOSED test discovery: a zero-match glob must NOT report green ------
-// Pins the gap closed in probeTests' harness/test_*.mjs entry: `node --test`
-// exits 0 on a glob matching ZERO files ("# tests 0"), so the old `.ok`-only
-// judgement reported the load-bearing self-test suite GREEN while running
-// nothing (exactly what happened when forge-init dropped test_enforce.mjs).
-// runCountedTest now backs BOTH Node globs; this proves the symmetric guard.
+// Pins the gap closed in probeTests' harness/test_*.mjs entry. Depending on the
+// Node release, a missing literal/glob either reports "# tests 0" or exits before
+// a TAP summary. Neither outcome may become a load-bearing false green.
 test('runCountedTest is fail-CLOSED: a zero-match glob is NOT ok (the plugged blind spot)', () => {
-  // A glob that matches no file at all. Pre-fix, probeTests judged this entry by
-  // the child run's `.ok` alone — and `node --test <no-match-glob>` EXITS 0, so
-  // it was a false green. The counted runner must reject it (count 0 -> ok:false).
   const r = runCountedTest('harness/__no_such_suite_*.mjs', { FORGE_ACCEPT_INNER: '1' });
   assert.equal(r.ok, false, 'a zero-match glob must be fail-closed (would have been a false green pre-fix)');
-  assert.equal(r.count, 0, 'node --test reports "# tests 0" for a zero-match glob');
+  assert.ok(r.count === 0 || r.count === null,
+    'a zero-match run may report zero or omit TAP, but never a positive count');
   // Belt-and-suspenders: a glob that DOES match real suites stays green with N>0,
   // so the guard rejects only the empty case (no false negative on real suites).
   const real = runCountedTest('harness/arch/test_*.mjs', { FORGE_ACCEPT_INNER: '1' });
@@ -239,12 +265,8 @@ test('collect() stamps a category on every row (the --json bridge payload)', () 
 });
 
 test('probeCoverage yields a single, honest coverage row (the wired-in probe)', () => {
-  // NOTE: deliberately tests probeCoverage() directly — NOT collect() — because
-  // collect() runs probeTests()/probeAppTests(), which spawn `node --test`; doing
-  // that from inside `node --test harness/test_*.mjs` would re-enter this suite
-  // and recurse. probeCoverage shells only the (absent/unrunnable) coverage tools,
-  // so it is cheap and side-effect-light, like the probeLint real-repo test.
-  const r = probeCoverage();
+  // Keep the recursive harness self-test hermetic; collect() owns the one real run.
+  const r = probeCoverage(ROOT, noTool);
   assert.equal(r.criterion, 'coverage', 'exactly the coverage criterion');
   assert.ok([PASS, FAIL, NA].includes(r.status), 'coverage status must be an honest verdict');
 });
@@ -266,7 +288,8 @@ test('probeCoverage wires the project mode×lifecycle threshold (the central kno
   // tool actually RUNS and emits a %. This repo has no runnable coverage tool, so
   // the criterion is N/A — and changing the floor cannot turn that N/A into a
   // verdict. Pin that: probeCoverage stays N/A regardless of the resolved threshold.
-  assert.equal(probeCoverage().status, NA, 'no runnable tool -> N/A, unaffected by the resolved threshold');
+  assert.equal(probeCoverage(ROOT, noTool).status, NA,
+    'no runnable tool -> N/A, unaffected by the resolved threshold');
 });
 
 test('judgeCoverage honors the resolved threshold at the PASS/FAIL boundary (60 vs 80)', () => {

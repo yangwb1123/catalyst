@@ -18,7 +18,7 @@ commands:
   build:
     run: "tsc --noEmit && vite build"
   coverage:
-    run: "vitest run --coverage"
+    run: "vitest run --coverage --coverage.reporter=json-summary"
     report: "coverage/coverage-summary.json"
   complexity:                      # 圈复杂度专项(可独立于 lint 跑)
     run: "eslint . --rule '{\"complexity\":[\"error\",10]}'"
