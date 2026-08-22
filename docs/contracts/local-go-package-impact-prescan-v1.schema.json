@@ -1,0 +1,430 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forgeos.local/contracts/local-go-package-impact-prescan-v1.schema.json",
+  "title": "ForgeOS Local Go Package ImpactPreScan v1",
+  "description": "Strict bounded authority-free local-only reverse lexical package impact prescan over exact ADR-0053 graph-observation bytes. System impact is always unknown.",
+  "$comment": "Schema alone cannot decode and revalidate Base64URL observation bytes, enforce canonical JSON or UTF-8 byte ordering, recompute domain-separated digests, derive seeds and the reverse fixed point, or prove deterministic shortest witnesses. A strict bounded semantic checker must perform every such check and fail the whole envelope before returning a report.",
+  "x-forgeos-canonicalization": {
+    "format": "forgeos.canonical-json/v1",
+    "exact_compact_utf8_input": true,
+    "graph_observation_digest_domain": "forgeos.governance.local-go-package-dependency-graph-observation.v1\u0000",
+    "request_digest_domain": "forgeos.governance.local-go-package-impact-prescan-request.v1\u0000",
+    "node_digest_domain": "forgeos.governance.local-go-package-impact-prescan-node.v1\u0000",
+    "edge_digest_domain": "forgeos.governance.local-go-package-impact-prescan-edge.v1\u0000",
+    "report_digest_domain": "forgeos.governance.local-go-package-impact-prescan-report.v1\u0000",
+    "envelope_digest_domain": "forgeos.governance.local-go-package-impact-prescan.v1\u0000",
+    "self_digest_rules": [
+      "request_sha256 hashes the complete canonical request with request_sha256 replaced by the empty string",
+      "node_sha256 hashes the canonical directory/import_path/module_path/package_name identity projection",
+      "edge_sha256 hashes the canonical from_node_id/import_path/relation/role/source_paths/to_node_id identity projection",
+      "report_sha256 hashes the complete canonical report with report_sha256 replaced by the empty string",
+      "envelope_sha256 hashes the complete canonical envelope with envelope_sha256 replaced by the empty string"
+    ]
+  },
+  "x-forgeos-limits": {
+    "max_graph_observation_decoded_bytes": 16777216,
+    "max_graph_observation_base64url_bytes": 22369622,
+    "max_request_bytes": 25165824,
+    "max_report_bytes": 16777216,
+    "max_envelope_bytes": 50331648,
+    "max_changed_paths": 256,
+    "max_resolved_seeds": 256,
+    "max_unresolved_seeds": 256,
+    "max_reachable_nodes": 16384,
+    "max_reachable_edges": 65536,
+    "max_source_paths_per_edge": 16384,
+    "max_witness_hops_per_node": 1024,
+    "max_aggregate_witness_hops": 65536,
+    "max_path_scalars": 4096,
+    "max_path_utf8_bytes": 16384,
+    "max_run_id_bytes": 160,
+    "max_json_depth": 16,
+    "integer_domain": "signed_int64",
+    "runtime_string_length_unit": "utf8_bytes",
+    "schema_max_length_unit": "unicode_code_points",
+    "schema_length_keywords_are_non_authoritative_approximations": true
+  },
+  "x-forgeos-local-execution": {
+    "execution_mode": "deterministic_pure_local_bytes_only",
+    "implicit_adr_0053_capture": false,
+    "repository_access": false,
+    "filesystem_access": false,
+    "process_access": false,
+    "environment_access": false,
+    "clock_access": false,
+    "credential_access": false,
+    "provider_access": false,
+    "network_access": false,
+    "database_access": false,
+    "persistence": "none"
+  },
+  "x-forgeos-authority-semantics": {
+    "delivery": "shipped_pure_local_runtime_and_strict_checker",
+    "system_impact_status": "unknown",
+    "selected_build_attestation": false,
+    "dependency_availability_attestation": false,
+    "compile_or_runtime_reachability_attestation": false,
+    "truth_attestation": false,
+    "authority_attestation": false,
+    "completion_attestation": false,
+    "permission_attestation": false,
+    "persistence_attestation": false,
+    "execution_attestation": false,
+    "effect_attestation": false,
+    "positive_result": "LOCAL_GO_PACKAGE_IMPACT_PRESCAN_ONLY (exact ADR-0053 lexical reverse dependency closure; system impact unknown; no selected-build, truth, authority, completion, persistence, execution, or effect attestation)",
+    "attestations": []
+  },
+  "x-forgeos-semantic-validation": {
+    "schema_alone_sufficient": false,
+    "required_checks": [
+      "unpadded_canonical_base64url_decodes_within_limit_and_round_trips_exactly",
+      "decoded_observation_is_exact_canonical_adr_0053_graph_observation",
+      "graph_observation_domain_digest_and_producer_run_id_match_request",
+      "changed_paths_are_strict_utf8_byte_sorted_unique_canonical_repo_paths",
+      "changed_paths_partition_exactly_across_resolved_and_unresolved_seeds",
+      "node_and_edge_identities_recompute_from_exact_observation_fields",
+      "reachable_nodes_and_edges_are_the_exact_reverse_local_edge_fixed_point",
+      "every_reachable_node_has_one_deterministic_shortest_witness",
+      "closure_status_and_reason_set_recompute_exactly",
+      "system_impact_is_fixed_unknown_with_the_complete_reason_set",
+      "request_report_and_envelope_self_digests_recompute_exactly",
+      "all_count_byte_depth_and_aggregate_witness_limits_fail_closed"
+    ]
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["api_version", "canonicalization", "envelope_sha256", "report", "request"],
+  "properties": {
+    "api_version": {
+      "const": "forgeos.governance.local-go-package-impact-prescan/v1"
+    },
+    "canonicalization": { "const": "forgeos.canonical-json/v1" },
+    "envelope_sha256": { "$ref": "#/$defs/hash" },
+    "report": { "$ref": "#/$defs/report" },
+    "request": { "$ref": "#/$defs/request" }
+  },
+  "$defs": {
+    "hash": {
+      "type": "string",
+      "minLength": 64,
+      "maxLength": 64,
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "safeText": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 16384,
+      "not": {
+        "pattern": "[\\u0000-\\u001f\\u007f\\u061c\\u200e\\u200f\\u2028-\\u202e\\u2066-\\u2069\\ud800-\\udfff]"
+      }
+    },
+    "runId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160,
+      "pattern": "^[a-z0-9][a-z0-9._:/-]{0,159}$"
+    },
+    "repoPath": {
+      "allOf": [
+        { "$ref": "#/$defs/safeText" },
+        {
+          "maxLength": 4096,
+          "pattern": "^(?!/)(?![A-Za-z]:)(?![.](?:[Gg][Ii][Tt]|[Ff][Oo][Rr][Gg][Ee])(?:/|$))(?!.*\\\\)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)(?!.*\/$).+$"
+        }
+      ]
+    },
+    "repoDirectory": {
+      "oneOf": [
+        { "const": "." },
+        { "$ref": "#/$defs/repoPath" }
+      ]
+    },
+    "goImportPath": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096,
+      "pattern": "^(?!/)(?![.-])(?!.*//)(?!.*(?:^|/)\\.)(?!.*\\.\\.)(?!.*\\.(?:/|$))(?!.*(?:^|/)(?:[Cc][Oo][Nn]|[Pp][Rr][Nn]|[Aa][Uu][Xx]|[Nn][Uu][Ll]|[Cc][Oo][Mm][1-9]|[Ll][Pp][Tt][1-9])(?:\\.|/|$))(?!.*(?:^|/)[^/.]*~[0-9]+(?:\\.|/|$))[A-Za-z0-9._~+/-]+$"
+    },
+    "nullableGoImportPath": {
+      "oneOf": [
+        { "$ref": "#/$defs/goImportPath" },
+        { "type": "null" }
+      ]
+    },
+    "packageName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096,
+      "pattern": "^(?!(?:break|case|chan|const|continue|default|defer|else|fallthrough|for|func|go|goto|if|import|interface|map|package|range|return|select|struct|switch|type|var)$)[A-Za-z_][A-Za-z0-9_]*$"
+    },
+    "base64urlObservation": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 22369622,
+      "pattern": "^(?:[A-Za-z0-9_-]{4})*(?:[A-Za-z0-9_-]{2}|[A-Za-z0-9_-]{3})?$"
+    },
+    "nodeId": {
+      "type": "string",
+      "minLength": 80,
+      "maxLength": 80,
+      "pattern": "^go-package-node-[0-9a-f]{64}$"
+    },
+    "edgeId": {
+      "type": "string",
+      "minLength": 80,
+      "maxLength": 80,
+      "pattern": "^go-package-edge-[0-9a-f]{64}$"
+    },
+    "diagnosticCode": {
+      "enum": [
+        "go_file_exceeds_parser_limit",
+        "go_file_import_limit_exceeded",
+        "go_file_invalid_utf8",
+        "go_file_parse_error",
+        "go_file_unsupported_text"
+      ]
+    },
+    "nullableDiagnosticCode": {
+      "oneOf": [
+        { "$ref": "#/$defs/diagnosticCode" },
+        { "type": "null" }
+      ]
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "api_version", "canonicalization", "changed_paths",
+        "graph_observation_base64url", "graph_observation_sha256",
+        "request_sha256", "run_id"
+      ],
+      "properties": {
+        "api_version": {
+          "const": "forgeos.governance.local-go-package-impact-prescan-request/v1"
+        },
+        "canonicalization": { "const": "forgeos.canonical-json/v1" },
+        "changed_paths": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/repoPath" }
+        },
+        "graph_observation_base64url": { "$ref": "#/$defs/base64urlObservation" },
+        "graph_observation_sha256": { "$ref": "#/$defs/hash" },
+        "request_sha256": { "$ref": "#/$defs/hash" },
+        "run_id": { "$ref": "#/$defs/runId" }
+      }
+    },
+    "resolvedSeed": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["changed_paths", "node_id"],
+      "properties": {
+        "changed_paths": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/repoPath" }
+        },
+        "node_id": { "$ref": "#/$defs/nodeId" }
+      }
+    },
+    "unresolvedSeed": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["changed_path", "diagnostic_code", "reason"],
+      "allOf": [
+        {
+          "if": {
+            "properties": { "reason": { "const": "go_file_diagnostic" } },
+            "required": ["reason"]
+          },
+          "then": {
+            "properties": { "diagnostic_code": { "$ref": "#/$defs/diagnosticCode" } }
+          },
+          "else": {
+            "properties": { "diagnostic_code": { "type": "null" } }
+          }
+        }
+      ],
+      "properties": {
+        "changed_path": { "$ref": "#/$defs/repoPath" },
+        "diagnostic_code": { "$ref": "#/$defs/nullableDiagnosticCode" },
+        "reason": {
+          "enum": [
+            "go_file_diagnostic",
+            "inside_nested_module_boundary",
+            "not_a_go_file",
+            "not_in_observed_file_or_diagnostic",
+            "outside_selected_module"
+          ]
+        }
+      }
+    },
+    "witness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["edge_ids", "hop_count", "node_ids", "seed_node_id"],
+      "properties": {
+        "edge_ids": {
+          "type": "array",
+          "maxItems": 1024,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/edgeId" }
+        },
+        "hop_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1024
+        },
+        "node_ids": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1025,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/nodeId" }
+        },
+        "seed_node_id": { "$ref": "#/$defs/nodeId" }
+      }
+    },
+    "reachableNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "directory", "import_path", "module_path", "node_id", "node_sha256",
+        "package_name", "witness"
+      ],
+      "properties": {
+        "directory": { "$ref": "#/$defs/repoDirectory" },
+        "import_path": { "$ref": "#/$defs/nullableGoImportPath" },
+        "module_path": { "$ref": "#/$defs/goImportPath" },
+        "node_id": { "$ref": "#/$defs/nodeId" },
+        "node_sha256": { "$ref": "#/$defs/hash" },
+        "package_name": { "$ref": "#/$defs/packageName" },
+        "witness": { "$ref": "#/$defs/witness" }
+      }
+    },
+    "reachableEdge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "edge_id", "edge_sha256", "from_node_id", "import_path", "relation",
+        "role", "source_paths", "to_node_id"
+      ],
+      "properties": {
+        "edge_id": { "$ref": "#/$defs/edgeId" },
+        "edge_sha256": { "$ref": "#/$defs/hash" },
+        "from_node_id": { "$ref": "#/$defs/nodeId" },
+        "import_path": { "$ref": "#/$defs/goImportPath" },
+        "relation": { "const": "depends_on" },
+        "role": { "enum": ["compile", "test"] },
+        "source_paths": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16384,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/repoPath" }
+        },
+        "to_node_id": { "$ref": "#/$defs/nodeId" }
+      }
+    },
+    "closureReasonCode": {
+      "enum": [
+        "ambiguous_local_dependency_present",
+        "changed_path_unresolved",
+        "go_file_diagnostic_present",
+        "nested_module_boundary_dependency_present",
+        "unresolved_local_dependency_present",
+        "unsupported_import_dependency_present"
+      ]
+    },
+    "report": {
+      "type": "object",
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "package_lexical_closure_status": {
+                "const": "complete_within_observation"
+              }
+            },
+            "required": ["package_lexical_closure_status"]
+          },
+          "then": {
+            "properties": { "closure_reason_codes": { "maxItems": 0 } }
+          },
+          "else": {
+            "properties": { "closure_reason_codes": { "minItems": 1 } }
+          }
+        }
+      ],
+      "required": [
+        "api_version", "canonicalization", "closure_reason_codes",
+        "graph_observation_sha256", "package_lexical_closure_status",
+        "reachable_edges", "reachable_nodes", "report_sha256", "request_sha256",
+        "resolved_seeds", "result", "run_id", "system_impact_status",
+        "system_unknown_reason_codes", "unresolved_seeds"
+      ],
+      "properties": {
+        "api_version": {
+          "const": "forgeos.governance.local-go-package-impact-prescan-report/v1"
+        },
+        "canonicalization": { "const": "forgeos.canonical-json/v1" },
+        "closure_reason_codes": {
+          "type": "array",
+          "maxItems": 6,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/closureReasonCode" }
+        },
+        "graph_observation_sha256": { "$ref": "#/$defs/hash" },
+        "package_lexical_closure_status": {
+          "enum": ["complete_within_observation", "unknown"]
+        },
+        "reachable_edges": {
+          "type": "array",
+          "maxItems": 65536,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/reachableEdge" }
+        },
+        "reachable_nodes": {
+          "type": "array",
+          "maxItems": 16384,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/reachableNode" }
+        },
+        "report_sha256": { "$ref": "#/$defs/hash" },
+        "request_sha256": { "$ref": "#/$defs/hash" },
+        "resolved_seeds": {
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/resolvedSeed" }
+        },
+        "result": {
+          "const": "LOCAL_GO_PACKAGE_IMPACT_PRESCAN_ONLY (exact ADR-0053 lexical reverse dependency closure; system impact unknown; no selected-build, truth, authority, completion, persistence, execution, or effect attestation)"
+        },
+        "run_id": { "$ref": "#/$defs/runId" },
+        "system_impact_status": { "const": "unknown" },
+        "system_unknown_reason_codes": {
+          "const": [
+            "api_event_contract_surfaces_not_observed",
+            "call_and_runtime_reachability_not_observed",
+            "data_and_migration_surfaces_not_observed",
+            "deployment_and_operations_surfaces_not_observed",
+            "owner_adr_policy_surfaces_not_observed",
+            "selected_build_semantics_not_observed"
+          ]
+        },
+        "unresolved_seeds": {
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/unresolvedSeed" }
+        }
+      }
+    }
+  }
+}

@@ -285,6 +285,7 @@ def go_package_dependency_graph_producer_registry_issues(data, path):
             "local_gate_command_observation_producer",
             "local_evolve_repo_locator_observation_producer",
             key,
+            "local_project_source_snapshot_producer",
         ]
         or scope.get("staged_producers") != []
     ):

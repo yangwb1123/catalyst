@@ -1,5 +1,7 @@
 package gopackagegraph
 
+import "strings"
+
 func cloneRegularFile(value RegularFile) RegularFile {
 	value.Content = append([]byte(nil), value.Content...)
 	return value
@@ -68,5 +70,26 @@ func validProducer(value Producer) bool {
 }
 
 func validSource(value Source) bool {
-	return validText(value.SourceRevision) && validHash(value.SourceTreeSHA256)
+	return validSourceRevision(value.SourceRevision) && validHash(value.SourceTreeSHA256)
+}
+
+func validSourceRevision(value string) bool {
+	if strings.HasPrefix(value, "git-sha1:") {
+		return len(value) == len("git-sha1:")+40 && lowerHexText(value[len("git-sha1:"):])
+	}
+	if strings.HasPrefix(value, "git-sha256:") {
+		return len(value) == len("git-sha256:")+64 && lowerHexText(value[len("git-sha256:"):])
+	}
+	return false
+}
+
+func lowerHexText(value string) bool {
+	for _, character := range value {
+		if character < '0' || character > '9' {
+			if character < 'a' || character > 'f' {
+				return false
+			}
+		}
+	}
+	return value != ""
 }

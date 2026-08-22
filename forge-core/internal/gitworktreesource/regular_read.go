@@ -28,12 +28,35 @@ func ReadRegularFiles(
 	return readRegularFilesWith(ctx, snapshot, paths, limits, nil)
 }
 
+// ReadSingleLinkRegularFiles applies the same stable-read contract and also
+// rejects hard-linked leaves. Platforms without reliable link-count metadata
+// fail closed instead of silently weakening the declared-artifact contract.
+func ReadSingleLinkRegularFiles(
+	ctx context.Context,
+	snapshot Snapshot,
+	paths []string,
+	limits RegularReadLimits,
+) ([]RegularFile, error) {
+	return readRegularFilesWithPolicy(ctx, snapshot, paths, limits, nil, true)
+}
+
 func readRegularFilesWith(
 	ctx context.Context,
 	snapshot Snapshot,
 	paths []string,
 	limits RegularReadLimits,
 	observer regularReadObserver,
+) ([]RegularFile, error) {
+	return readRegularFilesWithPolicy(ctx, snapshot, paths, limits, observer, false)
+}
+
+func readRegularFilesWithPolicy(
+	ctx context.Context,
+	snapshot Snapshot,
+	paths []string,
+	limits RegularReadLimits,
+	observer regularReadObserver,
+	requireSingleLink bool,
 ) ([]RegularFile, error) {
 	entries, err := validateRegularRead(snapshot, paths, limits)
 	if err != nil {
@@ -53,7 +76,7 @@ func readRegularFilesWith(
 	if len(entries) == 0 {
 		return []RegularFile{}, root.verify()
 	}
-	return readRegularEntries(ctx, root, entries, limits.MaxFileBytes, observer)
+	return readRegularEntries(ctx, root, entries, limits.MaxFileBytes, observer, requireSingleLink)
 }
 
 func validateRegularRead(
@@ -134,6 +157,7 @@ func readRegularEntries(
 	entries []SourceEntry,
 	maxFileBytes int64,
 	observer regularReadObserver,
+	requireSingleLink bool,
 ) ([]RegularFile, error) {
 	result := make([]RegularFile, 0, len(entries))
 	for _, entry := range entries {
@@ -141,7 +165,7 @@ func readRegularEntries(
 			return nil, fmt.Errorf("read regular source files: %w", err)
 		}
 		observeRegularRead(observer, regularReadBeforeFile, entry.Path)
-		value, err := readRegularEntry(ctx, root, entry, maxFileBytes, observer)
+		value, err := readRegularEntry(ctx, root, entry, maxFileBytes, observer, requireSingleLink)
 		if err != nil {
 			return nil, err
 		}
@@ -159,6 +183,7 @@ func readRegularEntry(
 	entry SourceEntry,
 	maxFileBytes int64,
 	observer regularReadObserver,
+	requireSingleLink bool,
 ) (RegularFile, error) {
 	parent, err := openSourceParent(ctx, root, entry.Path)
 	if err != nil {
@@ -169,18 +194,28 @@ func readRegularEntry(
 	if err != nil || !before.Mode().IsRegular() {
 		return RegularFile{}, fmt.Errorf("source path %q is not an available regular file", entry.Path)
 	}
+	if requireSingleLink {
+		if err := requireSingleLinkSourceFile(entry.Path, nil, before); err != nil {
+			return RegularFile{}, err
+		}
+	}
 	observeRegularRead(observer, regularReadAfterLeafLstat, entry.Path)
 	file, opened, err := parent.openRegular(before)
 	if err != nil {
 		return RegularFile{}, err
 	}
 	defer func() { _ = file.Close() }()
+	if requireSingleLink {
+		if err := requireSingleLinkSourceFile(entry.Path, file, opened); err != nil {
+			return RegularFile{}, err
+		}
+	}
 	content, err := readRegularContent(ctx, entry.Path, file, maxFileBytes)
 	if err != nil {
 		return RegularFile{}, err
 	}
 	observeRegularRead(observer, regularReadAfterContent, entry.Path)
-	if err := verifyRegularContent(parent, file, opened, entry, content); err != nil {
+	if err := verifyRegularContent(parent, file, opened, entry, content, requireSingleLink); err != nil {
 		return RegularFile{}, err
 	}
 	return RegularFile{Content: content, Path: entry.Path, SHA256: *entry.ContentSHA256}, nil
@@ -204,13 +239,28 @@ func verifyRegularContent(
 	opened os.FileInfo,
 	entry SourceEntry,
 	content []byte,
+	requireSingleLink bool,
 ) error {
 	after, statErr := file.Stat()
 	if statErr != nil || int64(len(content)) != entry.Bytes || !stableSourceFile(opened, after) {
 		return fmt.Errorf("source path %q changed while reading", entry.Path)
 	}
+	if requireSingleLink {
+		if err := requireSingleLinkSourceFile(entry.Path, file, after); err != nil {
+			return err
+		}
+	}
 	if err := parent.verifyRegularLeaf(opened); err != nil {
 		return err
+	}
+	if requireSingleLink {
+		current, err := parent.leafRoot.Lstat(parent.leaf)
+		if err != nil || !stableSourceFile(opened, current) {
+			return fmt.Errorf("source path %q changed while verifying hard-link state", entry.Path)
+		}
+		if err := requireSingleLinkSourceFile(entry.Path, file, current); err != nil {
+			return err
+		}
 	}
 	if sha256Bytes(content) != *entry.ContentSHA256 {
 		return fmt.Errorf("source path %q content does not match source manifest", entry.Path)
