@@ -1,0 +1,243 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forgeos.dev/contracts/architecture-decision-record-v2.schema.json",
+  "title": "ForgeOS proposed ArchitectureDecisionRecord v2 frontmatter",
+  "description": "Closed proposed-only machine frontmatter carried as one exact canonical JSON line in an ADR v2 Markdown document.",
+  "$comment": "JSON Schema alone is NOT sufficient. A conforming checker must validate the complete Markdown framing and filename, strict canonical JSON bytes, duplicate and forbidden Unicode rules, UTF-8 byte bounds and ordering, body sections, cross-field relations, and both domain-separated digests.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "acceptance_id", "accepted_at_unix_ms", "adr_id", "affected_node_ids",
+    "alternatives", "api_version", "approver_refs", "assumption_claim_ids",
+    "body_sha256", "canonicalization", "compatibility", "consequences",
+    "context_claim_ids", "decision", "decision_driver_claim_ids", "document_name",
+    "evidence_record_ids", "expires_at_unix_ms", "implementation_refs", "kind",
+    "owner_refs", "proposed_at_unix_ms", "revisit_triggers", "risks", "rollback",
+    "rollout", "scope_refs", "self_sha256", "status", "superseded_by",
+    "supersedes", "title", "validation_plan"
+  ],
+  "properties": {
+    "accepted_at_unix_ms": {"type": "null"},
+    "acceptance_id": {"type": "null"},
+    "adr_id": {"$ref": "#/$defs/adrId"},
+    "affected_node_ids": {"$ref": "#/$defs/graphNodeSet"},
+    "alternatives": {
+      "type": "array", "minItems": 2, "maxItems": 64,
+      "items": {"$ref": "#/$defs/alternative"},
+      "contains": {"type": "object", "properties": {"disposition": {"const": "candidate"}}, "required": ["disposition"]},
+      "minContains": 1,
+      "allOf": [{"contains": {"type": "object", "properties": {"disposition": {"const": "rejected"}}, "required": ["disposition"]}, "minContains": 1}]
+    },
+    "api_version": {"const": "forgeos.architecture-decision-record/v2"},
+    "approver_refs": {"$ref": "#/$defs/nonemptyDeclaredRefSet"},
+    "assumption_claim_ids": {"$ref": "#/$defs/declaredRefSet"},
+    "body_sha256": {"$ref": "#/$defs/hash"},
+    "canonicalization": {"const": "forgeos.canonical-json/v1"},
+    "compatibility": {"$ref": "#/$defs/narrative"},
+    "consequences": {"$ref": "#/$defs/narrativeList"},
+    "context_claim_ids": {"$ref": "#/$defs/declaredRefSet"},
+    "decision": {"$ref": "#/$defs/narrative"},
+    "decision_driver_claim_ids": {"$ref": "#/$defs/declaredRefSet"},
+    "document_name": {"$ref": "#/$defs/documentName"},
+    "evidence_record_ids": {"$ref": "#/$defs/declaredRefSet"},
+    "expires_at_unix_ms": {
+      "oneOf": [
+        {"type": "null"},
+        {"type": "integer", "minimum": 0, "maximum": 9223372036854775807}
+      ]
+    },
+    "implementation_refs": {"$ref": "#/$defs/implementationRefSet"},
+    "kind": {"const": "ArchitectureDecisionRecord"},
+    "owner_refs": {"$ref": "#/$defs/nonemptyDeclaredRefSet"},
+    "proposed_at_unix_ms": {"type": "integer", "minimum": 0, "maximum": 9223372036854775807},
+    "revisit_triggers": {
+      "type": "array", "minItems": 1, "maxItems": 64,
+      "items": {"$ref": "#/$defs/revisitTrigger"}
+    },
+    "risks": {"type": "array", "maxItems": 64, "items": {"$ref": "#/$defs/risk"}},
+    "rollback": {"$ref": "#/$defs/narrative"},
+    "rollout": {"$ref": "#/$defs/narrative"},
+    "scope_refs": {"$ref": "#/$defs/nonemptyDeclaredRefSet"},
+    "self_sha256": {"$ref": "#/$defs/hash"},
+    "status": {"const": "proposed"},
+    "superseded_by": {"const": []},
+    "supersedes": {"type": "array", "maxItems": 64, "uniqueItems": true, "items": {"$ref": "#/$defs/adrId"}},
+    "title": {"type": "string", "minLength": 1, "maxLength": 160},
+    "validation_plan": {
+      "type": "array", "minItems": 1, "maxItems": 64,
+      "items": {"$ref": "#/$defs/validationStep"}
+    }
+  },
+  "$defs": {
+    "hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "adrId": {"type": "string", "pattern": "^ADR-(?:000[1-9]|00[1-9][0-9]|0[1-9][0-9]{2}|[1-9][0-9]{3})$"},
+    "documentName": {"type": "string", "maxLength": 255, "pattern": "^ADR-(?:000[1-9]|00[1-9][0-9]|0[1-9][0-9]{2}|[1-9][0-9]{3})-[a-z0-9]+(?:-[a-z0-9]+)*\\.md$"},
+    "declaredRef": {"type": "string", "minLength": 1, "maxLength": 160, "pattern": "^[a-z0-9][a-z0-9._:/-]*$"},
+    "narrative": {"type": "string", "minLength": 1, "maxLength": 4096},
+    "narrativeList": {
+      "type": "array", "minItems": 1, "maxItems": 64,
+      "items": {"$ref": "#/$defs/narrative"}
+    },
+    "evidenceRequired": {
+      "type": "array", "minItems": 1, "maxItems": 64,
+      "items": {"$ref": "#/$defs/narrative"}
+    },
+    "declaredRefSet": {
+      "type": "array", "maxItems": 64, "uniqueItems": true,
+      "items": {"$ref": "#/$defs/declaredRef"}
+    },
+    "nonemptyDeclaredRefSet": {
+      "type": "array", "minItems": 1, "maxItems": 64, "uniqueItems": true,
+      "items": {"$ref": "#/$defs/declaredRef"}
+    },
+    "graphNodeSet": {
+      "type": "array", "maxItems": 64, "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^graph-node-[a-f0-9]{64}$"}
+    },
+    "implementationRef": {
+      "type": "string", "minLength": 1, "maxLength": 4096,
+      "pattern": "^(?!\\.git(?:/|#|$))(?!\\.forge(?:/|#|$))(?!.*(?:^|/)\\.\\.?(?:/|#|$))[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*(?:#L[1-9][0-9]{0,9})?$"
+    },
+    "implementationRefSet": {
+      "type": "array", "maxItems": 64, "uniqueItems": true,
+      "items": {"$ref": "#/$defs/implementationRef"}
+    },
+    "alternative": {
+      "type": "object", "additionalProperties": false,
+      "required": ["alternative_id", "description", "disposition", "rationale"],
+      "properties": {
+        "alternative_id": {"$ref": "#/$defs/declaredRef"},
+        "description": {"$ref": "#/$defs/narrative"},
+        "disposition": {"enum": ["candidate", "rejected"]},
+        "rationale": {"$ref": "#/$defs/narrative"}
+      }
+    },
+    "risk": {
+      "type": "object", "additionalProperties": false,
+      "required": ["description", "mitigation", "risk_id"],
+      "properties": {
+        "description": {"$ref": "#/$defs/narrative"},
+        "mitigation": {"$ref": "#/$defs/narrative"},
+        "risk_id": {"$ref": "#/$defs/declaredRef"}
+      }
+    },
+    "validationStep": {
+      "type": "object", "additionalProperties": false,
+      "required": ["description", "due_trigger", "evidence_required", "owner_ref", "success_criteria", "validation_id"],
+      "properties": {
+        "description": {"$ref": "#/$defs/narrative"},
+        "due_trigger": {"$ref": "#/$defs/narrative"},
+        "evidence_required": {"$ref": "#/$defs/evidenceRequired"},
+        "owner_ref": {"$ref": "#/$defs/declaredRef"},
+        "success_criteria": {"$ref": "#/$defs/narrative"},
+        "validation_id": {"$ref": "#/$defs/declaredRef"}
+      }
+    },
+    "revisitTrigger": {
+      "type": "object", "additionalProperties": false,
+      "required": ["condition", "evidence_required", "trigger_id"],
+      "properties": {
+        "condition": {"$ref": "#/$defs/narrative"},
+        "evidence_required": {"$ref": "#/$defs/evidenceRequired"},
+        "trigger_id": {"$ref": "#/$defs/declaredRef"}
+      }
+    }
+  },
+  "x-forgeos-document-framing": {
+    "encoding": "UTF-8",
+    "bom_forbidden": true,
+    "line_endings": "LF_only",
+    "prefix": "---\\n",
+    "frontmatter": "one_exact_compact_canonical_json_line",
+    "separator": "\\n---\\n\\n",
+    "body_final_lf_required": true,
+    "body_exactly_one_final_lf": true,
+    "body_control_characters_other_than_lf_forbidden": true,
+    "body_line_trailing_ascii_space_forbidden": true,
+    "body_h1": "# <adr_id>: <title>",
+    "body_h1_to_context_separator": "\\n\\n",
+    "body_h2_to_content_separator": "\\n",
+    "body_section_separator": "\\n\\n",
+    "required_h2_order": ["Context", "Decision", "Consequences", "Validation", "Limitations"],
+    "other_h2_forbidden": true,
+    "other_h2_detection": "lexical_zero_to_three_ascii_space_atx_or_setext_marker_not_commonmark_ast",
+    "each_required_section_must_be_non_whitespace": true,
+    "each_required_section_must_equal_its_unicode_whitespace_trim": true,
+    "body_sections_are_independent_narrative_not_normalized_copies_of_frontmatter": true
+  },
+  "x-forgeos-canonicalization": {
+    "format": "forgeos.canonical-json/v1",
+    "exact_compact_utf8_input": true,
+    "ascii_snake_case_keys_sorted_by_raw_utf8_bytes": true,
+    "integer_domain": "signed_int64",
+    "floats_and_bool_as_int_forbidden": true,
+    "duplicate_unknown_and_noncanonical_members_forbidden": true,
+    "unicode_normalization": "none",
+    "forbidden_unicode": ["Cc", "DEL", "bidi_controls", "surrogates", "U+2028", "U+2029"],
+    "runtime_string_length_unit": "utf8_bytes",
+    "schema_length_and_unique_keywords_are_non_authoritative_approximations": true,
+    "set_arrays_sorted_unique_by_raw_utf8_bytes": [
+      "affected_node_ids", "approver_refs", "assumption_claim_ids", "context_claim_ids",
+      "decision_driver_claim_ids", "evidence_record_ids", "implementation_refs", "owner_refs",
+      "scope_refs", "superseded_by", "supersedes"
+    ],
+    "structured_sets_sorted_unique_by_id": {
+      "alternatives": "alternative_id", "revisit_triggers": "trigger_id",
+      "risks": "risk_id", "validation_plan": "validation_id"
+    },
+    "ordered_narrative_arrays": ["consequences", "revisit_triggers[].evidence_required", "validation_plan[].evidence_required"]
+  },
+  "x-forgeos-digests": {
+    "body_domain": "forgeos.architecture-decision-record-body.v2\u0000",
+    "body_preimage": "body_domain_then_exact_body_bytes",
+    "self_domain": "forgeos.architecture-decision-record.v2\u0000",
+    "self_preimage": "self_domain_then_canonical_frontmatter_with_only_self_sha256_empty_and_final_body_sha256_present_then_NUL_then_exact_body_bytes",
+    "algorithm": "sha256_lowercase_hex",
+    "digest_fields_must_match_before_success": true
+  },
+  "x-forgeos-semantic-validation": {
+    "schema_alone_sufficient": false,
+    "required_relations": [
+      "document_name_equals_physical_basename",
+      "adr_id_number_equals_document_name_number_and_h1_number",
+      "h1_title_equals_frontmatter_title_exactly",
+      "validation_owner_ref_is_member_of_owner_refs",
+      "alternative_ids_risk_ids_validation_ids_and_trigger_ids_are_independently_sorted_unique",
+      "at_least_one_candidate_and_one_rejected_alternative",
+      "expires_at_is_null_or_strictly_greater_than_proposed_at",
+      "supersedes_does_not_contain_adr_id",
+      "implementation_ref_has_normalized_repo_relative_components_non_control_root_and_optional_line_not_above_2147483647",
+      "all_set_arrays_are_already_raw_utf8_sorted_unique",
+      "body_and_self_digests_recompute_exactly"
+    ],
+    "unsupported_api_kind_status_or_canonicalization": "fail_closed_before_success",
+    "ambient_reads": "none",
+    "reference_resolution": "none"
+  },
+  "x-forgeos-limits": {
+    "max_document_bytes": 262144,
+    "max_frontmatter_json_bytes": 65536,
+    "max_body_bytes": 196608,
+    "max_json_depth": 16,
+    "max_object_fields": 64,
+    "max_array_items": 64,
+    "max_document_name_utf8_bytes": 255,
+    "max_declared_ref_utf8_bytes": 160,
+    "max_title_utf8_bytes": 160,
+    "max_narrative_utf8_bytes": 4096,
+    "max_implementation_ref_utf8_bytes": 4096
+  },
+  "x-forgeos-authority-semantics": {
+    "profile": "proposed_only_new_document_validation",
+    "positive_result": "STRUCTURALLY_VALID_PROPOSED_ADR_V2 (declared metadata and exact document bytes only; no identity, ownership, approver, evidence, claim, graph, acceptance, compliance, persistence, transition, execution, or effect attestation)",
+    "owner_refs": "caller_or_author_declared_responsibility_references_only",
+    "approver_refs": "caller_or_author_declared_required_review_references_only",
+    "acceptance_or_approval_record": false,
+    "authenticated_identity_or_separation_of_duty": false,
+    "claim_evidence_or_graph_resolution": false,
+    "empty_claim_evidence_affected_or_risk_arrays_mean_no_declarations_not_no_context_evidence_impact_or_risk": true,
+    "architecture_compliance_attestation": false,
+    "legacy_adr_migration_or_retro_validation": false,
+    "attestations": []
+  }
+}
