@@ -1,0 +1,4 @@
+interface:
+  display_name: "Project Snapshot"
+  short_description: "Capture bounded local source observations"
+  default_prompt: "Use $project-snapshot to capture and validate a bounded project source snapshot."

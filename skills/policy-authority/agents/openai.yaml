@@ -1,0 +1,4 @@
+interface:
+  display_name: "Policy Authority"
+  short_description: "Assess declared grants and approvals without authority"
+  default_prompt: "Use $policy-authority to assess a canonical CapabilityGrant or ApprovalRecord declaration without treating it as authorization."

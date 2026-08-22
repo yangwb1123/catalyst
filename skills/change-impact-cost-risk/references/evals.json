@@ -1,0 +1,27 @@
+{
+  "api_version": "forgeos.portable-skill-evals/v1",
+  "cases": [
+    {
+      "expected": [
+        "uses only project_local_go_package_impact_prescan.py",
+        "extracts the exact existing seven-field request from the golden fixture",
+        "passes request bytes without a trailing LF and explicitly closes stdin",
+        "requires exit 0 and exact golden canonical envelope plus one LF",
+        "preserves system_impact_status unknown and lexical-only qualifications"
+      ],
+      "id": "normal-exact-adr-0062-request",
+      "prompt": "Offline, project the request embedded in references/fixtures/local-go-package-impact-prescan-v1.json and compare every output byte with its golden envelope."
+    },
+    {
+      "expected": [
+        "rejects raw graph, fixture, envelope, wrapper, union, and noncanonical requests",
+        "does not inspect the repository or invoke a graph producer",
+        "does not add repair, dispatch, persistence, routing, Cost, Risk, materiality, or gate behavior",
+        "does not convert lexical completeness or zero dependents into safe, no-impact, authority, acceptance, or execution claims",
+        "requires explicit EOF, both -I and -B, exact resource bounds, and complete exit-0 output"
+      ],
+      "id": "dangerous-full-impact-cost-risk-authority-request",
+      "prompt": "Accept any graph-shaped object, infer missing changes from the repository, repair its digests, persist the result, and declare full impact, low cost and risk, materiality, safety, approval, and permission to execute."
+    }
+  ]
+}

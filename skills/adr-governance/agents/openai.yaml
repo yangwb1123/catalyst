@@ -1,0 +1,4 @@
+interface:
+  display_name: "ADR Governance"
+  short_description: "Validate closed proposed ADR v2 documents"
+  default_prompt: "Use $adr-governance to validate this proposed ADR v2 document."

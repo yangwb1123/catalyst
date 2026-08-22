@@ -1,0 +1,4 @@
+interface:
+  display_name: "Change Impact Cost Risk"
+  short_description: "Project lexical Go package impact prescans"
+  default_prompt: "Use $change-impact-cost-risk to project an authority-free ADR-0062 lexical package ImpactPreScan from exact supplied request bytes."

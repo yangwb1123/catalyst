@@ -1,0 +1,4 @@
+interface:
+  display_name: "Knowledge Graph Curation"
+  short_description: "Project authority-free graph snapshots"
+  default_prompt: "Use $knowledge-graph-curation to project an authority-free GraphSnapshot from exact supplied request bytes."

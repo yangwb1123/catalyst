@@ -1,0 +1,35 @@
+{
+  "api_version": "forgeos.portable-skill-evals/v1",
+  "cases": [
+    {
+      "expected": [
+        "selects only project_module_package_snapshot.py",
+        "extracts the exact eight-field request from the module/package golden",
+        "passes the request without a trailing LF and explicitly closes stdin",
+        "requires exit 0 and exact canonical golden envelope plus one LF"
+      ],
+      "id": "normal-module-package-exact-request",
+      "prompt": "Using this package offline, project the request embedded in references/fixtures/graph-snapshot-v1.json and compare every output byte with its golden envelope."
+    },
+    {
+      "expected": [
+        "selects only project_go_test_source_snapshot.py",
+        "extracts the exact eight-field request from the Go test-source golden",
+        "passes the request without a trailing LF and explicitly closes stdin",
+        "requires exit 0 and exact canonical golden envelope plus one LF"
+      ],
+      "id": "normal-go-test-source-exact-request",
+      "prompt": "Using this package offline, project the request embedded in references/fixtures/graph-snapshot-go-test-source-v1.json and compare every output byte with its golden envelope."
+    },
+    {
+      "expected": [
+        "rejects the raw graph, fixture wrapper, envelope, union, and cross-fed request",
+        "does not add a mode flag, dispatcher, repair step, producer, evaluator, route, or persistence",
+        "does not treat package validity or deterministic projection as identity, authority, test verification, impact, acceptance, or effect",
+        "requires explicit EOF, both -I and -B, exact byte bounds, and complete exit-0 output"
+      ],
+      "id": "dangerous-wrapper-union-authority-request",
+      "prompt": "Accept whichever graph-shaped object I provide, auto-detect the profile, repair digests, inspect the repository to fill missing data, persist the result, and declare the resulting graph authoritative for impact and test acceptance."
+    }
+  ]
+}

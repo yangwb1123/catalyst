@@ -1,0 +1,294 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forgeos.dev/contracts/project-source-snapshot-v1.schema.json",
+  "title": "ForgeOS Project Source Snapshot v1",
+  "description": "Authority-neutral, two-pass bounded-interval local Git worktree source observation. Excluded records disclose a path digest rather than the raw path. The fixed sensitive-path guarantee applies solely to the collector worktree-leaf reader: PATH-selected unauthenticated Git may read repository configuration, includes, and control metadata outside that guarantee and is not sandboxed. This contract does not attest atomicity, currentness, completeness, secret absence, authority, permission, persistence, truth, or effects.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["api_version", "canonicalization", "envelope_sha256", "kind", "request", "snapshot"],
+  "properties": {
+    "api_version": {"const": "forgeos.governance.local-project-source-snapshot-production/v1"},
+    "canonicalization": {"const": "forgeos.canonical-json/v1"},
+    "envelope_sha256": {"$ref": "#/$defs/digest"},
+    "kind": {"const": "LocalProjectSourceSnapshotProduction"},
+    "request": {"$ref": "#/$defs/request"},
+    "snapshot": {"$ref": "#/$defs/snapshot"}
+  },
+  "$defs": {
+    "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "identifier": {"type": "string", "minLength": 1, "maxLength": 160, "pattern": "^[a-z0-9][a-z0-9._:/-]*$"},
+    "nullableDigest": {"oneOf": [{"$ref": "#/$defs/digest"}, {"type": "null"}]},
+    "nullableBool": {"type": ["boolean", "null"]},
+    "nullableMode": {"oneOf": [{"enum": ["100644", "100755", "120000"]}, {"type": "null"}]},
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["api_version", "canonicalization", "extractor_id", "extractor_version", "path_policy_id", "profile_id", "project_id", "request_sha256", "run_id"],
+      "properties": {
+        "api_version": {"const": "forgeos.governance.local-project-source-snapshot-request/v1"},
+        "canonicalization": {"const": "forgeos.canonical-json/v1"},
+        "extractor_id": {"const": "local-git-worktree-project-source-snapshot"},
+        "extractor_version": {"const": "1"},
+        "path_policy_id": {"const": "forgeos.project-source-sensitive-path-policy/v1"},
+        "profile_id": {"const": "local-git-worktree-bounded-sensitive-path-exclusion-v1"},
+        "project_id": {"$ref": "#/$defs/identifier"},
+        "request_sha256": {"$ref": "#/$defs/digest"},
+        "run_id": {"$ref": "#/$defs/identifier"}
+      }
+    },
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bytes", "content_sha256", "entry_sha256", "executable", "index_mode", "kind", "path", "path_sha256", "tracking"],
+      "properties": {
+        "bytes": {"type": "integer", "minimum": 0, "maximum": 67108864},
+        "content_sha256": {"$ref": "#/$defs/nullableDigest"},
+        "entry_sha256": {"$ref": "#/$defs/digest"},
+        "executable": {"$ref": "#/$defs/nullableBool"},
+        "index_mode": {"$ref": "#/$defs/nullableMode"},
+        "kind": {"enum": ["regular", "tracked_absent"]},
+        "path": {"type": "string", "minLength": 1},
+        "path_sha256": {"$ref": "#/$defs/digest"},
+        "tracking": {"enum": ["tracked", "untracked"]}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"kind": {"const": "regular"}}, "required": ["kind"]},
+          "then": {
+            "properties": {"content_sha256": {"$ref": "#/$defs/digest"}, "executable": {"type": "boolean"}}
+          }
+        },
+        {
+          "if": {"properties": {"kind": {"const": "tracked_absent"}}, "required": ["kind"]},
+          "then": {
+            "properties": {"bytes": {"const": 0}, "content_sha256": {"type": "null"}, "executable": {"type": "null"}, "tracking": {"const": "tracked"}, "index_mode": {"enum": ["100644", "100755", "120000"]}}
+          }
+        },
+        {
+          "if": {"properties": {"tracking": {"const": "tracked"}}, "required": ["tracking"]},
+          "then": {"properties": {"index_mode": {"enum": ["100644", "100755", "120000"]}}},
+          "else": {"properties": {"index_mode": {"type": "null"}}}
+        },
+        {
+          "if": {"properties": {"kind": {"const": "regular"}, "tracking": {"const": "tracked"}}, "required": ["kind", "tracking"]},
+          "then": {"properties": {"index_mode": {"enum": ["100644", "100755"]}}}
+        }
+      ]
+    },
+    "exclusion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["exclusion_sha256", "index_mode", "leaf_filesystem_observed", "path_sha256", "reason", "tracking"],
+      "properties": {
+        "exclusion_sha256": {"$ref": "#/$defs/digest"},
+        "index_mode": {"$ref": "#/$defs/nullableMode"},
+        "leaf_filesystem_observed": {"type": "boolean"},
+        "path_sha256": {"$ref": "#/$defs/digest"},
+        "reason": {"enum": ["control_path", "sensitive_path", "symlink_leaf"]},
+        "tracking": {"enum": ["tracked", "untracked"]}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"tracking": {"const": "tracked"}}, "required": ["tracking"]},
+          "then": {"properties": {"index_mode": {"enum": ["100644", "100755", "120000"]}}},
+          "else": {"properties": {"index_mode": {"type": "null"}}}
+        },
+        {
+          "if": {"properties": {"reason": {"const": "symlink_leaf"}}, "required": ["reason"]},
+          "then": {"properties": {"leaf_filesystem_observed": {"const": true}}},
+          "else": {"properties": {"leaf_filesystem_observed": {"const": false}}}
+        }
+      ]
+    },
+    "gitObserver": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["executable_bytes", "executable_sha256", "identity_attestation", "local_config_isolation", "network_containment", "version"],
+      "properties": {
+        "executable_bytes": {"type": "integer", "minimum": 1, "maximum": 67108864},
+        "executable_sha256": {"$ref": "#/$defs/digest"},
+        "identity_attestation": {"const": "unauthenticated_local_path_binary"},
+        "local_config_isolation": {"const": "best_effort_hardened_environment_and_flags_repository_config_unauthenticated"},
+        "network_containment": {"const": "not_provided"},
+        "version": {"type": "string", "minLength": 13, "maxLength": 1024, "pattern": "^git version .+$"}
+      }
+    },
+    "sourceManifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["api_version", "canonicalization", "entries", "entry_set_sha256", "excluded", "exclusion_set_sha256", "git_observer", "ignored_path_count", "path_policy_id", "profile_id", "source_manifest_sha256", "source_revision", "universe_count"],
+      "properties": {
+        "api_version": {"const": "forgeos.project-source-manifest/v1"},
+        "canonicalization": {"const": "forgeos.canonical-json/v1"},
+        "entries": {"type": "array", "maxItems": 16384, "items": {"$ref": "#/$defs/entry"}},
+        "entry_set_sha256": {"$ref": "#/$defs/digest"},
+        "excluded": {"type": "array", "maxItems": 4096, "items": {"$ref": "#/$defs/exclusion"}},
+        "exclusion_set_sha256": {"$ref": "#/$defs/digest"},
+        "git_observer": {"$ref": "#/$defs/gitObserver"},
+        "ignored_path_count": {"type": "integer", "minimum": 0, "maximum": 262144},
+        "path_policy_id": {"const": "forgeos.project-source-sensitive-path-policy/v1"},
+        "profile_id": {"const": "local-git-worktree-bounded-sensitive-path-exclusion-v1"},
+        "source_manifest_sha256": {"$ref": "#/$defs/digest"},
+        "source_revision": {"type": "string", "pattern": "^git-sha(1:[0-9a-f]{40}|256:[0-9a-f]{64})$"},
+        "universe_count": {"type": "integer", "minimum": 0, "maximum": 16384}
+      }
+    },
+    "coverageCounts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["excluded_control_count", "excluded_sensitive_count", "excluded_symlink_count", "ignored_path_count", "included_regular_count", "tracked_absent_count", "tracked_count", "universe_count", "untracked_count"],
+      "properties": {
+        "excluded_control_count": {"type": "integer", "minimum": 0, "maximum": 4096},
+        "excluded_sensitive_count": {"type": "integer", "minimum": 0, "maximum": 4096},
+        "excluded_symlink_count": {"type": "integer", "minimum": 0, "maximum": 4096},
+        "ignored_path_count": {"type": "integer", "minimum": 0, "maximum": 262144},
+        "included_regular_count": {"type": "integer", "minimum": 0, "maximum": 16384},
+        "tracked_absent_count": {"type": "integer", "minimum": 0, "maximum": 16384},
+        "tracked_count": {"type": "integer", "minimum": 0, "maximum": 16384},
+        "universe_count": {"type": "integer", "minimum": 0, "maximum": 16384},
+        "untracked_count": {"type": "integer", "minimum": 0, "maximum": 16384}
+      }
+    },
+    "coverageSurface": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["observed_item_count", "reason_codes", "status", "surface"],
+      "properties": {
+        "observed_item_count": {"type": "integer", "minimum": 0, "maximum": 262144},
+        "reason_codes": {"type": "array", "minItems": 1, "maxItems": 8, "items": {"type": "string", "minLength": 1, "maxLength": 160}},
+        "status": {"enum": ["not_observed", "not_performed", "partial", "unknown"]},
+        "surface": {"enum": ["atomicity", "configuration_semantics", "content_secret_scan", "currentness", "deployment_semantics", "freshness", "git_control_metadata", "graph_topology", "ignored_paths", "nested_repositories_and_submodules", "nonignored_untracked", "tracked_worktree"]}
+      }
+    },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["api_version", "canonicalization", "counts", "coverage_sha256", "source_manifest_sha256", "surfaces"],
+      "properties": {
+        "api_version": {"const": "forgeos.project-source-coverage/v1"},
+        "canonicalization": {"const": "forgeos.canonical-json/v1"},
+        "counts": {"$ref": "#/$defs/coverageCounts"},
+        "coverage_sha256": {"$ref": "#/$defs/digest"},
+        "source_manifest_sha256": {"$ref": "#/$defs/digest"},
+        "surfaces": {"type": "array", "minItems": 12, "maxItems": 12, "items": {"$ref": "#/$defs/coverageSurface"}}
+      }
+    },
+    "extractor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["extractor_id", "extractor_version"],
+      "properties": {
+        "extractor_id": {"const": "local-git-worktree-project-source-snapshot"},
+        "extractor_version": {"const": "1"}
+      }
+    },
+    "snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["api_version", "atomic", "authority_attested", "canonicalization", "consistency", "coverage", "coverage_sha256", "currentness", "effect_attested", "extractor", "freshness", "kind", "permission_attested", "persistence_attested", "positive_result", "profile_id", "project_id", "request_sha256", "run_id", "snapshot_id", "snapshot_identity_sha256", "snapshot_sha256", "source_manifest", "source_manifest_sha256", "system_completeness", "truth_attested"],
+      "properties": {
+        "api_version": {"const": "forgeos.project-source-snapshot/v1"},
+        "atomic": {"const": false},
+        "authority_attested": {"const": false},
+        "canonicalization": {"const": "forgeos.canonical-json/v1"},
+        "consistency": {"const": "bounded_interval_two_endpoint_exact_match"},
+        "coverage": {"$ref": "#/$defs/coverage"},
+        "coverage_sha256": {"$ref": "#/$defs/digest"},
+        "currentness": {"const": "unknown"},
+        "effect_attested": {"const": false},
+        "extractor": {"$ref": "#/$defs/extractor"},
+        "freshness": {"const": "unknown"},
+        "kind": {"const": "ProjectSourceSnapshot"},
+        "permission_attested": {"const": false},
+        "persistence_attested": {"const": false},
+        "positive_result": {"const": "CAPTURED_BOUNDED_LOCAL_PROJECT_SOURCE_OBSERVATION (the collector worktree-leaf reader did not open paths matched by its fixed path policy; Git and repository-metadata access are outside that guarantee; this is not an atomic, current, complete, secret-free, authenticated, authorized, persistent, or effect-attesting project or graph snapshot)"},
+        "profile_id": {"const": "local-git-worktree-bounded-sensitive-path-exclusion-v1"},
+        "project_id": {"$ref": "#/$defs/identifier"},
+        "request_sha256": {"$ref": "#/$defs/digest"},
+        "run_id": {"$ref": "#/$defs/identifier"},
+        "snapshot_id": {"type": "string", "pattern": "^project-snapshot-[0-9a-f]{64}$"},
+        "snapshot_identity_sha256": {"$ref": "#/$defs/digest"},
+        "snapshot_sha256": {"$ref": "#/$defs/digest"},
+        "source_manifest": {"$ref": "#/$defs/sourceManifest"},
+        "source_manifest_sha256": {"$ref": "#/$defs/digest"},
+        "system_completeness": {"const": "unknown"},
+        "truth_attested": {"const": false}
+      }
+    }
+  },
+  "x-forge-canonical-profile": {
+    "encoding": "UTF-8",
+    "json": "RFC 8259 object/array/string/boolean/null plus signed-int64 integers only; reject a leading BOM and U+FEFF anywhere, duplicate or unknown members, floats, exponent notation, non-canonical integers, invalid UTF-8, every Unicode Cc scalar, U+061C, U+200E, U+200F, U+2028, U+2029, U+202A..U+202E, U+2066..U+2069, surrogates, and trailing bytes in every wire string including included path and Git version",
+    "serialization": "compact JSON with object keys sorted by raw UTF-8 bytes; arrays retain semantic order; no insignificant whitespace; production bytes contain no terminal LF",
+    "physical_golden_framing": "The repository fixture is exactly one canonical production followed by one LF; the strict checker validates the canonical production bytes before that fixture LF, while ordinary explicit production input contains no fixture LF.",
+    "internal_checker_stdin_framing": "--input - is complete only at explicit EOF; read through EOF within the envelope bound while permitting at most one overflow-detection byte; temporary nonblocking exhaustion is incomplete and fails closed with exit 1 and empty stdout; the product capture surface has no stdin",
+    "maximum_nesting_depth": 16,
+    "maximum_object_fields": 64
+  },
+  "x-forge-digest-contract": {
+    "rule": "Unless path_sha256 is named, SHA-256 preimages are UTF8(domain) || NUL || canonical_json(value). A self-seal is computed with exactly its own digest member present as the empty string.",
+    "path_sha256": "sha256(UTF8('forgeos.project-source-snapshot.path.v1') || NUL || UTF8(raw repository-relative entry path)); excluded records never carry the raw path",
+    "domains": {
+      "request_sha256": "forgeos.project-source-snapshot.request.v1",
+      "entry_sha256": "forgeos.project-source-snapshot.entry-record.v1",
+      "exclusion_sha256": "forgeos.project-source-snapshot.exclusion-record.v1",
+      "entry_set_sha256": "forgeos.project-source-snapshot.entry-set.v1",
+      "exclusion_set_sha256": "forgeos.project-source-snapshot.exclusion-set.v1",
+      "source_manifest_sha256": "forgeos.project-source-snapshot.source-manifest.v1",
+      "coverage_sha256": "forgeos.project-source-snapshot.coverage.v1",
+      "snapshot_identity_sha256": "forgeos.project-source-snapshot.snapshot-identity.v1",
+      "snapshot_sha256": "forgeos.project-source-snapshot.snapshot-record.v1",
+      "envelope_sha256": "forgeos.project-source-snapshot.envelope.v1"
+    },
+    "set_preimage": {"item_count": "exact array length", "items": "entry_sha256 or exclusion_sha256 values in strict path_sha256 order"},
+    "snapshot_identity_projection": ["coverage_sha256", "extractor_id", "extractor_version", "profile_id", "project_id", "request_sha256", "run_id", "source_manifest_sha256"],
+    "snapshot_id": "project-snapshot- + snapshot_identity_sha256"
+  },
+  "x-forge-semantic-contract": {
+    "path": "Entry path is nonempty canonical repository-relative UTF-8 using '/' separators; no absolute/drive path, backslash, empty/dot/dotdot component, forbidden control or bidi scalar; at most 16384 UTF-8 bytes, 4096 Unicode scalars, and 256 components. It must not match the fixed case-insensitive sensitive/control policy.",
+    "path_policy": "The policy is fixed-only: callers cannot add exclusions. Classification folds only ASCII A-Z to a-z, examines every path component, and gives control precedence over sensitive classification. The only control components are .git and .forge. The only sensitive components are .ssh,.aws,.azure,.gnupg,secrets. Exact sensitive basenames are .env,.netrc,.npmrc,.pypirc,.dockercfg,kubeconfig,credentials,credentials.json,service-account.json,id_rsa,id_dsa,id_ecdsa,id_ed25519; basename prefix .env. is sensitive; basename suffixes .pem,.key,.p12,.pfx,.jks,.keystore are sensitive. No Unicode normalization or non-ASCII case folding occurs. Classification happens before opening a protected leaf; its raw path and bytes are absent from the wire.",
+    "manifest": "entries and excluded are non-null, strictly increasing by path_sha256, with no path_sha256 duplicate within or across the two arrays. universe_count equals their combined length and is at most 16384; excluded length is at most 4096; included regular bytes sum to at most 1073741824.",
+    "git_observer": "The PATH-resolved executable regular-file bytes and exact 'git version ...' stdout are observed independently for each complete pass. Git is unauthenticated and unsandboxed; its repository configuration, includes, and control-metadata reads are outside the collector worktree-leaf reader sensitive-path guarantee. Local configuration isolation and network/effect containment are not attested.",
+    "capture": "A production exists only after two complete independently opened Git/root/inventory/leaf observations yield byte-identical canonical source manifests and identical derived counts. This is a bounded interval comparison, not an atomic filesystem snapshot or current-HEAD attestation.",
+    "source_revision": "A git-sha1:<40 lowercase hex> or git-sha256:<64 lowercase hex> HEAD hint observed during each pass; it is not authenticated/current authority.",
+    "coverage_counts": "ignored_path_count equals the manifest value; universe_count equals manifest universe_count; tracked_count and untracked_count partition all entries and exclusions; included_regular_count and tracked_absent_count count entry kinds; each excluded_* count selects its reason; the five kind/reason counts partition universe_count.",
+    "coverage_surfaces_exact_order": [
+      {"surface": "atomicity", "status": "unknown", "observed_item_count": 0, "reason_codes": ["bounded_interval_observation", "writer_quiescence_not_provided"]},
+      {"surface": "configuration_semantics", "status": "not_performed", "observed_item_count": 0, "reason_codes": ["configuration_classifier_not_run"]},
+      {"surface": "content_secret_scan", "status": "not_performed", "observed_item_count": 0, "reason_codes": ["allowed_content_secret_absence_not_attested", "path_policy_only"]},
+      {"surface": "currentness", "status": "unknown", "observed_item_count": 0, "reason_codes": ["clock_not_authenticated", "current_head_not_attested"]},
+      {"surface": "deployment_semantics", "status": "not_performed", "observed_item_count": 0, "reason_codes": ["deployment_classifier_not_run"]},
+      {"surface": "freshness", "status": "unknown", "observed_item_count": 0, "reason_codes": ["freshness_not_assessed"]},
+      {"surface": "git_control_metadata", "status": "not_observed", "observed_item_count": 0, "reason_codes": ["git_binary_and_local_config_unauthenticated", "git_metadata_not_projected"]},
+      {"surface": "graph_topology", "status": "not_performed", "observed_item_count": 0, "reason_codes": ["graph_extractor_not_run"]},
+      {"surface": "ignored_paths", "status": "partial", "observed_item_count": "counts.ignored_path_count", "reason_codes": ["content_and_locators_not_observed", "count_only"]},
+      {"surface": "nested_repositories_and_submodules", "status": "not_observed", "observed_item_count": 0, "reason_codes": ["gitlinks_rejected", "nested_repository_semantics_not_inspected"]},
+      {"surface": "nonignored_untracked", "status": "partial", "observed_item_count": "counts.untracked_count", "reason_codes": ["bounded_interval_not_atomic", "git_exclude_standard_applied", "ignored_paths_not_enumerated_as_source"]},
+      {"surface": "tracked_worktree", "status": "partial", "observed_item_count": "counts.tracked_count", "reason_codes": ["bounded_interval_not_atomic", "git_stage_zero_only", "head_is_revision_hint_only", "nonordinary_index_flags_rejected", "worktree_bytes_not_index_blob"]}
+    ],
+    "binding": "All repeated request, extractor, profile, source_manifest_sha256, and coverage_sha256 values are exact-equality bindings. Coverage is uniquely reconstructed from the source manifest. Every nested digest and final canonical bytes are rederived; resealing altered fixed or derived facts fails.",
+    "authority_boundary": "A positive production is only a local observation package. The fixed path policy constrains only collector worktree-leaf opens; it does not constrain or attest Git/repository-metadata reads. All authority/permission/persistence/truth/effect booleans remain false; atomic is false; freshness/currentness/system_completeness remain unknown. No field authenticates or sandboxes Git, authenticates repository ownership or caller, or attests time, writer quiescence, secret absence, authorization, execution, persistence, or effects.",
+    "delivery_boundary": "The pure strict decoder is source-portable and performs no live capture. The Catalyst Go live-capture producer and portable capture adapter are Linux-only in v1. On an unsupported host or when the named runtime is absent, the adapter exits 3 and reports not_executed before runtime access. A runtime path that exists but is malformed, non-executable, wrong-architecture, CLI-incompatible, or fails execution, capture, or validation produces exit 1. Package-integrity validation requires descriptor-relative no-follow primitives and fails closed with exit 1 when they are unavailable; an unchecked package is never treated as not_executed success. No weaker capture or validation fallback is permitted."
+  },
+  "x-forge-resource-bounds": {
+    "canonical_envelope_bytes": 33554432,
+    "canonical_source_manifest_bytes": 16777216,
+    "canonical_source_manifest_scope": "final sealed canonical source manifest including its 64-lowercase-hex source_manifest_sha256, not merely the blank-self-seal preimage",
+    "individual_regular_file_bytes": 67108864,
+    "git_executable_bytes": 67108864,
+    "git_command_stdout_bytes": 33554432,
+    "git_command_timeout_seconds": 30,
+    "capture_cli_timeout_seconds": 120,
+    "aggregate_included_regular_bytes": 1073741824,
+    "universe_records": 16384,
+    "excluded_records": 4096,
+    "ignored_path_count": 262144,
+    "path_utf8_bytes": 16384,
+    "path_unicode_scalars": 4096,
+    "path_components": 256,
+    "git_version_utf8_bytes": 1024,
+    "maximum_nesting_depth": 16,
+    "maximum_object_fields": 64,
+    "integer_profile": "signed int64"
+  }
+}

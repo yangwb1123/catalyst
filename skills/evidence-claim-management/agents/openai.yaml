@@ -1,0 +1,4 @@
+interface:
+  display_name: "Evidence and Claim Management"
+  short_description: "Validate authority-free evidence and claims"
+  default_prompt: "Use $evidence-claim-management to validate an exact supplied EvidenceRecord/KnowledgeClaim record set without granting truth or authority."

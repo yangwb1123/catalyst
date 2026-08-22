@@ -1,0 +1,394 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forgeos.dev/contracts/graph-snapshot-go-test-source-v1.schema.json",
+  "title": "ForgeOS authority-free Go lexical test-source partial GraphSnapshot profile v1",
+  "description": "Strict shipped single-profile wire for projecting exact ADR-0053 caller bytes into module/package/test-source GraphSnapshot v1 records.",
+  "$comment": "Schema alone is NOT sufficient. A compatible semantic checker must validate exact canonical ADR-0053 bytes and uniquely reconstruct every identity, final ID, profile-bound record, set, crosswalk, unresolved bijection, disjoint coverage partition, freshness value and digest before byte-for-byte envelope comparison. This delivered slice includes fixture, checker, Go/Python pure runtimes, CLI, registry, Skill and scaffold, but no Rust implementation.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["api_version", "canonicalization", "envelope_sha256", "request", "snapshot"],
+  "properties": {
+    "api_version": {"const": "forgeos.governance.local-go-test-source-graph-snapshot-projection/v1"},
+    "canonicalization": {"const": "forgeos.canonical-json/v1"},
+    "envelope_sha256": {"$ref": "#/$defs/hash"},
+    "request": {"$ref": "#/$defs/request"},
+    "snapshot": {"$ref": "#/$defs/snapshot"}
+  },
+  "x-forgeos-canonicalization": {
+    "format": "forgeos.canonical-json/v1",
+    "exact_compact_utf8_input": true,
+    "ascii_snake_case_keys_sorted_by_raw_utf8_bytes": true,
+    "integer_domain": "signed_int64",
+    "floats_and_bool_as_int_forbidden": true,
+    "duplicate_unknown_and_noncanonical_members_forbidden": true,
+    "forbidden_unicode": ["Cc", "bidi_controls", "surrogates", "U+2028", "U+2029"],
+    "runtime_string_length_unit": "utf8_bytes",
+    "schema_max_length_unit": "unicode_code_points",
+    "schema_length_and_unique_keywords_are_non_authoritative_approximations": true,
+    "digest_domains": {
+      "adr_0053_graph_observation": "forgeos.governance.local-go-package-dependency-graph-observation.v1\u0000",
+      "request": "forgeos.governance.local-go-test-source-graph-snapshot-projection-request.v1\u0000",
+      "source_identity": "forgeos.governance.graph-snapshot-source-identity.v1\u0000",
+      "source": "forgeos.governance.graph-snapshot-source.v1\u0000",
+      "extractor_identity": "forgeos.governance.graph-snapshot-extractor-identity.v1\u0000",
+      "extractor": "forgeos.governance.graph-snapshot-extractor.v1\u0000",
+      "node_identity": "forgeos.governance.graph-snapshot-node-identity.v1\u0000",
+      "node": "forgeos.governance.graph-snapshot-node.v1\u0000",
+      "edge_identity": "forgeos.governance.graph-snapshot-edge-identity.v1\u0000",
+      "edge": "forgeos.governance.graph-snapshot-edge.v1\u0000",
+      "unresolved_node_identity": "forgeos.governance.graph-snapshot-unresolved-node-identity.v1\u0000",
+      "unresolved_node": "forgeos.governance.graph-snapshot-unresolved-node.v1\u0000",
+      "unresolved_edge_identity": "forgeos.governance.graph-snapshot-unresolved-edge-identity.v1\u0000",
+      "unresolved_edge": "forgeos.governance.graph-snapshot-unresolved-edge.v1\u0000",
+      "source_set": "forgeos.governance.graph-snapshot-source-set.v1\u0000",
+      "extractor_set": "forgeos.governance.graph-snapshot-extractor-set.v1\u0000",
+      "node_set": "forgeos.governance.graph-snapshot-node-set.v1\u0000",
+      "edge_set": "forgeos.governance.graph-snapshot-edge-set.v1\u0000",
+      "unresolved_node_set": "forgeos.governance.graph-snapshot-unresolved-node-set.v1\u0000",
+      "unresolved_edge_set": "forgeos.governance.graph-snapshot-unresolved-edge-set.v1\u0000",
+      "adr_0062_node_crosswalk_set": "forgeos.governance.graph-snapshot-adr-0062-node-crosswalk-set.v1\u0000",
+      "coverage": "forgeos.governance.graph-snapshot-coverage.v1\u0000",
+      "snapshot_identity": "forgeos.governance.graph-snapshot-identity.v1\u0000",
+      "snapshot": "forgeos.governance.graph-snapshot.v1\u0000",
+      "envelope": "forgeos.governance.local-go-test-source-graph-snapshot-projection.v1\u0000"
+    },
+    "identity_and_self_digest_rule": "derive each identity digest from its exact independent identity projection; form the final prefixed ID; hash the complete record with only its self sha256 field empty and the final ID present",
+    "identity_projection_fields": {
+      "source": ["graph_api_version", "graph_observation_sha256", "graph_profile_id", "observer_run_id", "source_revision", "source_tree_sha256", "source_type"],
+      "extractor": ["extractor_type", "extractor_version", "producer_id", "projector_profile_id"],
+      "node": ["identity_namespace", "identity_profile_id", "node_type", "project_id", "qualified_name_components"],
+      "edge": ["category_axes", "from_node_id", "identity_profile_id", "import_discriminator", "parallel_discriminator", "relation", "source_role", "to_node_id"],
+      "unresolved_node": ["candidate_identity_namespace", "candidate_identity_profile_id", "candidate_qualified_name_components", "kind", "project_id", "reason_code"],
+      "unresolved_edge": ["category_axes", "from_node_id", "identity_profile_id", "import_discriminator", "parallel_discriminator", "project_id", "reason_code", "relation", "resolution", "resolution_detail", "source_role", "target_candidate"],
+      "snapshot": ["coverage_sha256", "crosswalk_set_sha256", "edge_set_sha256", "extractor_set_sha256", "node_set_sha256", "profile_id", "project_id", "request_sha256", "source_set_sha256", "unresolved_edge_set_sha256", "unresolved_node_set_sha256"]
+    },
+    "id_prefixes": {"source": "graph-source-", "extractor": "graph-extractor-", "node": "graph-node-", "edge": "graph-edge-", "unresolved_node": "graph-unresolved-node-", "unresolved_edge": "graph-unresolved-edge-", "snapshot": "graph-snapshot-"},
+    "self_digest_empty_fields": {"request": "request_sha256", "source": "source_sha256", "extractor": "extractor_sha256", "node": "node_sha256", "edge": "edge_sha256", "unresolved_node": "unresolved_node_sha256", "unresolved_edge": "unresolved_edge_sha256", "snapshot": "snapshot_sha256", "envelope": "envelope_sha256"},
+    "set_digest_preimage": {"fields": ["item_count", "items"], "items_are_complete_final_records": true},
+    "set_sort_keys": {"source": "source_id", "extractor": "extractor_id", "node": "node_id", "edge": "edge_id", "unresolved_node": "unresolved_node_id", "unresolved_edge": "unresolved_edge_id", "adr_0062_node_crosswalk": "graph_node_id"},
+    "coverage_digest_preimage": {"fields": ["status", "surface_count", "surfaces"]}
+  },
+  "x-forgeos-profile": {
+    "projector_profile_id": "adr-0053-selected-go-module-lexical-package-test-source-partial-graph-snapshot-v1",
+    "input_api_version": "forgeos.go-package-dependency-graph-observation/v1",
+    "input_profile_id": "selected-go-module-lexical-dependency-graph-v1",
+    "transport_negotiation": "dedicated_single_profile_request_and_envelope_api",
+    "legacy_adr_0065_profile_api_schema_fixture_and_golden_unchanged": true,
+    "unsupported_version_or_profile_result": "unsupported_profile_before_any_output",
+    "project_identity_semantics": "caller_declared_project_scoped_semantic_name_stable_only",
+    "root_module_relative_directory": ".",
+    "epistemic_status": "derived",
+    "coverage_status": "partial",
+    "freshness_status": "unknown",
+    "system_knowledge_status": "unknown"
+  },
+  "x-forgeos-topology": {
+    "node_types": ["module", "package", "test"],
+    "relations": ["contains", "depends_on"],
+    "test_node_identity_profile": "go-test-source-set-module-relative-directory-package-name-v1",
+    "test_node_components": ["module_path", "module_relative_directory", "package_name"],
+    "test_node_bijection": "one_test_node_for_each_and_only_each_adr_0053_package_with_nonempty_test_files",
+    "test_node_locators": "exact_test_files_only_with_role_test_and_exact_input_content_sha256",
+    "package_p_and_external_package_p_test_remain_distinct": true,
+    "diagnostics_may_guess_or_bind_a_package": false,
+    "test_contains_edge": {"from": "module", "to": "test", "relation": "contains", "category_axes": ["structural"], "source_role": null, "import_discriminator": null, "parallel_discriminator": "contains", "epistemic_status": "derived"},
+    "legacy_dependency_endpoints_rewritten": false,
+    "generated_relations": ["contains", "depends_on"],
+    "verified_by_generated": false,
+    "observed_by_generated": false,
+    "test_case_execution_outcome_or_coverage_inferred": false,
+    "cross_profile_identity": {"source_record_equal": true, "module_package_legacy_edge_and_unresolved_ids_equal": true, "adr_0062_crosswalk_items_equal": true, "extractor_sha256_equal": false, "node_edge_and_unresolved_record_sha256_equal": false, "snapshot_sha256_equal": false}
+  },
+  "x-forgeos-coverage": {
+    "surface_order": ["adr_decision", "api_event_contract", "business_domain", "data_schema_migration", "deployment_environment", "go_module_package_lexical", "operations_runtime_signal", "other_language_module_package", "owner_policy", "symbol_call_runtime", "test_verification"],
+    "partial_surfaces": ["go_module_package_lexical", "test_verification"],
+    "not_observed_surfaces": ["adr_decision", "api_event_contract", "business_domain", "data_schema_migration", "deployment_environment", "operations_runtime_signal", "other_language_module_package", "owner_policy", "symbol_call_runtime"],
+    "disjoint_partition": {
+      "go_nodes": "module_and_package_nodes",
+      "test_nodes": "test_nodes",
+      "go_edges": "module_to_package_contains_and_compile_role_resolved_dependencies",
+      "test_edges": "module_to_test_contains_and_test_role_resolved_dependencies",
+      "node_counts_sum_to_snapshot_nodes": true,
+      "edge_counts_sum_to_snapshot_edges": true,
+      "unresolved_records_excluded_from_resolved_counts": true
+    },
+    "go_base_reasons": ["all_regular_go_files_lexical_union_not_selected_build", "compile_runtime_reachability_not_observed", "go_module_graph_not_resolved", "single_selected_go_module_only", "source_observation_not_atomic_snapshot"],
+    "test_base_reasons": ["go_test_files_lexical_source_set_only", "selected_test_build_not_observed", "source_observation_not_atomic_snapshot", "test_case_identity_not_observed", "test_execution_not_observed", "test_outcome_and_coverage_not_observed"],
+    "conditional_reasons": ["ambiguous_local_dependency_present", "cgo_pseudo_dependency_present", "external_candidate_dependency_present", "go_file_diagnostic_present", "nested_module_boundary_dependency_present", "nested_module_boundary_present", "nonregular_go_entries_not_located", "stdlib_candidate_dependency_present", "unresolved_local_dependency_present", "unsupported_import_dependency_present"],
+    "conditional_reason_partition": "dependency_resolution_by_source_role_and_diagnostic_by_literal_test_suffix; nested_boundary_and_nonregular_aggregate_reasons_on_both_partial_surfaces",
+    "partial_surface_when_count_zero": true,
+    "reason_order": "unique_raw_utf8_bytes"
+  },
+  "x-forgeos-limits": {
+    "max_graph_observation_decoded_bytes": 16777216,
+    "max_graph_observation_base64url_bytes": 22369622,
+    "max_request_bytes": 25165824,
+    "max_snapshot_bytes": 67108864,
+    "max_envelope_bytes": 100663296,
+    "max_json_depth": 16,
+    "max_nodes": 32769,
+    "max_module_nodes": 1,
+    "max_package_nodes": 16384,
+    "max_test_nodes": 16384,
+    "max_package_contains_edges": 16384,
+    "max_test_contains_edges": 16384,
+    "max_resolved_dependency_edges": 65536,
+    "max_total_resolved_and_unresolved_dependency_candidates": 65536,
+    "max_resolved_edge_union": 98304,
+    "edge_union_uses_its_dedicated_98304_limit_before_generic_walker": true,
+    "max_unresolved_nodes": 17408,
+    "max_unresolved_edges": 65536,
+    "max_crosswalk_items": 16384,
+    "source_count": 1,
+    "extractor_count": 1,
+    "coverage_surface_count": 11,
+    "max_source_locators_per_record": 16384,
+    "max_aggregate_source_locators": 132097,
+    "max_path_scalars": 4096,
+    "max_path_utf8_bytes": 16384,
+    "max_project_id_utf8_bytes": 160,
+    "max_run_id_utf8_bytes": 160
+  },
+  "x-forgeos-authority-semantics": {
+    "delivery": "shipped_go_and_python_pure_projector_strict_checker",
+    "positive_result": "PROJECTED_PARTIAL_GRAPH_SNAPSHOT (exact ADR-0053 selected-module lexical module/package/test-source subgraph only; test nodes are source sets, not tests or outcomes; coverage partial and system/freshness unknown; no selected-build, cross-surface completeness, truth, authority, completion, persistence, execution, verification, impact, or effect attestation)",
+    "graph_only_input_revalidates_source_or_parameters_manifest_preimages": false,
+    "reads_repository_git_clock_environment_process_provider_network_database_hub_journal_or_memory": false,
+    "authenticates_project_observer_projector_git_source_or_clock": false,
+    "parses_test_declarations_or_test_cases": false,
+    "runs_compiles_or_executes_tests": false,
+    "attests_test_pass_fail_coverage_flakiness_or_verified_subject": false,
+    "emits_verified_by_or_observed_by": false,
+    "selected_build_or_system_graph_completeness_attestation": false,
+    "truth_authority_permission_completion_persistence_execution_verification_or_effect_attestation": false,
+    "change_impact_cost_risk_or_assessment_output": false,
+    "satisfies_g3_or_assessment_join": false,
+    "fixture_checker_go_python_runtime_cli_registry_skill_scaffold_delivered": true,
+    "roadmap_closure_delivered": true,
+    "rust_implementation_delivered": false,
+    "attestations": [],
+    "noncapabilities": ["authenticated_identity", "selected_build_semantics", "test_case_identity", "test_execution", "test_result", "test_coverage", "verified_subject_mapping", "freshness_attestation", "system_graph_completeness", "authority", "persistence", "effect"]
+  },
+  "x-forgeos-semantic-validation": {
+    "schema_alone_sufficient": false,
+    "complete_canonical_envelope_reconstruction_required": true,
+    "required_checks": [
+      "exact_unpadded_base64url_roundtrip_and_exact_adr_0053_graph_validation",
+      "dedicated_transport_graph_domain_observer_run_and_profile_match_request",
+      "all_identity_final_id_self_digest_and_structured_set_digests_recompute",
+      "legacy_adr_0065_module_package_dependency_unresolved_and_crosswalk_projection_reconstructs_unchanged",
+      "each_nonempty_test_files_package_maps_bijectively_to_one_exact_test_source_set_node",
+      "p_and_p_test_identity_components_remain_distinct",
+      "diagnostic_and_nonregular_input_never_generate_or_attach_test_nodes",
+      "each_test_node_maps_bijectively_to_one_module_to_test_structural_contains_edge",
+      "no_package_to_test_verified_by_observed_by_execution_outcome_or_coverage_facts_exist",
+      "cross_profile_stable_ids_and_profile_bound_full_record_sha256_rules_hold",
+      "all_identity_union_collisions_duplicates_and_dangling_endpoints_fail_closed",
+      "go_and_test_surface_node_and_resolved_edge_counts_form_an_exact_disjoint_partition",
+      "all_conditional_coverage_reasons_freshness_and_system_unknown_reconstruct",
+      "raw_utf8_ordering_byte_depth_count_per_field_and_aggregate_limits_fail_closed",
+      "complete_canonical_envelope_matches_the_unique_derived_value_byte_for_byte"
+    ]
+  },
+  "x-forgeos-adversarial-acceptance": {
+    "case_count": 22,
+    "cases": [
+      "transport_profile_negotiation_fails_closed",
+      "exact_adr_0053_base64_digest_run_and_profile_binding",
+      "canonical_closed_json_and_unicode_rejection",
+      "no_ambient_observation",
+      "one_test_node_per_nonempty_test_files_package",
+      "test_node_package_bijection",
+      "p_and_p_test_separation",
+      "exact_test_identity_and_literal_root_directory",
+      "exact_test_only_locator_set",
+      "diagnostic_never_guesses_package",
+      "exact_module_to_test_contains_edge",
+      "no_inferred_verification_edges",
+      "no_test_execution_or_outcome_claim",
+      "legacy_topology_and_dependency_endpoints_unchanged",
+      "cross_profile_stable_identity_ids",
+      "profile_bound_full_record_sha256",
+      "global_collision_and_dangling_endpoint_rejection",
+      "unresolved_node_and_edge_bijections",
+      "adr_0062_package_only_crosswalk",
+      "disjoint_go_and_test_coverage_partition",
+      "freshness_and_system_knowledge_remain_unknown",
+      "dedicated_node_edge_and_aggregate_locator_bounds"
+    ]
+  },
+  "$defs": {
+    "hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "identifier": {"type": "string", "minLength": 1, "maxLength": 160, "pattern": "^[a-z0-9][a-z0-9._:/-]*$"},
+    "boundedString": {"type": "string", "minLength": 1, "maxLength": 16384},
+    "repoPath": {"type": "string", "minLength": 1, "maxLength": 4096, "$comment": "ADR-0053 canonical repository-path grammar and the 16 KiB UTF-8 bound require semantic validation."},
+    "revision": {"type": "string", "pattern": "^(?:git-sha1:[a-f0-9]{40}|git-sha256:[a-f0-9]{64})$"},
+    "nodeId": {"type": "string", "pattern": "^graph-node-[a-f0-9]{64}$"},
+    "edgeId": {"type": "string", "pattern": "^graph-edge-[a-f0-9]{64}$"},
+    "sourceId": {"type": "string", "pattern": "^graph-source-[a-f0-9]{64}$"},
+    "extractorId": {"type": "string", "pattern": "^graph-extractor-[a-f0-9]{64}$"},
+    "unresolvedNodeId": {"type": "string", "pattern": "^graph-unresolved-node-[a-f0-9]{64}$"},
+    "unresolvedEdgeId": {"type": "string", "pattern": "^graph-unresolved-edge-[a-f0-9]{64}$"},
+    "emptyIds": {"type": "array", "maxItems": 0, "items": {"$ref": "#/$defs/identifier"}},
+    "oneHash": {"type": "array", "minItems": 1, "maxItems": 1, "items": {"$ref": "#/$defs/hash"}},
+    "oneSourceId": {"type": "array", "minItems": 1, "maxItems": 1, "items": {"$ref": "#/$defs/sourceId"}},
+    "fileLocator": {
+      "type": "object", "additionalProperties": false,
+      "required": ["content_sha256", "path", "role", "source_id"],
+      "properties": {"content_sha256": {"$ref": "#/$defs/hash"}, "path": {"$ref": "#/$defs/repoPath"}, "role": {"enum": ["compile", "test"]}, "source_id": {"$ref": "#/$defs/sourceId"}}
+    },
+    "testLocator": {
+      "type": "object", "additionalProperties": false,
+      "required": ["content_sha256", "path", "role", "source_id"],
+      "properties": {"content_sha256": {"$ref": "#/$defs/hash"}, "path": {"$ref": "#/$defs/repoPath"}, "role": {"const": "test"}, "source_id": {"$ref": "#/$defs/sourceId"}}
+    },
+    "goModLocator": {
+      "type": "object", "additionalProperties": false,
+      "required": ["content_sha256", "path", "role", "source_id"],
+      "properties": {"content_sha256": {"$ref": "#/$defs/hash"}, "path": {"$ref": "#/$defs/repoPath"}, "role": {"const": "go_mod"}, "source_id": {"$ref": "#/$defs/sourceId"}}
+    },
+    "unresolvedLocator": {
+      "type": "object", "additionalProperties": false,
+      "required": ["content_sha256", "path", "role", "source_id"],
+      "properties": {"content_sha256": {"type": "null"}, "path": {"$ref": "#/$defs/repoPath"}, "role": {"enum": ["compile", "go_mod", "test"]}, "source_id": {"$ref": "#/$defs/sourceId"}}
+    },
+    "freshness": {
+      "type": "object", "additionalProperties": false,
+      "required": ["expires_at_unix_ms", "observed_at_unix_ms", "reason_codes", "status"],
+      "properties": {"expires_at_unix_ms": {"type": "integer", "minimum": 0}, "observed_at_unix_ms": {"type": "integer", "minimum": 0}, "reason_codes": {"const": ["source_observation_clock_unauthenticated", "source_observation_not_atomic_snapshot", "zero_duration_expiry_no_freshness_attestation"]}, "status": {"const": "unknown"}}
+    },
+    "request": {
+      "type": "object", "additionalProperties": false,
+      "required": ["api_version", "canonicalization", "graph_observation_base64url", "graph_observation_sha256", "project_id", "projector_profile_id", "request_sha256", "run_id"],
+      "properties": {
+        "api_version": {"const": "forgeos.governance.local-go-test-source-graph-snapshot-projection-request/v1"},
+        "canonicalization": {"const": "forgeos.canonical-json/v1"},
+        "graph_observation_base64url": {"type": "string", "minLength": 1, "maxLength": 22369622, "pattern": "^[A-Za-z0-9_-]+$"},
+        "graph_observation_sha256": {"$ref": "#/$defs/hash"}, "project_id": {"$ref": "#/$defs/identifier"},
+        "projector_profile_id": {"const": "adr-0053-selected-go-module-lexical-package-test-source-partial-graph-snapshot-v1"},
+        "request_sha256": {"$ref": "#/$defs/hash"}, "run_id": {"$ref": "#/$defs/identifier"}
+      }
+    },
+    "source": {
+      "type": "object", "additionalProperties": false,
+      "required": ["graph_api_version", "graph_observation_sha256", "graph_profile_id", "observed_at_unix_ms", "observer_parameters_sha256", "observer_producer_id", "observer_producer_type", "observer_producer_version", "observer_run_id", "source_id", "source_identity_sha256", "source_revision", "source_sha256", "source_tree_sha256", "source_type"],
+      "properties": {
+        "graph_api_version": {"const": "forgeos.go-package-dependency-graph-observation/v1"}, "graph_observation_sha256": {"$ref": "#/$defs/hash"}, "graph_profile_id": {"const": "selected-go-module-lexical-dependency-graph-v1"},
+        "observed_at_unix_ms": {"type": "integer", "minimum": 0}, "observer_parameters_sha256": {"$ref": "#/$defs/hash"}, "observer_producer_id": {"const": "forgeos.local-go-package-dependency-graph-observer"}, "observer_producer_type": {"const": "tool"}, "observer_producer_version": {"const": "v1"}, "observer_run_id": {"$ref": "#/$defs/identifier"},
+        "source_id": {"$ref": "#/$defs/sourceId"}, "source_identity_sha256": {"$ref": "#/$defs/hash"}, "source_revision": {"$ref": "#/$defs/revision"}, "source_sha256": {"$ref": "#/$defs/hash"}, "source_tree_sha256": {"$ref": "#/$defs/hash"}, "source_type": {"const": "adr_0053_graph_observation"}
+      }
+    },
+    "extractor": {
+      "type": "object", "additionalProperties": false,
+      "required": ["extractor_id", "extractor_identity_sha256", "extractor_sha256", "extractor_type", "extractor_version", "input_graph_api_version", "input_graph_profile_id", "input_source_id", "producer_id", "producer_type", "producer_version", "projector_profile_id"],
+      "properties": {
+        "extractor_id": {"$ref": "#/$defs/extractorId"}, "extractor_identity_sha256": {"$ref": "#/$defs/hash"}, "extractor_sha256": {"$ref": "#/$defs/hash"}, "extractor_type": {"const": "graph_snapshot_projector"}, "extractor_version": {"const": "v1"},
+        "input_graph_api_version": {"const": "forgeos.go-package-dependency-graph-observation/v1"}, "input_graph_profile_id": {"const": "selected-go-module-lexical-dependency-graph-v1"}, "input_source_id": {"$ref": "#/$defs/sourceId"},
+        "producer_id": {"const": "forgeos.local-go-graph-snapshot-projector"}, "producer_type": {"const": "tool"}, "producer_version": {"const": "v1"}, "projector_profile_id": {"const": "adr-0053-selected-go-module-lexical-package-test-source-partial-graph-snapshot-v1"}
+      }
+    },
+    "node": {
+      "type": "object", "additionalProperties": false,
+      "required": ["claim_record_ids", "data_classification", "epistemic_status", "evidence_record_ids", "extractor_sha256s", "freshness_status", "identity_namespace", "identity_profile_id", "lifecycle_status", "node_id", "node_identity_sha256", "node_sha256", "node_type", "owner_node_ids", "owner_status", "project_id", "provenance_status", "qualified_name_components", "source_ids", "source_locators", "validity_status"],
+      "properties": {
+        "claim_record_ids": {"$ref": "#/$defs/emptyIds"}, "data_classification": {"const": "unknown"}, "epistemic_status": {"const": "derived"}, "evidence_record_ids": {"$ref": "#/$defs/emptyIds"}, "extractor_sha256s": {"$ref": "#/$defs/oneHash"}, "freshness_status": {"const": "unknown"},
+        "identity_namespace": {"const": "go"}, "identity_profile_id": {"enum": ["go-module-path-v1", "go-package-module-relative-directory-name-v1", "go-test-source-set-module-relative-directory-package-name-v1"]}, "lifecycle_status": {"const": "unknown"},
+        "node_id": {"$ref": "#/$defs/nodeId"}, "node_identity_sha256": {"$ref": "#/$defs/hash"}, "node_sha256": {"$ref": "#/$defs/hash"}, "node_type": {"enum": ["module", "package", "test"]},
+        "owner_node_ids": {"$ref": "#/$defs/emptyIds"}, "owner_status": {"const": "unknown"}, "project_id": {"$ref": "#/$defs/identifier"}, "provenance_status": {"const": "unknown"},
+        "qualified_name_components": {"type": "array", "minItems": 1, "maxItems": 3, "items": {"$ref": "#/$defs/boundedString"}}, "source_ids": {"$ref": "#/$defs/oneSourceId"},
+        "source_locators": {"type": "array", "minItems": 1, "maxItems": 16384}, "validity_status": {"const": "unknown"}
+      },
+      "allOf": [
+        {"if": {"properties": {"node_type": {"const": "module"}}}, "then": {"properties": {"identity_profile_id": {"const": "go-module-path-v1"}, "qualified_name_components": {"type": "array", "minItems": 1, "maxItems": 1, "items": {"$ref": "#/$defs/boundedString"}}, "source_locators": {"type": "array", "minItems": 1, "maxItems": 1, "items": {"$ref": "#/$defs/goModLocator"}}}}},
+        {"if": {"properties": {"node_type": {"const": "package"}}}, "then": {"properties": {"identity_profile_id": {"const": "go-package-module-relative-directory-name-v1"}, "qualified_name_components": {"type": "array", "minItems": 3, "maxItems": 3, "items": {"$ref": "#/$defs/boundedString"}}, "source_locators": {"type": "array", "minItems": 1, "maxItems": 16384, "items": {"$ref": "#/$defs/fileLocator"}}}}},
+        {"if": {"properties": {"node_type": {"const": "test"}}}, "then": {"properties": {"identity_profile_id": {"const": "go-test-source-set-module-relative-directory-package-name-v1"}, "qualified_name_components": {"type": "array", "minItems": 3, "maxItems": 3, "items": {"$ref": "#/$defs/boundedString"}}, "source_locators": {"type": "array", "minItems": 1, "maxItems": 16384, "items": {"$ref": "#/$defs/testLocator"}}}}}
+      ]
+    },
+    "edge": {
+      "type": "object", "additionalProperties": false,
+      "required": ["category_axes", "claim_record_ids", "data_classification", "edge_id", "edge_identity_sha256", "edge_sha256", "epistemic_status", "evidence_record_ids", "extractor_sha256s", "freshness_status", "from_node_id", "identity_profile_id", "import_discriminator", "lifecycle_status", "owner_node_ids", "owner_status", "parallel_discriminator", "provenance_status", "relation", "source_ids", "source_locators", "source_role", "to_node_id", "validity_status"],
+      "properties": {
+        "category_axes": {"type": "array", "minItems": 1, "maxItems": 1, "items": {"enum": ["static_source", "structural"]}}, "claim_record_ids": {"$ref": "#/$defs/emptyIds"}, "data_classification": {"const": "unknown"},
+        "edge_id": {"$ref": "#/$defs/edgeId"}, "edge_identity_sha256": {"$ref": "#/$defs/hash"}, "edge_sha256": {"$ref": "#/$defs/hash"}, "epistemic_status": {"const": "derived"}, "evidence_record_ids": {"$ref": "#/$defs/emptyIds"}, "extractor_sha256s": {"$ref": "#/$defs/oneHash"}, "freshness_status": {"const": "unknown"},
+        "from_node_id": {"$ref": "#/$defs/nodeId"}, "identity_profile_id": {"const": "graph-edge-semantic-endpoints-v1"}, "import_discriminator": {"oneOf": [{"$ref": "#/$defs/boundedString"}, {"type": "null"}]}, "lifecycle_status": {"const": "unknown"},
+        "owner_node_ids": {"$ref": "#/$defs/emptyIds"}, "owner_status": {"const": "unknown"}, "parallel_discriminator": {"$ref": "#/$defs/boundedString"}, "provenance_status": {"const": "unknown"}, "relation": {"enum": ["contains", "depends_on"]},
+        "source_ids": {"$ref": "#/$defs/oneSourceId"}, "source_locators": {"type": "array", "minItems": 1, "maxItems": 16384, "items": {"$ref": "#/$defs/fileLocator"}}, "source_role": {"oneOf": [{"enum": ["compile", "test"]}, {"type": "null"}]}, "to_node_id": {"$ref": "#/$defs/nodeId"}, "validity_status": {"const": "unknown"}
+      },
+      "oneOf": [
+        {"properties": {"category_axes": {"const": ["structural"]}, "import_discriminator": {"type": "null"}, "parallel_discriminator": {"const": "contains"}, "relation": {"const": "contains"}, "source_role": {"type": "null"}}},
+        {"properties": {"category_axes": {"const": ["static_source"]}, "import_discriminator": {"$ref": "#/$defs/boundedString"}, "relation": {"const": "depends_on"}, "source_role": {"enum": ["compile", "test"]}}}
+      ]
+    },
+    "targetCandidate": {
+      "type": "object", "additionalProperties": false,
+      "required": ["identity_namespace", "identity_profile_id", "qualified_name_components", "target_node_ids"],
+      "properties": {"identity_namespace": {"enum": ["go", "go_import_candidate"]}, "identity_profile_id": {"enum": ["go-import-candidate-v1", "go-package-directory-candidate-v1"]}, "qualified_name_components": {"type": "array", "minItems": 1, "maxItems": 3, "items": {"$ref": "#/$defs/boundedString"}}, "target_node_ids": {"type": "array", "maxItems": 16384, "items": {"$ref": "#/$defs/nodeId"}}}
+    },
+    "unresolvedNode": {
+      "type": "object", "additionalProperties": false,
+      "required": ["candidate_identity_namespace", "candidate_identity_profile_id", "candidate_qualified_name_components", "diagnostic_code", "extractor_sha256s", "kind", "project_id", "reason_code", "source_ids", "source_locators", "unresolved_node_id", "unresolved_node_identity_sha256", "unresolved_node_sha256"],
+      "properties": {
+        "candidate_identity_namespace": {"enum": ["go_module_boundary", "go_source_path"]}, "candidate_identity_profile_id": {"enum": ["go-module-boundary-v1", "go-source-path-v1"]}, "candidate_qualified_name_components": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"$ref": "#/$defs/boundedString"}},
+        "diagnostic_code": {"oneOf": [{"enum": ["go_file_exceeds_parser_limit", "go_file_import_limit_exceeded", "go_file_invalid_utf8", "go_file_parse_error", "go_file_unsupported_text"]}, {"type": "null"}]}, "extractor_sha256s": {"$ref": "#/$defs/oneHash"}, "kind": {"enum": ["go_file_diagnostic", "nested_module_boundary"]},
+        "project_id": {"$ref": "#/$defs/identifier"}, "reason_code": {"enum": ["go_file_diagnostic", "nested_module_boundary"]}, "source_ids": {"$ref": "#/$defs/oneSourceId"}, "source_locators": {"type": "array", "minItems": 1, "maxItems": 1, "items": {"$ref": "#/$defs/unresolvedLocator"}},
+        "unresolved_node_id": {"$ref": "#/$defs/unresolvedNodeId"}, "unresolved_node_identity_sha256": {"$ref": "#/$defs/hash"}, "unresolved_node_sha256": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "unresolvedEdge": {
+      "type": "object", "additionalProperties": false,
+      "required": ["category_axes", "epistemic_status", "extractor_sha256s", "from_node_id", "identity_profile_id", "import_discriminator", "parallel_discriminator", "project_id", "reason_code", "relation", "resolution", "resolution_detail", "source_ids", "source_locators", "source_role", "target_candidate", "unresolved_edge_id", "unresolved_edge_identity_sha256", "unresolved_edge_sha256"],
+      "properties": {
+        "category_axes": {"const": ["static_source"]}, "epistemic_status": {"const": "derived"}, "extractor_sha256s": {"$ref": "#/$defs/oneHash"}, "from_node_id": {"$ref": "#/$defs/nodeId"}, "identity_profile_id": {"const": "go-unresolved-import-edge-v1"}, "import_discriminator": {"$ref": "#/$defs/boundedString"}, "parallel_discriminator": {"$ref": "#/$defs/boundedString"}, "project_id": {"$ref": "#/$defs/identifier"},
+        "reason_code": {"enum": ["cgo_pseudo_not_resolved", "external_candidate_not_resolved", "multiple_compile_packages", "nested_module_boundary", "no_compile_package", "noncanonical_import_path", "stdlib_candidate_not_resolved"]}, "relation": {"const": "depends_on"},
+        "resolution": {"enum": ["ambiguous_local", "cgo_pseudo", "external_candidate", "nested_module_boundary", "stdlib_candidate", "unresolved_local", "unsupported"]}, "resolution_detail": {"oneOf": [{"$ref": "#/$defs/boundedString"}, {"type": "null"}]},
+        "source_ids": {"$ref": "#/$defs/oneSourceId"}, "source_locators": {"type": "array", "minItems": 1, "maxItems": 16384, "items": {"$ref": "#/$defs/fileLocator"}}, "source_role": {"enum": ["compile", "test"]}, "target_candidate": {"$ref": "#/$defs/targetCandidate"},
+        "unresolved_edge_id": {"$ref": "#/$defs/unresolvedEdgeId"}, "unresolved_edge_identity_sha256": {"$ref": "#/$defs/hash"}, "unresolved_edge_sha256": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "crosswalk": {
+      "type": "object", "additionalProperties": false,
+      "required": ["adr_0062_node_id", "adr_0062_node_sha256", "graph_node_id"],
+      "properties": {"adr_0062_node_id": {"type": "string", "pattern": "^go-package-node-[a-f0-9]{64}$"}, "adr_0062_node_sha256": {"$ref": "#/$defs/hash"}, "graph_node_id": {"$ref": "#/$defs/nodeId"}}
+    },
+    "surfaceName": {"enum": ["adr_decision", "api_event_contract", "business_domain", "data_schema_migration", "deployment_environment", "go_module_package_lexical", "operations_runtime_signal", "other_language_module_package", "owner_policy", "symbol_call_runtime", "test_verification"]},
+    "coverageSurface": {
+      "type": "object", "additionalProperties": false,
+      "required": ["edge_count", "node_count", "reason_codes", "status", "surface"],
+      "properties": {"edge_count": {"type": "integer", "minimum": 0, "maximum": 98304}, "node_count": {"type": "integer", "minimum": 0, "maximum": 32769}, "reason_codes": {"type": "array", "minItems": 1, "maxItems": 24, "uniqueItems": true, "items": {"$ref": "#/$defs/identifier"}}, "status": {"enum": ["not_observed", "partial"]}, "surface": {"$ref": "#/$defs/surfaceName"}}
+    },
+    "notObservedAdr": {"allOf": [{"$ref": "#/$defs/coverageSurface"}, {"properties": {"edge_count": {"const": 0}, "node_count": {"const": 0}, "reason_codes": {"const": ["adr_decision_surface_not_observed"]}, "status": {"const": "not_observed"}, "surface": {"const": "adr_decision"}}}]},
+    "notObservedApi": {"allOf": [{"$ref": "#/$defs/coverageSurface"}, {"properties": {"edge_count": {"const": 0}, "node_count": {"const": 0}, "reason_codes": {"const": ["api_event_contract_surface_not_observed"]}, "status": {"const": "not_observed"}, "surface": {"const": "api_event_contract"}}}]},
+    "notObservedBusiness": {"allOf": [{"$ref": "#/$defs/coverageSurface"}, {"properties": {"edge_count": {"const": 0}, "node_count": {"const": 0}, "reason_codes": {"const": ["business_domain_surface_not_observed"]}, "status": {"const": "not_observed"}, "surface": {"const": "business_domain"}}}]},
+    "notObservedData": {"allOf": [{"$ref": "#/$defs/coverageSurface"}, {"properties": {"edge_count": {"const": 0}, "node_count": {"const": 0}, "reason_codes": {"const": ["data_schema_migration_surface_not_observed"]}, "status": {"const": "not_observed"}, "surface": {"const": "data_schema_migration"}}}]},
+    "notObservedDeployment": {"allOf": [{"$ref": "#/$defs/coverageSurface"}, {"properties": {"edge_count": {"const": 0}, "node_count": {"const": 0}, "reason_codes": {"const": ["deployment_environment_surface_not_observed"]}, "status": {"const": "not_observed"}, "surface": {"const": "deployment_environment"}}}]},
+    "partialGo": {"allOf": [{"$ref": "#/$defs/coverageSurface"}, {"properties": {"reason_codes": {"type": "array", "minItems": 5, "maxItems": 15, "uniqueItems": true, "items": {"$ref": "#/$defs/identifier"}}, "status": {"const": "partial"}, "surface": {"const": "go_module_package_lexical"}}}]},
+    "notObservedOperations": {"allOf": [{"$ref": "#/$defs/coverageSurface"}, {"properties": {"edge_count": {"const": 0}, "node_count": {"const": 0}, "reason_codes": {"const": ["operations_runtime_signal_surface_not_observed"]}, "status": {"const": "not_observed"}, "surface": {"const": "operations_runtime_signal"}}}]},
+    "notObservedOtherLanguage": {"allOf": [{"$ref": "#/$defs/coverageSurface"}, {"properties": {"edge_count": {"const": 0}, "node_count": {"const": 0}, "reason_codes": {"const": ["other_language_module_package_surface_not_observed"]}, "status": {"const": "not_observed"}, "surface": {"const": "other_language_module_package"}}}]},
+    "notObservedOwner": {"allOf": [{"$ref": "#/$defs/coverageSurface"}, {"properties": {"edge_count": {"const": 0}, "node_count": {"const": 0}, "reason_codes": {"const": ["owner_policy_surface_not_observed"]}, "status": {"const": "not_observed"}, "surface": {"const": "owner_policy"}}}]},
+    "notObservedSymbol": {"allOf": [{"$ref": "#/$defs/coverageSurface"}, {"properties": {"edge_count": {"const": 0}, "node_count": {"const": 0}, "reason_codes": {"const": ["symbol_call_runtime_surface_not_observed"]}, "status": {"const": "not_observed"}, "surface": {"const": "symbol_call_runtime"}}}]},
+    "partialTest": {"allOf": [{"$ref": "#/$defs/coverageSurface"}, {"properties": {"reason_codes": {"type": "array", "minItems": 6, "maxItems": 16, "uniqueItems": true, "items": {"$ref": "#/$defs/identifier"}}, "status": {"const": "partial"}, "surface": {"const": "test_verification"}}}]},
+    "coverage": {
+      "type": "object", "additionalProperties": false,
+      "required": ["status", "surface_count", "surfaces"],
+      "properties": {
+        "status": {"const": "partial"}, "surface_count": {"const": 11},
+        "surfaces": {"type": "array", "minItems": 11, "maxItems": 11, "prefixItems": [{"$ref": "#/$defs/notObservedAdr"}, {"$ref": "#/$defs/notObservedApi"}, {"$ref": "#/$defs/notObservedBusiness"}, {"$ref": "#/$defs/notObservedData"}, {"$ref": "#/$defs/notObservedDeployment"}, {"$ref": "#/$defs/partialGo"}, {"$ref": "#/$defs/notObservedOperations"}, {"$ref": "#/$defs/notObservedOtherLanguage"}, {"$ref": "#/$defs/notObservedOwner"}, {"$ref": "#/$defs/notObservedSymbol"}, {"$ref": "#/$defs/partialTest"}], "items": false}
+      }
+    },
+    "snapshot": {
+      "type": "object", "additionalProperties": false,
+      "required": ["adr_0062_node_crosswalk", "api_version", "canonicalization", "coverage", "coverage_sha256", "crosswalk_set_sha256", "edge_set_sha256", "edges", "extractor_set_sha256", "extractors", "freshness", "node_set_sha256", "nodes", "profile_id", "project_id", "request_sha256", "result", "snapshot_id", "snapshot_identity_sha256", "snapshot_sha256", "source_set_sha256", "sources", "system_knowledge_status", "system_unknown_reason_codes", "unresolved_edge_set_sha256", "unresolved_edges", "unresolved_node_set_sha256", "unresolved_nodes"],
+      "properties": {
+        "adr_0062_node_crosswalk": {"type": "array", "maxItems": 16384, "items": {"$ref": "#/$defs/crosswalk"}}, "api_version": {"const": "forgeos.governance.graph-snapshot/v1"}, "canonicalization": {"const": "forgeos.canonical-json/v1"},
+        "coverage": {"$ref": "#/$defs/coverage"}, "coverage_sha256": {"$ref": "#/$defs/hash"}, "crosswalk_set_sha256": {"$ref": "#/$defs/hash"}, "edge_set_sha256": {"$ref": "#/$defs/hash"}, "edges": {"type": "array", "maxItems": 98304, "items": {"$ref": "#/$defs/edge"}},
+        "extractor_set_sha256": {"$ref": "#/$defs/hash"}, "extractors": {"type": "array", "minItems": 1, "maxItems": 1, "items": {"$ref": "#/$defs/extractor"}}, "freshness": {"$ref": "#/$defs/freshness"},
+        "node_set_sha256": {"$ref": "#/$defs/hash"}, "nodes": {"type": "array", "minItems": 1, "maxItems": 32769, "items": {"$ref": "#/$defs/node"}}, "profile_id": {"const": "adr-0053-selected-go-module-lexical-package-test-source-partial-graph-snapshot-v1"}, "project_id": {"$ref": "#/$defs/identifier"}, "request_sha256": {"$ref": "#/$defs/hash"},
+        "result": {"const": "PROJECTED_PARTIAL_GRAPH_SNAPSHOT (exact ADR-0053 selected-module lexical module/package/test-source subgraph only; test nodes are source sets, not tests or outcomes; coverage partial and system/freshness unknown; no selected-build, cross-surface completeness, truth, authority, completion, persistence, execution, verification, impact, or effect attestation)"},
+        "snapshot_id": {"type": "string", "pattern": "^graph-snapshot-[a-f0-9]{64}$"}, "snapshot_identity_sha256": {"$ref": "#/$defs/hash"}, "snapshot_sha256": {"$ref": "#/$defs/hash"},
+        "source_set_sha256": {"$ref": "#/$defs/hash"}, "sources": {"type": "array", "minItems": 1, "maxItems": 1, "items": {"$ref": "#/$defs/source"}}, "system_knowledge_status": {"const": "unknown"},
+        "system_unknown_reason_codes": {"const": ["adr_owner_policy_surfaces_not_observed", "api_event_contract_surfaces_not_observed", "business_domain_surfaces_not_observed", "call_and_runtime_reachability_not_observed", "data_and_migration_surfaces_not_observed", "deployment_and_operations_surfaces_not_observed", "freshness_not_attested", "other_language_module_package_surfaces_not_observed", "selected_build_semantics_not_observed", "test_execution_and_verification_outcomes_not_observed"]},
+        "unresolved_edge_set_sha256": {"$ref": "#/$defs/hash"}, "unresolved_edges": {"type": "array", "maxItems": 65536, "items": {"$ref": "#/$defs/unresolvedEdge"}}, "unresolved_node_set_sha256": {"$ref": "#/$defs/hash"}, "unresolved_nodes": {"type": "array", "maxItems": 17408, "items": {"$ref": "#/$defs/unresolvedNode"}}
+      }
+    }
+  }
+}
