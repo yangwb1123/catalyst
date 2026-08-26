@@ -120,7 +120,7 @@ function rustHeaderName(line) {
 function matchBrace(lines, start, lang) {
   let depth = 0;
   let opened = false;
-  let state = { quote: null, block: false }; // multi-line string/comment carried across lines
+  let state = { quote: null, block: false, paren: 0, body: false };
   for (let i = start; i < lines.length; i += 1) {
     const r = braceDelta(lines[i], lang, state);
     state = r.state;
@@ -139,10 +139,13 @@ function matchBrace(lines, start, lang) {
 // string / JS template) and an open block comment persist; single-line `"`/`'`
 // reset at EOL (unless trailing `\`). `open` flags a real `{`; `lang` selects
 // backtick escapes (JS template honors `\`; a Go raw string does not).
-function braceDelta(line, lang, state = { quote: null, block: false }) {
+function braceDelta(
+  line, lang, state = { quote: null, block: false, paren: 0, body: false },
+) {
   let delta = 0;
   let open = false;
-  let { quote, block } = state;
+  let { quote, block, paren = 0, body = false } = state;
+  const javascript = lang === 'js' || lang === 'ts';
   for (let i = 0; i < line.length; i += 1) {
     const c = line[i];
     if (block) { // inside /* ... */ — only `*/` ends it; everything else skipped
@@ -160,14 +163,17 @@ function braceDelta(line, lang, state = { quote: null, block: false }) {
     if (c === '"' || c === "'" || c === '`') { quote = c; continue; }
     if (c === '/' && line[i + 1] === '/') break; // JS/Go line comment
     if (c === '#') break; // Python line comment (harmless for brace langs)
-    if (c === '{') { delta += 1; open = true; }
+    if (javascript && !body && c === '(') { paren += 1; continue; }
+    if (javascript && !body && c === ')') { paren = Math.max(0, paren - 1); continue; }
+    if (javascript && !body && paren > 0) continue;
+    if (c === '{') { delta += 1; open = true; body = true; }
     else if (c === '}') delta -= 1;
   }
   // `"`/`'` do not span lines (except a trailing `\` continuation): drop an
   // unterminated one so a stray quote cannot poison the rest of the body. A
   // backtick (multi-line raw/template) and a block comment intentionally carry.
   if ((quote === '"' || quote === "'") && !line.endsWith('\\')) quote = null;
-  return { open, delta, state: { quote, block } };
+  return { open, delta, state: { quote, block, paren, body } };
 }
 
 // indentFunctions (Python): a `def` owns every following line that is blank or

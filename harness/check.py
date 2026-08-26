@@ -27,6 +27,11 @@ import re
 import sys
 from pathlib import Path
 
+# Standalone callers intentionally use the canonical ``python3 harness/check.py``
+# argv. Disable bytecode before any third-party or repository-local imports so
+# exact package closures cannot be polluted by this integrity observation.
+sys.dont_write_bytecode = True
+
 try:
     import yaml
 except ImportError:  # pragma: no cover - clear actionable error, not a crash

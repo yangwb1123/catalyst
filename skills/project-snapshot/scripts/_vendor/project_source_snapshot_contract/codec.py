@@ -5,7 +5,6 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-import unicodedata
 
 from .constants import (
     MAX_ARRAY_ITEMS, MAX_DEPTH, MAX_FIELDS, MAX_I64, MAX_MANIFEST_BYTES,
@@ -17,12 +16,11 @@ class ContractError(ValueError):
     """Input bytes or values violate the frozen contract."""
 
 
+_FORBIDDEN_SCALAR_RE = re.compile('[\\x00-\\x1f\\x7f-\\x9f\\ud800-\\udfff\\u061c\\u200e\\u200f\\u2028\\u2029\\u202a-\\u202e\\u2066-\\u2069\\ufeff]')
+
+
 def forbidden_scalar(character: str) -> bool:
-    code = ord(character)
-    return (unicodedata.category(character) == "Cc" or code == 0x7F or
-            0xD800 <= code <= 0xDFFF or
-            code in {0x061C, 0x200E, 0x200F, 0x2028, 0x2029, 0xFEFF} or
-            0x202A <= code <= 0x202E or 0x2066 <= code <= 0x2069)
+    return _FORBIDDEN_SCALAR_RE.fullmatch(character) is not None
 
 
 def _walk(value: object, depth: int = 1) -> None:
@@ -37,7 +35,7 @@ def _walk(value: object, depth: int = 1) -> None:
     if isinstance(value, str):
         if len(value.encode("utf-8")) > MAX_MANIFEST_BYTES:
             raise ContractError("string exceeds global UTF-8 byte limit")
-        if any(forbidden_scalar(character) for character in value):
+        if _FORBIDDEN_SCALAR_RE.search(value) is not None:
             raise ContractError("string contains forbidden Unicode scalar")
         return
     if isinstance(value, list):
@@ -122,6 +120,6 @@ def short_text(value: object, label: str) -> str:
     if (not isinstance(value, str) or not value or
             len(value.encode("utf-8")) > MAX_SHORT_TEXT_BYTES):
         raise ContractError(f"{label}: expected bounded nonempty text")
-    if any(forbidden_scalar(character) for character in value):
+    if _FORBIDDEN_SCALAR_RE.search(value) is not None:
         raise ContractError(f"{label}: forbidden Unicode scalar")
     return value

@@ -3,7 +3,7 @@
 // test/build/vet checks are mandatory. A copied harness normally does not carry
 // forge-core; there the same criteria are honestly INAPPLICABLE.
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { isAbsolute, join, relative, sep } from 'node:path';
 
 import {
   PASS,
@@ -122,7 +122,12 @@ export function probeForgeCoreTests(root = ROOT, exec = run) {
 // Rust, and Java manifests/workspaces. A missing tool/config remains N/A/no_tool
 // here and is promoted to a test_pass failure by acceptance.mjs.
 export function probeProjectTests(root = ROOT, exec = run, discoveryIO = readdirSync) {
-  const rows = probeDiscoveredProjectTests(root, exec, discoveryIO);
+  const examples = join(root, 'examples');
+  const outsideExamples = (plan) => {
+    const rel = relative(examples, plan.root);
+    return isAbsolute(rel) || rel === '..' || rel.startsWith(`..${sep}`);
+  };
+  const rows = probeDiscoveredProjectTests(root, exec, discoveryIO, outsideExamples);
   return aggregateRows(
     'project_test',
     rows,

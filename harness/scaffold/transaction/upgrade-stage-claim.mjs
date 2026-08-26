@@ -5,13 +5,17 @@ import {
   lstatSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, rmdirSync,
   unlinkSync, writeFileSync,
 } from 'node:fs';
-import { createHash, randomBytes } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import { basename, dirname, join } from 'node:path';
+
+import {
+  STAGE_CLAIM, authorizeStage, claimDigest as digest, publishStageClaim,
+} from './upgrade-stage-claim-publication.mjs';
 
 const DIRECTORY = constants.O_DIRECTORY;
 const NOFOLLOW = constants.O_NOFOLLOW;
 const NONBLOCK = constants.O_NONBLOCK ?? 0;
-export const STAGE_CLAIM = 'stage-claim.json';
+export { STAGE_CLAIM };
 export const PRIOR_CLAIM = 'prior-claim.json';
 const MAX_CLAIM_BYTES = 4096;
 const RANDOM_ARTIFACT_SUFFIX = /^[a-f0-9]{32}$/;
@@ -22,7 +26,6 @@ function sameIdentity(left, right) {
 
 function identity(stat) { return Object.freeze({ dev: stat.dev, ino: stat.ino }); }
 function modeOf(stat) { return Number(stat.mode & 0o777n); }
-function digest(bytes) { return createHash('sha256').update(bytes).digest('hex'); }
 function descriptorPath(root, fd, leaf = null) {
   const base = join(root, String(fd));
   return leaf === null ? base : join(base, leaf);
@@ -174,19 +177,6 @@ function exactKeys(value, expected) {
     && JSON.stringify(Object.keys(value).sort()) === JSON.stringify(expected);
 }
 
-function stageDocument(stageName, directory, next, bytes, mode, control) {
-  return {
-    api_version: 'forgeos.scaffold-upgrade-stage-claim/v1',
-    control: { dev: String(control.dev), ino: String(control.ino) },
-    directory: { dev: String(directory.dev), ino: String(directory.ino) },
-    next: {
-      dev: String(next.dev), ino: String(next.ino), mode,
-      sha256: digest(bytes),
-    },
-    stage_name: stageName,
-  };
-}
-
 function assertStageAuthority(claim, authority) {
   if (authority === null) return claim;
   if (!sameIdentity(claim.controlIdentity, authority.controlIdentity)
@@ -246,10 +236,7 @@ export function createTransactionClaim(
     if (!created.isDirectory() || !sameIdentity(created, openedDirectory)) {
       throw new Error(`unsafe claim directory for ${label}`);
     }
-    if (typeof authorize !== 'function') throw new Error(`missing stage intent for ${label}`);
-    authorize({
-      directoryIdentity, nextMode: mode & 0o777, nextSha256: digest(content), stageName: name,
-    });
+    authorizeStage(authorize, directoryIdentity, mode, content, name, label);
     hooks.afterUpgradeStageDirectoryCreate?.({ label, path: directory });
     const descriptor = descriptorPath(boundary.descriptorRoot, directoryFd);
     sentinel = join(descriptor, 'next');
@@ -264,14 +251,10 @@ export function createTransactionClaim(
     hooks.afterUpgradeStageNextSync?.({ label, path: sentinel });
     const next = requireRegular(fstatSync(fd, { bigint: true }), `claim for ${label}`);
     if (Number(next.nlink) !== 1) throw new Error(`unsafe claim for ${label}`);
-    claimPath = join(descriptor, STAGE_CLAIM);
-    controlIdentity = writeClaim(
-      claimPath,
-      (control) => stageDocument(name, openedDirectory, next, content, modeOf(next), control),
-      `stage claim for ${label}`,
-    );
-    syncDirectory(directoryFd);
-    syncDirectory(parent.fd);
+    ({ claimPath, controlIdentity } = publishStageClaim({
+      content, descriptor, directory: openedDirectory, directoryFd,
+      label, name, next, parentFd: parent.fd,
+    }, writeClaim));
     return {
       claimPath, controlIdentity, directory: descriptor,
       directoryFd, directoryIdentity, fd,

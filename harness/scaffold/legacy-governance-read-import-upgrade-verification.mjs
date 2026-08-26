@@ -43,9 +43,9 @@ const IMPLEMENTATION_ROADMAP = join(
 const ROADMAP_CLOSURE_LINE =
   '- [x] 设计旧 memory/ADR 的只读导入：默认 `unverified_legacy`，绝不自动确认。';
 const POLICY_SHA256 =
-  '7f72243aab82625e75f0b0da9823bbd76d083dc39365dad8795ed526b11d9a54';
+  'bdd9034e83572ae0cb269a9de918df2021025580b7382b8825571335af6d1bac';
 const EXACT18_SHA256 =
-  'a4e82d3ba9bc4346074e9587a87556c0362df443fb24b6211f1de678884d589f';
+  '99bd3357a709069b55c5c3ff0b430f3de61817c2da28d58f9f1b0d47a6bc2cff';
 const SOURCE_SHA256 = new Map([
   [ADR_0086, '6dbe26fd38c6d64294f673da9d132d4d28d6dec29d7283aceb26a5b03593701f'],
   [join('docs', 'contracts', 'legacy-governance-read-import-v1.schema.json'),
@@ -62,7 +62,7 @@ const SOURCE_SHA256 = new Map([
   [join(PACKAGE, '__init__.py'),
     '340d7088346a46ae35e71210fa484026ec30e6f972c373de7dea0725ee91d10b'],
   [join(PACKAGE, 'canonical.py'),
-    '99539624d6273feab04af5837994460dd0d95f4cfdb865ff242c306b41d10c53'],
+    'dda4c0e3ab7288865926e3de69fb77222ef5ce1d637a97edc5f55caa35a28c7b'],
   [join(PACKAGE, 'constants.py'),
     '19c927c5b5fdfb0db3a26c2fd88461775af09e060c15d7685acabf4410203593'],
   [join(PACKAGE, 'memory.py'),
@@ -77,7 +77,7 @@ const SOURCE_SHA256 = new Map([
   [ADR_0087, '5e1cf6054347d5bd15384adb649c7f011b4969da725b8bf1f188418ea1a84a68'],
   [join('harness', 'governance_engineering',
     'legacy_governance_read_import_candidate.py'),
-  'a2eea8365dba45ce6bbfd68d02664025af289b0dca4de61e9956b9604da79883'],
+  'a109bde114c96a1095ca80078399949d7139bfc01be80ee7b01d30ef97cd5f76'],
   [join('harness', 'governance_engineering',
     'test_legacy_governance_read_import_candidate.py'),
   '92fb11f3775b7edf24ad9e2d5ac1612d12ab402877f2ab143974b8019a9e7ea8'],

@@ -1,13 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync,
+  existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync, writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import {
-  discoverHarnessSuites, runCountedNodeFiles, runPythonSuites,
+  discoverHarnessSuites, runCountedNodeFiles, runPythonHarnessParallel, runPythonSuites,
 } from './acceptance-tests.mjs';
 
 function tempHarness(fn) {
@@ -38,19 +38,31 @@ test('recursive discovery returns Node and Python suites from arbitrary subpacka
     const calls = [];
     const result = runCountedNodeFiles(found.node, root, (cmd, args, env, cwd) => {
       calls.push({ cmd, args, env, cwd });
-      return { ok: true, code: 0, out: 'TAP version 13\n# tests 2\n' };
+      return { ok: true, code: 0, out: 'TAP version 13\n# tests 2\n# skipped 0\n' };
     });
-    assert.deepEqual(result, { ok: true, count: 2, files: 2 });
+    assert.deepEqual(result, { ok: true, count: 2, files: 2, skipped: 0 });
     assert.deepEqual(calls[0], {
       cmd: 'node',
       args: [
-        '--test', '--test-reporter=tap',
+        '--test', '--test-reporter=tap', '--test-concurrency=4',
         'harness/new-subpackage/test_nested.mjs',
         'harness/test_root.mjs',
       ],
       env: { FORGE_ACCEPT_INNER: '1', PYTHONDONTWRITEBYTECODE: '1' },
       cwd: root,
     });
+  });
+});
+
+test('recursive Node discovery fails closed when TAP reports a skipped test', () => {
+  tempHarness((root, harness) => {
+    const path = join(harness, 'test_skipped.mjs');
+    writeFileSync(path, '');
+    const result = runCountedNodeFiles([path], root, () => ({
+      ok: true, code: 0,
+      out: 'TAP version 13\n# tests 1\n# pass 0\n# skipped 1\n',
+    }));
+    assert.deepEqual(result, { ok: false, count: 1, files: 1, skipped: 1 });
   });
 });
 
@@ -123,6 +135,20 @@ test('recursive discovery reports unreadable subtrees and the suite result fails
   });
 });
 
+test('recursive discovery reports symlinked entries instead of omitting tests', {
+  skip: process.platform === 'win32',
+}, () => {
+  tempHarness((_root, harness) => {
+    writeFileSync(join(harness, 'real_test.mjs'), '');
+    symlinkSync('real_test.mjs', join(harness, 'test_link.mjs'));
+    const found = discoverHarnessSuites(harness);
+    assert.deepEqual(found.node, []);
+    assert.deepEqual(found.errors, [{
+      path: 'test_link.mjs', message: 'non-regular harness entry',
+    }]);
+  });
+});
+
 test('Python runner executes pytest-style functions and rejects zero-test files', () => {
   tempHarness((root, harness) => {
     mkdirSync(join(harness, 'nested'));
@@ -144,4 +170,55 @@ test('Python runner executes pytest-style functions and rejects zero-test files'
       ['nested/test_zero.py', false],
     );
   });
+});
+
+test('parallel Python runner drains noisy stderr and fails bounded output closed', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'parallel-python-output-'));
+  const harness = join(root, 'harness');
+  mkdirSync(harness);
+  try {
+    writeFileSync(join(harness, 'test_check.py'), [
+      'import os',
+      'def test_noisy():',
+      '    for _ in range(32):',
+      '        os.write(2, b"x" * 65536)',
+      '',
+    ].join('\n'));
+    const result = await runPythonHarnessParallel(harness, { workers: 1 });
+    assert.deepEqual(
+      result.entries.find(([name]) => name === 'test_check.py'),
+      ['test_check.py', false],
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('parallel Python runner terminates a suite at the output limit', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'parallel-python-overflow-'));
+  const harness = join(root, 'harness');
+  const completed = join(root, 'completed');
+  mkdirSync(harness);
+  try {
+    writeFileSync(join(harness, 'test_check.py'), [
+      'import os, pathlib',
+      'def test_noisy():',
+      '    for _ in range(8192):',
+      '        os.write(2, b"x" * 65536)',
+      `    pathlib.Path(${JSON.stringify(completed)}).write_text("completed")`,
+      '',
+    ].join('\n'));
+    const result = await runPythonHarnessParallel(harness, { workers: 1 });
+    assert.equal(result.ok, false);
+    assert.equal(existsSync(completed), false, 'overflowing suite must be killed, not drained to exit');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('parallel Python runner rejects a zero-width worker pool', async () => {
+  await assert.rejects(
+    runPythonHarnessParallel('/unused', { workers: 0 }),
+    /workers must be a positive integer/,
+  );
 });

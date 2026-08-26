@@ -41,7 +41,7 @@ const PINS = [
   [TEST_GOLDEN,
     'df1b25a933ffa2503f750e2209c9866bfe126e273b28c1181bb211ce48cae5e9'],
   [MANIFEST,
-    'c9b8397658c3bcecb474966a3efd155f0af550be4fe7319dcdbf23a63cec2008'],
+    '5f3f240f7ebaaacc9b06945367e9f6bef9cfeb03df4dcae6d2fbbd7f36ae393f'],
   [ADR,
     '81c0690f1f305dbf714a7ee0afd8dae0f2226d95a015fe019f087c3429761f91'],
 ];

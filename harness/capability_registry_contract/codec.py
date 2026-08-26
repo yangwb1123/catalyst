@@ -1,10 +1,10 @@
 """Strict bounded compact canonical JSON for the Registry wire."""
 
 from __future__ import annotations
+import re
 
 import json
 import os
-import unicodedata
 from pathlib import Path
 
 from .constants import (
@@ -16,12 +16,11 @@ class ContractError(ValueError):
     """Caller bytes or in-memory values violate the frozen contract."""
 
 
+_FORBIDDEN_SCALAR_RE = re.compile('[\\x00-\\x1f\\x7f-\\x9f\\ud800-\\udfff\\u061c\\u200e\\u200f\\u2028\\u2029\\u202a-\\u202e\\u2066-\\u2069]')
+
+
 def _forbidden_scalar(character: str) -> bool:
-    code = ord(character)
-    return (unicodedata.category(character) == "Cc" or code == 0x7F or
-            0xD800 <= code <= 0xDFFF or
-            code in {0x061C, 0x200E, 0x200F, 0x2028, 0x2029} or
-            0x202A <= code <= 0x202E or 0x2066 <= code <= 0x2069)
+    return _FORBIDDEN_SCALAR_RE.fullmatch(character) is not None
 
 
 def _valid_key(value: object) -> bool:
@@ -42,7 +41,7 @@ def _walk(value: object, depth: int = 1) -> None:
     if isinstance(value, str):
         if len(value.encode("utf-8")) > MAX_STRING_BYTES:
             raise ContractError(f"string exceeds {MAX_STRING_BYTES} UTF-8 bytes")
-        if any(_forbidden_scalar(character) for character in value):
+        if _FORBIDDEN_SCALAR_RE.search(value) is not None:
             raise ContractError("string contains forbidden Unicode scalar")
         return
     if isinstance(value, list):

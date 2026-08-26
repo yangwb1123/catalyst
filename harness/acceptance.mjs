@@ -15,19 +15,22 @@
 // exit code); a runner collects results; `decide()` is a PURE function over the
 // results array so the verdict is unit-testable without spawning anything.
 //
-// CLI: `node harness/acceptance.mjs`         ->  exit 0 ACCEPTED · exit 1 REJECTED.
-//      `node harness/acceptance.mjs --json`  ->  per-criterion JSON to stdout.
+// CLI: `node harness/acceptance.mjs`         ->  live exit 0 ACCEPTED · exit 1 REJECTED.
+//      `node harness/acceptance.mjs --json`  ->  live per-criterion JSON to stdout.
+//      `node harness/acceptance.mjs --cache` ->  explicitly advisory acceleration.
 import { readdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { probeDiscoveredProjectTests } from './adapters/project.mjs';
 import { scanRepo as scaScanRepo } from './sca.mjs';
 import {
-  PASS, FAIL, NA, ROOT, HARNESS_DIR, INAPPLICABLE, run, result, withCategory,
+  APPLICABLE, INAPPLICABLE, NO_TOOL, PASS, FAIL, NA, ROOT, HARNESS_DIR,
+  run, result, withCategory,
 } from './acceptance-kernel.mjs';
 import { probeLint, probeCoverage } from './acceptance-quality.mjs';
 import {
-  runHarnessSuites, runPythonSuites,
+  runNodeHarness, runPythonHarness, runPythonHarnessParallel,
+  runCountedNodeFiles, runPythonSuites,
 } from './acceptance-tests.mjs';
 import {
   criticalNAReasons,
@@ -41,6 +44,22 @@ import {
 // Re-export the verdict statuses (defined in the kernel) so importers — chiefly
 // test_acceptance.mjs — keep getting PASS/FAIL/NA from acceptance.mjs unchanged.
 export { PASS, FAIL, NA };
+// Dynamic import keeps the dependency graph one-way: the parallel coordinator
+// imports these probe functions, while this module loads it only after module
+// evaluation. Importing acceptance.mjs therefore remains side-effect free and
+// cannot form acceptance <-> parallel static-initialisation cycles.
+export async function collectParallel(options = {}) {
+  const runner = await import('./acceptance-parallel.mjs');
+  return runner.collectParallel(options);
+}
+
+export async function collectCliRows(options = {}) {
+  if (options.useCache === true) {
+    const advisory = await import('./acceptance-advisory.mjs');
+    return advisory.collectAdvisory(options);
+  }
+  return collectParallel(options);
+}
 // Re-export the adapter-backed quality probes (moved to acceptance-quality.mjs):
 // collect() below calls them, and test_acceptance.mjs imports probeLint/
 // probeCoverage / the pure judgeLint+unconfigured from acceptance.mjs — keep that
@@ -98,30 +117,61 @@ export function runCountedTest(glob, extraEnv = {}) {
   return { ok: r.ok && count > 0, count: Number.isNaN(count) ? null : count };
 }
 
-// test_pass recursively discovers every harness Node/Python suite. Node runs the
-// concrete discovered file list and requires TAP `# tests N>0`; Python imports
-// each file, runs unittest plus module-level pytest-style tests, and likewise
-// requires a real positive count. New nested subpackages cannot vanish behind a
-// curated glob. Project manifests are independently load-bearing below.
+// Sub-domain row builders used by the parallel workers. The synchronous
+// collect() compatibility path calls the same live probes directly.
+export function nodeTestRow() {
+  const r = runNodeHarness();
+  return result('test_pass_node', r.ok ? PASS : FAIL,
+    `recursive Node suites (${r.files} files/${r.count} tests/${r.skipped} skipped)`);
+}
+
+export function pythonTestRow() {
+  const r = runPythonHarness();
+  return result('test_pass_python', r.ok ? PASS : FAIL,
+    `recursive Python suites (${r.files} files/${r.count} tests)`);
+}
+
+// Parallel-python row used by the worker path: the 60+ suite files run as
+// independent processes with a bounded pool, so the python wall-clock drops to
+// ~the slowest file. Same verdict semantics and detail shape as pythonTestRow.
+export async function pythonTestRowParallel() {
+  const r = await runPythonHarnessParallel();
+  return result('test_pass_python', r.ok ? PASS : FAIL,
+    `recursive Python suites (${r.files} files/${r.count} tests)`);
+}
+
+// Fold the three test sub-rows (Node / Python / project) into the single
+// test_pass criterion the acceptance schema declares. Pure over the rows, so
+// the parallel runner can rebuild the test_pass row from cached sub-rows and
+// live worker rows without duplicating the aggregation semantics.
+export function aggregateTestPass(node, python, project) {
+  const sub = [node, python];
+  if (project.category !== INAPPLICABLE) sub.push(project);
+  const failed = sub.filter((r) => r.status !== PASS).map((r) => r.criterion);
+  const ok = failed.length === 0;
+  const parts = [
+    `${python.detail}`, `${node.detail}`,
+    ...(project.category !== INAPPLICABLE ? [project.detail] : []),
+  ];
+  const detail = ok
+    ? `${parts.join(' + ')}: all green`
+    : `failed: ${failed.join(', ')}${project.status !== PASS && project.category !== INAPPLICABLE ? ` — ${project.detail}` : ''}`;
+  return result('test_pass', ok ? PASS : FAIL, detail);
+}
+
+// test_pass recursively discovers every harness Node/Python suite and every
+// project test target. The three sub-domains (Node family / Python family /
+// project tests) are all live on this formal/synchronous path. Optional cached
+// replay belongs only to the explicitly advisory parallel CLI mode; it can
+// never substitute for this load-bearing criterion.
 export function probeTests() {
-  const harness = runHarnessSuites();
-  const suites = [...harness.entries];
+  const node = nodeTestRow();
+  const python = pythonTestRow();
   // Project test targets are load-bearing when present. A missing Rust/Java
   // tool is N/A/no_tool at the project-probe boundary, but cannot be silently
   // skipped inside test_pass; only a truly inapplicable "no project" is omitted.
-  const projectTests = withCategory(probeProjectTests());
-  if (projectTests.category !== INAPPLICABLE) {
-    suites.push(['project tests', projectTests.status === PASS]);
-  }
-  const failed = suites.filter(([, ok]) => !ok).map(([name]) => name);
-  const ok = failed.length === 0;
-  const detail = ok
-    ? `recursive Python suites (${harness.python.files} files/${harness.python.count} tests)`
-      + ` + recursive Node suites (${harness.node.files} files/${harness.node.count} tests)`
-      + (projectTests.status === PASS ? ` + ${projectTests.detail}` : '')
-      + ': all green'
-    : `failed: ${failed.join(', ')}${projectTests.status !== PASS ? ` — ${projectTests.detail}` : ''}`;
-  return result('test_pass', ok ? PASS : FAIL, detail);
+  const project = withCategory({ ...probeProjectTests(), criterion: 'test_pass_project' });
+  return aggregateTestPass(node, python, project);
 }
 
 // app_test_pass == true  <-  EVERY discovered example app's test suite is green.
@@ -251,6 +301,9 @@ export function probeArchitecture() {
 // annotated with its lifecycle-aware category (withCategory). The category lets
 // both direct decide() and the --json forge-core bridge distinguish a missing
 // tool from a concept that does not apply.
+// collect() is the synchronous compatibility surface used by scorecard and
+// tests. It is deliberately all-live: formal acceptance, imported consumers,
+// and the --json authority bridge can never obtain a verdict from a cache.
 export function collect() {
   return [
     probeTests(),
@@ -271,7 +324,49 @@ export function collect() {
 // for acceptance. Unlike the N/A criteria, these are backed by a real check, so
 // "not FAIL" is not enough — a missing or non-PASS load-bearing criterion is a
 // hard reject (e.g. a probe silently dropped, or surfaced as N/A by mistake).
-export const LOAD_BEARING = ['test_pass', 'app_test_pass', 'complexity_violations', 'arch_violations', 'architecture', 'security_findings'];
+export const ACCEPTANCE_CRITERIA = [
+  'test_pass', 'app_test_pass', 'complexity_violations', 'arch_violations',
+  'architecture', 'security_findings', 'dependency_vulnerabilities', 'lint',
+  'coverage', 'typecheck', 'build',
+];
+export const LOAD_BEARING = [
+  'test_pass', 'app_test_pass', 'complexity_violations', 'arch_violations',
+  'architecture', 'security_findings',
+];
+const ROW_FIELDS = new Set(['criterion', 'status', 'detail', 'category']);
+const ROW_STATUSES = new Set([PASS, FAIL, NA]);
+const ROW_CATEGORIES = new Set([APPLICABLE, INAPPLICABLE, NO_TOOL]);
+
+function acceptanceSchemaReasons(results) {
+  if (!Array.isArray(results)) return ['acceptance result is not an array'];
+  const seen = new Map();
+  const reasons = [];
+  for (const [index, row] of results.entries()) {
+    if (!row || Array.isArray(row) || typeof row !== 'object') {
+      reasons.push(`row ${index} is not an object`);
+      continue;
+    }
+    const fields = Object.keys(row);
+    if (fields.length !== ROW_FIELDS.size || fields.some((field) => !ROW_FIELDS.has(field))) {
+      reasons.push(`row ${index} has non-exact fields`);
+    }
+    if (!ACCEPTANCE_CRITERIA.includes(row.criterion)) reasons.push(`unknown criterion ${JSON.stringify(row.criterion)}`);
+    else seen.set(row.criterion, (seen.get(row.criterion) ?? 0) + 1);
+    if (!ROW_STATUSES.has(row.status)) reasons.push(`${row.criterion} bad status ${JSON.stringify(row.status)}`);
+    if (typeof row.detail !== 'string') reasons.push(`${row.criterion} detail is not a string`);
+    if (!ROW_CATEGORIES.has(row.category)) reasons.push(`${row.criterion} bad category ${JSON.stringify(row.category)}`);
+    if (row.status === NA ? row.category === APPLICABLE : row.category !== APPLICABLE) {
+      reasons.push(`${row.criterion} status/category mismatch`);
+    }
+  }
+  for (const criterion of ACCEPTANCE_CRITERIA) {
+    if (!seen.has(criterion)) {
+      reasons.push(LOAD_BEARING.includes(criterion)
+        ? `${criterion} not satisfied (absent)` : `${criterion} absent`);
+    } else if (seen.get(criterion) !== 1) reasons.push(`${criterion} duplicated`);
+  }
+  return reasons;
+}
 
 // PURE verdict function (no I/O) so it is directly unit-testable.
 //
@@ -283,21 +378,23 @@ export const LOAD_BEARING = ['test_pass', 'app_test_pass', 'complexity_violation
 // N/A is explicitly NOT a pass. Before production a critical NO_TOOL N/A is
 // exempt; production blocks it. INAPPLICABLE remains exempt at every lifecycle.
 export function decide(results, lifecycle = 'mvp') {
-  const failed = results.filter((r) => r.status === FAIL);
-  const passed = results.filter((r) => r.status === PASS);
-  const na = results.filter((r) => r.status === NA);
-  const unknown = results.filter((r) => r.status !== PASS && r.status !== FAIL && r.status !== NA);
-  const byName = new Map(results.map((r) => [r.criterion, r.status]));
+  const rows = Array.isArray(results) ? results.filter((r) => r && typeof r === 'object') : [];
+  const schema = acceptanceSchemaReasons(results);
+  const failed = rows.filter((r) => r.status === FAIL);
+  const passed = rows.filter((r) => r.status === PASS);
+  const na = rows.filter((r) => r.status === NA);
+  const byName = new Map(rows.map((r) => [r.criterion, r.status]));
   const missing = LOAD_BEARING.filter((name) => byName.get(name) !== PASS);
   const reasons = [
+    ...schema,
     ...failed.map((r) => `${r.criterion} failed`),
-    ...unknown.map((r) => `${r.criterion} bad status ${JSON.stringify(r.status)}`),
     ...missing
       .filter((name) => byName.get(name) === undefined || byName.get(name) === NA)
-      .map((name) => `${name} not satisfied (${byName.get(name) ?? 'absent'})`),
-    ...criticalNAReasons(results, lifecycle),
+      .map((name) => `${name} not satisfied (${byName.get(name) ?? 'absent'})`)
+      .filter((reason) => !schema.includes(reason)),
+    ...(schema.length === 0 ? criticalNAReasons(rows, lifecycle) : []),
   ];
-  const empty = results.length === 0;
+  const empty = rows.length === 0;
   const accepted = reasons.length === 0 && !empty;
   return {
     accepted,
@@ -311,9 +408,24 @@ export function decide(results, lifecycle = 'mvp') {
 }
 
 const ICON = { [PASS]: 'PASS', [FAIL]: 'FAIL', [NA]: 'N-A ' };
+const TERMINAL_ESCAPE_RE = /\x1B(?:\][\s\S]*?(?:\x07|\x1B\\)|[PX^_][\s\S]*?\x1B\\|\[[0-?]*[ -/]*[@-~]|[@-_])/g;
+
+function terminalSafeText(value) {
+  return String(value).replace(TERMINAL_ESCAPE_RE, '').replace(/\p{Cf}/gu, '')
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/g, '')
+    .replaceAll('\t', '\\t');
+}
+
+function singleLineText(value) {
+  return terminalSafeText(value).replaceAll('\r', '\\r').replaceAll('\n', '\\n');
+}
+
+export function sanitizeAdvisoryText(value) {
+  return singleLineText(value).replace(/accepted/gi, 'A_C_C_E_P_T_E_D');
+}
 
 export function render(results, verdict) {
-  const lines = results.map((r) => `  [${ICON[r.status]}] ${r.criterion} — ${r.detail}`);
+  const lines = results.map((r) => `  [${ICON[r.status]}] ${r.criterion} — ${singleLineText(r.detail)}`);
   return [
     'forge-accept: acceptance gate (.agent/eval/acceptance.schema.yml)',
     ...lines,
@@ -322,28 +434,66 @@ export function render(results, verdict) {
   ].join('\n');
 }
 
-// emitJson prints the per-criterion results as a JSON array
-// [{criterion,status,detail}] to stdout — the structured mode consumed by
-// forge-core's gate.ProbeAll. Reuses the same pure collect(); the exit code
-// still reflects the verdict so `--json` stays usable as a gate too.
-function emitJson() {
-  const results = collect();
-  console.log(JSON.stringify(results));
-  process.exit(decide(results, readProjectLifecycle()).accepted ? 0 : 1);
+export function parseCliOptions(args = process.argv.slice(2), env = process.env) {
+  const supported = new Set(['--json', '--cache', '--no-cache']);
+  const unknown = args.filter((arg) => !supported.has(arg));
+  if (unknown.length > 0) throw new Error(`unsupported argument(s): ${unknown.join(', ')}`);
+  const json = args.includes('--json');
+  const advisory = args.includes('--cache');
+  if (json && advisory) throw new Error('--cache is advisory-only and cannot be combined with --json');
+  if (advisory && args.includes('--no-cache')) throw new Error('--cache and --no-cache are mutually exclusive');
+  return { json, advisory, useCache: advisory && env.FORGE_ACCEPT_NO_CACHE !== '1' };
 }
 
-function main() {
-  if (process.argv.slice(2).includes('--json')) {
-    emitJson();
-    return;
+export function renderAdvisory(results, verdict, cacheEnabled) {
+  const lines = results.map((r) => `  [${ICON[r.status]}] ${r.criterion} — ${sanitizeAdvisoryText(r.detail)}`);
+  const state = verdict.accepted ? 'GREEN' : 'RED';
+  const source = cacheEnabled ? 'explicit advisory cache' : 'live advisory run (cache bypassed)';
+  return [
+    'forge-accept: advisory acceleration (NOT the acceptance authority)',
+    ...lines,
+    `  (${verdict.passed} pass · ${verdict.failed} fail · ${verdict.na} n/a — n/a is NOT counted as satisfied)`,
+    `forge-accept: ADVISORY ${state} — ${source}; run forge accept for an authoritative verdict`,
+  ].join('\n');
+}
+
+export async function runAcceptanceCli(args = process.argv.slice(2), options = {}) {
+  const env = options.env ?? process.env;
+  const mode = parseCliOptions(args, env);
+  const collector = options.collector ?? collectCliRows;
+  const fixedLifecycle = options.lifecycle !== undefined;
+  const lifecycleReader = options.lifecycleReader ?? readProjectLifecycle;
+  const lifecycleBefore = fixedLifecycle ? options.lifecycle : lifecycleReader();
+  let results = await collector({ useCache: mode.useCache, env });
+  const lifecycleAfter = fixedLifecycle ? options.lifecycle : lifecycleReader();
+  let verdict = decide(results, lifecycleBefore);
+  if (lifecycleBefore !== lifecycleAfter) {
+    results = Array.isArray(results) ? results.map((row) => withCategory({
+      criterion: row?.criterion, status: FAIL,
+      detail: 'project lifecycle changed during acceptance; rerun required',
+    })) : [];
+    verdict = decide(results, lifecycleBefore);
+    verdict = {
+      ...verdict, accepted: false,
+      line: 'forge-accept: REJECTED — project lifecycle changed during acceptance; rerun required',
+    };
   }
-  const results = collect();
-  const verdict = decide(results, readProjectLifecycle());
-  console.log(render(results, verdict));
-  process.exit(verdict.accepted ? 0 : 1);
+  const output = mode.json
+    ? JSON.stringify(results)
+    : (mode.advisory ? renderAdvisory(results, verdict, mode.useCache) : render(results, verdict));
+  const exitCode = mode.advisory ? 2 : (verdict.accepted ? 0 : 1);
+  return { exitCode, mode, output, results, verdict };
 }
 
 // Run only when executed directly, not on import (keeps the module test-safe).
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  main();
+  runAcceptanceCli().then(({ exitCode, output }) => {
+    process.stdout.write(`${output}\n`);
+    process.exitCode = exitCode;
+  }).catch((err) => {
+    const raw = err?.stack ?? err;
+    const detail = process.argv.slice(2).includes('--cache') ? sanitizeAdvisoryText(raw) : raw;
+    process.stderr.write(`forge-accept: fatal: ${detail}\n`);
+    process.exitCode = 3;
+  });
 }

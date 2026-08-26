@@ -208,6 +208,20 @@ test('function-length POSITIVE: functions at/under the limit are clean', () => {
   assert.equal(checkFunctionLength(m, 50).length, 0);
 });
 
+test('function-length sees past multiline destructured JavaScript parameters', () => {
+  const body = [
+    'export async function splitSignature(',
+    '  root,',
+    '  { workers = 8 } = {},',
+    ') {',
+    ...Array(55).fill('  doWork();'),
+    '}',
+  ].join('\n');
+  assert.deepEqual(extractFunctions(body, 'js'), [
+    { name: 'splitSignature', line: 1, lines: 60 },
+  ]);
+});
+
 test('function-length FAIL-CLOSED: a missing/non-numeric limit is reported, not silently passed', () => {
   const m = { files: [{ rel: 'a.mjs', functions: [{ name: 'f', line: 1, lines: 9 }] }] };
   assert.equal(checkFunctionLength(m, NaN).length, 1);

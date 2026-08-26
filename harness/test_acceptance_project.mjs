@@ -6,12 +6,12 @@ import {
   lstatSync, mkdtempSync, mkdirSync, readdirSync, rmSync, writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, sep } from 'node:path';
 
 import {
+  ACCEPTANCE_CRITERIA,
   decide,
   FAIL,
-  LOAD_BEARING,
   NA,
   PASS,
   probeBuild,
@@ -26,10 +26,10 @@ import {
 } from './acceptance-kernel.mjs';
 
 function acceptanceRows(extra) {
-  return [
-    ...LOAD_BEARING.map((criterion) => ({ criterion, status: PASS, detail: 'green' })),
-    ...extra,
-  ];
+  const overrides = new Map(extra.map((row) => [row.criterion, row]));
+  return ACCEPTANCE_CRITERIA.map((criterion) => withCategory({
+    criterion, status: PASS, detail: 'green', ...(overrides.get(criterion) ?? {}),
+  }));
 }
 
 test('forge-core probes run go test/build/vet from the module and propagate failures', () => {
@@ -162,11 +162,15 @@ test('immature lifecycle exempts no_tool; production accepts all-inapplicable N/
 });
 
 test('unknown lifecycle is strict and missing critical rows cannot silently pass', () => {
-  const verdict = decide(acceptanceRows([]), 'unknown');
+  const critical = ['lint', 'coverage', 'build', 'typecheck', 'dependency_vulnerabilities'];
+  const verdict = decide(acceptanceRows(
+    critical.map((criterion) => ({ criterion, status: NA, detail: 'tool missing', category: NO_TOOL })),
+  ), 'unknown');
   assert.equal(verdict.accepted, false);
-  assert.match(verdict.line, /lint not satisfied \(absent; lifecycle=unknown\)/);
-  assert.match(verdict.line, /build not satisfied \(absent; lifecycle=unknown\)/);
-  assert.match(verdict.line, /dependency_vulnerabilities not satisfied \(absent; lifecycle=unknown\)/);
+  assert.match(verdict.line, /lint not satisfied \(N-A\/no_tool; lifecycle=unknown\)/);
+  assert.match(verdict.line, /build not satisfied \(N-A\/no_tool; lifecycle=unknown\)/);
+  const missing = acceptanceRows([]).filter((row) => row.criterion !== 'lint');
+  assert.match(decide(missing, 'unknown').line, /lint absent/);
 });
 
 test('project lifecycle reader accepts quoted YAML and fails safe when absent', () => {
@@ -228,6 +232,29 @@ test('project tests recursively run fixed argv for Go/Node/Python/Rust/Java modu
       ['python3', ['-c', 'import pytest'], join(root, 'py-svc')],
       ['python3', ['-m', 'pytest', '-q'], join(root, 'py-svc')],
     ]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('project and app probes own disjoint roots under examples', () => {
+  const root = mkdtempSync(join(tmpdir(), 'disjoint-project-app-tests-'));
+  try {
+    for (const rel of ['service', 'examples/demo']) {
+      const dir = join(root, rel);
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, 'package.json'), JSON.stringify({ scripts: { test: 'node --test' } }));
+    }
+    const projectRoots = [];
+    const appRoots = [];
+    const successful = (roots) => (_cmd, _args, _env, cwd) => {
+      roots.push(cwd);
+      return { ok: true, code: 0, out: '# tests 1\n' };
+    };
+    assert.equal(probeProjectTests(root, successful(projectRoots)).status, PASS);
+    assert.equal(probeAppTests(root, successful(appRoots)).status, PASS);
+    assert.ok(projectRoots.every((cwd) => !cwd.startsWith(join(root, 'examples') + sep)));
+    assert.ok(appRoots.every((cwd) => cwd.startsWith(join(root, 'examples') + sep)));
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

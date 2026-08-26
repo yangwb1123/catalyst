@@ -493,7 +493,7 @@ export function probeProjectOperations(root, operation, exec, discoveryIO = read
   return rows;
 }
 
-export function probeDiscoveredProjectTests(root, exec, discoveryIO = readdirSync) {
-  return discoverProjectTestPlans(root, discoveryIO)
+export function probeDiscoveredProjectTests(root, exec, discoveryIO = readdirSync, includePlan = () => true) {
+  return discoverProjectTestPlans(root, discoveryIO).filter(includePlan)
     .map((plan) => executeCommandPlan(plan, exec));
 }

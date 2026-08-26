@@ -45,7 +45,7 @@ const WORK_INTENT_SOURCE_SHA256 = new Map([
   [join('harness', 'work_intent_contract', '__init__.py'),
     'a7a4d4ea10307914883433ccca808a2b5fcd784512f04ad4226481f602ac0a61'],
   [join('harness', 'work_intent_contract', 'codec.py'),
-    'c767c6e65fb5f1b6d26db440081f596ed7c92677454462eb957630b0db1d3463'],
+    '41bdcc5a99d07d01bdbe4b8aac0134a7ca1328bb499bd41563808b895e81b5ed'],
   [join('harness', 'work_intent_contract', 'constants.py'),
     '9d4f0ef59226c34a94b31e0f51b4a02b7808af4c05a4c51aa47db32ce1c863fe'],
   [join('harness', 'work_intent_contract', 'fixture.py'),
@@ -60,7 +60,7 @@ const WORK_INTENT_SOURCE_SHA256 = new Map([
   [GOVERNANCE_TEST, 'c1ad40d1cb9189cd0033006fa748d98a4dccdfbdc5b03558a057f502ab394e58'],
 ]);
 const POLICY_SHA256 =
-  '7f72243aab82625e75f0b0da9823bbd76d083dc39365dad8795ed526b11d9a54';
+  'bdd9034e83572ae0cb269a9de918df2021025580b7382b8825571335af6d1bac';
 export const WORK_INTENT_CONTRACT_TEST_ARGV = Object.freeze([
   '-S', '-B', '-m', 'unittest', '-q',
   'harness.test_work_intent_contract_check',

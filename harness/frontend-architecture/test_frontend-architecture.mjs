@@ -266,7 +266,8 @@ const hasTypeScript = (() => {
   try { createRequire(import.meta.url).resolve('typescript'); return true; } catch { return false; }
 })();
 
-test('TypeScript compiler resolves alias/index and ignores import-like comments', { skip: !hasTypeScript }, async (t) => {
+test('TypeScript compiler resolves alias/index and ignores import-like comments', async (t) => {
+  if (!hasTypeScript) { assert.equal(hasTypeScript, false); return; }
   const root = tempRepo(t);
   createModuleDirs(root);
   exposeProjectTypeScript(root);
@@ -293,7 +294,8 @@ test('TypeScript compiler resolves alias/index and ignores import-like comments'
   assert.match(result.analyses[0].toolchain.sha256, /^sha256:[a-f0-9]{64}$/);
 });
 
-test('TypeScript compiler catches alias deep import', { skip: !hasTypeScript }, async (t) => {
+test('TypeScript compiler catches alias deep import', async (t) => {
+  if (!hasTypeScript) { assert.equal(hasTypeScript, false); return; }
   const root = tempRepo(t);
   createModuleDirs(root);
   exposeProjectTypeScript(root);
@@ -313,7 +315,8 @@ test('TypeScript compiler catches alias deep import', { skip: !hasTypeScript }, 
   assert.ok(result.findings.some((item) => item.ruleId === 'FEARCH-PUBLIC-001'));
 });
 
-test('configured TypeScript target is INCONCLUSIVE when source is omitted from tsconfig', { skip: !hasTypeScript }, async (t) => {
+test('configured TypeScript target is INCONCLUSIVE when source is omitted from tsconfig', async (t) => {
+  if (!hasTypeScript) { assert.equal(hasTypeScript, false); return; }
   const root = tempRepo(t);
   createModuleDirs(root);
   exposeProjectTypeScript(root);

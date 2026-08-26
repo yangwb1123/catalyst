@@ -450,8 +450,9 @@ class DecisionCapsuleStrictTest(unittest.TestCase):
             api.validate_evaluation_branch(self.branch)
 
     def test_checker_rejects_missing_directory_symlink_hardlink_and_oversize(self) -> None:
-        with tempfile.TemporaryDirectory(dir=ROOT) as directory:
+        with tempfile.TemporaryDirectory() as directory:
             base = Path(directory)
+            self.assertNotIn(ROOT, base.resolve().parents)
             source = base / "source.json"
             source.write_bytes(canonical_json(self.outer))
             symlink = base / "link.json"

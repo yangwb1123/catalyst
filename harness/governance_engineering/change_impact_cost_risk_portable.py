@@ -29,9 +29,7 @@ DECISION = (
     "docs/adr/ADR-0076-portable-change-impact-cost-risk-"
     "lexical-prescan-skill.md"
 )
-MANIFEST_SHA256 = (
-    "d46202beacc000c6fbdc14afb1c5996476af90d9c0e8927da6f1bf56bf354ad5"
-)
+MANIFEST_SHA256 = "50f56d957e9198c6e52fd6ab1506c23cef894c4e1d5049c1b3222f89e57101f6"
 COMPATIBILITY_PINS = {
     SCHEMA: "a4592c63a938c090ccc4d6c8187bba8f37909ef6c2d2253fd06f656623c2bb25",
     GOLDEN: "bc364e387705651d307a3ff18137b857a3fad2c518685a358bba169a835a68d9",

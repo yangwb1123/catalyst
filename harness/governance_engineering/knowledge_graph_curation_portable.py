@@ -31,9 +31,7 @@ DECISION = (
     "docs/adr/ADR-0075-portable-knowledge-graph-curation-"
     "partial-projectors-skill.md"
 )
-MANIFEST_SHA256 = (
-    "c9b8397658c3bcecb474966a3efd155f0af550be4fe7319dcdbf23a63cec2008"
-)
+MANIFEST_SHA256 = "5f3f240f7ebaaacc9b06945367e9f6bef9cfeb03df4dcae6d2fbbd7f36ae393f"
 COMPATIBILITY_PINS = {
     MODULE_SCHEMA: "9dcaf66cff5b6d10338af6d295c75b2a5925604238cc276f80b68d3783d72bff",
     TEST_SCHEMA: "bfada8bb3d183061f2758bfc3645b56dc038b35d38c3c0b779a8ef32afcd17be",

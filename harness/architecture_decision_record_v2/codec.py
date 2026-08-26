@@ -1,10 +1,10 @@
 """Bounded strict canonical JSON and domain-separated ADR v2 digests."""
 
 from __future__ import annotations
+import re
 
 import hashlib
 import json
-import unicodedata
 
 from governance_contract import ContractError
 
@@ -14,12 +14,11 @@ from .constants import (
 )
 
 
+_FORBIDDEN_SCALAR_RE = re.compile('[\\x00-\\x1f\\x7f-\\x9f\\ud800-\\udfff\\u061c\\u200e\\u200f\\u2028\\u2029\\u202a-\\u202e\\u2066-\\u2069]')
+
+
 def forbidden_scalar(character: str) -> bool:
-    code = ord(character)
-    return (unicodedata.category(character) == "Cc" or
-            0xD800 <= code <= 0xDFFF or
-            code in {0x061C, 0x200E, 0x200F, 0x2028, 0x2029} or
-            0x202A <= code <= 0x202E or 0x2066 <= code <= 0x2069)
+    return _FORBIDDEN_SCALAR_RE.fullmatch(character) is not None
 
 
 def validate_text(value: object, label: str, maximum: int = MAX_NARRATIVE_BYTES,
@@ -34,7 +33,7 @@ def validate_text(value: object, label: str, maximum: int = MAX_NARRATIVE_BYTES,
         raise ContractError(f"{label} must not be blank")
     if len(encoded) > maximum:
         raise ContractError(f"{label} exceeds {maximum} UTF-8 bytes")
-    if any(forbidden_scalar(character) for character in value):
+    if _FORBIDDEN_SCALAR_RE.search(value) is not None:
         raise ContractError(f"{label} contains a forbidden Unicode scalar")
     return value
 

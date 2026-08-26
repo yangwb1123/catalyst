@@ -23,9 +23,7 @@ DECISION = (
     "docs/adr/ADR-0074-portable-adr-governance-proposed-document-"
     "validation-skill.md"
 )
-MANIFEST_SHA256 = (
-    "88fb16e51af69cb3a2bc38fe2dcae7893a24cee744b85a06eafff70ae841dd3c"
-)
+MANIFEST_SHA256 = "c1f84e909414878eec6ed62e6605ce7c26758f1940fb1a4660ecef7dcb56fab7"
 SCHEMA_SHA256 = (
     "ff3f00b1060b2d777b142947ef1ec9c0920782613d941aa672aecd242cf0341b"
 )

@@ -38,17 +38,17 @@ def _reject_number(raw: str) -> None:
     raise ContractError(f"non-integer JSON number {raw!r} is forbidden")
 
 
+_FORBIDDEN_SCALAR_RE = re.compile('[\\x00-\\x1f\\x7f\\ud800-\\udfff\\u061c\\u200e\\u200f\\u2028\\u2029\\u202a-\\u202e\\u2066-\\u2069]')
+
+
 def forbidden_scalar(character: str) -> bool:
-    code = ord(character)
-    return (code <= 0x1F or code == 0x7F or 0xD800 <= code <= 0xDFFF or
-            code in {0x061C, 0x200E, 0x200F, 0x2028, 0x2029} or
-            0x202A <= code <= 0x202E or 0x2066 <= code <= 0x2069)
+    return _FORBIDDEN_SCALAR_RE.fullmatch(character) is not None
 
 
 def validate_text(value: Any, label: str, maximum: int = MAX_STRING_BYTES) -> str:
     if not isinstance(value, str):
         raise ContractError(f"{label} must be a string")
-    if any(forbidden_scalar(character) for character in value):
+    if _FORBIDDEN_SCALAR_RE.search(value) is not None:
         raise ContractError(f"{label} contains a forbidden Unicode scalar")
     try:
         encoded = value.encode("utf-8")
@@ -97,7 +97,7 @@ def _measure(value: Any, depth: int, remaining: list[int]) -> None:
 
 
 def _measure_string(value: str, remaining: list[int]) -> None:
-    if any(forbidden_scalar(character) for character in value):
+    if _FORBIDDEN_SCALAR_RE.search(value) is not None:
         raise ContractError("JSON string contains a forbidden Unicode scalar")
     try:
         encoded = value.encode("utf-8")

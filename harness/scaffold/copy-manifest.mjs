@@ -89,6 +89,7 @@ const SCAFFOLD_TOOL_FILES = [
   'transaction/upgrade-owned-directory-create.mjs',
   'transaction/upgrade-record-cleanup.mjs',
   'transaction/upgrade-stage-claim.mjs',
+  'transaction/upgrade-stage-claim-publication.mjs',
   'transaction/upgrade-stage-cleanup.mjs',
   'transaction/upgrade-stage-intent-authority.mjs',
   'transaction/upgrade-stage-recovery.mjs',

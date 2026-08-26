@@ -29,7 +29,7 @@ const GOVERNANCE = join('harness', 'governance_engineering',
 const GOVERNANCE_TEST = join('harness', 'governance_engineering',
   'test_authenticated_adr_lifecycle_authority_evidence.py');
 const POLICY_SHA256 =
-  '7f72243aab82625e75f0b0da9823bbd76d083dc39365dad8795ed526b11d9a54';
+  'bdd9034e83572ae0cb269a9de918df2021025580b7382b8825571335af6d1bac';
 const AUTHORITY_MANIFEST_SHA256 =
   '1a85aa0aa90414039815e90c7be53d56d0222c8a742e37f33ef9681586a00778';
 

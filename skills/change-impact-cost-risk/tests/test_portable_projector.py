@@ -28,14 +28,14 @@ FIXTURE = SKILL / "references/fixtures/local-go-package-impact-prescan-v1.json"
 REJECTION = b"local Go package ImpactPreScan projection rejected\n"
 
 LEAF_PINS = {
-    "go_package_dependency_graph_observation_producer/codec.py": "4b5ddd26814d8ac9dda8028aa8269d5efc4a11a11e2aa94eefffc07dfa2ca278",
+    "go_package_dependency_graph_observation_producer/codec.py": "ea38d1fab60ebf92f9619a2342e56f00029e17b5c236d82ef3cb127db5b6f97c",
     "go_package_dependency_graph_observation_producer/constants.py": "792436867d81283c8ea4181ee7f7c64dbcf4b20770c57864e8a94edb95e99f07",
     "go_package_dependency_graph_observation_producer/graph_contract.py": "d3745824141cbe0d61098989037ae3efaf32ddbf249229213c553ce1c6888daa",
     "go_package_dependency_graph_observation_producer/profiles.py": "62384a4befce4324c186a202fc43588767b8f90776706c20b7831c82ebf31205",
     "go_package_dependency_graph_observation_producer/semantics.py": "79da57a8c5bc17dbe807684f15f9386c639c3531168a697176cda7c4c5354c96",
-    "governance_contract/codec.py": "b000ccf4cfc02d863f454b5c0565f6b5e19382cd2b8c3f1e833967619d7f7633",
+    "governance_contract/codec.py": "e679980cb0f52a7375c494a19c58d2c65f030096d6d049923b7b5da7f991da68",
     "governance_contract/constants.py": "36bcbcc220409adf1fcad83ec6a125007d5df1568483d573393b081f4b60293c",
-    "local_command_observation_producer/codec.py": "bf84c60c7e4da8fa7be7722148e25df7244e9eda851f4427476a0b727ca276f2",
+    "local_command_observation_producer/codec.py": "0656c83506cb55e385af1da840635a1a924e5f8ecccaea02e665e768f7882369",
     "local_command_observation_producer/constants.py": "35c8fb845e2f74d4d03c21c30cff1f816a2062ea82aa9af8d625aef9ea966a02",
     "local_command_observation_producer/profiles.py": "766516f03995e48cff90bed721a92bfafc7be101adbba9c511878cb1d15351c6",
     "local_go_package_impact_prescan_contract/codec.py": "e8f7b78f3df40e96852ea1ffcdea6bcf9991cc9dfbfa6996b730611876fa5082",

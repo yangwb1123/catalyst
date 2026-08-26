@@ -21,9 +21,9 @@ const PRIOR_DISTRIBUTED_MODULE =
 const PRIOR_DISTRIBUTED_TEST =
   'harness/governance_engineering/test_kernel_decision_reference_candidate.py';
 export const REGISTRY_V38_POLICY_SHA256 =
-  '63b44231ae33a9788177db0d348b94d76ef368a8bcec2c9d67f4dabc7dace271';
+  '909fb4daa33f3854309b360f0f1ee4d0ba42d470d5edcbb54fff1be21f051752';
 export const REGISTRY_V39_POLICY_SHA256 =
-  '7f72243aab82625e75f0b0da9823bbd76d083dc39365dad8795ed526b11d9a54';
+  'bdd9034e83572ae0cb269a9de918df2021025580b7382b8825571335af6d1bac';
 const V39_DISCIPLINE_ASSETS = [
   'docs/contracts/decision-capsule-structural-replay-core-v1.schema.json',
   'docs/contracts/fixtures/decision-capsule-structural-replay-v1.json',
@@ -35,6 +35,14 @@ const V39_MARKERS = [
   'decision_capsule_structural_replay', 'decision-capsule-structural-replay',
   'Decision Capsule structural replay', 'Decision Capsule Structural Replay',
   'ADR-0093', 'Registry v39', 'registry-v39', 'is_v39',
+];
+const KERNEL_V39_TO_V38_PINS = [
+  ['14e64da5e5985d06fff3a7d5ba8faa2bcf928bacc2ba5d18158c0a962b80f937',
+    '0c2dd1383454f605cdcfdf42c6b1d2916d62deccedf8e5f1b05d018202125d8e'],
+  ['60d55929fd2a11c3c92dd3ca06b169635d5f22d9a8c0ab048d2fea501c2beea7',
+    'acab4b66f5bf39161265c0d232cbe225e5d3881362620cdafdd8a2634891a7e1'],
+  ['813112dfa32a6e8363434a4732534328eb56a4d2b6b8768e427440c2c4bb0df7',
+    'd749583506b1973cf08afc7bf9532b7b53fa819eecccd05d15a4f50e4e899df3'],
 ];
 
 // Registry-v38's shared inventory was exact37. Its source-distributed Kernel
@@ -91,19 +99,19 @@ export const REGISTRY_V38_OWNER_SHA256 = Object.freeze({
   '.agent/engineering/activation.yml': 'e2fe910060988c73af744beb57a37fb8f3ab1d8f018aa7593f52c8439c8c7556',
   '.agent/engineering/detectors.yml': '2c6a27c0e283cb4a11c96c5f5f82c6357d2d89bc9ee481623d5e73d4a3ad3bff',
   '.agent/engineering/disciplines.yml': '02069e36eb95466c1de87bdffb9c19122f05866421c5db8206297c05734e8924',
-  '.agent/engineering/governance-contracts.yml': '63b44231ae33a9788177db0d348b94d76ef368a8bcec2c9d67f4dabc7dace271',
+  '.agent/engineering/governance-contracts.yml': '909fb4daa33f3854309b360f0f1ee4d0ba42d470d5edcbb54fff1be21f051752',
   '.arch/rules.yaml': 'b6f8b503254b199f7a2636ff2069857dc2555092ad3c32542d88a5f8452b38d3',
   'docs/design/ai-engineering-os/governance-contracts.md': '353bd372e8eb6a1142dd20be91ec912ef197a1ba50dc8ad57f32070c820eb977',
   'harness/agent_engineering/contract.py': '9872e852d37fe0d650ad2dc11558b31cd3417ae792ebd8bfa8a58ff7d18957dd',
-  'harness/engineering_check_support.py': '0c4eec5cd5410c8d93091d9fd2bbfada4b9285521355502310bc69bc6a39af46',
+  'harness/engineering_check_support.py': 'eb068bc942e4430fc24f186820d0e250d1c5a565e7c1482d513d6a8b28f5baec',
   'harness/evolve_locator_observation_producer/test_governance.py': 'c2176a74ab6eb61023e7d82e91d182c5083315b9a92f2b9ee83b86d1dfeea7b3',
   'harness/governance_engineering/authenticated_adr_approval_candidate.py': 'c233f1bcdd6ab1e2bb7e0b6f76b2e4b6fb88c1e040957225e400b60e20f8fb3f',
   'harness/governance_engineering/authenticated_adr_lifecycle_authority_evidence.py': '9315725f5ea4490c32bfa2b2082c3eaa4557e1be75e69a9a20dca7af2a22ebd5',
   'harness/governance_engineering/authenticated_adr_lifecycle_candidate.py': '42c50dbdac8999bd90d78bd58a66225d5fe63cad65d103965078eac1162734fa',
   'harness/governance_engineering/kernel_decision_reference_candidate.py': 'a8d4ff8c2085b990bfb6c827968fc0402f5fde886f04611d3bac6aad0b07306b',
-  'harness/governance_engineering/kernel_operational_reference_candidate.py': '11c5c0b294172315ee00776fa6ba8abd67fcdc54158a3ce4603b442b8404cb37',
-  'harness/governance_engineering/legacy_governance_read_import_candidate.py': '5ae72ba7c119da30a7b946361581ccae1044b0c65d43f60bc99b178e3a12d2d8',
-  'harness/governance_engineering/registry_contract.py': '0c6b5fb170d027cc1ab0d916eee42ede32dfe176101d170bb28a0410c3e6f14e',
+  'harness/governance_engineering/kernel_operational_reference_candidate.py': 'f9cf79f154e4da3a6b4c5e79729d733bd3f9760b8d6b3ef822e10e55ea2ac503',
+  'harness/governance_engineering/legacy_governance_read_import_candidate.py': 'b3643ef9582a121d3931de9d2d40d7204b7101de2515ea2c74f12c8970a746f8',
+  'harness/governance_engineering/registry_contract.py': 'ca98fa92776aa64fb182876ff2470e1c3819541b2e2b2aec6ad4881aef77b049',
   'harness/governance_engineering/test_adr_governance_portable.py': '7b59d730de8e5baf1f45cb10e772a55d7fb12ccce1bf450a610e3b5958cf3966',
   'harness/governance_engineering/test_authenticated_adr_approval_candidate.py': 'f919fd4633211aba41a34b5cbd7be1abc97f43e0784a461002ac153fbff4d478',
   'harness/governance_engineering/test_authenticated_adr_lifecycle_authority_evidence.py': '4abae645d3724b55db693452383e1d002de3b2bbd88e14c0d56cc7d47d0cda4c',
@@ -159,6 +167,11 @@ function replaceRegistryVersionV38(text) {
     .replaceAll('canonical v39 value', 'canonical v38 value');
 }
 
+function restoreKernelV38Pins(text) {
+  return KERNEL_V39_TO_V38_PINS.reduce((projected, [current, prior]) =>
+    projected.replaceAll(current, prior), text);
+}
+
 function projectPolicyV38(text) {
   let projected = text.replace(
     /_and_proposed_decision_capsule_structural_replay_core_v1_[a-z0-9_]+(?=\n)/,
@@ -172,7 +185,7 @@ function projectPolicyV38(text) {
     '',
   ).replace(/^  decision_capsule_structural_replay_core_v1_.*\n/gm, '')
     .replace(/^  - ADR-0092\/0093 .*\n/m, '');
-  return replaceRegistryVersionV38(projected);
+  return replaceRegistryVersionV38(restoreKernelV38Pins(projected));
 }
 
 function projectRegistryContractV38(text) {
@@ -375,6 +388,9 @@ function projectV38(relative, text) {
   }
   if (relative === 'harness/governance_engineering/registry_contract.py') {
     return projectRegistryContractV38(text);
+  }
+  if (relative === PRIOR_DISTRIBUTED_MODULE) {
+    return replaceRegistryVersionV38(restoreKernelV38Pins(text));
   }
   if (relative === 'harness/governance_engineering_check.py') {
     return projectGovernanceCheckV38(text);

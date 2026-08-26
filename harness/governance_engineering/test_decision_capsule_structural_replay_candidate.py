@@ -76,8 +76,12 @@ class DecisionCapsuleStructuralReplayCandidateTest(unittest.TestCase):
         self.assertEqual(SCOPE_SHA256, hashlib.sha256(scope).hexdigest())
         self.assertEqual(32, len(ATTESTATIONS))
         self.assertTrue(all(value is False for value in ATTESTATIONS.values()))
-        self.assertTrue(all(value is False for value in
-                            CONTRACT["completion"].values()))
+        narrow_completion = (
+            "decision_capsule_structural_replay_repository_slice_complete")
+        self.assertTrue(CONTRACT["completion"][narrow_completion])
+        self.assertTrue(all(value is False for key, value in
+                            CONTRACT["completion"].items()
+                            if key != narrow_completion))
         self.assertIn(NON_CAPABILITY, self.policy["non_capabilities"])
 
     def test_refs_pins_and_three_language_projection_split_are_exact(self):
@@ -112,7 +116,7 @@ class DecisionCapsuleStructuralReplayCandidateTest(unittest.TestCase):
             self.skipTest("Catalyst-only Rust parity package is not source-distributed")
         self.assertEqual([], rust_parity_issues(self.repo))
 
-    def test_strict_proposed_decisions_and_pending_roadmap_are_pinned(self):
+    def test_strict_proposed_decisions_and_completed_roadmap_are_pinned(self):
         self.assertEqual([], adr_issues(self.repo))
         self.assertEqual([], roadmap_issues(self.repo))
         facts = self.repo / "docs/FUNCTIONAL_REQUIREMENTS_AUDIT.md"
@@ -132,10 +136,10 @@ class DecisionCapsuleStructuralReplayCandidateTest(unittest.TestCase):
             shutil.copy2(self.repo / relative, target)
         roadmap = root / "docs/design/ai-engineering-os/implementation-roadmap.md"
         roadmap.write_text(roadmap.read_text(encoding="utf-8").replace(
-            "- [ ] 交付 Decision Capsule structural replay repository slice",
-            "- [x] 交付 Decision Capsule structural replay repository slice"),
+            "- [x] 交付 Decision Capsule structural replay repository slice",
+            "- [ ] 交付 Decision Capsule structural replay repository slice"),
             encoding="utf-8")
-        self.assertTrue(any("must remain one exact pending item" in issue
+        self.assertTrue(any("must remain one exact completed item" in issue
                             for issue in roadmap_issues(root)))
 
     def test_pinned_golden_checker_detector_is_honest_and_unique(self):
@@ -164,7 +168,7 @@ class DecisionCapsuleStructuralReplayCandidateTest(unittest.TestCase):
         block = mutated["decision_capsule_structural_replay_core_v1_candidate_contract"]
         block["attestations"]["authority_attestation"] = True
         block["completion"][
-            "decision_capsule_structural_replay_repository_slice_complete"] = True
+            "decision_capsule_structural_replay_repository_slice_complete"] = False
         block["source_distribution"]["copies_go_rust_or_runtime_registration"] = True
         mutated["canonical_refs"][next(iter(CANONICAL_REFS))] = "drift"
         mutated["contract_pins"][next(iter(PINS))] = "0" * 64

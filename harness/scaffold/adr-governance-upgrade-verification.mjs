@@ -26,7 +26,7 @@ const GOLDEN = join(
 );
 const PINS = [
   [MANIFEST,
-    '88fb16e51af69cb3a2bc38fe2dcae7893a24cee744b85a06eafff70ae841dd3c',
+    'c1f84e909414878eec6ed62e6605ce7c26758f1940fb1a4660ecef7dcb56fab7',
     'ADR Governance package manifest'],
   [SEMANTIC_ADR,
     '78c7d484cfb0e448c4c896440d4ea272a8e32a60f947539a3ad739baaeead71e',
@@ -41,7 +41,7 @@ const PINS = [
     '21d452845cf0f2889fcc5fa22f450cc4a40d5fb694f5b1f202d4b3cfd79f2eb2',
     'ADR-0074'],
   [join('harness', 'governance_engineering', 'adr_governance_portable.py'),
-    '6eecab3a55f75dcdf425b9f8b12f1f282f8396f1dc0f807408a8db1fada39633',
+    '20bbce90227803329d192597eed1859b69508be3e24f9c5249be86441ba445a6',
     'ADR Governance module'],
   [join('harness', 'governance_engineering', 'test_adr_governance_portable.py'),
     'f943fc18d083da69b343fcb5026d7f5422487ca2baca50258db791214b024a9b',

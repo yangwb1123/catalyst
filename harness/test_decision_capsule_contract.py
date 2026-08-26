@@ -317,7 +317,8 @@ class DecisionCapsuleContractTest(unittest.TestCase):
         environment = dict(os.environ)
         environment["PYTHONDONTWRITEBYTECODE"] = "1"
         commands = [["--golden", "."]]
-        with tempfile.NamedTemporaryFile(dir=ROOT, suffix=".json") as stream:
+        with tempfile.NamedTemporaryFile(suffix=".json") as stream:
+            self.assertNotIn(ROOT, Path(stream.name).resolve().parents)
             stream.write(canonical_json(self.closure))
             stream.flush()
             commands.append(["--file", stream.name])
@@ -339,7 +340,8 @@ class DecisionCapsuleContractTest(unittest.TestCase):
         with self.assertRaises(ContractError):
             decode_structural_replay_closure(raw)
         environment = dict(os.environ, PYTHONDONTWRITEBYTECODE="1")
-        with tempfile.NamedTemporaryFile(dir=ROOT, suffix=".json") as stream:
+        with tempfile.NamedTemporaryFile(suffix=".json") as stream:
+            self.assertNotIn(ROOT, Path(stream.name).resolve().parents)
             stream.write(raw)
             stream.flush()
             result = subprocess.run(

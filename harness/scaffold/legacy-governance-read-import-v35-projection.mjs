@@ -29,9 +29,9 @@ import {
 
 const POLICY = join('.agent', 'engineering', 'governance-contracts.yml');
 export const REGISTRY_V35_POLICY_SHA256 =
-  '6e768241b583ce96419974e7cf4051eb9196a1d7082f16b3a8fb12bcbf4762fb';
+  '5728a84f7668a7d13b089ea0869c29058aa66235b56aa235ae4c3c0621b03796';
 const REGISTRY_V36_POLICY_SHA256 =
-  'ed0427dae8e81e233cab69691e8e47cb8443544d34e09d959fff691f7a77f924';
+  '5f3fb8b4d4a75695a09791fc38c132d9b5e292c913e7b116ad4f97893053b324';
 const PYTHON_PACKAGE = join('harness', 'legacy_governance_read_import_contract');
 const OPERATIONAL_PACKAGE = join('harness', 'kernel_operational_contract');
 export const CONCURRENT_CURRENT_FILES = ['.arch/rules.yaml'];

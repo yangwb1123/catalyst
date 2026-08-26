@@ -1,12 +1,12 @@
 """Bounded canonical JSON, Base64URL, and digest primitives for ADR-0065."""
 
 from __future__ import annotations
+import re
 
 import base64
 import binascii
 import hashlib
 import json
-import unicodedata
 
 from governance_contract import ContractError
 
@@ -20,12 +20,11 @@ from .constants import (
 )
 
 
+_FORBIDDEN_SCALAR_RE = re.compile('[\\x00-\\x1f\\x7f-\\x9f\\ud800-\\udfff\\u061c\\u200e\\u200f\\u2028\\u2029\\u202a-\\u202e\\u2066-\\u2069]')
+
+
 def forbidden_scalar(character: str) -> bool:
-    code = ord(character)
-    return (unicodedata.category(character) == "Cc" or
-            0xD800 <= code <= 0xDFFF or
-            code in {0x061C, 0x200E, 0x200F, 0x2028, 0x2029} or
-            0x202A <= code <= 0x202E or 0x2066 <= code <= 0x2069)
+    return _FORBIDDEN_SCALAR_RE.fullmatch(character) is not None
 
 
 def _valid_key(key: object) -> bool:
@@ -98,7 +97,7 @@ def _walk_string(value: str, path: tuple[str, ...]) -> None:
         limit, scalar_limit = MAX_PATH_BYTES, MAX_PATH_SCALARS
     if len(encoded) > limit or scalar_limit is not None and len(value) > scalar_limit:
         raise ContractError(f"ADR-0065 string at {'.'.join(path)} exceeds its bound")
-    if any(forbidden_scalar(character) for character in value):
+    if _FORBIDDEN_SCALAR_RE.search(value) is not None:
         raise ContractError("ADR-0065 string contains forbidden Unicode scalar")
 
 
@@ -118,7 +117,7 @@ def _walk(value: object, depth: int = 1,
         if discriminator_only:
             encoded = value.encode("utf-8")
             if (len(encoded) > MAX_GRAPH_BASE64URL_BYTES or
-                    any(forbidden_scalar(character) for character in value)):
+                    _FORBIDDEN_SCALAR_RE.search(value) is not None):
                 raise ContractError("ADR-0065 discriminator string exceeds safe bound")
         else:
             _walk_string(value, path)

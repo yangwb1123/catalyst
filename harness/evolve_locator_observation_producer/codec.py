@@ -1,9 +1,9 @@
 """Bounded exact canonical JSON codec for ADR-0052 contract values."""
 
 from __future__ import annotations
+import re
 
 import json
-import unicodedata
 
 from governance_contract import ContractError
 
@@ -11,12 +11,11 @@ from .constants import (MAX_DEPTH, MAX_FIELDS, MAX_I64, MAX_LIST_ITEMS,
                         MAX_PRODUCTION_BYTES, MAX_STRING_BYTES, MIN_I64)
 
 
+_FORBIDDEN_SCALAR_RE = re.compile('[\\x00-\\x1f\\x7f-\\x9f\\ud800-\\udfff\\u061c\\u200e\\u200f\\u2028\\u2029\\u202a-\\u202e\\u2066-\\u2069]')
+
+
 def forbidden_scalar(character: str) -> bool:
-    code = ord(character)
-    return (unicodedata.category(character) == "Cc" or
-            0xD800 <= code <= 0xDFFF or
-            code in {0x061C, 0x200E, 0x200F, 0x2028, 0x2029} or
-            0x202A <= code <= 0x202E or 0x2066 <= code <= 0x2069)
+    return _FORBIDDEN_SCALAR_RE.fullmatch(character) is not None
 
 
 def _valid_key(key: object) -> bool:
@@ -61,7 +60,7 @@ def _walk_string(value: str, enforce_text: bool) -> None:
         raise ContractError(f"producer string is not valid UTF-8: {error}") from error
     if len(encoded) > MAX_STRING_BYTES:
         raise ContractError(f"producer string exceeds {MAX_STRING_BYTES} UTF-8 bytes")
-    if enforce_text and any(forbidden_scalar(character) for character in value):
+    if enforce_text and _FORBIDDEN_SCALAR_RE.search(value) is not None:
         raise ContractError("producer string contains forbidden Unicode control scalar")
 
 

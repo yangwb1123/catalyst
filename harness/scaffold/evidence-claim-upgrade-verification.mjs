@@ -24,7 +24,7 @@ const ADR = join('docs', 'adr',
   'ADR-0072-portable-evidence-claim-validation-skill.md');
 const SCHEMA_SHA256 = 'b2f8824c95012d94e71b4643756890a7a23f67dc1b9e0e8ecacf979b016864e8';
 const GOLDEN_SHA256 = 'db111600f93e63b3533b1f06b14d7520eb4cbec0e4c6d0e3a6e0fd7e2740824a';
-const MANIFEST_SHA256 = 'b5d0d15497f47d4310729e7eadf2df506b0c90a1ae982b30b5b453536e98c771';
+const MANIFEST_SHA256 = 'ee8f1ee8644a04826aa0b718f76eb59e817ce2d315d54c8fad0ded9b7abf2ea0';
 const ADR_SHA256 = '5ed33ea8d0a7e44e0ff401fad438c0fce0a875914da1187a64cb6cc3452b4929';
 
 function sha256(path) {

@@ -67,7 +67,14 @@ stages:
           honor the prescribed specs and the persistence-design gate when
           the direction touches core data.
           Implement only the selected direction directly in the repository.
-          Add focused regression tests and run the project's documented gates.
+          Honesty discipline: this direction MUST stay inside its declared
+          roadmap item (roadmap_ref); do not invent adjacent features.
+          Respect the repo red lines: single file <= 500 lines, function
+          <= 50 lines, package file-count budgets (cmd/forge max), one-way
+          deps, no new top-level files; if you hit a threshold, split
+          FIRST then continue. New ADRs must be Proposed-only v2.
+          Add focused regression tests and run the project's documented gates
+          (node harness/gate.mjs; full stop: node harness/acceptance.mjs).
           Do not commit. Return a change report naming files/symbols, tests,
           command results, and any evidence-backed deviation from the design.
           {input_content}

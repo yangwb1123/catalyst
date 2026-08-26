@@ -42,9 +42,9 @@ const ROADMAP_COMPLETE =
   + '及其对 InteractionEvent、CapabilityInvocation、ArtifactReceipt、'
   + 'ExecutionReceipt 的单向引用闭包；';
 const POLICY_SHA256 =
-  '7f72243aab82625e75f0b0da9823bbd76d083dc39365dad8795ed526b11d9a54';
+  'bdd9034e83572ae0cb269a9de918df2021025580b7382b8825571335af6d1bac';
 const EXACT18_SHA256 =
-  'f769c770fefb5bf4e651af1841c3a432d226beb8c2ed84a418a333b8e6d8294b';
+  '21ce8c784574fca8b220305bef0a6ad6d6d05035b6d097b2a1fd81537681a363';
 const SOURCE_SHA256 = new Map([
   [ADR_0088, 'e179c3451a28df68051e7dc5f907db5e097c2bca5baab4894700bebafdc9bb77'],
   [join('docs', 'contracts', 'kernel-operational-reference-core-v1.schema.json'),
@@ -55,7 +55,7 @@ const SOURCE_SHA256 = new Map([
   [join(PACKAGE, 'closure.py'),
     'c16a27a1f248d7d798cf6e044310cf59588207c7f6692d0a46cce68e8064cb3f'],
   [join(PACKAGE, 'codec.py'),
-    '959be158f96a59f757b5257ac951860d4b3a79c968e0b69d4d95c73b44e866ee'],
+    'e1ccc487b15bce45493ee6609bea72aed879e612cccabab75f37674118b14490'],
   [join(PACKAGE, 'constants.py'),
     'b78febe4db08a8a6656ee87817fc3403e7e5c73f8605464fda290192ddcc33bf'],
   [join(PACKAGE, 'fixture.py'),
@@ -76,7 +76,7 @@ const SOURCE_SHA256 = new Map([
   [ADR_0089, 'eccdcd118983be03de27ef8886679d3fb0c73a2b3aee0f4bdeb6e10fdc1007f2'],
   [join('harness', 'governance_engineering',
     'kernel_operational_reference_candidate.py'),
-  '2785c83b618af6d3a1db493e240ffd04a5ff66af9ed8d6e3b9841e1275c4e778'],
+  '1a729a2eb18a4742a8fb8e45f4f17981d9fc26f156bc0f388498c41604bf5836'],
   [join('harness', 'governance_engineering',
     'test_kernel_operational_reference_candidate.py'),
   '88224e9fa308d34fc36d0d7da51604d98221c1f9d1ce69421080d3eebf6f0f96'],

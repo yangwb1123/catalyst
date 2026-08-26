@@ -324,12 +324,22 @@ export const UNIVERSAL_COPIED_FILES = [
   join('harness', 'workflow_verdict_check.py'), // imported by check.py; validates strict Build reviewer verdict assets
   join('harness', 'acceptance.mjs'),
   // acceptance.mjs is split into a dependency-free kernel (shared run/result/
-  // splitCmd + PASS/FAIL/NA/ROOT/HARNESS_DIR) and the adapter-backed quality
-  // probes (lint + coverage); acceptance.mjs imports BOTH, so a fresh project
-  // missing either fails to import the gate (ERR_MODULE_NOT_FOUND) — copy-anywhere
-  // iron rule.
+  // splitCmd + PASS/FAIL/NA/ROOT/HARNESS_DIR), adapter-backed quality probes,
+  // process-parallel workers, and the explicitly advisory cache. The CLI loads
+  // this complete closure, so a fresh project missing any member fails closed
+  // (ERR_MODULE_NOT_FOUND) — copy-anywhere iron rule.
   join('harness', 'acceptance-kernel.mjs'),
   join('harness', 'acceptance-quality.mjs'),
+  join('harness', 'acceptance-advisory.mjs'),
+  join('harness', 'acceptance-candidate.mjs'),
+  join('harness', 'acceptance-candidate-portable.mjs'),
+  join('harness', 'acceptance', 'candidate-journal.mjs'),
+  join('harness', 'acceptance', 'candidate-journal.py'),
+  join('harness', 'acceptance-cache.mjs'),
+  join('harness', 'acceptance', 'formal.mjs'),
+  join('harness', 'acceptance-parallel.mjs'),
+  join('harness', 'acceptance-process.mjs'),
+  join('harness', 'acceptance-worker.mjs'),
   join('harness', 'acceptance-project.mjs'),
   join('harness', 'acceptance-tests.mjs'),
   // Adapter runtime: adapters.mjs owns common declarations, detection.mjs scans
@@ -368,6 +378,7 @@ export const UNIVERSAL_COPIED_FILES = [
   join('harness', 'test_check.py'),
   join('harness', 'test_check_bounded_input.py'),
   join('harness', 'test_agent_engineering_check.py'),
+  join('harness', 'test_engineering_check_support.py'),
   join('harness', 'test_governance_contract_check.py'),
   join('harness', 'test_context_package_contract_check.py'),
   join('harness', 'test_capability_grant_contract_check.py'),
@@ -406,6 +417,11 @@ export const UNIVERSAL_COPIED_FILES = [
   join('harness', 'test_reviewer_verdict_check.py'),
   join('harness', 'test_yaml2json.py'),
   join('harness', 'test_acceptance.mjs'),
+  join('harness', 'test_acceptance_cache.mjs'),
+  join('harness', 'test_acceptance_candidate.mjs'),
+  join('harness', 'test_acceptance_candidate_journal.mjs'),
+  join('harness', 'test_acceptance_parallel.mjs'),
+  join('harness', 'test_acceptance_process.mjs'),
   join('harness', 'test_coverage_artifacts.mjs'),
   join('harness', 'test_python_coverage_runner.py'),
   join('harness', 'test_acceptance_project.mjs'),

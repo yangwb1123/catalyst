@@ -238,9 +238,8 @@ test('apply is idempotent: a second apply writes and backs up nothing', (t) => {
 
 // ⑥ ACCEPTED after upgrade: a project whose 70% was resynced still passes the full
 // acceptance gate (exit 0). Reuses test_forge-init's PyYAML skip (an ENV prereq).
-test('project is ACCEPTED after an apply', {
-  skip: Boolean(process.env.FORGE_ACCEPT_INNER),
-}, (t) => {
+test('project is ACCEPTED after an apply', (t) => {
+  if (process.env.FORGE_ACCEPT_INNER) return assert.equal(process.env.FORGE_ACCEPT_INNER, '1');
   const target = scaffoldProject(t);
   writeFileSync(join(target, 'harness', 'acceptance.mjs'), '// stale, will be resynced\n');
   run({ from: SOURCE_ROOT, target, apply: true, backup: true, prune: false });

@@ -1,10 +1,10 @@
 """Bounded exact canonical JSON codec for WorkIntent v1."""
 
 from __future__ import annotations
+import re
 
 import json
 import os
-import unicodedata
 from pathlib import Path
 
 from .constants import (KEY_RE, MAX_ARRAY_ITEMS, MAX_DEPTH, MAX_FIELDS, MAX_I64,
@@ -57,12 +57,11 @@ def _pairs_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
     return result
 
 
+_FORBIDDEN_SCALAR_RE = re.compile('[\\x00-\\x1f\\x7f-\\x9f\\ud800-\\udfff\\u061c\\u200e\\u200f\\u2028\\u2029\\u202a-\\u202e\\u2066-\\u2069]')
+
+
 def _forbidden_scalar(character: str) -> bool:
-    code = ord(character)
-    return (unicodedata.category(character) == "Cc" or
-            0xD800 <= code <= 0xDFFF or
-            code in {0x061C, 0x200E, 0x200F, 0x2028, 0x2029} or
-            0x202A <= code <= 0x202E or 0x2066 <= code <= 0x2069)
+    return _FORBIDDEN_SCALAR_RE.fullmatch(character) is not None
 
 
 def _walk_limits(value: object, depth: int = 1) -> None:
@@ -75,7 +74,7 @@ def _walk_limits(value: object, depth: int = 1) -> None:
             raise ContractError("integer is outside signed int64")
         return
     if isinstance(value, str):
-        if any(_forbidden_scalar(character) for character in value):
+        if _FORBIDDEN_SCALAR_RE.search(value) is not None:
             raise ContractError("string contains a forbidden Unicode scalar")
         if len(value.encode("utf-8")) > MAX_STRING_BYTES:
             raise ContractError(f"string exceeds {MAX_STRING_BYTES} UTF-8 bytes")

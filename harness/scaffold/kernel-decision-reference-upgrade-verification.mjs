@@ -42,11 +42,11 @@ const ROADMAP_COMPLETE =
   + '及其对 InteractionEvent、CapabilityInvocation、ArtifactReceipt、'
   + 'ExecutionReceipt 的单向引用闭包；';
 const POLICY_SHA256 =
-  '7f72243aab82625e75f0b0da9823bbd76d083dc39365dad8795ed526b11d9a54';
+  'bdd9034e83572ae0cb269a9de918df2021025580b7382b8825571335af6d1bac';
 const CORE_EXACT16_SHA256 =
-  'acab4b66f5bf39161265c0d232cbe225e5d3881362620cdafdd8a2634891a7e1';
+  '60d55929fd2a11c3c92dd3ca06b169635d5f22d9a8c0ab048d2fea501c2beea7';
 const EXACT19_SHA256 =
-  '9fab067214617e31ea2df6a7f156e2f5b0d856e80860d72313f0c5b3ae735610';
+  'b0bbfdbbe4a3d3ad35c28db1380534044c6ea673ab11e326e756bf9edbc9a663';
 const SOURCE_SHA256 = new Map([
   [ADR_0090, '5ebb9bcb4fbce5c0e613fe59de44c19fb7c359e506b6ee3b2a6d66e38afd3210'],
   [join('docs', 'contracts', 'kernel-decision-reference-core-v1.schema.json'),
@@ -76,11 +76,11 @@ const SOURCE_SHA256 = new Map([
   [join('harness', 'test_kernel_decision_reference_graph.py'),
     '6b625c6a9fbd6c46ae6404a9ce6dc4273434e10146bb11eb50478a2e4ec14409'],
   [join('harness', 'test_kernel_decision_strict.py'),
-    'd749583506b1973cf08afc7bf9532b7b53fa819eecccd05d15a4f50e4e899df3'],
+    '813112dfa32a6e8363434a4732534328eb56a4d2b6b8768e427440c2c4bb0df7'],
   [ADR_0091, 'a37dc6d8bce98bae07f5d4e047d52b8625b60c65d3f0129b1e2989d54d2eedde'],
   [join('harness', 'governance_engineering',
     'kernel_decision_reference_candidate.py'),
-  'ca279c548d52ed6b39edc545ac9595ae70da92c810f39e7b59982e051594b2f7'],
+  '0c4c864835664002913864c9b55329fb129c2ccf90e72afb0659488078192091'],
   [join('harness', 'governance_engineering',
     'test_kernel_decision_reference_candidate.py'),
   '936c18483b6b0f97c19c4d448f20a42fd30ac2f8fd50ed65eae7d5b92e57592a'],

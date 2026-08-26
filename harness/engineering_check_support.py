@@ -17,6 +17,19 @@ class _UniqueKeyLoader(yaml.SafeLoader):
     """Safe YAML loader that rejects duplicate keys instead of overwriting."""
 
 
+class _StrictKeyLoader(_UniqueKeyLoader):
+    """Unique-key loader that also rejects anchors/aliases during composition,
+    so the check costs one parse instead of a full token scan + a full load."""
+
+    def compose_node(self, parent, index):
+        event = self.peek_event()
+        if (isinstance(event, yaml.events.AliasEvent)
+                or getattr(event, "anchor", None) is not None):
+            raise yaml.composer.ComposerError(
+                None, None, "YAML anchors and aliases are not allowed", None)
+        return super().compose_node(parent, index)
+
+
 def _construct_unique_mapping(loader, node, deep=False):
     mapping = {}
     for key_node, value_node in node.value:
@@ -58,14 +71,38 @@ def read_bounded_spec(path):
     return raw
 
 
+def _load_yaml_once(path, raw):
+    text = raw.decode("utf-8")
+    return yaml.load(text, Loader=_StrictKeyLoader), None
+
+
+# Parse-level cache: the same spec files are re-read by every governance check
+# (dozens of times per `forge accept`, once per extension contract). The key is
+# the exact bounded bytes digest, so forged/restored timestamps and path races
+# cannot replay another document; callers receive deep copies.
+_YAML_PARSE_CACHE = {}
+_YAML_PARSE_CACHE_MAX = 128
+
+
 def load_yaml(path):
     try:
         raw = read_bounded_spec(path)
-        text = raw.decode("utf-8")
-        token_types = (yaml.tokens.AnchorToken, yaml.tokens.AliasToken)
-        if any(isinstance(token, token_types) for token in yaml.scan(text)):
-            raise ValueError("YAML anchors and aliases are not allowed")
-        return yaml.load(text, Loader=_UniqueKeyLoader), None
+        key = hashlib.sha256(raw).digest()
+        if key in _YAML_PARSE_CACHE:
+            data, error = _YAML_PARSE_CACHE[key]
+            if error is None:
+                import copy
+                return copy.deepcopy(data), None
+            return data, error
+        result = _load_yaml_once(path, raw)
+        if len(_YAML_PARSE_CACHE) >= _YAML_PARSE_CACHE_MAX:
+            _YAML_PARSE_CACHE.pop(next(iter(_YAML_PARSE_CACHE)))
+        _YAML_PARSE_CACHE[key] = result
+        data, error = result
+        if error is None:
+            import copy
+            return copy.deepcopy(data), None
+        return data, error
     except (OSError, UnicodeDecodeError, ValueError, RecursionError, yaml.YAMLError) as exc:
         return None, str(exc).replace("\n", " ")
 

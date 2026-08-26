@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import copy
+import re
 
 from kernel_operational_contract.codec import (
-    ContractError, _forbidden_scalar,
+    ContractError,
     canonical_json as _operational_canonical_json, decode_canonical_json,
     read_bounded_file,
 )
@@ -15,6 +16,9 @@ from kernel_operational_contract.constants import (
 )
 
 from .constants import MAX_CLOSURE_BYTES
+
+_FORBIDDEN_SCALAR_RE = re.compile(
+    "[\\x00-\\x1f\\x7f-\\x9f\\ud800-\\udfff\\u061c\\u200e\\u200f\\u2028\\u2029\\u202a-\\u202e\\u2066-\\u2069]")
 
 
 def validate_json_tree(value: object, maximum: int) -> None:
@@ -78,10 +82,10 @@ def _utf8_width(character: str) -> int:
 
 
 def _string_size(value: str, maximum: int) -> int:
+    if _FORBIDDEN_SCALAR_RE.search(value):
+        raise ContractError("string contains a forbidden Unicode scalar")
     total, content_bytes = 2, 0
     for character in value:
-        if _forbidden_scalar(character):
-            raise ContractError("string contains a forbidden Unicode scalar")
         width = _utf8_width(character)
         content_bytes += width
         if content_bytes > MAX_STRING_BYTES:

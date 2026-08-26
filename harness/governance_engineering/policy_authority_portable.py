@@ -24,9 +24,7 @@ CHECKER = "skills/policy-authority/scripts/check_package.py"
 DECISION = (
     "docs/adr/ADR-0073-portable-policy-authority-declaration-assessment-skill.md"
 )
-MANIFEST_SHA256 = (
-    "feb21737424b0133e8b57f553ff342b51583917f83e1d47b4b83cd6c3a667132"
-)
+MANIFEST_SHA256 = "73dd9b4fda1850faff838de812cc6540a841f9b73b8fecbe53ad1e647c21593f"
 GRANT_SCHEMA_SHA256 = (
     "dd26568ec430ae5e444ae851ba2b58087528a17e84794137268be3860d9c3209"
 )

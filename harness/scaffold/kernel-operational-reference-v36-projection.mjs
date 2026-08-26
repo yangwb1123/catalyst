@@ -28,9 +28,9 @@ import {
 const POLICY = join('.agent', 'engineering', 'governance-contracts.yml');
 const PYTHON_PACKAGE = join('harness', 'kernel_operational_contract');
 export const REGISTRY_V36_POLICY_SHA256 =
-  'ed0427dae8e81e233cab69691e8e47cb8443544d34e09d959fff691f7a77f924';
+  '5f3fb8b4d4a75695a09791fc38c132d9b5e292c913e7b116ad4f97893053b324';
 const REGISTRY_V37_POLICY_SHA256 =
-  '1d8e8a0f3fff06c64e613b0e4c69533e10119d27dcaa7096e0e6be2578d308d5';
+  'b9303b692950ebf47da9648c41950517403bd91a02b38c567c91581ad3556a70';
 const V37_DISCIPLINE_ASSETS = [
   'docs/contracts/kernel-operational-reference-core-v1.schema.json',
   'docs/contracts/fixtures/kernel-operational-reference-closure-v1.json',

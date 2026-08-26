@@ -47,7 +47,7 @@ const PACKAGE_FILES = [
   'shape.py', 'state.py',
 ];
 const POLICY_SHA256 =
-  '7f72243aab82625e75f0b0da9823bbd76d083dc39365dad8795ed526b11d9a54';
+  'bdd9034e83572ae0cb269a9de918df2021025580b7382b8825571335af6d1bac';
 const SUCCESS_MARKER =
   'STRUCTURALLY_VALID_AUTHENTICATED_ADR_LIFECYCLE_V1_CANDIDATE '
   + '(declared exact bytes/digests/relations only; no Ed25519, external-root, '

@@ -8,7 +8,7 @@ from local_go_package_impact_prescan_contract import (
 )
 
 POLICY_RELATIVE = "engineering/governance-contracts.yml"
-POLICY_SHA256 = "7f72243aab82625e75f0b0da9823bbd76d083dc39365dad8795ed526b11d9a54"
+POLICY_SHA256 = "bdd9034e83572ae0cb269a9de918df2021025580b7382b8825571335af6d1bac"
 POLICY_HEADER = {
     "status": "active_contract",
     "runtime_binding": (

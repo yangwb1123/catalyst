@@ -44,8 +44,8 @@ MANIFEST_SHA256 = "40d1fa34a2fc9b31856d3f16edd1cc346f47d0b447040539b667279f0f673
 CAPSULE_SHA256 = "f02c172fb5d65a36841361a9969dd8ad79eae08c548d1c6d0bbea5a564276b59"
 BRANCH_SHA256 = "4442cf99caa21eda32a1c4062cfe66b333dff5188f4b818a9c69bf5cb829949a"
 CLOSURE_SHA256 = "38f14574e9a9531371d55800f1f77bbdb79648a121c0f774a2a9c0083cf13497"
-PYTHON_MANIFEST_SHA256 = "353c2cce2251225872fe672141e332a30a42eda2f6e37c9df423b246f351c2cc"
-CORE_MANIFEST_SHA256 = "358b6e330789c123cbec6c23e51179f1b82de4ca88af0cb25e7c4ce1bf1cf45f"
+PYTHON_MANIFEST_SHA256 = ("70f39094ce06f9de6f44f92ac818e3afc18435d2138f4616480cdacbc25dbb52")
+CORE_MANIFEST_SHA256 = ("e101e5132cef188f2df387f17662983fc20439024b87ef822d6e8469ce383219")
 GO_MANIFEST_SHA256 = "5afddbe8ba871c41c7d4a2ff820309be67c589ba56b8227d7e4e34c6d9f570af"
 RUST_MODULE_MANIFEST_SHA256 = "6cab30aca92abe0ddd863bf5b9c88132f9010e466f65b9d83e65124635107caf"
 PYTHON_SHA256 = {
@@ -53,15 +53,15 @@ PYTHON_SHA256 = {
     f"{PYTHON_PACKAGE}/branch.py": "2d60f60e3bebe28a476e45a9690dcb1d26e0bd497b37ac443748a246d6aa200f",
     f"{PYTHON_PACKAGE}/capsule.py": "2134da3b01f726f42ae39ded2b97b0b11deb17d4a4e8d1060c8d53280421f368",
     f"{PYTHON_PACKAGE}/closure.py": "af44e9286ae92708f5bd0f428d1e05b5515fbed857fda37807390492229c3817",
-    f"{PYTHON_PACKAGE}/codec.py": "66f322169b8e79e76ab06b64785d7970587e7a9ddcb946b0d91591021bd982c0",
+    f"{PYTHON_PACKAGE}/codec.py": "5aae4591a9f7d34b4114755aa99fbf9fdb1ddb86042896d5d204e685cb721391",
     f"{PYTHON_PACKAGE}/constants.py": "e8861e4ac240fd7e1d66f9f9714c44851b96b35ff0efca44c607c09fa265ca37",
     f"{PYTHON_PACKAGE}/fixture.py": "cd16fac5ded67a19be9b73c78645780fb49b46b88f9aac7a555beef7a175d1cc",
     f"{PYTHON_PACKAGE}/manifest.py": "0f667a2ff6de512984c2cc54161e4b6a62552e7ca82e3634212238829bad28c1",
     f"{PYTHON_PACKAGE}/shape.py": "392abeb6bc6496d3d40d3fc60e7017cc76bc486480aad02d427195be8110d41d",
     CHECKER: "4680982f7e5c29a9df515a5672a73fbccd71dd75b544e5f75561f274bc1c31e0",
-    PYTHON_TESTS[0]: "1477af13b229395c277f9c025134ea4c4e5ac5da9fd2696e6272bd9fd43afec2",
+    PYTHON_TESTS[0]: "a155abbdbca4b7eaeb0ed7e6056f90cf7ec0637d2edfb853c8e3baf45f7f9b5f",
     PYTHON_TESTS[1]: "d75db786409da35558a1a950892d1ab7c3f8c04983346bc94a066bf6f06fe4ac",
-    PYTHON_TESTS[2]: "862a32d02ccc92f57b37a7dffb85260b5ba6010110784df5a1a74cf46472d727",
+    PYTHON_TESTS[2]: "4f8c9551a72859046a499958b02ab340a610a05a03b2b137a1d1cc650ee6aeaf",
 }
 CORE_SHA256 = {SEMANTIC_DECISION: SEMANTIC_DECISION_SHA256, SCHEMA: SCHEMA_SHA256,
                GOLDEN: GOLDEN_SHA256, **PYTHON_SHA256}
@@ -146,7 +146,7 @@ CONTRACT = {
         "adds_registry_scope_kind_evaluator_producer_or_runtime_profile": False,
     },
     "completion": {
-        "decision_capsule_structural_replay_repository_slice_complete": False,
+        "decision_capsule_structural_replay_repository_slice_complete": True,
         "broader_adr_0038_complete": False,
         "decision_capsule_complete": False,
         "authorized_transaction_spec_complete": False,
@@ -448,8 +448,9 @@ def roadmap_issues(repo_root):
         return []
     relative = "docs/design/ai-engineering-os/implementation-roadmap.md"
     expected = (
-        "- [ ] 交付 Decision Capsule structural replay repository slice（structural only）："
-        "分发 ADR-0092 四对象 pure validate/reseal/compare closure；"
+        "- [x] 交付 Decision Capsule structural replay repository slice（structural only）："
+        "分发 ADR-0092 四对象 pure validate/reseal/compare closure；仅完成 source-only structural candidate，"
+        "不包含 runtime、authority、persistence、PDP、controller 或 Reflection consumer；"
     )
     try:
         text = read_regular_file(repo_root / relative, relative).decode()
@@ -458,7 +459,7 @@ def roadmap_issues(repo_root):
     entries = [line for line in text.splitlines()
                if "Decision Capsule structural replay repository slice" in line]
     issues = [] if entries == [expected] else [
-        f"{relative}: Decision Capsule structural replay item must remain one exact pending item"]
+        f"{relative}: Decision Capsule structural replay item must remain one exact completed item"]
     required_open = ("完成 Governance Kernel/PDP", "DecisionCapsule 与 AuthorizedTransactionSpec",
                      "DecisionTransaction 与有界 rolling controller")
     if any(not any(line.startswith("- [ ]") and marker in line

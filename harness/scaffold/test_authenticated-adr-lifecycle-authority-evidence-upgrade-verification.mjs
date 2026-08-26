@@ -65,7 +65,7 @@ const POLICY = join('.agent', 'engineering', 'governance-contracts.yml');
 const MUTATION_TARGET = join('harness', 'governance_engineering',
   'authenticated_adr_lifecycle_authority_evidence.py');
 const V34_POLICY_SHA256 =
-  '96fe6e2f0cfff7f7c89108367ab551254738fbbcc8ff3087d2e7a633ab668dbf';
+  'c9cf65ac22da1172d2d397c2530ce1e2b5b353e6b5dca00fa80f7d2fa30b4e48';
 const V35_SURFACE_MARKERS = [
   'authenticated_adr_lifecycle_authority_evidence',
   'authenticated_adr_lifecycle_v1_go_authority',
@@ -168,7 +168,7 @@ function projectPolicyV34(text) {
 
 function projectRegistryOwnerV34(text) {
   return text.replace(
-    '6e768241b583ce96419974e7cf4051eb9196a1d7082f16b3a8fb12bcbf4762fb',
+    '5728a84f7668a7d13b089ea0869c29058aa66235b56aa235ae4c3c0621b03796',
     V34_POLICY_SHA256,
   ).replace(
     '        "structural_candidate_source_distribution_only_with_catalyst_repository_"\n'

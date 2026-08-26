@@ -39,7 +39,7 @@ const SUCCESS_MARKER = 'STRUCTURALLY_VALID_AUTHENTICATED_ADR_APPROVAL_V1_CANDIDA
   + 'acceptance, persistence, effect, root-pin, time-currentness, '
   + 'revocation-currentness, CAS, or durability attestation)';
 const POLICY_SHA256 =
-  '7f72243aab82625e75f0b0da9823bbd76d083dc39365dad8795ed526b11d9a54';
+  'bdd9034e83572ae0cb269a9de918df2021025580b7382b8825571335af6d1bac';
 
 const SOURCE_SHA256 = new Map([
   [ADR_0079, '087eb6f7e669c027802c0f1822c8091d2b2cfb405e72186a430e24dcfd34d194'],
@@ -53,7 +53,7 @@ const SOURCE_SHA256 = new Map([
   [join('harness', 'authenticated_adr_approval_contract', 'authority.py'),
     '5bcb5e7baf71dd9ca67a38e953ffe308a231d32213ad93355ade8d957dcbf0f7'],
   [join('harness', 'authenticated_adr_approval_contract', 'canonical.py'),
-    'd116e8c81a1d19703d5f7d9052252f3f8e62a823c44d3926ad5d89fa610a8493'],
+    '7893d36880a3aea203072f31d278a08334c0bb02a4f74bac05c39501bc2d8ed6'],
   [join('harness', 'authenticated_adr_approval_contract', 'constants.py'),
     'e88eee438d57251c22a91b20cb0b1ca2c7810e006e1b717d21e2c20328106af2'],
   [join('harness', 'authenticated_adr_approval_contract', 'contract.py'),

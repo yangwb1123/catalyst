@@ -23,6 +23,7 @@ import {
   categorize, withCategory, APPLICABLE, INAPPLICABLE, NO_TOOL, ROOT, run as runCommand,
 } from './acceptance-kernel.mjs';
 const {
+  ACCEPTANCE_CRITERIA,
   decide,
   PASS,
   FAIL,
@@ -41,19 +42,16 @@ const noTool = () => ({ ok: false, code: 127, out: 'tool unavailable' });
 // then applies the given overrides — so a test can isolate ONE criterion's
 // status without tripping the P10 "all six load-bearing must PASS" guard.
 const allPass = (overrides = []) => {
-  const base = LOAD_BEARING.map((criterion) => ({ criterion, status: PASS, detail: 'x' }));
-  for (const o of overrides) {
-    const hit = base.find((r) => r.criterion === o.criterion);
-    if (hit) hit.status = o.status;
-    else base.push({ criterion: o.criterion, status: o.status, detail: 'x' });
-  }
-  return base;
+  const changed = new Map(overrides.map((item) => [item.criterion, item.status]));
+  return ACCEPTANCE_CRITERIA.map((criterion) => withCategory({
+    criterion, status: changed.get(criterion) ?? PASS, detail: 'x',
+  }));
 };
 
 const ACCEPT_PATH = join(dirname(fileURLToPath(import.meta.url)), 'acceptance.mjs');
 
 // Helper: build a result row the way the gate's probes do.
-const row = (criterion, status) => ({ criterion, status, detail: 'x' });
+const row = (criterion, status) => withCategory({ criterion, status, detail: 'x' });
 
 // --- smoke: importing acceptance.mjs must have no side effects (main not run) -
 test('importing acceptance.mjs produces no output and exits 0 (no side effects)', () => {
@@ -75,6 +73,18 @@ test('acceptance command boundary suppresses Python bytecode in all descendants'
   assert.equal(res.out, '1');
 });
 
+test('canonical governance probe emits no exact-package Python cache', () => {
+  const caches = [
+    'decision_' + 'capsule_contract', 'kernel_decision_contract',
+    'kernel_operational_contract', 'legacy_governance_' + 'read_import_contract',
+  ]
+    .map((name) => join(ROOT, 'harness', name, '__pycache__'));
+  assert.deepEqual(caches.filter(existsSync), []);
+  assert.equal(acc.probeArch().status, PASS);
+  assert.deepEqual(caches.filter(existsSync), []);
+  assert.match(acc.probeArch.toString(), /run\('python3', \[join\(HARNESS_DIR, 'check\.py'\)\]\)/);
+});
+
 test('portable Skill Python is not misclassified as unowned application source', () => {
   const dir = mkdtempSync(join(tmpdir(), 'acceptance-skill-source-'));
   try {
@@ -93,7 +103,7 @@ test('portable Skill Python is not misclassified as unowned application source',
 });
 
 // --- integration: CLI exit must equal the pure lifecycle-aware verdict --------
-// SKIPPED when FORGE_ACCEPT_INNER is set: that env flag means this suite is
+// SHORT-CIRCUITED when FORGE_ACCEPT_INNER is set: that env flag means this suite is
 // itself running *inside* acceptance.mjs's probeTests() glob run. Re-spawning
 // the whole acceptance gate from there would recurse (acceptance -> glob ->
 // test_acceptance -> acceptance -> ...) and cost ~4x redundant nested gate runs.
@@ -107,9 +117,13 @@ test('portable Skill Python is not misclassified as unowned application source',
 // SOURCE repo's app names (go-taskd / url-shortener) or environment (go
 // installed), or it would falsely fail when copied to a scaffold that ships only
 // examples/starter/ — turning copy-anywhere into a lie patched over by the INNER
-// skip. (The skip below still prevents recursion when this runs inside
+// guard. (The branch below still prevents recursion when this runs inside
 // acceptance.mjs's own probeTests glob; it is not what makes the asserts portable.)
-test('acceptance CLI exit matches its lifecycle-aware pure verdict', { skip: Boolean(process.env.FORGE_ACCEPT_INNER) }, () => {
+test('acceptance CLI exit matches its lifecycle-aware pure verdict', () => {
+  if (process.env.FORGE_ACCEPT_INNER) {
+    assert.equal(process.env.FORGE_ACCEPT_INNER, '1');
+    return;
+  }
   const res = spawnSync(process.execPath, [ACCEPT_PATH, '--json'], { encoding: 'utf8' });
   assert.ok([0, 1].includes(res.status), `gate must return a verdict exit; got ${res.status}\n${res.stderr}`);
   const rows = JSON.parse(res.stdout);
@@ -304,8 +318,7 @@ test('judgeCoverage honors the resolved threshold at the PASS/FAIL boundary (60 
 test('coverage is not load-bearing and a pre-production no_tool N/A is exempt', () => {
   // Lifecycle invariant: mvp follows the Go policy's missing-tool exemption.
   assert.ok(!LOAD_BEARING.includes('coverage'), 'coverage must stay non-load-bearing');
-  const base = LOAD_BEARING.map((criterion) => ({ criterion, status: PASS, detail: 'x' }));
-  base.push({ criterion: 'coverage', status: NA, detail: 'no runnable coverage tool' });
+  const base = allPass([{ criterion: 'coverage', status: NA }]);
   assert.equal(decide(base, 'mvp').accepted, true, 'mvp N/A coverage must not block acceptance');
 });
 
@@ -344,8 +357,7 @@ test('SCA no_tool N/A is exempt before production and blocks production', () => 
   // immature projects may lack a repository-specific advisory snapshot. The
   // lifecycle policy nevertheless requires that tool/database for production.
   assert.ok(!LOAD_BEARING.includes('dependency_vulnerabilities'));
-  const base = LOAD_BEARING.map((criterion) => ({ criterion, status: PASS, detail: 'x' }));
-  base.push({ criterion: 'dependency_vulnerabilities', status: NA, detail: 'no advisory DB' });
+  const base = allPass([{ criterion: 'dependency_vulnerabilities', status: NA }]);
   assert.equal(decide(base, 'mvp').accepted, true, 'immature projects may exempt missing SCA data');
   const production = decide(base, 'production');
   assert.equal(production.accepted, false, 'production must have an SCA database');
@@ -356,8 +368,7 @@ test('decide() REJECTS when a SCA vuln is found (DB present + vulnerable dep -> 
   // When an advisory DB IS supplied and a dependency matches a vulnerable range,
   // probeSCA returns FAIL and decide()'s normal fail path must block the accept —
   // the honesty mirror of N/A: present+vulnerable BLOCKS, absent stays N/A.
-  const base = LOAD_BEARING.map((criterion) => ({ criterion, status: PASS, detail: 'x' }));
-  base.push({ criterion: 'dependency_vulnerabilities', status: FAIL, detail: 'sca: 1 vulnerable dep' });
+  const base = allPass([{ criterion: 'dependency_vulnerabilities', status: FAIL }]);
   const v = decide(base);
   assert.equal(v.accepted, false, 'a SCA FAIL must block accept');
   assert.match(v.line, /dependency_vulnerabilities failed/);
@@ -441,6 +452,20 @@ test('decide() hard-rejects an unknown status value', () => {
   const v = decide(allPass([{ criterion: 'coverage', status: 'MAYBE' }]));
   assert.equal(v.accepted, false, 'an unrecognized status must be a hard reject');
   assert.match(v.line, /coverage bad status/);
+});
+
+test('decide() requires one exact row for every acceptance criterion', () => {
+  const missing = allPass().filter((item) => item.criterion !== 'build');
+  assert.match(decide(missing).line, /build absent/);
+  const duplicate = allPass();
+  duplicate.push({ ...duplicate[0] });
+  assert.match(decide(duplicate).line, /test_pass duplicated/);
+  const extra = allPass();
+  extra[0] = { ...extra[0], accepted: true };
+  assert.match(decide(extra).line, /non-exact fields/);
+  const mismatch = allPass();
+  mismatch[0] = { ...mismatch[0], category: NO_TOOL };
+  assert.match(decide(mismatch).line, /status\/category mismatch/);
 });
 
 test('decide() REJECTS empty results (zero criteria prove nothing)', () => {

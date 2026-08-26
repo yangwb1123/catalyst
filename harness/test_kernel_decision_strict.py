@@ -140,7 +140,8 @@ class KernelDecisionStrictTest(unittest.TestCase):
             seal_closure(candidate)
 
     def test_checker_failure_is_exit_two_silent_stdout_no_traceback(self) -> None:
-        with tempfile.NamedTemporaryFile(dir=ROOT, suffix=".json") as stream:
+        with tempfile.NamedTemporaryFile(suffix=".json") as stream:
+            self.assertNotIn(ROOT, Path(stream.name).resolve().parents)
             stream.write(b"{}")
             stream.flush()
             environment = dict(os.environ)

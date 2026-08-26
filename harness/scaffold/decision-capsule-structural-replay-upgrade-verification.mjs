@@ -38,15 +38,16 @@ const IMPLEMENTATION_ROADMAP = join(
   'docs', 'design', 'ai-engineering-os', 'implementation-roadmap.md');
 const ROADMAP_ITEM =
   '交付 Decision Capsule structural replay repository slice（structural only）：'
-  + '分发 ADR-0092 四对象 pure validate/reseal/compare closure；';
+  + '分发 ADR-0092 四对象 pure validate/reseal/compare closure；'
+  + '仅完成 source-only structural candidate，不包含 runtime、authority、persistence、PDP、controller 或 Reflection consumer；';
 
 // Filled from the independently frozen Registry-v39/governance source bytes.
 const POLICY_SHA256 =
-  '7f72243aab82625e75f0b0da9823bbd76d083dc39365dad8795ed526b11d9a54';
+  'bdd9034e83572ae0cb269a9de918df2021025580b7382b8825571335af6d1bac';
 const CORE_EXACT16_SHA256 =
-  '358b6e330789c123cbec6c23e51179f1b82de4ca88af0cb25e7c4ce1bf1cf45f';
+  'e101e5132cef188f2df387f17662983fc20439024b87ef822d6e8469ce383219';
 const EXACT19_SHA256 =
-  '10eb6393d0fd7c96b3c92af85fad548a7331a4fce674d86c2e8a7c8b0e622479';
+  '4d95053645556d64b7449e467df4c3372a07e1c492939b542e6602db32ab3fd8';
 const SOURCE_SHA256 = new Map([
   [ADR_0092, '89c5fb87b1abdd7f8b3fe3cf7bc8759aa43739dfad5f4c79102ba2a26bb4e54b'],
   [join('docs', 'contracts',
@@ -62,7 +63,7 @@ const SOURCE_SHA256 = new Map([
   [join(PACKAGE, 'closure.py'),
     'af44e9286ae92708f5bd0f428d1e05b5515fbed857fda37807390492229c3817'],
   [join(PACKAGE, 'codec.py'),
-    '66f322169b8e79e76ab06b64785d7970587e7a9ddcb946b0d91591021bd982c0'],
+    '5aae4591a9f7d34b4114755aa99fbf9fdb1ddb86042896d5d204e685cb721391'],
   [join(PACKAGE, 'constants.py'),
     'e8861e4ac240fd7e1d66f9f9714c44851b96b35ff0efca44c607c09fa265ca37'],
   [join(PACKAGE, 'fixture.py'),
@@ -73,18 +74,18 @@ const SOURCE_SHA256 = new Map([
     '392abeb6bc6496d3d40d3fc60e7017cc76bc486480aad02d427195be8110d41d'],
   [CHECKER, '4680982f7e5c29a9df515a5672a73fbccd71dd75b544e5f75561f274bc1c31e0'],
   [join('harness', 'test_decision_capsule_contract.py'),
-    '1477af13b229395c277f9c025134ea4c4e5ac5da9fd2696e6272bd9fd43afec2'],
+    'a155abbdbca4b7eaeb0ed7e6056f90cf7ec0637d2edfb853c8e3baf45f7f9b5f'],
   [join('harness', 'test_decision_capsule_replay_graph.py'),
     'd75db786409da35558a1a950892d1ab7c3f8c04983346bc94a066bf6f06fe4ac'],
   [join('harness', 'test_decision_capsule_strict.py'),
-    '862a32d02ccc92f57b37a7dffb85260b5ba6010110784df5a1a74cf46472d727'],
+    '4f8c9551a72859046a499958b02ab340a610a05a03b2b137a1d1cc650ee6aeaf'],
   [ADR_0093, '6e33f2262a4037a1abb474df3f55f057cb36d6e2ab4fb2d41802da902d11a6eb'],
   [join('harness', 'governance_engineering',
     'decision_capsule_structural_replay_candidate.py'),
-  '4f406c46387a067c5ad9d53ef1dd297f717c766e4c2e45ec527d11bd27681fa0'],
+  '0897c1e0e6019a010fb11b3422f807eafaf58379acfc60ef5cf164c73080dbc1'],
   [join('harness', 'governance_engineering',
     'test_decision_capsule_structural_replay_candidate.py'),
-  '752564163bcc5afa56379748c3d3cadcfe816dd5c4b61e7defdd665301b6566c'],
+  'e190200624a240acc053ef953cddfefb5797209b4acd485edd4bce95ed2673d0'],
 ]);
 const DECISION_PINS = [
   [ADR_0092, 'ADR-0092',
