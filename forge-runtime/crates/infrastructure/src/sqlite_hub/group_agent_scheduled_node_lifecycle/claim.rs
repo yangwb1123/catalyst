@@ -141,9 +141,10 @@ fn insert(
     let auth_digest = digest(&claim.authorization_sha256)?;
     let provider_digest = digest(&claim.provider_request_sha256)?;
     let lane_digest = digest(&claim.project_lane_sha256)?;
+    let insert_sql = INSERT_SQL.replace("{TABLE}", TABLE);
     transaction
         .execute(
-            INSERT_SQL,
+            &insert_sql,
             params![
                 claim.dispatch_id,
                 claim.graph_run_id,

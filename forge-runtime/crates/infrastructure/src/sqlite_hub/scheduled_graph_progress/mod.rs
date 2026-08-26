@@ -2,6 +2,14 @@ mod node;
 mod read;
 
 #[cfg(test)]
+mod atomicity_terminal;
+#[cfg(test)]
+mod bounds;
+#[cfg(test)]
+mod bounds_support;
+#[cfg(test)]
+mod corruption_tests;
+#[cfg(test)]
 mod tests;
 
 #[cfg(test)]

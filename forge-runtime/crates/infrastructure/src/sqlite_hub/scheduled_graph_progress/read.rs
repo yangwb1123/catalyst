@@ -12,6 +12,16 @@ use super::super::{
     scheduled_graph_progress::node::{ObservedProgressCounts, project_nodes},
 };
 
+#[cfg(test)]
+#[path = "atomicity.rs"]
+mod atomicity;
+#[cfg(test)]
+#[path = "atomicity_authorization.rs"]
+mod atomicity_authorization;
+#[cfg(test)]
+#[path = "atomicity_fixture.rs"]
+mod atomicity_fixture;
+
 pub(super) fn snapshot(
     connection: &mut Connection,
     graph_run_id: &str,
@@ -19,18 +29,34 @@ pub(super) fn snapshot(
     let transaction = connection
         .transaction_with_behavior(TransactionBehavior::Deferred)
         .map_err(read_error)?;
-    let snapshot = build(&transaction, graph_run_id)?;
+    let snapshot = build_after_source(&transaction, graph_run_id, || Ok(()))?;
     transaction.commit().map_err(read_error)?;
     Ok(snapshot)
 }
 
-fn build(
+#[cfg(test)]
+fn snapshot_after_source(
+    connection: &mut Connection,
+    graph_run_id: &str,
+    after_source: impl FnOnce() -> Result<(), HubStoreError>,
+) -> Result<ScheduledGraphProgressSnapshot, HubStoreError> {
+    let transaction = connection
+        .transaction_with_behavior(TransactionBehavior::Deferred)
+        .map_err(read_error)?;
+    let snapshot = build_after_source(&transaction, graph_run_id, after_source)?;
+    transaction.commit().map_err(read_error)?;
+    Ok(snapshot)
+}
+
+fn build_after_source(
     connection: &Connection,
     graph_run_id: &str,
+    after_source: impl FnOnce() -> Result<(), HubStoreError>,
 ) -> Result<ScheduledGraphProgressSnapshot, HubStoreError> {
     let run = group_agent_graph_run::read::inspect_in_snapshot(connection, graph_run_id)?;
     let graph = group_agent_graph::read::inspect_in_snapshot(connection, &run.run.graph_id)?;
     let schedule = required_schedule(connection, &run, &graph)?;
+    after_source()?;
     let (nodes, observed) = project_nodes(connection, &run, &graph, &schedule)?;
     validate_stored_counts(connection, graph_run_id, observed)?;
     seal_snapshot(schedule, nodes)
