@@ -224,7 +224,7 @@ ADR 0005 的 Deploy/Rollback 仍不做远程动作，但本地边界已从“目
 
 ADR 0006 的 Agent Loop 与 ADR 0007 的本地 Conversation/Prompt ledger 已接成最小可用的 Project Run。SQLite schema 从 v1 原子迁移到 v2，新增 execution-bound `runs`、append-only `run_events`、增量语义 cursor 与 Run-assistant 关联；Run 必须绑定真实 Project Conversation、既有 user Prompt、provider/model、system Prompt、exact read allowlist 与全部 limits。事件按 `(run_id, seq)` 连续追加，同事件重试幂等、异内容冲突；SQLite 先提交、JSONL 后输出，`tool_started` 在工具效果前持久化。每次 append 通过同事务 cursor 做 O(1) 语义推进，完整 inspection 在同一 SQLite snapshot 内读取 Run/cursor/events/bound Prompt，并从 durable prefix 重建 cursor 比对；journal 仍有事件数、单事件与总字节硬上限。
 
-`run start/list/show` 已跨进程工作。新 Run 最多加载所选 user Prompt 之前 16 条完整 lowercase `user`/`assistant` causal 消息，历史正文总量严格限制为 512 KiB；Run answer 永远锚定原 user，即使晚于后续 user 才 crash-repair，多 Run 同源也会保留 source+最新 bounded answers，损坏关联失败关闭。孤立 assistant 前缀会丢弃，当前 Prompt 只追加一次。journal 严格验证 user/turn/tool/result/terminal 全状态机；`run_finished.completed` 必须等于最后 committed、无 tool call 的 assistant。完成写回由 validated Run 授权，在一个事务内创建 assistant Prompt 与唯一关联，不再依赖可伪造的内部 key 约定。相同终态重试在 API key preflight 前完成，不调用 provider/tool，只修复缺失 writeback；incomplete 与 pending-tool 失败关闭。
+`run start/list/show` 已跨进程工作。新 Run 最多加载所选 user Prompt 之前 16 条完整 lowercase `user`/`assistant` causal 消息，历史正文总量严格限制为 512 KiB；Run answer 永远锚定原 user，即使晚于后续 user 才 crash-repair，多 Run 同源也会保留 source+最新 bounded answers，损坏关联失败关闭。孤立 assistant 前缀会丢弃，当前 Prompt 只追加一次。journal 严格验证 user/turn/tool/result/terminal 全状态机；`run_finished.completed` 必须等于最后 committed、无 tool call 的 assistant。完成写回由 validated Run 授权，在一个事务内创建 assistant Prompt 与唯一关联，不再依赖可伪造的内部 key 约定。相同 `RunOutcome::Completed` 终态重试在 API key preflight 前完成，不调用 provider/tool，只修复缺失 writeback；`RunOutcome::Failed`、`RunOutcome::Cancelled`、`RunOutcome::LimitExceeded`、incomplete 与 pending-tool 均不进入这条修复路径。
 
 默认路径仍是 deterministic/offline。显式 `--live` 才启用 OpenAI Responses streaming adapter，并要求调用者显式提供 CLI idempotency key 与环境中的 `OPENAI_API_KEY`；API key 不进 argv、Hub 或错误。live 默认零工具/零 WorkspaceRead，repeatable `--allow-read` 只授权 exact relative file。adapter 只接受固定 HTTPS endpoint，禁 redirect 与隐式 retry，校验 SSE content type，并限制 total bytes/frame/buffer/pending call/timeout/token；`store:false` 在 tool turns 间原序回放完整 validated reasoning/function/message output items，保留 encrypted content、function identity/status 与 assistant phase，并用 projection equality 防重复/漂移。streamed message/function item identity 必须与 terminal output 精确一致；`commentary` 只保留在 raw context，`final_answer` 与 legacy null/omitted phase 保持实时 delta。只有 `max_output_tokens` incomplete 映射为正常 length limit，content filter、未知 reason、矛盾 status 均失败关闭，任何 incomplete call 都不可执行。后到终态失败不能撤回已发文本，但不会 commit Assistant 或授权工具。loopback 两 POST 测试覆盖 reasoning→commentary→function call→tool output→final answer，另有 refusal/failed/transport/超限/脱敏反例；本轮没有发起真实付费模型请求。没有写/replace/Shell/process/network 工具或 OS sandbox。
 
@@ -1745,7 +1745,7 @@ upgrade 3/3 与 `git diff --check` 均通过；独立最终复审为 CLEAN。验
 test-source profile，不改变前述 UNKNOWN/非 authority 边界，也不勾选 Wave 2 多 surface extractor 总项。
 
 ## 下一前沿(需外部资源 / 后续阶段 / 投机增强 / 明确非目标,非本环境可完整验证)
-- **Graph 下一协议切片**:SQLite v17–v24 已交付 successor candidate、per-node request/lifecycle、receipt/content dataflow、wave-ready/admit、本地 hard-crash adjudication与 8 MiB successor candidate 持久化上限；下一步是顶层整图执行循环、并发 wave 的失败传播/恢复以及安全 resume/branching。不得把当前逐节点 operator 驱动或 Hub-local single-consumption 冒充远程 exactly-once。
+- **Graph 下一协议切片**:SQLite v17–v24 已交付 successor candidate、per-node request/lifecycle、receipt/content dataflow、wave-ready/admit、本地 hard-crash adjudication与 8 MiB successor candidate 持久化上限；下一步是顶层整图执行循环、并发 wave 的失败传播/自动恢复以及任意 event-prefix branching。不得把当前逐节点 operator 驱动或 Hub-local single-consumption 冒充远程 exactly-once。
 - **真点火** `--agent-cmd=claude`:**multi-agent running to completion 已坐实**(Sprint 25:真 claude 多-agent 跑到 converge MET,增量级 + 版本级)。完整旋钮:四维资源护栏 + 成本三维(phase/时间/美元)+ 任务注入 + 写权限 + 模型路由 + 工作目录 + retry + loop-back;诚实分工:agent 自治增量绿、人确认版本竣工。docs/ignition.md 有完整配方 + 实测
 - **外部资源状态**:~~SCA/CVE 漏洞库~~、~~Firecracker 主机前提~~与~~LiteLLM 双后端主机验证~~均已解决；Go Docker/Firecracker runner 也已接入执行器。剩余项是完整 coding-workspace 交换/隔离硬化与生产 provider registry/policy，它们属于后续产品契约，不再是本机外部资源阻塞。〔真 cost/latency telemetry **已达成**——S26 真 claude 补齐真 token/cost/latency 数据,scorecard 三维真值落盘〕
 - **投机增强(做即违反反 gold-plating 纪律)**:embedding 语义检索(TF-IDF 已工作,增量仅真点火时体现)
@@ -1977,8 +1977,72 @@ ADR-0090 exact16 dependency-free Python core、Catalyst exact13 Go、flat exact9
 
 正式 Candidate 验收为 **ACCEPTED**（9 pass、0 fail、2 个诚实 N/A）：Python 92 files / 1323 tests，Node 32 files / 460 tests，Go 2466 tests，Rust 五组 observed tests 334 / 54 / 334 / 248 / 164，examples 22 / 47，真实覆盖率 83.45830729709088%。隔离凭证日志 `/tmp/forgeos-adr0091-candidate-acceptance-rerun.log` SHA-256 为 `9892543e5f82bcf82d10e1ea1bed4ce98c07709e4e729ceb8423dae12d6897b3`；pre/post provenance 四项全等。晋级后 Registry v38 policy physical SHA-256 为 `63b44231ae33a9788177db0d348b94d76ef368a8bcec2c9d67f4dabc7dace271`，decision governance module 为 `a8d4ff8c2085b990bfb6c827968fc0402f5fde886f04611d3bac6aad0b07306b`，exact19 aggregate 为 `ad7220c2c02012cab4eb4a36adc0419142b9bbc7612496165197ea994e217b46`；ADR-0090/0091 bytes 与 exact16 均未改变。
 
-### Sprint 131 — Registry v39 Decision Capsule structural replay（CHECKED Candidate；PENDING acceptance）
+### Sprint 131 — Registry v39 Decision Capsule structural replay（✅ DONE；Proposed-only）
 
 ADR-0092 exact16 dependency-free Python core、Catalyst exact15 Go、exact14 Rust parity 与 ADR/Schema/golden 已冻结；共享 Rust `lib.rs` 只要求 registration 恰好一次，不整文件 pin。ADR-0093 仅登记 `StructuralReplayManifest → DecisionCapsule → EvaluationBranch → StructuralReplayClosure` 的 caller-supplied validate/reseal/compare DAG；专用的后挂载 ReflectionReport refs unresolved 且 outer-only，上游 ArtifactRefs 保持 opaque/uninterpreted。Registry v39 保持完整 scope digest，detector 精确运行 pinned-golden argv；source distribution 为 Python exact19，绝不复制 Go/Rust 或 runtime registration。
 
-32 项 attestations、effect replay/history rewrite 与七项 completion 全 false；无 Skill、route、runtime、model/rule/world-state/history/Reflection consumer、persistence、PDP/controller。ADR-0092/0093 始终 Proposed/null；repository-slice roadmap checkbox 保持 `[ ]`，等待 independent review、fresh/upgrade scaffold 与正式 `forge accept`。ADR-0038 仍 ADOPTED-PARTIAL，完整 DecisionCapsule、AuthorizedTransactionSpec、authenticated PDP 与 rolling controller 保持开放。
+32 项 attestations、effect replay/history rewrite 与 replay controls 保持 false；窄 repository-slice completion claim 在正式验收后为 true，其余六项 broader completion claims 保持 false。无 Skill、route、runtime、model/rule/world-state/history/Reflection consumer、persistence、PDP/controller。ADR-0092/0093 始终 Proposed/null；exact19 source-only distribution、independent review、fresh/legacy scaffold 与正式 `forge accept` 已完成，roadmap checkbox 已勾选。正式验收为 **ACCEPTED**（9 PASS、0 FAIL、2 honest N/A）。ADR-0038 仍 ADOPTED-PARTIAL，完整 DecisionCapsule、AuthorizedTransactionSpec、authenticated PDP 与 rolling controller 保持开放。
+
+### Sprint 132 — Explicit durable Project Run resume（bounded runtime slice）
+
+交付 `forge-runtime` 的显式 `run resume RUN_ID`：从经过 `RunInspection` 校验的 durable journal 推导安全 continuation point，并恢复已持久化的 Conversation history、消息与运行计数。已提交的 `tool_started` effect 永不自动重放；`tool_finished` 后仅补写缺失的 Tool message，未开始的 tool call 才允许继续执行，已提交 assistant answer 可补写 terminal。未决外部 effect、无 durable prefix 或 Project 绑定漂移均 fail closed，resume event 序号从 journal 尾部继续，成功后复用既有 assistant writeback。仅 `RunOutcome::Completed` 的已完成终态 Run 在 Project 绑定后进入 writeback-only recovery：它在 credential/provider/tool/history setup 前幂等 reconcile 已持久化 answer，不读取 workspace 内容；`RunOutcome::Failed`、`RunOutcome::Cancelled` 与 `RunOutcome::LimitExceeded` 终态仍拒绝 resume。
+
+恢复点保留 rejected batch 的 disposition：中断后的剩余调用继续以同一 code/message 拒绝，
+不会转成工具执行；最后一个 `tool_call_limit`/`cancelled` rejection 补齐受字节上限约束的
+Tool message 后直接写入对应 terminal outcome，不会错误进入新 turn。
+
+产品边界保持明确：这是 caller-triggered bounded recovery，不是 automatic retry、whole-Graph execution、remote sync、mutating tool 或 provider usage 历史伪造，也不隐式创建分支。domain resume-point 单测、CLI 跨进程回归（不重复工具、pending effect refusal、Project binding）与 `cargo test` 聚焦套件通过。
+
+### Sprint 133 — Bounded Project Run explain query
+
+交付只读 `run explain RUN_ID`：从同一份经过 `RunInspection` 校验的 durable journal 生成
+content-free evidence summary，包含事件支持的事实、已提交消息的 role/bytes/SHA-256、
+工具 started/finished/rejected 生命周期、显式 workspace read allowlist、可继续性和
+open assumptions。completed-terminal Run 的 continuation 显示为 writeback-only recovery；failed、
+cancelled 与 limit-exceeded terminal Run 均显示为不可 resume；无 durable prompt 的 incomplete
+prefix、pending tool effect 分别报告不可安全继续和 operator review。查询不读取 workspace、
+不调用 provider/tool，并通过 existing-current immutable reader 打开 Hub，不创建、迁移、
+配置或写入 SQLite；不回显 Prompt/answer/tool output；preceding Conversation
+history 未被 Run v1 snapshot 绑定，Grant/Approval/PDP 仍明确是未交付的 authority boundary。
+Parser、terminal/incomplete/finished-tool/pending-tool CLI 回归、`cargo clippy` 已通过。
+Provider-controlled tool-call ID 不进入 explanation 明文，只保留长度/SHA-256；纯
+`tool_rejected` 调用纳入生命周期摘要，已完成但尚未 commit Tool message 的 output 以指纹呈现。
+人类输出显示 continuation 安全理由与去除 `assistant_delta` 分片噪声后的证据时间线。
+Human 输出同时显示消息/工具输出 hash、实际 allowlist 与 terminal outcome；provider-controlled
+工具名只显示受信标签或 `unrecognized` 及长度/SHA-256，配置路径均做 terminal-safe 转义。
+
+### Sprint 134 — Prepared Project Run restart
+
+交付 `forge-runtime --idempotency-key KEY -C PATH run restart SOURCE_RUN_ID`。应用层只接受
+经过同快照完整校验的 terminal source，并将其已持久化的 Project、Conversation、user Prompt
+与 exact execution configuration 物化为新的独立 Run。source 指纹与显式 key 通过域分隔
+SHA-256 稳定映射到专用 Run ID namespace；换 source 复用 key 会冲突，普通 begin 不能占用
+该 namespace。创建与 crash repair 共用既有 begin/event 精确重放契约，新 Run 只包含一个
+`run_started` seed，随后由 caller 显式执行 `run resume NEW_RUN_ID`。晚到精确重试根据目标
+journal 返回真实 `incomplete`、`pending_tool_effect` 或 `terminal` 状态，不伪报可恢复。
+
+准备阶段只解析并校验 Project，不读取 credential/workspace 内容，不构造
+provider/tool/transport，不访问 network，也不复制 source journal suffix、result 或 answer。
+Project binding 在写入前校验；非终态 source、source/key 漂移与跨操作 key ownership 均 fail
+closed，JSON 输出保持 content-free；新 seed 声明 `ready_to_resume`、`resume_required=true`、
+`external_effects=false`。restart 保持 independent rerun preparation 语义，不创建 lineage；
+root-input branch 与直接父系由 Sprint 135 的独立命令承载。
+
+### Sprint 135 — Queryable Project Run root-input branch
+
+交付 `forge-runtime --idempotency-key KEY -C PATH run branch PARENT_RUN_ID`：应用层只接受
+经过完整同快照验证的 terminal parent，并在 SQLite v28 的单个 `BEGIN IMMEDIATE`
+事务中原子创建 child Run、immutable direct-parent lineage 与恰好一个 fresh
+`run_started` seed。child 复用 parent 持久化的 Project、Conversation、user Prompt 与
+exact execution configuration，不复制 parent journal suffix、result、answer 或 tool events。
+
+branch identity 使用专用 digest domain 和 `run-branch-` namespace；同 parent/key 精确重放已
+提交 child/lineage/seed，换 parent 或跨 start/restart 操作复用 key 会冲突。lineage v1 固定
+`root_input` 与 source event seq 1，以 domain-separated SHA-256 绑定 exact parent Run/root
+event 及完整直接父系字段。读取时重验 parent terminal/root event、source digest 与 child 继承配置。
+
+`run lineage RUN_ID` 使用 existing-current immutable reader 返回 content-free direct-parent view，
+不迁移/写入 Hub，不展开 Prompt/event 正文或祖先链。branch 准备不读取 credential/
+workspace 内容，不构造 provider/tool/transport，不访问 network；child 只在 caller 随后
+显式执行 `run resume CHILD_RUN_ID` 时开始运行。context/workspace snapshot 均未绑定，
+任意 event-prefix branching 保持为后续独立协议。

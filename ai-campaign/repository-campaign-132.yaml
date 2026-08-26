@@ -1,0 +1,67 @@
+# Round 132: roadmap-driven improvement campaign (post ADR-0092/0093 acceptance).
+# Same mechanics as round 1 (repository-campaign.yaml) but every direction must
+# map to an explicit OPEN roadmap item in .agent/ROADMAP.md / ROADMAP.md or fix
+# a real gate/acceptance failure. No gold-plating.
+name: repository-improvements-132
+
+analysis:
+  jobs: 4
+  retries: 2
+  candidate_limit: 3
+  prompt: |
+    Analyze module '{module}' at {module_path} and its related interfaces in the repository.
+    Return ONLY a JSON array with at most {candidate_limit} high-value improvement directions, sorted by value.
+    Each object must contain: title, problem, value (1-10), risk_reduction (1-10), effort (1-10), confidence (1-10), evidence (array of existing file/symbol paths), and acceptance (array of testable checks).
+    evidence and acceptance MUST be JSON arrays of strings, e.g.:
+    {"title": "...", "problem": "...", "value": 7, "risk_reduction": 6, "effort": 2, "confidence": 8,
+     "evidence": ["internal/storage/local_read.go:42"], "acceptance": ["go test ./internal/storage -run TestX passes"]}
+    Do not modify code. Claims without repository evidence must be identified as proposed, not verified.
+    CONSTRAINT: each direction MUST map to an explicitly OPEN item in .agent/ROADMAP.md
+    (e.g. Wave 0F-B-3b full governance authority kernel, Wave 2 Impact Closure,
+    Wave 3 Engineering Memory, Wave 4-5 Capability Organization, Wave 6 Reflection,
+    G0 change-intake, ADR-0038 DecisionCapsule/AuthorizedTransactionSpec/PDP/controller)
+    or fix a real failing gate (forge accept / gate.mjs / arch-check / check.py).
+    In every object add "roadmap_ref": the exact open item title/line it maps to.
+    Reject directions that are already DONE in the roadmap, or invented gold-plating.
+
+discovery:
+  roots:
+    - forge-core
+    - forge-runtime
+    - harness
+  exclude:
+    - tests
+    - docs
+    - ai-batch
+    - ai-campaign
+    - reviews
+    - target
+    - node_modules
+    - vendor
+    - .git
+    - .github
+    - .agent
+    - __pycache__
+  max_depth: 1
+  fallback_top_level: true
+
+selection:
+  max_directions: 1
+  minimum_score: 0
+
+implementation:
+  pipeline: ai-campaign/repository-campaign-pipeline.yaml
+  requirement_stage: requirements
+  concurrency: 1
+  timeout: 14400
+  worktree_root: ai-campaign/worktrees
+
+state:
+  output_dir: ai-campaign/state
+  state_file: ai-campaign/state/state.jsonl
+  summary_file: ai-campaign/state/SUMMARY.md
+  line_max_bytes: 262144
+
+estimates:
+  analysis_minutes: 3
+  pipeline_minutes: 20

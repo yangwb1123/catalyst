@@ -9,7 +9,10 @@ ForgeOS 不替代 Claude Code / Codex / Gemini CLI / OpenCode / OpenHands ——
 
 - 设计与决策的唯一事实源:[`.agent/`](.agent/)
 - 工程红线(本仓库自身也遵守):[`.agent/AGENTS.md`](.agent/AGENTS.md)
-- 完整验收真相源:`node harness/acceptance.mjs`
+- 完整验收真相源:`node harness/acceptance.mjs`。正式验收在 Linux 上采用
+  descriptor-relative no-follow 遍历与覆盖整个探测窗口的独立文件事件日志；
+  要求初始 user namespace 与受信本地文件系统，无法提供这些保证时会
+  fail closed，不以路径级快照回退宣称正式通过
 - 快速编辑信号:`node harness/gate.mjs`
 - Go 编排/链状态/审批控制面:[`forge-core/`](forge-core/)
 - Rust 本地会话 Hub、durable Project Run 与默认离线/显式 live Agent Runtime:
@@ -35,6 +38,29 @@ provider、工具或 workspace，也不代表已经完成分析或讨论。
 可恢复的本地 execution receipt。这个首切片只验证冻结输入并持久化证据：
 不调用模型/provider，不读取 workspace，不开放工具或网络，也不产出分析、
 讨论或任务结论。
+中断的 Project Run 可由调用者显式执行
+`forge-runtime -C PATH run resume RUN_ID` 继续已验证的 durable prefix；已提交的
+工具 effect 不会自动重放，未决外部 effect 会拒绝恢复。
+仅对 `RunOutcome::Completed` 的已完成终态 Run，同一命令会在 Project 绑定后幂等补齐
+assistant Conversation 写回，并在 credential/provider/tool/history 初始化前完成，不读取
+workspace 内容；`RunOutcome::Failed`、`RunOutcome::Cancelled` 与
+`RunOutcome::LimitExceeded` 终态仍拒绝 resume。
+只读的 `forge-runtime --json run explain RUN_ID` 可从同一 durable journal 查询事件证据、
+可见上下文边界、显式读能力和安全 continuation；它不会把未快照的历史、外部 effect
+或认证 Grant/Approval 推断成事实。
+终态 Project Run 可通过
+`forge-runtime --idempotency-key KEY -C PATH run restart SOURCE_RUN_ID`
+准备成一个新的独立 Run：沿用已持久化的 Prompt 与执行配置，只写入一个确定性 seed，
+不复制旧答案或 journal，不触发 provider/tool/workspace/network；随后仍需显式
+`run resume NEW_RUN_ID` 才会执行。source 指纹与 key 共同绑定幂等身份，晚到重试会返回
+目标 Run 的真实当前状态。
+如需保留可查询的来源关系，可对终态 Project Run 执行
+`forge-runtime --idempotency-key KEY -C PATH run branch PARENT_RUN_ID`：Hub 会原子创建
+child Run、immutable direct-parent lineage 和单个 fresh `run_started`。child 沿用
+Project、Conversation、user Prompt 与 exact execution configuration，不复制 parent
+journal suffix、result、answer 或 tool events，仍由显式 `run resume CHILD_RUN_ID` 开始执行。
+`forge-runtime --json run lineage CHILD_RUN_ID` 以 content-free 只读视图返回
+`root_input` 的 direct parent 与 source seq 1；context/workspace snapshot 均未绑定。
 Graph 协议当前使用 SQLite v24。legacy 首节点 authorization 路径使用 main Run v3；scheduled
 多节点链则刻意保持 main Run v1/seq-1，并把逐节点状态保存在独立 sidecar。Go Core 负责冻结
 canonical plan、serial schedule、per-node contract/request/authorization/pricing 与 terminal
@@ -46,7 +72,8 @@ receipt；Rust Hub 对同一份 exact bytes 做 fresh-state 复验并持久化 p
 adjudication 已具备，所有 effectful dispatch 仍须 fresh consent、固定 Core binary、Project lane
 单赢家和 bounded terminal result。
 
-这套协议尚未提供顶层“自动跑完整张图”的循环、branching/resume 或远程 exactly-once；
+这套 Graph 协议尚未提供顶层“自动跑完整张图”的循环、任意 event-prefix branching、
+automatic recovery 或远程 exactly-once；
 Graph 的进度仍由 operator/外层编排逐节点驱动。Prompt、前驱正文、result 与 receipt 会以
 本地 SQLite plaintext 保存，默认 CLI 视图隐藏正文；consent 只授权当前 exact request，
 不扩大到 workspace/tool、其他节点或自动 retry。`operator_asserted` pricing 也不代表实时

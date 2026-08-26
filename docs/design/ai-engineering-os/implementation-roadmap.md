@@ -98,7 +98,7 @@ Canonical capability/governance schemas
 - [x] WorkIntent v1 Proposed candidate evidence：ADR-0077/0078 仅冻结 Python/Go/Rust exact golden parity、Registry v32 candidate-only metadata、checker-only shadow 与 source-only Python distribution 边界；保持 scope arrays 不变，不关闭 G0，不接受 semantic authority，不新增 route、producer、evaluator、consumer、Run、RunJournal、lifecycle、Approval、Grant、persistence 或 effect；
 - [x] Authenticated ADR approval v1 Proposed structural prerequisite evidence：ADR-0079/0080 与 Registry v33 仅冻结 caller-supplied structure/digests/relations 的 dependency-free Python candidate、checker-only shadow 与 source-only Python distribution；不验证 Ed25519，不认证或授权，不签发 receipt，不消费或证明 external root pin、trusted time/revocation currentness，不提供 CAS/durability/Accepted，不新增 future Go service、keys/state、Skill、route、scope/evaluator/producer/runtime，不关闭 G0；full authenticated approval 与 ADR lifecycle 保持开放，package rollout 保持开放；
 - [x] 冻结 Kernel structural reference-family ABI（structural only）：扩展 CognitiveAtom source/type/authority/hardness，并定义 DecisionTransaction 及其对 InteractionEvent、CapabilityInvocation、ArtifactReceipt、ExecutionReceipt 的单向引用闭包；
-- [ ] 交付 Decision Capsule structural replay repository slice（structural only）：分发 ADR-0092 四对象 pure validate/reseal/compare closure；
+- [x] 交付 Decision Capsule structural replay repository slice（structural only）：分发 ADR-0092 四对象 pure validate/reseal/compare closure；仅完成 source-only structural candidate，不包含 runtime、authority、persistence、PDP、controller 或 Reflection consumer；
 - [x] 冻结 Evidence/Claim canonical bytes、kind digest domain、大小/数量上限和 v1 兼容边界；统一 Kernel 错误代码和持久化迁移仍待后续；
 - [x] 建 Evidence/Claim 跨 Go/Rust/Python golden 与 malformed/duplicate/unknown/oversize/authority adversarial 回归；
 - [x] 设计旧 memory/ADR 的只读导入：默认 `unverified_legacy`，绝不自动确认。
@@ -146,6 +146,7 @@ instruction、hard guard、transition、completion、effect 或 persistence；De
   command output）/B（L3/L4 reviewer_v2）/C（Design/Deploy/Rollback positive approval）/D（resume/scaffold），但仅为
   same-UID local observation/control consistency，不是 authenticated ApprovalRecord/PDP/SoD/effect authority；
 - [ ] 增加查询：为什么这个事实成立、哪些假设开放、这个 Agent 看到了什么/没看到什么、被授予什么。
+- [x] 交付 bounded Project Run `run explain RUN_ID` journal query：只读输出事件证据、上下文 hash/边界、显式 read scope 与安全 continuation；完整 semantic fact provenance、history snapshot、authenticated Grant/Approval/PDP 查询仍开放。
 
 **ADR-0048 首个 source-adapter 窄切片已达判据。** 同一 exact artifact-v1 + binding request 跨 Python/Go/Rust 产生相同 canonical
 source/request/Evidence bytes 与 digest，且 Universal checker 能 exact re-adapt。结果仅为
