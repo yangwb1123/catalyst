@@ -51,13 +51,12 @@ function nestedJournalRejected() {
 }
 
 function helperPid(root) {
-  const result = spawnSync('ps', ['-eo', 'pid=,args='], { encoding: 'utf8' });
+  const result = spawnSync('/usr/bin/pgrep', ['-f', '--', root], { encoding: 'utf8' });
   assert.equal(result.status, 0);
-  const line = result.stdout.split('\n').find(
-    (entry) => entry.includes('Bounded raw-inotify helper') && entry.includes(root),
-  );
-  assert.ok(line, 'journal helper process must be observable');
-  return Number(line.trim().split(/\s+/, 1)[0]);
+  const identifiers = result.stdout.trim().split('\n').filter(Boolean).map(Number);
+  assert.equal(identifiers.length, 1, 'exactly one journal helper must be observable');
+  assert.ok(Number.isSafeInteger(identifiers[0]) && identifiers[0] > 0);
+  return identifiers[0];
 }
 
 function processAlive(pid) {
@@ -102,7 +101,7 @@ try {
   writeFileSync(1, JSON.stringify({
     ok: false, attacked: existsSync(marker), error: error.message,
   }));
-} finally { journal?.close(); }
+} finally { await journal?.close(); }
 `);
   return path;
 }
@@ -149,7 +148,7 @@ test(journalTestName('candidate journal permanently records A-to-B-to-A drift'),
     assert.equal(observation.error, null);
     assert.ok(observation.events.includes('docs/contract.md'));
   } finally {
-    journal.close();
+    await journal.close();
     rmSync(root, { recursive: true, force: true });
   }
 });
@@ -173,7 +172,7 @@ test(journalTestName('candidate journal records ancestor-path A-to-B-to-A rebind
     await journal.barrier();
     assert.ok(journal.drift().events.includes('.'));
   } finally {
-    journal.close();
+    await journal.close();
     rmSync(outer, { recursive: true, force: true });
     rmSync(moved, { recursive: true, force: true });
   }
@@ -199,7 +198,7 @@ test(journalTestName('candidate journal records persistent source drift and igno
     await journal.barrier();
     assert.ok(journal.drift().events.includes('docs/contract.md'));
   } finally {
-    journal.close();
+    await journal.close();
     rmSync(root, { recursive: true, force: true });
   }
 });
@@ -214,7 +213,26 @@ test(journalTestName('candidate journal fails closed when its helper dies'), asy
     await assert.rejects(journal.barrier(), /exited unexpectedly|write|closed/);
     assert.ok(journal.drift().error instanceof Error);
   } finally {
-    journal.close();
+    await journal.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test(journalTestName('candidate journal CLOSE absorbs an asynchronous helper pipe error'), async () => {
+  if (nestedJournalRejected()) return;
+  const root = fixture();
+  const journal = createCandidateJournal(root);
+  try {
+    await journal.barrier();
+    const pid = helperPid(root);
+    process.kill(pid, 'SIGKILL');
+    const blocked = new Int32Array(new SharedArrayBuffer(4));
+    Atomics.wait(blocked, 0, 0, 50);
+    await journal.close();
+    await journal.close();
+    assert.equal(await waitForDead(pid), true);
+  } finally {
+    await journal.close();
     rmSync(root, { recursive: true, force: true });
   }
 });
@@ -226,13 +244,25 @@ test(journalTestName('candidate journal CLOSE reaps its helper'), async () => {
   try {
     await journal.barrier();
     const pid = helperPid(root);
-    journal.close();
+    await journal.close();
     assert.equal(await waitForDead(pid), true);
     assert.deepEqual(journal.drift(), { error: null, events: [] });
   } finally {
-    journal.close();
+    await journal.close();
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test(journalTestName('awaited candidate journal CLOSE does not accumulate inotify instances'), async () => {
+  if (nestedJournalRejected()) return;
+  const root = fixture();
+  try {
+    for (let index = 0; index < 132; index += 1) {
+      const journal = createCandidateJournal(root);
+      await journal.barrier();
+      await journal.close();
+    }
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
 test('nested rootless mount cannot impersonate the journal interpreter', {

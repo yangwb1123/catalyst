@@ -18,6 +18,7 @@ const PYTHON = '/usr/bin/python3';
 const READY_TIMEOUT_MS = 15_000;
 const BARRIER_TIMEOUT_MS = 5_000;
 const CLOSE_GRACE_MS = 500;
+const CLOSE_TIMEOUT_MS = 5_000;
 const MAX_LINE_BYTES = 256 * 1024;
 const MAX_OUTPUT_BYTES = 1024 * 1024;
 const MAX_STDERR_BYTES = 16 * 1024;
@@ -313,6 +314,9 @@ function consumeStdout(state, chunk) {
 }
 
 function attachHelper(state) {
+  state.child.stdin.on('error', (error) => {
+    if (!state.closed) protocolFailure(state, error);
+  });
   state.child.stdout.on('data', (chunk) => consumeStdout(state, chunk));
   state.child.stderr.on('data', (chunk) => {
     if (state.closed) return;
@@ -324,6 +328,7 @@ function attachHelper(state) {
     if (!state.closed) markFailure(state, error);
   });
   state.child.once('close', (code, signal) => {
+    state.helperClosed = true;
     if (!state.closed) {
       markFailure(state, new Error(
         `candidate journal helper exited unexpectedly (${signal ?? `exit ${code}`})`,
@@ -334,8 +339,9 @@ function attachHelper(state) {
 
 function helperState(child) {
   const state = {
-    child, closed: false, error: null, events: [], nextId: 1,
-    outputBytes: 0, pending: new Map(), stderrBytes: 0, stdout: Buffer.alloc(0),
+    child, closed: false, closePromise: null, error: null, events: [], helperClosed: false,
+    nextId: 1, outputBytes: 0, pending: new Map(), stderrBytes: 0,
+    stdout: Buffer.alloc(0),
   };
   attachHelper(state);
   return state;
@@ -376,16 +382,33 @@ function barrier(state) {
 }
 
 function closeJournal(state) {
-  if (state.closed) return;
+  if (state.closePromise) return state.closePromise;
   state.closed = true;
   rejectPending(state, new Error('candidate journal is closed'));
-  if (state.child.exitCode !== null || state.child.signalCode !== null) return;
-  try {
-    state.child.stdin.end(`${JSON.stringify({ id: state.nextId++, op: 'CLOSE' })}\n`);
-  } catch { stopHelper(state); return; }
-  const timer = setTimeout(() => stopHelper(state), CLOSE_GRACE_MS);
-  timer.unref?.();
-  state.child.once('close', () => clearTimeout(timer));
+  state.closePromise = new Promise((resolve, reject) => {
+    if (state.helperClosed) {
+      resolve();
+      return;
+    }
+    let killTimer;
+    const timeout = setTimeout(() => {
+      stopHelper(state);
+      reject(new Error(`candidate journal helper did not close after ${CLOSE_TIMEOUT_MS}ms`));
+    }, CLOSE_TIMEOUT_MS);
+    const finish = () => {
+      clearTimeout(killTimer);
+      clearTimeout(timeout);
+      resolve();
+    };
+    state.child.once('close', finish);
+    try {
+      state.child.stdin.end(`${JSON.stringify({ id: state.nextId++, op: 'CLOSE' })}\n`);
+    } catch {
+      stopHelper(state);
+    }
+    killTimer = setTimeout(() => stopHelper(state), CLOSE_GRACE_MS);
+  });
+  return state.closePromise;
 }
 
 export function createCandidateJournal(root) {

@@ -72,6 +72,7 @@ export async function collectFormal(options, api) {
       ? error.message : `candidate stability check failed: ${error.message}`;
     return failureRows(detail, api);
   } finally {
-    try { journal.close(); } catch { /* completed barriers already bound the interval */ }
+    try { await journal.close(); }
+    catch { /* completed barriers already bound the interval */ }
   }
 }
