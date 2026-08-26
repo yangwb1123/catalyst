@@ -9,7 +9,7 @@
   },
   "type": "module",
   "scripts": {
-    "test": "node --test harness/",
+    "test": "node --test \"**/test_*.mjs\"",
     "gate": "node harness/gate.mjs"
   },
   "dependencies": {},
