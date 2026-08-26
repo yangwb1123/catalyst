@@ -20,6 +20,7 @@ use super::{
     contract_command::{self, GroupAgentGraphControlContractCliOutput},
     contract_output::{self, GroupAgentNodeExecutionContractCliOutput},
     dispatch_command::{self, GroupAgentGraphRunDispatchCommandCliOutput},
+    reconcile_command::{self, ScheduledGraphReconcileCliOutput},
     run_output::{self, GroupAgentGraphRunCliOutput},
     schedule_command,
     schedule_output::{self, GroupAgentGraphExecutionScheduleCliOutput},
@@ -38,6 +39,7 @@ pub enum GroupAgentGraphRunCommandCliOutput {
     Schedule(Box<GroupAgentGraphExecutionScheduleCliOutput>),
     ScheduledContract(Box<GroupAgentScheduledNodeContractCliOutput>),
     ScheduledProviderRequest(Box<GroupAgentScheduledNodeProviderRequestCommandCliOutput>),
+    Reconcile(Box<ScheduledGraphReconcileCliOutput>),
 }
 
 pub async fn execute(
@@ -52,19 +54,9 @@ pub async fn execute(
         GroupGraphRunCommand::Show {
             graph_run_id,
             include_plan,
-        } => {
-            let service = service(args)?;
-            Ok(run_output(GroupAgentGraphRunCliOutput::run(
-                service.inspect(graph_run_id)?,
-                *include_plan,
-            )))
-        }
+        } => execute_show(args, graph_run_id, *include_plan),
         GroupGraphRunCommand::List { graph_id, limit } => {
-            let service = service(args)?;
-            Ok(run_output(GroupAgentGraphRunCliOutput::list(
-                GROUP_AGENT_GRAPH_RUN_VERSION,
-                service.list(graph_id.as_deref(), *limit)?,
-            )))
+            execute_list(args, graph_id.as_deref(), *limit)
         }
         GroupGraphRunCommand::Control(command) => Ok(aux_output(
             contract_command::execute_control(args, command)?,
@@ -84,7 +76,38 @@ pub async fn execute(
         GroupGraphRunCommand::ScheduledContract(command) => {
             execute_scheduled_contract(args, command)
         }
+        GroupGraphRunCommand::Reconcile {
+            graph_run_id,
+            core_bin,
+            core_bin_sha256,
+        } => Ok(GroupAgentGraphRunCommandCliOutput::Reconcile(Box::new(
+            reconcile_command::execute(args, graph_run_id, core_bin, core_bin_sha256)?,
+        ))),
     }
+}
+
+fn execute_show(
+    args: &Args,
+    graph_run_id: &str,
+    include_plan: bool,
+) -> Result<GroupAgentGraphRunCommandCliOutput, Box<dyn Error>> {
+    let service = service(args)?;
+    Ok(run_output(GroupAgentGraphRunCliOutput::run(
+        service.inspect(graph_run_id)?,
+        include_plan,
+    )))
+}
+
+fn execute_list(
+    args: &Args,
+    graph_id: Option<&str>,
+    limit: usize,
+) -> Result<GroupAgentGraphRunCommandCliOutput, Box<dyn Error>> {
+    let service = service(args)?;
+    Ok(run_output(GroupAgentGraphRunCliOutput::list(
+        GROUP_AGENT_GRAPH_RUN_VERSION,
+        service.list(graph_id, limit)?,
+    )))
 }
 
 fn execute_prepare(
@@ -129,6 +152,9 @@ pub fn write_output(
         }
         GroupAgentGraphRunCommandCliOutput::ScheduledProviderRequest(output) => {
             scheduled_provider_request_command::write_output(output, json, writer)
+        }
+        GroupAgentGraphRunCommandCliOutput::Reconcile(output) => {
+            reconcile_command::write_output(output, json, writer)
         }
     }
 }

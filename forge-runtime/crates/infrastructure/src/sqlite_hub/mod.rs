@@ -38,6 +38,7 @@ mod run_read;
 mod run_read_snapshot_tests;
 mod run_write;
 mod run_writeback;
+mod scheduled_graph_progress;
 mod schema;
 #[cfg(test)]
 mod schema_migration_tests;

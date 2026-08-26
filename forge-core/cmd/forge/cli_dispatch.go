@@ -16,6 +16,7 @@ import (
 	"forgeos/forge-core/internal/graphrelease"
 	"forgeos/forge-core/internal/graphschedule"
 	"forgeos/forge-core/internal/graphscheduledcontract"
+	"forgeos/forge-core/internal/graphscheduledreconcile"
 	"forgeos/forge-core/internal/graphscheduledrelease"
 	"forgeos/forge-core/internal/graphsnapshot"
 	"forgeos/forge-core/internal/graphterminal"
@@ -70,6 +71,9 @@ var subcommands = map[string]func([]string) int{
 	"graph-scheduled-node-contract": func(rest []string) int { return graphscheduledcontract.Command(rest, os.Stdin, os.Stdout, os.Stderr) },
 	"graph-scheduled-ready-nodes": func(rest []string) int {
 		return graphscheduledcontract.ReadyCommand(rest, os.Stdin, os.Stdout, os.Stderr)
+	},
+	"graph-scheduled-reconcile": func(rest []string) int {
+		return graphscheduledreconcile.Command(rest, os.Stdin, os.Stdout, os.Stderr)
 	},
 	"graph-scheduled-node-dispatch-authorize": func(rest []string) int {
 		return graphscheduledrelease.Command(rest, os.Stdin, os.Stdout, os.Stderr)
@@ -140,6 +144,8 @@ usage:
   forge graph-scheduled-node-terminal-receipt --protocol-version
   forge graph-execution-schedule --control FILE|-
   forge graph-scheduled-node-contract --control FILE|- --schedule-sha256 SHA256 --endpoint HTTPS_URL --model MODEL --max-output-tokens N --max-model-output-bytes N --max-model-events N --timeout-ms N --max-cost-usd-micros N --pricing-snapshot-sha256 SHA256 --max-result-bytes N
+  forge graph-scheduled-reconcile --snapshot FILE|-
+  forge graph-scheduled-reconcile --protocol-version
   forge graph-scheduled-node-dispatch-authorize --control FILE|-
   forge gate|check|accept [--root DIR] [--timeout D] [--max-output-bytes N]
 `)

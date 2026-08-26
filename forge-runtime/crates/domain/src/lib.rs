@@ -31,6 +31,7 @@ mod run;
 mod run_journal;
 mod run_lineage;
 mod run_store;
+mod scheduled_graph_progress;
 mod tool;
 pub mod transition_receipt_contract;
 pub mod work_intent_contract;
@@ -295,6 +296,7 @@ pub use run_store::{
     MAX_RUN_LIST_LIMIT, RUN_STORE_VERSION, RunEntity, RunExecution, RunProvider, RunRecord,
     RunStore, RunStoreError,
 };
+pub use scheduled_graph_progress::*;
 pub use tool::{
     AgentTool, Capability, Message, ToolCall, ToolContext, ToolError, ToolFuture, ToolOutput,
     ToolSpec,

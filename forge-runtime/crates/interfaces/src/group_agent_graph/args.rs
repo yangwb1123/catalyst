@@ -4,6 +4,8 @@ use std::collections::VecDeque;
 
 #[path = "dispatch_execute_args.rs"]
 mod dispatch_execute_args;
+#[path = "reconcile_args.rs"]
+mod reconcile_args;
 #[path = "scheduled_contract_args.rs"]
 mod scheduled_contract_args;
 #[path = "scheduled_release/args.rs"]
@@ -51,6 +53,7 @@ fn parse_run(
             crate::group_agent_graph::schedule_command::parse_schedule(tokens, idempotency_key)
         }
         Some("scheduled-contract") => scheduled_contract_args::parse(tokens, idempotency_key),
+        Some("reconcile") => reconcile_args::parse(tokens),
         Some("show") => parse_run_show(tokens),
         Some("list") => parse_run_list(tokens),
         Some(value) => Err(with_usage(&format!(

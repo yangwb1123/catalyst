@@ -52,6 +52,11 @@ pub enum GroupGraphRunCommand {
     Dispatch(GroupGraphRunDispatchCommand),
     Schedule(GroupGraphRunScheduleCommand),
     ScheduledContract(GroupGraphRunScheduledContractCommand),
+    Reconcile {
+        graph_run_id: String,
+        core_bin: String,
+        core_bin_sha256: String,
+    },
     Show {
         graph_run_id: String,
         include_plan: bool,

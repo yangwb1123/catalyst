@@ -15,6 +15,7 @@ pub(crate) use forge_runtime_domain as runtime_domain;
 
 pub use core_terminal_bridge::{
     CoreTerminalBridgeError, PinnedCoreTerminalBridge, PinnedScheduledCoreTerminalBridge,
+    PinnedScheduledGraphReconcileBridge,
 };
 pub use deterministic_provider::ReadThenAnswerProvider;
 pub use durable_event_sink::DurableFirstEventSink;

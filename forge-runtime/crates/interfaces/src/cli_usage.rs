@@ -72,6 +72,8 @@ pub const TEXT: &str = "usage:
     execute PROVIDER_REQUEST_ID --authorization FILE|- --pricing FILE|-
     --core-bin ABSOLUTE_FILE --core-bin-sha256 SHA256
     --confirm-off-machine [--include-result]
+  forge-runtime [OPTIONS] group graph run reconcile GRAPH_RUN_ID
+    --core-bin ABSOLUTE_FILE --core-bin-sha256 SHA256
   forge-runtime [OPTIONS] group graph run dispatch prepare GRAPH_RUN_ID
                 [--idempotency-key KEY]
   forge-runtime [OPTIONS] group graph run dispatch show DISPATCH_REQUEST_ID

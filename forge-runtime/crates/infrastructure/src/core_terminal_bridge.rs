@@ -30,6 +30,11 @@ use crate::runtime_domain::{
     GroupAgentScheduledNodeTerminalReceipt, GroupAgentScheduledNodeTerminalReceiptPort,
     MAX_GROUP_AGENT_SCHEDULED_NODE_CONTROL_BYTES, MAX_GROUP_AGENT_SCHEDULED_NODE_RECEIPT_BYTES,
 };
+use crate::runtime_domain::{
+    MAX_SCHEDULED_GRAPH_PROGRESS_SNAPSHOT_BYTES, MAX_SCHEDULED_GRAPH_RECONCILE_DECISION_BYTES,
+    ScheduledGraphProgressSnapshot, ScheduledGraphReconcileDecision, ScheduledGraphReconcilePort,
+    ScheduledGraphReconcilePortError,
+};
 
 const MAX_CORE_BINARY_BYTES: u64 = 128 * 1024 * 1024;
 const MAX_CORE_STDOUT_BYTES: usize = MAX_GROUP_AGENT_NODE_TERMINAL_RECEIPT_BYTES;
@@ -52,6 +57,11 @@ pub struct CoreTerminalBridgeError {
 
 #[derive(Clone, Debug)]
 pub struct PinnedScheduledCoreTerminalBridge {
+    inner: PinnedCoreTerminalBridge,
+}
+
+#[derive(Clone, Debug)]
+pub struct PinnedScheduledGraphReconcileBridge {
     inner: PinnedCoreTerminalBridge,
 }
 
@@ -206,6 +216,43 @@ impl PinnedScheduledCoreTerminalBridge {
     }
 }
 
+impl PinnedScheduledGraphReconcileBridge {
+    /// Records an explicitly pinned reconcile executable without starting it.
+    pub fn new(path: PathBuf, sha256: String) -> Result<Self, CoreTerminalBridgeError> {
+        validate_digest(&sha256)?;
+        Ok(Self {
+            inner: PinnedCoreTerminalBridge { path, sha256 },
+        })
+    }
+
+    pub fn decide_json(&self, snapshot: &[u8]) -> Result<Vec<u8>, CoreTerminalBridgeError> {
+        if !(1..=MAX_SCHEDULED_GRAPH_PROGRESS_SNAPSHOT_BYTES).contains(&snapshot.len()) {
+            return Err(invalid(
+                "scheduled progress snapshot is outside its byte bound",
+            ));
+        }
+        let protocol = self.inner.invoke(
+            &["graph-scheduled-reconcile", "--protocol-version"],
+            b"",
+            CORE_PREFLIGHT_TIMEOUT,
+        )?;
+        if protocol.as_slice() != b"1" {
+            return Err(invalid("Core scheduled reconcile handshake failed"));
+        }
+        let output = self.inner.invoke(
+            &["graph-scheduled-reconcile", "--snapshot", "-"],
+            snapshot,
+            CORE_DECISION_TIMEOUT,
+        )?;
+        if output.len() > MAX_SCHEDULED_GRAPH_RECONCILE_DECISION_BYTES {
+            return Err(invalid(
+                "scheduled reconcile decision exceeds its byte bound",
+            ));
+        }
+        Ok(output)
+    }
+}
+
 impl GroupAgentNodeCoreTerminalReceiptPort for PinnedCoreTerminalBridge {
     fn decide(
         &self,
@@ -268,6 +315,29 @@ impl GroupAgentScheduledNodeTerminalReceiptPort for PinnedScheduledCoreTerminalB
             receipt,
             receipt_json,
         })
+    }
+}
+
+impl ScheduledGraphReconcilePort for PinnedScheduledGraphReconcileBridge {
+    fn decide(
+        &self,
+        snapshot: &ScheduledGraphProgressSnapshot,
+    ) -> Result<ScheduledGraphReconcileDecision, ScheduledGraphReconcilePortError> {
+        snapshot
+            .validate()
+            .map_err(|_| ScheduledGraphReconcilePortError::InvalidDecision)?;
+        let snapshot_json = snapshot
+            .canonical_json()
+            .map_err(|_| ScheduledGraphReconcilePortError::InvalidDecision)?;
+        let output = self
+            .decide_json(snapshot_json.as_bytes())
+            .map_err(|_| ScheduledGraphReconcilePortError::Unavailable)?;
+        let decision = ScheduledGraphReconcileDecision::decode_exact_bytes(&output)
+            .map_err(|_| ScheduledGraphReconcilePortError::InvalidDecision)?;
+        decision
+            .validate_against_snapshot(snapshot)
+            .map_err(|_| ScheduledGraphReconcilePortError::InvalidDecision)?;
+        Ok(decision)
     }
 }
 

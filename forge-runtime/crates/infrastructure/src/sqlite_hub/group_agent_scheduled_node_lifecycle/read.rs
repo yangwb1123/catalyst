@@ -4,7 +4,8 @@ use crate::runtime_domain::{
     GroupAgentGraphRunInspection, GroupAgentNodePricingSnapshot,
     GroupAgentScheduledNodeDispatchAuthorization, GroupAgentScheduledNodeDispatchClaim,
     GroupAgentScheduledNodeDispatchReleaseControl, GroupAgentScheduledNodeLifecycleInspection,
-    GroupAgentScheduledNodeLifecycleStatus, HubEntity, HubStoreError,
+    GroupAgentScheduledNodeLifecycleStatus, GroupAgentScheduledNodeProviderRequestInspection,
+    HubEntity, HubStoreError,
 };
 
 use super::super::{
@@ -170,16 +171,43 @@ pub(super) fn reconstruct(
         connection,
         &raw.provider_request_id,
     )?;
+    reconstruct_with_sources(raw, &graph_run, &provider_request)
+}
+
+pub(in crate::sqlite_hub) fn inspect_for_progress_in_snapshot(
+    connection: &Connection,
+    graph_run: &GroupAgentGraphRunInspection,
+    provider_request: &GroupAgentScheduledNodeProviderRequestInspection,
+) -> Result<Option<GroupAgentScheduledNodeLifecycleInspection>, HubStoreError> {
+    let Some(raw) =
+        find_by_provider_request(connection, &provider_request.record.provider_request_id)?
+    else {
+        return Ok(None);
+    };
+    reconstruct_with_sources(&raw, graph_run, provider_request).map(Some)
+}
+
+fn reconstruct_with_sources(
+    raw: &RawLifecycle,
+    graph_run: &GroupAgentGraphRunInspection,
+    provider_request: &GroupAgentScheduledNodeProviderRequestInspection,
+) -> Result<GroupAgentScheduledNodeLifecycleInspection, HubStoreError> {
+    validate_raw(raw)?;
+    if raw.graph_run_id != graph_run.run.graph_run_id
+        || raw.provider_request_id != provider_request.record.provider_request_id
+    {
+        return Err(corrupt("scheduled lifecycle source binding disagrees"));
+    }
     let parts = decode_parts(raw)?;
     let active_lane = (raw.lane_active == 1).then_some(parts.active_lane_value);
     let inspection = GroupAgentScheduledNodeLifecycleInspection {
         v: crate::runtime_domain::GROUP_AGENT_SCHEDULED_NODE_LIFECYCLE_VERSION,
-        graph_run,
+        graph_run: graph_run.clone(),
         release_control: parts.release_control,
         authorization: parts.authorization,
         pricing: parts.pricing,
-        provider_request: provider_request.record,
-        provider_request_body: provider_request.provider_request_body,
+        provider_request: provider_request.record.clone(),
+        provider_request_body: provider_request.provider_request_body.clone(),
         claim: parts.claim,
         claim_json: parts.claim_json,
         active_lane,

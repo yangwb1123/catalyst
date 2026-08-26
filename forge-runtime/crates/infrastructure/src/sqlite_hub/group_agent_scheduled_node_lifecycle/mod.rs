@@ -1,6 +1,6 @@
 mod adjudicate;
 mod claim;
-mod read;
+pub(in crate::sqlite_hub) mod read;
 mod terminalize;
 
 use crate::runtime_domain::{

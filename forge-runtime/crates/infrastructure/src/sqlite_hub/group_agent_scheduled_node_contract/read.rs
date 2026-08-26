@@ -36,6 +36,25 @@ pub(in crate::sqlite_hub) fn inspect_in_snapshot(
     validate_stored(connection, stored)
 }
 
+pub(in crate::sqlite_hub) fn inspect_ordinal_in_snapshot(
+    connection: &Connection,
+    run: &GroupAgentGraphRunInspection,
+    graph: &GroupAgentGraphInspection,
+    schedule: &GroupAgentGraphExecutionScheduleInspection,
+    execution_ordinal: usize,
+) -> Result<Option<GroupAgentScheduledNodeContractInspection>, HubStoreError> {
+    let Some(stored) = rows::find_by_schedule_ordinal_attempt(
+        connection,
+        &schedule.record.schedule_id,
+        execution_ordinal,
+        1,
+    )?
+    else {
+        return Ok(None);
+    };
+    validate_with_sources(decode_stored(stored)?, run, graph, schedule).map(Some)
+}
+
 pub(super) fn list(
     connection: &mut Connection,
     graph_run_id: Option<&str>,
@@ -178,7 +197,7 @@ pub(in crate::sqlite_hub) fn decode_stored(
     })
 }
 
-pub(super) fn validate_with_sources(
+pub(in crate::sqlite_hub) fn validate_with_sources(
     decoded: DecodedStoredCandidate,
     run: &GroupAgentGraphRunInspection,
     graph: &GroupAgentGraphInspection,

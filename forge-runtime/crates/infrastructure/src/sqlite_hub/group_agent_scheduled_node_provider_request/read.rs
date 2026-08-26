@@ -42,6 +42,28 @@ pub(in crate::sqlite_hub) fn inspect_in_snapshot(
     validate_stored(connection, stored)
 }
 
+pub(in crate::sqlite_hub) fn inspect_ordinal_in_snapshot(
+    connection: &Connection,
+    schedule_id: &str,
+    execution_ordinal: usize,
+    source: Option<&GroupAgentScheduledNodeContractInspection>,
+) -> Result<Option<GroupAgentScheduledNodeProviderRequestInspection>, HubStoreError> {
+    let Some(stored) =
+        rows::find_by_schedule_ordinal_attempt(connection, schedule_id, execution_ordinal, 1)?
+    else {
+        return Ok(None);
+    };
+    let source =
+        source.ok_or_else(|| corrupt("stored scheduled-node provider request has no candidate"))?;
+    let (record, body) = decode_stored(stored)?;
+    if record.scheduled_contract_id != source.record.contract_id {
+        return Err(corrupt(
+            "stored scheduled-node provider request candidate binding disagrees",
+        ));
+    }
+    validate_decoded(record, body, source.clone()).map(Some)
+}
+
 pub(in crate::sqlite_hub) fn validate_graph_run_binding(
     connection: &Connection,
     run: &GroupAgentGraphRunInspection,

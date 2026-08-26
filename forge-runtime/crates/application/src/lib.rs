@@ -34,6 +34,7 @@ mod model_turn;
 mod output_limit;
 mod run_service;
 mod run_state;
+mod scheduled_graph_reconcile;
 
 pub(crate) use forge_runtime_domain as runtime_domain;
 
@@ -192,4 +193,7 @@ pub use hub_validation::{
 pub use run_service::{
     PrepareRunBranch, PrepareRunBranchResult, PrepareRunRestart, PrepareRunRestartResult,
     RunService,
+};
+pub use scheduled_graph_reconcile::{
+    ScheduledGraphReconcileService, ScheduledGraphReconcileServiceError,
 };
