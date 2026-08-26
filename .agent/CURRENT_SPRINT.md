@@ -1745,7 +1745,7 @@ upgrade 3/3 与 `git diff --check` 均通过；独立最终复审为 CLEAN。验
 test-source profile，不改变前述 UNKNOWN/非 authority 边界，也不勾选 Wave 2 多 surface extractor 总项。
 
 ## 下一前沿(需外部资源 / 后续阶段 / 投机增强 / 明确非目标,非本环境可完整验证)
-- **Graph 下一协议切片**:SQLite v17–v24 已交付 successor candidate、per-node request/lifecycle、receipt/content dataflow、wave-ready/admit、本地 hard-crash adjudication与 8 MiB successor candidate 持久化上限；下一步是顶层整图执行循环、并发 wave 的失败传播/自动恢复以及任意 event-prefix branching。不得把当前逐节点 operator 驱动或 Hub-local single-consumption 冒充远程 exactly-once。
+- **Graph 下一协议切片**:SQLite v17–v24 已交付 successor candidate、per-node request/lifecycle、receipt/content dataflow、wave-ready/admit、本地 hard-crash adjudication与 8 MiB successor candidate 持久化上限；ADR-0096 又交付 read-only whole-schedule reconcile 及其 pre-effect storage validation。正确顺序是先补 Core-selected initial/successor release authorization v2，再独立实现 effectful one-node step，最后才是 durable whole-Graph controller；并发 wave 的失败传播/自动恢复和任意 event-prefix branching 仍更晚。不得把 `ready` observation、当前逐节点 operator 驱动或 Hub-local single-consumption 冒充 execution authority、顶层循环或远程 exactly-once。
 - **真点火** `--agent-cmd=claude`:**multi-agent running to completion 已坐实**(Sprint 25:真 claude 多-agent 跑到 converge MET,增量级 + 版本级)。完整旋钮:四维资源护栏 + 成本三维(phase/时间/美元)+ 任务注入 + 写权限 + 模型路由 + 工作目录 + retry + loop-back;诚实分工:agent 自治增量绿、人确认版本竣工。docs/ignition.md 有完整配方 + 实测
 - **外部资源状态**:~~SCA/CVE 漏洞库~~、~~Firecracker 主机前提~~与~~LiteLLM 双后端主机验证~~均已解决；Go Docker/Firecracker runner 也已接入执行器。剩余项是完整 coding-workspace 交换/隔离硬化与生产 provider registry/policy，它们属于后续产品契约，不再是本机外部资源阻塞。〔真 cost/latency telemetry **已达成**——S26 真 claude 补齐真 token/cost/latency 数据,scorecard 三维真值落盘〕
 - **投机增强(做即违反反 gold-plating 纪律)**:embedding 语义检索(TF-IDF 已工作,增量仅真点火时体现)
@@ -2096,3 +2096,41 @@ stored-corruption matrix 属 effectful step 前置；one-node step 必须每次 
 consent 且至多执行一个 Core-selected node。Durable whole-Graph controller、第二节点自动循环与
 concurrent wave execution 在各自 journal/budget/re-entry/failure/recovery contract 独立验收前保持关闭。
 上述定向 observation 不证明 arbitrary operator-pinned Core 的 filesystem/network effect confinement。
+
+### Sprint 137 — ADR-0096 pre-effect storage validation closure（read-only/testing slice）
+
+本 sprint 不新增 CLI/schema/wire/digest/disposition，也不把 `ready` 转成 authority。它只闭合
+ADR-0096 自己列出的三个 effectful 前置：concurrent terminalization、32-node count/order bound 与
+stored-corruption/source-binding matrix。
+
+SQLite reader 新增仅在 unit-test build 存在的确定性交错 seam：deferred transaction 完成 Run、
+Graph 与 schedule source read 并固定 snapshot 后，第二连接通过真实 store path 对合法 scheduled
+lifecycle 完成 claim→terminalize。被固定的 reader 精确返回完整 `claimed` 前态；fresh reader 精确
+返回完整 `terminalized/completed` 后态及 receipt，candidate/request identity 保持一致，未观察到
+跨版本混合。该正向 fixture 同时暴露了既有 scheduled lifecycle claim 的 production defect：
+`INSERT_SQL` 曾把 `{TABLE}` 当成字面 SQLite token。最小修复只把受控 `TABLE` 常量代入原 SQL，
+不改变 schema、claim contract、lane authority 或 terminal semantics，并由真实 claim/terminalize
+回归覆盖。
+
+32-node evidence 在真实 SQLite v28 中构造完整 serial schedule，验证全部 ordinal 顺序、attempt、
+content-free 空 progress、exact canonical round-trip，并确认该 representative encoding 不超过
+64 KiB。Go Core 另以两个 32-node decision-boundary shape 验证 31 个 completed receipt 后 ordinal
+31 为唯一 `ready`，32 个 completed receipt 返回 `completed`；两份 signed canonical snapshot
+均不超过 64 KiB。它们证明 node-count boundary 与这些 exemplar 的 size check，不宣称使用最长
+identifier 或为 `ready` node 填满全部可选 evidence 后得到 byte-maximal snapshot。
+
+Stored corruption suite 使用 fresh fixture 注入 **42 个独立状态**：initial candidate 7、successor
+candidate 7、provider request 9、claimed lifecycle 9、orphan/extra/count 5、terminal evidence 5。
+覆盖 cross-run/schedule、ordinal/node/attempt、candidate/request body 与 digest、presence-chain、
+不可投影 extra row、claim/release JSON、status/evidence shape、artifact/control/receipt canonical JSON、
+stale receipt digest，以及“自身合法重签但与 terminal control/source 漂移”的 receipt；全部返回
+`HubStoreError::Corrupt`，另有 claimed/terminalized 两个 honest baseline。聚焦 scheduled progress
+为 **21/21 PASS**，Go test/race/vet、infrastructure strict Clippy 与 rustfmt 均通过。
+
+审计同时确认下一步不能直接进入 effectful step：现有 Go `graphscheduledrelease` v1 的 source rebuild、
+contract/provider/authorization header 都固定 initial candidate/ordinal 0，而 Rust 已能表示 successor。
+因此下一独立协议切片是 zero-effect `Scheduled Ready-Node Release Authorization v2`：Core 必须重跑并
+绑定 exact snapshot+reconcile decision，重建 exact initial/successor source 与直接前驱 closure，输出
+max-one future release policy。它仍不是 consent、current execution authority、lane claim 或 provider
+send。只有该 parity、fresh exact consent、snapshot-to-claim CAS、竞争、pid-sidecar owner、hard-crash/
+uncertain-commit 与安全复审闭合后，才可实现 effectful one-node step；durable controller 继续更晚。
