@@ -49,10 +49,11 @@ use super::{
     schema_v25_sql::MIGRATE_V24_TO_V25_SQL,
     schema_v26_sql::MIGRATE_V25_TO_V26_SQL,
     schema_v27_sql::MIGRATE_V26_TO_V27_SQL,
+    schema_v28_sql::MIGRATE_V27_TO_V28_SQL,
     unavailable,
 };
 
-pub(super) const SCHEMA_VERSION: i64 = 27;
+pub(super) const SCHEMA_VERSION: i64 = 28;
 const CONNECTION_BUSY_TIMEOUT: Duration = Duration::from_millis(250);
 const OPEN_RETRY_TIMEOUT: Duration = Duration::from_secs(5);
 const OPEN_RETRY_DELAY: Duration = Duration::from_millis(10);
@@ -81,7 +82,7 @@ pub(super) fn open_database(path: &Path) -> Result<Connection, HubStoreError> {
 pub(super) fn open_existing_current_read_only_database(
     path: &Path,
 ) -> Result<Connection, HubStoreError> {
-    open_existing_validated_read_only_database(path, &[SCHEMA_VERSION], "current schema version 27")
+    open_existing_validated_read_only_database(path, &[SCHEMA_VERSION], "current schema version 28")
 }
 pub(super) fn open_existing_dispatch_preflight_read_only_database(
     path: &Path,
@@ -89,9 +90,9 @@ pub(super) fn open_existing_dispatch_preflight_read_only_database(
     open_existing_validated_read_only_database(
         path,
         &[
-            11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27,
+            11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28,
         ],
-        "schema version 11..=27",
+        "schema version 11..=28",
     )
 }
 fn open_existing_validated_read_only_database(
@@ -231,6 +232,7 @@ fn migrate_endpoint_only_v25_to_current(connection: &Connection) -> Result<(), O
     connection.execute_batch(MIGRATE_V26_TO_V27_SQL)?;
     super::governance_record_journal::semantic::rebuild_locked(connection)
         .map_err(OpenAttemptError::Store)?;
+    connection.execute_batch(MIGRATE_V27_TO_V28_SQL)?;
     Ok(())
 }
 
@@ -299,7 +301,7 @@ fn migrate_late(connection: &Connection, version: i64) -> Result<(), OpenAttempt
     Ok(())
 }
 
-/// Upgrades execution/governance v17 through v26 sources to current v27.
+/// Upgrades execution/governance v17 through v27 sources to current v28.
 fn migrate_latest(connection: &Connection, version: i64) -> Result<(), OpenAttemptError> {
     if version <= 17 {
         connection.execute_batch(MIGRATE_V17_TO_V18_SQL)?;
@@ -332,6 +334,9 @@ fn migrate_latest(connection: &Connection, version: i64) -> Result<(), OpenAttem
         connection.execute_batch(MIGRATE_V26_TO_V27_SQL)?;
         super::governance_record_journal::semantic::rebuild_locked(connection)
             .map_err(OpenAttemptError::Store)?;
+    }
+    if version <= 27 {
+        connection.execute_batch(MIGRATE_V27_TO_V28_SQL)?;
     }
     Ok(())
 }

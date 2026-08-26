@@ -108,6 +108,7 @@ fn downgrade_to_v26(connection: &rusqlite::Connection) {
     connection
         .execute_batch(
             "PRAGMA foreign_keys=OFF;
+             DROP TABLE run_lineages;
              DROP TABLE governance_claim_validation_jobs;
              DROP TABLE governance_claim_semantic_views;
              DROP TABLE governance_semantic_heads;
@@ -121,6 +122,7 @@ fn downgrade_to_v24(database: &Path) {
     connection
         .execute_batch(
             "PRAGMA foreign_keys=OFF;
+             DROP TABLE run_lineages;
              DROP TABLE governance_claim_validation_jobs;
              DROP TABLE governance_claim_semantic_views;
              DROP TABLE governance_semantic_heads;

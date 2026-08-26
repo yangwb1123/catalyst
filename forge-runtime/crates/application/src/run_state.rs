@@ -33,13 +33,39 @@ impl AssistantAction {
 impl RunState {
     pub(crate) fn new(mut messages: Vec<Message>, prompt: String) -> Self {
         messages.push(Message::User { text: prompt });
+        Self::with_counters(messages, 0, 0, 0, 0)
+    }
+
+    pub(crate) fn from_replay(
+        messages: Vec<Message>,
+        turns: u32,
+        tool_calls: u32,
+        model_output_bytes: usize,
+        model_events: u32,
+    ) -> Self {
+        Self::with_counters(
+            messages,
+            turns,
+            tool_calls,
+            model_output_bytes,
+            model_events,
+        )
+    }
+
+    fn with_counters(
+        messages: Vec<Message>,
+        turns: u32,
+        tool_calls: u32,
+        model_output_bytes: usize,
+        model_events: u32,
+    ) -> Self {
         Self {
             messages,
             usage: Usage::default(),
-            turns: 0,
-            tool_calls: 0,
-            model_output_bytes: 0,
-            model_events: 0,
+            turns,
+            tool_calls,
+            model_output_bytes,
+            model_events,
         }
     }
 

@@ -54,6 +54,26 @@ fn inspect_snapshot<F>(
 where
     F: FnOnce() -> Result<(), RunStoreError>,
 {
+    let inspection = inspect_base_snapshot(connection, run_id, after_cursor)?;
+    super::run_lineage_read::validate_inspection(connection, &inspection)?;
+    Ok(inspection)
+}
+
+pub(super) fn inspect_base(
+    connection: &Connection,
+    run_id: &str,
+) -> Result<RunInspection, RunStoreError> {
+    inspect_base_snapshot(connection, run_id, || Ok(()))
+}
+
+fn inspect_base_snapshot<F>(
+    connection: &Connection,
+    run_id: &str,
+    after_cursor: F,
+) -> Result<RunInspection, RunStoreError>
+where
+    F: FnOnce() -> Result<(), RunStoreError>,
+{
     let stored = find_run(connection, run_id)?.ok_or_else(|| not_found(RunEntity::Run, run_id))?;
     let journal = load_cursor(connection, &stored.record)?;
     after_cursor()?;

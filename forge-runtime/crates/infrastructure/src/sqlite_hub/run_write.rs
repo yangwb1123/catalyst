@@ -33,7 +33,7 @@ pub(super) fn append_event(
     transaction.commit().map_err(unavailable)
 }
 
-fn begin_run_locked(
+pub(super) fn begin_run_locked(
     transaction: &Transaction<'_>,
     request: &BeginRun,
 ) -> Result<BeginRunResult, RunStoreError> {
@@ -61,7 +61,7 @@ fn begin_run_locked(
     Ok(begin_result(BeginRunDisposition::Created, record, prompt))
 }
 
-fn append_event_locked(
+pub(super) fn append_event_locked(
     transaction: &Transaction<'_>,
     event: &RuntimeEvent,
 ) -> Result<(), RunStoreError> {
@@ -109,7 +109,7 @@ fn append_event_locked(
     )
 }
 
-fn validate_begin_request(request: &BeginRun) -> Result<(), RunStoreError> {
+pub(super) fn validate_begin_request(request: &BeginRun) -> Result<(), RunStoreError> {
     if request.v != RUN_STORE_VERSION {
         return Err(conflict(
             RunEntity::Run,
@@ -405,7 +405,7 @@ fn encode_event(event: &RuntimeEvent) -> Result<String, RunStoreError> {
     })
 }
 
-fn immediate(connection: &mut Connection) -> Result<Transaction<'_>, RunStoreError> {
+pub(super) fn immediate(connection: &mut Connection) -> Result<Transaction<'_>, RunStoreError> {
     connection
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(unavailable)

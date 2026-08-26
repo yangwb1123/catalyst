@@ -22,8 +22,8 @@ The local runtime now:
    tool without automatically executing anything;
 7. load bounded prior user/assistant messages at the bound Prompt boundary;
 8. persist the completed assistant answer through an atomic Run-authorized
-   association and repair that writeback on a terminal replay without
-   repeating model or tool work;
+   association and repair that writeback only when replaying a completed
+   terminal Run, without repeating model or tool work;
 9. append in O(1) semantic work through a durable incremental cursor while
    rebuilding that cursor during full inspection; and
 10. optionally stream a live OpenAI Responses turn behind explicit CLI and

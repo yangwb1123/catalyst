@@ -11,6 +11,7 @@ use super::super::{
     MIGRATE_V15_TO_V16_SQL, MIGRATE_V16_TO_V17_SQL, MIGRATE_V17_TO_V18_SQL, MIGRATE_V18_TO_V19_SQL,
     MIGRATE_V19_TO_V20_SQL, MIGRATE_V20_TO_V21_SQL, MIGRATE_V21_TO_V22_SQL, MIGRATE_V22_TO_V23_SQL,
     MIGRATE_V23_TO_V24_SQL, MIGRATE_V24_TO_V25_SQL, MIGRATE_V25_TO_V26_SQL, MIGRATE_V26_TO_V27_SQL,
+    MIGRATE_V27_TO_V28_SQL,
 };
 #[path = "full_contract/divergent_v25.rs"]
 mod divergent_v25;
@@ -30,6 +31,8 @@ mod v24;
 mod v25;
 #[path = "full_contract/v27.rs"]
 mod v27;
+#[path = "full_contract/v28.rs"]
+mod v28;
 
 use legacy_digest::{
     V6_IMPLICIT_INDEX_COUNT, V6_STRUCTURAL_CONTRACT_SHA256, V7_IMPLICIT_INDEX_COUNT,
@@ -88,6 +91,7 @@ const OWNED_TABLES: &[&str] = &[
     "governance_semantic_heads",
     "governance_claim_semantic_views",
     "governance_claim_validation_jobs",
+    "run_lineages",
 ];
 const SCHEMA_BATCHES: &[&str] = &[
     CREATE_V1_SCHEMA_SQL,
@@ -117,14 +121,15 @@ const SCHEMA_BATCHES: &[&str] = &[
     MIGRATE_V24_TO_V25_SQL,
     MIGRATE_V25_TO_V26_SQL,
     MIGRATE_V26_TO_V27_SQL,
+    MIGRATE_V27_TO_V28_SQL,
 ];
-const VERSION_TABLE_COUNTS: [usize; 28] = [
+const VERSION_TABLE_COUNTS: [usize; 29] = [
     0, 5, 8, 9, 11, 14, 16, 19, 20, 22, 23, 24, 28, 29, 30, 31, 32, 33, 33, 33, 33, 33, 33, 33, 33,
-    36, 36, 39,
+    36, 36, 39, 40,
 ];
-const VERSION_EXPLICIT_INDEX_COUNTS: [usize; 28] = [
+const VERSION_EXPLICIT_INDEX_COUNTS: [usize; 29] = [
     0, 2, 3, 4, 6, 8, 10, 12, 14, 16, 18, 20, 24, 25, 27, 29, 31, 32, 32, 32, 32, 32, 32, 32, 32,
-    35, 35, 38,
+    35, 35, 38, 39,
 ];
 const STRUCTURAL_DIGEST_DOMAIN: &[u8] = b"forge-hub-structural-contract-v1\0";
 
@@ -347,6 +352,10 @@ fn release_structural_contract(version: usize) -> Result<(usize, [u8; 32]), Stri
         27 => (
             v27::V27_IMPLICIT_INDEX_COUNT,
             v27::V27_STRUCTURAL_CONTRACT_SHA256,
+        ),
+        28 => (
+            v28::V28_IMPLICIT_INDEX_COUNT,
+            v28::V28_STRUCTURAL_CONTRACT_SHA256,
         ),
         version => {
             return Err(format!("Hub v{version} has no release structural contract"));

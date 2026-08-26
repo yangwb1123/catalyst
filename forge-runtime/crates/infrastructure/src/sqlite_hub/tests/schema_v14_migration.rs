@@ -199,6 +199,8 @@ fn without_v14(snapshot: &[SchemaRow]) -> Vec<SchemaRow> {
                         | "governance_semantic_heads_state_validity"
                         | "governance_claim_semantic_conflicts"
                         | "governance_claim_validation_jobs_due"
+                        | "run_lineages"
+                        | "run_lineages_parent"
                 )
         })
         .cloned()

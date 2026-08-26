@@ -13,11 +13,29 @@ pub(crate) struct EventEmitter<'a> {
 
 impl<'a> EventEmitter<'a> {
     pub(crate) fn new(sink: &'a mut dyn EventSink, session_id: String, run_id: String) -> Self {
+        Self::with_next_sequence(sink, session_id, run_id, 1)
+    }
+
+    pub(crate) fn resumed(
+        sink: &'a mut dyn EventSink,
+        session_id: String,
+        run_id: String,
+        next_sequence: u64,
+    ) -> Self {
+        Self::with_next_sequence(sink, session_id, run_id, next_sequence)
+    }
+
+    fn with_next_sequence(
+        sink: &'a mut dyn EventSink,
+        session_id: String,
+        run_id: String,
+        next_sequence: u64,
+    ) -> Self {
         Self {
             sink,
             session_id,
             run_id,
-            next_sequence: 1,
+            next_sequence: next_sequence.max(1),
         }
     }
 

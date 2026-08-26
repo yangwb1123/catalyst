@@ -148,8 +148,10 @@ query a newer cross-project view. No provider consumes it yet.
 **Follow-on status (2026-07-27).** Schema version 2 and its append-only
 Run/event journal are delivered. A Run binds an existing Project Conversation
 and user Prompt; its recovery view classifies terminal, incomplete, or pending
-tool. A terminal retry can reconcile a missing assistant writeback, but no
-stored nonterminal prefix is automatically executed. See ADR 0008 and
+tool. A retry of a Run with completed terminal outcome can reconcile a missing
+assistant writeback; failed, cancelled, and limit-exceeded terminal outcomes do
+not enter that recovery path, and no stored nonterminal prefix is automatically
+executed. See ADR 0008 and
 [`run-journal-phase1.md`](../design/run-journal-phase1.md).
 
 **Follow-on status (2026-07-28).** Schema version 3 and prepared Group Run

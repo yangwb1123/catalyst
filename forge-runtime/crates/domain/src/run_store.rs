@@ -1,4 +1,7 @@
-use crate::{PromptRecord, RunInspection, RunLimits, RuntimeEvent};
+use crate::{
+    BeginRunBranch, BeginRunBranchResult, PromptRecord, RunInspection, RunLimits, RunLineageRecord,
+    RuntimeEvent,
+};
 
 pub const RUN_STORE_VERSION: u16 = 1;
 pub const MAX_RUN_LIST_LIMIT: usize = 1_000;
@@ -83,6 +86,29 @@ pub trait RunStore: Send + Sync {
     /// idempotency conflict, an unsupported version, or unavailable storage.
     fn begin_run(&self, request: &BeginRun) -> Result<BeginRunResult, RunStoreError>;
 
+    /// Atomically creates or replays one root-input branch, its immutable
+    /// direct-parent record, and the child Run's initial journal event.
+    /// Replay requires all three durable records to remain complete and
+    /// self-consistent; a partial aggregate is corruption and is never repaired.
+    /// A parent's recorded direct lineage is validated in the same transaction;
+    /// validation does not recursively traverse earlier ancestors.
+    ///
+    /// # Errors
+    ///
+    /// Returns a structured error for an invalid or nonterminal parent,
+    /// conflicting operation ownership, corrupt lineage, or unavailable storage.
+    fn begin_run_branch(
+        &self,
+        request: &BeginRunBranch,
+    ) -> Result<BeginRunBranchResult, RunStoreError>;
+
+    /// Finds the immutable direct-parent record for one Run, if it is a branch.
+    ///
+    /// # Errors
+    ///
+    /// Returns a structured error when the record is corrupt or storage fails.
+    fn find_run_lineage(&self, run_id: &str) -> Result<Option<RunLineageRecord>, RunStoreError>;
+
     /// Finds one Run by the retry key without creating execution intent.
     ///
     /// # Errors
@@ -144,6 +170,7 @@ pub enum RunEntity {
     Prompt,
     Run,
     Event,
+    Lineage,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

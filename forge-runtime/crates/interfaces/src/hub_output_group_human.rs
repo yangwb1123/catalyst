@@ -2,7 +2,7 @@ use super::{
     OutputKind, write_group_context, write_group_execution, write_group_execution_list,
     write_group_execution_started, write_group_model_kind, write_group_panel_kind, write_group_run,
     write_group_run_list, write_group_run_prepared, write_group_synthesis_kind, write_groups,
-    write_run, write_runs,
+    write_run, write_run_explanation, write_run_lineage, write_runs,
 };
 
 pub(super) fn write(
@@ -39,6 +39,8 @@ pub(super) fn write(
         OutputKind::Groups { groups } => write_groups(groups, writer),
         OutputKind::Runs { runs } => write_runs(runs, writer),
         OutputKind::Run { inspection } => write_run(inspection, writer),
+        OutputKind::RunExplanation { explanation } => write_run_explanation(explanation, writer),
+        OutputKind::RunLineage { view } => write_run_lineage(view, writer),
         _ => unreachable!("non-group output routed to group writer"),
     }
 }

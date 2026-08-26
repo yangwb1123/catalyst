@@ -189,4 +189,7 @@ pub use hub_validation::{
     MAX_ENTITY_ID_BYTES, MAX_GROUP_NAME_BYTES, MAX_IDEMPOTENCY_KEY_BYTES, MAX_PROMPT_BYTES,
     MAX_PROMPT_LIST_LIMIT, MAX_ROLE_BYTES, MAX_TITLE_BYTES,
 };
-pub use run_service::RunService;
+pub use run_service::{
+    PrepareRunBranch, PrepareRunBranchResult, PrepareRunRestart, PrepareRunRestartResult,
+    RunService,
+};

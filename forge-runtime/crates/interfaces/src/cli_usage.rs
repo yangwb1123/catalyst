@@ -117,6 +117,11 @@ pub const TEXT: &str = "usage:
                 [--max-output-tokens N]
   forge-runtime [OPTIONS] run list [SESSION_ID] [--limit N]
   forge-runtime [OPTIONS] run show RUN_ID
+  forge-runtime [OPTIONS] run explain RUN_ID
+  forge-runtime [OPTIONS] -C PATH run resume RUN_ID
+  forge-runtime [OPTIONS] --idempotency-key KEY -C PATH run restart RUN_ID
+  forge-runtime [OPTIONS] --idempotency-key KEY -C PATH run branch SOURCE_RUN_ID
+  forge-runtime [OPTIONS] run lineage RUN_ID
   forge-runtime [OPTIONS] [PATH|-C PATH] demo [--read FILE] PROMPT
 
   Mutations accept --idempotency-key KEY before the command.
@@ -126,11 +131,21 @@ pub const TEXT: &str = "usage:
   Run configuration, model/provider events, tool arguments/results, and allowed
   file contents are journaled locally in plaintext and may appear in run show.
   Without --allow-read, live exposes no tools and grants no WorkspaceRead capability.
+  Run restart accepts only a validated terminal source and binds that source plus
+  the explicit key to a new Run containing the same Prompt and execution config.
+  It copies no journal suffix or result and performs no provider, tool, workspace,
+  or network effect; `run resume` remains an explicit second command. Late exact
+  retries report the target Run's current state. Restart does not persist queryable
+  parent lineage, so it is not a branch/history record.
+  Run branch creates an atomic root-input child with immutable direct-parent
+  lineage and one fresh run_started seed. It copies no parent result, answer,
+  tool event, or journal suffix and still requires explicit run resume.
+  Run lineage is a content-free, read-only direct-parent query.
   For prompt add, '-' reads UTF-8 prompt content from standard input.
   Governance journal append validates one exact record set before opening the Hub.
   Journal reads require an existing current-schema Hub and never create or migrate it.
   Ordinary show/list/head reads use the immutable sidecar-rejecting path. Semantic
-  reads use exact-v27 live mode=ro/query_only and may coordinate transient WAL/SHM.
+  reads use exact-v28 live mode=ro/query_only and may coordinate transient WAL/SHM.
   Journal show/list omit exact record content unless --include-record is explicit.
   A structural head reports sequence position only, never truth, freshness, or authority.
   Semantic view reads require explicit caller time and report deterministic projection,

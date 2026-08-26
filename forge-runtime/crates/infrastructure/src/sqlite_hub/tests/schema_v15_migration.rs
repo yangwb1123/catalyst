@@ -113,26 +113,7 @@ fn populated_v14_candidate_and_all_prior_schema_survive_v15_migration_and_reopen
     let database = fixture.database.clone();
     let legacy = fixture.connection();
     let before_candidate = candidate_row(&legacy);
-    legacy
-        .execute_batch(&format!(
-            "DROP TABLE {REQUEST_TABLE};
-             DROP INDEX {};
-             DROP INDEX {};
-             DROP TABLE {V16_TABLE};
-             DROP TABLE group_agent_graph_scheduled_node_successor_candidates;
-             {}
-             DROP TABLE governance_structural_heads;
-             DROP TABLE governance_records;
-             DROP TABLE governance_record_append_batches;
-             PRAGMA user_version=14;",
-            V16_INDEXES[0],
-            V16_INDEXES[1],
-            super::DROP_V27_SEMANTIC_VIEW_SQL,
-        ))
-        .expect("downgrade empty v15 suffix to exact v14");
-    legacy
-        .execute_batch(super::RESTORE_HISTORICAL_ANALYSES_SQL)
-        .expect("restore historical analyses definitions for downgraded fixture");
+    downgrade_current_to_v14(&legacy);
     let before_schema = schema_snapshot(&legacy);
     assert_eq!(schema_version(&legacy), 14);
     drop(legacy);
@@ -151,6 +132,31 @@ fn populated_v14_candidate_and_all_prior_schema_survive_v15_migration_and_reopen
     assert_current_shape(&reopened);
     assert_eq!(candidate_row(&reopened), before_candidate);
     drop((reopened, fixture));
+}
+
+fn downgrade_current_to_v14(legacy: &Connection) {
+    legacy
+        .execute_batch(&format!(
+            "DROP TABLE {REQUEST_TABLE};
+             DROP INDEX {};
+             DROP INDEX {};
+             DROP TABLE {V16_TABLE};
+             DROP TABLE group_agent_graph_scheduled_node_successor_candidates;
+             {}
+             {}
+             DROP TABLE governance_structural_heads;
+             DROP TABLE governance_records;
+             DROP TABLE governance_record_append_batches;
+             PRAGMA user_version=14;",
+            V16_INDEXES[0],
+            V16_INDEXES[1],
+            super::DROP_V28_LINEAGE_SQL,
+            super::DROP_V27_SEMANTIC_VIEW_SQL,
+        ))
+        .expect("downgrade empty v15 suffix to exact v14");
+    legacy
+        .execute_batch(super::RESTORE_HISTORICAL_ANALYSES_SQL)
+        .expect("restore historical analyses definitions for downgraded fixture");
 }
 
 #[test]
@@ -249,7 +255,7 @@ fn current_physical_columns_and_catalog_counts_are_locked() {
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .expect("catalog counts");
-    assert_eq!((tables, implicit_indexes, explicit_indexes), (39, 100, 38));
+    assert_eq!((tables, implicit_indexes, explicit_indexes), (40, 102, 39));
     drop((connection, root));
 }
 
@@ -363,6 +369,8 @@ fn without_v15_and_v16(snapshot: &[SchemaRow]) -> Vec<SchemaRow> {
                         | "governance_semantic_heads_state_validity"
                         | "governance_claim_semantic_conflicts"
                         | "governance_claim_validation_jobs_due"
+                        | "run_lineages"
+                        | "run_lineages_parent"
                 )
         })
         .cloned()

@@ -217,6 +217,9 @@ fn scheduled_fixture() -> super::sqlite_group_agent_graph_run_support::Fixture {
 
 fn restore_exact_v24(connection: &Connection) {
     connection
+        .execute_batch(super::DROP_V28_LINEAGE_SQL)
+        .expect("drop v28 Run lineage table");
+    connection
         .execute_batch(super::RESTORE_HISTORICAL_ANALYSES_SQL)
         .expect("restore v24 endpoint definitions");
     connection

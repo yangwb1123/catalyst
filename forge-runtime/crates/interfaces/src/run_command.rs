@@ -11,10 +11,11 @@ use forge_runtime_infrastructure::{
 
 use crate::{
     args::Args,
+    run_selection::validate_project_binding,
     runtime_domain::{
         BeginRun, BeginRunDisposition, Cancellation, Capability, ModelProvider, RUN_STORE_VERSION,
-        RunExecution, RunLimits, RunOutcome, RunProvider, RunRecord, RunRecoveryState, RunRequest,
-        RunResult,
+        RunExecution, RunInspection, RunLimits, RunOutcome, RunProvider, RunRecord,
+        RunRecoveryState, RunRequest, RunResult,
     },
     state_path::{
         canonical_project, hub_database_path, idempotency_key, unique_id, unix_time_millis,
@@ -34,6 +35,24 @@ struct RunSetup {
     store: Arc<SqliteHubStore>,
     workspace: PathBuf,
     begin: BeginRun,
+}
+
+struct PreparedResume {
+    store: Arc<SqliteHubStore>,
+    runtime: AgentRuntime,
+    request: RunRequest,
+    inspection: RunInspection,
+    history: ConversationHistory,
+}
+
+enum ResumePreparation {
+    Execute(Box<PreparedResume>),
+    ReconcileCompleted { store: Arc<SqliteHubStore> },
+}
+
+enum ResumeAction {
+    Execute,
+    ReconcileCompleted,
 }
 
 const MAX_HISTORY_CONTENT_BYTES: usize = 512 * 1024;
@@ -93,6 +112,113 @@ pub async fn start(args: &Args, options: StartOptions<'_>) -> Result<RunOutcome,
             )
             .into()),
         },
+    }
+}
+
+/// Explicitly resumes one incomplete durable Run from its last committed
+/// journal event, or reconciles a completed Run whose assistant writeback was
+/// interrupted. Provider credentials and tools are constructed only for an
+/// executable incomplete prefix.
+pub async fn resume(args: &Args, run_id: &str) -> Result<RunOutcome, Box<dyn Error>> {
+    match prepare_resume(args, run_id)? {
+        ResumePreparation::Execute(prepared) => execute_resume(*prepared, run_id).await,
+        ResumePreparation::ReconcileCompleted { store } => reconcile_terminal_by_id(&store, run_id),
+    }
+}
+
+async fn execute_resume(
+    prepared: PreparedResume,
+    run_id: &str,
+) -> Result<RunOutcome, Box<dyn Error>> {
+    let stdout = io::stdout();
+    let mut downstream = JsonlEventSink::new(stdout.lock());
+    let mut sink = DurableFirstEventSink::new(prepared.store.as_ref(), &mut downstream);
+    let result = prepared
+        .runtime
+        .resume_with_inspection(
+            prepared.request,
+            prepared.inspection,
+            prepared.history,
+            Cancellation::default(),
+            &mut sink,
+        )
+        .await;
+    match result {
+        Ok(_) => reconcile_terminal_by_id(&prepared.store, run_id),
+        Err(error) => match reconcile_terminal_by_id(&prepared.store, run_id) {
+            Ok(_) => Err(Box::new(error)),
+            Err(reconcile_error) => Err(format!(
+                "runtime failed: {error}; durable reconciliation failed: {reconcile_error}"
+            )
+            .into()),
+        },
+    }
+}
+
+fn prepare_resume(args: &Args, run_id: &str) -> Result<ResumePreparation, Box<dyn Error>> {
+    let selected = args
+        .project
+        .as_deref()
+        .ok_or("run resume requires a Project")?;
+    let workspace = canonical_project(selected)?;
+    let database = hub_database_path(args.state_dir.as_deref())?;
+    let store = Arc::new(SqliteHubStore::open(database)?);
+    let service = RunService::new(store.clone());
+    let inspection = service.inspect_run(run_id)?;
+    let action = validate_resume_selection(&store, run_id, &workspace, &inspection)?;
+    if matches!(action, ResumeAction::ReconcileCompleted) {
+        return Ok(ResumePreparation::ReconcileCompleted { store });
+    }
+    let prompt = persisted_resume_prompt(&inspection)?;
+    let history = ConversationHistoryBridge::new(store.clone()).load_before(
+        &inspection.run.conversation_id,
+        &inspection.run.prompt_id,
+        MAX_HISTORY_CONTENT_BYTES,
+    )?;
+    let provider = provider_for(&inspection.run.execution)?;
+    let (tools, allowed_capabilities) =
+        runtime_tools(&inspection.run.execution.allowed_read_paths)?;
+    let runtime = AgentRuntime::new(provider, tools, Arc::new(CapStdWorkspaceFactory));
+    let request = RunRequest {
+        session_id: inspection.run.conversation_id.clone(),
+        run_id: inspection.run.run_id.clone(),
+        prompt,
+        system_prompt: inspection.run.execution.system_prompt.clone(),
+        workspace,
+        allowed_capabilities,
+        limits: inspection.run.execution.limits.clone(),
+    };
+    Ok(ResumePreparation::Execute(Box::new(PreparedResume {
+        store,
+        runtime,
+        request,
+        inspection,
+        history,
+    })))
+}
+
+fn validate_resume_selection(
+    store: &Arc<SqliteHubStore>,
+    run_id: &str,
+    workspace: &std::path::Path,
+    inspection: &RunInspection,
+) -> Result<ResumeAction, Box<dyn Error>> {
+    validate_project_binding(store, run_id, workspace, inspection)?;
+    match &inspection.recovery.state {
+        RunRecoveryState::Terminal {
+            outcome: RunOutcome::Completed { .. },
+        } => Ok(ResumeAction::ReconcileCompleted),
+        RunRecoveryState::Terminal { .. } => {
+            Err(format!("Run {run_id} is already terminal; resume is not applicable").into())
+        }
+        RunRecoveryState::PendingTool { calls } => {
+            let name = calls.first().map_or("unknown", |call| call.name.as_str());
+            Err(format!(
+                "Run {run_id} has a pending tool effect ({name}); resume refuses automatic replay"
+            )
+            .into())
+        }
+        RunRecoveryState::Incomplete => Ok(ResumeAction::Execute),
     }
 }
 
@@ -276,26 +402,42 @@ fn provider_for(execution: &RunExecution) -> Result<Arc<dyn ModelProvider>, Box<
 }
 
 fn reconcile_terminal(prepared: &PreparedRun) -> Result<RunOutcome, Box<dyn Error>> {
-    let service = RunService::new(prepared.store.clone());
-    let inspection = service.inspect_run(&prepared.run.run_id)?;
+    reconcile_terminal_by_id(&prepared.store, &prepared.run.run_id)
+}
+
+fn reconcile_terminal_by_id(
+    store: &Arc<SqliteHubStore>,
+    run_id: &str,
+) -> Result<RunOutcome, Box<dyn Error>> {
+    let service = RunService::new(store.clone());
+    let inspection = service.inspect_run(run_id)?;
     match inspection.recovery.state {
         RunRecoveryState::Terminal { outcome } => {
             if matches!(&outcome, RunOutcome::Completed { .. }) {
-                service.reconcile_completed_assistant(&prepared.run.run_id)?;
+                service.reconcile_completed_assistant(run_id)?;
             }
             Ok(outcome)
         }
-        RunRecoveryState::Incomplete => Err(format!(
-            "Run {} is incomplete; automatic resume is disabled",
-            prepared.run.run_id
-        )
-        .into()),
+        RunRecoveryState::Incomplete => {
+            Err(format!("Run {run_id} is incomplete; explicit run resume is required").into())
+        }
         RunRecoveryState::PendingTool { calls } => Err(format!(
-            "Run {} is blocked on {} pending tool call(s); automatic replay is disabled",
-            prepared.run.run_id,
+            "Run {run_id} is blocked on {} pending tool call(s); automatic replay is disabled",
             calls.len()
         )
         .into()),
+    }
+}
+
+fn persisted_resume_prompt(
+    inspection: &crate::runtime_domain::RunInspection,
+) -> Result<String, Box<dyn Error>> {
+    let Some(first) = inspection.events.first() else {
+        return Err(Box::new(RuntimeError::ResumeWithoutJournal));
+    };
+    match &first.kind {
+        crate::runtime_domain::RuntimeEventKind::RunStarted { prompt } => Ok(prompt.clone()),
+        _ => Err(Box::new(RuntimeError::ResumeWithoutJournal)),
     }
 }
 

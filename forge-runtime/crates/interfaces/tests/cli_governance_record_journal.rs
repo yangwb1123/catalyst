@@ -389,7 +389,10 @@ fn reads_refuse_v24_without_migration_but_append_migrates_it_to_current() {
     assert_eq!(stored_version(&database), 24);
     let file = write_set(&state, &record_set(&canonical_records()));
     assert_receipt(&json(append_file(&state, "migration-key", &file)), "stored");
-    assert_eq!(stored_version(&database), 27);
+    assert_eq!(
+        stored_version(&database),
+        forge_runtime_infrastructure::CURRENT_SCHEMA_VERSION
+    );
 }
 
 fn assert_receipt(value: &Value, disposition: &str) {
@@ -447,7 +450,8 @@ fn downgrade_empty_current_to_v24(database: &Path) {
         .expect("restore v24 endpoint definitions");
     connection
         .execute_batch(
-            "DROP TABLE governance_claim_validation_jobs;
+            "DROP TABLE run_lineages;
+             DROP TABLE governance_claim_validation_jobs;
              DROP TABLE governance_claim_semantic_views;
              DROP TABLE governance_semantic_heads;
              DROP TABLE governance_structural_heads;

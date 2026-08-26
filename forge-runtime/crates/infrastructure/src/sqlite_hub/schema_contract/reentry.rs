@@ -20,13 +20,13 @@ const WAL_MAGIC_BIG_ENDIAN_CHECKSUM: [u8; 4] = [0x37, 0x7f, 0x06, 0x82];
 const WAL_MAGIC_LITTLE_ENDIAN_CHECKSUM: [u8; 4] = [0x37, 0x7f, 0x06, 0x83];
 const SHM_MINIMUM_BYTES: u64 = 32_768;
 const DISPATCH_REENTRY_VERSIONS: &[i64] = &[
-    12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27,
+    12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28,
 ];
 
 pub(in crate::sqlite_hub) fn open_existing_current_live_read_only_database(
     path: &Path,
 ) -> Result<Connection, HubStoreError> {
-    open_existing_live_read_only_database(path, &[27], "current schema version 27", true)
+    open_existing_live_read_only_database(path, &[28], "current schema version 28", true)
 }
 
 pub(in crate::sqlite_hub) fn open_existing_dispatch_reentry_read_only_database(
@@ -35,7 +35,7 @@ pub(in crate::sqlite_hub) fn open_existing_dispatch_reentry_read_only_database(
     open_existing_live_read_only_database(
         path,
         DISPATCH_REENTRY_VERSIONS,
-        "dispatch re-entry schema version 12..=27",
+        "dispatch re-entry schema version 12..=28",
         false,
     )
 }
@@ -88,7 +88,7 @@ fn validate_live_schema(
         contract::validate_migration_source(connection, version)?;
         return Ok(());
     }
-    if upgrade_supported && (1..27).contains(&version) {
+    if upgrade_supported && (1..28).contains(&version) {
         contract::validate_migration_source(connection, version)?;
         return Err(HubStoreError::Unavailable {
             message: format!(

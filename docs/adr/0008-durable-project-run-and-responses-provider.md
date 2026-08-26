@@ -60,10 +60,11 @@ and a unique Run-to-Prompt association in one immediate SQLite transaction.
 There is no public idempotency-key namespace that can fabricate this
 authorization.
 
-Repeating the same terminal Run may repair a missing assistant Prompt without
-calling a provider or tool, or requiring a live provider credential. A changed
-or contradictory association is corruption. Incomplete and pending-tool Runs
-are inspectable but never automatically resumed.
+Repeating the same completed-terminal Run may repair a missing assistant Prompt
+without calling a provider or tool, or requiring a live provider credential.
+Failed, cancelled, and limit-exceeded terminal Runs do not enter this repair
+path. A changed or contradictory association is corruption. Incomplete and
+pending-tool Runs are inspectable but never automatically resumed.
 
 Conversation history orders an associated assistant immediately after the
 Run's bound user Prompt. It derives that causal anchor from the durable

@@ -10,17 +10,30 @@ use crate::{
     ConversationHistory, RuntimeError, ToolCatalog,
     emitter::EventEmitter,
     model_turn::{ModelBudget, collect_model_turn},
-    output_limit::truncate_output,
     run_state::{
         AssistantAction, RunState, classify_assistant_turn, finish_without_tools, limit_outcome,
         pre_turn_outcome,
     },
 };
 
+#[path = "engine_resume.rs"]
+mod resume;
+#[path = "engine_tools.rs"]
+mod tool_events;
+
+use tool_events::{commit_tool_result, reject_calls};
+
 pub struct AgentRuntime {
     provider: Arc<dyn ModelProvider>,
     tools: ToolCatalog,
     workspace_factory: Arc<dyn WorkspaceReadFactory>,
+}
+
+struct ResumeDriver<'request, 'borrow, 'sink> {
+    request: &'request RunRequest,
+    workspace: &'request WorkspaceReadCapability,
+    cancellation: &'request Cancellation,
+    emitter: &'borrow mut EventEmitter<'sink>,
 }
 
 impl AgentRuntime {
@@ -107,19 +120,82 @@ impl AgentRuntime {
         cancellation: &Cancellation,
         emitter: &mut EventEmitter<'_>,
     ) -> Result<RunResult, RuntimeError> {
-        let mut state = RunState::new(history, request.prompt.clone());
+        let state = RunState::new(history, request.prompt.clone());
+        let mut driver = ResumeDriver {
+            request,
+            workspace,
+            cancellation,
+            emitter,
+        };
+        self.resume_from_state(state, &mut driver, false, None)
+            .await
+    }
+
+    async fn resume_from_state(
+        &self,
+        mut state: RunState,
+        driver: &mut ResumeDriver<'_, '_, '_>,
+        active_turn: bool,
+        initial_calls: Option<Vec<ToolCall>>,
+    ) -> Result<RunResult, RuntimeError> {
+        if let Some(calls) = initial_calls
+            && let Some(outcome) = self
+                .execute_initial_calls(&mut state, driver, calls)
+                .await?
+        {
+            return Ok(state.result(outcome));
+        }
+        self.resume_loop(state, driver, active_turn).await
+    }
+
+    async fn execute_initial_calls(
+        &self,
+        state: &mut RunState,
+        driver: &mut ResumeDriver<'_, '_, '_>,
+        calls: Vec<ToolCall>,
+    ) -> Result<Option<RunOutcome>, RuntimeError> {
+        let action = AssistantAction::Execute(calls.clone());
+        if Self::tool_call_limit_reached(&action, driver.request, state, driver.emitter)? {
+            return Ok(Some(limit_outcome(LimitKind::ToolCalls)));
+        }
+        if self
+            .execute_calls(
+                driver.request,
+                driver.workspace,
+                driver.cancellation,
+                calls,
+                state,
+                driver.emitter,
+            )
+            .await?
+        {
+            return Ok(Some(RunOutcome::Cancelled));
+        }
+        Ok(None)
+    }
+
+    async fn resume_loop(
+        &self,
+        mut state: RunState,
+        driver: &mut ResumeDriver<'_, '_, '_>,
+        mut active_turn: bool,
+    ) -> Result<RunResult, RuntimeError> {
         loop {
-            if let Some(outcome) = pre_turn_outcome(request, cancellation, &state) {
+            if !active_turn
+                && let Some(outcome) = pre_turn_outcome(driver.request, driver.cancellation, &state)
+            {
                 return Ok(state.result(outcome));
             }
-            let turn = match self.next_turn(request, cancellation, &state, emitter).await {
-                Ok(turn) => turn,
-                Err(RuntimeError::Cancelled) => return Ok(state.result(RunOutcome::Cancelled)),
-                Err(error) => return Err(error),
+            let Some(turn) = self.next_resume_turn(&state, driver, !active_turn).await? else {
+                return Ok(state.result(RunOutcome::Cancelled));
             };
-            let action = Self::commit_assistant(turn, &mut state, emitter)?;
-            if Self::tool_call_limit_reached(&action, request, &mut state, emitter)? {
+            active_turn = false;
+            let action = Self::commit_assistant(turn, &mut state, driver.emitter)?;
+            if Self::tool_call_limit_reached(&action, driver.request, &mut state, driver.emitter)? {
                 return Ok(state.result(limit_outcome(LimitKind::ToolCalls)));
+            }
+            if Self::reject_assistant_action(&action, driver.request, &mut state, driver.emitter)? {
+                continue;
             }
             let calls = match action {
                 AssistantAction::Finish => return finish_without_tools(state),
@@ -127,24 +203,63 @@ impl AgentRuntime {
                     return Ok(state.result(limit_outcome(kind)));
                 }
                 AssistantAction::Execute(calls) => calls,
-                AssistantAction::Reject(calls, code) => {
-                    reject_calls(
-                        &calls,
-                        code,
-                        request.limits.max_tool_output_bytes,
-                        &mut state,
-                        emitter,
-                    )?;
-                    continue;
-                }
+                AssistantAction::Reject(..) => unreachable!("rejected action was handled above"),
             };
             if self
-                .execute_calls(request, workspace, cancellation, calls, &mut state, emitter)
+                .execute_calls(
+                    driver.request,
+                    driver.workspace,
+                    driver.cancellation,
+                    calls,
+                    &mut state,
+                    driver.emitter,
+                )
                 .await?
             {
                 return Ok(state.result(RunOutcome::Cancelled));
             }
         }
+    }
+
+    async fn next_resume_turn(
+        &self,
+        state: &RunState,
+        driver: &mut ResumeDriver<'_, '_, '_>,
+        emit_turn_started: bool,
+    ) -> Result<Option<crate::model_turn::ModelTurn>, RuntimeError> {
+        match self
+            .next_turn(
+                driver.request,
+                driver.cancellation,
+                state,
+                driver.emitter,
+                emit_turn_started,
+            )
+            .await
+        {
+            Ok(turn) => Ok(Some(turn)),
+            Err(RuntimeError::Cancelled) => Ok(None),
+            Err(error) => Err(error),
+        }
+    }
+
+    fn reject_assistant_action(
+        action: &AssistantAction,
+        request: &RunRequest,
+        state: &mut RunState,
+        emitter: &mut EventEmitter<'_>,
+    ) -> Result<bool, RuntimeError> {
+        let AssistantAction::Reject(calls, code) = action else {
+            return Ok(false);
+        };
+        reject_calls(
+            calls,
+            code,
+            request.limits.max_tool_output_bytes,
+            state,
+            emitter,
+        )?;
+        Ok(true)
     }
 
     fn tool_call_limit_reached(
@@ -173,9 +288,12 @@ impl AgentRuntime {
         cancellation: &Cancellation,
         state: &RunState,
         emitter: &mut EventEmitter<'_>,
+        emit_turn_started: bool,
     ) -> Result<crate::model_turn::ModelTurn, RuntimeError> {
         let turn = state.turns.saturating_add(1);
-        emitter.emit(RuntimeEventKind::TurnStarted { turn })?;
+        if emit_turn_started {
+            emitter.emit(RuntimeEventKind::TurnStarted { turn })?;
+        }
         let model_request = ModelRequest {
             system_prompt: request.system_prompt.clone(),
             messages: state.messages.clone(),
@@ -324,91 +442,4 @@ impl AgentRuntime {
             }
         }
     }
-}
-
-fn reject_calls(
-    calls: &[ToolCall],
-    code: &str,
-    max_output_bytes: usize,
-    state: &mut RunState,
-    emitter: &mut EventEmitter<'_>,
-) -> Result<(), RuntimeError> {
-    for call in calls {
-        let message = "tool call was not executed";
-        emitter.emit(RuntimeEventKind::ToolRejected {
-            call: call.clone(),
-            code: code.into(),
-            message: message.into(),
-        })?;
-        let output = truncate_output(
-            ToolOutput {
-                content: format!("{code}: {message}"),
-                truncated: false,
-            },
-            max_output_bytes,
-        );
-        commit_tool_message(
-            call.clone(),
-            output.content,
-            true,
-            output.truncated,
-            state,
-            emitter,
-        )?;
-    }
-    Ok(())
-}
-
-fn commit_tool_result(
-    call: ToolCall,
-    result: Result<ToolOutput, (String, String)>,
-    max_output_bytes: usize,
-    state: &mut RunState,
-    emitter: &mut EventEmitter<'_>,
-) -> Result<(), RuntimeError> {
-    let (output, is_error) = match result {
-        Ok(output) => (output, false),
-        Err((code, message)) => (
-            ToolOutput {
-                content: format!("{code}: {message}"),
-                truncated: false,
-            },
-            true,
-        ),
-    };
-    let output = truncate_output(output, max_output_bytes);
-    emitter.emit(RuntimeEventKind::ToolFinished {
-        call_id: call.id.clone(),
-        name: call.name.clone(),
-        output: output.content.clone(),
-        is_error,
-        truncated: output.truncated,
-    })?;
-    commit_tool_message(
-        call,
-        output.content,
-        is_error,
-        output.truncated,
-        state,
-        emitter,
-    )
-}
-
-fn commit_tool_message(
-    call: ToolCall,
-    output: String,
-    is_error: bool,
-    truncated: bool,
-    state: &mut RunState,
-    emitter: &mut EventEmitter<'_>,
-) -> Result<(), RuntimeError> {
-    let message = Message::Tool {
-        call_id: call.id,
-        name: call.name,
-        output,
-        is_error,
-        truncated,
-    };
-    state.messages.push(message.clone());
-    emitter.emit(RuntimeEventKind::MessageCommitted { message })
 }

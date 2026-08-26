@@ -30,6 +30,21 @@ pub enum RunCommand {
     Show {
         run_id: String,
     },
+    Explain {
+        run_id: String,
+    },
+    Resume {
+        run_id: String,
+    },
+    Restart {
+        run_id: String,
+    },
+    Branch {
+        run_id: String,
+    },
+    Lineage {
+        run_id: String,
+    },
 }
 
 #[derive(Default)]
@@ -49,6 +64,11 @@ pub(super) fn parse(
         Some("start") => parse_start(tokens, global),
         Some("list") => parse_list(tokens),
         Some("show") => parse_show(tokens),
+        Some("explain") => parse_explain(tokens),
+        Some("resume") => parse_resume(tokens),
+        Some("restart") => parse_restart(tokens),
+        Some("branch") => parse_branch(tokens),
+        Some("lineage") => parse_lineage(tokens),
         Some(value) => Err(with_usage(&format!("unknown run command '{value}'"))),
         None => Err(with_usage("run command is required")),
     }
@@ -201,6 +221,36 @@ fn parse_show(tokens: &mut VecDeque<String>) -> Result<Command, String> {
     let run_id = next_value(tokens, "run show")?;
     require_empty(tokens)?;
     Ok(Command::Run(RunCommand::Show { run_id }))
+}
+
+fn parse_resume(tokens: &mut VecDeque<String>) -> Result<Command, String> {
+    let run_id = next_value(tokens, "run resume")?;
+    require_empty(tokens)?;
+    Ok(Command::Run(RunCommand::Resume { run_id }))
+}
+
+fn parse_restart(tokens: &mut VecDeque<String>) -> Result<Command, String> {
+    let run_id = next_value(tokens, "run restart")?;
+    require_empty(tokens)?;
+    Ok(Command::Run(RunCommand::Restart { run_id }))
+}
+
+fn parse_branch(tokens: &mut VecDeque<String>) -> Result<Command, String> {
+    let run_id = next_value(tokens, "run branch")?;
+    require_empty(tokens)?;
+    Ok(Command::Run(RunCommand::Branch { run_id }))
+}
+
+fn parse_lineage(tokens: &mut VecDeque<String>) -> Result<Command, String> {
+    let run_id = next_value(tokens, "run lineage")?;
+    require_empty(tokens)?;
+    Ok(Command::Run(RunCommand::Lineage { run_id }))
+}
+
+fn parse_explain(tokens: &mut VecDeque<String>) -> Result<Command, String> {
+    let run_id = next_value(tokens, "run explain")?;
+    require_empty(tokens)?;
+    Ok(Command::Run(RunCommand::Explain { run_id }))
 }
 
 fn set_once<T>(slot: &mut Option<T>, value: T, option: &str) -> Result<(), String> {

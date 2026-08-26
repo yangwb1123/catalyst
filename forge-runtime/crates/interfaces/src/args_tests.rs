@@ -386,17 +386,71 @@ fn run_queries_parse_without_a_space_selector() {
             run_id: "run-1".into(),
         })
     );
+    assert_eq!(
+        parse(&["run", "explain", "run-1"]).command,
+        Command::Run(RunCommand::Explain {
+            run_id: "run-1".into(),
+        })
+    );
+    assert_eq!(
+        parse(&["-C", "/srv/api", "run", "resume", "run-1"]).command,
+        Command::Run(RunCommand::Resume {
+            run_id: "run-1".into(),
+        })
+    );
+    assert_eq!(
+        parse(&[
+            "--idempotency-key",
+            "restart-key",
+            "-C",
+            "/srv/api",
+            "run",
+            "restart",
+            "run-1",
+        ])
+        .command,
+        Command::Run(RunCommand::Restart {
+            run_id: "run-1".into(),
+        })
+    );
 }
 
 #[test]
-fn run_start_requires_a_project_and_queries_reject_selectors() {
+fn run_execution_requires_a_project_and_queries_reject_selectors() {
     let missing_project =
         parse_tokens(["run", "start", "session-1", "prompt-1"].map(str::to_owned))
             .expect_err("run start needs an explicit workspace");
     assert!(missing_project.contains("requires -C/--project"));
 
+    let missing_resume_project = parse_tokens(["run", "resume", "run-1"].map(str::to_owned))
+        .expect_err("run resume needs an explicit workspace");
+    assert!(missing_resume_project.contains("run resume requires -C/--project"));
+
+    let missing_restart_key =
+        parse_tokens(["-C", "/srv/api", "run", "restart", "run-1"].map(str::to_owned))
+            .expect_err("run restart needs an explicit key");
+    assert!(missing_restart_key.contains("explicit --idempotency-key"));
+
+    let missing_restart_project = parse_tokens(
+        [
+            "--idempotency-key",
+            "restart-key",
+            "run",
+            "restart",
+            "run-1",
+        ]
+        .map(str::to_owned),
+    )
+    .expect_err("run restart needs an explicit workspace");
+    assert!(missing_restart_project.contains("run restart requires -C/--project"));
+
     let selected_query =
         parse_tokens(["-C", "/srv/api", "run", "show", "run-1"].map(str::to_owned))
             .expect_err("run queries cannot ignore a selector");
     assert!(selected_query.contains("selectors are not valid"));
+
+    let selected_explanation =
+        parse_tokens(["-C", "/srv/api", "run", "explain", "run-1"].map(str::to_owned))
+            .expect_err("run explanations cannot ignore a selector");
+    assert!(selected_explanation.contains("selectors are not valid"));
 }

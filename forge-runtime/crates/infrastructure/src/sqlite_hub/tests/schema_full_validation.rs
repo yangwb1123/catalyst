@@ -328,6 +328,8 @@ const POST_V1_SCHEMA_OBJECTS: &[&str] = &[
     "governance_semantic_heads_state_validity",
     "governance_claim_semantic_conflicts",
     "governance_claim_validation_jobs_due",
+    "run_lineages",
+    "run_lineages_parent",
 ];
 
 pub(super) fn assert_post_v1_objects_absent(connection: &Connection) {

@@ -30,6 +30,8 @@ mod open;
 mod read;
 mod rows;
 mod run_integrity;
+mod run_lineage_read;
+mod run_lineage_write;
 mod run_read;
 #[cfg(test)]
 #[path = "tests/run_read_snapshot.rs"]
@@ -74,18 +76,21 @@ mod schema_v25_sql;
 mod schema_v26_sql;
 #[path = "schema_contract/v27_sql.rs"]
 mod schema_v27_sql;
+#[path = "schema_contract/v28_sql.rs"]
+mod schema_v28_sql;
 mod schema_v9_sql;
 mod write;
 
 use std::path::{Path, PathBuf};
 
 use forge_runtime_domain::{
-    BeginGroupExecution, BeginGroupExecutionResult, BeginRun, BeginRunResult, Conversation,
-    ConversationScope, GroupContextPolicy, GroupContextSlice, GroupExecutionEvent,
-    GroupExecutionInspection, GroupExecutionRecord, GroupExecutionStore, GroupProjectMember,
-    GroupRunRecord, GroupRunSnapshot, GroupRunStore, HubEntity, HubSnapshot, HubStore,
-    HubStoreError, PrepareGroupRun, PrepareGroupRunResult, Project, PromptRecord, RunInspection,
-    RunRecord, RunStore, RunStoreError, RuntimeEvent, SessionGroup,
+    BeginGroupExecution, BeginGroupExecutionResult, BeginRun, BeginRunBranch, BeginRunBranchResult,
+    BeginRunResult, Conversation, ConversationScope, GroupContextPolicy, GroupContextSlice,
+    GroupExecutionEvent, GroupExecutionInspection, GroupExecutionRecord, GroupExecutionStore,
+    GroupProjectMember, GroupRunRecord, GroupRunSnapshot, GroupRunStore, HubEntity, HubSnapshot,
+    HubStore, HubStoreError, PrepareGroupRun, PrepareGroupRunResult, Project, PromptRecord,
+    RunInspection, RunLineageRecord, RunRecord, RunStore, RunStoreError, RuntimeEvent,
+    SessionGroup,
 };
 use rusqlite::{Connection, Error as SqliteError, ErrorCode};
 
@@ -288,6 +293,17 @@ impl RunStore for SqliteHubStore {
     fn begin_run(&self, request: &BeginRun) -> Result<BeginRunResult, RunStoreError> {
         let mut connection = self.connect_run()?;
         run_write::begin_run(&mut connection, request)
+    }
+
+    fn begin_run_branch(
+        &self,
+        request: &BeginRunBranch,
+    ) -> Result<BeginRunBranchResult, RunStoreError> {
+        run_lineage_write::begin(&mut self.connect_run()?, request)
+    }
+
+    fn find_run_lineage(&self, run_id: &str) -> Result<Option<RunLineageRecord>, RunStoreError> {
+        run_lineage_read::find_validated(&mut self.connect_run()?, run_id)
     }
 
     fn append_event(&self, event: &RuntimeEvent) -> Result<(), RunStoreError> {

@@ -29,6 +29,7 @@ pub mod knowledge_update_proposal_contract;
 mod model;
 mod run;
 mod run_journal;
+mod run_lineage;
 mod run_store;
 mod tool;
 pub mod transition_receipt_contract;
@@ -282,6 +283,11 @@ pub use run::{
 };
 pub use run_journal::{
     RunInspection, RunJournalCursor, RunJournalError, RunRecovery, RunRecoveryState,
+    RunResumePoint, RunToolContinuation,
+};
+pub use run_lineage::{
+    BeginRunBranch, BeginRunBranchResult, ROOT_INPUT_SOURCE_EVENT_SEQ, RUN_LINEAGE_VERSION,
+    RunBranchMode, RunLineageError, RunLineageRecord, expected_lineage_sha256, source_event_sha256,
 };
 pub use run_store::{
     BeginRun, BeginRunDisposition, BeginRunResult, BoundRunPrompt, MAX_RUN_CURSOR_JSON_BYTES,

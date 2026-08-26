@@ -1,8 +1,4 @@
-use std::{
-    fs,
-    path::Path,
-    process::{Command, Output},
-};
+mod support;
 
 use forge_runtime_domain::{
     BeginRun, HubStore, Message, PROTOCOL_VERSION, RUN_STORE_VERSION, RunExecution, RunLimits,
@@ -13,41 +9,10 @@ use rusqlite::Connection;
 use serde_json::Value;
 use tempfile::TempDir;
 
-struct RunFixture {
-    state: TempDir,
-    project: TempDir,
-    conversation_id: String,
-    prompt_id: String,
-}
-
-fn invoke(arguments: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_forge-runtime"))
-        .args(arguments)
-        .output()
-        .expect("run forge-runtime")
-}
-
-fn invoke_without_openai_key(arguments: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_forge-runtime"))
-        .args(arguments)
-        .env_remove("OPENAI_API_KEY")
-        .output()
-        .expect("run forge-runtime without an OpenAI key")
-}
-
-fn run_json(arguments: &[&str]) -> Value {
-    let output = invoke(arguments);
-    assert_success(&output);
-    serde_json::from_slice(&output.stdout).expect("CLI emits JSON")
-}
-
-fn assert_success(output: &Output) {
-    assert!(
-        output.status.success(),
-        "command failed:\n{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-}
+use support::{
+    RunFixture, assert_prompt_writeback, assert_success, fixture, fixture_store, invoke,
+    invoke_without_openai_key, parse_jsonl, path_text, run_json, start_arguments, text_field,
+};
 
 #[test]
 fn help_discloses_live_egress_journaling_and_no_tool_default() {
@@ -61,6 +26,25 @@ fn help_discloses_live_egress_journaling_and_no_tool_default() {
     assert!(help.contains("journaled locally in plaintext"));
     assert!(help.contains("exposes no tools"));
     assert!(help.contains("grants no WorkspaceRead capability"));
+    assert!(help.contains("run explain RUN_ID"));
+    assert!(help.contains("run resume RUN_ID"));
+}
+
+#[test]
+fn run_explain_does_not_create_a_missing_hub_database() {
+    let state = TempDir::new().expect("state directory");
+    let output = invoke(&[
+        "--state-dir",
+        path_text(state.path()),
+        "--json",
+        "run",
+        "explain",
+        "missing-run",
+    ]);
+
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    assert!(!state.path().join("hub.sqlite3").exists());
 }
 
 #[test]
@@ -79,76 +63,6 @@ fn allow_read_without_live_is_rejected_before_execution() {
     assert_eq!(output.status.code(), Some(2));
     assert!(output.stdout.is_empty());
     assert!(String::from_utf8_lossy(&output.stderr).contains("only valid with --live"));
-}
-
-fn path_text(path: &Path) -> &str {
-    path.to_str().expect("test paths are UTF-8")
-}
-
-fn fixture() -> RunFixture {
-    let state = TempDir::new().expect("state directory");
-    let project = TempDir::new().expect("project directory");
-    fs::write(project.path().join("README.md"), "# Durable run\n").expect("workspace fixture");
-    let created = run_json(&[
-        "--state-dir",
-        path_text(state.path()),
-        "--json",
-        "-C",
-        path_text(project.path()),
-        "session",
-        "new",
-        "--title",
-        "Durable execution",
-    ]);
-    let conversation_id = text_field(&created, &["session", "id"]);
-    let prompt = run_json(&[
-        "--state-dir",
-        path_text(state.path()),
-        "--json",
-        "prompt",
-        "add",
-        &conversation_id,
-        "inspect the durable workspace",
-    ]);
-    let prompt_id = text_field(&prompt, &["prompt", "id"]);
-    RunFixture {
-        state,
-        project,
-        conversation_id,
-        prompt_id,
-    }
-}
-
-fn text_field(value: &Value, path: &[&str]) -> String {
-    let mut current = value;
-    for segment in path {
-        current = &current[*segment];
-    }
-    current.as_str().expect("string field").to_owned()
-}
-
-fn start_arguments<'a>(fixture: &'a RunFixture, key: &'a str) -> Vec<&'a str> {
-    vec![
-        "--state-dir",
-        path_text(fixture.state.path()),
-        "--idempotency-key",
-        key,
-        "-C",
-        path_text(fixture.project.path()),
-        "run",
-        "start",
-        &fixture.conversation_id,
-        &fixture.prompt_id,
-        "--read",
-        "README.md",
-    ]
-}
-
-fn parse_jsonl(output: &Output) -> Vec<Value> {
-    String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .map(|line| serde_json::from_str(line).expect("runtime event is JSON"))
-        .collect()
 }
 
 #[test]
@@ -208,6 +122,31 @@ fn assert_run_queries(fixture: &RunFixture, run_id: &str, event_count: usize) {
         Some(event_count)
     );
     assert!(!inspection.to_string().contains("stable-run-key"));
+    let explanation = run_json(&["--state-dir", state, "--json", "run", "explain", run_id]);
+    assert_eq!(explanation["type"], "run_explanation");
+    assert_eq!(explanation["explanation"]["recovery"]["status"], "terminal");
+    assert_eq!(
+        explanation["explanation"]["continuation"]["command"],
+        Value::Null
+    );
+    assert_eq!(
+        explanation["explanation"]["authorization"]["workspace_read"]["status"],
+        "declared_and_runtime_exposed"
+    );
+    assert_eq!(
+        explanation["explanation"]["context"]["prior_conversation_history"]["status"],
+        "open"
+    );
+    assert!(
+        !explanation
+            .to_string()
+            .contains("inspect the durable workspace")
+    );
+    assert!(
+        !explanation
+            .to_string()
+            .contains("Read README.md successfully")
+    );
     let listed = run_json(&[
         "--state-dir",
         state,
@@ -219,31 +158,6 @@ fn assert_run_queries(fixture: &RunFixture, run_id: &str, event_count: usize) {
         "5",
     ]);
     assert_eq!(listed["runs"][0]["run_id"], run_id);
-}
-
-fn assert_prompt_writeback(fixture: &RunFixture) {
-    let prompts = run_json(&[
-        "--state-dir",
-        path_text(fixture.state.path()),
-        "--json",
-        "prompt",
-        "list",
-        &fixture.conversation_id,
-        "--limit",
-        "10",
-    ]);
-    let assistant: Vec<_> = prompts["prompts"]
-        .as_array()
-        .expect("prompt array")
-        .iter()
-        .filter(|prompt| prompt["role"] == "assistant")
-        .collect();
-    assert_eq!(assistant.len(), 1);
-    assert!(
-        assistant[0]["content"]
-            .as_str()
-            .is_some_and(|answer| answer.contains("Read README.md successfully"))
-    );
 }
 
 #[test]
@@ -271,19 +185,6 @@ fn a_mismatched_project_conversation_emits_no_event_and_creates_no_run() {
         "list",
     ]);
     assert_eq!(listed["runs"].as_array().map(Vec::len), Some(0));
-}
-
-#[test]
-fn an_incomplete_replay_never_restarts_the_provider_or_tools() {
-    let fixture = fixture();
-    seed_incomplete_run(&fixture, "incomplete-key");
-    let arguments = start_arguments(&fixture, "incomplete-key");
-
-    let replay = invoke(&arguments);
-
-    assert!(!replay.status.success());
-    assert!(replay.stdout.is_empty());
-    assert!(String::from_utf8_lossy(&replay.stderr).contains("incomplete"));
 }
 
 #[test]
@@ -339,67 +240,6 @@ fn terminal_live_replay_does_not_require_an_api_key() {
     assert_prompt_writeback(&fixture);
 }
 
-#[test]
-fn replay_key_cannot_change_the_persisted_execution_mode() {
-    let fixture = fixture();
-    seed_incomplete_run(&fixture, "bound-execution-key");
-    let output = invoke_without_openai_key(&[
-        "--state-dir",
-        path_text(fixture.state.path()),
-        "--idempotency-key",
-        "bound-execution-key",
-        "-C",
-        path_text(fixture.project.path()),
-        "run",
-        "start",
-        &fixture.conversation_id,
-        &fixture.prompt_id,
-        "--live",
-    ]);
-
-    assert!(!output.status.success());
-    let error = String::from_utf8_lossy(&output.stderr);
-    assert!(error.contains("different Run input"));
-    assert!(!error.contains("OPENAI_API_KEY"));
-}
-
-fn seed_incomplete_run(fixture: &RunFixture, key: &str) {
-    let database = fixture.state.path().join("hub.sqlite3");
-    let store = SqliteHubStore::open(database).expect("open Hub fixture");
-    let project_path = fixture
-        .project
-        .path()
-        .canonicalize()
-        .expect("canonical project");
-    let project = store.open_project(&project_path).expect("existing Project");
-    store
-        .begin_run(&BeginRun {
-            v: RUN_STORE_VERSION,
-            run_id: "incomplete-run".into(),
-            conversation_id: fixture.conversation_id.clone(),
-            prompt_id: fixture.prompt_id.clone(),
-            project_id: project.id,
-            execution: RunExecution {
-                provider: RunProvider::DeterministicRead {
-                    path: "README.md".into(),
-                },
-                system_prompt: "Use only the available read-only tools to answer the user.".into(),
-                allowed_read_paths: vec!["README.md".into()],
-                limits: RunLimits {
-                    max_turns: 4,
-                    max_tool_calls: 4,
-                    max_tool_output_bytes: 64 * 1024,
-                    max_model_output_bytes: 64 * 1024,
-                    max_model_events: 4_096,
-                    max_output_tokens_per_turn: 4_096,
-                },
-            },
-            idempotency_key: key.into(),
-            created_at_ms: 1,
-        })
-        .expect("seed incomplete Run");
-}
-
 fn seed_terminal_live_run(fixture: &RunFixture, key: &str) {
     let store = fixture_store(fixture);
     let run = live_begin(fixture, &store, key);
@@ -440,10 +280,6 @@ fn seed_terminal_live_run(fixture: &RunFixture, key: &str) {
             })
             .expect("seed live event");
     }
-}
-
-fn fixture_store(fixture: &RunFixture) -> SqliteHubStore {
-    SqliteHubStore::open(fixture.state.path().join("hub.sqlite3")).expect("open Hub fixture")
 }
 
 fn live_begin(fixture: &RunFixture, store: &SqliteHubStore, key: &str) -> BeginRun {

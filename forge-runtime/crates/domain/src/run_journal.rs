@@ -1,4 +1,6 @@
-use crate::{PROTOCOL_VERSION, RUN_STORE_VERSION, RunOutcome, RunRecord, RuntimeEvent, ToolCall};
+use crate::{
+    Message, PROTOCOL_VERSION, RUN_STORE_VERSION, RunOutcome, RunRecord, RuntimeEvent, ToolCall,
+};
 
 #[path = "run_journal_state.rs"]
 mod state;
@@ -24,6 +26,64 @@ pub enum RunRecoveryState {
     Terminal { outcome: RunOutcome },
     Incomplete,
     PendingTool { calls: Vec<ToolCall> },
+}
+
+/// The only safe continuation points for an explicit Run resume.
+///
+/// This is derived from the already validated journal, never from a caller
+/// supplied cursor.  In particular, a `PendingTool` point is intentionally
+/// exposed as a refusal point: a durable `tool_started` event means the
+/// external effect may already have happened, so an automatic replay must not
+/// execute that tool again.
+#[derive(Clone, Debug, PartialEq)]
+pub enum RunResumePoint {
+    Start,
+    CommitUser {
+        prompt: String,
+    },
+    StartTurn {
+        turn: u32,
+    },
+    ContinueTurn {
+        turn: u32,
+    },
+    ExecuteTools {
+        calls: Vec<ToolCall>,
+    },
+    RejectTools {
+        calls: Vec<ToolCall>,
+        code: String,
+        message: String,
+    },
+    CommitToolMessage {
+        message: Message,
+        continuation: RunToolContinuation,
+    },
+    Finish {
+        outcome: RunOutcome,
+    },
+    PendingTool {
+        call: ToolCall,
+    },
+}
+
+/// The validated action that follows a repaired Tool message.
+#[derive(Clone, Debug, PartialEq)]
+pub enum RunToolContinuation {
+    ExecuteTools {
+        calls: Vec<ToolCall>,
+    },
+    RejectTools {
+        calls: Vec<ToolCall>,
+        code: String,
+        message: String,
+    },
+    StartTurn {
+        turn: u32,
+    },
+    Finish {
+        outcome: RunOutcome,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -109,6 +169,12 @@ impl RunJournalCursor {
         self.state.recovery()
     }
 
+    /// Returns the validated point at which an explicit resume may continue.
+    #[must_use]
+    pub fn resume_point(&self) -> RunResumePoint {
+        self.state.resume_point()
+    }
+
     fn validate_internal(&self) -> Result<(), RunJournalError> {
         if self.v != RUN_STORE_VERSION
             || self.protocol_version != PROTOCOL_VERSION
@@ -152,6 +218,20 @@ impl RunInspection {
             recovery: cursor.recovery(),
         })
     }
+
+    /// Derives the explicit-resume continuation from this validated journal.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error only if the inspection was constructed outside
+    /// [`RunInspection::validate`] with an invalid event prefix.
+    pub fn resume_point(&self) -> Result<RunResumePoint, RunJournalError> {
+        let mut cursor = RunJournalCursor::new(&self.run)?;
+        for event in &self.events {
+            cursor.append(event)?;
+        }
+        Ok(cursor.resume_point())
+    }
 }
 
 impl std::fmt::Display for RunJournalError {
@@ -179,14 +259,42 @@ fn journal_error(message: &str) -> RunJournalError {
 }
 
 #[cfg(test)]
-mod tests {
-    use crate::{
-        Message, PROTOCOL_VERSION, RUN_STORE_VERSION, RunExecution, RunLimits, RunOutcome,
-        RunProvider, RunRecord, RunRecoveryState, RuntimeEvent, RuntimeEventKind, ToolCall,
-    };
-    use serde_json::json;
+#[path = "run_journal_test_support.rs"]
+mod test_support;
 
-    use super::RunInspection;
+#[cfg(test)]
+#[path = "run_journal_resume_rejection_tests.rs"]
+mod resume_rejection_tests;
+
+#[cfg(test)]
+mod tests {
+    use crate::{Message, RunOutcome, RunRecoveryState, RunToolContinuation, RuntimeEventKind};
+
+    use super::{
+        RunInspection, RunResumePoint,
+        test_support::{assistant_event, event, record, tool_call, user_event},
+    };
+
+    #[test]
+    fn resume_point_executes_only_unstarted_calls() {
+        let inspection = RunInspection::validate(
+            record(),
+            vec![
+                event(1, RuntimeEventKind::RunStarted { prompt: "p".into() }),
+                user_event(2),
+                event(3, RuntimeEventKind::TurnStarted { turn: 1 }),
+                assistant_event(4, vec![tool_call()]),
+            ],
+        )
+        .expect("valid tool-call prefix");
+
+        assert_eq!(
+            inspection.resume_point().expect("resume point"),
+            RunResumePoint::ExecuteTools {
+                calls: vec![tool_call()]
+            }
+        );
+    }
 
     #[test]
     fn unmatched_tool_start_is_recovery_blocked() {
@@ -206,6 +314,72 @@ mod tests {
             inspection.recovery.state,
             RunRecoveryState::PendingTool { ref calls } if calls == &[tool_call()]
         ));
+        assert_eq!(
+            inspection.resume_point().expect("resume point"),
+            RunResumePoint::PendingTool { call: tool_call() }
+        );
+    }
+
+    #[test]
+    fn resume_point_commits_a_missing_tool_message_without_replaying_the_effect() {
+        let inspection = RunInspection::validate(
+            record(),
+            vec![
+                event(1, RuntimeEventKind::RunStarted { prompt: "p".into() }),
+                user_event(2),
+                event(3, RuntimeEventKind::TurnStarted { turn: 1 }),
+                assistant_event(4, vec![tool_call()]),
+                event(5, RuntimeEventKind::ToolStarted { call: tool_call() }),
+                event(
+                    6,
+                    RuntimeEventKind::ToolFinished {
+                        call_id: "call-1".into(),
+                        name: "read_file".into(),
+                        output: "result".into(),
+                        is_error: false,
+                        truncated: false,
+                    },
+                ),
+            ],
+        )
+        .expect("valid completed-effect prefix");
+
+        assert_eq!(
+            inspection.resume_point().expect("resume point"),
+            RunResumePoint::CommitToolMessage {
+                message: Message::Tool {
+                    call_id: "call-1".into(),
+                    name: "read_file".into(),
+                    output: "result".into(),
+                    is_error: false,
+                    truncated: false,
+                },
+                continuation: RunToolContinuation::StartTurn { turn: 2 },
+            }
+        );
+    }
+
+    #[test]
+    fn resume_point_finishes_a_committed_answer_without_calling_the_provider() {
+        let inspection = RunInspection::validate(
+            record(),
+            vec![
+                event(1, RuntimeEventKind::RunStarted { prompt: "p".into() }),
+                user_event(2),
+                event(3, RuntimeEventKind::TurnStarted { turn: 1 }),
+                assistant_event(4, Vec::new()),
+            ],
+        )
+        .expect("valid answer prefix");
+
+        assert_eq!(
+            inspection.resume_point().expect("resume point"),
+            RunResumePoint::Finish {
+                outcome: RunOutcome::Completed {
+                    answer: "done".into()
+                }
+            }
+        );
     }
 
     #[test]
@@ -312,65 +486,5 @@ mod tests {
                 outcome: RunOutcome::Completed { ref answer }
             } if answer == "done"
         ));
-    }
-
-    fn record() -> RunRecord {
-        RunRecord {
-            v: RUN_STORE_VERSION,
-            run_id: "run-1".into(),
-            conversation_id: "conversation-1".into(),
-            prompt_id: "prompt-1".into(),
-            project_id: "project-1".into(),
-            execution: RunExecution {
-                provider: RunProvider::DeterministicRead {
-                    path: "README.md".into(),
-                },
-                system_prompt: "answer".into(),
-                allowed_read_paths: vec!["README.md".into()],
-                limits: RunLimits::default(),
-            },
-            protocol_version: PROTOCOL_VERSION,
-            created_at_ms: 1,
-        }
-    }
-
-    fn event(seq: u64, kind: RuntimeEventKind) -> RuntimeEvent {
-        RuntimeEvent {
-            v: PROTOCOL_VERSION,
-            session_id: "conversation-1".into(),
-            run_id: "run-1".into(),
-            seq,
-            emitted_at_ms: seq,
-            kind,
-        }
-    }
-
-    fn user_event(seq: u64) -> RuntimeEvent {
-        event(
-            seq,
-            RuntimeEventKind::MessageCommitted {
-                message: Message::User { text: "p".into() },
-            },
-        )
-    }
-
-    fn assistant_event(seq: u64, tool_calls: Vec<ToolCall>) -> RuntimeEvent {
-        event(
-            seq,
-            RuntimeEventKind::MessageCommitted {
-                message: Message::Assistant {
-                    text: "done".into(),
-                    tool_calls,
-                },
-            },
-        )
-    }
-
-    fn tool_call() -> ToolCall {
-        ToolCall {
-            id: "call-1".into(),
-            name: "read_file".into(),
-            arguments: json!({"path": "README.md"}),
-        }
     }
 }

@@ -43,6 +43,7 @@ const FINAL_TABLES: &[&str] = &[
     "governance_semantic_heads",
     "governance_claim_semantic_views",
     "governance_claim_validation_jobs",
+    "run_lineages",
 ];
 
 #[test]
@@ -114,7 +115,7 @@ fn injected_final_validation_failure_rolls_back_complete_v1_migration_chain() {
         panic!("final validator returned the wrong error class: {error:?}");
     };
     assert_eq!(
-        message, "Hub v27 main catalog has invalid object inventory",
+        message, "Hub v28 main catalog has invalid object inventory",
         "error must originate from the real final catalog validator"
     );
 

@@ -292,7 +292,7 @@ dataflow, and fail-fast/no-retry outcomes. It omits manager/task/acceptance,
 Project/member/profile, provider/model/credential, and result text.
 
 `group graph run schedule admit` independently rebuilds the exact control and
-stores the canonical artifact in current SQLite v27 (the schedule sidecar was
+stores the canonical artifact in current SQLite v28 (the schedule sidecar was
 introduced in v13) as one immutable row per Run.
 The transaction consumes no Graph Run journal sequence and leaves the Run,
 event head, Graph, Conversations, Prompts, credentials, providers, network,
@@ -324,7 +324,7 @@ first direct predecessor. Every candidate remains passive and keeps all six
 lifecycle/authority/progress flags false.
 
 `group graph run scheduled-contract admit` stores that artifact in current
-SQLite v27 (initial sidecars began in v14; successor/per-node evolution spans
+SQLite v28 (initial sidecars began in v14; successor/per-node evolution spans
 v17–v24) as an immutable passive row. Initial candidate v2 and the legacy
 lifecycle contract remain mutually exclusive; successor rows use per-node and
 per-ordinal slots. Admission and exact replay revalidate the current source,
@@ -340,9 +340,10 @@ itself claims dispatch authority or execution progress.
 
 `group graph run scheduled-contract provider-request prepare` then fully
 revalidates that candidate and every source binding before using the production
-Responses codec as a deterministic, side-effect-free encoder. SQLite v27 stores
-the exact compact canonical body in a separate immutable sidecar while the Run
-remains v1/seq 1 and the main journal remains unchanged. The candidate's own
+Responses codec as a deterministic, side-effect-free encoder. Current SQLite
+v28 stores the exact compact canonical body in a separate immutable sidecar,
+historically introduced in v15, while the Run remains v1/seq 1 and the main
+journal remains unchanged. The candidate's own
 `provider_request_present=false` is an immutable creation-time field; request
 inspection separately reports `provider_request_sidecar_present=true` without
 claiming a lifecycle request. Default show/list output hides body, endpoint,
@@ -371,7 +372,7 @@ forge-runtime group graph run scheduled-contract provider-request \
 
 This command repeats release and readiness validation after fresh consent, reads
 one header-safe credential, resolves the registered provider without a health
-request, and opens current SQLite schema v27 only at the effectful boundary.
+request, and opens current SQLite schema v28 only at the effectful boundary.
 Its immediate transaction claims the exact scheduled request and global Project
 lane. The one-shot provider stream is reduced to bounded result/uncertainty
 evidence; a pinned Go Core receives a scheduled terminal control and returns one
@@ -662,16 +663,17 @@ it does not prove that replaying an interrupted tool effect is safe. Run
 inspection reads its record, cursor, events, and bound Prompt from one SQLite
 snapshot so a concurrent append cannot look like corruption.
 
-The main SQLite catalog is exclusively Hub-owned. Every declared v0–v27 schema
+The main SQLite catalog is exclusively Hub-owned. Every declared v0–v28 schema
 is validated before migration DDL (v0 must be empty); the final migration step
-then validates the exact v27 governance-semantic-view catalog, DDL, columns, keys,
-foreign keys, structural/index contract, and absence of
+then validates the exact v28 catalog, including the v27 governance semantic view
+and the immutable Project Run direct-parent lineage table, plus all DDL, columns,
+keys, foreign keys, structural/index contracts, and the absence of
 extra views/triggers/tables before the immediate transaction commits.
 Per-version exact DDL expectations are regenerated from the immutable migration
 batches, while each independent structural contract is release-pinned; exact
-DDL validators separately catch CHECK-only drift. v27 owns 39 tables, 38
-explicit indexes and 100 implicit index signatures. Its structural-contract SHA-256 is
-`0b2d43826834a219858fcd44fc052092b998a382acb87689228eb9a4e2d9d2f8`.
+DDL validators separately catch CHECK-only drift. v28 owns 40 tables, 39
+explicit indexes and 102 implicit index signatures. Its structural-contract SHA-256 is
+`e9b13bc846f4cd1ec4460fddbf9ed6bc496b9e65c0f52aa49807bfd7a9be4064`.
 Unexpected state fails as corruption and is never auto-repaired.
 Environmental SQLite failures remain unavailable. This detects schema drift
 but is not a same-user tamper or TOCTOU boundary.
@@ -691,7 +693,7 @@ forge-runtime governance journal validation-jobs --as-of-unix-ms N [--due-only] 
 
 These commands always select the exact current structural tail; caller-supplied
 `as_of_unix_ms` evaluates that tail and never selects history. They open an existing
-exact-v27 database with live SQLite `mode=ro` plus `query_only` and use one Deferred
+exact-v28 database with live SQLite `mode=ro` plus `query_only` and use one Deferred
 snapshot. They do not migrate or logically write Hub rows, but SQLite may coordinate
 SHM locks or create/remove empty WAL/SHM sidecars; a fully read-only filesystem may
 therefore return unavailable. Each inspected aggregate shares a 1,024-record/16-MiB
@@ -713,7 +715,62 @@ forge-runtime --idempotency-key run-local-1 -C . \
 # Inspect durable evidence from another process.
 forge-runtime run list SESSION_ID
 forge-runtime run show RUN_ID
+forge-runtime run explain RUN_ID
+
+# Continue a safe incomplete Run or reconcile completed-terminal writeback.
+forge-runtime -C . run resume RUN_ID
+
+# Prepare a new independent Run from a validated terminal source.
+forge-runtime --idempotency-key restart-1 -C . \
+  run restart SOURCE_RUN_ID
+
+# Create a root-input branch with immutable direct-parent lineage.
+forge-runtime --idempotency-key branch-1 -C . \
+  run branch PARENT_RUN_ID
+
+# Query one Run's direct parent without returning content.
+forge-runtime --json run lineage RUN_ID
 ```
+
+`run list/show/explain/lineage` 使用 existing-current immutable SQLite reader：不会创建、迁移、
+配置或写入 Hub，数据库缺失、schema 非当前版本或存在活动 sidecar 时会 fail closed。
+`run explain` 是 journal-derived 解释视图：它按事件序列给出可复验的
+evidence summary，返回已提交消息的 role/长度/hash、工具生命周期、显式 workspace
+read scope 和 `run resume` 是否是安全的 bounded continuation。它不回显 Prompt、工具
+输出或答案正文；之前的 Conversation history 没有在 Project Run v1 中快照绑定，认证的
+Grant/Approval/PDP 也不在此记录中，因此这些边界会明确标为 open，而不是被推断为事实。
+Provider 生成的 tool-call ID 也只显示长度与 SHA-256；已完成但尚未写入 Tool message 的
+工具输出只显示指纹，纯拒绝调用会作为 `rejected` 生命周期项出现。人类输出折叠流式
+`assistant_delta`，同时保留其计数，并显示消息/工具输出指纹、实际 read scope 和 terminal
+outcome。provider-controlled 工具名只保留受信标签（当前仅 `read_file`）或
+`unrecognized` 加长度/SHA-256，Human 输出对所有配置路径做 terminal-safe 转义。
+
+`run resume` 对安全 incomplete prefix 继续执行；仅对 `RunOutcome::Completed` 的已完成终态
+Run 执行 writeback-only recovery。该 completed 路径先验证 Project 绑定，再幂等
+reconcile 已持久化 assistant answer 与 Conversation，并在
+credential/provider/tool/history setup 前返回；它不调用 provider/tool，也不读取
+workspace 内容。`RunOutcome::Failed`、`RunOutcome::Cancelled` 与
+`RunOutcome::LimitExceeded` 终态仍拒绝 resume。
+
+`run restart` 将终态 source Run 绑定的 Project、Conversation、user Prompt 与完整 execution
+configuration 物化为一个新的、可显式恢复的独立 Run。source Run 指纹与显式 idempotency
+key 在专用域内稳定映射到同一 Run ID；换 source 复用 key 会冲突，精确重试只重放同一个
+`run_started` seed。准备阶段只解析并校验所选 Project，不读取 credential 或 workspace 内容，
+不调用 provider/tool/network，也不复制 source journal、answer 或 result。输出保持
+content-free；新 seed 返回 `ready_to_resume`，晚到重试则返回目标 Run 的真实
+`incomplete`/`pending_tool_effect`/`terminal` 状态。真正执行仍由调用者随后运行
+`run resume NEW_RUN_ID`。restart 保持 independent rerun 语义，不创建 lineage。
+
+`run branch` 只接受已完整验证的 terminal parent。Hub 在一个 immediate transaction 中
+原子创建 child Run、immutable direct-parent lineage 和恰好一个 fresh
+`run_started` seed。child 复用 parent 的 Project、Conversation、user Prompt 与 exact
+execution configuration，但复制零 parent journal suffix、result、answer 或 tool events。
+准备过程不读取 credential/workspace 内容，不构造 provider/tool/transport，也不
+访问 network；真实执行只在调用者显式运行 `run resume CHILD_RUN_ID` 后开始。
+lineage 固定为 `root_input`、source event seq 1，并持久化 source-event 与 lineage
+SHA-256 绑定；context snapshot 与 workspace snapshot 均未绑定。`run lineage`
+只返回 content-free direct-parent metadata，不展开祖先链或 Prompt/event 内容。任意
+event-prefix branching 不在这个 root-input 切片内。
 
 The Run loads at most 16 complete causal messages before the selected user
 Prompt, with a strict 512 KiB history-content budget. A recovered Run answer is
@@ -812,3 +869,5 @@ Architecture:
 - [Passive scheduled-node provider request ADR](../docs/adr/0027-passive-scheduled-node-provider-request.md)
 - [Hub local-foundation design](../docs/design/conversation-hub-phase1.md)
 - [Durable Run journal design](../docs/design/run-journal-phase1.md)
+- [Project Run root-input branch v1 design](../docs/design/run-root-input-branch.md)
+- [Project Run root-input branch v1 ADR](../docs/adr/ADR-0095-project-run-root-input-branch-v1.md)

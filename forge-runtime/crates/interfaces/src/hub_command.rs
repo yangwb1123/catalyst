@@ -15,7 +15,8 @@ use crate::{
     group_context_output::GroupContextView,
     group_execution_output::GroupExecutionInspectionView,
     group_run_output::GroupRunSnapshotView,
-    hub_output::{CliOutput, OutputKind, RemoteStatus},
+    hub_output::{CliOutput, OutputKind, RemoteStatus, RunExplanationView},
+    run_lineage_output::RunLineageView,
     runtime_application::{
         GroupExecutionService, GroupRunService, HubService, MAX_PROMPT_BYTES, RunService,
     },
@@ -34,6 +35,18 @@ pub fn execute(args: &Args) -> Result<CliOutput, Box<dyn Error>> {
         // Readiness probe: report BEFORE any store open, which would
         // migrate the hub. The probe never migrates or creates.
         return hub_status(args);
+    }
+    if let Command::Run(command) = &args.command
+        && matches!(
+            command,
+            RunCommand::List { .. }
+                | RunCommand::Show { .. }
+                | RunCommand::Explain { .. }
+                | RunCommand::Lineage { .. }
+        )
+    {
+        let store = Arc::new(SqliteHubStore::open_existing_current_read_only(database)?);
+        return execute_run(&RunService::new(store), command);
     }
     let store = Arc::new(SqliteHubStore::open(database)?);
     let service = HubService::new(store.clone());
@@ -78,7 +91,19 @@ fn execute_run(service: &RunService, command: &RunCommand) -> Result<CliOutput, 
         RunCommand::Show { run_id } => Ok(CliOutput::new(OutputKind::Run {
             inspection: service.inspect_run(run_id)?,
         })),
-        RunCommand::Start { .. } => Err("run start must use the runtime execution path".into()),
+        RunCommand::Explain { run_id } => Ok(CliOutput::new(OutputKind::RunExplanation {
+            explanation: RunExplanationView::from_inspection(&service.inspect_run(run_id)?)
+                .map_err(|error| -> Box<dyn Error> { error.into() })?,
+        })),
+        RunCommand::Lineage { run_id } => Ok(CliOutput::new(OutputKind::RunLineage {
+            view: RunLineageView::new(run_id, service.run_lineage(run_id)?),
+        })),
+        RunCommand::Start { .. }
+        | RunCommand::Resume { .. }
+        | RunCommand::Restart { .. }
+        | RunCommand::Branch { .. } => {
+            Err("run execution commands must use the runtime execution path".into())
+        }
     }
 }
 

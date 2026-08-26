@@ -15,7 +15,13 @@ mod group_run_output;
 mod hub_command;
 mod hub_output;
 mod openai_prepared_dispatch;
+mod run_branch_command;
+mod run_branch_output;
 mod run_command;
+mod run_lineage_output;
+mod run_restart_command;
+mod run_restart_output;
+mod run_selection;
 mod runtime_application;
 mod state_path;
 
@@ -70,6 +76,9 @@ async fn dispatch(args: &Args) -> ExitCode {
             )
             .await
         }
+        Command::Run(args::RunCommand::Resume { run_id }) => run_resumed(args, run_id).await,
+        Command::Run(args::RunCommand::Restart { run_id }) => run_restarted(args, run_id),
+        Command::Run(args::RunCommand::Branch { run_id }) => run_branched(args, run_id),
         Command::Group(args::GroupCommand::Analysis(command)) => {
             run_group_model_analysis(args, command).await
         }
@@ -85,6 +94,36 @@ async fn dispatch(args: &Args) -> ExitCode {
         }
         _ => run_hub(args),
     }
+}
+
+fn run_branched(args: &Args, parent_run_id: &str) -> ExitCode {
+    let output = match run_branch_command::prepare(args, parent_run_id) {
+        Ok(output) => output,
+        Err(error) => {
+            eprintln!("Run branch failed: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    if let Err(error) = run_branch_output::write(&output, args.json, &mut io::stdout().lock()) {
+        eprintln!("failed to write Run branch output: {error}");
+        return ExitCode::FAILURE;
+    }
+    ExitCode::SUCCESS
+}
+
+fn run_restarted(args: &Args, source_run_id: &str) -> ExitCode {
+    let output = match run_restart_command::prepare(args, source_run_id) {
+        Ok(output) => output,
+        Err(error) => {
+            eprintln!("Run restart failed: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    if let Err(error) = run_restart_output::write(&output, args.json, &mut io::stdout().lock()) {
+        eprintln!("failed to write Run restart output: {error}");
+        return ExitCode::FAILURE;
+    }
+    ExitCode::SUCCESS
 }
 
 async fn run_group_agent_graph_run(args: &Args, command: &args::GroupGraphRunCommand) -> ExitCode {
@@ -228,6 +267,20 @@ async fn run_persisted(args: &Args, options: run_command::StartOptions<'_>) -> E
         }
         Err(error) => {
             eprintln!("Run command failed: {error}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+async fn run_resumed(args: &Args, run_id: &str) -> ExitCode {
+    match run_command::resume(args, run_id).await {
+        Ok(RunOutcome::Completed { .. }) => ExitCode::SUCCESS,
+        Ok(outcome) => {
+            eprintln!("runtime stopped without completion: {outcome:?}");
+            ExitCode::from(2)
+        }
+        Err(error) => {
+            eprintln!("Run resume failed: {error}");
             ExitCode::FAILURE
         }
     }

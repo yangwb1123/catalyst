@@ -28,16 +28,17 @@ struct GoldenEntry {
 }
 
 #[test]
-fn populated_v26_journal_is_backfilled_and_reopens_as_v27() {
+fn populated_v26_journal_is_backfilled_and_reopens_as_current() {
     let fixture = populated_v26_fixture();
-    let migrated = open_database(&fixture.database).expect("migrate populated v26 to v27");
-    assert_eq!(schema_version(&migrated), 27);
+    let migrated = open_database(&fixture.database).expect("migrate populated v26 to current");
+    assert_eq!(schema_version(&migrated), super::SCHEMA_VERSION);
     assert_eq!(row_count(&migrated, "governance_semantic_heads"), 2);
     assert_eq!(row_count(&migrated, "governance_claim_semantic_views"), 1);
+    assert_eq!(row_count(&migrated, "run_lineages"), 0);
     drop(migrated);
 
-    let reopened = open_database(&fixture.database).expect("reopen v27");
-    assert_eq!(schema_version(&reopened), 27);
+    let reopened = open_database(&fixture.database).expect("reopen current Hub");
+    assert_eq!(schema_version(&reopened), super::SCHEMA_VERSION);
     drop(reopened);
     let projection = fixture
         .store
@@ -55,11 +56,12 @@ fn final_validation_failure_rolls_v26_schema_and_backfill_back_atomically() {
     let connection = fixture.connection();
     let before: Vec<SchemaRow> = schema_snapshot(&connection);
     let error = migrate_with_before_final_fault_for_test(&connection, |migrated| {
-        assert_eq!(schema_version(migrated), 27);
+        assert_eq!(schema_version(migrated), super::SCHEMA_VERSION);
         assert_eq!(row_count(migrated, "governance_semantic_heads"), 2);
-        migrated.execute_batch("CREATE TABLE rogue_v27_final_fault(id TEXT)")
+        assert_eq!(row_count(migrated, "run_lineages"), 0);
+        migrated.execute_batch("CREATE TABLE rogue_current_final_fault(id TEXT)")
     })
-    .expect_err("final v27 validation rejects rogue object");
+    .expect_err("final current validation rejects rogue object");
     assert!(matches!(error, HubStoreError::Corrupt { .. }), "{error:?}");
     assert_eq!(schema_version(&connection), 26);
     assert_eq!(schema_snapshot(&connection), before);
@@ -67,7 +69,8 @@ fn final_validation_failure_rolls_v26_schema_and_backfill_back_atomically() {
         "governance_semantic_heads",
         "governance_claim_semantic_views",
         "governance_claim_validation_jobs",
-        "rogue_v27_final_fault",
+        "run_lineages",
+        "rogue_current_final_fault",
     ] {
         assert!(!schema_object_named(&connection, object), "{object}");
     }
@@ -114,6 +117,9 @@ fn populated_v26_fixture() -> super::sqlite_group_agent_graph_run_support::Fixtu
         .append_governance_record_batch(&journal_request(&records))
         .expect("append v27 migration journal fixture");
     let connection = fixture.connection();
+    connection
+        .execute_batch(super::DROP_V28_LINEAGE_SQL)
+        .expect("remove v28 Run lineage table");
     connection
         .execute_batch(super::DROP_V27_SEMANTIC_VIEW_SQL)
         .expect("remove v27 projection tables");

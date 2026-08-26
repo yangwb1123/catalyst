@@ -202,7 +202,8 @@ const RESTORE_HISTORICAL_ANALYSES_SQL: &str = include_str!("restore_historical_a
 fn restore_v24_schema(connection: &rusqlite::Connection) {
     connection
         .execute_batch(
-            "DROP TABLE governance_claim_validation_jobs;
+            "DROP TABLE run_lineages;
+             DROP TABLE governance_claim_validation_jobs;
              DROP TABLE governance_claim_semantic_views;
              DROP TABLE governance_semantic_heads;
              DROP TABLE governance_structural_heads;

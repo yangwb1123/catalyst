@@ -4,10 +4,10 @@ use forge_runtime_application::{
     MAX_ENTITY_ID_BYTES, MAX_IDEMPOTENCY_KEY_BYTES, RunError, RunField, RunService,
 };
 use forge_runtime_domain::{
-    BeginRun, BeginRunDisposition, BeginRunResult, BoundRunPrompt, MAX_RUN_LIST_LIMIT,
-    PROTOCOL_VERSION, PromptRecord, RUN_STORE_VERSION, RunExecution, RunInspection, RunLimits,
-    RunOutcome, RunProvider, RunRecord, RunRecovery, RunRecoveryState, RunStore, RunStoreError,
-    RuntimeEvent,
+    BeginRun, BeginRunBranch, BeginRunBranchResult, BeginRunDisposition, BeginRunResult,
+    BoundRunPrompt, MAX_RUN_LIST_LIMIT, PROTOCOL_VERSION, PromptRecord, RUN_STORE_VERSION,
+    RunExecution, RunInspection, RunLimits, RunLineageRecord, RunOutcome, RunProvider, RunRecord,
+    RunRecovery, RunRecoveryState, RunStore, RunStoreError, RuntimeEvent,
 };
 
 #[test]
@@ -253,6 +253,17 @@ impl RunStore for SpyRunStore {
     fn begin_run(&self, request: &BeginRun) -> Result<BeginRunResult, RunStoreError> {
         self.record(Call::Begin(Box::new(request.clone())))?;
         Ok(begin_result())
+    }
+
+    fn begin_run_branch(
+        &self,
+        _request: &BeginRunBranch,
+    ) -> Result<BeginRunBranchResult, RunStoreError> {
+        unreachable!("branch service has dedicated integration coverage")
+    }
+
+    fn find_run_lineage(&self, _run_id: &str) -> Result<Option<RunLineageRecord>, RunStoreError> {
+        unreachable!("branch service has dedicated integration coverage")
     }
 
     fn append_event(&self, _event: &RuntimeEvent) -> Result<(), RunStoreError> {

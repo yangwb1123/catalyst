@@ -1,5 +1,13 @@
 #[path = "hub_output_group_human.rs"]
 mod group_human;
+#[path = "prompt_receipt.rs"]
+mod prompt_receipt;
+#[path = "run_explain_output.rs"]
+mod run_explain_output;
+
+use crate::run_lineage_output::{RunLineageView, write as write_run_lineage};
+use prompt_receipt::PromptReceipt;
+pub(crate) use run_explain_output::{RunExplanationView, write_run_explanation};
 
 use crate::runtime_domain::{
     BeginGroupExecutionDisposition, Conversation, ConversationScope, GroupProjectMember,
@@ -158,21 +166,13 @@ pub enum OutputKind {
     Run {
         inspection: RunInspection,
     },
-}
-#[derive(Debug, Serialize)]
-pub struct PromptReceipt {
-    pub id: String,
-    pub conversation_id: String,
-    pub created_at_ms: u64,
-}
-impl From<PromptRecord> for PromptReceipt {
-    fn from(prompt: PromptRecord) -> Self {
-        Self {
-            id: prompt.id,
-            conversation_id: prompt.conversation_id,
-            created_at_ms: prompt.created_at_ms,
-        }
-    }
+    RunExplanation {
+        explanation: RunExplanationView,
+    },
+    RunLineage {
+        #[serde(flatten)]
+        view: RunLineageView,
+    },
 }
 #[derive(Clone, Copy, Debug, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -241,7 +241,9 @@ fn write_human(kind: &OutputKind, writer: &mut impl Write) -> Result<(), io::Err
         | OutputKind::GroupPanelSyntheses { .. }
         | OutputKind::Groups { .. }
         | OutputKind::Runs { .. }
-        | OutputKind::Run { .. } => group_human::write(kind, writer),
+        | OutputKind::Run { .. }
+        | OutputKind::RunExplanation { .. }
+        | OutputKind::RunLineage { .. } => group_human::write(kind, writer),
     }
 }
 fn write_group_linked(

@@ -1,5 +1,16 @@
 use std::sync::Arc;
 
+#[path = "run_branch.rs"]
+mod branch;
+#[path = "run_restart.rs"]
+mod restart;
+
+pub use branch::{PrepareRunBranch, PrepareRunBranchResult};
+pub use restart::{PrepareRunRestart, PrepareRunRestartResult};
+
+pub(super) const RESTART_RUN_ID_PREFIX: &str = "run-restart-";
+pub(super) const BRANCH_RUN_ID_PREFIX: &str = "run-branch-";
+
 use crate::{
     MAX_ENTITY_ID_BYTES, MAX_IDEMPOTENCY_KEY_BYTES, MAX_PROMPT_BYTES, RunError, RunField,
     runtime_domain::{
@@ -25,15 +36,28 @@ impl RunService {
     /// Returns validation errors before storage is called, or a structured
     /// storage error when the atomic begin operation fails.
     pub fn begin_run(&self, request: &BeginRun) -> Result<BeginRunResult, RunError> {
-        required_id(&request.run_id, RunField::RunId)?;
-        required_id(&request.conversation_id, RunField::ConversationId)?;
-        required_id(&request.prompt_id, RunField::PromptId)?;
-        required_id(&request.project_id, RunField::ProjectId)?;
-        required(
-            &request.idempotency_key,
-            RunField::IdempotencyKey,
-            MAX_IDEMPOTENCY_KEY_BYTES,
-        )?;
+        validate_begin_request(request)?;
+        if request.run_id.starts_with(RESTART_RUN_ID_PREFIX) {
+            return Err(RunError::ReservedRestartRunId);
+        }
+        if request.run_id.starts_with(BRANCH_RUN_ID_PREFIX) {
+            return Err(RunError::ReservedBranchRunId);
+        }
+        let result = self.store.begin_run(request)?;
+        if result.run.run_id.starts_with(RESTART_RUN_ID_PREFIX) {
+            return Err(RunError::RestartIdempotencyConflict);
+        }
+        if result.run.run_id.starts_with(BRANCH_RUN_ID_PREFIX) {
+            return Err(RunError::BranchIdempotencyConflict);
+        }
+        Ok(result)
+    }
+
+    pub(super) fn begin_restart_run(&self, request: &BeginRun) -> Result<BeginRunResult, RunError> {
+        validate_begin_request(request)?;
+        if !request.run_id.starts_with(RESTART_RUN_ID_PREFIX) {
+            return Err(RunError::RestartIdempotencyConflict);
+        }
         Ok(self.store.begin_run(request)?)
     }
 
@@ -101,6 +125,19 @@ impl RunService {
         required(answer, RunField::Answer, MAX_PROMPT_BYTES)?;
         Ok(self.store.reconcile_completed_assistant(run_id)?)
     }
+}
+
+fn validate_begin_request(request: &BeginRun) -> Result<(), RunError> {
+    required_id(&request.run_id, RunField::RunId)?;
+    required_id(&request.conversation_id, RunField::ConversationId)?;
+    required_id(&request.prompt_id, RunField::PromptId)?;
+    required_id(&request.project_id, RunField::ProjectId)?;
+    required(
+        &request.idempotency_key,
+        RunField::IdempotencyKey,
+        MAX_IDEMPOTENCY_KEY_BYTES,
+    )?;
+    Ok(())
 }
 
 fn required_id(value: &str, field: RunField) -> Result<(), RunError> {

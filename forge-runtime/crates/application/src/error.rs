@@ -12,6 +12,10 @@ pub enum RuntimeError {
     ToolCatalog(String),
     #[error("workspace unavailable: {0}")]
     Workspace(String),
+    #[error("run resume refused: pending tool '{name}' may have an unknown external effect")]
+    ResumePendingTool { name: String },
+    #[error("run resume requires a durable journal prefix")]
+    ResumeWithoutJournal,
     #[error("run was cancelled")]
     Cancelled,
 }
@@ -25,6 +29,8 @@ impl RuntimeError {
             Self::EventSink(_) => "event_sink_error",
             Self::ToolCatalog(_) => "tool_catalog_error",
             Self::Workspace(_) => "workspace_unavailable",
+            Self::ResumePendingTool { .. } => "resume_pending_tool",
+            Self::ResumeWithoutJournal => "resume_without_journal",
             Self::Cancelled => "cancelled",
         }
     }
@@ -58,6 +64,18 @@ pub enum RunError {
     },
     #[error("Run must be terminal-completed before assistant reconciliation")]
     NotCompleted,
+    #[error("run restart requires a terminal source Run")]
+    RestartSourceNotTerminal,
+    #[error("run restart idempotency key is already owned by another Run operation")]
+    RestartIdempotencyConflict,
+    #[error("Run IDs beginning with 'run-restart-' are reserved for restart preparation")]
+    ReservedRestartRunId,
+    #[error("run branch requires a terminal parent Run")]
+    BranchParentNotTerminal,
+    #[error("run branch idempotency key is already owned by another Run operation")]
+    BranchIdempotencyConflict,
+    #[error("Run IDs beginning with 'run-branch-' are reserved for branch preparation")]
+    ReservedBranchRunId,
     #[error("run store failed: {0}")]
     Store(#[from] RunStoreError),
 }
