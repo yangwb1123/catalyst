@@ -31,6 +31,35 @@ func TestShippedWorkflowsFakeAgentDeliveryLifecycle(t *testing.T) {
 	test.rollback(t)
 }
 
+func TestShippedBoundBuildNotConvergedPersistsExactRecoveryState(t *testing.T) {
+	if repoRoot() == "" {
+		t.Skip("ForgeOS repository root unavailable")
+	}
+	root, fake := shippedWorkflowFixture(t)
+	t.Setenv("USER", "forge-e2e-test")
+	test := shippedWorkflowE2E{root: root, fake: fake}
+	test.discover(t)
+	reopenFixtureRoadmap(t, root)
+
+	code, out := advanceShippedChainToDeploy(t, root, fake, "engineering")
+	if code != exitChainIncomplete || !strings.Contains(out, "stage=build (NOT MET") ||
+		strings.Contains(out, "persistence failed") {
+		t.Fatalf("unmet bound Build exit=%d; output:\n%s", code, out)
+	}
+	state := mustChainState(t, root)
+	if state.Status != "not_converged" || state.CurrentStage != "build" ||
+		strings.Join(state.CompletedStages, ",") != "design,review" {
+		t.Fatalf("unmet bound Build state = %+v", state)
+	}
+	assertIncompleteStageRecoveryAbsent(t, state, "build")
+	if state.StageReceipts["design"] == "" || state.StageReceipts["review"] == "" {
+		t.Fatal("unmet Build discarded completed-stage recovery references")
+	}
+	if err := validateBoundChainRecovery(root, state); err != nil {
+		t.Fatalf("persisted unmet Build recovery is invalid: %v", err)
+	}
+}
+
 type shippedWorkflowE2E struct {
 	root string
 	fake string
@@ -225,6 +254,7 @@ func shippedWorkflowFixture(t *testing.T) (string, string) {
 	} {
 		copyFixtureFile(t, source, root, rel)
 	}
+	completeFixtureRoadmap(t, root)
 	writeHarnessStubs(t, root)
 	fake := writeFakeClaude(t)
 	t.Setenv("PATH", filepath.Dir(fake)+string(os.PathListSeparator)+os.Getenv("PATH"))
@@ -237,6 +267,47 @@ func shippedWorkflowFixture(t *testing.T) (string, string) {
 	mustGit(t, root, "add", ".")
 	mustGit(t, root, "commit", "-q", "-m", "shipped workflow fixture")
 	return root, fake
+}
+
+func completeFixtureRoadmap(t *testing.T, root string) {
+	t.Helper()
+	path := filepath.Join(root, ".agent", "ROADMAP.md")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	completed := strings.ReplaceAll(string(data), "- [ ]", "- [x]")
+	if err := os.WriteFile(path, []byte(completed), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func reopenFixtureRoadmap(t *testing.T, root string) {
+	t.Helper()
+	path := filepath.Join(root, ".agent", "ROADMAP.md")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	open := strings.Replace(string(data), "- [x]", "- [ ]", 1)
+	if open == string(data) {
+		t.Fatal("fixture Roadmap has no completed item to reopen")
+	}
+	if err := os.WriteFile(path, []byte(open), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func assertIncompleteStageRecoveryAbsent(t *testing.T, state chainState, stage string) {
+	t.Helper()
+	for key := range state.PhaseReceipts {
+		if strings.HasPrefix(key, stage+"/") {
+			t.Fatalf("incomplete stage retained phase receipt reference %q", key)
+		}
+	}
+	if state.StageReceipts[stage] != "" || state.ApprovalContexts[stage] != "" {
+		t.Fatalf("incomplete stage retained stage recovery references")
+	}
 }
 
 func copyFixtureTree(t *testing.T, source, target, relative string) {

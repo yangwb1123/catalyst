@@ -292,7 +292,7 @@ func (r *chainRuntime) runOne(wf asset.Workflow, stageIndex int) (asset.Workflow
 		}
 		return asset.Workflow{}, r.fail(wf.Stage, fmt.Sprintf("stage execution failed with exit code %d", code), code), true
 	}
-	if err := r.bindStageRecovery(wf); err != nil {
+	if err := r.bindStageRecoveryForResult(wf, met); err != nil {
 		return asset.Workflow{}, r.fail(wf.Stage, "durable output binding: "+err.Error(), 1), true
 	}
 	if !met {
@@ -309,6 +309,19 @@ func (r *chainRuntime) runOne(wf asset.Workflow, stageIndex int) (asset.Workflow
 		}
 	}
 	return next, nextCode, done
+}
+
+// bindStageRecoveryForResult keeps chain recovery references exact. A held
+// human gate is resumable and therefore needs its accepted output binding;
+// an unmet conjunction is diagnostic-only and must not look completed.
+func (r *chainRuntime) bindStageRecoveryForResult(wf asset.Workflow, met bool) error {
+	if err := r.bindStageRecovery(wf); err != nil {
+		return err
+	}
+	if !met && !converge.IsHumanGate(wf.Stop) {
+		r.state.dropStageRecovery(wf.Stage)
+	}
+	return nil
 }
 
 func (state *chainState) dropStageRecovery(stage string) {
