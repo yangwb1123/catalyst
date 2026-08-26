@@ -15,11 +15,13 @@ const (
 )
 
 func (e Engine) validatePhaseStart(p workflowPhase) error {
-	return validateRuntimeHook(p, validationPhaseStart, e.PhaseStart)
+	err := validateRuntimeHook(p, validationPhaseStart, e.PhaseStart)
+	return e.observeRuntimeValidation(p.Name, validationPhaseStart, err)
 }
 
 func (e Engine) validatePhaseComplete(p workflowPhase) error {
-	return validateRuntimeHook(p, validationPhaseComplete, e.PhaseComplete)
+	err := validateRuntimeHook(p, validationPhaseComplete, e.PhaseComplete)
+	return e.observeRuntimeValidation(p.Name, validationPhaseComplete, err)
 }
 
 func (e Engine) validateAgentSpawn(p workflowPhase) error {
@@ -31,9 +33,10 @@ func (e Engine) validateWorkflowComplete(wf workflow) error {
 		return nil
 	}
 	if err := e.WorkflowComplete(wf); err != nil {
-		return runtimeValidationError(
+		runtimeErr := runtimeValidationError(
 			workflowPhase{Name: wf.Stage}, validationWorkflowComplete, err,
 		)
+		return e.observeRuntimeValidation(wf.Stage, validationWorkflowComplete, runtimeErr)
 	}
 	return nil
 }
@@ -57,9 +60,21 @@ func (e Engine) validateAgentVerdictToken(p workflowPhase, token string) error {
 		return nil
 	}
 	if err := e.ValidateAgentVerdict(p, token); err != nil {
-		return runtimeValidationError(p, validationAgentVerdict, err)
+		runtimeErr := runtimeValidationError(p, validationAgentVerdict, err)
+		return e.observeRuntimeValidation(p.Name, validationAgentVerdict, runtimeErr)
 	}
 	return nil
+}
+
+func (e Engine) observeRuntimeValidation(
+	name string,
+	boundary runtimeValidationBoundary,
+	err error,
+) error {
+	if err != nil {
+		e.observeTypedExecError(name, "failed", err, fmt.Sprintf("boundary=%s", boundary))
+	}
+	return err
 }
 
 func runtimeValidationError(

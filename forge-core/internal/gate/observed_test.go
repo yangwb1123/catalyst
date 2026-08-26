@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -96,14 +97,32 @@ func TestObservedGate_ExitZeroAndNonzeroKeepLegacyVerdict(t *testing.T) {
 	}
 }
 
-func TestObservedProbe_NonzeroValidJSONStillParses(t *testing.T) {
+func TestObservedGate_QueuedTimeoutDoesNotSpawn(t *testing.T) {
+	marker := installObservedStubs(t, "printf should-not-run; exit 0")
+	holdAllSpawnSlots(t)
+	result, production, observationError := GateObservedWith(
+		context.Background(), t.TempDir(), "run-queued-timeout",
+		Options{Timeout: 50 * time.Millisecond},
+	)
+	if result.Status != StatusFail || !strings.Contains(result.Output, "timed out") ||
+		production != nil || observationError != context.DeadlineExceeded {
+		t.Fatalf("observed queue timeout is dishonest: %+v / %v / %v",
+			result, production, observationError)
+	}
+	if spawns := countLines(marker); spawns != 0 {
+		t.Fatalf("queued timeout spawned %d command(s)", spawns)
+	}
+}
+
+func TestObservedProbe_NonzeroAllPassJSONFailsClosed(t *testing.T) {
 	root := observedGitRepo(t)
-	marker := installObservedStubs(t, "printf '%s' '"+validProbeJSON+"'; exit 7")
+	marker := installObservedStubs(t, "printf '%s' '"+validProbeJSON+"'; exit 1")
 	statuses, categories, err, production, observationError :=
 		ProbeAllObservedWith(context.Background(), root, "run-probe-nonzero", Options{})
 
-	if err != nil || statuses["lint"] != StatusPass || categories["lint"] != "applicable" {
-		t.Fatalf("valid nonzero probe lost legacy parse semantics: %v / %v / %v", statuses, categories, err)
+	if errStr(err) != "gate: acceptance --json exited nonzero with an all-PASS envelope" ||
+		statuses != nil || categories != nil {
+		t.Fatalf("nonzero all-PASS probe must fail closed: %v / %v / %v", statuses, categories, err)
 	}
 	if production == nil || observationError != nil {
 		t.Fatalf("valid nonzero process must still produce observation: %v / %v", production, observationError)

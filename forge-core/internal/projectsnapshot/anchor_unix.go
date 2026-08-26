@@ -21,11 +21,14 @@ func openCaptureAnchorWith(path string, observer captureObserver) (*treeRoot, er
 	}
 	root := &treeRoot{anchored: true, owned: []*os.Root{base}, path: absolute}
 	current := base
-	for _, component := range strings.Split(strings.TrimPrefix(absolute, "/"), "/") {
+	components := strings.Split(strings.TrimPrefix(absolute, "/"), "/")
+	for index, component := range components {
 		if component == "" {
 			continue
 		}
-		child, bindErr := bindAnchorComponent(root, current, component, observer)
+		child, bindErr := bindAnchorComponent(
+			root, current, component, index == len(components)-1, observer,
+		)
 		if bindErr != nil {
 			root.close()
 			return nil, bindErr
@@ -49,6 +52,7 @@ func bindAnchorComponent(
 	root *treeRoot,
 	parent *os.Root,
 	component string,
+	final bool,
 	observer captureObserver,
 ) (*os.Root, error) {
 	before, err := parent.Lstat(component)
@@ -63,8 +67,11 @@ func bindAnchorComponent(
 	}
 	opened, openErr := child.Lstat(".")
 	after, afterErr := parent.Lstat(component)
-	if openErr != nil || afterErr != nil || !stableDirectory(before, opened) ||
-		!stableDirectory(opened, after) {
+	stable := sameDirectory
+	if final {
+		stable = stableDirectory
+	}
+	if openErr != nil || afterErr != nil || !stable(before, opened) || !stable(opened, after) {
 		_ = child.Close()
 		return nil, fmt.Errorf("repository ancestor changed while opening")
 	}

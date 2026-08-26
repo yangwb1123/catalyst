@@ -4,7 +4,7 @@
 
 | 面 | 工具 | 说明 |
 |---|---|---|
-| 运行跟踪 | `forge trace` | Go 侧阶段级跟踪 |
+| 运行跟踪 | `forge trace` | 最终 Claude 模型、overload 退避、typed error、stale 增量与已提交定向 loop-back |
 | 阶段日志 | forge-core 的 `logf` 输出 | 每阶段命令/延迟/结果(渲染视图) |
 | 成本观测 | cost sink | 每阶段 model/成本/延迟 → scorecard p95 |
 | 评审产物 | `docs/reviews/reviews/*/stage-*.out.md` | 独立 Agent 评审留档 |
@@ -17,6 +17,7 @@
 - 无 hub readiness probe CLI(内部探测原语存在,未暴露)。
 - WAL checkpoint/保留策略未自动化。
 - 跨边界(Go↔Rust)跟踪不连续。
+- stale 连续计数仍为进程内状态；resume 会恢复上一轮信号，但不会恢复崩溃前的累计值。
 
 ## 后续
 

@@ -28,9 +28,28 @@ func stubBinary(t *testing.T, name, body string) {
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 }
 
-// validProbeJSON is the fixed --json payload every passing probe stub emits:
-// one lint criterion, PASS, applicable — deterministic (no date/$RANDOM).
-const validProbeJSON = `[{"criterion":"lint","status":"PASS","detail":"","category":"applicable"}]`
+// validProbeJSON is one exact complete acceptance envelope.
+const validProbeJSON = `[{"criterion":"test_pass","status":"PASS","detail":"","category":"applicable"},{"criterion":"app_test_pass","status":"PASS","detail":"","category":"applicable"},{"criterion":"complexity_violations","status":"PASS","detail":"","category":"applicable"},{"criterion":"arch_violations","status":"PASS","detail":"","category":"applicable"},{"criterion":"architecture","status":"PASS","detail":"","category":"applicable"},{"criterion":"security_findings","status":"PASS","detail":"","category":"applicable"},{"criterion":"dependency_vulnerabilities","status":"PASS","detail":"","category":"applicable"},{"criterion":"lint","status":"PASS","detail":"","category":"applicable"},{"criterion":"coverage","status":"PASS","detail":"","category":"applicable"},{"criterion":"typecheck","status":"PASS","detail":"","category":"applicable"},{"criterion":"build","status":"PASS","detail":"","category":"applicable"}]`
+
+func TestDecodeProbeRowsRejectsProtocolDrift(t *testing.T) {
+	cases := map[string]string{
+		"missing rows":         `[]`,
+		"unknown field":        strings.Replace(validProbeJSON, `"detail":""`, `"detail":"","extra":true`, 1),
+		"duplicate key":        strings.Replace(validProbeJSON, `"status":"PASS"`, `"status":"FAIL","status":"PASS"`, 1),
+		"case-folded field":    strings.Replace(validProbeJSON, `"status":"PASS"`, `"status":"FAIL","Status":"PASS"`, 1),
+		"unicode-folded field": strings.Replace(validProbeJSON, `"status":"PASS"`, `"ſtatus":"PASS"`, 1),
+		"duplicate criterion":  strings.Replace(validProbeJSON, `"criterion":"build"`, `"criterion":"lint"`, 1),
+		"missing field":        strings.Replace(validProbeJSON, `,"detail":""`, ``, 1),
+		"bad category":         strings.Replace(validProbeJSON, `"category":"applicable"`, `"category":"no_tool"`, 1),
+	}
+	for name, raw := range cases {
+		t.Run(name, func(t *testing.T) {
+			if _, err := decodeProbeRows([]byte(raw)); err == nil {
+				t.Fatal("protocol drift must fail closed")
+			}
+		})
+	}
+}
 
 // ── T1 (direction check A1, R1/R4) ──────────────────────────────────────────
 // A stub harness sleeping PAST the injected deadline must make Gate return a
@@ -113,6 +132,17 @@ func TestGate_ProbeAll_Timeout_TruncationBrokenJSON(t *testing.T) {
 	}
 }
 
+func TestProbeAllRejectsTruncatedBytesAfterValidJSONPrefix(t *testing.T) {
+	t.Setenv(EnvTimeout, "")
+	stubBinary(t, "node", "printf '%s' '"+validProbeJSON+"discarded'; exit 0")
+	_, _, err := ProbeAllWith(context.Background(), t.TempDir(), Options{
+		MaxOutputBytes: len(validProbeJSON),
+	})
+	if err == nil || !strings.Contains(err.Error(), "output truncated") {
+		t.Fatalf("a valid retained prefix must not conceal discarded bytes: %v", err)
+	}
+}
+
 // ── T18 (R3/R7) ─────────────────────────────────────────────────────────────
 // Valid JSON under the cap parses into identical maps with no error — the cap
 // never breaks a normal repo.
@@ -131,6 +161,15 @@ func TestGateWith_ValidJSON_UnderCap_IdenticalMaps(t *testing.T) {
 	}
 	if s1["lint"] != StatusPass || c1["lint"] != "applicable" {
 		t.Errorf("probe maps wrong: %v / %v", s1, c1)
+	}
+}
+
+func TestProbeAllRejectsNonzeroAllPassEnvelope(t *testing.T) {
+	stubBinary(t, "node", "printf '%s' '"+validProbeJSON+"'; exit 1")
+	statuses, categories, err := ProbeAllWith(context.Background(), t.TempDir(), Options{})
+	if errStr(err) != "gate: acceptance --json exited nonzero with an all-PASS envelope" ||
+		statuses != nil || categories != nil {
+		t.Fatalf("nonzero all-PASS output must fail closed: %v / %v / %v", statuses, categories, err)
 	}
 }
 
@@ -174,6 +213,19 @@ func TestGateWith_Deadline_UnboundedSurvives(t *testing.T) {
 	}
 	if elapsed >= 5*time.Second {
 		t.Errorf("unbounded sleep 2 took %v — suspicious", elapsed)
+	}
+}
+
+func TestGateWith_ParentDeadlineIsReportedHonestly(t *testing.T) {
+	stubBinary(t, "node", "exec /bin/sleep 30")
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	res := GateWith(ctx, t.TempDir(), Options{Unbounded: true, Knob: "--timeout"})
+	if res.Status != StatusFail || !strings.Contains(res.Output, "parent context deadline") {
+		t.Fatalf("parent deadline must be named honestly: %+v", res)
+	}
+	if strings.Contains(res.Output, "10m") || strings.Contains(res.Output, "--timeout") {
+		t.Fatalf("parent deadline must not be attributed to configured timeout: %q", res.Output)
 	}
 }
 
@@ -299,6 +351,31 @@ func TestGateWith_Semaphore_MaxFourConcurrent(t *testing.T) {
 	if n := countLines(marker); n != maxConcurrentGateSpawns {
 		t.Errorf("pre-cancelled ctx spawned: marker grew to %d", n)
 	}
+}
+
+func TestGateWith_QueuedTimeoutIncludesSemaphoreWait(t *testing.T) {
+	holdAllSpawnSlots(t)
+
+	start := time.Now()
+	res := GateWith(context.Background(), t.TempDir(), Options{Timeout: 50 * time.Millisecond})
+	if res.Status != StatusFail || !strings.Contains(res.Output, "timed out") {
+		t.Fatalf("queued gate must exhaust its shared timeout before spawn: %+v", res)
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Fatalf("queued timeout returned too late: %v", elapsed)
+	}
+}
+
+func holdAllSpawnSlots(t *testing.T) {
+	t.Helper()
+	for range maxConcurrentGateSpawns {
+		spawnSlots <- struct{}{}
+	}
+	t.Cleanup(func() {
+		for range maxConcurrentGateSpawns {
+			<-spawnSlots
+		}
+	})
 }
 
 // spawnConcurrentGateRuns launches 8 concurrent Unbounded GateWith runs.

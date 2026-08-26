@@ -91,12 +91,11 @@ func Accept(root string) Result {
 	return AcceptWith(context.Background(), root, Options{})
 }
 
-// probeRow mirrors one element of acceptance.mjs's `--json` array. Category is the
-// lifecycle-aware N/A classification ("applicable"|"inapplicable"|"no_tool") the
-// harness now stamps on every result; it is OPTIONAL — an older acceptance.mjs
-// that predates the field decodes it as "" and the consumer treats that as the
-// strict default (see cmd/forge's exemption matrix), so the bridge stays
-// backward-compatible in both directions.
+// probeRow mirrors one element of acceptance.mjs's `--json` array. ProbeAll
+// requires exactly the 11 known criteria, once each, and exactly these four
+// non-null string fields. Category is the required lifecycle-aware N/A
+// classification: PASS/FAIL pair with "applicable"; N-A pairs with either
+// "inapplicable" or "no_tool".
 type probeRow struct {
 	Criterion string `json:"criterion"`
 	Status    string `json:"status"`
@@ -104,18 +103,14 @@ type probeRow struct {
 	Category  string `json:"category"`
 }
 
-// ProbeAll runs `node harness/acceptance.mjs --json` ONCE and returns two PARALLEL
-// criterion-keyed maps: statuses (normalised to PASS/FAIL/NA) and categories (the
-// lifecycle-aware N/A classification — "applicable"|"inapplicable"|"no_tool", or ""
-// when a pre-category acceptance.mjs omits the field). It is the single honest
-// source for per-gate verdicts: callers run it once per run and map each required
-// gate name onto its real status, instead of collapsing lint/build/security onto a
-// coarse "did anything fail" signal. The categories map is the ADDITIVE channel
-// that lets a downstream lifecycle-aware exemption distinguish an honest "language
-// has no such concept" N/A from a fixable "tool not installed" N/A — it does not
-// change any status. A non-zero acceptance exit is NOT an error here (a load-bearing
-// FAIL is a legitimate, parseable verdict); only a missing tool or unparseable
-// output is an error.
+// ProbeAll runs `node harness/acceptance.mjs --json` ONCE and returns two parallel
+// criterion-keyed maps: statuses (normalised to PASS/FAIL/NA) and required
+// categories ("applicable"|"inapplicable"|"no_tool"). The exact envelope has 11
+// unique known rows and exactly four fields per row; missing, null, duplicate or
+// unknown data fails closed. Protocol exit 1 with a valid mixed verdict is usable,
+// because FAIL/N-A rows honestly explain rejection. Any other nonzero termination,
+// or exit 1 paired with an all-PASS envelope, fails closed. Output-cap overflow is
+// reported as truncation before exit or JSON interpretation.
 func ProbeAll(root string) (statuses map[string]string, categories map[string]string, err error) {
 	return ProbeAllWith(context.Background(), root, Options{})
 }
@@ -128,9 +123,9 @@ func exitStderr(stderr []byte) string {
 	return strings.TrimSpace(string(stderr))
 }
 
-// normStatus maps acceptance.mjs's status spelling onto gate's tri-state. The
-// harness emits "N-A"; gate uses "NA". An unrecognised status is treated as NA
-// (unknown == not actually checked) rather than silently passing.
+// normStatus maps acceptance.mjs's validated status spelling onto gate's
+// tri-state. The strict probe decoder rejects unknown values before this point;
+// the harness's "N-A" is normalised to gate's "NA".
 func normStatus(s string) string {
 	switch s {
 	case StatusPass, StatusFail:

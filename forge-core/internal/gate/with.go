@@ -17,9 +17,11 @@
 package gate
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os/exec"
 	"strings"
 	"time"
@@ -40,8 +42,8 @@ type Options = execbound.Options
 // Re-exported defaults (compile-time const copy — keeps cmd/forge off
 // execbound's import edge).
 const (
-	DefaultTimeout        = execbound.DefaultTimeout          // 10m
-	DefaultMaxOutputBytes = execbound.DefaultMaxOutputBytes   // 10 MiB
+	DefaultTimeout        = execbound.DefaultTimeout        // 10m
+	DefaultMaxOutputBytes = execbound.DefaultMaxOutputBytes // 10 MiB
 )
 
 // maxConcurrentGateSpawns caps simultaneously-live harness processes. Four is
@@ -51,6 +53,162 @@ const maxConcurrentGateSpawns = 4
 
 // spawnSlots is the package-level spawn semaphore (see with.go doc comment).
 var spawnSlots = make(chan struct{}, maxConcurrentGateSpawns)
+
+var acceptanceProbeCriteria = map[string]struct{}{
+	"test_pass": {}, "app_test_pass": {}, "complexity_violations": {},
+	"arch_violations": {}, "architecture": {}, "security_findings": {},
+	"dependency_vulnerabilities": {}, "lint": {}, "coverage": {},
+	"typecheck": {}, "build": {},
+}
+
+var acceptanceProbeRowFields = map[string]struct{}{
+	"criterion": {}, "status": {}, "detail": {}, "category": {},
+}
+
+type strictProbeRow struct {
+	Criterion *string `json:"criterion"`
+	Status    *string `json:"status"`
+	Detail    *string `json:"detail"`
+	Category  *string `json:"category"`
+}
+
+func validateProbeRow(row probeRow, seen map[string]struct{}) error {
+	if _, ok := acceptanceProbeCriteria[row.Criterion]; !ok {
+		return fmt.Errorf("unknown acceptance criterion %q", row.Criterion)
+	}
+	if _, duplicate := seen[row.Criterion]; duplicate {
+		return fmt.Errorf("duplicate acceptance criterion %q", row.Criterion)
+	}
+	seen[row.Criterion] = struct{}{}
+	if row.Status != "PASS" && row.Status != "FAIL" && row.Status != "N-A" {
+		return fmt.Errorf("criterion %q has invalid status %q", row.Criterion, row.Status)
+	}
+	if row.Category != "applicable" && row.Category != "inapplicable" && row.Category != "no_tool" {
+		return fmt.Errorf("criterion %q has invalid category %q", row.Criterion, row.Category)
+	}
+	if (row.Status == "N-A") == (row.Category == "applicable") {
+		return fmt.Errorf("criterion %q has inconsistent status/category", row.Criterion)
+	}
+	return nil
+}
+
+func rejectDuplicateProbeKeys(data []byte) error {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	if err := walkProbeJSON(decoder); err != nil {
+		return err
+	}
+	var trailing json.RawMessage
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		if err == nil {
+			return fmt.Errorf("trailing JSON value")
+		}
+		return err
+	}
+	return nil
+}
+
+func walkProbeJSON(decoder *json.Decoder) error {
+	token, err := decoder.Token()
+	if err != nil {
+		return err
+	}
+	delim, composite := token.(json.Delim)
+	if !composite {
+		return nil
+	}
+	if delim == '[' {
+		for decoder.More() {
+			if err := walkProbeJSON(decoder); err != nil {
+				return err
+			}
+		}
+		return requireProbeClose(decoder, ']')
+	}
+	if delim != '{' {
+		return fmt.Errorf("unexpected JSON delimiter %q", delim)
+	}
+	return walkProbeObject(decoder)
+}
+
+func walkProbeObject(decoder *json.Decoder) error {
+	seen := map[string]struct{}{}
+	for decoder.More() {
+		token, err := decoder.Token()
+		if err != nil {
+			return err
+		}
+		key, ok := token.(string)
+		if !ok {
+			return fmt.Errorf("JSON object key is not a string")
+		}
+		if _, known := acceptanceProbeRowFields[key]; !known {
+			return fmt.Errorf("unknown JSON object key %q", key)
+		}
+		if _, duplicate := seen[key]; duplicate {
+			return fmt.Errorf("duplicate JSON key %q", key)
+		}
+		seen[key] = struct{}{}
+		if err := walkProbeJSON(decoder); err != nil {
+			return err
+		}
+	}
+	return requireProbeClose(decoder, '}')
+}
+
+func requireProbeClose(decoder *json.Decoder, want json.Delim) error {
+	token, err := decoder.Token()
+	if err != nil {
+		return err
+	}
+	if token != want {
+		return fmt.Errorf("unexpected JSON close delimiter %q", token)
+	}
+	return nil
+}
+
+func decodeProbeRows(data []byte) ([]probeRow, error) {
+	if err := rejectDuplicateProbeKeys(data); err != nil {
+		return nil, err
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	var wire []strictProbeRow
+	if err := decoder.Decode(&wire); err != nil {
+		return nil, err
+	}
+	var trailing json.RawMessage
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		if err == nil {
+			return nil, fmt.Errorf("trailing JSON value")
+		}
+		return nil, err
+	}
+	if len(wire) != len(acceptanceProbeCriteria) {
+		return nil, fmt.Errorf("acceptance rows = %d, want %d", len(wire), len(acceptanceProbeCriteria))
+	}
+	seen := make(map[string]struct{}, len(wire))
+	rows := make([]probeRow, 0, len(wire))
+	for index, item := range wire {
+		if item.Criterion == nil || item.Status == nil || item.Detail == nil || item.Category == nil {
+			return nil, fmt.Errorf("acceptance row %d has missing or null fields", index)
+		}
+		row := probeRow{*item.Criterion, *item.Status, *item.Detail, *item.Category}
+		if err := validateProbeRow(row, seen); err != nil {
+			return nil, err
+		}
+		rows = append(rows, row)
+	}
+	return rows, nil
+}
+
+func allProbeRowsPass(rows []probeRow) bool {
+	for _, row := range rows {
+		if row.Status != "PASS" {
+			return false
+		}
+	}
+	return true
+}
 
 // acquireSpawnSlot takes one spawn slot, or reports not-OK when ctx is done —
 // deterministically: a done ctx never acquires (checked first), and a slot
@@ -68,6 +226,24 @@ func acquireSpawnSlot(ctx context.Context) (release func(), ok bool) {
 	}
 }
 
+// gateDeadlineContext starts the gate's configured deadline before semaphore
+// acquisition so queueing and process execution consume one shared budget.
+// execbound.Run derives its own defensive deadline after acquisition, but this
+// parent deadline remains the earlier bound and therefore cannot be extended.
+func gateDeadlineContext(parent context.Context, opts Options) (context.Context, context.CancelFunc, string) {
+	if opts.Unbounded {
+		ctx, cancel := context.WithCancel(parent)
+		return ctx, cancel, "at parent context deadline"
+	}
+	timeout := effectiveDeadline(opts)
+	if parentDeadline, ok := parent.Deadline(); ok && time.Until(parentDeadline) <= timeout {
+		ctx, cancel := context.WithCancel(parent)
+		return ctx, cancel, "at parent context deadline"
+	}
+	ctx, cancel := context.WithTimeout(parent, timeout)
+	return ctx, cancel, fmt.Sprintf("after %s%s", timeout, knobClause(opts))
+}
+
 // runWith executes one bounded harness gate with the legacy run() verdict
 // semantics: PASS iff the process exited 0, FAIL otherwise — a timeout is
 // FAIL, never NA. Output carries the retained (possibly truncated) combined
@@ -80,18 +256,23 @@ func runWith(ctx context.Context, name, root string, opts Options, argv ...strin
 	if len(argv) == 0 {
 		return newResult(name, false, "gate: empty argv")
 	}
-	release, ok := acquireSpawnSlot(ctx)
+	runCtx, cancel, deadline := gateDeadlineContext(ctx, opts)
+	defer cancel()
+	release, ok := acquireSpawnSlot(runCtx)
 	if !ok {
+		if runCtx.Err() == context.DeadlineExceeded {
+			return newResult(name, false, fmt.Sprintf("gate: timed out %s before spawn", deadline))
+		}
 		return newResult(name, false, "gate: canceled")
 	}
 	defer release()
-	res := execbound.Run(ctx, argv, opts, execbound.CaptureCombined, execbound.Spec{Dir: RepoRoot(root)})
+	res := execbound.Run(runCtx, argv, opts, execbound.CaptureCombined, execbound.Spec{Dir: RepoRoot(root)})
 	switch {
 	case res.TimedOut():
 		// A spawn already past its own deadline when the parent ctx cancels
 		// reports timeout (the stronger verdict), never a silent success.
 		return newResult(name, false,
-			strings.TrimSpace(res.Rendered())+fmt.Sprintf(" …[timed out after %s%s]", effectiveDeadline(opts), knobClause(opts)))
+			strings.TrimSpace(res.Rendered())+fmt.Sprintf(" …[timed out %s]", deadline))
 	case res.CtxErr == context.Canceled:
 		return newResult(name, false, strings.TrimSpace(res.Rendered())+" …[canceled]")
 	default:
@@ -118,44 +299,47 @@ func AcceptWith(ctx context.Context, root string, opts Options) Result {
 }
 
 // ProbeAllWith runs `node harness/acceptance.mjs --json` ONCE, bounded by
-// ctx/opts, and returns the two PARALLEL criterion-keyed maps (statuses and
-// categories) with the exact legacy parse pipeline — the single difference is
-// that the spawn is bounded: a deadline produces an honest, knob-named error
-// (the run/evolve degrade path turns probe-backed gates N/A from there), and
-// an over-cap output wraps the JSON parse error with the retained/total
-// counts.
+// ctx/opts, and returns the two parallel criterion-keyed maps (statuses and
+// categories). The stdout envelope must satisfy ProbeAll's exact 11-row,
+// four-field contract. Any output-cap overflow is reported before exit or JSON
+// interpretation. Exit 0 is a completed verdict, exit 1 may carry an honest
+// rejection envelope, and every other termination fails the protocol closed.
 func ProbeAllWith(ctx context.Context, root string, opts Options) (statuses map[string]string, categories map[string]string, err error) {
 	if err := opts.Validate(); err != nil {
 		return nil, nil, fmt.Errorf("gate: invalid options: %v", err)
 	}
-	release, ok := acquireSpawnSlot(ctx)
+	runCtx, cancel, deadline := gateDeadlineContext(ctx, opts)
+	defer cancel()
+	release, ok := acquireSpawnSlot(runCtx)
 	if !ok {
+		if runCtx.Err() == context.DeadlineExceeded {
+			return nil, nil, fmt.Errorf("gate: acceptance --json timed out %s before spawn", deadline)
+		}
 		return nil, nil, fmt.Errorf("gate: acceptance --json canceled")
 	}
 	defer release()
-	res := execbound.Run(ctx, []string{"node", "harness/acceptance.mjs", "--json"}, opts,
+	res := execbound.Run(runCtx, []string{"node", "harness/acceptance.mjs", "--json"}, opts,
 		execbound.CaptureSplit, execbound.Spec{Dir: RepoRoot(root)})
 	switch {
 	case res.TimedOut():
-		return nil, nil, fmt.Errorf("gate: acceptance --json timed out after %s%s: %w",
-			effectiveDeadline(opts), knobClause(opts), res.Err)
+		return nil, nil, fmt.Errorf("gate: acceptance --json timed out %s: %w", deadline, res.Err)
 	case res.CtxErr == context.Canceled:
 		return nil, nil, fmt.Errorf("gate: acceptance --json canceled")
 	}
-	if res.Err != nil {
-		// An ExitError still carries valid JSON on stdout (REJECTED but honest);
-		// only treat a start failure / no-stdout case as fatal.
-		if _, ok := res.Err.(*exec.ExitError); !ok || len(res.Stdout) == 0 {
-			return nil, nil, fmt.Errorf("gate: acceptance --json failed: %w (%s)", res.Err, exitStderr(res.Stderr))
-		}
+	if res.Total > int64(res.Retained) {
+		return nil, nil, fmt.Errorf("gate: parsing acceptance --json: output truncated: retained %d of %d bytes",
+			res.Retained, res.Total)
 	}
-	var rows []probeRow
-	if err := json.Unmarshal(res.Stdout, &rows); err != nil {
-		if res.Total > int64(res.Retained) {
-			return nil, nil, fmt.Errorf("gate: parsing acceptance --json: %w (output truncated: retained %d of %d bytes)",
-				err, res.Retained, res.Total)
-		}
-		return nil, nil, fmt.Errorf("gate: parsing acceptance --json: %w", err)
+	rejected, exitErr := validateProbeExit(res)
+	if exitErr != nil {
+		return nil, nil, exitErr
+	}
+	rows, decodeErr := decodeProbeRows(res.Stdout)
+	if decodeErr != nil {
+		return nil, nil, fmt.Errorf("gate: parsing acceptance --json: %w", decodeErr)
+	}
+	if rejected && allProbeRowsPass(rows) {
+		return nil, nil, fmt.Errorf("gate: acceptance --json exited nonzero with an all-PASS envelope")
 	}
 	statuses = make(map[string]string, len(rows))
 	categories = make(map[string]string, len(rows))
@@ -164,6 +348,22 @@ func ProbeAllWith(ctx context.Context, root string, opts Options) (statuses map[
 		categories[row.Criterion] = row.Category
 	}
 	return statuses, categories, nil
+}
+
+func validateProbeExit(res execbound.Result) (bool, error) {
+	if res.Err == nil {
+		return false, nil
+	}
+	exit, ok := res.Err.(*exec.ExitError)
+	if !ok || len(res.Stdout) == 0 {
+		return false, fmt.Errorf(
+			"gate: acceptance --json failed: %w (%s)", res.Err, exitStderr(res.Stderr))
+	}
+	if exit.ExitCode() != 1 {
+		return false, fmt.Errorf(
+			"gate: acceptance --json used unexpected exit code %d", exit.ExitCode())
+	}
+	return true, nil
 }
 
 // ResolveGateWith computes one gate's honest tri-state Result with the exact

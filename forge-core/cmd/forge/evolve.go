@@ -243,12 +243,9 @@ func execLoop(ctx context.Context, wf asset.Workflow, o runOpts, maxIter int, ma
 
 func openResumeTracer(root string, resumed loopResumeState,
 	logln func(string)) (*trace.Tracer, func(), error) {
-	tracer, closeTrace, err := openTracer(root)
+	tracer, closeTrace, err := openTracerForRun(root, resumed.runID)
 	if err != nil {
 		return nil, nil, err
-	}
-	if resumed.runID != "" && resumed.runID != "run_id_not_bound" {
-		tracer.RunID = resumed.runID
 	}
 	quickDoctorCheck(root, tracer, logln)
 	return tracer, closeTrace, nil
@@ -273,8 +270,8 @@ func buildTracedLoop(ctx context.Context, wf asset.Workflow, o runOpts, maxIter 
 		autoRisk, autoRiskReasons = resolveAutoRisk(o.root)
 		logAutoRisk(logln, "forge evolve", autoRisk, autoRiskReasons)
 	}
-	loop, verdicts, findings, phaseOut, recovery := buildLoopWithRecovery(ctx, wf, o, maxIter, logln, costEmitter(tracer, logln), budget, autoRisk, autoRiskReasons, tracer.RunID)
-	wireGateTrace(&loop.Engine, tracer, logln)
+	loop, verdicts, findings, phaseOut, recovery := buildLoopWithRecovery(ctx, wf, o, maxIter, logln, costEmitter(tracer, logln), budget, autoRisk, autoRiskReasons, tracedEngineBuildOptions(tracer, logln)...)
+	wireEngineTrace(&loop.Engine, tracer, logln)
 	loop.Ctx = ctx
 	loop.Parallel = parallelEnabled(o, wf, logln, "forge evolve") // depends_on-gated opt-in
 	return loop, verdicts, findings, phaseOut, recovery
@@ -290,13 +287,13 @@ func buildTracedLoop(ctx context.Context, wf asset.Workflow, o runOpts, maxIter 
 // Returns the LoopEngine plus the verdict/findings ledgers buildRunEngine built, so
 // execLoop can thread rework+trajectory into the scorecard wind-down and the Reflect
 // memory step without rebuilding or re-exposing the Engine internals.
-func buildLoop(ctx context.Context, wf asset.Workflow, o runOpts, maxIter int, logln func(string), costSink func(phase, model string, usd float64, latency time.Duration), budget *runBudget, autoRisk string, autoRiskReasons []string, runIDs ...string) (orchestrator.LoopEngine, *verdictLedger, *reviewFindingsLedger, *phaseOutputLedger) {
+func buildLoop(ctx context.Context, wf asset.Workflow, o runOpts, maxIter int, logln func(string), costSink func(phase, model string, usd float64, latency time.Duration), budget *runBudget, autoRisk string, autoRiskReasons []string, options ...engineBuildOption) (orchestrator.LoopEngine, *verdictLedger, *reviewFindingsLedger, *phaseOutputLedger) {
 	loop, verdicts, findings, phaseOut, _ := buildLoopWithRecovery(ctx, wf, o, maxIter, logln,
-		costSink, budget, autoRisk, autoRiskReasons, runIDs...)
+		costSink, budget, autoRisk, autoRiskReasons, options...)
 	return loop, verdicts, findings, phaseOut
 }
 
-func buildLoopWithRecovery(ctx context.Context, wf asset.Workflow, o runOpts, maxIter int, logln func(string), costSink func(phase, model string, usd float64, latency time.Duration), budget *runBudget, autoRisk string, autoRiskReasons []string, runIDs ...string) (orchestrator.LoopEngine, *verdictLedger, *reviewFindingsLedger, *phaseOutputLedger, *outputBindingRuntime) {
+func buildLoopWithRecovery(ctx context.Context, wf asset.Workflow, o runOpts, maxIter int, logln func(string), costSink func(phase, model string, usd float64, latency time.Duration), budget *runBudget, autoRisk string, autoRiskReasons []string, options ...engineBuildOption) (orchestrator.LoopEngine, *verdictLedger, *reviewFindingsLedger, *phaseOutputLedger, *outputBindingRuntime) {
 	probe := &loopProbe{root: o.root, ctx: ctx, opts: o.gateOpts}
 	// The Engine — with its four prompt/feedback ledgers — is built by the SAME
 	// buildRunEngine `forge run` uses, so the two paths never drift. The only
@@ -310,7 +307,7 @@ func buildLoopWithRecovery(ctx context.Context, wf asset.Workflow, o runOpts, ma
 	phaseOut := newPhaseOutputLedger()
 	eng, verdicts, findings, _, recovery := buildRunEngineWithPhaseOutput(wf, o, logln, costSink,
 		runGate, policy, budget, autoRisk, autoRiskReasons, autoDims, autoDimsReasons,
-		phaseOut, runIDs...)
+		phaseOut, options...)
 	approved := humanApproved(o.root, wf.Stage, o.approved)
 	signals := func() converge.Signals {
 		statuses, categories := probe.current()

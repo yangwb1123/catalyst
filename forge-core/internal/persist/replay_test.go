@@ -28,13 +28,67 @@ import (
 // replayDir is the fixture directory relative to this test file.
 const replayDir = "testdata/replay"
 
+const replayFixtureMode os.FileMode = 0o644
+
+func guardFixtureMode(t *testing.T, path string) {
+	t.Helper()
+	before, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat replay fixture %s: %v", path, err)
+	}
+	if before.Mode().Perm() != replayFixtureMode {
+		t.Fatalf("replay fixture %s mode = %o, want %o", path,
+			before.Mode().Perm(), replayFixtureMode)
+	}
+	t.Cleanup(func() {
+		after, statErr := os.Stat(path)
+		if statErr != nil {
+			t.Errorf("replay fixture %s changed: %v", path, statErr)
+			return
+		}
+		if after.Mode() != before.Mode() {
+			t.Errorf("replay fixture %s mode changed from %v to %v", path,
+				before.Mode(), after.Mode())
+		}
+	})
+}
+
 // readFixture reads the named file from a replay fixture directory.
-func readFixture(fixture, filename string) []byte {
-	data, err := os.ReadFile(filepath.Join(replayDir, fixture, filename))
+func readFixture(t *testing.T, fixture, filename string) []byte {
+	t.Helper()
+	path := filepath.Join(replayDir, fixture, filename)
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil
 	}
+	guardFixtureMode(t, path)
 	return data
+}
+
+// isolatedFixture copies immutable replay input away from the repository.
+// Production state loaders intentionally secure their target mode, so tests
+// must never point them at checked-in fixtures.
+func isolatedFixture(t *testing.T, source string) string {
+	t.Helper()
+	guardFixtureMode(t, source)
+	data, err := os.ReadFile(source)
+	if err != nil {
+		t.Fatalf("read replay fixture %s: %v", source, err)
+	}
+	target := filepath.Join(t.TempDir(), filepath.Base(source))
+	if err := os.WriteFile(target, data, 0o600); err != nil {
+		t.Fatalf("copy replay fixture %s: %v", source, err)
+	}
+	return target
+}
+
+func TestReplay_FixtureModes(t *testing.T) {
+	for _, filename := range []string{"trace.jsonl", "memory.jsonl", "checkpoint.json"} {
+		path := filepath.Join(replayDir, "evolve-dry-run", filename)
+		t.Run(filename, func(t *testing.T) {
+			guardFixtureMode(t, path)
+		})
+	}
 }
 
 // ── Trace replay ───────────────────────────────────────────────────────────
@@ -78,7 +132,7 @@ func TestReplay_TraceParsing(t *testing.T) {
 	fixtures := []string{"evolve-dry-run"}
 	for _, name := range fixtures {
 		t.Run(name, func(t *testing.T) {
-			data := readFixture(name, "trace.jsonl")
+			data := readFixture(t, name, "trace.jsonl")
 			if data == nil {
 				t.Skipf("fixture %s/trace.jsonl not found", name)
 			}
@@ -111,7 +165,7 @@ func TestReplay_TraceParsing(t *testing.T) {
 }
 
 func TestReplay_TraceSeqIsMonotonic(t *testing.T) {
-	data := readFixture("evolve-dry-run", "trace.jsonl")
+	data := readFixture(t, "evolve-dry-run", "trace.jsonl")
 	if data == nil {
 		t.Skip("fixture evolve-dry-run/trace.jsonl not found")
 	}
@@ -142,7 +196,7 @@ func TestReplay_MemoryParsing(t *testing.T) {
 			if _, statErr := os.Stat(path); statErr != nil {
 				t.Skipf("fixture %s/memory.jsonl not found", name)
 			}
-			entries, err := memory.Load(path)
+			entries, err := memory.Load(isolatedFixture(t, path))
 			if err != nil {
 				t.Fatalf("decode memory: %v", err)
 			}
@@ -178,7 +232,7 @@ func TestReplay_MemorySuperseded(t *testing.T) {
 	if _, statErr := os.Stat(path); statErr != nil {
 		t.Skip("fixture evolve-dry-run/memory.jsonl not found")
 	}
-	entries, err := memory.Load(path)
+	entries, err := memory.Load(isolatedFixture(t, path))
 	if err != nil {
 		t.Fatalf("decode memory: %v", err)
 	}
@@ -200,7 +254,7 @@ func TestReplay_CheckpointLoads(t *testing.T) {
 	for _, name := range fixtures {
 		t.Run(name, func(t *testing.T) {
 			path := filepath.Join(replayDir, name, "checkpoint.json")
-			cp, found, err := Load(path)
+			cp, found, err := Load(isolatedFixture(t, path))
 			if err != nil {
 				t.Fatalf("Load checkpoint from %s: %v", path, err)
 			}
@@ -229,7 +283,7 @@ func TestReplay_MultipleFixtures(t *testing.T) {
 		}
 		name := entry.Name()
 		t.Run(name, func(t *testing.T) {
-			if traceData := readFixture(name, "trace.jsonl"); traceData != nil {
+			if traceData := readFixture(t, name, "trace.jsonl"); traceData != nil {
 				events, err := decodeTrace(traceData)
 				if err != nil {
 					t.Errorf("%s/trace.jsonl: %v", name, err)
@@ -239,7 +293,7 @@ func TestReplay_MultipleFixtures(t *testing.T) {
 			}
 			memPath := filepath.Join(replayDir, name, "memory.jsonl")
 			if _, statErr := os.Stat(memPath); statErr == nil {
-				memEntries, err := memory.Load(memPath)
+				memEntries, err := memory.Load(isolatedFixture(t, memPath))
 				if err != nil {
 					t.Errorf("%s/memory.jsonl: %v", name, err)
 				} else if len(memEntries) == 0 {
@@ -248,7 +302,7 @@ func TestReplay_MultipleFixtures(t *testing.T) {
 			}
 			cpPath := filepath.Join(replayDir, name, "checkpoint.json")
 			if _, err := os.Stat(cpPath); err == nil {
-				cp, found, err := Load(cpPath)
+				cp, found, err := Load(isolatedFixture(t, cpPath))
 				if err != nil {
 					t.Errorf("%s/checkpoint.json: %v", name, err)
 				} else if !found {

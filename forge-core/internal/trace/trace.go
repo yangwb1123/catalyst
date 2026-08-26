@@ -26,6 +26,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"sync"
 	"time"
 )
@@ -45,9 +46,9 @@ func ValidateFormat(format string) error {
 // Event is one structured record in the trace stream. It is intentionally flat
 // and string-typed so it round-trips through JSON without bespoke decoders and
 // stays greppable by tools that do not know forge-core's internal types. Seq is
-// assigned by the Tracer (callers never set it), giving every line a total order
-// independent of any wall-clock timestamp. The json tags are the on-disk
-// contract that downstream tooling reads, so they are stable and lower_snake.
+// assigned by the Tracer (callers never set it). Together RunID and Seq give
+// each durable run a total order independent of wall-clock timestamps. The json
+// tags are the on-disk contract read by downstream tooling.
 //
 // Format carries the on-disk format version identifier (e.g. "forgeos.trace.v1"),
 // so downstream tooling can detect format changes. An empty value (pre-format
@@ -93,12 +94,11 @@ type Event struct {
 	// billed cost to the model that incurred it.
 	Model  string `json:"model,omitempty"`
 	Detail string `json:"detail,omitempty"` // free-text context, omitted from JSON when empty
-	// RunID correlates every event in one trace.jsonl to the process that
-	// wrote it (forge-core/internal/runlock.NewRunID). A caller normally
-	// leaves this empty and lets Emit auto-stamp it from the Tracer's RunID
-	// field; omitempty keeps every event predating this field, and every
-	// event from a Tracer whose RunID was never set, byte-for-byte
-	// identical on disk (back-compat).
+	// RunID correlates every event in one durable workflow run. Fresh runs use
+	// forge-core/internal/runlock.NewRunID; resume paths retain the checkpoint's
+	// RunID across processes. A caller normally leaves this empty and lets Emit
+	// auto-stamp it from the Tracer's RunID field. omitempty preserves records
+	// created before this field existed.
 	RunID string `json:"run_id,omitempty"`
 }
 
@@ -106,9 +106,10 @@ type Event struct {
 // It owns Seq assignment and write ordering; callers just describe what
 // happened. The zero value is NOT ready — use NewTracer so the writer is set.
 type Tracer struct {
-	mu  sync.Mutex // guards seq and the writer so each line is emitted atomically
-	w   io.Writer  // destination; one '\n'-terminated JSON object is written per Emit
-	seq int        // last assigned sequence number; pre-incremented on each Emit
+	mu      sync.Mutex // guards sequence state and the writer
+	w       io.Writer  // destination; one '\n'-terminated JSON object per Emit
+	seq     int        // last assigned sequence; pre-incremented on each Emit
+	started bool       // true after the first Emit attempt
 
 	// Now supplies the current time for Span's duration measurement. It is a
 	// field (not a hardcoded time.Now call) purely so tests can inject a
@@ -116,12 +117,10 @@ type Tracer struct {
 	// time.Now. Keep all time reads going through this so duration stays testable.
 	Now func() time.Time
 
-	// RunID is this process's run-correlation id (see Event.RunID), set once
-	// by the caller right after NewTracer (cmd/forge's openTracer stamps it
-	// via runlock.NewRunID). The zero value "" is back-compat: Emit only
-	// stamps an event's RunID when the event itself left it empty, so a
-	// Tracer that never sets this behaves exactly as before this field
-	// existed.
+	// RunID is the durable run-correlation id (see Event.RunID). openTracer
+	// stamps a fresh value; resume wiring may replace it with the checkpoint's
+	// value before ResumeAfter and the first Emit. The zero value remains
+	// backward compatible.
 	RunID string
 }
 
@@ -131,6 +130,29 @@ type Tracer struct {
 // first emitted event is 1 (humans count runs from one, and 0 reads as "unset").
 func NewTracer(w io.Writer) *Tracer {
 	return &Tracer{w: w, Now: time.Now}
+}
+
+// ResumeAfter raises the sequence floor to the greatest event already stored
+// for this run. Resume paths must call it before the first Emit; late recovery
+// is rejected so an event cannot be assigned before its persisted floor is
+// installed. Concurrent floor calls are serialized, and lower floors never
+// move the sequence backwards.
+func (t *Tracer) ResumeAfter(seq int) error {
+	if seq < 0 {
+		return fmt.Errorf("trace: resume sequence must be non-negative, got %d", seq)
+	}
+	if seq == math.MaxInt {
+		return fmt.Errorf("trace: resume sequence %d leaves no next sequence", seq)
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.started {
+		return fmt.Errorf("trace: resume sequence must be set before the first emit")
+	}
+	if seq > t.seq {
+		t.seq = seq
+	}
+	return nil
 }
 
 // Emit assigns the next sequence number to ev and writes it as a single JSONL
@@ -144,6 +166,10 @@ func (t *Tracer) Emit(ev Event) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
+	if t.seq == math.MaxInt {
+		return fmt.Errorf("trace: sequence exhausted at %d", t.seq)
+	}
+	t.started = true
 	t.seq++
 	ev.Seq = t.seq
 	if ev.Format == "" {
@@ -211,23 +237,14 @@ func GateEvent(name, status, detail string) Event {
 	return Event{Kind: "gate", Name: name, Status: status, Detail: detail}
 }
 
-// DecisionEvent, OverloadEvent, StaleEvent, and ErrorEvent below are
-// constructors for four of trace's documented "canonical kinds" — but as of
-// this writing NONE of the four is actually called from any production code
-// path (verified by repo-wide grep): internal/orchestrator deliberately
-// stays generic and does not import internal/trace at all (see backoff.go's
-// own doc comment on why 529/overload handling is vendor-agnostic there),
-// and nothing in cmd/forge currently bridges the orchestrator's real
-// overload-retry/stale-tripwire moments into a callback that would call
-// these. Only trace.GateEvent is wired end-to-end today (engine_build.go's
-// wireGateTrace). These four are exercised solely by their own field-
-// assertion unit tests. Honest status, not a hidden gap: wiring them needs a
-// new Engine/LoopEngine callback hook (mirroring the existing OnGateResult/
-// OnPhase/OnIteration pattern) plus cmd/forge-side wiring — real, scoped
-// follow-up work, not a one-line fix, so left undone here rather than rushed.
+// The runtime stays independent of this package: cmd/forge maps its typed,
+// vendor-neutral observer events onto the four canonical constructors below.
+// This keeps orchestration decisions testable without trace I/O while making
+// the same real decisions visible in run, evolve, resume, and chain traces.
 
-// DecisionEvent builds a trace event for a runtime decision (tier up/down,
-// cost guard trip, or adaptive behavior). name identifies the decision context
+// DecisionEvent builds a trace event for a runtime decision (final model
+// selection, a committed directed loop-back, or other adaptive behavior).
+// name identifies the decision context
 // (e.g. the phase name), detail describes what was decided and why.
 func DecisionEvent(name, detail string) Event {
 	return Event{Kind: "decision", Name: name, Status: "ok", Detail: detail}
@@ -249,8 +266,8 @@ func StaleEvent(name, detail string) Event {
 
 // ErrorEvent builds a trace event for a recoverable or fatal error. name
 // identifies the source (phase/gate), errorType classifies the kind (e.g.
-// "overload", "timeout", "config"), status is the outcome ("recovered"|
-// "failed"), and detail carries the error message.
+// "overload", "timeout", "config"), status is the lifecycle outcome
+// ("recovered"|"failed"), and detail carries the error message.
 func ErrorEvent(name, errorType, status, detail string) Event {
 	return Event{Kind: "error", Name: name, Status: status, Detail: fmt.Sprintf("[%s] %s", errorType, detail)}
 }

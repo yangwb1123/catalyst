@@ -115,12 +115,12 @@ func execOneStage(ctx context.Context, wf asset.Workflow, o runOpts, logln func(
 	eng, verdicts, _, validateCompletion, _ := buildRunEngineWithPhaseOutput(wf, o, logln,
 		costEmitter(tracer, logln), boundary.runGate, pol, budget,
 		boundary.autoRisk, boundary.autoRiskReasons, boundary.autoDims, boundary.autoDimsReasons,
-		newPhaseOutputLedger(), tracer.RunID)
+		newPhaseOutputLedger(), tracedEngineBuildOptions(tracer, logln)...)
 	eng.ChargeAgentCall = charge
 	if boundary.hostCommands {
 		eng.Exec = runProbeExecutor{next: eng.Exec, probe: boundary.probe}
 	}
-	wireGateTrace(&eng, tracer, logln)
+	wireEngineTrace(&eng, tracer, logln)
 	logRunBanner(wf, o, lifecycle, pol)
 	start, rejected, err := resolveRejectionStartPhase(wf, o.root, logln)
 	if err != nil {
@@ -166,10 +166,8 @@ func allowScorecardWindDown(wf asset.Workflow, opts runOpts) bool {
 	return wf.OutputBindingContract != asset.OutputBindingContractLocalDigestV1
 }
 
-// stampRunID sets t's process-correlation RunID (internal/runlock.NewRunID,
-// trace.Tracer.RunID) so every trace.jsonl line this process emits can be
-// attributed to this run. Called once by openTracer, the single shared
-// constructor for both `forge run` (via openRunResources) and `forge evolve`.
+// stampRunID gives a fresh trace a run-correlation ID. Resume wiring replaces
+// it with the checkpoint's durable ID before the first event is emitted.
 func stampRunID(t *trace.Tracer) {
 	t.RunID = runlock.NewRunID()
 }
@@ -194,6 +192,8 @@ func openTracer(root string) (*trace.Tracer, func(), error) {
 			if err := os.Rename(tp, tp+".1"); err != nil {
 				return nil, func() {}, fmt.Errorf("rotate trace file: %w", err)
 			}
+		} else if err := validateTraceAppendFraming(tp, st.Size()); err != nil {
+			return nil, func() {}, fmt.Errorf("secure trace framing: %w", err)
 		}
 	}
 	f, err := statefs.OpenRegular(tp, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600)

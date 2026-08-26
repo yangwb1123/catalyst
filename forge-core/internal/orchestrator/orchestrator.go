@@ -100,6 +100,9 @@ type Engine struct {
 	// phase's prompt — so the reviewer is told "test: ok" and need not re-run it. The
 	// engine just REPORTS, oblivious to where they go (mirror of injected Log/RunGate); nil reports nothing (back-compat, byte-exact).
 	OnGateResult func(name, status string)
+	// OnRuntimeEvent observes adaptive decisions, retry/backoff, stale progress,
+	// and typed execution errors. Nil preserves control flow and output exactly.
+	OnRuntimeEvent func(kind, name, status, errorType, detail string)
 	// AgentVerdict is an OPTIONAL puller — the REVERSE twin of OnGateResult. Where
 	// OnGateResult lets the engine PUSH an objective gate verdict out to cmd/forge,
 	// AgentVerdict lets the engine PULL an agent phase's objective verdict back IN
@@ -347,7 +350,11 @@ func (e Engine) runAgentTransition(
 	}
 	if jumped {
 		err = e.checkpointLoopBack(target, *agentCalls, loopBacks, nil)
-		return target, err == nil, err
+		if err != nil {
+			return 0, false, err
+		}
+		e.observeDirectedLoopBack(p.Name, wf.Phases[target].Name, "reviewer-request-changes")
+		return target, true, nil
 	}
 	if err := e.checkpointPhase(index+1, *agentCalls, *loopBacks); err != nil {
 		return 0, false, fmt.Errorf("phase %s: completion checkpoint: %w", p.Name, err)
@@ -375,6 +382,7 @@ func (e Engine) gateOutcome(
 	if err := e.checkpointLoopBack(target, agentCalls, loopBacks, gateErr); err != nil {
 		return 0, err
 	}
+	e.observeDirectedLoopBack(p.Name, wf.Phases[target].Name, "gate-failure")
 	return target, nil
 }
 

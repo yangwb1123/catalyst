@@ -61,3 +61,25 @@ func TestLoadTraceEventsCountsUnsupportedFormatAsMalformed(t *testing.T) {
 		t.Fatalf("events=%+v malformed=%d", events, malformed)
 	}
 }
+
+func TestLoadTraceEventsFiltersCanonicalRuntimeKinds(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, ".forge")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := `{"_format":"forgeos.trace.v1","seq":1,"kind":"decision","status":"ok"}
+{"_format":"forgeos.trace.v1","seq":2,"kind":"overload_backoff","status":"retry"}
+{"_format":"forgeos.trace.v1","seq":3,"kind":"stale_increment","status":"stale"}
+{"_format":"forgeos.trace.v1","seq":4,"kind":"error","status":"failed"}
+`
+	if err := os.WriteFile(filepath.Join(dir, "trace.jsonl"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for seq, kind := range []string{"decision", "overload_backoff", "stale_increment", "error"} {
+		events, malformed, err := loadTraceEvents(root, kind, "", "", "")
+		if err != nil || malformed != 0 || len(events) != 1 || events[0].Seq != seq+1 {
+			t.Errorf("kind=%s events=%+v malformed=%d err=%v", kind, events, malformed, err)
+		}
+	}
+}

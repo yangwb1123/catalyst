@@ -62,14 +62,15 @@ import (
 //
 // Returns the assembled Engine plus the verdict/findings ledgers for callers to thread
 // rework+trajectory signals into wind-down/Reflect without re-building.
-func buildRunEngine(wf asset.Workflow, o runOpts, logln func(string), costSink func(phase, model string, usd float64, latency time.Duration), runGate func(name string) gate.Result, pol mode.Policy, budget *runBudget, autoRisk string, autoRiskReasons []string, autoDims map[string]float64, autoReasons []string, runIDs ...string) (orchestrator.Engine, *verdictLedger, *reviewFindingsLedger) {
+func buildRunEngine(wf asset.Workflow, o runOpts, logln func(string), costSink func(phase, model string, usd float64, latency time.Duration), runGate func(name string) gate.Result, pol mode.Policy, budget *runBudget, autoRisk string, autoRiskReasons []string, autoDims map[string]float64, autoReasons []string, options ...engineBuildOption) (orchestrator.Engine, *verdictLedger, *reviewFindingsLedger) {
 	engine, verdicts, findings, _, _ := buildRunEngineWithPhaseOutput(wf, o, logln, costSink, runGate, pol,
 		budget, autoRisk, autoRiskReasons, autoDims, autoReasons,
-		newPhaseOutputLedger(), runIDs...)
+		newPhaseOutputLedger(), options...)
 	return engine, verdicts, findings
 }
 
-func buildRunEngineWithPhaseOutput(wf asset.Workflow, o runOpts, logln func(string), costSink func(phase, model string, usd float64, latency time.Duration), runGate func(name string) gate.Result, pol mode.Policy, budget *runBudget, autoRisk string, autoRiskReasons []string, autoDims map[string]float64, autoReasons []string, phaseOut *phaseOutputLedger, runIDs ...string) (orchestrator.Engine, *verdictLedger, *reviewFindingsLedger, func() error, *outputBindingRuntime) {
+func buildRunEngineWithPhaseOutput(wf asset.Workflow, o runOpts, logln func(string), costSink func(phase, model string, usd float64, latency time.Duration), runGate func(name string) gate.Result, pol mode.Policy, budget *runBudget, autoRisk string, autoRiskReasons []string, autoDims map[string]float64, autoReasons []string, phaseOut *phaseOutputLedger, options ...engineBuildOption) (orchestrator.Engine, *verdictLedger, *reviewFindingsLedger, func() error, *outputBindingRuntime) {
+	buildSettings := resolveEngineBuildSettings(options)
 	o.workflowStage = wf.Stage
 	gates := newGateLedger()
 	verdicts := newVerdictLedger()
@@ -91,7 +92,7 @@ func buildRunEngineWithPhaseOutput(wf asset.Workflow, o runOpts, logln func(stri
 		phaseOut, logln)
 	wiring := buildEngineRuntimeWiring(wf, o, pol, logln, budget.feed(costSink), tierOf,
 		phaseOut, enginePromptLedgers{context: ctxCache, gates: gates, verdicts: verdicts, findings: findings},
-		firstRunID(runIDs))
+		buildSettings)
 	engine := orchestrator.Engine{
 		Exec:                 wiring.exec,
 		RunGate:              runGate,
@@ -137,13 +138,6 @@ func loadRunScorecards(wf asset.Workflow, root string, logln func(string)) []rou
 	// the broken Eval producer visible instead of silently accepting bad data.
 	logln(fmt.Sprintf("forge: WARNING scorecards unreadable (%v) — continuing with no history (routing unaffected; learning-loop read-back skipped)", err))
 	return nil
-}
-
-func firstRunID(runIDs []string) string {
-	if len(runIDs) > 0 {
-		return runIDs[0]
-	}
-	return ""
 }
 
 // phaseTierResolver builds the ONE per-phase tier resolver (tierOf) that EVERY tier
@@ -302,13 +296,10 @@ func riskAdjustedTier(base, riskLevel string) string {
 // .forge/trace.jsonl evolve uses, git-ignored, so real claude cost is never billed
 // unseen), runs the doctor's pre-run diagnostics into it, then opens the run-level
 // budget — fail-closed on either step.
-func openRunResources(root, runBudgetUSD string, logln func(string), runIDs ...string) (*trace.Tracer, func(), *runBudget, error) {
-	tracer, closeTrace, err := openTracer(root)
+func openRunResources(root, runBudgetUSD string, logln func(string), resumeRunID string) (*trace.Tracer, func(), *runBudget, error) {
+	tracer, closeTrace, err := openTracerForRun(root, resumeRunID)
 	if err != nil {
 		return nil, nil, nil, err
-	}
-	if len(runIDs) > 0 && runIDs[0] != "" {
-		tracer.RunID = runIDs[0]
 	}
 	quickDoctorCheck(root, tracer, logln)
 	budget, err := newRunBudget(runBudgetUSD)

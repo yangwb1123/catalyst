@@ -51,6 +51,8 @@ func (e Engine) runAgentPhaseWithProgress(
 		default:
 		}
 		if err := e.validateAgentSpawn(p); err != nil {
+			e.observeTypedExecError(p.Name, "failed", err,
+				fmt.Sprintf("attempt=%d; terminal=before-executor-spawn", attempt+1))
 			return err
 		}
 		err := e.Exec.Execute(ctx, p, mode)
@@ -59,24 +61,42 @@ func (e Engine) runAgentPhaseWithProgress(
 		}
 		if onFailedAttempt != nil {
 			if progressErr := onFailedAttempt(); progressErr != nil {
+				e.observeTypedExecError(p.Name, "failed", err,
+					fmt.Sprintf("attempt=%d; terminal=failed-attempt-checkpoint", attempt+1))
 				return errors.Join(
 					fmt.Errorf("phase %s: agent execution failed: %w", p.Name, err),
 					fmt.Errorf("phase %s: failed-attempt checkpoint: %w", p.Name, progressErr),
 				)
 			}
 		}
-		var execErr *ExecError
-		if !errors.As(err, &execErr) || !execErr.Retryable() || attempt >= e.MaxRetries {
+		if !e.retryAgentError(ctx, p, err, attempt) {
 			return fmt.Errorf("phase %s: agent execution failed: %w", p.Name, err)
 		}
-		if execErr.Kind == KindOverloaded {
-			d := overloadBackoff(attempt)
-			e.logf("phase %s: overloaded, backing off %s before retry %d/%d", p.Name, d, attempt+1, e.MaxRetries)
-			e.sleep(ctx, d)
-			continue
-		}
-		e.logf("phase %s: retryable %s, retry %d/%d", p.Name, execErr.Kind, attempt+1, e.MaxRetries)
 	}
+}
+
+func (e Engine) retryAgentError(ctx context.Context, p asset.Phase, err error, attempt int) bool {
+	var execErr *ExecError
+	if !errors.As(err, &execErr) {
+		return false
+	}
+	if !execErr.Retryable() || attempt >= e.MaxRetries {
+		e.observeTypedExecError(p.Name, "failed", err,
+			fmt.Sprintf("attempt=%d; terminal=no-retry", attempt+1))
+		return false
+	}
+	if execErr.Kind != KindOverloaded {
+		e.logf("phase %s: retryable %s, retry %d/%d", p.Name, execErr.Kind, attempt+1, e.MaxRetries)
+		return true
+	}
+	d := overloadBackoff(attempt)
+	e.observeRuntime(runtimeEvent{
+		Kind: runtimeOverloadBackoff, Name: p.Name, Status: "retry",
+		Detail: fmt.Sprintf("backoff=%s; retry=%d/%d", d, attempt+1, e.MaxRetries),
+	})
+	e.logf("phase %s: overloaded, backing off %s before retry %d/%d", p.Name, d, attempt+1, e.MaxRetries)
+	e.sleep(ctx, d)
+	return true
 }
 
 // overloadBackoffBase / overloadBackoffCap bound the exponential overload backoff. base=2s

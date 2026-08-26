@@ -85,6 +85,10 @@ type CommandExecutor struct {
 	// PATH. This is intentionally stronger than the ordinary minimal policy.
 	RestrictedEnv bool
 	Log           func(string)
+	// OnDispatch, when set, receives the phase name immediately before a
+	// validated command is handed to the host process or sandbox runner. Config,
+	// finalization, input-shape, and recursion refusals never reach this boundary.
+	OnDispatch func(phase string)
 	// Observe, when set, receives a successfully VALIDATED command's phase name,
 	// complete untrimmed captured output and measured wall-clock LATENCY (the
 	// time cmd.Run() took — see Now). It is a generic output SINK: this spawner hands the
@@ -199,21 +203,31 @@ func (c CommandExecutor) Execute(ctx context.Context, p asset.Phase, mode string
 	if err != nil {
 		return err
 	}
+	if err := c.validateDispatchOptions(p.Name); err != nil {
+		return err
+	}
 	if c.Sandbox != nil && c.Sandbox.Runner != nil && !c.sandboxNone() {
+		c.dispatch(p.Name)
 		return c.executeSandboxedDispatch(ctx, p.Name, argv, input, useStdin)
 	}
+	return c.executeHostDispatch(ctx, p.Name, argv, input, useStdin)
+}
 
+func (c CommandExecutor) executeHostDispatch(
+	ctx context.Context, phase string, argv []string, input string, useStdin bool,
+) error {
 	// Recursion guard: once the inherited agent-call depth reaches the cap, refuse
 	// to spawn — a real agent re-invoking `forge --executor=command` would else
 	// fork-bomb unboundedly. Fail closed, NON-retryable (re-running recurses).
 	depth := currentAgentDepth()
 	if max := c.maxDepth(); depth >= max {
-		c.logf("phase %s: recursion guard fired (depth %d >= cap %d) — refusing another agent spawn", p.Name, depth, max)
-		return recursionErr(p.Name, depth, max)
+		c.logf("phase %s: recursion guard fired (depth %d >= cap %d) — refusing another agent spawn", phase, depth, max)
+		return recursionErr(phase, depth, max)
 	}
 
+	c.dispatch(phase)
 	res, latency := c.runMeasured(ctx, argv, depth, input, useStdin)
-	return c.finish(p.Name, argv, res, latency)
+	return c.finish(phase, argv, res, latency)
 }
 
 func (c CommandExecutor) validatePhaseConfig(p asset.Phase, mode string) error {
@@ -235,6 +249,13 @@ func (c CommandExecutor) prepareInput(phase string, argv []string) ([]string, st
 	}
 	runArgv := append([]string(nil), argv[:len(argv)-1]...)
 	return runArgv, argv[len(argv)-1], true, nil
+}
+
+func (c CommandExecutor) validateDispatchOptions(phase string) error {
+	if err := c.execboundOptions().Validate(); err != nil {
+		return configErr(phase, err)
+	}
+	return nil
 }
 
 // execboundOptions maps this executor's documented Timeout semantics onto the
@@ -381,6 +402,12 @@ func (c CommandExecutor) logf(format string, args ...any) {
 func (c CommandExecutor) observe(phase, output string, latency time.Duration) {
 	if c.Observe != nil {
 		c.Observe(phase, output, latency)
+	}
+}
+
+func (c CommandExecutor) dispatch(phase string) {
+	if c.OnDispatch != nil {
+		c.OnDispatch(phase)
 	}
 }
 

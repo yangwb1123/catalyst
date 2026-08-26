@@ -290,8 +290,9 @@ func writeHarnessStubs(t *testing.T, root string) {
 	}
 	acceptance := `#!/usr/bin/env node
 const criteria = [
-  'lint', 'test_pass', 'app_test_pass', 'build', 'complexity',
-  'arch', 'security_findings', 'dependency_vulnerabilities',
+  'test_pass', 'app_test_pass', 'complexity_violations', 'arch_violations',
+  'architecture', 'security_findings', 'dependency_vulnerabilities', 'lint',
+  'typecheck', 'build', 'coverage',
 ];
 const rows = criteria.map((criterion) => ({
   criterion, status: 'PASS', detail: 'deterministic fake gate', category: 'applicable',

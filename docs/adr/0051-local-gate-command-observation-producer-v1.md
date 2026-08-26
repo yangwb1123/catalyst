@@ -5,6 +5,12 @@
 - 关联：ADR-0020、ADR-0045、ADR-0049、ADR-0050、
   `docs/contracts/local-gate-command-observation-producer-v1.schema.json`
 
+> 维护说明（2026-08-23）：本 ADR 冻结的是 observation producer，不是对 gate JSON 协议的永久兼容承诺。
+> 共享的 `ProbeAll` 解析契约后续已 fail-closed 收紧为 exact 11 rows、每行 exact four fields：非零退出搭配至少一个
+> `FAIL`/`N-A` 的合法 mixed envelope 仍可解析，非零退出搭配 all-`PASS` envelope 则作为矛盾失败关闭；任一 stream
+> 超出 output cap 时优先报告 truncation，不先解释 exit 或 JSON。Standard 与 observed 路径共享该语义；producer wire
+> 与非能力边界不变。
+
 ## 背景
 
 ADR-0049 已冻结 strict `forgeos.command-observation/v1` wire 与纯 Evidence adapter，但它只接受 caller 提供的 observation：不会执行
@@ -224,7 +230,8 @@ completion, truth, authority, identity, persistence, or external-effect attestat
 - 不 append GovernanceRecordJournal，不写 SQLite/Knowledge/Memory；它会执行仓库控制的本地命令，且自身不提供 sandbox、egress、device 或
   production-effect containment，因此既不授权、阻止或隔离命令可能产生的外部 effect，也不对这些 effect 作出 attestation；调用方必须在
   opt-in 前另行完成命令授权与所需的运行隔离；
-- 不改变 existing gate Result、criterion parse、N/A exemption、convergence 或 CLI exit contract；
+- producer 层不独立改写 gate Result、criterion parse、N/A exemption、convergence 或 CLI exit contract；standard/observed
+  路径均消费本 ADR 顶部维护说明所述的当前共享 `ProbeAll` 契约；
 - 不接线 Evolve locator producer。
 
 SQLite 保持 v25，无 migration、backfill 或 automatic append。capture disabled 必须继续使用 legacy execution path并保持 stdout、stderr、
@@ -242,7 +249,9 @@ error、Result 与 exit byte-exact。
 - tool requested/resolved/final/symlink/mode/bytes/digest 与 source revision/all-entry manifest 的 exact drift；
 - stdout-only、stderr-only、interleaved、empty、nonzero、cap overflow、timeout、cancel、spawn/signaled/wait/drain failure；
 - full digest 不受 retention cap 或展示 marker 污染；
-- Gate/Check/Accept/Probe observed API 与 legacy disabled parity；`ProbeAll` 的 nonzero+valid JSON 兼容和 parse/truncation error 不漂移；
+- Gate/Check/Accept/Probe observed API 与 disabled standard path parity；`ProbeAll` 的 exact 11-row/four-field 解析不漂移，
+  nonzero mixed `FAIL`/`N-A` 仍是合法 verdict，nonzero all-`PASS` 失败关闭，且任一 stream 的 cap overflow
+  均优先报告 truncation；
 - run/evolve cache 与并发路径保证每个 actual spawn 只产生一条 production；
 - explicit ADR-0049 adaptation exact replay，但不产生 PASS/truth/completion/authority/persistence 语义。
 

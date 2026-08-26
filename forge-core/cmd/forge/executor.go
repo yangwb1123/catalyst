@@ -91,6 +91,9 @@ func (c commandExecutorConfig) executor() orchestrator.AgentExecutor {
 		SemanticOutput:        c.hooks.SemanticOutput,
 		CommitValidatedOutput: c.hooks.CommitValidatedOutput,
 	}
+	if c.isClaude {
+		ex.OnDispatch = c.hooks.OnDispatch
+	}
 	phaseModel := preferPhaseModel(c.hooks.ModelFor, c.phaseModel)
 	ex.Observe = observeFor(c.isClaude, c.costSink, phaseModel, c.phaseOut, c.feedsForward, c.verdicts, c.findings, c.onFailTarget, c.hooks.VerdictContractFor, c.hooks.ScanContractFor)
 	ex.ObserveSemantic = semanticObserveFor(c.isClaude, c.phaseOut, c.feedsForward,

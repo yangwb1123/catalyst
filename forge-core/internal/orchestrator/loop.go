@@ -63,18 +63,13 @@ type LoopEngine struct {
 	// StartIter, ResumePrev, and ResumeGatesGreen support resuming a
 	// crashed/paused run from a checkpoint. StartIter is the 1-based iteration
 	// to begin at (0 or 1 both mean "start fresh from iteration 1" — the
-	// default). ResumePrev seeds the previous RoadmapCompletion so the
-	// stale/tripwire computation is continuous across the resume boundary; for
-	// a fresh run it is the sentinel -1.0 (set by loopStart), so the first
-	// reading is never counted as "no progress vs nothing". ResumeGatesGreen
-	// is GatesGreen's equivalent seed — persist.Checkpoint already carries
-	// GatesGreen at snapshot time, but until this field existed a resumed run
-	// always started prevGatesGreen at false regardless of the checkpoint's
-	// real value, making the two-axis stale detector's GatesGreen half
-	// non-continuous across a resume (a checkpoint saved at gates-green=true
-	// would spuriously look like a green-to-still-green NON-transition on the
-	// first post-resume iteration, instead of correctly seeding "already
-	// green" continuity).
+	// default). ResumePrev seeds the previous RoadmapCompletion so the first
+	// post-resume comparison uses the last durable value; for a fresh run it is
+	// the sentinel -1.0 (set by loopStart), so the first reading is never counted
+	// as "no progress vs nothing". ResumeGatesGreen is GatesGreen's equivalent
+	// seed. The consecutive stale counter itself remains process-local and starts
+	// from zero after resume; these fields restore comparison continuity, not the
+	// pre-crash counter value.
 	StartIter        int
 	ResumePrev       float64
 	ResumeGatesGreen bool
@@ -219,7 +214,8 @@ func (l LoopEngine) runIteration(wf asset.Workflow, mode string, i int, startPha
 	if lo, done := l.checkStop(i, sig); done {
 		return &lo, nil
 	}
-	if *stale = staleCount(sig.RoadmapCompletion, *prev, *stale, sig.GatesGreen, *prevGatesGreen); l.tripped(*stale) {
+	l.advanceStale(i, sig, *prev, stale, *prevGatesGreen)
+	if l.tripped(*stale) {
 		sto := l.staleOutcome(i)
 		return &sto, nil
 	}
@@ -227,6 +223,17 @@ func (l LoopEngine) runIteration(wf asset.Workflow, mode string, i int, startPha
 	*prev = sig.RoadmapCompletion
 	*startPhase = l.nextStartPhase(wf)
 	return nil, nil
+}
+
+func (l LoopEngine) advanceStale(i int, sig converge.Signals, prev float64, stale *int, prevGatesGreen bool) {
+	next := staleCount(sig.RoadmapCompletion, prev, *stale, sig.GatesGreen, prevGatesGreen)
+	if next > *stale {
+		l.Engine.observeStaleIncrement(
+			i, next, l.NoProgress,
+			sig.RoadmapCompletion, prev, sig.GatesGreen, prevGatesGreen,
+		)
+	}
+	*stale = next
 }
 
 // nextStartPhase resolves where the NEXT iteration should begin after this one was
@@ -283,9 +290,9 @@ func (l LoopEngine) nextStartPhase(wf asset.Workflow) int {
 // run: start at iteration 1 with prev = -1.0 (the sentinel that makes the
 // first reading never register as stale) and gatesGreen = false. A StartIter
 // > 1 is a resume: begin there and seed prev/gatesGreen with ResumePrev/
-// ResumeGatesGreen (last persisted values) so the stale/tripwire math is
-// continuous across the resume on BOTH axes — a flat first post-resume
-// reading correctly counts as stale. This keeps the default (fresh) path
+// ResumeGatesGreen (last persisted values), so a flat first post-resume reading
+// correctly counts as stale. The accumulated stale counter is intentionally
+// process-local and is not restored here. This keeps the default (fresh) path
 // bit-for-bit identical to the original.
 func (l LoopEngine) loopStart() (start int, prev float64, gatesGreen bool) {
 	if l.StartIter > 1 {

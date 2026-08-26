@@ -23,7 +23,8 @@ type engineRuntimeWiring struct {
 func buildEngineRuntimeWiring(wf asset.Workflow, o runOpts, pol mode.Policy,
 	logln func(string), costSink func(string, string, float64, time.Duration),
 	tierOf func(asset.Phase) string, phaseOut *phaseOutputLedger,
-	ledgers enginePromptLedgers, runID string) engineRuntimeWiring {
+	ledgers enginePromptLedgers, buildSettings engineBuildSettings) engineRuntimeWiring {
+	runID := buildSettings.runID
 	priorEmits := priorEmitsOf(wf)
 	modelFor := phaseTierByName(wf, tierOf)
 	provenance := newArtifactProvenance(o.root, wf.Stage, runID, o.releaseAgentSHA256)
@@ -44,6 +45,7 @@ func buildEngineRuntimeWiring(wf asset.Workflow, o runOpts, pol mode.Policy,
 				provenance.validateBuildPreparation, hooks.FinalizeCommand,
 			), CommitValidatedOutput: hooks.CommitValidatedOutput,
 			OnBuild: combineBuildObservers(provenance.recordBuild, bindingObserver), ModelFor: provenance.modelFor,
+			OnDispatch:         buildSettings.dispatchObserver(provenance),
 			FrozenEmits:        binding.promptEmitBlocks,
 			VerdictContractFor: effectiveVerdictContractOf(wf, o), ScanContractFor: scanContractOf(wf),
 			ScanDepth: pol.EvolveDepth,
@@ -104,6 +106,7 @@ type executorHooks struct {
 	FinalizeCommand       func(phase asset.Phase, mode string, argv []string) ([]string, error)
 	CommitValidatedOutput func(phase, rawOutput, output string, latency time.Duration) error
 	OnBuild               func(phase asset.Phase, model, promptText, frozenSourceRevision string, frozenReleaseInputs map[string]string)
+	OnDispatch            func(phase string)
 	FrozenEmits           func(phase asset.Phase) ([]string, bool)
 	ModelFor              func(phase string) string
 	VerdictContractFor    func(phase string) string

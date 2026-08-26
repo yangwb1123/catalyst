@@ -22,8 +22,8 @@ import (
 // [--tail N] [--strict] [--root DIR]`.
 func cmdTrace(args []string) int {
 	fs := flag.NewFlagSet("trace", flag.ContinueOnError)
-	kind := fs.String("kind", "", "filter by event kind (agent|gate|iteration|converge)")
-	status := fs.String("status", "", "filter by event status (PASS|FAIL|ok|timeout)")
+	kind := fs.String("kind", "", "filter by event kind (agent|gate|iteration|converge|decision|error|overload_backoff|stale_increment)")
+	status := fs.String("status", "", "filter by event status (PASS|FAIL|ok|timeout|retry|recovered|failed|stale)")
 	model := fs.String("model", "", "filter by model name (sonnet|opus|haiku)")
 	runID := fs.String("run-id", "", "filter by run_id (full value or unique prefix)")
 	tail := fs.Int("tail", 0, "show only the last N events (0 = all)")
