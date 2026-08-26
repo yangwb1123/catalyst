@@ -126,8 +126,8 @@ access to the primary worktree and `integrate-next`.
 The Go binary is also the sole scheduler for persisted Group Agent Graphs. It
 produces canonical, effect-free interchange artifacts for planning, immutable
 multi-node scheduling policy, schedule-bound initial-node contracting,
-operator pricing, legacy first-node contracting, and passive release
-authorization:
+operator pricing, legacy first-node contracting, passive release authorization,
+and read-only whole-schedule progress reconciliation:
 
 The commands below are a protocol map. Replace uppercase tokens with the
 preceding artifact fields: read `SCHEDULE_SHA256` from `schedule.json` and
@@ -138,6 +138,9 @@ forge graph-plan --graph-id GROUP_AGENT_GRAPH_ID \
   --manifest-sha256 GRAPH_MANIFEST_SHA256 --input graph.json > core-plan.json
 
 forge graph-execution-schedule --control control.json > schedule.json
+
+forge graph-scheduled-reconcile \
+  --snapshot scheduled-progress.json > reconcile-decision.json
 
 forge graph-node-pricing-snapshot --model PINNED_MODEL \
   --input-usd-micros-per-token-unit 2000000 \
@@ -199,6 +202,23 @@ direct predecessor. `graph-scheduled-ready-nodes` exposes the same selection
 rule. Every canonical v2 candidate remains passive: it creates no lifecycle or
 provider request, observes no progress, grants no authority, and cannot by
 itself advance a successor.
+
+`graph-scheduled-reconcile` accepts one exact, content-free
+`ScheduledGraphProgressSnapshot` projected by Rust from a single SQLite read
+transaction. It strictly validates the fixed schedule-v1 serial policy and
+returns exactly one source-bound disposition: `ready`, `claimed_unknown`,
+`manual_recovery_required`, `failed`, `failed_uncertain`, `completed`, or
+`incompatible_progress`. Only `ready` contains the next ordinal and node ID.
+Evidence after the first non-completed ordinal is incompatible rather than
+silently treated as serial progress. The repository-built official command is
+implemented as a pure snapshot-to-decision transform with no database,
+credential, provider, network, workspace, consent, lane, dispatch, recovery,
+retry, resend, or successor effect. The Rust bridge nevertheless treats the
+operator-selected Core as a same-user TCB: its SHA-256 pin proves byte identity
+and `--protocol-version` proves protocol compatibility only. Neither is
+publisher/function attestation or filesystem/network effect containment, and
+the bridge does not sandbox Core. The protocol-version output is exact `1`
+without a trailing newline.
 
 `graph-node-pricing-snapshot` fixes the production destination to the official
 OpenAI Responses endpoint and emits an immutable local pricing assertion. Its

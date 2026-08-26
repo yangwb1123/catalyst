@@ -2046,3 +2046,53 @@ event 及完整直接父系字段。读取时重验 parent terminal/root event�
 workspace 内容，不构造 provider/tool/transport，不访问 network；child 只在 caller 随后
 显式执行 `run resume CHILD_RUN_ID` 时开始运行。context/workspace snapshot 均未绑定，
 任意 event-prefix branching 保持为后续独立协议。
+
+### Sprint 136 — Scheduled Graph Progress Snapshot + Core Reconcile v1（read-only runtime slice）— ADR-0096 Proposed
+
+交付 `forge-runtime group graph run reconcile GRAPH_RUN_ID --core-bin ABSOLUTE_PATH
+--core-bin-sha256 SHA256`。Infrastructure 在 exact-current SQLite v28 的一个 deferred read
+transaction 内重验 Graph Run、Graph、唯一 schedule 及每个 ordinal 的 candidate、prepared
+provider request、lifecycle 与 Core terminal receipt，再投影不含 Prompt/request body/result/
+artifact/credential/workspace 内容的 canonical `ScheduledGraphProgressSnapshot`。它复用同一
+snapshot 已加载的 source objects，并以跨表 count reconciliation 拒绝 schedule 外、orphan/
+presence-chain 缺口、重复或 source-binding 漂移的已存在记录及 row-count disagreement；合法未
+materialize 的 ordinal 仍投影为空 evidence 并由 Core 判断为 `ready`。
+
+显式 digest-pinned Go Core 通过 `graph-scheduled-reconcile --protocol-version` v1 handshake
+接收 exact snapshot，并在 schedule-v1 serial/one-in-flight/completed-contiguous-prefix/
+exactly-one/fail-fast policy 下返回七类 source-bound disposition：`ready`、
+`claimed_unknown`、`manual_recovery_required`、`failed`、`failed_uncertain`、`completed` 或
+`incompatible_progress`。只有 `ready` 带 exact next ordinal/node；Rust 严格重验 decision
+canonical bytes、digest、snapshot/schedule binding 与 field shape，不复制 Core 的调度选择。
+
+Core 是 operator-trusted same-user TCB。SHA-256 pin 只证明 Rust copy/execute 的 exact bytes，
+v1 handshake 只证明协议兼容；两者不认证 publisher 或 binary function。empty environment、sealed
+executable bytes、bounded I/O/deadline 不是 sandbox，Runtime 没有对 Core 提供 filesystem/network/
+syscall/namespace/mount/egress confinement，也没有 effect-containment attestation。
+
+Forge Runtime 自身只观察现有 durable state：不 migration、不 logical write Hub、不读取 credential
+或 workspace、不构造 provider、不联网、不 claim/release Project lane，不 materialize candidate、
+prepare/send request、consume consent、adjudicate/recover/retry/resend、执行节点或授予 successor
+authority。Official Core command 按 pure transform 实现并测试，但 combined no-effect claim 以 operator
+信任该 exact official Core 为前提。SQLite live reader 仍可能使用 SHM read coordination；`ready`
+不是 dispatch authorization。CLI JSON 以 `effect_facts_scope="forge_runtime"` 约束全部为 false 的
+`runtime_effect_facts`；独立 `core_trust_boundary` 把 same-user/operator-trust、binary identity、protocol
+handshake 与 empty environment 报为 true，把 filesystem/network isolation、effect containment 与
+effect attestation 报为 false，Human 输出也重复 trusted same-user TCB 警示。这些字段是条件化合同与
+缺口披露，不是 arbitrary pinned child 的 syscall observation 或 attestation。
+
+当前聚焦证据包括 Go 全七 disposition、canonical/digest mutation 与 strict decode tests；Rust
+domain/application strict codec、presence-chain/source binding/error mapping tests；schedule-only、
+candidate+prepared-request、non-contiguous evidence、missing-schedule、out-of-schedule candidate
+五组 SQLite projection tests；compiled Go Core 的 Rust→Go exact golden bridge；以及 2/2 process-level
+CLI tests。后者覆盖 repository-built official Core ready、wrong-pin fail-closed、logical Hub table snapshot 不变、
+workspace sentinel 不变、credential/endpoint poison 不泄露且 loopback sentinel 未收到连接。冻结
+golden snapshot/ready-decision SHA-256
+分别为 `a847c1b486323dc5b31922b579a5586636d7fd83eac1cca03d2722642be46d20` 和
+`0c5682601d192a19abb1d23d8bb1597c0eacde8fa098a49b4db548fd5bc56af0`。
+
+**stop_condition:** 本 sprint 到只读 reconcile 为止。Concurrent terminalization、完整 32-node 与
+stored-corruption matrix 属 effectful step 前置；one-node step 必须每次 fresh exact-request
+consent 且至多执行一个 Core-selected node。Durable whole-Graph controller、第二节点自动循环与
+concurrent wave execution 在各自 journal/budget/re-entry/failure/recovery contract 独立验收前保持关闭。
+上述定向 observation 不证明 arbitrary operator-pinned Core 的 filesystem/network effect confinement。

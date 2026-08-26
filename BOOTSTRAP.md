@@ -16,8 +16,12 @@ ForgeOS = **AI-native 软件工厂**:站在 Claude Code / Codex / Gemini CLI 等
 - **v2(现状)**:`forge-core/` Go 控制平面已落地；`forge-runtime/` 已具备 Rust 原生 Agent Loop、
   local-first Conversation Hub、durable Project Run 与 Group/Graph 协议，默认仍为离线确定性执行。
   真实 CLI/Responses 均需显式启用；Go 执行器已可选 Docker/Firecracker sandbox。
-  Project Run 已提供显式有界 resume 与可查询的 root-input branch；顶层整图自动执行、
-  任意 event-prefix branching、远程账号同步与受控写/进程工具仍未实现。
+  Project Run 已提供显式有界 resume 与可查询的 root-input branch；scheduled multi-node
+  Graph 已提供单个 SQLite 快照上的 content-free 只读 progress projection 与 pinned Go Core
+  reconcile。它不执行、恢复或重试节点；effectful one-node step、顶层整图自动执行、任意
+  event-prefix branching、远程账号同步与受控写/进程工具仍未实现。Core 是 operator-trusted
+  same-user TCB；pin/handshake 不提供 sandbox、publisher attestation 或 effect containment；CLI
+  以 Runtime-only effect scope、独立 Core trust-boundary facts 与 Human 警示披露这一限制。
 - 时序与理由见 [`.agent/DECISIONS.md`](.agent/DECISIONS.md)(D1–D2)。
 
 ## 工程原则 (Principles)

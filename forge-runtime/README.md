@@ -103,6 +103,12 @@ forge-runtime --json group graph run schedule show GRAPH_EXECUTION_SCHEDULE_ID \
   --include-schedule
 forge-runtime --json group graph run schedule list MULTI_NODE_GRAPH_RUN_ID --limit 20
 
+# Atomically observe durable scheduled progress and ask an operator-trusted,
+# pinned official Go Core for one serial disposition. `ready` is not authority.
+forge-runtime --json group graph run reconcile MULTI_NODE_GRAPH_RUN_ID \
+  --core-bin /absolute/path/to/forge \
+  --core-bin-sha256 LOWERCASE_SHA256
+
 # Bind Core's ordinal-zero candidate to the claimed schedule digest and pristine head.
 # This sidecar is not a dispatchable lifecycle contract.
 forge graph-scheduled-node-contract --control multi-control.json \
@@ -357,6 +363,46 @@ accesses no workspace/tool, and releases no lifecycle/dispatch/lane/progress/
 receipt/successor authority. Legacy `dispatch execute` completes source,
 consent and readiness preflight before constructing the pinned Core bridge, so
 a scheduled-only Run cannot start that process through the old lifecycle.
+
+At any durable scheduled stage, `group graph run reconcile` opens only an
+existing exact-current v28 Hub through the live read-only path. One deferred
+SQLite transaction validates the Run, Graph, schedule and each ordinal's
+candidate/request/lifecycle/terminal identity, then seals a content-free
+progress snapshot. The explicitly SHA-256-pinned official Go Core returns one
+serial disposition; Rust revalidates its canonical bytes, digest and source binding.
+Only `ready` carries the exact next ordinal/node observation. Claimed work is
+unknown, quarantined or adjudicated work requires manual recovery, terminal
+failures remain separated by certainty, and non-contiguous evidence is
+incompatible with schedule v1.
+
+Reconcile accepts no consent, pricing, authorization or idempotency option.
+Forge Runtime does not read credentials or workspace files, construct a
+provider, access a network, claim a Project lane, mutate logical Hub state,
+execute/recover/retry/resend a node, or grant successor authority. SQLite may
+still coordinate the live reader through SHM locks or transient empty sidecars.
+This is the read-only input boundary for a future one-node step, not that step
+or a whole-Graph loop.
+
+The Core executable is an operator-trusted same-user TCB. Its digest pin proves
+only which bytes Runtime copied and executed; the handshake proves only
+protocol compatibility. Empty environment, sealed executable bytes and bounded
+I/O do not sandbox Core, and Runtime applies no filesystem, network/egress,
+namespace, mount or syscall confinement. The official Core command is designed
+and tested as a pure transform, but arbitrary operator-pinned bytes are not
+attested or effect-contained.
+
+JSON makes that boundary explicit: `effect_facts_scope="forge_runtime"` scopes
+the all-false `runtime_effect_facts` object, including `credential_read`,
+`network_accessed`, `workspace_accessed` and `logical_hub_mutated`. A separate
+`core_trust_boundary` object reports `same_user_code`,
+`operator_trust_required`, `binary_identity_validated`,
+`protocol_handshake_validated` and `empty_environment` as true, and reports
+`filesystem_isolation_enforced`, `network_isolation_enforced`,
+`effect_containment_enforced` and `effect_attestation_present` as false. Human
+output likewise says that the operator-pinned Core is trusted same-user code
+and that its byte pin is not effect containment or attestation. These are
+contract and trust-boundary disclosures, not syscall observations about the
+child.
 
 The scheduled sidecar now has one deliberately separate effectful entry point:
 
@@ -867,6 +913,8 @@ Architecture:
 - [Passive multi-node execution schedule ADR](../docs/adr/0025-passive-multi-node-execution-schedule.md)
 - [Passive schedule-bound initial-node contract candidate ADR](../docs/adr/0026-passive-schedule-bound-initial-node-contract.md)
 - [Passive scheduled-node provider request ADR](../docs/adr/0027-passive-scheduled-node-provider-request.md)
+- [Scheduled Graph progress/Core reconcile ADR (Proposed)](../docs/adr/ADR-0096-scheduled-graph-progress-reconcile-v1.md)
+- [Scheduled Graph progress/Core reconcile design](../docs/design/scheduled-graph-progress-reconcile-v1.md)
 - [Hub local-foundation design](../docs/design/conversation-hub-phase1.md)
 - [Durable Run journal design](../docs/design/run-journal-phase1.md)
 - [Project Run root-input branch v1 design](../docs/design/run-root-input-branch.md)
