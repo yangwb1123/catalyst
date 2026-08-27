@@ -72,10 +72,16 @@ pub const TEXT: &str = "usage:
     execute PROVIDER_REQUEST_ID --authorization FILE|- --pricing FILE|-
     --core-bin ABSOLUTE_FILE --core-bin-sha256 SHA256
     --confirm-off-machine [--include-result]
+  forge-runtime [OPTIONS] group graph run scheduled-contract provider-request dispatch
+    adjudicate PROVIDER_REQUEST_ID
   forge-runtime [OPTIONS] group graph run reconcile GRAPH_RUN_ID
     --core-bin ABSOLUTE_FILE --core-bin-sha256 SHA256
   forge-runtime [OPTIONS] group graph run ready-release GRAPH_RUN_ID
     --core-bin ABSOLUTE_FILE --core-bin-sha256 SHA256
+  forge-runtime [OPTIONS] group graph run step GRAPH_RUN_ID
+    --expected-provider-request-id ID --expected-ready-authorization-sha256 SHA256
+    --pricing FILE|- --core-bin ABSOLUTE_FILE --core-bin-sha256 SHA256
+    --confirm-off-machine [--confirm-predecessor-content] [--include-result]
   forge-runtime [OPTIONS] group graph run dispatch prepare GRAPH_RUN_ID
                 [--idempotency-key KEY]
   forge-runtime [OPTIONS] group graph run dispatch show DISPATCH_REQUEST_ID
@@ -209,8 +215,8 @@ pub const TEXT: &str = "usage:
   its frozen budget. It is not vendor-attested or a live price guarantee, and
   remains read-only: no consent/credential/provider/network/lane/authority,
   execution/result/database/Graph successor or writeback effect occurs.
-  Scheduled provider-request dispatch execute is the only effectful scheduled
-  surface. It requires fresh --confirm-off-machine consent, exact authorization
+  Scheduled provider-request dispatch execute is the legacy v1 effectful
+  scheduled-contract surface. It requires fresh --confirm-off-machine consent, exact authorization
   and pricing, an environment credential, and a pinned scheduled Core executable.
   It atomically claims the pristine v1 Run and Project lane before one provider
   stream, then records one result/uncertainty artifact and one Core terminal
@@ -218,6 +224,28 @@ pub const TEXT: &str = "usage:
   no lease, resend, retry, successor advance, Run journal mutation, workspace/
   tool effect, or Prompt/memory writeback. Re-entry returns stored metadata and
   never invokes the provider again.
+  Scheduled provider-request dispatch adjudicate is the Linux-only, operator-invoked
+  no-send recovery for a claimed legacy-v1 or ready-v2 lifecycle. It opens the exact
+  request-and-lane owner sidecar, requires matching local machine evidence plus a dead
+  or PID-reused process incarnation, repeats the exact-owner/status guard in one atomic
+  database update, then removes the sidecar only after commit. It reads no consent,
+  credential or Core input, constructs no provider, contacts no network and never
+  retries or resends. The sidecar is local same-machine evidence, not distributed
+  identity or fencing, and does not defend against a hostile same-UID pathname race.
+  Group graph run step is the effectful one-ready-node v2 surface. It first
+  pins and handshakes the operator-named Core, before reading the private pricing
+  source. It then freshly reruns reconcile and ready authorization, requires the
+  exact expected request and authorization digest plus fresh off-machine consent,
+  and requires separate fresh consent when predecessor content is included.
+  One BEGIN IMMEDIATE transaction compares the complete ready source and claims
+  the cross-family Project lane before at most one provider stream. A durable
+  owner sidecar identifies the exact request/lane/PID incarnation for crash
+  adjudication. SIGINT/SIGTERM are folded into a bounded Cancelled uncertainty;
+  uncatchable crashes preserve owner evidence. Re-entry never resends. Default human and JSON output are metadata
+  only; --include-result explicitly reveals stored provider output, which may
+  reproduce private source. The pinned Core is trusted same-user code, not an
+  effect-contained or attested sandbox. No automatic retry, recovery, successor
+  wave, workspace/tool access, or Conversation/Prompt/memory writeback occurs.
   Group graph run dispatch prepare uses only the pure local Responses codec and
   persists exact request bytes. It obtains no consent, reads no credential, releases
   no dispatch authority, and invokes no provider, network, workspace, tool, result,
@@ -239,7 +267,7 @@ pub const TEXT: &str = "usage:
   Readiness remains read-only and is not the final consent/credential/budget
   preflight: no provider is constructed, no lane or authority is claimed, and no
   request, result, database write, or graph advance occurs.
-  WARNING: dispatch execute is the only effectful Graph surface. It revalidates
+  WARNING: dispatch execute is the legacy single-node Graph surface. It revalidates
   one single-node Graph, exact authorization/pricing, and an explicitly pinned
   Core executable before reading OPENAI_API_KEY. This effectful command is Linux-only:
   Core runs from sealed, digest-verified anonymous executable bytes. --confirm-off-machine permits

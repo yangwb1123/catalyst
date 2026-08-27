@@ -66,6 +66,55 @@ source/digest 不一致都必须失败关闭。
 `--confirm-predecessor-content`，且不得从 candidate flag、receipt、ready/release
 决策、历史 consent 或 `--confirm-off-machine` 推断；反向也同样不得推断。
 
+## Effectful ready-node step
+
+公开入口是 `group graph run step GRAPH_RUN_ID`。调用者必须同时提供预期的
+provider request ID、ready authorization SHA-256、exact pricing artifact、operator-pinned
+Core binary/digest 与 fresh `--confirm-off-machine`；candidate 包含 predecessor 正文时还必须
+独立提供 fresh `--confirm-predecessor-content`。缺少任一所需 consent 时，不得读取 credential、
+创建 executor owner、构造 provider、claim lane 或发送 request。
+
+生命周期共用既有物理表但按 stored release/authorization pair 严格分族：`(1,1)` 只表示
+legacy lifecycle，`(2,2)` 只表示 ready-node lifecycle；mixed 或 unknown pair 是 corruption，
+不得靠另一 decoder 成功与否 fallback。ready claim 必须在一个 SQLite `BEGIN IMMEDIATE`
+transaction 内重建 current progress/selected source，要求它与 v2 release、authorization、pricing、
+prepared request/exact body 全绑定，并同时检查 legacy 与 ready family 的 Hub-global Project lane。
+只有 commit winner 获得 non-`Clone` request authority；stale source、loser、occupied lane、corruption
+或 commit error 都不得发送。
+
+赢家只可消费一次 exact authority并至多 poll 一次 bounded provider stream；这不证明远端已观测 request。没有 transport retry、application resend、lease
+expiry 或 automatic recovery。terminal evidence + Core receipt 在一个 immediate transaction 中落库并
+释放 lane；Core failure 尝试 artifact-only quarantine。任何 claimed、terminalized、quarantined 或
+adjudicated re-entry 都必须返回 durable inspection 且零重发。每次命令至多执行一个 selected node，
+不 materialize successor、不递归调用自己，也不推进 whole-Graph controller。默认输出只披露
+metadata；result 正文只有显式 `--include-result` 才返回。
+
+公开结果必须携带 invocation-scoped effect receipt，分别表达入口 replay、已做 private Core/credential/
+provider/owner preclaim 后输掉 CAS、terminal winner 与已持久化 quarantine；不得由最终 lifecycle status
+反推本次调用的动作。Core protocol handshake 与 stored terminal receipt 是两个独立事实。claim outcome
+或 post-claim commit outcome 无法判定时，错误仍须脱敏披露 poll/remote-attestation/no-resend 边界。
+成功 exact-owner adjudication 必须报告 dispatch 未发生但 database write 已发生。
+
+Linux executor owner 以 provider request ID + unpredictable lane ownership ID 的 hash 命名，存于
+exact non-symlink `0700` directory 中的 `0600` create-new、single-link、≤4 KiB canonical sidecar；
+document 绑定 machine ID、boot ID、PID namespace identity、time namespace identity、PID 与 `/proc`
+process start ticks。machine 不同必须失败关闭；同 machine 的 boot 不同足以证明旧 executor 已死；同 boot
+才必须在读取 `/proc/<pid>/stat` 前证明 PID/time namespace exact 相等，并证明 `/proc/self` 的 numeric
+target 等于当事进程 `getpid()`，避免祖先 PID namespace procfs mount 混淆。cleanup 另要求原 device/inode。
+协作的 Runtime writer 在同一 directory advisory lock 内计数，已有任意 1024 个条目即拒绝创建；
+unknown entry 也占容量，且绝不自动 scavenging，避免把容量恢复误当成 owner 已失效的证据。
+hard crash、claim commit uncertainty 或 terminal commit uncertainty 必须保留无法安全排除的 owner
+证据。显式 adjudication 先从 durable any-family lifecycle 取得 exact lane owner；同 machine 的旧 boot 可判
+`dead`，同 boot 只接受 exact PID/time namespace 与 verified procfs view 的 `dead|pid_reused` sidecar；写事务
+再次要求 claimed、lane active、
+无 terminal evidence 与 exact owner，
+guarded update 恰好一行并 commit 后才可 cleanup。sidecar 不是分布式身份/fencing token，也不能把
+本地 single-consumption 解释为 provider 侧 exactly-once。
+
+owner cleanup 发生在 durable terminal/quarantine/adjudication commit 之后。cleanup failure 不得抹掉已知
+invocation facts：公开结果仍报告 lifecycle、dispatch/database write 与 poll/receipt 事实，并以
+`owner_sidecar_cleanup_observation=failed`、sidecar presence `null` 明确表示清理后的存在性未知。
+
 ## Identity shapes
 
 | key | value |

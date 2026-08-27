@@ -87,7 +87,7 @@ pub(super) fn build_lane(
 }
 
 #[allow(clippy::too_many_lines)]
-pub(super) fn build_artifact(
+pub(crate) fn build_artifact(
     claim: &GroupAgentScheduledNodeDispatchClaim,
     evidence: &CollectedDispatchEvidence,
     terminalized_at_ms: u64,
@@ -157,18 +157,33 @@ fn finalize_artifact(
     artifact: &mut GroupAgentScheduledNodeTerminalArtifact,
 ) -> Result<(), GroupAgentScheduledNodeDispatchExecutionServiceError> {
     artifact.output_bytes = artifact.output_text.len();
-    let digest = artifact
-        .expected_sha256()
-        .map_err(|_| GroupAgentScheduledNodeDispatchExecutionServiceError::DispatchQuarantined)?;
+    let digest = artifact.expected_sha256().map_err(|_| {
+        GroupAgentScheduledNodeDispatchExecutionServiceError::PostClaimOutcomeUncertain
+    })?;
     artifact.artifact_sha256.clone_from(&digest);
     artifact.artifact_id = format!("scheduled-node-terminal-artifact-{digest}");
-    artifact.artifact_bytes = artifact
-        .canonical_json()
-        .map_err(|_| GroupAgentScheduledNodeDispatchExecutionServiceError::DispatchQuarantined)?
-        .len();
-    artifact
-        .validate()
-        .map_err(|_| GroupAgentScheduledNodeDispatchExecutionServiceError::DispatchQuarantined)
+    settle_artifact_bytes(artifact)?;
+    artifact.validate().map_err(|_| {
+        GroupAgentScheduledNodeDispatchExecutionServiceError::PostClaimOutcomeUncertain
+    })
+}
+
+fn settle_artifact_bytes(
+    artifact: &mut GroupAgentScheduledNodeTerminalArtifact,
+) -> Result<(), GroupAgentScheduledNodeDispatchExecutionServiceError> {
+    for _ in 0..8 {
+        let bytes = artifact
+            .canonical_json()
+            .map_err(|_| {
+                GroupAgentScheduledNodeDispatchExecutionServiceError::PostClaimOutcomeUncertain
+            })?
+            .len();
+        if artifact.artifact_bytes == bytes {
+            return Ok(());
+        }
+        artifact.artifact_bytes = bytes;
+    }
+    Err(GroupAgentScheduledNodeDispatchExecutionServiceError::PostClaimOutcomeUncertain)
 }
 
 pub(super) fn build_claim_request(
@@ -245,16 +260,16 @@ pub(super) fn build_control(
         artifact,
         snapshot_sha256: String::new(),
     };
-    control.snapshot_sha256 = control
-        .expected_sha256()
-        .map_err(|_| GroupAgentScheduledNodeDispatchExecutionServiceError::DispatchQuarantined)?;
-    control
-        .validate()
-        .map_err(|_| GroupAgentScheduledNodeDispatchExecutionServiceError::DispatchQuarantined)?;
+    control.snapshot_sha256 = control.expected_sha256().map_err(|_| {
+        GroupAgentScheduledNodeDispatchExecutionServiceError::PostClaimOutcomeUncertain
+    })?;
+    control.validate().map_err(|_| {
+        GroupAgentScheduledNodeDispatchExecutionServiceError::PostClaimOutcomeUncertain
+    })?;
     Ok(control)
 }
 
-pub(super) fn limits(
+pub(crate) fn limits(
     budgets: &crate::runtime_domain::GroupAgentNodeExecutionBudgets,
     max_result_bytes: usize,
 ) -> DispatchCollectionLimits {

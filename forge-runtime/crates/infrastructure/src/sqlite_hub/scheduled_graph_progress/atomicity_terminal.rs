@@ -35,7 +35,7 @@ pub(super) fn terminal_request(
     }
 }
 
-fn completed_artifact(
+pub(in crate::sqlite_hub) fn completed_artifact(
     claim: &GroupAgentScheduledNodeDispatchClaim,
 ) -> GroupAgentScheduledNodeTerminalArtifact {
     let output = "done".to_owned();

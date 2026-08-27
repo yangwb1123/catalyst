@@ -22,6 +22,31 @@ func TestDecodeControlRejectsNonCanonicalWhitespace(t *testing.T) {
 	}
 }
 
+func TestDigestWithoutFieldRecursivelySortsAndPreservesUint64(t *testing.T) {
+	type nested struct {
+		Z uint64 `json:"z"`
+		A uint64 `json:"a"`
+	}
+	type envelope struct {
+		SnapshotSHA256 string `json:"snapshot_sha256"`
+		Nested         nested `json:"nested"`
+	}
+	value := envelope{
+		SnapshotSHA256: strings.Repeat("f", 64),
+		Nested:         nested{Z: ^uint64(0), A: 1},
+	}
+
+	got, err := digestWithoutField(value, "snapshot_sha256", "fixture\x00")
+	if err != nil {
+		t.Fatalf("digestWithoutField: %v", err)
+	}
+	preimage := []byte(`{"nested":{"a":1,"z":18446744073709551615}}`)
+	want := digestBytes("fixture\x00", preimage)
+	if got != want {
+		t.Fatalf("digest = %s, want %s from %s", got, want, preimage)
+	}
+}
+
 func TestReceiptRejectsOutcomeArtifactAndLaneDrift(t *testing.T) {
 	cases := []struct {
 		name   string

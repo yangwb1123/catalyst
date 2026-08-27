@@ -6,11 +6,13 @@ use crate::runtime_domain::{
     GroupAgentScheduledNodeLifecycleStatus, GroupAgentScheduledNodeTerminalArtifact, HubEntity,
     HubStoreError, TerminalizeGroupAgentScheduledNodeDispatch,
     TerminalizeGroupAgentScheduledNodeDispatchResult,
+    TerminalizeGroupAgentScheduledReadyNodeDispatchResult,
 };
 
 use super::{
     super::{read_error, write_error},
     read::{self, TABLE},
+    read_ready,
 };
 
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
@@ -19,6 +21,7 @@ pub(super) fn terminalize(
     connection: &mut Connection,
     request: &TerminalizeGroupAgentScheduledNodeDispatch,
 ) -> Result<TerminalizeGroupAgentScheduledNodeDispatchResult, HubStoreError> {
+    validate_legacy_version(request.v)?;
     validate_request(request)?;
     connection.busy_timeout(BUSY_TIMEOUT).map_err(read_error)?;
     let transaction = connection
@@ -44,7 +47,11 @@ pub(super) fn terminalize(
         });
     }
     let artifact = decode_artifact(&request.artifact_json)?;
-    verify_artifact_binding(&artifact, &existing)?;
+    verify_artifact_binding(
+        &artifact,
+        &existing.provider_request.provider_request_id,
+        &existing.claim,
+    )?;
     apply_terminal_update(
         &transaction,
         request,
@@ -60,18 +67,60 @@ pub(super) fn terminalize(
     })
 }
 
+pub(super) fn terminalize_ready(
+    connection: &mut Connection,
+    request: &TerminalizeGroupAgentScheduledNodeDispatch,
+) -> Result<TerminalizeGroupAgentScheduledReadyNodeDispatchResult, HubStoreError> {
+    validate_ready_version(request.v)?;
+    validate_request(request)?;
+    connection.busy_timeout(BUSY_TIMEOUT).map_err(read_error)?;
+    let transaction = connection
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(read_error)?;
+    let provider_request_id = provider_request_id(request)?;
+    let raw =
+        read::find_by_provider_request(&transaction, &provider_request_id)?.ok_or_else(|| {
+            HubStoreError::NotFound {
+                entity: HubEntity::GroupAgentScheduledNodeLifecycle,
+                id: provider_request_id.clone(),
+            }
+        })?;
+    let existing = read_ready::reconstruct(&transaction, &raw)?;
+    if existing.status == GroupAgentScheduledNodeLifecycleStatus::Claimed {
+        let artifact = decode_artifact(&request.artifact_json)?;
+        verify_artifact_binding(
+            &artifact,
+            &existing.provider_request.provider_request_id,
+            &existing.claim,
+        )?;
+        apply_terminal_update(
+            &transaction,
+            request,
+            &artifact,
+            &existing.provider_request.provider_request_id,
+        )?;
+    }
+    let inspection = read_ready::inspect_in_snapshot(&transaction, &provider_request_id)?;
+    transaction.commit().map_err(read_error)?;
+    Ok(TerminalizeGroupAgentScheduledReadyNodeDispatchResult {
+        v: request.v,
+        inspection,
+    })
+}
+
 /// The terminal artifact must bind every claim identity it carries to the
 /// durable claim before any lane release is applied.
 fn verify_artifact_binding(
     artifact: &GroupAgentScheduledNodeTerminalArtifact,
-    existing: &crate::runtime_domain::GroupAgentScheduledNodeLifecycleInspection,
+    provider_request_id: &str,
+    claim: &crate::runtime_domain::GroupAgentScheduledNodeDispatchClaim,
 ) -> Result<(), HubStoreError> {
-    if artifact.provider_request_id != existing.provider_request.provider_request_id
-        || artifact.dispatch_id != existing.claim.dispatch_id
-        || artifact.authorization_sha256 != existing.claim.authorization_sha256
-        || artifact.provider_request_sha256 != existing.claim.provider_request_sha256
-        || artifact.project_lane_sha256 != existing.claim.project_lane_sha256
-        || artifact.claim_event_sha256 != existing.claim.claim_event_sha256
+    if artifact.provider_request_id != provider_request_id
+        || artifact.dispatch_id != claim.dispatch_id
+        || artifact.authorization_sha256 != claim.authorization_sha256
+        || artifact.provider_request_sha256 != claim.provider_request_sha256
+        || artifact.project_lane_sha256 != claim.project_lane_sha256
+        || artifact.claim_event_sha256 != claim.claim_event_sha256
     {
         return Err(corrupt(
             "scheduled terminal artifact does not bind to claim",
@@ -223,4 +272,26 @@ fn corrupt(message: &str) -> HubStoreError {
     HubStoreError::Corrupt {
         message: message.into(),
     }
+}
+
+fn require_version(actual: u16, expected: u16, message: &str) -> Result<(), HubStoreError> {
+    (actual == expected)
+        .then_some(())
+        .ok_or_else(|| corrupt(message))
+}
+
+fn validate_legacy_version(actual: u16) -> Result<(), HubStoreError> {
+    require_version(
+        actual,
+        crate::runtime_domain::GROUP_AGENT_SCHEDULED_NODE_LIFECYCLE_VERSION,
+        "scheduled legacy terminal version is invalid",
+    )
+}
+
+fn validate_ready_version(actual: u16) -> Result<(), HubStoreError> {
+    require_version(
+        actual,
+        crate::runtime_domain::GROUP_AGENT_SCHEDULED_READY_NODE_LIFECYCLE_VERSION,
+        "scheduled ready-node terminal version is invalid",
+    )
 }

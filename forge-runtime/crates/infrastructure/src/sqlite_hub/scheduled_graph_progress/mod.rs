@@ -1,15 +1,20 @@
 mod node;
 mod read;
-mod ready_release;
+pub(in crate::sqlite_hub) mod ready_release;
 
 #[cfg(test)]
-mod atomicity_terminal;
+pub(in crate::sqlite_hub) use read::atomicity_fixture;
+
+#[cfg(test)]
+pub(in crate::sqlite_hub) mod atomicity_terminal;
 #[cfg(test)]
 mod bounds;
 #[cfg(test)]
 mod bounds_support;
 #[cfg(test)]
 mod corruption_tests;
+#[cfg(test)]
+mod global_project_lane_tests;
 #[cfg(test)]
 mod ready_release_tests;
 #[cfg(test)]
@@ -19,22 +24,38 @@ mod tests;
 #[path = "../../../tests/sqlite_group_agent_graph_execution_schedule_support/mod.rs"]
 #[allow(dead_code)]
 #[allow(clippy::duplicate_mod)]
-mod sqlite_group_agent_graph_execution_schedule_support;
+pub(in crate::sqlite_hub) mod sqlite_group_agent_graph_execution_schedule_support;
 #[cfg(test)]
 #[path = "../../../tests/sqlite_group_agent_graph_run_support/mod.rs"]
 #[allow(dead_code)]
 #[allow(clippy::duplicate_mod)]
-mod sqlite_group_agent_graph_run_support;
+pub(in crate::sqlite_hub) mod sqlite_group_agent_graph_run_support;
+#[cfg(test)]
+#[path = "../../../tests/sqlite_group_agent_node_dispatch_request_support/mod.rs"]
+#[allow(dead_code)]
+#[allow(clippy::duplicate_mod)]
+mod sqlite_group_agent_node_dispatch_request_support;
+#[cfg(test)]
+#[path = "../../../tests/sqlite_group_agent_node_execution_contract_support/mod.rs"]
+#[allow(dead_code)]
+#[allow(clippy::duplicate_mod)]
+mod sqlite_group_agent_node_execution_contract_support;
+#[cfg(test)]
+#[path = "../../../tests/sqlite_group_agent_node_lifecycle_support/mod.rs"]
+#[allow(dead_code)]
+#[allow(clippy::duplicate_mod)]
+#[allow(unused_imports)]
+mod sqlite_group_agent_node_lifecycle_support;
 #[cfg(test)]
 #[path = "../../../tests/sqlite_group_agent_scheduled_node_contract_support/mod.rs"]
 #[allow(dead_code)]
 #[allow(clippy::duplicate_mod)]
-mod sqlite_group_agent_scheduled_node_contract_support;
+pub(in crate::sqlite_hub) mod sqlite_group_agent_scheduled_node_contract_support;
 #[cfg(test)]
 #[path = "../../../tests/sqlite_group_agent_scheduled_node_provider_request_support/mod.rs"]
 #[allow(dead_code)]
 #[allow(clippy::duplicate_mod)]
-mod sqlite_group_agent_scheduled_node_provider_request_support;
+pub(in crate::sqlite_hub) mod sqlite_group_agent_scheduled_node_provider_request_support;
 
 use crate::runtime_domain::{
     HubStoreError, ScheduledGraphProgressSnapshot, ScheduledGraphProgressStore,

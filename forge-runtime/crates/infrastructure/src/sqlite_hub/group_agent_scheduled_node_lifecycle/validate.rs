@@ -73,6 +73,8 @@ fn validate_raw_identity(
     provider_digest: &str,
     lane_digest: &str,
 ) -> Result<(), HubStoreError> {
+    let released_at_ms = i64::try_from(claim.released_at_ms)
+        .map_err(|_| corrupt("scheduled lifecycle claim time is too large"))?;
     if raw.id != claim.dispatch_id
         || raw.graph_run_id != claim.graph_run_id
         || raw.provider_request_id != claim.provider_request_id
@@ -100,10 +102,7 @@ fn validate_raw_identity(
         || claim_event.lane_ownership_id != claim.lane_ownership_id
         || claim_event.released_at_ms != claim.released_at_ms
         || claim_event.event_sha256 != claim.claim_event_sha256
-        || raw.created_at_ms < 0
-        || raw
-            .terminalized_at_ms
-            .is_some_and(|time| time < raw.created_at_ms)
+        || raw.created_at_ms != released_at_ms
     {
         return Err(corrupt("scheduled lifecycle row identity disagrees"));
     }
@@ -161,6 +160,7 @@ fn validate_raw_evidence_shape(
                 && raw.terminal_control_json.is_none()
                 && raw.terminal_receipt_json.is_none()
                 && raw.terminalized_at_ms.is_none()
+                && raw.adjudicated_at_ms.is_none()
         }
         GroupAgentScheduledNodeLifecycleStatus::Terminalized => {
             raw.lane_active == 0
@@ -168,6 +168,7 @@ fn validate_raw_evidence_shape(
                 && raw.terminal_control_json.is_some()
                 && raw.terminal_receipt_json.is_some()
                 && raw.terminalized_at_ms.is_some()
+                && raw.adjudicated_at_ms.is_none()
         }
         GroupAgentScheduledNodeLifecycleStatus::Quarantined => {
             raw.lane_active == 0
@@ -175,12 +176,15 @@ fn validate_raw_evidence_shape(
                 && raw.terminal_control_json.is_none()
                 && raw.terminal_receipt_json.is_none()
                 && raw.terminalized_at_ms.is_some()
+                && raw.adjudicated_at_ms.is_none()
         }
         GroupAgentScheduledNodeLifecycleStatus::Adjudicated => {
             raw.lane_active == 0
                 && raw.artifact_json.is_none()
                 && raw.terminal_control_json.is_none()
                 && raw.terminal_receipt_json.is_none()
+                && raw.terminalized_at_ms.is_none()
+                && raw.adjudicated_at_ms.is_some()
         }
     };
     if !evidence_shape {
@@ -191,27 +195,38 @@ fn validate_raw_evidence_shape(
     Ok(())
 }
 
-/// Terminal-time ordering: the terminal time must follow the claim release and
-/// any artifact creation time must stay at or before the terminal time.
+/// Persisted lifecycle times must bind exactly to their authenticated source
+/// time or follow the claim release, depending on the status transition.
 fn validate_raw_timing(
     raw: &RawLifecycle,
     claim: &GroupAgentScheduledNodeDispatchClaim,
 ) -> Result<(), HubStoreError> {
+    let released_at_ms = i64::try_from(claim.released_at_ms)
+        .map_err(|_| corrupt("scheduled lifecycle claim time is too large"))?;
+    if raw
+        .adjudicated_at_ms
+        .is_some_and(|time| time < released_at_ms)
+    {
+        return Err(corrupt(
+            "scheduled lifecycle adjudication time predates claim",
+        ));
+    }
     let Some(terminalized_at_ms) = raw.terminalized_at_ms else {
         return Ok(());
     };
-    if terminalized_at_ms < i64::try_from(claim.released_at_ms).unwrap_or(i64::MAX) {
-        return Err(corrupt("scheduled lifecycle terminal time predates claim"));
-    }
-    if let Some(artifact_json) = &raw.artifact_json {
-        let artifact = decode_json::<crate::runtime_domain::GroupAgentScheduledNodeTerminalArtifact>(
-            artifact_json,
-        )?;
-        if artifact.created_at_ms > u64::try_from(terminalized_at_ms).unwrap_or(0) {
-            return Err(corrupt(
-                "scheduled lifecycle artifact time exceeds terminal time",
-            ));
-        }
+    let artifact_json = raw
+        .artifact_json
+        .as_ref()
+        .ok_or_else(|| corrupt("scheduled lifecycle terminal time has no artifact"))?;
+    let artifact = decode_json::<crate::runtime_domain::GroupAgentScheduledNodeTerminalArtifact>(
+        artifact_json,
+    )?;
+    let artifact_created_at_ms = i64::try_from(artifact.created_at_ms)
+        .map_err(|_| corrupt("scheduled lifecycle artifact time is too large"))?;
+    if terminalized_at_ms != artifact_created_at_ms || terminalized_at_ms < released_at_ms {
+        return Err(corrupt(
+            "scheduled lifecycle terminal time disagrees with artifact",
+        ));
     }
     Ok(())
 }

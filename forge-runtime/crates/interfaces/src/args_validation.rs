@@ -99,6 +99,11 @@ fn dispatch_claim_key_error(command: &Command) -> Option<&'static str> {
             "--idempotency-key is not valid for graph dispatch adjudicate; GRAPH_RUN_ID owns the single dispatch claim",
         ),
         Command::Group(GroupCommand::Graph(GroupGraphCommand::Run(
+            GroupGraphRunCommand::Step(_),
+        ))) => Some(
+            "--idempotency-key is not valid for graph run step; expected request and authorization anchors own the single dispatch claim",
+        ),
+        Command::Group(GroupCommand::Graph(GroupGraphCommand::Run(
             GroupGraphRunCommand::ScheduledContract(
                 GroupGraphRunScheduledContractCommand::ProviderRequest(
                     GroupGraphRunScheduledContractProviderRequestCommand::Execute { .. },

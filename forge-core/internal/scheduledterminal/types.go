@@ -249,8 +249,12 @@ func digestWithoutField(value any, fields any, domain string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	var object map[string]json.RawMessage
-	if err := json.Unmarshal(data, &object); err != nil {
+	// Digest objects sort keys recursively; UseNumber preserves exact uint64
+	// preimages while decoding nested objects instead of opaque RawMessages.
+	var object map[string]any
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	if err := decoder.Decode(&object); err != nil {
 		return "", err
 	}
 	remove := func(field string) { delete(object, field) }

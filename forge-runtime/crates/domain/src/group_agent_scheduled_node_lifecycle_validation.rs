@@ -1,6 +1,7 @@
 use super::{
-    ClaimGroupAgentScheduledNodeDispatch, GROUP_AGENT_SCHEDULED_NODE_ACTIVE_LANE_VERSION,
-    GROUP_AGENT_SCHEDULED_NODE_CLAIM_VERSION, GroupAgentScheduledNodeActiveLane,
+    AdjudicateGroupAgentScheduledNodeDispatch, ClaimGroupAgentScheduledNodeDispatch,
+    GROUP_AGENT_SCHEDULED_NODE_ACTIVE_LANE_VERSION, GROUP_AGENT_SCHEDULED_NODE_CLAIM_VERSION,
+    GROUP_AGENT_SCHEDULED_NODE_LIFECYCLE_VERSION, GroupAgentScheduledNodeActiveLane,
     GroupAgentScheduledNodeDispatchClaim, GroupAgentScheduledNodeDispatchClaimEvent,
     GroupAgentScheduledNodeLifecycleInspection, GroupAgentScheduledNodeLifecycleStatus,
     GroupAgentScheduledNodeTerminalArtifact, GroupAgentScheduledNodeTerminalControl,
@@ -45,6 +46,17 @@ pub(super) fn validate_claim(
     valid
         .then_some(())
         .ok_or_else(|| invalid("invalid scheduled dispatch claim"))
+}
+
+pub(super) fn validate_adjudication_request(
+    request: &AdjudicateGroupAgentScheduledNodeDispatch,
+) -> Result<(), super::GroupAgentScheduledNodeLifecycleValidationError> {
+    let valid = request.v == GROUP_AGENT_SCHEDULED_NODE_LIFECYCLE_VERSION
+        && identifier(&request.provider_request_id)
+        && identifier(&request.expected_lane_ownership_id);
+    valid
+        .then_some(())
+        .ok_or_else(|| invalid("invalid scheduled adjudication request"))
 }
 
 pub(super) fn validate_active_lane(
@@ -337,7 +349,25 @@ fn validate_inspection_status(
                 && inspection.active_lane.is_none() => {}
         _ => return Err(invalid("scheduled lifecycle evidence/status disagree")),
     }
-    Ok(())
+    validate_adjudication_time(inspection)
+}
+
+fn validate_adjudication_time(
+    inspection: &GroupAgentScheduledNodeLifecycleInspection,
+) -> Result<(), super::GroupAgentScheduledNodeLifecycleValidationError> {
+    let valid = match inspection.status {
+        GroupAgentScheduledNodeLifecycleStatus::Adjudicated => inspection
+            .adjudicated_at_ms
+            .is_some_and(|time| time >= inspection.claim.released_at_ms),
+        GroupAgentScheduledNodeLifecycleStatus::Claimed
+        | GroupAgentScheduledNodeLifecycleStatus::Terminalized
+        | GroupAgentScheduledNodeLifecycleStatus::Quarantined => {
+            inspection.adjudicated_at_ms.is_none()
+        }
+    };
+    valid
+        .then_some(())
+        .ok_or_else(|| invalid("scheduled lifecycle adjudication time disagrees"))
 }
 
 fn exact_json<T: Serialize>(

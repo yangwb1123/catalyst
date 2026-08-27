@@ -1745,7 +1745,7 @@ upgrade 3/3 与 `git diff --check` 均通过；独立最终复审为 CLEAN。验
 test-source profile，不改变前述 UNKNOWN/非 authority 边界，也不勾选 Wave 2 多 surface extractor 总项。
 
 ## 下一前沿(需外部资源 / 后续阶段 / 投机增强 / 明确非目标,非本环境可完整验证)
-- **Graph 下一协议切片**:SQLite v17–v24 已交付 successor candidate、per-node request/lifecycle、receipt/content dataflow、wave-ready/admit、本地 hard-crash adjudication与 8 MiB successor candidate 持久化上限；ADR-0096 又交付 read-only whole-schedule reconcile 及其 pre-effect storage validation。正确顺序是先补 Core-selected initial/successor release authorization v2，再独立实现 effectful one-node step，最后才是 durable whole-Graph controller；并发 wave 的失败传播/自动恢复和任意 event-prefix branching 仍更晚。不得把 `ready` observation、当前逐节点 operator 驱动或 Hub-local single-consumption 冒充 execution authority、顶层循环或远程 exactly-once。
+- **Graph 下一协议切片**:SQLite v17–v24 已交付 successor candidate、per-node request/lifecycle、receipt/content dataflow、wave-ready/admit 与 8 MiB successor candidate 上限；ADR-0096/0097 又交付 read-only whole-schedule reconcile 和 successor-capable zero-effect ready release。ADR-0098 的公开 max-one effectful step、跨 family Project lane 与 exact-owner adjudication 已进入最终验收流程；其正式 acceptance 前 ROADMAP 仍不勾选。下一独立协议才是 durable whole-Graph controller；并发 wave 的失败传播/自动恢复和任意 event-prefix branching 仍更晚。不得把 `ready` observation、逐节点 operator 调用或 Hub-local single-consumption 冒充顶层循环、自动第二节点或远程 exactly-once。
 - **真点火** `--agent-cmd=claude`:**multi-agent running to completion 已坐实**(Sprint 25:真 claude 多-agent 跑到 converge MET,增量级 + 版本级)。完整旋钮:四维资源护栏 + 成本三维(phase/时间/美元)+ 任务注入 + 写权限 + 模型路由 + 工作目录 + retry + loop-back;诚实分工:agent 自治增量绿、人确认版本竣工。docs/ignition.md 有完整配方 + 实测
 - **外部资源状态**:~~SCA/CVE 漏洞库~~、~~Firecracker 主机前提~~与~~LiteLLM 双后端主机验证~~均已解决；Go Docker/Firecracker runner 也已接入执行器。剩余项是完整 coding-workspace 交换/隔离硬化与生产 provider registry/policy，它们属于后续产品契约，不再是本机外部资源阻塞。〔真 cost/latency telemetry **已达成**——S26 真 claude 补齐真 token/cost/latency 数据,scorecard 三维真值落盘〕
 - **投机增强(做即违反反 gold-plating 纪律)**:embedding 语义检索(TF-IDF 已工作,增量仅真点火时体现)
@@ -2188,3 +2188,79 @@ step 必须在 `BEGIN IMMEDIATE` 中把 fresh progress/decision/source 与 claim
 off-machine consent，并在 predecessor content 存在时另取 content consent；还须闭合单赢家竞争、lane/
 pid-sidecar ownership、one-shot send、post-claim no-resend、hard-crash 与 uncertain-commit。Durable controller、
 自动第二节点与 concurrent schedule-v2 wave 继续保持关闭。
+
+### Sprint 139 — Effectful Scheduled One-Node Step（runtime slice）— ADR-0098 Proposed
+
+新增公开 `group graph run step GRAPH_RUN_ID`，要求 caller 同时锚定
+`--expected-provider-request-id`、`--expected-ready-authorization-sha256`、exact `--pricing`、
+operator-pinned `--core-bin/--core-bin-sha256` 与 fresh `--confirm-off-machine`；selected candidate
+包含 predecessor output 时另要求 fresh `--confirm-predecessor-content`。Application 每次 prospective
+effect 都重新运行 ADR-0097 A/Core/B 并比较两个 expected identity；缺 consent 或 identity/source 漂移
+在 credential、owner、provider 与 send 前失败。CLI 默认 metadata-only，只有 `--include-result` 显式披露
+结果正文；SIGINT/SIGTERM 映射为 bounded cancellation/uncertainty，命令不执行第二个 node。
+
+ready claim 使用 lifecycle v2 并保持既有物理 SQLite 表与 schema 不变。reader 只接受 stored
+release/authorization `(1,1)=legacy` 或 `(2,2)=ready`，mixed/unknown pair 一律 corruption。provider 可在
+claim 前构造但保持 unopened；exact owner durable 后，`BEGIN IMMEDIATE` 同时重建 current ready
+progress/selected initial-or-successor source，CAS exact release/authorization/pricing/request/body，并检查
+legacy 与 ready 两个 lifecycle family 的 Hub-global Project lane。只有 commit winner 获得 non-`Clone`
+authority 并至多 poll 一次 bounded provider stream；这个本地观测不证明远端已观测 request。exact replay 忽略 contender 新生成的 owner/time，但仍要求全部 immutable
+source evidence 相等。terminal receipt 或 artifact-only quarantine 才释放 lane，所有 claim 后路径和
+claimed/terminalized/quarantined/adjudicated re-entry 均禁止 automatic retry/resend。
+
+旧 `<request>.pid` overwrite 方案已被统一 Linux exact-owner sidecar 取代。owner 路径绑定 request + random
+lane ownership ID，directory/file 分别要求 `0700`/`0600`、non-symlink、create-new、single-link 与 ≤4 KiB
+canonical JSON；document 绑定 machine/boot/PID namespace/time namespace/PID/process-start，创建与同 boot 裁决
+均验证 `/proc/self` numeric target 精确等于 `getpid()` 后才读取 `/proc/<pid>/stat`；cleanup 还校验
+device/inode，replacement 保留。
+directory advisory lock 串行化容量检查与 durable create，任意条目总数达到 1024 即失败关闭；unknown entry
+同样占容量且不自动 scavenging，故 crash orphan 有硬上限但不会被误判为可安全释放的 owner。
+sidecar 在 claim commit-uncertain 前切为 preserve-on-drop；hard crash、claim commit uncertainty 或 terminal
+commit uncertainty 无法证明 lane 已安全释放时保留证据。公开
+`group graph run scheduled-contract provider-request dispatch adjudicate PROVIDER_REQUEST_ID` 先读 durable
+any-family exact owner；machine 不同失败关闭，旧 boot 足以证明 executor 已死，同 boot 只接受 exact PID/time
+namespace 与 verified procfs view 的 `dead|pid_reused`，
+再以 guarded immediate transaction 重验 claimed + lane-active + no-terminal + exact owner 并要求恰好更新一行，
+commit 后才 cleanup。该机制不构成分布式 executor identity、
+fencing token 或 remote exactly-once；同 UID hostile replacement 的窄 final-check→unlink race 保持披露。
+
+fresh review 揭示的 honesty/portability gap 已修：应用结果携带独立 invocation effect receipt，入口 replay 与
+已执行 Core/credential/provider/owner preclaim 的 CAS loser 不再合并；durable Core-failure quarantine 返回结构化
+metadata，terminal commit-after-success 会 fresh inspect 后恢复确切 terminal 结果，其余 claim/post-claim uncertainty
+错误固定披露 poll/remote-attestation/no-resend。CLI 分开报告 terminal protocol handshake 与 stored receipt。
+scheduled adjudication 输出也分开 `dispatch_performed=false` 与 `database_written=true`。v1/v2 reader 严格绑定
+created=claim release、terminalized=artifact created、status↔adjudication timestamp，并把负值/NULL/drift 返回
+`Corrupt` 而非 panic。非 Linux 编译使用 API-compatible unsupported sidecar 与 cfg signal watcher，effect/adjudication
+在 private/Core/provider 前明确拒绝，不再拖垮其余 CLI。
+最终安全复审又定位到旧 scheduled `Execute` 路由仍在 platform guard 前读取 authorization/pricing；guard 已提升到
+公开命令路由的 inspect/input-read 之前，并保留执行/裁决内部的纵深检查。新增 non-Linux 公开进程回归以不存在的
+private source/Core 路径证明先返回 Linux-only 且不创建 Hub。
+后续终审又关闭三类事实缺口：Go scheduled terminal digest 改为与 Rust 一致的递归 object-key canonicalization，
+同时以 `UseNumber` 保持 exact `u64`，真实 pinned Core 现接受 control 并持久化 receipt；CAS loser、durable
+terminal/quarantine 与 adjudication 的 commit 后 cleanup failure 不再覆盖已知 effect receipt，而独立报告
+cleanup failed/presence unknown；terminal 写入前失败则保留 owner 并返回固定 no-resend uncertainty。
+legacy scheduled `Execute` 也把 claim commit uncertainty 固定为 poll=false、其余 post-claim uncertainty 固定为
+poll=true；terminal/quarantine commit-response-loss 仅在 exact claim、lane released、expected status 重读成功后
+恢复结构化结果，Core refusal 的 durable quarantine 与 cleanup failure 不再退化为 generic error。其 JSON 固定
+`remote_provider_request_observation=not_attested`，不把本地 poll/dispatch 冒充远端已观察 request。
+安全终审实证了 time namespace 对 `/proc/<pid>/stat` starttime 的 boottime-offset 重写可把 live owner 误判为
+PID reuse；sidecar 现额外绑定 canonical `/proc/self/ns/time` identity，同 boot namespace mismatch 在读取目标
+PID stat 前失败关闭，并保留跨 boot 可证明旧 executor 已死的恢复语义。
+
+截至本节更新，定向证据包括 Application + real SQLite ready-step **9/9**、ready cleanup/uncertain failure **4/4**
+与 legacy claim/terminal/quarantine response-loss **3/3**，
+ready CAS/replay/cross-family 竞争 **7/7**，sidecar permission/create-new/symlink/hardlink/replacement/
+PID-namespace/time-namespace/procfs-view/liveness/preserve/capacity **21/21**，
+lifecycle/adjudication/version/timestamp corruption **22/22**，公开 ready-step process **5/5**、legacy Execute
+quarantine/cleanup/re-entry process **1/1** 与公开 adjudication process **1/1**。两个 effect process 都用 production
+binary/registered adapter 和测试进程内 `getaddrinfo`/`connect` 拒绝垫片。ready process 真实完成 claim→一次本地
+provider poll→pinned Core receipt→terminalized→`--include-result` re-entry；legacy process 则完成一次本地 poll 后由
+pinned Core 拒绝并 durable quarantine，在故意制造 cleanup failure 时保留结构化事实，随后 re-entry 零重发。各自
+marker 证明首调网络路径被本地拦截且二次调用没有再次触发；ready 三节点 plan 仍只有一个 lifecycle。所有测试只用 deterministic provider、
+本地 pinned Core 或本地拒绝网络，没有 live provider/付费模型请求。终审修复后的 Rustfmt、strict workspace
+Clippy、arch **8/8**、gate、governance 与 `cargo test --workspace --all-targets` 均通过，最后一项 exit 0、耗时
+350.16 秒；Go `test ./...` 与 `vet ./...` 也分别 exit 0。初轮及终轮 fresh security/final review 曾准确给出
+NOT APPROVED 并推动上述修复；最终 security 与 contract review 均已 **APPROVE/CLEAN**，clean-clone
+`forge accept` 尚待主流程完成；
+在这些证据落定前不勾选 ROADMAP。本切片始终不包含 durable whole-Graph controller、automatic second-node、
+schedule-v2 concurrent wave、lease expiry、provider-side idempotency 或自动 crash recovery。

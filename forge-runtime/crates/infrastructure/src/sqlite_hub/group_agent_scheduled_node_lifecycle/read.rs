@@ -2,8 +2,9 @@ use rusqlite::{Connection, OptionalExtension, Row, TransactionBehavior};
 
 use crate::runtime_domain::{
     GroupAgentGraphRunInspection, GroupAgentNodePricingSnapshot,
-    GroupAgentScheduledNodeDispatchAuthorization, GroupAgentScheduledNodeDispatchClaim,
-    GroupAgentScheduledNodeDispatchReleaseControl, GroupAgentScheduledNodeLifecycleInspection,
+    GroupAgentScheduledNodeAnyLifecycleInspection, GroupAgentScheduledNodeDispatchAuthorization,
+    GroupAgentScheduledNodeDispatchClaim, GroupAgentScheduledNodeDispatchReleaseControl,
+    GroupAgentScheduledNodeLifecycleInspection, GroupAgentScheduledNodeLifecycleProgressInspection,
     GroupAgentScheduledNodeLifecycleStatus, GroupAgentScheduledNodeProviderRequestInspection,
     HubEntity, HubStoreError,
 };
@@ -17,6 +18,12 @@ mod validate;
 use validate::validate_raw;
 
 pub(super) const TABLE: &str = "group_agent_graph_scheduled_node_dispatch_lifecycles";
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum StoredLifecycleKind {
+    Legacy,
+    Ready,
+}
 
 const COLUMNS: &str = "id,graph_run_id,provider_request_id,authorization_id,authorization_sha256,\
  provider_request_sha256,request_body_blob,request_body_bytes,project_lane_sha256,node_id,attempt,\
@@ -95,6 +102,26 @@ pub(super) fn inspect_in_snapshot(
     reconstruct(connection, &raw)
 }
 
+pub(super) fn inspect_any_in_snapshot(
+    connection: &Connection,
+    provider_request_id: &str,
+) -> Result<GroupAgentScheduledNodeAnyLifecycleInspection, HubStoreError> {
+    let raw = find_by_provider_request(connection, provider_request_id)?.ok_or_else(|| {
+        HubStoreError::NotFound {
+            entity: HubEntity::GroupAgentScheduledNodeLifecycle,
+            id: provider_request_id.into(),
+        }
+    })?;
+    match stored_kind(&raw)? {
+        StoredLifecycleKind::Legacy => reconstruct(connection, &raw)
+            .map(Box::new)
+            .map(GroupAgentScheduledNodeAnyLifecycleInspection::Legacy),
+        StoredLifecycleKind::Ready => super::read_ready::reconstruct(connection, &raw)
+            .map(Box::new)
+            .map(GroupAgentScheduledNodeAnyLifecycleInspection::Ready),
+    }
+}
+
 pub(super) fn find_by_provider_request(
     connection: &Connection,
     provider_request_id: &str,
@@ -165,6 +192,7 @@ pub(super) fn reconstruct(
     raw: &RawLifecycle,
 ) -> Result<GroupAgentScheduledNodeLifecycleInspection, HubStoreError> {
     validate_raw(raw)?;
+    require_kind(raw, StoredLifecycleKind::Legacy)?;
     let graph_run =
         group_agent_graph_run::read::inspect_in_snapshot(connection, &raw.graph_run_id)?;
     let provider_request = group_agent_scheduled_node_provider_request::read::inspect_in_snapshot(
@@ -178,13 +206,21 @@ pub(in crate::sqlite_hub) fn inspect_for_progress_in_snapshot(
     connection: &Connection,
     graph_run: &GroupAgentGraphRunInspection,
     provider_request: &GroupAgentScheduledNodeProviderRequestInspection,
-) -> Result<Option<GroupAgentScheduledNodeLifecycleInspection>, HubStoreError> {
+) -> Result<Option<GroupAgentScheduledNodeLifecycleProgressInspection>, HubStoreError> {
     let Some(raw) =
         find_by_provider_request(connection, &provider_request.record.provider_request_id)?
     else {
         return Ok(None);
     };
-    reconstruct_with_sources(&raw, graph_run, provider_request).map(Some)
+    let inspection = match stored_kind(&raw)? {
+        StoredLifecycleKind::Legacy => {
+            reconstruct_with_sources(&raw, graph_run, provider_request)?.into()
+        }
+        StoredLifecycleKind::Ready => {
+            super::read_ready::reconstruct_with_sources(&raw, graph_run, provider_request)?.into()
+        }
+    };
+    Ok(Some(inspection))
 }
 
 fn reconstruct_with_sources(
@@ -193,6 +229,7 @@ fn reconstruct_with_sources(
     provider_request: &GroupAgentScheduledNodeProviderRequestInspection,
 ) -> Result<GroupAgentScheduledNodeLifecycleInspection, HubStoreError> {
     validate_raw(raw)?;
+    require_kind(raw, StoredLifecycleKind::Legacy)?;
     if raw.graph_run_id != graph_run.run.graph_run_id
         || raw.provider_request_id != provider_request.record.provider_request_id
     {
@@ -219,9 +256,10 @@ fn reconstruct_with_sources(
         terminal_receipt: parts.terminal_receipt,
         terminal_receipt_json: parts.terminal_receipt_json,
         status: parts.status,
-        adjudicated_at_ms: raw
-            .adjudicated_at_ms
-            .map(|value| u64::try_from(value).expect("adjudicated_at_ms must be non-negative")),
+        adjudicated_at_ms: optional_nonnegative_millis(
+            raw.adjudicated_at_ms,
+            "scheduled lifecycle adjudication time",
+        )?,
     };
     inspection
         .validate()
@@ -277,11 +315,11 @@ fn decode_parts(raw: &RawLifecycle) -> Result<DecodedParts, HubStoreError> {
     })
 }
 
-fn utf8(bytes: &[u8], label: &str) -> Result<String, HubStoreError> {
+pub(super) fn utf8(bytes: &[u8], label: &str) -> Result<String, HubStoreError> {
     String::from_utf8(bytes.to_vec()).map_err(|_| corrupt(&format!("{label} is not UTF-8")))
 }
 
-fn decode_optional<T>(bytes: Option<&Vec<u8>>) -> Result<Option<T>, HubStoreError>
+pub(super) fn decode_optional<T>(bytes: Option<&Vec<u8>>) -> Result<Option<T>, HubStoreError>
 where
     T: serde::de::DeserializeOwned + serde::Serialize,
 {
@@ -305,11 +343,13 @@ struct DecodedParts {
     status: crate::runtime_domain::GroupAgentScheduledNodeLifecycleStatus,
 }
 
-fn decode_claim(bytes: &[u8]) -> Result<GroupAgentScheduledNodeDispatchClaim, HubStoreError> {
+pub(super) fn decode_claim(
+    bytes: &[u8],
+) -> Result<GroupAgentScheduledNodeDispatchClaim, HubStoreError> {
     decode_json(bytes)
 }
 
-fn decode_json<T>(bytes: &[u8]) -> Result<T, HubStoreError>
+pub(super) fn decode_json<T>(bytes: &[u8]) -> Result<T, HubStoreError>
 where
     T: serde::de::DeserializeOwned + serde::Serialize,
 {
@@ -322,7 +362,9 @@ where
         .ok_or_else(|| corrupt("scheduled lifecycle JSON is not canonical"))
 }
 
-fn parse_status(value: &str) -> Result<GroupAgentScheduledNodeLifecycleStatus, HubStoreError> {
+pub(super) fn parse_status(
+    value: &str,
+) -> Result<GroupAgentScheduledNodeLifecycleStatus, HubStoreError> {
     serde_json::from_str(&format!("\"{value}\""))
         .map_err(|_| corrupt("scheduled lifecycle status is invalid"))
 }
@@ -366,8 +408,52 @@ fn row(row: &Row<'_>) -> rusqlite::Result<RawLifecycle> {
     })
 }
 
-fn corrupt(message: &str) -> HubStoreError {
+pub(super) fn corrupt(message: &str) -> HubStoreError {
     HubStoreError::Corrupt {
         message: message.into(),
     }
+}
+
+pub(super) fn optional_nonnegative_millis(
+    value: Option<i64>,
+    label: &str,
+) -> Result<Option<u64>, HubStoreError> {
+    value
+        .map(|time| u64::try_from(time).map_err(|_| corrupt(&format!("{label} is negative"))))
+        .transpose()
+}
+
+pub(super) fn stored_kind(raw: &RawLifecycle) -> Result<StoredLifecycleKind, HubStoreError> {
+    let release = json_version(&raw.release_control_json)?;
+    let authorization = json_version(&raw.authorization_json)?;
+    match (release, authorization) {
+        (1, 1) => Ok(StoredLifecycleKind::Legacy),
+        (2, 2) => Ok(StoredLifecycleKind::Ready),
+        _ => Err(corrupt(
+            "scheduled lifecycle release and authorization versions disagree",
+        )),
+    }
+}
+
+pub(super) fn validate_raw_for_family(raw: &RawLifecycle) -> Result<(), HubStoreError> {
+    validate_raw(raw)
+}
+
+pub(super) fn require_kind(
+    raw: &RawLifecycle,
+    expected: StoredLifecycleKind,
+) -> Result<(), HubStoreError> {
+    (stored_kind(raw)? == expected)
+        .then_some(())
+        .ok_or_else(|| corrupt("scheduled lifecycle protocol family disagrees"))
+}
+
+fn json_version(bytes: &[u8]) -> Result<u64, HubStoreError> {
+    let value: serde_json::Value = serde_json::from_slice(bytes)
+        .map_err(|_| corrupt("scheduled lifecycle JSON is invalid"))?;
+    value
+        .as_object()
+        .and_then(|object| object.get("v"))
+        .and_then(serde_json::Value::as_u64)
+        .ok_or_else(|| corrupt("scheduled lifecycle JSON version is invalid"))
 }

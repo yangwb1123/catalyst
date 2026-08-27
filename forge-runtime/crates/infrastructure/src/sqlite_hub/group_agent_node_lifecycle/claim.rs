@@ -101,13 +101,29 @@ fn reject_owned_lane(
     request: &ClaimGroupAgentNodeDispatch,
 ) -> Result<(), HubStoreError> {
     let lane = candidate_digest(&request.claim.project_lane_sha256, "project lane")?;
-    let Some(stored) = rows::lane_by_project(transaction, &lane)? else {
-        return Ok(());
-    };
-    read::inspect_in_snapshot(transaction, &stored.graph_run_id)?;
-    Err(conflict(
-        "Project lane is already owned by another durable dispatch claim",
-    ))
+    if let Some(stored) = rows::lane_by_project(transaction, &lane)? {
+        read::inspect_in_snapshot(transaction, &stored.graph_run_id)?;
+        return Err(conflict(
+            "Project lane is already owned by another durable dispatch claim",
+        ));
+    }
+    let scheduled_owned: bool = transaction
+        .query_row(
+            "SELECT EXISTS(
+               SELECT 1
+               FROM group_agent_graph_scheduled_node_dispatch_lifecycles
+               WHERE project_lane_sha256=?1 AND lane_active=1
+             )",
+            [lane.as_slice()],
+            |row| row.get(0),
+        )
+        .map_err(read_error)?;
+    if scheduled_owned {
+        return Err(conflict(
+            "Project lane is already owned by another durable dispatch claim",
+        ));
+    }
+    Ok(())
 }
 
 fn insert_claim(

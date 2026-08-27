@@ -337,6 +337,7 @@ pub trait GroupAgentScheduledNodeLifecycleStore: Send + Sync {
 pub struct AdjudicateGroupAgentScheduledNodeDispatch {
     pub v: u16,
     pub provider_request_id: String,
+    pub expected_lane_ownership_id: String,
     pub adjudicated_at_ms: u64,
 }
 

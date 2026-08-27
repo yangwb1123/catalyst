@@ -2,6 +2,7 @@ use crate::runtime_domain::{
     ClaimGroupAgentScheduledNodeDispatchResult, GroupAgentScheduledNodeLifecycleStatus,
     HubStoreError, ScheduledGraphProgressStore, ScheduledReadyNodeReleaseStore,
 };
+use rusqlite::TransactionBehavior;
 
 use super::{
     read::atomicity_fixture::{ReadyFixture, claimed_fixture, ready_fixture},
@@ -10,6 +11,85 @@ use super::{
 
 #[path = "ready_release_test_support.rs"]
 mod support;
+
+#[test]
+fn in_snapshot_reuses_the_caller_owned_transaction() {
+    let fixture = ready_fixture();
+    let progress = fixture
+        .graph
+        .store
+        .snapshot_scheduled_graph_progress("graph-run-1")
+        .expect("ready progress snapshot");
+    let selected = &progress.nodes[0];
+    let expected = fixture
+        .graph
+        .store
+        .inspect_scheduled_ready_node_release(
+            "graph-run-1",
+            &progress.snapshot_sha256,
+            0,
+            &selected.node_id,
+        )
+        .expect("standalone ready release source");
+    let mut connection = fixture.graph.connection();
+    connection
+        .execute_batch("CREATE TEMP TABLE ready_release_caller_marker (value INTEGER NOT NULL)")
+        .expect("create caller-owned marker");
+    let transaction = connection
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .expect("caller-owned transaction");
+
+    let actual = ready_release::inspect_in_snapshot(
+        &transaction,
+        "graph-run-1",
+        &progress.snapshot_sha256,
+        0,
+        &selected.node_id,
+    )
+    .expect("ready release source in caller snapshot");
+    assert_eq!(actual, expected);
+    transaction
+        .execute("INSERT INTO ready_release_caller_marker VALUES (1)", [])
+        .expect("write remains inside caller transaction");
+    transaction.rollback().expect("caller rolls back snapshot");
+
+    let marker_count: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM ready_release_caller_marker",
+            [],
+            |row| row.get(0),
+        )
+        .expect("count rolled-back caller marker");
+    assert_eq!(marker_count, 0);
+}
+
+#[test]
+fn in_snapshot_preserves_the_standalone_stale_source_error() {
+    let fixture = ready_fixture();
+    let progress = fixture
+        .graph
+        .store
+        .snapshot_scheduled_graph_progress("graph-run-1")
+        .expect("ready progress snapshot");
+    let selected = &progress.nodes[0];
+    let expected = fixture
+        .graph
+        .store
+        .inspect_scheduled_ready_node_release("graph-run-1", "stale-snapshot", 0, &selected.node_id)
+        .expect_err("standalone inspection rejects stale source");
+    let connection = fixture.graph.connection();
+
+    let actual = ready_release::inspect_in_snapshot(
+        &connection,
+        "graph-run-1",
+        "stale-snapshot",
+        0,
+        &selected.node_id,
+    )
+    .expect_err("snapshot inspection rejects stale source");
+
+    assert_eq!(actual, expected);
+}
 
 #[test]
 fn ready_bundle_keeps_one_snapshot_while_a_legal_claim_commits() {

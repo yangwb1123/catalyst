@@ -59,6 +59,12 @@ impl ClaimGroupAgentScheduledNodeDispatch {
     }
 }
 
+impl AdjudicateGroupAgentScheduledNodeDispatch {
+    pub fn validate(&self) -> Result<(), GroupAgentScheduledNodeLifecycleValidationError> {
+        validation::validate_adjudication_request(self)
+    }
+}
+
 impl GroupAgentScheduledNodeDispatchAuthority {
     pub fn new(
         request: &GroupAgentScheduledNodeProviderRequestRecord,

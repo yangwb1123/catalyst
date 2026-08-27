@@ -1,5 +1,4 @@
 use std::{
-    collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
 };
@@ -16,10 +15,10 @@ use forge_runtime_domain::{
 };
 use forge_runtime_infrastructure::SqliteHubStore;
 use rusqlite::Connection;
-use serde::Serialize;
-use serde_json::Value;
-use sha2::{Digest, Sha256};
 use tempfile::TempDir;
+
+mod encoding;
+use encoding::{canonical_json_bytes, decode_hex, digest_hex};
 
 pub struct Fixture {
     pub _root: TempDir,
@@ -105,6 +104,39 @@ impl Fixture {
 
     pub fn request(&self, run_id: &str, key: &str, created_at_ms: u64) -> BeginGroupAgentGraphRun {
         request(&self.graph, run_id, key, created_at_ms)
+    }
+
+    #[allow(dead_code)]
+    pub fn prepare_single_node_sibling(&self) -> GroupAgentGraphInspection {
+        let node = self
+            .graph
+            .manifest
+            .nodes
+            .first()
+            .expect("source Graph node")
+            .clone();
+        let node_id = node.node_id.clone();
+        let manifest = GroupAgentGraphManifest {
+            v: GROUP_AGENT_GRAPH_VERSION,
+            source: self.graph.manifest.source.clone(),
+            manager: self.graph.manifest.manager.clone(),
+            nodes: vec![node],
+            edges: Vec::new(),
+            waves: vec![vec![node_id]],
+        };
+        let bytes = canonical_json_bytes(&manifest);
+        self.store
+            .prepare_group_agent_graph(&PrepareGroupAgentGraph {
+                v: GROUP_AGENT_GRAPH_VERSION,
+                graph_id: "graph-single-sibling".into(),
+                manifest,
+                manifest_json: String::from_utf8(bytes.clone()).expect("manifest UTF-8"),
+                manifest_sha256: digest_hex(GROUP_AGENT_GRAPH_MANIFEST_DIGEST_DOMAIN, &bytes),
+                idempotency_key: "graph-single-sibling-key".into(),
+                created_at_ms: 20,
+            })
+            .expect("prepare single-node sibling Graph")
+            .inspection
     }
 
     pub fn connection(&self) -> Connection {
@@ -453,42 +485,4 @@ fn prepared_event(request: &BeginGroupAgentGraphRun) -> GroupAgentGraphRunEvent 
             prepared_at_ms: request.created_at_ms,
         },
     }
-}
-
-fn canonical_json_bytes(value: &impl Serialize) -> Vec<u8> {
-    let value = serde_json::to_value(value).expect("JSON value");
-    serde_json::to_vec(&sort_json(value)).expect("canonical JSON")
-}
-
-fn sort_json(value: Value) -> Value {
-    match value {
-        Value::Array(items) => Value::Array(items.into_iter().map(sort_json).collect()),
-        Value::Object(items) => Value::Object(
-            items
-                .into_iter()
-                .map(|(key, value)| (key, sort_json(value)))
-                .collect::<BTreeMap<_, _>>()
-                .into_iter()
-                .collect(),
-        ),
-        other => other,
-    }
-}
-
-fn digest_hex(domain: &[u8], bytes: &[u8]) -> String {
-    let mut digest = Sha256::new();
-    digest.update(domain);
-    digest.update(bytes);
-    format!("{:x}", digest.finalize())
-}
-
-fn decode_hex(value: &str) -> Vec<u8> {
-    value
-        .as_bytes()
-        .chunks_exact(2)
-        .map(|pair| {
-            let text = std::str::from_utf8(pair).expect("hex is ASCII");
-            u8::from_str_radix(text, 16).expect("valid hex pair")
-        })
-        .collect()
 }

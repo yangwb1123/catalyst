@@ -2,7 +2,9 @@ use std::{error::Error, path::PathBuf, sync::Arc};
 
 use forge_runtime_application::{
     ExecuteGroupAgentScheduledNodeDispatchInput, ExecuteGroupAgentScheduledNodeDispatchResult,
-    GroupAgentScheduledNodeDispatchExecutionService,
+    GroupAgentNodeDispatchClaimMetadata, GroupAgentNodeDispatchMetadataSource,
+    GroupAgentNodeDispatchMetadataSourceError, GroupAgentScheduledNodeDispatchExecutionService,
+    GroupAgentScheduledNodeDispatchExecutionServiceError,
     GroupAgentScheduledNodeDispatchReadinessService,
 };
 use forge_runtime_infrastructure::{
@@ -11,8 +13,15 @@ use forge_runtime_infrastructure::{
 
 use crate::{
     args::{Args, GroupGraphRunScheduledContractProviderRequestCommand},
+    group_agent_graph::scheduled_dispatch_execution_output::ScheduledExecutorOwnerCleanup,
+    group_agent_graph::scheduled_executor_sidecar::{
+        ScheduledExecutorLiveness, ScheduledExecutorSidecar, ScheduledExecutorSidecarError,
+    },
     openai_prepared_dispatch::OpenAiRequestCodec,
-    runtime_domain::{Cancellation, GroupAgentScheduledNodeLifecycleStore},
+    runtime_domain::{
+        Cancellation, GroupAgentScheduledNodeAnyLifecycleStore,
+        GroupAgentScheduledNodeLifecycleStatus, GroupAgentScheduledNodeLifecycleStore,
+    },
     state_path::hub_database_path,
 };
 
@@ -21,9 +30,52 @@ use super::{
     scheduled_provider_request_output::GroupAgentScheduledNodeDispatchExecutionCliOutput,
 };
 
+#[path = "scheduled_provider_request_dispatch/reconcile.rs"]
+mod reconcile;
+use reconcile::{DispatchErrorReconciliation, reconcile_owner_after_error};
+
 pub(super) struct DispatchInputs {
     pub(super) authorization_json: Option<String>,
     pub(super) pricing_json: Option<String>,
+}
+
+struct FixedDispatchMetadataSource {
+    claim: GroupAgentNodeDispatchClaimMetadata,
+}
+
+struct DispatchInvocation<'a> {
+    args: &'a Args,
+    provider_request_id: &'a str,
+    inputs: &'a DispatchInputs,
+    metadata: GroupAgentNodeDispatchClaimMetadata,
+    owner: ScheduledExecutorSidecar,
+    confirm_off_machine: bool,
+    confirm_predecessor_content: bool,
+    include_result: bool,
+}
+
+impl GroupAgentNodeDispatchMetadataSource for FixedDispatchMetadataSource {
+    fn claim_metadata(
+        &self,
+    ) -> Result<GroupAgentNodeDispatchClaimMetadata, GroupAgentNodeDispatchMetadataSourceError>
+    {
+        Ok(self.claim.clone())
+    }
+
+    fn terminal_time_ms(&self) -> Result<u64, GroupAgentNodeDispatchMetadataSourceError> {
+        crate::group_agent_graph::dispatch_execution_adapters::SystemDispatchMetadataSource
+            .terminal_time_ms()
+    }
+}
+
+fn create_claim_metadata() -> Result<GroupAgentNodeDispatchClaimMetadata, Box<dyn Error>> {
+    crate::group_agent_graph::dispatch_execution_adapters::SystemDispatchMetadataSource
+        .claim_metadata()
+        .map_err(Into::into)
+}
+
+fn executor_owner_directory(args: &Args) -> Result<PathBuf, Box<dyn Error>> {
+    Ok(crate::state_path::state_dir(args.state_dir.as_deref())?.join("scheduled-executor-owners"))
 }
 
 impl DispatchInputs {
@@ -101,6 +153,7 @@ pub(super) async fn execute_dispatch(
     confirm_predecessor_content: bool,
     include_result: bool,
 ) -> Result<GroupAgentScheduledNodeProviderRequestCommandCliOutput, Box<dyn Error>> {
+    ensure_scheduled_executor_supported()?;
     validate_execute_preflight(
         args,
         provider_request_id,
@@ -112,171 +165,175 @@ pub(super) async fn execute_dispatch(
         PathBuf::from(core_bin),
         core_bin_sha256.into(),
     )?);
-    let service = execution_service(args, bridge)?;
+    let metadata = create_claim_metadata()?;
+    let owner = ScheduledExecutorSidecar::create(
+        &executor_owner_directory(args)?,
+        provider_request_id,
+        &metadata.lane_ownership_id,
+    )?;
+    let service = execution_service(
+        args,
+        bridge,
+        Arc::new(FixedDispatchMetadataSource {
+            claim: metadata.clone(),
+        }),
+    )?;
     execute_with_signal_cancellation(
         &service,
-        args,
-        provider_request_id,
-        inputs,
-        confirm_off_machine,
-        confirm_predecessor_content,
-        include_result,
+        DispatchInvocation {
+            args,
+            provider_request_id,
+            inputs,
+            metadata,
+            owner,
+            confirm_off_machine,
+            confirm_predecessor_content,
+            include_result,
+        },
     )
     .await
 }
 
-/// Runs one effectful dispatch with a pid sidecar for hard-crash
-/// adjudication and OS-signal cancellation folding into the cancellation
-/// token (clean uncertainty terminal instead of a stranded claim).
+/// Runs one effectful dispatch with exact executor-owner evidence for
+/// hard-crash adjudication and folds OS signals into clean uncertainty.
 async fn execute_with_signal_cancellation(
     service: &GroupAgentScheduledNodeDispatchExecutionService,
-    args: &Args,
-    provider_request_id: &str,
-    inputs: &DispatchInputs,
-    confirm_off_machine: bool,
-    confirm_predecessor_content: bool,
-    include_result: bool,
+    mut invocation: DispatchInvocation<'_>,
 ) -> Result<GroupAgentScheduledNodeProviderRequestCommandCliOutput, Box<dyn Error>> {
-    let sidecar = ExecutorPidSidecar::write(args, provider_request_id)?;
     let cancellation = Cancellation::default();
     let cancel_on_signal = tokio::spawn(cancel_on_os_signal(cancellation.clone()));
-    let result = Box::pin(
-        service.execute(&ExecuteGroupAgentScheduledNodeDispatchInput {
-            provider_request_id: provider_request_id.into(),
-            authorization_json: inputs
-                .authorization_json
-                .clone()
-                .expect("scheduled authorization was read before execution"),
-            pricing_json: inputs
-                .pricing_json
-                .clone()
-                .expect("scheduled pricing was read before execution"),
-            confirm_off_machine,
-            confirm_predecessor_content,
-            cancellation,
-        }),
-    )
-    .await?;
+    invocation.owner.preserve_on_drop();
+    let input = dispatch_input(&invocation, cancellation);
+    let result = Box::pin(service.execute(&input)).await;
     cancel_on_signal.abort();
     let _ = cancel_on_signal.await;
-    sidecar.remove();
+    let (result, cleanup) = match result {
+        Ok(value) => {
+            let cleanup = owner_cleanup(invocation.owner.cleanup());
+            (value, cleanup)
+        }
+        Err(error) => {
+            let reconciliation = reconcile_owner_after_error(
+                invocation.args,
+                invocation.provider_request_id,
+                &invocation.metadata,
+                invocation.owner,
+            );
+            return recover_dispatch_error(reconciliation, error, invocation.include_result);
+        }
+    };
     Ok(
         GroupAgentScheduledNodeProviderRequestCommandCliOutput::Execution(Box::new(
-            GroupAgentScheduledNodeDispatchExecutionCliOutput::from_result(result, include_result),
+            GroupAgentScheduledNodeDispatchExecutionCliOutput::from_result_with_owner_cleanup(
+                result,
+                invocation.include_result,
+                cleanup,
+            ),
         )),
     )
 }
 
-/// Local hard-crash adjudication evidence: records the executor pid + hostname
-/// before the claim so a later operator can prove the old executor stopped.
+fn recover_dispatch_error(
+    reconciliation: DispatchErrorReconciliation,
+    error: GroupAgentScheduledNodeDispatchExecutionServiceError,
+    include_result: bool,
+) -> Result<GroupAgentScheduledNodeProviderRequestCommandCliOutput, Box<dyn Error>> {
+    match reconciliation {
+        DispatchErrorReconciliation::Released {
+            inspection,
+            cleanup,
+        } => Ok(
+            GroupAgentScheduledNodeProviderRequestCommandCliOutput::Execution(Box::new(
+                GroupAgentScheduledNodeDispatchExecutionCliOutput::from_any_inspection(
+                    &inspection,
+                    true,
+                    true,
+                    include_result,
+                    cleanup,
+                ),
+            )),
+        ),
+        DispatchErrorReconciliation::NotClaimed | DispatchErrorReconciliation::Uncertain => {
+            Err(error.into())
+        }
+    }
+}
+
+fn dispatch_input(
+    invocation: &DispatchInvocation<'_>,
+    cancellation: Cancellation,
+) -> ExecuteGroupAgentScheduledNodeDispatchInput {
+    ExecuteGroupAgentScheduledNodeDispatchInput {
+        provider_request_id: invocation.provider_request_id.into(),
+        authorization_json: invocation
+            .inputs
+            .authorization_json
+            .clone()
+            .expect("scheduled authorization was read before execution"),
+        pricing_json: invocation
+            .inputs
+            .pricing_json
+            .clone()
+            .expect("scheduled pricing was read before execution"),
+        confirm_off_machine: invocation.confirm_off_machine,
+        confirm_predecessor_content: invocation.confirm_predecessor_content,
+        cancellation,
+    }
+}
+
+/// Uses durable exact-owner evidence to prove the old local executor stopped.
 pub(super) fn adjudicate_dispatch(
     args: &Args,
     provider_request_id: &str,
 ) -> Result<GroupAgentScheduledNodeProviderRequestCommandCliOutput, Box<dyn Error>> {
+    ensure_scheduled_executor_supported()?;
     let database = crate::state_path::hub_database_path(args.state_dir.as_deref())?;
     let store = std::sync::Arc::new(forge_runtime_infrastructure::SqliteHubStore::open(
         database,
     )?);
-    let evidence = ExecutorPidSidecar::prove_stopped(args, provider_request_id)?;
-    let inspection = store.adjudicate_group_agent_scheduled_node_dispatch(
+    let existing = store.inspect_group_agent_scheduled_node_any_lifecycle(provider_request_id)?;
+    let lane_ownership_id = existing.claim().lane_ownership_id.clone();
+    if existing.status() != GroupAgentScheduledNodeLifecycleStatus::Claimed {
+        return Err(invalid_evidence("scheduled dispatch is not actively claimed").into());
+    }
+    let evidence = ScheduledExecutorSidecar::open(
+        &executor_owner_directory(args)?,
+        provider_request_id,
+        &lane_ownership_id,
+    )?;
+    if evidence.liveness()? == ScheduledExecutorLiveness::Live {
+        return Err(invalid_evidence("recorded scheduled executor is still alive").into());
+    }
+    let inspection = store.adjudicate_group_agent_scheduled_node_any_dispatch(
         &forge_runtime_domain::AdjudicateGroupAgentScheduledNodeDispatch {
             v: 1,
             provider_request_id: provider_request_id.into(),
+            expected_lane_ownership_id: lane_ownership_id,
             adjudicated_at_ms: crate::state_path::unix_time_millis(),
         },
     )?;
-    evidence.remove();
+    let cleanup = owner_cleanup(evidence.cleanup());
     Ok(
         GroupAgentScheduledNodeProviderRequestCommandCliOutput::Execution(Box::new(
-            GroupAgentScheduledNodeDispatchExecutionCliOutput::from_inspection(
+            GroupAgentScheduledNodeDispatchExecutionCliOutput::from_any_inspection(
                 &inspection,
                 false,
+                true,
                 false,
+                cleanup,
             ),
         )),
     )
 }
 
-/// The `.forge/executor-pids/<request_id>.pid` sidecar: one line
-/// "PID HOSTNAME", written before the claim and removed after the terminalize
-/// transaction commits. Its absence after a hard crash is impossible for a
-/// normally completed dispatch; adjudication requires the record to exist AND
-/// the recorded pid to be provably dead on this host.
-pub(super) struct ExecutorPidSidecar {
-    path: std::path::PathBuf,
-}
-
-impl ExecutorPidSidecar {
-    pub(super) fn write(args: &Args, provider_request_id: &str) -> Result<Self, Box<dyn Error>> {
-        let state = crate::state_path::state_dir(args.state_dir.as_deref())?;
-        let dir = state.join("executor-pids");
-        std::fs::create_dir_all(&dir)?;
-        let path = dir.join(format!("{provider_request_id}.pid"));
-        let hostname = std::env::var("HOSTNAME").unwrap_or_else(|_| "localhost".into());
-        std::fs::write(
-            &path,
-            format!(
-                "{} {hostname}
-",
-                std::process::id()
-            ),
-        )?;
-        Ok(Self { path })
+fn owner_cleanup(
+    result: Result<(), ScheduledExecutorSidecarError>,
+) -> ScheduledExecutorOwnerCleanup {
+    if result.is_ok() {
+        ScheduledExecutorOwnerCleanup::Succeeded
+    } else {
+        ScheduledExecutorOwnerCleanup::Failed
     }
-
-    fn remove(&self) {
-        let _ = std::fs::remove_file(&self.path);
-    }
-
-    /// Proves the recorded executor stopped: sidecar exists, same hostname,
-    /// and the recorded pid is not alive. Any other outcome rejects.
-    fn prove_stopped(args: &Args, provider_request_id: &str) -> Result<Self, Box<dyn Error>> {
-        let state = crate::state_path::state_dir(args.state_dir.as_deref())?;
-        let path = state
-            .join("executor-pids")
-            .join(format!("{provider_request_id}.pid"));
-        let raw = std::fs::read_to_string(&path).map_err(|_| {
-            std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                "no executor pid sidecar: hard-crash adjudication has no evidence to prove",
-            )
-        })?;
-        let mut parts = raw.split_whitespace();
-        let pid: u32 = parts
-            .next()
-            .and_then(|value| value.parse().ok())
-            .ok_or_else(|| invalid_evidence("malformed executor pid sidecar"))?;
-        let hostname = parts
-            .next()
-            .ok_or_else(|| invalid_evidence("malformed executor pid sidecar"))?;
-        let current_host = std::env::var("HOSTNAME").unwrap_or_else(|_| "localhost".into());
-        if hostname != current_host {
-            return Err(Box::new(invalid_evidence(
-                "executor pid sidecar belongs to another host; cannot prove it stopped",
-            )));
-        }
-        if pid_alive(pid) {
-            return Err(Box::new(invalid_evidence(
-                "recorded executor pid is still alive; adjudication refused",
-            )));
-        }
-        Ok(Self { path })
-    }
-}
-
-fn pid_alive(pid: u32) -> bool {
-    // /proc/<pid> exists while the process (or a zombie) is present; a
-    // completed reaped process leaves no entry. Best-effort local liveness,
-    // not a cross-host or adversarial guarantee.
-    let proc_path = format!("/proc/{pid}");
-    let proc_entry = std::path::Path::new(&proc_path);
-    if !proc_entry.exists() {
-        return false;
-    }
-    // A zombie still occupies the pid; treat it as alive (conservative).
-    std::fs::read_to_string(proc_entry.join("stat"))
-        .map(|stat| !stat.contains(" Z "))
-        .unwrap_or(true)
 }
 
 fn invalid_evidence(message: &str) -> std::io::Error {
@@ -288,6 +345,7 @@ fn invalid_evidence(message: &str) -> std::io::Error {
 /// lane is released, instead of leaving a stranded v4 `dispatch_unknown`.
 /// Hard crashes (SIGKILL/OOM) still leave quarantine; this only closes the
 /// catchable-signal gap.
+#[cfg(target_os = "linux")]
 async fn cancel_on_os_signal(cancellation: Cancellation) {
     let Ok(mut sigint) = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())
     else {
@@ -304,9 +362,26 @@ async fn cancel_on_os_signal(cancellation: Cancellation) {
     cancellation.cancel();
 }
 
+#[cfg(not(target_os = "linux"))]
+async fn cancel_on_os_signal(_: Cancellation) {
+    std::future::pending::<()>().await;
+}
+
+pub(super) fn ensure_scheduled_executor_supported() -> Result<(), std::io::Error> {
+    if cfg!(target_os = "linux") {
+        Ok(())
+    } else {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "scheduled provider-request execution and adjudication are Linux-only",
+        ))
+    }
+}
+
 fn execution_service(
     args: &Args,
     bridge: Arc<PinnedScheduledCoreTerminalBridge>,
+    metadata: Arc<dyn GroupAgentNodeDispatchMetadataSource>,
 ) -> Result<GroupAgentScheduledNodeDispatchExecutionService, Box<dyn Error>> {
     let database = hub_database_path(args.state_dir.as_deref())?;
     let store = Arc::new(SqliteHubStore::open(database)?);
@@ -323,7 +398,7 @@ fn execution_service(
         providers,
         Arc::new(crate::group_agent_graph::dispatch_execution_adapters::EnvironmentOpenAiCredentialSource),
         bridge,
-        Arc::new(crate::group_agent_graph::dispatch_execution_adapters::SystemDispatchMetadataSource),
+        metadata,
     ))
 }
 

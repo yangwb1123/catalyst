@@ -69,8 +69,8 @@ pub(super) fn claim(
     {
         return Err(corrupt("scheduled claim provider request source disagrees"));
     }
-    reject_owned_lane(&transaction, request)?;
-    insert(&transaction, request)?;
+    reject_owned_lane(&transaction, &request.claim.project_lane_sha256)?;
+    insert(&transaction, &LifecycleInsert::from(request))?;
     let inspection =
         read::inspect_in_snapshot(&transaction, &request.provider_request.provider_request_id)?;
     let authority = GroupAgentScheduledNodeDispatchAuthority::new(
@@ -99,11 +99,11 @@ fn validate_pristine_run(
         .ok_or_else(|| conflict("scheduled claim requires exact pristine v1/seq-1 Graph Run"))
 }
 
-fn reject_owned_lane(
+pub(super) fn reject_owned_lane(
     transaction: &Transaction<'_>,
-    request: &ClaimGroupAgentScheduledNodeDispatch,
+    project_lane_sha256: &str,
 ) -> Result<(), HubStoreError> {
-    let lane = group_run_codec::decode_hex_digest(&request.claim.project_lane_sha256)
+    let lane = group_run_codec::decode_hex_digest(project_lane_sha256)
         .ok_or_else(|| conflict("scheduled Project lane digest is invalid"))?;
     let owned: Option<String> = transaction
         .query_row(
@@ -116,6 +116,22 @@ fn reject_owned_lane(
         .optional()
         .map_err(read_error)?;
     if owned.is_some() {
+        return Err(conflict(
+            "Project lane is already owned by a scheduled dispatch",
+        ));
+    }
+    let legacy_owned: bool = transaction
+        .query_row(
+            "SELECT EXISTS(
+               SELECT 1
+               FROM group_agent_project_lane_ownerships
+               WHERE project_lane_sha256=?1
+             )",
+            [lane.as_slice()],
+            |row| row.get(0),
+        )
+        .map_err(read_error)?;
+    if legacy_owned {
         return Err(conflict(
             "Project lane is already owned by a scheduled dispatch",
         ));
@@ -133,11 +149,11 @@ const INSERT_SQL: &str = "INSERT INTO {TABLE} (id,graph_run_id,provider_request_
                  ?19,?20,?21,?22,?23,'claimed',1,?24)";
 
 #[allow(clippy::too_many_lines)]
-fn insert(
+pub(super) fn insert(
     transaction: &Transaction<'_>,
-    request: &ClaimGroupAgentScheduledNodeDispatch,
+    request: &LifecycleInsert<'_>,
 ) -> Result<(), HubStoreError> {
-    let claim = &request.claim;
+    let claim = request.claim;
     let auth_digest = digest(&claim.authorization_sha256)?;
     let provider_digest = digest(&claim.provider_request_sha256)?;
     let lane_digest = digest(&claim.project_lane_sha256)?;
@@ -152,7 +168,7 @@ fn insert(
                 claim.authorization_id,
                 auth_digest,
                 provider_digest,
-                &request.provider_request_body,
+                request.provider_request_body,
                 sized(
                     "scheduled request body",
                     request.provider_request_body.len()
@@ -181,6 +197,32 @@ fn insert(
         )
         .map_err(|error| write_error(HubEntity::GroupAgentScheduledNodeLifecycle, error))?;
     Ok(())
+}
+
+pub(super) struct LifecycleInsert<'a> {
+    pub claim: &'a crate::runtime_domain::GroupAgentScheduledNodeDispatchClaim,
+    pub provider_request_body: &'a [u8],
+    pub claim_json: &'a str,
+    pub active_lane_json: &'a str,
+    pub release_control_json: &'a str,
+    pub authorization_json: &'a str,
+    pub pricing_json: &'a str,
+    pub claim_event_json: &'a str,
+}
+
+impl<'a> From<&'a ClaimGroupAgentScheduledNodeDispatch> for LifecycleInsert<'a> {
+    fn from(value: &'a ClaimGroupAgentScheduledNodeDispatch) -> Self {
+        Self {
+            claim: &value.claim,
+            provider_request_body: &value.provider_request_body,
+            claim_json: &value.claim_json,
+            active_lane_json: &value.active_lane_json,
+            release_control_json: &value.release_control_json,
+            authorization_json: &value.authorization_json,
+            pricing_json: &value.pricing_json,
+            claim_event_json: &value.claim_event_json,
+        }
+    }
 }
 
 /// Converts a persisted JSON byte count to an i64, failing closed when the

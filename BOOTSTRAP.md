@@ -19,8 +19,16 @@ ForgeOS = **AI-native 软件工厂**:站在 Claude Code / Codex / Gemini CLI 等
   Project Run 已提供显式有界 resume 与可查询的 root-input branch；scheduled multi-node
   Graph 已提供单个 SQLite 快照上的 content-free 只读 progress projection、pinned Go Core
   reconcile，以及用 atomic S0→reconcile-Core→A→authorization-Core→B current-state revalidation 绑定 initial/successor source 的
-  zero-effect ready-node release authorization v2。它不执行、恢复或重试节点；effectful one-node
-  step、顶层整图自动执行、任意
+  zero-effect ready-node release authorization v2。公开 `group graph run step` 现可在 fresh
+  off-machine/条件式 predecessor-content consent 后，将同一 ready source 在 SQLite immediate
+  transaction 中 snapshot-to-claim CAS，跨 legacy/ready lifecycle family 竞争全局 Project lane，
+  并以 exact Linux executor owner、单次 authority/至多一次 bounded provider-stream poll 与
+  post-claim no-resend 终结至多一个
+  Core-selected node；默认输出只含 metadata，result 需显式揭示。hard crash 或 commit uncertainty
+  保留绑定 machine/boot/PID namespace/time namespace/PID/start-ticks 的 exact-owner 证据：machine
+  不同失败关闭，boot 不同证明旧 executor 已死，同 boot 才要求两个 namespace 与当前 procfs PID view
+  精确匹配；该证据供显式 adjudication；owner directory 以 advisory lock 限制为至多
+  1024 个任意条目且不自动清扫，不自动恢复、重试或重发。顶层整图自动执行、任意
   event-prefix branching、远程账号同步与受控写/进程工具仍未实现。Core 是 operator-trusted
   same-user TCB；pin/handshake 不提供 sandbox、publisher attestation 或 effect containment；CLI
   以 Runtime-only effect scope、独立 Core trust-boundary facts 与 Human 警示披露这一限制。

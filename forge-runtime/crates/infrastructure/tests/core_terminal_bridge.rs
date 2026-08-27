@@ -13,14 +13,15 @@ use std::{
 };
 
 use forge_runtime_domain::{
-    GroupAgentNodeCoreTerminalReceiptPort, MAX_GROUP_AGENT_NODE_TERMINAL_CONTROL_BYTES,
+    GroupAgentNodeCoreTerminalReceiptPort, GroupAgentNodeTerminalOutcome,
+    GroupAgentScheduledNodeTerminalReceiptPort, MAX_GROUP_AGENT_NODE_TERMINAL_CONTROL_BYTES,
 };
-use forge_runtime_infrastructure::PinnedCoreTerminalBridge;
+use forge_runtime_infrastructure::{PinnedCoreTerminalBridge, PinnedScheduledCoreTerminalBridge};
 use tempfile::tempdir;
 
 use core_terminal_bridge_support::{
-    build_go_forge, core_script, environment_probe_script, script_digest, shared_terminal_control,
-    shared_terminal_fixture, write_script,
+    build_go_forge, core_script, environment_probe_script, scheduled_terminal_control,
+    script_digest, shared_terminal_control, shared_terminal_fixture, write_script,
 };
 
 #[test]
@@ -259,6 +260,40 @@ fn compiled_go_core_returns_the_exact_shared_receipt() {
     assert_eq!(
         envelope.receipt.receipt_sha256,
         fixture.terminal_receipt_sha256
+    );
+}
+
+#[test]
+fn compiled_go_core_accepts_the_rust_scheduled_control_digest() {
+    let _guard = core_test_lock();
+    let directory = tempdir().expect("temporary Go build directory");
+    let path = build_go_forge(directory.path());
+    let bridge = PinnedScheduledCoreTerminalBridge::new(path.clone(), script_digest(&path))
+        .expect("pinned compiled scheduled Go Core");
+    let control = scheduled_terminal_control();
+
+    let envelope = bridge
+        .decide(&control)
+        .expect("Go accepts Rust scheduled control digest");
+
+    assert_eq!(
+        envelope.receipt.terminal_control_sha256,
+        control.snapshot_sha256
+    );
+    assert_eq!(
+        envelope.receipt.artifact_sha256,
+        control.artifact.artifact_sha256
+    );
+    assert_eq!(
+        envelope.receipt.node_outcome,
+        GroupAgentNodeTerminalOutcome::Completed
+    );
+    assert_eq!(
+        envelope.receipt_json,
+        envelope
+            .receipt
+            .canonical_json()
+            .expect("canonical receipt")
     );
 }
 

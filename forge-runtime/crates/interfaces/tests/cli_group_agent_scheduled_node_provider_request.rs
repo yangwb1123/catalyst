@@ -199,6 +199,15 @@ fn help_and_empty_list_keep_the_passive_boundary_explicit() {
     assert!(!help.contains("scheduled-contract provider-request send"));
     assert!(help.contains("scheduled-contract provider-request dispatch"));
     assert!(help.contains("execute PROVIDER_REQUEST_ID"));
+    assert!(help.contains("adjudicate PROVIDER_REQUEST_ID"));
+    for boundary in [
+        "operator-invoked\n  no-send recovery",
+        "exact\n  request-and-lane owner sidecar",
+        "dead\n  or PID-reused process incarnation",
+        "not distributed\n  identity or fencing",
+    ] {
+        assert!(help.contains(boundary), "help omitted {boundary}");
+    }
 }
 
 fn loopback_sentinel() -> (TcpListener, String) {

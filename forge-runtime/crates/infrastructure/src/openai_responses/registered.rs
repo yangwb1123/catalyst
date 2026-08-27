@@ -6,6 +6,7 @@ use crate::runtime_domain::{
     GroupAgentNodeResolvedDispatch, GroupAgentScheduledNodeDestinationRegistry,
     GroupAgentScheduledNodeDispatchAuthorization, GroupAgentScheduledNodeProviderFactory,
     GroupAgentScheduledNodeProviderFactoryError, GroupAgentScheduledNodeResolvedDispatch,
+    GroupAgentScheduledReadyNodeDispatchAuthorization, GroupAgentScheduledReadyNodeProviderFactory,
     ModelEventStream, PreparedModelProvider, PreparedModelRequest,
     group_agent_node_destination_sha256,
 };
@@ -202,6 +203,43 @@ impl GroupAgentScheduledNodeProviderFactory for RegisteredGroupAgentNodeProvider
         RegisteredGroupAgentNodeProviderFactory::build(self, readiness, credential)
             .map(|provider| Box::new(provider) as Box<dyn PreparedModelProvider>)
             .map_err(|_| scheduled_factory_error())
+    }
+}
+
+impl GroupAgentScheduledReadyNodeProviderFactory for RegisteredGroupAgentNodeProviderFactory {
+    fn resolve_ready(
+        &self,
+        authorization: &GroupAgentScheduledReadyNodeDispatchAuthorization,
+        pricing: &GroupAgentNodePricingSnapshot,
+    ) -> Result<GroupAgentScheduledNodeResolvedDispatch, GroupAgentScheduledNodeProviderFactoryError>
+    {
+        let quote = pricing
+            .verify_scheduled_ready_authorization(authorization)
+            .map_err(|_| scheduled_factory_error())?;
+        validate_registered_destination(
+            authorization.provider_kind,
+            &authorization.endpoint,
+            &authorization.model,
+            &authorization.destination_sha256,
+        )
+        .map_err(|_| scheduled_factory_error())?;
+        Ok(GroupAgentScheduledNodeResolvedDispatch {
+            authorization_sha256: authorization.authorization_sha256.clone(),
+            provider_kind: authorization.provider_kind,
+            endpoint: authorization.endpoint.clone(),
+            model: authorization.model.clone(),
+            destination_sha256: authorization.destination_sha256.clone(),
+            pricing_snapshot_sha256: authorization.pricing_snapshot_sha256.clone(),
+            quote,
+        })
+    }
+
+    fn build_ready(
+        &self,
+        resolved: GroupAgentScheduledNodeResolvedDispatch,
+        credential: String,
+    ) -> Result<Box<dyn PreparedModelProvider>, GroupAgentScheduledNodeProviderFactoryError> {
+        GroupAgentScheduledNodeProviderFactory::build(self, resolved, credential)
     }
 }
 

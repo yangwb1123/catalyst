@@ -3,7 +3,7 @@ use rusqlite::{Connection, TransactionBehavior};
 use crate::runtime_domain::{
     GroupAgentGraphExecutionScheduleInspection, GroupAgentGraphInspection,
     GroupAgentGraphRunInspection, GroupAgentNodeTerminalOutcome,
-    GroupAgentScheduledNodeContractInspection, GroupAgentScheduledNodeLifecycleInspection,
+    GroupAgentScheduledNodeContractInspection, GroupAgentScheduledNodeLifecycleProgressInspection,
     GroupAgentScheduledNodeLifecycleStatus, GroupAgentScheduledNodePredecessorOutcome,
     GroupAgentScheduledNodePredecessorReceipt, GroupAgentScheduledNodeProviderRequestInspection,
     GroupAgentScheduledNodeTerminalArtifact, GroupAgentScheduledNodeTerminalArtifactKind,
@@ -24,7 +24,28 @@ pub(super) fn inspect(
     execution_ordinal: usize,
     node_id: &str,
 ) -> Result<ScheduledReadyNodeReleaseSource, HubStoreError> {
-    inspect_after_progress(
+    let transaction = connection
+        .transaction_with_behavior(TransactionBehavior::Deferred)
+        .map_err(read_error)?;
+    let source = inspect_in_snapshot(
+        &transaction,
+        graph_run_id,
+        expected_snapshot_sha256,
+        execution_ordinal,
+        node_id,
+    )?;
+    transaction.commit().map_err(read_error)?;
+    Ok(source)
+}
+
+pub(in crate::sqlite_hub) fn inspect_in_snapshot(
+    connection: &Connection,
+    graph_run_id: &str,
+    expected_snapshot_sha256: &str,
+    execution_ordinal: usize,
+    node_id: &str,
+) -> Result<ScheduledReadyNodeReleaseSource, HubStoreError> {
+    inspect_after_progress_in_snapshot(
         connection,
         graph_run_id,
         expected_snapshot_sha256,
@@ -34,18 +55,15 @@ pub(super) fn inspect(
     )
 }
 
-fn inspect_after_progress(
-    connection: &mut Connection,
+fn inspect_after_progress_in_snapshot(
+    connection: &Connection,
     graph_run_id: &str,
     expected_snapshot_sha256: &str,
     execution_ordinal: usize,
     node_id: &str,
     after_progress: impl FnOnce() -> Result<(), HubStoreError>,
 ) -> Result<ScheduledReadyNodeReleaseSource, HubStoreError> {
-    let transaction = connection
-        .transaction_with_behavior(TransactionBehavior::Deferred)
-        .map_err(read_error)?;
-    let progress = super::read::build_in_snapshot(&transaction, graph_run_id)?;
+    let progress = super::read::build_in_snapshot(connection, graph_run_id)?;
     validate_expected(
         &progress,
         graph_run_id,
@@ -54,16 +72,15 @@ fn inspect_after_progress(
         node_id,
     )?;
     after_progress()?;
-    let run = group_agent_graph_run::read::inspect_in_snapshot(&transaction, graph_run_id)?;
-    let graph = group_agent_graph::read::inspect_in_snapshot(&transaction, &run.run.graph_id)?;
-    let schedule = required_schedule(&transaction, &run, &graph)?;
+    let run = group_agent_graph_run::read::inspect_in_snapshot(connection, graph_run_id)?;
+    let graph = group_agent_graph::read::inspect_in_snapshot(connection, &run.run.graph_id)?;
+    let schedule = required_schedule(connection, &run, &graph)?;
     validate_schedule_binding(&progress, &schedule)?;
-    let provider = load_selected(&transaction, &run, &graph, &schedule, execution_ordinal)?;
+    let provider = load_selected(connection, &run, &graph, &schedule, execution_ordinal)?;
     validate_selected_binding(&progress.nodes[execution_ordinal], &provider)?;
-    reject_selected_lifecycle(&transaction, &run, &provider)?;
+    reject_selected_lifecycle(connection, &run, &provider)?;
     let (receipts, artifact) =
-        load_direct_closure(&transaction, &progress, &run, &graph, &schedule, &provider)?;
-    transaction.commit().map_err(read_error)?;
+        load_direct_closure(connection, &progress, &run, &graph, &schedule, &provider)?;
     Ok(ScheduledReadyNodeReleaseSource {
         progress_snapshot: progress,
         graph_run: run,
@@ -84,14 +101,19 @@ pub(super) fn inspect_with_concurrent_writer(
     node_id: &str,
     writer: impl FnOnce() -> Result<(), HubStoreError>,
 ) -> Result<ScheduledReadyNodeReleaseSource, HubStoreError> {
-    inspect_after_progress(
-        connection,
+    let transaction = connection
+        .transaction_with_behavior(TransactionBehavior::Deferred)
+        .map_err(read_error)?;
+    let source = inspect_after_progress_in_snapshot(
+        &transaction,
         graph_run_id,
         expected_snapshot_sha256,
         execution_ordinal,
         node_id,
         writer,
-    )
+    )?;
+    transaction.commit().map_err(read_error)?;
+    Ok(source)
 }
 
 fn validate_expected(
@@ -243,7 +265,7 @@ fn load_predecessor(
     graph: &GroupAgentGraphInspection,
     schedule: &GroupAgentGraphExecutionScheduleInspection,
     node_id: &str,
-) -> Result<GroupAgentScheduledNodeLifecycleInspection, HubStoreError> {
+) -> Result<GroupAgentScheduledNodeLifecycleProgressInspection, HubStoreError> {
     let source = schedule
         .schedule
         .nodes
@@ -266,7 +288,7 @@ fn load_predecessor(
 }
 
 fn terminal_receipt(
-    lifecycle: &GroupAgentScheduledNodeLifecycleInspection,
+    lifecycle: &GroupAgentScheduledNodeLifecycleProgressInspection,
 ) -> Result<&GroupAgentScheduledNodeTerminalReceipt, HubStoreError> {
     if lifecycle.status != GroupAgentScheduledNodeLifecycleStatus::Terminalized {
         return Err(corrupt("scheduled direct predecessor is not terminalized"));
@@ -284,7 +306,7 @@ fn terminal_receipt(
 fn validate_predecessor(
     progress: &ScheduledGraphProgressSnapshot,
     compact: &GroupAgentScheduledNodePredecessorReceipt,
-    lifecycle: &GroupAgentScheduledNodeLifecycleInspection,
+    lifecycle: &GroupAgentScheduledNodeLifecycleProgressInspection,
     receipt: &GroupAgentScheduledNodeTerminalReceipt,
 ) -> Result<(), HubStoreError> {
     let ordinal = lifecycle.provider_request.execution_ordinal;

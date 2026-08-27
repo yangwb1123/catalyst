@@ -18,6 +18,12 @@ pub(crate) mod dispatch_readiness_output;
 pub(crate) mod output;
 #[path = "group_agent_graph/ready_release_command.rs"]
 pub(crate) mod ready_release_command;
+#[path = "group_agent_graph/ready_step_command.rs"]
+pub(crate) mod ready_step_command;
+#[path = "group_agent_graph/ready_step_output.rs"]
+pub(crate) mod ready_step_output;
+#[path = "group_agent_graph/ready_step_owner.rs"]
+pub(crate) mod ready_step_owner;
 #[path = "group_agent_graph/reconcile_command.rs"]
 pub(crate) mod reconcile_command;
 #[path = "group_agent_graph/run_command.rs"]
@@ -32,6 +38,22 @@ pub(crate) mod schedule_output;
 pub(crate) mod scheduled_contract_command;
 #[path = "group_agent_graph/scheduled_contract_output.rs"]
 pub(crate) mod scheduled_contract_output;
+#[path = "group_agent_graph/scheduled_dispatch_execution_output.rs"]
+pub(crate) mod scheduled_dispatch_execution_output;
+#[cfg(target_os = "linux")]
+#[allow(
+    dead_code,
+    reason = "shared owner/adjudication protocol includes observation APIs used by separate commands"
+)]
+#[path = "group_agent_graph/scheduled_executor_sidecar.rs"]
+pub(crate) mod scheduled_executor_sidecar;
+#[cfg(not(target_os = "linux"))]
+#[allow(
+    dead_code,
+    reason = "portable callers share the Linux sidecar API but fail explicitly as unsupported"
+)]
+#[path = "group_agent_graph/scheduled_executor_sidecar_unsupported.rs"]
+pub(crate) mod scheduled_executor_sidecar;
 #[path = "group_agent_graph/scheduled_provider_request_command.rs"]
 pub(crate) mod scheduled_provider_request_command;
 #[path = "group_agent_graph/scheduled_provider_request_output.rs"]

@@ -28,10 +28,14 @@ use super::{
     sqlite_group_agent_scheduled_node_provider_request_support as provider_support,
 };
 
+mod predecessor_terminal;
+mod successor_content;
+
 pub struct Fixture {
     graph: GraphFixture,
     pub reader: Arc<SqliteHubStore>,
     claim: ClaimGroupAgentScheduledNodeDispatch,
+    pricing_json: String,
 }
 
 impl Fixture {
@@ -68,6 +72,7 @@ impl Fixture {
             .inspection;
         let release = release_control(&graph, &admission, schedule, &provider);
         let authorization = legacy_authorization_support::authorization(&release, &pricing);
+        let pricing_json = pricing.canonical_json().expect("race pricing JSON");
         let claim = claim_request(release, authorization, pricing, &provider);
         let reader = Arc::new(
             SqliteHubStore::open_existing_current_live_read_only(&graph.database)
@@ -77,13 +82,34 @@ impl Fixture {
             graph,
             reader,
             claim,
+            pricing_json,
         }
+    }
+
+    pub fn with_predecessor_content() -> Self {
+        successor_content::fixture()
     }
 
     pub fn claim(&self) -> Result<ClaimGroupAgentScheduledNodeDispatchResult, HubStoreError> {
         self.graph
             .store
             .claim_group_agent_scheduled_node_dispatch(&self.claim)
+    }
+
+    pub fn writer(&self) -> Arc<SqliteHubStore> {
+        Arc::new(self.graph.store.clone())
+    }
+
+    pub fn pricing_json(&self) -> &str {
+        &self.pricing_json
+    }
+
+    pub fn provider_request_id(&self) -> &str {
+        &self.claim.authorization.scheduled_provider_request_id
+    }
+
+    pub fn authorization_json(&self) -> &str {
+        &self.claim.authorization_json
     }
 }
 

@@ -62,6 +62,7 @@ pub enum GroupGraphRunCommand {
         core_bin: String,
         core_bin_sha256: String,
     },
+    Step(Box<GroupGraphRunReadyStepOptions>),
     Show {
         graph_run_id: String,
         include_plan: bool,
@@ -70,6 +71,19 @@ pub enum GroupGraphRunCommand {
         graph_id: Option<String>,
         limit: usize,
     },
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub struct GroupGraphRunReadyStepOptions {
+    pub graph_run_id: String,
+    pub expected_provider_request_id: String,
+    pub expected_ready_authorization_sha256: String,
+    pub pricing_source: String,
+    pub core_bin: String,
+    pub core_bin_sha256: String,
+    pub confirm_off_machine: bool,
+    pub confirm_predecessor_content: bool,
+    pub include_result: bool,
 }
 
 #[derive(Debug, Eq, PartialEq)]

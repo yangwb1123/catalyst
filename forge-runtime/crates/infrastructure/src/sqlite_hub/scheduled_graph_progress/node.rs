@@ -3,8 +3,9 @@ use rusqlite::Connection;
 use crate::runtime_domain::{
     GroupAgentGraphExecutionScheduleInspection, GroupAgentGraphInspection,
     GroupAgentGraphRunInspection, GroupAgentScheduledNodeContractInspection,
-    GroupAgentScheduledNodeLifecycleInspection, GroupAgentScheduledNodeProviderRequestInspection,
-    HubStoreError, MAX_GROUP_AGENT_GRAPH_NODES, ScheduledGraphProgressNode,
+    GroupAgentScheduledNodeLifecycleProgressInspection,
+    GroupAgentScheduledNodeProviderRequestInspection, HubStoreError, MAX_GROUP_AGENT_GRAPH_NODES,
+    ScheduledGraphProgressNode,
 };
 
 use super::super::{
@@ -36,7 +37,7 @@ impl ObservedProgressCounts {
         &mut self,
         candidate: Option<&GroupAgentScheduledNodeContractInspection>,
         provider: Option<&GroupAgentScheduledNodeProviderRequestInspection>,
-        lifecycle: Option<&GroupAgentScheduledNodeLifecycleInspection>,
+        lifecycle: Option<&GroupAgentScheduledNodeLifecycleProgressInspection>,
     ) {
         self.candidates += usize::from(candidate.is_some());
         self.provider_requests += usize::from(provider.is_some());
@@ -95,7 +96,7 @@ fn load_lifecycle(
     connection: &Connection,
     run: &GroupAgentGraphRunInspection,
     provider: Option<&GroupAgentScheduledNodeProviderRequestInspection>,
-) -> Result<Option<GroupAgentScheduledNodeLifecycleInspection>, HubStoreError> {
+) -> Result<Option<GroupAgentScheduledNodeLifecycleProgressInspection>, HubStoreError> {
     provider.map_or(Ok(None), |provider| {
         group_agent_scheduled_node_lifecycle::read::inspect_for_progress_in_snapshot(
             connection, run, provider,
@@ -107,7 +108,7 @@ fn project_node(
     source: &crate::runtime_domain::GroupAgentGraphExecutionScheduleNode,
     candidate: Option<&GroupAgentScheduledNodeContractInspection>,
     provider: Option<&GroupAgentScheduledNodeProviderRequestInspection>,
-    lifecycle: Option<&GroupAgentScheduledNodeLifecycleInspection>,
+    lifecycle: Option<&GroupAgentScheduledNodeLifecycleProgressInspection>,
 ) -> ScheduledGraphProgressNode {
     let receipt = lifecycle.and_then(|inspection| inspection.terminal_receipt.as_ref());
     ScheduledGraphProgressNode {

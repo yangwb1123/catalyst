@@ -17,12 +17,12 @@ use crate::runtime_domain::{
     GroupAgentScheduledNodeActiveLane, GroupAgentScheduledNodeContractStore,
     GroupAgentScheduledNodeDispatchAuthorization, GroupAgentScheduledNodeDispatchClaim,
     GroupAgentScheduledNodeDispatchClaimEvent, GroupAgentScheduledNodeDispatchReleaseControl,
-    GroupAgentScheduledNodeLifecycleInspection, GroupAgentScheduledNodeLifecycleStore,
-    GroupAgentScheduledNodeProviderFactory, GroupAgentScheduledNodeProviderRequestStore,
-    GroupAgentScheduledNodeSuccessorStore, GroupAgentScheduledNodeTerminalArtifact,
-    GroupAgentScheduledNodeTerminalArtifactKind, GroupAgentScheduledNodeTerminalControl,
-    GroupAgentScheduledNodeTerminalReceiptPort, TerminalizeGroupAgentScheduledNodeDispatch,
-    group_agent_scheduled_node_terminal_output_sha256,
+    GroupAgentScheduledNodeLifecycleInspection, GroupAgentScheduledNodeLifecycleStatus,
+    GroupAgentScheduledNodeLifecycleStore, GroupAgentScheduledNodeProviderFactory,
+    GroupAgentScheduledNodeProviderRequestStore, GroupAgentScheduledNodeSuccessorStore,
+    GroupAgentScheduledNodeTerminalArtifact, GroupAgentScheduledNodeTerminalArtifactKind,
+    GroupAgentScheduledNodeTerminalControl, GroupAgentScheduledNodeTerminalReceiptPort,
+    TerminalizeGroupAgentScheduledNodeDispatch, group_agent_scheduled_node_terminal_output_sha256,
 };
 use crate::{
     GroupAgentNodeCredentialSource, GroupAgentNodeDispatchClaimMetadata,
@@ -33,7 +33,7 @@ use crate::{
 };
 
 #[path = "group_agent_scheduled_node_dispatch_execution_helpers.rs"]
-mod helpers;
+pub(crate) mod helpers;
 use helpers::{build_artifact, build_claim_request, build_control, limits};
 
 #[derive(Clone, Debug)]
@@ -52,6 +52,7 @@ pub struct ExecuteGroupAgentScheduledNodeDispatchInput {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ExecuteGroupAgentScheduledNodeDispatchResult {
     Terminalized(GroupAgentScheduledNodeLifecycleInspection),
+    Quarantined(GroupAgentScheduledNodeLifecycleInspection),
     AlreadyClaimed(GroupAgentScheduledNodeLifecycleInspection),
 }
 
@@ -67,8 +68,14 @@ pub enum GroupAgentScheduledNodeDispatchExecutionServiceError {
     ProviderUnavailable,
     #[error("scheduled Node Dispatch state is not ready")]
     InvalidState,
-    #[error("scheduled Node Dispatch is durably claimed and quarantined; resend is forbidden")]
-    DispatchQuarantined,
+    #[error(
+        "scheduled Node Dispatch claim outcome is uncertain; provider_stream_polled=false; remote_send_attested=false; automatic_retry_or_resend=false"
+    )]
+    ClaimOutcomeUncertain,
+    #[error(
+        "scheduled Node Dispatch post-claim outcome is uncertain; provider_stream_polled=true; remote_send_attested=false; automatic_retry_or_resend=false"
+    )]
+    PostClaimOutcomeUncertain,
     #[error("scheduled Node Dispatch store failed: {0}")]
     Store(#[from] forge_runtime_domain::HubStoreError),
     #[error("scheduled Node Dispatch release verification failed: {0}")]
@@ -221,10 +228,13 @@ impl GroupAgentScheduledNodeDispatchExecutionService {
             .claim_metadata()
             .map_err(|_| GroupAgentScheduledNodeDispatchExecutionServiceError::InvalidInput)?;
         let request = build_claim_request(preflight, &metadata)?;
-        match self
+        let result = self
             .lifecycles
-            .claim_group_agent_scheduled_node_dispatch(&request)?
-        {
+            .claim_group_agent_scheduled_node_dispatch(&request)
+            .map_err(|_| {
+                GroupAgentScheduledNodeDispatchExecutionServiceError::ClaimOutcomeUncertain
+            })?;
+        match result {
             ClaimGroupAgentScheduledNodeDispatchResult::AlreadyClaimed { inspection } => {
                 Ok(ClaimStart::Already(inspection))
             }
@@ -292,23 +302,20 @@ impl GroupAgentScheduledNodeDispatchExecutionService {
         )
         .await;
         let terminalized_at_ms = self.metadata.terminal_time_ms().map_err(|_| {
-            GroupAgentScheduledNodeDispatchExecutionServiceError::DispatchQuarantined
+            GroupAgentScheduledNodeDispatchExecutionServiceError::PostClaimOutcomeUncertain
         })?;
         self.verify_lane(&claim)?;
         let artifact = build_artifact(&claim, &evidence, terminalized_at_ms)?;
         let artifact_json = artifact.canonical_json().map_err(|_| {
-            GroupAgentScheduledNodeDispatchExecutionServiceError::DispatchQuarantined
+            GroupAgentScheduledNodeDispatchExecutionServiceError::PostClaimOutcomeUncertain
         })?;
-        let inspection = self.terminalize(
+        self.terminalize(
             &claimed.release,
             &claim,
             artifact,
             artifact_json,
             terminalized_at_ms,
-        )?;
-        Ok(ExecuteGroupAgentScheduledNodeDispatchResult::Terminalized(
-            inspection,
-        ))
+        )
     }
 
     /// Re-inspects the durable lifecycle and rejects a claim that no longer
@@ -321,10 +328,12 @@ impl GroupAgentScheduledNodeDispatchExecutionService {
             .lifecycles
             .inspect_group_agent_scheduled_node_lifecycle(&claim.provider_request_id)
             .map_err(|_| {
-                GroupAgentScheduledNodeDispatchExecutionServiceError::DispatchQuarantined
+                GroupAgentScheduledNodeDispatchExecutionServiceError::PostClaimOutcomeUncertain
             })?;
         if lifecycle.claim != *claim {
-            return Err(GroupAgentScheduledNodeDispatchExecutionServiceError::DispatchQuarantined);
+            return Err(
+                GroupAgentScheduledNodeDispatchExecutionServiceError::PostClaimOutcomeUncertain,
+            );
         }
         Ok(())
     }
@@ -339,16 +348,18 @@ impl GroupAgentScheduledNodeDispatchExecutionService {
         artifact_json: String,
         terminalized_at_ms: u64,
     ) -> Result<
-        GroupAgentScheduledNodeLifecycleInspection,
+        ExecuteGroupAgentScheduledNodeDispatchResult,
         GroupAgentScheduledNodeDispatchExecutionServiceError,
     > {
         let control = build_control(release, claim, artifact)?;
         let control_json = control.canonical_json().map_err(|_| {
-            GroupAgentScheduledNodeDispatchExecutionServiceError::DispatchQuarantined
+            GroupAgentScheduledNodeDispatchExecutionServiceError::PostClaimOutcomeUncertain
         })?;
         let Ok(receipt) = self.core.decide(&control) else {
-            self.persist_quarantine(artifact_json, terminalized_at_ms)?;
-            return Err(GroupAgentScheduledNodeDispatchExecutionServiceError::DispatchQuarantined);
+            let inspection = self.persist_quarantine(claim, artifact_json, terminalized_at_ms)?;
+            return Ok(ExecuteGroupAgentScheduledNodeDispatchResult::Quarantined(
+                inspection,
+            ));
         };
         let terminal = TerminalizeGroupAgentScheduledNodeDispatch {
             v: GROUP_AGENT_SCHEDULED_NODE_LIFECYCLE_VERSION,
@@ -359,17 +370,25 @@ impl GroupAgentScheduledNodeDispatchExecutionService {
             receipt_json: Some(receipt.receipt_json),
             terminalized_at_ms,
         };
-        let result = self
-            .lifecycles
-            .terminalize_group_agent_scheduled_node_dispatch(&terminal)?;
-        Ok(result.inspection)
+        let inspection = self.persist_or_recover(
+            claim,
+            &terminal,
+            GroupAgentScheduledNodeLifecycleStatus::Terminalized,
+        )?;
+        Ok(ExecuteGroupAgentScheduledNodeDispatchResult::Terminalized(
+            inspection,
+        ))
     }
 
     fn persist_quarantine(
         &self,
+        claim: &GroupAgentScheduledNodeDispatchClaim,
         artifact_json: String,
         terminalized_at_ms: u64,
-    ) -> Result<(), GroupAgentScheduledNodeDispatchExecutionServiceError> {
+    ) -> Result<
+        GroupAgentScheduledNodeLifecycleInspection,
+        GroupAgentScheduledNodeDispatchExecutionServiceError,
+    > {
         let request = TerminalizeGroupAgentScheduledNodeDispatch {
             v: GROUP_AGENT_SCHEDULED_NODE_LIFECYCLE_VERSION,
             control: None,
@@ -379,13 +398,53 @@ impl GroupAgentScheduledNodeDispatchExecutionService {
             receipt_json: None,
             terminalized_at_ms,
         };
-        let _ = self
+        self.persist_or_recover(
+            claim,
+            &request,
+            GroupAgentScheduledNodeLifecycleStatus::Quarantined,
+        )
+    }
+
+    fn persist_or_recover(
+        &self,
+        claim: &GroupAgentScheduledNodeDispatchClaim,
+        request: &TerminalizeGroupAgentScheduledNodeDispatch,
+        expected: GroupAgentScheduledNodeLifecycleStatus,
+    ) -> Result<
+        GroupAgentScheduledNodeLifecycleInspection,
+        GroupAgentScheduledNodeDispatchExecutionServiceError,
+    > {
+        match self
             .lifecycles
-            .terminalize_group_agent_scheduled_node_dispatch(&request)
+            .terminalize_group_agent_scheduled_node_dispatch(request)
+        {
+            Ok(result) => Ok(result.inspection),
+            Err(_) => self.recover_released(claim, expected),
+        }
+    }
+
+    fn recover_released(
+        &self,
+        claim: &GroupAgentScheduledNodeDispatchClaim,
+        expected: GroupAgentScheduledNodeLifecycleStatus,
+    ) -> Result<
+        GroupAgentScheduledNodeLifecycleInspection,
+        GroupAgentScheduledNodeDispatchExecutionServiceError,
+    > {
+        let inspection = self
+            .lifecycles
+            .inspect_group_agent_scheduled_node_lifecycle(&claim.provider_request_id)
             .map_err(|_| {
-                GroupAgentScheduledNodeDispatchExecutionServiceError::DispatchQuarantined
+                GroupAgentScheduledNodeDispatchExecutionServiceError::PostClaimOutcomeUncertain
             })?;
-        Ok(())
+        if inspection.claim == *claim
+            && inspection.active_lane.is_none()
+            && inspection.status == expected
+        {
+            Ok(inspection)
+        } else {
+            Err(GroupAgentScheduledNodeDispatchExecutionServiceError::PostClaimOutcomeUncertain)
+        }
     }
 
     fn existing(

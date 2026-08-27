@@ -27,8 +27,8 @@ use super::super::{
 };
 use super::atomicity_authorization;
 
-pub(in crate::sqlite_hub::scheduled_graph_progress) struct ClaimedFixture {
-    pub(in crate::sqlite_hub::scheduled_graph_progress) graph: GraphFixture,
+pub(in crate::sqlite_hub) struct ClaimedFixture {
+    pub(in crate::sqlite_hub) graph: GraphFixture,
     pub(in crate::sqlite_hub::scheduled_graph_progress) initial_admission:
         AdmitGroupAgentScheduledNodeContractCandidate,
     pub(in crate::sqlite_hub::scheduled_graph_progress) pricing: GroupAgentNodePricingSnapshot,
@@ -37,8 +37,8 @@ pub(in crate::sqlite_hub::scheduled_graph_progress) struct ClaimedFixture {
     terminal: TerminalizeGroupAgentScheduledNodeDispatch,
 }
 
-pub(in crate::sqlite_hub::scheduled_graph_progress) struct ReadyFixture {
-    pub(in crate::sqlite_hub::scheduled_graph_progress) graph: GraphFixture,
+pub(in crate::sqlite_hub) struct ReadyFixture {
+    pub(in crate::sqlite_hub) graph: GraphFixture,
     claim: ClaimGroupAgentScheduledNodeDispatch,
     initial_admission: AdmitGroupAgentScheduledNodeContractCandidate,
 }
@@ -51,19 +51,29 @@ impl ClaimedFixture {
             .store
             .terminalize_group_agent_scheduled_node_dispatch(&self.terminal)
     }
+
+    pub(in crate::sqlite_hub) fn terminal_request(
+        &self,
+    ) -> TerminalizeGroupAgentScheduledNodeDispatch {
+        self.terminal.clone()
+    }
 }
 
 impl ReadyFixture {
-    pub(in crate::sqlite_hub::scheduled_graph_progress) fn claim(
+    pub(in crate::sqlite_hub) fn claim(
         &self,
     ) -> Result<ClaimGroupAgentScheduledNodeDispatchResult, HubStoreError> {
         self.graph
             .store
             .claim_group_agent_scheduled_node_dispatch(&self.claim)
     }
+
+    pub(in crate::sqlite_hub) fn claim_request(&self) -> &ClaimGroupAgentScheduledNodeDispatch {
+        &self.claim
+    }
 }
 
-pub(in crate::sqlite_hub::scheduled_graph_progress) fn ready_fixture() -> ReadyFixture {
+pub(in crate::sqlite_hub) fn ready_fixture() -> ReadyFixture {
     let graph = schedule_support::prepared_fixture();
     ready_fixture_from_graph(graph)
 }
@@ -95,7 +105,7 @@ fn ready_fixture_from_graph(graph: GraphFixture) -> ReadyFixture {
     }
 }
 
-pub(in crate::sqlite_hub::scheduled_graph_progress) fn claimed_fixture() -> ClaimedFixture {
+pub(in crate::sqlite_hub) fn claimed_fixture() -> ClaimedFixture {
     claim_ready(ready_fixture())
 }
 

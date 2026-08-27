@@ -20,7 +20,7 @@ mod atomicity;
 mod atomicity_authorization;
 #[cfg(test)]
 #[path = "atomicity_fixture.rs"]
-pub(super) mod atomicity_fixture;
+pub(in crate::sqlite_hub) mod atomicity_fixture;
 
 pub(super) fn snapshot(
     connection: &mut Connection,

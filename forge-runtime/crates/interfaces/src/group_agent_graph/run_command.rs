@@ -21,6 +21,8 @@ use super::{
     contract_output::{self, GroupAgentNodeExecutionContractCliOutput},
     dispatch_command::{self, GroupAgentGraphRunDispatchCommandCliOutput},
     ready_release_command::{self, ScheduledReadyNodeReleaseCliOutput},
+    ready_step_command,
+    ready_step_output::{self, ScheduledReadyNodeStepCliOutput},
     reconcile_command::{self, ScheduledGraphReconcileCliOutput},
     run_output::{self, GroupAgentGraphRunCliOutput},
     schedule_command,
@@ -42,6 +44,7 @@ pub enum GroupAgentGraphRunCommandCliOutput {
     ScheduledProviderRequest(Box<GroupAgentScheduledNodeProviderRequestCommandCliOutput>),
     Reconcile(Box<ScheduledGraphReconcileCliOutput>),
     ReadyRelease(Box<ScheduledReadyNodeReleaseCliOutput>),
+    ReadyStep(Box<ScheduledReadyNodeStepCliOutput>),
 }
 
 pub async fn execute(
@@ -89,10 +92,29 @@ pub async fn execute(
             graph_run_id,
             core_bin,
             core_bin_sha256,
-        } => Ok(GroupAgentGraphRunCommandCliOutput::ReadyRelease(Box::new(
-            ready_release_command::execute(args, graph_run_id, core_bin, core_bin_sha256)?,
-        ))),
+        } => execute_ready_release(args, graph_run_id, core_bin, core_bin_sha256),
+        GroupGraphRunCommand::Step(options) => execute_ready_step(args, options).await,
     }
+}
+
+async fn execute_ready_step(
+    args: &Args,
+    options: &crate::args::GroupGraphRunReadyStepOptions,
+) -> Result<GroupAgentGraphRunCommandCliOutput, Box<dyn Error>> {
+    Ok(GroupAgentGraphRunCommandCliOutput::ReadyStep(Box::new(
+        Box::pin(ready_step_command::execute(args, options)).await?,
+    )))
+}
+
+fn execute_ready_release(
+    args: &Args,
+    graph_run_id: &str,
+    core_bin: &str,
+    core_bin_sha256: &str,
+) -> Result<GroupAgentGraphRunCommandCliOutput, Box<dyn Error>> {
+    Ok(GroupAgentGraphRunCommandCliOutput::ReadyRelease(Box::new(
+        ready_release_command::execute(args, graph_run_id, core_bin, core_bin_sha256)?,
+    )))
 }
 
 fn execute_show(
@@ -167,6 +189,9 @@ pub fn write_output(
         }
         GroupAgentGraphRunCommandCliOutput::ReadyRelease(output) => {
             ready_release_command::write_output(output, json, writer)
+        }
+        GroupAgentGraphRunCommandCliOutput::ReadyStep(output) => {
+            ready_step_output::write_output(output, json, writer)
         }
     }
 }

@@ -37,7 +37,10 @@ use super::{
 
 #[path = "scheduled_provider_request_dispatch.rs"]
 mod dispatch;
-use dispatch::{adjudicate_dispatch, execute_dispatch, inspect_existing_execution, read_inputs};
+use dispatch::{
+    adjudicate_dispatch, ensure_scheduled_executor_supported, execute_dispatch,
+    inspect_existing_execution, read_inputs,
+};
 
 pub enum GroupAgentScheduledNodeProviderRequestCommandCliOutput {
     Request(Box<GroupAgentScheduledNodeProviderRequestCliOutput>),
@@ -51,6 +54,13 @@ pub async fn execute(
     args: &Args,
     command: &GroupGraphRunScheduledContractProviderRequestCommand,
 ) -> Result<GroupAgentScheduledNodeProviderRequestCommandCliOutput, Box<dyn Error>> {
+    if matches!(
+        command,
+        GroupGraphRunScheduledContractProviderRequestCommand::Execute { .. }
+            | GroupGraphRunScheduledContractProviderRequestCommand::Adjudicate { .. }
+    ) {
+        ensure_scheduled_executor_supported()?;
+    }
     if let Some(existing) = inspect_existing_execution(args, command)? {
         return Ok(existing);
     }

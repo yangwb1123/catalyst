@@ -22,6 +22,7 @@ mod sqlite_group_agent_scheduled_node_contract_support;
 #[allow(dead_code, clippy::duplicate_mod)]
 #[path = "../../infrastructure/tests/sqlite_group_agent_scheduled_node_provider_request_support/mod.rs"]
 mod sqlite_group_agent_scheduled_node_provider_request_support;
+#[allow(dead_code)]
 #[path = "scheduled_ready_release_sqlite_support/mod.rs"]
 mod sqlite_support;
 

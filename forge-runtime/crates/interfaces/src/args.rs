@@ -24,7 +24,7 @@ pub use governance_journal_args::{GovernanceCommand, GovernanceJournalCommand};
 pub use group_commands::{
     GroupAnalysisCommand, GroupCommand, GroupExecutionCommand, GroupGraphCommand,
     GroupGraphRunCommand, GroupGraphRunContractCommand, GroupGraphRunControlCommand,
-    GroupGraphRunDispatchCommand, GroupGraphRunScheduleCommand,
+    GroupGraphRunDispatchCommand, GroupGraphRunReadyStepOptions, GroupGraphRunScheduleCommand,
     GroupGraphRunScheduledContractCommand, GroupGraphRunScheduledContractProviderRequestCommand,
     GroupGraphRunScheduledContractSuccessorCommand, GroupPanelCommand, GroupRunCommand,
     GroupSynthesisCommand, WaveAdmitExecutionOptions,

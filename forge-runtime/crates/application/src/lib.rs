@@ -14,6 +14,7 @@ mod group_agent_node_dispatch_adjudication;
 mod group_agent_node_dispatch_execution;
 mod group_agent_node_execution;
 mod group_agent_scheduled_node_dispatch_execution;
+mod group_agent_scheduled_ready_node_dispatch_execution;
 mod group_analysis_panel_service;
 mod group_analysis_panel_validation;
 mod group_execution_service;
@@ -168,6 +169,7 @@ pub use group_agent_scheduled_node_dispatch_execution::{
     GroupAgentScheduledNodeDispatchExecutionService,
     GroupAgentScheduledNodeDispatchExecutionServiceError,
 };
+pub use group_agent_scheduled_ready_node_dispatch_execution::*;
 pub use group_analysis_panel_service::{GroupAnalysisPanelService, PrepareGroupAnalysisPanelInput};
 pub use group_execution_service::{GroupExecutionService, StartGroupExecutionResult};
 pub use group_model_analysis_error::{

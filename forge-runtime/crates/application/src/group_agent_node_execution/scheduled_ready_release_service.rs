@@ -42,6 +42,7 @@ pub enum ScheduledReadyNodeReleaseServiceError {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AuthorizedScheduledReadyNodeRelease {
+    pub release_control: GroupAgentScheduledReadyNodeDispatchReleaseControl,
     pub authorization: GroupAgentScheduledReadyNodeDispatchAuthorization,
 }
 
@@ -99,7 +100,10 @@ impl ScheduledReadyNodeReleaseService {
         authorization
             .validate_against_release_control(&control_b)
             .map_err(|_| ScheduledReadyNodeReleaseServiceError::InvalidAuthorization)?;
-        Ok(AuthorizedScheduledReadyNodeRelease { authorization })
+        Ok(AuthorizedScheduledReadyNodeRelease {
+            release_control: control_b,
+            authorization,
+        })
     }
 
     fn load_progress(

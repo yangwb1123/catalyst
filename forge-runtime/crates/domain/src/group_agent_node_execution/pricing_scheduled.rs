@@ -1,4 +1,6 @@
-use crate::GroupAgentScheduledNodeDispatchAuthorization;
+use crate::{
+    GroupAgentScheduledNodeDispatchAuthorization, GroupAgentScheduledReadyNodeDispatchAuthorization,
+};
 
 use super::{
     GroupAgentNodeDestinationRegistryError, GroupAgentNodePricingQuote,
@@ -54,6 +56,38 @@ impl GroupAgentNodePricingSnapshot {
             max_cost_usd_micros: maximum,
         })
     }
+
+    /// Verifies one successor-capable ready-node authorization against this
+    /// immutable pricing snapshot without reading credentials or constructing
+    /// a provider.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for invalid authorization, destination or pricing
+    /// drift, arithmetic overflow, or an insufficient authorized cost budget.
+    pub fn verify_scheduled_ready_authorization(
+        &self,
+        authorization: &GroupAgentScheduledReadyNodeDispatchAuthorization,
+    ) -> Result<GroupAgentNodePricingQuote, GroupAgentNodePricingValidationError> {
+        self.validate()?;
+        authorization.validate().map_err(|_| {
+            invalid("scheduled ready-node Dispatch Authorization is invalid for pricing")
+        })?;
+        validate_ready_authorization_bindings(self, authorization)?;
+        let maximum = maximum_cost(self, authorization.budgets.max_output_tokens)?;
+        if maximum > authorization.budgets.max_cost_usd_micros {
+            return Err(invalid(
+                "authorized scheduled ready-node Dispatch cost budget is insufficient",
+            ));
+        }
+        Ok(GroupAgentNodePricingQuote {
+            pricing_snapshot_sha256: self.pricing_snapshot_sha256.clone(),
+            destination_sha256: self.destination_sha256.clone(),
+            max_input_tokens: self.max_input_tokens,
+            max_output_tokens: authorization.budgets.max_output_tokens,
+            max_cost_usd_micros: maximum,
+        })
+    }
 }
 
 fn validate_scheduled_authorization_bindings(
@@ -68,5 +102,20 @@ fn validate_scheduled_authorization_bindings(
         && authorization.budgets.pricing_snapshot_sha256 == snapshot.pricing_snapshot_sha256;
     exact.then_some(()).ok_or_else(|| {
         invalid("pricing snapshot and scheduled Node Dispatch Authorization disagree")
+    })
+}
+
+fn validate_ready_authorization_bindings(
+    snapshot: &GroupAgentNodePricingSnapshot,
+    authorization: &GroupAgentScheduledReadyNodeDispatchAuthorization,
+) -> Result<(), GroupAgentNodePricingValidationError> {
+    let exact = authorization.provider_kind == snapshot.provider_kind
+        && authorization.endpoint == snapshot.endpoint
+        && authorization.model == snapshot.model
+        && authorization.destination_sha256 == snapshot.destination_sha256
+        && authorization.pricing_snapshot_sha256 == snapshot.pricing_snapshot_sha256
+        && authorization.budgets.pricing_snapshot_sha256 == snapshot.pricing_snapshot_sha256;
+    exact.then_some(()).ok_or_else(|| {
+        invalid("pricing snapshot and scheduled ready-node Dispatch Authorization disagree")
     })
 }

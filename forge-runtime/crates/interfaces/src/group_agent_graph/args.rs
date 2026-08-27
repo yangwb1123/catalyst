@@ -6,6 +6,8 @@ use std::collections::VecDeque;
 mod dispatch_execute_args;
 #[path = "ready_release_args.rs"]
 mod ready_release_args;
+#[path = "ready_step_args.rs"]
+mod ready_step_args;
 #[path = "reconcile_args.rs"]
 mod reconcile_args;
 #[path = "scheduled_contract_args.rs"]
@@ -57,6 +59,7 @@ fn parse_run(
         Some("scheduled-contract") => scheduled_contract_args::parse(tokens, idempotency_key),
         Some("reconcile") => reconcile_args::parse(tokens),
         Some("ready-release") => ready_release_args::parse(tokens),
+        Some("step") => ready_step_args::parse(tokens),
         Some("show") => parse_run_show(tokens),
         Some("list") => parse_run_list(tokens),
         Some(value) => Err(with_usage(&format!(
