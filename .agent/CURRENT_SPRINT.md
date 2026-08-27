@@ -2134,3 +2134,57 @@ contract/provider/authorization header 都固定 initial candidate/ordinal 0，�
 max-one future release policy。它仍不是 consent、current execution authority、lane claim 或 provider
 send。只有该 parity、fresh exact consent、snapshot-to-claim CAS、竞争、pid-sidecar owner、hard-crash/
 uncertain-commit 与安全复审闭合后，才可实现 effectful one-node step；durable controller 继续更晚。
+
+### Sprint 138 — Scheduled Ready-Node Release Authorization v2（zero-effect runtime slice）— ADR-0097 Proposed
+
+本 sprint 保持既有 scheduled release v1 的 initial/ordinal-0 wire、command 与 digest 不变，新增独立
+`forge graph-scheduled-ready-node-dispatch-authorize --control FILE|-` 和 exact `--protocol-version=2`，
+以及 Runtime `group graph run ready-release GRAPH_RUN_ID --core-bin ABS --core-bin-sha256 SHA`。v2 control
+和 authorization 分别使用 domain-separated
+`forge.group-agent-scheduled-ready-node-dispatch-release-control.v2\0` 与
+`forge.group-agent-scheduled-ready-node-dispatch-authorization.v2\0` identity；完整 control 上限 64 MiB，metadata-only
+authorization 上限 1 MiB。
+
+Application 先通过既有 atomic progress reader 取得 S0，释放其 transaction 后调用 pinned reconcile Core，
+验证 exact source-bound decision 并要求 `ready`。Rust SQLite adapter 随后用 S0 digest 与 selected ordinal/node
+在单个 deferred transaction 中原子重建 source bundle A：exact Run/Graph/schedule、同一 progress snapshot、
+selected initial 或 successor candidate、prepared request/exact body、有序直接前驱 terminal receipt closure，
+以及只在显式 content flag 下允许的首直接前驱 durable result artifact。A 关闭后 Application 才把 exact
+reconcile decision 绑定进 control 并调用 handshake-2 authorization Core；Core 严格解码 control、重跑
+ADR-0096 reconcile，并只为同一 `ready` ordinal/node 重建 source。authorization Core 返回后 Runtime 通过同一路径
+读取第二个 atomic bundle B，要求 A/B source 与用同一 decision 构造的 control bytes exact 相等，再验证只含 metadata 的
+`maximum_future_node_releases=1` authorization。真实 Application service + SQLite barrier 在 A 后暂停
+authorization Core port，合法 claim 提交后再恢复 B，精确返回 `SourceChanged`；较低层 snapshot interleaving 另覆盖
+terminalization 后旧 snapshot 拒绝。没有 transaction 跨越 child process。
+
+initial 必须是空 receipt closure/content-free；successor 精确使用 schedule canonical direct-predecessor
+order，允许空 direct set，receipt-bearing 路径分别覆盖 content-free 与绑定首 receipt 的可选 result
+artifact。content presence 不推导 disclosure consent，`ready`、receipt 或 authorization 也不推导
+off-machine consent。compiled Go/Rust 边界覆盖 initial、empty-direct successor、receipt-bearing content-free、
+content-bearing successor，以及完整 32-node、31-receipt、ordinal-31 五种 shape；mutation matrix 覆盖
+non-ready、stale/decision/source drift、closure/order/content/digest、
+strict canonical framing、wrong pin/handshake 与 process I/O bounds。
+Accepted ADR-0033 的 predecessor output 保持 exact nonempty valid UTF-8，而 task/acceptance 仍用既有 prose
+grammar；双语言 user-Prompt ceiling 扩为精确 6,553,926 bytes，并用 1 MiB NUL 验证最坏 6x inner JSON
+escaping 仍落在 8 MiB candidate 内。Go canonical codec 将 encoding/json 的 U+2028/U+2029 JSONP escape
+归一为既有 Rust raw-scalar wire；包含这两个 scalar 的 candidate + durable artifact 已通过整份 Rust control
+→真实 Go Core→Rust authorization compiled 往返，literal `\\u2028` 文本保持不变。
+
+CLI 在 Hub/private input 前完成双 handshake，公共 JSON/Human 只输出 authorization metadata、Runtime-only
+effect facts 与同用户 trusted-Core 警示。official tested path 不做 migration 或 logical Hub write，不读
+credential/workspace、不构造 provider/transport、不联网、不收集/消费 consent、不 admit/release lifecycle、
+不 claim/release lane、不 send/terminalize/persist receipt/retry/resend/recover/advance。pin 只证明 binary bytes，
+handshake 只证明 wire compatibility；empty environment、sealed executable 与 bounded I/O 都不是 filesystem/
+network/syscall confinement、publisher authentication 或 function/effect attestation。
+
+聚焦验证为 Application unit **7/7**、Application + real SQLite A/B race **1/1**、ready-release Domain **6/6**、
+SQLite store **3/3**、Core bridge **2/2**、CLI compiled cross-language **6/6**；Go full/race/vet/build
+与 Rust workspace full test、fmt、strict Clippy、check/build
+均通过。v2 artifact 不持久化 consumption，也不消除 B 后 staleness；两个不变状态的调用可以得到相同
+deterministic policy，因为本切片没有 effect。
+
+**stop_condition:** 本 sprint 到 zero-effect max-one future-release policy 为止。后续 effectful one-node
+step 必须在 `BEGIN IMMEDIATE` 中把 fresh progress/decision/source 与 claim 做 CAS，独立取得 exact-request
+off-machine consent，并在 predecessor content 存在时另取 content consent；还须闭合单赢家竞争、lane/
+pid-sidecar ownership、one-shot send、post-claim no-resend、hard-crash 与 uncertain-commit。Durable controller、
+自动第二节点与 concurrent schedule-v2 wave 继续保持关闭。
