@@ -2,6 +2,8 @@
 
 use std::collections::VecDeque;
 
+#[path = "controller_args.rs"]
+mod controller_args;
 #[path = "dispatch_execute_args.rs"]
 mod dispatch_execute_args;
 #[path = "ready_release_args.rs"]
@@ -51,6 +53,7 @@ fn parse_run(
     match tokens.pop_front().as_deref() {
         Some("prepare") => parse_run_prepare(tokens, idempotency_key),
         Some("control") => parse_run_control(tokens),
+        Some("controller") => controller_args::parse(tokens),
         Some("contract") => parse_run_contract(tokens, idempotency_key),
         Some("dispatch") => parse_run_dispatch(tokens, idempotency_key),
         Some("schedule") => {

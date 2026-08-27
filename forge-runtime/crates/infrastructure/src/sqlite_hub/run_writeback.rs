@@ -135,6 +135,7 @@ fn run_entity(entity: HubEntity) -> Option<RunEntity> {
         | HubEntity::GroupAgentNodeDispatchRequest
         | HubEntity::GroupAgentNodeLifecycle
         | HubEntity::GroupAgentScheduledNodeLifecycle
+        | HubEntity::ScheduledGraphController
         | HubEntity::GovernanceRecord => None,
     }
 }

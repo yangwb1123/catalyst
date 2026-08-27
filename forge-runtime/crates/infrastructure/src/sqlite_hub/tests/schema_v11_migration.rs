@@ -103,14 +103,14 @@ fn future_schema_version_is_rejected_without_mutation() {
     let (root, database) = legacy_v10_database();
     let connection = open_database(&database).expect("migrate future-version fixture");
     connection
-        .pragma_update(None, "user_version", 29)
+        .pragma_update(None, "user_version", 30)
         .expect("mark future schema");
     let before = schema_snapshot(&connection);
     drop(connection);
 
     assert_open_corrupt(&database);
     let unchanged = Connection::open(&database).expect("reopen future schema directly");
-    assert_eq!(schema_version(&unchanged), 29);
+    assert_eq!(schema_version(&unchanged), 30);
     assert_eq!(schema_snapshot(&unchanged), before);
     drop((unchanged, root));
 }

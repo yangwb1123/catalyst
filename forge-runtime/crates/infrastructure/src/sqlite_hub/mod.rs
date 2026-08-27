@@ -38,6 +38,7 @@ mod run_read;
 mod run_read_snapshot_tests;
 mod run_write;
 mod run_writeback;
+mod scheduled_graph_controller;
 mod scheduled_graph_progress;
 mod schema;
 #[cfg(test)]
@@ -79,6 +80,8 @@ mod schema_v26_sql;
 mod schema_v27_sql;
 #[path = "schema_contract/v28_sql.rs"]
 mod schema_v28_sql;
+#[path = "schema_contract/v29_sql.rs"]
+mod schema_v29_sql;
 mod schema_v9_sql;
 mod write;
 

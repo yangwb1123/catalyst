@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{path::Path, sync::Arc};
 
 use forge_runtime_domain::{
     ClaimGroupAgentScheduledNodeDispatch, ClaimGroupAgentScheduledNodeDispatchResult,
@@ -98,6 +98,10 @@ impl Fixture {
 
     pub fn writer(&self) -> Arc<SqliteHubStore> {
         Arc::new(self.graph.store.clone())
+    }
+
+    pub fn database(&self) -> &Path {
+        &self.graph.database
     }
 
     pub fn pricing_json(&self) -> &str {

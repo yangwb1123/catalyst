@@ -185,6 +185,7 @@ fn without_v14(snapshot: &[SchemaRow]) -> Vec<SchemaRow> {
                 && !V16_OBJECTS.contains(&name.as_str())
                 && *name != "group_agent_graph_scheduled_node_successor_candidates"
                 && *name != "group_agent_graph_scheduled_node_successor_candidates_created"
+                && !super::V29_CONTROLLER_OBJECTS.contains(&name.as_str())
                 && !matches!(
                     name.as_str(),
                     "governance_record_append_batches"

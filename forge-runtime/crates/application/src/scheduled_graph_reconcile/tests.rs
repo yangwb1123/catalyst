@@ -34,6 +34,31 @@ fn service_returns_one_bound_core_decision() {
 }
 
 #[test]
+fn service_observes_the_atomic_snapshot_with_its_bound_decision() {
+    let snapshot = snapshot("graph-run-fixture");
+    let decision = decision(&snapshot);
+    let store = Arc::new(FakeStore::ok(snapshot.clone()));
+    let core = Arc::new(FakeCore::ok(decision.clone()));
+    let service = ScheduledGraphReconcileService::new(store.clone(), core.clone());
+
+    assert_eq!(
+        service.observe("graph-run-fixture").expect("observation"),
+        ScheduledGraphReconcileObservation {
+            snapshot: snapshot.clone(),
+            decision,
+        }
+    );
+    assert_eq!(
+        store.requests.lock().expect("requests").as_slice(),
+        ["graph-run-fixture"]
+    );
+    assert_eq!(
+        core.snapshots.lock().expect("snapshots").as_slice(),
+        [snapshot]
+    );
+}
+
+#[test]
 fn invalid_input_opens_neither_store_nor_core() {
     let snapshot = snapshot("graph-run-fixture");
     let store = Arc::new(FakeStore::ok(snapshot.clone()));

@@ -15,8 +15,10 @@ use futures_util::stream;
 
 use super::sqlite_support;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum StoreFault {
+    #[default]
+    None,
     ClaimAfterCommit,
     TerminalAfterCommit,
 }
@@ -25,6 +27,15 @@ pub enum StoreFault {
 pub enum CoreBehavior {
     Receipt,
     Fail,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[allow(dead_code)]
+pub enum ProviderBehavior {
+    #[default]
+    Completed,
+    Length,
+    TransportError,
 }
 
 #[derive(Clone, Default)]
@@ -59,6 +70,16 @@ pub fn service(
     fault: StoreFault,
     core: CoreBehavior,
 ) -> GroupAgentScheduledNodeDispatchExecutionService {
+    service_with_provider_behavior(fixture, counters, fault, core, ProviderBehavior::Completed)
+}
+
+pub fn service_with_provider_behavior(
+    fixture: &sqlite_support::Fixture,
+    counters: &Counters,
+    fault: StoreFault,
+    core: CoreBehavior,
+    provider_behavior: ProviderBehavior,
+) -> GroupAgentScheduledNodeDispatchExecutionService {
     let store = fixture.writer();
     let lifecycles = Arc::new(FaultStore {
         inner: store.clone(),
@@ -75,6 +96,7 @@ pub fn service(
         lifecycles,
         Arc::new(ProviderFactory {
             calls: counters.provider.clone(),
+            behavior: provider_behavior,
         }),
         Arc::new(Credential),
         Arc::new(TerminalCore {
@@ -88,6 +110,24 @@ pub fn service(
 struct FaultStore {
     inner: Arc<SqliteHubStore>,
     fault: StoreFault,
+}
+
+impl GroupAgentScheduledNodeAnyLifecycleStore for FaultStore {
+    fn inspect_group_agent_scheduled_node_any_lifecycle(
+        &self,
+        provider_request_id: &str,
+    ) -> Result<GroupAgentScheduledNodeAnyLifecycleInspection, HubStoreError> {
+        self.inner
+            .inspect_group_agent_scheduled_node_any_lifecycle(provider_request_id)
+    }
+
+    fn adjudicate_group_agent_scheduled_node_any_dispatch(
+        &self,
+        request: &AdjudicateGroupAgentScheduledNodeDispatch,
+    ) -> Result<GroupAgentScheduledNodeAnyLifecycleInspection, HubStoreError> {
+        self.inner
+            .adjudicate_group_agent_scheduled_node_any_dispatch(request)
+    }
 }
 
 impl GroupAgentScheduledNodeLifecycleStore for FaultStore {
@@ -174,6 +214,7 @@ fn codec_error() -> ProviderError {
 
 struct ProviderFactory {
     calls: Arc<AtomicUsize>,
+    behavior: ProviderBehavior,
 }
 
 impl GroupAgentScheduledNodeProviderFactory for ProviderFactory {
@@ -207,6 +248,7 @@ impl GroupAgentScheduledNodeProviderFactory for ProviderFactory {
         }
         Ok(Box::new(Provider {
             calls: self.calls.clone(),
+            behavior: self.behavior,
         }))
     }
 }
@@ -219,27 +261,43 @@ fn provider_factory_error() -> GroupAgentScheduledNodeProviderFactoryError {
 
 struct Provider {
     calls: Arc<AtomicUsize>,
+    behavior: ProviderBehavior,
 }
 
 impl PreparedModelProvider for Provider {
     fn stream_prepared(&self, request: PreparedModelRequest) -> ModelEventStream {
         assert!(!request.body().is_empty());
         self.calls.fetch_add(1, Ordering::AcqRel);
-        Box::pin(stream::iter([
-            Ok(ModelEvent::TextDelta {
-                delta: "done".into(),
-            }),
-            Ok(ModelEvent::Usage {
-                usage: Usage {
-                    input_tokens: 1,
-                    output_tokens: 1,
-                },
-            }),
-            Ok(ModelEvent::Finished {
-                reason: ModelFinishReason::Completed,
-            }),
-        ]))
+        Box::pin(stream::iter(provider_events(self.behavior)))
     }
+}
+
+fn provider_events(behavior: ProviderBehavior) -> Vec<Result<ModelEvent, ProviderError>> {
+    match behavior {
+        ProviderBehavior::Completed => terminal_events("done", ModelFinishReason::Completed),
+        ProviderBehavior::Length => terminal_events("partial", ModelFinishReason::Length),
+        ProviderBehavior::TransportError => vec![Err(ProviderError::new(
+            "transport_error",
+            "deterministic transport uncertainty",
+            true,
+        ))],
+    }
+}
+
+fn terminal_events(
+    text: &str,
+    reason: ModelFinishReason,
+) -> Vec<Result<ModelEvent, ProviderError>> {
+    vec![
+        Ok(ModelEvent::TextDelta { delta: text.into() }),
+        Ok(ModelEvent::Usage {
+            usage: Usage {
+                input_tokens: 1,
+                output_tokens: 1,
+            },
+        }),
+        Ok(ModelEvent::Finished { reason }),
+    ]
 }
 
 struct Credential;
@@ -315,7 +373,13 @@ fn terminal_receipt(
         artifact_kind: artifact.artifact_kind,
         artifact_id: artifact.artifact_id.clone(),
         artifact_sha256: artifact.artifact_sha256.clone(),
-        node_outcome: GroupAgentNodeTerminalOutcome::Completed,
+        node_outcome: match artifact.classification {
+            GroupAgentNodeTerminalClassification::Completed => {
+                GroupAgentNodeTerminalOutcome::Completed
+            }
+            GroupAgentNodeTerminalClassification::Length => GroupAgentNodeTerminalOutcome::Failed,
+            _ => GroupAgentNodeTerminalOutcome::FailedUncertain,
+        },
         retry_authorized: false,
         lane_release_authorized: true,
         successor_advance_authorized: false,

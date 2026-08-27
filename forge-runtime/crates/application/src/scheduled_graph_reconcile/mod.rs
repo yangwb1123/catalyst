@@ -27,6 +27,12 @@ pub enum ScheduledGraphReconcileServiceError {
     InvalidCoreDecision,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ScheduledGraphReconcileObservation {
+    pub snapshot: ScheduledGraphProgressSnapshot,
+    pub decision: ScheduledGraphReconcileDecision,
+}
+
 pub struct ScheduledGraphReconcileService {
     progress: Arc<dyn ScheduledGraphProgressStore>,
     core: Arc<dyn ScheduledGraphReconcilePort>,
@@ -52,6 +58,21 @@ impl ScheduledGraphReconcileService {
         &self,
         graph_run_id: &str,
     ) -> Result<ScheduledGraphReconcileDecision, ScheduledGraphReconcileServiceError> {
+        self.observe(graph_run_id)
+            .map(|observation| observation.decision)
+    }
+
+    /// Loads one atomic progress snapshot and returns it with the bound Core decision.
+    ///
+    /// This service does not persist, claim, dispatch, retry, or release authority.
+    ///
+    /// # Errors
+    ///
+    /// Returns a redacted input, storage, corruption, Core, or decision error.
+    pub fn observe(
+        &self,
+        graph_run_id: &str,
+    ) -> Result<ScheduledGraphReconcileObservation, ScheduledGraphReconcileServiceError> {
         validate_identifier(graph_run_id)?;
         let snapshot = self
             .progress
@@ -62,7 +83,7 @@ impl ScheduledGraphReconcileService {
         decision
             .validate_against_snapshot(&snapshot)
             .map_err(|_| ScheduledGraphReconcileServiceError::InvalidCoreDecision)?;
-        Ok(decision)
+        Ok(ScheduledGraphReconcileObservation { snapshot, decision })
     }
 }
 

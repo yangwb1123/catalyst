@@ -82,6 +82,20 @@ pub const TEXT: &str = "usage:
     --expected-provider-request-id ID --expected-ready-authorization-sha256 SHA256
     --pricing FILE|- --core-bin ABSOLUTE_FILE --core-bin-sha256 SHA256
     --confirm-off-machine [--confirm-predecessor-content] [--include-result]
+  forge-runtime [OPTIONS] group graph run controller start GRAPH_RUN_ID
+    --expected-schedule-sha256 SHA256 --core-bin ABSOLUTE_FILE --core-bin-sha256 SHA256
+    --endpoint URL --model MODEL --max-output-tokens N --max-model-output-bytes N
+    --max-model-events N --timeout-ms N --max-cost-usd-micros N
+    --pricing-snapshot-sha256 SHA256 --max-result-bytes N
+    --max-effectful-steps N --max-total-cost-usd-micros N
+  forge-runtime [OPTIONS] group graph run controller show GRAPH_RUN_ID
+  forge-runtime [OPTIONS] group graph run controller advance GRAPH_RUN_ID
+    --core-bin ABSOLUTE_FILE --core-bin-sha256 SHA256
+  forge-runtime [OPTIONS] group graph run controller step GRAPH_RUN_ID
+    --expected-awaiting-event-sha256 SHA256 --expected-provider-request-id ID
+    --expected-authorization-sha256 SHA256
+    --pricing FILE|- --core-bin ABSOLUTE_FILE --core-bin-sha256 SHA256
+    --confirm-off-machine [--confirm-predecessor-content] [--include-result]
   forge-runtime [OPTIONS] group graph run dispatch prepare GRAPH_RUN_ID
                 [--idempotency-key KEY]
   forge-runtime [OPTIONS] group graph run dispatch show DISPATCH_REQUEST_ID
@@ -155,7 +169,7 @@ pub const TEXT: &str = "usage:
   Governance journal append validates one exact record set before opening the Hub.
   Journal reads require an existing current-schema Hub and never create or migrate it.
   Ordinary show/list/head reads use the immutable sidecar-rejecting path. Semantic
-  reads use exact-v28 live mode=ro/query_only and may coordinate transient WAL/SHM.
+  reads use exact-v29 live mode=ro/query_only and may coordinate transient WAL/SHM.
   Journal show/list omit exact record content unless --include-record is explicit.
   A structural head reports sequence position only, never truth, freshness, or authority.
   Semantic view reads require explicit caller time and report deterministic projection,
@@ -246,6 +260,19 @@ pub const TEXT: &str = "usage:
   reproduce private source. The pinned Core is trusted same-user code, not an
   effect-contained or attested sandbox. No automatic retry, recovery, successor
   wave, workspace/tool access, or Conversation/Prompt/memory writeback occurs.
+  Group graph run controller is the bounded crash-recoverable serial whole-Graph
+  surface. start/advance perform only pinned-Core reconciliation, candidate
+  materialization, local admission, request preparation, and fresh authorization;
+  they stop before each external request. Core-using start/advance/step are Linux-only
+  because the pinned executable is copied into sealed memory; show does not invoke Core.
+  Automatic successor materialization passes terminal receipts, not predecessor
+  plaintext; an externally precreated content-bearing candidate remains subject to
+  separate fresh content consent. Every controller step requires exact
+  current awaiting-event/request/authorization anchors and fresh consent, reserves one durable
+  step/cost budget before invoking the existing ready-node executor at most once,
+  never automatically retries or resends, and never reuses prior consent after a crash.
+  Claimed, quarantined, adjudicated, failed, uncertain, incompatible, and exhausted
+  states stop explicitly. show is a metadata-only current-schema read.
   Group graph run dispatch prepare uses only the pure local Responses codec and
   persists exact request bytes. It obtains no consent, reads no credential, releases
   no dispatch authority, and invokes no provider, network, workspace, tool, result,

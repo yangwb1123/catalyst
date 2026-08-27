@@ -7,11 +7,10 @@ use crate::runtime_domain::{
     GroupAgentGraphRunInspection, GroupAgentNodeTerminalOutcome,
     GroupAgentScheduledNodeContractCandidate, GroupAgentScheduledNodeContractInspection,
     GroupAgentScheduledNodeContractRecord, GroupAgentScheduledNodeContractScope,
-    GroupAgentScheduledNodeLifecycleInspection, GroupAgentScheduledNodeLifecycleStatus,
-    GroupAgentScheduledNodePredecessorOutcome, GroupAgentScheduledNodePredecessorReceipt,
-    GroupAgentScheduledNodeTerminalArtifact, GroupAgentScheduledNodeTerminalArtifactKind,
-    GroupAgentScheduledNodeTerminalReceipt, MAX_GROUP_AGENT_GRAPH_IDEMPOTENCY_KEY_BYTES,
-    MAX_GROUP_AGENT_SCHEDULED_NODE_CONTRACT_BYTES,
+    GroupAgentScheduledNodeLifecycleStatus, GroupAgentScheduledNodePredecessorOutcome,
+    GroupAgentScheduledNodePredecessorReceipt, GroupAgentScheduledNodeTerminalArtifact,
+    GroupAgentScheduledNodeTerminalArtifactKind, GroupAgentScheduledNodeTerminalReceipt,
+    MAX_GROUP_AGENT_GRAPH_IDEMPOTENCY_KEY_BYTES, MAX_GROUP_AGENT_SCHEDULED_NODE_CONTRACT_BYTES,
     MAX_GROUP_AGENT_SCHEDULED_NODE_CONTRACT_LIST_LIMIT,
 };
 
@@ -293,17 +292,16 @@ pub(super) fn verify_content_presence(
 }
 
 pub(super) fn validated_terminal_result_artifact(
-    inspection: &GroupAgentScheduledNodeLifecycleInspection,
+    inspection: &crate::runtime_domain::GroupAgentScheduledNodeAnyLifecycleInspection,
 ) -> Result<&GroupAgentScheduledNodeTerminalArtifact, GroupAgentScheduledNodeContractServiceError> {
     inspection
         .validate()
         .map_err(|error| corrupt(&error.to_string()))?;
-    if inspection.status != GroupAgentScheduledNodeLifecycleStatus::Terminalized {
+    if inspection.status() != GroupAgentScheduledNodeLifecycleStatus::Terminalized {
         return Err(invalid("predecessor lifecycle is not terminalized"));
     }
     let artifact = inspection
-        .artifact
-        .as_ref()
+        .artifact()
         .ok_or_else(|| corrupt("terminalized lifecycle has no artifact for predecessor content"))?;
     if artifact.artifact_kind != GroupAgentScheduledNodeTerminalArtifactKind::Result {
         return Err(invalid(

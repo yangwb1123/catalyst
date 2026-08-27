@@ -136,6 +136,9 @@ fn populated_v14_candidate_and_all_prior_schema_survive_v15_migration_and_reopen
 
 fn downgrade_current_to_v14(legacy: &Connection) {
     legacy
+        .execute_batch(super::DROP_V29_CONTROLLER_SQL)
+        .expect("drop v29 controller journal");
+    legacy
         .execute_batch(&format!(
             "DROP TABLE {REQUEST_TABLE};
              DROP INDEX {};
@@ -255,7 +258,7 @@ fn current_physical_columns_and_catalog_counts_are_locked() {
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .expect("catalog counts");
-    assert_eq!((tables, implicit_indexes, explicit_indexes), (40, 102, 39));
+    assert_eq!((tables, implicit_indexes, explicit_indexes), (42, 107, 40));
     drop((connection, root));
 }
 
@@ -355,6 +358,7 @@ fn without_v15_and_v16(snapshot: &[SchemaRow]) -> Vec<SchemaRow> {
                 && !V16_INDEXES.contains(&name.as_str())
                 && *name != "group_agent_graph_scheduled_node_successor_candidates"
                 && *name != "group_agent_graph_scheduled_node_successor_candidates_created"
+                && !super::V29_CONTROLLER_OBJECTS.contains(&name.as_str())
                 && !matches!(
                     name.as_str(),
                     "governance_record_append_batches"

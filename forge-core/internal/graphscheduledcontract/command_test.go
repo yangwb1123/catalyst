@@ -34,6 +34,42 @@ func assertCommand(t *testing.T, args []string, input string, want []byte) {
 	}
 }
 
+func TestCommandProtocolVersionIsExactExclusiveAndInputFree(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Command([]string{"--protocol-version"}, forbiddenReader{}, &stdout, &stderr)
+	if code != 0 || stdout.String() != "2" || stderr.String() != "" {
+		t.Fatalf("protocol version code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	for _, args := range [][]string{
+		{"--protocol-version", "--control", "-"},
+		{"--protocol-version", "extra"},
+		{"--protocol-version", "--protocol-version"},
+	} {
+		stdout.Reset()
+		stderr.Reset()
+		code = Command(args, forbiddenReader{}, &stdout, &stderr)
+		wantError := "forge graph-scheduled-node-contract: invalid arguments\n"
+		if code != 2 || stdout.String() != "" || stderr.String() != wantError {
+			t.Fatalf("args=%v code=%d stdout=%q stderr=%q", args, code, stdout.String(), stderr.String())
+		}
+	}
+}
+
+func TestCommandProtocolVersionReportsExactWriteFailure(t *testing.T) {
+	var stderr bytes.Buffer
+	code := Command([]string{"--protocol-version"}, forbiddenReader{}, shortWriter{}, &stderr)
+	want := "forge graph-scheduled-node-contract: cannot write protocol version\n"
+	if code != 1 || stderr.String() != want {
+		t.Fatalf("protocol write code=%d stderr=%q", code, stderr.String())
+	}
+}
+
+type forbiddenReader struct{}
+
+func (forbiddenReader) Read([]byte) (int, error) {
+	panic("protocol handshake must not read control input")
+}
+
 func TestCommandRejectsArgumentsAndPrivateInputWithoutEcho(t *testing.T) {
 	valid := fixtureCommandArgs(readSourceFixture(t).Input.ExecutionOptions, "-")
 	cases := [][]string{nil, append(valid, "extra"), append(valid, "--control", "-"),
@@ -91,7 +127,7 @@ func TestCommandHelpStatesInitialPassiveFence(t *testing.T) {
 	code := Command([]string{"--help"}, strings.NewReader("secret"), &stdout, &stderr)
 	for _, phrase := range []string{
 		"initial-node-only", "grants no lifecycle", "successor authority",
-		"--predecessor-content FILE|-",
+		"--predecessor-content FILE|-", "--protocol-version",
 	} {
 		if code != 0 || stdout.Len() != 0 || !strings.Contains(stderr.String(), phrase) {
 			t.Fatalf("help missing %q: code=%d stdout=%q stderr=%q", phrase, code, stdout.String(), stderr.String())

@@ -88,6 +88,10 @@ struct RuntimeEffectFactsView {
 }
 
 impl ScheduledReadyNodeStepCliOutput {
+    pub(super) const fn metadata_only(&self) -> bool {
+        self.metadata_only
+    }
+
     pub(super) fn from_result(
         result: ExecuteGroupAgentScheduledReadyNodeDispatchResult,
         predecessor_consent: bool,

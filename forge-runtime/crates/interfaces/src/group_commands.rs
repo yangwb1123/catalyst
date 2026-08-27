@@ -48,6 +48,7 @@ pub enum GroupGraphRunCommand {
         plan_source: String,
     },
     Control(GroupGraphRunControlCommand),
+    Controller(GroupGraphRunControllerCommand),
     Contract(GroupGraphRunContractCommand),
     Dispatch(GroupGraphRunDispatchCommand),
     Schedule(GroupGraphRunScheduleCommand),
@@ -71,6 +72,53 @@ pub enum GroupGraphRunCommand {
         graph_id: Option<String>,
         limit: usize,
     },
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub enum GroupGraphRunControllerCommand {
+    Start(Box<GroupGraphRunControllerStartOptions>),
+    Advance {
+        graph_run_id: String,
+        core_bin: String,
+        core_bin_sha256: String,
+    },
+    Show {
+        graph_run_id: String,
+    },
+    Step(Box<GroupGraphRunControllerStepOptions>),
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub struct GroupGraphRunControllerStartOptions {
+    pub graph_run_id: String,
+    pub expected_schedule_sha256: String,
+    pub core_bin: String,
+    pub core_bin_sha256: String,
+    pub endpoint: String,
+    pub model: String,
+    pub max_output_tokens: u64,
+    pub max_model_output_bytes: u64,
+    pub max_model_events: u64,
+    pub timeout_ms: u64,
+    pub max_cost_usd_micros: u64,
+    pub pricing_snapshot_sha256: String,
+    pub max_result_bytes: u64,
+    pub max_effectful_steps: u16,
+    pub max_total_cost_usd_micros: u64,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub struct GroupGraphRunControllerStepOptions {
+    pub graph_run_id: String,
+    pub expected_awaiting_event_sha256: String,
+    pub expected_provider_request_id: String,
+    pub expected_authorization_sha256: String,
+    pub pricing_source: String,
+    pub core_bin: String,
+    pub core_bin_sha256: String,
+    pub confirm_off_machine: bool,
+    pub confirm_predecessor_content: bool,
+    pub include_result: bool,
 }
 
 #[derive(Debug, Eq, PartialEq)]

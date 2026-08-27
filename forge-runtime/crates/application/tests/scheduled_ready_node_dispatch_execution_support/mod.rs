@@ -462,11 +462,12 @@ fn terminal_receipt(
         artifact_kind: artifact.artifact_kind,
         artifact_id: artifact.artifact_id.clone(),
         artifact_sha256: artifact.artifact_sha256.clone(),
-        node_outcome: if artifact.classification == GroupAgentNodeTerminalClassification::Completed
-        {
-            GroupAgentNodeTerminalOutcome::Completed
-        } else {
-            GroupAgentNodeTerminalOutcome::FailedUncertain
+        node_outcome: match artifact.classification {
+            GroupAgentNodeTerminalClassification::Completed => {
+                GroupAgentNodeTerminalOutcome::Completed
+            }
+            GroupAgentNodeTerminalClassification::Length => GroupAgentNodeTerminalOutcome::Failed,
+            _ => GroupAgentNodeTerminalOutcome::FailedUncertain,
         },
         retry_authorized: false,
         lane_release_authorized: true,

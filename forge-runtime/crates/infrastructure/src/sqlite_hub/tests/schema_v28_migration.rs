@@ -118,6 +118,9 @@ fn exact_v27_fixture() -> (TempDir, PathBuf) {
     let connection = open_database(&database).expect("create current fixture");
     seed_runs(&connection);
     connection
+        .execute_batch(super::DROP_V29_CONTROLLER_SQL)
+        .expect("restore pre-v29 schema");
+    connection
         .execute_batch(super::DROP_V28_LINEAGE_SQL)
         .expect("restore exact v27 schema");
     connection

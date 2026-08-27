@@ -3,9 +3,9 @@ use std::sync::Arc;
 use crate::runtime_domain::{
     GroupAgentGraphExecutionScheduleInspection, GroupAgentGraphExecutionScheduleStore,
     GroupAgentGraphRunInspection, GroupAgentGraphRunStore, GroupAgentGraphStore,
-    GroupAgentNodeTerminalOutcome, GroupAgentScheduledNodeContractInspection,
-    GroupAgentScheduledNodeContractRecord, GroupAgentScheduledNodeContractScope,
-    GroupAgentScheduledNodeLifecycleInspection, GroupAgentScheduledNodeLifecycleStatus,
+    GroupAgentNodeTerminalOutcome, GroupAgentScheduledNodeAnyLifecycleInspectionStore,
+    GroupAgentScheduledNodeContractInspection, GroupAgentScheduledNodeContractRecord,
+    GroupAgentScheduledNodeContractScope, GroupAgentScheduledNodeLifecycleStatus,
     GroupAgentScheduledNodeLifecycleStore, GroupAgentScheduledNodeSuccessorStore,
     GroupAgentScheduledNodeTerminalArtifact, GroupAgentScheduledNodeTerminalArtifactKind,
 };
@@ -22,6 +22,8 @@ use super::{
     },
     snapshot,
 };
+
+mod lifecycle;
 
 /// Input for one effect-free successor-candidate admission.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -51,7 +53,7 @@ pub struct GroupAgentScheduledNodeSuccessorService {
     runs: Arc<dyn GroupAgentGraphRunStore>,
     schedules: Arc<dyn GroupAgentGraphExecutionScheduleStore>,
     successors: Arc<dyn GroupAgentScheduledNodeSuccessorStore>,
-    lifecycles: Arc<dyn GroupAgentScheduledNodeLifecycleStore>,
+    lifecycles: Arc<dyn GroupAgentScheduledNodeAnyLifecycleInspectionStore>,
 }
 
 impl GroupAgentScheduledNodeSuccessorService {
@@ -63,6 +65,24 @@ impl GroupAgentScheduledNodeSuccessorService {
         schedules: Arc<dyn GroupAgentGraphExecutionScheduleStore>,
         successors: Arc<dyn GroupAgentScheduledNodeSuccessorStore>,
         lifecycles: Arc<dyn GroupAgentScheduledNodeLifecycleStore>,
+    ) -> Self {
+        Self {
+            graphs,
+            runs,
+            schedules,
+            successors,
+            lifecycles: lifecycle::legacy_inspection_store(lifecycles),
+        }
+    }
+
+    #[must_use]
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_with_any_lifecycles(
+        graphs: Arc<dyn GroupAgentGraphStore>,
+        runs: Arc<dyn GroupAgentGraphRunStore>,
+        schedules: Arc<dyn GroupAgentGraphExecutionScheduleStore>,
+        successors: Arc<dyn GroupAgentScheduledNodeSuccessorStore>,
+        lifecycles: Arc<dyn GroupAgentScheduledNodeAnyLifecycleInspectionStore>,
     ) -> Self {
         Self {
             graphs,
@@ -133,7 +153,7 @@ impl GroupAgentScheduledNodeSuccessorService {
         validate_identifier(provider_request_id, "provider request ID")?;
         let inspection = self
             .lifecycles
-            .inspect_group_agent_scheduled_node_lifecycle(provider_request_id)
+            .inspect_group_agent_scheduled_node_lifecycle_any_family(provider_request_id)
             .map_err(GroupAgentScheduledNodeContractServiceError::from)?;
         let (receipt_json, receipt_sha256) = terminal_receipt_evidence(&inspection)?;
         Ok(ExportedPredecessorReceipt {
@@ -297,7 +317,7 @@ impl GroupAgentScheduledNodeSuccessorService {
             .ok_or_else(|| corrupt("successor candidate has no predecessor receipt"))?;
         let lifecycle = self
             .lifecycles
-            .inspect_group_agent_scheduled_node_lifecycle(&receipt.provider_request_id)
+            .inspect_group_agent_scheduled_node_lifecycle_any_family(&receipt.provider_request_id)
             .map_err(GroupAgentScheduledNodeContractServiceError::from)?;
         let artifact = validated_terminal_result_artifact(&lifecycle)?;
         stored_predecessor_content_matches(candidate, Some(artifact))
@@ -317,7 +337,7 @@ impl GroupAgentScheduledNodeSuccessorService {
             .ok_or_else(|| corrupt("successor candidate has no predecessor receipt"))?;
         let lifecycle = self
             .lifecycles
-            .inspect_group_agent_scheduled_node_lifecycle(&receipt.provider_request_id)
+            .inspect_group_agent_scheduled_node_lifecycle_any_family(&receipt.provider_request_id)
             .map_err(GroupAgentScheduledNodeContractServiceError::from)?;
         let artifact = validated_terminal_result_artifact(&lifecycle)?;
         result_artifact_text_matches(artifact, supplied)
@@ -332,13 +352,15 @@ impl GroupAgentScheduledNodeSuccessorService {
         for receipt in &candidate.request.predecessor_terminal_receipts {
             let inspection = self
                 .lifecycles
-                .inspect_group_agent_scheduled_node_lifecycle(&receipt.provider_request_id)
+                .inspect_group_agent_scheduled_node_lifecycle_any_family(
+                    &receipt.provider_request_id,
+                )
                 .map_err(GroupAgentScheduledNodeContractServiceError::from)?;
             // Stage-02 Finding 2: the durable lifecycle must belong to the
             // SAME Graph Run as the candidate — a genuine receipt from
             // another run of the same graph must not satisfy this run's
             // predecessor set.
-            if inspection.graph_run.run.graph_run_id != candidate.graph_run_id {
+            if inspection.graph_run().run.graph_run_id != candidate.graph_run_id {
                 return Err(invalid(
                     "predecessor lifecycle belongs to a different Graph Run",
                 ));
@@ -429,17 +451,16 @@ fn result_artifact_text_matches(
 
 /// Extracts the exact canonical receipt JSON from a terminalized lifecycle.
 fn terminal_receipt_evidence(
-    inspection: &GroupAgentScheduledNodeLifecycleInspection,
+    inspection: &crate::runtime_domain::GroupAgentScheduledNodeAnyLifecycleInspection,
 ) -> Result<(String, String), GroupAgentScheduledNodeContractServiceError> {
     inspection
         .validate()
         .map_err(|error| corrupt(&error.to_string()))?;
-    if inspection.status != GroupAgentScheduledNodeLifecycleStatus::Terminalized {
+    if inspection.status() != GroupAgentScheduledNodeLifecycleStatus::Terminalized {
         return Err(invalid("predecessor lifecycle is not terminalized"));
     }
     let receipt = inspection
-        .terminal_receipt
-        .as_ref()
+        .terminal_receipt()
         .ok_or_else(|| corrupt("terminalized lifecycle has no persisted receipt"))?;
     if receipt.node_outcome != GroupAgentNodeTerminalOutcome::Completed {
         return Err(invalid(
@@ -447,27 +468,25 @@ fn terminal_receipt_evidence(
         ));
     }
     let receipt_json = inspection
-        .terminal_receipt_json
-        .as_ref()
+        .terminal_receipt_json()
         .ok_or_else(|| corrupt("terminalized lifecycle has no receipt JSON"))?;
-    Ok((receipt_json.clone(), receipt.receipt_sha256.clone()))
+    Ok((receipt_json.to_owned(), receipt.receipt_sha256.clone()))
 }
 
 /// Verifies one consumed receipt against the durable terminal lifecycle:
 /// every candidate identity must equal the persisted evidence exactly.
 fn verify_receipt_binding(
-    inspection: &GroupAgentScheduledNodeLifecycleInspection,
+    inspection: &crate::runtime_domain::GroupAgentScheduledNodeAnyLifecycleInspection,
     receipt: &crate::runtime_domain::GroupAgentScheduledNodePredecessorReceipt,
 ) -> Result<(), GroupAgentScheduledNodeContractServiceError> {
     inspection
         .validate()
         .map_err(|error| corrupt(&error.to_string()))?;
-    if inspection.status != GroupAgentScheduledNodeLifecycleStatus::Terminalized {
+    if inspection.status() != GroupAgentScheduledNodeLifecycleStatus::Terminalized {
         return Err(invalid("predecessor lifecycle is not terminalized"));
     }
     let stored = inspection
-        .terminal_receipt
-        .as_ref()
+        .terminal_receipt()
         .ok_or_else(|| corrupt("terminalized lifecycle has no persisted receipt"))?;
     // Stage-02 Finding 2: predecessor evidence must belong to the SAME
     // Graph Run — a genuine receipt from another run of the same graph must

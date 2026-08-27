@@ -147,6 +147,7 @@ usage:
   forge graph-scheduled-node-terminal-receipt --protocol-version
   forge graph-execution-schedule --control FILE|-
   forge graph-scheduled-node-contract --control FILE|- --schedule-sha256 SHA256 --endpoint HTTPS_URL --model MODEL --max-output-tokens N --max-model-output-bytes N --max-model-events N --timeout-ms N --max-cost-usd-micros N --pricing-snapshot-sha256 SHA256 --max-result-bytes N
+  forge graph-scheduled-node-contract --protocol-version
   forge graph-scheduled-reconcile --snapshot FILE|-
   forge graph-scheduled-reconcile --protocol-version
   forge graph-scheduled-node-dispatch-authorize --control FILE|-

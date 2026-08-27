@@ -4,6 +4,10 @@ pub(crate) mod command;
 pub(crate) mod contract_command;
 #[path = "group_agent_graph/contract_output.rs"]
 pub(crate) mod contract_output;
+#[path = "group_agent_graph/controller_command.rs"]
+pub(crate) mod controller_command;
+#[path = "group_agent_graph/controller_output.rs"]
+pub(crate) mod controller_output;
 #[path = "group_agent_graph/dispatch_authorization_output.rs"]
 pub(crate) mod dispatch_authorization_output;
 #[path = "group_agent_graph/dispatch_command.rs"]

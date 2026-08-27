@@ -131,6 +131,9 @@ fn canonical_v25_fixture() -> (
     );
     let connection = fixture.connection();
     connection
+        .execute_batch(super::DROP_V29_CONTROLLER_SQL)
+        .expect("drop v29 controller journal");
+    connection
         .execute_batch(super::DROP_V28_LINEAGE_SQL)
         .expect("drop v28 Run lineage table");
     connection
@@ -201,6 +204,9 @@ fn assert_canonical_journal_survives(
 fn endpoint_only_v25_fixture() -> super::sqlite_group_agent_graph_run_support::Fixture {
     let fixture = sqlite_group_agent_graph_execution_schedule_support::prepared_fixture();
     let connection = fixture.connection();
+    connection
+        .execute_batch(super::DROP_V29_CONTROLLER_SQL)
+        .expect("drop v29 controller journal");
     connection
         .execute_batch(super::DROP_V28_LINEAGE_SQL)
         .expect("drop v28 Run lineage table");

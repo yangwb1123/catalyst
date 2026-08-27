@@ -19,6 +19,8 @@ use crate::{
 use super::{
     contract_command::{self, GroupAgentGraphControlContractCliOutput},
     contract_output::{self, GroupAgentNodeExecutionContractCliOutput},
+    controller_command,
+    controller_output::{self, ScheduledGraphControllerCliOutput},
     dispatch_command::{self, GroupAgentGraphRunDispatchCommandCliOutput},
     ready_release_command::{self, ScheduledReadyNodeReleaseCliOutput},
     ready_step_command,
@@ -45,6 +47,7 @@ pub enum GroupAgentGraphRunCommandCliOutput {
     Reconcile(Box<ScheduledGraphReconcileCliOutput>),
     ReadyRelease(Box<ScheduledReadyNodeReleaseCliOutput>),
     ReadyStep(Box<ScheduledReadyNodeStepCliOutput>),
+    Controller(Box<ScheduledGraphControllerCliOutput>),
 }
 
 pub async fn execute(
@@ -66,6 +69,7 @@ pub async fn execute(
         GroupGraphRunCommand::Control(command) => Ok(aux_output(
             contract_command::execute_control(args, command)?,
         )),
+        GroupGraphRunCommand::Controller(command) => execute_controller(args, command).await,
         GroupGraphRunCommand::Contract(command) => Ok(aux_output(
             contract_command::execute_contract(args, command)?,
         )),
@@ -95,6 +99,15 @@ pub async fn execute(
         } => execute_ready_release(args, graph_run_id, core_bin, core_bin_sha256),
         GroupGraphRunCommand::Step(options) => execute_ready_step(args, options).await,
     }
+}
+
+async fn execute_controller(
+    args: &Args,
+    command: &crate::args::GroupGraphRunControllerCommand,
+) -> Result<GroupAgentGraphRunCommandCliOutput, Box<dyn Error>> {
+    Ok(GroupAgentGraphRunCommandCliOutput::Controller(Box::new(
+        Box::pin(controller_command::execute(args, command)).await?,
+    )))
 }
 
 async fn execute_ready_step(
@@ -192,6 +205,9 @@ pub fn write_output(
         }
         GroupAgentGraphRunCommandCliOutput::ReadyStep(output) => {
             ready_step_output::write_output(output, json, writer)
+        }
+        GroupAgentGraphRunCommandCliOutput::Controller(output) => {
+            controller_output::write_output(output, json, writer)
         }
     }
 }

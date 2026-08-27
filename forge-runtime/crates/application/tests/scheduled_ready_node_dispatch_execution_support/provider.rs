@@ -16,6 +16,7 @@ use futures_util::stream;
 pub enum ProviderBehavior {
     #[default]
     Completed,
+    Length,
     TransportError,
 }
 
@@ -111,6 +112,20 @@ fn provider_events(behavior: ProviderBehavior) -> Vec<Result<ModelEvent, Provide
             }),
             Ok(ModelEvent::Finished {
                 reason: ModelFinishReason::Completed,
+            }),
+        ],
+        ProviderBehavior::Length => vec![
+            Ok(ModelEvent::TextDelta {
+                delta: "partial".into(),
+            }),
+            Ok(ModelEvent::Usage {
+                usage: Usage {
+                    input_tokens: 1,
+                    output_tokens: 1,
+                },
+            }),
+            Ok(ModelEvent::Finished {
+                reason: ModelFinishReason::Length,
             }),
         ],
         ProviderBehavior::TransportError => vec![Err(ProviderError::new(

@@ -21,6 +21,7 @@ use super::{
     schema_v24_sql::MIGRATE_V23_TO_V24_SQL,
     schema_v25_sql::MIGRATE_V24_TO_V25_SQL,
     schema_v28_sql::MIGRATE_V27_TO_V28_SQL,
+    schema_v29_sql::MIGRATE_V28_TO_V29_SQL,
 };
 use crate::runtime_domain::HubStoreError;
 use rusqlite::Connection;
@@ -33,6 +34,14 @@ pub(super) const DROP_V27_SEMANTIC_VIEW_SQL: &str = "DROP TABLE governance_claim
      DROP TABLE governance_claim_semantic_views;
      DROP TABLE governance_semantic_heads;";
 pub(super) const DROP_V28_LINEAGE_SQL: &str = "DROP TABLE run_lineages;";
+pub(super) const DROP_V29_CONTROLLER_SQL: &str =
+    "DROP TABLE group_agent_scheduled_graph_controller_events;
+     DROP TABLE group_agent_scheduled_graph_controllers;";
+pub(super) const V29_CONTROLLER_OBJECTS: &[&str] = &[
+    "group_agent_scheduled_graph_controllers",
+    "group_agent_scheduled_graph_controllers_schedule",
+    "group_agent_scheduled_graph_controller_events",
+];
 #[path = "tests/schema_migration_support.rs"]
 mod schema_migration_support;
 #[path = "tests/schema_open_adversarial.rs"]
@@ -63,6 +72,8 @@ mod schema_v26_migration_tests;
 mod schema_v27_migration_tests;
 #[path = "tests/schema_v28_migration.rs"]
 mod schema_v28_migration_tests;
+#[path = "tests/schema_v29_migration.rs"]
+mod schema_v29_migration_tests;
 #[path = "tests/schema_v5_migration.rs"]
 mod schema_v5_migration_tests;
 #[path = "tests/schema_v6_migration.rs"]

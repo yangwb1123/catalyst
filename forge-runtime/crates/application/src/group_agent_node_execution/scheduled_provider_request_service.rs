@@ -2,10 +2,10 @@ use std::sync::Arc;
 
 use crate::runtime_domain::{
     GroupAgentGraphExecutionScheduleStore, GroupAgentGraphRunStore, GroupAgentGraphStore,
-    GroupAgentScheduledNodeContractInspection, GroupAgentScheduledNodeContractStore,
-    GroupAgentScheduledNodeLifecycleStore, GroupAgentScheduledNodeProviderRequestInspection,
-    GroupAgentScheduledNodeProviderRequestRecord, GroupAgentScheduledNodeProviderRequestStore,
-    GroupAgentScheduledNodeSuccessorStore,
+    GroupAgentScheduledNodeAnyLifecycleInspectionStore, GroupAgentScheduledNodeContractInspection,
+    GroupAgentScheduledNodeContractStore, GroupAgentScheduledNodeLifecycleStore,
+    GroupAgentScheduledNodeProviderRequestInspection, GroupAgentScheduledNodeProviderRequestRecord,
+    GroupAgentScheduledNodeProviderRequestStore, GroupAgentScheduledNodeSuccessorStore,
 };
 
 use super::{
@@ -85,6 +85,40 @@ impl GroupAgentScheduledNodeProviderRequestService {
                 successor_contracts,
                 lifecycles,
             )),
+            provider_requests,
+            codec,
+        }
+    }
+
+    #[must_use]
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_with_any_lifecycle_successors(
+        graphs: Arc<dyn GroupAgentGraphStore>,
+        runs: Arc<dyn GroupAgentGraphRunStore>,
+        schedules: Arc<dyn GroupAgentGraphExecutionScheduleStore>,
+        scheduled_contracts: Arc<dyn GroupAgentScheduledNodeContractStore>,
+        successor_contracts: Arc<dyn GroupAgentScheduledNodeSuccessorStore>,
+        lifecycles: Arc<dyn GroupAgentScheduledNodeAnyLifecycleInspectionStore>,
+        provider_requests: Arc<dyn GroupAgentScheduledNodeProviderRequestStore>,
+        codec: Arc<dyn GroupAgentNodeDispatchRequestCodec>,
+    ) -> Self {
+        Self {
+            runs: Arc::clone(&runs),
+            scheduled_contracts: GroupAgentScheduledNodeContractService::new(
+                Arc::clone(&graphs),
+                Arc::clone(&runs),
+                Arc::clone(&schedules),
+                scheduled_contracts,
+            ),
+            successor_contracts: Some(
+                GroupAgentScheduledNodeSuccessorService::new_with_any_lifecycles(
+                    graphs,
+                    runs,
+                    schedules,
+                    successor_contracts,
+                    lifecycles,
+                ),
+            ),
             provider_requests,
             codec,
         }

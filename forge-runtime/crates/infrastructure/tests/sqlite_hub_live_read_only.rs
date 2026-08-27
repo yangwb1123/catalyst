@@ -11,7 +11,7 @@ fn exact_current_live_reader_opens_clean_state_without_changing_logical_content(
     let main_before = fs::read(&database).expect("read clean current main database");
 
     let live = SqliteHubStore::open_existing_current_live_read_only(&database)
-        .expect("open clean exact-v28 live reader");
+        .expect("open clean exact-v29 live reader");
     assert!(live.list_groups().expect("read clean snapshot").is_empty());
     drop(live);
 
@@ -59,7 +59,7 @@ fn exact_current_live_reader_includes_committed_hot_wal_without_logical_writes()
 fn exact_current_live_reader_rejects_old_and_future_hot_wal_versions() {
     let (_old_root, old_database) = fixture();
     let old_writer = hot_writer(&old_database);
-    downgrade_empty_v28_to_v26(&old_writer);
+    downgrade_empty_v29_to_v26(&old_writer);
     let old = SqliteHubStore::open_existing_current_live_read_only(&old_database)
         .expect_err("valid v26 requires an explicit upgrade");
     assert!(matches!(old, HubStoreError::Unavailable { .. }), "{old}");
@@ -71,7 +71,7 @@ fn exact_current_live_reader_rejects_old_and_future_hot_wal_versions() {
     let (_future_root, future_database) = fixture();
     let future_writer = hot_writer(&future_database);
     future_writer
-        .pragma_update(None, "user_version", 29)
+        .pragma_update(None, "user_version", 30)
         .expect("commit future version into hot WAL");
     let future = SqliteHubStore::open_existing_current_live_read_only(&future_database)
         .expect_err("future schema is unsupported");
@@ -156,10 +156,12 @@ fn hot_writer(database: &Path) -> Connection {
     writer
 }
 
-fn downgrade_empty_v28_to_v26(connection: &Connection) {
+fn downgrade_empty_v29_to_v26(connection: &Connection) {
     connection
         .execute_batch(
-            "DROP TABLE run_lineages;
+            "DROP TABLE group_agent_scheduled_graph_controller_events;
+             DROP TABLE group_agent_scheduled_graph_controllers;
+             DROP TABLE run_lineages;
              DROP TABLE governance_claim_validation_jobs;
              DROP TABLE governance_claim_semantic_views;
              DROP TABLE governance_semantic_heads;

@@ -118,6 +118,9 @@ fn populated_v26_fixture() -> super::sqlite_group_agent_graph_run_support::Fixtu
         .expect("append v27 migration journal fixture");
     let connection = fixture.connection();
     connection
+        .execute_batch(super::DROP_V29_CONTROLLER_SQL)
+        .expect("remove v29 controller journal");
+    connection
         .execute_batch(super::DROP_V28_LINEAGE_SQL)
         .expect("remove v28 Run lineage table");
     connection

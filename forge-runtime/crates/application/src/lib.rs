@@ -1,3 +1,6 @@
+#[cfg(test)]
+extern crate self as forge_runtime_application;
+
 mod catalog;
 mod conversation_history;
 mod emitter;
@@ -35,6 +38,7 @@ mod model_turn;
 mod output_limit;
 mod run_service;
 mod run_state;
+mod scheduled_graph_controller;
 mod scheduled_graph_reconcile;
 
 pub(crate) use forge_runtime_domain as runtime_domain;
@@ -198,6 +202,8 @@ pub use run_service::{
     PrepareRunBranch, PrepareRunBranchResult, PrepareRunRestart, PrepareRunRestartResult,
     RunService,
 };
+pub use scheduled_graph_controller::*;
 pub use scheduled_graph_reconcile::{
-    ScheduledGraphReconcileService, ScheduledGraphReconcileServiceError,
+    ScheduledGraphReconcileObservation, ScheduledGraphReconcileService,
+    ScheduledGraphReconcileServiceError,
 };

@@ -15,11 +15,14 @@ use sha2::{Digest, Sha256};
 mod pinned_executable;
 #[path = "core_terminal_bridge/process.rs"]
 mod process;
+#[path = "core_terminal_bridge/scheduled_node_materializer.rs"]
+mod scheduled_node_materializer;
 #[path = "core_terminal_bridge/scheduled_ready_release.rs"]
 mod scheduled_ready_release;
 
 use pinned_executable::PinnedCoreExecutable;
 use process::{CoreIo, core_command, process_io, terminate_process_tree, wait_bounded};
+pub use scheduled_node_materializer::PinnedScheduledNodeMaterializationBridge;
 pub use scheduled_ready_release::PinnedScheduledReadyNodeReleaseBridge;
 
 use crate::runtime_domain::{

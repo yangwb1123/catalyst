@@ -1,8 +1,3 @@
-use std::sync::OnceLock;
-
-use rusqlite::{Connection, Error as SqliteError, ErrorCode, OptionalExtension};
-use sha2::{Digest, Sha256};
-
 use super::super::{
     CREATE_V1_SCHEMA_SQL, HubStoreError, MIGRATE_V1_TO_V2_SQL, MIGRATE_V2_TO_V3_SQL,
     MIGRATE_V3_TO_V4_SQL, MIGRATE_V4_TO_V5_SQL, MIGRATE_V5_TO_V6_SQL, MIGRATE_V6_TO_V7_SQL,
@@ -11,8 +6,11 @@ use super::super::{
     MIGRATE_V15_TO_V16_SQL, MIGRATE_V16_TO_V17_SQL, MIGRATE_V17_TO_V18_SQL, MIGRATE_V18_TO_V19_SQL,
     MIGRATE_V19_TO_V20_SQL, MIGRATE_V20_TO_V21_SQL, MIGRATE_V21_TO_V22_SQL, MIGRATE_V22_TO_V23_SQL,
     MIGRATE_V23_TO_V24_SQL, MIGRATE_V24_TO_V25_SQL, MIGRATE_V25_TO_V26_SQL, MIGRATE_V26_TO_V27_SQL,
-    MIGRATE_V27_TO_V28_SQL,
+    MIGRATE_V27_TO_V28_SQL, MIGRATE_V28_TO_V29_SQL,
 };
+use rusqlite::{Connection, Error as SqliteError, ErrorCode, OptionalExtension};
+use sha2::{Digest, Sha256};
+use std::sync::OnceLock;
 #[path = "full_contract/divergent_v25.rs"]
 mod divergent_v25;
 #[path = "full_contract/legacy_digest.rs"]
@@ -33,6 +31,8 @@ mod v25;
 mod v27;
 #[path = "full_contract/v28.rs"]
 mod v28;
+#[path = "full_contract/v29.rs"]
+mod v29;
 
 use legacy_digest::{
     V6_IMPLICIT_INDEX_COUNT, V6_STRUCTURAL_CONTRACT_SHA256, V7_IMPLICIT_INDEX_COUNT,
@@ -92,6 +92,8 @@ const OWNED_TABLES: &[&str] = &[
     "governance_claim_semantic_views",
     "governance_claim_validation_jobs",
     "run_lineages",
+    "group_agent_scheduled_graph_controllers",
+    "group_agent_scheduled_graph_controller_events",
 ];
 const SCHEMA_BATCHES: &[&str] = &[
     CREATE_V1_SCHEMA_SQL,
@@ -122,14 +124,15 @@ const SCHEMA_BATCHES: &[&str] = &[
     MIGRATE_V25_TO_V26_SQL,
     MIGRATE_V26_TO_V27_SQL,
     MIGRATE_V27_TO_V28_SQL,
+    MIGRATE_V28_TO_V29_SQL,
 ];
-const VERSION_TABLE_COUNTS: [usize; 29] = [
+const VERSION_TABLE_COUNTS: [usize; 30] = [
     0, 5, 8, 9, 11, 14, 16, 19, 20, 22, 23, 24, 28, 29, 30, 31, 32, 33, 33, 33, 33, 33, 33, 33, 33,
-    36, 36, 39, 40,
+    36, 36, 39, 40, 42,
 ];
-const VERSION_EXPLICIT_INDEX_COUNTS: [usize; 29] = [
+const VERSION_EXPLICIT_INDEX_COUNTS: [usize; 30] = [
     0, 2, 3, 4, 6, 8, 10, 12, 14, 16, 18, 20, 24, 25, 27, 29, 31, 32, 32, 32, 32, 32, 32, 32, 32,
-    35, 35, 38, 39,
+    35, 35, 38, 39, 40,
 ];
 const STRUCTURAL_DIGEST_DOMAIN: &[u8] = b"forge-hub-structural-contract-v1\0";
 
@@ -357,6 +360,7 @@ fn release_structural_contract(version: usize) -> Result<(usize, [u8; 32]), Stri
             v28::V28_IMPLICIT_INDEX_COUNT,
             v28::V28_STRUCTURAL_CONTRACT_SHA256,
         ),
+        29 => v29::V29_STRUCTURAL_CONTRACT,
         version => {
             return Err(format!("Hub v{version} has no release structural contract"));
         }

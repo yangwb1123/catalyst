@@ -450,7 +450,9 @@ fn downgrade_empty_current_to_v24(database: &Path) {
         .expect("restore v24 endpoint definitions");
     connection
         .execute_batch(
-            "DROP TABLE run_lineages;
+            "DROP TABLE group_agent_scheduled_graph_controller_events;
+             DROP TABLE group_agent_scheduled_graph_controllers;
+             DROP TABLE run_lineages;
              DROP TABLE governance_claim_validation_jobs;
              DROP TABLE governance_claim_semantic_views;
              DROP TABLE governance_semantic_heads;

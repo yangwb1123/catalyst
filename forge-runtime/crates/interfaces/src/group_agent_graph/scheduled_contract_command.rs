@@ -280,13 +280,15 @@ pub(crate) fn successor_service(
 ) -> Result<GroupAgentScheduledNodeSuccessorService, Box<dyn Error>> {
     let database = hub_database_path(args.state_dir.as_deref())?;
     let store = Arc::new(SqliteHubStore::open(database)?);
-    Ok(GroupAgentScheduledNodeSuccessorService::new(
-        store.clone(),
-        store.clone(),
-        store.clone(),
-        store.clone(),
-        store,
-    ))
+    Ok(
+        GroupAgentScheduledNodeSuccessorService::new_with_any_lifecycles(
+            store.clone(),
+            store.clone(),
+            store.clone(),
+            store.clone(),
+            store,
+        ),
+    )
 }
 
 fn admit(

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"unicode/utf8"
 
 	"forgeos/forge-core/internal/graphdispatch"
@@ -20,6 +21,7 @@ const commandUsage = `usage:
     --pricing-snapshot-sha256 SHA256 --max-result-bytes N
     [--predecessor-receipt FILE|-]... [--predecessor-content FILE|-]
     [--target-node NODE_ID]
+  forge graph-scheduled-node-contract --protocol-version
 
 warning:
   The control and candidate are private. Without --predecessor-receipt or
@@ -38,6 +40,10 @@ func Command(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 	if err != nil {
 		return commandFailure(stderr, 2, "invalid arguments")
+	}
+	if options.protocolVersion {
+		version := strconv.FormatUint(uint64(NodeExecutionProtocolVersion), 10)
+		return writeExact(stdout, stderr, []byte(version), "cannot write protocol version")
 	}
 	snapshot, err := readControl(options.control, stdin)
 	if err != nil {
@@ -71,11 +77,7 @@ func Command(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if err != nil {
 		return commandFailure(stderr, 1, "cannot encode scheduled node contract candidate")
 	}
-	written, err := stdout.Write(encoded)
-	if err != nil || written != len(encoded) {
-		return commandFailure(stderr, 1, "cannot write scheduled node contract candidate")
-	}
-	return 0
+	return writeExact(stdout, stderr, encoded, "cannot write scheduled node contract candidate")
 }
 
 // readPredecessorContent reads one bounded exact UTF-8 predecessor result
@@ -149,6 +151,14 @@ func readControl(source string, stdin io.Reader) (graphdispatch.ControlSnapshot,
 	}
 	defer func() { _ = file.Close() }()
 	return graphdispatch.DecodeControl(file)
+}
+
+func writeExact(stdout, stderr io.Writer, data []byte, message string) int {
+	written, err := stdout.Write(data)
+	if err != nil || written != len(data) {
+		return commandFailure(stderr, 1, message)
+	}
+	return 0
 }
 
 func commandFailure(stderr io.Writer, code int, message string) int {

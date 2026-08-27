@@ -21,7 +21,8 @@ func TestGraphScheduledNodeContractIsRegisteredAndDocumented(t *testing.T) {
 	}
 	output := captureUsageStderr(t)
 	if !strings.Contains(output, "forge graph-scheduled-node-contract --control FILE|-") ||
-		!strings.Contains(output, "--schedule-sha256 SHA256") {
+		!strings.Contains(output, "--schedule-sha256 SHA256") ||
+		!strings.Contains(output, "forge graph-scheduled-node-contract --protocol-version") {
 		t.Fatalf("usage omits scheduled-node contract command:\n%s", output)
 	}
 }

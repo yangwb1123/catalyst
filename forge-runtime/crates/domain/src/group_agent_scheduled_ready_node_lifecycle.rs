@@ -126,6 +126,29 @@ pub trait GroupAgentScheduledNodeAnyLifecycleStore: Send + Sync {
     ) -> Result<GroupAgentScheduledNodeAnyLifecycleInspection, HubStoreError>;
 }
 
+/// Narrow, read-only access to either persisted scheduled lifecycle family.
+pub trait GroupAgentScheduledNodeAnyLifecycleInspectionStore: Send + Sync {
+    fn inspect_group_agent_scheduled_node_lifecycle_any_family(
+        &self,
+        provider_request_id: &str,
+    ) -> Result<GroupAgentScheduledNodeAnyLifecycleInspection, HubStoreError>;
+}
+
+impl<T> GroupAgentScheduledNodeAnyLifecycleInspectionStore for T
+where
+    T: GroupAgentScheduledNodeAnyLifecycleStore + ?Sized,
+{
+    fn inspect_group_agent_scheduled_node_lifecycle_any_family(
+        &self,
+        provider_request_id: &str,
+    ) -> Result<GroupAgentScheduledNodeAnyLifecycleInspection, HubStoreError> {
+        GroupAgentScheduledNodeAnyLifecycleStore::inspect_group_agent_scheduled_node_any_lifecycle(
+            self,
+            provider_request_id,
+        )
+    }
+}
+
 pub trait GroupAgentScheduledReadyNodeProviderFactory: Send + Sync {
     fn resolve_ready(
         &self,
@@ -153,6 +176,27 @@ impl GroupAgentScheduledReadyNodeLifecycleInspection {
 }
 
 impl GroupAgentScheduledNodeAnyLifecycleInspection {
+    /// Fully validates the selected persisted lifecycle family.
+    ///
+    /// # Errors
+    ///
+    /// Returns the family-specific validation error when any stored binding
+    /// or terminal evidence is invalid.
+    pub fn validate(&self) -> Result<(), crate::GroupAgentScheduledNodeLifecycleValidationError> {
+        match self {
+            Self::Legacy(value) => value.validate(),
+            Self::Ready(value) => value.validate(),
+        }
+    }
+
+    #[must_use]
+    pub fn graph_run(&self) -> &GroupAgentGraphRunInspection {
+        match self {
+            Self::Legacy(value) => &value.graph_run,
+            Self::Ready(value) => &value.graph_run,
+        }
+    }
+
     #[must_use]
     pub fn claim(&self) -> &GroupAgentScheduledNodeDispatchClaim {
         match self {
@@ -166,6 +210,30 @@ impl GroupAgentScheduledNodeAnyLifecycleInspection {
         match self {
             Self::Legacy(value) => value.status,
             Self::Ready(value) => value.status,
+        }
+    }
+
+    #[must_use]
+    pub fn artifact(&self) -> Option<&GroupAgentScheduledNodeTerminalArtifact> {
+        match self {
+            Self::Legacy(value) => value.artifact.as_ref(),
+            Self::Ready(value) => value.artifact.as_ref(),
+        }
+    }
+
+    #[must_use]
+    pub fn terminal_receipt(&self) -> Option<&GroupAgentScheduledNodeTerminalReceipt> {
+        match self {
+            Self::Legacy(value) => value.terminal_receipt.as_ref(),
+            Self::Ready(value) => value.terminal_receipt.as_ref(),
+        }
+    }
+
+    #[must_use]
+    pub fn terminal_receipt_json(&self) -> Option<&str> {
+        match self {
+            Self::Legacy(value) => value.terminal_receipt_json.as_deref(),
+            Self::Ready(value) => value.terminal_receipt_json.as_deref(),
         }
     }
 

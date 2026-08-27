@@ -1,5 +1,6 @@
 pub(crate) use forge_runtime_application::{
-    AppendGovernanceRecordBatchInput, ExecuteGroupAgentScheduledReadyNodeDispatchInput,
+    AdvanceScheduledGraphControllerInput, AppendGovernanceRecordBatchInput,
+    ExecuteGroupAgentScheduledReadyNodeDispatchInput,
     ExecuteGroupAgentScheduledReadyNodeDispatchResult, GovernanceRecordJournalService,
     GovernanceSemanticViewService, GroupAgentScheduledExecutorOwner,
     GroupAgentScheduledExecutorOwnerError, GroupAgentScheduledExecutorOwnerFactory,
@@ -7,4 +8,10 @@ pub(crate) use forge_runtime_application::{
     GroupAgentScheduledReadyNodeDispatchExecutionServiceError,
     GroupAgentScheduledReadyNodeInvocationEffects, GroupAgentScheduledReadyNodeOwnerCleanup,
     GroupExecutionService, GroupRunService, HubService, MAX_PROMPT_BYTES, RunService,
+    ScheduledGraphControllerClock, ScheduledGraphControllerOutput,
+    ScheduledGraphControllerPricingSource, ScheduledGraphControllerPricingSourceError,
+    ScheduledGraphControllerQueryService, ScheduledGraphControllerRecoveryPhase,
+    ScheduledGraphControllerService, ScheduledGraphControllerServiceError,
+    ScheduledGraphControllerState, StartScheduledGraphControllerInput,
+    StepScheduledGraphControllerInput,
 };

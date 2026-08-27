@@ -9,6 +9,7 @@ import (
 )
 
 type commandOptions struct {
+	protocolVersion          bool
 	control                  string
 	scheduleSHA256           string
 	execution                graphdispatch.ExecutionOptions
@@ -18,6 +19,14 @@ type commandOptions struct {
 }
 
 func parseCommandOptions(args []string) (commandOptions, error) {
+	if len(args) == 1 && args[0] == "--protocol-version" {
+		return commandOptions{protocolVersion: true}, nil
+	}
+	for _, argument := range args {
+		if argument == "--protocol-version" {
+			return commandOptions{}, errInvalidCandidate
+		}
+	}
 	var options commandOptions
 	seen := make(map[string]bool)
 	flags := flag.NewFlagSet("graph-scheduled-node-contract", flag.ContinueOnError)

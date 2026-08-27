@@ -59,7 +59,7 @@ impl SqliteHubStore {
     ///
     /// # Errors
     ///
-    /// Returns an error for missing, unsafe, non-v28, corrupt, incomplete-sidecar,
+    /// Returns an error for missing, unsafe, non-v29, corrupt, incomplete-sidecar,
     /// rollback-journal, or concurrently changing state.
     pub fn open_existing_current_live_read_only(
         database_path: impl AsRef<Path>,
@@ -72,7 +72,7 @@ impl SqliteHubStore {
         })
     }
 
-    /// Opens an exact existing v11 through v28 Hub for dispatch topology preflight.
+    /// Opens an exact existing v11 through v29 Hub for dispatch topology preflight.
     ///
     /// This mode is immutable and cannot create, migrate, chmod, or write Hub state.
     ///
@@ -92,8 +92,8 @@ impl SqliteHubStore {
 
     /// Opens existing dispatch state for a no-send re-entry diagnosis.
     ///
-    /// A clean exact v11 through v28 database keeps the immutable path. For v12
-    /// through v28 hot WAL state, the fallback reads the complete WAL/SHM pair;
+    /// A clean exact v11 through v29 database keeps the immutable path. For v12
+    /// through v29 hot WAL state, the fallback reads the complete WAL/SHM pair;
     /// `SQLite` may coordinate transient reader locks in the existing SHM file.
     ///
     /// # Errors
@@ -120,6 +120,15 @@ impl SqliteHubStore {
         graph_run_id: &str,
     ) -> Result<Option<GroupAgentNodeLifecycleInspection>, HubStoreError> {
         group_agent_node_lifecycle::inspect_if_present(&mut self.connect()?, graph_run_id)
+    }
+
+    /// Returns the schema version observed through this store's existing read-only snapshot.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the snapshot cannot be reopened or queried.
+    pub fn inspected_schema_version(&self) -> Result<i64, HubStoreError> {
+        schema::schema_version(&self.connect()?).map_err(schema::sqlite_error)
     }
 
     pub(super) fn connect(&self) -> Result<Connection, HubStoreError> {
