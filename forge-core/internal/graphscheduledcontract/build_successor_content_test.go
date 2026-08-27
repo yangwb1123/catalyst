@@ -60,6 +60,35 @@ func TestBuildSuccessorEmbedsPredecessorContent(t *testing.T) {
 	}
 }
 
+func TestBuildSuccessorAcceptsEveryNonemptyValidUTF8PredecessorOutput(t *testing.T) {
+	cases := map[string]string{
+		"whitespace":      " ",
+		"ascii control":   "\x00",
+		"bidi control":    "\u202e",
+		"line separators": "\u2028\u2029",
+	}
+	for name, content := range cases {
+		t.Run(name, func(t *testing.T) {
+			candidate, err := buildContentSuccessor(t, content)
+			if err != nil {
+				t.Fatalf("BuildSuccessor: %v", err)
+			}
+			encoded, err := MarshalCandidate(candidate)
+			if err != nil {
+				t.Fatalf("MarshalCandidate: %v", err)
+			}
+			if _, err := DecodeCandidate(bytes.NewReader(encoded)); err != nil {
+				t.Fatalf("DecodeCandidate: %v", err)
+			}
+			if name == "line separators" &&
+				(!strings.Contains(candidate.Request.UserPrompt, content) ||
+					strings.Contains(candidate.Request.UserPrompt, `\u2028`)) {
+				t.Fatalf("line separators do not use exact raw UTF-8: %q", candidate.Request.UserPrompt)
+			}
+		})
+	}
+}
+
 func TestBuildSuccessorRejectsContentWithoutDirectPredecessorReceipt(t *testing.T) {
 	snapshot := fixtureSnapshot(t)
 	schedule := mustSchedule(t)
@@ -158,7 +187,7 @@ func TestMaximumEscapeExpandedPromptAndCandidateRemainReachable(t *testing.T) {
 		V: RequestVersion, NodeID: candidate.Node.NodeID,
 		Task:              strings.Repeat("\"", maxProseBytes),
 		Acceptance:        strings.Repeat("\"", maxProseBytes),
-		PredecessorOutput: strings.Repeat("\"", MaxPredecessorOutputBytes),
+		PredecessorOutput: strings.Repeat("\x00", MaxPredecessorOutputBytes),
 	})
 	if err != nil {
 		t.Fatalf("canonical user Prompt: %v", err)

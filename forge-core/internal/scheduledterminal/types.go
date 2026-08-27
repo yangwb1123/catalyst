@@ -8,6 +8,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+
+	"forgeos/forge-core/internal/canonicaljson"
 )
 
 const (
@@ -24,7 +26,9 @@ const (
 	receiptDomain  = "forge.group-agent-scheduled-node-terminal-receipt.v1\x00"
 )
 
-type terminalArtifact struct {
+// Artifact is the exact content-addressed terminal result or uncertainty
+// artifact embedded in a scheduled terminal control.
+type Artifact struct {
 	V                        uint16 `json:"v"`
 	TerminalArtifactProtocol uint16 `json:"terminal_artifact_protocol_version"`
 	ArtifactKind             string `json:"artifact_kind"`
@@ -58,6 +62,11 @@ type terminalArtifact struct {
 	ArtifactBytes            int    `json:"artifact_bytes"`
 	ArtifactSHA256           string `json:"artifact_sha256"`
 }
+
+// terminalArtifact preserves the historical private name used by terminal
+// control construction while exposing the same wire type to successor source
+// validators.
+type terminalArtifact = Artifact
 
 type terminalControl struct {
 	V                         uint16           `json:"v"`
@@ -125,7 +134,7 @@ func (value terminalControl) validate() error {
 	return nil
 }
 
-func (value terminalArtifact) validate() error {
+func (value Artifact) validate() error {
 	if value.V != 1 || value.TerminalArtifactProtocol != terminalProtocol || value.Attempt != 1 || value.ArtifactBytes <= 0 || value.ArtifactBytes > maxArtifactBytes || value.OutputBytes != len([]byte(value.OutputText)) || value.RetryAuthorized {
 		return errors.New("artifact shape is invalid")
 	}
@@ -231,7 +240,8 @@ func marshalCanonical(value any) ([]byte, error) {
 	if err := encoder.Encode(value); err != nil {
 		return nil, err
 	}
-	return bytes.TrimSuffix(buffer.Bytes(), []byte{'\n'}), nil
+	encoded := bytes.TrimSuffix(buffer.Bytes(), []byte{'\n'})
+	return canonicaljson.UnescapeLineSeparators(encoded), nil
 }
 
 func digestWithoutField(value any, fields any, domain string) (string, error) {

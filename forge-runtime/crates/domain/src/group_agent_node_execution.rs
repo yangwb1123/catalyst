@@ -21,6 +21,8 @@ mod scheduled_contract;
 mod scheduled_dispatch_release;
 #[path = "group_agent_node_execution/scheduled_provider_request.rs"]
 mod scheduled_provider_request;
+#[path = "group_agent_node_execution/scheduled_ready_dispatch_release.rs"]
+mod scheduled_ready_dispatch_release;
 #[path = "group_agent_node_execution_validation.rs"]
 mod validation;
 
@@ -33,6 +35,7 @@ pub use schedule::*;
 pub use scheduled_contract::*;
 pub use scheduled_dispatch_release::*;
 pub use scheduled_provider_request::*;
+pub use scheduled_ready_dispatch_release::*;
 
 pub const GROUP_AGENT_GRAPH_CONTROL_SNAPSHOT_VERSION: u16 = 1;
 pub const GROUP_AGENT_NODE_EXECUTION_CONTRACT_VERSION: u16 = 1;

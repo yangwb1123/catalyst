@@ -80,4 +80,31 @@ fn spec_bounds_match_rust_constants() {
         MAX_GROUP_AGENT_SCHEDULED_NODE_PREDECESSOR_OUTPUT_BYTES as u64,
         spec_uint("bounds", "predecessor_output_bytes.max"),
     );
+    assert_eq!(
+        forge_runtime_domain::MAX_GROUP_AGENT_SCHEDULED_NODE_USER_PROMPT_BYTES as u64,
+        spec_uint("bounds", "user_prompt_bytes.max"),
+    );
+}
+
+#[test]
+fn spec_successor_invariants_match_rust_protocol() {
+    let expected = [
+        ("successor.attempt", "1"),
+        ("receipt.attempt", "1"),
+        ("successor.retry_authorized", "false"),
+        ("receipt.retry_authorized", "false"),
+        ("receipt.successor_advance_authorized", "false"),
+        (
+            "successor.predecessor_content_included",
+            "optional;`true` iff the user Prompt contains exact `predecessor_output`(ADR-0033)",
+        ),
+        (
+            "successor.predecessor_content_source",
+            "仅当 included=true:canonical ordered direct-receipt closure 的第一份 receipt 所绑定的 durable terminalized result artifact",
+        ),
+        ("wave_sibling.receipts", "0(空直接前驱集,ADR-0035)"),
+    ];
+    for (key, want) in expected {
+        assert_eq!(spec_value("invariants", key), want, "invariant {key}");
+    }
 }

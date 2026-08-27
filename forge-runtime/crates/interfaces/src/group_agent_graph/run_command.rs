@@ -20,6 +20,7 @@ use super::{
     contract_command::{self, GroupAgentGraphControlContractCliOutput},
     contract_output::{self, GroupAgentNodeExecutionContractCliOutput},
     dispatch_command::{self, GroupAgentGraphRunDispatchCommandCliOutput},
+    ready_release_command::{self, ScheduledReadyNodeReleaseCliOutput},
     reconcile_command::{self, ScheduledGraphReconcileCliOutput},
     run_output::{self, GroupAgentGraphRunCliOutput},
     schedule_command,
@@ -40,6 +41,7 @@ pub enum GroupAgentGraphRunCommandCliOutput {
     ScheduledContract(Box<GroupAgentScheduledNodeContractCliOutput>),
     ScheduledProviderRequest(Box<GroupAgentScheduledNodeProviderRequestCommandCliOutput>),
     Reconcile(Box<ScheduledGraphReconcileCliOutput>),
+    ReadyRelease(Box<ScheduledReadyNodeReleaseCliOutput>),
 }
 
 pub async fn execute(
@@ -82,6 +84,13 @@ pub async fn execute(
             core_bin_sha256,
         } => Ok(GroupAgentGraphRunCommandCliOutput::Reconcile(Box::new(
             reconcile_command::execute(args, graph_run_id, core_bin, core_bin_sha256)?,
+        ))),
+        GroupGraphRunCommand::ReadyRelease {
+            graph_run_id,
+            core_bin,
+            core_bin_sha256,
+        } => Ok(GroupAgentGraphRunCommandCliOutput::ReadyRelease(Box::new(
+            ready_release_command::execute(args, graph_run_id, core_bin, core_bin_sha256)?,
         ))),
     }
 }
@@ -155,6 +164,9 @@ pub fn write_output(
         }
         GroupAgentGraphRunCommandCliOutput::Reconcile(output) => {
             reconcile_command::write_output(output, json, writer)
+        }
+        GroupAgentGraphRunCommandCliOutput::ReadyRelease(output) => {
+            ready_release_command::write_output(output, json, writer)
         }
     }
 }

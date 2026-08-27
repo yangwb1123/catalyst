@@ -57,6 +57,11 @@ pub enum GroupGraphRunCommand {
         core_bin: String,
         core_bin_sha256: String,
     },
+    ReadyRelease {
+        graph_run_id: String,
+        core_bin: String,
+        core_bin_sha256: String,
+    },
     Show {
         graph_run_id: String,
         include_plan: bool,

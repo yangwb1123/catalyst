@@ -20,7 +20,7 @@ mod atomicity;
 mod atomicity_authorization;
 #[cfg(test)]
 #[path = "atomicity_fixture.rs"]
-mod atomicity_fixture;
+pub(super) mod atomicity_fixture;
 
 pub(super) fn snapshot(
     connection: &mut Connection,
@@ -29,9 +29,16 @@ pub(super) fn snapshot(
     let transaction = connection
         .transaction_with_behavior(TransactionBehavior::Deferred)
         .map_err(read_error)?;
-    let snapshot = build_after_source(&transaction, graph_run_id, || Ok(()))?;
+    let snapshot = build_in_snapshot(&transaction, graph_run_id)?;
     transaction.commit().map_err(read_error)?;
     Ok(snapshot)
+}
+
+pub(in crate::sqlite_hub) fn build_in_snapshot(
+    connection: &Connection,
+    graph_run_id: &str,
+) -> Result<ScheduledGraphProgressSnapshot, HubStoreError> {
+    build_after_source(connection, graph_run_id, || Ok(()))
 }
 
 #[cfg(test)]

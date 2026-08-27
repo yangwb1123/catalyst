@@ -35,6 +35,7 @@
 | idempotency_key_bytes | 1 | 256 | 幂等键 |
 | contract_bytes | 1 | 8388608 | 候选 canonical envelope 字节(8 MiB；v24 successor 上限) |
 | predecessor_output_bytes | 1 | 1048576 | 前驱内容披露(1 MiB) |
+| user_prompt_bytes | 1 | 6553926 | exact canonical request-v2 user Prompt；容纳 1 MiB 任意 valid UTF-8 前驱正文的最坏 control-scalar JSON 转义 |
 
 `contract_bytes` 是 v2 candidate codec 的总上限。初始节点候选不携带前驱正文，
 其既有 4 MiB admission/storage 兼容边界保持不变；8 MiB 只用于容纳 v24
@@ -49,8 +50,21 @@ successor candidate 在最坏 JSON 转义下的有界前驱正文。
 | successor.retry_authorized | false |
 | receipt.retry_authorized | false |
 | receipt.successor_advance_authorized | false |
-| successor.predecessor_content_included | false(被动候选) |
+| successor.predecessor_content_included | optional;`true` iff the user Prompt contains exact `predecessor_output`(ADR-0033) |
+| successor.predecessor_content_source | 仅当 included=true:canonical ordered direct-receipt closure 的第一份 receipt 所绑定的 durable terminalized result artifact |
 | wave_sibling.receipts | 0(空直接前驱集,ADR-0035) |
+
+`predecessor_content_included=true` 仅对非空直接前驱集合法。正文必须是第一份
+canonical direct receipt 对应的 result-class artifact 中的 exact nonempty valid
+UTF-8 output，长度为 1..1048576 bytes；它必须与 candidate user Prompt 的
+`predecessor_output`、Prompt bytes/digest 及 durable artifact byte-for-byte 一致。
+其他直接前驱只绑定 receipt，不把 metadata 或 output 拷入 provider body。
+uncertainty artifact、非终态 lifecycle、非 result artifact、缺失/额外正文或任何
+source/digest 不一致都必须失败关闭。
+
+正文存在不是 disclosure consent。真正的 effectful execute 必须独立收集
+`--confirm-predecessor-content`，且不得从 candidate flag、receipt、ready/release
+决策、历史 consent 或 `--confirm-off-machine` 推断；反向也同样不得推断。
 
 ## Identity shapes
 

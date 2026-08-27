@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 
+	"forgeos/forge-core/internal/canonicaljson"
 	"forgeos/forge-core/internal/graphdispatch"
 )
 
@@ -80,7 +81,8 @@ func canonicalBytes(value any) ([]byte, error) {
 	if len(encoded) == 0 || encoded[len(encoded)-1] != '\n' {
 		return nil, errInvalidCandidate
 	}
-	return append([]byte(nil), encoded[:len(encoded)-1]...), nil
+	canonical := append([]byte(nil), encoded[:len(encoded)-1]...)
+	return canonicaljson.UnescapeLineSeparators(canonical), nil
 }
 
 func domainDigest(domain string, value any) (string, error) {

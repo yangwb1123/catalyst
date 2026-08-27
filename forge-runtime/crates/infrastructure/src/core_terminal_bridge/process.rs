@@ -8,8 +8,8 @@ use std::{
 };
 
 use super::{
-    CORE_KILL_REAP_TIMEOUT, CoreTerminalBridgeError, MAX_CORE_STDERR_BYTES, MAX_CORE_STDOUT_BYTES,
-    PinnedCoreExecutable, invalid,
+    CORE_KILL_REAP_TIMEOUT, CoreTerminalBridgeError, MAX_CORE_STDERR_BYTES, PinnedCoreExecutable,
+    invalid,
 };
 
 pub(super) fn core_command(
@@ -55,10 +55,11 @@ impl CoreIo {
         stdout: impl Read + Send + 'static,
         stderr: impl Read + Send + 'static,
         input: Vec<u8>,
+        stdout_limit: usize,
     ) -> Self {
         Self {
             writer: spawn_io(move || write_input(stdin, &input)),
-            stdout: spawn_io(move || read_bounded(stdout, MAX_CORE_STDOUT_BYTES)),
+            stdout: spawn_io(move || read_bounded(stdout, stdout_limit)),
             stderr: spawn_io(move || read_bounded(stderr, MAX_CORE_STDERR_BYTES)),
         }
     }

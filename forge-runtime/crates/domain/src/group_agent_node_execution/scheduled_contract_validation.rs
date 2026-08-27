@@ -130,13 +130,13 @@ fn validate_request(
         && ordinal_valid
         && super::super::validation::valid_identifier(&request.node_id)
         && request.attempt == 1
-        && valid_prompt(
+        && valid_prose_prompt(
             &request.system_prompt,
             request.system_prompt_bytes,
             &request.system_prompt_sha256,
             MAX_SYSTEM_PROMPT_BYTES,
         )
-        && valid_prompt(
+        && valid_encoded_prompt(
             &request.user_prompt,
             request.user_prompt_bytes,
             &request.user_prompt_sha256,
@@ -252,11 +252,15 @@ fn validate_shared_policy(
         .map_err(|error| invalid(&error.to_string()))
 }
 
-fn valid_prompt(value: &str, bytes: usize, sha256: &str, maximum: usize) -> bool {
+fn valid_prose_prompt(value: &str, bytes: usize, sha256: &str, maximum: usize) -> bool {
     super::super::validation::valid_prose(value)
         && value.len() <= maximum
         && bytes == value.len()
         && sha256 == group_agent_prompt_sha256(value)
+}
+
+fn valid_encoded_prompt(value: &str, bytes: usize, sha256: &str, maximum: usize) -> bool {
+    value.len() <= maximum && bytes == value.len() && sha256 == group_agent_prompt_sha256(value)
 }
 
 fn validate_user_prompt(
@@ -268,7 +272,6 @@ fn validate_user_prompt(
         Some(output) => {
             !output.is_empty()
                 && output.len() <= MAX_GROUP_AGENT_SCHEDULED_NODE_PREDECESSOR_OUTPUT_BYTES
-                && super::super::validation::valid_prose(output)
         }
         None => true,
     };

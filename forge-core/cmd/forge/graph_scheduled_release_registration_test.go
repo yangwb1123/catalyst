@@ -14,3 +14,15 @@ func TestGraphScheduledNodeDispatchAuthorizeIsRegisteredAndDocumented(t *testing
 		t.Fatalf("usage omits scheduled-node dispatch authorization:\n%s", output)
 	}
 }
+
+func TestGraphScheduledReadyNodeDispatchAuthorizeIsRegisteredAndDocumented(t *testing.T) {
+	name := "graph-scheduled-ready-node-dispatch-authorize"
+	if _, ok := subcommands[name]; !ok {
+		t.Fatalf("%s must be registered", name)
+	}
+	output := captureUsageStderr(t)
+	if !strings.Contains(output, "forge "+name+" --control FILE|-") ||
+		!strings.Contains(output, "forge "+name+" --protocol-version") {
+		t.Fatalf("usage omits scheduled ready-node authorization:\n%s", output)
+	}
+}

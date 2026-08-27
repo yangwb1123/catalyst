@@ -77,6 +77,9 @@ func TestSpecBoundsMatchGoConstants(t *testing.T) {
 	if got := uint64(MaxPredecessorOutputBytes); got != specUint(t, "bounds", "predecessor_output_bytes.max") {
 		t.Fatalf("MaxPredecessorOutputBytes = %d, spec says %d", got, specUint(t, "bounds", "predecessor_output_bytes.max"))
 	}
+	if got := uint64(MaxUserPromptBytes); got != specUint(t, "bounds", "user_prompt_bytes.max") {
+		t.Fatalf("MaxUserPromptBytes = %d, spec says %d", got, specUint(t, "bounds", "user_prompt_bytes.max"))
+	}
 	if got := uint64(maxSuccessorOrdinal); got != specUint(t, "bounds", "successor.execution_ordinal.max") {
 		t.Fatalf("maxSuccessorOrdinal = %d, spec says %d", got, specUint(t, "bounds", "successor.execution_ordinal.max"))
 	}
@@ -85,6 +88,24 @@ func TestSpecBoundsMatchGoConstants(t *testing.T) {
 	}
 	if got := uint64(maxTopologyWaveIndex); got != specUint(t, "bounds", "successor.execution_ordinal.max") {
 		t.Fatalf("maxTopologyWaveIndex = %d, spec says %d", got, specUint(t, "bounds", "successor.execution_ordinal.max"))
+	}
+}
+
+func TestSpecSuccessorInvariantsMatchGoProtocol(t *testing.T) {
+	expected := map[string]string{
+		"successor.attempt":                      "1",
+		"receipt.attempt":                        "1",
+		"successor.retry_authorized":             "false",
+		"receipt.retry_authorized":               "false",
+		"receipt.successor_advance_authorized":   "false",
+		"successor.predecessor_content_included": "optional;`true` iff the user Prompt contains exact `predecessor_output`(ADR-0033)",
+		"successor.predecessor_content_source":   "仅当 included=true:canonical ordered direct-receipt closure 的第一份 receipt 所绑定的 durable terminalized result artifact",
+		"wave_sibling.receipts":                  "0(空直接前驱集,ADR-0035)",
+	}
+	for key, want := range expected {
+		if got := specValue(t, "invariants", key); got != want {
+			t.Fatalf("invariant %s = %q, want %q", key, got, want)
+		}
 	}
 }
 

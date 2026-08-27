@@ -15,9 +15,12 @@ use sha2::{Digest, Sha256};
 mod pinned_executable;
 #[path = "core_terminal_bridge/process.rs"]
 mod process;
+#[path = "core_terminal_bridge/scheduled_ready_release.rs"]
+mod scheduled_ready_release;
 
 use pinned_executable::PinnedCoreExecutable;
 use process::{CoreIo, core_command, process_io, terminate_process_tree, wait_bounded};
+pub use scheduled_ready_release::PinnedScheduledReadyNodeReleaseBridge;
 
 use crate::runtime_domain::{
     GroupAgentNodeCoreTerminalReceiptEnvelope, GroupAgentNodeCoreTerminalReceiptPort,
@@ -137,6 +140,16 @@ impl PinnedCoreTerminalBridge {
         input: &[u8],
         timeout: Duration,
     ) -> Result<Vec<u8>, CoreTerminalBridgeError> {
+        self.invoke_with_stdout_limit(args, input, timeout, MAX_CORE_STDOUT_BYTES)
+    }
+
+    fn invoke_with_stdout_limit(
+        &self,
+        args: &[&str],
+        input: &[u8],
+        timeout: Duration,
+        stdout_limit: usize,
+    ) -> Result<Vec<u8>, CoreTerminalBridgeError> {
         let deadline = Instant::now() + timeout;
         let executable = self.prepare_binary_bounded(deadline)?;
         let mut child = core_command(&executable, &self.path, args)
@@ -145,7 +158,7 @@ impl PinnedCoreTerminalBridge {
         let stdin = child.stdin.take().ok_or_else(process_io)?;
         let stdout = child.stdout.take().ok_or_else(process_io)?;
         let stderr = child.stderr.take().ok_or_else(process_io)?;
-        let io = CoreIo::spawn(stdin, stdout, stderr, input.to_vec());
+        let io = CoreIo::spawn(stdin, stdout, stderr, input.to_vec(), stdout_limit);
         let status = wait_bounded(&mut child, deadline)?;
         let drain_deadline = deadline.min(Instant::now() + CORE_IO_DRAIN_TIMEOUT);
         let (wrote, stdout, stderr) = match io.collect(drain_deadline) {

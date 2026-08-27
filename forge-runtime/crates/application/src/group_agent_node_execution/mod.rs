@@ -24,6 +24,10 @@ mod scheduled_provider_request_service;
 #[path = "scheduled_provider_request_tests.rs"]
 mod scheduled_provider_request_tests;
 mod scheduled_provider_request_validation;
+mod scheduled_ready_release_service;
+#[cfg(test)]
+#[path = "scheduled_ready_release_tests.rs"]
+mod scheduled_ready_release_tests;
 mod scheduled_release_error;
 mod scheduled_release_service;
 #[cfg(test)]
@@ -37,6 +41,7 @@ mod service;
 mod snapshot;
 mod validation;
 
+pub use crate::runtime_domain::GroupAgentScheduledReadyNodeDispatchAuthorization;
 pub use crate::runtime_domain::{
     AdmitGroupAgentGraphExecutionScheduleDisposition, AdmitGroupAgentGraphExecutionScheduleResult,
     GROUP_AGENT_GRAPH_EXECUTION_SCHEDULE_VERSION, GroupAgentGraphExecutionSchedule,
@@ -134,6 +139,10 @@ pub use scheduled_provider_request_error::GroupAgentScheduledNodeProviderRequest
 pub use scheduled_provider_request_service::{
     GroupAgentScheduledNodeProviderRequestService,
     PrepareGroupAgentScheduledNodeProviderRequestInput,
+};
+pub use scheduled_ready_release_service::{
+    AuthorizedScheduledReadyNodeRelease, ScheduledReadyNodeReleaseService,
+    ScheduledReadyNodeReleaseServiceError,
 };
 pub use scheduled_release_error::GroupAgentScheduledNodeDispatchReleaseControlServiceError;
 pub use scheduled_release_service::{

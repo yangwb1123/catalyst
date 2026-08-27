@@ -16,6 +16,8 @@ pub(crate) mod dispatch_output;
 pub(crate) mod dispatch_readiness_output;
 #[path = "group_agent_graph/output.rs"]
 pub(crate) mod output;
+#[path = "group_agent_graph/ready_release_command.rs"]
+pub(crate) mod ready_release_command;
 #[path = "group_agent_graph/reconcile_command.rs"]
 pub(crate) mod reconcile_command;
 #[path = "group_agent_graph/run_command.rs"]

@@ -1,5 +1,6 @@
 mod node;
 mod read;
+mod ready_release;
 
 #[cfg(test)]
 mod atomicity_terminal;
@@ -9,6 +10,8 @@ mod bounds;
 mod bounds_support;
 #[cfg(test)]
 mod corruption_tests;
+#[cfg(test)]
+mod ready_release_tests;
 #[cfg(test)]
 mod tests;
 
@@ -35,6 +38,7 @@ mod sqlite_group_agent_scheduled_node_provider_request_support;
 
 use crate::runtime_domain::{
     HubStoreError, ScheduledGraphProgressSnapshot, ScheduledGraphProgressStore,
+    ScheduledReadyNodeReleaseSource, ScheduledReadyNodeReleaseStore,
 };
 
 use super::SqliteHubStore;
@@ -45,5 +49,23 @@ impl ScheduledGraphProgressStore for SqliteHubStore {
         graph_run_id: &str,
     ) -> Result<ScheduledGraphProgressSnapshot, HubStoreError> {
         read::snapshot(&mut self.connect()?, graph_run_id)
+    }
+}
+
+impl ScheduledReadyNodeReleaseStore for SqliteHubStore {
+    fn inspect_scheduled_ready_node_release(
+        &self,
+        graph_run_id: &str,
+        expected_snapshot_sha256: &str,
+        execution_ordinal: usize,
+        node_id: &str,
+    ) -> Result<ScheduledReadyNodeReleaseSource, HubStoreError> {
+        ready_release::inspect(
+            &mut self.connect()?,
+            graph_run_id,
+            expected_snapshot_sha256,
+            execution_ordinal,
+            node_id,
+        )
     }
 }

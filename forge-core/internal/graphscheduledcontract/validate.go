@@ -148,7 +148,8 @@ func validPrompts(request ScheduledNodeRequest) bool {
 	}
 	decoded, err := decodeExact[userPrompt]([]byte(request.UserPrompt))
 	contentPresent := decoded.PredecessorOutput != ""
-	contentValid := !contentPresent || validProse(decoded.PredecessorOutput, MaxPredecessorOutputBytes)
+	contentValid := !contentPresent || utf8.ValidString(decoded.PredecessorOutput) &&
+		len(decoded.PredecessorOutput) <= MaxPredecessorOutputBytes
 	return err == nil && decoded.V == RequestVersion && decoded.NodeID == request.NodeID &&
 		validIdentifier(decoded.NodeID, maxIdentifierBytes) && validProse(decoded.Task, maxProseBytes) &&
 		validProse(decoded.Acceptance, maxProseBytes) &&

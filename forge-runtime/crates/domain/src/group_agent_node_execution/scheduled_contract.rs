@@ -36,14 +36,14 @@ pub const MAX_GROUP_AGENT_SCHEDULED_NODE_CONTRACT_BYTES: usize = 8 * 1024 * 1024
 pub const MAX_GROUP_AGENT_SCHEDULED_NODE_PREDECESSOR_OUTPUT_BYTES: usize = 1024 * 1024;
 /// Exact worst-case canonical JSON size of the content-bearing user Prompt.
 ///
-/// Every permitted Prompt byte can require at most two JSON bytes (quotes,
-/// backslashes, and the permitted whitespace controls). The fixed compact
-/// `v`/`node_id`/`task`/`acceptance`/`predecessor_output` envelope is 70 bytes.
+/// Identifier/task/acceptance bytes can require at most two JSON bytes. Exact
+/// predecessor UTF-8 may contain ASCII controls requiring six JSON bytes. The
+/// fixed `v`/`node_id`/`task`/`acceptance`/`predecessor_output` envelope is 70.
 pub const MAX_GROUP_AGENT_SCHEDULED_NODE_USER_PROMPT_BYTES: usize = 2
     * (crate::MAX_GROUP_AGENT_GRAPH_IDENTIFIER_BYTES
         + crate::MAX_GROUP_AGENT_GRAPH_NODE_TASK_BYTES
-        + crate::MAX_GROUP_AGENT_GRAPH_NODE_ACCEPTANCE_BYTES
-        + MAX_GROUP_AGENT_SCHEDULED_NODE_PREDECESSOR_OUTPUT_BYTES)
+        + crate::MAX_GROUP_AGENT_GRAPH_NODE_ACCEPTANCE_BYTES)
+    + 6 * MAX_GROUP_AGENT_SCHEDULED_NODE_PREDECESSOR_OUTPUT_BYTES
     + 70;
 pub const MAX_GROUP_AGENT_SCHEDULED_NODE_CONTRACT_LIST_LIMIT: usize = 100;
 

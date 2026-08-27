@@ -78,6 +78,9 @@ var subcommands = map[string]func([]string) int{
 	"graph-scheduled-node-dispatch-authorize": func(rest []string) int {
 		return graphscheduledrelease.Command(rest, os.Stdin, os.Stdout, os.Stderr)
 	},
+	"graph-scheduled-ready-node-dispatch-authorize": func(rest []string) int {
+		return graphscheduledrelease.ReadyCommand(rest, os.Stdin, os.Stdout, os.Stderr)
+	},
 	"approve":                cmdApprove,
 	"reject":                 cmdReject,
 	releasePinnedExecCommand: cmdReleaseExecPinned,
@@ -147,6 +150,8 @@ usage:
   forge graph-scheduled-reconcile --snapshot FILE|-
   forge graph-scheduled-reconcile --protocol-version
   forge graph-scheduled-node-dispatch-authorize --control FILE|-
+  forge graph-scheduled-ready-node-dispatch-authorize --control FILE|-
+  forge graph-scheduled-ready-node-dispatch-authorize --protocol-version
   forge gate|check|accept [--root DIR] [--timeout D] [--max-output-bytes N]
 `)
 }

@@ -31,9 +31,11 @@ const (
 const (
 	maxIdentifierBytes = 128
 	maxProseBytes      = 64 * 1024
-	// Every permitted Prompt byte can require at most two JSON bytes. The
-	// compact content-bearing Prompt envelope contributes exactly 70 bytes.
-	MaxUserPromptBytes = 2*(maxIdentifierBytes+2*maxProseBytes+MaxPredecessorOutputBytes) + 70
+	// Identifier/task/acceptance bytes require at most two JSON bytes. Exact
+	// predecessor UTF-8 may contain ASCII controls requiring six JSON bytes.
+	// The compact content-bearing Prompt envelope contributes exactly 70 bytes.
+	MaxUserPromptBytes = 2*(maxIdentifierBytes+2*maxProseBytes) +
+		6*MaxPredecessorOutputBytes + 70
 )
 
 var errInvalidCandidate = errors.New("invalid scheduled node contract candidate")

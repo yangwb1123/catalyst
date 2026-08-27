@@ -1,10 +1,11 @@
 use crate::runtime_domain::{
-    AdmitGroupAgentGraphExecutionSchedule, ClaimGroupAgentScheduledNodeDispatch,
-    ClaimGroupAgentScheduledNodeDispatchResult, GROUP_AGENT_GRAPH_SCHEDULER_PROTOCOL_VERSION,
-    GROUP_AGENT_NODE_PRICING_COST_ALGORITHM, GROUP_AGENT_NODE_PRICING_CURRENCY,
-    GROUP_AGENT_NODE_PRICING_PROTOCOL_VERSION, GROUP_AGENT_NODE_PRICING_PROVENANCE,
-    GROUP_AGENT_NODE_PRICING_SNAPSHOT_VERSION, GROUP_AGENT_NODE_PRICING_TOKEN_UNIT,
-    GROUP_AGENT_SCHEDULED_NODE_ACTIVE_LANE_VERSION, GROUP_AGENT_SCHEDULED_NODE_CLAIM_VERSION,
+    AdmitGroupAgentGraphExecutionSchedule, AdmitGroupAgentScheduledNodeContractCandidate,
+    ClaimGroupAgentScheduledNodeDispatch, ClaimGroupAgentScheduledNodeDispatchResult,
+    GROUP_AGENT_GRAPH_SCHEDULER_PROTOCOL_VERSION, GROUP_AGENT_NODE_PRICING_COST_ALGORITHM,
+    GROUP_AGENT_NODE_PRICING_CURRENCY, GROUP_AGENT_NODE_PRICING_PROTOCOL_VERSION,
+    GROUP_AGENT_NODE_PRICING_PROVENANCE, GROUP_AGENT_NODE_PRICING_SNAPSHOT_VERSION,
+    GROUP_AGENT_NODE_PRICING_TOKEN_UNIT, GROUP_AGENT_SCHEDULED_NODE_ACTIVE_LANE_VERSION,
+    GROUP_AGENT_SCHEDULED_NODE_CLAIM_VERSION,
     GROUP_AGENT_SCHEDULED_NODE_DISPATCH_RELEASE_CONTROL_PROTOCOL_VERSION,
     GROUP_AGENT_SCHEDULED_NODE_DISPATCH_RELEASE_CONTROL_VERSION,
     GROUP_AGENT_SCHEDULED_NODE_LIFECYCLE_VERSION, GroupAgentGraphExecutionScheduleInspection,
@@ -13,9 +14,9 @@ use crate::runtime_domain::{
     GroupAgentScheduledNodeDispatchAuthorization, GroupAgentScheduledNodeDispatchClaim,
     GroupAgentScheduledNodeDispatchClaimEvent, GroupAgentScheduledNodeDispatchReleaseControl,
     GroupAgentScheduledNodeLifecycleStore, GroupAgentScheduledNodeProviderRequestInspection,
-    GroupAgentScheduledNodeProviderRequestStore, HubStoreError,
-    TerminalizeGroupAgentScheduledNodeDispatch, TerminalizeGroupAgentScheduledNodeDispatchResult,
-    group_agent_node_destination_sha256,
+    GroupAgentScheduledNodeProviderRequestStore, HubStoreError, ScheduledGraphProgressSnapshot,
+    ScheduledGraphProgressStore, TerminalizeGroupAgentScheduledNodeDispatch,
+    TerminalizeGroupAgentScheduledNodeDispatchResult, group_agent_node_destination_sha256,
 };
 
 use super::super::{
@@ -26,13 +27,24 @@ use super::super::{
 };
 use super::atomicity_authorization;
 
-pub(super) struct ClaimedFixture {
-    pub(super) graph: GraphFixture,
+pub(in crate::sqlite_hub::scheduled_graph_progress) struct ClaimedFixture {
+    pub(in crate::sqlite_hub::scheduled_graph_progress) graph: GraphFixture,
+    pub(in crate::sqlite_hub::scheduled_graph_progress) initial_admission:
+        AdmitGroupAgentScheduledNodeContractCandidate,
+    pub(in crate::sqlite_hub::scheduled_graph_progress) pricing: GroupAgentNodePricingSnapshot,
+    pub(in crate::sqlite_hub::scheduled_graph_progress) ready_progress:
+        ScheduledGraphProgressSnapshot,
     terminal: TerminalizeGroupAgentScheduledNodeDispatch,
 }
 
+pub(in crate::sqlite_hub::scheduled_graph_progress) struct ReadyFixture {
+    pub(in crate::sqlite_hub::scheduled_graph_progress) graph: GraphFixture,
+    claim: ClaimGroupAgentScheduledNodeDispatch,
+    initial_admission: AdmitGroupAgentScheduledNodeContractCandidate,
+}
+
 impl ClaimedFixture {
-    pub(super) fn terminalize(
+    pub(in crate::sqlite_hub::scheduled_graph_progress) fn terminalize(
         &self,
     ) -> Result<TerminalizeGroupAgentScheduledNodeDispatchResult, HubStoreError> {
         self.graph
@@ -41,30 +53,114 @@ impl ClaimedFixture {
     }
 }
 
-pub(super) fn claimed_fixture() -> ClaimedFixture {
+impl ReadyFixture {
+    pub(in crate::sqlite_hub::scheduled_graph_progress) fn claim(
+        &self,
+    ) -> Result<ClaimGroupAgentScheduledNodeDispatchResult, HubStoreError> {
+        self.graph
+            .store
+            .claim_group_agent_scheduled_node_dispatch(&self.claim)
+    }
+}
+
+pub(in crate::sqlite_hub::scheduled_graph_progress) fn ready_fixture() -> ReadyFixture {
     let graph = schedule_support::prepared_fixture();
+    ready_fixture_from_graph(graph)
+}
+
+pub(in crate::sqlite_hub::scheduled_graph_progress) fn diamond_ready_fixture() -> ReadyFixture {
+    let graph = GraphFixture::diamond();
+    graph
+        .store
+        .begin_group_agent_graph_run(&graph.request("graph-run-1", "run-key", 30))
+        .expect("seed diamond atomicity Graph Run");
+    ready_fixture_from_graph(graph)
+}
+
+fn ready_fixture_from_graph(graph: GraphFixture) -> ReadyFixture {
     let schedule_request = schedule_support::request(&graph, "schedule-key", 40);
     let schedule = graph
         .store
         .admit_group_agent_graph_execution_schedule(&schedule_request)
         .expect("admit atomicity schedule")
         .inspection;
-    let (pricing, provider) = prepare_provider(&graph, schedule_request.clone());
-    let release = release_control(&graph, &schedule_request, schedule, provider.clone());
+    let (pricing, provider, initial_admission) = prepare_provider(&graph, schedule_request.clone());
+    let release = release_control(&graph, &initial_admission, schedule, provider.clone());
     let authorization = atomicity_authorization::authorization(&release, &pricing);
-    let claim_request = claim_request(release.clone(), authorization, pricing, &provider);
-    let result = graph
+    let claim = claim_request(release, authorization, pricing, &provider);
+    ReadyFixture {
+        graph,
+        claim,
+        initial_admission,
+    }
+}
+
+pub(in crate::sqlite_hub::scheduled_graph_progress) fn claimed_fixture() -> ClaimedFixture {
+    claim_ready(ready_fixture())
+}
+
+pub(in crate::sqlite_hub::scheduled_graph_progress) fn claim_ready(
+    ready: ReadyFixture,
+) -> ClaimedFixture {
+    let ready_progress = ready
+        .graph
         .store
-        .claim_group_agent_scheduled_node_dispatch(&claim_request)
-        .expect("claim scheduled dispatch");
+        .snapshot_scheduled_graph_progress("graph-run-1")
+        .expect("snapshot ready dispatch");
+    let result = ready.claim().expect("claim scheduled dispatch");
     let ClaimGroupAgentScheduledNodeDispatchResult::Claimed { authority } = result else {
         panic!("first scheduled claim must be new");
     };
     let (claim, _) = authority.into_parts();
+    let terminal = atomicity_terminal::terminal_request(&ready.claim.release_control, &claim);
     ClaimedFixture {
-        terminal: atomicity_terminal::terminal_request(&release, &claim),
-        graph,
+        graph: ready.graph,
+        initial_admission: ready.initial_admission,
+        pricing: ready.claim.pricing,
+        ready_progress,
+        terminal,
     }
+}
+
+pub(in crate::sqlite_hub::scheduled_graph_progress) fn claim_prepared(
+    graph: &GraphFixture,
+    source: &AdmitGroupAgentScheduledNodeContractCandidate,
+    provider: &GroupAgentScheduledNodeProviderRequestInspection,
+    pricing: &GroupAgentNodePricingSnapshot,
+) -> Result<
+    (
+        GroupAgentScheduledNodeDispatchReleaseControl,
+        GroupAgentScheduledNodeDispatchClaim,
+    ),
+    HubStoreError,
+> {
+    let schedule = graph
+        .store
+        .inspect_group_agent_graph_execution_schedule(&source.schedule.schedule_id)?;
+    let release = release_control(graph, source, schedule, provider.clone());
+    let authorization = atomicity_authorization::authorization(&release, pricing);
+    let request = claim_request(release.clone(), authorization, pricing.clone(), provider);
+    let result = graph
+        .store
+        .claim_group_agent_scheduled_node_dispatch(&request)?;
+    let ClaimGroupAgentScheduledNodeDispatchResult::Claimed { authority } = result else {
+        return Err(HubStoreError::Conflict {
+            entity: crate::runtime_domain::HubEntity::GroupAgentScheduledNodeLifecycle,
+            message: "prepared test dispatch was already claimed".into(),
+        });
+    };
+    let (claim, _) = authority.into_parts();
+    Ok((release, claim))
+}
+
+pub(in crate::sqlite_hub::scheduled_graph_progress) fn terminalize_prepared(
+    graph: &GraphFixture,
+    release: &GroupAgentScheduledNodeDispatchReleaseControl,
+    claim: &GroupAgentScheduledNodeDispatchClaim,
+) -> Result<TerminalizeGroupAgentScheduledNodeDispatchResult, HubStoreError> {
+    graph.store.terminalize_group_agent_scheduled_node_dispatch(
+        &atomicity_terminal::terminal_request(release, claim),
+    )
 }
 
 fn prepare_provider(
@@ -73,6 +169,7 @@ fn prepare_provider(
 ) -> (
     GroupAgentNodePricingSnapshot,
     GroupAgentScheduledNodeProviderRequestInspection,
+    AdmitGroupAgentScheduledNodeContractCandidate,
 ) {
     let mut admission = contract_support::admission(schedule, "contract-key", 50);
     let pricing = pricing_snapshot(&admission);
@@ -98,7 +195,7 @@ fn prepare_provider(
         .prepare_group_agent_scheduled_node_provider_request(&request)
         .expect("prepare atomicity provider request")
         .inspection;
-    (pricing, provider)
+    (pricing, provider, admission)
 }
 
 fn pricing_snapshot(
@@ -133,7 +230,7 @@ fn pricing_snapshot(
 
 fn release_control(
     graph: &GraphFixture,
-    source: &AdmitGroupAgentGraphExecutionSchedule,
+    source: &AdmitGroupAgentScheduledNodeContractCandidate,
     schedule: GroupAgentGraphExecutionScheduleInspection,
     provider: GroupAgentScheduledNodeProviderRequestInspection,
 ) -> GroupAgentScheduledNodeDispatchReleaseControl {

@@ -62,6 +62,23 @@ fn successor_with_matching_predecessor_content_validates() {
 }
 
 #[test]
+fn successor_accepts_every_nonempty_valid_utf8_predecessor_output() {
+    for output in [" ", "\0", "\u{202e}", "\u{2028}\u{2029}"] {
+        let candidate = successor_fixture(Some(output));
+        candidate
+            .validate()
+            .expect("exact valid UTF-8 predecessor output must validate");
+        let canonical = candidate.canonical_json().expect("canonical candidate");
+        GroupAgentScheduledNodeContractCandidate::decode_exact(&canonical)
+            .expect("exact candidate must decode");
+        if output == "\u{2028}\u{2029}" {
+            assert!(candidate.request.user_prompt.contains(output));
+            assert!(!candidate.request.user_prompt.contains(r"\u2028"));
+        }
+    }
+}
+
+#[test]
 fn successor_content_requires_a_predecessor_receipt() {
     let mut candidate = successor_fixture(Some("unbound predecessor output"));
     candidate.request.predecessor_terminal_receipts.clear();
@@ -125,7 +142,7 @@ fn maximum_escape_expanded_user_prompt_and_candidate_validate() {
         &candidate.request.node_id,
         &"\"".repeat(MAX_GROUP_AGENT_GRAPH_NODE_TASK_BYTES),
         &"\"".repeat(MAX_GROUP_AGENT_GRAPH_NODE_ACCEPTANCE_BYTES),
-        &"\"".repeat(MAX_GROUP_AGENT_SCHEDULED_NODE_PREDECESSOR_OUTPUT_BYTES),
+        &"\0".repeat(MAX_GROUP_AGENT_SCHEDULED_NODE_PREDECESSOR_OUTPUT_BYTES),
     )
     .expect("maximally escaped Prompt");
     assert_eq!(
