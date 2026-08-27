@@ -1745,7 +1745,7 @@ upgrade 3/3 与 `git diff --check` 均通过；独立最终复审为 CLEAN。验
 test-source profile，不改变前述 UNKNOWN/非 authority 边界，也不勾选 Wave 2 多 surface extractor 总项。
 
 ## 下一前沿(需外部资源 / 后续阶段 / 投机增强 / 明确非目标,非本环境可完整验证)
-- **Graph 下一协议切片**:SQLite v17–v24 已交付 successor candidate、per-node request/lifecycle、receipt/content dataflow、wave-ready/admit 与 8 MiB successor candidate 上限；ADR-0096/0097 又交付 read-only whole-schedule reconcile 和 successor-capable zero-effect ready release。ADR-0098 的公开 max-one effectful step、跨 family Project lane 与 exact-owner adjudication 已进入最终验收流程；其正式 acceptance 前 ROADMAP 仍不勾选。下一独立协议才是 durable whole-Graph controller；并发 wave 的失败传播/自动恢复和任意 event-prefix branching 仍更晚。不得把 `ready` observation、逐节点 operator 调用或 Hub-local single-consumption 冒充顶层循环、自动第二节点或远程 exactly-once。
+- **Graph 下一协议切片**:SQLite v17–v24 已交付 successor candidate、per-node request/lifecycle、receipt/content dataflow、wave-ready/admit 与 8 MiB successor candidate 上限；ADR-0096/0097 又交付 read-only whole-schedule reconcile 和 successor-capable zero-effect ready release。ADR-0098 的公开 max-one effectful step、跨 family Project lane 与 exact-owner adjudication 已通过独立复审及正式 clean-clone acceptance，ROADMAP 对应实现项已闭合；ADR 本身仍为 Proposed。下一独立协议才是 durable whole-Graph controller；并发 wave 的失败传播/自动恢复和任意 event-prefix branching 仍更晚。不得把 `ready` observation、逐节点 operator 调用或 Hub-local single-consumption 冒充顶层循环、自动第二节点或远程 exactly-once。
 - **真点火** `--agent-cmd=claude`:**multi-agent running to completion 已坐实**(Sprint 25:真 claude 多-agent 跑到 converge MET,增量级 + 版本级)。完整旋钮:四维资源护栏 + 成本三维(phase/时间/美元)+ 任务注入 + 写权限 + 模型路由 + 工作目录 + retry + loop-back;诚实分工:agent 自治增量绿、人确认版本竣工。docs/ignition.md 有完整配方 + 实测
 - **外部资源状态**:~~SCA/CVE 漏洞库~~、~~Firecracker 主机前提~~与~~LiteLLM 双后端主机验证~~均已解决；Go Docker/Firecracker runner 也已接入执行器。剩余项是完整 coding-workspace 交换/隔离硬化与生产 provider registry/policy，它们属于后续产品契约，不再是本机外部资源阻塞。〔真 cost/latency telemetry **已达成**——S26 真 claude 补齐真 token/cost/latency 数据,scorecard 三维真值落盘〕
 - **投机增强(做即违反反 gold-plating 纪律)**:embedding 语义检索(TF-IDF 已工作,增量仅真点火时体现)
@@ -2260,7 +2260,13 @@ marker 证明首调网络路径被本地拦截且二次调用没有再次触发�
 本地 pinned Core 或本地拒绝网络，没有 live provider/付费模型请求。终审修复后的 Rustfmt、strict workspace
 Clippy、arch **8/8**、gate、governance 与 `cargo test --workspace --all-targets` 均通过，最后一项 exit 0、耗时
 350.16 秒；Go `test ./...` 与 `vet ./...` 也分别 exit 0。初轮及终轮 fresh security/final review 曾准确给出
-NOT APPROVED 并推动上述修复；最终 security 与 contract review 均已 **APPROVE/CLEAN**，clean-clone
-`forge accept` 尚待主流程完成；
-在这些证据落定前不勾选 ROADMAP。本切片始终不包含 durable whole-Graph controller、automatic second-node、
+NOT APPROVED 并推动上述修复；最终 security 与 contract review 均已 **APPROVE/CLEAN**。实现提交
+`713b4b3` 与 inert credential-fixture 扫描标注修复 `3b3e64a` 落盘后，正式候选以 `umask 0022` 从
+`3b3e64a` 创建 clean clone，并在 journal 前预建精确、已排除的 `forge-runtime/target/`，避免 Cargo 1.93
+冷初始化的原子 `targetXXXXXX` staging 被误记为源码漂移；候选 Git 状态及 staged/unstaged diff 均为空，冻结文件为
+`0644`/single-link。`node harness/acceptance.mjs` 最终 **ACCEPTED（9 pass / 0 fail / 2 honest N/A）**：Python
+97 files / 1397 tests、Node 41 files / 609 tests / 0 skipped、forge-core Go 2620 tests、Rust 五组 observed tests
+389 / 66 / 389 / 303 / 211，examples 22 / 47；complexity、governance、architecture、secret scan、SCA、
+typecheck 与 build 全部 PASS，缺失/未配置的 lint/coverage 工具保持诚实 N/A。ROADMAP 实现项据此勾选；
+ADR-0098 仍为 Proposed，未发生 lifecycle 晋级。本切片始终不包含 durable whole-Graph controller、automatic second-node、
 schedule-v2 concurrent wave、lease expiry、provider-side idempotency 或自动 crash recovery。
