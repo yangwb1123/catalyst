@@ -61,6 +61,7 @@ fn help_publishes_the_exact_ready_step_boundary() {
 
 #[test]
 fn process_parser_rejects_and_redacts_unowned_credentials() {
+    // secret-scan:ignore -- inert rejected-option fixture, never a credential.
     let secret = "private-inline-credential-must-not-echo";
     let option = format!("--api-key={secret}");
     let output = Command::new(env!("CARGO_BIN_EXE_forge-runtime"))

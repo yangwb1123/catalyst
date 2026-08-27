@@ -91,6 +91,7 @@ fn requires_every_exact_anchor_and_rejects_duplicates() {
 
 #[test]
 fn unknown_options_are_redacted_and_help_names_the_surface() {
+    // secret-scan:ignore -- inert rejected-option fixture, never a credential.
     let secret = "private-inline-credential-must-not-echo";
     let error = command(vec![format!("--api-key={secret}")]).expect_err("unknown fails");
     assert!(!error.contains(secret));
