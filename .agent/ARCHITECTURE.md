@@ -120,6 +120,8 @@ Knowledge-Engine · **Evaluation-Engine** · **Sandbox(载重墙)** · Web-UI
 >
 > **Gateway · 完整 Knowledge-Engine · Web-UI 仍为路线图；Go Docker/Firecracker runner 已落地，完整 coding-workspace 交换仍待后续。**
 
+> **Sprint 140 architecture update:** 上述引擎现状末尾“仍缺顶层整图执行循环”的旧边界已由 SQLite v29 的显式 durable scheduled whole-Graph controller 取代。`group graph run controller start/show/advance/step` 以 bounded header/event journal 重入 schedule-v1 serial progression，可在一个 completed node 后被动准备 content-free successor，但每个 provider request 仍需要 fresh exact consent，单次 `step` 至多 poll 一次。裸 dispatch 缺少或暂不可读 lifecycle 时停止为 `claimed_unknown`，仅 durable safe-preclaim classification 可重开 consent；无 daemon、concurrent wave、automatic retry/resend/refund/stopped-state recovery、provider idempotency 或 remote exactly-once。SQLite/Core 仍是 same-user trust boundary，不提供 isolation、authentication 或 effect attestation。
+
 ## AI Engineering OS 治理知识层（ADR 0045–0066 的限定切片已交付）
 
 ADR 0037 将下一层组织冻结为「生命周期决策节点 × 可复用 Capability/Skill × 显式 CapabilityGrant」：Agent

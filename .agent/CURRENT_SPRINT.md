@@ -2270,3 +2270,69 @@ NOT APPROVED 并推动上述修复；最终 security 与 contract review 均已 
 typecheck 与 build 全部 PASS，缺失/未配置的 lint/coverage 工具保持诚实 N/A。ROADMAP 实现项据此勾选；
 ADR-0098 仍为 Proposed，未发生 lifecycle 晋级。本切片始终不包含 durable whole-Graph controller、automatic second-node、
 schedule-v2 concurrent wave、lease expiry、provider-side idempotency 或自动 crash recovery。
+
+### Sprint 140 — Durable Scheduled Whole-Graph Controller v1（runtime slice）— ADR-0099 Proposed
+
+在已独立验收的一次一节点 step 之上，新增公开
+`group graph run controller start/show/advance/step`。SQLite v29 为每个 Graph Run 保存一个 immutable
+controller header 与 bounded append-only event journal；header 绑定 exact schedule/Core/profile/预算，event
+链以 digest CAS 记录 materialize、prepare、fresh-consent、dispatch reservation、completion 与 terminal stop。
+公开 `show` 只读重建 journal；`start/advance` 使用无 executor 的 passive service；`step` 复用既有
+snapshot-to-lifecycle claim 与跨 family Project lane 作为唯一 send fence，并且一个调用至多执行一次
+`executor.execute`/provider poll。
+
+controller 只接受 schedule-v1 serial、contiguous prefix、exactly-one-attempt、fail-fast policy。Core 的
+reconcile、ready-release、materialization 与 terminal 四个 protocol handshake 均在任何 Hub mutation 前完成；
+Rust 又重验每个 source-bound decision。completed node 可在同一显式调用内被动 materialize/prepare 一个
+content-free successor，但必停在新的 `AwaitingFreshConsent`；自动路径不传播 predecessor result 正文，也不
+递归执行第二个 node。每个 effectful step 在可能的外部 effect 前持久化 `DispatchPlanned`，不可退款地预留
+一个 step 与完整 per-node maximum cost，并要求 caller 锚定 exact awaiting event/request/authorization/
+snapshot/decision 与 fresh off-machine consent；存在 predecessor content 时仍另需独立 content consent。
+
+crash/re-entry 先检查 any-family lifecycle，再触碰 pricing、credential、provider 或 schedule drive。completed
+receipt 可精确修复为 `NodeCompleted`；claimed/quarantined/adjudicated/failed/failed-uncertain 进入对应 terminal
+stop。裸 `DispatchPlanned` 的 lifecycle `NotFound` 或 `Unavailable` 都不能证明旧进程无害，只要 controller
+journal 可写便持久化 `Stopped(claimed_unknown)`；只有 credential、provider construction 或 owner evidence
+这三类明确发生在 claim/poll 前的失败先写入 durable `RetryablePreclaimFailure`，才允许后续重新计算 current
+authorization、产生新 awaiting digest 并重新取得 consent。SIGINT 卡在 pricing read 的进程测试也验证裸
+dispatch 永久 stop，而不是把 cancellation 冒充 safe release。
+
+controller CAS 仅排序 journal，不授予 provider authority。并发 loser 必须 reload 同时严格后继 original 与
+previous journal 的完整有效链，重新检查 exact completion、允许的 uncertainty terminal 与 lifecycle；无关预算/
+兼容性/reauthorization terminal 不能清除 unresolved effect uncertainty。rebase 受 512-event protocol cap 约束，
+每次 retry 都要求严格 chain growth。SQLite v29 的 `BEGIN IMMEDIATE` start/append、exact replay、head CAS、
+canonical blob/column cross-validation、v28→v29 migration/final rollback、两连接竞争与 persisted header/event
+corruption matrix 均通过。
+
+所有 public controller identifier/digest/profile preflight 都在 Hub path/Core 构造之前执行，并拒绝 control 与
+bidi format characters；compiled CLI 以不存在的 Hub/Core/pricing 证明 malformed `show/start/advance/step`
+不会访问它们。默认输出只有 bounded metadata，journal 不保存 prompt/request body/predecessor output/model
+result；Core 明确标为 operator-trusted same-user code，pin/handshake/empty environment 不冒充 publisher/
+function attestation 或 filesystem/network/syscall/effect containment。Linux-only Core/effect path 在公开 usage 中
+披露；测试全部使用 deterministic provider、本地 pinned Core 或本地拒绝网络垫片，没有 live provider 或
+付费模型请求。
+
+fresh-context governance 与 security 最终复核均为 **Critical 0 / Major 0 / Minor 0**。聚焦证据包括 Domain
+**13/13**、Application controller **42/42**、SQLite controller **10/10**、CLI unit **13/13**，compiled
+handshake/re-entry/process suites 与 Go focused 全绿；prepare 五个 crash cuts、legacy lifecycle、late completion、
+budget/clock rollback、StoreUnavailable-but-controller-writable stop、uncertainty/passive-writer race、bidi
+preflight、wrong pin/四 handshake、SIGINT/FIFO 与 provider-count/privacy sentinel 均有回归。最终未提交快照的
+Rust workspace all-targets、fmt、strict Clippy、check/build，Go full/race/vet/build，architecture **8/8**、
+gate、governance、ADR v2 validator 与 diff-check 全部通过。
+
+实现提交 `dd89f26` 与 ADR/design 提交 `0ca5068` 落盘后，以 `umask 0022` 从 exact `0ca5068` 创建 clean
+clone `/tmp/tmp.J1j97bTIqf/catalyst`，并预建已忽略的 `forge-runtime/target/`。候选 Git status、staged 与
+unstaged diff 均为空；从 `b34248f..0ca5068` 的 **112** 个 changed files 全为 `0644`/single-link。
+只把确认 cwd 位于该 clone 的运行计作正式证据：`node harness/acceptance.mjs` 最终
+**ACCEPTED（9 PASS / 0 FAIL / 2 honest N/A）**。Python 为 **97 files / 1397 tests**，Node 为
+**41 files / 609 tests / 0 skipped**，forge-core Go 为 **2622 observed tests**，Rust 五组为
+**402 / 109 / 402 / 316 / 224 observed tests**，examples 为 **22 / 47**；complexity、governance、
+architecture、secret scan、SCA、typecheck 与 build 全部 PASS。缺失/未配置的 ruff/golangci-lint、ESLint
+project config 与 coverage 工具保持诚实 N/A；Rust Clippy 五组实际 PASS。
+
+**stop_condition:** durable loop budget、terminal lifecycle dispositions、per-request consent、CAS/replay、
+schedule-version compatibility、privacy、fresh review 与正式 acceptance 已闭合，ROADMAP 实现项据此勾选。
+ADR-0099 仍为 Proposed/null，未发生 lifecycle promotion。v1 是 caller-driven explicit re-entry，不是 daemon；
+不提供 schedule-v2 concurrent wave、parallel/in-flight multi-node、multiple attempts、automatic retry/resend、
+budget refund、stopped-state recovery、lease expiry、quarantine repair、claim adjudication、predecessor-content
+auto propagation、provider-side idempotency、remote exactly-once 或 Core/SQLite same-user tamper resistance。
