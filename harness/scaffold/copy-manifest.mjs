@@ -169,5 +169,31 @@ const SLICE_TOOL_FILES = [
   'strict-reviewer-scaffold-verification.mjs',
 ];
 
-export const HARNESS_NOT_COPIED = [...SLICE_TOOL_FILES, ...SCAFFOLD_TOOL_FILES]
-  .map((name) => join('harness', 'scaffold', name));
+// Platform Core conformance checks validate Catalyst's product bindings across
+// languages. They are repository-only and are not part of generated projects.
+const PLATFORM_CORE_REPOSITORY_ONLY_FILES = [
+  '__init__.py',
+  'artifact.py',
+  'check.py',
+  'codec.py',
+  'constants.py',
+  'contract.py',
+  'envelope.py',
+  'execution_receipt.py',
+  'file_read_tests.py',
+  'identity.py',
+  'receipt_contract.py',
+  'references.py',
+  'states.py',
+  'test_contract.py',
+  'test_receipt_profiles.py',
+  'test_receipts.py',
+  'verification.py',
+];
+
+export const HARNESS_NOT_COPIED = [
+  ...[...SLICE_TOOL_FILES, ...SCAFFOLD_TOOL_FILES]
+    .map((name) => join('harness', 'scaffold', name)),
+  ...PLATFORM_CORE_REPOSITORY_ONLY_FILES
+    .map((name) => join('harness', 'platform_core_contract', name)),
+];

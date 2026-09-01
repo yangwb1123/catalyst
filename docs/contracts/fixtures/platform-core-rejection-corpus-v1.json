@@ -1,0 +1,1114 @@
+{
+  "api_version": "forge.platform-core-rejection-corpus/v1",
+  "evidence_ref_cases": [
+    {
+      "arrangement": "ascending",
+      "case_id": "evidence_maximum_accepts",
+      "count": 16,
+      "expected_code": null
+    },
+    {
+      "arrangement": "ascending",
+      "case_id": "evidence_overflow_rejects",
+      "count": 17,
+      "expected_code": "pc_value_invalid"
+    },
+    {
+      "arrangement": "duplicate",
+      "case_id": "evidence_duplicate_rejects",
+      "count": 2,
+      "expected_code": "pc_value_invalid"
+    },
+    {
+      "arrangement": "descending",
+      "case_id": "evidence_descending_rejects",
+      "count": 2,
+      "expected_code": "pc_value_invalid"
+    }
+  ],
+  "executor_role_cases": [
+    {
+      "actor_type": "agent"
+    },
+    {
+      "actor_type": "service"
+    },
+    {
+      "actor_type": "system"
+    }
+  ],
+  "state_machines": [
+    {
+      "allowed_targets": {
+        "awaiting_approval": ["ready", "blocked", "cancelled"],
+        "blocked": ["ready", "failed", "cancelled"],
+        "cancelled": [],
+        "completed": [],
+        "dispatched": ["running", "blocked", "failed", "uncertain", "cancelled"],
+        "draft": ["planned", "cancelled"],
+        "failed": ["ready", "cancelled"],
+        "planned": ["awaiting_approval", "ready", "cancelled"],
+        "ready": ["dispatched", "blocked", "cancelled"],
+        "running": ["verifying", "blocked", "failed", "uncertain", "cancelled"],
+        "uncertain": ["ready", "failed", "cancelled"],
+        "verifying": ["completed", "ready", "blocked", "failed", "uncertain", "cancelled"]
+      },
+      "machine": "work_item",
+      "states": [
+        "draft",
+        "planned",
+        "awaiting_approval",
+        "ready",
+        "dispatched",
+        "running",
+        "verifying",
+        "completed",
+        "blocked",
+        "failed",
+        "uncertain",
+        "cancelled"
+      ]
+    },
+    {
+      "allowed_targets": {
+        "accepted": ["starting", "interrupted", "failed", "uncertain"],
+        "completed": [],
+        "failed": [],
+        "interrupted": [],
+        "requested": ["accepted"],
+        "running": ["interrupted", "completed", "failed", "uncertain"],
+        "starting": ["running", "interrupted", "failed", "uncertain"],
+        "uncertain": []
+      },
+      "machine": "attempt",
+      "states": [
+        "requested",
+        "accepted",
+        "starting",
+        "running",
+        "interrupted",
+        "completed",
+        "failed",
+        "uncertain"
+      ]
+    },
+    {
+      "allowed_targets": {
+        "approved": ["started", "cancelled"],
+        "awaiting_approval": ["approved", "rejected", "cancelled"],
+        "cancelled": [],
+        "failed": [],
+        "finished": [],
+        "rejected": [],
+        "requested": ["awaiting_approval", "approved", "rejected", "cancelled"],
+        "started": ["finished", "failed", "cancelled", "uncertain"],
+        "uncertain": []
+      },
+      "machine": "action",
+      "states": [
+        "requested",
+        "awaiting_approval",
+        "approved",
+        "started",
+        "finished",
+        "rejected",
+        "failed",
+        "cancelled",
+        "uncertain"
+      ]
+    }
+  ],
+  "transition_cases": [
+    {
+      "case_id": "work_item_terminal_reopen",
+      "expected_code": "pc_transition_invalid",
+      "machine": "work_item",
+      "source": "completed",
+      "target": "running"
+    },
+    {
+      "case_id": "attempt_terminal_reopen",
+      "expected_code": "pc_transition_invalid",
+      "machine": "attempt",
+      "source": "completed",
+      "target": "running"
+    },
+    {
+      "case_id": "attempt_unknown_source",
+      "expected_code": "pc_state_invalid",
+      "machine": "attempt",
+      "source": "unknown_state",
+      "target": "running"
+    },
+    {
+      "case_id": "work_item_unknown_source",
+      "expected_code": "pc_state_invalid",
+      "machine": "work_item",
+      "source": "unknown_state",
+      "target": "running"
+    },
+    {
+      "case_id": "work_item_unknown_target",
+      "expected_code": "pc_state_invalid",
+      "machine": "work_item",
+      "source": "running",
+      "target": "unknown_state"
+    },
+    {
+      "case_id": "attempt_unknown_target",
+      "expected_code": "pc_state_invalid",
+      "machine": "attempt",
+      "source": "running",
+      "target": "unknown_state"
+    },
+    {
+      "case_id": "action_unknown_source",
+      "expected_code": "pc_state_invalid",
+      "machine": "action",
+      "source": "unknown_state",
+      "target": "started"
+    },
+    {
+      "case_id": "action_unknown_target",
+      "expected_code": "pc_state_invalid",
+      "machine": "action",
+      "source": "started",
+      "target": "unknown_state"
+    },
+    {
+      "case_id": "action_terminal_reopen",
+      "expected_code": "pc_transition_invalid",
+      "machine": "action",
+      "source": "finished",
+      "target": "started"
+    }
+  ],
+  "wire_cases": [
+    {
+      "case_id": "execution_unknown_field",
+      "expected_code": "pc_document_invalid",
+      "mutations": [
+        {
+          "operation": "replace",
+          "pointer": "/unexpected",
+          "value": true
+        }
+      ],
+      "target": "execution_receipt"
+    },
+    {
+      "case_id": "verification_identifier_precedes_reference_state_and_relation",
+      "expected_code": "pc_identifier_invalid",
+      "mutations": [
+        {
+          "operation": "replace",
+          "pointer": "/receipt_id",
+          "value": "atm_0000000000000000000000000h"
+        },
+        {
+          "operation": "replace",
+          "pointer": "/scope_ref/attempt_id",
+          "value": "atm_0000000000000000000000000m"
+        },
+        {
+          "operation": "replace",
+          "pointer": "/overall_status",
+          "value": "unknown"
+        },
+        {
+          "operation": "replace",
+          "pointer": "/ended_at_unix_ms",
+          "value": 1787961606000
+        }
+      ],
+      "target": "verification_receipt"
+    },
+    {
+      "case_id": "execution_executor_role_is_closed",
+      "expected_code": "pc_value_invalid",
+      "mutations": [
+        {
+          "operation": "replace",
+          "pointer": "/executor/actor_ref/actor_type",
+          "value": "harness"
+        }
+      ],
+      "target": "execution_receipt"
+    },
+    {
+      "case_id": "execution_nonterminal_state",
+      "expected_code": "pc_state_invalid",
+      "mutations": [
+        {
+          "operation": "replace",
+          "pointer": "/terminal_state",
+          "value": "running"
+        }
+      ],
+      "target": "execution_receipt"
+    },
+    {
+      "case_id": "execution_unknown_terminal_state",
+      "expected_code": "pc_state_invalid",
+      "mutations": [
+        {
+          "operation": "replace",
+          "pointer": "/terminal_state",
+          "value": "unknown_terminal"
+        }
+      ],
+      "target": "execution_receipt"
+    },
+    {
+      "case_id": "execution_reference_precedes_unknown_state",
+      "expected_code": "pc_reference_mismatch",
+      "mutations": [
+        {
+          "operation": "replace",
+          "pointer": "/terminal_state",
+          "value": "unknown_terminal"
+        },
+        {
+          "operation": "replace",
+          "pointer": "/attempt_ref/entity_id",
+          "value": "atm_0000000000000000000000000m"
+        }
+      ],
+      "target": "execution_receipt"
+    },
+    {
+      "case_id": "execution_attempt_ref_mismatch",
+      "expected_code": "pc_reference_mismatch",
+      "mutations": [
+        {
+          "operation": "replace",
+          "pointer": "/attempt_ref/entity_id",
+          "value": "atm_0000000000000000000000000m"
+        }
+      ],
+      "target": "execution_receipt"
+    },
+    {
+      "case_id": "execution_scope_ancestry_gap",
+      "expected_code": "pc_reference_mismatch",
+      "mutations": [
+        {
+          "operation": "replace",
+          "pointer": "/scope_ref/project_id",
+          "value": null
+        }
+      ],
+      "target": "execution_receipt"
+    },
+    {
+      "case_id": "execution_opaque_record_id_invalid",
+      "expected_code": "pc_value_invalid",
+      "mutations": [
+        {
+          "operation": "replace",
+          "pointer": "/approval_ref/record_id",
+          "value": "Approval!"
+        }
+      ],
+      "target": "execution_receipt"
+    },
+    {
+      "case_id": "execution_grant_record_role_mismatch",
+      "expected_code": "pc_reference_mismatch",
+      "mutations": [
+        {
+          "operation": "replace",
+          "pointer": "/grant_ref/record_type",
+          "value": "forge.harness.test_run"
+        }
+      ],
+      "target": "execution_receipt"
+    },
+    {
+      "case_id": "execution_approval_record_role_mismatch",
+      "expected_code": "pc_reference_mismatch",
+      "mutations": [
+        {
+          "operation": "replace",
+          "pointer": "/approval_ref/record_type",
+          "value": "forge.control.capability_grant"
+        }
+      ],
+      "target": "execution_receipt"
+    },
+    {
+      "case_id": "execution_record_role_reference_precedes_state_and_relation",
+      "expected_code": "pc_reference_mismatch",
+      "mutations": [
+        {
+          "operation": "replace",
+          "pointer": "/grant_ref/record_type",
+          "value": "forge.harness.test_run"
+        },
+        {
+          "operation": "replace",
+          "pointer": "/terminal_state",
+          "value": "unknown_terminal"
+        },
+        {
+          "operation": "replace",
+          "pointer": "/output_artifact_refs/0/content_id",
+          "value": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ],
+      "target": "execution_receipt"
+    },
+    {
+      "case_id": "execution_value_precedes_record_role_reference",
+      "expected_code": "pc_value_invalid",
+      "mutations": [
+        {
+          "operation": "replace",
+          "pointer": "/observed_usage/input_tokens",
+          "value": -1
+        },
+        {
+          "operation": "replace",
+          "pointer": "/grant_ref/record_type",
+          "value": "forge.harness.test_run"
+        }
+      ],
+      "target": "execution_receipt"
+    },
+    {
+      "case_id": "execution_unknown_entity_type",
+      "expected_code": "pc_value_invalid",
+      "mutations": [
+        {
+          "operation": "replace",
+          "pointer": "/attempt_ref/entity_type",
+          "value": "unknown_entity"
+        }
+      ],
+      "target": "execution_receipt"
+    },
+    {
+      "case_id": "execution_unknown_retention_class",
+      "expected_code": "pc_value_invalid",
+      "mutations": [
+        {
+          "operation": "replace",
+          "pointer": "/output_artifact_refs/0/retention_class",
+          "value": "unknown_retention"
+        }
+      ],
+      "target": "execution_receipt"
+    },
+    {
+      "case_id": "execution_unknown_sensitivity",
+      "expected_code": "pc_value_invalid",
+      "mutations": [
+        {
+          "operation": "replace",
+          "pointer": "/output_artifact_refs/0/sensitivity",
+          "value": "unknown_sensitivity"
+        }
+      ],
+      "target": "execution_receipt"
+    },
+    {
+      "case_id": "execution_missing_reason_codes",
+      "expected_code": "pc_document_invalid",
+      "mutations": [
+        {
+          "operation": "remove",
+          "pointer": "/reason_codes",
+          "value": null
+        }
+      ],
+      "target": "execution_receipt"
+    },
+    {
+      "case_id": "execution_null_array_precedes_reference",
+      "expected_code": "pc_document_invalid",
+      "mutations": [
+        {
+          "operation": "replace",
+          "pointer": "/reason_codes",
+          "value": null
+        },
+        {
+          "operation": "replace",
+          "pointer": "/attempt_ref/entity_id",
+          "value": "atm_0000000000000000000000000m"
+        }
+      ],
+      "target": "execution_receipt"
+    },
+    {
+      "case_id": "execution_reference_precedes_nonterminal_state",
+      "expected_code": "pc_reference_mismatch",
+      "mutations": [
+        {
+          "operation": "replace",
+          "pointer": "/terminal_state",
+          "value": "running"
+        },
+        {
+          "operation": "replace",
+          "pointer": "/attempt_ref/entity_id",
+          "value": "atm_0000000000000000000000000m"
+        }
+      ],
+      "target": "execution_receipt"
+    },
+    {
+      "case_id": "execution_value_precedes_relation",
+      "expected_code": "pc_value_invalid",
+      "mutations": [
+        {
+          "operation": "replace",
+          "pointer": "/observed_usage/input_tokens",
+          "value": -1
+        },
+        {
+          "operation": "replace",
+          "pointer": "/observed_usage/elapsed_ms",
+          "value": 3999
+        }
+      ],
+      "target": "execution_receipt"
+    },
+    {
+      "case_id": "request_duplicate_check",
+      "expected_code": "pc_value_invalid",
+      "mutations": [
+        {
+          "operation": "replace",
+          "pointer": "/checks/1/check_id",
+          "value": "lint"
+        }
+      ],
+      "target": "verification_request"
+    },
+    {
+      "case_id": "request_version_boolean",
+      "expected_code": "pc_document_invalid",
+      "mutations": [
+        {
+          "operation": "replace",
+          "pointer": "/verification_request_version",
+          "value": true
+        }
+      ],
+      "target": "verification_request"
+    },
+    {
+      "case_id": "request_unknown_actor_type",
+      "expected_code": "pc_value_invalid",
+      "mutations": [
+        {
+          "operation": "replace",
+          "pointer": "/requested_by/actor_type",
+          "value": "unknown_actor"
+        }
+      ],
+      "target": "verification_request"
+    },
+    {
+      "case_id": "request_unknown_actor_precedes_relation",
+      "expected_code": "pc_value_invalid",
+      "mutations": [
+        {
+          "operation": "replace",
+          "pointer": "/requested_by/actor_type",
+          "value": "unknown_actor"
+        },
+        {
+          "operation": "replace",
+          "pointer": "/input_artifact_ref/created_at_unix_ms",
+          "value": 1787961606500
+        }
+      ],
+      "target": "verification_request"
+    },
+    {
+      "case_id": "request_artifact_postdates_request",
+      "expected_code": "pc_relation_mismatch",
+      "mutations": [
+        {
+          "operation": "replace",
+          "pointer": "/input_artifact_ref/created_at_unix_ms",
+          "value": 1787961606500
+        }
+      ],
+      "target": "verification_request"
+    },
+    {
+      "case_id": "receipt_na_missing_reason",
+      "expected_code": "pc_relation_mismatch",
+      "mutations": [
+        {
+          "operation": "replace",
+          "pointer": "/results/0/applicability_reason",
+          "value": null
+        }
+      ],
+      "target": "verification_receipt"
+    },
+    {
+      "case_id": "receipt_unknown_result_status",
+      "expected_code": "pc_state_invalid",
+      "mutations": [
+        {
+          "operation": "replace",
+          "pointer": "/results/0/status",
+          "value": "unknown_status"
+        }
+      ],
+      "target": "verification_receipt"
+    },
+    {
+      "case_id": "receipt_unknown_overall_status",
+      "expected_code": "pc_state_invalid",
+      "mutations": [
+        {
+          "operation": "replace",
+          "pointer": "/overall_status",
+          "value": "unknown_status"
+        }
+      ],
+      "target": "verification_receipt"
+    },
+    {
+      "case_id": "receipt_unknown_overall_precedes_relation",
+      "expected_code": "pc_state_invalid",
+      "mutations": [
+        {
+          "operation": "replace",
+          "pointer": "/overall_status",
+          "value": "unknown_status"
+        },
+        {
+          "operation": "replace",
+          "pointer": "/ended_at_unix_ms",
+          "value": 1787961606999
+        }
+      ],
+      "target": "verification_receipt"
+    },
+    {
+      "case_id": "receipt_artifact_reference_precedes_overall_state",
+      "expected_code": "pc_reference_mismatch",
+      "mutations": [
+        {
+          "operation": "replace",
+          "pointer": "/input_artifact_ref/source_snapshot_ref/entity_type",
+          "value": "project"
+        },
+        {
+          "operation": "replace",
+          "pointer": "/input_artifact_ref/source_snapshot_ref/entity_id",
+          "value": "prj_00000000000000000000000002"
+        },
+        {
+          "operation": "replace",
+          "pointer": "/overall_status",
+          "value": "unknown_status"
+        }
+      ],
+      "target": "verification_receipt"
+    },
+    {
+      "case_id": "receipt_artifact_reference_precedes_result_state",
+      "expected_code": "pc_reference_mismatch",
+      "mutations": [
+        {
+          "operation": "replace",
+          "pointer": "/input_artifact_ref/source_snapshot_ref/entity_type",
+          "value": "project"
+        },
+        {
+          "operation": "replace",
+          "pointer": "/input_artifact_ref/source_snapshot_ref/entity_id",
+          "value": "prj_00000000000000000000000002"
+        },
+        {
+          "operation": "replace",
+          "pointer": "/results/0/status",
+          "value": "unknown_status"
+        }
+      ],
+      "target": "verification_receipt"
+    },
+    {
+      "case_id": "receipt_unknown_applicability",
+      "expected_code": "pc_value_invalid",
+      "mutations": [
+        {
+          "operation": "replace",
+          "pointer": "/results/0/applicability",
+          "value": "unknown_applicability"
+        }
+      ],
+      "target": "verification_receipt"
+    },
+    {
+      "case_id": "receipt_null_results",
+      "expected_code": "pc_document_invalid",
+      "mutations": [
+        {
+          "operation": "replace",
+          "pointer": "/results",
+          "value": null
+        }
+      ],
+      "target": "verification_receipt"
+    },
+    {
+      "case_id": "receipt_overall_mismatch",
+      "expected_code": "pc_relation_mismatch",
+      "mutations": [
+        {
+          "operation": "replace",
+          "pointer": "/results/1/status",
+          "value": "fail"
+        },
+        {
+          "operation": "replace",
+          "pointer": "/results/1/reason_codes",
+          "value": [
+            "test_failed"
+          ]
+        }
+      ],
+      "target": "verification_receipt"
+    },
+    {
+      "case_id": "exchange_request_digest_mismatch",
+      "expected_code": "pc_relation_mismatch",
+      "mutations": [
+        {
+          "operation": "replace",
+          "pointer": "/request_sha256",
+          "value": "5555555555555555555555555555555555555555555555555555555555555555"
+        }
+      ],
+      "target": "verification_exchange"
+    },
+    {
+      "case_id": "execution_artifact_relation_after_state",
+      "expected_code": "pc_state_invalid",
+      "mutations": [
+        {
+          "operation": "replace",
+          "pointer": "/output_artifact_refs/0/content_id",
+          "value": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "operation": "replace",
+          "pointer": "/terminal_state",
+          "value": "unknown_terminal"
+        }
+      ],
+      "target": "execution_receipt"
+    },
+    {
+      "case_id": "execution_artifact_reference_after_value",
+      "expected_code": "pc_value_invalid",
+      "mutations": [
+        {
+          "operation": "replace",
+          "pointer": "/output_artifact_refs/0/source_snapshot_ref/entity_type",
+          "value": "project"
+        },
+        {
+          "operation": "replace",
+          "pointer": "/output_artifact_refs/0/source_snapshot_ref/entity_id",
+          "value": "prj_00000000000000000000000002"
+        },
+        {
+          "operation": "replace",
+          "pointer": "/observed_usage/input_tokens",
+          "value": -1
+        }
+      ],
+      "target": "execution_receipt"
+    },
+    {
+      "case_id": "execution_reference_precedes_artifact_relation",
+      "expected_code": "pc_reference_mismatch",
+      "mutations": [
+        {
+          "operation": "replace",
+          "pointer": "/attempt_ref/entity_id",
+          "value": "atm_0000000000000000000000000m"
+        },
+        {
+          "operation": "replace",
+          "pointer": "/output_artifact_refs/0/content_id",
+          "value": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ],
+      "target": "execution_receipt"
+    },
+    {
+      "case_id": "execution_reversed_interval",
+      "expected_code": "pc_relation_mismatch",
+      "mutations": [
+        {
+          "operation": "replace",
+          "pointer": "/ended_at_unix_ms",
+          "value": 1787961600000
+        }
+      ],
+      "target": "execution_receipt"
+    },
+    {
+      "case_id": "execution_reversed_interval_after_state",
+      "expected_code": "pc_state_invalid",
+      "mutations": [
+        {
+          "operation": "replace",
+          "pointer": "/ended_at_unix_ms",
+          "value": 1787961600000
+        },
+        {
+          "operation": "replace",
+          "pointer": "/terminal_state",
+          "value": "unknown_terminal"
+        }
+      ],
+      "target": "execution_receipt"
+    },
+    {
+      "case_id": "execution_reversed_event_range",
+      "expected_code": "pc_relation_mismatch",
+      "mutations": [
+        {
+          "operation": "replace",
+          "pointer": "/event_range/first_sequence",
+          "value": 12
+        }
+      ],
+      "target": "execution_receipt"
+    },
+    {
+      "case_id": "request_artifact_relation_after_value",
+      "expected_code": "pc_value_invalid",
+      "mutations": [
+        {
+          "operation": "replace",
+          "pointer": "/input_artifact_ref/content_id",
+          "value": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "operation": "replace",
+          "pointer": "/checks/1/check_id",
+          "value": "lint"
+        }
+      ],
+      "target": "verification_request"
+    },
+    {
+      "case_id": "request_artifact_reference_precedes_relation",
+      "expected_code": "pc_reference_mismatch",
+      "mutations": [
+        {
+          "operation": "replace",
+          "pointer": "/input_artifact_ref/source_snapshot_ref/entity_type",
+          "value": "project"
+        },
+        {
+          "operation": "replace",
+          "pointer": "/input_artifact_ref/source_snapshot_ref/entity_id",
+          "value": "prj_00000000000000000000000002"
+        },
+        {
+          "operation": "replace",
+          "pointer": "/input_artifact_ref/content_id",
+          "value": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ],
+      "target": "verification_request"
+    },
+    {
+      "case_id": "receipt_artifact_relation_after_state",
+      "expected_code": "pc_state_invalid",
+      "mutations": [
+        {
+          "operation": "replace",
+          "pointer": "/input_artifact_ref/content_id",
+          "value": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "operation": "replace",
+          "pointer": "/overall_status",
+          "value": "unknown_status"
+        }
+      ],
+      "target": "verification_receipt"
+    },
+    {
+      "case_id": "receipt_artifact_reference_precedes_timing_relation",
+      "expected_code": "pc_reference_mismatch",
+      "mutations": [
+        {
+          "operation": "replace",
+          "pointer": "/input_artifact_ref/source_snapshot_ref/entity_type",
+          "value": "project"
+        },
+        {
+          "operation": "replace",
+          "pointer": "/input_artifact_ref/source_snapshot_ref/entity_id",
+          "value": "prj_00000000000000000000000002"
+        },
+        {
+          "operation": "replace",
+          "pointer": "/ended_at_unix_ms",
+          "value": 1787961606999
+        }
+      ],
+      "target": "verification_receipt"
+    },
+    {
+      "case_id": "artifact_missing_field_precedes_identifier",
+      "expected_code": "pc_document_invalid",
+      "mutations": [
+        {
+          "operation": "remove",
+          "pointer": "/media_type",
+          "value": null
+        },
+        {
+          "operation": "replace",
+          "pointer": "/logical_id",
+          "value": "bad"
+        }
+      ],
+      "target": "artifact_ref"
+    },
+    {
+      "case_id": "artifact_boolean_retention_precedes_relation",
+      "expected_code": "pc_document_invalid",
+      "mutations": [
+        {
+          "operation": "replace",
+          "pointer": "/retention_class",
+          "value": true
+        },
+        {
+          "operation": "replace",
+          "pointer": "/content_id",
+          "value": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ],
+      "target": "artifact_ref"
+    },
+    {
+      "case_id": "artifact_snapshot_type_mismatch",
+      "expected_code": "pc_reference_mismatch",
+      "mutations": [
+        {
+          "operation": "replace",
+          "pointer": "/source_snapshot_ref/entity_type",
+          "value": "project"
+        },
+        {
+          "operation": "replace",
+          "pointer": "/source_snapshot_ref/entity_id",
+          "value": "prj_00000000000000000000000002"
+        }
+      ],
+      "target": "artifact_ref"
+    },
+    {
+      "case_id": "artifact_content_relation_mismatch",
+      "expected_code": "pc_relation_mismatch",
+      "mutations": [
+        {
+          "operation": "replace",
+          "pointer": "/content_id",
+          "value": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ],
+      "target": "artifact_ref"
+    },
+    {
+      "case_id": "command_missing_field_precedes_identifier",
+      "expected_code": "pc_document_invalid",
+      "mutations": [
+        {
+          "operation": "remove",
+          "pointer": "/schema_name",
+          "value": null
+        },
+        {
+          "operation": "replace",
+          "pointer": "/command_id",
+          "value": "bad"
+        }
+      ],
+      "target": "command_envelope"
+    },
+    {
+      "case_id": "event_boolean_source_precedes_reference",
+      "expected_code": "pc_document_invalid",
+      "mutations": [
+        {
+          "operation": "replace",
+          "pointer": "/source_component",
+          "value": true
+        },
+        {
+          "operation": "replace",
+          "pointer": "/aggregate_ref/entity_id",
+          "value": "atm_0000000000000000000000000f"
+        }
+      ],
+      "target": "event_envelope"
+    },
+    {
+      "case_id": "command_target_outside_scope",
+      "expected_code": "pc_reference_mismatch",
+      "mutations": [
+        {
+          "operation": "replace",
+          "pointer": "/target_ref/entity_id",
+          "value": "wki_0000000000000000000000000f"
+        }
+      ],
+      "target": "command_envelope"
+    },
+    {
+      "case_id": "event_aggregate_outside_scope",
+      "expected_code": "pc_reference_mismatch",
+      "mutations": [
+        {
+          "operation": "replace",
+          "pointer": "/aggregate_ref/entity_id",
+          "value": "atm_0000000000000000000000000f"
+        }
+      ],
+      "target": "event_envelope"
+    },
+    {
+      "case_id": "command_self_causation",
+      "expected_code": "pc_relation_mismatch",
+      "mutations": [
+        {
+          "operation": "replace",
+          "pointer": "/causation_id",
+          "value": "msg_0000000000000000000000000c"
+        }
+      ],
+      "target": "command_envelope"
+    },
+    {
+      "case_id": "command_message_suffix_mismatch",
+      "expected_code": "pc_relation_mismatch",
+      "mutations": [
+        {
+          "operation": "replace",
+          "pointer": "/command_id",
+          "value": "cmd_0000000000000000000000000f"
+        }
+      ],
+      "target": "command_envelope"
+    },
+    {
+      "case_id": "command_deadline_relation",
+      "expected_code": "pc_relation_mismatch",
+      "mutations": [
+        {
+          "operation": "replace",
+          "pointer": "/deadline_unix_ms",
+          "value": 1787961599999
+        }
+      ],
+      "target": "command_envelope"
+    },
+    {
+      "case_id": "event_self_causation",
+      "expected_code": "pc_relation_mismatch",
+      "mutations": [
+        {
+          "operation": "replace",
+          "pointer": "/causation_id",
+          "value": "msg_0000000000000000000000000e"
+        }
+      ],
+      "target": "event_envelope"
+    },
+    {
+      "case_id": "event_source_snapshot_mismatch",
+      "expected_code": "pc_reference_mismatch",
+      "mutations": [
+        {
+          "operation": "replace",
+          "pointer": "/source_snapshot_ref/entity_id",
+          "value": "psn_0000000000000000000000000f"
+        }
+      ],
+      "target": "event_envelope"
+    },
+    {
+      "case_id": "event_payload_artifact_snapshot_mismatch",
+      "expected_code": "pc_reference_mismatch",
+      "mutations": [
+        {
+          "operation": "replace",
+          "pointer": "/payload_artifact_ref/source_snapshot_ref/entity_id",
+          "value": "psn_0000000000000000000000000f"
+        }
+      ],
+      "target": "event_envelope"
+    },
+    {
+      "case_id": "event_value_precedes_reference_and_relation",
+      "expected_code": "pc_value_invalid",
+      "mutations": [
+        {
+          "operation": "replace",
+          "pointer": "/source_component",
+          "value": "unknown_source"
+        },
+        {
+          "operation": "replace",
+          "pointer": "/aggregate_ref/entity_id",
+          "value": "atm_0000000000000000000000000f"
+        },
+        {
+          "operation": "replace",
+          "pointer": "/causation_id",
+          "value": "msg_0000000000000000000000000e"
+        }
+      ],
+      "target": "event_envelope"
+    },
+    {
+      "case_id": "event_reference_precedes_relation",
+      "expected_code": "pc_reference_mismatch",
+      "mutations": [
+        {
+          "operation": "replace",
+          "pointer": "/aggregate_ref/entity_id",
+          "value": "atm_0000000000000000000000000f"
+        },
+        {
+          "operation": "replace",
+          "pointer": "/event_id",
+          "value": "evt_0000000000000000000000000f"
+        }
+      ],
+      "target": "event_envelope"
+    },
+    {
+      "case_id": "event_unknown_source_component",
+      "expected_code": "pc_value_invalid",
+      "mutations": [
+        {
+          "operation": "replace",
+          "pointer": "/source_component",
+          "value": "unknown_source"
+        }
+      ],
+      "target": "event_envelope"
+    }
+  ]
+}

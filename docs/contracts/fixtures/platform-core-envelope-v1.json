@@ -1,0 +1,143 @@
+{
+  "api_version": "forge.platform-core-envelope-fixture/v1",
+  "artifact_ref": {
+    "artifact_kind": "tool_output",
+    "canonicalization": "forge.canonical-json/v1",
+    "content_digest": "85532d31f231c75f6afcfd40c877a8f1f70d2fc58f728cc66ae9e385a4a90ca0",
+    "content_id": "sha256:85532d31f231c75f6afcfd40c877a8f1f70d2fc58f728cc66ae9e385a4a90ca0",
+    "created_at_unix_ms": 1787961604000,
+    "logical_id": "art_0000000000000000000000000b",
+    "media_type": "application/json",
+    "producer_attempt_id": "atm_00000000000000000000000008",
+    "provenance_ref": {
+      "record_id": "runtime-event-fixture-1",
+      "record_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+      "record_type": "forge.runtime.artifact_provenance"
+    },
+    "retention_class": "project",
+    "sensitivity": "internal",
+    "size_bytes": 4096,
+    "source_snapshot_ref": {
+      "entity_id": "psn_00000000000000000000000003",
+      "entity_type": "project_snapshot"
+    }
+  },
+  "command_envelope": {
+    "actor_ref": {
+      "actor_id": "acr_0000000000000000000000000a",
+      "actor_type": "service"
+    },
+    "authorization_ref": {
+      "record_id": "authorization-receipt-fixture-1",
+      "record_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+      "record_type": "forge.control.authorization_receipt"
+    },
+    "canonicalization": "forge.canonical-json/v1",
+    "causation_id": null,
+    "command_id": "cmd_0000000000000000000000000c",
+    "correlation_id": "cor_0000000000000000000000000d",
+    "deadline_unix_ms": 1787961660000,
+    "envelope_version": 1,
+    "expected_version": 3,
+    "extensions": {
+      "forge.trace": {
+        "sampled": false
+      }
+    },
+    "idempotency_key": "fixture-start-attempt-0001",
+    "issued_at_unix_ms": 1787961600000,
+    "message_id": "msg_0000000000000000000000000c",
+    "payload": {
+      "agent_adapter": "codex",
+      "work_item_id": "wki_00000000000000000000000007"
+    },
+    "payload_artifact_ref": null,
+    "schema_name": "forge.runtime.start_attempt",
+    "schema_version": 1,
+    "scope_ref": {
+      "action_id": null,
+      "attempt_id": null,
+      "change_id": "chg_00000000000000000000000005",
+      "objective_id": "obj_00000000000000000000000004",
+      "project_id": "prj_00000000000000000000000002",
+      "project_snapshot_id": "psn_00000000000000000000000003",
+      "session_id": null,
+      "space_id": "spc_00000000000000000000000001",
+      "turn_id": null,
+      "work_graph_id": "wgr_00000000000000000000000006",
+      "work_item_id": "wki_00000000000000000000000007"
+    },
+    "target_ref": {
+      "entity_id": "wki_00000000000000000000000007",
+      "entity_type": "work_item"
+    }
+  },
+  "event_envelope": {
+    "actor_ref": {
+      "actor_id": "acr_0000000000000000000000000a",
+      "actor_type": "service"
+    },
+    "aggregate_ref": {
+      "entity_id": "atm_00000000000000000000000008",
+      "entity_type": "attempt"
+    },
+    "aggregate_version": 4,
+    "canonicalization": "forge.canonical-json/v1",
+    "causation_id": "msg_0000000000000000000000000c",
+    "correlation_id": "cor_0000000000000000000000000d",
+    "envelope_version": 1,
+    "event_id": "evt_0000000000000000000000000e",
+    "extensions": {},
+    "message_id": "msg_0000000000000000000000000e",
+    "occurred_at_unix_ms": 1787961605000,
+    "payload": null,
+    "payload_artifact_ref": {
+      "artifact_kind": "tool_output",
+      "canonicalization": "forge.canonical-json/v1",
+      "content_digest": "85532d31f231c75f6afcfd40c877a8f1f70d2fc58f728cc66ae9e385a4a90ca0",
+      "content_id": "sha256:85532d31f231c75f6afcfd40c877a8f1f70d2fc58f728cc66ae9e385a4a90ca0",
+      "created_at_unix_ms": 1787961604000,
+      "logical_id": "art_0000000000000000000000000b",
+      "media_type": "application/json",
+      "producer_attempt_id": "atm_00000000000000000000000008",
+      "provenance_ref": {
+        "record_id": "runtime-event-fixture-1",
+        "record_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "record_type": "forge.runtime.artifact_provenance"
+      },
+      "retention_class": "project",
+      "sensitivity": "internal",
+      "size_bytes": 4096,
+      "source_snapshot_ref": {
+        "entity_id": "psn_00000000000000000000000003",
+        "entity_type": "project_snapshot"
+      }
+    },
+    "schema_name": "forge.runtime.attempt_output_captured",
+    "schema_version": 1,
+    "scope_ref": {
+      "action_id": null,
+      "attempt_id": "atm_00000000000000000000000008",
+      "change_id": "chg_00000000000000000000000005",
+      "objective_id": "obj_00000000000000000000000004",
+      "project_id": "prj_00000000000000000000000002",
+      "project_snapshot_id": "psn_00000000000000000000000003",
+      "session_id": null,
+      "space_id": "spc_00000000000000000000000001",
+      "turn_id": null,
+      "work_graph_id": "wgr_00000000000000000000000006",
+      "work_item_id": "wki_00000000000000000000000007"
+    },
+    "sequence": 9,
+    "source_component": "runtime",
+    "source_snapshot_ref": {
+      "entity_id": "psn_00000000000000000000000003",
+      "entity_type": "project_snapshot"
+    }
+  },
+  "expected": {
+    "artifact_ref_sha256": "19eabdc1eb12c8115ee81e64b93a8d02f3aa90d3ab96fa7c28bce5fe05c2ad68",
+    "command_envelope_sha256": "e3bf4b95e21e26b7343ea860baa9053a19157e47822cc8f550a0ba2cd8c460c6",
+    "event_envelope_sha256": "7cda8a47460b73a3daea3992f5cf3e783a121f86e9372071545aade7c6535f86"
+  }
+}

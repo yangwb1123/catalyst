@@ -454,9 +454,11 @@ test('COPIED_FILES has no drift: every harness source is copied or whitelisted',
     `would silently miss these):\n  ${missing.join('\n  ')}`,
   );
   // Honesty the other direction: the whitelist must name only REAL, present files
-  // (a stale whitelist entry would hide a genuinely-missing copy behind a typo).
+  // and must remain disjoint from copied files. A stale or copied whitelist entry
+  // would hide a genuinely-missing ownership decision.
   for (const rel of whitelist) {
     assert.ok(existsSync(join(SOURCE_ROOT, rel)), `whitelisted ${rel} must exist (stale whitelist entry)`);
+    assert.ok(!copied.has(rel), `whitelisted ${rel} must not also be copied`);
   }
 });
 test('forge-init exits non-zero on missing required args', () => {

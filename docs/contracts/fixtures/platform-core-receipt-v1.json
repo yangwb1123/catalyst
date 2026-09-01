@@ -1,0 +1,237 @@
+{
+  "api_version": "forge.platform-core-receipt-fixture/v1",
+  "execution_receipt": {
+    "approval_ref": {
+      "record_id": "approval-record-fixture-1",
+      "record_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+      "record_type": "forge.control.approval_record"
+    },
+    "attempt_ref": {
+      "entity_id": "atm_00000000000000000000000008",
+      "entity_type": "attempt"
+    },
+    "canonicalization": "forge.canonical-json/v1",
+    "ended_at_unix_ms": 1787961605000,
+    "event_range": {
+      "aggregate_ref": {
+        "entity_id": "atm_00000000000000000000000008",
+        "entity_type": "attempt"
+      },
+      "first_event_id": "evt_0000000000000000000000000e",
+      "first_sequence": 9,
+      "last_event_id": "evt_0000000000000000000000000k",
+      "last_sequence": 11
+    },
+    "execution_receipt_version": 1,
+    "executor": {
+      "actor_ref": {
+        "actor_id": "acr_0000000000000000000000000a",
+        "actor_type": "service"
+      },
+      "adapter_id": "forge.runtime.codex_adapter",
+      "adapter_version": "1.0.0"
+    },
+    "grant_ref": {
+      "record_id": "capability-grant-fixture-1",
+      "record_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+      "record_type": "forge.control.capability_grant"
+    },
+    "input_artifact_refs": [],
+    "observed_usage": {
+      "cost_usd_micros": 25000,
+      "elapsed_ms": 4000,
+      "input_tokens": 200,
+      "model_calls": 1,
+      "network_bytes": 1024,
+      "output_bytes": 4096,
+      "output_tokens": 80,
+      "tool_calls": 2
+    },
+    "output_artifact_refs": [
+      {
+        "artifact_kind": "tool_output",
+        "canonicalization": "forge.canonical-json/v1",
+        "content_digest": "85532d31f231c75f6afcfd40c877a8f1f70d2fc58f728cc66ae9e385a4a90ca0",
+        "content_id": "sha256:85532d31f231c75f6afcfd40c877a8f1f70d2fc58f728cc66ae9e385a4a90ca0",
+        "created_at_unix_ms": 1787961604000,
+        "logical_id": "art_0000000000000000000000000b",
+        "media_type": "application/json",
+        "producer_attempt_id": "atm_00000000000000000000000008",
+        "provenance_ref": {
+          "record_id": "runtime-event-fixture-1",
+          "record_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+          "record_type": "forge.runtime.artifact_provenance"
+        },
+        "retention_class": "project",
+        "sensitivity": "internal",
+        "size_bytes": 4096,
+        "source_snapshot_ref": {
+          "entity_id": "psn_00000000000000000000000003",
+          "entity_type": "project_snapshot"
+        }
+      }
+    ],
+    "reason_codes": [],
+    "receipt_id": "rcp_0000000000000000000000000f",
+    "scope_ref": {
+      "action_id": null,
+      "attempt_id": "atm_00000000000000000000000008",
+      "change_id": "chg_00000000000000000000000005",
+      "objective_id": "obj_00000000000000000000000004",
+      "project_id": "prj_00000000000000000000000002",
+      "project_snapshot_id": "psn_00000000000000000000000003",
+      "session_id": "ses_00000000000000000000000009",
+      "space_id": "spc_00000000000000000000000001",
+      "turn_id": null,
+      "work_graph_id": "wgr_00000000000000000000000006",
+      "work_item_id": "wki_00000000000000000000000007"
+    },
+    "session_ref": {
+      "entity_id": "ses_00000000000000000000000009",
+      "entity_type": "session"
+    },
+    "source_snapshot_ref": {
+      "entity_id": "psn_00000000000000000000000003",
+      "entity_type": "project_snapshot"
+    },
+    "started_at_unix_ms": 1787961601000,
+    "terminal_state": "completed"
+  },
+  "expected": {
+    "execution_receipt_sha256": "3425b14b9238fe42464295e5840c6607a96eaa53d0b995ea695a1dfe83a63dc1",
+    "verification_receipt_sha256": "21b122f3479b5a3ba58278209212f6b0d9646ab170156a07bb63af2926d72c8b",
+    "verification_request_sha256": "c205e58b0bb3486223fef9401cdeecdc1266f233dbe4d774bc7029313636a5dc"
+  },
+  "verification_receipt": {
+    "canonicalization": "forge.canonical-json/v1",
+    "ended_at_unix_ms": 1787961609000,
+    "input_artifact_ref": {
+      "artifact_kind": "tool_output",
+      "canonicalization": "forge.canonical-json/v1",
+      "content_digest": "85532d31f231c75f6afcfd40c877a8f1f70d2fc58f728cc66ae9e385a4a90ca0",
+      "content_id": "sha256:85532d31f231c75f6afcfd40c877a8f1f70d2fc58f728cc66ae9e385a4a90ca0",
+      "created_at_unix_ms": 1787961604000,
+      "logical_id": "art_0000000000000000000000000b",
+      "media_type": "application/json",
+      "producer_attempt_id": "atm_00000000000000000000000008",
+      "provenance_ref": {
+        "record_id": "runtime-event-fixture-1",
+        "record_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "record_type": "forge.runtime.artifact_provenance"
+      },
+      "retention_class": "project",
+      "sensitivity": "internal",
+      "size_bytes": 4096,
+      "source_snapshot_ref": {
+        "entity_id": "psn_00000000000000000000000003",
+        "entity_type": "project_snapshot"
+      }
+    },
+    "overall_status": "pass",
+    "produced_by": {
+      "actor_id": "acr_0000000000000000000000000j",
+      "actor_type": "harness"
+    },
+    "receipt_id": "rcp_0000000000000000000000000h",
+    "request_sha256": "c205e58b0bb3486223fef9401cdeecdc1266f233dbe4d774bc7029313636a5dc",
+    "results": [
+      {
+        "applicability": "not_applicable",
+        "applicability_reason": "No lint profile applies to this fixture.",
+        "check_id": "lint",
+        "evidence_refs": [],
+        "reason_codes": [
+          "not_applicable"
+        ],
+        "status": "not_executed"
+      },
+      {
+        "applicability": "applicable",
+        "applicability_reason": null,
+        "check_id": "tests",
+        "evidence_refs": [
+          {
+            "record_id": "harness-test-run-fixture-1",
+            "record_sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+            "record_type": "forge.harness.test_run"
+          }
+        ],
+        "reason_codes": [],
+        "status": "pass"
+      }
+    ],
+    "scope_ref": {
+      "action_id": null,
+      "attempt_id": "atm_00000000000000000000000008",
+      "change_id": "chg_00000000000000000000000005",
+      "objective_id": "obj_00000000000000000000000004",
+      "project_id": "prj_00000000000000000000000002",
+      "project_snapshot_id": "psn_00000000000000000000000003",
+      "session_id": "ses_00000000000000000000000009",
+      "space_id": "spc_00000000000000000000000001",
+      "turn_id": null,
+      "work_graph_id": "wgr_00000000000000000000000006",
+      "work_item_id": "wki_00000000000000000000000007"
+    },
+    "started_at_unix_ms": 1787961607000,
+    "verification_id": "ver_0000000000000000000000000g",
+    "verification_receipt_version": 1
+  },
+  "verification_request": {
+    "canonicalization": "forge.canonical-json/v1",
+    "checks": [
+      {
+        "check_id": "lint",
+        "check_name": "forge.check.lint",
+        "declared_required": false
+      },
+      {
+        "check_id": "tests",
+        "check_name": "forge.check.test",
+        "declared_required": true
+      }
+    ],
+    "input_artifact_ref": {
+      "artifact_kind": "tool_output",
+      "canonicalization": "forge.canonical-json/v1",
+      "content_digest": "85532d31f231c75f6afcfd40c877a8f1f70d2fc58f728cc66ae9e385a4a90ca0",
+      "content_id": "sha256:85532d31f231c75f6afcfd40c877a8f1f70d2fc58f728cc66ae9e385a4a90ca0",
+      "created_at_unix_ms": 1787961604000,
+      "logical_id": "art_0000000000000000000000000b",
+      "media_type": "application/json",
+      "producer_attempt_id": "atm_00000000000000000000000008",
+      "provenance_ref": {
+        "record_id": "runtime-event-fixture-1",
+        "record_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "record_type": "forge.runtime.artifact_provenance"
+      },
+      "retention_class": "project",
+      "sensitivity": "internal",
+      "size_bytes": 4096,
+      "source_snapshot_ref": {
+        "entity_id": "psn_00000000000000000000000003",
+        "entity_type": "project_snapshot"
+      }
+    },
+    "requested_at_unix_ms": 1787961606000,
+    "requested_by": {
+      "actor_id": "acr_0000000000000000000000000a",
+      "actor_type": "service"
+    },
+    "scope_ref": {
+      "action_id": null,
+      "attempt_id": "atm_00000000000000000000000008",
+      "change_id": "chg_00000000000000000000000005",
+      "objective_id": "obj_00000000000000000000000004",
+      "project_id": "prj_00000000000000000000000002",
+      "project_snapshot_id": "psn_00000000000000000000000003",
+      "session_id": "ses_00000000000000000000000009",
+      "space_id": "spc_00000000000000000000000001",
+      "turn_id": null,
+      "work_graph_id": "wgr_00000000000000000000000006",
+      "work_item_id": "wki_00000000000000000000000007"
+    },
+    "verification_id": "ver_0000000000000000000000000g",
+    "verification_request_version": 1
+  }
+}

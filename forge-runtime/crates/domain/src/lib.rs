@@ -28,6 +28,7 @@ pub mod kernel_decision_contract;
 pub mod kernel_operational_contract;
 pub mod knowledge_update_proposal_contract;
 mod model;
+pub mod platform_core_contract;
 mod run;
 mod run_journal;
 mod run_lineage;

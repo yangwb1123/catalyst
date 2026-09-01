@@ -9,6 +9,14 @@ OpenAI Responses provider, and a capability-confined read-only workspace tool.
 It never mutates a project. The default remains offline; network and model
 cost are possible only with an explicit `--live` command.
 
+The domain crate also exports strict Rust bindings for the Proposed
+[Platform Core Envelope v1](../docs/contracts/platform-core-envelope-v1.md) and
+[Platform Core Receipt v1](../docs/contracts/platform-core-receipt-v1.md).
+They validate and canonically encode supplied identity, scope, artifact,
+command, event, execution/verification receipt values, and pure state-edge
+membership. They are not wired to Hub persistence, dispatch, provider calls,
+check execution, current-state mutation, or completion policy.
+
 The Hub adds persistent local discovery:
 
 ```bash

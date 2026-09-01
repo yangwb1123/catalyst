@@ -1,0 +1,269 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forgeos.dev/contracts/platform-core-receipt-v1.schema.json",
+  "title": "Forge Platform Core Receipt v1",
+  "oneOf": [
+    {"$ref": "#/$defs/execution_receipt"},
+    {"$ref": "#/$defs/verification_request"},
+    {"$ref": "#/$defs/verification_receipt"}
+  ],
+  "$defs": {
+    "entity_ref": {
+      "$ref": "platform-core-envelope-v1.schema.json#/$defs/entity_ref"
+    },
+    "actor_ref": {
+      "$ref": "platform-core-envelope-v1.schema.json#/$defs/actor_ref"
+    },
+    "record_ref": {
+      "$ref": "platform-core-envelope-v1.schema.json#/$defs/record_ref"
+    },
+    "scope_ref": {
+      "$ref": "platform-core-envelope-v1.schema.json#/$defs/scope_ref"
+    },
+    "artifact_ref": {
+      "$ref": "platform-core-envelope-v1.schema.json#/$defs/artifact_ref"
+    },
+    "schema_name": {
+      "$ref": "platform-core-envelope-v1.schema.json#/$defs/schema_name"
+    },
+    "reason_codes": {
+      "type": "array",
+      "maxItems": 16,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 64,
+        "pattern": "^[a-z][a-z0-9_]*(?![\\s\\S])"
+      }
+    },
+    "executor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["actor_ref", "adapter_id", "adapter_version"],
+      "properties": {
+        "actor_ref": {
+          "allOf": [
+            {"$ref": "#/$defs/actor_ref"},
+            {"properties": {"actor_type": {"enum": ["agent", "service", "system"]}}}
+          ]
+        },
+        "adapter_id": {"$ref": "#/$defs/schema_name"},
+        "adapter_version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]{0,8})\\.(0|[1-9][0-9]{0,8})\\.(0|[1-9][0-9]{0,8})(?![\\s\\S])"
+        }
+      }
+    },
+    "observed_usage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cost_usd_micros", "elapsed_ms", "input_tokens", "model_calls", "network_bytes", "output_bytes", "output_tokens", "tool_calls"],
+      "properties": {
+        "cost_usd_micros": {"type": "integer", "minimum": 0, "maximum": 1000000000000000},
+        "elapsed_ms": {"type": "integer", "minimum": 0, "maximum": 31536000000},
+        "input_tokens": {"type": "integer", "minimum": 0, "maximum": 1000000000000000},
+        "model_calls": {"type": "integer", "minimum": 0, "maximum": 1000000000},
+        "network_bytes": {"type": "integer", "minimum": 0, "maximum": 1000000000000000},
+        "output_bytes": {"type": "integer", "minimum": 0, "maximum": 1000000000000000},
+        "output_tokens": {"type": "integer", "minimum": 0, "maximum": 1000000000000000},
+        "tool_calls": {"type": "integer", "minimum": 0, "maximum": 1000000000}
+      }
+    },
+    "attempt_ref": {
+      "allOf": [
+        {"$ref": "#/$defs/entity_ref"},
+        {"properties": {"entity_type": {"const": "attempt"}}}
+      ]
+    },
+    "session_ref": {
+      "allOf": [
+        {"$ref": "#/$defs/entity_ref"},
+        {"properties": {"entity_type": {"const": "session"}}}
+      ]
+    },
+    "snapshot_ref": {
+      "allOf": [
+        {"$ref": "#/$defs/entity_ref"},
+        {"properties": {"entity_type": {"const": "project_snapshot"}}}
+      ]
+    },
+    "event_range": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["aggregate_ref", "first_event_id", "first_sequence", "last_event_id", "last_sequence"],
+      "properties": {
+        "aggregate_ref": {"$ref": "#/$defs/attempt_ref"},
+        "first_event_id": {
+          "type": "string",
+          "pattern": "^evt_[0-7][0-9a-hjkmnp-tv-z]{25}(?![\\s\\S])"
+        },
+        "first_sequence": {"type": "integer", "minimum": 1, "maximum": 9223372036854775807},
+        "last_event_id": {
+          "type": "string",
+          "pattern": "^evt_[0-7][0-9a-hjkmnp-tv-z]{25}(?![\\s\\S])"
+        },
+        "last_sequence": {"type": "integer", "minimum": 1, "maximum": 9223372036854775807}
+      }
+    },
+    "execution_receipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["approval_ref", "attempt_ref", "canonicalization", "ended_at_unix_ms", "event_range", "execution_receipt_version", "executor", "grant_ref", "input_artifact_refs", "observed_usage", "output_artifact_refs", "reason_codes", "receipt_id", "scope_ref", "session_ref", "source_snapshot_ref", "started_at_unix_ms", "terminal_state"],
+      "properties": {
+        "approval_ref": {
+          "oneOf": [
+            {
+              "allOf": [
+                {"$ref": "#/$defs/record_ref"},
+                {"properties": {"record_type": {"const": "forge.control.approval_record"}}}
+              ]
+            },
+            {"type": "null"}
+          ]
+        },
+        "attempt_ref": {"$ref": "#/$defs/attempt_ref"},
+        "canonicalization": {"const": "forge.canonical-json/v1"},
+        "ended_at_unix_ms": {"type": "integer", "minimum": 1, "maximum": 253402300799999},
+        "event_range": {"$ref": "#/$defs/event_range"},
+        "execution_receipt_version": {"const": 1},
+        "executor": {"$ref": "#/$defs/executor"},
+        "grant_ref": {
+          "oneOf": [
+            {
+              "allOf": [
+                {"$ref": "#/$defs/record_ref"},
+                {"properties": {"record_type": {"const": "forge.control.capability_grant"}}}
+              ]
+            },
+            {"type": "null"}
+          ]
+        },
+        "input_artifact_refs": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {"$ref": "#/$defs/artifact_ref"}
+        },
+        "observed_usage": {"$ref": "#/$defs/observed_usage"},
+        "output_artifact_refs": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {"$ref": "#/$defs/artifact_ref"}
+        },
+        "reason_codes": {"$ref": "#/$defs/reason_codes"},
+        "receipt_id": {
+          "type": "string",
+          "pattern": "^rcp_[0-7][0-9a-hjkmnp-tv-z]{25}(?![\\s\\S])"
+        },
+        "scope_ref": {"$ref": "#/$defs/scope_ref"},
+        "session_ref": {"$ref": "#/$defs/session_ref"},
+        "source_snapshot_ref": {"$ref": "#/$defs/snapshot_ref"},
+        "started_at_unix_ms": {"type": "integer", "minimum": 1, "maximum": 253402300799999},
+        "terminal_state": {
+          "enum": ["interrupted", "completed", "failed", "uncertain"]
+        }
+      }
+    },
+    "verification_check_request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["check_id", "check_name", "declared_required"],
+      "properties": {
+        "check_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9_]*(?![\\s\\S])"
+        },
+        "check_name": {"$ref": "#/$defs/schema_name"},
+        "declared_required": {"type": "boolean"}
+      }
+    },
+    "verification_request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["canonicalization", "checks", "input_artifact_ref", "requested_at_unix_ms", "requested_by", "scope_ref", "verification_id", "verification_request_version"],
+      "properties": {
+        "canonicalization": {"const": "forge.canonical-json/v1"},
+        "checks": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {"$ref": "#/$defs/verification_check_request"}
+        },
+        "input_artifact_ref": {"$ref": "#/$defs/artifact_ref"},
+        "requested_at_unix_ms": {"type": "integer", "minimum": 1, "maximum": 253402300799999},
+        "requested_by": {"$ref": "#/$defs/actor_ref"},
+        "scope_ref": {"$ref": "#/$defs/scope_ref"},
+        "verification_id": {
+          "type": "string",
+          "pattern": "^ver_[0-7][0-9a-hjkmnp-tv-z]{25}(?![\\s\\S])"
+        },
+        "verification_request_version": {"const": 1}
+      }
+    },
+    "verification_result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["applicability", "applicability_reason", "check_id", "evidence_refs", "reason_codes", "status"],
+      "properties": {
+        "applicability": {"enum": ["applicable", "not_applicable"]},
+        "applicability_reason": {
+          "type": ["string", "null"],
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "check_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9_]*(?![\\s\\S])"
+        },
+        "evidence_refs": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {"$ref": "#/$defs/record_ref"}
+        },
+        "reason_codes": {"$ref": "#/$defs/reason_codes"},
+        "status": {"enum": ["pass", "fail", "inconclusive", "not_executed"]}
+      }
+    },
+    "verification_receipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["canonicalization", "ended_at_unix_ms", "input_artifact_ref", "overall_status", "produced_by", "receipt_id", "request_sha256", "results", "scope_ref", "started_at_unix_ms", "verification_id", "verification_receipt_version"],
+      "properties": {
+        "canonicalization": {"const": "forge.canonical-json/v1"},
+        "ended_at_unix_ms": {"type": "integer", "minimum": 1, "maximum": 253402300799999},
+        "input_artifact_ref": {"$ref": "#/$defs/artifact_ref"},
+        "overall_status": {"enum": ["pass", "fail", "inconclusive", "not_executed"]},
+        "produced_by": {
+          "allOf": [
+            {"$ref": "#/$defs/actor_ref"},
+            {"properties": {"actor_type": {"const": "harness"}}}
+          ]
+        },
+        "receipt_id": {
+          "type": "string",
+          "pattern": "^rcp_[0-7][0-9a-hjkmnp-tv-z]{25}(?![\\s\\S])"
+        },
+        "request_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}(?![\\s\\S])"
+        },
+        "results": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {"$ref": "#/$defs/verification_result"}
+        },
+        "scope_ref": {"$ref": "#/$defs/scope_ref"},
+        "started_at_unix_ms": {"type": "integer", "minimum": 1, "maximum": 253402300799999},
+        "verification_id": {
+          "type": "string",
+          "pattern": "^ver_[0-7][0-9a-hjkmnp-tv-z]{25}(?![\\s\\S])"
+        },
+        "verification_receipt_version": {"const": 1}
+      }
+    }
+  }
+}
