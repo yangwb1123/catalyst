@@ -121,8 +121,8 @@ type Priorities struct {
 
 // modePriorities is each mode's priorities ranking, distilled VERBATIM from
 // modes.yml modes.<mode>.priorities — the same hardcoded-distillation play as
-// internal/routing's modeDefault (forge-core is zero-dependency, so it cannot
-// parse the YAML at runtime; the table is the single Go mirror of that data,
+// internal/routing's modeDefault. This policy path intentionally does not add
+// a YAML parser; the table is the single Go mirror of that data,
 // kept in lockstep with modes.yml, which check.py independently validates).
 //
 //	mode         speed quality cost   (modes.yml priorities)

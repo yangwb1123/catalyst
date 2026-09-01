@@ -55,7 +55,7 @@ func Governance(root string) GovernanceReport {
 	}
 	rep.Evolving = rep.TotalChanges > 5
 	rep.ADRs = []ADRCheck{
-		{Label: "ADR-0001: Go 自研运行时 + 零外部依赖", Mark: checkADR0001(root)},
+		{Label: "ADR-0001: Go 自研运行时 + 收敛依赖边界", Mark: checkADR0001(root)},
 		{Label: "ADR-0002: Polyglot 栈分期引入 (Go ✅, ❌ Python/Rust/TS)", Mark: checkADR0002(root)},
 		{Label: "ADR-0003: agent-os Submodule 共享", Mark: checkADR0003(root)},
 		{Label: "ADR-0004: REVIEW 阶段 AI-SDLC 评审 (workflow ✅, uses_template ⚠️)", Mark: checkADR0004(root)},
@@ -85,10 +85,14 @@ func dirStats(path string) (int, time.Time) {
 	return count, latest
 }
 
-// checkADR0001 verifies forge-core still builds with zero external deps.
+// checkADR0001 verifies forge-core builds and retains its exact module policy.
 func checkADR0001(root string) string {
+	forgeDir := filepath.Join(root, "forge-core")
+	if err := CheckModuleDependencyPolicy(forgeDir); err != nil {
+		return "❌"
+	}
 	cmd := exec.Command("go", "build", "-o", os.DevNull, "./cmd/forge")
-	cmd.Dir = filepath.Join(root, "forge-core")
+	cmd.Dir = forgeDir
 	if err := cmd.Run(); err != nil {
 		return "❌"
 	}

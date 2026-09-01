@@ -7,17 +7,18 @@
 // deliberate design choice: every ADR must be falsifiable by an automated test,
 // so "Accepted" means "passes its tests".
 //
-// These tests use only the Go standard library — forge-core's own zero-dep
-// constraint means they never introduce external test dependencies.
+// These tests themselves use only the Go standard library plus forge-core's
+// internal packages; the reviewed App Server SQLite closure is checked below.
 package adr
 
 import (
-	"bytes"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"forgeos/forge-core/internal/doctor"
 )
 
 // repoRoot attempts to find the ForgeOS repo root by looking for
@@ -56,69 +57,47 @@ func TestADR0001_ForgeCoreExists(t *testing.T) {
 	}
 }
 
-// TestADR0001_ZeroExternalDeps checks that forge-core has no external dependencies
-// in go.mod (ADR-0001's implicit commitment to zero-dependency core).
-func TestADR0001_ZeroExternalDeps(t *testing.T) {
+// TestForgeCoreDependencyPolicy keeps the App Server's sole external module
+// exact and confined. ADR-0001 is superseded and ADR-0002 permits procured
+// infrastructure; neither records the former all-module zero-dependency claim.
+func TestForgeCoreDependencyPolicy(t *testing.T) {
 	root := repoRoot(t)
-	data, err := os.ReadFile(filepath.Join(root, "forge-core", "go.mod"))
-	if err != nil {
-		t.Fatalf("read go.mod: %v", err)
-	}
-	// The go.mod must not have a "require (" block, AND must not have a
-	// single-line `require <module> <version>` directive — zero external
-	// dependencies. Standard library and the forgeos/forge-core module itself
-	// are not external. (A prior version of this check only scanned inside a
-	// `require (` ... `)` block and silently ignored the single-line form,
-	// which is what `go get`/`go mod tidy` actually emit for one new
-	// dependency — that form was never caught.)
-	lines := strings.Split(string(data), "\n")
-	inRequire := false
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "require (" {
-			inRequire = true
-			continue
-		}
-		if inRequire {
-			if trimmed == ")" {
-				inRequire = false
-				continue
-			}
-			// Skip blank lines and comments.
-			if trimmed == "" || strings.HasPrefix(trimmed, "//") {
-				continue
-			}
-			// Any non-comment line in a require block is an external dependency.
-			if strings.Contains(trimmed, " ") {
-				t.Errorf("ADR-0001 violation: forge-core has external dependency: %s", trimmed)
-			}
-			continue
-		}
-		// Single-line form: `require <module> <version>`.
-		if strings.HasPrefix(trimmed, "require ") {
-			t.Errorf("ADR-0001 violation: forge-core has external dependency: %s", trimmed)
-		}
+	if err := doctor.CheckModuleDependencyPolicy(filepath.Join(root, "forge-core")); err != nil {
+		t.Fatal(err)
 	}
 }
 
-// TestADR0001_ZeroExternalDeps_CatchesSingleLineForm is a regression test for
-// the single-line `require <module> <version>` form (what `go get` actually
-// emits for one new dependency) — a prior version of the scan above only
-// looked inside a `require (` ... `)` block and never noticed this form.
-func TestADR0001_ZeroExternalDeps_CatchesSingleLineForm(t *testing.T) {
-	fixture := "module forgeos/forge-core\n\ngo 1.26\n\nrequire golang.org/x/net v0.20.0\n"
-	found := false
-	for _, line := range strings.Split(fixture, "\n") {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "require (" {
-			t.Fatal("fixture unexpectedly contains a require block; test needs updating")
-		}
-		if strings.HasPrefix(trimmed, "require ") {
-			found = true
-		}
+func TestForgeCoreDependencyPolicyCatchesUnexpectedModule(t *testing.T) {
+	root := repoRoot(t)
+	forgeDir := filepath.Join(root, "forge-core")
+	goMod, err := os.ReadFile(filepath.Join(forgeDir, "go.mod"))
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !found {
-		t.Fatal("regression: a single-line `require <module> <version>` directive was not detected")
+	goSum, err := os.ReadFile(filepath.Join(forgeDir, "go.sum"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	goMod = append(goMod, []byte("require golang.org/x/net v0.20.0\n")...)
+	if err := doctor.CheckModuleManifests(goMod, goSum); err == nil {
+		t.Fatal("unexpected module escaped the exact dependency policy")
+	}
+}
+
+func TestForgeCoreDependencyPolicyCatchesChecksumDrift(t *testing.T) {
+	root := repoRoot(t)
+	forgeDir := filepath.Join(root, "forge-core")
+	goMod, err := os.ReadFile(filepath.Join(forgeDir, "go.mod"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	goSum, err := os.ReadFile(filepath.Join(forgeDir, "go.sum"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	goSum = append(goSum, []byte("unexpected checksum\n")...)
+	if err := doctor.CheckModuleManifests(goMod, goSum); err == nil {
+		t.Fatal("checksum drift escaped the exact dependency policy")
 	}
 }
 
@@ -275,28 +254,5 @@ func TestCrossADR_HarnessNotInForgeCore(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("walk forge-core: %v", err)
-	}
-}
-
-// TestCrossADR_GoModStaysClean is a coarse, deliberately t.Logf-only tripwire
-// for ANY unexpected go.mod growth (not just dependencies) — update the
-// expected max when a legitimate standard-library-only feature grows it.
-// The precise, hard-failing check for actual dependencies is
-// TestADR0001_ZeroExternalDeps above (content-based: it inspects go.mod's
-// require directives directly, in both the block and single-line forms), so
-// this line-count heuristic is intentionally redundant with — and weaker
-// than — that one for the dependency case specifically; it is kept only as
-// a cheap heads-up for growth from OTHER causes (e.g. a retract/toolchain
-// directive) that TestADR0001 has no reason to flag.
-func TestCrossADR_GoModStaysClean(t *testing.T) {
-	root := repoRoot(t)
-	data, err := os.ReadFile(filepath.Join(root, "forge-core", "go.mod"))
-	if err != nil {
-		t.Fatalf("read go.mod: %v", err)
-	}
-	// go.mod should be small: module declaration + go version line.
-	// A go.mod with external deps would have a require block and much more content.
-	if bytes.Count(data, []byte("\n")) > 5 {
-		t.Logf("go.mod has %d lines — check for unintended changes", bytes.Count(data, []byte("\n")))
 	}
 }

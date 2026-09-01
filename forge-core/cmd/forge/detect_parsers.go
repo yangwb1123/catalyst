@@ -52,8 +52,8 @@ func detectProject(root string) projectProfile {
 //   - Successful parse → populated fields + indicator listing what was found.
 
 // parseGoMod reads go.mod for the `module` directive (module path) and the `go`
-// directive (Go language version). forge-core is zero-dep so this is a line
-// scanner, the same approach as readProjectYML. Returns the found module path,
+// directive (Go language version). This path deliberately adds no parser
+// dependency and uses the same line-scanning approach as readProjectYML.
 // Go version, and updated indicator slice.
 func parseGoMod(root string, ind []string) (modulePath, goVersion string, indicators []string) {
 	data, err := os.ReadFile(filepath.Join(root, "go.mod"))
@@ -77,8 +77,8 @@ func parseGoMod(root string, ind []string) (modulePath, goVersion string, indica
 }
 
 // parsePackageJSON reads package.json for the `scripts.build`, `scripts.test`,
-// and dependency count fields. Uses Go stdlib's json decoder (the only JSON lib
-// we have — zero-dep, no external imports). Returns build-script presence,
+// and dependency count fields. Uses Go stdlib's JSON decoder and adds no
+// external manifest dependency. Returns build-script presence,
 // test-script presence, dependency count, and updated indicators.
 func parsePackageJSON(root string, ind []string) (hasBuild, hasTest bool, deps int, indicators []string) {
 	data, err := os.ReadFile(filepath.Join(root, "package.json"))
@@ -139,7 +139,7 @@ func parsePyprojectToml(root string, ind []string) (buildBackend, pythonVersion 
 
 // parseCargoToml reads Cargo.toml for the `[package] name` (crate name) and
 // `[package] edition` (Rust edition: 2015|2018|2021|2024) fields. Uses the
-// same zero-dep section-scanner pattern as parsePyprojectToml: finds a
+// same dependency-free section-scanner pattern as parsePyprojectToml: finds a
 // `[section]` header, reads key = value lines until the next `[section]` or
 // EOF. Returns crate name, edition, and updated indicators.
 func parseCargoToml(root string, ind []string) (crateName, edition string, indicators []string) {

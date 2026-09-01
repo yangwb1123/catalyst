@@ -18,7 +18,7 @@ package prompt
 //   - It is NOT semantic. "car" will not match "vehicle"; only shared word stems
 //     (lowercased, punctuation-split) count. True semantic / embedding retrieval
 //     is v3 work: it needs vectorization and an external embedding model, neither
-//     of which belongs in this zero-dependency runtime.
+//     of which belongs in this deterministic local retriever.
 //   - Even when the corpus is small enough that top-K ≈ full injection, wiring
 //     retrieval in now is the correct, scalable direction: the moment the repo
 //     grows past a windowful of ADRs, the same call keeps the prompt bounded.

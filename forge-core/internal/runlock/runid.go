@@ -8,8 +8,8 @@ import (
 
 // NewRunID returns a process-scoped, roughly time-ordered, collision-
 // resistant id for trace correlation: hex(time.Now().UnixNano()) + "-" +
-// hex(4 crypto/rand bytes). No UUID library (forge-core's zero-dependency
-// rule) — this is enough entropy to make two runs started in the same
+// hex(4 crypto/rand bytes). This package intentionally needs no UUID library;
+// the construction has enough entropy to make two runs started in the same
 // nanosecond tick (the only way the time component alone could collide)
 // distinguishable in practice, without any package-level state to guard.
 //

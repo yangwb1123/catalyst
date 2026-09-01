@@ -7,7 +7,7 @@
 //
 // HONEST scope (v1.5):
 //   - Detection is STRUCTURAL (file presence) + SEMANTIC (reading manifest contents).
-//     Parsing is lightweight line-scanning (forge-core is zero-dep, no JSON/YAML/TOML lib).
+//     Parsing is lightweight line-scanning and adds no manifest-parser dependency.
 //   - Suggestions are advisory: the user runs the suggested command, not this tool.
 //   - Unknown signs or parse failures → honest "unknown"; never fabricates confident verdict.
 //   - project.yml lifecycle/mode is read if present; missing fields degrade gracefully.
