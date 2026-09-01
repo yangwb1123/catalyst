@@ -2,10 +2,14 @@ package gate
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"math"
 	"reflect"
 	"strings"
 	"testing"
+
+	"forgeos/forge-core/internal/execbound"
 )
 
 // mixedProbeJSON is one complete exact envelope with every valid category and
@@ -23,6 +27,34 @@ const mixedProbeJSON = `[` +
 	`{"criterion":"typecheck","status":"N-A","detail":"not typed","category":"inapplicable"},` +
 	`{"criterion":"build","status":"PASS","detail":"build passed","category":"applicable"}` +
 	`]`
+
+func TestProbeParserRejectsIncompleteDrainBeforeValidEnvelope(t *testing.T) {
+	result := execbound.Result{
+		Stdout:          []byte(mixedProbeJSON),
+		Total:           int64(len(mixedProbeJSON)),
+		Retained:        len(mixedProbeJSON),
+		DrainIncomplete: true,
+		Err:             errors.New("exit status 1"),
+	}
+	statuses, categories, err := probeFromExecution(result, "after 1m")
+	if statuses != nil || categories != nil ||
+		errStr(err) != "gate: parsing acceptance --json: output drain incomplete" {
+		t.Fatalf("incomplete drain was usable: %v / %v / %v", statuses, categories, err)
+	}
+}
+
+func TestProbeParserReportsCountOverflowWithoutFalseExactTotal(t *testing.T) {
+	result := execbound.Result{
+		Stdout: []byte(mixedProbeJSON), Total: math.MaxInt64,
+		Retained: len(mixedProbeJSON), CountOverflow: true,
+	}
+	statuses, categories, err := probeFromExecution(result, "after 1m")
+	if statuses != nil || categories != nil || err == nil ||
+		!strings.Contains(err.Error(), "total byte count overflowed") ||
+		strings.Contains(err.Error(), fmt.Sprintf("of %d bytes", int64(math.MaxInt64))) {
+		t.Fatalf("count overflow was reported as exact: %v / %v / %v", statuses, categories, err)
+	}
+}
 
 func TestProbeAll_ExitOneMixedExactEnvelopeParses(t *testing.T) {
 	stubBinary(t, "node", "printf '%s' '"+mixedProbeJSON+"'; exit 1")

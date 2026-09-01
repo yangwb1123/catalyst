@@ -129,14 +129,15 @@ func overloadErr(phase string, cause error) *ExecError {
 // outputTruncatedErr uses the existing typed terminal ExecError vocabulary.
 // The retained prefix is useful for human logs only: it is not a complete agent
 // result and must never cross a machine-output contract or accepted commit.
-func outputTruncatedErr(phase string, retained int, total int64) *ExecError {
+func outputTruncatedErr(phase string, retained int, total int64, overflow bool) *ExecError {
+	detail := fmt.Sprintf("retained %d of %d child bytes", retained, total)
+	if overflow {
+		detail = fmt.Sprintf("retained %d child bytes; total byte count overflowed", retained)
+	}
 	return &ExecError{
 		Phase: phase,
 		Kind:  KindFailed,
-		Err: fmt.Errorf(
-			"command output exceeded retention limit: retained %d of %d child bytes",
-			retained, total,
-		),
+		Err:   fmt.Errorf("command output exceeded retention limit: %s", detail),
 	}
 }
 
@@ -163,6 +164,8 @@ func classifyRunErr(phase string, runErr, ctxErr error, isOverload bool) *ExecEr
 		// Report the deadline as the cause: the kill manifests as a generic
 		// "signal: killed" run error, but the deadline is the real reason.
 		return &ExecError{Phase: phase, Kind: KindTimeout, Err: ctxErr}
+	case errors.Is(ctxErr, context.Canceled):
+		return &ExecError{Phase: phase, Kind: KindFailed, Err: ctxErr}
 	case isOverload:
 		return overloadErr(phase, runErr)
 	default:

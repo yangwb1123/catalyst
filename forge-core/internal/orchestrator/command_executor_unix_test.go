@@ -92,44 +92,11 @@ func readPID(s string) int {
 	return pid
 }
 
-// ★ Core orphan proof ★ — the end-to-end evidence the gap is real AND fixed.
-// WITH setupProcessGroup the negative-pid SIGKILL reaps the whole group, so the
-// pipe-holding grandchild is gone (syscall.Kill(pid,0) == ESRCH) shortly after the
-// timeout. The contrast subtest below shows the SAME construction leaks the grandchild
-// without the process group, so this is not vacuously true.
-func TestCommandExecutor_ProcessGroup_GrandchildReaped(t *testing.T) {
-	if testing.Short() {
-		t.Skip("spawns real grandchild processes; skipped under -short")
-	}
-	pidFile := filepath.Join(t.TempDir(), "grandchild.pid")
-	ex := CommandExecutor{
-		Build:   func(asset.Phase, string) []string { return grandchildSpawner(pidFile, 30) },
-		Timeout: 300 * time.Millisecond,
-	}
-
-	err := ex.Execute(context.Background(), asset.Phase{Name: "slow"}, "m")
-
-	pid := readPID(waitForFile(pidFile, time.Second))
-	if pid == 0 {
-		t.Fatal("grandchild never recorded its pid; test construction broken")
-	}
-	t.Cleanup(func() { killPID(pid) })
-
-	execErr := requireExecError(t, err)
-	if execErr.Kind != KindTimeout {
-		t.Errorf("want KindTimeout, got %v", execErr.Kind)
-	}
-	// The group kill is asynchronous to Run's return; give the SIGKILL a moment to
-	// land before asserting the grandchild is gone (generous, to stay non-flaky).
-	if !waitGone(pid, 3*time.Second) {
-		t.Errorf("grandchild pid %d still alive after a group-killed timeout; process-group teardown failed", pid)
-	}
-}
-
-// Contrast (proves the gap is real, not vacuous): the SAME grandchild construction run
-// WITHOUT setupProcessGroup — a bare exec.CommandContext, os/exec's default
-// direct-child-only kill — leaks the grandchild, which is still alive after the context
-// fires. This is the pre-fix behavior; the test above shows the process group fixes it.
+// Contrast: the same grandchild construction under a bare exec.CommandContext
+// has neither group teardown nor the bounded parent-reader drain. The direct
+// child dies while the grandchild and inherited pipe survive. The Linux-only
+// test proves group teardown separately; the portable test below proves the
+// drain backstop bounds return on every Unix target.
 func TestCommandExecutor_NoProcessGroup_GrandchildLeaks(t *testing.T) {
 	if testing.Short() {
 		t.Skip("spawns real grandchild processes; skipped under -short")
@@ -149,11 +116,11 @@ func TestCommandExecutor_NoProcessGroup_GrandchildLeaks(t *testing.T) {
 }
 
 // ★ Core timeliness proof ★ — the gap that actually matters: a tripped Timeout must
-// RETURN, not hang. With the grandchild holding the stdout pipe, the fixed path returns
+// RETURN, not hang. With the grandchild holding the stdout pipe, the bounded path returns
 // within Timeout + WaitDelay + slack as KindTimeout. The bare path (contrast helper)
 // would block on Wait until the 30s sleep — so rather than hang CI for 30s we assert the
 // fixed path returns FAST and prove the contrast hangs via a bounded select probe.
-func TestCommandExecutor_ProcessGroup_TimeoutReturnsPromptly(t *testing.T) {
+func TestCommandExecutor_BoundedDrain_TimeoutReturnsPromptly(t *testing.T) {
 	if testing.Short() {
 		t.Skip("spawns real grandchild processes; skipped under -short")
 	}
@@ -184,13 +151,13 @@ func TestCommandExecutor_ProcessGroup_TimeoutReturnsPromptly(t *testing.T) {
 		t.Errorf("timeout did not return promptly: %v >= budget %v (Run hung on the inherited pipe)", elapsed, budget)
 	}
 	if elapsed >= 25*time.Second {
-		t.Errorf("Run waited the grandchild's full sleep out (%v) — the process-group fix did not take effect", elapsed)
+		t.Errorf("Run waited the grandchild's full sleep out (%v) — bounded drain did not take effect", elapsed)
 	}
 }
 
-// Backward-compat on unix: a single-process command with NO grandchildren exits
-// normally and is byte-for-byte unaffected by Setpgid — the Cancel/WaitDelay path is
-// never reached on a clean exit, so output and (success) classification are unchanged.
+// Backward compatibility: a single-process command with no grandchildren exits
+// normally. The cancellation and drain-backstop paths are never reached on a clean
+// exit, so output and success classification remain unchanged.
 func TestCommandExecutor_ProcessGroup_SingleProcessUnaffected(t *testing.T) {
 	rec := &recorder{}
 	ex := CommandExecutor{

@@ -36,14 +36,30 @@ func EffectiveMemoryMB(configured int) (int, error) {
 }
 
 // OutputLimitError reports that a sandbox produced more output than its
-// bounded host capture could retain. Total is the observed lower bound when
-// the runner stops immediately after overflow.
+// bounded host capture could retain. Counts are int64 on every host;
+// CountOverflow distinguishes a saturated Total from an exact observation.
 type OutputLimitError struct {
-	Limit int
-	Total int
+	Limit         int64
+	Total         int64
+	CountOverflow bool
 }
 
+// ExitError preserves the exact clean guest exit status across the generic
+// CommandExecutor error boundary.
+type ExitError struct {
+	Code int
+}
+
+func (e *ExitError) Error() string {
+	return fmt.Sprintf("sandbox command exited with status %d", e.Code)
+}
+
+func (e *ExitError) ExitCode() int { return e.Code }
+
 func (e *OutputLimitError) Error() string {
+	if e.CountOverflow {
+		return fmt.Sprintf("sandbox output exceeded %d-byte limit (total byte count overflowed)", e.Limit)
+	}
 	return fmt.Sprintf("sandbox output exceeded %d-byte limit (observed %d bytes)", e.Limit, e.Total)
 }
 

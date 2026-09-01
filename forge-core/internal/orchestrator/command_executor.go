@@ -2,6 +2,7 @@ package orchestrator
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -164,7 +165,9 @@ type CommandExecutor struct {
 // masquerades as success — and never panics on a nil Build. The error's Kind
 // lets callers tell a retryable timeout from a permanent config fault from the
 // agent's own non-zero exit (see ExecError). ctx propagates cancellation so a
-// parent SIGINT/SIGTERM stops the child process via its process group.
+// parent SIGINT/SIGTERM requests cancellation; on supported Linux hosts
+// execbound serializes process-group signalling with reap, while other targets
+// kill the direct child. This is teardown, not containment.
 //
 // The bounded-run mechanics — deadline, process-group teardown, capped output —
 // live in internal/execbound (the shared leaf extraction); this executor maps
@@ -248,12 +251,21 @@ func (c CommandExecutor) prepareInput(phase string, argv []string) ([]string, st
 		return nil, "", false, configErr(phase, fmt.Errorf("stdin prompt requires a terminal -p <prompt> command shape"))
 	}
 	runArgv := append([]string(nil), argv[:len(argv)-1]...)
-	return runArgv, argv[len(argv)-1], true, nil
+	input := argv[len(argv)-1]
+	if err := execbound.ValidateStdinSize(len(input)); err != nil {
+		return nil, "", false, configErr(phase, err)
+	}
+	return runArgv, input, true, nil
 }
 
 func (c CommandExecutor) validateDispatchOptions(phase string) error {
 	if err := c.execboundOptions().Validate(); err != nil {
 		return configErr(phase, err)
+	}
+	if c.Sandbox != nil {
+		if _, err := sandboxTimeoutDuration(c.Sandbox.TimeoutSec); err != nil {
+			return configErr(phase, err)
+		}
 	}
 	return nil
 }
@@ -267,7 +279,9 @@ func (c CommandExecutor) validateDispatchOptions(phase string) error {
 // 0 → execbound's safe default (10 MiB), the same effective cap as before.
 func (c CommandExecutor) execboundOptions() execbound.Options {
 	opts := execbound.Options{MaxOutputBytes: c.MaxOutputBytes, Log: c.Log}
-	if c.Timeout <= 0 {
+	if c.Timeout < 0 {
+		opts.Timeout = c.Timeout // preserved so Validate fails closed
+	} else if c.Timeout == 0 {
 		opts.Unbounded = true // zero = no deadline (documented back-compat)
 	} else {
 		opts.Timeout = c.Timeout
@@ -275,7 +289,7 @@ func (c CommandExecutor) execboundOptions() execbound.Options {
 	return opts
 }
 
-// runMeasured constructs the bounded, process-grouped command for argv and runs it under
+// runMeasured constructs the bounded command for argv and runs it under
 // ctx, bracketing cmd.Run() with the injectable clock to MEASURE its wall-clock latency. It
 // returns the bounded run result and the measured duration. Split out of Execute
 // so that stays within the function-length ceiling; the construction and the timing are one
@@ -287,17 +301,16 @@ func (c CommandExecutor) execboundOptions() execbound.Options {
 // started and finished, never what model it billed.
 func (c CommandExecutor) runMeasured(ctx context.Context, argv []string, depth int, input string, useStdin bool) (execbound.Result, time.Duration) {
 	// execbound.Run owns the bounded-run mechanics: a deadline derived from ctx
-	// (Timeout > 0) or the Unbounded escape (Timeout == 0), process-group
-	// teardown on unix (Setpgid + SIGKILL(-pgid) + WaitDelay backstop) so a
-	// tripped deadline is reliably enforced even when `claude -p` forks
-	// grandchildren via its own tools (Bash -> git/test/build) that inherit the
-	// command's stdout/stderr pipe, and capped output retention with the honest
-	// truncation marker. The SAME pointer for Stdout+Stderr (CaptureCombined)
-	// lets os/exec serialize the writes, exactly as CombinedOutput merges the
-	// two streams.
+	// (Timeout > 0) or the Unbounded escape (Timeout == 0), race-free
+	// process-group cancellation on supported Linux hosts, direct-child kill
+	// elsewhere, plus a parent capture-reader deadline. A descendant that leaves
+	// the process group, or remains after a normal parent exit, may survive; the reader deadline
+	// returns DrainIncomplete instead of claiming containment. CaptureCombined
+	// connects both child streams to one raw pipe and retains the observed pipe
+	// order in one bounded buffer; complete runs additionally prove reader EOF.
 	spec := execbound.Spec{Dir: c.Dir, Env: c.childEnv(depth)} // empty Dir -> inherit forge's cwd
 	if useStdin {
-		spec.Stdin = strings.NewReader(input)
+		spec.Stdin = []byte(input)
 	}
 	// Bracket the run with the injectable clock — the wall-clock span is the phase's latency.
 	start := c.now()
@@ -309,21 +322,33 @@ func (c CommandExecutor) runMeasured(ctx context.Context, argv []string, depth i
 // to Observe. Failed or rejected attempts are logged/classified but never enter
 // the accepted-output sink.
 func (c CommandExecutor) finish(phase string, argv []string, res execbound.Result, latency time.Duration) error {
+	// Defense in depth for every current and future runner: a terminal context
+	// state can never enter validation, durable commit, or accepted observation.
+	if res.Err == nil && res.CtxErr != nil {
+		res.Err = res.CtxErr
+	}
 	observed := res.Observed()
 	rendered := res.Rendered()
 	visible := c.renderForLog(rendered)
 	c.logf("phase %s: ran %q -> %s", phase, strings.Join(argv, " "), visible)
 	if res.Err == nil {
-		if res.Total > int64(res.Retained) {
-			return outputTruncatedErr(phase, res.Retained, res.Total)
+		if res.CountOverflow || res.Total > int64(res.Retained) {
+			return outputTruncatedErr(phase, res.Retained, res.Total, res.CountOverflow)
 		}
 		return c.acceptOutput(phase, observed, visible, latency)
 	}
 	// Ask the optional caller-injected judge whether this failure was a transient overload
 	// (e.g. a vendor 529). nil-safe: with no hook the verdict is false, so classifyRunErr keeps
 	// its original KindFailed branch — byte-for-byte unchanged.
-	isOverload := c.ClassifyOverload != nil && c.ClassifyOverload(rendered)
+	isOverload := c.ClassifyOverload != nil && failureOutputIsComplete(res) &&
+		c.ClassifyOverload(rendered)
 	return classifyRunErr(phase, res.Err, res.CtxErr, isOverload)
+}
+
+func failureOutputIsComplete(result execbound.Result) bool {
+	return result.CtxErr == nil && !errors.Is(result.Err, context.Canceled) &&
+		!result.DrainIncomplete && !result.CountOverflow &&
+		result.Total <= int64(result.Retained)
 }
 
 func (c CommandExecutor) acceptOutput(phase, observed, visible string, latency time.Duration) error {

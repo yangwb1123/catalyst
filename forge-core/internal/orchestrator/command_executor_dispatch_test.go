@@ -3,6 +3,7 @@ package orchestrator
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -45,6 +46,9 @@ func TestCommandExecutorDispatchesSandboxOnceBeforeRunner(t *testing.T) {
 func TestCommandExecutorRefusalsDoNotDispatch(t *testing.T) {
 	invalidSandbox := sandboxedExecutor(&fakeRunner{output: "unused"})
 	invalidSandbox.MaxOutputBytes = -1
+	negativeSandboxTimeout := sandboxedExecutor(&fakeRunner{output: "unused"})
+	negativeSandboxTimeout.Sandbox.TimeoutSec = -1
+	oversizedPrompt := strings.Repeat("x", 16<<20+1)
 	cases := []struct {
 		name string
 		exec CommandExecutor
@@ -52,10 +56,13 @@ func TestCommandExecutorRefusalsDoNotDispatch(t *testing.T) {
 		{"nil-build", CommandExecutor{}},
 		{"empty-argv", CommandExecutor{Build: func(asset.Phase, string) []string { return nil }}},
 		{"invalid-output-cap", CommandExecutor{Build: func(asset.Phase, string) []string { return []string{"true"} }, MaxOutputBytes: -1}},
+		{"negative-timeout", CommandExecutor{Build: func(asset.Phase, string) []string { return []string{"true"} }, Timeout: -time.Second}},
 		{"invalid-sandbox-output-cap", invalidSandbox},
+		{"negative-sandbox-timeout", negativeSandboxTimeout},
 		{"config", CommandExecutor{ValidateConfig: func(asset.Phase, string) error { return errors.New("denied") }, Build: func(asset.Phase, string) []string { return []string{"true"} }}},
 		{"finalize", CommandExecutor{Build: func(asset.Phase, string) []string { return []string{"true"} }, FinalizeCommand: func(asset.Phase, string, []string) ([]string, error) { return nil, errors.New("stale binding") }}},
 		{"input", CommandExecutor{Build: func(asset.Phase, string) []string { return []string{"agent", "prompt"} }, PromptViaStdin: true}},
+		{"oversized-input", CommandExecutor{Build: func(asset.Phase, string) []string { return []string{"agent", "-p", oversizedPrompt} }, PromptViaStdin: true}},
 	}
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {

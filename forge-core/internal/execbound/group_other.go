@@ -1,22 +1,34 @@
-//go:build !unix
+//go:build !linux
 
 package execbound
 
 import "os/exec"
 
-const groupKillAvailable = false
+type processLifecycle struct{}
 
-// setupProcessGroup is a no-op on non-unix platforms: it leaves
-// exec.CommandContext's default cancellation in place, which SIGKILLs
-// (TerminateProcess on Windows) the DIRECT child only. The honest consequence
-// is that the grandchild-pipe gap is NOT closed here — a command that forks
-// grandchildren can still leak them. WaitDelay (capture.go, common code) still
-// backstops the HANG: Run returns ≤ deadline + 2s even when a surviving
-// grandchild holds the pipes, and Run emits one honest degradation Log line on
-// the kill path (see Result.logDegradation). Reliable group teardown on
-// Windows needs a Job Object (CreateJobObject + AssignProcessToJobObject +
-// KILL_ON_JOB_CLOSE), which has no portable stdlib analogue to the unix
-// Setpgid/-pgid pair; that is left as deliberate future work rather than
-// faked. Keeping the signature identical lets Run call it unconditionally
-// with no build-tagged branching at the call site.
-func setupProcessGroup(_ *exec.Cmd) {}
+// setupProcessGroup uses race-safe os.Process.Kill for the direct child on
+// non-Linux targets and adds the common positive WaitDelay. Grandchildren may
+// survive, but inherited output descriptors cannot hold Run past the deadline
+// plus the drain backstop. Run emits a degradation Log line on cancellation or
+// incomplete drain (see Result.logDegradation).
+//
+// Reliable tree teardown on Windows needs a Job Object; other Unix targets
+// would need the same non-reaping exit observation used by the Linux
+// implementation before a numeric process-group signal can be proven safe.
+// Those are deliberate future work rather than unsafe emulation.
+func setupProcessGroup(cmd *exec.Cmd) *processLifecycle {
+	cmd.WaitDelay = waitDelay
+	return &processLifecycle{}
+}
+
+func (*processLifecycle) cancel(cmd *exec.Cmd) error {
+	return cmd.Process.Kill()
+}
+
+func (*processLifecycle) wait(cmd *exec.Cmd) error {
+	return cmd.Wait()
+}
+
+func platformGroupKillSupported() bool {
+	return false
+}

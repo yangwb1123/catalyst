@@ -22,17 +22,24 @@ type observedDrainResult struct {
 }
 
 func newObservedPipes() (*observedPipe, *observedPipe, error) {
-	stdoutReader, stdoutWriter, err := os.Pipe()
+	stdout, err := newObservedPipe("stdout")
 	if err != nil {
-		return nil, nil, fmt.Errorf("create observed stdout pipe: %w", err)
+		return nil, nil, err
 	}
-	stdout := &observedPipe{reader: stdoutReader, writer: stdoutWriter}
-	stderrReader, stderrWriter, err := os.Pipe()
+	stderr, err := newObservedPipe("stderr")
 	if err != nil {
 		stdout.close()
-		return nil, nil, fmt.Errorf("create observed stderr pipe: %w", err)
+		return nil, nil, err
 	}
-	return stdout, &observedPipe{reader: stderrReader, writer: stderrWriter}, nil
+	return stdout, stderr, nil
+}
+
+func newObservedPipe(label string) (*observedPipe, error) {
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		return nil, fmt.Errorf("create observed %s pipe: %w", label, err)
+	}
+	return &observedPipe{reader: reader, writer: writer}, nil
 }
 
 func (pipe *observedPipe) closeWriter() error {
@@ -81,6 +88,14 @@ func awaitObservedDrains(
 	results <-chan observedDrainResult,
 	cancel cancelSnapshot,
 ) (bool, error) {
+	return awaitPipeDrains([]*observedPipe{stdout, stderr}, results, cancel)
+}
+
+func awaitPipeDrains(
+	pipes []*observedPipe,
+	results <-chan observedDrainResult,
+	cancel cancelSnapshot,
+) (bool, error) {
 	deadline := time.Now().Add(waitDelay)
 	if !cancel.at.IsZero() {
 		cancelDeadline := cancel.at.Add(waitDelay)
@@ -95,12 +110,11 @@ func awaitObservedDrains(
 	timer := time.NewTimer(duration)
 	defer stopObservedTimer(timer)
 
-	firstErr := firstObservedPipeError(stdout, stderr)
+	firstErr := firstObservedPipeError(pipes...)
 	forced, firstErr := collectObservedDrains(
-		stdout, stderr, results, timer, deadline, firstErr,
+		pipes, results, timer, deadline, firstErr,
 	)
-	stdout.closeReader()
-	stderr.closeReader()
+	closeObservedReaders(pipes)
 	if forced {
 		return false, exec.ErrWaitDelay
 	}
@@ -111,7 +125,7 @@ func awaitObservedDrains(
 }
 
 func collectObservedDrains(
-	stdout, stderr *observedPipe,
+	pipes []*observedPipe,
 	results <-chan observedDrainResult,
 	timer *time.Timer,
 	deadline time.Time,
@@ -119,11 +133,10 @@ func collectObservedDrains(
 ) (bool, error) {
 	completed := 0
 	forced := false
-	for completed < 2 {
+	for completed < len(pipes) {
 		if !forced && !time.Now().Before(deadline) {
 			forced = true
-			stdout.closeReader()
-			stderr.closeReader()
+			closeObservedReaders(pipes)
 		}
 		if forced {
 			result := <-results
@@ -139,23 +152,30 @@ func collectObservedDrains(
 			if result.err != nil && firstErr == nil {
 				firstErr = result.err
 			}
-			if completed == 2 && !time.Now().Before(deadline) {
+			if completed == len(pipes) && !time.Now().Before(deadline) {
 				forced = true
 			}
 		case <-timer.C:
 			forced = true
-			stdout.closeReader()
-			stderr.closeReader()
+			closeObservedReaders(pipes)
 		}
 	}
 	return forced, firstErr
 }
 
-func firstObservedPipeError(stdout, stderr *observedPipe) error {
-	if stdout.writerCloseErr != nil {
-		return stdout.writerCloseErr
+func firstObservedPipeError(pipes ...*observedPipe) error {
+	for _, pipe := range pipes {
+		if pipe.writerCloseErr != nil {
+			return pipe.writerCloseErr
+		}
 	}
-	return stderr.writerCloseErr
+	return nil
+}
+
+func closeObservedReaders(pipes []*observedPipe) {
+	for _, pipe := range pipes {
+		pipe.closeReader()
+	}
 }
 
 func stopObservedTimer(timer *time.Timer) {

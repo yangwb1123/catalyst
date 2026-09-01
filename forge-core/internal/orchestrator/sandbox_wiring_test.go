@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"os/exec"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -26,6 +28,17 @@ type fakeRunner struct {
 	code    int
 	err     error
 	calls   int
+}
+
+type cancelThenSucceedRunner struct {
+	cancel context.CancelFunc
+}
+
+func (r cancelThenSucceedRunner) Run(
+	_ context.Context, _ []string, _ string, _ time.Duration,
+) (string, int, error) {
+	r.cancel()
+	return "apparently valid", 0, nil
 }
 
 func (f *fakeRunner) Run(
@@ -82,6 +95,41 @@ func TestSandboxCleanNonZeroExitIsKindFailed(t *testing.T) {
 	}
 	if execErr.Kind != KindFailed {
 		t.Fatalf("kind = %v, want KindFailed", execErr.Kind)
+	}
+	var exitError *sandbox.ExitError
+	if !errors.As(err, &exitError) || exitError.ExitCode() != 3 ||
+		!strings.Contains(err.Error(), "status 3") {
+		t.Fatalf("sandbox exit status was not preserved: %v", err)
+	}
+}
+
+func TestSandboxRejectsOversizedInputBeforeDispatch(t *testing.T) {
+	runner := &fakeRunner{output: "must not run"}
+	executor := sandboxedExecutor(runner)
+	executor.PromptViaStdin = true
+	executor.Build = func(asset.Phase, string) []string {
+		return []string{"agent", "-p", strings.Repeat("x", 16<<20+1)}
+	}
+	dispatches := 0
+	executor.OnDispatch = func(string) { dispatches++ }
+	err := executor.Execute(context.Background(), asset.Phase{Name: "sandbox-phase"}, "run")
+	var execErr *ExecError
+	if !errors.As(err, &execErr) || execErr.Kind != KindConfig ||
+		dispatches != 0 || runner.calls != 0 {
+		t.Fatalf("oversized sandbox input result = %v, dispatches=%d calls=%d",
+			err, dispatches, runner.calls)
+	}
+}
+
+func TestSandboxTimeoutSecondsRejectNegativeAndOverflow(t *testing.T) {
+	if _, err := sandboxTimeoutDuration(-1); err == nil {
+		t.Fatal("negative sandbox timeout was accepted")
+	}
+	overflow := int64(math.MaxInt64/int64(time.Second)) + 1
+	if strconv.IntSize == 64 {
+		if _, err := sandboxTimeoutDuration(int(overflow)); err == nil {
+			t.Fatal("overflowing sandbox timeout was accepted")
+		}
 	}
 }
 
@@ -328,6 +376,67 @@ func TestSandboxRunnerCancellationIsKindFailedWhileParentIsLive(t *testing.T) {
 	var execErr *ExecError
 	if !errors.As(err, &execErr) || execErr.Kind != KindFailed {
 		t.Fatalf("wrapped runner cancellation must be KindFailed, got %v", err)
+	}
+}
+
+func TestSandboxCancellationVisibleAtRunnerReturnSuppressesAcceptance(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	executor := sandboxedExecutor(cancelThenSucceedRunner{cancel: cancel})
+	var validated, committed, observed bool
+	executor.ValidateOutput = func(string, string) error { validated = true; return nil }
+	executor.CommitValidatedOutput = func(string, string, string, time.Duration) error {
+		committed = true
+		return nil
+	}
+	executor.Observe = func(string, string, time.Duration) { observed = true }
+	err := executor.Execute(ctx, asset.Phase{Name: "sandbox-phase"}, "run")
+	var execErr *ExecError
+	if !errors.As(err, &execErr) || execErr.Kind != KindFailed ||
+		!errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled success result = %v", err)
+	}
+	if validated || committed || observed {
+		t.Fatalf("cancelled result was accepted: validate=%v commit=%v observe=%v",
+			validated, committed, observed)
+	}
+}
+
+func TestSandboxCancellationAfterRunnerReturnDoesNotRetroactivelyFail(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	executor := sandboxedExecutor(&fakeRunner{output: "accepted"})
+	clockEntered := make(chan struct{})
+	releaseClock := make(chan struct{})
+	clockCalls := 0
+	base := time.Unix(1_700_000_000, 0)
+	executor.Now = func() time.Time {
+		clockCalls++
+		if clockCalls == 2 {
+			close(clockEntered)
+			<-releaseClock
+			return base.Add(time.Second)
+		}
+		return base
+	}
+	var validated, committed, observed bool
+	executor.ValidateOutput = func(string, string) error { validated = true; return nil }
+	executor.CommitValidatedOutput = func(string, string, string, time.Duration) error {
+		committed = true
+		return nil
+	}
+	executor.Observe = func(string, string, time.Duration) { observed = true }
+	done := make(chan error, 1)
+	go func() {
+		done <- executor.Execute(ctx, asset.Phase{Name: "sandbox-phase"}, "run")
+	}()
+	<-clockEntered
+	cancel()
+	close(releaseClock)
+	if err := <-done; err != nil {
+		t.Fatalf("post-linearization cancellation changed completed run: %v", err)
+	}
+	if !validated || !committed || !observed {
+		t.Fatalf("completed result was not accepted: validate=%v commit=%v observe=%v",
+			validated, committed, observed)
 	}
 }
 

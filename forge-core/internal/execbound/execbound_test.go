@@ -3,6 +3,7 @@ package execbound
 import (
 	"context"
 	"errors"
+	"os"
 	"os/exec"
 	"strings"
 	"testing"
@@ -143,10 +144,53 @@ func TestRun_Timeout_TimedOut(t *testing.T) {
 	}
 }
 
-// GroupKillAvailable is a compile-time platform capability query; the value
+func TestPreferContextFailurePreventsCancelledSuccess(t *testing.T) {
+	for _, contextError := range []error{context.Canceled, context.DeadlineExceeded} {
+		if got := preferContextFailure(nil, contextError); !errors.Is(got, contextError) {
+			t.Fatalf("context failure %v became success: %v", contextError, got)
+		}
+	}
+	runError := errors.New("process failed")
+	if got := preferContextFailure(runError, context.Canceled); !errors.Is(got, runError) {
+		t.Fatalf("process failure precedence = %v", got)
+	}
+	if got := preferContextFailure(nil, nil); got != nil {
+		t.Fatalf("clean run gained error %v", got)
+	}
+}
+
+func TestRunPreCancelledContextDoesNotLogKill(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	logs := []string{}
+	result := Run(ctx, []string{"execbound-self", "-test.run=^$"}, Options{
+		Unbounded: true, Log: func(value string) { logs = append(logs, value) },
+	}, CaptureCombined, Spec{ExecutablePath: os.Args[0]})
+	if !errors.Is(result.Err, context.Canceled) || !errors.Is(result.CtxErr, context.Canceled) {
+		t.Fatalf("pre-cancelled result = %+v", result)
+	}
+	if len(logs) != 0 {
+		t.Fatalf("pre-cancelled non-start logged a kill: %v", logs)
+	}
+}
+
+func TestRunUsesOnlyBoundedInMemoryStdin(t *testing.T) {
+	result := Run(context.Background(), []string{"sh", "-c", "cat"}, Options{},
+		CaptureCombined, Spec{Stdin: []byte("bounded-input")})
+	if result.Err != nil || result.Observed() != "bounded-input" {
+		t.Fatalf("bounded stdin result = %q, %v", result.Observed(), result.Err)
+	}
+	oversized := Run(context.Background(), []string{"forge-must-not-spawn"}, Options{},
+		CaptureCombined, Spec{Stdin: make([]byte, maxStdinBytes+1)})
+	if oversized.Err == nil || !strings.Contains(oversized.Err.Error(), "stdin exceeds") {
+		t.Fatalf("oversized stdin did not fail before spawn: %v", oversized.Err)
+	}
+}
+
+// groupKillSupported is a compile-time platform capability query; the value
 // itself is platform-specific (asserted in the tagged tests).
 func TestRun_GroupKillAvailable_Smoke(t *testing.T) {
-	_ = GroupKillAvailable() // must not panic on any platform
+	_ = groupKillSupported() // must not panic on any platform
 }
 
 // FromBytes applies the same cap+marker semantics to pre-captured bytes.

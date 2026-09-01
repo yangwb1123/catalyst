@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"math"
 	"regexp"
@@ -153,6 +154,9 @@ func captureFromExecution(execution execbound.ObservedResult) (capture, error) {
 	if !execution.Execution.DrainComplete {
 		return capture{}, fmt.Errorf("local command stream drain was incomplete; no observation produced")
 	}
+	if err := validateExecutionContext(execution); err != nil {
+		return capture{}, err
+	}
 	started, ended, err := observationTimes(execution.Execution.StartedAt, execution.Execution.EndedAt)
 	if err != nil {
 		return capture{}, err
@@ -181,6 +185,24 @@ func captureFromExecution(execution execbound.ObservedResult) (capture, error) {
 		Streams:     commandcontract.Streams{Combined: combined, Stderr: stderr, Stdout: stdout},
 		Termination: termination,
 	}, nil
+}
+
+func validateExecutionContext(execution execbound.ObservedResult) error {
+	switch execution.Execution.Termination {
+	case execbound.TerminationExited, execbound.TerminationSignaled:
+		if execution.Legacy.CtxErr != nil {
+			return fmt.Errorf("natural process termination conflicts with execution context failure")
+		}
+	case execbound.TerminationTimedOut:
+		if !errors.Is(execution.Legacy.CtxErr, context.DeadlineExceeded) {
+			return fmt.Errorf("timed-out termination lacks matching execution deadline")
+		}
+	case execbound.TerminationCancelled:
+		if !errors.Is(execution.Legacy.CtxErr, context.Canceled) {
+			return fmt.Errorf("cancelled termination lacks matching execution cancellation")
+		}
+	}
+	return nil
 }
 
 func observationTimes(started, ended time.Time) (int64, int64, error) {

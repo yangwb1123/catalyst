@@ -73,7 +73,7 @@ func TestObservedCapture_ConcurrentWritersAreSerialized(t *testing.T) {
 		t.Errorf("combined count/retention = %d/%d", combined.Bytes, len(combined.Retained))
 	}
 	if combined.SHA256 != sha256.Sum256(combined.Retained) {
-		t.Error("combined digest must cover the exact mutex-serialized retained bytes")
+		t.Error("combined digest must cover the exact serialized tagged retained bytes")
 	}
 }
 
@@ -143,12 +143,21 @@ func TestRunObserved_NotStartedAndSpawnFailed(t *testing.T) {
 
 	spawnFailed := RunObserved(context.Background(), []string{"forge-no-such-observed-binary"}, Options{},
 		CaptureCombined, Spec{}, ObservationOptions{Now: func() time.Time { return now }})
-	if spawnFailed.Execution.Started || spawnFailed.Execution.Termination != TerminationSpawnFailed ||
+	if spawnFailed.Execution.Started || spawnFailed.Execution.Termination != terminationSpawnFailed ||
 		spawnFailed.Legacy.Err == nil || !errors.Is(spawnFailed.Legacy.Err, exec.ErrNotFound) {
 		t.Errorf("spawn failure result = %+v", spawnFailed)
 	}
 	if !spawnFailed.Execution.StartedAt.IsZero() || spawnFailed.Execution.DrainComplete {
 		t.Errorf("spawn failure must have zero start/incomplete drain: %+v", spawnFailed.Execution)
+	}
+
+	oversizedInput := RunObserved(context.Background(), []string{"forge-must-not-spawn"},
+		Options{}, CaptureCombined, Spec{Stdin: make([]byte, maxStdinBytes+1)},
+		ObservationOptions{Now: func() time.Time { return now }})
+	if oversizedInput.Execution.Started || oversizedInput.Execution.Termination != TerminationNotStarted ||
+		oversizedInput.Legacy.Err == nil ||
+		!strings.Contains(oversizedInput.Legacy.Err.Error(), "stdin exceeds") {
+		t.Errorf("oversized observed stdin result = %+v", oversizedInput)
 	}
 }
 
@@ -157,7 +166,7 @@ func TestRunObserved_PreCancelledAndInvalidCWDDoNotStart(t *testing.T) {
 	cancel()
 	preCancelled := RunObserved(ctx, []string{"true"}, Options{Unbounded: true},
 		CaptureCombined, Spec{}, ObservationOptions{})
-	if preCancelled.Execution.Started || preCancelled.Execution.Termination != TerminationSpawnFailed ||
+	if preCancelled.Execution.Started || preCancelled.Execution.Termination != terminationSpawnFailed ||
 		!errors.Is(preCancelled.Legacy.Err, context.Canceled) ||
 		!errors.Is(preCancelled.Legacy.CtxErr, context.Canceled) {
 		t.Errorf("pre-cancelled spawn result = %+v", preCancelled)
@@ -165,7 +174,7 @@ func TestRunObserved_PreCancelledAndInvalidCWDDoNotStart(t *testing.T) {
 
 	invalidCWD := RunObserved(context.Background(), []string{"true"}, Options{},
 		CaptureCombined, Spec{Dir: "/forgeos/execbound/no-such-directory"}, ObservationOptions{})
-	if invalidCWD.Execution.Started || invalidCWD.Execution.Termination != TerminationSpawnFailed ||
+	if invalidCWD.Execution.Started || invalidCWD.Execution.Termination != terminationSpawnFailed ||
 		invalidCWD.Legacy.Err == nil {
 		t.Errorf("invalid cwd spawn result = %+v", invalidCWD)
 	}
@@ -237,9 +246,20 @@ func TestObservedTermination_ProcessDoneCancellationDoesNotHideExit(t *testing.T
 	}
 }
 
+func TestObservedLegacyProjectionCannotTurnCancellationIntoSuccess(t *testing.T) {
+	capture := newObservedCapture(1)
+	result := capture.result(
+		CaptureCombined, nil, context.Canceled, ExecutionObservation{},
+	)
+	if !errors.Is(result.Legacy.Err, context.Canceled) ||
+		!errors.Is(result.Legacy.CtxErr, context.Canceled) {
+		t.Fatalf("cancelled legacy projection = %+v", result.Legacy)
+	}
+}
+
 func TestLegacyCountSaturatesWithoutWrapping(t *testing.T) {
-	if got := legacyCount(math.MaxInt64, 1); got != math.MaxInt64 {
-		t.Errorf("legacyCount overflow = %d", got)
+	if got, overflow := legacyCount(math.MaxInt64, 1); got != math.MaxInt64 || !overflow {
+		t.Errorf("legacyCount overflow = %d, %v", got, overflow)
 	}
 }
 

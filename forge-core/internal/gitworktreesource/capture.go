@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -17,6 +18,8 @@ const (
 	maxSourceBytes         = int64(8 << 30)
 	maxIndividualFileBytes = int64(1 << 30)
 	maxGitOutputBytes      = 32 << 20
+	maxGitDiagnosticBytes  = 4 << 10
+	maxGitDiagnosticRaw    = 960
 )
 
 type inventoryRecord struct {
@@ -240,13 +243,32 @@ func hardenedGitOutput(ctx context.Context, root, gitPath string, environment []
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return nil, fmt.Errorf("hardened Git command canceled: %w", ctxErr)
 	}
-	if result.Err != nil {
-		return nil, fmt.Errorf("hardened Git command failed: %w (%s)", result.Err, strings.TrimSpace(string(result.Stderr)))
+	if result.DrainIncomplete {
+		return nil, fmt.Errorf("hardened Git output drain is incomplete")
 	}
-	if result.Total > maxGitOutputBytes || result.Total > int64(result.Retained) {
+	if result.CountOverflow || result.Total > maxGitOutputBytes ||
+		result.Total > int64(result.Retained) {
 		return nil, fmt.Errorf("hardened Git output exceeds %d bytes", maxGitOutputBytes)
 	}
+	if result.Err != nil {
+		return nil, fmt.Errorf(
+			"hardened Git command failed: cause=%s stderr=%s",
+			boundedGitDiagnostic([]byte(result.Err.Error())), boundedGitDiagnostic(result.Stderr),
+		)
+	}
 	return append([]byte(nil), result.Stdout...), nil
+}
+
+func boundedGitDiagnostic(source []byte) string {
+	truncated := len(source) > maxGitDiagnosticRaw
+	if truncated {
+		source = source[:maxGitDiagnosticRaw]
+	}
+	result := strconv.QuoteToASCII(string(source))
+	if truncated {
+		result += " …[Git stderr diagnostic truncated]"
+	}
+	return result
 }
 
 func hardenedGitEnvironment(environment []string) []string {
@@ -269,16 +291,20 @@ func hardenedGitEnvironment(environment []string) []string {
 }
 
 func forEachNUL(value []byte, visit func([]byte) error) error {
+	if len(value) == 0 {
+		return nil
+	}
+	if value[len(value)-1] != 0 {
+		return fmt.Errorf("malformed NUL-delimited inventory: missing terminal NUL")
+	}
 	for offset := 0; offset < len(value); {
 		end := bytes.IndexByte(value[offset:], 0)
-		if end < 0 {
-			end = len(value) - offset
+		if end <= 0 {
+			return fmt.Errorf("malformed NUL-delimited inventory: empty record")
 		}
 		item := value[offset : offset+end]
-		if len(item) != 0 {
-			if err := visit(item); err != nil {
-				return err
-			}
+		if err := visit(item); err != nil {
+			return err
 		}
 		offset += end + 1
 	}

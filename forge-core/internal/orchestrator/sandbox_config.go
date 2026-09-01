@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os/exec"
+	"math"
 	"strings"
 	"time"
 
@@ -99,12 +99,19 @@ func (c CommandExecutor) sandboxRunner() (sandbox.Runner, error) {
 // Timeout semantics (zero = no deadline, the back-compat default) — the
 // sandbox path's analogue of execbound's internal deadline derivation (the
 // sandbox runner needs a ctx + timeout PAIR, so it cannot ride execbound.Run
-// directly). Positive Timeout → a deadline; zero/negative → merely cancelable.
-func (c CommandExecutor) commandDeadlineCtx(parent context.Context) (context.Context, context.CancelFunc) {
-	if c.Timeout > 0 {
-		return context.WithTimeout(parent, c.Timeout)
+// directly). Positive Timeout → a deadline; zero → merely cancelable.
+func (c CommandExecutor) commandDeadlineCtx(
+	parent context.Context,
+) (context.Context, context.CancelFunc, error) {
+	if c.Timeout < 0 {
+		return nil, nil, fmt.Errorf("timeout must be >= 0 (got %s)", c.Timeout)
 	}
-	return context.WithCancel(parent)
+	if c.Timeout > 0 {
+		ctx, cancel := context.WithTimeout(parent, c.Timeout)
+		return ctx, cancel, nil
+	}
+	ctx, cancel := context.WithCancel(parent)
+	return ctx, cancel, nil
 }
 
 // executeSandboxedDispatch builds the sandboxed run: a dedicated context
@@ -117,9 +124,15 @@ func (c CommandExecutor) executeSandboxedDispatch(
 	input string,
 	useStdin bool,
 ) error {
-	runCtx, runCancel := c.commandDeadlineCtx(ctx)
+	runCtx, runCancel, err := c.commandDeadlineCtx(ctx)
+	if err != nil {
+		return configErr(phase, err)
+	}
 	defer runCancel()
-	timeout := time.Duration(c.Sandbox.TimeoutSec) * time.Second
+	timeout, err := sandboxTimeoutDuration(c.Sandbox.TimeoutSec)
+	if err != nil {
+		return configErr(phase, err)
+	}
 	prompt := ""
 	if useStdin {
 		prompt = input
@@ -142,11 +155,25 @@ func (c CommandExecutor) executeSandboxed(
 	stdin string,
 	timeout time.Duration,
 ) error {
+	if err := execbound.ValidateStdinSize(len(stdin)); err != nil {
+		return configErr(phase, err)
+	}
 	start := c.now()
 	output, code, err := c.Sandbox.Runner.Run(runCtx, argv, stdin, timeout)
+	// The immediate post-Run sample is the sandbox completion/cancellation
+	// linearization point. Cancellation already visible here wins even if a
+	// faulty runner reports (nil, 0); a later cancellation belongs to the next
+	// operation and cannot retroactively invalidate a completed run.
+	ctxErr := runCtx.Err()
+	if ctxErr != nil {
+		kind := KindFailed
+		if errors.Is(ctxErr, context.DeadlineExceeded) {
+			kind = KindTimeout
+		}
+		return &ExecError{Phase: phase, Kind: kind, Err: ctxErr}
+	}
 	latency := c.now().Sub(start)
 	res := execbound.FromBytes([]byte(output), c.MaxOutputBytes)
-	res.CtxErr = runCtx.Err()
 	if err != nil {
 		var outputLimit *sandbox.OutputLimitError
 		if errors.As(err, &outputLimit) {
@@ -155,17 +182,23 @@ func (c CommandExecutor) executeSandboxed(
 		// Typed classification parity with the host path: only a deadline
 		// is retryable; a cancellation is the caller's verdict, not a
 		// timeout (review F5). No message-string matching.
-		if errors.Is(err, context.DeadlineExceeded) ||
-			errors.Is(runCtx.Err(), context.DeadlineExceeded) {
+		if errors.Is(err, context.DeadlineExceeded) {
 			return &ExecError{Phase: phase, Kind: KindTimeout, Err: err}
 		}
-		if errors.Is(err, context.Canceled) || runCtx.Err() != nil {
+		if errors.Is(err, context.Canceled) {
 			return &ExecError{Phase: phase, Kind: KindFailed, Err: err}
 		}
 		return &ExecError{Phase: phase, Kind: KindConfig, Err: err}
 	}
 	if code != 0 {
-		res.Err = &exec.ExitError{}
+		res.Err = &sandbox.ExitError{Code: code}
 	}
 	return c.finish(phase, argv, res, latency)
+}
+
+func sandboxTimeoutDuration(seconds int) (time.Duration, error) {
+	if seconds < 0 || uint64(seconds) > uint64(math.MaxInt64/int64(time.Second)) {
+		return 0, fmt.Errorf("sandbox timeout seconds are outside the duration range: %d", seconds)
+	}
+	return time.Duration(seconds) * time.Second, nil
 }

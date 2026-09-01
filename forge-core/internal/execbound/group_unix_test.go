@@ -1,9 +1,10 @@
-//go:build unix
+//go:build linux
 
 package execbound
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -63,19 +64,21 @@ func waitGone(pid int, within time.Duration) bool {
 	return !processAlive(pid)
 }
 
-// setupProcessGroup unit: on unix it must wire all three mechanisms — a new
-// process group (Setpgid), a non-default group-kill Cancel, and a positive
-// WaitDelay backstop (moved here from the orchestrator's test suite with the
-// extracted machinery).
+// setupProcessGroup unit: on Linux with waitid(WNOWAIT), it must wire a new
+// process group and a positive WaitDelay. Cancellation is owned by
+// boundedCommand so its lifecycle lock can serialize group kill and reap.
 func TestSetupProcessGroup_WiresGroupKillAndWaitDelay(t *testing.T) {
 	cmd := exec.Command("sh", "-c", "true")
-	setupProcessGroup(cmd)
+	lifecycle := setupProcessGroup(cmd)
+	if !groupKillSupported() {
+		t.Skip("waitid(WNOWAIT) unavailable; direct-child fallback is active")
+	}
 
 	if cmd.SysProcAttr == nil || !cmd.SysProcAttr.Setpgid {
 		t.Error("must set SysProcAttr.Setpgid=true so the child leads a new process group")
 	}
-	if cmd.Cancel == nil {
-		t.Error("must install a Cancel that group-kills (overriding os/exec's direct-child-only default)")
+	if cmd.Cancel != nil {
+		t.Error("os/exec Cancel must remain nil; boundedCommand owns safe cancellation")
 	}
 	if cmd.WaitDelay <= 0 {
 		t.Errorf("must set a positive WaitDelay backstop; got %v", cmd.WaitDelay)
@@ -83,8 +86,61 @@ func TestSetupProcessGroup_WiresGroupKillAndWaitDelay(t *testing.T) {
 	if cmd.WaitDelay != waitDelay {
 		t.Errorf("WaitDelay = %v, want the documented grace %v", cmd.WaitDelay, waitDelay)
 	}
-	if !GroupKillAvailable() {
-		t.Error("GroupKillAvailable must be true on unix")
+	if !groupKillSupported() {
+		t.Error("race-free Linux group kill must be available")
+	}
+	if lifecycle == nil || !lifecycle.groupKill {
+		t.Error("setup must retain a group-kill lifecycle")
+	}
+}
+
+func TestSetupProcessGroupNormalizesMissingProcess(t *testing.T) {
+	command := exec.Command("sh", "-c", "true")
+	lifecycle := setupProcessGroup(command)
+	command.Process = &os.Process{Pid: 1 << 30}
+	if err := lifecycle.cancel(command); !errors.Is(err, os.ErrProcessDone) {
+		t.Fatalf("missing process cancellation = %v", err)
+	}
+}
+
+func TestExecboundDoesNotGroupKillAfterReap(t *testing.T) {
+	if !groupKillSupported() {
+		t.Skip("waitid(WNOWAIT) unavailable; direct-child fallback is active")
+	}
+	originalWaitHook := afterLinuxWaitidLocked
+	originalCancelHook := beforeLinuxGroupCancel
+	originalSignal := signalLinuxProcessGroup
+	reapLocked := make(chan struct{})
+	releaseReap := make(chan struct{})
+	cancelEntered := make(chan struct{})
+	afterLinuxWaitidLocked = func() { close(reapLocked); <-releaseReap }
+	beforeLinuxGroupCancel = func() { close(cancelEntered) }
+	signalCalls := 0
+	signalLinuxProcessGroup = func(pid int) error {
+		signalCalls++
+		return originalSignal(pid)
+	}
+	t.Cleanup(func() {
+		afterLinuxWaitidLocked = originalWaitHook
+		beforeLinuxGroupCancel = originalCancelHook
+		signalLinuxProcessGroup = originalSignal
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan Result, 1)
+	go func() {
+		done <- Run(ctx, []string{"true"}, Options{Unbounded: true}, CaptureCombined, Spec{})
+	}()
+	<-reapLocked
+	cancel()
+	<-cancelEntered
+	close(releaseReap)
+	result := <-done
+	if signalCalls != 0 {
+		t.Fatalf("group signal ran after reap began: calls=%d", signalCalls)
+	}
+	if !errors.Is(result.CtxErr, context.Canceled) {
+		t.Fatalf("raced cancellation result = %+v", result)
 	}
 }
 
@@ -94,6 +150,9 @@ func TestSetupProcessGroup_WiresGroupKillAndWaitDelay(t *testing.T) {
 func TestExecbound_ProcessGroup_GrandchildReaped(t *testing.T) {
 	if testing.Short() {
 		t.Skip("spawns real grandchild processes; skipped under -short")
+	}
+	if !groupKillSupported() {
+		t.Skip("waitid(WNOWAIT) unavailable; direct-child fallback is active")
 	}
 	pidFile := filepath.Join(t.TempDir(), "grandchild.pid")
 	res := Run(context.Background(), grandchildSpawner(pidFile, 30),
@@ -113,13 +172,39 @@ func TestExecbound_ProcessGroup_GrandchildReaped(t *testing.T) {
 	}
 }
 
+func TestRunObserved_TimeoutReapsGrandchild(t *testing.T) {
+	if testing.Short() {
+		t.Skip("spawns a real grandchild")
+	}
+	if !groupKillSupported() {
+		t.Skip("waitid(WNOWAIT) unavailable; direct-child fallback is active")
+	}
+	pidFile := filepath.Join(t.TempDir(), "observed-grandchild.pid")
+	result := RunObserved(context.Background(), grandchildSpawner(pidFile, 30),
+		Options{Timeout: 300 * time.Millisecond}, CaptureCombined, Spec{}, ObservationOptions{})
+	pid := readPIDFile(t, pidFile, time.Second)
+	if pid == 0 {
+		t.Fatal("grandchild did not record its pid")
+	}
+	t.Cleanup(func() { killPID(pid) })
+	if result.Execution.Termination != TerminationTimedOut || !result.Execution.DrainComplete {
+		t.Errorf("timeout observation = %+v", result.Execution)
+	}
+	if !waitGone(pid, 3*time.Second) {
+		t.Errorf("grandchild pid %d survived observed timeout", pid)
+	}
+}
+
 // ★ Core timeliness proof (T11) ★ — a tripped deadline must RETURN, not hang:
 // with the grandchild holding the stdout pipe, Run returns within deadline +
 // WaitDelay + slack. The WaitDelay backstop is what guarantees this even if
 // the group kill races a just-forked grandchild.
-func TestExecbound_WaitDelay_Backstop_Unix(t *testing.T) {
+func TestExecbound_WaitDelay_Backstop_Linux(t *testing.T) {
 	if testing.Short() {
 		t.Skip("spawns real grandchild processes; skipped under -short")
+	}
+	if !groupKillSupported() {
+		t.Skip("waitid(WNOWAIT) unavailable; direct-child fallback is active")
 	}
 	pidFile := filepath.Join(t.TempDir(), "grandchild.pid")
 	start := time.Now()
@@ -144,9 +229,12 @@ func TestExecbound_WaitDelay_Backstop_Unix(t *testing.T) {
 	}
 }
 
-// On unix no degradation Log line is emitted on the kill path (group teardown
-// IS available): the Log sink stays silent even when the deadline fires.
-func TestExecbound_KillPath_NoDegradationLogOnUnix(t *testing.T) {
+// On supported Linux hosts no degradation Log line is emitted on the kill
+// path: the Log sink stays silent even when the deadline fires.
+func TestExecbound_KillPath_NoDegradationLogOnLinux(t *testing.T) {
+	if !groupKillSupported() {
+		t.Skip("waitid(WNOWAIT) unavailable; direct-child fallback is active")
+	}
 	var logs []string
 	res := Run(context.Background(), []string{"sleep", "30"},
 		Options{Timeout: 300 * time.Millisecond, Log: func(s string) { logs = append(logs, s) }},
@@ -155,6 +243,53 @@ func TestExecbound_KillPath_NoDegradationLogOnUnix(t *testing.T) {
 		t.Fatalf("must report TimedOut; CtxErr=%v", res.CtxErr)
 	}
 	if len(logs) != 0 {
-		t.Errorf("unix kill path must not emit a degradation log; got %v", logs)
+		t.Errorf("Linux group-kill path must not emit a degradation log; got %v", logs)
+	}
+}
+
+func TestExecbound_IncompleteDrainWarnsEvenOnLinux(t *testing.T) {
+	if testing.Short() {
+		t.Skip("waits for the real WaitDelay backstop")
+	}
+	setsid, err := exec.LookPath("setsid")
+	if err != nil {
+		t.Skip("setsid unavailable")
+	}
+	pidFile := filepath.Join(t.TempDir(), "escaped.pid")
+	logs := []string{}
+	result := Run(context.Background(), []string{"sh", "-c",
+		setsid + " sleep 30 & echo $! > " + pidFile + "; exit 0"},
+		Options{Log: func(value string) { logs = append(logs, value) }},
+		CaptureCombined, Spec{})
+	if pid := readPIDFile(t, pidFile, time.Second); pid > 0 {
+		t.Cleanup(func() { killPID(pid) })
+	}
+	if !errors.Is(result.Err, exec.ErrWaitDelay) || !result.DrainIncomplete {
+		t.Fatalf("incomplete drain result = %+v", result)
+	}
+	if len(logs) != 1 || !strings.Contains(logs[0], "output drain incomplete") {
+		t.Fatalf("incomplete drain warning = %v", logs)
+	}
+}
+
+func TestExecbound_AbnormalExitCannotHideIncompleteDrain(t *testing.T) {
+	if testing.Short() {
+		t.Skip("waits for the real WaitDelay backstop")
+	}
+	pidFile := filepath.Join(t.TempDir(), "survivor.pid")
+	logs := []string{}
+	result := Run(context.Background(), []string{"sh", "-c",
+		"sleep 30 & echo $! > " + pidFile + "; exit 7"},
+		Options{Log: func(value string) { logs = append(logs, value) }},
+		CaptureCombined, Spec{})
+	if pid := readPIDFile(t, pidFile, time.Second); pid > 0 {
+		t.Cleanup(func() { killPID(pid) })
+	}
+	var exitError *exec.ExitError
+	if !errors.As(result.Err, &exitError) || !result.DrainIncomplete {
+		t.Fatalf("abnormal incomplete drain result = %+v", result)
+	}
+	if len(logs) != 1 || !strings.Contains(logs[0], "output drain incomplete") {
+		t.Fatalf("abnormal incomplete drain warning = %v", logs)
 	}
 }

@@ -2,10 +2,45 @@ package execbound
 
 import (
 	"context"
+	"math"
 	"strconv"
 	"strings"
 	"testing"
 )
+
+func TestCappedBufferCountSaturatesWithoutIntegerWrap(t *testing.T) {
+	buffer := &cappedBuffer{total: math.MaxInt64 - 1}
+	if written, err := buffer.Write([]byte("xx")); written != 2 || err != nil {
+		t.Fatalf("Write() = %d, %v", written, err)
+	}
+	if buffer.total != math.MaxInt64 || !buffer.countOverflow {
+		t.Fatalf("overflow count = %d, marked = %v", buffer.total, buffer.countOverflow)
+	}
+	left := &cappedBuffer{total: math.MaxInt64}
+	right := &cappedBuffer{total: 1}
+	if total, overflow := combinedByteCount(left, right); total != math.MaxInt64 || !overflow {
+		t.Fatalf("combined overflow = %d, %v", total, overflow)
+	}
+}
+
+func TestResultCountOverflowIsAlwaysTruncated(t *testing.T) {
+	result := Result{Stdout: []byte("x"), Total: math.MaxInt64, Retained: 1, CountOverflow: true}
+	if !result.CountOverflow || !strings.Contains(result.Observed(), "total byte count overflowed") {
+		t.Fatalf("count overflow was not reported honestly: %q", result.Observed())
+	}
+}
+
+func TestCaptureCombinedPreservesSharedPipeWriteOrder(t *testing.T) {
+	const want = "out-1|err-1|out-2|err-2|"
+	for attempt := 0; attempt < 100; attempt++ {
+		result := Run(context.Background(), []string{"sh", "-c",
+			"printf 'out-1|'; printf 'err-1|' >&2; printf 'out-2|'; printf 'err-2|' >&2"},
+			Options{}, CaptureCombined, Spec{})
+		if result.Err != nil || result.Observed() != want {
+			t.Fatalf("attempt %d combined bytes = %q, %v", attempt, result.Observed(), result.Err)
+		}
+	}
+}
 
 // T16 — exact-count truncation: a stub emitting exactly cap+delta must retain
 // EXACTLY cap bytes and report the exact total. Deterministic: cappedBuffer
@@ -77,6 +112,10 @@ func TestRun_CaptureSplit_SeparatesStreams(t *testing.T) {
 	// Split retention is capped per stream: total counts both.
 	if res.Total != int64(len(res.Stdout)+len(res.Stderr)) {
 		t.Errorf("Total = %d, want %d", res.Total, len(res.Stdout)+len(res.Stderr))
+	}
+	if strings.Contains(res.Rendered(), "truncated") || strings.Contains(res.Observed(), "truncated") {
+		t.Fatalf("complete split stdout gained an aggregate truncation marker: %q / %q",
+			res.Rendered(), res.Observed())
 	}
 }
 

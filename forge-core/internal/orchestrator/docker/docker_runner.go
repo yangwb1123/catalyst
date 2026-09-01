@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"os/exec"
 	"strings"
 	"time"
 
+	"forgeos/forge-core/internal/execbound"
 	"forgeos/forge-core/internal/orchestrator/sandbox"
 )
 
@@ -37,13 +39,19 @@ type Runner struct {
 
 // cappedWriter retains at most cap bytes and drains the rest.
 type cappedWriter struct {
-	cap   int
-	buf   []byte
-	total int
+	cap           int
+	buf           []byte
+	total         int64
+	countOverflow bool
 }
 
 func (w *cappedWriter) Write(p []byte) (int, error) {
-	w.total += len(p)
+	if w.countOverflow || w.total > math.MaxInt64-int64(len(p)) {
+		w.total = math.MaxInt64
+		w.countOverflow = true
+	} else {
+		w.total += int64(len(p))
+	}
 	if room := w.cap - len(w.buf); room > 0 {
 		if len(p) <= room {
 			w.buf = append(w.buf, p...)
@@ -55,10 +63,12 @@ func (w *cappedWriter) Write(p []byte) (int, error) {
 }
 
 func (w *cappedWriter) limitError() error {
-	if w.total <= w.cap {
+	if !w.countOverflow && w.total <= int64(w.cap) {
 		return nil
 	}
-	return &sandbox.OutputLimitError{Limit: w.cap, Total: w.total}
+	return &sandbox.OutputLimitError{
+		Limit: int64(w.cap), Total: w.total, CountOverflow: w.countOverflow,
+	}
 }
 
 // Run executes argv inside a fresh container. A nil error with a non-zero
@@ -70,6 +80,12 @@ func (r *Runner) Run(
 	stdin string,
 	timeout time.Duration,
 ) (string, int, error) {
+	if err := execbound.ValidateStdinSize(len(stdin)); err != nil {
+		return "", 0, err
+	}
+	if err := (execbound.Options{MaxOutputBytes: r.MaxOutputBytes}).Validate(); err != nil {
+		return "", 0, configFault(err)
+	}
 	binary := r.Binary
 	if binary == "" {
 		binary = "docker"
@@ -79,6 +95,9 @@ func (r *Runner) Run(
 	effective, err := r.effective()
 	if err != nil {
 		return "", 0, err
+	}
+	if err := runCtx.Err(); err != nil {
+		return "", 0, interruptionError("docker run", err, timeout)
 	}
 	if err := r.checkReady(runCtx, binary, runCommand); err != nil {
 		return "", 0, readinessError(err, runCtx.Err(), timeout)
@@ -93,23 +112,31 @@ func (r *Runner) Run(
 	if runCtx.Err() != nil {
 		return interruptedResult(binary, invocation.cleanup, out, runCtx.Err(), timeout)
 	}
+	return r.completedResult(out, err, started)
+}
+
+func (r *Runner) completedResult(
+	out *cappedWriter, runErr error, started time.Time,
+) (string, int, error) {
 	if r.Logf != nil {
 		r.Logf("docker: container exited after %s", time.Since(started).Round(time.Millisecond))
 	}
 	if limitErr := out.limitError(); limitErr != nil {
 		return string(out.buf), 0, limitErr
 	}
-	if err != nil {
-		if exit, ok := err.(*exec.ExitError); ok {
+	if runErr != nil {
+		if exit, ok := runErr.(*exec.ExitError); ok {
 			// Exit 125 is the docker daemon's own fault (client/daemon/pull
 			// error), not the guest's verdict — it must never surface as a
 			// guest exit code (review stage-06 Medium).
 			if exit.ExitCode() == 125 {
-				return string(out.buf), 0, configFault(fmt.Errorf("docker daemon fault (exit 125): %w", err))
+				return string(out.buf), 0, configFault(fmt.Errorf(
+					"docker daemon fault (exit 125): %w", runErr,
+				))
 			}
 			return string(out.buf), exit.ExitCode(), nil
 		}
-		return string(out.buf), 0, configFault(fmt.Errorf("docker run: %w", err))
+		return string(out.buf), 0, configFault(fmt.Errorf("docker run: %w", runErr))
 	}
 	return string(out.buf), 0, nil
 }

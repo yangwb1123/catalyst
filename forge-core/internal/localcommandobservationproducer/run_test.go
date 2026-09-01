@@ -194,6 +194,35 @@ func TestPostExecutionProfileContextOnlyDetachesForControllerTermination(t *test
 	cancelTimedOut()
 }
 
+func TestExecutionContextConsistencyFailsClosed(t *testing.T) {
+	tests := []struct {
+		name        string
+		termination execbound.TerminationKind
+		ctxErr      error
+		wantErr     bool
+	}{
+		{name: "clean exit", termination: execbound.TerminationExited},
+		{name: "exit with cancellation", termination: execbound.TerminationExited, ctxErr: context.Canceled, wantErr: true},
+		{name: "signal with deadline", termination: execbound.TerminationSignaled, ctxErr: context.DeadlineExceeded, wantErr: true},
+		{name: "timeout", termination: execbound.TerminationTimedOut, ctxErr: context.DeadlineExceeded},
+		{name: "timeout with cancellation", termination: execbound.TerminationTimedOut, ctxErr: context.Canceled, wantErr: true},
+		{name: "cancellation", termination: execbound.TerminationCancelled, ctxErr: context.Canceled},
+		{name: "cancellation without context", termination: execbound.TerminationCancelled, wantErr: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			execution := execbound.ObservedResult{
+				Legacy:    execbound.Result{CtxErr: test.ctxErr},
+				Execution: execbound.ExecutionObservation{Termination: test.termination},
+			}
+			err := validateExecutionContext(execution)
+			if (err != nil) != test.wantErr {
+				t.Fatalf("validateExecutionContext() error = %v, wantErr %v", err, test.wantErr)
+			}
+		})
+	}
+}
+
 func TestRunRejectsUnproducibleInputsBeforeSpawn(t *testing.T) {
 	for _, test := range []struct {
 		name    string

@@ -1,19 +1,19 @@
 // Package execbound provides ONE bounded subprocess run: a context deadline
-// (or an explicit unbounded escape), process-group teardown on unix (with a
-// portable WaitDelay backstop), and capped output retention with an honest
+// (or an explicit unbounded escape), cancellation-only process-group teardown
+// on Linux (with a portable parent-reader backstop), and capped output retention with an honest
 // truncation marker. It is the leaf extraction of the orchestrator's solved
 // bounded-run pattern (CommandExecutor.Timeout + cappedBuffer +
-// process-group cancel), shared by the orchestrator and the gate bridge so the
-// grandchild-pipe logic can never drift between the two consumers.
+// process-group cancel), shared by the orchestrator and the gate bridge.
 //
 // Zero dependencies beyond the Go standard library (the forge-core red line);
 // it must never import an internal package, in particular not internal/asset.
 package execbound
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"runtime"
@@ -30,6 +30,8 @@ const DefaultTimeout = 10 * time.Minute
 // DefaultMaxOutputBytes is the safe default retention cap when
 // Options.MaxOutputBytes is zero: 10 MiB (10 << 20).
 const DefaultMaxOutputBytes = 10 << 20
+
+const maxStdinBytes = 16 << 20
 
 // Options controls one bounded subprocess run. The zero value selects the safe
 // defaults (DefaultTimeout / DefaultMaxOutputBytes). Validate must pass before
@@ -48,10 +50,9 @@ type Options struct {
 	// "FORGE_GATE_TIMEOUT" | ""), set by gate.ResolveOptions, consumed by the
 	// gate layer's honest timeout text. "" = omit the knob clause.
 	Knob string
-	// Log, when set, receives one line per kill event on a platform without
-	// process-group teardown: "process-group teardown unavailable on <GOOS>:
-	// timed-out command's descendants may outlive it". Nil-safe; never called
-	// on the happy path.
+	// Log receives a bounded warning when cancellation lacks process-group
+	// teardown or WaitDelay proves an incomplete output drain. Nil-safe and
+	// silent for a clean, completely drained run.
 	Log func(string)
 }
 
@@ -75,8 +76,8 @@ func (o Options) Validate() error {
 type Capture int
 
 const (
-	// CaptureCombined retains both streams in ONE merged buffer (os/exec
-	// same-pointer serialization) — the orchestrator's current behavior.
+	// CaptureCombined sends both child streams through one shared raw pipe,
+	// retaining their pipe order in one bounded buffer and proving its EOF.
 	CaptureCombined Capture = iota
 	// CaptureSplit retains stdout and stderr separately — gate.ProbeAll needs
 	// raw stdout for JSON plus stderr for error text.
@@ -88,12 +89,12 @@ const (
 type Spec struct {
 	Dir        string     // working directory; "" = inherit forge's cwd
 	Env        []string   // child environment; nil = inherit parent (os/exec default)
-	Stdin      io.Reader  // child stdin; nil = os/exec default
+	Stdin      []byte     // bounded in-memory stdin; nil = os/exec default
 	ExtraFiles []*os.File // inherited descriptors beginning at fd 3; nil = none
 	// ExecutablePath, when non-empty, is the already-resolved executable used
 	// for this run while argv[0] remains the caller-declared process name. It
 	// is primarily useful to producers that resolve and snapshot a tool before
-	// execution. Clearing exec.Cmd.Err is required because exec.CommandContext
+	// execution. Clearing exec.Cmd.Err is required because exec.Command
 	// may already have recorded a failed LookPath for argv[0]. Empty preserves
 	// the exact legacy lookup behavior.
 	ExecutablePath string
@@ -103,15 +104,21 @@ type Spec struct {
 //   - deadline: Timeout > 0 → context.WithTimeout(ctx, Timeout); Unbounded →
 //     ctx as-is (NO deadline, but parent cancellation still propagates);
 //     Timeout == 0 → DefaultTimeout.
-//   - teardown: unix → Setpgid + Cancel = SIGKILL(-pgid) + WaitDelay = 2s;
-//     non-unix → direct-child kill + WaitDelay = 2s (the portable backstop:
-//     Run returns ≤ deadline + 2s even when descendants hold the pipes;
-//     descendants leak on non-unix and one Log line is emitted).
+//   - teardown: supported Linux → Setpgid + lifecycle-serialized SIGKILL(-pgid);
+//     all other cases → direct-child kill. Every target also gets WaitDelay =
+//     2s. Independent raw-pipe drains return within the same bound and expose
+//     DrainIncomplete when a descendant keeps a writer; descendants may
+//     survive on every platform.
 //   - capture: capped retention with the honest truncation marker.
 //
-// Kill errors (ESRCH etc.) are best-effort — never fatal, never a pass.
+// A process group is a best-effort teardown handle, not containment: a child
+// may deliberately escape it. DrainIncomplete reports when WaitDelay had to
+// close output pipes. Kill errors (ESRCH etc.) are never a silent pass.
 func Run(ctx context.Context, argv []string, opts Options, capture Capture, spec Spec) Result {
 	if err := opts.Validate(); err != nil {
+		return Result{Err: err}
+	}
+	if err := validateSpec(spec); err != nil {
 		return Result{Err: err}
 	}
 	if len(argv) == 0 {
@@ -119,54 +126,72 @@ func Run(ctx context.Context, argv []string, opts Options, capture Capture, spec
 	}
 	runCtx, runCancel := deadlineContext(ctx, opts)
 	defer runCancel()
-	cmd := exec.CommandContext(runCtx, argv[0], argv[1:]...)
+	cmd := newBoundedCommand(runCtx, argv, spec)
+	cancelled := &cancelTracker{}
+	wrapTrackedCancel(cmd, runCtx, cancelled)
+	return runCapturedCommand(cmd, runCtx, cancelled, opts, capture)
+}
+
+func capturedResult(runErr, ctxErr error, cancelled cancelSnapshot) Result {
+	return Result{
+		Err: preferContextFailure(runErr, ctxErr), CtxErr: ctxErr,
+		DrainIncomplete: errors.Is(runErr, exec.ErrWaitDelay),
+		cancelApplied:   cancelled.called && cancelled.err == nil,
+	}
+}
+
+func newBoundedCommand(ctx context.Context, argv []string, spec Spec) *boundedCommand {
+	cmd := exec.Command(argv[0], argv[1:]...)
 	if spec.ExecutablePath != "" {
 		cmd.Path = spec.ExecutablePath
 		cmd.Err = nil
 	}
-	setupProcessGroup(cmd)
-	if spec.Dir != "" {
-		cmd.Dir = spec.Dir
+	lifecycle := setupProcessGroup(cmd)
+	command := &boundedCommand{
+		Cmd: cmd, runCtx: ctx, lifecycle: lifecycle, cancel: lifecycle.cancel,
+		processDone: make(chan struct{}), cancelDone: make(chan struct{}),
 	}
-	if spec.Env != nil {
-		cmd.Env = spec.Env
-	}
+	cmd.Dir, cmd.Env = spec.Dir, spec.Env
 	if spec.Stdin != nil {
-		cmd.Stdin = spec.Stdin
+		cmd.Stdin = bytes.NewReader(append([]byte(nil), spec.Stdin...))
 	}
 	cmd.ExtraFiles = append([]*os.File(nil), spec.ExtraFiles...)
-	if capture == CaptureSplit {
-		stdout := &cappedBuffer{cap: maxBytes(opts.MaxOutputBytes)}
-		stderr := &cappedBuffer{cap: maxBytes(opts.MaxOutputBytes)}
-		cmd.Stdout, cmd.Stderr = stdout, stderr
-		runErr := cmd.Run()
-		res := Result{
-			Stdout: stdout.buf, Stderr: stderr.buf, Err: runErr,
-			CtxErr:   runCtx.Err(),
-			Total:    int64(stdout.total) + int64(stderr.total),
-			Retained: len(stdout.buf) + len(stderr.buf),
-		}
-		res.logDegradation(opts)
-		return res
-	}
-	merged := &cappedBuffer{cap: maxBytes(opts.MaxOutputBytes)}
-	cmd.Stdout, cmd.Stderr = merged, merged
-	runErr := cmd.Run()
-	res := Result{
-		Merged: merged.buf, Err: runErr, CtxErr: runCtx.Err(),
-		Total: int64(merged.total), Retained: len(merged.buf),
-	}
-	res.logDegradation(opts)
-	return res
+	return command
 }
 
-// logDegradation emits the honest non-unix kill note exactly when a kill event
-// fired without process-group teardown available — never on the happy path.
+func validateSpec(spec Spec) error {
+	return ValidateStdinSize(len(spec.Stdin))
+}
+
+// ValidateStdinSize enforces the shared in-memory child-input ceiling before
+// callers allocate, dispatch, or hand input to a host or sandbox runner.
+func ValidateStdinSize(size int) error {
+	if size < 0 || size > maxStdinBytes {
+		return fmt.Errorf("stdin exceeds %d-byte bound", maxStdinBytes)
+	}
+	return nil
+}
+
+// logDegradation reports observed incomplete drain independently of platform,
+// then the weaker direct-child cancellation teardown when applicable.
 func (r Result) logDegradation(opts Options) {
-	if r.CtxErr == nil || GroupKillAvailable() || opts.Log == nil {
+	if opts.Log == nil {
 		return
 	}
-	opts.Log(fmt.Sprintf("process-group teardown unavailable on %s: timed-out command's descendants may outlive it", runtime.GOOS))
+	if r.DrainIncomplete {
+		opts.Log(fmt.Sprintf("subprocess output drain incomplete on %s: descendants may have outlived the command", runtime.GOOS))
+		return
+	}
+	if r.cancelApplied && !groupKillSupported() {
+		opts.Log(fmt.Sprintf("process-group teardown unavailable on %s: cancelled command's descendants may outlive it", runtime.GOOS))
+	}
+}
+
+func preferContextFailure(runErr, ctxErr error) error {
+	if runErr == nil && ctxErr != nil {
+		return ctxErr
+	}
+	return runErr
 }
 
 // deadlineContext derives the run context: the configured deadline, or a plain
@@ -194,13 +219,19 @@ func maxBytes(n int) int {
 
 // Result is the outcome of one bounded subprocess run.
 type Result struct {
-	Stdout   []byte // retained stdout bytes (CaptureSplit only)
-	Stderr   []byte // retained stderr bytes (CaptureSplit only)
-	Merged   []byte // retained merged bytes (CaptureCombined only)
-	Err      error  // cmd.Run() error; nil iff the command exited 0
-	CtxErr   error  // run ctx error at completion: DeadlineExceeded | Canceled | nil
-	Total    int64  // total bytes written to the captured stream(s)
-	Retained int    // bytes retained (== cap EXACTLY whenever Total >= cap)
+	Stdout          []byte // retained stdout bytes (CaptureSplit only)
+	Stderr          []byte // retained stderr bytes (CaptureSplit only)
+	Merged          []byte // retained merged bytes (CaptureCombined only)
+	Err             error  // process/context failure; nil only for clean exit and drain
+	CtxErr          error  // run ctx error at completion: DeadlineExceeded | Canceled | nil
+	Total           int64  // observed bytes, saturated at MaxInt64 on count overflow
+	Retained        int    // bytes retained in memory across captured stream(s)
+	CountOverflow   bool   // exact total no longer fits signed int64
+	DrainIncomplete bool   // WaitDelay proved the output drain incomplete
+	cancelApplied   bool   // cancellation successfully reached the process/group
+	renderTotal     int64  // bytes in the stream returned by retainedBytes
+	renderOverflow  bool   // renderTotal no longer fits signed int64
+	renderCountSet  bool   // split capture supplied an independent stdout count
 }
 
 // TimedOut reports whether the run ended because the deadline fired. A spawn
@@ -218,14 +249,24 @@ func (r Result) retainedBytes() []byte {
 	return r.Stdout
 }
 
+func (r Result) renderedCount() (int64, bool) {
+	if r.renderCountSet {
+		return r.renderTotal, r.renderOverflow
+	}
+	return r.Total, r.CountOverflow
+}
+
 // Rendered returns the retained output trimmed, appending the truncation
 // marker when Total > Retained — a clipped log is never mistaken for full
 // output.
 func (r Result) Rendered() string {
 	b := r.retainedBytes()
 	s := strings.TrimSpace(string(b))
-	if r.Total > int64(len(b)) {
-		s += truncationMarker(len(b), r.Total)
+	total, overflow := r.renderedCount()
+	if overflow {
+		s += countOverflowMarker(len(b))
+	} else if total > int64(len(b)) {
+		s += truncationMarker(len(b), total)
 	}
 	return s
 }
@@ -235,8 +276,11 @@ func (r Result) Rendered() string {
 func (r Result) Observed() string {
 	b := r.retainedBytes()
 	s := string(b)
-	if r.Total > int64(len(b)) {
-		s += truncationMarker(len(b), r.Total)
+	total, overflow := r.renderedCount()
+	if overflow {
+		s += countOverflowMarker(len(b))
+	} else if total > int64(len(b)) {
+		s += truncationMarker(len(b), total)
 	}
 	return s
 }
@@ -245,6 +289,10 @@ func (r Result) Observed() string {
 // orchestrator's rendered/observed semantics and the gate bridge's output.
 func truncationMarker(retained int, total int64) string {
 	return fmt.Sprintf(" …[output truncated: retained %d of %d bytes (--max-output-bytes)]", retained, total)
+}
+
+func countOverflowMarker(retained int) string {
+	return fmt.Sprintf(" …[output truncated: retained %d bytes; total byte count overflowed (--max-output-bytes)]", retained)
 }
 
 // FromBytes builds a Result from a pre-captured byte string (sandboxed runs)
@@ -261,8 +309,9 @@ func FromBytes(p []byte, max int) Result {
 	return Result{Stdout: p[:retained], Total: total, Retained: retained}
 }
 
-// GroupKillAvailable reports whether process-group teardown exists on this
-// platform: true on unix, false elsewhere. Consulted ONLY on the kill path.
-func GroupKillAvailable() bool {
-	return groupKillAvailable
+// groupKillSupported reports whether race-free process-group teardown exists
+// on this host. Linux requires waitid(WNOWAIT); other targets use safe direct-
+// child termination plus the portable drain backstop.
+func groupKillSupported() bool {
+	return platformGroupKillSupported()
 }

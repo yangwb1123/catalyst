@@ -125,6 +125,15 @@ func probeFromExecution(
 	case res.CtxErr == context.Canceled:
 		return nil, nil, fmt.Errorf("gate: acceptance --json canceled")
 	}
+	if res.DrainIncomplete {
+		return nil, nil, fmt.Errorf("gate: parsing acceptance --json: output drain incomplete")
+	}
+	if res.CountOverflow {
+		return nil, nil, fmt.Errorf(
+			"gate: parsing acceptance --json: total byte count overflowed after retaining %d bytes",
+			res.Retained,
+		)
+	}
 	if res.Total > int64(res.Retained) {
 		return nil, nil, fmt.Errorf("gate: parsing acceptance --json: output truncated: retained %d of %d bytes",
 			res.Retained, res.Total)

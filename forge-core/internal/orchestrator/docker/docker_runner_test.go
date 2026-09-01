@@ -3,6 +3,7 @@ package docker
 import (
 	"context"
 	"errors"
+	"math"
 	"os"
 	"os/exec"
 	"strings"
@@ -14,6 +15,24 @@ import (
 
 func runProbe() error {
 	return exec.Command("docker", "info").Run()
+}
+
+func TestRunnerRejectsOversizedStdinBeforeDockerProbe(t *testing.T) {
+	runner := &Runner{}
+	_, _, err := runner.Run(
+		context.Background(), []string{"true"}, strings.Repeat("x", 16<<20+1), 0,
+	)
+	if err == nil || !strings.Contains(err.Error(), "stdin exceeds") {
+		t.Fatalf("oversized stdin error = %v", err)
+	}
+}
+
+func TestRunnerRejectsNegativeOutputLimitBeforeDockerProbe(t *testing.T) {
+	runner := &Runner{MaxOutputBytes: -1}
+	_, _, err := runner.Run(context.Background(), []string{"true"}, "", 0)
+	if err == nil || !strings.Contains(err.Error(), "max output bytes must be >= 0") {
+		t.Fatalf("negative output limit error = %v", err)
+	}
 }
 
 func TestShellJoinQuotesArgv(t *testing.T) {
@@ -61,6 +80,18 @@ func TestCappedWriterReportsObservedOverflow(t *testing.T) {
 	var limitErr *sandbox.OutputLimitError
 	if err := out.limitError(); !errors.As(err, &limitErr) || !strings.Contains(err.Error(), "observed 6 bytes") {
 		t.Fatalf("overflow error = %v", err)
+	}
+}
+
+func TestCappedWriterSaturatesByteCountOnOverflow(t *testing.T) {
+	out := &cappedWriter{cap: 4, total: math.MaxInt64 - 1}
+	if _, err := out.Write([]byte("xx")); err != nil {
+		t.Fatal(err)
+	}
+	var limitErr *sandbox.OutputLimitError
+	if err := out.limitError(); !errors.As(err, &limitErr) ||
+		!limitErr.CountOverflow || limitErr.Total != math.MaxInt64 {
+		t.Fatalf("overflow accounting = %+v (err %v)", limitErr, err)
 	}
 }
 

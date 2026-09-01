@@ -41,12 +41,12 @@ type TerminationKind string
 
 const (
 	TerminationNotStarted  TerminationKind = "not_started"
-	TerminationSpawnFailed TerminationKind = "spawn_failed"
 	TerminationExited      TerminationKind = "exited"
 	TerminationTimedOut    TerminationKind = "timed_out"
 	TerminationCancelled   TerminationKind = "cancelled"
 	TerminationSignaled    TerminationKind = "signaled"
-	TerminationWaitFailed  TerminationKind = "wait_failed"
+	terminationSpawnFailed TerminationKind = "spawn_failed"
+	terminationWaitFailed  TerminationKind = "wait_failed"
 )
 
 // ExecutionObservation describes process lifecycle facts that cannot be
@@ -100,6 +100,11 @@ func RunObserved(
 			EndedAt: clock(), Termination: TerminationNotStarted,
 		})
 	}
+	if err := validateSpec(spec); err != nil {
+		return captured.result(capture, err, nil, ExecutionObservation{
+			EndedAt: clock(), Termination: TerminationNotStarted,
+		})
+	}
 	if len(argv) == 0 {
 		return captured.result(capture, errors.New("empty argv"), nil, ExecutionObservation{
 			EndedAt: clock(), Termination: TerminationNotStarted,
@@ -132,11 +137,11 @@ func runObservedValidated(
 	cmd.Stderr = stderrPipe.writer
 
 	cancelled := &cancelTracker{}
-	wrapObservedCancel(cmd, runCtx, cancelled)
+	wrapTrackedCancel(cmd, runCtx, cancelled)
 	attemptStartedAt := clock()
 	if err := cmd.Start(); err != nil {
 		return captured.result(capture, err, runCtx.Err(), ExecutionObservation{
-			EndedAt: clock(), Termination: TerminationSpawnFailed,
+			EndedAt: clock(), Termination: terminationSpawnFailed,
 		})
 	}
 	// The child owns duplicated write descriptors after Start. Closing the
@@ -155,20 +160,12 @@ func runObservedValidated(
 	)
 }
 
-func newObservedCommand(ctx context.Context, argv []string, spec Spec) *exec.Cmd {
-	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
-	if spec.ExecutablePath != "" {
-		cmd.Path = spec.ExecutablePath
-		cmd.Err = nil
-	}
-	setupProcessGroup(cmd)
-	cmd.Dir, cmd.Env, cmd.Stdin = spec.Dir, spec.Env, spec.Stdin
-	cmd.ExtraFiles = append([]*os.File(nil), spec.ExtraFiles...)
-	return cmd
+func newObservedCommand(ctx context.Context, argv []string, spec Spec) *boundedCommand {
+	return newBoundedCommand(ctx, argv, spec)
 }
 
 func finishObservedRun(
-	cmd *exec.Cmd,
+	cmd *boundedCommand,
 	stdoutPipe, stderrPipe *observedPipe,
 	drains <-chan observedDrainResult,
 	cancelled *cancelTracker,
@@ -191,12 +188,11 @@ func finishObservedRun(
 	if waitErr == nil {
 		waitErr = drainErr
 	}
-	classifyObservedTermination(&execution, cmd, waitErr, cancelSnapshot)
+	classifyObservedTermination(&execution, cmd.Cmd, waitErr, cancelSnapshot)
 
 	result := captured.result(capture, waitErr, runCtx.Err(), execution)
-	if execution.Termination == TerminationTimedOut || execution.Termination == TerminationCancelled {
-		result.Legacy.logDegradation(opts)
-	}
+	result.Legacy.cancelApplied = cancelSnapshot.called && cancelSnapshot.err == nil
+	result.Legacy.logDegradation(opts)
 	return result
 }
 
@@ -249,15 +245,20 @@ func (capture *observedCapture) result(
 	execution ExecutionObservation,
 ) ObservedResult {
 	stdout, stderr, combined := capture.snapshots()
-	legacy := Result{Err: runErr, CtxErr: ctxErr}
+	legacy := Result{
+		Err: preferContextFailure(runErr, ctxErr), CtxErr: ctxErr,
+		DrainIncomplete: execution.Started && !execution.DrainComplete,
+	}
 	if mode == CaptureSplit {
 		legacy.Stdout = append([]byte(nil), stdout.Retained...)
 		legacy.Stderr = append([]byte(nil), stderr.Retained...)
-		legacy.Total = legacyCount(stdout.Bytes, stderr.Bytes)
+		legacy.Total, legacy.CountOverflow = legacyCount(stdout.Bytes, stderr.Bytes)
 		legacy.Retained = legacyRetained(len(stdout.Retained), len(stderr.Retained))
+		legacy.renderTotal, legacy.renderOverflow = legacyCount(stdout.Bytes)
+		legacy.renderCountSet = true
 	} else {
 		legacy.Merged = append([]byte(nil), combined.Retained...)
-		legacy.Total = legacyCount(combined.Bytes)
+		legacy.Total, legacy.CountOverflow = legacyCount(combined.Bytes)
 		legacy.Retained = len(combined.Retained)
 	}
 	return ObservedResult{
@@ -324,18 +325,18 @@ func (stream *observedStream) snapshot() StreamObservation {
 	}
 }
 
-func legacyCount(values ...uint64) int64 {
+func legacyCount(values ...uint64) (int64, bool) {
 	var total uint64
 	for _, value := range values {
 		if value > math.MaxUint64-total {
-			return math.MaxInt64
+			return math.MaxInt64, true
 		}
 		total += value
 		if total > math.MaxInt64 {
-			return math.MaxInt64
+			return math.MaxInt64, true
 		}
 	}
-	return int64(total)
+	return int64(total), false
 }
 
 func legacyRetained(left, right int) int {
@@ -372,19 +373,8 @@ func (tracker *cancelTracker) snapshot() cancelSnapshot {
 	return cancelSnapshot{called: tracker.called, cause: tracker.cause, err: tracker.err, at: tracker.at}
 }
 
-func wrapObservedCancel(cmd *exec.Cmd, runCtx context.Context, tracker *cancelTracker) {
-	cancel := cmd.Cancel
-	cmd.Cancel = func() error {
-		var err error
-		if cancel != nil {
-			err = cancel()
-		}
-		if observedCancelProcessDone(err) {
-			err = os.ErrProcessDone
-		}
-		tracker.record(runCtx.Err(), err)
-		return err
-	}
+func wrapTrackedCancel(cmd *boundedCommand, _ context.Context, tracker *cancelTracker) {
+	cmd.tracker = tracker
 }
 
 func classifyObservedTermination(
@@ -401,9 +391,14 @@ func classifyObservedTermination(
 		}
 		return
 	}
+	if waitErr == nil && cancel.called && cancel.err != nil &&
+		!errors.Is(cancel.err, os.ErrProcessDone) {
+		execution.Termination = terminationWaitFailed
+		return
+	}
 	var exitError *exec.ExitError
 	if waitErr != nil && !errors.As(waitErr, &exitError) {
-		execution.Termination = TerminationWaitFailed
+		execution.Termination = terminationWaitFailed
 		return
 	}
 	if code, signalNumber, signalName, signaled, ok := observedProcessState(cmd.ProcessState); ok {
@@ -421,8 +416,8 @@ func classifyObservedTermination(
 	// os.ErrProcessDone. Its actual ProcessState wins; reaching here means no
 	// reliable terminal state was available.
 	if cancel.called && errors.Is(cancel.err, os.ErrProcessDone) {
-		execution.Termination = TerminationWaitFailed
+		execution.Termination = terminationWaitFailed
 		return
 	}
-	execution.Termination = TerminationWaitFailed
+	execution.Termination = terminationWaitFailed
 }

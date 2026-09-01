@@ -126,6 +126,17 @@ func TestCaptureEnvironmentRejectsAmbiguousPathAndDropsTMPDIR(t *testing.T) {
 	}
 }
 
+func TestBoundedGitDiagnosticEscapesAndCapsToolText(t *testing.T) {
+	diagnostic := boundedGitDiagnostic([]byte(
+		"line\nbidi\u202e" + strings.Repeat("\x01", maxGitDiagnosticBytes),
+	))
+	if len(diagnostic) > maxGitDiagnosticBytes || strings.Contains(diagnostic, "\n") ||
+		strings.Contains(diagnostic, "\u202e") || !strings.Contains(diagnostic, `\n`) ||
+		!strings.Contains(diagnostic, `\u202e`) || !strings.Contains(diagnostic, "truncated") {
+		t.Fatalf("Git diagnostic is unsafe or unbounded: %q", diagnostic)
+	}
+}
+
 func TestCanonicalDigestValidationAndCloneAreExact(t *testing.T) {
 	target := "target-<>&"
 	digest := sha256Bytes([]byte(target))

@@ -20,14 +20,17 @@ func TestBuildRootfsHonorsRunDeadline(t *testing.T) {
 	}
 }
 
-func TestMarkerReadHonorsRunDeadline(t *testing.T) {
+func TestPostShutdownResultDumpHonorsRunDeadline(t *testing.T) {
 	tool := blockingTool(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 	defer cancel()
 	started := time.Now()
-	_, _, err := readMarkerWithRetry(ctx, tool, filepath.Join(t.TempDir(), "rootfs"))
+	_, err := dumpGuestFile(
+		ctx, tool, filepath.Join(t.TempDir(), "rootfs"), t.TempDir(),
+		"/forge-result-00000000000000000000000000000000/status", "guest-status",
+	)
 	if !errors.Is(err, context.DeadlineExceeded) || time.Since(started) > time.Second {
-		t.Fatalf("bounded marker read error = %v after %s", err, time.Since(started))
+		t.Fatalf("bounded result dump error = %v after %s", err, time.Since(started))
 	}
 }
 

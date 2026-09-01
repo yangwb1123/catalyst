@@ -12,13 +12,21 @@ import (
 func newTestRepository(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
+	initializeTestRepository(t, root)
+	return root
+}
+
+func initializeTestRepository(t *testing.T, root string) {
+	t.Helper()
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	runTestGit(t, root, "init", "-b", "main")
 	runTestGit(t, root, "config", "user.name", "Forge Session Test")
 	runTestGit(t, root, "config", "user.email", "forge-session@example.invalid")
 	writeTestFile(t, filepath.Join(root, "README.md"), "base\n")
 	runTestGit(t, root, "add", ".")
 	runTestGit(t, root, "commit", "-m", "base")
-	return root
 }
 
 func startTestSession(t *testing.T, root, worktrees, id string, now time.Time) Session {

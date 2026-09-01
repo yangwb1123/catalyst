@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"forgeos/forge-core/internal/asset"
+	"forgeos/forge-core/internal/execbound"
 )
 
 // Uses a real subprocess (echo) to prove the executor actually runs a command
@@ -436,6 +437,36 @@ func TestCommandExecutor_ClassifyOverloadNotConsultedOnSuccess(t *testing.T) {
 	}
 	if called {
 		t.Error("ClassifyOverload must NOT be consulted on a successful run")
+	}
+}
+
+func TestCommandExecutor_DegradedOutputCannotTriggerOverload(t *testing.T) {
+	base := execbound.Result{
+		Merged: []byte("529"), Err: errors.New("exit status 7"), Total: 3, Retained: 3,
+	}
+	tests := []struct {
+		name   string
+		mutate func(*execbound.Result)
+	}{
+		{"canceled", func(result *execbound.Result) {
+			result.Err, result.CtxErr = context.Canceled, context.Canceled
+		}},
+		{"incomplete drain", func(result *execbound.Result) { result.DrainIncomplete = true }},
+		{"count overflow", func(result *execbound.Result) { result.CountOverflow = true }},
+		{"truncated", func(result *execbound.Result) { result.Total = 4 }},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			result := base
+			test.mutate(&result)
+			calls := 0
+			executor := CommandExecutor{ClassifyOverload: func(string) bool { calls++; return true }}
+			err := executor.finish("implement", []string{"agent"}, result, 0)
+			var execErr *ExecError
+			if !errors.As(err, &execErr) || execErr.Kind != KindFailed || calls != 0 {
+				t.Fatalf("degraded result = %v, classifier calls = %d", err, calls)
+			}
+		})
 	}
 }
 

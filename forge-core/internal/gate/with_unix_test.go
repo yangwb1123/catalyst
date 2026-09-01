@@ -1,4 +1,4 @@
-//go:build unix
+//go:build linux
 
 package gate
 
@@ -13,10 +13,10 @@ import (
 	"time"
 )
 
-// ── T7 (R1/R2) — process-tree kill through the gate bridge ─────────────────
+// ── T7 (R1/R2) — Linux process-tree kill through the gate bridge ───────────
 // A stub harness that forks a pipe-inheriting grandchild and waits on it must
 // have BOTH the direct child and the grandchild reaped when the run's ctx is
-// cancelled — the process-group teardown this direction adds to the gate
+// cancelled — the Linux process-group teardown this direction adds to the gate
 // bridge (mirrors the orchestrator's grandchild proof).
 func TestGateWith_Deadline_CtxCancelKillsGrandchild(t *testing.T) {
 	if testing.Short() {

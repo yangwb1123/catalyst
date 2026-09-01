@@ -3,9 +3,9 @@
 // (timeout, output cap). The legacy wrappers in gate.go/resolve.go delegate to
 // these with context.Background() + zero Options (the safe defaults), so
 // existing callers are byte-identical on non-boundary runs while every new
-// call site gets the bounded-run mechanics — process-group teardown on unix,
-// the WaitDelay pipe backstop, and capped output — exactly as the orchestrator
-// already does.
+// call site gets the bounded-run mechanics — race-free process-group teardown
+// on supported Linux hosts, direct-child kill elsewhere, the WaitDelay pipe
+// backstop, and capped output — exactly as the orchestrator already does.
 //
 // CONCURRENCY (hardening A2): a spawn semaphore caps the number of live
 // harness processes. Gate/Check/Accept/ProbeAll each acquire exactly ONE slot
@@ -320,34 +320,7 @@ func ProbeAllWith(ctx context.Context, root string, opts Options) (statuses map[
 	defer release()
 	res := execbound.Run(runCtx, []string{"node", "harness/acceptance.mjs", "--json"}, opts,
 		execbound.CaptureSplit, execbound.Spec{Dir: RepoRoot(root)})
-	switch {
-	case res.TimedOut():
-		return nil, nil, fmt.Errorf("gate: acceptance --json timed out %s: %w", deadline, res.Err)
-	case res.CtxErr == context.Canceled:
-		return nil, nil, fmt.Errorf("gate: acceptance --json canceled")
-	}
-	if res.Total > int64(res.Retained) {
-		return nil, nil, fmt.Errorf("gate: parsing acceptance --json: output truncated: retained %d of %d bytes",
-			res.Retained, res.Total)
-	}
-	rejected, exitErr := validateProbeExit(res)
-	if exitErr != nil {
-		return nil, nil, exitErr
-	}
-	rows, decodeErr := decodeProbeRows(res.Stdout)
-	if decodeErr != nil {
-		return nil, nil, fmt.Errorf("gate: parsing acceptance --json: %w", decodeErr)
-	}
-	if rejected && allProbeRowsPass(rows) {
-		return nil, nil, fmt.Errorf("gate: acceptance --json exited nonzero with an all-PASS envelope")
-	}
-	statuses = make(map[string]string, len(rows))
-	categories = make(map[string]string, len(rows))
-	for _, row := range rows {
-		statuses[row.Criterion] = normStatus(row.Status)
-		categories[row.Criterion] = row.Category
-	}
-	return statuses, categories, nil
+	return probeFromExecution(res, deadline)
 }
 
 func validateProbeExit(res execbound.Result) (bool, error) {

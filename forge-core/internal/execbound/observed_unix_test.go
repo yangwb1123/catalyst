@@ -36,7 +36,7 @@ func TestRunObserved_PermissionDeniedExecutableIsSpawnFailure(t *testing.T) {
 	}
 	result := RunObserved(context.Background(), []string{"logical-tool"}, Options{},
 		CaptureCombined, Spec{ExecutablePath: path}, ObservationOptions{})
-	if result.Execution.Started || result.Execution.Termination != TerminationSpawnFailed ||
+	if result.Execution.Started || result.Execution.Termination != terminationSpawnFailed ||
 		result.Legacy.Err == nil {
 		t.Errorf("permission-denied spawn result = %+v", result)
 	}
@@ -49,8 +49,10 @@ func TestRunObserved_WaitDelayMarksDrainIncomplete(t *testing.T) {
 	pidFile := filepath.Join(t.TempDir(), "inherited-pipe.pid")
 	script := "sleep 30 & echo $! > " + pidFile + "; exit 0"
 	start := time.Now()
+	logs := []string{}
 	result := RunObserved(context.Background(), []string{"sh", "-c", script},
-		Options{}, CaptureCombined, Spec{}, ObservationOptions{})
+		Options{Log: func(value string) { logs = append(logs, value) }},
+		CaptureCombined, Spec{}, ObservationOptions{})
 	elapsed := time.Since(start)
 
 	pid := readObservedPID(t, pidFile)
@@ -60,9 +62,12 @@ func TestRunObserved_WaitDelayMarksDrainIncomplete(t *testing.T) {
 	if !errors.Is(result.Legacy.Err, exec.ErrWaitDelay) {
 		t.Fatalf("wait error = %v, want exec.ErrWaitDelay", result.Legacy.Err)
 	}
-	if result.Execution.DrainComplete || result.Execution.Termination != TerminationWaitFailed ||
-		!result.Execution.Started {
+	if result.Execution.DrainComplete || result.Execution.Termination != terminationWaitFailed ||
+		!result.Execution.Started || !result.Legacy.DrainIncomplete {
 		t.Errorf("WaitDelay observation = %+v", result.Execution)
+	}
+	if len(logs) != 1 || !strings.Contains(logs[0], "output drain incomplete") {
+		t.Fatalf("observed incomplete drain warning = %v", logs)
 	}
 	if elapsed < waitDelay || elapsed > waitDelay+5*time.Second {
 		t.Errorf("WaitDelay elapsed = %v, want around %v", elapsed, waitDelay)
@@ -143,31 +148,11 @@ func TestRunObserved_OneSidedInheritedPipeIsIncomplete(t *testing.T) {
 			if pid > 0 {
 				t.Cleanup(func() { _ = syscall.Kill(pid, syscall.SIGKILL) })
 			}
-			if result.Execution.DrainComplete || result.Execution.Termination != TerminationWaitFailed ||
+			if result.Execution.DrainComplete || result.Execution.Termination != terminationWaitFailed ||
 				!errors.Is(result.Legacy.Err, exec.ErrWaitDelay) {
 				t.Fatalf("one inherited stream must fail closed: %+v err=%v", result.Execution, result.Legacy.Err)
 			}
 		})
-	}
-}
-
-func TestRunObserved_TimeoutReapsGrandchild(t *testing.T) {
-	if testing.Short() {
-		t.Skip("spawns a real grandchild")
-	}
-	pidFile := filepath.Join(t.TempDir(), "observed-grandchild.pid")
-	result := RunObserved(context.Background(), grandchildSpawner(pidFile, 30),
-		Options{Timeout: 300 * time.Millisecond}, CaptureCombined, Spec{}, ObservationOptions{})
-	pid := readPIDFile(t, pidFile, time.Second)
-	if pid == 0 {
-		t.Fatal("grandchild did not record its pid")
-	}
-	t.Cleanup(func() { killPID(pid) })
-	if result.Execution.Termination != TerminationTimedOut || !result.Execution.DrainComplete {
-		t.Errorf("timeout observation = %+v", result.Execution)
-	}
-	if !waitGone(pid, 3*time.Second) {
-		t.Errorf("grandchild pid %d survived observed timeout", pid)
 	}
 }
 

@@ -60,9 +60,10 @@ func main() {
 }
 
 // delegate runs one harness gate with the bounded With-variants, prints its
-// output, and maps OK to exit code. Signal ctx: Ctrl-C/SIGTERM cancel the
-// gate's process group (hardening A1.2) — this REPLACES today's accidental
-// group-shared Ctrl-C, which the new Setpgid would otherwise break. The
+// output, and maps OK to exit code. Signal ctx: Ctrl-C/SIGTERM cancel the gate;
+// supported Linux hosts use lifecycle-safe process-group teardown while other
+// targets kill the direct child and bound parent-reader drain. This replaces
+// accidental group-shared Ctrl-C without promising portable containment. The
 // --timeout/--max-output-bytes flags feed gate.ResolveOptions (flag > env >
 // default); a config error names the offending source+value and exits 2.
 func delegate(fn func(ctx context.Context, root string, opts gate.Options) gate.Result, args []string) int {
@@ -335,6 +336,10 @@ func cmdRun(args []string) int {
 		fmt.Fprintf(os.Stderr, "forge run: %v\n", err)
 		return 2
 	}
+	if err := validateAgentTimeout(o.timeout); err != nil {
+		fmt.Fprintf(os.Stderr, "forge run: %v\n", err)
+		return 2
+	}
 	if o.chain && o.maxChainStages < 1 {
 		fmt.Fprintln(os.Stderr, "forge run: --max-chain-stages must be >= 1")
 		return 2
@@ -439,8 +444,8 @@ func freezeRunOptions(fs *flag.FlagSet, o *runOpts) {
 
 // projectYAMLValue reads one top-level scalar `key: value` from
 // <root>/.agent/project.yml, stripping a trailing `# comment` and surrounding
-// whitespace. This is a deliberately tiny line scanner — forge-core is zero-dep
-// (no YAML lib), and project.yml's mode/lifecycle are flat scalars (the same
+// whitespace. This is a deliberately tiny line scanner with no YAML dependency;
+// project.yml's mode/lifecycle are flat scalars (the same
 // approach arch-check.mjs uses for policies.yml). A missing file or absent key
 // yields "" (the caller then falls back), never an error: project.yml is an
 // optional convenience, not a hard dependency of a run.
@@ -485,11 +490,4 @@ func sandboxConfig(o runOpts) *orchestrator.SandboxConfig {
 		Kernel:   o.sandboxKernel,
 		MemoryMB: o.sandboxMemoryMB,
 	}
-}
-
-func validateSandboxMemory(memoryMB int) error {
-	if memoryMB < sandbox.MinMemoryMB || memoryMB > sandbox.MaxMemoryMB {
-		return fmt.Errorf("--sandbox-memory-mb must be between %d and %d", sandbox.MinMemoryMB, sandbox.MaxMemoryMB)
-	}
-	return nil
 }

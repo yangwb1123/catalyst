@@ -98,7 +98,8 @@ func gitOutput(
 	if result.Err != nil {
 		return nil, fmt.Errorf("hardened Git command failed: %w", result.Err)
 	}
-	if result.Total > maxGitOutputBytes || result.Total > int64(result.Retained) {
+	if result.CountOverflow || result.Total > maxGitOutputBytes ||
+		result.Total > int64(result.Retained) {
 		return nil, fmt.Errorf("hardened Git output exceeds %d bytes", maxGitOutputBytes)
 	}
 	if err := git.verifyIdentity(ctx); err != nil {
