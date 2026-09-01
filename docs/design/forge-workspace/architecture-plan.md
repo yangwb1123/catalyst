@@ -106,6 +106,12 @@ Local Protocol Server
 
 Runtime 接受“执行一个已授权 Attempt”的请求，不接受“完成这个项目”的开放式顶层命令。每个请求绑定 idempotency key、WorkItem、ProjectSnapshot、Context/Policy/Approval digest、预算和允许的 effect。
 
+R0-C5 已在 ADR-0107 Proposed 边界内实现 FR-03a pure request value：caller-supplied input 经完整 Scope/ref、snapshot、
+typed RecordRef、effect、budget、timeout 和 idempotency relation validation 后，被防御性复制为 private-field
+`AttemptRequest`，初始 state 固定为 `requested`。这里的 executor/Artifact/Grant/Approval/effect/budget 均不是已认证或
+已保留事实；request presence 也不是 accepted、durable、claimed、dispatched 或 running。Runtime lifecycle、journal、
+local protocol 与 Control consumer 仍分别属于 FR-03 后续、FR-04、FR-06 与 FC-07。
+
 ## 6. Canonical Command API
 
 ### 6.1 用户/控制面命令
@@ -141,6 +147,9 @@ ReadRuntimeEvents(after_cursor)
 ```
 
 `StartAttempt` 最小绑定：Attempt/WorkItem/Project/Snapshot、Agent adapter/version、context artifact、effect grant、budget、timeout、working directory capability、idempotency key。
+
+该列表仍是后续 protocol 目标。R0-C5 不定义 `StartAttempt` serde/canonical wire、command envelope payload、deadline、
+ack 或 stable protocol error；它只提供 Rust 内部 request value，不能被 Go 直接传输或消费。
 
 ### 6.3 Control → Harness 命令
 

@@ -238,6 +238,11 @@ R0-C4（ADR-0106 Proposed）candidate 只交付 FC-06 的 pure pre-effect select
 authority，不创建 Attempt，不写 journal/outbox，不接 Runtime/Harness，不做 Verification 或 completion join；因此只关闭
 FC-06 的 pure 子集，不关闭 F6/F7、FC-07/08、F3/F4 或 Objective→Outcome。
 
+R0-C5（ADR-0107 Proposed）已交付 FC-07 之前的 Rust-side 前置依赖，只关闭 FR-03a pure Attempt request value。
+Go Reconciler 不消费该 Rust source value，`RuntimePort.StartAttempt` 也不在本切片出现；FR-03 后续 lifecycle、FR-04
+durable journal/outbox 与 FR-06 local protocol 全部完成并单独验收后，FC-07 才能冻结 Go↔Rust transport、timeout/ack/
+uncertainty 与 no-resend 语义。
+
 ## 10. 测试计划
 
 - Domain：状态机、DAG、snapshot drift、budget、approval、Outcome join；

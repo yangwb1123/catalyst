@@ -2661,3 +2661,35 @@ Blocker/Major/Minor/Nit 0 返回 CLEAN；ADR body/self pins 为 `7041df374cc2c5a
 **completion_boundary:** 本 DONE/[x] 标记只关闭 FC-06 pure pre-effect selection 子集，并以紧随封树运行的
 `node harness/acceptance.mjs` 作为保留门禁；若正式验收失败必须撤销。F6/F7、FC-07/08、F3/F4、R0 Developer Preview、
 Objective→Outcome 与完整 App 继续开放。
+
+### Sprint 148 — Runtime Attempt Request Domain v1（R0-C5 / FR-03a）— ADR-0107 Proposed（✅ DONE）
+
+本切片只建立 Rust Runtime-owned Attempt 的 pure request construction boundary。`AttemptRequestInput` 由 caller
+提供完整 Platform Core Scope、explicit Attempt/WorkItem/Project/ProjectSnapshot refs、四项 Control aggregate
+versions、executor descriptor、可选 context Artifact/workspace capability/Grant、normalized Approval/effect sets、Attempt budget、timeout 与
+idempotency key。构造成功时防御性复制为 private-field `AttemptRequest`，只暴露只读 getter，并把初始 state 固定为
+Platform Core `requested`；调用者后续修改原输入不得改变已构造值。
+
+验证必须失败关闭 scope 缺层/越层、explicit ref type/ID substitution、snapshot mismatch、错误 record type、重复或非法
+effect、非空 effects 缺 Grant、非法 idempotency、非正/超限 Control version/budget 与 timeout，以及 timeout 超过
+duration ceiling。Executor、Artifact、workspace capability、Grant、Approval、effect 与 budget 均只按 caller
+declaration 做 structure/relation 检查，不解析 record/artifact
+bytes，不认证 producer/issuer/approver/principal/currentness/revocation/permission，不查询 current Control versions，也不
+reserve budget。
+
+本切片未加入 Attempt reducer/transition authority、Session/Turn/Action、serde/canonical wire/digest、SQLite schema/
+journal/outbox、CAS/Artifact resolution、protocol server/handshake/ack、Runtime adapter、Reconciler consumer、WorkItem edge、
+claim/dispatch/provider/tool/filesystem/process/network effect、Verification/completion 或产品入口。
+
+最终标记树的 invariant tests 20/20、boundary tests 6/6、domain lib 436 tests、Rust workspace all-target tests/build、
+fmt、strict Clippy、Platform Core/Application 回归、Go workspace regressions、strict ADR v2、gate 3942 files、
+architecture 8/8（3271 source files）、governance 13/13 与 diff check 均通过。fresh-context architecture/domain 和
+reliability 终审均以 Blocker/Major/Minor/Nit 0 返回 CLEAN；authority-boundary 复核独立确认 caller declaration、
+no-consumer/no-effect 与 fail-closed 关系。ADR body/self pins 为
+`6b9748819c50bae58ebd349f13751b8b0548df1d23a16a5b94dee5e80246504a`/
+`3696901c7e9fb4a896f219391235b0d9cc1575aa755e98db595e49fb4c5c5d79`。
+
+**completion_boundary:** 本 DONE/[x] 标记只在同一棵冻结树通过上述测试、独立复审与紧随封树运行的
+`node harness/acceptance.mjs` 时保留，任一失败必须立即撤回。通过也只关闭 FR-03a pure request value；依赖链仍为
+`FR-03 后续 lifecycle → FR-04 execution journal/outbox → FR-06 local protocol → FC-07 RuntimePort client`，F2/F3/F4/F6、
+R0 Developer Preview、Objective→Outcome 与完整 App 继续开放。

@@ -77,6 +77,11 @@ F0 边界冻结
 
 验收：deterministic fake adapter 与至少一个真实本地 CLI fixture 能产生可重放 timeline；断电/进程终止后不丢 durable terminal boundary；不解析 stdout 冒充不可见内部动作。
 
+R0-C5/ADR-0107 已交付 F2 中的 FR-03a 前置子项，只构造 caller-supplied、defensively-owned、初始 state 固定为
+`requested` 的 Rust `AttemptRequest`。它没有 lifecycle reducer、Session/Turn/Action、journal/outbox、CAS、adapter、
+wire/protocol、authenticated authority、budget reservation、dispatch 或 effect，因此不能把 request structure tests 写成
+F2 或 StartAttempt 已交付。后续必须依序关闭 FR-03 其余 execution domain、FR-04、FR-06，FC-07 才能开始真实进程合同。
+
 ### F3 — App Server 与查询投影（L）
 
 交付：

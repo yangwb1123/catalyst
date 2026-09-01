@@ -134,6 +134,12 @@ Attempt request 冻结：WorkItem、ProjectSnapshot、workspace capability、Age
 
 状态由 Runtime transaction 推进。重复 StartAttempt：相同 key+payload 精确返回原 ack；相同 key+不同 payload 拒绝。
 
+R0-C5/ADR-0107 已实现且只关闭前一段的 FR-03a pure request value：`AttemptRequestInput` 经 Platform Core structure 与完整
+Scope、explicit ref、snapshot、typed RecordRef、effect、budget、timeout、idempotency relation validation 后，被
+防御性复制为 private-field `AttemptRequest`，初始 state 固定为 `requested`。它不实现本段第二句的 Runtime
+transaction、durable idempotency、ack 或 payload comparison，也不认证 Grant/Approval/workspace capability、解析 Artifact、
+保留预算或释放 effect。
+
 ### 5.2 Session 与 Turn
 
 一个 Attempt 可有多个 Session（恢复或切换宿主需显式 policy）和多个 Turn。每个 Turn 绑定输入 Artifact、上下文 digest、sequence 和 terminal reason。
@@ -223,6 +229,10 @@ Control 启动 Runtime 时 pin 可执行文件身份和参数；Runtime 不继�
 | FR-11 | Sandbox/Process observer integration | FR-10 | XL | file/process/network evidence |
 | FR-12 | legacy Run/Group/Graph adapter | FR-04 | L | old DB exact replay |
 | FR-13 | low-level CLI → protocol/debug | FR-06, FC-13 | M | compatibility tests |
+
+R0-C5 是 FR-03 的 `FR-03a request value` 子项，已完成但不能勾选完整 FR-03。依赖顺序固定为
+`FR-03a → FR-03 lifecycle values → FR-04 → FR-06 → FC-07`；FR-06 不得在没有 durable Attempt owner 时用
+protocol fixture 反向定义领域状态。
 
 ## 12. 测试计划
 

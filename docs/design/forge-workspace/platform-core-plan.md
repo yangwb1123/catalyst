@@ -149,6 +149,10 @@ requested → accepted → starting → running
 
 Runtime 拥有 Attempt observed state。Control 只能消费 durable event，不写 Runtime state。
 
+ADR-0107/R0-C5 已实现的 FR-03a 只允许 Runtime domain 从 caller-supplied input 构造一个 state 固定为
+`requested` 的 immutable `AttemptRequest`。这不是应用 `requested → accepted` edge，也不读取 current state、append
+event 或建立 Attempt aggregate；完整 lifecycle reducer 和 durable transition 仍在 FR-03 后续与 FR-04。
+
 ### 4.3 Action
 
 ```text

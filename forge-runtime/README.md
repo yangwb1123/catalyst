@@ -17,6 +17,17 @@ command, event, execution/verification receipt values, and pure state-edge
 membership. They are not wired to Hub persistence, dispatch, provider calls,
 check execution, current-state mutation, or completion policy.
 
+R0-C5 implements one pure Runtime-owned Attempt request value under Proposed
+ADR-0107 and closes only FR-03a. It validates caller-supplied Platform Core scope and
+explicit refs, Control aggregate versions, executor and typed record
+declarations, an optional snapshot-bound context artifact, effects, budgets,
+timeout, and idempotency, then defensively owns the result with initial state
+fixed to `requested`. It does not add serde or a canonical wire, a lifecycle
+reducer, durable idempotency, SQLite journal/outbox, artifact resolution,
+authenticated Grant/Approval authority, budget reservation,
+protocol/adapter dispatch, or any effect. See the
+[Runtime Attempt Request Domain v1 design](../docs/design/forge-workspace/runtime-attempt-domain-v1.md).
+
 The Hub adds persistent local discovery:
 
 ```bash

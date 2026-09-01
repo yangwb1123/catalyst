@@ -38,6 +38,10 @@ ForgeOS 不替代 Claude Code / Codex / Gemini CLI / OpenCode / OpenHands ——
   与 [`docs/contracts/platform-core-receipt-v1.md`](docs/contracts/platform-core-receipt-v1.md)
 - Rust 本地会话 Hub、durable Project Run 与默认离线/显式 live Agent Runtime:
   [`forge-runtime/`](forge-runtime/)
+- Rust Runtime Attempt Request Domain v1 已通过 R0-C5 实现 FR-03a pure construction boundary：只把 caller-supplied Scope/ref、executor、
+  Artifact/typed declaration refs、effect、budget、timeout 与 idempotency 验证并防御性复制为初始
+  `requested` immutable value；尚无 lifecycle、journal、wire/protocol、authenticated authority、dispatch 或 effect。
+  边界见 [`runtime-attempt-domain-v1.md`](docs/design/forge-workspace/runtime-attempt-domain-v1.md)
 - 已采纳的企业级 AI Engineering OS 目标规划（00–16 节点、AADM/Meta Reflection、140→38 Capability/Skill
   ownership、default-off Device Fabric）:
   [`docs/design/ai-engineering-os/`](docs/design/ai-engineering-os/)（`planning_only`，不代表 runtime 已实现）

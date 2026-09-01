@@ -1,6 +1,6 @@
 # Runtime Attempt Request Domain v1
 
-> 状态：R0-C5 candidate / Sprint 148 in progress；只覆盖 FR-03a 的 pure request 子集，ADR-0107 保持 Proposed。
+> 状态：R0-C5 implemented / Sprint 148 DONE；只关闭 FR-03a pure request 子集，ADR-0107 仍为 Proposed。
 > 日期：2026-09-01
 
 ## 1. 目的

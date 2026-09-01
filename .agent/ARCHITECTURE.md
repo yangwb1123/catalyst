@@ -117,14 +117,22 @@ progress，再确定性返回一个 passive pre-effect Decision。Policy/Approva
 `ReadyWorkItem` 不请求状态迁移或释放执行 authority。该包无 I/O、store、journal/outbox、controller、Attempt、Runtime/
 Harness Receipt、completion、canonical wire 或用户入口；effectful FC-07/08、F6/F7 与 Objective-to-Outcome 仍开放。
 
+ADR-0107 Proposed 边界内已实现的 R0-C5 只关闭 FR-03a pure `AttemptRequest` construction boundary：
+caller-supplied input 必须绑定完整 Platform Core Scope、exact Attempt/WorkItem/Project/ProjectSnapshot refs、正数 bounded
+Objective/Change/WorkGraph/WorkItem versions、executor declaration、可选 snapshot-bound context Artifact 与 typed
+workspace-capability/Grant、normalized typed Approval/effect sets、Attempt budget、timeout 和 Platform Core idempotency
+key。成功对象防御性复制输入、字段 private、只读 getter，state 由构造器固定为 `requested`。它不认证任何
+reference/authority，不查询 current Control versions，不解析 Artifact，不提供 reducer、Session/Turn/Action、serde/wire/digest、SQLite/journal/outbox、protocol、adapter、
+Reconciler consumer、dispatch 或 effect；后续链仍为 FR-03 lifecycle → FR-04 → FR-06 → FC-07。
+
 ADR-0101/0102 Proposed 冻结 Platform Core Envelope/Receipt v1 的 typed identity/reference、ArtifactRef、
 Command/Event Envelope、ExecutionReceipt、VerificationRequest/Receipt、WorkItem/Attempt/Action 状态边和七类
 broad rejection code。Go control、Rust domain 与独立 Python Harness 对 supplied canonical bytes、关系、共同
 golden 和 mutation corpus 做纯验证；Receipt/state binding 仍不生成 live ID/Receipt，不认证 actor/Grant/Approval/
 Evidence，不解析 Artifact bytes，不执行 Harness check，也不形成完成权威。ADR-0103 现在只让 Go store 成为
 Command/Event canonical bytes 的首个 durable consumer，不持久化 Receipt 或应用 WorkItem/Attempt/Action edge。
-因此 R0-A/B1/B2/C1、已实现的 C2/C3 与 C4 candidate 只构成完整 App 的 process、协议、私有存储、内部 Workspace catalog、
-pure Delivery 语义和 passive selection 地基，Runtime/Harness transport、垂直
+因此 R0-A/B1/B2/C1 与已实现的 C2/C3/C4/C5 只构成完整 App 的 process、协议、私有存储、内部
+Workspace catalog、pure Delivery 语义、passive selection 与 Rust requested-value 地基，Runtime/Harness transport、垂直
 Objective→Outcome consumer、产品 API、projection 与 Web UI 仍必须以后续切片交付。
 
 ## 引擎 (Engines)
