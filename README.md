@@ -23,6 +23,11 @@ ForgeOS 不替代 Claude Code / Codex / Gemini CLI / OpenCode / OpenHands ——
   create/get/list，但不读取 Project path、没有认证或公开 route。私有存储与 catalog 契约见
   [`control-store-v1.md`](docs/design/forge-workspace/control-store-v1.md) 与
   [`workspace-catalog-v1.md`](docs/design/forge-workspace/workspace-catalog-v1.md)
+- Go 内部 Delivery Domain 与 pure pre-effect Reconciler 已提供 bounded Objective/Change/WorkGraph 校验和一个确定性
+  passive WorkItem candidate；Policy/Approval/Budget 仍是 declared-only，`ReadyWorkItem` 不授权状态迁移或执行。
+  当前仍无产品 route、Runtime/Harness bridge 或 completion join；边界见
+  [`delivery-domain-v1.md`](docs/design/forge-workspace/delivery-domain-v1.md) 与
+  [`reconciler-v1.md`](docs/design/forge-workspace/reconciler-v1.md)
 - Proposed Platform Core Envelope/Receipt v1 已冻结 typed ID、Scope/Actor/Record reference、`ArtifactRef`、
   `CommandEnvelope`、`EventEnvelope`、Execution/Verification Receipt、WorkItem/Attempt/Action 状态边及
   broad rejection code 的 Go/Rust/Python 严格合同；Go `controlstore` 现只消费 canonical Command/Event bytes

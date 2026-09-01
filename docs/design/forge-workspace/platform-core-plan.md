@@ -134,6 +134,9 @@ draft → planned → awaiting_approval → ready → dispatched
 
 只有 Go Reconciler 可请求迁移，transition authority 仍需 current state、Policy/Approval 和 evidence 校验。
 
+ADR-0106/R0-C4 的 passive `ReadyWorkItem` 明确不请求这里的任何 edge；它只做 pre-effect candidate selection。只有后续
+effectful consumer 在 durable current-version、effective Policy/Approval、budget 与 evidence 绑定完成后，才可设计迁移请求。
+
 ### 4.2 Attempt
 
 ```text

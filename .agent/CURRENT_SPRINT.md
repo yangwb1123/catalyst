@@ -2635,3 +2635,29 @@ execbound/caller、Control Store/Firecracker 和 whole-tree 三条独立复核�
 **completion_boundary:** 本 DONE/ROADMAP 标记只在同一棵冻结树通过 fresh-context 复审与
 `node harness/acceptance.mjs` 时保留，任一失败必须立即撤回。通过只关闭 FC-05 pure domain，不代表 FC-06、F3/F4、
 R0 Developer Preview、Objective→Outcome 或完整 App 已交付。
+
+### Sprint 147 — Pure Pre-Effect Reconciler v1（R0-C4）— ADR-0106 Proposed（✅ DONE）
+
+本切片只实现 FC-06 的 pure pre-effect selection 子集。`internal/reconcile/application` 作为
+`internal/delivery/domain` 的 exact sole production consumer，一次接收 caller-owned、完整且调用期间 race-free stable 的
+Objective/Change/WorkGraph、supplied current snapshot identifiers 与 WorkItem assessments。入口重新执行 Domain/DAG、
+version/declaration/evidence 和 progressed-predecessor 校验；合法输入按 uncertainty→snapshot drift→aggregate lifecycle→
+in-flight→terminal blocker→lexicographic-topological frontier→Policy/Approval/Budget 的固定顺序，恰好返回一个 passive
+`NoOp|AwaitApproval|ReadyWorkItem|BlockWorkItem|ReplanChange|EscalateUncertain`。
+
+Assessment 的 `unknown|satisfied_declared|unsatisfied_declared|uncertain` 只是 caller declaration；1–16 个 `RecordRef` 只做
+结构与同 identity digest 一致性校验，不解析或认证。`ReadyWorkItem` 仅选择一个零效果候选，不请求 Platform Core edge，
+不生成 identity/time，不写 `control.db`，不创建 Command/Event/journal/outbox，不 claim/dispatch Attempt，不调用 Runtime/
+Harness，不解析 Artifact/Receipt，不完成 WorkItem/Change，也不提供 loop/worker/retry/manual override/API/CLI/TUI/UI。
+
+最终标记树的 focused normal/race、96.8% package coverage、50 组 fixed-seed randomized DAG permutation、128
+WorkItem/assessment exact bound、assessment ID/effect pre-lookup bound、Delivery sole-consumer、full Go normal/race/vet/
+CGO-disabled build、module verify、Darwin/FreeBSD/NetBSD/OpenBSD/Windows 八个 OS/arch 目标的全量 production build +
+focused test compile、strict ADR v2、architecture 8/8、zero Reconciler production consumer、gate 3924 files 与
+governance 13 checks 已通过。fresh-context architecture/domain 与 reliability/security 双审均以
+Blocker/Major/Minor/Nit 0 返回 CLEAN；ADR body/self pins 为 `7041df374cc2c5ac5dc70ada740289bc36eacb4ee5cb6ede1341017b4b0011b9`/
+`3459996cc7bed1f83fc99a9aa3000e7f0633e69ed7b6536b0719b747345774fc`。
+
+**completion_boundary:** 本 DONE/[x] 标记只关闭 FC-06 pure pre-effect selection 子集，并以紧随封树运行的
+`node harness/acceptance.mjs` 作为保留门禁；若正式验收失败必须撤销。F6/F7、FC-07/08、F3/F4、R0 Developer Preview、
+Objective→Outcome 与完整 App 继续开放。

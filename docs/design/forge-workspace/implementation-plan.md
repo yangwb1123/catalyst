@@ -127,6 +127,11 @@ F0 边界冻结
 
 验收：相同 observed state 产生相同 next decision；无审批、过期快照、预算不足和 uncertain predecessor 全部 fail closed；Agent 不直接写 WorkItem 状态。
 
+R0-C4/ADR-0106 只先交付本节的 pure pre-effect selector 子集：Policy/Approval/Budget 使用 caller-supplied
+authority-neutral declared assessment，Snapshot 只比较 supplied identifiers，输出 `ReadyWorkItem` 也只是零效果候选。
+幂等 dispatch/Attempt claim、effective authority、Harness Receipt、terminal reconcile、manual override、timeline 与持久恢复
+仍属于本 F6 的后续 effectful 切片，不能从 C4 的确定性测试推断为已完成。
+
 ### F7 — 多任务自动推进（XL）
 
 交付：

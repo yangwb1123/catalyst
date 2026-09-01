@@ -232,6 +232,12 @@ caller-supplied snapshot comparison。它没有 canonical wire、journal fold、
 policy/approval authority、Runtime/Harness bridge、completion join 或用户入口；因此即使该 candidate 通过验收，FC-06、
 F3/F4 与 Objective→Outcome 仍保持开放。
 
+R0-C4（ADR-0106 Proposed）candidate 只交付 FC-06 的 pure pre-effect selection：Go
+`internal/reconcile/application` 对 caller-supplied stable ControlSnapshot 与 authority-neutral declared assessments
+重新校验，并以固定优先级选择一个 passive `ReadyWorkItem` 或返回明确 stop Decision。它不是 transition/dispatch
+authority，不创建 Attempt，不写 journal/outbox，不接 Runtime/Harness，不做 Verification 或 completion join；因此只关闭
+FC-06 的 pure 子集，不关闭 F6/F7、FC-07/08、F3/F4 或 Objective→Outcome。
+
 ## 10. 测试计划
 
 - Domain：状态机、DAG、snapshot drift、budget、approval、Outcome join；

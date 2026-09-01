@@ -17,6 +17,8 @@ cmd/forge-server/      loopback-only R0 App Server bootstrap
 internal/appserver/    single-instance lifecycle + versioned metadata-only health API
 internal/controlstore/ private SQLite journal/version/idempotency/outbox/inbox
 internal/workspace/    internal Space/Project/declared Snapshot-reference domain + application + store adapter
+internal/delivery/domain/ bounded pure Objective/Change/WorkGraph/WorkItem validation
+internal/reconcile/application/ passive deterministic pre-effect WorkItem selection
 internal/platformcorecontract/ common product identity/envelope v1 candidate
 internal/platformcorecontract/receipt/ execution + verification receipt v1 candidate
 internal/platformcorecontract/state/ pure WorkItem/Attempt/Action edge vocabulary

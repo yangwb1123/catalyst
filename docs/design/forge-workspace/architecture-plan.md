@@ -80,6 +80,10 @@ API/BFF
 
 Reconciler 是纯决策核心；实际 I/O 由 application service/outbox 执行。Agent 输出永远只是 observed input，不直接改变状态。
 
+R0-C4 的首个实现刻意停在 pre-effect 层：输入 Policy/Approval/Budget 与 current Snapshot 都是 caller-supplied declaration，
+输出 `ReadyWorkItem` 只表示一个确定性候选，不请求状态边、Attempt、dispatch、Verification 或 completion。未来 application
+service 消费它前必须另行冻结 durable current projection、effective authority、CAS/journal/outbox 与 uncertain-effect recovery。
+
 ### 4.4 Projection Workers
 
 从 Control event 和 Runtime event 构造 timeline、space overview、change cockpit、cost、artifact、approval、graph 和 evolution read model。Projection 带 schema version，可丢弃重建。
