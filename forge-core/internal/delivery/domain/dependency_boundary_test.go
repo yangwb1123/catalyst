@@ -9,6 +9,7 @@ import (
 )
 
 const deliveryDomainImportPath = "forgeos/forge-core/internal/delivery/domain"
+const deliveryReconcilerImportPath = "forgeos/forge-core/internal/reconcile/application"
 
 var dependencyImportPathAllowlist = map[string]bool{
 	"bytes": true, "crypto/sha256": true, "encoding/hex": true,

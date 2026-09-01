@@ -38,8 +38,8 @@ open/read 前先按 `Lstat` stable size 预留聚合预算，读取后再要求 
 本切片不创建 `application`、`store`、API 或 projection 包，不修改 `control.db` schema v1，也不产生 canonical Command/Event。
 领域值是 caller-owned mutable draft；调用方必须让完整 reachable slice/pointer graph 在整个校验调用期间保持 race-free、
 exclusive-stable。validator 不同步、不 deep-copy，也不形成 atomic snapshot；成功结果只描述该稳定输入，不是可缓存的
-validated token。机器检查禁止
-R0-C3 出现 production consumer：全源码 lexical scan 不跳过 `testdata`、拒绝 module symlink 并覆盖所有 build-tag source，
+validated token。R0-C3 交付时机器检查禁止任何 production consumer；ADR-0106/R0-C4 现已显式触发该 revisit，并只允许 exact
+`forgeos/forge-core/internal/reconcile/application`。全源码 lexical scan 不跳过 `testdata`、拒绝 module symlink 并覆盖所有 build-tag source，
 Linux/Darwin/Windows 的离线 `go list -e -json ./...` 在 empty HOME/module/build cache 下再解析本地 production package
 的 direct-import metadata；外部 module 不可用时由 `-e` 保留本地 metadata，网络/VCS 路径则关闭。Go tool 通过
 支持 `waitid(WNOWAIT)` 的 Linux 上 `Setpgid` + 与 reap 串行化的 group `SIGKILL`、其余目标 direct-child kill，以及
@@ -213,14 +213,15 @@ Focused tests 必须覆盖：
 - identity/time generation、application service、repository、schema v2、projection；
 - local actor authentication、authorization、Approval/Grant/Policy evaluation；
 - Impact observer、filesystem/Git Snapshot current-head resolution；
-- Reconciler、ready-node selection、Attempt dispatch、Runtime/Harness transport；
+- effectful Reconciler transition/Attempt dispatch、Runtime/Harness transport（R0-C4 只增加 passive ready selection）；
 - Receipt/AcceptanceCriteria join、Change/WorkItem completion authority；
 - HTTP/CLI/TUI/App、Timeline、Change Cockpit 或 Outcome。
 
-当前 mutable aggregate 没有 production consumer；任何未来消费方都不得把一次成功的 `Validate*` 调用保留为随后可变值的
+当前 mutable aggregate 只有 ADR-0106 审查的 pure Reconciler application consumer；它在每次 `Decide` 边界重新校验。
+任何消费方都不得把一次成功的 `Validate*` 调用保留为随后可变值的
 authority；并发 mutation 属调用方 data race，而不是 mixed-value atomicity 保证。源检查不证明被 Go compiler 消费的
 bytes 与测试读取 bytes 原子相同，也不证明 allowlisted dependency API 的调用级 effect 行为；有并发 source writer 时
 本 guard 不产生可信结论。
 
-因此本候选树一旦通过 fresh 双审与正式验收，只关闭 FC-05 的 pure domain 子集，不关闭 FC-06、F3/F4、
-R0 Developer Preview、Objective→Outcome 或完整 App。
+因此 R0-C3 本身只关闭 FC-05 pure domain；后续 R0-C4 也只关闭 FC-06 pure pre-effect selection 子集。两者都不关闭
+effectful F6/F7、FC-07/08、F3/F4、R0 Developer Preview、Objective→Outcome 或完整 App。

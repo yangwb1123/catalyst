@@ -35,15 +35,28 @@ type listedProductionPackage struct {
 	Imports    []string
 }
 
-func TestDeliveryDomainHasNoProductionConsumers(t *testing.T) {
+func TestDeliveryDomainHasOnlyTheReviewedReconcilerConsumer(t *testing.T) {
 	_, moduleRoot := deliverySourceRoots(t)
 	lexical, err := scanModuleConsumerSources(moduleRoot)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(lexical) != 0 {
-		t.Fatalf("mutable Delivery drafts gained source consumers: %s",
-			boundedConsumerDiagnostic(lexical))
+	reconcilerDir := filepath.Join(moduleRoot, "internal", "reconcile", "application")
+	if len(lexical) == 0 {
+		t.Fatal("reviewed Reconciler source consumer is missing")
+	}
+	for _, path := range lexical {
+		if filepath.Dir(path) != reconcilerDir {
+			t.Fatalf("mutable Delivery drafts gained another source consumer: %s",
+				boundedConsumerDiagnostic(lexical))
+		}
+	}
+	reconcilerConsumers, err := scanModuleConsumerSourcesFor(
+		moduleRoot, defaultSourceScanBudget(), deliveryReconcilerImportPath,
+	)
+	if err != nil || len(reconcilerConsumers) != 0 {
+		t.Fatalf("passive Reconciler gained source consumers: %s, error=%v",
+			boundedConsumerDiagnostic(reconcilerConsumers), err)
 	}
 	t.Setenv("GOPROXY", "https://hostile.invalid")
 	t.Setenv("GOVCS", "*:all")
@@ -55,8 +68,14 @@ func TestDeliveryDomainHasNoProductionConsumers(t *testing.T) {
 			t.Fatalf("%s production package metadata: %v", target, err)
 		}
 		assertDomainMetadataImports(t, target, packages)
-		if consumers := productionConsumers(packages); len(consumers) != 0 {
-			t.Fatalf("%s mutable Delivery consumers: %s", target, boundedConsumerDiagnostic(consumers))
+		consumers := productionConsumers(packages)
+		if strings.Join(consumers, ",") != deliveryReconcilerImportPath {
+			t.Fatalf("%s mutable Delivery consumers: %s", target,
+				boundedConsumerDiagnostic(consumers))
+		}
+		if consumers := productionConsumersOf(packages, deliveryReconcilerImportPath); len(consumers) != 0 {
+			t.Fatalf("%s passive Reconciler consumers: %s", target,
+				boundedConsumerDiagnostic(consumers))
 		}
 	}
 }
@@ -288,13 +307,19 @@ func TestGoListAggregateOutputBound(t *testing.T) {
 }
 
 func productionConsumers(packages []listedProductionPackage) []string {
+	return productionConsumersOf(packages, deliveryDomainImportPath)
+}
+
+func productionConsumersOf(
+	packages []listedProductionPackage, targetImportPath string,
+) []string {
 	seen := map[string]bool{}
 	for _, value := range packages {
-		if value.ImportPath == deliveryDomainImportPath {
+		if value.ImportPath == targetImportPath {
 			continue
 		}
 		for _, imported := range value.Imports {
-			if imported == deliveryDomainImportPath {
+			if imported == targetImportPath {
 				seen[value.ImportPath] = true
 			}
 		}
@@ -313,6 +338,14 @@ func scanModuleConsumerSources(moduleRoot string) ([]string, error) {
 
 func scanModuleConsumerSourcesWithBudget(
 	moduleRoot string, budget *sourceScanBudget,
+) ([]string, error) {
+	return scanModuleConsumerSourcesFor(
+		moduleRoot, budget, deliveryDomainImportPath,
+	)
+}
+
+func scanModuleConsumerSourcesFor(
+	moduleRoot string, budget *sourceScanBudget, targetImportPath string,
 ) ([]string, error) {
 	moduleRoot, _, err := canonicalSourceDirectory(moduleRoot)
 	if err != nil {
@@ -336,7 +369,7 @@ func scanModuleConsumerSourcesWithBudget(
 			return err
 		}
 		for _, imported := range imports {
-			if imported == deliveryDomainImportPath {
+			if imported == targetImportPath {
 				if len(result) >= maxConsumerSourcePaths {
 					return fmt.Errorf("consumer source path count exceeds its bound")
 				}
