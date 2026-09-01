@@ -15,6 +15,22 @@ ForgeOS 不替代 Claude Code / Codex / Gemini CLI / OpenCode / OpenHands ——
   fail closed，不以路径级快照回退宣称正式通过
 - 快速编辑信号:`node harness/gate.mjs`
 - Go 编排/链状态/审批控制面:[`forge-core/`](forge-core/)
+- Go R0 App Server：`forge-server --state-dir /absolute/private/dedicated-leaf`；首次启动创建 identity-bound
+  专用目录，并在 instance lock 后、listener/readiness 前初始化 descriptor-bound private SQLite `control.db`
+  v1。当前公开面仍只有 literal-loopback `GET|HEAD /api/v1/health`，尚无产品 Command/Query API、Runtime/
+  Harness transport、projection 或 Web UI；只允许 `GOOS=linux`（排除 Android）启动，其他目标在 state access
+  前失败关闭。Go 内部 Workspace Catalog v1 已开始提供 event-backed Space/Project/declared Snapshot-reference
+  create/get/list，但不读取 Project path、没有认证或公开 route。私有存储与 catalog 契约见
+  [`control-store-v1.md`](docs/design/forge-workspace/control-store-v1.md) 与
+  [`workspace-catalog-v1.md`](docs/design/forge-workspace/workspace-catalog-v1.md)
+- Proposed Platform Core Envelope/Receipt v1 已冻结 typed ID、Scope/Actor/Record reference、`ArtifactRef`、
+  `CommandEnvelope`、`EventEnvelope`、Execution/Verification Receipt、WorkItem/Attempt/Action 状态边及
+  broad rejection code 的 Go/Rust/Python 严格合同；Go `controlstore` 现只消费 canonical Command/Event bytes
+  并持久化 journal/version/idempotency/outbox/inbox，Receipt/state binding 仍不生成或持久化回执、不执行检查、
+  不推进领域状态，也未接入 Runtime transport 或 UI。可分别用
+  `python3 -I -B harness/platform_core_contract/check.py --golden .` 和 `--receipt-golden .` 独立复验
+  共享 golden；协议见 [`docs/contracts/platform-core-envelope-v1.md`](docs/contracts/platform-core-envelope-v1.md)
+  与 [`docs/contracts/platform-core-receipt-v1.md`](docs/contracts/platform-core-receipt-v1.md)
 - Rust 本地会话 Hub、durable Project Run 与默认离线/显式 live Agent Runtime:
   [`forge-runtime/`](forge-runtime/)
 - 已采纳的企业级 AI Engineering OS 目标规划（00–16 节点、AADM/Meta Reflection、140→38 Capability/Skill

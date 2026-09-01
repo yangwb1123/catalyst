@@ -218,6 +218,20 @@ API 只做 authentication/local actor、decode、command dispatch、query 和 st
 | FC-14 | Knowledge graph projection | F9 | XL | provenance/freshness query |
 | FC-15 | Evolution proposal service | F10 | L | proposal-only authority |
 
+R0-C1（ADR-0103 Proposed）交付 FC-03 的私有基础子集：exact schema/WAL、独立 component/global
+event sequence、Go-owned aggregate head、durable causation index、command idempotency result、outbox/inbox 与 bounded replay。
+outbox/inbox live worker、Runtime cursor、projection、
+R0-C2（ADR-0104 Proposed）已交付 FC-04 的 Go 内部 Workspace catalog：immutable Space/Project/
+ProjectSnapshot-reference create/get/list、pure event fold 和 Control Store adapter。它不增加 schema v2，path/reference
+均保持 declared-only，也不开放 transport API。Objective/Change/WorkGraph、projection、Runtime/Harness worker 与
+产品 API 仍未交付，因此 FC-03/F3 不能据此整体标记完成。
+
+R0-C3（ADR-0105 Proposed）candidate 将 FC-05 限定为 Go 内部 pure Delivery Domain：bounded Objective/Change、
+desired/observed state edge、AcceptanceCriterion、snapshot-bound WorkGraph/WorkItem、budget、deterministic DAG 与
+caller-supplied snapshot comparison。它没有 canonical wire、journal fold、repository、current-state owner、Reconciler、
+policy/approval authority、Runtime/Harness bridge、completion join 或用户入口；因此即使该 candidate 通过验收，FC-06、
+F3/F4 与 Objective→Outcome 仍保持开放。
+
 ## 10. 测试计划
 
 - Domain：状态机、DAG、snapshot drift、budget、approval、Outcome join；

@@ -17,16 +17,19 @@ Platform Core 是 Forge Workspace 跨组件稳定语义的最小集合：身份�
 - Harness 的新名称；
 - 可以签发授权或宣布完成的结构验证器。
 
-物理上先表达为：
+R0-B1/B2 的物理 ownership 已由 ADR-0101/0102 冻结为：
 
 ```text
-contracts/                 canonical schemas + fixtures + protocol docs
-forge-core/...             Go binding + control-domain rules
-forge-runtime/...          Rust binding + execution-domain rules
-harness/conformance/...    independent canonical verification
+docs/contracts/                                      protocol、schema 与 golden/mutation fixtures
+forge-core/internal/platformcorecontract/            Go common binding 与 control-domain rules
+forge-core/internal/platformcorecontract/receipt/    Go Receipt binding
+forge-core/internal/platformcorecontract/state/      Go pure state-edge vocabulary
+forge-runtime/crates/domain/src/platform_core_contract/  Rust execution-domain binding
+harness/platform_core_contract/                      repository-only independent Python conformance
 ```
 
-是否创建顶层 `contracts/`、采用代码生成及具体 schema 技术，必须由 ADR 决定。
+当前不创建顶层 `contracts/`，不采用代码生成；JSON Schema 只是 non-load-bearing shadow。
+未来改变 ownership、代码生成或 schema 技术仍须由新的 reviewed ADR 决定。
 
 ## 2. 领域边界
 
@@ -62,7 +65,7 @@ ActorId
 | Space/Project | Go | ID、reference shape |
 | Objective/Change/WorkGraph | Go | ID、state vocabulary、event envelope |
 | Attempt/Session/Turn/Action | Rust | ID、state vocabulary、event envelope |
-| Artifact | Runtime/CAS | reference、digest、provenance shape |
+| Artifact | Rust Runtime（CAS 仅拥有 `content_id` 字节） | reference、digest、provenance shape |
 | Verification | Harness produces, Go consumes | request/receipt shape |
 | Approval/Policy | Go/Kernel authority | reference and scope shape，不签发 authority |
 
@@ -179,29 +182,33 @@ requested → awaiting_approval → approved → started → finished
 
 ## 6. Versioning
 
-- schema 名和 major version 构成协议身份；
-- 同 major 只允许接收方能安全忽略的 optional additive field；
-- 删除、重命名、语义变化和默认值变化必须升 major；
-- writer 写当前版本，reader 在明确窗口内支持当前和前一版本；
+本节描述未来 PC-09 compatibility/migration 目标，不放宽当前 B1/B2 的 exact-v1
+协议。当前 Envelope/Receipt writer 只写 v1，reader 只接受 exact v1 字段集；即使
+新增 optional 字段也需要新的 reviewed contract version。未来兼容 ADR 另行决定：
+
+- schema 名和 major version 如何共同构成协议身份；
+- 哪些 additive field 可由明确版本的 reader 安全忽略；
+- 删除、重命名、语义变化和默认值变化何时必须升 major；
+- current/previous reader 窗口、迁移和 legacy mapping；
 - canonical bytes、digest domain 和 normalization 不能由语言默认 JSON 行为隐式决定；
 - migration 不修改旧 Receipt，使用新 projection 或 superseding record。
 
-## 7. 建议源码布局
+## 7. 当前源码布局与后续扩展
 
 ```text
-contracts/
-  README.md
-  ids/
-  commands/v1/
-  events/v1/
-  artifacts/v1/
-  receipts/v1/
-  fixtures/valid/
-  fixtures/invalid/
-  compatibility/
+docs/contracts/
+  platform-core-envelope-v1.{md,schema.json}
+  platform-core-receipt-v1.{md,schema.json}
+  fixtures/platform-core-*-v1.json
+forge-core/internal/platformcorecontract/{receipt,state}/
+forge-runtime/crates/domain/src/platform_core_contract/
+harness/platform_core_contract/
 ```
 
-每个 contract package 包含：normative schema、canonicalization 文档、大小/数量限制、错误码、golden、malformed/adversarial fixture、owner 和 consumer 列表。
+后续 family 继续映射到上述 owner，而不是恢复旧的顶层 `contracts/` 或
+`harness/conformance/` 草案。每个 contract family 包含：normative protocol、structural
+schema shadow、canonicalization 文档、大小/数量限制、错误码、golden、malformed/adversarial
+fixture、owner 和 consumer 列表。
 
 不把所有现有 governance contract 一次迁入。首期只覆盖 Objective-to-Outcome 垂直切片使用的 8–12 个 wire。
 
@@ -219,6 +226,26 @@ contracts/
 | PC-08 | Harness conformance runner | PC-06–07 | M | valid/malformed 全矩阵独立通过 |
 | PC-09 | compatibility matrix 与 version policy | PC-02 | S | current/previous/unknown 有明确结果 |
 | PC-10 | Legacy Run/Graph ID mapping | PC-01 | M | 无路径/row-id 冒充全局 ID |
+
+R0-B1 只覆盖 PC-01、PC-02、PC-03 的 `ArtifactRef` 部分，以及 PC-06–08 对这三类
+wire 的首个 strict binding/conformance 增量。ExecutionReceipt、VerificationRequest/Receipt、
+状态词汇、稳定错误码与共享 malformed corpus、durable consumer compatibility 和 legacy mapping 仍未交付，因此不能把 R0-B1
+或其 golden 通过写成完整 Platform Core v1/F1 完成。
+
+R0-B2（ADR-0102 Proposed）候选覆盖 PC-03 的纯 `ExecutionReceipt`、PC-04、PC-05，以及
+PC-06–08 对新增三类 wire、状态边和七类 broad rejection code 的 Go/Rust/Python strict binding、
+共同 golden 与首个共享 mutation corpus。它仍不生成或持久化 Receipt，不执行 Harness check，
+不读取 Artifact bytes，不解析或认证 Grant/Approval/Evidence 等被引用记录，不做 reference resolution，
+不读取或推进 current state，也不做完成裁决。完整跨 family
+malformed corpus、durable current/previous consumer compatibility、PC-09、PC-10、Runtime replay 与真实
+Objective→Outcome consumer 继续开放，因此 R0-B2 通过也不能写成完整 Platform Core v1/F1 完成。
+
+R0-C1（ADR-0103 Proposed）只把 exact canonical `CommandEnvelope`/`EventEnvelope` 接入 Go 私有
+`control.db`：在同一事务中关闭 expected-version、aggregate version、component sequence、
+store-assigned global order、idempotency result 与 outbox，并为外部 canonical Event 建 explicit source-stream
+inbox。它只更新 Go-owned aggregate，并解析 durable causation/correlation；它不持久化 Receipt、
+不应用状态边、不解析 payload
+domain、不连接 live Runtime/Harness，也不改变 PC-09/PC-10 的开放状态；因此仍不是完整 Platform Core v1/F1。
 
 ## 9. 验收矩阵
 

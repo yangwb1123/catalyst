@@ -2336,3 +2336,302 @@ ADR-0099 仍为 Proposed/null，未发生 lifecycle promotion。v1 是 caller-dr
 不提供 schedule-v2 concurrent wave、parallel/in-flight multi-node、multiple attempts、automatic retry/resend、
 budget refund、stopped-state recovery、lease expiry、quarantine repair、claim adjudication、predecessor-content
 auto propagation、provider-side idempotency、remote exactly-once 或 Core/SQLite same-user tamper resistance。
+
+### Sprint 141 — Local App Server Bootstrap v1（R0 product slice）— ADR-0100 Proposed（✅ DONE）
+
+把 v3 Web UI 目标收窄为第一个可独立验收的产品进程边界：新增 Go `forge-server` 与
+`internal/appserver`，要求 caller 显式提供 absolute non-root dedicated state directory，只监听 literal loopback IP。
+首次启动只创建 missing leaf；后续必须验证 exact `0700`、effective-user ownership、v1 identity、closed layout 与
+single-link `0600` lock identity。state path 必须 canonical；existing direct parent 是 euid-owned、non-group/world-
+writable trust anchor，完整 parent path 在绑定该 directory identity 前后均拒绝 symlink component。实现拒绝 replaceable
+state parent、特殊权限位、hard link、未知 entry 与 arbitrary private directory，且不 chmod/truncate 既有对象。
+`GOOS=linux`（排除 Android）使用 nonblocking advisory lock；Android、AIX、Darwin、Illumos、Solaris、Windows 与其他目标可编译，
+但因 v1 没有 descriptor-bound 独立 ACL 模型校验而在任何 state access 前失败关闭。
+direct parent 的 pre/open/post identity 均重验 owner/mode 并覆盖 same-inode ABA；更高 namespace component 只做
+pre/post symlink observation，并拒绝 mapped-untrusted owner 与 non-sticky group/world-writable ancestor；Linux non-initial
+user namespace 只接受 configured overflow UID 且必须不落入任一 inside map；所有折叠到该 UID 的 unmapped host
+principal 均不可区分并归入 supervisor TCB，不能冒充已认证 host owner，也不声称抵抗能在不同 startup 间重映射
+accepted euid-owned parent entry 的 supervisor/OS/root authority。
+
+公开 HTTP surface 固定为 `forgeos.app-server/v1` 的 metadata-only startup receipt 与
+`GET|HEAD /api/v1/health`；unknown route 和 mutation method 返回稳定 JSON error，响应固定 no-store、
+no-sniff、same-origin resource policy、no-referrer 与 deny-all CSP，且不发 CORS grant。startup receipt 采用 bounded
+可取消 publication，成功后才开始 HTTP Accept；request Host 必须等于 exact listener authority，general `OPTIONS *`
+关闭，live connection 与 in-flight request 有固定上限。health 只含 service、
+API version、bounded build version/commit 与 process `ok`，不含 absolute path、host、Prompt、Project、
+credential、Runtime、Harness 或 product state，也不声称 dependency readiness。listener 采用 bounded HTTP
+header/read/write/idle timeout；caller cancellation 在正常 serving 或 blocked startup output 阶段均 bounded 退出。
+
+本 slice 不创建 `control.db`，不读取 repository、Go checkpoint、Rust Hub 或 Harness state，不启动 Agent/
+provider、不发现或读取 ambient workspace（只检查 caller-supplied state path 及祖先安全）、不发出站网络、
+不推进 Objective/Change/WorkItem/Attempt/Approval/Outcome，
+也不包含 Web/TUI asset。后续 Command API、Query projection、Runtime event inbox、browser origin/authentication
+与 UI 必须另立版本化 sprint/ADR。
+
+验证要求覆盖 config preflight、exact HTTP bytes/headers/Host/raw OPTIONS、connection/request saturation、private
+filesystem identity/alias/special-mode/hardlink、same-state real-process contention/reuse、真实 ephemeral loopback、
+pre-cancel/announce-error/blocked-output cancellation，以及 built command process 的 startup→health→SIGINT→zero-exit
+和 Linux/Android/AIX/Darwin/Illumos/Solaris/Windows build/lock-selection。所有测试仅访问本机 loopback，不使用 live provider、模型、凭证
+或外部网络。
+
+实现证据已覆盖 focused normal/race、最终全仓 non-cached race、full vet/build、7-target build/lock-selection、
+真实 built-command process、ADR v2 双 validator、architecture 8/8、gate/governance 与 fresh-context architecture/
+security 双 CLEAN。正式 repository acceptance 是最后的 completion gate；任何失败均要求撤回本 DONE/ROADMAP 标记。
+
+**stop_condition:** Proposed ADR v2 exact validator、focused/full Go tests、gofmt、architecture/gate/governance、
+fresh-context architecture/security review 与正式 `node harness/acceptance.mjs` 全部通过后，才可勾选 R0-A。
+通过只关闭 process/bootstrap/health 边界，不代表 F1–F4、R0 Developer Preview 或完整 App 已交付。
+
+### Sprint 142 — Platform Core Identity + Envelope v1（R0-B1）— ADR-0101 Proposed（✅ DONE）
+
+本切片只交付 Platform Core 的第一段纯合同：typed opaque ID、contiguous `ScopeRef`、`ActorRef`、
+`RecordRef`、`ArtifactRef`、`CommandEnvelope` 与 `EventEnvelope`，并在 Go control、Rust domain 和独立
+Python Harness 中实现 exact canonical JSON、domain-separated conformance digest、共同 golden 及
+malformed/boundary/adversarial tests。`envelope_version` 只版本化信封，正 signed-int64
+`(schema_name, schema_version)` 独立标识 payload schema。
+
+共同 golden 仅示意 supplied WorkItem target 与 Attempt-scoped runtime event；本切片不解释
+`StartAttempt` payload，也不保证 Attempt 创建或 first-event 语义，这些属于后续 payload/state contract。
+非空 causation 不得自指。Artifact-backed envelope 必须把 Artifact 的 ProjectSnapshot 与 producing Attempt
+绑定到同一 scope，且 Artifact 不得晚于 command issue/event occurrence。结构通过不认证 actor/record，
+不授权、reserve idempotency、append event、证明 content、持久化、迁移状态、验证或完成。
+
+多轮 fresh-context architecture/security review 推动修复 Python bool/int 与 signed-i64 漂移、descriptor-relative
+稳定读取及 special-file open、Attempt/Artifact owner 冲突、envelope/payload version 混淆、自因果、
+cross-scope Artifact substitution、Schema grammar/type/true-end 漂移、三语言 whole-envelope depth 计数、
+Go typed-nil writer 和 Python high-fanout 输出放大。最新 completion-tree review 又发现缺失 App Server startup
+announcer 可绕过回执门槛、请求饱和先于 exact route preflight、Python mutable writer 的 validate/serialize
+alias race、显式深路径 FD fan-out、metadata failure FD leak，以及 exported route constructor 可绕过完整
+Run lifecycle；后续复审又补出 Go state-dir 无前置 byte/component budget 及 Root/File `Stat` failure 延迟关闭，
+以及 JSON Schema 未表达 payload/ArtifactRef exact XOR，均已修复并有专项回归，新的 architecture/security
+双 CLEAN 终审均已通过。
+
+验收证据覆盖 Go focused normal/race、full non-cached race 与 vet，Rust workspace all-targets test、fmt 与
+strict clippy，Python 23 项 golden/malformed/boundary/file-race/alias tests、独立 checker，ADR-0101 v2 exact digest，
+architecture 8/8、gate 3733 files、governance 13 checks、`git diff --check`，以及 exact recursive Node
+41 files / 609 tests。正式 acceptance 首轮仅因新增 repository-only Platform Core Python harness 未进入
+scaffold copy/whitelist ownership 而拒绝 `test_pass_node`；现已显式列入 `HARNESS_NOT_COPIED`，并以 disjoint/
+existence guard 防止复制或陈旧清单漂移。
+
+**completion_boundary:** 本 DONE/ROADMAP 标记仅在正式 acceptance 对这棵精确 completion tree 通过时保留，
+任何失败均立即撤回。完成也只关闭
+PC-01、PC-02、PC-03 的 `ArtifactRef` 部分及 PC-06–08 对三类 wire 的首段 strict conformance；不代表
+完整 Platform Core v1、F1、R0 Developer Preview 或完整 App。
+
+### Sprint 143 — Platform Core Receipt + State v1（R0-B2）— ADR-0102 Proposed（✅ DONE）
+
+本切片在 R0-B1 的 identity/envelope 之上冻结三个新增纯 wire：`ExecutionReceipt` 绑定 session-level
+Scope、Attempt/Session/ProjectSnapshot、executor adapter、nullable unresolved Grant/Approval refs、observed usage、
+terminal Attempt state、Artifact 输入/输出、可选 event range、时间与原因；`VerificationRequest/Receipt` 绑定一个
+immutable output Artifact、排序检查集、exact request digest、Harness producer、applicability、reason/evidence refs 与
+严格派生的 overall status。`declared_required` 暂不参与完成策略，all-N/A 固定派生 `not_executed`。
+
+Go control、Rust domain 与独立 Python Harness 已实现 exact canonical JSON、三份 domain-separated digest、
+WorkItem/Attempt/Action 纯状态边、七类 broad rejection code、共同 golden、共享 JSON-pointer mutation corpus 及
+boundary/semantic/adversarial tests。Schema 只作 non-load-bearing structural shadow；既有 Envelope v1 bytes 和 digest
+不变，diagnostic 文本仍不稳定。
+
+本切片不生成、认证或持久化任何 Receipt，不执行 Harness check，不读取 Artifact bytes，不解析或认证
+Grant/Approval/Evidence 等被引用记录，不做 reference resolution，不读取 current state 或应用 edge，不 append journal，
+不做 replay/idempotency/current-version/compatibility/legacy mapping，也不
+把 completed/pass 冒充 WorkItem/Change 完成。
+
+验收前证据覆盖 Go focused/full normal、race 与 vet，Rust workspace all-targets、strict Clippy 与 fmt，Python
+49 项 exact golden/malformed/boundary/subclass-hook tests、双 independent checker，三份 Receipt digest，29 个状态、
+61 条合法边及所有其余 pair 拒绝、62 个 wire cases、9 个 targeted transition cases、4 个 evidence ordering cases、
+3 个 executor role cases与七类 rejection code。ADR-0102 仍为 Proposed，body/self digest 分别为
+`5d97907c849ed28d783728e34ed05cfbe1fb830b3e5aa9299cbaa79d67d45aba` 与
+`8e9b0802afba76a4536092cb6c826e83bf017d8d0293642f0a4edb7be26e15ac`。
+
+Repository 证据包括 architecture 8/8、gate 3766 files、governance 13 checks、scaffold manifest drift 1/1、
+完整 forge-init 8/8 且临时生成项目 `ACCEPTED`，以及最终 fresh-context architecture/robustness 双
+`APPROVE/CLEAN`。正式 repository acceptance 是最后 completion gate；任何失败均要求立即撤回本
+DONE/ROADMAP 标记。
+
+**completion_boundary:** 本 DONE/ROADMAP 标记仅在正式 acceptance 对这棵精确 completion tree 通过时保留。
+完成只关闭纯 supplied-bytes Receipt/Verification/state-vocabulary conformance，不代表 journal/current-version authority、
+Runtime/Harness transport、真实 Receipt producer/replay、Objective→Outcome consumer、完整 Platform Core v1、F1、
+R0 Developer Preview 或完整 App 已交付。
+
+### Sprint 144 — Control Store Journal Foundation v1（R0-C1）— ADR-0103 Proposed（✅ DONE）
+
+本切片只交付 Go Product Control Plane 的私有持久化原语。`internal/controlstore` 固定
+`modernc.org/sqlite v1.57.0`，在既有 App Server descriptor-bound instance lock 后持有同一 state root 的
+directory FD，并只通过 `/proc/self/fd/<fd>/control.db` 打开 SQLite，避免 configured pathname rename/
+replacement 把 lock 与数据库拆成两个物理 namespace。初始 database 以 exact `0600`、euid-owned、single-link
+regular file 创建；state closed layout 只扩展 `control.db` 与可选 `-journal|-wal|-shm`，已有文件均在 readiness
+前重验。Android/non-Linux 继续在 state access 前失败关闭。
+
+历史 ADR-0001 已 Superseded 且只决定启动时序，ADR-0002 的 Go-core polyglot 决策也未永久禁止外部 module。
+原 zero-require 测试已收敛为更窄的机器策略：exact `go.mod`、完整 `go.sum` digest、唯一
+`internal/controlstore/open_linux.go` blank driver import，以及 `CGO_ENABLED=0` forge CLI build；任何额外 module、
+checksum 或 source import 漂移都会失败。
+
+Schema v1 使用 exact application/user/schema identity、STRICT tables、explicit indexes、append-only trigger、
+WAL/FULL/foreign-key/defensive/trusted-schema-off profile、5 秒 busy bound、quick/foreign-key/catalog/relational
+validation。非空库先经 SQLite header 和 read-only main+WAL 预检，通过后才打开可改变
+journal mode 的读写连接。首次启动在 WAL profile 后、schema commit 前中断所留的 exact
+zero-identity/empty-catalog/single-page/zero-freelist SQLite shell 会在下次启动安全重试。空 R0-A state
+transactionally 初始化；foreign、
+partial、future、downgrade 或 catalog drift 不修复，
+在 listener bind/announcement 前拒绝。
+
+`Commit` 只接受 exact canonical Platform Core Command/Event：command 必须有 expected-version；1–32 个 Go-Control
+event 必须 target 一致、只更新 Go-owned aggregate、aggregate version 与 component sequence 连续，global
+replay sequence 由 store 独立分配。idempotency lookup、message/causation/correlation 解析、aggregate head compare、
+event append、head advance、0–32 outbox append 与原始 result
+receipt 在一个 immediate transaction 中完成；same key+same canonical command 返回第一次 bytes，same key+different
+command 拒绝；receipt 同时保留 exact command bytes/digest，replay 会重验 canonical metadata。Inbox 只接受
+non-Control canonical Event（含拒绝 `legacy_importer`），首 event 把 `source_component` 固定到 explicit source
+stream，并区分 exact replay、mixed-source conflict、payload conflict、gap 与 reorder；不同 stream 独立，outbox ack 另存 immutable row。所有 page 1–100，读取重算 digest 并重验
+canonical metadata；`ControlSourceHead`/`InboxCursor` 提供下一层构造 event 与恢复 transport 所需的只读 durable cursor，
+事务仍会重新比较，预读值不是锁或 authority。
+
+当前 focused evidence 已覆盖 exact private schema/reopen、非空不兼容库零 journal-mode 变更、descriptor
+rename/replacement、symlink/hardlink、foreign/version/catalog drift、exact pragma/defensive/immediate 语义、
+successful commit/replay（含 non-null empty result）、same-key payload conflict、expected-version 双并发单赢家、
+component/global sequence 分离、causation/correlation、Rust-owned aggregate 拒绝、injected outbox/inbox insertion
+failure 全事务回滚、outbox ack、inbox independent stream/cursor reopen、stored request drift rejection、
+grouped non-correlated startup plan、concurrent Close 与 abrupt-exit WAL commit/rollback 恢复，以及 App Server
+store-before-announcement/schema-before-readiness。独立存储复审追加发现的 interrupted-first-init、
+interleaved command range 和 reopen causal-validation 三个 Major 已以跨进程恢复、window/range invariant、
+startup causal join 及 exact corruption/reopen fixtures 修复；App Server 也不再丢弃 Store.Close 错误。
+
+最终代码树已通过 focused/full Go normal+race+vet、CGO-disabled build、Darwin/Windows fail-closed
+cross-build、gofmt、module verify、architecture **8/8**、gate **3791 files** 与 governance **13 checks**。
+fresh-context architecture/protocol 与 storage/security 复审均为 `APPROVE/CLEAN`，Blocker/Major/Minor 均为 0。
+ADR-0103 保持 Proposed，body/self SHA-256 分别为
+`e2da59ac298aef16e2d1fbcd8b5dd033628c6aa5beb37424a2b623451f9a55da` 与
+`3cf27714d0fa6cfed781ef2ff4fd02318a413e49c38b273dc06fe1cd1d84fb99`，strict Proposed-v2 validator 通过。
+
+本切片没有产品 Command/Query route、local actor/browser auth、Space/Project/Objective/Change/WorkItem repository、
+Runtime command client、live outbox/inbox worker、Harness check/Receipt producer、projection/Timeline、Reconciler、
+completion authority、backup/repair、schema v2 或 UI。health wire 不变，只表示 local process 在 exact schema 验证后
+serving，不表示 Runtime/Harness/project/workflow ready。
+
+**completion_boundary:** 本 DONE/Roadmap 标记是正式 acceptance 的候选完成树；只在同一树上
+`node harness/acceptance.mjs` 通过时保留，任一失败必须立即撤回两个标记。通过只关闭 FC-03
+的基础子集，不代表 F3/F4、R0 Developer Preview、Objective→Outcome 或完整 App 已交付。
+
+### Sprint 145 — Workspace Catalog Application Service v1（R0-C2）— ADR-0104 Proposed（✅ DONE）
+
+本切片只实现 FC-04 的 Go 内部 Workspace catalog。`internal/workspace/domain` 用 pure fold 从 exact
+`forge.workspace.space_created`、`project_registered`、`project_snapshot_recorded` event 重建 immutable v1
+Space、Project 和 ProjectSnapshot reference；每个 aggregate 必须只有一个 version-1 creation event，未知 schema、
+额外 history、payload/scope/actor/source/reference drift 全部失败关闭。`application` 提供 create/get/list、parent
+existence、cross-Space binding、expected-version zero、canonical Command/Event 派生、cryptographic EventID、bounded
+source-sequence retry 和 stable internal error；`store` 只适配既有 `controlstore.Store`，不打开第二个 DB、不接触 SQL。
+
+Project RootPath 固定为 2–4096 byte canonical absolute POSIX lexical declaration，状态只能是
+`declared_unverified`。服务不 stat/open 路径，不调用 Git、不做 language/build/secret discovery。Snapshot 操作名为
+`RecordProjectSnapshot`，只保存通过 Platform Core structural validation 的 caller-supplied `RecordRef`，状态固定
+`declared_unresolved`；不读取 referenced bytes、不执行 capture、不认证 digest/actor。Alias 是 display token，不是
+uniqueness key；ProjectID 才是 identity。List 复用已有 global event cursor，每次最多检查 1,000 个真实 journal
+events；目标 aggregate 在输出前重新完整 fold 并重验 parent，任一错误返回原 cursor 的零 item page。parent 不存在
+与空 list 严格区分；当前没有 projection table 或 schema v2 migration。
+
+为保持 `controlstore` package export hard cap 30，原 command/event/outbox 三个 storage-location-specific ID conflict
+sentinel 收敛为统一 `ErrIdentifierConflict`，错误文本仍区分具体 identifier，现有 exact collision tests 继续覆盖。
+这是尚无 production consumer 的 Go `internal` source breaking revision，不冒充 C1→C2 source compatibility；durable
+schema、wire 与 health 不变，source rollback 必须恢复旧 sentinel 和 adapter tests。
+Control Store 只新增 integrity-checked aggregate-version page；List 复用已有 global-order page，schema/catalog bytes 不变。
+
+当前 focused normal/race evidence 已覆盖纯 fold mutation、invalid-before-commit、parent/cross-Space、canonical
+causation/correlation/actor、sequence contention stable-event retry、real SQLite create/get/list、nonexistent path remains absent、
+reopen/exact replay、same-key conflict、same aggregate concurrent single winner、filtered cursor 和 canonical-but-semantic
+history drift。首轮 fresh-context architecture/storage review 发现 list stale-history、durable parent、partial error page、
+boundary evidence、无索引 aggregate-type scan 和 bidi path 风险；实现已改为 global bounded scan + per-aggregate fold，
+并补齐 parent/zero-page/Unicode/bounds/retry-exhaustion/real-SQLite unknown-v2 回归。修复后复审、完整 gates 与 formal
+acceptance 仍待 completion tree 冻结后执行。
+
+第二轮 fresh review 又发现 parent list 早期错误未保留 nonzero cursor、1,000 行主扫描后 continuation probe
+实际读取第 1,001 行，以及继承自 R0-C1 的 pending-outbox anti-join 会无界跨过已 ack 前缀。当前修复把
+Workspace budget 明确拆为 999 个过滤/fold rows + 1 个 lookahead，所有 parent 错误保留原 cursor，并把 pending
+outbox 改为最多 `limit` 个 raw sequence rows 的窗口、显式检查 cursor 与同 statement exact `More`；schema v1
+仍不变。Envelope/scope/payload-type/result receipt 与 acknowledged-prefix/query-plan 回归同步补齐。
+
+第三轮 review 又发现 aggregate replay 未绑定 originating Command actor、schema v1 缺少独立冻结基线，以及批量
+global read 会在 item limit 后预验证多于一个 lookahead。当前 aggregate/global reads 同时完整验证 originating
+canonical Command 并向 Workspace 暴露 actor；List 固定使用 one-row global page；C1 ordered catalog pin 与压缩
+physical `control.db` fixture 独立于 `schemaObjects` 固化。actor mismatch 跨 reopen、fixture reopen 和 single-lookahead
+回归已补齐；终审仍须在该修复树上重跑。
+
+第四轮 fresh review 指出 nonexistent-path sentinel 只能证明未创建路径，不能独立证明零读取，并发现
+`ControlSourceHead` 遗漏 corruption→`ErrInvalidHistory` 映射。当前 exact production-import allowlist 已锁定
+Workspace domain/application/store 只能依赖已审查的 pure/Core/Control 边界，拒绝新增 filesystem/process/network
+或 alternate infrastructure import；source-head 现也统一经过稳定错误映射并由全 sentinel 单测覆盖。该修复随后进入
+新的 fresh 双终审与候选完成树验证。
+
+最终候选树已通过 focused/full Go normal+race+vet、CGO-disabled build、Darwin/Windows fail-closed
+cross-build、gofmt、module verify、architecture **8/8（3181 source files）**、gate **3831 files** 与
+governance **13 checks**。修复后的 fresh-context architecture/domain 与 storage/security 双终审均为
+`CLEAN`，Blocker/Major/Minor/Nit 全部为 0；Linux 有效 `controlstore` API 为 29 exports，互斥 build-tag
+文本口径为 30/30。ADR-0104 保持 Proposed，body/self SHA-256 分别为
+`1c24b72737ced3d4142f4b80ca5219b4ed66ee14a97408d1bbe7af8595b6340f` 与
+`679188209a3bcc81dca98f53357a2a84a2f807978b071cde498617da43fbff71`；C1 ordered catalog/physical fixture
+SHA-256 分别为 `d306abca185dbdf0601b2cda5ab0cb214c1eb5d001ac759aab543aab207552cc` 与
+`156f9c54419d770639cf54322eeb0fc3023e6c7e177d03c3cd5e1026742f66b9`，strict ADR validator 与 fixture reopen 通过。
+
+本切片没有 authenticated local actor、authorization、HTTP/CLI/TUI product route、filesystem observer、真正 Snapshot
+capture、Objective/Change/WorkGraph/WorkItem、Reconciler、Runtime/Harness transport、outbox/inbox worker、projection、
+completion authority、backup/repair 或 UI。health wire 不变，内部 service 尚无用户入口。
+
+**completion_boundary:** 本 DONE/Roadmap 标记是正式 acceptance 的候选完成树；只在同一树上
+`node harness/acceptance.mjs` 通过时保留，任一失败必须立即撤回两个标记。通过只关闭 FC-04，
+不代表 FC-05、F3/F4、R0 Developer Preview、Objective→Outcome 或完整 App 已交付。
+
+### Sprint 146 — Delivery Domain v1（R0-C3）— ADR-0105 Proposed（✅ DONE）
+
+本切片只实现 FC-05 的 Go 内部 pure Delivery Domain。`internal/delivery/domain` 已定义 Objective、
+Change desired/observed state、AcceptanceCriterion、snapshot-bound WorkGraph/WorkItem、budget、DAG 和
+caller-supplied snapshot comparison；依赖仅允许 pure 标准库与 Platform Core reference/state vocabulary。
+为使 no-production-consumer 的离线 Go metadata 证明不解析降级输出，本切片也对共享内部 `execbound` 做 scoped
+hardening：bounded byte stdin、普通 combined capture 的单一 raw pipe、saturating count overflow、显式
+`DrainIncomplete`、context failure precedence，以及 gate/Git machine parser 的 fail-closed 处理；所有现有 caller
+同树迁移。它是 repository proof 支撑，不是 Delivery production consumer，也不提供 descendant containment。
+
+目标是为后续 pure Reconciler 和单 WorkItem 垂直闭环提供确定输入，而不是先冻结新的跨语言 wire。
+本切片不生成 ID/time，不创建 Command/Event，不写 `control.db`，不读取 filesystem/Git，不解析 current Snapshot，
+不认证 actor/Approval/Grant，不选择 ready node，不 dispatch Attempt，不消费 Runtime/Harness Receipt，也不暴露
+HTTP/CLI/TUI/App。状态 validator 只检查声明边，不推进 current state；snapshot comparison 只比较 supplied IDs。
+
+验收要求覆盖 exact bounds、typed IDs、Unicode/control/bidi、Objective/Change/Graph 状态边、snapshot/criterion
+coverage、budget aggregation、Artifact snapshot relation、DAG permutation/cycle/missing/self/duplicate/edge bounds、
+deterministic randomized property tests 和 production import allowlist。完成前必须通过 fresh-context architecture/domain
+与 security/reliability 双审、共享 executor lifecycle/parser 回归、full Go normal/race/vet/build、architecture/governance
+及正式 acceptance。
+
+首轮 fresh security/reliability review 发现 Firecracker 的 `/forge-exit` 与串口结束 sentinel 可被 root guest
+workload 伪造、sandbox runner 在返回 nil/zero 的同时已取消时仍可能进入 output commit，以及 Docker/Firecracker
+host output count 在 32-bit `int` 上可溢出。候选修复已改为随机 root-only result path、`0700` PID-1 init、
+no-new-privs/空 capabilities 的 uid/gid 65534 workload、VMM 真正退出后的 bounded debugfs status/output 读取；
+串口只作 bounded diagnostics。sandbox 以 Runner 返回后的立即 context sample 为 completion/cancellation
+线性化点，已可见的 cancel/deadline 禁止 validation/commit/Observe；两种 runner 均使用 signed-64 saturating
+count。受信 rootfs 现在必须提供 exact `setpriv` profile，旧主机 boot 证据不冒充新版通道 live re-verification。
+该轮不是 CLEAN，修复树仍需两位全新 reviewer 重新独立审查。
+
+后续 fresh review 又发现并修复三组边界问题。Firecracker 的 VMM lifecycle 现在由单一 waiter 持有 reap，Unix
+用 `Wait4(WNOHANG)` 与 group terminate 共用锁，避免 leader reap 后向复用 PGID 发信号；diagnostic copy 与 reader
+close 错误均保留，回归测试直接记录 stale-group signal 调用。共享 `execbound` 不再把负 PGID signal 交给可能晚于
+`Cmd.Wait` 的标准库 cancel callback：它自己持有 cancellation watcher，支持 `waitid(WNOWAIT)` 的 Linux 先观察退出、
+再在 lifecycle lock 内完成 `Cmd.Wait`，因此 numeric PID/PGID 在 signal/reap 竞争期间不会复用；其余平台安全降级为
+`os.Process.Kill` direct-child teardown，同时保留全平台 parent-reader drain bound。gate/orchestrator 的 group-reap
+断言已收窄到 Linux，Darwin/BSD/Windows/Solaris/AIX 等目标只验证可移植的 direct-child/drain 合同。
+
+Control Store 的 durable `msg_` identity domain 现在跨 `message_index` 与 `outbox_messages` 统一：command、control event、
+inbox event 与 outbox 在同一 commit 和既有 durable state 上都拒绝碰撞，启动关系校验也拒绝跨表腐化；新增测试覆盖
+command/event/outbox 的同批与跨批冲突、outbox→inbox 冲突及人工腐化后的 reopen fail-closed。Session worktree 的 Git
+输出限制也改为 stdout+stderr aggregate saturation，并从任意 repository 子目录解析 canonical root；split capture 和
+尾空格路径回归覆盖对应边界。以上修复树仍以最终 fresh review 与正式 acceptance 为完成条件。
+
+最终 repair verification 已关闭剩余边界：非 benign cancellation failure 现在按 `os/exec` precedence 在成功 wait
+后仍返回错误，并由 observed execution 强制分类为 `wait_failed`；local command observation producer 另校验 terminal kind
+与 `CtxErr` 一致，矛盾事实不得封存。Sandbox 在 `Runner.Run` 返回后的第一条语句冻结 context error，随后才读取可注入
+clock 或复制 output；同步测试证明 sample 后发生的 cancel 不会追溯污染已完成 operation。顶层 `CLAUDE.md` 也已从过时的
+forge-core 全模块零依赖声明修正为 sole `modernc.org/sqlite` direct import、exact module closure 与 no-CGo machine policy。
+execbound/caller、Control Store/Firecracker 和 whole-tree 三条独立复核最终均为 CLEAN；full Go normal/race/vet/build、
+八个非 Linux 目标交叉测试编译、architecture/governance 与 diff/format checks 均已通过。
+
+**completion_boundary:** 本 DONE/ROADMAP 标记只在同一棵冻结树通过 fresh-context 复审与
+`node harness/acceptance.mjs` 时保留，任一失败必须立即撤回。通过只关闭 FC-05 pure domain，不代表 FC-06、F3/F4、
+R0 Developer Preview、Objective→Outcome 或完整 App 已交付。

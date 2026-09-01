@@ -90,10 +90,41 @@ locator 可机器复验，但不把 Agent 的“clear”判断或机会价值冒
   和 commit metadata 的 product 工作树摘要，不是 Git commit identity。云/K8s 凭证和远程执行始终归外部 CI/operator；
   人核对外部证据后写 approval marker，agent 不得自证发布成功。
 
+## R0 产品基础边界
+
+ADR-0100/0103 Proposed 的 `forge-server` 当前建立 Linux（排除 Android）本机 loopback 进程、专用私有
+state directory、单实例锁、descriptor-bound SQLite `control.db` v1、startup receipt 与 metadata-only
+`GET|HEAD /api/v1/health` 边界。`control.db` 在 lock 后、listener/readiness 前 exact 初始化/复验，提供
+canonical Command/Event 的 aggregate expected-version、append-only journal、idempotency result、outbox 与
+explicit source-stream inbox 原语。Control Event 保留 component sequence，store 另行分配 global replay order；
+durable message index 验证 command/event/inbox causation 与 correlation，Go store 只允许更新其拥有的
+Space/Project/ProjectSnapshot/Objective/Change/WorkGraph/WorkItem aggregate，不写 Rust-owned
+Attempt/Session/Turn/Action。ADR-0104 Proposed 再增加 Go 内部 Workspace Catalog：immutable Space/Project/
+ProjectSnapshot-reference pure fold、create/get/list application service 与 Control Store adapter；Project path 固定为
+`declared_unverified` 且从不打开，Snapshot observation `RecordRef` 固定为 `declared_unresolved`。它没有产品
+Command/Query API、authenticated local actor、Runtime/Harness live bridge、projection worker、provider、
+Objective-to-Outcome consumer 或 UI。
+
+ADR-0105 Proposed candidate 增加隔离的 Go `internal/delivery/domain`：Objective、Change desired/observed state、
+AcceptanceCriterion、snapshot-bound WorkGraph/WorkItem、budget、状态边、确定性 DAG 与 caller-supplied snapshot
+difference 都只做 bounded pure validation。生产依赖由测试限制为 pure 标准库与 Platform Core reference/state；它不生成
+identity/time，不解析 current Snapshot，不持久化或推进 current state，不授权 requested effect，也不选择 ready node、
+dispatch Attempt、连接 Runtime/Harness、裁决 completion 或开放 API/UI。
+
+ADR-0101/0102 Proposed 冻结 Platform Core Envelope/Receipt v1 的 typed identity/reference、ArtifactRef、
+Command/Event Envelope、ExecutionReceipt、VerificationRequest/Receipt、WorkItem/Attempt/Action 状态边和七类
+broad rejection code。Go control、Rust domain 与独立 Python Harness 对 supplied canonical bytes、关系、共同
+golden 和 mutation corpus 做纯验证；Receipt/state binding 仍不生成 live ID/Receipt，不认证 actor/Grant/Approval/
+Evidence，不解析 Artifact bytes，不执行 Harness check，也不形成完成权威。ADR-0103 现在只让 Go store 成为
+Command/Event canonical bytes 的首个 durable consumer，不持久化 Receipt 或应用 WorkItem/Attempt/Action edge。
+因此 R0-A/B1/B2/C1、已实现的 C2 与 C3 candidate 只构成完整 App 的 process、协议、私有存储、内部 Workspace catalog
+和 pure Delivery 语义地基，Runtime/Harness transport、垂直
+Objective→Outcome consumer、产品 API、projection 与 Web UI 仍必须以后续切片交付。
+
 ## 引擎 (Engines)
 Gateway · Orchestrator · Agent-Runtime · **Model-Router** · Context-Engine · Memory-Engine ·
 Knowledge-Engine · **Evaluation-Engine** · **Sandbox(载重墙)** · Web-UI
-> **v2 现状**:在 `forge-core/` 执行 `go list ./...` 当前实测 **84 包**（82 个 `internal`，含嵌套包与仅测试使用的 `internal/adr`；另有 `cmd/forge` 和独立非 Agent `cmd/forge-kernel`）。排除 `internal/adr` 后的产品口径为 **83 包**；模块仍为纯标准库零依赖。已落地 5 个核心引擎与可工作的本地 Agent-Runtime 切片:
+> **v2 现状**:在 `forge-core/` 执行 `go list ./...` 当前实测 **96 包**（93 个 `internal`，含嵌套包与仅测试使用的 `internal/adr`；另有 `cmd/forge`、独立非 Agent `cmd/forge-kernel` 和 R0 `cmd/forge-server`）。排除 `internal/adr` 后的产品口径为 **95 包**；除 `internal/controlstore` 固定的 `modernc.org/sqlite v1.57.0` 及其 `go.sum` 闭包外，其余现有 Go 边界保持原依赖模型。已落地 5 个核心引擎与可工作的本地 Agent-Runtime 切片:
 > **Orchestrator**(`internal/orchestrator`)· **Model-Router**(`routing`)· **Context-Engine**(`prompt`)·
 > **Memory-Engine**(`memory`)· **Evaluation-Engine**(`converge`);Agent-Runtime 已具备本地命令执行、预算/超时/进程组、最小环境、stdin prompt、产物溯源与 run lock。`forge run --chain` 以版本化状态跨 Discover→Design→Review→Build→Deploy→Evolve 持久恢复，拒绝/cycle/max-stage/策略 halt 均失败关闭。
 > `forge-runtime/` 现有 Rust 原生多轮模型/工具循环、SQLite local-first Conversation Hub 与 durable Project Run：无路径 Global、有路径 Project、Group 联动；execution-bound Project Run、append-only event journal、O(1) 增量语义 cursor、同快照 inspection、严格有界 causal user/assistant history、Run 原子授权 assistant 写回、terminal/incomplete/pending-tool 判定均跨进程持久化。Group dossier 可被原子冻结为独立 prepared Group Run，幂等重放精确旧快照且不查询最新历史；独立 Group Execution 能纯本地验证冻结输入并恢复 content-free integrity receipt。其后的 two-phase Group analysis 在 SQLite v5 先原子准备 exact、零工具、`store:false` 请求，再经当次显式同意、claim 前凭证/目标预检和单赢家 authority 至多外发一次；claim 后不自动重发，只有完整 provider terminal 能原子提交结果，默认输出隐藏正文。SQLite v6 又能把同一 frozen source 的 2–8 份 completed 分析按声明顺序冻结为本地 canonical panel，同 key 精确重放并在 show 时重验所有来源，默认不显示结果正文；这仍只是并排组装。SQLite v7 再以独立 consent/claim/result journal 对一个 exact panel 做单模型综合：唯一 user message 是 canonical panel manifest，不重发原始 dossier，单赢家外发且 uncertainty 不自动重试，固定本地 artifact/no-writeback，并明确不冒充讨论、共识或事实验证。SQLite v8 进一步持久化 exact Group Run 上的 manager 指令、frozen member task assignments、dependency edges 与 deterministic waves，作为 `forge-core` 唯一调度器和 Rust 单任务 Agent Loop 之间的 immutable interchange artifact；SQLite v9 被动接收 Go `forge graph-plan` 生成的 canonical Core Plan并冻结 `awaiting_execution_contract` Run；SQLite v10 再由 Rust 导出 exact private control snapshot、Go 唯一选择 `plan.waves[0][0]` 并生成 canonical Node Execution Contract、Rust 以 seq/head CAS 登记唯一契约和第二事件，把 Run 推到 `awaiting_core_dispatch`；SQLite v11 使用现有 Responses 纯 codec 固定 exact provider body 与 content-addressed Node Dispatch Request，再以 seq-2/head CAS 追加第三事件并停在 `awaiting_dispatch_authorization`。Go 仍是唯一调度 owner；v11 准备链不释放 authority，也不把 topology waves、契约或 request presence 冒充执行。SQLite v12 只对严格单节点/单 wave/零 edge Graph 开放完整 effectful 生命周期：seq-3/head 与 Hub-global Project lane 原子 claim 后一次消费 exact body，bounded 收集 terminal/EOF 或 uncertainty，Go Core 从真实 v4 control 产生 terminal receipt，Rust 再原子保存 artifact/receipt、追加 seq 5、释放 lane 并进入 completed/failed/failed_uncertain。默认 deterministic/offline；显式 Project Run `--live` 默认零工具，仅 exact `--allow-read` 授权，并启用固定 HTTPS origin、无 redirect/隐式 retry、`store:false` 完整 validated output-item 回放、phase-aware final projection、terminal status/item identity 校验及 transport/SSE/token/output 全套上限；incomplete 永不释放工具。SQLite open→PRAGMA/WAL→schema 有统一 5 秒重试，DB/WAL/SHM 私有权限及 workspace capability 失败有并发/反例回归。后续 v17–v24 已交付非初始节点候选、per-node request/lifecycle 存储、predecessor receipt/content disclosure、wave-ready/admit、本地 hard-crash adjudication与 8 MiB successor candidate 持久化上限。SQLite v28 现又能在一个 deferred snapshot 中投影整份 schedule 的 content-free durable progress，由 digest-pinned Go Core 返回七类只读 reconcile disposition，Rust 再验证 snapshot binding；公开 `group graph run step` 可把 fresh v2 ready release 在同一 immediate transaction 中 snapshot-to-claim CAS，并以跨 lifecycle family 的全局 Project lane、exact Linux executor owner、单次 authority/至多一次 bounded provider-stream poll 和 no-resend terminal/quarantine/adjudication 边界执行至多一个 selected node。Project Run 另已提供显式有界 resume、content-free explain 与 SQLite v28 root-input branch/direct-parent lineage；branch 原子创建 child + lineage + fresh seed，仅在显式 resume 后执行。当前仍缺顶层整图执行循环、任意 event-prefix branching、远程账号与同步、共享 ACL/Group 多 Agent discussion、受控写/进程工具及 Rust runtime 自身的 OS 沙箱整合。

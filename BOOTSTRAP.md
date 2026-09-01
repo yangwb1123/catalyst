@@ -52,7 +52,7 @@ README.md                 ← 对外简介
 harness/                  ← 约束执法(真相之源,host-independent)
   gate.mjs · policies.yml ← 主循环拥有,勿改
   adapters/               ← polyglot 闸门适配器(TypeScript/Python/Go/Rust/Java)
-forge-core/               ← v2 自研编排运行时(纯 Go 标准库,零依赖;CLI run/chain/evolve/approve/trace/gates 等)
+forge-core/               ← v2 自研编排运行时(绝大多数包仅 Go 标准库;Control Store 精确锁定 modernc SQLite;CLI run/chain/evolve/approve/trace/gates 等)
 forge-runtime/            ← Rust Agent Loop + 本地 Conversation Hub(SQLite,仍离线)
 examples/                 ← dogfood 真实应用(url-shortener:经完整 pipeline 端到端建成)
 docs/                     ← discovery/design/review/release/adr 产物(按需生成)

@@ -1,6 +1,7 @@
 # `harness` 收敛与实施计划
 
-> 状态：**Proposed / 增量收敛方案，非当前目录变更声明**
+> 状态：**Proposed / 增量收敛方案；旧 `harness/conformance/` 与顶层 `contracts/`
+> 布局已被 ADR-0101/0102 的 R0 ownership 取代**
 > 日期：2026-08-21
 > 目标：保留带外信任边界，把 Harness 从“第二套产品内核”收敛为独立 Verification Plane。
 
@@ -25,12 +26,14 @@ harness/
   acceptance/       end-to-end completion checks
   security/         secret, SCA, path, supply-chain, effect boundary
   architecture/     dependency, cycle, ownership, size/complexity signals
-  conformance/      canonical schemas, cross-language golden/adversarial
+  platform_core_contract/  repository-only Python cross-language conformance binding
   governance/       .agent/config/reference integrity verification
   adapters/         ecosystem test/lint/build/coverage runners
 ```
 
-脚手架、升级事务和产品数据迁移属于 `tools/`；产品领域 projector/evaluator 属于唯一 domain owner；canonical schema/fixture 属于 `contracts/`。迁移期 Harness 可保留 compatibility wrapper。
+脚手架、升级事务和产品数据迁移属于 `tools/`；产品领域 projector/evaluator 属于唯一 domain owner；
+Platform Core canonical protocol/schema/fixture 已属于 `docs/contracts/`，独立 Python binding 已属于
+repository-only `harness/platform_core_contract/`。其他 family 改变 ownership 前仍需 reviewed ADR。
 
 ## 3. 当前目录分类策略
 
@@ -48,7 +51,9 @@ harness/
 
 ### 3.2 Move canonical source, keep checker
 
-以下 `*_contract` 目录中的 normative schema/golden 应逐步迁到 `contracts/`，Harness 保留独立 decoder/checker：
+不再建立通用顶层 `contracts/`。Platform Core family 使用已冻结的 `docs/contracts/`；以下
+`*_contract` 的 normative schema/golden 只有在各自 semantic owner 与目标路径经 reviewed ADR
+确认后才迁移，Harness 保留独立 decoder/checker：
 
 - Approval/Grant/Transition/Knowledge contracts；
 - Context/WorkIntent/ProjectSnapshot/GraphSnapshot；
@@ -164,7 +169,7 @@ harness acceptance --root DIR
 | H-04 | VerificationRequest/Receipt dispatcher | PC-04 | L | immutable digest/receipt |
 | H-05 | existing acceptance adapter 封装为 observations | H-02–04 | L | 不丢 raw Artifact/N-A |
 | H-06 | security/architecture/governance 目标目录 facade | H-01 | M | 旧命令仍通过 |
-| H-07 | canonical schemas/goldens 迁到 `contracts/` | H-01, PC-01 | XL | 单 normative source |
+| H-07 | 稳定 `docs/contracts/` 的 family ownership/compatibility | H-01, PC-01 | XL | 单 normative source |
 | H-08 | scaffold 迁到 `tools/` | H-01 | L | fresh/upgrade fixtures 不回归 |
 | H-09 | live producer/projector 迁给 owner | H-01 | XL | Harness 只消费 Artifact |
 | H-10 | 删除重复业务 evaluator | H-07–09 | L | conformance/acceptance 仍独立 |

@@ -103,11 +103,18 @@ Ollama :11434(qwen3.5:0.8b);系统 LiteLLM :4000(deepseek 网关,月度限额)�
 ## Firecracker sandbox runner(2026-08)
 
 `forge-core/internal/orchestrator/firecracker` 的 `FirecrackerRunner` 在 KVM
-微虚拟机内执行命令,端到端验证 PASS(guest 输出 FORGELIVE-VM-OK,~1.4s)。
+微虚拟机内执行命令。2026-08 的原始主机验证曾完成一次约 1.4s 的真实启动；
+2026-08-31 已替换其 guest 完成协议，原证据只继续证明本机 KVM/Firecracker
+前提，不冒充新版结果通道的 live re-verification。新版 env-gated live test
+需要下面包含 `setpriv` 的受信 rootdir；未提供环境时诚实 skip。
 
-- 机制:rootdir 模板拷贝 → 注入 init 脚本(命令 shell-quoted)→ `mke2fs -d`
-  构建全新 ext4(免 sudo)→ firecracker 启动 → guest 执行 → `/forge-exit`
-  marker 回读(debugfs)+ 串口输出捕获 → 自动 poweroff。
+- 机制:rootdir 模板拷贝 → 注入 `0700` PID-1 脚本(命令 shell-quoted)→
+  `mke2fs -d` 构建全新 ext4(免 sudo)→ PID 1 创建随机 `0700` 结果目录并
+  以 `setpriv` 清除 groups/capabilities、设置 no-new-privs、降到 uid/gid 65534
+  执行 workload → PID 1 原子写严格 exit status 并 poweroff → 宿主等待 VMM
+  真正退出后才用 debugfs 离线导出 status/output。串口只保留 bounded
+  diagnostics，不携带输出 framing 或完成 authority；workload 输出中的任意
+  sentinel/数字都只是普通字节。
 - 踩坑:debugfs 直接注入模板镜像会被 ext4 journal 重放覆盖(已实测多次);
   **必须从零构建镜像**(mke2fs -d),每轮全新无历史状态。
 - 失败分类:缺 firecracker/debugfs/mke2fs/KVM = 永久 config 错(继续
@@ -116,11 +123,18 @@ Ollama :11434(qwen3.5:0.8b);系统 LiteLLM :4000(deepseek 网关,月度限额)�
   ```sh
   mkdir -p rootdir/{bin,dev,etc,proc,root,sys,sbin}
   cp /usr/bin/busybox rootdir/bin/
-  ln -sf /bin/busybox rootdir/bin/{sh,mount,poweroff,echo,cat,ls,sync,sleep}
+  ln -sf /bin/busybox rootdir/bin/{sh,mount,poweroff,echo,cat,ls,sync,sleep,true,env,chmod,mv}
+  # BusyBox 1.36 setpriv 不支持本 runner 所需的 uid/gid/groups/bounding-set
+  # 全部选项，不能用其 applet 冒充。必须安装同 guest 架构、受信且依赖完整的
+  # util-linux setpriv 或经审查的等价实现到 /bin/setpriv；动态实现还需复制
+  # loader/shared libraries。它必须接受：
+  # --reuid/--regid/--clear-groups/--inh-caps/--ambient-caps/
+  # --bounding-set/--no-new-privs
+  install -m 0755 /trusted/guest/setpriv rootdir/bin/setpriv
   ln -sf /bin/busybox rootdir/sbin/init
   printf '::sysinit:/init\n' > rootdir/etc/inittab
   # /init 由 runner 每轮生成,模板可不含
   ```
 - 集成测试:`TestFirecrackerRunnerLiveMicroVM`(env-gated:
   FORGE_FIRECRACKER_KERNEL/ROOTDIR/BINARY/DEBUGFS/MKE2FS;无 env 诚实 skip)。
-  产物:/tmp/fc-test(vmlinux.bin + rootfs.ext4 模板)、/tmp/vmtest/rootdir。
+  旧 `/tmp` rootdir 若无兼容 `setpriv` 不能作为新版通过证据，必须重建后复测。

@@ -105,7 +105,8 @@ R1 复核：若超过 30% 的实现/缺陷工作量来自 Go↔Rust 协议和版
 
 - Platform Core 只拥有跨进程 wire，不拥有所有领域实现；
 - Space/Objective/Change 规则留在 Go，Attempt/Action 规则留在 Rust；
-- `contracts/` 按 wire family 分包，无全量 `core.schema`、无通用 Entity 基类；
+- `docs/contracts/` 按 wire family 管理 protocol/schema shadow/fixture，无全量
+  `core.schema`、无通用 Entity 基类；
 - binding 只在边界转换，内部 domain 不直接使用 wire DTO；
 - 每个 wire 有 owner、consumer 和删除/升版策略。
 

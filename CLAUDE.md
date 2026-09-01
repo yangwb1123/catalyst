@@ -18,7 +18,9 @@ test · app-test。无工具的项(coverage/lint/typecheck/build)诚实标 N/A�
 ## 纪律
 - **Reviewer 必须是 fresh-context 独立 Agent** —— 不让实现者审自己的代码。
 - **先拆分,再继续** —— 命中体积/复杂度阈值先重构(skill `refactor-large-file`),复检过再走。
-- forge-core(Go 运行时)纯标准库**零依赖**;harness Node/Python **零外部依赖**。
+- forge-core 绝大多数包保持标准库依赖；唯一直接产品外部导入是
+  `internal/controlstore/open_linux.go` 的 `modernc.org/sqlite v1.57.0` blank driver，其 exact `go.mod`/`go.sum`
+  闭包、单一导入位置与 no-CGo 边界由 doctor 策略锁定；harness Node/Python **零外部依赖**。
 
 ## 阅读顺序
 `BOOTSTRAP → .agent/{PROJECT · ARCHITECTURE · ROADMAP · CURRENT_SPRINT · AGENTS} → 代码`

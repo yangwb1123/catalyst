@@ -113,7 +113,11 @@ fork 孙子、不烧 budget、不让 prompt 膨胀。这些是真 LLM 长跑**�
 
 **交付(PR1-6,诚实分项)**:✅ ① 529/过载 → `KindOverloaded` retryable + 退避(`70d87a3`,
 `orchestrator/backoff.go`);✅ ② prompt 长跑预算 → bound 无界 `memoryContext` lane(`1a236a4`);✅ ③
-子进程进程组 `SysProcAttr{Setpgid}` + 组 SIGTERM→SIGKILL(`791e213`,`command_executor_unix.go`);✅ ④
+支持 `waitid(WNOWAIT)` 的 Linux 通过 `SysProcAttr{Setpgid}` + 与 reap 串行化的组 `SIGKILL`
+（`internal/execbound/group_unix.go`），其余目标安全降级为 direct-child kill；正常退出不会触发后代清理。这只是
+best-effort teardown handle 而非 containment，离开进程组或在父进程正常退出后仍持有资源的 descendant 可能继续存活；
+全平台 bounded drain backstop 只关闭父进程侧 capture readers 并诚实报告
+`DrainIncomplete`;✅ ④
 run-level budget 硬上限 + 跨 `--resume` 持久化 + budget-aware 降档(PR4-6 `6cdcec9`/`16892f6`/`5c5792d`)。
 ✅ ⑤ checkpoint **phase 级粒度**(third-wave,`persist.PhaseIndex` + `evolve.go phaseCheckpointHook` 经
 `loop.OnPhase` + `resumeStart`→phaseStart + `phase_checkpoint_test.go`)——崩在 phase N 后 resume 从 N 续跑,

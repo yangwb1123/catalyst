@@ -5,13 +5,21 @@ turns a declarative workflow into something that *runs itself*, stepping
 through phases in order and **enforcing the real harness gates** at gate
 phases.
 
-It is written in **pure Go standard library: zero external modules, no network
-fetch**. `go.mod` has no `require` block.
+Most packages use only the Go standard library. The R0 private SQLite boundary
+pins `modernc.org/sqlite v1.57.0` and its transitive closure in `go.mod`/`go.sum`;
+normal runtime operation performs no dependency or network fetch.
 
 ## What it is
 
 ```
 cmd/forge/             CLI entry point
+cmd/forge-server/      loopback-only R0 App Server bootstrap
+internal/appserver/    single-instance lifecycle + versioned metadata-only health API
+internal/controlstore/ private SQLite journal/version/idempotency/outbox/inbox
+internal/workspace/    internal Space/Project/declared Snapshot-reference domain + application + store adapter
+internal/platformcorecontract/ common product identity/envelope v1 candidate
+internal/platformcorecontract/receipt/ execution + verification receipt v1 candidate
+internal/platformcorecontract/state/ pure WorkItem/Attempt/Action edge vocabulary
 internal/asset/        load a workflow from JSON (fault tolerant)
 internal/gate/         shell out to the real harness gates (gate.mjs / check.py / acceptance.mjs)
 internal/routing/      (agent, mode) -> model tier, with a hard Opus safety floor
@@ -92,6 +100,68 @@ go -C forge-core run ./cmd/forge run deploy --executor command --agent-cmd claud
 go -C forge-core run ./cmd/forge gate   --root "$PWD"   # node harness/gate.mjs
 go -C forge-core run ./cmd/forge check  --root "$PWD"   # python3 harness/check.py
 go -C forge-core run ./cmd/forge accept --root "$PWD"   # node harness/acceptance.mjs
+```
+
+## Local App Server foundation
+
+The first R0 product slice is an intentionally narrow local process boundary:
+
+```sh
+install -d -m 700 /absolute/private
+go -C forge-core run ./cmd/forge-server \
+  --state-dir /absolute/private/forge-server-state
+
+curl --fail http://127.0.0.1:7467/api/v1/health
+```
+
+`forge-server` requires a literal loopback listener and one explicit absolute
+path for a dedicated state directory. The leaf must be absent on first use;
+its existing direct parent must be effective-user-owned and not group/world
+writable, and later starts require the leaf's exact private identity, lock and known control-store layout.
+`GOOS=linux` (excluding Android) uses a non-blocking advisory lock; every other target rejects
+startup before state access because v1 has no descriptor-bound validator for ACL models whose
+grants are independent of mode bits.
+After taking the descriptor-bound instance lock, the server initializes or
+validates exact private SQLite `control.db` schema v1 through the retained state
+directory descriptor. Canonical Platform Core commands/events can be committed
+with optimistic Go-owned aggregate versions, per-component event sequence,
+store-assigned global replay order, durable causal links, idempotency result and
+outbox atomicity; external canonical events can be retained in contiguous explicit
+source streams. Existing databases are read-only preflighted before any WAL-changing
+connection is opened. The [private storage contract](../docs/design/forge-workspace/control-store-v1.md)
+is not a client API.
+
+The receipt completes only after local schema validation and before HTTP is
+accepted; requests must use the exact listener authority, and connections and
+in-flight requests are bounded. The server still has no Runtime or Harness live
+bridge, ambient workspace discovery, provider access, outbound request, CORS
+grant, product command/query API, Objective/Timeline/Outcome service, projection
+worker, or Web UI. Health means only that this local process is serving its
+versioned endpoint after local store validation.
+
+## Platform Core contract candidates
+
+`internal/platformcorecontract` and its bounded `receipt` and `state`
+subpackages are the Go binding for the Proposed
+[Platform Core Envelope v1](../docs/contracts/platform-core-envelope-v1.md) and
+[Platform Core Receipt v1](../docs/contracts/platform-core-receipt-v1.md).
+It validates supplied typed IDs, references, scope, `ArtifactRef`, commands,
+durable-shaped events, execution/verification receipt declarations, and pure
+WorkItem/Attempt/Action edge membership. It also produces exact canonical bytes,
+domain-separated conformance digests, and broad stable rejection classes. The
+packages intentionally have no ID or receipt generator, authorization, reference
+resolution, domain state mutation, check execution or completion policy. The
+Go-only `internal/controlstore` is now the first durable consumer of canonical
+Command/Event bytes, but it does not persist Receipt wires or expose an App Server
+product route. Future application and transport slices can consume these boundaries
+without changing the current metadata-only HTTP surface by implication.
+
+The shared cross-language fixture can be checked independently from the
+repository root:
+
+```sh
+python3 -I -B harness/platform_core_contract/check.py --golden .
+python3 -I -B harness/platform_core_contract/check.py --receipt-golden .
 ```
 
 ## Isolated coding sessions
@@ -304,10 +374,15 @@ These are real, intentional gaps — flagged here rather than hidden:
   memory configuration. `--sandbox-memory-mb` defaults to 512 MiB and accepts
   64–32768 MiB; retained output inherits `--max-output-bytes` (default 10 MiB)
   and overflow is explicit. Docker readiness shares the run deadline and a
-  named container gets an independent bounded cleanup attempt; Firecracker's
-  deadline includes prerequisite/rootfs work, serial capture is in-memory and
-  bounded, and rootfs template copying rejects special files and unsafe
-  injection links. This is currently an isolated argv/stdin command
+  named container gets an independent bounded cleanup attempt. Firecracker's
+  deadline includes prerequisite/rootfs work; its trusted PID 1 opens a private
+  result file, drops the workload to uid/gid 65534 with no-new-privs and an
+  empty capability set, waits for VMM shutdown, then reads a strict root-only
+  status and exact bounded output from a fresh randomized path. Serial capture
+  is bounded diagnostics only and cannot frame completion. The trusted rootfs
+  must provide the emitted `/bin/setpriv` profile; missing support fails closed.
+  Rootfs copying rejects special files and unsafe injection links. This is
+  currently an isolated argv/stdin command
   runner, not a complete coding-workspace exchange protocol: no repository
   snapshot/mount, scoped secret channel, or declared artifact sync-back is
   claimed by the runner interface.
