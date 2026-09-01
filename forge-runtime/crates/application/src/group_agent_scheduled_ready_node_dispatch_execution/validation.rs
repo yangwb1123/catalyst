@@ -1,6 +1,6 @@
 use crate::group_agent_scheduled_ready_node_dispatch_execution::{
     ExecuteGroupAgentScheduledReadyNodeDispatchInput,
-    GroupAgentScheduledReadyNodeDispatchExecutionServiceError as Error,
+    GroupAgentScheduledReadyNodeDispatchExecutionServiceError as ServiceError,
 };
 use crate::runtime_domain::{
     GroupAgentNodePricingSnapshot, GroupAgentScheduledReadyNodeLifecycleInspection, HubEntity,
@@ -9,27 +9,27 @@ use crate::runtime_domain::{
 
 pub(super) fn validate_input(
     input: &ExecuteGroupAgentScheduledReadyNodeDispatchInput,
-) -> Result<GroupAgentNodePricingSnapshot, Error> {
+) -> Result<GroupAgentNodePricingSnapshot, ServiceError> {
     let valid = is_identifier(&input.graph_run_id)
         && is_identifier(&input.expected_provider_request_id)
         && is_digest(&input.expected_authorization_sha256)
         && !input.cancellation.is_cancelled();
     if !valid {
-        return Err(Error::InvalidInput);
+        return Err(ServiceError::InvalidInput);
     }
     input
         .confirm_off_machine
         .then_some(())
-        .ok_or(Error::ConsentRequired)?;
+        .ok_or(ServiceError::ConsentRequired)?;
     GroupAgentNodePricingSnapshot::decode_exact(&input.pricing_json)
-        .map_err(|_| Error::InvalidInput)
+        .map_err(|_| ServiceError::InvalidInput)
 }
 
 pub(super) fn validate_existing(
     input: &ExecuteGroupAgentScheduledReadyNodeDispatchInput,
     pricing: &GroupAgentNodePricingSnapshot,
     value: GroupAgentScheduledReadyNodeLifecycleInspection,
-) -> Result<GroupAgentScheduledReadyNodeLifecycleInspection, Error> {
+) -> Result<GroupAgentScheduledReadyNodeLifecycleInspection, ServiceError> {
     let exact = value.authorization.authorization_sha256 == input.expected_authorization_sha256
         && value.authorization.scheduled_provider_request_id == input.expected_provider_request_id
         && value.graph_run.run.graph_run_id == input.graph_run_id
@@ -47,7 +47,7 @@ pub(super) fn validate_existing(
         .request
         .predecessor_content_included;
     if includes_content && !input.confirm_predecessor_content {
-        return Err(Error::PredecessorContentConsentRequired);
+        return Err(ServiceError::PredecessorContentConsentRequired);
     }
     Ok(value)
 }

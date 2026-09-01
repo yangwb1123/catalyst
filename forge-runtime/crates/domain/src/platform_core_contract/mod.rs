@@ -27,11 +27,14 @@ pub use codec::{
     verification_request_sha256,
 };
 pub use command::validate_command_envelope;
+pub(crate) use envelope::validate_idempotency_key;
 pub use event::validate_event_envelope;
 pub use execution_receipt::validate_execution_receipt;
+pub(crate) use execution_receipt::validate_executor_descriptor;
 pub use identity::validate_platform_id;
 pub use model::*;
 pub use receipt_model::*;
+pub(crate) use references::{validate_entity_ref, validate_record_ref, validate_scope_ref};
 pub use state::{
     validate_action_transition, validate_attempt_transition, validate_work_item_transition,
 };

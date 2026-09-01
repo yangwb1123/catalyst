@@ -7,6 +7,7 @@ pub mod context_package_contract;
 pub mod decision_capsule_contract;
 mod event;
 pub mod evolve_repo_locator_evidence_contract;
+pub mod execution;
 pub mod governance_contract;
 mod governance_record_journal;
 mod group_agent_graph;

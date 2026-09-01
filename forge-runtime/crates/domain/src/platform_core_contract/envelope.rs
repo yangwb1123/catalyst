@@ -136,7 +136,11 @@ fn validate_extension_key(value: &str) -> Result<(), PlatformCoreContractError> 
     Ok(())
 }
 
-pub(super) fn validate_idempotency_key(value: &str) -> Result<(), PlatformCoreContractError> {
+/// Validates a bounded, visible-ASCII Platform Core idempotency key.
+///
+/// # Errors
+/// Returns an error when the key is outside the frozen length or byte grammar.
+pub(crate) fn validate_idempotency_key(value: &str) -> Result<(), PlatformCoreContractError> {
     if !(16..=128).contains(&value.len())
         || !value.bytes().all(|byte| (b'!'..=b'~').contains(&byte))
     {

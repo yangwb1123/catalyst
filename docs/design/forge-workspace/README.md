@@ -26,8 +26,9 @@
 4. [Platform Core 计划](platform-core-plan.md)
 5. [`forge-core` 计划](forge-core-plan.md)
 6. [`forge-runtime` 计划](forge-runtime-plan.md)
-7. [`harness` 计划](harness-plan.md)
-8. [十轮产品与架构对抗式分析](adversarial-analysis-10-rounds.md)
+7. [Runtime Attempt Request Domain v1 candidate](runtime-attempt-domain-v1.md)
+8. [`harness` 计划](harness-plan.md)
+9. [十轮产品与架构对抗式分析](adversarial-analysis-10-rounds.md)
 
 ## 共同决策原则
 

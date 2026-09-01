@@ -3,7 +3,11 @@ use super::{
     RejectionCode, ScopeRef, identity, invalid, reject, wire,
 };
 
-pub(super) fn validate_entity_ref(
+/// Validates one supplied typed entity reference without resolving it.
+///
+/// # Errors
+/// Returns an error when the entity type or Platform ID is invalid.
+pub(crate) fn validate_entity_ref(
     value: &EntityRef,
     label: &str,
 ) -> Result<(), PlatformCoreContractError> {
@@ -21,13 +25,26 @@ pub(super) fn validate_actor_ref(value: &ActorRef) -> Result<(), PlatformCoreCon
     Ok(())
 }
 
-pub(super) fn validate_record_ref(
+/// Validates one supplied opaque record reference without resolving it.
+///
+/// # Errors
+/// Returns an error when its identifier, digest, or record type is invalid.
+pub(crate) fn validate_record_ref(
     value: &RecordRef,
     label: &str,
 ) -> Result<(), PlatformCoreContractError> {
     validate_record_id(&value.record_id, &format!("{label}.record_id"))?;
     wire::validate_hash(&value.record_sha256, &format!("{label}.record_sha256"))?;
     wire::validate_schema_name(&value.record_type, &format!("{label}.record_type"))
+}
+
+/// Validates supplied scope identities and their structural ancestry.
+///
+/// # Errors
+/// Returns an error when an ID is invalid or a child lacks its required parent.
+pub(crate) fn validate_scope_ref(value: &ScopeRef) -> Result<(), PlatformCoreContractError> {
+    validate_scope_values(value)?;
+    validate_scope_references(value)
 }
 
 pub(super) fn validate_scope_values(value: &ScopeRef) -> Result<(), PlatformCoreContractError> {

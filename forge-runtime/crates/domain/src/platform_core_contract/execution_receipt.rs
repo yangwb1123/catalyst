@@ -18,7 +18,7 @@ pub fn validate_execution_receipt(
 ) -> Result<(), PlatformCoreContractError> {
     validate_header(value)?;
     validate_time_values(value)?;
-    validate_executor(&value.executor)?;
+    validate_executor_descriptor(&value.executor)?;
     validate_declaration_values(value)?;
     validate_scope_bindings(value)?;
     validate_declaration_references(value)?;
@@ -118,7 +118,13 @@ fn validate_terminal_state(value: &ExecutionReceipt) -> Result<(), PlatformCoreC
     Ok(())
 }
 
-fn validate_executor(value: &ExecutorDescriptor) -> Result<(), PlatformCoreContractError> {
+/// Validates a supplied executor declaration without resolving an adapter.
+///
+/// # Errors
+/// Returns an error for invalid actor identity/type, adapter ID, or version.
+pub(crate) fn validate_executor_descriptor(
+    value: &ExecutorDescriptor,
+) -> Result<(), PlatformCoreContractError> {
     references::validate_actor_ref(&value.actor_ref)?;
     if !matches!(
         &value.actor_ref.actor_type,
