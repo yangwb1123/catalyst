@@ -1,7 +1,7 @@
 use crate::runtime_domain::ModelEvent;
 use serde_json::{Value, json};
 
-use super::sse::SseDecoder;
+use super::{redaction::REDACTED, sse::SseDecoder};
 
 const SECRET: &str = "sk-mock-secret-never-log";
 
@@ -30,13 +30,13 @@ fn assert_redacted(deltas: &[&str]) {
 
     assert!(!encoded.contains(SECRET));
     assert!(!emitted.contains(SECRET));
-    assert_eq!(emitted, "provider echoed [REDACTED]");
-    assert!(encoded.contains("[REDACTED]"));
+    assert_eq!(emitted, format!("provider echoed {REDACTED}"));
+    assert!(encoded.contains(REDACTED));
     assert!(events.iter().any(|event| matches!(
         event,
         ModelEvent::ProviderContext { items, .. }
             if !serialized(items).contains(SECRET)
-                && serialized(items).contains("[REDACTED]")
+                && serialized(items).contains(REDACTED)
     )));
 }
 

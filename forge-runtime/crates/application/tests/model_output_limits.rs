@@ -89,7 +89,7 @@ async fn model_event_budget_is_shared_across_turns() {
 }
 
 #[tokio::test]
-async fn usage_event_floods_consume_the_model_event_budget() {
+async fn duplicate_usage_events_are_a_protocol_failure() {
     let root = TempDir::new().expect("workspace");
     let usage = ModelEvent::Usage {
         usage: Usage {
@@ -106,19 +106,48 @@ async fn usage_event_floods_consume_the_model_event_budget() {
         }),
     ]];
     let runtime = runtime(turns, vec![]);
+    let request = request(&root);
+    let mut sink = MemoryEventSink::default();
+
+    let error = runtime
+        .run(request, Cancellation::default(), &mut sink)
+        .await
+        .expect_err("a provider turn may report usage only once");
+
+    assert_eq!(error.code(), "model_protocol_error");
+}
+
+#[tokio::test]
+async fn one_usage_event_does_not_consume_the_replayable_event_budget() {
+    let root = TempDir::new().expect("workspace");
+    let turns = vec![vec![
+        Ok(ModelEvent::Usage {
+            usage: Usage {
+                input_tokens: 1,
+                output_tokens: 1,
+            },
+        }),
+        Ok(ModelEvent::TextDelta {
+            delta: "answer".into(),
+        }),
+        Ok(ModelEvent::Finished {
+            reason: ModelFinishReason::Completed,
+        }),
+    ]];
+    let runtime = runtime(turns, vec![]);
     let mut request = request(&root);
-    request.limits.max_model_events = 2;
+    request.limits.max_model_events = 1;
     let mut sink = MemoryEventSink::default();
 
     let result = runtime
         .run(request, Cancellation::default(), &mut sink)
         .await
-        .expect("a local model limit is a normal outcome");
+        .expect("one replayable output event remains within the limit");
 
     assert_eq!(
         result.outcome,
-        RunOutcome::LimitExceeded {
-            kind: LimitKind::ModelOutput
+        RunOutcome::Completed {
+            answer: "answer".into()
         }
     );
 }

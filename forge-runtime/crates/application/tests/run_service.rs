@@ -1,13 +1,14 @@
 use std::sync::{Arc, Mutex};
 
 use forge_runtime_application::{
-    MAX_ENTITY_ID_BYTES, MAX_IDEMPOTENCY_KEY_BYTES, RunError, RunField, RunService,
+    MAX_ENTITY_ID_BYTES, MAX_IDEMPOTENCY_KEY_BYTES, MAX_PROMPT_BYTES, RunError, RunField,
+    RunService,
 };
 use forge_runtime_domain::{
     BeginRun, BeginRunBranch, BeginRunBranchResult, BeginRunDisposition, BeginRunResult,
-    BoundRunPrompt, MAX_RUN_LIST_LIMIT, PROTOCOL_VERSION, PromptRecord, RUN_STORE_VERSION,
-    RunExecution, RunInspection, RunLimits, RunLineageRecord, RunOutcome, RunProvider, RunRecord,
-    RunRecovery, RunRecoveryState, RunStore, RunStoreError, RuntimeEvent,
+    BeginRunWithPrompt, BoundRunPrompt, MAX_RUN_LIST_LIMIT, PROTOCOL_VERSION, PromptRecord,
+    RUN_STORE_VERSION, RunExecution, RunInspection, RunLimits, RunLineageRecord, RunOutcome,
+    RunProvider, RunRecord, RunRecovery, RunRecoveryState, RunStore, RunStoreError, RuntimeEvent,
 };
 
 #[test]
@@ -45,6 +46,37 @@ fn legacy_internal_prefix_is_a_valid_run_idempotency_key() {
 }
 
 #[test]
+fn atomic_prompt_begin_validates_prompt_fields_before_storage() {
+    let store = Arc::new(SpyRunStore::default());
+    let service = RunService::new(store.clone());
+    let mut request = begin_with_prompt_request();
+    request.prompt_content = " ".into();
+    assert!(matches!(
+        service.begin_run_with_prompt(&request),
+        Err(RunError::Empty {
+            field: RunField::Prompt
+        })
+    ));
+    request.prompt_content = "p".repeat(MAX_PROMPT_BYTES + 1);
+    assert!(matches!(
+        service.begin_run_with_prompt(&request),
+        Err(RunError::TooLong {
+            field: RunField::Prompt,
+            ..
+        })
+    ));
+    request.prompt_content = "hello".into();
+    request.prompt_idempotency_key = " ".into();
+    assert!(matches!(
+        service.begin_run_with_prompt(&request),
+        Err(RunError::Empty {
+            field: RunField::IdempotencyKey
+        })
+    ));
+    assert!(store.calls().is_empty());
+}
+
+#[test]
 fn list_and_inspection_validate_before_calling_storage() {
     let store = Arc::new(SpyRunStore::default());
     let service = RunService::new(store.clone());
@@ -68,8 +100,15 @@ fn valid_operations_delegate_without_rewriting_inputs() {
     let store = Arc::new(SpyRunStore::default());
     let service = RunService::new(store.clone());
     let request = begin_request();
+    let atomic_request = begin_with_prompt_request();
 
     assert_eq!(service.begin_run(&request).expect("begin"), begin_result());
+    assert_eq!(
+        service
+            .begin_run_with_prompt(&atomic_request)
+            .expect("atomic begin"),
+        begin_result()
+    );
     assert_eq!(
         service.list_runs(Some("conversation-1"), 7).expect("list"),
         vec![record()]
@@ -91,6 +130,7 @@ fn valid_operations_delegate_without_rewriting_inputs() {
         store.calls(),
         vec![
             Call::Begin(Box::new(request)),
+            Call::BeginWithPrompt(Box::new(atomic_request)),
             Call::List(Some("conversation-1".into()), 7),
             Call::Inspect("run-1".into()),
             Call::Find("run-key".into()),
@@ -106,11 +146,12 @@ fn structured_storage_errors_are_preserved_for_every_operation() {
     let service = RunService::new(store.clone());
 
     assert_store_failure(&service.begin_run(&begin_request()));
+    assert_store_failure(&service.begin_run_with_prompt(&begin_with_prompt_request()));
     assert_store_failure(&service.list_runs(None, 1));
     assert_store_failure(&service.inspect_run("run-1"));
     assert_store_failure(&service.find_run_by_idempotency_key("run-key"));
     assert_store_failure(&service.reconcile_completed_assistant("run-1"));
-    assert_eq!(store.calls().len(), 5);
+    assert_eq!(store.calls().len(), 6);
 }
 
 fn assert_empty_run_id(service: &RunService) {
@@ -214,6 +255,7 @@ fn push_too_long_requests(cases: &mut Vec<(BeginRun, RunField)>) {
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum Call {
     Begin(Box<BeginRun>),
+    BeginWithPrompt(Box<BeginRunWithPrompt>),
     Find(String),
     List(Option<String>, usize),
     Inspect(String),
@@ -250,6 +292,14 @@ impl SpyRunStore {
 }
 
 impl RunStore for SpyRunStore {
+    fn begin_run_with_prompt(
+        &self,
+        request: &BeginRunWithPrompt,
+    ) -> Result<BeginRunResult, RunStoreError> {
+        self.record(Call::BeginWithPrompt(Box::new(request.clone())))?;
+        Ok(begin_result())
+    }
+
     fn begin_run(&self, request: &BeginRun) -> Result<BeginRunResult, RunStoreError> {
         self.record(Call::Begin(Box::new(request.clone())))?;
         Ok(begin_result())
@@ -308,6 +358,14 @@ fn begin_request() -> BeginRun {
         execution: execution(),
         idempotency_key: "run-key".into(),
         created_at_ms: 10,
+    }
+}
+
+fn begin_with_prompt_request() -> BeginRunWithPrompt {
+    BeginRunWithPrompt {
+        run: begin_request(),
+        prompt_content: "hello".into(),
+        prompt_idempotency_key: "prompt-key".into(),
     }
 }
 

@@ -1,7 +1,7 @@
 use super::{
-    AssumptionView, AuthorizationView, BoundaryView, CapabilityView, ContentFingerprint,
-    ContextView, ContinuationView, EvidenceView, MessageView, RecoveryView, RunExplanationView,
-    ToolObservationView,
+    AssumptionView, BoundaryView, ContentFingerprint, ContextView, ContinuationView, EvidenceView,
+    MessageView, RecoveryView, RunExplanationView, ToolObservationView,
+    authorization::{authorization_for, workspace_boundary},
 };
 use forge_runtime_domain::{
     Message, RunInspection, RunOutcome, RunProvider, RunRecoveryState, RunResumePoint,
@@ -26,7 +26,7 @@ pub(super) fn from_inspection(inspection: &RunInspection) -> Result<RunExplanati
         pending_tool_calls,
     };
     let continuation = continuation_for(&inspection.run.run_id, &point, inspection);
-    let authorization = authorization_for(&inspection.run.execution.allowed_read_paths);
+    let authorization = authorization_for(&inspection.run.execution);
     let open_assumptions = assumptions_for(&inspection.recovery.state, &inspection.events);
 
     Ok(RunExplanationView {
@@ -78,10 +78,7 @@ fn context_for(inspection: &RunInspection) -> Result<ContextView, String> {
             status: "open",
             reason: "Project Run v1 does not snapshot the preceding Conversation history, so this query cannot prove what prior messages reached the provider",
         },
-        workspace_outside_configured_read_scope: BoundaryView {
-            status: "not_exposed",
-            reason: "the Project Run read tool is restricted to the persisted allowlist; write, process, and network tools are not exposed by this runtime path",
-        },
+        workspace_outside_configured_read_scope: workspace_boundary(&inspection.run.execution),
     })
 }
 
@@ -289,9 +286,13 @@ fn named_identity_detail(field: &str, label: &str, value: &str) -> String {
     )
 }
 
-fn tool_name_label(name: &str) -> &'static str {
+pub(super) fn tool_name_label(name: &str) -> &'static str {
     match name {
+        "edit_file" => "edit_file",
+        "exec_command" => "exec_command",
+        "list_files" => "list_files",
         "read_file" => "read_file",
+        "search_text" => "search_text",
         _ => "unrecognized",
     }
 }
@@ -343,34 +344,6 @@ fn message_detail(message: &Message) -> String {
     }
 }
 
-fn authorization_for(paths: &[String]) -> AuthorizationView {
-    let workspace_read = if paths.is_empty() {
-        CapabilityView {
-            status: "not_granted",
-            scope: Vec::new(),
-        }
-    } else {
-        CapabilityView {
-            status: "declared_and_runtime_exposed",
-            scope: paths.to_vec(),
-        }
-    };
-    AuthorizationView {
-        source: "persisted Project Run execution configuration; not an authenticated Grant/Approval/PDP decision",
-        workspace_read,
-        workspace_write: not_exposed(),
-        process: not_exposed(),
-        network: not_exposed(),
-    }
-}
-
-fn not_exposed() -> CapabilityView {
-    CapabilityView {
-        status: "not_exposed_by_project_run_v1",
-        scope: Vec::new(),
-    }
-}
-
 fn assumptions_for(state: &RunRecoveryState, events: &[RuntimeEvent]) -> Vec<AssumptionView> {
     let external_effect_status = if matches!(state, RunRecoveryState::PendingTool { .. }) {
         "requires_operator"
@@ -411,17 +384,10 @@ fn continuation_for(
     point: &RunResumePoint,
     inspection: &RunInspection,
 ) -> ContinuationView {
-    let command = || format!("run resume {run_id}");
-    if matches!(
-        &inspection.recovery.state,
-        RunRecoveryState::Terminal { .. }
-    ) {
-        return ContinuationView {
-            command: None,
-            safe: false,
-            reason: "the Run already has a durable terminal outcome; resume is not applicable",
-        };
+    if let Some(terminal) = terminal_continuation(run_id, &inspection.recovery.state) {
+        return terminal;
     }
+    let command = || format!("run resume {run_id}");
     match point {
         RunResumePoint::Start if inspection.events.is_empty() => ContinuationView {
             command: None,
@@ -431,7 +397,6 @@ fn continuation_for(
         RunResumePoint::Start
         | RunResumePoint::CommitUser { .. }
         | RunResumePoint::StartTurn { .. }
-        | RunResumePoint::ContinueTurn { .. }
         | RunResumePoint::ExecuteTools { .. }
         | RunResumePoint::RejectTools { .. }
         | RunResumePoint::CommitToolMessage { .. }
@@ -440,11 +405,34 @@ fn continuation_for(
             safe: true,
             reason: "the validated journal ends at a bounded continuation point accepted by explicit run resume",
         },
+        RunResumePoint::ContinueTurn { .. } => ContinuationView {
+            command: Some(command()),
+            safe: false,
+            reason: "the provider request may already have been sent after turn_started; explicit resume can repeat provider disclosure and cost but will not replay a started tool effect",
+        },
         RunResumePoint::PendingTool { .. } => ContinuationView {
             command: None,
             safe: false,
             reason: "a tool_started effect has no durable outcome; automatic replay is refused",
         },
+    }
+}
+
+fn terminal_continuation(run_id: &str, state: &RunRecoveryState) -> Option<ContinuationView> {
+    match state {
+        RunRecoveryState::Terminal {
+            outcome: RunOutcome::Completed { .. },
+        } => Some(ContinuationView {
+            command: Some(format!("run resume {run_id}")),
+            safe: true,
+            reason: "the completed Run can be resumed only for idempotent assistant writeback reconciliation",
+        }),
+        RunRecoveryState::Terminal { .. } => Some(ContinuationView {
+            command: None,
+            safe: false,
+            reason: "this terminal outcome is not eligible for resume or assistant writeback reconciliation",
+        }),
+        RunRecoveryState::Incomplete | RunRecoveryState::PendingTool { .. } => None,
     }
 }
 
@@ -476,6 +464,7 @@ fn provider_label(provider: &RunProvider) -> &'static str {
     match provider {
         RunProvider::DeterministicRead { .. } => "deterministic_read",
         RunProvider::OpenAiResponses { .. } => "openai_responses",
+        RunProvider::OpenAiAgent { .. } => "openai_agent",
     }
 }
 

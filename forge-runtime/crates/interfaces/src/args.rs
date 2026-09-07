@@ -1,4 +1,6 @@
 use std::{collections::VecDeque, env, path::PathBuf};
+#[path = "agent_args.rs"]
+mod agent_args;
 #[path = "args_validation.rs"]
 mod args_validation;
 #[path = "args/basic.rs"]
@@ -19,6 +21,8 @@ mod group_panel_args;
 mod group_synthesis_args;
 #[path = "run_args.rs"]
 mod run_args;
+pub use agent_args::{AgentArgs, AgentCommand};
+pub(crate) use agent_args::{MAX_PROMPT_BYTES, validate_prompt};
 pub use basic_args::{PromptCommand, SessionCommand};
 pub use governance_journal_args::{GovernanceCommand, GovernanceJournalCommand};
 pub use group_commands::{
@@ -51,6 +55,7 @@ pub enum Command {
     Governance(GovernanceCommand),
     Group(GroupCommand),
     Run(RunCommand),
+    Agent(AgentArgs),
     Demo(DemoArgs),
     Help,
 }
@@ -160,7 +165,15 @@ fn parse_command(
 fn is_command(value: &str) -> bool {
     matches!(
         value,
-        "session" | "prompt" | "governance" | "group" | "run" | "demo" | "help" | "status"
+        "session"
+            | "prompt"
+            | "governance"
+            | "group"
+            | "run"
+            | "agent"
+            | "demo"
+            | "help"
+            | "status"
     )
 }
 
@@ -190,6 +203,7 @@ fn parse_named_command(
         "governance" => governance_journal_args::parse(tokens),
         "group" => group_args::parse(tokens, &mut options.idempotency_key),
         "run" => run_args::parse(tokens, options),
+        "agent" => Ok(Command::Agent(agent_args::parse(tokens)?)),
         "demo" => parse_demo(tokens, options),
         "status" => {
             require_empty(tokens)?;

@@ -40,10 +40,11 @@ mod run_service;
 mod run_state;
 mod scheduled_graph_controller;
 mod scheduled_graph_reconcile;
+mod workspace_identity;
 
 pub(crate) use forge_runtime_domain as runtime_domain;
 
-pub use catalog::ToolCatalog;
+pub use catalog::{ToolCatalog, validate_agent_tool_catalog};
 pub use conversation_history::{
     ConversationHistory, ConversationHistoryBridge, HISTORY_RECORD_LIMIT, HistoryError,
 };
@@ -196,7 +197,7 @@ pub use hub_error::{HubError, HubField};
 pub use hub_service::HubService;
 pub use hub_validation::{
     MAX_ENTITY_ID_BYTES, MAX_GROUP_NAME_BYTES, MAX_IDEMPOTENCY_KEY_BYTES, MAX_PROMPT_BYTES,
-    MAX_PROMPT_LIST_LIMIT, MAX_ROLE_BYTES, MAX_TITLE_BYTES,
+    MAX_PROMPT_LIST_LIMIT, MAX_ROLE_BYTES, MAX_TITLE_BYTES, validate_idempotency_key,
 };
 pub use run_service::{
     PrepareRunBranch, PrepareRunBranchResult, PrepareRunRestart, PrepareRunRestartResult,
@@ -207,3 +208,4 @@ pub use scheduled_graph_reconcile::{
     ScheduledGraphReconcileObservation, ScheduledGraphReconcileService,
     ScheduledGraphReconcileServiceError,
 };
+pub use workspace_identity::validate_resume_workspace_identity;

@@ -3,8 +3,9 @@ use std::{path::Path, sync::Arc};
 use crate::{
     HubError, HubField,
     hub_validation::{
-        MAX_GROUP_NAME_BYTES, MAX_IDEMPOTENCY_KEY_BYTES, MAX_PROMPT_BYTES, MAX_ROLE_BYTES,
-        MAX_TITLE_BYTES, normalized_absolute_path, prompt_limit, required, required_id, scope,
+        MAX_GROUP_NAME_BYTES, MAX_PROMPT_BYTES, MAX_ROLE_BYTES, MAX_TITLE_BYTES,
+        normalized_absolute_path, prompt_limit, required, required_id, scope,
+        validate_idempotency_key,
     },
     runtime_domain::{
         Conversation, ConversationScope, GroupContextPolicy, GroupContextSlice, GroupProjectMember,
@@ -221,11 +222,6 @@ impl HubService {
             .store
             .add_project_path_to_group(group_id, absolute_path, role, idempotency_key)?)
     }
-}
-
-fn validate_idempotency_key(value: &str) -> Result<(), HubError> {
-    required(value, HubField::IdempotencyKey, MAX_IDEMPOTENCY_KEY_BYTES)?;
-    Ok(())
 }
 
 fn context_bytes(value: usize) -> Result<(), HubError> {

@@ -13,6 +13,7 @@ use wiremock::{
 
 use super::{
     OpenAiResponsesProvider,
+    redaction::REDACTED,
     response_fixtures::{
         function_output, function_stream, message_output, refusal_output, text_stream,
     },
@@ -134,7 +135,7 @@ async fn redacts_the_api_key_from_stream_errors() {
 
     assert_eq!(error.code, "server_error");
     assert!(!format!("{error:?}").contains(SECRET));
-    assert!(error.message.contains("[REDACTED]"));
+    assert!(error.message.contains(REDACTED));
 }
 
 #[test]

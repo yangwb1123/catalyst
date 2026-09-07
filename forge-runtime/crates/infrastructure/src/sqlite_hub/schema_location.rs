@@ -8,6 +8,7 @@ use std::{
 use rusqlite::Connection;
 
 use super::{HubStoreError, unavailable};
+use crate::sqlite_hub::schema_hard_link::verify_unique_link;
 
 const SQLITE_HEADER_BYTES: usize = 20;
 const SQLITE_HEADER_MAGIC: &[u8; 16] = b"SQLite format 3\0";
@@ -136,6 +137,7 @@ pub(super) fn checked_database_metadata(path: &Path) -> Result<fs::Metadata, Hub
             message: format!("Hub database path is not a file: {}", path.display()),
         });
     }
+    verify_unique_link(path, &metadata)?;
     Ok(metadata)
 }
 
@@ -290,7 +292,7 @@ fn reject_symlink(path: &Path) -> Result<(), HubStoreError> {
         Ok(metadata) if metadata.file_type().is_symlink() => Err(HubStoreError::Unavailable {
             message: format!("Hub database cannot be a symbolic link: {}", path.display()),
         }),
-        Ok(_) => Ok(()),
+        Ok(metadata) => verify_unique_link(path, &metadata),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(error) => Err(unavailable(error)),
     }

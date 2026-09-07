@@ -1,13 +1,109 @@
 # forge-runtime
 
-Clean-room Rust Agent Runtime and local Conversation Hub inspired by the
-architectural boundaries of Pi Coding Agent.
+First-party Rust Dev Agent Runtime and local Conversation Hub.
 
 The runtime has one authoritative Agent Loop, versioned durable Run events,
-bounded Conversation-history replay, a deterministic provider, an opt-in
-OpenAI Responses provider, and a capability-confined read-only workspace tool.
-It never mutates a project. The default remains offline; network and model
-cost are possible only with an explicit `--live` command.
+bounded Conversation-history replay, a deterministic test provider, and an
+explicit OpenAI Responses provider. The `agent` command is read-only by default;
+its descriptor-anchored tools can list regular files, perform bounded literal text
+search, and read selected UTF-8 files. Discovery explicitly skips `.git` metadata but
+does not interpret `.gitignore`. `agent --dev` on Unix additionally enables
+workspace-scoped file editing and same-user local process execution so one coding
+task can be inspected, changed, verified, and reported.
+
+## Use the Dev Agent
+
+```bash
+# From this directory. The selected project must already exist.
+OPENAI_API_KEY=... cargo run -p forge-runtime-cli -- \
+  -C /path/to/project agent --dev \
+  "Inspect the project, fix the failing test, and run the relevant checks."
+
+# Keep a sensitive prompt out of argv and shell history (maximum 256 KiB UTF-8).
+OPENAI_API_KEY=... cargo run -p forge-runtime-cli -- \
+  -C /path/to/project agent -
+# Type the prompt on stdin, then send EOF (usually Ctrl-D).
+```
+
+The command creates or reuses one local Project session, persists the user
+prompt, streams a concise human-readable trace, and journals model/tool events
+and the final result in the local Hub. Omit `--dev` for a read-only inspection.
+Each untrusted assistant line in the human trace starts with `[assistant]`, terminal
+controls are escaped, and later human Prompt listings escape persisted provider text;
+trusted `[run]`/`[tool]` status lines therefore remain distinguishable.
+Use `--session SESSION_ID` to select another existing Project session and
+`--model MODEL` to override the default. `OPENAI_BASE_URL` may select an
+OpenAI-compatible self-hosted `/v1` endpoint.
+
+Workspace selection opens one descriptor-anchored bundle and proves that the
+selected and canonical paths identify it; the Runtime factory and all Agent tools
+reuse that same bundle and captured filesystem identity. Prompt, Run,
+`run_started`, and the matching user event are inserted in one SQLite immediate
+transaction. With a global `--idempotency-key KEY`, only the first `Created`
+pristine seed may call the provider. An exact replay never sends automatically:
+it returns the stored terminal outcome, reconciling assistant writeback only for
+a completed Run; an incomplete Run requires explicit `run resume` after inspection.
+All original-start and explicit-resume execution owners hold one nonblocking,
+OS-released cooperative lock on an empty private Hub-side coordination file through
+the provider/tool loop. On Unix the opened file is hardened and reverified as a
+current-user-owned, single-link `0600` empty regular file regardless of caller umask.
+The zero-byte file persists but contains no owner token; only
+its OS lock is transient. Thus one Hub executes at most one local Run at a time; a
+concurrent attempt fails before provider/tool use. This coordinates participating
+Forge processes, not non-cooperating same-user programs, and is no remote exactly-once
+guarantee.
+
+`--dev` is Unix-only in v1 and fails before Agent state is created on other hosts.
+It is an explicit trust boundary, not an OS sandbox. File tools stay under
+the selected workspace and reject traversal and escaping symlinks, but an
+executed process runs as the current OS user and can access anything that user
+can access. Start from a clean commit or disposable worktree. Secrets are not
+intentionally inherited by the process tool, but prompts, model responses, tool
+arguments/results, and file contents used by the Agent are stored locally in
+plaintext and may be sent to the configured model provider.
+
+The edit tool stages contents in a private `0600` same-directory file and rejects
+target identity/content drift before commit. Replacement requires the staged inode
+to match the old owner/group and verifies the restored POSIX mode. On Linux it fails
+closed rather than silently dropping a parent default ACL, any target or staged
+xattr/access ACL enumerable by the calling process, or unreadable/
+changing enumerable extended metadata. Kernel-hidden attributes are not guaranteed,
+and general ACL/xattr preservation on other Unix systems is not claimed. Any error
+from the namespace-changing rename/link call or a later confirmation is
+effect-uncertain, including an ambiguous network-filesystem error. A pre-commit
+error is also effect-uncertain when deletion/absence of the private plaintext
+staging name cannot be confirmed.
+
+Every abnormal result after `exec_command` spawns—including timeout,
+cancellation, wait failure, or an output pipe retained after direct-child exit—is
+`tool_effect_uncertain`. Process-group kill/reap is bounded best effort, not proof
+that no descendant escaped to a new session; the journal keeps `ToolStarted`
+pending and automatic effect replay stays disabled. Pre-spawn cancellation remains
+effect-free.
+
+An interrupted incomplete Run can be inspected with `run list` / `run show`
+and explicitly continued with `-C PATH run resume RUN_ID`. Agent resume keeps the
+redacted human trace by default; add global `--json` only when the complete event
+stream, including tool arguments/results, is intentionally required. The Agent has finite
+turn, tool-call, output, timeout, cleanup-grace, and capture limits. If process cleanup
+cannot be confirmed—or any other abnormal post-spawn result occurs—the Run remains
+visibly pending instead of recording a false terminal result or replaying the effect.
+Public Agent bounds are 64 turns, 256 configured tool calls, 32,768 output tokens,
+256 KiB cumulative model output, and 2,048 replay-accounted text/tool/context events.
+Each turn accepts at most one aggregate Usage event and exactly one Finished event;
+duplicate Usage is a provider protocol failure, so explicit resume can reconstruct the
+bounded event counter. Per-tool output is
+`min(128 KiB, 32 MiB / (12 × max_tool_calls))`, reserving capacity under worst-case
+JSON escaping and the two journal copies of a tool result. This v1 implementation
+candidate remains under Proposed ADR-0108 and awaits final repository acceptance;
+it is not a production deployment agent or a multi-agent autonomous roadmap loop.
+These per-Run/history-output limits do not cap lifetime Hub disk growth or the SQL/
+memory work used by full-Conversation integrity checks, Project binding, keyed replay,
+and unbounded session/Hub snapshots before a bounded projection is selected. V1 has
+no retention/pruning quota, so long-lived local state is operator-managed.
+The persisted Agent toolset version keeps historical Runs on their original tools
+and fails closed on unknown future versions. See
+[First-party Dev Agent v1](../docs/design/first-party-dev-agent-v1.md).
 
 The domain crate also exports strict Rust bindings for the Proposed
 [Platform Core Envelope v1](../docs/contracts/platform-core-envelope-v1.md) and
@@ -807,8 +903,9 @@ Grant/Approval/PDP 也不在此记录中，因此这些边界会明确标为 ope
 Provider 生成的 tool-call ID 也只显示长度与 SHA-256；已完成但尚未写入 Tool message 的
 工具输出只显示指纹，纯拒绝调用会作为 `rejected` 生命周期项出现。人类输出折叠流式
 `assistant_delta`，同时保留其计数，并显示消息/工具输出指纹、实际 read scope 和 terminal
-outcome。provider-controlled 工具名只保留受信标签（当前仅 `read_file`）或
-`unrecognized` 加长度/SHA-256，Human 输出对所有配置路径做 terminal-safe 转义。
+outcome。provider-controlled 工具名只保留受信标签（当前为 `list_files`、`read_file`、
+`search_text`、`edit_file`、`exec_command`）或 `unrecognized` 加长度/SHA-256，Human 输出对所有配置路径做
+terminal-safe 转义。
 
 `run resume` 对安全 incomplete prefix 继续执行；仅对 `RunOutcome::Completed` 的已完成终态
 Run 执行 writeback-only recovery。该 completed 路径先验证 Project 绑定，再幂等
@@ -816,6 +913,10 @@ reconcile 已持久化 assistant answer 与 Conversation，并在
 credential/provider/tool/history setup 前返回；它不调用 provider/tool，也不读取
 workspace 内容。`RunOutcome::Failed`、`RunOutcome::Cancelled` 与
 `RunOutcome::LimitExceeded` 终态仍拒绝 resume。
+已提交 `turn_started` 但尚无 durable provider response 的 prefix 无法证明请求是否已经发出；
+`run explain` 会保留显式 resume 命令但标记 `safe=false`，因为继续可能重复 provider egress
+与费用，尽管它不会重放已开始的工具效果。completed terminal 则把同一命令明确标为安全、
+幂等且仅用于 assistant writeback reconciliation。
 
 `run restart` 将终态 source Run 绑定的 Project、Conversation、user Prompt 与完整 execution
 configuration 物化为一个新的、可显式恢复的独立 Run。source Run 指纹与显式 idempotency

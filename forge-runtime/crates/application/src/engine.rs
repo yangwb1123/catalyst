@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
 use forge_runtime_domain::{
-    Cancellation, EventSink, LimitKind, Message, ModelProvider, ModelRequest, RunOutcome,
-    RunRequest, RunResult, RuntimeEventKind, ToolCall, ToolContext, ToolOutput,
-    WorkspaceReadCapability, WorkspaceReadFactory,
+    Cancellation, Capability, EventSink, LimitKind, Message, ModelProvider, ModelRequest,
+    RunOutcome, RunRequest, RunResult, RuntimeEventKind, TOOL_EFFECT_UNCERTAIN_CODE, ToolCall,
+    ToolContext, ToolOutput, WorkspaceReadCapability, WorkspaceReadFactory,
 };
 
 use crate::{
@@ -367,6 +367,14 @@ impl AgentRuntime {
             let result = self
                 .execute_call(request, workspace, cancellation, &call)
                 .await;
+            if let Err((code, message)) = &result
+                && code == TOOL_EFFECT_UNCERTAIN_CODE
+            {
+                return Err(RuntimeError::ToolEffectUncertain {
+                    name: call.name,
+                    message: message.clone(),
+                });
+            }
             commit_tool_result(
                 call,
                 result,
@@ -404,6 +412,11 @@ impl AgentRuntime {
             max_output_bytes: request.limits.max_tool_output_bytes,
         };
         let execution = tool.execute(call.arguments.clone(), context);
+        // Effectful work must observe cancellation and finish cleanup before
+        // the journal can record ToolFinished and the terminal RunFinished.
+        if spec.capability != Capability::WorkspaceRead {
+            return execution.await.map_err(|error| (error.code, error.message));
+        }
         let cancelled = Box::pin(cancellation.cancelled());
         match futures_util::future::select(execution, cancelled).await {
             futures_util::future::Either::Left((result, _)) => {
@@ -427,7 +440,9 @@ impl AgentRuntime {
                 })?;
                 Ok(result)
             }
-            Err(error @ RuntimeError::EventSink(_)) => Err(error),
+            Err(
+                error @ (RuntimeError::EventSink(_) | RuntimeError::ToolEffectUncertain { .. }),
+            ) => Err(error),
             Err(error) => {
                 let outcome = RunOutcome::Failed {
                     code: error.code().into(),

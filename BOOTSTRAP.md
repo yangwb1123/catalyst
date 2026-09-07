@@ -4,18 +4,21 @@
 > Read me first, then follow 阅读顺序 below. 双语:中文权威,English mirrors.
 
 ## 项目是什么 (What)
-ForgeOS = **AI-native 软件工厂**:站在 Claude Code / Codex / Gemini CLI 等编码 CLI 之上的
-**治理 + 编排控制平面**。目标是让 AI 长时自治推进 Idea 到 operator-gated production handoff，
-而不写「上帝文件」、不让架构腐化；当前真实远程生产执行明确留在带外 CI/operator。
-不是某个应用,是元框架。详见 [`.agent/PROJECT.md`](.agent/PROJECT.md)。
+ForgeOS = **带第一方 Agent Runtime 的 AI-native 软件工程系统**。它既能通过
+`forge-runtime -C PATH agent` 直接完成单个开发任务，也能让 Claude Code / Codex /
+Gemini CLI 等外部宿主接入治理与编排能力。目标是让 AI 长时自治推进 Idea 到
+operator-gated production handoff，而不写「上帝文件」、不让架构腐化；当前真实远程生产
+执行明确留在带外 CI/operator。详见 [`.agent/PROJECT.md`](.agent/PROJECT.md)。
 
 ## 技术栈 (Stack)
 - **目的地**:Go-核心 polyglot(`forge-core`=Go · `forge-ai`=Python · `forge-runtime`=Rust · `forge-web`=TS)。
 - **v0–v1**:编排骑 Claude Code 原生能力(subagents/hooks/skills);
   只写**声明式**(agent 卡 / workflow / policy)+ 薄胶水(`harness/gate.mjs` 现用 Node,够用)。
 - **v2(现状)**:`forge-core/` Go 控制平面已落地；`forge-runtime/` 已具备 Rust 原生 Agent Loop、
-  local-first Conversation Hub、durable Project Run 与 Group/Graph 协议，默认仍为离线确定性执行。
-  真实 CLI/Responses 均需显式启用；Go 执行器已可选 Docker/Firecracker sandbox。
+  local-first Conversation Hub、durable Project Run、第一方 `agent` CLI 与 Group/Graph 协议。
+  默认 Agent 可有界发现、literal 搜索和读取 workspace；测试保持离线确定性，真实 Responses
+  需显式凭证，写文件/本地进程还需显式 `--dev`。
+  Go 执行器已可选 Docker/Firecracker sandbox。
   Project Run 已提供显式有界 resume 与可查询的 root-input branch；scheduled multi-node
   Graph 已提供单个 SQLite 快照上的 content-free 只读 progress projection、pinned Go Core
   reconcile，以及用 atomic S0→reconcile-Core→A→authorization-Core→B current-state revalidation 绑定 initial/successor source 的
@@ -29,7 +32,8 @@ ForgeOS = **AI-native 软件工厂**:站在 Claude Code / Codex / Gemini CLI 等
   不同失败关闭，boot 不同证明旧 executor 已死，同 boot 才要求两个 namespace 与当前 procfs PID view
   精确匹配；该证据供显式 adjudication；owner directory 以 advisory lock 限制为至多
   1024 个任意条目且不自动清扫，不自动恢复、重试或重发。顶层整图自动执行、任意
-  event-prefix branching、远程账号同步与受控写/进程工具仍未实现。Core 是 operator-trusted
+  event-prefix branching与远程账号同步仍未实现。第一方 Agent 已提供 workspace 文件编辑和
+  same-user 本地进程工具，但 `--dev` 不构成 OS sandbox；Rust runtime 自身的进程隔离仍未实现。Core 是 operator-trusted
   same-user TCB；pin/handshake 不提供 sandbox、publisher attestation 或 effect containment；CLI
   以 Runtime-only effect scope、独立 Core trust-boundary facts 与 Human 警示披露这一限制。
 - 时序与理由见 [`.agent/DECISIONS.md`](.agent/DECISIONS.md)(D1–D2)。
@@ -53,7 +57,7 @@ harness/                  ← 约束执法(真相之源,host-independent)
   gate.mjs · policies.yml ← 主循环拥有,勿改
   adapters/               ← polyglot 闸门适配器(TypeScript/Python/Go/Rust/Java)
 forge-core/               ← v2 自研编排运行时(绝大多数包仅 Go 标准库;Control Store 精确锁定 modernc SQLite;CLI run/chain/evolve/approve/trace/gates 等)
-forge-runtime/            ← Rust Agent Loop + 本地 Conversation Hub(SQLite,仍离线)
+forge-runtime/            ← 第一方 Rust Dev Agent + 本地 Conversation/Run Hub(SQLite)
 examples/                 ← dogfood 真实应用(url-shortener:经完整 pipeline 端到端建成)
 docs/                     ← discovery/design/review/release/adr 产物(按需生成)
 ```

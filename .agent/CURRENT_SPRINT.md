@@ -1991,7 +1991,7 @@ ADR-0092 exact16 dependency-free Python core、Catalyst exact15 Go、exact14 Rus
 不会转成工具执行；最后一个 `tool_call_limit`/`cancelled` rejection 补齐受字节上限约束的
 Tool message 后直接写入对应 terminal outcome，不会错误进入新 turn。
 
-产品边界保持明确：这是 caller-triggered bounded recovery，不是 automatic retry、whole-Graph execution、remote sync、mutating tool 或 provider usage 历史伪造，也不隐式创建分支。domain resume-point 单测、CLI 跨进程回归（不重复工具、pending effect refusal、Project binding）与 `cargo test` 聚焦套件通过。
+产品边界保持明确：这是 caller-triggered bounded recovery，不是 automatic retry、whole-Graph execution、remote sync 或 provider usage 历史伪造，也不隐式创建分支。该 recovery slice 不会自行扩大某个 Run 已持久化的工具面；ADR-0108 的第一方 Agent candidate 可按 persisted mode/toolset 恢复其只读或 `--dev` edit/process 工具。domain resume-point 单测、CLI 跨进程回归（不重复工具、pending effect refusal、Project binding）与 `cargo test` 聚焦套件通过。
 
 ### Sprint 133 — Bounded Project Run explain query
 
@@ -2693,3 +2693,79 @@ no-consumer/no-effect 与 fail-closed 关系。ADR body/self pins 为
 `node harness/acceptance.mjs` 时保留，任一失败必须立即撤回。通过也只关闭 FR-03a pure request value；依赖链仍为
 `FR-03 后续 lifecycle → FR-04 execution journal/outbox → FR-06 local protocol → FC-07 RuntimePort client`，F2/F3/F4/F6、
 R0 Developer Preview、Objective→Outcome 与完整 App 继续开放。
+
+### Sprint 149 — First-party Dev Agent v1（ADR-0108 Proposed；implementation candidate，正式验收待定）
+
+本切片为已有 Rust `AgentRuntime` 增加直接产品入口
+`forge-runtime -C PATH agent [--dev] PROMPT|-`，而不是引入第二套 loop、scheduler 或 persistence。
+默认版本化 toolset 只含 `list_files`、`search_text` 与 `read_file`；Unix 上只有显式 `--dev` 才增加
+`edit_file` 与 `exec_command`。外部 Claude Code/Codex 仍可互操作，但不再是这条 candidate 路径的运行前提。
+该入口只处理单个有限任务，不执行 Sprint、Attempt、Work Graph 或 Group Graph 编排。
+
+credential preflight 位于 stdin/workspace/Hub 之前；sole `-` 从 stdin 读取最多 256 KiB 的非空 valid UTF-8，
+避免把敏感 Prompt 放入 argv/shell history。Human/JSON start disclosure 明示 provider egress、local plaintext
+journal、same-user execution 以及不存在 filesystem/network sandbox。外层 human provider failure 只返回稳定错误码和
+durable Run 检查指引，不复制 provider-controlled secret/control/bidi 文本；machine event stream 仍保留既有协议事实。
+
+Project selection 只打开一次 descriptor-anchored `CapStdAgentWorkspace`：selected path 与 canonical path 经
+filesystem identity 双向重验，随后 Project registration、persisted workspace identity、Runtime factory 和全部工具复用
+同一 bundle。路径在 descriptor open 后被替换时失败关闭；恢复旧 Run 仍按 persisted mode/toolset version 与 workspace
+identity 重建，未知版本在 provider/tool/writeback 前拒绝。
+Agent explicit resume 默认复用不显示 tool arguments/results 的 HumanEventSink，只有 global `--json` 才输出完整
+machine event stream；每个不受信 assistant 物理行固定带 `[assistant]` 前缀并转义 terminal control，后续 human
+Prompt list 也转义已持久化 provider text，不能伪造 trusted run/tool status 行。runtime/provider failure 的外层
+stderr 同样只显示 stable code。
+
+Agent start 现在以一个 SQLite immediate transaction 原子提交 Prompt、Run、seq-1 `run_started` 与 seq-2 matching
+user `message_committed`。只有 `BeginRunDisposition::Created` 且 inspection 仍为 exact pristine two-event seed 才能构造并
+调用 provider；同 idempotency key 的精确重放不会自动再次发送。terminal replay 只做幂等 assistant reconcile，
+incomplete replay 固定要求 operator 先检查后显式 `run resume`，pending tool effect 继续拒绝自动重放；并发同 key
+process regression 要求最多一个 provider request。terminal replay 返回既有 outcome，仅 completed outcome 触发
+assistant writeback reconcile；failed/cancelled/limit-exceeded 不产生 assistant writeback。
+
+所有可能持有执行权的 original start/Agent atomic seed/explicit resume 都在 provider/tool loop 全程持有 private
+Hub-side empty coordination file 上的 nonblocking OS lock；zero-byte 文件会持久存在但不保存 owner token，进程退出
+释放的是 OS lock。Unix 上已打开文件无论 caller umask 都强制固化并复验为 current-user-owned `0600`、single-link
+empty regular file。同一 Hub 即使是不同 Run 也保守串行，竞争者在 provider/tool 前失败。该锁只协调 participating
+Forge process，不抵御 non-cooperating same-user program，也不提供 crash 后 remote exactly-once。
+
+文件发现/search/read 继续走同一 workspace descriptor。`edit_file` 的 staged plaintext 在 namespace commit 前保持
+private `0600`；replacement 仅在 staged inode 与 target owner/group 相同时继续，并在 rename 后恢复且复验旧 POSIX
+mode。namespace-changing rename/link 一旦调用，其 Err（包括 network filesystem 的歧义失败）以及后续
+确认/sync/permission 错误都返回 `tool_effect_uncertain`。replacement CAS 重验 content digest 与 length/device/inode/
+mode/nlink/uid/gid/ctime identity。Linux 还会拒绝 parent default POSIX ACL、calling process 可枚举的任意 target
+或 staged xattr/access ACL、不可读或发生漂移的可枚举 extended metadata，避免 v1 静默丢失
+已观察到且无法精确保留的安全元数据；kernel 对调用进程隐藏的 attribute 不在保证内。这不构成 non-Linux 通用
+ACL/xattr preservation，也不是对非协作 writer 的全局 filesystem transaction。
+任何 precommit 失败若不能确认 private named stage 已删除或原本不存在，也升级为 `tool_effect_uncertain`，避免把
+可能残留的部分 plaintext temp 误报为普通安全失败。
+
+`exec_command` 的 cwd 从已打开 workspace descriptor 进入，清空环境后只复制显式 non-secret operational 变量。
+任何 spawn 后 abnormal result——timeout、cancellation、wait error 或 direct child 已退出但 capture pipe 仍被持有——
+一律返回 `tool_effect_uncertain`，不写 false `ToolFinished`/terminal。原 process group 的 kill/reap 只是 bounded best effort，
+不能证明 descendant 未创建新 session；direct child 已 reap 后也不再向可复用 numeric PID/PGID blind signal。
+只有 pre-spawn cancellation 保持无进程 effect 的普通 cancelled。
+
+Agent public profile 固定最多 64 turns、256 configured tool calls、32,768 output tokens、256 KiB cumulative model output
+与 2,048 个可从 journal 重建的 text/tool-call/provider-context model events。每 turn 另只允许一个 aggregate Usage
+与一个 Finished；重复 Usage 是 protocol failure，因此不会形成 resume 后遗忘的无界计数。每次 tool output 为
+`min(128 KiB, 32 MiB / (12 × max_tool_calls))`；12 来自一个结果在 `ToolFinished` 与 Tool message 中两份持久化、
+且 JSON string 每输入 byte 最坏 6 倍展开。默认 64 calls 得 43,690 bytes，public maximum 256 calls 得 10,922 bytes。
+保守事件证明保持在 8,192 上限内；真实 Application + SQLite 回归已让单 turn 2,048 个 minimal tool calls 到达 terminal
+seq 4,101，并让 256 个完整 NUL worst-expansion outputs 后仍能追加 terminal，cursor byte count 与实际 stored JSON
+一致且不超过 64 MiB。
+
+上述只约束 per-Run journal 与最终 retained history projection，不约束 Hub 生命周期总 Prompt/Run/plaintext/disk 增长；
+causal history integrity query、Project binding、keyed replay 与 session/global snapshot 在返回 bounded projection 前仍可
+按完整 Conversation/Hub 增长 SQL 或内存工作量。v1 不提供 retention、prune、总磁盘 quota 或固定 SQL/memory-work
+budget，长期 local state 仍由 operator 管理，production availability 需另立合同。
+
+当前仅记录 implementation candidate 事实。ADR-0108 继续是 Proposed/null，正文与 body/self seal 未因本节改变；
+不得把 focused tests、候选代码或本节文字冒充 independent final review、完整 gate 或正式 repository acceptance。
+最终晋级前仍须在同一冻结树完成 Rust fmt/strict Clippy/workspace all-target tests、repository architecture/governance/diff
+checks、fresh-context architecture/security/final review，并紧随其后运行正式 `node harness/acceptance.mjs`。
+
+**completion_boundary:** 在上述终审与正式 acceptance 成功前，ROADMAP 项保持未勾选、Functional audit 保持
+`PROPOSED-STAGED`。即使最终验收通过，也只关闭 trusted same-user local single-task developer preview；OS/network
+sandbox、production approval、remote deploy、multi-Agent、automatic Sprint/Attempt/Graph、provider-side idempotency 与
+任意 shell 安全保证仍不在本切片内。

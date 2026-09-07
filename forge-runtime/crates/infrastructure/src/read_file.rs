@@ -80,10 +80,13 @@ fn execute_read(
         }
         let relative = PathBuf::from(input.path);
         let workspace = context.workspace;
+        let cancellation = context.cancellation;
         let max_bytes = context.max_output_bytes;
-        tokio::task::spawn_blocking(move || workspace.read_file(&relative, max_bytes))
-            .await
-            .map_err(|error| ToolError::new("read_task_failed", error.to_string()))?
+        tokio::task::spawn_blocking(move || {
+            workspace.read_file(&relative, max_bytes, &cancellation)
+        })
+        .await
+        .map_err(|error| ToolError::new("read_task_failed", error.to_string()))?
     })
 }
 
@@ -201,6 +204,56 @@ mod tests {
         assert_eq!(error.code, "path_denied");
     }
 
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn rejects_a_fifo_without_waiting_for_a_writer() {
+        use std::{
+            sync::{
+                Arc,
+                atomic::{AtomicBool, Ordering},
+                mpsc,
+            },
+            thread,
+            time::Duration,
+        };
+
+        let root = TempDir::new().expect("temporary workspace");
+        let fifo = root.path().join("input.pipe");
+        rustix::fs::mkfifoat(
+            rustix::fs::CWD,
+            &fifo,
+            rustix::fs::Mode::RUSR | rustix::fs::Mode::WUSR,
+        )
+        .expect("FIFO fixture");
+        let release_path = fifo.clone();
+        let forced_release = Arc::new(AtomicBool::new(false));
+        let release_flag = forced_release.clone();
+        let (done, wait_for_done) = mpsc::channel();
+        let releaser = thread::spawn(move || {
+            if wait_for_done.recv_timeout(Duration::from_secs(2)).is_err() {
+                release_flag.store(true, Ordering::SeqCst);
+                let _ = rustix::fs::openat(
+                    rustix::fs::CWD,
+                    release_path,
+                    rustix::fs::OFlags::WRONLY
+                        | rustix::fs::OFlags::NONBLOCK
+                        | rustix::fs::OFlags::CLOEXEC,
+                    rustix::fs::Mode::empty(),
+                );
+            }
+        });
+
+        let error = ReadFileTool
+            .execute(json!({ "path": "input.pipe" }), context(root.path()))
+            .await
+            .expect_err("FIFO is not a regular file");
+        let _ = done.send(());
+        releaser.join().expect("FIFO release helper");
+
+        assert_eq!(error.code, "not_a_file");
+        assert!(!forced_release.load(Ordering::SeqCst));
+    }
+
     #[cfg(unix)]
     #[test]
     fn open_directory_capability_survives_workspace_path_replacement() {
@@ -221,7 +274,7 @@ mod tests {
         fs::rename(&workspace, &moved).expect("move workspace path");
         symlink(&outside, &workspace).expect("replace workspace path");
         let output = capability
-            .read_file(Path::new("note.txt"), 1024)
+            .read_file(Path::new("note.txt"), 1024, &Cancellation::default())
             .expect("open handle remains confined");
 
         assert_eq!(output.content, "inside");

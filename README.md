@@ -2,10 +2,21 @@
 
 **The operating system for AI-native software engineering.**
 
-ForgeOS 不替代 Claude Code / Codex / Gemini CLI / OpenCode / OpenHands —— 它站在它们之上,
-提供统一的工程治理:需求探索、架构推导、模型调度、上下文与约束执法,让 AI 能长期(24h)
-自治推进「Idea → operator-gated production handoff」,而不写出「上帝文件」、不让架构腐化。
-真实云/K8s 变更由带外 CI/operator 执行，不由 ForgeOS agent 直接完成。
+ForgeOS 现在包含一个第一方、local-first 的 Dev Agent：给它一个项目和任务，它可以调用模型、
+发现/搜索/读取文件，并在显式 `--dev` 后修改工作区、执行本地验证命令，再把完整 Run 写入 SQLite 日志。
+Claude Code / Codex / Gemini CLI / OpenCode / OpenHands 仍可作为外部宿主接入，但不再是产品运行
+的前提。真实云/K8s 变更仍由带外 CI/operator 执行，不由 ForgeOS agent 直接完成。
+
+```bash
+cd forge-runtime
+OPENAI_API_KEY=... cargo run -p forge-runtime-cli -- \
+  -C /path/to/project agent --dev "检查项目并修复当前失败的测试"
+```
+
+不带 `--dev` 时 Agent 只有工作区读取能力。v1 的 `--dev` 仅支持 Unix，并在其他平台创建
+Agent 状态前失败关闭；它是受信 same-user 开发模式，不是 OS sandbox。在重要仓库使用前应先提交或备份当前改动。详见
+[`forge-runtime/README.md`](forge-runtime/README.md) 与
+[`First-party Dev Agent v1`](docs/design/first-party-dev-agent-v1.md)。
 
 - 设计与决策的唯一事实源:[`.agent/`](.agent/)
 - 工程红线(本仓库自身也遵守):[`.agent/AGENTS.md`](.agent/AGENTS.md)
@@ -36,7 +47,7 @@ ForgeOS 不替代 Claude Code / Codex / Gemini CLI / OpenCode / OpenHands ——
   `python3 -I -B harness/platform_core_contract/check.py --golden .` 和 `--receipt-golden .` 独立复验
   共享 golden；协议见 [`docs/contracts/platform-core-envelope-v1.md`](docs/contracts/platform-core-envelope-v1.md)
   与 [`docs/contracts/platform-core-receipt-v1.md`](docs/contracts/platform-core-receipt-v1.md)
-- Rust 本地会话 Hub、durable Project Run 与默认离线/显式 live Agent Runtime:
+- Rust 第一方 Dev Agent、本地会话 Hub 与 durable Project Run（离线测试、显式模型运行）:
   [`forge-runtime/`](forge-runtime/)
 - Rust Runtime Attempt Request Domain v1 已通过 R0-C5 实现 FR-03a pure construction boundary：只把 caller-supplied Scope/ref、executor、
   Artifact/typed declaration refs、effect、budget、timeout 与 idempotency 验证并防御性复制为初始

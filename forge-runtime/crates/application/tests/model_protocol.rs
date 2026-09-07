@@ -12,7 +12,9 @@ use tempfile::TempDir;
 
 mod support;
 
-use support::{ScriptedTurn, count_terminal_events, request, runtime, tool_call, tool_turn};
+use support::{
+    ProbeTool, ScriptedTurn, count_terminal_events, request, runtime, tool_call, tool_turn,
+};
 
 #[tokio::test]
 async fn rejects_finish_reasons_that_disagree_with_tool_calls() {
@@ -85,7 +87,7 @@ async fn rejects_duplicate_tool_call_ids() {
 }
 
 #[tokio::test]
-async fn finished_event_does_not_wait_for_provider_eof() {
+async fn finished_event_waits_for_provider_eof_or_cancellation() {
     let root = TempDir::new().expect("temporary workspace");
     let runtime = AgentRuntime::new(
         Arc::new(FinishedThenPending),
@@ -93,21 +95,51 @@ async fn finished_event_does_not_wait_for_provider_eof() {
         Arc::new(CapStdWorkspaceFactory),
     );
     let mut sink = MemoryEventSink::default();
+    let cancellation = Cancellation::default();
+    let cancel = cancellation.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(25)).await;
+        cancel.cancel();
+    });
 
     let result = tokio::time::timeout(
         Duration::from_secs(1),
-        runtime.run(request(&root), Cancellation::default(), &mut sink),
+        runtime.run(request(&root), cancellation, &mut sink),
     )
     .await
-    .expect("finished is terminal even if the provider stays pending")
-    .expect("valid finished turn succeeds");
+    .expect("cancellation releases the pending EOF check")
+    .expect("cancellation is a normal terminal outcome");
 
-    assert_eq!(
-        result.outcome,
-        RunOutcome::Completed {
-            answer: "done".into()
-        }
+    assert_eq!(result.outcome, RunOutcome::Cancelled);
+    assert_eq!(count_terminal_events(sink.events()), 1);
+    assert!(matches!(
+        sink.events().last().map(|event| &event.kind),
+        Some(RuntimeEventKind::RunFinished {
+            outcome: RunOutcome::Cancelled
+        })
+    ));
+}
+
+#[tokio::test]
+async fn delayed_post_terminal_event_is_rejected_before_tool_execution() {
+    let root = TempDir::new().expect("temporary workspace");
+    let tool = ProbeTool::succeeds("probe", "unused");
+    let mut catalog = ToolCatalog::default();
+    catalog.register(tool.clone()).expect("register probe");
+    let runtime = AgentRuntime::new(
+        Arc::new(FinishedThenLateTool),
+        catalog,
+        Arc::new(CapStdWorkspaceFactory),
     );
+    let mut sink = MemoryEventSink::default();
+
+    let error = runtime
+        .run(request(&root), Cancellation::default(), &mut sink)
+        .await
+        .expect_err("post-terminal event must invalidate the whole turn");
+
+    assert_eq!(error.code(), "model_protocol_error");
+    assert_eq!(tool.invocation_count(), 0);
 }
 
 async fn assert_protocol_failure(turn: ScriptedTurn) {
@@ -143,5 +175,27 @@ impl ModelProvider for FinishedThenPending {
             }),
         ];
         Box::pin(stream::iter(events).chain(stream::pending()))
+    }
+}
+
+struct FinishedThenLateTool;
+
+impl ModelProvider for FinishedThenLateTool {
+    fn stream(&self, _request: ModelRequest) -> ModelEventStream {
+        let initial = stream::iter(vec![
+            Ok(ModelEvent::ToolCall {
+                call: tool_call("call-1", "probe", json!({})),
+            }),
+            Ok(ModelEvent::Finished {
+                reason: ModelFinishReason::ToolUse,
+            }),
+        ]);
+        let late = stream::once(async {
+            tokio::time::sleep(Duration::from_millis(25)).await;
+            Ok(ModelEvent::TextDelta {
+                delta: "late".into(),
+            })
+        });
+        Box::pin(initial.chain(late))
     }
 }

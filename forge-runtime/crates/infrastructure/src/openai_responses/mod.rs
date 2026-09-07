@@ -416,7 +416,7 @@ async fn http_error(response: Response, api_key: &str) -> ProviderError {
         .map(|envelope| envelope.error);
     let message = api_error.map_or_else(
         || format!("provider returned HTTP {}", status.as_u16()),
-        |error| redact(&error.message, api_key),
+        |error| redaction::redacted_text(&error.message, api_key),
     );
     ProviderError::new(
         format!("http_{}", status.as_u16()),
@@ -461,13 +461,12 @@ fn validate_api_key(value: &str) -> Result<(), ProviderError> {
             "api_key must not contain leading or trailing whitespace",
         ));
     }
+    if !value.is_ascii() {
+        return Err(config_error("api_key must contain only ASCII characters"));
+    }
     header::HeaderValue::from_str(&format!("Bearer {value}"))
         .map(|_| ())
         .map_err(|_| config_error("api_key cannot form an Authorization header"))
-}
-
-fn redact(message: &str, api_key: &str) -> String {
-    message.replace(api_key, "[REDACTED]")
 }
 
 fn config_error(message: &str) -> ProviderError {

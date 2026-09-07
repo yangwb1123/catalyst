@@ -2,6 +2,19 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum WorkspaceIdentity {
+    Unix {
+        device: u64,
+        inode: u64,
+    },
+    Windows {
+        volume_serial_number: u32,
+        file_index: u64,
+    },
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", content = "id", rename_all = "snake_case")]
 pub enum ConversationScope {
@@ -62,7 +75,10 @@ pub struct HubSnapshot {
 }
 use std::{path::Path, sync::Arc};
 
-use crate::tool::{ToolError, ToolOutput};
+use crate::{
+    Cancellation,
+    tool::{ToolError, ToolOutput},
+};
 
 pub trait WorkspaceReader: Send + Sync {
     /// Reads one file relative to the anchored workspace.
@@ -71,18 +87,29 @@ pub trait WorkspaceReader: Send + Sync {
     ///
     /// Returns a tool error when the path is denied, the file cannot be read,
     /// or the output exceeds `max_bytes`.
-    fn read_file(&self, relative: &Path, max_bytes: usize) -> Result<ToolOutput, ToolError>;
+    fn read_file(
+        &self,
+        relative: &Path,
+        max_bytes: usize,
+        cancellation: &Cancellation,
+    ) -> Result<ToolOutput, ToolError>;
 }
 
 #[derive(Clone)]
 pub struct WorkspaceReadCapability {
     reader: Arc<dyn WorkspaceReader>,
+    identity: Option<WorkspaceIdentity>,
 }
 
 impl WorkspaceReadCapability {
     #[must_use]
-    pub fn new(reader: Arc<dyn WorkspaceReader>) -> Self {
-        Self { reader }
+    pub fn new(reader: Arc<dyn WorkspaceReader>, identity: Option<WorkspaceIdentity>) -> Self {
+        Self { reader, identity }
+    }
+
+    #[must_use]
+    pub const fn workspace_identity(&self) -> Option<&WorkspaceIdentity> {
+        self.identity.as_ref()
     }
 
     /// Reads one workspace-relative file through the anchored capability.
@@ -91,8 +118,13 @@ impl WorkspaceReadCapability {
     ///
     /// Returns a tool error when the path is denied, the file cannot be read,
     /// or the output exceeds the requested bound.
-    pub fn read_file(&self, relative: &Path, max_bytes: usize) -> Result<ToolOutput, ToolError> {
-        self.reader.read_file(relative, max_bytes)
+    pub fn read_file(
+        &self,
+        relative: &Path,
+        max_bytes: usize,
+        cancellation: &Cancellation,
+    ) -> Result<ToolOutput, ToolError> {
+        self.reader.read_file(relative, max_bytes, cancellation)
     }
 }
 

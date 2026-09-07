@@ -4,6 +4,8 @@ use crate::group_context_output::terminal_text;
 use forge_runtime_domain::RunInspection;
 use serde::Serialize;
 
+#[path = "run_explain_authorization.rs"]
+mod authorization;
 #[path = "run_explain_projection.rs"]
 mod projection;
 
@@ -196,14 +198,45 @@ fn write_authorization(
         "authorization: {}",
         explanation.authorization.source
     )?;
+    write_capability(
+        "workspace_read",
+        &explanation.authorization.workspace_read,
+        writer,
+    )?;
+    write_capability(
+        "workspace_write",
+        &explanation.authorization.workspace_write,
+        writer,
+    )?;
+    write_capability("process", &explanation.authorization.process, writer)?;
+    write_capability("network", &explanation.authorization.network, writer)?;
     writeln!(
         writer,
-        "workspace read scope: status={} paths={}",
-        explanation.authorization.workspace_read.status,
-        explanation.authorization.workspace_read.scope.len()
+        "agent workspace boundary: status={} reason={}",
+        explanation
+            .context
+            .workspace_outside_configured_read_scope
+            .status,
+        explanation
+            .context
+            .workspace_outside_configured_read_scope
+            .reason
+    )
+}
+
+fn write_capability(
+    label: &str,
+    capability: &CapabilityView,
+    writer: &mut impl Write,
+) -> Result<(), io::Error> {
+    writeln!(
+        writer,
+        "{label}: status={} scope={}",
+        capability.status,
+        capability.scope.len()
     )?;
-    for path in &explanation.authorization.workspace_read.scope {
-        writeln!(writer, "scope\t{}", terminal_text(path))?;
+    for item in &capability.scope {
+        writeln!(writer, "scope\t{label}\t{}", terminal_text(item))?;
     }
     Ok(())
 }

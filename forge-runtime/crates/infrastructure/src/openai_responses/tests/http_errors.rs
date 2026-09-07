@@ -6,7 +6,7 @@ use wiremock::{
     matchers::{header, method, path},
 };
 
-use super::OpenAiResponsesProvider;
+use super::{OpenAiResponsesProvider, redaction::REDACTED};
 
 const SECRET: &str = "sk-mock-secret-never-log";
 
@@ -30,7 +30,7 @@ async fn redacts_the_api_key_from_http_errors() {
     assert_eq!(error.code, "http_401");
     assert!(!error.retryable);
     assert!(!format!("{error:?}").contains(SECRET));
-    assert!(error.message.contains("[REDACTED]"));
+    assert!(error.message.contains(REDACTED));
 }
 
 #[tokio::test]

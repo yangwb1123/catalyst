@@ -1,10 +1,10 @@
 use std::collections::BTreeSet;
 
 use forge_runtime_domain::{
-    Cancellation, Message, ModelEvent, ModelFinishReason, ModelProvider, ModelRequest,
-    RuntimeEventKind, ToolCall, Usage,
+    Cancellation, Message, ModelEvent, ModelEventStream, ModelFinishReason, ModelProvider,
+    ModelRequest, RuntimeEventKind, ToolCall, Usage,
 };
-use futures_util::{FutureExt, StreamExt, future};
+use futures_util::{StreamExt, future};
 
 use crate::{RuntimeError, emitter::EventEmitter};
 
@@ -50,16 +50,27 @@ pub(crate) async fn collect_model_turn(
             CollectAction::Continue => {}
             CollectAction::LocalLimit => return collector.finish(),
             CollectAction::ProviderFinished => {
-                if matches!(stream.next().now_or_never(), Some(Some(_))) {
-                    return Err(RuntimeError::Protocol(
-                        "provider emitted an event after the finished event".into(),
-                    ));
-                }
+                require_provider_eof(&mut stream, cancellation).await?;
                 return collector.finish();
             }
         }
     }
     collector.finish()
+}
+
+async fn require_provider_eof(
+    stream: &mut ModelEventStream,
+    cancellation: &Cancellation,
+) -> Result<(), RuntimeError> {
+    let next = Box::pin(stream.next());
+    let cancelled = Box::pin(cancellation.cancelled());
+    match future::select(next, cancelled).await {
+        future::Either::Left((None, _)) => Ok(()),
+        future::Either::Left((Some(_), _)) => Err(RuntimeError::Protocol(
+            "provider emitted an event or error after the finished event".into(),
+        )),
+        future::Either::Right(((), _)) => Err(RuntimeError::Cancelled),
+    }
 }
 
 enum CollectAction {
@@ -75,6 +86,7 @@ struct TurnCollector {
     provider_context: Vec<Message>,
     finish_reason: Option<ModelFinishReason>,
     usage: Usage,
+    usage_seen: bool,
     output_bytes: usize,
     output_events: u32,
 }
@@ -98,9 +110,12 @@ impl TurnCollector {
                 self.accept_provider_context(provider, items, budget)
             }
             ModelEvent::Usage { usage } => {
-                if !self.charge_output(0, budget) {
-                    return Ok(self.local_limit());
+                if self.usage_seen {
+                    return Err(RuntimeError::Protocol(
+                        "provider emitted more than one usage event in a turn".into(),
+                    ));
                 }
+                self.usage_seen = true;
                 self.usage.add(usage);
                 Ok(CollectAction::Continue)
             }

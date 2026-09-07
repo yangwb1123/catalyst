@@ -166,8 +166,8 @@ impl SseDecoder {
                     .message
                     .unwrap_or_else(|| "provider response failed".into());
                 return Err(ProviderError::new(
-                    code.replace(&self.secret, "[REDACTED]"),
-                    message.replace(&self.secret, "[REDACTED]"),
+                    super::redaction::redacted_text(&code, &self.secret),
+                    super::redaction::redacted_text(&message, &self.secret),
                     false,
                 ));
             }
@@ -176,8 +176,8 @@ impl SseDecoder {
                 let code = code.unwrap_or_else(|| "provider_error".into());
                 let retryable = retryable_code(&code);
                 return Err(ProviderError::new(
-                    code.replace(&self.secret, "[REDACTED]"),
-                    message.replace(&self.secret, "[REDACTED]"),
+                    super::redaction::redacted_text(&code, &self.secret),
+                    super::redaction::redacted_text(&message, &self.secret),
                     retryable,
                 ));
             }

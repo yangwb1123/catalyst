@@ -1,3 +1,6 @@
+mod agent_command;
+mod agent_run_limits;
+mod agent_workspace;
 mod args;
 mod cli_usage;
 mod demo;
@@ -14,11 +17,13 @@ mod group_panel_synthesis_output;
 mod group_run_output;
 mod hub_command;
 mod hub_output;
+mod human_event_sink;
 mod openai_prepared_dispatch;
 mod run_branch_command;
 mod run_branch_output;
 mod run_command;
 mod run_lineage_output;
+mod run_provider;
 mod run_restart_command;
 mod run_restart_output;
 mod run_selection;
@@ -32,6 +37,7 @@ use std::{
 
 use args::{Args, Command, usage};
 use hub_output::write_output;
+use runtime_application::RuntimeError;
 
 pub(crate) use forge_runtime_domain as runtime_domain;
 use runtime_domain::RunOutcome;
@@ -52,33 +58,9 @@ async fn dispatch(args: &Args) -> ExitCode {
             ExitCode::SUCCESS
         }
         Command::Demo(demo_args) => run_demo(demo_args, args.project.as_deref()).await,
+        Command::Agent(agent_args) => run_agent(args, agent_args).await,
         Command::Governance(command) => run_governance_journal(args, command),
-        Command::Run(args::RunCommand::Start {
-            conversation_id,
-            prompt_id,
-            read_path,
-            allowed_read_paths,
-            live,
-            model,
-            max_output_tokens,
-        }) => {
-            run_persisted(
-                args,
-                run_command::StartOptions {
-                    conversation_id,
-                    prompt_id,
-                    read_path,
-                    allowed_read_paths,
-                    live: *live,
-                    model: model.as_deref(),
-                    max_output_tokens: *max_output_tokens,
-                },
-            )
-            .await
-        }
-        Command::Run(args::RunCommand::Resume { run_id }) => run_resumed(args, run_id).await,
-        Command::Run(args::RunCommand::Restart { run_id }) => run_restarted(args, run_id),
-        Command::Run(args::RunCommand::Branch { run_id }) => run_branched(args, run_id),
+        Command::Run(command) => run_project_command(args, command).await,
         Command::Group(args::GroupCommand::Analysis(command)) => {
             run_group_model_analysis(args, command).await
         }
@@ -92,6 +74,51 @@ async fn dispatch(args: &Args) -> ExitCode {
         Command::Group(args::GroupCommand::Synthesis(command)) => {
             run_group_panel_synthesis(args, command).await
         }
+        _ => run_hub(args),
+    }
+}
+
+async fn run_project_command(args: &Args, command: &args::RunCommand) -> ExitCode {
+    match command {
+        args::RunCommand::Start {
+            conversation_id,
+            prompt_id,
+            read_path,
+            allowed_read_paths,
+            live,
+            model,
+            max_output_tokens,
+        } => {
+            let mode = if *live {
+                run_command::StartMode::Live
+            } else {
+                run_command::StartMode::Deterministic
+            };
+            let max_tool_calls = if *live && allowed_read_paths.is_empty() {
+                0
+            } else {
+                4
+            };
+            run_persisted(
+                args,
+                run_command::StartOptions {
+                    conversation_id,
+                    prompt_id,
+                    read_path,
+                    allowed_read_paths,
+                    mode,
+                    model: model.as_deref(),
+                    max_output_tokens: *max_output_tokens,
+                    output: run_command::StartOutput::JsonLines,
+                    max_turns: 4,
+                    max_tool_calls,
+                },
+            )
+            .await
+        }
+        args::RunCommand::Resume { run_id } => run_resumed(args, run_id).await,
+        args::RunCommand::Restart { run_id } => run_restarted(args, run_id),
+        args::RunCommand::Branch { run_id } => run_branched(args, run_id),
         _ => run_hub(args),
     }
 }
@@ -272,18 +299,86 @@ async fn run_persisted(args: &Args, options: run_command::StartOptions<'_>) -> E
     }
 }
 
+async fn run_agent(args: &Args, agent_args: &args::AgentArgs) -> ExitCode {
+    match agent_command::run(args, agent_args).await {
+        Ok(RunOutcome::Completed { .. }) => ExitCode::SUCCESS,
+        Ok(outcome) => {
+            write_agent_stopped(args, &outcome);
+            ExitCode::from(2)
+        }
+        Err(error) => {
+            if args.json {
+                let code = error
+                    .downcast_ref::<agent_command::AgentExecutionError>()
+                    .map_or(
+                        "agent_setup_failed",
+                        agent_command::AgentExecutionError::code,
+                    );
+                eprintln!(
+                    "{}",
+                    serde_json::json!({"type": "agent_failed", "code": code})
+                );
+            } else {
+                eprintln!(
+                    "Agent failed: {}",
+                    group_context_output::terminal_text(&error.to_string())
+                );
+            }
+            ExitCode::FAILURE
+        }
+    }
+}
+
+fn write_agent_stopped(args: &Args, outcome: &RunOutcome) {
+    let (status, detail) = match outcome {
+        RunOutcome::Completed { .. } => ("completed", None),
+        RunOutcome::Cancelled => ("cancelled", None),
+        RunOutcome::LimitExceeded { kind } => ("limit_exceeded", Some(format!("{kind:?}"))),
+        RunOutcome::Failed { code, .. } => ("failed", Some(code.clone())),
+    };
+    if args.json {
+        eprintln!(
+            "{}",
+            serde_json::json!({"type": "agent_stopped", "status": status, "detail": detail})
+        );
+    } else if let Some(detail) = detail {
+        eprintln!(
+            "agent stopped without completion: {status} ({})",
+            group_context_output::terminal_text(&detail)
+        );
+    } else {
+        eprintln!("agent stopped without completion: {status}");
+    }
+}
+
 async fn run_resumed(args: &Args, run_id: &str) -> ExitCode {
     match run_command::resume(args, run_id).await {
         Ok(RunOutcome::Completed { .. }) => ExitCode::SUCCESS,
         Ok(outcome) => {
-            eprintln!("runtime stopped without completion: {outcome:?}");
+            write_resume_stopped(&outcome);
             ExitCode::from(2)
         }
         Err(error) => {
-            eprintln!("Run resume failed: {error}");
+            let detail = error.downcast_ref::<RuntimeError>().map_or_else(
+                || group_context_output::terminal_text(&error.to_string()),
+                |runtime| runtime.code().to_owned(),
+            );
+            eprintln!("Run resume failed: {detail}");
             ExitCode::FAILURE
         }
     }
+}
+
+fn write_resume_stopped(outcome: &RunOutcome) {
+    let detail = match outcome {
+        RunOutcome::Cancelled => "cancelled".into(),
+        RunOutcome::LimitExceeded { kind } => format!("limit_exceeded ({kind:?})"),
+        RunOutcome::Failed { code, .. } => {
+            format!("failed ({})", group_context_output::terminal_text(code))
+        }
+        RunOutcome::Completed { .. } => "completed".into(),
+    };
+    eprintln!("runtime stopped without completion: {detail}");
 }
 
 fn argument_error(error: &str) -> ExitCode {

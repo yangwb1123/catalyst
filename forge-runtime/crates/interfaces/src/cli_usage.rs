@@ -135,6 +135,9 @@ pub const TEXT: &str = "usage:
   forge-runtime [OPTIONS] group synthesis show SYNTHESIS_ID [--include-result]
   forge-runtime [OPTIONS] group synthesis list [PANEL_ID] [--limit N]
   forge-runtime [OPTIONS] group list
+  forge-runtime [OPTIONS] -C PATH agent [--session SESSION_ID] [--model MODEL]
+                [--dev] [--max-turns N] [--max-tool-calls N]
+                [--max-output-tokens N] [--] PROMPT|-
   forge-runtime [OPTIONS] -C PATH run start SESSION_ID PROMPT_ID [--read FILE]
   forge-runtime [OPTIONS] -C PATH run start SESSION_ID PROMPT_ID --live
                 [--allow-read RELATIVE_FILE]... [--model MODEL]
@@ -150,6 +153,17 @@ pub const TEXT: &str = "usage:
 
   Mutations accept --idempotency-key KEY before the command.
   Live execution requires an explicit idempotency key and OPENAI_API_KEY.
+  Agent execution requires OPENAI_API_KEY and automatically reuses one Project
+  session. It is read-only by default, with bounded file listing, literal text
+  search, and UTF-8 file reads. Explicit --dev on Unix exposes workspace edits and
+  local process execution to the model; this trusted same-user mode can modify or
+  delete files and is not an OS sandbox. Agent prompts, tool calls, outputs, and
+  model responses are journaled locally in plaintext. Use '-' as the sole Agent
+  prompt token to read bounded UTF-8 from stdin and avoid exposing sensitive Prompt
+  text in argv, process listings, and shell history.
+  WARNING: agent sends its prompt, prior conversation history, model-selected
+  workspace file contents, and tool outputs to the configured OpenAI Responses
+  endpoint. A dev subprocess also retains ambient same-user network access.
   WARNING: --live sends the prompt, prior conversation history, and contents of
   files explicitly named by --allow-read off-machine to OpenAI. Prompt/history,
   Run configuration, model/provider events, tool arguments/results, and allowed

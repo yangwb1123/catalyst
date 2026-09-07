@@ -37,13 +37,7 @@ pub fn execute(args: &Args) -> Result<CliOutput, Box<dyn Error>> {
         return hub_status(args);
     }
     if let Command::Run(command) = &args.command
-        && matches!(
-            command,
-            RunCommand::List { .. }
-                | RunCommand::Show { .. }
-                | RunCommand::Explain { .. }
-                | RunCommand::Lineage { .. }
-        )
+        && is_read_only_run(command)
     {
         let store = Arc::new(SqliteHubStore::open_existing_current_read_only(database)?);
         return execute_run(&RunService::new(store), command);
@@ -76,8 +70,20 @@ pub fn execute(args: &Args) -> Result<CliOutput, Box<dyn Error>> {
         Command::Governance(_) => {
             Err("governance journal must use the dedicated journal path".into())
         }
-        Command::Demo(_) | Command::Help => Err("command is not a Hub operation".into()),
+        Command::Agent(_) | Command::Demo(_) | Command::Help => {
+            Err("command is not a Hub operation".into())
+        }
     }
+}
+
+fn is_read_only_run(command: &RunCommand) -> bool {
+    matches!(
+        command,
+        RunCommand::List { .. }
+            | RunCommand::Show { .. }
+            | RunCommand::Explain { .. }
+            | RunCommand::Lineage { .. }
+    )
 }
 
 fn execute_run(service: &RunService, command: &RunCommand) -> Result<CliOutput, Box<dyn Error>> {

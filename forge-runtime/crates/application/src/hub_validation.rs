@@ -20,6 +20,16 @@ pub(crate) fn required(value: &str, field: HubField, max_bytes: usize) -> Result
     Ok(())
 }
 
+/// Validates the Hub's shared caller-owned idempotency-key bounds.
+///
+/// # Errors
+///
+/// Returns `HubError::Empty` for blank values and `HubError::TooLong` when the
+/// UTF-8 byte length exceeds the shared maximum.
+pub fn validate_idempotency_key(value: &str) -> Result<(), HubError> {
+    required(value, HubField::IdempotencyKey, MAX_IDEMPOTENCY_KEY_BYTES)
+}
+
 pub(crate) fn scope(scope: &ConversationScope) -> Result<(), HubError> {
     match scope {
         ConversationScope::Global => Ok(()),

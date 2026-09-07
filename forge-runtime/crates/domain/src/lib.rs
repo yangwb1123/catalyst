@@ -291,8 +291,8 @@ pub use group_panel_synthesis::{
 };
 pub use hub::{
     Conversation, ConversationScope, GroupProjectMember, HubSnapshot, Project, PromptRecord,
-    SessionGroup, WorkspaceOpenError, WorkspaceReadCapability, WorkspaceReadFactory,
-    WorkspaceReader,
+    SessionGroup, WorkspaceIdentity, WorkspaceOpenError, WorkspaceReadCapability,
+    WorkspaceReadFactory, WorkspaceReader,
 };
 pub use hub_store::{HubEntity, HubStore, HubStoreError};
 pub use model::{
@@ -314,7 +314,8 @@ pub use run_lineage::{
     RunBranchMode, RunLineageError, RunLineageRecord, expected_lineage_sha256, source_event_sha256,
 };
 pub use run_store::{
-    BeginRun, BeginRunDisposition, BeginRunResult, BoundRunPrompt, MAX_RUN_CURSOR_JSON_BYTES,
+    BeginRun, BeginRunDisposition, BeginRunResult, BeginRunWithPrompt, BoundRunPrompt,
+    CURRENT_AGENT_TOOLSET_VERSION, LEGACY_AGENT_TOOLSET_VERSION, MAX_RUN_CURSOR_JSON_BYTES,
     MAX_RUN_EVENT_JSON_BYTES, MAX_RUN_EVENTS, MAX_RUN_EXECUTION_JSON_BYTES, MAX_RUN_JOURNAL_BYTES,
     MAX_RUN_LIST_LIMIT, RUN_STORE_VERSION, RunEntity, RunExecution, RunProvider, RunRecord,
     RunStore, RunStoreError,
@@ -322,6 +323,6 @@ pub use run_store::{
 pub use scheduled_graph_controller::*;
 pub use scheduled_graph_progress::*;
 pub use tool::{
-    AgentTool, Capability, Message, ToolCall, ToolContext, ToolError, ToolFuture, ToolOutput,
-    ToolSpec,
+    AgentTool, Capability, Message, TOOL_EFFECT_UNCERTAIN_CODE, ToolCall, ToolContext, ToolError,
+    ToolFuture, ToolOutput, ToolSpec,
 };

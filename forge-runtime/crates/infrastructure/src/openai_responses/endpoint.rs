@@ -4,11 +4,39 @@ use reqwest::{Client, Url};
 
 use super::{
     CONNECT_TIMEOUT, EndpointPolicy, OpenAiResponsesProvider, READ_TIMEOUT, REQUEST_TIMEOUT,
-    config_error,
+    config_error, validate_api_key, validate_non_empty,
 };
 use crate::runtime_domain::ProviderError;
 
 impl OpenAiResponsesProvider {
+    /// Validates official endpoint, model, and credential inputs without
+    /// constructing an HTTP client or performing network I/O.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when any provider input violates the official policy.
+    pub fn validate_official_configuration(
+        base_url: &str,
+        model: &str,
+        api_key: &str,
+    ) -> Result<(), ProviderError> {
+        validate_configuration(base_url, model, api_key, EndpointPolicy::Official)
+    }
+
+    /// Validates self-hosted endpoint, model, and credential inputs without
+    /// constructing an HTTP client or performing network I/O.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when any provider input violates the self-hosted policy.
+    pub fn validate_self_hosted_configuration(
+        base_url: &str,
+        model: &str,
+        api_key: &str,
+    ) -> Result<(), ProviderError> {
+        validate_configuration(base_url, model, api_key, EndpointPolicy::SelfHosted)
+    }
+
     /// Resolves the exact Responses endpoint for an official `/v1` base URL
     /// without constructing a client or reading credentials.
     ///
@@ -30,6 +58,17 @@ impl OpenAiResponsesProvider {
     pub fn resolve_self_hosted_endpoint(base_url: &str) -> Result<String, ProviderError> {
         responses_endpoint(base_url, EndpointPolicy::SelfHosted).map(|url| url.to_string())
     }
+}
+
+fn validate_configuration(
+    base_url: &str,
+    model: &str,
+    api_key: &str,
+    policy: EndpointPolicy,
+) -> Result<(), ProviderError> {
+    validate_non_empty("model", model)?;
+    validate_api_key(api_key)?;
+    responses_endpoint(base_url, policy).map(drop)
 }
 
 pub(super) fn responses_endpoint(

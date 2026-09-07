@@ -42,6 +42,7 @@ fn validate_scope_options(options: &GlobalOptions, command: &Command) -> Result<
         && matches!(
             command,
             Command::Demo(_)
+                | Command::Agent(_)
                 | Command::Run(
                     RunCommand::Start { .. }
                         | RunCommand::Resume { .. }
@@ -59,6 +60,9 @@ fn validate_scope_options(options: &GlobalOptions, command: &Command) -> Result<
 }
 
 fn require_project(options: &GlobalOptions, command: &Command) -> Result<(), String> {
+    if matches!(command, Command::Agent(_)) && options.project.is_none() {
+        return Err(format!("agent requires -C/--project PATH\n\n{}", usage()));
+    }
     if let Some(operation) = project_required_operation(command)
         && options.project.is_none()
     {
@@ -159,6 +163,7 @@ fn accepts_idempotency_key(command: &Command) -> bool {
                     | RunCommand::Restart { .. }
                     | RunCommand::Branch { .. },
             )
+            | Command::Agent(_)
             | Command::Governance(GovernanceCommand::Journal(
                 GovernanceJournalCommand::Append { .. },
             ))

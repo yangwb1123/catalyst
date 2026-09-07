@@ -16,6 +16,8 @@ pub enum RuntimeError {
     ResumePendingTool { name: String },
     #[error("run resume requires a durable journal prefix")]
     ResumeWithoutJournal,
+    #[error("tool '{name}' has an uncertain external effect: {message}")]
+    ToolEffectUncertain { name: String, message: String },
     #[error("run was cancelled")]
     Cancelled,
 }
@@ -31,6 +33,7 @@ impl RuntimeError {
             Self::Workspace(_) => "workspace_unavailable",
             Self::ResumePendingTool { .. } => "resume_pending_tool",
             Self::ResumeWithoutJournal => "resume_without_journal",
+            Self::ToolEffectUncertain { .. } => "tool_effect_uncertain",
             Self::Cancelled => "cancelled",
         }
     }
@@ -44,6 +47,7 @@ pub enum RunField {
     RunId,
     ConversationId,
     PromptId,
+    Prompt,
     ProjectId,
     Answer,
     IdempotencyKey,

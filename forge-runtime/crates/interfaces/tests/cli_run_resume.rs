@@ -122,7 +122,7 @@ fn explicit_resume_preserves_a_cancelled_rejection_batch() {
     ]);
 
     assert_eq!(resumed.status.code(), Some(2));
-    assert!(String::from_utf8_lossy(&resumed.stderr).contains("Cancelled"));
+    assert!(String::from_utf8_lossy(&resumed.stderr).contains("cancelled"));
     let events = parse_jsonl(&resumed);
     assert_eq!(events.len(), 3);
     assert_eq!(events[0]["type"], "tool_rejected");
@@ -149,7 +149,7 @@ fn explicit_resume_bounds_a_repaired_limit_message_then_finishes() {
     ]);
 
     assert_eq!(resumed.status.code(), Some(2));
-    assert!(String::from_utf8_lossy(&resumed.stderr).contains("LimitExceeded"));
+    assert!(String::from_utf8_lossy(&resumed.stderr).contains("limit_exceeded"));
     let events = parse_jsonl(&resumed);
     assert_eq!(events.len(), 2);
     assert_eq!(events[0]["type"], "message_committed");

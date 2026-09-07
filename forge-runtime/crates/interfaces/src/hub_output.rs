@@ -20,7 +20,7 @@ use crate::{
         write_panel as write_group_analysis_panel,
         write_prepared as write_group_analysis_panel_prepared,
     },
-    group_context_output::{GroupContextView, write_group_context},
+    group_context_output::{GroupContextView, terminal_text, write_group_context},
     group_execution_output::{
         GroupExecutionInspectionView, write_group_execution, write_group_execution_list,
         write_group_execution_started,
@@ -381,7 +381,10 @@ fn write_prompts(prompts: &[PromptRecord], writer: &mut impl Write) -> Result<()
         writeln!(
             writer,
             "{}\t{}\t{}\t{}",
-            prompt.id, prompt.conversation_id, prompt.role, prompt.content
+            terminal_text(&prompt.id),
+            terminal_text(&prompt.conversation_id),
+            terminal_text(&prompt.role),
+            terminal_text(&prompt.content)
         )?;
     }
     Ok(())

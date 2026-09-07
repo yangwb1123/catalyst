@@ -5,6 +5,10 @@ use serde_json::Value;
 
 use crate::{Cancellation, WorkspaceReadCapability};
 
+/// A started effect could not be proven stopped or completed. The journal must
+/// retain its pending `ToolStarted` fence instead of recording a result.
+pub const TOOL_EFFECT_UNCERTAIN_CODE: &str = "tool_effect_uncertain";
+
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Capability {

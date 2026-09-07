@@ -29,18 +29,24 @@ mod group_run_write;
 mod open;
 mod read;
 mod rows;
+mod run_execution_lock;
 mod run_integrity;
 mod run_lineage_read;
 mod run_lineage_write;
+#[cfg(test)]
+#[path = "tests/run_prompt_atomicity.rs"]
+mod run_prompt_atomicity_tests;
 mod run_read;
 #[cfg(test)]
 #[path = "tests/run_read_snapshot.rs"]
 mod run_read_snapshot_tests;
+mod run_seed;
 mod run_write;
 mod run_writeback;
 mod scheduled_graph_controller;
 mod scheduled_graph_progress;
 mod schema;
+mod schema_hard_link;
 #[cfg(test)]
 mod schema_migration_tests;
 mod schema_sql;
@@ -89,16 +95,17 @@ use std::path::{Path, PathBuf};
 
 use forge_runtime_domain::{
     BeginGroupExecution, BeginGroupExecutionResult, BeginRun, BeginRunBranch, BeginRunBranchResult,
-    BeginRunResult, Conversation, ConversationScope, GroupContextPolicy, GroupContextSlice,
-    GroupExecutionEvent, GroupExecutionInspection, GroupExecutionRecord, GroupExecutionStore,
-    GroupProjectMember, GroupRunRecord, GroupRunSnapshot, GroupRunStore, HubEntity, HubSnapshot,
-    HubStore, HubStoreError, PrepareGroupRun, PrepareGroupRunResult, Project, PromptRecord,
-    RunInspection, RunLineageRecord, RunRecord, RunStore, RunStoreError, RuntimeEvent,
-    SessionGroup,
+    BeginRunResult, BeginRunWithPrompt, Conversation, ConversationScope, GroupContextPolicy,
+    GroupContextSlice, GroupExecutionEvent, GroupExecutionInspection, GroupExecutionRecord,
+    GroupExecutionStore, GroupProjectMember, GroupRunRecord, GroupRunSnapshot, GroupRunStore,
+    HubEntity, HubSnapshot, HubStore, HubStoreError, PrepareGroupRun, PrepareGroupRunResult,
+    Project, PromptRecord, RunInspection, RunLineageRecord, RunRecord, RunStore, RunStoreError,
+    RuntimeEvent, SessionGroup,
 };
 use rusqlite::{Connection, Error as SqliteError, ErrorCode};
 
 use open::SqliteHubStoreOpenMode;
+pub use run_execution_lock::RunExecutionGuard;
 
 #[derive(Clone, Debug)]
 pub struct SqliteHubStore {
@@ -294,6 +301,14 @@ impl GroupExecutionStore for SqliteHubStore {
 }
 
 impl RunStore for SqliteHubStore {
+    fn begin_run_with_prompt(
+        &self,
+        request: &BeginRunWithPrompt,
+    ) -> Result<BeginRunResult, RunStoreError> {
+        let mut connection = self.connect_run()?;
+        run_seed::begin(&mut connection, request)
+    }
+
     fn begin_run(&self, request: &BeginRun) -> Result<BeginRunResult, RunStoreError> {
         let mut connection = self.connect_run()?;
         run_write::begin_run(&mut connection, request)

@@ -14,8 +14,8 @@ pub(super) const BRANCH_RUN_ID_PREFIX: &str = "run-branch-";
 use crate::{
     MAX_ENTITY_ID_BYTES, MAX_IDEMPOTENCY_KEY_BYTES, MAX_PROMPT_BYTES, RunError, RunField,
     runtime_domain::{
-        BeginRun, BeginRunResult, MAX_RUN_LIST_LIMIT, PromptRecord, RunInspection, RunOutcome,
-        RunRecord, RunRecoveryState, RunStore,
+        BeginRun, BeginRunResult, BeginRunWithPrompt, MAX_RUN_LIST_LIMIT, PromptRecord,
+        RunInspection, RunOutcome, RunRecord, RunRecoveryState, RunStore,
     },
 };
 
@@ -37,19 +37,33 @@ impl RunService {
     /// storage error when the atomic begin operation fails.
     pub fn begin_run(&self, request: &BeginRun) -> Result<BeginRunResult, RunError> {
         validate_begin_request(request)?;
-        if request.run_id.starts_with(RESTART_RUN_ID_PREFIX) {
-            return Err(RunError::ReservedRestartRunId);
-        }
-        if request.run_id.starts_with(BRANCH_RUN_ID_PREFIX) {
-            return Err(RunError::ReservedBranchRunId);
-        }
+        validate_public_run_id(&request.run_id)?;
         let result = self.store.begin_run(request)?;
-        if result.run.run_id.starts_with(RESTART_RUN_ID_PREFIX) {
-            return Err(RunError::RestartIdempotencyConflict);
-        }
-        if result.run.run_id.starts_with(BRANCH_RUN_ID_PREFIX) {
-            return Err(RunError::BranchIdempotencyConflict);
-        }
+        validate_public_result_id(&result.run.run_id)?;
+        Ok(result)
+    }
+
+    /// Atomically creates or replays one user Prompt, its bound Run intent,
+    /// and its safely resumable initial journal prefix.
+    ///
+    /// # Errors
+    ///
+    /// Returns validation errors before storage is called, or a structured
+    /// storage error when the atomic seed cannot commit.
+    pub fn begin_run_with_prompt(
+        &self,
+        request: &BeginRunWithPrompt,
+    ) -> Result<BeginRunResult, RunError> {
+        validate_begin_request(&request.run)?;
+        required(&request.prompt_content, RunField::Prompt, MAX_PROMPT_BYTES)?;
+        required(
+            &request.prompt_idempotency_key,
+            RunField::IdempotencyKey,
+            MAX_IDEMPOTENCY_KEY_BYTES,
+        )?;
+        validate_public_run_id(&request.run.run_id)?;
+        let result = self.store.begin_run_with_prompt(request)?;
+        validate_public_result_id(&result.run.run_id)?;
         Ok(result)
     }
 
@@ -137,6 +151,26 @@ fn validate_begin_request(request: &BeginRun) -> Result<(), RunError> {
         RunField::IdempotencyKey,
         MAX_IDEMPOTENCY_KEY_BYTES,
     )?;
+    Ok(())
+}
+
+fn validate_public_run_id(run_id: &str) -> Result<(), RunError> {
+    if run_id.starts_with(RESTART_RUN_ID_PREFIX) {
+        return Err(RunError::ReservedRestartRunId);
+    }
+    if run_id.starts_with(BRANCH_RUN_ID_PREFIX) {
+        return Err(RunError::ReservedBranchRunId);
+    }
+    Ok(())
+}
+
+fn validate_public_result_id(run_id: &str) -> Result<(), RunError> {
+    if run_id.starts_with(RESTART_RUN_ID_PREFIX) {
+        return Err(RunError::RestartIdempotencyConflict);
+    }
+    if run_id.starts_with(BRANCH_RUN_ID_PREFIX) {
+        return Err(RunError::BranchIdempotencyConflict);
+    }
     Ok(())
 }
 

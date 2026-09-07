@@ -127,8 +127,9 @@ fn assert_run_queries(fixture: &RunFixture, run_id: &str, event_count: usize) {
     assert_eq!(explanation["explanation"]["recovery"]["status"], "terminal");
     assert_eq!(
         explanation["explanation"]["continuation"]["command"],
-        Value::Null
+        format!("run resume {run_id}")
     );
+    assert_eq!(explanation["explanation"]["continuation"]["safe"], true);
     assert_eq!(
         explanation["explanation"]["authorization"]["workspace_read"]["status"],
         "declared_and_runtime_exposed"

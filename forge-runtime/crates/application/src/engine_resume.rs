@@ -1,13 +1,17 @@
 use forge_runtime_domain::{
-    Cancellation, Capability, EventSink, LimitKind, Message, PROTOCOL_VERSION, RunExecution,
-    RunInspection, RunOutcome, RunRecoveryState, RunRequest, RunResult, RunResumePoint,
-    RunToolContinuation, RuntimeEvent, RuntimeEventKind, ToolCall, ToolOutput,
+    Cancellation, EventSink, LimitKind, Message, PROTOCOL_VERSION, RunExecution, RunInspection,
+    RunOutcome, RunRecoveryState, RunRequest, RunResult, RunResumePoint, RunToolContinuation,
+    RuntimeEvent, RuntimeEventKind, ToolCall, ToolOutput,
 };
 
 use super::{AgentRuntime, ResumeDriver, tool_events::reject_calls_with_message};
 use crate::{
-    ConversationHistory, RuntimeError, emitter::EventEmitter, output_limit::truncate_output,
+    ConversationHistory, RuntimeError,
+    emitter::EventEmitter,
+    output_limit::truncate_output,
     run_state::RunState,
+    validate_agent_tool_catalog,
+    workspace_identity::{open_agent_resume_workspace, resolve_resume_workspace},
 };
 
 struct ResumeDispatch {
@@ -47,16 +51,16 @@ impl AgentRuntime {
         );
         let state = replay_state(&inspection.events, history.into_messages())?;
         reject_unsafe_resume_point(&point)?;
+        validate_agent_tool_catalog(&inspection.run.execution, &self.tools)?;
+        let factory = self.workspace_factory.as_ref();
+        let agent_workspace =
+            open_agent_resume_workspace(factory, &request, &inspection.run.execution)?;
         if let Some(result) =
             finish_resume_terminal(&point, &inspection.recovery.state, &mut emitter)?
         {
             return Ok(state.result(result));
         }
-
-        let workspace = self
-            .workspace_factory
-            .open(&request.workspace)
-            .map_err(|error| RuntimeError::Workspace(error.to_string()))?;
+        let workspace = resolve_resume_workspace(factory, &request, agent_workspace)?;
         let dispatch = prepare_resume_dispatch(&point, &request, state, &mut emitter)?;
         if let Some(outcome) = dispatch.immediate_outcome {
             return Self::finish_run(Ok(dispatch.state.result(outcome)), &mut emitter);
@@ -363,11 +367,7 @@ fn validate_execution_binding(
     request: &RunRequest,
     execution: &RunExecution,
 ) -> Result<(), RuntimeError> {
-    let capabilities = if execution.allowed_read_paths.is_empty() {
-        Vec::new()
-    } else {
-        vec![Capability::WorkspaceRead]
-    };
+    let capabilities = execution.allowed_capabilities();
     if request.system_prompt != execution.system_prompt
         || request.limits != execution.limits
         || request.allowed_capabilities != capabilities

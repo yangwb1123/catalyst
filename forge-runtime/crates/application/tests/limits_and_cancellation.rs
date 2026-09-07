@@ -1,9 +1,17 @@
-use std::{future, sync::Arc, time::Duration};
+use std::{
+    future,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::Duration,
+};
 
 use forge_runtime_application::{AgentRuntime, ToolCatalog};
 use forge_runtime_domain::{
-    AgentTool, Cancellation, Capability, LimitKind, Message, ModelEventStream, ModelFinishReason,
-    ModelProvider, ModelRequest, RunOutcome, RuntimeEventKind, ToolContext, ToolFuture, ToolSpec,
+    AgentTool, Cancellation, Capability, EventSink, EventSinkError, LimitKind, Message,
+    ModelEventStream, ModelFinishReason, ModelProvider, ModelRequest, RunOutcome, RuntimeEvent,
+    RuntimeEventKind, ToolContext, ToolError, ToolFuture, ToolSpec,
 };
 use forge_runtime_infrastructure::{CapStdWorkspaceFactory, MemoryEventSink};
 use futures_util::stream;
@@ -247,7 +255,7 @@ async fn cancellation_wakes_a_pending_model_stream_and_finishes_normally() {
 }
 
 #[tokio::test]
-async fn cancellation_drops_a_pending_tool_future() {
+async fn cancellation_drops_a_pending_read_tool_future() {
     let root = TempDir::new().expect("temporary workspace");
     let runtime = runtime(
         vec![tool_turn(
@@ -276,6 +284,62 @@ async fn cancellation_drops_a_pending_tool_future() {
         RunOutcome::Cancelled
     );
     assert_cancelled_terminal(sink.events());
+}
+
+#[tokio::test]
+async fn effectful_tool_cleans_up_before_the_cancelled_run_finishes() {
+    let root = TempDir::new().expect("temporary workspace");
+    let state = Arc::new(EffectState::default());
+    let runtime = runtime(
+        vec![tool_turn(
+            vec![tool_call("call-1", "effectful", json!({}))],
+            ModelFinishReason::ToolUse,
+        )],
+        vec![Arc::new(CancellationAwareWriteTool {
+            state: state.clone(),
+        })],
+    );
+    let cancellation = Cancellation::default();
+    let cancel = cancellation.clone();
+    let mut run_request = request(&root);
+    run_request.allowed_capabilities = vec![Capability::WorkspaceWrite];
+    let mut sink = CleanupAwareSink::new(state.clone());
+
+    let run = runtime.run(run_request, cancellation, &mut sink);
+    let cancel_when_started = cancel_when_started(cancel, state.clone());
+    let (result, ()) = tokio::time::timeout(Duration::from_secs(1), async {
+        tokio::join!(run, cancel_when_started)
+    })
+    .await
+    .expect("cooperative effect cleanup must finish promptly");
+
+    assert_eq!(
+        result.expect("normal cancellation").outcome,
+        RunOutcome::Cancelled
+    );
+    assert!(state.cleanup_complete.load(Ordering::SeqCst));
+    assert!(!state.dropped_before_cleanup.load(Ordering::SeqCst));
+    assert!(sink.terminal_saw_cleanup);
+    assert_tool_finished_before_run_finished(&sink.events);
+}
+
+async fn cancel_when_started(cancellation: Cancellation, state: Arc<EffectState>) {
+    while !state.started.load(Ordering::SeqCst) {
+        tokio::task::yield_now().await;
+    }
+    cancellation.cancel();
+}
+
+fn assert_tool_finished_before_run_finished(events: &[RuntimeEvent]) {
+    let tool = events
+        .iter()
+        .position(|event| matches!(event.kind, RuntimeEventKind::ToolFinished { .. }))
+        .expect("tool completion is journaled");
+    let terminal = events
+        .iter()
+        .position(|event| matches!(event.kind, RuntimeEventKind::RunFinished { .. }))
+        .expect("run completion is journaled");
+    assert!(tool < terminal);
 }
 
 fn assert_cancelled_terminal(events: &[forge_runtime_domain::RuntimeEvent]) {
@@ -331,5 +395,75 @@ impl AgentTool for PendingTool {
 
     fn execute(&self, _arguments: serde_json::Value, _context: ToolContext) -> ToolFuture<'_> {
         Box::pin(future::pending())
+    }
+}
+
+#[derive(Default)]
+struct EffectState {
+    started: AtomicBool,
+    cleanup_complete: AtomicBool,
+    dropped_before_cleanup: AtomicBool,
+}
+
+struct CancellationAwareWriteTool {
+    state: Arc<EffectState>,
+}
+
+impl AgentTool for CancellationAwareWriteTool {
+    fn spec(&self) -> ToolSpec {
+        ToolSpec {
+            name: "effectful".into(),
+            description: "Waits for cancellation, then performs controlled cleanup.".into(),
+            input_schema: json!({ "type": "object" }),
+            capability: Capability::WorkspaceWrite,
+        }
+    }
+
+    fn execute(&self, _arguments: serde_json::Value, context: ToolContext) -> ToolFuture<'_> {
+        let state = self.state.clone();
+        Box::pin(async move {
+            let _drop_guard = CleanupDropGuard(state.clone());
+            state.started.store(true, Ordering::SeqCst);
+            context.cancellation.cancelled().await;
+            tokio::task::yield_now().await;
+            state.cleanup_complete.store(true, Ordering::SeqCst);
+            Err(ToolError::new("cancelled", "controlled cleanup finished"))
+        })
+    }
+}
+
+struct CleanupDropGuard(Arc<EffectState>);
+
+impl Drop for CleanupDropGuard {
+    fn drop(&mut self) {
+        if !self.0.cleanup_complete.load(Ordering::SeqCst) {
+            self.0.dropped_before_cleanup.store(true, Ordering::SeqCst);
+        }
+    }
+}
+
+struct CleanupAwareSink {
+    state: Arc<EffectState>,
+    events: Vec<RuntimeEvent>,
+    terminal_saw_cleanup: bool,
+}
+
+impl CleanupAwareSink {
+    fn new(state: Arc<EffectState>) -> Self {
+        Self {
+            state,
+            events: Vec::new(),
+            terminal_saw_cleanup: false,
+        }
+    }
+}
+
+impl EventSink for CleanupAwareSink {
+    fn emit(&mut self, event: &RuntimeEvent) -> Result<(), EventSinkError> {
+        if matches!(event.kind, RuntimeEventKind::RunFinished { .. }) {
+            self.terminal_saw_cleanup = self.state.cleanup_complete.load(Ordering::SeqCst);
+        }
+        self.events.push(event.clone());
+        Ok(())
     }
 }
