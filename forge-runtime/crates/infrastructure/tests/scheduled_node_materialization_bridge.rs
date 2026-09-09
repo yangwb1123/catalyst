@@ -221,6 +221,7 @@ fn materializer_script(protocol: &str, decision: &str) -> String {
          if [ \"$1\" != \"graph-scheduled-node-contract\" ]; then exit 90; fi\n\
          if [ \"$2\" = \"--protocol-version\" ]; then printf '%s' '{protocol}'; exit 0; fi\n\
          if [ \"$2\" != \"--control\" ] || [ \"$3\" != \"-\" ]; then exit 91; fi\n\
+         cat >/dev/null || exit 92\n\
          {decision}\n"
     )
 }

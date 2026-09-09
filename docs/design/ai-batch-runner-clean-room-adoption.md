@@ -5,14 +5,65 @@
 - Inspection date: 2026-08-03
 - Scope: product behavior and protocol ideas only
 
-## Provenance and copying boundary
+## Follow-up inspection (2026-09-07)
 
-The inspected tree is not a stable, licensed source release. Its README says
-that it is synced from the `snaplink/ai-dev` monorepo and contains local
-adaptations. At inspection time `main` was 15 commits ahead of `origin/main`,
-with 21 tracked changes and 16 untracked paths. The README also says that no
-license has been selected, and the tracked tree contains no `LICENSE` or
-`COPYING` file.
+The reference HEAD was
+`7fdac33a70fba08a2b008262f8ca0f8680b9644b`; the surrounding working tree had
+pre-existing tracked and untracked changes. To keep the observation
+reproducible, this follow-up used only the tracked files below. A path-scoped
+`git status --short` was empty for every listed path, and each recorded blob is
+the exact blob at that HEAD. No dirty or untracked reference path contributed
+to the requirements in this section.
+
+| Evidence ID | Reference path | Git blob at follow-up HEAD |
+|---|---|---|
+| E1 | `README.md` | `64fb81b40fb3a767d1b7afce5c99ae386ce02a08` |
+| E2 | `docs/TUI_PRODUCT.md` | `e8d6279663e8ecc3cbd7a8958532faab6d315a51` |
+| E3 | `docs/feature-matrix.md` | `22ad5cca1685cee32643d1337032db60f1772276` |
+| E4 | `docs/ARCHITECTURE.md` | `566f224dc726fc08df80974bf41e16e5bede5f01` |
+| E5 | `pbatch/models.py` | `efb9e0d8d315f8851ac5b1db1f9aab0649ca7bdd` |
+| E6 | `pbatch/tui_protocol.py` | `df74cdc98d959c915f73c38c085762d2601bdc18` |
+| E7 | `pbatch/tui_command_specs.py` | `13e8e93e14415c745b16ce95bb078ef4b4f1415a` |
+| E8 | `pbatch/runner.py` | `9f61c4f219fd18564aae45837282ef08e754e521` |
+| E9 | `pbatch/agent_session.py` | `86fcc1629d3f77260cb295c4be4f8115f2bd09dd` |
+| E10 | `LICENSE` | `d62bb07c88fcfc066cb192ecaa4954503cbcb74c` |
+
+E10 is an MIT license file, but it also records that the upstream
+`snaplink/ai-dev` license was not publicly available when that choice was
+made, with provenance to be rechecked if upstream conditions change. D8's
+conservative copying boundary therefore remains in force: this follow-up
+adopts observable product requirements only and copies no source, tests,
+schemas, prompts, or prose.
+
+The follow-up exposed a more mature product surface than the 2026-08-03
+snapshot. The useful additions and their Catalyst dispositions are:
+
+| Observed behavior family | Evidence | Catalyst requirement | Disposition |
+|---|---|---|---|
+| Interactive and non-interactive surfaces share runtime behavior | E1, E2, E6 | CLI, TUI, and App use the App Server command/query/event contracts and do not create another execution authority | Adopt for F3/F4 |
+| Typed runtime events supply bounded execution and result views | E2, E3, E6, E7 | Views consume canonical events, Receipts, and authoritative workspace observations; assistant text has no control meaning | Adopt for F2–F4 |
+| Runtime capabilities describe session and in-flight controls | E6, E7, E9 | Runtime handshake publishes exact capabilities; unsupported operations fail before effect | Adopt for FR-06 and adapters |
+| Task, stage, and pipeline concepts structure batch work | E1, E5, E8 | Map them to WorkItem/WorkGraph/Change and Attempt rather than creating a parallel task domain | Already covered; do not duplicate |
+| Staged output passes configured checks before final placement | E5, E8 | CAS atomically publishes only size/digest-valid immutable bytes; Harness later evaluates the resulting `ArtifactRef`, and the projection cannot mark the Artifact or Outcome `Verified` until it consumes a valid VerificationReceipt | Adopt for FR-05/F8 |
+| Sessions expose restore, fork, archive, and degraded-history paths | E2, E7, E9 | Rebuild from a trusted durable prefix; incompatible history stays read-only, while `uncertain` is reserved for evidence that an effect may have started | Adopt for F4; richer controls after the first slice |
+| Retry, circuit, campaign, worktree, and continuous-operation controls | E1, E3, E4, E8 | Preserve bounded pre-effect recovery; multi-work-item automation belongs to F7/R2 | Defer beyond the R0 vertical slice |
+
+The follow-up also reinforces explicit non-adoptions. Catalyst will not inherit
+the complete host environment into an Agent, execute validators through an
+untyped shell boundary, use auto-approve/yolo defaults, treat a boolean or
+file-existence marker as authenticated approval, expose arbitrary local log
+paths over HTTP, or retry after an effect may have occurred. The target
+interaction and acceptance requirements are recorded in
+[`forge-workspace/functional-interaction-design.md`](forge-workspace/functional-interaction-design.md#17-requirement-coverage-and-entry-contract).
+
+## Initial inspection provenance and copying boundary (2026-08-03)
+
+The tree inspected on 2026-08-03 was not a stable, licensed source release.
+Its README said that it was synced from the `snaplink/ai-dev` monorepo and
+contained local adaptations. At that inspection `main` was 15 commits ahead
+of `origin/main`, with 21 tracked changes and 16 untracked paths. The README
+also said that no license had been selected, and that tracked tree contained
+no `LICENSE` or `COPYING` file.
 
 Therefore Catalyst does not copy source, tests, schemas, prompts, or prose from
 that tree. We use it as a behavior catalogue, derive requirements from first

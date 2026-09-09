@@ -1,10 +1,13 @@
+mod admission;
 mod attempt_inventory;
 mod codegen;
 mod lex;
+mod lifecycle;
 mod macro_inventory;
 mod metadata;
 mod path_attr;
 mod scan;
+mod serde_policy;
 
 use std::{fs, path::Path};
 
@@ -50,6 +53,7 @@ pub fn verify_workspace_consumer_boundary() {
     let cargo = metadata::cargo_metadata();
     metadata::verify_dependency_manifests(cargo);
     macro_inventory::verify_inventory(&cargo.workspace_root);
+    admission::verify_inventory(&cargo.workspace_root);
     let attempt = cargo
         .workspace_root
         .join("crates/domain/src/execution/attempt");
@@ -66,6 +70,26 @@ pub fn check_attempt_api_fixture(source: &str) -> Result<(), String> {
     lex::check_attempt_request_api(source)
 }
 
+pub fn verify_lifecycle_module_boundary() {
+    lifecycle::verify_module(&metadata::cargo_metadata().workspace_root);
+}
+
+pub fn check_lifecycle_source_fixture(source: &str) -> Result<(), String> {
+    lifecycle::check_source(source)
+}
+
+pub fn check_lifecycle_api_fixture(source: &str) -> Result<(), String> {
+    lifecycle::check_api(source)
+}
+
+pub fn check_lifecycle_pure_fixture(source: &str) -> Result<(), String> {
+    lifecycle::check_pure(source)
+}
+
+pub fn check_lifecycle_consumer_fixture(source: &str, path: Option<&str>) -> Result<(), String> {
+    lifecycle::check_no_consumer(source, path)
+}
+
 pub fn check_path_fixture(source: &str) -> Result<(), String> {
     let workspace = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -74,3 +98,9 @@ pub fn check_path_fixture(source: &str) -> Result<(), String> {
     let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixture.rs");
     path_attr::validate_path_attributes(source, &fixture, workspace)
 }
+
+pub fn check_admission_consumer_fixture(source: &str, path: Option<&str>) -> Result<bool, String> {
+    admission::check_source(source, path)
+}
+
+pub use admission::reviewed_sources as reviewed_admission_sources;

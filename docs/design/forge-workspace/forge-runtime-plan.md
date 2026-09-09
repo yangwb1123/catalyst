@@ -234,6 +234,59 @@ R0-C5 是 FR-03 的 `FR-03a request value` 子项，已完成但不能勾选完�
 `FR-03a → FR-03 lifecycle values → FR-04 → FR-06 → FC-07`；FR-06 不得在没有 durable Attempt owner 时用
 protocol fixture 反向定义领域状态。
 
+### 11.1 Attempt lifecycle slice: R0-C6 / FR-03b
+
+> 状态：**条件化 DONE / ADR-0109 Proposed；仅按 Sprint 150 completion_boundary 在同树正式验收后保留**
+
+本切片在 Rust domain 实现 authority-free `AttemptLifecycle` value 与
+deterministic transition reducer。它逐项复用 Platform Core 已冻结的 Attempt
+vocabulary/edges。输入是 caller-supplied current lifecycle value 与 typed transition
+request；输出是新的 defensively-owned lifecycle value 或稳定拒绝，不执行 I/O。
+它不拥有 Attempt identity、aggregate、expected/current version、journal position 或
+transition authority，也不把 `AttemptRequest` presence 当作 durable aggregate creation。
+
+Public request 必须是 closed variants：`Accept`、`BeginStarting`、`ObserveRunning`、
+`ObserveInterrupted`、`ObserveCompleted`、`ObserveFailed` 与
+`ObserveEffectOutcomeUncertain`。Lifecycle 只公开 `requested` seed，不接受 raw
+`AttemptState`、string target、`Default` 或 unchecked restore；未知 wire operation 留给
+FR-06 compatibility boundary。
+
+本实现满足：
+
+- `requested → accepted → starting → running` 及既有 terminal edges 逐项复用
+  Platform Core，不增加第二张状态图；
+- closed API 不提供 unknown/raw target、reset、retry 或 reopen；非法 edge、same-state、
+  fast-forward 和 terminal 后续 transition 全部失败关闭；
+- 相同 lifecycle value + request 产生相同结果，调用者后续修改输入不改变已构造值；
+- `uncertain` 只通过 explicit typed request 声明“effect 可能已开始且结果无法证明”；
+  caller 不应仅因 journal、projection 或 history 缺失提交该声明，也不应把未知结果
+  声明为普通 `failed`。Reducer 不认证、解析或保留 evidence，FR-04 才负责 durable evidence；
+- 本切片不增加 budget reservation/usage field 或逻辑；R0-C5 request 已校验的 budget
+  declaration 不参与 transition result，也不产生 reservation、usage 或 effect authority；
+- exhaustive edge/property/boundary tests 证明本 lifecycle module 无 serde、SQLite、clock、process、
+  provider、protocol、Go consumer 或 Harness completion side effect。
+
+R0-C6 只关闭 FR-03b 的 authority-free lifecycle value/reducer，其完成标记遵守 Sprint 150
+`completion_boundary`。FR-03 仍拥有
+pure Attempt domain/lifecycle；依 R0-C5 已冻结边界，只有 FR-04 才决定何时将其建立为
+durable Attempt aggregate，并拥有 identity/current-version authority、journal/outbox
+与 crash recovery。FR-06 local protocol、FC-07 RuntimePort、Session/Turn/Action、CAS、
+Adapter、Approval Broker、Verification 和产品入口继续保持开放。
+
+### 11.2 Requested admission slice: R0-C7 / FR-04a
+
+> 状态：**条件化 DONE / ADR-0110 Proposed；仅按 Sprint 151 completion_boundary 在同树正式验收后保留**
+
+[Runtime Attempt Admission v1](runtime-attempt-admission-v1.md) 只建立独立 SQLite requested admission
+profile：immutable request、固定 initial Event 与 retained pending outbox 同事务写入，exact replay、reopen、
+bounded pages 和 schema/data integrity 失败关闭。私有 storage codec 重用原 request validator，public pure
+digest helper 用于绑定 event payload；它不是 StartAttempt wire、授权或 runnable Attempt。
+
+入口只接收 caller 显式打开的 on-disk Connection，文件/目录/descriptor/VFS 安全由后续 factory 合同负责；
+不迁移旧 Hub v29，不推进生命周期，不定义 sender/ack/delete、应用服务或产品协议。只有后续独立 evidence
+合同才能持久化 observation transition；SQLite error/missing history 不生成 effect uncertainty。
+该窄项遵守 Sprint 151 `completion_boundary`，不能勾选完整 FR-04、FR-06 或 FC-07。
+
 ## 12. 测试计划
 
 - Domain：Attempt/Action illegal transitions、idempotency、budget、approval；

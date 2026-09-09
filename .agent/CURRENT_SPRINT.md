@@ -2769,3 +2769,131 @@ checks、fresh-context architecture/security/final review，并紧随其后运�
 `PROPOSED-STAGED`。即使最终验收通过，也只关闭 trusted same-user local single-task developer preview；OS/network
 sandbox、production approval、remote deploy、multi-Agent、automatic Sprint/Attempt/Graph、provider-side idempotency 与
 任意 shell 安全保证仍不在本切片内。
+
+### Sprint 150 — Runtime Attempt Lifecycle Domain v1（R0-C6 / FR-03b）— ADR-0109 Proposed（✅ DONE；以本节 completion_boundary 为条件）
+
+本切片已由 Roadmap 选择，用户于 2026-09-08 明确要求继续实现既定的 R0-C6 窄边界。实现只在 Rust domain 增加
+sibling `execution::attempt_lifecycle`：private-state `AttemptLifecycle` 从 explicit `requested` seed 开始，closed
+`AttemptTransitionRequest` 只含 `Accept`、`BeginStarting`、`ObserveRunning`、`ObserveInterrupted`、`ObserveCompleted`、
+`ObserveFailed` 与 `ObserveEffectOutcomeUncertain` 七类请求；每次 reducer 都复用 Platform Core `validate_attempt_transition`，返回新 value，
+不复制状态图或修改 current value。
+
+影响文件是 ADR-0109、`execution/mod.rs`、独立 `attempt_lifecycle.rs`、focused lifecycle tests，以及 R0-C5
+boundary support 中新增但不放宽原规则的 lifecycle-only source/API/no-consumer policy。`execution::attempt` 四文件及
+`AttemptRequest` public API 必须保持 frozen；Platform Core state vocabulary/edge table、Cargo dependency manifests、
+SQLite schema、wire 和现有 consumer 不变。正式验收暴露既有 CLI concurrency fixture 的时序竞争后，另增加
+test-only response gate，并替换三处依赖固定 sleep 的并发测试同步；不修改 CLI production behavior。
+第二轮验收后还加固两个既有 test-only stdin fixture：模拟 materializer 在返回前 drain input；CLI helper
+在完整 wait/reap 后只允许 unsuccessful exit 的 `BrokenPipe`，success 仍要求完整 write。生产 I/O 拒绝行为不变。
+
+机器验收已证明：八个 known current states × 七类 request 的 56 组合恰好 13 个 canonical edge 成功、43 个
+失败；四个 terminal state 全关闭；same-state/backward/reset/retry/reopen/fast-forward 不存在或失败；只有 explicit
+effect-outcome-uncertain request 可产生 `uncertain`；重复与并发调用确定、failure atomic。Source/API inventory
+拒绝 raw/Unknown target、unchecked restore、`Default`/`From`、public field/`&mut self`、serde/wire/digest、identity/
+version、budget/usage、journal/outbox/receipt、ambient I/O、provider/tool/Harness/Go 依赖和未审 production consumer。
+
+ADR-0109 strict v2 validation、代码前 fresh-context design review 与实现后的 independent architecture/domain review
+均通过。Reliability/security 首轮发现 `#[r#path]` 可绕过既有 path scanner；现已规范化 raw attribute identifier，
+并覆盖正向 local path、lifecycle source/test/module、旧 Attempt source、absolute escape 与 inline module 的回归。
+修复后的 fresh-context reliability/security review 为 CLEAN，状态文档的独立复核也已消除 candidate/status 和
+caller-declaration 语义歧义。ADR-0109 继续保持 Proposed/null；以上 review 不产生 authenticated approval authority。
+
+Focused lifecycle tests 4/4、boundary tests 14/14、domain lib 436 tests、Rust workspace all-target/all-feature tests、
+fmt、strict Clippy、all-target build、architecture 八项、governance 十三项与 diff checks 均通过。首次 sandbox
+workspace run 在需要 bind loopback 的 CLI fixture 遇到 `Operation not permitted`；已获准在 sandbox 外移除真实
+模型凭证并以 locked/offline 重跑全量，全部通过。Shared `domain/src/lib.rs` 的既有 0664 权限已恢复为 0644，
+未修改该文件 source bytes 或 registration。正式 `node harness/acceptance.mjs` 首轮返回 8 PASS、1 FAIL、2 N/A；
+失败是既有 `cli_agent_idempotency` 在 project test 中退出 101。首轮条件化完成标记已撤回；focused 重现确认
+`different_key_lock_loser_announces_its_durable_run_for_explicit_resume` 的固定 sleep 不能保证 contender 重叠。
+修复使用显式 request-arrival/response-release gate：首个 request 到达后才启动 contender，取得 contender 结果
+后才释放首个 response；等待有界，channel disconnect 可退出，不削弱原有 lock/idempotency assertions。
+修复后受影响 CLI tests 21/21，通过三轮并行重复的 idempotency/atomicity tests 27/27；最终 helper 借用签名
+调整后再次通过 idempotency/atomicity 9/9、fmt、strict Clippy、all-target/all-feature build、architecture 八项、
+governance 十三项与 diff checks。Lifecycle 4/4 与 boundary 14/14 也通过，新增 helper 未引入 consumer 例外。
+Test-only 修复的 fresh-context independent review 为 CLEAN。上述独立全 workspace pass 属于修复前结果；
+修复后最终冻结树的正式 `node harness/acceptance.mjs` 必须重新完整运行，不能沿用首轮失败或先前测试结果。
+第二轮正式验收仍返回 8 PASS、1 FAIL、2 N/A：workspace 全量通过，但逐 crate 检查中的
+`scheduled_node_materialization_bridge` 与 `cli_group_agent_node_dispatch_authorization` 失败；完成标记再次撤回，
+该轮不能作为完成依据。Rust strict Clippy/typecheck/build 均通过；Python coverage 为 84.133%，
+整体 lint/coverage 因其他语言工具缺失或未配置而诚实 N/A。
+
+第二轮原始 assertion 被 project adapter 摘要截断，两个目标 isolated 重跑通过；materializer 六轮完整重跑
+与另 32 次 invalid-candidate 重跑（含 12 次并发）均通过。因此无法声称已复现该轮具体失败原因。
+代码检查发现的 fixture stdin/exit race 已作上述 test-only 加固；CLI 新增两个确定性 regression cases，先确认
+子进程关闭 stdin 再写入，分别保留拒绝 status/diagnostic 与拒绝 successful incomplete write，不使用 sleep。
+修复后 materializer 4/4、四组受影响 CLI targets 合计 20/20、lifecycle 4/4、boundary 14/14、fmt、workspace
+strict Clippy/all-target/all-feature build、architecture 八项、governance 十三项与 diff checks 全通过；两项独立
+fresh-context fixture reviews 均为 CLEAN，但不证明先前 clipped failure 的具体原因。
+最终封树后须重跑完整正式验收；设置 `CARGO_TERM_QUIET=true` 仅减少 Cargo progress 输出，已验证仍保留
+真实测试计数，避免 progress 淹没失败摘要，不改变测试目标、features 或断言。仍移除真实模型凭证并离线运行。
+第三轮正式验收返回 8 PASS、1 FAIL、2 N/A，`test_pass_project` worker 被 SIGKILL 终止，未形成完整项目
+测试结果；其余正式检查通过，整体 lint/coverage 仍为诚实 N/A。完成标记再次撤回；SIGKILL 原因尚未证实，
+不能把 worker 终止当作测试通过或已定位的代码缺陷，最终正式验收仍待完成。
+有限只读排查将该信号定位到 worker 的外层 `unshare` launcher，未找到 OOM 或跨任务全局 kill 的因果证据；
+现有 private process group、PID/start-time 与 exact worker token 清理边界未发现可据此修复的缺陷。
+未改变验收清理逻辑，也未停止或修改外部 campaign。终止来源未明，当前只交接 implementation candidate。
+
+2026-09-09 继续实现时，fresh-context 复审确认 Serde `remote` literal-path 可绕过 lifecycle no-consumer gate：
+normal/raw/Unicode-escaped mirror enum 均可编译并调用 generated deserialize，旧三项 lexical/path gates 却接受。
+新增四项 boundary regressions，首项在旧实现上稳定失败；修复只扩充 lifecycle 的 Serde metadata policy，
+不修改 R0-C5 frozen lexer/inventory、AttemptRequest、Platform Core 或 lifecycle production bytes。
+新 policy 在 source/test exemptions 前扫描真实 attribute，跳过无关 comments/literals，并规范化 raw identifier；
+只允许 closed inert metadata grammar。所有未审 path-bearing/unknown options 失败关闭，不依赖解码后搜索
+lifecycle 名称；仅保留 exact `Option::is_none` 两种已有 attribute 形状，以及由 source path + whole-source
+SHA-256 双重固定的 `run_store` legacy named default。Normal/raw/Unicode/hex literal、raw option names、
+nested/unknown option、旧 exemption 路径、inert wire names 与例外替换均有回归。
+修复后 lifecycle 4/4、boundary 18/18、fmt、workspace strict Clippy 与 all-target/all-feature build、
+architecture 八项、governance 十三项、file gate 与 ADR strict v2 validation 均通过。
+另一个全新上下文的 independent reviewer 对 Serde 修复及 integration 返回 CLEAN，并独立运行 boundary
+18/18（含 live workspace scan）；冻结 lexer/codegen/inventories、原 Attempt、Platform Core 与依赖未改变。
+本轮带 signal-only trace 的独立 project probe 因转入已确认边界缺口修复而由本任务主动 SIGINT 取消（exit 130），
+不属于正式 acceptance，不是先前 SIGKILL 的复现，也不提供项目测试通过证据。
+
+**completion_boundary:** 本 DONE/[x] 为封树前预置的条件化标记，仅在同一棵冻结树通过上述测试、独立复审与紧随封树运行的
+`node harness/acceptance.mjs` 后保留；标记本身不是验收结果，任一失败必须立即撤回。通过只关闭 FR-03b authority-free Attempt lifecycle
+value/reducer；Session/Turn/Action、FR-04 durable aggregate/journal/outbox、FR-06 local protocol、FC-07 RuntimePort、
+authenticated authority、budget reservation/usage、effect 与产品入口继续开放。
+
+### Sprint 151 — Runtime Attempt Admission Journal v1（R0-C7 / FR-04a）— ADR-0110 Proposed（✅ DONE；以本节 completion_boundary 为条件）
+
+用户在 R0-C6 完成后于 2026-09-09 要求继续实现。前一切片第四轮正式验收已返回 ACCEPTED：9 PASS、
+0 FAIL、2 个诚实 N/A，验收前后 tracked diff 与所有 untracked source digests 一致；不沿用其结果验收本切片。
+
+本片选择实际 SQLite requested admission，而不提前建立需要独立 observation evidence 合同的 lifecycle
+推进。设计见 `docs/design/forge-workspace/runtime-attempt-admission-v1.md`；fresh-context design review
+已通过，并修复 caller 无法构造 private request digest 绑定 payload 的缺口：新增 pure `request_sha256`
+准备接口。ADR-0110 strict v2 validation 通过，仍为 Proposed/null；design review 不等于实现或正式验收。
+
+新 adapter 仅在 caller 显式打开并移交的 on-disk Connection 上工作；拒绝 memory/attached/active-transaction/
+foreign schema，验证 exact SQLite v1 profile，WAL/FULL/foreign keys 和完整有界数据关系。路径、权限、descriptor、
+SQLite/VFS 与 host 信任仍归 caller，不宣称安全文件 opener、sandbox 或生产 readiness。旧 Hub v29 不迁移。
+
+私有 request record 通过 frozen getters 编码，恢复时重建十五字段 input 并再次调用原 validator；canonical
+bytes/digest、固定 Platform Core creation Event、数据库全局 Attempt/key/event/message uniqueness、连续 local
+cursor、request/event/outbox 一对一关系在同一 transaction 重验。Exact duplicate 返回原结果，不新增 cursor/
+outbox；任何 payload/event 差异冲突。所有状态只为 `requested`，无 runnable/authorization 含义。
+
+边界闸门仅增加 exact path + whole-source-SHA reviewed consumers，Serde/codegen/path 检查仍先执行；原 Attempt
+四文件、lifecycle source/API、Platform Core 与 Cargo dependencies 不改，且不允许 lifecycle consumer。
+本片不增加 transition、evidence authentication、budget reservation、effect、sender/ack/delete、application
+service、local protocol、Go consumer、CLI/UI 或 Receipt producer。SQLite error 不合成 lifecycle `uncertain`。
+
+实现后的 sqlite_execution unit tests 15/15 与 admission integration tests 22/22 通过；其中独立编写的
+4 种 crash/fault 场景加 1 个显式子进程 fixture 覆盖三表已写入但尚未 commit 的真实 kill、commit 后回复丢失的 kill、
+precommit error 与 deferred-foreign-key commit error 的全事务回滚。子进程以明确 pipe 信号同步并有界
+wait/kill/reap，不用 sleep 猜测边界；这些不证明断电、恶意 VFS 或物理硬件 durability。
+私有 codec 与 corruption tests 覆盖 exact bytes、missing/unknown/duplicate/nested fields、digest、schema、
+完整关系和先检查长度再读取记录；22 integration cases 覆盖 creation binding、重开、幂等、并发、count
+capacity 和有界分页。新 21-file path+SHA consumer closure、4 项新增拒绝/复用回归已接入 live workspace
+scan，lifecycle 4/4、boundary 22/22 通过。原 Attempt/lifecycle/Platform Core/Cargo bytes 未改变。
+workspace fmt、strict Clippy、all-target/all-feature build、architecture 8/8、file gate、governance 13/13、
+strict ADR v2 与 diff check 通过；不沿用前一切片正式验收替代本树验收。
+另一个全新上下文的 implementation/security reviewer 独立核验 21 个唯一 path 与对应源码 SHA，确认
+consumer closure 无 missing/extra、Serde/codegen 先于 exact exception、path/r#path reuse 失败关闭；其独立
+执行的 codec 4/4、corruption 6/6 与 admission boundary regressions 4/4 均通过。该审查不替代正式验收。
+
+**completion_boundary:** 本 DONE/[x] 为封树前预置的条件化标记，不是验收结果。只有最终冻结树完成 request/event/transaction/
+reopen/concurrency/corruption/capacity/page/crash 回归、fresh-context independent implementation/security reviews、
+Rust fmt/strict Clippy/tests/build、architecture/governance 与完整 `node harness/acceptance.mjs` 后，才可保留
+R0-C7 DONE/[x]；任一失败立即撤回。本片最多关闭 FR-04a requested admission，不关闭完整 FR-04、FR-06、FC-07
+或产品执行能力，也不改变 ADR 的 Proposed/null 状态。

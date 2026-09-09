@@ -124,6 +124,25 @@ authenticated Grant/Approval authority, budget reservation,
 protocol/adapter dispatch, or any effect. See the
 [Runtime Attempt Request Domain v1 design](../docs/design/forge-workspace/runtime-attempt-domain-v1.md).
 
+R0-C6 implements the pure `execution::attempt_lifecycle` module under Proposed
+[ADR-0109](../docs/adr/ADR-0109-runtime-attempt-lifecycle-domain-v1.md).
+`AttemptLifecycle::requested()` seeds an immutable value;
+seven closed requests reduce it through the existing Platform Core edge validator.
+Terminal states cannot reopen. Effect uncertainty is an explicit caller declaration
+whose evidence is neither authenticated nor retained here. The value has no durable
+identity/version, restoration, wire, budget, storage, consumer, or effect authority.
+Completion is conditional on same-tree formal acceptance under Sprint 150's
+`completion_boundary` in [CURRENT_SPRINT](../.agent/CURRENT_SPRINT.md), which retains the prior failed runs. Acceptance closes only FR-03b;
+Session/Turn/Action and FR-04 remain open.
+
+R0-C7 / FR-04a implements isolated SQLite requested admission;
+see [the admission design](../docs/design/forge-workspace/runtime-attempt-admission-v1.md).
+It atomically retains the immutable request, creation event and pending outbox, with exact
+replay and bounded integrity checks. The caller supplies an already-open on-disk connection
+and owns filesystem/VFS trust. It does not migrate the Hub, advance lifecycle, authorize or
+run effects, deliver/acknowledge events, or expose a product protocol. Completion remains
+subject to Sprint 151 review and same-tree formal acceptance.
+
 The Hub adds persistent local discovery:
 
 ```bash

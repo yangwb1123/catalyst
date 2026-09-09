@@ -9,6 +9,7 @@ mod openai_responses;
 mod read_file;
 mod scripted_provider;
 mod search_text;
+pub mod sqlite_execution;
 mod sqlite_hub;
 mod workspace;
 mod workspace_discovery;

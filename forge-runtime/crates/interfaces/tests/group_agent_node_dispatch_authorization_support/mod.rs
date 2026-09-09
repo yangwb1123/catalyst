@@ -9,6 +9,8 @@ use std::{
 
 use serde_json::Value;
 
+mod stdin_completion;
+
 use super::{
     group_agent_graph_run_support::{
         Fixture, TASK_SECRET, WORKSPACE_SECRET, command, human_command, invoke_with_stdin, run_json,
@@ -355,7 +357,7 @@ pub(super) fn assert_run_still_waits_for_authority(fixture: &Fixture, graph_run_
 }
 
 pub(super) fn invoke_raw(state: &Path, cwd: &Path, args: &[&str], input: &[u8]) -> Output {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_forge-runtime"))
+    let child = Command::new(env!("CARGO_BIN_EXE_forge-runtime"))
         .current_dir(cwd)
         .env("OPENAI_API_KEY", CREDENTIAL_SENTINEL)
         .env_remove("ANTHROPIC_API_KEY")
@@ -366,13 +368,7 @@ pub(super) fn invoke_raw(state: &Path, cwd: &Path, args: &[&str], input: &[u8]) 
         .stderr(Stdio::piped())
         .spawn()
         .expect("spawn CLI");
-    child
-        .stdin
-        .take()
-        .expect("stdin")
-        .write_all(input)
-        .expect("write stdin");
-    child.wait_with_output().expect("wait for CLI")
+    stdin_completion::finish(child, input)
 }
 
 fn effect_fields() -> [&'static str; 19] {

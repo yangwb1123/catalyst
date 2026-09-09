@@ -65,8 +65,12 @@ fn validate_resolved_path(joined: &Path, relative: &str, workspace: &Path) -> Re
 fn excluded_proof_source(target: &Path, workspace: &Path) -> bool {
     let tests = workspace.join("crates/domain/tests");
     target.starts_with(workspace.join("target"))
+        || super::admission::reviewed_path(target, workspace)
         || target.starts_with(workspace.join("crates/domain/src/execution/attempt"))
+        || target == workspace.join("crates/domain/src/execution/attempt_lifecycle.rs")
+        || target == workspace.join("crates/domain/src/execution/mod.rs")
         || target == tests.join("attempt_request.rs")
+        || target == tests.join("attempt_lifecycle.rs")
         || target.starts_with(tests.join("attempt_request_support"))
 }
 
@@ -181,7 +185,7 @@ fn skip_attribute(bytes: &[u8], mut index: usize) -> Result<usize, String> {
     Err("unterminated attribute".into())
 }
 
-fn skip_non_code(bytes: &[u8], index: usize) -> Result<Option<usize>, String> {
+pub(super) fn skip_non_code(bytes: &[u8], index: usize) -> Result<Option<usize>, String> {
     if starts(bytes, index, b"//") {
         Ok(Some(skip_line_comment(bytes, index + 2)))
     } else if starts(bytes, index, b"/*") {
@@ -197,7 +201,7 @@ fn skip_non_code(bytes: &[u8], index: usize) -> Result<Option<usize>, String> {
     }
 }
 
-fn skip_trivia(bytes: &[u8], mut index: usize) -> Result<usize, String> {
+pub(super) fn skip_trivia(bytes: &[u8], mut index: usize) -> Result<usize, String> {
     loop {
         while bytes.get(index).is_some_and(u8::is_ascii_whitespace) {
             index += 1;
@@ -212,7 +216,8 @@ fn skip_trivia(bytes: &[u8], mut index: usize) -> Result<usize, String> {
     }
 }
 
-fn take_identifier(bytes: &[u8], start: usize) -> (&[u8], usize) {
+pub(super) fn take_identifier(bytes: &[u8], start: usize) -> (&[u8], usize) {
+    let start = start + if starts(bytes, start, b"r#") { 2 } else { 0 };
     let mut end = start;
     while bytes
         .get(end)

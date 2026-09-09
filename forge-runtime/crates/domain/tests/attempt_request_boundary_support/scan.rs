@@ -1,4 +1,4 @@
-use super::{MAX_SOURCE_FILE_BYTES, MAX_TOTAL_SOURCE_BYTES, lex, path_attr};
+use super::{MAX_SOURCE_FILE_BYTES, MAX_TOTAL_SOURCE_BYTES, admission, lex, lifecycle, path_attr};
 use std::{
     fs::{self, File},
     io::Read,
@@ -102,9 +102,7 @@ fn visit_workspace_file(
         "workspace entry must be regular"
     );
     super::metadata::validate_control_file(path, workspace);
-    if path.extension().and_then(|value| value.to_str()) != Some("rs")
-        || reviewed_attempt_source(path, workspace, attempt)
-    {
+    if path.extension().and_then(|value| value.to_str()) != Some("rs") {
         return;
     }
     let source = read_source(path, metadata.len(), &mut budget.source_bytes);
@@ -116,8 +114,14 @@ fn visit_workspace_file(
         .expect("source below workspace")
         .to_str()
         .expect("UTF-8 source path");
-    lex::check_no_attempt_consumer(&source, true, Some(relative))
+    lifecycle::check_no_consumer(&source, Some(relative))
         .unwrap_or_else(|error| panic!("{}: {error}", path.display()));
+    let reviewed_admission = admission::check_source(&source, Some(relative))
+        .unwrap_or_else(|error| panic!("{}: {error}", path.display()));
+    if !reviewed_admission && !reviewed_attempt_source(path, workspace, attempt) {
+        lex::check_no_attempt_consumer(&source, true, Some(relative))
+            .unwrap_or_else(|error| panic!("{}: {error}", path.display()));
+    }
 }
 
 fn reviewed_attempt_source(path: &Path, workspace: &Path, attempt: &Path) -> bool {

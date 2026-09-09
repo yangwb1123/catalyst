@@ -322,3 +322,93 @@ URL 只包含逻辑 ID，不暴露本地绝对路径或数据库 row id。刷新
 8. 用户在 CLI、TUI、App 看到相同状态、原因和 Receipt；
 9. Evolution 提案只能做 shadow evaluation，未经审批不能生效；
 10. Agent Host 未公开内部信息时，界面诚实显示不可观测边界。
+
+## 17. Requirement coverage and entry contract
+
+本节把现有产品设计收敛为可追踪需求，不创建第二套 Task、Pipeline、Gate 或
+Completion 领域。参考行为来自
+[`ai-batch-runner` clean-room follow-up](../ai-batch-runner-clean-room-adoption.md#follow-up-inspection-2026-09-07)，
+但术语、状态、authority 和验收全部采用 ForgeOS 自有合同。
+
+### 17.1 Human roles and responsibility
+
+| 人类角色 | 核心任务 | 不可代理的责任 |
+|---|---|---|
+| Developer | 创建 Objective、检查 Plan/Changes/Timeline、处理中断并复验结果 | 确认任务意图和本地工作区范围 |
+| Reviewer / Approver | 审查计划、effect、风险、恢复和 Evolution 决策 | 对 exact scope、digest、版本和有效期作明确决定 |
+| Operator | 维护本地服务和状态、处理 uncertain effect、执行带外交付 | 管理凭证、外部 CI/生产动作和恢复证据 |
+
+这些是产品用户角色，不是 `architect`、`implementer`、`reviewer` 等临时 Agent
+role。Agent role 名称不得推导人类身份、职责分离或 approval authority。
+
+### 17.2 Product entry contract
+
+- CLI、TUI、App 的 mutation 均经 App Server command admission，读取均来自同一组
+  versioned Query projection；任何用户入口都不得直接打开 `control.db`、Runtime Hub
+  或 Harness 私有存储；
+- durable event 提交后才可进入事实投影。Live chunk 只改善实时体验，丢失、重连或
+  截断不得改变已提交状态；
+- `forge tui` 只负责输入与展示，不拥有 schedule、Agent execution、journal append
+  或 Completion Join；
+- stdout 不是 terminal 时，CLI 保持稳定的 line/JSON framing，terminal escape bytes
+  不得进入 machine-readable output；
+- Runtime handshake 必须报告 start/resume/fork/interrupt/steer/approval/usage 等
+  exact capability；客户端不得按 Agent 名称猜测能力或静默创建替代 Session；
+- Plan、Changes、Completion、Artifact、Approval、Session 和 Agent Inspector 都是
+  有界只读 projection。Assistant 正文中的状态名、PASS 或 Receipt ID 只是文本。
+- Runtime/Adapter 不可用时，既有 durable projection 仍可读；会产生 effect 的命令在
+  admission 前返回稳定错误、retryability 和 next action，不制造成功事件；
+
+### 17.3 Coverage matrix
+
+本表不创建新的交付状态。`DONE`、`ADOPTED-PLANNED`、`ADOPTED-STAGED` 和
+`PROPOSED-STAGED` 仅在引用
+[`Functional Requirements Audit`](../../FUNCTIONAL_REQUIREMENTS_AUDIT.md#current-closure-matrix-2026-09-01)
+中的 exact status 时使用，并且只修饰被点名的窄前置，不修饰整行 FW-UX 需求。
+证据等级 `Observed/Inferred/Declared/Unknown/Verified` 也不表示实现进度。
+
+| ID | 用户需求 | Target | 可复用现状（不代表本行完成） | 仍未交付 |
+|---|---|---|---|---|
+| FW-UX-01 | 同一执行 authority 支持 CLI、TUI、App 和 non-interactive 入口 | R0/F3–F4 | 已正式验收的窄前置只有 App Server health | Product API、projection、TUI shell |
+| FW-UX-02 | 从 Space/Project 创建 Objective 并启动单 WorkItem | R0/F4 | Workspace Catalog 与 pure Delivery Domain 窄切片已正式验收 | Objective repository、single-item intake、dispatch |
+| FW-UX-03 | 以 Attempt/Session/Turn/Action 查看可信执行 Timeline | R0/F2–F4 | FR-03a/b pure values 已验收；FR-04a requested admission 条件化完成，遵守 Sprint 151 同树正式验收边界；first-party Agent 仍是相邻 candidate，且绕过 Attempt/Graph | Durable lifecycle transitions、Session/Turn/Action journal、Runtime transport、projection |
+| FW-UX-04 | 按 capability 启动、中断、恢复或只读查看执行 | R0/F2–F4 | legacy Project Run 已有 resume/restart/branch | Product-scoped capability handshake、Attempt identity mapping 与 App recovery join |
+| FW-UX-05 | 在 effect 前查看 exact scope 并作 typed decision | R1/F6 | `DONE` 的 local marker/consent 与 contract-only ApprovalRecord 只是 same-UID observation/control ref 和 authority-neutral wire | authenticated actor、expiry/revocation、Action digest binding、PDP/effect authority |
+| FW-UX-06 | 检查 Plan、Git Changes、Artifact 和本轮 Completion evidence | R0/F3–F4 | ArtifactRef/Receipt pure wire 窄切片已正式验收 | CAS producer、authoritative Git delta、bounded Inspectors |
+| FW-UX-07 | Harness 独立验证并由 Control Plane 生成 Outcome | R0–R1/F4/F6/F8 | Harness baseline 与 pure Verification wire 窄切片已正式验收 | VerificationPort、Receipt ingestion、Completion Join |
+| FW-UX-08 | 相同 projection 在 CLI/TUI/App 显示相同状态和原因 | R0/F3–F4 | 无产品级实现 | versioned Query model、cursor replay、UX contract tests |
+| FW-UX-09 | 串并行 WorkGraph、重试、checkpoint 和 integration queue | R2/F7 | legacy scheduled serial Graph controller/worktree session 是独立前身，不是 product WorkGraph 的实现子集 | identity/compatibility mapping、parallelism、retry、checkpoint、integration queue 与 write/resource conflict join |
+| FW-UX-10 | Campaign、跨项目图谱和受控 Evolution | R3–R4/F9–F10 | 已有窄 graph/governance repository projection；没有产品 consumer | product consumer、freshness/coverage、promotion authority |
+
+每行的最终实现状态仍只由 `.agent/ROADMAP.md`、当前代码、独立 Review 和正式
+`forge accept` 决定。本表不能把 Proposed 设计或结构验证升级为产品完成。
+
+### 17.4 R0 interaction acceptance supplement
+
+1. 用户可从空产品状态注册一个本地 Project，创建一个 Objective，并在不调用低层
+   graph handshake 命令的情况下启动一个 WorkItem/Attempt；
+2. `forge tui`、人类 CLI 和 `--json` 对同一 Query projection 展示相同 ID、状态、
+   原因、Receipt presence 和 next action；
+3. App Server 或客户端重启后从 durable cursor 恢复，不丢失、不重复展示事件；无法
+   证明完整前缀时进入只读 `Partial`/`Error`，不自动执行；只有另有 evidence 表明
+   effect 可能已经开始且结果未知时，Attempt 才进入 `Uncertain`；
+4. 相同 idempotency key 与相同 payload 不重复创建 Objective、WorkItem 或 Attempt；
+   retry 必须创建新 Attempt 并保留旧终态；
+5. Attempt `completed` 但 VerificationReceipt 缺失、`fail`、`inconclusive` 或
+   `not_executed` 时，Completion 不得显示 Outcome satisfied；
+6. 需要 approval authority 的 Action 在 R0 缺少该 authority 时保持不可 dispatch；
+   local marker、consent flag 或 actor hint 不得升级为 authenticated approval；
+7. Timeline、diff、Artifact、模型输出和诊断都有独立大小/数量上限，文件预览限制在
+   授权 root 并使用 no-follow 语义，secret 在 durable append 前脱敏；
+8. Runtime 或 Harness 不可用时展示稳定错误码、correlation ID、retryability 和
+   next action，不生成虚假 Receipt；
+9. TUI 在 80×24、窄终端、无颜色和纯键盘环境仍可完成主流程，审批不能由单个未确认
+   快捷键立即生效；
+10. R0 不包含 Web/mobile、remote runner、多用户、自动多 WorkItem、自动 effect
+    retry、Device Fabric、知识图谱 cockpit、富媒体 Artifact renderer 或云部署。
+
+### 17.5 R1 approval acceptance extension
+
+R1/F6 在 R0 条件之上增加 authenticated Approval Broker。Approval 的 exact scope、
+Snapshot、Action digest、policy/aggregate version、actor 和 expiry/revocation 任一不匹配
+时，effect 必须在 dispatch 前失败关闭；这一条不是 R0 shipment claim。

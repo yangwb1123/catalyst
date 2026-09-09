@@ -10,6 +10,9 @@ use std::{
 
 use serde_json::{Value, json};
 
+mod response_gate;
+pub(super) use response_gate::ResponseGate;
+
 pub(super) struct LocalResponses {
     endpoint: String,
     requests: Arc<Mutex<Vec<Value>>>,
@@ -19,6 +22,10 @@ pub(super) struct LocalResponses {
 impl LocalResponses {
     pub(super) fn start(responses: Vec<String>) -> Self {
         Self::start_delayed(responses, Duration::ZERO)
+    }
+
+    pub(super) fn start_gated(response: String) -> (Self, ResponseGate) {
+        response_gate::start(response)
     }
 
     pub(super) fn start_delayed(responses: Vec<String>, response_delay: Duration) -> Self {

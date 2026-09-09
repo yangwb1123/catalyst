@@ -5,8 +5,7 @@ mod e2e_support;
 use std::{
     process::Command,
     sync::Arc,
-    thread,
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 use forge_runtime_application::{HubService, RunService};
@@ -112,32 +111,24 @@ fn assert_terminal_retry_is_read_only(
 fn concurrent_same_key_agents_allow_only_one_provider_request() {
     let project = TempDir::new().expect("project");
     let state = TempDir::new().expect("state");
-    let server = LocalResponses::start_delayed(
-        vec![final_stream("single winner")],
-        Duration::from_millis(500),
-    );
+    let (server, gate) = LocalResponses::start_gated(final_stream("single winner"));
     let endpoint = server.endpoint().to_owned();
 
     let first = spawn_agent(&endpoint, state.path(), project.path());
-    thread::sleep(Duration::from_millis(50));
+    gate.wait_for_request();
     let second = spawn_agent(&endpoint, state.path(), project.path());
-    let first = first.wait_with_output().expect("first Agent exits");
     let second = second.wait_with_output().expect("second Agent exits");
+    gate.release();
+    let first = first.wait_with_output().expect("first Agent exits");
     let requests = server.finish();
 
     assert_eq!(requests.len(), 1, "only the Created seed owner may send");
+    assert_success(&first);
     assert!(
-        first.status.success() || second.status.success(),
-        "one Created contender must complete"
+        !second.status.success(),
+        "active seed must require explicit resume"
     );
-    for contender in [&first, &second] {
-        if !contender.status.success() {
-            assert!(
-                String::from_utf8_lossy(&contender.stderr)
-                    .contains("explicit run resume is required")
-            );
-        }
-    }
+    assert!(String::from_utf8_lossy(&second.stderr).contains("explicit run resume is required"));
     let store = Arc::new(
         SqliteHubStore::open(state.path().join("hub.sqlite3")).expect("open shared Agent Hub"),
     );
@@ -152,17 +143,15 @@ fn concurrent_same_key_agents_allow_only_one_provider_request() {
 fn concurrent_resumes_allow_only_one_provider_request() {
     let project = TempDir::new().expect("project");
     let state = TempDir::new().expect("state");
-    let server = LocalResponses::start_delayed(
-        vec![final_stream("single resume winner")],
-        Duration::from_secs(2),
-    );
+    let (server, gate) = LocalResponses::start_gated(final_stream("single resume winner"));
     let (_, run_id, _) = seed_crash_prefix(state.path(), project.path(), server.endpoint());
 
     let first = spawn_resume(state.path(), project.path(), &run_id);
-    thread::sleep(Duration::from_millis(50));
+    gate.wait_for_request();
     let second = spawn_resume(state.path(), project.path(), &run_id);
-    let first = first.wait_with_output().expect("first resume exits");
     let second = second.wait_with_output().expect("second resume exits");
+    gate.release();
+    let first = first.wait_with_output().expect("first resume exits");
 
     assert_eq!(
         usize::from(first.status.success()) + usize::from(second.status.success()),

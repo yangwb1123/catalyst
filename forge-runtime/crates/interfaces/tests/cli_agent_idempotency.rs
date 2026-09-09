@@ -4,7 +4,7 @@ mod e2e_support;
 #[allow(dead_code)]
 mod support;
 
-use std::{process::Command, sync::Arc, thread, time::Duration};
+use std::{process::Command, sync::Arc};
 
 use forge_runtime_application::{HubService, RunService};
 use forge_runtime_domain::{Conversation, ConversationScope, PromptRecord, RunRecord};
@@ -107,15 +107,14 @@ fn agent_key_replays_exactly_without_additional_mutation_or_model_access() {
 fn different_key_lock_loser_announces_its_durable_run_for_explicit_resume() {
     let project = TempDir::new().expect("project");
     let state = TempDir::new().expect("state");
-    let server =
-        LocalResponses::start_delayed(vec![final_stream("first answer")], Duration::from_secs(2));
+    let (server, gate) = LocalResponses::start_gated(final_stream("first answer"));
     let first = spawn_keyed_agent(
         server.endpoint(),
         state.path(),
         project.path(),
         "first-different-key",
     );
-    thread::sleep(Duration::from_millis(250));
+    gate.wait_for_request();
 
     let loser = invoke_keyed_agent(
         server.endpoint(),
@@ -125,13 +124,14 @@ fn different_key_lock_loser_announces_its_durable_run_for_explicit_resume() {
         &["--model", "offline-test-model"],
         "second prompt",
     );
+    gate.release();
+    let first = first.wait_with_output().expect("first Agent exits");
+    assert_success(&first);
     assert!(!loser.status.success());
     let stderr = String::from_utf8(loser.stderr).expect("loser stderr");
     assert!(stderr.contains("run: run-"), "{stderr}");
     assert!(stderr.contains("explicit run resume"), "{stderr}");
 
-    let first = first.wait_with_output().expect("first Agent exits");
-    assert_success(&first);
     assert_eq!(server.finish().len(), 1);
     let runs = persisted_agent_state(state.path()).runs;
     assert_eq!(runs.len(), 2);
