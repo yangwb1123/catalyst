@@ -1,4 +1,4 @@
-use forge_runtime_domain::{HubStoreError, ProviderError};
+use crate::runtime_domain::{HubStoreError, ProviderError};
 use thiserror::Error;
 
 #[derive(Debug, Error)]

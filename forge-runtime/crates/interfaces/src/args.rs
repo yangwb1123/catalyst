@@ -19,6 +19,8 @@ pub(crate) mod group_graph_args;
 mod group_panel_args;
 #[path = "group_synthesis_args.rs"]
 mod group_synthesis_args;
+#[path = "remote_args.rs"]
+mod remote_args;
 #[path = "run_args.rs"]
 mod run_args;
 pub use agent_args::{AgentArgs, AgentCommand};
@@ -35,6 +37,8 @@ pub use group_commands::{
     GroupGraphRunScheduledContractSuccessorCommand, GroupPanelCommand, GroupRunCommand,
     GroupSynthesisCommand, WaveAdmitExecutionOptions,
 };
+pub(crate) use remote_args::parse_scope;
+pub use remote_args::{PromptPageCursor, RemoteCommand, RemoteConversationScope};
 pub use run_args::RunCommand;
 #[derive(Debug, Eq, PartialEq)]
 pub struct Args {
@@ -52,6 +56,7 @@ pub enum Command {
     HubStatus, // readiness probe (no migration)
     Session(SessionCommand),
     Prompt(PromptCommand),
+    Remote(RemoteCommand),
     Governance(GovernanceCommand),
     Group(GroupCommand),
     Run(RunCommand),
@@ -174,6 +179,7 @@ fn is_command(value: &str) -> bool {
             | "demo"
             | "help"
             | "status"
+            | "remote"
     )
 }
 
@@ -200,6 +206,7 @@ fn parse_named_command(
     match command {
         "session" => basic_args::parse_session(tokens),
         "prompt" => basic_args::parse_prompt(tokens),
+        "remote" => remote_args::parse(tokens),
         "governance" => governance_journal_args::parse(tokens),
         "group" => group_args::parse(tokens, &mut options.idempotency_key),
         "run" => run_args::parse(tokens, options),

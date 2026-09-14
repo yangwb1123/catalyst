@@ -115,7 +115,11 @@ fn injected_final_validation_failure_rolls_back_complete_v1_migration_chain() {
         panic!("final validator returned the wrong error class: {error:?}");
     };
     assert_eq!(
-        message, "Hub v29 main catalog has invalid object inventory",
+        message,
+        format!(
+            "Hub v{} main catalog has invalid object inventory",
+            super::SCHEMA_VERSION
+        ),
         "error must originate from the real final catalog validator"
     );
 

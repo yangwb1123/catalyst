@@ -1,6 +1,6 @@
 use std::fmt::Write as _;
 
-use forge_runtime_domain::{
+use crate::runtime_domain::{
     Cancellation, Capability, Message, ModelEvent, ModelFinishReason, ModelProvider, ModelRequest,
     ToolCall, ToolSpec, Usage,
 };

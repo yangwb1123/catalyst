@@ -1,4 +1,4 @@
-use forge_runtime_domain::GroupAgentScheduledNodeContractStore;
+use crate::runtime_domain::GroupAgentScheduledNodeContractStore;
 use rusqlite::Connection;
 
 use crate::runtime_domain::HubStoreError;
@@ -258,7 +258,8 @@ fn current_physical_columns_and_catalog_counts_are_locked() {
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .expect("catalog counts");
-    assert_eq!((tables, implicit_indexes, explicit_indexes), (42, 107, 40));
+    // v33 and v34 add the shared-session journal and execution-consent catalog.
+    assert_eq!((tables, implicit_indexes, explicit_indexes), (53, 115, 47));
     drop((connection, root));
 }
 
@@ -359,6 +360,11 @@ fn without_v15_and_v16(snapshot: &[SchemaRow]) -> Vec<SchemaRow> {
                 && *name != "group_agent_graph_scheduled_node_successor_candidates"
                 && *name != "group_agent_graph_scheduled_node_successor_candidates_created"
                 && !super::V29_CONTROLLER_OBJECTS.contains(&name.as_str())
+                && !super::V30_CHANGE_OBJECTS.contains(&name.as_str())
+                && !super::V31_OWNER_OBJECTS.contains(&name.as_str())
+                && !super::V32_OWNER_CURSOR_OBJECTS.contains(&name.as_str())
+                && !super::V33_PROJECT_CONSENT_OBJECTS.contains(&name.as_str())
+                && !super::V34_PENDING_RUN_INTENT_OBJECTS.contains(&name.as_str())
                 && !matches!(
                     name.as_str(),
                     "governance_record_append_batches"

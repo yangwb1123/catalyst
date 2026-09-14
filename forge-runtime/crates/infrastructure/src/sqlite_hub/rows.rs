@@ -6,8 +6,9 @@ use std::{
 use rusqlite::{Connection, Row, types::Type};
 
 use super::{
-    Conversation, ConversationScope, GroupProjectMember, HubStoreError, Project, PromptRecord,
-    SessionGroup, unavailable,
+    Conversation, ConversationChange, ConversationChangeKind, ConversationPrompt,
+    ConversationScope, GroupProjectMember, HubStoreError, Project, PromptRecord, SessionGroup,
+    unavailable,
 };
 
 pub(super) fn project(row: &Row<'_>) -> rusqlite::Result<Project> {
@@ -43,6 +44,16 @@ pub(super) fn prompt(row: &Row<'_>) -> rusqlite::Result<PromptRecord> {
     })
 }
 
+pub(super) fn conversation_prompt(row: &Row<'_>) -> rusqlite::Result<ConversationPrompt> {
+    Ok(ConversationPrompt {
+        id: row.get(0)?,
+        conversation_id: row.get(1)?,
+        role: row.get(2)?,
+        content: row.get(3)?,
+        created_at_ms: timestamp(row, 4)?,
+    })
+}
+
 pub(super) fn group(row: &Row<'_>) -> rusqlite::Result<SessionGroup> {
     Ok(SessionGroup {
         id: row.get(0)?,
@@ -57,6 +68,38 @@ pub(super) fn group_member(row: &Row<'_>) -> rusqlite::Result<GroupProjectMember
         project_id: row.get(1)?,
         role: row.get(2)?,
         added_at_ms: timestamp(row, 3)?,
+    })
+}
+
+pub(super) fn conversation_change(row: &Row<'_>) -> rusqlite::Result<ConversationChange> {
+    let schema_version: i64 = row.get(1)?;
+    if schema_version != 1 {
+        return Err(conversion_error(
+            1,
+            format!("unsupported Hub Conversation change schema version {schema_version}"),
+        ));
+    }
+    let event_kind: String = row.get(5)?;
+    let kind = match event_kind.as_str() {
+        "conversation_created" => ConversationChangeKind::ConversationCreated,
+        "prompt_appended" => ConversationChangeKind::PromptAppended,
+        _ => {
+            return Err(conversion_error(
+                5,
+                format!("unknown Hub Conversation change kind '{event_kind}'"),
+            ));
+        }
+    };
+    Ok(ConversationChange {
+        cursor: timestamp(row, 0)?,
+        schema_version: u16::try_from(schema_version).map_err(|error| {
+            rusqlite::Error::FromSqlConversionFailure(1, Type::Integer, Box::new(error))
+        })?,
+        conversation_id: row.get(2)?,
+        entity_id: row.get(3)?,
+        aggregate_version: timestamp(row, 4)?,
+        kind,
+        created_at_ms: timestamp(row, 6)?,
     })
 }
 

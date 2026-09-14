@@ -10,19 +10,21 @@ OpenHands 仍可作为外部宿主接入治理能力，但不再是 ForgeOS 可�
 
 ## 目标 (Goals)
 - **G0 第一方可用 Agent** — 给出一个任务，Agent 能在选定项目中检查、修改、验证并返回结果，
-  且 Conversation、Run 与事件可在本地追踪；先面向受信开发环境使用。
+  且 Conversation、Run 与事件可在本地追踪；先面向受信开发环境使用。近期产品目标扩展为个人单账号、单一逻辑 Coordinator 下的多端会话与 Prompt；认证 API、客户端和远程执行仍须按 Roadmap 阶段门实现，当前代码不因此视为已具备这些能力。
 - **G1 需求自动发现** — 用户给 Idea,系统做行业/竞品/能力矩阵分析,输出 PRD,而非直接写码。
 - **G2 自动架构设计** — 按 lifecycle 推导(单体→服务→事件驱动),分阶段演进,不 day-1 镀金。
 - **G3 自动模型调度** — 多维路由(复杂度/风险/阶段/预算/上下文/历史),贵模型只用在该用处。
 - **G4 自动 Roadmap** — Gap 分析驱动「该做什么」,而非用户逐条下达。
 - **G5 持续演化** — Scan→Gap→Roadmap→Implement→Harness→Review→Evaluate→Scan 闭环。
+- **G6 个人多端协作（分阶段目标）** — CLI、TUI、Web、App、Mobile 可查看同一账号下各实例的会话并提交 Prompt；后续显式注册设备、观察资源并通过受控阶段门调度任务。
 
 ## 非目标 (Non-Goals)
-- 不复制外部编码 CLI 的全部 UI、插件生态或远程服务；它们是可选互操作宿主，不是依赖。
+- 不复制外部编码 CLI 的全部 UI、插件生态或其服务；Forge 的个人多端能力由自己的单一逻辑 Coordinator 提供，不依赖外部编码 CLI 服务。
 - Dev Agent 的 `--dev` 是受信 same-user 模式，不是 OS sandbox，也不承诺生产环境无人值守安全。
 - 不自研基础模型;不做 IDE;v0–v2 不做跨厂商模型池(见 ROADMAP)。
 - 不持有云/K8s 凭证或直接执行远程部署/回滚；ForgeOS 只生成并验证声明式交付包，
   实际应用由外部 CI/operator 完成并由人审 marker 确认。
+- 近期不承诺团队 ACL、多租户、生产级 HA 或多 Coordinator federation；个人设备执行仍须经过显式注册、资源/信任检查、租约与隔离阶段门。
 
 ## 最高论点
 需求探索 > 代码实现。多数项目失败在需求/架构没推导清楚,而非代码写错。

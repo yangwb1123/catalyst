@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use forge_runtime_domain::{
+use crate::runtime_domain::{
     Cancellation, ClaimGroupModelAnalysisDispatch, ClaimGroupModelAnalysisDispatchResult,
     CompleteGroupModelAnalysis, CompleteGroupModelAnalysisResult, GROUP_MODEL_ANALYSIS_VERSION,
     GroupModelAnalysisDispatchAuthority, GroupModelAnalysisInspection, GroupModelAnalysisProvider,

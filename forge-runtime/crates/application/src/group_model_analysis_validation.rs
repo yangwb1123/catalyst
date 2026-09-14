@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use forge_runtime_domain::{
+use crate::runtime_domain::{
     Cancellation, ClaimGroupModelAnalysisDispatch, CompleteGroupModelAnalysisResult,
     GROUP_MODEL_ANALYSIS_CONFIG_DIGEST_DOMAIN, GROUP_MODEL_ANALYSIS_CONSENT_VERSION,
     GROUP_MODEL_ANALYSIS_VERSION, GroupModelAnalysisDispatchClaim, GroupModelAnalysisInspection,

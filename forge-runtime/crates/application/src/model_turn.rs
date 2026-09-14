@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use forge_runtime_domain::{
+use crate::runtime_domain::{
     Cancellation, Message, ModelEvent, ModelEventStream, ModelFinishReason, ModelProvider,
     ModelRequest, RuntimeEventKind, ToolCall, Usage,
 };

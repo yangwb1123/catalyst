@@ -166,6 +166,93 @@ cargo run -p forge-runtime-cli -- \
   --state-dir /tmp/forge-hub prompt list
 ```
 
+## Shared Forge sessions
+
+The remote CLI and line-oriented TUI use the authenticated Forge session API.
+The Snaplink deployment must define the public `forge-cli` client with the
+`device_code` grant, resource `forge-api`, and the
+`forge:conversations:read forge:conversations:write` scopes.
+
+```bash
+export SNAPLINK_ISSUER_URL=https://id.example
+export FORGE_API_URL=https://forge.example
+
+# Sign in with Snaplink's device authorization page.
+cargo run -p forge-runtime-cli -- remote login
+
+# Browse the shared owner-scoped conversations and change feed.
+cargo run -p forge-runtime-cli -- remote sessions list
+cargo run -p forge-runtime-cli -- remote tui
+cargo run -p forge-runtime-cli -- remote changes list
+# Override the saved cursor for one read without changing the checkpoint.
+cargo run -p forge-runtime-cli -- remote changes list --after-cursor 0
+
+# Inspect metadata for Runs already attached to a shared Conversation.
+cargo run -p forge-runtime-cli -- remote runs list CONVERSATION_ID
+cargo run -p forge-runtime-cli -- remote runs timeline CONVERSATION_ID RUN_ID
+
+# Filter the current server page by an exact Project or Group scope.
+cargo run -p forge-runtime-cli -- remote sessions list --scope project:PROJECT_ID
+# Scan up to 64 pages, applying the scope filter across all scanned pages.
+cargo run -p forge-runtime-cli -- --json remote sessions list --scope project:PROJECT_ID --all
+
+# Create a shared conversation and append a prompt with CAS/idempotency guards.
+cargo run -p forge-runtime-cli -- --idempotency-key create-1 \
+  remote sessions create --scope group:GROUP_ID --title "Shared work"
+cargo run -p forge-runtime-cli -- --idempotency-key prompt-1 \
+  remote prompts add CONVERSATION_ID --expected-version 1 "Review the current task."
+```
+
+Authenticated remote conversations can use Global, Project, or Group scope when
+the selected scope already exists in the Hub. Scope organizes a Conversation;
+the exact authenticated owner still controls its visibility, so Group membership
+does not share it with other accounts. Project paths and files are not returned,
+and a Project scope grants no execution authority. CLI and TUI can create
+conversations in all three scopes; CLI creation defaults to Global. The TUI
+displays each session scope. By default CLI `--scope` filters only the current
+server page; `--all` scans at most 64 keyset pages (8,192 sessions) and applies
+the filter across them. If `has_more` remains true, continue from the returned
+`next_after_id` with another `--all --after ID` request. Pages are read
+separately rather than from a frozen snapshot. Appending a remote Prompt stores
+it but does not create or dispatch a Run.
+
+Run inspection is read-only and metadata-only: summaries expose the Run and
+Prompt IDs, creation time, latest sequence and a closed status; timeline pages
+expose event sequence, timestamp and one of four sanitized event kinds. Assistant
+text, tool details, execution configuration, paths and error messages are not
+returned. Run pages cap at 25 entries and timeline pages at 128 entries; both
+also obey a 2 MiB source-event budget and may return a shorter page with a
+continuation cursor. `nonterminal` means the latest recorded event is not
+terminal; it does not prove that a process is currently running.
+
+The default Snaplink client ID is `forge-cli`; override it with
+`SNAPLINK_CLIENT_ID` only when the deployment uses a different profile.
+On Unix, login saves the access token under
+`$XDG_CONFIG_HOME/forge-runtime/credentials` (or
+`$HOME/.config/forge-runtime/credentials`) with current-user ownership and
+private directory/file modes. `FORGE_ACCESS_TOKEN`, when set, overrides the
+saved credential. If several accounts match, set `SNAPLINK_SUBJECT` and, when
+needed, `SNAPLINK_TENANT_ID` to select one. This slice stores access tokens
+only; after expiry, run `remote login` again. Non-Unix systems fail closed for
+persistent credential storage and can use the explicit environment-token
+override.
+
+With a saved login, `remote changes list` and TUI `sync` share a private local
+checkpoint keyed by the API origin and exact saved account. The CLI resumes and
+advances it after a valid page; `--after-cursor` is a one-off override. TUI only
+commits the cursor after refreshing the conversation list and selected history.
+Setting `FORGE_ACCESS_TOKEN` disables checkpoint persistence.
+
+The CLI checks the returned JWT claims to catch a mismatched issuer, owner,
+audience, or scope before saving; Forge Core remains responsible for token
+signature and request authorization. Prompt submission currently persists a
+Prompt in the shared Conversation and returns its storage result. It does not
+create a Run or dispatch work to a device. The API also requires the HTTP Host
+to match its bound listener authority, so a reverse proxy that preserves a
+different public Host currently receives `421`; see the active
+[cross-device implementation plan](../docs/design/ai-engineering-os/cross-device-session-and-fabric-plan.md)
+for the remaining Run, proxy, and device-fabric work.
+
 Local-private Groups can link several Projects with descriptive roles and own
 their own discussion Conversations:
 
@@ -836,24 +923,28 @@ validated completed Run and its Run-to-Prompt association in one SQLite
 transaction; it is not a caller-constructible Prompt convention.
 
 SQLite opening retries the complete connection/PRAGMA/WAL/schema sequence on
-`BUSY`/`LOCKED` under one five-second deadline. Tests exercise 8×16 concurrent
-first opens, a 2.3-second held lock, and real `0600` DB/WAL/SHM files. This is
+`BUSY`/`LOCKED` with 10–100 ms capped exponential backoff under one 15-second deadline.
+An in-flight SQLite attempt can finish its 250 ms busy timeout after that
+deadline, but no further retry starts. Tests exercise 8×16 concurrent first
+opens, a 2.3-second held lock, deadline exhaustion, and real `0600` DB/WAL/SHM files. This is
 now also an append-only Run/event journal. It makes interrupted state visible;
 it does not prove that replaying an interrupted tool effect is safe. Run
 inspection reads its record, cursor, events, and bound Prompt from one SQLite
 snapshot so a concurrent append cannot look like corruption.
 
-The main SQLite catalog is exclusively Hub-owned. Every declared v0–v28 schema
+The main SQLite catalog is exclusively Hub-owned. Every declared v0–v29 schema
 is validated before migration DDL (v0 must be empty); the final migration step
-then validates the exact v28 catalog, including the v27 governance semantic view
-and the immutable Project Run direct-parent lineage table, plus all DDL, columns,
-keys, foreign keys, structural/index contracts, and the absence of
-extra views/triggers/tables before the immediate transaction commits.
+then validates the exact v30 catalog, including the v27 governance semantic view,
+the immutable Project Run direct-parent lineage table, and the v30 Conversation
+change journal, plus all DDL, columns, keys, foreign keys, structural/index
+contracts, and the absence of extra views/triggers/tables before the immediate
+transaction commits.
 Per-version exact DDL expectations are regenerated from the immutable migration
 batches, while each independent structural contract is release-pinned; exact
-DDL validators separately catch CHECK-only drift. v28 owns 40 tables, 39
-explicit indexes and 102 implicit index signatures. Its structural-contract SHA-256 is
-`e9b13bc846f4cd1ec4460fddbf9ed6bc496b9e65c0f52aa49807bfd7a9be4064`.
+DDL validators separately catch CHECK-only drift. v30 owns 46 tables, 42
+explicit indexes and 109 implicit index signatures. Its structural-contract
+SHA-256 is
+`fdc63fbc80e97b208abd53e47a8802911ca0e283050a95fb393147a19e40b4e8`.
 Unexpected state fails as corruption and is never auto-repaired.
 Environmental SQLite failures remain unavailable. This detects schema drift
 but is not a same-user tamper or TOCTOU boundary.

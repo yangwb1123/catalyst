@@ -104,6 +104,23 @@ go -C forge-core run ./cmd/forge check  --root "$PWD"   # python3 harness/check.
 go -C forge-core run ./cmd/forge accept --root "$PWD"   # node harness/acceptance.mjs
 ```
 
+The local CLI also provides an offline, caller-declared device comparison:
+
+```sh
+go -C forge-core run ./cmd/forge device-placement dry-run --input placement-request.json
+cat placement-request.json | go -C forge-core run ./cmd/forge device-placement dry-run --input -
+```
+
+It evaluates one bounded `forge.device-placement-dry-run/v1` request at its
+fixed `evaluated_at_ms`, emits stable per-device `matches_requirements` results
+and sorted exclusion reasons, and labels every owner/resource/security field
+unverified. It never selects a target, authorizes execution, reserves resources,
+dispatches, discovers devices, or contacts an API/Runner. The exact schema and
+reason semantics are documented in
+[`internal/deviceplacement/README.md`](internal/deviceplacement/README.md).
+This does not enable live inventory or amend ADR-0039; ADR-0114 remains
+Proposed-only.
+
 ## Local App Server foundation
 
 The first R0 product slice is an intentionally narrow local process boundary:
@@ -135,11 +152,56 @@ is not a client API.
 
 The receipt completes only after local schema validation and before HTTP is
 accepted; requests must use the exact listener authority, and connections and
-in-flight requests are bounded. The server still has no Runtime or Harness live
-bridge, ambient workspace discovery, provider access, outbound request, CORS
-grant, product command/query API, Objective/Timeline/Outcome service, projection
-worker, or Web UI. Health means only that this local process is serving its
-versioned endpoint after local store validation.
+in-flight requests are bounded. Without the optional session API configuration,
+this process only serves health and its local control store. To enable the shared
+Conversation API, configure the direct Runtime executable/state and Snaplink
+issuer/audience plus the exact Coordinator tenant and subject. The resource server
+rejects other accounts even when they present a valid token for the same tenant;
+this Coordinator is intentionally single-account so a second principal cannot
+attach Conversations to local Project or Group scopes. Remote Project/Group
+scope is organizational metadata only, and does not grant Run authority. A
+private-interface listener additionally requires TLS; browser access needs an
+explicit exact Origin allowlist. Optional repeatable
+`--execution-profile-binding` values accept exact JSON records with
+`project_id`, `profile_id`, and lowercase 32-byte `profile_sha256`; the
+server loads these as an immutable, fail-closed Project profile catalog. A
+binding requires the authenticated Runtime/Hub API configuration, and profile
+lookup derives the Project from an exact-owner Hub Conversation read. This
+policy does not grant consent, and no HTTP route currently calls the catalog.
+There is no public Run-intent route. Prompt writes persist text but do not
+start Runs.
+
+By default, Forge validates access tokens against Snaplink JWKS. To make an
+already-issued token's server-side revocation visible on the next Forge API
+request, configure opt-in remote introspection instead: set
+`--snaplink-introspect-url` to the same-origin HTTPS `/token/introspect` URL,
+`--snaplink-introspect-client-id` to a confidential resource-server client,
+and `--snaplink-introspect-secret-file` to its canonical absolute secret file
+(owner-only permissions). Provision a dedicated active confidential Snaplink
+client for this backend use; keep its secret in the Forge server's secret
+file and never in Flutter, CLI, or browser configuration. Snaplink's current
+introspection gate authenticates an active client but does not scope that
+client's introspection authority by audience, so treat the credential as a
+privileged backend secret. Forge still verifies the issuer, audience, and
+configured tenant/subject pins from the introspection result. Do not also set
+`--snaplink-jwks-url`; the modes are mutually exclusive and introspection has
+no local-JWKS fallback. Forge performs introspection for each authenticated
+request, so an unavailable or inactive response fails closed. Cross-replica
+revocation still depends on Snaplink being configured with its durable/shared
+revocation store; local in-memory revocation alone cannot guarantee that
+another Snaplink replica will report a token inactive. A request already
+authorized before a revoke cannot be recalled.
+
+```sh
+--execution-profile-binding '{"project_id":"project-id","profile_id":"profile-v1","profile_sha256":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}'
+```
+Owner-scoped Run observation is available through
+`GET /api/v1/conversations/{conversationID}/runs` and
+`GET /api/v1/conversations/{conversationID}/runs/{runID}/timeline`; it returns
+bounded summaries and sanitized event sequence/type/timestamp metadata only.
+These routes do not create or dispatch Runs and never return Run event bodies.
+There is still no remote device inventory, live placement/scheduling, Runner dispatch, Objective/
+Timeline/Outcome service, projection worker, or Web UI in this server package.
 
 ## Platform Core contract candidates
 

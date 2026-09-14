@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use forge_runtime_domain::{
+use crate::runtime_domain::{
     Message, ModelEvent, ModelEventStream, ModelFinishReason, ModelProvider, ModelRequest,
     ToolCall, Usage,
 };

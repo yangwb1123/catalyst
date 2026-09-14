@@ -1,4 +1,4 @@
-use forge_runtime_domain::{
+use crate::runtime_domain::{
     Cancellation, ClaimGroupModelAnalysisDispatch, ClaimGroupPanelSynthesisDispatch,
     CompleteGroupModelAnalysis, CompleteGroupPanelSynthesis, GROUP_ANALYSIS_PANEL_VERSION,
     GROUP_MODEL_ANALYSIS_CONFIG_DIGEST_DOMAIN, GROUP_MODEL_ANALYSIS_CONSENT_VERSION,

@@ -35,6 +35,24 @@ func TestRunRejectsPositionalArguments(t *testing.T) {
 	}
 }
 
+func TestRunRejectsMalformedOrDuplicateExecutionProfileBindings(t *testing.T) {
+	valid := `{"project_id":"project-1","profile_id":"profile-1","profile_sha256":"000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"}`
+	for _, bindings := range [][]string{
+		{`{"project_id":"project-1","profile_id":"profile-1"}`},
+		{valid, valid},
+	} {
+		args := []string{"--execution-profile-binding", bindings[0]}
+		if len(bindings) == 2 {
+			args = append(args, "--execution-profile-binding", bindings[1])
+		}
+		var stdout, stderr bytes.Buffer
+		if code := run(context.Background(), args, &stdout, &stderr); code != 2 ||
+			!strings.Contains(stderr.String(), "execution profile policy") {
+			t.Errorf("bindings=%#v exit=%d stderr=%q", bindings, code, stderr.String())
+		}
+	}
+}
+
 func TestAnnounceWritesOneVersionedJSONReceipt(t *testing.T) {
 	var output bytes.Buffer
 	ready := appserver.Ready{APIVersion: appserver.APIVersion, Event: "listening", Listen: "http://127.0.0.1:1"}

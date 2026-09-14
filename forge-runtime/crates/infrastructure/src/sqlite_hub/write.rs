@@ -2,16 +2,19 @@ use std::path::Path;
 
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 
+mod group;
+mod owned;
+pub(super) use group::{add_project_to_group, create_group};
+pub(super) use owned::{append_owned_prompt, create_owned_conversation, import_owned_conversation};
+
 use super::{
-    Conversation, ConversationScope, GroupProjectMember, HubEntity, HubStoreError, Project,
-    PromptRecord, SessionGroup, read_error, rows, write_error,
+    Conversation, ConversationScope, HubEntity, HubStoreError, Project, PromptRecord, read_error,
+    rows, write_error,
 };
 
 const PROJECT_COLUMNS: &str = "id, name, canonical_path, created_at_ms";
 const CONVERSATION_COLUMNS: &str = "id, scope_kind, scope_id, title, created_at_ms, updated_at_ms";
 const PROMPT_COLUMNS: &str = "id, conversation_id, role, content, idempotency_key, created_at_ms";
-const GROUP_COLUMNS: &str = "id, name, created_at_ms";
-const MEMBER_COLUMNS: &str = "group_id, project_id, role, added_at_ms";
 
 pub(super) fn open_project(
     connection: &mut Connection,
@@ -79,6 +82,13 @@ pub(super) fn create_conversation(
         updated_at_ms: now,
     };
     insert_conversation(&transaction, &conversation, idempotency_key)?;
+    super::change_write::append_conversation_change(
+        &transaction,
+        "conversation_created",
+        &conversation.id,
+        &conversation.id,
+        conversation.created_at_ms,
+    )?;
     transaction
         .commit()
         .map_err(|error| write_error(HubEntity::Conversation, error))?;
@@ -119,84 +129,6 @@ pub(super) fn append_prompt(
         .commit()
         .map_err(|error| write_error(HubEntity::Prompt, error))?;
     Ok(prompt)
-}
-
-pub(super) fn create_group(
-    connection: &mut Connection,
-    name: &str,
-    idempotency_key: &str,
-) -> Result<SessionGroup, HubStoreError> {
-    let transaction = begin(connection)?;
-    if let Some(existing) = group_by_key(&transaction, idempotency_key)? {
-        if existing.name != name {
-            return Err(conflict(
-                HubEntity::Group,
-                "idempotency key was reused with a different group name",
-            ));
-        }
-        transaction
-            .commit()
-            .map_err(|error| write_error(HubEntity::Group, error))?;
-        return Ok(existing);
-    }
-    let group = SessionGroup {
-        id: rows::new_id(&transaction, "group")?,
-        name: name.into(),
-        created_at_ms: rows::now_ms()?,
-    };
-    transaction
-        .execute(
-            "INSERT INTO groups(id,name,idempotency_key,created_at_ms)
-             VALUES(?1,?2,?3,?4)",
-            params![
-                group.id,
-                group.name,
-                idempotency_key,
-                to_i64(group.created_at_ms)?
-            ],
-        )
-        .map_err(|error| write_error(HubEntity::Group, error))?;
-    transaction
-        .commit()
-        .map_err(|error| write_error(HubEntity::Group, error))?;
-    Ok(group)
-}
-
-pub(super) fn add_project_to_group(
-    connection: &mut Connection,
-    group_id: &str,
-    project_id: &str,
-    role: &str,
-    idempotency_key: &str,
-) -> Result<GroupProjectMember, HubStoreError> {
-    let transaction = begin(connection)?;
-    ensure_exists(&transaction, "groups", group_id, HubEntity::Group)?;
-    ensure_exists(&transaction, "projects", project_id, HubEntity::Project)?;
-    if let Some(existing) = member_by_key(&transaction, idempotency_key)? {
-        ensure_same_member(&existing, group_id, project_id, role)?;
-        transaction
-            .commit()
-            .map_err(|error| write_error(HubEntity::GroupProjectMember, error))?;
-        return Ok(existing);
-    }
-    if let Some(existing) = member_by_pair(&transaction, group_id, project_id)? {
-        ensure_same_member(&existing, group_id, project_id, role)?;
-        return Err(conflict(
-            HubEntity::GroupProjectMember,
-            "project link already exists under a different idempotency key",
-        ));
-    }
-    let member = GroupProjectMember {
-        group_id: group_id.into(),
-        project_id: project_id.into(),
-        role: role.into(),
-        added_at_ms: rows::now_ms()?,
-    };
-    insert_member(&transaction, &member, idempotency_key)?;
-    transaction
-        .commit()
-        .map_err(|error| write_error(HubEntity::GroupProjectMember, error))?;
-    Ok(member)
 }
 
 fn begin(connection: &mut Connection) -> Result<Transaction<'_>, HubStoreError> {
@@ -245,52 +177,6 @@ fn prompt_by_key(
             &format!("SELECT {PROMPT_COLUMNS} FROM prompts WHERE idempotency_key = ?1"),
             [key],
             rows::prompt,
-        )
-        .optional()
-        .map_err(read_error)
-}
-
-fn group_by_key(
-    transaction: &Transaction<'_>,
-    key: &str,
-) -> Result<Option<SessionGroup>, HubStoreError> {
-    transaction
-        .query_row(
-            &format!("SELECT {GROUP_COLUMNS} FROM groups WHERE idempotency_key = ?1"),
-            [key],
-            rows::group,
-        )
-        .optional()
-        .map_err(read_error)
-}
-
-fn member_by_key(
-    transaction: &Transaction<'_>,
-    key: &str,
-) -> Result<Option<GroupProjectMember>, HubStoreError> {
-    transaction
-        .query_row(
-            &format!("SELECT {MEMBER_COLUMNS} FROM group_projects WHERE idempotency_key = ?1"),
-            [key],
-            rows::group_member,
-        )
-        .optional()
-        .map_err(read_error)
-}
-
-fn member_by_pair(
-    transaction: &Transaction<'_>,
-    group_id: &str,
-    project_id: &str,
-) -> Result<Option<GroupProjectMember>, HubStoreError> {
-    transaction
-        .query_row(
-            &format!(
-                "SELECT {MEMBER_COLUMNS} FROM group_projects
-                 WHERE group_id = ?1 AND project_id = ?2"
-            ),
-            params![group_id, project_id],
-            rows::group_member,
         )
         .optional()
         .map_err(read_error)
@@ -359,6 +245,21 @@ pub(super) fn insert_prompt(
     transaction: &Transaction<'_>,
     prompt: &PromptRecord,
 ) -> Result<(), HubStoreError> {
+    insert_prompt_with_hook(transaction, prompt, |_| Ok(()))
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum PromptInsertStage {
+    PromptRow,
+    ConversationTimestamp,
+    ChangeJournal,
+}
+
+pub(super) fn insert_prompt_with_hook(
+    transaction: &Transaction<'_>,
+    prompt: &PromptRecord,
+    mut after_stage: impl FnMut(PromptInsertStage) -> Result<(), HubStoreError>,
+) -> Result<(), HubStoreError> {
     let created_at = to_i64(prompt.created_at_ms)?;
     transaction
         .execute(
@@ -375,34 +276,22 @@ pub(super) fn insert_prompt(
             ],
         )
         .map_err(|error| write_error(HubEntity::Prompt, error))?;
+    after_stage(PromptInsertStage::PromptRow)?;
     transaction
         .execute(
             "UPDATE conversations SET updated_at_ms = ?1 WHERE id = ?2",
             params![created_at, prompt.conversation_id],
         )
         .map_err(|error| write_error(HubEntity::Conversation, error))?;
-    Ok(())
-}
-
-fn insert_member(
-    transaction: &Transaction<'_>,
-    member: &GroupProjectMember,
-    key: &str,
-) -> Result<(), HubStoreError> {
-    transaction
-        .execute(
-            "INSERT INTO group_projects(
-               group_id,project_id,role,idempotency_key,added_at_ms
-             ) VALUES(?1,?2,?3,?4,?5)",
-            params![
-                member.group_id,
-                member.project_id,
-                member.role,
-                key,
-                to_i64(member.added_at_ms)?
-            ],
-        )
-        .map_err(|error| write_error(HubEntity::GroupProjectMember, error))?;
+    after_stage(PromptInsertStage::ConversationTimestamp)?;
+    super::change_write::append_conversation_change(
+        transaction,
+        "prompt_appended",
+        &prompt.conversation_id,
+        &prompt.id,
+        prompt.created_at_ms,
+    )?;
+    after_stage(PromptInsertStage::ChangeJournal)?;
     Ok(())
 }
 
@@ -439,22 +328,6 @@ fn ensure_same_prompt(
         })
 }
 
-fn ensure_same_member(
-    existing: &GroupProjectMember,
-    group_id: &str,
-    project_id: &str,
-    role: &str,
-) -> Result<(), HubStoreError> {
-    (existing.group_id == group_id && existing.project_id == project_id && existing.role == role)
-        .then_some(())
-        .ok_or_else(|| {
-            conflict(
-                HubEntity::GroupProjectMember,
-                "project is already linked with different membership data",
-            )
-        })
-}
-
 fn project_name(path: &Path) -> String {
     path.file_name()
         .and_then(|name| name.to_str())
@@ -462,7 +335,7 @@ fn project_name(path: &Path) -> String {
         .map_or_else(|| path.display().to_string(), str::to_owned)
 }
 
-fn to_i64(value: u64) -> Result<i64, HubStoreError> {
+pub(super) fn to_i64(value: u64) -> Result<i64, HubStoreError> {
     i64::try_from(value).map_err(|error| HubStoreError::Unavailable {
         message: error.to_string(),
     })

@@ -1,6 +1,6 @@
 use std::fs;
 
-use forge_runtime_domain::{ConversationScope, GroupContextPolicy, HubStore};
+use crate::runtime_domain::{ConversationScope, GroupContextPolicy, HubStore};
 use tempfile::TempDir;
 
 use super::{SqliteHubStore, group_context_read};

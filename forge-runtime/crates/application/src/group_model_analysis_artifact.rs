@@ -1,4 +1,4 @@
-use forge_runtime_domain::{
+use crate::runtime_domain::{
     GROUP_MODEL_ANALYSIS_RESULT_DIGEST_DOMAIN, GROUP_MODEL_ANALYSIS_RESULT_VERSION,
     GroupModelAnalysisDispatchClaim, GroupModelAnalysisOutcome, GroupModelAnalysisResult,
     GroupModelAnalysisResultArtifact, MAX_GROUP_MODEL_ANALYSIS_RESULT_BYTES, ModelFinishReason,

@@ -2,8 +2,10 @@
 
 > 状态：**Proposed / 目标态蓝图，非已实现声明**
 > 日期：2026-08-21
-> 范围：`forge-core`、`forge-runtime`、`harness`，以及其上的 CLI、TUI、App 产品层
+> 范围：`forge-core`、`forge-runtime`、`harness`，以及其上的 CLI、TUI、Web、桌面 App、Mobile 产品层
 > 约束：本文不授予运行、审批、知识写入或完成裁决权限；现状以代码、测试、正式 ADR 和 `forge accept` 为准。
+
+个人单账号跨端会话与多设备执行路线已获用户批准实施，并已进入 Roadmap/Sprint；这项批准更新近期产品优先级，不将本蓝图的目标态、Proposed ADR 或未验收实现声明为已交付。当前阶段门见[跨端会话与设备执行织网实施方案](cross-device-session-and-fabric-plan.md)。
 
 ## 1. 执行摘要
 
@@ -18,7 +20,7 @@ Forge 当前不是无序堆砌，而是一个“可信执行与合同治理强�
 建议将 Forge 明确分成两层：
 
 1. **ForgeOS Platform**：继续作为 Agent 之上的可信工程控制与执行平台；
-2. **Forge Workspace（工作名）**：在 Platform 之上提供 CLI、TUI、App，面向用户交付“目标到验收”的产品闭环。
+2. **Forge Workspace（工作名）**：在 Platform 之上提供 CLI、TUI、Web、桌面 App、Mobile，面向用户交付“目标到验收”的产品闭环，并让个人用户从不同实例查看和继续同一会话。
 
 目标架构应采用本地优先的模块化单体：Go 是唯一产品控制面，Rust 是执行面，Harness 是外部验证面；三者通过版本化命令、事件、Artifact 与 Receipt 协作。现阶段不需要微服务化，也不应重写为单一语言。
 
@@ -26,7 +28,7 @@ Forge 当前不是无序堆砌，而是一个“可信执行与合同治理强�
 
 ### 2.1 产品命题
 
-Forge Workspace 是位于 Codex、Claude Code 等编码 Agent 之上的自治软件交付控制塔。它把用户目标转换为可验证的项目变更，完整呈现 Agent 的可观测行为，在策略和预算约束下自动推进工作，并在一个 Space 内理解多个项目之间的关联。
+Forge Workspace 是位于 Codex、Claude Code 等编码 Agent 之上的自治软件交付控制塔。它把用户目标转换为可验证的项目变更，完整呈现 Agent 的可观测行为，在策略和预算约束下自动推进工作，并在一个 Space 内理解多个项目之间的关联。个人多端目标是由一个逻辑 Coordinator 汇聚会话和 Prompt；设备资源观察与远程任务调度按独立阶段门逐步开放。
 
 它交付的不是“一次成功的 Agent 对话”，而是一个可验收的 Outcome：
 
@@ -61,6 +63,8 @@ Forge Workspace 是位于 Codex、Claude Code 等编码 Agent 之上的自治软
 6. 知道为什么推进、为什么阻塞、为什么完成；
 7. 让系统基于历史 Outcome 改进路由、上下文、工作流和验证策略；
 8. 分析一个变更对其他项目、API、数据、部署和 Owner 的影响。
+9. 从 CLI、TUI、Web、桌面 App 或 Mobile 查看个人账号下不同实例创建的会话，并从任一已授权客户端继续提交 Prompt。
+10. 后续显式注册设备、查看资源与能力新鲜度，再由唯一调度 owner 对合格 Runner 做可解释的任务放置。
 
 ### 2.4 非目标
 
@@ -69,7 +73,7 @@ Forge Workspace 是位于 Codex、Claude Code 等编码 Agent 之上的自治软
 - 替代 Codex、Claude Code 等 Agent 宿主；
 - 展示模型未公开的内部状态或原始隐藏思维链；
 - 在无人授权下自动部署生产、读取生产凭证或修改安全策略；
-- 一开始就提供云端多租户、HA、远程 Runner 和企业 IAM；
+- 一开始就提供团队 ACL、多租户、云端 HA、企业 IAM 或多 Coordinator federation；个人单账号的会话同步、设备 inventory 与受控 Runner 执行按独立 Roadmap 阶段门交付。
 - 使用 LLM 推断替代确定性代码、合同、测试和部署关系；
 - 让系统直接修改自己的 Harness、PDP 或审批边界后自行宣布有效。
 
@@ -86,7 +90,7 @@ Forge Workspace 是位于 Codex、Claude Code 等编码 Agent 之上的自治软
 | 自动推进 | 局部具备 | 缺顶层 Objective/Change/WorkGraph Reconciler |
 | 跨项目分析 | 早期基础 | 缺稳定跨源身份、完整关系图和影响闭包 |
 | 自我进化 | 初级 | 主要是文本记忆和提案，缺实验、评估、晋升、回滚 |
-| CLI/TUI/App 产品 | 尚未闭环 | 缺统一 App Server、查询投影和结果导向的信息架构 |
+| CLI/TUI/Web/App/Mobile 产品 | 尚未闭环 | 缺统一 Coordinator API、跨实例查询投影和结果导向的信息架构 |
 
 ### 3.2 `forge-core`
 
@@ -94,7 +98,7 @@ Forge Workspace 是位于 Codex、Claude Code 等编码 Agent 之上的自治软
 
 - 已形成串行/并行工作流、预算、重试、loopback、checkpoint 和 gate 接线；
 - 适合继续承担策略、调度、路由和产品应用服务；
-- Go 对本地 daemon、CLI、TUI 和控制循环较合适。
+- Go 对本地 daemon/Coordinator、CLI/TUI 客户端和控制循环较合适。
 
 当前问题：
 
@@ -181,34 +185,15 @@ Action → ArtifactRef → ExecutionReceipt / VerificationReceipt → Outcome
 
 ## 5. 目标逻辑架构
 
-```text
-                 CLI / TUI / Web App / Desktop
-                              │
-                   Query API + Command API
-                       Durable Event Stream
-                              │
-┌──────────────────────────────────────────────────────────────┐
-│ Forge App Server / Control Plane — Go                        │
-│                                                              │
-│ Workspace Catalog │ Objective/Change │ WorkGraph/Reconciler  │
-│ Policy/Approval   │ Router/Budget    │ Knowledge/Projection  │
-└──────────────────────────────┬───────────────────────────────┘
-                               │ versioned command
-                               ▼
-┌──────────────────────────────────────────────────────────────┐
-│ Forge Runtime / Execution Plane — Rust                       │
-│                                                              │
-│ Agent Adapters │ Session/Turn/Action │ Tool/Sandbox/Process  │
-│ Runtime Journal│ Artifact/CAS        │ Execution Receipt     │
-└──────────────────────────────┬───────────────────────────────┘
-                               │ immutable evidence
-                               ▼
-┌──────────────────────────────────────────────────────────────┐
-│ Harness / Independent Verification                           │
-│ Acceptance │ Security │ Architecture │ Cross-language Contract│
-└──────────────────────────────┬───────────────────────────────┘
-                               │ verdict receipt
-                               └──────────────→ Control Plane
+```mermaid
+flowchart TB
+  C[CLI / TUI / Web / Desktop App / Mobile] -->|versioned query and command API; durable cursor| G[Forge Coordinator / Go Control Plane]
+  G -->|versioned Runtime port| R[Forge Runtime / Rust]
+  R -->|immutable evidence| H[Harness / Independent Verification]
+  H -->|verification receipt| G
+  G -->|mTLS assignment with lease and fencing| N[Enrolled Runner / Rust Runtime]
+  N -->|fenced result and receipt references| G
+  R -->|canonical Conversation, Prompt, Run state| G
 ```
 
 ### 5.1 所有权规则
@@ -219,22 +204,25 @@ Action → ArtifactRef → ExecutionReceipt / VerificationReceipt → Outcome
 | 风险、预算、审批策略 | Go Policy/Kernel | Agent 不自授予权限 |
 | Agent Session/Turn/Tool Loop | Rust Runtime | Go 不解析 stdout 模拟完整执行语义 |
 | Tool、进程、网络、Sandbox | Rust Runtime | UI 不直接调用执行器 |
+| 个人设备注册、资源快照、Placement、lease | Go Control Plane | Runner 上报不等于可调度；stale/revoked 设备不得接收任务 |
+| 目标设备上的 Agent Loop、工具与执行 Journal | 该设备上的 Rust Runtime | Runner 不拥有顶层 WorkGraph 或用户凭证 |
 | Acceptance 与独立 Gate | Harness | 产品代码不自证通过 |
 | Artifact bytes 与 content identity | Runtime CAS | Event/SQLite 不内联无限大正文 |
-| 产品查询视图 | Go Projection | CLI/TUI/App 不直接查询 Runtime DB |
+| 产品查询视图 | Go Projection | 各客户端不直接查询 Runtime DB |
 | 知识事实采用 | 独立 Knowledge authority | Agent 只可 propose，不能自行确认 truth |
 
 ### 5.2 部署形态
 
-首个产品版本采用本地 daemon 模式：
+首个可验证切片仍从本地 daemon 和本地数据边界起步；个人多端阶段演进为每账号一个逻辑 Coordinator。远程访问通过单独认证和授权后开放，不等于团队多租户服务：
 
-- 一个 Go `forge-server` 对 CLI、TUI、App 提供统一 API；
+- 一个 Go `forge-server` 对 CLI、TUI、Web、桌面 App、Mobile 提供统一版本化 Query/Command API 与事件游标；
 - Rust Runtime 作为受控子进程或本地服务运行；
 - 双方使用版本化本地协议，不共享内存和数据库表；
-- App 通过 SSE/WebSocket 或本地等价流订阅事件；
-- 未来迁移到远程服务时保持同一命令和事件语义。
+- 客户端使用 Snaplink 身份/授权合同；会话仍由 Rust Hub 持有，Go 的查询投影可重建；
+- 有设备执行阶段才启用 Runner 的 outbound mTLS、短租约与 fencing；客户端身份和 Runner 身份分离；
+- 多用户 ACL、云端 HA 与跨 Coordinator federation 后置，并另走决策和运维门槛。
 
-这条路径与目标 HA 架构兼容，但不要求当前引入 Temporal、NATS、Postgres 或微服务。
+这些阶段不要求当前引入 Temporal、NATS、Postgres 或微服务；其目标架构仍为单 Coordinator 的模块化服务。
 
 ## 6. 可观测执行模型
 

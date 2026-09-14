@@ -2,14 +2,14 @@ use std::{fs, path::Path, time::Duration};
 
 use crate::runtime_domain::{
     AgentTool, Cancellation, Capability, TOOL_EFFECT_UNCERTAIN_CODE, ToolContext, ToolError,
-    ToolOutput, WorkspaceReadFactory as _,
+    ToolOutput, WorkspaceReadFactory as _, execution::fabric::ToolInvocationRef,
 };
 use serde_json::{Value, json};
 use tempfile::TempDir;
 
 use super::{
-    ExecCommandTool, MAX_ARGUMENT_BYTES, MAX_ARGUMENTS, MAX_TIMEOUT_MS, blocking_task_failure,
-    is_allowed_environment_name, is_sensitive_environment_name, parse_input,
+    ExecCommandTool, LocalExecutionTarget, MAX_ARGUMENT_BYTES, MAX_ARGUMENTS, MAX_TIMEOUT_MS,
+    blocking_task_failure, is_allowed_environment_name, is_sensitive_environment_name, parse_input,
 };
 use crate::CapStdWorkspaceFactory;
 
@@ -124,6 +124,110 @@ async fn captures_exit_code_stdout_and_stderr() {
     assert!(output.content.contains("exit_code: 7"));
     assert!(output.content.contains("stdout:\nout"));
     assert!(output.content.contains("stderr:\nerr"));
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn runtime_invocation_uses_local_target_and_keeps_tool_output_shape() {
+    let root = TempDir::new().expect("temporary workspace");
+    let tool = ExecCommandTool::new(root.path()).expect("tool");
+    let output = tool
+        .execute_with_invocation(
+            json!({ "program": "printf", "argv": ["local-target"] }),
+            context(root.path(), 1024),
+            ToolInvocationRef {
+                session_id: "session-1".into(),
+                run_id: "run-1".into(),
+                tool_call_id: "call-1".into(),
+                tool_started_sequence: 4,
+            },
+        )
+        .await
+        .expect("local target completes");
+
+    assert!(output.content.contains("stdout:\nlocal-target"));
+    assert!(!output.truncated);
+}
+
+#[test]
+fn local_adapter_rejects_a_nonlocal_target_declaration() {
+    let root = TempDir::new().expect("temporary workspace");
+    let target = LocalExecutionTarget::new(ExecCommandTool::new(root.path()).expect("tool"));
+    let invocation = ToolInvocationRef {
+        session_id: "session-1".into(),
+        run_id: "run-1".into(),
+        tool_call_id: "call-1".into(),
+        tool_started_sequence: 9,
+    };
+    let mut attempt =
+        crate::runtime_domain::execution::fabric::ExecutionAttempt::local_process(invocation);
+    attempt.target_ref.target_id = "device-1".into();
+
+    let error = target
+        .validate_attempt(&attempt)
+        .expect_err("local-only adapter rejects other target IDs");
+    assert_eq!(error.code, "unsupported_execution_target");
+}
+
+#[test]
+fn local_adapter_rejects_unverified_artifact_refs() {
+    let root = TempDir::new().expect("temporary workspace");
+    let target = LocalExecutionTarget::new(ExecCommandTool::new(root.path()).expect("tool"));
+    let invocation = ToolInvocationRef {
+        session_id: "session-1".into(),
+        run_id: "run-1".into(),
+        tool_call_id: "call-1".into(),
+        tool_started_sequence: 10,
+    };
+    let mut attempt =
+        crate::runtime_domain::execution::fabric::ExecutionAttempt::local_process(invocation);
+    attempt
+        .input_artifacts
+        .push(crate::runtime_domain::execution::fabric::ArtifactRef {
+            artifact_id: "sha256:declared-only".into(),
+            sha256: "declared-only".into(),
+            media_type: "application/octet-stream".into(),
+            size_bytes: 1,
+        });
+
+    let error = target
+        .validate_attempt(&attempt)
+        .expect_err("local-only adapter does not stage unverified CAS artifacts");
+    assert_eq!(error.code, "invalid_execution_attempt");
+}
+
+#[cfg(unix)]
+#[test]
+fn local_target_binds_observation_to_attempt_without_claiming_verification() {
+    let root = TempDir::new().expect("temporary workspace");
+    let tool = ExecCommandTool::new(root.path()).expect("tool");
+    let target = LocalExecutionTarget::new(tool);
+    let input =
+        parse_input(json!({ "program": "printf", "argv": ["ok"] })).expect("valid process request");
+    let (output, evidence) = target
+        .execute(
+            &input,
+            Some(ToolInvocationRef {
+                session_id: "session-1".into(),
+                run_id: "run-1".into(),
+                tool_call_id: "call-1".into(),
+                tool_started_sequence: 9,
+            }),
+            &Cancellation::default(),
+            1024,
+        )
+        .expect("local execution succeeds");
+    let evidence = evidence.expect("attempt evidence is bound");
+
+    assert_eq!(evidence.attempt_ref.run_id, "run-1");
+    assert_eq!(evidence.attempt_ref.tool_started_sequence, 9);
+    assert_eq!(evidence.target_ref.target_id, "local");
+    assert_eq!(evidence.observation.exit_code, Some(0));
+    assert_eq!(
+        evidence.source,
+        crate::runtime_domain::execution::fabric::ExecutionEvidenceSource::LocalProcessObservation
+    );
+    assert!(output.content.contains("stdout:\nok"));
 }
 
 #[cfg(unix)]

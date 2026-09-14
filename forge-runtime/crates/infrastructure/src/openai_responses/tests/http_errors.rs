@@ -1,4 +1,4 @@
-use forge_runtime_domain::{Cancellation, Message, ModelProvider, ModelRequest};
+use crate::runtime_domain::{Cancellation, Message, ModelProvider, ModelRequest};
 use futures_util::StreamExt;
 use serde_json::json;
 use wiremock::{

@@ -12,7 +12,22 @@ use super::{
     schema_object_named, schema_version,
 };
 
-const DROP_V29_CONTROLLER_SQL: &str = "DROP TABLE group_agent_scheduled_graph_controller_events;
+const DROP_V29_CONTROLLER_SQL: &str = "DROP TABLE IF EXISTS pending_run_intent_events;
+     DROP TABLE IF EXISTS pending_run_intents;
+     DROP INDEX IF EXISTS project_execution_consent_active_lookup;
+     DROP TABLE IF EXISTS project_execution_consent_events;
+     DROP TABLE IF EXISTS project_execution_consent_grants;
+     DROP TABLE IF EXISTS conversation_owner_change_rows;
+     DROP TABLE IF EXISTS conversation_owner_change_heads;
+     DROP INDEX IF EXISTS conversation_changes_conversation_cursor;
+     DROP INDEX IF EXISTS conversation_owners_principal_conversation;
+     DROP INDEX IF EXISTS conversation_owners_principal;
+     DROP TABLE IF EXISTS conversation_owners;
+     DROP TABLE IF EXISTS conversation_changes;
+     DROP TABLE IF EXISTS conversation_change_heads;
+     DROP TABLE IF EXISTS conversation_change_state;
+     DROP TABLE IF EXISTS conversation_change_baselines;
+     DROP TABLE group_agent_scheduled_graph_controller_events;
      DROP TABLE group_agent_scheduled_graph_controllers;";
 
 type RunRow = (String, String, String, i64);

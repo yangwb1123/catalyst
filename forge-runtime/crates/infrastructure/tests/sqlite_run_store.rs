@@ -296,6 +296,7 @@ fn completed_run_atomically_authorizes_one_assistant_prompt() {
         .store
         .reconcile_completed_assistant("run-1")
         .expect("first reconciliation");
+    assert_assistant_prompt_journal(&fixture, &first.id);
     let replay = fixture
         .store
         .reconcile_completed_assistant("run-1")
@@ -308,6 +309,14 @@ fn completed_run_atomically_authorizes_one_assistant_prompt() {
     assert_eq!(
         fixture
             .store
+            .snapshot_at_cursor()
+            .expect("snapshot after writeback replay")
+            .cursor,
+        3
+    );
+    assert_eq!(
+        fixture
+            .store
             .list_prompts(Some(&fixture.conversation_id), 10)
             .expect("prompt list")
             .into_iter()
@@ -315,6 +324,16 @@ fn completed_run_atomically_authorizes_one_assistant_prompt() {
             .count(),
         1
     );
+}
+
+fn assert_assistant_prompt_journal(fixture: &Fixture, prompt_id: &str) {
+    let changes = fixture
+        .store
+        .conversation_changes_after(0, 10)
+        .expect("read change journal after assistant writeback");
+    assert_eq!(changes.head_cursor, 3);
+    assert_eq!(changes.changes.len(), 3);
+    assert_eq!(changes.changes[2].entity_id, prompt_id);
 }
 
 #[test]

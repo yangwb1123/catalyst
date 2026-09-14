@@ -5,10 +5,10 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use forge_runtime_domain::{
-    BeginRun, BeginRunDisposition, BeginRunWithPrompt, ConversationScope, HubStore, Message,
-    PROTOCOL_VERSION, RUN_STORE_VERSION, RunExecution, RunLimits, RunProvider, RunStore,
-    RuntimeEventKind,
+use crate::runtime_domain::{
+    BeginRun, BeginRunDisposition, BeginRunResult, BeginRunWithPrompt, ConversationChangeKind,
+    ConversationScope, HubStore, Message, PROTOCOL_VERSION, RUN_STORE_VERSION, RunExecution,
+    RunLimits, RunProvider, RunStore, RuntimeEventKind,
 };
 use rusqlite::Connection;
 use tempfile::TempDir;
@@ -42,10 +42,83 @@ fn late_prefix_failure_rolls_back_prompt_run_and_events_before_retry() {
         .connection
         .execute_batch("DROP TRIGGER fail_second_seed_event")
         .expect("remove late seed failure");
+    let before_retry = fixture
+        .store
+        .conversation_changes_after(0, 10)
+        .expect("read change journal after rolled-back seed");
+    assert_eq!(before_retry.head_cursor, 1);
+    assert_eq!(before_retry.changes.len(), 1);
     let result = run_seed::begin(&mut fixture.connection, &fixture.request)
         .expect("same logical retry succeeds");
     assert_eq!(result.disposition, BeginRunDisposition::Created);
+    let after_retry = fixture
+        .store
+        .conversation_changes_after(0, 10)
+        .expect("read change journal after seed retry");
+    assert_eq!(after_retry.head_cursor, 2);
+    assert_eq!(after_retry.changes.len(), 2);
+    assert_eq!(after_retry.changes[1].entity_id, result.prompt.prompt_id);
     assert_pristine_seed(&fixture.store, &result.run.run_id, "inspect README");
+}
+
+#[test]
+fn change_insert_failure_rolls_back_prompt_run_and_idempotency_before_retry() {
+    let mut fixture = fixture();
+    fixture
+        .connection
+        .execute_batch(
+            "CREATE TRIGGER fail_prompt_change BEFORE INSERT ON conversation_changes
+             WHEN NEW.event_kind = 'prompt_appended'
+             BEGIN SELECT RAISE(ABORT, 'injected Conversation change failure'); END",
+        )
+        .expect("install Conversation change insert failure");
+
+    assert!(run_seed::begin(&mut fixture.connection, &fixture.request).is_err());
+    fixture
+        .connection
+        .execute_batch("DROP TRIGGER fail_prompt_change")
+        .expect("remove Conversation change insert failure");
+    assert_failed_seed_rolled_back(&fixture);
+
+    let retry = run_seed::begin(&mut fixture.connection, &fixture.request)
+        .expect("same logical seed retry succeeds");
+    assert_eq!(retry.disposition, BeginRunDisposition::Created);
+    let changes = fixture
+        .store
+        .conversation_changes_after(0, 10)
+        .expect("read change journal after retry");
+    assert_eq!(changes.head_cursor, 2);
+    assert_eq!(changes.changes[1].entity_id, retry.prompt.prompt_id);
+}
+
+#[test]
+fn change_head_failure_rolls_back_inserted_change_and_prompt_before_retry() {
+    let mut fixture = fixture();
+    fixture
+        .connection
+        .execute_batch(
+            "CREATE TRIGGER fail_change_head BEFORE UPDATE OF last_cursor
+             ON conversation_change_state WHEN NEW.last_cursor > OLD.last_cursor
+             BEGIN SELECT RAISE(ABORT, 'injected Conversation head failure'); END",
+        )
+        .expect("install Conversation head update failure");
+
+    assert!(run_seed::begin(&mut fixture.connection, &fixture.request).is_err());
+    fixture
+        .connection
+        .execute_batch("DROP TRIGGER fail_change_head")
+        .expect("remove Conversation head update failure");
+    assert_failed_seed_rolled_back(&fixture);
+
+    let retry = run_seed::begin(&mut fixture.connection, &fixture.request)
+        .expect("same logical seed retry succeeds");
+    assert_eq!(retry.disposition, BeginRunDisposition::Created);
+    let changes = fixture
+        .store
+        .conversation_changes_after(0, 10)
+        .expect("read change journal after retry");
+    assert_eq!(changes.head_cursor, 2);
+    assert_eq!(changes.changes[1].entity_id, retry.prompt.prompt_id);
 }
 
 #[test]
@@ -69,6 +142,13 @@ fn logical_replay_keeps_original_ids_and_does_not_duplicate_prefix() {
     assert_eq!(replayed.disposition, BeginRunDisposition::Replayed);
     assert_eq!(replayed.run, created.run);
     assert_eq!(replayed.prompt, created.prompt);
+    let changes = fixture
+        .store
+        .conversation_changes_after(0, 10)
+        .expect("read change journal after replay");
+    assert_eq!(changes.head_cursor, 2);
+    assert_eq!(changes.changes.len(), 2);
+    assert_eq!(changes.changes[1].entity_id, created.prompt.prompt_id);
     assert_pristine_seed(&fixture.store, &created.run.run_id, "inspect README");
     assert_eq!(row_count(&fixture.connection, "prompts"), 1);
     assert_eq!(row_count(&fixture.connection, "runs"), 1);
@@ -127,7 +207,10 @@ fn concurrent_seed_contenders_have_one_created_execution_owner() {
         .into_iter()
         .map(|contender| contender.join().expect("seed contender"))
         .collect();
+    assert_concurrent_seed_winner(&fixture, &results);
+}
 
+fn assert_concurrent_seed_winner(fixture: &Fixture, results: &[BeginRunResult]) {
     assert_eq!(
         results
             .iter()
@@ -144,6 +227,13 @@ fn concurrent_seed_contenders_have_one_created_execution_owner() {
     );
     assert_eq!(results[0].run, results[1].run);
     assert_eq!(results[0].prompt, results[1].prompt);
+    let changes = fixture
+        .store
+        .conversation_changes_after(0, 10)
+        .expect("read change journal after concurrent seed");
+    assert_eq!(changes.head_cursor, 2);
+    assert_eq!(changes.changes.len(), 2);
+    assert_eq!(changes.changes[1].entity_id, results[0].prompt.prompt_id);
     assert_pristine_seed(&fixture.store, &results[0].run.run_id, "inspect README");
     assert_eq!(row_count(&fixture.connection, "prompts"), 1);
     assert_eq!(row_count(&fixture.connection, "runs"), 1);
@@ -187,6 +277,40 @@ fn fixture() -> Fixture {
         connection,
         request,
     }
+}
+
+fn assert_failed_seed_rolled_back(fixture: &Fixture) {
+    assert_eq!(row_count(&fixture.connection, "prompts"), 0);
+    assert_eq!(row_count(&fixture.connection, "runs"), 0);
+    assert_eq!(row_count(&fixture.connection, "run_events"), 0);
+    let global_cursor: i64 = fixture
+        .connection
+        .query_row(
+            "SELECT last_cursor FROM conversation_change_state WHERE state_id = 1",
+            [],
+            |row| row.get(0),
+        )
+        .expect("read global change cursor after rollback");
+    assert_eq!(global_cursor, 1);
+    let conversation_version: i64 = fixture
+        .connection
+        .query_row(
+            "SELECT last_version FROM conversation_change_heads WHERE conversation_id = ?1",
+            [&fixture.request.run.conversation_id],
+            |row| row.get(0),
+        )
+        .expect("read conversation change head after rollback");
+    assert_eq!(conversation_version, 1);
+    let changes = fixture
+        .store
+        .conversation_changes_after(0, 10)
+        .expect("read journal after rollback");
+    assert_eq!(changes.head_cursor, 1);
+    assert_eq!(changes.changes.len(), 1);
+    assert_eq!(
+        changes.changes[0].kind,
+        ConversationChangeKind::ConversationCreated
+    );
 }
 
 fn execution() -> RunExecution {

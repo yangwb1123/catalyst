@@ -3,7 +3,7 @@ use std::{future::Future, pin::Pin};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::{Cancellation, WorkspaceReadCapability};
+use crate::{Cancellation, WorkspaceReadCapability, execution::fabric::ToolInvocationRef};
 
 /// A started effect could not be proven stopped or completed. The journal must
 /// retain its pending `ToolStarted` fence instead of recording a result.
@@ -76,6 +76,17 @@ pub trait AgentTool: Send + Sync {
     fn spec(&self) -> ToolSpec;
 
     fn execute(&self, arguments: Value, context: ToolContext) -> ToolFuture<'_>;
+
+    /// Executes one invocation with its existing Runtime event correlation.
+    /// Tools that do not use the local execution ABI keep their current path.
+    fn execute_with_invocation(
+        &self,
+        arguments: Value,
+        context: ToolContext,
+        _invocation: ToolInvocationRef,
+    ) -> ToolFuture<'_> {
+        self.execute(arguments, context)
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]

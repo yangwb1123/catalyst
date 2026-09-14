@@ -1,11 +1,24 @@
 use std::path::Path;
 
 use crate::{
-    Conversation, ConversationScope, GroupContextPolicy, GroupContextSlice, GroupProjectMember,
-    HubSnapshot, Project, PromptRecord, SessionGroup,
+    Conversation, ConversationBootstrapCursor, ConversationBootstrapPage, ConversationChangePage,
+    ConversationImportPrompt, ConversationOwner, ConversationPromptCursor, ConversationPromptPage,
+    ConversationScope, GroupContextPolicy, GroupContextSlice, GroupProjectMember, HubSnapshot,
+    HubSnapshotAtCursor, LocalConversationImportSource, OwnedConversationChangePage,
+    OwnedConversationImportResult, OwnedConversationPage, OwnedProjectConversationIdentity,
+    OwnedPromptAppendResult, OwnedRunCursor, OwnedRunPage, OwnedRunTimelinePage,
+    PendingRunIntentCursor, PendingRunIntentPage, PendingRunIntentSubmissionResult,
+    PendingRunIntentTimelinePage, Project, ProjectExecutionConsentGrantResult,
+    ProjectExecutionConsentRevocationResult, PromptRecord, SessionGroup, SubmitPendingRunIntent,
 };
 
+#[macro_use]
+#[path = "hub_store_owned_methods.rs"]
+mod owned_methods;
+
 pub trait HubStore: Send + Sync {
+    owned_conversation_methods!();
+
     /// Finds or registers the project anchored at an absolute path.
     ///
     /// # Errors
@@ -19,6 +32,45 @@ pub trait HubStore: Send + Sync {
     ///
     /// Returns a structured storage error when the snapshot cannot be loaded.
     fn snapshot(&self, scope: &ConversationScope) -> Result<HubSnapshot, HubStoreError>;
+
+    /// Loads the canonical Global snapshot and store-global feed head observed
+    /// in one storage read snapshot. Project and Group snapshots have no scoped
+    /// change feed in this version.
+    ///
+    /// # Errors
+    ///
+    /// Returns a structured storage error when either read cannot complete.
+    fn snapshot_at_cursor(&self) -> Result<HubSnapshotAtCursor, HubStoreError>;
+
+    /// Reads a bounded, ordered page of changes strictly after a local cursor.
+    ///
+    /// Implementations must reject cursors beyond the observed head and detect
+    /// gaps because this v1 journal has no retention or deletion operation.
+    ///
+    /// # Errors
+    ///
+    /// Returns a structured storage error for invalid cursors, gaps, or corrupt
+    /// journal rows.
+    fn conversation_changes_after(
+        &self,
+        after_cursor: u64,
+        limit: usize,
+    ) -> Result<ConversationChangePage, HubStoreError>;
+
+    /// Reads one bounded page of Conversation metadata through a frozen change
+    /// head. Implementations page legacy baselines by binary ID, then page
+    /// journal rows by cursor and hydrate only Conversation-created events.
+    /// Prompt-only pages may be empty while advancing the journal cursor.
+    ///
+    /// # Errors
+    ///
+    /// Returns a structured storage error for invalid cursors, gaps, or corrupt
+    /// baseline/change rows.
+    fn conversation_bootstrap_page(
+        &self,
+        cursor: Option<&ConversationBootstrapCursor>,
+        limit: usize,
+    ) -> Result<ConversationBootstrapPage, HubStoreError>;
 
     /// Creates a conversation, or returns an identical prior result for the key.
     ///
@@ -68,6 +120,42 @@ pub trait HubStore: Send + Sync {
         conversation_id: Option<&str>,
         limit: usize,
     ) -> Result<Vec<PromptRecord>, HubStoreError>;
+
+    /// Reads one newest-first keyset page of sanitized Prompt history.
+    ///
+    /// The page is scoped to one Conversation, excludes the supplied `(time, id)`
+    /// cursor, and must enforce both row-count and aggregate content-byte bounds
+    /// before loading Prompt bodies. Idempotency keys are not part of the result.
+    ///
+    /// # Errors
+    ///
+    /// Returns `NotFound` for an absent Conversation and `Corrupt` for rows that
+    /// cannot fit the frozen page contract.
+    fn conversation_prompt_page(
+        &self,
+        conversation_id: &str,
+        before: Option<&ConversationPromptCursor>,
+        limit: usize,
+    ) -> Result<ConversationPromptPage, HubStoreError>;
+
+    /// Reads one bounded local ownerless Conversation transcript for explicit import.
+    /// Only user/assistant text is returned; project paths and execution records are excluded.
+    ///
+    /// # Errors
+    ///
+    /// Returns `NotFound` for an absent source, `Conflict` when the source is
+    /// owner-bound or exceeds import limits, and `Unavailable` when previews
+    /// are unsupported by this Hub store.
+    fn local_conversation_import_source(
+        &self,
+        conversation_id: &str,
+    ) -> Result<LocalConversationImportSource, HubStoreError> {
+        let _ = conversation_id;
+        Err(HubStoreError::Unavailable {
+            message: "local Conversation import previews are not supported by this Hub store"
+                .into(),
+        })
+    }
 
     /// Lists records strictly before one user Prompt in the same Conversation.
     ///
@@ -153,6 +241,8 @@ pub trait HubStore: Send + Sync {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum HubEntity {
     Project,
+    ProjectExecutionConsent,
+    PendingRunIntent,
     Conversation,
     Prompt,
     Group,

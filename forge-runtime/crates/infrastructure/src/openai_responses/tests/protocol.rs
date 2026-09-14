@@ -1,4 +1,4 @@
-use forge_runtime_domain::{Cancellation, Message, ModelEvent, ModelFinishReason, ModelRequest};
+use crate::runtime_domain::{Cancellation, Message, ModelEvent, ModelFinishReason, ModelRequest};
 use serde_json::json;
 
 use super::{

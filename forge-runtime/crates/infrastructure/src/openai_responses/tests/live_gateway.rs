@@ -4,7 +4,7 @@
 // deterministic wiremock suite; this test is the host-verified external
 // resource counterpart (see docs/external-resource-verification.md).
 
-use forge_runtime_domain::{
+use crate::runtime_domain::{
     Cancellation, Message, ModelEvent, ModelProvider, ModelRequest, ProviderError,
 };
 use futures_util::StreamExt;

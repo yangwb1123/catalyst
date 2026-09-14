@@ -47,6 +47,7 @@ export function isTestFile(file) {
   const base = file.split(/[\\/]/).pop();
   return (
     base.endsWith('_test.go') ||
+    base.endsWith('_tests.rs') ||
     base.endsWith('.test.mjs') || base.endsWith('.test.js') ||
     base.endsWith('_test.py') || base.startsWith('test_') ||
     file.split(/[\\/]/).some((part) => part === 'test' || part === 'tests')

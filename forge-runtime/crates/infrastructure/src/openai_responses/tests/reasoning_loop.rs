@@ -3,7 +3,7 @@ use std::sync::{
     atomic::{AtomicUsize, Ordering},
 };
 
-use forge_runtime_domain::{
+use crate::runtime_domain::{
     Cancellation, Message, ModelEvent, ModelFinishReason, ModelProvider, ModelRequest, ToolCall,
 };
 use futures_util::StreamExt;

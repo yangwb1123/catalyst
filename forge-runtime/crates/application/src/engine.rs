@@ -1,9 +1,10 @@
 use std::sync::Arc;
 
-use forge_runtime_domain::{
+use crate::runtime_domain::{
     Cancellation, Capability, EventSink, LimitKind, Message, ModelProvider, ModelRequest,
     RunOutcome, RunRequest, RunResult, RuntimeEventKind, TOOL_EFFECT_UNCERTAIN_CODE, ToolCall,
     ToolContext, ToolOutput, WorkspaceReadCapability, WorkspaceReadFactory,
+    execution::fabric::ToolInvocationRef,
 };
 
 use crate::{
@@ -363,9 +364,16 @@ impl AgentRuntime {
                 )?;
                 return Ok(true);
             }
+            let tool_started_sequence = emitter.next_sequence();
             emitter.emit(RuntimeEventKind::ToolStarted { call: call.clone() })?;
             let result = self
-                .execute_call(request, workspace, cancellation, &call)
+                .execute_call(
+                    request,
+                    workspace,
+                    cancellation,
+                    &call,
+                    tool_started_sequence,
+                )
                 .await;
             if let Err((code, message)) = &result
                 && code == TOOL_EFFECT_UNCERTAIN_CODE
@@ -392,6 +400,7 @@ impl AgentRuntime {
         workspace: &WorkspaceReadCapability,
         cancellation: &Cancellation,
         call: &ToolCall,
+        tool_started_sequence: u64,
     ) -> Result<ToolOutput, (String, String)> {
         let tool = self.tools.get(&call.name).ok_or_else(|| {
             (
@@ -411,7 +420,16 @@ impl AgentRuntime {
             cancellation: cancellation.clone(),
             max_output_bytes: request.limits.max_tool_output_bytes,
         };
-        let execution = tool.execute(call.arguments.clone(), context);
+        let execution = tool.execute_with_invocation(
+            call.arguments.clone(),
+            context,
+            ToolInvocationRef {
+                session_id: request.session_id.clone(),
+                run_id: request.run_id.clone(),
+                tool_call_id: call.id.clone(),
+                tool_started_sequence,
+            },
+        );
         // Effectful work must observe cancellation and finish cleanup before
         // the journal can record ToolFinished and the terminal RunFinished.
         if spec.capability != Capability::WorkspaceRead {

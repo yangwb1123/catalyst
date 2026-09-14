@@ -186,6 +186,11 @@ fn without_v14(snapshot: &[SchemaRow]) -> Vec<SchemaRow> {
                 && *name != "group_agent_graph_scheduled_node_successor_candidates"
                 && *name != "group_agent_graph_scheduled_node_successor_candidates_created"
                 && !super::V29_CONTROLLER_OBJECTS.contains(&name.as_str())
+                && !super::V30_CHANGE_OBJECTS.contains(&name.as_str())
+                && !super::V31_OWNER_OBJECTS.contains(&name.as_str())
+                && !super::V32_OWNER_CURSOR_OBJECTS.contains(&name.as_str())
+                && !super::V33_PROJECT_CONSENT_OBJECTS.contains(&name.as_str())
+                && !super::V34_PENDING_RUN_INTENT_OBJECTS.contains(&name.as_str())
                 && !matches!(
                     name.as_str(),
                     "governance_record_append_batches"

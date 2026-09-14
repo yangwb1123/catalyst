@@ -1,4 +1,4 @@
-use forge_runtime_domain::{
+use crate::runtime_domain::{
     MAX_RUN_EVENT_JSON_BYTES, MAX_RUN_EVENTS, MAX_RUN_JOURNAL_BYTES, RunEntity, RunRecord,
     RunStoreError, RuntimeEvent, RuntimeEventKind,
 };

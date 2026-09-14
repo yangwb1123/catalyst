@@ -1,5 +1,11 @@
+mod owned;
+
+use sha2::{Digest, Sha256};
 use std::{path::Path, sync::Arc};
 
+use crate::hub_validation::{
+    conversation_bootstrap_page, conversation_change_page_limit, conversation_prompt_page,
+};
 use crate::{
     HubError, HubField,
     hub_validation::{
@@ -8,11 +14,18 @@ use crate::{
         validate_idempotency_key,
     },
     runtime_domain::{
-        Conversation, ConversationScope, GroupContextPolicy, GroupContextSlice, GroupProjectMember,
-        HubSnapshot, HubStore, MAX_GROUP_CONTEXT_CONTENT_BYTES, Project, PromptRecord,
+        Conversation, ConversationBootstrapCursor, ConversationBootstrapPage,
+        ConversationChangePage, ConversationOwner, ConversationPromptCursor,
+        ConversationPromptPage, ConversationScope, GroupContextPolicy, GroupContextSlice,
+        GroupProjectMember, HubSnapshot, HubSnapshotAtCursor, HubStore,
+        LocalConversationImportSource, MAX_CONVERSATION_OWNER_ISSUER_BYTES,
+        MAX_CONVERSATION_OWNER_SUBJECT_BYTES, MAX_CONVERSATION_OWNER_TENANT_BYTES,
+        MAX_GROUP_CONTEXT_CONTENT_BYTES, OwnedConversationChangePage, Project, PromptRecord,
         SessionGroup,
     },
 };
+
+const LOWERCASE_HEX: &[u8; 16] = b"0123456789abcdef";
 
 pub struct HubService {
     store: Arc<dyn HubStore>,
@@ -41,6 +54,111 @@ impl HubService {
     /// Returns a structured storage error when the snapshot cannot be loaded.
     pub fn global_snapshot(&self) -> Result<HubSnapshot, HubError> {
         Ok(self.store.snapshot(&ConversationScope::Global)?)
+    }
+
+    /// Reads this exact principal's changes after its last owner-local cursor.
+    /// The returned cursor reveals no Hub-global journal position.
+    ///
+    /// # Errors
+    ///
+    /// Returns validation or storage errors when owner-scoped paging fails.
+    pub fn owned_conversation_changes_after(
+        &self,
+        owner: &ConversationOwner,
+        after_cursor: u64,
+        limit: usize,
+    ) -> Result<OwnedConversationChangePage, HubError> {
+        validate_owner(owner)?;
+        conversation_change_page_limit(limit)?;
+        if i64::try_from(after_cursor).is_err() {
+            return Err(HubError::OutOfRange {
+                field: HubField::OwnedConversationChangeCursor,
+                min: 0,
+                max: usize::try_from(i64::MAX).unwrap_or(usize::MAX),
+            });
+        }
+        Ok(self
+            .store
+            .owned_conversation_changes_after(owner, after_cursor, limit)?)
+    }
+
+    /// Loads the Global Hub snapshot and store-global change cursor atomically.
+    ///
+    /// This is the bootstrap point for a later replicated client: it can load
+    /// the snapshot at cursor N and then request changes strictly after N.
+    ///
+    /// # Errors
+    ///
+    /// Returns a structured storage error when the snapshot cannot be loaded.
+    pub fn snapshot_at_cursor(&self) -> Result<HubSnapshotAtCursor, HubError> {
+        Ok(self.store.snapshot_at_cursor()?)
+    }
+
+    /// Reads one bounded page from the Hub-local Conversation change feed.
+    ///
+    /// # Errors
+    ///
+    /// Returns an out-of-range error for unsupported page sizes or a structured
+    /// storage error for invalid cursors and corrupt change rows.
+    pub fn conversation_changes_after(
+        &self,
+        after_cursor: u64,
+        limit: usize,
+    ) -> Result<ConversationChangePage, HubError> {
+        conversation_change_page_limit(limit)?;
+        Ok(self.store.conversation_changes_after(after_cursor, limit)?)
+    }
+
+    /// Reads one bounded Conversation metadata page through a fixed journal head.
+    ///
+    /// # Errors
+    ///
+    /// Returns validation errors for malformed cursors or limits and structured
+    /// storage errors for cursors beyond the current head or corrupt journal rows.
+    pub fn conversation_bootstrap_page(
+        &self,
+        cursor: Option<&ConversationBootstrapCursor>,
+        limit: usize,
+    ) -> Result<ConversationBootstrapPage, HubError> {
+        conversation_bootstrap_page(cursor, limit)?;
+        Ok(self.store.conversation_bootstrap_page(cursor, limit)?)
+    }
+
+    /// Reads one bounded newest-first page of Prompt history for one Conversation.
+    ///
+    /// The cursor is exclusive and ordered by `(created_at_ms DESC, prompt_id DESC)`.
+    ///
+    /// # Errors
+    ///
+    /// Returns validation errors for invalid IDs, cursors, or limits and a
+    /// structured storage error for a missing Conversation or corrupt Prompt row.
+    pub fn conversation_prompt_page(
+        &self,
+        conversation_id: &str,
+        before: Option<&ConversationPromptCursor>,
+        limit: usize,
+    ) -> Result<ConversationPromptPage, HubError> {
+        required_id(conversation_id, HubField::ConversationId)?;
+        conversation_prompt_page(before, limit)?;
+        Ok(self
+            .store
+            .conversation_prompt_page(conversation_id, before, limit)?)
+    }
+
+    /// Previews a bounded ownerless local Conversation for explicit import.
+    ///
+    /// # Errors
+    ///
+    /// Returns a validation error for an invalid Conversation ID and a
+    /// structured storage error if the source is missing or not importable.
+    pub fn local_conversation_import_source(
+        &self,
+        conversation_id: &str,
+    ) -> Result<LocalConversationImportSource, HubError> {
+        required_id(conversation_id, HubField::ConversationId)?;
+        Ok(self
+            .store
+            .local_conversation_import_source(conversation_id)?)
     }
 
     /// Loads one project's scoped hub overview.
@@ -222,6 +340,57 @@ impl HubService {
             .store
             .add_project_path_to_group(group_id, absolute_path, role, idempotency_key)?)
     }
+}
+
+fn validate_owner(owner: &ConversationOwner) -> Result<(), HubError> {
+    validate_owner_component(
+        &owner.issuer,
+        HubField::ConversationOwnerIssuer,
+        MAX_CONVERSATION_OWNER_ISSUER_BYTES,
+    )?;
+    validate_owner_component(
+        &owner.subject,
+        HubField::ConversationOwnerSubject,
+        MAX_CONVERSATION_OWNER_SUBJECT_BYTES,
+    )?;
+    validate_owner_component(
+        &owner.tenant_id,
+        HubField::ConversationOwnerTenant,
+        MAX_CONVERSATION_OWNER_TENANT_BYTES,
+    )
+}
+
+fn validate_owner_component(
+    value: &str,
+    field: HubField,
+    max_bytes: usize,
+) -> Result<(), HubError> {
+    required(value, field, max_bytes)?;
+    if value.chars().any(char::is_control) {
+        return Err(HubError::InvalidCharacters { field });
+    }
+    Ok(())
+}
+
+fn owner_idempotency_key(owner: &ConversationOwner, operation: &str, supplied: &str) -> String {
+    let mut digest = Sha256::new();
+    digest.update(b"forgeos.conversation-owner-idempotency.v1\0");
+    for value in [
+        owner.issuer.as_str(),
+        owner.subject.as_str(),
+        owner.tenant_id.as_str(),
+        operation,
+        supplied,
+    ] {
+        digest.update(u64::try_from(value.len()).unwrap_or(u64::MAX).to_be_bytes());
+        digest.update(value.as_bytes());
+    }
+    let mut encoded = String::with_capacity(64);
+    for byte in digest.finalize() {
+        encoded.push(char::from(LOWERCASE_HEX[usize::from(byte >> 4)]));
+        encoded.push(char::from(LOWERCASE_HEX[usize::from(byte & 0x0f)]));
+    }
+    format!("owner-v1-{encoded}")
 }
 
 fn context_bytes(value: usize) -> Result<(), HubError> {

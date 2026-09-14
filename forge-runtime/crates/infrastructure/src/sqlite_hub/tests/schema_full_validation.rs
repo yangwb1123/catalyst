@@ -279,6 +279,12 @@ pub(super) fn v1_data_snapshot(connection: &Connection) -> Vec<String> {
 }
 
 const POST_V1_SCHEMA_OBJECTS: &[&str] = &[
+    "conversation_change_baselines",
+    "conversation_changes",
+    "conversation_changes_event_entity",
+    "conversation_changes_conversation_version",
+    "conversation_change_state",
+    "conversation_change_heads",
     "runs",
     "run_events",
     "run_assistant_prompts",

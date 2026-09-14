@@ -11,6 +11,7 @@ pub(super) enum SqliteHubStoreOpenMode {
     ReadWrite,
     ExistingCurrentReadOnly,
     ExistingCurrentLiveReadOnly,
+    ExistingCurrentWritable,
     ExistingDispatchPreflightReadOnly,
     ExistingDispatchReentryReadOnly,
 }
@@ -59,7 +60,7 @@ impl SqliteHubStore {
     ///
     /// # Errors
     ///
-    /// Returns an error for missing, unsafe, non-v29, corrupt, incomplete-sidecar,
+    /// Returns an error for missing, unsafe, non-v34, corrupt, incomplete-sidecar,
     /// rollback-journal, or concurrently changing state.
     pub fn open_existing_current_live_read_only(
         database_path: impl AsRef<Path>,
@@ -72,7 +73,29 @@ impl SqliteHubStore {
         })
     }
 
-    /// Opens an exact existing v11 through v29 Hub for dispatch topology preflight.
+    /// Opens an exact existing v34 Hub for controlled application writes.
+    ///
+    /// This path refuses to create a database or migrate its schema. It enables
+    /// foreign-key enforcement and verifies the existing database/WAL identity
+    /// around open; `SQLite` may still coordinate its WAL/SHM files for this
+    /// read-write connection.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for missing, unsafe, non-current, corrupt, incomplete-sidecar,
+    /// rollback-journal, or concurrently changing state.
+    pub fn open_existing_current_writable(
+        database_path: impl AsRef<Path>,
+    ) -> Result<Self, HubStoreError> {
+        let database_path = database_path.as_ref().to_path_buf();
+        schema::open_existing_current_writable_database(&database_path)?;
+        Ok(Self {
+            database_path,
+            open_mode: SqliteHubStoreOpenMode::ExistingCurrentWritable,
+        })
+    }
+
+    /// Opens an exact existing v11 through v32 Hub for dispatch topology preflight.
     ///
     /// This mode is immutable and cannot create, migrate, chmod, or write Hub state.
     ///
@@ -92,9 +115,9 @@ impl SqliteHubStore {
 
     /// Opens existing dispatch state for a no-send re-entry diagnosis.
     ///
-    /// A clean exact v11 through v29 database keeps the immutable path. For v12
-    /// through v29 hot WAL state, the fallback reads the complete WAL/SHM pair;
-    /// `SQLite` may coordinate transient reader locks in the existing SHM file.
+    /// The immutable dispatch preflight accepts exact v11 through v32. Re-entry
+    /// accepts v12 through v34, using a live read-only snapshot for hot WAL state
+    /// and current v34; `SQLite` may coordinate transient SHM reader locks.
     ///
     /// # Errors
     ///
@@ -139,6 +162,9 @@ impl SqliteHubStore {
             }
             SqliteHubStoreOpenMode::ExistingCurrentLiveReadOnly => {
                 schema::open_existing_current_live_read_only_database(&self.database_path)
+            }
+            SqliteHubStoreOpenMode::ExistingCurrentWritable => {
+                schema::open_existing_current_writable_database(&self.database_path)
             }
             SqliteHubStoreOpenMode::ExistingDispatchPreflightReadOnly => {
                 schema::open_existing_dispatch_preflight_read_only_database(&self.database_path)

@@ -1,20 +1,15 @@
-use super::super::{
-    CREATE_V1_SCHEMA_SQL, HubStoreError, MIGRATE_V1_TO_V2_SQL, MIGRATE_V2_TO_V3_SQL,
-    MIGRATE_V3_TO_V4_SQL, MIGRATE_V4_TO_V5_SQL, MIGRATE_V5_TO_V6_SQL, MIGRATE_V6_TO_V7_SQL,
-    MIGRATE_V7_TO_V8_SQL, MIGRATE_V8_TO_V9_SQL, MIGRATE_V9_TO_V10_SQL, MIGRATE_V10_TO_V11_SQL,
-    MIGRATE_V11_TO_V12_SQL, MIGRATE_V12_TO_V13_SQL, MIGRATE_V13_TO_V14_SQL, MIGRATE_V14_TO_V15_SQL,
-    MIGRATE_V15_TO_V16_SQL, MIGRATE_V16_TO_V17_SQL, MIGRATE_V17_TO_V18_SQL, MIGRATE_V18_TO_V19_SQL,
-    MIGRATE_V19_TO_V20_SQL, MIGRATE_V20_TO_V21_SQL, MIGRATE_V21_TO_V22_SQL, MIGRATE_V22_TO_V23_SQL,
-    MIGRATE_V23_TO_V24_SQL, MIGRATE_V24_TO_V25_SQL, MIGRATE_V25_TO_V26_SQL, MIGRATE_V26_TO_V27_SQL,
-    MIGRATE_V27_TO_V28_SQL, MIGRATE_V28_TO_V29_SQL,
-};
+use super::super::{HubStoreError, MIGRATE_V25_TO_V26_SQL};
 use rusqlite::{Connection, Error as SqliteError, ErrorCode, OptionalExtension};
 use sha2::{Digest, Sha256};
 use std::sync::OnceLock;
 #[path = "full_contract/divergent_v25.rs"]
 mod divergent_v25;
+#[path = "full_contract/errors.rs"]
+mod errors;
 #[path = "full_contract/legacy_digest.rs"]
 mod legacy_digest;
+#[path = "full_contract/metadata.rs"]
+mod metadata;
 #[path = "full_contract/structure.rs"]
 mod structure;
 #[path = "full_contract/v17_v21.rs"]
@@ -33,7 +28,17 @@ mod v27;
 mod v28;
 #[path = "full_contract/v29.rs"]
 mod v29;
-
+#[path = "full_contract/v30.rs"]
+mod v30;
+#[path = "full_contract/v31.rs"]
+mod v31;
+#[path = "full_contract/v32.rs"]
+mod v32;
+#[path = "full_contract/v33.rs"]
+mod v33;
+#[path = "full_contract/v34.rs"]
+mod v34;
+use errors::{invalid, stringify, unavailable};
 use legacy_digest::{
     V6_IMPLICIT_INDEX_COUNT, V6_STRUCTURAL_CONTRACT_SHA256, V7_IMPLICIT_INDEX_COUNT,
     V7_STRUCTURAL_CONTRACT_SHA256, V8_IMPLICIT_INDEX_COUNT, V8_STRUCTURAL_CONTRACT_SHA256,
@@ -44,98 +49,14 @@ use legacy_digest::{
     V15_IMPLICIT_INDEX_COUNT, V15_STRUCTURAL_CONTRACT_SHA256, V16_IMPLICIT_INDEX_COUNT,
     V16_STRUCTURAL_CONTRACT_SHA256,
 };
+use metadata::{OWNED_TABLES, SCHEMA_BATCHES, VERSION_EXPLICIT_INDEX_COUNTS, VERSION_TABLE_COUNTS};
 use v17_v21::{
     V17_IMPLICIT_INDEX_COUNT, V17_STRUCTURAL_CONTRACT_SHA256, V18_IMPLICIT_INDEX_COUNT,
     V18_STRUCTURAL_CONTRACT_SHA256, V19_IMPLICIT_INDEX_COUNT, V19_STRUCTURAL_CONTRACT_SHA256,
     V20_IMPLICIT_INDEX_COUNT, V20_STRUCTURAL_CONTRACT_SHA256, V21_IMPLICIT_INDEX_COUNT,
     V21_STRUCTURAL_CONTRACT_SHA256,
 };
-
-const OWNED_TABLES: &[&str] = &[
-    "projects",
-    "groups",
-    "conversations",
-    "group_projects",
-    "prompts",
-    "runs",
-    "run_events",
-    "run_assistant_prompts",
-    "group_runs",
-    "group_executions",
-    "group_execution_events",
-    "group_model_analyses",
-    "group_model_analysis_events",
-    "group_model_analysis_results",
-    "group_analysis_panels",
-    "group_analysis_panel_analyses",
-    "group_panel_syntheses",
-    "group_panel_synthesis_events",
-    "group_panel_synthesis_results",
-    "group_agent_graphs",
-    "group_agent_graph_runs",
-    "group_agent_graph_run_events",
-    "group_agent_graph_node_execution_contracts",
-    "group_agent_graph_node_dispatch_requests",
-    "group_agent_graph_node_dispatch_claims",
-    "group_agent_project_lane_ownerships",
-    "group_agent_graph_node_terminal_artifacts",
-    "group_agent_graph_node_terminal_receipts",
-    "group_agent_graph_execution_schedules",
-    "group_agent_graph_scheduled_node_contract_candidates",
-    "group_agent_graph_scheduled_node_provider_requests",
-    "group_agent_graph_scheduled_node_dispatch_lifecycles",
-    "group_agent_graph_scheduled_node_successor_candidates",
-    "governance_record_append_batches",
-    "governance_records",
-    "governance_structural_heads",
-    "governance_semantic_heads",
-    "governance_claim_semantic_views",
-    "governance_claim_validation_jobs",
-    "run_lineages",
-    "group_agent_scheduled_graph_controllers",
-    "group_agent_scheduled_graph_controller_events",
-];
-const SCHEMA_BATCHES: &[&str] = &[
-    CREATE_V1_SCHEMA_SQL,
-    MIGRATE_V1_TO_V2_SQL,
-    MIGRATE_V2_TO_V3_SQL,
-    MIGRATE_V3_TO_V4_SQL,
-    MIGRATE_V4_TO_V5_SQL,
-    MIGRATE_V5_TO_V6_SQL,
-    MIGRATE_V6_TO_V7_SQL,
-    MIGRATE_V7_TO_V8_SQL,
-    MIGRATE_V8_TO_V9_SQL,
-    MIGRATE_V9_TO_V10_SQL,
-    MIGRATE_V10_TO_V11_SQL,
-    MIGRATE_V11_TO_V12_SQL,
-    MIGRATE_V12_TO_V13_SQL,
-    MIGRATE_V13_TO_V14_SQL,
-    MIGRATE_V14_TO_V15_SQL,
-    MIGRATE_V15_TO_V16_SQL,
-    MIGRATE_V16_TO_V17_SQL,
-    MIGRATE_V17_TO_V18_SQL,
-    MIGRATE_V18_TO_V19_SQL,
-    MIGRATE_V19_TO_V20_SQL,
-    MIGRATE_V20_TO_V21_SQL,
-    MIGRATE_V21_TO_V22_SQL,
-    MIGRATE_V22_TO_V23_SQL,
-    MIGRATE_V23_TO_V24_SQL,
-    MIGRATE_V24_TO_V25_SQL,
-    MIGRATE_V25_TO_V26_SQL,
-    MIGRATE_V26_TO_V27_SQL,
-    MIGRATE_V27_TO_V28_SQL,
-    MIGRATE_V28_TO_V29_SQL,
-];
-const VERSION_TABLE_COUNTS: [usize; 30] = [
-    0, 5, 8, 9, 11, 14, 16, 19, 20, 22, 23, 24, 28, 29, 30, 31, 32, 33, 33, 33, 33, 33, 33, 33, 33,
-    36, 36, 39, 40, 42,
-];
-const VERSION_EXPLICIT_INDEX_COUNTS: [usize; 30] = [
-    0, 2, 3, 4, 6, 8, 10, 12, 14, 16, 18, 20, 24, 25, 27, 29, 31, 32, 32, 32, 32, 32, 32, 32, 32,
-    35, 35, 38, 39, 40,
-];
 const STRUCTURAL_DIGEST_DOMAIN: &[u8] = b"forge-hub-structural-contract-v1\0";
-
 static EXPECTED_SCHEMAS: OnceLock<Result<Vec<ExpectedSchema>, String>> = OnceLock::new();
 
 struct ExpectedSchema {
@@ -301,12 +222,21 @@ fn validate_release_structure(schema: &ExpectedSchema) -> Result<(), String> {
         .iter()
         .map(|table| table.signature.implicit_index_count())
         .sum::<usize>();
+    let expected_catalog_index_owners = match schema.version {
+        31 => v31::catalog_implicit_index_count(schema.version, expected_indexes),
+        32 => v32::catalog_implicit_index_count(schema.version, expected_indexes),
+        33 => v33::catalog_implicit_index_count(schema.version, expected_indexes),
+        34 => v34::catalog_implicit_index_count(schema.version, expected_indexes),
+        _ => v30::catalog_implicit_index_count(schema.version, expected_indexes),
+    };
     if implicit_indexes != expected_indexes
-        || schema.catalog.implicit_index_owners.len() != expected_indexes
+        || schema.catalog.implicit_index_owners.len() != expected_catalog_index_owners
     {
         return Err(format!(
-            "generated Hub v{} has {implicit_indexes} implicit indexes; expected {expected_indexes}",
-            schema.version
+            "generated Hub v{} has {implicit_indexes} structural implicit indexes and {} catalog owners; expected {expected_indexes} and {}",
+            schema.version,
+            schema.catalog.implicit_index_owners.len(),
+            expected_catalog_index_owners
         ));
     }
     let digest = structural_digest(&schema.tables);
@@ -318,24 +248,12 @@ fn validate_release_structure(schema: &ExpectedSchema) -> Result<(), String> {
     }
     Ok(())
 }
+#[allow(clippy::too_many_lines)] // The released per-version digests are kept in one audit table.
 fn release_structural_contract(version: usize) -> Result<(usize, [u8; 32]), String> {
+    if let Some(contract) = release_contract_through_v21(version) {
+        return Ok(contract);
+    }
     Ok(match version {
-        6 => (V6_IMPLICIT_INDEX_COUNT, V6_STRUCTURAL_CONTRACT_SHA256),
-        7 => (V7_IMPLICIT_INDEX_COUNT, V7_STRUCTURAL_CONTRACT_SHA256),
-        8 => (V8_IMPLICIT_INDEX_COUNT, V8_STRUCTURAL_CONTRACT_SHA256),
-        9 => (V9_IMPLICIT_INDEX_COUNT, V9_STRUCTURAL_CONTRACT_SHA256),
-        10 => (V10_IMPLICIT_INDEX_COUNT, V10_STRUCTURAL_CONTRACT_SHA256),
-        11 => (V11_IMPLICIT_INDEX_COUNT, V11_STRUCTURAL_CONTRACT_SHA256),
-        12 => (V12_IMPLICIT_INDEX_COUNT, V12_STRUCTURAL_CONTRACT_SHA256),
-        13 => (V13_IMPLICIT_INDEX_COUNT, V13_STRUCTURAL_CONTRACT_SHA256),
-        14 => (V14_IMPLICIT_INDEX_COUNT, V14_STRUCTURAL_CONTRACT_SHA256),
-        15 => (V15_IMPLICIT_INDEX_COUNT, V15_STRUCTURAL_CONTRACT_SHA256),
-        16 => (V16_IMPLICIT_INDEX_COUNT, V16_STRUCTURAL_CONTRACT_SHA256),
-        17 => (V17_IMPLICIT_INDEX_COUNT, V17_STRUCTURAL_CONTRACT_SHA256),
-        18 => (V18_IMPLICIT_INDEX_COUNT, V18_STRUCTURAL_CONTRACT_SHA256),
-        19 => (V19_IMPLICIT_INDEX_COUNT, V19_STRUCTURAL_CONTRACT_SHA256),
-        20 => (V20_IMPLICIT_INDEX_COUNT, V20_STRUCTURAL_CONTRACT_SHA256),
-        21 => (V21_IMPLICIT_INDEX_COUNT, V21_STRUCTURAL_CONTRACT_SHA256),
         22 => (
             v22::V22_IMPLICIT_INDEX_COUNT,
             v22::V22_STRUCTURAL_CONTRACT_SHA256,
@@ -361,12 +279,38 @@ fn release_structural_contract(version: usize) -> Result<(usize, [u8; 32]), Stri
             v28::V28_STRUCTURAL_CONTRACT_SHA256,
         ),
         29 => v29::V29_STRUCTURAL_CONTRACT,
+        30 => v30::V30_STRUCTURAL_CONTRACT,
+        31 => v31::V31_STRUCTURAL_CONTRACT,
+        32 => v32::V32_STRUCTURAL_CONTRACT,
+        33 => v33::V33_STRUCTURAL_CONTRACT,
+        34 => v34::V34_STRUCTURAL_CONTRACT,
         version => {
             return Err(format!("Hub v{version} has no release structural contract"));
         }
     })
 }
 
+fn release_contract_through_v21(version: usize) -> Option<(usize, [u8; 32])> {
+    match version {
+        6 => Some((V6_IMPLICIT_INDEX_COUNT, V6_STRUCTURAL_CONTRACT_SHA256)),
+        7 => Some((V7_IMPLICIT_INDEX_COUNT, V7_STRUCTURAL_CONTRACT_SHA256)),
+        8 => Some((V8_IMPLICIT_INDEX_COUNT, V8_STRUCTURAL_CONTRACT_SHA256)),
+        9 => Some((V9_IMPLICIT_INDEX_COUNT, V9_STRUCTURAL_CONTRACT_SHA256)),
+        10 => Some((V10_IMPLICIT_INDEX_COUNT, V10_STRUCTURAL_CONTRACT_SHA256)),
+        11 => Some((V11_IMPLICIT_INDEX_COUNT, V11_STRUCTURAL_CONTRACT_SHA256)),
+        12 => Some((V12_IMPLICIT_INDEX_COUNT, V12_STRUCTURAL_CONTRACT_SHA256)),
+        13 => Some((V13_IMPLICIT_INDEX_COUNT, V13_STRUCTURAL_CONTRACT_SHA256)),
+        14 => Some((V14_IMPLICIT_INDEX_COUNT, V14_STRUCTURAL_CONTRACT_SHA256)),
+        15 => Some((V15_IMPLICIT_INDEX_COUNT, V15_STRUCTURAL_CONTRACT_SHA256)),
+        16 => Some((V16_IMPLICIT_INDEX_COUNT, V16_STRUCTURAL_CONTRACT_SHA256)),
+        17 => Some((V17_IMPLICIT_INDEX_COUNT, V17_STRUCTURAL_CONTRACT_SHA256)),
+        18 => Some((V18_IMPLICIT_INDEX_COUNT, V18_STRUCTURAL_CONTRACT_SHA256)),
+        19 => Some((V19_IMPLICIT_INDEX_COUNT, V19_STRUCTURAL_CONTRACT_SHA256)),
+        20 => Some((V20_IMPLICIT_INDEX_COUNT, V20_STRUCTURAL_CONTRACT_SHA256)),
+        21 => Some((V21_IMPLICIT_INDEX_COUNT, V21_STRUCTURAL_CONTRACT_SHA256)),
+        _ => None,
+    }
+}
 fn structural_digest(tables: &[ExpectedTable]) -> [u8; 32] {
     let mut ordered = tables.iter().collect::<Vec<_>>();
     ordered.sort_unstable_by(|left, right| left.name.cmp(right.name));
@@ -463,12 +407,6 @@ impl CatalogSignature {
     }
 }
 
-fn invalid(version: i64, object: &str, detail: &str) -> HubStoreError {
-    HubStoreError::Corrupt {
-        message: format!("Hub v{version} {object} has invalid {detail}"),
-    }
-}
-
 pub(super) fn sqlite_error(error: SqliteError) -> HubStoreError {
     let corrupt = matches!(
         &error,
@@ -484,14 +422,4 @@ pub(super) fn sqlite_error(error: SqliteError) -> HubStoreError {
         };
     }
     unavailable(error)
-}
-
-fn unavailable(error: impl std::fmt::Display) -> HubStoreError {
-    HubStoreError::Unavailable {
-        message: error.to_string(),
-    }
-}
-
-fn stringify(error: impl std::fmt::Display) -> String {
-    error.to_string()
 }

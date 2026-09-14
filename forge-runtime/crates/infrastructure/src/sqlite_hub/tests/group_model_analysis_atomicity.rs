@@ -1,4 +1,4 @@
-use forge_runtime_domain::{
+use crate::runtime_domain::{
     ClaimGroupModelAnalysisDispatch, CompleteGroupModelAnalysis,
     GROUP_MODEL_ANALYSIS_CONSENT_VERSION, GROUP_MODEL_ANALYSIS_PROVIDER_ENDPOINT,
     GROUP_MODEL_ANALYSIS_RESULT_VERSION, GROUP_MODEL_ANALYSIS_SYSTEM_PROMPT_VERSION,

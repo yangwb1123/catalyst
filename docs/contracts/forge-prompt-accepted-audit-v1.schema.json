@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forgeos.dev/contracts/forge-prompt-accepted-audit-v1.schema.json",
+  "title": "Forge Prompt accepted audit event v1",
+  "description": "Minimized contract-only projection from an owner-scoped committed Hub prompt_appended change. It does not authorize or implement event delivery.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "event_id",
+    "tenant_id",
+    "source_system",
+    "event_type",
+    "schema_id",
+    "schema_version",
+    "occurred_at",
+    "operation_id",
+    "actor",
+    "aggregate_type",
+    "aggregate_id",
+    "aggregate_version",
+    "action",
+    "outcome",
+    "payload",
+    "data_classification",
+    "retention_class",
+    "idempotency_key"
+  ],
+  "properties": {
+    "event_id": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "tenant_id": {"type": "string", "minLength": 1, "maxLength": 85, "pattern": "^[^\\s:/\\\\]+$"},
+    "source_system": {"const": "forge-runtime"},
+    "event_type": {"const": "forge.prompt.accepted.v1"},
+    "schema_id": {"const": "forge.prompt.accepted.v1"},
+    "schema_version": {"const": 1},
+    "occurred_at": {"type": "string", "format": "date-time"},
+    "operation_id": {"type": "string", "minLength": 1, "maxLength": 85, "pattern": "^[^\\s:/\\\\]+$"},
+    "actor": {
+      "description": "Issuer-qualified, tenant-scoped pseudonym derived by Forge from the authenticated owner tuple; the raw subject is not exported.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "type": {"const": "user"}
+      }
+    },
+    "aggregate_type": {"const": "forge_conversation"},
+    "aggregate_id": {"type": "string", "minLength": 1, "maxLength": 85, "pattern": "^[^\\s:/\\\\]+$"},
+    "aggregate_version": {"type": "integer", "minimum": 1, "maximum": 9223372036854775807},
+    "action": {"const": "append_prompt"},
+    "outcome": {"const": "accepted"},
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["content_included"],
+      "properties": {
+        "content_included": {"const": false}
+      }
+    },
+    "data_classification": {"const": "internal"},
+    "retention_class": {"const": "standard"},
+    "idempotency_key": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  }
+}

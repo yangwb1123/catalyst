@@ -1,0 +1,30 @@
+{
+  "conversations": [
+    {
+      "conversation": {
+        "id": "conversation-001",
+        "scope": {
+          "kind": "project",
+          "id": "project-7"
+        },
+        "title": "Shared build",
+        "created_at_ms": 100,
+        "updated_at_ms": 150
+      },
+      "aggregate_version": 2
+    },
+    {
+      "conversation": {
+        "id": "conversation-002",
+        "scope": {
+          "kind": "global"
+        },
+        "title": "Run tests",
+        "created_at_ms": 200,
+        "updated_at_ms": 250
+      },
+      "aggregate_version": 1
+    }
+  ],
+  "has_more": false
+}

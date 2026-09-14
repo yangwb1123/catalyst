@@ -343,9 +343,9 @@ role。Agent role 名称不得推导人类身份、职责分离或 approval auth
 
 ### 17.2 Product entry contract
 
-- CLI、TUI、App 的 mutation 均经 App Server command admission，读取均来自同一组
-  versioned Query projection；任何用户入口都不得直接打开 `control.db`、Runtime Hub
-  或 Harness 私有存储；
+- CLI、TUI、Web、App、Mobile 的 mutation 均经经过身份/授权检查的 Coordinator command
+  admission，读取均来自同一组 versioned Query projection；任何用户入口都不得直接打开
+  `control.db`、Runtime Hub 或 Harness 私有存储；
 - durable event 提交后才可进入事实投影。Live chunk 只改善实时体验，丢失、重连或
   截断不得改变已提交状态；
 - `forge tui` 只负责输入与展示，不拥有 schedule、Agent execution、journal append
@@ -369,16 +369,19 @@ role。Agent role 名称不得推导人类身份、职责分离或 approval auth
 
 | ID | 用户需求 | Target | 可复用现状（不代表本行完成） | 仍未交付 |
 |---|---|---|---|---|
-| FW-UX-01 | 同一执行 authority 支持 CLI、TUI、App 和 non-interactive 入口 | R0/F3–F4 | 已正式验收的窄前置只有 App Server health | Product API、projection、TUI shell |
+| FW-UX-01 | 同一执行 authority 支持 CLI、TUI、Web、App、Mobile 和 non-interactive 入口 | R0/F3–F4；个人多端 P1–P2 | 已正式验收的窄前置只有 App Server health | authenticated Product API、跨实例 projection、Web/Mobile 与多端客户端 |
 | FW-UX-02 | 从 Space/Project 创建 Objective 并启动单 WorkItem | R0/F4 | Workspace Catalog 与 pure Delivery Domain 窄切片已正式验收 | Objective repository、single-item intake、dispatch |
 | FW-UX-03 | 以 Attempt/Session/Turn/Action 查看可信执行 Timeline | R0/F2–F4 | FR-03a/b pure values 已验收；FR-04a requested admission 条件化完成，遵守 Sprint 151 同树正式验收边界；first-party Agent 仍是相邻 candidate，且绕过 Attempt/Graph | Durable lifecycle transitions、Session/Turn/Action journal、Runtime transport、projection |
 | FW-UX-04 | 按 capability 启动、中断、恢复或只读查看执行 | R0/F2–F4 | legacy Project Run 已有 resume/restart/branch | Product-scoped capability handshake、Attempt identity mapping 与 App recovery join |
 | FW-UX-05 | 在 effect 前查看 exact scope 并作 typed decision | R1/F6 | `DONE` 的 local marker/consent 与 contract-only ApprovalRecord 只是 same-UID observation/control ref 和 authority-neutral wire | authenticated actor、expiry/revocation、Action digest binding、PDP/effect authority |
 | FW-UX-06 | 检查 Plan、Git Changes、Artifact 和本轮 Completion evidence | R0/F3–F4 | ArtifactRef/Receipt pure wire 窄切片已正式验收 | CAS producer、authoritative Git delta、bounded Inspectors |
 | FW-UX-07 | Harness 独立验证并由 Control Plane 生成 Outcome | R0–R1/F4/F6/F8 | Harness baseline 与 pure Verification wire 窄切片已正式验收 | VerificationPort、Receipt ingestion、Completion Join |
-| FW-UX-08 | 相同 projection 在 CLI/TUI/App 显示相同状态和原因 | R0/F3–F4 | 无产品级实现 | versioned Query model、cursor replay、UX contract tests |
+| FW-UX-08 | 相同 projection 在 CLI/TUI/Web/App/Mobile 显示相同状态和原因 | R0/F3–F4；个人多端 P1–P2 | 无产品级实现 | versioned Query model、跨客户端 cursor replay、UX contract tests |
 | FW-UX-09 | 串并行 WorkGraph、重试、checkpoint 和 integration queue | R2/F7 | legacy scheduled serial Graph controller/worktree session 是独立前身，不是 product WorkGraph 的实现子集 | identity/compatibility mapping、parallelism、retry、checkpoint、integration queue 与 write/resource conflict join |
 | FW-UX-10 | Campaign、跨项目图谱和受控 Evolution | R3–R4/F9–F10 | 已有窄 graph/governance repository projection；没有产品 consumer | product consumer、freshness/coverage、promotion authority |
+| FW-UX-11 | 个人单账号下，不同实例查看同一 Conversation 并提交 Prompt | Personal P1–P2 | ADR-0007 定义本地 Rust Hub owner；ADR-0111/0112 是 Proposed journal/read-bridge 候选；ADR-0113 提出 Proposed owner-enforced auth 边界 | authenticated Coordinator API、owner-filtered Rust Hub adapter、cursor replay、各端客户端 |
+| FW-UX-12 | 注册个人设备、查看新鲜资源快照并 dry-run 解释放置 | Personal P3 | 无设备产品 API 或 Runner inventory | Runner identity、TTL capability snapshot、撤销/过期、placement dry-run |
+| FW-UX-13 | 受控任务可在两台已注册设备间按资源和策略执行 | Personal P4 | 无远程 Runner 或任务 placement 实现 | reservation、lease/fencing、隔离、Artifact staging、审计和 uncertain-effect handling |
 
 每行的最终实现状态仍只由 `.agent/ROADMAP.md`、当前代码、独立 Review 和正式
 `forge accept` 决定。本表不能把 Proposed 设计或结构验证升级为产品完成。
@@ -404,10 +407,24 @@ role。Agent role 名称不得推导人类身份、职责分离或 approval auth
    next action，不生成虚假 Receipt；
 9. TUI 在 80×24、窄终端、无颜色和纯键盘环境仍可完成主流程，审批不能由单个未确认
    快捷键立即生效；
-10. R0 不包含 Web/mobile、remote runner、多用户、自动多 WorkItem、自动 effect
-    retry、Device Fabric、知识图谱 cockpit、富媒体 Artifact renderer 或云部署。
+10. 本节 R0 验收仍只覆盖本地单实例产品边界，不据此声称 Web/Mobile、多端共享、remote Runner 或
+    Device Fabric 已交付；这些能力不再作为产品目标的排除项，而按 FW-UX-11–13 的个人 P1–P4 阶段门推进。
+    多用户、自动多 WorkItem、自动 effect retry、知识图谱 cockpit、富媒体 Artifact renderer 与云部署仍不属于此验收切片。
 
-### 17.5 R1 approval acceptance extension
+### 17.5 个人多端会话与设备阶段验收补充（已批准实施；实现进行中）
+
+用户已批准按此节实施个人单账号目标；本节定义阶段验收门，不是完成声明。Sprint 155 的正式验收没有留下结果。Sprint 156 正在实现 owner-enforced authenticated session API foundation；ADR-0113 的 v2 生命周期仍为 Proposed/null，当前没有已验收的远程 API、客户端或远程执行。
+
+1. 同一用户在 CLI/TUI/Web/App/Mobile 登录后，只能读取由该 Snaplink 已验证 issuer/subject/tenant tuple 授权的 Conversation；OAuth/AuthSession、IM room 与 Forge Conversation 使用不同 ID 和生命周期；
+2. 一个客户端创建或 claim/import 会话后，其他客户端能看到其会话摘要、详情和有序用户可见事件；本地历史跨帐号导入前必须显示来源、目标、项目、选定记录与内容量并取得同意；
+3. 任一已授权客户端可幂等提交 Prompt。相同 key 与相同内容重试不新增 Prompt/Run，冲突 key 或过期 aggregate version 返回可解释冲突；并发提交有确定顺序或明确冲突结果；
+4. 游标分页有界、按序且可恢复；cursor gap、过期、ahead-of-head、权限撤销或损坏时显式失败并要求重新同步，不静默跳过事件；
+5. Runner 显式注册并用与用户会话分离的设备身份上报带 TTL 的 CPU、内存、存储、加速器与能力快照；Stale、offline、revoked、cordoned 或不满足资源/信任条件的设备不得成为候选；
+6. dry-run 对每个候选展示放置或拒绝原因。启用两设备执行前先验证原子资源 reservation、lease/fencing、Runner watchdog、Artifact digest/授权与审计引用；过期或被 fencing 的 Runner 不得提交结果，未知 effect 不自动重试。
+
+Mobile 首期是会话客户端；移动设备参与计算须在后续单独选择加入。多用户/team ACL、多租户、HA 与 federation 不由以上个人设备验收自动覆盖。
+
+### 17.6 R1 approval acceptance extension
 
 R1/F6 在 R0 条件之上增加 authenticated Approval Broker。Approval 的 exact scope、
 Snapshot、Action digest、policy/aggregate version、actor 和 expiry/revocation 任一不匹配

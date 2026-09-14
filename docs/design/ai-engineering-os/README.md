@@ -15,6 +15,8 @@
 > [ADR-0068](../../adr/ADR-0068-authority-neutral-capability-registry-v1.md)；当前覆盖与分期见
 > [implementation-roadmap.md](implementation-roadmap.md)。运行时代码、测试和现有 `.agent/` 契约仍是当前事实源。
 
+新增的[跨端会话与设备执行织网实施方案](cross-device-session-and-fabric-plan.md)记录了用户已批准实施的 CLI/TUI/Web/App/Mobile 共享会话与多设备调度路线；当前实现进行中，任何 phase 均未因此标记为交付。[ADR-0111](../../adr/ADR-0111-hub-conversation-change-journal-v1.md) 与 [ADR-0112](../../adr/ADR-0112-runtime-hub-read-bridge-v1.md) 仍为 Proposed，分别记录本地 Hub change journal 和不开放 HTTP 的只读子进程桥接。[ADR-0113](../../adr/ADR-0113-authenticated-shared-conversation-coordinator-v1.md) 提出 authenticated owner-enforced session API 边界，仍保持 Proposed/null；它不代表 P1 已交付。
+
 当前已交付的窄切片位于 `.agent/engineering/`：activation、14 学科状态、原子规则、`forge accept` detector 接线、
 typed Context 路由、W0–W3 保障覆盖层和 TaskEvidencePackage 契约由 `harness/check.py` 机器校验，并随 scaffold/legacy
 upgrade 继承。其 `activation: shadow` 只强制合同和接线完整性；ADR-0068 已交付唯一 staged entry 的 exact

@@ -239,13 +239,19 @@ fn v15_structural_index_inventory_matches_the_release_golden() {
 
 #[test]
 fn exhausted_writer_lock_is_classified_as_unavailable() {
+    use std::time::{Duration, Instant};
+
     let (root, database) = empty_database();
     let writer = open_database(&database).expect("create lock fixture");
     writer
         .execute_batch("BEGIN IMMEDIATE")
         .expect("hold deterministic writer lock");
 
+    let started = Instant::now();
     let error = open_database(&database).expect_err("writer lock must time out");
+    let elapsed = started.elapsed();
+    assert!(elapsed >= Duration::from_secs(14));
+    assert!(elapsed <= Duration::from_secs(18));
     assert!(matches!(error, HubStoreError::Unavailable { .. }));
 
     writer

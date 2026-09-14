@@ -357,6 +357,11 @@ fn old_schema(snapshot: &[SchemaRow]) -> Vec<SchemaRow> {
                 && !SCHEDULED_DISPATCH_LIFECYCLE_OBJECTS.contains(&name.as_str())
                 && !SUCCESSOR_CANDIDATE_OBJECTS.contains(&name.as_str())
                 && !super::V29_CONTROLLER_OBJECTS.contains(&name.as_str())
+                && !super::V30_CHANGE_OBJECTS.contains(&name.as_str())
+                && !super::V31_OWNER_OBJECTS.contains(&name.as_str())
+                && !super::V32_OWNER_CURSOR_OBJECTS.contains(&name.as_str())
+                && !super::V33_PROJECT_CONSENT_OBJECTS.contains(&name.as_str())
+                && !super::V34_PENDING_RUN_INTENT_OBJECTS.contains(&name.as_str())
                 && !matches!(
                     name.as_str(),
                     "governance_record_append_batches"

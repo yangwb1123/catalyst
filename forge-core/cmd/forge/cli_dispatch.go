@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 
 	"forgeos/forge-core/internal/capabilityregistry"
+	"forgeos/forge-core/internal/deviceplacement"
 	"forgeos/forge-core/internal/gate"
 	"forgeos/forge-core/internal/goimpactprescan"
 	"forgeos/forge-core/internal/graphdispatch"
@@ -55,6 +56,9 @@ var subcommands = map[string]func([]string) int{
 		return sessionworktree.Command(rest, os.Stdout, os.Stderr)
 	},
 	"capability-registry": func(rest []string) int { return capabilityregistry.Command(rest, os.Stdin, os.Stdout, os.Stderr) },
+	"device-placement": func(rest []string) int {
+		return deviceplacement.Command(rest, os.Stdin, os.Stdout, os.Stderr)
+	},
 	"graph-plan":          func(rest []string) int { return graphplan.Command(rest, os.Stdin, os.Stdout, os.Stderr) },
 	"go-impact-prescan":   func(rest []string) int { return goimpactprescan.Command(rest, os.Stdin, os.Stdout, os.Stderr) },
 	"graph-snapshot":      func(rest []string) int { return graphsnapshot.Command(rest, os.Stdin, os.Stdout, os.Stderr) },
@@ -135,6 +139,7 @@ usage:
   forge session integrate-next --repo DIR [--validate-program PATH] [--validate-arg ARG ...] [--validation-timeout D] [--keep-worktree]
   forge capability-registry validate --registry FILE|-
   forge capability-registry resolve --registry FILE|- --request FILE|-
+  forge device-placement dry-run --input FILE|-
   forge graph-plan --graph-id ID --manifest-sha256 HEX [--input FILE|-]
   forge go-impact-prescan --graph-sha256 HEX --run-id ID --changed-path PATH [--changed-path PATH ...] [--input FILE|-]
   forge graph-snapshot --project-id ID --graph-sha256 HEX --run-id ID [--profile PROFILE] [--input FILE|-]

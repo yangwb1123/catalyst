@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use forge_runtime_domain::{
+use crate::runtime_domain::{
     GROUP_ANALYSIS_PANEL_MANIFEST_DIGEST_DOMAIN, GROUP_ANALYSIS_PANEL_VERSION,
     GroupAnalysisPanelContribution, GroupAnalysisPanelInspection, GroupAnalysisPanelRecord,
     GroupModelAnalysisOutcome, GroupModelAnalysisRecovery, GroupModelAnalysisSource,

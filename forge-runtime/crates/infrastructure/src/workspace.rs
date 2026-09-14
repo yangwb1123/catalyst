@@ -5,13 +5,13 @@ use std::{
     sync::Arc,
 };
 
+use crate::runtime_domain::{
+    Cancellation, ToolError, ToolOutput, WorkspaceIdentity, WorkspaceOpenError,
+    WorkspaceReadCapability, WorkspaceReadFactory, WorkspaceReader,
+};
 use cap_std::{
     ambient_authority,
     fs::{Dir, File},
-};
-use forge_runtime_domain::{
-    Cancellation, ToolError, ToolOutput, WorkspaceIdentity, WorkspaceOpenError,
-    WorkspaceReadCapability, WorkspaceReadFactory, WorkspaceReader,
 };
 
 use crate::{
@@ -333,7 +333,7 @@ fn ensure_active(cancellation: &Cancellation) -> Result<(), ToolError> {
 mod tests {
     use std::{fs, io::Read};
 
-    use forge_runtime_domain::Cancellation;
+    use crate::runtime_domain::Cancellation;
     use tempfile::TempDir;
 
     struct CancellingReader {

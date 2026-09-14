@@ -6,6 +6,12 @@ use sha2::{Digest, Sha256};
 
 const RUN_STORE: &str = "crates/domain/src/run_store.rs";
 const RUN_STORE_SHA256: &str = "3e1dcec4391811039c9816fe6429790fef1adc63020a0b71455fc6dbdaa517fa";
+const REMOTE_LOGIN: &str = "crates/interfaces/src/remote_login.rs";
+const REMOTE_LOGIN_SHA256: &str =
+    "516023e1b37288d6b2d52464cb644fdedc5aad386b6b396a181c01fe574f53f2";
+const RUNTIME_RPC_VALIDATION: &str = "crates/interfaces/src/runtime_rpc/validation.rs";
+const RUNTIME_RPC_VALIDATION_SHA256: &str =
+    "1e1fa731f14f0f94e1c0a5f50ba3d9023375736037e2b8fa68c228fbe378702f";
 const INERT_FLAGS: &[&[u8]] = &[
     b"default",
     b"deny_unknown_fields",
@@ -135,6 +141,12 @@ fn check_options(
             Some(b"\"legacy_agent_toolset_version\"") if option.name == b"default" => {
                 options.len() == 1 && reviewed_run_store(source, relative)
             }
+            Some(b"\"default_interval\"") if option.name == b"default" => {
+                options.len() == 1 && reviewed_remote_login(source, relative)
+            }
+            Some(b"\"owned::default_owned_change_limit\"") if option.name == b"default" => {
+                options.len() == 1 && reviewed_runtime_rpc_validation(source, relative)
+            }
             Some(_) => false,
         };
         if !allowed {
@@ -164,4 +176,14 @@ fn standard_option_attribute(options: &[OptionValue<'_>]) -> bool {
 fn reviewed_run_store(source: &str, relative: Option<&str>) -> bool {
     relative == Some(RUN_STORE)
         && format!("{:x}", Sha256::digest(source.as_bytes())) == RUN_STORE_SHA256
+}
+
+fn reviewed_remote_login(source: &str, relative: Option<&str>) -> bool {
+    relative == Some(REMOTE_LOGIN)
+        && format!("{:x}", Sha256::digest(source.as_bytes())) == REMOTE_LOGIN_SHA256
+}
+
+fn reviewed_runtime_rpc_validation(source: &str, relative: Option<&str>) -> bool {
+    relative == Some(RUNTIME_RPC_VALIDATION)
+        && format!("{:x}", Sha256::digest(source.as_bytes())) == RUNTIME_RPC_VALIDATION_SHA256
 }

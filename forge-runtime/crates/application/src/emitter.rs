@@ -1,6 +1,6 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use forge_runtime_domain::{EventSink, PROTOCOL_VERSION, RuntimeEvent, RuntimeEventKind};
+use crate::runtime_domain::{EventSink, PROTOCOL_VERSION, RuntimeEvent, RuntimeEventKind};
 
 use crate::RuntimeError;
 
@@ -51,6 +51,10 @@ impl<'a> EventEmitter<'a> {
         self.sink.emit(&event)?;
         self.next_sequence = self.next_sequence.saturating_add(1);
         Ok(())
+    }
+
+    pub(crate) const fn next_sequence(&self) -> u64 {
+        self.next_sequence
     }
 }
 

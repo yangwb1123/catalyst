@@ -42,6 +42,28 @@ async fn coding_agent_reads_edits_verifies_and_finishes() {
         .filter(|event| matches!(event.kind, RuntimeEventKind::RunFinished { .. }))
         .count();
     assert_eq!(terminal_count, 1);
+    assert_eq!(
+        sink.events()
+            .iter()
+            .filter(|event| matches!(
+                &event.kind,
+                RuntimeEventKind::ToolStarted { call } if call.name == "exec_command"
+            ))
+            .count(),
+        1,
+        "the local adapter must preserve the existing ToolStarted event"
+    );
+    assert_eq!(
+        sink.events()
+            .iter()
+            .filter(|event| matches!(
+                &event.kind,
+                RuntimeEventKind::ToolFinished { name, .. } if name == "exec_command"
+            ))
+            .count(),
+        1,
+        "the local adapter must preserve the existing ToolFinished event"
+    );
 }
 
 fn runtime(workspace: &TempDir, turns: Vec<Vec<ProviderEvent>>) -> AgentRuntime {

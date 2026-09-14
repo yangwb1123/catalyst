@@ -1,6 +1,6 @@
 use std::io::Write;
 
-use forge_runtime_domain::{EventSink, EventSinkError, RuntimeEvent};
+use crate::runtime_domain::{EventSink, EventSinkError, RuntimeEvent};
 
 pub struct JsonlEventSink<W> {
     writer: W,
@@ -53,10 +53,10 @@ impl EventSink for MemoryEventSink {
 
 #[cfg(test)]
 mod tests {
-    use forge_runtime_domain::{PROTOCOL_VERSION, RuntimeEvent, RuntimeEventKind};
+    use crate::runtime_domain::{PROTOCOL_VERSION, RuntimeEvent, RuntimeEventKind};
 
     use super::JsonlEventSink;
-    use forge_runtime_domain::EventSink;
+    use crate::runtime_domain::EventSink;
 
     #[test]
     fn jsonl_sink_writes_one_lf_delimited_object() {

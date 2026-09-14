@@ -1,4 +1,11 @@
 mod atomic_link;
+mod change_read;
+mod change_write;
+mod conversation_bootstrap_read;
+mod conversation_import_read;
+mod conversation_owner_changes_read;
+mod conversation_owner_read;
+mod conversation_project_read;
 #[cfg(test)]
 #[path = "tests/error_classification.rs"]
 mod error_classification_tests;
@@ -27,6 +34,10 @@ mod group_run_codec;
 mod group_run_read;
 mod group_run_write;
 mod open;
+mod owned_run_read;
+mod pending_run_intent;
+mod project_execution_consent;
+mod prompt_read;
 mod read;
 mod rows;
 mod run_execution_lock;
@@ -88,19 +99,44 @@ mod schema_v27_sql;
 mod schema_v28_sql;
 #[path = "schema_contract/v29_sql.rs"]
 mod schema_v29_sql;
+#[path = "schema_contract/v30_sql.rs"]
+mod schema_v30_sql;
+#[path = "schema_contract/v31_sql.rs"]
+mod schema_v31_sql;
+#[path = "schema_contract/v32_sql.rs"]
+mod schema_v32_sql;
+#[path = "schema_contract/v33_sql.rs"]
+mod schema_v33_sql;
+#[path = "schema_contract/v34_sql.rs"]
+mod schema_v34_sql;
 mod schema_v9_sql;
+mod store_impl;
 mod write;
 
 use std::path::{Path, PathBuf};
 
-use forge_runtime_domain::{
+pub(super) use crate::runtime_domain::{
     BeginGroupExecution, BeginGroupExecutionResult, BeginRun, BeginRunBranch, BeginRunBranchResult,
-    BeginRunResult, BeginRunWithPrompt, Conversation, ConversationScope, GroupContextPolicy,
-    GroupContextSlice, GroupExecutionEvent, GroupExecutionInspection, GroupExecutionRecord,
-    GroupExecutionStore, GroupProjectMember, GroupRunRecord, GroupRunSnapshot, GroupRunStore,
-    HubEntity, HubSnapshot, HubStore, HubStoreError, PrepareGroupRun, PrepareGroupRunResult,
-    Project, PromptRecord, RunInspection, RunLineageRecord, RunRecord, RunStore, RunStoreError,
-    RuntimeEvent, SessionGroup,
+    BeginRunResult, BeginRunWithPrompt, Conversation, ConversationBootstrapCursor,
+    ConversationBootstrapEntry, ConversationBootstrapPage, ConversationBootstrapPhase,
+    ConversationChange, ConversationChangeKind, ConversationChangePage, ConversationImportPrompt,
+    ConversationOwner, ConversationPrompt, ConversationPromptCursor, ConversationPromptPage,
+    ConversationScope, GroupContextPolicy, GroupContextSlice, GroupExecutionEvent,
+    GroupExecutionInspection, GroupExecutionRecord, GroupExecutionStore, GroupProjectMember,
+    GroupRunRecord, GroupRunSnapshot, GroupRunStore, HubEntity, HubSnapshot, HubSnapshotAtCursor,
+    HubStore, HubStoreError, LocalConversationImportSource, MAX_CONVERSATION_BOOTSTRAP_PAGE_LIMIT,
+    MAX_CONVERSATION_CHANGE_PAGE_LIMIT, MAX_CONVERSATION_IMPORT_PROMPT_COUNT,
+    MAX_CONVERSATION_PROMPT_PAGE_CONTENT_BYTES, MAX_CONVERSATION_PROMPT_PAGE_LIMIT,
+    MAX_HUB_ENTITY_ID_BYTES, MAX_HUB_ROLE_BYTES, MAX_OWNED_CONVERSATION_PAGE_LIMIT,
+    MAX_OWNED_RUN_PAGE_LIMIT, MAX_OWNED_RUN_TIMELINE_PAGE_LIMIT, MAX_PROMPT_CONTENT_BYTES,
+    OwnedConversationChangePage, OwnedConversationEntry, OwnedConversationImportResult,
+    OwnedConversationPage, OwnedProjectConversationIdentity, OwnedPromptAppendResult,
+    OwnedRunCursor, OwnedRunPage, OwnedRunStatus, OwnedRunSummary, OwnedRunTimelineEvent,
+    OwnedRunTimelineEventType, OwnedRunTimelinePage, PendingRunIntentCursor, PendingRunIntentPage,
+    PendingRunIntentSubmissionResult, PendingRunIntentTimelinePage, PrepareGroupRun,
+    PrepareGroupRunResult, Project, ProjectExecutionConsentGrantResult,
+    ProjectExecutionConsentRevocationResult, PromptRecord, RunInspection, RunLineageRecord,
+    RunRecord, RunStore, RunStoreError, RuntimeEvent, SessionGroup, SubmitPendingRunIntent,
 };
 use rusqlite::{Connection, Error as SqliteError, ErrorCode};
 
@@ -132,120 +168,6 @@ pub fn hub_schema_version(path: &Path) -> Result<i64, HubStoreError> {
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .map_err(schema::sqlite_error)?;
     Ok(version)
-}
-
-impl HubStore for SqliteHubStore {
-    fn open_project(&self, absolute_path: &Path) -> Result<Project, HubStoreError> {
-        let mut connection = self.connect()?;
-        write::open_project(&mut connection, absolute_path)
-    }
-
-    fn snapshot(&self, scope: &ConversationScope) -> Result<HubSnapshot, HubStoreError> {
-        let mut connection = self.connect()?;
-        read::snapshot(&mut connection, scope)
-    }
-
-    fn create_conversation(
-        &self,
-        scope: &ConversationScope,
-        title: &str,
-        idempotency_key: &str,
-    ) -> Result<Conversation, HubStoreError> {
-        let mut connection = self.connect()?;
-        write::create_conversation(&mut connection, scope, title, idempotency_key)
-    }
-
-    fn list_conversations(
-        &self,
-        scope: &ConversationScope,
-    ) -> Result<Vec<Conversation>, HubStoreError> {
-        read::list_conversations(&self.connect()?, scope)
-    }
-
-    fn append_prompt(
-        &self,
-        conversation_id: &str,
-        role: &str,
-        content: &str,
-        idempotency_key: &str,
-    ) -> Result<PromptRecord, HubStoreError> {
-        let mut connection = self.connect()?;
-        write::append_prompt(
-            &mut connection,
-            conversation_id,
-            role,
-            content,
-            idempotency_key,
-        )
-    }
-
-    fn list_prompts(
-        &self,
-        conversation_id: Option<&str>,
-        limit: usize,
-    ) -> Result<Vec<PromptRecord>, HubStoreError> {
-        read::list_prompts(&self.connect()?, conversation_id, limit)
-    }
-
-    fn list_prompts_before(
-        &self,
-        conversation_id: &str,
-        boundary_prompt_id: &str,
-        limit: usize,
-    ) -> Result<Vec<PromptRecord>, HubStoreError> {
-        let mut connection = self.connect()?;
-        read::list_prompts_before(&mut connection, conversation_id, boundary_prompt_id, limit)
-    }
-
-    fn load_group_context(
-        &self,
-        group_id: &str,
-        policy: &GroupContextPolicy,
-    ) -> Result<GroupContextSlice, HubStoreError> {
-        let mut connection = self.connect()?;
-        group_context_read::load(&mut connection, group_id, policy)
-    }
-
-    fn create_group(
-        &self,
-        name: &str,
-        idempotency_key: &str,
-    ) -> Result<SessionGroup, HubStoreError> {
-        let mut connection = self.connect()?;
-        write::create_group(&mut connection, name, idempotency_key)
-    }
-
-    fn list_groups(&self) -> Result<Vec<SessionGroup>, HubStoreError> {
-        read::list_groups(&self.connect()?)
-    }
-
-    fn add_project_to_group(
-        &self,
-        group_id: &str,
-        project_id: &str,
-        role: &str,
-        idempotency_key: &str,
-    ) -> Result<GroupProjectMember, HubStoreError> {
-        let mut connection = self.connect()?;
-        write::add_project_to_group(&mut connection, group_id, project_id, role, idempotency_key)
-    }
-
-    fn add_project_path_to_group(
-        &self,
-        group_id: &str,
-        absolute_path: &Path,
-        role: &str,
-        idempotency_key: &str,
-    ) -> Result<GroupProjectMember, HubStoreError> {
-        let mut connection = self.connect()?;
-        atomic_link::add_project_path_to_group(
-            &mut connection,
-            group_id,
-            absolute_path,
-            role,
-            idempotency_key,
-        )
-    }
 }
 
 impl GroupRunStore for SqliteHubStore {

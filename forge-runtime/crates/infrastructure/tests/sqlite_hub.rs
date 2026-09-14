@@ -1,8 +1,25 @@
 use std::{collections::BTreeMap, fs, path::Path};
 
-use forge_runtime_domain::{ConversationScope, HubEntity, HubSnapshot, HubStore, HubStoreError};
-use forge_runtime_infrastructure::SqliteHubStore;
+use forge_runtime_domain::{
+    Conversation, ConversationBootstrapCursor, ConversationBootstrapPage,
+    ConversationBootstrapPhase, ConversationChangePage, ConversationScope, HubEntity, HubSnapshot,
+    HubStore, HubStoreError,
+};
+use forge_runtime_infrastructure::{SqliteHubStore, hub_schema_version};
 use tempfile::TempDir;
+
+#[path = "sqlite_hub/conversation_bootstrap_page.rs"]
+mod conversation_bootstrap_page;
+#[path = "sqlite_hub/conversation_changes.rs"]
+mod conversation_changes;
+#[path = "sqlite_hub/conversation_import.rs"]
+mod conversation_import;
+#[path = "sqlite_hub/conversation_prompt_page.rs"]
+mod conversation_prompt_page;
+#[path = "sqlite_hub/owned_conversation_changes.rs"]
+mod owned_conversation_changes;
+#[path = "sqlite_hub/owned_run_read.rs"]
+mod owned_run_read;
 
 fn fixture() -> (TempDir, SqliteHubStore) {
     let root = TempDir::new().expect("temporary Hub root");
@@ -406,11 +423,10 @@ fn effect_free_open_rejects_non_current_and_corrupt_databases_without_changes() 
     let error = SqliteHubStore::open_existing_current_read_only(&database)
         .expect_err("non-current Hub is rejected");
     assert!(matches!(error, HubStoreError::Corrupt { .. }));
-    assert!(
-        error
-            .to_string()
-            .contains("current schema version 29; found 10")
-    );
+    assert!(error.to_string().contains(&format!(
+        "current schema version {}; found 10",
+        forge_runtime_infrastructure::CURRENT_SCHEMA_VERSION
+    )));
     assert_eq!(state_files(root.path()), before);
 
     let corrupt_root = TempDir::new().expect("corrupt root");

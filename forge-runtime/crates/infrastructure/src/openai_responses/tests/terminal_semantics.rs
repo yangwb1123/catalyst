@@ -1,4 +1,4 @@
-use forge_runtime_domain::{ModelEvent, ModelFinishReason, Usage};
+use crate::runtime_domain::{ModelEvent, ModelFinishReason, Usage};
 use serde_json::{Value, json};
 
 use super::sse::SseDecoder;

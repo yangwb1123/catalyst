@@ -3,7 +3,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use forge_runtime_domain::{
+use crate::runtime_domain::{
     ModelEvent, ModelEventStream, ModelProvider, ModelRequest, ProviderError,
 };
 use futures_util::stream;

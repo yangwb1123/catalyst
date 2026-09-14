@@ -108,6 +108,25 @@ fn downgrade_to_v26(connection: &rusqlite::Connection) {
     connection
         .execute_batch(
             "PRAGMA foreign_keys=OFF;
+             DROP INDEX IF EXISTS pending_run_intents_owner_conversation_page;
+             DROP TABLE IF EXISTS pending_run_intent_events;
+             DROP TABLE IF EXISTS pending_run_intents;
+             DROP INDEX IF EXISTS project_execution_consent_active_lookup;
+             DROP TABLE IF EXISTS project_execution_consent_events;
+             DROP TABLE IF EXISTS project_execution_consent_grants;
+             DROP TABLE IF EXISTS conversation_owner_change_rows;
+             DROP TABLE IF EXISTS conversation_owner_change_heads;
+             DROP INDEX IF EXISTS conversation_changes_conversation_cursor;
+             DROP INDEX IF EXISTS conversation_owners_principal_conversation;
+             DROP INDEX IF EXISTS conversation_changes_conversation_cursor;
+             DROP TABLE IF EXISTS conversation_owner_change_rows;
+             DROP TABLE IF EXISTS conversation_owner_change_heads;
+             DROP INDEX IF EXISTS conversation_owners_principal;
+             DROP TABLE IF EXISTS conversation_owners;
+             DROP TABLE conversation_changes;
+             DROP TABLE conversation_change_heads;
+             DROP TABLE conversation_change_state;
+             DROP TABLE conversation_change_baselines;
              DROP TABLE group_agent_scheduled_graph_controller_events;
              DROP TABLE group_agent_scheduled_graph_controllers;
              DROP TABLE run_lineages;
@@ -124,6 +143,25 @@ fn downgrade_to_v24(database: &Path) {
     connection
         .execute_batch(
             "PRAGMA foreign_keys=OFF;
+             DROP INDEX IF EXISTS pending_run_intents_owner_conversation_page;
+             DROP TABLE IF EXISTS pending_run_intent_events;
+             DROP TABLE IF EXISTS pending_run_intents;
+             DROP INDEX IF EXISTS project_execution_consent_active_lookup;
+             DROP TABLE IF EXISTS project_execution_consent_events;
+             DROP TABLE IF EXISTS project_execution_consent_grants;
+             DROP TABLE IF EXISTS conversation_owner_change_rows;
+             DROP TABLE IF EXISTS conversation_owner_change_heads;
+             DROP INDEX IF EXISTS conversation_changes_conversation_cursor;
+             DROP INDEX IF EXISTS conversation_owners_principal_conversation;
+             DROP INDEX IF EXISTS conversation_changes_conversation_cursor;
+             DROP TABLE IF EXISTS conversation_owner_change_rows;
+             DROP TABLE IF EXISTS conversation_owner_change_heads;
+             DROP INDEX IF EXISTS conversation_owners_principal;
+             DROP TABLE IF EXISTS conversation_owners;
+             DROP TABLE conversation_changes;
+             DROP TABLE conversation_change_heads;
+             DROP TABLE conversation_change_state;
+             DROP TABLE conversation_change_baselines;
              DROP TABLE group_agent_scheduled_graph_controller_events;
              DROP TABLE group_agent_scheduled_graph_controllers;
              DROP TABLE run_lineages;

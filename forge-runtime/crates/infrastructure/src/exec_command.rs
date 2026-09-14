@@ -14,6 +14,12 @@ use std::{
 use crate::runtime_domain::{
     AgentTool, Cancellation, Capability, TOOL_EFFECT_UNCERTAIN_CODE, ToolContext, ToolError,
     ToolFuture, ToolOutput, ToolSpec,
+    execution::fabric::{
+        EXECUTION_FABRIC_ABI_VERSION, EffectClassification, EnvironmentDigest, ExecutionAttempt,
+        ExecutionEvidence, ExecutionEvidenceSource, ExecutionTarget, ExecutionTargetScope,
+        ExecutionTargetStatus, LOCAL_EXECUTION_ADAPTER_ID, LOCAL_EXECUTION_ADAPTER_VERSION,
+        LocalProcessObservation, Mobility, ToolInvocationRef,
+    },
 };
 use cap_std::{ambient_authority, fs::Dir};
 use schemars::{JsonSchema, schema_for};
@@ -128,16 +134,120 @@ impl AgentTool for ExecCommandTool {
     }
 
     fn execute(&self, arguments: Value, context: ToolContext) -> ToolFuture<'_> {
+        self.execute_inner(arguments, context, None)
+    }
+
+    fn execute_with_invocation(
+        &self,
+        arguments: Value,
+        context: ToolContext,
+        invocation: ToolInvocationRef,
+    ) -> ToolFuture<'_> {
+        self.execute_inner(arguments, context, Some(invocation))
+    }
+}
+
+impl ExecCommandTool {
+    fn execute_inner(
+        &self,
+        arguments: Value,
+        context: ToolContext,
+        invocation: Option<ToolInvocationRef>,
+    ) -> ToolFuture<'_> {
         let workspace = self.clone();
         Box::pin(async move {
             let input = parse_input(arguments)?;
             let output_limit = context.max_output_bytes.min(MAX_CAPTURE_BYTES);
             tokio::task::spawn_blocking(move || {
-                run_command(&workspace, &input, &context.cancellation, output_limit)
+                LocalExecutionTarget::new(workspace).execute(
+                    &input,
+                    invocation,
+                    &context.cancellation,
+                    output_limit,
+                )
             })
             .await
             .map_err(blocking_task_failure)?
+            .map(|(output, _)| output)
         })
+    }
+}
+
+struct LocalExecutionTarget {
+    workspace: ExecCommandTool,
+    descriptor: ExecutionTarget,
+}
+
+impl LocalExecutionTarget {
+    fn new(workspace: ExecCommandTool) -> Self {
+        Self {
+            workspace,
+            descriptor: ExecutionTarget::local(),
+        }
+    }
+
+    fn execute(
+        &self,
+        input: &ExecCommandInput,
+        invocation: Option<ToolInvocationRef>,
+        cancellation: &Cancellation,
+        output_limit: usize,
+    ) -> Result<(ToolOutput, Option<ExecutionEvidence>), ToolError> {
+        let attempt = invocation.map(ExecutionAttempt::local_process);
+        if let Some(attempt) = &attempt {
+            self.validate_attempt(attempt)?;
+        }
+        let (output, exit_code) = run_command(&self.workspace, input, cancellation, output_limit)?;
+        let evidence = attempt.map(|attempt| ExecutionEvidence {
+            v: EXECUTION_FABRIC_ABI_VERSION,
+            attempt_ref: attempt.attempt_ref,
+            target_ref: attempt.target_ref,
+            source: ExecutionEvidenceSource::LocalProcessObservation,
+            observation: LocalProcessObservation {
+                exit_code,
+                rendered_output_bytes: u64::try_from(output.content.len()).unwrap_or(u64::MAX),
+                output_truncated: output.truncated,
+            },
+        });
+        Ok((output, evidence))
+    }
+
+    fn validate_attempt(&self, attempt: &ExecutionAttempt) -> Result<(), ToolError> {
+        let target_ref = &self.descriptor.target_ref;
+        if self.descriptor.v != EXECUTION_FABRIC_ABI_VERSION
+            || self.descriptor.target_ref.scope != ExecutionTargetScope::CurrentRuntimeOnly
+            || self.descriptor.adapter_id != LOCAL_EXECUTION_ADAPTER_ID
+            || self.descriptor.adapter_version != LOCAL_EXECUTION_ADAPTER_VERSION
+            || self.descriptor.status != ExecutionTargetStatus::Ready
+            || attempt.target_ref != *target_ref
+            || attempt.placement_constraint.target_required != *target_ref
+        {
+            return Err(ToolError::new(
+                "unsupported_execution_target",
+                "the local adapter accepts only the current local target",
+            ));
+        }
+        if attempt.v != EXECUTION_FABRIC_ABI_VERSION
+            || attempt.attempt_ref.session_id != attempt.tool_invocation.session_id
+            || attempt.attempt_ref.run_id != attempt.tool_invocation.run_id
+            || attempt.attempt_ref.tool_started_sequence
+                != attempt.tool_invocation.tool_started_sequence
+            || attempt.effect.capability != Capability::Process
+            || attempt.effect.classification != EffectClassification::PotentiallySideEffecting
+            || attempt.mobility != Mobility::Pinned
+            || !attempt.input_artifacts.is_empty()
+            || !attempt.output_artifacts.is_empty()
+            || !matches!(
+                attempt.environment_digest,
+                EnvironmentDigest::NotCaptured { .. }
+            )
+        {
+            return Err(ToolError::new(
+                "invalid_execution_attempt",
+                "attempt metadata is incompatible with the local process adapter",
+            ));
+        }
+        Ok(())
     }
 }
 
@@ -209,7 +319,7 @@ fn run_command(
     input: &ExecCommandInput,
     cancellation: &Cancellation,
     output_limit: usize,
-) -> Result<ToolOutput, ToolError> {
+) -> Result<(ToolOutput, Option<i32>), ToolError> {
     if cancellation.is_cancelled() {
         return Err(cancelled_error());
     }
@@ -243,7 +353,11 @@ fn run_command(
             return Err(cleanup_after_capture_error(&mut child, error));
         }
     };
-    Ok(render_output(status, &stdout, &stderr, output_limit))
+    let exit_code = status.code();
+    Ok((
+        render_output(status, &stdout, &stderr, output_limit),
+        exit_code,
+    ))
 }
 
 #[cfg(unix)]

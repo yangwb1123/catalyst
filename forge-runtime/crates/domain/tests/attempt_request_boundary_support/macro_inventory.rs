@@ -10,6 +10,14 @@ const MAX_REVIEWED_MACRO_SOURCE_BYTES: u64 = 1024 * 1024;
 // lexical consumer-closure gate does not misclassify this test as a consumer.
 const EXPECTED_MACRO_SOURCES: &[(&str, &str)] = &[
     (
+        "crates/domain/src/hub_store_owned_methods.rs",
+        "1607f00aa37d9fbaa73b0aa5b8453f367327a603167dc4de6c3b36115bde3459",
+    ),
+    (
+        "crates/domain/src/device_registry/model.rs",
+        "348171c4349c79ce3ddb15157b69b5a05f75ccfd6a373c551e68111478868171",
+    ),
+    (
         "crates/domain/src/approval_record_contract/model.rs",
         "c81d0f7c9abed7fab8b4640c1912740c0e82497c87d9c1645ccd008115e75e98",
     ),

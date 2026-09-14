@@ -1,4 +1,4 @@
-use forge_runtime_domain::{
+use crate::runtime_domain::{
     Cancellation, GroupAgentNodeExecutionContract, Message, ModelRequest, PreparedModelProvider,
     PreparedModelRequest, ProviderError, group_agent_node_provider_request_sha256,
 };

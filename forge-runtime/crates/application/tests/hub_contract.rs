@@ -1,5 +1,12 @@
 mod hub_support;
 
+#[path = "hub_contract/bootstrap.rs"]
+mod bootstrap;
+#[path = "hub_contract/owned_changes.rs"]
+mod owned_changes;
+#[path = "hub_contract/owned_runs.rs"]
+mod owned_runs;
+
 use std::{path::Path, sync::Arc};
 
 use forge_runtime_application::{
@@ -7,7 +14,11 @@ use forge_runtime_application::{
     MAX_IDEMPOTENCY_KEY_BYTES, MAX_PROMPT_BYTES, MAX_PROMPT_LIST_LIMIT, MAX_ROLE_BYTES,
     MAX_TITLE_BYTES,
 };
-use forge_runtime_domain::{ConversationScope, HubEntity, HubStore, HubStoreError};
+use forge_runtime_domain::{
+    ConversationBootstrapCursor, ConversationBootstrapPhase, ConversationPromptCursor,
+    ConversationScope, HubEntity, HubStore, HubStoreError, MAX_CONVERSATION_BOOTSTRAP_PAGE_LIMIT,
+    MAX_CONVERSATION_PROMPT_PAGE_LIMIT,
+};
 use hub_support::MemoryHubStore;
 
 #[test]
@@ -61,6 +72,104 @@ fn global_and_scoped_snapshots_expose_expected_conversations() {
     assert_eq!(project.projects, vec![frontend]);
     assert_eq!(project.conversations.len(), 1);
     assert_eq!(project.conversations[0].title, "Frontend");
+}
+
+#[test]
+fn snapshot_cursor_and_change_pages_support_idempotent_session_sync() {
+    let service = service();
+    let initial = service
+        .snapshot_at_cursor()
+        .expect("initial snapshot and cursor");
+    assert_eq!(initial.cursor, 0);
+    assert!(initial.snapshot.conversations.is_empty());
+
+    let conversation = service
+        .create_session(&ConversationScope::Global, "Shared", "shared-session")
+        .expect("create conversation");
+    let replay = service
+        .create_session(&ConversationScope::Global, "Shared", "shared-session")
+        .expect("idempotent replay");
+    assert_eq!(conversation, replay);
+
+    let first_page = service
+        .conversation_changes_after(initial.cursor, 1)
+        .expect("read create change");
+    assert_eq!(first_page.head_cursor, 1);
+    assert_eq!(first_page.next_cursor, 1);
+    assert!(!first_page.has_more);
+    assert_eq!(first_page.changes.len(), 1);
+    assert_eq!(first_page.changes[0].conversation_id, conversation.id);
+    assert_eq!(first_page.changes[0].entity_id, conversation.id);
+    assert_eq!(first_page.changes[0].aggregate_version, 1);
+
+    service
+        .append_prompt(&conversation.id, "user", "hello", "shared-prompt")
+        .expect("append prompt");
+    service
+        .append_prompt(&conversation.id, "user", "hello", "shared-prompt")
+        .expect("idempotent Prompt replay");
+    let second_page = service
+        .conversation_changes_after(first_page.next_cursor, 1)
+        .expect("read Prompt change");
+    assert_eq!(second_page.head_cursor, 2);
+    assert_eq!(second_page.next_cursor, 2);
+    assert_eq!(second_page.changes.len(), 1);
+    assert_eq!(second_page.changes[0].aggregate_version, 2);
+    assert!(matches!(
+        second_page.changes[0].kind,
+        forge_runtime_domain::ConversationChangeKind::PromptAppended
+    ));
+    assert!(matches!(
+        service.conversation_changes_after(3, 1),
+        Err(HubError::Store(HubStoreError::Conflict { .. }))
+    ));
+}
+
+#[test]
+fn conversation_prompt_page_validates_scope_cursor_and_limit() {
+    let service = service();
+    let conversation = service
+        .create_session(&ConversationScope::Global, "history", "history-session")
+        .expect("Conversation");
+    service
+        .append_prompt(&conversation.id, "user", "older", "history-older")
+        .expect("older Prompt");
+    service
+        .append_prompt(&conversation.id, "assistant", "newer", "history-newer")
+        .expect("newer Prompt");
+    let page = service
+        .conversation_prompt_page(&conversation.id, None, 1)
+        .expect("first history page");
+    assert_eq!(page.conversation_id, conversation.id);
+    assert_eq!(page.prompts.len(), 1);
+    assert!(page.has_more);
+
+    for limit in [0, MAX_CONVERSATION_PROMPT_PAGE_LIMIT + 1] {
+        assert!(matches!(
+            service.conversation_prompt_page(&conversation.id, None, limit),
+            Err(HubError::OutOfRange {
+                field: HubField::PromptLimit,
+                ..
+            })
+        ));
+    }
+    assert!(matches!(
+        service.conversation_prompt_page(" ", None, 1),
+        Err(HubError::Empty {
+            field: HubField::ConversationId
+        })
+    ));
+    let invalid_cursor = ConversationPromptCursor {
+        created_at_ms: i64::MAX as u64 + 1,
+        prompt_id: "prompt".into(),
+    };
+    assert!(matches!(
+        service.conversation_prompt_page(&conversation.id, Some(&invalid_cursor), 1),
+        Err(HubError::OutOfRange {
+            field: HubField::PromptCursor,
+            ..
+        })
+    ));
 }
 
 #[test]

@@ -1,9 +1,13 @@
 package appserver
 
 import (
+	intentmodel "forgeos/forge-core/internal/runtimebridge/intentmodel"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"forgeos/forge-core/internal/executionprofile"
 )
 
 func testConfig(t *testing.T) Config {
@@ -33,6 +37,17 @@ func TestConfigRejectsUnsafeListenAddresses(t *testing.T) {
 		if err := config.Validate(); err == nil {
 			t.Errorf("Validate(%q) succeeded", address)
 		}
+	}
+}
+
+func TestConfigRequiresSessionAPIForExecutionProfileBindings(t *testing.T) {
+	config := testConfig(t)
+	config.ExecutionProfiles = []executionprofile.Binding{{
+		ProjectID: "project-1",
+		Profile:   intentmodel.ServerExecutionProfile{ID: "profile-1", SHA256: [32]byte{1}},
+	}}
+	if err := config.Validate(); err == nil || !strings.Contains(err.Error(), "session API requires") {
+		t.Fatalf("profile policy without authenticated Hub API error=%v", err)
 	}
 }
 
@@ -92,5 +107,117 @@ func TestConfigRejectsUnboundedBuildIdentity(t *testing.T) {
 	config.Build.Commit = "bad commit"
 	if err := config.Validate(); err == nil {
 		t.Fatal("commit with whitespace succeeded")
+	}
+}
+
+func TestBrowserOriginsAreExactAndHTTPSExceptLoopbackDevelopment(t *testing.T) {
+	for _, origin := range []string{
+		"https://console.example",
+		"https://console.example:8443",
+		"http://localhost:3000",
+		"http://127.0.0.1:3000",
+		"http://[::1]:3000",
+	} {
+		if err := validateBrowserOrigins([]string{origin}); err != nil {
+			t.Errorf("validateBrowserOrigins(%q): %v", origin, err)
+		}
+	}
+	for _, origin := range []string{
+		"*", "https://*", "https://console.example/", "https://user@console.example",
+		"https://console.example:443", "https://console.example:70000", "http://console.example",
+	} {
+		if err := validateBrowserOrigins([]string{origin}); err == nil {
+			t.Errorf("validateBrowserOrigins(%q) succeeded", origin)
+		}
+	}
+	if err := validateBrowserOrigins([]string{"https://console.example", "https://console.example"}); err == nil {
+		t.Fatal("duplicate browser origins succeeded")
+	}
+}
+
+func TestConfigRequiresSessionAPIWhenBrowserOriginsAreConfigured(t *testing.T) {
+	config := testConfig(t)
+	config.BrowserOrigins = []string{"https://console.example"}
+	if err := config.Validate(); err == nil {
+		t.Fatal("browser origin without authenticated session API succeeded")
+	}
+}
+
+func TestPrivateInterfaceRequiresTLSAndSnaplinkSessionAPI(t *testing.T) {
+	config := testConfig(t)
+	config.ListenAddress = "10.20.30.40:7467"
+	if err := config.Validate(); err == nil {
+		t.Fatal("private listener without TLS/API configuration succeeded")
+	}
+
+	root := t.TempDir()
+	certificate := filepath.Join(root, "server.crt")
+	privateKey := filepath.Join(root, "server.key")
+	runtimeExecutable := filepath.Join(root, "forge-runtime")
+	for path, contents := range map[string]string{
+		certificate:       "test certificate file",
+		privateKey:        "test private key file",
+		runtimeExecutable: "test executable",
+	} {
+		if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Chmod(privateKey, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	config.TLSCertificateFile = certificate
+	config.TLSPrivateKeyFile = privateKey
+	config.RuntimeExecutable = runtimeExecutable
+	config.RuntimeStateDir = filepath.Join(root, "runtime-state")
+	config.SnaplinkIssuer = "https://identity.example"
+	config.SnaplinkAudience = "forge-api"
+	config.ExpectedTenantID = "tenant-slate"
+	config.ExpectedSubjectID = "account-42"
+	if err := config.Validate(); err != nil {
+		t.Fatalf("valid private HTTPS/API config rejected: %v", err)
+	}
+	config.ExpectedSubjectID = ""
+	if err := config.Validate(); err == nil {
+		t.Fatal("session API without the exact Coordinator subject succeeded")
+	}
+	config.ExpectedSubjectID = "account-42"
+	config.ExpectedTenantID = ""
+	if err := config.Validate(); err == nil {
+		t.Fatal("session API without the exact Coordinator tenant succeeded")
+	}
+	config.ExpectedTenantID = "tenant-slate"
+	config.SnaplinkAudience = ""
+	if err := config.Validate(); err == nil {
+		t.Fatal("private listener without complete Snaplink config succeeded")
+	}
+}
+
+func TestConfigAcceptsOptInIntrospectionWithPrivateCredentialFile(t *testing.T) {
+	root := t.TempDir()
+	executable := filepath.Join(root, "forge-runtime")
+	if err := os.WriteFile(executable, []byte("runtime"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	secretFile := filepath.Join(root, "snaplink-introspect.secret")
+	if err := os.WriteFile(secretFile, []byte("resource-secret\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	config := testConfig(t)
+	config.RuntimeExecutable = executable
+	config.RuntimeStateDir = filepath.Join(root, "runtime-state")
+	config.SnaplinkIssuer = "https://identity.example"
+	config.SnaplinkAudience = "forge-api"
+	config.ExpectedTenantID = "tenant-slate"
+	config.ExpectedSubjectID = "account-42"
+	config.SnaplinkIntrospectURL = "https://identity.example/token/introspect"
+	config.SnaplinkIntrospectClientID = "forge-resource-server"
+	config.SnaplinkIntrospectSecretFile = secretFile
+	if err := config.Validate(); err != nil {
+		t.Fatalf("valid opt-in introspection config rejected: %v", err)
+	}
+	config.SnaplinkIntrospectClientID = ""
+	if err := config.Validate(); err == nil {
+		t.Fatal("introspection endpoint without client credentials succeeded")
 	}
 }

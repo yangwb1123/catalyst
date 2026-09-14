@@ -3,6 +3,7 @@ extern crate self as forge_runtime_application;
 
 mod catalog;
 mod conversation_history;
+mod device_registry;
 mod emitter;
 mod engine;
 mod error;
@@ -44,18 +45,33 @@ mod workspace_identity;
 
 pub(crate) use forge_runtime_domain as runtime_domain;
 
+pub use crate::runtime_domain::{
+    CapabilitySnapshot, Device, DeviceApprovalState, DeviceHeartbeatError, DeviceId,
+    DevicePlacementCandidate, DevicePlacementDecision, DevicePlacementDisposition,
+    DevicePlacementExclusion, DevicePlacementRequest, DevicePlacementRequirements,
+    DevicePlacementValidationError, DeviceRegistryValidationError, DeviceStateError, GpuCapability,
+    MAX_DEVICE_CAPABILITY_BYTES, MAX_DEVICE_CAPABILITY_LEASE_TTL_MS, MAX_DEVICE_CPU_CORES,
+    MAX_DEVICE_GPU_COUNT, MAX_DEVICE_IDENTIFIER_BYTES, MAX_DEVICE_PLACEMENT_CANDIDATES,
+    MAX_DEVICE_RUNTIME_COUNT, MAX_DEVICE_RUNTIME_NAME_BYTES, MIN_DEVICE_CAPABILITY_LEASE_TTL_MS,
+    RunnerHeartbeat, RunnerInstance, RunnerInstanceId, RunnerLiveness, TenantId,
+    apply_device_heartbeat, dry_run_device_placement,
+};
+pub use crate::runtime_domain::{
+    DEFAULT_GROUP_CONTEXT_CONTENT_BYTES, GROUP_AGENT_GRAPH_VERSION, GROUP_EXECUTION_VERSION,
+    GROUP_RUN_VERSION, MAX_CONVERSATION_CHANGE_PAGE_LIMIT, MAX_GROUP_AGENT_GRAPH_LIST_LIMIT,
+    MAX_GROUP_CONTEXT_CONTENT_BYTES, MAX_GROUP_EXECUTION_LIST_LIMIT,
+    MAX_GROUP_MODEL_ANALYSIS_LIST_LIMIT, MAX_GROUP_RUN_LIST_LIMIT,
+};
 pub use catalog::{ToolCatalog, validate_agent_tool_catalog};
 pub use conversation_history::{
     ConversationHistory, ConversationHistoryBridge, HISTORY_RECORD_LIMIT, HistoryError,
 };
+pub use device_registry::{
+    DEVICE_CAPABILITY_LEASE_TTL_MS, DEVICE_HEARTBEAT_STALE_AFTER_MS, DeviceRegistryService,
+};
 pub use engine::AgentRuntime;
 pub use error::RuntimeError;
 pub use error::{RunError, RunField};
-pub use forge_runtime_domain::{
-    DEFAULT_GROUP_CONTEXT_CONTENT_BYTES, GROUP_AGENT_GRAPH_VERSION, GROUP_EXECUTION_VERSION,
-    GROUP_RUN_VERSION, MAX_GROUP_AGENT_GRAPH_LIST_LIMIT, MAX_GROUP_CONTEXT_CONTENT_BYTES,
-    MAX_GROUP_EXECUTION_LIST_LIMIT, MAX_GROUP_MODEL_ANALYSIS_LIST_LIMIT, MAX_GROUP_RUN_LIST_LIMIT,
-};
 pub use governance_record_journal::{
     AppendGovernanceRecordBatchInput, GovernanceRecordJournalService,
     GovernanceRecordJournalServiceError,

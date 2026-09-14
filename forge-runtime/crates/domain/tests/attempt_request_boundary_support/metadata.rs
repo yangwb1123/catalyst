@@ -19,11 +19,11 @@ const METADATA_TIMEOUT: Duration = Duration::from_secs(30);
 const EXPECTED_DEPENDENCY_FILES: &[(&str, &str)] = &[
     (
         "Cargo.lock",
-        "5577c86546c551085da867a2d7d44cfbfd812c9670853fd0e1a7c94076b6b5f7",
+        "f905299731ad59a117b59c1b07140fc96dce441aa06779bb14c4f0fd68d528e8",
     ),
     (
         "Cargo.toml",
-        "8ed616ecb4fa042631ab449999d2a09d1936e9a815c96334ad06885e49992ea6",
+        "29d86d61e1a13bf91e5d527286f42213a047bf5d36aaf228f5f5de679499fa80",
     ),
     (
         "crates/application/Cargo.toml",
@@ -39,7 +39,7 @@ const EXPECTED_DEPENDENCY_FILES: &[(&str, &str)] = &[
     ),
     (
         "crates/interfaces/Cargo.toml",
-        "9123dddae67fa6369d3187cf3f6bfede26389bf9a8d3d0c9bce838bfe9bf908b",
+        "8fddc75446ffe86fb6d5ba717e1baac8628b7497907cdc503b83e9fee659b4a0",
     ),
 ];
 

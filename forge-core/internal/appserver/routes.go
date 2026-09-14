@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 )
 
 const HealthPath = "/api/v1/health"
@@ -27,14 +28,19 @@ type healthResponse struct {
 type routes struct {
 	authority string
 	health    http.Handler
+	sessions  http.Handler
 }
 
-// newRoutes builds the package-private read-only surface served only by Run.
+// newRoutes builds the package-private API surface served only by Run.
 func newRoutes(build BuildInfo, authority string) (http.Handler, error) {
 	return newRoutesWithLimit(build, authority, maxInFlightRequests)
 }
 
 func newRoutesWithLimit(build BuildInfo, authority string, maximum int) (http.Handler, error) {
+	return newRoutesWithSessions(build, authority, maximum, nil)
+}
+
+func newRoutesWithSessions(build BuildInfo, authority string, maximum int, sessions http.Handler) (http.Handler, error) {
 	if err := build.validate(); err != nil {
 		return nil, err
 	}
@@ -52,7 +58,10 @@ func newRoutesWithLimit(build BuildInfo, authority string, maximum int) (http.Ha
 	health := http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		writeJSON(writer, request, http.StatusOK, healthBody)
 	})
-	return routes{authority: authority, health: limitRequests(health, maximum)}, nil
+	if sessions != nil {
+		sessions = limitRequests(sessions, maximum)
+	}
+	return routes{authority: authority, health: limitRequests(health, maximum), sessions: sessions}, nil
 }
 
 func (r routes) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
@@ -60,16 +69,28 @@ func (r routes) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 		writeJSON(writer, request, http.StatusMisdirectedRequest, invalidAuthorityBody)
 		return
 	}
-	if request.URL.EscapedPath() != HealthPath || request.URL.ForceQuery || request.URL.RawQuery != "" {
+	path := request.URL.EscapedPath()
+	if path == HealthPath {
+		if request.URL.ForceQuery || request.URL.RawQuery != "" {
+			writeJSON(writer, request, http.StatusNotFound, notFoundBody)
+			return
+		}
+		if request.Method != http.MethodGet && request.Method != http.MethodHead {
+			writer.Header().Set("Allow", "GET, HEAD")
+			writeJSON(writer, request, http.StatusMethodNotAllowed, methodBody)
+			return
+		}
+		r.health.ServeHTTP(writer, request)
+		return
+	}
+	if r.sessions != nil && (strings.HasPrefix(path, "/api/v1/conversations") || path == conversationChangesPath) {
+		r.sessions.ServeHTTP(writer, request)
+		return
+	}
+	if path != HealthPath {
 		writeJSON(writer, request, http.StatusNotFound, notFoundBody)
 		return
 	}
-	if request.Method != http.MethodGet && request.Method != http.MethodHead {
-		writer.Header().Set("Allow", "GET, HEAD")
-		writeJSON(writer, request, http.StatusMethodNotAllowed, methodBody)
-		return
-	}
-	r.health.ServeHTTP(writer, request)
 }
 
 func writeJSON(writer http.ResponseWriter, request *http.Request, status int, body []byte) {

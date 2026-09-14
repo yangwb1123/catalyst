@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use forge_runtime_domain::{
+use crate::runtime_domain::{
     GROUP_AGENT_GRAPH_MANIFEST_DIGEST_DOMAIN, GROUP_AGENT_GRAPH_VERSION,
     GROUP_CONTEXT_DIGEST_DOMAIN, GROUP_CONTEXT_VERSION, GROUP_RUN_SNAPSHOT_DIGEST_DOMAIN,
     GROUP_RUN_VERSION, GroupAgentGraphInspection, GroupAgentGraphManifest, GroupAgentGraphNode,

@@ -1,0 +1,75 @@
+{
+  "target": {
+    "v": 1,
+    "target_ref": {
+      "target_id": "local",
+      "kind": "local",
+      "scope": "current_runtime_only"
+    },
+    "adapter_id": "forge.exec_command.local",
+    "adapter_version": "1",
+    "status": "ready"
+  },
+  "attempt": {
+    "v": 1,
+    "attempt_ref": {
+      "session_id": "session-1",
+      "run_id": "run-1",
+      "tool_started_sequence": 4
+    },
+    "tool_invocation": {
+      "session_id": "session-1",
+      "run_id": "run-1",
+      "tool_call_id": "call-1",
+      "tool_started_sequence": 4
+    },
+    "target_ref": {
+      "target_id": "local",
+      "kind": "local",
+      "scope": "current_runtime_only"
+    },
+    "placement_constraint": {
+      "target_required": {
+        "target_id": "local",
+        "kind": "local",
+        "scope": "current_runtime_only"
+      }
+    },
+    "environment_digest": {
+      "status": "not_captured",
+      "reason": "the current local process runner does not capture a complete environment digest"
+    },
+    "input_artifacts": [],
+    "output_artifacts": [],
+    "effect": {
+      "capability": "process",
+      "classification": "potentially_side_effecting"
+    },
+    "mobility": "pinned"
+  },
+  "evidence": {
+    "v": 1,
+    "attempt_ref": {
+      "session_id": "session-1",
+      "run_id": "run-1",
+      "tool_started_sequence": 4
+    },
+    "target_ref": {
+      "target_id": "local",
+      "kind": "local",
+      "scope": "current_runtime_only"
+    },
+    "source": "local_process_observation",
+    "observation": {
+      "exit_code": 0,
+      "rendered_output_bytes": 30,
+      "output_truncated": false
+    }
+  },
+  "artifact_ref": {
+    "artifact_id": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    "media_type": "application/octet-stream",
+    "size_bytes": 16
+  }
+}

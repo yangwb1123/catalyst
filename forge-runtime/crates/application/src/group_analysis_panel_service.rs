@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use forge_runtime_domain::{
+use crate::runtime_domain::{
     GROUP_ANALYSIS_PANEL_VERSION, GroupAnalysisPanelContribution, GroupAnalysisPanelInspection,
     GroupAnalysisPanelManifest, GroupAnalysisPanelRecord, GroupAnalysisPanelStore,
     GroupModelAnalysisStore, GroupRunStore, MAX_GROUP_ANALYSIS_PANEL_LIST_LIMIT,

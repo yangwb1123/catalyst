@@ -15,7 +15,7 @@ use crate::runtime_domain::{
     RunRecord, RunRecoveryState, RuntimeEventKind, SessionGroup,
 };
 use crate::{
-    group_analysis_panel_output::{
+    group_analysis_panel_command::{
         GroupAnalysisPanelInspectionView, write_list as write_group_analysis_panel_list,
         write_panel as write_group_analysis_panel,
         write_prepared as write_group_analysis_panel_prepared,

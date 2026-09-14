@@ -5,7 +5,7 @@ use std::{
     time::Duration,
 };
 
-use forge_runtime_domain::{
+use crate::runtime_domain::{
     Cancellation, Message, ModelEvent, ModelFinishReason, ModelRequest, PreparedModelProvider,
 };
 use futures_util::StreamExt;

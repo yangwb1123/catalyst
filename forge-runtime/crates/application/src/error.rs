@@ -1,4 +1,4 @@
-use forge_runtime_domain::{EventSinkError, ProviderError};
+use crate::runtime_domain::{EventSinkError, ProviderError};
 
 #[derive(Debug, Error)]
 pub enum RuntimeError {

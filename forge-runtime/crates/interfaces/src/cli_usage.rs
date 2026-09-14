@@ -4,6 +4,36 @@ pub const TEXT: &str = "usage:
   forge-runtime [OPTIONS] [PATH|-C PATH|--group GROUP_ID] session new [--title TITLE]
   forge-runtime [OPTIONS] prompt add SESSION_ID PROMPT|-
   forge-runtime [OPTIONS] prompt list [SESSION_ID] [--limit N]
+  forge-runtime remote tui
+  forge-runtime remote login
+  forge-runtime [--json] remote sessions list [--after CONVERSATION_ID]
+    [--scope global|project:ID|group:ID] [--all]
+  forge-runtime [--state-dir PATH] [--json] remote sessions import LOCAL_CONVERSATION_ID
+    [--confirm SHA256]
+  forge-runtime [--json] remote runs list CONVERSATION_ID [--limit 1..25]
+    [--before-created-at-ms MS --before-run-id RUN_ID]
+  forge-runtime [--json] remote runs timeline CONVERSATION_ID RUN_ID
+    [--after-sequence N] [--limit 1..128]
+  forge-runtime [--json] --idempotency-key KEY remote sessions create
+    [--scope global|project:ID|group:ID] [--title TITLE]
+  forge-runtime [--json] remote prompts list CONVERSATION_ID
+    [--before-created-at-ms MS --before-prompt-id PROMPT_ID]
+  forge-runtime [--json] remote changes list [--after-cursor N]
+  forge-runtime [--json] --idempotency-key KEY remote prompts add CONVERSATION_ID
+    --expected-version N PROMPT
+    (remote login reads SNAPLINK_ISSUER_URL and stores a protected local credential;
+     API commands prefer FORGE_ACCESS_TOKEN, then the matching local credential)
+    (credentials are access-token only; after expiry run remote login again;
+     set SNAPLINK_SUBJECT and SNAPLINK_TENANT_ID to select among matching accounts)
+    (remote API reads FORGE_API_URL; remote writes require an explicit key)
+    (with a saved login, remote changes list resumes and saves a private cursor for this coordinator/account;
+     --after-cursor overrides the saved cursor for a one-off read; FORGE_ACCESS_TOKEN has no saved cursor)
+    (remote prompts add stores the Prompt; it does not start a Run)
+    (remote Run status is an observed summary; timeline output contains metadata-only event markers)
+    (Run pages may be short; continue from next_cursor or scanned_through_sequence while has_more is true)
+    (sessions import previews the local user/assistant transcript; repeat with its SHA256 confirmation to import it)
+    (remote tui is interactive and uses the same environment configuration)
+    (--all scans at most 64 pages; scope filters apply across scanned pages)
   forge-runtime [OPTIONS] --idempotency-key KEY governance journal append --file PATH|-
   forge-runtime [OPTIONS] governance journal show RECORD_ID [--include-record]
   forge-runtime [OPTIONS] governance journal list [--kind EvidenceRecord|KnowledgeClaim]

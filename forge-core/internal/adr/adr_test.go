@@ -57,9 +57,8 @@ func TestADR0001_ForgeCoreExists(t *testing.T) {
 	}
 }
 
-// TestForgeCoreDependencyPolicy keeps the App Server's sole external module
-// exact and confined. ADR-0001 is superseded and ADR-0002 permits procured
-// infrastructure; neither records the former all-module zero-dependency claim.
+// TestForgeCoreDependencyPolicy keeps the exact Snaplink identity and SQLite
+// module closure, and confines their source imports to the approved boundaries.
 func TestForgeCoreDependencyPolicy(t *testing.T) {
 	root := repoRoot(t)
 	if err := doctor.CheckModuleDependencyPolicy(filepath.Join(root, "forge-core")); err != nil {

@@ -13,7 +13,7 @@ import {
   checkFunctionLength, checkCircular,
 } from './arch-check.mjs';
 import {
-  extractFunctions, extractImports, scan, walkSource,
+  extractFunctions, extractImports, isTestFile, scan, walkSource,
 } from './scan.mjs';
 
 const rules = {
@@ -33,6 +33,11 @@ const rules = {
 function file(rel, layer, imports = [], extra = {}) {
   return { rel, dir: rel.replace(/\/[^/]+$/, ''), layer, isTest: false, exports: 0, imports, ...extra };
 }
+
+test('Rust unit-test module suffix is excluded from production package budgets', () => {
+  assert.equal(isTestFile('crates/interfaces/src/remote_tui_tests.rs'), true);
+  assert.equal(isTestFile('crates/interfaces/src/remote_tui.rs'), false);
+});
 
 test('layering: a clean inward-pointing model has no violations', () => {
   const m = { files: [

@@ -325,7 +325,7 @@ fn load_conversation(
     provenance: GroupContextProvenance,
     limit: usize,
 ) -> Result<LoadedConversation, HubStoreError> {
-    super::read::validate_causal_associations(connection, &conversation.id)?;
+    super::prompt_read::validate_causal_associations(connection, &conversation.id)?;
     validate_prompt_roles(connection, &conversation.id)?;
     let total = count_prompts(connection, &conversation.id)?;
     let prompts = select_prompts(connection, &conversation.id, limit)?;

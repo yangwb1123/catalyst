@@ -120,7 +120,17 @@ pub(super) fn downgrade_empty_v15_sidecar(database: &Path) {
     let connection = Connection::open(database).expect("open current Hub for v14 fixture");
     connection
         .execute_batch(
-            "DROP INDEX group_agent_graph_scheduled_node_dispatch_lifecycles_project_lane_active;
+            "DROP INDEX conversation_owners_principal_conversation;
+             DROP INDEX conversation_changes_conversation_cursor;
+             DROP TABLE conversation_owner_change_rows;
+             DROP TABLE conversation_owner_change_heads;
+             DROP INDEX conversation_owners_principal;
+             DROP TABLE conversation_owners;
+             DROP TABLE conversation_changes;
+             DROP TABLE conversation_change_heads;
+             DROP TABLE conversation_change_state;
+             DROP TABLE conversation_change_baselines;
+             DROP INDEX group_agent_graph_scheduled_node_dispatch_lifecycles_project_lane_active;
              DROP INDEX group_agent_graph_scheduled_node_dispatch_lifecycles_created;
              DROP TABLE group_agent_graph_scheduled_node_dispatch_lifecycles;
              DROP TABLE group_agent_graph_scheduled_node_provider_requests;

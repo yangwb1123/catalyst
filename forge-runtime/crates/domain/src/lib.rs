@@ -5,6 +5,7 @@ pub mod cognitive_atom_contract;
 pub mod command_observation_evidence_contract;
 pub mod context_package_contract;
 pub mod decision_capsule_contract;
+mod device_registry;
 mod event;
 pub mod evolve_repo_locator_evidence_contract;
 pub mod execution;
@@ -40,6 +41,7 @@ mod tool;
 pub mod transition_receipt_contract;
 pub mod work_intent_contract;
 
+pub use device_registry::*;
 pub use event::{
     Cancellation, EventSink, EventSinkError, PROTOCOL_VERSION, RuntimeEvent, RuntimeEventKind,
 };
@@ -290,9 +292,29 @@ pub use group_panel_synthesis::{
     PrepareGroupPanelSynthesisDisposition, PrepareGroupPanelSynthesisResult,
 };
 pub use hub::{
-    Conversation, ConversationScope, GroupProjectMember, HubSnapshot, Project, PromptRecord,
-    SessionGroup, WorkspaceIdentity, WorkspaceOpenError, WorkspaceReadCapability,
-    WorkspaceReadFactory, WorkspaceReader,
+    Conversation, ConversationBootstrapCursor, ConversationBootstrapEntry,
+    ConversationBootstrapPage, ConversationBootstrapPhase, ConversationChange,
+    ConversationChangeKind, ConversationChangePage, ConversationImportPrompt, ConversationOwner,
+    ConversationPrompt, ConversationPromptCursor, ConversationPromptPage, ConversationScope,
+    GroupProjectMember, HubSnapshot, HubSnapshotAtCursor, LocalConversationImportSource,
+    MAX_CONVERSATION_BOOTSTRAP_PAGE_LIMIT, MAX_CONVERSATION_CHANGE_PAGE_LIMIT,
+    MAX_CONVERSATION_IMPORT_PROMPT_COUNT, MAX_CONVERSATION_OWNER_ISSUER_BYTES,
+    MAX_CONVERSATION_OWNER_SUBJECT_BYTES, MAX_CONVERSATION_OWNER_TENANT_BYTES,
+    MAX_CONVERSATION_PROMPT_PAGE_CONTENT_BYTES, MAX_CONVERSATION_PROMPT_PAGE_LIMIT,
+    MAX_HUB_ENTITY_ID_BYTES, MAX_HUB_ROLE_BYTES, MAX_OWNED_CONVERSATION_PAGE_LIMIT,
+    MAX_OWNED_RUN_PAGE_LIMIT, MAX_OWNED_RUN_TIMELINE_PAGE_LIMIT, MAX_PENDING_RUN_INTENT_PAGE_LIMIT,
+    MAX_PENDING_RUN_INTENT_TIMELINE_PAGE_LIMIT, MAX_PROJECT_EXECUTION_CONSENT_TTL_MS,
+    MAX_PROMPT_CONTENT_BYTES, OwnedConversationChangePage, OwnedConversationEntry,
+    OwnedConversationImportResult, OwnedConversationPage, OwnedProjectConversationIdentity,
+    OwnedPromptAppendResult, OwnedRunCursor, OwnedRunPage, OwnedRunStatus, OwnedRunSummary,
+    OwnedRunTimelineEvent, OwnedRunTimelineEventType, OwnedRunTimelinePage, PendingRunIntent,
+    PendingRunIntentCursor, PendingRunIntentPage, PendingRunIntentStatus,
+    PendingRunIntentSubmissionResult, PendingRunIntentTimelineEvent,
+    PendingRunIntentTimelineEventType, PendingRunIntentTimelinePage, Project,
+    ProjectExecutionConsentGrant, ProjectExecutionConsentGrantResult,
+    ProjectExecutionConsentRevocation, ProjectExecutionConsentRevocationResult, PromptRecord,
+    SessionGroup, SubmitPendingRunIntent, WorkspaceIdentity, WorkspaceOpenError,
+    WorkspaceReadCapability, WorkspaceReadFactory, WorkspaceReader,
 };
 pub use hub_store::{HubEntity, HubStore, HubStoreError};
 pub use model::{

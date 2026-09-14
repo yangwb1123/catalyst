@@ -7,7 +7,6 @@ mod demo;
 mod governance_journal;
 mod group_agent_graph;
 mod group_analysis_panel_command;
-mod group_analysis_panel_output;
 mod group_context_output;
 mod group_execution_output;
 mod group_model_analysis_command;
@@ -19,15 +18,16 @@ mod hub_command;
 mod hub_output;
 mod human_event_sink;
 mod openai_prepared_dispatch;
+mod remote_command;
+mod remote_dispatch;
 mod run_branch_command;
-mod run_branch_output;
 mod run_command;
 mod run_lineage_output;
 mod run_provider;
 mod run_restart_command;
-mod run_restart_output;
 mod run_selection;
 mod runtime_application;
+mod runtime_rpc;
 mod state_path;
 
 use std::{
@@ -44,6 +44,9 @@ use runtime_domain::RunOutcome;
 
 #[tokio::main]
 async fn main() -> ExitCode {
+    if let Some(code) = runtime_rpc::run_if_invoked() {
+        return code;
+    }
     let args = match Args::parse() {
         Ok(args) => args,
         Err(error) => return argument_error(&error),
@@ -60,6 +63,7 @@ async fn dispatch(args: &Args) -> ExitCode {
         Command::Demo(demo_args) => run_demo(demo_args, args.project.as_deref()).await,
         Command::Agent(agent_args) => run_agent(args, agent_args).await,
         Command::Governance(command) => run_governance_journal(args, command),
+        Command::Remote(command) => remote_dispatch::run(args, command).await,
         Command::Run(command) => run_project_command(args, command).await,
         Command::Group(args::GroupCommand::Analysis(command)) => {
             run_group_model_analysis(args, command).await
@@ -131,7 +135,7 @@ fn run_branched(args: &Args, parent_run_id: &str) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    if let Err(error) = run_branch_output::write(&output, args.json, &mut io::stdout().lock()) {
+    if let Err(error) = run_branch_command::write(&output, args.json, &mut io::stdout().lock()) {
         eprintln!("failed to write Run branch output: {error}");
         return ExitCode::FAILURE;
     }
@@ -146,7 +150,7 @@ fn run_restarted(args: &Args, source_run_id: &str) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    if let Err(error) = run_restart_output::write(&output, args.json, &mut io::stdout().lock()) {
+    if let Err(error) = run_restart_command::write(&output, args.json, &mut io::stdout().lock()) {
         eprintln!("failed to write Run restart output: {error}");
         return ExitCode::FAILURE;
     }

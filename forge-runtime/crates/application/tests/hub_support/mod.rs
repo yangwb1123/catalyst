@@ -6,11 +6,18 @@ use std::{
 };
 
 use forge_runtime_domain::{
-    Conversation, ConversationScope, GroupContextPolicy, GroupContextSlice, GroupProjectMember,
-    HubEntity, HubSnapshot, HubStore, HubStoreError, Project, PromptRecord, SessionGroup,
+    Conversation, ConversationBootstrapCursor, ConversationBootstrapEntry,
+    ConversationBootstrapPage, ConversationBootstrapPhase, ConversationChange,
+    ConversationChangeKind, ConversationChangePage, ConversationPrompt, ConversationPromptCursor,
+    ConversationPromptPage, ConversationScope, GroupContextPolicy, GroupContextSlice,
+    GroupProjectMember, HubEntity, HubSnapshot, HubSnapshotAtCursor, HubStore, HubStoreError,
+    MAX_CONVERSATION_BOOTSTRAP_PAGE_LIMIT, MAX_CONVERSATION_CHANGE_PAGE_LIMIT,
+    MAX_CONVERSATION_PROMPT_PAGE_CONTENT_BYTES, MAX_CONVERSATION_PROMPT_PAGE_LIMIT, Project,
+    PromptRecord, SessionGroup,
 };
 
 mod atomic_memory;
+mod bootstrap;
 mod memory_queries;
 
 use memory_queries::*;
@@ -27,6 +34,7 @@ struct MemoryState {
     conversations: Vec<Conversation>,
     conversation_keys: Vec<(String, String)>,
     prompts: Vec<PromptRecord>,
+    conversation_changes: Vec<ConversationChange>,
     groups: Vec<SessionGroup>,
     group_keys: Vec<(String, String)>,
     members: Vec<GroupProjectMember>,
@@ -87,6 +95,61 @@ impl HubStore for MemoryHubStore {
         Ok(snapshot_from(&state, scope))
     }
 
+    fn snapshot_at_cursor(&self) -> Result<HubSnapshotAtCursor, HubStoreError> {
+        let state = self.state()?;
+        Ok(HubSnapshotAtCursor {
+            snapshot: snapshot_from(&state, &ConversationScope::Global),
+            cursor: u64::try_from(state.conversation_changes.len())
+                .expect("test change count fits u64"),
+        })
+    }
+
+    fn conversation_changes_after(
+        &self,
+        after_cursor: u64,
+        limit: usize,
+    ) -> Result<ConversationChangePage, HubStoreError> {
+        if !(1..=MAX_CONVERSATION_CHANGE_PAGE_LIMIT).contains(&limit) {
+            return Err(HubStoreError::Conflict {
+                entity: HubEntity::Conversation,
+                message: "invalid in-memory Hub change page limit".into(),
+            });
+        }
+        let state = self.state()?;
+        let head_cursor =
+            u64::try_from(state.conversation_changes.len()).expect("test change count fits u64");
+        if after_cursor > head_cursor {
+            return Err(HubStoreError::Conflict {
+                entity: HubEntity::Conversation,
+                message: "change cursor is beyond the in-memory Hub head".into(),
+            });
+        }
+        let changes = state
+            .conversation_changes
+            .iter()
+            .filter(|change| change.cursor > after_cursor)
+            .take(limit)
+            .cloned()
+            .collect::<Vec<_>>();
+        let next_cursor = changes.last().map_or(after_cursor, |change| change.cursor);
+        Ok(ConversationChangePage {
+            after_cursor,
+            next_cursor,
+            head_cursor,
+            has_more: next_cursor < head_cursor,
+            changes,
+        })
+    }
+
+    fn conversation_bootstrap_page(
+        &self,
+        cursor: Option<&ConversationBootstrapCursor>,
+        limit: usize,
+    ) -> Result<ConversationBootstrapPage, HubStoreError> {
+        let state = self.state()?;
+        bootstrap::conversation_bootstrap_page(&state, cursor, limit)
+    }
+
     fn create_conversation(
         &self,
         scope: &ConversationScope,
@@ -109,6 +172,18 @@ impl HubStore for MemoryHubStore {
         state
             .conversation_keys
             .push((idempotency_key.into(), conversation.id.clone()));
+        let cursor = u64::try_from(state.conversation_changes.len())
+            .expect("test change count fits u64")
+            + 1;
+        state.conversation_changes.push(ConversationChange {
+            cursor,
+            schema_version: 1,
+            conversation_id: conversation.id.clone(),
+            entity_id: conversation.id.clone(),
+            aggregate_version: 1,
+            kind: ConversationChangeKind::ConversationCreated,
+            created_at_ms,
+        });
         state.conversations.push(conversation.clone());
         Ok(conversation)
     }
@@ -153,6 +228,25 @@ impl HubStore for MemoryHubStore {
         };
         state.prompts.push(prompt.clone());
         touch_conversation(&mut state, conversation_id, created_at_ms);
+        let aggregate_version = state
+            .conversation_changes
+            .iter()
+            .filter(|change| change.conversation_id == conversation_id)
+            .count();
+        let aggregate_version =
+            u64::try_from(aggregate_version).expect("test aggregate version fits u64") + 1;
+        let cursor = u64::try_from(state.conversation_changes.len())
+            .expect("test change count fits u64")
+            + 1;
+        state.conversation_changes.push(ConversationChange {
+            cursor,
+            schema_version: 1,
+            conversation_id: conversation_id.into(),
+            entity_id: prompt.id.clone(),
+            aggregate_version,
+            kind: ConversationChangeKind::PromptAppended,
+            created_at_ms,
+        });
         Ok(prompt)
     }
 
@@ -179,6 +273,41 @@ impl HubStore for MemoryHubStore {
         });
         prompts.truncate(limit);
         Ok(prompts)
+    }
+
+    fn conversation_prompt_page(
+        &self,
+        conversation_id: &str,
+        before: Option<&ConversationPromptCursor>,
+        limit: usize,
+    ) -> Result<ConversationPromptPage, HubStoreError> {
+        if !(1..=MAX_CONVERSATION_PROMPT_PAGE_LIMIT).contains(&limit) {
+            return Err(HubStoreError::Conflict {
+                entity: HubEntity::Prompt,
+                message: "invalid in-memory Prompt page limit".into(),
+            });
+        }
+        let state = self.state()?;
+        require_conversation(&state, conversation_id)?;
+        let mut records: Vec<_> = state
+            .prompts
+            .iter()
+            .filter(|record| record.conversation_id == conversation_id)
+            .filter(|record| {
+                before.is_none_or(|cursor| {
+                    (record.created_at_ms, record.id.as_str())
+                        < (cursor.created_at_ms, cursor.prompt_id.as_str())
+                })
+            })
+            .collect();
+        records.sort_by(|left, right| {
+            right
+                .created_at_ms
+                .cmp(&left.created_at_ms)
+                .then_with(|| right.id.cmp(&left.id))
+        });
+        let (prompts, has_more) = take_memory_prompt_page(records, limit)?;
+        Ok(memory_prompt_page(conversation_id, prompts, has_more))
     }
 
     fn list_prompts_before(
@@ -284,5 +413,57 @@ impl HubStore for MemoryHubStore {
     ) -> Result<GroupProjectMember, HubStoreError> {
         let mut state = self.state()?;
         atomic_memory::link_project_path(&mut state, group_id, absolute_path, role, idempotency_key)
+    }
+}
+
+fn take_memory_prompt_page(
+    records: Vec<&PromptRecord>,
+    limit: usize,
+) -> Result<(Vec<ConversationPrompt>, bool), HubStoreError> {
+    let mut prompts = Vec::with_capacity(limit.min(records.len()));
+    let mut content_bytes = 0_usize;
+    for record in records {
+        if prompts.len() == limit {
+            return Ok((prompts, true));
+        }
+        if record.content.len() > MAX_CONVERSATION_PROMPT_PAGE_CONTENT_BYTES {
+            return Err(HubStoreError::Corrupt {
+                message: "Prompt exceeds the history page content budget".into(),
+            });
+        }
+        let next_bytes = content_bytes.saturating_add(record.content.len());
+        if next_bytes > MAX_CONVERSATION_PROMPT_PAGE_CONTENT_BYTES {
+            return Ok((prompts, true));
+        }
+        content_bytes = next_bytes;
+        prompts.push(ConversationPrompt {
+            id: record.id.clone(),
+            conversation_id: record.conversation_id.clone(),
+            role: record.role.clone(),
+            content: record.content.clone(),
+            created_at_ms: record.created_at_ms,
+        });
+    }
+    Ok((prompts, false))
+}
+
+fn memory_prompt_page(
+    conversation_id: &str,
+    prompts: Vec<ConversationPrompt>,
+    has_more: bool,
+) -> ConversationPromptPage {
+    let next_cursor = if has_more {
+        prompts.last().map(|prompt| ConversationPromptCursor {
+            created_at_ms: prompt.created_at_ms,
+            prompt_id: prompt.id.clone(),
+        })
+    } else {
+        None
+    };
+    ConversationPromptPage {
+        conversation_id: conversation_id.into(),
+        prompts,
+        next_cursor,
+        has_more,
     }
 }

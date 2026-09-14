@@ -4,7 +4,7 @@ use super::{
     GroupGraphRunContractCommand, GroupGraphRunDispatchCommand, GroupGraphRunScheduleCommand,
     GroupGraphRunScheduledContractCommand, GroupGraphRunScheduledContractProviderRequestCommand,
     GroupGraphRunScheduledContractSuccessorCommand, GroupPanelCommand, GroupRunCommand,
-    GroupSynthesisCommand, PromptCommand, RunCommand, SessionCommand, usage,
+    GroupSynthesisCommand, PromptCommand, RemoteCommand, RunCommand, SessionCommand, usage,
 };
 
 pub(super) fn validate_options(options: &GlobalOptions, command: &Command) -> Result<(), String> {
@@ -13,6 +13,25 @@ pub(super) fn validate_options(options: &GlobalOptions, command: &Command) -> Re
 }
 
 fn validate_scope_options(options: &GlobalOptions, command: &Command) -> Result<(), String> {
+    validate_local_state_scope(options, command)?;
+    validate_management_scope(options, command)?;
+    validate_group_execution_scope(options, command)?;
+    require_project(options, command)
+}
+
+fn validate_local_state_scope(options: &GlobalOptions, command: &Command) -> Result<(), String> {
+    if options.state_dir.is_some()
+        && matches!(command, Command::Remote(remote) if !matches!(remote, RemoteCommand::SessionsImport { .. }))
+    {
+        return Err(format!(
+            "--state-dir is not valid for remote commands\n\n{}",
+            usage()
+        ));
+    }
+    Ok(())
+}
+
+fn validate_management_scope(options: &GlobalOptions, command: &Command) -> Result<(), String> {
     if options.project.is_some() && options.group.is_some() {
         return Err(format!(
             "-C/--project and --group are mutually exclusive\n\n{}",
@@ -23,6 +42,7 @@ fn validate_scope_options(options: &GlobalOptions, command: &Command) -> Result<
         && matches!(
             command,
             Command::Prompt(_)
+                | Command::Remote(_)
                 | Command::Governance(_)
                 | Command::Group(_)
                 | Command::Run(
@@ -38,6 +58,13 @@ fn validate_scope_options(options: &GlobalOptions, command: &Command) -> Result<
             usage()
         ));
     }
+    Ok(())
+}
+
+fn validate_group_execution_scope(
+    options: &GlobalOptions,
+    command: &Command,
+) -> Result<(), String> {
     if options.group.is_some()
         && matches!(
             command,
@@ -56,7 +83,7 @@ fn validate_scope_options(options: &GlobalOptions, command: &Command) -> Result<
             usage()
         ));
     }
-    require_project(options, command)
+    Ok(())
 }
 
 fn require_project(options: &GlobalOptions, command: &Command) -> Result<(), String> {
@@ -125,6 +152,7 @@ fn accepts_idempotency_key(command: &Command) -> bool {
         command,
         Command::Session(SessionCommand::New { .. })
             | Command::Prompt(PromptCommand::Add { .. })
+            | Command::Remote(RemoteCommand::SessionsCreate { .. } | RemoteCommand::PromptsAdd { .. })
             | Command::Group(
                 GroupCommand::Create { .. }
                     | GroupCommand::Add { .. }
@@ -171,6 +199,12 @@ fn accepts_idempotency_key(command: &Command) -> bool {
 }
 
 fn validate_execution_options(options: &GlobalOptions, command: &Command) -> Result<(), String> {
+    if options.json && matches!(command, Command::Remote(RemoteCommand::Tui)) {
+        return Err(format!(
+            "remote tui cannot be combined with --json\n\n{}",
+            usage()
+        ));
+    }
     if let Some(message) = explicit_key_requirement(command)
         && options.idempotency_key.is_none()
     {
@@ -206,6 +240,9 @@ fn explicit_key_requirement(command: &Command) -> Option<&'static str> {
         Command::Governance(GovernanceCommand::Journal(GovernanceJournalCommand::Append {
             ..
         })) => Some("governance journal append requires an explicit --idempotency-key"),
+        Command::Remote(
+            RemoteCommand::SessionsCreate { .. } | RemoteCommand::PromptsAdd { .. },
+        ) => Some("remote writes require an explicit --idempotency-key"),
         Command::Run(RunCommand::Start { live: true, .. }) => {
             Some("--live requires an explicit --idempotency-key")
         }

@@ -1,6 +1,6 @@
 use std::{collections::BTreeSet, path::PathBuf, sync::Arc};
 
-use forge_runtime_domain::{AgentTool, Capability, ToolContext, ToolError, ToolFuture, ToolSpec};
+use crate::runtime_domain::{AgentTool, Capability, ToolContext, ToolError, ToolFuture, ToolSpec};
 use schemars::{JsonSchema, schema_for};
 use serde::Deserialize;
 use serde_json::Value;
@@ -99,7 +99,7 @@ fn parse_input(arguments: Value) -> Result<ReadFileInput, ToolError> {
 mod tests {
     use std::{fs, path::Path};
 
-    use forge_runtime_domain::{AgentTool, Cancellation, ToolContext, WorkspaceReadFactory as _};
+    use crate::runtime_domain::{AgentTool, Cancellation, ToolContext, WorkspaceReadFactory as _};
     use serde_json::json;
     use tempfile::TempDir;
 

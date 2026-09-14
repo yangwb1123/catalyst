@@ -11,8 +11,8 @@ use rusqlite::{Connection, OpenFlags};
 use url::Url;
 
 use super::{
-    CONNECTION_BUSY_TIMEOUT, HubStoreError, contract, location, read_only_schema_required,
-    schema_version, unavailable,
+    CONNECTION_BUSY_TIMEOUT, HubStoreError, SCHEMA_VERSION, contract, location,
+    read_only_schema_required, schema_version, unavailable,
 };
 
 const WAL_HEADER_BYTES: usize = 32;
@@ -20,13 +20,63 @@ const WAL_MAGIC_BIG_ENDIAN_CHECKSUM: [u8; 4] = [0x37, 0x7f, 0x06, 0x82];
 const WAL_MAGIC_LITTLE_ENDIAN_CHECKSUM: [u8; 4] = [0x37, 0x7f, 0x06, 0x83];
 const SHM_MINIMUM_BYTES: u64 = 32_768;
 const DISPATCH_REENTRY_VERSIONS: &[i64] = &[
-    12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29,
+    12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34,
 ];
 
 pub(in crate::sqlite_hub) fn open_existing_current_live_read_only_database(
     path: &Path,
 ) -> Result<Connection, HubStoreError> {
-    open_existing_live_read_only_database(path, &[29], "current schema version 29", true)
+    open_existing_live_read_only_database(
+        path,
+        &[SCHEMA_VERSION],
+        "current schema version 34",
+        true,
+    )
+}
+
+pub(in crate::sqlite_hub) fn open_existing_current_live_writable_database(
+    path: &Path,
+) -> Result<Connection, HubStoreError> {
+    let before = LiveDatabaseIdentity::inspect(path)?;
+    let uri = read_write_file_uri(&before.canonical_path)?;
+    let flags = OpenFlags::SQLITE_OPEN_READ_WRITE
+        | OpenFlags::SQLITE_OPEN_URI
+        | OpenFlags::SQLITE_OPEN_NO_MUTEX;
+    let connection =
+        Connection::open_with_flags(uri.as_str(), flags).map_err(contract::sqlite_error)?;
+    connection
+        .busy_timeout(CONNECTION_BUSY_TIMEOUT)
+        .map_err(contract::sqlite_error)?;
+    connection
+        .pragma_update(None, "foreign_keys", true)
+        .map_err(contract::sqlite_error)?;
+    let foreign_keys: i64 = connection
+        .pragma_query_value(None, "foreign_keys", |row| row.get(0))
+        .map_err(contract::sqlite_error)?;
+    if foreign_keys != 1 {
+        return Err(HubStoreError::Unavailable {
+            message: "writable Hub connection could not enable SQLite foreign keys".into(),
+        });
+    }
+    let version = schema_version(&connection).map_err(contract::sqlite_error)?;
+    if version != SCHEMA_VERSION {
+        return Err(read_only_schema_required(
+            version,
+            "current schema version 34",
+        ));
+    }
+    contract::validate_migration_source(&connection, version)?;
+    let clean_before = before.wal.as_ref().is_none_or(|wal| wal.length == 0);
+    let after = LiveDatabaseIdentity::inspect_after_open(path, clean_before)?;
+    if !before.stable_after_open(&after) {
+        return Err(HubStoreError::Unavailable {
+            message: format!(
+                "Hub database or WAL changed during exact current-schema writable open: {}",
+                path.display()
+            ),
+        });
+    }
+    Ok(connection)
 }
 
 pub(in crate::sqlite_hub) fn open_existing_dispatch_reentry_read_only_database(
@@ -35,7 +85,7 @@ pub(in crate::sqlite_hub) fn open_existing_dispatch_reentry_read_only_database(
     open_existing_live_read_only_database(
         path,
         DISPATCH_REENTRY_VERSIONS,
-        "dispatch re-entry schema version 12..=29",
+        "dispatch re-entry schema version 12..=34",
         false,
     )
 }
@@ -88,7 +138,7 @@ fn validate_live_schema(
         contract::validate_migration_source(connection, version)?;
         return Ok(());
     }
-    if upgrade_supported && (1..29).contains(&version) {
+    if upgrade_supported && (1..SCHEMA_VERSION).contains(&version) {
         contract::validate_migration_source(connection, version)?;
         return Err(HubStoreError::Unavailable {
             message: format!(
@@ -294,6 +344,17 @@ fn read_only_file_uri(path: &Path) -> Result<Url, HubStoreError> {
         ),
     })?;
     uri.query_pairs_mut().append_pair("mode", "ro");
+    Ok(uri)
+}
+
+fn read_write_file_uri(path: &Path) -> Result<Url, HubStoreError> {
+    let mut uri = Url::from_file_path(path).map_err(|()| HubStoreError::Unavailable {
+        message: format!(
+            "Hub database path cannot be represented as a file URI: {}",
+            path.display()
+        ),
+    })?;
+    uri.query_pairs_mut().append_pair("mode", "rw");
     Ok(uri)
 }
 

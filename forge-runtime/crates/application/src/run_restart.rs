@@ -1,4 +1,4 @@
-use forge_runtime_domain::{
+use crate::runtime_domain::{
     BeginRun, BeginRunDisposition, PROTOCOL_VERSION, RUN_STORE_VERSION, RunInspection,
     RunRecoveryState, RuntimeEvent, RuntimeEventKind,
 };

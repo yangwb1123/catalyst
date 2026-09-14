@@ -2,3 +2,4 @@
 
 pub mod attempt;
 pub mod attempt_lifecycle;
+pub mod fabric;
