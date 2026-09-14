@@ -1,8 +1,11 @@
-use std::{fs, time::SystemTime};
+use std::{fs, sync::Arc, time::SystemTime};
 
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 
-use super::{CredentialStore, OwnerSelector, StoredCredential, credential_from_token};
+use super::{
+    CredentialStore, MemoryRefreshTokenBackend, OwnerSelector, RefreshTokenBackend,
+    StoredCredential, credential_from_token,
+};
 
 #[cfg(unix)]
 #[test]
@@ -158,6 +161,56 @@ fn credential_store_rejects_world_writable_config_root() {
     let store = store(directory.path());
     let saved = credential("https://id.example", "forge-cli", "user-a", "tenant-a");
     assert!(store.save(&saved).is_err());
+}
+
+#[cfg(unix)]
+#[test]
+fn login_keeps_refresh_token_out_of_the_credential_file_and_verifies_keyring_write() {
+    let directory = secure_tempdir();
+    let backend = Arc::new(MemoryRefreshTokenBackend::default());
+    let store = CredentialStore::with_test_backend(directory.path().to_path_buf(), backend);
+    let saved = credential("https://id.example", "forge-cli", "user-a", "tenant-a");
+
+    store.save_login(&saved, Some("refresh-secret-01")).unwrap();
+
+    assert_eq!(
+        store.load_refresh_token(&saved).unwrap().as_deref(),
+        Some("refresh-secret-01")
+    );
+    let bytes = fs::read(store.path_for(&saved)).unwrap();
+    let serialized = String::from_utf8(bytes).unwrap();
+    assert!(serialized.contains(&saved.access_token));
+    assert!(!serialized.contains("refresh-secret-01"));
+}
+
+#[cfg(unix)]
+#[test]
+fn login_fails_closed_when_the_secure_refresh_store_is_unavailable() {
+    struct FailedBackend;
+
+    impl RefreshTokenBackend for FailedBackend {
+        fn get(&self, _account: &str) -> Result<Option<String>, String> {
+            Err("test keyring read failure".into())
+        }
+
+        fn set(&self, _account: &str, _token: &str) -> Result<(), String> {
+            Err("test keyring write failure".into())
+        }
+
+        fn delete(&self, _account: &str) -> Result<(), String> {
+            Err("test keyring delete failure".into())
+        }
+    }
+
+    let directory = secure_tempdir();
+    let store = CredentialStore::with_test_backend(
+        directory.path().to_path_buf(),
+        Arc::new(FailedBackend),
+    );
+    let saved = credential("https://id.example", "forge-cli", "user-a", "tenant-a");
+
+    assert!(store.save_login(&saved, Some("refresh-secret-01")).is_err());
+    assert!(!store.path_for(&saved).exists());
 }
 
 fn store(config_root: &std::path::Path) -> CredentialStore {

@@ -45,13 +45,14 @@ async fn pending_then_approved_polls_with_device_grant_and_never_persists_in_hub
         (400, r#"{"error":"authorization_pending"}"#.into()),
         (
             200,
-            r#"{"access_token":"secret-token","token_type":"Bearer","expires_in":900}"#.into(),
+            r#"{"access_token":"secret-token","token_type":"Bearer","expires_in":900,"refresh_token":"refresh-secret"}"#.into(),
         ),
     ]);
     let client = test_client(&issuer);
     let authorization = client.request_device_code().await.unwrap();
     let token = client.poll_until_approved(&authorization).await.unwrap();
     assert_eq!(token.access_token, "secret-token");
+    assert_eq!(token.refresh_token.as_deref(), Some("refresh-secret"));
     let requests = server.join().unwrap();
     assert_eq!(requests.len(), 3);
     for request in &requests {
