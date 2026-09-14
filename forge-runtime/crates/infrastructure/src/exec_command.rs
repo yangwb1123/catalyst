@@ -13,7 +13,7 @@ use std::{
 
 use crate::runtime_domain::{
     AgentTool, Cancellation, Capability, TOOL_EFFECT_UNCERTAIN_CODE, ToolContext, ToolError,
-    ToolFuture, ToolOutput, ToolSpec,
+    ToolExecutionFuture, ToolExecutionResult, ToolFuture, ToolOutput, ToolSpec,
     execution::fabric::{
         EXECUTION_FABRIC_ABI_VERSION, EffectClassification, EnvironmentDigest, ExecutionAttempt,
         ExecutionEvidence, ExecutionEvidenceSource, ExecutionTarget, ExecutionTargetScope,
@@ -134,7 +134,8 @@ impl AgentTool for ExecCommandTool {
     }
 
     fn execute(&self, arguments: Value, context: ToolContext) -> ToolFuture<'_> {
-        self.execute_inner(arguments, context, None)
+        let execution = self.execute_inner(arguments, context, None);
+        Box::pin(async move { execution.await.map(|result| result.output) })
     }
 
     fn execute_with_invocation(
@@ -143,6 +144,16 @@ impl AgentTool for ExecCommandTool {
         context: ToolContext,
         invocation: ToolInvocationRef,
     ) -> ToolFuture<'_> {
+        let execution = self.execute_inner(arguments, context, Some(invocation));
+        Box::pin(async move { execution.await.map(|result| result.output) })
+    }
+
+    fn execute_with_invocation_evidence(
+        &self,
+        arguments: Value,
+        context: ToolContext,
+        invocation: ToolInvocationRef,
+    ) -> ToolExecutionFuture<'_> {
         self.execute_inner(arguments, context, Some(invocation))
     }
 }
@@ -153,7 +164,7 @@ impl ExecCommandTool {
         arguments: Value,
         context: ToolContext,
         invocation: Option<ToolInvocationRef>,
-    ) -> ToolFuture<'_> {
+    ) -> ToolExecutionFuture<'_> {
         let workspace = self.clone();
         Box::pin(async move {
             let input = parse_input(arguments)?;
@@ -168,7 +179,10 @@ impl ExecCommandTool {
             })
             .await
             .map_err(blocking_task_failure)?
-            .map(|(output, _)| output)
+            .map(|(output, execution_evidence)| ToolExecutionResult {
+                output,
+                execution_evidence,
+            })
         })
     }
 }

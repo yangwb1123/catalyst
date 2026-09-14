@@ -4,7 +4,7 @@ use serde_json::Value;
 
 use self::state::{
     PendingCreate, PendingPrompt, TuiState, io_error, json_text, new_idempotency_key,
-    refresh_sessions, render, write_help, write_pending_recovery,
+    refresh_sessions, render, scope_filter_label, write_help, write_pending_recovery,
 };
 use super::{OwnedConversationEntry, RemoteClient, RemoteError};
 use crate::args::{RemoteConversationScope, parse_scope};
@@ -34,7 +34,7 @@ pub(super) async fn run() -> Result<(), RemoteError> {
             "remote tui requires an interactive terminal".into(),
         ));
     }
-    let client = RemoteClient::from_env()?;
+    let client = RemoteClient::from_env().await?;
     let stdin = io::stdin();
     let stdout = io::stdout();
     run_with_io(&client, &mut stdin.lock(), &mut stdout.lock()).await
@@ -99,6 +99,7 @@ async fn dispatch_command<W: Write>(
     }
     match verb {
         "help" | "?" => write_help(writer)?,
+        "filter" => filter_sessions(state, argument, writer)?,
         "sync" => sync_command(client, state, writer).await?,
         "runs" => runs::runs_command(client, state, argument, writer).await?,
         "timeline" => runs::timeline_command(client, state, argument, writer).await?,
@@ -114,6 +115,34 @@ async fn dispatch_command<W: Write>(
             .map_err(io_error)?,
     }
     Ok(false)
+}
+
+fn filter_sessions<W: Write>(
+    state: &mut TuiState,
+    argument: &str,
+    writer: &mut W,
+) -> Result<(), RemoteError> {
+    let selector = argument.trim();
+    if selector == "clear" {
+        state.scope_filter = None;
+        writeln!(writer, "Scope filter cleared.").map_err(io_error)?;
+        return Ok(());
+    }
+    let Ok(scope_filter) = parse_scope(selector) else {
+        writeln!(
+            writer,
+            "Invalid scope filter. Use filter global|project:ID|group:ID or filter clear."
+        )
+        .map_err(io_error)?;
+        return Ok(());
+    };
+    let label = scope_filter_label(&scope_filter);
+    state.scope_filter = Some(scope_filter);
+    writeln!(
+        writer,
+        "Scope filter set to {label}; this only organizes the displayed session list, not authorization or device identity."
+    )
+    .map_err(io_error)
 }
 
 fn handle_exit<W: Write>(

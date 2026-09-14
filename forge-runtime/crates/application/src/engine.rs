@@ -3,7 +3,7 @@ use std::sync::Arc;
 use crate::runtime_domain::{
     Cancellation, Capability, EventSink, LimitKind, Message, ModelProvider, ModelRequest,
     RunOutcome, RunRequest, RunResult, RuntimeEventKind, TOOL_EFFECT_UNCERTAIN_CODE, ToolCall,
-    ToolContext, ToolOutput, WorkspaceReadCapability, WorkspaceReadFactory,
+    ToolContext, ToolExecutionResult, WorkspaceReadCapability, WorkspaceReadFactory,
     execution::fabric::ToolInvocationRef,
 };
 
@@ -401,7 +401,7 @@ impl AgentRuntime {
         cancellation: &Cancellation,
         call: &ToolCall,
         tool_started_sequence: u64,
-    ) -> Result<ToolOutput, (String, String)> {
+    ) -> Result<ToolExecutionResult, (String, String)> {
         let tool = self.tools.get(&call.name).ok_or_else(|| {
             (
                 "unknown_tool".into(),
@@ -420,7 +420,7 @@ impl AgentRuntime {
             cancellation: cancellation.clone(),
             max_output_bytes: request.limits.max_tool_output_bytes,
         };
-        let execution = tool.execute_with_invocation(
+        let execution = tool.execute_with_invocation_evidence(
             call.arguments.clone(),
             context,
             ToolInvocationRef {

@@ -201,7 +201,8 @@ pub(super) fn check_no_consumer(source: &str, relative: Option<&str>) -> Result<
         return Ok(());
     }
     if relative == Some(MODULE) {
-        let expected = lex::tokenize("pub mod attempt; pub mod attempt_lifecycle;")?;
+        let expected =
+            lex::tokenize("pub mod attempt; pub mod attempt_lifecycle; pub mod fabric;")?;
         return if tokens == expected {
             Ok(())
         } else {
@@ -240,7 +241,13 @@ fn check_execution_imports(tokens: &[String]) -> Result<(), String> {
             let root_path = tokens
                 .get(index + offset + 1)
                 .is_some_and(|token| matches!(token.as_str(), "::" | "as"));
-            if (domain_root || root_path) && tail.is_none_or(|pair| pair != ["::", "attempt"]) {
+            let reviewed_fabric = tail.is_some_and(|pair| pair == ["::", "fabric"])
+                && !tokens[index + offset + 3..end]
+                    .iter()
+                    .any(|token| matches!(token.as_str(), "*" | "as"));
+            let reviewed_leaf =
+                tail.is_some_and(|pair| pair == ["::", "attempt"]) || reviewed_fabric;
+            if (domain_root || root_path) && !reviewed_leaf {
                 return Err("execution alias or glob may expose the lifecycle module".into());
             }
         }

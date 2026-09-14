@@ -27,6 +27,7 @@ struct PersistedCursor {
 pub struct ChangeCursorStore {
     config_root: PathBuf,
     directory: PathBuf,
+    credential_store: CredentialStore,
     checkpoint: PersistedCursor,
     path: PathBuf,
 }
@@ -50,6 +51,7 @@ impl CredentialStore {
         ChangeCursorStore {
             config_root: self.config_root.clone(),
             directory: self.directory.clone(),
+            credential_store: self.clone(),
             checkpoint,
             path: self.directory.join(format!("{name}.cursor")),
         }
@@ -91,11 +93,8 @@ impl ChangeCursorStore {
         if encoded.len() > MAX_CHECKPOINT_BYTES {
             return Err("Forge change checkpoint exceeds the local size limit".into());
         }
-        CredentialStore {
-            config_root: self.config_root.clone(),
-            directory: self.directory.clone(),
-        }
-        .atomic_write(&self.path, &encoded, owner_uid)
+        self.credential_store
+            .atomic_write(&self.path, &encoded, owner_uid)
     }
 }
 

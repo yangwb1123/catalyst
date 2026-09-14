@@ -12,11 +12,176 @@ use serde_json::{Value, json};
 use super::super::credentials::{CredentialStore, StoredCredential};
 use super::{
     RemoteClient, run_with_io,
-    state::{TuiState, render},
+    state::{TuiState, render, scope_filter_matches},
 };
 
 #[path = "remote_tui/runs_tests.rs"]
 mod runs;
+
+#[test]
+fn remote_tui_scope_filter_matches_global_project_and_group_ids_exactly() {
+    use crate::args::RemoteConversationScope;
+
+    let global = json!({"scope": {"kind": "global"}});
+    let project = json!({"scope": {"kind": "project", "id": "prj_1"}});
+    let group = json!({"scope": {"kind": "group", "id": "grp_1"}});
+
+    assert!(scope_filter_matches(
+        &global,
+        Some(&RemoteConversationScope::Global)
+    ));
+    assert!(scope_filter_matches(
+        &project,
+        Some(&RemoteConversationScope::Project("prj_1".into()))
+    ));
+    assert!(!scope_filter_matches(
+        &project,
+        Some(&RemoteConversationScope::Project("prj_2".into()))
+    ));
+    assert!(scope_filter_matches(
+        &group,
+        Some(&RemoteConversationScope::Group("grp_1".into()))
+    ));
+    assert!(!scope_filter_matches(
+        &group,
+        Some(&RemoteConversationScope::Group("grp_2".into()))
+    ));
+    assert!(scope_filter_matches(&global, None));
+}
+
+#[test]
+fn remote_tui_filtered_selected_entry_is_labeled_as_usable_outside_the_list_filter() {
+    let state = TuiState {
+        selected_id: Some("c-1".into()),
+        selected_entry: Some(super::OwnedConversationEntry {
+            conversation: json!({
+                "id": "c-1",
+                "scope": {"kind": "global"},
+                "title": "Selected"
+            }),
+            aggregate_version: 1,
+        }),
+        scope_filter: Some(crate::args::RemoteConversationScope::Project(
+            "prj_1".into(),
+        )),
+        ..TuiState::default()
+    };
+    let mut writer = Vec::new();
+    render(&state, &mut writer).unwrap();
+    let output = String::from_utf8(writer).unwrap();
+    assert!(output.contains("outside current list filter, still selected and openable"));
+}
+
+#[tokio::test]
+async fn remote_tui_scope_filter_preserves_server_cursor_across_empty_page_and_can_be_cleared() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = thread::spawn(move || {
+        let (mut first, request, _, _) = accept_request(&listener);
+        assert!(request.starts_with("GET /api/v1/conversations?limit=128 "));
+        respond(&mut first, "200 OK", &full_global_conversation_page());
+        drop(first);
+
+        let (mut second, request, _, _) = accept_request(&listener);
+        assert!(request.starts_with("GET /api/v1/conversations?limit=128&after_id=c-127 "));
+        respond(
+            &mut second,
+            "200 OK",
+            &json!({
+                "conversations": [{
+                    "conversation": {
+                        "id": "c-128",
+                        "scope": {"kind": "project", "id": "prj_1"},
+                        "title": "Project hit",
+                        "created_at_ms": 2,
+                        "updated_at_ms": 2
+                    },
+                    "aggregate_version": 2
+                }],
+                "next_after_id": null,
+                "has_more": false
+            }),
+        );
+    });
+
+    let client = test_client(address);
+    let mut reader = Cursor::new("filter project:prj_1\nnext\nfilter clear\nquit\n");
+    let mut writer = Vec::new();
+    run_with_io(&client, &mut reader, &mut writer)
+        .await
+        .unwrap();
+    server.join().unwrap();
+
+    let output = String::from_utf8(writer).unwrap();
+    assert!(output.contains("No sessions match this scope filter in the loaded pages."));
+    assert!(
+        output.contains("\"c-128\"  \"Project hit\"  [project:\"prj_1\"]"),
+        "{output}"
+    );
+    assert!(output.contains("Scope filter cleared."));
+    assert!(output.contains("\"c-000\"  \"Global 0\"  [global]"));
+    assert!(output.contains("organization-only display filter"));
+}
+
+fn full_global_conversation_page() -> Value {
+    let conversations = (0..128)
+        .map(|index| {
+            let id = format!("c-{index:03}");
+            json!({
+                "conversation": conversation_projection(&id, &format!("Global {index}")),
+                "aggregate_version": 1
+            })
+        })
+        .collect::<Vec<_>>();
+    json!({
+        "conversations": conversations,
+        "next_after_id": "c-127",
+        "has_more": true
+    })
+}
+
+#[tokio::test]
+async fn remote_tui_filtered_out_selected_session_remains_openable_without_permission_error() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = thread::spawn(move || {
+        serve_conversation_page(
+            &listener,
+            &json!({
+                "conversations": [{
+                    "conversation": conversation_projection("c-1", "Shared"),
+                    "aggregate_version": 1
+                }],
+                "next_after_id": null,
+                "has_more": false
+            }),
+        );
+        let (mut history, request, _, _) = accept_request(&listener);
+        assert!(request.starts_with("GET /api/v1/conversations/c-1/prompts?"));
+        respond(
+            &mut history,
+            "200 OK",
+            &json!({
+                "conversation_id": "c-1",
+                "prompts": [],
+                "has_more": false
+            }),
+        );
+    });
+
+    let client = test_client(address);
+    let mut reader = Cursor::new("filter group:grp_1\nopen c-1\nquit\n");
+    let mut writer = Vec::new();
+    run_with_io(&client, &mut reader, &mut writer)
+        .await
+        .unwrap();
+    server.join().unwrap();
+
+    let output = String::from_utf8(writer).unwrap();
+    assert!(output.contains("Opened session \"c-1\" and refreshed Prompt history."));
+    assert!(!output.contains("That session is not in the loaded pages."));
+    assert!(!output.to_lowercase().contains("permission"));
+}
 
 #[tokio::test]
 async fn ambiguous_prompt_retry_reuses_the_same_key_version_and_body() {
@@ -693,6 +858,7 @@ fn test_client(address: std::net::SocketAddr) -> RemoteClient {
         base_url: Url::parse(&format!("http://{address}")).unwrap(),
         access_token: "test-token".into(),
         change_cursor: None,
+        token_refresh: None,
     }
 }
 

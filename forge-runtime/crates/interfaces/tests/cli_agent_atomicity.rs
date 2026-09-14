@@ -311,6 +311,7 @@ fn append_finished_tool_prefix(store: &SqliteHubStore, run_id: &str) {
                 output: "private-tool-output".into(),
                 is_error: false,
                 truncated: false,
+                execution_evidence: None,
             },
         })
         .expect("append finished tool prefix");

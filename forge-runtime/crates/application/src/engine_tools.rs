@@ -1,4 +1,4 @@
-use crate::runtime_domain::{Message, RuntimeEventKind, ToolCall, ToolOutput};
+use crate::runtime_domain::{Message, RuntimeEventKind, ToolCall, ToolExecutionResult, ToolOutput};
 
 use crate::{
     RuntimeError, emitter::EventEmitter, output_limit::truncate_output, run_state::RunState,
@@ -56,19 +56,20 @@ pub(super) fn reject_calls_with_message(
 
 pub(super) fn commit_tool_result(
     call: ToolCall,
-    result: Result<ToolOutput, (String, String)>,
+    result: Result<ToolExecutionResult, (String, String)>,
     max_output_bytes: usize,
     state: &mut RunState,
     emitter: &mut EventEmitter<'_>,
 ) -> Result<(), RuntimeError> {
-    let (output, is_error) = match result {
-        Ok(output) => (output, false),
+    let (output, is_error, execution_evidence) = match result {
+        Ok(result) => (result.output, false, result.execution_evidence),
         Err((code, message)) => (
             ToolOutput {
                 content: format!("{code}: {message}"),
                 truncated: false,
             },
             true,
+            None,
         ),
     };
     let output = truncate_output(output, max_output_bytes);
@@ -78,6 +79,7 @@ pub(super) fn commit_tool_result(
         output: output.content.clone(),
         is_error,
         truncated: output.truncated,
+        execution_evidence,
     })?;
     commit_tool_message(
         call,

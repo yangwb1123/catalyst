@@ -64,6 +64,35 @@ async fn coding_agent_reads_edits_verifies_and_finishes() {
         1,
         "the local adapter must preserve the existing ToolFinished event"
     );
+    assert_local_execution_evidence(sink.events());
+}
+
+fn assert_local_execution_evidence(events: &[forge_runtime_domain::RuntimeEvent]) {
+    let started_sequence = events
+        .iter()
+        .find_map(|event| match &event.kind {
+            RuntimeEventKind::ToolStarted { call } if call.name == "exec_command" => {
+                Some(event.seq)
+            }
+            _ => None,
+        })
+        .expect("local execution has a ToolStarted event");
+    let evidence = events
+        .iter()
+        .find_map(|event| match &event.kind {
+            RuntimeEventKind::ToolFinished {
+                name,
+                execution_evidence: Some(evidence),
+                ..
+            } if name == "exec_command" => Some(evidence),
+            _ => None,
+        })
+        .expect("local execution evidence is retained on ToolFinished");
+    assert_eq!(evidence.attempt_ref.session_id, "dev-session");
+    assert_eq!(evidence.attempt_ref.run_id, "dev-run");
+    assert_eq!(evidence.attempt_ref.tool_started_sequence, started_sequence);
+    assert_eq!(evidence.target_ref.target_id, "local");
+    assert_eq!(evidence.observation.exit_code, Some(0));
 }
 
 fn runtime(workspace: &TempDir, turns: Vec<Vec<ProviderEvent>>) -> AgentRuntime {

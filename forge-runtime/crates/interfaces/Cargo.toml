@@ -14,6 +14,7 @@ base64 = "0.22"
 forge-runtime-application.workspace = true
 forge-runtime-domain.workspace = true
 forge-runtime-infrastructure.workspace = true
+keyring = { version = "=3.6.3", default-features = false, features = ["apple-native", "windows-native", "sync-secret-service", "crypto-rust"] }
 rand.workspace = true
 reqwest.workspace = true
 serde.workspace = true

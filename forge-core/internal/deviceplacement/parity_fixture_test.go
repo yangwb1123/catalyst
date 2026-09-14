@@ -30,7 +30,16 @@ type placementParityExpected struct {
 }
 
 func TestPolicyParityFixture(t *testing.T) {
-	path := filepath.Join("..", "..", "..", "docs", "contracts", "fixtures", "forge-device-placement-policy-parity-v1.json")
+	testPolicyParityFixture(t, "forge-device-placement-policy-parity-v1.json")
+}
+
+func TestGpuPolicyParityFixture(t *testing.T) {
+	testPolicyParityFixture(t, "forge-device-placement-gpu-policy-parity-v1.json")
+}
+
+func testPolicyParityFixture(t *testing.T, name string) {
+	t.Helper()
+	path := filepath.Join("..", "..", "..", "docs", "contracts", "fixtures", name)
 	encoded, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)

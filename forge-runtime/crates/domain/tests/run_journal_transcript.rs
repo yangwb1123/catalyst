@@ -2,6 +2,10 @@ use forge_runtime_domain::{
     LimitKind, Message, PROTOCOL_VERSION, RUN_STORE_VERSION, RunExecution, RunInspection,
     RunJournalCursor, RunLimits, RunOutcome, RunProvider, RunRecord, RunRecoveryState,
     RuntimeEvent, RuntimeEventKind, ToolCall,
+    execution::fabric::{
+        EXECUTION_FABRIC_ABI_VERSION, ExecutionEvidence, ExecutionEvidenceSource, ExecutionTarget,
+        LocalProcessObservation,
+    },
 };
 use serde_json::json;
 
@@ -20,6 +24,70 @@ fn fabricated_completed_tool_call_is_rejected() {
     let error = validate(transcript).expect_err("unresolved tool call cannot complete");
 
     assert!(error.message.contains("unresolved tool calls"));
+}
+
+#[test]
+fn execution_evidence_must_bind_to_the_adjacent_local_tool_start() {
+    let call = ToolCall {
+        id: "exec-1".into(),
+        name: "exec_command".into(),
+        arguments: json!({}),
+    };
+    let mut transcript = through_assistant(vec![call.clone()]);
+    transcript.push(RuntimeEventKind::ToolStarted { call: call.clone() });
+    transcript.push(RuntimeEventKind::ToolFinished {
+        call_id: call.id,
+        name: call.name,
+        output: "ok".into(),
+        is_error: false,
+        truncated: false,
+        execution_evidence: Some(local_evidence(4, 2)),
+    });
+
+    let error = validate(transcript).expect_err("unbound evidence is rejected");
+
+    assert!(error.message.contains("execution evidence"));
+}
+
+#[test]
+fn execution_evidence_observation_must_match_the_tool_finished_output() {
+    let call = ToolCall {
+        id: "exec-1".into(),
+        name: "exec_command".into(),
+        arguments: json!({}),
+    };
+    let mut transcript = through_assistant(vec![call.clone()]);
+    transcript.push(RuntimeEventKind::ToolStarted { call: call.clone() });
+    transcript.push(RuntimeEventKind::ToolFinished {
+        call_id: call.id,
+        name: call.name,
+        output: "ok".into(),
+        is_error: false,
+        truncated: false,
+        execution_evidence: Some(local_evidence(5, 1)),
+    });
+
+    let error = validate(transcript).expect_err("mismatched observation is rejected");
+
+    assert!(error.message.contains("execution evidence"));
+}
+
+fn local_evidence(start_sequence: u64, output_bytes: u64) -> ExecutionEvidence {
+    ExecutionEvidence {
+        v: EXECUTION_FABRIC_ABI_VERSION,
+        attempt_ref: forge_runtime_domain::execution::fabric::AttemptRef {
+            session_id: "conversation-1".into(),
+            run_id: "run-1".into(),
+            tool_started_sequence: start_sequence,
+        },
+        target_ref: ExecutionTarget::local().target_ref,
+        source: ExecutionEvidenceSource::LocalProcessObservation,
+        observation: LocalProcessObservation {
+            exit_code: Some(0),
+            rendered_output_bytes: output_bytes,
+            output_truncated: false,
+        },
+    }
 }
 
 #[test]
@@ -396,6 +464,7 @@ fn finished(call: &ToolCall, output: &str) -> RuntimeEventKind {
         output: output.into(),
         is_error: false,
         truncated: false,
+        execution_evidence: None,
     }
 }
 

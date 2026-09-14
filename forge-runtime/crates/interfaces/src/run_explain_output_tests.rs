@@ -78,6 +78,7 @@ fn finished_tool_output_is_fingerprinted_before_message_commit() {
                 output: PRIVATE_OUTPUT.into(),
                 is_error: false,
                 truncated: false,
+                execution_evidence: None,
             },
         ),
     ];

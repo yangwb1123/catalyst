@@ -46,11 +46,12 @@ struct DeviceAuthorization {
 }
 
 #[derive(Deserialize)]
-struct TokenReply {
-    access_token: Option<String>,
-    token_type: Option<String>,
-    expires_in: Option<u64>,
-    error: Option<String>,
+pub(super) struct TokenReply {
+    pub(super) access_token: Option<String>,
+    pub(super) token_type: Option<String>,
+    pub(super) expires_in: Option<u64>,
+    pub(super) refresh_token: Option<String>,
+    pub(super) error: Option<String>,
 }
 
 pub(super) async fn run() -> Result<(), Box<dyn Error>> {
@@ -73,9 +74,11 @@ pub(super) async fn run() -> Result<(), Box<dyn Error>> {
     .map_err(LoginError)?;
     CredentialStore::from_env()
         .map_err(LoginError)?
-        .save(&credential)
+        .save_login(&credential, token.refresh_token.as_deref())
         .map_err(LoginError)?;
-    println!("Forge CLI login completed; token stored in the protected local credential store.");
+    println!(
+        "Forge CLI login completed; credentials were stored in the available protected stores."
+    );
     Ok(())
 }
 
@@ -188,6 +191,7 @@ impl DeviceClient {
 struct ApprovedToken {
     access_token: String,
     expires_in: u64,
+    refresh_token: Option<String>,
 }
 
 enum PollResult {
@@ -203,10 +207,13 @@ fn interpret_token_reply(reply: TokenReply) -> Result<PollResult, LoginError> {
             token_type: Some(token_type),
             expires_in: Some(expires_in),
             error: None,
+            refresh_token,
+            ..
         } if token_type.eq_ignore_ascii_case("bearer") && expires_in > 0 => {
             Ok(PollResult::Approved(ApprovedToken {
                 access_token,
                 expires_in,
+                refresh_token,
             }))
         }
         TokenReply {
@@ -235,6 +242,30 @@ async fn decode_success<T: for<'de> Deserialize<'de>>(response: Response) -> Res
     let bytes = bounded_body(response).await?;
     serde_json::from_slice(&bytes)
         .map_err(|_| LoginError("Snaplink returned an invalid device-flow response".into()))
+}
+
+pub(super) async fn refresh_token_request(
+    http: &Client,
+    issuer: &Url,
+    client_id: &str,
+    refresh_token: &str,
+) -> Result<TokenReply, String> {
+    let endpoint = issuer
+        .join("/token")
+        .map_err(|_| "Snaplink OAuth endpoint is invalid".to_owned())?;
+    let response = http
+        .post(endpoint)
+        .form(&[
+            ("grant_type", "refresh_token"),
+            ("refresh_token", refresh_token),
+            ("client_id", client_id),
+        ])
+        .send()
+        .await
+        .map_err(|_| "Snaplink refresh request failed".to_owned())?;
+    decode_token_reply(response)
+        .await
+        .map_err(|error| error.to_string())
 }
 
 async fn decode_token_reply(response: Response) -> Result<TokenReply, LoginError> {

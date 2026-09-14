@@ -41,7 +41,7 @@ pub(super) async fn run(
     confirm: Option<&str>,
     json_output: bool,
 ) -> Result<(), Box<dyn Error>> {
-    let client = RemoteClient::from_env()?;
+    let client = RemoteClient::from_env().await?;
     let source = load_source(state_dir, conversation_id)?;
     let target = target_identity(&client.access_token)?;
     let digest = preview_digest(&client, &target, &source)?;
@@ -443,6 +443,7 @@ mod tests {
             base_url: reqwest::Url::parse("https://forge.example/").unwrap(),
             access_token: "preview-only".into(),
             change_cursor: None,
+            token_refresh: None,
         };
         let target = target();
         let preview = preview_json(&client, &target, &source("review this"), "digest");

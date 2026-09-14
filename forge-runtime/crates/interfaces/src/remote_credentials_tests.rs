@@ -161,10 +161,7 @@ fn credential_store_rejects_world_writable_config_root() {
 }
 
 fn store(config_root: &std::path::Path) -> CredentialStore {
-    CredentialStore {
-        config_root: config_root.to_path_buf(),
-        directory: config_root.join("forge-runtime").join("credentials"),
-    }
+    CredentialStore::for_test(config_root.to_path_buf())
 }
 
 #[cfg(unix)]

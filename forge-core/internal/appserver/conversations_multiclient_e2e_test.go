@@ -121,6 +121,121 @@ func TestIndependentClientsShareOwnedConversationAndPrompts(t *testing.T) {
 	}
 	assertNoPendingRunIntentAfterPrompt(t, bridge, identity, cliConversation.ID)
 	assertNoPendingRunIntentAfterPrompt(t, bridge, identity, created.ID)
+	assertForgeRuntimeCLIListsOwnedConversationsAcrossPages(
+		t, executable, server.URL, identity, bridge, recorder,
+	)
+}
+
+func assertForgeRuntimeCLIListsOwnedConversationsAcrossPages(
+	t *testing.T,
+	executable, apiURL string,
+	identity *conversationTestIdentity,
+	bridge *runtimebridge.Client,
+	recorder *conversationHTTPRecorder,
+) {
+	t.Helper()
+	const seedCount = 130
+	const scopes = "forge:conversations:read forge:conversations:write"
+	owner := model.Owner{Issuer: identity.issuer, Subject: "account-42", TenantID: "tenant-slate"}
+	baseline, err := bridge.ListOwnedConversations(context.Background(), owner, "", conversationPageMax)
+	if err != nil || baseline.HasMore || baseline.NextAfterID != nil {
+		t.Fatalf("read pagination E2E baseline: page=%#v err=%v", baseline, err)
+	}
+
+	seeder := &http.Client{Timeout: 20 * time.Second}
+	seederToken := tokenForIndependentClient(identity, scopes, "cli-pagination-seeder")
+	seedIDs := make(map[string]struct{}, seedCount)
+	const requestBody = `{"scope":{"kind":"global"},"title":"Cross-page session fixture"}`
+	for index := 0; index < seedCount; index++ {
+		response := doConversationClientRequest(
+			t, seeder, apiURL, seederToken, http.MethodPost, conversationCollectionPath,
+			"application/json", "cli-page-seed-"+strconv.Itoa(index), requestBody,
+		)
+		if response.StatusCode != http.StatusCreated {
+			t.Fatalf("seed session %d status=%d body=%q",
+				index, response.StatusCode, readConversationClientBody(t, response))
+		}
+		var created model.Conversation
+		if err := json.NewDecoder(response.Body).Decode(&created); err != nil || created.ID == "" {
+			_ = response.Body.Close()
+			t.Fatalf("seed session %d response=%#v decode=%v", index, created, err)
+		}
+		_ = response.Body.Close()
+		seedIDs[created.ID] = struct{}{}
+	}
+
+	firstPage, err := bridge.ListOwnedConversations(context.Background(), owner, "", conversationPageMax)
+	if err != nil || !firstPage.HasMore || firstPage.NextAfterID == nil {
+		t.Fatalf("read first page cursor for pagination E2E: page=%#v err=%v", firstPage, err)
+	}
+	readerHome := t.TempDir()
+	readerToken := tokenForIndependentClient(identity, scopes, "cli-pagination-reader")
+	firstListRequest := len(recorder.snapshot())
+	output, stderr, err := runForgeRuntimeCLI(
+		t, executable, apiURL, readerToken, readerHome,
+		"--json", "remote", "sessions", "list", "--all",
+	)
+	if err != nil {
+		t.Fatalf("CLI cross-page owner list failed: stderr=%q stdout=%q err=%v", stderr, output, err)
+	}
+	var page model.OwnedConversationPage
+	if err := json.Unmarshal([]byte(output), &page); err != nil {
+		t.Fatalf("decode CLI cross-page owner list: %v; stdout=%q", err, output)
+	}
+	if len(page.Conversations) != len(baseline.Conversations)+seedCount ||
+		page.HasMore || page.NextAfterID != nil {
+		t.Fatalf("CLI cross-page owner list count=%d has_more=%t cursor=%v, baseline=%d seed=%d",
+			len(page.Conversations), page.HasMore, page.NextAfterID, len(baseline.Conversations), seedCount)
+	}
+	seen := make(map[string]struct{}, len(page.Conversations))
+	previousID := ""
+	for _, entry := range page.Conversations {
+		id := entry.Conversation.ID
+		if id <= previousID {
+			t.Fatalf("CLI cross-page sessions are not strictly ordered: previous=%q current=%q", previousID, id)
+		}
+		previousID = id
+		seen[id] = struct{}{}
+	}
+	for id := range seedIDs {
+		if _, ok := seen[id]; !ok {
+			t.Fatalf("CLI cross-page owner list omitted seeded session %q", id)
+		}
+	}
+	requests := recorder.snapshot()[firstListRequest:]
+	if len(requests) != 2 ||
+		requests[0] != (recordedConversationRequest{
+			method: http.MethodGet, path: conversationCollectionPath, query: "limit=128",
+		}) ||
+		requests[1] != (recordedConversationRequest{
+			method: http.MethodGet, path: conversationCollectionPath,
+			query: "limit=128&after_id=" + *firstPage.NextAfterID,
+		}) {
+		t.Fatalf("CLI cross-page list requests=%#v; expected exactly two cursor-linked owner-page reads", requests)
+	}
+
+	foreignHome := t.TempDir()
+	foreignToken := tokenForPrincipal(identity, "account-foreign", scopes, "cli-pagination-foreign")
+	firstForeignRequest := len(recorder.snapshot())
+	foreignOutput, foreignStderr, err := runForgeRuntimeCLI(
+		t, executable, apiURL, foreignToken, foreignHome,
+		"--json", "remote", "sessions", "list", "--all",
+	)
+	if err != nil {
+		t.Fatalf("foreign CLI all-pages list failed: stderr=%q stdout=%q err=%v",
+			foreignStderr, foreignOutput, err)
+	}
+	var foreignPage model.OwnedConversationPage
+	if err := json.Unmarshal([]byte(foreignOutput), &foreignPage); err != nil ||
+		len(foreignPage.Conversations) != 0 || foreignPage.HasMore || foreignPage.NextAfterID != nil {
+		t.Fatalf("foreign CLI all-pages list exposed owner sessions: page=%#v decode=%v", foreignPage, err)
+	}
+	foreignRequests := recorder.snapshot()[firstForeignRequest:]
+	if len(foreignRequests) != 1 || foreignRequests[0] != (recordedConversationRequest{
+		method: http.MethodGet, path: conversationCollectionPath, query: "limit=128",
+	}) {
+		t.Fatalf("foreign CLI all-pages list requests=%#v; expected one empty owner-scoped page", foreignRequests)
+	}
 }
 
 func assertForgeRuntimeCLIClientsShareOwnedConversationAndPrompts(

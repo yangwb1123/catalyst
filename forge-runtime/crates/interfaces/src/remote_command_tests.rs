@@ -96,6 +96,7 @@ fn test_remote_client(address: std::net::SocketAddr) -> RemoteClient {
         base_url: Url::parse(&format!("http://{address}")).unwrap(),
         access_token: "test-token".into(),
         change_cursor: None,
+        token_refresh: None,
     }
 }
 

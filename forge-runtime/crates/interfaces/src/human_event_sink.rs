@@ -227,6 +227,7 @@ mod tests {
                 output: "secret result".into(),
                 is_error: false,
                 truncated: true,
+                execution_evidence: None,
             },
         );
         emit(

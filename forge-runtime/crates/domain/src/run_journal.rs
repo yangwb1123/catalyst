@@ -1,5 +1,7 @@
 use crate::{
-    Message, PROTOCOL_VERSION, RUN_STORE_VERSION, RunOutcome, RunRecord, RuntimeEvent, ToolCall,
+    Message, PROTOCOL_VERSION, RUN_STORE_VERSION, RunOutcome, RunRecord, RuntimeEvent,
+    RuntimeEventKind, ToolCall,
+    execution::fabric::{EXECUTION_FABRIC_ABI_VERSION, ExecutionEvidenceSource, ExecutionTarget},
 };
 
 #[path = "run_journal_state.rs"]
@@ -135,6 +137,7 @@ impl RunJournalCursor {
             .next_sequence
             .checked_add(1)
             .ok_or_else(|| journal_error("runtime event sequence exhausted"))?;
+        self.validate_execution_evidence(event)?;
         self.state.apply(event, self.next_sequence == 1)?;
         self.next_sequence = following;
         Ok(())
@@ -194,6 +197,35 @@ impl RunJournalCursor {
         }
         if event.seq != self.next_sequence {
             return Err(journal_error("runtime event sequence is not contiguous"));
+        }
+        Ok(())
+    }
+
+    fn validate_execution_evidence(&self, event: &RuntimeEvent) -> Result<(), RunJournalError> {
+        let RuntimeEventKind::ToolFinished {
+            name,
+            output,
+            truncated,
+            execution_evidence: Some(evidence),
+            ..
+        } = &event.kind
+        else {
+            return Ok(());
+        };
+        let expected_target = ExecutionTarget::local().target_ref;
+        if name != "exec_command"
+            || evidence.v != EXECUTION_FABRIC_ABI_VERSION
+            || evidence.source != ExecutionEvidenceSource::LocalProcessObservation
+            || evidence.attempt_ref.session_id != self.conversation_id
+            || evidence.attempt_ref.run_id != self.run_id
+            || evidence.attempt_ref.tool_started_sequence.checked_add(1) != Some(event.seq)
+            || evidence.target_ref != expected_target
+            || evidence.observation.output_truncated != *truncated
+            || u64::try_from(output.len()).ok() != Some(evidence.observation.rendered_output_bytes)
+        {
+            return Err(journal_error(
+                "execution evidence does not match the local ToolStarted invocation",
+            ));
         }
         Ok(())
     }
@@ -338,6 +370,7 @@ mod tests {
                         output: "result".into(),
                         is_error: false,
                         truncated: false,
+                        execution_evidence: None,
                     },
                 ),
             ],

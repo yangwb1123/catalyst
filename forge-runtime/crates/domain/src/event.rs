@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{Message, RunOutcome, ToolCall};
+use crate::{Message, RunOutcome, ToolCall, execution::fabric::ExecutionEvidence};
 
 pub const PROTOCOL_VERSION: u16 = 1;
 
@@ -39,6 +39,8 @@ pub enum RuntimeEventKind {
         output: String,
         is_error: bool,
         truncated: bool,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        execution_evidence: Option<ExecutionEvidence>,
     },
     ToolRejected {
         call: ToolCall,
@@ -88,6 +90,37 @@ pub trait EventSink {
 #[cfg(test)]
 mod tests {
     use super::{PROTOCOL_VERSION, RuntimeEvent, RuntimeEventKind};
+
+    #[test]
+    fn legacy_tool_finished_json_decodes_without_changing_its_shape() {
+        let legacy = serde_json::json!({
+            "v": PROTOCOL_VERSION,
+            "session_id": "session-1",
+            "run_id": "run-1",
+            "seq": 6,
+            "emitted_at_ms": 7,
+            "type": "tool_finished",
+            "call_id": "call-1",
+            "name": "read_file",
+            "output": "ok",
+            "is_error": false,
+            "truncated": false
+        });
+
+        let event: RuntimeEvent =
+            serde_json::from_value(legacy.clone()).expect("legacy event remains readable");
+        assert!(matches!(
+            event.kind,
+            RuntimeEventKind::ToolFinished {
+                execution_evidence: None,
+                ..
+            }
+        ));
+        assert_eq!(
+            serde_json::to_value(event).expect("event re-encodes"),
+            legacy
+        );
+    }
 
     #[test]
     fn event_kind_is_flattened_into_envelope() {

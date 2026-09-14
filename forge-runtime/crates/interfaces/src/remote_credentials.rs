@@ -1,8 +1,11 @@
+#[cfg(test)]
+use std::{collections::HashMap, sync::Mutex};
 use std::{
     env,
     fs::{self, File, OpenOptions},
     io::{Read, Write},
     path::{Path, PathBuf},
+    sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -15,10 +18,94 @@ pub(super) use token_claims::{OwnerSelector, StoredCredential, credential_from_t
 use token_claims::{credential_key, validate_credential};
 
 const MAX_CREDENTIAL_BYTES: usize = 16 * 1024;
+const MAX_REFRESH_TOKEN_BYTES: usize = 2048;
+const KEYRING_SERVICE: &str = "forge-runtime-cli";
 
+#[derive(Clone)]
 pub(super) struct CredentialStore {
     config_root: PathBuf,
     directory: PathBuf,
+    refresh_backend: Arc<dyn RefreshTokenBackend>,
+}
+
+pub(super) trait RefreshTokenBackend: Send + Sync {
+    fn get(&self, account: &str) -> Result<Option<String>, String>;
+    fn set(&self, account: &str, token: &str) -> Result<(), String>;
+    fn delete(&self, account: &str) -> Result<(), String>;
+}
+
+struct PlatformRefreshTokenBackend;
+
+#[cfg(test)]
+#[derive(Default)]
+struct MemoryRefreshTokenBackend(Mutex<HashMap<String, String>>);
+
+#[cfg(any(unix, windows))]
+impl RefreshTokenBackend for PlatformRefreshTokenBackend {
+    fn get(&self, account: &str) -> Result<Option<String>, String> {
+        match keyring::Entry::new(KEYRING_SERVICE, account).and_then(|entry| entry.get_password()) {
+            Ok(token) => Ok(Some(token)),
+            Err(keyring::Error::NoEntry) => Ok(None),
+            Err(_) => Err("OS credential store could not read the Forge refresh token".into()),
+        }
+    }
+
+    fn set(&self, account: &str, token: &str) -> Result<(), String> {
+        let entry = keyring::Entry::new(KEYRING_SERVICE, account)
+            .map_err(|_| "OS credential store is unavailable for Forge refresh tokens")?;
+        entry
+            .set_password(token)
+            .map_err(|_| "OS credential store could not save the Forge refresh token")?;
+        if entry.get_password().is_ok_and(|saved| saved == token) {
+            Ok(())
+        } else {
+            Err("OS credential store did not verify the Forge refresh token".into())
+        }
+    }
+
+    fn delete(&self, account: &str) -> Result<(), String> {
+        let entry = keyring::Entry::new(KEYRING_SERVICE, account)
+            .map_err(|_| "OS credential store is unavailable for Forge refresh tokens")?;
+        match entry.delete_credential() {
+            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+            Err(_) => Err("OS credential store could not remove the Forge refresh token".into()),
+        }
+    }
+}
+
+#[cfg(not(any(unix, windows)))]
+impl RefreshTokenBackend for PlatformRefreshTokenBackend {
+    fn get(&self, _account: &str) -> Result<Option<String>, String> {
+        Err("OS credential store is unsupported on this platform".into())
+    }
+
+    fn set(&self, _account: &str, _token: &str) -> Result<(), String> {
+        Err("OS credential store is unsupported on this platform".into())
+    }
+
+    fn delete(&self, _account: &str) -> Result<(), String> {
+        Err("OS credential store is unsupported on this platform".into())
+    }
+}
+
+#[cfg(test)]
+impl RefreshTokenBackend for MemoryRefreshTokenBackend {
+    fn get(&self, account: &str) -> Result<Option<String>, String> {
+        Ok(self.0.lock().unwrap().get(account).cloned())
+    }
+
+    fn set(&self, account: &str, token: &str) -> Result<(), String> {
+        self.0
+            .lock()
+            .unwrap()
+            .insert(account.to_owned(), token.to_owned());
+        Ok(())
+    }
+
+    fn delete(&self, account: &str) -> Result<(), String> {
+        self.0.lock().unwrap().remove(account);
+        Ok(())
+    }
 }
 
 impl CredentialStore {
@@ -27,6 +114,7 @@ impl CredentialStore {
         Self {
             directory: config_root.join("forge-runtime").join("credentials"),
             config_root,
+            refresh_backend: Arc::new(MemoryRefreshTokenBackend::default()),
         }
     }
 
@@ -45,7 +133,87 @@ impl CredentialStore {
         Ok(Self {
             directory: config_root.join("forge-runtime").join("credentials"),
             config_root,
+            refresh_backend: Arc::new(PlatformRefreshTokenBackend),
         })
+    }
+
+    #[cfg(test)]
+    pub(super) fn with_test_backend(
+        config_root: PathBuf,
+        refresh_backend: Arc<dyn RefreshTokenBackend>,
+    ) -> Self {
+        Self {
+            directory: config_root.join("forge-runtime").join("credentials"),
+            config_root,
+            refresh_backend,
+        }
+    }
+
+    pub(super) fn load_refresh_token(
+        &self,
+        credential: &StoredCredential,
+    ) -> Result<Option<String>, String> {
+        let token = self
+            .refresh_backend
+            .get(&self.refresh_account(credential))?;
+        if let Some(token) = &token {
+            validate_refresh_token(token)?;
+        }
+        Ok(token)
+    }
+
+    pub(super) fn save_refresh_token(
+        &self,
+        credential: &StoredCredential,
+        refresh_token: &str,
+    ) -> Result<(), String> {
+        validate_refresh_token(refresh_token)?;
+        self.refresh_backend
+            .set(&self.refresh_account(credential), refresh_token)?;
+        if self.load_refresh_token(credential)?.as_deref() != Some(refresh_token) {
+            return Err("OS credential store did not verify the Forge refresh token".into());
+        }
+        Ok(())
+    }
+
+    pub(super) fn clear_refresh_token(&self, credential: &StoredCredential) -> Result<(), String> {
+        self.refresh_backend
+            .delete(&self.refresh_account(credential))?;
+        if self.load_refresh_token(credential)?.is_some() {
+            return Err("OS credential store did not remove the Forge refresh token".into());
+        }
+        Ok(())
+    }
+
+    pub(super) fn save_login(
+        &self,
+        credential: &StoredCredential,
+        refresh_token: Option<&str>,
+    ) -> Result<(), String> {
+        if let Some(refresh_token) = refresh_token {
+            self.save_refresh_token(credential, refresh_token)?;
+        } else {
+            self.clear_refresh_token(credential)?;
+        }
+        if let Err(error) = self.save(credential) {
+            if refresh_token.is_some() {
+                let _ = self.clear_refresh_token(credential);
+            }
+            return Err(error);
+        }
+        Ok(())
+    }
+
+    fn refresh_account(&self, credential: &StoredCredential) -> String {
+        format!(
+            "refresh-{}",
+            credential_key(
+                &credential.issuer,
+                &credential.client_id,
+                &credential.tenant_id,
+                &credential.subject,
+            )
+        )
     }
 
     #[cfg(unix)]
@@ -78,6 +246,7 @@ impl CredentialStore {
             .map_err(|_| "could not read the Forge credential directory".to_owned())?;
         let now = unix_time()?;
         let mut matching = Vec::new();
+        let mut expired = Vec::new();
         for entry in entries {
             let entry = entry.map_err(|_| "could not inspect a Forge credential".to_owned())?;
             let path = entry.path();
@@ -100,11 +269,15 @@ impl CredentialStore {
                 }
                 if credential.expires_at_unix > now {
                     matching.push(credential);
+                } else {
+                    expired.push(credential);
                 }
             }
         }
         match matching.len() {
-            0 => Err("no unexpired Forge credential matches this issuer and client; run forge-runtime remote login or set FORGE_ACCESS_TOKEN".into()),
+            0 if expired.len() == 1 => Ok(expired.remove(0)),
+            0 if expired.len() > 1 => Err("multiple expired Forge accounts match this issuer and client; set SNAPLINK_SUBJECT and, if needed, SNAPLINK_TENANT_ID".into()),
+            0 => Err("no Forge credential matches this issuer and client; run forge-runtime remote login or set FORGE_ACCESS_TOKEN".into()),
             1 => Ok(matching.remove(0)),
             _ => Err("multiple Forge accounts match this issuer and client; set SNAPLINK_SUBJECT and, if needed, SNAPLINK_TENANT_ID".into()),
         }
@@ -165,6 +338,17 @@ fn unix_time() -> Result<u64, String> {
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_secs())
         .map_err(|_| "system clock is before the Unix epoch".to_owned())
+}
+
+pub(super) fn validate_refresh_token(token: &str) -> Result<(), String> {
+    if token.is_empty()
+        || token.len() > MAX_REFRESH_TOKEN_BYTES
+        || token.trim() != token
+        || !token.bytes().all(|byte| (0x21..=0x7e).contains(&byte))
+    {
+        return Err("Snaplink returned an invalid refresh token".into());
+    }
+    Ok(())
 }
 
 fn read_credential(path: &Path, owner_uid: u32) -> Result<StoredCredential, String> {

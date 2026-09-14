@@ -427,6 +427,7 @@ fn seed_tool_prefix(fixture: &RunFixture, key: &str, include_finished: bool) {
             output: "# Durable run\n".into(),
             is_error: false,
             truncated: false,
+            execution_evidence: None,
         });
     }
     let store = fixture_store(fixture);

@@ -346,5 +346,5 @@ pub use scheduled_graph_controller::*;
 pub use scheduled_graph_progress::*;
 pub use tool::{
     AgentTool, Capability, Message, TOOL_EFFECT_UNCERTAIN_CODE, ToolCall, ToolContext, ToolError,
-    ToolFuture, ToolOutput, ToolSpec,
+    ToolExecutionFuture, ToolExecutionResult, ToolFuture, ToolOutput, ToolSpec,
 };

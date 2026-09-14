@@ -169,6 +169,7 @@ pub(super) fn finish_started_call(
         output,
         is_error,
         truncated,
+        ..
     } = event
     else {
         return Err(journal_error(

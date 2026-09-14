@@ -3169,3 +3169,31 @@ Validation: the ABI v1 fixture covers target, attempt, digest state, effect/mobi
 Validation: parser coverage verifies `--all` and duplicate rejection; HTTP client coverage verifies a second-page scope match, the continuation request, terminal cursor, and the 64-page cap. `cargo test -p forge-runtime-cli session_list` passes (5 tests); strict all-target CLI Clippy and workspace formatting pass. This changes no API, token grant, Run, device, scheduling, or execution boundary.
 
 Broader test attempt: `cargo test -p forge-runtime-cli` passed all 366 unit tests, then stopped at the unrelated `cli_governance_record_journal::reads_refuse_v24_without_migration_but_append_migrates_it_to_current` integration test (`Hub v24 main catalog has invalid object inventory`). That migration fixture and command path were not changed in this session; the session-list-focused tests, formatting, and strict CLI Clippy pass.
+
+
+#### 2026-09-13 continuation — persist local process observation evidence
+
+`ExecCommandTool` now returns its typed local `ExecutionEvidence` through a new additive AgentTool result method; tools without evidence retain the existing output-only method and default to `None`. The existing `ToolFinished` event carries the optional value, omitting the field when absent. Older event JSON still decodes unchanged, and SQLite persists the evidence in the same Run event row with no new sequence or schema migration. The journal accepts it only when ABI/source, session/run, adjacent `ToolStarted` sequence, `exec_command`, and the local target match. Recovery still commits the Tool message and does not rerun the completed effect.
+
+Validation: full domain suite passes; the real coding-agent `exec_command` integration verifies the captured sequence/identity/local target/exit code; SQLite append-readback verifies the evidence survives and recovery remains `CommitToolMessage`; all workspace tests compile with `cargo test --workspace --no-run`; strict library/test-target Clippy, formatting, and the 22-test Attempt-boundary suite pass. Full all-target Clippy still reports five `needless_borrow` lints in the existing `sqlite_hub/owned_run_read.rs`.
+
+The boundary scanner now explicitly permits named imports from the already-published pure `execution::fabric` leaf, while rejecting root aliases/globs, Fabric aliases/globs, lifecycle imports, and extra module declarations. This only corrects the whitelist for the existing Fabric module; it does not admit Attempt lifecycle or remote execution. Evidence remains a local process observation and is not included in the owned remote Run timeline projection. Environment capture, CAS artifact refs, inventory, scheduling, and dispatch remain open; ADR-0039 is unchanged and ADR-0114 remains Proposed/null.
+
+#### 2026-09-13 continuation — offline placement state and GPU parity
+
+Expanded the shared Go/Rust caller-declaration fixtures with pending/revoked approval, cordoned/offline state, future and stale snapshot timestamps, expired leases, the exact freshness boundary, and a separate required-GPU/memory comparison. Test adapters map implementation-specific offline/heartbeat/GPU reason labels to the shared vector; this remains test-only and defines no live inventory contract. Go still asserts that all candidate attributes are unverified and execution/reservation/dispatch are false.
+
+Validation: `go test ./internal/deviceplacement`, its `go vet`, Rust `placement_parity` tests, strict changed-target checks, and `scripts/test-forge-contracts.sh` pass. The fixtures do not authenticate or discover devices, select targets, or reserve/dispatch work. ADR-0039 remains unchanged and ADR-0114 remains Proposed/null; details are in [cross-device implementation plan](../docs/design/ai-engineering-os/cross-device-session-and-fabric-plan.md) §42.
+
+#### 2026-09-13 continuation — TUI session scope filter
+
+`forge-runtime remote tui` now supports `filter global|project:ID|group:ID` and `filter clear`. This is client-side list rendering only; it preserves the raw server cursor so `next` still reaches a match beyond an empty filtered page. Opening an already loaded but filtered-out session remains available, and the UI labels the filter as organization-only rather than authorization or device identity.
+
+Validation: the TUI tests cover exact scope/ID matches, an empty 128-row first page followed by a second-page match using the unchanged `after_id`, clear-and-reveal behavior, and opening a selected Conversation outside the filter. `cargo test -p forge-runtime-cli remote_tui` passes (4 tests); strict CLI Clippy, workspace formatting, and diff checks pass. P2 remains partial; details are in [cross-device implementation plan](../docs/design/ai-engineering-os/cross-device-session-and-fabric-plan.md) §43.
+
+
+#### 2026-09-13 continuation — Android/iOS Forge credential persistence
+
+Forge OAuth credentials now use one versioned secure-storage record on Android/iOS. Login waits for write-and-readback, the Forge route gate restores the record asynchronously after cold start, and refresh rotation persists before replacing the in-memory credential. Forge sign-out revokes the freshest access/refresh tokens best-effort and clears only the Forge slot; app-wide session cleanup also removes that record. Android backup is disabled, while iOS uses this-device-only Keychain accessibility and Runner entitlements. Web keeps its Forge tab-scoped `sessionStorage`; Linux/macOS/Windows still use process memory.
+
+Validation: the full Flutter test suite passes (2,235 tests), `flutter analyze --no-pub` is clean, and an Android debug APK builds successfully. The secure-store tests cover write-before-cache, cold restore, wrong-client rejection and cleanup, refresh rotation, and global cleanup while preserving the separate Admin slot. iOS compilation and physical-device lifecycle behavior were not tested. This adds no API or server behavior and does not enable live inventory or dispatch; ADR-0039 remains in force and ADR-0114 remains Proposed/null. Details are in [cross-device implementation plan](../docs/design/ai-engineering-os/cross-device-session-and-fabric-plan.md) §44.

@@ -1,26 +1,39 @@
-# Offline placement policy parity fixture v1
+# Offline placement policy parity fixtures v1
 
-`fixtures/forge-device-placement-policy-parity-v1.json` is a shared test vector
-for the overlapping, declaration-only resource and policy checks in Forge Core
-Go and the Rust placement reference model. It covers OS, architecture, CPU,
-memory, storage, one runtime, data residency, trust zone, sandbox floor, and
-concurrency using fixed evaluation time and valid same-tenant candidates.
+The two files under `fixtures/` are shared test vectors for overlapping,
+declaration-only resource and policy checks in Forge Core Go and the Rust
+placement reference model. They are not request or response schemas and do not
+define a device registry. Each language maps the common fields into its own
+local model; the vectors never create a cross-language runtime wire contract.
 
-The fixture is not a request or response schema and does not define a device
-registry. Each language maps the common fields into its existing local model.
-`instance_id` is present only to construct the Rust Runner pair; Go does not
-use it in the projection.
-It intentionally omits comparisons that differ between the implementations:
-full owner tuple matching, unknown state handling, configurable freshness
-versus heartbeat age, lease rules, and GPU count/available-memory semantics.
-Those remain covered by each implementation's local tests.
+`forge-device-placement-policy-parity-v1.json` covers OS, architecture, CPU,
+memory, storage, runtime, data residency, trust zone, sandbox floor,
+concurrency, approval, cordon, liveness, fixed-time snapshot freshness, and
+lease expiry. It includes both excluded-state cases and freshness boundary
+cases: a declaration exactly at the 90-second freshness limit remains eligible,
+while a stale snapshot and expired lease are excluded. The fixed evaluation
+time and freshness window match Rust's current placement reference model.
 
-The expected projection contains only candidate IDs, `matches_requirements`,
-and sorted exclusion reason codes. In the Rust test, its internal `Eligible`
-disposition is translated to this boolean; it is not a scheduling result. The
-Rust capacity reason names for memory and storage are mapped to the Go/common
-fixture codes in that test. The fixture does not normalize production reason
-enums or create a cross-language runtime wire format. It does not choose a
-device, reserve resources, authorize execution, or dispatch work. The
-comparison remains offline and does not change ADR-0039 or ADR-0114's
-Proposed-only lifecycle state.
+`forge-device-placement-gpu-policy-parity-v1.json` covers a required GPU, a
+missing GPU, insufficient declared memory, and sufficient declared memory.
+The shared vector uses an empty GPU runtime and one memory value. Go compares
+the caller-declared memory value; the Rust test maps that value to both total
+and available memory. This does not standardize richer GPU inventory semantics.
+
+The vectors intentionally omit comparisons that differ between the
+implementations: full issuer/subject/tenant matching (the Rust placement model
+currently receives tenant only), unknown state handling, configurable freshness
+outside the shared 90-second boundary, invalid lease TTL, GPU runtime, and
+multi-GPU count/available-memory semantics. Those remain covered by each
+implementation's local tests.
+
+Expected results contain only candidate IDs, `matches_requirements`, and
+sorted exclusion reason codes. Rust translates its internal disposition to
+that boolean and maps its overlapping reason names to the fixture vocabulary
+(including memory/storage capacity, liveness, heartbeat freshness, lease
+expiry, and absent GPU). An eligible declaration is only a dry-run match; it
+does not select a device. Every test also verifies that the Go result keeps
+execution authorization, reservation, and dispatch false. Neither fixture
+discovers or authenticates a device, reserves resources, authorizes execution,
+or dispatches work. All attributes remain unverified caller declarations, and
+these tests do not change ADR-0039 or ADR-0114's Proposed-only lifecycle state.

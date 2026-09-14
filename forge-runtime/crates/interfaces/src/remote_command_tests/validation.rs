@@ -35,6 +35,7 @@ async fn malformed_error_body_preserves_http_status_for_retry_decisions() {
             base_url: Url::parse(&format!("http://{address}")).unwrap(),
             access_token: "test-token".into(),
             change_cursor: None,
+            token_refresh: None,
         };
         let error = client.list_prompts("c-1", None).await.unwrap_err();
         let status_code = status[..3].parse::<u16>().unwrap();

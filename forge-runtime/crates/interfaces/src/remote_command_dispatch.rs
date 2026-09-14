@@ -13,7 +13,7 @@ pub(crate) async fn execute(
     if matches!(command, RemoteCommand::Login) {
         return Err(RemoteError("use the remote login entry point".into()).into());
     }
-    let client = RemoteClient::from_env()?;
+    let client = RemoteClient::from_env().await?;
     match command {
         RemoteCommand::Login => unreachable!("remote login is handled before API client setup"),
         RemoteCommand::Tui => {

@@ -3,7 +3,10 @@ use std::{future::Future, pin::Pin};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::{Cancellation, WorkspaceReadCapability, execution::fabric::ToolInvocationRef};
+use crate::{
+    Cancellation, WorkspaceReadCapability,
+    execution::fabric::{ExecutionEvidence, ToolInvocationRef},
+};
 
 /// A started effect could not be proven stopped or completed. The journal must
 /// retain its pending `ToolStarted` fence instead of recording a result.
@@ -72,6 +75,16 @@ pub struct ToolContext {
 
 pub type ToolFuture<'a> = Pin<Box<dyn Future<Output = Result<ToolOutput, ToolError>> + Send + 'a>>;
 
+/// A tool result plus optional local execution-fabric observation.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct ToolExecutionResult {
+    pub output: ToolOutput,
+    pub execution_evidence: Option<ExecutionEvidence>,
+}
+
+pub type ToolExecutionFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<ToolExecutionResult, ToolError>> + Send + 'a>>;
+
 pub trait AgentTool: Send + Sync {
     fn spec(&self) -> ToolSpec;
 
@@ -86,6 +99,23 @@ pub trait AgentTool: Send + Sync {
         _invocation: ToolInvocationRef,
     ) -> ToolFuture<'_> {
         self.execute(arguments, context)
+    }
+
+    /// Executes an invocation and returns optional execution-fabric evidence.
+    /// Existing tools preserve their output-only behavior by default.
+    fn execute_with_invocation_evidence(
+        &self,
+        arguments: Value,
+        context: ToolContext,
+        invocation: ToolInvocationRef,
+    ) -> ToolExecutionFuture<'_> {
+        let execution = self.execute_with_invocation(arguments, context, invocation);
+        Box::pin(async move {
+            execution.await.map(|output| ToolExecutionResult {
+                output,
+                execution_evidence: None,
+            })
+        })
     }
 }
 

@@ -9,6 +9,7 @@ use crate::args::{PromptPageCursor, RemoteConversationScope};
 #[derive(Default)]
 pub(super) struct TuiState {
     pub(super) conversations: Vec<OwnedConversationEntry>,
+    pub(super) scope_filter: Option<RemoteConversationScope>,
     pub(super) selected_id: Option<String>,
     pub(super) selected_entry: Option<OwnedConversationEntry>,
     pub(super) next_after_id: Option<String>,
@@ -167,10 +168,28 @@ fn render_selected_history<W: Write>(state: &TuiState, writer: &mut W) -> Result
 }
 
 fn render_conversations<W: Write>(state: &TuiState, writer: &mut W) -> Result<(), RemoteError> {
-    if state.conversations.is_empty() {
-        writeln!(writer, "  No sessions on this page.").map_err(io_error)?;
+    if let Some(scope) = &state.scope_filter {
+        writeln!(
+            writer,
+            "  Scope filter: {} (organization-only display filter; not authorization or device identity).",
+            scope_filter_label(scope)
+        )
+        .map_err(io_error)?;
     }
-    for entry in &state.conversations {
+    let mut visible = state
+        .conversations
+        .iter()
+        .filter(|entry| scope_filter_matches(&entry.conversation, state.scope_filter.as_ref()))
+        .peekable();
+    if visible.peek().is_none() {
+        let empty_message = if state.scope_filter.is_some() {
+            "  No sessions match this scope filter in the loaded pages."
+        } else {
+            "  No sessions on this page."
+        };
+        writeln!(writer, "{empty_message}").map_err(io_error)?;
+    }
+    for entry in visible {
         let Some(id) = entry.conversation.get("id").and_then(Value::as_str) else {
             continue;
         };
@@ -206,9 +225,15 @@ fn render_selected_entry<W: Write>(state: &TuiState, writer: &mut W) -> Result<(
             .get("title")
             .and_then(Value::as_str)
             .unwrap_or("Untitled");
+        let filter_note = state
+            .scope_filter
+            .as_ref()
+            .filter(|scope| !scope_filter_matches(&entry.conversation, Some(scope)))
+            .map(|_| "; outside current list filter, still selected and openable")
+            .unwrap_or_default();
         writeln!(
             writer,
-            " * {}  {}  [{}]  (version {}, outside loaded pages)",
+            " * {}  {}  [{}]  (version {}, outside loaded pages{filter_note})",
             json_text(selected_id),
             json_text(title),
             conversation_scope_label(&entry.conversation),
@@ -248,9 +273,40 @@ fn render_pending_writes<W: Write>(state: &TuiState, writer: &mut W) -> Result<(
 pub(super) fn write_help<W: Write>(writer: &mut W) -> Result<(), RemoteError> {
     writeln!(
         writer,
-        "Commands: list | next | sync | open ID | older | runs [--before TIME RUN_ID] | timeline RUN_ID [AFTER_SEQUENCE] | create [--scope global|project:ID|group:ID] TITLE | prompt TEXT | retry | quit | quit --discard-pending"
+        "Commands: list | next | filter global|project:ID|group:ID | filter clear | sync | open ID | older | runs [--before TIME RUN_ID] | timeline RUN_ID [AFTER_SEQUENCE] | create [--scope global|project:ID|group:ID] TITLE | prompt TEXT | retry | quit | quit --discard-pending\nThe scope filter only organizes the displayed session list; it is not authorization and does not identify a device. Existing selected sessions remain usable even if they do not match the list filter."
     )
     .map_err(io_error)
+}
+
+pub(super) fn scope_filter_matches(
+    conversation: &Value,
+    filter: Option<&RemoteConversationScope>,
+) -> bool {
+    let Some(filter) = filter else {
+        return true;
+    };
+    let Some(scope) = conversation.get("scope") else {
+        return false;
+    };
+    let kind = scope.get("kind").and_then(Value::as_str);
+    let id = scope.get("id").and_then(Value::as_str);
+    match filter {
+        RemoteConversationScope::Global => kind == Some("global"),
+        RemoteConversationScope::Project(expected_id) => {
+            kind == Some("project") && id == Some(expected_id.as_str())
+        }
+        RemoteConversationScope::Group(expected_id) => {
+            kind == Some("group") && id == Some(expected_id.as_str())
+        }
+    }
+}
+
+pub(super) fn scope_filter_label(filter: &RemoteConversationScope) -> String {
+    match filter {
+        RemoteConversationScope::Global => "global".to_owned(),
+        RemoteConversationScope::Project(id) => format!("project:{}", json_text(id)),
+        RemoteConversationScope::Group(id) => format!("group:{}", json_text(id)),
+    }
 }
 
 fn conversation_scope_label(conversation: &Value) -> String {

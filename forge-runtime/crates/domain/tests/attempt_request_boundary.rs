@@ -255,6 +255,8 @@ fn lifecycle_consumer_gate_rejects_aliases_macros_and_old_test_exemptions() {
     for source in [
         "type Value = forge_runtime_domain::execution::attempt_lifecycle::AttemptLifecycle;",
         "use forge_runtime_domain::execution::{attempt_lifecycle::*};",
+        "use forge_runtime_domain::execution::fabric::*;",
+        "use forge_runtime_domain::execution::fabric as fabric;",
         "use forge_runtime_domain::execution /* hidden */ :: r#attempt_lifecycle as cycle;",
         "use forge_runtime_domain::execution as ex;",
         "use forge_runtime_domain::execution::*;",
@@ -294,12 +296,19 @@ fn lifecycle_consumer_gate_preserves_unrelated_code_and_old_attempt_tests() {
         .is_ok()
     );
     assert!(check_lifecycle_consumer_fixture("use support::{execution, run};", None).is_ok());
+    assert!(
+        check_lifecycle_consumer_fixture(
+            "use forge_runtime_domain::execution::fabric::{ExecutionEvidence, ExecutionTarget};",
+            None,
+        )
+        .is_ok()
+    );
 }
 
 #[test]
 fn lifecycle_reviewed_module_is_exact_and_cannot_be_reused_by_path() {
     let module = Some("crates/domain/src/execution/mod.rs");
-    let declaration = "pub mod attempt; pub mod attempt_lifecycle;";
+    let declaration = "pub mod attempt; pub mod attempt_lifecycle; pub mod fabric;";
     assert!(check_lifecycle_consumer_fixture(declaration, module).is_ok());
     assert!(check_lifecycle_consumer_fixture(declaration, None).is_err());
     for addition in [

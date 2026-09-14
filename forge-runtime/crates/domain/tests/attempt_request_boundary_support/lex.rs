@@ -140,7 +140,16 @@ fn check_consumer_imports(tokens: &[String]) -> Result<(), String> {
             let reaches_attempt = declaration[execution + 1..]
                 .iter()
                 .any(|candidate| candidate == "attempt");
-            if domain_root || matches!(next, Some("::" | "as")) || reaches_attempt {
+            let imports_reviewed_fabric =
+                declaration.windows(3).enumerate().any(|(index, path)| {
+                    path == ["execution", "::", "fabric"]
+                        && !declaration[index + 3..]
+                            .iter()
+                            .any(|candidate| matches!(candidate.as_str(), "*" | "as"))
+                });
+            if !imports_reviewed_fabric
+                && (domain_root || matches!(next, Some("::" | "as")) || reaches_attempt)
+            {
                 return Err(
                     "importing or aliasing the Attempt execution module is outside the proof"
                         .into(),

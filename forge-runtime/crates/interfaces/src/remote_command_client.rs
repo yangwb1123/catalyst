@@ -1,4 +1,4 @@
-use std::{env, time::Duration};
+use std::{env, sync::Arc, time::Duration};
 
 use reqwest::{Client, Url, redirect::Policy};
 use serde::{Deserialize, Serialize};
@@ -10,11 +10,14 @@ use crate::{
 };
 
 use super::{
-    RemoteError, changes::OwnedConversationChangePage, client_auth::access_token_from_env,
-    conversation_has_scope, credentials::ChangeCursorStore, import_payload, parse_api_url,
-    prompt_page, read_json_response, scope_json, validate_conversation_id,
-    validate_conversation_page, validate_entity_id, validate_run_page, validate_run_page_request,
-    validate_run_timeline, validate_timeline_request,
+    RemoteError,
+    changes::OwnedConversationChangePage,
+    client_auth::{SavedTokenProvider, access_token_from_env},
+    conversation_has_scope,
+    credentials::ChangeCursorStore,
+    import_payload, parse_api_url, prompt_page, read_json_response, scope_json,
+    validate_conversation_id, validate_conversation_page, validate_entity_id, validate_run_page,
+    validate_run_page_request, validate_run_timeline, validate_timeline_request,
 };
 
 const PAGE_SIZE: &str = "128";
@@ -97,10 +100,11 @@ pub(super) struct RemoteClient {
     pub(super) base_url: Url,
     pub(super) access_token: String,
     pub(super) change_cursor: Option<ChangeCursorStore>,
+    pub(super) token_refresh: Option<Arc<SavedTokenProvider>>,
 }
 
 impl RemoteClient {
-    pub(super) fn from_env() -> Result<Self, RemoteError> {
+    pub(super) async fn from_env() -> Result<Self, RemoteError> {
         let api_url = env::var("FORGE_API_URL")
             .map_err(|_| RemoteError("FORGE_API_URL is required".into()))?;
         if api_url.len() > 2048 {
@@ -109,7 +113,8 @@ impl RemoteClient {
             ));
         }
         let base_url = parse_api_url(&api_url)?;
-        let (access_token, change_cursor) = access_token_from_env(base_url.as_str())?;
+        let (access_token, change_cursor, token_refresh) =
+            access_token_from_env(base_url.as_str())?;
         if access_token.len() > 8192 {
             return Err(RemoteError(
                 "Forge API configuration exceeds the size limit".into(),
@@ -121,12 +126,17 @@ impl RemoteClient {
             .timeout(Duration::from_secs(15))
             .build()
             .map_err(|_| RemoteError("could not configure the Forge API client".into()))?;
-        Ok(Self {
+        let mut client = Self {
             http,
             base_url,
             access_token,
             change_cursor,
-        })
+            token_refresh,
+        };
+        if let Some(provider) = &client.token_refresh {
+            client.access_token = provider.access_token().await?;
+        }
+        Ok(client)
     }
 
     pub(super) fn endpoint(&self, path: &str) -> Result<Url, RemoteError> {
@@ -139,8 +149,12 @@ impl RemoteClient {
         &self,
         request: reqwest::RequestBuilder,
     ) -> Result<Value, RemoteError> {
+        let access_token = match &self.token_refresh {
+            Some(provider) => provider.access_token().await?,
+            None => self.access_token.clone(),
+        };
         let response = request
-            .bearer_auth(&self.access_token)
+            .bearer_auth(access_token)
             .send()
             .await
             .map_err(|_| RemoteError("Forge API request failed".into()))?;
