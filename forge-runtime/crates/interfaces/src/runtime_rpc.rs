@@ -10,12 +10,15 @@ use forge_runtime_application::HubError;
 use forge_runtime_infrastructure::SqliteHubStore;
 use serde::Serialize;
 
+mod conversation_transport;
 mod owned_operations;
+mod pending_intent_transport;
 mod validation;
 mod wire;
 
 use owned_operations::execute_owned_operation;
 
+use conversation_transport::{ConversationChangesJsonSafe, ConversationTimestampsJsonSafe};
 use validation::{Operation, RpcRequest, validate_request};
 use wire::{
     bound_response, error_response, read_framed_request, snapshot_projection, success_response,
@@ -119,14 +122,11 @@ fn execute_operation(service: &HubService, request_id: &str, operation: Operatio
 
 fn execute_read_operation(service: &HubService, request_id: &str, operation: Operation) -> Vec<u8> {
     match operation {
-        Operation::SnapshotAtCursor => query_response(
-            request_id,
-            service.snapshot_at_cursor().map(snapshot_projection),
-        ),
+        Operation::SnapshotAtCursor => snapshot_response(request_id, service.snapshot_at_cursor()),
         Operation::ChangesAfter {
             after_cursor,
             limit,
-        } => query_response(
+        } => conversation_change_response(
             request_id,
             service.conversation_changes_after(after_cursor, limit),
         ),
@@ -138,7 +138,7 @@ fn execute_read_operation(service: &HubService, request_id: &str, operation: Ope
             request_id,
             service.conversation_prompt_page(&conversation_id, before.as_ref(), limit),
         ),
-        Operation::BootstrapPage { cursor, limit } => query_response(
+        Operation::BootstrapPage { cursor, limit } => conversation_query_response(
             request_id,
             service.conversation_bootstrap_page(cursor.as_ref(), limit),
         ),
@@ -146,10 +146,58 @@ fn execute_read_operation(service: &HubService, request_id: &str, operation: Ope
     }
 }
 
+fn snapshot_response(
+    request_id: &str,
+    result: Result<crate::runtime_domain::HubSnapshotAtCursor, HubError>,
+) -> Vec<u8> {
+    result.map_or_else(
+        |_| error_response(request_id, "query_failed"),
+        |value| {
+            if value.conversation_timestamps_json_safe() {
+                success_response(request_id, snapshot_projection(value))
+            } else {
+                error_response(request_id, "query_failed")
+            }
+        },
+    )
+}
+
+fn conversation_query_response<T>(request_id: &str, result: Result<T, HubError>) -> Vec<u8>
+where
+    T: Serialize + ConversationTimestampsJsonSafe,
+{
+    result.map_or_else(
+        |_| error_response(request_id, "query_failed"),
+        |value| {
+            if value.conversation_timestamps_json_safe() {
+                success_response(request_id, value)
+            } else {
+                error_response(request_id, "query_failed")
+            }
+        },
+    )
+}
+
 fn query_response<T: Serialize>(request_id: &str, result: Result<T, HubError>) -> Vec<u8> {
     result.map_or_else(
         |_| error_response(request_id, "query_failed"),
         |value| success_response(request_id, value),
+    )
+}
+
+fn conversation_change_response<T: Serialize + ConversationChangesJsonSafe>(
+    request_id: &str,
+    result: Result<T, HubError>,
+) -> Vec<u8> {
+    result.map_or_else(
+        |_| error_response(request_id, "query_failed"),
+        |value| {
+            if value.conversation_changes_json_safe() {
+                success_response(request_id, value)
+            } else {
+                error_response(request_id, "query_failed")
+            }
+        },
     )
 }
 

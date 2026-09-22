@@ -21,10 +21,11 @@ fn validate_scope_options(options: &GlobalOptions, command: &Command) -> Result<
 
 fn validate_local_state_scope(options: &GlobalOptions, command: &Command) -> Result<(), String> {
     if options.state_dir.is_some()
-        && matches!(command, Command::Remote(remote) if !matches!(remote, RemoteCommand::SessionsImport { .. }))
+        && (matches!(command, Command::Device(_))
+            || matches!(command, Command::Remote(remote) if !matches!(remote, RemoteCommand::SessionsImport { .. })))
     {
         return Err(format!(
-            "--state-dir is not valid for remote commands\n\n{}",
+            "--state-dir is not valid for this command\n\n{}",
             usage()
         ));
     }
@@ -42,6 +43,7 @@ fn validate_management_scope(options: &GlobalOptions, command: &Command) -> Resu
         && matches!(
             command,
             Command::Prompt(_)
+                | Command::Device(_)
                 | Command::Remote(_)
                 | Command::Governance(_)
                 | Command::Group(_)
@@ -152,7 +154,11 @@ fn accepts_idempotency_key(command: &Command) -> bool {
         command,
         Command::Session(SessionCommand::New { .. })
             | Command::Prompt(PromptCommand::Add { .. })
-            | Command::Remote(RemoteCommand::SessionsCreate { .. } | RemoteCommand::PromptsAdd { .. })
+            | Command::Remote(
+                RemoteCommand::SessionsCreate { .. }
+                    | RemoteCommand::PromptsAdd { .. }
+                    | RemoteCommand::PendingRunIntentSubmit { .. },
+            )
             | Command::Group(
                 GroupCommand::Create { .. }
                     | GroupCommand::Add { .. }
@@ -241,7 +247,9 @@ fn explicit_key_requirement(command: &Command) -> Option<&'static str> {
             ..
         })) => Some("governance journal append requires an explicit --idempotency-key"),
         Command::Remote(
-            RemoteCommand::SessionsCreate { .. } | RemoteCommand::PromptsAdd { .. },
+            RemoteCommand::SessionsCreate { .. }
+            | RemoteCommand::PromptsAdd { .. }
+            | RemoteCommand::PendingRunIntentSubmit { .. },
         ) => Some("remote writes require an explicit --idempotency-key"),
         Command::Run(RunCommand::Start { live: true, .. }) => {
             Some("--live requires an explicit --idempotency-key")

@@ -1,0 +1,45 @@
+{
+  "schema_version": "forge.snaplink-profile/v1",
+  "evaluation_mode": "configuration_parity_only",
+  "issuer": "https://id.example",
+  "audience": "forge-api",
+  "resource": "forge-api",
+  "conversation_scopes": [
+    "forge:conversations:read",
+    "forge:conversations:write"
+  ],
+  "clients": {
+    "cli": {
+      "client_id": "forge-cli",
+      "public": true,
+      "grant_types": [
+        "urn:ietf:params:oauth:grant-type:device_code",
+        "refresh_token"
+      ],
+      "scopes": [
+        "forge:conversations:read",
+        "forge:conversations:write"
+      ]
+    },
+    "console": {
+      "client_id": "forge-console",
+      "public": true,
+      "grant_types": [
+        "authorization_code",
+        "refresh_token"
+      ],
+      "scopes": [
+        "forge:conversations:read",
+        "forge:conversations:write"
+      ]
+    }
+  },
+  "authority": {
+    "issuer_verified": false,
+    "audience_verified": false,
+    "client_provisioned": false,
+    "token_issued": false,
+    "device_authorized": false,
+    "conversation_access_granted": false
+  }
+}

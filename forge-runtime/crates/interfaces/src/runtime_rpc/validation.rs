@@ -12,7 +12,13 @@ use super::{
     WRITE_API_VERSION,
 };
 
+#[path = "validation_headers.rs"]
+mod headers;
 mod owned;
+
+const MAX_SAFE_JSON_INTEGER: u64 = 9_007_199_254_740_991;
+
+pub(super) use headers::{validate_header, validate_write_header};
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
@@ -66,6 +72,12 @@ pub(super) enum RpcRequest {
         after_id: Option<String>,
         limit: usize,
     },
+    GetOwnedConversation {
+        api_version: String,
+        request_id: String,
+        owner: ConversationOwner,
+        conversation_id: String,
+    },
     OwnedConversationPromptPage {
         api_version: String,
         request_id: String,
@@ -91,6 +103,13 @@ pub(super) enum RpcRequest {
         #[serde(default)]
         before_run_id: Option<String>,
         limit: usize,
+    },
+    OwnedRunObservation {
+        api_version: String,
+        request_id: String,
+        owner: ConversationOwner,
+        conversation_id: String,
+        run_id: String,
     },
     OwnedRunTimelinePage {
         api_version: String,
@@ -171,9 +190,11 @@ impl RpcRequest {
         match self {
             Self::CreateOwnedConversation { .. }
             | Self::ListOwnedConversations { .. }
+            | Self::GetOwnedConversation { .. }
             | Self::OwnedConversationPromptPage { .. }
             | Self::OwnedProjectConversationIdentity { .. }
             | Self::OwnedRunPage { .. }
+            | Self::OwnedRunObservation { .. }
             | Self::OwnedRunTimelinePage { .. }
             | Self::OwnedPendingRunIntentPage { .. }
             | Self::OwnedPendingRunIntentTimelinePage { .. }
@@ -222,6 +243,10 @@ pub(super) enum Operation {
         after_id: Option<String>,
         limit: usize,
     },
+    GetOwnedConversation {
+        owner: ConversationOwner,
+        conversation_id: String,
+    },
     OwnedPromptPage {
         owner: ConversationOwner,
         conversation_id: String,
@@ -237,6 +262,11 @@ pub(super) enum Operation {
         conversation_id: String,
         before: Option<OwnedRunCursor>,
         limit: usize,
+    },
+    OwnedRunObservation {
+        owner: ConversationOwner,
+        conversation_id: String,
+        run_id: String,
     },
     OwnedRunTimelinePage {
         owner: ConversationOwner,
@@ -313,9 +343,11 @@ impl Operation {
             self,
             Self::CreateOwnedConversation { .. }
                 | Self::ListOwnedConversations { .. }
+                | Self::GetOwnedConversation { .. }
                 | Self::OwnedPromptPage { .. }
                 | Self::OwnedProjectConversationIdentity { .. }
                 | Self::OwnedRunPage { .. }
+                | Self::OwnedRunObservation { .. }
                 | Self::OwnedRunTimelinePage { .. }
                 | Self::OwnedPendingRunIntentPage { .. }
                 | Self::OwnedPendingRunIntentTimelinePage { .. }
@@ -424,6 +456,9 @@ fn validate_change_request(
     limit: usize,
 ) -> Result<(String, Operation), (String, &'static str)> {
     validate_header(api_version, &request_id)?;
+    if after_cursor > MAX_SAFE_JSON_INTEGER {
+        return Err((request_id, "invalid_cursor"));
+    }
     if !(1..=MAX_CHANGE_LIMIT).contains(&limit) {
         return Err((request_id, "invalid_limit"));
     }
@@ -450,7 +485,7 @@ fn validate_prompt_page_request(
     if conversation_id.trim().is_empty()
         || conversation_id.len() > MAX_HUB_ENTITY_ID_BYTES
         || before.as_ref().is_some_and(|cursor| {
-            cursor.created_at_ms > i64::MAX as u64
+            cursor.created_at_ms > MAX_SAFE_JSON_INTEGER
                 || cursor.prompt_id.trim().is_empty()
                 || cursor.prompt_id.len() > MAX_HUB_ENTITY_ID_BYTES
         })
@@ -465,34 +500,4 @@ fn validate_prompt_page_request(
             limit,
         },
     ))
-}
-
-fn validate_header(api_version: &str, request_id: &str) -> Result<(), (String, &'static str)> {
-    validate_header_for_version(api_version, request_id, API_VERSION)
-}
-
-fn validate_write_header(
-    api_version: &str,
-    request_id: &str,
-) -> Result<(), (String, &'static str)> {
-    validate_header_for_version(api_version, request_id, WRITE_API_VERSION)
-}
-
-fn validate_header_for_version(
-    api_version: &str,
-    request_id: &str,
-    expected_version: &str,
-) -> Result<(), (String, &'static str)> {
-    if request_id.is_empty()
-        || request_id.len() > MAX_REQUEST_ID_BYTES
-        || !request_id
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
-    {
-        return Err(("invalid".into(), "invalid_request_id"));
-    }
-    if api_version != expected_version {
-        return Err((request_id.to_owned(), "unsupported_version"));
-    }
-    Ok(())
 }

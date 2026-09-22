@@ -1,0 +1,152 @@
+{
+  "schema_version": "forge.pending-write-recovery/v1",
+  "evaluation_mode": "pure_metadata_projection",
+  "authority": {
+    "body_included": false,
+    "run_created": false,
+    "network_contacted": false,
+    "persistence_written": false
+  },
+  "cases": [
+    {
+      "name": "prompt_pending_before_attempt",
+      "metadata": {
+        "operation": "append_prompt",
+        "conversation_id": "conversation-001",
+        "expected_version": 7,
+        "idempotency_key": "prompt-key-001",
+        "state": "pending",
+        "attempted_at_ms": null,
+        "last_observed_at_ms": null
+      },
+      "expected": {
+        "accepted": true,
+        "operation": "append_prompt",
+        "conversation_id": "conversation-001",
+        "expected_version": 7,
+        "idempotency_key": "prompt-key-001",
+        "state": "pending",
+        "pending": true,
+        "unconfirmed": false,
+        "retry_allowed": true,
+        "same_key_required": true,
+        "reconcile_before_retry": false,
+        "attempted_at_ms": null,
+        "last_observed_at_ms": null
+      }
+    },
+    {
+      "name": "prompt_unconfirmed_after_transport_failure",
+      "metadata": {
+        "operation": "append_prompt",
+        "conversation_id": "conversation-001",
+        "expected_version": 7,
+        "idempotency_key": "prompt-key-002",
+        "state": "unconfirmed",
+        "attempted_at_ms": 1000,
+        "last_observed_at_ms": 1050
+      },
+      "expected": {
+        "accepted": true,
+        "operation": "append_prompt",
+        "conversation_id": "conversation-001",
+        "expected_version": 7,
+        "idempotency_key": "prompt-key-002",
+        "state": "unconfirmed",
+        "pending": true,
+        "unconfirmed": true,
+        "retry_allowed": true,
+        "same_key_required": true,
+        "reconcile_before_retry": true,
+        "attempted_at_ms": 1000,
+        "last_observed_at_ms": 1050
+      }
+    },
+    {
+      "name": "conversation_create_unconfirmed_without_body",
+      "metadata": {
+        "operation": "create_conversation",
+        "conversation_id": null,
+        "expected_version": null,
+        "idempotency_key": "conversation-key-001",
+        "state": "unconfirmed",
+        "attempted_at_ms": 2000,
+        "last_observed_at_ms": 2000
+      },
+      "expected": {
+        "accepted": true,
+        "operation": "create_conversation",
+        "conversation_id": null,
+        "expected_version": null,
+        "idempotency_key": "conversation-key-001",
+        "state": "unconfirmed",
+        "pending": true,
+        "unconfirmed": true,
+        "retry_allowed": true,
+        "same_key_required": true,
+        "reconcile_before_retry": true,
+        "attempted_at_ms": 2000,
+        "last_observed_at_ms": 2000
+      }
+    },
+    {
+      "name": "prompt_pending_with_caller_observation_time",
+      "metadata": {
+        "operation": "append_prompt",
+        "conversation_id": "conversation-002",
+        "expected_version": 0,
+        "idempotency_key": "prompt-key-003",
+        "state": "pending",
+        "attempted_at_ms": 3000,
+        "last_observed_at_ms": 3000
+      },
+      "expected": {
+        "accepted": true,
+        "operation": "append_prompt",
+        "conversation_id": "conversation-002",
+        "expected_version": 0,
+        "idempotency_key": "prompt-key-003",
+        "state": "pending",
+        "pending": true,
+        "unconfirmed": false,
+        "retry_allowed": true,
+        "same_key_required": true,
+        "reconcile_before_retry": false,
+        "attempted_at_ms": 3000,
+        "last_observed_at_ms": 3000
+      }
+    },
+    {
+      "name": "rejects_regressed_observation_time",
+      "metadata": {
+        "operation": "append_prompt",
+        "conversation_id": "conversation-001",
+        "expected_version": 7,
+        "idempotency_key": "prompt-key-004",
+        "state": "unconfirmed",
+        "attempted_at_ms": 5000,
+        "last_observed_at_ms": 4999
+      },
+      "expected": {
+        "accepted": false,
+        "error": "observation_time_regressed"
+      }
+    },
+    {
+      "name": "rejects_unknown_state",
+      "metadata": {
+        "operation": "append_prompt",
+        "conversation_id": "conversation-001",
+        "expected_version": 7,
+        "idempotency_key": "prompt-key-005",
+        "state": "sent",
+        "attempted_at_ms": null,
+        "last_observed_at_ms": null
+      },
+      "expected": {
+        "accepted": false,
+        "error": "invalid_state"
+      }
+    }
+  ]
+}

@@ -2953,9 +2953,9 @@ focused evidence：Rust SQLite 页测试 3/3（Conversation 隔离、同时间�
 
 用户已批准个人单账号、单一逻辑 Coordinator 下的跨端会话和后续多设备执行路线。该批准已同步到 `.agent/ROADMAP.md`、cross-device plan、产品蓝图/实施计划与功能交互设计；它是产品实施授权，不是 ADR v2 lifecycle acceptance。ADR-0113 以 strict Proposed-only v2 candidate 记录 Snaplink principal、私有 HTTPS 部署边界、Rust Hub Conversation owner 与 owner-filtered query/write contract，字段 `status=proposed`、`accepted_at_unix_ms=null`、`acceptance_id=null` 必须保持不变。
 
-已实现切片：Rust Hub v32 新增 exact `(issuer, subject, tenant_id)` owner 表；v30 既有会话保持无 owner，网络 API 不返回、不自动 claim。Go App Server 经 Snaplink resource-server 验证 JWT 与 `forge:conversations:read/write` scopes，从已验证 claims 构造 owner；session API 配置必须 pin 唯一 Coordinator tenant/subject，防止同租户其他账号通过已知 Project/Group ID 污染本地 scoped views。支持有界 Global/Project/Group 会话列表与创建、历史分页、Prompt 幂等追加和 `GET /api/v1/conversation-changes` owner-filtered replay feed，Rust Runtime RPC v2 在 Hub 事务中重复验证 owner，Prompt append 使用 aggregate-version CAS。Conversation scope 只是组织信息：每次读写仍限制在精确 owner，Group 成员不会获得他人会话，Project scope 不授予执行权限。Replay feed 使用 v32 每个精确 owner 独立的 dense cursor，Hub global journal cursor 只在服务端内部映射校验；foreign-owner activity 不改变其他 owner 的 head/游标。迁移从既有 owned changes 回填 owner-local 序列，legacy ownerless 会话不进入 feed。Page 只含 ID 元数据；CLI 有 `remote changes list`，TUI 有 `sync`，Console 每 15 秒轮询最多四个 128-row page；CLI/TUI 使用本地 owner-bound 检查点，Flutter Console 在 Web/native 平台持久化 owner-bound cursor。Flutter history DTO 校验 owner、排序、cursor 与 256 KiB 内容预算，并接受合法的 byte-budget partial page。客户端均无 live stream。Go/Flutter 校验 dense continuity、scanned cursor、empty page 不推进及 change-feed `has_more` 页长约束。指定的 `~/workspace/demo/snaplink` 已提供通用 RFC 8628 设备授权端点、需认证的审批、client-bound polling、`slow_down` 和可配置 DeviceCodeStore；后续续段已添加 Forge CLI/Console public-client 源配置和 CLI device login。CLI 仅存 access token、未接 refresh rotation 或 OS keychain；Console token 独立存于 tab-scoped session storage。源配置 race 测试验证 device/client 同账号 owner tuple 与 Forge audience 相同，但不证明 live deployment 已加载配置。远程监听要求显式私网地址、TLS 和会话配置；Web CORS 只接受显式 exact Origin，并允许有限方法/headers。Prompt 目前只固化 Rust-owned user Prompt，不创建 Run intent、不声称任务已执行；Run intent 还要服务端 Project consent/grant 与执行 profile。完整跨端 journey 未交付，P1/P2 仍开放。
+已实现切片：Rust Hub v32 新增 exact `(issuer, subject, tenant_id)` owner 表；v30 既有会话保持无 owner，网络 API 不返回、不自动 claim。Go App Server 经 Snaplink resource-server 验证 JWT 与 `forge:conversations:read/write` scopes，从已验证 claims 构造 owner；session API 配置必须 pin 唯一 Coordinator tenant/subject，防止同租户其他账号通过已知 Project/Group ID 污染本地 scoped views。支持有界 Global/Project/Group 会话列表与创建、历史分页、Prompt 幂等追加和 `GET /api/v1/conversation-changes` owner-filtered replay feed，Rust Runtime RPC v2 在 Hub 事务中重复验证 owner，Prompt append 使用 aggregate-version CAS。Conversation scope 只是组织信息：每次读写仍限制在精确 owner，Group 成员不会获得他人会话，Project scope 不授予执行权限。Replay feed 使用 v32 每个精确 owner 独立的 dense cursor，Hub global journal cursor 只在服务端内部映射校验；foreign-owner activity 不改变其他 owner 的 head/游标。迁移从既有 owned changes 回填 owner-local 序列，legacy ownerless 会话不进入 feed。Page 只含 ID 元数据；CLI 有 `remote changes list`，TUI 有 `sync`，Console 每 15 秒轮询最多四个 128-row page；CLI/TUI 使用本地 owner-bound 检查点，Flutter Console 在 Web/native 平台持久化 owner-bound cursor。Flutter history DTO 校验 owner、排序、cursor 与 256 KiB 内容预算，并接受合法的 byte-budget partial page。客户端均无 live stream。Go/Flutter 校验 dense continuity、scanned cursor、empty page 不推进及 change-feed `has_more` 页长约束。指定的 `~/workspace/demo/snaplink` 已提供通用 RFC 8628 设备授权端点、需认证的审批、client-bound polling、`slow_down` 和可配置 DeviceCodeStore；后续续段已添加 Forge CLI/Console public-client 源配置和 CLI device login。Sprint 156 原始切片中的 CLI 仅存 access token；2026-09-14 continuation 增加 Linux/macOS refresh rotation 与系统 keyring（见 §45）；Console token 独立存于 tab-scoped session storage。源配置 race 测试验证 device/client 同账号 owner tuple 与 Forge audience 相同，但不证明 live deployment 已加载配置。远程监听要求显式私网地址、TLS 和会话配置；Web CORS 只接受显式 exact Origin，并允许有限方法/headers。Prompt 目前只固化 Rust-owned user Prompt，不创建 Run intent、不声称任务已执行；Run intent 还要服务端 Project consent/grant 与执行 profile。完整跨端 journey 未交付，P1/P2 仍开放。
 
-Rust CLI 已有 `remote login`、`remote sessions list/create`、`remote prompts list/add` 和交互式 `remote tui`，覆盖 Snaplink RFC 8628 登录、会话分页浏览、历史查看、创建和 Prompt 提交/重试。CLI/TUI 通过同一 coordinator API 工作；`FORGE_ACCESS_TOKEN` 可作显式 override，登录 token 仅以 Unix 权限保护的文件保存，没有 refresh token 或 OS keychain。Prompt append 仍要求 expected-version 与幂等键，且只写入 Prompt，不创建 Run。远程 CLI/TUI 新建会话目前默认 Global；authenticated API 已支持 Global/Project/Group owner 私有 scope，但 CLI/TUI 仍缺少 scope 选择和远端 scope 浏览。这些仍不代表完整 CLI/TUI 产品旅程已交付。
+Rust CLI 已有 `remote login`、`remote sessions list/create`、`remote prompts list/add` 和交互式 `remote tui`，覆盖 Snaplink RFC 8628 登录、会话分页浏览、历史查看、创建和 Prompt 提交/重试。CLI/TUI 通过同一 coordinator API 工作；`FORGE_ACCESS_TOKEN` 可作显式 override，access token 仍保存在 Unix 权限保护文件；Linux/macOS 通过系统 Keychain/Secret Service 续期，其他 CLI 平台仍不支持安全持久 refresh。Prompt append 仍要求 expected-version 与幂等键，且只写入 Prompt，不创建 Run。远程 CLI/TUI 新建会话目前默认 Global；authenticated API 已支持 Global/Project/Group owner 私有 scope，但 CLI/TUI 仍缺少 scope 选择和远端 scope 浏览。这些仍不代表完整 CLI/TUI 产品旅程已交付。
 
 Flutter Console 在 `/forge/` 增加部分会话界面：列表/创建、分页 Prompt history、Prompt append 与同请求幂等重试；它复用现有 Snaplink 登录并请求 `forge:conversations:read/write` scopes。最新 Console 定向测试 12/12、`flutter analyze` 通过。Rust fmt/strict-Clippy 通过；CLI all-targets 的 288 个单测曾全部通过，最终复跑通过 286 个、跳过先前已通过的两项长压力测试且所有 integration targets 通过；Infrastructure 430 个单测、全部 integration/doc targets 通过。该 Console 切片没有 Run timeline、任务执行、设备库存或调度，也不能代表原生 App/Mobile 或统一多端接受旅程。
 
@@ -3158,7 +3158,7 @@ The full Snaplink repository acceptance gates remain incomplete: all-package `go
 
 #### 2026-09-13 continuation — local-only Runtime process Execution Fabric ABI v1
 
-The existing Runtime `exec_command` call now enters a local-only `ExecutionTarget` adapter through a versioned in-memory `ExecutionAttempt`. The attempt is correlated to the already-emitted `ToolStarted` sequence, requires the `current_runtime_only` `local` alias, declares `Process` as potentially side-effecting and mobility as pinned, and carries explicit `environment_digest: not_captured` plus empty ArtifactRef arrays. The AttemptRef represents one local tool invocation only; it is not a cross-instance identity, retry generation, or fencing ID. ArtifactRef is declared content-addressed metadata, not proof that a CAS object exists or matches; the local adapter rejects nonempty ArtifactRef arrays. A local process Evidence value records the captured exit code/output size and is explicitly only an in-process observation; the AgentTool output/event schema cannot carry it, so the adapter currently drops it and does not persist it. The existing ToolStarted/ToolFinished journal remains the only persisted lifecycle; the AgentTool output/event schema, direct argv dispatch, workspace anchoring, environment filter, output bounds, cancellation and uncertain-effect handling are unchanged. No remote target variant, registry, transport, scheduler, or connection code is loaded.
+The existing Runtime `exec_command` call now enters a local-only `ExecutionTarget` adapter through a versioned in-memory `ExecutionAttempt`. The attempt is correlated to the already-emitted `ToolStarted` sequence, requires the `current_runtime_only` `local` alias, declares `Process` as potentially side-effecting and mobility as pinned, and carries explicit `environment_digest: not_captured` plus empty ArtifactRef arrays. This records the earlier persistence slice; the bounded environment capture is now delivered in the 2026-09-16 continuation below. The AttemptRef represents one local tool invocation only; it is not a cross-instance identity, retry generation, or fencing ID. ArtifactRef is declared content-addressed metadata, not proof that a CAS object exists or matches; the local adapter rejects nonempty ArtifactRef arrays. A local process Evidence value records the captured exit code/output size and is explicitly only an in-process observation; the AgentTool output/event schema cannot carry it, so the adapter currently drops it and does not persist it. The existing ToolStarted/ToolFinished journal remains the only persisted lifecycle; the AgentTool output/event schema, direct argv dispatch, workspace anchoring, environment filter, output bounds, cancellation and uncertain-effect handling are unchanged. No remote target variant, registry, transport, scheduler, or connection code is loaded.
 
 Validation: the ABI v1 fixture covers target, attempt, digest state, effect/mobility, Evidence and ArtifactRef shape; domain contract tests pass (4), exec-command behavior/boundary tests pass (20), and the application coding-agent integration passes (1), including the unchanged ToolStarted/ToolFinished events. This closes only the process-call adapter slice. Other Runtime operations do not yet route through Fabric; the generated Evidence is not persisted, environment is not fingerprinted, and workspace changes are not captured as CAS artifacts. Therefore ADR-0039 §14 step 0 remains open, as do device inventory, resource scheduling and remote execution under their separate ADR/security gates.
 
@@ -3191,9 +3191,4596 @@ Validation: `go test ./internal/deviceplacement`, its `go vet`, Rust `placement_
 
 Validation: the TUI tests cover exact scope/ID matches, an empty 128-row first page followed by a second-page match using the unchanged `after_id`, clear-and-reveal behavior, and opening a selected Conversation outside the filter. `cargo test -p forge-runtime-cli remote_tui` passes (4 tests); strict CLI Clippy, workspace formatting, and diff checks pass. P2 remains partial; details are in [cross-device implementation plan](../docs/design/ai-engineering-os/cross-device-session-and-fabric-plan.md) §43.
 
+#### 2026-09-14 continuation — CLI/TUI refresh-token persistence and rotation
 
-#### 2026-09-13 continuation — Android/iOS Forge credential persistence
+Saved Forge credentials now refresh through Snaplink's public `refresh_token` grant in CLI commands and long-lived TUI requests. Linux Secret Service/macOS Keychain hold the refresh token; the access credential remains in the existing private Unix file. Refresh happens within 60 seconds of expiry, keyring work runs on Tokio's blocking pool, and no API write is replayed after `401`. A per-account, validated Unix `flock` serializes login replacement and token rotation across separate CLI/TUI processes; each waiter rereads the current credential before deciding to exchange. The new refresh token is verified before the access-token file is replaced, and `invalid_grant` clears the old keyring value.
+
+The Snaplink distributed profile now allows `refresh_token` for `forge-cli` and configures a 5-second, Redis-backed rotation grace for immediate ambiguous-response retries across replicas. This profile change is source-only, not deployed; the grace does not recover a lost response after five seconds. A failed credential-file write during re-login restores the prior refresh token. Linux requires a usable D-Bus Secret Service. Persistent CLI/TUI login is currently supported only on Linux/macOS; unsupported targets fail closed and can use an explicit `FORGE_ACCESS_TOKEN` override without refresh.
+
+Validation: CLI client-auth tests (3), credential tests (8), and device-login tests (8) pass; `cargo check -p forge-runtime-cli --all-targets` passes; Snaplink's distributed-profile loader test passes. These tests use local fixtures, not live Snaplink or an OS keychain. No physical-device check was performed. Web/App/Mobile lifecycle and delivery remain incomplete, and the existing authorization gates still prohibit live device enrollment, inventory, scheduling, and dispatch. See plan §45.
+
+#### 2026-09-14 continuation — Flutter desktop Forge credential persistence
+
+Extended the Console's existing versioned secure Forge credential record and cold-start restore path from Android/iOS to Linux/macOS/Windows. macOS now has the Keychain entitlements required by the plugin and stores credentials as device-bound Keychain items. Web continues to use tab-scoped `sessionStorage`; unsupported targets and secure-storage failures fail closed. Updated Forge session docs cover libsecret/Secret Service runtime requirements on Linux and ATL for Windows builds.
+
+Validation: platform policy, credential-store, token-refresh, and OAuth client-selection suites pass (20 tests); `flutter analyze --no-pub` is clean; the `/forge/` Web build and Android debug APK build succeed. Linux desktop build stops because `libsecret-1>=0.18.4` is missing. macOS/Windows build and real OS keychain integration remain unverified. This improves Console cold-start continuity only; live instance inventory, resource discovery, scheduling, and dispatch remain gated by ADR-0039, and ADR-0114 remains Proposed/null. See plan §46.
+
+#### 2026-09-14 continuation — periodic Forge snapshot recovery
+
+The Flutter Forge screen now retries a previously failed Conversation snapshot after a successful periodic owner change-feed read. A temporary initial network outage can therefore recover the session list without requiring manual refresh; existing state and cursor safety rules remain unchanged. The regression widget test covers the failed initial snapshot, later feed success, and automatic recovery. No Run write, device inventory, scheduling, or dispatch was added. See plan §47.
+
+#### 2026-09-14 continuation — remote CLI stdin Prompt submission
+
+`forge-runtime remote prompts add CONVERSATION_ID --expected-version N -` now reads bounded UTF-8 Prompt content from stdin. The sole marker preserves multiline text and avoids argv/shell-history disclosure; empty, invalid UTF-8, oversized, or mixed marker input fails before the API call. Existing idempotency, CAS, owner authorization, and storage-only Prompt semantics are unchanged.
+
+Validation: all 101 remote CLI/TUI tests pass, including stdin bounds and multiline request checks; `cargo check -p forge-runtime-cli --all-targets`, strict CLI Clippy, and workspace formatting pass. No Run, device inventory, scheduling, or dispatch path was added. See plan §48.
+
+#### 2026-09-14 continuation — offline Forge Conversation metadata recovery
+
+Flutter Console now keeps a bounded owner-bound snapshot of the last successful Conversation list for temporary network failures. Only IDs, scope, title, timestamps, and aggregate version are cached; Prompt bodies, Run data, tokens, and owner claims are excluded. A stale/offline banner marks fallback data, successful network reads replace it, opaque tokens disable the cache, and Forge sign-out clears the current owner's snapshot. Cache validation rejects unknown fields, invalid metadata, duplicate/misordered IDs, oversized records, and binding mismatches. Focused cache/widget tests and `flutter analyze --no-pub` pass. This is read continuity only; device inventory, scheduling, dispatch, and execution remain gated by ADR-0039/ADR-0114. See plan §49.
+
+#### 2026-09-14 continuation — Flutter desktop refresh-token process lock
+
+Flutter Linux/macOS/Windows refresh rotation now takes a per-client application-support `FileLock`, reloads secure credentials under that lock, and lets a waiting process reuse the winner's successor token instead of consuming a single-use refresh token twice. Web and Mobile keep their process/tab-scoped no-op lock. Lock and secure-store failures fail closed; injected lock/backend seams keep tests deterministic.
+
+Validation: the full Flutter test suite passes with 3 skipped, `flutter analyze --no-pub` is clean, the `/forge/` Web build and Android debug APK build succeed, and the focused refresh/credential tests cover serialized actions and stale-record reload. Real macOS/Windows multi-process/keychain runs remain unverified; Linux still needs libsecret and Secret Service. This remains session continuity only; device inventory, scheduling, dispatch, and execution stay gated by ADR-0039/ADR-0114. See plan §50.
+
+#### 2026-09-15 continuation — bounded Forge GET read retries
+
+The Flutter Forge API now retries only idempotent GET reads after transport failures or HTTP 408/425/429/5xx responses, at most three attempts with 50 ms and 100 ms backoff. Conversation and Prompt POST writes keep one-request transient behavior; their explicit retry state reuses the same idempotency key, while an existing one-time 401 refresh retry remains available. Tests verify transient read recovery and exactly one request for a failed write.
+
+Validation: `flutter analyze --no-pub`, the full Flutter suite with 3 skipped, the `/forge/` Web build, Android debug APK build, Dart formatting, and diff checks pass. This changes read convergence only; owner authorization, Prompt/Run semantics, device inventory, scheduling, dispatch, and execution remain gated by ADR-0039/ADR-0114. See plan §51.
+
+#### 2026-09-15 continuation — bounded Rust CLI/TUI GET read retries
+
+Rust remote CLI/TUI GET calls now retry only replay-safe session reads after transport/read failures or HTTP 408, 425, 429, and 5xx responses. The bounded policy allows three total attempts with 50 ms and 100 ms backoff. Conversation and Prompt POST writes remain single-attempt for transient responses; the TUI preserves the exact body, CAS version, and idempotency key for explicit recovery, and 401 still never causes API replay.
+
+Request tests cover authenticated recovery after a transient read response and assert that a failed Prompt write is sent once. Existing TUI failure fixtures cover bounded retry exhaustion while retaining selected history and change-cursor behavior. `cargo test -p forge-runtime-cli --bin forge-runtime remote_` passes (103 tests), strict CLI Clippy and workspace formatting pass. This changes read continuity only; device inventory, scheduling, dispatch, and execution remain gated by ADR-0039/ADR-0114. See plan §52.
+
+#### 2026-09-15 continuation — Flutter pagination, credential lock, and response status closure
+
+The Flutter Forge session list preserves its existing `after_id` when a
+load-more read fails; only a first-page cache fallback clears pagination state,
+so a later retry requests the same page. Desktop Linux/macOS/Windows
+credential-store restore, login writes, clears, and refresh rotation now share
+one per-client `FileLock` through a non-reentrant lock-owned scope. Login and
+sign-out wait for an in-flight rotation, while Web/Mobile keep no-op locks.
+The Flutter transport preserves the received HTTP status for malformed,
+oversized, and unreadable response bodies; transient 5xx responses still use
+bounded GET retries and malformed 401 responses still enter one-time refresh.
+A failed secure-store reload clears the in-memory Forge slot before another
+request can use it.
+
+Widget, credential, refresh, and API resilience tests cover these paths.
+`flutter analyze --no-pub`, the full Flutter suite (1,443 passed, 3 skipped),
+Web build, Android debug APK build, formatting, focused tests, and
+`git diff --check` pass. Real macOS/Windows multi-process/keychain runs remain
+unverified; Linux still needs libsecret and Secret Service. This remains
+session/read continuity only; device inventory, scheduling, dispatch, and
+execution stay gated by ADR-0039/ADR-0114. See plan §53.
+
+#### 2026-09-16 continuation — Agent session request history
+
+Agent operations now has an instance-pinned, bounded request-history dialog
+for Hub-accepted session creation and close operations. It uses one
+authenticated GET with strict DTO/status/error validation, opaque pagination,
+instance and duplicate checks, and a 256 KiB response bound. Read-only detail
+refresh and explicit open validate the request/session/instance binding;
+history never retries or replaces locally unconfirmed POST state. Authorization
+or selection changes clear late responses, while 404/405/501 older Hub routes
+are reported as unsupported.
+
+The current shared Flutter worktree passes `flutter test --no-pub` (1509
+passed, 3 skipped) and `flutter analyze --no-pub`. The isolated verification
+record remains historical and documents MockClient/Chrome evidence only. This
+is Agent Hub history UI, not Forge Conversation authority, device inventory,
+scheduling, or dispatch; ADR-0039 remains in force and ADR-0114 remains
+Proposed/null. See plan §54.
+
+#### 2026-09-16 continuation — Forge stale-state closure and Local ABI environment digest
+
+The Forge session screen now clears the visible Conversation, selection, and
+Prompt/Run details after a deterministic first-page API or response error;
+only transport failures and HTTP 5xx retain the owner-bound offline metadata
+fallback. A failed load-more page preserves the confirmed first page and its
+cursor so the same page can be retried. A feed 401/403 ends any in-flight
+initial snapshot loading, invalidates late responses, clears credentials, and
+leaves a sign-in error instead of a permanent spinner. Widget regressions
+cover deterministic first-page errors, feed authorization races, pagination
+cursor preservation, and newer feed versions winning over late older pages.
+
+ADR-0039 §14 Local ABI Step 0 now captures a bounded, deterministic
+domain-separated SHA-256 digest of a fixed safe environment allowlist. The
+allowlist excludes credential/token/key/secret/password/auth names, uses one
+canonical sorted manifest, rejects duplicate or invalid UTF-8 names, missing
+`PATH`, oversized values/manifests, and serialization failures as
+`NotCaptured`, and gives the command the exact snapshot used for the digest.
+The work directory remains outside the digest and is governed by existing
+workspace/cwd checks. The slice remains local-only with empty ArtifactRefs;
+there is no CAS, device registration/heartbeat, inventory, scheduler,
+reservation, dispatch, network, or remote execution.
+
+Validation: Flutter `flutter test --no-pub` **1509 passed, 3 skipped** and
+`flutter analyze --no-pub` clean; Forge/Agent focused tests 22/22. Rust
+infrastructure 456/456, domain fabric 5/5, environment/fabric targeted
+10/10, format and focused Clippy pass. The broader infrastructure Clippy
+command still has five pre-existing `needless_borrow` warnings in
+`sqlite_hub/owned_run_read.rs`. See cross-device plan §§54–55.
+The repository-wide `node harness/gate.mjs` remains BLOCKED by 12 existing or
+expanded files over the 500-line limit; this continuation did not include that
+file-size refactor.
+
+#### 2026-09-16 continuation — Local ABI validation convergence
+
+The Local ABI validation now has one Rust domain owner. `EnvironmentDigest`
+validates the bounded SHA-256/entry-count/reason representation, and the
+infrastructure adapter reuses that validator. `ExecutionEvidence::validate_local`
+binds ABI/source, the current local target, exact Run identity, adjacent
+`ToolStarted` sequence, truncation state, and rendered output byte count; the
+Run journal invokes it before accepting `ToolFinished` evidence. Invalid UTF-8
+environment names fail closed as `NotCaptured`.
+
+Validation: domain Fabric 6/6, Run-journal transcript 15/15, infrastructure
+environment/fabric targeted tests, infrastructure **456/456**, strict domain
+Clippy, and workspace formatting pass. This remains local ABI/evidence
+validation only; it does not add device enrollment, heartbeat, inventory,
+placement, reservation, scheduling, CAS artifacts, or remote execution.
+ADR-0039 remains in force and ADR-0114 remains Proposed/null. See plan §57.
+
+
+#### 2026-09-16 continuation — Shared-session response contract fixture
+
+Added `docs/contracts/fixtures/forge-shared-session-v1.json` to freeze the
+owner-scoped Conversation list, newest-first Prompt history, dense owner-local
+change feed, and storage-only Prompt append receipt. Go Runtime bridge
+validators, Rust CLI/TUI decoders, and Flutter Console models all validate the
+same fixture through `scripts/test-forge-contracts.sh`, including exact fields,
+Conversation identity, cursor order, aggregate versions, and user Prompt
+role. The fixture is a contract guard and does not create Runs, pending
+intents, device records, inventory, reservations, scheduling, or dispatch.
+
+Validation: the cross-repository contract script passes its Go, Rust, and
+Flutter checks. The Rust invocation is scoped to the CLI binary and domain
+library contract targets so unrelated broken integration test targets do not
+mask this contract result. The new Go test is 58 lines and no production Go
+file changed; `go build ./...`, `go vet ./...`, and
+`go test ./... -run 'TestMaintainability_|TestArchitecture_'` pass. The
+Console repository exposes `python3 cli.py check` rather than a `quality`
+command; that check still reports its existing oversized Flutter files (and
+ignored `.pi-batch` worktrees) while `flutter analyze --no-pub` remains clean.
+ADR-0039 remains in force and ADR-0114 remains Proposed/null. See plan §56.
+
+
+#### 2026-09-13 continuation — Android/iOS Forge credential persistence (historical; desktop behavior superseded by §46)
 
 Forge OAuth credentials now use one versioned secure-storage record on Android/iOS. Login waits for write-and-readback, the Forge route gate restores the record asynchronously after cold start, and refresh rotation persists before replacing the in-memory credential. Forge sign-out revokes the freshest access/refresh tokens best-effort and clears only the Forge slot; app-wide session cleanup also removes that record. Android backup is disabled, while iOS uses this-device-only Keychain accessibility and Runner entitlements. Web keeps its Forge tab-scoped `sessionStorage`; Linux/macOS/Windows still use process memory.
 
 Validation: the full Flutter test suite passes (2,235 tests), `flutter analyze --no-pub` is clean, and an Android debug APK builds successfully. The secure-store tests cover write-before-cache, cold restore, wrong-client rejection and cleanup, refresh rotation, and global cleanup while preserving the separate Admin slot. iOS compilation and physical-device lifecycle behavior were not tested. This adds no API or server behavior and does not enable live inventory or dispatch; ADR-0039 remains in force and ADR-0114 remains Proposed/null. Details are in [cross-device implementation plan](../docs/design/ai-engineering-os/cross-device-session-and-fabric-plan.md) §44.
+
+#### 2026-09-16 continuation — Shared-session and Local ABI gate convergence
+
+The shared owner-scoped session fixture now drives exact-field, identity,
+cursor, aggregate-version, and append-role checks in Go Runtime bridge, Rust
+CLI/TUI, and Flutter Console. The live Go App Server → Rust Hub journey was
+rerun with independent clients: Flutter's API service and `ForgeSessionsGate`
+screen, the Rust CLI, and the Rust TUI read and append the same Conversation.
+The Flutter live harness now injects an in-memory credential store so it does
+not require the host platform secure-store/file-lock plugin; production
+credential behavior remains unchanged. The request recorder rejects Run-intent,
+device, placement, scheduling, and dispatch calls.
+
+The Rust file-size split is complete and `node harness/gate.mjs` is green:
+4,245 files, zero violations. Go build, vet, full tests, and the live shared
+session E2E pass; Rust workspace no-run compilation, CLI 386 tests,
+infrastructure 457 tests, SQLite Run-store 12 tests, Run-journal transcript 15
+tests, strict CLI/domain/infrastructure Clippy, formatting, and the shared
+contract script pass. Flutter `flutter test --no-pub` reports **1,578 passed,
+4 skipped**, and `flutter analyze --no-pub` is clean. The Console's
+`python3 cli.py check` still reports its existing oversized Flutter files and
+ignored `.pi-batch` worktrees even though analysis and tests pass.
+
+This remains session/Prompt/read-only Run and local ABI evidence work. No live
+device enrollment, heartbeat, inventory, reservation, scheduler, placement
+authority, or remote execution was added; browser deployment, native App/Mobile
+OAuth, and physical-device evidence remain open. ADR-0039 is still
+planning-only and ADR-0114 remains Proposed/null. See cross-device plan §58.
+
+#### 2026-09-16 continuation — Offline device-resource observation contract
+
+Added `forge-device-inventory-observation-v1`, a strict caller-supplied,
+read-only resource observation fixture. It carries the owner and instance
+declarations, approval/cordon/liveness, fixed timestamps, CPU/memory/storage,
+runtime/GPU, residency/trust/sandbox, and concurrency fields while requiring
+unverified markers and false execution/reservation/dispatch authority bits.
+Go validates and projects the rows through the existing offline placement
+comparison; the Rust device-registry reference maps the same rows to typed
+candidates; Flutter adds `ForgeDeviceInventoryPage` for exact read-only
+decoding. No API route or persistence is involved.
+
+Validation: `scripts/test-forge-contracts.sh` passes the Go, Rust, and Flutter
+inventory consumers; the targeted Flutter model test and analyze pass, Rust
+format and the targeted domain test pass, and repository diff checks are clean.
+This remains P3a offline contract work. It does not prove device identity,
+freshness, liveness, or schedulability and does not add enrollment, heartbeat,
+inventory persistence, reservation, scheduling, dispatch, or execution. ADR-
+0039 remains planning-only and ADR-0114 remains Proposed/null. See plan §59.
+
+#### 2026-09-16 continuation — Owner-bound Conversation detail
+
+The authenticated shared-session surface now has a read-only
+`GET /api/v1/conversations/{conversation_id}` projection. Go passes only the
+verified issuer/subject/tenant tuple to Rust, SQLite joins the owner record,
+and missing and foreign IDs share the sanitized `not_found` result. The
+Runtime bridge rejects malformed or expanded detail responses, and the shared
+session fixture now covers list, detail, Prompt history, dense change feed, and
+Prompt append receipt.
+
+CLI adds `remote sessions show CONVERSATION_ID`; TUI re-reads the selected
+entry before refreshing history; Flutter exposes `getConversation` and checks
+the returned ID. Web coverage verifies the Forge tab-scoped credential slot
+restores without overwriting the Admin slot. This remains a metadata/read
+slice: it does not create Runs, device records, inventory, reservations,
+scheduling, dispatch, or remote execution authority.
+
+Validation: Go route, owner-isolation, and Rust RPC integration tests; Rust
+remote request/parser/response tests; Flutter API and shared-contract tests;
+the cross-repository contract script; Go build/vet/tests; Rust workspace
+compilation; `cargo fmt --all -- --check`; strict client Clippy; and
+`node harness/gate.mjs` all pass. Browser deployment, native App/Mobile OAuth,
+and physical-device evidence remain open. ADR-0039 remains planning-only and
+ADR-0114 remains Proposed/null. See plan §60.
+
+#### 2026-09-16 continuation — Final shared-slice regression closure
+
+The post-detail/post-inventory regression is green: Go build, vet, and the
+full `go test ./... -race -count=1`; Rust workspace no-run compilation,
+formatting, strict Clippy for CLI/domain/infrastructure, CLI 388 tests, and
+infrastructure 457 tests; Flutter `1,578 passed, 4 skipped` with clean
+analysis; the browser Forge credential gate; the shared Go/Rust/Flutter
+contract script; and both repository diff checks. The root size gate reports
+4,251 files with zero violations.
+
+These remain local/test-server checks. Live Runner identity, registration,
+heartbeat, authoritative inventory, reservation, scheduling, dispatch,
+remote execution, native App/Mobile OAuth, and physical-device behavior stay
+outside the approved boundary. ADR-0039 remains planning-only and ADR-0114
+remains Proposed/null.
+
+#### 2026-09-16 continuation — Pure lease and fencing contract
+
+Added `forge_runtime_domain::execution::lease`, a bounded in-memory contract
+for the future Runner boundary. It binds attempt/target identity, lease
+epoch, fencing token, and server-observed expiry; renewal rotates epoch and
+token; stale, foreign, expired, reused-token, and backwards-time proofs fail
+closed. Terminal receipts replay only the original proof/disposition, reject
+changed outcomes, and keep uncertain effects terminal without automatic retry.
+No clock, storage, HTTP, Runner, reservation, scheduler, artifact transfer,
+or process dispatch was added; the current local-only target is unchanged.
+
+Validation: 7 focused domain tests, strict domain Clippy, workspace Rust
+formatting, and the repository diff check pass. ADR-0039 remains
+planning-only; ADR-0114 and the separate P4 execution decision remain
+unaccepted.
+
+#### 2026-09-16 continuation — Read-only Run observer resume contract
+
+Added `forge-run-observer-resume-v1`, a shared metadata-only timeline fixture
+consumed by Go Runtime bridge validation, Rust CLI validation, and Flutter
+Console validation. It fixes three bounded pages, advances
+`after_sequence → scanned_through_sequence`, and verifies event sequences
+`1..5` without gaps while preserving Conversation/Run identity and sanitized
+event metadata.
+
+Validation: `scripts/test-forge-contracts.sh` passes the Go, Rust, and Flutter
+consumers. No Run write, execution resume, live stream, device registration,
+inventory, scheduling, Runner dispatch, or remote execution was added.
+ADR-0039 remains planning-only; ADR-0114 and the separate P4 execution
+decision remain unaccepted.
+
+#### 2026-09-16 continuation — Pure heartbeat sequencing contract
+
+Added the shared `forge-device-heartbeat-contract-v1` fixture consumed by the
+Go effect-free reference model and the Rust device-registry tests. It covers
+first generation/sequence, monotonic updates, generation restart, replay,
+skipped and old generations, instance changes, server-clock regression,
+revoked devices, lease bounds, and timestamp overflow. The fixture's identity,
+persistence, inventory, execution, reservation, and dispatch authority bits
+are all false. The contract script executes both validators; no route,
+listener, credential, database, clock source, enrollment, or remote execution
+was added. ADR-0039 remains planning-only and ADR-0114 remains Proposed with
+null acceptance fields.
+
+#### 2026-09-16 continuation — Pure device identity proof and approval binding
+
+Added `forge-device-identity-proof-contract-v1`, consumed independently by a
+pure Go reference package and the Rust device-registry model. The fixture
+covers exact `(issuer, subject, tenant_id)` owner binding, immutable device/key
+binding, one-time challenge identity and freshness, pending versus approved
+owner state, key-rotation mismatch, replay/expiry, and revoked/expired
+credential states. A proof digest is only a bounded test-vector label; no
+cryptographic verifier, key material, issuer, challenge consumption, or
+credential issuance exists in this slice. All authority bits remain false.
+
+Validation: Go and Rust fixture consumers pass with strict unknown-field
+decoding, Rust formatting and the repository diff check pass, and the shared
+contract script now runs both identity validators. No HTTP route, persistence,
+device listener, inventory authority, reservation, scheduling, dispatch, or
+remote execution was added. ADR-0039 remains planning-only and ADR-0114
+remains Proposed/null.
+
+#### 2026-09-16 continuation — Pure heartbeat persistence CAS plan
+
+Added `forge-device-heartbeat-persistence-contract-v1`, a pure value-level
+compare-and-swap plan consumed by Go and Rust. It binds expected revision to a
+complete heartbeat replacement and covers initial insert, monotonic sequence,
+replay, version conflict, foreign/revoked device, server-clock rollback,
+missing snapshot, invalid persisted revision, and revision overflow. The
+Rust contract maps revision zero through the validated persisted-state
+constructor; it does not bypass the invariant. No database, clock, network,
+listener, retry, inventory publication, reservation, scheduling, dispatch, or
+execution was added. All authority bits remain false.
+
+#### 2026-09-16 continuation — Pure inventory status projection
+
+Added `forge-device-inventory-status-contract-v1` and matching Go/Rust pure
+projections. Fixed-time cases classify declarations as revoked, cordoned,
+offline, stale, pending, reserved, or online, with `declared_eligible` only
+for the online display state. Future snapshots, invalid lease windows, and
+unknown states fail closed. This is a display/comparison contract only and
+does not expose identity, persistence, heartbeat, inventory, reservation,
+scheduling, dispatch, or execution authority. ADR-0039 remains planning-only;
+ADR-0114 remains Proposed/null.
+
+#### 2026-09-16 continuation — Flutter inventory status projection consumer
+
+Flutter Console now consumes the shared
+`forge-device-inventory-status-contract-v1` fixture through a strict
+`ForgeDeviceInventoryStatusObservation` decoder and fixed-time pure
+projection. The test asserts the exact envelope, all-false authority bits, and
+all eleven status/error cases, keeping status precedence and
+`declared_eligible` parity with the Go and Rust references. The contract
+script runs this consumer alongside the existing inventory observation test.
+
+This remains a local display contract: no clock, endpoint, persistence,
+registration, reservation, scheduling, dispatch, or execution authority was
+added. ADR-0039 remains planning-only and ADR-0114 remains Proposed/null;
+see implementation plan §68.
+
+#### 2026-09-16 continuation — Pure owner-scoped inventory snapshot canonicalization
+
+Added `forge-device-inventory-snapshot-canonical-v1`, consumed by pure Go,
+Rust, and Flutter models. A fixed caller-declared owner tuple and supplied
+observation time are validated; rows are copied without mutating input and
+ordered by `(device_id, instance_id)`. Foreign-owner rows, duplicate composite
+keys, invalid identifiers, and zero observation time fail closed. The shared
+length-prefixed, domain-separated SHA-256 is only an integrity label for an
+unverified declaration.
+
+Validation: Go and Rust fixture consumers, Rust strict Clippy/formatting,
+Flutter fixture test/analyze, and the cross-repository contract script pass.
+No route, database, clock source, registration, heartbeat listener, discovery,
+reservation, scheduling, dispatch, or Runner execution was added. ADR-0039
+remains planning-only; ADR-0114 remains Proposed/null; see implementation
+plan §69.
+
+#### 2026-09-16 continuation — Pure Runner command and terminal receipt ABI
+
+Added the Rust Runtime-only `execution::runner_command` contract and strict
+fixture `forge-runner-command-terminal-receipt-v1`. `RunnerCommand` accepts
+only bounded direct `argv`, an opaque staged-workspace reference, an
+idempotency key, timeout/output limits, and an exact lease proof. A
+domain-separated command digest binds `RunnerTerminalReceipt` to those bytes;
+receipt validation rechecks the supplied current lease and preserves epoch,
+fencing, idempotent replay, and terminal `uncertain` semantics. Five focused
+domain tests and the contract-script consumer pass.
+
+This is a pure value ABI. It does not execute a process, read a clock, persist
+state, reserve capacity, connect a Runner, stage artifacts, publish audit, or
+grant execution authority. Go has no assignment consumer yet because P4 still
+requires a separately Accepted execution/security decision; ADR-0039 remains
+planning-only and ADR-0114 remains Proposed/null. See implementation plan §70.
+
+#### 2026-09-16 continuation — Flutter offline placement dry-run consumer
+
+Flutter Console now consumes the existing CPU-only and GPU placement parity
+fixtures through a fixed-time `ForgeDevicePlacementRequest` evaluator. It
+compares resource, runtime, GPU, residency, trust, sandbox, concurrency,
+approval, cordon, liveness, freshness, and lease declarations, returning
+stable device and exclusion-reason ordering. Invalid requests and duplicate
+device IDs fail closed.
+
+The result keeps all declaration and authority flags honest and always reports
+`execution_authorized=false`, `reservation_created=false`, and
+`dispatch_performed=false`; no target is selected. The cross-repository
+contract script now runs this consumer with the Go and Rust parity checks.
+This remains local display/comparison logic with no endpoint, reservation,
+scheduler, dispatch, or Runner effect. ADR-0039 remains planning-only and
+ADR-0114 remains Proposed/null. See implementation plan §71.
+
+### Cross-device plan §72 — Rust CLI offline placement dry-run
+
+- `forge-runtime device placement dry-run --input FILE|-` consumes the strict
+  placement parity document through the Rust domain evaluator.
+- The command is bounded and read-only: it opens no Hub or network endpoint,
+  writes no state, and emits explicit false authority bits for identity,
+  heartbeat, authoritative inventory, reservation, execution, and dispatch.
+- CPU/GPU fixture, stdin, malformed/unknown-field, oversized, parser, and
+  contract-script coverage is required before treating this slice as complete.
+
+### Cross-device plan §73 — Rust CLI offline inventory show
+
+- `forge-runtime device inventory show --input FILE|-` consumes the strict
+  `forge-device-inventory-observation-v1` fixture and validates owner,
+  device/instance, duplicate-row, unverified, and authority-false declarations.
+- Output is sorted by `(device_id, instance_id)` and exposes the declared CPU,
+  memory, storage, GPU, runtime, liveness, placement, and concurrency values
+  for local inspection. File/stdin, stable-order, unknown-field, oversized,
+  authority mutation, parser, and contract-script coverage is included.
+- The command is offline and read-only: no Hub, network, clock, persistence,
+  registration, target selection, reservation, scheduling, dispatch, or Runner
+execution is performed. ADR-0039 remains planning-only and ADR-0114 remains
+Proposed/null.
+
+### Cross-device plan §74 — Pure session-to-device placement observation
+
+- `forge-session-placement-observation-v1` binds a caller-declared owner tuple,
+  Conversation ID, and Run ID to the fixed-time placement parity result while
+  retaining each `(device_id, instance_id)` pair and stable exclusion reasons.
+- Go `deviceplacement`, Rust Runtime domain, and Flutter Console
+  `forge_session_placement` consumers fail closed for duplicate instances,
+  invalid owner/session bindings, or candidate mismatches. Selected device and
+  instance remain empty, and identity/heartbeat/inventory/reservation/
+  execution/dispatch authority bits remain false.
+- The contract script covers all three consumers and the malformed duplicate
+  instance case. The observer is value-only: no endpoint, clock, storage,
+  registration, scheduler, reservation, Runner, or process execution is
+  added. ADR-0039 remains planning-only and ADR-0114 remains Proposed/null.
+
+### Cross-device plan §75 — TUI offline inventory inspection
+
+- `forge-runtime remote tui` accepts `inventory show --input FILE` and renders
+  the bounded inventory observation used by the standalone CLI. It requires a
+  filesystem path so the interactive stdin stream remains available; stdin
+  input is supported by the standalone CLI command.
+- The TUI output retains declared resource rows plus explicit unverified and
+  authority-false markers. Its focused regression confirms that rendering the
+  local observation emits no `/api/v1/devices` request.
+- No device route, Hub mutation, clock, persistence, registration, target
+  selection, reservation, scheduling, dispatch, or Runner execution is added.
+  ADR-0039 remains planning-only and ADR-0114 remains Proposed/null.
+
+### Cross-device plan §76 — Pure Run-intent observation across session and placement
+
+- Added the shared `forge-run-intent-observation-v1` fixture and strict
+  value-only consumers in Go `deviceplacement`, Rust Runtime domain, and
+  Flutter Console. The contract binds a payload-free accepted Prompt receipt,
+  an existing Run summary, and the existing owner/Conversation/Run placement
+  observation, preserving exact IDs, status/sequence, replay state, and
+  placement decision/eligible-instance counts.
+- The result is always a preview: `preview_only=true`, no device or Runner
+  instance is selected, Prompt content is absent, declarations remain
+  unverified, and identity/heartbeat/inventory/reservation/execution/dispatch
+  authority bits are false. Confused owner/session/Prompt/Run/placement
+  bindings and claimed authority fail closed.
+- Go/Rust/Flutter fixture tests and the contract script pass. This adds no
+  Prompt or Run creation, clock read, Hub/Runner request, persistence,
+  registration, scheduler, reservation, dispatch, or process execution.
+  ADR-0039 remains planning-only, ADR-0114 remains Proposed/null, and P4
+  still needs a separately Accepted execution/security decision.
+
+### Cross-device plan §77 — CLI/TUI offline Run-intent preview
+
+- Rust CLI exposes `device placement run-intent-preview --input RUN_FILE|-
+  --placement-input SESSION_FILE|-`; at most one bounded input may consume
+  stdin. The command strictly decodes both shared fixtures, recomputes session
+  placement through the domain evaluator, and invokes the pure Run-intent
+  observer.
+- `remote tui` exposes `run-intent-preview --input RUN_FILE --placement-input
+  SESSION_FILE` with file-only inputs so interactive stdin remains available.
+  JSON/human output carries no Prompt content, selects no target, and keeps all
+  identity/heartbeat/inventory/reservation/execution/dispatch authority false.
+- CLI integration and TUI focused tests cover stable output, unknown and
+  oversized input, owner mismatch, parser bounds, and no device request. This
+  adds no Prompt/Run creation, clock, Hub/Runner call, persistence, selection,
+  reservation, dispatch, or process execution. ADR-0039 remains planning-only,
+  ADR-0114 remains Proposed/null, and P4 still needs a separate Accepted
+  execution/security decision.
+
+### Cross-device plan §78 — Pure multi-instance resource summary
+
+- `forge-device-resource-summary-v1` combines a caller-supplied inventory
+  declaration with an already observed session-placement declaration. Go,
+  Rust, and Flutter aggregate device/Runner-instance counts, declared
+  available CPU/memory/storage/GPU totals, and eligible device/instance
+  counts, binding exact owner, Conversation/Run, and device/instance pairs.
+- Resource totals include declarations from ineligible instances and therefore
+  are observations of supplied values rather than schedulable capacity. Every
+  value remains unverified; selected IDs are null and identity, heartbeat,
+  inventory, reservation, execution, and dispatch authority bits remain false.
+  Duplicate, foreign, missing, malformed, and overflow bindings fail closed.
+- Strict fixture consumers and confused-binding/GPU aggregation tests are
+  connected to the contract script. The slice adds no device route, network
+  discovery, clock, persistence, registration, heartbeat, scheduler,
+  selection, reservation, dispatch, Runner, or process execution. ADR-0039
+  remains planning-only and ADR-0114 remains Proposed/null; P4 still needs a
+  separate Accepted execution/security decision.
+
+### Cross-device plan §79 — CLI/TUI offline multi-instance resource summary
+
+- `device inventory resource-summary --input FILE|-` now provides a bounded
+  standalone CLI view over the shared resource-summary fixture. It reuses the
+  pure Rust domain aggregator and emits stable JSON or human-readable metrics;
+  unknown fields, oversized input, confused owner bindings, and claimed
+  authority fail closed.
+- `remote tui` accepts `inventory resource-summary --input FILE`, with a
+  filesystem path required so interactive stdin remains available. The
+  focused regression verifies aggregate metrics, false authority, and no
+  `/api/v1/devices` request. Both surfaces remain read-only observations with
+  no route, clock, storage, registration, heartbeat, selection, reservation,
+  scheduling, dispatch, Runner, or process execution; ADR-0039 remains
+  planning-only and ADR-0114 remains Proposed/null.
+
+### Cross-device plan §80 — CLI/TUI offline inventory status projection
+
+- `device inventory status --input FILE|-` now consumes the strict
+  `forge-device-inventory-status-contract-v1` envelope, recomputes every case
+  with the pure Rust fixed-time projector, and emits stable JSON or human
+  status/fresh/declared-eligible output. Unknown fields, duplicate case names,
+  oversized input, claimed authority, and expected-result mismatches fail
+  closed; bounded stdin is supported by the standalone CLI.
+- `remote tui` accepts `inventory status --input FILE`, requiring a file path
+  so interactive stdin remains available. Focused CLI/TUI tests cover stable
+  output, file/stdin, authority mutation, malformed boundaries, and absence of
+  a `/api/v1/devices` request. This remains a local display projection with no
+  route, clock, storage, registration, heartbeat, selection, reservation,
+  scheduling, dispatch, Runner, or process execution; ADR-0039 remains
+  planning-only and ADR-0114 remains Proposed/null.
+
+### Cross-device plan §81 — CLI/TUI offline inventory snapshot canonicalization
+
+- `device inventory snapshot-canonical --input FILE|-` now consumes the
+  strict `forge-device-inventory-snapshot-canonical-v1` envelope, reuses the
+  pure Rust canonicalizer and digest, and emits stable ordered keys and
+  digest/error results. Unknown fields, duplicate case names, oversized input,
+  authority mutation, and expected-result mismatch fail closed; bounded stdin
+  is supported by the standalone CLI.
+- `remote tui` accepts `inventory snapshot-canonical --input FILE`, requiring
+  a file path so interactive stdin remains available. Focused CLI/TUI tests
+  cover stable ordering, file/stdin, malformed boundaries, digest mismatch,
+  false authority, and absence of a `/api/v1/devices` request. This remains a
+  local display projection with no route, clock, storage, registration,
+  heartbeat, selection, reservation, scheduling, dispatch, Runner, or process
+  execution; ADR-0039 remains planning-only and ADR-0114 remains Proposed/null.
+
+### Cross-device plan §82 — Flutter identity and heartbeat persistence contract consumers
+
+- Flutter Console now consumes the shared `forge-device-identity-proof-contract-v1`
+  and `forge-device-heartbeat-persistence-contract-v1` fixtures through strict,
+  effect-free models. Identity validation preserves exact owner/device/key/
+  challenge binding, credential and approval state, and caller-supplied windows;
+  heartbeat persistence uses bounded `BigInt` uint64 values and recomputes the
+  complete CAS replacement with revision, generation, sequence, lease,
+  rollback, and overflow behavior.
+- Contract tests cover all shared cases plus unknown-field and authority
+  mutation rejection. The new consumers are included in
+  `scripts/test-forge-contracts.sh`, extending parity to Flutter Web/App/Mobile
+  code without adding cryptography, key material, challenge consumption,
+  persistence, clock, network, enrollment, inventory authority, reservation,
+  scheduling, dispatch, Runner, or process execution. ADR-0039 remains
+  planning-only and ADR-0114 remains Proposed/null; P4 still needs a separate
+  Accepted execution/security decision.
+
+### Cross-device plan §83 — Flutter heartbeat sequencing contract consumer
+
+- Flutter Console now consumes `forge-device-heartbeat-contract-v1` through a
+  strict pure model shared with the Go/Rust fixture semantics. It preserves
+  full uint64 values with `BigInt` and checks device binding, revoked approval,
+  generation/sequence monotonicity, Runner instance changes, explicit server
+  time, bounded TTL, and lease-expiry overflow.
+- The 12 shared cases plus unknown-field, authority-mutation, and full-uint64
+  decoding tests are wired into `scripts/test-forge-contracts.sh`. Capability
+  fields remain unverified declarations; this adds no clock, network,
+  persistence, live heartbeat publication, registration, inventory authority,
+  reservation, scheduling, dispatch, or Runner execution. ADR-0039 remains
+  planning-only and ADR-0114 remains Proposed/null; P4 still needs a separate
+  Accepted execution/security decision.
+
+### Cross-device plan §84 — Flutter live shared-session cold-start restore evidence
+
+- The authenticated Go HTTP → Rust Hub → Flutter E2E now writes the Forge
+  token through an injected credential backend, clears the in-memory Forge
+  slot, and lets `ForgeSessionsGate.restore()` recover it before reading the
+  shared Conversation and appending a Prompt. The test continues to keep the
+  Admin client slot separate.
+- This is test-backend evidence rather than physical Android/iOS secure-store,
+  browser OAuth, or production deployment evidence. Prompt append remains
+  storage-only and creates no Run; the allowlist remains Conversation,
+  Prompt, change-feed, and metadata-only Run reads, with no device route,
+  inventory authority, reservation, scheduling, dispatch, or Runner execution.
+
+### Cross-device plan §85 — Cross-client pending-write recovery metadata contract
+
+- Go, Rust, and Flutter now consume the strict
+  `forge-pending-write-recovery-v1` fixture. The pure projection carries only
+  operation, optional Conversation ID, expected aggregate version,
+  idempotency key, pending/unconfirmed state, and caller-supplied observation
+  times; an unconfirmed write requires reconciliation and every retry must
+  reuse the same key.
+- Prompt content, title, scope, credentials, and Run payloads are absent.
+  The projection reads no clock, contacts no service, writes no persistence,
+  creates no Run, and grants no retry authority. It does not provide
+  cross-process Prompt-body persistence or automatic replay. Strict Go/Rust/
+  Flutter fixture tests are wired into `scripts/test-forge-contracts.sh`;
+  device routes, inventory authority, reservation, scheduling, dispatch, and
+  Runner execution remain unavailable under ADR-0039/ADR-0114 and the P4
+  execution/security gate.
+
+### Cross-device plan §86 — Flutter live Prompt idempotency replay evidence
+
+- The real Go HTTP → Rust Hub → Flutter API journey now submits one Prompt
+  twice with the same expected Conversation version and idempotency key. The
+  first response creates the Prompt; the second returns the same Prompt ID and
+  aggregate version with `replayed=true`. Owner change-feed and Go readback
+  prove that history contains one copy, while the widget path appends one
+  separate Prompt.
+- This validates cross-client retry deduplication through the live storage
+  path. The operation remains storage-only and creates no Run or task; the
+  test uses a signed test token and injected credential backend, not
+  production OAuth or physical Android/iOS secure storage. Device routes,
+  inventory authority, reservation, scheduling, dispatch, and Runner
+  execution remain gated by ADR-0039/ADR-0114/P4.
+
+### Cross-device plan §87 — Cross-client Snaplink Forge profile contract
+
+- Added `forge-snaplink-profile-v1`, freezing the `forge-api` resource/audience,
+  two conversation scopes, public `forge-cli` RFC 8628 device-code plus
+  refresh-token grants, and public `forge-console` authorization-code plus
+  refresh-token grants.
+- Go validates the fixture with the resource-server configuration; Rust checks
+  the CLI device-login constants; Flutter checks `ForgeAuthProfile` and the
+  Console OAuth request. All three consumers reject unknown fixture fields and
+  keep authority bits false.
+- The issuer is a deployment placeholder and this is configuration parity
+  evidence only. It does not prove live client registration, JWKS reachability,
+  token issuance, consent, Conversation access, device inventory, scheduling,
+  dispatch, or Runner execution. ADR-0039 remains planning-only, ADR-0114
+  remains Proposed/null, and P4 still needs a separately Accepted
+  execution/security decision.
+
+### Cross-device plan §88 — Pure Prompt/Run to Runner-command binding
+
+- Added the shared `forge-runner-execution-intent-v1` fixture. Go
+  `deviceplacement`, Rust Runtime, and Flutter Console bind the exact owner,
+  Conversation, accepted Prompt receipt, existing Run, Attempt, command,
+  opaque target, direct-argv digest, lease proof, and idempotency identities.
+- Flutter reproduces the Rust domain-separated command digest; strict tests in
+  all three consumers reject foreign Run/target bindings and unknown or
+  malformed values. `selected_target_id` remains null and `preview_only` is
+  always true.
+- Every authority marker remains false. The slice does not issue or persist a
+  lease, select or reserve a device, contact a Runner, dispatch or execute a
+  command, publish audit, or add a route. ADR-0039 remains planning-only,
+  ADR-0114 remains Proposed/null, and P4 still needs a separate Accepted
+  execution/security decision.
+
+### Cross-device plan §89 — Cross-language Runner terminal receipt observation
+
+- Go `deviceplacement` and Flutter Console now consume the existing
+  `forge-runner-command-terminal-receipt-v1` fixture alongside Rust Runtime.
+  Strict consumers recompute the domain-separated direct-argv command digest
+  and bind command ID, attempt/target/epoch/fencing proof, bounded grant
+  window, and caller-supplied observation time.
+- Completed receipts require the declared receipt digest; failed and
+  uncertain receipts retain bounded reasons. `uncertain` is always surfaced
+  as reconciliation-required with `automatic_retry=false`.
+- This remains pure ABI parity and fail-closed observation. It does not issue,
+  persist, renew, or revoke a lease; read a clock; contact a Runner; stage,
+  reserve, dispatch, or execute work; or publish audit. Authority bits remain
+  false. ADR-0039 remains planning-only, ADR-0114 remains Proposed/null, and
+  P4 still requires a separate Accepted execution/security decision.
+
+### Cross-device plan §90 — Local Snaplink JWKS authenticated session boundary
+
+- Added a test-only Forge app-server integration that starts the real Snaplink
+  SSO handler on an ephemeral TLS listener, obtains independent tokens for the
+  public `forge-console` and `forge-cli` clients, and sends those tokens through
+  Forge's real JWKS-backed `authn` middleware.
+- The test creates a Conversation with one client, lists it with the other, and
+  appends a Prompt. Every backend call receives the same verified
+  `(issuer, subject, tenant_id)` owner tuple, proving that client identity is
+  derived from Snaplink claims rather than request bodies.
+- The harness uses only memory stores and temporary test keys. It adds no
+  production OAuth registration, device route, inventory/heartbeat authority,
+  reservation, scheduling, dispatch, Runner execution, or audit outbox.
+  ADR-0113 remains Proposed, ADR-0039 remains planning-only, ADR-0114 remains
+  Proposed/null, and P4 still needs a separately Accepted execution/security
+  decision.
+
+### Cross-device plan §91B — Snaplink-authenticated inert execution intent over Rust Hub
+
+- Added a test-only Go app-server E2E that starts the real Snaplink SSO handler
+  on an ephemeral TLS listener, obtains independent `forge-console` and
+  `forge-cli` JWTs, validates them through the real Snaplink JWKS, and sends
+  both clients through the private inert execution surface to a real Rust Hub.
+- Client A creates a Project Conversation, previews and grants the Hub-bound
+  execution profile consent; client B submits a consent-checked pending Run
+  intent and reads its bounded intent/timeline views. The test revokes consent,
+  proves a fresh intent conflicts while the original idempotency key replays
+  its immutable receipt, and verifies normal Runs remain empty.
+- The production `newConversationRoutes` surface is checked on the same
+  consent and pending-intent paths and remains 404. The test is skipped unless
+  `FORGE_RUNTIME_BIN` is supplied and adds no device registration, inventory or
+  heartbeat authority, lease issuance, reservation, selection, scheduling,
+  dispatch, Runner execution, or audit outbox. ADR-0039 remains planning-only,
+  ADR-0114 remains Proposed/null, and P4 still needs a separately Accepted
+  execution/security decision.
+
+### Cross-device plan §91A — Snaplink introspection-backed authenticated session boundary
+
+- Added a test-only Forge app-server E2E that starts the real Snaplink SSO
+  handler on ephemeral TLS, logs in with the public `forge-console` client,
+  and validates every protected request through a confidential
+  `forge-introspector` client at `/token/introspect`.
+- The introspection secret is read from a temporary owner-private 0600 file;
+  a counting transport proves there is no JWKS fallback and that revocation is
+  observed on the next request. Conversation create/list/Prompt preserve the
+  same verified `(issuer, subject, tenant_id)` owner tuple.
+- Wrong audience, wrong tenant, missing write scope, and wrong introspection
+  secret fail closed. `forge-core/go.mod` uses the requested local Snaplink
+  ecosystem replace so the tested introspection response includes the signed
+  `tenant_id` provenance field. No device/inventory/heartbeat authority,
+  execution route, reservation, scheduling, dispatch, Runner, or audit outbox
+  is added; ADR-0039/0114/0113 and P4 gates remain open.
+
+### Cross-device plan §92 — Snaplink JWT consumed by the real CLI/TUI and Flutter shared-session clients
+
+- Extended the §91B test-only cross-process E2E to invoke the actual
+  `forge-runtime` binary with the two real Snaplink JWTs. Client A lists the
+  owner Conversation, client B reads the Prompt history, and the CLI Run page
+  remains empty; client B then opens the same Conversation in the TUI and
+  appends a Prompt. With `FORGE_CONSOLE_E2E=1`, the Flutter Console API and
+  widget tests use the same Snaplink JWT to cold-start, read the Conversation,
+  and append idempotent Prompts. `FORGE_BROWSER_E2E=1` additionally serves the
+  Flutter Web build and drives the browser path with that JWT.
+- The test is conditional on `FORGE_RUNTIME_BIN` and uses temporary homes plus
+  the ephemeral Snaplink/Rust Hub fixtures. It does not exercise device-code
+  credential persistence, which depends on the host OS credential store.
+  No device/inventory/heartbeat authority, lease, reservation, scheduling,
+  dispatch, Runner, execution, or audit outbox is added; ADR-0039/0114/0113
+  and P4 gates remain open.
+
+### Cross-device plan §93 — Snaplink change-feed cursor consumed by the real CLI and TUI
+
+- Extended the §92 authenticated process E2E so the real Rust CLI reads the
+  owner-scoped change feed and verifies the Conversation-created and
+  Prompt-appended events at dense cursors. The real Rust TUI then runs `sync`
+  with the same Snaplink token, advances through both events, refreshes the
+  selected session and history, and appends a Prompt.
+- Exact request allowlists cover only Conversation, Prompt, and change-feed
+  reads plus the tested Prompt write. No Run is created, and no device route,
+  inventory/heartbeat authority, lease, reservation, scheduling, dispatch,
+  Runner execution, or audit outbox is added. ADR-0039 remains planning-only;
+  ADR-0114/0113 remain Proposed/null and P4 still needs separate Accepted
+  execution/security governance.
+
+### Cross-device plan §94 — Real Snaplink RFC 8628 login and saved CLI credential consumption
+
+- Added an opt-in Go app-server E2E that drives the actual Rust CLI through a
+  temporary Snaplink device-code issuer. It reads the verification code,
+  approves it with a Forge Console bearer, waits for token polling, checks the
+  owner-bound credential file and protected refresh-token store, then starts a
+  second CLI process that loads the saved credential and sends its Bearer token
+  to the Forge session-list endpoint.
+- The test rejects refresh-token material in the JSON credential file and
+  verifies issuer/client/subject/tenant binding. It is enabled only with
+  `FORGE_DEVICE_LOGIN_E2E=1` because it needs an unlocked host Secret Service;
+  the shared-session script preflights `secret-tool` and D-Bus for this mode.
+  No Forge device registration, heartbeat/inventory authority, Run, lease,
+  reservation, scheduling, dispatch, Runner execution, or audit outbox is
+  added. ADR-0039 remains planning-only; ADR-0114/0113 remain Proposed/null
+and P4 still needs separate Accepted execution/security governance.
+
+### Cross-device plan §95 — Saved CLI change-feed cursor resumed across processes
+
+- Extended the opt-in RFC 8628 device-login E2E so the first real Rust CLI
+  process runs `remote changes list` without `--after-cursor`, persists the
+  owner-bound checkpoint, and a second process with the same saved credential
+  resumes from it. The temporary Forge endpoint asserts the exact dense
+  request sequence `after_cursor=0` then `after_cursor=1`; the second page is
+  empty, proving no duplicate replay after a process restart.
+- This remains credential and read-replay continuity evidence. It requires an
+  unlocked host Secret Service when enabled and adds no Forge device
+  registration, heartbeat/inventory authority, Run, lease, reservation,
+  scheduling, dispatch, Runner execution, or audit outbox. ADR-0039 remains
+  planning-only; ADR-0113/0114 remain Proposed/null and P4 still needs a
+  separate Accepted execution/security decision.
+
+### Cross-device plan §96 — Authenticated offline placement preview boundary
+
+The configured Forge session handler now exposes a bounded
+`POST /api/v1/device-placement/preview` route for the existing
+`forge.device-placement-dry-run/v1` caller declaration. It requires the
+verified Snaplink owner tuple to match the declaration exactly and uses the
+existing conversation read scope. The handler is stateless and deterministic:
+all owner/device attributes remain unverified and `execution_authorized`,
+`reservation_created`, and `dispatch_performed` are always false. Query
+parameters, wrong methods, malformed declarations, missing read scope, and
+foreign owners fail closed; `/api/v1/devices` and heartbeat paths remain 404.
+
+This closes only an authenticated P3a observation boundary so Web/App/Mobile
+clients can submit a bounded offline declaration for comparison. It does not
+read a registry, Hub, clock, network, inventory or heartbeat store and does not
+select, reserve, schedule, dispatch, execute, or publish audit. ADR-0039 stays
+planning-only; ADR-0113/0114 remain Proposed/null and P4 still requires a
+separate Accepted execution/security decision.
+
+### Cross-device plan §97 — Flutter authenticated placement preview consumer
+
+Flutter Console's Forge API client now serializes the strict placement
+declaration and sends one authenticated `POST /api/v1/device-placement/preview`.
+The response decoder requires the fixed schema and notice, stable device and
+reason ordering, exact owner parity, and false execution/reservation/dispatch
+authority. It rejects a foreign owner or any response that claims authority;
+the client does not retry an uncertain POST, persist the declaration, or infer
+live capacity. The result remains a display-only P3a comparison for
+Web/App/Mobile; P3b inventory and P4 scheduling/Runner execution remain
+gated by ADR-0039/0113/0114 and a separate Accepted execution decision.
+
+### Cross-device plan §98 — Authenticated placement preview consumed by CLI and TUI
+
+Rust remote CLI now exposes `remote placement preview --input FILE|-` and
+sends one authenticated POST to the existing P3a placement preview route. Its
+strict decoder binds the response owner and exact device ID set to the
+submitted declaration, checks stable result/reason ordering and the fixed
+all-false authority envelope, and rejects malformed or forged responses. The
+remote TUI adds `placement-preview --input FILE`; it uses the same decoder and
+leaves interactive stdin available for commands. Focused request, parser,
+bounds, authority-mutation, exact-device-set, and TUI rendering tests pass.
+
+The Snaplink-authenticated Go→Rust Hub process E2E now invokes the actual CLI
+and PTY TUI against the route, verifies the returned unverified result, and
+asserts one exact placement POST in each client request allowlist.
+
+This is client consumption of an offline declaration only. No registry read,
+live enrollment/heartbeat, target selection, reservation, scheduling,
+dispatch, Runner/process execution, or audit outbox was added. ADR-0039 remains
+planning-only; ADR-0113/0114 remain Proposed/null and P4 still needs a
+separate Accepted execution/security decision.
+
+### Cross-device plan §99 — Pure Aero-ID profile and source-membership projection
+
+Added the bounded `forge.aero-id-profile-projection/v1` fixture and isolated
+Go, Rust, and Flutter consumers. The projection retains the exact
+caller-supplied Snaplink owner tuple, Aero-ID-owned display fields, and
+source-scoped membership rows with deterministic ordering; unknown fields,
+foreign owners, malformed values, and any authority bit fail closed. The
+authority envelope is fixed false, so source memberships are never treated as
+Forge tenant or authorization grants.
+
+This is P5 groundwork only. It does not call Aero-ID, create a separate
+OAuth client or audience, forward a token, persist a profile snapshot, add a
+route, or affect Conversation, device, inventory, reservation, scheduling,
+dispatch, Runner, or execution authority. ADR-0039 remains planning-only;
+ADR-0113/0114 remain Proposed/null and P4 still needs separate Accepted
+execution/security governance.
+
+### Cross-device plan §100 — Flutter Console live placement-preview consumption
+
+The opt-in Snaplink-authenticated Flutter Console API E2E now receives the
+same strict P3a placement declaration as the Go route and Rust CLI/TUI. It
+submits exactly one `POST /api/v1/device-placement/preview`, checks the
+returned owner tuple and evaluation time against the request, verifies the
+declared device result, and rejects execution/reservation/dispatch authority.
+The Go recorder allowlist includes this single observation request and still
+rejects unrelated device or effect paths. This is live transport evidence for
+the Web/App/Mobile API client, not live inventory or a claim that the current
+Console screen has server-owned device data. The declaration remains
+caller-supplied and unverified, is not persisted, and is not retried after
+uncertain delivery. No registry, heartbeat, enrollment, target selection,
+reservation, scheduling, dispatch, Runner/process execution, or audit outbox
+is added. ADR-0039 remains planning-only; ADR-0113/0114 remain Proposed/null
+and P4 still requires separate Accepted execution/security governance.
+
+### Cross-device plan §101 — Snaplink-authenticated read-only Run observation
+
+An opt-in app-server E2E seeds one deterministic completed Run through a local
+Rust Hub fixture, then uses a real Snaplink access token with the actual Rust
+CLI to read the owner-scoped Run page and metadata-only timeline. A PTY TUI
+performs the same Conversation/Run observation. Recorder assertions require
+the CLI and TUI to issue only the expected Run reads, and timeline output is
+checked to exclude prompt/output/tool payload fields. The local fixture command
+produces the test Run; remote CLI/TUI surfaces remain read-only and do not
+create, resume, cancel, dispatch, or execute work. No public Run write route,
+device enrollment/inventory/heartbeat authority, scheduler, reservation,
+Runner, artifact transfer, or audit outbox is added. ADR-0039 remains
+planning-only; ADR-0113/0114 remain Proposed/null and P4 still requires
+separate Accepted execution/security governance.
+
+### Cross-device plan §102 — Flutter API observation of a populated Run
+
+The opt-in Snaplink-authenticated Run-observation E2E now also drives the real
+Flutter Console API client after a local deterministic fixture creates a
+completed Run. Flutter reads the same owner-scoped Run page and metadata-only
+timeline as CLI/TUI, verifies owner/conversation/run binding, completion,
+sequence markers, and payload-free event types, and issues only the two
+bounded GET requests allowed by the recorder. This closes the populated-Run
+transport check for the shared Web/App/Mobile client path. No Run write,
+resume/cancel, dispatch, device enrollment/inventory/heartbeat, scheduler,
+reservation, Runner/process execution, or audit outbox is added; ADR-0039
+remains planning-only, ADR-0113/0114 remain Proposed/null, and P4 still needs
+separate Accepted execution/security governance.
+
+### Cross-device plan §103 — Flutter Web browser observation of a populated Run
+
+With the opt-in browser E2E enabled, the authenticated Snaplink Run-observation
+fixture serves the real Flutter Web build and drives Chromium through `/forge/`.
+The browser selects the seeded completed Run, verifies the metadata-only
+timeline markers and completed status, rejects fixture/event payload text, and
+issues only bounded session, Prompt, Run, timeline, and validated change-feed
+reads. This proves the Web route renders the same owner-scoped read path as the
+shared Flutter API client. No browser write or device enrollment/inventory/
+heartbeat, scheduler, reservation, Runner/process execution, or audit outbox
+is added; ADR-0039 remains planning-only, ADR-0113/0114 remain Proposed/null,
+and P4 still needs separate Accepted execution/security governance.
+
+### Cross-device plan §104 — Flutter native App/Mobile observation of a populated Run
+
+The authenticated populated-Run E2E now cold-starts the shared Flutter Forge
+gate with an injected credential backend and mounts the real
+`ForgeSessionsGate`/`ForgeSessionsScreen` widget path. The native test reads the
+owner Conversation, Run summary, and metadata-only timeline over the real Go
+HTTP endpoint, verifies completion and terminal markers, rejects fixture/event
+payload text, and issues only bounded Conversation, Prompt, Run, and timeline
+reads. This is shared Flutter widget evidence for desktop App and Mobile
+clients; it does not claim platform secure storage or production OAuth. No Run
+write, device enrollment/inventory/heartbeat, scheduler, reservation,
+Runner/process execution, or audit outbox is added; ADR-0039 remains
+planning-only, ADR-0113/0114 remain Proposed/null, and P4 still needs separate
+Accepted execution/security governance.
+
+### Cross-device plan §105 — Authenticated placement and Run-intent observation binding
+
+The Snaplink-authenticated Run-observation E2E now submits one caller-supplied
+P3a placement declaration through the normal authenticated session route before
+reading the same Run timeline. Go verifies exact owner, stable device result,
+and all-false authority; the pure observer binds that placement to the same
+Conversation/Run and validates the payload-free Prompt/Run reference with no
+selected target. The recorder requires exactly one placement POST between the
+Run-page and timeline reads and still rejects device, heartbeat, reservation,
+dispatch, and execution paths. The placement is unverified caller data and the
+Prompt receipt is a bounded test fixture, not a write route or execution intent;
+ADR-0039 remains planning-only, ADR-0113/0114 remain Proposed/null, and P4
+still needs separate Accepted execution/security governance.
+
+### Cross-device plan §106 — Flutter Forge Sessions offline device observation panel
+
+The shared Flutter Forge Sessions screen now accepts an explicit caller-supplied
+P3a offline device observation. Its pure builder reuses strict inventory,
+placement dry-run, session-placement binding, resource-summary, and status
+projection contracts, then renders the read-only inventory panel only when the
+observation's Conversation and Run IDs match the selected owner-scoped Run.
+The panel exposes declared resources, Runner instances, status, exclusions, and
+all-false authority without offering an action; a foreign Run is omitted.
+
+This is injection/display evidence only. No live inventory or heartbeat route,
+registry, enrollment, persistence, clock, network scan, scheduler, reservation,
+dispatch, Runner/process execution, or Audit Governance outbox was added.
+Normal Sessions behavior remains unchanged with no observation supplied.
+ADR-0039 remains planning-only; ADR-0113/0114 remain Proposed/null and P4 still
+needs separate Accepted execution/security governance.
+
+### Cross-device plan §107 — Canonical cross-client session device observation envelope
+
+Added the strict `forge.session-device-observation/v1` envelope for the P3a
+offline path. Flutter now decodes/re-encodes the exact owner,
+Conversation/Run, caller inventory, placement observation, resource summary,
+null selection, and all-false authority shape, then recomputes the summary
+before rendering Sessions. Go now has a bounded strict decoder/validator with
+exact nested keys, duplicate/null rejection, deterministic ordering, safe
+integer bounds, owner/Run binding, and aggregate recomputation. A shared
+fixture and contract-script entries cover both consumers.
+
+Rust CLI/TUI consumption and an authenticated session-bound preview route are
+now complete as bounded local consumers and a stateless authenticated preview
+route. No live inventory/heartbeat route,
+registry, persistence, scheduler, reservation, target selection, dispatch,
+Runner/process execution, or Audit Governance outbox was added. ADR-0039
+remains planning-only, ADR-0113/0114 remain Proposed/null, and P4 still needs
+separate Accepted execution/security governance.
+
+### Cross-device plan §108 — Session-bound device observation preview across clients
+
+Rust CLI/TUI now consume the canonical `forge.session-device-observation/v1`
+fixture from bounded local `FILE|-` input and render only the recomputed,
+unverified resource summary. Go exposes the authenticated, stateless
+`POST /api/v1/conversations/{conversation}/runs/{run}/device-observation/preview`
+preview with read scope and exact owner/path binding; it accepts caller
+declarations only and keeps selection and authority false. The contract script
+covers Go, Rust CLI/TUI, and Flutter consumers. No live inventory/heartbeat
+route, registry persistence, scheduler, reservation, selection, dispatch,
+Runner/process execution, or Audit Governance outbox was added. ADR-0039
+remains planning-only; ADR-0113/0114 remain Proposed/null; P3b and P4 retain
+their separate governance gates.
+
+### Cross-device plan §109 — Flutter authenticated session device observation consumer
+
+`ForgeConversationsApi.previewSessionDeviceObservation` now posts the strict
+caller-supplied session placement declaration to the authenticated Go preview
+route and consumes `forge.session-device-observation/v1`. Flutter validates the
+request locally, then requires exact owner, Conversation/Run, evaluation time,
+and device/Runner declaration parity in the response. It rejects candidate
+drift, unknown/authority-bearing wire fields, and any other binding mismatch;
+the single POST is never retried after uncertain delivery. Web/App/Mobile share
+this API path. Sessions can now receive an explicit placement request, fetch
+the preview once for the matching selected Run, and render the strictly bound
+result; local/offline observation injection remains available.
+No live inventory/heartbeat route, registry persistence, scheduler, reservation,
+selection, dispatch, Runner/process execution, or Audit outbox was added.
+ADR-0039 remains planning-only; ADR-0113/0114 remain Proposed/null; P3b and
+P4 retain separate governance gates.
+
+### Cross-device plan §110 — Snaplink-authenticated Flutter session observation E2E
+
+The opt-in populated-Run E2E now drives the real Flutter API client through the
+Snaplink-authenticated Go route with the same owner, Conversation, and Run. It
+submits one caller-supplied placement declaration, consumes the strict
+`forge.session-device-observation/v1` envelope, verifies the unverified
+inventory/Runner binding and all-false authority, and records exactly one
+session observation POST. The real `forge-runtime` binary E2E passed under
+`FORGE_RUNTIME_BIN` and `FORGE_CONSOLE_E2E`; no live inventory/heartbeat,
+registry, target selection, reservation, scheduling, dispatch, Runner/process
+execution, or Audit outbox was added. ADR-0039 remains planning-only;
+ADR-0113/0114 remain Proposed/null and P4 retains its separate Accepted
+execution/security gate.
+
+### Cross-device plan §111 — Authenticated Rust CLI/TUI session observation preview
+
+Rust remote CLI now provides `remote session-observation preview --input FILE|-`;
+the authenticated TUI provides `session-observation-preview --input FILE`.
+Both post a bounded caller-supplied owner, Conversation/Run, placement, and
+Runner-instance candidate declaration once to the session-bound Go preview
+route. The response is required to be the canonical
+`forge.session-device-observation/v1` envelope; Rust recomputes the resource
+summary, binds owner/time/Conversation/Run and the exact declaration set, and
+rejects unknown fields, candidate drift, selected targets, summary drift, or
+any authority bit. TUI input is file-only to preserve its interactive stdin.
+Focused parser, authenticated request, authority-mutation, and TUI rendering
+tests pass. The opt-in Snaplink Run-observation E2E also drives the real Rust
+CLI and PTY TUI and requires exactly one session observation POST per surface.
+This remains stateless P3a observation and adds no live inventory,
+heartbeat, enrollment, registry persistence, scheduling, reservation,
+selection, dispatch, Runner/process execution, or Audit outbox. ADR-0039
+remains planning-only; ADR-0113/0114 remain Proposed/null; P3b and P4 retain
+their separate governance gates.
+
+### Cross-device plan §112 — Flutter Sessions Run-intent observation card
+
+The shared Flutter Forge Sessions screen now accepts an optional pure
+`forge.run-intent-observation/v1` value and renders the existing read-only
+Prompt-to-Run card only for an exact selected Conversation/Run binding. The
+screen rechecks the offline schema/mode, prompt/Run/placement binding flags,
+null target selection, unverified declarations, and all-false authority before
+display; foreign Run values and caller-constructed authority mutations are
+omitted. `ForgeSessionsGate` forwards the same guarded value for Web,
+App, and Mobile. Focused widget tests cover matching, foreign, and authority
+mutation cases. This is display-only and adds no write, consent/profile,
+device, inventory, heartbeat, scheduler, reservation, dispatch, Runner,
+process-execution, or audit-outbox behavior. ADR-0039 remains planning-only;
+ADR-0113/0114 remain Proposed/null; P3b and P4 retain separate governance
+gates.
+
+### Cross-device plan §113 — Flutter strict Run-intent observation envelope consumer
+
+`ForgeRunIntentObservation` now strictly parses and re-encodes
+`forge.run-intent-observation/v1`. The consumer enforces exact keys, owner and
+identifier shape, safe integer/status/count bounds, null target selection,
+and an all-false authority envelope before the Sessions card receives a
+value. It accepts only the fixed `v=1`/`type=device_run_intent_preview` local
+Rust framing and strips it when re-encoding. Round-trip and
+unknown/target/authority/overflow mutation tests pass.
+This adds no public Run-intent or consent route, Prompt/Run write, device or
+inventory authority, scheduler, reservation, dispatch, Runner/process
+execution, or Audit outbox; ADR-0039 remains planning-only,
+ADR-0113/0114 remain Proposed/null, and P3b/P4 retain their governance gates.
+
+### Cross-device plan §114 — Snaplink-authenticated Flutter Run-intent observation E2E
+
+The opt-in populated-Run E2E now serializes the same Go pure Run-intent
+observation and injects it into the real Flutter native `ForgeSessionsGate`.
+Flutter strictly consumes the envelope, rechecks the Conversation/Run binding,
+and renders the read-only Run-intent card beside the metadata-only timeline.
+The HTTP recorder allowlist is unchanged and no new route or write is issued.
+This proves transport/presentation only for caller-supplied observation; no
+public intent/consent API, live inventory, selection, reservation, scheduler,
+dispatch, Runner/process execution, or audit outbox is added. ADR-0039 remains
+planning-only; ADR-0113/0114 remain Proposed/null; P3b/P4 retain their
+separate governance gates.
+
+### Cross-device plan §115 — Canonical Rust offline inventory envelopes
+
+Rust JSON output for `device inventory show --input FILE|-` now matches the
+canonical `forge.device-inventory-observation/v1` envelope consumed by Go and
+Flutter: CLI-only `v`/`type`/nested-authority wrappers are removed, while
+human/TUI rendering stays unchanged. The local resource-summary JSON output
+also removes its CLI-only wrapper fields and matches the canonical nested
+`forge.device-resource-summary/v1` shape. Focused Rust CLI tests cover both
+paths and keep authority false. This remains bounded caller-supplied P3a
+offline data with no live registration, heartbeat, persistence, discovery,
+selection, reservation, scheduling, dispatch, Runner, or audit behavior;
+ADR-0039 remains planning-only, ADR-0113/0114 remain Proposed/null, and P3b
+and P4 retain their separate governance gates.
+
+### Cross-device plan §116 — Flutter import of canonical offline observations
+
+The shared Forge Sessions Run panel now exposes a bounded process-local import
+for canonical `forge.session-device-observation/v1` JSON. Web, App, and Mobile
+share the same strict Flutter wire consumer: it recomputes the declared
+resource summary, requires all authority bits false, and binds the imported
+value to the selected Conversation/Run before rendering the read-only device
+and resource panels. Malformed and foreign-Run values stay in the dialog with
+generic errors; the value is not persisted, posted, retried, or used for
+execution. Focused widget tests cover matching import, foreign-Run rejection,
+and the no-POST guarantee. ADR-0039 remains planning-only; ADR-0113/0114
+remain Proposed/null; P3b and P4 retain their separate governance gates.
+
+### Cross-device plan §117 — Nine-instance cross-client observation E2E
+
+The authenticated session-device preview now reuses the canonical nine-
+candidate placement fixture. Go verifies stable device/Runner pairing,
+byte-identical repeated output, nine inventory and placement rows, aggregate
+CPU 66, memory 135168 B, storage 67584 B, and eligible counts 2/2 with no
+selection or authority. The opt-in Snaplink E2E sends the same request through
+Rust CLI, PTY TUI, Flutter API, and native Sessions; the Web browser imports the
+canonical CLI envelope locally and renders the aggregate and candidate rows
+without a preview POST. No live inventory, heartbeat, persistence, scheduler,
+reservation, dispatch, Runner execution, or audit outbox was added. ADR-0039
+remains planning-only; ADR-0113/0114 remain Proposed/null; P3b/P4 retain their
+separate governance gates.
+
+### Cross-device plan §118 — Rust CLI/TUI terminal receipt observation preview
+
+The pure `forge.runner-command-terminal-receipt/v1` contract is now consumed
+by `device runner-receipt-preview --input FILE|-` and the file-only TUI
+`runner-receipt-preview --input FILE`. Rust reuses the bounded Runner command,
+lease, fencing, digest, and terminal disposition domain checks and emits the
+same metadata-only receipt projection. Completed values remain preview-only;
+uncertain values require manual reconciliation and never enable automatic
+retry. Unknown fields, authority mutation, digest/proof drift, and expiry fail
+closed. Focused parser, canonical output, domain observation, and TUI tests
+pass; no device request is issued. No Runner, inventory/heartbeat, selection,
+reservation, scheduling, dispatch, process execution, or audit outbox was
+added. ADR-0039 remains planning-only; ADR-0113/0114 remain Proposed/null; P3b
+and P4 retain separate governance gates.
+
+### Cross-device plan §119 — Rust CLI/TUI Runner execution-intent observation preview
+
+The pure `forge.runner-execution-intent/v1` contract is now consumed by
+bounded local `device runner-execution-intent-preview --input FILE|-` and
+file-only TUI `runner-execution-intent-preview --input FILE`. Rust strictly
+decodes the owner, payload-free Prompt receipt, existing Run reference,
+repeated Conversation/Prompt/Run/attempt/command/target identities, and
+direct-argv declaration; the domain recomputes the command digest and requires
+null target selection plus all-false authority. Focused parser, canonical
+output, mutation, domain, and TUI tests pass. This adds no Prompt/Run write,
+Hub/clock read, lease issuance/persistence, device selection/reservation,
+Runner/dispatch/process execution, or audit outbox. ADR-0039 remains
+planning-only; ADR-0113/0114 remain Proposed/null; P3b and P4 retain separate
+governance gates.
+
+### Cross-device plan §120 — Flutter Runner execution-intent observation card and Web/native E2E
+
+The shared Flutter Forge Sessions gate/screen now consumes strict canonical
+`forge.runner-execution-intent/v1` observations and renders a read-only card
+only for the selected Conversation/Run. The parser requires exact keys,
+`pure_runner_binding_only`, valid repeated Prompt/Run/attempt/command identity,
+null target selection, the idempotency tuple, and all-false Runner authority;
+the card exposes metadata/digest identity without argv, output, lease, target,
+or execution controls. The authenticated populated-Run native E2E injects the
+same Go pure observation derived from the Rust-compatible command digest; Web
+uses the same bounded process-local import and browser E2E injection without a
+preview POST. Contract, widget, analyzer, Go appserver, and full
+contract-script checks pass.
+No public execution route, Prompt/Run write, live inventory/heartbeat,
+lease persistence, selection, reservation, scheduler, dispatch,
+Runner/process execution, artifact transfer, or audit outbox was added.
+ADR-0039 remains planning-only; ADR-0113/0114 remain Proposed/null; P3b and
+P4 retain separate governance gates.
+
+### Cross-device plan §121 — Session-bound Runner terminal receipt observation card and E2E
+
+The canonical `forge.session-runner-receipt-observation/v1` envelope now has
+strict Go/Rust value consumers that bind the existing Runner execution-intent
+observation to the existing terminal receipt projection across owner,
+Conversation/Prompt/Run, attempt, command, target, and digest identities.
+Flutter consumes the same envelope in `ForgeSessionsGate` and renders a
+read-only receipt card only for the selected Run. Web/App/Mobile can import a
+bounded JSON value into process-local state; native and browser populated-Run
+E2E paths inject the Go-derived observation without a receipt POST. Completed
+and uncertain receipts remain preview-only; uncertain means manual
+reconciliation and `automatic_retry=false`. Unknown/foreign/drifted values,
+selected targets, and every authority mutation fail closed. No public route,
+receipt/lease persistence, device registration/heartbeat, selection,
+reservation, scheduler, dispatch, Runner/process execution, artifact transfer,
+or Audit outbox was added. ADR-0039 remains planning-only; ADR-0113/0114
+remain Proposed/null; P3b and P4 retain separate governance gates.
+
+### Cross-device plan §122 — Rust CLI/TUI session-bound Runner receipt preview
+
+The canonical `forge.session-runner-receipt-observation/v1` envelope is now
+consumed by bounded local `device session-runner-receipt-preview --input
+FILE|-` and file-only TUI `session-runner-receipt-preview --input FILE`.
+Rust reuses the domain validator and emits the same metadata-only receipt
+projection, with no argv/output, target selection, or authority. The TUI
+reserves `-` for interactive input. Focused CLI argument, canonical output,
+mutation, and TUI no-device-request tests pass; the contract script includes
+both surfaces. No route, Hub/clock read, receipt/lease persistence, device
+registration/heartbeat, selection, reservation, scheduler, dispatch, Runner,
+process execution, artifact transfer, or Audit outbox was added. ADR-0039
+remains planning-only; ADR-0113/0114 remain Proposed/null; P3b and P4 retain
+separate governance gates.
+
+### Cross-device plan §123 — Authenticated session Runner receipt observation preview
+
+The canonical `forge.session-runner-receipt-observation/v1` envelope now has a
+read-only authenticated preview route at
+`POST /api/v1/conversations/{conversation_id}/runs/{run_id}/runner-receipt-observation/preview`.
+It requires `forge:conversations:read`, strict JSON, exact path/session
+identity, and owner equality with the verified Snaplink principal. Go
+revalidates nested receipt identity/state, null target selection, and every
+all-false authority bit before echoing canonical JSON. Flutter's
+`ForgeConversationsApi.previewSessionRunnerReceiptObservation` performs the
+same local display-only/path checks and rejects owner or response drift.
+Focused Go route tests cover deterministic echo, foreign owner/path, scope,
+method/query, malformed authority/selection, and the unchanged `/devices`
+404 boundary; Flutter API tests cover request shape and response owner drift.
+This is only a caller-supplied display bridge: it does not read Hub state or a
+clock, persist receipts or leases, register/heartbeat devices, select or
+reserve capacity, schedule, dispatch, contact a Runner, execute a process, or
+publish an Audit outbox. ADR-0039 remains planning-only; ADR-0113/0114 remain
+Proposed/null; P3b and P4 retain separate governance gates.
+
+### Cross-device plan §124 — Authenticated Rust CLI/TUI session Runner receipt observation preview
+
+Rust now consumes `forge.session-runner-receipt-observation/v1` through
+`remote session-runner-receipt preview --input FILE|-` and the authenticated
+TUI command `session-runner-receipt-preview --input FILE`. The client posts the
+bounded canonical envelope once to the existing session Runner receipt preview
+route and strictly validates the canonical echo, owner/path/session binding,
+nested receipt state, null target, and all-false authority.
+`session-runner-receipt-offline-preview --input FILE` preserves the prior
+file-only TUI inspection path, with `-` reserved for the interactive input.
+Parser, HTTP, response-mutation, TUI route, and no-device-request tests are
+in the contract script. No Hub/clock read, Run creation, persistence, device
+selection, reservation, scheduling, dispatch, Runner/process execution, or
+public inventory/execution route was added; ADR-0039 remains planning-only,
+ADR-0113/0114 remain Proposed/null, and P3b/P4 retain separate governance
+gates.
+
+### Cross-device plan §125 — Snaplink authenticated Rust receipt preview E2E
+
+The opt-in populated-Run Snaplink E2E now drives the real Rust CLI and PTY TUI
+through the authenticated session Runner receipt preview route. Each surface
+posts the same bounded `forge.session-runner-receipt-observation/v1` value once;
+the recorder and response checks require owner/Conversation/Prompt/Run,
+command/digest, null target, metadata-only output, and all-false authority.
+The TUI rejects command payload text and device paths. This is transport
+evidence only: no Run/receipt/lease persistence, device registration or
+heartbeat, selection, reservation, scheduler, dispatch, Runner execution,
+artifact transfer, or Audit outbox was added. ADR-0039 remains planning-only,
+ADR-0113/0114 remain Proposed/null, and P3b/P4 retain separate gates.
+
+### Cross-device plan §126 — Snaplink authenticated Flutter receipt preview E2E
+
+The opt-in populated-Run Flutter API and native Sessions E2E now consume the
+same canonical `forge.session-runner-receipt-observation/v1` value as Rust.
+The API client posts once to the authenticated receipt preview route and
+verifies the exact Conversation/Prompt/Run and command digest bindings; the
+native Sessions path renders the metadata-only card for the selected Run. The
+recorder allowlist contains that one receipt POST and still excludes device
+and execution routes. This remains display transport evidence: no Run,
+receipt/lease persistence, device registration/heartbeat, selection,
+reservation, scheduler, dispatch, Runner execution, artifact transfer, or
+Audit outbox was added. ADR-0039 remains planning-only, ADR-0113/0114 remain
+Proposed/null, and P3b/P4 retain separate gates.
+
+### Cross-device plan §127 — Snaplink authenticated Flutter Web receipt preview E2E
+
+The opt-in populated-Run browser E2E now drives the real Flutter Web build in
+Chromium, imports the canonical session Runner receipt card for the selected
+Run, and sends the same bounded envelope through the browser's authenticated
+receipt preview request. The browser validates the `200` canonical echo and
+metadata-only card, while the Go recorder requires exactly one receipt preview
+POST and still rejects device, inventory, and execution routes. Release Web
+JSON may materialize an integral number as `double`, so the receipt parser
+accepts only a finite exact integer within the platform-safe bound; fractional
+or rounded values remain rejected. No Run,
+receipt/lease persistence, device registration/heartbeat, selection,
+reservation, scheduler, dispatch, Runner execution, artifact transfer, or
+Audit outbox was added; ADR-0039 remains planning-only, ADR-0113/0114 remain
+Proposed/null, and P3b and P4 retain separate gates.
+
+### Cross-device plan §128 — Snaplink authenticated Flutter Web session device observation preview E2E
+
+The opt-in populated-Run browser E2E now posts the caller-supplied
+`forge.session-device-observation/v1` request once to the authenticated
+`device-observation/preview` route, validates the canonical response's exact
+Conversation/Run binding, null selected device/instance, and all-false
+authority, then imports that response into the Web Sessions panel. The Go
+recorder requires exactly one device-observation POST alongside the receipt
+preview POST and continues to reject live device, inventory, and execution
+routes; browser waits scroll through the long nine-instance declaration panel
+so later metadata cards remain observable. The browser also mutates a local
+receipt selection, verifies the Flutter import error, then reimports the
+canonical value without a second preview request. This is P3a transport evidence
+only: no registry/heartbeat persistence, enrollment, selection, reservation,
+scheduler, dispatch, Runner/process execution, artifact transfer, or Audit
+outbox was added; ADR-0039 remains planning-only, ADR-0113/0114 remain
+Proposed/null, and P3b/P4 retain separate gates.
+
+### Cross-device plan §129 — Flutter Web session device observation fail-closed import E2E
+
+The populated-Run browser path now mutates the canonical session device observation locally by setting `selected_device_id`, verifies the Flutter import error, closes the failed dialog, and successfully reimports the canonical response. The negative import is process-local and does not issue another device-observation preview request; the recorder still observes exactly one authenticated POST. This closes the Web consumer's selected-target fail-closed check for the P3a display envelope. No live inventory/heartbeat persistence, enrollment, selection, reservation, scheduler, dispatch, Runner/process execution, artifact transfer, or Audit outbox was added; ADR-0039 remains planning-only, ADR-0113/0114 remain Proposed/null, and P3b/P4 retain separate gates.
+
+### Cross-device plan §130 — Flutter Prompt byte preservation across retry
+
+Flutter now uses trimming only to reject an all-whitespace Prompt; non-empty leading spaces and trailing newlines remain byte-preserved through the authenticated append request and the pending-write retry with one idempotency key. The Sessions widget regression covers the whitespace-bearing Prompt and both attempts. No Run creation, device inventory/heartbeat, target selection, reservation, scheduler, dispatch, Runner execution, artifact transfer, or Audit outbox was added; ADR-0039 remains planning-only, ADR-0113/0114 remain Proposed/null, and P3b/P4 retain separate gates.
+
+### Cross-device plan §131 — Snaplink authenticated Flutter Web Prompt byte preservation E2E
+
+The independent-client E2E now sends a browser Prompt with leading spaces and a trailing newline through the real Flutter Web route; a Go client reads the Rust Hub record and compares the exact content bytes. The browser recorder still permits only bounded session/history reads and one Prompt POST, with no Run/device/inventory/scheduling route. This verifies Web semantics against Flutter retry behavior and the CLI/TUI/API contract; no execution authority or device effects were added, and ADR-0039/0113/0114 plus P3b/P4 gates remain unchanged.
+
+### Cross-device plan §132 — Authenticated Flutter-to-Rust Prompt byte parity E2E
+
+The shared-session E2E now drives the real Flutter API/native test path with Prompt values containing leading spaces and trailing newlines. Rust CLI history reads both values exactly, and the PTY TUI re-renders the same JSON-escaped values from the owner-scoped Conversation. This extends §130's local retry evidence across Flutter, Hub, CLI, and TUI without creating a Run or authorizing device work; ADR-0039/0113/0114 and P3b/P4 gates remain unchanged.
+
+### Cross-device plan §133 — Flutter Forge foreground refresh coalescing across platforms
+
+The shared Flutter Sessions screen now coalesces overlapping foreground refreshes. Android/iOS lifecycle delivery and desktop window integrations can report another `resumed` notification while the prior owner feed/session/Run reads are pending; one in-flight resume refresh is retained and a later foreground cycle starts only after it finishes. The widget regression uses Flutter's valid inactive/hidden/paused/resumed sequence, starts a second foreground cycle while the first feed read is blocked, and proves one change-feed request plus one follow-up session refresh. Focused Sessions tests, targeted analyzer, Web release build, and Android debug APK build pass. This is read-only lifecycle coordination and adds no Run write, device inventory/heartbeat, selection, reservation, scheduling, dispatch, Runner/process execution, artifact transfer, or Audit outbox; ADR-0039 remains planning-only, ADR-0113/0114 remain Proposed/null, and P3b/P4 retain separate gates.
+
+### Cross-device plan §134 — Flutter session device observation rejects selected instances
+
+The shared Web/App/Mobile offline observation import now rejects a caller mutation of `selected_instance_id` with `Invalid offline device observation.` and leaves no observation panel rendered. The regression complements the selected-device mutation check and proves the `(device_id, instance_id)` pair remains display-only without a request. This remains a local P3a validation boundary: no live inventory/heartbeat persistence, selection, reservation, scheduler, dispatch, Runner/process execution, artifact transfer, or Audit outbox was added; ADR-0039 remains planning-only, ADR-0113/0114 remain Proposed/null, and P3b/P4 retain separate governance gates.
+
+### Cross-device plan §135 — Flutter Forge session deep-link selection
+
+The Forge route now passes `/forge/conversations/{conversation_id}` into the authenticated Sessions screen. If the requested owner-scoped Conversation is outside the first keyset page, Flutter performs one bounded detail read, merges the exact result, and loads its Prompt and Run metadata; refreshes preserve the selected owner session across page-boundary changes. The deep-link widget regression verifies the request sequence and owner-scoped selection. This is read-only P2 navigation and observation: no Run/Prompt write, inventory/heartbeat persistence, target selection/reservation, scheduling, dispatch, Runner execution, artifact transfer, or Audit outbox was added; ADR-0039 remains planning-only, ADR-0113/0114 remain Proposed/null, and P3b/P4 retain separate gates.
+
+### Cross-device plan §136 — Flutter Forge session selection URL synchronization
+
+Selecting another owner-scoped Conversation now updates the same-document
+`/forge/conversations/{conversation_id}` route with
+`BrowserNavigation.replaceState`. The authenticated Sessions screen remains
+mounted and no navigation reload or extra route read is triggered, while a
+refresh or bookmark can restore the selected session through the existing
+owner-scoped deep-link path. A targeted widget regression checks the canonical
+path and the absence of a non-GET request. The URL remains a selection hint;
+the authenticated list/detail read remains authoritative. This is read-only
+P2 navigation continuity and adds no Run/Prompt write, device
+inventory/heartbeat, target selection/reservation, scheduling, dispatch,
+Runner execution, artifact transfer, or Audit outbox; ADR-0039/0113/0114 and
+P3b/P4 gates remain unchanged.
+
+### Cross-device plan §137 — Flutter Forge same-document history selection recovery
+
+The authenticated Forge Sessions screen now listens to
+`BrowserNavigation.listenToLocationChange` and restores an owner-scoped
+Conversation after same-document push/replace or back/forward changes. Local
+first-page selections reuse the existing owner-filtered object; older deep
+links resolve through the authenticated detail fallback. Returning to `/forge`
+clears local selection metadata, duplicate URL events are coalesced, stale
+location work cannot overwrite a newer selection, and the listener is removed
+on dispose. Widget coverage includes local recovery, back navigation, detail
+fallback, duplicate reads, and disposal. This remains read-only P2 navigation:
+no gate rebuild, Prompt/Run write, inventory/heartbeat persistence,
+target selection/reservation, scheduling, dispatch, Runner execution,
+artifact transfer, or Audit outbox; ADR-0039/0113/0114 and P3b/P4 gates remain
+unchanged.
+
+### Cross-device plan §138 — Flutter Forge gate restores the current route
+
+`ForgeSessionsGate` now treats the entry route as a bootstrap hint while the
+Forge credential record is restored. It re-reads `BrowserNavigation.currentUri`
+after the asynchronous restore, so a deep link entered during restore wins and
+a return to `/forge` clears the stale entry selection before constructing the
+Sessions screen. Delayed secure-store widget regressions cover both transitions
+through a route-aware test builder. This is read-only P2 route continuity; the
+authenticated owner-scoped read remains authoritative and no Prompt/Run write,
+inventory or heartbeat persistence, target selection/reservation, scheduling,
+dispatch, Runner execution, artifact transfer, or Audit outbox was added.
+ADR-0039/0113/0114 and the P3b/P4 governance gates remain unchanged.
+
+### Cross-device plan §139 — Create a bookmarkable Forge session selection
+
+After the authenticated create response succeeds, Forge now updates the
+same-document `/forge/conversations/{conversation_id}` URL through the same
+selection helper used by list taps. A transport failure leaves the existing
+`/forge` or prior session URL intact while the pending create is retried; only
+the confirmed server Conversation changes the route. The replacement is
+handled in place and causes no extra list/detail, Prompt, or Run read. Widget
+coverage verifies success and failure/retry behavior. This remains read-only
+route continuity around the existing Conversation write; no inventory or
+heartbeat persistence, target selection/reservation, scheduling, dispatch,
+Runner execution, artifact transfer, or Audit outbox was added.
+ADR-0039/0113/0114 and P3b/P4 governance gates remain unchanged.
+
+### Cross-device plan §140 — Rust TUI owner-scoped detail fallback
+
+Rust TUI `open` and `detail/show` now resolve a Conversation outside the
+currently loaded page through the existing authenticated owner-scoped detail
+GET. `open` continues to load Prompt history and `detail` renders the validated
+metadata-only projection; loaded-page `open` keeps the zero-extra-GET fast
+path. A successful fallback commits `selected_entry` only after ID/owner
+validation, while a missing or foreign lookup preserves the previous selection
+and history. Focused PTY-style tests cover both commands and failed lookup
+preservation. This is read-only CLI/TUI session continuity and adds no device
+registration/heartbeat, live inventory authority, target selection/reservation,
+scheduling, dispatch, Runner execution, artifact transfer, or Audit outbox.
+ADR-0039/0113/0114 and P3b/P4 governance gates remain unchanged.
+
+### Cross-device plan §141 — Ecosystem revalidation and outbound-audit boundary
+
+Rechecked the user-named Snaplink, Console, Aero-ID, Aero-IM, Aero-Vault, and
+Audit Governance repositories. Console Agent Hub's device/task APIs are a
+separate scheduler: their instance/project/task data has no Forge owner,
+Conversation/Prompt/Run/Attempt, key-proof, sequence/freshness, lease/fencing,
+or Runner-receipt binding, so it cannot become Forge inventory. Snaplink's
+authenticated Forge client evidence remains human identity only; Aero-ID
+projection, Aero-IM delivery, and Aero-Vault objects stay downstream and do
+not provide Runner authority. Audit Governance's real event endpoint requires
+registered tenant source bindings, credentials, bounded receipts, and a relay;
+Forge lacks the approved registration/outbox/redaction lifecycle.
+
+The existing content-free `forge.prompt.accepted.v1` remains contract-only.
+`auditprojection` now has an AST-based negative boundary test rejecting
+network/database/process/runtime imports and publisher/dispatch/enrollment
+entry points, ensuring an ungoverned Audit relay cannot appear beside the pure
+projection; the Forge contract script executes it. No external call,
+persistence, device/heartbeat API, inventory,
+reservation, scheduler, dispatch, Runner execution, or Audit publication was
+added. ADR-0039 is still planning-only; ADR-0113/0114 remain Proposed/null;
+P3b/P4 remain gated.
+
+### Cross-device plan §142 — Flutter failed deep-link selection preservation
+
+The shared Flutter Web/App/Mobile Sessions screen now treats a failed
+owner-scoped detail fallback as a selection failure rather than a failed
+Conversation-list read. A missing, foreign, malformed, or unavailable
+same-document deep link keeps the last successful list, current selection,
+and rendered Prompt/Run state, reports the detail error, and performs no
+Prompt/Run read for the inaccessible ID. The URL remains an untrusted hint and
+the failed ID is never selected. Authorization failures retain the existing
+fail-closed credential and visible-owner-data clearing path. Focused widget
+coverage verifies state preservation and the exact list/detail request bound;
+the existing authorization regression remains green. This is P2 read and
+navigation resilience only and adds no inventory/heartbeat persistence,
+target selection/reservation, scheduler, dispatch, Runner execution, artifact
+transfer, or Audit outbox. ADR-0039/0113/0114 and P3b/P4 governance gates
+remain unchanged.
+
+### Cross-device plan §143 — Rust TUI renders per-instance resource declarations
+
+Authenticated TUI session-device observation output now renders each placement
+decision as `device_id/instance_id`, with the bounded caller-declared CPU,
+memory, storage, GPU presence, and GPU memory values. Focused PTY-style
+coverage verifies eligible and excluded instance rows and the absence of
+device-route requests. This remains a display projection of unverified P3a
+input: no live inventory/heartbeat persistence, registration, target
+selection/reservation, scheduler, dispatch, Runner execution, artifact
+transfer, or Audit outbox was added. ADR-0039 remains planning-only,
+ADR-0113/0114 remain Proposed/null, and P3b/P4 remain gated.
+
+### Cross-device plan §198 — Go/Rust persisted inventory placement-input parity
+
+Forge Core and Rust Runtime now convert one persisted, owner-bound inventory
+value into a strict pure placement input without a route, database, clock, or
+policy evaluation. The conversion preserves only persisted owner/device/Runner
+state and canonical capabilities, rejects foreign owners and Runner/device
+binding drift, and keeps the owner tuple unverified. Residency, trust,
+sandbox, and concurrency are absent from persistence and are carried as empty
+or unknown values, so an enabled policy fails closed. The shared strict
+`forge-device-inventory-placement-input-v1` fixture covers online, stale,
+expired, pending, cordoned, revoked, offline, owner mismatch, binding
+mismatch, and missing-policy-attribute cases; all authority fields remain
+false. No selection, reservation, dispatch, Runner execution, or production
+authority changed.
+
+### Cross-device plan §144 — Flutter clears imported Runner observations across session selection
+
+Process-local Runner execution-intent and session Runner receipt observations
+are now scoped to the selected Conversation/Run. Selecting another
+Conversation, clearing the same-document `/forge` selection, creating a new
+Conversation, or observing a different Run clears those imports before later
+reads can complete. A widget regression imports both display-only cards,
+switches to a second owner-scoped session, and returns to the first without
+resurrecting stale cards. This is local display-state hygiene only; no Prompt
+or Run write, inventory/heartbeat persistence, target selection/reservation,
+scheduler, dispatch, Runner execution, artifact transfer, or Audit outbox was
+added. ADR-0039/0113/0114 and P3b/P4 governance gates remain unchanged.
+
+### Cross-device plan §145 — Rust TUI clears owner data after authorization rejection
+
+The authenticated Rust TUI now clears its owner-scoped Conversation list,
+selection, Prompt history, pagination cursor, and pending write state after an
+HTTP 401/403 from a session read or write. A focused PTY-style regression
+loads a session and Prompt history, receives 403 from the Run read, and proves
+the final render contains neither the prior Conversation nor Prompt. Missing,
+conflict, and transient responses retain the trusted view. This aligns the
+CLI/TUI fail-closed read behavior with Flutter's existing authorization path;
+it adds no credential revocation, device/inventory persistence, target
+selection, scheduling, dispatch, Runner execution, or Audit outbox. ADR-0039
+remains planning-only, ADR-0113/0114 remain Proposed/null, and P3b/P4 remain
+gated.
+
+### Cross-device plan §146 — Strict nested session device-observation request boundary
+
+The authenticated Go session device-observation preview now routes its
+caller-supplied body through a bounded strict decoder that requires the full
+nested placement, requirements, GPU, device, and candidate shape. This aligns
+the authenticated observation request with the standalone placement decoder;
+missing nested fields can no longer become valid Go zero values. Package and
+route regressions reject an omitted placement `gpu` object before evaluation.
+The slice remains stateless P3a observation and adds no live inventory,
+registration/heartbeat persistence, target selection/reservation, scheduler,
+dispatch, Runner execution, artifact transfer, or Audit outbox. ADR-0039
+remains planning-only, ADR-0113/0114 remain Proposed/null, and P3b/P4
+governance gates remain unchanged.
+
+### Cross-device plan §147 — Flutter Forge sign-out hides owner data before cleanup
+
+Flutter Forge Sessions now invalidates and hides the owner-scoped Conversation,
+Prompt, Run, and imported observation state immediately when device-scoped
+sign-out begins. The change-feed timer stops while Snaplink revocation and
+secure-store cleanup finish; a failed secure-store delete leaves the owner
+view hidden and exposes an explicit retry state. The native-route regression
+seeds a Conversation and Prompt, blocks revocation, and proves neither remains
+visible during pending sign-out. This is client lifecycle hygiene only: no
+device registration/heartbeat, inventory, target selection, reservation,
+scheduling, dispatch, Runner execution, artifact transfer, or Audit outbox was
+added. ADR-0039 remains planning-only, ADR-0113/0114 remain Proposed/null,
+and P3b/P4 remain gated.
+
+
+### Cross-device plan §148 — Flutter refreshes a replaced session device observation
+
+The shared Web/App/Mobile Sessions State now handles a parent replacing the
+caller-supplied session device-observation declaration without recreating the
+screen. It clears the previous fetched/imported value, invalidates the old
+generation, and performs one bounded preview for the new selected
+Conversation/Run; equivalent declarations do not trigger another request. A
+widget regression updates the mounted screen from no request to a matching
+request and verifies the authenticated preview plus per-instance panel. This
+remains P3a display state only: no live inventory/heartbeat persistence,
+registration, selection, reservation, scheduling, dispatch, Runner execution,
+artifact transfer, or Audit outbox was added. ADR-0039 remains planning-only,
+ADR-0113/0114 remain Proposed/null, and P3b/P4 remain gated.
+
+### Cross-device plan §149 — Rust TUI clears owner data after placement preview authorization failure
+
+The authenticated Rust TUI placement preview now clears its owner-scoped
+Conversation list, selected entry, Prompt history, pagination cursor, and
+pending write state after HTTP 401/403, matching the existing session, Run,
+and session-observation read behavior. A focused PTY-style regression loads a
+private session, returns 403 from the stateless placement preview route, and
+proves the next render contains no stale owner data. This is P2 client-state
+hygiene around a P3a display-only preview; no live inventory/heartbeat,
+registration, target selection/reservation, scheduling, dispatch, Runner
+execution, artifact transfer, or Audit outbox was added. ADR-0039 remains
+planning-only, ADR-0113/0114 remain Proposed/null, and P3b/P4 remain gated.
+
+### Cross-device plan §150 — Flutter rejects duplicate Runner instance declarations
+
+The Flutter offline device-inventory decoder now rejects duplicate
+`instance_id` values, matching the existing Go and Rust strict contracts. A
+fixture regression mutates two device rows to share one Runner instance and
+proves the page is rejected before resource aggregation or rendering. This is
+P3a contract parity for caller-supplied display data; it adds no live
+inventory/heartbeat persistence, registration, target selection/reservation,
+scheduling, dispatch, Runner execution, artifact transfer, or Audit outbox.
+ADR-0039 remains planning-only, ADR-0113/0114 remain Proposed/null, and P3b/P4
+remain gated.
+
+### Cross-device plan §151 — Flutter stops owner polling after authorization invalidation
+
+The shared Flutter Web/App/Mobile Forge Sessions screen stops its
+foreground owner change-feed timer immediately after an authenticated read or
+write receives HTTP 401/403. Existing fail-closed cleanup still clears the
+Conversation, Prompt, Run, and process-local observation state and the Forge
+credential slot; a widget regression advances beyond one polling interval and
+verifies that no further session read is sent. This is P2 client lifecycle
+hygiene only: no live inventory/heartbeat persistence, registration, target
+selection/reservation, scheduling, dispatch, Runner execution, artifact
+transfer, or Audit outbox was added. ADR-0039/0113/0114 and the P3b/P4 gates
+remain unchanged.
+
+### Cross-device plan §152 — Rust CLI rejects duplicate device and Runner instance declarations
+
+The Rust `device inventory show` decoder now tracks device and Runner instance
+identities independently. Repeated `device_id` or repeated `instance_id`
+declarations fail before sorting and output, matching the Flutter, Go, and
+authenticated TUI boundaries; CLI coverage exercises both mutations. This is
+P3a offline contract parity only. No live inventory/heartbeat persistence,
+registration, target selection/reservation, scheduling, dispatch, Runner
+execution, artifact transfer, or Audit outbox was added. ADR-0039 remains
+planning-only, ADR-0113/0114 remain Proposed/null, and P3b/P4 remain gated.
+
+### Cross-device plan §153 — Flutter keeps authorization-invalidated polling disabled across resume
+
+The shared Flutter Web/App/Mobile Forge Sessions screen keeps owner polling
+disabled after an authenticated 401/403, including a later `resumed` lifecycle
+event. The timer start path, foreground refresh, and change-feed poll all honor
+the authorization-invalidated state, and the widget regression proves that
+neither the Conversation snapshot nor change feed is requested after resume.
+This remains P2 client lifecycle hygiene only; no live inventory/heartbeat,
+registration, target selection/reservation, scheduling, dispatch, Runner
+execution, artifact transfer, or Audit outbox was added. ADR-0039/0113/0114
+and the P3b/P4 gates remain unchanged.
+
+### Cross-device plan §154 — Rust rejects duplicate Aero-ID projection keys
+
+The Rust domain consumer for the pure `forge.aero-id-profile-projection/v1`
+fixture now performs a recursive duplicate-object-key scan before
+`serde_json` materializes the projection. This matches the Go strict decoder
+and prevents a caller from using a later duplicate value to alter an owner,
+profile, membership, or authority field. Root and nested duplicate-key
+regressions pass; bounded shape, unknown fields, membership order, owner
+binding, and all-false authority checks remain active. This is pure P5
+projection parity only: no Aero-ID call, token forwarding, profile
+persistence, Forge authorization, device registration/heartbeat, inventory,
+selection, reservation, scheduling, dispatch, Runner execution, artifact
+transfer, or Audit outbox was added. ADR-0039 remains planning-only,
+ADR-0113/0114 remain Proposed/null, and P3b/P4 remain gated.
+
+### Cross-device plan §155 — Rust CLI/TUI rejects duplicate JSON keys in offline inventory snapshots
+
+The Rust `device inventory snapshot-canonical` input boundary now recursively
+rejects duplicate object keys before `serde` materializes the bounded
+caller-supplied fixture. Root and nested duplicate-key regressions prove
+fail-closed behavior while preserving bounded input, unknown-field,
+case-identity, canonical ordering, digest, and all-false authority checks. The
+authenticated TUI reuses this same local command boundary; no live
+inventory/heartbeat persistence, registration, selection, reservation,
+scheduling, dispatch, Runner execution, artifact transfer, or Audit outbox was
+added. ADR-0039 remains planning-only, ADR-0113/0114 remain Proposed/null, and
+P3b/P4 remain gated.
+
+### Cross-device plan §156 — Rust TUI explicit local Conversation import
+
+The interactive Rust TUI now accepts `import LOCAL_CONVERSATION_ID
+[--confirm SHA256]`, reusing the CLI's bounded ownerless local Hub loader,
+target binding, digest preview, idempotent import request, and result validation.
+No confirmation only renders the visible user/assistant Prompt preview; an
+exact current lowercase digest is required before upload, and a mismatch makes
+no request. The optional `--state-dir` reaches the TUI, and 401/403 import
+failures clear the owner session view. This closes the explicit P1/P2 TUI
+session-continuity parity gap without adding Run execution, device
+registration/heartbeat, live inventory, selection, reservation, scheduling,
+dispatch, Runner execution, artifact transfer, or Audit outbox. ADR-0039
+remains planning-only, ADR-0113/0114 remain Proposed/null, and P3b/P4 remain
+gated.
+
+### Cross-device plan §157 — Rust CLI/TUI heartbeat persistence CAS preview
+
+The Rust CLI `device heartbeat-persistence-preview --input FILE|-` and
+authenticated TUI `heartbeat-persistence-preview --input FILE` consume the
+shared heartbeat persistence fixture through the pure domain CAS evaluator.
+They restore caller-supplied snapshots, compare replacement fields or bounded
+error names, reject duplicate JSON keys/unknown fields/authority mutations,
+and preserve all-false authority. The slice performs no storage, clock,
+network, enrollment, inventory publication, target selection, reservation,
+scheduling, dispatch, Runner, or Audit action; ADR-0039 remains
+planning-only, ADR-0113/0114 remain Proposed/null, and P3b/P4 remain gated.
+
+### Cross-device plan §158 — Rust CLI/TUI identity proof binding preview
+
+The Rust `device identity-proof-preview --input FILE|-` CLI and file-only
+TUI command now consume the shared identity-proof fixture through the pure
+binding evaluator. Owner, device, key, challenge, approval, credential, and
+validity cases are checked with bounded input, strict unknown/duplicate-key
+rejection, expected-result matching, and all-false authority output. No
+cryptography, key material, challenge consumption, persistence, enrollment,
+network, live inventory, target selection/reservation, scheduling, dispatch,
+Runner execution, or Audit outbox was added; ADR-0039 remains planning-only,
+ADR-0113/0114 remain Proposed/null, and P3b/P4 remain gated.
+
+### Cross-device plan §159 — Rust identity proof envelope parity
+
+The Rust CLI/TUI identity-proof consumer now applies the same fixed envelope
+checks as Go and Flutter: exact notice/schema mode, matching owner declaration,
+canonical base device/key and approved-active state, unconsumed base challenge,
+twelve unique cases, and all-false authority. Envelope mutations fail before
+case evaluation. This remains strict P3a fixture parity only; no cryptography,
+key material, challenge consumption, persistence, enrollment, network, live
+inventory, target selection/reservation, scheduling, dispatch, Runner
+execution, or Audit outbox was added. ADR-0039 remains planning-only,
+ADR-0113/0114 remain Proposed/null, and P3b/P4 remain gated.
+
+### Cross-device plan §160 — Rust CLI/TUI inventory row bound parity
+
+Rust `device inventory show` now rejects more than 128 caller-supplied
+device/Runner-instance declarations, matching Go, Flutter, resource-summary,
+and session-observation consumers. CLI coverage builds a valid 129-row
+observation and proves fail-closed behavior; the authenticated TUI reuses the
+same local boundary and emits no device request. This remains P3a offline
+hygiene with no live discovery, registration, persistence, inventory
+publication, target selection/reservation, scheduling, dispatch, Runner
+execution, or Audit outbox; ADR-0039 remains planning-only, ADR-0113/0114
+remain Proposed/null, and P3b/P4 remain gated.
+
+### Cross-device plan §161 — Cross-client Prompt idempotency replay
+
+Owned SQLite Prompt retries now resolve the original `prompt_appended`
+aggregate version instead of returning the current Conversation head. This
+keeps Prompt identity/content/version stable when Flutter's idempotency key is
+replayed later by Rust CLI; infrastructure coverage exercises a later write,
+and the shared Flutter Console → Rust CLI E2E proves one history entry and
+stable change-feed versions. This is P1/P2 retry parity only: no device
+registration/heartbeat, live inventory, target selection/reservation,
+scheduling, dispatch, Runner execution, artifact transfer, or Audit outbox was
+added. ADR-0039 remains planning-only, ADR-0113/0114 remain Proposed/null,
+and P3b/P4 remain gated.
+
+### Cross-device plan §162 — Rust CLI/TUI inventory safe-integer parity
+
+Rust `device inventory show` now rejects evaluation, snapshot, lease, memory,
+storage, and GPU-memory declarations above the shared
+`9_007_199_254_740_991` JavaScript/Dart safe integer limit. The authenticated
+TUI reuses the same decoder, and focused CLI coverage mutates every numeric
+field independently. This remains P3a offline declaration hygiene with no
+live discovery, registration, persistence, inventory authority, target
+selection/reservation, scheduling, dispatch, Runner execution, artifact
+transfer, or Audit outbox; ADR-0039 remains planning-only, ADR-0113/0114
+remain Proposed/null, and P3b/P4 remain gated.
+
+### Cross-device plan §163 — Owner-bound Run timeline checkpoint/resume
+
+Rust CLI/TUI now expose explicit metadata-only `remote runs timeline ...
+--resume` / `timeline RUN_ID --resume` paths backed by a private checkpoint
+bound to coordinator, issuer, client, owner, Conversation, and Run; manual
+`--after-sequence` remains one-off. Flutter persists the same sequence-only
+owner-bound checkpoint and resumes after cold start or Run re-entry. Only a
+validated dense page advances it; malformed, failed, stale, or unauthorized
+reads do not. No token, Prompt body, event payload, device declaration, or
+execution data is persisted. This is P2 reconnect hygiene only: no live event
+delivery, Run content, device registration/heartbeat, inventory authority,
+target selection/reservation, scheduling, dispatch, Runner execution,
+artifact transfer, or Audit outbox was added. ADR-0039 remains planning-only,
+ADR-0113/0114 remain Proposed/null, and P3b/P4 remain gated.
+
+### Cross-device plan §164 — Flutter Native populated-Run remount resume evidence
+
+The real Flutter Web/App/Mobile widget E2E mounts a populated completed Run,
+reads its metadata timeline from sequence zero, unmounts the route, and mounts
+it again with the same persistent credential store. The remount receives no
+device declaration and resumes from the owner-bound positive checkpoint; the
+Go recorder requires one zero cursor, one positive cursor, and one device
+observation preview POST. This is P2 reconnect evidence only: no live device,
+inventory, scheduling, dispatch, Runner, artifact, or Audit action was added;
+ADR-0039 remains planning-only, ADR-0113/0114 remain Proposed/null, and P3b/P4
+remain gated.
+
+### Cross-device plan §165 — Go Runner execution-intent command digest parity
+
+Go `ObserveRunnerExecutionIntent` now recomputes the Rust-compatible
+`forge.runtime.runner-command.v1` digest from the supplied direct-argv command
+and rejects a detached or mismatched `execution_intent.command_sha256`; a
+matching digest remains accepted. This is pure P4 preparation only: no device
+verification, lease, selection, reservation, scheduling, dispatch, Runner,
+artifact, or Audit action was added. ADR-0039 remains planning-only,
+ADR-0113/0114 remain Proposed/null, and P3b/P4 remain gated.
+
+### Cross-device plan §166 — Cross-client Run JSON-safe integer parity
+
+Run page/timeline cursors, summaries, timeline pages, metadata-only resume
+checkpoints, Rust CLI/TUI parsers, runtime RPC, and Go appserver/runtime bridge
+now reject values above the shared JSON-safe integer ceiling
+`9_007_199_254_740_991` while accepting the ceiling itself. Focused tests cover
+request/response, parser, runtime-RPC, checkpoint, and Go route boundaries so
+Flutter/Web/Rust/Go cannot silently diverge on large Run sequence or timestamp
+values. This remains P2/P3a transport and reconnect hygiene only; no live
+device registration/heartbeat, authoritative inventory, selection,
+reservation, scheduling, dispatch, Runner, artifact, or Audit action was added;
+ADR-0039 remains planning-only, ADR-0113/0114 remain Proposed/null, and P3b/P4
+remain gated.
+
+### Cross-device plan §167 — Run summary invariant parity
+
+Rust remote Run-page validation now rejects zero `latest_sequence` and
+repeated `run_id` values within one response page, matching Go runtime bridge
+validation while retaining the shared JSON-safe number ceiling. Focused Rust
+and Go regressions cover zero-sequence, duplicate-summary, cursor, and
+metadata timeline cases. This is read-only P2/P3a response hygiene only; no
+Run/device mutation, live registration/heartbeat, authoritative inventory,
+selection, reservation, scheduling, dispatch, Runner, artifact, or Audit
+operation was added. ADR-0039 remains planning-only, ADR-0113/0114 remain
+Proposed/null, and P3b/P4 remain gated.
+
+### Cross-device plan §168 — Flutter Web Run checkpoint reload evidence
+
+The real Chromium Web E2E opens a populated Run, reads its metadata timeline
+from sequence zero, reloads `/forge/` with the same tab credential, and
+re-enters the Run using the persisted owner-bound positive cursor. The remount
+shows no timeline markers and no duplicate `run_started`/`run_finished` values;
+the recorder accepts the initial zero cursor followed only by positive cursors
+from bounded refreshes. The same path continues to validate caller-supplied
+device observation and session Runner receipt previews. This is P2/P3a evidence
+only: no live enrollment/heartbeat, authoritative inventory, selection,
+reservation, scheduling, dispatch, Runner, artifact, or Audit action was added;
+ADR-0039 remains planning-only, ADR-0113/0114 remain Proposed/null, and P3b/P4
+remain gated.
+
+### Cross-device plan §169 — Rust TUI owner-bound Run timeline resume process evidence
+
+A real two-process PTY integration now runs authenticated Rust TUI with a
+private saved credential: process one reads the populated Run timeline from
+sequence zero and persists the validated positive cursor; process two resumes
+with the same owner/coordinator/Conversation/Run binding and reads an empty
+page without replaying timeline markers. The recorder asserts only
+owner-scoped Conversation, Prompt, Run, and timeline GETs; no device,
+inventory, Runner, or execution request is made. This remains P2 reconnect
+evidence only; ADR-0039 remains planning-only, ADR-0113/0114 remain
+Proposed/null, and P3b/P4 remain gated.
+
+### Cross-device plan §170 — Cross-client Prompt JSON-safe integer parity
+
+Prompt page timestamps and (created_at_ms, prompt_id) cursors now use the
+shared JSON-safe ceiling 9_007_199_254_740_991 across Go HTTP/runtime
+bridge, Rust runtime RPC/CLI, and Flutter API/model boundaries. The ceiling is
+accepted while +1 fails closed at request and response edges; Hub SQLite
+storage keeps its existing signed-integer range. This remains P1/P2
+pagination hygiene only, with no live inventory, scheduling, dispatch,
+Runner, artifact, or Audit operation; ADR-0039 remains planning-only,
+ADR-0113/0114 remain Proposed/null, and P3b/P4 remain gated.
+
+### Cross-device plan §171 — Cross-client Conversation JSON-safe timestamp parity
+
+Conversation `created_at_ms` and `updated_at_ms` now use the shared
+JSON-safe ceiling `9_007_199_254_740_991` across Go runtimebridge/HTTP,
+Rust remote/RPC, and Flutter model boundaries. The ceiling is accepted and
+`+1` fails closed; Rust RPC covers snapshot, bootstrap, and owned
+create/import/list/detail responses, while Hub SQLite storage remains
+unchanged. This is P1/P2 transport hygiene only, with no live inventory,
+scheduling, dispatch, Runner, artifact, or Audit operation; ADR-0039 remains
+planning-only, ADR-0113/0114 remain Proposed/null, and P3b/P4 remain gated.
+
+### Cross-device plan §172 — Cross-client Conversation changes JSON-safe integer parity
+
+Global and owner-scoped Conversation change feeds now reject values above the
+shared JSON-safe ceiling `9_007_199_254_740_991` across Go Runtime bridge and
+HTTP, Rust Runtime RPC/remote CLI-TUI, and Flutter models. The ceiling remains
+valid while `+1` fails closed for after/scanned/next/head cursors, row cursors,
+schema/aggregate versions, and creation timestamps; unsafe Runtime storage
+returns bounded query/storage errors without changing SQLite ranges. Focused
+Go, Rust, and Flutter regressions cover request, response, RPC, and model
+boundaries. This remains P1/P2 feed transport hygiene only; no live inventory,
+scheduling, dispatch, Runner, artifact, or Audit action was added; ADR-0039
+remains planning-only, ADR-0113/0114 remain Proposed/null, and P3b/P4 remain
+gated.
+
+### Cross-device plan §173 — Cross-client Conversation timestamp chronology parity
+
+Flutter, Go, Rust remote, and Rust Runtime RPC now reject Conversation rows
+where `updated_at_ms < created_at_ms`, while retaining the §171 JSON-safe
+timestamp ceiling. This is P1/P2 response hygiene only; no live inventory,
+scheduling, dispatch, Runner, artifact, or Audit action was added. ADR-0039
+remains planning-only, ADR-0113/0114 remain Proposed/null, and P3b/P4 remain
+gated.
+
+### Cross-device plan §174 — Cross-client pending Run-intent JSON-safe numeric parity
+
+The private Go HTTP candidate route and Runtime bridge pending-intent
+DTO/request/response validation, plus Rust Runtime RPC/HubService pending-intent
+cursors, timeline sequences, submit
+versions, summaries, Prompt receipts, and event markers now share
+`9_007_199_254_740_991`; the ceiling is accepted and `+1` fails closed, while
+unsafe stored projections return `storage_corrupt`. The intent remains an
+inert consent-checked receipt with no public execution path; SQLite storage is
+unchanged, Flutter has no pending-intent RPC consumer, and its separate
+display-only observation contract already enforces the same bound. No live
+inventory, scheduling, dispatch, Runner, artifact, or Audit action was added;
+ADR-0039 remains planning-only, ADR-0113/0114 remain Proposed/null, and P3b/P4
+remain gated.
+
+### Cross-device plan §175 — Cross-client Conversation aggregate-version JSON-safe parity
+
+Go runtimebridge/HTTP, Rust remote/Runtime RPC, and Flutter now share
+`9_007_199_254_740_991` for owner Conversation aggregate versions across
+list/detail/create/import projections, Prompt append receipts, and
+expected-version inputs. The ceiling is accepted and `+1` fails closed at
+request, response, RPC, and model boundaries; Hub SQLite schema and ADR
+invariants remain unchanged. This is P1/P2 transport/CAS hygiene only; no
+live inventory, scheduling, dispatch, Runner, artifact, or Audit action was
+added. ADR-0039 remains planning-only, ADR-0113/0114 remain Proposed/null,
+and P3b/P4 remain gated.
+
+### Cross-device plan §176 — Pending Run-intent HTTP candidate response guard
+
+The private pending Run-intent HTTP candidate now validates backend response
+numbers before serialization: submit Prompt receipts, intent summaries,
+initial event markers, page cursors, timeline sequences, and event timestamps
+must stay within `9_007_199_254_740_991`. Unsafe replacement-backend values
+fail with a bounded service error; production route wiring remains disabled.
+This is P2 inert-intent transport hygiene only, with no Run, live inventory,
+scheduling, dispatch, Runner, artifact, or Audit action. ADR-0039 remains
+planning-only, ADR-0113/0114 remain Proposed/null, and P3b/P4 remain gated.
+
+### Cross-device plan §177 — Flutter placement preview response re-evaluation parity
+
+The authenticated Flutter placement-preview client now recomputes the same
+deterministic P3a evaluator over its validated caller declaration and rejects
+any response whose owner, evaluation time, device set, eligibility, or
+exclusion reasons differ. Authority bits, schema, ordering, and JSON-safe
+numeric limits remain fail-closed. Flutter owner text now rejects Go's full
+C0/C1 control range, and `min_cpu_cores` is bounded to the Go `uint32` wire
+range. Regressions cover response tampering, C1 input, and the uint32 edge.
+This remains an authenticated, stateless, caller-supplied preview: no live
+inventory, heartbeat, reservation, scheduling, dispatch, Runner, artifact, or
+Audit operation was added; ADR-0039 remains planning-only, ADR-0113/0114
+remain Proposed/null, and P3b/P4 remain gated.
+
+### Cross-device plan §178 — Go owner-scoped inventory read candidate seam
+
+Forge Core now has a private unregistered candidate handler that derives the
+owner from verified claims, requires the separate `forge:devices:read` scope,
+validates an injected unverified inventory observation and response budget, and
+fails closed on foreign, unsafe, unavailable, or oversized source data. The
+production Coordinator still returns 404 for `/api/v1/devices`, enrollment,
+and heartbeat; no discovery, persistence, live authority, selection,
+scheduling, dispatch, Runner, or Audit operation was added. ADR-0039 remains
+planning-only, ADR-0114 remains Proposed/null, and P3b/P4 remain gated.
+
+### Cross-device plan §179 — Rust/Go/Flutter placement strict parity
+
+Rust CLI/TUI and Go placement boundaries now share the complete nested wire
+shape, `available_storage_bytes`, duplicate/unknown/null rejection,
+deterministic response re-evaluation, and JSON-safe numeric ceiling. Authority
+bounds now also align Flutter `concurrency_slots` with Go/Rust `uint16`; all
+authority bits remain false. This remains P3a caller-supplied offline comparison
+with no live inventory, heartbeat, target selection, reservation, scheduling,
+dispatch, Runner, artifact, or Audit action; ADR-0039 remains planning-only,
+ADR-0113/0114 remain Proposed/null, and P3b/P4 remain gated.
+
+### Cross-device plan §180 — Rust offline resource-summary declaration parity
+
+Rust CLI/TUI resource-summary and session-device-observation consumers now
+aggregate caller declarations directly rather than applying live registry
+`RunnerInstance`/`CapabilitySnapshot` constraints. Go, Rust, and Flutter now
+agree on zero capacity, unknown declaration states, and zero/non-registry
+snapshot or lease timestamps while retaining owner and `(device_id,
+instance_id)` binding, bounded rows, safe-integer totals, duplicate-key
+rejection, deterministic placement consistency, and all-false authority. The
+raw aggregator is shared by both Rust commands and nested duplicate-key
+regressions cover each local envelope. This remains P3a offline observation;
+no live inventory, heartbeat, enrollment, selection, reservation, scheduling,
+dispatch, Runner, artifact, or Audit action was added. ADR-0039 remains
+planning-only, ADR-0113/0114 remain Proposed/null, and P3b/P4 remain gated.
+
+### Cross-device plan §181 — Cross-client Prompt replay after bridge reconstruction
+
+The Go HTTP-to-Rust integration now rebuilds the Runtime bridge after the
+initial write sequence, replays the first Prompt idempotency key after a later
+Prompt advances the Conversation head, and requires the original Prompt
+receipt and aggregate version. It then re-reads owner history and the owner
+Conversation page through the rebuilt route. This is P1/P2 persistence and
+idempotency evidence only: Prompt submission remains storage-only, with no Run,
+live inventory, scheduling, dispatch, Runner, artifact, or Audit action. ADR-
+0039 remains planning-only, ADR-0113/0114 remain Proposed/null, and P3b/P4
+remain gated.
+
+### Cross-device plan §182 — Rust TUI change-feed cursor process recovery
+
+Rust TUI sync now has a two-state regression over one owner/coordinator-bound
+checkpoint: the first state consumes cursor zero and commits cursor one only
+after session/history refresh; a fresh state requests after cursor one and
+renders no duplicate change. A Go PTY integration runs two real saved-
+credential TUI processes against a bounded Forge recorder and checks the
+persisted cursor binding plus the absence of device/Run requests. This remains
+P2 reconnect evidence only; no live event stream, device inventory,
+heartbeat, scheduling, dispatch, Runner, artifact, or Audit action was added.
+ADR-0039 remains planning-only, ADR-0113/0114 remain Proposed/null, and P3b/P4
+remain gated.
+
+### Cross-device plan §183 — TUI cursor recovery test portability and bounded fixture serving
+
+The three Rust sync regressions that use the Unix saved-credential checkpoint
+helper are now explicitly Unix-gated, while all fixture listener accepts use a
+five-second bounded loop and restore accepted streams to blocking mode before
+request reads, so missing requests fail promptly instead of hanging a test
+thread on any supported socket platform. The standard shared-session E2E script
+now selects the real saved-credential two-PTY TUI test whenever it builds the
+Runtime binary. This
+is test portability and failure containment only; no production route,
+inventory, scheduling, dispatch, Runner, artifact, or Audit action was added.
+ADR-0039 remains planning-only, ADR-0113/0114 remain Proposed/null, and P3b/P4
+remain gated.
+
+### Cross-device plan §184 — Flutter Web Conversation change-feed cursor reload recovery
+
+The real Chromium Forge Console browser runner now enables an explicit
+`reload_session` branch for the shared-session Prompt journey: it captures a
+change-feed read from cursor zero, waits for the opaque owner-bound Web
+checkpoint, reloads `/forge/` in the same tab, and captures a second automatic
+feed read from a positive cursor before appending the Prompt. Go input plumbing
+and recorder assertions require that zero-to-positive sequence while retaining
+bounded Conversation, Prompt-history, Run, and change-feed reads. Run
+observation callers pass `reload_session=false`, so the existing `run_id`
+timeline and observation sequence remain compatible. This is P2 Web reconnect
+evidence only; production routes and all inventory, scheduling, dispatch,
+Runner, artifact, and Audit gates remain unchanged. ADR-0039 remains
+planning-only, ADR-0113/0114 remain Proposed/null, and P3b/P4 remain gated.
+
+### Cross-device plan §185 — Session device observation Go→Rust TUI→Flutter envelope roundtrip
+
+The populated-Run integration now passes the canonical
+`forge.session-device-observation/v1` envelope returned through the Rust
+remote path into the Flutter API E2E. Flutter strictly decodes it and compares
+the same owner, Conversation/Run, `evaluated_at_ms`, nine device/instance
+pairs, nine decisions, resource totals, eligibility counts, null selection,
+and all-false authority with its authenticated preview response. The real
+Rust TUI output asserts the same timestamp, summary, candidate pairs, and
+offline authority line. This remains P3a caller-supplied observation evidence;
+live inventory, enrollment, heartbeat, scheduling, dispatch, Runner, and Audit
+surfaces remain gated. ADR-0039 remains planning-only, ADR-0113/0114 remain
+Proposed/null, and P3b/P4 remain gated.
+
+### Cross-device plan §186 — Default-disabled gate for the Go inventory read candidate
+
+The private Go owner-scoped inventory candidate now requires an explicit
+injected configuration with `Enabled=true` and a non-nil source. Missing,
+zero-value, disabled, or source-less configuration returns the bounded 404
+surface, while the enabled fixture path retains verified-owner derivation,
+the separate `forge:devices:read` scope, and strict source validation. Scope,
+foreign-owner, unsafe-number, unavailable-source, and response-budget
+regressions fail closed. The candidate remains unregistered; production
+`/api/v1/devices`, enrollment, and heartbeat stay 404, and ADR-0039 remains
+planning-only while ADR-0113/0114 remain Proposed/null. P3b/P4 remain gated.
+
+### Cross-device plan §187 — Go heartbeat persistence compare-and-swap boundary
+
+Forge Core's heartbeat package now exposes a pure value-level
+`PersistedInstance` and `Commit` evaluator for a future storage transaction.
+Malformed restored snapshots, stale expected revisions, and revision overflow
+fail closed; accepted heartbeats return a complete replacement without
+mutating the supplied snapshot. Focused tests cover invalid lease state,
+successful and stale CAS attempts, and the shared ten-case persistence fixture
+continues to match the Rust domain consumer. This is a transaction ABI and P3b
+preparation only: no database, clock, auth, enrollment, listener, inventory,
+reservation, selection, scheduling, dispatch, Runner, artifact, or Audit
+operation was added. Production device routes remain 404 and ADR-0039,
+ADR-0113/0114, and the P3b/P4 gates are unchanged.
+
+### Cross-device plan §188 — Go heartbeat capability snapshot parity
+
+Forge Core's pure heartbeat model now carries a bounded `CapabilitySnapshot` on
+`Heartbeat` and `Instance`. CPU, memory, storage, GPU, runtime, label,
+capacity, count, and duplicate validation mirrors the Rust Runner registry;
+runtime names and GPU rows are canonicalized before a transition returns.
+`Apply` and `Commit` retain the snapshot and reject malformed inbound or
+restored declarations. The existing v1 heartbeat and persistence fixture JSON
+is unchanged; fixture consumers inject the top-level capability declaration
+into heartbeat/current values before evaluation. This remains P3b preparation:
+production device routes remain 404 and ADR-0039, ADR-0113/0114, and the
+P3b/P4 gates are unchanged.
+
+### Cross-device plan §189 — Flutter heartbeat capability declaration parity
+
+The Flutter pure heartbeat fixture consumer now validates the top-level
+capability declaration with the Rust/Go bounds for normalized OS/architecture
+and runtime tags, CPU/memory/storage capacities, available-capacity relations,
+runtime and GPU counts, GPU memory, labels, and duplicate values. Optional GPU
+rows are decoded and sorted by identifier; runtime names are lower-cased and
+sorted. Regressions cover canonicalization, GPU rows, invalid capacity, and
+duplicate declarations. This remains offline contract parsing only: no
+heartbeat request, registration, authoritative inventory, selection,
+reservation, scheduling, dispatch, Runner, or Audit operation was added;
+production routes remain 404 and ADR-0039/0113/0114 plus P3b/P4 are unchanged.
+
+### Cross-device plan §190 — Flutter heartbeat capability propagation parity
+
+Flutter heartbeat signals and observed instances now carry the validated
+capability snapshot through the pure transition. The persistence heartbeat and
+CAS state use the same capability value, inject the existing persistence
+fixture's bounded default declaration without changing its JSON, canonicalize
+before returning, and reject missing or malformed heartbeat/current snapshots.
+Regression coverage checks accepted heartbeat and CAS outputs retain runtime
+and GPU declarations and that a missing snapshot fails closed. This remains
+pure offline transition propagation: no heartbeat request, registration,
+clock/storage access, authoritative inventory, selection, reservation,
+scheduling, dispatch, Runner, or Audit operation was added; production routes
+remain 404 and ADR-0039/0113/0114 plus P3b/P4 are unchanged.
+
+### Cross-device plan §191 — Go persisted capability canonicality boundary
+
+The Go heartbeat persistence CAS evaluator now rejects restored capability
+snapshots whose values validate but whose OS/architecture spelling, runtime
+order, or GPU order is not canonical under the Rust constructor semantics.
+The pure semantic comparison treats nil and empty Go collections as the same
+empty Rust `Vec`; canonicalization copies slices and focused tests prove
+canonical replacement plus unchanged input on every rejection. This remains
+P3b preparation only: no storage, clock, auth, enrollment, live inventory,
+selection, reservation, scheduling, dispatch, Runner, artifact, or Audit
+operation was added; production routes remain 404 and ADR-0039/0113/0114 plus
+P3b/P4 are unchanged.
+
+### Cross-device plan §192 — Go/Rust heartbeat boundary error precedence parity
+
+Forge Core now checks heartbeat device binding, revocation, and lease bounds
+before canonicalizing the declared capability snapshot, matching the Rust
+heartbeat transition's stable rejection order for foreign, revoked, and
+invalid-lease heartbeats even when capabilities are malformed. Focused tests
+pin the precedence while eligible heartbeats still fail closed on invalid
+capabilities. This remains pure transition preparation: no device request,
+credential verification, storage, clock, enrollment, listener, inventory,
+selection, reservation, scheduling, dispatch, Runner, artifact, or Audit
+operation was added; production routes remain 404 and ADR-0039/0113/0114 plus
+P3b/P4 are unchanged.
+
+### Cross-device plan §193 — Go persisted inventory value and owner-isolation boundary
+
+Forge Core now exposes a pure `PersistedInventoryState` contract combining an
+owner-tuple-bound (still unverified) device record with a bounded Runner
+instance. Restore validation
+checks nonzero revision, exact device/Runner binding, canonical capability
+collections, approval/cordon/reservation declarations, and lease bounds.
+`CommitPersistedInventory` is an exact-revision complete-replacement evaluator;
+`ProjectPersistedInventory` applies the fixed-time status projection and
+rejects foreign owners. Focused tests cover restart-style restore, stale and
+expired states, owner isolation, binding changes, revision conflicts and
+noncanonical capabilities. No database, clock, listener, credential,
+enrollment, live inventory, reservation, selection, scheduling, dispatch,
+Runner, artifact, or Audit operation was added; production routes remain 404
+and ADR-0039/0113/0114 plus P3b/P4 remain gated.
+
+### Cross-device plan §194 — Go/Rust Runner lease and fencing contract parity
+
+Forge Core's pure `executionlease` model now matches Rust Runtime
+`execution::lease` for bounded grant validation, epoch/token renewal,
+stale-proof rejection, terminal replay/conflict, digest/reason validation,
+and uncertain-terminal no-retry semantics. The shared strict sixteen-case
+`forge-runner-lease-fencing-v1` fixture runs in Go and Rust with all authority
+bits false. This is a P4 precondition only: no clock, storage, enrollment,
+inventory route, reservation, scheduler, transport, Runner, process, artifact,
+or Audit operation was added; ADR-0039 remains planning-only, ADR-0113/0114
+remain Proposed/null, and the accepted P4 execution/security decision is
+still required.
+
+### Cross-device plan §195 — Go/Rust persisted inventory CAS and projection parity
+
+Rust's device-registry reference now exposes the same complete persisted
+inventory value as Go: revision, owner tuple, device approval/cordon/
+reservation declarations, and one bounded Runner instance with canonical
+capabilities. The shared strict twelve-case
+`forge-device-inventory-persistence-v1` fixture covers exact-revision
+replacement, overflow, device/Runner binding, owner rejection, and
+online/stale/pending/cordoned/offline/revoked projections. This remains a P3b
+pure restart/CAS preparation slice: no database, clock, auth, enrollment,
+heartbeat listener, inventory route, reservation, selection, scheduler,
+transport, Runner, artifact, or Audit operation was added; ADR-0039 remains
+planning-only, ADR-0113/0114 remain Proposed/null, and P3b/P4 remain gated.
+
+### Cross-device plan §196 — Go/Rust Attempt lifecycle contract parity
+
+Forge Core now exposes an authority-neutral `executionattempt.Lifecycle` value
+that validates only the frozen Platform Core Attempt state graph. Rust Runtime
+and Go consume the strict `forge-attempt-lifecycle-v1` fixture covering all
+thirteen legal edges plus same-state, undeclared, terminal, and unknown-state
+rejections. Reduction returns a new value and leaves the source unchanged;
+the value does not persist an Attempt or authorize execution. This is a pure
+P4 precondition: no database, clock, authentication, enrollment, inventory,
+reservation, selection, scheduler, transport, Runner, artifact, or Audit
+operation was added; ADR-0039 remains planning-only, ADR-0113/0114 remain
+Proposed/null, and P3b/P4 remain gated.
+
+### Cross-device plan §197 — Go/Rust Attempt request contract parity
+
+Forge Core now exposes an authority-neutral `executionattempt.AttemptRequest`
+value aligned with Rust Runtime's frozen `AttemptRequest`. The strict
+`forge-attempt-request-v1` fixture covers full Attempt scope and exact entity
+bindings, control versions, executor and optional record roles, deterministic
+approval/effect normalization, budgets, timeout, idempotency, and invalid
+value/reference classifications. Construction defensively copies caller
+values and exposes read-only accessors; it performs no resolution or durable
+write. This is a pure P4 precondition: no clock, authentication, enrollment,
+inventory publication, reservation, selection, scheduler, transport, Runner,
+artifact, or Audit operation was added; ADR-0039 remains planning-only,
+ADR-0113/0114 remain Proposed/null, and P3b/P4 remain gated.
+
+### Cross-device plan §199 — Go/Rust content-free Run observer evidence parity
+
+Forge Core and Rust Runtime now project an existing owner-scoped Run summary
+into the pure `forge.run.observed.v1` value. It exposes only opaque owner
+linkage and bounded Conversation/Run/Prompt metadata; raw owner claims and
+Prompt/result/tool/provider/path/token/lease/credential content are excluded,
+and all eight authority fields remain false. Strict Go/Rust fixture consumers
+cover unknown fields, bounds, status, owner shape, content-free output, and
+authority invariants. This is evidence compatibility with the audited
+Aero-ID/Audit Governance observer boundary only; Catalyst does not publish or
+enqueue it. No outbox, route, device registration, heartbeat, inventory
+authority, placement, reservation, scheduler, dispatch, Runner, artifact, or
+Audit action was added; ADR-0039 remains planning-only, ADR-0113/0114 remain
+Proposed/null, and P3b/P4 remain gated.
+
+### Cross-device plan §200 — Ecosystem observer-fixture parity
+
+The canonical `forge.run.observed.v1` fixture is now consumed by the
+read-only Aero-ID Audit Governance publisher contract, the Audit Governance
+receiver contract, and Snaplink Console's strict Dart evidence parser. The
+standalone Go repositories embed byte-identical fixture copies; the contract
+runner compares both copies with Catalyst's canonical fixture before running
+focused tests. Consumers retain only opaque owner linkage and bounded Run
+metadata, reject unknown/content-bearing fields, and require all authority
+bits to remain false. This is evidence compatibility only: no publication,
+device registration, heartbeat, inventory authority, placement, reservation,
+scheduler, dispatch, Runner, artifact, or execution behavior was added.
+ADR-0039 remains planning-only, ADR-0113/0114 remain Proposed/null, and P3b/P4
+retain their separate governance gates.
+
+### Cross-device plan §201 — Go/Rust persisted placement timestamp safety parity
+
+The persisted-inventory-to-placement conversion now rejects Runner observation
+and capability-lease timestamps above the JSON-safe integer ceiling
+(`9007199254740991`) in both Go and Rust. Two shared fixture cases pin unsafe
+observation and unsafe lease-expiry rejection to the stable
+`invalid_persisted_inventory_placement_input` error, closing a freshness-input
+parity gap before pure placement comparison. No route, storage, clock,
+heartbeat listener, enrollment, inventory publication, selection, reservation,
+scheduling, dispatch, Runner, artifact, or Audit operation was added;
+production device routes remain 404 and ADR-0039/0113/0114 plus P3b/P4 remain
+gated.
+
+### Cross-device plan §202 — Go/Rust Run execution-evidence binding parity
+
+Forge Core and Rust Runtime now bind an existing owner-scoped Run observer to
+an existing session Runner terminal-receipt observer in the pure
+`forge.run.execution-evidence.v1` value. Exact opaque-owner and
+Conversation/Run/Prompt bindings are required; only bounded Attempt,
+target, command, digest, disposition, and uncertain/manual-reconciliation
+metadata are retained. Unknown/content fields and enabled authority fail
+closed, and all evidence authority bits remain false. This adds no receipt
+persistence, lease, target selection, reservation, dispatch, Runner,
+artifact, or Audit behavior. ADR-0039 remains planning-only,
+ADR-0113/0114 remain Proposed/null, and P3b/P4 retain separate gates.
+
+### Cross-device plan §203 — Console Attempt-lifecycle fixture consumer
+
+Snaplink Console now strictly consumes `forge-attempt-lifecycle-v1`, checking
+the closed state graph, legal transitions, explicit rejection classes, and
+all-false authority. The parser is offline evidence only and adds no network,
+persistence, device, lease, placement, or execution behavior. ADR-0039 remains
+planning-only, ADR-0113/0114 remain Proposed/null, and the separate accepted
+P4 execution/security decision remains required.
+
+### Cross-device plan §204 — Console Run execution-evidence fixture consumer
+
+Snaplink Console now strictly parses `forge.run.execution-evidence.v1`,
+checking opaque owner/reference fields, bounded metadata, command digest,
+disposition/uncertain pairing, content-free flags, closed fields, and
+all-false authority. It retains manual-reconciliation evidence without
+retry/execution claims and adds no network, persistence, device, lease,
+placement, reservation, dispatch, Runner, artifact, or Audit behavior.
+ADR-0039 remains planning-only, ADR-0113/0114 remain Proposed/null, and P3b/P4
+remain separately gated.
+### Cross-device plan §205 — Go/Rust persisted inventory offline placement evaluation adapter
+
+Forge Core and Rust Runtime now adapt one already owner-bound persisted
+inventory placement input into their existing fixed-time pure placement
+comparators. The shared `forge-device-inventory-placement-evaluation-v1`
+fixture checks revision and device/Runner identity, deterministic exclusion
+reasons when persisted inventory lacks residency/trust/sandbox/concurrency
+attributes, and all-false authority. Both runtimes use the same 90-second
+persisted-heartbeat freshness boundary and reject any non-empty GPU
+capability with `unsupported_persisted_placement_capability` until a lossless
+multi-GPU adapter exists. No selection, reservation, dispatch, Runner,
+persistence, route, heartbeat, enrollment, or clock operation was added;
+ADR-0039 remains planning-only, ADR-0113/0114 remain Proposed/null, and
+P3b/P4 remain gated.
+
+### Cross-device plan §206 — Console persisted inventory placement-input fixture consumer
+
+Snaplink Console now strictly parses the canonical
+`forge-device-inventory-placement-input-v1` fixture. Its offline value model
+checks exact envelope, owner and Runner/device bindings, bounded persisted
+capabilities, all case shapes, closed unknown policy defaults, unsafe timestamp
+rejection cases, and all-false authority; unknown root, case, and expected
+result fields fail closed. This is display and contract validation only: the
+parser sends no request and adds no device registration, inventory
+publication, target selection, reservation, scheduling, dispatch, Runner
+execution, or receipt persistence. ADR-0039 remains planning-only,
+ADR-0113/0114 remain Proposed/null, and P3b/P4 remain gated.
+
+### Cross-device plan §207 — Flutter persisted inventory placement-evaluation fixture consumer
+
+Snaplink Console's shared Web/App/Mobile API layer now strictly parses the
+`forge-device-inventory-placement-evaluation-v1` fixture. The value model
+checks the exact evaluation envelope and source binding, policy requirements,
+sorted exclusion reasons, bounded identifiers, and all-false authority. Unknown
+fields, enabled authority, invalid reason tokens, and inconsistent accepted
+decisions fail closed. This remains offline display and contract validation
+only: no request, device registration, heartbeat, target selection, reservation,
+scheduling, dispatch, Runner execution, or receipt persistence was added.
+ADR-0039 remains planning-only, ADR-0113/0114 remain Proposed/null, and P3b/P4
+remain gated.
+
+### Cross-device plan §208 — Go/Rust persisted inventory batch placement evaluation
+
+Forge Core and Rust Runtime now evaluate a bounded set of owner-bound persisted
+inventory inputs through the same fixed-time pure comparator. Full owner
+tuples, duplicate device/Runner identities, empty input, sorted decisions,
+revision/instance preservation, null selection, stable GPU/timestamp errors,
+and all-false authority are covered by
+`forge-device-inventory-placement-batch-evaluation-v1`. No registry read,
+clock, route, registration, heartbeat, target selection, reservation,
+scheduling, dispatch, Runner, artifact, persistence, or Audit action was
+added; ADR-0039 remains planning-only, ADR-0113/0114 remain Proposed/null,
+and P3b/P4 remain gated.
+
+### Cross-device plan §209 — Rust CLI/TUI persisted inventory batch-evaluation consumer
+
+Rust CLI now accepts `device inventory placement-batch-evaluation --input
+FILE|-`, and the authenticated TUI reuses the same file-only offline preview.
+Both consumers strictly validate the batch and sibling source fixtures,
+duplicate JSON keys, unknown fields, authority mutations, duplicate
+identities, unsafe timestamps, and source drift, rendering only deterministic
+metadata decisions with null selection. No device request, registration,
+heartbeat, inventory publication, selection, reservation, scheduling,
+dispatch, Runner execution, receipt persistence, or Audit outbox operation was
+added. ADR-0039 remains planning-only, ADR-0113/0114 remain Proposed/null, and
+P3b/P4 remain gated.
+
+### Cross-device plan §210 — Flutter Web/App/Mobile persisted inventory batch-evaluation consumer
+
+Snaplink Console's shared Web/App/Mobile API layer now strictly parses the
+canonical `forge-device-inventory-placement-batch-evaluation-v1` fixture. The
+value model preserves the owner tuple, fixed evaluation time, requirements,
+bounded case decisions, stable error cases, null selection, and all-false
+authority; unknown fields, duplicate identities, invalid reasons, enabled
+authority, and inconsistent decision identities fail closed. This remains
+offline display and contract validation only: no inventory request, device
+registration, heartbeat, target selection, reservation, scheduling, dispatch,
+Runner execution, or receipt persistence was added. ADR-0039 remains
+planning-only, ADR-0113/0114 remain Proposed/null, and P3b/P4 remain gated.
+
+### Cross-device plan §211 — Flutter Web/App/Mobile persisted inventory restore/CAS projection consumer
+
+Snaplink Console's shared Web/App/Mobile API layer now strictly parses and
+purely evaluates `forge-device-inventory-persistence-v1`. The consumer keeps
+revision, owner, device/Runner bindings, bounded capabilities, and full uint64
+values as `BigInt`; restore, exact-revision replacement, and fixed-time status
+projection are checked against all twelve canonical cases. Unknown fields,
+duplicate case names, unknown errors, invalid bindings/owners, and enabled
+authority fail closed.
+
+This is value-only restart/CAS preparation. Flutter performs no storage write,
+heartbeat, clock read, device request, registration, inventory publication,
+target selection, reservation, scheduling, dispatch, Runner execution, receipt
+persistence, or Audit publication. ADR-0039 remains planning-only,
+ADR-0113/0114 remain Proposed/null, and P3b/P4 retain their separate gates.
+
+### Cross-device plan §212 — Rust CLI/TUI persisted inventory restore/CAS projection preview
+
+Rust CLI now accepts `device inventory persistence-preview --input FILE|-`,
+and the authenticated TUI reuses the same file-only offline preview. The
+consumer strictly decodes `forge-device-inventory-persistence-v1`, rejects
+duplicate JSON keys, unknown fields, enabled authority, invalid state values,
+and expectation mismatches, then evaluates restore, exact-revision replacement,
+and fixed-time projection through the Rust domain model. It renders bounded
+case metadata only and grants no target or execution authority.
+
+Focused CLI stdin/path/negative tests, argument parsing, and TUI rendering
+tests pass. This is pure CAS/projection consumption: no storage write, clock
+read, network request, device registration, heartbeat, inventory publication,
+selection, reservation, scheduling, dispatch, Runner execution, receipt
+persistence, or Audit operation was added. ADR-0039 remains planning-only,
+ADR-0113/0114 remain Proposed/null, and P3b/P4 retain their separate gates.
+
+### Cross-device plan §213 — Real forge-server process shared-session smoke and negative boundary
+
+The actual forge-server binary now has a process-level test with the actual
+Rust Runtime bridge and a temporary trusted loopback Snaplink JWKS issuer. Two
+independent client tokens create, list, append, replay, and read one
+owner-scoped Conversation/Prompt; wrong Host, pinned-owner mismatch, missing
+write scope, stale version, and caller-supplied placement preview are covered,
+with all placement authority bits false. The default server remains health-only
+and device registration, enrollment, heartbeat, execution-consent, and
+run-intent paths remain 404. No device registry, credential issuer,
+authoritative inventory, selection, reservation, scheduling, dispatch, Runner
+transport, remote execution, artifact, or Audit operation was added. ADR-0039
+remains planning-only, ADR-0113/0114 remain Proposed/null, and P3b/P4 remain
+gated.
+
+### Cross-device plan §214 — Flutter Forge response and change-feed hardening
+
+Snaplink Console now rejects duplicate object keys in raw Forge JSON before
+Dart decoding, applies closed-field validation to Prompt append results, and
+resnapshots owner metadata before persisting a feed cursor for a conversation
+outside the loaded page. API/model and periodic widget regressions cover
+duplicate, unknown, missing, and unloaded-conversation cases. This is
+client-side parsing/read synchronization only: no device registration,
+enrollment, heartbeat, inventory authority, selection, reservation, scheduling,
+dispatch, Runner, artifact, receipt, or Audit operation was added. ADR-0039
+remains planning-only, ADR-0113/0114 remain Proposed/null, and P3b/P4 retain
+their separate acceptance gates.
+
+### Cross-device plan §215 — Go persisted inventory to owner-bound observation source
+
+Forge Core now converts already restored `PersistedInventoryState` values into
+the existing owner-bound `forge.device-inventory-observation/v1` envelope at an
+explicit evaluation time. The pure adapter reuses the fixed 90-second
+projection, canonicalizes resources, sorts rows, rejects foreign owners,
+duplicate identities, unsafe timestamps, unsupported reservation declarations,
+and unsupported GPU mappings, and preserves unverified resources with all
+authority bits false. A test-only private read-source bridge derives the owner
+from verified claims and checks cancellation; it is not wired to production
+routes. Focused Go tests cover canonical ordering, pending/stale/offline/
+expired states, owner isolation, unsupported values, unsafe time, and response
+validation. No device table, control-store change, clock read, heartbeat
+listener, credential issuer, enrollment, production inventory route, target
+selection, reservation, scheduling, dispatch, Runner, artifact, or Audit
+operation was added; `/api/v1/devices`, enrollment, and heartbeat remain 404,
+ADR-0039 remains planning-only, ADR-0113/0114 remain Proposed/null, and P3b/P4
+retain their separate acceptance gates.
+
+### Cross-device plan §216 — Rust persisted inventory to owner-bound observation source
+
+Rust Runtime now exposes a pure domain adapter from already restored
+`PersistedInventoryState` values to the existing
+`forge.device-inventory-observation/v1` envelope. The adapter takes an exact
+`SnapshotOwner` and explicit evaluation time, reuses restore validation and the
+fixed 90-second projection, sorts rows, preserves unverified capability/state
+declarations, and rejects owner drift, duplicate identities, unsafe/future
+observations, reservations, and GPU values that the current envelope cannot
+represent losslessly. JSON serialization keeps every authority bit false.
+
+Focused domain tests cover ordering, status declarations, owner/time binding,
+unsupported values, duplicate device/Runner identities, and envelope shape.
+This is a P3b preparation seam only; no storage, clock, listener, credential,
+route, registration, enrollment, heartbeat, inventory publication, selection,
+reservation, scheduling, dispatch, Runner, artifact, or Audit operation was
+added. ADR-0039 remains planning-only, ADR-0113/0114 remain Proposed/null,
+and P3b/P4 retain their separate gates.
+
+### Cross-device plan §217 — Flutter Prompt request preflight parity
+
+Snaplink Console now rejects unsafe Prompt request values before transport:
+listPrompts requires an owner-session-safe Conversation ID and validates the
+Prompt cursor ID, while appendPrompt validates the Conversation ID, non-empty
+bounded UTF-8 content, and the single-use-safe idempotency-key shape. Prompt
+cursor parsing also rejects control characters. Focused API/model tests prove
+all invalid values make zero HTTP requests.
+
+This closes client preflight parity with the Rust remote client and Go
+Conversation handlers. It does not create a Run, submit a pending intent,
+resolve an execution profile, read inventory, select a target, reserve,
+schedule, dispatch, execute a Runner, persist a receipt, or publish Audit
+events. ADR-0039 remains planning-only, ADR-0113/0114 remain Proposed/null,
+and P3b/P4 retain their separate gates.
+
+### Cross-device plan §218 — Rust persisted inventory observation preview
+
+Rust CLI now accepts `device inventory persisted-observation --input FILE|-`,
+and the authenticated TUI reuses the same file-only offline preview. The new
+`forge-device-inventory-persisted-observation-v1` fixture supplies restored
+value declarations, exact owner/time, all-false source authority, and the
+expected shared `forge.device-inventory-observation/v1` envelope. Strict
+parsing and tests cover duplicate JSON keys, unknown fields, authority
+mutations, invalid state/capability values, owner drift, future timestamps,
+duplicate identities, reservation/GPU lossiness, and deterministic sorted
+output.
+
+The adapter and consumers remain pure value/display paths. They perform no
+storage, clock, network, route, registration, enrollment, heartbeat, inventory
+publication, target selection, reservation, scheduling, dispatch, Runner,
+artifact, receipt, or Audit operation. ADR-0039 remains planning-only,
+ADR-0113/0114 remain Proposed/null, and P3b/P4 retain their separate gates.
+
+### Cross-device plan §219 — Flutter persisted inventory observation envelope consumer
+
+Snaplink Console's shared Web/App/Mobile inventory parser now consumes the
+expected `forge.device-inventory-observation/v1` envelope from the Rust
+persisted-observation fixture. The contract checks source metadata, owner/time
+binding, sorted device/Runner rows, CPU/memory/storage declarations,
+liveness/approval state, and all-false authority; an authority mutation fails
+closed through the same strict parser used by the display path. This is a
+display contract only: no storage, device route, registration, heartbeat,
+inventory authority, target selection, reservation, scheduling, dispatch,
+Runner, receipt, or Audit operation was added. ADR-0039 remains planning-only,
+ADR-0113/0114 remain Proposed/null, and P3b/P4 retain their separate gates.
+
+### Cross-device plan §220 — Aero-ID and Audit Governance execution-evidence consumer parity
+
+Aero-ID and Snaplink Audit Governance now consume byte-identical copies of the
+canonical `forge.run.execution-evidence.v1` fixture. Strict receiver tests
+validate the closed metadata shape, lowercase owner/command digests,
+content-free payload, compatible Audit event, and all-false authority;
+unknown fields and raw prompt/result/output content fail closed. This is
+read-only ecosystem contract validation: no event publication, outbox,
+receipt persistence, device registration, inventory publication, selection,
+reservation, scheduling, dispatch, Runner, artifact, or Audit authority was
+added. ADR-0039 remains planning-only, ADR-0113/0114 remain Proposed/null,
+and P3b/P4 retain their separate gates.
+
+### Cross-device plan §221 — Persisted observation JSON-safe resource bounds
+
+The Go and Rust persisted-inventory observation adapters now reject available
+memory and storage declarations above the JSON-safe integer ceiling before
+building `forge.device-inventory-observation/v1`. Regression cases cover both
+resource dimensions in each runtime and preserve decoding parity for the
+Flutter Web/App/Mobile consumer. This is a pure value boundary: no storage,
+clock, route, registration, heartbeat, authoritative inventory, target
+selection, reservation, scheduling, dispatch, Runner, receipt, or Audit
+operation was added. ADR-0039 remains planning-only, ADR-0113/0114 remain
+Proposed/null, and P3b/P4 retain their separate gates.
+
+### Cross-device plan §222 — Aero IM and Aero Vault integration gate audit
+
+The ecosystem audit confirms that Aero IM's machine notification endpoint is a
+side-effecting publish path requiring installation authorization, target
+mapping, idempotency, and durable delivery. Aero Vault owns generic
+tenant-scoped object metadata and storage but has no Forge ArtifactRef ABI or
+accepted digest/size/sensitivity/retention/version mapping. No Forge adapter is
+added until those contracts and their outbox/receipt or artifact authorization
+decisions are accepted. IM delivery and Vault object writes therefore remain
+outside the session/inventory preview; no network, message publication,
+object write, artifact staging, device registration, inventory authority,
+selection, reservation, scheduling, dispatch, Runner, or Audit operation was
+added. ADR-0039 remains planning-only, ADR-0113/0114 remain Proposed/null,
+and P3b/P4 retain their separate gates.
+
+### Cross-device plan §223 — Rust CLI/TUI Attempt request preview
+
+Rust CLI now accepts `device attempt-request-preview --input FILE|-`, and the
+authenticated TUI exposes the same file-only preview. Both strictly decode
+`forge-attempt-request-v1`, reject duplicate keys, unknown fields, authority
+mutations, malformed case envelopes, and expectation drift, then run each
+caller-supplied request through the existing pure Attempt request model. They
+render only bounded case names, stable rejection classes, normalized effect or
+approval metadata, and all-false authority. Focused CLI argument, contract,
+duplicate-key, metadata-only output, and TUI no-network tests pass.
+
+This closes the Rust CLI/TUI consumer gap for the P4 Attempt request
+precondition. No reference resolution, storage, clock, network, inventory,
+reservation, target selection, scheduling, dispatch, Runner execution,
+artifact transfer, receipt persistence, or Audit operation was added. Flutter
+still has lifecycle fixture consumption but no Attempt request card; that is a
+separate display-only follow-up. ADR-0039 remains planning-only,
+ADR-0113/0114 remain Proposed/null, and P3b/P4 retain their separate gates.
+
+### Cross-device plan §224 — Rust TUI selected Run incremental sync
+
+The authenticated Rust TUI now retains the validated Run timeline sequence
+selected by `timeline RUN_ID`; a later `sync` requests the next bounded,
+owner-bound metadata-only timeline page and renders contiguous new markers.
+Changing the selected Conversation or clearing owner state clears this
+process-local Run selection. A PTY-style regression covers sequence-zero then
+sequence-one reads, while transport, authorization, malformed-page, and
+cursor-regression failures leave the Conversation change cursor unadvanced.
+Durable cross-process resume remains explicit `timeline RUN_ID --resume`.
+No Run write, execution, device/inventory request, target selection,
+reservation, scheduling, dispatch, Runner, artifact, receipt, or Audit
+operation was added; ADR-0039 remains planning-only, ADR-0113/0114 remain
+Proposed/null, and P3b/P4 retain their separate gates.
+
+### Cross-device plan §225 — Flutter Attempt request preview consumer
+
+Snaplink Console's shared Web/App/Mobile API layer now consumes the
+`forge-attempt-request-v1` fixture as a bounded, read-only preview. The strict
+decoder checks the closed envelope, all-false authority, unique case names,
+request shape, normalized sorted effects and approval IDs, stable rejection
+classes, and duplicate JSON keys from raw fixture text. A display card renders
+case outcomes and marks the value offline and unverified. Focused fixture and
+widget tests pass with `flutter analyze --no-pub`.
+
+This slice does not resolve references, read or write storage, call a route,
+read a clock, select or reserve a device, schedule or dispatch a Run, execute
+a Runner, transfer an artifact, persist a receipt, or publish Audit evidence.
+ADR-0039 remains planning-only, ADR-0113/0114 remain Proposed/null, and
+P3b/P4 retain their separate acceptance gates.
+
+### Cross-device plan §226 — Flutter pending Run-intent preview consumer
+
+Snaplink Console now consumes `forge-pending-run-intent-v1` across the shared
+Web/App/Mobile surface. The strict bounded decoder verifies the owner envelope,
+all-false authority, Prompt/intent/event bindings, page and payload-free
+timeline continuity, JSON-safe numbers, expectation parity, and duplicate raw
+JSON keys. The optional Sessions card renders receipt metadata only and omits
+Prompt content. Focused fixture and widget tests pass with `flutter analyze`.
+
+This remains read-only pending-intent observation: no Run is created, no
+Project profile is resolved, no storage or private candidate route is called,
+and no device selection, reservation, scheduling, dispatch, Runner, artifact,
+receipt, or Audit operation is performed. ADR-0039 remains planning-only,
+ADR-0113/0114 remain Proposed/null, and P3b/P4 retain their separate gates.
+
+### Cross-device plan §227 — Rust CLI/TUI and Flutter authenticated pending Run-intent observation
+
+Rust's authenticated remote client now exposes owner-scoped pending Run-intent
+list and payload-free timeline GETs. `remote run-intents list` and `remote
+run-intents timeline` enforce bounded pages, JSON-safe cursors, complete keyset
+pairs, owner binding, newest-first ordering, pending status, sequence
+continuity, and a closed metadata-only response shape. The TUI exposes the same
+selected-session reads and renders only intent/profile/status metadata and
+immutable event envelopes. Mock HTTP and TUI tests cover authenticated GET
+requests, unknown fields, and prompt-content exclusion.
+
+The real Snaplink-issued-token → Go app-server → Rust Hub E2E now reads the
+same test-only inert receipt through both CLI commands and the TUI. Its request
+recorder asserts only the two added GET paths and keeps production execution
+routes at 404.
+
+Flutter's common Web/App/Mobile API layer has matching owner-bound list and
+timeline response models and request preflight. The live methods remain a
+read-only API seam; the Sessions card continues to consume the offline fixture
+and no submit method is wired into product flow.
+
+This slice does not submit a pending intent, create a Run, resolve a caller
+profile, access device storage, register or heartbeat a device, publish
+authoritative inventory, select or reserve a target, schedule or dispatch work,
+execute a Runner, transfer an artifact, persist a receipt, or publish Audit
+evidence. Production execution routes remain 404/default-off. ADR-0039 remains
+planning-only, ADR-0113/0114 remain Proposed/null, and P3b/P4 retain their
+separate acceptance gates.
+
+### Cross-device plan §228 — Flutter owner-bound device inventory read candidate seam
+
+Snaplink Console's shared Web/App/Mobile Forge API now has a strict,
+owner-bound `GET /api/v1/devices` candidate method. It validates the expected
+owner tuple before transport, decodes the existing
+`forge.device-inventory-observation/v1` envelope, and rejects owner drift.
+Focused tests prove the authenticated GET has no query, body, or idempotency
+key and invalid owner input performs no request.
+
+This is an API seam for the explicitly injected Go read candidate; production
+`/api/v1/devices` remains unregistered and 404. No enrollment, heartbeat,
+live-registry read, target selection, reservation, scheduling, dispatch,
+Runner execution, receipt persistence, or Audit publication was added.
+Inventory values and authority markers remain unverified. ADR-0039 remains
+planning-only, ADR-0114 remains Proposed/null, and P3b/P4 remain separately
+gated.
+
+### Cross-device plan §229 — Flutter live pending Run-intent API E2E parity
+
+The test-only inert execution surface now runs Snaplink Console's shared
+Web/App/Mobile `ForgeConversationsApi` against the same owner-scoped pending
+Run-intent receipt used by the Rust CLI/TUI. The Flutter API E2E performs
+authenticated bounded list and payload-free timeline GETs, verifies the
+pending metadata and initial `submitted` event, and then continues the
+existing Prompt retry and placement-preview checks. Go's recorder requires
+the two exact pending paths when enabled and rejects extra execution/device
+requests.
+
+This supplies live API evidence for the common Flutter seam; the Sessions
+card remains fixture-only. Production execution-consent and pending-intent
+routes remain 404. No pending intent submission, Run creation, device
+registration/heartbeat/inventory authority, selection, reservation,
+scheduling, dispatch, Runner, artifact, receipt, or Audit operation was added.
+ADR-0039 remains planning-only, ADR-0113/0114 remain Proposed/null, and P3b/P4
+remain separately gated.
+
+### Cross-device plan §230 — Flutter authenticated inventory candidate E2E
+
+The test-only inert Go server now mounts the explicitly enabled owner-bound
+inventory read candidate beside the shared-session routes. A real
+Snaplink-issued token with the separate `forge:devices:read` scope drives the
+common Web/App/Mobile Console API through exactly one authenticated
+`GET /api/v1/devices`. Flutter verifies the owner tuple, bounded device and
+Runner identity, unverified markers, and all-false authority; Go verifies the
+request count and owner derived from verified claims.
+
+This exercises the §228 API seam only. Production `/api/v1/devices`,
+enrollment, and heartbeat remain 404 because the candidate is mounted only in
+the test server. No live registry, credential issuer, discovery, selection,
+reservation, scheduling, dispatch, Runner, receipt, or Audit operation was
+added. ADR-0039 remains planning-only, ADR-0114 remains Proposed/null, and
+P3b/P4 retain their separate gates.
+
+### Cross-device plan §231 — Rust CLI/TUI authenticated inventory candidate parity
+
+Rust Runtime now exposes `remote inventory show` and TUI `inventory read` for
+the same test-only owner-bound `/api/v1/devices` candidate. Both clients send
+authenticated GET-only requests and strictly validate
+`forge.device-inventory-observation/v1`, preserving the owner tuple,
+unverified markers, and all-false authority. The real Snaplink JWT → Go inert
+server → Rust CLI/TUI E2E checks the exact request and metadata.
+
+Production `/api/v1/devices`, enrollment, and heartbeat remain 404. No
+registry, discovery, selection, reservation, scheduling, dispatch, Runner,
+receipt, or Audit operation was added. ADR-0039 remains planning-only,
+ADR-0114 remains Proposed/null, and P3b/P4 remain separately gated.
+
+### Cross-device plan §232 — Flutter Runner lease/fencing contract parity
+
+Snaplink Console's shared Web/App/Mobile layer now consumes the existing
+`forge-runner-lease-fencing/v1` fixture through a pure in-memory model. It
+covers activity, renewal with a new fencing token, proof binding, terminal
+replay/conflict behavior, and uncertain-terminal reconciliation. Explicit
+null optionals, malformed Unicode, and UTF-8 byte-bound violations fail
+closed. Local JSON round trips document decimal-string encoding above the Web
+safe-integer range; they are not a transport encoder.
+
+This is contract parity only. It reads no clock, creates no lease store or
+issuer, reserves no capacity, contacts no Runner, and performs no execution,
+dispatch, or Audit publication. Production lease, reservation, and Runner
+routes remain absent/default-off. ADR-0039 remains planning-only, ADR-0114
+remains Proposed/null, and P3b/P4 retain their separate gates.
+
+### Cross-device plan §233 — Flutter Runner terminal receipt Unicode/UTF-8 parity
+
+Snaplink Console's terminal receipt decoder now checks that every bounded
+Runner text value is well-formed Unicode before calling `utf8.encode`. An
+isolated high or low UTF-16 surrogate is rejected for lease identities and
+fencing tokens, command/argv text, and failed or uncertain reasons. This
+prevents Dart's replacement behavior from changing invalid input into a value
+that appears to satisfy the shared byte limits. Focused contract tests cover
+command, grant, and disposition paths for both surrogate directions, and the
+existing valid receipt and uncertain-reconciliation cases remain green.
+
+The change is a pure client value-boundary correction. It adds no clock, lease
+store/issuer, device registration, heartbeat, inventory authority,
+reservation, scheduling, dispatch, Runner transport, execution, receipt
+persistence, or Audit publication. Production device and execution routes
+remain default-off; ADR-0039 remains planning-only, ADR-0114 remains
+Proposed/null, and P3b/P4 retain their separate acceptance gates.
+
+### Cross-device plan §234 — Flutter Runner lease fixture duplicate-key parity
+
+The raw `forge-runner-lease-fencing/v1` fixture loader now bounds the source,
+scans every object depth for duplicate keys, and only then calls Dart's JSON
+decoder. Contract coverage mutates both the root `schema_version` and nested
+`authority.device_identity_verified` keys, proving that a last-value-wins
+decode cannot hide a cross-runtime contract mutation. Valid Go/Rust fixture
+consumption and the existing lease/fencing lifecycle cases remain green.
+
+This is fixture decoder hardening only. It adds no network request, clock,
+lease store/issuer, device registration, heartbeat, inventory authority,
+reservation, scheduling, dispatch, Runner transport, execution, receipt
+persistence, or Audit publication. Production device and execution routes
+remain default-off; ADR-0039 remains planning-only, ADR-0114 remains
+Proposed/null, and P3b/P4 retain their separate acceptance gates.
+
+### Cross-device plan §235 — Authenticated uncertain Runner receipt preview parity
+
+The test-only authenticated Snaplink session Run E2E now exercises both a
+completed and an `uncertain` Runner terminal receipt through the same Go
+preview route. Rust CLI and PTY TUI assert the disposition, uncertainty,
+manual-reconciliation, and all-false authority markers. The recorder requires
+exactly one receipt-preview POST per surface and rejects device, execution, or
+dispatch requests. Under `FORGE_CONSOLE_E2E=1`, Flutter's shared Web/App/Mobile
+API consumes the same uncertain envelope and follows the exact Run/timeline/
+session-observation/receipt-preview request contract.
+
+This remains test-only observation evidence: no lease renewal, retry, target
+selection, receipt persistence, Runner contact, execution, dispatch, or Audit
+publication was added. Production device and execution routes remain
+default-off; ADR-0039 remains planning-only, ADR-0114 remains Proposed/null,
+and P3b/P4 retain their separate acceptance gates.
+
+### Cross-device plan §236 — Flutter Forge owner tuple Unicode/UTF-8 parity
+
+Snaplink Console's shared `ForgeDeviceOwner` decoder now rejects isolated
+UTF-16 high and low surrogates before measuring UTF-8 bytes. Issuer, subject,
+and `tenant_id` therefore follow the well-formed Unicode boundary used by the
+Go/Rust owner contract; valid multibyte values at exactly 512 bytes remain
+accepted and values above that bound fail closed. Focused inventory contract
+tests exercise both surrogate directions and both UTF-8 boundary outcomes for
+all three owner tuple fields.
+
+This is a pure owner-value decoder correction. It adds no network request,
+device registration, heartbeat, inventory authority, lease store or issuer,
+reservation, scheduling, dispatch, Runner transport, execution, receipt
+persistence, or Audit publication. Production device and execution routes
+remain default-off; ADR-0039 remains planning-only, ADR-0114 remains
+Proposed/null, and P3b/P4 retain their separate acceptance gates.
+
+### Cross-device plan §237 — Flutter native uncertain Runner receipt preview parity
+
+The populated-Run Flutter native widget E2E now exercises both completed and
+`uncertain` session Runner receipt envelopes. Each invocation first sends the
+canonical receipt through the authenticated Flutter API and asserts the
+disposition, reconciliation/manual-review flags, `automatic_retry=false`, and
+`follow_up`; the rendered card exposes the disposition and follow-up as well.
+The Go recorder requires exactly one receipt-preview POST and one device-
+observation POST per invocation, allows only owner-scoped Run/timeline reads,
+and rejects device, execution, or dispatch paths.
+
+This is test-only native observation evidence; browser parity is a separate
+follow-up. No lease renewal, retry, target selection, receipt persistence,
+Runner contact, execution, dispatch, or Audit publication was added.
+Production device and execution routes remain default-off; ADR-0039 remains
+planning-only, ADR-0114 remains Proposed/null, and P3b/P4 retain their
+separate acceptance gates.
+
+### Cross-device plan §238 — Flutter Web uncertain Runner receipt preview parity
+
+The browser observation E2E now runs completed and `uncertain` session Runner
+receipt envelopes in separate authenticated Chromium sessions. Python validates
+the echoed uncertainty, reconciliation/manual-review, no-automatic-retry, and
+follow-up invariants; the page assertion also requires the disposition and
+follow-up strings in the rendered receipt card. Go's recorder applies the exact
+owner-scoped Run/timeline/session-observation contract and requires exactly one
+receipt-preview POST per browser run, rejecting device, execution, or dispatch
+paths.
+
+The Web test code and static checks are complete. With the prebuilt Flutter
+Web bundle and the host Google Chrome executable, the authenticated Go →
+Flutter Web E2E passes in `43.270s`; each browser session issues one receipt
+preview POST and no device, execution, or dispatch request. No lease renewal,
+retry, target selection, receipt persistence, Runner contact, execution,
+dispatch, or Audit publication was added. Production device and execution
+routes remain default-off; ADR-0039 remains planning-only, ADR-0114 remains
+Proposed/null, and P3b/P4 retain their separate gates.
+
+### Cross-device plan §239 — Rust session Runner receipt duplicate-key parity
+
+Rust's offline `device session-runner-receipt-preview` input and authenticated
+`remote session-runner-receipt preview` input now reject duplicate JSON object
+keys in the bounded raw UTF-8 document before `serde_json` materializes maps.
+Root and nested authority mutations are covered by CLI/TUI regressions. The
+existing 2 MiB bound, closed envelope, owner/Run binding, and all-false
+authority remain unchanged. The full `scripts/test-forge-contracts.sh` suite
+exits 0.
+
+This is decoder hardening only. No network route, receipt or lease persistence,
+device registration, heartbeat, inventory authority, target selection,
+reservation, scheduling, dispatch, Runner contact, execution, or Audit
+publication was added. Production device and execution routes remain
+default-off; ADR-0039 remains planning-only, ADR-0114 remains Proposed/null,
+and P3b/P4 retain their separate gates.
+
+### Cross-device plan §240 — Authenticated inventory Runner resource parity
+
+The test-only owner-bound inventory candidate E2E now verifies each distinct
+`(device_id, instance_id)` row's architecture, CPU, memory, storage, runtime,
+and concurrency fields in Rust CLI, Rust TUI, and Flutter's shared Web/App/
+Mobile API. Go continues to require one owner-scoped inventory GET and the
+owner derived from verified claims; all declaration and authority markers stay
+unverified/false.
+
+This remains a bounded observation parity slice. The candidate is mounted only
+by the inert test server, so production `/api/v1/devices`, enrollment, and
+heartbeat remain 404. No target selection, reservation, scheduling, dispatch,
+Runner contact, execution, receipt persistence, or Audit publication was
+added. ADR-0039 remains planning-only, ADR-0114 remains Proposed/null, and
+P3b/P4 retain their separate gates.
+
+### Cross-device plan §241 — Cross-client pending Run-intent submit parity
+
+Rust CLI/TUI and Flutter's shared Web/App/Mobile API now submit the same
+owner-scoped, consent-checked pending Run-intent candidate with CAS versioning,
+required idempotency, strict receipt binding, and retry/recovery semantics.
+The real Snaplink-issued inert E2E drives CLI, TUI, and Flutter against one
+receipt and verifies the shared metadata and payload-free timeline.
+
+This receipt stores Prompt and pending metadata only. It never starts an
+ordinary Run, selects a device, creates a lease, authorizes execution,
+schedules or dispatches work, contacts a Runner, or publishes Audit evidence.
+Production `/run-intents` and execution routes remain 404; device registration,
+heartbeat, authoritative inventory, and scheduler/Runner services remain
+disabled. ADR-0039 remains planning-only, ADR-0113/0114 remain Proposed/null,
+and P3b/P4 retain their separate acceptance gates.
+
+### Cross-device plan §242 — Fresh pending Run-intent cross-client write/recovery parity
+
+The authenticated inert E2E now creates independent fresh pending receipts from
+Rust CLI, Flutter's shared Web/App/Mobile API, and Rust TUI with distinct CAS
+versions and idempotency keys, then reads shared metadata/timeline. TUI 409/CAS
+conflict handling now clears stale pending state, refreshes the session, and
+requires a new submission.
+
+This remains test-only inert receipt evidence. No ordinary Run, target
+selection, lease, execution authorization, scheduling, dispatch, Runner
+contact, receipt persistence, or Audit evidence was added. Production
+run-intent/device/execution routes remain 404; ADR-0039 remains
+planning-only, ADR-0113/0114 remain Proposed/null, and P3b/P4 retain their
+separate acceptance gates.
+
+### Cross-device plan §243 — Fresh pending Run-intent cross-client readback convergence
+
+The fresh-write E2E now reads back every owner-scoped pending receipt after the
+CLI → Flutter → TUI sequence. CLI validates its fresh list item and timeline,
+Flutter validates its fresh item and timeline while retaining the original
+receipt read, TUI refreshes the list after submit, and a final owner-scoped Go
+readback binds all receipts to Prompt history, expected aggregate versions,
+payload-free `submitted` timelines, and an empty ordinary Run page.
+
+Optional client branches remain recorder-checked and each client that runs must
+contribute its fresh Prompt and receipt. This remains inert evidence: no
+ordinary Run, target selection, lease, execution authorization, scheduling,
+dispatch, Runner contact, receipt persistence, or Audit evidence was added.
+Production run-intent/device/execution routes remain 404; ADR-0039 remains
+planning-only, ADR-0113/0114 remain Proposed/null, and P3b/P4 retain their
+separate acceptance gates.
+
+### Cross-device plan §244 — Flutter Prompt history refresh merge convergence
+
+The shared Flutter Sessions screen now merges an owner change-feed Prompt
+refresh by Prompt ID instead of replacing the locally loaded history. After a
+user loads older Prompts, a Prompt appended by another authenticated client is
+added while the older rows and the deepest pagination cursor remain visible.
+Initial reads, older-page reads, and generation/Conversation binding checks are
+unchanged.
+
+The widget regression drives the older-page read, an authenticated
+`prompt_appended` change, and the newest-page refresh, then requires the old,
+newest, and cross-client Prompt rows plus the older-page affordance. This is
+read synchronization only: no device registration, inventory, heartbeat,
+target selection, reservation, scheduling, dispatch, Runner, execution,
+receipt, or Audit operation was added. Production device and execution routes
+remain default-off; ADR-0039 remains planning-only, ADR-0113/0114 remain
+Proposed/null, and P3b/P4 retain their separate acceptance gates.
+
+### Cross-device plan §245 — Flutter Sessions owner-bound inventory candidate display
+
+The shared Flutter Sessions Gate/Screen now accepts an explicitly injected
+verified owner tuple and inventory-candidate reader. When supplied, Web/App/
+Mobile performs one bounded owner-scoped candidate read and renders both
+Runner rows, resource values, and the unverified/all-false authority markers
+through the existing inventory panel. Refresh performs one new read and a
+foreign-owner response fails closed; the default Gate remains request-free for
+`/devices`.
+
+The widget regression covers two Runner rows, refresh call count, and owner
+mismatch. The authenticated candidate E2E mounts the real Sessions screen and
+asserts the panel while Go still requires exactly one owner-bound inventory GET
+among normal owner-scoped session reads. No enrollment, heartbeat,
+authoritative inventory, target selection, reservation, scheduling, dispatch,
+Runner, execution, receipt, or Audit operation was added. Production device
+routes remain 404; ADR-0039 remains planning-only, ADR-0114 remains
+Proposed/null, and P3b/P4 retain their separate acceptance gates.
+
+### Cross-device plan §246 — Flutter Sessions owner-bound pending Run-intent metadata observation
+
+The shared Flutter Sessions Gate/Screen now accepts an explicitly injected
+pending Run-intent metadata reader. The opt-in path reads one bounded
+owner-scoped list for the selected Conversation, strictly re-decodes its
+Conversation binding/order/pending status/initial sequence, and renders only
+intent metadata without Prompt content or action buttons. Refresh, feed
+synchronization, selection changes, authorization failure, and sign-out clear
+or re-read the projection; the default Gate makes no `/run-intents` request.
+
+Widget coverage proves metadata-only rendering, refresh count, foreign-
+Conversation rejection, and the default no-request path. The authenticated
+inert E2E mounts the real Sessions screen and requires one bounded pending
+metadata GET while rejecting widget POSTs. No pending submission, ordinary Run,
+device selection, lease, reservation, scheduling, dispatch, Runner, execution,
+receipt, or Audit operation was added. Production run-intent/device/execution
+routes remain 404; ADR-0039 remains planning-only, ADR-0113/0114 remain
+Proposed/null, and P3b/P4 retain their separate acceptance gates.
+
+### Cross-device plan §247 — Flutter Sessions pending Run-intent timeline metadata expansion
+
+The shared Flutter Sessions Gate/Screen now accepts an explicitly injected
+pending Run-intent timeline reader. The receipt card remains collapsed and
+does not request a timeline until an owner expands it. The opt-in read is one
+bounded initial page, strictly re-decoded for Conversation/intent binding,
+`after_sequence=0`, the submitted event, scanned-through sequence, and the
+payload-free event shape; the card renders only event ID, sequence, emitted
+time, type, and scanned-through metadata. Re-expansion uses the cached page;
+selection, refresh, authorization, sign-out, and stale generation clear it.
+
+Widget coverage proves zero-before-expand/one-after-expand behavior, cached
+re-expansion, foreign binding rejection, invalid event type rejection, and
+the default no-request path. The authenticated inert E2E expands the real
+Sessions receipt and requires one owner-scoped timeline GET while rejecting
+widget Run-intent writes. No pending submission, ordinary Run, device
+selection, lease, reservation, scheduling, dispatch, Runner, execution,
+receipt, or Audit operation was added. Production run-intent/device/execution
+routes remain 404; ADR-0039 remains planning-only, ADR-0113/0114 remain
+Proposed/null, and P3b/P4 retain their separate acceptance gates.
+
+### Cross-device plan §248 — Flutter Sessions pending timeline refresh lifecycle
+
+The shared Sessions refresh path now records whether change-feed
+synchronization already refreshed pending Run-intent metadata. A manual
+refresh therefore performs at most one bounded pending metadata GET even when
+it reloads the owner Conversation snapshot. When the refreshed page remains
+the same Conversation with the same closed intent metadata, validated
+payload-free timeline pages stay attached and an expanded receipt keeps its
+event markers. Changed or failed pages, Conversation switch, authorization
+failure, sign-out, and stale generations clear timelines and invalidate
+in-flight responses.
+
+Widget coverage proves change-feed refresh call count and expanded timeline
+retention. No Prompt body, pending submission, ordinary Run, device selection,
+lease, reservation, scheduling, dispatch, Runner, execution, receipt, or Audit
+operation was added. Production run-intent/device/execution routes remain 404;
+ADR-0039 remains planning-only, ADR-0113/0114 remain Proposed/null, and P3b/P4
+retain their separate acceptance gates.
+
+### Cross-device plan §249 — Flutter Sessions owner-scoped inventory refresh lifecycle
+
+The shared Sessions screen now keeps the last owner-validated inventory
+snapshot visible while an explicitly injected candidate refresh is pending. A
+temporary network, service, or response-validation failure marks the retained
+rows stale instead of presenting an empty device pool; a successful response
+replaces the snapshot and clears the marker. Authorization failure, sign-out,
+owner/reader replacement, and stale generation responses still clear the
+projection and cannot restore old data. Widget coverage proves the panel and
+stale marker remain during a blocked refresh and after a bounded 503, while
+foreign-owner and 401 cases remain fail-closed. No enrollment, heartbeat,
+authoritative inventory, reservation, scheduling, dispatch, Runner, execution,
+receipt, or Audit operation was added. Production `/api/v1/devices` remains
+404; ADR-0039 remains planning-only, ADR-0114 remains Proposed/null, and P3b
+and P4 retain their separate acceptance gates.
+
+### Cross-device plan §250 — Flutter Web shared-session deep-link and cold-reload parity
+
+The authenticated browser E2E now opens the real owner-bound route at
+`/forge/conversations/{conversation_id}`, verifies that the Conversation is
+selected without a title click, reloads the same route, and proves that the
+persisted owner change-feed cursor resumes after the initial cursor-0
+bootstrap. Existing `/forge/` and Run-observation flows keep their previous
+navigation paths. The lazy inventory assertion first resolves the leading row
+before scrolling toward the tail, so viewport virtualization does not turn a
+present observation into a false failure.
+
+The real Chromium run passes through the authenticated inert server and keeps
+the recorder contract limited to owner-scoped session reads, change-feed
+reads, and the expected Prompt write. No device registration, enrollment,
+heartbeat, authoritative inventory, target selection, reservation,
+scheduling, dispatch, Runner, execution, receipt, or Audit operation was
+added. Production `/api/v1/devices`, run-intent, and execution routes remain
+404; ADR-0039 remains planning-only, ADR-0113/0114 remain Proposed/null, and
+P3b/P4 retain their separate acceptance gates.
+
+### Cross-device plan §251 — Lossless persisted inventory observation v2 contract parity
+
+Go and Rust now build the explicit offline-only
+`forge.device-inventory-observation/v2` envelope from restored inventory
+values. The v2 shape retains reservation state, all declared GPUs, persisted
+revision, Runner generation, and heartbeat sequence, with owner binding,
+stable device/instance/GPU ordering, JSON-safe bounds, and all-false authority
+bits. Snaplink Console adds a strict v2 decoder/encoder and mutation tests;
+Rust CLI/TUI add a bounded local `persisted-observation-v2` preview, and the
+same fixture is consumed across Go, Rust, CLI/TUI, and Flutter while the v1
+envelope remains unchanged.
+
+This remains a value and contract slice. It adds no storage write,
+enrollment, heartbeat listener, authoritative inventory route, reservation,
+target selection, scheduling, dispatch, Runner contact, execution, receipt,
+or Audit operation. Production `/api/v1/devices` and execution routes remain
+404; ADR-0039 remains planning-only, ADR-0113/0114 remain Proposed/null, and
+P3b/P4 retain their separate acceptance gates.
+
+### Cross-device plan §252 — Flutter Sessions lossless v2 inventory preview panel
+
+Snaplink Console's shared Sessions surface now accepts an explicit v2
+persisted-inventory observation and renders its revision, Runner generation,
+heartbeat sequence, reservation state, resources, and all declared GPUs in a
+read-only panel. The panel has no reader or action callback; the default Gate
+does not inject it and therefore keeps the existing route request-free for
+v2. A fixture-backed widget test proves both Runner rows, multi-GPU values,
+all-false authority markers, and the absence of controls.
+
+This remains an injected display seam. It adds no v2 route, storage write,
+enrollment, heartbeat listener, authoritative inventory publication,
+reservation, target selection, scheduling, dispatch, Runner contact,
+execution, receipt, or Audit operation. Production `/api/v1/devices` and
+execution routes remain 404; ADR-0039 remains planning-only, ADR-0113/0114
+remain Proposed/null, and P3b/P4 retain their separate acceptance gates.
+
+### Cross-device plan §253 — Lossless v2 offline placement comparison
+
+Go Core and Rust Runtime now compare the complete v2 persisted-inventory
+observation against fixed caller requirements. Each sorted decision retains
+revision, Runner generation, heartbeat sequence, reservation state, GPU count,
+and aggregate available GPU memory. A reserved declaration is an explicit
+`device_reserved` exclusion; accelerator runtime requirements fail closed
+because the v2 observation has no accelerator runtime claim. The shared fixture
+tests multi-GPU retention, stale/expired declarations, owner drift, duplicate
+devices, deterministic exclusion reasons, and all-false authority.
+
+This remains a pure offline comparison. It selects no target and performs no
+reservation, lease, scheduling, dispatch, Runner contact, execution, receipt,
+or Audit operation. Production device and execution routes remain 404;
+ADR-0039 remains planning-only, ADR-0113/0114 remain Proposed/null, and P3b/P4
+retain their separate acceptance gates. The cross-client CLI/TUI and Flutter
+consumers are covered by the §254 slice below.
+
+### Cross-device plan §254 — Cross-client v2 placement comparison consumers
+
+Rust CLI and the authenticated TUI now provide a file-only local
+`device inventory placement-evaluation-v2 --input FILE|-` preview. Snaplink
+Console strictly decodes the same lossless v2 placement fixture and binds each
+decision to its observed revision, Runner generation/heartbeat, reservation,
+and multi-GPU totals before exposing metadata. Selected target IDs remain null
+and every authority bit remains false.
+
+This is a local contract consumer only. It performs no HTTP request,
+enrollment, heartbeat, authoritative inventory publication, reservation,
+scheduling, dispatch, Runner contact, execution, receipt, or Audit operation.
+Production device and execution routes remain 404; ADR-0039 remains
+planning-only, ADR-0113/0114 remain Proposed/null, and P3b/P4 retain their
+separate acceptance gates.
+
+### Cross-device plan §255 — Flutter Sessions v2 placement comparison panel
+
+Snaplink Console's Sessions Gate and Screen now accept an optional decoded v2
+placement evaluation. The read-only panel renders caller requirements and each
+observation-bound decision's reservation, GPU totals, persisted revision,
+Runner generation/heartbeat, sorted exclusion reasons, null selection, and
+all-false authority. The default Gate leaves the value unset and makes no
+placement request.
+
+This is an injected display seam only. It performs no HTTP request, target
+selection, reservation, scheduling, dispatch, Runner contact, execution,
+receipt, or Audit operation. Production device and execution routes remain 404;
+ADR-0039 remains planning-only, ADR-0113/0114 remain Proposed/null, and P3b/P4
+retain their separate acceptance gates.
+
+### Cross-device plan §256 — Rust v2 placement declaration canonicality parity
+
+The Rust v2 placement adapter now shares Go Core and Snaplink Console's
+fail-closed declaration rules: device and GPU rows are ordered and unique,
+resource tags are already lowercase and unique, and v2 state fields stay within
+the bounded vocabulary and limits. An exhausted CPU or memory value of zero is
+kept as a valid observation and reported through the normal insufficiency
+reason. This closes cross-runtime normalization drift without adding storage,
+enrollment, heartbeat, authority, target selection, reservation, scheduling,
+dispatch, Runner, execution, receipt, Audit, or production device behavior;
+ADR-0039 remains planning-only, ADR-0113/0114 remain Proposed/null, and P3b/P4
+retain their separate acceptance gates.
+
+## §257 — v2 placement preview integrity
+
+Completed a strict Go local `persisted-observation-v2` consumer, JSON-safe
+aggregate GPU bounds, Flutter v2 decision recomputation, and Rust/observation
+runtime-count parity. The shared fixture still produces no selected target and
+all authority bits remain false. The Flutter raw-text entrypoint also rejects
+duplicate JSON object keys before map decoding. No production device,
+enrollment, heartbeat, scheduling, dispatch, Runner, execution, receipt, or
+Audit route was enabled.
+
+## §258 — v2 capability-lease boundary parity
+
+Go's lossless v2 observation validator and Snaplink Console's v2 observation
+decoder now enforce the same 1-second minimum and 10-minute maximum capability
+lease TTL already enforced by Rust's restored Runner. Regression tests cover
+both rejected edges and the inclusive bounds while preserving the shared
+fixture's valid lease. This is offline value validation only; no device route,
+enrollment, heartbeat, inventory authority, target selection, reservation,
+scheduling, dispatch, Runner, execution, receipt, or Audit operation was added.
+
+## §259 — v2 CLI and runtime declaration boundary parity
+
+Rust CLI v2 preflight now accepts zero available CPU as an exhausted
+observation, uses the shared 32-runtime and JSON-safe capability bounds, and
+covers that path locally. Go v2 observation validation and Flutter v2 decoding
+share the lowercase ASCII runtime/OS/architecture grammar and 64-byte limit,
+rejecting URL punctuation and overlong declarations. This remains offline
+value validation only; no device route, enrollment, heartbeat, inventory
+authority, target selection, reservation, scheduling, dispatch, Runner,
+execution, receipt, or Audit operation was added.
+
+## §260 — Flutter raw v2 inventory envelope duplicate-key parity
+
+Snaplink Console's lossless `forge.device-inventory-observation/v2` model now
+has a bounded raw-text entrypoint. It scans nested JSON objects for duplicate
+names before `dart:convert` materializes maps, rejecting root and nested
+duplicates while preserving the valid fixture round trip and existing typed
+map entrypoint.
+
+This is transport parsing hygiene only. It adds no device route, enrollment,
+heartbeat listener, authoritative inventory, target selection, reservation,
+scheduling, dispatch, Runner contact, execution, receipt, or Audit operation.
+Production device and execution routes remain 404; ADR-0039 remains
+planning-only, ADR-0113/0114 remain Proposed/null, and P3b/P4 retain their
+separate acceptance gates.
+
+### Cross-device plan §261 — Rust persisted-observation CLI canonical-tag parity
+
+The Rust CLI/TUI `persisted-observation-v2` reader now uses the same lowercase
+ASCII `._-+` canonical grammar and 64-byte limit as Go, Flutter, and the Rust
+placement evaluator for v2 OS, architecture, and runtime declarations.
+Uppercase, URL-style punctuation, and Unicode values fail closed before the
+offline observation is rendered; GPU vendor labels keep their separate display
+label grammar. Regression coverage exercises all three malformed declaration
+classes while the shared fixture still round-trips exactly.
+
+This is local validation hygiene only. It adds no device route, enrollment,
+heartbeat listener, authoritative inventory, target selection, reservation,
+scheduling, dispatch, Runner, execution, receipt, or Audit operation. ADR-0039
+remains planning-only, ADR-0113/0114 remain Proposed/null, and P3b/P4 retain
+their separate acceptance gates.
+
+### Cross-device plan §262 — Flutter Sessions Gate precondition preview wiring
+
+The shared Web/App/Mobile `ForgeSessionsGate` now forwards explicitly injected
+Attempt-request and pending Run-intent fixture values through the real Gate to
+the Sessions screen. A widget regression mounts that path, verifies both
+read-only cards, and records exactly one owner-scoped Conversation GET; all
+fixture authority remains false and no device or execution request is made.
+
+This is execution-precondition display wiring only. It adds no Attempt or
+Run-intent production write, Run creation, device route, enrollment, heartbeat,
+authoritative inventory, target selection, reservation, scheduling, dispatch,
+Runner contact, execution, receipt, or Audit operation. Production device and
+execution routes remain 404; ADR-0039 remains planning-only, ADR-0113/0114
+remain Proposed/null, and P3b/P4 retain their separate acceptance gates.
+
+### Cross-device plan §263 — Rust v2 persisted-observation capability-lease parity
+
+Rust's lossless v2 placement domain and CLI/TUI persisted-observation reader
+now enforce the shared 1-second minimum and 10-minute maximum capability lease
+TTL used by Go, Flutter, and the restored Runner contract. Lower and upper
+edges are accepted, while short and overlong leases fail closed before local
+rendering or offline comparison.
+
+This is offline declaration validation only. It adds no device route,
+enrollment, heartbeat listener, authoritative inventory, target selection,
+reservation, scheduling, dispatch, Runner contact, execution, receipt, or Audit
+operation. Production device and execution routes remain 404; ADR-0039 remains
+planning-only, ADR-0113/0114 remain Proposed/null, and P3b/P4 retain their
+separate acceptance gates.
+
+
+### Cross-device plan §264 — Flutter Sessions Gate v2 placement precondition parity
+
+The shared Web/App/Mobile `ForgeSessionsGate` now has a real-path widget
+regression for forwarding an explicitly injected lossless v2 placement
+evaluation to the Sessions screen. The Gate performs the normal single
+owner-scoped Conversation read, renders observation-bound Runner decision
+metadata, and makes no `/devices` request. Rust CLI/TUI already consume the
+same v2 fixture through bounded file-only previews, so the five client
+surfaces share tested display wiring for this placement precondition.
+
+This remains injected, offline, read-only wiring. It does not select a target,
+create a reservation or lease, schedule or dispatch work, contact a Runner,
+execute a command, persist a receipt, or publish Audit evidence. Production
+device and execution routes remain 404; ADR-0039 remains planning-only,
+ADR-0113/0114 remain Proposed/null, and P3b/P4 retain their separate
+acceptance gates.
+
+### Cross-device plan §265 — Aero-ID and Audit Governance observer receiver hardening
+
+Aero-ID and Snaplink Audit Governance now recursively reject duplicate JSON
+object names before decoding the shared `forge.run.observed.v1` evidence
+fixture, including the root and nested `authority` objects. Aero-ID's observer
+publisher copies only non-empty, trimmed, non-control-character
+`execution_run_id` and `workflow_instance_id` correlation values into the
+governance envelope; non-string or unsafe values are omitted.
+
+This is deterministic, content-free evidence handling only. It adds no event
+publication, outbox write, device registration, heartbeat, inventory authority,
+reservation, scheduling, dispatch, Runner execution, receipt persistence, or
+Audit authority. ADR-0039 remains planning-only, ADR-0113/0114 remain
+Proposed/null, and P3b/P4 retain their separate acceptance gates.
+
+### Cross-device plan §266 — Cross-platform credential-storage preflight contract
+
+Forge Runtime now provides a local, read-only `remote credentials status`
+command with the versioned `forge.remote-credential-capabilities/v1` contract.
+It reports platform, `FORGE_ACCESS_TOKEN` fallback, OS refresh-token keyring,
+credential metadata persistence, refresh locking, and aggregate saved-login
+availability independently. The command never opens a keyring, creates files,
+contacts Snaplink, or touches device/execution routes. Windows is included in
+the keyring backend compilation boundary, while its absent secure metadata and
+refresh-lock pieces remain explicit and continue to require
+`FORGE_ACCESS_TOKEN`; Android and other unsupported targets fail closed too.
+This is capability discovery only: no credential persistence, enrollment,
+heartbeat, inventory authority, target selection, reservation, scheduling,
+dispatch, Runner, execution, receipt, or Audit behavior was enabled. ADR-0039
+remains planning-only; ADR-0113/0114 remain Proposed/null; P3b/P4 remain gated.
+
+### Cross-device plan §267 — Flutter native OAuth client-slot isolation
+
+Snaplink Console's native `ForgeCredentialStore` now derives a bounded secure
+storage key from each non-default OAuth client ID. The legacy first-party Forge
+key remains stable for cold-start migration compatibility, while additional
+client slots no longer overwrite or clear one another during store, restore,
+refresh, or sign-out. A shared-backend regression writes and restores two
+access/refresh pairs, clears one slot, and verifies the other remains usable.
+The web `sessionStorage` path and all device/execution routes remain unchanged;
+ADR-0039 remains planning-only, ADR-0113/0114 remain Proposed/null, and P3b/P4
+remain gated.
+
+### Cross-device plan §268 — Go owner-bound lossless v2 inventory candidate
+
+Forge Core now provides a separate private `/api/v1/devices/observations/v2`
+candidate constructor for the lossless inventory envelope. It requires an
+explicitly enabled injected source, derives the owner from verified claims,
+requires `forge:devices:read`, validates all v2 declaration bounds and
+all-false authority, and applies the response budget. A restored-state adapter
+builds this observation without storage, heartbeat, or selection side effects;
+route tests cover default-disabled, owner binding, foreign-owner, method/query/
+scope, source failure, cancellation, and the lossless reservation/multi-GPU
+values. Production route constructors do not mount the candidate, so device
+routes remain 404; no enrollment, heartbeat listener, inventory authority,
+selection, reservation, scheduling, dispatch, Runner, execution, receipt, or
+Audit behavior was enabled. ADR-0039 remains planning-only, ADR-0113/0114
+remain Proposed/null, and P3b/P4 remain gated.
+
+### Cross-device plan §269 — Bounded CLI change-feed watch and backoff
+
+Forge Runtime now exposes a bounded `remote changes watch` helper for clients
+without push transport. It polls the authenticated owner-bound dense feed from
+the saved Coordinator/account cursor, returns observed rows and the final
+cursor, exponentially backs off across empty pages, and resets the delay for
+changes or continuation pages. Saved cursors advance after each valid page;
+explicit `--after-cursor` watches never replace the saved checkpoint. Poll and
+delay bounds are finite and validated, and a regression observes a change
+after two empty pages. This extends Conversation read delivery only: no push
+route, Prompt/Run mutation, device/execution route, enrollment, heartbeat,
+inventory authority, selection, reservation, scheduling, dispatch, Runner,
+receipt, or Audit behavior was enabled. ADR-0039 remains planning-only,
+ADR-0113/0114 remain Proposed/null, and P3b/P4 remain gated.
+
+### Cross-device plan §270 — Flutter Web OAuth lifecycle contract
+
+Snaplink Console now has a browser-only OAuth lifecycle regression running
+against Chrome's actual `sessionStorage` adapter. It cold-mounts a second
+`ForgeCredentialStore`, rotates an expired access token after a Conversation
+401 through the public refresh grant, retries the read once with the new
+token, and verifies the rotated access/refresh pair. Forge-only cleanup then
+clears the Forge slot while preserving the Admin slot. The test uses an
+injected HTTP client and reaches no Snaplink, device, inventory, scheduling,
+Runner, or execution route; ADR-0039 remains planning-only,
+ADR-0113/0114 remain Proposed/null, and P3b/P4 remain gated.
+
+### Cross-device plan §271 — Flutter adaptive change-feed polling and recovery
+
+Snaplink Console's shared Web/App/Mobile `ForgeSessionsScreen` now schedules
+one-shot owner change-feed reads with bounded adaptive backoff. The normal
+15-second interval expands to 30, 60, and at most 120 seconds after
+consecutive feed or required snapshot failures; a valid empty page is a
+successful recovery and resets the next interval to 15 seconds. Pause,
+sign-out, authorization invalidation, and disposal cancel the pending timer,
+and resumed routes do not overlap feed reads. The owner-local cursor remains
+committed only after the required authenticated GET refreshes succeed. A
+widget regression proves the 15-to-30-second backoff and recovery to 15
+seconds after a valid empty page. No push route, Prompt/Run mutation,
+device registration, enrollment, heartbeat, inventory authority, target
+selection, reservation, scheduling, dispatch, Runner, execution, receipt,
+or Audit behavior was added; ADR-0039 remains planning-only,
+ADR-0113/0114 remain Proposed/null, and P3b/P4 remain gated.
+
+### Cross-device plan §273 — Snaplink JWT to Flutter lossless v2 inventory candidate evidence
+
+Forge Core now proves the private lossless v2 inventory candidate across
+processes: a real in-memory Snaplink SSO issuer signs the bearer token, an
+explicit test mux mounts the owner-bound Go source, and a separate Flutter
+test process reads `/api/v1/devices/observations/v2` through the authenticated
+API client and strictly decodes the exact envelope. The regression retains
+owner, revision/generation/heartbeat, reservation, two GPU declarations, and
+the all-false authority flags. Go route coverage continues to exercise scope,
+request-shape, foreign-owner, source-failure, cancellation, and response
+budget failures. The production handler remains 404 because the candidate is
+never mounted by production constructors; no enrollment, heartbeat,
+authoritative inventory, selection, reservation, scheduling, dispatch,
+Runner, execution, receipt, or Audit behavior was enabled. ADR-0039 remains
+planning-only, ADR-0113/0114 remain Proposed/null, and P3b/P4 remain gated.
+
+### Cross-device plan §272 — Rust TUI bounded change-feed watch consumer
+
+The authenticated Rust remote TUI now consumes the same finite owner-feed
+watch as `remote changes watch`. `changes watch` parses bounded polls and
+backoff, supports an explicit one-off cursor, renders validated metadata-only
+change rows, advances the in-process cursor, and updates aggregate versions
+for loaded sessions. Saved cursor checkpointing remains in the shared client
+after each valid advancing page; explicit cursors never replace the saved
+checkpoint. Mock TUI coverage serves empty and changed pages, requires
+authenticated GET requests with empty bodies, verifies state/render updates,
+and rejects invalid bounds before making a request. No push transport,
+Prompt/Run mutation, device registration, enrollment, heartbeat, authoritative
+inventory, target selection, reservation, scheduling, dispatch, Runner,
+execution, receipt, or Audit behavior was added; production device and
+execution routes remain 404, ADR-0039 remains planning-only,
+ADR-0113/0114 remain Proposed/null, and P3b/P4 remain gated.
+
+### Cross-device plan §274 — Rust TUI pending Run-intent timeline resume boundary
+
+The authenticated Rust remote TUI now accepts `run-intents timeline
+INTENT_ID --resume` after a successful metadata-only timeline read in the same
+process. It binds the in-process `scanned_through_sequence` to the exact
+selected Conversation and pending intent, requests the next page with that
+cursor, rejects session/intent drift and cursor regression, and clears the
+owner-scoped observation after authorization failure. The checkpoint is
+intentionally process-local; no durable pending-intent resume file is inferred
+until its separate contract is accepted.
+
+Mock TUI coverage proves the initial sequence-zero read, the bound sequence-one
+resume, empty continuation and single-event rendering, plus rejection before
+any request when no exact prior binding exists. This extends authenticated
+pending-intent observation only. No Prompt/Run mutation, public consent route,
+device registration, enrollment, heartbeat, authoritative inventory, target
+selection, reservation, scheduling, dispatch, Runner, execution, receipt, or
+Audit behavior was added; production device and execution routes remain 404,
+ADR-0039 remains planning-only, ADR-0113/0114 remain Proposed/null, and P3b/P4
+remain gated.
+
+### Cross-device plan §276 — Aero-IM/Aero-Vault Forge observer evidence conformance
+
+Aero-IM's audit connector and Aero-Vault's governance relay now consume
+byte-identical copies of Catalyst's content-free `forge.run.observed.v1`
+fixture in standalone receiver contract tests. Both reject recursive duplicate
+JSON keys, unknown/content-bearing fields, unsafe metadata, and enabled
+authority; Aero-IM also proves the bounded payload can cross its typed audit
+envelope without Prompt/result/tool/token/artifact content. The conformance
+runner compares both external copies with Catalyst's canonical fixture and runs
+the focused tests. This is evidence compatibility only: no publisher, outbox,
+relay activation, device registration, enrollment, heartbeat, authoritative
+inventory, selection, reservation, scheduling, dispatch, Runner, execution,
+receipt, or Audit authority was added. ADR-0039 remains planning-only,
+ADR-0113/0114 remain Proposed/null, and P3b/P4 remain gated.
+
+### Cross-device plan §275 — Flutter pending Run-intent metadata cursor pagination
+
+Snaplink Console's shared Web/App/Mobile Forge surface now accepts an explicit
+paged pending Run-intent reader. The first read uses a null cursor; `Load more
+pending Run-intents` passes the strict `next_cursor` to the next bounded read,
+revalidates Conversation/order/duplicate identity boundaries, and merges older
+metadata while preserving already loaded payload-free timeline markers. The
+legacy single-page callback remains compatible and the default Gate leaves both
+candidate readers unset. Widget coverage drives two pages, asserts the cursor
+binding, and verifies the continuation row/control lifecycle. No Prompt body,
+consent write, Run creation, device registration, inventory authority,
+selection, reservation, scheduling, dispatch, Runner, execution, receipt, or
+Audit operation was added; production `/run-intents` and device/execution
+routes remain 404, ADR-0039 remains planning-only, ADR-0113/0114 remain
+Proposed/null, and P3b/P4 remain gated.
+- **DONE — Rust CLI/TUI authenticated lossless v2 inventory candidate (cross-device plan §277)**: Forge Runtime adds `remote inventory show-v2` and TUI `inventory read-v2` for the private `/api/v1/devices/observations/v2` candidate. Each performs one logical authenticated GET with bounded transient retry, validates the owner-bound lossless v2 envelope including revision, Runner generation/heartbeat, reservation, multi-GPU rows, and all-false authority, and renders only metadata. Mock CLI/TUI coverage rejects authority mutation and proves the exact request path/empty body. Production constructors never mount this candidate, so the route remains 404; no registration, enrollment, heartbeat, authoritative inventory, selection, reservation, scheduling, dispatch, Runner, execution, receipt, or Audit behavior was added. ADR-0039 remains planning-only, ADR-0113/0114 remain Proposed/null, and P3b/P4 remain gated.
+- The §277 Go E2E can optionally launch the real Rust CLI when `FORGE_RUNTIME_BIN` is set, comparing the CLI envelope with the same authenticated Go and Flutter reads; the default contract runner leaves this cross-process check opt-in.
+
+### Cross-device plan §278 — Flutter authenticated lossless v2 inventory reader lifecycle
+
+Snaplink Console's shared Web/App/Mobile `ForgeSessionsGate` and
+`ForgeSessionsScreen` now accept an optional owner-bound
+`ForgeDeviceInventoryV2Reader`. When supplied, the screen reads the existing
+`ForgeConversationsApi.readDeviceInventoryCandidateV2` seam after the owner
+snapshot, strictly re-decodes and owner-checks the v2 page, and renders the
+actual response through the read-only lossless v2 panel. Refresh repeats the
+bounded GET; transient failures retain the last validated page and mark it
+stale, while a 401 clears owner sessions and the v2 projection with the v1
+lifecycle behavior. The default Gate leaves the reader unset and sends no v2
+device request. API and widget regressions cover the exact path, owner drift,
+Runner/revision/GPU/reservation rendering, refresh, stale retention, 401
+cleanup, and the request-free default. No enrollment, heartbeat, authoritative
+inventory, selection, reservation, scheduling, dispatch, Runner, execution,
+receipt, or Audit operation was added; production v2 device routes remain 404,
+ADR-0039 remains planning-only, ADR-0113/0114 remain Proposed/null, and P3b/P4
+remain gated.
+
+### Cross-device plan §279 — Local Run execution-evidence preview and selected-Run metadata card
+
+Forge Runtime now accepts the canonical content-free
+`forge.run.execution-evidence.v1` fixture through local
+`device run-execution-evidence-preview --input FILE|-`; the TUI exposes the
+same preview for a path-only file and reuses bounded input, recursive duplicate
+key rejection, strict unknown/authority/content validation, and metadata-only
+output. It never performs HTTP, device access, persistence, target selection,
+reservation, dispatch, process execution, or Audit publication.
+
+The shared Snaplink Console Web/App/Mobile Gate and Sessions screen accept an
+explicit `ForgeRunExecutionEvidence`, strictly re-decode it, require the exact
+selected Conversation/Run binding, and render a metadata-only card with
+uncertainty/reconciliation and all-false authority. The owner reference stays a
+digest and is not turned into an owner identity. Focused Rust/Flutter tests
+cover fixture parity, duplicate/unknown/authority/content rejection, selected
+Run matching, strict re-decode, reconciliation display, and the request-free
+boundary. ADR-0039 remains planning-only, ADR-0113/0114 remain Proposed/null,
+and P3b/P4 remain separately gated; no live inventory, scheduling, dispatch,
+Runner, execution, receipt persistence, or Audit behavior was added.
+
+### Cross-device plan §280 — Run observer preview and selected-Run metadata parity
+
+Forge Runtime adds fixture-only local CLI/TUI previews for
+`forge.run.observed.v1`, with bounded strict decoding,
+duplicate/unknown/content/authority rejection, and metadata-only rendering.
+Snaplink Console's shared Gate/Screen accepts an explicit `ForgeRunObserved`,
+strictly re-decodes it, requires the selected Conversation/Run binding, and
+renders the opaque owner digest plus bounded Run metadata in a read-only card.
+No default observer request or HTTP/device/execution route was added;
+ADR-0039 remains planning-only, ADR-0113/0114 remain Proposed/null, and P3b/P4
+remain gated.
+
+### Cross-device plan §281 — Host-side native cold-start shared-session lifecycle
+
+Snaplink Console adds `forge_mobile_shared_session_e2e_test.dart`, a host-side
+native lifecycle harness that uses the Android/iOS `ForgeCredentialStore`
+abstraction with an injected secure-store backend. It clears the process
+credential slot, restores the same owner Conversation across two cold starts,
+appends and replays one idempotent Prompt, checks aggregate version and the
+owner change-feed cursor, and proves exactly one matching history row. The
+initial `android-host` marker made the host-only result explicit; §348 adds the
+matching `ios-host` variant. The opt-in Go E2E launches it through the real
+Snaplink JWT → Go → Rust path, records the exact
+prompt/session/change-feed calls, rejects devices, Run-intents, placement and
+dispatch, and rechecks detail/history from Go. No physical Android run is
+claimed; ADR-0039 remains planning-only, ADR-0113/0114 remain Proposed/null,
+and no device or execution authority was added.
+
+### Cross-device plan §282 — Populated-Run ForgeRunObserved Flutter live E2E
+
+The opt-in populated-Run Snaplink JWT → Go → Rust E2E now uses pure
+`ProjectRunObserved` projection output in a private 0600 Flutter input file.
+The native Flutter test strictly decodes it, checks `isFor`/`isDisplayOnly`,
+injects the value through `ForgeSessionsGate`, and requires the selected Run
+metadata card. Local fake-API probes verify foreign, content-bearing, and
+authoritative values remain hidden without changing the live recorder request
+sequence. No observer route, device or execution authority, or Audit behavior
+was added; ADR-0039 remains planning-only and ADR-0113/0114 remain
+Proposed/null.
+
+### Cross-device plan §283 — Flutter selected-Run observer reader lifecycle
+
+Snaplink Console's shared Web/App/Mobile Sessions surface accepts an explicit
+`ForgeRunObservedReader` callback for one selected Conversation/Run. The
+screen strictly re-decodes the returned `forge.run.observed.v1` value, checks
+the exact selected binding and all-false display boundary, refreshes it through
+the existing owner/session refresh lifecycle, and retains the last validated
+value during a transient refresh failure. The default Gate remains reader-free
+and performs no observer request. Focused widget coverage proves loading,
+binding, strict display-only validation, and refresh replacement; no observer
+route, device or execution authority, or Audit behavior was added. ADR-0039
+remains planning-only and ADR-0113/0114 remain Proposed/null.
+
+- **DONE — Rust CLI/TUI Runner lease-fencing preview parity (cross-device plan §284)**: Forge Runtime now exposes `device runner-lease-fencing-preview --input FILE|-` and path-only TUI `runner-lease-fencing-preview --input FILE`. Both consume the canonical fixture with bounded duplicate/unknown/schema/authority/input checks, exercise lease renewal/proof/terminal/replay/conflict/uncertain cases, and emit only lease metadata and redacted case outcomes. Focused CLI/TUI tests prove the request-free boundary and all-false authority; no lease is issued or persisted, no device is selected/reserved, no work is scheduled/dispatched, no Runner is contacted, and no process, receipt, or Audit evidence is produced. ADR-0039 remains planning-only, ADR-0113/0114 remain Proposed/null, and P3b/P4 remain gated.
+- **DONE — Android secure-storage instrumentation boundary (cross-device plan §285)**: Snaplink Console adds `ForgeCredentialStorageInstrumentedTest` against the actual native `flutter_secure_storage` Android backend and a runner that requires an explicit disposable `emulator-N`. The test restores a Forge-shaped credential through a second storage instance and verifies deletion/cleanup; no serial yields an explicit `SKIP`, and an unavailable serial fails. This is storage-boundary evidence only and does not start Flutter/MainActivity, claim process recreation, or prove physical Android shared-session Prompt behavior. The host-side JWT → Go → Rust lifecycle test remains the authenticated session evidence; no device/execution authority was added, ADR-0039 remains planning-only, ADR-0113/0114 remain Proposed/null, and P3b/P4 remain gated.
+
+### Cross-device plan §288 — Flutter placement-batch observation parity
+
+Snaplink Console's shared Web/App/Mobile Forge Sessions surface now accepts an
+explicit `ForgeDeviceInventoryPlacementBatchEvaluationFixture` and renders the
+canonical persisted-inventory placement batch value. The panel shows fixed
+evaluation metadata, requirements, candidate revisions, and exclusion reasons
+while retaining null selection and all-false authority. The default Gate leaves
+the value unset. Widget tests use the canonical fixture through the real
+`ForgeSessionsScreen` and assert no `/devices` or placement request. This is
+P3a observation parity only; no inventory authority, selection, reservation,
+scheduling, dispatch, Runner, execution, receipt, or Audit behavior was added.
+ADR-0039 remains planning-only and ADR-0113/0114 remain Proposed/null.
+- **DONE — Aero-IM/Aero-Vault execution-evidence receiver parity (cross-device plan §287)**: Aero-IM and Aero-Vault now consume byte-identical copies of Catalyst's `forge.run.execution-evidence.v1` fixture. Their strict receiver tests reject duplicate/unknown/content-bearing fields, unsafe metadata, digest drift, and enabled authority; Aero-IM also proves the value survives its typed audit payload envelope without Prompt/result/tool/token/artifact content. The contract runner compares both copies and runs both focused suites. This is compatibility evidence only: no event publication, outbox/relay activation, receipt persistence, Runner contact, device registration, inventory, reservation, scheduling, dispatch, or execution authority was added; ADR-0039 remains planning-only, ADR-0113/0114 remain Proposed/null, production routes remain closed, and P3b/P4 remain gated.
+- **DONE — Flutter response duplicate-key scanner hardening (cross-device plan §286)**: `ForgeConversationsApi` now validates JSON structure before Dart map materialization, deduplicating only actual object member names and normalizing escaped Unicode key aliases. Strings containing braces/colons, arrays, literals, nested objects, and invalid JSON are covered by API/resilience/model/origin regressions. This is response-integrity hardening only; no device or execution authority was added, ADR-0039 remains planning-only, ADR-0113/0114 remain Proposed/null, and P3b/P4 remain gated.
+- **DONE — Owner-scoped persisted inventory file read boundary (cross-device plan §289)**: Forge Core's injected read-only `forge.device-inventory-file/v1` adapter restores a complete 0600 regular-file envelope through `statefs`, rejects symlink/permission/size/duplicate/unknown-field drift, validates the exact owner tuple, projects at a fixed caller time, and survives a separate-process revision read. Private appserver v1/v2 bridges and default-off 404 tests use it without constructing production routes; no enrollment, heartbeat, inventory authority, selection, reservation, scheduling, dispatch, Runner, execution, receipt, or Audit operation was added. ADR-0039 remains planning-only, ADR-0113/0114 remain Proposed/null, and P3b/P4 remain gated.
+- **DONE — Android Activity recreation shared-session lifecycle (cross-device plan §290)**: Debug Android instrumentation starts the real Forge Gate/Screen, restores an OAuth-shaped credential from native secure storage, exercises authenticated Conversation/Prompt/Run reads, recreates `MainActivity`, and verifies a second authenticated Conversation read via a debug-only recorder channel. The runner requires an explicit disposable `emulator-N`, reports a clear skip without one, and fails an unavailable requested serial. It is native lifecycle evidence only; no physical remote execution or device authority was enabled, and ADR-0039/0113/0114 remain gated.
+- **DONE — Injected local Runner execution preview (cross-device plan §291)**: Forge Core's local/test adapter accepts validated Runner intent plus caller-supplied lease proof and observation time, invokes only an injected direct-argv executor, bounds output, maps failure/uncertainty, and returns metadata-only terminal/session receipt observations with all authority bits false. Fake, direct-process, lease, output, uncertainty, and mutation regressions pass; no production route constructs it and no device selection, remote dispatch, lease persistence, receipt persistence, or Audit publication was added.
+- **DONE — Flutter Runner lease/fencing preview import (cross-device plan §293)**: Snaplink Console's shared Web/App/Mobile Forge Sessions surface accepts bounded workspace JSON for the strict `forge.runner-lease-fencing/v1` fixture and renders only schema, lease timing, and redacted case outcomes. Fencing tokens, receipt digests, terminal reasons, target, reservation, dispatch, and action fields stay hidden; authority remains false. A compact, semantic AppBar action keeps the request-free import reachable without changing the session list scroll geometry. No device request, enrollment, heartbeat, inventory authority, selection, reservation, scheduling, dispatch, Runner, execution, receipt, or Audit behavior was added; ADR-0039 remains planning-only, ADR-0113/0114 remain Proposed/null, and P3b/P4 remain gated.
+- **DONE — Runner dispatch-plan preview value contract (cross-device plan §294)**: Forge Core's pure `ObserveRunnerDispatchPlanPreview` joins offline placement candidates, Attempt lifecycle state, Runner intent target, and a lease grant into deterministic declarative metadata. It reports requirement, target, lease, and Attempt admissibility while keeping selected target null and all authority false; no fencing token, argv, workspace, output, reservation, or dispatch command is represented. Focused Go tests cover accepted, terminal, expired, owner/target/lease mismatch, authority mutation, ordering, and input immutability. No registry, clock, selection, reservation, scheduling, dispatch, Runner, process, receipt, or Audit operation was added; ADR-0039 remains planning-only, ADR-0113/0114 remain Proposed/null, and P3b/P4 remain gated.
+- **DONE — Atomic multi-instance persisted inventory read (cross-device plan §295)**: Forge Core's injected `forge.device-inventory-file-set/v1` adapter reads one owner-bound, atomically replaced 0600 regular-file image containing up to 128 complete device/Runner states. It rejects aliases, broad permissions, duplicate/unknown/trailing JSON, malformed members, foreign owners, and duplicate device/instance IDs, then returns deterministic ordering; atomic replacement tests prove revision/heartbeat updates without mixed state. The private candidate projects v1/v2 observations, and an opt-in Snaplink JWT E2E sends two instances through Rust CLI/TUI and optional Flutter API. Production device routes remain 404; no enrollment, heartbeat ingestion, inventory authority, selection, reservation, scheduling, dispatch, Runner, execution, receipt, or Audit behavior was added; ADR-0039 remains planning-only, ADR-0113/0114 remain Proposed/null, and P3b/P4 remain gated.
+- **DONE — Client-instance/session view contract (cross-device plan §296)**: Forge Core defines the pure `forge.client-instance-session-view/v1` read-only vocabulary for owner-scoped CLI/TUI/Web/App/Mobile instance metadata and opaque session references. Strict Go decoding and the canonical fixture reject duplicate, unknown, null, trailing, owner-drift, unsupported-kind/status, and oversized input; all identity, session-write, device, reservation, execution, dispatch, and Audit authority bits remain false. Rust `device client-session-view-preview --input FILE|-` and the path-only TUI `client-session-view-preview --input FILE` consume the same fixture and render metadata only. No production instance route, registration, session binding, Prompt-to-Run behavior, Agent Hub authority, device enrollment, scheduling, Runner, or execution behavior was added; ADR-0039 remains planning-only, ADR-0113/0114 remain Proposed/null, and P3b/P4 remain gated.
+- **DONE — Flutter client-instance/session view consumption (cross-device plan §297)**: Snaplink Console strictly decodes the shared `forge.client-instance-session-view/v1` fixture and forwards an optional, local value through `ForgeSessionsGate` to the shared `ForgeSessionsScreen`, which re-decodes it before rendering a metadata-only panel for owner, instance kind/status, observation time, and opaque session IDs. The Dart consumer checks duplicate keys before map decoding, exact shapes, owner metadata, sorted unique IDs, supported kinds/statuses, bounds, timestamps, and all-false authority. Canonical fixture tests reject malformed and authority mutations; shared Web/App/Mobile widget coverage drives both the panel and real Sessions screen and asserts no `/devices` request. Default reader/value remains unset, with no network, Agent Hub authority, Prompt/Run write, selection, reservation, dispatch, production route, device enrollment, heartbeat, scheduling, Runner, execution, receipt, or Audit behavior; ADR-0039/0113/0114 and P3b/P4 remain gated.
+- **DONE — Client-instance/resource view composition (cross-device plan §298)**: Forge Core defines the pure `forge.client-instance-resource-view/v1` join of owner-declared CLI/TUI/Web/App/Mobile instance/session metadata and sorted device/Runner resource summaries. It keeps client `instance_id` distinct from `runner_instance_id`, bounds revision/generation/heartbeat/capacity/GPU metadata, rejects owner drift, duplicates, lifecycle/capacity inversions, ordering and strict JSON mutations, and fixes all authority false. Rust CLI `device client-instance-resource-view-preview --input FILE|-` and path-only TUI consume the canonical fixture and render metadata only. No production route, enrollment, heartbeat, authoritative inventory, session binding, Prompt-to-Run, selection, reservation, scheduling, Runner, execution, receipt, or Audit behavior was added; ADR-0039 remains planning-only, ADR-0113/0114 remain Proposed/null, and P3b/P4 remain gated.
+- **DONE — Flutter client-instance/resource view consumption (cross-device plan §299)**: Snaplink Console strictly consumes the shared `forge.client-instance-resource-view/v1` fixture through an optional local `ForgeSessionsGate`/`ForgeSessionsScreen` value and renders owner, client-instance, Runner, lifecycle, reservation, capacity, and GPU metadata. It re-decodes exact fields, owner bindings, ordering, bounds, and all-false authority before display; widget coverage drives both the panel and real Sessions screen and asserts no `/devices` request. The panel has no Prompt, Run, target-selection, reservation, or execution control, and the default Gate remains null; no production instance/device route, enrollment, heartbeat, authoritative inventory, session binding, Prompt mutation, Run creation, selection, scheduling, dispatch, Runner, execution, receipt, or Audit behavior was added; ADR-0039 remains planning-only, ADR-0113/0114 remain Proposed/null, and P3b/P4 remain gated.
+- **DONE — Persisted inventory to cross-client resource view (cross-device plan §300)**: Forge Core maps an explicitly injected owner-bound `forge.device-inventory-file-set/v1` image into the strict `forge.client-instance-resource-view/v1` composition, preserving client `instance_id` versus Runner `runner_instance_id`, revision/generation/heartbeat, liveness/reservation, capacity, and aggregate GPU memory with deterministic sorting and fail-closed owner/duplicate/bounds checks. A private `/api/v1/client-instances/resource-view` candidate is exercised through a real Snaplink JWT and the exact response is consumed by separate Rust CLI/TUI and Flutter API E2E processes; production construction remains 404, the default Sessions Gate remains unset, and no client registration, enrollment, heartbeat, inventory authority, selection, reservation, scheduling, dispatch, Runner, execution, receipt, or Audit behavior was added. ADR-0039 remains planning-only, ADR-0113/0114 remain Proposed/null, and P3b/P4 remain gated.
+- **DONE — Explicit Console reader for client-instance/resource view (cross-device plan §301)**: `ForgeSessionsGate` and `ForgeSessionsScreen` now accept an explicit owner plus `ForgeClientInstanceResourceViewReader`, strictly re-decode the returned candidate, require owner/display-only parity, retain the last validated value on refresh failure, and clear it when the reader changes. The default Gate/Screen remain reader-free and request-free; Web/App/Mobile widget coverage exercises the real screen reader seam, while no production instance/device route, registration, enrollment, heartbeat, inventory authority, session binding, Prompt/Run mutation, selection, reservation, scheduling, dispatch, Runner, execution, receipt, or Audit behavior was added. ADR-0039 remains planning-only, ADR-0113/0114 remain Proposed/null, and P3b/P4 remain gated.
+- **DONE — Authenticated candidate for client-instance/session view (cross-device plan §302)**: Forge Core adds a private, explicitly enabled `/api/v1/client-instances/session-view` seam that derives owner from verified JWT claims, reuses `forge:conversations:read`, strictly validates the read-only envelope, and remains unmounted by production routes. Snaplink Console accepts an explicit owner plus reader, re-decodes owner/display-only values, preserves stale data during refresh failure, and clears on seam changes. An opt-in Snaplink JWT E2E feeds the same response to Rust CLI/TUI and Flutter API; no client registration, session binding, Prompt/Run mutation, device authority, scheduling, dispatch, Runner, execution, receipt, or Audit behavior was added. ADR-0039 remains planning-only, ADR-0113/0114 remain Proposed/null, and P3b/P4 remain gated.
+- **DONE — Authenticated Rust CLI/TUI readers for client-instance candidates (cross-device plan §303)**: Forge Runtime adds bearer-authenticated, no-body `remote client-instances session-view` and `remote client-instances resource-view` reads with strict envelope and all-false authority validation. The TUI renders the same owner-bound metadata, clears its local observation after 401/403, and never selects or dispatches a device. Rust mock-server tests and the opt-in Snaplink JWT E2E now exercise the direct remote CLI/TUI paths against the explicitly enabled candidate mux; production constructors remain 404 and offline fixture readers remain available. No client registration, session binding, enrollment, heartbeat, inventory authority, selection, reservation, scheduling, dispatch, Runner, execution, receipt, or Audit behavior was added. ADR-0039 remains planning-only, ADR-0113/0114 remain Proposed/null, and P3b/P4 remain gated.
+- **DONE — Owner-bound local Runner execution-readiness preview candidate (cross-device plan §304)**: Forge Core adds a private, explicitly enabled POST candidate that binds verified JWT owner, conversation, and intent path identities to a strict value-only local Runner preview request. It invokes only an injected deterministic executor, maps completed/failure/uncertain outcomes into metadata-only receipt observations, rejects lease/authority/transport mutations, redacts argv/workspace/fencing/output/error data, and keeps selected target and every authority bit false. The production constructor remains 404; no normal Run/Attempt/device state, inventory authority, reservation, scheduling, remote dispatch, Runner transport, durable receipt, or Audit event is created. ADR-0039 remains planning-only, ADR-0113/0114 remain Proposed/null, and P3b/P4 remain gated.
+- **DONE — Authenticated Rust CLI/TUI local Runner preview consumer (cross-device plan §305)**: Forge Runtime adds `remote runner execution-readiness-preview --input FILE|-` and TUI `runner-execution-readiness-preview --input FILE` for the explicitly enabled test candidate. Bounded request validation reuses the Runner intent and lease domains; the client sends one exact owner/path-bound POST without retry, rejects nested identity/authority drift, and renders only metadata (argv, workspace, fencing token, output, and executor diagnostics stay absent). The TUI requires the selected owner-scoped Conversation and clears its local view after 401/403. Production routes remain 404; no Run/Attempt, device registration, inventory authority, reservation, scheduling, remote transport, durable receipt, or Audit event is created. ADR-0039 remains planning-only, ADR-0113/0114 remain Proposed/null, and P3b/P4 remain gated.
+- **DONE — Authenticated Flutter local Runner preview consumer (cross-device plan §306)**: Snaplink Console adds an explicit typed consumer for the same test-only candidate. It validates the owner/path-bound Runner intent and lease grant before one POST, disables bearer refresh/replay, strictly rechecks nested intent/session receipt/command identity, observation time, and all-false authority, and covers exact path/body/header plus no-replay behavior. The default Forge Gate/Sessions screen remains unconfigured; production routes stay 404 and no Run/Attempt, device, inventory, reservation, scheduling, dispatch, receipt, or Audit authority is added. ADR-0039 remains planning-only, ADR-0113/0114 remain Proposed/null, and P3b/P4 remain gated.
+- **DONE — Production observation-candidate route closure (cross-device plan §307)**: Forge Core's production authenticated-session constructor now mounts only the owner-scoped Conversation API. Placement, session device observation, Runner receipt observation, and local Runner execution-readiness preview are composed only by explicitly named test/opt-in candidate constructors. A configured outer-route regression proves all four candidate paths remain exact 404 while focused candidate tests stay available. No candidate contract or device, inventory, selection, reservation, scheduling, dispatch, Runner, Run/Attempt, receipt, or Audit authority was added; ADR-0039 remains planning-only, ADR-0113/0114 remain Proposed/null, and P3b/P4 remain gated.
+- **DONE — Cross-client local Runner preview over one authenticated candidate (cross-device plan §308)**: The opt-in Snaplink JWT test now sends one owner-bound local Runner preview through direct HTTP, Rust CLI, Rust TUI after owner-scoped session refresh, and Flutter typed API. Exact injected executor call counts, identity binding, metadata-only output, and all-false authority are checked across the same candidate mux and token; private output/fencing data remain absent. This is transport parity only; production routes remain 404 and no Run/Attempt, device, inventory, lease, reservation, dispatch, receipt, or Audit authority was added. ADR-0039 remains planning-only, ADR-0113/0114 remain Proposed/null, and P3b/P4 remain gated.
+- **DONE — Cross-client execution-consent preview preflight (§309)**: The inert/test-only `/api/v1/conversations/{conversation_id}/execution-consents` candidate now returns strict project/profile/digest/TTL metadata bound to the verified owner and Conversation. Rust `remote execution-consent preview CONVERSATION_ID`, TUI `execution-consent-preview`, and Flutter `getExecutionConsentPreview` consume it with exact GET/no-body/no-write semantics and fail closed on response drift. Snaplink JWT cross-client coverage and production 404 regression are included; no consent, Run, device, lease, reservation, dispatch, Runner, receipt, or Audit behavior is enabled.
+- **DONE — Joined identity-heartbeat-inventory lifecycle contract (§310)**: Forge Core composes the pure identity proof, heartbeat generation/sequence CAS, persisted inventory CAS, and fixed-time projection as the canonical `forge.device-enrollment-heartbeat-lifecycle/v1` value transition. Go, Forge Runtime domain tests, and Snaplink Console consume one fixture covering approval, replay, generation, server-clock, revision-conflict, stale, revoked, owner-drift, and restart cases; all authority fields remain false. The real `Run` server keeps enrollment, heartbeat, inventory, and client/device candidates exact 404. No cryptographic verification, challenge consumption, credential issuance, storage write, registration, reservation, scheduling, dispatch, Runner, execution, receipt, or Audit behavior was added; ADR-0039 remains planning-only and ADR-0113/0114 remain Proposed/null.
+- **DONE — Composite lifecycle replacement image (§311)**: Forge Core now provides an authority-neutral `PersistedEnrollmentHeartbeatLifecycleState` with one outer revision joining immutable owner/device identity, heartbeat state, and inventory state. Restore rejects split revisions, owner/device drift, capability drift, and malformed values; commit derives nested revisions from the current image and rejects stale outer writers, while copying capability collections across the restart boundary. This is a persistence/restart seam only: no I/O, clock, cryptographic verification, challenge consumption, credential issuance, route registration, registration, reservation, scheduling, dispatch, Runner, execution, receipt, or Audit authority was added. ADR-0039 remains planning-only and ADR-0113/0114 remain Proposed/null.
+- **DONE — Cross-language lifecycle persistence image contract (§312)**: The canonical `forge.device-enrollment-heartbeat-lifecycle-persistence/v1` fixture is consumed by Forge Runtime's domain contract alongside Forge Core's composite image seam. It enforces one outer revision matching both nested revisions and rejects split revisions, Runner/device or generation drift, owner drift, and zero revisions while preserving all-false authority and copied capability values. No storage, route, registration, inventory authority, reservation, scheduling, dispatch, Runner, execution, receipt, or Audit behavior was added; ADR-0039 remains planning-only and ADR-0113/0114 remain Proposed/null.
+- **DONE — Joined Run–Attempt–lease–dispatch preflight (§313)**: Forge Core's pure `forge.run-attempt-lease-dispatch-preflight/v1` adapter binds caller-supplied Run status to the existing Attempt, Runner intent, fixed-time lease, and offline placement declarations with exact owner/Conversation/Run parity. Focused Go tests, Forge Runtime's Rust fixture consumer, and Snaplink Console's strict Flutter fixture model consume the canonical envelope; the shared Sessions Gate accepts an explicit local value and renders metadata on Web/App/Mobile while its default remains request-free. Accepted, terminal, expired-lease, identity-mismatch, immutability, and observation-validation cases are covered. `selected_target_id` remains null, all authority bits remain false, and fencing/argv/workspace/output/error fields are absent; no store, clock, lease issuance, reservation, scheduling, dispatch, Runner, receipt, Audit, or production route was added, and ADR-0039/0113/0114 remain gated.
+- **DONE — Rust CLI/TUI Run–Attempt–lease preflight consumer (§314)**: Forge Runtime now strictly consumes `forge.run-attempt-lease-dispatch-preflight/v1` via `device run-attempt-lease-dispatch-preflight-preview --input FILE|-` and the path-only TUI command. The value model rejects unknown/duplicate fields, unsafe identifiers/numbers, inconsistent admissibility/readiness, unsorted rejection reasons, target selection, and any authority mutation; human output remains metadata-only with `selected_target_id=null`. Focused CLI/TUI tests consume the canonical fixture and assert no `/api/v1/devices` request. It is still offline caller-supplied evidence with no store/clock, lease, selection, reservation, scheduling, dispatch, Runner, receipt, Audit, or production route authority; ADR-0039/0113/0114 remain gated.
+- **DONE — Authenticated cross-client Run–Attempt–lease preflight consumer (§315)**: The explicitly enabled Go JWT candidate binds owner, Conversation, Run, and nested intent on one strict POST while production remains exact 404. Rust remote CLI/TUI send one path-bound request without refresh/retry and validate metadata-only output; Snaplink Console exposes the typed one-shot API through an explicit request-free Gate/Screen seam. The canonical request fixture and opt-in JWT E2E cover direct HTTP, Rust CLI, Rust TUI, and Flutter parity. No store, lease issuance, target selection, reservation, scheduling, dispatch, Runner, execution, receipt, Audit, or production route authority was added; ADR-0039/0113/0114 and P3b/P4 remain gated.
+- **DONE — Canonical preflight request/response closure (§316)**: Forge Core now strictly decodes the shared Run–Attempt–lease–dispatch request fixture, evaluates it through the real pure placement/Runner-intent/lease preflight adapter, validates the result, and requires byte-for-byte equality with the canonical response fixture. The request's fixed timestamps were aligned with the already shared response, closing a previously untested drift where both files passed independently while describing different observation times. Catalyst and Snaplink Console keep byte-identical request copies. This adds deterministic contract evidence only; production routes remain 404, selection and every authority bit remain false, and no inventory authority, lease issuance, reservation, scheduling, dispatch, Runner, execution, receipt, or Audit behavior was added. ADR-0039 remains planning-only and ADR-0113/0114 remain Proposed/null.
+- **DONE — Flutter authenticated Run–Attempt–lease preflight E2E parity (§317)**: The opt-in Snaplink JWT preflight harness now launches the real Snaplink Console Flutter typed API against the same inert candidate mux and bearer token used by direct HTTP, Rust CLI, and Rust TUI. A private 0600 input document reconstructs the strict request; the process sends one POST and rechecks owner, Conversation/Run, Attempt, command, target, lease epoch, observation time, candidate count, null selection, preview mode, and all-false authority. The normal Console Gate remains request-free, production candidate routes remain 404, and no Run/Attempt store, lease issuance, target selection, reservation, scheduling, dispatch, Runner, execution, receipt, or Audit authority was added; ADR-0039/0113/0114 and P3b/P4 remain gated.
+- **DONE — Audit Governance receiver compatibility for accepted Prompt evidence (§318)**: Audit Governance now strictly consumes the minimized `forge.prompt.accepted.v1` fixture, rejects unknown/duplicate fields and Prompt/content/token/credential/artifact leakage, and validates the value through its real `Event.ValidateBasic()` boundary. The contract runner exports the fixture, runs Forge source projection tests, compares the downstream mirror, and runs the focused receiver test. This remains compatibility evidence only: no Forge outbox/publisher/relay/source registration/delivery receipt or tenant credential flow was added, and no device enrollment, inventory authority, selection, reservation, scheduling, dispatch, Runner, execution, or Audit publication was enabled; ADR-0039/0113/0114 and P3b/P4 remain gated.
+- **DONE — Cross-ecosystem accepted Prompt contract consumers (§319)**: The canonical minimized `forge.prompt.accepted.v1` envelope is now consumed by strict receiver tests in Aero-ID, Aero-IM, Aero-Vault, and Audit Governance. Each mirror rejects unknown/duplicate fields and Prompt or credential-bearing content; Aero-IM carries the value through its typed `AuditClaimPayload` while keeping publication disabled. The contract runner compares every mirror and runs focused suites. No Forge outbox, source registration, tenant credential binding, relay, delivery receipt, event publication, device enrollment, inventory authority, selection, reservation, scheduling, dispatch, Runner, or execution behavior was added; ADR-0039/0113/0114 and P3b/P4 remain gated.
+- **DONE — Committed Prompt to audit projection causal binding (§320)**: Forge Core's pure `auditprojection.ProjectCommittedPrompt` requires the owner-scoped Prompt receipt and the Hub `prompt_appended` change to agree on Prompt ID, Conversation ID, user role, and committed timestamp before producing minimized `forge.prompt.accepted.v1` evidence. The authenticated HTTP-to-Rust integration matches every durable Prompt change to exactly one stored Prompt, asserts exact idempotency retries create no second change or event identity, and repeats the check after reopening the Hub through a new bridge. No audit table, outbox, publisher, network call, receipt, credential, device enrollment, inventory authority, selection, reservation, scheduling, dispatch, Runner, execution, or Audit publication was added; ADR-0039 remains planning-only and ADR-0113/0114 remain Proposed/null.
+- **DONE — Authenticated Run observed projection candidate (cross-device plan §321)**: The explicitly enabled test-only `GET /api/v1/conversations/{conversation_id}/runs/{run_id}/observation` candidate derives owner from the verified JWT, reads existing owner-filtered Run summaries, and returns only minimized `forge.run.observed.v1` metadata with opaque owner linkage and all-false authority. Unknown/foreign Runs, query/body misuse, path binding, and production exact-404 closure are covered; Snaplink Console's explicit reader compares the transported value with the owner-scoped Run page. No outbox, publisher, device enrollment, inventory authority, selection, reservation, scheduling, dispatch, Runner, execution, receipt, or Audit authority was added; ADR-0039 remains planning-only and ADR-0113/0114 remain Proposed/null.
+- **DONE — Atomic owner-bound Run observation read (cross-device plan §322)**: The authenticated Run observation candidate now calls one Rust Hub `owned_run_observation` operation rather than scanning Run pages. Strict RPC validation binds verified owner, Conversation, and Run IDs; SQLite performs owner and membership checks in one deferred read snapshot, uses a uniform not-found boundary, and projects only bounded `forge.run.observed.v1` metadata. The Go bridge validates the projection and the direct HTTP/Rust CLI/TUI/Flutter E2E remains cross-client identical. No production route, outbox, publisher, receipt, credential, device enrollment, inventory authority, selection, reservation, scheduling, dispatch, Runner, execution, or Audit authority was added; ADR-0039 remains planning-only and ADR-0113/0114 remain Proposed/null.
+- **DONE — Rust CLI/TUI authenticated Run observation reader (§323)**: Forge Runtime's `remote runs observed` and TUI `run-observed` commands consume the owner-bound `forge.run.observed.v1` candidate through one authenticated GET, enforce exact Conversation/Run binding, metadata-only content, and all-false authority, and clear TUI state on auth failure. The opt-in JWT E2E compares direct HTTP, Rust CLI, Rust TUI, and Flutter. Production routes remain 404 and ADR-0039/0113/0114 plus P3b/P4 remain gated.
+- **DONE — TUI selected-Run observation refresh (§324)**: TUI `sync` now refreshes the selected Run's owner/path-bound `forge.run.observed.v1` metadata after its incremental timeline read, renders only content-free metadata, and keeps it in process-local selected-session state. Switching sessions or 401/403 clears it with the owner-scoped view. No Run write, device inventory authority, target selection, reservation, scheduling, dispatch, Runner, execution, receipt, or Audit publication was added; production routes remain 404 and ADR-0039/0113/0114 plus P3b/P4 remain gated.
+
+- **DONE — Opt-in TUI inventory refresh during sync (cross-device plan §325)**: After the user explicitly runs `inventory read-v2`, Forge Runtime TUI retains the validated owner-scoped v2 observation in process-local state and refreshes it during later `sync` calls through one authenticated GET. It renders the lossless revision/generation/heartbeat/reservation/GPU metadata, replaces state only after strict validation, leaves ordinary sync request-free for device routes, and clears the observation on 401/403 with the owner view. A failed refresh leaves the prior value and does not advance the conversation cursor. No enrollment, heartbeat ingestion, inventory authority, selection, reservation, scheduling, dispatch, Runner, execution, receipt, or Audit publication was added; production routes remain 404 and ADR-0039/0113/0114 remain gated.
+
+### Cross-device plan §326 — Browser Run observation candidate transport parity
+
+The opt-in Chromium Forge Web journey now performs one same-origin bearer GET
+for the canonical `forge.run.observed.v1` candidate after receiving its
+private projection. It compares the response with the Go projection, enforces
+closed content-free metadata and exact Conversation/Run binding, and records
+the candidate read beside the owner-scoped Run list and timeline requests.
+The ordinary Forge Gate remains reader-free, production candidate routes stay
+404, and no device enrollment, heartbeat, inventory authority, selection,
+reservation, scheduling, dispatch, Runner, execution, receipt, or Audit
+publication was added; ADR-0039 remains planning-only and ADR-0113/0114 remain
+Proposed/null.
+
+### Cross-device plan §327 — Explicit Flutter Gate Run observation reader
+
+Snaplink Console's shared Web/App/Mobile `ForgeSessionsGate` now has a
+default-off, explicitly enabled adapter for the authenticated Run observation
+candidate. It builds the typed reader from the restored Forge credential and
+an explicit candidate origin, then forwards it through the existing strict
+`ForgeSessionsScreen` reader seam. Focused widget coverage proves one exact
+owner/path-bound bearer GET and proves default construction makes no candidate
+request; caller-supplied readers still take precedence. Production candidate
+routes remain 404 and no device enrollment, inventory authority, selection,
+reservation, scheduling, dispatch, Runner, execution, receipt, or Audit
+publication was added; ADR-0039 remains planning-only and ADR-0113/0114
+remain Proposed/null.
+
+### Cross-device plan §328 — Flutter scheduled Run observation refresh
+
+Snaplink Console's shared Web/App/Mobile Sessions screen now forces an
+explicit `ForgeRunObservedReader` during each owner change-feed refresh of the
+selected Run, including the scheduled poll path that bypasses the
+manual/resume wrapper. Widget coverage advances the poll clock and proves a
+second metadata read; transient failures retain the last validated value,
+authorization failures clear owner state, and the default Gate remains
+request-free. Production observation/device routes remain closed, with no Run
+write, enrollment, inventory authority, selection, reservation, scheduling,
+dispatch, Runner, execution, receipt, or Audit publication; ADR-0039 remains
+planning-only and ADR-0113/0114 remain Proposed with null acceptance metadata.
+
+### Cross-device plan §329 — Flutter scheduled v2 inventory refresh
+
+The shared Web/App/Mobile Sessions screen now refreshes an explicitly
+injected owner-bound v2 inventory reader during scheduled change-feed polling,
+covering the path that bypasses the manual/resume wrapper. Widget coverage
+advances the fake poll clock and proves a second metadata-only inventory read;
+transient failures retain the last validated snapshot, authorization failures
+clear owner state, and the default Gate remains request-free. No enrollment,
+heartbeat ingestion, inventory authority, target selection, reservation,
+scheduling, dispatch, Runner, execution, receipt, or Audit publication was
+added; production device routes remain closed under ADR-0039 and Proposed
+ADR-0113/0114.
+
+### Cross-device plan §330 — Flutter scheduled client-instance view refresh
+
+The shared Web/App/Mobile Sessions screen now refreshes explicitly injected
+owner-bound client-instance session and resource readers during scheduled
+change-feed polling. The timer path keeps instance/session metadata and
+unverified resource summaries aligned with the owner feed without requiring a
+manual or foreground refresh. Focused widget coverage advances the fake poll
+clock and proves a second resource-view read; strict owner/display-only
+validation, stale-value retention, authorization cleanup, and the request-free
+default remain intact. No client registration, session binding mutation,
+device enrollment, inventory authority, target selection, reservation,
+scheduling, dispatch, Runner, execution, receipt, or Audit publication was
+added; production candidate routes remain closed under ADR-0039 and Proposed
+ADR-0113/0114.
+
+### Cross-device plan §331 — Flutter scheduled pending Run-intent refresh
+
+The shared Web/App/Mobile Sessions screen now refreshes an explicitly injected
+owner-scoped pending Run-intent metadata reader during scheduled change-feed
+polling when the feed has no new changes. Change-bearing syncs already refresh
+the metadata and therefore avoid a duplicate read; the default Gate remains
+request-free. Focused widget coverage advances the fake poll clock and proves
+a second metadata read. No Prompt body, Run/Attempt write, device enrollment,
+inventory authority, target selection, reservation, scheduling, dispatch,
+Runner, execution, receipt, or Audit publication was added; production
+candidate routes remain closed under ADR-0039 and Proposed ADR-0113/0114.
+
+### Cross-device plan §332 — Flutter Runner dispatch-plan preview consumer
+
+Snaplink Console now strictly consumes the canonical
+`forge.runner-dispatch-plan-preview/v1` observation through a typed,
+display-only model and card. It validates owner/identity/digest/timestamp
+bounds, Attempt admissibility, sorted unique candidates, readiness equations,
+`selected_target_id=null`, and all-false authority; duplicate-key scanning is
+object-scope aware so repeated candidate fields across array elements remain
+valid. Contract/widget tests cover the canonical fixture and authority,
+selection, candidate, unknown-field, and duplicate-key mutations. The value
+is not wired into the default Sessions Gate or a production route; no
+inventory authority, target selection, reservation, scheduling, lease
+issuance, dispatch, Runner, execution, receipt, or Audit publication was
+added, and ADR-0039/0113/0114 remain gated.
+
+### Cross-device plan §333 — TUI scheduled pending Run-intent refresh
+
+Forge Runtime TUI now records the owner/Conversation and page-cursor binding
+after the user explicitly opens `run-intents`; later `sync` refreshes only that
+metadata page, while ordinary sync remains request-free when it was not
+opened. Refresh failure preserves the prior page and change cursor; 401/403
+and Conversation changes clear the bound state. Focused TUI tests cover
+refresh, cursor binding, failure preservation, and authorization cleanup.
+This remains metadata-only and process-local with no Prompt body, Run/Attempt
+write, device enrollment, inventory authority, target selection, reservation,
+scheduling, dispatch, Runner, execution, receipt, or Audit publication;
+production candidate routes remain closed under ADR-0039 and Proposed
+ADR-0113/0114.
+
+### Cross-device plan §334 — Explicit Flutter Gate v2 inventory candidate adapter
+
+The shared Web/App/Mobile `ForgeSessionsGate` now has a default-off,
+explicitly enabled adapter for the authenticated v2 inventory observation
+candidate. It uses the restored Forge credential, an explicit origin, and a
+caller-supplied owner before forwarding the strict typed reader;
+caller-supplied readers retain precedence. Widget coverage proves one exact
+bearer GET and default construction remains request-free. This is unverified
+display-only inventory; no enrollment, heartbeat ingestion, inventory
+authority, target selection, reservation, scheduling, dispatch, Runner,
+execution, receipt, or Audit publication was added, and production device
+routes remain closed under ADR-0039 and Proposed ADR-0113/0114.
+
+### Cross-device plan §335 — TUI scheduled client-instance view refresh
+
+Forge Runtime TUI now retains owner-bound client-instance session/resource
+observations only after the user explicitly opens the candidate; later `sync`
+refreshes those exact authenticated GETs, preserves prior observations/cursor
+on failure, and clears on 401/403 or owner/session changes. Ordinary sync
+remains request-free when neither view is open. Focused tests cover both views,
+binding, failure preservation, and cleanup; no registration, session mutation,
+device authority, selection, reservation, scheduling, dispatch, Runner,
+execution, receipt, or Audit publication was added.
+
+### Cross-device plan §336 — Chromium Web v2 inventory candidate parity
+
+The opt-in Chromium journey now performs one owner-bound bearer GET for
+`forge.device-inventory-observation/v2`, compares it with the canonical
+projection, rejects open fields/authority bits, and verifies token retention.
+The real Flutter Web build, Google Chrome, Snaplink JWT issuer, and Forge
+candidate mux pass together; the ordinary Web Gate remains request-free and
+production device routes remain 404.
+
+### Cross-device plan §337 — Chromium client-instance session/resource candidate parity
+
+The opt-in Chromium journey now performs one authenticated bearer GET for each
+owner-bound `forge.client-instance-session-view/v1` and
+`forge.client-instance-resource-view/v1` candidate, compares both with their
+canonical projections, requires display-only/all-false authority, retains the
+browser credential, and rejects device/effect paths. The shared entry enables
+it only when `FORGE_BROWSER_E2E=1`; `FORGE_CLIENT_INSTANCE_BROWSER_E2E=0` can
+disable this candidate while leaving other browser checks enabled. The real
+Flutter Web build, Google Chrome, Snaplink JWT issuer, and Forge mux pass
+together; the ordinary Web Gate remains request-free and production candidate
+routes remain 404. No client registration, session mutation, inventory
+authority, target selection, reservation, scheduling, dispatch, Runner,
+execution, receipt, or Audit publication was added; ADR-0039/0113/0114 remain
+gated.
+
+### Cross-device plan §338 — Flutter Gate client-instance session/resource candidate adapters
+
+Snaplink Console's shared Web/App/Mobile `ForgeSessionsGate` now provides two
+separately default-off adapters for the authenticated owner-bound
+`forge.client-instance-session-view/v1` and
+`forge.client-instance-resource-view/v1` candidates. Each requires an explicit
+owner, uses the restored Forge credential and optional candidate origin,
+enforces the configured owner before issuing the typed bearer GET, and
+lets a caller-supplied reader take precedence. Focused Gate tests prove one
+bearer GET per candidate, both panels, and no candidate request when explicit
+readers are supplied. The normal Gate remains request-free; no client
+registration, session mutation, inventory authority, target selection,
+reservation, scheduling, dispatch, Runner, execution, receipt, or Audit
+publication was added, and production candidate routes remain closed under
+ADR-0039/0113/0114.
+
+### Cross-device plan §339 — Flutter typed client-instance session/resource E2E parity
+
+The shared authenticated E2E entry now enables the existing Flutter typed API
+readers for both owner-bound client-instance session and resource candidates.
+Each test crosses the real Snaplink JWT issuer, candidate mux, and
+`ForgeConversationsApi`, validates the canonical display-only projection, and
+preserves the production constructor's exact 404 closure; both toggles remain
+independently disableable. Shared CLI/TUI/Flutter integration passes with the
+cases enabled. No client registration, session mutation, device enrollment,
+heartbeat ingestion, inventory authority, target selection, reservation,
+scheduling, dispatch, Runner, execution, receipt, or Audit publication was
+added; ADR-0039 remains planning-only and ADR-0113/0114 remain Proposed/null.
+
+### Cross-device plan §340 — Flutter Gate scheduled client-instance candidate refresh
+
+The default-off `ForgeSessionsGate` candidate adapters now have a focused
+scheduled change-feed journey. With both explicit owner-bound readers enabled,
+the real shared Sessions screen performs a second authenticated session-view
+and resource-view GET after the initial load, retains the restored bearer
+credential, and keeps both metadata panels visible. This proves the
+adapter-to-scheduled-screen boundary only; no client registration, session
+mutation, device enrollment, heartbeat ingestion, inventory authority, target
+selection, reservation, scheduling, dispatch, Runner, execution, receipt, or
+Audit publication was added, and production candidate routes remain closed
+under ADR-0039/0113/0114.
+
+### Cross-device plan §341 — Cross-ecosystem client-instance observation contract parity
+
+The canonical `forge.client-instance-session-view/v1` and
+`forge.client-instance-resource-view/v1` fixtures are now mirrored and
+strictly consumed by Aero-ID, Aero-IM's audit connector, Aero-Vault's
+governance relay, and Snaplink Audit Governance. Receiver tests reject
+duplicate/unknown fields, foreign resource-owner declarations, and authority
+mutations while retaining the CLI/TUI/Web/App/Mobile rows and all-false display
+boundary. `scripts/test-forge-contracts.sh` compares all four copies and runs
+the focused suites. This is read-only interoperability evidence; no instance
+authentication, event publication, device enrollment, inventory authority,
+selection, reservation, scheduling, dispatch, Runner, execution, receipt, or
+Audit authority is enabled. ADR-0039 remains planning-only and ADR-0113/0114
+remain Proposed/null.
+
+### Cross-device plan §342 — Flutter Gate authenticated Run–Attempt–lease preflight candidate adapter
+
+The default-off Gate can now connect a caller-supplied typed Run–Attempt–lease
+preflight request to the existing strict authenticated candidate POST after
+restoring the Forge bearer token. It fixes the owner/Conversation/Run binding
+to the Gate declaration, leaves an injected reader authoritative, and drives
+the selected Run screen through one metadata-only preview request; enabling the
+flag without a typed request remains request-free. No Run/Attempt store, lease
+issuance, target selection, reservation, scheduling, dispatch, Runner,
+execution, receipt, or Audit publication was added; production candidate
+routes remain closed under ADR-0039/0113/0114.
+
+### Cross-device plan §343 — Chromium Web Run–Attempt–lease preflight candidate parity
+
+The opt-in Chromium journey now loads the real Flutter Web Forge route with a
+Snaplink JWT and posts one caller-supplied Run–Attempt–lease preflight request
+to the inert candidate mux. It compares the canonical metadata-only response,
+checks Conversation/Run binding, and rejects target selection and authority
+bits. The ordinary Web Gate remains request-free and production candidate
+routes remain closed under ADR-0039/0113/0114. No Run/Attempt store, lease
+issuance, device enrollment, inventory authority, reservation, scheduling,
+dispatch, Runner, execution, receipt, or Audit publication was added.
+
+### Cross-device plan §344 — Cross-ecosystem Run–Attempt–lease preflight observation parity
+
+The canonical `forge.run-attempt-lease-dispatch-preflight/v1` observation is now
+mirrored and strictly consumed by Aero-ID, Aero-IM's audit connector, Aero-Vault's
+governance relay, and Snaplink Audit Governance. Receiver tests reject
+unknown/duplicate fields, selected targets, and every non-zero authority bit;
+the contract runner compares all four copies byte-for-byte and runs focused
+suites. This remains caller-supplied metadata-only interoperability evidence:
+no Run/Attempt persistence, lease issuance, target selection/reservation,
+scheduling, dispatch, Runner, execution, receipt, or Audit publication was
+added; production routes remain closed under ADR-0039 and Proposed ADR-0113/0114.
+
+### Cross-device plan §346 — Cross-ecosystem P3b lifecycle persistence image parity
+
+The canonical `forge.device-enrollment-heartbeat-lifecycle-persistence/v1`
+fixture is now mirrored and strictly consumed by Aero-ID, Aero-IM's audit
+connector, Aero-Vault's governance relay, and Snaplink Audit Governance. Each
+receiver preserves the complete owner/device binding, capability declaration,
+heartbeat image, inventory image, and one outer revision with matching nested
+revisions; unknown/duplicate fields, forged authority, split revisions, and
+binding drift fail closed.
+
+This is P3b preparation and interoperability evidence only. No device
+authentication, challenge consumption, credential issuance, registration,
+heartbeat/inventory persistence, reservation, scheduling, dispatch, Runner,
+execution, or Audit authority was added. Production enrollment, heartbeat, and
+inventory routes remain closed under ADR-0039 and Proposed ADR-0114; ADR-0113
+and ADR-0114 retain their separate acceptance gates.
+### Cross-device plan §347 — Cross-ecosystem Runner capability lease/fencing evidence parity
+
+The canonical `forge-runner-lease-fencing/v1` fixture is now mirrored and
+strictly consumed by Aero-ID, Aero-IM's audit connector, Aero-Vault's
+governance relay, and Snaplink Audit Governance. Receiver tests cover all
+sixteen active, renewal, proof, terminal, replay, conflict, and uncertain
+cases and reject unknown/duplicate fields, authority mutation, and raw output
+content. The contract runner compares all four copies byte-for-byte and runs
+focused receiver suites.
+
+This is capability-lease interoperability evidence only: it does not verify a
+Runner identity, issue or persist a lease, reserve capacity, select a target,
+dispatch a command, execute a process, persist a receipt, or publish Audit
+evidence. Production routes remain closed under ADR-0039; ADR-0113/0114 remain
+Proposed/null and P4 retains its separate execution/security gate.
+
+
+
+### Cross-device plan §348 — Host-side Android/iOS shared-session lifecycle parity
+
+The authenticated native cold-start harness now accepts explicit `android-host`
+and `ios-host` markers. Forge Core runs both variants through the real
+Snaplink JWT → Go → Rust path; each restores the credential through the
+injected native secure-store abstraction across two cold starts, reads the
+owner Conversation and Prompt history, appends and replays one idempotent
+Prompt, and observes the owner change cursor.
+
+The recorder proves both variants issue only Conversation, Prompt, and
+change-feed calls. Device, Run-intent, placement, dispatch, and execution
+paths remain untouched. This is host-side lifecycle evidence, not a physical
+Android/iOS device claim; production device and execution routes remain closed
+under ADR-0039 and Proposed ADR-0113/0114.
+
+### Cross-device plan §349 — Host-side mobile owner cursor persistence across cold starts
+
+The native host harness now seeds and restores the owner/coordinator/client/resource-bound
+`ForgeChangeCursorStore` checkpoint alongside the native credential. Cold start one reads
+and validates the restored cursor, persists the bounded empty-feed checkpoint before
+appending an idempotent Prompt, and cold start two restores that cursor, reads exactly
+the new owner-visible Prompt change, and advances the checkpoint after validation.
+Android-host and ios-host variants cross the real Snaplink JWT → Forge Core Go → Forge
+Runtime Rust boundary; recorder assertions reject device, Run-intent, placement,
+dispatch, and execution requests. This is host-side cursor lifecycle evidence only,
+not physical-device execution or global journal authority; production device,
+scheduling, and execution routes remain closed under ADR-0039 and Proposed
+ADR-0113/0114.
+
+### Cross-device plan §350 — Cross-ecosystem device resource-summary receiver parity
+
+The canonical `forge.device-resource-summary/v1` observation is now mirrored
+and strictly consumed by Aero-ID, Aero-IM's audit connector, Aero-Vault's
+governance relay, and Snaplink Audit Governance. Receivers enforce the bounded
+owner binding, nested inventory/placement rows, deterministic ordering,
+aggregate resource totals, null selected targets, and all-false authority;
+unknown/duplicate fields, authority mutation, foreign device owners, and
+selected targets fail closed. `scripts/test-forge-contracts.sh` compares the
+four copies byte-for-byte and runs focused Go/Rust suites.
+
+This remains offline, caller-declared resource perception evidence only. It
+adds no device authentication/enrollment, heartbeat or inventory persistence,
+production inventory route, target selection, reservation, scheduling,
+dispatch, Runner, execution, receipt, or Audit publication. ADR-0039 remains
+planning-only and ADR-0113/0114 remain Proposed with null acceptance metadata.
+
+### Cross-device plan §351 — Cross-ecosystem persisted inventory observation receiver parity
+
+The canonical `forge.device-inventory-persisted-observation/v1` image is now
+mirrored and strictly consumed by Aero-ID, Aero-IM's audit connector,
+Aero-Vault's governance relay, and Snaplink Audit Governance. Receivers retain
+the owner-bound persisted device/Runner state and deterministic read-only
+projection while rejecting unknown/duplicate fields, foreign owners, and
+authority mutations. `scripts/test-forge-contracts.sh` compares all four
+copies byte-for-byte and runs focused Go/Rust suites.
+
+This is restored-value interoperability evidence only. It adds no device
+registration, Runner authentication, heartbeat ingestion, authoritative
+inventory, production inventory route, target selection, reservation,
+scheduling, dispatch, execution, receipt, or Audit publication. ADR-0039
+remains planning-only and ADR-0113/0114 remain Proposed/null.
+
+### Cross-device plan §352 — Cross-ecosystem heartbeat persistence receiver parity
+
+The canonical `forge-device-heartbeat-persistence-contract-v1` fixture is now
+mirrored and strictly consumed by Aero-ID, Aero-IM's audit connector,
+Aero-Vault's governance relay, and Snaplink Audit Governance. The receivers
+validate the bounded owner/device binding, approval state, ten-case pure
+compare-and-swap plan, revision chain, heartbeat generation/sequence,
+server-clock monotonicity, lease expiry calculation, and stable rejection
+errors. Unknown/duplicate fields, forged authority, foreign devices, and
+invalid persisted revision state fail closed; `scripts/test-forge-contracts.sh`
+compares all four copies byte-for-byte and runs the focused Go/Rust suites.
+
+This is binding-only interoperability evidence. It adds no heartbeat
+persistence, device authentication/enrollment, inventory authority, lease
+issuance, target selection, reservation, scheduling, dispatch, Runner,
+execution, receipt, or Audit publication. Production device and execution
+routes remain closed under ADR-0039 and Proposed ADR-0113/0114.
+
+### Cross-device plan §353 — Cross-ecosystem inventory persistence receiver parity
+
+The canonical `forge.device-inventory-persistence/v1` image is now mirrored
+and strictly consumed by Aero-ID, Aero-IM's audit connector, Aero-Vault's
+governance relay, and Snaplink Audit Governance. Receivers validate the
+owner/device/Runner binding, persisted revision, CAS replacement, projection
+freshness and status, pending/cordoned/offline/revoked cases, mismatch errors,
+and revision overflow. Unknown/duplicate fields, forged authority, foreign
+owners or Runner devices, and invalid persisted revisions fail closed;
+`scripts/test-forge-contracts.sh` compares all four copies byte-for-byte and
+runs the focused Go/Rust suites.
+
+This is persisted-value interoperability evidence only. It adds no inventory
+write, heartbeat ingestion, device authentication/enrollment, authoritative
+inventory, lease issuance, target selection, reservation, scheduling,
+dispatch, Runner, execution, receipt, or Audit publication. ADR-0039 remains
+planning-only and ADR-0113/0114 remain Proposed/null.
+
+### Cross-device plan §354 — Cross-ecosystem inventory status projection receiver parity
+
+The canonical `forge-device-inventory-status-contract/v1` image is mirrored
+and strictly consumed by Aero-ID, Aero-IM's audit connector, Aero-Vault's
+governance relay, and Snaplink Audit Governance. Receivers recompute fixed-time
+status precedence, freshness and lease boundaries, and the display-only
+`declared_eligible` value; future snapshots, invalid lease windows, unknown
+liveness, unknown/duplicate fields, and authority mutations fail closed.
+`scripts/test-forge-contracts.sh` compares all four copies byte-for-byte and
+runs focused Go/Rust suites.
+
+This remains a pure projection contract. `declared_eligible` is not target
+selection, reservation, scheduling, lease issuance, dispatch, execution, or
+permission. No inventory route, storage write, heartbeat listener, device
+authentication/enrollment, Runner, receipt, or Audit publication was added;
+ADR-0039 remains planning-only and ADR-0113/0114 remain Proposed/null.
+
+### Cross-device plan §355 — Cross-ecosystem inventory snapshot canonical receiver parity
+
+The canonical `forge-device-inventory-snapshot-canonical/v1` image is mirrored
+and strictly consumed by Aero-ID, Aero-IM's audit connector, Aero-Vault's
+governance relay, and Snaplink Audit Governance. Receivers validate the
+caller-declared owner tuple, copy and sort rows by `(device_id, instance_id)`
+without mutating input, reject foreign owners and duplicate composite rows,
+and recompute the domain-separated digest. Empty/ordered snapshots, invalid
+IDs, zero observation time, unknown/duplicate fields, six authority mutations,
+and digest drift fail closed; `scripts/test-forge-contracts.sh` compares all
+four copies byte-for-byte and runs focused Go/Rust suites.
+
+Owner and inventory declarations remain unverified. The digest is an integrity
+label only, not identity proof, authentication, freshness, reservation, target
+selection, scheduling, dispatch, execution, or Audit permission. No route,
+clock, storage write, registration, heartbeat listener, discovery, Runner,
+receipt, or Audit publication was added; ADR-0039 remains planning-only and
+ADR-0113/0114 remain Proposed/null.
+
+### Cross-device plan §356 — Cross-ecosystem inventory observation v1 receiver parity
+
+The canonical `forge-device-inventory-observation/v1` image is mirrored and
+strictly consumed by Aero-ID, Aero-IM's audit connector, Aero-Vault's
+governance relay, and Snaplink Audit Governance. Receivers validate the fixed
+owner/evaluation time, complete resource and liveness/lease declarations,
+deterministic device ordering, and reject foreign or duplicate device/instance
+rows, invalid bounds, unknown/duplicate fields, unverified flag changes, and
+authority mutations. `scripts/test-forge-contracts.sh` compares all four copies
+byte-for-byte and runs focused Go/Rust suites.
+
+This remains `offline_static_only` caller-supplied observation. Owner/resource
+values remain unverified; no selected target or schedulable claim is produced.
+No route, storage write, registration, heartbeat listener, discovery,
+reservation, scheduler, dispatch, Runner, receipt, or Audit publication was
+added; ADR-0039 remains planning-only and ADR-0113/0114 remain Proposed/null.
+
+### Cross-device plan §357 — Lossless inventory observation v2 contract documentation
+
+The fixture-only `forge.device-inventory-observation/v2` value now has an
+independent contract description at
+`docs/contracts/forge-device-inventory-observation-v2.md`. It fixes the
+offline caller-supplied boundary for revision, Runner generation and heartbeat
+sequence, declared reservation state, multi-GPU rows, resource and lease
+bounds, owner equality, deterministic ordering, strict fields, and all-false
+authority. A `reserved` declaration remains unverified metadata.
+
+This documentation slice adds no v2 receiver, inventory write, heartbeat
+ingestion, enrollment, authentication, production route, target selection,
+reservation, scheduler, dispatch, Runner, execution, receipt, or Audit
+publication. A later receiver parity slice must remain offline value
+consumption; ADR-0039 remains planning-only and ADR-0113/0114 remain
+Proposed/null.
+
+### Cross-device plan §358 — Cross-ecosystem inventory observation v2 receiver parity
+
+The canonical lossless `forge.device-inventory-observation/v2` image is
+mirrored and strictly consumed by Aero-ID, Aero-IM's audit connector,
+Aero-Vault's governance relay, and Snaplink Audit Governance. Receivers retain
+unverified revision, Runner generation/heartbeat, reservation, resource/lease,
+canonical runtime, and sorted multi-GPU declarations while rejecting owner
+drift, duplicate/unsorted rows, unsafe counters, invalid leases/tags/GPU
+bounds, unknown/duplicate fields, selected/schedulable claims, flag changes,
+and authority mutations. The contract runner compares all four copies
+byte-for-byte and runs focused Go/Rust suites.
+
+This remains strict offline value consumption; `reserved` and heartbeat
+metadata do not mean live reservation, freshness, authentication, or
+execution. No route, storage write, heartbeat listener, enrollment,
+authentication, target selection, reservation, scheduler, dispatch, Runner,
+execution, receipt, or Audit publication was added. ADR-0039 remains
+planning-only and ADR-0113/0114 remain Proposed/null.
+
+### Cross-device plan §359 — iOS host shared-session credential rotation boundary
+
+The explicit `ios-host` (and Android parity) Flutter host lifecycle now
+receives a second valid JWT, replaces the persisted credential tuple between
+cold starts, clears the in-memory slot, and requires the second client to
+restore the rotated token before replaying the same idempotent Prompt and
+observing the owner change feed. Forge Core's real Snaplink JWT → Go → Rust
+path accepts both tokens, while request assertions continue to reject device,
+inventory, placement, reservation, dispatch, and execution calls.
+
+This is injected-backend host evidence only; it does not claim a physical
+iPhone, iOS Keychain, simulator, or native device execution. ADR-0039 remains
+planning-only and ADR-0113/0114 remain Proposed/null.
+
+### Cross-device plan §360 — Explicit Android emulator Coordinator journey
+
+Snaplink Console now has a separately selected Android instrumentation class
+for a real Coordinator journey. An owner-only (`0600` or stricter) private
+input file is copied into the debug
+app sandbox, so only its filename is passed to `am instrument`; the bearer is
+restored through the real Android secure-storage plugin. The Flutter entrypoint
+uses the authenticated `ForgeConversationsApi` against the caller-supplied
+Forge Go→Rust service, records only Conversation/Prompt/change-feed paths,
+persists the owner-local cursor, and reports bounded metadata. Recreating
+`MainActivity` repeats the idempotent Prompt probe and requires the replayed
+owner-bound result.
+
+The ordinary instrumentation command remains a successful no-device skip; the
+Coordinator mode requires an explicit disposable `emulator-N`, a reachable
+Coordinator, and a valid private input file. An explicit failure fails closed.
+This slice adds no production route, client registration, device
+authentication, heartbeat/inventory authority, target selection, reservation,
+scheduler, lease issuance, dispatch, Runner, execution, receipt, or Audit
+publication. It is real Android-emulator evidence only when the opt-in command
+completes; iOS evidence remains host-side and injected. ADR-0039 remains
+planning-only and ADR-0113/0114 remain Proposed/null.
+
+### Cross-device plan §361 — Android Coordinator input credential boundary
+
+The opt-in Android Coordinator runner now rejects group- or world-readable
+input files before copying them into the debug app sandbox. The documented
+flow uses `umask 077` and `chmod 600`; only the filename is passed to
+instrumentation, and the short-lived JWT is restored through Android secure
+storage. No-device skip and explicit-emulator failure semantics are
+unchanged. This is runner credential hygiene only; no production device,
+inventory, selection, reservation, scheduling, dispatch, Runner, execution,
+receipt, or Audit authority was added. ADR-0039 remains planning-only and
+ADR-0113/0114 remain Proposed/null.
+
+### Cross-device plan §362 — Explicit iOS XCTest shared-session acceptance boundary
+
+Snaplink Console now has an opt-in `RunnerTests` boundary for a future macOS
+iOS Simulator/device run. A Linux-safe validator requires an owner-only JSON
+with exact platform/origin, original and rotated credentials, owner
+Conversation/cursor, Prompt, and idempotency fields. Its no-follow descriptor
+read and the XCTest direct-file reader reject symlinks, and Conversation and
+idempotency identifiers are path-safe ASCII; the runner passes only the path to
+`xcodebuild` and rejects public permissions, unsafe origins, duplicate tokens,
+and unknown fields. The XCTest allowlist admits
+only Conversation, Prompt, and change-feed paths and rejects device,
+inventory, placement, reservation, dispatch, Run-intent, execution, receipt,
+and heartbeat paths. Linux validates then skips clearly because Xcode is
+unavailable; no physical iPhone, Keychain, simulator, enrollment,
+scheduling, or execution evidence is claimed. ADR-0039 remains planning-only
+and ADR-0113/0114 remain Proposed/null.
+
+### Cross-device plan §363 — Mobile acceptance input strict decoding
+
+The Android and iOS opt-in acceptance validators now reject duplicate JSON
+keys and enforce the Forge JSON-safe integer ceiling. The contract script runs
+their syntax checks and default no-device/opt-in skips. `expected_version` is
+positive, the owner cursor is non-negative, and both are bounded to
+`9_007_199_254_740_991`, matching Flutter request preflight. This is disposable
+mobile input validation only; no production route, client registration, device
+or inventory authority, selection, reservation, scheduling, dispatch, Runner,
+execution, receipt, or Audit behavior changed. ADR-0039 remains planning-only
+and ADR-0113/0114 remain Proposed/null.
+
+### Cross-device plan §364 — Device Fabric activation gate
+
+Forge Core now has a pure `forge.device-fabric-activation-gate/v1` policy
+adapter. The default/zero-value request keeps the fabric `OFF`; explicit
+`INVENTORY`/`OBSERVE` requires accepted non-planning ADR-0039 plus accepted
+ADR-0113/0114 and evidence for owner isolation, device proof, approval and
+revocation, heartbeat CAS/freshness, owner-scoped reads, route closure, and
+security review. `EXECUTE` adds a separate P4 decision and Runner
+isolation, fencing, uncertain-effect, Vault, and Audit evidence; migration and
+federation stay blocked by separate decision codes. `Config.Validate` rejects
+an explicit incomplete activation while normal configuration and production
+404 route closure remain unchanged. ADR-0039 remains planning-only and
+ADR-0113/0114 remain Proposed/null.
+
+### Cross-device plan §365 — Device Fabric activation review packet
+
+Forge Core now validates the review-only `forge.device-fabric-activation-request/v1`
+packet with canonical JSON, duplicate/unknown-field rejection, bounded
+evidence references, explicit ADR lifecycle metadata, and all-false authority
+markers. A proposed repository fixture reflects the current planning-only and
+Proposed ADR state; a separate synthetic accepted fixture exercises the pure
+positive evaluator without production authorization. `forge-server` accepts an
+owner-private activation manifest only as a startup gate; no manifest mounts a
+device route, and an absent manifest keeps the Fabric OFF. The threat model and
+JSON Schema document the evidence needed before future INVENTORY/OBSERVE
+activation. No enrollment, heartbeat listener, inventory authority, selection,
+reservation, scheduling, dispatch, Runner, execution, migration, federation,
+or Audit behavior is enabled.
+
+### Cross-device plan §366 — Flutter local client-instance session scope filter
+
+The shared Web/App/Mobile Forge Sessions screen now offers a process-local,
+display-only scope picker when a caller supplies the client-instance
+session/resource observation. It filters the authenticated owner Conversation
+page by the selected instance's opaque `session_ids`, and clears/reselects the
+local Prompt panel when the current session is outside that projection. The
+screen labels the value unverified and does not change API requests, Prompt
+writes, idempotency, ownership, or any device/execution authority. Focused
+session/resource/candidate widget tests and the broader Sessions widget suite
+pass. ADR-0039 remains planning-only and ADR-0113/0114 remain Proposed/null.
+
+### Cross-device plan §367 — Heartbeat transition boundary hardening
+
+Forge Core's pure `deviceheartbeat.Apply` now validates bounded non-empty
+device/Runner identifiers, known `pending`/`approved`/`revoked` approval
+states, and nonzero generation/sequence values before capability or incarnation
+evaluation. It returns stable invalid-device, invalid-instance, and
+unknown-approval errors, and `Commit` inherits the same guard through `Apply`.
+Focused Go boundary tests cover malformed values with invalid capabilities and
+prior-observation paths. This is pure value validation only: no heartbeat
+listener, device authentication, enrollment, persistence, inventory authority,
+selection, reservation, scheduling, dispatch, Runner, receipt, Audit, or
+production route was enabled. ADR-0039 remains planning-only and
+ADR-0113/0114 remain Proposed/null; device surfaces stay default-off/404.
+
+### Cross-device plan §368 — Pure owner approval, terminal revocation, and key rotation state machine
+
+Forge Core now provides `forge.device-approval-rotation/v1`, a pure
+owner/device enrollment lifecycle value state machine. It validates exact
+owner/device binding and the existing `pending`/`approved`/`revoked` vocabulary;
+pending can be approved or revoked, approved can be revoked, and revoked is
+terminal. Rotation is allowed only before revocation, preserves device ID,
+owner, and approval state, replaces key material, and increments key generation
+inside the transition rather than accepting a caller generation.
+
+Unknown states/actions, owner/device drift, malformed or unchanged key
+material, repeated approval, terminal operations, and generation overflow fail
+closed. The result is explicitly preview-only with owner authentication,
+credential issuance, persistence, authoritative inventory, and execution
+authorization fixed false. The canonical fixture/schema/documentation and
+focused contract-script test cover the value boundary. No listener, credential
+store, route, inventory write, selection, reservation, scheduling, dispatch,
+Runner, execution, receipt, or Audit behavior was added; ADR-0039 remains
+planning-only and ADR-0114 remains Proposed/null.
+
+### Cross-device plan §369 — CLI/TUI local client-instance session scope
+
+Forge Runtime CLI `remote sessions list --instance INSTANCE_ID` and the TUI
+`instance INSTANCE_ID` command now apply a process-local projection over a
+strict caller-declared client-instance session/resource view. The projection
+filters owner conversations by opaque `session_ids`, preserves the original
+authenticated request shape, and clears/reselects local Prompt/Run state when
+the selected session becomes invisible. Path-like/duplicate IDs fail closed;
+focused Rust CLI/TUI tests pass. No registration, enrollment, heartbeat,
+inventory, placement, reservation, scheduling, dispatch, Runner, execution,
+receipt, or Audit authority was added; ADR-0039 remains planning-only and
+ADR-0113/0114 remain Proposed/null.
+
+### Cross-device plan §370 — Cross-ecosystem device approval and key-rotation receiver parity
+
+The canonical `forge.device-approval-rotation/v1` pure lifecycle fixture is
+mirrored and strictly consumed by Aero-ID, Aero-IM's audit connector,
+Aero-Vault's governance relay, and Snaplink Audit Governance. Receiver tests
+require the pending initial value, preserve exact owner/device identity for
+accepted replacement cases, keep all authority bits false, and reject unknown
+or duplicate JSON fields and authority mutations. `scripts/test-forge-contracts.sh`
+compares all four mirrors and runs the focused Go/Rust suites. This is offline
+preview interoperability only: it adds no authentication, credential
+issuance, persistence, route, inventory, selection, reservation, scheduling,
+dispatch, Runner, execution, receipt, or Audit authority; ADR-0039 remains
+planning-only and ADR-0113/0114 remain Proposed/null.
+
+### Cross-device plan §371 — Authenticated Coordinator read-page transport hardening
+
+Forge Core's authenticated Coordinator now revalidates owner-bound Prompt
+pages, Run summaries, Run timelines, and content-free Run observations at the
+final HTTP boundary before serialization. It binds pages/observations to the
+path Conversation/Run and verified owner, enforces bounded content and
+JSON-safe integers, requires dense/newest-first cursor order, and rejects
+malformed IDs, non-metadata Run events, or authority-claiming observations.
+Focused injected-backend HTTP tests cover foreign Conversation IDs, unsafe
+numbers, cursor drift, an unapproved event type, and an unsafe observation.
+This adds no execution, device, inventory, scheduling, dispatch, receipt, or
+Audit authority; production device routes remain default-off/404 and
+ADR-0039/0113/0114 remain gated.
+
+### Cross-device plan §372 — Owner-scoped lifecycle registry restart image
+
+Forge Core now defines the read-only
+`forge.device-enrollment-heartbeat-lifecycle-file-set/v1` restart boundary for
+a future Go-owned registry. A private `0600` file restores up to 128 complete
+identity, heartbeat, and inventory images under one exact owner tuple. The
+adapter verifies private regular-file boundaries, strict JSON, nested lifecycle
+state, owner equality, duplicate device/Runner rejection, and deterministic
+ordering. Focused Go tests cover restart restoration, owner drift, duplicate
+members, malformed images, aliases, permissions, and missing state.
+
+This is migration-ready registry aggregation only. It adds no write method,
+proof verification, challenge consumption, credential issuance, enrollment or
+heartbeat listener, inventory authority, HTTP route, placement, reservation,
+scheduling, dispatch, Runner, execution, receipt, or Audit behavior. ADR-0039
+remains planning-only and ADR-0114 remains Proposed/null; device surfaces stay
+default-off/404.
+
+### Cross-device plan §373 — Restart-boundary execution reconciliation observation
+
+Forge Core and Forge Runtime now share the pure
+`forge.execution-reconciliation-observation/v1` value contract. It validates
+caller-supplied Run/Attempt/lease/terminal bindings at an explicit observation
+time and classifies `await_terminal`, expired/no-terminal, terminal
+completion/failure/uncertainty, and state-conflict cases. Foreign/expired
+proofs, future receipts, unsafe identifiers/timestamps, and binding drift fail
+closed; uncertain, stale, and conflicting evidence requires manual review and
+automatic retry is fixed false. Canonical fixture, schema, Go/Rust tests, and
+contract-script wiring are included. This remains a read-only observation:
+all authority bits are false and no store, clock, registry, route, selection,
+reservation, scheduler, dispatch, Runner, receipt persistence, or Audit path is
+opened. ADR-0039 remains planning-only and ADR-0113/0114 remain Proposed/null.
+
+### Cross-device plan §374 — Cross-ecosystem execution-reconciliation receiver parity
+
+The canonical `forge.execution-reconciliation-observation/v1` fixture is now
+mirrored byte-for-byte in Aero-ID, Aero-IM's audit connector, Aero-Vault's
+governance relay, and Snaplink Audit Governance. Each receiver remains
+read-only: it validates owner/Run/Attempt/lease bindings and terminal proof
+alignment, preserves expired/uncertain/conflict cases as manual-reconciliation
+signals, keeps all authority markers false, and rejects unknown or duplicate
+JSON, authority mutations, foreign proofs, and automatic-retry fields.
+`scripts/test-forge-contracts.sh` compares all four copies and runs the focused
+Go/Rust suites. No authentication, persistence, lease issuance, selection,
+reservation, scheduling, dispatch, Runner, execution, receipt, Audit, or
+production route was added; ADR-0039 remains planning-only and ADR-0113/0114
+remain Proposed/null.
+
+### Cross-device plan §375 — Authenticated execution-reconciliation preview boundary
+
+Forge Core adds an opt-in-only authenticated
+`execution-reconciliation/preview` candidate under an owner-bound
+Conversation/Run path. It validates the caller-supplied Run/Attempt/lease/
+terminal restart image against the exact path and authenticated owner, returns
+metadata-only classification, and rejects missing/duplicate fields, foreign
+owners, path drift, unsafe epochs, expired proofs, and future receipts;
+`automatic_retry` and all authority bits remain false. The candidate is mounted
+only by focused test constructors; production Coordinator remains 404/default-
+off and no Run/device store, lease issuance/renewal, target selection,
+reservation, scheduling, dispatch, Runner, receipt persistence, Audit, or
+production route is enabled. ADR-0039 remains planning-only and ADR-0113/0114
+remain Proposed/null.
+
+### Cross-device plan §376 — CLI/TUI execution-reconciliation preview consumers
+
+Forge Runtime now provides explicit CLI and TUI consumers for the authenticated
+execution-reconciliation preview candidate. Both consume the bounded canonical
+fixture shape, reject unknown/duplicate/missing fields, bind the Conversation
+and Run path to the caller-supplied owner image, issue exactly one authenticated
+POST, and require the response to equal the pure reconciliation projection.
+The TUI additionally requires the selected owner Conversation and clears its
+local session on `401`/`403`; human output is metadata-only and reports no
+automatic retry or authority. No retry, lease renewal, target selection,
+reservation, scheduling, dispatch, Runner, receipt persistence, Audit, or
+production device route was added; production remains 404/default-off and
+ADR-0039/0113/0114 remain gated.
+
+### Cross-device plan §377 — Flutter Web/App/Mobile execution-reconciliation preview consumer
+
+Snaplink Console adds an explicitly injected Web/App/Mobile consumer for the
+authenticated `execution-reconciliation/preview` candidate. The strict
+`ForgeExecutionReconciliationObservation` model re-decodes
+`forge.execution-reconciliation-observation/v1`, rejects unknown/duplicate/
+missing/unsafe or foreign/path-drifting values, and requires exact
+Conversation/Run/Attempt/lease/terminal binding. The shared API sends one
+owner-bound POST and accepts only the metadata-only projection with
+`automatic_retry=false`, required manual-reconciliation state, and all-false
+authority; the optional Gate/card remains display-only.
+
+The default Sessions Gate remains request-free. The candidate adapter surfaces
+401/403 without refreshing or replaying a bearer, and does not renew a lease,
+select/reserve a target, schedule/dispatch work, contact a Runner, persist a
+receipt, or publish Audit evidence. Production Coordinator construction stays
+404/default-off; ADR-0039 remains planning-only and ADR-0113/0114 remain
+Proposed/null. Focused Flutter contract/API/widget tests and
+`bash scripts/test-forge-contracts.sh` are the verification boundary.
+
+### Cross-device plan §378 — Owner-scoped per-device lifecycle registry CAS aggregation
+
+Forge Core now computes a complete owner-scoped
+enrollment/heartbeat/inventory registry replacement through a pure per-device
+CAS function. Revision zero creates a device; a nonzero expected revision must
+match that device's outer lifecycle revision, with no global registry revision
+that can let one device update clobber another. The function clones and
+validates the current image, applies the joined lifecycle transition while
+preserving server-owned cordon/reservation state, validates the complete
+replacement, and returns deterministic device/Runner ordering without
+mutating caller state.
+
+Owner mismatch, stale revision, invalid member, duplicate device/Runner,
+capacity over 128, and revision overflow errors fail closed. The returned
+registry/result are value images only: no I/O, lock, clock, proof or
+credential authentication, challenge consumption, heartbeat listener,
+inventory write, or authority transition occurs. No selection, reservation,
+scheduling, dispatch, Runner, receipt, or Audit path was added; production
+device routes remain 404/default-off. Focused
+`go test ./internal/deviceinventory -run '^TestCommitPersistedEnrollmentHeartbeatLifecycleRegistry' -count=1`
+passes; ADR-0039 remains planning-only and ADR-0114 remains Proposed/null.
+
+### Cross-device plan §379 — Flutter explicit execution-reconciliation reader binding
+
+Snaplink Console adds an explicit `ForgeExecutionReconciliationReader` and
+typed `ForgeExecutionReconciliationInput` seam from the Sessions Gate to the
+selected Conversation/Run. The opt-in candidate adapter revalidates owner,
+Conversation, Run, Attempt, lease, and terminal bindings before one
+authenticated preview POST, strictly re-decodes the response, and compares it
+with the local pure projection before displaying the read-only card. The
+default Gate remains request-free; enabling the candidate without a typed input
+cannot issue a request. This is an observation seam only: no lifecycle
+registry I/O, lease renewal, target selection/reservation, scheduling,
+dispatch, Runner, receipt persistence, Audit publication, or production route
+was added. Focused Flutter Gate/API/contract/widget suites pass; ADR-0039
+remains planning-only and ADR-0113/0114 remain Proposed/null.
+
+### Cross-device plan §380 — Candidate owner-scoped lifecycle registry file CAS boundary
+
+Forge Core adds an explicitly injected private-file adapter for the complete
+owner-scoped enrollment/heartbeat/inventory registry image. It strictly reads
+the `forge.device-enrollment-heartbeat-lifecycle-file-set/v1` envelope, keeps
+the exact bytes and `0600` mode as an opaque token, validates every replacement
+member before encoding, sorts device/Runner members deterministically, and
+publishes through `AtomicWriteTrackedIfUnchanged`. A missing leaf is a valid
+revision-zero create expectation only under an existing private parent;
+stale create/update tokens return a stable CAS conflict and preserve the
+current image.
+
+This remains a persistence candidate only: no proof or credential validation,
+challenge consumption, clock, registration, approval/revocation transition,
+heartbeat listener, inventory authority, HTTP route, scheduler, selection,
+reservation, dispatch, Runner, receipt, or Audit behavior was added. Production
+remains 404/default-off; ADR-0039 remains planning-only and ADR-0114 remains
+Proposed/null. Focused deviceinventory Go tests and the contract script cover
+create/restore, stale-token preservation, owner/duplicate rejection,
+permissions, and filesystem drift.
+
+### Cross-device plan §381 — Lifecycle registry to multi-instance inventory observation bridge
+
+Forge Core adds an explicitly injected source that reads the complete
+owner-scoped lifecycle registry file-set and projects its joined inventory
+members through the existing authenticated device observation candidates. Both
+v1 and lossless v2 readers are supported; v2 retains registry revision,
+generation, and heartbeat sequence while every authority, reservation, and
+dispatch marker remains false. The source checks the verified owner and
+context before every read and reloads the image for each observation, so a
+later candidate CAS replacement is visible without exposing file-owned slices.
+
+This remains a candidate read bridge only. No enrollment, heartbeat listener,
+inventory authority, production route, target selection, reservation,
+scheduling, dispatch, Runner, receipt, or Audit behavior was added. Production
+remains 404/default-off; ADR-0039 remains planning-only and ADR-0114 remains
+Proposed/null. Focused Go tests cover multi-instance v1/v2 projection,
+owner-binding, cancellation, and all-false authority.
+
+### Cross-device plan §382 — Authenticated candidate lifecycle registry read/replace CAS boundary
+
+Forge Core adds an explicitly injected candidate HTTP boundary at
+`/api/v1/device-enrollment-heartbeat/lifecycle-registry`. `GET` and `PUT` use
+separate lifecycle scopes; the owner is always taken from the verified bearer
+principal, `GET` returns a canonical complete image, and `PUT` accepts only
+`states` before re-reading and exact-image-CAS replacing the private file.
+Stale images, owner drift, malformed members, duplicate identities, broad
+permissions, and filesystem changes fail closed. The registry envelope is
+canonicalized before it is returned, so an injected store cannot leak an
+unsorted or aliased state slice.
+
+The candidate is not mounted by production. It adds no proof verification,
+credential issuance, heartbeat listener, authoritative inventory, selection,
+reservation, scheduling, dispatch, Runner, receipt, or Audit behavior.
+Production remains 404/default-off; ADR-0039 remains planning-only and
+ADR-0114 remains Proposed/null. Focused Go tests cover default closure,
+separate scopes, owner/query/method/content validation, CAS conflict mapping,
+canonical response, and production-route closure.
+
+### Cross-device plan §383 — Rust CLI/TUI lifecycle registry candidate reader
+
+Forge Runtime adds the explicit read-only commands remote lifecycle-registry
+show/read and TUI lifecycle-registry show. They send one authenticated GET
+only when explicitly requested; TUI startup and sync never refresh this
+registry. A closed DTO decoder rejects unknown/duplicate fields, wrong schema,
+invalid owner tuples, unsorted members, revision drift, and nested
+device/Runner/capability binding drift before display. Focused CLI/TUI tests
+cover exact path, bearer header, empty-body GET, strict response rejection,
+and explicit-trigger behavior. No PUT, enrollment, heartbeat acceptance,
+inventory authority, selection, reservation, scheduling, dispatch, Runner,
+receipt, Audit, or production route was added; ADR-0039 remains
+planning-only and ADR-0114 remains Proposed/null.
+
+### Cross-device plan §384 — Lifecycle registry source composition for inventory candidates
+
+Forge Core adds a focused migration constructor that feeds one private
+owner-scoped lifecycle-registry file source into both authenticated device
+observation candidates (`/api/v1/devices` v1 and
+`/api/v1/devices/observations/v2` lossless v2). The composition reuses one
+validated registry image, preserves deterministic device/Runner ordering and
+v2 revision/generation/heartbeat metadata, and keeps execution, reservation,
+and dispatch markers false. Focused tests prove both projections and confirm
+the production constructor remains 404. No enrollment, heartbeat acceptance,
+inventory authority, selection, reservation, scheduling, dispatch, Runner,
+receipt, or Audit behavior was added; ADR-0039 remains planning-only and
+ADR-0114 remains Proposed/null.
+
+### Cross-device plan §385 — Flutter lifecycle registry candidate contract and Gate boundary
+
+Snaplink Console adds strict contract, authenticated API, display-only panel,
+and Sessions Gate coverage for the candidate lifecycle-registry GET. Tests
+reject unknown/duplicate fields, foreign owners, unsorted or duplicate
+device/Runner identities, identity/revision/heartbeat/capability drift, and
+authority mutations; API coverage proves one empty-body bearer GET at the exact
+path and rejects origin drift before transport. The default Gate and a
+candidate without explicit origin remain request-free. No PUT, enrollment,
+heartbeat, inventory authority, selection, reservation, scheduling, dispatch,
+Runner, receipt, Audit, or production route was added. Production remains
+404/default-off; ADR-0039 remains planning-only and ADR-0114 remains
+Proposed/null.
+
+### Cross-device plan §386 — Candidate device heartbeat transaction and lifecycle-file CAS hardening
+
+Forge Core adds an explicitly injected `/api/v1/device-enrollment-heartbeat/heartbeat`
+candidate with a separate lifecycle-heartbeat scope, verified bearer owner,
+injected server clock, strict device proof/challenge/Runner heartbeat input,
+approval and generation/sequence validation, owner-scoped registry CAS, and
+private-file publication. The file adapter serializes writers with a platform
+lock and rejects lifecycle revision/generation/heartbeat/server-time rollback
+and device deletion while preserving stale/concurrent CAS safety. Proof remains
+a non-cryptographic value label, challenge consumption and credential issuance
+remain absent, authority flags remain false, and production remains
+404/default-off; ADR-0039 remains planning-only and ADR-0114 remains
+Proposed/null.
+
+### Cross-device plan §387 — Owner-scoped registry placement preview boundary
+
+Forge Core adds the explicitly injected `POST /api/v1/device-placement/registry-preview`
+candidate with `forge:devices:placement:preview` scope. The body contains only
+strict placement requirements; verified owner, injected server clock, and the
+owner-scoped lifecycle-registry v2 source provide the remaining inputs. The
+response reuses the deterministic v2 placement evaluation, leaves selected
+targets null, and keeps every authority marker false. Strict JSON, owner/source
+validation, clock failure, scope, production 404 closure, and lifecycle-file
+composition are covered by focused tests and the contract document. This adds
+no selection, reservation, scheduling, dispatch, Runner, execution, receipt,
+or Audit behavior; ADR-0039 remains planning-only and ADR-0114 remains
+Proposed/null.
+
+- **DONE — Registry placement preview cross-client transport closure (cross-device plan §388)**: Forge Runtime adds explicit CLI `remote placement registry-preview --input FILE|-` and TUI `placement-registry-preview --input FILE` consumers for the authenticated registry-backed candidate. Both issue one requirements-only POST, reject duplicate/unknown fields and compact v2 drift, and keep startup/sync request-free. Snaplink Console adds the same strict compact-response decoder, authenticated API, opt-in Sessions Gate reader, display-only panel, and explicit/manual/scheduled refresh semantics shared by Web/App/Mobile. Selected targets remain null and all authority flags remain false; production Coordinator construction stays 404/default-off, ADR-0039 remains planning-only, and ADR-0114 remains Proposed/null.
+- **DONE — Flutter client-instance candidate authorization boundary (cross-device plan §389)**: The shared Web/App/Mobile client-instance session-view and resource-view candidate readers now pass `retryUnauthorized=false` to the authenticated transport. A caller-supplied token-refresh callback cannot replay an opt-in candidate GET after a 401. Focused transport coverage proves one bearer request and zero refresh calls for both paths, while existing Gate/session/resource suites preserve default request-free behavior and normal owner-session refresh behavior. No client registration, Prompt/Run mutation, device/inventory authority, target selection, reservation, scheduling, dispatch, Runner, receipt, Audit, or production route was added; ADR-0039 remains planning-only and ADR-0114 remains Proposed/null.
+
+- **DONE — Registry placement preview cross-ecosystem receiver parity (cross-device plan §390)**: The canonical compact registry placement response fixture is mirrored byte-for-byte and strictly consumed by Aero-ID, Aero-IM's audit connector, Aero-Vault's governance relay, and Snaplink Audit Governance. Focused receivers enforce exact fields, owner/time/counter bounds, unique sorted candidates/reasons, null selected targets, matching eligible counts, and all-false authority while rejecting unknown, duplicate, trailing, selected, or authority-bearing mutations. The contract script compares all four mirrors and runs the focused Go/Rust suites. This remains read-only compatibility evidence; no device authentication, Audit publication, inventory authority, selection, reservation, scheduling, dispatch, Runner, execution, or production route was added; ADR-0039 remains planning-only and ADR-0114 remains Proposed/null.
+
+- **DONE — Cross-ecosystem device identity proof receiver parity (cross-device plan §391)**: The canonical `forge.device-identity-proof-contract/v1` pure binding vector is mirrored byte-for-byte and strictly consumed by Aero-ID, Aero-IM's audit connector, Aero-Vault's governance relay, and Snaplink Audit Governance. Receivers enforce the owner/device/key/challenge envelope, twelve accepted/rejected binding cases, digest/time bounds, unique names, and all-false authority while rejecting unknown, duplicate, trailing, malformed, or authority-bearing mutations. This is offline identity interoperability evidence only; no cryptography, challenge consumption, credential issuance, enrollment persistence, approval write, heartbeat acceptance, inventory authority, selection, reservation, scheduling, dispatch, Runner execution, Audit publication, or production route was enabled. ADR-0039 remains planning-only and ADR-0114 remains Proposed/null.
+- **DONE — Owner-scoped device approval and key lifecycle candidate (cross-device plan §392)**: Forge Core adds the explicitly injected `POST /api/v1/device-enrollment-heartbeat/approval-candidate` under `forge:devices:lifecycle:approval`. The verified bearer supplies the owner; the strict request supplies only a device ID, pure approve/revoke/rotate action, optional next-key values, and expected lifecycle revision. The handler applies `forge.device-approval-rotation/v1` and exact-image-CAS publishes only an optional `approval_candidate`; live DeviceBinding, heartbeat, inventory, credential, Runner, and registry revision remain unchanged. Responses are preview-only with `candidate_published=true` and all authority false; terminal revocation, generation/owner/device/revision/JSON/scope/CAS checks and production 404 closure are tested. No cryptographic proof, credential issuance, enrollment, heartbeat acceptance, inventory authority, selection, reservation, scheduling, dispatch, Runner execution, receipt, Audit, or production route was added; ADR-0039 remains planning-only and ADR-0114 remains Proposed/null.
+- **DONE — Flutter explicit candidate scheduling-review receipt (cross-device plan §393)**: Snaplink Console exposes the existing inert pending Run-intent contract as an explicit Web/App/Mobile Sessions action only when the Gate receives the reviewed owner, candidate origin, and opt-in flag. The selected Conversation, Prompt bytes, aggregate version, and idempotency key are bound before one authenticated candidate POST; the result renders a metadata-only pending receipt with all execution authority false. Candidate 401 responses never replay through bearer refresh; the default Gate remains request-free and the action is absent. No Run, device selection, reservation, scheduler decision, dispatch, Runner, execution, Audit, or production route authority was added; ADR-0039 remains planning-only and ADR-0114 remains Proposed/null.
+- **DONE — Pure Ed25519 device proof-of-possession verifier (cross-device plan §394)**: Forge Core adds `deviceidentity.VerifySignedProof`, a side-effect-free Ed25519 verifier with domain-separated deterministic signed bytes binding device/key/public-key digest, exact owner, challenge ID/digest, and proof validity window. It checks exact raw key/signature encodings, key digest against the already-bound device, then applies the existing owner/device/key/challenge/approval/credential/time/replay evaluator; malformed UTF-8 owner claims and binding or cryptographic drift fail closed. No challenge consumption, credential issuance or rotation, enrollment/approval persistence, heartbeat acceptance, inventory authority, selection, reservation, scheduling, dispatch, Runner, Run, receipt, Audit, or production route was added; the approval/lifecycle candidate remains injected-only, ADR-0039 remains planning-only, and ADR-0114 remains Proposed/null.
+- **DONE — Flutter candidate resource and Run-status authorization boundary (cross-device plan §395)**: Snaplink Console's owner-scoped v1 inventory, lossless v2 inventory, and content-free Run-observation candidate GETs now pass `retryUnauthorized=false`, so a candidate `401` is never replayed with a rotated bearer. Sessions initial/manual refresh and stale snapshot retention remain unchanged, while scheduled change-feed polling now refreshes both the v1 and v2 inventory projections when explicitly enabled. Focused transport coverage proves one bearer request and zero refresh calls for all three paths, and the widget coverage proves scheduled v1 refresh. No registration, heartbeat, inventory authority, target selection, reservation, scheduling, dispatch, Runner execution, Run creation, receipt, Audit, or production route was added. ADR-0039 remains planning-only and ADR-0114 remains Proposed/null.
+- **DONE — Cross-ecosystem Ed25519 device proof receiver parity (cross-device plan §396)**: The canonical `forge.device-identity-proof/ed25519/v1` signed proof vector is mirrored byte-for-byte and strictly consumed by Aero-ID, Aero-IM's audit connector, Aero-Vault's governance relay, and Snaplink Audit Governance. Receivers validate owner/device/key/challenge binding, raw base64url key/signature sizes, public-key digest, domain-separated deterministic payload, Ed25519 signature, validity windows, expected projection, and all-false authority; unknown/duplicate/trailing/signature/authority mutations fail closed. This remains cryptographic proof-input interoperability only: no challenge consumption, credential or enrollment/approval persistence, heartbeat acceptance, inventory authority, selection, reservation, scheduling, dispatch, Runner, Run, receipt, Audit, or production route was enabled. ADR-0039 remains planning-only and ADR-0114 remains Proposed/null.
+- **DONE — Pure device-only credential lifecycle replacement plan (cross-device plan §397)**: Forge Core adds `devicecredential.Apply` for pure issue/revoke/rotate metadata plans. Exact owner/device/approval/credential/key/generation bindings and explicit one-second-to-one-hour validity windows are validated; revocation is terminal and rotation increments key generation. The value contains no bearer secret or token material, and only `owner_binding_matched` may be true; authentication, material creation, persistence, inventory, and execution authority remain false. The explicitly injected owner-scoped `POST /api/v1/device-enrollment-heartbeat/credential-candidate` applies the same plan through exact-image CAS into an optional private candidate and hides it from the live registry projection; focused tests cover strict owner/device/key/revision/JSON/scope checks, issue/rotate/revoke terminal behavior, persistence, and production 404 closure. No credential issuance, enrollment, heartbeat, inventory authority, placement, scheduling, dispatch, Runner, Run, receipt, Audit, or production route was enabled; ADR-0039 remains planning-only and ADR-0114 remains Proposed/null.
+- **DONE — §398 cross-ecosystem device credential lifecycle receiver parity**: The canonical `forge.device-credential-lifecycle/v1` pure metadata fixture is mirrored byte-for-byte and strictly consumed by Aero-ID, Aero-IM's audit connector, Aero-Vault's governance relay, and Snaplink Audit Governance. Receivers validate all six issue/revoke/rotate cases, owner/device/key/generation bindings, credential state and validity windows, terminal rejection, and all-false authority; unknown/duplicate/trailing/secret-bearing/invalid-action/authority mutations fail closed. This adds no bearer material, caller authentication, persistence, heartbeat acceptance, inventory authority, selection, reservation, scheduling, dispatch, Runner, Run, receipt, Audit, or production route. ADR-0039 remains planning-only and ADR-0114 remains Proposed/null.
+- **DONE — §399 cross-client credential lifecycle candidate decoder**: Forge Runtime CLI/TUI now expose only local `device credential-candidate-preview --input FILE|-` / `credential-candidate-preview --input FILE` readers for the strict `forge.device-credential-lifecycle/v1` response. Snaplink Console adds the same owner-bound metadata decoder and all-false authority checks. Unknown/duplicate/secret-bearing/owner/device/key/window/authority drift fails closed; no client issues the candidate POST or replays a Bearer, and no credential material, challenge, heartbeat, inventory, selection, reservation, scheduling, dispatch, Runner, receipt, Audit, or production route was enabled. ADR-0039 remains planning-only and ADR-0114 remains Proposed/null.
+- **DONE — §400 cross-client credential lifecycle candidate authenticated transport**: Forge Runtime and Snaplink Console add explicitly invoked owner-scoped metadata-only POST adapters for `/api/v1/device-enrollment-heartbeat/credential-candidate`. Runtime validates request/response device, action, revision, and issue/rotate bindings; Snaplink Console requires an explicit candidate origin, owner binding, and `retryUnauthorized=false`, so a candidate 401 is never refreshed or replayed. Request bodies contain no bearer or credential material; startup, TUI sync, default Gate, and Core production routing remain closed. No challenge consumption, credential issuance, enrollment, heartbeat, inventory authority, selection, reservation, scheduling, dispatch, Runner, Run, receipt, Audit, or production route behavior was added; ADR-0039 remains planning-only and ADR-0114 remains Proposed/null.
+- **DONE — Explicit Rust CLI/TUI credential lifecycle candidate command (cross-device plan §401)**: Forge Runtime exposes `remote credential-candidate preview --input FILE|-` and TUI `credential-candidate --input FILE` as explicit one-POST consumers for the injected metadata-only candidate. Strict bounded JSON and response binding reject drift, duplicate/unknown/secret-bearing fields, authority, and material; 401/network failures are not replayed. TUI startup/sync and local preview remain request-free, with `-` reserved for the CLI. No credential issuance/material, challenge/enrollment/heartbeat acceptance, inventory authority, selection/reservation, scheduling, dispatch, Runner, Run, receipt, Audit, or production route behavior was enabled; ADR-0039 remains planning-only and ADR-0114 remains Proposed/null.
+- **DONE — Flutter Sessions Gate credential-candidate transport closure (cross-device plan §402)**: Snaplink Console now wires the explicit metadata-only credential lifecycle candidate through the shared Web/App/Mobile Sessions Gate with pinned owner, request, and candidate origin. Focused widget coverage proves one Bearer POST only when the opt-in flag and complete binding are present, the default Gate remains request-free, and a foreign-owner response is rejected. The stale Gate binding references and candidate panel analysis errors are fixed. No credential material, challenge/enrollment/heartbeat acceptance, inventory authority, selection/reservation, scheduling, dispatch, Runner, Run, receipt, Audit, or production route behavior was enabled; ADR-0039 remains planning-only and ADR-0114 remains Proposed/null.
+- **DONE — Cross-ecosystem device credential candidate response parity (cross-device plan §403)**: Mirrored the canonical metadata-only credential candidate response into Aero-ID, Aero-IM, Aero-Vault, and Snaplink Audit Governance. Receiver contracts strictly enforce owner/device/revision, action-specific previous/next state bindings, safe windows, preview/publication flags, and all-false authority while rejecting unknown, duplicate, trailing, secret-bearing, binding, key, preview, publication, and authority mutations. No credential material, lifecycle persistence, challenge, enrollment, heartbeat, inventory authority, placement, selection, reservation, scheduling, dispatch, Runner, Run, receipt, Audit, or production route was added.
+- **DONE — Lifecycle-registry client-instance view composition (cross-device plan §404)**: Added the private Core test/migration projection that reads one owner-bound lifecycle-registry source for both client-instance session and resource views, with five client kinds, sorted resources, owner/duplicate/transport/authority regressions, and production 404 closure. No registration, enrollment, heartbeat, inventory authority, target selection, reservation, scheduling, dispatch, Runner, Run, receipt, Audit, or production route was enabled; ADR-0039 remains planning-only and ADR-0114 remains Proposed/null.
+- **DONE — Authenticated cross-client session projection acceptance (cross-device plan §405)**: The opt-in Snaplink JWT E2E creates two owner Conversations, serves five CLI/TUI/Web/App/Mobile declarations, verifies each CLI `remote sessions list --instance` local projection, sends a TUI Prompt, and reads it from a separate authenticated client. It records the HTTP boundary and rejects instance query leakage and device/placement/reservation/dispatch/Runner/execution requests; production candidate routing remains 404. No registration, authoritative instance metadata, scheduling, selection, reservation, dispatch, Runner, Run, receipt, Audit, or production device route was added; ADR-0039 remains planning-only and ADR-0114 remains Proposed/null.
+- **DONE — Flutter resource-view display-only transport guard (cross-device plan §406)**: The explicit Snaplink Console client-instance/resource-view reader now requires the expected owner and `isDisplayOnly`, matching the session reader and Sessions screen. Focused transport coverage rejects a response that clears `read_only` and preserves one-shot 401/no-refresh behavior. No registration, Prompt/Run mutation, device authentication, enrollment, heartbeat, inventory authority, selection, reservation, scheduling, dispatch, Runner, receipt, Audit, or production route behavior was added; ADR-0039 remains planning-only and ADR-0114 remains Proposed/null.
+- **DONE — Authenticated Console client-instance projection and Prompt acceptance (cross-device plan §407)**: The opt-in Forge Core/Flutter E2E crosses the real Snaplink JWT, two owner Conversations, and one five-kind CLI/TUI/Web/App/Mobile projection. The shared Sessions Gate restores the bearer, loads the candidate, filters to a declared instance, sends one owner-scoped Prompt, and an independent authenticated client reads it back. The recorder rejects instance-query leakage and device/placement/reservation/dispatch/Runner/execution requests; candidate origin/owner/flag remain harness-only and production remains 404. No registration, instance authority, Run/pending intent, selection, reservation, scheduling, dispatch, Runner, receipt, Audit, or production device route was added; ADR-0039 remains planning-only and ADR-0114 remains Proposed/null.
+- **DONE — Runtime TUI client-instance Prompt write boundary (cross-device plan §408)**: Runtime TUI now blocks Prompt creation and retry when the selected Conversation is outside the active local client-instance/session declaration, without issuing HTTP and while retaining the pending idempotency tuple. No-filter and ordinary scope-filter semantics remain unchanged; no registration, heartbeat, inventory, selection, reservation, scheduling, dispatch, Runner, Run, receipt, Audit, or production route was added; ADR-0039 remains planning-only and ADR-0114 remains Proposed/null.
+- **DONE — Authenticated resource-view-only client-instance Prompt acceptance (cross-device plan §409)**: The opt-in Forge Core/Flutter/Runtime acceptance harness uses only the owner-bound resource-view candidate to drive instance filtering and Prompt writes across TUI and the shared Web/App/Mobile Sessions surface. Two real owner Conversations are written and independently read back; session-view, instance-query, device, placement, reservation, dispatch, Runner, and execution requests are rejected, and production routes remain 404. No registration, heartbeat, inventory authority, selection, reservation, scheduling, dispatch, Runner, Run, receipt, Audit, or production route was added; ADR-0039 remains planning-only and ADR-0114 remains Proposed/null.
+- **DONE — CLI client-instance Prompt read/write boundary (cross-device plan §410)**: Runtime CLI `remote prompts list/add` now support `--instance` and optional `--instance-view FILE|-`; strict local projection checks reject hidden Conversations before any Prompt request, while visible owner, CAS, and idempotency behavior remains unchanged. No instance query, registration, enrollment, heartbeat, inventory, selection, reservation, scheduling, dispatch, Runner, Run, receipt, Audit, or production route was added; ADR-0039 remains planning-only and ADR-0114 remains Proposed/null.
+- **DONE — Runtime TUI client-instance Prompt read boundary (cross-device plan §411)**: TUI `open CONVERSATION_ID` and `older` now enforce the active local client-instance/session or resource projection before owner Conversation and Prompt-history GETs. Hidden or unvalidated Conversations are blocked without HTTP; no-instance and ordinary scope-filter semantics are preserved. No instance authorization, registration, enrollment, heartbeat, inventory, selection, reservation, scheduling, dispatch, Runner, Run, receipt, Audit, or production route was added; ADR-0039 remains planning-only and ADR-0114 remains Proposed/null.
+- **DONE — Runtime TUI client-instance detail and sync read boundary (cross-device plan §412)**: TUI `detail/show CONVERSATION_ID` and selected-session `sync` now apply the active local client-instance/session or resource projection before owner Conversation and Prompt-history GETs. Hidden or unvalidated Conversations are blocked locally; no-instance and ordinary scope-filter semantics remain unchanged. No instance authorization, registration, enrollment, heartbeat, inventory, selection, reservation, scheduling, dispatch, Runner, Run, receipt, Audit, or production route was added; ADR-0039 remains planning-only and ADR-0114 remains Proposed/null.
+- **DONE — Console client-instance Prompt history read boundary (cross-device plan §413)**: The shared Web/App/Mobile Sessions screen now guards deep-link selection, change-feed refresh, initial selection, and older Prompt history reads with the selected session/resource projection. Hidden Conversations issue no Prompt GET and clear the local Prompt panel; owner API and production routes remain unchanged. No instance authorization, registration, enrollment, heartbeat, inventory, selection, reservation, scheduling, dispatch, Runner, Run, receipt, Audit, or production route was added; ADR-0039 remains planning-only and ADR-0114 remains Proposed/null.
+- **DONE — CLI client-instance Conversation detail read boundary (cross-device plan §414)**: Runtime CLI `remote sessions show` now supports `--instance` and optional `--instance-view FILE|-`, rejects hidden Conversations before any detail GET, and preserves visible owner-scoped and no-option behavior. No registration, enrollment, heartbeat, inventory, selection, reservation, scheduling, dispatch, Runner, Run, receipt, Audit, or production route was added; ADR-0039 remains planning-only and ADR-0114 remains Proposed/null.
+- **DONE — Runtime TUI v1 inventory refresh boundary (cross-device plan §415)**: An explicit TUI `inventory read` now opts the process into refreshing the same owner-scoped v1 inventory observation during `sync`, with response validation, authorization-failure cleanup, and a focused HTTP-order test. Startup and ordinary sync remain request-free until the explicit read; no registration, enrollment, heartbeat, inventory authority, selection, reservation, scheduling, dispatch, Runner, Run, receipt, Audit, or production route was added; ADR-0039 remains planning-only and ADR-0114 remains Proposed/null.
+- **DONE — Authenticated Runner dispatch-plan preview transport and four-ecosystem parity (cross-device plan §416)**: Forge Core's injected runner dispatch-plan preview now flows through explicit authenticated Runtime CLI/TUI and Snaplink Console preview adapters. They validate owner, conversation/run/Attempt/lease bindings, candidate origin, response shape, and all-false display-only authority, perform one POST with no 401 replay, and keep production construction 404. The canonical preview fixture is mirrored and strictly consumed by Aero-ID, Aero-IM, Aero-Vault, and Snaplink Audit Governance. Empty ready-candidate reasons encode as `[]`; no registry, lease issuance, reservation, scheduling, dispatch, Runner, Run, receipt, Audit, or production route was enabled; ADR-0039 remains planning-only and ADR-0114 remains Proposed/null.
+- **DONE — Console Sessions Gate Runner dispatch-plan preview candidate (cross-device plan §417)**: The shared Web/App/Mobile Sessions Gate now wires an explicit Run/Attempt/lease dispatch-plan declaration into the authenticated candidate reader and display-only card. Owner/path/command/target/lease/time bindings are pinned and re-decoded; transient failures retain only the validated prior observation, authorization failures clear owner state, and the default Gate remains request-free. Focused widget coverage proves one bearer POST and the no-candidate default. No inventory authority, target selection, reservation, scheduling, dispatch, Runner, receipt, Audit, or production route was enabled; ADR-0039 remains planning-only and ADR-0114 remains Proposed/null.
+- **DONE — Console Sessions Gate local Runner execution-readiness candidate (cross-device plan §418)**: The shared Web/App/Mobile Sessions Gate now consumes the explicit Prompt/Run/Attempt/lease local Runner preview request through one authenticated candidate POST. It validates path, intent, receipt, command, lease, timestamp, and all-false authority bindings, renders only metadata, and keeps argv/workspace/fencing/output/diagnostics and execution actions absent. The default Gate remains request-free; no device selection, reservation, dispatch, durable Run/receipt, or production route was enabled; ADR-0039 remains planning-only and ADR-0114 remains Proposed/null.
+- **DONE — Console Sessions Gate v1 inventory candidate adapter (cross-device plan §419)**: Snaplink Console's shared Web/App/Mobile Gate now enables a caller-declared owner/origin/flag adapter for the existing owner-scoped v1 `/devices` observation. The adapter performs one authenticated, non-replayed GET, preserves explicit reader precedence, and feeds the strict read-only inventory panel; focused coverage proves exact request binding, default request-free behavior, and missing-origin closure. No enrollment, heartbeat, inventory authority, target selection, reservation, scheduling, dispatch, Runner, receipt, Audit, or production route was enabled; ADR-0039 remains planning-only and ADR-0114 remains Proposed/null.
+- **DONE — Runtime pending Run-intent client-instance boundary (cross-device plan §420)**: Forge Runtime CLI `remote run-intents list/submit/timeline` now accept `--instance` with optional `--instance-view FILE|-` and validate the caller-declared session projection before any pending Run-intent GET/POST; hidden Conversations issue no private request while visible reads preserve owner, cursor, CAS, and idempotency behavior. TUI list, timeline, submit, retry, and explicit sync refresh reuse the same local guard and retain pending recovery tuples when blocked. Pending Run-intents remain inert metadata; no Run start, device selection, reservation, scheduling, dispatch, Runner, receipt, Audit, or production route was enabled; ADR-0039 remains planning-only and ADR-0114 remains Proposed/null.
+- **DONE — Runtime Run read client-instance projection boundary (cross-device plan §423)**: Forge Runtime CLI `remote runs list/observed/timeline` now accept `--instance` with optional `--instance-view FILE|-` and reject hidden Conversations before private Run summary, observation, or timeline GETs. TUI Runs list, observed, timeline, and selected-Run sync reuse the active local projection; hidden sessions issue no private Run request and stale selected Run metadata is cleared without touching pending recovery state. Visible cursor, resume, and metadata-only behavior remains unchanged. Focused parser/dispatch/TUI tests and the contract script cover local-view request avoidance and hidden-request closure. No instance authority, registration, enrollment, heartbeat, inventory authority, selection, reservation, scheduling, dispatch, Runner, receipt, Audit, or production route was added; ADR-0039 remains planning-only and ADR-0114 remains Proposed/null.
+- **DONE — Console Sessions Gate execution-consent preview candidate (cross-device plan §421)**: Snaplink Console now wires the explicit owner/origin/enable execution-consent preview candidate through the shared Web/App/Mobile Sessions Gate. The selected Conversation ID is carried into one strict read-only GET and checked on return; the request disables unauthorized replay, and a metadata-only card exposes project/profile/digest/TTL without any consent or execution action. Focused API and widget tests prove one exact candidate read, default zero candidate traffic, selected Conversation binding, and no refresh/replay; production authority routes remain closed under ADR-0039 and Proposed ADR-0114.
+- **DONE — Local Runner execution-preview contract parity (cross-device plan §422)**: The canonical `forge.runner-local-execution-preview/v1` fixture is mirrored byte-for-byte and strictly consumed by Aero-ID, Aero-IM's audit connector, Aero-Vault, and Snaplink Audit Governance. Receiver tests reject unknown/duplicate fields, binding and numeric drift, selection mutations, and authority claims; the contract script compares all four copies and runs each focused suite. This is injected local Runner observation evidence only: no device authentication/enrollment, lease, reservation, scheduling, dispatch, remote transport, durable Run/receipt, Audit publication, or production route was enabled; ADR-0039 remains planning-only and ADR-0114 remains Proposed/null.
+- **DONE — Console Sessions Run client-instance read boundary (cross-device plan §424)**: The shared Web/App/Mobile Sessions screen now rechecks the selected local client-instance projection inside Runs list and scheduled Run-observation refresh paths. Hidden Conversations clear Run/timeline/pending-intent and adjacent metadata before any `/runs` request; visible owner-scoped pagination and metadata behavior remain unchanged. Focused widget coverage records only the visible session's Prompt and Run reads through an instance filter. No instance authority, registration, enrollment, heartbeat, inventory authority, selection, reservation, scheduling, dispatch, Runner, durable Run/receipt, Audit, or production route was added; ADR-0039 remains planning-only and ADR-0114 remains Proposed/null.
+- **DONE — Console Sessions pending Run-intent client-instance read/write boundary (cross-device plan §425)**: The shared Web/App/Mobile Sessions screen now rechecks the selected local client-instance projection before pending Run-intent list, older-page, timeline, and inert scheduling-review submission callbacks. Hidden Conversations clear pending Run-intent and Run-adjacent metadata before any `/run-intents` callback or candidate POST; visible owner, cursor, CAS, and idempotency behavior remains unchanged. Focused widget coverage records pending reads only for the visible Conversation and no hidden callback. Pending Run-intents remain inert metadata; no Run, device selection, reservation, scheduling, dispatch, Runner, receipt, Audit, or production route was added; ADR-0039 remains planning-only and ADR-0114 remains Proposed/null.
+- **DONE — Console Sessions execution-consent client-instance read boundary (cross-device plan §426)**: The shared Web/App/Mobile Sessions screen now rechecks the selected local client-instance projection before and after an explicit execution-consent preview reader. Hidden Conversations produce no execution-consent callback, and an in-flight response cannot reattach after the projection changes; visible owner and Conversation binding behavior remains unchanged. The preview remains metadata-only; no consent grant, Run creation, device selection, reservation, scheduling, dispatch, Runner, receipt, Audit, or production route was added; ADR-0039 remains planning-only and ADR-0114 remains Proposed/null.
+- **DONE — Console Sessions complete Run-resource client-instance boundary (cross-device plan §427)**: The shared Web/App/Mobile Sessions screen now checks the active client-instance projection around Run timeline/device observation, Run observation, preflight, Runner dispatch-plan, local readiness, and execution-reconciliation reads. Hidden Conversations are blocked before private transport and stale Run metadata is cleared; Prompt append and inert scheduling-review results are also rejected after an instance change. Focused widget coverage proves the strict Run observation callback remains visible-session-only. No device registration, enrollment, heartbeat, inventory authority, selection, reservation, scheduling, dispatch, Runner, receipt, Audit, or production route was added; ADR-0039 remains planning-only and ADR-0114 remains Proposed/null.
+- **DONE — Console Sessions dynamic client-instance projection revocation boundary (cross-device plan §428)**: The shared Web/App/Mobile Sessions screen now reconciles explicit session/resource-view responses and injected preview replacements against the selected client-instance filter. When a refreshed projection hides the selected Conversation, Prompt history, Run summaries, timeline, pending Run-intent, and Run-adjacent candidate state are invalidated with generation bumps; if the Conversation later reappears, stale private metadata cannot return without a new owner read. Focused Flutter coverage proves hidden and restored projections do not resurrect the Run row or Prompt content. This remains a local unverified display boundary; no client registration, device enrollment/heartbeat, inventory authority, selection, reservation, scheduling, dispatch, Runner, Run, receipt, Audit, or production route was added; ADR-0039 remains planning-only and ADR-0114 remains Proposed/null.
+- **DONE — Console Sessions static Run-resource client-instance render boundary (cross-device plan §429)**: The shared Web/App/Mobile Sessions view now gates caller-injected and cached Run-bound observations plus error/stale/loading cards on the selected client-instance projection. Hidden sessions cannot display a static content-free Run observation; focused Flutter coverage proves the card disappears after a refreshed projection hides the selected session. This remains an unverified local display boundary with no registration, enrollment, heartbeat, inventory authority, selection, reservation, scheduling, dispatch, Runner, Run, receipt, Audit, or production route authority; ADR-0039 remains planning-only and ADR-0114 remains Proposed/null.
+
+- **DONE — Console Sessions removed client-instance projection empty boundary (cross-device plan §430)**: A selected instance that disappears from refreshed session/resource metadata now yields an empty local session projection and keeps the “All client instances” clearing entry; owner sessions are never shown by fallback. Focused Flutter coverage proves removal of the Web declaration leaves the Conversation hidden. This remains an unverified local display boundary with no registration, enrollment, heartbeat, inventory authority, selection, reservation, scheduling, dispatch, Runner, Run, receipt, Audit, or production route authority; ADR-0039 remains planning-only and ADR-0114 remains Proposed/null.
+
+- **DONE — Runtime TUI missing client-instance projection fail-closed boundary (cross-device plan §431)**: An active TUI instance filter with an unavailable validated session/resource view now yields no visible owner Conversations and clears the selected local Prompt/Run panels; it never falls back to the full owner list. Focused Rust tests cover the matcher and rendered empty projection. This remains an unverified local display/write boundary with no registration, enrollment, heartbeat, inventory authority, selection, reservation, scheduling, dispatch, Runner, Run, receipt, Audit, or production route authority; ADR-0039 remains planning-only and ADR-0114 remains Proposed/null.
+- **DONE — Console Sessions client-instance reader revocation boundary (cross-device plan §432)**: The Web/App/Mobile Sessions screen now retains a selected instance filter when its owner reader is revoked or replaced, clears private Prompt/Run state, and keeps the local projection empty until a validated view returns. A missing instance declaration cannot broaden the owner list. Focused Flutter coverage proves the revoked reader hides both Web and CLI sessions and leaves the stale-filter clear surface available. This remains an unverified local display boundary with no registration, enrollment, heartbeat, inventory authority, selection, reservation, scheduling, dispatch, Runner, Run, receipt, Audit, or production route authority; ADR-0039 remains planning-only and ADR-0114 remains Proposed/null.
+- **DONE — Console Sessions resource-view reader revocation boundary (cross-device plan §433)**: The Web/App/Mobile Sessions screen now retains an active instance filter when its owner resource-view reader is revoked or replaced, clears private Prompt/Run state, and keeps the local projection empty until a validated declaration returns. Focused Flutter coverage proves the resource-view-only path hides both Web and CLI sessions after reader removal and leaves the stale-filter clear surface available. This remains an unverified local display boundary with no registration, enrollment, heartbeat, inventory authority, selection, reservation, scheduling, dispatch, Runner, Run, receipt, Audit, or production route authority; ADR-0039 remains planning-only and ADR-0114 remains Proposed/null.
+- **DONE — Runtime TUI client-instance reader revocation boundary (cross-device plan §434)**: Forge Runtime now lets TUI users revoke one explicit `session-view` or `resource-view` reader while retaining the active instance filter. If no validated replacement remains, the Conversation projection is empty and private Prompt/Run state is cleared; non-authorizing refresh failures drop the affected stale candidate, while 401/403 clears the owner view. Focused Rust coverage proves explicit revocation and failed refresh never broaden the selected instance back to all owner sessions. This remains an unverified local display boundary with no registration, enrollment, heartbeat, inventory authority, selection, reservation, scheduling, dispatch, Runner, Run, receipt, Audit, or production route authority; ADR-0039 remains planning-only and ADR-0114 remains Proposed/null.
+- **DONE — Cross-client Prompt CAS receipt sequencing (cross-device plan §435)**: Rust Runtime and Snaplink Console now require every successful owner-scoped Prompt append response to return exactly `expected_version + 1` within the JSON-safe boundary. Stale or skipped receipts are rejected before CLI/TUI/Flutter local state advances, while idempotent replay retains the same deterministic next version. Focused Rust request tests and Flutter API tests cover non-sequential responses. Prompt remains storage-only; no Run, device selection, reservation, scheduling, dispatch, Runner, receipt, Audit, or production route authority was added; ADR-0039 remains planning-only and ADR-0114 remains Proposed/null.
+- **DONE — Cross-client Prompt replay receipt visibility (cross-device plan §436)**: Forge Runtime now requires the successful remote Prompt receipt's boolean `replayed` marker, rejecting missing or non-boolean values before clearing a pending write. The TUI and Snaplink Console display when a retry replayed an existing Prompt; stable idempotency-key Flutter/TUI journeys and Rust request coverage exercise this path. Prompt remains storage-only; no Run, device selection, reservation, scheduling, dispatch, Runner, receipt, Audit, or production route authority was added; ADR-0039 remains planning-only and ADR-0114 remains Proposed/null.
+- **DONE — CLI Prompt replay receipt visibility (cross-device plan §437)**: Runtime CLI Prompt acknowledgements now derive from the validated boolean `replayed` receipt marker, distinguishing a fresh stored Prompt from an idempotent replay while retaining the JSON response for automation and a conservative missing-marker message. Focused Rust coverage exercises all display branches; Prompt remains storage-only with no Run, device selection, reservation, scheduling, dispatch, Runner, receipt, Audit, or production route authority; ADR-0039 remains planning-only and ADR-0114 remains Proposed/null.
+- **DONE — Cross-ecosystem execution-lease checkpoint parity (cross-device plan §438)**: The canonical `forge.execution-lease-checkpoint/v1` value is mirrored byte-for-byte and strictly consumed by Aero-ID, Aero-IM, Aero-Vault, and Snaplink Audit Governance; receiver tests reject unknown/duplicate fields, authority mutations, invalid grant/terminal proof relationships, and preserve uncertain terminal evidence. Core and Runtime contract checks plus the cross-ecosystem script now cover the restart/fencing value. This is offline interoperability evidence only; no live lease issuance/persistence, device enrollment, reservation, scheduling, dispatch, Runner, receipt, Audit publication, or production route authority was added; ADR-0039 remains planning-only and ADR-0114 remains Proposed/null.
+- **DONE — Runtime CLI/TUI execution-lease checkpoint preview (cross-device plan §439)**: Forge Runtime adds the offline `device execution-lease-checkpoint-preview --input FILE|-` command and matching request-free TUI preview. Both use the pure `LeaseState::from_checkpoint` validator, expose bounded grant/time and terminal/uncertain status, hide fencing/proof/digest/reason material, and reject unknown/duplicate fields or authority mutation. Focused parser, command, human-output, and TUI tests are wired into the contract script. No live lease restoration/persistence, device enrollment, reservation, scheduling, dispatch, Runner, receipt, Audit publication, or production route authority was added; ADR-0039 remains planning-only and ADR-0114 remains Proposed/null.
+- **DONE — Console execution-lease checkpoint projection (cross-device plan §440)**: Snaplink Console's shared Web/App/Mobile Forge Sessions surface now strictly consumes the canonical `forge.execution-lease-checkpoint/v1` value as a local display-only card. Contract/widget coverage validates the four canonical outcomes, rejects unknown/duplicate fields, authority mutations, grant drift, and expectation drift, and keeps fencing/proof/digest/reason material out of the UI. No lease restoration/persistence, device enrollment, reservation, scheduling, dispatch, Runner, receipt, Audit publication, or production route authority was added; ADR-0039 remains planning-only and ADR-0114 remains Proposed/null.
+- **DONE — Console local execution-lease checkpoint import (cross-device plan §441)**: The shared Web/App/Mobile Forge Sessions surface now imports a bounded local execution-lease checkpoint JSON through the platform picker or an injected reader, strictly re-decodes it, and renders the same metadata-only card used by the Runtime preview. Focused widget coverage proves the import path remains request-free and exposes no proof, fencing, digest, or reason material. No lease restoration/persistence, device enrollment, reservation, scheduling, dispatch, Runner, receipt, Audit publication, or production route authority was added; ADR-0039 remains planning-only and ADR-0114 remains Proposed/null.
+- **DONE — Console local v2 device inventory import (cross-device plan §442)**: The shared Web/App/Mobile Forge Sessions surface now imports bounded `forge.device-inventory-observation/v2` JSON through the platform picker or an injected reader, strictly re-decodes it, and renders the existing metadata-only inventory panel with revision, generation, heartbeat, reservation, and GPU declarations. Focused widget coverage proves the import path remains request-free and does not call `/devices`; no enrollment, heartbeat acceptance, inventory authority, target selection, reservation, scheduling, dispatch, Runner, receipt, Audit publication, or production route authority was added. ADR-0039 remains planning-only and ADR-0114 remains Proposed/null.
+- **DONE — Console local v2 placement evaluation import (cross-device plan §443)**: The shared Web/App/Mobile Forge Sessions surface now imports bounded `forge.device-inventory-placement-evaluation/v2` JSON through the platform picker or an injected reader, strictly re-decodes the candidate decisions, requirements, owner/time bindings, and all-false authority before rendering exclusion reasons. Focused widget coverage proves no `/devices` request and no target-selection control; no reservation, scheduling, dispatch, Runner, receipt, Audit publication, or production route authority was added. ADR-0039 remains planning-only and ADR-0114 remains Proposed/null.
+- **DONE — Console local placement-batch evaluation import (cross-device plan §444)**: The shared Web/App/Mobile Forge Sessions surface now imports bounded `forge.device-inventory-placement-batch-evaluation/v1` JSON through the platform picker or an injected reader, strictly re-decodes candidate/error cases and null-selection authority, and renders the existing dry-run panel. Focused widget and contract coverage prove duplicate-key rejection and no `/devices` request; no registration, heartbeat, target selection, reservation, scheduling, dispatch, Runner, receipt, Audit publication, or production route authority was added. ADR-0039 remains planning-only and ADR-0114 remains Proposed/null.
+- **DONE — Cross-ecosystem placement-batch evaluation receiver parity (cross-device plan §445)**: The canonical `forge.device-inventory-placement-batch-evaluation/v1` fixture is mirrored byte-for-byte and strictly consumed by Aero-ID, Aero-IM, Aero-Vault, and Snaplink Audit Governance. Receiver tests preserve the six candidate/error cases, deterministic exclusion reasons, null selected target, and all-false authority while rejecting unknown/duplicate/trailing fields and authority or selection mutations. This is offline interoperability evidence only; no device authentication, heartbeat acceptance, authoritative inventory, target selection, reservation, scheduling, dispatch, Runner, execution, receipt, Audit publication, or production route was enabled. ADR-0039 remains planning-only, ADR-0114 remains Proposed/null, and P3b/P4 remain gated.
+- **DONE — Cross-ecosystem persisted-inventory placement-input parity (cross-device plan §446)**: The canonical `forge.device-inventory-placement-input/v1` fixture is mirrored byte-for-byte and strictly consumed by Aero-ID, Aero-IM, Aero-Vault, and Snaplink Audit Governance. Receivers cover twelve state/error cases, closed unknown policy attributes, owner/Runner bindings, safe timestamp handling, stable errors, all-false authority, and reject unknown/duplicate/trailing, owner, and authority mutations. This remains pure P3a interoperability evidence; no Runner authentication, heartbeat acceptance, authoritative inventory, target selection, reservation, scheduling, dispatch, execution, receipt, Audit publication, or production route was enabled. ADR-0039 remains planning-only, ADR-0114 remains Proposed/null, and P3b/P4 remain gated.
+- **DONE — Cross-ecosystem persisted-inventory placement-evaluation parity (cross-device plan §447)**: The canonical `forge.device-inventory-placement-evaluation/v1` fixture is mirrored byte-for-byte and strictly consumed by Aero-ID, Aero-IM, Aero-Vault, and Snaplink Audit Governance. Receivers preserve the fixed policy/source case, revision/device/Runner binding, deterministic exclusion reasons, JSON-safe evaluation time, unverified markers, and all-false authority while rejecting unknown/duplicate/trailing, source, and authority mutations. This remains pure P3a interoperability evidence; no Runner authentication, heartbeat acceptance, authoritative inventory, target selection, reservation, scheduling, dispatch, execution, receipt, Audit publication, or production route was enabled. ADR-0039 remains planning-only, ADR-0114 remains Proposed/null, and P3b/P4 remain gated.
+- **DONE — Runtime persisted-inventory placement-evaluation v1 preview (cross-device plan §448)**: Forge Runtime CLI and TUI now consume the canonical `forge.device-inventory-placement-evaluation/v1` through a bounded local file preview, recompute the online decision through the Rust persisted-inventory comparator, and render revision/device/Runner binding, deterministic reasons, and unverified markers. Duplicate/unknown/trailing input, source-fixture drift, policy mutations, and authority mutations fail closed; TUI file reads remain request-free and `-` remains CLI-only. No Runner authentication, heartbeat acceptance, authoritative inventory, target selection, reservation, scheduling, dispatch, execution, receipt, Audit publication, or production route was enabled. ADR-0039 remains planning-only, ADR-0114 remains Proposed/null, and P3b/P4 remain gated.
+- **DONE — Console persisted-inventory placement-evaluation v1 preview (cross-device plan §449)**: The shared Snaplink Console Web/App/Mobile Forge Sessions surface now imports the canonical `forge.device-inventory-placement-evaluation/v1` through a bounded local reader or workspace picker, strictly rejects duplicate/unknown/trailing/oversized input plus invalid source-envelope, policy-shape, and authority fields, and renders a value-only panel with revision/device/Runner binding, deterministic reasons, unverified declarations, and requirements. Focused widget coverage proves injected/imported previews issue no `/devices` or placement request and expose no target-selection control. This remains pure P3a interoperability evidence; no Runner authentication, heartbeat acceptance, authoritative inventory, target selection, reservation, scheduling, dispatch, execution, receipt, Audit publication, or production route was enabled. ADR-0039 remains planning-only, ADR-0114 remains Proposed/null, and P3b/P4 remain gated.
+- **DONE — Cross-ecosystem persisted-inventory placement-evaluation v2 parity (cross-device plan §450)**: The canonical `forge.device-inventory-placement-evaluation/v2` fixture is mirrored byte-for-byte and strictly consumed by Aero-ID, Aero-IM, Aero-Vault, and Snaplink Audit Governance. Receivers validate the nested lossless v2 observation, requirements, sorted decisions, source/time/owner binding, revision/generation/heartbeat counters, reservation/GPU declarations, and deterministic exclusion reasons while rejecting unknown, duplicate, trailing, selected-target, owner/time, observation, decision, and authority mutations. This is offline P3a interoperability evidence only; no Runner authentication, heartbeat acceptance, authoritative inventory, target selection, reservation, scheduling, dispatch, execution, receipt, Audit publication, or production route was enabled. ADR-0039 remains planning-only, ADR-0114 remains Proposed/null, and P3b/P4 remain gated.
+- **DONE — Console local multi-instance resource-summary import (cross-device plan §451)**: Snaplink Console's shared Web/App/Mobile Forge Sessions surface now imports the complete `forgeos.device-resource-summary-contract/v1` fixture through a bounded local reader or platform workspace picker. The strict decoder rejects duplicate/unknown/trailing/oversized JSON, owner and nested inventory/placement drift, aggregate totals that do not recompute from declarations, selected targets, and authority-bearing values. A read-only panel exposes Conversation/Run binding, device and Runner counts, aggregate CPU/memory/storage/GPU totals, eligible counts, and the all-false/no-selection boundary. Focused contract and widget coverage proves injection/import remain request-free with no `/devices` or placement transport. This advances P3a cross-client resource perception only; no Runner authentication, heartbeat acceptance, authoritative inventory, target selection, reservation, scheduling, dispatch, execution, receipt, Audit publication, or production route was enabled. ADR-0039 remains planning-only, ADR-0114 remains Proposed/null, and P3b/P4 remain gated.
+- **DONE — Console local client-instance resource-view import (cross-device plan §452)**: Snaplink Console's shared Web/App/Mobile Forge Sessions surface now imports the complete `forge.client-instance-resource-view/v1` observation through a bounded local reader or platform workspace picker. The existing strict decoder is reused and re-applied before display, preserving owner, sorted client-instance/session rows, sorted device/Runner resources, capacity bounds, and all-false authority; the imported view also drives the existing local instance filter without broadening it. Focused widget coverage proves no `/devices` or client-instance/resource candidate request and no scheduling control. This remains P3a cross-client resource perception only; no Runner authentication, heartbeat acceptance, authoritative inventory, target selection, reservation, scheduling, dispatch, execution, receipt, Audit publication, or production route was enabled. ADR-0039 remains planning-only, ADR-0114 remains Proposed/null, and P3b/P4 remain gated.
+- **DONE — Console local client-instance session-view import (cross-device plan §453)**: Snaplink Console's shared Web/App/Mobile Forge Sessions surface now imports the complete `forge.client-instance-session-view/v1` observation through a bounded local reader or platform workspace picker. The existing strict decoder is re-applied before display, preserving owner, sorted instance and session IDs, bounded timestamps, and all-false authority; the imported view also drives the local instance filter without widening it. Focused widget coverage proves no `/devices` or client-instance/session candidate request and no Prompt, Run, or scheduling control. This remains P3a cross-client session perception only; no instance authentication, Prompt/Run mutation, device inventory authority, target selection, reservation, scheduling, dispatch, Runner execution, Audit publication, or production route was enabled. ADR-0039 remains planning-only, ADR-0114 remains Proposed/null, and P3b/P4 remain gated.
+
+- **DONE — Five-client instance matrix parity (cross-device plan §454)**: The canonical `forge.client-instance-session-view/v1` and `forge.client-instance-resource-view/v1` fixtures now declare sorted CLI, TUI, Web, desktop App, and Mobile instances. The bytes are mirrored and strictly consumed by Forge Core, Runtime CLI/TUI, Snaplink Console, Aero-ID, Aero-IM, Aero-Vault, and Snaplink Audit Governance; Console's local import tests assert every client kind. The values remain unverified display declarations with all authority false, so no registration, heartbeat acceptance, selection, reservation, scheduling, dispatch, Runner execution, Run/receipt persistence, Audit publication, or production route was added. ADR-0039 remains planning-only, ADR-0114 remains Proposed/null, and P3b/P4 remain gated. Focused Go, Rust, Flutter, Aero-ID, Aero-IM, Aero-Vault, and Audit Governance contract tests pass.
+- **DONE — Authenticated Web/App/Mobile client-instance Prompt parity (cross-device plan §455)**: The opt-in Snaplink JWT acceptance path now runs the shared Flutter Sessions surface as three independent owner-authenticated clients. Web, desktop App, and Mobile each select their declared instance, receive only its declared Conversation projection, and append one Prompt; a separate authenticated Runtime client verifies both Conversation histories. CLI still validates all five instance projections and TUI still writes within its selected instance. The acceptance rejects device/placement/reservation/dispatch/Runner/execution requests and confirms the production candidate route remains 404. This remains session/Prompt interoperability evidence with unverified candidate metadata; no device registration, heartbeat acceptance, inventory authority, scheduling, dispatch, Runner execution, Run/receipt persistence, or Audit publication was enabled. ADR-0039 remains planning-only, ADR-0114 remains Proposed/null, and P3b/P4 remain gated. The configured opt-in E2E passes.
+- **DONE — Authenticated Web/App/Mobile resource-view projection parity (cross-device plan §456)**: The opt-in JWT acceptance path now runs the shared resource-view surface as independent Web, desktop App, and Mobile clients. Each consumes the strict five-client `forge.client-instance-resource-view/v1` candidate, sees the display-only device resource, filters only its declared Conversation, and appends one Prompt; a separate Runtime client verifies the three receipts with the TUI receipt. The Flutter screen preserves owner-level resource/session projections across Conversation switches and guards against a late owner-list refresh restoring the prior selection. Candidate resources remain unverified, production candidate routes remain 404, and no device/placement/reservation/dispatch/Runner/execution authority is enabled. ADR-0039 remains planning-only, ADR-0114 remains Proposed/null, and P3b/P4 remain gated. The configured E2E passes twice.
+- **DONE — Authenticated Web/App/Mobile dispatch-plan projection parity (cross-device plan §457)**: The opt-in JWT acceptance path now runs independent Web, desktop App, and Mobile clients through the resource-to-dispatch preflight boundary. Each reads the strict five-instance resource view, confirms its own Conversation declaration and two display-only device rows, and posts one owner/Conversation/Run-bound `forge.runner-dispatch-plan-preview/v1` request. The response retains both candidates and one declarative ready count while selected target, reservation, execution, dispatch, and Audit authority remain null/false. Production candidate routes remain 404; no lease issuance or Runner operation was added. ADR-0039 remains planning-only, ADR-0114 remains Proposed/null, and P3b/P4 remain gated. The configured E2E passes twice.
+- **DONE — Authenticated Web/App/Mobile execution-readiness projection parity (cross-device plan §458)**: The opt-in JWT acceptance path now runs independent Web, desktop App, and Mobile clients through the resource-to-execution preflight boundary. Each reads the strict five-instance resource view, confirms its own Conversation declaration and two display-only Runner resources, and posts one bound `forge.runner-local-execution-preview/v1` request. The injected adapter returns a completed redacted metadata receipt with command/Attempt/target/Run bindings while execution and Audit authority stay false. Production candidate routes remain 404; no Run, lease, reservation, remote Runner, or Audit operation was added. ADR-0039 remains planning-only, ADR-0114 remains Proposed/null, and P3b/P4 remain gated. The configured E2E passes.
+- **DONE — Authenticated Web/App/Mobile execution-reconciliation projection parity (cross-device plan §459)**: The opt-in JWT acceptance path now runs independent Web, desktop App, and Mobile clients through the resource-to-restart-image boundary. Each reads the strict five-instance resource view, confirms its own Conversation declaration and two display-only Runner resources, and posts one owner/Conversation/Run-bound `forge.execution-reconciliation-observation/v1` restart image. The candidate returns `await_terminal` with redacted metadata and all authority bits false. Production resource and execution-reconciliation routes remain 404; no durable Run/Attempt/lease/registry/Runner read or mutation, retry, or Audit operation was added. ADR-0039 remains planning-only, ADR-0114 remains Proposed/null, and P3b/P4 remain gated. The configured E2E passes twice.
+- **DONE — Activation-gated owner inventory route (cross-device plan §460)**: Forge Server now mounts authenticated `/api/v1/devices` v1/v2 reads only after a complete accepted device-fabric request, owner-private lifecycle registry path, and authenticated session configuration pass validation. The persisted lifecycle image is rechecked against the verified JWT owner and evaluated with the Coordinator clock per read; missing/proposed activation and malformed/private-file/owner drift fail closed, while the normal constructor remains 404. This adds P3a observation visibility only: no enrollment, heartbeat write, credential issuance, target selection, reservation, scheduling, dispatch, Runner, execution, or Audit authority was added, and P3b/P4 remain gated. Focused Config, route, and actual `Run` HTTP tests pass.
+- **DONE — Activation-gated five-client session/resource views (cross-device plan §461)**: Forge Server optionally mounts authenticated client-instance/session and client-instance/resource views from a private `forge.client-instance-session-view/v1` declaration image only when the accepted Fabric gate and lifecycle image are present. Each read revalidates the declaration, exact JWT owner, and current lifecycle image; resource rows retain the persisted Runner observation and lease timestamps and keep all authority false. With the configured Runtime and Console E2E, the same accepted `Run` creates two owner Conversations, atomically refreshes declaration session IDs, verifies Web/App/Mobile instance-scoped Prompt appends through Runtime history reads, verifies TUI instance filtering plus Prompt append, and verifies CLI instance listing plus aggregate-version CAS Prompt append. Default and missing-image routes remain 404; no client registration, scheduling, dispatch, Runner execution, or Audit path was enabled.
+- **DONE — Activation-gated registry placement preflight (cross-device plan §462)**: The accepted Fabric assembly optionally mounts owner-scoped `POST /api/v1/device-placement/registry-preview` beside the v1/v2 inventory and five-client views. It evaluates requirements against the freshly read lossless lifecycle registry with a Coordinator-clock sample, preserves candidate counters and exclusion reasons, and keeps selected target IDs null with all authority false. The actual production `Run` path is also read through the authenticated Runtime remote CLI when configured; the normal constructor and blocked/missing activation remain 404 or startup failures. No reservation, lease, scheduling mutation, dispatch, Runner, Run, receipt, or Audit path was enabled. ADR-0039 remains planning-only, ADR-0114 remains Proposed/null, and P4 remains gated.
+- **DONE — Activation-gated lifecycle registry read (cross-device plan §463)**: Accepted Fabric now mounts owner-scoped `GET /api/v1/device-enrollment-heartbeat/lifecycle-registry` from the private lifecycle image. It strictly re-decodes and owner-checks the full lifecycle registry on every read; `PUT` and all enrollment/heartbeat/approval/credential mutation paths remain 404 or unmounted. The configured production `Run` is read through Runtime CLI `remote lifecycle-registry show` and the explicit TUI command, with all authority flags false. The ordinary constructor and blocked/missing activation remain closed; no registration, heartbeat write, credential issuance, reservation, scheduling, dispatch, Runner, Run, receipt, or Audit authority was added. ADR-0039 remains planning-only and ADR-0114 remains Proposed/null.
+- **DONE — Accepted lifecycle registry read through Flutter Console (cross-device plan §464)**: Snaplink Console's shared Web/App/Mobile API now reads the owner-scoped lifecycle registry from the Accepted Fabric route with the same strict schema, owner, sorted device/Runner join, revision, heartbeat, capability, and display-only checks used by the candidate Gate. The production E2E reaches the real Forge Server with a Snaplink JWT and verifies both device rows and online/offline liveness. The ordinary constructor stays request-free; no enrollment, heartbeat write, credential issuance, selection, reservation, scheduling, dispatch, Runner, Run, receipt, or Audit authority was added. ADR-0039 remains planning-only and ADR-0114 remains Proposed/null.
+- **DONE — Accepted registry placement preflight through Flutter Console (cross-device plan §465)**: Snaplink Console's shared Web/App/Mobile API now posts explicit requirements to the Accepted Fabric registry placement route and strictly validates owner, schema, evaluation mode, sorted device/Runner decisions, safe evaluation time, unverified markers, null selected target, and all-false authority. The production E2E reaches the real Forge Server with a Snaplink JWT and verifies both lifecycle candidates. This remains deterministic P3a comparison only: no lease, reservation, selection, scheduling mutation, dispatch, Runner, execution, Run, receipt, or Audit authority was added. ADR-0039 remains planning-only and ADR-0114 remains Proposed/null.
+- **DONE — Accepted inventory resource perception through Flutter Console (cross-device plan §466)**: The shared Web/App/Mobile Sessions surface now reads both owner-scoped inventory projections from the Accepted Fabric assembly. The production E2E feeds the authenticated v1 response into the user-facing resource panel and consumes lossless v2 through the same API client, retaining device/Runner IDs, revision, generation, heartbeat sequence, and GPU shape while checking the dynamic Coordinator observation time. Both reads remain unverified/display-only with all authority false; no enrollment, heartbeat write, credential, selection, reservation, lease, dispatch, Runner, execution, Run, receipt, Audit, or default route authority was added. ADR-0039 remains planning-only and ADR-0114 remains Proposed/null.
+- **DONE — Fail-closed production assembly for the OBSERVE stage (cross-device plan §467)**: Forge Server's device-fabric route assembler now accepts only `INVENTORY` and `OBSERVE`. Accepted OBSERVE mounts owner-scoped lifecycle, v1/v2 inventory, registry placement-preflight, and optional client-instance read projections; unsupported EXECUTE/MIGRATE/FEDERATE modes fail startup/assembly until dedicated routes exist. The pure staged gate remains unchanged and no enrollment, heartbeat write, credential, selection, reservation, lease, dispatch, Runner, execution, Run, receipt, Audit, or default route authority was added. ADR-0039 remains planning-only and ADR-0114 remains Proposed/null.
+- **DONE — Accepted OBSERVE production Run coverage (cross-device plan §468)**: The real Forge Server `Run` path now starts an explicitly accepted OBSERVE request and serves authenticated owner-scoped lifecycle, v1/v2 inventory, registry placement-preflight, and optional five-client session/resource reads while rejecting lifecycle mutation. Owner binding, lossless observations, null selected targets, and all-false authority are covered by the production test. The fixture remains synthetic and default-off; no live enrollment, heartbeat, credentials, reservation, lease, dispatch, Runner, execution, Run, receipt, or Audit authority was added, and ADR-0039/0114/P3b/P4 remain gated.
+- **DONE — Accepted EXECUTE admission assembly (cross-device plan §469)**: Forge Server now accepts a complete synthetic `EXECUTE + P4` gate and mounts the owner-scoped observation projections, consent/pending Run-intent/revocation handlers, and pure Attempt/lease, Runner-receipt, dispatch-plan, and reconciliation preflight projections through the authenticated production `Run` boundary. The assembly records explicit owner/CAS/idempotent intent and comparison packets only; it still does not select or reserve a device, issue a lease, create a Run, dispatch a Runner, execute work, or publish Audit. `OFF`/`INVENTORY`/`OBSERVE` behavior remains fail-closed/read-only, `MIGRATE`/`FEDERATE` remain unassembled, and ADR-0039/0114/P3b/live remote execution remain gated.
+- **DONE — Runner transport admission verifier (cross-device plan §470)**: Forge Core adds a pure D3 HMAC envelope verifier matching the ecosystem Python Runner byte-for-byte. It validates canonical JSON payload bytes, method/path binding, bounded timestamp skew, lower-case signatures, bounded nonce replay, and fixed all-false authority metadata; malformed or stale requests fail closed and bad signatures do not consume a nonce. No secret store, registration, heartbeat, lease, selection, reservation, dispatch, execution, Audit, or production Runner route is mounted; the verifier is transport groundwork for a separately accepted EXECUTE/P4 adapter.
+- **DONE — EXECUTE scheduler selection preview (cross-device plan §471)**: The accepted `EXECUTE + P4` production assembly now exposes an owner-bound scheduler preview over the lossless v2 inventory. It deterministically declares the first eligible `(device_id, instance_id)` and preserves a no-candidate reason when all observations are stale, reserved, or otherwise ineligible; `preview_only` remains true and placement, reservation, lease, execution, dispatch, and Audit authority remain false. The route reads no durable Run/Attempt/lease/registry state, opens no Runner transport, and remains 404 for default/OFF/INVENTORY/OBSERVE while MIGRATE/FEDERATE stay unassembled. A future adapter must revalidate the unverified observation and acquire a fenced lease before dispatch; ADR-0039 remains planning-only, ADR-0114 remains Proposed/null, and live P4 execution remains gated.

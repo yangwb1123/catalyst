@@ -1,15 +1,15 @@
 use std::{fs, path::Path, time::Duration};
 
 use crate::runtime_domain::{
-    AgentTool, Cancellation, Capability, TOOL_EFFECT_UNCERTAIN_CODE, ToolContext, ToolError,
-    ToolOutput, WorkspaceReadFactory as _, execution::fabric::ToolInvocationRef,
+    AgentTool, Cancellation, ToolContext, ToolError, ToolOutput, WorkspaceReadFactory as _,
+    execution::fabric::ToolInvocationRef,
 };
 use serde_json::{Value, json};
 use tempfile::TempDir;
 
 use super::{
     ExecCommandTool, LocalExecutionTarget, MAX_ARGUMENT_BYTES, MAX_ARGUMENTS, MAX_TIMEOUT_MS,
-    blocking_task_failure, is_allowed_environment_name, is_sensitive_environment_name, parse_input,
+    parse_input,
 };
 use crate::CapStdWorkspaceFactory;
 
@@ -32,38 +32,6 @@ async fn run(
         .expect("tool")
         .execute(arguments, context(root, max_output_bytes))
         .await
-}
-
-#[test]
-fn advertises_the_process_capability_and_direct_argv_shape() {
-    let root = TempDir::new().expect("temporary workspace");
-    let spec = ExecCommandTool::new(root.path()).expect("tool").spec();
-    assert_eq!(spec.name, "exec_command");
-    assert_eq!(spec.capability, Capability::Process);
-    assert!(spec.input_schema.to_string().contains("argv"));
-}
-
-#[test]
-fn blocking_worker_failure_is_effect_uncertain() {
-    let error = blocking_task_failure("join failed");
-    assert_eq!(error.code, TOOL_EFFECT_UNCERTAIN_CODE);
-}
-
-#[test]
-fn environment_allowlist_rejects_sensitive_names() {
-    assert!(is_allowed_environment_name("PATH"));
-    assert!(is_allowed_environment_name("cargo_home"));
-    for name in [
-        "OPENAI_API_KEY",
-        "ACCESS_TOKEN",
-        "CLIENT_SECRET",
-        "DB_PASSWORD",
-        "AWS_CREDENTIAL_FILE",
-        "HTTP_AUTHORIZATION",
-    ] {
-        assert!(is_sensitive_environment_name(name));
-        assert!(!is_allowed_environment_name(name));
-    }
 }
 
 #[test]

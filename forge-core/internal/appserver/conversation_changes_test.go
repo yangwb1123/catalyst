@@ -58,6 +58,7 @@ func TestConversationChangesRouteRejectsInvalidQueriesAndBodies(t *testing.T) {
 		conversationChangesPath + "?after_cursor=1&limit=0",
 		conversationChangesPath + "?after_cursor=1&limit=129",
 		conversationChangesPath + "?after_cursor=1&limit=1&unknown=x",
+		conversationChangesPath + "?after_cursor=" + fmt.Sprint(maxSafeJSONInteger+1),
 	}
 	for _, target := range targets {
 		response := requestConversationAPI(t, handler, identity, http.MethodGet, target,
@@ -111,5 +112,37 @@ func TestConversationChangesRouteRejectsCursorOverflow(t *testing.T) {
 		conversationChangesPath+"?after_cursor="+fmt.Sprint(maxSQLiteCursor+1), "forge:conversations:read", "", "", "")
 	if response.Code != http.StatusBadRequest || backend.changeCalls != 0 {
 		t.Fatalf("cursor overflow status=%d calls=%d body=%q", response.Code, backend.changeCalls, response.Body.String())
+	}
+}
+
+func TestConversationChangesRouteRejectsJSONUnsafeResponse(t *testing.T) {
+	backend := &fakeConversationBackend{changePage: model.OwnedConversationChangePage{
+		AfterCursor: maxSafeJSONInteger, ScannedThroughCursor: maxSafeJSONInteger,
+		Changes: []model.Change{{
+			Cursor: maxSafeJSONInteger, SchemaVersion: 1, ConversationID: "c-owned",
+			EntityID: "p-owned", AggregateVersion: 1, Kind: "prompt_appended",
+			CreatedAtMS: maxSafeJSONInteger + 1,
+		}},
+	}}
+	identity, handler := conversationTestHandler(t, backend)
+	response := requestConversationAPI(t, handler, identity, http.MethodGet,
+		conversationChangesPath+"?after_cursor="+fmt.Sprint(maxSafeJSONInteger),
+		"forge:conversations:read", "", "", "")
+	if response.Code != http.StatusBadGateway || backend.changeCalls != 1 {
+		t.Fatalf("unsafe change response status=%d calls=%d body=%q", response.Code, backend.changeCalls, response.Body.String())
+	}
+}
+
+func TestConversationChangesRouteAcceptsJSONSafeCursorBoundary(t *testing.T) {
+	backend := &fakeConversationBackend{changePage: model.OwnedConversationChangePage{
+		AfterCursor: maxSafeJSONInteger, ScannedThroughCursor: maxSafeJSONInteger,
+		Changes: []model.Change{},
+	}}
+	identity, handler := conversationTestHandler(t, backend)
+	response := requestConversationAPI(t, handler, identity, http.MethodGet,
+		conversationChangesPath+"?after_cursor="+fmt.Sprint(maxSafeJSONInteger),
+		"forge:conversations:read", "", "", "")
+	if response.Code != http.StatusOK || backend.changeAfter != maxSafeJSONInteger {
+		t.Fatalf("JSON-safe cursor status=%d after=%d body=%q", response.Code, backend.changeAfter, response.Body.String())
 	}
 }

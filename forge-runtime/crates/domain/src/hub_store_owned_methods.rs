@@ -58,6 +58,25 @@ macro_rules! owned_conversation_methods {
         })
     }
 
+    /// Reads one Conversation metadata record only when this exact principal
+    /// owns it. Missing, ownerless, and foreign IDs share the same not-found
+    /// result so callers cannot probe another principal's data.
+    ///
+    /// # Errors
+    ///
+    /// Returns a storage error when the owner-filtered Conversation cannot be
+    /// read or validated.
+    fn get_owned_conversation(
+        &self,
+        owner: &ConversationOwner,
+        conversation_id: &str,
+    ) -> Result<OwnedConversationEntry, HubStoreError> {
+        let _ = (owner, conversation_id);
+        Err(HubStoreError::Unavailable {
+            message: "owner-bound Conversation reads are not supported by this Hub store".into(),
+        })
+    }
+
     /// Resolves the Project scope of a Conversation owned by this exact
     /// principal. The result contains only opaque Hub IDs, never path, title,
     /// or Prompt content.
@@ -94,6 +113,26 @@ macro_rules! owned_conversation_methods {
         limit: usize,
     ) -> Result<OwnedRunPage, HubStoreError> {
         let _ = (owner, conversation_id, before, limit);
+        Err(HubStoreError::Unavailable {
+            message: "owner-bound Run reads are not supported by this Hub store".into(),
+        })
+    }
+
+    /// Reads one scalar Run summary only when this exact principal owns the
+    /// containing Conversation. The result is suitable for the pure
+    /// `forge.run.observed.v1` projection and contains no execution payload.
+    ///
+    /// # Errors
+    ///
+    /// Returns a storage error when ownership, Run membership, or stored Run
+    /// metadata cannot be validated.
+    fn owned_run_observation(
+        &self,
+        owner: &ConversationOwner,
+        conversation_id: &str,
+        run_id: &str,
+    ) -> Result<OwnedRunSummary, HubStoreError> {
+        let _ = (owner, conversation_id, run_id);
         Err(HubStoreError::Unavailable {
             message: "owner-bound Run reads are not supported by this Hub store".into(),
         })

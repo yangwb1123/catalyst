@@ -141,7 +141,8 @@ func validSnapshot(data []byte, snapshot model.SnapshotAtCursor) bool {
 	}
 	var projection map[string]json.RawMessage
 	if json.Unmarshal(root["snapshot"], &projection) != nil ||
-		!validConversationScope(projection["scope"]) {
+		!validConversationScope(projection["scope"]) ||
+		!validConversationTimestamps(snapshot.Snapshot.Conversations) {
 		return false
 	}
 	return requireArrayObjectFields(projection["projects"], "id", "name", "created_at_ms") == nil &&
@@ -149,6 +150,16 @@ func validSnapshot(data []byte, snapshot model.SnapshotAtCursor) bool {
 		validConversationScopes(projection["conversations"]) &&
 		requireArrayObjectFields(projection["groups"], "id", "name", "created_at_ms") == nil &&
 		requireArrayObjectFields(projection["group_project_members"], "group_id", "project_id", "role", "added_at_ms") == nil
+}
+
+func validConversationTimestamps(conversations []model.Conversation) bool {
+	for _, conversation := range conversations {
+		if conversation.CreatedAtMS > conversation.UpdatedAtMS ||
+			conversation.UpdatedAtMS > maxSafeJSONInteger {
+			return false
+		}
+	}
+	return true
 }
 
 func validConversationScopes(data []byte) bool {
@@ -194,11 +205,15 @@ func validScope(scope model.ConversationScope) bool {
 func validConversation(conversation model.Conversation) bool {
 	return validEntityID(conversation.ID) && strings.TrimSpace(conversation.Title) != "" &&
 		len(conversation.Title) <= 256 && conversation.CreatedAtMS <= conversation.UpdatedAtMS &&
-		conversation.UpdatedAtMS <= maxSQLiteInteger && validScope(conversation.Scope)
+		conversation.UpdatedAtMS <= maxSafeJSONInteger && validScope(conversation.Scope)
+}
+
+func validAggregateVersion(version uint64) bool {
+	return version > 0 && version <= maxSafeJSONInteger
 }
 
 func validPromptCursor(cursor model.PromptPageCursor) bool {
-	return cursor.CreatedAtMS <= maxSQLiteInteger && validEntityID(cursor.PromptID)
+	return cursor.CreatedAtMS <= maxSafeJSONInteger && validEntityID(cursor.PromptID)
 }
 
 func validOwnedConversationPage(
@@ -217,7 +232,7 @@ func validOwnedConversationPage(
 	}
 	previous := afterID
 	for _, entry := range page.Conversations {
-		if !validConversation(entry.Conversation) || entry.AggregateVersion == 0 ||
+		if !validConversation(entry.Conversation) || !validAggregateVersion(entry.AggregateVersion) ||
 			(entry.Conversation.ID <= previous && previous != "") {
 			return false
 		}
@@ -230,6 +245,18 @@ func validOwnedConversationPage(
 	return page.NextAfterID == nil
 }
 
+func validOwnedConversationEntry(data []byte, entry model.OwnedConversationEntry) bool {
+	if requireObjectFieldSet(data, "conversation", "aggregate_version") != nil ||
+		!validConversation(entry.Conversation) || !validAggregateVersion(entry.AggregateVersion) {
+		return false
+	}
+	var root map[string]json.RawMessage
+	if json.Unmarshal(data, &root) != nil {
+		return false
+	}
+	return requireObjectFieldSet(root["conversation"], "id", "scope", "title", "created_at_ms", "updated_at_ms") == nil
+}
+
 func validOwnedPromptAppend(
 	data []byte,
 	result ownedPromptAppendResult,
@@ -237,9 +264,9 @@ func validOwnedPromptAppend(
 	content string,
 ) bool {
 	if requireObjectFieldSet(data, "prompt", "aggregate_version", "replayed") != nil ||
-		result.AggregateVersion == 0 || result.Prompt.ConversationID != conversationID ||
+		!validAggregateVersion(result.AggregateVersion) || result.Prompt.ConversationID != conversationID ||
 		result.Prompt.Role != "user" || result.Prompt.Content != content ||
-		!validEntityID(result.Prompt.ID) || result.Prompt.CreatedAtMS > maxSQLiteInteger {
+		!validEntityID(result.Prompt.ID) || result.Prompt.CreatedAtMS > maxSafeJSONInteger {
 		return false
 	}
 	var root map[string]json.RawMessage
@@ -257,7 +284,7 @@ func validOwnedConversationImport(
 ) bool {
 	if requireObjectFieldSet(data, "conversation", "aggregate_version", "imported_prompt_count", "replayed") != nil ||
 		!validConversation(result.Conversation) || result.Conversation.Scope != (model.ConversationScope{Kind: "global"}) ||
-		result.Conversation.Title != title || result.AggregateVersion == 0 ||
+		result.Conversation.Title != title || !validAggregateVersion(result.AggregateVersion) ||
 		result.ImportedPromptCount != promptCount || promptCount < 0 ||
 		promptCount > maxConversationImportPromptCount {
 		return false
@@ -350,7 +377,7 @@ func validPromptEntries(
 		if requireObjectFieldSet(raw, "id", "conversation_id", "role", "content", "created_at_ms") != nil ||
 			prompt.ID == "" || len(prompt.ID) > maxEntityIDBytes ||
 			prompt.ConversationID != conversationID || prompt.Role == "" || len(prompt.Role) > maxRoleBytes ||
-			len(prompt.Content) > maxPromptContentBytes || prompt.CreatedAtMS > maxSQLiteInteger {
+			len(prompt.Content) > maxPromptContentBytes || prompt.CreatedAtMS > maxSafeJSONInteger {
 			return false
 		}
 		if _, exists := seen[prompt.ID]; exists {
@@ -387,7 +414,7 @@ func validNextPromptCursor(root map[string]json.RawMessage, page model.Conversat
 		return false
 	}
 	return page.NextCursor.PromptID != "" && len(page.NextCursor.PromptID) <= maxEntityIDBytes &&
-		page.NextCursor.CreatedAtMS <= maxSQLiteInteger
+		page.NextCursor.CreatedAtMS <= maxSafeJSONInteger
 }
 
 func samePromptCursor(cursor model.PromptPageCursor, prompt model.ConversationPrompt) bool {
@@ -403,14 +430,18 @@ func unframeResponse(framed []byte) ([]byte, error) {
 }
 
 func validPage(page model.ChangePage, after uint64, limit int) bool {
-	if page.AfterCursor != after || page.HeadCursor < after || page.NextCursor > page.HeadCursor ||
+	if after > maxSafeJSONInteger || page.AfterCursor != after || page.HeadCursor < after ||
+		page.HeadCursor > maxSafeJSONInteger || page.NextCursor > page.HeadCursor ||
+		page.NextCursor > maxSafeJSONInteger ||
 		len(page.Changes) > limit {
 		return false
 	}
 	expected := after
 	for _, change := range page.Changes {
-		if expected == ^uint64(0) || change.Cursor != expected+1 ||
+		if expected == maxSafeJSONInteger || change.Cursor != expected+1 ||
+			change.Cursor > maxSafeJSONInteger ||
 			change.SchemaVersion != 1 || change.AggregateVersion == 0 ||
+			change.AggregateVersion > maxSafeJSONInteger || change.CreatedAtMS > maxSafeJSONInteger ||
 			change.ConversationID == "" || change.EntityID == "" ||
 			(change.Kind != "conversation_created" && change.Kind != "prompt_appended") {
 			return false

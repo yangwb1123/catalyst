@@ -11,6 +11,9 @@ pub const EXECUTION_FABRIC_ABI_VERSION: u16 = 1;
 pub const LOCAL_EXECUTION_TARGET_ID: &str = "local";
 pub const LOCAL_EXECUTION_ADAPTER_ID: &str = "forge.exec_command.local";
 pub const LOCAL_EXECUTION_ADAPTER_VERSION: &str = "1";
+pub const ENVIRONMENT_DIGEST_ALGORITHM: &str = "sha256";
+pub const MAX_ENVIRONMENT_DIGEST_ENTRIES: u16 = 32;
+pub const MAX_ENVIRONMENT_DIGEST_REASON_BYTES: usize = 256;
 
 /// Identifies one call at the existing Runtime `ToolStarted` boundary.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -102,7 +105,43 @@ pub struct PlacementConstraint {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "status", rename_all = "snake_case")]
 pub enum EnvironmentDigest {
-    NotCaptured { reason: String },
+    Captured {
+        algorithm: String,
+        sha256: String,
+        entry_count: u16,
+    },
+    NotCaptured {
+        reason: String,
+    },
+}
+
+impl EnvironmentDigest {
+    /// Validates the shape of the local environment observation.
+    ///
+    /// This checks only the bounded ABI representation. It does not prove
+    /// that a digest was calculated from a particular host environment.
+    #[must_use]
+    pub fn is_valid(&self) -> bool {
+        match self {
+            Self::Captured {
+                algorithm,
+                sha256,
+                entry_count,
+            } => {
+                algorithm == ENVIRONMENT_DIGEST_ALGORITHM
+                    && (1..=MAX_ENVIRONMENT_DIGEST_ENTRIES).contains(entry_count)
+                    && sha256.len() == 64
+                    && sha256
+                        .bytes()
+                        .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
+            }
+            Self::NotCaptured { reason } => {
+                !reason.is_empty()
+                    && reason.len() <= MAX_ENVIRONMENT_DIGEST_REASON_BYTES
+                    && !reason.contains('\0')
+            }
+        }
+    }
 }
 
 /// Declared content-addressed metadata. This value does not prove that bytes
@@ -143,6 +182,51 @@ pub struct ExecutionEvidence {
     pub target_ref: ExecutionTargetRef,
     pub source: ExecutionEvidenceSource,
     pub observation: LocalProcessObservation,
+}
+
+impl ExecutionEvidence {
+    /// Validates evidence emitted by the current local process adapter.
+    ///
+    /// The caller supplies the durable Run envelope and rendered output so
+    /// this check can bind the observation to the existing `ToolStarted` /
+    /// `ToolFinished` lifecycle without introducing a second attempt journal.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the evidence does not match the supplied Run
+    /// envelope, local target, lifecycle sequence, or rendered output.
+    pub fn validate_local(
+        &self,
+        session_id: &str,
+        run_id: &str,
+        finished_sequence: u64,
+        output: &str,
+        truncated: bool,
+    ) -> Result<(), &'static str> {
+        let expected_target = ExecutionTarget::local().target_ref;
+        if self.v != EXECUTION_FABRIC_ABI_VERSION {
+            return Err("evidence ABI version is unsupported");
+        }
+        if self.source != ExecutionEvidenceSource::LocalProcessObservation {
+            return Err("evidence source is not local process observation");
+        }
+        if self.attempt_ref.session_id != session_id || self.attempt_ref.run_id != run_id {
+            return Err("evidence attempt identity does not match the Run");
+        }
+        if self.attempt_ref.tool_started_sequence.checked_add(1) != Some(finished_sequence) {
+            return Err("evidence does not bind to the adjacent ToolStarted event");
+        }
+        if self.target_ref != expected_target {
+            return Err("evidence target is not the current local target");
+        }
+        if self.observation.output_truncated != truncated {
+            return Err("evidence truncation does not match ToolFinished");
+        }
+        if u64::try_from(output.len()).ok() != Some(self.observation.rendered_output_bytes) {
+            return Err("evidence output byte count does not match ToolFinished");
+        }
+        Ok(())
+    }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -204,6 +288,16 @@ impl ExecutionAttempt {
             },
             mobility: Mobility::Pinned,
         }
+    }
+
+    #[must_use]
+    pub fn local_process_with_environment(
+        tool_invocation: ToolInvocationRef,
+        environment_digest: EnvironmentDigest,
+    ) -> Self {
+        let mut attempt = Self::local_process(tool_invocation);
+        attempt.environment_digest = environment_digest;
+        attempt
     }
 }
 
@@ -325,5 +419,58 @@ mod tests {
             }
         );
         assert_eq!(attempt.tool_invocation, invocation);
+    }
+
+    #[test]
+    fn local_attempt_can_bind_a_non_secret_environment_digest() {
+        let attempt = ExecutionAttempt::local_process_with_environment(
+            ToolInvocationRef {
+                session_id: "s".into(),
+                run_id: "r".into(),
+                tool_call_id: "call".into(),
+                tool_started_sequence: 19,
+            },
+            EnvironmentDigest::Captured {
+                algorithm: super::ENVIRONMENT_DIGEST_ALGORITHM.into(),
+                sha256: "a".repeat(64),
+                entry_count: 2,
+            },
+        );
+        assert!(matches!(
+            attempt.environment_digest,
+            EnvironmentDigest::Captured { entry_count: 2, .. }
+        ));
+        assert!(attempt.input_artifacts.is_empty());
+        assert!(attempt.output_artifacts.is_empty());
+        assert_eq!(attempt.mobility, Mobility::Pinned);
+    }
+
+    #[test]
+    fn local_evidence_validator_binds_the_existing_tool_lifecycle() {
+        let mut evidence = ExecutionEvidence {
+            v: super::EXECUTION_FABRIC_ABI_VERSION,
+            attempt_ref: AttemptRef {
+                session_id: "session-1".into(),
+                run_id: "run-1".into(),
+                tool_started_sequence: 4,
+            },
+            target_ref: ExecutionTarget::local().target_ref,
+            source: ExecutionEvidenceSource::LocalProcessObservation,
+            observation: LocalProcessObservation {
+                exit_code: Some(0),
+                rendered_output_bytes: 2,
+                output_truncated: false,
+            },
+        };
+        evidence
+            .validate_local("session-1", "run-1", 5, "ok", false)
+            .expect("matching local evidence is valid");
+
+        evidence.observation.rendered_output_bytes = 3;
+        assert!(
+            evidence
+                .validate_local("session-1", "run-1", 5, "ok", false)
+                .is_err()
+        );
     }
 }

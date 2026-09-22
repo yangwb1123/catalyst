@@ -1,16 +1,17 @@
-use std::net::IpAddr;
+use std::{collections::HashSet, net::IpAddr};
 
 use reqwest::{Response, Url};
 use serde_json::Value;
 
 use super::{
-    OwnedConversationPage, OwnedRunPageResponse, OwnedRunSummaryResponse,
+    OwnedConversationEntry, OwnedConversationPage, OwnedRunPageResponse, OwnedRunSummaryResponse,
     OwnedRunTimelinePageResponse, RemoteError,
 };
 
 const MAX_RESPONSE_BYTES: usize = 1024 * 1024;
 const RUN_PAGE_SIZE: usize = 25;
 const RUN_TIMELINE_PAGE_SIZE: usize = 128;
+const MAX_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
 
 pub(super) fn required_idempotency_key(key: Option<&str>) -> Result<&str, RemoteError> {
     let value = key
@@ -87,6 +88,8 @@ pub(super) async fn read_json_response(response: Response) -> Result<Value, Remo
     if !status.is_success() {
         return Err(http_status_error(status, &body));
     }
+    crate::device_json_unique::reject_duplicate_keys(&body)
+        .map_err(|_| RemoteError("Forge API returned duplicate JSON keys".into()))?;
     serde_json::from_slice(&body).map_err(|_| RemoteError("Forge API returned invalid JSON".into()))
 }
 
@@ -125,7 +128,10 @@ pub(super) fn validate_conversation_page(
     }
     let mut previous_id = after_id;
     for entry in &page.conversations {
-        if entry.aggregate_version == 0 || !is_valid_conversation_projection(&entry.conversation) {
+        if entry.aggregate_version == 0
+            || entry.aggregate_version > MAX_SAFE_INTEGER
+            || !is_valid_conversation_projection(&entry.conversation)
+        {
             return Err(RemoteError(
                 "Forge API returned an invalid conversation page".into(),
             ));
@@ -159,6 +165,27 @@ pub(super) fn validate_conversation_page(
     Ok(())
 }
 
+pub(super) fn validate_owned_conversation_entry(
+    data: &Value,
+    entry: &OwnedConversationEntry,
+) -> Result<(), RemoteError> {
+    let object = data
+        .as_object()
+        .ok_or_else(|| RemoteError("Forge API returned an invalid conversation detail".into()))?;
+    if object.len() != 2
+        || !object.contains_key("conversation")
+        || !object.contains_key("aggregate_version")
+        || entry.aggregate_version == 0
+        || entry.aggregate_version > MAX_SAFE_INTEGER
+        || !is_valid_conversation_projection(&entry.conversation)
+    {
+        return Err(RemoteError(
+            "Forge API returned an invalid conversation detail".into(),
+        ));
+    }
+    Ok(())
+}
+
 fn is_valid_conversation_projection(conversation: &Value) -> bool {
     let Some(conversation) = conversation.as_object() else {
         return false;
@@ -175,14 +202,18 @@ fn is_valid_conversation_projection(conversation: &Value) -> bool {
             .get("title")
             .and_then(Value::as_str)
             .is_none_or(|title| title.trim().is_empty())
-        || conversation
-            .get("created_at_ms")
-            .and_then(Value::as_u64)
-            .is_none()
-        || conversation
-            .get("updated_at_ms")
-            .and_then(Value::as_u64)
-            .is_none()
+    {
+        return false;
+    }
+    let Some(created_at_ms) = conversation.get("created_at_ms").and_then(Value::as_u64) else {
+        return false;
+    };
+    let Some(updated_at_ms) = conversation.get("updated_at_ms").and_then(Value::as_u64) else {
+        return false;
+    };
+    if created_at_ms > updated_at_ms
+        || created_at_ms > MAX_SAFE_INTEGER
+        || updated_at_ms > MAX_SAFE_INTEGER
     {
         return false;
     }
@@ -210,7 +241,7 @@ pub(super) fn validate_run_page_request(
     if limit == 0
         || limit > RUN_PAGE_SIZE
         || before_created_at_ms.is_some() != before_run_id.is_some()
-        || before_created_at_ms.is_some_and(|value| i64::try_from(value).is_err())
+        || before_created_at_ms.is_some_and(|value| value > MAX_SAFE_INTEGER)
     {
         return Err(RemoteError("Run page request is invalid".into()));
     }
@@ -224,7 +255,7 @@ pub(super) fn validate_timeline_request(
     after_sequence: u64,
     limit: usize,
 ) -> Result<(), RemoteError> {
-    if i64::try_from(after_sequence).is_err() || limit == 0 || limit > RUN_TIMELINE_PAGE_SIZE {
+    if after_sequence > MAX_SAFE_INTEGER || limit == 0 || limit > RUN_TIMELINE_PAGE_SIZE {
         return Err(RemoteError("Run timeline request is invalid".into()));
     }
     Ok(())
@@ -239,7 +270,11 @@ pub(super) fn validate_run_page(
 ) -> Result<(), String> {
     validate_run_page_shape(page, conversation_id, limit)?;
     let mut previous: Option<&OwnedRunSummaryResponse> = None;
+    let mut run_ids = HashSet::with_capacity(page.runs.len());
     for run in &page.runs {
+        if !run_ids.insert(run.run_id.as_str()) {
+            return Err(invalid_run_page());
+        }
         validate_run_summary(run, previous, before_created_at_ms, before_run_id)?;
         previous = Some(run);
     }
@@ -270,8 +305,9 @@ fn validate_run_summary(
 ) -> Result<(), String> {
     if validate_entity_id(&run.run_id, "Run").is_err()
         || validate_entity_id(&run.prompt_id, "Prompt").is_err()
-        || i64::try_from(run.created_at_ms).is_err()
-        || i64::try_from(run.latest_sequence).is_err()
+        || run.created_at_ms > MAX_SAFE_INTEGER
+        || run.latest_sequence == 0
+        || run.latest_sequence > MAX_SAFE_INTEGER
         || previous.is_some_and(|older| {
             older.created_at_ms < run.created_at_ms
                 || (older.created_at_ms == run.created_at_ms && older.run_id <= run.run_id)
@@ -301,7 +337,7 @@ fn validate_run_page_cursor(page: &OwnedRunPageResponse) -> Result<(), String> {
             last.created_at_ms == cursor.created_at_ms && last.run_id == cursor.run_id
         });
         if validate_entity_id(&cursor.run_id, "Run").is_err()
-            || i64::try_from(cursor.created_at_ms).is_err()
+            || cursor.created_at_ms > MAX_SAFE_INTEGER
             || !matches_last
         {
             return Err(invalid_run_page());
@@ -326,7 +362,7 @@ pub(super) fn validate_run_timeline(
         || page.after_sequence != after_sequence
         || page.events.len() > limit
         || (page.has_more && page.events.is_empty())
-        || i64::try_from(page.scanned_through_sequence).is_err()
+        || page.scanned_through_sequence > MAX_SAFE_INTEGER
         || page.scanned_through_sequence < after_sequence
     {
         return Err("Forge API returned an invalid Run timeline".into());
@@ -337,8 +373,8 @@ pub(super) fn validate_run_timeline(
             return Err("Forge API returned an invalid Run timeline".into());
         };
         if event.seq != expected_sequence
-            || i64::try_from(event.seq).is_err()
-            || i64::try_from(event.emitted_at_ms).is_err()
+            || event.seq > MAX_SAFE_INTEGER
+            || event.emitted_at_ms > MAX_SAFE_INTEGER
         {
             return Err("Forge API returned an invalid Run timeline".into());
         }

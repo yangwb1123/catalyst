@@ -302,7 +302,7 @@ fn assert_malformed_run_events(
             .owned_run_page(&fixture.owner_a, &fixture.conversation_a, None, 1),
         Err(HubStoreError::Corrupt { .. })
     ));
-    fixture.insert_raw_event(&run, 1, "{not-json");
+    fixture.insert_raw_event(run, 1, "{not-json");
     assert!(matches!(
         fixture
             .store
@@ -319,8 +319,8 @@ fn assert_malformed_run_events(
         ),
         Err(HubStoreError::Corrupt { .. })
     ));
-    fixture.add_single_event(&gapped, 1, "run_started", "prompt", "gap prompt");
-    fixture.add_single_event(&gapped, 3, "turn_started", "turn", "unused");
+    fixture.add_single_event(gapped, 1, "run_started", "prompt", "gap prompt");
+    fixture.add_single_event(gapped, 3, "turn_started", "turn", "unused");
     assert!(matches!(
         fixture.store.owned_run_timeline_page(
             &fixture.owner_a,
@@ -350,7 +350,7 @@ fn assert_run_pages_resume_at_byte_budget(fixture: &OwnedRunFixture, body: &str)
             run_id,
             created_at_ms,
         );
-        fixture.add_single_event(&run, 1, "run_started", "prompt", &body);
+        fixture.add_single_event(&run, 1, "run_started", "prompt", body);
         runs.push(run);
     }
 
@@ -390,7 +390,7 @@ fn assert_timeline_pages_resume_at_byte_budget(fixture: &OwnedRunFixture, body: 
         50,
     );
     for sequence in 1..=3 {
-        fixture.add_single_event(&timeline_run, sequence, "assistant_delta", "delta", &body);
+        fixture.add_single_event(&timeline_run, sequence, "assistant_delta", "delta", body);
     }
     let first_timeline = fixture
         .store

@@ -2,6 +2,7 @@ package runtimebridge
 
 import (
 	"context"
+	"fmt"
 	model "forgeos/forge-core/internal/runtimebridge/model"
 	"path/filepath"
 	"testing"
@@ -90,6 +91,46 @@ func TestConversationBootstrapValidationRejectsMalformedPages(t *testing.T) {
 		SnapshotCursor: 4, Phase: model.ConversationBootstrapLegacyBaseline, AfterConversationID: ptrString(" "),
 	}) {
 		t.Fatal("blank baseline boundary was accepted")
+	}
+}
+
+func TestConversationBootstrapAggregateVersionUsesJSONSafeBoundary(t *testing.T) {
+	valid := []byte(fmt.Sprintf(`{"snapshot_cursor":4,"conversations":[{"conversation":{"id":"c2","scope":{"kind":"global"},"title":"Session","created_at_ms":1,"updated_at_ms":1},"creation_cursor":4,"aggregate_version":%d}],"scanned_through_cursor":4,"has_more":false}`, maxSafeJSONInteger))
+	var page model.ConversationBootstrapPage
+	cursor := &model.ConversationBootstrapCursor{
+		SnapshotCursor: 4, Phase: model.ConversationBootstrapChangeLog, AfterChangeCursor: ptrUint64(3),
+	}
+	if err := decodeStrict(valid, &page); err != nil || !validConversationBootstrapPage(valid, page, cursor, 1) {
+		t.Fatalf("JSON-safe bootstrap aggregate boundary rejected: %v", err)
+	}
+	unsafe := []byte(fmt.Sprintf(`{"snapshot_cursor":4,"conversations":[{"conversation":{"id":"c2","scope":{"kind":"global"},"title":"Session","created_at_ms":1,"updated_at_ms":1},"creation_cursor":4,"aggregate_version":%d}],"scanned_through_cursor":4,"has_more":false}`, maxSafeJSONInteger+1))
+	var unsafePage model.ConversationBootstrapPage
+	if err := decodeStrict(unsafe, &unsafePage); err != nil || validConversationBootstrapPage(unsafe, unsafePage, cursor, 1) {
+		t.Fatal("bootstrap aggregate above JSON-safe integer accepted")
+	}
+}
+
+func TestConversationBootstrapTimestampUsesJSONSafeIntegerBoundary(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		value uint64
+		valid bool
+	}{
+		{name: "ceiling", value: maxSafeJSONInteger, valid: true},
+		{name: "above ceiling", value: maxSafeJSONInteger + 1},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			data := []byte(fmt.Sprintf(`{"snapshot_cursor":4,"conversations":[{"conversation":{"id":"c2","scope":{"kind":"global"},"title":"Session","created_at_ms":%d,"updated_at_ms":%d},"creation_cursor":4,"aggregate_version":2}],"scanned_through_cursor":4,"has_more":false}`, test.value, test.value))
+			var page model.ConversationBootstrapPage
+			err := decodeStrict(data, &page)
+			cursor := &model.ConversationBootstrapCursor{
+				SnapshotCursor: 4, Phase: model.ConversationBootstrapChangeLog,
+				AfterChangeCursor: ptrUint64(3),
+			}
+			if got := err == nil && validConversationBootstrapPage(data, page, cursor, 1); got != test.valid {
+				t.Fatalf("valid=%v, want %v (decode error: %v)", got, test.valid, err)
+			}
+		})
 	}
 }
 

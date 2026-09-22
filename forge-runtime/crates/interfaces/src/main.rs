@@ -3,7 +3,38 @@ mod agent_run_limits;
 mod agent_workspace;
 mod args;
 mod cli_usage;
+mod client_instance_session_scope;
 mod demo;
+mod device_attempt_request_command;
+mod device_client_instance_resource_view_command;
+mod device_client_session_view_command;
+mod device_command;
+mod device_credential_candidate_command;
+mod device_dispatch;
+mod device_execution_lease_checkpoint_command;
+mod device_heartbeat_persistence_command;
+mod device_identity_proof_command;
+mod device_inventory_command;
+mod device_inventory_observation_v2_command;
+mod device_inventory_persisted_observation_command;
+mod device_inventory_persistence_command;
+mod device_inventory_placement_batch_evaluation_command;
+mod device_inventory_placement_evaluation_command;
+mod device_inventory_placement_evaluation_v2_command;
+mod device_inventory_snapshot_command;
+mod device_inventory_status_command;
+mod device_json_unique;
+mod device_pending_run_intent_command;
+mod device_resource_summary_command;
+mod device_run_attempt_lease_dispatch_preflight_command;
+mod device_run_execution_evidence_command;
+mod device_run_intent_command;
+mod device_run_observed_command;
+mod device_runner_dispatch_plan_command;
+mod device_runner_execution_intent_command;
+mod device_runner_lease_fencing_command;
+mod device_runner_receipt_command;
+mod device_session_runner_receipt_command;
 mod governance_journal;
 mod group_agent_graph;
 mod group_analysis_panel_command;
@@ -19,6 +50,7 @@ mod hub_output;
 mod human_event_sink;
 mod openai_prepared_dispatch;
 mod remote_command;
+mod remote_credential_candidate;
 mod remote_dispatch;
 mod run_branch_command;
 mod run_command;
@@ -61,6 +93,7 @@ async fn dispatch(args: &Args) -> ExitCode {
             ExitCode::SUCCESS
         }
         Command::Demo(demo_args) => run_demo(demo_args, args.project.as_deref()).await,
+        Command::Device(command) => device_dispatch::run(command, args.json),
         Command::Agent(agent_args) => run_agent(args, agent_args).await,
         Command::Governance(command) => run_governance_journal(args, command),
         Command::Remote(command) => remote_dispatch::run(args, command).await,
@@ -401,8 +434,7 @@ fn argument_error(error: &str) -> ExitCode {
     ExitCode::from(2)
 }
 
-///  returns the number of rejected wave nodes in the
-/// output, or zero for any other output shape.
+/// Returns rejected wave-node count, or zero for another output shape.
 fn wave_rejected_count(
     output: &group_agent_graph::run_command::GroupAgentGraphRunCommandCliOutput,
 ) -> usize {

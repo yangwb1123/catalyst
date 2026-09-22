@@ -28,6 +28,7 @@ const (
 	maxEntityIDBytes                  = 128
 	maxRoleBytes                      = 64
 	maxSQLiteInteger                  = uint64(1<<63 - 1)
+	maxSafeJSONInteger                = uint64(1<<53 - 1)
 	defaultTimeout                    = 5 * time.Second
 	maxTimeout                        = 30 * time.Second
 	childWaitDelay                    = 150 * time.Millisecond
@@ -151,6 +152,9 @@ func (c *Client) SnapshotAtCursor(ctx context.Context) (model.SnapshotAtCursor, 
 
 // ChangesAfter reads one contiguous, bounded page from the Hub-local change cursor.
 func (c *Client) ChangesAfter(ctx context.Context, after uint64, limit int) (model.ChangePage, error) {
+	if after > maxSafeJSONInteger {
+		return model.ChangePage{}, &Error{Code: "invalid_cursor"}
+	}
 	if limit < 1 || limit > maxChangeLimit {
 		return model.ChangePage{}, &Error{Code: "invalid_limit"}
 	}
@@ -183,7 +187,7 @@ func (c *Client) ConversationPrompts(
 	if limit < 1 || limit > maxPromptPageLimit {
 		return model.ConversationPromptPage{}, &Error{Code: "invalid_limit"}
 	}
-	if before != nil && (before.CreatedAtMS > maxSQLiteInteger ||
+	if before != nil && (before.CreatedAtMS > maxSafeJSONInteger ||
 		strings.TrimSpace(before.PromptID) == "" || len(before.PromptID) > maxEntityIDBytes) {
 		return model.ConversationPromptPage{}, &Error{Code: "invalid_cursor"}
 	}
@@ -332,6 +336,31 @@ func (c *Client) ListOwnedConversations(
 	return page, nil
 }
 
+// GetOwnedConversation returns one sanitized Conversation row only when the
+// verified principal owns the requested ID. Runtime uses one uniform not-found
+// result for missing and foreign IDs.
+func (c *Client) GetOwnedConversation(
+	ctx context.Context,
+	owner model.Owner,
+	conversationID string,
+) (model.OwnedConversationEntry, error) {
+	if !validOwner(owner) || strings.TrimSpace(conversationID) == "" || len(conversationID) > maxEntityIDBytes || strings.Contains(conversationID, "/") {
+		return model.OwnedConversationEntry{}, &Error{Code: "invalid_owned_conversation_request"}
+	}
+	ownerCopy := owner
+	response, err := c.callWrite(ctx, request{
+		Operation: "get_owned_conversation", Owner: &ownerCopy, ConversationID: conversationID,
+	})
+	if err != nil {
+		return model.OwnedConversationEntry{}, err
+	}
+	var entry model.OwnedConversationEntry
+	if err := decodeStrict(response, &entry); err != nil || !validOwnedConversationEntry(response, entry) {
+		return model.OwnedConversationEntry{}, &Error{Code: "invalid_runtime_response"}
+	}
+	return entry, nil
+}
+
 // OwnedConversationPrompts returns bounded history after an owner check in Hub.
 func (c *Client) OwnedConversationPrompts(
 	ctx context.Context,
@@ -371,7 +400,7 @@ func (c *Client) AppendOwnedPrompt(
 ) (model.ConversationPrompt, uint64, bool, error) {
 	if !validOwner(owner) || strings.TrimSpace(conversationID) == "" || len(conversationID) > maxEntityIDBytes ||
 		strings.TrimSpace(content) == "" || len(content) > maxPromptContentBytes ||
-		strings.TrimSpace(idempotencyKey) == "" || len(idempotencyKey) > 256 || expectedVersion > maxSQLiteInteger {
+		strings.TrimSpace(idempotencyKey) == "" || len(idempotencyKey) > 256 || expectedVersion > maxSafeJSONInteger {
 		return model.ConversationPrompt{}, 0, false, &Error{Code: "invalid_owned_prompt_request"}
 	}
 	ownerCopy, versionCopy := owner, expectedVersion

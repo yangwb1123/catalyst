@@ -28,6 +28,132 @@ async fn conversation_changes_sends_owner_feed_cursor_and_validates_dense_page()
     assert_eq!(page.changes[0].conversation_id, "c-1");
     server.join().unwrap();
 }
+
+#[tokio::test]
+async fn conversation_changes_rejects_cursor_above_json_safe_integer_before_request() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let client = test_remote_client(listener.local_addr().unwrap());
+    let error = client
+        .conversation_changes_after(9_007_199_254_740_992)
+        .await
+        .expect_err("unsafe cursor was sent");
+    assert_eq!(error.0, "conversation change cursor is invalid");
+}
+
+#[tokio::test]
+async fn conversation_changes_watch_backoffs_on_empty_pages_and_observes_later_change() {
+    let (client, server) = spawn_mock_server(vec![
+        ExpectedRequest {
+            request_prefix: "GET /api/v1/conversation-changes?after_cursor=4&limit=128 ",
+            required_headers: &[],
+            body_fields: Value::Null,
+            response_status: "200 OK",
+            response: json!({
+                "after_cursor": 4,
+                "scanned_through_cursor": 4,
+                "has_more": false,
+                "changes": []
+            }),
+        },
+        ExpectedRequest {
+            request_prefix: "GET /api/v1/conversation-changes?after_cursor=4&limit=128 ",
+            required_headers: &[],
+            body_fields: Value::Null,
+            response_status: "200 OK",
+            response: json!({
+                "after_cursor": 4,
+                "scanned_through_cursor": 4,
+                "has_more": false,
+                "changes": []
+            }),
+        },
+        ExpectedRequest {
+            request_prefix: "GET /api/v1/conversation-changes?after_cursor=4&limit=128 ",
+            required_headers: &[],
+            body_fields: Value::Null,
+            response_status: "200 OK",
+            response: json!({
+                "after_cursor": 4,
+                "scanned_through_cursor": 5,
+                "has_more": false,
+                "changes": [{
+                    "cursor": 5,
+                    "schema_version": 1,
+                    "conversation_id": "c-1",
+                    "entity_id": "p-1",
+                    "aggregate_version": 2,
+                    "kind": "prompt_appended",
+                    "created_at_ms": 10
+                }]
+            }),
+        },
+    ]);
+    let result = client
+        .watch_conversation_changes(Some(4), 3, 0, 0)
+        .await
+        .unwrap();
+    assert_eq!(result["start_cursor"], 4);
+    assert_eq!(result["scanned_through_cursor"], 5);
+    assert_eq!(result["polls"], 3);
+    assert_eq!(result["has_more"], false);
+    assert_eq!(result["changes"].as_array().unwrap().len(), 1);
+    assert_eq!(result["changes"][0]["cursor"], 5);
+    server.join().unwrap();
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn conversation_changes_watch_advances_saved_cursor_before_following_poll() {
+    let (client, server) = spawn_mock_server(vec![
+        ExpectedRequest {
+            request_prefix: "GET /api/v1/conversation-changes?after_cursor=4&limit=128 ",
+            required_headers: &[],
+            body_fields: Value::Null,
+            response_status: "200 OK",
+            response: json!({
+                "after_cursor": 4,
+                "scanned_through_cursor": 5,
+                "has_more": false,
+                "changes": [{
+                    "cursor": 5,
+                    "schema_version": 1,
+                    "conversation_id": "c-1",
+                    "entity_id": "p-1",
+                    "aggregate_version": 2,
+                    "kind": "prompt_appended",
+                    "created_at_ms": 10
+                }]
+            }),
+        },
+        ExpectedRequest {
+            request_prefix: "GET /api/v1/conversation-changes?after_cursor=5&limit=128 ",
+            required_headers: &[],
+            body_fields: Value::Null,
+            response_status: "200 OK",
+            response: json!({
+                "after_cursor": 5,
+                "scanned_through_cursor": 5,
+                "has_more": false,
+                "changes": []
+            }),
+        },
+    ]);
+    let port = client.base_url.port().expect("mock server port");
+    let (_config_root, cursor_store) =
+        checkpoint_store(std::net::SocketAddr::from(([127, 0, 0, 1], port)));
+    cursor_store.save(4).unwrap();
+    let client = RemoteClient {
+        change_cursor: Some(cursor_store.clone()),
+        ..client
+    };
+
+    client
+        .watch_conversation_changes(None, 2, 0, 0)
+        .await
+        .unwrap();
+    assert_eq!(cursor_store.load().unwrap(), 5);
+    server.join().unwrap();
+}
 #[cfg(unix)]
 #[tokio::test]
 async fn default_change_list_resumes_from_and_commits_the_saved_cursor() {

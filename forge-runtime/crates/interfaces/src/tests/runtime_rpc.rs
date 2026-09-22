@@ -3,6 +3,8 @@ use crate::runtime_domain::ConversationScope;
 use serde_json::json;
 use tempfile::tempdir;
 
+#[path = "runtime_rpc/conversation_transport.rs"]
+mod conversation_transport;
 #[path = "runtime_rpc/owned.rs"]
 mod owned;
 
@@ -272,6 +274,10 @@ fn invalid_prompt_pages_fail_before_database_open_and_missing_conversations_are_
         (
             json!({"conversation_id":"c1","limit":1,"before":{"created_at_ms":1,"prompt_id":"p1","extra":true}}),
             "invalid_request",
+        ),
+        (
+            json!({"conversation_id":"c1","limit":1,"before":{"created_at_ms":9007199254740992u64,"prompt_id":"p1"}}),
+            "invalid_prompt_request",
         ),
     ] {
         let response = process_request(&database, &request("conversation_prompt_page", &fields));

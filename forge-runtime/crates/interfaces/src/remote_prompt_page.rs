@@ -8,7 +8,7 @@ const PROMPT_PAGE_LIMIT: usize = 128;
 const MAX_PROMPT_ID_BYTES: usize = 128;
 const MAX_PROMPT_ROLE_BYTES: usize = 64;
 const MAX_PROMPT_CONTENT_BYTES: usize = 256 * 1024;
-const MAX_DATABASE_INTEGER: u64 = i64::MAX as u64;
+const MAX_SAFE_JSON_INTEGER: u64 = 9_007_199_254_740_991;
 
 pub(super) fn validate_prompt_page(page: &Value, conversation_id: &str) -> Result<(), String> {
     let object = page.as_object().ok_or_else(invalid_prompt_page)?;
@@ -115,7 +115,7 @@ fn validate_prompt_entry<'a>(
     let created_at_ms = object
         .get("created_at_ms")
         .and_then(Value::as_u64)
-        .filter(|value| *value <= MAX_DATABASE_INTEGER)
+        .filter(|value| *value <= MAX_SAFE_JSON_INTEGER)
         .ok_or_else(invalid_prompt_page)?;
     if object.get("conversation_id").and_then(Value::as_str) != Some(conversation_id)
         || !valid_prompt_id(id)

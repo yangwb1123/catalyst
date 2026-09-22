@@ -1,13 +1,8 @@
 use std::{
     fs,
-    io::{self, Read},
     path::{Component, Path, PathBuf},
-    process::{Child, Command, ExitStatus, Stdio},
-    sync::{
-        Arc,
-        mpsc::{self, Receiver},
-    },
-    thread,
+    process::{Command, Stdio},
+    sync::Arc,
     time::{Duration, Instant},
 };
 
@@ -15,10 +10,10 @@ use crate::runtime_domain::{
     AgentTool, Cancellation, Capability, TOOL_EFFECT_UNCERTAIN_CODE, ToolContext, ToolError,
     ToolExecutionFuture, ToolExecutionResult, ToolFuture, ToolOutput, ToolSpec,
     execution::fabric::{
-        EXECUTION_FABRIC_ABI_VERSION, EffectClassification, EnvironmentDigest, ExecutionAttempt,
-        ExecutionEvidence, ExecutionEvidenceSource, ExecutionTarget, ExecutionTargetScope,
-        ExecutionTargetStatus, LOCAL_EXECUTION_ADAPTER_ID, LOCAL_EXECUTION_ADAPTER_VERSION,
-        LocalProcessObservation, Mobility, ToolInvocationRef,
+        EXECUTION_FABRIC_ABI_VERSION, EffectClassification, ExecutionAttempt, ExecutionEvidence,
+        ExecutionEvidenceSource, ExecutionTarget, ExecutionTargetScope, ExecutionTargetStatus,
+        LOCAL_EXECUTION_ADAPTER_ID, LOCAL_EXECUTION_ADAPTER_VERSION, LocalProcessObservation,
+        Mobility, ToolInvocationRef,
     },
 };
 use cap_std::{ambient_authority, fs::Dir};
@@ -34,27 +29,16 @@ const MAX_ARGUMENT_BYTES: usize = 1024 * 1024;
 const MAX_CWD_BYTES: usize = 4_096;
 const MAX_CAPTURE_BYTES: usize = 1024 * 1024;
 const OUTPUT_DRAIN_TIMEOUT: Duration = Duration::from_secs(1);
-const SAFE_ENVIRONMENT_NAMES: &[&str] = &[
-    "PATH",
-    "HOME",
-    "TMPDIR",
-    "TEMP",
-    "TMP",
-    "CARGO_HOME",
-    "RUSTUP_HOME",
-    "GOPATH",
-    "GOMODCACHE",
-    "GOCACHE",
-    "PNPM_HOME",
-    "LANG",
-    "LC_ALL",
-];
-const SENSITIVE_ENVIRONMENT_MARKERS: &[&str] =
-    &["KEY", "TOKEN", "SECRET", "PASSWORD", "CREDENTIAL", "AUTH"];
 
 #[path = "exec_command_cleanup.rs"]
 mod cleanup;
 use cleanup::{cancelled_error, cleanup_after_capture_error, cleanup_after_error, wait_for_child};
+#[path = "exec_command_environment.rs"]
+mod environment;
+use environment::{SafeEnvironment, is_valid_environment_digest};
+#[path = "exec_command_capture.rs"]
+mod capture;
+use capture::{CaptureReaders, render_output};
 
 #[derive(Clone)]
 pub struct ExecCommandTool {
@@ -77,11 +61,6 @@ struct ExecCommandInput {
 struct BoundedCapture {
     bytes: Vec<u8>,
     truncated: bool,
-}
-
-struct CaptureReaders {
-    stdout: Receiver<io::Result<BoundedCapture>>,
-    stderr: Receiver<io::Result<BoundedCapture>>,
 }
 
 impl ExecCommandTool {
@@ -207,11 +186,20 @@ impl LocalExecutionTarget {
         cancellation: &Cancellation,
         output_limit: usize,
     ) -> Result<(ToolOutput, Option<ExecutionEvidence>), ToolError> {
-        let attempt = invocation.map(ExecutionAttempt::local_process);
+        let environment = SafeEnvironment::capture();
+        let attempt = invocation.map(|invocation| {
+            ExecutionAttempt::local_process_with_environment(invocation, environment.digest())
+        });
         if let Some(attempt) = &attempt {
             self.validate_attempt(attempt)?;
         }
-        let (output, exit_code) = run_command(&self.workspace, input, cancellation, output_limit)?;
+        let (output, exit_code) = run_command(
+            &self.workspace,
+            input,
+            &environment,
+            cancellation,
+            output_limit,
+        )?;
         let evidence = attempt.map(|attempt| ExecutionEvidence {
             v: EXECUTION_FABRIC_ABI_VERSION,
             attempt_ref: attempt.attempt_ref,
@@ -251,10 +239,7 @@ impl LocalExecutionTarget {
             || attempt.mobility != Mobility::Pinned
             || !attempt.input_artifacts.is_empty()
             || !attempt.output_artifacts.is_empty()
-            || !matches!(
-                attempt.environment_digest,
-                EnvironmentDigest::NotCaptured { .. }
-            )
+            || !is_valid_environment_digest(&attempt.environment_digest)
         {
             return Err(ToolError::new(
                 "invalid_execution_attempt",
@@ -331,6 +316,7 @@ fn invalid_arguments(message: impl Into<String>) -> ToolError {
 fn run_command(
     workspace: &ExecCommandTool,
     input: &ExecCommandInput,
+    environment: &SafeEnvironment,
     cancellation: &Cancellation,
     output_limit: usize,
 ) -> Result<(ToolOutput, Option<i32>), ToolError> {
@@ -339,7 +325,7 @@ fn run_command(
     }
     let cwd = resolve_cwd(workspace, input.cwd.as_deref())?;
     let timeout = Duration::from_millis(input.timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS));
-    let mut command = command_for(input, &cwd);
+    let mut command = command_for(input, &cwd, environment);
     let mut child = command
         .spawn()
         .map_err(|error| ToolError::new("spawn_failed", error.to_string()))?;
@@ -421,7 +407,7 @@ fn validate_cwd(cwd: &str) -> Result<&Path, ToolError> {
 }
 
 #[cfg(unix)]
-fn command_for(input: &ExecCommandInput, cwd: &Dir) -> Command {
+fn command_for(input: &ExecCommandInput, cwd: &Dir, environment: &SafeEnvironment) -> Command {
     let mut command = Command::new(&input.program);
     command
         .args(&input.argv)
@@ -430,13 +416,13 @@ fn command_for(input: &ExecCommandInput, cwd: &Dir) -> Command {
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    configure_safe_environment(&mut command);
+    environment.apply(&mut command);
     configure_process_group(&mut command);
     command
 }
 
 #[cfg(not(unix))]
-fn command_for(input: &ExecCommandInput, cwd: &Path) -> Command {
+fn command_for(input: &ExecCommandInput, cwd: &Path, environment: &SafeEnvironment) -> Command {
     let mut command = Command::new(&input.program);
     command
         .args(&input.argv)
@@ -445,7 +431,7 @@ fn command_for(input: &ExecCommandInput, cwd: &Path) -> Command {
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    configure_safe_environment(&mut command);
+    environment.apply(&mut command);
     command
 }
 
@@ -460,31 +446,6 @@ fn descriptor_cwd_path(directory: &Dir) -> PathBuf {
     Path::new(base).join(directory.as_raw_fd().to_string())
 }
 
-fn configure_safe_environment(command: &mut Command) {
-    for (name, value) in std::env::vars_os() {
-        let Some(name_text) = name.to_str() else {
-            continue;
-        };
-        if is_allowed_environment_name(name_text) {
-            command.env(name, value);
-        }
-    }
-}
-
-fn is_allowed_environment_name(name: &str) -> bool {
-    SAFE_ENVIRONMENT_NAMES
-        .iter()
-        .any(|allowed| name.eq_ignore_ascii_case(allowed))
-        && !is_sensitive_environment_name(name)
-}
-
-fn is_sensitive_environment_name(name: &str) -> bool {
-    let uppercase = name.to_ascii_uppercase();
-    SENSITIVE_ENVIRONMENT_MARKERS
-        .iter()
-        .any(|marker| uppercase.contains(marker))
-}
-
 #[cfg(unix)]
 fn configure_process_group(command: &mut Command) {
     use std::os::unix::process::CommandExt as _;
@@ -494,100 +455,14 @@ fn configure_process_group(command: &mut Command) {
 #[cfg(not(unix))]
 fn configure_process_group(_command: &mut Command) {}
 
-impl CaptureReaders {
-    fn from_child(child: &mut Child, limit: usize) -> Result<Self, ToolError> {
-        let stdout = child
-            .stdout
-            .take()
-            .ok_or_else(|| ToolError::new("capture_failed", "child stdout pipe was unavailable"))?;
-        let stderr = child
-            .stderr
-            .take()
-            .ok_or_else(|| ToolError::new("capture_failed", "child stderr pipe was unavailable"))?;
-        Ok(Self {
-            stdout: spawn_reader("forge-command-stdout", stdout, limit)?,
-            stderr: spawn_reader("forge-command-stderr", stderr, limit)?,
-        })
-    }
-
-    fn collect(self, deadline: Instant) -> Result<(BoundedCapture, BoundedCapture), ToolError> {
-        let stdout = receive_capture(&self.stdout, deadline)?;
-        let stderr = receive_capture(&self.stderr, deadline)?;
-        Ok((stdout, stderr))
-    }
-}
-
-fn spawn_reader(
-    name: &str,
-    reader: impl Read + Send + 'static,
-    limit: usize,
-) -> Result<Receiver<io::Result<BoundedCapture>>, ToolError> {
-    let (sender, receiver) = mpsc::sync_channel(1);
-    thread::Builder::new()
-        .name(name.into())
-        .spawn(move || {
-            let _ = sender.send(read_bounded(reader, limit));
-        })
-        .map_err(|error| ToolError::new("capture_failed", error.to_string()))?;
-    Ok(receiver)
-}
-
-fn read_bounded(mut reader: impl Read, limit: usize) -> io::Result<BoundedCapture> {
-    let mut bytes = Vec::with_capacity(limit.min(8 * 1024));
-    let mut truncated = false;
-    let mut chunk = [0_u8; 8 * 1024];
-    loop {
-        let count = reader.read(&mut chunk)?;
-        if count == 0 {
-            break;
-        }
-        let retained = count.min(limit.saturating_sub(bytes.len()));
-        bytes.extend_from_slice(&chunk[..retained]);
-        truncated |= retained < count;
-    }
-    Ok(BoundedCapture { bytes, truncated })
-}
-
-fn receive_capture(
-    receiver: &Receiver<io::Result<BoundedCapture>>,
-    deadline: Instant,
-) -> Result<BoundedCapture, ToolError> {
-    receiver
-        .recv_timeout(deadline.saturating_duration_since(Instant::now()))
-        .map_err(|_| ToolError::new("capture_failed", "command output did not close in time"))?
-        .map_err(|error| ToolError::new("capture_failed", error.to_string()))
-}
-
-fn render_output(
-    status: ExitStatus,
-    stdout: &BoundedCapture,
-    stderr: &BoundedCapture,
-    limit: usize,
-) -> ToolOutput {
-    let exit_code = status
-        .code()
-        .map_or_else(|| "signal".into(), |code| code.to_string());
-    let mut content = format!(
-        "exit_code: {exit_code}\nstdout:\n{}\nstderr:\n{}",
-        String::from_utf8_lossy(&stdout.bytes),
-        String::from_utf8_lossy(&stderr.bytes)
-    );
-    let truncated = stdout.truncated || stderr.truncated || content.len() > limit;
-    truncate_utf8(&mut content, limit);
-    ToolOutput { content, truncated }
-}
-
-fn truncate_utf8(value: &mut String, maximum: usize) {
-    if value.len() <= maximum {
-        return;
-    }
-    let mut boundary = maximum;
-    while !value.is_char_boundary(boundary) {
-        boundary = boundary.saturating_sub(1);
-    }
-    value.truncate(boundary);
-}
-
 #[cfg(test)]
 #[path = "exec_command_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "exec_command_basic_tests.rs"]
+mod basic_tests;
+
+#[cfg(test)]
+#[path = "exec_command_fabric_tests.rs"]
+mod fabric_tests;

@@ -114,8 +114,16 @@ func configureSessionHandler(
 	if err != nil {
 		return nil, nil, fmt.Errorf("configure Snaplink resource server: %w", err)
 	}
+	sessions, err := newAuthenticatedSessionRoutesWithDeviceFabricActivation(
+		runtimeClient, profileCatalog, config.DeviceFabricActivation,
+		config.DeviceInventoryLifecycleRegistryFile,
+		config.DeviceClientInstanceSessionViewFile,
+	)
+	if err != nil {
+		return nil, nil, fmt.Errorf("configure device fabric session routes: %w", err)
+	}
 	handler := allowBrowserOrigins(
-		authenticator.Handler(newConversationRoutesWithExecutionProfiles(runtimeClient, profileCatalog)), config.BrowserOrigins,
+		authenticator.Handler(sessions), config.BrowserOrigins,
 	)
 	return handler, authenticator.Close, nil
 }

@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"forgeos/forge-core/internal/appserver"
+	"forgeos/forge-core/internal/devicefabricgate"
 	"forgeos/forge-core/internal/executionprofile"
 )
 
@@ -26,6 +27,9 @@ type serverOptions struct {
 	snaplinkIntrospectURL, snaplinkIntrospectClientID, snaplinkIntrospectSecretFile string
 	expectedTenant, expectedSubject, tlsCert, tlsKey                                string
 	browserOrigins                                                                  string
+	deviceFabricActivationFile                                                      string
+	deviceInventoryLifecycleRegistryFile                                            string
+	deviceClientInstanceSessionViewFile                                             string
 	executionProfileBindings                                                        executionProfileBindingFlags
 	showVersion                                                                     bool
 }
@@ -61,6 +65,9 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	flags.StringVar(&options.tlsCert, "tls-cert", "", "TLS certificate PEM (required for private-interface listener)")
 	flags.StringVar(&options.tlsKey, "tls-key", "", "private TLS key PEM (required for private-interface listener)")
 	flags.StringVar(&options.browserOrigins, "browser-origins", "", "comma-separated exact HTTPS origins allowed to call the session API")
+	flags.StringVar(&options.deviceFabricActivationFile, "device-fabric-activation-file", "", "owner-private device Fabric activation manifest; absent keeps Fabric OFF")
+	flags.StringVar(&options.deviceInventoryLifecycleRegistryFile, "device-inventory-lifecycle-registry-file", "", "owner-private lifecycle registry image required by accepted inventory, observe, or execute admission activation")
+	flags.StringVar(&options.deviceClientInstanceSessionViewFile, "device-client-instance-session-view-file", "", "owner-private client-instance/session declaration image for accepted inventory, observe, or execute admission activation")
 	flags.Var(&options.executionProfileBindings, "execution-profile-binding",
 		"repeatable server-owned Project profile JSON binding; profile fields are never caller-selected")
 	flags.BoolVar(&options.showVersion, "version", false, "print build version and exit")
@@ -87,17 +94,30 @@ func runOptions(ctx context.Context, options serverOptions, stdout, stderr io.Wr
 		fmt.Fprintln(stderr, "forge-server: invalid execution profile policy")
 		return 2
 	}
+	var deviceFabricActivation *devicefabricgate.Request
+	if options.deviceFabricActivationFile != "" {
+		manifest, loadErr := devicefabricgate.LoadManifestFile(options.deviceFabricActivationFile)
+		if loadErr != nil {
+			fmt.Fprintf(stderr, "forge-server: device Fabric activation manifest: %v\n", loadErr)
+			return 2
+		}
+		request := manifest.Request()
+		deviceFabricActivation = &request
+	}
 	config := appserver.Config{
 		ListenAddress: options.listen, StateDir: options.stateDir,
 		RuntimeExecutable: options.runtimeExecutable, RuntimeStateDir: options.runtimeStateDir,
 		SnaplinkIssuer: options.snaplinkIssuer, SnaplinkAudience: options.snaplinkAudience,
 		SnaplinkJWKSURL: options.snaplinkJWKSURL, ExpectedTenantID: options.expectedTenant,
-		SnaplinkIntrospectURL:        options.snaplinkIntrospectURL,
-		SnaplinkIntrospectClientID:   options.snaplinkIntrospectClientID,
-		SnaplinkIntrospectSecretFile: options.snaplinkIntrospectSecretFile,
-		ExpectedSubjectID:            options.expectedSubject,
-		ExecutionProfiles:            profileBindings,
-		TLSCertificateFile:           options.tlsCert, TLSPrivateKeyFile: options.tlsKey,
+		SnaplinkIntrospectURL:                options.snaplinkIntrospectURL,
+		SnaplinkIntrospectClientID:           options.snaplinkIntrospectClientID,
+		SnaplinkIntrospectSecretFile:         options.snaplinkIntrospectSecretFile,
+		ExpectedSubjectID:                    options.expectedSubject,
+		ExecutionProfiles:                    profileBindings,
+		DeviceFabricActivation:               deviceFabricActivation,
+		DeviceInventoryLifecycleRegistryFile: options.deviceInventoryLifecycleRegistryFile,
+		DeviceClientInstanceSessionViewFile:  options.deviceClientInstanceSessionViewFile,
+		TLSCertificateFile:                   options.tlsCert, TLSPrivateKeyFile: options.tlsKey,
 		Build: appserver.BuildInfo{Version: serverVersion, Commit: serverCommit},
 	}
 	if options.browserOrigins != "" {

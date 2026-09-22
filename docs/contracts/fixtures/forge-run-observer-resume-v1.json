@@ -1,0 +1,41 @@
+{
+  "api_version": "forgeos.run-observer-resume-contract/v1",
+  "conversation_id": "conversation-001",
+  "run_id": "run-001",
+  "limit": 2,
+  "pages": [
+    {
+      "conversation_id": "conversation-001",
+      "run_id": "run-001",
+      "after_sequence": 0,
+      "scanned_through_sequence": 2,
+      "has_more": true,
+      "events": [
+        {"seq": 1, "emitted_at_ms": 100, "type": "run_started"},
+        {"seq": 2, "emitted_at_ms": 110, "type": "activity"}
+      ]
+    },
+    {
+      "conversation_id": "conversation-001",
+      "run_id": "run-001",
+      "after_sequence": 2,
+      "scanned_through_sequence": 4,
+      "has_more": true,
+      "events": [
+        {"seq": 3, "emitted_at_ms": 120, "type": "turn_started"},
+        {"seq": 4, "emitted_at_ms": 130, "type": "activity"}
+      ]
+    },
+    {
+      "conversation_id": "conversation-001",
+      "run_id": "run-001",
+      "after_sequence": 4,
+      "scanned_through_sequence": 5,
+      "has_more": false,
+      "events": [
+        {"seq": 5, "emitted_at_ms": 140, "type": "run_finished"}
+      ]
+    }
+  ],
+  "expected_sequences": [1, 2, 3, 4, 5]
+}

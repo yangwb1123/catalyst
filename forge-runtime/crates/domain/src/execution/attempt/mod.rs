@@ -6,6 +6,9 @@ mod error;
 mod model;
 mod validation;
 
+#[cfg(test)]
+mod request_contract_fixture;
+
 pub use error::{AttemptRequestError, AttemptRequestErrorCode};
 pub use model::{AttemptBudget, AttemptRequest, AttemptRequestInput, ControlVersionBinding};
 pub use validation::{

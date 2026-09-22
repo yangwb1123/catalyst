@@ -2,6 +2,7 @@ package appserver
 
 import (
 	"context"
+	"forgeos/forge-core/internal/runtimebridge"
 	model "forgeos/forge-core/internal/runtimebridge/model"
 	"net/http"
 	"net/url"
@@ -53,6 +54,10 @@ func (routes conversationRoutes) ownedConversationChanges(w http.ResponseWriter,
 		writeConversationBackendError(w, r, err)
 		return
 	}
+	if !conversationChangePageJSONSafe(page) {
+		writeConversationBackendError(w, r, &runtimebridge.Error{Code: "invalid_runtime_response"})
+		return
+	}
 	writeConversationJSON(w, r, http.StatusOK, page)
 }
 
@@ -62,7 +67,7 @@ func parseConversationAfterCursor(query url.Values) (uint64, error) {
 		return 0, errConversationJSON
 	}
 	cursor, err := parseUnsignedDecimal(values[0])
-	if err != nil || cursor > maxSQLiteCursor {
+	if err != nil || cursor > maxSafeJSONInteger {
 		return 0, errConversationJSON
 	}
 	return cursor, nil

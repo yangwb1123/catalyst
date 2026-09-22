@@ -113,6 +113,433 @@ command, event, execution/verification receipt values, and pure state-edge
 membership. They are not wired to Hub persistence, dispatch, provider calls,
 check execution, current-state mutation, or completion policy.
 
+## Offline device placement dry-run
+
+The CLI can evaluate a bounded placement parity document without opening the
+Hub, contacting a service, or writing state:
+
+```bash
+cargo run -p forge-runtime-cli -- --json \
+  device placement dry-run --input docs/contracts/fixtures/forge-device-placement-policy-parity-v1.json
+# Use --input - to read the same bounded JSON document from stdin.
+```
+
+This command consumes the strict `forge.device-placement-policy-parity-test/v1`
+fixture shape and reuses the Rust domain placement evaluator. It reports
+per-device eligibility and exclusion reasons in stable order. The output always
+sets `identity_verified`, `heartbeat_persisted`, `inventory_authoritative`,
+`reservation_created`, `execution_authorized`, and `dispatch_performed` to
+`false`; it is a comparison projection rather than live inventory, scheduling,
+reservation, or execution.
+
+## Offline device inventory show
+
+The CLI can render a bounded caller-supplied inventory observation without
+opening the Hub, contacting a service, or writing state:
+
+```bash
+cargo run -p forge-runtime-cli -- --json \
+  device inventory show --input docs/contracts/fixtures/forge-device-inventory-observation-v1.json
+# Use --input - to read the same bounded JSON document from stdin.
+```
+
+This command consumes the strict
+`forge.device-inventory-observation/v1` fixture, validates the owner tuple and
+composite device/instance keys, and sorts rows by `(device_id, instance_id)`.
+The shared contract accepts at most 128 device/Runner-instance declarations;
+larger caller-supplied documents fail closed before rendering.
+The output copies declared CPU, memory, storage, GPU, runtime, placement and
+liveness fields for read-only inspection. All declarations remain explicitly
+unverified, and every authority bit (`identity_verified`, `heartbeat_persisted`,
+`inventory_authoritative`, `reservation_created`, `execution_authorized`, and
+`dispatch_performed`) is `false`. The command does not register or select a
+device, reserve capacity, schedule work, dispatch a Runner, or execute a task.
+
+The interactive `remote tui` can render the same local observation with
+`inventory show --input FILE`. It requires a file path so the TUI's stdin
+remains available for commands; use the standalone command with `--input -`
+when the observation is supplied on stdin. This TUI view is still local,
+unverified, and authority-free, and it emits no device API request.
+
+## Authenticated lossless v2 inventory candidate
+
+An explicitly injected test Coordinator may expose the lossless v2 candidate
+to the authenticated remote clients:
+
+```bash
+cargo run -p forge-runtime-cli -- --json remote inventory show-v2
+```
+
+The command performs one logical authenticated `GET
+/api/v1/devices/observations/v2` (with the client's bounded transient retry
+policy) and validates the complete owner, revision, Runner
+generation/heartbeat, reservation, and multi-GPU envelope before returning it.
+The TUI uses `inventory read-v2` for the same metadata-only view. Production
+constructors never mount this candidate, so the endpoint remains `404` until
+ADR-0039 and ADR-0114 receive their required acceptance; the command does not
+register or heartbeat a device, persist inventory, select or reserve capacity,
+schedule, dispatch, contact a Runner, or execute work.
+
+## Accepted EXECUTE scheduler selection preview
+
+An explicitly accepted `EXECUTE + P4` Coordinator may expose one additional
+owner-bound comparison endpoint:
+
+```text
+POST /api/v1/device-placement/scheduler-preview
+```
+
+The request contains `conversation_id`, `run_id`, `attempt_id`, and strict
+placement requirements. The response uses
+`forge.scheduler-selection-preview/v1` and deterministically reports the first
+eligible `(device_id, instance_id)` from the current v2 observation, or a
+`no_eligible_candidate` reason. The selected IDs are display-only: the
+response always has `preview_only: true` and all placement, reservation, lease,
+execution, dispatch, and Audit authority fields set to `false`. The route does
+not create a Run/Attempt, persist a lease, contact a Runner, or mutate device
+state. Default, `OFF`, `INVENTORY`, and `OBSERVE` Runtime assemblies keep this
+endpoint at `404`; a future P4 adapter must revalidate the observation and
+acquire a fenced durable lease before dispatch.
+
+## Offline persisted inventory observation
+
+The CLI can convert a bounded set of already restored inventory values into
+the shared, owner-bound observation envelope without reading storage or a
+clock:
+
+```bash
+cargo run -p forge-runtime-cli -- --json \
+  device inventory persisted-observation --input docs/contracts/fixtures/forge-device-inventory-persisted-observation-v1.json
+```
+
+The input carries an explicit owner and evaluation time plus an expected
+`forge.device-inventory-observation/v1` value. The adapter sorts rows and
+rejects owner drift, duplicate identities, unsafe/future timestamps,
+reservation declarations, and GPU values the current envelope cannot represent
+losslessly. The output remains unverified and all authority fields are `false`;
+this command performs no registration, reservation, scheduling, dispatch, or
+execution. The TUI accepts the same file with
+`inventory persisted-observation --input FILE`.
+
+## Offline device inventory status
+
+The CLI also projects the shared, fixed-time inventory status contract without
+opening the Hub or contacting a device:
+
+```bash
+cargo run -p forge-runtime-cli -- --json \
+  device inventory status --input docs/contracts/fixtures/forge-device-inventory-status-contract-v1.json
+# Use --input - to read the same bounded JSON document from stdin.
+```
+
+The command strictly decodes `forge-device-inventory-status-contract-v1`,
+recomputes every case through the pure Rust domain projector, and rejects
+unknown fields, duplicate case names, oversized input, mismatched expected
+results, or any claimed authority. It reports status, freshness, and the
+caller-declared eligibility display flag; this flag is not a scheduler or
+execution decision. `remote tui` accepts `inventory status --input FILE` and
+keeps stdin available for interactive commands. Both paths keep every
+identity, heartbeat, inventory, reservation, execution, and dispatch authority
+bit false and emit no device API request.
+
+## Offline inventory snapshot canonicalization
+
+The CLI also validates and canonicalizes the owner-scoped inventory snapshot
+contract without mutating the caller's rows or contacting the Hub/device:
+
+```bash
+cargo run -p forge-runtime-cli -- --json \
+  device inventory snapshot-canonical --input docs/contracts/fixtures/forge-device-inventory-snapshot-canonical-v1.json
+# Use --input - for bounded JSON stdin.
+```
+
+The output preserves stable `(device_id, instance_id)` ordering and the
+domain-separated digest, or the contract error for an invalid case. Duplicate
+case names, unknown fields, oversized input, expected-result mismatches, and
+claimed authority fail closed. `remote tui` accepts
+`inventory snapshot-canonical --input FILE`; the TUI requires a file path so
+its interactive stdin remains available. This digest is an integrity label
+for an unverified declaration, not identity, freshness, reservation, or
+execution authority.
+
+## Offline device heartbeat persistence preview
+
+The CLI can evaluate the value-level heartbeat compare-and-swap contract
+without opening a database, reading a clock, contacting a service, or writing
+state:
+
+```bash
+cargo run -p forge-runtime-cli -- --json \
+  device heartbeat-persistence-preview --input docs/contracts/fixtures/forge-device-heartbeat-persistence-contract-v1.json
+# Use --input - for bounded JSON stdin.
+```
+
+The command restores each caller-supplied snapshot, applies the pure Rust
+heartbeat and revision rules, and compares every result with the fixed
+fixture. It rejects unknown fields, duplicate JSON keys, duplicate case names,
+oversized input, invalid approval state, and any authority bit. Accepted rows
+show the replacement revision, generation, sequence, server observation time,
+and lease expiry; rejected rows show the contract error. `remote tui` accepts
+`heartbeat-persistence-preview --input FILE` and keeps its interactive stdin
+available. This previews a future transaction shape: it does not persist a
+heartbeat, enroll or authenticate a device, publish authoritative inventory,
+select or reserve capacity, schedule, dispatch, or execute a Runner.
+
+## Offline device identity proof preview
+
+The CLI can compare caller-supplied device identity bindings and one-time
+challenge declarations through the pure domain evaluator without cryptography
+or a service call:
+
+```bash
+cargo run -p forge-runtime-cli -- --json \
+  device identity-proof-preview --input docs/contracts/fixtures/forge-device-identity-proof-contract-v1.json
+# Use --input - to read the same bounded JSON document from stdin.
+```
+
+The command checks owner, device, key, challenge, approval, credential, and
+validity bindings against the shared fixture cases. It rejects unknown fields,
+duplicate JSON keys, oversized input, mismatched expectations, and any claimed
+authority. `remote tui` accepts `identity-proof-preview --input FILE` and
+keeps its interactive stdin available. The output is a local comparison only:
+it does not verify cryptography, consume a challenge, persist or enroll a
+device, publish authoritative inventory, select or reserve capacity, schedule,
+dispatch, or execute a Runner. Every authority bit remains `false`.
+
+## Flutter identity and heartbeat persistence contract consumers
+
+Flutter Console also consumes the shared identity-proof and heartbeat
+persistence fixtures used by the Go and Rust references. The identity model
+checks exact owner/device/key/challenge bindings and caller-supplied
+credential, approval, and validity declarations. The heartbeat model uses
+bounded `BigInt` values for the uint64 fields and computes the complete
+compare-and-swap replacement, including revision, generation, sequence, lease,
+rollback, and overflow cases.
+
+These are strict local value consumers. They do not perform cryptography,
+consume challenges, read a clock, write persistence, open a network route,
+enroll a device, publish authoritative inventory, reserve capacity, schedule,
+dispatch, or execute a Runner. Every authority bit remains false.
+
+Flutter Console also consumes the shared `forge-device-heartbeat-contract-v1`
+sequencing fixture. Its `BigInt` transition preserves full uint64 generation,
+sequence, server-time, and lease-expiry values while checking device binding,
+revocation, generation restarts, instance changes, monotonic sequences, TTL,
+and overflow. This is still a strict offline projection: capabilities are
+unverified declarations and no heartbeat is authenticated, persisted,
+published, or used to authorize inventory, reservation, scheduling, dispatch,
+or Runner execution.
+
+## Pending-write recovery metadata
+
+The Go, Rust, and Flutter clients consume the shared
+`forge-pending-write-recovery-v1` fixture. It projects only the operation,
+Conversation binding, expected version, idempotency key, pending or
+unconfirmed state, and caller-supplied observation times. An unconfirmed write
+must be reconciled before retry and every retry reuses the same key.
+
+Prompt content, title, scope, credentials, and Run payloads are excluded. The
+Rust CLI/TUI prints this metadata after an uncertain write without printing the
+Prompt body; the projection does not persist that body or automatically replay
+the write. It reads no clock, contacts no Hub/Runner, creates no Run, and adds
+no device route, inventory authority, reservation, scheduling, dispatch, or
+Runner execution.
+
+The live Go HTTP → Rust Hub → Flutter API journey also submits one Prompt
+twice with the same expected version and idempotency key. The second response
+is an exact replay (`replayed=true`) with the original Prompt identity and
+aggregate version, and the owner change feed contains one Prompt. This is
+storage retry evidence; it does not create a Run or authorize device work.
+
+## Snaplink Forge profile parity
+
+The CLI/TUI and Flutter Console use the shared
+`forge-snaplink-profile-v1` configuration contract. It fixes the
+`forge-api` resource/audience and the two conversation scopes. `forge-cli` is
+the public RFC 8628 device-code client with refresh-token support;
+`forge-console` is the public authorization-code client with refresh-token
+support. Go resource-server
+validation, Rust login constants, and Flutter OAuth constants are checked
+against the same fixture by `scripts/test-forge-contracts.sh`.
+
+The fixture's issuer is a deployment placeholder and all authority markers are
+false. This proves profile parity only; it does not claim a live issuer,
+client registration, token/consent, Conversation access, device inventory,
+scheduling, dispatch, or Runner execution.
+
+## Runner execution-intent binding
+
+The pure `forge.runner-execution-intent/v1` contract repeats the owner,
+Conversation, Prompt receipt, Run, Attempt, command, opaque target, command
+digest, and idempotency identities before a future Runner adapter boundary.
+Rust Runtime, Go placement code, and Flutter Console consume the shared
+fixture. The Flutter consumer reproduces the domain-separated direct-argv
+command digest and rejects confused Run or target bindings.
+
+The observation is always preview-only: `selected_target_id` is null and
+device identity, command persistence, reservation, execution authorization,
+dispatch, and audit publication are false. It does not issue or persist a
+lease, read a clock, stage a workspace, open transport, dispatch a command,
+execute a process, or publish audit. A separate Accepted P4
+execution/security decision remains required.
+
+## Runner terminal receipt observation
+
+Go `deviceplacement`, Rust Runtime, and Flutter Console consume the shared
+`forge-runner-command-terminal-receipt-v1` fixture. The consumers recompute
+the domain-separated direct-argv command digest and bind the command ID,
+attempt/target/epoch/fencing proof, bounded lease window, and caller-supplied
+observation time. A completed result requires its declared receipt digest;
+failed and uncertain results retain bounded reasons, with `uncertain` always
+requiring reconciliation and never implying automatic retry.
+
+This remains a pure value boundary. The grant is not issued, renewed,
+revoked, or persisted; no clock, Runner transport, process, reservation,
+staging, dispatch, or audit outbox is accessed. Authority bits remain false,
+and P4 still requires a separately Accepted execution/security decision.
+
+## Runner lease-fencing preview
+
+The CLI and TUI can exercise the canonical
+`forge.runner-lease-fencing/v1` fixture without opening a device or Runner
+connection:
+
+```bash
+forge-runtime --json device runner-lease-fencing-preview \
+  --input docs/contracts/fixtures/forge-runner-lease-fencing-v1.json
+```
+
+The command rejects duplicate or unknown fields, noncanonical schema/mode,
+enabled authority, oversized input, and fixture expectation drift before
+running the bounded renewal, proof, terminal, replay, conflict, and uncertain
+cases. Human and JSON output includes only lease identity/time metadata and
+redacted case outcomes; fencing tokens, receipt digests, and terminal reasons
+are never rendered. The TUI accepts the path-only command
+`runner-lease-fencing-preview --input FILE`.
+
+This is execution-precondition evidence only. It does not issue or persist a
+lease, read a clock, select or reserve a target, schedule or dispatch work,
+contact a Runner, execute a process, persist a receipt, or publish Audit
+evidence. All authority fields remain false and P3b/P4 still require their
+separate accepted governance and security decisions.
+
+## Session-bound Runner receipt observation
+
+The `forge.session-runner-receipt-observation/v1` value bridge binds that
+payload-free terminal receipt projection to an existing
+`forge.runner-execution-intent/v1` owner, Conversation, Prompt, Run, attempt,
+command, target, and digest observation. Go and Rust reject foreign or
+drifted identities, selected targets, uncertain-state inconsistencies, and
+authority mutations before emitting the canonical envelope. The resulting
+value is still preview-only: it does not persist a receipt or lease, contact a
+Runner, reserve or dispatch a device, execute a process, transfer artifacts,
+or publish audit data.
+
+The same envelope can be inspected locally from a canonical file without
+opening the Hub:
+
+```bash
+forge-runtime --json device session-runner-receipt-preview \
+  --input docs/contracts/fixtures/forge-session-runner-receipt-observation-v1.json
+```
+
+The authenticated TUI command
+`session-runner-receipt-preview --input FILE` posts the same canonical value to
+the session preview route after binding it to the selected Conversation/Run.
+`session-runner-receipt-offline-preview --input FILE` remains available for
+file-only local inspection; `-` remains reserved for the standalone CLI so the
+TUI's command stream stays interactive. Both consumers strictly reject unknown
+fields, selected targets, authority bits, and invalid receipt/session bindings.
+
+An authenticated session can also revalidate the same canonical value through
+the read-only `forge:conversations:read` route:
+
+```text
+POST /api/v1/conversations/{conversation_id}/runs/{run_id}/runner-receipt-observation/preview
+```
+
+The envelope is the strict request and response body. The route binds its owner
+and Conversation/Run identifiers to the authenticated principal and path; it
+does not read Hub state, persist receipt evidence, select a device, issue a
+lease, dispatch a Runner, or execute a process.
+
+## Offline Run-intent preview
+
+The CLI can bind a payload-free accepted Prompt receipt and observed Run to a
+separately supplied session placement observation:
+
+```bash
+cargo run -p forge-runtime-cli -- --json \
+  device placement run-intent-preview \
+  --input docs/contracts/fixtures/forge-run-intent-observation-v1.json \
+  --placement-input docs/contracts/fixtures/forge-session-placement-observation-v1.json
+```
+
+Each input is limited to 2 MiB, unknown fields and mismatched owner/session/
+Prompt/Run bindings fail closed, and at most one input may use `-`. The command
+recomputes the session placement observation through the Rust domain model,
+then produces a stable `forge.run-intent-observation/v1` preview. It carries no
+Prompt content, selects no device or instance, and keeps all identity,
+inventory, reservation, execution, and dispatch authority false.
+
+The interactive `remote tui` exposes the same local view as
+`run-intent-preview --input RUN_FILE --placement-input SESSION_FILE`. Both TUI
+inputs must be file paths so interactive stdin remains available. Neither path
+contacts Hub or a device endpoint, writes state, reserves capacity, dispatches
+a Runner, or executes a process.
+
+## Offline multi-instance resource summary
+
+The pure resource summary combines a caller-supplied inventory declaration
+with an already observed session placement declaration:
+
+```text
+forge-device-resource-summary-v1
+```
+
+The bounded local view is available from the CLI and the interactive TUI:
+
+```text
+forge-runtime [--json] device inventory resource-summary --input FILE|-
+forge-runtime remote tui
+inventory resource-summary --input FILE
+```
+
+The standalone CLI accepts `-` for bounded UTF-8 stdin. The TUI requires a
+filesystem path so its interactive command stream remains available.
+
+Go, Rust, and Flutter bind the exact owner, Conversation/Run, and
+`(device_id, instance_id)` pairs, then aggregate declared device and Runner
+instance counts, available CPU/memory/storage/GPU totals, and eligible device
+and instance counts. Totals include declarations from ineligible instances;
+they describe supplied values and do not represent schedulable capacity.
+Every value remains unverified, selected IDs are empty, and all identity,
+heartbeat, inventory, reservation, execution, and dispatch authority bits are
+false. Duplicate, foreign, malformed, missing, and overflow bindings fail
+closed. The contract has no Hub/device request, network discovery, clock,
+persistence, registration, heartbeat, selection, reservation, scheduling,
+dispatch, Runner, or process execution.
+
+## Offline client-instance/resource view
+
+The composed read-only view keeps independent CLI, TUI, Web, App, and Mobile
+client instance rows next to caller-declared device/Runner resource metadata:
+
+```text
+forge-runtime [--json] device client-instance-resource-view-preview --input FILE|-
+forge-runtime remote tui
+client-instance-resource-view-preview --input FILE
+```
+
+`instance_id` identifies a client display row while `runner_instance_id`
+identifies only the declared Runner reference; neither proves device identity.
+The bounded decoder requires exact owner bindings, stable ordering, lifecycle
+states, capacity monotonicity, and all-false authority. It renders revision,
+generation, heartbeat, liveness, reservation, CPU, memory, storage, and GPU
+metadata only. It does not read a registry, bind a Conversation, write a
+Prompt, create a Run, select or reserve a device, schedule or dispatch work,
+contact a Runner, execute a process, persist a receipt, or publish Audit.
+
 R0-C5 implements one pure Runtime-owned Attempt request value under Proposed
 ADR-0107 and closes only FR-03a. It validates caller-supplied Platform Core scope and
 explicit refs, Control aggregate versions, executor and typed record
@@ -170,7 +597,8 @@ cargo run -p forge-runtime-cli -- \
 
 The remote CLI and line-oriented TUI use the authenticated Forge session API.
 The Snaplink deployment must define the public `forge-cli` client with the
-`device_code` grant, resource `forge-api`, and the
+`urn:ietf:params:oauth:grant-type:device_code` and `refresh_token` grants,
+resource `forge-api`, and the
 `forge:conversations:read forge:conversations:write` scopes.
 
 ```bash
@@ -184,23 +612,52 @@ cargo run -p forge-runtime-cli -- remote login
 cargo run -p forge-runtime-cli -- remote sessions list
 cargo run -p forge-runtime-cli -- remote tui
 cargo run -p forge-runtime-cli -- remote changes list
+# Poll the owner change feed for a bounded live-delivery window. Empty pages
+# back off; a change or backlog resets the delay. The saved cursor advances
+# after each validated page.
+cargo run -p forge-runtime-cli -- remote changes watch --polls 8
 # Override the saved cursor for one read without changing the checkpoint.
 cargo run -p forge-runtime-cli -- remote changes list --after-cursor 0
+
+# Preview a local ownerless Conversation before sharing it with the authenticated
+# Coordinator. Repeat with the exact displayed digest to upload only its visible
+# user/assistant Prompts; the local source remains unchanged.
+cargo run -p forge-runtime-cli -- remote sessions import LOCAL_CONVERSATION_ID
+cargo run -p forge-runtime-cli -- remote sessions import LOCAL_CONVERSATION_ID \
+  --confirm SHA256_FROM_PREVIEW
+# The interactive TUI accepts the same flow without leaving its command stream:
+# import LOCAL_CONVERSATION_ID
+# import LOCAL_CONVERSATION_ID --confirm SHA256_FROM_PREVIEW
+
+# Submit a caller-supplied offline placement declaration for authenticated
+# comparison; the response never authorizes, reserves, selects, or dispatches.
+cargo run -p forge-runtime-cli -- remote placement preview --input placement-request.json
 
 # Inspect metadata for Runs already attached to a shared Conversation.
 cargo run -p forge-runtime-cli -- remote runs list CONVERSATION_ID
 cargo run -p forge-runtime-cli -- remote runs timeline CONVERSATION_ID RUN_ID
+# Inspect consent-checked pending Run-intent receipts without submitting work.
+cargo run -p forge-runtime-cli -- remote run-intents list CONVERSATION_ID
+cargo run -p forge-runtime-cli -- remote run-intents timeline CONVERSATION_ID INTENT_ID
 
 # Filter the current server page by an exact Project or Group scope.
 cargo run -p forge-runtime-cli -- remote sessions list --scope project:PROJECT_ID
 # Scan up to 64 pages, applying the scope filter across all scanned pages.
 cargo run -p forge-runtime-cli -- --json remote sessions list --scope project:PROJECT_ID --all
+# Apply a local display projection from an explicit client-instance
+# session/resource observation.
+cargo run -p forge-runtime-cli -- --json remote sessions list \
+  --instance client-web-001 --instance-view client-instance-view.json
 
 # Create a shared conversation and append a prompt with CAS/idempotency guards.
 cargo run -p forge-runtime-cli -- --idempotency-key create-1 \
   remote sessions create --scope group:GROUP_ID --title "Shared work"
 cargo run -p forge-runtime-cli -- --idempotency-key prompt-1 \
   remote prompts add CONVERSATION_ID --expected-version 1 "Review the current task."
+# Or keep a multiline/sensitive Prompt out of argv and shell history (256 KiB max).
+cat prompt.txt | cargo run -p forge-runtime-cli -- \
+  --idempotency-key prompt-stdin \
+  remote prompts add CONVERSATION_ID --expected-version 1 -
 ```
 
 Authenticated remote conversations can use Global, Project, or Group scope when
@@ -216,6 +673,20 @@ the filter across them. If `has_more` remains true, continue from the returned
 separately rather than from a frozen snapshot. Appending a remote Prompt stores
 it but does not create or dispatch a Run.
 
+`remote sessions list --instance INSTANCE_ID` applies a local caller-declared
+projection from the selected instance's opaque `session_ids` after the already
+authenticated Conversation page arrives. `--instance-view FILE|-` accepts the
+strict `forge.client-instance-session-view/v1` or
+`forge.client-instance-resource-view/v1` observation locally; without it, the
+explicit owner-bound session-view candidate is read first. The instance value
+does not become a request query, owner claim, registration, or authority. In
+the TUI, open `client-instances session-view` or `resource-view`, then use
+`instance INSTANCE_ID`, `instance list`, or `instance clear`; an explicit
+reader can be revoked with `client-instances clear session-view` or
+`client-instances clear resource-view`. Selection and local Prompt/Run panels
+are reselected or cleared when a session leaves the projection, and an active
+instance filter remains empty until a new validated reader succeeds.
+
 Run inspection is read-only and metadata-only: summaries expose the Run and
 Prompt IDs, creation time, latest sequence and a closed status; timeline pages
 expose event sequence, timestamp and one of four sanitized event kinds. Assistant
@@ -225,16 +696,41 @@ also obey a 2 MiB source-event budget and may return a shorter page with a
 continuation cursor. `nonterminal` means the latest recorded event is not
 terminal; it does not prove that a process is currently running.
 
+Pending Run-intent inspection is also read-only and metadata-only. The list is
+owner-scoped and newest-first; the timeline exposes only the immutable event
+envelope (`event_id`, sequence, timestamp, and `submitted` type). On an
+explicitly accepted `EXECUTE` activation, the same owner-scoped API can also
+expose consent and pending-intent submission as an admission record. That
+record still does not select a device, issue a lease, reserve capacity, create
+a Run, dispatch a Runner, authorize execution, or publish Audit. The default
+production app-server keeps the execution surface closed; only the separate
+accepted admission assembly can mount it. That assembly also exposes the
+metadata-only Attempt/lease, Runner-receipt, dispatch-plan, and reconciliation
+preflight projections; they keep target selection and authority closed and do
+not read or mutate durable execution state.
+
 The default Snaplink client ID is `forge-cli`; override it with
 `SNAPLINK_CLIENT_ID` only when the deployment uses a different profile.
 On Unix, login saves the access token under
 `$XDG_CONFIG_HOME/forge-runtime/credentials` (or
 `$HOME/.config/forge-runtime/credentials`) with current-user ownership and
-private directory/file modes. `FORGE_ACCESS_TOKEN`, when set, overrides the
-saved credential. If several accounts match, set `SNAPLINK_SUBJECT` and, when
-needed, `SNAPLINK_TENANT_ID` to select one. This slice stores access tokens
-only; after expiry, run `remote login` again. Non-Unix systems fail closed for
-persistent credential storage and can use the explicit environment-token
+private directory/file modes. macOS Keychain or Linux Secret Service stores
+the refresh token; on Linux a working D-Bus Secret Service is required.
+Saved access tokens refresh within 60 seconds of expiry, including between
+requests from a long-lived TUI. A private per-account lock coordinates refresh
+and login replacement across local CLI/TUI processes. Refresh tokens are not
+stored in the credential file or sent to the Forge API; the refresh grant is
+sent only to the configured Snaplink issuer token endpoint. API requests are
+not replayed after a `401`. Read-only remote `GET` requests retry transport and
+transient `408`, `425`, `429`, or `5xx` responses at most twice with a bounded
+50/100-ms backoff; mutating `POST` requests are never replayed automatically.
+The TUI keeps an uncertain write's original body, CAS version, and
+idempotency key for an explicit `retry`. `FORGE_ACCESS_TOKEN`, when set,
+overrides saved credentials and does not refresh. If several accounts match,
+set `SNAPLINK_SUBJECT` and, when needed, `SNAPLINK_TENANT_ID` to select one.
+Persisted CLI login currently
+supports Linux and macOS; Windows, Android, and other unsupported targets fail
+closed for persistent credentials and can use the explicit environment-token
 override.
 
 With a saved login, `remote changes list` and TUI `sync` share a private local
@@ -242,6 +738,15 @@ checkpoint keyed by the API origin and exact saved account. The CLI resumes and
 advances it after a valid page; `--after-cursor` is a one-off override. TUI only
 commits the cursor after refreshing the conversation list and selected history.
 Setting `FORGE_ACCESS_TOKEN` disables checkpoint persistence.
+
+`remote changes watch` is a bounded live-delivery helper for clients that do
+not have a push transport yet. It polls the same owner-bound dense feed for a
+fixed number of cycles (default 8), backs off exponentially across empty
+pages, resets the delay when a change or backlog is observed, and persists an
+advancing saved cursor after each valid page. Set `--min-delay-ms` and
+`--max-delay-ms` to tune the bounded window; an explicit `--after-cursor`
+remains a one-off watch and never replaces the saved checkpoint. It only
+reads Conversations and does not touch device or execution routes.
 
 The CLI checks the returned JWT claims to catch a mismatched issuer, owner,
 audience, or scope before saving; Forge Core remains responsible for token

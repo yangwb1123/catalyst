@@ -6,6 +6,8 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"forgeos/forge-core/internal/auditprojection"
+	"forgeos/forge-core/internal/runtimebridge"
 	model "forgeos/forge-core/internal/runtimebridge/model"
 	runmodel "forgeos/forge-core/internal/runtimebridge/runmodel"
 	"net/http"
@@ -30,6 +32,11 @@ type fakeConversationBackend struct {
 	listAfter string
 	listLimit int
 	listPage  model.OwnedConversationPage
+
+	detailCalls int
+	detailOwner model.Owner
+	detailID    string
+	detail      model.OwnedConversationEntry
 
 	createCalls int
 	createOwner model.Owner
@@ -57,6 +64,7 @@ type fakeConversationBackend struct {
 	runCursor      *runmodel.OwnedRunPageCursor
 	runLimit       int
 	runPage        runmodel.OwnedRunPage
+	runObservation auditprojection.RunObserved
 	timelineCalls  int
 	timelineOwner  model.Owner
 	timelineConvID string
@@ -157,6 +165,19 @@ func (backend *fakeConversationBackend) ListOwnedConversations(
 	return backend.listPage, nil
 }
 
+func (backend *fakeConversationBackend) GetOwnedConversation(
+	_ context.Context,
+	owner model.Owner,
+	conversationID string,
+) (model.OwnedConversationEntry, error) {
+	backend.detailCalls++
+	backend.detailOwner, backend.detailID = owner, conversationID
+	if backend.err != nil {
+		return model.OwnedConversationEntry{}, backend.err
+	}
+	return backend.detail, nil
+}
+
 func (backend *fakeConversationBackend) OwnedConversationPrompts(
 	_ context.Context,
 	owner model.Owner,
@@ -186,6 +207,28 @@ func (backend *fakeConversationBackend) OwnedConversationRuns(
 		return runmodel.OwnedRunPage{}, backend.err
 	}
 	return backend.runPage, nil
+}
+
+func (backend *fakeConversationBackend) OwnedConversationRunObservation(
+	_ context.Context,
+	owner model.Owner,
+	conversationID string,
+	runID string,
+) (auditprojection.RunObserved, error) {
+	backend.runCalls++
+	backend.runOwner, backend.runID = owner, conversationID
+	if backend.err != nil {
+		return auditprojection.RunObserved{}, backend.err
+	}
+	if backend.runObservation != (auditprojection.RunObserved{}) {
+		return backend.runObservation, nil
+	}
+	for _, summary := range backend.runPage.Runs {
+		if summary.RunID == runID {
+			return auditprojection.ProjectRunObserved(owner, conversationID, summary)
+		}
+	}
+	return auditprojection.RunObserved{}, &runtimebridge.Error{Code: "not_found"}
 }
 
 func (backend *fakeConversationBackend) OwnedConversationRunTimeline(

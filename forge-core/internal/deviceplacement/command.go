@@ -11,6 +11,7 @@ import (
 
 const commandUsage = `usage:
   forge device-placement dry-run --input FILE|-
+  forge device-placement persisted-observation-v2 --input FILE|-
 
 Reads one bounded caller-supplied JSON declaration set. FILE|- is read locally;
 the evaluator performs no discovery, API/network access, persistence, reservation,
@@ -23,8 +24,14 @@ func Command(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		_, _ = io.WriteString(stderr, commandUsage)
 		return 0
 	}
-	if len(args) == 0 || args[0] != "dry-run" {
-		return commandFailure(stderr, 2, "expected dry-run")
+	if len(args) == 0 {
+		return commandFailure(stderr, 2, "expected dry-run or persisted-observation-v2")
+	}
+	if args[0] == "persisted-observation-v2" {
+		return persistedObservationV2Command(args[1:], stdin, stdout, stderr)
+	}
+	if args[0] != "dry-run" {
+		return commandFailure(stderr, 2, "expected dry-run or persisted-observation-v2")
 	}
 	if len(args) == 2 && (args[1] == "--help" || args[1] == "-h") {
 		_, _ = io.WriteString(stderr, commandUsage)
@@ -128,7 +135,7 @@ func Marshal(result Result) ([]byte, error) {
 	if result.SchemaVersion != ResultSchemaVersion || result.EvaluationMode != EvaluationMode ||
 		!result.OwnerDeclarationUnverified || !result.DeviceAttributesUnverified ||
 		result.ExecutionAuthorized || result.ReservationCreated || result.DispatchPerformed ||
-		result.EvaluatedAtMS <= 0 || result.Notice != resultNotice || !validOwner(result.Owner) ||
+		result.EvaluatedAtMS <= 0 || result.EvaluatedAtMS > MaxSafeIntegerMS || result.Notice != resultNotice || !validOwner(result.Owner) ||
 		len(result.DeviceResults) > MaxDevices {
 		return nil, errInvalidRequest
 	}

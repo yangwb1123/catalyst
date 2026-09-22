@@ -4,36 +4,146 @@ pub const TEXT: &str = "usage:
   forge-runtime [OPTIONS] [PATH|-C PATH|--group GROUP_ID] session new [--title TITLE]
   forge-runtime [OPTIONS] prompt add SESSION_ID PROMPT|-
   forge-runtime [OPTIONS] prompt list [SESSION_ID] [--limit N]
+  forge-runtime [--json] device placement dry-run --input FILE|-
+  forge-runtime [--json] device placement run-intent-preview
+    --input RUN_INTENT_FILE|- --placement-input SESSION_PLACEMENT_FILE|-
+  forge-runtime [--json] device attempt-request-preview --input FILE|-
+  forge-runtime [--json] device runner-receipt-preview --input FILE|-
+  forge-runtime [--json] device runner-lease-fencing-preview --input FILE|-
+  forge-runtime [--json] device execution-lease-checkpoint-preview --input FILE|-
+  forge-runtime [--json] device runner-dispatch-plan-preview --input FILE|-
+  forge-runtime [--json] device client-session-view-preview --input FILE|-
+  forge-runtime [--json] device client-instance-resource-view-preview --input FILE|-
+  forge-runtime [--json] device runner-execution-intent-preview --input FILE|-
+  forge-runtime [--json] device session-runner-receipt-preview --input FILE|-
+  forge-runtime [--json] device run-observed-preview --input FILE|-
+  forge-runtime [--json] device run-execution-evidence-preview --input FILE|-
+  forge-runtime [--json] device run-attempt-lease-dispatch-preflight-preview --input FILE|-
+  forge-runtime [--json] device heartbeat-persistence-preview --input FILE|-
+  forge-runtime [--json] device identity-proof-preview --input FILE|-
+  forge-runtime [--json] device credential-candidate-preview --input FILE|-
+  forge-runtime [--json] device inventory show --input FILE|-
+  forge-runtime [--json] device inventory persistence-preview --input FILE|-
+  forge-runtime [--json] device inventory persisted-observation --input FILE|-
+  forge-runtime [--json] device inventory persisted-observation-v2 --input FILE|-
+  forge-runtime [--json] device inventory status --input FILE|-
+  forge-runtime [--json] device inventory snapshot-canonical --input FILE|-
+  forge-runtime [--json] device inventory resource-summary --input FILE|-
+  forge-runtime [--json] device inventory session-observation --input FILE|-
+  forge-runtime [--json] device inventory placement-evaluation --input FILE|-
+  forge-runtime [--json] device inventory placement-batch-evaluation --input FILE|-
+  forge-runtime [--json] device inventory placement-evaluation-v2 --input FILE|-
   forge-runtime remote tui
+  forge-runtime remote credentials status
   forge-runtime remote login
+  forge-runtime [--json] remote placement preview --input FILE|-
+  forge-runtime [--json] remote placement registry-preview --input FILE|-
+  forge-runtime [--json] remote credential-candidate preview --input FILE|-
+  forge-runtime [--json] remote session-observation preview --input FILE|-
+  forge-runtime [--json] remote session-runner-receipt preview --input FILE|-
+  forge-runtime [--json] remote runner-dispatch-plan-preview --input FILE|-
+  forge-runtime [--json] remote runner execution-readiness-preview --input FILE|-
+  forge-runtime [--json] remote execution-consent preview CONVERSATION_ID
+  forge-runtime [--json] remote execution-reconciliation preview --input FILE|-
+  forge-runtime [--json] remote inventory show
+  forge-runtime [--json] remote inventory show-v2
+  forge-runtime [--json] remote client-instances session-view
+  forge-runtime [--json] remote client-instances resource-view
   forge-runtime [--json] remote sessions list [--after CONVERSATION_ID]
-    [--scope global|project:ID|group:ID] [--all]
+    [--scope global|project:ID|group:ID] [--instance INSTANCE_ID]
+    [--instance-view FILE|-] [--all]
+  forge-runtime [--json] remote sessions show CONVERSATION_ID
+    [--instance INSTANCE_ID] [--instance-view FILE|-]
   forge-runtime [--state-dir PATH] [--json] remote sessions import LOCAL_CONVERSATION_ID
     [--confirm SHA256]
   forge-runtime [--json] remote runs list CONVERSATION_ID [--limit 1..25]
     [--before-created-at-ms MS --before-run-id RUN_ID]
+    [--instance INSTANCE_ID [--instance-view FILE|-]]
+  forge-runtime [--json] remote runs observed CONVERSATION_ID RUN_ID
+    [--instance INSTANCE_ID [--instance-view FILE|-]]
   forge-runtime [--json] remote runs timeline CONVERSATION_ID RUN_ID
-    [--after-sequence N] [--limit 1..128]
+    [--after-sequence N|--resume] [--limit 1..128]
+    [--instance INSTANCE_ID [--instance-view FILE|-]]
+  forge-runtime [--json] remote run-intents list CONVERSATION_ID [--limit 1..25]
+    [--before-submitted-at-ms MS --before-intent-id INTENT_ID]
+    [--instance INSTANCE_ID [--instance-view FILE|-]]
+  forge-runtime [--json] --idempotency-key KEY remote run-intents submit CONVERSATION_ID
+    --expected-version N [--instance INSTANCE_ID [--instance-view FILE|-]] PROMPT|-
+  forge-runtime [--json] remote run-intents timeline CONVERSATION_ID INTENT_ID
+    [--after-sequence N] [--limit 1..25]
+    [--instance INSTANCE_ID [--instance-view FILE|-]]
   forge-runtime [--json] --idempotency-key KEY remote sessions create
     [--scope global|project:ID|group:ID] [--title TITLE]
   forge-runtime [--json] remote prompts list CONVERSATION_ID
     [--before-created-at-ms MS --before-prompt-id PROMPT_ID]
+    [--instance INSTANCE_ID [--instance-view FILE|-]]
   forge-runtime [--json] remote changes list [--after-cursor N]
+  forge-runtime [--json] remote changes watch [--after-cursor N]
+    [--polls 1..64] [--min-delay-ms 0..10000] [--max-delay-ms 0..60000]
   forge-runtime [--json] --idempotency-key KEY remote prompts add CONVERSATION_ID
-    --expected-version N PROMPT
+    --expected-version N [--instance INSTANCE_ID [--instance-view FILE|-]] PROMPT|-
     (remote login reads SNAPLINK_ISSUER_URL and stores a protected local credential;
      API commands prefer FORGE_ACCESS_TOKEN, then the matching local credential)
-    (credentials are access-token only; after expiry run remote login again;
+    (remote credentials status is a local, read-only preflight; it does not open the keyring,
+     create files, contact Snaplink, or enable device/execution routes)
+    (Linux/macOS saved credentials refresh within 60 seconds using an OS keyring refresh token;
+     Windows and Android report their exact persistence gaps; unsupported saved-login platforms require FORGE_ACCESS_TOKEN;
      set SNAPLINK_SUBJECT and SNAPLINK_TENANT_ID to select among matching accounts)
     (remote API reads FORGE_API_URL; remote writes require an explicit key)
     (with a saved login, remote changes list resumes and saves a private cursor for this coordinator/account;
      --after-cursor overrides the saved cursor for a one-off read; FORGE_ACCESS_TOKEN has no saved cursor)
-    (remote prompts add stores the Prompt; it does not start a Run)
+    (remote changes watch performs a bounded owner-feed watch; empty pages use exponential backoff,
+     change/continuation pages reset the delay, and saved cursors advance after each valid page;
+     explicit --after-cursor never changes the saved checkpoint)
+    (remote tui exposes the same bounded watch as `changes watch`; it renders metadata-only
+     change rows, advances its in-process cursor, and performs only authenticated GET requests)
+    (with a saved login, remote runs timeline --resume resumes and saves a private owner/Conversation/Run cursor;
+     --after-sequence performs a one-off read and never replaces the saved Run cursor)
+    (remote runs --instance applies only a caller-declared local client-instance/session display filter;
+     --instance-view FILE|- reads that declaration locally and avoids the candidate view request;
+     hidden Conversations issue no private Run request, while visible reads keep their cursor and metadata behavior)
+    (remote prompts add accepts a sole '-' to read bounded UTF-8 Prompt content from stdin;
+     it stores the Prompt and does not start a Run)
     (remote Run status is an observed summary; timeline output contains metadata-only event markers)
+    (remote pending Run-intent pages and timelines are owner-scoped metadata-only observations;
+     they do not submit work or start a Run)
+    (remote Run-intent submit uses the private inert candidate only; it stores a consent-checked
+     pending receipt and Prompt, never selects a device, creates a Run, or executes work)
+    (remote inventory show reads only the owner-bound v1 observation mounted by an accepted
+     device-fabric activation; remote inventory show-v2 reads the lossless v2 observation;
+     values remain unverified and
+     neither command registers, heartbeats, selects, reserves, schedules, dispatches, or executes a device)
+    (remote client-instances session-view and resource-view read only explicitly mounted,
+     owner-bound display observations; instance/resource values remain unverified and neither
+     command registers a client, binds a session, selects a device, reserves, schedules,
+     dispatches, or executes work)
+    (remote runner execution-readiness-preview is a test-only authenticated candidate;
+     it posts one caller-supplied request to an injected local Runner and returns
+     metadata-only receipt fields; it does not create a Run, persist a receipt,
+     select a device, reserve capacity, or enable production execution)
+    (remote runner-dispatch-plan-preview posts only the dispatch_plan from a bounded
+     Run/Attempt/lease declaration to an injected candidate; it returns metadata-only
+     comparison fields and never selects, reserves, authorizes, dispatches, or executes work)
+    (remote execution-consent preview is a read-only authenticated candidate;
+     it returns the server-resolved project, execution profile, digest, and maximum TTL;
+     it grants no consent, creates no Run, selects no device, acquires no lease,
+     reserves no capacity, dispatches no command, and contacts no Runner)
+    (remote execution-reconciliation preview posts one bounded caller-supplied
+     restart image once and returns metadata-only classification; it does not
+     renew a lease, retry, select, reserve, dispatch, or execute work)
+    (execution-lease-checkpoint-preview validates one bounded restart image
+     offline and renders terminal/uncertain status only; it never restores a
+     live lease, persists a terminal, reserves capacity, or dispatches a Runner)
     (Run pages may be short; continue from next_cursor or scanned_through_sequence while has_more is true)
     (sessions import previews the local user/assistant transcript; repeat with its SHA256 confirmation to import it)
     (remote tui is interactive and uses the same environment configuration)
     (--all scans at most 64 pages; scope filters apply across scanned pages)
+    (--instance applies a local display filter to the caller-declared client-instance
+     session_ids; use --instance-view FILE|- for an offline declaration, otherwise
+     the explicit owner-bound candidate is read; no request query or authority changes)
+    (run-intents list, submit, and timeline apply the same instance projection
+     before any pending Run-intent request; hidden sessions produce no private read
+     or submit, and pending Run-intents remain inert metadata with no Run start)
   forge-runtime [OPTIONS] --idempotency-key KEY governance journal append --file PATH|-
   forge-runtime [OPTIONS] governance journal show RECORD_ID [--include-record]
   forge-runtime [OPTIONS] governance journal list [--kind EvidenceRecord|KnowledgeClaim]

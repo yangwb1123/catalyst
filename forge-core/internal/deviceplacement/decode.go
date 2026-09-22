@@ -31,7 +31,14 @@ func Decode(reader io.Reader) (Request, error) {
 
 func requiredRequestShape(data []byte) bool {
 	var root map[string]json.RawMessage
-	if json.Unmarshal(data, &root) != nil || !hasFields(root,
+	if json.Unmarshal(data, &root) != nil {
+		return false
+	}
+	return requiredRequestObjectShape(root)
+}
+
+func requiredRequestObjectShape(root map[string]json.RawMessage) bool {
+	if root == nil || !hasFields(root,
 		"schema_version", "evaluated_at_ms", "owner", "max_snapshot_age_ms", "requirements", "devices") {
 		return false
 	}
@@ -54,21 +61,25 @@ func requiredRequirementsShape(raw map[string]json.RawMessage) bool {
 func requiredDeviceShapes(devices []json.RawMessage) bool {
 	for _, encoded := range devices {
 		var device map[string]json.RawMessage
-		if json.Unmarshal(encoded, &device) != nil || !hasFields(device,
-			"device_id", "owner", "approval_state", "cordon_state", "liveness", "snapshot_observed_at_ms",
-			"lease_expires_at_ms", "os", "architecture", "available_cpu_cores", "available_memory_bytes",
-			"available_storage_bytes", "runtimes", "gpu", "data_residency_zones", "trust_zone", "sandbox_levels",
-			"concurrency_limit", "active_concurrency") {
-			return false
-		}
-		owner, okOwner := objectField(device, "owner")
-		gpu, okGPU := objectField(device, "gpu")
-		if !okOwner || !hasFields(owner, "issuer", "subject", "tenant_id") ||
-			!okGPU || !hasFields(gpu, "present", "memory_bytes", "runtime") {
+		if json.Unmarshal(encoded, &device) != nil || !requiredDeviceObjectShape(device) {
 			return false
 		}
 	}
 	return true
+}
+
+func requiredDeviceObjectShape(device map[string]json.RawMessage) bool {
+	if device == nil || !hasFields(device,
+		"device_id", "owner", "approval_state", "cordon_state", "liveness", "snapshot_observed_at_ms",
+		"lease_expires_at_ms", "os", "architecture", "available_cpu_cores", "available_memory_bytes",
+		"available_storage_bytes", "runtimes", "gpu", "data_residency_zones", "trust_zone", "sandbox_levels",
+		"concurrency_limit", "active_concurrency") {
+		return false
+	}
+	owner, okOwner := objectField(device, "owner")
+	gpu, okGPU := objectField(device, "gpu")
+	return okOwner && hasFields(owner, "issuer", "subject", "tenant_id") &&
+		okGPU && hasFields(gpu, "present", "memory_bytes", "runtime")
 }
 
 func hasFields(object map[string]json.RawMessage, names ...string) bool {

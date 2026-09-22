@@ -46,11 +46,30 @@ func TestConversationHTTPToRustRPCWhenConfigured(t *testing.T) {
 	created := createIntegrationConversations(t, handler, identity, projectPath, projectID, groupID)
 	conversation := created[0]
 	promptID := appendIntegrationPrompts(t, handler, identity, conversation.ID)
-	assertIntegrationPromptHistory(t, handler, identity, conversation.ID, promptID)
+	history := assertIntegrationPromptHistory(t, handler, identity, conversation.ID, promptID)
 	assertIntegrationOwnerList(t, handler, identity, created, projectPath)
-	assertIntegrationChangeFeed(t, handler, identity, conversation.ID)
+	assertIntegrationChangeFeed(t, handler, identity, conversation.ID, history)
 	assertIntegrationNoNormalRun(t, handler, identity, conversation.ID)
 	assertIntegrationForeignAccess(t, handler, identity, projectID, conversation.ID)
+	// Construct a new bridge and HTTP route over the same durable state. Each
+	// bridge call launches a fresh Runtime process; replaying through this new
+	// route proves the persisted receipt remains stable across bridge objects.
+	restartedClient, err := runtimebridge.New(runtimebridge.Config{
+		Executable: executable, AppServerStateDir: appState, RuntimeStateDir: runtimeState,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	restartedHandler := auth.Handler(newConversationRoutes(restartedClient))
+	assertIntegrationPromptReplayAndConflicts(
+		t, restartedHandler, identity,
+		conversationCollectionPath+"/"+conversation.ID+"/prompts",
+		`{"content":"run the bounded task","expected_version":1}`,
+		promptID,
+	)
+	restartedHistory := assertIntegrationPromptHistory(t, restartedHandler, identity, conversation.ID, promptID)
+	assertIntegrationChangeFeed(t, restartedHandler, identity, conversation.ID, restartedHistory)
+	assertIntegrationOwnerList(t, restartedHandler, identity, created, projectPath)
 }
 
 func createIntegrationConversations(
@@ -135,9 +154,11 @@ func assertIntegrationPromptReplayAndConflicts(
 		AggregateVersion uint64 `json:"aggregate_version"`
 		Replayed         bool   `json:"replayed"`
 	}
+	// An idempotent replay returns the original append receipt. A later Prompt
+	// advances the head to version 3 but cannot rewrite this Prompt's version 2.
 	if err := json.Unmarshal(replay.Body.Bytes(), &replayAppend); err != nil ||
 		replay.Code != http.StatusOK || !replayAppend.Replayed ||
-		replayAppend.Prompt.ID != firstPromptID || replayAppend.AggregateVersion != 3 {
+		replayAppend.Prompt.ID != firstPromptID || replayAppend.AggregateVersion != 2 {
 		t.Fatalf("idempotent replay status=%d result=%#v body=%q decode=%v",
 			replay.Code, replayAppend, replay.Body.String(), err)
 	}
@@ -155,7 +176,7 @@ func assertIntegrationPromptReplayAndConflicts(
 	}
 }
 
-func assertIntegrationPromptHistory(t *testing.T, handler http.Handler, identity *conversationTestIdentity, conversationID, promptID string) {
+func assertIntegrationPromptHistory(t *testing.T, handler http.Handler, identity *conversationTestIdentity, conversationID, promptID string) model.ConversationPromptPage {
 	t.Helper()
 	promptPath := conversationCollectionPath + "/" + conversationID + "/prompts"
 	response := requestConversationAPI(t, handler, identity, http.MethodGet, promptPath,
@@ -166,6 +187,7 @@ func assertIntegrationPromptHistory(t *testing.T, handler http.Handler, identity
 		history.Prompts[1].ID != promptID || history.Prompts[1].Content != "run the bounded task" {
 		t.Fatalf("history status=%d body=%q", response.Code, response.Body.String())
 	}
+	return history
 }
 
 func assertIntegrationOwnerList(
@@ -200,7 +222,13 @@ func assertIntegrationOwnerList(
 	}
 }
 
-func assertIntegrationChangeFeed(t *testing.T, handler http.Handler, identity *conversationTestIdentity, conversationID string) {
+func assertIntegrationChangeFeed(
+	t *testing.T,
+	handler http.Handler,
+	identity *conversationTestIdentity,
+	conversationID string,
+	history model.ConversationPromptPage,
+) {
 	t.Helper()
 	changesTarget := conversationChangesPath + "?after_cursor=0&limit=50"
 	response := requestConversationAPI(t, handler, identity, http.MethodGet, changesTarget,
@@ -226,19 +254,35 @@ func assertIntegrationChangeFeed(t *testing.T, handler http.Handler, identity *c
 		t.Fatalf("first change does not identify the created conversation: %#v", changes.Changes[0])
 	}
 	owner := model.Owner{Issuer: identity.issuer, Subject: "account-42", TenantID: "tenant-slate"}
+	promptsByID := make(map[string]model.ConversationPrompt, len(history.Prompts))
+	for _, prompt := range history.Prompts {
+		if _, exists := promptsByID[prompt.ID]; exists {
+			t.Fatalf("Prompt history repeated ID %q", prompt.ID)
+		}
+		promptsByID[prompt.ID] = prompt
+	}
 	projectedPromptCount := 0
+	projectedPromptIDs := make(map[string]struct{})
 	for _, change := range changes.Changes {
 		if change.Kind != "prompt_appended" {
 			continue
 		}
-		event, err := auditprojection.Project(owner, change)
-		if err != nil {
-			t.Fatalf("project committed Prompt change %#v: %v", change, err)
+		prompt, ok := promptsByID[change.EntityID]
+		if !ok {
+			t.Fatalf("Prompt change %q has no matching committed Prompt receipt: %#v", change.EntityID, change)
 		}
-		replayed, err := auditprojection.Project(owner, change)
+		event, err := auditprojection.ProjectCommittedPrompt(owner, prompt, change)
+		if err != nil {
+			t.Fatalf("project committed Prompt/change pair %#v/%#v: %v", prompt, change, err)
+		}
+		replayed, err := auditprojection.ProjectCommittedPrompt(owner, prompt, change)
 		if err != nil || replayed != event {
 			t.Fatalf("repeat projection changed event identity: first=%#v repeat=%#v err=%v", event, replayed, err)
 		}
+		if _, exists := projectedPromptIDs[change.EntityID]; exists {
+			t.Fatalf("exact Prompt retry produced a second committed change for %q", change.EntityID)
+		}
+		projectedPromptIDs[change.EntityID] = struct{}{}
 		encoded, err := json.Marshal(event)
 		if err != nil {
 			t.Fatal(err)
@@ -262,6 +306,9 @@ func assertIntegrationChangeFeed(t *testing.T, handler http.Handler, identity *c
 	}
 	if projectedPromptCount != 2 {
 		t.Fatalf("projected prompt change count=%d, want 2", projectedPromptCount)
+	}
+	if len(projectedPromptIDs) != len(promptsByID) {
+		t.Fatalf("committed Prompt/change cardinality=%d, want %d", len(projectedPromptIDs), len(promptsByID))
 	}
 }
 

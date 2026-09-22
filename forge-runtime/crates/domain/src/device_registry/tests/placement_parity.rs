@@ -7,6 +7,9 @@ const FIXTURE: &str = include_str!(
 const GPU_FIXTURE: &str = include_str!(
     "../../../../../../docs/contracts/fixtures/forge-device-placement-gpu-policy-parity-v1.json"
 );
+const SESSION_FIXTURE: &str = include_str!(
+    "../../../../../../docs/contracts/fixtures/forge-session-placement-observation-v1.json"
+);
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -99,6 +102,51 @@ struct ExpectedFixture {
     exclusion_reasons: Vec<String>,
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SessionFixture {
+    api_version: String,
+    owner: OwnerFixture,
+    conversation_id: String,
+    run_id: String,
+    placement: Fixture,
+    expected: SessionExpectedFixture,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SessionExpectedFixture {
+    evaluation_mode: String,
+    evaluated_at_ms: u64,
+    owner_declaration_unverified: bool,
+    device_attributes_unverified: bool,
+    decisions: Vec<SessionDecisionFixture>,
+    selected_device_id: Option<String>,
+    selected_instance_id: Option<String>,
+    authority: SessionAuthorityFixture,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SessionDecisionFixture {
+    device_id: String,
+    instance_id: String,
+    matches_requirements: bool,
+    exclusion_reasons: Vec<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+#[allow(clippy::struct_excessive_bools)]
+struct SessionAuthorityFixture {
+    identity_verified: bool,
+    heartbeat_persisted: bool,
+    inventory_authoritative: bool,
+    reservation_created: bool,
+    execution_authorized: bool,
+    dispatch_performed: bool,
+}
+
 #[test]
 fn shared_policy_fixture_matches_offline_go_projection() {
     let fixture: Fixture = serde_json::from_str(FIXTURE).unwrap();
@@ -109,6 +157,118 @@ fn shared_policy_fixture_matches_offline_go_projection() {
 fn shared_gpu_policy_fixture_matches_offline_go_projection() {
     let fixture: Fixture = serde_json::from_str(GPU_FIXTURE).unwrap();
     assert_fixture_matches_offline_go_projection(&fixture);
+}
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn shared_session_placement_fixture_binds_run_without_authority() {
+    let fixture: SessionFixture = serde_json::from_str(SESSION_FIXTURE).unwrap();
+    assert_eq!(
+        fixture.api_version,
+        "forgeos.session-placement-observation-contract/v1"
+    );
+    assert_eq!(fixture.placement.owner.tenant_id, fixture.owner.tenant_id);
+    let requirements = build_requirements(&fixture.placement.requirements);
+    let candidates = fixture
+        .placement
+        .candidates
+        .iter()
+        .map(|candidate| {
+            build_candidate(candidate, &fixture.owner, &fixture.placement.requirements)
+        })
+        .collect::<Vec<_>>();
+    let owner = SessionPlacementOwner {
+        issuer: fixture.owner.issuer.clone(),
+        subject: fixture.owner.subject.clone(),
+        tenant_id: TenantId::parse(fixture.owner.tenant_id.clone()).unwrap(),
+    };
+    let observation = observe_session_placement(SessionPlacementObservationRequest {
+        owner: owner.clone(),
+        placement_owner: SessionPlacementOwner {
+            issuer: fixture.placement.owner.issuer.clone(),
+            subject: fixture.placement.owner.subject.clone(),
+            tenant_id: TenantId::parse(fixture.placement.owner.tenant_id.clone()).unwrap(),
+        },
+        conversation_id: fixture.conversation_id.clone(),
+        run_id: fixture.run_id.clone(),
+        placement: DevicePlacementRequest::new(
+            TenantId::parse(fixture.placement.owner.tenant_id.clone()).unwrap(),
+            requirements,
+        ),
+        evaluated_at_ms: fixture.placement.evaluated_at_ms,
+        candidates,
+    })
+    .unwrap();
+
+    assert_eq!(
+        observation.schema_version,
+        SESSION_PLACEMENT_OBSERVATION_SCHEMA_VERSION
+    );
+    assert_eq!(
+        observation.evaluation_mode,
+        fixture.expected.evaluation_mode
+    );
+    assert_eq!(observation.owner.issuer, fixture.owner.issuer);
+    assert_eq!(observation.owner.subject, fixture.owner.subject);
+    assert_eq!(
+        observation.owner.tenant_id.as_str(),
+        fixture.owner.tenant_id
+    );
+    assert_eq!(observation.conversation_id, fixture.conversation_id);
+    assert_eq!(observation.run_id, fixture.run_id);
+    assert_eq!(
+        observation.evaluated_at_ms,
+        fixture.expected.evaluated_at_ms
+    );
+    assert_eq!(
+        observation.owner_declaration_unverified,
+        fixture.expected.owner_declaration_unverified
+    );
+    assert_eq!(
+        observation.device_attributes_unverified,
+        fixture.expected.device_attributes_unverified
+    );
+    assert_eq!(
+        observation.selected_device_id,
+        fixture.expected.selected_device_id
+    );
+    assert_eq!(
+        observation.selected_instance_id,
+        fixture.expected.selected_instance_id
+    );
+    assert_eq!(
+        observation.authority,
+        SessionPlacementAuthority {
+            identity_verified: fixture.expected.authority.identity_verified,
+            heartbeat_persisted: fixture.expected.authority.heartbeat_persisted,
+            inventory_authoritative: fixture.expected.authority.inventory_authoritative,
+            reservation_created: fixture.expected.authority.reservation_created,
+            execution_authorized: fixture.expected.authority.execution_authorized,
+            dispatch_performed: fixture.expected.authority.dispatch_performed,
+        }
+    );
+    assert!(
+        !observation.authority.identity_verified
+            && !observation.authority.heartbeat_persisted
+            && !observation.authority.inventory_authoritative
+            && !observation.authority.reservation_created
+            && !observation.authority.execution_authorized
+            && !observation.authority.dispatch_performed
+    );
+    assert_eq!(
+        observation.decisions.len(),
+        fixture.expected.decisions.len()
+    );
+    for (actual, expected) in observation
+        .decisions
+        .iter()
+        .zip(&fixture.expected.decisions)
+    {
+        assert_eq!(actual.device_id, expected.device_id);
+        assert_eq!(actual.instance_id, expected.instance_id);
+        assert_eq!(actual.matches_requirements, expected.matches_requirements);
+        assert_eq!(actual.exclusion_reasons, expected.exclusion_reasons);
+    }
 }
 
 fn assert_fixture_matches_offline_go_projection(fixture: &Fixture) {

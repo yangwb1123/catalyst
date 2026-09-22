@@ -3,6 +3,7 @@ use std::{fs, io::Read, path::PathBuf};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+use super::run_timeline::RunTimelineCursorStore;
 use super::{
     CredentialStore, StoredCredential, check_file_metadata, ensure_directory,
     reject_symlink_if_present,
@@ -59,6 +60,23 @@ impl CredentialStore {
 }
 
 impl ChangeCursorStore {
+    pub(in crate::remote_command) fn run_timeline_cursor_store(
+        &self,
+        conversation_id: &str,
+        run_id: &str,
+    ) -> RunTimelineCursorStore {
+        RunTimelineCursorStore::from_binding(
+            self.credential_store.clone(),
+            &self.checkpoint.coordinator,
+            &self.checkpoint.issuer,
+            &self.checkpoint.client_id,
+            &self.checkpoint.subject,
+            &self.checkpoint.tenant_id,
+            conversation_id,
+            run_id,
+        )
+    }
+
     pub fn load(&self) -> Result<u64, String> {
         let owner_uid = ensure_directory(&self.config_root, &self.directory, false)?;
         match fs::symlink_metadata(&self.path) {

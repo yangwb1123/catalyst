@@ -1,0 +1,86 @@
+{
+  "schema_version": "forge.pending-run-intent/v1",
+  "evaluation_mode": "owner_scoped_pending_intent_preview",
+  "authority": {
+    "device_identity_verified": false,
+    "inventory_authoritative": false,
+    "reservation_created": false,
+    "execution_authorized": false,
+    "dispatch_performed": false,
+    "run_created": false,
+    "audit_published": false
+  },
+  "owner": {
+    "issuer": "https://id.example",
+    "subject": "user-1",
+    "tenant_id": "tenant-1"
+  },
+  "conversation_id": "conversation-001",
+  "submission": {
+    "prompt": {
+      "id": "prompt-001",
+      "conversation_id": "conversation-001",
+      "role": "user",
+      "content": "prepare the report",
+      "created_at_ms": 200
+    },
+    "intent": {
+      "intent_id": "intent-001",
+      "conversation_id": "conversation-001",
+      "prompt_id": "prompt-001",
+      "project_id": "project-001",
+      "profile_id": "profile-001",
+      "submitted_at_ms": 200,
+      "aggregate_version": 4,
+      "latest_sequence": 1,
+      "status": "pending"
+    },
+    "initial_event": {
+      "event_id": "event-001",
+      "seq": 1,
+      "emitted_at_ms": 200,
+      "type": "submitted"
+    },
+    "replayed": false
+  },
+  "page": {
+    "conversation_id": "conversation-001",
+    "intents": [
+      {
+        "intent_id": "intent-001",
+        "conversation_id": "conversation-001",
+        "prompt_id": "prompt-001",
+        "project_id": "project-001",
+        "profile_id": "profile-001",
+        "submitted_at_ms": 200,
+        "aggregate_version": 4,
+        "latest_sequence": 1,
+        "status": "pending"
+      }
+    ],
+    "next_cursor": null,
+    "has_more": false
+  },
+  "timeline": {
+    "conversation_id": "conversation-001",
+    "intent_id": "intent-001",
+    "after_sequence": 0,
+    "scanned_through_sequence": 1,
+    "has_more": false,
+    "events": [
+      {
+        "event_id": "event-001",
+        "seq": 1,
+        "emitted_at_ms": 200,
+        "type": "submitted"
+      }
+    ]
+  },
+  "expected": {
+    "prompt_role": "user",
+    "intent_status": "pending",
+    "initial_event_type": "submitted",
+    "timeline_event_count": 1,
+    "replayed": false
+  }
+}

@@ -261,7 +261,7 @@ pub(in crate::sqlite_hub) fn append_owned_prompt(
     ensure_conversation_owner(&transaction, owner, conversation_id)?;
     if let Some(existing) = prompt_by_key(&transaction, idempotency_key)? {
         ensure_same_prompt(&existing, conversation_id, "user", content)?;
-        let aggregate_version = conversation_change_version(&transaction, conversation_id)?;
+        let aggregate_version = prompt_change_version(&transaction, conversation_id, &existing.id)?;
         let result = owned_prompt_result(existing, aggregate_version, true);
         transaction
             .commit()
@@ -343,6 +343,36 @@ fn conversation_change_version(
         })?
         .ok_or_else(|| HubStoreError::Corrupt {
             message: format!("owned Conversation '{conversation_id}' has no change head"),
+        })
+}
+
+fn prompt_change_version(
+    transaction: &Transaction<'_>,
+    conversation_id: &str,
+    prompt_id: &str,
+) -> Result<u64, HubStoreError> {
+    let version: Option<i64> = transaction
+        .query_row(
+            "SELECT aggregate_version
+             FROM conversation_changes
+             WHERE conversation_id = ?1
+               AND entity_id = ?2
+               AND event_kind = 'prompt_appended'",
+            rusqlite::params![conversation_id, prompt_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(read_error)?;
+    version
+        .map(u64::try_from)
+        .transpose()
+        .map_err(|error| HubStoreError::Corrupt {
+            message: format!("invalid Prompt aggregate version: {error}"),
+        })?
+        .ok_or_else(|| HubStoreError::Corrupt {
+            message: format!(
+                "owned Prompt '{prompt_id}' has no prompt_appended change in Conversation '{conversation_id}'"
+            ),
         })
 }
 

@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forgeos.dev/contracts/forge-execution-reconciliation-observation-v1.schema.json",
+  "title": "Forge execution reconciliation observation v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "evaluation_mode", "owner", "conversation_id", "run_id", "attempt_id", "command_id", "target_id", "run_status", "attempt_state", "lease_epoch", "lease_active", "observed_at_ms", "terminal_observed", "terminal_disposition", "terminal_state_aligned", "next_observation", "reconciliation_required", "manual_review_required", "automatic_retry", "preview_only", "authority"],
+  "properties": {
+    "schema_version": {"const": "forge.execution-reconciliation-observation/v1"},
+    "evaluation_mode": {"const": "pure_execution_reconciliation_observation"},
+    "owner": {"$ref": "#/$defs/owner"},
+    "conversation_id": {"$ref": "#/$defs/id"},
+    "run_id": {"$ref": "#/$defs/id"},
+    "attempt_id": {"$ref": "#/$defs/id"},
+    "command_id": {"$ref": "#/$defs/id"},
+    "target_id": {"$ref": "#/$defs/id"},
+    "run_status": {"enum": ["nonterminal", "completed", "cancelled", "limit_exceeded", "failed"]},
+    "attempt_state": {"enum": ["requested", "accepted", "starting", "running", "interrupted", "completed", "failed", "uncertain"]},
+    "lease_epoch": {"type": "integer", "minimum": 1, "maximum": 9007199254740991},
+    "lease_active": {"type": "boolean"},
+    "observed_at_ms": {"type": "integer", "minimum": 1, "maximum": 9007199254740991},
+    "terminal_observed": {"type": "boolean"},
+    "terminal_disposition": {"enum": ["none", "completed", "failed", "uncertain"]},
+    "terminal_state_aligned": {"type": "boolean"},
+    "next_observation": {"enum": ["await_terminal", "lease_expired_without_terminal", "attempt_not_dispatchable", "attempt_terminal_without_receipt", "run_terminal_without_receipt", "terminal_completed", "terminal_failed", "terminal_uncertain", "terminal_state_conflict"]},
+    "reconciliation_required": {"type": "boolean"},
+    "manual_review_required": {"type": "boolean"},
+    "automatic_retry": {"const": false},
+    "preview_only": {"const": true},
+    "authority": {"$ref": "#/$defs/authority"}
+  },
+  "$defs": {
+    "id": {"type": "string", "minLength": 1, "maxLength": 85, "pattern": "^[^\\x00-\\x20:/\\\\]+$"},
+    "owner": {"type": "object", "additionalProperties": false, "required": ["issuer", "subject", "tenant_id"], "properties": {"issuer": {"type": "string", "minLength": 1, "maxLength": 2048}, "subject": {"type": "string", "minLength": 1, "maxLength": 255}, "tenant_id": {"type": "string", "minLength": 1, "maxLength": 255}}},
+    "authority": {"type": "object", "additionalProperties": false, "required": ["identity_verified", "run_authoritative", "attempt_persisted", "lease_issued", "terminal_persisted", "reservation_created", "execution_authorized", "dispatch_performed", "audit_published"], "properties": {"identity_verified": {"const": false}, "run_authoritative": {"const": false}, "attempt_persisted": {"const": false}, "lease_issued": {"const": false}, "terminal_persisted": {"const": false}, "reservation_created": {"const": false}, "execution_authorized": {"const": false}, "dispatch_performed": {"const": false}, "audit_published": {"const": false}}}
+  }
+}

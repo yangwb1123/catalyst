@@ -35,7 +35,7 @@ func TestOwnedConversationChangesAfterUsesRuntimeV2AndAcceptsDenseOwnerCursors(t
 		page.Changes[0].Cursor != 5 || page.Changes[1].Cursor != 6 {
 		t.Fatalf("owned change page = %#v", page)
 	}
-	if _, err := client.OwnedConversationChangesAfter(context.Background(), owner, maxSQLiteInteger+1, 2); err == nil {
+	if _, err := client.OwnedConversationChangesAfter(context.Background(), owner, maxSafeJSONInteger+1, 2); err == nil {
 		t.Fatal("out-of-range cursor was accepted")
 	}
 	if _, err := client.OwnedConversationChangesAfter(context.Background(), owner, 4, maxChangeLimit+1); err == nil {
@@ -43,6 +43,25 @@ func TestOwnedConversationChangesAfterUsesRuntimeV2AndAcceptsDenseOwnerCursors(t
 	}
 	if _, err := client.OwnedConversationChangesAfter(context.Background(), model.Owner{}, 4, 2); err == nil {
 		t.Fatal("empty owner was accepted")
+	}
+}
+
+func TestOwnedConversationChangePageUsesJSONSafeIntegerBoundary(t *testing.T) {
+	valid := fmt.Sprintf(`{"after_cursor":%d,"scanned_through_cursor":%d,"has_more":false,"changes":[{"cursor":%d,"schema_version":1,"conversation_id":"c-1","entity_id":"p-1","aggregate_version":%d,"kind":"prompt_appended","created_at_ms":%d}]}`,
+		maxSafeJSONInteger-1, maxSafeJSONInteger, maxSafeJSONInteger, maxSafeJSONInteger, maxSafeJSONInteger)
+	var page model.OwnedConversationChangePage
+	if err := decodeStrict([]byte(valid), &page); err != nil ||
+		!validOwnedConversationChangePage([]byte(valid), page, maxSafeJSONInteger-1, 1) {
+		t.Fatalf("JSON-safe change boundary rejected: %v", err)
+	}
+	for _, field := range []string{"scanned_through_cursor", "cursor", "aggregate_version", "created_at_ms"} {
+		unsafe := strings.Replace(valid, fmt.Sprintf(`"%s":%d`, field, maxSafeJSONInteger),
+			fmt.Sprintf(`"%s":%d`, field, maxSafeJSONInteger+1), 1)
+		var decoded model.OwnedConversationChangePage
+		if err := decodeStrict([]byte(unsafe), &decoded); err == nil &&
+			validOwnedConversationChangePage([]byte(unsafe), decoded, maxSafeJSONInteger-1, 1) {
+			t.Fatalf("unsafe %s accepted", field)
+		}
 	}
 }
 

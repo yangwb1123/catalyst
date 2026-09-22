@@ -5,10 +5,10 @@ use super::{
     ConversationImportPrompt, ConversationOwner, ConversationPromptCursor, ConversationPromptPage,
     ConversationScope, GroupContextPolicy, GroupContextSlice, GroupProjectMember, HubSnapshot,
     HubSnapshotAtCursor, HubStore, HubStoreError, LocalConversationImportSource,
-    OwnedConversationChangePage, OwnedConversationImportResult, OwnedConversationPage,
-    OwnedProjectConversationIdentity, OwnedPromptAppendResult, OwnedRunCursor, OwnedRunPage,
-    OwnedRunTimelinePage, PendingRunIntentCursor, PendingRunIntentPage,
-    PendingRunIntentSubmissionResult, PendingRunIntentTimelinePage, Project,
+    OwnedConversationChangePage, OwnedConversationEntry, OwnedConversationImportResult,
+    OwnedConversationPage, OwnedProjectConversationIdentity, OwnedPromptAppendResult,
+    OwnedRunCursor, OwnedRunPage, OwnedRunSummary, OwnedRunTimelinePage, PendingRunIntentCursor,
+    PendingRunIntentPage, PendingRunIntentSubmissionResult, PendingRunIntentTimelinePage, Project,
     ProjectExecutionConsentGrantResult, ProjectExecutionConsentRevocationResult, PromptRecord,
     SessionGroup, SqliteHubStore, SubmitPendingRunIntent, atomic_link, change_read,
     conversation_bootstrap_read, conversation_import_read, conversation_owner_changes_read,
@@ -40,6 +40,18 @@ impl HubStore for SqliteHubStore {
             title,
             prompts,
             idempotency_key,
+        )
+    }
+
+    fn get_owned_conversation(
+        &self,
+        owner: &ConversationOwner,
+        conversation_id: &str,
+    ) -> Result<OwnedConversationEntry, HubStoreError> {
+        conversation_owner_read::get_owned_conversation(
+            &mut self.connect()?,
+            owner,
+            conversation_id,
         )
     }
 
@@ -101,6 +113,15 @@ impl HubStore for SqliteHubStore {
         limit: usize,
     ) -> Result<OwnedRunPage, HubStoreError> {
         owned_run_read::owned_run_page(&mut self.connect()?, owner, conversation_id, before, limit)
+    }
+
+    fn owned_run_observation(
+        &self,
+        owner: &ConversationOwner,
+        conversation_id: &str,
+        run_id: &str,
+    ) -> Result<OwnedRunSummary, HubStoreError> {
+        owned_run_read::owned_run_observation(&mut self.connect()?, owner, conversation_id, run_id)
     }
 
     fn owned_run_timeline_page(

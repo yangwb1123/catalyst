@@ -58,6 +58,61 @@ pub(super) fn owned_run_page(
     })
 }
 
+/// Reads one owner-visible Run summary directly by its durable ID. The owner
+/// check and Run membership check happen in the same deferred snapshot, while
+/// the returned value remains the existing payload-free scalar summary.
+pub(super) fn owned_run_observation(
+    connection: &mut Connection,
+    owner: &ConversationOwner,
+    conversation_id: &str,
+    run_id: &str,
+) -> Result<OwnedRunSummary, HubStoreError> {
+    validate_identifier(conversation_id, "Conversation")?;
+    validate_identifier(run_id, "Run")?;
+    let transaction = connection
+        .transaction_with_behavior(TransactionBehavior::Deferred)
+        .map_err(read_error)?;
+
+    ensure_owned_conversation(&transaction, owner, conversation_id)?;
+    ensure_run_in_conversation(&transaction, conversation_id, run_id)?;
+    let (run_id, prompt_id, created_at, latest_sequence, latest_event_bytes) = transaction
+        .query_row(
+            "SELECT r.id, r.prompt_id, r.created_at_ms,
+                    COALESCE((SELECT MAX(e.seq) FROM run_events AS e
+                              WHERE e.run_id = r.id), 0),
+                    COALESCE((SELECT length(CAST(e.event_json AS BLOB))
+                              FROM run_events AS e WHERE e.run_id = r.id
+                              ORDER BY e.seq DESC LIMIT 1), 0)
+             FROM runs AS r
+             WHERE r.id = ?1 AND r.conversation_id = ?2",
+            params![run_id, conversation_id],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, i64>(2)?,
+                    row.get::<_, i64>(3)?,
+                    row.get::<_, i64>(4)?,
+                ))
+            },
+        )
+        .map_err(read_error)?;
+    let mut source_event_bytes = 0_usize;
+    let summary = decode_run_summary(
+        &transaction,
+        conversation_id,
+        run_id,
+        prompt_id,
+        created_at,
+        latest_sequence,
+        latest_event_bytes,
+        &mut source_event_bytes,
+    )?
+    .ok_or_else(|| corrupt("Run observation exceeds its durable size limit"))?;
+    transaction.commit().map_err(read_error)?;
+    Ok(summary)
+}
+
 fn summarize_candidates(
     transaction: &Transaction<'_>,
     conversation_id: &str,

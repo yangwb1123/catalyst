@@ -5,6 +5,8 @@ mod agent_args;
 mod args_validation;
 #[path = "args/basic.rs"]
 mod basic_args;
+#[path = "device_args.rs"]
+mod device_args;
 #[path = "governance_journal/args.rs"]
 mod governance_journal_args;
 #[path = "group_analysis_args.rs"]
@@ -26,6 +28,7 @@ mod run_args;
 pub use agent_args::{AgentArgs, AgentCommand};
 pub(crate) use agent_args::{MAX_PROMPT_BYTES, validate_prompt};
 pub use basic_args::{PromptCommand, SessionCommand};
+pub use device_args::{DeviceCommand, DeviceInventoryCommand, DevicePlacementCommand};
 pub use governance_journal_args::{GovernanceCommand, GovernanceJournalCommand};
 pub use group_commands::{
     GroupAnalysisCommand, GroupCommand, GroupExecutionCommand, GroupGraphCommand,
@@ -56,6 +59,7 @@ pub enum Command {
     HubStatus, // readiness probe (no migration)
     Session(SessionCommand),
     Prompt(PromptCommand),
+    Device(DeviceCommand),
     Remote(RemoteCommand),
     Governance(GovernanceCommand),
     Group(GroupCommand),
@@ -172,6 +176,7 @@ fn is_command(value: &str) -> bool {
         value,
         "session"
             | "prompt"
+            | "device"
             | "governance"
             | "group"
             | "run"
@@ -206,6 +211,7 @@ fn parse_named_command(
     match command {
         "session" => basic_args::parse_session(tokens),
         "prompt" => basic_args::parse_prompt(tokens),
+        "device" => device_args::parse(tokens),
         "remote" => remote_args::parse(tokens),
         "governance" => governance_journal_args::parse(tokens),
         "group" => group_args::parse(tokens, &mut options.idempotency_key),
@@ -292,6 +298,9 @@ pub fn usage() -> &'static str {
     crate::cli_usage::TEXT
 }
 
+#[cfg(test)]
+#[path = "device_args_tests.rs"]
+mod device_arg_tests;
 #[cfg(test)]
 #[path = "group_analysis_args_tests.rs"]
 mod group_analysis_tests;

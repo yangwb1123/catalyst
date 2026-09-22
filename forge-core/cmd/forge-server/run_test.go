@@ -3,10 +3,14 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"forgeos/forge-core/internal/appserver"
+	"forgeos/forge-core/internal/devicefabricgate"
 )
 
 func TestRunPrintsVersionWithoutStateDirectory(t *testing.T) {
@@ -50,6 +54,36 @@ func TestRunRejectsMalformedOrDuplicateExecutionProfileBindings(t *testing.T) {
 			!strings.Contains(stderr.String(), "execution profile policy") {
 			t.Errorf("bindings=%#v exit=%d stderr=%q", bindings, code, stderr.String())
 		}
+	}
+}
+
+func TestRunRejectsBlockedDeviceFabricManifestBeforeStateMutation(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Chmod(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	manifestPath := filepath.Join(root, "activation.json")
+	data, err := json.Marshal(devicefabricgate.Manifest{
+		SchemaVersion: devicefabricgate.ActivationManifestSchemaVersion,
+		Mode:          devicefabricgate.ModeInventory,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(manifestPath, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stateDir := filepath.Join(root, "state")
+	var stdout, stderr bytes.Buffer
+	code := run(context.Background(), []string{
+		"--state-dir", stateDir,
+		"--device-fabric-activation-file", manifestPath,
+	}, &stdout, &stderr)
+	if code != 2 || !strings.Contains(stderr.String(), "device fabric activation blocked") {
+		t.Fatalf("exit = %d, stderr = %q", code, stderr.String())
+	}
+	if _, err := os.Stat(stateDir); !os.IsNotExist(err) {
+		t.Fatalf("blocked activation changed state directory: stat err=%v", err)
 	}
 }
 

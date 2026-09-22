@@ -3,6 +3,7 @@ package appserver
 import (
 	"context"
 	"errors"
+	"forgeos/forge-core/internal/auditprojection"
 	intentmodel "forgeos/forge-core/internal/runtimebridge/intentmodel"
 	model "forgeos/forge-core/internal/runtimebridge/model"
 	runmodel "forgeos/forge-core/internal/runtimebridge/runmodel"
@@ -27,6 +28,7 @@ const (
 	conversationImportContentMaxBytes = 256 * 1024
 	conversationJSONMaxDepth          = 64
 	maxSQLiteCursor                   = uint64(1<<63 - 1)
+	maxSafeJSONInteger                = uint64(1<<53 - 1)
 )
 
 type conversationBackend interface {
@@ -45,6 +47,7 @@ type conversationBackend interface {
 		string,
 	) (model.OwnedConversationImportResult, error)
 	ListOwnedConversations(context.Context, model.Owner, string, int) (model.OwnedConversationPage, error)
+	GetOwnedConversation(context.Context, model.Owner, string) (model.OwnedConversationEntry, error)
 	OwnedConversationPrompts(
 		context.Context,
 		model.Owner,
@@ -59,6 +62,12 @@ type conversationBackend interface {
 		*runmodel.OwnedRunPageCursor,
 		int,
 	) (runmodel.OwnedRunPage, error)
+	OwnedConversationRunObservation(
+		context.Context,
+		model.Owner,
+		string,
+		string,
+	) (auditprojection.RunObserved, error)
 	OwnedConversationRunTimeline(
 		context.Context,
 		model.Owner,
@@ -82,6 +91,7 @@ type conversationRoutes struct {
 	profiles           *executionprofile.Catalog
 	changes            http.Handler
 	list               http.Handler
+	detail             http.Handler
 	create             http.Handler
 	importConversation http.Handler
 	listPrompts        http.Handler
@@ -148,6 +158,7 @@ func newConversationRoutesWithBackendAndExecutionProfiles(
 	routes := conversationRoutes{backend: backend, profiles: profiles}
 	routes.changes = authn.RequireScopes(http.HandlerFunc(routes.ownedConversationChanges), "forge:conversations:read")
 	routes.list = authn.RequireScopes(http.HandlerFunc(routes.listConversations), "forge:conversations:read")
+	routes.detail = authn.RequireScopes(http.HandlerFunc(routes.getConversation), "forge:conversations:read")
 	routes.create = authn.RequireScopes(http.HandlerFunc(routes.createConversation), "forge:conversations:write")
 	routes.importConversation = authn.RequireScopes(http.HandlerFunc(routes.importConversationHandler), "forge:conversations:write")
 	routes.listPrompts = authn.RequireScopes(http.HandlerFunc(routes.listConversationPrompts), "forge:conversations:read")
@@ -234,6 +245,13 @@ func (routes conversationRoutes) serveConversationCollectionRoutes(w http.Respon
 		}
 		return true
 	}
+	if conversationID, ok := conversationDetailID(path); ok {
+		if !requireConversationMethod(w, r, http.MethodGet) {
+			return true
+		}
+		routes.detail.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), conversationIDContextKey{}, conversationID)))
+		return true
+	}
 	if conversationID, ok := promptConversationID(path); ok {
 		switch r.Method {
 		case http.MethodGet:
@@ -308,6 +326,22 @@ func promptConversationID(escapedPath string) (string, bool) {
 	}
 	parts := strings.Split(strings.TrimPrefix(escapedPath, prefix), "/")
 	if len(parts) != 2 || parts[0] == "" || parts[1] != "prompts" {
+		return "", false
+	}
+	id, err := url.PathUnescape(parts[0])
+	if err != nil || strings.ContainsAny(id, "/\x00") || strings.TrimSpace(id) == "" || len(id) > conversationIDMaxBytes {
+		return "", false
+	}
+	return id, true
+}
+
+func conversationDetailID(escapedPath string) (string, bool) {
+	prefix := conversationCollectionPath + "/"
+	if !strings.HasPrefix(escapedPath, prefix) {
+		return "", false
+	}
+	parts := strings.Split(strings.TrimPrefix(escapedPath, prefix), "/")
+	if len(parts) != 1 || parts[0] == "" {
 		return "", false
 	}
 	id, err := url.PathUnescape(parts[0])

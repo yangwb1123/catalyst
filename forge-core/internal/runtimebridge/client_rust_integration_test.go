@@ -36,6 +36,10 @@ func assertRustOwnedConversationRoundTrip(t *testing.T, client *Client) {
 		t.Fatal(err)
 	}
 	aggregateVersion := ownedConversationVersion(t, page, conversation.ID)
+	detail, err := client.GetOwnedConversation(context.Background(), owner, conversation.ID)
+	if err != nil || detail.Conversation.ID != conversation.ID || detail.AggregateVersion != aggregateVersion {
+		t.Fatalf("owned Conversation detail = %#v, error %v", detail, err)
+	}
 
 	content, idempotencyKey := "persist one user Prompt", "prompt-"+requestID
 	prompt, nextVersion, replayed, err := client.AppendOwnedPrompt(context.Background(), owner,
@@ -54,6 +58,9 @@ func assertRustOwnedConversationRoundTrip(t *testing.T, client *Client) {
 	}
 	foreign := owner
 	foreign.TenantID = "tenant-other"
+	if _, err := client.GetOwnedConversation(context.Background(), foreign, conversation.ID); err == nil || err.(*Error).Code != "not_found" {
+		t.Fatalf("foreign owner could read Conversation detail: %v", err)
+	}
 	if _, err := client.OwnedConversationPrompts(context.Background(), foreign, conversation.ID, nil, 8); err == nil || err.(*Error).Code != "not_found" {
 		t.Fatalf("foreign owner could read Prompt page: %v", err)
 	}

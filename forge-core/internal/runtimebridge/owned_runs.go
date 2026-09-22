@@ -3,6 +3,7 @@ package runtimebridge
 import (
 	"context"
 	"encoding/json"
+	auditprojection "forgeos/forge-core/internal/auditprojection"
 	model "forgeos/forge-core/internal/runtimebridge/model"
 	runmodel "forgeos/forge-core/internal/runtimebridge/runmodel"
 	"strings"
@@ -17,7 +18,7 @@ func (client *Client) OwnedConversationRuns(
 	limit int,
 ) (runmodel.OwnedRunPage, error) {
 	if !validOwner(owner) || !validEntityID(conversationID) || limit < 1 || limit > maxOwnedRunPageLimit ||
-		(before != nil && (before.CreatedAtMS > maxSQLiteInteger || !validEntityID(before.RunID))) {
+		(before != nil && (before.CreatedAtMS > maxSafeJSONInteger || !validEntityID(before.RunID))) {
 		return runmodel.OwnedRunPage{}, &Error{Code: "invalid_owned_run_request"}
 	}
 	ownerCopy := owner
@@ -50,7 +51,7 @@ func (client *Client) OwnedConversationRunTimeline(
 	limit int,
 ) (runmodel.OwnedRunTimelinePage, error) {
 	if !validOwner(owner) || !validEntityID(conversationID) || !validEntityID(runID) ||
-		after > maxSQLiteInteger || limit < 1 || limit > maxOwnedRunTimelinePageLimit {
+		after > maxSafeJSONInteger || limit < 1 || limit > maxOwnedRunTimelinePageLimit {
 		return runmodel.OwnedRunTimelinePage{}, &Error{Code: "invalid_owned_run_request"}
 	}
 	ownerCopy := owner
@@ -68,6 +69,35 @@ func (client *Client) OwnedConversationRunTimeline(
 		return runmodel.OwnedRunTimelinePage{}, &Error{Code: "invalid_runtime_response"}
 	}
 	return page, nil
+}
+
+// OwnedConversationRunObservation reads one bounded, content-free Run
+// observation for the exact owner and Conversation. The result carries no
+// execution, lease, reservation, or dispatch authority.
+func (client *Client) OwnedConversationRunObservation(
+	ctx context.Context,
+	owner model.Owner,
+	conversationID string,
+	runID string,
+) (auditprojection.RunObserved, error) {
+	if !validOwner(owner) || !validEntityID(conversationID) || !validEntityID(runID) {
+		return auditprojection.RunObserved{}, &Error{Code: "invalid_owned_run_request"}
+	}
+	ownerCopy := owner
+	request := request{
+		Operation: "owned_run_observation", Owner: &ownerCopy, ConversationID: conversationID,
+		RunID: runID,
+	}
+	response, err := client.callWrite(ctx, request)
+	if err != nil {
+		return auditprojection.RunObserved{}, err
+	}
+	var observed auditprojection.RunObserved
+	if err := decodeStrict(response, &observed); err != nil ||
+		!validOwnedRunObservation(response, observed, owner, conversationID, runID) {
+		return auditprojection.RunObserved{}, &Error{Code: "invalid_runtime_response"}
+	}
+	return observed, nil
 }
 
 func validOwnedRunPage(
@@ -93,12 +123,17 @@ func validOwnedRunPage(
 	if json.Unmarshal(root["runs"], &rawRuns) != nil || len(rawRuns) != len(page.Runs) {
 		return false
 	}
+	seenRunIDs := make(map[string]struct{}, len(page.Runs))
 	for index, run := range page.Runs {
 		if requireObjectFieldSet(rawRuns[index], "run_id", "prompt_id", "created_at_ms", "latest_sequence", "status") != nil ||
-			!validEntityID(run.RunID) || !validEntityID(run.PromptID) || run.CreatedAtMS > maxSQLiteInteger ||
-			run.LatestSequence == 0 || run.LatestSequence > maxSQLiteInteger || !validOwnedRunStatus(run.Status) {
+			!validEntityID(run.RunID) || !validEntityID(run.PromptID) || run.CreatedAtMS > maxSafeJSONInteger ||
+			run.LatestSequence == 0 || run.LatestSequence > maxSafeJSONInteger || !validOwnedRunStatus(run.Status) {
 			return false
 		}
+		if _, exists := seenRunIDs[run.RunID]; exists {
+			return false
+		}
+		seenRunIDs[run.RunID] = struct{}{}
 		if index > 0 && !newerRun(page.Runs[index-1], run) {
 			return false
 		}
@@ -115,7 +150,7 @@ func validOwnedRunPage(
 			return false
 		}
 		return requireObjectFieldSet(root["next_cursor"], "created_at_ms", "run_id") == nil &&
-			page.NextCursor.CreatedAtMS <= maxSQLiteInteger && validEntityID(page.NextCursor.RunID)
+			page.NextCursor.CreatedAtMS <= maxSafeJSONInteger && validEntityID(page.NextCursor.RunID)
 	}
 	return page.NextCursor == nil
 }
@@ -130,7 +165,7 @@ func validOwnedRunTimelinePage(
 ) bool {
 	if requireObjectFieldSet(data, "conversation_id", "run_id", "after_sequence", "scanned_through_sequence", "has_more", "events") != nil ||
 		page.ConversationID != conversationID || page.RunID != runID || page.AfterSequence != after ||
-		page.ScannedThroughSequence < after || page.ScannedThroughSequence > maxSQLiteInteger ||
+		page.ScannedThroughSequence < after || page.ScannedThroughSequence > maxSafeJSONInteger ||
 		page.Events == nil || len(page.Events) > limit || (page.HasMore && len(page.Events) == 0) {
 		return false
 	}
@@ -145,8 +180,8 @@ func validOwnedRunTimelinePage(
 	previous := after
 	for index, event := range page.Events {
 		if requireObjectFieldSet(rawEvents[index], "seq", "emitted_at_ms", "type") != nil ||
-			event.Sequence != previous+1 || event.Sequence > maxSQLiteInteger ||
-			event.EmittedAtMS > maxSQLiteInteger || !validOwnedRunEventType(event.Type) {
+			event.Sequence != previous+1 || event.Sequence > maxSafeJSONInteger ||
+			event.EmittedAtMS > maxSafeJSONInteger || !validOwnedRunEventType(event.Type) {
 			return false
 		}
 		previous = event.Sequence
@@ -155,6 +190,34 @@ func validOwnedRunTimelinePage(
 		return !page.HasMore && page.ScannedThroughSequence == after
 	}
 	return page.ScannedThroughSequence == previous
+}
+
+func validOwnedRunObservation(
+	data []byte,
+	observed auditprojection.RunObserved,
+	owner model.Owner,
+	conversationID string,
+	runID string,
+) bool {
+	if requireObjectFieldSet(data, "api_version", "owner_ref", "conversation_id", "run_id", "prompt_id",
+		"created_at_ms", "latest_sequence", "status", "metadata_observed", "content_included", "authority") != nil ||
+		observed.ConversationID != conversationID || observed.RunID != runID {
+		return false
+	}
+	var root map[string]json.RawMessage
+	if json.Unmarshal(data, &root) != nil || requireObjectFieldSet(root["authority"],
+		"identity_verified", "owner_authorized", "run_authoritative", "persistence_attested",
+		"content_provenance_verified", "reservation_created", "execution_authorized", "dispatch_performed") != nil {
+		return false
+	}
+	expected, err := auditprojection.ProjectRunObserved(owner, conversationID, runmodel.OwnedRunSummary{
+		RunID:          observed.RunID,
+		PromptID:       observed.PromptID,
+		CreatedAtMS:    observed.CreatedAtMS,
+		LatestSequence: observed.LatestSequence,
+		Status:         observed.Status,
+	})
+	return err == nil && observed == expected
 }
 
 func validOwnedRunStatus(status string) bool {

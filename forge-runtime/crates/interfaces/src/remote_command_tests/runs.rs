@@ -57,6 +57,67 @@ async fn run_list_rejects_unallowlisted_execution_metadata() {
     );
     server.join().unwrap();
 }
+
+#[tokio::test]
+async fn run_observed_sends_one_authenticated_get_without_a_body() {
+    let response: Value = serde_json::from_str(include_str!(
+        "../../../../../docs/contracts/fixtures/forge-run-observed-v1.json"
+    ))
+    .unwrap();
+    let (client, server) = spawn_mock_server(vec![ExpectedRequest {
+        request_prefix: "GET /api/v1/conversations/conversation-001/runs/run-001/observation ",
+        required_headers: &[],
+        body_fields: Value::Null,
+        response_status: "200 OK",
+        response,
+    }]);
+    let observed = client
+        .read_run_observation("conversation-001", "run-001")
+        .await
+        .unwrap();
+    assert_eq!(observed.conversation_id, "conversation-001");
+    assert_eq!(observed.run_id, "run-001");
+    assert!(observed.metadata_observed);
+    assert!(!observed.content_included);
+    assert!(!observed.authority.execution_authorized);
+    assert!(!observed.authority.dispatch_performed);
+    server.join().unwrap();
+}
+
+#[tokio::test]
+async fn run_observed_rejects_binding_and_authority_mutations() {
+    for (conversation_id, run_id, mutation) in [
+        ("conversation-001", "run-001", "binding"),
+        ("conversation-001", "run-001", "authority"),
+        ("conversation-001", "run-001", "content"),
+    ] {
+        let mut response: Value = serde_json::from_str(include_str!(
+            "../../../../../docs/contracts/fixtures/forge-run-observed-v1.json"
+        ))
+        .unwrap();
+        match mutation {
+            "binding" => response["run_id"] = Value::String("run-other".into()),
+            "authority" => response["authority"]["dispatch_performed"] = Value::Bool(true),
+            "content" => response["content_included"] = Value::Bool(true),
+            _ => unreachable!(),
+        }
+        let (client, server) = spawn_mock_server(vec![ExpectedRequest {
+            request_prefix: "GET /api/v1/conversations/conversation-001/runs/run-001/observation ",
+            required_headers: &[],
+            body_fields: Value::Null,
+            response_status: "200 OK",
+            response,
+        }]);
+        assert!(
+            client
+                .read_run_observation(conversation_id, run_id)
+                .await
+                .is_err(),
+            "mutation {mutation} must be rejected"
+        );
+        server.join().unwrap();
+    }
+}
 #[tokio::test]
 async fn run_timeline_sends_cursor_and_returns_only_metadata_markers() {
     let (client, server) = spawn_mock_server(vec![ExpectedRequest {

@@ -70,9 +70,11 @@ pub fn execute(args: &Args) -> Result<CliOutput, Box<dyn Error>> {
         Command::Governance(_) => {
             Err("governance journal must use the dedicated journal path".into())
         }
-        Command::Agent(_) | Command::Demo(_) | Command::Remote(_) | Command::Help => {
-            Err("command is not a Hub operation".into())
-        }
+        Command::Agent(_)
+        | Command::Demo(_)
+        | Command::Device(_)
+        | Command::Remote(_)
+        | Command::Help => Err("command is not a Hub operation".into()),
     }
 }
 

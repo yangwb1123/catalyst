@@ -8,8 +8,8 @@ use std::{
 use reqwest::{Client, Url, redirect::Policy};
 
 use super::{
-    DEVICE_GRANT, DeviceClient, RESOURCE, SCOPES, increase_interval, parse_issuer,
-    validate_verification_uri,
+    DEFAULT_CLIENT_ID, DEVICE_GRANT, DeviceClient, RESOURCE, SCOPES, increase_interval,
+    parse_issuer, validate_verification_uri,
 };
 
 #[tokio::test]
@@ -248,4 +248,76 @@ fn assert_no_oauth_client_secret_or_authorization(request: &Request) {
     assert!(!headers.contains("authorization:"));
     assert!(!request.body.contains("client_secret"));
     assert!(!request.body.contains("authorization"));
+}
+
+#[test]
+fn snaplink_profile_fixture_matches_the_cli_device_client() {
+    const PROFILE: &str =
+        include_str!("../../../../docs/contracts/fixtures/forge-snaplink-profile-v1.json");
+    #[derive(serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct Profile {
+        schema_version: String,
+        evaluation_mode: String,
+        issuer: String,
+        audience: String,
+        resource: String,
+        conversation_scopes: Vec<String>,
+        clients: std::collections::BTreeMap<String, ClientProfile>,
+        authority: Authority,
+    }
+    #[derive(serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct ClientProfile {
+        client_id: String,
+        public: bool,
+        grant_types: Vec<String>,
+        scopes: Vec<String>,
+    }
+    #[derive(serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct Authority {
+        issuer_verified: bool,
+        audience_verified: bool,
+        client_provisioned: bool,
+        token_issued: bool,
+        device_authorized: bool,
+        conversation_access_granted: bool,
+    }
+
+    let profile: Profile = serde_json::from_str(PROFILE).expect("strict profile fixture");
+    assert_eq!(profile.schema_version, "forge.snaplink-profile/v1");
+    assert_eq!(profile.evaluation_mode, "configuration_parity_only");
+    assert_eq!(profile.issuer, "https://id.example");
+    assert_eq!(profile.audience, "forge-api");
+    assert_eq!(profile.resource, RESOURCE);
+    assert_eq!(
+        profile.conversation_scopes,
+        vec![
+            "forge:conversations:read".to_owned(),
+            "forge:conversations:write".to_owned()
+        ]
+    );
+    let cli = profile.clients.get("cli").expect("cli profile");
+    assert_eq!(cli.client_id, DEFAULT_CLIENT_ID);
+    assert!(cli.public);
+    assert_eq!(
+        cli.grant_types,
+        vec![DEVICE_GRANT.to_owned(), "refresh_token".to_owned()]
+    );
+    assert_eq!(cli.scopes.join(" "), SCOPES);
+    let console = profile.clients.get("console").expect("console profile");
+    assert_eq!(console.client_id, "forge-console");
+    assert!(console.public);
+    assert_eq!(
+        console.grant_types,
+        vec!["authorization_code", "refresh_token"]
+    );
+    assert_eq!(console.scopes, cli.scopes);
+    assert!(!profile.authority.issuer_verified);
+    assert!(!profile.authority.audience_verified);
+    assert!(!profile.authority.client_provisioned);
+    assert!(!profile.authority.token_issued);
+    assert!(!profile.authority.device_authorized);
+    assert!(!profile.authority.conversation_access_granted);
 }

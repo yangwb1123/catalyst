@@ -8,6 +8,7 @@ import (
 
 func validateRequest(value Request) error {
 	if value.SchemaVersion != RequestSchemaVersion || value.EvaluatedAtMS <= 0 ||
+		value.EvaluatedAtMS > MaxSafeIntegerMS ||
 		!validOwner(value.Owner) || value.MaxSnapshotAgeMS <= 0 || value.MaxSnapshotAgeMS > MaxSnapshotAgeMS ||
 		len(value.Devices) > MaxDevices || validateRequirements(value.Requirements) != nil {
 		return errInvalidRequest
@@ -27,7 +28,9 @@ func validateRequest(value Request) error {
 
 func validateRequirements(value Requirements) error {
 	if !validToken(value.OS) || !validToken(value.Architecture) || value.MinCPUCores == 0 ||
-		value.MinMemoryBytes == 0 || value.MinStorageBytes == 0 || !validToken(value.Runtime) ||
+		value.MinMemoryBytes == 0 || value.MinMemoryBytes > uint64(MaxSafeIntegerMS) ||
+		value.MinStorageBytes == 0 || value.MinStorageBytes > uint64(MaxSafeIntegerMS) ||
+		!validToken(value.Runtime) ||
 		!validTrustZone(value.MinimumTrustZone) || !validSandboxLevel(value.SandboxFloor) ||
 		value.ConcurrencySlots == 0 || len(value.DataResidencyZones) == 0 ||
 		!validUniqueTokens(value.DataResidencyZones, MaxArrayItems, validZone) ||
@@ -39,7 +42,7 @@ func validateRequirements(value Requirements) error {
 
 func validGPURequirement(value GPURequirement) bool {
 	if value.Required {
-		return value.Runtime == "" || validToken(value.Runtime)
+		return value.MinMemoryBytes <= uint64(MaxSafeIntegerMS) && (value.Runtime == "" || validToken(value.Runtime))
 	}
 	return value.MinMemoryBytes == 0 && value.Runtime == ""
 }
@@ -47,7 +50,9 @@ func validGPURequirement(value GPURequirement) bool {
 func validDeviceDeclaration(value Device) bool {
 	return validDeviceID(value.DeviceID) && validOwner(value.Owner) && validApproval(value.ApprovalState) &&
 		validCordonState(value.CordonState) && validLiveness(value.Liveness) && value.SnapshotObservedAtMS >= 0 &&
-		value.LeaseExpiresAtMS >= 0 && validToken(value.OS) && validToken(value.Architecture) &&
+		value.SnapshotObservedAtMS <= MaxSafeIntegerMS && value.LeaseExpiresAtMS >= 0 &&
+		value.LeaseExpiresAtMS <= MaxSafeIntegerMS && validToken(value.OS) && validToken(value.Architecture) &&
+		value.AvailableMemoryBytes <= uint64(MaxSafeIntegerMS) && value.AvailableStorage <= uint64(MaxSafeIntegerMS) &&
 		validUniqueTokens(value.Runtimes, MaxArrayItems, validToken) && validGPUDeclaration(value.GPU) &&
 		validUniqueTokens(value.DataResidencyZones, MaxArrayItems, validZone) &&
 		validDeviceTrustZone(value.TrustZone) && validUniqueTokens(value.SandboxLevels, MaxArrayItems, validSandboxLevel)
@@ -55,7 +60,7 @@ func validDeviceDeclaration(value Device) bool {
 
 func validGPUDeclaration(value GPUDeclaration) bool {
 	if value.Present {
-		return value.Runtime == "" || validToken(value.Runtime)
+		return value.MemoryBytes <= uint64(MaxSafeIntegerMS) && (value.Runtime == "" || validToken(value.Runtime))
 	}
 	return value.MemoryBytes == 0 && value.Runtime == ""
 }

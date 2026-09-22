@@ -1,3 +1,4 @@
+pub mod aero_id_profile_projection;
 pub mod approval_record_contract;
 pub mod artifact_evidence_contract;
 pub mod capability_grant_contract;
@@ -30,10 +31,17 @@ pub mod kernel_decision_contract;
 pub mod kernel_operational_contract;
 pub mod knowledge_update_proposal_contract;
 mod model;
+pub mod pending_write_recovery;
+pub use pending_write_recovery::{
+    PENDING_WRITE_RECOVERY_EVALUATION_MODE, PENDING_WRITE_RECOVERY_SCHEMA_VERSION,
+    PendingWriteMetadata, project_pending_write,
+};
 pub mod platform_core_contract;
 mod run;
+pub mod run_execution_evidence;
 mod run_journal;
 mod run_lineage;
+pub mod run_observed;
 mod run_store;
 mod scheduled_graph_controller;
 mod scheduled_graph_progress;

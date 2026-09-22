@@ -2,11 +2,43 @@ package appserver
 
 import (
 	"encoding/json"
+	"forgeos/forge-core/internal/runtimebridge"
 	model "forgeos/forge-core/internal/runtimebridge/model"
 	runmodel "forgeos/forge-core/internal/runtimebridge/runmodel"
 	"net/http"
 	"strings"
 )
+
+func (routes conversationRoutes) getConversation(w http.ResponseWriter, r *http.Request) {
+	if requestHasBody(r) {
+		writeConversationError(w, r, http.StatusBadRequest, "invalid_request", "GET requests must not include a body")
+		return
+	}
+	if _, err := parseConversationQuery(r); err != nil {
+		writeConversationRequestError(w, r, err)
+		return
+	}
+	conversationID, _ := r.Context().Value(conversationIDContextKey{}).(string)
+	owner, ok := conversationOwner(r)
+	if !ok {
+		writeConversationError(w, r, http.StatusUnauthorized, "invalid_token", "authentication is required")
+		return
+	}
+	if routes.backend == nil {
+		writeConversationBackendUnavailable(w, r)
+		return
+	}
+	entry, err := routes.backend.GetOwnedConversation(r.Context(), owner, conversationID)
+	if err != nil {
+		writeConversationBackendError(w, r, err)
+		return
+	}
+	if !conversationEntryJSONSafe(entry) {
+		writeConversationBackendError(w, r, &runtimebridge.Error{Code: "invalid_runtime_response"})
+		return
+	}
+	writeConversationJSON(w, r, http.StatusOK, entry)
+}
 
 func (routes conversationRoutes) listConversations(w http.ResponseWriter, r *http.Request) {
 	if requestHasBody(r) {
@@ -45,6 +77,10 @@ func (routes conversationRoutes) listConversations(w http.ResponseWriter, r *htt
 		writeConversationBackendError(w, r, err)
 		return
 	}
+	if !conversationPageJSONSafe(page) {
+		writeConversationBackendError(w, r, &runtimebridge.Error{Code: "invalid_runtime_response"})
+		return
+	}
 	writeConversationJSON(w, r, http.StatusOK, page)
 }
 
@@ -77,6 +113,10 @@ func (routes conversationRoutes) createConversation(w http.ResponseWriter, r *ht
 	conversation, err := routes.backend.CreateOwnedConversation(r.Context(), owner, request.Scope, request.Title, key)
 	if err != nil {
 		writeConversationBackendError(w, r, err)
+		return
+	}
+	if !conversationTimestampsJSONSafe(conversation) {
+		writeConversationBackendError(w, r, &runtimebridge.Error{Code: "invalid_runtime_response"})
 		return
 	}
 	writeConversationJSON(w, r, http.StatusCreated, conversation)
@@ -122,6 +162,10 @@ func (routes conversationRoutes) importConversationHandler(w http.ResponseWriter
 	result, err := routes.backend.ImportOwnedConversation(r.Context(), owner, request.Title, request.Prompts, key)
 	if err != nil {
 		writeConversationBackendError(w, r, err)
+		return
+	}
+	if !conversationImportJSONSafe(result) {
+		writeConversationBackendError(w, r, &runtimebridge.Error{Code: "invalid_runtime_response"})
 		return
 	}
 	status := http.StatusCreated
@@ -175,7 +219,7 @@ func (routes conversationRoutes) listConversationPrompts(w http.ResponseWriter, 
 	if hasTime {
 		createdAtMS, parseErr := parseUnsignedDecimal(timeValues[0])
 		promptID := idValues[0]
-		if parseErr != nil || createdAtMS > maxSQLiteCursor || strings.TrimSpace(promptID) == "" || len(promptID) > conversationIDMaxBytes {
+		if parseErr != nil || createdAtMS > maxSafeJSONInteger || strings.TrimSpace(promptID) == "" || len(promptID) > conversationIDMaxBytes {
 			writeConversationError(w, r, http.StatusBadRequest, "invalid_query", "pagination query is invalid")
 			return
 		}
@@ -193,6 +237,10 @@ func (routes conversationRoutes) listConversationPrompts(w http.ResponseWriter, 
 	page, err := routes.backend.OwnedConversationPrompts(r.Context(), owner, conversationID, before, limit)
 	if err != nil {
 		writeConversationBackendError(w, r, err)
+		return
+	}
+	if !conversationPromptPageJSONSafe(page, conversationID, before, limit) {
+		writeConversationBackendError(w, r, &runtimebridge.Error{Code: "invalid_runtime_response"})
 		return
 	}
 	writeConversationJSON(w, r, http.StatusOK, page)
@@ -239,6 +287,10 @@ func (routes conversationRoutes) listConversationRuns(w http.ResponseWriter, r *
 		writeConversationBackendError(w, r, err)
 		return
 	}
+	if !conversationRunPageJSONSafe(page, conversationID, before, limit) {
+		writeConversationBackendError(w, r, &runtimebridge.Error{Code: "invalid_runtime_response"})
+		return
+	}
 	writeConversationJSON(w, r, http.StatusOK, page)
 }
 
@@ -254,7 +306,7 @@ func parseRunPageCursor(
 	}
 	createdAtMS, err := parseUnsignedDecimal(timeValues[0])
 	runID := idValues[0]
-	if err != nil || createdAtMS > maxSQLiteCursor || strings.TrimSpace(runID) == "" ||
+	if err != nil || createdAtMS > maxSafeJSONInteger || strings.TrimSpace(runID) == "" ||
 		len(runID) > conversationIDMaxBytes {
 		return nil, false
 	}
@@ -276,7 +328,7 @@ func (routes conversationRoutes) listConversationRunTimeline(w http.ResponseWrit
 	after := uint64(0)
 	if values, ok := query["after_sequence"]; ok {
 		after, err = parseUnsignedDecimal(values[0])
-		if err != nil || after > maxSQLiteCursor {
+		if err != nil || after > maxSafeJSONInteger {
 			writeConversationError(w, r, http.StatusBadRequest, "invalid_query", "pagination query is invalid")
 			return
 		}
@@ -300,6 +352,10 @@ func (routes conversationRoutes) listConversationRunTimeline(w http.ResponseWrit
 		writeConversationBackendError(w, r, err)
 		return
 	}
+	if !conversationRunTimelineJSONSafe(page, conversationID, runID, after, limit) {
+		writeConversationBackendError(w, r, &runtimebridge.Error{Code: "invalid_runtime_response"})
+		return
+	}
 	writeConversationJSON(w, r, http.StatusOK, page)
 }
 
@@ -316,7 +372,7 @@ func (routes conversationRoutes) appendConversationPrompt(w http.ResponseWriter,
 		writeConversationRequestError(w, r, err)
 		return
 	}
-	if !hasExactRequiredFields(body, "content", "expected_version") || strings.TrimSpace(request.Content) == "" || len(request.Content) > promptContentMaxBytes || request.ExpectedVersion > maxSQLiteCursor {
+	if !hasExactRequiredFields(body, "content", "expected_version") || strings.TrimSpace(request.Content) == "" || len(request.Content) > promptContentMaxBytes || request.ExpectedVersion > maxSafeJSONInteger {
 		writeConversationError(w, r, http.StatusBadRequest, "invalid_request", "prompt request is invalid")
 		return
 	}
@@ -337,6 +393,10 @@ func (routes conversationRoutes) appendConversationPrompt(w http.ResponseWriter,
 	status := http.StatusCreated
 	if replayed {
 		status = http.StatusOK
+	}
+	if !conversationPromptAppendJSONSafe(prompt, aggregateVersion) {
+		writeConversationBackendError(w, r, &runtimebridge.Error{Code: "invalid_runtime_response"})
+		return
 	}
 	writeConversationJSON(w, r, status, struct {
 		Prompt           model.ConversationPrompt `json:"prompt"`

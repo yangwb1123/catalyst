@@ -1,3 +1,4 @@
+use serde::Serialize;
 #[cfg(test)]
 use std::{collections::HashMap, sync::Mutex};
 use std::{
@@ -11,15 +12,22 @@ use std::{
 
 #[path = "remote_credentials/checkpoint.rs"]
 mod checkpoint;
+#[path = "remote_credentials/run_timeline.rs"]
+mod run_timeline;
+#[path = "remote_credentials/storage.rs"]
+mod storage;
 #[path = "remote_token_claims.rs"]
 mod token_claims;
 pub(super) use checkpoint::ChangeCursorStore;
+use storage::{check_file_metadata, ensure_directory, read_credential, reject_symlink_if_present};
 pub(super) use token_claims::{OwnerSelector, StoredCredential, credential_from_token};
 use token_claims::{credential_key, validate_credential};
 
 const MAX_CREDENTIAL_BYTES: usize = 16 * 1024;
 const MAX_REFRESH_TOKEN_BYTES: usize = 2048;
 const KEYRING_SERVICE: &str = "forge-runtime-cli";
+#[cfg(unix)]
+static TEMP_FILE_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 #[derive(Clone)]
 pub(super) struct CredentialStore {
@@ -36,11 +44,21 @@ pub(super) trait RefreshTokenBackend: Send + Sync {
 
 struct PlatformRefreshTokenBackend;
 
+#[cfg(all(unix, not(any(target_os = "redox", target_os = "solaris"))))]
+pub(super) struct RefreshLock {
+    _file: nix::fcntl::Flock<File>,
+}
+
+#[cfg(not(all(unix, not(any(target_os = "redox", target_os = "solaris")))))]
+pub(super) struct RefreshLock {
+    _file: File,
+}
+
 #[cfg(test)]
 #[derive(Default)]
-struct MemoryRefreshTokenBackend(Mutex<HashMap<String, String>>);
+pub(super) struct MemoryRefreshTokenBackend(Mutex<HashMap<String, String>>);
 
-#[cfg(any(unix, windows))]
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 impl RefreshTokenBackend for PlatformRefreshTokenBackend {
     fn get(&self, account: &str) -> Result<Option<String>, String> {
         match keyring::Entry::new(KEYRING_SERVICE, account).and_then(|entry| entry.get_password()) {
@@ -73,7 +91,7 @@ impl RefreshTokenBackend for PlatformRefreshTokenBackend {
     }
 }
 
-#[cfg(not(any(unix, windows)))]
+#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
 impl RefreshTokenBackend for PlatformRefreshTokenBackend {
     fn get(&self, _account: &str) -> Result<Option<String>, String> {
         Err("OS credential store is unsupported on this platform".into())
@@ -85,6 +103,154 @@ impl RefreshTokenBackend for PlatformRefreshTokenBackend {
 
     fn delete(&self, _account: &str) -> Result<(), String> {
         Err("OS credential store is unsupported on this platform".into())
+    }
+}
+
+/// Describes which local credential persistence pieces are available on the
+/// current target. This is deliberately a read-only contract: it never opens
+/// the keyring, creates a credential directory, or contacts Snaplink.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub(super) struct CredentialStorageCapabilities {
+    pub schema_version: &'static str,
+    pub platform: &'static str,
+    pub access_token_env: CapabilityStatus,
+    pub refresh_token_os_keyring: CapabilityStatus,
+    pub credential_metadata: CapabilityStatus,
+    pub refresh_lock: CapabilityStatus,
+    pub saved_login: CapabilityStatus,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub(super) struct CapabilityStatus {
+    pub available: bool,
+    pub backend: &'static str,
+    pub reason: Option<&'static str>,
+}
+
+const CREDENTIAL_STORAGE_CAPABILITIES_SCHEMA: &str = "forge.remote-credential-capabilities/v1";
+
+pub(super) fn credential_storage_capabilities() -> CredentialStorageCapabilities {
+    CredentialStorageCapabilities {
+        schema_version: CREDENTIAL_STORAGE_CAPABILITIES_SCHEMA,
+        platform: credential_platform(),
+        access_token_env: CapabilityStatus {
+            available: true,
+            backend: "FORGE_ACCESS_TOKEN",
+            reason: None,
+        },
+        refresh_token_os_keyring: refresh_token_keyring_capability(),
+        credential_metadata: credential_metadata_capability(),
+        refresh_lock: refresh_lock_capability(),
+        saved_login: saved_login_capability(),
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn credential_platform() -> &'static str {
+    "linux"
+}
+
+#[cfg(target_os = "macos")]
+fn credential_platform() -> &'static str {
+    "macos"
+}
+
+#[cfg(target_os = "windows")]
+fn credential_platform() -> &'static str {
+    "windows"
+}
+
+#[cfg(target_os = "android")]
+fn credential_platform() -> &'static str {
+    "android"
+}
+
+#[cfg(not(any(
+    target_os = "linux",
+    target_os = "macos",
+    target_os = "windows",
+    target_os = "android"
+)))]
+fn credential_platform() -> &'static str {
+    "other"
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+fn refresh_token_keyring_capability() -> CapabilityStatus {
+    CapabilityStatus {
+        available: true,
+        backend: "OS keyring",
+        reason: None,
+    }
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+fn refresh_token_keyring_capability() -> CapabilityStatus {
+    CapabilityStatus {
+        available: false,
+        backend: "none",
+        reason: Some("this target has no supported Forge refresh-token keyring backend"),
+    }
+}
+
+#[cfg(all(unix, not(target_os = "android")))]
+fn credential_metadata_capability() -> CapabilityStatus {
+    CapabilityStatus {
+        available: true,
+        backend: "private user-owned credential file",
+        reason: None,
+    }
+}
+
+#[cfg(not(all(unix, not(target_os = "android"))))]
+fn credential_metadata_capability() -> CapabilityStatus {
+    CapabilityStatus {
+        available: false,
+        backend: "none",
+        reason: Some("secure persistent credential metadata is not implemented on this target"),
+    }
+}
+
+#[cfg(all(
+    unix,
+    not(any(target_os = "redox", target_os = "solaris", target_os = "android"))
+))]
+fn refresh_lock_capability() -> CapabilityStatus {
+    CapabilityStatus {
+        available: true,
+        backend: "private file lock",
+        reason: None,
+    }
+}
+
+#[cfg(not(all(
+    unix,
+    not(any(target_os = "redox", target_os = "solaris", target_os = "android"))
+)))]
+fn refresh_lock_capability() -> CapabilityStatus {
+    CapabilityStatus {
+        available: false,
+        backend: "none",
+        reason: Some("secure concurrent refresh locking is not implemented on this target"),
+    }
+}
+
+fn saved_login_capability() -> CapabilityStatus {
+    let metadata = credential_metadata_capability();
+    let lock = refresh_lock_capability();
+    if metadata.available && lock.available {
+        return CapabilityStatus {
+            available: true,
+            backend: "credential metadata + OS keyring + refresh lock",
+            reason: None,
+        };
+    }
+    CapabilityStatus {
+        available: false,
+        backend: "environment token only",
+        reason: Some(
+            "use FORGE_ACCESS_TOKEN until secure metadata and refresh locking are implemented",
+        ),
     }
 }
 
@@ -155,7 +321,7 @@ impl CredentialStore {
     ) -> Result<Option<String>, String> {
         let token = self
             .refresh_backend
-            .get(&self.refresh_account(credential))?;
+            .get(&Self::refresh_account(credential))?;
         if let Some(token) = &token {
             validate_refresh_token(token)?;
         }
@@ -169,7 +335,7 @@ impl CredentialStore {
     ) -> Result<(), String> {
         validate_refresh_token(refresh_token)?;
         self.refresh_backend
-            .set(&self.refresh_account(credential), refresh_token)?;
+            .set(&Self::refresh_account(credential), refresh_token)?;
         if self.load_refresh_token(credential)?.as_deref() != Some(refresh_token) {
             return Err("OS credential store did not verify the Forge refresh token".into());
         }
@@ -178,7 +344,7 @@ impl CredentialStore {
 
     pub(super) fn clear_refresh_token(&self, credential: &StoredCredential) -> Result<(), String> {
         self.refresh_backend
-            .delete(&self.refresh_account(credential))?;
+            .delete(&Self::refresh_account(credential))?;
         if self.load_refresh_token(credential)?.is_some() {
             return Err("OS credential store did not remove the Forge refresh token".into());
         }
@@ -190,21 +356,106 @@ impl CredentialStore {
         credential: &StoredCredential,
         refresh_token: Option<&str>,
     ) -> Result<(), String> {
-        if let Some(refresh_token) = refresh_token {
-            self.save_refresh_token(credential, refresh_token)?;
+        let _refresh_lock = self.lock_refresh_account(credential)?;
+        let previous_refresh_token = self.load_refresh_token(credential)?;
+        let token_update = if let Some(refresh_token) = refresh_token {
+            self.save_refresh_token(credential, refresh_token)
         } else {
-            self.clear_refresh_token(credential)?;
+            self.clear_refresh_token(credential)
+        };
+        if let Err(error) = token_update {
+            if self
+                .restore_login_refresh_token(credential, previous_refresh_token.as_deref())
+                .is_err()
+            {
+                return Err(
+                    "could not update the Forge credential or restore its previous refresh token"
+                        .into(),
+                );
+            }
+            return Err(error);
         }
         if let Err(error) = self.save(credential) {
-            if refresh_token.is_some() {
-                let _ = self.clear_refresh_token(credential);
+            if self
+                .restore_login_refresh_token(credential, previous_refresh_token.as_deref())
+                .is_err()
+            {
+                return Err(
+                    "could not save the Forge credential or restore its previous refresh token"
+                        .into(),
+                );
             }
             return Err(error);
         }
         Ok(())
     }
 
-    fn refresh_account(&self, credential: &StoredCredential) -> String {
+    fn restore_login_refresh_token(
+        &self,
+        credential: &StoredCredential,
+        previous: Option<&str>,
+    ) -> Result<(), String> {
+        match previous {
+            Some(token) => self.save_refresh_token(credential, token),
+            None => self.clear_refresh_token(credential),
+        }
+    }
+
+    pub(super) fn lock_and_load_refresh_credential(
+        &self,
+        credential: &StoredCredential,
+    ) -> Result<(RefreshLock, StoredCredential), String> {
+        let lock = self.lock_refresh_account(credential)?;
+        let latest = self.load(
+            &credential.issuer,
+            &credential.client_id,
+            OwnerSelector {
+                subject: Some(&credential.subject),
+                tenant_id: Some(&credential.tenant_id),
+            },
+        )?;
+        Ok((lock, latest))
+    }
+
+    #[cfg(all(unix, not(any(target_os = "redox", target_os = "solaris"))))]
+    fn lock_refresh_account(&self, credential: &StoredCredential) -> Result<RefreshLock, String> {
+        use std::os::unix::fs::OpenOptionsExt;
+
+        let owner_uid = ensure_directory(&self.config_root, &self.directory, true)?;
+        let path = self.directory.join(format!(
+            "{}.lock",
+            credential_key(
+                &credential.issuer,
+                &credential.client_id,
+                &credential.tenant_id,
+                &credential.subject,
+            )
+        ));
+        let file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .mode(0o600)
+            .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
+            .open(path)
+            .map_err(|_| "could not open the private Forge credential lock".to_owned())?;
+        check_file_metadata(
+            &file
+                .metadata()
+                .map_err(|_| "could not inspect the Forge credential lock".to_owned())?,
+            owner_uid,
+        )?;
+        let file = nix::fcntl::Flock::lock(file, nix::fcntl::FlockArg::LockExclusive)
+            .map_err(|(_, _)| "could not lock the Forge credential for refresh".to_owned())?;
+        Ok(RefreshLock { _file: file })
+    }
+
+    #[cfg(not(all(unix, not(any(target_os = "redox", target_os = "solaris")))))]
+    fn lock_refresh_account(&self, _credential: &StoredCredential) -> Result<RefreshLock, String> {
+        Err("secure Forge credential locking is unavailable on this platform".into())
+    }
+
+    fn refresh_account(credential: &StoredCredential) -> String {
         format!(
             "refresh-{}",
             credential_key(
@@ -299,7 +550,14 @@ impl CredentialStore {
     fn atomic_write(&self, path: &Path, encoded: &[u8], owner_uid: u32) -> Result<(), String> {
         use std::os::unix::fs::OpenOptionsExt;
 
-        let nonce = format!(".credential-{}-{}.tmp", std::process::id(), unix_time()?);
+        use std::sync::atomic::Ordering;
+
+        let nonce = format!(
+            ".credential-{}-{}-{}.tmp",
+            std::process::id(),
+            unix_time()?,
+            TEMP_FILE_COUNTER.fetch_add(1, Ordering::Relaxed),
+        );
         let temporary = self.directory.join(nonce);
         let mut file = OpenOptions::new()
             .write(true)
@@ -347,183 +605,6 @@ pub(super) fn validate_refresh_token(token: &str) -> Result<(), String> {
         || !token.bytes().all(|byte| (0x21..=0x7e).contains(&byte))
     {
         return Err("Snaplink returned an invalid refresh token".into());
-    }
-    Ok(())
-}
-
-fn read_credential(path: &Path, owner_uid: u32) -> Result<StoredCredential, String> {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-
-        let file = OpenOptions::new()
-            .read(true)
-            .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
-            .open(path)
-            .map_err(|_| "Forge credential is missing, unsafe, or unreadable".to_owned())?;
-        check_file_metadata(
-            &file
-                .metadata()
-                .map_err(|_| "could not inspect the Forge credential file".to_owned())?,
-            owner_uid,
-        )?;
-        let mut bytes = Vec::new();
-        file.take((MAX_CREDENTIAL_BYTES + 1) as u64)
-            .read_to_end(&mut bytes)
-            .map_err(|_| "could not read the Forge credential".to_owned())?;
-        if bytes.len() > MAX_CREDENTIAL_BYTES {
-            return Err("Forge credential exceeds the local size limit".into());
-        }
-        serde_json::from_slice(&bytes).map_err(|_| "Forge credential file is invalid".to_owned())
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = path;
-        Err("secure Forge credential storage is unavailable on this platform; set FORGE_ACCESS_TOKEN to continue".into())
-    }
-}
-
-#[cfg(unix)]
-fn ensure_directory(config_root: &Path, directory: &Path, create: bool) -> Result<u32, String> {
-    let owner_uid = ensure_config_root(config_root, create)?;
-    ensure_private_subdirectories(config_root, directory, create, owner_uid)?;
-    Ok(owner_uid)
-}
-
-#[cfg(unix)]
-fn ensure_config_root(config_root: &Path, create: bool) -> Result<u32, String> {
-    use std::os::unix::fs::{MetadataExt, PermissionsExt};
-
-    reject_symlink_components(config_root)?;
-    if create && fs::symlink_metadata(config_root).is_err() {
-        fs::create_dir(config_root).map_err(|_| {
-            "could not create the Forge credential configuration directory".to_owned()
-        })?;
-        fs::set_permissions(config_root, fs::Permissions::from_mode(0o700)).map_err(|_| {
-            "could not secure the Forge credential configuration directory".to_owned()
-        })?;
-    }
-    let root_metadata = fs::metadata(config_root)
-        .map_err(|_| "credential configuration directory does not exist".to_owned())?;
-    if !root_metadata.is_dir() {
-        return Err("credential configuration path is not a directory".into());
-    }
-    let owner_uid = nix::unistd::Uid::effective().as_raw();
-    if root_metadata.uid() != owner_uid {
-        return Err("credential configuration directory must be owned by the current user".into());
-    }
-    Ok(owner_uid)
-}
-
-#[cfg(unix)]
-fn ensure_private_subdirectories(
-    config_root: &Path,
-    directory: &Path,
-    create: bool,
-    owner_uid: u32,
-) -> Result<(), String> {
-    use std::os::unix::fs::PermissionsExt;
-
-    let mut current = config_root.to_path_buf();
-    for component in directory
-        .strip_prefix(config_root)
-        .map_err(|_| "credential directory is outside the configuration root".to_owned())?
-        .components()
-    {
-        current.push(component.as_os_str());
-        match fs::symlink_metadata(&current) {
-            Ok(metadata) => {
-                if metadata.file_type().is_symlink() || !metadata.is_dir() {
-                    return Err("credential directory contains a symlink or non-directory".into());
-                }
-                check_private_directory(&metadata, owner_uid)?;
-            }
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound && create => {
-                fs::create_dir(&current).map_err(|_| {
-                    "could not create a private Forge credential directory".to_owned()
-                })?;
-                fs::set_permissions(&current, fs::Permissions::from_mode(0o700))
-                    .map_err(|_| "could not secure the Forge credential directory".to_owned())?;
-                let metadata = fs::symlink_metadata(&current)
-                    .map_err(|_| "could not inspect the Forge credential directory".to_owned())?;
-                check_private_directory(&metadata, owner_uid)?;
-            }
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                return Err(
-                    "Forge credential directory does not exist; run forge-runtime remote login"
-                        .into(),
-                );
-            }
-            Err(_) => return Err("could not inspect the Forge credential directory".into()),
-        }
-    }
-    Ok(())
-}
-
-#[cfg(not(unix))]
-fn ensure_directory(_config_root: &Path, _directory: &Path, _create: bool) -> Result<u32, String> {
-    Err("secure Forge credential storage is unavailable on this platform; set FORGE_ACCESS_TOKEN to continue".into())
-}
-
-#[cfg(unix)]
-fn check_private_directory(metadata: &fs::Metadata, owner_uid: u32) -> Result<(), String> {
-    use std::os::unix::fs::MetadataExt;
-
-    if metadata.uid() != owner_uid || metadata.mode() & 0o777 != 0o700 {
-        return Err(
-            "Forge credential directories must be owned by the current user with mode 0700".into(),
-        );
-    }
-    Ok(())
-}
-
-#[cfg(unix)]
-fn check_file_metadata(metadata: &fs::Metadata, owner_uid: u32) -> Result<(), String> {
-    use std::os::unix::fs::MetadataExt;
-
-    if !metadata.is_file() || metadata.uid() != owner_uid || metadata.mode() & 0o777 != 0o600 {
-        return Err(
-            "Forge credential files must be owned by the current user with mode 0600".into(),
-        );
-    }
-    Ok(())
-}
-
-#[cfg(unix)]
-fn reject_symlink_if_present(path: &Path, owner_uid: u32) -> Result<(), String> {
-    match fs::symlink_metadata(path) {
-        Ok(metadata) if metadata.file_type().is_symlink() => {
-            Err("refusing a symlink at the Forge credential path".into())
-        }
-        Ok(metadata) if !metadata.is_file() => {
-            Err("Forge credential path is not a regular file".into())
-        }
-        Ok(metadata) => check_file_metadata(&metadata, owner_uid),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(_) => Err("could not inspect the Forge credential path".into()),
-    }
-}
-
-#[cfg(not(unix))]
-fn reject_symlink_if_present(_path: &Path, _owner_uid: u32) -> Result<(), String> {
-    Err("secure Forge credential storage is unavailable on this platform; set FORGE_ACCESS_TOKEN to continue".into())
-}
-
-#[cfg(unix)]
-fn reject_symlink_components(path: &Path) -> Result<(), String> {
-    use std::os::unix::fs::MetadataExt;
-
-    let mut current = PathBuf::new();
-    for component in path.components() {
-        current.push(component.as_os_str());
-        if let Ok(metadata) = fs::symlink_metadata(&current) {
-            if metadata.file_type().is_symlink() {
-                return Err("credential path contains a symlink".into());
-            }
-            if metadata.is_dir() && metadata.mode() & 0o022 != 0 {
-                return Err("credential path crosses a group- or world-writable directory".into());
-            }
-        }
     }
     Ok(())
 }

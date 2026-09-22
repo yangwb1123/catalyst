@@ -17,7 +17,7 @@ func (client *Client) OwnedConversationChangesAfter(
 	if !validOwner(owner) {
 		return model.OwnedConversationChangePage{}, &Error{Code: "invalid_owned_request"}
 	}
-	if after > maxSQLiteInteger {
+	if after > maxSafeJSONInteger {
 		return model.OwnedConversationChangePage{}, &Error{Code: "invalid_cursor"}
 	}
 	if limit < 1 || limit > maxChangeLimit {
@@ -47,10 +47,10 @@ func validOwnedConversationChangePage(
 	after uint64,
 	limit int,
 ) bool {
-	if after > maxSQLiteInteger ||
+	if after > maxSafeJSONInteger ||
 		requireObjectFieldSet(data, "after_cursor", "scanned_through_cursor", "has_more", "changes") != nil ||
 		page.AfterCursor != after || page.ScannedThroughCursor < after ||
-		page.ScannedThroughCursor > maxSQLiteInteger || page.Changes == nil || len(page.Changes) > limit {
+		page.ScannedThroughCursor > maxSafeJSONInteger || page.Changes == nil || len(page.Changes) > limit {
 		return false
 	}
 	if len(page.Changes) == 0 {
@@ -84,12 +84,13 @@ func validOwnedConversationChanges(
 	}
 	previous := after
 	for index, change := range changes {
-		if previous == maxSQLiteInteger || change.Cursor != previous+1 ||
+		if previous == maxSafeJSONInteger || change.Cursor != previous+1 ||
 			requireObjectFieldSet(rawChanges[index], "cursor", "schema_version", "conversation_id", "entity_id",
 				"aggregate_version", "kind", "created_at_ms") != nil ||
 			change.Cursor > scannedThrough || change.SchemaVersion != 1 ||
 			!validEntityID(change.ConversationID) || !validEntityID(change.EntityID) ||
-			change.AggregateVersion == 0 || change.CreatedAtMS > maxSQLiteInteger ||
+			change.AggregateVersion == 0 || change.AggregateVersion > maxSafeJSONInteger ||
+			change.CreatedAtMS > maxSafeJSONInteger ||
 			(change.Kind != "conversation_created" && change.Kind != "prompt_appended") {
 			return false
 		}

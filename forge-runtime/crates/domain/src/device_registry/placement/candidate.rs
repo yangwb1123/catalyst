@@ -17,6 +17,11 @@ impl DevicePlacementRequest {
             requirements,
         }
     }
+
+    #[must_use]
+    pub fn tenant_id(&self) -> &TenantId {
+        &self.tenant_id
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

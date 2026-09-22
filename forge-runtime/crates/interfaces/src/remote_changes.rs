@@ -2,6 +2,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::runtime_domain::MAX_HUB_ENTITY_ID_BYTES;
 
+const MAX_SAFE_JSON_INTEGER: u64 = 9_007_199_254_740_991;
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct OwnedConversationChangePage {
@@ -27,7 +29,7 @@ impl OwnedConversationChangePage {
     pub(super) fn validate(&self, requested_after: u64, limit: usize) -> Result<(), String> {
         if self.after_cursor != requested_after
             || self.scanned_through_cursor < requested_after
-            || self.scanned_through_cursor > i64::MAX as u64
+            || self.scanned_through_cursor > MAX_SAFE_JSON_INTEGER
             || limit == 0
             || self.changes.len() > limit
             || (self.has_more && self.changes.len() != limit)
@@ -45,7 +47,10 @@ impl OwnedConversationChangePage {
                 || change.cursor > self.scanned_through_cursor
                 || change.schema_version != 1
                 || change.aggregate_version == 0
-                || change.created_at_ms > i64::MAX as u64
+                || change.cursor > MAX_SAFE_JSON_INTEGER
+                || u64::from(change.schema_version) > MAX_SAFE_JSON_INTEGER
+                || change.aggregate_version > MAX_SAFE_JSON_INTEGER
+                || change.created_at_ms > MAX_SAFE_JSON_INTEGER
                 || !valid_id(&change.conversation_id)
                 || !valid_id(&change.entity_id)
                 || !matches!(
@@ -81,7 +86,7 @@ fn valid_id(value: &str) -> bool {
 mod tests {
     use serde_json::json;
 
-    use super::OwnedConversationChangePage;
+    use super::{MAX_SAFE_JSON_INTEGER, OwnedConversationChangePage};
 
     #[test]
     fn change_page_validation_requires_dense_progress_and_full_has_more_pages() {
@@ -93,6 +98,36 @@ mod tests {
         assert!(page(4, 4, true, &[]).validate(4, 2).is_err());
         assert!(page(4, 6, true, &[5, 6]).validate(4, 2).is_ok());
         assert!(page(4, 6, true, &[5, 6]).validate(4, 3).is_err());
+    }
+
+    #[test]
+    fn change_page_validation_uses_json_safe_integer_boundary() {
+        assert!(
+            page(
+                MAX_SAFE_JSON_INTEGER - 1,
+                MAX_SAFE_JSON_INTEGER,
+                false,
+                &[MAX_SAFE_JSON_INTEGER]
+            )
+            .validate(MAX_SAFE_JSON_INTEGER - 1, 1)
+            .is_ok()
+        );
+        assert!(
+            page(
+                MAX_SAFE_JSON_INTEGER,
+                MAX_SAFE_JSON_INTEGER + 1,
+                false,
+                &[MAX_SAFE_JSON_INTEGER + 1]
+            )
+            .validate(MAX_SAFE_JSON_INTEGER, 1)
+            .is_err()
+        );
+        let mut unsafe_change = page(4, 5, false, &[5]);
+        unsafe_change.changes[0].aggregate_version = MAX_SAFE_JSON_INTEGER + 1;
+        assert!(unsafe_change.validate(4, 1).is_err());
+        unsafe_change.changes[0].aggregate_version = 1;
+        unsafe_change.changes[0].created_at_ms = MAX_SAFE_JSON_INTEGER + 1;
+        assert!(unsafe_change.validate(4, 1).is_err());
     }
 
     fn page(

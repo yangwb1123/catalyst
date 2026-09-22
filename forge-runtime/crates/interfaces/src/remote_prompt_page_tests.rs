@@ -42,6 +42,23 @@ fn prompt_page_validation_rejects_duplicate_or_misordered_rows() {
 }
 
 #[test]
+fn prompt_page_validation_uses_json_safe_integer_boundary() {
+    let valid = json!({
+        "conversation_id": "c-1",
+        "prompts": [prompt("p-1", 9_007_199_254_740_991)],
+        "has_more": false
+    });
+    assert!(validate_prompt_page(&valid, "c-1").is_ok());
+
+    let invalid = json!({
+        "conversation_id": "c-1",
+        "prompts": [prompt("p-1", 9_007_199_254_740_992)],
+        "has_more": false
+    });
+    assert!(validate_prompt_page(&invalid, "c-1").is_err());
+}
+
+#[test]
 fn prompt_page_validation_accepts_content_budget_partial_page() {
     let mut first = prompt("p-2", 2);
     first["content"] = Value::String("a".repeat(200 * 1024));

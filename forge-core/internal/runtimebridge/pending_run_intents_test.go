@@ -108,7 +108,7 @@ func TestPendingRunIntentRequestValidationAndErrorCodeRetention(t *testing.T) {
 		t.Fatalf("control character idempotency key error=%v", err)
 	}
 	if _, err := client.OwnedConversationPendingRunIntents(context.Background(), owner, "conversation-1",
-		&intentmodel.PendingRunIntentCursor{SubmittedAtMS: maxSQLiteInteger + 1, IntentID: "intent-1"}, 1); err == nil ||
+		&intentmodel.PendingRunIntentCursor{SubmittedAtMS: maxSafeJSONInteger + 1, IntentID: "intent-1"}, 1); err == nil ||
 		err.(*Error).Code != "invalid_pending_run_intent_request" {
 		t.Fatalf("out-of-range cursor error=%v", err)
 	}
@@ -117,6 +117,63 @@ func TestPendingRunIntentRequestValidationAndErrorCodeRetention(t *testing.T) {
 	}
 	if stableRuntimeErrorCode("arbitrary-private-message") != "runtime_query_failed" {
 		t.Fatal("unknown remote error text was not hidden")
+	}
+}
+
+func TestPendingRunIntentJSONSafeCeilingAndNextInteger(t *testing.T) {
+	validReceipt := fmt.Sprintf(`{"prompt":{"id":"prompt-1","conversation_id":"conversation-1","role":"user","content":"do work","created_at_ms":%d},"intent":{"intent_id":"intent-1","conversation_id":"conversation-1","prompt_id":"prompt-1","project_id":"project-1","profile_id":"profile-1","submitted_at_ms":%d,"aggregate_version":%d,"latest_sequence":1,"status":"pending"},"initial_event":{"event_id":"event-1","seq":1,"emitted_at_ms":%d,"type":"submitted"},"replayed":false}`,
+		maxSafeJSONInteger, maxSafeJSONInteger, maxSafeJSONInteger, maxSafeJSONInteger)
+	var receipt intentmodel.PendingRunIntentSubmissionResult
+	if err := decodeStrict([]byte(validReceipt), &receipt); err != nil ||
+		!validPendingRunIntentSubmission([]byte(validReceipt), receipt, "conversation-1", "do work", "profile-1") {
+		t.Fatalf("JSON-safe pending intent ceiling was rejected: %#v, %v", receipt, err)
+	}
+	for _, field := range []string{
+		`"created_at_ms":`,
+		`"submitted_at_ms":`,
+		`"aggregate_version":`,
+		`"emitted_at_ms":`,
+	} {
+		unsafeReceipt := strings.Replace(validReceipt,
+			field+fmt.Sprint(maxSafeJSONInteger), field+fmt.Sprint(maxSafeJSONInteger+1), 1)
+		if err := decodeStrict([]byte(unsafeReceipt), &receipt); err == nil &&
+			validPendingRunIntentSubmission([]byte(unsafeReceipt), receipt, "conversation-1", "do work", "profile-1") {
+			t.Fatalf("pending intent receipt accepted unsafe %s", field)
+		}
+	}
+
+	validPage := fmt.Sprintf(`{"conversation_id":"conversation-1","intents":[{"intent_id":"intent-1","conversation_id":"conversation-1","prompt_id":"prompt-1","project_id":"project-1","profile_id":"profile-1","submitted_at_ms":%d,"aggregate_version":%d,"latest_sequence":1,"status":"pending"}],"next_cursor":{"submitted_at_ms":%d,"intent_id":"intent-1"},"has_more":true}`,
+		maxSafeJSONInteger, maxSafeJSONInteger, maxSafeJSONInteger)
+	var page intentmodel.OwnedPendingRunIntentPage
+	if err := decodeStrict([]byte(validPage), &page); err != nil ||
+		!validOwnedPendingRunIntentPage([]byte(validPage), page, "conversation-1", nil, 1) {
+		t.Fatalf("JSON-safe pending intent page ceiling was rejected: %#v, %v", page, err)
+	}
+	for _, field := range []string{
+		`"submitted_at_ms":`,
+		`"aggregate_version":`,
+	} {
+		unsafePage := strings.Replace(validPage,
+			field+fmt.Sprint(maxSafeJSONInteger), field+fmt.Sprint(maxSafeJSONInteger+1), 1)
+		if err := decodeStrict([]byte(unsafePage), &page); err == nil &&
+			validOwnedPendingRunIntentPage([]byte(unsafePage), page, "conversation-1", nil, 1) {
+			t.Fatalf("pending intent page accepted unsafe %s", field)
+		}
+	}
+
+	validTimeline := fmt.Sprintf(`{"conversation_id":"conversation-1","intent_id":"intent-1","after_sequence":%d,"scanned_through_sequence":%d,"has_more":false,"events":[]}`,
+		maxSafeJSONInteger, maxSafeJSONInteger)
+	var timeline intentmodel.OwnedPendingRunIntentTimelinePage
+	if err := decodeStrict([]byte(validTimeline), &timeline); err != nil ||
+		!validOwnedPendingRunIntentTimelinePage([]byte(validTimeline), timeline, "conversation-1", "intent-1", maxSafeJSONInteger, 1) {
+		t.Fatalf("JSON-safe pending intent timeline ceiling was rejected: %#v, %v", timeline, err)
+	}
+	unsafeTimeline := strings.Replace(validTimeline,
+		fmt.Sprintf(`"after_sequence":%d`, maxSafeJSONInteger),
+		fmt.Sprintf(`"after_sequence":%d`, maxSafeJSONInteger+1), 1)
+	if err := decodeStrict([]byte(unsafeTimeline), &timeline); err == nil &&
+		validOwnedPendingRunIntentTimelinePage([]byte(unsafeTimeline), timeline, "conversation-1", "intent-1", maxSafeJSONInteger+1, 1) {
+		t.Fatal("pending intent timeline accepted unsafe after_sequence")
 	}
 }
 

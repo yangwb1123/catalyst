@@ -17,12 +17,26 @@ use crate::{
 
 const IMPORT_PREVIEW_DOMAIN: &str = "forge-runtime/local-conversation-import-preview/v1";
 
+#[path = "remote_command_import_render.rs"]
+mod render;
+pub(super) use render::{render_import_result, render_preview_text};
+
 #[derive(Clone, Debug, Serialize)]
 struct TargetIdentity {
     issuer: String,
     client_id: String,
     subject: String,
     tenant_id: String,
+}
+
+/// A local import preview bound to the exact source transcript, target
+/// identity, Coordinator, and Global destination. The preview is rebuilt for
+/// every TUI command so a changed local source or target cannot reuse an old
+/// confirmation digest.
+pub(super) struct LocalImportPreview {
+    pub(super) source: LocalConversationImportSource,
+    pub(super) digest: String,
+    pub(super) preview: Value,
 }
 
 #[derive(Serialize)]
@@ -42,79 +56,69 @@ pub(super) async fn run(
     json_output: bool,
 ) -> Result<(), Box<dyn Error>> {
     let client = RemoteClient::from_env().await?;
-    let source = load_source(state_dir, conversation_id)?;
-    let target = target_identity(&client.access_token)?;
-    let digest = preview_digest(&client, &target, &source)?;
-    let preview = preview_json(&client, &target, &source, &digest);
+    let preview = prepare_preview(&client, state_dir, conversation_id)?;
     let Some(confirmation) = confirm else {
-        print_preview(&preview, &source, &digest, json_output)?;
+        print_preview(&preview, json_output)?;
         return Ok(());
     };
-    if confirmation != digest {
-        print_preview(&preview, &source, &digest, json_output)?;
+    if confirmation != preview.digest {
+        print_preview(&preview, json_output)?;
         return Err(RemoteError(
             "the confirmation does not match the current preview; no data was uploaded. Review the preview above, then repeat the command with its current digest".into(),
         )
         .into());
     }
-    import_confirmed(&client, &source, &digest, json_output).await?;
-    Ok(())
-}
-
-fn print_preview(
-    preview: &Value,
-    source: &LocalConversationImportSource,
-    digest: &str,
-    json_output: bool,
-) -> Result<(), Box<dyn Error>> {
-    if json_output {
-        println!("{}", serde_json::to_string_pretty(preview)?);
-    } else {
-        print_text_preview(preview, source, digest)?;
-    }
-    Ok(())
-}
-
-async fn import_confirmed(
-    client: &RemoteClient,
-    source: &LocalConversationImportSource,
-    digest: &str,
-    json_output: bool,
-) -> Result<(), Box<dyn Error>> {
-    let idempotency_key = format!("local-import-{digest}");
-    let result = client
-        .import_owned_conversation(
-            &source.conversation.title,
-            &source.prompts,
-            &idempotency_key,
-        )
-        .await?;
-    validate_import_result(&result, source.prompts.len())?;
+    let result = confirm_preview(&client, &preview).await?;
     if json_output {
         println!("{}", serde_json::to_string_pretty(&result)?);
     } else {
-        let conversation_id = result["conversation"]["id"]
-            .as_str()
-            .expect("validated import result has a conversation ID");
-        let replayed = result["replayed"].as_bool().unwrap_or(false);
-        println!(
-            "{} shared conversation {} ({} visible prompts).{}",
-            if replayed {
-                "Confirmed existing"
-            } else {
-                "Imported"
-            },
-            conversation_id,
-            source.prompts.len(),
-            if replayed {
-                " This was an idempotent retry."
-            } else {
-                ""
-            },
+        print!(
+            "{}",
+            render_import_result(&result, preview.source.prompts.len())?
         );
-        println!("The original local conversation was left unchanged.");
     }
     Ok(())
+}
+
+fn print_preview(preview: &LocalImportPreview, json_output: bool) -> Result<(), Box<dyn Error>> {
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&preview.preview)?);
+    } else {
+        print!("{}", render_preview_text(preview)?);
+    }
+    Ok(())
+}
+
+pub(super) fn prepare_preview(
+    client: &RemoteClient,
+    state_dir: Option<&Path>,
+    conversation_id: &str,
+) -> Result<LocalImportPreview, RemoteError> {
+    let source = load_source(state_dir, conversation_id)?;
+    let target = target_identity(&client.access_token)?;
+    let digest = preview_digest(client, &target, &source)?;
+    let preview = preview_json(client, &target, &source, &digest);
+    Ok(LocalImportPreview {
+        source,
+        digest,
+        preview,
+    })
+}
+
+pub(super) async fn confirm_preview(
+    client: &RemoteClient,
+    preview: &LocalImportPreview,
+) -> Result<Value, RemoteError> {
+    let idempotency_key = format!("local-import-{}", preview.digest);
+    let result = client
+        .import_owned_conversation(
+            &preview.source.conversation.title,
+            &preview.source.prompts,
+            &idempotency_key,
+        )
+        .await?;
+    validate_import_result(&result, preview.source.prompts.len())?;
+    Ok(result)
 }
 
 fn load_source(
@@ -213,51 +217,6 @@ fn preview_json(
     })
 }
 
-fn print_text_preview(
-    preview: &Value,
-    source: &LocalConversationImportSource,
-    digest: &str,
-) -> Result<(), RemoteError> {
-    let quoted = |value: &str| serde_json::to_string(value).unwrap_or_else(|_| "\"\"".into());
-    let source_json = &preview["source"];
-    let target_json = &preview["target"];
-    println!("Local conversation import preview (nothing uploaded)");
-    println!("Source: this device's local Hub");
-    println!(
-        "Conversation: {} {}",
-        quoted(&source.conversation.id),
-        quoted(&source.conversation.title)
-    );
-    println!("Scope: {}", scope_label(&source.conversation.scope));
-    println!(
-        "Visible prompts: {} ({} UTF-8 content bytes)",
-        source_json["prompt_count"], source_json["content_bytes"]
-    );
-    println!(
-        "Target Coordinator: {}",
-        target_json["coordinator"].as_str().unwrap_or("unknown")
-    );
-    println!("Destination scope: Global");
-    println!(
-        "Target account preview: issuer={}, client={}, tenant={}, subject={}",
-        quoted(target_json["issuer"].as_str().unwrap_or("")),
-        quoted(target_json["client_id"].as_str().unwrap_or("")),
-        quoted(target_json["tenant_id"].as_str().unwrap_or("")),
-        quoted(target_json["subject"].as_str().unwrap_or(""))
-    );
-    println!(
-        "Account fields are decoded locally for preview; the Coordinator verifies the token before import."
-    );
-    for prompt in &source.prompts {
-        let content = serde_json::to_string(&prompt.content)
-            .map_err(|_| RemoteError("could not render the local import preview".into()))?;
-        println!("\n[{}] {content}", prompt.role);
-    }
-    println!("\nConfirmation SHA-256: {digest}");
-    println!("Confirm by repeating this command with --confirm {digest}.");
-    Ok(())
-}
-
 fn scope_label(scope: &ConversationScope) -> String {
     match scope {
         ConversationScope::Global => "global".into(),
@@ -281,7 +240,7 @@ fn validate_import_result(result: &Value, expected_prompt_count: usize) -> Resul
     if result
         .get("aggregate_version")
         .and_then(Value::as_u64)
-        .is_none()
+        .is_none_or(|version| version == 0 || version > 9_007_199_254_740_991)
         || result.get("imported_prompt_count").and_then(Value::as_u64)
             != u64::try_from(expected_prompt_count).ok()
         || result.get("replayed").and_then(Value::as_bool).is_none()

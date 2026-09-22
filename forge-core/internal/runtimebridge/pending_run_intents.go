@@ -24,7 +24,7 @@ func (client *Client) SubmitOwnedPromptRunIntent(
 ) (intentmodel.PendingRunIntentSubmissionResult, error) {
 	if !validOwner(owner) || !validEntityID(conversationID) || strings.TrimSpace(content) == "" ||
 		len(content) > maxPromptContentBytes || !validPendingIntentIdempotencyKey(idempotencyKey) ||
-		expectedVersion > maxSQLiteInteger || !validEntityID(profile.ID) {
+		expectedVersion > maxSafeJSONInteger || !validEntityID(profile.ID) {
 		return intentmodel.PendingRunIntentSubmissionResult{}, &Error{Code: "invalid_owned_prompt_request"}
 	}
 	ownerCopy, versionCopy, digestCopy := owner, expectedVersion, profile.SHA256
@@ -84,7 +84,7 @@ func (client *Client) OwnedConversationPendingRunIntentTimeline(
 	limit int,
 ) (intentmodel.OwnedPendingRunIntentTimelinePage, error) {
 	if !validOwner(owner) || !validEntityID(conversationID) || !validEntityID(intentID) ||
-		afterSequence > maxSQLiteInteger || limit < 1 || limit > maxOwnedRunTimelinePageLimit {
+		afterSequence > maxSafeJSONInteger || limit < 1 || limit > maxOwnedRunTimelinePageLimit {
 		return intentmodel.OwnedPendingRunIntentTimelinePage{}, &Error{Code: "invalid_pending_run_intent_request"}
 	}
 	ownerCopy, afterCopy, limitCopy := owner, afterSequence, limit
@@ -112,14 +112,14 @@ func validPendingIntentIdempotencyKey(value string) bool {
 }
 
 func validPendingRunIntentCursor(cursor intentmodel.PendingRunIntentCursor) bool {
-	return cursor.SubmittedAtMS <= maxSQLiteInteger && validEntityID(cursor.IntentID)
+	return cursor.SubmittedAtMS <= maxSafeJSONInteger && validEntityID(cursor.IntentID)
 }
 
 func validPendingRunIntent(intent intentmodel.PendingRunIntent, conversationID string) bool {
 	return validEntityID(intent.IntentID) && intent.ConversationID == conversationID &&
 		validEntityID(intent.PromptID) && validEntityID(intent.ProjectID) && validEntityID(intent.ProfileID) &&
-		intent.SubmittedAtMS <= maxSQLiteInteger && intent.AggregateVersion > 0 &&
-		intent.AggregateVersion <= maxSQLiteInteger && intent.LatestSequence == 1 && intent.Status == "pending"
+		intent.SubmittedAtMS <= maxSafeJSONInteger && intent.AggregateVersion > 0 &&
+		intent.AggregateVersion <= maxSafeJSONInteger && intent.LatestSequence == 1 && intent.Status == "pending"
 }
 
 func validPendingRunIntentSubmission(
@@ -150,11 +150,11 @@ func validPendingRunIntentSubmission(
 
 func validPromptForPendingIntent(prompt model.ConversationPrompt, conversationID, content string) bool {
 	return validEntityID(prompt.ID) && prompt.ConversationID == conversationID && prompt.Role == "user" &&
-		prompt.Content == content && prompt.CreatedAtMS <= maxSQLiteInteger
+		prompt.Content == content && prompt.CreatedAtMS <= maxSafeJSONInteger
 }
 
 func validPendingRunIntentEvent(event intentmodel.PendingRunIntentEventSummary) bool {
-	return validEntityID(event.EventID) && event.EmittedAtMS <= maxSQLiteInteger && event.Type == "submitted"
+	return validEntityID(event.EventID) && event.EmittedAtMS <= maxSafeJSONInteger && event.Type == "submitted"
 }
 
 func validOwnedPendingRunIntentPage(
@@ -215,7 +215,8 @@ func validOwnedPendingRunIntentTimelinePage(
 ) bool {
 	if requireObjectFieldSet(data, "conversation_id", "intent_id", "after_sequence", "scanned_through_sequence", "has_more", "events") != nil ||
 		page.ConversationID != conversationID || page.IntentID != intentID || page.AfterSequence != afterSequence ||
-		page.ScannedThroughSequence > maxSQLiteInteger || page.Events == nil || len(page.Events) > limit || page.HasMore {
+		page.AfterSequence > maxSafeJSONInteger || page.ScannedThroughSequence > maxSafeJSONInteger ||
+		page.Events == nil || len(page.Events) > limit || page.HasMore {
 		return false
 	}
 	var root map[string]json.RawMessage

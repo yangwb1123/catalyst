@@ -2,6 +2,8 @@ package runtimebridge
 
 import (
 	"context"
+	"fmt"
+	auditprojection "forgeos/forge-core/internal/auditprojection"
 	model "forgeos/forge-core/internal/runtimebridge/model"
 	runmodel "forgeos/forge-core/internal/runtimebridge/runmodel"
 	"path/filepath"
@@ -63,6 +65,29 @@ func TestOwnedConversationRunTimelineUsesBoundedMetadataOnlyPage(t *testing.T) {
 	}
 }
 
+func TestOwnedConversationRunObservationUsesRuntimeV2AndClosedAuthority(t *testing.T) {
+	appState := filepath.Join(t.TempDir(), "app-state")
+	runtimeState := filepath.Join(t.TempDir(), "runtime-state")
+	makeDirectory(t, appState)
+	makeDirectory(t, runtimeState)
+	executable := filepath.Join(t.TempDir(), "runtime-rpc")
+	database := filepath.Join(runtimeState, "hub.sqlite3")
+	owner := model.Owner{Issuer: "https://identity.example", Subject: "account-42", TenantID: "tenant-slate"}
+	result := fmt.Sprintf(`{"api_version":"forge.run.observed.v1","owner_ref":%q,"conversation_id":"conversation-1","run_id":"run-2","prompt_id":"prompt-2","created_at_ms":20,"latest_sequence":3,"status":"nonterminal","metadata_observed":true,"content_included":false,"authority":{"identity_verified":false,"owner_authorized":false,"run_authoritative":false,"persistence_attested":false,"content_provenance_verified":false,"reservation_created":false,"execution_authorized":false,"dispatch_performed":false}}`, auditprojection.ObservedOwnerReference(owner))
+	writeFake(t, executable, responseScriptCheckingRequest(database, result, writeProtocolVersion,
+		`"operation":"owned_run_observation"`, `"conversation_id":"conversation-1"`, `"run_id":"run-2"`,
+		`"owner":{"issuer":"https://identity.example","subject":"account-42","tenant_id":"tenant-slate"}`))
+	client, err := New(Config{Executable: executable, AppServerStateDir: appState, RuntimeStateDir: runtimeState})
+	if err != nil {
+		t.Fatal(err)
+	}
+	observed, err := client.OwnedConversationRunObservation(context.Background(), owner, "conversation-1", "run-2")
+	if err != nil || observed.APIVersion != auditprojection.ForgeRunObservedV1 || observed.RunID != "run-2" ||
+		!observed.MetadataObserved || observed.ContentIncluded || observed.Authority.OwnerAuthorized || observed.Authority.DispatchPerformed {
+		t.Fatalf("Run observation=%#v error=%v", observed, err)
+	}
+}
+
 func TestOwnedRunResponsesRejectPayloadLeaksAndCursorGaps(t *testing.T) {
 	validRuns := `{"conversation_id":"c1","runs":[{"run_id":"run-b","prompt_id":"p2","created_at_ms":20,"latest_sequence":2,"status":"completed"},{"run_id":"run-a","prompt_id":"p1","created_at_ms":20,"latest_sequence":1,"status":"nonterminal"}],"has_more":false}`
 	var runs runmodel.OwnedRunPage
@@ -74,6 +99,7 @@ func TestOwnedRunResponsesRejectPayloadLeaksAndCursorGaps(t *testing.T) {
 		strings.Replace(validRuns, `"status":"completed"`, `"status":"running"`, 1),
 		strings.Replace(validRuns, `"latest_sequence":2`, `"latest_sequence":2,"execution_json":"{}"`, 1),
 		strings.Replace(validRuns, `"run_id":"run-a"`, `"run_id":"run-z"`, 1),
+		strings.Replace(validRuns, `"run_id":"run-a","prompt_id":"p1","created_at_ms":20`, `"run_id":"run-b","prompt_id":"p1","created_at_ms":19`, 1),
 	} {
 		var page runmodel.OwnedRunPage
 		if err := decodeStrict([]byte(malformed), &page); err == nil && validOwnedRunPage([]byte(malformed), page, "c1", nil, 2) {
@@ -106,5 +132,60 @@ func TestOwnedRunResponsesRejectPayloadLeaksAndCursorGaps(t *testing.T) {
 	if err := decodeStrict(shortTimeline, &timeline); err != nil ||
 		!validOwnedRunTimelinePage(shortTimeline, timeline, "c1", "r1", 4, 2) {
 		t.Fatalf("valid short byte-budget Run timeline rejected: %#v, %v", timeline, err)
+	}
+}
+
+func TestOwnedRunObservationResponsesRejectAuthorityAndWireShapeChanges(t *testing.T) {
+	owner := model.Owner{Issuer: "https://identity.example", Subject: "account-42", TenantID: "tenant-slate"}
+	valid := []byte(fmt.Sprintf(`{"api_version":"forge.run.observed.v1","owner_ref":%q,"conversation_id":"c1","run_id":"r1","prompt_id":"p1","created_at_ms":20,"latest_sequence":2,"status":"completed","metadata_observed":true,"content_included":false,"authority":{"identity_verified":false,"owner_authorized":false,"run_authoritative":false,"persistence_attested":false,"content_provenance_verified":false,"reservation_created":false,"execution_authorized":false,"dispatch_performed":false}}`, auditprojection.ObservedOwnerReference(owner)))
+	var observed auditprojection.RunObserved
+	if err := decodeStrict(valid, &observed); err != nil || !validOwnedRunObservation(valid, observed, owner, "c1", "r1") {
+		t.Fatalf("valid Run observation rejected: %#v, %v", observed, err)
+	}
+	for _, malformed := range [][]byte{
+		[]byte(strings.Replace(string(valid), `"content_included":false`, `"content_included":true`, 1)),
+		[]byte(strings.Replace(string(valid), `"dispatch_performed":false`, `"dispatch_performed":true`, 1)),
+		[]byte(strings.Replace(string(valid), `"status":"completed"`, `"status":"running"`, 1)),
+		[]byte(strings.Replace(string(valid), `"authority":{`, `"authority":{"extra":false,`, 1)),
+		append(append([]byte{}, valid...), []byte(` {}`)...),
+	} {
+		var candidate auditprojection.RunObserved
+		if err := decodeStrict(malformed, &candidate); err == nil && validOwnedRunObservation(malformed, candidate, owner, "c1", "r1") {
+			t.Fatalf("malformed Run observation accepted: %s", malformed)
+		}
+	}
+}
+
+func TestOwnedRunNumbersUseJSONSafeIntegerBoundary(t *testing.T) {
+	const maxSafe = maxSafeJSONInteger
+	validRuns := fmt.Sprintf(`{"conversation_id":"c1","runs":[{"run_id":"run-b","prompt_id":"p2","created_at_ms":%d,"latest_sequence":%d,"status":"completed"}],"has_more":false}`, maxSafe, maxSafe)
+	var page runmodel.OwnedRunPage
+	if err := decodeStrict([]byte(validRuns), &page); err != nil || !validOwnedRunPage([]byte(validRuns), page, "c1", nil, 1) {
+		t.Fatalf("JSON-safe Run summary boundary rejected: %#v, %v", page, err)
+	}
+	for _, oversized := range []string{
+		strings.Replace(validRuns, fmt.Sprintf(`"created_at_ms":%d`, maxSafe), fmt.Sprintf(`"created_at_ms":%d`, maxSafe+1), 1),
+		strings.Replace(validRuns, fmt.Sprintf(`"latest_sequence":%d`, maxSafe), fmt.Sprintf(`"latest_sequence":%d`, maxSafe+1), 1),
+	} {
+		var oversizedPage runmodel.OwnedRunPage
+		if err := decodeStrict([]byte(oversized), &oversizedPage); err == nil && validOwnedRunPage([]byte(oversized), oversizedPage, "c1", nil, 1) {
+			t.Fatalf("Run summary above JSON-safe integer accepted: %s", oversized)
+		}
+	}
+
+	validTimeline := fmt.Sprintf(`{"conversation_id":"c1","run_id":"r1","after_sequence":%d,"scanned_through_sequence":%d,"has_more":false,"events":[]}`, maxSafe, maxSafe)
+	var timeline runmodel.OwnedRunTimelinePage
+	if err := decodeStrict([]byte(validTimeline), &timeline); err != nil || !validOwnedRunTimelinePage([]byte(validTimeline), timeline, "c1", "r1", maxSafe, 1) {
+		t.Fatalf("JSON-safe Run timeline boundary rejected: %#v, %v", timeline, err)
+	}
+	owner := model.Owner{Issuer: "https://identity.example", Subject: "account-42", TenantID: "tenant-slate"}
+	if _, err := (&Client{}).OwnedConversationRuns(context.Background(), owner, "c1", &runmodel.OwnedRunPageCursor{
+		CreatedAtMS: maxSafe + 1,
+		RunID:       "run-1",
+	}, 1); err == nil {
+		t.Fatal("Run page cursor above JSON-safe integer accepted")
+	}
+	if _, err := (&Client{}).OwnedConversationRunTimeline(context.Background(), owner, "c1", "r1", maxSafe+1, 1); err == nil {
+		t.Fatal("Run timeline request above JSON-safe integer accepted")
 	}
 }

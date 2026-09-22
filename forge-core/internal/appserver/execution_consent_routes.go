@@ -55,17 +55,21 @@ func (routes executionRoutes) previewProjectConsent(w http.ResponseWriter, r *ht
 		writeConversationError(w, r, http.StatusBadRequest, "invalid_request", "GET requests must not include a body")
 		return
 	}
+	if _, err := parseConversationQuery(r); err != nil {
+		writeConversationError(w, r, http.StatusBadRequest, "invalid_query", "execution consent preview does not accept query parameters")
+		return
+	}
 	conversationID, _ := r.Context().Value(conversationIDContextKey{}).(string)
 	owner, ok := conversationOwner(r)
 	if !ok {
 		writeConversationError(w, r, http.StatusUnauthorized, "invalid_token", "authentication is required")
 		return
 	}
-	if routes.backend == nil {
+	if routes.reader == nil {
 		writeConversationBackendUnavailable(w, r)
 		return
 	}
-	identity, err := routes.backend.OwnedProjectConversationIdentity(r.Context(), owner, conversationID)
+	identity, err := routes.reader.OwnedProjectConversationIdentity(r.Context(), owner, conversationID)
 	if err != nil {
 		writeExecutionBackendError(w, r, err)
 		return

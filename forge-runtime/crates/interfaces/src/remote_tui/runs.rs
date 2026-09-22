@@ -5,18 +5,26 @@ use serde_json::Value;
 use super::{RemoteClient, RemoteError, state::TuiState};
 
 const RUN_PAGE_LIMIT: usize = 25;
-const RUN_TIMELINE_LIMIT: usize = 128;
+pub(super) const RUN_TIMELINE_LIMIT: usize = 128;
+const MAX_SAFE_JSON_INTEGER: u64 = 9_007_199_254_740_991;
 type ParsedRunCursor = Option<(Option<u64>, Option<String>)>;
 
 pub(super) async fn runs_command<W: Write>(
     client: &RemoteClient,
-    state: &TuiState,
+    state: &mut TuiState,
     argument: &str,
     writer: &mut W,
 ) -> Result<(), RemoteError> {
     let Some(conversation_id) = selected_conversation_id(state, writer)? else {
         return Ok(());
     };
+    if !super::commands::ensure_conversation_visible_to_client_instance(
+        state,
+        conversation_id,
+        writer,
+    )? {
+        return Ok(());
+    }
     let Some((before_created_at_ms, before_run_id)) = parse_run_cursor(argument, writer)? else {
         return Ok(());
     };
@@ -31,7 +39,16 @@ pub(super) async fn runs_command<W: Write>(
     {
         Ok(page) => page,
         Err(error) => {
-            return writeln!(writer, "Run list failed: {error}").map_err(super::state::io_error);
+            let cleared = super::clear_session_view_after_authorization_error(state, &error);
+            writeln!(writer, "Run list failed: {error}").map_err(super::state::io_error)?;
+            if cleared {
+                writeln!(
+                    writer,
+                    "Local session view cleared after authorization failure."
+                )
+                .map_err(super::state::io_error)?;
+            }
+            return Ok(());
         }
     };
     render_run_page(&page, writer)
@@ -39,30 +56,56 @@ pub(super) async fn runs_command<W: Write>(
 
 pub(super) async fn timeline_command<W: Write>(
     client: &RemoteClient,
-    state: &TuiState,
+    state: &mut TuiState,
     argument: &str,
     writer: &mut W,
 ) -> Result<(), RemoteError> {
     let Some(conversation_id) = selected_conversation_id(state, writer)? else {
         return Ok(());
     };
-    let Some((run_id, after_sequence)) = parse_timeline_cursor(argument, writer)? else {
+    if !super::commands::ensure_conversation_visible_to_client_instance(
+        state,
+        conversation_id,
+        writer,
+    )? {
+        return Ok(());
+    }
+    let Some((run_id, after_sequence, resume)) = parse_timeline_cursor(argument, writer)? else {
         return Ok(());
     };
-    let page = match client
-        .run_timeline(conversation_id, &run_id, after_sequence, RUN_TIMELINE_LIMIT)
-        .await
-    {
+    let page = match if resume {
+        client
+            .resumed_run_timeline(conversation_id, &run_id, RUN_TIMELINE_LIMIT)
+            .await
+    } else {
+        client
+            .run_timeline(conversation_id, &run_id, after_sequence, RUN_TIMELINE_LIMIT)
+            .await
+    } {
         Ok(page) => page,
         Err(error) => {
-            return writeln!(writer, "Run timeline failed: {error}")
-                .map_err(super::state::io_error);
+            let cleared = super::clear_session_view_after_authorization_error(state, &error);
+            writeln!(writer, "Run timeline failed: {error}").map_err(super::state::io_error)?;
+            if cleared {
+                writeln!(
+                    writer,
+                    "Local session view cleared after authorization failure."
+                )
+                .map_err(super::state::io_error)?;
+            }
+            return Ok(());
         }
     };
+    let scanned_through_sequence = page
+        .get("scanned_through_sequence")
+        .and_then(Value::as_u64)
+        .ok_or_else(|| RemoteError("Forge API returned an invalid Run timeline".into()))?;
+    state.selected_run_id = Some(run_id);
+    state.run_timeline_sequence = scanned_through_sequence;
     render_timeline(&page, writer)
 }
 
-fn selected_conversation_id<'a, W: Write>(
+pub(super) fn selected_conversation_id<'a, W: Write>(
     state: &'a TuiState,
     writer: &mut W,
 ) -> Result<Option<&'a str>, RemoteError> {
@@ -111,7 +154,11 @@ fn parse_run_cursor<W: Write>(
             .map_err(super::state::io_error)?;
         return Ok(None);
     };
-    let Some(timestamp) = timestamp.parse::<u64>().ok() else {
+    let Some(timestamp) = timestamp
+        .parse::<u64>()
+        .ok()
+        .filter(|value| *value <= MAX_SAFE_JSON_INTEGER)
+    else {
         writeln!(writer, "Run cursor time must be an unsigned integer.")
             .map_err(super::state::io_error)?;
         return Ok(None);
@@ -127,28 +174,40 @@ fn parse_run_cursor<W: Write>(
 fn parse_timeline_cursor<W: Write>(
     argument: &str,
     writer: &mut W,
-) -> Result<Option<(String, u64)>, RemoteError> {
+) -> Result<Option<(String, u64, bool)>, RemoteError> {
     let Some((run_id, remainder)) = split_run_id_argument(argument.trim()) else {
-        writeln!(writer, "Use timeline RUN_ID [AFTER_SEQUENCE].")
+        writeln!(writer, "Use timeline RUN_ID [AFTER_SEQUENCE|--resume].")
             .map_err(super::state::io_error)?;
         return Ok(None);
     };
     let after_sequence = match remainder.trim() {
         "" => 0,
+        "--resume" => 0,
         value => {
-            if let Ok(value) = value.parse::<u64>() {
+            if let Some(value) = value
+                .parse::<u64>()
+                .ok()
+                .filter(|value| *value <= MAX_SAFE_JSON_INTEGER)
+            {
                 value
             } else {
-                writeln!(writer, "Timeline cursor must be an unsigned integer.")
-                    .map_err(super::state::io_error)?;
+                writeln!(
+                    writer,
+                    "Timeline cursor must be an unsigned integer or --resume."
+                )
+                .map_err(super::state::io_error)?;
                 return Ok(None);
             }
         }
     };
-    Ok(Some((run_id, after_sequence)))
+    Ok(Some((
+        run_id,
+        after_sequence,
+        remainder.trim() == "--resume",
+    )))
 }
 
-fn parse_run_id_argument(value: &str) -> Option<String> {
+pub(super) fn parse_run_id_argument(value: &str) -> Option<String> {
     if value.starts_with('"') {
         serde_json::from_str(value).ok()
     } else if value.chars().any(char::is_whitespace) {
@@ -247,7 +306,7 @@ fn render_run_page_cursor<W: Write>(page: &Value, writer: &mut W) -> Result<(), 
     Ok(())
 }
 
-fn render_timeline<W: Write>(page: &Value, writer: &mut W) -> Result<(), RemoteError> {
+pub(super) fn render_timeline<W: Write>(page: &Value, writer: &mut W) -> Result<(), RemoteError> {
     let events = page
         .get("events")
         .and_then(Value::as_array)
@@ -289,4 +348,46 @@ fn render_timeline<W: Write>(page: &Value, writer: &mut W) -> Result<(), RemoteE
         .map_err(super::state::io_error)?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{parse_run_cursor, parse_timeline_cursor};
+
+    #[test]
+    fn tui_run_cursors_reject_values_above_json_safe_integer() {
+        let mut writer = Vec::new();
+        assert!(
+            parse_run_cursor("--before 9007199254740992 run-1", &mut writer)
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            parse_timeline_cursor("run-1 9007199254740992", &mut writer)
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn timeline_parser_keeps_manual_cursor_and_explicit_resume_distinct() {
+        let mut output = Vec::new();
+        assert_eq!(
+            parse_timeline_cursor("run-1", &mut output).unwrap(),
+            Some(("run-1".into(), 0, false))
+        );
+        assert_eq!(
+            parse_timeline_cursor("run-1 9", &mut output).unwrap(),
+            Some(("run-1".into(), 9, false))
+        );
+        assert_eq!(
+            parse_timeline_cursor("run-1 --resume", &mut output).unwrap(),
+            Some(("run-1".into(), 0, true))
+        );
+        assert!(
+            parse_timeline_cursor("run-1 not-a-cursor", &mut output)
+                .unwrap()
+                .is_none()
+        );
+    }
 }

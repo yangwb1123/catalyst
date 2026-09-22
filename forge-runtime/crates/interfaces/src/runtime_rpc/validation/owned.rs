@@ -13,6 +13,8 @@ use super::{Operation, RpcRequest, validate_write_header};
 mod write;
 use write::validate_owned_write_request;
 
+const MAX_SAFE_JSON_INTEGER: u64 = 9_007_199_254_740_991;
+
 pub(super) fn default_owned_change_limit() -> usize {
     50
 }
@@ -39,9 +41,9 @@ fn validate_owned_read_request(
     request: RpcRequest,
 ) -> Result<(String, Operation), (String, &'static str)> {
     match request {
-        request @ (RpcRequest::OwnedRunPage { .. } | RpcRequest::OwnedRunTimelinePage { .. }) => {
-            validate_owned_run_read_request(request)
-        }
+        request @ (RpcRequest::OwnedRunPage { .. }
+        | RpcRequest::OwnedRunObservation { .. }
+        | RpcRequest::OwnedRunTimelinePage { .. }) => validate_owned_run_read_request(request),
         request @ (RpcRequest::OwnedPendingRunIntentPage { .. }
         | RpcRequest::OwnedPendingRunIntentTimelinePage { .. }) => {
             validate_owned_pending_intent_read_request(request)
@@ -70,6 +72,19 @@ fn validate_owned_run_read_request(
             before_created_at_ms,
             before_run_id,
             limit,
+        ),
+        RpcRequest::OwnedRunObservation {
+            api_version,
+            request_id,
+            owner,
+            conversation_id,
+            run_id,
+        } => validate_owned_run_observation_request(
+            &api_version,
+            request_id,
+            owner,
+            conversation_id,
+            run_id,
         ),
         RpcRequest::OwnedRunTimelinePage {
             api_version,
@@ -143,6 +158,12 @@ fn validate_owned_conversation_read_request(
             after_id,
             limit,
         } => validate_list_owned_request(&api_version, request_id, owner, after_id, limit),
+        RpcRequest::GetOwnedConversation {
+            api_version,
+            request_id,
+            owner,
+            conversation_id,
+        } => validate_get_owned_request(&api_version, request_id, owner, conversation_id),
         RpcRequest::OwnedConversationPromptPage {
             api_version,
             request_id,
@@ -178,6 +199,25 @@ fn validate_owned_conversation_read_request(
         } => validate_owned_changes_request(&api_version, request_id, owner, after_cursor, limit),
         _ => Err(("invalid".into(), "invalid_request")),
     }
+}
+
+fn validate_get_owned_request(
+    api_version: &str,
+    request_id: String,
+    owner: ConversationOwner,
+    conversation_id: String,
+) -> Result<(String, Operation), (String, &'static str)> {
+    validate_write_header(api_version, &request_id)?;
+    if !valid_entity_id(&conversation_id) || !valid_conversation_owner(&owner) {
+        return Err((request_id, "invalid_owned_conversation_request"));
+    }
+    Ok((
+        request_id,
+        Operation::GetOwnedConversation {
+            owner,
+            conversation_id,
+        },
+    ))
 }
 
 fn validate_list_owned_request(
@@ -220,7 +260,7 @@ fn validate_owned_prompt_page_request(
         || conversation_id.len() > MAX_HUB_ENTITY_ID_BYTES
         || !valid_conversation_owner(&owner)
         || before.as_ref().is_some_and(|cursor| {
-            cursor.created_at_ms > i64::MAX as u64
+            cursor.created_at_ms > MAX_SAFE_JSON_INTEGER
                 || cursor.prompt_id.trim().is_empty()
                 || cursor.prompt_id.len() > MAX_HUB_ENTITY_ID_BYTES
         })
@@ -270,7 +310,7 @@ fn validate_owned_run_page_request(
     let before = match (before_created_at_ms, before_run_id) {
         (None, None) => None,
         (Some(created_at_ms), Some(run_id))
-            if i64::try_from(created_at_ms).is_ok() && valid_entity_id(&run_id) =>
+            if created_at_ms <= MAX_SAFE_JSON_INTEGER && valid_entity_id(&run_id) =>
         {
             Some(OwnedRunCursor {
                 created_at_ms,
@@ -296,6 +336,30 @@ fn validate_owned_run_page_request(
     ))
 }
 
+fn validate_owned_run_observation_request(
+    api_version: &str,
+    request_id: String,
+    owner: ConversationOwner,
+    conversation_id: String,
+    run_id: String,
+) -> Result<(String, Operation), (String, &'static str)> {
+    validate_write_header(api_version, &request_id)?;
+    if !valid_entity_id(&conversation_id)
+        || !valid_entity_id(&run_id)
+        || !valid_conversation_owner(&owner)
+    {
+        return Err((request_id, "invalid_owned_run_request"));
+    }
+    Ok((
+        request_id,
+        Operation::OwnedRunObservation {
+            owner,
+            conversation_id,
+            run_id,
+        },
+    ))
+}
+
 fn validate_owned_run_timeline_page_request(
     api_version: &str,
     request_id: String,
@@ -307,7 +371,7 @@ fn validate_owned_run_timeline_page_request(
 ) -> Result<(String, Operation), (String, &'static str)> {
     validate_write_header(api_version, &request_id)?;
     if !(1..=MAX_OWNED_RUN_TIMELINE_PAGE_LIMIT).contains(&limit)
-        || i64::try_from(after_sequence).is_err()
+        || after_sequence > MAX_SAFE_JSON_INTEGER
         || !valid_entity_id(&conversation_id)
         || !valid_entity_id(&run_id)
         || !valid_conversation_owner(&owner)
@@ -339,7 +403,7 @@ fn validate_owned_pending_run_intent_page_request(
         || !valid_entity_id(&conversation_id)
         || !valid_conversation_owner(&owner)
         || before.as_ref().is_some_and(|cursor| {
-            i64::try_from(cursor.submitted_at_ms).is_err() || !valid_entity_id(&cursor.intent_id)
+            cursor.submitted_at_ms > MAX_SAFE_JSON_INTEGER || !valid_entity_id(&cursor.intent_id)
         })
     {
         return Err((request_id, "invalid_pending_run_intent_request"));
@@ -366,7 +430,7 @@ fn validate_owned_pending_run_intent_timeline_request(
 ) -> Result<(String, Operation), (String, &'static str)> {
     validate_write_header(api_version, &request_id)?;
     if !(1..=MAX_PENDING_RUN_INTENT_TIMELINE_PAGE_LIMIT).contains(&limit)
-        || i64::try_from(after_sequence).is_err()
+        || after_sequence > MAX_SAFE_JSON_INTEGER
         || !valid_entity_id(&conversation_id)
         || !valid_entity_id(&intent_id)
         || !valid_conversation_owner(&owner)
@@ -394,7 +458,7 @@ fn validate_owned_changes_request(
 ) -> Result<(String, Operation), (String, &'static str)> {
     validate_write_header(api_version, &request_id)?;
     if !(1..=MAX_CONVERSATION_CHANGE_PAGE_LIMIT).contains(&limit)
-        || i64::try_from(after_cursor).is_err()
+        || after_cursor > MAX_SAFE_JSON_INTEGER
         || !valid_conversation_owner(&owner)
     {
         return Err((request_id, "invalid_owned_conversation_request"));

@@ -362,3 +362,49 @@ mod placement;
 
 #[path = "tests/placement_parity.rs"]
 mod placement_parity;
+
+#[path = "tests/run_intent_observation.rs"]
+mod run_intent_observation;
+
+#[path = "tests/resource_summary_contract.rs"]
+mod resource_summary_contract;
+
+#[path = "tests/inventory_contract.rs"]
+mod inventory_contract;
+
+#[path = "tests/persistence_contract.rs"]
+mod persistence_contract;
+
+#[path = "tests/persisted_inventory_contract.rs"]
+mod persisted_inventory_contract;
+
+#[path = "tests/persisted_inventory_placement_input_contract.rs"]
+mod persisted_inventory_placement_input_contract;
+
+#[path = "tests/persisted_inventory_placement_batch_contract.rs"]
+mod persisted_inventory_placement_batch_contract;
+
+#[path = "tests/status_contract.rs"]
+mod status_contract;
+
+#[path = "tests/snapshot_contract.rs"]
+mod snapshot_contract;
+
+#[path = "tests/heartbeat_contract.rs"]
+mod heartbeat_contract;
+
+#[path = "tests/identity_contract.rs"]
+mod identity_contract;
+
+#[path = "tests/enrollment_heartbeat_lifecycle_contract.rs"]
+mod enrollment_heartbeat_lifecycle_contract;
+
+#[path = "tests/persisted_inventory_observation.rs"]
+mod persisted_inventory_observation;
+#[path = "tests/persisted_inventory_observation_v2.rs"]
+mod persisted_inventory_observation_v2;
+#[path = "tests/persisted_placement_v2.rs"]
+mod persisted_placement_v2;
+
+#[path = "tests/enrollment_heartbeat_lifecycle_persistence_contract.rs"]
+mod enrollment_heartbeat_lifecycle_persistence_contract;

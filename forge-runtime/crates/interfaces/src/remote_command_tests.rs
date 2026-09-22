@@ -13,20 +13,48 @@ use super::RemoteError;
 use super::client_auth::validated_issuer;
 use super::credentials::{CredentialStore, StoredCredential};
 use super::{
-    OwnedConversationEntry, OwnedConversationPage, RemoteClient, parse_api_url,
-    resolve_access_token, validate_conversation_page,
+    OwnedConversationEntry, OwnedConversationPage, OwnedRunCursorResponse, OwnedRunPageResponse,
+    OwnedRunSummaryResponse, OwnedRunTimelinePageResponse, RemoteClient, parse_api_url,
+    resolve_access_token, validate_conversation_page, validate_owned_conversation_entry,
+    validate_run_page, validate_run_page_request, validate_run_timeline, validate_timeline_request,
 };
 use crate::args::RemoteConversationScope;
 use crate::runtime_domain::ConversationImportPrompt;
 
 #[path = "remote_command_tests/changes.rs"]
 mod changes;
+#[path = "remote_command_tests/client_instance_views.rs"]
+mod client_instance_views;
 #[path = "remote_command_tests/config.rs"]
 mod config;
+#[path = "remote_command_tests/credential_candidate.rs"]
+mod credential_candidate;
+#[path = "remote_command_tests/execution_consent.rs"]
+mod execution_consent;
+#[path = "remote_command_tests/execution_reconciliation.rs"]
+mod execution_reconciliation;
+#[path = "remote_command_tests/imports.rs"]
+mod imports;
+#[path = "remote_command_tests/lifecycle_registry.rs"]
+mod lifecycle_registry;
+#[path = "remote_command_tests/local_runner_preview.rs"]
+mod local_runner_preview;
+#[path = "remote_command_tests/pending_run_intent.rs"]
+mod pending_run_intent;
+#[path = "remote_command_tests/placement.rs"]
+mod placement;
+#[path = "remote_command_tests/prompt_writes.rs"]
+mod prompt_writes;
 #[path = "remote_command_tests/requests.rs"]
 mod requests;
+#[path = "remote_command_tests/run_attempt_lease_dispatch_preflight.rs"]
+mod run_attempt_lease_dispatch_preflight;
+#[path = "remote_command_tests/runner_dispatch_plan_preview.rs"]
+mod runner_dispatch_plan_preview;
 #[path = "remote_command_tests/runs.rs"]
 mod runs;
+#[path = "remote_command_tests/session_runner_receipt.rs"]
+mod session_runner_receipt;
 #[path = "remote_command_tests/validation.rs"]
 mod validation;
 

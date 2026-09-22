@@ -12,16 +12,13 @@ use super::credentials::{
 use super::login::{TokenReply, refresh_token_request};
 use super::{RemoteError, is_loopback_host};
 
-pub(super) fn access_token_from_env(
-    coordinator: &str,
-) -> Result<
-    (
-        String,
-        Option<ChangeCursorStore>,
-        Option<Arc<SavedTokenProvider>>,
-    ),
-    RemoteError,
-> {
+pub(super) type AccessTokenConfig = (
+    String,
+    Option<ChangeCursorStore>,
+    Option<Arc<SavedTokenProvider>>,
+);
+
+pub(super) fn access_token_from_env(coordinator: &str) -> Result<AccessTokenConfig, RemoteError> {
     let explicit = match env::var("FORGE_ACCESS_TOKEN") {
         Ok(value) => Some(value),
         Err(env::VarError::NotPresent) => None,
@@ -98,6 +95,24 @@ impl SavedTokenProvider {
         if credential.expires_at_unix > now.saturating_add(60) {
             return Ok(credential.access_token.clone());
         }
+
+        let store = self.store.clone();
+        let binding = credential.clone();
+        let (refresh_lock, latest) =
+            tokio::task::spawn_blocking(move || store.lock_and_load_refresh_credential(&binding))
+                .await
+                .map_err(|_| RemoteError("OS credential-store operation failed".into()))?
+                .map_err(RemoteError)?;
+        // Keep the account lock while reading the current refresh token, rotating it,
+        // and persisting both credentials. Other CLI/TUI processes then observe the
+        // successor instead of submitting the same single-use token.
+        let _refresh_lock = refresh_lock;
+        *credential = latest;
+        let now = unix_now()?;
+        if credential.expires_at_unix > now.saturating_add(60) {
+            return Ok(credential.access_token.clone());
+        }
+
         let store = self.store.clone();
         let binding = credential.clone();
         let refresh_token = tokio::task::spawn_blocking(move || store.load_refresh_token(&binding))
@@ -125,65 +140,83 @@ impl SavedTokenProvider {
         reply: TokenReply,
     ) -> Result<String, RemoteError> {
         if reply.error.as_deref() == Some("invalid_grant") {
-            let store = self.store.clone();
-            let binding = current.clone();
-            tokio::task::spawn_blocking(move || store.clear_refresh_token(&binding))
-                .await
-                .map_err(|_| RemoteError("OS credential-store operation failed".into()))?
-                .map_err(RemoteError)?;
+            self.clear_refresh_token(current).await?;
             return Err(RemoteError(
                 "Snaplink refresh credential expired or was revoked; run remote login".into(),
             ));
         }
-        let (Some(access_token), Some(token_type), Some(expires_in), Some(refresh_token)) = (
-            reply.access_token,
-            reply.token_type,
-            reply.expires_in,
-            reply.refresh_token,
-        ) else {
-            return Err(RemoteError(
-                "Snaplink returned an invalid refresh response".into(),
-            ));
-        };
-        if !token_type.eq_ignore_ascii_case("bearer") || expires_in == 0 || expires_in > 31_536_000
-        {
-            return Err(RemoteError(
-                "Snaplink returned an invalid refresh response".into(),
-            ));
-        }
-        let expires_at = unix_now()?
-            .checked_add(expires_in)
-            .ok_or_else(|| RemoteError("Snaplink token expiry is invalid".into()))?;
-        let next = credential_from_token(
-            &current.issuer,
-            &current.client_id,
-            access_token,
-            expires_at,
-        )
-        .map_err(RemoteError)?;
-        if next.subject != current.subject || next.tenant_id != current.tenant_id {
-            return Err(RemoteError(
-                "Snaplink refresh token changed the authenticated Forge owner".into(),
-            ));
-        }
+        let (next, refresh_token) = refreshed_credential(current, reply)?;
+        self.persist_refresh_pair(&next, &refresh_token).await?;
+        *current = next.clone();
+        Ok(next.access_token)
+    }
 
+    async fn clear_refresh_token(&self, credential: &StoredCredential) -> Result<(), RemoteError> {
         let store = self.store.clone();
-        let binding = next.clone();
-        let persisted_refresh = refresh_token.clone();
-        tokio::task::spawn_blocking(move || store.save_refresh_token(&binding, &persisted_refresh))
+        let binding = credential.clone();
+        tokio::task::spawn_blocking(move || store.clear_refresh_token(&binding))
+            .await
+            .map_err(|_| RemoteError("OS credential-store operation failed".into()))?
+            .map_err(RemoteError)
+    }
+
+    async fn persist_refresh_pair(
+        &self,
+        credential: &StoredCredential,
+        refresh_token: &str,
+    ) -> Result<(), RemoteError> {
+        let store = self.store.clone();
+        let binding = credential.clone();
+        let refresh_token = refresh_token.to_owned();
+        tokio::task::spawn_blocking(move || store.save_refresh_token(&binding, &refresh_token))
             .await
             .map_err(|_| RemoteError("OS credential-store operation failed".into()))?
             .map_err(RemoteError)?;
 
         let store = self.store.clone();
-        let saved = next.clone();
+        let saved = credential.clone();
         tokio::task::spawn_blocking(move || store.save(&saved))
             .await
             .map_err(|_| RemoteError("credential-file operation failed".into()))?
-            .map_err(RemoteError)?;
-        *current = next.clone();
-        Ok(next.access_token)
+            .map_err(RemoteError)
     }
+}
+
+fn refreshed_credential(
+    current: &StoredCredential,
+    reply: TokenReply,
+) -> Result<(StoredCredential, String), RemoteError> {
+    let (Some(access_token), Some(token_type), Some(expires_in), Some(refresh_token)) = (
+        reply.access_token,
+        reply.token_type,
+        reply.expires_in,
+        reply.refresh_token,
+    ) else {
+        return Err(RemoteError(
+            "Snaplink returned an invalid refresh response".into(),
+        ));
+    };
+    if !token_type.eq_ignore_ascii_case("bearer") || expires_in == 0 || expires_in > 31_536_000 {
+        return Err(RemoteError(
+            "Snaplink returned an invalid refresh response".into(),
+        ));
+    }
+    let expires_at = unix_now()?
+        .checked_add(expires_in)
+        .ok_or_else(|| RemoteError("Snaplink token expiry is invalid".into()))?;
+    let next = credential_from_token(
+        &current.issuer,
+        &current.client_id,
+        access_token,
+        expires_at,
+    )
+    .map_err(RemoteError)?;
+    if next.subject != current.subject || next.tenant_id != current.tenant_id {
+        return Err(RemoteError(
+            "Snaplink refresh token changed the authenticated Forge owner".into(),
+        ));
+    }
+    Ok((next, refresh_token))
 }
 
 fn unix_now() -> Result<u64, RemoteError> {
@@ -233,3 +266,7 @@ pub(super) fn resolve_access_token(
 ) -> Result<String, RemoteError> {
     explicit.map_or_else(load_saved, validate_access_token)
 }
+
+#[cfg(test)]
+#[path = "remote_client_auth_tests.rs"]
+mod tests;

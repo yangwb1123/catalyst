@@ -1,5 +1,7 @@
 mod hub_support;
 
+#[path = "hub_contract/aggregate_versions.rs"]
+mod aggregate_versions;
 #[path = "hub_contract/bootstrap.rs"]
 mod bootstrap;
 #[path = "hub_contract/owned_changes.rs"]

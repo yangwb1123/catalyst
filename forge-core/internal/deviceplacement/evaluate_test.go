@@ -197,6 +197,47 @@ func TestDecodeRejectsNullForRequiredWireValues(t *testing.T) {
 	}
 }
 
+func TestPlacementRejectsUnsafeJSONSafeNumbers(t *testing.T) {
+	tests := []struct {
+		name   string
+		change func(*Request)
+	}{
+		{"evaluated timestamp", func(value *Request) { value.EvaluatedAtMS = MaxSafeIntegerMS + 1 }},
+		{"requirement memory", func(value *Request) { value.Requirements.MinMemoryBytes = uint64(MaxSafeIntegerMS) + 1 }},
+		{"requirement storage", func(value *Request) { value.Requirements.MinStorageBytes = uint64(MaxSafeIntegerMS) + 1 }},
+		{"requirement gpu memory", func(value *Request) {
+			value.Requirements.GPU = GPURequirement{Required: true, MinMemoryBytes: uint64(MaxSafeIntegerMS) + 1}
+		}},
+		{"snapshot timestamp", func(value *Request) { value.Devices[0].SnapshotObservedAtMS = MaxSafeIntegerMS + 1 }},
+		{"lease timestamp", func(value *Request) { value.Devices[0].LeaseExpiresAtMS = MaxSafeIntegerMS + 1 }},
+		{"device memory", func(value *Request) { value.Devices[0].AvailableMemoryBytes = uint64(MaxSafeIntegerMS) + 1 }},
+		{"device storage", func(value *Request) { value.Devices[0].AvailableStorage = uint64(MaxSafeIntegerMS) + 1 }},
+		{"device gpu memory", func(value *Request) {
+			value.Devices[0].GPU = GPUDeclaration{Present: true, MemoryBytes: uint64(MaxSafeIntegerMS) + 1}
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			request := validRequest()
+			test.change(&request)
+			if _, err := Evaluate(request); err == nil {
+				t.Fatal("unsafe placement declaration was accepted")
+			}
+		})
+	}
+}
+
+func TestPlacementMarshalRejectsUnsafeEvaluationTimestamp(t *testing.T) {
+	result, err := Evaluate(validRequest())
+	if err != nil {
+		t.Fatal(err)
+	}
+	result.EvaluatedAtMS = MaxSafeIntegerMS + 1
+	if _, err := Marshal(result); err == nil {
+		t.Fatal("unsafe placement result timestamp was marshaled")
+	}
+}
+
 func TestDecodeScannerBoundsJSONNestingDepth(t *testing.T) {
 	within := nestedArrayDocument(MaxJSONDepth)
 	tooDeep := nestedArrayDocument(MaxJSONDepth + 1)

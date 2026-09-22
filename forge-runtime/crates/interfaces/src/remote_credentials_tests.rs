@@ -4,8 +4,54 @@ use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 
 use super::{
     CredentialStore, MemoryRefreshTokenBackend, OwnerSelector, RefreshTokenBackend,
-    StoredCredential, credential_from_token,
+    StoredCredential, credential_from_token, credential_storage_capabilities,
 };
+
+#[test]
+fn credential_storage_capability_contract_is_platform_truthful_and_side_effect_free() {
+    let capabilities = credential_storage_capabilities();
+    assert_eq!(
+        capabilities.schema_version,
+        "forge.remote-credential-capabilities/v1"
+    );
+    assert!(capabilities.access_token_env.available);
+    assert_eq!(capabilities.access_token_env.backend, "FORGE_ACCESS_TOKEN");
+    assert_eq!(capabilities.access_token_env.reason, None);
+
+    #[cfg(target_os = "linux")]
+    {
+        assert_eq!(capabilities.platform, "linux");
+        assert!(capabilities.refresh_token_os_keyring.available);
+        assert!(capabilities.credential_metadata.available);
+        assert!(capabilities.refresh_lock.available);
+        assert!(capabilities.saved_login.available);
+    }
+    #[cfg(target_os = "macos")]
+    {
+        assert_eq!(capabilities.platform, "macos");
+        assert!(capabilities.refresh_token_os_keyring.available);
+        assert!(capabilities.credential_metadata.available);
+        assert!(capabilities.refresh_lock.available);
+        assert!(capabilities.saved_login.available);
+    }
+    #[cfg(target_os = "windows")]
+    {
+        assert_eq!(capabilities.platform, "windows");
+        assert!(capabilities.refresh_token_os_keyring.available);
+        assert!(!capabilities.credential_metadata.available);
+        assert!(!capabilities.refresh_lock.available);
+        assert!(!capabilities.saved_login.available);
+        assert_eq!(capabilities.saved_login.backend, "environment token only");
+    }
+    #[cfg(target_os = "android")]
+    {
+        assert_eq!(capabilities.platform, "android");
+        assert!(!capabilities.refresh_token_os_keyring.available);
+        assert!(!capabilities.credential_metadata.available);
+        assert!(!capabilities.refresh_lock.available);
+        assert!(!capabilities.saved_login.available);
+    }
+}
 
 #[cfg(unix)]
 #[test]
@@ -203,14 +249,38 @@ fn login_fails_closed_when_the_secure_refresh_store_is_unavailable() {
     }
 
     let directory = secure_tempdir();
-    let store = CredentialStore::with_test_backend(
-        directory.path().to_path_buf(),
-        Arc::new(FailedBackend),
-    );
+    let store =
+        CredentialStore::with_test_backend(directory.path().to_path_buf(), Arc::new(FailedBackend));
     let saved = credential("https://id.example", "forge-cli", "user-a", "tenant-a");
 
     assert!(store.save_login(&saved, Some("refresh-secret-01")).is_err());
     assert!(!store.path_for(&saved).exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn failed_login_restores_the_previous_refresh_token() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let directory = secure_tempdir();
+    let store = CredentialStore::with_test_backend(
+        directory.path().to_path_buf(),
+        Arc::new(MemoryRefreshTokenBackend::default()),
+    );
+    let saved = credential("https://id.example", "forge-cli", "user-a", "tenant-a");
+    store.save_login(&saved, Some("refresh-original")).unwrap();
+
+    fs::set_permissions(store.path_for(&saved), fs::Permissions::from_mode(0o644)).unwrap();
+    assert!(
+        store
+            .save_login(&saved, Some("refresh-replacement"))
+            .is_err()
+    );
+
+    assert_eq!(
+        store.load_refresh_token(&saved).unwrap().as_deref(),
+        Some("refresh-original")
+    );
 }
 
 fn store(config_root: &std::path::Path) -> CredentialStore {

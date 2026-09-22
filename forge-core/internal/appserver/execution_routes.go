@@ -17,7 +17,8 @@ const executionConsentCollectionPath = "/api/v1/execution-consents"
 
 // executionBackend is the private app-server seam for Project consent and
 // inert pending Run intents. Production route wiring remains behind the ADR
-// lifecycle and same-tree acceptance gate.
+// lifecycle and same-tree acceptance gate; an accepted EXECUTE assembly only
+// exposes admission records and still has no Runner dispatch authority.
 type executionBackend interface {
 	OwnedProjectConversationIdentity(
 		context.Context,
@@ -73,9 +74,9 @@ type executionProjectReader interface {
 	) (model.OwnedProjectConversationIdentity, error)
 }
 
-// executionSurface is deliberately constructed only by focused tests today.
-// The running server continues to install only the approved conversation
-// routes until the documented governance and acceptance gates pass.
+// executionSurface is mounted by the dedicated accepted EXECUTE assembly. Its
+// execution handler contains consent and pending-intent admission only; the
+// ordinary server constructor and INVENTORY/OBSERVE assemblies keep it closed.
 type executionSurface struct {
 	sessions  http.Handler
 	execution http.Handler
@@ -93,8 +94,17 @@ func newConversationRoutesWithInertExecutionAPI(
 	backend conversationBackend,
 	profiles *executionprofile.Catalog,
 ) http.Handler {
+	sessions := newConversationRoutesWithBackendAndExecutionProfiles(backend, profiles)
 	return executionSurface{
-		sessions:  newConversationRoutesWithBackendAndExecutionProfiles(backend, profiles),
+		sessions: authenticatedSessionRoutes{
+			conversations:                    sessions,
+			placement:                        newDevicePlacementPreviewRoutes(),
+			deviceObservation:                newSessionDeviceObservationRoutes(),
+			sessionRunnerReceipt:             newSessionRunnerReceiptObservationRoutes(),
+			runAttemptLeaseDispatchPreflight: newRunAttemptLeaseDispatchPreflightRoutes(),
+			runnerDispatchPlanPreview:        newRunnerDispatchPlanPreviewRoutes(),
+			executionReconciliation:          newExecutionReconciliationPreviewRoutes(),
+		},
 		execution: newExecutionRoutes(backend, profiles),
 	}
 }

@@ -13,7 +13,7 @@ fn owner(tenant_id: &str) -> ConversationOwner {
 }
 
 #[test]
-fn owner_binding_filters_legacy_sessions_and_tenant_reads() {
+fn owner_binding_lists_and_reads_owned_detail() {
     let fixture = owned_conversation_fixture();
     let page = fixture
         .store
@@ -23,6 +23,29 @@ fn owner_binding_filters_legacy_sessions_and_tenant_reads() {
     assert_eq!(page.conversations[0].conversation, fixture.conversation);
     assert_eq!(page.conversations[0].aggregate_version, 1);
     assert!(!page.has_more);
+    let detail = fixture
+        .store
+        .get_owned_conversation(&fixture.account, &fixture.conversation.id)
+        .expect("owner can read Conversation detail");
+    assert_eq!(detail.conversation, fixture.conversation);
+    assert_eq!(detail.aggregate_version, 1);
+    assert_not_found(
+        fixture
+            .store
+            .get_owned_conversation(&owner("tenant-b"), &fixture.conversation.id),
+        "wrong tenant cannot read Conversation detail",
+    );
+}
+
+#[test]
+fn owner_binding_hides_legacy_and_foreign_history() {
+    let fixture = owned_conversation_fixture();
+    assert_not_found(
+        fixture
+            .store
+            .get_owned_conversation(&fixture.account, &fixture.legacy.id),
+        "legacy Conversation remains hidden from detail",
+    );
     assert_eq!(
         fixture
             .store
@@ -84,13 +107,39 @@ fn owned_prompt_writes_replay_idempotently_and_guard_cas() {
     assert_eq!(replay.aggregate_version, 2);
     assert!(replay.replayed);
 
-    let stale_write = fixture
+    let second = fixture
         .store
         .append_owned_prompt(
             &fixture.account,
             &fixture.conversation.id,
             "second prompt",
             "prompt-key-2",
+            2,
+        )
+        .expect("append a second Prompt at the next version");
+    assert_eq!(second.aggregate_version, 3);
+
+    let replay_after_later_write = fixture
+        .store
+        .append_owned_prompt(
+            &fixture.account,
+            &fixture.conversation.id,
+            "first prompt",
+            "prompt-key-1",
+            1,
+        )
+        .expect("replay retains the original Prompt result after later writes");
+    assert_eq!(replay_after_later_write.prompt.id, appended.prompt.id);
+    assert_eq!(replay_after_later_write.aggregate_version, 2);
+    assert!(replay_after_later_write.replayed);
+
+    let stale_write = fixture
+        .store
+        .append_owned_prompt(
+            &fixture.account,
+            &fixture.conversation.id,
+            "third prompt",
+            "prompt-key-3",
             1,
         )
         .expect_err("stale new write must fail");
@@ -100,8 +149,9 @@ fn owned_prompt_writes_replay_idempotently_and_guard_cas() {
         .store
         .owned_conversation_prompt_page(&fixture.account, &fixture.conversation.id, None, 10)
         .expect("read account history");
-    assert_eq!(history.prompts.len(), 1);
-    assert_eq!(history.prompts[0], appended.prompt);
+    assert_eq!(history.prompts.len(), 2);
+    assert_eq!(history.prompts[0], second.prompt);
+    assert_eq!(history.prompts[1], appended.prompt);
 }
 
 struct OwnedConversationFixture {

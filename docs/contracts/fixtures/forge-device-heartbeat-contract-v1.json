@@ -1,0 +1,284 @@
+{
+  "schema_version": "forge.device-heartbeat-contract/v1",
+  "evaluation_mode": "pure_reference_only",
+  "owner_declaration": {
+    "tenant_id": "tenant-1"
+  },
+  "device": {
+    "device_id": "device-a",
+    "tenant_id": "tenant-1",
+    "approval_state": "approved"
+  },
+  "capabilities": {
+    "os": "linux",
+    "architecture": "amd64",
+    "cpu_cores": 8,
+    "available_cpu_cores": 8,
+    "memory_bytes": 16384,
+    "available_memory_bytes": 16384,
+    "storage_bytes": 8192,
+    "available_storage_bytes": 8192,
+    "runtimes": ["oci"]
+  },
+  "authority": {
+    "identity_verified": false,
+    "heartbeat_persisted": false,
+    "inventory_authoritative": false,
+    "execution_authorized": false,
+    "reservation_created": false,
+    "dispatch_performed": false
+  },
+  "cases": [
+    {
+      "name": "initial_generation",
+      "server_observed_at_ms": 200000,
+      "lease_ttl_ms": 60000,
+      "current": null,
+      "heartbeat": {
+        "device_id": "device-a",
+        "instance_id": "runner-a",
+        "generation": 1,
+        "sequence": 1
+      },
+      "expected": {
+        "accepted": true,
+        "generation": 1,
+        "heartbeat_sequence": 1,
+        "server_observed_at_ms": 200000,
+        "capability_lease_expires_at_ms": 260000
+      }
+    },
+    {
+      "name": "next_sequence",
+      "server_observed_at_ms": 210000,
+      "lease_ttl_ms": 60000,
+      "current": {
+        "device_id": "device-a",
+        "instance_id": "runner-a",
+        "generation": 1,
+        "heartbeat_sequence": 1,
+        "server_observed_at_ms": 200000,
+        "capability_lease_expires_at_ms": 260000
+      },
+      "heartbeat": {
+        "device_id": "device-a",
+        "instance_id": "runner-a",
+        "generation": 1,
+        "sequence": 2
+      },
+      "expected": {
+        "accepted": true,
+        "generation": 1,
+        "heartbeat_sequence": 2,
+        "server_observed_at_ms": 210000,
+        "capability_lease_expires_at_ms": 270000
+      }
+    },
+    {
+      "name": "replayed_sequence",
+      "server_observed_at_ms": 210000,
+      "lease_ttl_ms": 60000,
+      "current": {
+        "device_id": "device-a",
+        "instance_id": "runner-a",
+        "generation": 1,
+        "heartbeat_sequence": 2,
+        "server_observed_at_ms": 210000,
+        "capability_lease_expires_at_ms": 270000
+      },
+      "heartbeat": {
+        "device_id": "device-a",
+        "instance_id": "runner-a",
+        "generation": 1,
+        "sequence": 2
+      },
+      "expected": {
+        "accepted": false,
+        "error": "sequence_not_increasing"
+      }
+    },
+    {
+      "name": "instance_changed_without_generation",
+      "server_observed_at_ms": 220000,
+      "lease_ttl_ms": 60000,
+      "current": {
+        "device_id": "device-a",
+        "instance_id": "runner-a",
+        "generation": 1,
+        "heartbeat_sequence": 2,
+        "server_observed_at_ms": 210000,
+        "capability_lease_expires_at_ms": 270000
+      },
+      "heartbeat": {
+        "device_id": "device-a",
+        "instance_id": "runner-b",
+        "generation": 1,
+        "sequence": 3
+      },
+      "expected": {
+        "accepted": false,
+        "error": "instance_changed_within_generation"
+      }
+    },
+    {
+      "name": "generation_skip",
+      "server_observed_at_ms": 220000,
+      "lease_ttl_ms": 60000,
+      "current": {
+        "device_id": "device-a",
+        "instance_id": "runner-a",
+        "generation": 1,
+        "heartbeat_sequence": 2,
+        "server_observed_at_ms": 210000,
+        "capability_lease_expires_at_ms": 270000
+      },
+      "heartbeat": {
+        "device_id": "device-a",
+        "instance_id": "runner-c",
+        "generation": 3,
+        "sequence": 1
+      },
+      "expected": {
+        "accepted": false,
+        "error": "generation_skipped"
+      }
+    },
+    {
+      "name": "new_generation",
+      "server_observed_at_ms": 220000,
+      "lease_ttl_ms": 60000,
+      "current": {
+        "device_id": "device-a",
+        "instance_id": "runner-a",
+        "generation": 1,
+        "heartbeat_sequence": 2,
+        "server_observed_at_ms": 210000,
+        "capability_lease_expires_at_ms": 270000
+      },
+      "heartbeat": {
+        "device_id": "device-a",
+        "instance_id": "runner-b",
+        "generation": 2,
+        "sequence": 1
+      },
+      "expected": {
+        "accepted": true,
+        "generation": 2,
+        "heartbeat_sequence": 1,
+        "server_observed_at_ms": 220000,
+        "capability_lease_expires_at_ms": 280000
+      }
+    },
+    {
+      "name": "old_generation",
+      "server_observed_at_ms": 230000,
+      "lease_ttl_ms": 60000,
+      "current": {
+        "device_id": "device-a",
+        "instance_id": "runner-b",
+        "generation": 2,
+        "heartbeat_sequence": 1,
+        "server_observed_at_ms": 220000,
+        "capability_lease_expires_at_ms": 280000
+      },
+      "heartbeat": {
+        "device_id": "device-a",
+        "instance_id": "runner-a",
+        "generation": 1,
+        "sequence": 2
+      },
+      "expected": {
+        "accepted": false,
+        "error": "old_generation"
+      }
+    },
+    {
+      "name": "server_clock_regression",
+      "server_observed_at_ms": 219999,
+      "lease_ttl_ms": 60000,
+      "current": {
+        "device_id": "device-a",
+        "instance_id": "runner-b",
+        "generation": 2,
+        "heartbeat_sequence": 1,
+        "server_observed_at_ms": 220000,
+        "capability_lease_expires_at_ms": 280000
+      },
+      "heartbeat": {
+        "device_id": "device-a",
+        "instance_id": "runner-b",
+        "generation": 2,
+        "sequence": 2
+      },
+      "expected": {
+        "accepted": false,
+        "error": "server_time_went_backwards"
+      }
+    },
+    {
+      "name": "foreign_device",
+      "server_observed_at_ms": 230000,
+      "lease_ttl_ms": 60000,
+      "current": null,
+      "heartbeat": {
+        "device_id": "device-foreign",
+        "instance_id": "runner-foreign",
+        "generation": 1,
+        "sequence": 1
+      },
+      "expected": {
+        "accepted": false,
+        "error": "device_mismatch"
+      }
+    },
+    {
+      "name": "revoked_device",
+      "server_observed_at_ms": 230000,
+      "lease_ttl_ms": 60000,
+      "device_approval_state": "revoked",
+      "current": null,
+      "heartbeat": {
+        "device_id": "device-a",
+        "instance_id": "runner-a",
+        "generation": 1,
+        "sequence": 1
+      },
+      "expected": {
+        "accepted": false,
+        "error": "device_revoked"
+      }
+    },
+    {
+      "name": "ttl_below_minimum",
+      "server_observed_at_ms": 230000,
+      "lease_ttl_ms": 999,
+      "current": null,
+      "heartbeat": {
+        "device_id": "device-a",
+        "instance_id": "runner-a",
+        "generation": 1,
+        "sequence": 1
+      },
+      "expected": {
+        "accepted": false,
+        "error": "invalid_lease_duration"
+      }
+    },
+    {
+      "name": "expiry_overflow",
+      "server_observed_at_ms": 18446744073709551615,
+      "lease_ttl_ms": 1000,
+      "current": null,
+      "heartbeat": {
+        "device_id": "device-a",
+        "instance_id": "runner-a",
+        "generation": 1,
+        "sequence": 1
+      },
+      "expected": {
+        "accepted": false,
+        "error": "lease_expiry_overflow"
+      }
+    }
+  ]
+}

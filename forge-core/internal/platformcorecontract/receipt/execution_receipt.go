@@ -224,6 +224,12 @@ func validateExecutor(value ExecutorDescriptor) error {
 	return validateAdapterVersion(value.AdapterVersion)
 }
 
+// ValidateExecutorDescriptor validates a caller-supplied executor declaration
+// without resolving an adapter or conferring execution authority.
+func ValidateExecutorDescriptor(value ExecutorDescriptor) error {
+	return validateExecutor(value)
+}
+
 func validateObservedUsage(value ObservedUsage) error {
 	checks := []struct {
 		label   string

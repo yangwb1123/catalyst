@@ -4,6 +4,7 @@ use super::*;
 fn owner_run_rpc_projects_only_status_and_closed_event_types() {
     let fixture = owned_run_fixture();
     assert_owned_run_summary(&fixture);
+    assert_owned_run_observation(&fixture);
     assert_owned_run_timeline(&fixture);
 }
 
@@ -130,6 +131,58 @@ fn assert_owned_run_summary(fixture: &OwnedRunFixture) {
     assert!(!page.to_string().contains("private"));
 }
 
+fn assert_owned_run_observation(fixture: &OwnedRunFixture) {
+    let observed = process_owned_request(
+        &fixture.database,
+        "owned_run_observation",
+        &json!({
+            "owner": fixture.owner,
+            "conversation_id": fixture.conversation_id,
+            "run_id": "run-rpc-a"
+        }),
+    );
+    assert_eq!(observed["ok"], true, "{observed}");
+    let result = &observed["result"];
+    assert_eq!(result["api_version"], "forge.run.observed.v1");
+    assert_eq!(result["conversation_id"], fixture.conversation_id);
+    assert_eq!(result["run_id"], "run-rpc-a");
+    assert_eq!(result["latest_sequence"], 1);
+    assert_eq!(result["status"], "nonterminal");
+    assert_eq!(result["metadata_observed"], true);
+    assert_eq!(result["content_included"], false);
+    assert_eq!(
+        result["authority"],
+        json!({
+            "identity_verified": false,
+            "owner_authorized": false,
+            "run_authoritative": false,
+            "persistence_attested": false,
+            "content_provenance_verified": false,
+            "reservation_created": false,
+            "execution_authorized": false,
+            "dispatch_performed": false,
+        })
+    );
+    assert!(
+        result["owner_ref"]
+            .as_str()
+            .is_some_and(|value| value.len() == 64)
+    );
+    assert!(!observed.to_string().contains("private"));
+
+    let foreign_owner = test_owner("tenant-slate-foreign");
+    let denied = process_owned_request(
+        &fixture.database,
+        "owned_run_observation",
+        &json!({
+            "owner": foreign_owner,
+            "conversation_id": fixture.conversation_id,
+            "run_id": "run-rpc-a"
+        }),
+    );
+    assert_eq!(denied["error"]["code"], "not_found", "{denied}");
+}
+
 fn assert_owned_run_timeline(fixture: &OwnedRunFixture) {
     let timeline = process_owned_request(
         &fixture.database,
@@ -172,12 +225,37 @@ fn owner_run_rpc_rejects_unknown_fields_mismatched_cursors_and_unbounded_inputs_
         ),
         (
             "owned_run_page",
+            json!({"owner":owner, "conversation_id":"c1", "limit":1, "before_created_at_ms":9007199254740992u64, "before_run_id":"r1"}),
+            "invalid_owned_run_request",
+        ),
+        (
+            "owned_run_page",
             json!({"owner":owner, "conversation_id":"c1", "limit":1, "unknown":true}),
             "invalid_request",
         ),
         (
+            "owned_run_observation",
+            json!({"owner":owner, "conversation_id":"c1"}),
+            "invalid_request",
+        ),
+        (
+            "owned_run_observation",
+            json!({"owner":owner, "conversation_id":"c1", "run_id":"r1", "unknown":true}),
+            "invalid_request",
+        ),
+        (
+            "owned_run_observation",
+            json!({"owner":owner, "conversation_id":"c1", "run_id":"r1"}),
+            "query_failed",
+        ),
+        (
             "owned_run_timeline_page",
             json!({"owner":owner, "conversation_id":"c1", "run_id":"r1", "after_sequence":u64::MAX, "limit":1}),
+            "invalid_owned_run_request",
+        ),
+        (
+            "owned_run_timeline_page",
+            json!({"owner":owner, "conversation_id":"c1", "run_id":"r1", "after_sequence":9007199254740992u64, "limit":1}),
             "invalid_owned_run_request",
         ),
         (

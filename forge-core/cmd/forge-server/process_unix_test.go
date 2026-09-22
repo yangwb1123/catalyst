@@ -27,6 +27,7 @@ func TestForgeServerProcessContentionReuseAndInterrupt(t *testing.T) {
 	t.Cleanup(func() { stopUnwaited(first) })
 	ready := readProcessReady(t, firstOutput, firstError.String)
 	assertProcessHealth(t, ready.Listen)
+	assertProcessNotFound(t, ready.Listen, "/api/v1/conversations")
 	second := exec.Command(binary, "--state-dir", stateDir, "--listen", "127.0.0.1:0")
 	secondOutput, err := second.CombinedOutput()
 	if err == nil || !strings.Contains(string(secondOutput), "already running") {
@@ -143,6 +144,19 @@ func assertProcessHealth(t *testing.T, listen string) {
 	_ = response.Body.Close()
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("health status = %d", response.StatusCode)
+	}
+}
+
+func assertProcessNotFound(t *testing.T, listen, path string) {
+	t.Helper()
+	client := &http.Client{Transport: &http.Transport{Proxy: nil}, Timeout: 2 * time.Second}
+	response, err := client.Get(listen + path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusNotFound {
+		t.Fatalf("%s status = %d, want %d", path, response.StatusCode, http.StatusNotFound)
 	}
 }
 

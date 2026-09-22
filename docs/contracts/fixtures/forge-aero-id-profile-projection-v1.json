@@ -1,0 +1,48 @@
+{
+  "schema_version": "forge.aero-id-profile-projection/v1",
+  "evaluation_mode": "pure_projection_only",
+  "source": "aero-id",
+  "owner_declaration": {
+    "issuer": "https://id.example",
+    "subject": "user-1",
+    "tenant_id": "tenant-a"
+  },
+  "owner_declaration_unverified": true,
+  "profile_attributes_unverified": true,
+  "membership_attributes_unverified": true,
+  "profile": {
+    "account_id": "11111111-1111-4111-8111-111111111111",
+    "display_name": "Aero User",
+    "avatar_url": "https://cdn.example/avatar/user-1.png",
+    "locale": "zh-CN",
+    "timezone": "America/Sitka"
+  },
+  "memberships": [
+    {
+      "source": "aero-im",
+      "scope_type": "workspace",
+      "scope_id": "workspace-1",
+      "role": "member",
+      "status": "active"
+    },
+    {
+      "source": "aero-vault",
+      "scope_type": "tenant",
+      "scope_id": "tenant-a",
+      "role": "owner",
+      "status": "active"
+    }
+  ],
+  "consistency": "eventual",
+  "partial": false,
+  "notice": "This is a caller-supplied Aero-ID profile/membership projection. Owner, account, profile, membership, consistency, and status values are unverified; it grants no Forge authorization, device, reservation, scheduling, dispatch, or execution authority.",
+  "authority": {
+    "identity_verified": false,
+    "profile_authoritative": false,
+    "membership_authoritative": false,
+    "authorization_granted": false,
+    "execution_authorized": false,
+    "reservation_created": false,
+    "dispatch_performed": false
+  }
+}

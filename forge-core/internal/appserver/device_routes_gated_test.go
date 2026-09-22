@@ -17,6 +17,8 @@ func TestDeviceRoutesRemainUnregisteredOnSessionCoordinator(t *testing.T) {
 	tests := []struct {
 		name, method, target, contentType, idempotencyKey, body string
 	}{
+		{"inventory candidate", http.MethodGet, deviceInventoryReadCandidatePath, "", "", ""},
+		{"lossless inventory candidate", http.MethodGet, deviceInventoryReadCandidateV2Path, "", "", ""},
 		{"inventory", http.MethodGet, "/api/v1/devices?limit=25", "", "", ""},
 		{"enrollment", http.MethodPost, "/api/v1/devices/enrollments", "application/json", "device-enrollment-gate-probe", `{}`},
 		{"heartbeat", http.MethodPost, "/api/v1/devices/device-1/heartbeats", "application/json", "device-heartbeat-gate-probe", `{}`},

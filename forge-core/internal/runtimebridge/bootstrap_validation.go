@@ -70,10 +70,10 @@ func validConversationBootstrapPage(
 func validConversationBootstrapEntry(data []byte, entry model.ConversationBootstrapEntry) bool {
 	if requireObjectFieldSet(data, "conversation", "creation_cursor", "aggregate_version") != nil ||
 		!validEntityID(entry.Conversation.ID) || strings.TrimSpace(entry.Conversation.Title) == "" ||
-		len(entry.Conversation.Title) > 256 || entry.Conversation.CreatedAtMS > maxSQLiteInteger ||
-		entry.Conversation.UpdatedAtMS > maxSQLiteInteger ||
+		len(entry.Conversation.Title) > 256 || entry.Conversation.CreatedAtMS > maxSafeJSONInteger ||
+		entry.Conversation.UpdatedAtMS > maxSafeJSONInteger ||
 		entry.Conversation.UpdatedAtMS < entry.Conversation.CreatedAtMS ||
-		entry.AggregateVersion > maxSQLiteInteger ||
+		!validAggregateVersion(entry.AggregateVersion) ||
 		entry.CreationCursor > maxSQLiteInteger {
 		return false
 	}

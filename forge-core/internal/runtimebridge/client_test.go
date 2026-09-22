@@ -1,6 +1,7 @@
 package runtimebridge
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -165,6 +166,89 @@ func TestPromptPageValidationRejectsLeakageGapsAndOversizedContent(t *testing.T)
 	}
 }
 
+func TestPromptJSONNumbersUseSafeIntegerBoundary(t *testing.T) {
+	valid := []byte(fmt.Sprintf(`{"conversation_id":"c1","prompts":[{"id":"p1","conversation_id":"c1","role":"user","content":"x","created_at_ms":%d}],"next_cursor":{"created_at_ms":%d,"prompt_id":"p1"},"has_more":true}`, maxSafeJSONInteger, maxSafeJSONInteger))
+	var page model.ConversationPromptPage
+	if err := decodeStrict(valid, &page); err != nil || !validPromptPage(valid, page, "c1", nil, 1) {
+		t.Fatalf("JSON-safe Prompt boundary rejected: %v", err)
+	}
+	unsafe := bytes.ReplaceAll(valid, []byte(fmt.Sprint(maxSafeJSONInteger)), []byte(fmt.Sprint(maxSafeJSONInteger+1)))
+	var unsafePage model.ConversationPromptPage
+	if err := decodeStrict(unsafe, &unsafePage); err != nil || validPromptPage(unsafe, unsafePage, "c1", nil, 1) {
+		t.Fatal("Prompt timestamp above JSON-safe integer accepted")
+	}
+	unsafeCursor := model.PromptPageCursor{CreatedAtMS: maxSafeJSONInteger + 1, PromptID: "p1"}
+	if _, err := (&Client{}).ConversationPrompts(context.Background(), "c1", &unsafeCursor, 1); err == nil {
+		t.Fatal("Prompt request cursor above JSON-safe integer accepted")
+	}
+	owner := model.Owner{Issuer: "https://identity.example", Subject: "account-1", TenantID: "tenant-1"}
+	if _, err := (&Client{}).OwnedConversationPrompts(context.Background(), owner, "c1", &unsafeCursor, 1); err == nil {
+		t.Fatal("owned Prompt request cursor above JSON-safe integer accepted")
+	}
+	result := ownedPromptAppendResult{Prompt: model.ConversationPrompt{
+		ID: "p1", ConversationID: "c1", Role: "user", Content: "x", CreatedAtMS: maxSafeJSONInteger + 1,
+	}, AggregateVersion: 1}
+	if validOwnedPromptAppend([]byte(`{"prompt":{"id":"p1","conversation_id":"c1","role":"user","content":"x","created_at_ms":9007199254740992},"aggregate_version":1,"replayed":false}`), result, "c1", "x") {
+		t.Fatal("Prompt append timestamp above JSON-safe integer accepted")
+	}
+	if _, _, _, err := (&Client{}).AppendOwnedPrompt(context.Background(), owner, "c1", "x", "key", maxSafeJSONInteger+1); err == nil {
+		t.Fatal("Prompt append expected version above JSON-safe integer accepted")
+	}
+}
+
+func TestOwnedAggregateVersionsUseSafeIntegerBoundary(t *testing.T) {
+	conversation := model.Conversation{
+		ID: "conversation-1", Scope: model.ConversationScope{Kind: "global"}, Title: "Shared",
+		CreatedAtMS: 1, UpdatedAtMS: 1,
+	}
+	pageData := []byte(fmt.Sprintf(`{"conversations":[{"conversation":{"id":"conversation-1","scope":{"kind":"global"},"title":"Shared","created_at_ms":1,"updated_at_ms":1},"aggregate_version":%d}],"has_more":false}`, maxSafeJSONInteger))
+	page := model.OwnedConversationPage{Conversations: []model.OwnedConversationEntry{{
+		Conversation: conversation, AggregateVersion: maxSafeJSONInteger,
+	}}}
+	if !validOwnedConversationPage(pageData, page, "", 1) {
+		t.Fatal("JSON-safe Conversation aggregate boundary rejected")
+	}
+	unsafePage := bytes.ReplaceAll(pageData, []byte(fmt.Sprint(maxSafeJSONInteger)), []byte(fmt.Sprint(maxSafeJSONInteger+1)))
+	page.Conversations[0].AggregateVersion = maxSafeJSONInteger + 1
+	if validOwnedConversationPage(unsafePage, page, "", 1) {
+		t.Fatal("Conversation aggregate above JSON-safe integer accepted")
+	}
+
+	detailData := []byte(fmt.Sprintf(`{"conversation":{"id":"conversation-1","scope":{"kind":"global"},"title":"Shared","created_at_ms":1,"updated_at_ms":1},"aggregate_version":%d}`, maxSafeJSONInteger))
+	entry := model.OwnedConversationEntry{Conversation: conversation, AggregateVersion: maxSafeJSONInteger}
+	if !validOwnedConversationEntry(detailData, entry) {
+		t.Fatal("JSON-safe Conversation detail aggregate boundary rejected")
+	}
+	entry.AggregateVersion = maxSafeJSONInteger + 1
+	if validOwnedConversationEntry(unsafePage, entry) {
+		t.Fatal("Conversation detail aggregate above JSON-safe integer accepted")
+	}
+
+	appendData := []byte(fmt.Sprintf(`{"prompt":{"id":"prompt-1","conversation_id":"conversation-1","role":"user","content":"ship it","created_at_ms":1},"aggregate_version":%d,"replayed":false}`, maxSafeJSONInteger))
+	appendResult := ownedPromptAppendResult{Prompt: model.ConversationPrompt{
+		ID: "prompt-1", ConversationID: "conversation-1", Role: "user", Content: "ship it", CreatedAtMS: 1,
+	}, AggregateVersion: maxSafeJSONInteger}
+	if !validOwnedPromptAppend(appendData, appendResult, "conversation-1", "ship it") {
+		t.Fatal("JSON-safe Prompt append aggregate boundary rejected")
+	}
+	unsafeAppend := bytes.ReplaceAll(appendData, []byte(fmt.Sprint(maxSafeJSONInteger)), []byte(fmt.Sprint(maxSafeJSONInteger+1)))
+	appendResult.AggregateVersion = maxSafeJSONInteger + 1
+	if validOwnedPromptAppend(unsafeAppend, appendResult, "conversation-1", "ship it") {
+		t.Fatal("Prompt append aggregate above JSON-safe integer accepted")
+	}
+
+	importData := []byte(fmt.Sprintf(`{"conversation":{"id":"conversation-1","scope":{"kind":"global"},"title":"Shared","created_at_ms":1,"updated_at_ms":1},"aggregate_version":%d,"imported_prompt_count":0,"replayed":false}`, maxSafeJSONInteger))
+	importResult := model.OwnedConversationImportResult{Conversation: conversation, AggregateVersion: maxSafeJSONInteger}
+	if !validOwnedConversationImport(importData, importResult, "Shared", 0) {
+		t.Fatal("JSON-safe import aggregate boundary rejected")
+	}
+	unsafeImport := bytes.ReplaceAll(importData, []byte(fmt.Sprint(maxSafeJSONInteger)), []byte(fmt.Sprint(maxSafeJSONInteger+1)))
+	importResult.AggregateVersion = maxSafeJSONInteger + 1
+	if validOwnedConversationImport(unsafeImport, importResult, "Shared", 0) {
+		t.Fatal("import aggregate above JSON-safe integer accepted")
+	}
+}
+
 func TestDecodeStrictRejectsInvalidUTF8(t *testing.T) {
 	data := append([]byte(`{"content":"`), 0xff)
 	data = append(data, []byte(`"}`)...)
@@ -306,6 +390,33 @@ func TestResponseDecoderRejectsPathAndUnknownFields(t *testing.T) {
 	for _, framed := range [][]byte{[]byte(`{}`), []byte("{}\n\n"), []byte("{}\r\n")} {
 		if _, err := unframeResponse(framed); err == nil {
 			t.Fatalf("invalid response frame %q was accepted", framed)
+		}
+	}
+}
+
+func TestChangePageUsesJSONSafeIntegerBoundary(t *testing.T) {
+	valid := model.ChangePage{
+		AfterCursor: maxSafeJSONInteger - 1, NextCursor: maxSafeJSONInteger,
+		HeadCursor: maxSafeJSONInteger, Changes: []model.Change{{
+			Cursor: maxSafeJSONInteger, SchemaVersion: 1, ConversationID: "c-1",
+			EntityID: "p-1", AggregateVersion: maxSafeJSONInteger,
+			Kind: "prompt_appended", CreatedAtMS: maxSafeJSONInteger,
+		}},
+	}
+	if !validPage(valid, maxSafeJSONInteger-1, 1) {
+		t.Fatal("JSON-safe global change boundary rejected")
+	}
+	for name, mutate := range map[string]func(*model.ChangePage){
+		"head":      func(page *model.ChangePage) { page.HeadCursor = maxSafeJSONInteger + 1 },
+		"next":      func(page *model.ChangePage) { page.NextCursor = maxSafeJSONInteger + 1 },
+		"cursor":    func(page *model.ChangePage) { page.Changes[0].Cursor = maxSafeJSONInteger + 1 },
+		"aggregate": func(page *model.ChangePage) { page.Changes[0].AggregateVersion = maxSafeJSONInteger + 1 },
+		"created":   func(page *model.ChangePage) { page.Changes[0].CreatedAtMS = maxSafeJSONInteger + 1 },
+	} {
+		page := valid
+		mutate(&page)
+		if validPage(page, maxSafeJSONInteger-1, 1) {
+			t.Fatalf("unsafe global change %s accepted", name)
 		}
 	}
 }

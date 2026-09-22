@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forgeos.dev/contracts/forge-device-approval-rotation-v1.schema.json",
+  "title": "Forge device approval, revocation, and key rotation pure value contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "evaluation_mode", "notice", "initial", "authority", "cases"],
+  "properties": {
+    "schema_version": {"const": "forge.device-approval-rotation/v1"},
+    "evaluation_mode": {"const": "pure_owner_device_lifecycle"},
+    "notice": {"type": "string", "minLength": 1, "maxLength": 1024},
+    "initial": {"$ref": "#/$defs/state"},
+    "authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["owner_authenticated", "persisted", "credential_issued", "inventory_authoritative", "execution_authorized"],
+      "properties": {
+        "owner_authenticated": {"const": false},
+        "persisted": {"const": false},
+        "credential_issued": {"const": false},
+        "inventory_authoritative": {"const": false},
+        "execution_authorized": {"const": false}
+      }
+    },
+    "cases": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "action", "owner", "device_id", "next_key_id", "next_public_key_sha256"],
+        "properties": {
+          "name": {"type": "string", "minLength": 1, "maxLength": 128},
+          "action": {"enum": ["approve", "revoke", "rotate_key", "reset"]},
+          "owner": {"$ref": "#/$defs/owner"},
+          "device_id": {"$ref": "#/$defs/identifier"},
+          "next_key_id": {"type": "string", "maxLength": 128},
+          "next_public_key_sha256": {"type": "string", "maxLength": 64},
+          "expected_state": {"$ref": "#/$defs/state"},
+          "expected_error": {"type": "string", "enum": ["owner_mismatch", "device_mismatch", "unknown_action", "invalid_rotation_key"]}
+        },
+        "oneOf": [
+          {"required": ["expected_state"], "not": {"required": ["expected_error"]}},
+          {"required": ["expected_error"], "not": {"required": ["expected_state"]}}
+        ]
+      }
+    }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    },
+    "owner": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["issuer", "subject", "tenant_id"],
+      "properties": {
+        "issuer": {"type": "string", "minLength": 1, "maxLength": 512},
+        "subject": {"type": "string", "minLength": 1, "maxLength": 512},
+        "tenant_id": {"type": "string", "minLength": 1, "maxLength": 512}
+      }
+    },
+    "state": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["device_id", "owner", "approval_state", "key_id", "public_key_sha256", "key_generation"],
+      "properties": {
+        "device_id": {"$ref": "#/$defs/identifier"},
+        "owner": {"$ref": "#/$defs/owner"},
+        "approval_state": {"enum": ["pending", "approved", "revoked"]},
+        "key_id": {"$ref": "#/$defs/identifier"},
+        "public_key_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "key_generation": {"type": "integer", "minimum": 1}
+      }
+    }
+  }
+}

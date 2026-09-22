@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"forgeos/forge-core/internal/authn"
+	"forgeos/forge-core/internal/devicefabricgate"
 	"forgeos/forge-core/internal/executionprofile"
 )
 
@@ -48,19 +49,68 @@ type Config struct {
 	ExpectedTenantID             string
 	ExpectedSubjectID            string
 	ExecutionProfiles            []executionprofile.Binding
-	BrowserOrigins               []string
-	TLSCertificateFile           string
-	TLSPrivateKeyFile            string
-	JWKSHTTPClient               *http.Client
-	JWKSMaxBytes                 int64
-	JWKSRefreshInterval          time.Duration
-	IntrospectHTTPClient         *http.Client
+	// DeviceFabricActivation is optional so the zero-value server remains
+	// default-off. If a future deployment attempts to mount a device-aware
+	// mode, it must provide the complete, accepted decision/evidence bundle.
+	DeviceFabricActivation *devicefabricgate.Request
+	// DeviceInventoryLifecycleRegistryFile is the owner-private, atomically
+	// replaced lifecycle image used by an explicitly accepted inventory,
+	// observe, or execute admission activation. It is never read while the
+	// fabric gate is off.
+	DeviceInventoryLifecycleRegistryFile string
+	// DeviceClientInstanceSessionViewFile is an optional owner-private,
+	// atomically replaced declaration image for the five Forge client kinds.
+	// It is only read by an accepted activation and never grants instance or
+	// session authority.
+	DeviceClientInstanceSessionViewFile string
+	BrowserOrigins                      []string
+	TLSCertificateFile                  string
+	TLSPrivateKeyFile                   string
+	JWKSHTTPClient                      *http.Client
+	JWKSMaxBytes                        int64
+	JWKSRefreshInterval                 time.Duration
+	IntrospectHTTPClient                *http.Client
 }
 
 // Validate rejects ambiguous state and unsafe listener, TLS, auth, or browser-origin policy.
 func (c Config) Validate() error {
 	if _, err := executionprofile.New(c.ExecutionProfiles); err != nil {
 		return fmt.Errorf("server execution-profile policy: %w", err)
+	}
+	if c.DeviceFabricActivation != nil {
+		decision := devicefabricgate.Evaluate(*c.DeviceFabricActivation)
+		if !decision.Allowed {
+			return fmt.Errorf("device fabric activation blocked (%s): %s",
+				decision.Mode, strings.Join(decision.Reasons, ","))
+		}
+		if decision.Mode != devicefabricgate.ModeOff && c.DeviceInventoryLifecycleRegistryFile == "" {
+			return fmt.Errorf("device fabric activation requires an owner-private lifecycle registry file")
+		}
+		if decision.Mode != devicefabricgate.ModeOff &&
+			decision.Mode != devicefabricgate.ModeInventory &&
+			decision.Mode != devicefabricgate.ModeObserve &&
+			decision.Mode != devicefabricgate.ModeExecute {
+			return fmt.Errorf("device fabric activation mode %q has no production route assembly", decision.Mode)
+		}
+		if decision.Mode != devicefabricgate.ModeOff && c.RuntimeExecutable == "" {
+			return fmt.Errorf("device fabric activation requires the authenticated session API")
+		}
+	}
+	if c.DeviceInventoryLifecycleRegistryFile != "" {
+		if c.DeviceFabricActivation == nil || devicefabricgate.Evaluate(*c.DeviceFabricActivation).Mode == devicefabricgate.ModeOff {
+			return fmt.Errorf("device inventory lifecycle registry file requires an enabled device fabric activation")
+		}
+		if err := validatePrivateFilePath(c.DeviceInventoryLifecycleRegistryFile); err != nil {
+			return fmt.Errorf("device inventory lifecycle registry file: %w", err)
+		}
+	}
+	if c.DeviceClientInstanceSessionViewFile != "" {
+		if c.DeviceFabricActivation == nil || devicefabricgate.Evaluate(*c.DeviceFabricActivation).Mode == devicefabricgate.ModeOff {
+			return fmt.Errorf("device client-instance session view file requires an enabled device fabric activation")
+		}
+		if err := validatePrivateFilePath(c.DeviceClientInstanceSessionViewFile); err != nil {
+			return fmt.Errorf("device client-instance session view file: %w", err)
+		}
 	}
 	if err := validateStateDir(c.StateDir); err != nil {
 		return err
@@ -90,6 +140,20 @@ func (c Config) Validate() error {
 		return err
 	}
 	return c.Build.validate()
+}
+
+func validatePrivateFilePath(path string) error {
+	if path == "" || len(path) > maxStateDirBytes || strings.ContainsRune(path, 0) || !filepath.IsAbs(path) {
+		return fmt.Errorf("path must be a canonical absolute path")
+	}
+	clean := filepath.Clean(path)
+	if path != clean || filepath.Base(clean) == "." || filepath.Base(clean) == string(filepath.Separator) {
+		return fmt.Errorf("path must be a canonical absolute file path")
+	}
+	if err := validateStateDir(filepath.Dir(clean)); err != nil {
+		return fmt.Errorf("parent directory: %w", err)
+	}
+	return nil
 }
 
 func (c Config) validateSessionAPI(remote bool) error {

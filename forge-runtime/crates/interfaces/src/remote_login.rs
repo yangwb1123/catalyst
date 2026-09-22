@@ -72,10 +72,13 @@ pub(super) async fn run() -> Result<(), Box<dyn Error>> {
         expires_at,
     )
     .map_err(LoginError)?;
-    CredentialStore::from_env()
-        .map_err(LoginError)?
-        .save_login(&credential, token.refresh_token.as_deref())
-        .map_err(LoginError)?;
+    let store = CredentialStore::from_env().map_err(LoginError)?;
+    tokio::task::spawn_blocking(move || {
+        store.save_login(&credential, token.refresh_token.as_deref())
+    })
+    .await
+    .map_err(|_| LoginError("OS credential-store operation failed".into()))?
+    .map_err(LoginError)?;
     println!(
         "Forge CLI login completed; credentials were stored in the available protected stores."
     );

@@ -15,6 +15,9 @@ const (
 	MaxTokenBytes        = 128
 	MaxOwnerPartBytes    = 512
 	MaxSnapshotAgeMS     = int64(24 * 60 * 60 * 1000)
+	// MaxSafeIntegerMS keeps timestamps and sequence values representable by
+	// Go, Rust, and Dart/Web consumers without loss of precision.
+	MaxSafeIntegerMS = int64(9007199254740991)
 )
 
 var errInvalidRequest = errors.New("invalid device placement dry-run request")

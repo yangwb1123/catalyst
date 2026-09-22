@@ -1,5 +1,8 @@
 use super::*;
 
+#[path = "intents/numeric_transport.rs"]
+mod numeric_transport;
+
 #[test]
 fn owner_scoped_rpc_creates_lists_reads_and_appends_with_isolation_and_cas() {
     let directory = tempdir().expect("temp directory");
@@ -361,6 +364,7 @@ fn pending_run_intent_rpc_rejects_malformed_and_caller_owned_execution_fields_be
     assert_eq!(denied["error"]["code"], "invalid_request");
     assert!(!database.exists());
 }
+
 #[test]
 fn project_execution_consent_rpc_rejects_malformed_owner_digest_and_unknown_fields_before_open() {
     let directory = tempdir().expect("temp directory");

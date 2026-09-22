@@ -54,3 +54,18 @@ func TestOwnedPromptAppendProjectionHidesIdempotencyAndFixesRole(t *testing.T) {
 		t.Fatal("non-user API Prompt accepted")
 	}
 }
+
+func TestConversationTimestampsUseJSONSafeIntegerBoundary(t *testing.T) {
+	conversation := model.Conversation{
+		ID: "conversation-1", Scope: model.ConversationScope{Kind: "global"}, Title: "Shared",
+		CreatedAtMS: maxSafeJSONInteger, UpdatedAtMS: maxSafeJSONInteger,
+	}
+	if !validConversation(conversation) {
+		t.Fatal("JSON-safe Conversation timestamp boundary rejected")
+	}
+	conversation.CreatedAtMS = maxSafeJSONInteger + 1
+	conversation.UpdatedAtMS = maxSafeJSONInteger + 1
+	if validConversation(conversation) {
+		t.Fatal("Conversation timestamp above JSON-safe integer accepted")
+	}
+}

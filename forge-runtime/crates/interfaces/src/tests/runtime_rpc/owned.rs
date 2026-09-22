@@ -393,6 +393,14 @@ fn assert_owned_list(database: &Path, owner: &Value, conversation_id: &str) {
     );
     assert_eq!(listed["result"]["conversations"][0]["aggregate_version"], 1);
     assert_eq!(listed["result"]["has_more"], false);
+    let detail = process_owned_request(
+        database,
+        "get_owned_conversation",
+        &json!({"owner": owner, "conversation_id": conversation_id}),
+    );
+    assert_eq!(detail["ok"], true, "{detail}");
+    assert_eq!(detail["result"]["conversation"]["id"], conversation_id);
+    assert_eq!(detail["result"]["aggregate_version"], 1);
 }
 
 fn assert_tenant_isolation(database: &Path, owner: &Value) {

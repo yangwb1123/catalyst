@@ -1,0 +1,2188 @@
+{
+  "schema_version": "forge.attempt-request/v1",
+  "evaluation_mode": "pure_attempt_request_only",
+  "authority": {
+    "device_identity_verified": false,
+    "references_resolved": false,
+    "request_persisted": false,
+    "reservation_created": false,
+    "execution_authorized": false,
+    "dispatch_performed": false,
+    "audit_published": false
+  },
+  "cases": [
+    {
+      "name": "valid_normalizes_order",
+      "request": {
+        "scope_ref": {
+          "action_id": null,
+          "attempt_id": "atm_00000000000000000000000000",
+          "change_id": "chg_00000000000000000000000000",
+          "objective_id": "obj_00000000000000000000000000",
+          "project_id": "prj_00000000000000000000000000",
+          "project_snapshot_id": "psn_00000000000000000000000000",
+          "session_id": null,
+          "space_id": "spc_00000000000000000000000000",
+          "turn_id": null,
+          "work_graph_id": "wgr_00000000000000000000000000",
+          "work_item_id": "wki_00000000000000000000000000"
+        },
+        "attempt_ref": {
+          "entity_id": "atm_00000000000000000000000000",
+          "entity_type": "attempt"
+        },
+        "work_item_ref": {
+          "entity_id": "wki_00000000000000000000000000",
+          "entity_type": "work_item"
+        },
+        "project_ref": {
+          "entity_id": "prj_00000000000000000000000000",
+          "entity_type": "project"
+        },
+        "project_snapshot_ref": {
+          "entity_id": "psn_00000000000000000000000000",
+          "entity_type": "project_snapshot"
+        },
+        "control_versions": {
+          "objective_version": 1,
+          "change_version": 2,
+          "work_graph_version": 3,
+          "work_item_version": 4
+        },
+        "executor": {
+          "actor_ref": {
+            "actor_id": "acr_00000000000000000000000000",
+            "actor_type": "agent"
+          },
+          "adapter_id": "forge.runtime.local.adapter",
+          "adapter_version": "1.2.3"
+        },
+        "context_artifact_ref": {
+          "artifact_kind": "context",
+          "canonicalization": "forge.canonical-json/v1",
+          "content_digest": "0000000000000000000000000000000000000000000000000000000000000000",
+          "content_id": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+          "created_at_unix_ms": 1,
+          "logical_id": "art_00000000000000000000000000",
+          "media_type": "text/plain",
+          "producer_attempt_id": "atm_00000000000000000000000001",
+          "provenance_ref": {
+            "record_id": "provenance.one",
+            "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+            "record_type": "forge.runtime.provenance"
+          },
+          "retention_class": "durable",
+          "sensitivity": "internal",
+          "size_bytes": 1,
+          "source_snapshot_ref": {
+            "entity_id": "psn_00000000000000000000000000",
+            "entity_type": "project_snapshot"
+          }
+        },
+        "workspace_capability_ref": {
+          "record_id": "workspace.one",
+          "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "record_type": "forge.runtime.workspace_capability"
+        },
+        "grant_ref": {
+          "record_id": "grant.one",
+          "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "record_type": "forge.control.capability_grant"
+        },
+        "approval_refs": [
+          {
+            "record_id": "approval.b",
+            "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+            "record_type": "forge.control.approval_record"
+          },
+          {
+            "record_id": "approval.a",
+            "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+            "record_type": "forge.control.approval_record"
+          }
+        ],
+        "requested_effects": [
+          "write.file",
+          "read.repo"
+        ],
+        "budget": {
+          "max_duration_ms": 5000,
+          "max_cost_usd_micros": 100,
+          "max_model_calls": 3,
+          "max_tool_calls": 4,
+          "max_input_tokens": 1000,
+          "max_output_tokens": 2000,
+          "max_output_bytes": 3000,
+          "max_network_bytes": 4000
+        },
+        "timeout_ms": 1000,
+        "idempotency_key": "attempt-key-000001"
+      },
+      "expected": {
+        "accepted": true,
+        "error": "",
+        "initial_state": "requested",
+        "requested_effects": [
+          "read.repo",
+          "write.file"
+        ],
+        "approval_record_ids": [
+          "approval.a",
+          "approval.b"
+        ]
+      }
+    },
+    {
+      "name": "scope_missing_attempt",
+      "request": {
+        "scope_ref": {
+          "action_id": null,
+          "attempt_id": null,
+          "change_id": "chg_00000000000000000000000000",
+          "objective_id": "obj_00000000000000000000000000",
+          "project_id": "prj_00000000000000000000000000",
+          "project_snapshot_id": "psn_00000000000000000000000000",
+          "session_id": null,
+          "space_id": "spc_00000000000000000000000000",
+          "turn_id": null,
+          "work_graph_id": "wgr_00000000000000000000000000",
+          "work_item_id": "wki_00000000000000000000000000"
+        },
+        "attempt_ref": {
+          "entity_id": "atm_00000000000000000000000000",
+          "entity_type": "attempt"
+        },
+        "work_item_ref": {
+          "entity_id": "wki_00000000000000000000000000",
+          "entity_type": "work_item"
+        },
+        "project_ref": {
+          "entity_id": "prj_00000000000000000000000000",
+          "entity_type": "project"
+        },
+        "project_snapshot_ref": {
+          "entity_id": "psn_00000000000000000000000000",
+          "entity_type": "project_snapshot"
+        },
+        "control_versions": {
+          "objective_version": 1,
+          "change_version": 2,
+          "work_graph_version": 3,
+          "work_item_version": 4
+        },
+        "executor": {
+          "actor_ref": {
+            "actor_id": "acr_00000000000000000000000000",
+            "actor_type": "agent"
+          },
+          "adapter_id": "forge.runtime.local.adapter",
+          "adapter_version": "1.2.3"
+        },
+        "context_artifact_ref": {
+          "artifact_kind": "context",
+          "canonicalization": "forge.canonical-json/v1",
+          "content_digest": "0000000000000000000000000000000000000000000000000000000000000000",
+          "content_id": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+          "created_at_unix_ms": 1,
+          "logical_id": "art_00000000000000000000000000",
+          "media_type": "text/plain",
+          "producer_attempt_id": "atm_00000000000000000000000001",
+          "provenance_ref": {
+            "record_id": "provenance.one",
+            "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+            "record_type": "forge.runtime.provenance"
+          },
+          "retention_class": "durable",
+          "sensitivity": "internal",
+          "size_bytes": 1,
+          "source_snapshot_ref": {
+            "entity_id": "psn_00000000000000000000000000",
+            "entity_type": "project_snapshot"
+          }
+        },
+        "workspace_capability_ref": {
+          "record_id": "workspace.one",
+          "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "record_type": "forge.runtime.workspace_capability"
+        },
+        "grant_ref": {
+          "record_id": "grant.one",
+          "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "record_type": "forge.control.capability_grant"
+        },
+        "approval_refs": [
+          {
+            "record_id": "approval.b",
+            "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+            "record_type": "forge.control.approval_record"
+          },
+          {
+            "record_id": "approval.a",
+            "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+            "record_type": "forge.control.approval_record"
+          }
+        ],
+        "requested_effects": [
+          "write.file",
+          "read.repo"
+        ],
+        "budget": {
+          "max_duration_ms": 5000,
+          "max_cost_usd_micros": 100,
+          "max_model_calls": 3,
+          "max_tool_calls": 4,
+          "max_input_tokens": 1000,
+          "max_output_tokens": 2000,
+          "max_output_bytes": 3000,
+          "max_network_bytes": 4000
+        },
+        "timeout_ms": 1000,
+        "idempotency_key": "attempt-key-000001"
+      },
+      "expected": {
+        "accepted": false,
+        "error": "reference_mismatch",
+        "initial_state": "requested",
+        "requested_effects": [
+          "read.repo",
+          "write.file"
+        ],
+        "approval_record_ids": [
+          "approval.a",
+          "approval.b"
+        ]
+      }
+    },
+    {
+      "name": "attempt_ref_identity_mismatch",
+      "request": {
+        "scope_ref": {
+          "action_id": null,
+          "attempt_id": "atm_00000000000000000000000000",
+          "change_id": "chg_00000000000000000000000000",
+          "objective_id": "obj_00000000000000000000000000",
+          "project_id": "prj_00000000000000000000000000",
+          "project_snapshot_id": "psn_00000000000000000000000000",
+          "session_id": null,
+          "space_id": "spc_00000000000000000000000000",
+          "turn_id": null,
+          "work_graph_id": "wgr_00000000000000000000000000",
+          "work_item_id": "wki_00000000000000000000000000"
+        },
+        "attempt_ref": {
+          "entity_id": "atm_00000000000000000000000001",
+          "entity_type": "attempt"
+        },
+        "work_item_ref": {
+          "entity_id": "wki_00000000000000000000000000",
+          "entity_type": "work_item"
+        },
+        "project_ref": {
+          "entity_id": "prj_00000000000000000000000000",
+          "entity_type": "project"
+        },
+        "project_snapshot_ref": {
+          "entity_id": "psn_00000000000000000000000000",
+          "entity_type": "project_snapshot"
+        },
+        "control_versions": {
+          "objective_version": 1,
+          "change_version": 2,
+          "work_graph_version": 3,
+          "work_item_version": 4
+        },
+        "executor": {
+          "actor_ref": {
+            "actor_id": "acr_00000000000000000000000000",
+            "actor_type": "agent"
+          },
+          "adapter_id": "forge.runtime.local.adapter",
+          "adapter_version": "1.2.3"
+        },
+        "context_artifact_ref": {
+          "artifact_kind": "context",
+          "canonicalization": "forge.canonical-json/v1",
+          "content_digest": "0000000000000000000000000000000000000000000000000000000000000000",
+          "content_id": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+          "created_at_unix_ms": 1,
+          "logical_id": "art_00000000000000000000000000",
+          "media_type": "text/plain",
+          "producer_attempt_id": "atm_00000000000000000000000001",
+          "provenance_ref": {
+            "record_id": "provenance.one",
+            "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+            "record_type": "forge.runtime.provenance"
+          },
+          "retention_class": "durable",
+          "sensitivity": "internal",
+          "size_bytes": 1,
+          "source_snapshot_ref": {
+            "entity_id": "psn_00000000000000000000000000",
+            "entity_type": "project_snapshot"
+          }
+        },
+        "workspace_capability_ref": {
+          "record_id": "workspace.one",
+          "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "record_type": "forge.runtime.workspace_capability"
+        },
+        "grant_ref": {
+          "record_id": "grant.one",
+          "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "record_type": "forge.control.capability_grant"
+        },
+        "approval_refs": [
+          {
+            "record_id": "approval.b",
+            "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+            "record_type": "forge.control.approval_record"
+          },
+          {
+            "record_id": "approval.a",
+            "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+            "record_type": "forge.control.approval_record"
+          }
+        ],
+        "requested_effects": [
+          "write.file",
+          "read.repo"
+        ],
+        "budget": {
+          "max_duration_ms": 5000,
+          "max_cost_usd_micros": 100,
+          "max_model_calls": 3,
+          "max_tool_calls": 4,
+          "max_input_tokens": 1000,
+          "max_output_tokens": 2000,
+          "max_output_bytes": 3000,
+          "max_network_bytes": 4000
+        },
+        "timeout_ms": 1000,
+        "idempotency_key": "attempt-key-000001"
+      },
+      "expected": {
+        "accepted": false,
+        "error": "reference_mismatch",
+        "initial_state": "requested",
+        "requested_effects": [
+          "read.repo",
+          "write.file"
+        ],
+        "approval_record_ids": [
+          "approval.a",
+          "approval.b"
+        ]
+      }
+    },
+    {
+      "name": "work_item_ref_type_mismatch",
+      "request": {
+        "scope_ref": {
+          "action_id": null,
+          "attempt_id": "atm_00000000000000000000000000",
+          "change_id": "chg_00000000000000000000000000",
+          "objective_id": "obj_00000000000000000000000000",
+          "project_id": "prj_00000000000000000000000000",
+          "project_snapshot_id": "psn_00000000000000000000000000",
+          "session_id": null,
+          "space_id": "spc_00000000000000000000000000",
+          "turn_id": null,
+          "work_graph_id": "wgr_00000000000000000000000000",
+          "work_item_id": "wki_00000000000000000000000000"
+        },
+        "attempt_ref": {
+          "entity_id": "atm_00000000000000000000000000",
+          "entity_type": "attempt"
+        },
+        "work_item_ref": {
+          "entity_id": "wki_00000000000000000000000000",
+          "entity_type": "project"
+        },
+        "project_ref": {
+          "entity_id": "prj_00000000000000000000000000",
+          "entity_type": "project"
+        },
+        "project_snapshot_ref": {
+          "entity_id": "psn_00000000000000000000000000",
+          "entity_type": "project_snapshot"
+        },
+        "control_versions": {
+          "objective_version": 1,
+          "change_version": 2,
+          "work_graph_version": 3,
+          "work_item_version": 4
+        },
+        "executor": {
+          "actor_ref": {
+            "actor_id": "acr_00000000000000000000000000",
+            "actor_type": "agent"
+          },
+          "adapter_id": "forge.runtime.local.adapter",
+          "adapter_version": "1.2.3"
+        },
+        "context_artifact_ref": {
+          "artifact_kind": "context",
+          "canonicalization": "forge.canonical-json/v1",
+          "content_digest": "0000000000000000000000000000000000000000000000000000000000000000",
+          "content_id": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+          "created_at_unix_ms": 1,
+          "logical_id": "art_00000000000000000000000000",
+          "media_type": "text/plain",
+          "producer_attempt_id": "atm_00000000000000000000000001",
+          "provenance_ref": {
+            "record_id": "provenance.one",
+            "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+            "record_type": "forge.runtime.provenance"
+          },
+          "retention_class": "durable",
+          "sensitivity": "internal",
+          "size_bytes": 1,
+          "source_snapshot_ref": {
+            "entity_id": "psn_00000000000000000000000000",
+            "entity_type": "project_snapshot"
+          }
+        },
+        "workspace_capability_ref": {
+          "record_id": "workspace.one",
+          "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "record_type": "forge.runtime.workspace_capability"
+        },
+        "grant_ref": {
+          "record_id": "grant.one",
+          "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "record_type": "forge.control.capability_grant"
+        },
+        "approval_refs": [
+          {
+            "record_id": "approval.b",
+            "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+            "record_type": "forge.control.approval_record"
+          },
+          {
+            "record_id": "approval.a",
+            "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+            "record_type": "forge.control.approval_record"
+          }
+        ],
+        "requested_effects": [
+          "write.file",
+          "read.repo"
+        ],
+        "budget": {
+          "max_duration_ms": 5000,
+          "max_cost_usd_micros": 100,
+          "max_model_calls": 3,
+          "max_tool_calls": 4,
+          "max_input_tokens": 1000,
+          "max_output_tokens": 2000,
+          "max_output_bytes": 3000,
+          "max_network_bytes": 4000
+        },
+        "timeout_ms": 1000,
+        "idempotency_key": "attempt-key-000001"
+      },
+      "expected": {
+        "accepted": false,
+        "error": "reference_mismatch",
+        "initial_state": "requested",
+        "requested_effects": [
+          "read.repo",
+          "write.file"
+        ],
+        "approval_record_ids": [
+          "approval.a",
+          "approval.b"
+        ]
+      }
+    },
+    {
+      "name": "project_snapshot_identity_mismatch",
+      "request": {
+        "scope_ref": {
+          "action_id": null,
+          "attempt_id": "atm_00000000000000000000000000",
+          "change_id": "chg_00000000000000000000000000",
+          "objective_id": "obj_00000000000000000000000000",
+          "project_id": "prj_00000000000000000000000000",
+          "project_snapshot_id": "psn_00000000000000000000000000",
+          "session_id": null,
+          "space_id": "spc_00000000000000000000000000",
+          "turn_id": null,
+          "work_graph_id": "wgr_00000000000000000000000000",
+          "work_item_id": "wki_00000000000000000000000000"
+        },
+        "attempt_ref": {
+          "entity_id": "atm_00000000000000000000000000",
+          "entity_type": "attempt"
+        },
+        "work_item_ref": {
+          "entity_id": "wki_00000000000000000000000000",
+          "entity_type": "work_item"
+        },
+        "project_ref": {
+          "entity_id": "prj_00000000000000000000000000",
+          "entity_type": "project"
+        },
+        "project_snapshot_ref": {
+          "entity_id": "psn_00000000000000000000000001",
+          "entity_type": "project_snapshot"
+        },
+        "control_versions": {
+          "objective_version": 1,
+          "change_version": 2,
+          "work_graph_version": 3,
+          "work_item_version": 4
+        },
+        "executor": {
+          "actor_ref": {
+            "actor_id": "acr_00000000000000000000000000",
+            "actor_type": "agent"
+          },
+          "adapter_id": "forge.runtime.local.adapter",
+          "adapter_version": "1.2.3"
+        },
+        "context_artifact_ref": {
+          "artifact_kind": "context",
+          "canonicalization": "forge.canonical-json/v1",
+          "content_digest": "0000000000000000000000000000000000000000000000000000000000000000",
+          "content_id": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+          "created_at_unix_ms": 1,
+          "logical_id": "art_00000000000000000000000000",
+          "media_type": "text/plain",
+          "producer_attempt_id": "atm_00000000000000000000000001",
+          "provenance_ref": {
+            "record_id": "provenance.one",
+            "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+            "record_type": "forge.runtime.provenance"
+          },
+          "retention_class": "durable",
+          "sensitivity": "internal",
+          "size_bytes": 1,
+          "source_snapshot_ref": {
+            "entity_id": "psn_00000000000000000000000000",
+            "entity_type": "project_snapshot"
+          }
+        },
+        "workspace_capability_ref": {
+          "record_id": "workspace.one",
+          "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "record_type": "forge.runtime.workspace_capability"
+        },
+        "grant_ref": {
+          "record_id": "grant.one",
+          "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "record_type": "forge.control.capability_grant"
+        },
+        "approval_refs": [
+          {
+            "record_id": "approval.b",
+            "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+            "record_type": "forge.control.approval_record"
+          },
+          {
+            "record_id": "approval.a",
+            "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+            "record_type": "forge.control.approval_record"
+          }
+        ],
+        "requested_effects": [
+          "write.file",
+          "read.repo"
+        ],
+        "budget": {
+          "max_duration_ms": 5000,
+          "max_cost_usd_micros": 100,
+          "max_model_calls": 3,
+          "max_tool_calls": 4,
+          "max_input_tokens": 1000,
+          "max_output_tokens": 2000,
+          "max_output_bytes": 3000,
+          "max_network_bytes": 4000
+        },
+        "timeout_ms": 1000,
+        "idempotency_key": "attempt-key-000001"
+      },
+      "expected": {
+        "accepted": false,
+        "error": "reference_mismatch",
+        "initial_state": "requested",
+        "requested_effects": [
+          "read.repo",
+          "write.file"
+        ],
+        "approval_record_ids": [
+          "approval.a",
+          "approval.b"
+        ]
+      }
+    },
+    {
+      "name": "executor_actor_type_rejected",
+      "request": {
+        "scope_ref": {
+          "action_id": null,
+          "attempt_id": "atm_00000000000000000000000000",
+          "change_id": "chg_00000000000000000000000000",
+          "objective_id": "obj_00000000000000000000000000",
+          "project_id": "prj_00000000000000000000000000",
+          "project_snapshot_id": "psn_00000000000000000000000000",
+          "session_id": null,
+          "space_id": "spc_00000000000000000000000000",
+          "turn_id": null,
+          "work_graph_id": "wgr_00000000000000000000000000",
+          "work_item_id": "wki_00000000000000000000000000"
+        },
+        "attempt_ref": {
+          "entity_id": "atm_00000000000000000000000000",
+          "entity_type": "attempt"
+        },
+        "work_item_ref": {
+          "entity_id": "wki_00000000000000000000000000",
+          "entity_type": "work_item"
+        },
+        "project_ref": {
+          "entity_id": "prj_00000000000000000000000000",
+          "entity_type": "project"
+        },
+        "project_snapshot_ref": {
+          "entity_id": "psn_00000000000000000000000000",
+          "entity_type": "project_snapshot"
+        },
+        "control_versions": {
+          "objective_version": 1,
+          "change_version": 2,
+          "work_graph_version": 3,
+          "work_item_version": 4
+        },
+        "executor": {
+          "actor_ref": {
+            "actor_id": "acr_00000000000000000000000000",
+            "actor_type": "human"
+          },
+          "adapter_id": "forge.runtime.local.adapter",
+          "adapter_version": "1.2.3"
+        },
+        "context_artifact_ref": {
+          "artifact_kind": "context",
+          "canonicalization": "forge.canonical-json/v1",
+          "content_digest": "0000000000000000000000000000000000000000000000000000000000000000",
+          "content_id": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+          "created_at_unix_ms": 1,
+          "logical_id": "art_00000000000000000000000000",
+          "media_type": "text/plain",
+          "producer_attempt_id": "atm_00000000000000000000000001",
+          "provenance_ref": {
+            "record_id": "provenance.one",
+            "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+            "record_type": "forge.runtime.provenance"
+          },
+          "retention_class": "durable",
+          "sensitivity": "internal",
+          "size_bytes": 1,
+          "source_snapshot_ref": {
+            "entity_id": "psn_00000000000000000000000000",
+            "entity_type": "project_snapshot"
+          }
+        },
+        "workspace_capability_ref": {
+          "record_id": "workspace.one",
+          "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "record_type": "forge.runtime.workspace_capability"
+        },
+        "grant_ref": {
+          "record_id": "grant.one",
+          "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "record_type": "forge.control.capability_grant"
+        },
+        "approval_refs": [
+          {
+            "record_id": "approval.b",
+            "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+            "record_type": "forge.control.approval_record"
+          },
+          {
+            "record_id": "approval.a",
+            "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+            "record_type": "forge.control.approval_record"
+          }
+        ],
+        "requested_effects": [
+          "write.file",
+          "read.repo"
+        ],
+        "budget": {
+          "max_duration_ms": 5000,
+          "max_cost_usd_micros": 100,
+          "max_model_calls": 3,
+          "max_tool_calls": 4,
+          "max_input_tokens": 1000,
+          "max_output_tokens": 2000,
+          "max_output_bytes": 3000,
+          "max_network_bytes": 4000
+        },
+        "timeout_ms": 1000,
+        "idempotency_key": "attempt-key-000001"
+      },
+      "expected": {
+        "accepted": false,
+        "error": "invalid_value",
+        "initial_state": "requested",
+        "requested_effects": [
+          "read.repo",
+          "write.file"
+        ],
+        "approval_record_ids": [
+          "approval.a",
+          "approval.b"
+        ]
+      }
+    },
+    {
+      "name": "context_artifact_snapshot_mismatch",
+      "request": {
+        "scope_ref": {
+          "action_id": null,
+          "attempt_id": "atm_00000000000000000000000000",
+          "change_id": "chg_00000000000000000000000000",
+          "objective_id": "obj_00000000000000000000000000",
+          "project_id": "prj_00000000000000000000000000",
+          "project_snapshot_id": "psn_00000000000000000000000000",
+          "session_id": null,
+          "space_id": "spc_00000000000000000000000000",
+          "turn_id": null,
+          "work_graph_id": "wgr_00000000000000000000000000",
+          "work_item_id": "wki_00000000000000000000000000"
+        },
+        "attempt_ref": {
+          "entity_id": "atm_00000000000000000000000000",
+          "entity_type": "attempt"
+        },
+        "work_item_ref": {
+          "entity_id": "wki_00000000000000000000000000",
+          "entity_type": "work_item"
+        },
+        "project_ref": {
+          "entity_id": "prj_00000000000000000000000000",
+          "entity_type": "project"
+        },
+        "project_snapshot_ref": {
+          "entity_id": "psn_00000000000000000000000000",
+          "entity_type": "project_snapshot"
+        },
+        "control_versions": {
+          "objective_version": 1,
+          "change_version": 2,
+          "work_graph_version": 3,
+          "work_item_version": 4
+        },
+        "executor": {
+          "actor_ref": {
+            "actor_id": "acr_00000000000000000000000000",
+            "actor_type": "agent"
+          },
+          "adapter_id": "forge.runtime.local.adapter",
+          "adapter_version": "1.2.3"
+        },
+        "context_artifact_ref": {
+          "artifact_kind": "context",
+          "canonicalization": "forge.canonical-json/v1",
+          "content_digest": "0000000000000000000000000000000000000000000000000000000000000000",
+          "content_id": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+          "created_at_unix_ms": 1,
+          "logical_id": "art_00000000000000000000000000",
+          "media_type": "text/plain",
+          "producer_attempt_id": "atm_00000000000000000000000001",
+          "provenance_ref": {
+            "record_id": "provenance.one",
+            "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+            "record_type": "forge.runtime.provenance"
+          },
+          "retention_class": "durable",
+          "sensitivity": "internal",
+          "size_bytes": 1,
+          "source_snapshot_ref": {
+            "entity_id": "psn_00000000000000000000000001",
+            "entity_type": "project_snapshot"
+          }
+        },
+        "workspace_capability_ref": {
+          "record_id": "workspace.one",
+          "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "record_type": "forge.runtime.workspace_capability"
+        },
+        "grant_ref": {
+          "record_id": "grant.one",
+          "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "record_type": "forge.control.capability_grant"
+        },
+        "approval_refs": [
+          {
+            "record_id": "approval.b",
+            "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+            "record_type": "forge.control.approval_record"
+          },
+          {
+            "record_id": "approval.a",
+            "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+            "record_type": "forge.control.approval_record"
+          }
+        ],
+        "requested_effects": [
+          "write.file",
+          "read.repo"
+        ],
+        "budget": {
+          "max_duration_ms": 5000,
+          "max_cost_usd_micros": 100,
+          "max_model_calls": 3,
+          "max_tool_calls": 4,
+          "max_input_tokens": 1000,
+          "max_output_tokens": 2000,
+          "max_output_bytes": 3000,
+          "max_network_bytes": 4000
+        },
+        "timeout_ms": 1000,
+        "idempotency_key": "attempt-key-000001"
+      },
+      "expected": {
+        "accepted": false,
+        "error": "reference_mismatch",
+        "initial_state": "requested",
+        "requested_effects": [
+          "read.repo",
+          "write.file"
+        ],
+        "approval_record_ids": [
+          "approval.a",
+          "approval.b"
+        ]
+      }
+    },
+    {
+      "name": "context_artifact_self_producer",
+      "request": {
+        "scope_ref": {
+          "action_id": null,
+          "attempt_id": "atm_00000000000000000000000000",
+          "change_id": "chg_00000000000000000000000000",
+          "objective_id": "obj_00000000000000000000000000",
+          "project_id": "prj_00000000000000000000000000",
+          "project_snapshot_id": "psn_00000000000000000000000000",
+          "session_id": null,
+          "space_id": "spc_00000000000000000000000000",
+          "turn_id": null,
+          "work_graph_id": "wgr_00000000000000000000000000",
+          "work_item_id": "wki_00000000000000000000000000"
+        },
+        "attempt_ref": {
+          "entity_id": "atm_00000000000000000000000000",
+          "entity_type": "attempt"
+        },
+        "work_item_ref": {
+          "entity_id": "wki_00000000000000000000000000",
+          "entity_type": "work_item"
+        },
+        "project_ref": {
+          "entity_id": "prj_00000000000000000000000000",
+          "entity_type": "project"
+        },
+        "project_snapshot_ref": {
+          "entity_id": "psn_00000000000000000000000000",
+          "entity_type": "project_snapshot"
+        },
+        "control_versions": {
+          "objective_version": 1,
+          "change_version": 2,
+          "work_graph_version": 3,
+          "work_item_version": 4
+        },
+        "executor": {
+          "actor_ref": {
+            "actor_id": "acr_00000000000000000000000000",
+            "actor_type": "agent"
+          },
+          "adapter_id": "forge.runtime.local.adapter",
+          "adapter_version": "1.2.3"
+        },
+        "context_artifact_ref": {
+          "artifact_kind": "context",
+          "canonicalization": "forge.canonical-json/v1",
+          "content_digest": "0000000000000000000000000000000000000000000000000000000000000000",
+          "content_id": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+          "created_at_unix_ms": 1,
+          "logical_id": "art_00000000000000000000000000",
+          "media_type": "text/plain",
+          "producer_attempt_id": "atm_00000000000000000000000000",
+          "provenance_ref": {
+            "record_id": "provenance.one",
+            "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+            "record_type": "forge.runtime.provenance"
+          },
+          "retention_class": "durable",
+          "sensitivity": "internal",
+          "size_bytes": 1,
+          "source_snapshot_ref": {
+            "entity_id": "psn_00000000000000000000000000",
+            "entity_type": "project_snapshot"
+          }
+        },
+        "workspace_capability_ref": {
+          "record_id": "workspace.one",
+          "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "record_type": "forge.runtime.workspace_capability"
+        },
+        "grant_ref": {
+          "record_id": "grant.one",
+          "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "record_type": "forge.control.capability_grant"
+        },
+        "approval_refs": [
+          {
+            "record_id": "approval.b",
+            "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+            "record_type": "forge.control.approval_record"
+          },
+          {
+            "record_id": "approval.a",
+            "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+            "record_type": "forge.control.approval_record"
+          }
+        ],
+        "requested_effects": [
+          "write.file",
+          "read.repo"
+        ],
+        "budget": {
+          "max_duration_ms": 5000,
+          "max_cost_usd_micros": 100,
+          "max_model_calls": 3,
+          "max_tool_calls": 4,
+          "max_input_tokens": 1000,
+          "max_output_tokens": 2000,
+          "max_output_bytes": 3000,
+          "max_network_bytes": 4000
+        },
+        "timeout_ms": 1000,
+        "idempotency_key": "attempt-key-000001"
+      },
+      "expected": {
+        "accepted": false,
+        "error": "reference_mismatch",
+        "initial_state": "requested",
+        "requested_effects": [
+          "read.repo",
+          "write.file"
+        ],
+        "approval_record_ids": [
+          "approval.a",
+          "approval.b"
+        ]
+      }
+    },
+    {
+      "name": "workspace_record_role_mismatch",
+      "request": {
+        "scope_ref": {
+          "action_id": null,
+          "attempt_id": "atm_00000000000000000000000000",
+          "change_id": "chg_00000000000000000000000000",
+          "objective_id": "obj_00000000000000000000000000",
+          "project_id": "prj_00000000000000000000000000",
+          "project_snapshot_id": "psn_00000000000000000000000000",
+          "session_id": null,
+          "space_id": "spc_00000000000000000000000000",
+          "turn_id": null,
+          "work_graph_id": "wgr_00000000000000000000000000",
+          "work_item_id": "wki_00000000000000000000000000"
+        },
+        "attempt_ref": {
+          "entity_id": "atm_00000000000000000000000000",
+          "entity_type": "attempt"
+        },
+        "work_item_ref": {
+          "entity_id": "wki_00000000000000000000000000",
+          "entity_type": "work_item"
+        },
+        "project_ref": {
+          "entity_id": "prj_00000000000000000000000000",
+          "entity_type": "project"
+        },
+        "project_snapshot_ref": {
+          "entity_id": "psn_00000000000000000000000000",
+          "entity_type": "project_snapshot"
+        },
+        "control_versions": {
+          "objective_version": 1,
+          "change_version": 2,
+          "work_graph_version": 3,
+          "work_item_version": 4
+        },
+        "executor": {
+          "actor_ref": {
+            "actor_id": "acr_00000000000000000000000000",
+            "actor_type": "agent"
+          },
+          "adapter_id": "forge.runtime.local.adapter",
+          "adapter_version": "1.2.3"
+        },
+        "context_artifact_ref": {
+          "artifact_kind": "context",
+          "canonicalization": "forge.canonical-json/v1",
+          "content_digest": "0000000000000000000000000000000000000000000000000000000000000000",
+          "content_id": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+          "created_at_unix_ms": 1,
+          "logical_id": "art_00000000000000000000000000",
+          "media_type": "text/plain",
+          "producer_attempt_id": "atm_00000000000000000000000001",
+          "provenance_ref": {
+            "record_id": "provenance.one",
+            "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+            "record_type": "forge.runtime.provenance"
+          },
+          "retention_class": "durable",
+          "sensitivity": "internal",
+          "size_bytes": 1,
+          "source_snapshot_ref": {
+            "entity_id": "psn_00000000000000000000000000",
+            "entity_type": "project_snapshot"
+          }
+        },
+        "workspace_capability_ref": {
+          "record_id": "workspace.one",
+          "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "record_type": "forge.control.capability_grant"
+        },
+        "grant_ref": {
+          "record_id": "grant.one",
+          "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "record_type": "forge.control.capability_grant"
+        },
+        "approval_refs": [
+          {
+            "record_id": "approval.b",
+            "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+            "record_type": "forge.control.approval_record"
+          },
+          {
+            "record_id": "approval.a",
+            "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+            "record_type": "forge.control.approval_record"
+          }
+        ],
+        "requested_effects": [
+          "write.file",
+          "read.repo"
+        ],
+        "budget": {
+          "max_duration_ms": 5000,
+          "max_cost_usd_micros": 100,
+          "max_model_calls": 3,
+          "max_tool_calls": 4,
+          "max_input_tokens": 1000,
+          "max_output_tokens": 2000,
+          "max_output_bytes": 3000,
+          "max_network_bytes": 4000
+        },
+        "timeout_ms": 1000,
+        "idempotency_key": "attempt-key-000001"
+      },
+      "expected": {
+        "accepted": false,
+        "error": "reference_mismatch",
+        "initial_state": "requested",
+        "requested_effects": [
+          "read.repo",
+          "write.file"
+        ],
+        "approval_record_ids": [
+          "approval.a",
+          "approval.b"
+        ]
+      }
+    },
+    {
+      "name": "grant_record_role_mismatch",
+      "request": {
+        "scope_ref": {
+          "action_id": null,
+          "attempt_id": "atm_00000000000000000000000000",
+          "change_id": "chg_00000000000000000000000000",
+          "objective_id": "obj_00000000000000000000000000",
+          "project_id": "prj_00000000000000000000000000",
+          "project_snapshot_id": "psn_00000000000000000000000000",
+          "session_id": null,
+          "space_id": "spc_00000000000000000000000000",
+          "turn_id": null,
+          "work_graph_id": "wgr_00000000000000000000000000",
+          "work_item_id": "wki_00000000000000000000000000"
+        },
+        "attempt_ref": {
+          "entity_id": "atm_00000000000000000000000000",
+          "entity_type": "attempt"
+        },
+        "work_item_ref": {
+          "entity_id": "wki_00000000000000000000000000",
+          "entity_type": "work_item"
+        },
+        "project_ref": {
+          "entity_id": "prj_00000000000000000000000000",
+          "entity_type": "project"
+        },
+        "project_snapshot_ref": {
+          "entity_id": "psn_00000000000000000000000000",
+          "entity_type": "project_snapshot"
+        },
+        "control_versions": {
+          "objective_version": 1,
+          "change_version": 2,
+          "work_graph_version": 3,
+          "work_item_version": 4
+        },
+        "executor": {
+          "actor_ref": {
+            "actor_id": "acr_00000000000000000000000000",
+            "actor_type": "agent"
+          },
+          "adapter_id": "forge.runtime.local.adapter",
+          "adapter_version": "1.2.3"
+        },
+        "context_artifact_ref": {
+          "artifact_kind": "context",
+          "canonicalization": "forge.canonical-json/v1",
+          "content_digest": "0000000000000000000000000000000000000000000000000000000000000000",
+          "content_id": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+          "created_at_unix_ms": 1,
+          "logical_id": "art_00000000000000000000000000",
+          "media_type": "text/plain",
+          "producer_attempt_id": "atm_00000000000000000000000001",
+          "provenance_ref": {
+            "record_id": "provenance.one",
+            "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+            "record_type": "forge.runtime.provenance"
+          },
+          "retention_class": "durable",
+          "sensitivity": "internal",
+          "size_bytes": 1,
+          "source_snapshot_ref": {
+            "entity_id": "psn_00000000000000000000000000",
+            "entity_type": "project_snapshot"
+          }
+        },
+        "workspace_capability_ref": {
+          "record_id": "workspace.one",
+          "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "record_type": "forge.runtime.workspace_capability"
+        },
+        "grant_ref": {
+          "record_id": "grant.one",
+          "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "record_type": "forge.runtime.workspace_capability"
+        },
+        "approval_refs": [
+          {
+            "record_id": "approval.b",
+            "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+            "record_type": "forge.control.approval_record"
+          },
+          {
+            "record_id": "approval.a",
+            "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+            "record_type": "forge.control.approval_record"
+          }
+        ],
+        "requested_effects": [
+          "write.file",
+          "read.repo"
+        ],
+        "budget": {
+          "max_duration_ms": 5000,
+          "max_cost_usd_micros": 100,
+          "max_model_calls": 3,
+          "max_tool_calls": 4,
+          "max_input_tokens": 1000,
+          "max_output_tokens": 2000,
+          "max_output_bytes": 3000,
+          "max_network_bytes": 4000
+        },
+        "timeout_ms": 1000,
+        "idempotency_key": "attempt-key-000001"
+      },
+      "expected": {
+        "accepted": false,
+        "error": "reference_mismatch",
+        "initial_state": "requested",
+        "requested_effects": [
+          "read.repo",
+          "write.file"
+        ],
+        "approval_record_ids": [
+          "approval.a",
+          "approval.b"
+        ]
+      }
+    },
+    {
+      "name": "effects_require_grant",
+      "request": {
+        "scope_ref": {
+          "action_id": null,
+          "attempt_id": "atm_00000000000000000000000000",
+          "change_id": "chg_00000000000000000000000000",
+          "objective_id": "obj_00000000000000000000000000",
+          "project_id": "prj_00000000000000000000000000",
+          "project_snapshot_id": "psn_00000000000000000000000000",
+          "session_id": null,
+          "space_id": "spc_00000000000000000000000000",
+          "turn_id": null,
+          "work_graph_id": "wgr_00000000000000000000000000",
+          "work_item_id": "wki_00000000000000000000000000"
+        },
+        "attempt_ref": {
+          "entity_id": "atm_00000000000000000000000000",
+          "entity_type": "attempt"
+        },
+        "work_item_ref": {
+          "entity_id": "wki_00000000000000000000000000",
+          "entity_type": "work_item"
+        },
+        "project_ref": {
+          "entity_id": "prj_00000000000000000000000000",
+          "entity_type": "project"
+        },
+        "project_snapshot_ref": {
+          "entity_id": "psn_00000000000000000000000000",
+          "entity_type": "project_snapshot"
+        },
+        "control_versions": {
+          "objective_version": 1,
+          "change_version": 2,
+          "work_graph_version": 3,
+          "work_item_version": 4
+        },
+        "executor": {
+          "actor_ref": {
+            "actor_id": "acr_00000000000000000000000000",
+            "actor_type": "agent"
+          },
+          "adapter_id": "forge.runtime.local.adapter",
+          "adapter_version": "1.2.3"
+        },
+        "context_artifact_ref": {
+          "artifact_kind": "context",
+          "canonicalization": "forge.canonical-json/v1",
+          "content_digest": "0000000000000000000000000000000000000000000000000000000000000000",
+          "content_id": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+          "created_at_unix_ms": 1,
+          "logical_id": "art_00000000000000000000000000",
+          "media_type": "text/plain",
+          "producer_attempt_id": "atm_00000000000000000000000001",
+          "provenance_ref": {
+            "record_id": "provenance.one",
+            "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+            "record_type": "forge.runtime.provenance"
+          },
+          "retention_class": "durable",
+          "sensitivity": "internal",
+          "size_bytes": 1,
+          "source_snapshot_ref": {
+            "entity_id": "psn_00000000000000000000000000",
+            "entity_type": "project_snapshot"
+          }
+        },
+        "workspace_capability_ref": {
+          "record_id": "workspace.one",
+          "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "record_type": "forge.runtime.workspace_capability"
+        },
+        "grant_ref": null,
+        "approval_refs": [
+          {
+            "record_id": "approval.b",
+            "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+            "record_type": "forge.control.approval_record"
+          },
+          {
+            "record_id": "approval.a",
+            "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+            "record_type": "forge.control.approval_record"
+          }
+        ],
+        "requested_effects": [
+          "write.file",
+          "read.repo"
+        ],
+        "budget": {
+          "max_duration_ms": 5000,
+          "max_cost_usd_micros": 100,
+          "max_model_calls": 3,
+          "max_tool_calls": 4,
+          "max_input_tokens": 1000,
+          "max_output_tokens": 2000,
+          "max_output_bytes": 3000,
+          "max_network_bytes": 4000
+        },
+        "timeout_ms": 1000,
+        "idempotency_key": "attempt-key-000001"
+      },
+      "expected": {
+        "accepted": false,
+        "error": "reference_mismatch",
+        "initial_state": "requested",
+        "requested_effects": [
+          "read.repo",
+          "write.file"
+        ],
+        "approval_record_ids": [
+          "approval.a",
+          "approval.b"
+        ]
+      }
+    },
+    {
+      "name": "duplicate_effect_rejected",
+      "request": {
+        "scope_ref": {
+          "action_id": null,
+          "attempt_id": "atm_00000000000000000000000000",
+          "change_id": "chg_00000000000000000000000000",
+          "objective_id": "obj_00000000000000000000000000",
+          "project_id": "prj_00000000000000000000000000",
+          "project_snapshot_id": "psn_00000000000000000000000000",
+          "session_id": null,
+          "space_id": "spc_00000000000000000000000000",
+          "turn_id": null,
+          "work_graph_id": "wgr_00000000000000000000000000",
+          "work_item_id": "wki_00000000000000000000000000"
+        },
+        "attempt_ref": {
+          "entity_id": "atm_00000000000000000000000000",
+          "entity_type": "attempt"
+        },
+        "work_item_ref": {
+          "entity_id": "wki_00000000000000000000000000",
+          "entity_type": "work_item"
+        },
+        "project_ref": {
+          "entity_id": "prj_00000000000000000000000000",
+          "entity_type": "project"
+        },
+        "project_snapshot_ref": {
+          "entity_id": "psn_00000000000000000000000000",
+          "entity_type": "project_snapshot"
+        },
+        "control_versions": {
+          "objective_version": 1,
+          "change_version": 2,
+          "work_graph_version": 3,
+          "work_item_version": 4
+        },
+        "executor": {
+          "actor_ref": {
+            "actor_id": "acr_00000000000000000000000000",
+            "actor_type": "agent"
+          },
+          "adapter_id": "forge.runtime.local.adapter",
+          "adapter_version": "1.2.3"
+        },
+        "context_artifact_ref": {
+          "artifact_kind": "context",
+          "canonicalization": "forge.canonical-json/v1",
+          "content_digest": "0000000000000000000000000000000000000000000000000000000000000000",
+          "content_id": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+          "created_at_unix_ms": 1,
+          "logical_id": "art_00000000000000000000000000",
+          "media_type": "text/plain",
+          "producer_attempt_id": "atm_00000000000000000000000001",
+          "provenance_ref": {
+            "record_id": "provenance.one",
+            "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+            "record_type": "forge.runtime.provenance"
+          },
+          "retention_class": "durable",
+          "sensitivity": "internal",
+          "size_bytes": 1,
+          "source_snapshot_ref": {
+            "entity_id": "psn_00000000000000000000000000",
+            "entity_type": "project_snapshot"
+          }
+        },
+        "workspace_capability_ref": {
+          "record_id": "workspace.one",
+          "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "record_type": "forge.runtime.workspace_capability"
+        },
+        "grant_ref": {
+          "record_id": "grant.one",
+          "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "record_type": "forge.control.capability_grant"
+        },
+        "approval_refs": [
+          {
+            "record_id": "approval.b",
+            "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+            "record_type": "forge.control.approval_record"
+          },
+          {
+            "record_id": "approval.a",
+            "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+            "record_type": "forge.control.approval_record"
+          }
+        ],
+        "requested_effects": [
+          "read.repo",
+          "read.repo"
+        ],
+        "budget": {
+          "max_duration_ms": 5000,
+          "max_cost_usd_micros": 100,
+          "max_model_calls": 3,
+          "max_tool_calls": 4,
+          "max_input_tokens": 1000,
+          "max_output_tokens": 2000,
+          "max_output_bytes": 3000,
+          "max_network_bytes": 4000
+        },
+        "timeout_ms": 1000,
+        "idempotency_key": "attempt-key-000001"
+      },
+      "expected": {
+        "accepted": false,
+        "error": "invalid_value",
+        "initial_state": "requested",
+        "requested_effects": [
+          "read.repo",
+          "write.file"
+        ],
+        "approval_record_ids": [
+          "approval.a",
+          "approval.b"
+        ]
+      }
+    },
+    {
+      "name": "effect_token_rejected",
+      "request": {
+        "scope_ref": {
+          "action_id": null,
+          "attempt_id": "atm_00000000000000000000000000",
+          "change_id": "chg_00000000000000000000000000",
+          "objective_id": "obj_00000000000000000000000000",
+          "project_id": "prj_00000000000000000000000000",
+          "project_snapshot_id": "psn_00000000000000000000000000",
+          "session_id": null,
+          "space_id": "spc_00000000000000000000000000",
+          "turn_id": null,
+          "work_graph_id": "wgr_00000000000000000000000000",
+          "work_item_id": "wki_00000000000000000000000000"
+        },
+        "attempt_ref": {
+          "entity_id": "atm_00000000000000000000000000",
+          "entity_type": "attempt"
+        },
+        "work_item_ref": {
+          "entity_id": "wki_00000000000000000000000000",
+          "entity_type": "work_item"
+        },
+        "project_ref": {
+          "entity_id": "prj_00000000000000000000000000",
+          "entity_type": "project"
+        },
+        "project_snapshot_ref": {
+          "entity_id": "psn_00000000000000000000000000",
+          "entity_type": "project_snapshot"
+        },
+        "control_versions": {
+          "objective_version": 1,
+          "change_version": 2,
+          "work_graph_version": 3,
+          "work_item_version": 4
+        },
+        "executor": {
+          "actor_ref": {
+            "actor_id": "acr_00000000000000000000000000",
+            "actor_type": "agent"
+          },
+          "adapter_id": "forge.runtime.local.adapter",
+          "adapter_version": "1.2.3"
+        },
+        "context_artifact_ref": {
+          "artifact_kind": "context",
+          "canonicalization": "forge.canonical-json/v1",
+          "content_digest": "0000000000000000000000000000000000000000000000000000000000000000",
+          "content_id": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+          "created_at_unix_ms": 1,
+          "logical_id": "art_00000000000000000000000000",
+          "media_type": "text/plain",
+          "producer_attempt_id": "atm_00000000000000000000000001",
+          "provenance_ref": {
+            "record_id": "provenance.one",
+            "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+            "record_type": "forge.runtime.provenance"
+          },
+          "retention_class": "durable",
+          "sensitivity": "internal",
+          "size_bytes": 1,
+          "source_snapshot_ref": {
+            "entity_id": "psn_00000000000000000000000000",
+            "entity_type": "project_snapshot"
+          }
+        },
+        "workspace_capability_ref": {
+          "record_id": "workspace.one",
+          "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "record_type": "forge.runtime.workspace_capability"
+        },
+        "grant_ref": {
+          "record_id": "grant.one",
+          "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "record_type": "forge.control.capability_grant"
+        },
+        "approval_refs": [
+          {
+            "record_id": "approval.b",
+            "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+            "record_type": "forge.control.approval_record"
+          },
+          {
+            "record_id": "approval.a",
+            "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+            "record_type": "forge.control.approval_record"
+          }
+        ],
+        "requested_effects": [
+          "Read.repo"
+        ],
+        "budget": {
+          "max_duration_ms": 5000,
+          "max_cost_usd_micros": 100,
+          "max_model_calls": 3,
+          "max_tool_calls": 4,
+          "max_input_tokens": 1000,
+          "max_output_tokens": 2000,
+          "max_output_bytes": 3000,
+          "max_network_bytes": 4000
+        },
+        "timeout_ms": 1000,
+        "idempotency_key": "attempt-key-000001"
+      },
+      "expected": {
+        "accepted": false,
+        "error": "invalid_value",
+        "initial_state": "requested",
+        "requested_effects": [
+          "read.repo",
+          "write.file"
+        ],
+        "approval_record_ids": [
+          "approval.a",
+          "approval.b"
+        ]
+      }
+    },
+    {
+      "name": "duplicate_approval_rejected",
+      "request": {
+        "scope_ref": {
+          "action_id": null,
+          "attempt_id": "atm_00000000000000000000000000",
+          "change_id": "chg_00000000000000000000000000",
+          "objective_id": "obj_00000000000000000000000000",
+          "project_id": "prj_00000000000000000000000000",
+          "project_snapshot_id": "psn_00000000000000000000000000",
+          "session_id": null,
+          "space_id": "spc_00000000000000000000000000",
+          "turn_id": null,
+          "work_graph_id": "wgr_00000000000000000000000000",
+          "work_item_id": "wki_00000000000000000000000000"
+        },
+        "attempt_ref": {
+          "entity_id": "atm_00000000000000000000000000",
+          "entity_type": "attempt"
+        },
+        "work_item_ref": {
+          "entity_id": "wki_00000000000000000000000000",
+          "entity_type": "work_item"
+        },
+        "project_ref": {
+          "entity_id": "prj_00000000000000000000000000",
+          "entity_type": "project"
+        },
+        "project_snapshot_ref": {
+          "entity_id": "psn_00000000000000000000000000",
+          "entity_type": "project_snapshot"
+        },
+        "control_versions": {
+          "objective_version": 1,
+          "change_version": 2,
+          "work_graph_version": 3,
+          "work_item_version": 4
+        },
+        "executor": {
+          "actor_ref": {
+            "actor_id": "acr_00000000000000000000000000",
+            "actor_type": "agent"
+          },
+          "adapter_id": "forge.runtime.local.adapter",
+          "adapter_version": "1.2.3"
+        },
+        "context_artifact_ref": {
+          "artifact_kind": "context",
+          "canonicalization": "forge.canonical-json/v1",
+          "content_digest": "0000000000000000000000000000000000000000000000000000000000000000",
+          "content_id": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+          "created_at_unix_ms": 1,
+          "logical_id": "art_00000000000000000000000000",
+          "media_type": "text/plain",
+          "producer_attempt_id": "atm_00000000000000000000000001",
+          "provenance_ref": {
+            "record_id": "provenance.one",
+            "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+            "record_type": "forge.runtime.provenance"
+          },
+          "retention_class": "durable",
+          "sensitivity": "internal",
+          "size_bytes": 1,
+          "source_snapshot_ref": {
+            "entity_id": "psn_00000000000000000000000000",
+            "entity_type": "project_snapshot"
+          }
+        },
+        "workspace_capability_ref": {
+          "record_id": "workspace.one",
+          "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "record_type": "forge.runtime.workspace_capability"
+        },
+        "grant_ref": {
+          "record_id": "grant.one",
+          "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "record_type": "forge.control.capability_grant"
+        },
+        "approval_refs": [
+          {
+            "record_id": "approval.b",
+            "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+            "record_type": "forge.control.approval_record"
+          },
+          {
+            "record_id": "approval.b",
+            "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+            "record_type": "forge.control.approval_record"
+          }
+        ],
+        "requested_effects": [
+          "write.file",
+          "read.repo"
+        ],
+        "budget": {
+          "max_duration_ms": 5000,
+          "max_cost_usd_micros": 100,
+          "max_model_calls": 3,
+          "max_tool_calls": 4,
+          "max_input_tokens": 1000,
+          "max_output_tokens": 2000,
+          "max_output_bytes": 3000,
+          "max_network_bytes": 4000
+        },
+        "timeout_ms": 1000,
+        "idempotency_key": "attempt-key-000001"
+      },
+      "expected": {
+        "accepted": false,
+        "error": "invalid_value",
+        "initial_state": "requested",
+        "requested_effects": [
+          "read.repo",
+          "write.file"
+        ],
+        "approval_record_ids": [
+          "approval.a",
+          "approval.b"
+        ]
+      }
+    },
+    {
+      "name": "budget_duration_rejected",
+      "request": {
+        "scope_ref": {
+          "action_id": null,
+          "attempt_id": "atm_00000000000000000000000000",
+          "change_id": "chg_00000000000000000000000000",
+          "objective_id": "obj_00000000000000000000000000",
+          "project_id": "prj_00000000000000000000000000",
+          "project_snapshot_id": "psn_00000000000000000000000000",
+          "session_id": null,
+          "space_id": "spc_00000000000000000000000000",
+          "turn_id": null,
+          "work_graph_id": "wgr_00000000000000000000000000",
+          "work_item_id": "wki_00000000000000000000000000"
+        },
+        "attempt_ref": {
+          "entity_id": "atm_00000000000000000000000000",
+          "entity_type": "attempt"
+        },
+        "work_item_ref": {
+          "entity_id": "wki_00000000000000000000000000",
+          "entity_type": "work_item"
+        },
+        "project_ref": {
+          "entity_id": "prj_00000000000000000000000000",
+          "entity_type": "project"
+        },
+        "project_snapshot_ref": {
+          "entity_id": "psn_00000000000000000000000000",
+          "entity_type": "project_snapshot"
+        },
+        "control_versions": {
+          "objective_version": 1,
+          "change_version": 2,
+          "work_graph_version": 3,
+          "work_item_version": 4
+        },
+        "executor": {
+          "actor_ref": {
+            "actor_id": "acr_00000000000000000000000000",
+            "actor_type": "agent"
+          },
+          "adapter_id": "forge.runtime.local.adapter",
+          "adapter_version": "1.2.3"
+        },
+        "context_artifact_ref": {
+          "artifact_kind": "context",
+          "canonicalization": "forge.canonical-json/v1",
+          "content_digest": "0000000000000000000000000000000000000000000000000000000000000000",
+          "content_id": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+          "created_at_unix_ms": 1,
+          "logical_id": "art_00000000000000000000000000",
+          "media_type": "text/plain",
+          "producer_attempt_id": "atm_00000000000000000000000001",
+          "provenance_ref": {
+            "record_id": "provenance.one",
+            "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+            "record_type": "forge.runtime.provenance"
+          },
+          "retention_class": "durable",
+          "sensitivity": "internal",
+          "size_bytes": 1,
+          "source_snapshot_ref": {
+            "entity_id": "psn_00000000000000000000000000",
+            "entity_type": "project_snapshot"
+          }
+        },
+        "workspace_capability_ref": {
+          "record_id": "workspace.one",
+          "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "record_type": "forge.runtime.workspace_capability"
+        },
+        "grant_ref": {
+          "record_id": "grant.one",
+          "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "record_type": "forge.control.capability_grant"
+        },
+        "approval_refs": [
+          {
+            "record_id": "approval.b",
+            "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+            "record_type": "forge.control.approval_record"
+          },
+          {
+            "record_id": "approval.a",
+            "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+            "record_type": "forge.control.approval_record"
+          }
+        ],
+        "requested_effects": [
+          "write.file",
+          "read.repo"
+        ],
+        "budget": {
+          "max_duration_ms": 0,
+          "max_cost_usd_micros": 100,
+          "max_model_calls": 3,
+          "max_tool_calls": 4,
+          "max_input_tokens": 1000,
+          "max_output_tokens": 2000,
+          "max_output_bytes": 3000,
+          "max_network_bytes": 4000
+        },
+        "timeout_ms": 1000,
+        "idempotency_key": "attempt-key-000001"
+      },
+      "expected": {
+        "accepted": false,
+        "error": "invalid_value",
+        "initial_state": "requested",
+        "requested_effects": [
+          "read.repo",
+          "write.file"
+        ],
+        "approval_record_ids": [
+          "approval.a",
+          "approval.b"
+        ]
+      }
+    },
+    {
+      "name": "timeout_exceeds_budget",
+      "request": {
+        "scope_ref": {
+          "action_id": null,
+          "attempt_id": "atm_00000000000000000000000000",
+          "change_id": "chg_00000000000000000000000000",
+          "objective_id": "obj_00000000000000000000000000",
+          "project_id": "prj_00000000000000000000000000",
+          "project_snapshot_id": "psn_00000000000000000000000000",
+          "session_id": null,
+          "space_id": "spc_00000000000000000000000000",
+          "turn_id": null,
+          "work_graph_id": "wgr_00000000000000000000000000",
+          "work_item_id": "wki_00000000000000000000000000"
+        },
+        "attempt_ref": {
+          "entity_id": "atm_00000000000000000000000000",
+          "entity_type": "attempt"
+        },
+        "work_item_ref": {
+          "entity_id": "wki_00000000000000000000000000",
+          "entity_type": "work_item"
+        },
+        "project_ref": {
+          "entity_id": "prj_00000000000000000000000000",
+          "entity_type": "project"
+        },
+        "project_snapshot_ref": {
+          "entity_id": "psn_00000000000000000000000000",
+          "entity_type": "project_snapshot"
+        },
+        "control_versions": {
+          "objective_version": 1,
+          "change_version": 2,
+          "work_graph_version": 3,
+          "work_item_version": 4
+        },
+        "executor": {
+          "actor_ref": {
+            "actor_id": "acr_00000000000000000000000000",
+            "actor_type": "agent"
+          },
+          "adapter_id": "forge.runtime.local.adapter",
+          "adapter_version": "1.2.3"
+        },
+        "context_artifact_ref": {
+          "artifact_kind": "context",
+          "canonicalization": "forge.canonical-json/v1",
+          "content_digest": "0000000000000000000000000000000000000000000000000000000000000000",
+          "content_id": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+          "created_at_unix_ms": 1,
+          "logical_id": "art_00000000000000000000000000",
+          "media_type": "text/plain",
+          "producer_attempt_id": "atm_00000000000000000000000001",
+          "provenance_ref": {
+            "record_id": "provenance.one",
+            "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+            "record_type": "forge.runtime.provenance"
+          },
+          "retention_class": "durable",
+          "sensitivity": "internal",
+          "size_bytes": 1,
+          "source_snapshot_ref": {
+            "entity_id": "psn_00000000000000000000000000",
+            "entity_type": "project_snapshot"
+          }
+        },
+        "workspace_capability_ref": {
+          "record_id": "workspace.one",
+          "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "record_type": "forge.runtime.workspace_capability"
+        },
+        "grant_ref": {
+          "record_id": "grant.one",
+          "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "record_type": "forge.control.capability_grant"
+        },
+        "approval_refs": [
+          {
+            "record_id": "approval.b",
+            "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+            "record_type": "forge.control.approval_record"
+          },
+          {
+            "record_id": "approval.a",
+            "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+            "record_type": "forge.control.approval_record"
+          }
+        ],
+        "requested_effects": [
+          "write.file",
+          "read.repo"
+        ],
+        "budget": {
+          "max_duration_ms": 5000,
+          "max_cost_usd_micros": 100,
+          "max_model_calls": 3,
+          "max_tool_calls": 4,
+          "max_input_tokens": 1000,
+          "max_output_tokens": 2000,
+          "max_output_bytes": 3000,
+          "max_network_bytes": 4000
+        },
+        "timeout_ms": 5001,
+        "idempotency_key": "attempt-key-000001"
+      },
+      "expected": {
+        "accepted": false,
+        "error": "invalid_value",
+        "initial_state": "requested",
+        "requested_effects": [
+          "read.repo",
+          "write.file"
+        ],
+        "approval_record_ids": [
+          "approval.a",
+          "approval.b"
+        ]
+      }
+    },
+    {
+      "name": "idempotency_key_rejected",
+      "request": {
+        "scope_ref": {
+          "action_id": null,
+          "attempt_id": "atm_00000000000000000000000000",
+          "change_id": "chg_00000000000000000000000000",
+          "objective_id": "obj_00000000000000000000000000",
+          "project_id": "prj_00000000000000000000000000",
+          "project_snapshot_id": "psn_00000000000000000000000000",
+          "session_id": null,
+          "space_id": "spc_00000000000000000000000000",
+          "turn_id": null,
+          "work_graph_id": "wgr_00000000000000000000000000",
+          "work_item_id": "wki_00000000000000000000000000"
+        },
+        "attempt_ref": {
+          "entity_id": "atm_00000000000000000000000000",
+          "entity_type": "attempt"
+        },
+        "work_item_ref": {
+          "entity_id": "wki_00000000000000000000000000",
+          "entity_type": "work_item"
+        },
+        "project_ref": {
+          "entity_id": "prj_00000000000000000000000000",
+          "entity_type": "project"
+        },
+        "project_snapshot_ref": {
+          "entity_id": "psn_00000000000000000000000000",
+          "entity_type": "project_snapshot"
+        },
+        "control_versions": {
+          "objective_version": 1,
+          "change_version": 2,
+          "work_graph_version": 3,
+          "work_item_version": 4
+        },
+        "executor": {
+          "actor_ref": {
+            "actor_id": "acr_00000000000000000000000000",
+            "actor_type": "agent"
+          },
+          "adapter_id": "forge.runtime.local.adapter",
+          "adapter_version": "1.2.3"
+        },
+        "context_artifact_ref": {
+          "artifact_kind": "context",
+          "canonicalization": "forge.canonical-json/v1",
+          "content_digest": "0000000000000000000000000000000000000000000000000000000000000000",
+          "content_id": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+          "created_at_unix_ms": 1,
+          "logical_id": "art_00000000000000000000000000",
+          "media_type": "text/plain",
+          "producer_attempt_id": "atm_00000000000000000000000001",
+          "provenance_ref": {
+            "record_id": "provenance.one",
+            "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+            "record_type": "forge.runtime.provenance"
+          },
+          "retention_class": "durable",
+          "sensitivity": "internal",
+          "size_bytes": 1,
+          "source_snapshot_ref": {
+            "entity_id": "psn_00000000000000000000000000",
+            "entity_type": "project_snapshot"
+          }
+        },
+        "workspace_capability_ref": {
+          "record_id": "workspace.one",
+          "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "record_type": "forge.runtime.workspace_capability"
+        },
+        "grant_ref": {
+          "record_id": "grant.one",
+          "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "record_type": "forge.control.capability_grant"
+        },
+        "approval_refs": [
+          {
+            "record_id": "approval.b",
+            "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+            "record_type": "forge.control.approval_record"
+          },
+          {
+            "record_id": "approval.a",
+            "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+            "record_type": "forge.control.approval_record"
+          }
+        ],
+        "requested_effects": [
+          "write.file",
+          "read.repo"
+        ],
+        "budget": {
+          "max_duration_ms": 5000,
+          "max_cost_usd_micros": 100,
+          "max_model_calls": 3,
+          "max_tool_calls": 4,
+          "max_input_tokens": 1000,
+          "max_output_tokens": 2000,
+          "max_output_bytes": 3000,
+          "max_network_bytes": 4000
+        },
+        "timeout_ms": 1000,
+        "idempotency_key": "short"
+      },
+      "expected": {
+        "accepted": false,
+        "error": "invalid_value",
+        "initial_state": "requested",
+        "requested_effects": [
+          "read.repo",
+          "write.file"
+        ],
+        "approval_record_ids": [
+          "approval.a",
+          "approval.b"
+        ]
+      }
+    },
+    {
+      "name": "control_version_rejected",
+      "request": {
+        "scope_ref": {
+          "action_id": null,
+          "attempt_id": "atm_00000000000000000000000000",
+          "change_id": "chg_00000000000000000000000000",
+          "objective_id": "obj_00000000000000000000000000",
+          "project_id": "prj_00000000000000000000000000",
+          "project_snapshot_id": "psn_00000000000000000000000000",
+          "session_id": null,
+          "space_id": "spc_00000000000000000000000000",
+          "turn_id": null,
+          "work_graph_id": "wgr_00000000000000000000000000",
+          "work_item_id": "wki_00000000000000000000000000"
+        },
+        "attempt_ref": {
+          "entity_id": "atm_00000000000000000000000000",
+          "entity_type": "attempt"
+        },
+        "work_item_ref": {
+          "entity_id": "wki_00000000000000000000000000",
+          "entity_type": "work_item"
+        },
+        "project_ref": {
+          "entity_id": "prj_00000000000000000000000000",
+          "entity_type": "project"
+        },
+        "project_snapshot_ref": {
+          "entity_id": "psn_00000000000000000000000000",
+          "entity_type": "project_snapshot"
+        },
+        "control_versions": {
+          "objective_version": 1,
+          "change_version": 2,
+          "work_graph_version": 3,
+          "work_item_version": 0
+        },
+        "executor": {
+          "actor_ref": {
+            "actor_id": "acr_00000000000000000000000000",
+            "actor_type": "agent"
+          },
+          "adapter_id": "forge.runtime.local.adapter",
+          "adapter_version": "1.2.3"
+        },
+        "context_artifact_ref": {
+          "artifact_kind": "context",
+          "canonicalization": "forge.canonical-json/v1",
+          "content_digest": "0000000000000000000000000000000000000000000000000000000000000000",
+          "content_id": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+          "created_at_unix_ms": 1,
+          "logical_id": "art_00000000000000000000000000",
+          "media_type": "text/plain",
+          "producer_attempt_id": "atm_00000000000000000000000001",
+          "provenance_ref": {
+            "record_id": "provenance.one",
+            "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+            "record_type": "forge.runtime.provenance"
+          },
+          "retention_class": "durable",
+          "sensitivity": "internal",
+          "size_bytes": 1,
+          "source_snapshot_ref": {
+            "entity_id": "psn_00000000000000000000000000",
+            "entity_type": "project_snapshot"
+          }
+        },
+        "workspace_capability_ref": {
+          "record_id": "workspace.one",
+          "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "record_type": "forge.runtime.workspace_capability"
+        },
+        "grant_ref": {
+          "record_id": "grant.one",
+          "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "record_type": "forge.control.capability_grant"
+        },
+        "approval_refs": [
+          {
+            "record_id": "approval.b",
+            "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+            "record_type": "forge.control.approval_record"
+          },
+          {
+            "record_id": "approval.a",
+            "record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+            "record_type": "forge.control.approval_record"
+          }
+        ],
+        "requested_effects": [
+          "write.file",
+          "read.repo"
+        ],
+        "budget": {
+          "max_duration_ms": 5000,
+          "max_cost_usd_micros": 100,
+          "max_model_calls": 3,
+          "max_tool_calls": 4,
+          "max_input_tokens": 1000,
+          "max_output_tokens": 2000,
+          "max_output_bytes": 3000,
+          "max_network_bytes": 4000
+        },
+        "timeout_ms": 1000,
+        "idempotency_key": "attempt-key-000001"
+      },
+      "expected": {
+        "accepted": false,
+        "error": "invalid_value",
+        "initial_state": "requested",
+        "requested_effects": [
+          "read.repo",
+          "write.file"
+        ],
+        "approval_record_ids": [
+          "approval.a",
+          "approval.b"
+        ]
+      }
+    }
+  ]
+}

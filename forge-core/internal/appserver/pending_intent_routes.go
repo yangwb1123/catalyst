@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"forgeos/forge-core/internal/executionprofile"
+	"forgeos/forge-core/internal/runtimebridge"
 )
 
 const pendingIntentPageMax = 25
@@ -30,7 +31,7 @@ func (routes executionRoutes) submitPendingIntent(w http.ResponseWriter, r *http
 		return
 	}
 	if !hasExactRequiredFields(body, "content", "expected_version") ||
-		request.ExpectedVersion > maxSQLiteCursor || requestContentInvalid(request.Content) {
+		request.ExpectedVersion > maxSafeJSONInteger || requestContentInvalid(request.Content) {
 		writeConversationError(w, r, http.StatusBadRequest, "invalid_request", "pending intent request is invalid")
 		return
 	}
@@ -58,6 +59,10 @@ func (routes executionRoutes) submitPendingIntent(w http.ResponseWriter, r *http
 	status := http.StatusCreated
 	if result.Replayed {
 		status = http.StatusOK
+	}
+	if !pendingIntentSubmissionJSONSafe(result) {
+		writeExecutionBackendError(w, r, &runtimebridge.Error{Code: "invalid_runtime_response"})
+		return
 	}
 	writeConversationJSON(w, r, status, result)
 }
@@ -105,7 +110,7 @@ func (routes executionRoutes) listPendingIntents(w http.ResponseWriter, r *http.
 	}
 	if hasTime {
 		at, parseErr := parseUnsignedDecimal(times[0])
-		if parseErr != nil || at > maxSQLiteCursor || !validExecutionRouteID(ids[0]) {
+		if parseErr != nil || at > maxSafeJSONInteger || !validExecutionRouteID(ids[0]) {
 			writeConversationError(w, r, http.StatusBadRequest, "invalid_query", "pagination query is invalid")
 			return
 		}
@@ -123,6 +128,10 @@ func (routes executionRoutes) listPendingIntents(w http.ResponseWriter, r *http.
 	page, err := routes.backend.OwnedConversationPendingRunIntents(r.Context(), owner, conversationID, before, limit)
 	if err != nil {
 		writeExecutionBackendError(w, r, err)
+		return
+	}
+	if !pendingIntentPageJSONSafe(page) {
+		writeExecutionBackendError(w, r, &runtimebridge.Error{Code: "invalid_runtime_response"})
 		return
 	}
 	writeConversationJSON(w, r, http.StatusOK, page)
@@ -143,7 +152,7 @@ func (routes executionRoutes) pendingIntentTimeline(w http.ResponseWriter, r *ht
 	after := uint64(0)
 	if values, ok := query["after_sequence"]; ok {
 		after, err = parseUnsignedDecimal(values[0])
-		if err != nil || after > maxSQLiteCursor {
+		if err != nil || after > maxSafeJSONInteger {
 			writeConversationError(w, r, http.StatusBadRequest, "invalid_query", "pagination query is invalid")
 			return
 		}
@@ -170,6 +179,10 @@ func (routes executionRoutes) pendingIntentTimeline(w http.ResponseWriter, r *ht
 	)
 	if err != nil {
 		writeExecutionBackendError(w, r, err)
+		return
+	}
+	if !pendingIntentTimelineJSONSafe(page) {
+		writeExecutionBackendError(w, r, &runtimebridge.Error{Code: "invalid_runtime_response"})
 		return
 	}
 	writeConversationJSON(w, r, http.StatusOK, page)

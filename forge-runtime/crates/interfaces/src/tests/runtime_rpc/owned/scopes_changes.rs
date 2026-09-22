@@ -84,6 +84,20 @@ fn owner_change_rpc_rejects_invalid_owner_and_page_bounds() {
         "invalid_owned_conversation_request"
     );
 
+    let unsafe_cursor = process_owned_request(
+        &database,
+        "owned_conversation_changes_after",
+        &json!({
+            "owner": test_owner("tenant-slate"),
+            "after_cursor": 9_007_199_254_740_992_u64,
+            "limit": 1
+        }),
+    );
+    assert_eq!(
+        unsafe_cursor["error"]["code"],
+        "invalid_owned_conversation_request"
+    );
+
     let missing_cursor = process_raw_request(
         &database,
         &json!({

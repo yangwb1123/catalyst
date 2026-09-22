@@ -4,21 +4,25 @@ use crate::{
         MAX_PROMPT_BYTES, MAX_TITLE_BYTES, conversation_prompt_page, required, required_id, scope,
         validate_idempotency_key,
     },
+    runtime_domain::run_observed::{RunObserved, RunObservedInput, observe_run},
     runtime_domain::{
         Conversation, ConversationImportPrompt, ConversationOwner, ConversationPromptCursor,
-        ConversationPromptPage, ConversationScope, MAX_CONVERSATION_IMPORT_PROMPT_COUNT,
-        MAX_OWNED_CONVERSATION_PAGE_LIMIT, MAX_OWNED_RUN_PAGE_LIMIT,
-        MAX_OWNED_RUN_TIMELINE_PAGE_LIMIT, MAX_PENDING_RUN_INTENT_PAGE_LIMIT,
-        MAX_PENDING_RUN_INTENT_TIMELINE_PAGE_LIMIT, OwnedConversationImportResult,
-        OwnedConversationPage, OwnedProjectConversationIdentity, OwnedPromptAppendResult,
-        OwnedRunCursor, OwnedRunPage, OwnedRunTimelinePage, PendingRunIntentCursor,
-        PendingRunIntentPage, PendingRunIntentSubmissionResult, PendingRunIntentTimelinePage,
+        ConversationPromptPage, ConversationScope, HubStoreError,
+        MAX_CONVERSATION_IMPORT_PROMPT_COUNT, MAX_OWNED_CONVERSATION_PAGE_LIMIT,
+        MAX_OWNED_RUN_PAGE_LIMIT, MAX_OWNED_RUN_TIMELINE_PAGE_LIMIT,
+        MAX_PENDING_RUN_INTENT_PAGE_LIMIT, MAX_PENDING_RUN_INTENT_TIMELINE_PAGE_LIMIT,
+        OwnedConversationEntry, OwnedConversationImportResult, OwnedConversationPage,
+        OwnedProjectConversationIdentity, OwnedPromptAppendResult, OwnedRunCursor, OwnedRunPage,
+        OwnedRunTimelinePage, PendingRunIntentCursor, PendingRunIntentPage,
+        PendingRunIntentSubmissionResult, PendingRunIntentTimelinePage,
         ProjectExecutionConsentGrantResult, ProjectExecutionConsentRevocationResult,
         SubmitPendingRunIntent,
     },
 };
 
 use super::{HubService, owner_idempotency_key, validate_owner};
+
+const MAX_SAFE_JSON_INTEGER: u64 = 9_007_199_254_740_991;
 
 impl HubService {
     /// Creates one account-owned Conversation while retaining an exact copy of
@@ -122,6 +126,23 @@ impl HubService {
             .list_owned_conversations(owner, after_id, limit)?)
     }
 
+    /// Reads one Conversation metadata record for the verified principal.
+    /// Missing and foreign IDs use the Hub's uniform not-found behavior.
+    ///
+    /// # Errors
+    ///
+    /// Returns validation errors for an invalid owner or Conversation ID, or a
+    /// storage error when the owner-filtered Conversation cannot be read.
+    pub fn get_owned_conversation(
+        &self,
+        owner: &ConversationOwner,
+        conversation_id: &str,
+    ) -> Result<OwnedConversationEntry, HubError> {
+        validate_owner(owner)?;
+        required_id(conversation_id, HubField::ConversationId)?;
+        Ok(self.store.get_owned_conversation(owner, conversation_id)?)
+    }
+
     /// Resolves a minimal trusted Project input from an owner-visible
     /// Project-scoped Conversation.
     ///
@@ -176,6 +197,39 @@ impl HubService {
         Ok(self
             .store
             .owned_run_page(owner, conversation_id, before, limit)?)
+    }
+
+    /// Reads one owner-visible Run summary and projects it into the bounded,
+    /// content-free `forge.run.observed.v1` value. This operation only reads
+    /// existing metadata and grants no Run, lease, reservation, or dispatch
+    /// authority.
+    ///
+    /// # Errors
+    ///
+    /// Returns validation or storage errors when ownership, Run membership, or
+    /// the stored scalar metadata cannot be validated.
+    pub fn owned_run_observation(
+        &self,
+        owner: &ConversationOwner,
+        conversation_id: &str,
+        run_id: &str,
+    ) -> Result<RunObserved, HubError> {
+        validate_owner(owner)?;
+        required_id(conversation_id, HubField::ConversationId)?;
+        required_id(run_id, HubField::RunId)?;
+        let run = self
+            .store
+            .owned_run_observation(owner, conversation_id, run_id)?;
+        observe_run(RunObservedInput {
+            owner: owner.clone(),
+            conversation_id: conversation_id.to_owned(),
+            run,
+        })
+        .map_err(|_| {
+            HubError::Store(HubStoreError::Corrupt {
+                message: "stored Run observation metadata is invalid".into(),
+            })
+        })
     }
 
     /// Reads a bounded payload-free event-type timeline for one owned Run.
@@ -257,11 +311,11 @@ impl HubService {
         required_id(conversation_id, HubField::ConversationId)?;
         required(content, HubField::Prompt, MAX_PROMPT_BYTES)?;
         validate_idempotency_key(idempotency_key)?;
-        if expected_version > i64::MAX as u64 {
+        if expected_version > MAX_SAFE_JSON_INTEGER {
             return Err(HubError::OutOfRange {
                 field: HubField::ExpectedAggregateVersion,
                 min: 0,
-                max: usize::try_from(i64::MAX).unwrap_or(usize::MAX),
+                max: usize::try_from(MAX_SAFE_JSON_INTEGER).unwrap_or(usize::MAX),
             });
         }
         let storage_key = owner_idempotency_key(owner, "prompt", idempotency_key);
@@ -297,11 +351,11 @@ impl HubService {
         required(submission.content, HubField::Prompt, MAX_PROMPT_BYTES)?;
         required_id(submission.profile_id, HubField::ProjectExecutionProfileId)?;
         validate_idempotency_key(submission.idempotency_key)?;
-        if submission.expected_version > i64::MAX as u64 {
+        if submission.expected_version > MAX_SAFE_JSON_INTEGER {
             return Err(HubError::OutOfRange {
                 field: HubField::ExpectedAggregateVersion,
                 min: 0,
-                max: usize::try_from(i64::MAX).unwrap_or(usize::MAX),
+                max: usize::try_from(MAX_SAFE_JSON_INTEGER).unwrap_or(usize::MAX),
             });
         }
         let storage_key =
@@ -341,11 +395,11 @@ impl HubService {
         }
         if let Some(cursor) = before {
             required_id(&cursor.intent_id, HubField::PendingRunIntentId)?;
-            if cursor.submitted_at_ms > i64::MAX as u64 {
+            if cursor.submitted_at_ms > MAX_SAFE_JSON_INTEGER {
                 return Err(HubError::OutOfRange {
                     field: HubField::PendingRunIntentId,
                     min: 0,
-                    max: usize::try_from(i64::MAX).unwrap_or(usize::MAX),
+                    max: usize::try_from(MAX_SAFE_JSON_INTEGER).unwrap_or(usize::MAX),
                 });
             }
         }
@@ -380,11 +434,11 @@ impl HubService {
                 max: MAX_PENDING_RUN_INTENT_TIMELINE_PAGE_LIMIT,
             });
         }
-        if after_sequence > i64::MAX as u64 {
+        if after_sequence > MAX_SAFE_JSON_INTEGER {
             return Err(HubError::OutOfRange {
                 field: HubField::PendingRunIntentTimelineSequence,
                 min: 0,
-                max: usize::try_from(i64::MAX).unwrap_or(usize::MAX),
+                max: usize::try_from(MAX_SAFE_JSON_INTEGER).unwrap_or(usize::MAX),
             });
         }
         Ok(self.store.owned_pending_run_intent_timeline_page(

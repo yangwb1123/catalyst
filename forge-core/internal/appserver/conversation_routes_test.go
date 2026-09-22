@@ -58,6 +58,39 @@ func TestConversationRoutesForwardVerifiedOwnerAndCollectionPage(t *testing.T) {
 	}
 }
 
+func TestConversationDetailRouteForwardsVerifiedOwnerAndHidesForeignIDs(t *testing.T) {
+	backend := &fakeConversationBackend{detail: model.OwnedConversationEntry{
+		Conversation: model.Conversation{
+			ID: "conversation-17", Scope: model.ConversationScope{Kind: "global"},
+			Title: "Shared", CreatedAtMS: 10, UpdatedAtMS: 20,
+		},
+		AggregateVersion: 3,
+	}}
+	identity, handler := conversationTestHandler(t, backend)
+	response := requestConversationAPI(t, handler, identity, http.MethodGet,
+		conversationCollectionPath+"/conversation-17", "forge:conversations:read", "", "", "")
+	if response.Code != http.StatusOK || backend.detailCalls != 1 {
+		t.Fatalf("detail status=%d calls=%d body=%q", response.Code, backend.detailCalls, response.Body.String())
+	}
+	wantOwner := model.Owner{Issuer: identity.issuer, Subject: "account-42", TenantID: "tenant-slate"}
+	if backend.detailOwner != wantOwner || backend.detailID != "conversation-17" ||
+		!strings.Contains(response.Body.String(), `"aggregate_version":3`) {
+		t.Fatalf("detail call=%#v body=%q", backend, response.Body.String())
+	}
+
+	backend.err = &runtimebridge.Error{Code: "not_found"}
+	response = requestConversationAPI(t, handler, identity, http.MethodGet,
+		conversationCollectionPath+"/conversation-foreign", "forge:conversations:read", "", "", "")
+	if response.Code != http.StatusNotFound || !strings.Contains(response.Body.String(), `"code":"not_found"`) {
+		t.Fatalf("foreign detail status=%d body=%q", response.Code, response.Body.String())
+	}
+	response = requestConversationAPI(t, handler, identity, http.MethodGet,
+		conversationCollectionPath+"/conversation-17?unexpected=yes", "forge:conversations:read", "", "", "")
+	if response.Code != http.StatusBadRequest || backend.detailCalls != 2 {
+		t.Fatalf("detail query status=%d calls=%d body=%q", response.Code, backend.detailCalls, response.Body.String())
+	}
+}
+
 func TestConversationPromptRoutesForwardCursorAndVersion(t *testing.T) {
 	backend := &fakeConversationBackend{
 		promptPage:   model.ConversationPromptPage{ConversationID: "conversation-17", Prompts: []model.ConversationPrompt{}},
@@ -76,6 +109,12 @@ func TestConversationPromptRoutesForwardCursorAndVersion(t *testing.T) {
 		backend.promptCursor == nil || *backend.promptCursor != (model.PromptPageCursor{CreatedAtMS: 99, PromptID: "prompt-7"}) || backend.promptLimit != 8 {
 		t.Fatalf("prompt page call = %#v", backend)
 	}
+	response = requestConversationAPI(t, handler, identity, http.MethodGet,
+		path+fmt.Sprintf("?before_created_at_ms=%d&before_prompt_id=prompt-7", maxSafeJSONInteger+1),
+		"forge:conversations:read", "", "", "")
+	if response.Code != http.StatusBadRequest || backend.promptCalls != 1 {
+		t.Fatalf("unsafe Prompt cursor status=%d calls=%d", response.Code, backend.promptCalls)
+	}
 
 	body := `{"content":"calculate","expected_version":7}`
 	response = requestConversationAPI(t, handler, identity, http.MethodPost, path,
@@ -93,6 +132,58 @@ func TestConversationPromptRoutesForwardCursorAndVersion(t *testing.T) {
 		"forge:conversations:write", "application/json", "prompt-key-1", body)
 	if response.Code != http.StatusOK {
 		t.Fatalf("idempotent replay status=%d body=%q", response.Code, response.Body.String())
+	}
+}
+
+func TestConversationPromptRouteRejectsUnsafeBackendPage(t *testing.T) {
+	cases := []struct {
+		name string
+		page model.ConversationPromptPage
+	}{
+		{
+			name: "foreign conversation",
+			page: model.ConversationPromptPage{
+				ConversationID: "conversation-other",
+				Prompts:        []model.ConversationPrompt{},
+			},
+		},
+		{
+			name: "unsafe timestamp",
+			page: model.ConversationPromptPage{
+				ConversationID: "conversation-17",
+				Prompts: []model.ConversationPrompt{{
+					ID: "prompt-1", ConversationID: "conversation-17", Role: "user",
+					Content: "safe", CreatedAtMS: maxSafeJSONInteger + 1,
+				}},
+			},
+		},
+		{
+			name: "cursor does not match page tail",
+			page: model.ConversationPromptPage{
+				ConversationID: "conversation-17",
+				Prompts: []model.ConversationPrompt{{
+					ID: "prompt-1", ConversationID: "conversation-17", Role: "user",
+					Content: "safe", CreatedAtMS: 2,
+				}},
+				NextCursor: &model.PromptPageCursor{CreatedAtMS: 1, PromptID: "prompt-0"},
+				HasMore:    true,
+			},
+		},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			backend := &fakeConversationBackend{promptPage: test.page}
+			identity, handler := conversationTestHandler(t, backend)
+			response := requestConversationAPI(t, handler, identity, http.MethodGet,
+				conversationCollectionPath+"/conversation-17/prompts?limit=8",
+				"forge:conversations:read", "", "", "")
+			if response.Code != http.StatusBadGateway || backend.promptCalls != 1 {
+				t.Fatalf("unsafe Prompt page status=%d calls=%d body=%q", response.Code, backend.promptCalls, response.Body.String())
+			}
+			if !strings.Contains(response.Body.String(), `"code":"conversation_service_error"`) {
+				t.Fatalf("unsafe Prompt page error=%q", response.Body.String())
+			}
+		})
 	}
 }
 
@@ -234,13 +325,19 @@ func TestConversationPromptRejectsMissingVersionAndDuplicateContentType(t *testi
 			t.Errorf("body %s status=%d body=%q", body, response.Code, response.Body.String())
 		}
 	}
+	unsafeVersion := fmt.Sprintf(`{"content":"do work","expected_version":%d}`, maxSafeJSONInteger+1)
+	response := requestConversationAPI(t, handler, identity, http.MethodPost, path,
+		"forge:conversations:write", "application/json", "prompt-key-unsafe", unsafeVersion)
+	if response.Code != http.StatusBadRequest || backend.appendCalls != 0 {
+		t.Fatalf("unsafe expected version = %d calls=%d body=%q", response.Code, backend.appendCalls, response.Body.String())
+	}
 	request := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:7467"+path,
 		strings.NewReader(`{"content":"do work","expected_version":0}`))
 	request.Header.Set("Authorization", "Bearer "+identity.token("forge:conversations:write"))
 	request.Header.Add("Content-Type", "application/json")
 	request.Header.Add("Content-Type", "application/json")
 	request.Header.Set("Idempotency-Key", "prompt-key")
-	response := httptest.NewRecorder()
+	response = httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
 	if response.Code != http.StatusUnsupportedMediaType || backend.appendCalls != 0 {
 		t.Fatalf("duplicate content type = %d calls=%d body=%q", response.Code, backend.appendCalls, response.Body.String())

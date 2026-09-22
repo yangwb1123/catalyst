@@ -4,6 +4,7 @@ import (
 	model "forgeos/forge-core/internal/runtimebridge/model"
 	runmodel "forgeos/forge-core/internal/runtimebridge/runmodel"
 	"net/http"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -28,6 +29,46 @@ func TestConversationRunRoutesUseVerifiedOwnerAndBoundedCursors(t *testing.T) {
 	assertConversationRunPageRoute(t, handler, identity, backend, owner)
 	assertConversationRunTimelineRoute(t, handler, identity, backend, owner)
 	assertConversationRunRouteRejections(t, handler, identity, backend)
+}
+
+func TestConversationRunRoutesRejectUnsafeBackendPages(t *testing.T) {
+	t.Run("Run summary", func(t *testing.T) {
+		backend := &fakeConversationBackend{runPage: runmodel.OwnedRunPage{
+			ConversationID: "conversation-1",
+			Runs: []runmodel.OwnedRunSummary{{
+				RunID: "run-1", PromptID: "prompt-1", CreatedAtMS: 1,
+				LatestSequence: maxSafeJSONInteger + 1, Status: "completed",
+			}},
+		}}
+		identity, handler := conversationTestHandler(t, backend)
+		response := requestConversationAPI(t, handler, identity, http.MethodGet,
+			conversationCollectionPath+"/conversation-1/runs?limit=1",
+			"forge:conversations:read", "", "", "")
+		if response.Code != http.StatusBadGateway || backend.runCalls != 1 ||
+			!strings.Contains(response.Body.String(), `"code":"conversation_service_error"`) {
+			t.Fatalf("unsafe Run page status=%d calls=%d body=%q", response.Code, backend.runCalls, response.Body.String())
+		}
+	})
+
+	t.Run("Run timeline", func(t *testing.T) {
+		backend := &fakeConversationBackend{timelinePage: runmodel.OwnedRunTimelinePage{
+			ConversationID:         "conversation-1",
+			RunID:                  "run-1",
+			AfterSequence:          0,
+			ScannedThroughSequence: 2,
+			Events: []runmodel.OwnedRunEventSummary{{
+				Sequence: 1, EmittedAtMS: 1, Type: "secret_payload",
+			}},
+		}}
+		identity, handler := conversationTestHandler(t, backend)
+		response := requestConversationAPI(t, handler, identity, http.MethodGet,
+			conversationCollectionPath+"/conversation-1/runs/run-1/timeline?limit=1",
+			"forge:conversations:read", "", "", "")
+		if response.Code != http.StatusBadGateway || backend.timelineCalls != 1 ||
+			!strings.Contains(response.Body.String(), `"code":"conversation_service_error"`) {
+			t.Fatalf("unsafe Run timeline status=%d calls=%d body=%q", response.Code, backend.timelineCalls, response.Body.String())
+		}
+	})
 }
 
 func assertConversationRunPageRoute(
@@ -99,6 +140,18 @@ func assertConversationRunRouteRejections(
 		conversationCollectionPath+"/conversation-1/runs?limit=26", "forge:conversations:read", "", "", "")
 	if tooMany.Code != http.StatusBadRequest || backend.runCalls != 2 {
 		t.Fatalf("over-limit Run page status=%d calls=%d", tooMany.Code, backend.runCalls)
+	}
+	unsafeCursor := requestConversationAPI(t, handler, identity, http.MethodGet,
+		conversationCollectionPath+"/conversation-1/runs?before_created_at_ms="+strconv.FormatUint(maxSafeJSONInteger+1, 10)+"&before_run_id=run-3",
+		"forge:conversations:read", "", "", "")
+	if unsafeCursor.Code != http.StatusBadRequest || backend.runCalls != 2 {
+		t.Fatalf("Run cursor above JSON-safe integer status=%d calls=%d", unsafeCursor.Code, backend.runCalls)
+	}
+	unsafeTimeline := requestConversationAPI(t, handler, identity, http.MethodGet,
+		conversationCollectionPath+"/conversation-1/runs/run-2/timeline?after_sequence="+strconv.FormatUint(maxSafeJSONInteger+1, 10)+"&limit=8",
+		"forge:conversations:read", "", "", "")
+	if unsafeTimeline.Code != http.StatusBadRequest || backend.timelineCalls != 1 {
+		t.Fatalf("Run timeline cursor above JSON-safe integer status=%d calls=%d", unsafeTimeline.Code, backend.timelineCalls)
 	}
 	unknown := requestConversationAPI(t, handler, identity, http.MethodGet,
 		conversationCollectionPath+"/conversation-1/runs?project_path=/tmp", "forge:conversations:read", "", "", "")

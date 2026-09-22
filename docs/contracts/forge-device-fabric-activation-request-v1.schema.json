@@ -1,0 +1,139 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forgeos.dev/contracts/forge-device-fabric-activation-request-v1.schema.json",
+  "title": "Forge device fabric activation review request v1",
+  "description": "Review-only, default-off declaration for future INVENTORY or OBSERVE activation. It grants no production authority.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "api_version",
+    "canonicalization",
+    "request_id",
+    "review_context",
+    "requested_mode",
+    "production_authorization",
+    "decisions",
+    "evidence",
+    "authority"
+  ],
+  "properties": {
+    "api_version": { "const": "forge.device-fabric-activation-request/v1" },
+    "canonicalization": { "const": "forgeos.canonical-json/v1" },
+    "request_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]*$"
+    },
+    "review_context": {
+      "enum": ["repository_snapshot", "synthetic_review"]
+    },
+    "requested_mode": {
+      "enum": ["inventory", "observe"]
+    },
+    "production_authorization": { "const": false },
+    "decisions": { "$ref": "#/$defs/decisions" },
+    "evidence": { "$ref": "#/$defs/evidence" },
+    "authority": { "$ref": "#/$defs/authority" }
+  },
+  "$defs": {
+    "decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "acceptance_id", "accepted_at_unix_ms", "planning_only"],
+      "properties": {
+        "status": {
+          "enum": ["proposed", "accepted", "rejected", "superseded"]
+        },
+        "acceptance_id": {
+          "type": ["string", "null"],
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]*$"
+        },
+        "accepted_at_unix_ms": {
+          "type": ["integer", "null"],
+          "minimum": 1,
+          "maximum": 9223372036854775807
+        },
+        "planning_only": { "type": "boolean" }
+      }
+    },
+    "decisions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["adr_0039", "adr_0113", "adr_0114"],
+      "properties": {
+        "adr_0039": { "$ref": "#/$defs/decision" },
+        "adr_0113": { "$ref": "#/$defs/decision" },
+        "adr_0114": { "$ref": "#/$defs/decision" }
+      }
+    },
+    "referenceArray": {
+      "type": "array",
+      "uniqueItems": true,
+      "maxItems": 64,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 256,
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]*$"
+      }
+    },
+    "evidenceClaim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "artifact_refs", "reviewer_refs", "independent_review"],
+      "properties": {
+        "status": { "enum": ["missing", "candidate", "verified"] },
+        "artifact_refs": { "$ref": "#/$defs/referenceArray" },
+        "reviewer_refs": { "$ref": "#/$defs/referenceArray" },
+        "independent_review": { "type": "boolean" }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "coordinator_owner_isolation",
+        "device_identity_proof",
+        "owner_approval_and_revocation",
+        "heartbeat_cas_and_freshness",
+        "inventory_owner_scope",
+        "disabled_default_and_route_close",
+        "security_review"
+      ],
+      "properties": {
+        "coordinator_owner_isolation": { "$ref": "#/$defs/evidenceClaim" },
+        "device_identity_proof": { "$ref": "#/$defs/evidenceClaim" },
+        "owner_approval_and_revocation": { "$ref": "#/$defs/evidenceClaim" },
+        "heartbeat_cas_and_freshness": { "$ref": "#/$defs/evidenceClaim" },
+        "inventory_owner_scope": { "$ref": "#/$defs/evidenceClaim" },
+        "disabled_default_and_route_close": { "$ref": "#/$defs/evidenceClaim" },
+        "security_review": { "$ref": "#/$defs/evidenceClaim" }
+      }
+    },
+    "authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "opens_listener",
+        "registers_devices",
+        "persists_inventory",
+        "selects_placement",
+        "reserves_resources",
+        "dispatches_tasks",
+        "executes_remote_work"
+      ],
+      "properties": {
+        "opens_listener": { "const": false },
+        "registers_devices": { "const": false },
+        "persists_inventory": { "const": false },
+        "selects_placement": { "const": false },
+        "reserves_resources": { "const": false },
+        "dispatches_tasks": { "const": false },
+        "executes_remote_work": { "const": false }
+      }
+    }
+  }
+}

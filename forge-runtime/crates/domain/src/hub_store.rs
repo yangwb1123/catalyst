@@ -5,11 +5,12 @@ use crate::{
     ConversationImportPrompt, ConversationOwner, ConversationPromptCursor, ConversationPromptPage,
     ConversationScope, GroupContextPolicy, GroupContextSlice, GroupProjectMember, HubSnapshot,
     HubSnapshotAtCursor, LocalConversationImportSource, OwnedConversationChangePage,
-    OwnedConversationImportResult, OwnedConversationPage, OwnedProjectConversationIdentity,
-    OwnedPromptAppendResult, OwnedRunCursor, OwnedRunPage, OwnedRunTimelinePage,
-    PendingRunIntentCursor, PendingRunIntentPage, PendingRunIntentSubmissionResult,
-    PendingRunIntentTimelinePage, Project, ProjectExecutionConsentGrantResult,
-    ProjectExecutionConsentRevocationResult, PromptRecord, SessionGroup, SubmitPendingRunIntent,
+    OwnedConversationEntry, OwnedConversationImportResult, OwnedConversationPage,
+    OwnedProjectConversationIdentity, OwnedPromptAppendResult, OwnedRunCursor, OwnedRunPage,
+    OwnedRunSummary, OwnedRunTimelinePage, PendingRunIntentCursor, PendingRunIntentPage,
+    PendingRunIntentSubmissionResult, PendingRunIntentTimelinePage, Project,
+    ProjectExecutionConsentGrantResult, ProjectExecutionConsentRevocationResult, PromptRecord,
+    SessionGroup, SubmitPendingRunIntent,
 };
 
 #[macro_use]
