@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"forgeos/forge-core/internal/runtimebridge"
+	runmodel "forgeos/forge-core/internal/runtimebridge/runmodel"
 )
 
 func TestIndependentClientsShareOwnedConversationAndPrompts(t *testing.T) {
@@ -41,7 +42,15 @@ func TestIndependentClientsShareOwnedConversationAndPrompts(t *testing.T) {
 		t.Fatal(err)
 	}
 	identity, authenticator := newMultiPrincipalConversationTestIdentity(t)
-	sessions := authenticator.Handler(newAuthenticatedSessionRoutesWithObservationCandidates(bridge, nil))
+	nativeConversationID := ""
+	nativeObservationSource := &nativeMobileClientInstanceObservationSource{
+		conversationID: &nativeConversationID,
+	}
+	nativeSchedulerBackend := &fakeConversationBackend{}
+	baseSessions := newAuthenticatedSessionRoutesWithObservationCandidates(bridge, nil)
+	sessions := authenticator.Handler(newNativeMobileClientInstanceObservationRoutes(
+		baseSessions, nativeObservationSource, nativeSchedulerBackend,
+	))
 	recorder := &conversationHTTPRecorder{}
 	server := httptest.NewUnstartedServer(http.NotFoundHandler())
 	routes, err := newRoutesWithSessions(
@@ -72,6 +81,14 @@ func TestIndependentClientsShareOwnedConversationAndPrompts(t *testing.T) {
 		t.Fatal("independent clients must use distinct access tokens")
 	}
 	created := createSharedConversationAsClientA(t, clientA, server.URL, tokenA)
+	nativeConversationID = created.ID
+	nativeSchedulerBackend.runPage = runmodel.OwnedRunPage{
+		ConversationID: created.ID,
+		Runs: []runmodel.OwnedRunSummary{{
+			RunID: "native-scheduler-run", PromptID: "native-scheduler-prompt",
+			CreatedAtMS: 1, LatestSequence: 1, Status: "completed",
+		}},
+	}
 	assertConversationVisibleToClientB(t, clientB, server.URL, tokenB, created)
 	promptPath := conversationCollectionPath + "/" + created.ID + "/prompts"
 	appendPromptAsClientB(t, clientB, server.URL, tokenB, promptPath)
@@ -141,12 +158,12 @@ func TestIndependentClientsShareOwnedConversationAndPrompts(t *testing.T) {
 		} {
 			nativeToken := tokenForPrincipalWithTTL(
 				identity, "account-42",
-				"forge:conversations:read forge:conversations:write",
+				"forge:conversations:read forge:conversations:write forge:devices:read "+schedulerSelectionPreviewScope,
 				native.clientID, 15*time.Minute,
 			)
 			rotatedNativeToken := tokenForPrincipalWithTTL(
 				identity, "account-42",
-				"forge:conversations:read forge:conversations:write",
+				"forge:conversations:read forge:conversations:write forge:devices:read "+schedulerSelectionPreviewScope,
 				native.clientID+"-rotated", 15*time.Minute,
 			)
 			nativeClient := &http.Client{Timeout: 20 * time.Second}
@@ -156,10 +173,22 @@ func TestIndependentClientsShareOwnedConversationAndPrompts(t *testing.T) {
 			nativeAfterCursor := readOwnedConversationCursor(
 				t, nativeClient, server.URL, nativeToken,
 			)
+			sessionViewJSON := readNativeClientInstanceViewJSON(
+				t, nativeClient, server.URL, nativeToken,
+				clientInstanceSessionViewCandidatePath,
+			)
+			resourceViewJSON := readNativeClientInstanceViewJSON(
+				t, nativeClient, server.URL, nativeToken,
+				clientInstanceResourceViewCandidatePath,
+			)
+			inventoryV2JSON := nativeMobileInventoryV2JSON(
+				t, identity.issuer, "account-42", "tenant-slate",
+			)
 			firstNativeRequest := len(recorder.snapshot())
 			runForgeMobileSharedSessionE2EWithToken(
 				t, native.platform, native.prompt, native.idempotencyKey,
 				server.URL, nativeToken, rotatedNativeToken, created.ID,
+				"client-mobile", sessionViewJSON, resourceViewJSON, inventoryV2JSON,
 				nativeVersion, nativeAfterCursor,
 			)
 			nativeRequests := recorder.snapshot()[firstNativeRequest:]

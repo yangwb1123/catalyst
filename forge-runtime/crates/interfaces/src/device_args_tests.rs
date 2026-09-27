@@ -235,6 +235,44 @@ fn device_runner_dispatch_plan_preview_rejects_missing_or_duplicate_input() {
 }
 
 #[test]
+fn device_runner_attempt_boundary_preview_accepts_a_bounded_input_source() {
+    let args = parse(&[
+        "--json",
+        "device",
+        "runner-attempt-boundary-preview",
+        "--input",
+        "attempt-boundary.json",
+    ]);
+    assert_eq!(
+        args.command,
+        Command::Device(DeviceCommand::RunnerAttemptBoundaryPreview {
+            input: "attempt-boundary.json".into(),
+        })
+    );
+    assert!(args.json);
+}
+
+#[test]
+fn device_runner_attempt_boundary_preview_rejects_missing_or_duplicate_input() {
+    for tokens in [
+        vec!["device", "runner-attempt-boundary-preview"],
+        vec![
+            "device",
+            "runner-attempt-boundary-preview",
+            "--input",
+            "one.json",
+            "--input",
+            "two.json",
+        ],
+    ] {
+        assert!(
+            parse_tokens(tokens.into_iter().map(str::to_owned)).is_err(),
+            "invalid Runner Attempt boundary preview arguments must fail"
+        );
+    }
+}
+
+#[test]
 fn device_client_session_view_preview_accepts_a_bounded_input_source() {
     let args = parse(&[
         "--json",
@@ -306,6 +344,44 @@ fn device_client_instance_resource_view_preview_rejects_missing_or_duplicate_inp
         assert!(
             parse_tokens(tokens.into_iter().map(str::to_owned)).is_err(),
             "invalid client-instance/resource-view preview arguments must fail"
+        );
+    }
+}
+
+#[test]
+fn device_client_instance_scheduler_selection_preview_accepts_a_bounded_input_source() {
+    let args = parse(&[
+        "--json",
+        "device",
+        "client-instance-scheduler-selection-preview",
+        "--input",
+        "instance-scheduler.json",
+    ]);
+    assert_eq!(
+        args.command,
+        Command::Device(DeviceCommand::ClientInstanceSchedulerSelectionPreview {
+            input: "instance-scheduler.json".into(),
+        })
+    );
+    assert!(args.json);
+}
+
+#[test]
+fn device_client_instance_scheduler_selection_preview_rejects_missing_or_duplicate_input() {
+    for tokens in [
+        vec!["device", "client-instance-scheduler-selection-preview"],
+        vec![
+            "device",
+            "client-instance-scheduler-selection-preview",
+            "--input",
+            "one.json",
+            "--input",
+            "two.json",
+        ],
+    ] {
+        assert!(
+            parse_tokens(tokens.into_iter().map(str::to_owned)).is_err(),
+            "invalid instance-scoped scheduler preview arguments must fail"
         );
     }
 }
@@ -458,6 +534,44 @@ fn device_session_runner_receipt_preview_rejects_missing_or_duplicate_input() {
         assert!(
             parse_tokens(tokens.into_iter().map(str::to_owned)).is_err(),
             "invalid session Runner receipt preview arguments must fail"
+        );
+    }
+}
+
+#[test]
+fn device_session_runner_receipt_history_preview_accepts_a_bounded_input_source() {
+    let args = parse(&[
+        "--json",
+        "device",
+        "session-runner-receipt-history-preview",
+        "--input",
+        "session-receipt-history.json",
+    ]);
+    assert_eq!(
+        args.command,
+        Command::Device(DeviceCommand::SessionRunnerReceiptHistoryPreview {
+            input: "session-receipt-history.json".into(),
+        })
+    );
+    assert!(args.json);
+}
+
+#[test]
+fn device_session_runner_receipt_history_preview_rejects_missing_or_duplicate_input() {
+    for tokens in [
+        vec!["device", "session-runner-receipt-history-preview"],
+        vec![
+            "device",
+            "session-runner-receipt-history-preview",
+            "--input",
+            "one.json",
+            "--input",
+            "two.json",
+        ],
+    ] {
+        assert!(
+            parse_tokens(tokens.into_iter().map(str::to_owned)).is_err(),
+            "invalid session Runner receipt history preview arguments must fail"
         );
     }
 }

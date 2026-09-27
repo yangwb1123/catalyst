@@ -35,7 +35,7 @@ func (value Lifecycle) State() corestate.AttemptState { return value.state }
 // Reduce checks one canonical edge and returns the next value. The receiver is
 // unchanged when the edge is rejected.
 func (value Lifecycle) Reduce(transition Transition) (Lifecycle, error) {
-	target, ok := transitionTarget(transition)
+	target, ok := TransitionTarget(transition)
 	if !ok {
 		return value, invalidTransition(value.state, corestate.AttemptState(""))
 	}
@@ -45,7 +45,10 @@ func (value Lifecycle) Reduce(transition Transition) (Lifecycle, error) {
 	return Lifecycle{state: target}, nil
 }
 
-func transitionTarget(value Transition) (corestate.AttemptState, bool) {
+// TransitionTarget returns the canonical state named by one lifecycle edge.
+// It is a pure lookup and does not validate that the edge is legal from a
+// particular source state.
+func TransitionTarget(value Transition) (corestate.AttemptState, bool) {
 	switch value {
 	case Accept:
 		return "accepted", true
@@ -64,6 +67,20 @@ func transitionTarget(value Transition) (corestate.AttemptState, bool) {
 	default:
 		return "", false
 	}
+}
+
+// ValidateTransition checks one named lifecycle edge and returns its target.
+// The helper lets a value-only boundary reuse the same state graph as
+// Lifecycle.Reduce without constructing durable Attempt state.
+func ValidateTransition(from corestate.AttemptState, transition Transition) (corestate.AttemptState, error) {
+	target, ok := TransitionTarget(transition)
+	if !ok {
+		return "", invalidTransition(from, "")
+	}
+	if err := corestate.ValidateAttemptTransition(from, target); err != nil {
+		return target, err
+	}
+	return target, nil
 }
 
 func invalidTransition(from, to corestate.AttemptState) error {

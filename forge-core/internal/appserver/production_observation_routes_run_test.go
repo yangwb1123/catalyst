@@ -79,6 +79,8 @@ func TestRunConfiguredServerKeepsObservationCandidatesClosed(t *testing.T) {
 		{name: "placement preview", method: http.MethodPost, path: devicePlacementPreviewPath, body: `{}`, contentType: "application/json"},
 		{name: "session device observation", method: http.MethodPost, path: "/api/v1/conversations/conversation-1/runs/run-1/device-observation/preview", body: `{}`, contentType: "application/json"},
 		{name: "runner receipt observation", method: http.MethodPost, path: "/api/v1/conversations/conversation-1/runs/run-1/runner-receipt-observation/preview", body: `{}`, contentType: "application/json"},
+		{name: "runner receipt history", method: http.MethodPost, path: "/api/v1/conversations/conversation-1/runs/run-1/runner-receipt-history/preview", body: `{}`, contentType: "application/json"},
+		{name: "runner reconciliation projection", method: http.MethodPost, path: "/api/v1/conversations/conversation-1/runs/run-1/runner-reconciliation/preview", body: `{}`, contentType: "application/json"},
 		{name: "local Runner preview", method: http.MethodPost, path: "/api/v1/conversations/conversation-1/run-intents/intent-1/execution-readiness-preview", body: `{}`, contentType: "application/json"},
 		{name: "Run Attempt lease dispatch preflight", method: http.MethodPost, path: "/api/v1/conversations/conversation-1/runs/run-1/attempt-lease-dispatch-preflight/preview", body: `{}`, contentType: "application/json"},
 		{name: "Run observed", method: http.MethodGet, path: "/api/v1/conversations/conversation-1/runs/run-1/observation"},
@@ -88,6 +90,18 @@ func TestRunConfiguredServerKeepsObservationCandidatesClosed(t *testing.T) {
 		{name: "pending run intent submit", method: http.MethodPost, path: "/api/v1/conversations/conversation-1/run-intents", body: `{}`, contentType: "application/json"},
 		{name: "pending run intent timeline", method: http.MethodGet, path: "/api/v1/conversations/conversation-1/run-intents/intent-1/timeline"},
 		{name: "execution consent revoke", method: http.MethodDelete, path: "/api/v1/execution-consents/grant-1"},
+		{name: "runner execution-intent preview", method: http.MethodPost, path: "/api/v1/conversations/conversation-1/runs/run-1/runner-execution-intent/preview", body: `{}`, contentType: "application/json"},
+		{name: "runner dispatch-plan preview", method: http.MethodPost, path: "/api/v1/conversations/conversation-1/runs/run-1/runner-dispatch-plan-preview", body: `{}`, contentType: "application/json"},
+		{name: "runner dispatch-admission preview", method: http.MethodPost, path: "/api/v1/conversations/conversation-1/runs/run-1/runner-dispatch-admission/preview", body: `{}`, contentType: "application/json"},
+		{name: "runner transport-admission preview", method: http.MethodPost, path: "/api/v1/conversations/conversation-1/runs/run-1/runner-transport-admission/preview", body: `{}`, contentType: "application/json"},
+		{name: "runner execution-boundary preview", method: http.MethodPost, path: "/api/v1/conversations/conversation-1/runs/run-1/runner-execution-boundary/preview", body: `{}`, contentType: "application/json"},
+		{name: "runner attempt-boundary preview", method: http.MethodPost, path: "/api/v1/conversations/conversation-1/runs/run-1/runner-attempt-boundary/preview", body: `{}`, contentType: "application/json"},
+		{name: "execution reconciliation preview", method: http.MethodPost, path: "/api/v1/conversations/conversation-1/runs/run-1/execution-reconciliation/preview", body: `{}`, contentType: "application/json"},
+		{name: "execution evidence preview", method: http.MethodPost, path: "/api/v1/conversations/conversation-1/runs/run-1/execution-evidence/preview", body: `{}`, contentType: "application/json"},
+		{name: "scheduler selection preview", method: http.MethodPost, path: schedulerSelectionPreviewPath, body: `{}`, contentType: "application/json"},
+		{name: "scheduler lease claim", method: http.MethodPost, path: schedulerSelectionLeasePath, body: `{}`, contentType: "application/json"},
+		{name: "scheduler lease renewal", method: http.MethodPost, path: schedulerSelectionLeaseRenewalPath, body: `{}`, contentType: "application/json"},
+		{name: "scheduler lease release", method: http.MethodPost, path: schedulerSelectionLeaseReleasePath, body: `{}`, contentType: "application/json"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

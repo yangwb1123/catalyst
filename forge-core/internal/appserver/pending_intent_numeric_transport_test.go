@@ -98,6 +98,11 @@ func TestPendingIntentHTTPUsesJSONSafeNumericBoundaries(t *testing.T) {
 	if safeSubmit.Code == http.StatusBadRequest {
 		t.Fatalf("JSON-safe pending intent version was rejected: status=%d body=%q", safeSubmit.Code, safeSubmit.Body.String())
 	}
+	zeroSubmit := requestConversationAPI(t, handler, identity, http.MethodPost, conversationPath,
+		"forge:conversations:write", "application/json", "pending-zero", `{"content":"prompt","expected_version":0}`)
+	if zeroSubmit.Code != http.StatusBadRequest {
+		t.Fatalf("zero pending intent version status=%d body=%q", zeroSubmit.Code, zeroSubmit.Body.String())
+	}
 	unsafeSubmit := requestConversationAPI(t, handler, identity, http.MethodPost, conversationPath,
 		"forge:conversations:write", "application/json", "pending-unsafe", `{"content":"prompt","expected_version":9007199254740992}`)
 	if unsafeSubmit.Code != http.StatusBadRequest {
@@ -178,5 +183,27 @@ func TestPendingIntentHTTPRejectsUnsafeBackendResponses(t *testing.T) {
 		`{"content":"prompt","expected_version":1}`)
 	if submissionResponse.Code != http.StatusBadGateway || !strings.Contains(submissionResponse.Body.String(), "conversation_service_error") {
 		t.Fatalf("unsafe pending intent submission status=%d body=%q", submissionResponse.Code, submissionResponse.Body.String())
+	}
+
+	versionDriftSubmission := *unsafeSubmission
+	versionDriftSubmission.Prompt.CreatedAtMS = 20
+	versionDriftSubmission.Intent.SubmittedAtMS = 20
+	versionDriftSubmission.Intent.AggregateVersion = 9
+	versionDriftSubmission.InitialEvent.EmittedAtMS = 20
+	versionDriftSubmission.Replayed = false
+	versionDriftHandler := authenticator.Handler(newConversationRoutesWithInertExecutionAPI(
+		&pendingIntentHTTPBackend{
+			fakeConversationBackend: fakeConversationBackend{projectIdentity: model.OwnedProjectConversationIdentity{
+				ConversationID: "conversation-1", ProjectID: "project-1",
+			}},
+			submission: &versionDriftSubmission,
+		}, profiles))
+	versionDriftResponse := requestConversationAPI(t, versionDriftHandler, identity, http.MethodPost,
+		conversationCollectionPath+"/conversation-1/run-intents",
+		"forge:conversations:write", "application/json", "pending-version-drift",
+		`{"content":"prompt","expected_version":1}`)
+	if versionDriftResponse.Code != http.StatusBadGateway ||
+		!strings.Contains(versionDriftResponse.Body.String(), "conversation_service_error") {
+		t.Fatalf("drifted pending intent submission status=%d body=%q", versionDriftResponse.Code, versionDriftResponse.Body.String())
 	}
 }

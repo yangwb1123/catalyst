@@ -102,10 +102,94 @@ func EvaluatePersistedInventoryObservationV2(
 	}, nil
 }
 
+// EvaluatePolicyCompleteInventoryObservationV2 evaluates the lifecycle
+// observation after joining the explicitly supplied policy registry. The
+// lifecycle image still supplies owner, approval, liveness, freshness,
+// capacity, GPU, and runtime observations; the policy registry supplies only
+// residency, trust, sandbox, and concurrency values that the lifecycle image
+// intentionally leaves unknown. Every join is bound by device/Runner IDs and
+// revision, generation, and heartbeat counters.
+func EvaluatePolicyCompleteInventoryObservationV2(
+	observation SessionDeviceObservationInventoryV2,
+	policy PlacementPolicyRegistry,
+	owner Owner,
+	requirements Requirements,
+	evaluatedAtMS int64,
+) (PersistedInventoryPlacementV2Evaluation, error) {
+	if err := ValidateSessionDeviceObservationInventoryV2(observation); err != nil {
+		return PersistedInventoryPlacementV2Evaluation{}, err
+	}
+	if err := ValidatePlacementPolicyRegistry(policy); err != nil ||
+		policy.Owner != owner || observation.Owner != owner || !validOwner(owner) ||
+		evaluatedAtMS <= 0 || evaluatedAtMS > MaxSafeIntegerMS {
+		return PersistedInventoryPlacementV2Evaluation{}, errInvalidRequest
+	}
+	if validateRequirements(requirements) != nil {
+		return PersistedInventoryPlacementV2Evaluation{}, errInvalidRequest
+	}
+	if requirements.GPU.Runtime != "" {
+		return PersistedInventoryPlacementV2Evaluation{}, errors.New("unsupported_policy_placement_gpu_runtime")
+	}
+	byInstance := make(map[string]PlacementPolicy, len(policy.Policies))
+	for _, value := range policy.Policies {
+		byInstance[value.InstanceID] = value
+	}
+	decisions := make([]PersistedInventoryPlacementV2Decision, 0, len(observation.Devices))
+	for _, candidate := range observation.Devices {
+		value, present := byInstance[candidate.InstanceID]
+		if !present || value.DeviceID != candidate.Device.DeviceID ||
+			value.Revision != candidate.Revision || value.Generation != candidate.Generation ||
+			value.HeartbeatSequence != candidate.HeartbeatSequence {
+			return PersistedInventoryPlacementV2Evaluation{}, ErrPlacementPolicyRegistryBinding
+		}
+		decision := evaluatePersistedInventoryV2CandidateWithPolicy(candidate, requirements, evaluatedAtMS, value)
+		decisions = append(decisions, decision)
+	}
+	if len(byInstance) != len(observation.Devices) {
+		return PersistedInventoryPlacementV2Evaluation{}, ErrPlacementPolicyRegistryBinding
+	}
+	sort.Slice(decisions, func(left, right int) bool {
+		if decisions[left].DeviceID == decisions[right].DeviceID {
+			return decisions[left].InstanceID < decisions[right].InstanceID
+		}
+		return decisions[left].DeviceID < decisions[right].DeviceID
+	})
+	eligible := 0
+	for _, decision := range decisions {
+		if decision.MatchesRequirements {
+			eligible++
+		}
+	}
+	return PersistedInventoryPlacementV2Evaluation{
+		SchemaVersion:       PersistedInventoryPlacementV2SchemaVersion,
+		EvaluationMode:      PersistedInventoryPlacementV2EvaluationMode,
+		SourceSchemaVersion: SessionDeviceObservationInventoryV2SchemaVersion,
+		Owner:               owner, EvaluatedAtMS: evaluatedAtMS, Notice: PersistedInventoryPlacementV2Notice,
+		Decisions: decisions, EligibleCandidateCount: eligible,
+		SelectedDeviceID: nil, SelectedInstanceID: nil,
+		Authority: PersistedInventoryPlacementBatchAuthority{},
+	}, nil
+}
+
 func evaluatePersistedInventoryV2Candidate(
 	candidate SessionPlacementCandidateV2,
 	requirements Requirements,
 	evaluatedAtMS int64,
+) PersistedInventoryPlacementV2Decision {
+	device := candidate.Device
+	return evaluatePersistedInventoryV2CandidateWithPolicy(candidate, requirements, evaluatedAtMS, PlacementPolicy{
+		DeviceID: candidate.Device.DeviceID, InstanceID: candidate.InstanceID,
+		DataResidencyZones: device.DataResidencyZones, TrustZone: device.TrustZone,
+		SandboxLevels: device.SandboxLevels, ConcurrencyLimit: device.ConcurrencyLimit,
+		ActiveConcurrency: device.ActiveConcurrency,
+	})
+}
+
+func evaluatePersistedInventoryV2CandidateWithPolicy(
+	candidate SessionPlacementCandidateV2,
+	requirements Requirements,
+	evaluatedAtMS int64,
+	policy PlacementPolicy,
 ) PersistedInventoryPlacementV2Decision {
 	device := candidate.Device
 	reasons := make([]string, 0, 12)
@@ -165,19 +249,19 @@ func evaluatePersistedInventoryV2Candidate(
 			}
 		}
 	}
-	if !intersects(requirements.DataResidencyZones, device.DataResidencyZones) {
+	if !intersects(requirements.DataResidencyZones, policy.DataResidencyZones) {
 		reasons = append(reasons, "data_residency_zone_mismatch")
 	}
-	if device.TrustZone == "unknown" {
+	if policy.TrustZone == "unknown" {
 		reasons = append(reasons, "trust_zone_unconfirmed")
-	} else if trustRankValue(device.TrustZone) < trustRankValue(requirements.MinimumTrustZone) {
+	} else if trustRankValue(policy.TrustZone) < trustRankValue(requirements.MinimumTrustZone) {
 		reasons = append(reasons, "trust_zone_below_minimum")
 	}
-	if !sandboxFloorMet(requirements.SandboxFloor, device.SandboxLevels) {
+	if !sandboxFloorMet(requirements.SandboxFloor, policy.SandboxLevels) {
 		reasons = append(reasons, "sandbox_floor_unmet")
 	}
-	if device.ActiveConcurrency > device.ConcurrencyLimit ||
-		requirements.ConcurrencySlots > device.ConcurrencyLimit-device.ActiveConcurrency {
+	if policy.ActiveConcurrency > policy.ConcurrencyLimit ||
+		requirements.ConcurrencySlots > policy.ConcurrencyLimit-policy.ActiveConcurrency {
 		reasons = append(reasons, "concurrency_capacity_insufficient")
 	}
 	sort.Strings(reasons)

@@ -12,11 +12,14 @@ pub enum DeviceCommand {
     RunnerLeaseFencingPreview { input: String },
     ExecutionLeaseCheckpointPreview { input: String },
     RunnerDispatchPlanPreview { input: String },
+    RunnerAttemptBoundaryPreview { input: String },
     ClientSessionViewPreview { input: String },
     ClientInstanceResourceViewPreview { input: String },
+    ClientInstanceSchedulerSelectionPreview { input: String },
     CredentialCandidatePreview { input: String },
     RunnerExecutionIntentPreview { input: String },
     SessionRunnerReceiptPreview { input: String },
+    SessionRunnerReceiptHistoryPreview { input: String },
     RunObservedPreview { input: String },
     RunExecutionEvidencePreview { input: String },
     RunAttemptLeaseDispatchPreflightPreview { input: String },
@@ -62,13 +65,20 @@ pub(super) fn parse(tokens: &mut VecDeque<String>) -> Result<Command, String> {
             parse_execution_lease_checkpoint_preview(tokens)
         }
         Some("runner-dispatch-plan-preview") => parse_runner_dispatch_plan_preview(tokens),
+        Some("runner-attempt-boundary-preview") => parse_runner_attempt_boundary_preview(tokens),
         Some("client-session-view-preview") => parse_client_session_view_preview(tokens),
         Some("client-instance-resource-view-preview") => {
             parse_client_instance_resource_view_preview(tokens)
         }
+        Some("client-instance-scheduler-selection-preview") => {
+            parse_client_instance_scheduler_selection_preview(tokens)
+        }
         Some("credential-candidate-preview") => parse_credential_candidate_preview(tokens),
         Some("runner-execution-intent-preview") => parse_runner_execution_intent_preview(tokens),
         Some("session-runner-receipt-preview") => parse_session_runner_receipt_preview(tokens),
+        Some("session-runner-receipt-history-preview") => {
+            parse_session_runner_receipt_history_preview(tokens)
+        }
         Some("run-observed-preview") => parse_run_observed_preview(tokens),
         Some("run-execution-evidence-preview") => parse_run_execution_evidence_preview(tokens),
         Some("run-attempt-lease-dispatch-preflight-preview") => {
@@ -251,6 +261,34 @@ fn parse_runner_dispatch_plan_preview(tokens: &mut VecDeque<String>) -> Result<C
     }))
 }
 
+fn parse_runner_attempt_boundary_preview(tokens: &mut VecDeque<String>) -> Result<Command, String> {
+    let mut input = None;
+    while let Some(option) = tokens.pop_front() {
+        match option.as_str() {
+            "--input" if input.is_none() => input = Some(next_value(tokens, "--input")?),
+            "--input" => return Err("--input was specified more than once".into()),
+            value => {
+                return Err(format!(
+                    "unknown device runner-attempt-boundary-preview option '{value}'\n\n{}",
+                    usage()
+                ));
+            }
+        }
+    }
+    let input = input.ok_or_else(|| {
+        format!(
+            "device runner-attempt-boundary-preview requires --input FILE|-\n\n{}",
+            usage()
+        )
+    })?;
+    if input.trim().is_empty() {
+        return Err("--input requires a non-empty FILE|- value".into());
+    }
+    Ok(Command::Device(
+        DeviceCommand::RunnerAttemptBoundaryPreview { input },
+    ))
+}
+
 fn parse_client_session_view_preview(tokens: &mut VecDeque<String>) -> Result<Command, String> {
     let mut input = None;
     while let Some(option) = tokens.pop_front() {
@@ -306,6 +344,36 @@ fn parse_client_instance_resource_view_preview(
     }
     Ok(Command::Device(
         DeviceCommand::ClientInstanceResourceViewPreview { input },
+    ))
+}
+
+fn parse_client_instance_scheduler_selection_preview(
+    tokens: &mut VecDeque<String>,
+) -> Result<Command, String> {
+    let mut input = None;
+    while let Some(option) = tokens.pop_front() {
+        match option.as_str() {
+            "--input" if input.is_none() => input = Some(next_value(tokens, "--input")?),
+            "--input" => return Err("--input was specified more than once".into()),
+            value => {
+                return Err(format!(
+                    "unknown device client-instance-scheduler-selection-preview option '{value}'\n\n{}",
+                    usage()
+                ));
+            }
+        }
+    }
+    let input = input.ok_or_else(|| {
+        format!(
+            "device client-instance-scheduler-selection-preview requires --input FILE|-\n\n{}",
+            usage()
+        )
+    })?;
+    if input.trim().is_empty() {
+        return Err("--input requires a non-empty FILE|- value".into());
+    }
+    Ok(Command::Device(
+        DeviceCommand::ClientInstanceSchedulerSelectionPreview { input },
     ))
 }
 
@@ -446,6 +514,36 @@ fn parse_session_runner_receipt_preview(tokens: &mut VecDeque<String>) -> Result
     }
     Ok(Command::Device(
         DeviceCommand::SessionRunnerReceiptPreview { input },
+    ))
+}
+
+fn parse_session_runner_receipt_history_preview(
+    tokens: &mut VecDeque<String>,
+) -> Result<Command, String> {
+    let mut input = None;
+    while let Some(option) = tokens.pop_front() {
+        match option.as_str() {
+            "--input" if input.is_none() => input = Some(next_value(tokens, "--input")?),
+            "--input" => return Err("--input was specified more than once".into()),
+            value => {
+                return Err(format!(
+                    "unknown device session-runner-receipt-history-preview option '{value}'\n\n{}",
+                    usage()
+                ));
+            }
+        }
+    }
+    let input = input.ok_or_else(|| {
+        format!(
+            "device session-runner-receipt-history-preview requires --input FILE|-\n\n{}",
+            usage()
+        )
+    })?;
+    if input.trim().is_empty() {
+        return Err("--input requires a non-empty FILE|- value".into());
+    }
+    Ok(Command::Device(
+        DeviceCommand::SessionRunnerReceiptHistoryPreview { input },
     ))
 }
 

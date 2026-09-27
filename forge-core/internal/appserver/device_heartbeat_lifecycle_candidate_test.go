@@ -31,6 +31,29 @@ func TestLifecycleHeartbeatCandidateDefaultsClosedAndProductionRemainsUnregister
 	}
 }
 
+func TestLifecycleHeartbeatCandidateRequiresExplicitUnsignedFixtureOptIn(t *testing.T) {
+	identity, authenticator := newConversationTestIdentity(t)
+	root := t.TempDir()
+	if err := statefs.EnsurePrivateDir(root); err != nil {
+		t.Fatal(err)
+	}
+	handler := authenticator.Handler(newLifecycleRegistryCandidateRoutes(&lifecycleRegistryCandidateConfig{
+		Enabled: true,
+		Store:   newPersistedLifecycleRegistryCandidateStore(filepath.Join(root, "lifecycle-registry.json")),
+		Heartbeat: &lifecycleHeartbeatCandidateConfig{
+			Enabled:      true,
+			Now:          func(context.Context) (uint64, error) { return 120_000, nil },
+			StaleAfterMS: 90_000,
+		},
+	}))
+	response := requestConversationAPI(t, handler, identity, http.MethodPost,
+		lifecycleHeartbeatCandidatePath, lifecycleHeartbeatCandidateScope,
+		"application/json", "", lifecycleHeartbeatCandidateBody(t, identity.issuer, "account-42", "tenant-slate", 1, 1, 0))
+	if response.Code != http.StatusNotFound || response.Body.String() != string(notFoundBody) {
+		t.Fatalf("unsigned fixture without explicit opt-in status=%d body=%q", response.Code, response.Body.String())
+	}
+}
+
 func TestLifecycleHeartbeatCandidateUsesServerClockAndPersistsCandidateImage(t *testing.T) {
 	identity, authenticator := newConversationTestIdentity(t)
 	root := t.TempDir()
@@ -43,7 +66,8 @@ func TestLifecycleHeartbeatCandidateUsesServerClockAndPersistsCandidateImage(t *
 		Enabled: true,
 		Store:   newPersistedLifecycleRegistryCandidateStore(path),
 		Heartbeat: &lifecycleHeartbeatCandidateConfig{
-			Enabled: true,
+			Enabled:            true,
+			AllowUnsignedProof: true,
 			Now: func(_ context.Context) (uint64, error) {
 				clockCalls++
 				return 120_000, nil
@@ -113,9 +137,10 @@ func TestLifecycleHeartbeatCandidateRejectsApprovalProofReplayAndScopeViolations
 		Enabled: true,
 		Store:   newPersistedLifecycleRegistryCandidateStore(path),
 		Heartbeat: &lifecycleHeartbeatCandidateConfig{
-			Enabled:      true,
-			Now:          func(context.Context) (uint64, error) { return 120_000, nil },
-			StaleAfterMS: 90_000,
+			Enabled:            true,
+			AllowUnsignedProof: true,
+			Now:                func(context.Context) (uint64, error) { return 120_000, nil },
+			StaleAfterMS:       90_000,
 		},
 	}
 	handler := authenticator.Handler(newLifecycleRegistryCandidateRoutes(config))

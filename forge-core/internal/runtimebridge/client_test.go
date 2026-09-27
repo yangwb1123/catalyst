@@ -3,6 +3,7 @@ package runtimebridge
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	model "forgeos/forge-core/internal/runtimebridge/model"
@@ -118,6 +119,25 @@ func TestOwnedConversationUsesV2ResponseEnvelope(t *testing.T) {
 		Issuer: "https://identity.example", Subject: "account-42", TenantID: "tenant-slate",
 	}, model.ConversationScope{Kind: "global"}, "shared", "create-key-1"); err == nil || err.(*Error).Code != "invalid_runtime_response" {
 		t.Fatalf("write accepted a v1 response envelope: %v", err)
+	}
+}
+
+func TestGetOwnedConversationRejectsForeignResponseID(t *testing.T) {
+	appState := filepath.Join(t.TempDir(), "server-state")
+	runtimeState := filepath.Join(t.TempDir(), "runtime-state")
+	makeDirectory(t, appState)
+	makeDirectory(t, runtimeState)
+	executable := filepath.Join(t.TempDir(), "runtime-rpc")
+	database := filepath.Join(runtimeState, "hub.sqlite3")
+	result := `{"conversation":{"id":"conversation-other","scope":{"kind":"global"},"title":"shared","created_at_ms":1,"updated_at_ms":1},"aggregate_version":1}`
+	writeFake(t, executable, responseScript(database, result))
+	client, err := New(Config{Executable: executable, AppServerStateDir: appState, RuntimeStateDir: runtimeState})
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner := model.Owner{Issuer: "https://identity.example", Subject: "account-42", TenantID: "tenant-slate"}
+	if _, err := client.GetOwnedConversation(context.Background(), owner, "conversation-requested"); err == nil || err.(*Error).Code != "invalid_runtime_response" {
+		t.Fatalf("foreign Conversation detail response was accepted: %v", err)
 	}
 }
 
@@ -246,6 +266,52 @@ func TestOwnedAggregateVersionsUseSafeIntegerBoundary(t *testing.T) {
 	importResult.AggregateVersion = maxSafeJSONInteger + 1
 	if validOwnedConversationImport(unsafeImport, importResult, "Shared", 0) {
 		t.Fatal("import aggregate above JSON-safe integer accepted")
+	}
+}
+
+func TestOwnedPromptAppendBindsTheExpectedAggregateVersion(t *testing.T) {
+	valid := []byte(`{"prompt":{"id":"prompt-1","conversation_id":"conversation-1","role":"user","content":"ship it","created_at_ms":1},"aggregate_version":8,"replayed":false}`)
+	result := ownedPromptAppendResult{Prompt: model.ConversationPrompt{
+		ID: "prompt-1", ConversationID: "conversation-1", Role: "user", Content: "ship it", CreatedAtMS: 1,
+	}, AggregateVersion: 8}
+	if !validOwnedPromptAppendForVersion(valid, result, "conversation-1", "ship it", 7) {
+		t.Fatal("exactly-next Prompt aggregate version was rejected")
+	}
+
+	for _, aggregateVersion := range []uint64{7, 9} {
+		mutated := result
+		mutated.AggregateVersion = aggregateVersion
+		data, err := json.Marshal(mutated)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if validOwnedPromptAppendForVersion(data, mutated, "conversation-1", "ship it", 7) {
+			t.Fatalf("non-next Prompt aggregate version %d was accepted", aggregateVersion)
+		}
+	}
+	if validOwnedPromptAppendForVersion(valid, result, "conversation-1", "ship it", maxSafeJSONInteger) {
+		t.Fatal("JSON-unsafe next Prompt aggregate version was accepted")
+	}
+}
+
+func TestAppendOwnedPromptRejectsAJumpedAggregateVersionAtTheBridge(t *testing.T) {
+	appState := filepath.Join(t.TempDir(), "server-state")
+	runtimeState := filepath.Join(t.TempDir(), "runtime-state")
+	makeDirectory(t, appState)
+	makeDirectory(t, runtimeState)
+	executable := filepath.Join(t.TempDir(), "runtime-rpc")
+	database := filepath.Join(runtimeState, "hub.sqlite3")
+	result := `{"prompt":{"id":"prompt-1","conversation_id":"conversation-1","role":"user","content":"ship it","created_at_ms":1},"aggregate_version":9,"replayed":false}`
+	writeFake(t, executable, responseScript(database, result))
+	client, err := New(Config{Executable: executable, AppServerStateDir: appState, RuntimeStateDir: runtimeState})
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner := model.Owner{Issuer: "https://identity.example", Subject: "account-42", TenantID: "tenant-slate"}
+	if _, _, _, err := client.AppendOwnedPrompt(
+		context.Background(), owner, "conversation-1", "ship it", "prompt-key", 7,
+	); err == nil || err.(*Error).Code != "invalid_runtime_response" {
+		t.Fatalf("jumped Prompt aggregate version was accepted: %v", err)
 	}
 }
 

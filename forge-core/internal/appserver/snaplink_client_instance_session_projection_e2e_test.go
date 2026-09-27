@@ -2,11 +2,11 @@ package appserver
 
 // This opt-in integration test proves the client-instance session projection
 // against two real owner Conversations and the existing Rust Runtime CLI/TUI
-// transport.  The instance view is still an injected candidate observation;
-// production route wiring remains closed and is asserted as 404.
+// transport. The CLI create and Prompt write also read the injected
+// owner-bound observations before their storage POSTs; production route wiring
+// remains closed and is asserted as 404.
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -56,27 +56,46 @@ func TestSnaplinkAuthenticatedClientInstanceSessionProjectionE2EWhenConfigured(t
 
 	identity, authenticator := newMultiPrincipalConversationTestIdentity(t)
 	source := &staticClientInstanceSessionViewSource{}
+	resourceSource := &fixtureClientInstanceResourceViewSource{}
+	owner := deviceplacement.Owner{
+		Issuer: identity.issuer, Subject: "account-42", TenantID: "tenant-slate",
+	}
+	// The explicit CLI Prompt-write guard reads the same owner-bound inventory
+	// image as the resource projection. Keep this candidate separate from the
+	// ordinary session/resource sources so the test can prove the extra read
+	// occurs only after the pair has converged.
+	inventory := fixtureDeviceInventoryReadV2Value(owner)
+	inventory.Devices[0].Device.ReservationState = "none"
+	inventory.Devices[0].Device.GPUs = []deviceplacement.GPUDeclarationV2{}
+	inventorySource := &fixtureDeviceInventoryReadV2Source{value: inventory}
 	sessions := newAuthenticatedSessionRoutesWithObservationCandidates(bridge, nil)
 	testRoutes := http.NewServeMux()
+	testRoutes.Handle(deviceInventoryReadCandidateV2Path,
+		newDeviceInventoryReadCandidateV2Routes(&deviceInventoryReadCandidateV2Config{
+			Enabled: true,
+			Source:  inventorySource,
+		}))
 	testRoutes.Handle(clientInstanceSessionViewCandidatePath,
 		newClientInstanceSessionViewCandidateRoutes(&clientInstanceSessionViewCandidateConfig{
 			Enabled: true,
 			Source:  source,
+		}))
+	testRoutes.Handle(clientInstanceResourceViewCandidatePath,
+		newClientInstanceResourceViewCandidateRoutes(&clientInstanceResourceViewCandidateConfig{
+			Enabled: true,
+			Source:  resourceSource,
 		}))
 	testRoutes.Handle("/", sessions)
 	recorder := &conversationHTTPRecorder{}
 	server := httptest.NewServer(authenticator.Handler(recorder.wrap(testRoutes)))
 	t.Cleanup(server.Close)
 
-	const scopes = "forge:conversations:read forge:conversations:write"
+	const scopes = "forge:conversations:read forge:conversations:write " + deviceInventoryReadCandidateScope
 	ownerToken := tokenForIndependentClient(identity, scopes, "projection-http-owner")
 	httpClient := &http.Client{Timeout: 20 * time.Second}
 	first := createSharedConversationAsClientA(t, httpClient, server.URL, ownerToken)
 	second := createProjectionConversation(t, httpClient, server.URL, ownerToken)
 
-	owner := deviceplacement.Owner{
-		Issuer: identity.issuer, Subject: "account-42", TenantID: "tenant-slate",
-	}
 	view, err := deviceplacement.ObserveClientInstanceSessionView(
 		deviceplacement.ClientInstanceSessionViewRequest{
 			Owner: owner,
@@ -111,6 +130,12 @@ func TestSnaplinkAuthenticatedClientInstanceSessionProjectionE2EWhenConfigured(t
 	// The test server has no registration store. The candidate receives this
 	// explicit observation only after the real Conversations exist.
 	source.value = view
+	resourceView := fixtureClientInstanceResourceView(owner)
+	resourceView.Instances = append([]deviceplacement.ClientInstanceSessionViewInstance(nil), view.Instances...)
+	if err := resourceView.Validate(); err != nil {
+		t.Fatalf("build paired resource view: %v", err)
+	}
+	resourceSource.value = resourceView
 
 	servedViewResponse := doConversationClientRequest(
 		t, httpClient, server.URL, ownerToken, http.MethodGet,
@@ -166,6 +191,63 @@ func TestSnaplinkAuthenticatedClientInstanceSessionProjectionE2EWhenConfigured(t
 			}
 		})
 	}
+	assertCLIInstanceCreatePreflight(t, executable, server.URL, ownerToken, recorder)
+	conversationOnlyToken := tokenForIndependentClient(
+		identity, "forge:conversations:read forge:conversations:write", "projection-cli-instance-no-device-scope",
+	)
+	assertCLIInstanceCreateRequiresResourceScope(t, executable, server.URL, conversationOnlyToken, recorder)
+	assertTUIInstanceCreatePreflight(
+		t, executable, server.URL,
+		tokenForIndependentClient(identity, scopes, "projection-tui-instance-create"), recorder,
+	)
+
+	// The CLI must carry the selected instance boundary through an actual
+	// owner-scoped Prompt write, not only through the session list. Online
+	// filtering reads the converged session/resource pair and inventory/resource
+	// image before the single Prompt POST; the selected CLI row declares the first
+	// Conversation.
+	cliWriteStart := len(recorder.snapshot())
+	cliPromptOutput, cliPromptStderr, err := runForgeRuntimeCLI(
+		t, executable, server.URL,
+		tokenForIndependentClient(identity, scopes, "projection-cli-write"),
+		t.TempDir(), "--json", "--idempotency-key", "projection-cli-instance-prompt", "remote", "prompts", "add", first.ID,
+		"--expected-version", "1", "--instance", "client-cli-001",
+		"Prompt submitted from authenticated CLI instance",
+	)
+	if err != nil || !strings.Contains(cliPromptOutput, "Prompt submitted from authenticated CLI instance") {
+		t.Fatalf("CLI instance Prompt write failed: stderr=%q stdout=%q err=%v", cliPromptStderr, cliPromptOutput, err)
+	}
+	cliWriteRequests := recorder.snapshot()[cliWriteStart:]
+	if len(cliWriteRequests) != 5 ||
+		cliWriteRequests[0].path != clientInstanceSessionViewCandidatePath ||
+		cliWriteRequests[1].path != clientInstanceResourceViewCandidatePath ||
+		cliWriteRequests[2].path != deviceInventoryReadCandidateV2Path ||
+		cliWriteRequests[3].path != clientInstanceResourceViewCandidatePath ||
+		cliWriteRequests[len(cliWriteRequests)-1].path != conversationCollectionPath+"/"+first.ID+"/prompts" {
+		t.Fatalf("CLI instance Prompt write did not converge pair and inventory/resource before POST: %#v", cliWriteRequests)
+	}
+	hiddenWriteStart := len(recorder.snapshot())
+	_, hiddenPromptStderr, hiddenPromptErr := runForgeRuntimeCLI(
+		t, executable, server.URL,
+		tokenForIndependentClient(identity, scopes, "projection-cli-hidden-write"),
+		t.TempDir(), "--json", "--idempotency-key", "projection-cli-hidden-prompt", "remote", "prompts", "add", second.ID,
+		"--expected-version", "1", "--instance", "client-web-001",
+		"Prompt hidden from authenticated Web instance",
+	)
+	if hiddenPromptErr == nil || !strings.Contains(hiddenPromptStderr, "no Prompt request was sent") {
+		t.Fatalf("hidden CLI instance Prompt write was not rejected: stderr=%q err=%v", hiddenPromptStderr, hiddenPromptErr)
+	}
+	for _, request := range recorder.snapshot()[hiddenWriteStart:] {
+		if request.path == deviceInventoryReadCandidateV2Path ||
+			request.path == conversationCollectionPath+"/"+second.ID+"/prompts" {
+			t.Fatalf("hidden CLI instance Prompt write escaped the pair guard: %#v", request)
+		}
+	}
+	if inventorySource.calls != 1 || inventorySource.owner != (model.Owner{
+		Issuer: identity.issuer, Subject: owner.Subject, TenantID: owner.TenantID,
+	}) {
+		t.Fatalf("CLI Prompt inventory source=%#v; want one owner-bound read and no hidden read", inventorySource)
+	}
 
 	// The shared Flutter Sessions surface is used by Web, desktop App, and
 	// Mobile. Exercise each declared instance independently so this acceptance
@@ -208,12 +290,13 @@ func TestSnaplinkAuthenticatedClientInstanceSessionProjectionE2EWhenConfigured(t
 		t.Run("console_"+projection.name, func(t *testing.T) {
 			runForgeConsoleClientInstanceSessionProjectionE2EWithToken(
 				t, server.URL, projection.token, owner, projection.instanceID,
-				projection.visible, projection.hidden, projection.prompt,
+				projection.visible, projection.hidden, projection.prompt, recorder,
 			)
 		})
 	}
 
 	firstTUIRequest := len(recorder.snapshot())
+	tuiInventoryCallsBefore := inventorySource.calls
 	tuiToken := tokenForIndependentClient(identity, scopes, "projection-tui")
 	tuiOutput := runForgeRuntimeClientInstanceProjectionTUI(t, executable, server.URL, tuiToken, second.ID)
 	if !strings.Contains(tuiOutput, `Client-instance filter set to "client-tui-001"`) ||
@@ -221,7 +304,12 @@ func TestSnaplinkAuthenticatedClientInstanceSessionProjectionE2EWhenConfigured(t
 		!strings.Contains(tuiOutput, "Prompt submitted from client-instance TUI") {
 		t.Fatalf("TUI projection output omitted filter or Prompt receipt: %q", tuiOutput)
 	}
-	assertClientInstanceProjectionRequestsHaveNoExecutionOrDeviceEffects(t, recorder.snapshot()[firstTUIRequest:])
+	tuiRequests := recorder.snapshot()[firstTUIRequest:]
+	assertRuntimeTUIInstancePromptFreshness(t, tuiRequests, second.ID)
+	assertClientInstanceProjectionRequestsHaveNoExecutionOrDeviceEffects(t, tuiRequests)
+	if inventorySource.calls != tuiInventoryCallsBefore+2 {
+		t.Fatalf("TUI instance Prompt inventory source calls=%d; want initial plus one fresh owner-bound read after %d", inventorySource.calls, tuiInventoryCallsBefore)
+	}
 
 	readerOutput, readerStderr, err := runForgeRuntimeCLI(
 		t, executable, server.URL,
@@ -248,7 +336,8 @@ func TestSnaplinkAuthenticatedClientInstanceSessionProjectionE2EWhenConfigured(t
 	}
 	var firstHistory model.ConversationPromptPage
 	if err := json.Unmarshal([]byte(firstHistoryOutput), &firstHistory); err != nil ||
-		firstHistory.ConversationID != first.ID || len(firstHistory.Prompts) != 2 ||
+		firstHistory.ConversationID != first.ID || len(firstHistory.Prompts) != 3 ||
+		!promptPageContains(firstHistory, "Prompt submitted from authenticated CLI instance") ||
 		!promptPageContains(firstHistory, "Prompt submitted from authenticated desktop App instance") ||
 		!promptPageContains(firstHistory, "Prompt submitted from authenticated Web Console instance") {
 		t.Fatalf("first client Prompt history=%#v stdout=%q decode=%v", firstHistory, firstHistoryOutput, err)
@@ -263,6 +352,20 @@ func TestSnaplinkAuthenticatedClientInstanceSessionProjectionE2EWhenConfigured(t
 	if productionResponse.Code != http.StatusNotFound {
 		t.Fatalf("production client-instance session projection route status=%d body=%q", productionResponse.Code, productionResponse.Body.String())
 	}
+	resourceRequest := httptest.NewRequest(http.MethodGet, clientInstanceResourceViewCandidatePath, nil)
+	resourceRequest.Header.Set("Authorization", "Bearer "+ownerToken)
+	resourceResponse := httptest.NewRecorder()
+	production.ServeHTTP(resourceResponse, resourceRequest)
+	if resourceResponse.Code != http.StatusNotFound {
+		t.Fatalf("production client-instance resource projection route status=%d body=%q", resourceResponse.Code, resourceResponse.Body.String())
+	}
+	inventoryRequest := httptest.NewRequest(http.MethodGet, deviceInventoryReadCandidateV2Path, nil)
+	inventoryRequest.Header.Set("Authorization", "Bearer "+ownerToken)
+	inventoryResponse := httptest.NewRecorder()
+	production.ServeHTTP(inventoryResponse, inventoryRequest)
+	if inventoryResponse.Code != http.StatusNotFound {
+		t.Fatalf("production inventory projection route status=%d body=%q", inventoryResponse.Code, inventoryResponse.Body.String())
+	}
 }
 
 func promptPageContains(page model.ConversationPromptPage, content string) bool {
@@ -272,94 +375,6 @@ func promptPageContains(page model.ConversationPromptPage, content string) bool 
 		}
 	}
 	return false
-}
-
-// runForgeConsoleClientInstanceSessionProjectionE2EWithToken drives the real
-// shared Web/App/Mobile Flutter Sessions Gate against the same authenticated
-// candidate mux and real owner Conversations used by this test. The candidate
-// is supplied only through this opt-in harness; normal Gate construction
-// remains request-free and the production route remains closed.
-func runForgeConsoleClientInstanceSessionProjectionE2EWithToken(
-	t *testing.T,
-	apiURL, token string,
-	owner deviceplacement.Owner,
-	instanceID string,
-	visible, hidden model.Conversation,
-	prompt string,
-) {
-	t.Helper()
-	consoleRoot := os.Getenv("SNAPLINK_CONSOLE_ROOT")
-	if consoleRoot == "" {
-		workingDirectory, err := os.Getwd()
-		if err != nil {
-			t.Fatalf("resolve Console repository: %v", err)
-		}
-		repoRoot := filepath.Clean(filepath.Join(workingDirectory, "..", "..", ".."))
-		consoleRoot = filepath.Join(filepath.Dir(repoRoot), "workspace", "demo", "snaplink-console")
-	}
-	if _, err := os.Stat(filepath.Join(consoleRoot, "pubspec.yaml")); err != nil {
-		t.Fatalf("SNAPLINK_CONSOLE_ROOT must name the Flutter Console repository: %v", err)
-	}
-	flutterBinary := os.Getenv("FLUTTER_BIN")
-	if flutterBinary == "" {
-		flutterBinary = "flutter"
-	}
-	flutterExecutable, err := exec.LookPath(flutterBinary)
-	if err != nil {
-		t.Fatalf("Flutter is required for client-instance session projection E2E: %v", err)
-	}
-	inputJSON, err := json.Marshal(struct {
-		APIURL              string                `json:"api_url"`
-		AccessToken         string                `json:"access_token"`
-		Owner               deviceplacement.Owner `json:"owner"`
-		InstanceID          string                `json:"instance_id"`
-		VisibleConversation string                `json:"visible_conversation_id"`
-		HiddenConversation  string                `json:"hidden_conversation_id"`
-		VisibleTitle        string                `json:"visible_title"`
-		HiddenTitle         string                `json:"hidden_title"`
-		Prompt              string                `json:"prompt"`
-	}{
-		APIURL: apiURL, AccessToken: token, Owner: owner,
-		InstanceID:          instanceID,
-		VisibleConversation: visible.ID,
-		HiddenConversation:  hidden.ID,
-		VisibleTitle:        visible.Title,
-		HiddenTitle:         hidden.Title,
-		Prompt:              prompt,
-	})
-	if err != nil {
-		t.Fatalf("encode Flutter client-instance session projection input: %v", err)
-	}
-	temporaryDirectory := t.TempDir()
-	inputPath := filepath.Join(temporaryDirectory, "client-instance-session-projection-input.json")
-	if err := os.WriteFile(inputPath, inputJSON, 0o600); err != nil {
-		t.Fatalf("write private Flutter client-instance projection input: %v", err)
-	}
-	flutterHome := filepath.Join(temporaryDirectory, "home")
-	if err := os.Mkdir(flutterHome, 0o700); err != nil {
-		t.Fatalf("create isolated Flutter home: %v", err)
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
-	defer cancel()
-	command := exec.CommandContext(ctx, flutterExecutable,
-		"test", "--no-pub",
-		"--dart-define=FORGE_CONVERSATIONS_API_ORIGIN="+apiURL,
-		"test/forge_client_instance_session_projection_e2e_test.dart")
-	command.Dir = consoleRoot
-	command.Env = append(
-		forgeConsoleTestEnvironment(inputPath, flutterHome),
-		"FORGE_CLIENT_INSTANCE_SESSION_PROJECTION_E2E_INPUT="+inputPath,
-	)
-	var stdoutBuffer, stderrBuffer boundedCLIOutput
-	command.Stdout = &stdoutBuffer
-	command.Stderr = &stderrBuffer
-	if err := command.Run(); err != nil {
-		t.Fatalf("Flutter client-instance session projection E2E failed: stdout=%q stderr=%q err=%v",
-			stdoutBuffer.String(), stderrBuffer.String(), err)
-	}
-	if stdoutBuffer.exceeded || stderrBuffer.exceeded {
-		t.Fatalf("Flutter client-instance session projection output exceeded the size limit")
-	}
 }
 
 func createProjectionConversation(
@@ -383,65 +398,4 @@ func createProjectionConversation(
 	}
 	_ = response.Body.Close()
 	return conversation
-}
-
-func runForgeRuntimeClientInstanceProjectionTUI(
-	t *testing.T,
-	executable, apiURL, accessToken, conversationID string,
-) string {
-	t.Helper()
-	ptyScript, err := exec.LookPath("script")
-	if err != nil {
-		t.Fatalf("client-instance projection TUI E2E requires script: %v", err)
-	}
-	home := t.TempDir()
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	command := exec.CommandContext(ctx, ptyScript,
-		"-q", "-e", "-f", "/dev/null", "--", executable, "remote", "tui")
-	command.Dir = home
-	command.Env = forgeRuntimeCLIEnvironment(apiURL, accessToken, home)
-	command.Stdin = strings.NewReader(
-		"client-instances session-view\n" +
-			"instance client-tui-001\n" +
-			"open " + conversationID + "\n" +
-			"prompt Prompt submitted from client-instance TUI\n" +
-			"quit\n",
-	)
-	var stdoutBuffer, stderrBuffer boundedCLIOutput
-	command.Stdout = &stdoutBuffer
-	command.Stderr = &stderrBuffer
-	if err := command.Run(); err != nil {
-		t.Fatalf("client-instance projection TUI failed: stdout=%q stderr=%q err=%v", stdoutBuffer.String(), stderrBuffer.String(), err)
-	}
-	if stdoutBuffer.exceeded || stderrBuffer.exceeded {
-		t.Fatalf("client-instance projection TUI output exceeded the size limit")
-	}
-	return stdoutBuffer.String()
-}
-
-func assertClientInstanceProjectionRequestsHaveNoExecutionOrDeviceEffects(
-	t *testing.T,
-	requests []recordedConversationRequest,
-) {
-	t.Helper()
-	for _, request := range requests {
-		path := strings.ToLower(request.path)
-		forbidden := []string{
-			"/api/v1/devices",
-			"/api/v1/device-placement",
-			"/api/v1/reservation",
-			"/api/v1/dispatch",
-			"/api/v1/runner",
-			"/api/v1/execution",
-		}
-		for _, fragment := range forbidden {
-			if strings.Contains(path, fragment) {
-				t.Fatalf("client-instance projection issued forbidden device/execution request: %#v", request)
-			}
-		}
-		if request.path == conversationCollectionPath && strings.Contains(request.query, "instance") {
-			t.Fatalf("client-instance projection leaked an instance query into the authenticated session list: %#v", request)
-		}
-	}
 }

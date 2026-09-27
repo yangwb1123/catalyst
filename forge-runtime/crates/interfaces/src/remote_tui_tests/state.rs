@@ -162,6 +162,79 @@ fn missing_client_instance_view_renders_an_empty_projection() {
 }
 
 #[test]
+fn mixed_client_instance_session_and_resource_views_fail_closed() {
+    let session: Value = serde_json::from_str(include_str!(
+        "../../../../../docs/contracts/fixtures/forge-client-instance-session-view-v1.json"
+    ))
+    .unwrap();
+    let mut resource: Value = serde_json::from_str(include_str!(
+        "../../../../../docs/contracts/fixtures/forge-client-instance-resource-view-v1.json"
+    ))
+    .unwrap();
+    resource["instances"][0]["observed_at_ms"] = json!(200501_u64);
+    let mut state = TuiState {
+        conversations: vec![super::super::OwnedConversationEntry {
+            conversation: json!({
+                "id": "conversation-001",
+                "title": "Shared",
+                "scope": {"kind": "global"}
+            }),
+            aggregate_version: 1,
+        }],
+        selected_id: Some("conversation-001".into()),
+        client_instance_filter: Some("client-web-001".into()),
+        client_instance_session_view_observed: Some(session),
+        client_instance_resource_view_observed: Some(resource),
+        history_loaded_for: Some("conversation-001".into()),
+        prompt_history: vec![json!({
+            "id": "prompt-001",
+            "conversation_id": "conversation-001",
+            "role": "user",
+            "content": "must not survive mixed refresh",
+            "created_at_ms": 1
+        })],
+        ..TuiState::default()
+    };
+
+    state.reconcile_client_instance_selection();
+
+    assert!(state.active_client_instance_view().is_none());
+    assert!(state.selected_id.is_none());
+    assert!(state.prompt_history.is_empty());
+}
+
+#[test]
+fn nonconverged_client_instance_observations_render_a_blocking_status_and_retain_metadata() {
+    let session: Value = serde_json::from_str(include_str!(
+        "../../../../../docs/contracts/fixtures/forge-client-instance-session-view-v1.json"
+    ))
+    .unwrap();
+    let resource: Value = serde_json::from_str(include_str!(
+        "../../../../../docs/contracts/fixtures/forge-client-instance-resource-view-v1.json"
+    ))
+    .unwrap();
+    let mut state = TuiState {
+        client_instance_filter: Some("client-web-001".into()),
+        client_instance_session_view_observed: Some(session),
+        client_instance_resource_view_observed: Some(resource),
+        ..TuiState::default()
+    };
+
+    state.mark_client_instance_observations_not_converged();
+
+    assert!(state.client_instance_session_view_observed.is_some());
+    assert!(state.client_instance_resource_view_observed.is_some());
+    assert!(state.active_client_instance_view().is_none());
+    let mut output = Vec::new();
+    render(&state, &mut output).unwrap();
+    let output = String::from_utf8(output).unwrap();
+    assert!(output.contains(
+        "Client-instance observations are not converged; instance filtering and private reads through this client-instance projection are blocked"
+    ));
+    assert!(output.contains("Existing observation metadata is retained for display only"));
+}
+
+#[test]
 fn revoking_one_client_instance_view_preserves_the_filter_and_private_clear() {
     let view: Value = serde_json::from_str(include_str!(
         "../../../../../docs/contracts/fixtures/forge-client-instance-session-view-v1.json"

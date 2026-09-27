@@ -73,6 +73,10 @@ fi
 
 (
   cd "$REPO_ROOT/forge-core"
+  # §698/§699/§703 are exercised inside the shared native lifecycle: the
+  # Android-host/iOS-host cold starts consume authenticated SSE, lossless
+  # inventory-v2 observation, and one planning-only scheduler preview while
+  # the request allowlist has no lease/reservation/dispatch/execution effect.
   FORGE_RUNTIME_BIN="$FORGE_RUNTIME_BIN" \
     FORGE_CONSOLE_E2E=1 \
     FORGE_BROWSER_E2E="$FORGE_BROWSER_E2E" \

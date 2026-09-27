@@ -11,7 +11,7 @@ const MAX_REVIEWED_MACRO_SOURCE_BYTES: u64 = 1024 * 1024;
 const EXPECTED_MACRO_SOURCES: &[(&str, &str)] = &[
     (
         "crates/domain/src/hub_store_owned_methods.rs",
-        "1607f00aa37d9fbaa73b0aa5b8453f367327a603167dc4de6c3b36115bde3459",
+        "13955f55f79c104293d13f824374d7eb37d2eab261875b1270ad6ad3a44c411e",
     ),
     (
         "crates/domain/src/device_registry/model.rs",

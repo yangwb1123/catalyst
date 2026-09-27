@@ -308,7 +308,16 @@ fn lifecycle_consumer_gate_preserves_unrelated_code_and_old_attempt_tests() {
 #[test]
 fn lifecycle_reviewed_module_is_exact_and_cannot_be_reused_by_path() {
     let module = Some("crates/domain/src/execution/mod.rs");
-    let declaration = "pub mod attempt; pub mod attempt_lifecycle; pub mod fabric;";
+    let declaration = "pub mod attempt; pub mod attempt_lifecycle; pub mod fabric;
+        pub mod lease; pub mod reconciliation;
+        pub mod run_attempt_lease_dispatch_preflight; pub mod runner_command;
+        pub mod runner_attempt_boundary;
+        pub mod runner_execution_intent; pub mod session_runner_receipt;
+        #[cfg(test)] mod attempt_lifecycle_contract;
+        #[cfg(test)] mod lease_checkpoint_contract;
+        #[cfg(test)] mod reconciliation_contract;
+        #[cfg(test)] mod run_attempt_lease_dispatch_preflight_contract;
+        #[cfg(test)] mod runner_attempt_boundary_contract;";
     assert!(check_lifecycle_consumer_fixture(declaration, module).is_ok());
     assert!(check_lifecycle_consumer_fixture(declaration, None).is_err());
     for addition in [

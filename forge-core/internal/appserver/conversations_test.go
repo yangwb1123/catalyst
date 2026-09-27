@@ -38,11 +38,12 @@ type fakeConversationBackend struct {
 	detailID    string
 	detail      model.OwnedConversationEntry
 
-	createCalls int
-	createOwner model.Owner
-	createScope model.ConversationScope
-	createTitle string
-	createKey   string
+	createCalls  int
+	createOwner  model.Owner
+	createScope  model.ConversationScope
+	createTitle  string
+	createKey    string
+	createResult model.Conversation
 
 	importCalls   int
 	importOwner   model.Owner
@@ -129,9 +130,13 @@ func (backend *fakeConversationBackend) CreateOwnedConversation(
 	if backend.err != nil {
 		return model.Conversation{}, backend.err
 	}
-	return model.Conversation{
+	result := model.Conversation{
 		ID: "conversation-created", Scope: scope, Title: title, CreatedAtMS: 11, UpdatedAtMS: 11,
-	}, nil
+	}
+	if backend.createResult.ID != "" {
+		result = backend.createResult
+	}
+	return result, nil
 }
 
 func (backend *fakeConversationBackend) ImportOwnedConversation(

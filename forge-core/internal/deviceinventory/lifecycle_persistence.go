@@ -24,6 +24,7 @@ type PersistedEnrollmentHeartbeatLifecycleState struct {
 	Inventory           PersistedInventoryState           `json:"inventory"`
 	ApprovalCandidate   *deviceapproval.State             `json:"approval_candidate,omitempty"`
 	CredentialCandidate *devicecredential.State           `json:"credential_candidate,omitempty"`
+	ChallengeCandidate  *deviceidentity.Challenge         `json:"challenge_candidate,omitempty"`
 }
 
 // LifecyclePersistenceError is a stable value-level result for the future
@@ -154,6 +155,7 @@ func CommitPersistedEnrollmentHeartbeatLifecycle(
 	if current != nil {
 		next.ApprovalCandidate = cloneApprovalCandidate(current.ApprovalCandidate)
 		next.CredentialCandidate = cloneCredentialCandidate(current.CredentialCandidate)
+		next.ChallengeCandidate = cloneChallengeCandidate(current.ChallengeCandidate)
 	}
 	return next, result, nil
 }
@@ -173,6 +175,9 @@ func validatePersistedEnrollmentHeartbeatLifecycle(value PersistedEnrollmentHear
 		return err
 	}
 	if err := validateCredentialCandidate(value.CredentialCandidate, value.Owner, value.Device); err != nil {
+		return err
+	}
+	if err := validateChallengeCandidate(value.ChallengeCandidate); err != nil {
 		return err
 	}
 	return nil
@@ -223,6 +228,28 @@ func validateCredentialCandidate(
 }
 
 func cloneCredentialCandidate(candidate *devicecredential.State) *devicecredential.State {
+	if candidate == nil {
+		return nil
+	}
+	copy := *candidate
+	return &copy
+}
+
+// validateChallengeCandidate keeps one issued challenge as a value-only
+// candidate attached to the already owner/device-bound lifecycle image. The
+// enclosing state supplies the owner and device scope; this value validates
+// only the challenge shape and expiry window.
+func validateChallengeCandidate(candidate *deviceidentity.Challenge) error {
+	if candidate == nil {
+		return nil
+	}
+	if err := candidate.Validate(); err != nil {
+		return ErrLifecycleInvalidState
+	}
+	return nil
+}
+
+func cloneChallengeCandidate(candidate *deviceidentity.Challenge) *deviceidentity.Challenge {
 	if candidate == nil {
 		return nil
 	}

@@ -20,10 +20,15 @@ func pendingIntentPromptNumericJSONSafe(prompt model.ConversationPrompt) bool {
 	return prompt.CreatedAtMS <= maxSafeJSONInteger
 }
 
-func pendingIntentSubmissionJSONSafe(result intentmodel.PendingRunIntentSubmissionResult) bool {
+func pendingIntentSubmissionJSONSafe(
+	result intentmodel.PendingRunIntentSubmissionResult,
+	expectedVersion uint64,
+) bool {
 	return pendingIntentPromptNumericJSONSafe(result.Prompt) &&
 		pendingIntentNumericJSONSafe(result.Intent) &&
-		pendingIntentEventNumericJSONSafe(result.InitialEvent)
+		pendingIntentEventNumericJSONSafe(result.InitialEvent) &&
+		(result.Replayed ||
+			(expectedVersion < maxSafeJSONInteger && result.Intent.AggregateVersion == expectedVersion+1))
 }
 
 func pendingIntentPageJSONSafe(page intentmodel.OwnedPendingRunIntentPage) bool {

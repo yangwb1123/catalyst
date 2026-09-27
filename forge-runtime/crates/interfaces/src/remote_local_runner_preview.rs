@@ -159,10 +159,26 @@ pub(super) fn conversation_and_intent(value: &Value) -> Result<(&str, &str), Rem
     Ok((conversation_id, intent_id))
 }
 
+/// Returns the target Runner instance declared by a valid local preview
+/// request. The value is still only a caller supplied observation; the TUI
+/// uses it to keep an explicit client-instance projection from previewing a
+/// target absent from its current resource image.
+pub(super) fn target_id(value: &Value) -> Result<&str, RemoteError> {
+    validate_request(value)?;
+    let target_id = value
+        .get("intent")
+        .and_then(|intent| intent.get("execution_intent"))
+        .and_then(|execution_intent| execution_intent.get("target_id"))
+        .and_then(Value::as_str)
+        .ok_or_else(|| RemoteError("remote local Runner preview target is invalid".into()))?;
+    validation::validate_entity_id(target_id, "Runner target")?;
+    Ok(target_id)
+}
+
 /// Validates the complete request envelope against the pure domain rules.
 /// In particular, the lease proof is checked against the supplied grant and
 /// the explicit observation time, but the grant is never adopted or renewed.
-fn validate_request(value: &Value) -> Result<(), RemoteError> {
+pub(super) fn validate_request(value: &Value) -> Result<(), RemoteError> {
     let request = decode_request(value)?;
     if request.observed_at_ms == 0 || request.observed_at_ms > MAX_SAFE_INTEGER {
         return Err(invalid_request());

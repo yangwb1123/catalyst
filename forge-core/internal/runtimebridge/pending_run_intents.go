@@ -24,7 +24,7 @@ func (client *Client) SubmitOwnedPromptRunIntent(
 ) (intentmodel.PendingRunIntentSubmissionResult, error) {
 	if !validOwner(owner) || !validEntityID(conversationID) || strings.TrimSpace(content) == "" ||
 		len(content) > maxPromptContentBytes || !validPendingIntentIdempotencyKey(idempotencyKey) ||
-		expectedVersion > maxSafeJSONInteger || !validEntityID(profile.ID) {
+		expectedVersion == 0 || expectedVersion > maxSafeJSONInteger || !validEntityID(profile.ID) {
 		return intentmodel.PendingRunIntentSubmissionResult{}, &Error{Code: "invalid_owned_prompt_request"}
 	}
 	ownerCopy, versionCopy, digestCopy := owner, expectedVersion, profile.SHA256
@@ -38,7 +38,9 @@ func (client *Client) SubmitOwnedPromptRunIntent(
 	}
 	var result intentmodel.PendingRunIntentSubmissionResult
 	if err := decodeStrict(response, &result); err != nil ||
-		!validPendingRunIntentSubmission(response, result, conversationID, content, profile.ID) {
+		!validPendingRunIntentSubmissionForVersion(
+			response, result, conversationID, content, profile.ID, expectedVersion,
+		) {
 		return intentmodel.PendingRunIntentSubmissionResult{}, &Error{Code: "invalid_runtime_response"}
 	}
 	return result, nil
@@ -146,6 +148,26 @@ func validPendingRunIntentSubmission(
 		return false
 	}
 	return requireObjectFieldSet(root["initial_event"], "event_id", "seq", "emitted_at_ms", "type") == nil
+}
+
+// validPendingRunIntentSubmissionForVersion binds a fresh admission receipt
+// to the caller's Conversation CAS. A replay deliberately returns the
+// original receipt, so its historical aggregate version and profile remain
+// authoritative even when the retry's expected version or selected profile
+// has changed.
+func validPendingRunIntentSubmissionForVersion(
+	data []byte,
+	result intentmodel.PendingRunIntentSubmissionResult,
+	conversationID string,
+	content string,
+	requestedProfileID string,
+	expectedVersion uint64,
+) bool {
+	if !validPendingRunIntentSubmission(data, result, conversationID, content, requestedProfileID) {
+		return false
+	}
+	return result.Replayed ||
+		(expectedVersion < maxSafeJSONInteger && result.Intent.AggregateVersion == expectedVersion+1)
 }
 
 func validPromptForPendingIntent(prompt model.ConversationPrompt, conversationID, content string) bool {

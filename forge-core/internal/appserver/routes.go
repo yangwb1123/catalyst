@@ -83,7 +83,7 @@ func (r routes) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 		r.health.ServeHTTP(writer, request)
 		return
 	}
-	if r.sessions != nil && (strings.HasPrefix(path, "/api/v1/conversations") || strings.HasPrefix(path, executionConsentCollectionPath+"/") || path == conversationChangesPath || path == lifecycleRegistryCandidatePath || path == devicePlacementPreviewPath || path == devicePlacementRegistryCandidatePath || path == schedulerSelectionPreviewPath || path == deviceInventoryReadCandidatePath || path == deviceInventoryReadCandidateV2Path || path == clientInstanceSessionViewCandidatePath || path == clientInstanceResourceViewCandidatePath) {
+	if r.sessions != nil && (strings.HasPrefix(path, "/api/v1/conversations") || strings.HasPrefix(path, executionConsentCollectionPath+"/") || path == conversationChangesPath || path == conversationChangesStreamPath || path == lifecycleRegistryCandidatePath || path == devicePlacementPreviewPath || path == devicePlacementRegistryCandidatePath || path == schedulerSelectionPreviewPath || path == schedulerSelectionLeasePath || path == schedulerSelectionLeaseRenewalPath || path == schedulerSelectionLeaseReleasePath || path == deviceInventoryReadCandidatePath || path == deviceInventoryReadCandidateV2Path || path == clientInstanceSessionViewCandidatePath || path == clientInstanceResourceViewCandidatePath) {
 		r.sessions.ServeHTTP(writer, request)
 		return
 	}

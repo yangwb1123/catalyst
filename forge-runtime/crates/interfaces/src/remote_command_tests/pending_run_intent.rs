@@ -156,6 +156,98 @@ async fn pending_run_intent_submit_rejects_receipt_binding_drift() {
 }
 
 #[tokio::test]
+async fn pending_run_intent_submit_rejects_stale_or_jumped_fresh_receipts() {
+    for aggregate_version in [7_u64, 9_u64] {
+        let (client, server) = spawn_mock_server(vec![ExpectedRequest {
+            request_prefix: "POST /api/v1/conversations/conversation-1/run-intents ",
+            required_headers: &["idempotency-key: intent-key"],
+            body_fields: json!({"content": "run this", "expected_version": 7}),
+            response_status: "201 Created",
+            response: json!({
+                "prompt": {
+                    "id": "prompt-1",
+                    "conversation_id": "conversation-1",
+                    "role": "user",
+                    "content": "run this",
+                    "created_at_ms": 20
+                },
+                "intent": {
+                    "intent_id": "intent-1",
+                    "conversation_id": "conversation-1",
+                    "prompt_id": "prompt-1",
+                    "project_id": "project-1",
+                    "profile_id": "profile-1",
+                    "submitted_at_ms": 20,
+                    "aggregate_version": aggregate_version,
+                    "latest_sequence": 1,
+                    "status": "pending"
+                },
+                "initial_event": {
+                    "event_id": "event-1",
+                    "seq": 1,
+                    "emitted_at_ms": 20,
+                    "type": "submitted"
+                },
+                "replayed": false
+            }),
+        }]);
+        let error = client
+            .submit_pending_run_intent("conversation-1", 7, "run this", "intent-key")
+            .await
+            .unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "Forge API returned an invalid pending Run-intent submission"
+        );
+        server.join().unwrap();
+    }
+}
+
+#[tokio::test]
+async fn pending_run_intent_submit_allows_replayed_historical_receipt() {
+    let (client, server) = spawn_mock_server(vec![ExpectedRequest {
+        request_prefix: "POST /api/v1/conversations/conversation-1/run-intents ",
+        required_headers: &["idempotency-key: intent-key"],
+        body_fields: json!({"content": "run this", "expected_version": 99}),
+        response_status: "200 OK",
+        response: json!({
+            "prompt": {
+                "id": "prompt-1",
+                "conversation_id": "conversation-1",
+                "role": "user",
+                "content": "run this",
+                "created_at_ms": 20
+            },
+            "intent": {
+                "intent_id": "intent-1",
+                "conversation_id": "conversation-1",
+                "prompt_id": "prompt-1",
+                "project_id": "project-1",
+                "profile_id": "profile-original",
+                "submitted_at_ms": 20,
+                "aggregate_version": 3,
+                "latest_sequence": 1,
+                "status": "pending"
+            },
+            "initial_event": {
+                "event_id": "event-1",
+                "seq": 1,
+                "emitted_at_ms": 20,
+                "type": "submitted"
+            },
+            "replayed": true
+        }),
+    }]);
+    let result = client
+        .submit_pending_run_intent("conversation-1", 99, "run this", "intent-key")
+        .await
+        .unwrap();
+    assert_eq!(result["replayed"], true);
+    assert_eq!(result["intent"]["aggregate_version"], 3);
+    server.join().unwrap();
+}
+
+#[tokio::test]
 async fn pending_run_intent_reads_reject_unknown_fields() {
     let (client, server) = spawn_mock_server(vec![ExpectedRequest {
         request_prefix: "GET /api/v1/conversations/conversation-1/run-intents?limit=25 ",

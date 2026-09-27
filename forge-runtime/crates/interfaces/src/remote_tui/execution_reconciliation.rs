@@ -48,6 +48,13 @@ pub(super) async fn preview<W: Write>(
         .map_err(io_error)?;
         return Ok(());
     }
+    if !super::commands::ensure_conversation_visible_to_client_instance(
+        state,
+        &conversation_id,
+        writer,
+    )? {
+        return Ok(());
+    }
     let response = match client
         .preview_execution_reconciliation(&conversation_id, &run_id, &request)
         .await

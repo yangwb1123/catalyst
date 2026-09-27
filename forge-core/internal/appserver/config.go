@@ -63,13 +63,29 @@ type Config struct {
 	// It is only read by an accepted activation and never grants instance or
 	// session authority.
 	DeviceClientInstanceSessionViewFile string
-	BrowserOrigins                      []string
-	TLSCertificateFile                  string
-	TLSPrivateKeyFile                   string
-	JWKSHTTPClient                      *http.Client
-	JWKSMaxBytes                        int64
-	JWKSRefreshInterval                 time.Duration
-	IntrospectHTTPClient                *http.Client
+	// DeviceExecutionLeaseRegistryFile is an optional owner-private durable
+	// reservation image. It is accepted only by EXECUTE activation with the P4
+	// decision/evidence already evaluated by DeviceFabricActivation. An empty
+	// value keeps lease claims closed even when EXECUTE admission is mounted.
+	DeviceExecutionLeaseRegistryFile string
+	// DeviceExecutionPolicyRegistryFile is the explicit owner-private policy
+	// image that completes lifecycle observations for scheduler lease claims.
+	// It is accepted only by EXECUTE activation; without it, the lease route
+	// remains fail-closed when residency, trust, sandbox, or concurrency values
+	// are unknown.
+	DeviceExecutionPolicyRegistryFile string
+	// RunnerExecutionAuthority is a separate, default-closed declaration for a
+	// future live Runner effect boundary. It is never sufficient on its own:
+	// Config validation requires the accepted EXECUTE/P4 device-fabric gate and
+	// the independent authority decision before this value can be retained.
+	RunnerExecutionAuthority *devicefabricgate.RunnerAuthorityConfig
+	BrowserOrigins           []string
+	TLSCertificateFile       string
+	TLSPrivateKeyFile        string
+	JWKSHTTPClient           *http.Client
+	JWKSMaxBytes             int64
+	JWKSRefreshInterval      time.Duration
+	IntrospectHTTPClient     *http.Client
 }
 
 // Validate rejects ambiguous state and unsafe listener, TLS, auth, or browser-origin policy.
@@ -110,6 +126,47 @@ func (c Config) Validate() error {
 		}
 		if err := validatePrivateFilePath(c.DeviceClientInstanceSessionViewFile); err != nil {
 			return fmt.Errorf("device client-instance session view file: %w", err)
+		}
+	}
+	if c.DeviceExecutionLeaseRegistryFile != "" {
+		if c.DeviceFabricActivation == nil || devicefabricgate.Evaluate(*c.DeviceFabricActivation).Mode != devicefabricgate.ModeExecute {
+			return fmt.Errorf("device execution lease registry file requires EXECUTE device fabric activation")
+		}
+		if err := validatePrivateFilePath(c.DeviceExecutionLeaseRegistryFile); err != nil {
+			return fmt.Errorf("device execution lease registry file: %w", err)
+		}
+	}
+	if c.DeviceExecutionPolicyRegistryFile != "" {
+		if c.DeviceFabricActivation == nil || devicefabricgate.Evaluate(*c.DeviceFabricActivation).Mode != devicefabricgate.ModeExecute {
+			return fmt.Errorf("device execution policy registry file requires EXECUTE device fabric activation")
+		}
+		if err := validatePrivateFilePath(c.DeviceExecutionPolicyRegistryFile); err != nil {
+			return fmt.Errorf("device execution policy registry file: %w", err)
+		}
+	}
+	if c.RunnerExecutionAuthority != nil && !c.RunnerExecutionAuthority.Enabled {
+		if c.RunnerExecutionAuthority.AuthorityID != "" || c.RunnerExecutionAuthority.Decision != (devicefabricgate.Decision{}) {
+			return fmt.Errorf("Runner execution authority disabled configuration must be zero-valued")
+		}
+		// An explicit zero/disabled declaration is equivalent to nil. It
+		// keeps the effect boundary closed without requiring an accepted
+		// activation bundle merely to spell out the default.
+	}
+	if c.RunnerExecutionAuthority != nil && c.RunnerExecutionAuthority.Enabled {
+		if c.DeviceExecutionLeaseRegistryFile == "" {
+			return fmt.Errorf("Runner execution authority requires an execution lease registry file")
+		}
+		activation := devicefabricgate.Request{}
+		if c.DeviceFabricActivation != nil {
+			activation = *c.DeviceFabricActivation
+		}
+		gate := devicefabricgate.EvaluateRunnerExecution(devicefabricgate.RunnerExecutionGateRequest{
+			Activation: activation,
+			Authority:  *c.RunnerExecutionAuthority,
+		})
+		if !gate.Allowed {
+			return fmt.Errorf("Runner execution authority blocked (%s): %s",
+				gate.Mode, strings.Join(gate.Reasons, ","))
 		}
 	}
 	if err := validateStateDir(c.StateDir); err != nil {

@@ -3,6 +3,7 @@ package appserver
 import (
 	"context"
 	"encoding/json"
+	"forgeos/forge-core/internal/deviceplacement"
 	model "forgeos/forge-core/internal/runtimebridge/model"
 	"net/http"
 	"os"
@@ -21,6 +22,7 @@ import (
 func runForgeMobileSharedSessionE2EWithToken(
 	t *testing.T,
 	platform, prompt, idempotencyKey, apiURL, token, rotatedToken, conversationID string,
+	clientInstanceID string, sessionViewJSON, resourceViewJSON, inventoryV2JSON json.RawMessage,
 	expectedVersion, afterCursor uint64,
 ) {
 	t.Helper()
@@ -45,20 +47,27 @@ func runForgeMobileSharedSessionE2EWithToken(
 		t.Fatalf("Flutter is required for the host-side native lifecycle E2E: %v", err)
 	}
 	inputJSON, err := json.Marshal(struct {
-		Platform           string `json:"platform"`
-		APIURL             string `json:"api_url"`
-		AccessToken        string `json:"access_token"`
-		RotatedAccessToken string `json:"rotated_access_token"`
-		ConversationID     string `json:"conversation_id"`
-		ExpectedVersion    uint64 `json:"expected_version"`
-		AfterCursor        uint64 `json:"after_cursor"`
-		Prompt             string `json:"prompt"`
-		IdempotencyKey     string `json:"idempotency_key"`
+		Platform           string          `json:"platform"`
+		APIURL             string          `json:"api_url"`
+		AccessToken        string          `json:"access_token"`
+		RotatedAccessToken string          `json:"rotated_access_token"`
+		ConversationID     string          `json:"conversation_id"`
+		ClientInstanceID   string          `json:"client_instance_id"`
+		SessionView        json.RawMessage `json:"session_view"`
+		ResourceView       json.RawMessage `json:"resource_view"`
+		InventoryV2        json.RawMessage `json:"inventory_v2"`
+		ExpectedVersion    uint64          `json:"expected_version"`
+		AfterCursor        uint64          `json:"after_cursor"`
+		Prompt             string          `json:"prompt"`
+		IdempotencyKey     string          `json:"idempotency_key"`
 	}{
 		Platform: platform, APIURL: apiURL, AccessToken: token,
 		RotatedAccessToken: rotatedToken,
-		ConversationID:     conversationID, ExpectedVersion: expectedVersion,
-		AfterCursor: afterCursor, Prompt: prompt, IdempotencyKey: idempotencyKey,
+		ConversationID:     conversationID, ClientInstanceID: clientInstanceID,
+		SessionView: sessionViewJSON, ResourceView: resourceViewJSON,
+		InventoryV2:     inventoryV2JSON,
+		ExpectedVersion: expectedVersion,
+		AfterCursor:     afterCursor, Prompt: prompt, IdempotencyKey: idempotencyKey,
 	})
 	if err != nil {
 		t.Fatalf("encode host-side native lifecycle input: %v", err)
@@ -92,6 +101,36 @@ func runForgeMobileSharedSessionE2EWithToken(
 	if stdoutBuffer.exceeded || stderrBuffer.exceeded {
 		t.Fatalf("Flutter host-side native lifecycle E2E output exceeded the size limit")
 	}
+}
+
+// nativeMobileInventoryV2JSON returns the exact test-only observation passed
+// to the host-side cold-start input. Validate the owner, device/instance
+// tuple, and all-false authority here so the Flutter process cannot silently
+// receive a fixture that differs from the authenticated candidate route.
+func nativeMobileInventoryV2JSON(
+	t *testing.T,
+	issuer, subject, tenant string,
+) json.RawMessage {
+	t.Helper()
+	owner := deviceplacement.Owner{Issuer: issuer, Subject: subject, TenantID: tenant}
+	value := fixtureDeviceInventoryReadV2Value(owner)
+	if err := deviceplacement.ValidateSessionDeviceObservationInventoryV2(value); err != nil {
+		t.Fatalf("validate native inventory v2 fixture: %v", err)
+	}
+	if value.Owner != owner || len(value.Devices) != 1 ||
+		value.Devices[0].InstanceID != "runner-a" ||
+		value.Devices[0].Device.DeviceID != "device-a" ||
+		value.Devices[0].Device.Owner != owner ||
+		value.Devices[0].Device.ReservationState != "reserved" ||
+		len(value.Devices[0].Device.GPUs) != 2 || value.ExecutionAuthorized ||
+		value.ReservationCreated || value.DispatchPerformed {
+		t.Fatalf("native inventory v2 fixture owner/tuple/authority mismatch: %#v", value)
+	}
+	body, err := json.Marshal(value)
+	if err != nil {
+		t.Fatalf("encode native inventory v2 fixture: %v", err)
+	}
+	return body
 }
 
 func readOwnedConversationAggregateVersion(
@@ -158,6 +197,22 @@ func readOwnedConversationCursor(
 	return 0
 }
 
+func readNativeClientInstanceViewJSON(
+	t *testing.T, client *http.Client, baseURL, token, path string,
+) json.RawMessage {
+	t.Helper()
+	response := snaplinkConversationRequest(t, client, baseURL, token, http.MethodGet, path, "", "")
+	body := []byte(readConversationClientBody(t, response))
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("read client-instance view path=%s status=%d body=%q", path, response.StatusCode, body)
+	}
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(body, &object); err != nil || object == nil {
+		t.Fatalf("decode client-instance view path=%s: %v body=%q", path, err, body)
+	}
+	return json.RawMessage(body)
+}
+
 func assertForgeMobileSharedSessionRequestsArePromptOnly(
 	t *testing.T,
 	requests []recordedConversationRequest,
@@ -167,14 +222,22 @@ func assertForgeMobileSharedSessionRequestsArePromptOnly(
 	t.Helper()
 	promptPath := conversationCollectionPath + "/" + conversationID + "/prompts"
 	want := []recordedConversationRequest{
+		{method: http.MethodGet, path: "/api/v1/client-instances/session-view"},
+		{method: http.MethodGet, path: "/api/v1/client-instances/resource-view"},
+		{method: http.MethodGet, path: deviceInventoryReadCandidateV2Path},
+		{method: http.MethodPost, path: schedulerSelectionPreviewPath},
 		{method: http.MethodGet, path: conversationCollectionPath, query: "limit=50"},
 		{method: http.MethodGet, path: conversationChangesPath, query: "after_cursor=" + strconv.FormatUint(afterCursor, 10) + "&limit=128"},
 		{method: http.MethodGet, path: promptPath, query: "limit=100"},
 		{method: http.MethodPost, path: promptPath},
+		{method: http.MethodGet, path: "/api/v1/client-instances/session-view"},
+		{method: http.MethodGet, path: "/api/v1/client-instances/resource-view"},
+		{method: http.MethodGet, path: deviceInventoryReadCandidateV2Path},
+		{method: http.MethodPost, path: schedulerSelectionPreviewPath},
 		{method: http.MethodGet, path: conversationCollectionPath, query: "limit=50"},
 		{method: http.MethodPost, path: promptPath},
 		{method: http.MethodGet, path: promptPath, query: "limit=100"},
-		{method: http.MethodGet, path: conversationChangesPath, query: "after_cursor=" + strconv.FormatUint(afterCursor, 10) + "&limit=128"},
+		{method: http.MethodGet, path: conversationChangesStreamPath, query: "after_cursor=" + strconv.FormatUint(afterCursor, 10) + "&limit=128&wait_ms=0"},
 	}
 	if len(requests) != len(want) {
 		t.Fatalf("host-side native lifecycle issued %d requests; want exactly %d prompt/session calls: %#v",
@@ -185,10 +248,11 @@ func assertForgeMobileSharedSessionRequestsArePromptOnly(
 			t.Fatalf("host-side native lifecycle request[%d]=%#v want=%#v (devices, Run-intents, placement, and dispatch must remain untouched)",
 				index, request, want[index])
 		}
-		for _, forbidden := range []string{"/devices", "/run-intents", "placement", "dispatch"} {
-			if strings.Contains(request.path, forbidden) {
-				t.Fatalf("host-side native lifecycle touched a forbidden route: %#v", request)
-			}
+		if (strings.Contains(request.path, "/devices") && request.path != deviceInventoryReadCandidateV2Path) ||
+			(strings.Contains(request.path, "placement") && request.path != schedulerSelectionPreviewPath) ||
+			strings.Contains(request.path, "/run-intents") ||
+			strings.Contains(request.path, "dispatch") {
+			t.Fatalf("host-side native lifecycle touched a forbidden route (only scheduler preview is allowed under placement): %#v", request)
 		}
 	}
 }

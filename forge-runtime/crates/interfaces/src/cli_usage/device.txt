@@ -1,0 +1,38 @@
+usage:
+  forge-runtime [--state-dir PATH] [--json] [PATH|-C PATH|--group GROUP_ID]
+  forge-runtime [OPTIONS] [PATH|-C PATH|--group GROUP_ID] session list
+  forge-runtime [OPTIONS] [PATH|-C PATH|--group GROUP_ID] session new [--title TITLE]
+  forge-runtime [OPTIONS] prompt add SESSION_ID PROMPT|-
+  forge-runtime [OPTIONS] prompt list [SESSION_ID] [--limit N]
+  forge-runtime [--json] device placement dry-run --input FILE|-
+  forge-runtime [--json] device placement run-intent-preview
+    --input RUN_INTENT_FILE|- --placement-input SESSION_PLACEMENT_FILE|-
+  forge-runtime [--json] device attempt-request-preview --input FILE|-
+  forge-runtime [--json] device runner-receipt-preview --input FILE|-
+  forge-runtime [--json] device runner-lease-fencing-preview --input FILE|-
+  forge-runtime [--json] device execution-lease-checkpoint-preview --input FILE|-
+  forge-runtime [--json] device runner-dispatch-plan-preview --input FILE|-
+  forge-runtime [--json] device runner-attempt-boundary-preview --input FILE|-
+  forge-runtime [--json] device client-session-view-preview --input FILE|-
+  forge-runtime [--json] device client-instance-resource-view-preview --input FILE|-
+  forge-runtime [--json] device client-instance-scheduler-selection-preview --input FILE|-
+  forge-runtime [--json] device runner-execution-intent-preview --input FILE|-
+  forge-runtime [--json] device session-runner-receipt-preview --input FILE|-
+  forge-runtime [--json] device session-runner-receipt-history-preview --input FILE|-
+  forge-runtime [--json] device run-observed-preview --input FILE|-
+  forge-runtime [--json] device run-execution-evidence-preview --input FILE|-
+  forge-runtime [--json] device run-attempt-lease-dispatch-preflight-preview --input FILE|-
+  forge-runtime [--json] device heartbeat-persistence-preview --input FILE|-
+  forge-runtime [--json] device identity-proof-preview --input FILE|-
+  forge-runtime [--json] device credential-candidate-preview --input FILE|-
+  forge-runtime [--json] device inventory show --input FILE|-
+  forge-runtime [--json] device inventory persistence-preview --input FILE|-
+  forge-runtime [--json] device inventory persisted-observation --input FILE|-
+  forge-runtime [--json] device inventory persisted-observation-v2 --input FILE|-
+  forge-runtime [--json] device inventory status --input FILE|-
+  forge-runtime [--json] device inventory snapshot-canonical --input FILE|-
+  forge-runtime [--json] device inventory resource-summary --input FILE|-
+  forge-runtime [--json] device inventory session-observation --input FILE|-
+  forge-runtime [--json] device inventory placement-evaluation --input FILE|-
+  forge-runtime [--json] device inventory placement-batch-evaluation --input FILE|-
+  forge-runtime [--json] device inventory placement-evaluation-v2 --input FILE|-

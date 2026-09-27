@@ -374,6 +374,8 @@ func TestExecutionAdmissionAssemblyMountsOnlyConsentAndIntentSurface(t *testing.
 	for _, route := range []string{
 		conversationCollectionPath + "/conversation-1/runs/run-1/device-observation/preview",
 		conversationCollectionPath + "/conversation-1/runs/run-1/runner-receipt-observation/preview",
+		conversationCollectionPath + "/conversation-1/runs/run-1/runner-receipt-history/preview",
+		conversationCollectionPath + "/conversation-1/runs/run-1/runner-reconciliation/preview",
 		conversationCollectionPath + "/conversation-1/runs/run-1/attempt-lease-dispatch-preflight/preview",
 		conversationCollectionPath + "/conversation-1/runs/run-1/runner-dispatch-plan-preview",
 		conversationCollectionPath + "/conversation-1/runs/run-1/execution-reconciliation/preview",
@@ -388,6 +390,19 @@ func TestExecutionAdmissionAssemblyMountsOnlyConsentAndIntentSurface(t *testing.
 		schedulerSelectionPreviewPath, schedulerSelectionPreviewScope, "application/json", "", `{}`)
 	if response.Code != http.StatusBadRequest {
 		t.Fatalf("scheduler selection preview route status=%d body=%q", response.Code, response.Body.String())
+	}
+	historyPath := conversationCollectionPath + "/conversation-001/runs/run-001/runner-receipt-history/preview"
+	historyBody := sessionRunnerReceiptHistoryPreviewBody(t, identity)
+	response = requestConversationAPI(t, handler, identity, http.MethodPost, historyPath,
+		"forge:conversations:read", "application/json", "", historyBody)
+	if response.Code != http.StatusOK {
+		t.Fatalf("accepted history path status=%d body=%q", response.Code, response.Body.String())
+	}
+	reconciliationPath := conversationCollectionPath + "/conversation-001/runs/run-001/runner-reconciliation/preview"
+	response = requestConversationAPI(t, handler, identity, http.MethodPost, reconciliationPath,
+		"forge:conversations:read", "application/json", "", historyBody)
+	if response.Code != http.StatusOK {
+		t.Fatalf("accepted reconciliation path status=%d body=%q", response.Code, response.Body.String())
 	}
 }
 

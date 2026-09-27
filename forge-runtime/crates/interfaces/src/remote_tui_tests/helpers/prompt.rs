@@ -25,7 +25,7 @@ pub(super) fn serve_ambiguous_prompt_retry(listener: &TcpListener) {
     respond(
         &mut retry_stream,
         "201 Created",
-        &json!({"aggregate_version": 8, "replayed": true}),
+        &prompt_append_response("c-1", "p-1", "finish the shared task", 8, true),
     );
     let (mut history, request, _, _) = accept_request(listener);
     assert!(request.starts_with("GET /api/v1/conversations/c-1/prompts?"));
@@ -45,7 +45,7 @@ pub(super) fn receive_prompt_request(
 ) -> (std::net::TcpStream, String, String, Vec<u8>) {
     let (stream, request, headers, body) = accept_request(listener);
     assert!(request.starts_with("POST /api/v1/conversations/c-1/prompts "));
-    assert!(headers.contains("authorization: bearer test-token"));
+    assert!(headers.contains("authorization: bearer eyj"));
     assert!(headers.contains("idempotency-key: forge-tui-"));
     let prompt: Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(prompt["content"], "finish the shared task");
@@ -62,6 +62,22 @@ pub(super) fn serve_ambiguous_create_retry(listener: &TcpListener) {
     serve_conversation_page(
         listener,
         &json!({"conversations": [], "next_after_id": null, "has_more": false}),
+    );
+    let (mut detail, request, _, _) = accept_request(listener);
+    assert!(request.starts_with("GET /api/v1/conversations/c-2 "));
+    respond(
+        &mut detail,
+        "200 OK",
+        &json!({
+            "conversation": {
+                "id": "c-2",
+                "scope": {"kind": "project", "id": "prj_1"},
+                "title": "Shared session",
+                "created_at_ms": 10,
+                "updated_at_ms": 10
+            },
+            "aggregate_version": 1
+        }),
     );
     serve_prompt_for_created_session(listener);
 }
@@ -87,7 +103,13 @@ pub(super) fn serve_idempotent_create(listener: &TcpListener) {
     respond(
         &mut retry_stream,
         "201 Created",
-        &json!({"id": "c-2", "scope": {"kind": "project", "id": "prj_1"}, "title": "Shared session"}),
+        &json!({
+            "id": "c-2",
+            "scope": {"kind": "project", "id": "prj_1"},
+            "title": "Shared session",
+            "created_at_ms": 10,
+            "updated_at_ms": 10
+        }),
     );
 }
 
@@ -100,7 +122,7 @@ pub(super) fn serve_prompt_for_created_session(listener: &TcpListener) {
     respond(
         &mut stream,
         "201 Created",
-        &json!({"aggregate_version": 2, "replayed": false}),
+        &prompt_append_response("c-2", "p-1", "continue newly created session", 2, false),
     );
     let (mut history, request, _, _) = accept_request(listener);
     assert!(request.starts_with("GET /api/v1/conversations/c-2/prompts?"));
@@ -113,4 +135,24 @@ pub(super) fn serve_prompt_for_created_session(listener: &TcpListener) {
             "has_more": false
         }),
     );
+}
+
+pub(super) fn prompt_append_response(
+    conversation_id: &str,
+    prompt_id: &str,
+    content: &str,
+    aggregate_version: u64,
+    replayed: bool,
+) -> Value {
+    json!({
+        "prompt": {
+            "id": prompt_id,
+            "conversation_id": conversation_id,
+            "role": "user",
+            "content": content,
+            "created_at_ms": 10,
+        },
+        "aggregate_version": aggregate_version,
+        "replayed": replayed,
+    })
 }

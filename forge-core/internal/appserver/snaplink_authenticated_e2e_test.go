@@ -25,8 +25,9 @@ import (
 )
 
 const (
-	snaplinkForgeTestUser     = "snaplink-forge-user"
-	snaplinkForgeTestTenant   = "snaplink-forge-tenant"
+	snaplinkForgeTestUser   = "snaplink-forge-user"
+	snaplinkForgeTestTenant = "snaplink-forge-tenant"
+	// secret-scan:ignore — in-memory Snaplink test credential.
 	snaplinkForgeTestPassword = "snaplink-forge-password"
 	snaplinkForgeTestAudience = "forge-api"
 )
@@ -46,7 +47,7 @@ func TestSnaplinkAuthenticatedConversationOwnerParity(t *testing.T) {
 		t.Fatal(err)
 	}
 	clients := defaultimpl.NewMemoryClientStore()
-	forgeScopes := []string{"openid", "profile", "forge:conversations:read", "forge:conversations:write", deviceInventoryReadCandidateScope, devicePlacementRegistryCandidateScope, lifecycleRegistryCandidateReadScope}
+	forgeScopes := []string{"openid", "profile", "forge:conversations:read", "forge:conversations:write", deviceInventoryReadCandidateScope, devicePlacementRegistryCandidateScope, lifecycleRegistryCandidateReadScope, schedulerSelectionLeaseScope}
 	for _, clientID := range []string{"forge-console", "forge-cli"} {
 		clients.AddSeed(&sso.Client{
 			ID:                      clientID,
@@ -158,7 +159,7 @@ func snaplinkForgeLogin(t *testing.T, client *http.Client, issuer, clientID stri
 		"provider":   "password",
 		"client_id":  clientID,
 		"credential": map[string]string{"username": snaplinkForgeTestUser, "password": snaplinkForgeTestPassword},
-		"scope":      []string{"openid", "profile", "forge:conversations:read", "forge:conversations:write", deviceInventoryReadCandidateScope, devicePlacementRegistryCandidateScope, lifecycleRegistryCandidateReadScope},
+		"scope":      []string{"openid", "profile", "forge:conversations:read", "forge:conversations:write", deviceInventoryReadCandidateScope, devicePlacementRegistryCandidateScope, lifecycleRegistryCandidateReadScope, schedulerSelectionLeaseScope},
 		"resource":   []string{snaplinkForgeTestAudience},
 	})
 	if err != nil {

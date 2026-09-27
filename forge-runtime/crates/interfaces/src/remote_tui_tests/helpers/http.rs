@@ -12,6 +12,32 @@ pub(super) fn test_client(address: std::net::SocketAddr) -> RemoteClient {
     }
 }
 
+/// Builds the same bounded JWT shape used by the authenticated Prompt receipt
+/// client. Most TUI tests intentionally use an opaque token because they only
+/// exercise Core's bearer transport; Prompt receipt tests need a locally
+/// declared owner to project the content-free receipt.
+pub(super) fn receipt_test_client(address: std::net::SocketAddr) -> RemoteClient {
+    let mut client = test_client(address);
+    let header = URL_SAFE_NO_PAD.encode(br#"{"alg":"none"}"#);
+    let payload = URL_SAFE_NO_PAD.encode(
+        serde_json::to_vec(&json!({
+            "iss": "https://id.example",
+            "client_id": "forge-cli",
+            "sub": "user-1",
+            "tenant_id": "tenant-1",
+            "exp": SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("system clock is after the Unix epoch")
+                .as_secs() + 3600,
+            "aud": ["forge-api"],
+            "scopes": ["forge:conversations:read", "forge:conversations:write"],
+        }))
+        .expect("receipt test token claims encode"),
+    );
+    client.access_token = format!("{header}.{payload}.signature");
+    client
+}
+
 pub(super) fn serve_conversation_page(listener: &TcpListener, payload: &Value) {
     let (mut stream, request, _, _) = accept_request(listener);
     assert!(request.starts_with("GET /api/v1/conversations?"));

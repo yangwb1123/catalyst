@@ -324,6 +324,52 @@ async fn sync_keeps_the_cursor_when_selected_history_refresh_fails() {
 }
 
 #[cfg(unix)]
+#[tokio::test]
+async fn sync_drops_selected_session_when_prompt_history_is_rejected() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let (_config_root, cursor_store) = tui_checkpoint_store(address);
+    let server = thread::spawn(move || {
+        serve_conversation_page(&listener, &conversation_page(1));
+        let (mut initial_history, request, _, _) = accept_request(&listener);
+        assert!(request.starts_with("GET /api/v1/conversations/c-1/prompts?"));
+        respond(
+            &mut initial_history,
+            "200 OK",
+            &json!({"conversation_id": "c-1", "prompts": [], "has_more": false}),
+        );
+        let (mut changes, _, _, _) = accept_request(&listener);
+        respond(&mut changes, "200 OK", &owner_change_page());
+        serve_conversation_page(&listener, &conversation_page(2));
+        let (mut history, request, _, _) = accept_request(&listener);
+        assert!(request.starts_with("GET /api/v1/conversations/c-1/prompts?"));
+        respond(
+            &mut history,
+            "404 Not Found",
+            &json!({"code": "not_found", "message": "gone"}),
+        );
+    });
+    let mut client = test_client(address);
+    client.change_cursor = Some(cursor_store.clone());
+    let mut reader = Cursor::new("open c-1\nsync\nquit\n");
+    let mut writer = Vec::new();
+
+    run_with_io(&client, &mut reader, &mut writer)
+        .await
+        .unwrap();
+    server.join().unwrap();
+
+    let output = String::from_utf8(writer).unwrap();
+    assert!(
+        output.contains(
+            "Selected session was removed after its owner Prompt read was rejected."
+        ),
+        "{output}"
+    );
+    assert_eq!(cursor_store.load().unwrap(), 0);
+}
+
+#[cfg(unix)]
 pub(super) fn tui_checkpoint_store(
     coordinator: std::net::SocketAddr,
 ) -> (

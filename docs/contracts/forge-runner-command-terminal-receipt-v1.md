@@ -16,3 +16,9 @@ This is a value contract only. It does not execute a process, read a clock,
 persist a command or receipt, reserve a device, open a Runner transport, stage
 Vault artifacts, or authorize a remote task. ADR-0039 remains planning-only;
 P4 still requires a separately Accepted execution/security decision.
+
+The canonical fixture is mirrored byte-for-byte by Aero-ID, Aero-IM's audit
+connector, Aero-Vault's governance relay, and Snaplink Audit Governance. Their
+strict receiver tests recompute the digest and reject wire, proof, time,
+disposition, and authority drift; this compatibility check has no transport,
+persistence, lease, retry, or Audit side effect.

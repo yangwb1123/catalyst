@@ -114,6 +114,232 @@ async fn remote_tui_can_read_owner_bound_lossless_v2_inventory_candidate() {
 }
 
 #[tokio::test]
+async fn remote_tui_show_converged_commits_inventory_and_resource_pair() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let pair: Value = serde_json::from_str(include_str!(
+        "../../../../../docs/contracts/fixtures/forge-device-inventory-resource-convergence-v1.json"
+    ))
+    .unwrap();
+    let inventory = pair["inventory"].clone();
+    let resource = pair["resource_view"].clone();
+    let server = thread::spawn(move || {
+        serve_conversation_page(&listener, &conversation_page(1));
+
+        let (mut inventory_response, request, headers, body) = accept_request(&listener);
+        assert!(
+            request.starts_with("GET /api/v1/devices/observations/v2 "),
+            "{request}"
+        );
+        assert!(headers.contains("authorization: bearer test-token"));
+        assert!(body.is_empty());
+        respond(&mut inventory_response, "200 OK", &inventory);
+
+        let (mut resource_response, request, headers, body) = accept_request(&listener);
+        assert!(
+            request.starts_with("GET /api/v1/client-instances/resource-view "),
+            "{request}"
+        );
+        assert!(headers.contains("authorization: bearer test-token"));
+        assert!(body.is_empty());
+        respond(&mut resource_response, "200 OK", &resource);
+    });
+
+    let client = test_client(address);
+    let mut reader = Cursor::new("inventory show-converged\nquit\n");
+    let mut writer = Vec::new();
+    run_with_io(&client, &mut reader, &mut writer)
+        .await
+        .unwrap();
+    server.join().unwrap();
+
+    let output = String::from_utf8(writer).unwrap();
+    assert!(
+        output.contains(
+            "remote inventory/resource-convergence [forge.device-inventory-resource-convergence/v1] converged=true read_only=true"
+        ),
+        "{output}"
+    );
+    assert!(
+        output.contains("remote device inventory [forge.device-inventory-observation/v2]"),
+        "{output}"
+    );
+    assert!(
+        output.contains(
+            "remote client-instance/resource-view [forge.client-instance-resource-view/v1]"
+        ),
+        "{output}"
+    );
+    assert!(
+        output.contains("Inventory/resource observations converged; both snapshots committed."),
+        "{output}"
+    );
+}
+
+#[tokio::test]
+async fn remote_tui_inventory_convergence_reconciles_revoked_instance_selection() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let pair: Value = serde_json::from_str(include_str!(
+        "../../../../../docs/contracts/fixtures/forge-device-inventory-resource-convergence-v1.json"
+    ))
+    .unwrap();
+    let inventory = pair["inventory"].clone();
+    let resource = pair["resource_view"].clone();
+    let mut revoked_resource = resource.clone();
+    for instance in revoked_resource["instances"].as_array_mut().unwrap() {
+        if instance["instance_id"] == "client-web-001" {
+            instance["session_ids"] = json!([]);
+        }
+    }
+    let page = json!({
+        "conversations": [{
+            "conversation": {
+                "id": "conversation-001",
+                "scope": {"kind": "global"},
+                "title": "Shared",
+                "created_at_ms": 1,
+                "updated_at_ms": 1
+            },
+            "aggregate_version": 1
+        }],
+        "next_after_id": null,
+        "has_more": false
+    });
+    let server = thread::spawn(move || {
+        serve_conversation_page(&listener, &page);
+
+        let (mut initial_inventory, request, _, body) = accept_request(&listener);
+        assert!(request.starts_with("GET /api/v1/devices/observations/v2 "));
+        assert!(body.is_empty());
+        respond(&mut initial_inventory, "200 OK", &inventory);
+
+        let (mut initial_resource, request, _, body) = accept_request(&listener);
+        assert!(request.starts_with("GET /api/v1/client-instances/resource-view "));
+        assert!(body.is_empty());
+        respond(&mut initial_resource, "200 OK", &resource);
+
+        let (mut history, request, _, body) = accept_request(&listener);
+        assert!(
+            request.starts_with("GET /api/v1/conversations/conversation-001/prompts?limit=128 ")
+        );
+        assert!(body.is_empty());
+        respond(
+            &mut history,
+            "200 OK",
+            &json!({
+                "conversation_id": "conversation-001",
+                "prompts": [{
+                    "id": "prompt-before-revocation",
+                    "conversation_id": "conversation-001",
+                    "role": "user",
+                    "content": "private prompt before refresh",
+                    "created_at_ms": 10
+                }],
+                "has_more": false
+            }),
+        );
+
+        let (mut refreshed_inventory, request, _, body) = accept_request(&listener);
+        assert!(request.starts_with("GET /api/v1/devices/observations/v2 "));
+        assert!(body.is_empty());
+        respond(&mut refreshed_inventory, "200 OK", &inventory);
+
+        let (mut refreshed_resource, request, _, body) = accept_request(&listener);
+        assert!(request.starts_with("GET /api/v1/client-instances/resource-view "));
+        assert!(body.is_empty());
+        respond(&mut refreshed_resource, "200 OK", &revoked_resource);
+    });
+
+    let client = test_client(address);
+    let mut reader = Cursor::new(
+        "inventory show-converged\ninstance client-web-001\nopen conversation-001\ninventory show-converged\nquit\n",
+    );
+    let mut writer = Vec::new();
+    run_with_io(&client, &mut reader, &mut writer)
+        .await
+        .unwrap();
+    server.join().unwrap();
+
+    let output = String::from_utf8(writer).unwrap();
+    assert!(
+        output.contains("Opened session \"conversation-001\""),
+        "{output}"
+    );
+    assert!(output.contains("private prompt before refresh"), "{output}");
+    let last_render = output
+        .rsplit("Forge shared sessions")
+        .next()
+        .unwrap_or_default();
+    assert!(
+        last_render.contains("Client-instance filter: \"client-web-001\""),
+        "{last_render}"
+    );
+    assert!(
+        last_render.contains("No sessions match this client-instance filter"),
+        "{last_render}"
+    );
+    assert!(!last_render.contains("Prompt history for"), "{last_render}");
+    assert!(
+        !last_render.contains("private prompt before refresh"),
+        "{last_render}"
+    );
+}
+
+#[tokio::test]
+async fn remote_tui_show_converged_rejects_inventory_resource_drift_without_partial_commit() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let pair: Value = serde_json::from_str(include_str!(
+        "../../../../../docs/contracts/fixtures/forge-device-inventory-resource-convergence-v1.json"
+    ))
+    .unwrap();
+    let inventory = pair["inventory"].clone();
+    let mut resource = pair["resource_view"].clone();
+    resource["devices"][0]["heartbeat_sequence"] = json!(99);
+    let server = thread::spawn(move || {
+        serve_conversation_page(&listener, &conversation_page(1));
+
+        let (mut inventory_response, request, _, body) = accept_request(&listener);
+        assert!(request.starts_with("GET /api/v1/devices/observations/v2 "));
+        assert!(body.is_empty());
+        respond(&mut inventory_response, "200 OK", &inventory);
+
+        let (mut resource_response, request, _, body) = accept_request(&listener);
+        assert!(request.starts_with("GET /api/v1/client-instances/resource-view "));
+        assert!(body.is_empty());
+        respond(&mut resource_response, "200 OK", &resource);
+    });
+
+    let client = test_client(address);
+    let mut reader = Cursor::new("inventory show-converged\nquit\n");
+    let mut writer = Vec::new();
+    run_with_io(&client, &mut reader, &mut writer)
+        .await
+        .unwrap();
+    server.join().unwrap();
+
+    let output = String::from_utf8(writer).unwrap();
+    assert!(
+        output.contains(
+            "Remote inventory/resource convergence request failed: Forge API inventory/resource observations did not converge"
+        ),
+        "{output}"
+    );
+    assert!(
+        output.contains(
+            "Previous inventory/resource snapshots were retained; no mixed pair was committed."
+        ),
+        "{output}"
+    );
+    assert!(!output.contains("remote device inventory ["), "{output}");
+    assert!(
+        !output.contains("remote client-instance/resource-view ["),
+        "{output}"
+    );
+}
+
+#[tokio::test]
 async fn remote_tui_sync_refreshes_an_explicitly_opened_inventory_view() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();
@@ -199,6 +425,98 @@ async fn remote_tui_sync_refreshes_an_explicitly_opened_inventory_view() {
     );
     assert!(output.contains("Selected inventory observation refreshed."));
     assert!(output.contains("Synced 0 owner-visible changes through cursor 0"));
+}
+
+#[tokio::test]
+async fn remote_tui_retains_previous_pair_until_inventory_resource_refresh_converges() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let pair: Value = serde_json::from_str(include_str!(
+        "../../../../../docs/contracts/fixtures/forge-device-inventory-resource-convergence-v1.json"
+    ))
+    .unwrap();
+    let inventory = pair["inventory"].clone();
+    let resource = pair["resource_view"].clone();
+    let mut inventory_revision_two = inventory.clone();
+    inventory_revision_two["devices"][0]["revision"] = json!(2);
+    inventory_revision_two["devices"][0]["heartbeat_sequence"] = json!(2);
+    let mut resource_revision_three = resource.clone();
+    resource_revision_three["devices"][0]["revision"] = json!(3);
+    resource_revision_three["devices"][0]["heartbeat_sequence"] = json!(3);
+    let mut inventory_revision_three = inventory_revision_two.clone();
+    inventory_revision_three["devices"][0]["revision"] = json!(3);
+    inventory_revision_three["devices"][0]["heartbeat_sequence"] = json!(3);
+    let server = thread::spawn(move || {
+        serve_conversation_page(&listener, &conversation_page(1));
+        let (mut initial_inventory, request, _, _) = super::helpers::accept_request(&listener);
+        assert!(request.starts_with("GET /api/v1/devices/observations/v2 "));
+        super::helpers::respond(&mut initial_inventory, "200 OK", &inventory);
+        let (mut initial_resource, request, _, _) = super::helpers::accept_request(&listener);
+        assert!(request.starts_with("GET /api/v1/client-instances/resource-view "));
+        super::helpers::respond(&mut initial_resource, "200 OK", &resource);
+
+        for (next_inventory, next_resource) in [
+            (
+                inventory_revision_two.clone(),
+                resource_revision_three.clone(),
+            ),
+            (inventory_revision_three, resource_revision_three),
+        ] {
+            let (mut changes, request, _, _) = super::helpers::accept_request(&listener);
+            assert!(
+                request.starts_with("GET /api/v1/conversation-changes?after_cursor=0&limit=128 ")
+            );
+            super::helpers::respond(
+                &mut changes,
+                "200 OK",
+                &json!({
+                    "after_cursor": 0,
+                    "scanned_through_cursor": 0,
+                    "has_more": false,
+                    "changes": []
+                }),
+            );
+            serve_conversation_page(&listener, &conversation_page(1));
+            let (mut history, request, _, _) = super::helpers::accept_request(&listener);
+            assert!(request.starts_with("GET /api/v1/conversations/c-1/prompts?"));
+            super::helpers::respond(
+                &mut history,
+                "200 OK",
+                &json!({"conversation_id": "c-1", "prompts": [], "has_more": false}),
+            );
+            let (mut refreshed_inventory, request, _, _) =
+                super::helpers::accept_request(&listener);
+            assert!(request.starts_with("GET /api/v1/devices/observations/v2 "));
+            super::helpers::respond(&mut refreshed_inventory, "200 OK", &next_inventory);
+            let (mut refreshed_resource, request, _, _) = super::helpers::accept_request(&listener);
+            assert!(request.starts_with("GET /api/v1/client-instances/resource-view "));
+            super::helpers::respond(&mut refreshed_resource, "200 OK", &next_resource);
+        }
+    });
+
+    let client = test_client(address);
+    let mut reader =
+        Cursor::new("inventory read-v2\nclient-instances resource-view\nsync\nsync\nquit\n");
+    let mut writer = Vec::new();
+    run_with_io(&client, &mut reader, &mut writer)
+        .await
+        .unwrap();
+    server.join().unwrap();
+
+    let output = String::from_utf8(writer).unwrap();
+    assert!(
+        output.contains(
+            "Inventory/resource observations did not converge; previous snapshots were retained"
+        ),
+        "{output}"
+    );
+    assert_eq!(
+        output
+            .matches("Synced 0 owner-visible changes through cursor 0")
+            .count(),
+        1,
+        "{output}"
+    );
 }
 
 #[tokio::test]
@@ -915,6 +1233,83 @@ async fn remote_tui_can_preview_a_session_runner_receipt_without_a_device_reques
 }
 
 #[tokio::test]
+async fn remote_tui_can_reduce_session_runner_receipt_history_without_a_device_request() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = thread::spawn(move || {
+        serve_conversation_page(&listener, &conversation_page(1));
+    });
+
+    let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../docs/contracts/fixtures/forge-session-runner-receipt-history-v1.json");
+    let client = test_client(address);
+    let mut reader = Cursor::new(format!(
+        "session-runner-receipt-history-offline-preview --input {}\nquit\n",
+        fixture.display()
+    ));
+    let mut writer = Vec::new();
+    run_with_io(&client, &mut reader, &mut writer)
+        .await
+        .unwrap();
+    server.join().unwrap();
+
+    let output = String::from_utf8(writer).unwrap();
+    assert!(
+        output.contains(
+            "offline session Runner receipt history [forge.session-runner-receipt-history/v1]"
+        ),
+        "{output}"
+    );
+    assert!(output.contains("attempt_count=2"));
+    assert!(output.contains(
+        "attempt[1]: command=command-001 attempt=attempt-001 target=runner-1 disposition=failed"
+    ));
+    assert!(output.contains(
+        "attempt[2]: command=command-002 attempt=attempt-002 target=runner-2 disposition=uncertain"
+    ));
+    assert!(output.contains("follow_up=reconciliation_manual"));
+    assert!(output.contains("automatic_retry=false"));
+    assert!(output.contains("selected_target=none"));
+    assert!(output.contains("receipt_persisted=false execution_authorized=false"));
+    assert!(!output.contains("/api/v1/devices"));
+}
+
+#[tokio::test]
+async fn remote_tui_rejects_session_runner_receipt_history_summary_drift_locally() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = thread::spawn(move || {
+        serve_conversation_page(&listener, &conversation_page(1));
+    });
+
+    let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../docs/contracts/fixtures/forge-session-runner-receipt-history-v1.json");
+    let mut malformed: Value = serde_json::from_slice(&std::fs::read(fixture).unwrap()).unwrap();
+    malformed["attempt_count"] = json!(3);
+    let input = NamedTempFile::new().unwrap();
+    std::fs::write(input.path(), serde_json::to_vec(&malformed).unwrap()).unwrap();
+
+    let client = test_client(address);
+    let mut reader = Cursor::new(format!(
+        "session-runner-receipt-history-offline-preview --input {}\nquit\n",
+        input.path().display()
+    ));
+    let mut writer = Vec::new();
+    run_with_io(&client, &mut reader, &mut writer)
+        .await
+        .unwrap();
+    server.join().unwrap();
+
+    let output = String::from_utf8(writer).unwrap();
+    assert!(
+        output.contains("Session Runner receipt history preview failed:"),
+        "{output}"
+    );
+    assert!(!output.contains("attempt_count=3"));
+    assert!(!output.contains("/api/v1/devices"));
+}
+
+#[tokio::test]
 async fn remote_tui_session_runner_receipt_preview_uses_the_authenticated_session_route() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();
@@ -962,6 +1357,118 @@ async fn remote_tui_session_runner_receipt_preview_uses_the_authenticated_sessio
     assert!(output.contains("receipt_command=command-001 attempt=attempt-001 target=runner-1"));
     assert!(output.contains("selected_target=none"));
     assert!(output.contains("receipt_persisted=false execution_authorized=false"));
+    assert!(!output.contains("/api/v1/devices"));
+}
+
+#[tokio::test]
+async fn remote_tui_run_execution_evidence_preview_uses_the_authenticated_session_route() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let receipt_fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../docs/contracts/fixtures/forge-session-runner-receipt-observation-v1.json");
+    let receipt: Value = serde_json::from_slice(&std::fs::read(&receipt_fixture).unwrap()).unwrap();
+    let evidence_fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../docs/contracts/fixtures/forge-run-execution-evidence-v1.json");
+    let evidence: Value =
+        serde_json::from_slice(&std::fs::read(&evidence_fixture).unwrap()).unwrap();
+    let request = serde_json::json!({
+        "run_observed": {
+            "api_version": "forge.run.observed.v1",
+            "owner_ref": evidence["owner_ref"].clone(),
+            "conversation_id": "c-1",
+            "run_id": "run-1",
+            "prompt_id": "prompt-001",
+            "created_at_ms": 200,
+            "latest_sequence": 5,
+            "status": "nonterminal",
+            "metadata_observed": true,
+            "content_included": false,
+            "authority": {
+                "identity_verified": false, "owner_authorized": false,
+                "run_authoritative": false, "persistence_attested": false,
+                "content_provenance_verified": false, "reservation_created": false,
+                "execution_authorized": false, "dispatch_performed": false
+            }
+        },
+        "session_receipt_observed": {
+            "schema_version": receipt["schema_version"].clone(),
+            "evaluation_mode": receipt["evaluation_mode"].clone(),
+            "owner": receipt["owner"].clone(),
+            "conversation_id": "c-1",
+            "prompt_id": receipt["prompt_id"].clone(),
+            "run_id": "run-1",
+            "receipt_observation": receipt["receipt_observation"].clone(),
+            "prompt_run_binding_valid": true,
+            "receipt_binding_valid": true,
+            "preview_only": true,
+            "selected_target_id": Value::Null,
+            "authority": receipt["authority"].clone()
+        }
+    });
+    let response = serde_json::json!({
+        "api_version": "forge.run.execution-evidence.v1",
+        "evaluation_mode": "pure_run_execution_evidence_binding",
+        "owner_ref": evidence["owner_ref"].clone(),
+        "conversation_id": "c-1", "run_id": "run-1", "prompt_id": "prompt-001",
+        "run_status": "nonterminal", "attempt_id": "attempt-001", "target_id": "runner-1",
+        "command_id": "command-001", "command_sha256": evidence["command_sha256"].clone(),
+        "disposition_kind": "completed", "receipt_observed_at_ms": 300,
+        "uncertain": false, "reconciliation_required": false,
+        "metadata_observed": true, "content_included": false,
+        "authority": {
+            "identity_verified": false, "owner_authorized": false, "run_authoritative": false,
+            "receipt_persisted": false, "reservation_created": false,
+            "execution_authorized": false, "dispatch_performed": false, "audit_published": false
+        }
+    });
+    let expected_request = request.clone();
+    let server = thread::spawn(move || {
+        serve_conversation_page(&listener, &conversation_page(1));
+        let (mut history, request, _, _) = accept_request(&listener);
+        assert!(request.starts_with("GET /api/v1/conversations/c-1/prompts?"));
+        respond(
+            &mut history,
+            "200 OK",
+            &serde_json::json!({"conversation_id":"c-1","prompts":[],"has_more":false}),
+        );
+        let (mut stream, request_line, headers, body) = accept_request(&listener);
+        assert!(
+            request_line.starts_with(
+                "POST /api/v1/conversations/c-1/runs/run-1/execution-evidence/preview "
+            ),
+            "{request_line}"
+        );
+        assert!(headers.contains("authorization: bearer test-token"));
+        assert_eq!(
+            serde_json::from_slice::<Value>(&body).unwrap(),
+            expected_request
+        );
+        respond(&mut stream, "200 OK", &response);
+    });
+    let input = tempfile::NamedTempFile::new().unwrap();
+    std::fs::write(input.path(), serde_json::to_vec(&request).unwrap()).unwrap();
+    let client = test_client(address);
+    let mut reader = Cursor::new(format!(
+        "open c-1\nrun-execution-evidence-remote-preview --input {}\nquit\n",
+        input.path().display()
+    ));
+    let mut writer = Vec::new();
+    run_with_io(&client, &mut reader, &mut writer)
+        .await
+        .unwrap();
+    server.join().unwrap();
+
+    let output = String::from_utf8(writer).unwrap();
+    assert!(
+        output.contains("authenticated Run execution evidence [forge.run.execution-evidence.v1]"),
+        "{output}"
+    );
+    assert!(output.contains("conversation=c-1 prompt=prompt-001 run=run-1 status=nonterminal"));
+    assert!(output.contains("disposition=completed observed_at_ms=300"));
+    assert!(
+        output.contains("content_included=false uncertain=false reconciliation_required=false")
+    );
+    assert!(output.contains("execution_authorized=false dispatch_performed=false"));
     assert!(!output.contains("/api/v1/devices"));
 }
 

@@ -27,9 +27,13 @@ const lifecycleHeartbeatCandidateScope = "forge:devices:lifecycle:heartbeat"
 type lifecycleHeartbeatCandidateClock func(context.Context) (uint64, error)
 
 type lifecycleHeartbeatCandidateConfig struct {
-	Enabled      bool
-	Now          lifecycleHeartbeatCandidateClock
-	StaleAfterMS uint64
+	Enabled bool
+	// AllowUnsignedProof is an explicit fixture-only opt-in for the legacy
+	// structural proof path. Production and accepted assemblies never set it;
+	// cryptographic challenge consumption belongs to the signed candidate.
+	AllowUnsignedProof bool
+	Now                lifecycleHeartbeatCandidateClock
+	StaleAfterMS       uint64
 }
 
 type lifecycleHeartbeatCandidateRequest struct {
@@ -56,7 +60,7 @@ type lifecycleHeartbeatCandidateResponse struct {
 
 func newLifecycleHeartbeatCandidateRoutes(config *lifecycleRegistryCandidateConfig) http.Handler {
 	if config == nil || !config.Enabled || config.Store == nil || config.Heartbeat == nil ||
-		!config.Heartbeat.Enabled {
+		!config.Heartbeat.Enabled || !config.Heartbeat.AllowUnsignedProof {
 		return http.HandlerFunc(serveDisabledLifecycleRegistryCandidate)
 	}
 	return authn.RequireScopes(
@@ -188,6 +192,12 @@ func writeLifecycleHeartbeatCandidateError(w http.ResponseWriter, r *http.Reques
 	case errors.Is(err, deviceidentity.ErrOwnerMismatch),
 		errors.Is(err, deviceidentity.ErrDeviceMismatch),
 		errors.Is(err, deviceidentity.ErrKeyMismatch),
+		errors.Is(err, errSignedHeartbeatDigestMismatch),
+		errors.Is(err, deviceidentity.ErrInvalidSignedProof),
+		errors.Is(err, deviceidentity.ErrPublicKeyEncoding),
+		errors.Is(err, deviceidentity.ErrPublicKeyDigestMismatch),
+		errors.Is(err, deviceidentity.ErrSignatureEncoding),
+		errors.Is(err, deviceidentity.ErrSignatureInvalid),
 		errors.Is(err, deviceidentity.ErrCredentialRevoked),
 		errors.Is(err, deviceidentity.ErrCredentialExpired),
 		errors.Is(err, deviceidentity.ErrChallengeMismatch),

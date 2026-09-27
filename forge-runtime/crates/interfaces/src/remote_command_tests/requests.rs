@@ -27,6 +27,25 @@ fn inventory_observation_v2() -> Value {
     .expect("device inventory observation v2 fixture")
 }
 
+fn prompt_append_response(
+    conversation_id: &str,
+    content: &str,
+    aggregate_version: u64,
+    replayed: bool,
+) -> Value {
+    json!({
+        "prompt": {
+            "id": "prompt-1",
+            "conversation_id": conversation_id,
+            "role": "user",
+            "content": content,
+            "created_at_ms": 300,
+        },
+        "aggregate_version": aggregate_version,
+        "replayed": replayed,
+    })
+}
+
 #[tokio::test]
 async fn device_inventory_read_sends_one_authenticated_get_without_a_body() {
     let response = inventory_observation();
@@ -168,7 +187,13 @@ async fn create_conversation_sends_bearer_and_idempotency_contract() {
         required_headers: &["idempotency-key: create-key"],
         body_fields: json!({"scope": {"kind": "global"}, "title": "Shared"}),
         response_status: "201 Created",
-        response: json!({"id": "c-1"}),
+        response: json!({
+            "id": "c-1",
+            "scope": {"kind": "global"},
+            "title": "Shared",
+            "created_at_ms": 10,
+            "updated_at_ms": 10
+        }),
     }]);
     assert_eq!(
         client
@@ -176,6 +201,32 @@ async fn create_conversation_sends_bearer_and_idempotency_contract() {
             .await
             .unwrap()["id"],
         "c-1"
+    );
+    server.join().unwrap();
+}
+
+#[tokio::test]
+async fn create_conversation_rejects_a_response_bound_to_another_request() {
+    let (client, server) = spawn_mock_server(vec![ExpectedRequest {
+        request_prefix: "POST /api/v1/conversations ",
+        required_headers: &["idempotency-key: create-key"],
+        body_fields: json!({"scope": {"kind": "global"}, "title": "Shared"}),
+        response_status: "201 Created",
+        response: json!({
+            "id": "c-1",
+            "scope": {"kind": "global"},
+            "title": "Another title",
+            "created_at_ms": 10,
+            "updated_at_ms": 10
+        }),
+    }]);
+    let error = client
+        .create_conversation("Shared", &RemoteConversationScope::Global, "create-key")
+        .await
+        .expect_err("the returned title must bind to the request");
+    assert_eq!(
+        error.to_string(),
+        "Forge API returned an invalid created conversation"
     );
     server.join().unwrap();
 }
@@ -239,6 +290,116 @@ async fn session_observation_preview_posts_the_bound_request_once_and_validates_
     let mut forged = returned;
     forged["authority"]["execution_authorized"] = Value::Bool(true);
     assert!(super::super::session_observation::validate_response(&forged, &request).is_err());
+}
+
+#[tokio::test]
+async fn session_observation_preview_rejects_response_drift_at_client_boundary() {
+    let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../docs/contracts/fixtures/forge-session-device-observation-v1.json");
+    let response: Value = serde_json::from_slice(&std::fs::read(fixture).unwrap()).unwrap();
+    let candidates = response["inventory"]["devices"].clone();
+    let devices = candidates
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|candidate| candidate["device"].clone())
+        .collect::<Vec<_>>();
+    let request = json!({
+        "owner": response["owner"].clone(),
+        "conversation_id": response["conversation_id"].clone(),
+        "run_id": response["run_id"].clone(),
+        "placement": {
+            "schema_version": "forge.device-placement-dry-run/v1",
+            "evaluated_at_ms": response["evaluated_at_ms"].clone(),
+            "owner": response["owner"].clone(),
+            "max_snapshot_age_ms": 60000,
+            "requirements": {
+                "os": "linux",
+                "architecture": "amd64",
+                "min_cpu_cores": 4,
+                "min_memory_bytes": 8192,
+                "min_storage_bytes": 4096,
+                "runtime": "oci",
+                "gpu": {"required": false, "min_memory_bytes": 0, "runtime": ""},
+                "data_residency_zones": ["us-west"],
+                "minimum_trust_zone": "standard",
+                "sandbox_floor": "container",
+                "concurrency_slots": 1
+            },
+            "devices": devices,
+        },
+        "candidates": candidates,
+    });
+    let mut forged = response;
+    forged["conversation_id"] = json!("conversation-foreign");
+    let (client, server) = spawn_mock_server(vec![ExpectedRequest {
+        request_prefix: "POST /api/v1/conversations/conversation-001/runs/run-001/device-observation/preview ",
+        required_headers: &[],
+        body_fields: json!({
+            "conversation_id": "conversation-001",
+            "run_id": "run-001",
+            "owner": request["owner"].clone(),
+        }),
+        response_status: "200 OK",
+        response: forged,
+    }]);
+    let error = client
+        .preview_session_device_observation("conversation-001", "run-001", &request)
+        .await
+        .expect_err("foreign observation must not escape the HTTP client");
+    assert_eq!(
+        error.to_string(),
+        "session device observation binding mismatch"
+    );
+    server.join().unwrap();
+}
+
+#[tokio::test]
+async fn session_observation_preview_rejects_request_url_drift_before_post() {
+    let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../docs/contracts/fixtures/forge-session-device-observation-v1.json");
+    let response: Value = serde_json::from_slice(&std::fs::read(fixture).unwrap()).unwrap();
+    let candidates = response["inventory"]["devices"].clone();
+    let devices = candidates
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|candidate| candidate["device"].clone())
+        .collect::<Vec<_>>();
+    let request = json!({
+        "owner": response["owner"].clone(),
+        "conversation_id": "conversation-001",
+        "run_id": "run-001",
+        "placement": {
+            "schema_version": "forge.device-placement-dry-run/v1",
+            "evaluated_at_ms": response["evaluated_at_ms"].clone(),
+            "owner": response["owner"].clone(),
+            "max_snapshot_age_ms": 60000,
+            "requirements": {
+                "os": "linux",
+                "architecture": "amd64",
+                "min_cpu_cores": 4,
+                "min_memory_bytes": 8192,
+                "min_storage_bytes": 4096,
+                "runtime": "oci",
+                "gpu": {"required": false, "min_memory_bytes": 0, "runtime": ""},
+                "data_residency_zones": ["us-west"],
+                "minimum_trust_zone": "standard",
+                "sandbox_floor": "container",
+                "concurrency_slots": 1
+            },
+            "devices": devices,
+        },
+        "candidates": candidates,
+    });
+    let error = test_remote_client("127.0.0.1:1".parse().unwrap())
+        .preview_session_device_observation("conversation-foreign", "run-001", &request)
+        .await
+        .expect_err("a request bound to another Conversation must fail before transport");
+    assert_eq!(
+        error.to_string(),
+        "Session device observation request does not match its URL"
+    );
 }
 
 #[test]
@@ -308,7 +469,13 @@ async fn create_project_conversation_sends_only_scope_metadata() {
             "title": "Project work"
         }),
         response_status: "201 Created",
-        response: json!({"id": "c-1", "scope": {"kind": "project", "id": "prj_1"}}),
+        response: json!({
+            "id": "c-1",
+            "scope": {"kind": "project", "id": "prj_1"},
+            "title": "Project work",
+            "created_at_ms": 10,
+            "updated_at_ms": 10
+        }),
     }]);
     assert_eq!(
         client
@@ -510,7 +677,7 @@ async fn append_prompt_sends_bearer_cas_and_idempotency_contract() {
         required_headers: &["idempotency-key: prompt-key"],
         body_fields: json!({"content": "run this prompt", "expected_version": 7}),
         response_status: "200 OK",
-        response: json!({"aggregate_version": 8, "replayed": false}),
+        response: prompt_append_response("c-1", "run this prompt", 8, false),
     }]);
     assert_eq!(
         client
@@ -529,7 +696,12 @@ async fn append_prompt_rejects_aggregate_version_above_json_safe_integer() {
         required_headers: &["idempotency-key: prompt-key"],
         body_fields: json!({"content": "run this prompt", "expected_version": 7}),
         response_status: "201 Created",
-        response: json!({"aggregate_version": 9_007_199_254_740_992_u64, "replayed": false}),
+        response: prompt_append_response(
+            "c-1",
+            "run this prompt",
+            9_007_199_254_740_992_u64,
+            false,
+        ),
     }]);
     let error = client
         .append_prompt("c-1", 7, "run this prompt", "prompt-key")
@@ -549,7 +721,7 @@ async fn append_prompt_rejects_a_non_sequential_aggregate_version() {
         required_headers: &["idempotency-key: prompt-key"],
         body_fields: json!({"content": "run this prompt", "expected_version": 7}),
         response_status: "200 OK",
-        response: json!({"aggregate_version": 9, "replayed": false}),
+        response: prompt_append_response("c-1", "run this prompt", 9, false),
     }]);
     let error = client
         .append_prompt("c-1", 7, "run this prompt", "prompt-key")
@@ -565,8 +737,27 @@ async fn append_prompt_rejects_a_non_sequential_aggregate_version() {
 #[tokio::test]
 async fn append_prompt_rejects_a_missing_or_non_boolean_replay_marker() {
     for response in [
-        json!({"aggregate_version": 8}),
-        json!({"aggregate_version": 8, "replayed": "false"}),
+        json!({
+            "prompt": {
+                "id": "prompt-1",
+                "conversation_id": "c-1",
+                "role": "user",
+                "content": "run this prompt",
+                "created_at_ms": 300,
+            },
+            "aggregate_version": 8,
+        }),
+        json!({
+            "prompt": {
+                "id": "prompt-1",
+                "conversation_id": "c-1",
+                "role": "user",
+                "content": "run this prompt",
+                "created_at_ms": 300,
+            },
+            "aggregate_version": 8,
+            "replayed": "false",
+        }),
     ] {
         let (client, server) = spawn_mock_server(vec![ExpectedRequest {
             request_prefix: "POST /api/v1/conversations/c-1/prompts ",
@@ -597,7 +788,7 @@ async fn append_prompt_preserves_multiline_content() {
             "expected_version": 7
         }),
         response_status: "201 Created",
-        response: json!({"aggregate_version": 8, "replayed": false}),
+        response: prompt_append_response("c-1", "first line\nsecond line\n", 8, false),
     }]);
     client
         .append_prompt("c-1", 7, "first line\nsecond line\n", "prompt-multiline")

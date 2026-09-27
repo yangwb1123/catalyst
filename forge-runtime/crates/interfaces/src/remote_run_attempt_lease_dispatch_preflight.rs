@@ -164,7 +164,7 @@ pub(super) fn read_request(input: &str) -> Result<Value, RemoteError> {
     })?;
     let request: PreflightRequest = serde_json::from_slice(&bytes)
         .map_err(|_| RemoteError("remote Run/Attempt/lease preflight input is invalid".into()))?;
-    validate_request(&request)?;
+    validate_request_model(&request)?;
     serde_json::from_slice(&bytes)
         .map_err(|_| RemoteError("remote Run/Attempt/lease preflight input is invalid JSON".into()))
 }
@@ -276,11 +276,15 @@ fn decode_request(value: &Value) -> Result<PreflightRequest, RemoteError> {
         .map_err(|_| RemoteError("remote Run/Attempt/lease preflight input is invalid".into()))?;
     let request: PreflightRequest = serde_json::from_slice(&encoded)
         .map_err(|_| RemoteError("remote Run/Attempt/lease preflight input is invalid".into()))?;
-    validate_request(&request)?;
+    validate_request_model(&request)?;
     Ok(request)
 }
 
-fn validate_request(request: &PreflightRequest) -> Result<(), RemoteError> {
+pub(super) fn validate_request(value: &Value) -> Result<(), RemoteError> {
+    decode_request(value).map(|_| ())
+}
+
+fn validate_request_model(request: &PreflightRequest) -> Result<(), RemoteError> {
     if !valid_owner(&request.owner)
         || !valid_route_identifier(&request.conversation_id)
         || !valid_route_identifier(&request.run_id)
@@ -560,8 +564,15 @@ fn read_bounded_input(input: &str) -> Result<Vec<u8>, RemoteError> {
 #[cfg(test)]
 mod tests {
     use serde_json::{Value, json};
+    use sha2::{Digest, Sha256};
 
     use super::{conversation_and_run, read_request, render_human, validate_response};
+
+    const CANONICAL_REQUEST_FIXTURE: &[u8] = include_bytes!(
+        "../../../../docs/contracts/fixtures/forge-run-attempt-lease-dispatch-preflight-request-v1.json"
+    );
+    const CANONICAL_REQUEST_SHA256: &str =
+        "a6ce75bfc27cf3150b5f00ff8ccaefded70502c3be9b1c7847477fae77bbbdce";
 
     pub(super) fn request() -> Value {
         let owner =
@@ -663,17 +674,55 @@ mod tests {
     #[test]
     fn canonical_request_fixture_is_accepted() {
         let file = tempfile::NamedTempFile::new().unwrap();
-        std::fs::write(
-            file.path(),
-            include_bytes!(
-                "../../../../docs/contracts/fixtures/forge-run-attempt-lease-dispatch-preflight-request-v1.json"
-            ),
-        )
-        .unwrap();
+        std::fs::write(file.path(), CANONICAL_REQUEST_FIXTURE).unwrap();
         let decoded = read_request(file.path().to_str().unwrap()).unwrap();
         assert_eq!(
             conversation_and_run(&decoded).unwrap(),
             ("conversation-001".to_owned(), "run-001".to_owned())
+        );
+    }
+
+    #[test]
+    fn canonical_request_fixture_bytes_reject_all_unsafe_mutations() {
+        assert_eq!(
+            format!("{:x}", Sha256::digest(CANONICAL_REQUEST_FIXTURE)),
+            CANONICAL_REQUEST_SHA256
+        );
+        let canonical = std::str::from_utf8(CANONICAL_REQUEST_FIXTURE).unwrap();
+        assert_request_is_rejected(&canonical.replacen(
+            "  \"run_status\": \"nonterminal\",\n",
+            "  \"run_status\": \"nonterminal\",\n  \"unexpected\": true,\n",
+            1,
+        ));
+        assert_request_is_rejected(&canonical.replacen(
+            "  \"run_status\": \"nonterminal\",\n",
+            "  \"run_status\": \"nonterminal\",\n  \"run_status\": \"nonterminal\",\n",
+            1,
+        ));
+        assert_request_is_rejected(&format!("{canonical} {{}}\n"));
+        assert_request_is_rejected(&canonical.replacen(
+            "      \"selected_target_id\": null",
+            "      \"selected_target_id\": \"runner-1\"",
+            1,
+        ));
+        assert_request_is_rejected(&canonical.replacen(
+            "      \"target_id\": \"runner-1\",\n      \"epoch\": 1,",
+            "      \"target_id\": \"runner-foreign\",\n      \"epoch\": 1,",
+            1,
+        ));
+        assert_request_is_rejected(&canonical.replacen(
+            "        \"dispatch_performed\": false",
+            "        \"dispatch_performed\": true",
+            1,
+        ));
+    }
+
+    fn assert_request_is_rejected(input: &str) {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(file.path(), input.as_bytes()).unwrap();
+        assert!(
+            read_request(file.path().to_str().unwrap()).is_err(),
+            "unsafe preflight request mutation was accepted"
         );
     }
 

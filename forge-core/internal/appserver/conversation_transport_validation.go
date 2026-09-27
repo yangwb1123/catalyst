@@ -13,6 +13,19 @@ func conversationTimestampsJSONSafe(conversation model.Conversation) bool {
 		conversation.UpdatedAtMS <= maxSafeJSONInteger
 }
 
+func conversationCreateJSONSafe(
+	conversation model.Conversation,
+	requestedScope model.ConversationScope,
+	requestedTitle string,
+) bool {
+	return validTransportConversationID(conversation.ID) &&
+		conversation.Scope == requestedScope &&
+		conversation.Title == requestedTitle &&
+		strings.TrimSpace(conversation.Title) != "" &&
+		len(conversation.Title) <= 256 &&
+		conversationTimestampsJSONSafe(conversation)
+}
+
 func conversationEntryTimestampsJSONSafe(entry model.OwnedConversationEntry) bool {
 	return conversationTimestampsJSONSafe(entry.Conversation)
 }
@@ -26,6 +39,10 @@ func conversationEntryJSONSafe(entry model.OwnedConversationEntry) bool {
 		conversationAggregateVersionJSONSafe(entry.AggregateVersion)
 }
 
+func conversationEntryJSONSafeForID(entry model.OwnedConversationEntry, conversationID string) bool {
+	return entry.Conversation.ID == conversationID && conversationEntryJSONSafe(entry)
+}
+
 func conversationPageJSONSafe(page model.OwnedConversationPage) bool {
 	for _, entry := range page.Conversations {
 		if !conversationEntryJSONSafe(entry) {
@@ -35,14 +52,42 @@ func conversationPageJSONSafe(page model.OwnedConversationPage) bool {
 	return true
 }
 
-func conversationImportJSONSafe(result model.OwnedConversationImportResult) bool {
-	return conversationTimestampsJSONSafe(result.Conversation) &&
-		conversationAggregateVersionJSONSafe(result.AggregateVersion)
+func conversationImportJSONSafe(
+	result model.OwnedConversationImportResult,
+	requestedTitle string,
+	requestedPromptCount int,
+) bool {
+	// Import is a write whose receipt is returned directly to every client
+	// family. Keep the final HTTP boundary bound to the requested Global
+	// Conversation, title, and transcript size even when a non-Rust backend is
+	// injected behind the typed conversationBackend interface.
+	return validTransportConversationID(result.Conversation.ID) &&
+		result.Conversation.Scope == (model.ConversationScope{Kind: "global"}) &&
+		result.Conversation.Title == requestedTitle &&
+		strings.TrimSpace(result.Conversation.Title) != "" &&
+		len(result.Conversation.Title) <= 256 &&
+		conversationTimestampsJSONSafe(result.Conversation) &&
+		conversationAggregateVersionJSONSafe(result.AggregateVersion) &&
+		result.ImportedPromptCount == requestedPromptCount &&
+		requestedPromptCount >= 0 && requestedPromptCount <= conversationImportPromptMax
 }
 
-func conversationPromptAppendJSONSafe(prompt model.ConversationPrompt, aggregateVersion uint64) bool {
-	return prompt.CreatedAtMS <= maxSafeJSONInteger &&
-		conversationAggregateVersionJSONSafe(aggregateVersion)
+func conversationPromptAppendJSONSafe(
+	prompt model.ConversationPrompt,
+	conversationID string,
+	content string,
+	expectedVersion uint64,
+	aggregateVersion uint64,
+) bool {
+	// Prompt append is the one authenticated write whose response is consumed
+	// by every client family. Keep the final HTTP boundary bound to the route,
+	// request, and CAS receipt so a malformed backend cannot make one client
+	// display another Conversation's Prompt or a different committed version.
+	return prompt.ConversationID == conversationID && prompt.Role == "user" &&
+		prompt.Content == content && validTransportEntityID(prompt.ID) &&
+		prompt.CreatedAtMS <= maxSafeJSONInteger && expectedVersion < maxSafeJSONInteger &&
+		conversationAggregateVersionJSONSafe(aggregateVersion) &&
+		aggregateVersion == expectedVersion+1
 }
 
 // conversationPromptPageJSONSafe protects the HTTP boundary even when a
@@ -182,6 +227,12 @@ func conversationRunTimelineJSONSafe(
 
 func validTransportEntityID(value string) bool {
 	return strings.TrimSpace(value) != "" && len(value) <= conversationIDMaxBytes
+}
+
+func validTransportConversationID(value string) bool {
+	return validTransportEntityID(value) &&
+		!strings.Contains(value, "/") &&
+		!strings.ContainsAny(value, "\x00\r\n")
 }
 
 func validTransportRunStatus(value string) bool {

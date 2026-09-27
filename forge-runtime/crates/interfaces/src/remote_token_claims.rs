@@ -2,6 +2,8 @@ use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+use crate::runtime_domain::execution::runner_execution_intent::RunnerExecutionOwner;
+
 use super::unix_time;
 
 const FORGE_AUDIENCE: &str = "forge-api";
@@ -47,6 +49,37 @@ pub(in crate::remote_command) fn credential_from_token(
     };
     validate_credential(&credential)?;
     Ok(credential)
+}
+
+/// Derives the owner declaration from the owner claims in the presented JWT.
+/// Core remains the authority for signature and request authorization; this
+/// local declaration only binds a content-free receipt to the token presented
+/// by this process. Explicit access-token callers do not need a `client_id`
+/// claim because the server already authenticates the bearer and OAuth access
+/// tokens commonly identify the client through metadata outside the JWT.
+pub(in crate::remote_command) fn owner_from_access_token(
+    access_token: &str,
+) -> Result<RunnerExecutionOwner, String> {
+    let claims = decode_access_token_claims(access_token)?;
+    validate_forge_token(&claims)?;
+    let issuer = claim_string(&claims, "iss")?.to_owned();
+    let subject = claim_string(&claims, "sub")?.to_owned();
+    let tenant_id = claim_string(&claims, "tenant_id")?.to_owned();
+    if subject.len() > 255 || tenant_id.len() > 256 {
+        return Err("Snaplink access token owner claims exceed the size limit".into());
+    }
+    let expires_at = claims
+        .get("exp")
+        .and_then(serde_json::Value::as_u64)
+        .ok_or_else(|| "Snaplink access token is missing a valid exp claim".to_owned())?;
+    if expires_at <= unix_time()? {
+        return Err("Snaplink access token is already expired".into());
+    }
+    Ok(RunnerExecutionOwner {
+        issuer,
+        subject,
+        tenant_id,
+    })
 }
 
 struct TokenOwner {

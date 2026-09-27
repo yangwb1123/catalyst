@@ -295,6 +295,214 @@ func runForgeConsolePendingIntentWidgetE2EWithToken(
 	}
 }
 
+// runForgeConsolePendingRunIntentGateE2EWithToken exercises the explicit
+// scheduling-review submitter through the authenticated Sessions Gate. The
+// default Gate leaves this candidate disabled; this helper supplies the
+// owner/origin bindings and lets the Flutter test perform exactly one
+// metadata-only POST.
+func runForgeConsolePendingRunIntentGateE2EWithToken(
+	t *testing.T,
+	apiURL, token, conversationID, issuer, subject, tenant string,
+	expectedVersion int,
+	content, idempotencyKey string,
+) {
+	runForgeConsolePendingRunIntentGateModeE2EWithToken(
+		t, apiURL, token, conversationID, issuer, subject, tenant,
+		expectedVersion, content, idempotencyKey, true, "",
+	)
+}
+
+// runForgeConsolePendingRunIntentGateReadE2EWithToken starts a fresh
+// authenticated Sessions Gate after another client has written the receipt.
+// The test intentionally leaves the Gate's submit action untouched so the
+// only write in this phase is the external client write performed by the
+// caller.
+func runForgeConsolePendingRunIntentGateReadE2EWithToken(
+	t *testing.T,
+	apiURL, token, conversationID, issuer, subject, tenant string,
+	expectedVersion int,
+	content, pendingIntentID string,
+) {
+	runForgeConsolePendingRunIntentGateModeE2EWithToken(
+		t, apiURL, token, conversationID, issuer, subject, tenant,
+		expectedVersion, content, "read-only-gate-unused-key", false, pendingIntentID,
+	)
+}
+
+// runForgeConsolePendingRunIntentGateLiveConvergenceE2EWithToken keeps the
+// authenticated Sessions Gate mounted while a separate Runtime CLI process
+// writes a pending Run-intent. The Flutter test then waits for the owner
+// change feed to refresh Prompt history and pending metadata without a local
+// Console POST.
+func runForgeConsolePendingRunIntentGateLiveConvergenceE2EWithToken(
+	t *testing.T,
+	apiURL, token, conversationID, issuer, subject, tenant string,
+	runtimeExecutable string,
+	expectedVersion int,
+	content, idempotencyKey string,
+	existingPendingCount int,
+) {
+	t.Helper()
+	consoleRoot := os.Getenv("SNAPLINK_CONSOLE_ROOT")
+	if consoleRoot == "" {
+		workingDirectory, err := os.Getwd()
+		if err != nil {
+			t.Fatalf("resolve Console repository: %v", err)
+		}
+		repoRoot := filepath.Clean(filepath.Join(workingDirectory, "..", "..", ".."))
+		consoleRoot = filepath.Join(filepath.Dir(repoRoot), "workspace", "demo", "snaplink-console")
+	}
+	if _, err := os.Stat(filepath.Join(consoleRoot, "pubspec.yaml")); err != nil {
+		t.Fatalf("SNAPLINK_CONSOLE_ROOT must name the Flutter Console repository: %v", err)
+	}
+	flutterBinary := os.Getenv("FLUTTER_BIN")
+	if flutterBinary == "" {
+		flutterBinary = "flutter"
+	}
+	flutterExecutable, err := exec.LookPath(flutterBinary)
+	if err != nil {
+		t.Fatalf("Flutter is required for live pending Run-intent Gate E2E: %v", err)
+	}
+	if runtimeExecutable == "" || expectedVersion < 1 || content == "" || idempotencyKey == "" || existingPendingCount < 1 {
+		t.Fatalf("invalid live pending Run-intent Gate E2E input: runtime=%q version=%d content=%q key=%q existing=%d", runtimeExecutable, expectedVersion, content, idempotencyKey, existingPendingCount)
+	}
+	input := struct {
+		APIURL               string `json:"api_url"`
+		AccessToken          string `json:"access_token"`
+		ConversationID       string `json:"conversation_id"`
+		Issuer               string `json:"issuer"`
+		Subject              string `json:"subject"`
+		TenantID             string `json:"tenant_id"`
+		ExpectedVersion      int    `json:"expected_version"`
+		Content              string `json:"content"`
+		IdempotencyKey       string `json:"idempotency_key"`
+		RuntimeExecutable    string `json:"runtime_executable"`
+		ExistingPendingCount int    `json:"existing_pending_count"`
+	}{
+		APIURL: apiURL, AccessToken: token, ConversationID: conversationID,
+		Issuer: issuer, Subject: subject, TenantID: tenant,
+		ExpectedVersion: expectedVersion, Content: content, IdempotencyKey: idempotencyKey,
+		RuntimeExecutable: runtimeExecutable, ExistingPendingCount: existingPendingCount,
+	}
+	inputJSON, err := json.Marshal(input)
+	if err != nil {
+		t.Fatalf("encode live Flutter pending Run-intent Gate input: %v", err)
+	}
+	temporaryDirectory := t.TempDir()
+	inputPath := filepath.Join(temporaryDirectory, "pending-run-intent-gate-live-e2e-input.json")
+	if err := os.WriteFile(inputPath, inputJSON, 0o600); err != nil {
+		t.Fatalf("write private live Flutter pending Run-intent Gate input: %v", err)
+	}
+	flutterHome := filepath.Join(temporaryDirectory, "home")
+	if err := os.Mkdir(flutterHome, 0o700); err != nil {
+		t.Fatalf("create isolated Flutter home: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
+	defer cancel()
+	command := exec.CommandContext(ctx, flutterExecutable,
+		"test", "--no-pub",
+		"--dart-define=FORGE_CONVERSATIONS_API_ORIGIN="+apiURL,
+		"test/forge_pending_run_intent_gate_live_convergence_e2e_test.dart")
+	command.Dir = consoleRoot
+	command.Env = append(
+		forgeConsoleTestEnvironment(inputPath, flutterHome),
+		"FORGE_PENDING_RUN_INTENT_LIVE_CONVERGENCE_E2E_INPUT="+inputPath,
+	)
+	var stdoutBuffer, stderrBuffer boundedCLIOutput
+	command.Stdout = &stdoutBuffer
+	command.Stderr = &stderrBuffer
+	if err := command.Run(); err != nil {
+		t.Fatalf("Flutter live pending Run-intent Gate E2E failed: stdout=%q stderr=%q", stdoutBuffer.String(), stderrBuffer.String())
+	}
+	if stdoutBuffer.exceeded || stderrBuffer.exceeded {
+		t.Fatalf("live pending Run-intent Gate E2E output exceeded the size limit")
+	}
+}
+
+func runForgeConsolePendingRunIntentGateModeE2EWithToken(
+	t *testing.T,
+	apiURL, token, conversationID, issuer, subject, tenant string,
+	expectedVersion int,
+	content, idempotencyKey string,
+	submit bool, pendingIntentID string,
+) {
+	t.Helper()
+	consoleRoot := os.Getenv("SNAPLINK_CONSOLE_ROOT")
+	if consoleRoot == "" {
+		workingDirectory, err := os.Getwd()
+		if err != nil {
+			t.Fatalf("resolve Console repository: %v", err)
+		}
+		repoRoot := filepath.Clean(filepath.Join(workingDirectory, "..", "..", ".."))
+		consoleRoot = filepath.Join(filepath.Dir(repoRoot), "workspace", "demo", "snaplink-console")
+	}
+	if _, err := os.Stat(filepath.Join(consoleRoot, "pubspec.yaml")); err != nil {
+		t.Fatalf("SNAPLINK_CONSOLE_ROOT must name the Flutter Console repository: %v", err)
+	}
+	flutterBinary := os.Getenv("FLUTTER_BIN")
+	if flutterBinary == "" {
+		flutterBinary = "flutter"
+	}
+	flutterExecutable, err := exec.LookPath(flutterBinary)
+	if err != nil {
+		t.Fatalf("Flutter is required for the pending Run-intent Gate E2E: %v", err)
+	}
+	if expectedVersion < 1 || content == "" || idempotencyKey == "" {
+		t.Fatalf("invalid pending Run-intent Gate E2E input: version=%d content=%q key=%q", expectedVersion, content, idempotencyKey)
+	}
+	input := struct {
+		APIURL          string `json:"api_url"`
+		AccessToken     string `json:"access_token"`
+		ConversationID  string `json:"conversation_id"`
+		Issuer          string `json:"issuer"`
+		Subject         string `json:"subject"`
+		TenantID        string `json:"tenant_id"`
+		ExpectedVersion int    `json:"expected_version"`
+		Content         string `json:"content"`
+		IdempotencyKey  string `json:"idempotency_key"`
+		Submit          bool   `json:"submit"`
+		PendingIntentID string `json:"pending_intent_id,omitempty"`
+	}{
+		APIURL: apiURL, AccessToken: token, ConversationID: conversationID,
+		Issuer: issuer, Subject: subject, TenantID: tenant,
+		ExpectedVersion: expectedVersion, Content: content, IdempotencyKey: idempotencyKey,
+		Submit: submit, PendingIntentID: pendingIntentID,
+	}
+	inputJSON, err := json.Marshal(input)
+	if err != nil {
+		t.Fatalf("encode Flutter pending Run-intent Gate input: %v", err)
+	}
+	temporaryDirectory := t.TempDir()
+	inputPath := filepath.Join(temporaryDirectory, "pending-run-intent-gate-e2e-input.json")
+	if err := os.WriteFile(inputPath, inputJSON, 0o600); err != nil {
+		t.Fatalf("write private Flutter pending Run-intent Gate input: %v", err)
+	}
+	flutterHome := filepath.Join(temporaryDirectory, "home")
+	if err := os.Mkdir(flutterHome, 0o700); err != nil {
+		t.Fatalf("create isolated Flutter home: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+	command := exec.CommandContext(ctx, flutterExecutable,
+		"test", "--no-pub",
+		"--dart-define=FORGE_CONVERSATIONS_API_ORIGIN="+apiURL,
+		"test/forge_pending_run_intent_gate_e2e_test.dart")
+	command.Dir = consoleRoot
+	command.Env = append(
+		forgeConsoleTestEnvironment(inputPath, flutterHome),
+		"FORGE_PENDING_RUN_INTENT_GATE_E2E_INPUT="+inputPath,
+	)
+	var stdoutBuffer, stderrBuffer boundedCLIOutput
+	command.Stdout = &stdoutBuffer
+	command.Stderr = &stderrBuffer
+	if err := command.Run(); err != nil {
+		t.Fatalf("Flutter pending Run-intent Gate E2E failed: stdout=%q stderr=%q", stdoutBuffer.String(), stderrBuffer.String())
+	}
+	if stdoutBuffer.exceeded || stderrBuffer.exceeded {
+		t.Fatalf("Flutter pending Run-intent Gate E2E output exceeded the size limit")
+	}
+}
+
 func runForgeConsoleBrowserE2E(
 	t *testing.T,
 	apiURL string,

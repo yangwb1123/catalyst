@@ -201,6 +201,75 @@ state. Default, `OFF`, `INVENTORY`, and `OBSERVE` Runtime assemblies keep this
 endpoint at `404`; a future P4 adapter must revalidate the observation and
 acquire a fenced durable lease before dispatch.
 
+## Accepted EXECUTE scheduler lease claim
+
+An explicitly accepted `EXECUTE + P4` Coordinator may additionally expose the
+owner-bound fenced lease candidate:
+
+```bash
+cargo run -p forge-runtime-cli -- --json \
+  --idempotency-key scheduler-lease-1 \
+  remote placement scheduler-lease --input scheduler-lease-request.json
+# Optionally bind the lease request to one client instance. The online form
+# reads the authenticated converged session/resource pair first and rejects a
+# hidden or drifted Conversation before sending the lease request. A local
+# --instance-view FILE|- is a read-only display projection; omitting both
+# options preserves the legacy unfiltered request.
+cargo run -p forge-runtime-cli -- --json \
+  --idempotency-key scheduler-lease-2 \
+  remote placement scheduler-lease --input scheduler-lease-request.json \
+  --instance client-web-001
+```
+
+The request binds one Conversation, Run, Attempt, requirement set, and bounded
+TTL. The server re-evaluates the policy-complete inventory, claims the first
+unoccupied target, and returns `forge.execution-lease-registry/v1` with the
+inventory counters and fenced epoch. Reusing the same key and request replays
+the original receipt; the idempotency digest uses the strict decoded
+canonical request projection, so Core, Rust, and Flutter may serialize object
+members in different orders and still replay the same grant. A different key
+can claim only another eligible target.
+The CLI validates the owner and authority split, while the human TUI withholds
+the fencing token. Placement, reservation, and lease issuance are true;
+execution authorization, Runner dispatch, command execution, renewal, and
+Audit publication remain false. The route is absent unless the private
+lease/policy files and accepted gate are configured.
+
+To extend a still-active lease, write the exact current proof and use a new
+explicit key:
+
+```bash
+cargo run -p forge-runtime-cli -- --json \
+  --idempotency-key scheduler-lease-renew-1 \
+  remote placement scheduler-lease-renew --input scheduler-lease-renewal.json
+# Renewal accepts the same optional --instance/--instance-view projection and
+# fails closed before the renewal POST when the Conversation is not visible.
+```
+
+The renewal route validates the attempt/target/epoch/token proof against the
+owner-private registry, issues the next fencing epoch with a Coordinator-side
+clock, and replays the same replacement grant for the same key. Expired or
+superseded proofs fail closed; the TUI uses a fresh key and withholds both old
+and new fencing material from human output. Renewal still grants no command,
+Runner, execution, release, or Audit authority.
+
+To release an active reservation after the caller has finished using it, write
+the exact current proof and use a new explicit key:
+
+```bash
+cargo run -p forge-runtime-cli -- --json \
+  --idempotency-key scheduler-lease-release-1 \
+  remote placement scheduler-lease-release --input scheduler-lease-release.json
+# Release accepts the same projection. Its default unfiltered form remains
+# compatible, while a selected instance must pass the visibility guard first.
+```
+
+The release route marks the matching registry entry inactive, preserves its
+epoch for stale-runner fencing, and replays the release receipt for the same
+key. It rejects stale, expired, foreign, malformed, and conflicting proofs.
+The response has all authority fields false and contains no fencing token;
+release does not authorize execution, dispatch, or Audit publication.
+
 ## Offline persisted inventory observation
 
 The CLI can convert a bounded set of already restored inventory values into
@@ -367,6 +436,12 @@ false. This proves profile parity only; it does not claim a live issuer,
 client registration, token/consent, Conversation access, device inventory,
 scheduling, dispatch, or Runner execution.
 
+The same fixture separately names `forge:devices:read` for owner-scoped device
+observation and describes a disabled `forge-device-observer` profile. The
+default CLI/Console clients remain conversation-only, and the optional profile
+does not mount a route or grant inventory, scheduling, dispatch, or execution
+authority.
+
 ## Runner execution-intent binding
 
 The pure `forge.runner-execution-intent/v1` contract repeats the owner,
@@ -423,6 +498,44 @@ contact a Runner, execute a process, persist a receipt, or publish Audit
 evidence. All authority fields remain false and P3b/P4 still require their
 separate accepted governance and security decisions.
 
+## Runner Attempt lifecycle boundary preview
+
+The pure `forge.runner-attempt-boundary/v1` observation can be inspected from
+a bounded local file or stdin without opening HTTP or contacting a Runner:
+
+```bash
+forge-runtime --json device runner-attempt-boundary-preview \
+  --input docs/contracts/fixtures/forge-runner-attempt-boundary-v1.json
+```
+
+The consumer strictly rejects duplicate, unknown, trailing, malformed,
+lifecycle, readiness, and authority drift, and the human rendering contains
+only owner, Attempt lifecycle, epoch, rejection, and all-false authority
+metadata. It does not persist an Attempt, read or mutate a lease, authorize or
+dispatch a command, execute argv, or publish Audit. The TUI remains file-only
+for this preview and exposes `runner-attempt-boundary-preview --input FILE`,
+so no authenticated route or implicit request is introduced. `-` remains
+reserved for the standalone CLI; the TUI renders the same metadata-only human
+projection and never displays command payloads or fencing material.
+
+The authenticated candidate is available separately as
+`remote placement runner-attempt-boundary-preview --input FILE|-`. With
+`--instance ID`, the CLI first reads a converged session/resource pair, then
+refreshes the inventory-v2/resource pair before posting the metadata-only
+preview. The Conversation must remain visible and the target must match a
+device ID or Runner instance ID in the observed resource image. An optional
+`--instance-view FILE` accepts a validated resource or converged fixture;
+a session-only fixture cannot establish the target binding.
+
+The remote TUI command `runner-attempt-boundary-remote-preview --input FILE`
+applies the same target check to an active instance filter. Open converged
+session/resource and inventory/resource observations first; the command
+refreshes inventory/resource data and rechecks Conversation visibility before
+POST. Missing observations, revoked sessions, resource drift, and foreign
+targets block the candidate. These observations grant no Attempt persistence,
+Runner transport, execution, or Audit authority; the server candidate remains
+subject to its existing activation gate.
+
 ## Session-bound Runner receipt observation
 
 The `forge.session-runner-receipt-observation/v1` value bridge binds that
@@ -462,6 +575,79 @@ The envelope is the strict request and response body. The route binds its owner
 and Conversation/Run identifiers to the authenticated principal and path; it
 does not read Hub state, persist receipt evidence, select a device, issue a
 lease, dispatch a Runner, or execute a process.
+
+An explicitly enabled Core candidate can revalidate the same bounded history
+through the authenticated remote CLI:
+
+```bash
+forge-runtime --json remote session-runner-receipt-history preview \
+  --input docs/contracts/fixtures/forge-session-runner-receipt-history-v1.json
+```
+
+The TUI command is
+`session-runner-receipt-history-preview --input FILE`. It binds the history to
+the selected Conversation/Run, posts it once to
+`/api/v1/conversations/{conversation_id}/runs/{run_id}/runner-receipt-history/preview`,
+and rechecks Core's canonical reduction before rendering. This opt-in route is
+read-only; it does not persist history, retry an uncertain attempt, select or
+reserve a target, dispatch a Runner, execute work, or publish Audit evidence.
+
+## Session-bound Runner receipt history
+
+The `forge.session-runner-receipt-history/v1` envelope is a bounded local
+reduction of caller-supplied session-bound receipt observations. It permits a
+definite `failed` attempt to precede a later observation, but a `completed` or
+`uncertain` observation closes the history. An `uncertain` latest result always
+requires manual reconciliation and never enables automatic retry.
+
+The CLI and TUI consume the canonical file without opening a device or making
+an API request:
+
+```bash
+forge-runtime --json device session-runner-receipt-history-preview \
+  --input docs/contracts/fixtures/forge-session-runner-receipt-history-v1.json
+```
+
+The TUI command is
+`session-runner-receipt-history-offline-preview --input FILE`; `-` remains
+reserved for the standalone CLI. Both surfaces reject duplicate, unknown, or
+trailing JSON, lifecycle violations such as retrying after `uncertain`, and
+summary drift. The projection is metadata-only: it performs no persistence,
+retry, device request, Runner transport, execution, or Audit publication.
+
+## Session Runner manual reconciliation projection
+
+Runtime consumes the canonical uncertain-terminal projection only from an
+explicit local input:
+
+```bash
+forge-runtime --json remote session-runner-reconciliation preview \
+  --input docs/contracts/fixtures/forge-session-runner-reconciliation-projection-v1.json
+```
+
+The TUI command is
+`session-runner-reconciliation-preview --input FILE`. Both consumers reject
+unknown, duplicate, or trailing JSON and any owner/session, source-history,
+latest-value, flag, selected-target, or authority drift. The standalone CLI
+does not require `FORGE_API_URL` and does not open a remote client. The value
+requires manual reconciliation, keeps automatic retry disabled, selects no
+target, and performs no persistence, scheduling, dispatch, execution, or Audit
+publication.
+
+An authenticated client can instead submit the complete receipt history to the
+opt-in Core projector once:
+
+```bash
+forge-runtime --json remote session-runner-reconciliation remote-preview \
+  --input docs/contracts/fixtures/forge-session-runner-receipt-history-v1.json
+```
+
+The TUI equivalent is
+`session-runner-reconciliation-remote-preview --input FILE`. It binds the
+history to the selected Conversation/Run, revalidates Core's canonical
+projection, and renders the same manual review result. This route is a
+stateless read-only preview: it never retries, selects or reserves a target,
+dispatches a Runner, executes work, persists a receipt, or publishes Audit.
 
 ## Offline Run-intent preview
 
@@ -540,6 +726,29 @@ metadata only. It does not read a registry, bind a Conversation, write a
 Prompt, create a Run, select or reserve a device, schedule or dispatch work,
 contact a Runner, execute a process, persist a receipt, or publish Audit.
 
+When an authenticated TUI has explicitly opened both the lossless v2 inventory
+and the client-instance/resource view, `sync` compares each device/Runner
+pair's revision, generation, and heartbeat sequence before committing the new
+display image. A mismatch retains the previous pair and leaves the owner
+change cursor unchanged so a later sync can retry the same boundary. This is
+a display consistency check only; it does not establish inventory authority,
+freshness, placement, reservation, or execution permission.
+
+The TUI also has an explicit paired client-instance read:
+
+```text
+client-instances show-converged
+```
+
+It performs one authenticated session-view GET and one resource-view GET,
+renders both only after the owner declaration and complete instance rows
+converge, and commits the two projections together. A drift or non-authority
+failure leaves the previous pair intact; an authorization failure clears the
+local owner view. The command remains display-only and does not register a
+client, authorize a session or Prompt write, select or reserve a device,
+schedule or dispatch work, contact a Runner, persist a receipt, or publish
+Audit.
+
 R0-C5 implements one pure Runtime-owned Attempt request value under Proposed
 ADR-0107 and closes only FR-03a. It validates caller-supplied Platform Core scope and
 explicit refs, Control aggregate versions, executor and typed record
@@ -616,6 +825,9 @@ cargo run -p forge-runtime-cli -- remote changes list
 # back off; a change or backlog resets the delay. The saved cursor advances
 # after each validated page.
 cargo run -p forge-runtime-cli -- remote changes watch --polls 8
+# Opt in to one bounded authenticated SSE/long-poll page. A 204 timeout is
+# reported as timed_out=true and leaves the checkpoint unchanged.
+cargo run -p forge-runtime-cli -- remote changes stream --wait-ms 5000
 # Override the saved cursor for one read without changing the checkpoint.
 cargo run -p forge-runtime-cli -- remote changes list --after-cursor 0
 
@@ -633,6 +845,15 @@ cargo run -p forge-runtime-cli -- remote sessions import LOCAL_CONVERSATION_ID \
 # comparison; the response never authorizes, reserves, selects, or dispatches.
 cargo run -p forge-runtime-cli -- remote placement preview --input placement-request.json
 
+# In an accepted EXECUTE + P4 assembly, preview one owner-bound scheduler
+# candidate. The selected IDs remain display-only and all authority is false.
+cargo run -p forge-runtime-cli -- remote placement scheduler-preview --input scheduler-request.json
+# Limit the preview to a Conversation declared by one client instance. The
+# online form reads one converged authenticated session/resource pair first;
+# --instance-view FILE|- uses an explicit local display observation instead.
+cargo run -p forge-runtime-cli -- remote placement scheduler-preview \
+  --input scheduler-request.json --instance client-web-001
+
 # Inspect metadata for Runs already attached to a shared Conversation.
 cargo run -p forge-runtime-cli -- remote runs list CONVERSATION_ID
 cargo run -p forge-runtime-cli -- remote runs timeline CONVERSATION_ID RUN_ID
@@ -648,10 +869,24 @@ cargo run -p forge-runtime-cli -- --json remote sessions list --scope project:PR
 # session/resource observation.
 cargo run -p forge-runtime-cli -- --json remote sessions list \
   --instance client-web-001 --instance-view client-instance-view.json
+# Capture one paired session/resource observation, then reuse it for a local
+# session filter and an owner/CAS/idempotent Prompt append.
+cargo run -p forge-runtime-cli -- --json remote client-instances show-converged \
+  > client-instance-convergence.json
+cargo run -p forge-runtime-cli -- --json remote sessions list \
+  --instance client-web-001 --instance-view client-instance-convergence.json
+cargo run -p forge-runtime-cli -- --idempotency-key prompt-2 \
+  remote prompts add CONVERSATION_ID --expected-version 1 \
+  --instance client-web-001 --instance-view client-instance-convergence.json \
+  "Review the current task."
 
 # Create a shared conversation and append a prompt with CAS/idempotency guards.
 cargo run -p forge-runtime-cli -- --idempotency-key create-1 \
   remote sessions create --scope group:GROUP_ID --title "Shared work"
+# Verify one selected instance before the same single owner-wide create.
+cargo run -p forge-runtime-cli -- --idempotency-key create-instance-1 \
+  remote sessions create --instance client-web-001 \
+  --instance-view client-instance-convergence.json --title "Web work"
 cargo run -p forge-runtime-cli -- --idempotency-key prompt-1 \
   remote prompts add CONVERSATION_ID --expected-version 1 "Review the current task."
 # Or keep a multiline/sensitive Prompt out of argv and shell history (256 KiB max).
@@ -675,17 +910,39 @@ it but does not create or dispatch a Run.
 
 `remote sessions list --instance INSTANCE_ID` applies a local caller-declared
 projection from the selected instance's opaque `session_ids` after the already
-authenticated Conversation page arrives. `--instance-view FILE|-` accepts the
+authenticated Conversation page arrives. Without `--instance-view`, the CLI
+reads both owner-bound session-view and resource-view candidates and requires
+their instance rows to converge before any private Conversation, Prompt, Run,
+or pending Run-intent request. `--instance-view FILE|-` accepts the
 strict `forge.client-instance-session-view/v1` or
-`forge.client-instance-resource-view/v1` observation locally; without it, the
-explicit owner-bound session-view candidate is read first. The instance value
-does not become a request query, owner claim, registration, or authority. In
-the TUI, open `client-instances session-view` or `resource-view`, then use
+`forge.client-instance-resource-view/v1` observation locally. It also accepts
+the paired `forge.client-instance-session-resource-convergence/v1` output from
+`client-instances show-converged`; the CLI strictly validates both nested views,
+matching owner and instance rows, and all-false authority before projecting its
+session view. Without a supplied file, the paired owner-bound candidates are
+read once and must converge. The instance value does not become a request query,
+owner claim, registration, or authority. `remote sessions create --instance`
+uses the same strict projection check before its one owner-wide storage write;
+it does not create instance membership or select private Prompt/Run state. In
+the TUI, open
+`client-instances session-view` or `client-instances resource-view`, then use
 `instance INSTANCE_ID`, `instance list`, or `instance clear`; an explicit
 reader can be revoked with `client-instances clear session-view` or
 `client-instances clear resource-view`. Selection and local Prompt/Run panels
 are reselected or cleared when a session leaves the projection, and an active
 instance filter remains empty until a new validated reader succeeds.
+After a TUI reader has been opened, `sync` refreshes the same owner-scoped
+instance declaration in the running process. If the refreshed image changes
+the instance ID, select the new declared instance before reopening its session;
+the normal owner/CAS/idempotency Prompt write then remains available for that
+local projection. A TUI `create` under an active instance filter requires both
+owner-bound readers to be present and converged before its owner-wide storage
+write; an ordinary unfiltered `create` keeps the existing path. If the
+independently refreshed session/resource images drift,
+the TUI retains their bounded metadata for display but shows that the
+client-instance filter and private Prompt/Run projection are blocked until the
+pair converges again. A failed second read cannot publish a mixed pair. With no
+active instance filter, ordinary owner reads keep their existing behavior.
 
 Run inspection is read-only and metadata-only: summaries expose the Run and
 Prompt IDs, creation time, latest sequence and a closed status; timeline pages
@@ -708,6 +965,13 @@ accepted admission assembly can mount it. That assembly also exposes the
 metadata-only Attempt/lease, Runner-receipt, dispatch-plan, and reconciliation
 preflight projections; they keep target selection and authority closed and do
 not read or mutate durable execution state.
+
+The authenticated `remote run-attempt-lease-dispatch-preflight-preview` command
+also accepts `--instance INSTANCE_ID`. Without `--instance-view`, it reads the
+owner-bound client-instance session/resource pair before the candidate POST;
+with `--instance-view FILE|-`, it validates the caller-supplied display view
+locally. A Conversation hidden from the selected instance fails closed without
+a preflight request, while omitting the filter preserves the legacy path.
 
 The default Snaplink client ID is `forge-cli`; override it with
 `SNAPLINK_CLIENT_ID` only when the deployment uses a different profile.
@@ -747,6 +1011,23 @@ advancing saved cursor after each valid page. Set `--min-delay-ms` and
 `--max-delay-ms` to tune the bounded window; an explicit `--after-cursor`
 remains a one-off watch and never replaces the saved checkpoint. It only
 reads Conversations and does not touch device or execution routes.
+
+`remote changes stream` is an explicit one-page SSE/long-poll read for clients
+that can use the Core stream transport. Its `--wait-ms` value is bounded to
+10,000 ms so it remains within the Runtime HTTP timeout. The response must be
+one `conversation_changes` event whose SSE id matches the page's scanned
+cursor; malformed framing, duplicate or unknown fields, unsafe values, and
+cursor drift fail closed. An empty `204` returns `timed_out=true` and does not
+advance the checkpoint. TUI users can issue the same request with
+`changes stream [--after-cursor N] [--wait-ms 0..10000]`; the existing polling
+and `changes watch` commands remain the default behavior.
+
+When the TUI has an explicit `instance:INSTANCE_ID` filter, both change-feed
+commands refresh the owner-bound client-instance session/resource observations
+before requesting the feed. Drift, refresh failure, or a previously selected
+Conversation that is no longer declared by that instance stops before the feed
+request and leaves the local cursor unchanged. Without an instance filter, no
+additional reads are made.
 
 The CLI checks the returned JWT claims to catch a mismatched issuer, owner,
 audience, or scope before saving; Forge Core remains responsible for token

@@ -51,6 +51,7 @@ type lifecycleRegistryCandidateConfig struct {
 	Enabled    bool
 	Store      lifecycleRegistryCandidateStore
 	Heartbeat  *lifecycleHeartbeatCandidateConfig
+	Challenge  *lifecycleChallengeCandidateConfig
 	Approval   *lifecycleApprovalCandidateConfig
 	Credential *lifecycleCredentialCandidateConfig
 }
@@ -134,11 +135,21 @@ func newLifecycleRegistryCandidateRoutes(config *lifecycleRegistryCandidateConfi
 		http.HandlerFunc(lifecycleRegistryCandidateHandler{store: config.Store}.ServeHTTP),
 	)
 	heartbeat := newLifecycleHeartbeatCandidateRoutes(config)
+	signedHeartbeat := newLifecycleSignedHeartbeatCandidateRoutes(config)
+	challenge := newLifecycleChallengeCandidateRoutes(config)
 	approval := newLifecycleApprovalCandidateRoutes(config)
 	credential := newLifecycleCredentialCandidateRoutes(config)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.EscapedPath() == lifecycleHeartbeatCandidatePath {
 			heartbeat.ServeHTTP(w, r)
+			return
+		}
+		if r.URL.EscapedPath() == lifecycleSignedHeartbeatCandidatePath {
+			signedHeartbeat.ServeHTTP(w, r)
+			return
+		}
+		if r.URL.EscapedPath() == lifecycleChallengeCandidatePath {
+			challenge.ServeHTTP(w, r)
 			return
 		}
 		if r.URL.EscapedPath() == lifecycleApprovalCandidatePath {
@@ -198,7 +209,7 @@ func newAuthenticatedSessionRoutesWithLifecycleRegistryCandidate(
 }
 
 func isLifecycleRegistryCandidatePath(path string) bool {
-	return path == lifecycleRegistryCandidatePath || path == lifecycleHeartbeatCandidatePath || path == lifecycleApprovalCandidatePath || path == lifecycleCredentialCandidatePath
+	return path == lifecycleRegistryCandidatePath || path == lifecycleHeartbeatCandidatePath || path == lifecycleSignedHeartbeatCandidatePath || path == lifecycleChallengeCandidatePath || path == lifecycleApprovalCandidatePath || path == lifecycleCredentialCandidatePath
 }
 
 func serveDisabledLifecycleRegistryCandidate(w http.ResponseWriter, r *http.Request) {
@@ -284,6 +295,12 @@ func (handler lifecycleRegistryCandidateHandler) serveReplace(w http.ResponseWri
 		writeConversationError(w, r, http.StatusBadRequest, "invalid_request", "lifecycle registry replacement is invalid")
 		return
 	}
+	for _, state := range request.States {
+		if state.ChallengeCandidate != nil {
+			writeConversationError(w, r, http.StatusBadRequest, "invalid_request", "challenge candidates must use the challenge candidate route")
+			return
+		}
+	}
 	owner, ok := conversationOwner(r)
 	if !ok {
 		writeConversationError(w, r, http.StatusUnauthorized, "invalid_token", "authentication is required")
@@ -335,6 +352,7 @@ func lifecycleRegistryCandidateEnvelopeFor(
 	for index := range canonical.States {
 		canonical.States[index].ApprovalCandidate = nil
 		canonical.States[index].CredentialCandidate = nil
+		canonical.States[index].ChallengeCandidate = nil
 	}
 	return lifecycleRegistryCandidateEnvelope{
 		SchemaVersion: deviceinventory.PersistedLifecycleRegistryFileSchemaVersion,

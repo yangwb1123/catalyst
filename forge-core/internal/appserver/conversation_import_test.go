@@ -58,6 +58,54 @@ func TestConversationImportRouteForwardsVerifiedOwnerAndGlobalTranscript(t *test
 	}
 }
 
+func TestConversationImportRouteRejectsBindingDriftedBackendReceipt(t *testing.T) {
+	cases := []struct {
+		name   string
+		result model.OwnedConversationImportResult
+	}{
+		{
+			name: "foreign title",
+			result: model.OwnedConversationImportResult{Conversation: model.Conversation{
+				ID: "conversation-imported", Scope: model.ConversationScope{Kind: "global"},
+				Title: "Other transcript", CreatedAtMS: 10, UpdatedAtMS: 10,
+			}, AggregateVersion: 1, ImportedPromptCount: 0},
+		},
+		{
+			name: "non-global scope",
+			result: model.OwnedConversationImportResult{Conversation: model.Conversation{
+				ID: "conversation-imported", Scope: model.ConversationScope{Kind: "project", ID: "project-1"},
+				Title: "Imported transcript", CreatedAtMS: 10, UpdatedAtMS: 10,
+			}, AggregateVersion: 1, ImportedPromptCount: 0},
+		},
+		{
+			name: "invalid conversation id",
+			result: model.OwnedConversationImportResult{Conversation: model.Conversation{
+				ID: "conversation/imported", Scope: model.ConversationScope{Kind: "global"},
+				Title: "Imported transcript", CreatedAtMS: 10, UpdatedAtMS: 10,
+			}, AggregateVersion: 1, ImportedPromptCount: 0},
+		},
+		{
+			name: "prompt count drift",
+			result: model.OwnedConversationImportResult{Conversation: model.Conversation{
+				ID: "conversation-imported", Scope: model.ConversationScope{Kind: "global"},
+				Title: "Imported transcript", CreatedAtMS: 10, UpdatedAtMS: 10,
+			}, AggregateVersion: 1, ImportedPromptCount: 1},
+		},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			backend := &fakeConversationBackend{importResult: test.result}
+			identity, handler := conversationTestHandler(t, backend)
+			response := requestConversationAPI(t, handler, identity, http.MethodPost, conversationImportPath,
+				"forge:conversations:write", "application/json", "import-binding-drift", `{"title":"Imported transcript","prompts":[]}`)
+			if response.Code != http.StatusBadGateway || backend.importCalls != 1 ||
+				!strings.Contains(response.Body.String(), `"code":"conversation_service_error"`) {
+				t.Fatalf("binding-drifted import status=%d calls=%d body=%q", response.Code, backend.importCalls, response.Body.String())
+			}
+		})
+	}
+}
+
 func TestConversationImportRequiresWriteScopeAndIdempotencyKey(t *testing.T) {
 	backend := &fakeConversationBackend{}
 	identity, handler := conversationTestHandler(t, backend)

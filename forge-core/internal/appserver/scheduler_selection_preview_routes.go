@@ -2,6 +2,7 @@ package appserver
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"forgeos/forge-core/internal/authn"
@@ -9,17 +10,20 @@ import (
 	model "forgeos/forge-core/internal/runtimebridge/model"
 )
 
-// schedulerSelectionPreviewPath is an EXECUTE admission candidate. It
-// exposes one deterministic target declaration from the owner-private v2
-// observation but never adopts that target as a reservation or lease.
+// schedulerSelectionPreviewPath is a planning-only candidate. It exposes one
+// deterministic target declaration from the owner-private v2 observation,
+// optionally joined with the owner-private policy image used by the lease
+// route, but never adopts that target as a reservation or lease.
 const schedulerSelectionPreviewPath = "/api/v1/device-placement/scheduler-preview"
 
 const schedulerSelectionPreviewScope = "forge:devices:placement:preview"
 
 type schedulerSelectionPreviewConfig struct {
-	Enabled bool
-	Source  deviceInventoryReadV2Source
-	Now     devicePlacementRegistryCandidateClock
+	Enabled      bool
+	Source       deviceInventoryReadV2Source
+	PolicySource devicePlacementPolicyReadSource
+	Now          devicePlacementRegistryCandidateClock
+	Backend      conversationBackend
 }
 
 type schedulerSelectionPreviewRequest struct {
@@ -29,15 +33,15 @@ type schedulerSelectionPreviewRequest struct {
 	Requirements   deviceplacement.Requirements `json:"requirements"`
 }
 
-// newSchedulerSelectionPreviewRoutes is only composed by accepted EXECUTE
-// activation. A missing or disabled dependency has the same 404 surface as
-// an unregistered production route.
+// newSchedulerSelectionPreviewRoutes is only composed by an explicit opt-in
+// activation. A missing or disabled dependency has the same 404 surface as an
+// unregistered production route.
 func newSchedulerSelectionPreviewRoutes(config *schedulerSelectionPreviewConfig) http.Handler {
 	if config == nil || !config.Enabled || config.Source == nil || config.Now == nil {
 		return http.HandlerFunc(serveDisabledSchedulerSelectionPreview)
 	}
 	return authn.RequireScopes(http.HandlerFunc(schedulerSelectionPreviewHandler{
-		source: config.Source, now: config.Now,
+		source: config.Source, policySource: config.PolicySource, now: config.Now, backend: config.Backend,
 	}.ServeHTTP), schedulerSelectionPreviewScope)
 }
 
@@ -46,8 +50,10 @@ func serveDisabledSchedulerSelectionPreview(w http.ResponseWriter, r *http.Reque
 }
 
 type schedulerSelectionPreviewHandler struct {
-	source deviceInventoryReadV2Source
-	now    devicePlacementRegistryCandidateClock
+	source       deviceInventoryReadV2Source
+	policySource devicePlacementPolicyReadSource
+	now          devicePlacementRegistryCandidateClock
+	backend      conversationBackend
 }
 
 func (handler schedulerSelectionPreviewHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -79,6 +85,10 @@ func (handler schedulerSelectionPreviewHandler) ServeHTTP(w http.ResponseWriter,
 		writeConversationError(w, r, http.StatusUnauthorized, "invalid_token", "authentication is required")
 		return
 	}
+	if err := verifyOwnedRunReference(r.Context(), handler.backend, owner, request.ConversationID, request.RunID); err != nil {
+		writeOwnedRunReferenceError(w, r, err)
+		return
+	}
 	evaluatedAtMS, err := handler.now(r.Context())
 	if err != nil {
 		writeConversationBackendError(w, r, err)
@@ -97,13 +107,27 @@ func (handler schedulerSelectionPreviewHandler) ServeHTTP(w http.ResponseWriter,
 		writeConversationError(w, r, http.StatusBadGateway, "device_placement_invalid", "scheduler selection preview source response is invalid")
 		return
 	}
-	placement, err := deviceplacement.EvaluatePersistedInventoryObservationV2(
-		observation,
-		deviceplacement.Owner{Issuer: owner.Issuer, Subject: owner.Subject, TenantID: owner.TenantID},
-		request.Requirements,
-		evaluatedAtMS,
-	)
+	evaluationOwner := deviceplacement.Owner{Issuer: owner.Issuer, Subject: owner.Subject, TenantID: owner.TenantID}
+	var placement deviceplacement.PersistedInventoryPlacementV2Evaluation
+	if handler.policySource == nil {
+		placement, err = deviceplacement.EvaluatePersistedInventoryObservationV2(
+			observation, evaluationOwner, request.Requirements, evaluatedAtMS,
+		)
+	} else {
+		policy, policyErr := handler.policySource.ReadOwnedDevicePlacementPolicy(r.Context(), owner)
+		if policyErr != nil {
+			writeConversationBackendError(w, r, policyErr)
+			return
+		}
+		placement, err = deviceplacement.EvaluatePolicyCompleteInventoryObservationV2(
+			observation, policy, evaluationOwner, request.Requirements, evaluatedAtMS,
+		)
+	}
 	if err != nil {
+		if errors.Is(err, deviceplacement.ErrPlacementPolicyRegistryBinding) {
+			writeConversationError(w, r, http.StatusBadGateway, "device_placement_invalid", "scheduler policy source does not match the inventory observation")
+			return
+		}
 		writeConversationError(w, r, http.StatusBadRequest, "invalid_request", "scheduler selection preview request is invalid")
 		return
 	}

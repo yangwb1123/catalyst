@@ -12,6 +12,9 @@ use super::{
     parse_issuer, validate_verification_uri,
 };
 
+const DEVICE_OBSERVATION_SCOPE: &str = "forge:devices:read";
+const DEVICE_OBSERVATION_CLIENT_ID: &str = "forge-device-observer";
+
 #[tokio::test]
 async fn device_flow_uses_form_encoding_without_credentials_or_bearer() {
     let (issuer, server) =
@@ -263,13 +266,24 @@ fn snaplink_profile_fixture_matches_the_cli_device_client() {
         audience: String,
         resource: String,
         conversation_scopes: Vec<String>,
+        device_observation_scopes: Vec<String>,
         clients: std::collections::BTreeMap<String, ClientProfile>,
+        optional_clients: std::collections::BTreeMap<String, OptionalClientProfile>,
         authority: Authority,
     }
     #[derive(serde::Deserialize)]
     #[serde(deny_unknown_fields)]
     struct ClientProfile {
         client_id: String,
+        public: bool,
+        grant_types: Vec<String>,
+        scopes: Vec<String>,
+    }
+    #[derive(serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct OptionalClientProfile {
+        client_id: String,
+        enabled: bool,
         public: bool,
         grant_types: Vec<String>,
         scopes: Vec<String>,
@@ -298,6 +312,10 @@ fn snaplink_profile_fixture_matches_the_cli_device_client() {
             "forge:conversations:write".to_owned()
         ]
     );
+    assert_eq!(
+        profile.device_observation_scopes,
+        vec![DEVICE_OBSERVATION_SCOPE.to_owned()]
+    );
     let cli = profile.clients.get("cli").expect("cli profile");
     assert_eq!(cli.client_id, DEFAULT_CLIENT_ID);
     assert!(cli.public);
@@ -314,6 +332,24 @@ fn snaplink_profile_fixture_matches_the_cli_device_client() {
         vec!["authorization_code", "refresh_token"]
     );
     assert_eq!(console.scopes, cli.scopes);
+    let observer = profile
+        .optional_clients
+        .get("device_observer")
+        .expect("device observation profile");
+    assert_eq!(observer.client_id, DEVICE_OBSERVATION_CLIENT_ID);
+    assert!(!observer.enabled);
+    assert!(observer.public);
+    assert_eq!(
+        observer.grant_types,
+        vec!["authorization_code", "refresh_token"]
+    );
+    assert_eq!(
+        observer.scopes,
+        vec![
+            "forge:conversations:read".to_owned(),
+            DEVICE_OBSERVATION_SCOPE.to_owned()
+        ]
+    );
     assert!(!profile.authority.issuer_verified);
     assert!(!profile.authority.audience_verified);
     assert!(!profile.authority.client_provisioned);

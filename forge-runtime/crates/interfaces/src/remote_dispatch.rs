@@ -47,6 +47,8 @@ pub(crate) async fn run(args: &Args, command: &RemoteCommand) -> ExitCode {
                 println!("{output}");
                 if matches!(command, RemoteCommand::PromptsAdd { .. }) {
                     eprintln!("{}", prompt_acknowledgement(&value));
+                } else if matches!(command, RemoteCommand::PromptsReceipt { .. }) {
+                    eprintln!("Prompt append receipt observed. No Run was started.");
                 } else if matches!(command, RemoteCommand::PendingRunIntentSubmit { .. }) {
                     eprintln!("Pending Run-intent stored. No Run was started.");
                 }
@@ -111,6 +113,19 @@ fn pending_write_recovery(command: &RemoteCommand, key: Option<&str>) -> Option<
             attempted_at_ms: None,
             last_observed_at_ms: None,
         },
+        RemoteCommand::PromptsReceipt {
+            conversation_id,
+            expected_version,
+            ..
+        } => PendingWriteMetadata {
+            operation: "append_prompt_receipt".into(),
+            conversation_id: Some(conversation_id.clone()),
+            expected_version: Some(*expected_version),
+            idempotency_key: key.into(),
+            state: "unconfirmed".into(),
+            attempted_at_ms: None,
+            last_observed_at_ms: None,
+        },
         RemoteCommand::PendingRunIntentSubmit {
             conversation_id,
             expected_version,
@@ -154,6 +169,7 @@ fn resolve_stdin_prompt(
 ) -> Result<Option<String>, Box<dyn std::error::Error>> {
     let content = match command {
         RemoteCommand::PromptsAdd { content, .. }
+        | RemoteCommand::PromptsReceipt { content, .. }
         | RemoteCommand::PendingRunIntentSubmit { content, .. } => content,
         _ => return Ok(None),
     };

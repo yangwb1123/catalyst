@@ -41,6 +41,159 @@ async fn conversation_changes_rejects_cursor_above_json_safe_integer_before_requ
 }
 
 #[tokio::test]
+async fn conversation_changes_stream_reads_one_authenticated_sse_page() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let request = capture_request(&mut stream);
+        assert!(request.line.starts_with(
+            "GET /api/v1/conversation-changes/stream?after_cursor=4&limit=128&wait_ms=0 "
+        ));
+        assert!(request.headers.contains("authorization: bearer test-token"));
+        assert!(request.headers.contains("accept: text/event-stream"));
+        assert!(request.body.is_empty());
+        let data = json!({
+            "after_cursor": 4,
+            "scanned_through_cursor": 5,
+            "has_more": false,
+            "changes": [{
+                "cursor": 5,
+                "schema_version": 1,
+                "conversation_id": "c-1",
+                "entity_id": "p-1",
+                "aggregate_version": 2,
+                "kind": "prompt_appended",
+                "created_at_ms": 20
+            }]
+        });
+        let payload = format!(
+            "event: conversation_changes\nid: 5\ndata: {}\n\n",
+            serde_json::to_string(&data).unwrap()
+        );
+        write!(
+            stream,
+            "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+            payload.len(),
+            payload
+        )
+        .unwrap();
+    });
+    let client = test_remote_client(address);
+    let result = client
+        .stream_conversation_changes(Some(4), 0)
+        .await
+        .unwrap();
+    assert_eq!(result["start_cursor"], 4);
+    assert_eq!(result["scanned_through_cursor"], 5);
+    assert_eq!(result["timed_out"], false);
+    assert_eq!(result["changes"].as_array().unwrap().len(), 1);
+    server.join().unwrap();
+}
+
+#[tokio::test]
+async fn conversation_changes_stream_accepts_empty_204_timeout_without_advancing_cursor() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let request = capture_request(&mut stream);
+        assert!(request.line.starts_with(
+            "GET /api/v1/conversation-changes/stream?after_cursor=4&limit=128&wait_ms=1 "
+        ));
+        assert!(request.headers.contains("accept: text/event-stream"));
+        write!(
+            stream,
+            "HTTP/1.1 204 No Content\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+        )
+        .unwrap();
+    });
+    let client = test_remote_client(address);
+    let result = client
+        .stream_conversation_changes(Some(4), 1)
+        .await
+        .unwrap();
+    assert_eq!(result["start_cursor"], 4);
+    assert_eq!(result["scanned_through_cursor"], 4);
+    assert_eq!(result["timed_out"], true);
+    assert!(result["changes"].as_array().unwrap().is_empty());
+    server.join().unwrap();
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn conversation_changes_stream_advances_saved_cursor_only_after_valid_page() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let (_config_root, cursor_store) = checkpoint_store(address);
+    cursor_store.save(4).unwrap();
+    let server = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let request = capture_request(&mut stream);
+        assert!(request.line.starts_with(
+            "GET /api/v1/conversation-changes/stream?after_cursor=4&limit=128&wait_ms=0 "
+        ));
+        let data = json!({
+            "after_cursor": 4,
+            "scanned_through_cursor": 5,
+            "has_more": false,
+            "changes": [{
+                "cursor": 5,
+                "schema_version": 1,
+                "conversation_id": "c-1",
+                "entity_id": "p-1",
+                "aggregate_version": 2,
+                "kind": "prompt_appended",
+                "created_at_ms": 20
+            }]
+        });
+        let frame = format!(
+            "event: conversation_changes\nid: 5\ndata: {}\n\n",
+            serde_json::to_string(&data).unwrap()
+        );
+        write!(
+            stream,
+            "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+            frame.len(),
+            frame
+        )
+        .unwrap();
+    });
+    let client = RemoteClient {
+        change_cursor: Some(cursor_store.clone()),
+        ..test_remote_client(address)
+    };
+    client.stream_conversation_changes(None, 0).await.unwrap();
+    assert_eq!(cursor_store.load().unwrap(), 5);
+    server.join().unwrap();
+}
+
+#[tokio::test]
+async fn conversation_changes_stream_rejects_wrong_content_type() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let _ = capture_request(&mut stream);
+        write!(
+            stream,
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+        )
+        .unwrap();
+    });
+    let client = test_remote_client(address);
+    let error = client
+        .stream_conversation_changes(Some(4), 0)
+        .await
+        .expect_err("wrong content type accepted");
+    assert_eq!(
+        error.0,
+        "Forge API returned an invalid conversation change stream response"
+    );
+    server.join().unwrap();
+}
+
+#[tokio::test]
 async fn conversation_changes_watch_backoffs_on_empty_pages_and_observes_later_change() {
     let (client, server) = spawn_mock_server(vec![
         ExpectedRequest {

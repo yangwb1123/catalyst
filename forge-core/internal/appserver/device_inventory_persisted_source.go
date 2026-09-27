@@ -60,12 +60,44 @@ type persistedInventoryFileSetReadSource struct {
 	evaluatedAtMS uint64
 }
 
+// persistedPlacementPolicyFileSource is the explicit policy-complete join
+// source used by scheduler selection preview and the fenced scheduler lease
+// route. It is separate from the lifecycle inventory source because the
+// latter intentionally contains unknown residency, trust, sandbox, and
+// concurrency attributes.
+type persistedPlacementPolicyFileSource struct {
+	path string
+}
+
 func newPersistedInventoryFileReadSource(path string, evaluatedAtMS uint64) persistedInventoryFileReadSource {
 	return persistedInventoryFileReadSource{path: path, evaluatedAtMS: evaluatedAtMS}
 }
 
 func newPersistedInventoryFileSetReadSource(path string, evaluatedAtMS uint64) persistedInventoryFileSetReadSource {
 	return persistedInventoryFileSetReadSource{path: path, evaluatedAtMS: evaluatedAtMS}
+}
+
+func newPersistedPlacementPolicyFileSource(path string) persistedPlacementPolicyFileSource {
+	return persistedPlacementPolicyFileSource{path: path}
+}
+
+func (source persistedPlacementPolicyFileSource) ReadOwnedDevicePlacementPolicy(
+	ctx context.Context,
+	owner model.Owner,
+) (deviceplacement.PlacementPolicyRegistry, error) {
+	if ctx == nil {
+		return deviceplacement.PlacementPolicyRegistry{}, fmt.Errorf("placement policy source requires a context")
+	}
+	if err := ctx.Err(); err != nil {
+		return deviceplacement.PlacementPolicyRegistry{}, err
+	}
+	adapter, err := deviceplacement.NewPlacementPolicyRegistryFileReadAdapter(source.path, deviceplacement.Owner{
+		Issuer: owner.Issuer, Subject: owner.Subject, TenantID: owner.TenantID,
+	})
+	if err != nil {
+		return deviceplacement.PlacementPolicyRegistry{}, err
+	}
+	return adapter.Read()
 }
 
 func newPersistedInventoryReadV2Source(

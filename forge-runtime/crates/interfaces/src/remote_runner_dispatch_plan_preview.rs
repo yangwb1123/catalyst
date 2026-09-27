@@ -9,7 +9,7 @@
 
 use std::{io, io::Write};
 
-use serde_json::Value;
+use serde_json::{Value, json};
 
 use super::{RemoteError, run_attempt_lease_dispatch_preflight as preflight};
 
@@ -32,6 +32,67 @@ pub(super) fn dispatch_plan(request: &Value) -> Result<Value, RemoteError> {
         .filter(|value| value.is_object())
         .cloned()
         .ok_or_else(invalid_request)
+}
+
+/// Validates the plan-only body accepted by the remote client.  The endpoint
+/// deliberately receives only `dispatch_plan`, so construct an internal
+/// preflight envelope to reuse the strict owner, Conversation/Run, Attempt,
+/// lease, placement, and execution-intent relationship checks.  The sentinel
+/// run status is validation scaffolding only; this client never infers or
+/// changes Run state from it.
+pub(super) fn validate_dispatch_plan_request(
+    dispatch_plan: &Value,
+    conversation_id: &str,
+    run_id: &str,
+) -> Result<(), RemoteError> {
+    let request = dispatch_plan_request(dispatch_plan, conversation_id, run_id)?;
+    preflight::validate_request(&request).map_err(|_| invalid_request())
+}
+
+/// Reuses the existing full-response validator with the internal plan-only
+/// envelope, keeping the public CLI/TUI request shape unchanged while making
+/// direct RemoteClient callers receive the same canonical checks.
+pub(super) fn validate_response_for_dispatch_plan(
+    value: &Value,
+    dispatch_plan: &Value,
+    conversation_id: &str,
+    run_id: &str,
+) -> Result<(), RemoteError> {
+    let request = dispatch_plan_request(dispatch_plan, conversation_id, run_id)?;
+    validate_response(value, &request, conversation_id, run_id)
+}
+
+fn dispatch_plan_request(
+    dispatch_plan: &Value,
+    conversation_id: &str,
+    run_id: &str,
+) -> Result<Value, RemoteError> {
+    let plan = dispatch_plan.as_object().ok_or_else(invalid_request)?;
+    let intent = plan
+        .get("runner_execution_intent")
+        .and_then(Value::as_object)
+        .ok_or_else(invalid_request)?;
+    let plan_conversation_id = intent
+        .get("conversation_id")
+        .and_then(Value::as_str)
+        .ok_or_else(invalid_request)?;
+    let plan_run_id = intent
+        .get("run_id")
+        .and_then(Value::as_str)
+        .ok_or_else(invalid_request)?;
+    if plan_conversation_id != conversation_id || plan_run_id != run_id {
+        return Err(RemoteError(
+            "remote Runner dispatch-plan preview request does not match the URL path".into(),
+        ));
+    }
+    let owner = intent.get("owner").cloned().ok_or_else(invalid_request)?;
+    Ok(json!({
+        "owner": owner,
+        "conversation_id": conversation_id,
+        "run_id": run_id,
+        "run_status": "nonterminal",
+        "dispatch_plan": dispatch_plan,
+    }))
 }
 
 pub(super) fn validate_response(

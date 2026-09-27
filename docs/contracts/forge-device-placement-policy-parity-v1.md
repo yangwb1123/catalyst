@@ -37,3 +37,17 @@ execution authorization, reservation, and dispatch false. Neither fixture
 discovers or authenticates a device, reserves resources, authorizes execution,
 or dispatches work. All attributes remain unverified caller declarations, and
 these tests do not change ADR-0039 or ADR-0114's Proposed-only lifecycle state.
+
+## Cross-ecosystem strict receiver coverage
+
+The canonical JSON is mirrored byte-for-byte into the testdata directories of
+Aero-ID, Aero-Vault, Snaplink Audit Governance, and Aero-IM's
+`aero-audit-connector`. Each receiver rejects unknown fields (including an
+injected `authority` object), duplicate keys, and trailing JSON. It also
+requires the root owner to bind every candidate device, keeps instance/device
+and expected-result pairs aligned, and rejects owner or binding mutations.
+
+These are receiver contract tests over a pure owner-bound policy value. They do
+not add a scheduler, target selection, reservation, lease, Runner, execution,
+or Audit authority; `scripts/test-forge-contracts.sh` only compares the mirrors
+and runs the four focused receiver suites.

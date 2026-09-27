@@ -47,6 +47,31 @@ async fn execution_reconciliation_preview_posts_exact_restart_image_once() {
     server.join().unwrap();
 }
 
+#[tokio::test]
+async fn execution_reconciliation_client_rejects_a_response_for_another_run() {
+    let request = request();
+    let mut response = response(&request);
+    response["run_id"] = json!("run-foreign");
+    let (client, server) = spawn_mock_server(vec![ExpectedRequest {
+        request_prefix: "POST /api/v1/conversations/conversation-1/runs/run-1/execution-reconciliation/preview ",
+        required_headers: &[],
+        body_fields: json!({
+            "owner": request["owner"].clone(),
+            "conversation_id": "conversation-1",
+            "run_id": "run-1",
+        }),
+        response_status: "200 OK",
+        response,
+    }]);
+    assert!(
+        client
+            .preview_execution_reconciliation("conversation-1", "run-1", &request)
+            .await
+            .is_err()
+    );
+    server.join().unwrap();
+}
+
 #[test]
 fn execution_reconciliation_preview_rejects_binding_and_authority_drift() {
     let request = request();

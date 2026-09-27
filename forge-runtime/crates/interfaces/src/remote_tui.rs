@@ -11,6 +11,8 @@ use super::{RemoteClient, RemoteError};
 
 #[path = "remote_tui/attempt_request.rs"]
 mod attempt_request;
+#[path = "remote_tui/client_instance_convergence.rs"]
+mod client_instance_convergence;
 #[path = "remote_tui/client_instance_resource_view.rs"]
 mod client_instance_resource_view;
 #[path = "remote_tui/client_session_view.rs"]
@@ -29,6 +31,8 @@ mod heartbeat_persistence;
 mod identity_proof;
 #[path = "remote_tui/input.rs"]
 mod input;
+#[path = "remote_tui/inventory_convergence.rs"]
+mod inventory_convergence;
 #[path = "remote_tui/local_runner_preview.rs"]
 mod local_runner_preview;
 #[path = "remote_tui/pending_run_intent.rs"]
@@ -41,24 +45,42 @@ mod run_attempt_lease_dispatch_preflight;
 mod run_execution_evidence;
 #[path = "remote_tui/run_observed.rs"]
 mod run_observed;
+#[path = "remote_tui/runner_attempt_boundary.rs"]
+mod runner_attempt_boundary;
+#[path = "remote_tui/runner_attempt_boundary_remote.rs"]
+mod runner_attempt_boundary_remote;
+#[path = "remote_tui/runner_dispatch_admission.rs"]
+mod runner_dispatch_admission;
 #[path = "remote_tui/runner_dispatch_plan_preview.rs"]
 mod runner_dispatch_plan_preview;
+#[path = "remote_tui/runner_execution_boundary.rs"]
+mod runner_execution_boundary;
 #[path = "remote_tui/runner_execution_intent.rs"]
 mod runner_execution_intent;
+#[path = "remote_tui/runner_execution_intent_remote.rs"]
+mod runner_execution_intent_remote;
 #[path = "remote_tui/runner_lease_fencing.rs"]
 mod runner_lease_fencing;
 #[path = "remote_tui/runner_receipt.rs"]
 mod runner_receipt;
+#[path = "remote_tui/runner_transport_admission.rs"]
+mod runner_transport_admission;
 #[path = "remote_tui/runs.rs"]
 mod runs;
 #[path = "remote_tui/session_observation.rs"]
 mod session_observation;
 #[path = "remote_tui/session_runner_receipt.rs"]
 mod session_runner_receipt;
+#[path = "remote_tui/session_runner_receipt_history.rs"]
+mod session_runner_receipt_history;
+#[path = "remote_tui/session_runner_reconciliation.rs"]
+mod session_runner_reconciliation;
 #[path = "remote_tui/state.rs"]
 mod state;
 #[path = "remote_tui/sync.rs"]
 mod sync;
+#[path = "remote_tui/sync_client_instances.rs"]
+mod sync_client_instances;
 #[path = "remote_tui/writes.rs"]
 mod writes;
 
@@ -134,11 +156,11 @@ fn clear_session_view_after_authorization_error(
     }
 }
 
-/// Clears a stale client-instance candidate after its explicit reader fails.
-/// Owner authorization failures invalidate the complete owner view; other
-/// failures revoke only the affected candidate while retaining the active
-/// local instance filter so the projection remains empty until a new reader
-/// succeeds.
+/// Marks a client-instance candidate as unavailable after its explicit reader
+/// fails. Owner authorization failures invalidate the complete owner view;
+/// other failures retain the last observations as display metadata while
+/// blocking the local filter and private projection until both readers
+/// converge again.
 fn clear_client_instance_view_after_failure(
     state: &mut state::TuiState,
     kind: &str,
@@ -147,7 +169,15 @@ fn clear_client_instance_view_after_failure(
     if clear_session_view_after_authorization_error(state, error) {
         return (true, false);
     }
-    (false, state.clear_client_instance_view(kind))
+    let observed = match kind {
+        "session-view" => state.client_instance_session_view_observed.is_some(),
+        "resource-view" => state.client_instance_resource_view_observed.is_some(),
+        _ => false,
+    };
+    if observed {
+        state.mark_client_instance_observations_not_converged();
+    }
+    (false, false)
 }
 
 #[cfg(test)]

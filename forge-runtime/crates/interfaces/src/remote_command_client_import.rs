@@ -26,12 +26,15 @@ impl RemoteClient {
                 return Err(RemoteError("conversation import is invalid".into()));
             }
         }
-        self.send_json(
-            self.http
-                .post(self.endpoint("/api/v1/conversations/import")?)
-                .header("Idempotency-Key", idempotency_key)
-                .json(&import_payload(title, prompts)),
-        )
-        .await
+        let response = self
+            .send_json(
+                self.http
+                    .post(self.endpoint("/api/v1/conversations/import")?)
+                    .header("Idempotency-Key", idempotency_key)
+                    .json(&import_payload(title, prompts)),
+            )
+            .await?;
+        super::super::validate_import_result(&response, title, prompts.len())?;
+        Ok(response)
     }
 }

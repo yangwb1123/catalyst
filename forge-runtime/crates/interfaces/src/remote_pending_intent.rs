@@ -102,6 +102,26 @@ pub(super) fn validate_submission(
     Ok(())
 }
 
+/// Binds a fresh pending-intent receipt to the caller's Conversation CAS.
+/// An idempotent replay intentionally returns the original historical
+/// receipt, so its aggregate version is not compared with the retry's
+/// expected version.
+pub(super) fn validate_submission_for_version(
+    submission: &Submission,
+    conversation_id: &str,
+    content: &str,
+    expected_version: u64,
+) -> Result<(), String> {
+    validate_submission(submission, conversation_id, content)?;
+    if submission.replayed
+        || (expected_version < MAX_SAFE_JSON_INTEGER
+            && submission.intent.aggregate_version == expected_version + 1)
+    {
+        return Ok(());
+    }
+    Err(invalid_submission())
+}
+
 pub(super) fn validate_page(
     page: &Page,
     conversation_id: &str,

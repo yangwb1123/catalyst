@@ -66,6 +66,24 @@ fn pending_run_intent_rpc_uses_json_safe_numeric_boundaries_before_open() {
         "{unsafe_timeline}"
     );
 
+    let zero_submit = process_owned_request_unchecked(
+        &database,
+        "submit_owned_prompt_run_intent",
+        &json!({
+            "owner": test_owner("tenant-slate"),
+            "conversation_id": "conversation-1",
+            "content": "prompt",
+            "idempotency_key": "intent-key-zero",
+            "expected_version": 0,
+            "profile_id": "server-profile-v1",
+            "profile_sha256": vec![0x71; 32]
+        }),
+    );
+    assert_eq!(
+        zero_submit["error"]["code"], "invalid_owned_prompt_request",
+        "{zero_submit}"
+    );
+
     let safe_submit = process_owned_request_unchecked(
         &database,
         "submit_owned_prompt_run_intent",

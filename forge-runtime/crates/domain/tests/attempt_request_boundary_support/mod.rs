@@ -23,7 +23,11 @@ pub fn verify_attempt_module_purity() {
     assert!(root_metadata.file_type().is_dir());
     let mut files = Vec::with_capacity(MAX_ATTEMPT_FILES);
     for entry in fs::read_dir(&root).expect("read Attempt module") {
-        files.push(entry.expect("Attempt source entry").path());
+        let path = entry.expect("Attempt source entry").path();
+        if path.file_name().and_then(|name| name.to_str()) == Some("request_contract_fixture.rs") {
+            continue;
+        }
+        files.push(path);
         assert!(
             files.len() <= MAX_ATTEMPT_FILES,
             "unexpected Attempt module production file"
@@ -54,6 +58,7 @@ pub fn verify_workspace_consumer_boundary() {
     metadata::verify_dependency_manifests(cargo);
     macro_inventory::verify_inventory(&cargo.workspace_root);
     admission::verify_inventory(&cargo.workspace_root);
+    attempt_inventory::verify_consumers(&cargo.workspace_root);
     let attempt = cargo
         .workspace_root
         .join("crates/domain/src/execution/attempt");

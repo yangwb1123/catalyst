@@ -48,9 +48,10 @@ func TestLifecycleApprovalCandidateBindsOwnerAndPublishesOnlyCandidatePlan(t *te
 	// pending value before exercising the owner approval transition.
 	seedConfig := *config
 	seedConfig.Heartbeat = &lifecycleHeartbeatCandidateConfig{
-		Enabled:      true,
-		Now:          func(context.Context) (uint64, error) { return 120_000, nil },
-		StaleAfterMS: 90_000,
+		Enabled:            true,
+		AllowUnsignedProof: true,
+		Now:                func(context.Context) (uint64, error) { return 120_000, nil },
+		StaleAfterMS:       90_000,
 	}
 	handler := authenticator.Handler(newLifecycleRegistryCandidateRoutes(&seedConfig))
 	seed := requestConversationAPI(t, handler, identity, http.MethodPost,
@@ -139,9 +140,10 @@ func TestLifecycleApprovalCandidateRotateAndRevokeAreStrictAndOwnerScoped(t *tes
 		Store:    newPersistedLifecycleRegistryCandidateStore(path),
 		Approval: &lifecycleApprovalCandidateConfig{Enabled: true},
 		Heartbeat: &lifecycleHeartbeatCandidateConfig{
-			Enabled:      true,
-			Now:          func(context.Context) (uint64, error) { return 120_000, nil },
-			StaleAfterMS: 90_000,
+			Enabled:            true,
+			AllowUnsignedProof: true,
+			Now:                func(context.Context) (uint64, error) { return 120_000, nil },
+			StaleAfterMS:       90_000,
 		},
 	}
 	handler := authenticator.Handler(newLifecycleRegistryCandidateRoutes(config))

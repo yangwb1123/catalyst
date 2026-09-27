@@ -1,34 +1,39 @@
-# Forge Runner transport admission v1
+# Forge Runner transport admission preview v1
 
-`forge.runner-transport-admission/v1` defines the bounded request envelope
-shared by the Forge Runner transport and the D3 ecosystem Runner. The request
-body is an object with `ts`, `nonce`, `sig`, and `payload` fields. `payload` is
-one compact canonical JSON object; its bytes are included verbatim in the
-signature.
+`forge.runner-transport-admission/v1` is the metadata-only join between a
+verified D3 Runner transport envelope and the current fenced command/lease
+admission. Core receives the value-only observation returned by
+`runnertransport.Verify`, checks the canonical `POST
+/api/v1/runners/{target_id}/dispatch` path and payload digest, and carries
+forward the command digest, target, lease epoch/window, Attempt state, and
+deterministic rejection reasons.
 
-The signed message is:
+The contract is display-only. `preview_only` is always true and all authority
+fields are false, including transport authentication, device identity,
+reservation, execution, dispatch, and Audit publication. The value contains
+transport timestamp/nonce/digest/byte-count metadata but never a signature
+secret, fencing token, argv, workspace reference, payload body, or output.
 
-```text
-METHOD|PATH|ts|nonce + payload_bytes
-```
+Runtime Rust, Snaplink Console Web/App/Mobile, Aero-ID, Aero-IM, Aero-Vault,
+and Snaplink Audit Governance strictly reject unknown or duplicate fields,
+authority mutations, malformed digests, path/readiness drift, and
+non-canonical rejection ordering. The canonical fixture is
+`docs/contracts/fixtures/forge-runner-transport-admission-v1.json` and is
+mirrored byte-for-byte at each receiver test boundary.
 
-`sig` is the lower-case hexadecimal HMAC-SHA256 digest. Timestamps are Unix
-seconds and must be within ±300 seconds of the injected verifier time. Nonces
-are bounded ASCII identifiers and may be accepted once by a bounded,
-process-local replay cache. Invalid signatures do not consume a nonce.
+The shared Snaplink Sessions Gate exposes this value only through an explicit
+owner-bound candidate request. It re-decodes the response before display and
+keeps the default Web/App/Mobile construction request-free.
 
-Forge Core implements the pure verifier in
-[`internal/runnertransport`](../../forge-core/internal/runnertransport/transport.go).
-It returns only a payload digest and binding metadata. The package does not
-store secrets, register devices, accept heartbeats, issue leases, select or
-reserve a target, dispatch a task, execute work, or publish Audit. A future
-HTTP adapter must supply the device identity/secret store, durable replay
-semantics, TLS or mTLS boundary, and the accepted `EXECUTE`/P4 activation
-evidence before mounting `/register`, `/heartbeat`, `/lease`, `/evidence`, or
-`/reconcile`.
+Accepted `EXECUTE + P4` Forge Server also exposes the owner-scoped
+`runner-transport-admission/preview` POST. It re-decodes the supplied
+metadata-only transport observation, re-reads the fenced lease registry, and
+checks the supplied lease window against the persisted grant before returning
+this contract. The route deliberately does not verify a device secret; that
+transport verifier remains a separately reviewed input boundary.
 
-The Go implementation was checked against the existing Python Runner's
-`fabric_rpc._sign` byte-for-byte for the canonical heartbeat payload. This
-document therefore fixes the transport boundary without changing the current
-production route graph: default, `INVENTORY`, and `OBSERVE` remain unchanged,
-and the existing `EXECUTE` assembly remains admission/preflight only.
+This contract does not open a Runner connection, send a payload, authorize a
+command, create a Run or Attempt, reserve or mutate a lease, execute work, or
+publish Audit. ADR-0039 remains planning-only, ADR-0114 remains Proposed/null,
+and the accepted P4 execution decision still gates a future live Runner
+adapter.

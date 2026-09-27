@@ -1,0 +1,81 @@
+{
+  "schema_version": "forge.client-instance-scheduler-selection-preview/v1",
+  "evaluation_mode": "owner_bound_client_instance_scheduler_selection_preview_only",
+  "owner_declaration": {
+    "issuer": "https://id.example",
+    "subject": "user-1",
+    "tenant_id": "tenant-1"
+  },
+  "instance": {
+    "instance_id": "client-web-001",
+    "client_kind": "web",
+    "session_ids": [
+      "conversation-001"
+    ],
+    "observed_at_ms": 200500,
+    "status": "active"
+  },
+  "conversation_id": "conversation-001",
+  "run_id": "run-001",
+  "attempt_id": "attempt-001",
+  "resource": {
+    "device_id": "device-a",
+    "runner_instance_id": "runner-a",
+    "revision": 3,
+    "generation": 2,
+    "heartbeat_sequence": 4,
+    "observed_at_ms": 150000,
+    "approval_state": "approved",
+    "cordon_state": "clear",
+    "reservation_state": "none",
+    "liveness": "online",
+    "available_cpu_cores": 8,
+    "available_memory_bytes": 16384,
+    "available_storage_bytes": 8192,
+    "gpu_count": 0,
+    "available_gpu_memory_bytes": 0
+  },
+  "scheduler_preview": {
+    "schema_version": "forge.scheduler-selection-preview/v1",
+    "evaluation_mode": "pure_scheduler_selection_preview",
+    "owner": {
+      "issuer": "https://id.example",
+      "subject": "user-1",
+      "tenant_id": "tenant-1"
+    },
+    "conversation_id": "conversation-001",
+    "run_id": "run-001",
+    "attempt_id": "attempt-001",
+    "evaluated_at_ms": 200600,
+    "candidate_count": 2,
+    "eligible_candidate_count": 1,
+    "selection_available": true,
+    "selection_reason": "first_sorted_eligible_candidate",
+    "selected_device_id": "device-a",
+    "selected_instance_id": "runner-a",
+    "preview_only": true,
+    "authority": {
+      "placement_selected": false,
+      "reservation_created": false,
+      "lease_issued": false,
+      "execution_authorized": false,
+      "dispatch_performed": false,
+      "audit_published": false
+    }
+  },
+  "preview_only": true,
+  "read_only": true,
+  "authority": {
+    "owner_authenticated": false,
+    "session_read_authorized": false,
+    "prompt_write_authorized": false,
+    "device_identity_verified": false,
+    "inventory_authoritative": false,
+    "placement_selected": false,
+    "reservation_created": false,
+    "lease_issued": false,
+    "execution_authorized": false,
+    "dispatch_performed": false,
+    "audit_published": false
+  }
+}

@@ -119,13 +119,15 @@ type fixtureClientInstanceResourceViewSource struct {
 	value deviceplacement.ClientInstanceResourceViewObservation
 	err   error
 	calls int
+	owner model.Owner
 }
 
 func (source *fixtureClientInstanceResourceViewSource) ReadOwnedClientInstanceResourceView(
 	_ context.Context,
-	_ model.Owner,
+	owner model.Owner,
 ) (deviceplacement.ClientInstanceResourceViewObservation, error) {
 	source.calls++
+	source.owner = owner
 	return source.value, source.err
 }
 

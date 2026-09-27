@@ -2,7 +2,7 @@ use std::time::SystemTime;
 
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 
-use super::{claim_contains_scope, credential_from_token, credential_key};
+use super::{claim_contains_scope, credential_from_token, credential_key, owner_from_access_token};
 
 #[test]
 fn credential_partition_key_binds_issuer_client_tenant_and_subject() {
@@ -69,6 +69,21 @@ fn token_storage_requires_forge_audience_both_scopes_and_the_expected_client() {
 }
 
 #[test]
+fn explicit_access_token_owner_projection_does_not_require_client_id_claim() {
+    let token = jwt_without_client_id(
+        "https://id.example",
+        "user-a",
+        "tenant-a",
+        "forge-api",
+        "forge:conversations:read forge:conversations:write",
+    );
+    let owner = owner_from_access_token(&token).unwrap();
+    assert_eq!(owner.issuer, "https://id.example");
+    assert_eq!(owner.subject, "user-a");
+    assert_eq!(owner.tenant_id, "tenant-a");
+}
+
+#[test]
 fn accepts_snaplink_scopes_array_and_oauth_scope_string_compatibility() {
     let expected = "forge:conversations:read";
     assert!(claim_contains_scope(
@@ -103,6 +118,28 @@ fn jwt_with(issuer: &str, subject: &str, tenant: &str, audience: &str, scopes: &
             "sub": subject,
             "tenant_id": tenant,
             "client_id": "forge-cli",
+            "aud": audience,
+            "scopes": scopes.split_ascii_whitespace().collect::<Vec<_>>(),
+            "exp": future_time(),
+        }))
+        .unwrap(),
+    );
+    format!("{header}.{payload}.inert-signature")
+}
+
+fn jwt_without_client_id(
+    issuer: &str,
+    subject: &str,
+    tenant: &str,
+    audience: &str,
+    scopes: &str,
+) -> String {
+    let header = URL_SAFE_NO_PAD.encode(br#"{"alg":"none"}"#);
+    let payload = URL_SAFE_NO_PAD.encode(
+        serde_json::to_vec(&serde_json::json!({
+            "iss": issuer,
+            "sub": subject,
+            "tenant_id": tenant,
             "aud": audience,
             "scopes": scopes.split_ascii_whitespace().collect::<Vec<_>>(),
             "exp": future_time(),

@@ -239,6 +239,7 @@ fn validate_submit_owned_prompt_run_intent_request(
         || idempotency_key.trim().is_empty()
         || idempotency_key.len() > 256
         || idempotency_key.chars().any(char::is_control)
+        || expected_version == 0
         || expected_version > MAX_SAFE_JSON_INTEGER
     {
         return Err((request_id, "invalid_owned_prompt_request"));

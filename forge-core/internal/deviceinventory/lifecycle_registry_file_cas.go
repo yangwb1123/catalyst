@@ -274,6 +274,8 @@ func sameLifecycleImageExceptCandidates(
 	right.ApprovalCandidate = nil
 	left.CredentialCandidate = nil
 	right.CredentialCandidate = nil
+	left.ChallengeCandidate = nil
+	right.ChallengeCandidate = nil
 	return reflect.DeepEqual(left, right)
 }
 
@@ -364,6 +366,7 @@ func cloneLifecycleRegistryStates(states []PersistedEnrollmentHeartbeatLifecycle
 		if err == nil {
 			canonical.ApprovalCandidate = cloneApprovalCandidate(state.ApprovalCandidate)
 			canonical.CredentialCandidate = cloneCredentialCandidate(state.CredentialCandidate)
+			canonical.ChallengeCandidate = cloneChallengeCandidate(state.ChallengeCandidate)
 			clone[index] = canonical
 		} else {
 			clone[index] = state

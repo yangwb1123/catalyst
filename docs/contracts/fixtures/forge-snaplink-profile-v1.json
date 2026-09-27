@@ -8,6 +8,9 @@
     "forge:conversations:read",
     "forge:conversations:write"
   ],
+  "device_observation_scopes": [
+    "forge:devices:read"
+  ],
   "clients": {
     "cli": {
       "client_id": "forge-cli",
@@ -31,6 +34,21 @@
       "scopes": [
         "forge:conversations:read",
         "forge:conversations:write"
+      ]
+    }
+  },
+  "optional_clients": {
+    "device_observer": {
+      "client_id": "forge-device-observer",
+      "enabled": false,
+      "public": true,
+      "grant_types": [
+        "authorization_code",
+        "refresh_token"
+      ],
+      "scopes": [
+        "forge:conversations:read",
+        "forge:devices:read"
       ]
     }
   },

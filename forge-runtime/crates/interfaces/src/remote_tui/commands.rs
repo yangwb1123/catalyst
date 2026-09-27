@@ -7,7 +7,8 @@ use crate::client_instance_session_scope;
 
 use super::super::OwnedConversationEntry;
 use super::state::{
-    TuiState, io_error, json_text, refresh_sessions, scope_filter_label, write_help,
+    TuiState, io_error, json_text, new_idempotency_key, refresh_sessions, scope_filter_label,
+    write_help,
 };
 use super::{RemoteClient, RemoteError, pending_run_intents, runs, state, sync, writes};
 
@@ -68,6 +69,18 @@ pub(super) async fn dispatch_command<W: Write>(
         "placement-registry-preview" => {
             placement_registry_preview(client, state, argument, writer).await?
         }
+        "scheduler-selection-preview" => {
+            scheduler_selection_preview(client, state, argument, writer).await?
+        }
+        "scheduler-selection-lease" => {
+            scheduler_selection_lease(client, state, argument, writer).await?
+        }
+        "scheduler-selection-lease-renew" => {
+            scheduler_selection_lease_renew(client, state, argument, writer).await?
+        }
+        "scheduler-selection-lease-release" => {
+            scheduler_selection_lease_release(client, state, argument, writer).await?
+        }
         "attempt-request-preview" => super::attempt_request::preview(argument, writer)?,
         "pending-run-intent-preview" => super::pending_run_intent::preview(argument, writer)?,
         "session-observation-preview" => {
@@ -89,6 +102,16 @@ pub(super) async fn dispatch_command<W: Write>(
         "session-runner-receipt-preview" => {
             super::session_runner_receipt::preview(client, state, argument, writer).await?
         }
+        "session-runner-receipt-history-preview" => {
+            super::session_runner_receipt_history::preview(client, state, argument, writer).await?
+        }
+        "session-runner-reconciliation-preview" => {
+            super::session_runner_reconciliation::preview(argument, writer)?
+        }
+        "session-runner-reconciliation-remote-preview" => {
+            super::session_runner_reconciliation::remote_preview(client, state, argument, writer)
+                .await?
+        }
         "runner-execution-readiness-preview" => {
             super::local_runner_preview::preview(client, state, argument, writer).await?
         }
@@ -101,8 +124,14 @@ pub(super) async fn dispatch_command<W: Write>(
         "session-runner-receipt-offline-preview" => {
             super::session_runner_receipt::offline_preview(argument, writer)?
         }
+        "session-runner-receipt-history-offline-preview" => {
+            super::session_runner_receipt::offline_history_preview(argument, writer)?
+        }
         "run-execution-evidence-preview" => {
             super::run_execution_evidence::preview(argument, writer)?
+        }
+        "run-execution-evidence-remote-preview" => {
+            super::run_execution_evidence::remote_preview(client, state, argument, writer).await?
         }
         "run-attempt-lease-dispatch-preflight-preview" => {
             super::run_attempt_lease_dispatch_preflight::preview(argument, writer)?
@@ -115,6 +144,29 @@ pub(super) async fn dispatch_command<W: Write>(
         }
         "runner-dispatch-plan-preview" | "runner-dispatch-plan-remote-preview" => {
             super::runner_dispatch_plan_preview::remote_preview(client, state, argument, writer)
+                .await?
+        }
+        "runner-attempt-boundary-preview" => {
+            super::runner_attempt_boundary::preview(argument, writer)?
+        }
+        "runner-attempt-boundary-remote-preview" => {
+            super::runner_attempt_boundary_remote::remote_preview(client, state, argument, writer)
+                .await?
+        }
+        "runner-dispatch-admission-preview" | "runner-dispatch-admission-remote-preview" => {
+            super::runner_dispatch_admission::remote_preview(client, state, argument, writer)
+                .await?
+        }
+        "runner-transport-admission-preview" | "runner-transport-admission-remote-preview" => {
+            super::runner_transport_admission::remote_preview(client, state, argument, writer)
+                .await?
+        }
+        "runner-execution-boundary-preview" | "runner-execution-boundary-remote-preview" => {
+            super::runner_execution_boundary::remote_preview(client, state, argument, writer)
+                .await?
+        }
+        "runner-execution-intent-remote-preview" => {
+            super::runner_execution_intent_remote::remote_preview(client, state, argument, writer)
                 .await?
         }
         "run-observed" | "observed" => {
@@ -251,10 +303,406 @@ async fn placement_registry_preview<W: Write>(
     Ok(())
 }
 
+async fn scheduler_selection_preview<W: Write>(
+    client: &RemoteClient,
+    state: &mut TuiState,
+    argument: &str,
+    writer: &mut W,
+) -> Result<(), RemoteError> {
+    let Some(input) = argument.strip_prefix("--input") else {
+        return write_scheduler_selection_usage(writer);
+    };
+    if !input.chars().next().is_some_and(char::is_whitespace) {
+        return write_scheduler_selection_usage(writer);
+    }
+    let input = input.trim();
+    if input.is_empty() || input == "-" {
+        return write_scheduler_selection_usage(writer);
+    }
+    let request = match super::super::scheduler_selection::read_tui_request(input) {
+        Ok(request) => request,
+        Err(error) => {
+            writeln!(writer, "Scheduler selection preview input failed: {error}")
+                .map_err(io_error)?;
+            return Ok(());
+        }
+    };
+    if !ensure_scheduler_request_visible_to_selected_instance(
+        state,
+        &request,
+        "Scheduler selection preview",
+        writer,
+    )? {
+        return Ok(());
+    }
+    // A selected instance with both owner-bound observations explicitly open
+    // must not plan against a stale local image. This remains opt-in: without
+    // that complete display pair, preserve the existing request-free path.
+    if !super::writes::refresh_explicit_inventory_resource_observations(
+        client,
+        state,
+        "Scheduler selection preview",
+        writer,
+    )
+    .await?
+    {
+        return Ok(());
+    }
+    // The refresh may revoke or otherwise change the selected instance row.
+    // Re-run the display-only membership fence after committing the new pair;
+    // the pre-refresh check only decides whether it is safe to read the
+    // opt-in inventory/resource candidates.
+    if !ensure_scheduler_request_visible_to_selected_instance(
+        state,
+        &request,
+        "Scheduler selection preview",
+        writer,
+    )? {
+        return Ok(());
+    }
+    if !super::writes::ensure_inventory_resource_converged(
+        state,
+        "Scheduler selection preview",
+        writer,
+    )? {
+        return Ok(());
+    }
+    let response = match client.preview_scheduler_selection(&request).await {
+        Ok(response) => response,
+        Err(error) => {
+            let cleared = super::clear_session_view_after_authorization_error(state, &error);
+            writeln!(
+                writer,
+                "Scheduler selection preview request failed: {error}"
+            )
+            .map_err(io_error)?;
+            if cleared {
+                writeln!(
+                    writer,
+                    "Local session view cleared after authorization failure."
+                )
+                .map_err(io_error)?;
+            }
+            return Ok(());
+        }
+    };
+    match super::super::scheduler_selection::validate_response_for_request(&response, &request) {
+        Ok(result) => {
+            super::super::scheduler_selection::render_human(&result, writer).map_err(io_error)?
+        }
+        Err(error) => {
+            writeln!(
+                writer,
+                "Scheduler selection preview response failed validation: {error}"
+            )
+            .map_err(io_error)?;
+        }
+    }
+    Ok(())
+}
+
+async fn scheduler_selection_lease<W: Write>(
+    client: &RemoteClient,
+    state: &mut TuiState,
+    argument: &str,
+    writer: &mut W,
+) -> Result<(), RemoteError> {
+    let Some(input) = argument.strip_prefix("--input") else {
+        return write_scheduler_selection_lease_usage(writer);
+    };
+    if !input.chars().next().is_some_and(char::is_whitespace) {
+        return write_scheduler_selection_lease_usage(writer);
+    }
+    let input = input.trim();
+    if input.is_empty() || input == "-" {
+        return write_scheduler_selection_lease_usage(writer);
+    }
+    let request = match super::super::scheduler_lease::read_tui_request(input) {
+        Ok(request) => request,
+        Err(error) => {
+            writeln!(writer, "Scheduler lease input failed: {error}").map_err(io_error)?;
+            return Ok(());
+        }
+    };
+    if !ensure_scheduler_request_visible_to_selected_instance(
+        state,
+        &request,
+        "Scheduler lease",
+        writer,
+    )? {
+        return Ok(());
+    }
+    // An explicit selected instance with both inventory/resource observations
+    // open must refresh the pair immediately before the candidate lease POST.
+    // The first visibility check only fences the caller-supplied request; the
+    // refresh can revoke that Conversation, so check the selected projection
+    // again before the local convergence guard and request.
+    if !super::writes::refresh_explicit_inventory_resource_observations(
+        client,
+        state,
+        "Scheduler lease",
+        writer,
+    )
+    .await?
+    {
+        return Ok(());
+    }
+    if !ensure_scheduler_request_visible_to_selected_instance(
+        state,
+        &request,
+        "Scheduler lease",
+        writer,
+    )? {
+        return Ok(());
+    }
+    if !super::writes::ensure_inventory_resource_converged(state, "Scheduler lease", writer)? {
+        return Ok(());
+    }
+    let key = new_idempotency_key()?;
+    let response = match client.claim_scheduler_selection_lease(&request, &key).await {
+        Ok(response) => response,
+        Err(error) => {
+            let cleared = super::clear_session_view_after_authorization_error(state, &error);
+            writeln!(writer, "Scheduler lease request failed: {error}").map_err(io_error)?;
+            if cleared {
+                writeln!(
+                    writer,
+                    "Local session view cleared after authorization failure."
+                )
+                .map_err(io_error)?;
+            }
+            return Ok(());
+        }
+    };
+    match super::super::scheduler_lease::validate_response_for_request(&response, &request) {
+        Ok(result) => {
+            super::super::scheduler_lease::render_human(&result, writer).map_err(io_error)?
+        }
+        Err(error) => writeln!(
+            writer,
+            "Scheduler lease response failed validation: {error}"
+        )
+        .map_err(io_error)?,
+    }
+    Ok(())
+}
+
+async fn scheduler_selection_lease_renew<W: Write>(
+    client: &RemoteClient,
+    state: &mut TuiState,
+    argument: &str,
+    writer: &mut W,
+) -> Result<(), RemoteError> {
+    let Some(input) = argument.strip_prefix("--input") else {
+        return write_scheduler_selection_lease_renewal_usage(writer);
+    };
+    if !input.chars().next().is_some_and(char::is_whitespace) {
+        return write_scheduler_selection_lease_renewal_usage(writer);
+    }
+    let input = input.trim();
+    if input.is_empty() || input == "-" {
+        return write_scheduler_selection_lease_renewal_usage(writer);
+    }
+    let request = match super::super::scheduler_lease_renew::read_tui_request(input) {
+        Ok(request) => request,
+        Err(error) => {
+            writeln!(writer, "Scheduler lease renewal input failed: {error}").map_err(io_error)?;
+            return Ok(());
+        }
+    };
+    if !ensure_scheduler_request_visible_to_selected_instance(
+        state,
+        &request,
+        "Scheduler lease renewal",
+        writer,
+    )? {
+        return Ok(());
+    }
+    // Keep renewal behind the same explicit inventory/resource freshness
+    // boundary as claim. A refresh may revoke the selected Conversation, so
+    // repeat the display-only visibility fence before the candidate POST.
+    if !super::writes::refresh_explicit_inventory_resource_observations(
+        client,
+        state,
+        "Scheduler lease renewal",
+        writer,
+    )
+    .await?
+    {
+        return Ok(());
+    }
+    if !ensure_scheduler_request_visible_to_selected_instance(
+        state,
+        &request,
+        "Scheduler lease renewal",
+        writer,
+    )? {
+        return Ok(());
+    }
+    if !super::writes::ensure_inventory_resource_converged(
+        state,
+        "Scheduler lease renewal",
+        writer,
+    )? {
+        return Ok(());
+    }
+    let key = new_idempotency_key()?;
+    let response = match client.renew_scheduler_selection_lease(&request, &key).await {
+        Ok(response) => response,
+        Err(error) => {
+            let cleared = super::clear_session_view_after_authorization_error(state, &error);
+            writeln!(writer, "Scheduler lease renewal request failed: {error}")
+                .map_err(io_error)?;
+            if cleared {
+                writeln!(
+                    writer,
+                    "Local session view cleared after authorization failure."
+                )
+                .map_err(io_error)?;
+            }
+            return Ok(());
+        }
+    };
+    match super::super::scheduler_lease_renew::validate_response_for_request(&response, &request) {
+        Ok(()) => super::super::scheduler_lease_renew::render_human(&response, writer)
+            .map_err(io_error)?,
+        Err(error) => writeln!(
+            writer,
+            "Scheduler lease renewal response failed validation: {error}"
+        )
+        .map_err(io_error)?,
+    }
+    Ok(())
+}
+
+async fn scheduler_selection_lease_release<W: Write>(
+    client: &RemoteClient,
+    state: &mut TuiState,
+    argument: &str,
+    writer: &mut W,
+) -> Result<(), RemoteError> {
+    let Some(input) = argument.strip_prefix("--input") else {
+        return write_scheduler_selection_lease_release_usage(writer);
+    };
+    if !input.chars().next().is_some_and(char::is_whitespace) {
+        return write_scheduler_selection_lease_release_usage(writer);
+    }
+    let input = input.trim();
+    if input.is_empty() || input == "-" {
+        return write_scheduler_selection_lease_release_usage(writer);
+    }
+    let request = match super::super::scheduler_lease_release::read_tui_request(input) {
+        Ok(request) => request,
+        Err(error) => {
+            writeln!(writer, "Scheduler lease release input failed: {error}").map_err(io_error)?;
+            return Ok(());
+        }
+    };
+    if !ensure_scheduler_request_visible_to_selected_instance(
+        state,
+        &request,
+        "Scheduler lease release",
+        writer,
+    )? {
+        return Ok(());
+    }
+    let key = new_idempotency_key()?;
+    let response = match client
+        .release_scheduler_selection_lease(&request, &key)
+        .await
+    {
+        Ok(response) => response,
+        Err(error) => {
+            let cleared = super::clear_session_view_after_authorization_error(state, &error);
+            writeln!(writer, "Scheduler lease release request failed: {error}")
+                .map_err(io_error)?;
+            if cleared {
+                writeln!(
+                    writer,
+                    "Local session view cleared after authorization failure."
+                )
+                .map_err(io_error)?;
+            }
+            return Ok(());
+        }
+    };
+    match super::super::scheduler_lease_release::validate_response_for_request(&response, &request)
+    {
+        Ok(()) => super::super::scheduler_lease_release::render_human(&response, writer)
+            .map_err(io_error)?,
+        Err(error) => writeln!(
+            writer,
+            "Scheduler lease release response failed validation: {error}"
+        )
+        .map_err(io_error)?,
+    }
+    Ok(())
+}
+
 fn write_placement_registry_usage<W: Write>(writer: &mut W) -> Result<(), RemoteError> {
     writeln!(
         writer,
         "Use placement-registry-preview --input FILE. The request contains only placement requirements; '-' is reserved for the standalone CLI."
+    )
+    .map_err(io_error)
+}
+
+fn write_scheduler_selection_usage<W: Write>(writer: &mut W) -> Result<(), RemoteError> {
+    writeln!(
+        writer,
+        "Use scheduler-selection-preview --input FILE. An active client-instance filter must declare the request Conversation; the request binds Conversation, Run, Attempt, and requirements; '-' is reserved for the standalone CLI."
+    )
+    .map_err(io_error)
+}
+
+/// Keeps scheduler previews and lease lifecycle requests inside an active
+/// client-instance display projection. Without an explicit instance filter,
+/// the existing caller-supplied request behavior remains unchanged; once a
+/// filter is active, a stale or foreign placement file cannot cross it.
+fn ensure_scheduler_request_visible_to_selected_instance<W: Write>(
+    state: &TuiState,
+    request: &Value,
+    operation: &str,
+    writer: &mut W,
+) -> Result<bool, RemoteError> {
+    let Some(conversation_id) = request.get("conversation_id").and_then(Value::as_str) else {
+        writeln!(
+            writer,
+            "{operation} input is missing conversation_id; no request was sent."
+        )
+        .map_err(io_error)?;
+        return Ok(false);
+    };
+    if state.client_instance_filter.is_none() {
+        return Ok(true);
+    }
+    ensure_conversation_visible_to_client_instance(state, conversation_id, writer)
+}
+
+fn write_scheduler_selection_lease_usage<W: Write>(writer: &mut W) -> Result<(), RemoteError> {
+    writeln!(
+        writer,
+        "Use scheduler-selection-lease --input FILE. This creates one fenced lease and uses a fresh idempotency key; '-' is reserved for the standalone CLI."
+    )
+    .map_err(io_error)
+}
+
+fn write_scheduler_selection_lease_renewal_usage<W: Write>(
+    writer: &mut W,
+) -> Result<(), RemoteError> {
+    writeln!(
+        writer,
+        "Use scheduler-selection-lease-renew --input FILE. This renews one current fenced lease with a fresh idempotency key; '-' is reserved for the standalone CLI."
+    )
+    .map_err(io_error)
+}
+
+fn write_scheduler_selection_lease_release_usage<W: Write>(
+    writer: &mut W,
+) -> Result<(), RemoteError> {
+    writeln!(
+        writer,
+        "Use scheduler-selection-lease-release --input FILE. This releases one current fenced lease with a fresh idempotency key; '-' is reserved for the standalone CLI."
     )
     .map_err(io_error)
 }
@@ -311,8 +759,12 @@ fn filter_sessions<W: Write>(
 ) -> Result<(), RemoteError> {
     let selector = argument.trim();
     if selector == "clear" {
+        let client_instance_filter_changed = state.client_instance_filter.is_some();
         state.scope_filter = None;
         state.client_instance_filter = None;
+        if client_instance_filter_changed {
+            state.clear_client_instance_private_projection();
+        }
         writeln!(writer, "Scope filter cleared.").map_err(io_error)?;
         return Ok(());
     }
@@ -345,8 +797,13 @@ fn filter_sessions<W: Write>(
             .map_err(io_error)?;
             return Ok(());
         }
+        let client_instance_filter_changed =
+            state.client_instance_filter.as_deref() != Some(instance_id);
         state.scope_filter = None;
         state.client_instance_filter = Some(instance_id.to_owned());
+        if client_instance_filter_changed {
+            state.clear_client_instance_private_projection();
+        }
         state.reconcile_client_instance_selection();
         writeln!(
             writer,
@@ -364,8 +821,12 @@ fn filter_sessions<W: Write>(
         return Ok(());
     };
     let label = scope_filter_label(&scope_filter);
+    let client_instance_filter_changed = state.client_instance_filter.is_some();
     state.scope_filter = Some(scope_filter);
     state.client_instance_filter = None;
+    if client_instance_filter_changed {
+        state.clear_client_instance_private_projection();
+    }
     writeln!(
         writer,
         "Scope filter set to {label}; this only organizes the displayed session list, not authorization or device identity."
@@ -523,11 +984,22 @@ async fn open_session<W: Write>(
         }
         Err(error) => {
             let cleared = super::clear_session_view_after_authorization_error(state, &error);
+            let dropped = if cleared {
+                false
+            } else {
+                drop_selected_session_after_read_rejection(state, conversation_id, &error)
+            };
             writeln!(writer, "History request failed: {error}").map_err(io_error)?;
             if cleared {
                 writeln!(
                     writer,
                     "Local session view cleared after authorization failure."
+                )
+                .map_err(io_error)?;
+            } else if dropped {
+                writeln!(
+                    writer,
+                    "Selected session was removed after its owner history read was rejected."
                 )
                 .map_err(io_error)?;
             }
@@ -654,11 +1126,22 @@ async fn older_history<W: Write>(
         }
         Err(error) => {
             let cleared = super::clear_session_view_after_authorization_error(state, &error);
+            let dropped = if cleared {
+                false
+            } else {
+                drop_selected_session_after_read_rejection(state, &conversation_id, &error)
+            };
             writeln!(writer, "Older history request failed: {error}").map_err(io_error)?;
             if cleared {
                 writeln!(
                     writer,
                     "Local session view cleared after authorization failure."
+                )
+                .map_err(io_error)?;
+            } else if dropped {
+                writeln!(
+                    writer,
+                    "Selected session was removed after its owner history read was rejected."
                 )
                 .map_err(io_error)?;
             }
@@ -701,4 +1184,32 @@ pub(super) fn ensure_conversation_visible_to_client_instance<W: Write>(
     )
     .map_err(io_error)?;
     Ok(false)
+}
+
+/// A private owner read that receives a deterministic client rejection no
+/// longer proves the cached selected Conversation. Drop only that row and its
+/// private projection; transient reads keep the existing stale/error path.
+pub(super) fn drop_selected_session_after_read_rejection(
+    state: &mut TuiState,
+    conversation_id: &str,
+    error: &RemoteError,
+) -> bool {
+    if !(super::response_status(error).is_some_and(super::definitive_client_rejection)
+        || matches!(
+            error.0.as_str(),
+            "Forge API returned duplicate JSON keys"
+                | "Forge API returned invalid JSON"
+                | "Forge API returned an invalid prompt page"
+                | "Forge API returned an invalid Run page"
+                | "Forge API returned an invalid Run timeline"
+                | "Forge API returned an invalid Run observation"
+                | "Forge API returned a Run observation with mismatched binding"
+                | "Forge API returned another conversation"
+        ))
+        || state.selected_id.as_deref() != Some(conversation_id)
+    {
+        return false;
+    }
+    state.drop_selected_session(conversation_id);
+    true
 }

@@ -103,6 +103,8 @@ func newConversationRoutesWithInertExecutionAPI(
 			sessionRunnerReceipt:             newSessionRunnerReceiptObservationRoutes(),
 			runAttemptLeaseDispatchPreflight: newRunAttemptLeaseDispatchPreflightRoutes(),
 			runnerDispatchPlanPreview:        newRunnerDispatchPlanPreviewRoutes(),
+			runnerExecutionIntentPreview:     newRunnerExecutionIntentPreviewRoutes(),
+			runExecutionEvidence:             newRunExecutionEvidencePreviewRoutes(),
 			executionReconciliation:          newExecutionReconciliationPreviewRoutes(),
 		},
 		execution: newExecutionRoutes(backend, profiles),

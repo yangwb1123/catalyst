@@ -450,7 +450,14 @@ fn downgrade_empty_current_to_v24(database: &Path) {
         .expect("restore v24 endpoint definitions");
     connection
         .execute_batch(
-            "DROP INDEX conversation_owners_principal_conversation;
+            "PRAGMA foreign_keys=OFF;
+             DROP INDEX IF EXISTS pending_run_intents_owner_conversation_page;
+             DROP TABLE IF EXISTS pending_run_intent_events;
+             DROP TABLE IF EXISTS pending_run_intents;
+             DROP INDEX IF EXISTS project_execution_consent_active_lookup;
+             DROP TABLE IF EXISTS project_execution_consent_events;
+             DROP TABLE IF EXISTS project_execution_consent_grants;
+             DROP INDEX conversation_owners_principal_conversation;
              DROP INDEX conversation_changes_conversation_cursor;
              DROP TABLE conversation_owner_change_rows;
              DROP TABLE conversation_owner_change_heads;

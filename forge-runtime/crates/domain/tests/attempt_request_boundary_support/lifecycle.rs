@@ -4,7 +4,19 @@ use std::path::Path;
 
 const SOURCE: &str = "crates/domain/src/execution/attempt_lifecycle.rs";
 const TEST: &str = "crates/domain/tests/attempt_lifecycle.rs";
+const CONTRACT_TEST: &str = "crates/domain/src/execution/attempt_lifecycle_contract.rs";
 const MODULE: &str = "crates/domain/src/execution/mod.rs";
+const REVIEWED_EXECUTION_MODULES: &[&str] = &[
+    "attempt",
+    "fabric",
+    "lease",
+    "reconciliation",
+    "run_attempt_lease_dispatch_preflight",
+    "runner_command",
+    "runner_attempt_boundary",
+    "runner_execution_intent",
+    "session_runner_receipt",
+];
 const SOURCE_SHA256: &str = "1022852cc453689675ba5c9dda68a9f61d791cd5bb1f87f2138a21327346655d";
 const IMPORT: &str = "use crate::platform_core_contract::{
     AttemptState, PlatformCoreContractError, validate_attempt_transition,
@@ -197,12 +209,26 @@ pub(super) fn check_no_consumer(source: &str, relative: Option<&str>) -> Result<
     serde_policy::check(source, relative)?;
     let tokens = lex::tokenize(source)?;
     codegen::check(&tokens, true, source, relative)?;
-    if matches!(relative, Some(SOURCE | TEST)) {
+    if matches!(relative, Some(SOURCE | TEST | CONTRACT_TEST)) {
         return Ok(());
     }
     if relative == Some(MODULE) {
-        let expected =
-            lex::tokenize("pub mod attempt; pub mod attempt_lifecycle; pub mod fabric;")?;
+        let expected = lex::tokenize(
+            "pub mod attempt;
+             pub mod attempt_lifecycle;
+             pub mod fabric;
+             pub mod lease;
+             pub mod reconciliation;
+             pub mod run_attempt_lease_dispatch_preflight;
+             pub mod runner_command;
+             pub mod runner_attempt_boundary;
+             pub mod runner_execution_intent;
+             pub mod session_runner_receipt;
+             #[cfg(test)] mod attempt_lifecycle_contract;
+             #[cfg(test)] mod lease_checkpoint_contract;
+             #[cfg(test)] mod reconciliation_contract;
+             #[cfg(test)] mod run_attempt_lease_dispatch_preflight_contract;",
+        )?;
         return if tokens == expected {
             Ok(())
         } else {
@@ -245,9 +271,20 @@ fn check_execution_imports(tokens: &[String]) -> Result<(), String> {
                 && !tokens[index + offset + 3..end]
                     .iter()
                     .any(|token| matches!(token.as_str(), "*" | "as"));
-            let reviewed_leaf =
-                tail.is_some_and(|pair| pair == ["::", "attempt"]) || reviewed_fabric;
-            if (domain_root || root_path) && !reviewed_leaf {
+            let reviewed_leaf = tail.is_some_and(|pair| pair == ["::", "attempt"])
+                || reviewed_fabric
+                || tail.is_some_and(|pair| {
+                    pair[0] == "::"
+                        && REVIEWED_EXECUTION_MODULES.contains(&pair[1].as_str())
+                        && !tokens[index + offset + 3..end]
+                            .iter()
+                            .any(|token| matches!(token.as_str(), "*" | "as"))
+                });
+            let reviewed_group = tail.is_some_and(|pair| pair == ["::", "{"])
+                && !tokens[index + offset + 3..end]
+                    .iter()
+                    .any(|token| matches!(token.as_str(), "*" | "as" | "attempt_lifecycle"));
+            if (domain_root || root_path) && !reviewed_leaf && !reviewed_group {
                 return Err("execution alias or glob may expose the lifecycle module".into());
             }
         }

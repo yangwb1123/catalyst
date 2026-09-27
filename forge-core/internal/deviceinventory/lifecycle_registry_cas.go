@@ -192,8 +192,12 @@ func validateLifecycleRegistryMembers(
 		if err := validateCredentialCandidate(state.CredentialCandidate, state.Owner, state.Device); err != nil {
 			return fmt.Errorf("%w: state %d: credential candidate: %v", ErrLifecycleRegistryInvalidState, index, err)
 		}
+		if err := validateChallengeCandidate(state.ChallengeCandidate); err != nil {
+			return fmt.Errorf("%w: state %d: challenge candidate: %v", ErrLifecycleRegistryInvalidState, index, err)
+		}
 		canonical.ApprovalCandidate = cloneApprovalCandidate(state.ApprovalCandidate)
 		canonical.CredentialCandidate = cloneCredentialCandidate(state.CredentialCandidate)
+		canonical.ChallengeCandidate = cloneChallengeCandidate(state.ChallengeCandidate)
 		states[index] = canonical
 		deviceID := canonical.Device.DeviceID
 		if _, exists := seenDevices[deviceID]; exists {

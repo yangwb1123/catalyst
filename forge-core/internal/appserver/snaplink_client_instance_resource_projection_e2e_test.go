@@ -7,8 +7,10 @@ package appserver
 // test mux and asserting production 404 closure.
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -61,14 +63,38 @@ func TestSnaplinkAuthenticatedClientInstanceResourceProjectionE2EWhenConfigured(
 		Issuer: identity.issuer, Subject: "account-42", TenantID: "tenant-slate",
 	}
 	resourceSource := &fixtureClientInstanceResourceViewSource{}
+	// Keep the inventory/resource write boundary honest: the resource-only
+	// projection below also has to converge with the owner-bound lossless v2
+	// inventory before the Console Prompt append. This remains a test-mux
+	// candidate and carries no inventory authority.
+	inventorySource := &fixtureDeviceInventoryReadV2Source{
+		value: fixtureDeviceInventoryReadV2Value(owner),
+	}
+	inventorySource.value.Devices[0].Device.ReservationState = "none"
+	inventorySource.value.Devices[0].Device.GPUs = []deviceplacement.GPUDeclarationV2{}
 	sessions := newAuthenticatedSessionRoutesWithObservationCandidates(bridge, nil)
+	var promptBodies []string
 	testRoutes := http.NewServeMux()
+	testRoutes.Handle(deviceInventoryReadCandidateV2Path,
+		newDeviceInventoryReadCandidateV2Routes(&deviceInventoryReadCandidateV2Config{
+			Enabled: true,
+			Source:  inventorySource,
+		}))
 	testRoutes.Handle(clientInstanceResourceViewCandidatePath,
 		newClientInstanceResourceViewCandidateRoutes(&clientInstanceResourceViewCandidateConfig{
 			Enabled: true,
 			Source:  resourceSource,
 		}))
-	testRoutes.Handle("/", sessions)
+	testRoutes.Handle("/", http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.Method == http.MethodPost && strings.Contains(request.URL.Path, "/prompts") {
+			body, readErr := io.ReadAll(request.Body)
+			if readErr == nil {
+				promptBodies = append(promptBodies, string(body))
+				request.Body = io.NopCloser(bytes.NewReader(body))
+			}
+		}
+		sessions.ServeHTTP(writer, request)
+	}))
 	recorder := &conversationHTTPRecorder{}
 	server := httptest.NewServer(authenticator.Handler(recorder.wrap(testRoutes)))
 	t.Cleanup(server.Close)
@@ -150,6 +176,7 @@ func TestSnaplinkAuthenticatedClientInstanceResourceProjectionE2EWhenConfigured(
 	}
 	resourceTUIRequests := recorder.snapshot()[resourceTUIStart:]
 	assertResourceProjectionRequestsHaveNoSessionOrExecutionEffects(t, resourceTUIRequests)
+	assertResourceProjectionTUIRefreshesInventoryResourceBeforePrompt(t, resourceTUIRequests, second.ID)
 
 	consoleCases := []struct {
 		name       string
@@ -190,7 +217,7 @@ func TestSnaplinkAuthenticatedClientInstanceResourceProjectionE2EWhenConfigured(
 			resourceConsoleStart := len(recorder.snapshot())
 			runForgeConsoleClientInstanceResourceProjectionE2EWithToken(
 				t, server.URL, projection.token, owner, projection.instanceID,
-				projection.visible, projection.hidden, projection.prompt,
+				projection.visible, projection.hidden, projection.prompt, recorder,
 			)
 			resourceConsoleRequests := recorder.snapshot()[resourceConsoleStart:]
 			assertResourceProjectionRequestsHaveNoSessionOrExecutionEffects(t, resourceConsoleRequests)
@@ -207,9 +234,16 @@ func TestSnaplinkAuthenticatedClientInstanceResourceProjectionE2EWhenConfigured(
 		second.ID, "Prompt submitted from resource-view TUI")
 
 	assertResourceProjectionRequestsHaveNoSessionOrExecutionEffects(t, recorder.snapshot())
+	t.Logf("resource projection prompt bodies=%v", promptBodies)
+	if inventorySource.calls == 0 || inventorySource.owner != (model.Owner{
+		Issuer: identity.issuer, Subject: owner.Subject, TenantID: owner.TenantID,
+	}) {
+		t.Fatalf("inventory/resource convergence source=%#v; expected an owner-bound inventory read", inventorySource)
+	}
 	production := authenticator.Handler(newConversationRoutes(bridge))
 	for _, path := range []string{
 		clientInstanceSessionViewCandidatePath,
+		deviceInventoryReadCandidateV2Path,
 		clientInstanceResourceViewCandidatePath,
 	} {
 		request := httptest.NewRequest(http.MethodGet, path, nil)
@@ -240,6 +274,7 @@ func runForgeRuntimeClientInstanceResourceProjectionTUI(
 	command.Env = forgeRuntimeCLIEnvironment(apiURL, accessToken, home)
 	command.Stdin = strings.NewReader(
 		"client-instances resource-view\n" +
+			"inventory read-v2\n" +
 			"instance client-tui-001\n" +
 			"open " + conversationID + "\n" +
 			"prompt Prompt submitted from resource-view TUI\n" +
@@ -257,6 +292,42 @@ func runForgeRuntimeClientInstanceResourceProjectionTUI(
 	return stdoutBuffer.String()
 }
 
+func assertResourceProjectionTUIRefreshesInventoryResourceBeforePrompt(
+	t *testing.T,
+	requests []recordedConversationRequest,
+	conversationID string,
+) {
+	t.Helper()
+	promptPath := conversationCollectionPath + "/" + conversationID + "/prompts"
+	var inventoryReads, resourceReads []int
+	promptPost := -1
+	for index, request := range requests {
+		switch {
+		case request.method == http.MethodGet && request.path == deviceInventoryReadCandidateV2Path:
+			inventoryReads = append(inventoryReads, index)
+		case request.method == http.MethodGet && request.path == clientInstanceResourceViewCandidatePath:
+			resourceReads = append(resourceReads, index)
+		case request.method == http.MethodPost && request.path == promptPath:
+			if promptPost >= 0 {
+				t.Fatalf("resource projection TUI sent duplicate Prompt POSTs: %#v", requests)
+			}
+			promptPost = index
+		}
+	}
+	if len(inventoryReads) < 2 || len(resourceReads) < 2 || promptPost < 0 {
+		t.Fatalf(
+			"resource projection TUI did not refresh inventory/resource before Prompt POST: %#v",
+			requests,
+		)
+	}
+	if inventoryReads[len(inventoryReads)-1] > promptPost || resourceReads[len(resourceReads)-1] > promptPost {
+		t.Fatalf(
+			"resource projection TUI Prompt POST preceded the latest inventory/resource refresh: %#v",
+			requests,
+		)
+	}
+}
+
 func runForgeConsoleClientInstanceResourceProjectionE2EWithToken(
 	t *testing.T,
 	apiURL, token string,
@@ -264,6 +335,7 @@ func runForgeConsoleClientInstanceResourceProjectionE2EWithToken(
 	instanceID string,
 	visible, hidden model.Conversation,
 	prompt string,
+	recorder *conversationHTTPRecorder,
 ) {
 	t.Helper()
 	consoleRoot := os.Getenv("SNAPLINK_CONSOLE_ROOT")
@@ -330,7 +402,7 @@ func runForgeConsoleClientInstanceResourceProjectionE2EWithToken(
 	command.Stdout = &stdoutBuffer
 	command.Stderr = &stderrBuffer
 	if err := command.Run(); err != nil {
-		t.Fatalf("Flutter resource-view projection E2E failed: stdout=%q stderr=%q err=%v", stdoutBuffer.String(), stderrBuffer.String(), err)
+		t.Fatalf("Flutter resource-view projection E2E failed: stdout=%q stderr=%q requests=%#v err=%v", stdoutBuffer.String(), stderrBuffer.String(), recorder.snapshot(), err)
 	}
 	if stdoutBuffer.exceeded || stderrBuffer.exceeded {
 		t.Fatalf("Flutter resource-view projection output exceeded the size limit")
@@ -375,7 +447,6 @@ func assertResourceProjectionRequestsHaveNoSessionOrExecutionEffects(
 			t.Fatalf("resource-view-only consumer requested session-view: %#v", request)
 		}
 		for _, fragment := range []string{
-			"/api/v1/devices",
 			"/api/v1/device-placement",
 			"/api/v1/reservation",
 			"/api/v1/dispatch",
@@ -385,6 +456,10 @@ func assertResourceProjectionRequestsHaveNoSessionOrExecutionEffects(
 			if strings.Contains(path, fragment) {
 				t.Fatalf("resource-view projection issued forbidden device/execution request: %#v", request)
 			}
+		}
+		if strings.Contains(path, "/api/v1/devices") &&
+			request.path != deviceInventoryReadCandidateV2Path {
+			t.Fatalf("resource-view projection issued forbidden device request: %#v", request)
 		}
 		if request.path == conversationCollectionPath && strings.Contains(request.query, "instance") {
 			t.Fatalf("resource-view projection leaked an instance query into the authenticated session list: %#v", request)

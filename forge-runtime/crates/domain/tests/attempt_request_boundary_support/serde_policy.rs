@@ -8,10 +8,17 @@ const RUN_STORE: &str = "crates/domain/src/run_store.rs";
 const RUN_STORE_SHA256: &str = "3e1dcec4391811039c9816fe6429790fef1adc63020a0b71455fc6dbdaa517fa";
 const REMOTE_LOGIN: &str = "crates/interfaces/src/remote_login.rs";
 const REMOTE_LOGIN_SHA256: &str =
-    "516023e1b37288d6b2d52464cb644fdedc5aad386b6b396a181c01fe574f53f2";
+    "feb4a5f797b867475fc2e7150d735077c3326cf5a501d509ed7887feaa368a2b";
 const RUNTIME_RPC_VALIDATION: &str = "crates/interfaces/src/runtime_rpc/validation.rs";
 const RUNTIME_RPC_VALIDATION_SHA256: &str =
-    "1e1fa731f14f0f94e1c0a5f50ba3d9023375736037e2b8fa68c228fbe378702f";
+    "b37e5bbcde1d2a3450fca5842774866aa242f9e47ae6bce7e39475ab5824555e";
+const RESOURCE_SUMMARY: &str = "crates/interfaces/src/device_resource_summary_command.rs";
+const RESOURCE_SUMMARY_SHA256: &str =
+    "fcc66afb929113cb774eb5dfb3e5d77580c8ac59223ac0b59741b35d4ae83f6c";
+const SESSION_OBSERVATION: &str =
+    "crates/interfaces/src/device_resource_summary_command/session_observation.rs";
+const SESSION_OBSERVATION_SHA256: &str =
+    "ec362d1fb62653cfcf056caf7de0312594bf1cfa8d11e9fa86c448ca300901f9";
 const INERT_FLAGS: &[&[u8]] = &[
     b"default",
     b"deny_unknown_fields",
@@ -147,6 +154,14 @@ fn check_options(
             Some(b"\"owned::default_owned_change_limit\"") if option.name == b"default" => {
                 options.len() == 1 && reviewed_runtime_rpc_validation(source, relative)
             }
+            Some(b"\"deserialize_required_nullable\"") if option.name == b"deserialize_with" => {
+                reviewed_nullable_deserializer(source, relative, false)
+            }
+            Some(b"\"super::deserialize_required_nullable\"")
+                if option.name == b"deserialize_with" =>
+            {
+                reviewed_nullable_deserializer(source, relative, true)
+            }
             Some(_) => false,
         };
         if !allowed {
@@ -186,4 +201,14 @@ fn reviewed_remote_login(source: &str, relative: Option<&str>) -> bool {
 fn reviewed_runtime_rpc_validation(source: &str, relative: Option<&str>) -> bool {
     relative == Some(RUNTIME_RPC_VALIDATION)
         && format!("{:x}", Sha256::digest(source.as_bytes())) == RUNTIME_RPC_VALIDATION_SHA256
+}
+
+fn reviewed_nullable_deserializer(source: &str, relative: Option<&str>, session: bool) -> bool {
+    let (expected_path, expected_hash) = if session {
+        (SESSION_OBSERVATION, SESSION_OBSERVATION_SHA256)
+    } else {
+        (RESOURCE_SUMMARY, RESOURCE_SUMMARY_SHA256)
+    };
+    relative == Some(expected_path)
+        && format!("{:x}", Sha256::digest(source.as_bytes())) == expected_hash
 }

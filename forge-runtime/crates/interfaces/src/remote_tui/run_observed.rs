@@ -38,12 +38,13 @@ pub(super) async fn show<W: Write>(
     argument: &str,
     writer: &mut W,
 ) -> Result<(), RemoteError> {
-    let Some(conversation_id) = runs::selected_conversation_id(state, writer)? else {
+    let Some(conversation_id) = runs::selected_conversation_id(state, writer)?.map(str::to_owned)
+    else {
         return Ok(());
     };
     if !super::commands::ensure_conversation_visible_to_client_instance(
         state,
-        conversation_id,
+        &conversation_id,
         writer,
     )? {
         return Ok(());
@@ -51,15 +52,30 @@ pub(super) async fn show<W: Write>(
     let Some(run_id) = runs::parse_run_id_argument(argument.trim()) else {
         return usage(writer);
     };
-    let observation = match client.read_run_observation(conversation_id, &run_id).await {
+    let observation = match client.read_run_observation(&conversation_id, &run_id).await {
         Ok(observation) => observation,
         Err(error) => {
             let cleared = super::clear_session_view_after_authorization_error(state, &error);
+            let dropped = if cleared {
+                false
+            } else {
+                super::commands::drop_selected_session_after_read_rejection(
+                    state,
+                    &conversation_id,
+                    &error,
+                )
+            };
             writeln!(writer, "Run observed request failed: {error}").map_err(io_error)?;
             if cleared {
                 writeln!(
                     writer,
                     "Local session view cleared after authorization failure."
+                )
+                .map_err(io_error)?;
+            } else if dropped {
+                writeln!(
+                    writer,
+                    "Selected session was removed after its owner Run read was rejected."
                 )
                 .map_err(io_error)?;
             }

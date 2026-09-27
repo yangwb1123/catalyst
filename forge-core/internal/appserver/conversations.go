@@ -98,6 +98,7 @@ type conversationRoutes struct {
 	appendPrompt       http.Handler
 	listRuns           http.Handler
 	listRunTimeline    http.Handler
+	changeStream       http.Handler
 }
 
 type conversationErrorResponse struct {
@@ -157,6 +158,7 @@ func newConversationRoutesWithBackendAndExecutionProfiles(
 ) http.Handler {
 	routes := conversationRoutes{backend: backend, profiles: profiles}
 	routes.changes = authn.RequireScopes(http.HandlerFunc(routes.ownedConversationChanges), "forge:conversations:read")
+	routes.changeStream = authn.RequireScopes(http.HandlerFunc(routes.ownedConversationChangesStream), "forge:conversations:read")
 	routes.list = authn.RequireScopes(http.HandlerFunc(routes.listConversations), "forge:conversations:read")
 	routes.detail = authn.RequireScopes(http.HandlerFunc(routes.getConversation), "forge:conversations:read")
 	routes.create = authn.RequireScopes(http.HandlerFunc(routes.createConversation), "forge:conversations:write")
@@ -212,6 +214,13 @@ func (routes conversationRoutes) serveConversationAuxiliaryRoutes(w http.Respons
 			return true
 		}
 		routes.changes.ServeHTTP(w, r)
+		return true
+	}
+	if path == conversationChangesStreamPath {
+		if !requireConversationMethod(w, r, http.MethodGet) {
+			return true
+		}
+		routes.changeStream.ServeHTTP(w, r)
 		return true
 	}
 	if conversationID, runID, ok := conversationRunTimelineIDs(path); ok {

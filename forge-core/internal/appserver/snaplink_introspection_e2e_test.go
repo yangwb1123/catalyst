@@ -30,7 +30,8 @@ import (
 )
 
 const (
-	snaplinkForgeIntrospectionClient       = "forge-introspector"
+	snaplinkForgeIntrospectionClient = "forge-introspector"
+	// secret-scan:ignore — in-memory introspection fixture credential.
 	snaplinkForgeIntrospectionClientSecret = "snaplink-forge-introspection-secret"
 	snaplinkForgeOtherTenant               = "snaplink-forge-other-tenant"
 )

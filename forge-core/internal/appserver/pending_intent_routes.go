@@ -31,7 +31,7 @@ func (routes executionRoutes) submitPendingIntent(w http.ResponseWriter, r *http
 		return
 	}
 	if !hasExactRequiredFields(body, "content", "expected_version") ||
-		request.ExpectedVersion > maxSafeJSONInteger || requestContentInvalid(request.Content) {
+		request.ExpectedVersion == 0 || request.ExpectedVersion > maxSafeJSONInteger || requestContentInvalid(request.Content) {
 		writeConversationError(w, r, http.StatusBadRequest, "invalid_request", "pending intent request is invalid")
 		return
 	}
@@ -60,7 +60,7 @@ func (routes executionRoutes) submitPendingIntent(w http.ResponseWriter, r *http
 	if result.Replayed {
 		status = http.StatusOK
 	}
-	if !pendingIntentSubmissionJSONSafe(result) {
+	if !pendingIntentSubmissionJSONSafe(result, request.ExpectedVersion) {
 		writeExecutionBackendError(w, r, &runtimebridge.Error{Code: "invalid_runtime_response"})
 		return
 	}

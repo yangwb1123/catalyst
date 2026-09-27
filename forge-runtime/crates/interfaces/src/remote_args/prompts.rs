@@ -8,6 +8,7 @@ pub(super) fn parse(tokens: &mut VecDeque<String>) -> Result<Command, String> {
     match tokens.pop_front().as_deref() {
         Some("list") => parse_prompt_list(tokens),
         Some("add") => parse_prompt_add(tokens),
+        Some("receipt") => parse_prompt_receipt(tokens),
         Some(value) => Err(format!(
             "unknown remote prompts command '{value}'\n\n{}",
             usage()
@@ -86,6 +87,14 @@ fn valid_prompt_cursor_fields(created_at_ms: Option<u64>, prompt_id: Option<&str
 }
 
 fn parse_prompt_add(tokens: &mut VecDeque<String>) -> Result<Command, String> {
+    parse_prompt_write(tokens, false)
+}
+
+fn parse_prompt_receipt(tokens: &mut VecDeque<String>) -> Result<Command, String> {
+    parse_prompt_write(tokens, true)
+}
+
+fn parse_prompt_write(tokens: &mut VecDeque<String>, receipt: bool) -> Result<Command, String> {
     let conversation_id = next_value(tokens, "remote prompts add")?;
     if tokens
         .front()
@@ -152,11 +161,22 @@ fn parse_prompt_add(tokens: &mut VecDeque<String>) -> Result<Command, String> {
         ));
     }
     let content = content_tokens.join(" ");
-    Ok(Command::Remote(RemoteCommand::PromptsAdd {
-        conversation_id,
-        expected_version,
-        content,
-        instance_id,
-        instance_view,
-    }))
+    let command = if receipt {
+        RemoteCommand::PromptsReceipt {
+            conversation_id,
+            expected_version,
+            content,
+            instance_id,
+            instance_view,
+        }
+    } else {
+        RemoteCommand::PromptsAdd {
+            conversation_id,
+            expected_version,
+            content,
+            instance_id,
+            instance_view,
+        }
+    };
+    Ok(Command::Remote(command))
 }

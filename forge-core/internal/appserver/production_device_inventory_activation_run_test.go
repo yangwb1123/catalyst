@@ -242,6 +242,7 @@ func TestRunAcceptedInventoryActivationMountsOwnerScopedDeviceRoute(t *testing.T
 		}
 	}
 
+	var acceptedFirstConversationID, acceptedSecondConversationID string
 	if executable := os.Getenv("FORGE_RUNTIME_BIN"); executable != "" {
 		activatedInventoryV2 := inventoryV2
 		activatedInventoryV2.EvaluatedAtMS = 0
@@ -274,10 +275,15 @@ func TestRunAcceptedInventoryActivationMountsOwnerScopedDeviceRoute(t *testing.T
 		runForgeConsoleAcceptedDeviceInventoryE2EWithToken(
 			t, ready.Listen, token, issuer, snaplinkForgeTestUser, snaplinkForgeTestTenant,
 		)
+		runForgeConsoleAcceptedDeviceInventoryGateE2EWithToken(
+			t, ready.Listen, token, issuer, snaplinkForgeTestUser, snaplinkForgeTestTenant,
+		)
 		if executable := os.Getenv("FORGE_RUNTIME_BIN"); executable != "" {
 			httpClient := &http.Client{Timeout: 20 * time.Second}
 			first := createSharedConversationAsClientA(t, httpClient, ready.Listen, token)
 			second := createProjectionConversation(t, httpClient, ready.Listen, token)
+			acceptedFirstConversationID = first.ID
+			acceptedSecondConversationID = second.ID
 			writeClientInstanceSessionViewSourceFileAtPath(t, clientInstancePath, owner, []deviceplacement.ClientInstanceSessionViewInstance{
 				{InstanceID: "client-cli-001", ClientKind: deviceplacement.ClientKindCLI, SessionIDs: []string{first.ID, second.ID}, ObservedAtMS: 200500, Status: "active"},
 				{InstanceID: "client-tui-001", ClientKind: deviceplacement.ClientKindTUI, SessionIDs: []string{second.ID}, ObservedAtMS: 200500, Status: "active"},
@@ -363,6 +369,153 @@ func TestRunAcceptedInventoryActivationMountsOwnerScopedDeviceRoute(t *testing.T
 					t.Fatalf("accepted production Prompt history=%#v stdout=%q decode=%v", history, output, err)
 				}
 			}
+			liveTUIOutput := runForgeRuntimeClientInstanceLiveRefreshPromptE2EWithToken(
+				t, executable, ready.Listen, token, clientInstancePath, owner, second.ID,
+			)
+			// Restore the canonical five-instance image before the later Gate
+			// refresh starts its own before/after assertion.
+			writeClientInstanceSessionViewSourceFileAtPath(t, clientInstancePath, owner, []deviceplacement.ClientInstanceSessionViewInstance{
+				{InstanceID: "client-cli-001", ClientKind: deviceplacement.ClientKindCLI, SessionIDs: []string{first.ID, second.ID}, ObservedAtMS: 200500, Status: "active"},
+				{InstanceID: "client-tui-001", ClientKind: deviceplacement.ClientKindTUI, SessionIDs: []string{second.ID}, ObservedAtMS: 200500, Status: "active"},
+				{InstanceID: "client-web-001", ClientKind: deviceplacement.ClientKindWeb, SessionIDs: []string{first.ID}, ObservedAtMS: 200500, Status: "active"},
+				{InstanceID: "client-app-001", ClientKind: deviceplacement.ClientKindApp, SessionIDs: []string{first.ID}, ObservedAtMS: 200500, Status: "active"},
+				{InstanceID: "client-mobile-001", ClientKind: deviceplacement.ClientKindMobile, SessionIDs: []string{second.ID}, ObservedAtMS: 200500, Status: "idle"},
+			})
+			for _, want := range []string{
+				"Selected client-instance/session-view refreshed.",
+				`Client-instance filter set to "client-tui-live-002"`,
+				"Opened session",
+				"Prompt stored. No Run was started.",
+				"Prompt submitted after client-instance refresh",
+			} {
+				if !strings.Contains(liveTUIOutput, want) {
+					t.Fatalf("accepted production live client-instance TUI omitted %q: %q", want, liveTUIOutput)
+				}
+			}
+			livePromptOutput, livePromptStderr, err := runForgeRuntimeCLI(
+				t, executable, ready.Listen, token, t.TempDir(),
+				"--json", "remote", "prompts", "list", second.ID,
+			)
+			if err != nil {
+				t.Fatalf("accepted production live-refresh Prompt read failed: stderr=%q stdout=%q err=%v", livePromptStderr, livePromptOutput, err)
+			}
+			var livePromptHistory model.ConversationPromptPage
+			if err := json.Unmarshal([]byte(livePromptOutput), &livePromptHistory); err != nil ||
+				!promptPageContains(livePromptHistory, "Prompt submitted after client-instance refresh") {
+				t.Fatalf("accepted production live-refresh Prompt history=%#v stdout=%q decode=%v", livePromptHistory, livePromptOutput, err)
+			}
+			externalTUIOutput := runForgeRuntimeClientInstanceExternalPromptConvergenceE2EWithToken(
+				t, executable, ready.Listen, token, clientInstancePath, owner, second.ID,
+			)
+			for _, want := range []string{
+				`Client-instance filter set to "client-tui-live-005"`,
+				"Opened session",
+				"Prompt history refreshed for the selected session.",
+				"Prompt from external Runtime CLI after client-instance refresh",
+			} {
+				if !strings.Contains(externalTUIOutput, want) {
+					t.Fatalf("accepted production external Prompt convergence omitted %q: %q", want, externalTUIOutput)
+				}
+			}
+			writeClientInstanceSessionViewSourceFileAtPath(
+				t,
+				clientInstancePath,
+				owner,
+				clientInstanceLiveRefreshRowsForConversations("006", first.ID, second.ID),
+			)
+			runForgeConsoleClientInstanceExternalPromptConvergenceE2EWithToken(
+				t,
+				ready.Listen,
+				token,
+				executable,
+				model.Owner{Issuer: issuer, Subject: snaplinkForgeTestUser, TenantID: snaplinkForgeTestTenant},
+				first.ID,
+				"client-web-live-006",
+				"Prompt from external Runtime CLI through the Console Gate",
+			)
+			writeClientInstanceSessionViewSourceFileAtPath(t, clientInstancePath, owner, []deviceplacement.ClientInstanceSessionViewInstance{
+				{InstanceID: "client-cli-001", ClientKind: deviceplacement.ClientKindCLI, SessionIDs: []string{first.ID, second.ID}, ObservedAtMS: 200500, Status: "active"},
+				{InstanceID: "client-tui-001", ClientKind: deviceplacement.ClientKindTUI, SessionIDs: []string{second.ID}, ObservedAtMS: 200500, Status: "active"},
+				{InstanceID: "client-web-001", ClientKind: deviceplacement.ClientKindWeb, SessionIDs: []string{first.ID}, ObservedAtMS: 200500, Status: "active"},
+				{InstanceID: "client-app-001", ClientKind: deviceplacement.ClientKindApp, SessionIDs: []string{first.ID}, ObservedAtMS: 200500, Status: "active"},
+				{InstanceID: "client-mobile-001", ClientKind: deviceplacement.ClientKindMobile, SessionIDs: []string{second.ID}, ObservedAtMS: 200500, Status: "idle"},
+			})
+		}
+	}
+	if executable := os.Getenv("FORGE_RUNTIME_BIN"); executable != "" {
+		runForgeRuntimePersistedInventoryV2TUILiveRefreshE2EWithToken(
+			t, executable, ready.Listen, token, registryPath, owner,
+		)
+		if os.Getenv("FORGE_CONSOLE_E2E") == "1" {
+			updated := lifecycleRegistrySourceStateRevision(t, owner, "device-a", "runner-a", 3)
+			second := lifecycleRegistrySourceState(t, owner, "device-b", "runner-b", 1)
+			updatedPath := filepath.Join(t.TempDir(), "accepted-inventory-gate-refresh.json")
+			writeLifecycleRegistrySourceFileAtPath(t, updatedPath, owner,
+				[]deviceinventory.PersistedEnrollmentHeartbeatLifecycleState{second, updated})
+			updatedJSON, err := os.ReadFile(updatedPath)
+			if err != nil {
+				t.Fatalf("read accepted inventory Gate refresh image: %v", err)
+			}
+			updatedClientPath := filepath.Join(t.TempDir(), "accepted-client-instance-gate-refresh.json")
+			writeClientInstanceSessionViewSourceFileAtPath(
+				t,
+				updatedClientPath,
+				owner,
+				clientInstanceLiveRefreshRowsForConversations("002", acceptedFirstConversationID, acceptedSecondConversationID),
+			)
+			updatedClientJSON, err := os.ReadFile(updatedClientPath)
+			if err != nil {
+				t.Fatalf("read accepted client-instance Gate refresh image: %v", err)
+			}
+			runForgeConsoleAcceptedDeviceInventoryGateE2EWithToken(
+				t, ready.Listen, token, issuer, snaplinkForgeTestUser, snaplinkForgeTestTenant,
+				acceptedInventoryGateRefreshInput{
+					registryPath:                   registryPath,
+					updatedJSON:                    string(updatedJSON),
+					marker:                         "Persisted counters: revision 3 · generation 1 · heartbeat 3",
+					clientInstancePath:             clientInstancePath,
+					updatedClientInstanceJSON:      string(updatedClientJSON),
+					expectedResourceRefreshMarker:  "state: revision=3 · generation=1 · heartbeat=3",
+					expectedResourceInstanceMarker: "client-web-live-002",
+					promptConversationID:           acceptedSecondConversationID,
+					promptInstanceBefore:           "client-tui-001",
+					promptInstanceAfter:            "client-tui-live-002",
+					promptContent:                  "Prompt from Console after client-instance refresh",
+				},
+			)
+			runForgeConsoleInventoryRefreshConvergenceE2EWithToken(
+				t, ready.Listen, token, issuer, snaplinkForgeTestUser, snaplinkForgeTestTenant,
+				3, 1, 3,
+			)
+			promptOutput, promptStderr, err := runForgeRuntimeCLI(
+				t, executable, ready.Listen, token, t.TempDir(),
+				"--json", "remote", "prompts", "list", acceptedSecondConversationID,
+			)
+			if err != nil {
+				t.Fatalf("accepted production Console live-refresh Prompt read failed: stderr=%q stdout=%q err=%v", promptStderr, promptOutput, err)
+			}
+			var promptHistory model.ConversationPromptPage
+			if err := json.Unmarshal([]byte(promptOutput), &promptHistory); err != nil ||
+				!promptPageContains(promptHistory, "Prompt from Console after client-instance refresh") {
+				t.Fatalf("accepted production Console live-refresh Prompt history=%#v stdout=%q decode=%v", promptHistory, promptOutput, err)
+			}
+		}
+		runForgeRuntimeClientInstanceViewsTUILiveRefreshE2EWithToken(
+			t, executable, ready.Listen, token, clientInstancePath, owner,
+		)
+		runForgeRuntimeClientInstanceViewsCLIRefreshE2EWithToken(
+			t, executable, ready.Listen, token, clientInstancePath, owner,
+		)
+		if acceptedFirstConversationID != "" && acceptedSecondConversationID != "" {
+			runForgeRuntimeClientInstanceCLIPromptAfterRefreshE2EWithToken(
+				t,
+				executable,
+				ready.Listen,
+				token,
+				clientInstancePath,
+				owner,
+				acceptedFirstConversationID,
+			)
 		}
 	}
 }
@@ -552,6 +705,9 @@ func TestRunAcceptedObserveActivationMountsReadOnlyDeviceRoutes(t *testing.T) {
 }
 
 func TestRunAcceptedExecuteActivationMountsAdmissionRoutes(t *testing.T) {
+	if os.Getenv("FORGE_RUNTIME_BIN") == "" {
+		t.Skip("accepted execute scheduler preview E2E requires a configured Forge Runtime binary for durable Run binding")
+	}
 	issuer, ssoClient, _, token, closeSnaplink := startSnaplinkForgeTestIssuer(t)
 	t.Cleanup(closeSnaplink)
 
@@ -562,15 +718,36 @@ func TestRunAcceptedExecuteActivationMountsAdmissionRoutes(t *testing.T) {
 		t.Fatal(err)
 	}
 	runtimeExecutable := filepath.Join(root, "forge-runtime-execute-admission")
-	if configuredRuntime := os.Getenv("FORGE_RUNTIME_BIN"); configuredRuntime != "" {
+	configuredRuntime := os.Getenv("FORGE_RUNTIME_BIN")
+	if configuredRuntime != "" {
 		runtimeExecutable = configuredRuntime
 		initializeRuntimeHubForIntegration(t, runtimeExecutable, runtimeStateDir)
 	} else if err := os.WriteFile(runtimeExecutable, []byte("test runtime"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	owner := deviceidentity.Owner{Issuer: issuer, Subject: snaplinkForgeTestUser, TenantID: snaplinkForgeTestTenant}
-	registryPath := writeLifecycleRegistrySourceFile(t, owner, []deviceinventory.PersistedEnrollmentHeartbeatLifecycleState{
-		lifecycleRegistrySourceState(t, owner, "device-a", "runner-a", 1),
+	schedulerConversationID, schedulerRunID := "conversation-1", "run-1"
+	if configuredRuntime != "" {
+		schedulerConversationID, schedulerRunID = seedSchedulerSelectionPreviewSession(
+			t, runtimeExecutable, runtimeStateDir, owner,
+		)
+	}
+	clientInstancePath := filepath.Join(root, "client-instance-session-view-scheduler-preview.json")
+	writeClientInstanceSessionViewSourceFileAtPath(
+		t,
+		clientInstancePath,
+		owner,
+		[]deviceplacement.ClientInstanceSessionViewInstance{
+			{InstanceID: "client-web-001", ClientKind: deviceplacement.ClientKindWeb, SessionIDs: []string{schedulerConversationID}, ObservedAtMS: 200500, Status: "active"},
+			{InstanceID: "client-app-001", ClientKind: deviceplacement.ClientKindApp, SessionIDs: []string{schedulerConversationID}, ObservedAtMS: 200500, Status: "active"},
+			{InstanceID: "client-mobile-001", ClientKind: deviceplacement.ClientKindMobile, SessionIDs: []string{schedulerConversationID}, ObservedAtMS: 200500, Status: "active"},
+		},
+	)
+	now := time.Now().UnixMilli()
+	state := schedulerLeaseFreshLifecycleState(t, owner, "device-a", "runner-a", 1, now)
+	registryPath := writeLifecycleRegistrySourceFile(t, owner, []deviceinventory.PersistedEnrollmentHeartbeatLifecycleState{state})
+	policyPath := writePlacementPolicySourceFile(t, owner, []deviceplacement.PlacementPolicy{
+		schedulerLeasePolicy(state),
 	})
 	activation := acceptedInventoryActivation()
 	activation.Mode = devicefabricgate.ModeExecute
@@ -597,6 +774,8 @@ func TestRunAcceptedExecuteActivationMountsAdmissionRoutes(t *testing.T) {
 		JWKSRefreshInterval:                  24 * time.Hour,
 		DeviceFabricActivation:               ptrDeviceFabricRequest(activation),
 		DeviceInventoryLifecycleRegistryFile: registryPath,
+		DeviceClientInstanceSessionViewFile:  clientInstancePath,
+		DeviceExecutionPolicyRegistryFile:    policyPath,
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -659,10 +838,11 @@ func TestRunAcceptedExecuteActivationMountsAdmissionRoutes(t *testing.T) {
 	if err := json.Unmarshal([]byte(registryPlacementRequirementsBody(t)), &placementRequest); err != nil {
 		t.Fatalf("decode execute scheduler requirements: %v", err)
 	}
-	schedulerRequest, err := json.Marshal(schedulerSelectionPreviewRequest{
-		ConversationID: "conversation-1", RunID: "run-1", AttemptID: "attempt-1",
+	schedulerPreviewRequest := schedulerSelectionPreviewRequest{
+		ConversationID: schedulerConversationID, RunID: schedulerRunID, AttemptID: "attempt-1",
 		Requirements: placementRequest.Requirements,
-	})
+	}
+	schedulerRequest, err := json.Marshal(schedulerPreviewRequest)
 	if err != nil {
 		t.Fatalf("encode execute scheduler request: %v", err)
 	}
@@ -674,9 +854,18 @@ func TestRunAcceptedExecuteActivationMountsAdmissionRoutes(t *testing.T) {
 	if err := json.Unmarshal(body, &selection); err != nil {
 		t.Fatalf("decode accepted execute scheduler selection: %v", err)
 	}
-	if err := selection.Validate(); err != nil || selection.SelectionAvailable || selection.SelectedDeviceID != nil || selection.SelectedInstanceID != nil ||
-		selection.SelectionReason != "no_eligible_candidate" || selection.Authority != (deviceplacement.SchedulerSelectionPreviewAuthority{}) {
+	if err := selection.Validate(); err != nil || !selection.SelectionAvailable ||
+		selection.SelectedDeviceID == nil || *selection.SelectedDeviceID != "device-a" ||
+		selection.SelectedInstanceID == nil || *selection.SelectedInstanceID != "runner-a" ||
+		selection.SelectionReason != "first_sorted_eligible_candidate" ||
+		selection.Authority != (deviceplacement.SchedulerSelectionPreviewAuthority{}) {
 		t.Fatalf("accepted execute scheduler selection=%#v err=%v", selection, err)
+	}
+	policyPreviewExpectation := schedulerSelectionPreviewExpectation{
+		SelectionAvailable: true,
+		SelectionReason:    "first_sorted_eligible_candidate",
+		DeviceID:           "device-a",
+		InstanceID:         "runner-a",
 	}
 	for _, route := range []struct {
 		method string
@@ -698,6 +887,50 @@ func TestRunAcceptedExecuteActivationMountsAdmissionRoutes(t *testing.T) {
 		}
 		if status == http.StatusNotFound && string(body) == string(notFoundBody) {
 			t.Fatalf("accepted execute admission route %s %s remained closed: body=%q", route.method, route.path, body)
+		}
+	}
+	if executable := os.Getenv("FORGE_RUNTIME_BIN"); executable != "" {
+		runForgeRuntimeSchedulerSelectionRemoteCLIWithRequest(
+			t,
+			executable,
+			ready.Listen,
+			token,
+			model.Owner{Issuer: issuer, Subject: snaplinkForgeTestUser, TenantID: snaplinkForgeTestTenant},
+			schedulerPreviewRequest,
+			policyPreviewExpectation,
+		)
+		runForgeRuntimeSchedulerSelectionRemoteTUIWithRequest(
+			t,
+			executable,
+			ready.Listen,
+			token,
+			model.Owner{Issuer: issuer, Subject: snaplinkForgeTestUser, TenantID: snaplinkForgeTestTenant},
+			schedulerPreviewRequest,
+			policyPreviewExpectation,
+		)
+	}
+	if os.Getenv("FORGE_CONSOLE_E2E") == "1" {
+		runForgeConsoleSchedulerSelectionPreviewE2EWithToken(
+			t,
+			ready.Listen,
+			token,
+			model.Owner{Issuer: issuer, Subject: snaplinkForgeTestUser, TenantID: snaplinkForgeTestTenant},
+			placementRequest.Requirements,
+			schedulerConversationID,
+			schedulerRunID,
+			policyPreviewExpectation,
+		)
+		if configuredRuntime != "" {
+			runForgeConsoleSchedulerSelectionPreviewGateE2EWithToken(
+				t,
+				ready.Listen,
+				token,
+				model.Owner{Issuer: issuer, Subject: snaplinkForgeTestUser, TenantID: snaplinkForgeTestTenant},
+				placementRequest.Requirements,
+				schedulerConversationID,
+				schedulerRunID,
+				policyPreviewExpectation,
+			)
 		}
 	}
 }
@@ -904,6 +1137,360 @@ func runForgeConsoleAcceptedDeviceInventoryE2EWithToken(
 	}
 }
 
+type acceptedInventoryGateRefreshInput struct {
+	registryPath                   string
+	updatedJSON                    string
+	marker                         string
+	clientInstancePath             string
+	updatedClientInstanceJSON      string
+	expectedResourceRefreshMarker  string
+	expectedResourceInstanceMarker string
+	promptConversationID           string
+	promptInstanceBefore           string
+	promptInstanceAfter            string
+	promptContent                  string
+}
+
+func runForgeConsoleAcceptedDeviceInventoryGateE2EWithToken(
+	t *testing.T, apiURL, token, issuer, subject, tenant string,
+	refresh ...acceptedInventoryGateRefreshInput,
+) {
+	t.Helper()
+	if len(refresh) > 1 {
+		t.Fatalf("accepted inventory Gate refresh input may be supplied at most once")
+	}
+	consoleRoot := os.Getenv("SNAPLINK_CONSOLE_ROOT")
+	if consoleRoot == "" {
+		workingDirectory, err := os.Getwd()
+		if err != nil {
+			t.Fatalf("resolve Console repository: %v", err)
+		}
+		repoRoot := filepath.Clean(filepath.Join(workingDirectory, "..", "..", ".."))
+		consoleRoot = filepath.Join(filepath.Dir(repoRoot), "workspace", "demo", "snaplink-console")
+	}
+	if _, err := os.Stat(filepath.Join(consoleRoot, "pubspec.yaml")); err != nil {
+		t.Fatalf("SNAPLINK_CONSOLE_ROOT must name the Flutter Console repository: %v", err)
+	}
+	flutterBinary := os.Getenv("FLUTTER_BIN")
+	if flutterBinary == "" {
+		flutterBinary = "flutter"
+	}
+	flutterExecutable, err := exec.LookPath(flutterBinary)
+	if err != nil {
+		t.Fatalf("Flutter is required for accepted device inventory Gate E2E: %v", err)
+	}
+	input := struct {
+		APIURL                         string `json:"api_url"`
+		AccessToken                    string `json:"access_token"`
+		Issuer                         string `json:"issuer"`
+		Subject                        string `json:"subject"`
+		Tenant                         string `json:"tenant_id"`
+		RegistryPath                   string `json:"registry_path,omitempty"`
+		UpdatedRegistryJSON            string `json:"updated_registry_json,omitempty"`
+		ExpectedMarker                 string `json:"expected_refresh_marker,omitempty"`
+		ClientInstancePath             string `json:"client_instance_path,omitempty"`
+		UpdatedClientJSON              string `json:"updated_client_instance_json,omitempty"`
+		ExpectedResourceMarker         string `json:"expected_resource_refresh_marker,omitempty"`
+		ExpectedResourceInstanceMarker string `json:"expected_resource_instance_marker,omitempty"`
+		PromptConversationID           string `json:"live_prompt_conversation_id,omitempty"`
+		PromptInstanceBefore           string `json:"live_prompt_instance_before,omitempty"`
+		PromptInstanceAfter            string `json:"live_prompt_instance_after,omitempty"`
+		PromptContent                  string `json:"live_prompt_content,omitempty"`
+	}{APIURL: apiURL, AccessToken: token, Issuer: issuer, Subject: subject, Tenant: tenant}
+	if len(refresh) == 1 {
+		input.RegistryPath = refresh[0].registryPath
+		input.UpdatedRegistryJSON = refresh[0].updatedJSON
+		input.ExpectedMarker = refresh[0].marker
+		input.ClientInstancePath = refresh[0].clientInstancePath
+		input.UpdatedClientJSON = refresh[0].updatedClientInstanceJSON
+		input.ExpectedResourceMarker = refresh[0].expectedResourceRefreshMarker
+		input.ExpectedResourceInstanceMarker = refresh[0].expectedResourceInstanceMarker
+		input.PromptConversationID = refresh[0].promptConversationID
+		input.PromptInstanceBefore = refresh[0].promptInstanceBefore
+		input.PromptInstanceAfter = refresh[0].promptInstanceAfter
+		input.PromptContent = refresh[0].promptContent
+	}
+	inputJSON, err := json.Marshal(input)
+	if err != nil {
+		t.Fatalf("encode accepted device inventory Gate input: %v", err)
+	}
+	temporaryDirectory := t.TempDir()
+	inputPath := filepath.Join(temporaryDirectory, "accepted-device-inventory-gate-e2e-input.json")
+	if err := os.WriteFile(inputPath, inputJSON, 0o600); err != nil {
+		t.Fatalf("write private accepted device inventory Gate input: %v", err)
+	}
+	flutterHome := filepath.Join(temporaryDirectory, "home")
+	if err := os.Mkdir(flutterHome, 0o700); err != nil {
+		t.Fatalf("create isolated Flutter home: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+	command := exec.CommandContext(ctx, flutterExecutable,
+		"test", "--no-pub",
+		"--dart-define=FORGE_CONVERSATIONS_API_ORIGIN="+apiURL,
+		"test/forge_accepted_device_inventory_gate_e2e_test.dart")
+	command.Dir = consoleRoot
+	command.Env = append(
+		forgeConsoleTestEnvironment(inputPath, flutterHome),
+		"FORGE_ACCEPTED_DEVICE_INVENTORY_GATE_E2E_INPUT="+inputPath,
+	)
+	var stdoutBuffer, stderrBuffer boundedCLIOutput
+	command.Stdout = &stdoutBuffer
+	command.Stderr = &stderrBuffer
+	if err := command.Run(); err != nil {
+		t.Fatalf("Flutter accepted device inventory Gate E2E failed: stdout=%q stderr=%q err=%v", stdoutBuffer.String(), stderrBuffer.String(), err)
+	}
+	if stdoutBuffer.exceeded || stderrBuffer.exceeded {
+		t.Fatalf("accepted device inventory Gate Flutter output exceeded the size limit")
+	}
+}
+
+func runForgeConsoleClientInstanceExternalPromptConvergenceE2EWithToken(
+	t *testing.T,
+	apiURL, accessToken, runtimeExecutable string,
+	owner model.Owner,
+	conversationID, instanceID, content string,
+) {
+	t.Helper()
+	consoleRoot := os.Getenv("SNAPLINK_CONSOLE_ROOT")
+	if consoleRoot == "" {
+		workingDirectory, err := os.Getwd()
+		if err != nil {
+			t.Fatalf("resolve Console repository: %v", err)
+		}
+		repoRoot := filepath.Clean(filepath.Join(workingDirectory, "..", "..", ".."))
+		consoleRoot = filepath.Join(filepath.Dir(repoRoot), "workspace", "demo", "snaplink-console")
+	}
+	if _, err := os.Stat(filepath.Join(consoleRoot, "pubspec.yaml")); err != nil {
+		t.Fatalf("SNAPLINK_CONSOLE_ROOT must name the Flutter Console repository: %v", err)
+	}
+	flutterBinary := os.Getenv("FLUTTER_BIN")
+	if flutterBinary == "" {
+		flutterBinary = "flutter"
+	}
+	flutterExecutable, err := exec.LookPath(flutterBinary)
+	if err != nil {
+		t.Fatalf("Flutter is required for client-instance external Prompt convergence: %v", err)
+	}
+	input := struct {
+		APIURL            string `json:"api_url"`
+		AccessToken       string `json:"access_token"`
+		ConversationID    string `json:"conversation_id"`
+		InstanceID        string `json:"instance_id"`
+		Issuer            string `json:"issuer"`
+		Subject           string `json:"subject"`
+		Tenant            string `json:"tenant_id"`
+		RuntimeExecutable string `json:"runtime_executable"`
+		Content           string `json:"content"`
+		IdempotencyKey    string `json:"idempotency_key"`
+	}{
+		APIURL: apiURL, AccessToken: accessToken, ConversationID: conversationID,
+		InstanceID: instanceID, Issuer: owner.Issuer, Subject: owner.Subject,
+		Tenant: owner.TenantID, RuntimeExecutable: runtimeExecutable, Content: content,
+		IdempotencyKey: "accepted-production-console-external-prompt-006",
+	}
+	inputJSON, err := json.Marshal(input)
+	if err != nil {
+		t.Fatalf("encode client-instance Console convergence input: %v", err)
+	}
+	temporaryDirectory := t.TempDir()
+	inputPath := filepath.Join(temporaryDirectory, "client-instance-session-convergence-input.json")
+	if err := os.WriteFile(inputPath, inputJSON, 0o600); err != nil {
+		t.Fatalf("write client-instance Console convergence input: %v", err)
+	}
+	flutterHome := filepath.Join(temporaryDirectory, "home")
+	if err := os.Mkdir(flutterHome, 0o700); err != nil {
+		t.Fatalf("create isolated Flutter home: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+	command := exec.CommandContext(ctx, flutterExecutable,
+		"test", "--no-pub",
+		"--dart-define=FORGE_CONVERSATIONS_API_ORIGIN="+apiURL,
+		"test/forge_client_instance_session_gate_live_convergence_e2e_test.dart",
+	)
+	command.Dir = consoleRoot
+	command.Env = append(
+		forgeConsoleTestEnvironment(inputPath, flutterHome),
+		"FORGE_CLIENT_INSTANCE_SESSION_GATE_LIVE_CONVERGENCE_E2E_INPUT="+inputPath,
+	)
+	var stdoutBuffer, stderrBuffer boundedCLIOutput
+	command.Stdout = &stdoutBuffer
+	command.Stderr = &stderrBuffer
+	if err := command.Run(); err != nil {
+		t.Fatalf("Flutter client-instance external Prompt convergence failed: stdout=%q stderr=%q err=%v", stdoutBuffer.String(), stderrBuffer.String(), err)
+	}
+	if stdoutBuffer.exceeded || stderrBuffer.exceeded {
+		t.Fatalf("client-instance external Prompt convergence Flutter output exceeded the size limit")
+	}
+}
+
+func runForgeConsoleSchedulerSelectionPreviewE2EWithToken(
+	t *testing.T, apiURL, token string, owner model.Owner, requirements deviceplacement.Requirements,
+	conversationID, runID string, expectation schedulerSelectionPreviewExpectation,
+) {
+	t.Helper()
+	consoleRoot := os.Getenv("SNAPLINK_CONSOLE_ROOT")
+	if consoleRoot == "" {
+		workingDirectory, err := os.Getwd()
+		if err != nil {
+			t.Fatalf("resolve Console repository: %v", err)
+		}
+		repoRoot := filepath.Clean(filepath.Join(workingDirectory, "..", "..", ".."))
+		consoleRoot = filepath.Join(filepath.Dir(repoRoot), "workspace", "demo", "snaplink-console")
+	}
+	if _, err := os.Stat(filepath.Join(consoleRoot, "pubspec.yaml")); err != nil {
+		t.Fatalf("SNAPLINK_CONSOLE_ROOT must name the Flutter Console repository: %v", err)
+	}
+	flutterBinary := os.Getenv("FLUTTER_BIN")
+	if flutterBinary == "" {
+		flutterBinary = "flutter"
+	}
+	flutterExecutable, err := exec.LookPath(flutterBinary)
+	if err != nil {
+		t.Fatalf("Flutter is required for the scheduler selection preview E2E: %v", err)
+	}
+	input := struct {
+		APIURL                 string                           `json:"api_url"`
+		AccessToken            string                           `json:"access_token"`
+		Owner                  deviceplacement.Owner            `json:"owner"`
+		ClientKinds            []string                         `json:"client_kinds"`
+		Request                schedulerSelectionPreviewRequest `json:"request"`
+		ExpectedConversationID string                           `json:"expected_conversation_id"`
+		ExpectedRunID          string                           `json:"expected_run_id"`
+		ExpectedAttemptID      string                           `json:"expected_attempt_id"`
+		ExpectedSelection      bool                             `json:"expected_selection_available"`
+		ExpectedReason         string                           `json:"expected_selection_reason"`
+		ExpectedDeviceID       string                           `json:"expected_device_id"`
+		ExpectedInstanceID     string                           `json:"expected_instance_id"`
+	}{
+		APIURL: apiURL, AccessToken: token,
+		Owner:       deviceplacement.Owner{Issuer: owner.Issuer, Subject: owner.Subject, TenantID: owner.TenantID},
+		ClientKinds: []string{"web", "app", "mobile"},
+		Request: schedulerSelectionPreviewRequest{
+			ConversationID: conversationID, RunID: runID, AttemptID: "attempt-1",
+			Requirements: requirements,
+		},
+		ExpectedConversationID: conversationID, ExpectedRunID: runID, ExpectedAttemptID: "attempt-1",
+		ExpectedSelection: expectation.SelectionAvailable, ExpectedReason: expectation.SelectionReason,
+		ExpectedDeviceID: expectation.DeviceID, ExpectedInstanceID: expectation.InstanceID,
+	}
+	inputJSON, err := json.Marshal(input)
+	if err != nil {
+		t.Fatalf("encode Flutter scheduler selection preview input: %v", err)
+	}
+	temporaryDirectory := t.TempDir()
+	inputPath := filepath.Join(temporaryDirectory, "scheduler-selection-preview-e2e-input.json")
+	if err := os.WriteFile(inputPath, inputJSON, 0o600); err != nil {
+		t.Fatalf("write private Flutter scheduler selection preview input: %v", err)
+	}
+	flutterHome := filepath.Join(temporaryDirectory, "home")
+	if err := os.Mkdir(flutterHome, 0o700); err != nil {
+		t.Fatalf("create isolated Flutter home: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+	command := exec.CommandContext(ctx, flutterExecutable,
+		"test", "--no-pub", "test/forge_scheduler_selection_preview_api_e2e_test.dart")
+	command.Dir = consoleRoot
+	command.Env = append(
+		forgeConsoleTestEnvironment(inputPath, flutterHome),
+		"FORGE_SCHEDULER_SELECTION_PREVIEW_E2E_INPUT="+inputPath,
+	)
+	var stdoutBuffer, stderrBuffer boundedCLIOutput
+	command.Stdout = &stdoutBuffer
+	command.Stderr = &stderrBuffer
+	if err := command.Run(); err != nil {
+		t.Fatalf("Flutter scheduler selection preview E2E failed: stdout=%q stderr=%q err=%v",
+			stdoutBuffer.String(), stderrBuffer.String(), err)
+	}
+	if stdoutBuffer.exceeded || stderrBuffer.exceeded {
+		t.Fatal("scheduler selection preview Flutter output exceeded the size limit")
+	}
+}
+
+func runForgeConsoleSchedulerSelectionPreviewGateE2EWithToken(
+	t *testing.T, apiURL, token string, owner model.Owner, requirements deviceplacement.Requirements,
+	conversationID, runID string, expectation schedulerSelectionPreviewExpectation,
+) {
+	t.Helper()
+	consoleRoot := os.Getenv("SNAPLINK_CONSOLE_ROOT")
+	if consoleRoot == "" {
+		workingDirectory, err := os.Getwd()
+		if err != nil {
+			t.Fatalf("resolve Console repository: %v", err)
+		}
+		repoRoot := filepath.Clean(filepath.Join(workingDirectory, "..", "..", ".."))
+		consoleRoot = filepath.Join(filepath.Dir(repoRoot), "workspace", "demo", "snaplink-console")
+	}
+	if _, err := os.Stat(filepath.Join(consoleRoot, "pubspec.yaml")); err != nil {
+		t.Fatalf("SNAPLINK_CONSOLE_ROOT must name the Flutter Console repository: %v", err)
+	}
+	flutterBinary := os.Getenv("FLUTTER_BIN")
+	if flutterBinary == "" {
+		flutterBinary = "flutter"
+	}
+	flutterExecutable, err := exec.LookPath(flutterBinary)
+	if err != nil {
+		t.Fatalf("Flutter is required for the scheduler selection Gate E2E: %v", err)
+	}
+	input := struct {
+		APIURL                 string                           `json:"api_url"`
+		AccessToken            string                           `json:"access_token"`
+		Owner                  deviceplacement.Owner            `json:"owner"`
+		Request                schedulerSelectionPreviewRequest `json:"request"`
+		ExpectedConversationID string                           `json:"expected_conversation_id"`
+		ExpectedRunID          string                           `json:"expected_run_id"`
+		ExpectedAttemptID      string                           `json:"expected_attempt_id"`
+		ExpectedSelection      bool                             `json:"expected_selection_available"`
+		ExpectedReason         string                           `json:"expected_selection_reason"`
+		ExpectedDeviceID       string                           `json:"expected_device_id"`
+		ExpectedInstanceID     string                           `json:"expected_instance_id"`
+	}{
+		APIURL: apiURL, AccessToken: token,
+		Owner: deviceplacement.Owner{Issuer: owner.Issuer, Subject: owner.Subject, TenantID: owner.TenantID},
+		Request: schedulerSelectionPreviewRequest{
+			ConversationID: conversationID, RunID: runID, AttemptID: "attempt-1",
+			Requirements: requirements,
+		},
+		ExpectedConversationID: conversationID, ExpectedRunID: runID, ExpectedAttemptID: "attempt-1",
+		ExpectedSelection: expectation.SelectionAvailable, ExpectedReason: expectation.SelectionReason,
+		ExpectedDeviceID: expectation.DeviceID, ExpectedInstanceID: expectation.InstanceID,
+	}
+	inputJSON, err := json.Marshal(input)
+	if err != nil {
+		t.Fatalf("encode Flutter scheduler selection Gate input: %v", err)
+	}
+	temporaryDirectory := t.TempDir()
+	inputPath := filepath.Join(temporaryDirectory, "scheduler-selection-preview-gate-e2e-input.json")
+	if err := os.WriteFile(inputPath, inputJSON, 0o600); err != nil {
+		t.Fatalf("write private Flutter scheduler selection Gate input: %v", err)
+	}
+	flutterHome := filepath.Join(temporaryDirectory, "home")
+	if err := os.Mkdir(flutterHome, 0o700); err != nil {
+		t.Fatalf("create isolated Flutter home: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+	command := exec.CommandContext(ctx, flutterExecutable,
+		"test", "--no-pub", "--dart-define=FORGE_CONVERSATIONS_API_ORIGIN="+apiURL,
+		"test/forge_scheduler_selection_preview_gate_e2e_test.dart")
+	command.Dir = consoleRoot
+	command.Env = append(
+		forgeConsoleTestEnvironment(inputPath, flutterHome),
+		"FORGE_SCHEDULER_SELECTION_PREVIEW_GATE_E2E_INPUT="+inputPath,
+	)
+	var stdoutBuffer, stderrBuffer boundedCLIOutput
+	command.Stdout = &stdoutBuffer
+	command.Stderr = &stderrBuffer
+	if err := command.Run(); err != nil {
+		t.Fatalf("Flutter scheduler selection Gate E2E failed: stdout=%q stderr=%q err=%v", stdoutBuffer.String(), stderrBuffer.String(), err)
+	}
+	if stdoutBuffer.exceeded || stderrBuffer.exceeded {
+		t.Fatal("scheduler selection Gate Flutter output exceeded the size limit")
+	}
+}
+
 func runForgeRuntimeRegistryPlacementRemoteCLI(
 	t *testing.T,
 	executable, apiURL, accessToken string,
@@ -934,6 +1521,31 @@ func runForgeRuntimeRegistryPlacementRemoteCLI(
 		decoded.Authority != (deviceplacement.PersistedInventoryPlacementBatchAuthority{}) {
 		t.Fatalf("authenticated registry placement Rust CLI=%#v", decoded)
 	}
+}
+
+func runForgeRuntimeSchedulerSelectionRemoteCLI(
+	t *testing.T,
+	executable, apiURL, accessToken string,
+	owner model.Owner,
+	conversationID, runID string,
+) {
+	t.Helper()
+	var placementRequest devicePlacementRegistryCandidateRequest
+	if err := json.Unmarshal([]byte(registryPlacementRequirementsBody(t)), &placementRequest); err != nil {
+		t.Fatalf("decode scheduler selection requirements for Runtime CLI: %v", err)
+	}
+	request := schedulerSelectionPreviewRequest{
+		ConversationID: conversationID,
+		RunID:          runID,
+		AttemptID:      "attempt-1",
+		Requirements:   placementRequest.Requirements,
+	}
+	runForgeRuntimeSchedulerSelectionRemoteCLIWithRequest(
+		t, executable, apiURL, accessToken, owner, request,
+		schedulerSelectionPreviewExpectation{
+			SelectionReason: "no_eligible_candidate",
+		},
+	)
 }
 
 func runForgeRuntimeLifecycleRegistryRemoteCLI(
@@ -1002,4 +1614,455 @@ func runForgeRuntimeLifecycleRegistryRemoteTUI(
 			t.Fatalf("authenticated lifecycle registry Rust TUI output omitted %q: %q", want, output)
 		}
 	}
+}
+
+func runForgeRuntimePersistedInventoryV2TUILiveRefreshE2EWithToken(
+	t *testing.T,
+	executable, apiURL, accessToken, registryPath string,
+	owner deviceidentity.Owner,
+) {
+	t.Helper()
+	ptyScript, err := exec.LookPath("script")
+	if err != nil {
+		t.Fatalf("live persisted inventory TUI E2E requires script: %v", err)
+	}
+	home := t.TempDir()
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	command := exec.CommandContext(ctx, ptyScript,
+		"-q", "-e", "-f", "/dev/null", "--", executable, "remote", "tui",
+	)
+	command.Dir = home
+	command.Env = forgeRuntimeCLIEnvironment(apiURL, accessToken, home)
+	stdin, err := command.StdinPipe()
+	if err != nil {
+		t.Fatalf("live persisted inventory TUI stdin pipe: %v", err)
+	}
+	var stdoutBuffer, stderrBuffer synchronizedCLIOutput
+	command.Stdout = &stdoutBuffer
+	command.Stderr = &stderrBuffer
+	if err := command.Start(); err != nil {
+		t.Fatalf("live persisted inventory TUI start: stdout=%q stderr=%q err=%v",
+			stdoutBuffer.String(), stderrBuffer.String(), err)
+	}
+	writeTUI := func(input string) {
+		if _, err := stdin.Write([]byte(input)); err != nil {
+			t.Fatalf("live persisted inventory TUI input %q: %v", input, err)
+		}
+	}
+	writeTUI("inventory read-v2\n")
+	waitForTUIOutput(t, &stdoutBuffer, "remote device inventory [forge.device-inventory-observation/v2]")
+
+	updated := lifecycleRegistrySourceStateRevision(t, owner, "device-a", "runner-a", 2)
+	second := lifecycleRegistrySourceState(t, owner, "device-b", "runner-b", 1)
+	writeLifecycleRegistrySourceFileAtPath(t, registryPath, owner,
+		[]deviceinventory.PersistedEnrollmentHeartbeatLifecycleState{second, updated})
+
+	writeTUI("sync\nquit\n")
+	if err := stdin.Close(); err != nil {
+		t.Fatalf("live persisted inventory TUI stdin close: %v", err)
+	}
+	if err := command.Wait(); err != nil {
+		t.Fatalf("live persisted inventory TUI failed: stdout=%q stderr=%q err=%v",
+			stdoutBuffer.String(), stderrBuffer.String(), err)
+	}
+	if stdoutBuffer.Exceeded() || stderrBuffer.Exceeded() {
+		t.Fatalf("live persisted inventory TUI output exceeded the size limit")
+	}
+	output := stdoutBuffer.String()
+	for _, want := range []string{
+		"Selected inventory observation refreshed.",
+		"revision=2 generation=1 heartbeat=2",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("live persisted inventory TUI output omitted %q: %q", want, output)
+		}
+	}
+}
+
+func runForgeRuntimeClientInstanceViewsTUILiveRefreshE2EWithToken(
+	t *testing.T,
+	executable, apiURL, accessToken, clientInstancePath string,
+	owner deviceidentity.Owner,
+) {
+	t.Helper()
+	ptyScript, err := exec.LookPath("script")
+	if err != nil {
+		t.Fatalf("live client-instance views TUI E2E requires script: %v", err)
+	}
+	writeClientInstanceSessionViewSourceFileAtPath(t, clientInstancePath, owner, clientInstanceLiveRefreshRows("001"))
+
+	home := t.TempDir()
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	command := exec.CommandContext(ctx, ptyScript,
+		"-q", "-e", "-f", "/dev/null", "--", executable, "remote", "tui",
+	)
+	command.Dir = home
+	command.Env = forgeRuntimeCLIEnvironment(apiURL, accessToken, home)
+	stdin, err := command.StdinPipe()
+	if err != nil {
+		t.Fatalf("live client-instance views TUI stdin pipe: %v", err)
+	}
+	var stdoutBuffer, stderrBuffer synchronizedCLIOutput
+	command.Stdout = &stdoutBuffer
+	command.Stderr = &stderrBuffer
+	if err := command.Start(); err != nil {
+		t.Fatalf("live client-instance views TUI start: stdout=%q stderr=%q err=%v",
+			stdoutBuffer.String(), stderrBuffer.String(), err)
+	}
+	writeTUI := func(input string) {
+		if _, err := stdin.Write([]byte(input)); err != nil {
+			t.Fatalf("live client-instance views TUI input %q: %v", input, err)
+		}
+	}
+	writeTUI("client-instances session-view\n")
+	waitForTUIOutput(t, &stdoutBuffer, "remote client-instance/session-view [forge.client-instance-session-view/v1]")
+	waitForTUIOutput(t, &stdoutBuffer, "instance client-cli-live-001:")
+	writeTUI("client-instances resource-view\n")
+	waitForTUIOutput(t, &stdoutBuffer, "remote client-instance/resource-view [forge.client-instance-resource-view/v1]")
+	waitForTUIOutput(t, &stdoutBuffer, "instance client-web-live-001:")
+
+	writeClientInstanceSessionViewSourceFileAtPath(t, clientInstancePath, owner, clientInstanceLiveRefreshRows("002"))
+	writeTUI("sync\nquit\n")
+	if err := stdin.Close(); err != nil {
+		t.Fatalf("live client-instance views TUI stdin close: %v", err)
+	}
+	if err := command.Wait(); err != nil {
+		t.Fatalf("live client-instance views TUI failed: stdout=%q stderr=%q err=%v",
+			stdoutBuffer.String(), stderrBuffer.String(), err)
+	}
+	if stdoutBuffer.Exceeded() || stderrBuffer.Exceeded() {
+		t.Fatalf("live client-instance views TUI output exceeded the size limit")
+	}
+	output := stdoutBuffer.String()
+	for _, want := range []string{
+		"Selected client-instance/session-view refreshed.",
+		"Selected client-instance/resource-view refreshed.",
+		"instance client-cli-live-002:",
+		"instance client-web-live-002:",
+		"device device-a: runner=runner-a",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("live client-instance views TUI output omitted %q: %q", want, output)
+		}
+	}
+}
+
+func runForgeRuntimeClientInstanceLiveRefreshPromptE2EWithToken(
+	t *testing.T,
+	executable, apiURL, accessToken, clientInstancePath string,
+	owner deviceidentity.Owner,
+	conversationID string,
+) string {
+	t.Helper()
+	ptyScript, err := exec.LookPath("script")
+	if err != nil {
+		t.Fatalf("live client-instance Prompt TUI E2E requires script: %v", err)
+	}
+	writeClientInstanceSessionViewSourceFileAtPath(
+		t,
+		clientInstancePath,
+		owner,
+		clientInstanceLiveRefreshRowsForConversations("001", "conversation-a", conversationID),
+	)
+
+	home := t.TempDir()
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	command := exec.CommandContext(ctx, ptyScript,
+		"-q", "-e", "-f", "/dev/null", "--", executable, "remote", "tui",
+	)
+	command.Dir = home
+	command.Env = forgeRuntimeCLIEnvironment(apiURL, accessToken, home)
+	stdin, err := command.StdinPipe()
+	if err != nil {
+		t.Fatalf("live client-instance Prompt TUI stdin pipe: %v", err)
+	}
+	var stdoutBuffer, stderrBuffer synchronizedCLIOutput
+	command.Stdout = &stdoutBuffer
+	command.Stderr = &stderrBuffer
+	if err := command.Start(); err != nil {
+		t.Fatalf("live client-instance Prompt TUI start: stdout=%q stderr=%q err=%v",
+			stdoutBuffer.String(), stderrBuffer.String(), err)
+	}
+	writeTUI := func(input string) {
+		if _, err := stdin.Write([]byte(input)); err != nil {
+			t.Fatalf("live client-instance Prompt TUI input %q: %v", input, err)
+		}
+	}
+	writeTUI("client-instances session-view\n")
+	waitForTUIOutput(t, &stdoutBuffer, "remote client-instance/session-view [forge.client-instance-session-view/v1]")
+	writeTUI("instance client-tui-live-001\n")
+	waitForTUIOutput(t, &stdoutBuffer, `Client-instance filter set to "client-tui-live-001"`)
+	writeTUI("open " + conversationID + "\n")
+	waitForTUIOutput(t, &stdoutBuffer, "Opened session")
+
+	writeClientInstanceSessionViewSourceFileAtPath(
+		t,
+		clientInstancePath,
+		owner,
+		clientInstanceLiveRefreshRowsForConversations("002", "conversation-a", conversationID),
+	)
+	writeTUI("sync\n")
+	waitForTUIOutput(t, &stdoutBuffer, "Selected client-instance/session-view refreshed.")
+	writeTUI("instance client-tui-live-002\n")
+	waitForTUIOutput(t, &stdoutBuffer, `Client-instance filter set to "client-tui-live-002"`)
+	writeTUI("open " + conversationID + "\n")
+	waitForTUIOutput(t, &stdoutBuffer, "Opened session")
+	writeTUI("prompt Prompt submitted after client-instance refresh\n")
+	waitForTUIOutput(t, &stdoutBuffer, "Prompt stored. No Run was started.")
+	writeTUI("quit\n")
+	if err := stdin.Close(); err != nil {
+		t.Fatalf("live client-instance Prompt TUI stdin close: %v", err)
+	}
+	if err := command.Wait(); err != nil {
+		t.Fatalf("live client-instance Prompt TUI failed: stdout=%q stderr=%q err=%v",
+			stdoutBuffer.String(), stderrBuffer.String(), err)
+	}
+	if stdoutBuffer.Exceeded() || stderrBuffer.Exceeded() {
+		t.Fatalf("live client-instance Prompt TUI output exceeded the size limit")
+	}
+	return stdoutBuffer.String()
+}
+
+func runForgeRuntimeClientInstanceExternalPromptConvergenceE2EWithToken(
+	t *testing.T,
+	executable, apiURL, accessToken, clientInstancePath string,
+	owner deviceidentity.Owner,
+	conversationID string,
+) string {
+	t.Helper()
+	ptyScript, err := exec.LookPath("script")
+	if err != nil {
+		t.Fatalf("external Prompt convergence TUI E2E requires script: %v", err)
+	}
+	writeClientInstanceSessionViewSourceFileAtPath(
+		t,
+		clientInstancePath,
+		owner,
+		clientInstanceLiveRefreshRowsForConversations("005", "conversation-a", conversationID),
+	)
+
+	home := t.TempDir()
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	command := exec.CommandContext(ctx, ptyScript,
+		"-q", "-e", "-f", "/dev/null", "--", executable, "remote", "tui",
+	)
+	command.Dir = home
+	command.Env = forgeRuntimeCLIEnvironment(apiURL, accessToken, home)
+	stdin, err := command.StdinPipe()
+	if err != nil {
+		t.Fatalf("external Prompt convergence TUI stdin pipe: %v", err)
+	}
+	var stdoutBuffer, stderrBuffer synchronizedCLIOutput
+	command.Stdout = &stdoutBuffer
+	command.Stderr = &stderrBuffer
+	if err := command.Start(); err != nil {
+		t.Fatalf("external Prompt convergence TUI start: stdout=%q stderr=%q err=%v",
+			stdoutBuffer.String(), stderrBuffer.String(), err)
+	}
+	writeTUI := func(input string) {
+		if _, err := stdin.Write([]byte(input)); err != nil {
+			t.Fatalf("external Prompt convergence TUI input %q: %v", input, err)
+		}
+	}
+	writeTUI("client-instances session-view\n")
+	waitForTUIOutput(t, &stdoutBuffer, "remote client-instance/session-view [forge.client-instance-session-view/v1]")
+	writeTUI("instance client-tui-live-005\n")
+	waitForTUIOutput(t, &stdoutBuffer, `Client-instance filter set to "client-tui-live-005"`)
+	writeTUI("open " + conversationID + "\n")
+	waitForTUIOutput(t, &stdoutBuffer, "Opened session")
+
+	sessionsOutput, sessionsStderr, err := runForgeRuntimeCLI(
+		t, executable, apiURL, accessToken, t.TempDir(),
+		"--json", "remote", "sessions", "list", "--instance", "client-cli-live-005",
+	)
+	if err != nil {
+		t.Fatalf("external Prompt convergence CLI session read failed: stderr=%q stdout=%q err=%v", sessionsStderr, sessionsOutput, err)
+	}
+	var sessions model.OwnedConversationPage
+	if err := json.Unmarshal([]byte(sessionsOutput), &sessions); err != nil {
+		t.Fatalf("decode external Prompt convergence CLI sessions: %v stdout=%q", err, sessionsOutput)
+	}
+	var expectedVersion uint64
+	for _, entry := range sessions.Conversations {
+		if entry.Conversation.ID == conversationID {
+			expectedVersion = entry.AggregateVersion
+			break
+		}
+	}
+	if expectedVersion == 0 {
+		t.Fatalf("external Prompt convergence CLI session page omitted %q: %#v", conversationID, sessions)
+	}
+	const content = "Prompt from external Runtime CLI after client-instance refresh"
+	cliOutput, cliStderr, err := runForgeRuntimeCLI(
+		t, executable, apiURL, accessToken, t.TempDir(),
+		"--json", "--idempotency-key", "accepted-production-external-cli-prompt",
+		"remote", "prompts", "add", conversationID,
+		"--expected-version", strconv.FormatUint(expectedVersion, 10),
+		"--instance", "client-cli-live-005", content,
+	)
+	if err != nil || !strings.Contains(cliOutput, content) {
+		t.Fatalf("external Prompt convergence CLI write failed: stderr=%q stdout=%q err=%v", cliStderr, cliOutput, err)
+	}
+	writeTUI("sync\n")
+	waitForTUIOutput(t, &stdoutBuffer, "Prompt history refreshed for the selected session.")
+	waitForTUIOutput(t, &stdoutBuffer, content)
+	writeTUI("quit\n")
+	if err := stdin.Close(); err != nil {
+		t.Fatalf("external Prompt convergence TUI stdin close: %v", err)
+	}
+	if err := command.Wait(); err != nil {
+		t.Fatalf("external Prompt convergence TUI failed: stdout=%q stderr=%q err=%v",
+			stdoutBuffer.String(), stderrBuffer.String(), err)
+	}
+	if stdoutBuffer.Exceeded() || stderrBuffer.Exceeded() {
+		t.Fatalf("external Prompt convergence TUI output exceeded the size limit")
+	}
+	return stdoutBuffer.String()
+}
+
+func clientInstanceLiveRefreshRows(suffix string) []deviceplacement.ClientInstanceSessionViewInstance {
+	return clientInstanceLiveRefreshRowsForConversations(suffix, "conversation-a", "conversation-b")
+}
+
+func clientInstanceLiveRefreshRowsForConversations(
+	suffix, firstConversationID, secondConversationID string,
+) []deviceplacement.ClientInstanceSessionViewInstance {
+	return []deviceplacement.ClientInstanceSessionViewInstance{
+		{InstanceID: "client-cli-live-" + suffix, ClientKind: deviceplacement.ClientKindCLI, SessionIDs: []string{firstConversationID, secondConversationID}, ObservedAtMS: 201500, Status: "active"},
+		{InstanceID: "client-tui-live-" + suffix, ClientKind: deviceplacement.ClientKindTUI, SessionIDs: []string{secondConversationID}, ObservedAtMS: 201500, Status: "active"},
+		{InstanceID: "client-web-live-" + suffix, ClientKind: deviceplacement.ClientKindWeb, SessionIDs: []string{firstConversationID}, ObservedAtMS: 201500, Status: "active"},
+		{InstanceID: "client-app-live-" + suffix, ClientKind: deviceplacement.ClientKindApp, SessionIDs: []string{firstConversationID}, ObservedAtMS: 201500, Status: "active"},
+		{InstanceID: "client-mobile-live-" + suffix, ClientKind: deviceplacement.ClientKindMobile, SessionIDs: []string{secondConversationID}, ObservedAtMS: 201500, Status: "active"},
+	}
+}
+
+func runForgeRuntimeClientInstanceViewsCLIRefreshE2EWithToken(
+	t *testing.T,
+	executable, apiURL, accessToken, clientInstancePath string,
+	owner deviceidentity.Owner,
+) {
+	t.Helper()
+	writeClientInstanceSessionViewSourceFileAtPath(t, clientInstancePath, owner, clientInstanceLiveRefreshRows("003"))
+
+	sessionOutput, sessionStderr, err := runForgeRuntimeCLI(
+		t, executable, apiURL, accessToken, t.TempDir(),
+		"--json", "remote", "client-instances", "session-view",
+	)
+	if err != nil {
+		t.Fatalf("live client-instance session CLI refresh failed: stderr=%q stdout=%q err=%v", sessionStderr, sessionOutput, err)
+	}
+	var sessionView deviceplacement.ClientInstanceSessionViewObservation
+	if err := json.Unmarshal([]byte(sessionOutput), &sessionView); err != nil {
+		t.Fatalf("decode live client-instance session CLI refresh: %v stdout=%q", err, sessionOutput)
+	}
+	if err := sessionView.Validate(); err != nil || len(sessionView.Instances) != 5 ||
+		sessionView.Instances[0].InstanceID != "client-app-live-003" ||
+		sessionView.Instances[4].InstanceID != "client-web-live-003" {
+		t.Fatalf("live client-instance session CLI refresh=%#v err=%v", sessionView, err)
+	}
+
+	resourceOutput, resourceStderr, err := runForgeRuntimeCLI(
+		t, executable, apiURL, accessToken, t.TempDir(),
+		"--json", "remote", "client-instances", "resource-view",
+	)
+	if err != nil {
+		t.Fatalf("live client-instance resource CLI refresh failed: stderr=%q stdout=%q err=%v", resourceStderr, resourceOutput, err)
+	}
+	var resourceView deviceplacement.ClientInstanceResourceViewObservation
+	if err := json.Unmarshal([]byte(resourceOutput), &resourceView); err != nil {
+		t.Fatalf("decode live client-instance resource CLI refresh: %v stdout=%q", err, resourceOutput)
+	}
+	if err := resourceView.Validate(); err != nil || len(resourceView.Instances) != 5 || len(resourceView.Devices) != 2 ||
+		resourceView.Instances[0].InstanceID != "client-app-live-003" ||
+		resourceView.Instances[4].InstanceID != "client-web-live-003" ||
+		resourceView.Devices[0].DeviceID != "device-a" {
+		t.Fatalf("live client-instance resource CLI refresh=%#v err=%v", resourceView, err)
+	}
+}
+
+func runForgeRuntimeClientInstanceCLIPromptAfterRefreshE2EWithToken(
+	t *testing.T,
+	executable, apiURL, accessToken, clientInstancePath string,
+	owner deviceidentity.Owner,
+	conversationID string,
+) {
+	t.Helper()
+	const prompt = "Prompt from Runtime CLI after client-instance refresh"
+	writeClientInstanceSessionViewSourceFileAtPath(
+		t,
+		clientInstancePath,
+		owner,
+		clientInstanceLiveRefreshRowsForConversations("004", conversationID, conversationID+"-other"),
+	)
+
+	sessionOutput, sessionStderr, err := runForgeRuntimeCLI(
+		t, executable, apiURL, accessToken, t.TempDir(),
+		"--json", "remote", "sessions", "list", "--instance", "client-cli-live-004",
+	)
+	if err != nil {
+		t.Fatalf("live client-instance CLI Prompt session read failed: stderr=%q stdout=%q err=%v", sessionStderr, sessionOutput, err)
+	}
+	var sessions model.OwnedConversationPage
+	if err := json.Unmarshal([]byte(sessionOutput), &sessions); err != nil {
+		t.Fatalf("decode live client-instance CLI Prompt sessions: %v stdout=%q", err, sessionOutput)
+	}
+	var expectedVersion uint64
+	for _, entry := range sessions.Conversations {
+		if entry.Conversation.ID == conversationID {
+			expectedVersion = entry.AggregateVersion
+			break
+		}
+	}
+	if expectedVersion == 0 {
+		t.Fatalf("live client-instance CLI Prompt session page omitted %q: %#v", conversationID, sessions)
+	}
+	promptOutput, promptStderr, err := runForgeRuntimeCLI(
+		t, executable, apiURL, accessToken, t.TempDir(),
+		"--json", "--idempotency-key", "accepted-production-live-cli-prompt",
+		"remote", "prompts", "add", conversationID,
+		"--expected-version", strconv.FormatUint(expectedVersion, 10),
+		"--instance", "client-cli-live-004", prompt,
+	)
+	if err != nil || !strings.Contains(promptOutput, prompt) {
+		t.Fatalf("live client-instance CLI Prompt failed: stderr=%q stdout=%q err=%v", promptStderr, promptOutput, err)
+	}
+	historyOutput, historyStderr, err := runForgeRuntimeCLI(
+		t, executable, apiURL, accessToken, t.TempDir(),
+		"--json", "remote", "prompts", "list", conversationID,
+	)
+	if err != nil {
+		t.Fatalf("live client-instance CLI Prompt history read failed: stderr=%q stdout=%q err=%v", historyStderr, historyOutput, err)
+	}
+	var history model.ConversationPromptPage
+	if err := json.Unmarshal([]byte(historyOutput), &history); err != nil ||
+		!promptPageContains(history, prompt) {
+		t.Fatalf("live client-instance CLI Prompt history=%#v stdout=%q decode=%v", history, historyOutput, err)
+	}
+}
+
+func lifecycleRegistrySourceStateRevision(
+	t *testing.T,
+	owner deviceidentity.Owner,
+	deviceID, instanceID string,
+	revision uint64,
+) deviceinventory.PersistedEnrollmentHeartbeatLifecycleState {
+	t.Helper()
+	if revision == 0 {
+		t.Fatal("lifecycle registry revision must be positive")
+	}
+	value := lifecycleRegistrySourceState(t, owner, deviceID, instanceID, 1)
+	value.Revision = revision
+	value.Heartbeat.Revision = revision
+	value.Heartbeat.Instance.HeartbeatSequence = revision
+	value.Heartbeat.Instance.ServerObservedAtMS += (revision - 1) * 1_000
+	value.Heartbeat.Instance.CapabilityLeaseExpiresAtMS += (revision - 1) * 1_000
+	value.Inventory.Revision = revision
+	value.Inventory.Runner.HeartbeatSequence = revision
+	value.Inventory.Runner.ServerObservedAtMS += (revision - 1) * 1_000
+	value.Inventory.Runner.CapabilityLeaseExpiresAtMS += (revision - 1) * 1_000
+	return value
 }

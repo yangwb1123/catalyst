@@ -7,19 +7,19 @@ func TestSelectSchedulerCandidateUsesStableEligibleOrderWithoutAuthority(t *test
 	first := PersistedInventoryPlacementV2Decision{
 		Revision: 1, Generation: 1, HeartbeatSequence: 1,
 		ReservationState: "none",
-		DeviceID: "device-a", InstanceID: "runner-a", MatchesRequirements: false,
+		DeviceID:         "device-a", InstanceID: "runner-a", MatchesRequirements: false,
 		ExclusionReasons: []string{"device_reserved"}, OwnerDeclarationUnverified: true, DeviceAttributesUnverified: true,
 	}
 	second := PersistedInventoryPlacementV2Decision{
 		Revision: 2, Generation: 2, HeartbeatSequence: 2,
 		ReservationState: "none",
-		DeviceID: "device-b", InstanceID: "runner-b", MatchesRequirements: true,
+		DeviceID:         "device-b", InstanceID: "runner-b", MatchesRequirements: true,
 		ExclusionReasons: []string{}, OwnerDeclarationUnverified: true, DeviceAttributesUnverified: true,
 	}
 	third := PersistedInventoryPlacementV2Decision{
 		Revision: 3, Generation: 3, HeartbeatSequence: 3,
 		ReservationState: "none",
-		DeviceID: "device-c", InstanceID: "runner-c", MatchesRequirements: true,
+		DeviceID:         "device-c", InstanceID: "runner-c", MatchesRequirements: true,
 		ExclusionReasons: []string{}, OwnerDeclarationUnverified: true, DeviceAttributesUnverified: true,
 	}
 	value, err := SelectSchedulerCandidate(SchedulerSelectionPreviewRequest{
@@ -59,7 +59,7 @@ func TestSelectSchedulerCandidateReportsNoEligibleCandidate(t *testing.T) {
 			Decisions: []PersistedInventoryPlacementV2Decision{{
 				Revision: 1, Generation: 1, HeartbeatSequence: 1,
 				ReservationState: "none",
-				DeviceID: "device-a", InstanceID: "runner-a", MatchesRequirements: false,
+				DeviceID:         "device-a", InstanceID: "runner-a", MatchesRequirements: false,
 				ExclusionReasons: []string{"device_offline"}, OwnerDeclarationUnverified: true, DeviceAttributesUnverified: true,
 			}},
 			EligibleCandidateCount: 0, Authority: PersistedInventoryPlacementBatchAuthority{},
@@ -89,7 +89,7 @@ func TestSelectSchedulerCandidateRejectsDriftAndAuthority(t *testing.T) {
 			Decisions: []PersistedInventoryPlacementV2Decision{{
 				Revision: 1, Generation: 1, HeartbeatSequence: 1,
 				ReservationState: "none",
-				DeviceID: "device-a", InstanceID: "runner-a", MatchesRequirements: true,
+				DeviceID:         "device-a", InstanceID: "runner-a", MatchesRequirements: true,
 				ExclusionReasons: []string{}, OwnerDeclarationUnverified: true, DeviceAttributesUnverified: true,
 			}},
 			EligibleCandidateCount: 1, Authority: PersistedInventoryPlacementBatchAuthority{},

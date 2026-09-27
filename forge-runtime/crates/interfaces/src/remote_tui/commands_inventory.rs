@@ -23,6 +23,9 @@ pub(super) async fn show_inventory<W: Write>(
     if argument.trim() == "read-v2" {
         return show_remote_inventory_v2(client, state, writer).await;
     }
+    if argument.trim() == "show-converged" {
+        return show_converged_inventory_resource_view(client, state, writer).await;
+    }
     let (kind, suffix) = if let Some(suffix) = argument.strip_prefix("show --input") {
         ("show", suffix)
     } else if let Some(suffix) = argument.strip_prefix("persistence-preview --input") {
@@ -126,6 +129,77 @@ async fn show_remote_inventory_v2<W: Write>(
     // owner-scoped observation during later `sync` commands. The value is
     // display state only; it is never used as placement or execution input.
     state.device_inventory_v2_observed = Some(value);
+    Ok(())
+}
+
+async fn show_converged_inventory_resource_view<W: Write>(
+    client: &RemoteClient,
+    state: &mut TuiState,
+    writer: &mut W,
+) -> Result<(), RemoteError> {
+    let response = match client.read_converged_inventory_resource_view().await {
+        Ok(response) => response,
+        Err(error) => return report_convergence_failure(state, error, writer),
+    };
+    let inventory = response.get("inventory").ok_or_else(|| {
+        RemoteError("Forge API returned an invalid inventory/resource convergence envelope".into())
+    })?;
+    let resource_view = response.get("resource_view").ok_or_else(|| {
+        RemoteError("Forge API returned an invalid inventory/resource convergence envelope".into())
+    })?;
+    writeln!(
+        writer,
+        "remote inventory/resource-convergence [forge.device-inventory-resource-convergence/v1] converged=true read_only=true"
+    )
+    .map_err(io_error)?;
+    write_remote_inventory_v2(inventory, writer)?;
+    crate::device_client_instance_resource_view_command::write_remote_output(resource_view, writer)
+        .map_err(|error| {
+            RemoteError(format!(
+                "client-instance/resource-view response could not be rendered: {error}"
+            ))
+        })?;
+    writeln!(
+        writer,
+        "Inventory/resource observations converged; both snapshots committed."
+    )
+    .map_err(io_error)?;
+    // The client has validated both source observations and their join. Keep
+    // the pair atomic in local TUI state so a later sync refreshes the same
+    // owner-bound resource image rather than mixing independent reads.
+    state.device_inventory_v2_observed = Some(inventory.clone());
+    state.client_instance_resource_view_observed = Some(resource_view.clone());
+    // The refreshed resource image can revoke the locally selected instance's
+    // session_ids. Reconcile immediately so private Prompt/Run panels cannot
+    // survive outside the newly committed display projection.
+    state.reconcile_client_instance_selection();
+    Ok(())
+}
+
+fn report_convergence_failure<W: Write>(
+    state: &mut TuiState,
+    error: RemoteError,
+    writer: &mut W,
+) -> Result<(), RemoteError> {
+    let cleared = super::super::clear_session_view_after_authorization_error(state, &error);
+    writeln!(
+        writer,
+        "Remote inventory/resource convergence request failed: {error}"
+    )
+    .map_err(io_error)?;
+    if cleared {
+        writeln!(
+            writer,
+            "Local session view cleared after authorization failure."
+        )
+        .map_err(io_error)?;
+    } else {
+        writeln!(
+            writer,
+            "Previous inventory/resource snapshots were retained; no mixed pair was committed."
+        )
+        .map_err(io_error)?;
+    }
     Ok(())
 }
 
@@ -558,7 +632,7 @@ fn show_inventory_placement_evaluation_v2<W: Write>(
 fn write_inventory_usage<W: Write>(writer: &mut W) -> Result<(), RemoteError> {
     writeln!(
         writer,
-        "Use inventory read, inventory read-v2, inventory show --input FILE, inventory persistence-preview --input FILE, inventory persisted-observation --input FILE, inventory persisted-observation-v2 --input FILE, inventory placement-evaluation --input FILE, inventory status --input FILE, inventory snapshot-canonical --input FILE, inventory resource-summary --input FILE, inventory session-observation --input FILE, inventory placement-batch-evaluation --input FILE, or inventory placement-evaluation-v2 --input FILE. All file previews are offline, unverified observations; '-' is reserved for the standalone CLI."
+        "Use inventory read, inventory read-v2, inventory show-converged, inventory show --input FILE, inventory persistence-preview --input FILE, inventory persisted-observation --input FILE, inventory persisted-observation-v2 --input FILE, inventory placement-evaluation --input FILE, inventory status --input FILE, inventory snapshot-canonical --input FILE, inventory resource-summary --input FILE, inventory session-observation --input FILE, inventory placement-batch-evaluation --input FILE, or inventory placement-evaluation-v2 --input FILE. All file previews are offline, unverified observations; '-' is reserved for the standalone CLI."
     )
     .map_err(io_error)?;
     Ok(())

@@ -107,6 +107,10 @@ func TestPendingRunIntentRequestValidationAndErrorCodeRetention(t *testing.T) {
 		"key\nwith-control", 1, profile); err == nil || err.(*Error).Code != "invalid_owned_prompt_request" {
 		t.Fatalf("control character idempotency key error=%v", err)
 	}
+	if _, err := client.SubmitOwnedPromptRunIntent(context.Background(), owner, "conversation-1", "ok",
+		"key-zero", 0, profile); err == nil || err.(*Error).Code != "invalid_owned_prompt_request" {
+		t.Fatalf("zero expected version error=%v", err)
+	}
 	if _, err := client.OwnedConversationPendingRunIntents(context.Background(), owner, "conversation-1",
 		&intentmodel.PendingRunIntentCursor{SubmittedAtMS: maxSafeJSONInteger + 1, IntentID: "intent-1"}, 1); err == nil ||
 		err.(*Error).Code != "invalid_pending_run_intent_request" {
@@ -174,6 +178,80 @@ func TestPendingRunIntentJSONSafeCeilingAndNextInteger(t *testing.T) {
 	if err := decodeStrict([]byte(unsafeTimeline), &timeline); err == nil &&
 		validOwnedPendingRunIntentTimelinePage([]byte(unsafeTimeline), timeline, "conversation-1", "intent-1", maxSafeJSONInteger+1, 1) {
 		t.Fatal("pending intent timeline accepted unsafe after_sequence")
+	}
+}
+
+func TestPendingRunIntentSubmissionBindsFreshAggregateVersion(t *testing.T) {
+	fresh := fmt.Sprintf(`{"prompt":{"id":"prompt-1","conversation_id":"conversation-1","role":"user","content":"do work","created_at_ms":20},"intent":{"intent_id":"intent-1","conversation_id":"conversation-1","prompt_id":"prompt-1","project_id":"project-1","profile_id":"profile-1","submitted_at_ms":20,"aggregate_version":8,"latest_sequence":1,"status":"pending"},"initial_event":{"event_id":"event-1","seq":1,"emitted_at_ms":20,"type":"submitted"},"replayed":false}`)
+	var receipt intentmodel.PendingRunIntentSubmissionResult
+	if err := decodeStrict([]byte(fresh), &receipt); err != nil ||
+		!validPendingRunIntentSubmissionForVersion([]byte(fresh), receipt, "conversation-1", "do work", "profile-1", 7) {
+		t.Fatalf("exactly-next fresh receipt was rejected: %#v, %v", receipt, err)
+	}
+	for _, aggregateVersion := range []uint64{7, 9} {
+		mutated := strings.Replace(fresh, `"aggregate_version":8`,
+			fmt.Sprintf(`"aggregate_version":%d`, aggregateVersion), 1)
+		if err := decodeStrict([]byte(mutated), &receipt); err != nil {
+			t.Fatal(err)
+		}
+		if validPendingRunIntentSubmissionForVersion(
+			[]byte(mutated), receipt, "conversation-1", "do work", "profile-1", 7,
+		) {
+			t.Fatalf("fresh receipt with aggregate version %d was accepted", aggregateVersion)
+		}
+	}
+	if validPendingRunIntentSubmissionForVersion(
+		[]byte(fresh), receipt, "conversation-1", "do work", "profile-1", maxSafeJSONInteger,
+	) {
+		t.Fatal("fresh receipt accepted an unsafe next aggregate version")
+	}
+	replayed := strings.Replace(fresh, `"replayed":false`, `"replayed":true`, 1)
+	if err := decodeStrict([]byte(replayed), &receipt); err != nil ||
+		!validPendingRunIntentSubmissionForVersion(
+			[]byte(replayed), receipt, "conversation-1", "do work", "profile-current", 99,
+		) {
+		t.Fatalf("historical replay receipt was rejected: %#v, %v", receipt, err)
+	}
+}
+
+func TestSubmitOwnedPromptRunIntentBindsFreshAggregateVersionAtBridge(t *testing.T) {
+	for _, test := range []struct {
+		name             string
+		aggregateVersion uint64
+		wantError        bool
+	}{
+		{name: "next", aggregateVersion: 8},
+		{name: "stale", aggregateVersion: 7, wantError: true},
+		{name: "jumped", aggregateVersion: 9, wantError: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			appState := filepath.Join(t.TempDir(), "app-state")
+			runtimeState := filepath.Join(t.TempDir(), "runtime-state")
+			makeDirectory(t, appState)
+			makeDirectory(t, runtimeState)
+			executable := filepath.Join(t.TempDir(), "runtime-rpc")
+			database := filepath.Join(runtimeState, "hub.sqlite3")
+			result := fmt.Sprintf(`{"prompt":{"id":"prompt-1","conversation_id":"conversation-1","role":"user","content":"compute this","created_at_ms":20},"intent":{"intent_id":"intent-1","conversation_id":"conversation-1","prompt_id":"prompt-1","project_id":"project-1","profile_id":"profile-1","submitted_at_ms":20,"aggregate_version":%d,"latest_sequence":1,"status":"pending"},"initial_event":{"event_id":"event-1","seq":1,"emitted_at_ms":20,"type":"submitted"},"replayed":false}`, test.aggregateVersion)
+			writeFake(t, executable, responseScriptCheckingRequest(database, result, writeProtocolVersion,
+				`"operation":"submit_owned_prompt_run_intent"`, `"expected_version":7`))
+			client, err := New(Config{Executable: executable, AppServerStateDir: appState, RuntimeStateDir: runtimeState})
+			if err != nil {
+				t.Fatal(err)
+			}
+			owner := model.Owner{Issuer: "https://identity.example", Subject: "account-42", TenantID: "tenant-slate"}
+			profile := intentmodel.ServerExecutionProfile{ID: "profile-1"}
+			receipt, err := client.SubmitOwnedPromptRunIntent(context.Background(), owner,
+				"conversation-1", "compute this", "request-key", 7, profile)
+			if test.wantError {
+				if err == nil || err.(*Error).Code != "invalid_runtime_response" {
+					t.Fatalf("fresh aggregate version %d was accepted: receipt=%#v error=%v", test.aggregateVersion, receipt, err)
+				}
+				return
+			}
+			if err != nil || receipt.Replayed || receipt.Intent.AggregateVersion != 8 {
+				t.Fatalf("fresh next receipt=%#v error=%v", receipt, err)
+			}
+		})
 	}
 }
 

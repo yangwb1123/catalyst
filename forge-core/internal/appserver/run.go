@@ -114,10 +114,14 @@ func configureSessionHandler(
 	if err != nil {
 		return nil, nil, fmt.Errorf("configure Snaplink resource server: %w", err)
 	}
-	sessions, err := newAuthenticatedSessionRoutesWithDeviceFabricActivation(
+	sessions, err := newAuthenticatedSessionRoutesWithDeviceFabricActivationAndRunnerAuthorityWithBackend(
 		runtimeClient, profileCatalog, config.DeviceFabricActivation,
 		config.DeviceInventoryLifecycleRegistryFile,
 		config.DeviceClientInstanceSessionViewFile,
+		config.RunnerExecutionAuthority,
+		runtimeClient,
+		config.DeviceExecutionLeaseRegistryFile,
+		config.DeviceExecutionPolicyRegistryFile,
 	)
 	if err != nil {
 		return nil, nil, fmt.Errorf("configure device fabric session routes: %w", err)

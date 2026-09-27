@@ -7,6 +7,22 @@ impl RemoteClient {
         self.endpoint("/api/v1/device-enrollment-heartbeat/credential-candidate")
     }
 
+    pub(super) fn scheduler_selection_preview_url(&self) -> Result<Url, RemoteError> {
+        self.endpoint("/api/v1/device-placement/scheduler-preview")
+    }
+
+    pub(super) fn scheduler_selection_lease_url(&self) -> Result<Url, RemoteError> {
+        self.endpoint("/api/v1/device-placement/scheduler-lease")
+    }
+
+    pub(super) fn scheduler_selection_lease_renewal_url(&self) -> Result<Url, RemoteError> {
+        self.endpoint("/api/v1/device-placement/scheduler-lease/renew")
+    }
+
+    pub(super) fn scheduler_selection_lease_release_url(&self) -> Result<Url, RemoteError> {
+        self.endpoint("/api/v1/device-placement/scheduler-lease/release")
+    }
+
     pub(super) fn lifecycle_registry_url(&self) -> Result<Url, RemoteError> {
         self.endpoint("/api/v1/device-enrollment-heartbeat/lifecycle-registry")
     }
@@ -121,6 +137,34 @@ impl RemoteClient {
         Ok(url)
     }
 
+    pub(super) fn session_runner_receipt_history_url(
+        &self,
+        conversation_id: &str,
+        run_id: &str,
+    ) -> Result<Url, RemoteError> {
+        let mut url = self.conversation_runs_url(conversation_id)?;
+        url.path_segments_mut()
+            .map_err(|()| RemoteError("Forge API endpoint is invalid".into()))?
+            .push(run_id)
+            .push("runner-receipt-history")
+            .push("preview");
+        Ok(url)
+    }
+
+    pub(super) fn session_runner_reconciliation_preview_url(
+        &self,
+        conversation_id: &str,
+        run_id: &str,
+    ) -> Result<Url, RemoteError> {
+        let mut url = self.conversation_runs_url(conversation_id)?;
+        url.path_segments_mut()
+            .map_err(|()| RemoteError("Forge API endpoint is invalid".into()))?
+            .push(run_id)
+            .push("runner-reconciliation")
+            .push("preview");
+        Ok(url)
+    }
+
     pub(super) fn run_attempt_lease_dispatch_preflight_url(
         &self,
         conversation_id: &str,
@@ -145,6 +189,76 @@ impl RemoteClient {
             .map_err(|()| RemoteError("Forge API endpoint is invalid".into()))?
             .push(run_id)
             .push("runner-dispatch-plan-preview");
+        Ok(url)
+    }
+
+    pub(super) fn runner_dispatch_admission_url(
+        &self,
+        conversation_id: &str,
+        run_id: &str,
+    ) -> Result<Url, RemoteError> {
+        let mut url = self.conversation_runs_url(conversation_id)?;
+        url.path_segments_mut()
+            .map_err(|()| RemoteError("Forge API endpoint is invalid".into()))?
+            .push(run_id)
+            .push("runner-dispatch-admission")
+            .push("preview");
+        Ok(url)
+    }
+
+    pub(super) fn runner_transport_admission_url(
+        &self,
+        conversation_id: &str,
+        run_id: &str,
+    ) -> Result<Url, RemoteError> {
+        let mut url = self.conversation_runs_url(conversation_id)?;
+        url.path_segments_mut()
+            .map_err(|()| RemoteError("Forge API endpoint is invalid".into()))?
+            .push(run_id)
+            .push("runner-transport-admission")
+            .push("preview");
+        Ok(url)
+    }
+
+    pub(super) fn runner_execution_boundary_url(
+        &self,
+        conversation_id: &str,
+        run_id: &str,
+    ) -> Result<Url, RemoteError> {
+        let mut url = self.conversation_runs_url(conversation_id)?;
+        url.path_segments_mut()
+            .map_err(|()| RemoteError("Forge API endpoint is invalid".into()))?
+            .push(run_id)
+            .push("runner-execution-boundary")
+            .push("preview");
+        Ok(url)
+    }
+
+    pub(super) fn runner_attempt_boundary_url(
+        &self,
+        conversation_id: &str,
+        run_id: &str,
+    ) -> Result<Url, RemoteError> {
+        let mut url = self.conversation_runs_url(conversation_id)?;
+        url.path_segments_mut()
+            .map_err(|()| RemoteError("Forge API endpoint is invalid".into()))?
+            .push(run_id)
+            .push("runner-attempt-boundary")
+            .push("preview");
+        Ok(url)
+    }
+
+    pub(super) fn runner_execution_intent_preview_url(
+        &self,
+        conversation_id: &str,
+        run_id: &str,
+    ) -> Result<Url, RemoteError> {
+        let mut url = self.conversation_runs_url(conversation_id)?;
+        url.path_segments_mut()
+            .map_err(|()| RemoteError("Forge API endpoint is invalid".into()))?
+            .push(run_id)
+            .push("runner-execution-intent")
+            .push("preview");
         Ok(url)
     }
 
@@ -182,6 +296,20 @@ impl RemoteClient {
             .map_err(|()| RemoteError("Forge API endpoint is invalid".into()))?
             .push(run_id)
             .push("execution-reconciliation")
+            .push("preview");
+        Ok(url)
+    }
+
+    pub(super) fn run_execution_evidence_url(
+        &self,
+        conversation_id: &str,
+        run_id: &str,
+    ) -> Result<Url, RemoteError> {
+        let mut url = self.conversation_runs_url(conversation_id)?;
+        url.path_segments_mut()
+            .map_err(|()| RemoteError("Forge API endpoint is invalid".into()))?
+            .push(run_id)
+            .push("execution-evidence")
             .push("preview");
         Ok(url)
     }

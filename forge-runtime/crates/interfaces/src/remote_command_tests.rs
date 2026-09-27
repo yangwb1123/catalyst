@@ -35,6 +35,8 @@ mod execution_consent;
 mod execution_reconciliation;
 #[path = "remote_command_tests/imports.rs"]
 mod imports;
+#[path = "remote_command_tests/inventory_resource_convergence.rs"]
+mod inventory_resource_convergence;
 #[path = "remote_command_tests/lifecycle_registry.rs"]
 mod lifecycle_registry;
 #[path = "remote_command_tests/local_runner_preview.rs"]
@@ -49,12 +51,28 @@ mod prompt_writes;
 mod requests;
 #[path = "remote_command_tests/run_attempt_lease_dispatch_preflight.rs"]
 mod run_attempt_lease_dispatch_preflight;
+#[path = "remote_command_tests/run_execution_evidence.rs"]
+mod run_execution_evidence;
+#[path = "remote_command_tests/runner_attempt_boundary.rs"]
+mod runner_attempt_boundary;
+#[path = "remote_command_tests/runner_dispatch_admission.rs"]
+mod runner_dispatch_admission;
 #[path = "remote_command_tests/runner_dispatch_plan_preview.rs"]
 mod runner_dispatch_plan_preview;
+#[path = "remote_command_tests/runner_execution_boundary.rs"]
+mod runner_execution_boundary;
+#[path = "remote_command_tests/runner_execution_intent.rs"]
+mod runner_execution_intent;
+#[path = "remote_command_tests/runner_transport_admission.rs"]
+mod runner_transport_admission;
 #[path = "remote_command_tests/runs.rs"]
 mod runs;
 #[path = "remote_command_tests/session_runner_receipt.rs"]
 mod session_runner_receipt;
+#[path = "remote_command_tests/session_runner_receipt_history.rs"]
+mod session_runner_receipt_history;
+#[path = "remote_command_tests/session_runner_reconciliation.rs"]
+mod session_runner_reconciliation;
 #[path = "remote_command_tests/validation.rs"]
 mod validation;
 

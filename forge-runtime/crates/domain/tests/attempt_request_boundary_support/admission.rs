@@ -128,10 +128,19 @@ pub(super) fn check_source(source: &str, relative: Option<&str>) -> Result<bool,
     if relative.is_some_and(|path| path.starts_with(PRODUCTION)) {
         return Err("unreviewed admission implementation source".into());
     }
-    if tokens.iter().any(|token| SYMBOLS.contains(&token.as_str())) {
+    if contains_unreviewed_symbol(&tokens) {
         return Err("unreviewed admission consumer".into());
     }
     Ok(false)
+}
+
+fn contains_unreviewed_symbol(tokens: &[String]) -> bool {
+    SYMBOLS.iter().any(|symbol| {
+        let locally_declared = tokens.windows(2).any(|window| {
+            matches!(window[0].as_str(), "struct" | "enum" | "type") && window[1] == *symbol
+        });
+        !locally_declared && tokens.iter().any(|token| token == symbol)
+    })
 }
 
 pub(super) fn reviewed_path(path: &Path, workspace: &Path) -> bool {

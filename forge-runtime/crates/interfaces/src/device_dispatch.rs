@@ -3,6 +3,7 @@ use std::{io, process::ExitCode};
 use crate::{
     args::{DeviceCommand, DeviceInventoryCommand, DevicePlacementCommand},
     device_attempt_request_command, device_client_instance_resource_view_command,
+    device_client_instance_scheduler_selection_preview_command,
     device_client_session_view_command, device_command, device_credential_candidate_command,
     device_execution_lease_checkpoint_command, device_heartbeat_persistence_command,
     device_identity_proof_command, device_inventory_command,
@@ -13,9 +14,10 @@ use crate::{
     device_inventory_status_command, device_pending_run_intent_command,
     device_resource_summary_command, device_run_attempt_lease_dispatch_preflight_command,
     device_run_execution_evidence_command, device_run_intent_command, device_run_observed_command,
-    device_runner_dispatch_plan_command, device_runner_execution_intent_command,
-    device_runner_lease_fencing_command, device_runner_receipt_command,
-    device_session_runner_receipt_command,
+    device_runner_attempt_boundary_command, device_runner_dispatch_plan_command,
+    device_runner_execution_intent_command, device_runner_lease_fencing_command,
+    device_runner_receipt_command, device_session_runner_receipt_command,
+    device_session_runner_receipt_history_command,
 };
 
 pub(crate) fn run(command: &DeviceCommand, json: bool) -> ExitCode {
@@ -40,11 +42,17 @@ pub(crate) fn run(command: &DeviceCommand, json: bool) -> ExitCode {
         DeviceCommand::RunnerDispatchPlanPreview { .. } => {
             run_runner_dispatch_plan_preview(command, json)
         }
+        DeviceCommand::RunnerAttemptBoundaryPreview { .. } => {
+            run_runner_attempt_boundary_preview(command, json)
+        }
         DeviceCommand::ClientSessionViewPreview { .. } => {
             run_client_session_view_preview(command, json)
         }
         DeviceCommand::ClientInstanceResourceViewPreview { .. } => {
             run_client_instance_resource_view_preview(command, json)
+        }
+        DeviceCommand::ClientInstanceSchedulerSelectionPreview { .. } => {
+            device_client_instance_scheduler_selection_preview_command::run(command, json)
         }
         DeviceCommand::CredentialCandidatePreview { .. } => {
             run_credential_candidate_preview(command, json)
@@ -54,6 +62,9 @@ pub(crate) fn run(command: &DeviceCommand, json: bool) -> ExitCode {
         }
         DeviceCommand::SessionRunnerReceiptPreview { .. } => {
             run_session_runner_receipt_preview(command, json)
+        }
+        DeviceCommand::SessionRunnerReceiptHistoryPreview { .. } => {
+            run_session_runner_receipt_history_preview(command, json)
         }
         DeviceCommand::RunObservedPreview { .. } => run_run_observed_preview(command, json),
         DeviceCommand::RunExecutionEvidencePreview { .. } => {
@@ -312,6 +323,25 @@ fn run_runner_execution_intent_preview(command: &DeviceCommand, json: bool) -> E
     ExitCode::SUCCESS
 }
 
+fn run_runner_attempt_boundary_preview(command: &DeviceCommand, json: bool) -> ExitCode {
+    let output = match device_runner_attempt_boundary_command::execute(command) {
+        Ok(output) => output,
+        Err(error) => {
+            eprintln!("Device Runner Attempt boundary preview failed: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    if let Err(error) = device_runner_attempt_boundary_command::write_output(
+        &output,
+        json,
+        &mut io::stdout().lock(),
+    ) {
+        eprintln!("failed to write device Runner Attempt boundary preview output: {error}");
+        return ExitCode::FAILURE;
+    }
+    ExitCode::SUCCESS
+}
+
 fn run_session_runner_receipt_preview(command: &DeviceCommand, json: bool) -> ExitCode {
     let output = match device_session_runner_receipt_command::execute(command) {
         Ok(output) => output,
@@ -324,6 +354,25 @@ fn run_session_runner_receipt_preview(command: &DeviceCommand, json: bool) -> Ex
         device_session_runner_receipt_command::write_output(&output, json, &mut io::stdout().lock())
     {
         eprintln!("failed to write device session Runner receipt preview output: {error}");
+        return ExitCode::FAILURE;
+    }
+    ExitCode::SUCCESS
+}
+
+fn run_session_runner_receipt_history_preview(command: &DeviceCommand, json: bool) -> ExitCode {
+    let output = match device_session_runner_receipt_history_command::execute(command) {
+        Ok(output) => output,
+        Err(error) => {
+            eprintln!("Device session Runner receipt history preview failed: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    if let Err(error) = device_session_runner_receipt_history_command::write_output(
+        &output,
+        json,
+        &mut io::stdout().lock(),
+    ) {
+        eprintln!("failed to write device session Runner receipt history output: {error}");
         return ExitCode::FAILURE;
     }
     ExitCode::SUCCESS

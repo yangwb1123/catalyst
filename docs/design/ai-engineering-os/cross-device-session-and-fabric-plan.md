@@ -5,7 +5,7 @@
 > Scope: shared Forge conversations across CLI, TUI, Web, App, and Mobile, plus authorized multi-device task execution.
 > Related designs: [Product Control Plane Blueprint](product-control-plane-blueprint.md), [Product Control Plane Delivery Plan](product-control-plane-delivery-plan.md), [Device-Aware Execution Fabric](device-aware-execution-fabric.md), [Implementation Roadmap](implementation-roadmap.md), and [ADR-0007](../../adr/0007-local-first-conversation-hub.md), with the authenticated shared-session boundary tracked by [ADR-0113](../../adr/ADR-0113-authenticated-shared-conversation-coordinator-v1.md).
 
-The user approved this staged product scope on 2026-09-13. `.agent/ROADMAP.md` tracks it as an active implementation route; this does not change prior Accepted ADRs or claim any phase complete. ADR-0113 records the authenticated shared-session boundary as a Proposed-only v2 decision candidate: its status remains `proposed` and its acceptance fields remain null under repository governance. The implementation includes an authenticated session/Prompt API, Hub-enforced owner binding, private-network TLS support, exact browser Origin allowlisting, and an owner-filtered paged change feed. Rust CLI exposes Snaplink device login, remote session commands, and `remote changes list`; the TUI exposes `sync`; and the Flutter Console `/forge/` surface polls the same feed every 15 seconds (at most four 128-row pages per poll). Feed cursors are dense and local to the exact owner tuple; the Hub's global journal cursor is not returned to clients. CLI/TUI persist reconnect cursors locally by exact Coordinator and saved owner credential with Unix private-file controls; explicit `FORGE_ACCESS_TOKEN` mode does not persist a cursor. Console stores the owner-local cursor in Web localStorage or native platform preferences, keyed by a digest of API origin, Forge client/resource, and the token's issuer/tenant/subject claims. It stores no token and advances the checkpoint only after required conversation/history refreshes succeed; malformed or opaque tokens receive process-only cursors. Saved CLI/TUI credentials now use a public Snaplink refresh-token grant with Linux Secret Service/macOS Keychain rotation; Flutter Forge credentials persist through Android/iOS/Linux/macOS/Windows secure storage, while Web remains tab-scoped. The Flutter feed retries a failed conversation snapshot after transport recovery, and CLI Prompt writes accept bounded multiline stdin with `-`. No client has push/live delivery. Prompt submission only stores a Prompt; it does not create a Run or schedule a device. A complete cross-client accepted journey, authoritative device inventory/scheduler, and Runner execution remain undelivered. The current HTTP listener also requires an exact Host match, which constrains reverse-proxy deployments. Code, focused tests, formal ADR lifecycle, and `forge accept` remain the sources for implementation and completion status.
+The user approved this staged product scope on 2026-09-13. `.agent/ROADMAP.md` tracks it as an active implementation route; this does not change prior Accepted ADRs or claim any phase complete. ADR-0113 records the authenticated shared-session boundary as a Proposed-only v2 decision candidate: its status remains `proposed` and its acceptance fields remain null under repository governance. The implementation includes an authenticated session/Prompt API, Hub-enforced owner binding, private-network TLS support, exact browser Origin allowlisting, and an owner-filtered paged change feed. Rust CLI exposes Snaplink device login, remote session commands, and `remote changes list`; the TUI exposes `sync`; and the Flutter Console `/forge/` surface polls the same feed every 15 seconds (at most four 128-row pages per poll). Feed cursors are dense and local to the exact owner tuple; the Hub's global journal cursor is not returned to clients. CLI/TUI persist reconnect cursors locally by exact Coordinator and saved owner credential with Unix private-file controls; explicit `FORGE_ACCESS_TOKEN` mode does not persist a cursor. Console stores the owner-local cursor in Web localStorage or native platform preferences, keyed by a digest of API origin, Forge client/resource, and the token's issuer/tenant/subject claims. It stores no token and advances the checkpoint only after required conversation/history refreshes succeed; malformed or opaque tokens receive process-only cursors. Saved CLI/TUI credentials now use a public Snaplink refresh-token grant with Linux Secret Service/macOS Keychain rotation; Flutter Forge credentials persist through Android/iOS/Linux/macOS/Windows secure storage, while Web remains tab-scoped. The Flutter feed retries a failed conversation snapshot after transport recovery, and CLI Prompt writes accept bounded multiline stdin with `-`. Default clients still use polling; CLI/TUI and Console expose explicit opt-in change-stream reads. Prompt submission only stores a Prompt; it does not create a Run or schedule a device. A complete cross-client accepted journey, authoritative device inventory/scheduler, and Runner execution remain undelivered. The current HTTP listener also requires an exact Host match, which constrains reverse-proxy deployments. Code, focused tests, formal ADR lifecycle, and `forge accept` remain the sources for implementation and completion status.
 
 The current client state also includes an owner-bound, metadata-only Conversation snapshot for offline list recovery; it never caches Prompt bodies or bearer tokens. This is still session continuity only and does not authorize Run creation, device inventory, scheduling, or dispatch.
 
@@ -8697,3 +8697,4682 @@ validation and acquire a fenced durable lease before dispatch. Default, OFF,
 INVENTORY, and OBSERVE routes remain closed, while MIGRATE and FEDERATE remain
 unassembled. See
 [`forge-scheduler-selection-preview-v1.md`](../../contracts/forge-scheduler-selection-preview-v1.md).
+
+## 472. Runtime CLI/TUI scheduler preview client (2026-09-22)
+
+Forge Runtime now consumes the accepted scheduler-selection preview through
+`remote placement scheduler-preview --input FILE|-` and the interactive TUI
+command `scheduler-selection-preview --input FILE`. The client sends the
+Conversation/Run/Attempt binding and requirements once, validates the strict
+`forge.scheduler-selection-preview/v1` response, and renders a deterministic
+candidate or the no-candidate reason. It rejects duplicate/unknown input,
+malformed owner or identifier data, selected IDs without an eligible result,
+and every non-false authority bit. TUI authorization failures clear its local
+owner view using the same behavior as the existing observation previews.
+
+This is a read-only client projection: no retry is applied to the POST, no
+lease or reservation is persisted, and the Runtime never opens Runner
+transport from this command. The server's default/OFF/INVENTORY/OBSERVE route
+closure and the `EXECUTE + P4` admission gate remain unchanged.
+
+## 473. Scheduler-selection preview receiver parity (2026-09-22)
+
+The canonical `forge.scheduler-selection-preview/v1` response is now mirrored
+and strictly decoded by Aero-ID, Aero-IM's audit connector, Aero-Vault's
+governance relay, and Snaplink Audit Governance. Each receiver requires the
+owner and Conversation/Run/Attempt binding, safe candidate counters, a
+consistent selected pair and reason, `preview_only=true`, and all-false
+placement, reservation, lease, execution, dispatch, and Audit markers. Unknown,
+duplicate, missing, trailing, unsafe identifier, selected-pair, and authority
+mutations fail closed.
+
+This is interoperability evidence only. The receivers do not publish an Audit
+fact, issue a lease, reserve a device, contact a Runner, dispatch work, or
+change the accepted EXECUTE gate. The production route remains closed outside
+the accepted `EXECUTE + P4` assembly.
+
+## 474. Console Web/App/Mobile scheduler-selection preview (2026-09-22)
+
+Snaplink Console's shared Flutter Sessions surface now consumes the accepted
+`forge.scheduler-selection-preview/v1` response through an explicit
+`ForgeSchedulerSelectionPreviewRequest` and reader. The authenticated adapter
+posts the exact Conversation/Run/Attempt binding and requirements once to
+`/api/v1/device-placement/scheduler-preview`, rejects origin/request/response
+drift, and re-decodes the response before rendering the selected pair or the
+no-candidate reason. The read-only panel exposes the owner, counters, reason,
+and all-false authority boundary without a select, reserve, lease, or dispatch
+action.
+
+The Gate defaults to no reader and no request; the adapter is reachable only
+through an explicit candidate flag and origin, so ordinary Web, desktop App,
+and Mobile construction remains request-free. No Run/Attempt/lease state is
+created or mutated, no Runner is contacted, and the selected IDs remain
+explanatory output under the accepted `EXECUTE + P4` gate.
+
+## 475. Accepted EXECUTE scheduler preview through Console clients (2026-09-22)
+
+The accepted `EXECUTE + P4` JWT production test now launches the shared
+Snaplink Console scheduler-preview consumer for independent Web, desktop App,
+and Mobile client instances. Each client creates its own authenticated API
+adapter, posts the exact Conversation/Run/Attempt and requirement binding to
+the real server, and validates the returned no-candidate observation, owner,
+counts, and all-false authority. This proves the Console transport reaches the
+same admission route used by Runtime without making selection state client
+local or mutating the server.
+
+The production fixture intentionally contains a stale observation, so the
+three clients receive `no_eligible_candidate`; no lease, reservation, Runner
+contact, dispatch, or Audit effect is possible. The default Console Gate,
+non-EXECUTE assemblies, and the `MIGRATE`/`FEDERATE` stages remain closed.
+
+## 476. EXECUTE fenced scheduler lease claim (2026-09-22)
+
+Forge Core now has an explicit owner-scoped lease registry behind the accepted
+`EXECUTE + P4` assembly. When a deployment supplies a private lease-registry
+file, `POST /api/v1/device-placement/scheduler-lease` re-evaluates the current
+lossless v2 observation, orders eligible `(device_id, instance_id)` pairs,
+claims the first unoccupied target, and persists a fenced epoch/token with
+the inventory revision, generation, and heartbeat sequence. The file adapter
+uses an inter-process lock, strict owner/schema decoding, atomic replacement,
+and exact idempotency replay; an active target cannot be claimed twice and an
+expired target advances its epoch.
+
+The response marks placement, reservation, and lease issuance true while
+execution authorization, Runner dispatch, and Audit publication remain false.
+Runtime CLI/TUI and the Console API strictly validate the same receipt, send
+the POST once with an explicit idempotency key, and never print the fencing
+token in human TUI output. The lease path is absent when no lease file is
+configured and remains unavailable to OFF, INVENTORY, OBSERVE, MIGRATE, and
+FEDERATE assemblies. Current persisted v2 observations intentionally carry
+unknown policy attributes, so the production route fails closed with
+`no_eligible_target` until a policy-complete inventory source is accepted;
+the lease state machine and file CAS are covered independently.
+
+## 477. Cross-ecosystem execution lease registry receipt parity (2026-09-22)
+
+The canonical `forge.execution-lease-registry/v1` receipt is now mirrored
+byte-for-byte and strictly consumed by Aero-ID, Aero-IM's audit connector,
+Aero-Vault's governance relay, and Snaplink Audit Governance. Each receiver
+checks the owner and Conversation/Run/Attempt binding, inventory revision,
+generation, heartbeat sequence, grant epoch/token/window, and the required
+authority split: placement, reservation, and lease issuance are true while
+execution, dispatch, and Audit publication remain false. Unknown, duplicate,
+trailing, binding, and authority mutations fail closed.
+
+This is interoperability evidence for the fenced lease value; receivers do
+not issue or renew a lease, reserve a target, contact a Runner, dispatch work,
+or publish an Audit fact. The optional `EXECUTE + P4` route and its current
+fail-closed policy-complete inventory requirement remain unchanged.
+
+## 478. EXECUTE policy-complete scheduler lease source (2026-09-22)
+
+Forge Core now accepts an optional owner-private
+`forge.device-placement-policy-registry/v1` image alongside the lifecycle
+registry and lease registry. The source is strict, 0600-only, owner-bound, and
+counter-bound to each lifecycle device/Runner observation; it supplies only
+residency zones, trust, sandbox, and concurrency values that the lifecycle
+heartbeat image intentionally leaves unknown. A policy entry cannot be
+joined when device, instance, revision, generation, or heartbeat sequence
+drifts.
+
+When both explicit files are configured under the accepted `EXECUTE + P4`
+gate, the scheduler lease route can claim and idempotently replay the first
+eligible fenced lease. Without the policy image, the existing lifecycle-only
+path still returns `no_eligible_target`; default/OFF/INVENTORY/OBSERVE and
+MIGRATE/FEDERATE assemblies remain closed. This advances placement,
+reservation, and lease issuance only: execution authorization, Runner
+dispatch, command execution, lease renewal, and Audit publication remain
+disabled.
+
+## 479. Console Web/App/Mobile explicit scheduler lease candidate (2026-09-22)
+
+Snaplink Console's shared Sessions Gate now wires the fenced scheduler lease
+API as an explicit Web, desktop App, and Mobile candidate. The caller must
+provide the exact Conversation/Run/Attempt requirements, a candidate origin,
+and a fixed idempotency key together with the opt-in flag. The Gate sends one
+authenticated `POST /api/v1/device-placement/scheduler-lease`, strictly
+re-decodes the request and receipt, and checks the returned binding and
+placement/reservation/lease-only authority before displaying the target,
+inventory counters, epoch, and validity window.
+
+The lease panel withholds the fencing token and states that execution, Runner
+dispatch, and Audit publication are disabled. The default Gate remains
+request-free, and a screen instance does not refresh or retry the claim. This
+joins the Console session/resource surface to the same fenced lease contract
+already consumed by Core and Runtime without adding a Run, dispatch, Runner,
+or Audit effect.
+
+## 480. Accepted EXECUTE scheduler lease through the real multi-client boundary (2026-09-22)
+
+The production `Run` E2E now supplies two current, policy-complete lifecycle
+observations and the owner-private lease/policy registries to the accepted
+`EXECUTE + P4` assembly. A real Snaplink JWT claim creates the first fenced
+lease and an exact-key retry returns the same grant, target counters, epoch,
+and authority split. When enabled, independent Console Web/App/Mobile API
+clients replay that receipt through the real HTTP route; Runtime CLI claims the
+next eligible target and Runtime TUI claims the following target with its own
+fresh key while withholding fencing material from human output.
+
+The route allowlist and Snaplink test scopes now include the scheduler-lease
+path, and Runtime's CLI option validator requires an explicit idempotency key
+for this effectful POST. This proves authenticated placement, reservation, and
+lease issuance across the actual Core, Runtime, and Console boundaries. It
+still creates no Run/Attempt, command authorization, Runner transport,
+execution, renewal, or Audit publication; the accepted gate, private policy
+source, and production opt-in remain required.
+
+## 481. Cross-client scheduler lease canonical replay (2026-09-22)
+
+The accepted scheduler-lease route now hashes the strict decoded request's
+canonical Go projection instead of the incoming JSON member order. A request
+encoded by Core, Runtime Rust, or Flutter therefore has one idempotency value
+when its owner, Conversation/Run/Attempt binding, requirements, and TTL are
+the same; duplicate, unknown, trailing, and malformed fields are still
+rejected before canonicalization. The production E2E replays one fenced grant
+with the same key through raw Core HTTP, Console Web/App/Mobile, and Runtime
+CLI, then uses a fresh TUI key for the next eligible target.
+
+This only improves replay interoperability for the existing placement,
+reservation, and lease issuance boundary. It does not add Run/Attempt
+creation, command authorization, Runner transport, execution, renewal,
+release, or Audit publication; the accepted `EXECUTE + P4` gate and private
+policy/lease sources remain required.
+
+## 482. Fenced scheduler lease renewal through Core and Runtime (2026-09-22)
+
+The owner-private lease registry now supports an authenticated
+`POST /api/v1/device-placement/scheduler-lease/renew` operation under the same
+accepted `EXECUTE + P4` assembly. The caller submits the current
+Conversation/Run/Attempt, target, epoch, fencing token, and bounded TTL;
+Core validates the proof against the active registry entry, advances the
+target to a new epoch and server-issued token, and atomically appends the
+replacement. A new idempotency key replays the replacement grant without
+issuing another token; expired, stale, foreign, malformed, and conflicting
+proofs fail closed.
+
+Runtime exposes the route as `remote placement scheduler-lease-renew` and the
+TUI command `scheduler-selection-lease-renew --input FILE`; the Console API
+has the corresponding explicit Web/App/Mobile adapter. Focused Go, Rust, and
+Flutter tests plus the configured real Runtime CLI E2E cover renewal and
+replay. The response keeps placement, reservation, and lease authority true
+while command authorization, Runner transport, execution, release, and Audit
+publication remain disabled.
+
+## 483. Console Web/App/Mobile explicit scheduler lease renewal candidate (2026-09-22)
+
+Snaplink Console's shared Sessions Gate now exposes the accepted scheduler-lease
+renewal as a separate explicit Web, desktop App, and Mobile candidate. The
+caller must provide the exact current Conversation/Run/Attempt/target proof,
+the candidate origin, a fresh idempotency key, and the opt-in flag. The Gate
+revalidates the request and returned epoch binding before displaying the same
+metadata-only lease panel; the fencing token remains withheld.
+
+The renewal candidate is single-shot, never retries a POST, and stays
+request-free in the default Gate. When claim and renewal declarations are both
+present, renewal takes precedence so a caller cannot accidentally create a
+second reservation while extending an existing proof. Placement, reservation,
+and lease authority remain the only enabled effects; command authorization,
+Runner transport, execution, release, and Audit publication remain disabled.
+
+## 484. Fenced scheduler lease release through Core, Runtime, and Console (2026-09-22)
+
+The accepted `EXECUTE + P4` lease registry now exposes
+`POST /api/v1/device-placement/scheduler-lease/release`. The authenticated
+caller supplies the exact Conversation/Run/Attempt, target, epoch, and fencing
+token proof with an explicit idempotency key. Core marks the matching active
+entry inactive under the owner-private file lock and atomic CAS, keeps the
+historical epoch/token so a later claim advances fencing, and returns an
+all-false authority receipt. Exact retries replay without another write;
+stale, expired, foreign, malformed, and cross-operation key conflicts fail
+closed.
+
+Runtime CLI/TUI expose `remote placement scheduler-lease-release --input FILE`
+and `scheduler-selection-lease-release --input FILE`; the strict clients send
+one POST, validate the release envelope, and withhold fencing material from
+human output. Snaplink Console's Web/App/Mobile Sessions Gate has the same
+explicit origin/request/key candidate and renders a metadata-only release
+receipt. The default Gate remains request-free. This slice releases only the
+durable placement reservation: it does not create a Run/Attempt, authorize a
+command, contact or dispatch a Runner, execute work, or publish Audit.
+
+## 485. Durable lease-bound Runner dispatch admission preview (2026-09-22)
+
+The accepted `EXECUTE + P4` assembly now exposes the owner-authenticated
+`POST /api/v1/conversations/{conversation_id}/runs/{run_id}/runner-dispatch-admission/preview`
+candidate when the private execution-lease registry is configured. Core reads
+the exact owner/Conversation/Run/Attempt lease proof under the registry lock,
+checks target and epoch fencing, recomputes the direct-argv command digest, and
+returns only bounded metadata: current/active lease state, dispatchable Attempt
+state, binding result, sorted rejection reasons, and an all-false authority
+object. Released, stale, missing, foreign, malformed, or confused proofs fail
+closed or return an inactive preview; no fencing token, argv, workspace, or
+output is returned.
+
+Runtime CLI/TUI and Snaplink Console Web/App/Mobile consume the same strict
+request/response shape. Each client performs one authenticated POST, rejects
+unknown/duplicate fields and binding or digest drift, clears the TUI owner view
+after authorization failure, and renders metadata without proof material. The
+canonical response fixture is available for the ecosystem receiver boundary;
+this remains an admission recheck only. It does not create a Run/Attempt,
+authorize a command, reserve capacity, contact or dispatch a Runner, execute
+work, renew or release a lease, or publish Audit. ADR-0039 remains
+planning-only, ADR-0114 remains Proposed/null, and the accepted P4 execution
+decision still gates the future Runner adapter.
+
+## 486. Console Gate Runner dispatch admission candidate (2026-09-22)
+
+The shared Snaplink Web/App/Mobile Sessions Gate now wires the explicit
+`forge.runner-dispatch-admission/v1` request and reader into the selected
+Conversation/Run view. The candidate re-decodes the request and response,
+checks owner/Attempt/command digest/target/epoch bindings, performs one
+authenticated POST, and retains only the last validated metadata while a
+refresh is in flight. The default Gate remains request-free; a selected
+client-instance projection can never display a response for a hidden
+Conversation.
+
+The new card exposes Attempt state, lease epoch/activity/current-proof,
+command binding, and deterministic rejection reasons. It deliberately omits
+the fencing token, argv, workspace, and any execution action. This is still a
+read-only admission recheck: no Run/Attempt creation, command authorization,
+Runner contact/dispatch, execution, lease renewal/release, or Audit
+publication was added. ADR-0039 remains planning-only, ADR-0114 remains
+Proposed/null, and the accepted P4 execution decision still gates the future
+Runner adapter.
+
+## 487. Accepted EXECUTE Runner dispatch admission across clients (2026-09-22)
+
+The accepted `EXECUTE + P4` production `Run` harness now starts with one
+owner-private fenced lease and posts the exact command proof to the
+`runner-dispatch-admission/preview` route. Core returns a ready,
+metadata-only recheck with the command digest, target, epoch, active proof,
+and all-false authority; the same request is consumed by Runtime CLI/TUI when
+the real binary is configured and by the opt-in Web/App/Mobile Console API
+reader. The lease is then released and the identical proof is read again as an
+inactive admission with a deterministic rejection reason.
+
+This is a production-boundary and fencing check only. It does not create a
+Run/Attempt, authorize a command, contact or dispatch a Runner, execute work,
+renew a lease, or publish Audit. The response continues to withhold fencing
+token, argv, workspace, and output; ADR-0039 remains planning-only,
+ADR-0114 remains Proposed/null, and the accepted P4 decision still gates any
+future Runner adapter.
+
+## 488. Cross-client Runner transport admission preview contract (2026-09-22)
+
+Forge Core now joins the already verified D3 Runner transport observation to
+the current command/lease admission as a pure value operation. The new
+`forge.runner-transport-admission/v1` observation binds the POST dispatch path,
+transport payload digest, command digest, target, lease epoch/window, and
+Attempt-state predicates. It emits deterministic sorted rejection reasons and
+keeps `preview_only` true with every device, transport, reservation,
+execution, dispatch, and Audit authority bit false.
+
+Runtime's strict Rust receiver and Snaplink Console's Web/App/Mobile model
+consume the canonical fixture, reject unknown/duplicate fields, authority
+mutations, path/readiness drift, and forbidden proof material, and preserve
+the same display-only shape. Core tests build the observation through the D3
+sign/verify path and cover path/payload confusion plus stale or terminal lease
+rejections.
+
+This contract is an admission preview only. It does not open a Runner socket,
+send a payload, authorize a command, create a Run/Attempt, reserve or mutate
+a lease, execute work, or publish Audit. ADR-0039 remains planning-only,
+ADR-0114 remains Proposed/null, and the accepted P4 execution decision still
+gates any live Runner adapter.
+
+## 489. Cross-ecosystem Runner transport admission receiver parity (2026-09-22)
+
+The canonical `forge.runner-transport-admission/v1` image is now mirrored
+byte-for-byte and strictly consumed by Aero-ID, Aero-IM's audit connector,
+Aero-Vault's governance relay, and Snaplink Audit Governance. Each receiver
+checks the owner/Conversation/Run/Attempt binding, canonical POST dispatch
+path, command and transport digests, lease/Attempt predicates, deterministic
+rejection shape, and the all-false authority split. Unknown, duplicate,
+trailing, path-confused, malformed-digest, and transport-authority mutations
+fail closed before the value can cross the ecosystem boundary.
+
+This is interoperability evidence for a display-only admission observation.
+No receiver opens a Runner connection, sends payload bytes, authenticates a
+device, issues or mutates a lease, authorizes a command, creates a Run/Attempt,
+executes work, or publishes Audit. ADR-0039 remains planning-only,
+ADR-0114 remains Proposed/null, and the accepted P4 execution decision still
+gates a live Runner adapter.
+
+## 490. Authenticated Runner transport admission preview boundary (2026-09-22)
+
+Accepted `EXECUTE + P4` Forge Server assembly now exposes an owner-scoped
+`runner-transport-admission/preview` POST beside the durable dispatch-admission
+recheck. The route strictly decodes the caller's already verified D3 transport
+observation, re-reads the owner-private fenced lease registry, binds the
+Conversation/Run/Attempt, target, epoch/window, canonical dispatch path, and
+payload digest, and evaluates the result against the Coordinator clock. Lease
+metadata supplied by the caller must match the persisted grant; stale or
+foreign proofs fail closed, and the response remains the canonical
+`forge.runner-transport-admission/v1` display-only value.
+
+This boundary does not verify a device secret or open a Runner connection: the
+transport observation is explicitly an input from a separately reviewed
+verifier. It sends no payload, authorizes a command, creates a Run/Attempt,
+mutates a lease, executes work, or publishes Audit. Default/OFF/INVENTORY/
+OBSERVE routes remain closed, ADR-0039 remains planning-only,
+ADR-0114 remains Proposed/null, and the accepted P4 decision still gates any
+live Runner adapter.
+
+## 491. Runtime and Console transport admission clients (2026-09-22)
+
+Forge Runtime CLI/TUI now expose explicit `remote placement
+runner-transport-admission-preview --input FILE|-` and
+`runner-transport-admission-remote-preview --input FILE` commands. The strict
+Rust client validates the owner/Conversation/Run/Attempt, command digest,
+fenced lease metadata, canonical transport path, payload digest, deterministic
+rejection reasons, and all-false authority before one authenticated POST; TUI
+authorization failure clears the local owner view and human output never
+contains fencing material or command payload fields.
+
+Snaplink Console's shared Web/App/Mobile API has the corresponding explicit
+request/response adapter. It pins the candidate origin, re-decodes the strict
+request and response, rejects binding or authority drift, sends one POST with
+no unauthorized retry, and retains only the display-only observation. This
+slice adds no Gate startup request and no live transport: it does not verify a
+device secret, open a Runner connection, send payload bytes, authorize a
+command, create a Run/Attempt, mutate a lease, execute work, or publish Audit.
+ADR-0039 remains planning-only, ADR-0114 remains Proposed/null, and the
+accepted P4 execution decision still gates a future Runner adapter.
+
+## 492. Console Sessions Gate transport admission candidate (2026-09-22)
+
+The shared Snaplink Web/App/Mobile Sessions Gate now wires the explicit
+`forge.runner-transport-admission/v1` request and reader into the selected
+Conversation/Run view. The candidate re-decodes the request and returned
+observation, checks owner/Attempt/command/target/epoch/path/payload bindings,
+retains only the last validated metadata during refresh, and renders transport
+method/path, payload byte count, replay check, lease state, and deterministic
+rejection reasons. The default Gate remains request-free and a hidden
+client-instance Conversation cannot display the preview.
+
+This remains a display-only admission boundary. It does not verify a device
+secret, open a Runner connection, send payload bytes, authorize a command,
+create a Run/Attempt, mutate a lease, execute work, or publish Audit. ADR-0039
+remains planning-only, ADR-0114 remains Proposed/null, and the accepted P4
+execution decision still gates any live Runner adapter.
+
+## 493. Accepted EXECUTE transport admission across clients (2026-09-22)
+
+The accepted `EXECUTE + P4` production `Run` harness now creates one fenced
+lease, supplies a D3-signed-and-verified transport observation to the
+authenticated transport-admission route, and consumes the same display-only
+response through Core, Runtime CLI/TUI when configured, and the opt-in Console
+Web/App/Mobile API harness. Releasing the lease and repeating the exact
+request returns an inactive admission with the deterministic lease rejection;
+the response never contains fencing token, argv, workspace, or payload bytes.
+
+This is a cross-client boundary and fencing check only. It does not open a
+Runner socket, send a payload, authorize a command, create a Run/Attempt,
+mutate a lease through the admission route, execute work, or publish Audit.
+ADR-0039 remains planning-only, ADR-0114 remains Proposed/null, and the
+accepted P4 execution decision still gates a future live Runner adapter.
+
+## 494. P4 and independent Runner execution boundary (2026-09-22)
+
+Forge Core now defines a pure `forge.runner-execution-boundary/v1` contract
+that joins the existing dispatch and transport admission observations with
+the accepted device-fabric `EXECUTE + P4` gate and a separate deployment-owned
+Runner authority decision. The zero-value authority configuration is disabled;
+an enabled configuration must carry its own accepted decision with acceptance
+metadata distinct from P4. The activation gate continues to require lease
+fencing, cancellation/uncertain-work handling, Vault artifact authorization,
+and Audit outbox evidence.
+
+The boundary also requires an explicit effect state and cancellation
+observation. Active cancellation and `uncertain` effects fail closed; only
+`not_started` or explicitly `reconciled` effects are startable. Even when all
+declarations line up, the result is `preview_only` with every authority bit
+false and contains no fencing token, argv, workspace, payload, or Runner
+response. App-server configuration rejects the authority declaration unless
+the complete accepted gate is present, and no live Runner route is mounted.
+
+This slice performs no I/O, lease mutation, command authorization, transport,
+execution, or Audit publication. ADR-0039 remains planning-only, ADR-0114
+remains Proposed/null, and the independent Runner authority decision is not
+accepted by the current repository configuration.
+
+## 495. Authenticated Runner execution-boundary preview (2026-09-22)
+
+The accepted `EXECUTE + P4` Forge assembly now has an optional owner-authenticated
+`runner-execution-boundary/preview` POST. The server owns the activation and
+independent Runner authority declarations; callers submit only the already
+bound direct-argv command proof, verified transport metadata, and explicit
+effect/cancellation controls. Core re-reads the owner-private fenced lease,
+recomputes dispatch and transport admission against the Coordinator clock,
+and returns the redacted `forge.runner-execution-boundary/v1` observation.
+
+The route is absent from the ordinary constructor and from accepted EXECUTE
+assemblies without the explicit authority configuration. Released leases,
+cancellation requests, non-startable effects, and uncertain effects remain
+non-ready with deterministic reasons. The response stays preview-only with
+all authority false and never exposes fencing tokens, argv, workspace,
+payload, or Runner output.
+
+This is still a preview boundary: it does not open a Runner connection, send
+payload bytes, authorize a command, create a Run/Attempt, mutate a lease,
+execute work, or publish Audit. Runtime and Console clients are the next
+cross-client slice; ADR-0039 remains planning-only, ADR-0114 remains
+Proposed/null, and P4 plus the independent Runner authority decision remain
+required for any live adapter.
+
+## 496. Runtime and Console execution-boundary clients (2026-09-22)
+
+Forge Runtime CLI/TUI now consume the authenticated
+`forge.runner-execution-boundary/v1` preview through an explicit
+`remote placement runner-execution-boundary-preview --input FILE|-` command and
+the selected-session TUI command. Strict consumers validate server-owned mode,
+owner/Conversation/Run/Attempt/command bindings, transport path and digest,
+effect/cancellation predicates, sorted rejection reasons, and all-false
+authority before rendering redacted metadata. Console Web/App/Mobile exposes
+the same origin-pinned, no-unauthorized-retry API request/response adapter.
+
+The request deliberately omits activation, Runner authority, lease state, and
+evaluation time; Core supplies and rechecks those values. This slice adds no
+Gate startup request and no live Runner adapter. It does not open a Runner
+connection, send payload bytes, authorize a command, create or mutate a
+Run/Attempt/lease, execute work, or publish Audit. ADR-0039 remains
+planning-only, ADR-0114 remains Proposed/null, and P4 plus an independent
+Runner authority decision remain required for any live effect.
+
+## 497. Console Sessions Gate execution-boundary candidate (2026-09-22)
+
+The shared Snaplink Console Web/App/Mobile Sessions Gate now accepts an explicit
+owner-bound `forge.runner-execution-boundary/v1` request and reader for the
+selected Conversation/Run. The candidate pins the expected request and origin,
+performs one authenticated preview POST, strictly re-decodes the response,
+checks owner/Attempt/command/target/epoch bindings and display-only authority,
+retains the last validated observation during refresh, and renders bounded gate
+metadata without proof material. The default Gate remains request-free and the
+hidden client-instance projection cannot display the observation.
+
+This remains a preview-only UI boundary. It does not open a Runner connection,
+send payload bytes, authorize a command, create or mutate a Run/Attempt/lease,
+execute work, or publish Audit. ADR-0039 remains planning-only, ADR-0114
+remains Proposed/null, and P4 plus an independent Runner authority decision
+remain required for any live effect.
+
+## 498. Cross-ecosystem execution-boundary receiver parity (2026-09-22)
+
+The canonical `forge.runner-execution-boundary/v1` observation is now mirrored
+byte-for-byte into Aero-ID, Aero-IM, Aero-Vault, Snaplink Audit Governance,
+and the Console contract fixtures. Their receiver tests reject unknown,
+duplicate, authority-bearing, and readiness-drifted values while accepting only
+the bounded `EXECUTE` preview with all authority fields false. The observation
+contains no fencing token, argv, workspace, payload, or Runner output.
+
+These receivers remain interoperability projections. They do not authenticate
+a device, issue or mutate a lease, authorize a command, open Runner transport,
+dispatch or execute work, create a Run/Attempt, or publish Audit. ADR-0039
+remains planning-only, ADR-0114 remains Proposed/null, and P4 plus an
+independent Runner authority decision remain required for any live effect.
+
+## 499. Accepted EXECUTE execution-boundary harness across clients (2026-09-22)
+
+Forge Core now has an accepted `EXECUTE + P4` integration harness that creates
+one owner-private fenced lease, joins a verified D3 transport observation, and
+serves the authenticated execution-boundary preview. When configured, the same
+request is consumed by Runtime CLI/TUI and the opt-in Console Flutter API
+test. The harness releases the exact lease and repeats the request; every
+consumer observes a non-ready boundary with the deterministic inactive-lease
+reason. Ready responses use a canonical empty `rejection_reasons` array so
+strict Rust and Dart clients receive the same wire shape.
+
+This is an integration proof for the preview boundary only. It opens no Runner
+connection, sends no payload, authorizes no command, creates or mutates no
+Run/Attempt through the preview, and publishes no Audit. ADR-0039 remains
+planning-only, ADR-0114 remains Proposed/null, and a separately accepted
+execution decision is still required before any live effect.
+
+## 500. Accepted EXECUTE reconciliation preview across clients (2026-09-22)
+
+The accepted `EXECUTE + P4` Forge `Run` harness now sends one owner-bound
+terminal-uncertainty restart image through the authenticated
+`execution-reconciliation/preview` route. Core classifies the image as
+`terminal_uncertain` and requires manual reconciliation; configured Runtime
+CLI/TUI and the opt-in Console Web/App/Mobile API consume the same result and
+verify `automatic_retry=false`, display-only authority, and the exact
+Conversation/Run/Attempt/command/target bindings. The request may carry a
+fencing proof, but every client and the response keep the token, receipt
+digest, terminal reason, argv, workspace, and output out of display data.
+
+This is restart-boundary evidence only. The preview reads no durable Run,
+Attempt, lease, registry, or Runner state, does not renew or release a lease,
+does not retry or authorize work, and publishes no Audit. ADR-0039 remains
+planning-only, ADR-0114 remains Proposed/null, and a separately accepted
+execution decision is still required before any live Runner effect.
+
+## 501. Accepted EXECUTE session Runner receipt observation across clients (2026-09-22)
+
+The accepted `EXECUTE + P4` Forge `Run` assembly now carries one completed,
+content-free `forge.session-runner-receipt-observation/v1` value through the
+authenticated receipt-preview route. Core, configured Runtime CLI/TUI, and the
+opt-in Console Web/App/Mobile API all verify the owner, Conversation, Prompt,
+Run, receipt command/Attempt/target bindings, `selected_target_id=null`, and
+all-false receipt/session authority. Human output contains only bounded
+disposition metadata; no fencing proof, command argv, workspace, output, or
+private event payload is surfaced.
+
+This is an observation echo for cross-client interoperability. It does not
+persist terminal evidence, create or mutate an Attempt/Run/lease, select or
+reserve a target, authorize or dispatch a Runner, retry uncertain work, or
+publish Audit. ADR-0039 remains planning-only, ADR-0114 remains Proposed/null,
+and the separately accepted execution decision is still required for any live
+Runner effect.
+
+## 502. Accepted EXECUTE Run execution-evidence binding across clients (2026-09-22)
+
+The accepted `EXECUTE + P4` Forge `Run` assembly now exposes an authenticated
+`run-execution-evidence/preview` route that binds one content-free
+`RunObserved` value to the matching session Runner receipt observation. Core
+strictly decodes the pair, checks owner and Conversation/Prompt/Run bindings,
+and returns the canonical `forge.run.execution-evidence/v1` metadata projection
+with all authority false. Runtime CLI/TUI and the opt-in Console Web/App/Mobile
+API consume the same response with one origin-pinned authenticated POST and
+strict drift checks; human output contains only bounded disposition and opaque
+owner metadata.
+
+This is a read-only evidence join. It does not persist Run or receipt state,
+create or mutate an Attempt/lease, select or reserve a target, authorize or
+dispatch a Runner, retry uncertain work, execute a command, or publish Audit.
+The ordinary server constructor keeps the route closed, ADR-0039 remains
+planning-only, ADR-0114 remains Proposed/null, and a separately accepted
+execution decision is still required for any live Runner effect.
+
+## 503. Console Sessions Gate execution-evidence candidate (2026-09-22)
+
+The shared Snaplink Console Web/App/Mobile Sessions Gate now accepts an
+explicit Run observation, session Runner receipt, candidate origin, and
+opt-in reader for the authenticated `run-execution-evidence/preview` join. It
+re-decodes both source values and the response, binds them to the selected
+Conversation/Run/Prompt, retains only the last validated display-only value
+during refresh, and renders the existing metadata-only evidence card. The
+default Gate remains request-free and candidate 401s do not replay through
+credential refresh.
+
+This is a UI projection of §502. It does not persist evidence, create or
+mutate a Run/Attempt/lease, select or reserve a target, authorize or dispatch a
+Runner, retry uncertain work, execute a command, or publish Audit. ADR-0039
+remains planning-only, ADR-0114 remains Proposed/null, and the separate live
+execution decision remains required.
+
+## 504. Accepted EXECUTE Run execution-evidence through the real Sessions Gate (2026-09-22)
+
+The accepted Core harness now exercises the same evidence join through the
+real Runtime-backed session store. With Runtime configured it creates an
+owner-bound project Conversation and Prompt, starts one deterministic
+completed Run in the shared Hub, and lets the authenticated Console Sessions
+Gate discover that Conversation and Run through its ordinary list/read paths.
+The Gate selects the durable Run, sends one origin-pinned
+`run-execution-evidence/preview` request, and renders the metadata-only card;
+the accepted harness still consumes the same response through Core, Runtime
+CLI/TUI, and the Console API test.
+
+This closes the cross-client discovery-to-evidence proof without adding a live
+effect. The candidate remains explicit and opt-in, all authority fields stay
+false, and no evidence is persisted, no Attempt/lease/target is mutated or
+selected, no Runner is contacted or dispatched, and no command or Audit is
+published. ADR-0039 remains planning-only, ADR-0114 remains Proposed/null, and
+the separate live execution decision remains required.
+
+## 505. Accepted inventory and instance resources through the real Sessions Gate (2026-09-22)
+
+The accepted inventory assembly now exercises the user-facing authenticated
+Console Sessions Gate in addition to the lower-level inventory API reader. The
+Gate restores the Snaplink credential, reads v1 and lossless v2 device
+observations, and composes the owner-scoped five-kind client-instance resource
+view from the same Core HTTP routes. The E2E checks both devices, all CLI/TUI/
+Web/App/Mobile declarations, Runner joins, and the display-only authority
+markers through one real Web/App/Mobile surface; the contract script runs this
+accepted production test with the Runtime binary when its cross-process lane is
+enabled.
+
+This closes the authenticated discovery-to-resource-perception path for the
+OBSERVE/INVENTORY stage. The candidate remains explicit and opt-in; no
+enrollment or heartbeat write, credential issuance, target selection,
+reservation, lease, dispatch, Runner contact, execution, Run/receipt mutation,
+or Audit publication was added. ADR-0039 remains planning-only, ADR-0114
+remains Proposed/null, and P3b/P4 live scheduling remains gated.
+
+## 506. Accepted scheduler lease through the real Sessions Gate (2026-09-22)
+
+The accepted `EXECUTE + P4` scheduler-lease harness now seeds a real
+Runtime-backed owner Conversation, Prompt, and completed Run when the
+cross-process lane is enabled. The authenticated Flutter Sessions Gate uses
+the same owner JWT and exact idempotency key as the Core/Console API clients,
+replays the fenced lease through the real route, and renders the target,
+epoch, and bounded lease window while withholding the fencing token.
+
+This closes the resource-perception-to-lease path on the user-facing
+Web/App/Mobile surface. Placement, reservation, and lease issuance are the
+only enabled authority; the Gate creates no Run or Attempt, authorizes no
+command, contacts or dispatches no Runner, executes no work, renews or
+releases no lease, and publishes no Audit. ADR-0039 remains planning-only,
+ADR-0114 remains Proposed/null, and the separate live Runner/P4 effect gate
+continues to apply.
+
+## 507. Accepted Runner dispatch admission through the real Sessions Gate (2026-09-22)
+
+The accepted `EXECUTE + P4` harness now seeds a Runtime-backed owner
+Conversation, Prompt, and deterministic completed Run, claims one fenced lease,
+and binds a command/Attempt proof to that durable Run. The authenticated
+Flutter Sessions Gate discovers the same Conversation and Run through its
+ordinary session reads, posts the explicit
+`runner-dispatch-admission/preview` request, and renders lease, Attempt, target,
+and command-binding metadata while withholding the fencing token, argv, and
+workspace. Core, Runtime CLI/TUI, Console API, and the real Gate all consume
+the same owner-bound observation; releasing the lease remains a deterministic
+fail-closed check.
+
+This closes the lease-to-admission perception path on the user-facing
+Web/App/Mobile surface. The admission route remains preview-only: it does not
+authorize a command, contact or dispatch a Runner, send payload, create or
+mutate a Run/Attempt/lease through the preview, execute work, or publish Audit.
+ADR-0039 remains planning-only, ADR-0114 remains Proposed/null, and the
+separate live Runner/P4 effect gate continues to apply.
+
+## 508. Accepted Runner transport admission through the real Sessions Gate (2026-09-22)
+
+The accepted `EXECUTE + P4` harness now seeds a Runtime-backed owner
+Conversation, Prompt, and deterministic completed Run, claims one fenced lease,
+and binds a verified D3 transport observation to the command proof. The
+authenticated Flutter Sessions Gate discovers that durable Run through its
+ordinary session reads, posts the explicit
+`runner-transport-admission/preview` request, and renders bounded transport
+method/path, payload-byte, binding, and replay metadata while withholding the
+fencing token, payload digest, nonce, argv, and workspace. Core, Runtime
+CLI/TUI, Console API, and the real Gate consume the same owner-bound
+observation; releasing the lease remains a deterministic fail-closed check.
+
+This closes the transport-to-admission perception path on the user-facing
+Web/App/Mobile surface. The transport route remains preview-only: it does not
+authenticate a device, open a Runner connection, send payload, authorize or
+dispatch a command, create or mutate a Run/Attempt/lease through the preview,
+execute work, or publish Audit. ADR-0039 remains planning-only, ADR-0114
+remains Proposed/null, and the separate live Runner/P4 effect gate continues
+to apply.
+
+## 509. Accepted Runner execution boundary through the real Sessions Gate (2026-09-22)
+
+The accepted `EXECUTE + P4` harness now seeds a Runtime-backed owner
+Conversation, Prompt, and deterministic completed Run, claims one fenced lease,
+and binds a verified transport observation under an independent accepted Runner
+authority decision. The authenticated Flutter Sessions Gate discovers that
+durable Run through its ordinary session reads, posts the explicit
+`runner-execution-boundary/preview` request, and renders server-owned mode,
+activation, authority, dispatch/transport admission, effect, and cancellation
+metadata while withholding fencing token, argv, workspace, payload, Runner
+output, and any execution authority. Core, Runtime CLI/TUI, Console API, and
+the real Gate consume the same all-false-authority observation; releasing the
+lease remains a deterministic fail-closed check.
+
+This closes the final preview-boundary perception path on the user-facing
+Web/App/Mobile surface. It does not open a Runner connection, send payload,
+authorize or dispatch a command, create or mutate a Run/Attempt/lease through
+the preview, execute work, or publish Audit. ADR-0039 remains planning-only,
+ADR-0114 remains Proposed/null, and the separate live Runner/P4 effect gate
+continues to apply.
+
+## 510. Accepted execution reconciliation through the real Sessions Gate (2026-09-22)
+
+The accepted `EXECUTE + P4` harness now seeds a Runtime-backed owner
+Conversation, Prompt, and deterministic completed Run, then supplies a
+caller-bound terminal-uncertainty restart image to the authenticated Flutter
+Sessions Gate. The Gate discovers the durable Run through its ordinary session
+reads, posts the explicit `execution-reconciliation/preview` request, and
+renders the metadata-only classification: `terminal_uncertain`, manual
+reconciliation required, and automatic retry false. Proof, terminal reason,
+receipt digest, argv, workspace, and output remain absent from the card; Core,
+Runtime CLI/TUI, Console API, and the real Gate consume the same observation.
+
+This closes the uncertain-restart perception path on the user-facing
+Web/App/Mobile surface. Reconciliation remains a pure read-only classification:
+it does not retry, mutate a Run/Attempt/lease, select or reserve a target,
+contact or dispatch a Runner, execute work, or publish Audit. ADR-0039 remains
+planning-only, ADR-0114 remains Proposed/null, and the separate live
+Runner/P4 effect gate continues to apply.
+
+## 511. Accepted session Runner receipt through the real Sessions Gate (2026-09-22)
+
+The accepted `EXECUTE + P4` harness now seeds a Runtime-backed owner
+Conversation, Prompt, and deterministic completed Run, then joins the same
+owner/Conversation/Prompt/Run-bound content-free Runner receipt observation
+through the authenticated Flutter Sessions Gate. The Gate discovers the
+durable Run through its ordinary session reads and renders completed
+disposition, receipt validity, selected-target absence, and all-false authority
+metadata. The receipt observation contains no event payload, output, fencing
+token, or execution action; Core, Runtime CLI/TUI, Console API, and the real
+Gate consume the same observation.
+
+This closes the terminal-receipt perception path on the user-facing
+Web/App/Mobile surface. The route and Gate remain observation-only: no receipt
+is persisted, no target is selected or reserved, no Run/Attempt/lease is
+mutated, no Runner is contacted or dispatched, no retry or execution occurs,
+and no Audit is published. ADR-0039 remains planning-only, ADR-0114 remains
+Proposed/null, and the separate live Runner/P4 effect gate continues to apply.
+
+## 512. Accepted pending Run-intent through the real Sessions Gate (2026-09-22)
+
+The accepted `EXECUTE + P4` harness now grants the project execution consent
+required by the inert Run-intent surface, then drives the authenticated
+Flutter Sessions Gate through the owner-bound execution-consent preview and
+durable Conversation, Prompt, and Run reads before one explicit
+scheduling-review POST. The Gate submits the same owner-bound content and
+expected aggregate version as the Core/Rust clients and renders the returned
+pending/created receipt with all execution flags false. Core reads the
+resulting pending intent and Prompt back from the Rust Hub and verifies that
+the pre-existing completed Run remains the only Run.
+
+This closes the request-to-review path on the user-facing Web/App/Mobile
+surface. The receipt remains inert metadata: it creates no ordinary Run,
+selects or reserves no device, acquires or mutates no lease, contacts or
+dispatches no Runner, retries or executes no work, and publishes no Audit.
+Consent is explicit and owner-bound, the default Gate remains request-free,
+ADR-0039 remains planning-only, ADR-0114 remains Proposed/null, and the
+separate live Runner/P4 effect gate continues to apply.
+
+## 513. Accepted pending Run-intent readback through the real Sessions Gate (2026-09-22)
+
+After the scheduling-review POST succeeds, the authenticated Flutter Sessions
+Gate now refreshes the explicit owner-scoped pending Run-intent reader and shows
+the server-owned metadata projection and payload-free timeline in the same
+session view. The cross-process harness verifies the aggregate-version advance,
+pending/created receipt, metadata-only authority, timeline `submitted` marker,
+and absence of Prompt content from the metadata card; the Core/Rust readers
+observe the same pending intent and unchanged durable Run set.
+
+This completes the write-to-readback path for the inert review surface across
+the user-facing Web/App/Mobile Gate. The refresh remains metadata-only: it does
+not create an ordinary Run, select or reserve a device, acquire or mutate a
+lease, contact or dispatch a Runner, retry or execute work, or publish Audit.
+The default Gate stays request-free, ADR-0039 remains planning-only,
+ADR-0114 remains Proposed/null, and the separate live Runner/P4 effect gate
+continues to apply.
+
+## 514. Accepted pending Run-intent candidate read transport through the Sessions Gate (2026-09-22)
+
+The opt-in pending Run-intent candidate now owns the complete authenticated
+read path as well as the scheduling-review POST. From the same owner/origin
+binding it supplies list, cursor-page, and payload-free timeline readers to the
+shared Sessions Gate; explicitly injected readers still take precedence. The
+real cross-process harness enables only the candidate flag and owner/origin,
+then verifies that the Gate itself reads the server-created receipt and its
+`submitted` timeline marker without a second API adapter in the test.
+
+The ordinary Gate remains request-free and the candidate remains inert
+metadata. The adapter creates no ordinary Run, device selection/reservation,
+lease mutation, Runner contact/dispatch, retry, execution, or Audit, and
+ADR-0039/ADR-0114/P4 remain gated.
+
+## 515. Accepted external pending Run-intent convergence through the Sessions Gate (2026-09-22)
+
+The accepted Runtime-backed harness now writes a second pending Run-intent
+through an isolated Runtime CLI client after the Console Gate has completed its
+own review. A fresh authenticated Sessions Gate, with no local submit action,
+reads that external receipt through the candidate's shared API adapter and
+renders its payload-free timeline. Core verifies both pending receipts and the
+external Prompt while the durable completed Run set remains unchanged.
+
+This closes the cross-client write-to-read convergence path for the inert
+review surface across CLI and Web/App/Mobile. The read-only Gate performs no
+POST, and the candidate remains metadata-only: no ordinary Run, target
+selection/reservation, lease mutation, Runner contact/dispatch, retry,
+execution, or Audit was added. ADR-0039/ADR-0114/P4 remain gated.
+
+## 516. Accepted live pending Run-intent convergence through the Sessions Gate (2026-09-22)
+
+The accepted Runtime-backed harness now keeps a Flutter Sessions Gate open
+while an isolated Runtime CLI process submits another pending Run-intent. The
+Gate consumes the owner change feed, refreshes Prompt history and the pending
+metadata page, and expands the externally created payload-free timeline without
+the local scheduling-review action being invoked. Core verifies the additional
+Prompt and pending receipt while the completed durable Run set remains stable.
+
+This closes the live cross-client convergence path for an already-open
+Web/App/Mobile session. The scheduled refresh remains inert metadata: it does
+not create a Run, select or reserve a target, mutate a lease, contact or
+dispatch a Runner, retry or execute work, or publish Audit. ADR-0039/ADR-0114/P4
+remain gated.
+
+## 517. Accepted live pending Run-intent convergence through Runtime TUI (2026-09-22)
+
+The authenticated Rust Runtime TUI now has a cross-process live convergence
+check alongside the Console Gate. A PTY-held TUI opens a session and reads its
+pending Run-intent page, an independent Runtime CLI submits another pending
+intent with the next aggregate version, and the already-open TUI consumes the
+owner change feed before refreshing metadata and expanding the external
+payload-free timeline.
+
+The harness verifies that the external receipt and `submitted` event are
+visible to TUI, while the TUI itself issues no pending Run-intent write. The
+surface remains inert metadata: it does not create a Run, select or reserve a
+target, mutate a lease, contact or dispatch a Runner, retry or execute work, or
+publish Audit. ADR-0039/ADR-0114/P4 remain gated.
+
+## 518. Accepted live inventory refresh through Runtime TUI (2026-09-22)
+
+The accepted inventory activation harness now keeps an authenticated Runtime
+TUI open on the v2 owner-scoped inventory observation while the lifecycle
+registry image is atomically replaced with the next revision for the same
+owner/device binding. An explicit TUI `sync` re-reads the candidate and renders
+the new revision and heartbeat sequence, proving that an already-open client
+can observe a fresh resource image without restarting or changing its owner
+scope.
+
+The replacement remains a test-side observation image; no heartbeat listener,
+enrollment, credential, inventory authority, target selection, reservation,
+scheduling, Runner dispatch, execution, or Audit publication was added.
+ADR-0039/ADR-0114/P4 remain gated.
+
+## 519. Accepted live inventory refresh through the Console Gate (2026-09-22)
+
+The accepted inventory activation harness now keeps the authenticated
+Web/App/Mobile Sessions Gate mounted after the Runtime TUI has advanced the
+same owner-scoped lifecycle image. The Gate test atomically replaces that
+private image with the next revision using the required `0600` mode, waits for
+the bounded owner change-sync cadence, and verifies that the v2 panel renders
+the new revision and heartbeat without a local write or restart.
+
+This proves the shared Console Gate can converge on an externally refreshed
+resource observation. The replacement remains a test-side image; no heartbeat
+listener, enrollment, credential, inventory authority, target selection,
+reservation, scheduling, Runner dispatch, execution, or Audit publication was
+added. ADR-0039/ADR-0114/P4 remain gated.
+
+## 520. Accepted live client-instance/resource refresh through the Console Gate (2026-09-22)
+
+The accepted Gate harness now exercises the composed owner-scoped
+client-instance/resource reader, whose display-only rows carry both the
+per-client session IDs and the device observation. While Web/App/Mobile remains
+mounted, the test atomically replaces the private client-instance declaration
+image and the lifecycle observation image, preserving the required `0600`
+permissions. After the bounded owner change-sync cadence, the same Gate renders
+the new instance row and the matching device revision/heartbeat in its resource
+panel.
+
+This closes the live read path for the per-client session map and its associated
+resource observation through the already accepted composed view. The
+declarations remain test-side, display-only images; no instance registration,
+Prompt authority, heartbeat listener, enrollment, credential, target selection,
+reservation, scheduling, Runner dispatch, execution, or Audit publication was
+added. ADR-0039/ADR-0114/P4 remain gated.
+
+## 521. Accepted live client-instance/session refresh through the Console Gate (2026-09-22)
+
+The accepted Gate harness now enables the dedicated owner-scoped
+client-instance/session reader alongside the composed resource reader. The
+authenticated Web/App/Mobile Sessions Gate renders the five explicit
+CLI/TUI/Web/App/Mobile instance rows, each with its owner-scoped session IDs,
+and keeps the v1/v2 inventory panels in the same session view. While the Gate
+remains mounted, the harness atomically replaces the private client-instance
+image and verifies that the bounded owner change-sync refresh replaces the
+session rows with the new observed instance image, without a local POST or
+restart.
+
+This closes the live read/convergence path for distinct client-instance session
+views through the shared Console surface. The session map remains a test-side,
+read-only declaration: it does not register an instance, grant Prompt or
+device authority, enroll or heartbeat a device, select or reserve a target,
+schedule, dispatch or execute work, or publish Audit. ADR-0039/ADR-0114/P4
+remain gated.
+
+## 522. Accepted live client-instance/session and resource refresh through Runtime TUI (2026-09-22)
+
+The accepted inventory activation harness now keeps one authenticated Runtime
+TUI open with both the owner-scoped client-instance/session and composed
+client-instance/resource views selected. An independent test-side writer
+atomically replaces the private client-instance declaration image with a new
+five-client observation, and an explicit TUI `sync` re-reads both routes in
+the same process. The harness verifies the refreshed CLI/TUI/Web/App/Mobile
+instance rows and the joined device resource row without a restart or owner
+scope change.
+
+This completes the read-only TUI convergence path for the shared session map
+and device/resource image. The declaration remains a test-side observation;
+the sync does not register an instance, grant Prompt or device authority,
+enroll or heartbeat a device, select or reserve a target, schedule, dispatch
+or execute work, or publish Audit. ADR-0039/ADR-0114/P4 remain gated.
+
+## 523. Accepted fresh client-instance/session and resource reads through Runtime CLI (2026-09-22)
+
+After the accepted TUI refresh, the harness atomically writes a third
+owner-scoped five-client declaration image and starts fresh authenticated
+Runtime CLI processes for the dedicated session view and composed resource
+view. Both processes observe the new CLI/TUI/Web/App/Mobile rows and the
+joined device row, proving the CLI does not reuse an earlier instance image or
+broaden its owner scope between invocations.
+
+This completes the accepted CLI read path for a refreshed client-instance
+declaration. The image remains a test-side display-only observation; fresh
+reads do not register an instance, grant Prompt or device authority, enroll or
+heartbeat a device, select or reserve a target, schedule, dispatch or execute
+work, or publish Audit. ADR-0039/ADR-0114/P4 remain gated.
+
+## 524. Accepted Prompt write after live client-instance refresh through Runtime TUI (2026-09-22)
+
+The accepted production harness now keeps an authenticated Runtime TUI open on
+an owner-scoped client-instance/session view, opens the Conversation declared by
+the TUI instance, atomically replaces the declaration with a new instance image,
+and runs `sync` in the same process. The TUI reselects the refreshed instance,
+reopens its declared Conversation, and appends a Prompt; an independent
+authenticated Runtime read verifies the Prompt in the shared Conversation
+history.
+
+This closes the live-refresh-to-write path for a distinct client instance. The
+instance declaration remains a test-side display-only observation and the
+Prompt uses the ordinary owner/CAS/idempotency boundary; no instance
+registration, Prompt authority grant, heartbeat listener, enrollment,
+credential, target selection, reservation, scheduling, Runner dispatch,
+execution, or Audit publication was added. ADR-0039/ADR-0114/P4 remain gated.
+
+## 525. Accepted Prompt write after live client-instance refresh through the Console Gate (2026-09-22)
+
+The accepted Console Gate harness now keeps the authenticated Web/App/Mobile
+surface mounted while it selects the old TUI instance, atomically replaces the
+owner-scoped client-instance declaration and lifecycle image, waits for the
+bounded change-sync refresh, and reselects the new TUI instance. It then opens
+the same owner Conversation and appends a Prompt through the normal Console
+write path. An independent authenticated Runtime CLI read verifies that the
+Prompt is present in the shared Conversation history.
+
+This closes the live-refresh-to-write path for the shared Console surface after
+an instance projection changes. The declaration remains a test-side
+display-only observation and the Prompt uses the ordinary owner/CAS/idempotency
+boundary; no instance registration, Prompt authority grant, heartbeat listener,
+enrollment, credential, target selection, reservation, scheduling, Runner
+dispatch, execution, or Audit publication was added. ADR-0039/ADR-0114/P4
+remain gated.
+
+## 526. Accepted Prompt write after fresh client-instance refresh through Runtime CLI (2026-09-22)
+
+The accepted production harness now writes a fourth owner-scoped
+client-instance declaration image and starts a fresh authenticated Runtime CLI
+for the `client-cli-live-004` projection. The CLI reads the filtered session
+page, obtains the returned aggregate version, appends a Prompt with the
+instance binding and idempotency key, and independently reads the shared
+Conversation history to verify the stored Prompt.
+
+This closes the fresh-read-to-write path for CLI after a client-instance
+declaration changes, complementing the live TUI and Console Gate journeys. The
+declaration remains a test-side display-only observation and the Prompt uses
+the ordinary owner/CAS/idempotency boundary; no instance registration, Prompt
+authority grant, heartbeat listener, enrollment, credential, target selection,
+reservation, scheduling, Runner dispatch, execution, or Audit publication was
+added. ADR-0039/ADR-0114/P4 remain gated.
+
+## 527. Accepted external CLI Prompt convergence through Runtime TUI (2026-09-22)
+
+The accepted production harness now holds an authenticated Runtime TUI on the
+`client-tui-live-005` projection while a fresh Runtime CLI reads the filtered
+owner session page for `client-cli-live-005`. The external CLI uses the returned
+aggregate version and the ordinary owner/CAS/idempotency Prompt write to append
+the Prompt to the selected Conversation. The held TUI consumes the owner change
+feed, refreshes Prompt history, and renders the externally written Prompt after
+an explicit sync.
+
+This proves that two distinct client instances converge on the same owner
+Conversation while retaining their own filtered session projections. The
+client-instance image remains test-side display-only metadata; the slice adds
+no instance enrollment or registration, heartbeat or inventory authority,
+credential flow, target selection or reservation, scheduling, Runner dispatch,
+execution, or Audit publication. ADR-0039/ADR-0114/P4 remain gated.
+
+## 528. Accepted external CLI Prompt convergence through the Console Gate (2026-09-22)
+
+The accepted production harness now writes a refreshed five-client
+owner-scoped declaration, opens the real Web/App/Mobile Sessions Gate on the
+Web projection, and runs an independent Runtime CLI against the selected
+instance. The CLI discovers the current owner Conversation version and appends
+one Prompt with its instance binding and ordinary CAS/idempotency controls.
+The already mounted Gate consumes the owner change feed and renders that
+external Prompt in the selected session; the Gate itself performs no Prompt
+POST.
+
+This closes the external-write convergence path for the shared Console surface
+while keeping the client-instance declaration test-side and display-only. No
+instance registration or enrollment, heartbeat or inventory authority,
+credential flow, target selection or reservation, scheduling, Runner dispatch,
+execution, or Audit publication was added. ADR-0039/ADR-0114/P4 remain gated.
+
+## 529. Authenticated Runner execution-intent preview parity (2026-09-22)
+
+Forge Core now mounts an explicitly injected, owner-authenticated
+`runner-execution-intent/preview` candidate at the Conversation/Run boundary.
+The request repeats the owner, Prompt receipt, Run reference, Attempt, target,
+command digest, idempotency key, and direct-argv command declaration. Core
+checks every repeated identity and returns the canonical pure binding
+observation without loading a lease or device registry.
+
+Runtime CLI and TUI use the same bounded request fixture and strict response
+validator, while Snaplink Console's shared Web/App/Mobile Sessions Gate exposes
+an opt-in candidate reader and metadata-only card. All clients reject
+unknown/duplicate fields, owner/path or candidate-origin drift, selected
+targets, response identity drift, and any authority bit. The POST is sent once
+and is never replayed through bearer refresh.
+
+This slice establishes the authenticated handoff contract for a future Runner
+effect boundary. It does not persist commands, verify or issue leases, enroll
+or heartbeat devices, select or reserve capacity, schedule, contact or dispatch
+a Runner, execute a process, create a Run, or publish Audit. ADR-0039 remains
+planning-only, ADR-0114 remains Proposed/null, and P3b/P4 remain gated.
+
+## 530. Accepted Runner execution-intent preview across clients (2026-09-22)
+
+The accepted `EXECUTE + P4` assembly now proves the §529 handoff through the
+real authenticated Core HTTP boundary. The production harness builds one
+owner-bound Prompt/Run/Attempt/Command value, recomputes the shared
+`forge.runtime.runner-command.v1` digest, and consumes the same preview through
+Core, Runtime CLI, Runtime TUI, and the opt-in Snaplink Console Web/App/Mobile
+API adapter. Runtime-backed Conversation and Run data are seeded when the
+configured Runtime binary is present, so the TUI follows a real selected
+Conversation while the candidate remains a single POST.
+
+The cross-client result is metadata-only: Prompt/Run/Command identities and
+binding booleans are visible, `selected_target_id` stays null, and every
+authority bit stays false. The response contains no fencing token, argv, or
+workspace material. The accepted route still creates no command, reads or
+mutates no lease, selects or reserves no device, opens no Runner transport,
+executes no process, and publishes no Audit; ADR-0039 remains planning-only,
+ADR-0114 remains Proposed/null, and P4 remains the separate effect gate.
+
+## 531. Accepted Runner execution-intent preview through the real Console Gate (2026-09-22)
+
+The shared Console Sessions Gate now has an accepted cross-process E2E path for
+the Runner intent candidate. With the configured Runtime binary, the harness
+creates an owner-bound Conversation, Prompt, and Run in the Runtime Hub, starts
+the authenticated Core server under `EXECUTE + P4`, and mounts the Flutter
+Web/App/Mobile Gate against that server. The Gate discovers the durable session
+through its ordinary reads, posts the explicit candidate once, and renders the
+same metadata-only card consumed by Core, Runtime CLI, Runtime TUI, and the
+Console API adapter.
+
+The Console model now strictly decodes the six-field request envelope and
+reuses its canonical `toJson` projection for transport. The Gate test asserts
+that the target is only a declaration, the selected target is `none`, authority
+is false, and fencing token, argv, and workspace remain absent. This adds no
+command persistence, lease or reservation, device selection, Runner transport,
+execution, or Audit publication; ADR-0039 remains planning-only, ADR-0114
+remains Proposed/null, and P4 remains the separate effect gate.
+
+## 532. Cross-ecosystem Runner execution-intent receiver parity (2026-09-22)
+
+The canonical `forge.runner-execution-intent/v1` fixture is now mirrored into
+Aero-ID, Aero-IM, Aero-Vault, and Snaplink Audit Governance. Each receiver uses
+closed nested decoding and rejects duplicate or trailing JSON before validating
+the owner, Prompt receipt, Run reference, Attempt/Command identity, command
+digest, idempotency key, lease-proof binding, null selected target, and the
+all-false authority projection. Mutation coverage proves unknown fields,
+duplicate keys, owner drift, binding drift, selected-target injection, and
+authority elevation fail closed in every ecosystem receiver.
+
+This is offline interoperability evidence for the authenticated handoff. The
+receivers do not persist a command, authenticate or issue a lease, accept device
+or inventory authority, reserve or schedule capacity, open Runner transport,
+execute argv, create a receipt, or publish Audit. ADR-0039 remains
+planning-only, ADR-0114 remains Proposed/null, and P4 remains the separate
+effect gate.
+
+## 533. Canonical Runner execution-intent request consumption (2026-09-23)
+
+The six-field request used by the authenticated Runner execution-intent
+preview now has one canonical fixture at
+`docs/contracts/fixtures/forge-runner-execution-intent-request-v1.json`.
+Forge Core consumes it with strict unknown/trailing-field decoding, recomputes
+the `forge.runtime.runner-command.v1` digest, and checks the repeated
+Conversation/Prompt/Run/Attempt/Command identities before producing the
+metadata-only observation. Runtime keeps its embedded request consumer on the
+same bytes, and Snaplink Console exposes a duplicate-key-safe
+`ForgeRunnerExecutionIntentRequest.fromJsonText` used by its contract test.
+
+The slice only closes request-shape drift between Core, Runtime, and Console.
+It does not persist commands, verify or issue leases, enroll or heartbeat
+devices, select or reserve capacity, schedule, contact or dispatch a Runner,
+execute argv, create a receipt, or publish Audit. ADR-0039 remains
+planning-only, ADR-0114 remains Proposed/null, and P4 remains the separate
+effect gate.
+
+## 534. Cross-ecosystem Runner execution-intent request receiver parity (2026-09-23)
+
+The canonical six-field request fixture is now mirrored into Aero-ID, Aero-IM,
+Aero-Vault, and Snaplink Audit Governance. Each receiver strictly rejects
+unknown, duplicate, and trailing fields before checking the owner,
+Conversation/Prompt/Run/Attempt/Command identities, command digest,
+idempotency key, lease-proof binding, and null selected target. Mutation
+coverage keeps owner, binding, digest, and selection drift fail-closed.
+
+These receivers only prove offline interoperability for the authenticated
+handoff. They do not persist a command, verify or issue a lease, enroll or
+heartbeat a device, select or reserve capacity, schedule, contact or dispatch
+a Runner, execute argv, create a receipt, or publish Audit. ADR-0039 remains
+planning-only, ADR-0114 remains Proposed/null, and P4 remains the separate
+effect gate.
+
+## 535. Cross-ecosystem direct-argv digest recomputation (2026-09-23)
+
+Aero-ID, Aero-Vault, Snaplink Audit Governance, and Aero-IM now recompute the
+domain-separated forge.runtime.runner-command.v1 SHA-256 over the strict
+direct-argv command bytes while consuming the canonical request. The Go
+receivers use the same ordered JSON command shape and domain prefix as Core;
+the Rust receiver uses serde bytes and the shared SHA-256 domain. Canonical
+assertions and digest mutations prove that a repeated digest cannot be
+accepted merely because it equals a fixture label.
+
+This remains offline, authority-free validation. It does not persist a
+command, verify or issue a lease, enroll or heartbeat a device, select or
+reserve capacity, schedule, contact or dispatch a Runner, execute argv,
+create a receipt, or publish Audit. ADR-0039 remains planning-only,
+ADR-0114 remains Proposed/null, and P4 remains the separate effect gate.
+
+## 536. Cross-ecosystem direct-argv digest vector parity (2026-09-23)
+
+The command digest now has one canonical fixture at
+`docs/contracts/fixtures/forge-runner-command-digest-v1.json` with baseline,
+punctuation/empty-argument, and UTF-8 vectors. Forge Core, Forge Runtime,
+Snaplink Console, Aero-ID, Aero-IM, Aero-Vault, and Snaplink Audit Governance
+consume the same ordered command bytes, recompute the domain-separated
+`forge.runtime.runner-command.v1` SHA-256, and reject unknown, duplicate, or
+trailing JSON. The fixture is mirrored into each ecosystem and wired into the
+contract test script.
+
+This closes cross-language serialization drift at the digest boundary. It is
+offline interoperability evidence only: no command persistence, device or
+lease authority, reservation, scheduling, Runner transport, execution,
+receipt, or Audit publication is introduced. ADR-0039 remains planning-only,
+ADR-0114 remains Proposed/null, and P4 remains the separate effect gate.
+
+## 537. Cross-ecosystem Runner terminal receipt outcome vectors (2026-09-23)
+
+The canonical `forge.runner-terminal-receipt-vectors/v1` fixture now freezes
+three direct-argv terminal outcomes: `completed`, `failed`, and `uncertain`.
+Each value carries a lease grant, command and lease proof, command digest,
+terminal disposition, observed time, and expected projection. Forge Core,
+Forge Runtime, Snaplink Console, Aero-ID, Aero-IM, Aero-Vault, and Snaplink
+Audit Governance consume byte-identical mirrors. Their contract tests
+recompute the domain-separated command digest, bind proof fields to the grant
+and command, enforce the half-open lease window, and keep the uncertain case
+manual-reconciliation-only with automatic retry disabled.
+
+Strict nested decoding rejects unknown, duplicate, and trailing fields. Digest
+drift and an observation at the lease expiry boundary are rejected as well.
+This slice proves cross-language receipt-value semantics only: it does not
+authenticate a device, issue or persist a lease, open Runner transport,
+execute argv, persist a terminal receipt, publish Audit, or grant production
+authority. ADR-0039 remains planning-only, ADR-0114 remains Proposed/null, and
+P4 remains a separate effect gate.
+
+## 538. Cross-ecosystem session Runner receipt outcome vectors (2026-09-23)
+
+The session-bound `forge.session-runner-receipt-observation/v1` value now has
+one canonical vector fixture covering `completed`, `failed`, and `uncertain`.
+Each vector repeats the owner, Conversation/Prompt/Run identities, command,
+Attempt, target, digest, observation time, and nested terminal outcome. Forge
+Core, Forge Runtime, Snaplink Console, Aero-ID, Aero-IM, Aero-Vault, and
+Snaplink Audit Governance consume byte-identical mirrors and compare the
+binding fields and outcome flags.
+
+Strict consumers reject unknown, duplicate, and trailing fields, selected
+targets, authority elevation, identity drift, and uncertain automatic retry.
+The uncertain vector remains a manual-reconciliation signal. This slice is
+interoperability evidence only: it does not persist a session receipt, issue a
+lease, contact or dispatch a Runner, execute argv, retry work, or publish Audit.
+ADR-0039 remains planning-only, ADR-0114 remains Proposed/null, and P4 remains
+a separate effect gate.
+
+## 539. Console session Runner receipt outcome-vector import (2026-09-23)
+
+Snaplink Console's shared Web/App/Mobile Sessions surface now consumes the
+canonical `forge.session-runner-receipt-vectors/v1` envelope through an
+optional local reader or workspace picker. The strict Dart model re-decodes
+each nested session receipt, compares the expected command/Attempt/target,
+digest, disposition, time, and reconciliation flags, and keeps all authority
+bits false. The display-only panel exposes the completed, failed, and
+uncertain outcomes without command payload, target selection, or retry action.
+
+The default Gate supplies no reader and performs no vector request. Import is
+process-local and request-free; it does not persist a receipt, issue a lease,
+contact or dispatch a Runner, execute work, retry uncertain work, or publish
+Audit. ADR-0039 remains planning-only, ADR-0114 remains Proposed/null, and P4
+remains the separate effect gate.
+
+## 540. Cross-ecosystem session Runner receipt history reduction (2026-09-23)
+
+The session-bound receipt contract now has a bounded history projection at
+`forge.session-runner-receipt-history/v1`. Core and Runtime reduce up to 16
+owner/Conversation/Prompt/Run-bound observations with unique Attempt IDs in
+nondecreasing observed-time order; equal timestamps use Attempt ID as a
+deterministic tie-breaker. A failed observation may be followed by another
+attempt; completed and uncertain outcomes close the history. An
+uncertain latest value requires manual reconciliation and always keeps
+`automatic_retry=false`.
+
+The canonical history fixture is consumed by Runtime CLI/TUI, Snaplink Console
+Web/App/Mobile, Aero-ID, Aero-IM, Aero-Vault, and Snaplink Audit Governance.
+Strict consumers reject unknown, duplicate, trailing, foreign, out-of-order,
+summary-drift, lifecycle, selected-target, and authority-bearing values. The
+projection is display-only and performs no request, persistence, lease issue,
+target selection, retry, Runner transport, dispatch, execution, or Audit
+publication. ADR-0039 remains planning-only, ADR-0114 remains Proposed/null,
+and P4 remains the separate effect gate.
+
+## 541. Authenticated session Runner receipt history and manual reconciliation projection (2026-09-23)
+
+The bounded history value now has an explicitly mounted authenticated preview
+boundary at
+`/api/v1/conversations/{conversation_id}/runs/{run_id}/runner-receipt-history/preview`.
+Core revalidates the authenticated owner, path binding, strict envelope, and
+the pure history reduction; Runtime CLI/TUI and the Console Web/App/Mobile
+Sessions Gate can use it only with an explicit candidate request and origin.
+The normal server and Gate constructors remain request-free/closed, and the
+response is metadata-only.
+
+The uncertain terminal case also has a strict
+`forge.session-runner-reconciliation-projection/v1` receiver fixture across
+Aero-ID, Aero-IM, Aero-Vault, and Snaplink Audit Governance. It carries only
+the history summary and manual reconciliation flags: `automatic_retry=false`,
+`selected_target_id=null`, `preview_only=true`, and all authority fields false.
+Unknown, duplicate, trailing, binding, latest-value, flag, selection, and
+authority drift fail closed. This slice does not persist receipts, retry work,
+select or reserve devices, issue or renew leases, contact or execute a Runner,
+or publish Audit; ADR-0039 remains planning-only, ADR-0114 remains
+Proposed/null, and P4 remains the separate effect gate.
+
+## 542. Core authenticated session Runner reconciliation projection (2026-09-23)
+
+Forge Core now derives the canonical
+`forge.session-runner-reconciliation-projection/v1` value directly from a
+complete `forge.session-runner-receipt-history/v1` observation. The pure
+projector accepts only an uncertain terminal history, copies its bounded
+summary, and fixes manual reconciliation, disabled automatic retry, null target
+selection, preview-only output, and all-false authority.
+
+An explicit authenticated candidate is available at
+`/api/v1/conversations/{conversation_id}/runs/{run_id}/runner-reconciliation/preview`.
+It requires the existing conversation-read scope and binds the supplied
+history to the authenticated owner and path before deriving the projection.
+Only observation candidates and accepted EXECUTE assembly mount it; the normal
+production session constructor remains closed. The endpoint reads no store and
+does not persist receipts, create or retry an Attempt, select a target, issue a
+lease, contact or execute a Runner, or publish Audit. ADR-0039 remains
+planning-only, ADR-0114 remains Proposed/null, and P4 remains separate.
+
+## 543. Cross-client authenticated session Runner reconciliation projection (2026-09-23)
+
+The reconciliation projection is now consumable across the shared client
+surfaces. Forge Runtime consumes and strictly revalidates an explicit bounded
+`forge.session-runner-reconciliation-projection/v1` input through
+`remote session-runner-reconciliation preview --input FILE|-` and the matching
+TUI command; both paths remain local and request-free. Snaplink Console's
+shared Web/App/Mobile Sessions surface has the same strict Dart decoder and
+read-only panel, a bounded local import, and an opt-in authenticated API/Gate
+adapter for `runner-reconciliation/preview`. The adapter pins the complete
+history, requires an explicit candidate origin, does not refresh or replay an
+unauthorized POST, and the default Gate remains closed/request-free.
+
+Contract, API, widget, Gate, Core, Runtime, and ecosystem checks all reject
+unknown, duplicate, trailing, owner/path, source/latest, flag, selection, and
+authority drift. This closes the display-only reconciliation projection
+journey across CLI, TUI, Web, App, and Mobile without adding receipt
+persistence, retry, target selection, reservation, scheduling, lease issue or
+renewal, Runner transport or execution, or Audit publication. ADR-0039 remains
+planning-only, ADR-0114 remains Proposed/null, and P4 remains the separate
+effect gate.
+
+## 544. Accepted EXECUTE+P4 Core session Runner reconciliation E2E (2026-09-23)
+
+The accepted `EXECUTE + P4` Core harness now exercises the minimal
+session-bound reconciliation chain through the real authenticated HTTP server.
+It posts a canonical owner-scoped receipt history to
+`runner-receipt-history/preview`, feeds the canonical history response into
+`runner-reconciliation/preview`, and checks that the resulting projection
+matches the pure projector: uncertain terminal state, manual reconciliation,
+`automatic_retry=false`, null selected target, and all-false authority.
+
+The opt-in Console harness now reuses that same authenticated Core server and
+canonical history. Its API entry performs one real HTTP projection POST, while
+the Gate entry (when a real seeded Runtime is configured) selects the owner
+Conversation and Run through Core HTTP before rendering the same projection
+panel. The default Gate remains request-free; the harness is enabled only by
+`FORGE_CONSOLE_E2E=1` and the Gate path additionally requires
+`FORGE_RUNTIME_BIN`.
+
+The harness supplies only the lifecycle observation image and leaves the
+execution lease registry and independent Runner authority unset. It therefore
+opens no Runner transport, executes no argv, persists no receipt or Attempt,
+mutates no lease, retries no work, and publishes no Audit. The normal
+production constructor remains closed; ADR-0039 remains planning-only,
+ADR-0114 remains Proposed/null, and P4 remains the separate effect gate.
+
+## 545. Authenticated Runtime session Runner reconciliation consumers (2026-09-23)
+
+Runtime now has an explicit authenticated `remote-preview` path alongside the
+offline projection consumer. The CLI reads a bounded complete receipt history,
+posts it once to the owner/Conversation/Run-bound
+`runner-reconciliation/preview` candidate, and recomputes the pure projection
+before emitting JSON. The TUI has the matching
+`session-runner-reconciliation-remote-preview --input FILE` command, requires
+the selected session to match the history, and clears the local view after an
+authorization failure. Mock transport and TUI checks plus the accepted Core /
+Runtime CLI/TUI harness cover path, body, projection, authority, and target
+drift; no lease/device/Runner path is opened.
+
+This slice only extends authenticated read-only observation: it never retries,
+selects or reserves a target, persists a receipt, dispatches or executes a
+Runner, or publishes Audit. ADR-0039 remains planning-only, ADR-0114 remains
+Proposed/null, and P4 remains the separate effect gate.
+
+## 546. Console authenticated session Runner reconciliation chain (2026-09-23)
+
+Snaplink Console now exposes an explicit two-step API helper for the
+owner-bound session Runner reconciliation candidate. It first posts the
+complete receipt history to `runner-receipt-history/preview`, strictly accepts
+the canonical returned history, and then posts that value once to
+`runner-reconciliation/preview`. The existing one-step API and default Gate
+remain unchanged; this helper is an additive opt-in seam for Web/App/Mobile
+callers that need the complete Core observation chain.
+
+Focused API coverage checks request order, exact owner/Conversation/Run paths,
+bearer binding, canonical history forwarding, and the display-only projection.
+The accepted Console API harness crosses both authenticated Core routes. Both
+requests remain stateless and read-only: no receipt persistence, retry, target
+selection, reservation, scheduling, lease mutation, Runner transport or
+execution, or Audit publication is enabled. ADR-0039 remains planning-only,
+ADR-0114 remains Proposed/null, and P4 remains the separate effect gate.
+## 547. Console Gate authenticated session Runner reconciliation chain (2026-09-23)
+
+The shared Web/App/Mobile Sessions Gate now has a separately default-off
+history-chain candidate. When explicitly enabled with an owner-bound history,
+candidate origin, and restored credential, the Gate first calls
+`runner-receipt-history/preview`, strictly validates the returned canonical
+history through the API helper, and then calls `runner-reconciliation/preview`
+with that value. The existing one-step candidate and default constructor keep
+their previous behavior.
+
+Gate coverage checks exact bearer/path/body bindings and ensures both calls
+render one display-only projection. The accepted Runtime-backed Console
+harness exercises the same two HTTP hops against Core. This remains a
+stateless observation chain: it adds no receipt persistence, retry, target
+selection, reservation, scheduling, lease mutation, Runner transport or
+execution, or Audit publication. ADR-0039 remains planning-only, ADR-0114
+remains Proposed/null, and P4 remains the separate effect gate.
+
+## 548. Runtime authenticated session Runner reconciliation chain (2026-09-23)
+
+Runtime CLI and TUI `session-runner-reconciliation remote-preview` now follow
+the same explicit two-hop boundary as Console. They first post the bounded
+owner/Conversation/Run-bound receipt history to `runner-receipt-history/preview`,
+strictly validate Core's canonical reduction, and forward only that returned
+history to `runner-reconciliation/preview`. The TUI also refuses a request
+whose Run differs from the process-local selected Run when one is selected;
+the guard is display scoping and grants no authority.
+
+Focused Runtime tests verify request order, exact paths, bearer binding,
+canonical forwarding, response reduction, selected-Run mismatch rejection, and
+the unchanged offline request-free projection command. The accepted Core /
+Runtime harness therefore observes one consistent source image across CLI,
+TUI, and Console while remaining stateless: no receipt persistence, retry,
+target selection, reservation, scheduling, lease mutation, Runner transport or
+execution, or Audit publication is enabled. ADR-0039 remains planning-only,
+ADR-0114 remains Proposed/null, and P4 remains the separate effect gate.
+
+## 549. Accepted scheduler selection preview through the Console Gate (2026-09-23)
+
+The accepted `EXECUTE + P4` inventory activation harness now drives the real
+authenticated Web/App/Mobile Sessions Gate through the owner-scoped scheduler
+selection preview route. The route evaluates the owner v2 resource inventory,
+while the Gate pins the Conversation/Run/Attempt and requirements, posts one
+preview request, and renders the bounded no-candidate result with all
+authority flags false. The API preview path and default Gate remain unchanged;
+the Gate journey is an explicit opt-in candidate.
+
+This closes the accepted resource-to-scheduler-preview display path without
+creating a reservation or lease, selecting a target for execution, dispatching
+or executing a Runner, persisting an Attempt/receipt, or publishing Audit.
+ADR-0039 remains planning-only, ADR-0114 remains Proposed/null, and P4 remains
+the separate effect gate.
+
+
+## 550. Accepted scheduler selection preview through Runtime TUI (2026-09-23)
+
+The accepted `EXECUTE + P4` inventory activation harness now drives the
+authenticated Runtime TUI through the same owner-scoped scheduler selection
+preview route already covered by Core, Runtime CLI, and the Console Gate. A
+PTY command posts one bounded Conversation/Run/Attempt request and verifies
+the human rendering of the deterministic no-candidate result with
+`preview_only=true` and all authority flags false. The TUI helper is opt-in
+behind `FORGE_RUNTIME_BIN`.
+
+This closes the Runtime TUI display path only. It does not select a target,
+create a reservation or lease, dispatch or execute a Runner, persist an
+Attempt or receipt, or publish Audit. ADR-0039 remains planning-only,
+ADR-0114 remains Proposed/null, and P4 remains the separate effect gate.
+
+## 551. Accepted cross-client harness coverage in the contract script (2026-09-23)
+
+`scripts/test-forge-contracts.sh` now builds or reuses a real `forge-runtime`
+binary and runs the accepted inventory activation, scheduler-lease, and
+Runner preview chains with `FORGE_RUNTIME_BIN` plus
+`FORGE_CONSOLE_E2E=1`. The contract run therefore exercises the authenticated
+Runtime CLI/TUI and Web/App/Mobile Gate paths instead of stopping at the
+Core-only branch; it also invokes the accepted Runner execution-intent and
+receipt/evidence/reconciliation chains.
+
+This is a verification-coverage change. The exercised routes remain
+preview/read-only or explicitly lease-scoped test routes and do not enable
+live Runner transport, execution, durable receipt authority, or Audit
+publication. ADR-0039 remains planning-only, ADR-0114 remains Proposed/null,
+and P4 remains the separate effect gate.
+
+## 552. Policy-complete scheduler preview parity with the fenced lease (2026-09-23)
+
+The accepted `EXECUTE` route assembly now injects one owner-private placement
+policy source into both scheduler-selection preview and fenced scheduler-lease
+evaluation. The strict 0600 policy image supplies only the residency, trust,
+sandbox, and concurrency declarations that the lifecycle observation leaves
+unknown; each row must match the observed device/Runner identity and exact
+revision, generation, and heartbeat sequence. Preview and a later lease claim
+therefore evaluate the same policy-complete candidate set. Without the policy
+image, the existing lifecycle-only preview remains a read-only comparison and
+the lease route keeps its fail-closed `no_eligible_target` behavior.
+
+Focused Core tests cover the positive policy-complete preview, owner and
+counter binding failures, and the policy-backed lease replay. This does not
+select or reserve a target through preview, contact or dispatch a Runner,
+authorize a command, persist a receipt, publish Audit, or execute work.
+ADR-0039 remains planning-only, ADR-0114 remains Proposed/null, and P4 still
+gates any live Runner effect.
+
+## 553. Accepted positive policy-complete scheduler preview across clients (2026-09-23)
+
+The accepted `EXECUTE + P4` activation harness now writes a fresh owner-scoped
+lifecycle observation and the matching strict private policy registry. The
+authenticated Core route returns the deterministic `device-a/runner-a`
+candidate, while preview authority remains all false. Runtime CLI and TUI use
+the same request and assert the selected pair; the Snaplink Console Web/App/
+Mobile API adapter and Sessions Gate make the same bounded POST and assert the
+same result. The existing lifecycle-only no-candidate harness remains in place,
+so a positive result cannot be produced from stale or missing policy metadata.
+
+This slice verifies cross-client policy parity only. It does not claim a lease,
+reserve capacity, contact or execute a Runner, persist a receipt, publish Audit,
+or enable enrollment/heartbeat authority. ADR-0039 remains planning-only,
+ADR-0114 remains Proposed/null, and P4 remains the separate effect gate.
+
+## 554. Accepted cross-client scheduler lease lifecycle (2026-09-23)
+
+The accepted `EXECUTE + P4` scheduler-lease harness now covers the lifecycle
+after the initial cross-client claim. Runtime CLI first renews the active
+proof, then the harness performs one fresh renewal through the authenticated
+Core route and passes that exact request and idempotency key to independent
+Snaplink Console Web/App/Mobile API clients. Each client strictly re-decodes
+the same renewed grant and verifies the replayed epoch, target binding, and
+all-false execution/dispatch/Audit authority.
+
+The resulting epoch and fencing proof are then passed to a real authenticated
+Sessions Gate, which submits one explicit release candidate. The Gate renders
+the inactive reservation and preserves the historical epoch while withholding
+the fencing token. This is lifecycle interoperability evidence for the
+existing fenced lease boundary; it does not add Runner transport or command
+execution, receipt persistence, Audit publication, device enrollment, or
+heartbeat authority. ADR-0039 remains planning-only, ADR-0114 remains
+Proposed/null, and P4 remains the separate effect gate.
+
+## 555. Console scheduler preview selected-Run stale guard (2026-09-23)
+
+The authenticated Console Sessions surface now applies the same selected
+Conversation/Run display-scope guard already used by Runtime TUI to the
+opt-in scheduler-selection preview. When the mounted screen has a selected
+Conversation or Run whose binding differs from the configured preview request,
+the Gate clears any stale projection and does not issue the candidate POST;
+the initial request-free/empty-session behavior remains compatible for an
+explicit candidate harness.
+
+Focused Gate coverage proves that a mismatched selected Run produces zero
+scheduler-preview requests, while the accepted policy-complete Web/App/Mobile
+Gate path still renders the selected metadata with all authority false. This
+is a negative display-scope check only: it adds no target selection,
+reservation or lease, Runner transport/execution, Attempt/receipt
+persistence, enrollment, or Audit publication. ADR-0039 remains
+planning-only, ADR-0114 remains Proposed/null, and P4 remains the separate
+effect gate.
+
+## 556. Scheduler lease stale-epoch and idempotency-conflict fencing (2026-09-23)
+
+The authenticated scheduler-lease route now has a focused negative lifecycle
+slice after renewal. A release carrying the previous epoch and fencing proof
+returns `lease_stale` and leaves the replacement reservation untouched; the
+current proof can then release it. Reusing that completed release's
+idempotency key with a changed target returns `idempotency_conflict`, so a
+cross-client retry cannot silently replay a different release request.
+
+Snaplink Console's API contract test surfaces the stale response exactly once
+without an unauthorized retry or client-side replay. This is fencing and
+idempotency evidence around the existing lease boundary only. It adds no
+Runner transport or command execution, receipt persistence, Audit
+publication, device enrollment, or heartbeat authority. ADR-0039 remains
+planning-only, ADR-0114 remains Proposed/null, and P4 remains the separate
+effect gate.
+
+## 557. Cross-ecosystem shared-session receiver parity (2026-09-23)
+
+The canonical `forge-shared-session-v1.json` compatibility envelope is now
+mirrored and strictly consumed by Aero-ID, Aero-IM, Aero-Vault, and Snaplink
+Audit Governance. Receiver tests preserve the Conversation list/detail,
+newest-first Prompt history, owner-local change cursor, and storage-only Prompt
+append receipt while rejecting unknown, duplicate, and trailing fields plus
+foreign binding, role, cursor, and replay drift.
+
+This closes a cross-ecosystem contract gap in the authenticated shared-session
+foundation without adding a session store, owner authority, Prompt write,
+device enrollment, inventory authority, scheduling, Runner transport or
+execution, receipt persistence, or Audit publication. ADR-0039 remains
+planning-only, ADR-0114 remains Proposed/null, and P4 remains the separate
+effect gate.
+
+## 558. Accepted inventory refresh convergence across Console API clients (2026-09-23)
+
+The accepted owner-scoped inventory refresh harness now starts independent
+Snaplink Console Web, App, and Mobile API clients after replacing the private
+lifecycle image. Each client reads v1 inventory, lossless v2 inventory, and
+the composed client-instance/resource view, then verifies the same device
+revision, generation, heartbeat sequence, liveness, and reservation metadata.
+
+This extends the existing Runtime TUI and Console Gate refresh evidence to the
+shared API adapters without adding enrollment or heartbeat authority. The
+readers remain display-only: no inventory mutation, target selection,
+reservation, scheduling, Runner transport/execution, receipt persistence, or
+Audit publication is introduced. ADR-0039 remains planning-only, ADR-0114
+remains Proposed/null, and P4 remains the separate effect gate.
+
+## 559. Lease renewal fencing at dispatch admission (2026-09-23)
+
+The metadata-only Runner dispatch-admission preview now consumes the same
+fenced lease history as scheduler renewal. After a lease is renewed, a request
+carrying the previous epoch and token returns `lease_stale`; a request carrying
+the replacement proof returns the redacted admission observation with the
+replacement epoch and all dispatch, execution, and Audit authority false.
+
+This also fixes the durable read adapter's lookup ordering: it scans every
+history entry for the target before returning a matching historical proof, so a
+stale entry cannot be returned before a newer epoch is noticed. The slice adds
+no Runner transport or command execution, receipt persistence, Audit
+publication, device enrollment, or heartbeat authority. ADR-0039 remains
+planning-only, ADR-0114 remains Proposed/null, and P4 remains the separate
+effect gate.
+
+## 560. Cross-ecosystem scheduler lease release receipt parity (2026-09-23)
+
+The canonical `forge.execution-lease-release/v1` terminal release observation
+is now mirrored byte-for-byte and strictly consumed by Aero-ID, Aero-IM's audit
+connector, Aero-Vault's governance relay, and Snaplink Audit Governance. Each
+receiver binds the owner, Conversation/Run/Attempt, device/Runner instance,
+fencing epoch, and release time, while requiring all placement, reservation,
+lease, execution, dispatch, and Audit authority flags to remain false.
+Unknown, duplicate, missing, trailing, binding, unsafe-epoch, and authority
+mutations fail closed. An exact idempotent replay remains representable through
+the bounded `replayed` flag.
+
+This is offline interoperability evidence for the existing fenced release
+boundary. Receivers do not release a lease, select or reserve a target, contact
+or dispatch a Runner, persist a receipt, retry work, or publish Audit. ADR-0039
+remains planning-only, ADR-0114 remains Proposed/null, and P4 remains the
+separate effect gate.
+
+## 561. Console Gate scheduler lease selected-scope stale guards (2026-09-23)
+
+The authenticated Web/App/Mobile Sessions Gate now applies the selected
+Conversation/Run display-scope guard to explicit scheduler lease claim,
+renewal, and release candidates. If a configured candidate refers to a
+different Conversation or Run than the mounted Sessions selection, the Gate
+clears any stale candidate state and makes no POST, retry, or replay. An
+empty/default Gate remains compatible with the existing opt-in candidate
+seams.
+
+Focused Gate tests cover claim Run drift, renewal Conversation drift, and
+release Run drift. This remains a negative display-scope check only: it adds
+no Runner transport or command execution, receipt persistence, Audit
+publication, enrollment or heartbeat authority, or live scheduler effect.
+ADR-0039 remains planning-only, ADR-0114 remains Proposed/null, and P4
+remains the separate effect gate.
+
+## 562. Runtime TUI paired inventory/resource refresh convergence (2026-09-23)
+
+The Runtime TUI's explicit inventory refresh now reads the owner-scoped v2
+inventory and client-instance/resource view as a paired observation. It
+compares the shared device and Runner-instance identities together with the
+revision, generation, and heartbeat counters. If the pair does not converge,
+the TUI retains the previous pair, does not advance the owner change cursor,
+and lets the next `sync` retry the same boundary; a converged pair is then
+persisted and displayed together.
+
+This is a display-consistency guard only. It adds no enrollment or heartbeat
+authority, inventory authority, placement, reservation, lease, scheduling,
+Runner transport or execution, receipt, or Audit effect. ADR-0039 remains
+planning-only, ADR-0114 remains Proposed/null, and P4 remains the separate
+effect gate.
+
+## 563. Runtime TUI paired client-instance session/resource refresh convergence (2026-09-23)
+
+The Runtime TUI now treats the explicit client-instance session-view and
+resource-view reads as one owner-scoped observation pair. It compares the
+owner declaration and complete instance rows, including session visibility,
+status, client kind, and observation time. When a refresh returns different
+images, the TUI restores the previous pair, keeps the client-instance filter
+fail-closed, and does not advance the owner change cursor; the next `sync`
+retries the same boundary. A matching pair is committed and rendered together.
+
+This is a display-consistency guard for per-instance session and resource
+views. It adds no Prompt authority, enrollment or heartbeat authority,
+inventory mutation, placement, reservation, lease, scheduling, Runner
+transport or execution, receipt, or Audit effect. ADR-0039 remains
+planning-only, ADR-0114 remains Proposed/null, and P4 remains the separate
+effect gate.
+
+## 564. Core Attempt lifecycle dispatch boundary (2026-09-23)
+
+Forge Core now defines the pure `forge.runner-attempt-boundary/v1` value
+contract. It reuses the canonical Attempt state graph after the existing
+Runner execution-boundary preview and exposes the proposed lifecycle edge
+without persisting an Attempt. Only `accepted -> starting` and
+`starting -> running` are dispatchable; legal terminal or preparatory edges
+remain visible but fail closed with `attempt_transition_not_dispatchable`, and
+illegal edges fail closed with `attempt_transition_invalid`.
+
+The observation repeats only redacted Conversation/Run/Attempt/command/target
+and lease-epoch metadata, keeps `preview_only=true`, and fixes every
+Attempt/reservation/execution/dispatch/Audit authority bit to false. This
+Core-only slice has no HTTP route, lease mutation, Runner transport, command
+execution, receipt persistence, or Audit publication. ADR-0039 remains
+planning-only, ADR-0114 remains Proposed/null, and P4 remains the separate
+effect gate.
+
+## 565. Cross-ecosystem Runner command terminal receipt ABI parity (2026-09-23)
+
+The canonical `forge.runner-command-terminal-receipt/v1` value is now
+mirrored byte-for-byte into Aero-ID, Aero-IM, Aero-Vault, and Snaplink Audit
+Governance. Each strict receiver recomputes the domain-separated command
+digest, binds the terminal receipt to the same Attempt/target/epoch/fencing
+proof and observation window, validates completed/failed/uncertain disposition
+shapes, and rejects unknown, duplicate, trailing, digest, proof, expiry, and
+authority mutations.
+
+This closes the cross-ecosystem ABI gap for immutable Runner command/terminal
+observations only. The receivers do not execute argv, open Runner transport,
+persist commands or receipts, issue or mutate leases, reserve devices, retry
+uncertain work, or publish Audit. ADR-0039 remains planning-only, ADR-0114
+remains Proposed/null, and P4 remains the separate execution gate.
+
+## 566. Runtime CLI offline Runner Attempt boundary consumer (2026-09-23)
+
+Forge Runtime now exposes `device runner-attempt-boundary-preview --input
+FILE|-` as a bounded, read-only client consumer of
+`forge.runner-attempt-boundary/v1`. It rejects duplicate, unknown, malformed,
+trailing, lifecycle, and authority drift, then emits either the strict JSON
+observation or a metadata-only human rendering. The command does not open
+HTTP, read or mutate a lease, persist an Attempt, contact a Runner, authorize
+or dispatch a command, execute argv, or publish Audit; ADR-0039 remains
+planning-only, ADR-0114 remains Proposed/null, and P4 remains the separate
+effect gate.
+
+## 567. Cross-ecosystem Runner Attempt boundary receiver parity (2026-09-23)
+
+The canonical `forge.runner-attempt-boundary/v1` observation is now mirrored
+byte-for-byte into Aero-ID, Aero-IM, Aero-Vault, and Snaplink Audit Governance.
+Their strict receivers bind the same owner, Conversation, Run, Attempt,
+command, target, and lease epoch, then recompute lifecycle target,
+transition-valid, dispatchable, readiness, rejection, preview, and all-false
+authority predicates. Unknown, duplicate, trailing, lifecycle/readiness, and
+authority drift fail closed.
+
+This closes the offline ABI parity gap for the Attempt lifecycle boundary. It
+does not add an HTTP route, Attempt persistence, lease mutation, reservation,
+Runner transport, command authorization, argv execution, receipt persistence,
+or Audit publication; ADR-0039 remains planning-only, ADR-0114 remains
+Proposed/null, and P4 remains the separate effect gate.
+
+## 568. Console Web/App/Mobile Runner Attempt boundary display consumer (2026-09-23)
+
+Snaplink Console now provides one shared strict Flutter model and a read-only
+card for `forge.runner-attempt-boundary/v1`, so Web, App, and Mobile render the
+same owner/Conversation/Run/Attempt/command/target and lifecycle metadata. The
+model rejects unknown, duplicate, trailing, lifecycle, rejection-order, and
+authority drift; the card exposes no transition control, lease proof, argv, or
+Runner action. The contract and widget tests consume the canonical fixture
+without opening HTTP or changing the default request-free Gate.
+
+This is a local display consumer only. It adds no Prompt or Attempt
+persistence, lease mutation, reservation, scheduling, Runner transport,
+command authorization, argv execution, receipt persistence, or Audit
+publication; ADR-0039 remains planning-only, ADR-0114 remains Proposed/null,
+and P4 remains the separate effect gate.
+
+## 569. Console Sessions Gate scoped local Runner Attempt boundary projection/import (2026-09-23)
+
+Snaplink Console's shared Web/App/Mobile Sessions Gate now accepts an
+explicitly enabled local projection/import seam for
+`forge.runner-attempt-boundary/v1`. The caller supplies an owner and selected
+Conversation/Run/Attempt scope; the Gate and Sessions screen strictly
+re-decode the observation, require the owner and scope to match, and render
+the existing metadata-only Attempt boundary card. A selected-session or owner
+drift rejects the value, and a failed import clears the previous local
+projection before surfacing the error.
+
+The seam is disabled by default and uses no HTTP reader. It adds no lease
+read or mutation, Prompt or Attempt persistence, reservation, scheduling,
+Runner transport, command authorization, argv execution, receipt persistence,
+or Audit publication; ADR-0039 remains planning-only, ADR-0114 remains
+Proposed/null, and P4 remains the separate effect gate.
+
+## 570. Runtime TUI offline Runner Attempt boundary consumer (2026-09-23)
+
+Forge Runtime's interactive TUI now exposes
+`runner-attempt-boundary-preview --input FILE` as a bounded local consumer of
+the canonical `forge.runner-attempt-boundary/v1` observation. It reuses the
+strict Runtime decoder and metadata-only renderer, so unknown, duplicate,
+trailing, lifecycle/readiness, and authority drift fail closed while the
+human output contains only redacted owner, Attempt lifecycle, epoch,
+rejection, and all-false authority metadata. The path-only form preserves
+interactive stdin, and the focused tests prove canonical rendering and
+no-request rejection behavior.
+
+This is a TUI display seam only. It adds no HTTP request, Attempt persistence,
+lease read or mutation, target selection, reservation, scheduling, Runner
+transport, command authorization, argv execution, receipt persistence, or
+Audit publication; ADR-0039 remains planning-only, ADR-0114 remains
+Proposed/null, and P4 remains the separate effect gate.
+
+## 571. Authenticated Runner Attempt boundary preview candidate (2026-09-23)
+
+Forge Core now mounts the opt-in owner/path-bound
+`runner-attempt-boundary/preview` candidate after the existing authenticated
+Runner execution-boundary preview. The request carries the same strict
+redacted execution inputs plus one caller-declared Attempt transition; Core
+re-reads the owner-private fenced lease, recomputes the execution boundary,
+then projects the canonical `forge.runner-attempt-boundary/v1` observation.
+The response binds owner, Conversation, Run, Attempt, command, target, and
+lease epoch, and keeps lifecycle readiness, `preview_only`, and all Attempt,
+reservation, execution, dispatch, and Audit authority predicates explicit.
+
+The candidate is mounted only with accepted `EXECUTE + P4` activation and an
+independent Runner authority declaration, uses the existing lease-read scope,
+and remains disabled by the ordinary constructor. It performs no Attempt
+persistence, lease mutation or renewal, reservation, scheduling, Runner
+transport, command authorization, argv execution, receipt persistence, or
+Audit publication. Route tests cover the ready transition, redacted response,
+and authority-free 404; ADR-0039 remains planning-only, ADR-0114 remains
+Proposed/null, and P4 remains the separate effect gate.
+
+## 572. Canonical Prompt append request/receipt parity (2026-09-23)
+
+Forge Core's pure `forge.prompt-append-receipt/v1` projection now binds an
+owner-scoped Conversation, expected aggregate version, user role, Prompt
+identity/version/time, and content/idempotency digests while omitting Prompt
+content. Forge Runtime and Snaplink Console recompute and strictly consume the
+same metadata-only envelope, and Aero-ID, Aero-IM, Aero-Vault, and Snaplink
+Audit Governance consume byte-identical mirrors. Unknown, duplicate, trailing,
+digest, binding, version, content-disclosure, replay, and authority drift fail
+closed.
+
+This is compatibility evidence for the existing owner/CAS Prompt append path.
+It adds no HTTP route, Prompt store mutation, Run creation, device selection,
+reservation, dispatch, scheduling, Runner transport, execution, or Audit
+publication; ADR-0039 remains planning-only, ADR-0114 remains Proposed/null,
+and P4 remains the separate effect gate.
+
+## 573. Runtime authenticated Runner Attempt boundary consumers (2026-09-23)
+
+Forge Runtime now consumes the authenticated Core
+`runner-attempt-boundary/preview` candidate through an explicit CLI command,
+`remote placement runner-attempt-boundary-preview --input FILE|-`, and an
+explicit TUI command, `runner-attempt-boundary-remote-preview --input FILE`.
+Both clients strictly validate the flattened execution request and the
+canonical `forge.runner-attempt-boundary/v1` response, binding owner,
+Conversation, Run, Attempt, command, target, lease epoch, current state, and
+caller-declared transition. The response renderer exposes lifecycle metadata
+only and requires `preview_only=true` plus all Attempt/reservation/execution/
+dispatch/Audit authority fields false. TUI additionally requires the request
+Conversation to match the selected session.
+
+The POST client uses the existing no-retry path; a 401 is returned once and is
+never retried. Input is bounded and duplicate/unknown/trailing JSON or binding,
+lifecycle, readiness, and authority drift fails closed. This slice adds no
+Attempt persistence, lease mutation or renewal, reservation, scheduling,
+Runner transport, command authorization, argv execution, receipt persistence,
+enrollment, heartbeat, or Audit publication; ADR-0039 remains planning-only,
+ADR-0114 remains Proposed/null, and P4 remains the separate effect gate.
+
+## 574. Console authenticated Runner Attempt boundary candidate (2026-09-23)
+
+Snaplink Console Web/App/Mobile now share a strict origin-pinned API adapter
+and an explicit Sessions Gate candidate for the existing
+`runner-attempt-boundary/preview` projection. The adapter validates the
+owner/path/Attempt/command/target/epoch/state/transition binding, posts once
+with unauthorized retry disabled, and the Screen rejects selected-scope,
+response, authority, and stale-generation drift. The default Gate remains
+request-free and the response is rendered only as a display-only lifecycle
+observation.
+
+This is a read-only consumer of the Core candidate. It adds no Attempt or
+Prompt persistence, lease mutation or renewal, device selection or
+reservation, scheduling, Runner transport or argv execution, receipt
+persistence, or Audit publication; ADR-0039 remains planning-only, ADR-0114
+remains Proposed/null, and P4 remains the separate effect gate.
+
+## 575. Core Attempt boundary stale-lease fencing (2026-09-23)
+
+The authenticated `runner-attempt-boundary/preview` candidate now has a
+focused stale-epoch negative path. The test claims one owner-private lease,
+renews it through the existing write adapter, and sends the original
+Attempt-bound request to the read-only route; the route reopens the durable
+history and returns `lease_stale` before producing lifecycle preview. This
+proves that the Attempt boundary cannot consume a superseded proof even when
+the historical entry still exists.
+
+The slice changes no Runtime or Console client surface and adds no lease
+mutation to the preview route. It performs no Attempt persistence, Runner
+transport, command authorization, argv execution, receipt persistence,
+reservation, scheduling, enrollment, heartbeat, or Audit publication; ADR-0039
+remains planning-only, ADR-0114 remains Proposed/null, and P4 remains the
+separate effect gate.
+
+## 576. Accepted Runner Attempt boundary cross-client evidence (2026-09-23)
+
+The accepted `EXECUTE + P4` harness now sends one owner/path-bound
+`runner-attempt-boundary/preview` request directly to Core, then consumes the
+same flattened request and redacted response through Runtime's authenticated
+CLI and selected-session TUI clients and Snaplink Console's shared
+Web/App/Mobile API and Sessions Gate. The harness verifies the same owner,
+Conversation, Run, Attempt, command, target, epoch, lifecycle edge, and
+display-only result at each boundary, while rejecting proof and command
+material.
+
+The harness snapshots the durable lease image before and after all previews to
+prove that the accepted candidate performs no lease mutation. Attempt
+persistence, reservation, scheduling, Runner transport, command
+authorization, argv execution, receipt persistence, and Audit publication
+remain absent; the ordinary production constructor stays 404/default-off.
+ADR-0039 remains planning-only, ADR-0114 remains Proposed/null, and P4
+remains the separate effect gate.
+
+## 577. Console authenticated Prompt append receipt consumer (2026-09-23)
+
+Snaplink Console's shared Web/App/Mobile API now exposes an explicit
+`appendPromptReceipt` adapter over the authenticated owner-scoped Prompt
+append endpoint. It validates the caller-declared owner, Conversation path,
+user role, expected aggregate version, Prompt identity, and exact
+idempotency-key binding before returning the canonical
+`forge.prompt-append-receipt/v1` observation. The adapter consumes the strict
+append response but returns only content-free receipt metadata with
+`content_included=false` and every downstream authority flag false.
+
+The POST is single-shot, including on HTTP 401, and the shared Sessions Gate
+does not wire this method by default, so startup remains request-free. The
+existing Prompt append write remains the only storage operation; this slice
+adds no Run creation, device selection, reservation, scheduling, Runner
+transport or execution, receipt persistence, or Audit publication. ADR-0039
+remains planning-only, ADR-0114 remains Proposed/null, and P4 remains the
+separate effect gate.
+
+## 578. Runner Attempt boundary route negative closure (2026-09-23)
+
+The authenticated `runner-attempt-boundary/preview` candidate now has a
+separate negative-path contract test for its HTTP boundary. A non-POST request
+is rejected with the explicit `Allow: POST` response, query parameters are
+rejected before the body is interpreted, and a well-formed request carrying an
+unknown Attempt lease returns `lease_not_found` instead of producing a
+lifecycle observation. These checks keep the candidate bounded to one
+owner/path-bound, proof-backed metadata preview.
+
+This is test-only route closure. It adds no Attempt or Prompt persistence,
+lease mutation, reservation, scheduling, Runner transport, command
+authorization, argv execution, receipt persistence, enrollment, heartbeat, or
+Audit publication; ADR-0039 remains planning-only, ADR-0114 remains
+Proposed/null, and P4 remains the separate effect gate.
+
+## 579. Core Prompt append response binding closure (2026-09-23)
+
+The authenticated Conversation Prompt append route now validates the backend
+response against the requested Conversation, exact user content, `user` role,
+Prompt identity, JSON-safe timestamp, and the `expected_version + 1`
+aggregate-version receipt before serializing it. Focused HTTP regressions reject
+foreign Conversation, role/content/identity/timestamp/version drift with a
+sanitized `502`; valid ceiling values remain accepted.
+
+This is response-boundary hygiene only. It adds no new route, storage, Run,
+device selection, reservation, scheduling, Runner, receipt persistence, or
+Audit behavior; ADR-0039/ADR-0114/P4 remain gated.
+
+## 580. Runtime Prompt append receipt response binding closure (2026-09-23)
+
+Forge Runtime's explicit `remote prompts ... --receipt` path now binds the
+authenticated Prompt append response back to the exact Conversation, `user`
+role, submitted content, Prompt identity, JSON-safe timestamp, and
+`expected_version + 1` aggregate version before projecting
+`forge.prompt-append-receipt/v1`. Foreign Conversation, role/content/identity,
+timestamp, CAS, or replay-marker drift fails closed; the returned observation
+remains content-free and all Run/device/reservation/dispatch/execution/Audit
+authority flags remain false.
+
+The POST still uses the single-shot write path, so HTTP 401 or another
+uncertain result is never replayed automatically. This is an explicit Runtime
+remote Prompt-send consumer and does not wire the default Sessions Gate or
+start a Run; ADR-0039 remains planning-only, ADR-0114 remains Proposed/null,
+and P4 remains the separate effect gate.
+
+## 581. Runtime TUI Prompt append receipt consumer (2026-09-23)
+
+Forge Runtime's interactive TUI now sends Prompts through the authenticated
+`append_prompt_receipt` projection. Pending writes keep the selected
+Conversation, CAS version, content, and idempotency key across an uncertain
+write; an explicit retry consumes `receipt.aggregate_version` and
+`receipt.replayed`, refreshes the owner-visible Prompt history, and reports
+that no Run was started. The selected client-instance display guard remains
+before the request, and 401/403/conflict handling preserves the existing
+pending-write and local-view rules.
+
+Focused TUI coverage exercises both a successful content-free receipt and an
+idempotent replay while requiring the nested receipt shape. This remains a
+Prompt storage/read projection only: the POST is single-shot, no Run starts,
+and no device selection, reservation, scheduling, Runner transport/execution,
+lease mutation, receipt persistence, or Audit publication was added;
+ADR-0039 remains planning-only, ADR-0114 remains Proposed/null, and P4 remains
+the separate effect gate.
+
+## 582. Runtime CLI paired inventory/resource convergence consumer (2026-09-23)
+
+Forge Runtime's explicit `remote inventory show-converged` command now reads
+the owner-scoped lossless v2 inventory and composed client-instance/resource
+view as one bounded pair. It strictly validates each source, then compares
+every device/Runner identity together with revision, generation, and heartbeat
+counters before returning a read-only convergence envelope. Counter, identity,
+missing-device, or source-shape drift fails closed, so the CLI cannot present a
+mixed resource image as one current view.
+
+The command performs only two authenticated GETs after explicit invocation;
+it does not persist observations, enroll or heartbeat a device, select or
+reserve capacity, claim or mutate a scheduler lease, dispatch or execute a
+Runner, persist a receipt, or publish Audit. The envelope keeps all authority
+predicates false; ADR-0039 remains planning-only, ADR-0114 remains Proposed/null,
+and P4 remains the separate effect gate.
+
+## 583. Console Sessions Gate Prompt append receipt opt-in (2026-09-23)
+
+Snaplink Console's shared Web/App/Mobile Sessions Screen now accepts an
+explicit owner-bound Prompt append receipt submitter. The Gate can construct
+that submitter only when a caller supplies the owner, candidate origin, and an
+explicit enable flag; a caller-injected submitter takes precedence. The Screen
+strictly re-decodes the returned `forge.prompt-append-receipt/v1` observation,
+recomputes its content and idempotency digests, binds it to the selected
+Conversation and expected aggregate version, and refreshes Prompt history
+through the ordinary owner-scoped read because the receipt contains no body.
+
+The selected client-instance projection is checked before and after the write
+and history refresh; a hidden or stale selected Conversation cannot display
+the result. Pending content and its idempotency key remain recoverable on
+uncertain failure, while a confirmed receipt clears the pending editor and
+reports that no task started. The default Gate leaves the owner and submitter
+unset and performs no receipt request. This opt-in Prompt storage/read path
+adds no Run creation, device selection, reservation, scheduling, Runner
+transport or execution, lease mutation, receipt persistence, or Audit
+publication; ADR-0039 remains planning-only, ADR-0114 remains Proposed/null,
+and P4 remains the separate effect gate.
+
+## 584. Aero-IM Runner execution-intent request receiver parity closure (2026-09-23)
+
+Aero-IM's audit connector now consumes the canonical
+forge-runner-execution-intent-request/v1 fixture alongside Aero-ID,
+Aero-Vault, and Snaplink Audit Governance. The strict receiver rejects
+unknown, duplicate, and trailing JSON, binds the owner, Conversation,
+Prompt receipt, Run reference, Attempt/Command identity, idempotency key,
+lease proof, and null selected target, and recomputes the domain-separated
+Runner command digest. Mutation coverage keeps owner, binding, digest, and
+selection drift fail-closed.
+
+This closes the receiver implementation gap under the existing §534
+cross-ecosystem contract. It remains offline, authority-free interoperability
+evidence: no command persistence, lease or device authentication, enrollment,
+heartbeat, selection, reservation, scheduling, Runner transport, execution,
+receipt, or Audit publication was added. ADR-0039 remains planning-only,
+ADR-0114 remains Proposed/null, and P4 remains the separate effect gate.
+
+## 585. Runtime CLI paired client-instance session/resource convergence (2026-09-23)
+
+Forge Runtime now exposes the explicit `remote client-instances
+show-converged` command. It performs one authenticated GET for the owner-bound
+session view and one for the composed resource view, reuses both strict
+response validators, and compares the owner declaration plus every instance
+row before returning a read-only convergence envelope. Owner, client-kind,
+session-list, observed-time, or status drift fails closed, so the CLI cannot
+present a mixed session/resource image as one current instance view.
+
+The command is an explicit two-GET display projection only. It does not
+register or heartbeat a client, authorize a session or Prompt write, mutate
+inventory, select or reserve a device, claim or mutate a scheduler lease,
+dispatch or execute a Runner, persist a receipt, or publish Audit; ADR-0039
+remains planning-only, ADR-0114 remains Proposed/null, and P4 remains the
+separate effect gate.
+
+## 586. Console paired inventory/resource convergence candidate (2026-09-23)
+
+Snaplink Console's shared Web/App/Mobile Sessions Gate now has an explicit,
+owner-bound paired inventory/resource reader. When enabled by a caller, the
+candidate performs one authenticated GET for lossless v2 inventory and one for
+the composed client-instance/resource view, then strictly joins device and
+Runner identity with revision, generation, and heartbeat sequence before
+rendering a converged display observation. Any owner, shape, identity, counter,
+or authority drift fails closed; the default Gate remains request-free.
+
+This is a display-consistency boundary only. It does not persist observations,
+register or heartbeat a client or Runner, authorize session or Prompt writes,
+select or reserve a device, claim or mutate a scheduler lease, dispatch or
+execute a Runner, persist a receipt, or publish Audit. ADR-0039 remains
+planning-only, ADR-0114 remains Proposed/null, and P4 remains the separate
+effect gate.
+
+## 587. Runtime TUI explicit paired client-instance convergence (2026-09-23)
+
+Forge Runtime's interactive TUI now exposes
+`client-instances show-converged`. The command performs one authenticated
+session-view GET and one resource-view GET, reuses both strict source
+validators, compares the owner declaration and complete client-instance rows,
+and renders/commits the two projections only after they converge. A
+non-authority failure retains the previous pair, while a 401/403 clears the
+local owner view; a partial successful response is never committed as a mixed
+display image.
+
+This closes the TUI counterpart to the Runtime CLI §585 paired reader. The
+command remains a display-only projection: it does not register or heartbeat a
+client, authorize a session or Prompt write, mutate inventory, select or reserve
+a device, claim or mutate a scheduler lease, dispatch or execute a Runner,
+persist a receipt, or publish Audit. ADR-0039 remains planning-only,
+ADR-0114 remains Proposed/null, and P4 remains the separate effect gate.
+
+## 588. Console shared paired client-instance session/resource observation (2026-09-23)
+
+Snaplink Console's shared Web/App/Mobile Sessions Gate now accepts an explicit,
+owner-bound paired reader for the authenticated client-instance session and
+resource views. The reader performs exactly one GET for each existing view,
+strictly re-decodes both responses, binds the owner and complete instance rows,
+and only then feeds the existing session and resource panels. Owner, row, or
+authority drift fails closed; a failed refresh keeps the last validated pair
+marked stale. The default Gate has no owner, reader, or enable flag and makes
+no candidate request.
+
+This is a read-only display join. The envelope keeps owner authentication,
+session authorization, Prompt write authorization, device verification,
+reservation, execution, dispatch, and Audit predicates false. It does not
+register or heartbeat a client, mutate inventory, select or reserve a device,
+claim or mutate a scheduler lease, start or execute a Runner, persist a
+receipt, or publish Audit. Focused coverage lives in
+`forge_client_instance_session_resource_convergence_api_test.dart` and
+`forge_sessions_gate_client_instance_session_resource_convergence_test.dart`.
+ADR-0039 remains planning-only, ADR-0114 remains Proposed/null, and P4
+remains the separate effect gate.
+
+## 589. Cross-ecosystem client-instance convergence fixture parity (2026-09-23)
+
+The paired client-instance session/resource envelope is now frozen in the
+shared `forge-client-instance-session-resource-convergence-v1.json` fixture.
+Forge Runtime's authenticated CLI reader is checked against the canonical
+bytes, while Aero-ID, Aero-IM, Aero-Vault, Snaplink Audit Governance, and the
+Console Web/App/Mobile test surface strictly consume the same envelope. Each
+receiver binds the owner and complete instance rows from both source views,
+rejects unknown or duplicate envelope fields, and keeps every authority
+predicate false.
+
+This is compatibility evidence for the five client surfaces and their
+receiver mirrors. It does not authenticate a client instance, persist an
+observation, select or reserve a device, claim a scheduler lease, dispatch or
+execute a Runner, persist a receipt, or publish Audit. ADR-0039 remains
+planning-only, ADR-0114 remains Proposed/null, and P4 remains the separate
+effect gate.
+
+## 590. Cross-ecosystem inventory/resource convergence fixture parity (2026-09-23)
+
+The owner-bound `forge.device-inventory-resource-convergence/v1` envelope is
+now frozen in `forge-device-inventory-resource-convergence-v1.json`.
+Runtime's authenticated CLI/TUI readers and the Console display reader are
+checked against the same v2 inventory plus client-instance/resource source
+pair. Aero-ID, Aero-IM, Aero-Vault, and Snaplink Audit Governance consume
+byte-identical mirrors and reject unknown, duplicate, owner, authority, and
+lifecycle-counter drift while retaining the all-false authority projection.
+
+This is display-only compatibility evidence. No inventory persistence,
+enrollment/heartbeat authority, target selection, reservation, scheduler
+lease, Runner transport/execution, receipt persistence, or Audit publication
+was added. ADR-0039 remains planning-only, ADR-0114 remains Proposed/null,
+and P4 remains the separate effect gate.
+
+## 591. Snaplink Console shared-session fixture mirror (2026-09-23)
+
+Snaplink Console now keeps a local byte-identical mirror of the canonical
+`forge-shared-session-v1.json` envelope. `scripts/test-forge-contracts.sh`
+compares the mirror before running `forge_conversations_contract_test.dart`,
+and that test is explicitly pointed at the Console mirror. This closes the
+remaining fixture-path gap in the §557 shared-session receiver parity: Console
+still validates the Conversation list/detail, Prompt history, change feed, and
+storage-only append receipt through its existing strict models.
+
+This is test-fixture and contract-script wiring only. It does not add an HTTP
+route, authentication or session storage, Prompt mutation, Run creation,
+device inventory, selection, reservation, scheduler lease, Runner transport
+or execution, receipt persistence, or Audit publication. Runtime remains the
+Conversation/Prompt owner; ADR-0039 remains planning-only, ADR-0114 remains
+Proposed/null, and P4 remains the separate effect gate.
+
+Runtime CLI also accepts the paired
+`forge.client-instance-session-resource-convergence/v1` envelope as an explicit
+local `--instance-view`. It strictly
+revalidates both nested projections and their all-false authority before
+filtering the owner session list or allowing a visible-instance Prompt POST;
+an invisible Conversation is rejected before any write request. This local
+projection adds no instance registration, session authority, inventory
+mutation, device selection, reservation, scheduler lease, Runner effect, or
+Audit publication.
+
+## 592. Console initial client-instance selection boundary (2026-09-23)
+
+Snaplink Console's shared Web/App/Mobile Sessions Gate now accepts an
+optional `initialClientInstanceID` display hint. When an explicit owner-bound
+client-instance session/resource observation is supplied, the Gate loads that
+observation before the first Conversation page, filters the local owner list,
+and hydrates Prompt/Run detail only for a session declared by the selected
+instance. An unknown or unavailable instance produces an empty local
+projection and does not issue a private Prompt/Run history read.
+
+The hint remains a local display selection. It does not authenticate a client
+instance, authorize a session or Prompt write, register or heartbeat a client,
+mutate inventory, select or reserve a device, claim a scheduler lease,
+dispatch or execute a Runner, persist a receipt, or publish Audit. The default
+Gate remains unchanged when the hint and observation readers are unset;
+ADR-0039 remains planning-only, ADR-0114 remains Proposed/null, and P4
+remains the separate effect gate.
+
+## 593. Authenticated execution-intent preview binds durable Prompt and Run references (2026-09-23)
+
+The accepted Coordinator execution-intent preview now re-reads the
+owner-scoped Prompt and Run pages from the Runtime Hub before projecting the
+Runner binding. It requires the requested Prompt to exist and the requested
+Run to exist with that Prompt identity; pagination is bounded to 64 pages with
+the existing Prompt/Run page limits, and malformed, unavailable, or cycling
+backend pages fail closed. The value-level projection still keeps the
+selected target null and every authority predicate false.
+
+This closes a confused-reference gap before the existing scheduler/Runner
+seams while remaining read-only. It creates no Run or command, mutates no
+lease, selects or reserves no device, opens no Runner transport, executes no
+argv, persists no receipt, and publishes no Audit. The accepted E2E now uses
+an actual Runtime binary; without one it is skipped rather than accepting a
+placeholder process. ADR-0039 remains planning-only, ADR-0114 remains
+Proposed/null, and P4 remains the separate effect gate.
+
+## 594. Authenticated paired client-instance projection proof (2026-09-23)
+
+Forge Core now has an opt-in authenticated integration test that reads the
+owner-bound client-instance session view and composed resource view with the
+same Snaplink bearer token. It verifies the five CLI/TUI/Web/App/Mobile rows
+are identical in both responses, the joined device/Runner resource is present,
+and every authority predicate remains false. The candidate routes exist only
+on the test mux; production construction remains closed.
+
+This is an authenticated consistency proof for the display projections. It
+does not register or authenticate a client instance, persist observations,
+authorize Prompt/session writes, enroll or heartbeat devices, select or reserve
+capacity, claim a scheduler lease, dispatch or execute a Runner, persist a
+receipt, or publish Audit. ADR-0039 remains planning-only, ADR-0114 remains
+Proposed/null, and P4 remains the separate effect gate.
+
+## 595. Accepted Runner preview binds durable owner-scoped Run references (2026-09-23)
+
+The accepted `EXECUTE + P4` Runner execution-boundary and Attempt-boundary
+previews now re-read the owner-scoped Runtime Run pages before reading the
+private lease image. A request is accepted only when its Conversation/Run
+reference exists for the authenticated owner; bounded pagination reuses the
+existing strict Run-page validator and rejects unavailable, malformed, cycling,
+or overlong pages. The production assembly injects the Runtime backend, while
+value-only route tests retain a nil backend and the Runtime-backed cross-client
+harnesses require an actual binary.
+
+This closes a stale or confused Run reference before the existing redacted
+preview without creating or mutating a Run, Attempt, lease, reservation, or
+scheduler state. It opens no Runner transport, authorizes no command, executes
+no argv, persists no receipt, and publishes no Audit. ADR-0039 remains
+planning-only, ADR-0114 remains Proposed/null, and P4/live Runner effects
+remain gated.
+
+## 596. Accepted Runner admission previews bind durable owner-scoped Run references (2026-09-23)
+
+The accepted `EXECUTE + P4` Runner dispatch-admission and transport-admission
+previews now re-read the owner-scoped Runtime Run page before evaluating the
+fenced lease or verified transport observation. The production assembly passes
+the Runtime backend into both routes; missing, foreign, malformed, unavailable,
+cycling, or overlong Run references fail closed. Value-only route tests keep
+the backend unset, while Runtime-backed cross-client E2Es require a real
+binary.
+
+This aligns the admission handoff with the later execution and Attempt
+boundaries without opening a Runner connection or sending a payload. It creates
+no Run or Attempt, mutates no lease outside the existing explicit lease route,
+selects or reserves no additional device, authorizes no command, executes no
+argv, persists no receipt, and publishes no Audit. ADR-0039 remains
+planning-only, ADR-0114 remains Proposed/null, and P4/live Runner effects
+remain gated.
+
+## 597. Cross-ecosystem durable Run binding negative parity (2026-09-23)
+
+The canonical `forge-runner-execution-intent-request/v1` receiver checks now
+share explicit negative coverage across Aero-ID, Aero-Vault, Snaplink Audit
+Governance, Aero-IM, Snaplink Console, and Forge Runtime. Each receiver rejects
+a `run_reference` whose Run ID or Prompt ID no longer matches the owner-bound
+Prompt/Conversation/Run binding before accepting the display-only execution
+intent request.
+
+This is compatibility and fail-closed evidence only. It adds no Run or Prompt
+authority, device enrollment or heartbeat, target selection or reservation,
+scheduler lease, Runner transport or command execution, receipt persistence, or
+Audit publication. ADR-0039 remains planning-only, ADR-0114 remains
+Proposed/null, and P4/live Runner effects remain gated.
+
+## 598. Runtime TUI scheduler requests respect the selected client-instance projection (2026-09-23)
+
+Forge Runtime's interactive TUI now checks the active client-instance session
+projection before posting scheduler-selection preview, lease claim, lease
+renewal, or lease release requests. When an instance filter is active, a
+request whose `conversation_id` is absent from that instance's validated
+`session_ids` is rejected locally with no POST; requests without an instance
+filter retain their existing caller-supplied behavior. Missing conversation
+identity also fails closed.
+
+This is a local display-scope guard only. It adds no client registration or
+heartbeat authority, inventory mutation, device selection or reservation,
+scheduler authority, Runner transport or execution, lease mutation, receipt
+persistence, or Audit publication. ADR-0039 remains planning-only, ADR-0114
+remains Proposed/null, and P4/live Runner effects remain gated.
+
+## 599. Scheduler lease claims bind durable owner-scoped Run references (2026-09-23)
+
+The accepted `EXECUTE + P4` scheduler lease claim now re-reads the
+owner-scoped Runtime Run projection before evaluating inventory or creating a
+fenced lease. Missing, foreign, malformed, unavailable, cycling, or overlong
+Run references fail closed; production injects the Runtime backend while
+value-only route tests keep the backend unset. Renewal and release remain
+available for an existing lease so a removed Run cannot strand its resource
+cleanup path.
+
+This closes the same confused-reference gap at the first durable scheduler
+effect without adding Run creation, Runner transport or command execution,
+receipt persistence, or Audit publication. ADR-0039 remains planning-only,
+ADR-0114 remains Proposed/null, and P4/live Runner effects remain gated.
+
+## 600. Scheduler lease renewal requires a live Run while release survives deletion (2026-09-23)
+
+The accepted `EXECUTE + P4` scheduler lease renewal now re-reads the
+owner-scoped Runtime Run projection before extending an existing fenced
+reservation. A missing, foreign, malformed, unavailable, cycling, or
+overlong Run reference fails closed. The production assembly supplies the
+Runtime backend, while value-only route tests may leave it unset.
+
+The release route intentionally does not repeat that Runtime read: it
+continues to authenticate the owner and match the durable Conversation/Run/
+Attempt lease proof from the private registry, so deleting a Run cannot strand
+resource cleanup. No Run/Attempt mutation, Runner transport or command
+execution, receipt persistence, or Audit publication was added. ADR-0039
+remains planning-only, ADR-0114 remains Proposed/null, and P4/live Runner
+effects remain gated.
+
+## 601. Scheduler selection previews bind durable owner-scoped Run references (2026-09-23)
+
+The accepted `EXECUTE + P4` scheduler selection preview now re-reads the
+owner-scoped Runtime Run projection before evaluating inventory or returning a
+candidate. Missing, foreign, malformed, unavailable, cycling, or overlong Run
+references fail closed; production injects the Runtime backend while focused
+value-only route tests may leave it unset. When a policy image is configured,
+preview and lease evaluation use the same owner-bound policy-complete source.
+
+This keeps a placement candidate tied to the durable Conversation/Run binding
+without creating or mutating a Run, Attempt, reservation, lease, or scheduler
+state. No Runner transport or command execution, receipt persistence, or Audit
+publication was added. ADR-0039 remains planning-only, ADR-0114 remains
+Proposed/null, and P4/live Runner effects remain gated.
+
+## 602. Inventory/resource convergence compares complete capacity declarations (2026-09-23)
+
+Forge Runtime CLI/TUI and Snaplink Console's paired inventory/resource readers
+now fail closed when owner declarations, approval/cordon/reservation/liveness,
+OS or architecture, CPU, memory, storage, or GPU count and available-memory
+summaries drift between the lossless inventory observation and the composed
+client-instance/resource view. The existing revision, generation, and
+heartbeat checks remain part of the same pair boundary.
+
+The change strengthens a display-consistency read and adds no inventory
+authority, enrollment or heartbeat write, target selection, reservation,
+scheduler lease, Runner transport or execution, receipt persistence, or Audit
+publication. ADR-0039 remains planning-only, ADR-0114 remains Proposed/null,
+and P4/live Runner effects remain gated.
+
+## 603. Console scheduler candidates respect selected client-instance scope (2026-09-23)
+
+The shared Snaplink Console Sessions surface now applies its validated selected
+client-instance projection to scheduler selection preview, lease claim, lease
+renewal, and lease release candidates. If the selected instance does not
+declare the Conversation, or the projection is unavailable, the candidate is
+cleared locally and sends no POST; Conversation/Run drift is likewise treated
+as stale. The default Web/App/Mobile surface remains request-free.
+
+This is a local display-scope guard only. It adds no instance registration or
+heartbeat authority, inventory mutation, target selection, reservation, lease
+mutation, Runner transport or execution, receipt persistence, or Audit
+publication. ADR-0039 remains planning-only, ADR-0114 remains Proposed/null,
+and P4/live Runner effects remain gated.
+
+## 604. TUI session refresh commits only the selected client-instance projection (2026-09-23)
+
+Forge Runtime TUI session refresh now validates the selected client-instance
+projection before making the Conversation request, filters each returned page
+to the instance's declared `session_ids`, and commits only those rows to local
+state. A missing or invalid validated projection fails closed before the
+request, so a stale selection cannot retain hidden sessions for later Prompt
+or Run actions; owner authorization and server pagination remain unchanged.
+
+This is a local display-scope guard only. It adds no client registration,
+heartbeat or inventory authority, Prompt/session storage, target selection,
+reservation, scheduler lease, Runner transport or execution, receipt
+persistence, or Audit publication. ADR-0039 remains planning-only, ADR-0114
+remains Proposed/null, and P4/live Runner effects remain gated.
+
+## 605. Cross-ecosystem Attempt lifecycle receiver parity (2026-09-23)
+
+The canonical `forge.attempt-lifecycle/v1` state graph is now mirrored into
+Aero-ID, Aero-IM, Aero-Vault, and Snaplink Audit Governance. Each receiver
+strictly decodes the envelope, rejects unknown, duplicate, and trailing JSON,
+recomputes every accepted and rejected transition, and requires all authority
+predicates to remain false. Mutation coverage rejects lifecycle or authority
+drift before the value can be consumed.
+
+This is offline interoperability evidence for the pure Attempt lifecycle
+only. It adds no Attempt persistence, lease issuance or mutation, device
+selection or reservation, Runner transport or command execution, receipt
+persistence, or Audit publication. ADR-0039 remains planning-only, ADR-0114
+remains Proposed/null, and P4/live Runner effects remain gated.
+
+## 606. Cross-ecosystem Attempt boundary rejection-reason parity (2026-09-23)
+
+The four offline receivers for `forge.runner-attempt-boundary/v1` now derive
+the same Core rejection reasons for a non-ready boundary:
+`execution_boundary_not_ready`, `attempt_transition_invalid`, and
+`attempt_transition_not_dispatchable`. A non-ready response cannot omit or
+invent reasons; ready responses still require an empty list. Canonical
+non-ready and reason-drift mutations fail closed across Aero-ID, Aero-IM,
+Aero-Vault, and Snaplink Audit Governance.
+
+This closes a cross-ecosystem handoff ambiguity only. It adds no Attempt or
+lease persistence, reservation, target selection, Runner transport or command
+execution, receipt persistence, or Audit publication. ADR-0039 remains
+planning-only, ADR-0114 remains Proposed/null, and P4/live Runner effects
+remain gated.
+
+## 607. TUI client-instance pair refresh fails closed until convergence (2026-09-23)
+
+Forge Runtime TUI now treats an explicitly opened client-instance session view
+and resource view as one local projection when both are present. During refresh,
+selection reconciliation waits until the two observations have matching owner
+and complete instance images; timestamp or row drift restores the previous
+validated pair, clears no change cursor, and prevents Prompt/Run reads from
+using a mixed projection. The refresh logic is isolated in a bounded module
+with focused state and sync coverage.
+
+This is a process-local display consistency guard. It adds no client
+registration, heartbeat or inventory authority, Prompt/session storage, target
+selection, reservation, scheduler lease, Runner transport or execution,
+receipt persistence, or Audit publication. ADR-0039 remains planning-only,
+ADR-0114 remains Proposed/null, and P4/live Runner effects remain gated.
+
+## 608. Console refreshes the selected client-instance projection before owner reads (2026-09-23)
+
+Snaplink Console's shared Web/App/Mobile Sessions surface now refreshes an
+explicitly selected client-instance session/resource projection before it
+consumes the owner change feed or hydrates Conversation, Prompt, and Run
+metadata. A missing, stale, revoked, or failed projection leaves the change
+cursor and private panels unchanged; a refreshed declaration that removes the
+selected session clears it before any private read. The default Gate remains
+request-free when no reader is supplied.
+
+This is an owner-bound display-scope ordering guard. It adds no client
+registration, heartbeat or inventory authority, Prompt/session storage, target
+selection, reservation, scheduler lease, Runner transport or execution,
+receipt persistence, or Audit publication. ADR-0039 remains planning-only,
+ADR-0114 remains Proposed/null, and P4/live Runner effects remain gated.
+
+## 609. Runtime CLI validates ordinary Prompt append responses (2026-09-23)
+
+Forge Runtime's ordinary `remote prompts add` path now strictly decodes and
+binds the returned Prompt response to the requested Conversation, `user` role,
+exact content, Prompt identity, JSON-safe timestamp, replay marker, and
+`expected_version + 1` aggregate version before returning it. Unknown fields,
+foreign or malformed Prompt metadata, missing or non-boolean replay markers,
+CAS drift, and unsafe integer values fail closed after the single POST; the
+existing authenticated owner/CAS/idempotency and storage-only semantics remain
+unchanged.
+
+This closes a client response-boundary gap only. It adds no Run creation,
+device selection, inventory or heartbeat authority, reservation, scheduler
+lease, Runner transport or execution, receipt persistence, or Audit
+publication. ADR-0039 remains planning-only, ADR-0114 remains Proposed/null,
+and P4/live Runner effects remain gated.
+
+## 610. Console ordinary Prompt append responses are identity-bound (2026-09-23)
+
+Snaplink Console's shared Web/App/Mobile `appendPrompt` path now rejects an
+ordinary append response when the returned Prompt identity is empty, longer
+than the bounded 128-byte identity limit, or contains control characters. The
+existing response checks continue to bind the requested Conversation, `user`
+role, exact Prompt content, JSON-safe creation time, replay marker, and
+`expected_version + 1` aggregate version before the result reaches a session
+surface. Focused API coverage also rejects duplicate response keys and each
+identity/timestamp/replay/CAS mutation.
+
+This closes a client response-boundary gap only. The authenticated POST remains
+one storage-only Prompt write; no Run creation, device selection, inventory or
+heartbeat authority, reservation, scheduler lease, Runner transport or
+execution, receipt persistence, or Audit publication was added. ADR-0039
+remains planning-only, ADR-0114 remains Proposed/null, and P4/live Runner
+effects remain separately gated.
+
+## 611. Runtime validates remote Runner receipt and reconciliation previews at the client boundary (2026-09-23)
+
+Forge Runtime's authenticated remote session Runner receipt, receipt-history,
+and reconciliation preview clients now validate successful HTTP responses before
+returning them to CLI or TUI callers. The receipt path rechecks the exact
+Conversation/Run URL binding and request echo. Receipt-history recomputes the
+canonical bounded reduction from the submitted history and rejects summary,
+lifecycle, binding, or authority drift. Reconciliation recomputes the
+projection from that canonical history and rejects a different projection or
+any non-preview authority. The combined remote reconciliation path also
+canonicalizes the history before requesting the projection.
+
+This closes a client response-boundary gap only. It adds no Runner transport,
+command execution, registration or heartbeat authority, lease mutation,
+reservation, scheduler dispatch, receipt persistence, or Audit publication.
+ADR-0039 remains planning-only, ADR-0114 remains Proposed/null, and P4/live
+Runner effects remain separately gated.
+
+## 612. Console refreshes selected instance and resource proof before Prompt writes (2026-09-23)
+
+The opt-in Snaplink Console Web/App/Mobile Prompt journey now refreshes the
+selected client-instance session/resource projection immediately before it
+invokes the Prompt submitter. When the caller also supplies the inventory/
+resource convergence reader, that observation is refreshed at the same write
+boundary and must remain owner-bound and converged with the selected resource
+image. If a refresh revokes the Conversation, becomes stale, fails, or drifts,
+the screen clears the local private view and does not invoke the Prompt
+submitter. The default Gate remains request-free when no reader is configured.
+
+This closes a write-time display-scope race only. It adds no client
+registration or heartbeat authority, Run creation, inventory mutation, device
+selection, reservation, scheduler lease, Runner transport or execution,
+receipt persistence, or Audit publication. ADR-0039 remains planning-only,
+ADR-0114 remains Proposed/null, and P4/live Runner effects remain separately
+gated.
+
+## 613. Runtime binds scheduler lease and reconciliation responses to requests (2026-09-23)
+
+Forge Runtime's authenticated scheduler-selection and scheduler-lease clients
+now validate request envelopes before sending and bind successful responses to
+the submitted Conversation/Run/Attempt. Lease renewal additionally requires
+the same target and the next fencing epoch; release requires the same target
+and epoch. The execution-reconciliation client validates the restart image,
+URL Conversation/Run, and pure domain recomputation before returning the
+projection. These checks run at the HTTP client boundary, before CLI/TUI
+rendering, while existing dispatch and TUI validators remain as defense in
+depth.
+
+This closes response and fencing-proof drift only. It adds no unrestricted
+scheduler dispatch, Runner transport, command execution, device registration,
+heartbeat authority, lease persistence, receipt persistence, or Audit
+publication. ADR-0039 remains planning-only, ADR-0114 remains Proposed/null,
+and P4/live Runner effects remain separately gated.
+
+## 614. Core binds Conversation detail responses to the requested ID (2026-09-23)
+
+Forge Core's owner-scoped Runtime bridge and Conversation detail route now
+require the returned Conversation identity to equal the requested ID before
+exposing it to CLI/TUI/Web/App/Mobile consumers. A foreign backend response
+fails closed as an invalid runtime response, preserving the existing owner and
+JSON-safety checks.
+
+This closes an owner-scoped read response drift only. It adds no session,
+Prompt, Run, device, lease, Runner, registration, heartbeat, or Audit
+authority. ADR-0039 remains planning-only, ADR-0114 remains Proposed/null, and
+P4/live Runner effects remain separately gated.
+
+## 615. Console requires the next fencing epoch on scheduler renewal (2026-09-23)
+
+Snaplink Console's shared Web/App/Mobile scheduler-lease renewal adapter now
+requires the returned grant epoch to equal the submitted epoch plus one. This
+matches the Runtime request-bound validator and rejects a response that skips a
+fencing step before the lease reaches the Sessions surface. The single-shot
+POST, target binding, and default-off candidate gate remain unchanged.
+
+This closes a cross-client fencing-response drift only. It adds no new lease
+authority, Runner transport, command execution, device registration, heartbeat
+authority, lease persistence, receipt persistence, or Audit publication.
+ADR-0039 remains planning-only, ADR-0114 remains Proposed/null, and P4/live
+Runner effects remain separately gated.
+
+## 616. Runtime TUI accepts server-authenticated owner claims without requiring `client_id` (2026-09-23)
+
+Forge Runtime's content-free Prompt receipt projection now derives its local
+owner binding from the validated JWT issuer, subject, tenant, Forge
+audience/scopes, and expiry. Explicit access tokens used by CLI/TUI can
+therefore complete Prompt writes when the server-authenticated JWT omits
+`client_id`; saved-login credential storage still requires that client binding.
+
+The real shared-session E2E now passes the TUI Prompt through the Go Coordinator
+and Rust Hub after the same token read path, proving the cross-client write and
+history convergence. This closes an authentication metadata compatibility gap
+only. It adds no Run, device, lease, Runner, registration, heartbeat, or Audit
+authority. ADR-0039 remains planning-only, ADR-0114 remains Proposed/null, and
+P4/live Runner effects remain separately gated.
+
+## 617. Runtime TUI inventory/resource convergence command (2026-09-23)
+
+Forge Runtime's interactive TUI now exposes `inventory show-converged`. The
+command performs one authenticated GET for the lossless v2 inventory and one
+authenticated GET for the owner-bound client-instance/resource view, reuses the
+strict response validators, and requires the complete owner, device/Runner,
+revision, generation, heartbeat, lifecycle, capacity, and GPU summary to
+converge before rendering either observation. A successful pair is committed
+atomically to the process-local refresh state so later `sync` uses the same
+resource image. A drifted pair keeps the previous snapshots and reports that
+no mixed pair was committed.
+
+This closes a TUI resource-perception usability gap only. The command remains a
+read-only observation and adds no client registration, enrollment or heartbeat
+authority, inventory mutation, target selection, reservation, scheduler lease,
+Runner transport or command execution, receipt persistence, or Audit
+publication. ADR-0039 remains planning-only, ADR-0114 remains Proposed/null,
+and P3b/P4/live Runner effects remain separately gated.
+
+## 618. Runtime TUI inventory convergence reconciles selected instance state (2026-09-23)
+
+The TUI's `inventory show-converged` path now invokes the same local
+client-instance selection reconciliation used by the explicit
+`client-instances` readers after committing a validated inventory/resource
+pair. If the refreshed resource observation removes the selected Conversation
+from the chosen client instance, the TUI clears the selected Conversation's
+Prompt history and Run panels before the next render. The change remains
+process-local display consistency: it adds no registration, heartbeat,
+inventory mutation, device selection, reservation, scheduler lease, Runner
+transport or command execution, receipt persistence, or Audit publication.
+ADR-0039 remains planning-only, ADR-0114 remains Proposed/null, and
+P3b/P4/live Runner effects remain separately gated.
+
+## 619. Runtime TUI keeps paired client-instance refreshes atomic (2026-09-23)
+
+When both client-instance session and resource views are explicitly open, TUI
+`sync` now reads and validates both observations into local values before it
+renders or commits either one. If the second read fails for a non-authority
+reason, the previous validated pair is restored and the change cursor remains
+unchanged; a drifted pair follows the same retain-previous-pair path. A
+single-view refresh keeps its existing affected-view clearing behavior, while
+401/403 still clears the owner session view. Focused coverage exercises a
+successful pair and a second-read 503 without exposing a mixed snapshot.
+
+This closes a process-local projection consistency gap only. It adds no client
+registration, heartbeat or inventory authority, Prompt/session storage, target
+selection, reservation, scheduler lease, Runner transport or command
+execution, receipt persistence, or Audit publication. ADR-0039 remains
+planning-only, ADR-0114 remains Proposed/null, and P3b/P4/live Runner effects
+remain separately gated.
+
+## 620. Conversation creation responses remain request-bound (2026-09-23)
+
+The authenticated Conversation creation path now preserves one response
+contract across Forge Runtime, Forge Core, and Snaplink Console. Runtime
+rejects a response whose strict Conversation projection does not carry the
+requested scope and exact title; Core applies the same binding at the HTTP
+boundary before serializing a backend result; and Console checks the returned
+Conversation against the requested scope and title before Web/App/Mobile code
+can select it. Identity and timestamp bounds remain enforced, so a valid
+shaped response for another request fails closed before it can become local
+session state. This is response/state consistency only: it adds no session
+authority, inventory mutation, device selection, reservation, scheduler lease,
+Runner transport or command execution, receipt persistence, or Audit
+publication. ADR-0039 remains planning-only, ADR-0114 remains Proposed/null,
+and P3b/P4/live Runner effects remain separately gated.
+
+## 621. Runtime binds remote Run execution-evidence previews at the client boundary (2026-09-23)
+
+The authenticated Runtime client now treats remote Run execution-evidence
+preview as one bound request/response operation. Before sending the POST it
+requires the content-free Run observation and session Runner receipt to carry
+the same Conversation/Run pair as the URL. After the response arrives it
+recomputes the expected evidence reduction and rejects foreign bindings,
+value drift, non-display observations, or any authority-bearing response before
+CLI/TUI callers can render it. Existing dispatch and TUI validators remain in
+place as defense in depth; this closes the direct client boundary without
+opening Runner transport, command execution, receipt persistence, device
+selection, reservation, lease, registration, heartbeat, or Audit authority.
+ADR-0039 remains planning-only, ADR-0114 remains Proposed/null, and P4/live
+Runner effects remain separately gated.
+
+## 622. Runtime binds remote session device-observation previews at the client boundary (2026-09-23)
+
+The authenticated Runtime client now treats session device-observation preview
+as one bound request/response operation. Before sending the POST it strictly
+validates the caller-supplied placement and candidate declarations and requires
+their Conversation/Run pair to equal the URL path. After the response arrives
+it reuses the canonical session observation validator to reject foreign or
+drifted bindings, malformed resource reductions, and authority-bearing values
+before direct CLI/TUI callers can render them. This closes the direct client
+boundary while preserving the existing dispatch/TUI checks and adding no live
+inventory, enrollment/heartbeat, target selection, reservation, scheduler
+lease, Runner transport or command execution, receipt persistence, or Audit
+authority. ADR-0039 remains planning-only, ADR-0114 remains Proposed/null, and
+P4/live Runner effects remain separately gated.
+
+## 623. Runtime binds offline placement dry-run previews at the client boundary (2026-09-23)
+
+The authenticated Runtime client now treats the offline placement dry-run as
+one canonical request/response operation. Before sending the POST it validates
+the caller declaration; after the response arrives it recomputes the pure
+placement decisions and requires exact owner/timestamp/device-set parity,
+strict result ordering, and all-false execution, reservation, and dispatch
+authority. Foreign, drifted, malformed, or authority-bearing responses fail
+closed for direct client callers as well as the existing CLI/TUI dispatch
+paths. This remains an offline comparison only: it adds no target selection,
+reservation, scheduler lease, dispatch, Runner transport or command execution,
+inventory mutation, enrollment/heartbeat, receipt persistence, or Audit
+authority. ADR-0039 remains planning-only, ADR-0114 remains Proposed/null, and
+P4/live Runner effects remain separately gated.
+
+## 624. Runtime binds registry placement previews at the client boundary (2026-09-23)
+
+The authenticated Runtime client now validates the requirements-only request
+before posting to the owner-scoped registry placement candidate and validates
+the complete v2 evaluation before returning it. The canonical response check
+enforces schema/evaluation/source tags, owner and timestamp bounds, sorted
+unique device/Runner decisions, derived eligibility counts, null selected
+targets, and all-false authority. Selected targets, authority elevation,
+malformed decisions, or response drift fail closed for direct client callers as
+well as the existing CLI/TUI dispatch paths. This remains a read-only registry
+observation and adds no target selection, reservation, scheduler lease,
+dispatch, Runner transport or command execution, inventory mutation,
+enrollment/heartbeat, receipt persistence, or Audit authority. ADR-0039 remains
+planning-only, ADR-0114 remains Proposed/null, and P4/live Runner effects
+remain separately gated.
+
+## 625. Runtime binds Runner dispatch-admission previews at the client boundary (2026-09-23)
+
+The authenticated Runtime client now validates the complete lease-bound Runner
+dispatch-admission request before POST and requires the request's
+Conversation/Run pair to equal the URL path. After the response arrives it
+reuses the canonical admission validator, which binds owner, Conversation,
+Run, Attempt, command identity and digest, target and lease epoch, attempt
+state, derived rejection reasons, and preview-only authority. URL/request
+binding drift, foreign or malformed responses, digest drift, or authority
+elevation fail closed for direct client callers as well as the existing
+CLI/TUI dispatch paths. This remains a preview-only admission observation and
+adds no Runner transport, command execution, dispatch effect,
+enrollment/heartbeat, receipt persistence, or Audit authority. ADR-0039
+remains planning-only, ADR-0114 remains Proposed/null, and P4/live Runner
+effects remain separately gated.
+
+## 626. Runtime binds Run/Attempt/lease dispatch preflight at the client boundary (2026-09-23)
+
+The authenticated Runtime client now validates the complete Run/Attempt/lease
+preflight request before POST and requires its Conversation/Run pair to equal
+the URL path. After the response arrives it reuses the canonical preflight
+validator, binding owner, Conversation/Run, Run status, Attempt state, command
+and intent identity, lease epoch/activity, candidate counts, evaluation time,
+null selected target, and all-false authority. URL/request binding drift,
+foreign or malformed responses, selected-target/lease/intent drift, or
+authority elevation fail closed for direct client callers as well as existing
+CLI/TUI paths. This remains a metadata-only preflight and adds no live
+enrollment/heartbeat, Runner transport or command execution, dispatch effect,
+receipt persistence, or Audit authority. ADR-0039 remains planning-only,
+ADR-0114 remains Proposed/null, and P4/live Runner effects remain separately
+gated.
+
+## 627. Runtime binds Runner transport-admission previews at the client boundary (2026-09-23)
+
+The authenticated Runtime client now validates the complete lease, command,
+and transport request before POST and requires its Conversation/Run pair to
+equal the URL path. After the response arrives it reuses the canonical
+transport-admission validator, binding owner, Attempt, command digest, target
+and lease epoch, transport method/path/timestamp/nonce/payload digest and
+size, replay marker, preview-only state, and all-false authority. URL/request
+drift, foreign responses, path or payload drift, malformed values, or
+authority elevation fail closed for direct client callers as well as existing
+CLI/TUI paths. This remains a metadata-only admission preview and adds no
+transport opening, heartbeat, command execution, dispatch effect,
+enrollment, receipt persistence, or Audit authority. ADR-0039 remains
+planning-only, ADR-0114 remains Proposed/null, and P4/live Runner effects
+remain separately gated.
+
+## 628. Runtime binds Runner execution-intent previews at the client boundary (2026-09-23)
+
+The authenticated Runtime client now validates the complete
+owner/Conversation/Prompt/Run/Attempt/target/command intent request before POST
+and requires its Conversation/Run pair to equal the URL path. After the
+response arrives it reuses the canonical exact-value reduction, binding every
+owner and execution identity, command and target, selected-target nullability,
+preview-only marker, and all-false authority. Foreign owner, Prompt, Run,
+Attempt, target, command, URL, or authority drift fails closed for direct
+client callers as well as existing CLI/TUI paths. This remains a value-only
+intent preview and adds no command execution, Runner opening,
+enrollment/heartbeat, dispatch effect, receipt persistence, or Audit authority.
+ADR-0039 remains planning-only, ADR-0114 remains Proposed/null, and P4/live
+Runner effects remain separately gated.
+
+## 629. Runtime binds Runner execution-boundary previews at the client boundary (2026-09-23)
+
+The authenticated Runtime client now validates the complete
+owner/Conversation/Run/Attempt/command/transport execution-boundary request
+before POST and requires its Conversation/Run pair to equal the URL path. After
+the response arrives it reuses the canonical boundary validator, binding owner,
+Conversation/Run, Attempt state, command digest, target and lease epoch,
+transport path/payload, derived readiness and rejection reasons, preview-only
+state, and all-false authority. URL/request drift, foreign binding, readiness
+drift, malformed values, or authority elevation fail closed for direct client
+callers as well as existing CLI/TUI paths. This remains a value-only boundary
+preview and adds no Runner opening, transport, command execution, dispatch
+effect, enrollment/heartbeat, receipt persistence, or Audit authority.
+ADR-0039 remains planning-only, ADR-0114 remains Proposed/null, and P4/live
+Runner effects remain separately gated.
+
+## 630. Runtime binds local Runner execution-readiness previews at the client boundary (2026-09-23)
+
+The authenticated Runtime client now validates the complete local Runner
+execution-readiness request before POST and requires its Conversation/Run-intent
+pair to equal the URL path. After the response arrives it reuses the canonical
+metadata-only preview validator, binding owner, Prompt, Run, Attempt, target,
+command and lease identity through the intent and session Runner receipt, while
+requiring the executor-invoked marker, preview-only state, and all-false
+authority. URL/request drift, foreign identity or receipt binding, malformed
+metadata, or authority elevation fail closed for direct client callers as well
+as existing CLI/TUI paths. This remains an injected local preview and adds no
+production execution, Runner transport, dispatch effect, enrollment/heartbeat,
+receipt persistence, or Audit authority. ADR-0039 remains planning-only,
+ADR-0114 remains Proposed/null, and P4/live Runner effects remain separately
+gated.
+
+## 631. Runtime binds Runner Attempt-boundary previews at the client boundary (2026-09-23)
+
+The authenticated Runtime client now validates the complete owner/Conversation/
+Run/Attempt/command/transport/transition request before POST and requires its
+Conversation/Run pair to equal the URL path. After the response arrives it
+reuses the canonical Attempt-boundary validator, binding owner,
+Conversation/Run/Attempt, command identity, target and lease epoch, current and
+next lifecycle states, transition predicates, rejection reasons, preview-only
+state, and all-false authority. URL/request drift, foreign identity or
+lifecycle, malformed values, or authority elevation fail closed for direct
+client callers as well as existing CLI/TUI paths. This remains a metadata-only
+Attempt observation and adds no Attempt persistence, lease mutation, reservation,
+dispatch, Runner transport or command execution, enrollment/heartbeat, receipt,
+or Audit authority. ADR-0039 remains planning-only, ADR-0114 remains
+Proposed/null, and P4/live Runner effects remain separately gated.
+
+## 632. Runtime binds Runner dispatch-plan previews at the client boundary (2026-09-23)
+
+The authenticated Runtime client now validates the nested dispatch-plan body
+through an internal strict preflight envelope before POST. The envelope binds
+the owner, Conversation, Run, Attempt, execution intent, placement snapshot,
+and lease proof to the URL while preserving the existing CLI/TUI input and
+wire body shape. The response is then checked against that same plan for
+canonical identity, candidate count, lease state, null selected target, and
+all-false authority. URL/request drift, candidate or lease summary drift,
+selection, malformed values, or authority elevation fail closed for direct
+client callers. This remains a value-only dispatch-plan comparison and adds no
+scheduler effect, lease mutation, dispatch, Runner transport or command
+execution, enrollment/heartbeat, receipt persistence, or Audit authority.
+ADR-0039 remains planning-only, ADR-0114 remains Proposed/null, and P4/live
+Runner effects remain separately gated.
+
+## 633. Runtime binds session Runner receipt observation requests at the client boundary (2026-09-23)
+
+The authenticated Runtime client now reuses the canonical session Runner
+receipt `validate_value` and `conversation_and_run` functions before POST. It
+rejects malformed observation shapes locally and requires the observation's
+Conversation/Run pair to equal the URL path, so direct callers cannot send a
+valid-looking observation to a different session route. The existing response
+validator still enforces canonical request equality, owner/Conversation/Prompt/
+Run binding, and all-false authority; direct client mock coverage rejects URL
+drift, malformed requests, foreign response binding, and authority drift. This
+remains a read-only observation preview with no receipt persistence,
+Runner/dispatch/heartbeat/enrollment authority. ADR-0039 remains
+planning-only, ADR-0114 remains Proposed/null, and P4/live Runner effects
+remain separately gated.
+
+## 634. Runtime binds session Runner receipt history requests at the client boundary (2026-09-23)
+
+The authenticated Runtime client now reuses the canonical session Runner
+receipt-history `validate_value` and `conversation_and_run` functions before
+POST. It rejects malformed histories locally and requires the history's
+Conversation/Run pair to equal the URL path, so direct callers cannot send a
+valid-looking history to a different session route. The existing response
+validator still recomputes the canonical reduction and enforces binding and
+all-false authority; direct client coverage rejects Conversation/Run URL drift
+and malformed requests. This remains a read-only history preview with no
+receipt persistence, Runner/dispatch/heartbeat/enrollment authority.
+ADR-0039 remains planning-only, ADR-0114 remains Proposed/null, and P4/live
+Runner effects remain separately gated.
+
+## 635. Runtime binds session Runner reconciliation requests at the client boundary (2026-09-23)
+
+The authenticated Runtime reconciliation client now reuses the canonical
+receipt-history `validate_value` and `conversation_and_run` functions before
+POST. It rejects malformed histories locally and requires the history's
+Conversation/Run pair to equal the URL path, so direct callers cannot send a
+valid-looking history to a different reconciliation route. The existing
+response validator still recomputes the canonical reconciliation projection
+and enforces all-false authority; direct client coverage rejects
+Conversation/Run URL drift and malformed requests. This remains a read-only
+reconciliation preview with no receipt persistence,
+Runner/dispatch/heartbeat/enrollment authority. ADR-0039 remains
+planning-only, ADR-0114 remains Proposed/null, and P4/live Runner effects
+remain separately gated.
+
+## 636. Runtime binds Conversation import responses at the client boundary (2026-09-23)
+
+Forge Runtime preserves the existing import POST body (`title` plus `prompts`)
+and `Idempotency-Key` wire shape while the direct client validates the returned
+envelope before exposing it. The envelope has exactly four fields:
+`conversation`, `aggregate_version`, `imported_prompt_count`, and `replayed`.
+The returned Conversation is checked with the existing strict created-Conversation
+validator for identity, Global scope, exact requested title, and JSON-safe
+chronological timestamps. Aggregate version must be positive and JSON-safe,
+prompt count must equal the submitted transcript, and `replayed` must be a
+boolean. Unknown, malformed, foreign, scope/title/timestamp/version/count, and
+binding-drift responses fail closed. Existing confirm-preview validation reuses
+the same helper. This remains storage-only Conversation import with no device or
+Runner authority; ADR-0039 remains planning-only, ADR-0114 remains Proposed/null,
+and P4/live Runner effects remain separately gated.
+
+## 637. Core binds Runtime bridge Prompt CAS receipts before route projection (2026-09-23)
+
+Forge Core's Runtime bridge now binds an owner-scoped Prompt append response to
+the caller's exact `expected_version` before returning the typed result. The
+bridge keeps the existing strict Conversation, role, content, Prompt identity,
+timestamp, replay, and JSON-safe checks, then requires the returned
+`aggregate_version` to equal `expected_version + 1` within the safe integer
+ceiling. A jumped, stale, or unsafe CAS receipt fails closed even for direct
+bridge callers; the authenticated HTTP route retains its own final transport
+check. This is response-boundary hygiene for the shared Prompt write and adds
+no Run creation, device visibility authority, target selection, lease mutation,
+scheduling, dispatch, Runner transport or command execution, receipt
+persistence, registration/heartbeat, or Audit publication. ADR-0039 remains
+planning-only, ADR-0114 remains Proposed/null, and P3b/P4/live Runner effects
+remain separately gated.
+
+## 638. Core binds fresh pending Run-intent Prompt CAS receipts (2026-09-23)
+
+Forge Runtime's authenticated CLI/TUI client, Forge Core's Runtime bridge,
+the accepted execution HTTP boundary, and Snaplink Console's shared
+Web/App/Mobile API now bind a fresh
+`SubmitOwnedPromptRunIntent` receipt to the caller's exact
+`expected_version + 1` within the JSON-safe ceiling, and all request
+boundaries require a positive JSON-safe `expected_version`. Stale, skipped,
+zero, or unsafe fresh receipts fail closed before a CLI/TUI/Web/App/Mobile
+client can advance its shared-session projection. Replayed submissions preserve
+the historical Prompt, intent, profile, and aggregate receipt exactly, so retry
+and profile semantics remain unchanged. This is response-boundary validation
+only and adds no Run creation, device visibility authority, target selection,
+lease mutation, scheduling, dispatch, Runner transport or command execution,
+registration/heartbeat, receipt persistence, or Audit publication. ADR-0039
+remains planning-only, ADR-0114 remains Proposed/null, and P3b/P4/live Runner
+effects remain separately gated.
+
+## 639. Console drops a selected session when owner refresh no longer proves it (2026-09-23)
+
+Snaplink Console's shared Web/App/Mobile Sessions surface no longer restores a
+previously selected Conversation solely because the first owner-scoped page
+omits it. When the selected row is absent, the screen performs one
+owner-authenticated detail read; only a current owner response can keep the
+selection and its Prompt/Run projection. A deleted, revoked, foreign, or
+unverifiable row clears the selection and private details while retaining the
+fresh page, so a stale session cannot remain visible or receive further reads.
+The default Gate and transport contracts are unchanged, and this adds no
+device enrollment/heartbeat, inventory authority, Run creation, scheduling,
+lease, Runner transport/execution, receipt persistence, or Audit publication.
+ADR-0039 remains planning-only, ADR-0114 remains Proposed/null, and P3b/P4/live
+Runner effects remain separately gated.
+
+## 640. Runtime TUI drops a selected session when owner refresh no longer proves it (2026-09-23)
+
+Forge Runtime's interactive TUI now revalidates a selected Conversation through
+the authenticated owner detail route when a refreshed first page omits it.
+Only a successful current owner response keeps the selected entry and its
+Prompt/Run projection. A deleted, revoked, foreign, or unverifiable detail
+response commits the fresh page, clears the selected entry and private history,
+and fails closed so stale session data cannot remain visible or receive a
+write. This adds no device enrollment/heartbeat, inventory authority, Run,
+scheduling, lease, Runner transport/execution, receipt persistence, or Audit
+authority. ADR-0039 remains planning-only, ADR-0114 remains Proposed/null, and
+P3b/P4/live Runner effects remain separately gated.
+
+## 641. Inventory/resource joins bind Runner observation time (2026-09-23)
+
+Forge Runtime's authenticated CLI and TUI inventory/resource convergence
+readers, Snaplink Console's shared Web/App/Mobile reader, and the mirrored
+Aero-ID/Aero-IM/Aero-Vault/Audit Governance contract consumers now require the
+inventory v2 device `snapshot_observed_at_ms` to equal the paired resource-view
+device `observed_at_ms`. A resource row with matching owner, Runner identity,
+revision, generation, heartbeat, and capacity but a different observation time
+now fails closed, so a stale or cross-snapshot device image cannot be displayed
+as one converged pair. The standalone client-instance observation time remains
+independent; Core's existing persisted resource projection already derives the
+device time from the same Runner observation used by inventory. This is a
+read-only freshness binding and adds no enrollment/heartbeat, inventory write,
+target selection, reservation, scheduler lease, dispatch, Runner transport or
+execution, receipt persistence, or Audit authority. ADR-0039 remains
+planning-only, ADR-0114 remains Proposed/null, and P3b/P4/live Runner effects
+remain separately gated.
+
+## 642. Runtime TUI refreshes the selected instance before private session reads (2026-09-23)
+
+Forge Runtime's interactive TUI now refreshes an explicitly selected
+client-instance/session or resource observation before refreshing the owner
+Conversation page, Prompt history, Run timeline, or pending Run-intent
+metadata. A revoked, failed, or non-converged observation therefore blocks
+that sync before private session reads can use the previous instance image;
+the ordinary TUI path remains request-free when no instance filter is active.
+This is a local owner/session projection boundary only and adds no enrollment,
+heartbeat, inventory write, target selection, reservation, scheduling, lease,
+dispatch, Runner transport or execution, receipt persistence, or Audit
+authority. ADR-0039 remains planning-only, ADR-0114 remains Proposed/null, and
+P3b/P4/live Runner effects remain separately gated.
+
+## 643. Aero mirrors reject malformed client-instance rows before convergence (2026-09-23)
+
+The Aero-ID, Aero-Vault, and Snaplink Audit Governance receiver mirrors now
+validate the owner tuple and each client-instance row before comparing the
+session-view and resource-view arrays. Instance and session identifiers must be
+bounded and canonically ordered, client kind and lifecycle status must use the
+accepted vocabulary, and observation times must be positive and JSON-safe.
+Missing/null row arrays, duplicate or unsorted identifiers, invalid
+kinds/statuses, malformed or foreign owner declarations, and
+zero/negative/unsafe observation values therefore fail closed even when the
+same malformed rows appear in both views. This closes receiver parity only and
+adds no enrollment/heartbeat, inventory write, target selection, reservation,
+scheduling, lease, dispatch, Runner transport or execution, receipt
+persistence, or Audit authority. ADR-0039 remains planning-only, ADR-0114
+remains Proposed/null, and P3b/P4/live Runner effects remain separately gated.
+
+## 644. Runtime TUI and Console drop selected sessions after private read rejection (2026-09-23)
+
+Forge Runtime's interactive TUI and Snaplink Console now treat a deterministic
+owner rejection or foreign/malformed Prompt/Run response as loss of proof for
+the cached selected Conversation. The clients remove that row and clear its
+private Prompt/Run projection before exposing the error; other owner rows stay
+available, and transient timeout, rate-limit, or server failures keep the
+existing retry/stale-error behavior. Prompt history pagination and Run timeline
+reads use the same boundary, so a deleted or revoked session cannot remain
+selected solely because a private read failed after its list row was cached.
+This is read-side state hygiene only and adds no enrollment/heartbeat,
+inventory, target selection, reservation, scheduling, lease, Runner
+transport/execution, receipt persistence, or Audit authority. ADR-0039 remains
+planning-only, ADR-0114 remains Proposed/null, and P3b/P4/live Runner effects
+remain separately gated.
+
+## 645. Aero-IM rejects malformed client-instance rows before convergence (2026-09-24)
+
+Aero-IM's receiver-side client-instance/session/resource contract now applies
+the same bounded owner, identifier, client-kind, lifecycle-status, and
+JSON-safe observation-time checks used by the Go mirrors before a composed
+session/resource view can be treated as converged. Resource device and Runner
+identifiers use the same bounded syntax, and malformed rows are rejected even
+when both source views carry identical malformed values. This is offline
+compatibility validation only and adds no enrollment/heartbeat, inventory
+write, target selection, reservation, scheduling, lease, dispatch, Runner
+transport or execution, receipt persistence, or Audit authority. ADR-0039
+remains planning-only, ADR-0114 remains Proposed/null, and P3b/P4/live Runner
+effects remain separately gated.
+
+## 646. Runtime CLI binds instance-filtered private reads to converged resource observations (2026-09-24)
+
+Forge Runtime's non-interactive CLI now uses the paired owner-bound
+session-view and resource-view reads whenever `remote sessions`, `prompts`,
+`runs`, or pending Run-intent commands use `--instance` without an explicit
+local `--instance-view` file. The two observations must have identical owner
+declarations and client-instance rows before the CLI derives the local
+session-id projection; a resource observation that drifts in time, status,
+kind, or session membership therefore blocks the subsequent private
+Conversation, Prompt, Run, or pending Run-intent request. Explicit local
+files remain caller-supplied offline display declarations and continue to be
+validated by the strict local decoder.
+
+This closes the CLI parity gap with the TUI and Console convergence boundaries.
+The paired reads remain GET-only and display-only; no owner claim, instance
+query parameter, enrollment, heartbeat, inventory write, target selection,
+reservation, scheduling, lease, dispatch, Runner transport or execution,
+receipt persistence, or Audit authority was added. ADR-0039 remains
+planning-only, ADR-0114 remains Proposed/null, and P3b/P4/live Runner effects
+remain separately gated.
+
+## 647. Runtime TUI binds explicit inventory/resource observations before shared-session writes and scheduler previews (2026-09-24)
+
+The accepted planning-only Runtime TUI path now reuses the existing
+`observations_converged` comparison whenever both an inventory v2 observation
+and a client-instance resource observation are open in TUI state. Prompt and
+pending Run-intent submission/retry, scheduler selection preview, scheduler
+lease claim, and scheduler lease renewal require the two observations to carry
+the same owner, device, lifecycle, capacity/GPU, and observation-time image.
+Drift is rendered locally and returns before any request or pending write is
+created. With neither observation or only one side present, the existing
+compatibility path remains available; lease release remains available for
+cleanup after a stale image.
+
+This closes the TUI write/preview gap after inventory/resource observation
+refresh and keeps the boundary read-only and fail-closed. It does not add
+inventory enrollment or heartbeat, target selection authority, reservation,
+lease/dispatch authority, Runner transport or execution, receipt persistence,
+or Audit authority. ADR-0039 remains planning-only, ADR-0114 remains
+Proposed/null, and P3b/P4/live Runner effects remain separately gated.
+
+## 648. Core binds Conversation import receipts at the HTTP boundary (2026-09-24)
+
+Forge Core's authenticated Conversation import route now revalidates the
+typed backend receipt against the submitted title and transcript size before
+serializing it to CLI, TUI, Web, App, or Mobile consumers. The receipt must
+carry a bounded Conversation ID, the required Global scope, the exact title,
+JSON-safe timestamps and aggregate version, and an imported prompt count equal
+to the request. A non-Rust or injected backend that returns a foreign title,
+scope, identifier, or count therefore fails closed even though the Runtime
+bridge has its own response validator. This remains storage-only Conversation
+import and adds no device enrollment/heartbeat, inventory, target selection,
+reservation, scheduling, lease, dispatch, Runner transport/execution, receipt
+persistence, or Audit authority. ADR-0039 remains planning-only, ADR-0114
+remains Proposed/null, and P3b/P4/live Runner effects remain separately
+gated.
+
+## 649. Console keeps owner inventory proof across client-instance filter changes (2026-09-24)
+
+Snaplink Console's shared Web/App/Mobile Sessions surface now treats v1/v2
+inventory and registry placement observations as owner-scoped screen resources
+when a local client-instance filter changes. Switching from one declared
+instance to another clears only the private Conversation/Prompt/Run projection,
+so the selected instance cannot inherit hidden session state while the already
+validated inventory proof is not discarded. Concurrent opt-in v2 inventory and
+client-resource refreshes are coalesced. A write boundary reuses the current
+validated converged pair; missing, loading, stale, failed, or drifted reads
+still force a refresh and remain fail-closed, so no operation can use them as
+fresh convergence evidence. Explicit HTTP candidate readers use wall-clock
+deadlines so real IO is not expired by a caller's virtual frame clock. This is
+client-side observation-state hygiene only and adds no enrollment/heartbeat,
+inventory authority, target selection, reservation, scheduling, lease,
+dispatch, Runner transport/execution, receipt persistence, or Audit authority.
+ADR-0039 remains planning-only, ADR-0114 remains Proposed/null, and P3b/P4/live
+Runner effects remain separately gated.
+
+## 650. Console revokes private state across shared-session instance filters (2026-09-24)
+
+Snaplink Console's shared Web/App/Mobile Sessions surface now invalidates
+private Prompt/Run details on every client-instance filter transition, including
+when the same Conversation remains declared by both instances, marks the
+selected owner session for a subsequent authenticated re-read, and retains
+owner-scoped inventory/resource observations. Regression coverage proves the
+shared session panel survives, hidden Prompt/Run state is absent, and a
+refreshed instance projection cannot resurrect stale private metadata. No
+enrollment/heartbeat, inventory authority, target selection, reservation,
+scheduling, lease, dispatch, Runner transport/execution, receipt persistence,
+or Audit authority was added.
+ADR-0039 remains planning-only, ADR-0114 remains Proposed/null, and P3b/P4/live
+Runner effects remain separately gated.
+
+## 651. Runtime TUI revokes private state across instance filters (2026-09-24)
+
+Forge Runtime TUI now clears Prompt history, selected Run/timeline/observation,
+and pending Run-intent page/timeline metadata when a validated local
+client-instance filter actually changes. This covers instance-to-instance,
+instance-to-clear, and instance-to-scope transitions, including a shared
+Conversation declared by both instances. The selected owner Conversation,
+owner-scoped inventory/resource/client-instance observations, and pending
+Prompt/Run-intent/create writes remain available for an explicit re-read or
+retry. Invalid or unknown instance selectors leave state and transport
+untouched. The focused and full TUI regressions use a closed local client and
+prove that filtering sends no HTTP request. This is process-local projection
+hygiene only: no enrollment/heartbeat, inventory authority, target selection,
+reservation, scheduling, lease, dispatch, Runner transport/execution, receipt
+persistence, or Audit authority was added. ADR-0039 remains planning-only,
+ADR-0114 remains Proposed/null, and P3b/P4/live Runner effects remain gated.
+
+## 652. Console rejects divergent independent client-instance observations (2026-09-24)
+
+Snaplink Console's Web/App/Mobile Sessions surface now joins independently
+configured client-instance/session-view and client-instance/resource-view
+readers before deriving the local instance filter or allowing private
+Conversation, Prompt, and Run reads. Owner declarations, the complete sorted
+instance rows, client kind, status, session membership, and observation times
+must match. During a missing, loading, stale, failed, or divergent refresh the
+selected filter remains fail-closed, the visible session projection is empty,
+and a previously rendered Prompt is not rehydrated. A divergent observation
+may be retained as display metadata, but it cannot drive the filter or a
+private read, and a later refresh can replace both sides with one converged
+image. Regression coverage drives a changed observation time through the
+scheduled change-feed boundary and proves no second Prompt read occurs. Final
+visibility checks also discard an in-flight Run or pending Run-intent response
+that returns after the selected pair enters a reader gap. The combined
+session/resource reader keeps its existing strict validation path, and the
+default Gate remains request-free.
+
+This is a local read-consistency boundary only. It adds no enrollment,
+heartbeat, inventory mutation, target selection, reservation, scheduling,
+lease, dispatch, Runner transport or execution, receipt persistence, or Audit
+authority. ADR-0039 remains planning-only, ADR-0114 remains Proposed/null, and
+P3b/P4/live Runner effects remain separately gated.
+
+## 653. Runtime TUI exposes non-converged client-instance state (2026-09-24)
+
+Forge Runtime TUI now keeps the last owner-bound session/resource observations
+available as display metadata while tracking whether the pair is incomplete or
+divergent. The renderer explicitly says that the active client-instance filter
+and its private Prompt/Run projection are blocked until both snapshots
+converge. A failed second reader or a one-sided replacement cannot publish a
+mixed pair, and the warning remains visible until a later refresh produces the
+same owner and complete instance image. When no client-instance filter is
+active, ordinary owner reads retain the existing compatibility behavior.
+
+This is a process-local display and fail-closed boundary. It does not add
+enrollment, heartbeat, inventory mutation, target selection, reservation,
+scheduling, lease, dispatch, Runner transport or execution, receipt
+persistence, or Audit authority. ADR-0039 remains planning-only, ADR-0114
+remains Proposed/null, and P3b/P4/live Runner effects remain separately
+gated.
+
+## 654. Forge Core closes the execution-adjacent production route matrix (2026-09-24)
+
+Forge Core now keeps table-driven default-off regressions for the execution
+adjacent route surface. Ordinary authenticated session construction and the
+configured `Run` server return the standard 404 for Runner execution-intent, dispatch-plan,
+dispatch-admission, transport-admission, execution-boundary, Attempt-boundary,
+execution-reconciliation, and execution-evidence previews, as well as
+scheduler selection and scheduler lease claim/renew/release paths. The matrix
+covers twelve paths and proves that authentication alone does not mount a
+candidate; the explicit device-fabric EXECUTE assembly remains the only route
+mount seam.
+
+This is route-closure evidence only. It does not enable Runner authority,
+reservation, lease mutation, dispatch, transport, execution, receipt
+persistence, or Audit publication. ADR-0039 remains planning-only, ADR-0114
+remains Proposed/null, and P4/live Runner effects remain separately gated.
+
+## 655. Runtime TUI guards every selected-session Runner metadata preview (2026-09-24)
+
+The Runtime TUI now applies the existing local
+`ensure_conversation_visible_to_client_instance` check before the first HTTP
+request in the selected-session Runner metadata surface. The guard covers
+local Runner readiness, execution-intent, dispatch-plan, dispatch admission,
+transport admission, execution and Attempt boundaries, receipt history,
+reconciliation, execution evidence, Attempt/lease preflight, and execution
+consent. A selected Conversation that is hidden by the active client-instance
+filter, or whose session/resource observations have not converged, returns
+locally and reports that no request was sent. With no active filter, existing
+owner-scoped behavior remains unchanged.
+
+This is a process-local display/read boundary. It does not authenticate a
+client instance, enroll or heartbeat a device, mutate inventory, select or
+reserve a target, claim or mutate a scheduler lease, dispatch or execute a
+Runner command, persist a receipt, or publish Audit evidence. ADR-0039 remains
+planning-only, ADR-0114 remains Proposed/null, and P3b/P4/live Runner effects
+remain separately gated.
+
+## 656. Console atomically joins independent Run and Runner-receipt observations (2026-09-24)
+
+Snaplink Console's shared Web/App/Mobile Sessions surface accepts an explicit
+`ForgeSessionRunnerReceiptObservationReader` only as a companion to the
+existing Run observation reader. The Screen reads both values concurrently,
+strictly re-decodes each value, and commits neither until one convergence
+check binds the owner reference, Conversation, Prompt, Run ID and selected Run
+summary (created time, latest sequence, status) together with receipt Attempt,
+Command, target, command digest, disposition, observation time, and the
+`uncertain == reconciliation_required` state. A missing side, binding drift,
+reader failure, selection change, or late response clears or rejects the
+paired projection. Run execution evidence receives the already converged
+receipt, so it cannot combine independently refreshed halves.
+
+The Gate's default construction leaves this reader unset and therefore makes
+no request. The reader is a display-only candidate seam: it adds no receipt
+persistence, owner authentication, device enrollment/heartbeat, inventory
+mutation, target selection, reservation, scheduling, lease, dispatch, Runner
+transport/execution, or Audit authority. ADR-0039 remains planning-only,
+ADR-0114 remains Proposed/null, and P4/live Runner effects remain separately
+gated.
+
+## 657. Native Mobile client-instance session/resource acceptance (2026-09-24)
+
+Android and iOS native acceptance inputs now carry an explicit
+`client_instance_id` together with owner-bound session and resource views. The
+Python, Kotlin, Swift, and Flutter validators require a selected visible
+`mobile` instance to declare the Conversation and reject missing or hidden
+membership, non-mobile rows, owner or instance-row drift, non-display-only
+authority, malformed capacity, duplicate keys, and unsafe extra fields before
+the first Conversation or Prompt request. Both native cold starts read the
+same converged pair before listing or writing the shared Conversation.
+
+The host-side Go journey mounts only a test-only read candidate route behind a
+Snaplink JWT; production constructors remain default-off. This slice does not
+add enrollment or heartbeat, inventory mutation, scheduling, Runner or receipt
+authority, device writes, Run-intents, placement, dispatch, or execution.
+ADR-0039 remains planning-only, ADR-0114 remains Proposed/null, and P4/live
+Runner effects remain separately gated.
+
+## 658. Runtime CLI instance-filtered execution-consent preview (2026-09-24)
+
+Forge Runtime's `remote execution-consent preview` command now accepts an explicit
+`--instance INSTANCE_ID` together with an optional strict local `--instance-view`
+file. In online mode, the client reads the authenticated owner-bound
+`client-instances/session-view` and `client-instances/resource-view` pair before
+the consent GET and requires the complete instance rows to converge. Hidden
+membership, missing or malformed observations, and row drift fail closed with no
+execution-consent request. A local instance view is validated offline and avoids
+candidate reads; the existing unfiltered command keeps its single consent GET.
+
+The command remains a read-only planning/display seam. It does not grant consent,
+create a Run, select or reserve a target, claim a lease, dispatch or execute a
+Runner, persist a receipt, enroll or heartbeat a device, or publish Audit evidence.
+ADR-0039 remains planning-only, ADR-0114 remains Proposed/null, and P4/live Runner
+effects remain separately gated.
+
+## 659. Optional device-observation scope/profile parity (2026-09-24)
+
+The canonical Forge/Snaplink profile now declares `forge:devices:read` as a
+separate observation scope and describes a `forge-device-observer` profile that
+combines Conversation read with device observation. The distributed Snaplink
+seed registers that profile as `active: false`; the normal `forge-cli` and
+`forge-console` clients remain conversation-only. Owner-parity coverage proves
+that a default client requesting the device scope is rejected and that a
+test-only explicitly activated observer preserves the same issuer, subject,
+tenant, and Forge audience.
+
+Forge Core, Runtime, and Snaplink Console strict profile consumers now validate
+the same optional shape. Console exposes the observer constants as a separate
+profile but does not add them to the default login URL. The profile is
+configuration evidence only: no production session/resource route is enabled,
+and no enrollment, inventory mutation, target selection, reservation,
+scheduling, lease, dispatch, Runner, receipt, or execution authority follows
+from declaring the optional scope. Aero-ID, Aero-IM, Aero-Vault, and Snaplink
+Audit Governance remain offline audit/receiver surfaces and gain no session
+reader. ADR-0039 remains planning-only, ADR-0114 remains Proposed/null, and
+P4/live Runner effects remain separately gated.
+
+## 660. Snaplink JWT client-instance pair authorization boundary (2026-09-24)
+
+The opt-in Forge Core convergence journey now crosses a real Snaplink JWT
+boundary. A token carrying both `forge:conversations:read` and
+`forge:devices:read` reads the owner-bound session and resource projections,
+and the test compares the complete five-row CLI/TUI/Web/App/Mobile instance
+image plus the read-only device/Runner observation. A second token carrying
+only Conversation read can still read session metadata, but receives `403`
+for resource-view before the resource source is invoked; this keeps the two
+authorization gates independent.
+
+The pair is mounted only on the explicit test mux. Even the full-scope token
+receives the standard `404` from both paths through the ordinary production
+constructor. This is authenticated scope and source-boundary evidence only;
+it does not enable production enrollment, heartbeat, inventory mutation,
+target selection, reservation, scheduling, lease, dispatch, Runner, receipt,
+or execution authority. ADR-0039 remains planning-only, ADR-0114 remains
+Proposed/null, and P4/live Runner effects remain separately gated.
+
+## 661. Runtime CLI scheduler preview respects the selected client-instance pair (2026-09-24)
+
+Forge Runtime's `remote placement scheduler-preview` command now accepts
+`--instance INSTANCE_ID` and an optional strict local `--instance-view FILE|-`.
+Without a local view, the command reads the authenticated owner-bound
+session/resource pair and requires the request's `conversation_id` to be
+declared by the converged instance before sending the scheduler-preview POST.
+Hidden membership, malformed observations, row drift, and invalid selectors
+fail closed before the candidate request. A local display observation avoids
+the pair reads; omitting `--instance` preserves the existing single POST.
+
+The pair remains a display/planning projection. The scheduler response still
+selects no target, creates no reservation or lease, dispatches no Runner, and
+does not persist a receipt or enable enrollment, heartbeat, or execution.
+ADR-0039 remains planning-only, ADR-0114 remains Proposed/null, and P4/live
+Runner effects remain separately gated.
+
+## 662. Snaplink JWT client-instance scheduler-preview convergence E2E (2026-09-24)
+
+Forge Core now carries an opt-in integration journey that crosses the real
+Snaplink JWT boundary, reads the complete CLI/TUI/Web/App/Mobile
+client-instance session/resource pair, and posts one planning-only scheduler
+preview for a Conversation declared by that owner. The resource projection and
+the scheduler's owner-private inventory/policy image deliberately share the
+same device/Runner pair; the response is checked to select that pair while all
+placement, reservation, lease, execution, dispatch, and Audit authority stays
+false.
+
+The journey also mints a token without the scheduler-preview scope and proves
+that the middleware rejects it before touching the Run, inventory, policy, or
+client-instance sources. The ordinary production constructor continues to
+return the standard `404`, even for the full-scope token. The contract script
+runs this test only with its explicit opt-in environment flag, so no live
+enrollment, heartbeat, lease, dispatch, Runner execution, receipt persistence,
+or P4 activation follows from the test.
+
+## 663. Console execution-readiness refresh respects the selected client-instance pair (2026-09-24)
+
+Snaplink Console's shared Web/App/Mobile local Runner execution-readiness
+preview now refreshes the selected client-instance session/resource projection
+and any separately configured inventory/resource observation immediately before
+invoking its explicit candidate reader. A missing, stale, drifted, or revoked
+pair clears the readiness projection and prevents the candidate POST; selected
+Conversation/Run changes remain fail-closed. Focused Flutter coverage proves
+that a second pair refresh hiding the selected session sends no
+execution-readiness request.
+
+This remains a metadata-only preflight. It adds no Runner transport/argv
+execution, lease mutation, reservation, scheduling, enrollment/heartbeat,
+receipt persistence, or Audit authority; ADR-0039 remains planning-only,
+ADR-0114 remains Proposed/null, and P4/live Runner effects remain gated.
+
+## 664. CLI instance-filtered Prompt write joins the converged resource pair (2026-09-24)
+
+The real Forge Core session-projection journey now mounts both owner-bound
+client-instance observations and drives the Rust Runtime CLI through a visible
+`client-cli-001` Prompt append only after the session/resource pair converges.
+The same journey attempts a second CLI write to a Conversation hidden from
+`client-web-001` and proves that the local instance guard rejects it before the
+Prompt POST. The existing TUI and shared Web/App/Mobile writes still land in the
+same owner history, so all five client kinds share one storage-only Conversation
+surface while retaining their declared display boundary.
+
+This adds no session or Prompt authority, Run creation, inventory mutation,
+target selection, reservation, scheduling, lease, dispatch, Runner
+transport/execution, receipt persistence, enrollment/heartbeat, or Audit
+authority. ADR-0039 remains planning-only, ADR-0114 remains Proposed/null, and
+P4/live Runner effects remain gated.
+
+## 665. Runtime CLI scheduler lease lifecycle respects the selected client-instance pair (2026-09-24)
+
+Forge Runtime's `remote placement scheduler-lease`, `scheduler-lease-renew`,
+and `scheduler-lease-release` commands now accept `--instance INSTANCE_ID`
+with an optional strict local `--instance-view FILE|-`. With an online filter,
+the CLI reads the authenticated owner-bound session/resource pair before the
+candidate claim, renewal, or release POST. Hidden membership, malformed rows,
+and pair drift fail closed before the lease request; a local display view avoids
+candidate observations, and omitting the filter preserves the legacy unfiltered
+POST. Explicit idempotency keys remain required, request/response proof binding
+is still validated, and the TUI continues to withhold fencing material.
+
+The selected pair remains a caller-visible session boundary. This slice does
+not enable production lease routes, enrollment or heartbeat, inventory
+mutation, target selection beyond the explicitly accepted candidate, Runner
+dispatch/transport/execution, receipt persistence, or Audit authority. ADR-0039
+remains planning-only, ADR-0114 remains Proposed/null, and P4/live Runner
+effects remain separately gated.
+
+## 666. Runtime CLI instance-filtered Runner dispatch-plan convergence E2E (2026-09-24)
+
+Forge Core now drives the real Rust Runtime CLI through a Snaplink JWT with
+`--instance client-cli-001`. The CLI reads and validates the owner-bound
+client-instance session/resource pair before posting the planning-only Runner
+dispatch-plan candidate. The opt-in journey checks the ordered session GET,
+resource GET, and dispatch-plan POST, the owner and complete five-client row
+convergence, the display-only resource binding and false authority, and a
+hidden `client-web-001` rejection before any candidate POST. The ordinary
+production dispatch-plan route still returns 404.
+
+This slice adds no target selection, reservation, lease, dispatch, Runner
+transport or execution, receipt persistence, enrollment or heartbeat, or Audit
+authority. ADR-0039 remains planning-only, ADR-0114 remains Proposed/null,
+and P4/live Runner effects remain separately gated.
+
+## 667. Snaplink JWT Runtime CLI scheduler-lease pair convergence E2E (2026-09-24)
+
+Forge Core's opt-in candidate-mux journey now drives the real Rust Runtime CLI
+through scheduler lease claim and renewal with `--instance client-cli-001`.
+Each visible operation reads and validates the owner-bound five-instance
+session/resource pair before its lease POST. A hidden `client-web-001` claim or
+renewal reads only the two pair members and fails closed before the lease
+route. Claim, renewal, and release remain `404` through the ordinary production
+constructor, and the returned authority remains limited to placement,
+reservation, and lease predicates.
+
+This slice adds no Runner transport or execution, enrollment or heartbeat,
+receipt persistence, Audit publication, or live P4 effect. ADR-0039 remains
+planning-only, ADR-0114 remains Proposed/null, and P4/live Runner effects
+remain separately gated.
+
+
+## 668. Snaplink JWT Runtime CLI scheduler-lease release pair convergence E2E (2026-09-24)
+
+The same opt-in candidate-mux journey now drives the real Rust Runtime CLI
+through `scheduler-lease-release --instance client-cli-001` after a renewed
+fenced proof is returned. The visible release reads and validates the
+owner-bound session/resource pair before one release POST and binds the
+owner, Conversation/Run/Attempt, target, epoch, release timestamp, and
+zero-authority receipt. A hidden `client-web-001` release reads only the two
+pair members and fails closed before any release POST. The ordinary production
+constructor still returns 404 for claim, renewal, and release.
+
+This slice adds no Runner transport or execution, enrollment or heartbeat,
+receipt persistence, Audit publication, or live P4 effect. ADR-0039 remains
+planning-only, ADR-0114 remains Proposed/null, and P4/live Runner effects
+remain separately gated.
+
+## 669. Console dispatch-plan preview revalidates the selected session/resource pair before POST (2026-09-24)
+
+Snaplink Console's shared Web/App/Mobile Sessions surface now refreshes the
+selected client-instance session and resource observations immediately before
+the opt-in Runner dispatch-plan candidate reader. If either observation no
+longer declares the selected Conversation, is stale, or no longer converges,
+the candidate projection is cleared and no dispatch-plan POST is sent. The
+focused Gate test drives both readers twice and proves the second hidden row
+blocks the candidate.
+
+The default Gate remains request-free. This slice adds no Runner transport or
+execution, enrollment or heartbeat, reservation, lease mutation, receipt or
+Audit authority, or live P4 effect. ADR-0039 remains planning-only,
+ADR-0114 remains Proposed/null, and P4/live Runner effects remain gated.
+
+## 670. Runtime TUI real JWT inventory/resource and client-instance Runner candidate convergence (2026-09-24)
+
+Forge Core now drives the real Rust Runtime TUI through an opt-in Snaplink JWT
+journey. The TUI reads the owner-bound v2 inventory, reads and converges the
+client-instance session/resource pair, selects `client-tui-001`, and posts one
+planning-only Runner dispatch-plan candidate. A hidden `client-web-001`
+projection completes the same authenticated observations but stops before any
+candidate POST. The ordinary production dispatch-plan constructor remains
+closed with 404.
+
+This supplies the missing real-TUI evidence for the inventory/resource to
+client-instance to Runner-candidate chain. It adds no target selection,
+reservation, lease, dispatch, Runner transport or execution, receipt
+persistence, enrollment or heartbeat, Audit publication, or live P4 effect;
+ADR-0039 remains planning-only, ADR-0114 remains Proposed/null, and P4/live
+Runner effects remain separately gated.
+
+## 671. Console Sessions Gate accepts a real JWT client-instance pair before dispatch-plan POST (2026-09-24)
+
+Forge Core now drives Snaplink Console's shared Web/App/Mobile Sessions Gate
+against a real JWT candidate API. The visible `client-cli-001` path refreshes
+and validates both session and resource observations before exactly one
+dispatch-plan POST. A hidden `client-web-001` projection, or a session/resource
+drift between the two observations, fails closed after the pair reads and sends
+no dispatch-plan POST. The ordinary production session/resource/dispatch
+constructors remain `404`.
+
+This adds no Runner transport or execution, enrollment or heartbeat,
+reservation, lease mutation, receipt persistence, Audit publication, or live P4
+effect. ADR-0039 remains planning-only, ADR-0114 remains Proposed/null, and
+P4/live Runner effects remain separately gated.
+
+## 672. Runtime TUI scheduler-preview pair convergence (2026-09-24)
+
+Forge Core now drives the real Rust Runtime TUI through an opt-in Snaplink JWT
+journey. The TUI performs its normal owner Conversation list, then reads the
+converged client-instance session/resource pair, selects `client-web`, and
+posts one planning-only scheduler preview. A hidden `client-tui` selection
+reads the same pair but stops before the preview POST when the Conversation is
+not declared for that instance. The candidate response keeps all placement,
+reservation, lease, execution, dispatch, and Audit authority false; the
+ordinary production scheduler-preview constructor remains 404.
+
+This slice adds no target selection, reservation, lease mutation, Runner
+transport or execution, receipt persistence, enrollment or heartbeat, Audit
+publication, or live P4 effect. ADR-0039 remains planning-only, ADR-0114
+remains Proposed/null, and P4/live Runner effects remain separately gated.
+
+## 673. Runtime TUI scheduler-lease claim pair convergence (2026-09-24)
+
+Forge Core now drives the real Rust Runtime TUI through an opt-in Snaplink JWT
+journey that reads session-view and resource-view before an instance-filtered
+scheduler-lease claim. The visible `client-tui-001` path reaches a second
+eligible `device-b/runner-b` candidate and renders only the redacted lease
+receipt; a hidden `client-web-001` path reads the pair and fails closed without
+a lease POST. The second candidate is intentional: the durable registry keeps
+historical fencing epochs after renewal/release, so reusing the first target in
+the same acceptance would incorrectly test target conflict instead of TUI
+convergence. The ordinary production claim, renewal, and release constructors
+remain 404.
+
+This slice adds no Runner transport or execution, enrollment or heartbeat,
+receipt persistence, Audit publication, or live P4 effect. ADR-0039 remains
+planning-only, ADR-0114 remains Proposed/null, and P4/live Runner effects
+remain separately gated.
+
+## 674. Console Web/App/Mobile Prompt writes converge independent session/resource readers (2026-09-24)
+
+The real Snaplink JWT Console acceptance now enables both independent
+client-instance session-view and resource-view candidate readers for Web,
+desktop App, and Mobile. The test scrolls the projection panels before locating
+the owner Conversation, selects the declared instance, and proves that the
+screen refreshes both observations before exactly one owner-scoped Prompt POST.
+The hidden Conversation is checked for the absence of a Prompt POST. A focused
+widget regression covers the no-initial-instance path and keeps owner
+Conversations visible while the two read-only observations converge.
+
+The candidate routes remain opt-in and production construction remains
+request-free. This slice adds no enrollment or heartbeat, inventory mutation,
+target selection, reservation, scheduler lease, Runner transport or execution,
+receipt persistence, Audit publication, or live P4 authority; ordinary Prompt
+storage remains the only write exercised.
+
+## 675. Console scheduler-preview pair gate (2026-09-24)
+
+Snaplink Console now has focused candidate coverage for the planning-only
+scheduler preview on a selected client instance. The Gate re-reads independent
+session-view and resource-view observations before one scheduler-preview POST
+and leaves the candidate request-free when the selected Run is hidden from that
+instance.
+
+The default Gate and production scheduler-preview constructor remain closed.
+This slice adds no reservation, lease mutation, Runner transport or execution,
+receipt persistence, enrollment or heartbeat, Audit publication, or live P4
+authority.
+
+## 676. Console scheduler candidates require composed inventory/resource convergence (2026-09-24)
+
+The shared Snaplink Console Sessions Gate now treats a composed owner-bound
+inventory/resource response as one half of the scheduling read boundary when a
+separate client-instance session/resource pair is also configured. Before an
+explicit scheduler preview, lease claim, renewal, release, or related metadata
+candidate operation, the Gate requires fresh validated snapshots and compares
+the complete resource image and owner declaration. Missing, failed, stale, or
+revision-drifted state returns a local fail-closed error before the candidate
+request; a valid pair reaches the existing candidate exactly once.
+
+Focused Flutter coverage proves valid composed-pair reads precede one lease
+claim and that a revision drift sends no lease POST. The default Gate and
+production constructors remain request-free/404. This slice adds no enrollment
+or heartbeat, inventory mutation, reservation or additional lease authority,
+Runner transport or execution, receipt persistence, Audit publication, or live
+P4 effect. ADR-0039 remains planning-only, ADR-0114 remains Proposed/null, and
+P4/live Runner effects remain separately gated.
+
+## 677. Audit Governance archives the dispatch-preflight request ABI (2026-09-24)
+
+Snaplink Audit Governance now mirrors the canonical
+`forge-run-attempt-lease-dispatch-preflight-request-v1` fixture and strictly
+accepts it as an archival observation. The receiver binds the owner,
+Conversation, Run, Attempt, placement request, Runner intent, idempotency key,
+and lease target, and rejects unknown, duplicate, trailing, selected-target,
+lease-target, or authority mutations.
+
+This is offline compatibility evidence. It does not authenticate a device,
+select or reserve capacity, issue or mutate a lease, dispatch or execute Runner
+work, persist receipts, or publish Audit authority. ADR-0039/ADR-0114 remain
+gated and P4 is unchanged.
+
+## 678. Real JWT Console Web/App/Mobile scheduler-lease projection (2026-09-24)
+
+Forge Core's opt-in acceptance mux now drives the shared Snaplink Console
+Sessions Gate with one real JWT for Web, desktop App, and Mobile. Each visible
+instance reads inventory-v2/resource and client-instance session/resource
+observations before exactly one idempotent replay of the same fenced lease.
+A hidden Conversation reads only the owner-bound pair and produces no lease
+POST. The test mux also mounts the Conversation child routes needed by the
+Sessions surface; the ordinary production session/resource/inventory/lease
+constructors still return `404`.
+
+The journey remains candidate-only and does not add enrollment or heartbeat,
+inventory mutation, new scheduling authority, Runner transport or execution,
+receipt persistence, Audit publication, or live P4 effects. ADR-0039 remains
+planning-only, ADR-0114 remains Proposed/null, and P4/live Runner effects
+remain separately gated.
+
+## 679. Console Run/Attempt preflight joins the selected client-instance pair (2026-09-24)
+
+Snaplink Console's shared Web/App/Mobile Sessions Gate now refreshes the
+owner-bound client-instance session/resource projection before invoking the
+opt-in Run/Attempt lease dispatch preflight or Runner Attempt-boundary
+candidate reader. A revoked or hidden selected Conversation, a stale pair, or
+inventory/resource drift clears the candidate and sends no preflight or
+Attempt-boundary POST; a converged pair reaches the existing planning-only
+candidate once. Focused Flutter coverage proves the preflight request order and
+zero POST after a second pair read hides the selected Run.
+
+The default Gate and production constructors remain request-free/404. This
+slice adds no enrollment or heartbeat, inventory mutation, target selection,
+reservation, lease mutation, Runner transport or execution, receipt
+persistence, Audit publication, or live P4 effect. ADR-0039 remains
+planning-only, ADR-0114 remains Proposed/null, and P4/live Runner effects
+remain separately gated.
+
+## 680. Aero-ID archives the dispatch-preflight request ABI (2026-09-24)
+
+Aero-ID's Audit Governance connector now mirrors the canonical
+`forge-run-attempt-lease-dispatch-preflight-request-v1` fixture and strictly
+consumes it as an offline archival observation. The receiver binds the owner,
+Conversation, Run, Attempt, placement, Runner intent, idempotency key, and
+lease target/epoch, while rejecting unknown, duplicate, trailing,
+selected-target, lease-target, and authority mutations.
+
+This adds no JWT, route, database, lease, scheduling, Runner, receipt, or Audit
+authority. ADR-0039/ADR-0114 remain gated and P4 is unchanged.
+
+## 681. Aero-IM and Aero-Vault archive the dispatch-preflight request ABI (2026-09-24)
+
+Aero-IM's Rust Audit connector and Aero-Vault's Go Audit Governance receiver now
+mirror the canonical `forge-run-attempt-lease-dispatch-preflight-request-v1`
+fixture byte-for-byte. Both strict archival receivers bind the owner,
+Conversation/Run/Attempt, placement, Runner intent, idempotency key, and lease
+target/epoch metadata while rejecting unknown, duplicate, trailing,
+selected-target, lease-target, and authority mutations.
+
+This remains offline compatibility evidence. It adds no device authentication,
+target selection, reservation, lease, scheduling, Runner transport or execution,
+receipt persistence, or Audit authority; ADR-0039/ADR-0114 remain gated and P4
+is unchanged.
+
+## 682. Runtime CLI/TUI pins the dispatch-preflight request boundary (2026-09-24)
+
+The authenticated Forge Runtime CLI and TUI now pin the canonical
+`forge-run-attempt-lease-dispatch-preflight-request-v1` bytes with a SHA-256
+test vector. Their shared request decoder rejects unknown, duplicate, trailing,
+selected-target, lease-target, and authority mutations before a candidate
+request is sent; the existing path, owner, lease binding, and metadata-only
+response checks remain in force.
+
+This is a bounded client boundary only. Production routes, lease mutation,
+Runner transport or execution, receipt persistence, and P4 authority remain
+closed; ADR-0039/ADR-0114 remain gated.
+
+## 683. Real JWT Console Web/App/Mobile Run/Attempt/lease preflight projection (2026-09-24)
+
+Forge Core's opt-in acceptance mux now drives the shared Snaplink Console
+Sessions Gate with one real JWT across Web, desktop App, and Mobile. Each
+visible instance re-reads its owner-bound client-instance session/resource pair
+and inventory/resource image before exactly one Run/Attempt/lease preflight
+POST. A hidden Web instance re-reads the pair but fails closed locally, sending
+neither an inventory nor a preflight POST.
+
+Conversation child routes are mounted only in the test mux; production pair,
+inventory, and preflight constructors remain `404`/default-off. This slice adds
+no enrollment or heartbeat, inventory mutation, target selection, reservation,
+lease mutation, Runner transport or execution, receipt persistence, Audit
+publication, or live P4 authority. ADR-0039/ADR-0114 remain gated and P4/live
+Runner effects remain separately gated.
+
+## 684. Runtime TUI preflight joins the explicit inventory/resource observation boundary (2026-09-24)
+
+The authenticated Forge Runtime TUI now checks its process-local owner-bound
+inventory-v2/resource observation pair immediately before the Run/Attempt/lease
+dispatch preflight candidate. A drifted owner, device, lifecycle, capacity,
+GPU, or observation-time image fails closed with zero POSTs; the existing
+selected client-instance session/resource guard still runs before the candidate.
+
+This is a local display/read boundary only. It adds no enrollment or heartbeat,
+inventory mutation, target selection, reservation, lease mutation, Runner
+transport or execution, receipt persistence, Audit publication, or P4 authority.
+ADR-0039/ADR-0114 remain gated and P4/live Runner effects remain separately
+gated.
+
+## 685. Runtime CLI preflight applies the selected client-instance pair (2026-09-24)
+
+`remote run-attempt-lease-dispatch-preflight-preview` now accepts an optional
+`--instance INSTANCE_ID` and `--instance-view FILE|-`. Online mode reads and
+converges the owner-bound client-instance session/resource pair before the
+metadata-only candidate POST and fails closed for a hidden Conversation;
+`--instance-view` applies the same display filter locally without candidate view
+reads. The unfiltered command remains compatible.
+
+This is a planning/read boundary only. It adds no inventory mutation, target
+selection, reservation, lease mutation, Runner transport or execution, receipt
+persistence, Audit publication, or P4 authority. ADR-0039/ADR-0114 remain
+gated and P4/live Runner effects remain separately gated.
+
+## 686. Real JWT Runtime CLI preflight projection (2026-09-24)
+
+Forge Core now drives the Runtime CLI through a real Snaplink JWT and the
+opt-in candidate mux. A visible `client-cli-001` request reads the owner-bound
+session/resource pair before one metadata-only Run/Attempt/lease preflight POST.
+A hidden Conversation re-reads the pair and emits zero candidate POSTs; the
+ordinary production pair and preflight constructors remain `404`.
+
+This adds no inventory mutation, target selection, reservation, lease mutation,
+Runner transport or execution, receipt persistence, Audit publication, or P4
+authority. ADR-0039/ADR-0114 remain gated and P4/live Runner effects remain
+separately gated.
+
+## 687. Real JWT Runtime TUI preflight projection (2026-09-24)
+
+Forge Core now drives the Runtime TUI through a real Snaplink JWT and the
+opt-in candidate mux. A visible `client-tui-001` session reads the owner-bound
+inventory/resource and client-instance session/resource observations before one
+metadata-only Run/Attempt/lease preflight POST. A hidden Conversation rereads
+the same observations and fails closed before POST; the ordinary production
+preflight constructor remains `404`.
+
+This is a client projection and ordering proof only. It adds no inventory
+mutation, target selection, reservation, lease mutation, Runner transport or
+execution, receipt persistence, Audit publication, or P4 authority.
+ADR-0039/ADR-0114 remain gated and P4/live Runner effects remain separately
+gated.
+
+## 688. Authenticated owner change SSE boundary (2026-09-24)
+
+Forge Core now exposes the owner-scoped
+`/api/v1/conversation-changes/stream` path over the existing dense change
+metadata. It requires the verified Snaplink owner and
+`forge:conversations:read`, emits immediately available rows as one SSE frame,
+and can long-poll for a later change with a bounded server-side wait. When the
+wait expires without a new row it returns `204`; malformed cursors, missing
+scope, cancellation, backend failure, and unsafe response images remain
+fail-closed.
+
+This is transport-only P2 delivery. It carries no Prompt content and adds no
+Run state, device inventory, enrollment/heartbeat, scheduling, Runner, receipt,
+or execution authority. ADR-0039/ADR-0114 remain gated and P4/live Runner
+effects remain separately gated.
+
+## 689. Real Snaplink JWT change-stream integration (2026-09-24)
+
+Forge Core now exercises the owner-scoped change stream with a real Snaplink
+JWT. The integration verifies the derived owner, requested cursor, SSE event
+identity, and metadata-only change page; the ordinary constructor remains
+fail-closed when no Runtime backend is configured. Snaplink Console Web/App/
+Mobile also exposes an explicit `conversationChangesStream` adapter that
+accepts exactly one strict `conversation_changes` event or an empty `204`,
+while the Sessions UI keeps its existing polling default. This is delivery
+evidence only and adds no Prompt, Run, device, lease, Runner, receipt, or
+execution authority. ADR-0039/ADR-0114 remain gated and P4/live Runner
+effects remain separately gated.
+
+## §690 Runtime CLI/TUI explicit Conversation SSE consumer (2026-09-24)
+
+Forge Runtime adds an explicit `remote changes stream` CLI command and `changes
+stream` TUI command over the owner-scoped Core SSE/long-poll path. The bounded
+client wait is 0..10000 ms so it remains inside the Runtime HTTP timeout. A
+successful response must be `text/event-stream` and contain exactly one
+`conversation_changes` event; the event id must equal the page's
+`scanned_through_cursor`. Duplicate/unknown fields, duplicate JSON keys,
+malformed framing, unsafe/noncanonical IDs, dense-page drift, and wrong media
+types are rejected before state changes. A `204` is represented as
+`timed_out=true` and leaves saved and in-process cursors unchanged. Implicit
+saved cursors advance only after a valid advancing page, while explicit cursors
+remain one-off. Existing polling and bounded watch paths remain the default.
+
+This extends P2 read delivery only. It does not add Prompt/Run mutation,
+device registration or heartbeat, inventory authority, target selection,
+reservation, scheduling, dispatch, Runner transport/execution, receipt, or Audit
+behavior. ADR-0039 remains planning-only, ADR-0114 remains Proposed/null, and
+P4 requires separate accepted execution/security governance.
+
+## §691 Console Sessions opt-in SSE consumer (2026-09-24)
+
+The shared Snaplink Console `ForgeSessionsScreen` now accepts an explicit
+`enableConversationChangesStream` flag and bounded wait. Once the initial
+owner-scoped snapshot completes, it runs one foreground stream request at a
+time. An empty `204` reconnects without moving the cursor; transport,
+401/refresh, malformed-frame, or cursor-validation failures disable stream mode
+for that screen instance and immediately reuse the existing adaptive JSON
+polling path. The stream calls the same Conversation merge, required history
+refresh, and owner-local cursor store; persistence happens only after those
+steps succeed. Pause, sign-out, disposal, and flag changes cancel reconnects.
+The default Gate and existing callers keep the flag false, so normal Sessions
+behavior remains polling.
+
+This is P2 read delivery only. It does not add Prompt/Run mutation, device
+registration/enrollment/heartbeat, authoritative inventory, target selection,
+reservation, scheduling, dispatch, Runner transport/execution, receipt, or
+Audit behavior. ADR-0039 remains planning-only, ADR-0114 remains Proposed/null,
+and P4 still requires separate accepted execution/security governance.
+
+## §692 Runtime TUI change-feed instance freshness gate (2026-09-24)
+
+Forge Runtime TUI now refreshes the explicit client-instance session/resource
+pair before `changes watch` or `changes stream` requests the owner-scoped
+Conversation change feed. Pair refresh failure or drift, and a Conversation
+revoked from the previously selected instance, stop before the feed request and
+leave the local cursor unchanged. With no instance filter, the existing request
+path remains unchanged. This is read/display freshness only; no Prompt/Run
+mutation, device enrollment or heartbeat, inventory authority, target
+selection, reservation, scheduling, dispatch, Runner, receipt, or Audit
+authority was added. ADR-0039 remains planning-only, ADR-0114 remains
+Proposed/null, and P4 remains separately gated.
+
+## §693 Real JWT Runtime CLI/TUI Conversation SSE E2E (2026-09-24)
+
+Forge Core's opt-in E2E now runs the Runtime CLI and line-oriented TUI with a
+real Snaplink JWT against `/api/v1/conversation-changes/stream`. It verifies
+the authenticated SSE `Accept` header, canonical dense page and cursor, normal
+TUI owner-session startup sync, and zero POST/device/execution effects. This
+is P2 read-delivery evidence only; no Prompt/Run mutation, enrollment/heartbeat,
+inventory authority, target selection, reservation, scheduling, dispatch,
+Runner, receipt, or Audit authority was added. ADR-0039 remains planning-only,
+ADR-0114 remains Proposed/null, and P4 remains separately gated.
+
+## §694 Real JWT Flutter Console Conversation SSE E2E (2026-09-24)
+
+An opt-in Forge Core integration launches the shared Flutter Console API test
+with a real Snaplink JWT against the owner-scoped Conversation SSE route. The
+test validates `Accept: text/event-stream`, the Bearer token, owner-derived
+dense cursor/page delivery, and exactly one read-only stream GET with no POST
+or device/execution effect. This supplies authenticated Web/App/Mobile API
+transport evidence; the Sessions UI still requires its explicit stream flag
+and otherwise uses polling.
+
+This is P2 read delivery only. It adds no Prompt/Run mutation,
+enrollment/heartbeat, inventory authority, target selection, reservation,
+scheduling, dispatch, Runner, receipt, Audit, or P4 authority. ADR-0039 and
+ADR-0114 remain gated and P4 remains separately governed.
+
+## §695 Console Sessions Gate SSE projection (2026-09-24)
+
+The shared `ForgeSessionsGate` now carries explicit
+`enableConversationChangesStream` and `conversationChangesStreamWaitMS` options
+into `ForgeSessionsScreen`. The defaults are `false` and `15000`, preserving
+polling for existing Web/App/Mobile construction; opt-in Gate coverage proves a
+bounded authenticated stream request and JSON-polling fallback on failure.
+This is P2 read delivery only and adds no Prompt/Run, device, inventory,
+selection, reservation, scheduling, Runner, receipt, Audit, or P4 authority.
+
+## §696 Real JWT Chromium Conversation SSE E2E (2026-09-24)
+
+An opt-in Forge Core/Web harness serves a built Flutter Web bundle through a
+same-origin wrapper, opens Chromium, seeds a real Snaplink JWT, and performs a
+browser `fetch` against `/api/v1/conversation-changes/stream`. It strictly
+checks the SSE event, owner-bound dense cursor/page, Bearer authorization, and
+zero POSTs; the ordinary production constructor remains fail-closed. This is
+read-only Web transport evidence; ADR-0039/ADR-0114 remain gated and P4 remains
+separately governed.
+
+## §697 Console selected-instance revocation closes the change feed (2026-09-24)
+
+The shared Console Sessions screen now requires the latest selected
+client-instance session/resource pair to still include the selected instance
+before consuming either SSE or JSON Conversation changes. A removed row fails
+closed before transport, keeps the owner-local cursor unchanged, and retains
+the existing private Prompt/Run revocation behavior. Cursor persistence is
+checked before the advanced cursor becomes in-memory state. Focused coverage
+proves zero feed requests after revocation. This remains P2 display fencing;
+ADR-0039/ADR-0114 remain gated and P4 remains separately governed.
+
+## §698 Native mobile Conversation SSE evidence (2026-09-24)
+
+The opt-in Android-host/iOS-host shared-session lifecycle now restores the
+owner-local cursor through the native credential path and consumes one
+authenticated `/conversation-changes/stream` page on the second cold start.
+The host harness binds the SSE event, cursor, owner, and Prompt change while
+retaining exactly the existing storage-only Prompt writes. The normal mobile
+Sessions Gate remains polling/default-off.
+
+This remains P2 read delivery evidence. It adds no device enrollment or
+heartbeat, inventory mutation, target selection, reservation, scheduling,
+Runner transport/execution, receipt, Audit, or P4 authority. ADR-0039/ADR-0114
+remain gated and P4 remains separately governed.
+
+## §699 Mobile inventory-v2 observation chain (2026-09-24)
+
+The opt-in Android-host/iOS-host cold-start journey now reads the authenticated
+lossless `/api/v1/devices/observations/v2` candidate on both native starts.
+Flutter and the Go harness bind the verified owner, `runner-a/device-a`
+revision/generation/heartbeat tuple, reservation and multi-GPU values, and
+all-false authority. The exact request allowlist excludes enrollment or
+heartbeat writes, target selection, reservation, scheduling, Runner,
+receipt, and Audit effects; production inventory remains default-off/404.
+
+This is P2 read-only inventory observation evidence. ADR-0039/ADR-0114 remain
+gated and P4 remains separately governed.
+
+## §700 Inventory/resource convergence revalidates manually constructed v2 observations (2026-09-24)
+
+Snaplink Console now round-trips locally constructed inventory-v2 and
+client-instance/resource observations through their strict decoders before
+treating them as a converged display boundary. Envelope, owner, capacity,
+lifecycle, GPU, revision/generation/heartbeat, and all-false authority drift
+fails closed; regression coverage proves a tampered inventory envelope cannot
+be used as a freshness proof.
+
+This is P2 local read/display fencing. It adds no inventory mutation,
+enrollment/heartbeat, target selection, reservation, scheduling, Runner,
+receipt, Audit, or P4 authority. ADR-0039/ADR-0114 remain gated and P4 remains
+separately governed.
+
+## §701 Client-instance session/resource convergence revalidates nested observations (2026-09-24)
+
+The Console Gate's injected client-instance session/resource pair now rechecks
+the nested display envelopes and complete instance image before exposing a
+converged local filter. A hand-built outer `converged/read_only` envelope with
+schema, owner, row, or authority drift fails closed; malformed nested rows
+cannot bypass the pair boundary.
+
+This is P2 local read/display fencing only. It adds no Prompt/Run mutation,
+inventory mutation, enrollment/heartbeat, target selection, reservation,
+scheduling, Runner, receipt, Audit, or P4 authority. ADR-0039/ADR-0114 remain
+gated and P4 remains separately governed.
+
+### Cross-device plan §702 — Runtime convergence joins revalidate nested observations
+
+Forge Runtime CLI/TUI client-instance and inventory/resource join helpers now
+rerun the strict source validators at the join boundary before comparing owner,
+instance, lifecycle, capacity, and GPU fields. Authority-bearing or manually
+assembled nested observations fail closed even when shared resource fields
+match; focused unit coverage proves both joins reject nested authority
+mutation. This remains a read-only metadata boundary with no registration,
+heartbeat, inventory mutation, target selection, reservation, scheduling,
+Runner transport/execution, receipt, Audit, or P4 authority. ADR-0039/ADR-0114
+remain gated and P4 remains separately governed.
+
+### Cross-device plan §703 — Mobile planning-only scheduler-preview handoff
+
+The opt-in Android-host/iOS-host cold-start journey now performs one
+authenticated scheduler-preview POST after strict client-instance
+session/resource and lossless inventory-v2 convergence. A separate test-only
+fresh, unreserved scheduler image selects `device-a`/`runner-a` and proves
+`preview_only=true` with all authority predicates false; the display inventory
+remains reserved so observation cannot be interpreted as scheduling authority.
+The request allowlist contains no enrollment, heartbeat, reservation, lease,
+dispatch, Runner, or execution operation. Production scheduler preview remains
+default-off/404; ADR-0039 remains planning-only, ADR-0114 remains Proposed/null,
+and P4 requires separate accepted execution/security governance.
+
+### Cross-device plan §704 — Lifecycle candidate routes remain closed on ordinary Coordinator
+
+The ordinary authenticated Conversation/Coordinator constructor now has exact
+404 regression coverage for lifecycle registry, heartbeat, approval, and
+credential candidate paths, even with lifecycle scopes in the bearer. The live
+enrollment, heartbeat, approval, credential, inventory mutation, Runner, and
+execution seams remain behind separate activation decisions; ADR-0114 remains
+Proposed/null and no live lifecycle authority was enabled.
+
+### Cross-device plan §705 — Real JWT Runtime CLI scheduler-preview pair convergence
+
+The opt-in Forge Core E2E now drives the Rust Runtime CLI with a real Snaplink
+JWT and `--instance client-web`. The visible path strictly orders the
+owner-bound client-instance `session-view`, `resource-view`, and one
+planning-only `scheduler-preview` POST, binding owner, Conversation, Run,
+Attempt, selected `device-a`/`runner-a`, `preview_only`, and all-false
+authority. A hidden `client-tui` path reads only the two pair views and fails
+closed before POST; the under-scoped and ordinary-production 403/404 guards
+remain covered.
+
+This remains read/planning evidence only: no reservation, lease, dispatch,
+Runner, enrollment, heartbeat, receipt, Audit, or live P4 authority is
+enabled. ADR-0039 remains planning-only and ADR-0114 remains Proposed/null.
+
+### Cross-device plan §706 — Runtime CLI scheduler-preview inventory/resource convergence
+
+Online Runtime CLI `remote placement scheduler-preview --instance` now
+completes the existing owner-bound client-instance session/resource scope
+before calling the strict inventory-v2/resource-view convergence reader. A
+visible instance therefore orders
+`session-view → resource-view → inventory-v2 → resource-view → scheduler-preview`;
+owner, device/Runner, revision, generation, heartbeat, capacity, GPU,
+lifecycle, and observation-time drift fail closed before the planning-only
+POST. Hidden instances stop after the pair scope, local `--instance-view`
+remains offline, and unfiltered preview remains a single POST.
+
+This remains read/planning evidence only. No reservation, lease, dispatch,
+Runner execution, enrollment, heartbeat, receipt, Audit, or live P4 authority
+was enabled; ADR-0039 remains planning-only, ADR-0114 remains Proposed/null,
+and P4 requires separate accepted execution/security governance.
+
+### Cross-device plan §707 — Runtime CLI Prompt-write inventory/resource guard
+
+Online `remote prompts add/receipt --instance INSTANCE_ID` now completes the
+owner-bound client-instance session/resource pair and then the strict
+inventory-v2/resource-view convergence reader before the Prompt POST. Hidden
+instances fail before any inventory or Prompt request; owner, device/Runner,
+revision/generation/heartbeat, capacity, GPU, lifecycle, or observation drift
+fails closed before POST. Prompt history reads, unfiltered commands, and local
+`--instance-view` remain compatible and offline.
+
+This is a Prompt-write freshness guard only. It adds no Run, target selection,
+reservation, lease, dispatch, Runner execution, enrollment, heartbeat, receipt,
+Audit, or live P4 authority; ADR-0039 remains planning-only, ADR-0114 remains
+Proposed/null, and P4 requires separate accepted execution/security governance.
+
+### Cross-device plan §708 — Runtime TUI Prompt-write inventory/resource freshness
+
+An explicitly selected Runtime TUI instance now refreshes the already-open
+owner-bound inventory-v2/resource pair immediately before a Prompt append or
+retry. The pair is committed atomically only after strict convergence; drift,
+malformed envelopes, or authorization failure retain the pending write and stop
+before the Prompt POST. Missing or one-sided opt-in observations keep the
+existing request-free compatibility path.
+
+This is a Prompt-write freshness guard only. It adds no Run, target selection,
+reservation, lease, dispatch, Runner execution, enrollment, heartbeat, receipt,
+Audit, or live P4 authority; ADR-0039 remains planning-only, ADR-0114 remains
+Proposed/null, and P4 requires separate accepted execution and security
+governance.
+
+### Cross-device plan §709 — Runtime TUI scheduler-preview inventory/resource freshness
+
+When an explicitly selected Runtime TUI instance has opened both the
+owner-bound inventory-v2 and resource observations, `scheduler-selection-preview`
+refreshes that strict pair immediately before its planning-only POST. The E2E
+proves the visible order `session-view → resource-view → inventory-v2 →
+resource-view → inventory-v2 → resource-view → scheduler-preview`; a hidden
+instance stops after its client-instance pair and never reads inventory or
+posts. Missing or one-sided observations retain the existing request-free
+compatibility path.
+
+This is read/planning freshness only. It adds no reservation, lease, dispatch,
+Runner execution, enrollment, heartbeat, receipt, Audit, or live P4 authority;
+ADR-0039 remains planning-only, ADR-0114 remains Proposed/null, and P4 requires
+separate accepted execution and security governance.
+
+### Cross-device plan §710 — Real JWT Console Prompt inventory/resource freshness
+
+The opt-in shared Console Web/App/Mobile Prompt E2E now injects the existing
+owner-bound inventory/resource convergence candidate and requires it before
+the storage-only Prompt POST. Each visible client still refreshes its
+client-instance session/resource projection; the acceptance recorder also
+requires inventory-v2 before the visible POST and rejects every hidden Prompt
+POST. Default Gate construction and production candidate routes remain closed.
+
+This adds only freshness evidence around existing Prompt storage. It adds no
+Run, reservation, lease, dispatch, Runner execution, enrollment, heartbeat,
+receipt, Audit, or live P4 authority; ADR-0039 remains planning-only,
+ADR-0114 remains Proposed/null, and P4 requires separate accepted execution
+and security governance.
+
+### Cross-device plan §711 — Console Prompt write refreshes inventory/resource immediately before POST
+
+When the opt-in shared Console Web/App/Mobile Prompt path has the composed
+owner-bound inventory/resource reader, it now forces a fresh pair read at the
+Prompt write boundary. A resource revision or client-instance image that drifts
+after the initial display refresh is rejected before the storage-only submitter
+is invoked; the default Gate and one-sided compatibility paths remain
+request-free. Focused Flutter coverage proves the second read and zero Prompt
+submitter calls on drift.
+
+This is read freshness evidence around Prompt storage only. It adds no Run,
+target selection, reservation, lease, dispatch, Runner execution,
+enrollment, heartbeat, receipt, Audit, or live P4 authority; ADR-0039 remains
+planning-only, ADR-0114 remains Proposed/null, and P4 requires separate
+accepted execution and security governance.
+
+### Cross-device plan §712 — Console scheduler-preview forces fresh inventory/resource evidence
+
+The opt-in Console Web/App/Mobile planning-only scheduler-selection-preview
+path now forces a new owner-bound inventory/resource pair immediately before
+its candidate POST, even when the display cache is healthy. A revision drift
+from that forced read fails closed with zero preview POSTs; focused Flutter
+coverage proves the reread counts and the drift boundary. Default Gate
+construction and production routes remain closed. No reservation, lease,
+dispatch, Runner execution, enrollment, heartbeat, receipt, Audit, or live P4
+authority was added; ADR-0039 remains planning-only, ADR-0114 remains
+Proposed/null, and P4 requires separate accepted execution and security
+governance.
+
+### Cross-device plan §713 — Real-JWT Console scheduler-preview inventory/resource convergence
+
+The accepted test-only Console Web/App/Mobile scheduler Gate now supplies the
+same owner-bound inventory-v2 and client-instance resource candidates that the
+planning-only preview must observe. The Gate performs those authenticated reads
+before rendering the selection and fails closed if either candidate is missing
+or non-convergent; the ordinary production constructor remains default-off.
+This adds no enrollment, heartbeat, reservation, lease, dispatch, Runner
+execution, receipt, Audit, or live P4 authority; ADR-0039 remains
+planning-only, ADR-0114 remains Proposed/null, and P4 retains its separate
+execution/security gate.
+
+### Cross-device plan §714 — CLI pending Run-intent inventory/resource freshness
+
+Online CLI pending Run-intent submission with `--instance` now refreshes the
+strict owner-bound inventory-v2/resource pair after the client-instance
+session/resource projection and before the candidate POST. Resource drift
+rejects the submission with zero pending-intent POSTs; local `--instance-view`,
+unfiltered reads, and ordinary compatibility paths remain unchanged. No Run,
+reservation, lease, dispatch, Runner execution, enrollment, heartbeat, receipt,
+Audit, or live P4 authority was enabled; ADR-0039/ADR-0114/P4 remain gated.
+
+### Cross-device plan §715 — CLI scheduler lease claim/renew inventory/resource freshness
+
+Online CLI scheduler lease claim and renewal scoped with `--instance` now
+refresh the strict owner-bound inventory-v2/resource pair after the
+client-instance projection and before the candidate POST. Inventory/resource
+read failure or drift yields zero claim/renew POSTs; local `--instance-view`,
+unfiltered operations, and lease release compatibility remain unchanged. No
+live reservation, lease authority, dispatch, Runner execution, enrollment,
+heartbeat, receipt, Audit, or P4 authority was enabled; ADR-0039/ADR-0114/P4
+remain gated.
+
+### Cross-device plan §716 — TUI pending Run-intent inventory/resource freshness
+
+An explicitly selected Runtime TUI instance with both owner-bound observations
+open now refreshes the inventory-v2/resource pair immediately before a pending
+Run-intent submit or retry. Drift, malformed responses, or authorization
+failure retain the pending intent and stop before POST; missing or one-sided
+observations keep the existing request-free compatibility path. No ordinary
+Run, reservation, lease, dispatch, Runner execution, enrollment, heartbeat,
+receipt, Audit, or live P4 authority was enabled; ADR-0039/ADR-0114/P4 remain
+gated.
+
+### Cross-device plan §717 — TUI scheduler lease claim/renew inventory/resource freshness
+
+An explicitly selected Runtime TUI instance with both owner-bound observations
+open now refreshes the inventory-v2/resource pair immediately before scheduler
+lease claim or renewal and rechecks Conversation visibility after the refresh.
+Drift, malformed responses, or instance revocation yield zero candidate POSTs;
+release, unfiltered, and one-sided compatibility paths remain unchanged. No
+live reservation, lease authority, dispatch, Runner execution, enrollment,
+heartbeat, receipt, Audit, or P4 authority was enabled; ADR-0039/ADR-0114/P4
+remain gated.
+
+### Cross-device plan §718 — Runner metadata previews refresh inventory/resource
+
+Online Runtime CLI Runner execution-intent, dispatch-plan, and Run/Attempt/lease
+preflight previews now read the owner-bound client-instance pair, then a
+converged inventory-v2/resource pair, before a candidate POST; the refreshed
+resource image must still contain the selected Conversation. Runtime TUI applies
+the same refresh and visibility recheck to execution-intent, dispatch-plan, and
+preflight previews, and the shared Console Web/App/Mobile execution-intent Gate
+refreshes its selected client-instance and inventory/resource observations before
+the candidate reader. Drift, malformed observations, or instance revocation
+yield zero candidate requests; local/offline, unfiltered, one-sided, and default
+request-free paths remain compatible. This adds metadata freshness evidence only
+and no enrollment/heartbeat, inventory mutation, target selection, reservation,
+scheduler lease, dispatch, Runner transport/execution, receipt, Audit, or P4
+authority; ADR-0039/ADR-0114/P4 remain gated.
+
+### Cross-device plan §719 — Instance-scoped change-feed projections
+
+Runtime CLI `changes list/watch/stream` and TUI change-feed commands now accept
+an explicit client-instance filter. They refresh the owner-bound session/resource
+declaration, output and apply only Conversation rows declared by that instance,
+and still advance the owner cursor across hidden rows. The shared Console
+Web/App/Mobile Sessions feed follows the same rule: hidden-instance changes are
+acknowledged without triggering private Prompt/Run hydration. Owner-wide
+defaults, local/offline views, and unfiltered compatibility remain unchanged.
+
+This is a display projection over caller-supplied observations, not instance
+authorization. It adds no enrollment/heartbeat authority, inventory mutation,
+target selection, reservation, scheduler lease, dispatch, Runner
+transport/execution, receipt persistence, Audit, or P4 authority. ADR-0039
+remains planning-only, ADR-0114 remains Proposed/null, and P4 requires
+separate accepted execution and security governance.
+
+### Cross-device plan §720 — Candidate heartbeat-to-inventory/resource journey
+
+The Forge Core candidate harness now POSTs a proof-bound heartbeat into the
+private lifecycle image, reconstructs the accepted read-only activation from
+that persisted image, and verifies owner-scoped inventory-v2 plus
+client-instance session/resource projections across the restart boundary. It
+also proves heartbeat replay/CAS rejection, foreign-owner isolation, all-false
+authority, and that the accepted assembly does not expose the heartbeat write
+route.
+
+This remains a candidate-only pre-activation journey. No production
+enrollment/heartbeat route, inventory mutation, reservation, scheduler lease,
+dispatch, Runner transport/execution, receipt, Audit, or P4 authority was
+enabled. ADR-0039 remains planning-only, ADR-0114 remains Proposed/null, and
+P4 requires separate accepted execution and security governance.
+
+### Cross-device plan §721 — Accepted fabric assembly rechecks review evidence
+
+The accepted Forge Core device-fabric route assembly now has a focused
+construction boundary proving that a persisted lifecycle image cannot bypass
+review state. Proposed or planning-only ADR-0114 metadata, missing owner
+approval/revocation evidence, missing heartbeat CAS/freshness evidence, or
+missing inventory owner-scope evidence blocks assembly before any owner-scoped
+inventory or client-instance read route is mounted.
+
+This is a fail-closed review boundary only. It does not transition ADR state or
+mount enrollment/heartbeat writes, inventory mutation, reservation, scheduler
+lease, dispatch, Runner transport/execution, receipt, Audit, or P4 authority.
+ADR-0039 remains planning-only, ADR-0114 remains Proposed/null, and P4
+requires separate accepted execution and security governance.
+
+### Cross-device plan §722 — Accepted lifecycle mutation surfaces stay closed
+
+Accepted `INVENTORY` and `OBSERVE` assemblies now have regression coverage
+showing that heartbeat, approval, credential, and lifecycle-registry
+replacement writes remain `404`. The accepted image exposes read-only
+owner-scoped projections only; the candidate mutation handlers continue to
+require an injected test store and are not treated as production device
+identity transport.
+
+This preserves the enrollment boundary while the independent device-credential
+transport is still designed and governed. No live enrollment/heartbeat,
+inventory mutation, reservation, scheduler lease, dispatch, Runner
+transport/execution, receipt, Audit, or P4 authority was enabled. ADR-0039
+remains planning-only, ADR-0114 remains Proposed/null, and P4 requires
+separate accepted execution and security governance.
+
+### Cross-device plan §723 — Signed heartbeat candidate proof transport boundary
+
+Forge Core now has an injected candidate-only `heartbeat-signed` route. It
+reads the persisted owner/device binding, verifies an Ed25519 proof and the
+heartbeat digest against the server challenge, then publishes a lifecycle
+registry CAS update while preserving the owner's other devices. The response
+is explicitly preview-only and keeps every authority predicate false; ordinary
+and accepted production assemblies continue to return `404` for the signed
+write route.
+
+This does not issue or consume authoritative challenges, enroll a real device credential,
+mount a production heartbeat route, or grant inventory, scheduling, Runner
+transport/execution, receipt, Audit, or P4 authority. ADR-0039 remains
+planning-only and ADR-0114 remains Proposed/null.
+
+### Cross-device plan §724 — Runtime TUI keeps instance-hidden creates out of private projection
+
+Runtime TUI Conversation creation now checks the returned owner session against
+the currently converged client-instance display declaration before selecting it
+or retaining private Prompt/Run state. A newly created session absent from the
+selected instance remains unselected and is removed by the filtered refresh;
+focused coverage proves one create request and one list read with no detail,
+Prompt, or Run read. Invalid or divergent observations fail closed before the
+create request.
+
+The owner-wide create API remains storage-only. This slice adds no membership
+writer or instance authority, enrollment/heartbeat, inventory mutation,
+reservation, scheduler lease, dispatch, Runner transport/execution, receipt,
+Audit, or P4 authority. ADR-0039 remains planning-only and ADR-0114 remains
+Proposed/null.
+
+### Cross-device plan §725 — Accepted non-EXECUTE execution evidence remains closed
+
+Forge Core now has a focused accepted-assembly matrix proving that `INVENTORY`
+and `OBSERVE` device-fabric modes keep Runner receipt, receipt-history,
+reconciliation, Attempt, scheduler, dispatch, transport, and execution-boundary
+candidate routes at `404`, even when an owner-scoped lifecycle image is present.
+Only the separately reviewed EXECUTE/P4 assembly may mount those planning and
+evidence surfaces.
+
+This is a governance regression boundary. It changes no route behavior, ADR
+status, receipt persistence, Runner transport, or live execution authority;
+ADR-0039 remains planning-only and ADR-0114 remains Proposed/null.
+
+### Cross-device plan §726 — Candidate challenge issuance and one-time signed heartbeat consumption
+
+The injected Forge Core lifecycle candidate now issues one owner-scoped,
+server-clocked challenge at a time, binds its digest and bounded expiry to the
+private lifecycle image, and refuses an active reissue. The signed heartbeat
+candidate must present that persisted, unconsumed challenge, a matching
+Ed25519 proof, and a heartbeat digest bound to the challenge; successful
+candidate CAS marks the challenge consumed and advances the lifecycle image.
+Generic lifecycle replacement rejects challenge injection, and the response
+remains preview-only with all authority predicates false. The older unsigned
+heartbeat candidate remains a separate injected fixture seam; it is absent
+from production and accepted assemblies.
+
+Ordinary Coordinator and accepted `INVENTORY`/`OBSERVE` assemblies keep both
+candidate writes closed at `404`. Credential enrollment, production heartbeat,
+inventory mutation, scheduling, Runner transport/execution, receipts, Audit,
+and P4 remain gated; ADR-0039 is planning-only and ADR-0114 remains
+Proposed/null.
+
+### Cross-device plan §727 — Challenge expiry, reissue, and CAS race boundaries
+
+Forge Core now covers exact-expiry reissue, consumed-challenge replacement
+after persistence/restart, minimum/maximum TTL and `uint64` overflow rejection,
+and concurrent file-CAS issuance where exactly one active challenge succeeds.
+The challenge remains candidate-only, owner-scoped, preview-only, and
+all-false; ordinary and accepted assemblies keep production enrollment and
+heartbeat writes closed.
+
+### Cross-device plan §728 — Console instance-hidden Conversation creates remain private-read free
+
+Snaplink Console's shared Web/App/Mobile Sessions screen refreshes the selected
+owner-bound client-instance session/resource projection before an owner-wide
+Conversation create. When the returned Conversation is absent from that
+declaration, the storage result remains outside selection, URL navigation,
+Prompt/Run hydration, and private state while the owner-side create result is
+retained. A focused Flutter regression proves one create POST and zero
+Prompt/Run reads; no membership writer or instance authority was added.
+
+### Cross-device plan §729 — Runtime CLI instance-scoped Conversation create preflight
+
+Runtime CLI `remote sessions create` now accepts `--instance INSTANCE_ID` and an
+optional strict local `--instance-view FILE|-`. The online path converges the
+owner-bound client-instance session/resource pair before sending its one
+owner-wide Conversation POST; a malformed, unknown, or non-converged declaration
+fails closed, while a local file avoids candidate reads and is validated by the
+same projection rules. This remains a storage-only create boundary: it does not
+write instance membership, select private Prompt/Run state, or add enrollment,
+inventory, scheduling, Runner, receipt, Audit, or P4 authority.
+
+### Cross-device plan §730 — Real JWT CLI instance-scoped Conversation create journey
+
+The opt-in Forge Core five-client projection E2E now drives the built Runtime
+CLI through a real Snaplink JWT for
+`remote sessions create --instance client-cli-001`. The HTTP recorder validates
+the owner-bound `session-view → resource-view → one owner-wide Conversation
+POST` sequence and the returned Conversation, while the same journey continues
+to cover Console Web/App/Mobile and TUI projections. No device, scheduler,
+Runner, execution, membership writer, or Audit side request is permitted.
+
+### Cross-device plan §731 — CLI instance-create resource-scope rejection
+
+The same real JWT journey retries instance-scoped CLI creation with only
+Conversation read/write scopes. The session-view read is allowed, the
+resource-view candidate returns 403 for the missing `forge:devices:read` scope,
+and the recorder proves that no owner-wide Conversation POST or device,
+scheduler, Runner, or execution request follows. The display preflight therefore
+cannot become an implicit write grant.
+
+### Cross-device plan §732 — Runtime TUI instance-scoped create requires a converged resource pair
+
+A selected Runtime TUI client-instance filter now blocks its owner-wide
+Conversation create until both owner-bound session-view and resource-view
+observations are present and converged. A one-sided or drifted pair remains
+request-free, while ordinary owner-wide TUI create and the hidden-response
+projection check remain compatible. No membership writer, enrollment/heartbeat,
+inventory mutation, scheduling, Runner, receipt, Audit, or P4 authority was
+added; ADR-0039/ADR-0114/P4 remain gated.
+
+### Cross-device plan §733 — Runtime TUI instance-scoped Conversation create freshness guard
+
+With an active client-instance filter, TUI creation now refreshes and strictly
+converges the owner-bound session/resource pair immediately before the owner-wide
+Conversation POST. Pair drift, malformed observations, instance revocation, or
+authorization failure blocks the POST and keeps the pending storage write
+available for explicit retry; a successful owner-wide create outside the
+refreshed declaration remains unselected. This is a display/write freshness
+boundary only: no instance membership writer, enrollment/heartbeat, inventory
+mutation, scheduling, Runner transport/execution, receipt, Audit, or P4
+authority was added.
+
+### Cross-device plan §734 — Real JWT Runtime TUI instance-scoped Conversation create journey
+
+The opt-in Forge Core five-client projection E2E now drives the interactive
+Runtime TUI with a real Snaplink JWT through `client-instances show-converged`,
+an explicit `client-tui-001` filter, and an instance-scoped `create`. The HTTP
+recorder proves the startup owner Conversation list, initial session/resource
+convergence, a second fresh pair immediately before one owner-wide Conversation
+POST, and the post-create owner refresh. Because the fixture declaration does
+not include the returned Conversation, TUI leaves it outside the selected
+instance projection and unselected. No membership writer, enrollment/heartbeat,
+inventory mutation, scheduling, Runner transport/execution, receipt, Audit, or
+P4 authority was added; ADR-0039/ADR-0114/P4 remain gated.
+
+### Cross-device plan §735 — Real JWT Runtime TUI instance-scoped Prompt freshness
+
+The opt-in Forge Core projection journey now drives the authenticated Runtime
+TUI through `client-instances show-converged`, `inventory show-converged`, and
+an explicit `client-tui-001` filter before opening a declared Conversation.
+Immediately before the storage-only Prompt POST, TUI refreshes the
+owner-bound inventory/resource pair again. The recorder proves the exact
+session/resource and inventory/resource read ordering, one visible Prompt POST,
+and no device, scheduler, Runner, or execution side request. No membership
+writer, enrollment/heartbeat, inventory mutation, scheduling, Runner
+transport/execution, receipt, Audit, or P4 authority was added; ADR-0039
+remains planning-only and ADR-0114 remains Proposed/null.
+
+### Cross-device plan §736 — Real JWT Runtime TUI instance-scoped change stream
+
+The opt-in Forge Core journey now drives Runtime TUI
+`changes stream --instance` through a real Snaplink JWT after converged
+client-instance reads. The recorder proves a fresh session/resource pair
+immediately before the owner-scoped SSE GET; hidden Conversation changes advance
+the owner cursor without entering the selected session projection, while the
+visible row is applied exactly once. No Prompt, device, scheduler, Runner, or
+execution request is emitted; no membership writer, enrollment/heartbeat,
+inventory mutation, scheduling, Runner transport/execution, receipt, Audit,
+or P4 authority was added. ADR-0039 remains planning-only and ADR-0114
+remains Proposed/null.
+
+### Cross-device plan §737 — Real JWT Runtime CLI instance-scoped change stream
+
+The opt-in Forge Core journey now drives Runtime CLI
+`remote changes stream --instance` through a real Snaplink JWT after a fresh
+owner-bound session/resource pair. The JSON response contains only the selected
+Conversation change while `scanned_through_cursor` advances across the hidden
+row; the recorder proves the exact read order and no Prompt, device, scheduler,
+Runner, or execution request. No membership writer, enrollment/heartbeat,
+inventory mutation, scheduling, Runner transport/execution, receipt, Audit,
+or P4 authority was added. ADR-0039 remains planning-only and ADR-0114
+remains Proposed/null.
+
+### Cross-device plan §738 — Real JWT Runtime CLI execution-intent convergence
+
+The opt-in Forge Core execution-intent convergence journey now launches the
+real Runtime CLI with a Snaplink JWT and an explicit `client-cli` instance.
+Before the metadata-only intent POST, the CLI reads and converges the
+owner-bound client-instance session/resource pair, then the lossless
+inventory-v2/resource pair. The recorder fixes the exact five-request order;
+a hidden `client-tui` stops after the first two reads with no inventory or
+intent request. The response remains selected-target-null and all authority
+false, and command argv, workspace, and fencing material stay out of output.
+
+This adds cross-client evidence for an already implemented candidate only.
+The ordinary production constructor remains 404; no inventory mutation,
+selection, reservation, lease mutation, Runner transport/execution, receipt
+persistence, Audit publication, or live P4 authority was added. ADR-0039
+remains planning-only, ADR-0114 remains Proposed/null, and P4 remains gated.
+
+### Cross-device plan §739 — Real JWT Console Web/App/Mobile execution-intent Gate convergence
+
+The opt-in Forge Core journey now drives the shared Snaplink Console Gate with
+one real JWT across Web, desktop App, and Mobile. Each visible client refreshes
+the owner-bound client-instance session/resource pair, reads the lossless
+inventory-v2 image, refreshes the resource image again, and posts exactly one
+metadata-only Runner execution-intent candidate. Hidden and resource-drifted
+instances remain candidate-free; the ordinary production constructors stay
+`404`. This adds no inventory mutation, target selection, reservation, lease,
+Runner transport/execution, receipt, Audit, or P4 authority; ADR-0039/
+ADR-0114/P4 remain gated.
+
+### Cross-device plan §740 — Console scheduler-preview target/resource binding
+
+The shared Console scheduler-preview projection now validates that every
+returned device and Runner instance is present in the current owner-bound
+resource observation before displaying the candidate. A target absent from the
+resource image, including a fetched or static response, is rejected and cannot
+cross the Sessions projection. This is display-only binding hygiene; it adds no
+reservation, scheduler lease, dispatch, Runner transport/execution, receipt,
+Audit, or P4 authority, and ADR-0039/ADR-0114/P4 remain gated.
+
+### Cross-device plan §741 — Real JWT Runtime TUI execution-intent convergence
+
+The opt-in Forge Core journey now drives the real Runtime TUI through a
+Snaplink JWT, an explicit `client-tui-001` filter, and the planning-only Runner
+execution-intent candidate. The visible TUI refreshes the owner-bound
+session/resource pair, refreshes the lossless inventory-v2/resource pair, and
+posts one metadata-only intent; a hidden `client-web-001` stops before POST.
+The ordinary production constructor remains `404`, and no target selection,
+reservation, lease mutation, Runner transport/execution, receipt, Audit, or P4
+authority was added; ADR-0039/ADR-0114/P4 remain gated.
+
+### Cross-device plan §742 — Real JWT Console Web/App/Mobile scheduler-preview target/resource Gate
+
+The opt-in Forge Core journey now drives the shared Console Gate with one real
+Snaplink JWT across Web, desktop App, and Mobile. Each visible selected
+instance refreshes the owner-bound session/resource pair and the
+inventory/resource image before one planning-only scheduler-preview POST. The
+Gate strictly binds the returned `device-a / runner-a` target to that resource
+image before rendering the preview; authority remains all false and the card
+contains no fencing or lease token. Hidden membership and resource/session
+drift remain request-free, while ordinary production constructors remain
+`404`. No reservation, lease, Runner transport/execution, receipt, Audit, or
+P4 authority was added; ADR-0039 remains planning-only and ADR-0114 remains
+Proposed/null.
+
+### Cross-device plan §743 — Console Runner dispatch-plan target/resource binding
+
+The shared Console Web/App/Mobile Sessions projection now revalidates every
+Runner dispatch-plan candidate target, including the intent target, against the
+current owner-bound resource image before display. Canonical device IDs and
+adapter-exposed Runner instance IDs are treated as identities of the same
+observed resource row; owner drift and foreign targets fail closed. The real
+JWT Gate journey covers visible, hidden, session/resource drift, and target
+resource drift while the no-resource-reader compatibility path remains
+request-compatible. This remains planning-only: no target selection,
+reservation, lease, Runner transport/execution, receipt, Audit, or P4 authority
+was added; ADR-0039 remains planning-only and ADR-0114 remains Proposed/null.
+
+### Cross-device plan §744 — Runtime TUI local Runner preview resource/target guard
+
+An explicitly selected Runtime TUI client instance now requires an owner-bound
+converged inventory/resource pair before the injected local Runner
+execution-readiness preview. The pair is refreshed immediately before the
+candidate POST, Conversation visibility is rechecked, and the request target
+must match either the observed device ID or Runner instance ID. Hidden sessions,
+missing or drifted pairs, and foreign targets remain zero-POST. Focused Rust
+coverage exercises these fail-closed paths; production routes, local executor
+authority, receipts, reservation, Runner transport, Audit, and P4 authority
+remain closed; ADR-0039 remains planning-only and ADR-0114 remains Proposed/null.
+
+### Cross-device plan §745 — Runtime TUI dispatch-plan target/resource guard
+
+An explicitly selected Runtime TUI client instance now requires the converged
+inventory-v2/resource pair before the planning-only Runner dispatch-plan
+candidate. After the fresh pair and Conversation visibility checks, the lease
+target, intent target, and every placement device ID must match an observed
+device ID or Runner instance ID; missing pairs and foreign targets remain
+zero-POST. Unfiltered behavior remains compatible. No reservation, lease
+mutation, dispatch, Runner transport/execution, receipt, Audit, or P4 authority
+was added; ADR-0039 remains planning-only and ADR-0114 remains Proposed/null.
+
+### Cross-device plan §746 — Runtime TUI dispatch-admission target/resource guard
+
+The selected-instance Runtime TUI dispatch-admission preview now requires the
+converged inventory-v2/resource pair, refreshes it immediately before POST,
+rechecks Conversation visibility, and rejects a lease-proof target absent from
+the owner-bound device/Runner resource image. Missing pairs and foreign targets
+remain zero-POST; unfiltered behavior remains compatible. No reservation, lease
+mutation, dispatch, Runner transport/execution, receipt, Audit, or P4 authority
+was added; ADR-0039 remains planning-only and ADR-0114 remains Proposed/null.
+
+### Cross-device plan §747 — Runtime TUI transport-admission target/resource guard
+
+The selected-instance Runtime TUI transport-admission preview now applies the
+same converged inventory-v2/resource refresh and Conversation visibility fence,
+then requires the command lease-proof target to exist in the owner-bound
+device/Runner resource image. Missing pairs and foreign targets remain
+zero-POST; unfiltered behavior remains compatible. No Runner connection,
+payload transport, reservation, lease mutation, execution, receipt, Audit, or
+P4 authority was added; ADR-0039 remains planning-only and ADR-0114 remains
+Proposed/null.
+
+### Cross-device plan §748 — Console Runner admission target/resource gate
+
+The shared Console Web/App/Mobile Sessions projection now refreshes the
+selected client-instance's owner-bound inventory/resource observation before a
+Runner dispatch-admission or transport-admission candidate. Configured empty
+or drifted resource images, owner mismatch, and targets absent from either the
+observed device ID or Runner instance ID remain zero-POST and hidden; static
+and fetched candidates use the same gate, while the no-resource-reader
+compatibility path remains unchanged. No Runner transport, payload execution,
+enrollment, reservation, Audit, or P4 authority was added; ADR-0039 remains
+planning-only and ADR-0114 remains Proposed/null.
+
+### Cross-device plan §749 — Native Android/iOS admission evidence boundary
+
+The Console native contract harness now validates metadata-only dispatch and
+transport admission candidates against the owner-bound resource image for both
+Android and iOS evidence. A candidate is accepted only when its owner matches
+the read-only resource owner, its target names an observed device or Runner
+instance, `preview_only` and admission bindings are true, and every authority
+flag remains false; foreign targets and owner/authority drift fail closed. The
+native trace allowlist contains only client-instance/resource observations and
+the two admission preview endpoints, so direct Runner dispatch and payload
+transport are rejected. The Android and iOS harnesses run without ADB,
+xcodebuild, HTTP, or a Runner connection; platform journeys remain opt-in and
+default-off. No reservation, execution, receipt, Audit, or P4 authority was
+added; ADR-0039 remains planning-only and ADR-0114 remains Proposed/null.
+
+### Cross-device plan §750 — Runtime CLI Runner admission target/resource gate
+
+Non-interactive Runtime CLI dispatch-admission and transport-admission previews
+now accept an explicit `--instance` projection only after refreshing the
+owner-bound client-instance session/resource pair and the inventory-v2/resource
+pair. The lease-proof target must match an observed device ID or Runner
+instance ID; missing, malformed, foreign, or drifted observations remain
+zero-POST. Unfiltered input remains compatible, and local `--instance-view`
+accepts only a validated resource or converged fixture so the target binding
+is observable. This remains a metadata-only candidate boundary: no
+Runner transport, payload execution, reservation, lease mutation, receipt,
+Audit, or P4 authority was added; ADR-0039 remains planning-only and ADR-0114
+remains Proposed/null.
+
+### Cross-device plan §751 — Real JWT Runtime CLI Runner admission convergence
+
+An opt-in Forge Core E2E now drives both Runtime CLI dispatch-admission and
+transport-admission previews with a real Snaplink JWT and explicit
+`--instance client-cli-001`. Each visible command proves
+`session-view → resource-view → inventory-v2 → resource-view → one admission
+POST`; after the resource image changes to a foreign target, the same commands
+stop after the four read-only observations with zero admission POSTs. The
+candidate uses a persisted lease and owned Run reference but never contacts a
+Runner; the normal production constructor remains `404`. No reservation,
+execution, receipt, Audit, or P4 authority was added; ADR-0039 remains
+planning-only and ADR-0114 remains Proposed/null.
+
+### Cross-device plan §752 — Runtime CLI/TUI execution-boundary target/resource gate
+
+Runtime CLI and TUI Runner execution-boundary previews now keep a selected
+client instance behind the owner-bound session/resource pair and refreshed
+inventory-v2/resource pair before the metadata-only candidate. The lease-proof
+target must match an observed device ID or Runner instance ID; foreign targets,
+missing observations, and one-sided TUI projections stop with zero POST. CLI
+unfiltered input remains compatible and local `--instance-view` accepts only a
+validated resource or converged fixture. No Runner transport, payload
+execution, reservation, lease mutation, receipt, Audit, or P4 authority was
+added;
+ADR-0039 remains planning-only and ADR-0114 remains Proposed/null.
+
+### Cross-device plan §753 — Runtime TUI execution-boundary target/resource guard
+
+The selected Runtime TUI execution-boundary preview requires the opened
+owner-bound session/resource declaration and refreshed, converged
+inventory-v2/resource pair before the metadata-only candidate. Conversation
+visibility is rechecked after refresh, and the target must match an observed
+device ID or Runner instance ID. Missing, one-sided, drifted, or foreign
+observations remain zero-POST; unfiltered behavior stays compatible. No Runner
+transport, execution, reservation, lease mutation, receipt, Audit, or P4
+authority was added; ADR-0039 remains planning-only and ADR-0114 remains
+Proposed/null.
+
+### Cross-device plan §754 — Android shared-session origin and resource boundary
+
+The opt-in Android shared-session coordinator validates the owner-bound selected
+client-instance session/resource pair and allows only HTTPS or loopback HTTP
+before bearer input enters the explicit emulator path. Public HTTP, paths,
+credentials, query/fragment, invalid ports, and resource drift fail before ADB.
+Host-only tests remain request-free. No enrollment, heartbeat, inventory
+mutation, scheduling, Runner, execution, receipt, Audit, or P4 authority was
+added; ADR-0039 remains planning-only and ADR-0114 remains Proposed/null.
+
+### Cross-device plan §755 — Console Web/App/Mobile execution-boundary target/resource gate
+
+The shared Console Sessions surface refreshes the selected client-instance
+session/resource observation immediately before the metadata-only Runner
+execution-boundary candidate. The target must match an owner-bound device ID or
+Runner instance ID from that resource image; foreign targets, selected mobile
+resource drift, and revoked sessions remain zero-POST and hidden. Paired
+session/resource observations bind the target, while the default candidate stays
+disabled and the no-resource-reader compatibility path remains unchanged. No
+Runner transport, payload execution, reservation, lease mutation, receipt,
+Audit, or P4 authority was added; ADR-0039 remains planning-only and ADR-0114
+remains Proposed/null.
+
+### Cross-device plan §756 — Real JWT Console execution-boundary convergence
+
+The accepted Forge Core EXECUTE harness mounts the owner-scoped client-instance
+session/resource projection for Web, desktop App, and Mobile and drives a
+dedicated Flutter E2E with the real Snaplink JWT. Each selected instance must
+observe the Conversation and the owner-bound device or Runner instance target
+before one metadata-only execution-boundary POST; the response remains
+display-only with all authority false. No Runner transport, payload execution,
+reservation, lease mutation, receipt, Audit, or P4 authority was added; ADR-0039
+remains planning-only and ADR-0114 remains Proposed/null.
+
+### Cross-device plan §757 — Console Web/App/Mobile Attempt-boundary target/resource gate
+
+The shared Console Sessions surface validates the selected Runner Attempt target
+against freshly refreshed owner-bound client-instance session/resource and
+inventory/resource images before invoking the metadata-only
+`runner-attempt-boundary/preview` candidate. Device IDs and Runner instance IDs
+are accepted only from the same owner resource image; foreign targets stop with
+zero POST, and returned targets are checked again against the current image.
+This remains a display-only boundary: no Attempt persistence, reservation,
+Runner transport, execution, receipt, Audit, or P4 authority was added; ADR-0039
+remains planning-only and ADR-0114 remains Proposed/null.
+
+### Cross-device plan §758 — Runtime CLI/TUI Attempt-boundary target/resource gate
+
+Runtime CLI Attempt-boundary previews now support `--instance` and refresh the
+owner-bound session/resource pair followed by the inventory-v2/resource pair
+before the metadata-only POST. The selected Conversation must remain visible,
+and the command target must match an observed device ID or Runner instance ID.
+Local `--instance-view` accepts only validated resource or converged fixtures;
+session-only declarations cannot establish target membership. Runtime TUI
+requires opened session/resource and inventory observations, refreshes the
+inventory/resource pair, and rechecks visibility and target membership before
+POST. Missing observations, hidden or revoked sessions, malformed or drifted
+resources, and foreign targets fail closed; unfiltered behavior remains
+compatible. Oversized CLI argument, dispatch, and help files were split along
+their existing command boundaries. No Attempt persistence, reservation, lease
+mutation, Runner transport/execution, receipt, Audit, or P4 authority was added;
+ADR-0039 remains planning-only and ADR-0114 remains Proposed/null.

@@ -32,12 +32,30 @@ func TestSnaplinkAuthenticatedClientInstanceDispatchPlanProjectionE2EWhenConfigu
 	}
 	resourceView := clientInstanceDispatchPlanResourceView(owner)
 	resourceSource := &fixtureClientInstanceResourceViewSource{value: resourceView}
+	sessionView, err := deviceplacement.ObserveClientInstanceSessionView(
+		deviceplacement.ClientInstanceSessionViewRequest{
+			Owner:     owner,
+			Instances: append([]deviceplacement.ClientInstanceSessionViewInstance(nil), resourceView.Instances...),
+		},
+	)
+	if err != nil {
+		t.Fatalf("observe client-instance dispatch session view: %v", err)
+	}
+	sessionSource := &fixtureClientInstanceSessionViewSource{value: sessionView}
+	sessionCandidate := newClientInstanceSessionViewCandidateRoutes(&clientInstanceSessionViewCandidateConfig{
+		Enabled: true,
+		Source:  sessionSource,
+	})
 	resourceCandidate := newClientInstanceResourceViewCandidateRoutes(&clientInstanceResourceViewCandidateConfig{
 		Enabled: true,
 		Source:  resourceSource,
 	})
 	dispatchCandidate := newRunnerDispatchPlanPreviewRoutes()
 	handler := authenticator.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Path == clientInstanceSessionViewCandidatePath {
+			sessionCandidate.ServeHTTP(w, r)
+			return
+		}
 		if r.Method == http.MethodGet && r.URL.Path == clientInstanceResourceViewCandidatePath {
 			resourceCandidate.ServeHTTP(w, r)
 			return

@@ -157,7 +157,11 @@ fn accepts_idempotency_key(command: &Command) -> bool {
             | Command::Remote(
                 RemoteCommand::SessionsCreate { .. }
                     | RemoteCommand::PromptsAdd { .. }
-                    | RemoteCommand::PendingRunIntentSubmit { .. },
+                    | RemoteCommand::PromptsReceipt { .. }
+                    | RemoteCommand::PendingRunIntentSubmit { .. }
+                    | RemoteCommand::SchedulerSelectionLease { .. }
+                    | RemoteCommand::SchedulerSelectionLeaseRenew { .. }
+                    | RemoteCommand::SchedulerSelectionLeaseRelease { .. },
             )
             | Command::Group(
                 GroupCommand::Create { .. }
@@ -249,7 +253,11 @@ fn explicit_key_requirement(command: &Command) -> Option<&'static str> {
         Command::Remote(
             RemoteCommand::SessionsCreate { .. }
             | RemoteCommand::PromptsAdd { .. }
-            | RemoteCommand::PendingRunIntentSubmit { .. },
+            | RemoteCommand::PromptsReceipt { .. }
+            | RemoteCommand::PendingRunIntentSubmit { .. }
+            | RemoteCommand::SchedulerSelectionLease { .. }
+            | RemoteCommand::SchedulerSelectionLeaseRenew { .. }
+            | RemoteCommand::SchedulerSelectionLeaseRelease { .. },
         ) => Some("remote writes require an explicit --idempotency-key"),
         Command::Run(RunCommand::Start { live: true, .. }) => {
             Some("--live requires an explicit --idempotency-key")

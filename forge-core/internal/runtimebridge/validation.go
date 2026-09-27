@@ -257,6 +257,14 @@ func validOwnedConversationEntry(data []byte, entry model.OwnedConversationEntry
 	return requireObjectFieldSet(root["conversation"], "id", "scope", "title", "created_at_ms", "updated_at_ms") == nil
 }
 
+func validOwnedConversationEntryForID(
+	data []byte,
+	entry model.OwnedConversationEntry,
+	conversationID string,
+) bool {
+	return entry.Conversation.ID == conversationID && validOwnedConversationEntry(data, entry)
+}
+
 func validOwnedPromptAppend(
 	data []byte,
 	result ownedPromptAppendResult,
@@ -274,6 +282,22 @@ func validOwnedPromptAppend(
 		return false
 	}
 	return requireObjectFieldSet(root["prompt"], "id", "conversation_id", "role", "content", "created_at_ms") == nil
+}
+
+// validOwnedPromptAppendForVersion binds the Runtime bridge receipt to the
+// caller's aggregate-version CAS. The shape validator above is intentionally
+// reusable for callers that only have a receipt image; a write response must
+// additionally prove that it advanced exactly one version from the request.
+func validOwnedPromptAppendForVersion(
+	data []byte,
+	result ownedPromptAppendResult,
+	conversationID string,
+	content string,
+	expectedVersion uint64,
+) bool {
+	return expectedVersion < maxSafeJSONInteger &&
+		result.AggregateVersion == expectedVersion+1 &&
+		validOwnedPromptAppend(data, result, conversationID, content)
 }
 
 func validOwnedConversationImport(

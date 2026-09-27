@@ -2,6 +2,7 @@ use std::{io::Cursor, net::TcpListener, thread};
 
 use serde_json::json;
 
+use super::super::state::TuiState;
 use super::{
     helpers::{
         accept_request, conversation_projection, respond, serve_conversation_page, test_client,
@@ -234,4 +235,89 @@ async fn remote_tui_failed_outside_page_lookup_preserves_current_session() {
         )
     );
     assert!(!output.contains("Foreign session"));
+}
+
+#[tokio::test]
+async fn remote_tui_drops_selected_session_after_a_later_history_rejection() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = thread::spawn(move || {
+        serve_conversation_page(
+            &listener,
+            &json!({
+                "conversations": [{
+                    "conversation": conversation_projection("c-1", "Deleted later"),
+                    "aggregate_version": 1
+                }],
+                "next_after_id": null,
+                "has_more": false
+            }),
+        );
+
+        let (mut initial_history, request, _, _) = accept_request(&listener);
+        assert!(request.starts_with("GET /api/v1/conversations/c-1/prompts?"));
+        respond(
+            &mut initial_history,
+            "200 OK",
+            &json!({
+                "conversation_id": "c-1",
+                "prompts": [{
+                    "id": "p-private",
+                    "conversation_id": "c-1",
+                    "role": "user",
+                    "content": "private prompt before deletion",
+                    "created_at_ms": 10
+                }],
+                "has_more": false
+            }),
+        );
+
+        let (mut rejected_history, request, _, _) = accept_request(&listener);
+        assert!(request.starts_with("GET /api/v1/conversations/c-1/prompts?"));
+        respond(
+            &mut rejected_history,
+            "404 Not Found",
+            &json!({"code": "not_found", "message": "deleted"}),
+        );
+    });
+
+    let client = test_client(address);
+    let mut state = TuiState::default();
+    super::super::state::refresh_sessions(&client, &mut state, false)
+        .await
+        .unwrap();
+    super::super::commands::dispatch_command(
+        &client,
+        &mut state,
+        None,
+        "open c-1",
+        &mut Vec::new(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(state.selected_id.as_deref(), Some("c-1"));
+    assert_eq!(state.prompt_history.len(), 1);
+
+    super::super::commands::dispatch_command(
+        &client,
+        &mut state,
+        None,
+        "open c-1",
+        &mut Vec::new(),
+    )
+    .await
+    .unwrap();
+
+    assert!(state.selected_id.is_none());
+    assert!(state.selected_entry.is_none());
+    assert!(state.prompt_history.is_empty());
+    assert!(state.selected_run_id.is_none());
+    assert!(state.conversations.iter().all(|entry| {
+        entry
+            .conversation
+            .get("id")
+            .and_then(serde_json::Value::as_str)
+            != Some("c-1")
+    }));
+    server.join().unwrap();
 }

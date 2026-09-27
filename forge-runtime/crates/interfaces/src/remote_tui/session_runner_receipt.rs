@@ -47,6 +47,13 @@ pub(super) async fn preview<W: Write>(
         .map_err(io_error)?;
         return Ok(());
     }
+    if !super::commands::ensure_conversation_visible_to_client_instance(
+        state,
+        conversation_id,
+        writer,
+    )? {
+        return Ok(());
+    }
     let response = match client
         .preview_session_runner_receipt_observation(conversation_id, run_id, &request)
         .await
@@ -112,10 +119,51 @@ pub(super) fn offline_preview<W: Write>(argument: &str, writer: &mut W) -> Resul
     Ok(())
 }
 
+/// Shows one bounded session-bound Runner receipt history locally. The TUI
+/// accepts paths only so its interactive stdin remains available for commands.
+pub(super) fn offline_history_preview<W: Write>(
+    argument: &str,
+    writer: &mut W,
+) -> Result<(), RemoteError> {
+    let Some(suffix) = argument.strip_prefix("--input") else {
+        return history_usage(writer);
+    };
+    if !suffix.chars().next().is_some_and(char::is_whitespace) {
+        return history_usage(writer);
+    }
+    let input = suffix.trim();
+    if input.is_empty() || input == "-" {
+        return history_usage(writer);
+    }
+    let command = crate::args::DeviceCommand::SessionRunnerReceiptHistoryPreview {
+        input: input.to_owned(),
+    };
+    match crate::device_session_runner_receipt_history_command::execute(&command) {
+        Ok(output) => crate::device_session_runner_receipt_history_command::write_output(
+            &output, false, writer,
+        )
+        .map_err(io_error)?,
+        Err(error) => writeln!(
+            writer,
+            "Session Runner receipt history preview failed: {error}"
+        )
+        .map_err(io_error)?,
+    }
+    Ok(())
+}
+
 fn usage<W: Write>(writer: &mut W) -> Result<(), RemoteError> {
     writeln!(
         writer,
         "Use session-runner-receipt-preview --input FILE. The file is a caller-supplied offline declaration; '-' is reserved for the standalone CLI."
+    )
+    .map_err(io_error)
+}
+
+fn history_usage<W: Write>(writer: &mut W) -> Result<(), RemoteError> {
+    writeln!(
+        writer,
+        "Use session-runner-receipt-history-offline-preview --input FILE. The file is a caller-supplied offline history; '-' is reserved for the standalone CLI."
     )
     .map_err(io_error)
 }

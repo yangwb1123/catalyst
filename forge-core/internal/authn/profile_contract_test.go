@@ -33,7 +33,8 @@ func TestSnaplinkProfileContractFixture(t *testing.T) {
 		fixture.Issuer != "https://id.example" || fixture.Audience != "forge-api" ||
 		fixture.Resource != fixture.Audience || len(fixture.ConversationScopes) != 2 ||
 		fixture.ConversationScopes[0] != "forge:conversations:read" ||
-		fixture.ConversationScopes[1] != "forge:conversations:write" {
+		fixture.ConversationScopes[1] != "forge:conversations:write" ||
+		!equalStrings(fixture.DeviceObservationScopes, []string{"forge:devices:read"}) {
 		t.Fatalf("invalid Snaplink profile envelope: %#v", fixture)
 	}
 	if err := ValidateConfig(Config{Issuer: fixture.Issuer, Audience: fixture.Audience, JWKSURL: fixture.Issuer + "/jwks"}); err != nil {
@@ -41,20 +42,27 @@ func TestSnaplinkProfileContractFixture(t *testing.T) {
 	}
 	assertSnaplinkProfileClient(t, fixture.Clients["cli"], "forge-cli", []string{"urn:ietf:params:oauth:grant-type:device_code", "refresh_token"}, fixture.ConversationScopes)
 	assertSnaplinkProfileClient(t, fixture.Clients["console"], "forge-console", []string{"authorization_code", "refresh_token"}, fixture.ConversationScopes)
+	observer, ok := fixture.OptionalClients["device_observer"]
+	if !ok || observer.Enabled {
+		t.Fatalf("device observation client must be present but disabled: %#v", fixture.OptionalClients)
+	}
+	assertSnaplinkProfileClient(t, observer.profile(), "forge-device-observer", []string{"authorization_code", "refresh_token"}, []string{"forge:conversations:read", "forge:devices:read"})
 	if fixture.Authority != (snaplinkProfileAuthority{}) {
 		t.Fatalf("profile fixture must not claim live authority: %#v", fixture.Authority)
 	}
 }
 
 type snaplinkProfileFixture struct {
-	SchemaVersion      string                           `json:"schema_version"`
-	EvaluationMode     string                           `json:"evaluation_mode"`
-	Issuer             string                           `json:"issuer"`
-	Audience           string                           `json:"audience"`
-	Resource           string                           `json:"resource"`
-	ConversationScopes []string                         `json:"conversation_scopes"`
-	Clients            map[string]snaplinkProfileClient `json:"clients"`
-	Authority          snaplinkProfileAuthority         `json:"authority"`
+	SchemaVersion           string                            `json:"schema_version"`
+	EvaluationMode          string                            `json:"evaluation_mode"`
+	Issuer                  string                            `json:"issuer"`
+	Audience                string                            `json:"audience"`
+	Resource                string                            `json:"resource"`
+	ConversationScopes      []string                          `json:"conversation_scopes"`
+	DeviceObservationScopes []string                          `json:"device_observation_scopes"`
+	Clients                 map[string]snaplinkProfileClient  `json:"clients"`
+	OptionalClients         map[string]snaplinkOptionalClient `json:"optional_clients"`
+	Authority               snaplinkProfileAuthority          `json:"authority"`
 }
 
 type snaplinkProfileClient struct {
@@ -62,6 +70,23 @@ type snaplinkProfileClient struct {
 	Public     bool     `json:"public"`
 	GrantTypes []string `json:"grant_types"`
 	Scopes     []string `json:"scopes"`
+}
+
+type snaplinkOptionalClient struct {
+	ClientID   string   `json:"client_id"`
+	Enabled    bool     `json:"enabled"`
+	Public     bool     `json:"public"`
+	GrantTypes []string `json:"grant_types"`
+	Scopes     []string `json:"scopes"`
+}
+
+func (client snaplinkOptionalClient) profile() snaplinkProfileClient {
+	return snaplinkProfileClient{
+		ClientID:   client.ClientID,
+		Public:     client.Public,
+		GrantTypes: client.GrantTypes,
+		Scopes:     client.Scopes,
+	}
 }
 
 type snaplinkProfileAuthority struct {

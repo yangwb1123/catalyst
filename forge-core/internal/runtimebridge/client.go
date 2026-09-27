@@ -355,7 +355,8 @@ func (c *Client) GetOwnedConversation(
 		return model.OwnedConversationEntry{}, err
 	}
 	var entry model.OwnedConversationEntry
-	if err := decodeStrict(response, &entry); err != nil || !validOwnedConversationEntry(response, entry) {
+	if err := decodeStrict(response, &entry); err != nil ||
+		!validOwnedConversationEntryForID(response, entry, conversationID) {
 		return model.OwnedConversationEntry{}, &Error{Code: "invalid_runtime_response"}
 	}
 	return entry, nil
@@ -413,7 +414,9 @@ func (c *Client) AppendOwnedPrompt(
 	}
 	var result ownedPromptAppendResult
 	if err := decodeStrict(response, &result); err != nil ||
-		!validOwnedPromptAppend(response, result, conversationID, content) {
+		!validOwnedPromptAppendForVersion(
+			response, result, conversationID, content, expectedVersion,
+		) {
 		return model.ConversationPrompt{}, 0, false, &Error{Code: "invalid_runtime_response"}
 	}
 	return result.Prompt, result.AggregateVersion, result.Replayed, nil

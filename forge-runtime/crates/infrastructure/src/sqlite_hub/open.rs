@@ -179,9 +179,15 @@ impl SqliteHubStore {
 fn dispatch_inspection_mode(path: &Path) -> Result<SqliteHubStoreOpenMode, HubStoreError> {
     match schema::open_existing_dispatch_preflight_read_only_database(path) {
         Ok(_) => Ok(SqliteHubStoreOpenMode::ExistingDispatchPreflightReadOnly),
-        Err(immutable_error) => schema::open_existing_dispatch_reentry_read_only_database(path)
-            .map(|_| SqliteHubStoreOpenMode::ExistingDispatchReentryReadOnly)
-            .map_err(|reentry_error| prefer_corruption(immutable_error, reentry_error)),
+        Err(immutable_error) => match schema::open_existing_current_read_only_database(path) {
+            Ok(_) => Ok(SqliteHubStoreOpenMode::ExistingCurrentReadOnly),
+            Err(current_error) => {
+                let first_error = prefer_corruption(immutable_error, current_error);
+                schema::open_existing_dispatch_reentry_read_only_database(path)
+                    .map(|_| SqliteHubStoreOpenMode::ExistingDispatchReentryReadOnly)
+                    .map_err(|reentry_error| prefer_corruption(first_error, reentry_error))
+            }
+        },
     }
 }
 

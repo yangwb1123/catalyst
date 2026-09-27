@@ -18,6 +18,13 @@ pub(super) async fn preview<W: Write>(
     let Some(conversation_id) = selected_conversation_id(state, writer)? else {
         return Ok(());
     };
+    if !super::commands::ensure_conversation_visible_to_client_instance(
+        state,
+        conversation_id,
+        writer,
+    )? {
+        return Ok(());
+    }
     let response = match client.preview_execution_consent(conversation_id).await {
         Ok(response) => response,
         Err(error) => {

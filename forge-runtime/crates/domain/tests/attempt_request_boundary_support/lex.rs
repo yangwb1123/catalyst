@@ -10,6 +10,17 @@ const ALLOWED_TYPE_PATH_ROOTS: &[&str] = &[
     "RejectionCode",
     "Self",
 ];
+const REVIEWED_EXECUTION_MODULES: &[&str] = &[
+    "attempt",
+    "fabric",
+    "lease",
+    "reconciliation",
+    "run_attempt_lease_dispatch_preflight",
+    "runner_command",
+    "runner_attempt_boundary",
+    "runner_execution_intent",
+    "session_runner_receipt",
+];
 const ALLOWED_MACROS: &[&str] = &["format", "matches", "write"];
 const FORBIDDEN_IDENTIFIERS: &[&str] = &[
     "canonical_wire",
@@ -55,7 +66,7 @@ fn check_modules(tokens: &[String]) -> Result<(), String> {
             continue;
         }
         let declaration = tokens.get(index + 1..index + 3);
-        let allowed = ["error", "model", "validation"]
+        let allowed = ["error", "model", "request_contract_fixture", "validation"]
             .iter()
             .any(|name| declaration.is_some_and(|value| value[0] == *name && value[1] == ";"));
         if !allowed {
@@ -80,7 +91,9 @@ pub fn check_no_attempt_consumer(
     if contains_sequence(&tokens, &["execution", "::", "attempt"])? {
         return Err("unreviewed execution::attempt path".into());
     }
-    if contains_sequence(&tokens, &["include", "!"])? {
+    if contains_sequence(&tokens, &["include", "!"])?
+        && !codegen::reviewed_include_source(source, source_path)
+    {
         return Err("generated include! source is outside the proof".into());
     }
     codegen::check(&tokens, reviewed_path_attributes, source, source_path)
@@ -140,14 +153,23 @@ fn check_consumer_imports(tokens: &[String]) -> Result<(), String> {
             let reaches_attempt = declaration[execution + 1..]
                 .iter()
                 .any(|candidate| candidate == "attempt");
-            let imports_reviewed_fabric =
+            let imports_reviewed_execution =
                 declaration.windows(3).enumerate().any(|(index, path)| {
-                    path == ["execution", "::", "fabric"]
+                    path[0] == "execution"
+                        && path[1] == "::"
+                        && REVIEWED_EXECUTION_MODULES.contains(&path[2].as_str())
                         && !declaration[index + 3..]
                             .iter()
                             .any(|candidate| matches!(candidate.as_str(), "*" | "as"))
                 });
-            if !imports_reviewed_fabric
+            let imports_reviewed_group = declaration.windows(3).enumerate().any(|(index, path)| {
+                path == ["execution", "::", "{"]
+                    && !declaration[index + 3..].iter().any(|candidate| {
+                        matches!(candidate.as_str(), "*" | "as" | "attempt_lifecycle")
+                    })
+            });
+            if !imports_reviewed_execution
+                && !imports_reviewed_group
                 && (domain_root || matches!(next, Some("::" | "as")) || reaches_attempt)
             {
                 return Err(

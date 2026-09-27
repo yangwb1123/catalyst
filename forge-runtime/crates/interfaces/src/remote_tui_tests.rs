@@ -16,6 +16,8 @@ mod attempt_request;
 mod authorization;
 #[path = "remote_tui_tests/changes.rs"]
 mod changes;
+#[path = "remote_tui_tests/changes_instance.rs"]
+mod changes_instance;
 #[path = "remote_tui_tests/client_instance_views.rs"]
 mod client_instance_views;
 #[path = "remote_tui_tests/credential_candidate.rs"]
@@ -24,8 +26,14 @@ mod credential_candidate;
 mod execution_consent;
 #[path = "remote_tui_tests/execution_reconciliation.rs"]
 mod execution_reconciliation;
+#[path = "remote_tui_tests/instance_filter_projection.rs"]
+mod instance_filter_projection;
 #[path = "remote_tui_tests/inventory.rs"]
 mod inventory;
+#[path = "remote_tui_tests/inventory_resource_convergence.rs"]
+mod inventory_resource_convergence;
+#[path = "remote_tui_tests/inventory_resource_write_boundary.rs"]
+mod inventory_resource_write_boundary;
 #[path = "remote_tui_tests/lifecycle_registry.rs"]
 mod lifecycle_registry;
 #[path = "remote_tui_tests/local_runner_preview.rs"]
@@ -40,10 +48,28 @@ mod placement;
 mod resilience;
 #[path = "remote_tui_tests/run_attempt_lease_dispatch_preflight.rs"]
 mod run_attempt_lease_dispatch_preflight;
+#[path = "remote_tui_tests/runner_attempt_boundary.rs"]
+mod runner_attempt_boundary;
+#[path = "remote_tui_tests/runner_attempt_boundary_remote.rs"]
+mod runner_attempt_boundary_remote;
+#[path = "remote_tui_tests/runner_dispatch_admission.rs"]
+mod runner_dispatch_admission;
 #[path = "remote_tui_tests/runner_dispatch_plan_preview.rs"]
 mod runner_dispatch_plan_preview;
+#[path = "remote_tui_tests/runner_execution_boundary.rs"]
+mod runner_execution_boundary;
+#[path = "remote_tui_tests/runner_execution_intent.rs"]
+mod runner_execution_intent;
+#[path = "remote_tui_tests/runner_transport_admission.rs"]
+mod runner_transport_admission;
 #[path = "remote_tui_tests/scope_tests.rs"]
 mod scope_tests;
+#[path = "remote_tui_tests/session_refresh.rs"]
+mod session_refresh;
+#[path = "remote_tui_tests/session_runner_receipt_history.rs"]
+mod session_runner_receipt_history;
+#[path = "remote_tui_tests/session_runner_reconciliation.rs"]
+mod session_runner_reconciliation;
 #[path = "remote_tui_tests/session_selection.rs"]
 mod session_selection;
 #[path = "remote_tui_tests/state.rs"]

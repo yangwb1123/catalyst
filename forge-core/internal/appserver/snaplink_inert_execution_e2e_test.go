@@ -191,7 +191,26 @@ func TestSnaplinkAuthenticatedInertExecutionToRustHubWhenConfigured(t *testing.T
 		tuiAggregateVersion, tuiChangeCursor,
 	)
 	assertSnaplinkRustTUIRequestsHaveNoExecutionOrDeviceEffects(t, recorder.snapshot()[firstTUIRequest:], conversation.ID, first.Intent.IntentID)
-	snaplinkAssertFreshPendingIntentReadback(t, client, inert.URL, tokenB, conversation.ID, first)
+	liveTUIRequest := len(recorder.snapshot())
+	liveTUIIntent := assertSnaplinkRustTUILiveExternalPendingIntent(
+		t, executable, inert.URL, tokenB, conversation.ID, tuiAggregateVersion+2,
+		"pending intent observed by live Rust TUI", "snaplink-cli-live-tui",
+	)
+	liveTUIRequests := recorder.snapshot()[liveTUIRequest:]
+	var liveTUIWrites []recordedConversationRequest
+	for _, request := range liveTUIRequests {
+		if request.method == http.MethodPost &&
+			request.path == conversationCollectionPath+"/"+conversation.ID+"/run-intents" {
+			liveTUIWrites = append(liveTUIWrites, request)
+		}
+	}
+	if len(liveTUIWrites) != 1 {
+		t.Fatalf("live TUI convergence issued %d pending Run-intent writes; expected only the external CLI write: %#v", len(liveTUIWrites), liveTUIRequests)
+	}
+	snaplinkAssertFreshPendingIntentReadback(
+		t, client, inert.URL, tokenB, conversation.ID, first,
+		map[string]uint64{"pending intent observed by live Rust TUI": liveTUIIntent.Intent.AggregateVersion},
+	)
 	if os.Getenv("FORGE_BROWSER_E2E") == "1" {
 		runForgeConsoleBrowserE2EWithToken(
 			t, inert.URL, tokenB, conversation.ID,
@@ -514,6 +533,104 @@ func assertSnaplinkRustTUISharedSession(
 	}
 }
 
+func assertSnaplinkRustTUILiveExternalPendingIntent(
+	t *testing.T, executable, apiURL, accessToken, conversationID string,
+	expectedVersion uint64, content, idempotencyKey string,
+) intentmodel.PendingRunIntentSubmissionResult {
+	t.Helper()
+	ptyScript, err := exec.LookPath("script")
+	if err != nil {
+		t.Skipf("skipping live Snaplink JWT Rust TUI convergence sub-check: script PTY launcher is unavailable: %v", err)
+	}
+	home := t.TempDir()
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	command := exec.CommandContext(ctx, ptyScript,
+		"-q", "-e", "-f", "/dev/null", "--", executable, "remote", "tui",
+	)
+	command.Dir = home
+	command.Env = forgeRuntimeCLIEnvironment(apiURL, accessToken, home)
+	stdin, err := command.StdinPipe()
+	if err != nil {
+		t.Fatalf("live Snaplink JWT Rust TUI stdin pipe: %v", err)
+	}
+	var stdoutBuffer, stderrBuffer synchronizedCLIOutput
+	command.Stdout = &stdoutBuffer
+	command.Stderr = &stderrBuffer
+	if err := command.Start(); err != nil {
+		t.Fatalf("live Snaplink JWT Rust TUI start: stdout=%q stderr=%q err=%v",
+			stdoutBuffer.String(), stderrBuffer.String(), err)
+	}
+	writeTUI := func(script string) {
+		if _, err := stdin.Write([]byte(script)); err != nil {
+			t.Fatalf("live Snaplink JWT Rust TUI input %q: %v", script, err)
+		}
+	}
+	writeTUI("open " + conversationID + "\nrun-intents\n")
+	waitForTUIOutput(t, &stdoutBuffer, "Run-intent \"")
+
+	submitOutput, submitStderr, err := runForgeRuntimeCLI(
+		t, executable, apiURL, accessToken, t.TempDir(), "--json", "--idempotency-key", idempotencyKey,
+		"remote", "run-intents", "submit", conversationID,
+		"--expected-version", fmt.Sprintf("%d", expectedVersion), content,
+	)
+	if err != nil {
+		_ = stdin.Close()
+		_ = command.Process.Kill()
+		_ = command.Wait()
+		t.Fatalf("live external pending Run-intent submit failed: stderr=%q stdout=%q err=%v", submitStderr, submitOutput, err)
+	}
+	var submitted intentmodel.PendingRunIntentSubmissionResult
+	if err := json.Unmarshal([]byte(submitOutput), &submitted); err != nil || submitted.Replayed ||
+		submitted.Intent.Status != "pending" || submitted.Intent.AggregateVersion != expectedVersion+1 ||
+		submitted.Prompt.Content != content || submitted.Intent.IntentID == "" {
+		_ = stdin.Close()
+		_ = command.Process.Kill()
+		_ = command.Wait()
+		t.Fatalf("live external pending Run-intent=%#v stdout=%q decode=%v", submitted, submitOutput, err)
+	}
+
+	writeTUI("sync\nrun-intents\nrun-intents timeline " + submitted.Intent.IntentID + "\nquit\n")
+	if err := stdin.Close(); err != nil {
+		t.Fatalf("live Snaplink JWT Rust TUI stdin close: %v", err)
+	}
+	if err := command.Wait(); err != nil {
+		t.Fatalf("live Snaplink JWT Rust TUI failed: stdout=%q stderr=%q err=%v",
+			stdoutBuffer.String(), stderrBuffer.String(), err)
+	}
+	if stdoutBuffer.Exceeded() || stderrBuffer.Exceeded() {
+		t.Fatalf("live Snaplink JWT Rust TUI output exceeded the size limit")
+	}
+	output := stdoutBuffer.String()
+	for _, want := range []string{
+		"Selected pending Run-intent metadata refreshed.",
+		fmt.Sprintf("Run-intent %q status=\"pending\"", submitted.Intent.IntentID),
+		"Run-intent event seq=1",
+		"Synced ",
+		"owner-visible changes through cursor ",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("live Snaplink JWT Rust TUI output omitted %q: %q", want, output)
+		}
+	}
+	if strings.Contains(output, "Prompt stored. No Run was started.") {
+		t.Fatalf("live Snaplink JWT Rust TUI unexpectedly submitted a Prompt: %q", output)
+	}
+	return submitted
+}
+
+func waitForTUIOutput(t *testing.T, output *synchronizedCLIOutput, marker string) {
+	t.Helper()
+	deadline := time.Now().Add(15 * time.Second)
+	for time.Now().Before(deadline) {
+		if strings.Contains(output.String(), marker) {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("live Snaplink JWT Rust TUI did not reach marker %q: %q", marker, output.String())
+}
+
 func snaplinkExecutionProfile(t *testing.T, projectID string) (*executionprofile.Catalog, intentmodel.ServerExecutionProfile) {
 	t.Helper()
 	profile := intentmodel.ServerExecutionProfile{
@@ -536,7 +653,7 @@ func startSnaplinkForgeTestIssuer(t *testing.T) (string, *http.Client, string, s
 		t.Fatal(err)
 	}
 	clients := defaultimpl.NewMemoryClientStore()
-	forgeScopes := []string{"openid", "profile", "forge:conversations:read", "forge:conversations:write", deviceInventoryReadCandidateScope, devicePlacementRegistryCandidateScope, lifecycleRegistryCandidateReadScope}
+	forgeScopes := []string{"openid", "profile", "forge:conversations:read", "forge:conversations:write", deviceInventoryReadCandidateScope, devicePlacementRegistryCandidateScope, lifecycleRegistryCandidateReadScope, schedulerSelectionLeaseScope}
 	for _, clientID := range []string{"forge-console", "forge-cli"} {
 		clients.AddSeed(&sso.Client{
 			ID: clientID, Name: clientID, TenantID: snaplinkForgeTestTenant, SubjectType: "public",
@@ -740,7 +857,7 @@ func snaplinkAssertPendingIntentViews(
 
 func snaplinkAssertFreshPendingIntentReadback(
 	t *testing.T, client *http.Client, baseURL, token, conversationID string,
-	first intentmodel.PendingRunIntentSubmissionResult,
+	first intentmodel.PendingRunIntentSubmissionResult, additional ...map[string]uint64,
 ) {
 	t.Helper()
 	promptResponse := snaplinkConversationRequest(t, client, baseURL, token, http.MethodGet,
@@ -760,6 +877,11 @@ func snaplinkAssertFreshPendingIntentReadback(
 	expectedPendingContents := map[string]uint64{
 		"prompt sent from client B":    first.Intent.AggregateVersion,
 		"pending intent from Rust CLI": first.Intent.AggregateVersion + 1,
+	}
+	for _, extra := range additional {
+		for content, version := range extra {
+			expectedPendingContents[content] = version
+		}
 	}
 	if _, ok := promptContentsByContent(promptContents)["pending intent from Flutter Console"]; ok {
 		expectedPendingContents["pending intent from Flutter Console"] = first.Intent.AggregateVersion + 2

@@ -87,6 +87,166 @@ fn registry_placement_response() -> Value {
     })
 }
 
+fn scheduler_selection_lease_request() -> Value {
+    json!({
+        "conversation_id": "conversation-1",
+        "run_id": "run-1",
+        "attempt_id": "attempt-1",
+        "requirements": {
+            "os": "linux", "architecture": "amd64", "min_cpu_cores": 1,
+            "min_memory_bytes": 1, "min_storage_bytes": 1, "runtime": "oci",
+            "gpu": {"required": false, "min_memory_bytes": 0, "runtime": ""},
+            "data_residency_zones": ["us-west"], "minimum_trust_zone": "standard",
+            "sandbox_floor": "container", "concurrency_slots": 1
+        },
+        "ttl_ms": 30000
+    })
+}
+
+fn scheduler_selection_lease_response() -> Value {
+    json!({
+        "schema_version": "forge.execution-lease-registry/v1",
+        "evaluation_mode": "durable_scheduler_lease_claim",
+        "owner": {"issuer":"https://id.example","subject":"user-a","tenant_id":"tenant-a"},
+        "conversation_id": "conversation-1", "run_id": "run-1", "attempt_id": "attempt-1",
+        "device_id": "device-a", "instance_id": "runner-a",
+        "inventory_revision": 7, "generation": 3, "heartbeat_sequence": 12,
+        "grant": {
+            "v": 1, "attempt_id": "attempt-1", "target_id": "runner-a", "epoch": 1,
+            "fencing_token": "fence-token-a", "issued_at_ms": 1800000000000_i64,
+            "expires_at_ms": 1800000030000_i64
+        },
+        "replayed": false,
+        "authority": {
+            "placement_selected": true, "reservation_created": true, "lease_issued": true,
+            "execution_authorized": false, "dispatch_performed": false, "audit_published": false
+        }
+    })
+}
+
+fn scheduler_selection_lease_renewal_request() -> Value {
+    json!({
+        "conversation_id": "conversation-1",
+        "run_id": "run-1",
+        "attempt_id": "attempt-1",
+        "target_id": "runner-a",
+        "epoch": 1,
+        "fencing_token": "fence-token-a",
+        "ttl_ms": 30000
+    })
+}
+
+fn scheduler_selection_lease_release_request() -> Value {
+    json!({
+        "conversation_id": "conversation-1",
+        "run_id": "run-1",
+        "attempt_id": "attempt-1",
+        "target_id": "runner-a",
+        "epoch": 2,
+        "fencing_token": "fence-token-b",
+    })
+}
+
+fn scheduler_selection_lease_release_response() -> Value {
+    json!({
+        "schema_version": "forge.execution-lease-registry/v1",
+        "evaluation_mode": "durable_scheduler_lease_release",
+        "owner": {"issuer":"https://id.example","subject":"user-a","tenant_id":"tenant-a"},
+        "conversation_id": "conversation-1", "run_id": "run-1", "attempt_id": "attempt-1",
+        "device_id": "device-a", "instance_id": "runner-a", "epoch": 2,
+        "released_at_ms": 1800000000100_i64, "replayed": false,
+        "authority": {
+            "placement_selected": false, "reservation_created": false, "lease_issued": false,
+            "execution_authorized": false, "dispatch_performed": false, "audit_published": false
+        }
+    })
+}
+
+#[tokio::test]
+async fn scheduler_selection_lease_posts_once_with_explicit_idempotency() {
+    let request = scheduler_selection_lease_request();
+    let response = scheduler_selection_lease_response();
+    let (client, server) = spawn_mock_server(vec![ExpectedRequest {
+        request_prefix: "POST /api/v1/device-placement/scheduler-lease ",
+        required_headers: &["idempotency-key: lease-key-00000001"],
+        body_fields: json!({
+            "conversation_id": "conversation-1",
+            "run_id": "run-1",
+            "attempt_id": "attempt-1",
+            "ttl_ms": 30000
+        }),
+        response_status: "200 OK",
+        response: response.clone(),
+    }]);
+    let returned = client
+        .claim_scheduler_selection_lease(&request, "lease-key-00000001")
+        .await
+        .unwrap();
+    super::super::scheduler_lease::validate_response(&returned).unwrap();
+    assert_eq!(returned["grant"]["epoch"], 1);
+    server.join().unwrap();
+
+    let mut enabled = response;
+    enabled["authority"]["dispatch_performed"] = Value::Bool(true);
+    assert!(super::super::scheduler_lease::validate_response(&enabled).is_err());
+}
+
+#[tokio::test]
+async fn scheduler_selection_lease_renewal_posts_once_with_explicit_idempotency() {
+    let request = scheduler_selection_lease_renewal_request();
+    let mut response = scheduler_selection_lease_response();
+    response["grant"]["epoch"] = json!(2);
+    response["grant"]["fencing_token"] = json!("fence-token-b");
+    let (client, server) = spawn_mock_server(vec![ExpectedRequest {
+        request_prefix: "POST /api/v1/device-placement/scheduler-lease/renew ",
+        required_headers: &["idempotency-key: renew-key-00000001"],
+        body_fields: json!({
+            "conversation_id": "conversation-1",
+            "target_id": "runner-a",
+            "epoch": 1,
+            "ttl_ms": 30000
+        }),
+        response_status: "200 OK",
+        response: response.clone(),
+    }]);
+    let returned = client
+        .renew_scheduler_selection_lease(&request, "renew-key-00000001")
+        .await
+        .unwrap();
+    super::super::scheduler_lease_renew::validate_response(&returned).unwrap();
+    assert_eq!(returned["grant"]["epoch"], 2);
+    server.join().unwrap();
+}
+
+#[tokio::test]
+async fn scheduler_selection_lease_release_posts_once_with_explicit_idempotency() {
+    let request = scheduler_selection_lease_release_request();
+    let response = scheduler_selection_lease_release_response();
+    let (client, server) = spawn_mock_server(vec![ExpectedRequest {
+        request_prefix: "POST /api/v1/device-placement/scheduler-lease/release ",
+        required_headers: &["idempotency-key: release-key-00000001"],
+        body_fields: json!({
+            "conversation_id": "conversation-1",
+            "target_id": "runner-a",
+            "epoch": 2
+        }),
+        response_status: "200 OK",
+        response: response.clone(),
+    }]);
+    let returned = client
+        .release_scheduler_selection_lease(&request, "release-key-00000001")
+        .await
+        .unwrap();
+    super::super::scheduler_lease_release::validate_response(&returned).unwrap();
+    assert_eq!(returned["released_at_ms"], 1800000000100_i64);
+    assert!(!returned.to_string().contains("fence-token-b"));
+    server.join().unwrap();
+
+    let mut authority = response;
+    authority["authority"]["lease_issued"] = Value::Bool(true);
+    assert!(super::super::scheduler_lease_release::validate_response(&authority).is_err());
+}
+
 #[tokio::test]
 async fn registry_placement_preview_posts_requirements_once_and_validates_v2_response() {
     let request = registry_placement_request();
@@ -108,6 +268,52 @@ async fn registry_placement_preview_posts_requirements_once_and_validates_v2_res
     let mut selected = response;
     selected["selected_device_id"] = json!("device-a");
     assert!(super::super::placement_registry::validate_response(&selected).is_err());
+}
+
+#[tokio::test]
+async fn registry_placement_preview_rejects_response_drift_at_client_boundary() {
+    let request = registry_placement_request();
+    let mut response = registry_placement_response();
+    response["selected_device_id"] = json!("device-a");
+    let (client, server) = spawn_mock_server(vec![ExpectedRequest {
+        request_prefix: "POST /api/v1/device-placement/registry-preview ",
+        required_headers: &[],
+        body_fields: json!({"requirements": request["requirements"].clone()}),
+        response_status: "200 OK",
+        response,
+    }]);
+    let error = client
+        .preview_device_placement_registry(&request)
+        .await
+        .expect_err("a selected target must not escape the registry preview client");
+    assert_eq!(
+        error.to_string(),
+        "Forge API returned an invalid registry placement preview"
+    );
+    server.join().unwrap();
+}
+
+#[tokio::test]
+async fn registry_placement_preview_rejects_authority_drift_at_client_boundary() {
+    let request = registry_placement_request();
+    let mut response = registry_placement_response();
+    response["authority"]["placement_selected"] = Value::Bool(true);
+    let (client, server) = spawn_mock_server(vec![ExpectedRequest {
+        request_prefix: "POST /api/v1/device-placement/registry-preview ",
+        required_headers: &[],
+        body_fields: json!({"requirements": request["requirements"].clone()}),
+        response_status: "200 OK",
+        response,
+    }]);
+    let error = client
+        .preview_device_placement_registry(&request)
+        .await
+        .expect_err("authority-bearing registry preview must not escape the client");
+    assert_eq!(
+        error.to_string(),
+        "Forge API returned an invalid registry placement preview"
+    );
+    server.join().unwrap();
 }
 
 #[tokio::test]
@@ -179,6 +385,58 @@ async fn placement_preview_posts_the_caller_declaration_once_and_rejects_authori
     let mut forged = response;
     forged["execution_authorized"] = Value::Bool(true);
     assert!(super::super::placement::validate_response(&forged, &request).is_err());
+}
+
+#[tokio::test]
+async fn placement_preview_rejects_response_binding_drift_at_client_boundary() {
+    let request = placement_request();
+    let mut response = placement_response(true, json!([]));
+    response["owner_declaration"]["subject"] = json!("user-foreign");
+    let (client, server) = spawn_mock_server(vec![ExpectedRequest {
+        request_prefix: "POST /api/v1/device-placement/preview ",
+        required_headers: &[],
+        body_fields: json!({
+            "schema_version": "forge.device-placement-dry-run/v1",
+            "evaluated_at_ms": 1800000000000_i64,
+        }),
+        response_status: "200 OK",
+        response,
+    }]);
+    let error = client
+        .preview_device_placement(&request)
+        .await
+        .expect_err("a foreign placement response must not escape the HTTP client");
+    assert_eq!(
+        error.to_string(),
+        "Forge API returned a placement preview with invalid authority or binding"
+    );
+    server.join().unwrap();
+}
+
+#[tokio::test]
+async fn placement_preview_rejects_authority_drift_at_client_boundary() {
+    let request = placement_request();
+    let mut response = placement_response(true, json!([]));
+    response["execution_authorized"] = Value::Bool(true);
+    let (client, server) = spawn_mock_server(vec![ExpectedRequest {
+        request_prefix: "POST /api/v1/device-placement/preview ",
+        required_headers: &[],
+        body_fields: json!({
+            "schema_version": "forge.device-placement-dry-run/v1",
+            "evaluated_at_ms": 1800000000000_i64,
+        }),
+        response_status: "200 OK",
+        response,
+    }]);
+    let error = client
+        .preview_device_placement(&request)
+        .await
+        .expect_err("an authority-bearing placement response must not escape the HTTP client");
+    assert_eq!(
+        error.to_string(),
+        "Forge API returned a placement preview with invalid authority or binding"
+    );
+    server.join().unwrap();
 }
 
 #[test]
@@ -295,5 +553,165 @@ async fn remote_placement_response_rejects_duplicate_json_keys_before_decode() {
         .await
         .unwrap_err();
     assert_eq!(error.to_string(), "Forge API returned duplicate JSON keys");
+    server.join().unwrap();
+}
+
+#[tokio::test]
+async fn scheduler_selection_preview_posts_bound_request_and_keeps_authority_closed() {
+    let request = json!({
+        "conversation_id": "conversation-1",
+        "run_id": "run-1",
+        "attempt_id": "attempt-1",
+        "requirements": {
+            "os": "linux", "architecture": "amd64", "min_cpu_cores": 1,
+            "min_memory_bytes": 1, "min_storage_bytes": 1, "runtime": "oci",
+            "gpu": {"required": false, "min_memory_bytes": 0, "runtime": ""},
+            "data_residency_zones": ["us-west"], "minimum_trust_zone": "standard",
+            "sandbox_floor": "container", "concurrency_slots": 1
+        }
+    });
+    let response = json!({
+        "schema_version": "forge.scheduler-selection-preview/v1",
+        "evaluation_mode": "pure_scheduler_selection_preview",
+        "owner": {"issuer": "https://id.example", "subject": "user-a", "tenant_id": "tenant-a"},
+        "conversation_id": "conversation-1", "run_id": "run-1", "attempt_id": "attempt-1",
+        "evaluated_at_ms": 1_800_000_000_000_i64,
+        "candidate_count": 1, "eligible_candidate_count": 0,
+        "selection_available": false, "selection_reason": "no_eligible_candidate",
+        "selected_device_id": null, "selected_instance_id": null, "preview_only": true,
+        "authority": {
+            "placement_selected": false, "reservation_created": false, "lease_issued": false,
+            "execution_authorized": false, "dispatch_performed": false, "audit_published": false
+        }
+    });
+    let (client, server) = spawn_mock_server(vec![ExpectedRequest {
+        request_prefix: "POST /api/v1/device-placement/scheduler-preview ",
+        required_headers: &[],
+        body_fields: request.clone(),
+        response_status: "200 OK",
+        response: response.clone(),
+    }]);
+    let returned = client.preview_scheduler_selection(&request).await.unwrap();
+    super::super::scheduler_selection::validate_response(&returned).unwrap();
+    server.join().unwrap();
+
+    let mut authority = response;
+    authority["authority"]["dispatch_performed"] = json!(true);
+    assert!(super::super::scheduler_selection::validate_response(&authority).is_err());
+}
+
+#[tokio::test]
+async fn scheduler_selection_client_rejects_a_response_for_another_run() {
+    let request = json!({
+        "conversation_id": "conversation-1",
+        "run_id": "run-1",
+        "attempt_id": "attempt-1",
+        "requirements": {
+            "os": "linux", "architecture": "amd64", "min_cpu_cores": 1,
+            "min_memory_bytes": 1, "min_storage_bytes": 1, "runtime": "oci",
+            "gpu": {"required": false, "min_memory_bytes": 0, "runtime": ""},
+            "data_residency_zones": ["us-west"], "minimum_trust_zone": "standard",
+            "sandbox_floor": "container", "concurrency_slots": 1
+        }
+    });
+    let mut response = json!({
+        "schema_version": "forge.scheduler-selection-preview/v1",
+        "evaluation_mode": "pure_scheduler_selection_preview",
+        "owner": {"issuer": "https://id.example", "subject": "user-a", "tenant_id": "tenant-a"},
+        "conversation_id": "conversation-1", "run_id": "run-foreign", "attempt_id": "attempt-1",
+        "evaluated_at_ms": 1_800_000_000_000_i64,
+        "candidate_count": 0, "eligible_candidate_count": 0,
+        "selection_available": false, "selection_reason": "no_eligible_candidate",
+        "selected_device_id": null, "selected_instance_id": null, "preview_only": true,
+        "authority": {
+            "placement_selected": false, "reservation_created": false, "lease_issued": false,
+            "execution_authorized": false, "dispatch_performed": false, "audit_published": false
+        }
+    });
+    let (client, server) = spawn_mock_server(vec![ExpectedRequest {
+        request_prefix: "POST /api/v1/device-placement/scheduler-preview ",
+        required_headers: &[],
+        body_fields: request.clone(),
+        response_status: "200 OK",
+        response: response.clone(),
+    }]);
+    assert!(client.preview_scheduler_selection(&request).await.is_err());
+    server.join().unwrap();
+
+    response["run_id"] = json!("run-1");
+    super::super::scheduler_selection::validate_response_for_request(&response, &request).unwrap();
+}
+
+#[tokio::test]
+async fn scheduler_lease_claim_client_rejects_a_response_for_another_attempt() {
+    let request = scheduler_selection_lease_request();
+    let mut response = scheduler_selection_lease_response();
+    response["attempt_id"] = json!("attempt-foreign");
+    response["grant"]["attempt_id"] = json!("attempt-foreign");
+    let (client, server) = spawn_mock_server(vec![ExpectedRequest {
+        request_prefix: "POST /api/v1/device-placement/scheduler-lease ",
+        required_headers: &["idempotency-key: lease-binding-key-0001"],
+        body_fields: json!({
+            "conversation_id": "conversation-1", "run_id": "run-1", "attempt_id": "attempt-1",
+            "requirements": request["requirements"].clone(), "ttl_ms": 30000
+        }),
+        response_status: "200 OK",
+        response,
+    }]);
+    assert!(
+        client
+            .claim_scheduler_selection_lease(&request, "lease-binding-key-0001")
+            .await
+            .is_err()
+    );
+    server.join().unwrap();
+}
+
+#[tokio::test]
+async fn scheduler_lease_renewal_client_rejects_a_response_for_another_epoch() {
+    let request = scheduler_selection_lease_renewal_request();
+    let mut response = scheduler_selection_lease_response();
+    response["grant"]["epoch"] = json!(3);
+    response["grant"]["fencing_token"] = json!("fence-token-c");
+    let (client, server) = spawn_mock_server(vec![ExpectedRequest {
+        request_prefix: "POST /api/v1/device-placement/scheduler-lease/renew ",
+        required_headers: &["idempotency-key: renewal-binding-key-0001"],
+        body_fields: json!({
+            "conversation_id": "conversation-1", "run_id": "run-1", "attempt_id": "attempt-1",
+            "target_id": "runner-a", "epoch": 1, "fencing_token": "fence-token-a", "ttl_ms": 30000
+        }),
+        response_status: "200 OK",
+        response,
+    }]);
+    assert!(
+        client
+            .renew_scheduler_selection_lease(&request, "renewal-binding-key-0001")
+            .await
+            .is_err()
+    );
+    server.join().unwrap();
+}
+
+#[tokio::test]
+async fn scheduler_lease_release_client_rejects_a_response_for_another_target() {
+    let request = scheduler_selection_lease_release_request();
+    let mut response = scheduler_selection_lease_release_response();
+    response["instance_id"] = json!("runner-foreign");
+    let (client, server) = spawn_mock_server(vec![ExpectedRequest {
+        request_prefix: "POST /api/v1/device-placement/scheduler-lease/release ",
+        required_headers: &["idempotency-key: release-binding-key-0001"],
+        body_fields: json!({
+            "conversation_id": "conversation-1", "run_id": "run-1", "attempt_id": "attempt-1",
+            "target_id": "runner-a", "epoch": 2, "fencing_token": "fence-token-b"
+        }),
+        response_status: "200 OK",
+        response,
+    }]);
+    assert!(
+        client
+            .release_scheduler_selection_lease(&request, "release-binding-key-0001")
+            .await
+            .is_err()
+    );
     server.join().unwrap();
 }

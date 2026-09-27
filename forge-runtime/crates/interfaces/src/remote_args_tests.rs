@@ -55,6 +55,8 @@ fn remote_runner_dispatch_plan_preview_requires_one_bounded_input() {
         .unwrap(),
         RemoteCommand::RunnerDispatchPlanPreview {
             input: "request.json".into(),
+            instance_id: None,
+            instance_view: None,
         }
     );
     assert!(parse_remote_command(&["remote", "runner-dispatch-plan-preview"]).is_err());
@@ -71,6 +73,121 @@ fn remote_runner_dispatch_plan_preview_requires_one_bounded_input() {
     );
     assert!(
         parse_remote_command(&["remote", "runner-dispatch-plan-preview", "--input", " "]).is_err()
+    );
+}
+
+#[test]
+fn remote_runner_dispatch_plan_preview_accepts_an_instance_projection() {
+    assert_eq!(
+        parse_remote_command(&[
+            "remote",
+            "runner-dispatch-plan-preview",
+            "--input",
+            "request.json",
+            "--instance",
+            "client-web-001",
+            "--instance-view",
+            "client-view.json",
+        ])
+        .unwrap(),
+        RemoteCommand::RunnerDispatchPlanPreview {
+            input: "request.json".into(),
+            instance_id: Some("client-web-001".into()),
+            instance_view: Some("client-view.json".into()),
+        }
+    );
+    assert!(
+        parse_remote_command(&[
+            "remote",
+            "runner-dispatch-plan-preview",
+            "--input",
+            "request.json",
+            "--instance-view",
+            "client-view.json",
+        ])
+        .is_err()
+    );
+    assert!(
+        parse_remote_command(&[
+            "remote",
+            "runner-dispatch-plan-preview",
+            "--input",
+            "request.json",
+            "--instance",
+            "client-web-001",
+            "--instance",
+            "client-cli-001",
+        ])
+        .is_err()
+    );
+}
+
+#[test]
+fn remote_runner_execution_intent_preview_requires_one_bounded_input() {
+    assert_eq!(
+        parse_remote_command(&[
+            "remote",
+            "runner-execution-intent-preview",
+            "--input",
+            "request.json",
+        ])
+        .unwrap(),
+        RemoteCommand::RunnerExecutionIntentPreview {
+            input: "request.json".into(),
+            instance_id: None,
+            instance_view: None,
+        }
+    );
+    assert!(parse_remote_command(&["remote", "runner-execution-intent-preview"]).is_err());
+    assert!(
+        parse_remote_command(&["remote", "runner-execution-intent-preview", "--input", " ",])
+            .is_err()
+    );
+}
+
+#[test]
+fn remote_runner_execution_intent_preview_accepts_an_instance_projection() {
+    assert_eq!(
+        parse_remote_command(&[
+            "remote",
+            "runner-execution-intent-preview",
+            "--input",
+            "request.json",
+            "--instance",
+            "client-web-001",
+            "--instance-view",
+            "client-view.json",
+        ])
+        .unwrap(),
+        RemoteCommand::RunnerExecutionIntentPreview {
+            input: "request.json".into(),
+            instance_id: Some("client-web-001".into()),
+            instance_view: Some("client-view.json".into()),
+        }
+    );
+    assert!(
+        parse_remote_command(&[
+            "remote",
+            "runner-execution-intent-preview",
+            "--input",
+            "request.json",
+            "--instance-view",
+            "client-view.json",
+        ])
+        .is_err()
+    );
+    assert!(
+        parse_remote_command(&[
+            "remote",
+            "runner-execution-intent-preview",
+            "--input",
+            "request.json",
+            "--instance",
+            "client-web-001",
+            "--instance",
+            "client-cli-001",
+        ])
+        .is_err()
     );
 }
 
@@ -99,6 +216,15 @@ fn remote_inventory_show_v2_is_an_explicit_candidate_read() {
 }
 
 #[test]
+fn remote_inventory_show_converged_is_an_explicit_pair_read() {
+    assert_eq!(
+        parse_remote_command(&["remote", "inventory", "show-converged"]).unwrap(),
+        RemoteCommand::InventoryShowConverged
+    );
+    assert!(parse_remote_command(&["remote", "inventory", "show-converged", "extra"]).is_err());
+}
+
+#[test]
 fn remote_client_instance_views_parse_as_exact_read_only_commands() {
     assert_eq!(
         parse_remote_command(&["remote", "client-instances", "session-view"]).unwrap(),
@@ -112,6 +238,17 @@ fn remote_client_instance_views_parse_as_exact_read_only_commands() {
     assert!(parse_remote_command(&["remote", "client-instances", "unknown"]).is_err());
     assert!(
         parse_remote_command(&["remote", "client-instances", "session-view", "extra",]).is_err()
+    );
+}
+
+#[test]
+fn remote_client_instance_show_converged_is_an_explicit_pair_read() {
+    assert_eq!(
+        parse_remote_command(&["remote", "client-instances", "show-converged"]).unwrap(),
+        RemoteCommand::ClientInstancesShowConverged
+    );
+    assert!(
+        parse_remote_command(&["remote", "client-instances", "show-converged", "extra",]).is_err()
     );
 }
 
@@ -164,6 +301,26 @@ fn remote_execution_consent_preview_parses_as_an_exact_read_only_command() {
             .unwrap(),
         RemoteCommand::ExecutionConsentPreview {
             conversation_id: "conversation-17".into(),
+            instance_id: None,
+            instance_view: None,
+        }
+    );
+    assert_eq!(
+        parse_remote_command(&[
+            "remote",
+            "execution-consent",
+            "preview",
+            "conversation-17",
+            "--instance",
+            "client-cli-001",
+            "--instance-view",
+            "view.json",
+        ])
+        .unwrap(),
+        RemoteCommand::ExecutionConsentPreview {
+            conversation_id: "conversation-17".into(),
+            instance_id: Some("client-cli-001".into()),
+            instance_view: Some("view.json".into()),
         }
     );
     assert!(parse_remote_command(&["remote", "execution-consent"]).is_err());
@@ -180,6 +337,17 @@ fn remote_execution_consent_preview_parses_as_an_exact_read_only_command() {
     assert!(
         parse_remote_command(&["remote", "execution-consent", "grant", "conversation-17",])
             .is_err()
+    );
+    assert!(
+        parse_remote_command(&[
+            "remote",
+            "execution-consent",
+            "preview",
+            "conversation-17",
+            "--instance-view",
+            "view.json",
+        ])
+        .is_err()
     );
 }
 
@@ -436,6 +604,8 @@ fn remote_session_create_parses_project_scope_and_requires_idempotency() {
         Command::Remote(RemoteCommand::SessionsCreate {
             title: "Review".into(),
             scope: RemoteConversationScope::Project("prj_1".into()),
+            instance_id: None,
+            instance_view: None,
         })
     );
     assert!(
@@ -445,6 +615,55 @@ fn remote_session_create_parses_project_scope_and_requires_idempotency() {
     assert!(
         parse_tokens(["remote", "sessions", "create", "--title", "New"].map(str::to_owned))
             .is_err()
+    );
+}
+
+#[test]
+fn remote_session_create_parses_optional_client_instance_projection() {
+    let scoped = parse_tokens(
+        [
+            "--idempotency-key",
+            "instance-create",
+            "remote",
+            "sessions",
+            "create",
+            "--instance",
+            "client-web-001",
+            "--instance-view",
+            "client-instance-view.json",
+            "--title",
+            "Visible create",
+        ]
+        .map(str::to_owned),
+    )
+    .unwrap();
+    assert_eq!(
+        scoped.command,
+        Command::Remote(RemoteCommand::SessionsCreate {
+            title: "Visible create".into(),
+            scope: RemoteConversationScope::Global,
+            instance_id: Some("client-web-001".into()),
+            instance_view: Some("client-instance-view.json".into()),
+        })
+    );
+    assert!(
+        parse_tokens(
+            [
+                "remote",
+                "sessions",
+                "create",
+                "--instance-view",
+                "client-instance-view.json"
+            ]
+            .map(str::to_owned),
+        )
+        .is_err()
+    );
+    assert!(
+        parse_tokens(
+            ["remote", "sessions", "create", "--instance", "client/web"].map(str::to_owned),
+        )
+        .is_err()
     );
 }
 
@@ -528,7 +747,11 @@ fn remote_change_command_parses_bounded_cursor() {
         parse_tokens(["remote", "changes", "list"].map(str::to_owned))
             .unwrap()
             .command,
-        Command::Remote(RemoteCommand::ChangesList { after_cursor: None })
+        Command::Remote(RemoteCommand::ChangesList {
+            after_cursor: None,
+            instance_id: None,
+            instance_view: None,
+        })
     );
     assert_eq!(
         parse_tokens(["remote", "changes", "list", "--after-cursor", "19"].map(str::to_owned))
@@ -536,6 +759,8 @@ fn remote_change_command_parses_bounded_cursor() {
             .command,
         Command::Remote(RemoteCommand::ChangesList {
             after_cursor: Some(19),
+            instance_id: None,
+            instance_view: None,
         })
     );
     assert!(
@@ -579,6 +804,8 @@ fn remote_change_watch_parses_bounded_polling_and_backoff_options() {
             polls: 4,
             min_delay_ms: 50,
             max_delay_ms: 500,
+            instance_id: None,
+            instance_view: None,
         })
     );
     assert!(
@@ -594,6 +821,148 @@ fn remote_change_watch_parses_bounded_polling_and_backoff_options() {
                 "500",
                 "--max-delay-ms",
                 "50"
+            ]
+            .map(str::to_owned)
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn remote_change_stream_parses_bounded_wait_and_cursor_options() {
+    assert_eq!(
+        parse_tokens(
+            [
+                "remote",
+                "changes",
+                "stream",
+                "--after-cursor",
+                "19",
+                "--wait-ms",
+                "10000"
+            ]
+            .map(str::to_owned)
+        )
+        .unwrap()
+        .command,
+        Command::Remote(RemoteCommand::ChangesStream {
+            after_cursor: Some(19),
+            wait_ms: 10_000,
+            instance_id: None,
+            instance_view: None,
+        })
+    );
+    assert_eq!(
+        parse_tokens(["remote", "changes", "stream"].map(str::to_owned))
+            .unwrap()
+            .command,
+        Command::Remote(RemoteCommand::ChangesStream {
+            after_cursor: None,
+            wait_ms: 5_000,
+            instance_id: None,
+            instance_view: None,
+        })
+    );
+    assert!(
+        parse_tokens(["remote", "changes", "stream", "--wait-ms", "10001"].map(str::to_owned))
+            .is_err()
+    );
+    assert!(
+        parse_tokens(
+            [
+                "remote",
+                "changes",
+                "stream",
+                "--wait-ms",
+                "1",
+                "--wait-ms",
+                "2"
+            ]
+            .map(str::to_owned)
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn remote_change_feeds_parse_instance_projection_options() {
+    assert_eq!(
+        parse_tokens(
+            [
+                "remote",
+                "changes",
+                "list",
+                "--instance",
+                "client-web-001",
+                "--instance-view",
+                "view.json",
+                "--after-cursor",
+                "19"
+            ]
+            .map(str::to_owned)
+        )
+        .unwrap()
+        .command,
+        Command::Remote(RemoteCommand::ChangesList {
+            after_cursor: Some(19),
+            instance_id: Some("client-web-001".into()),
+            instance_view: Some("view.json".into()),
+        })
+    );
+    assert_eq!(
+        parse_tokens(
+            [
+                "remote",
+                "changes",
+                "watch",
+                "--instance",
+                "client-web-001",
+                "--polls",
+                "1"
+            ]
+            .map(str::to_owned)
+        )
+        .unwrap()
+        .command,
+        Command::Remote(RemoteCommand::ChangesWatch {
+            after_cursor: None,
+            polls: 1,
+            min_delay_ms: 250,
+            max_delay_ms: 5_000,
+            instance_id: Some("client-web-001".into()),
+            instance_view: None,
+        })
+    );
+    assert_eq!(
+        parse_tokens(
+            [
+                "remote",
+                "changes",
+                "stream",
+                "--instance-view",
+                "view.json",
+                "--instance",
+                "client-web-001"
+            ]
+            .map(str::to_owned)
+        )
+        .unwrap()
+        .command,
+        Command::Remote(RemoteCommand::ChangesStream {
+            after_cursor: None,
+            wait_ms: 5_000,
+            instance_id: Some("client-web-001".into()),
+            instance_view: Some("view.json".into()),
+        })
+    );
+    assert!(
+        parse_tokens(
+            [
+                "remote",
+                "changes",
+                "stream",
+                "--instance-view",
+                "view.json"
             ]
             .map(str::to_owned)
         )
@@ -1157,11 +1526,17 @@ mod local_runner_preview_tests;
 mod placement_tests;
 #[path = "remote_args/run_attempt_lease_dispatch_preflight_tests.rs"]
 mod run_attempt_lease_dispatch_preflight_tests;
+#[cfg(test)]
+#[path = "remote_args/run_execution_evidence_tests.rs"]
+mod run_execution_evidence_tests;
 #[path = "remote_args/run_timeline_tests.rs"]
 mod run_timeline_tests;
 #[cfg(test)]
 #[path = "remote_args/session_observation_tests.rs"]
 mod session_observation_tests;
+#[cfg(test)]
+#[path = "remote_args/session_runner_receipt_history_tests.rs"]
+mod session_runner_receipt_history_tests;
 #[cfg(test)]
 #[path = "remote_args/session_runner_receipt_tests.rs"]
 mod session_runner_receipt_tests;

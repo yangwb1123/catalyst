@@ -26,13 +26,73 @@ func newAuthenticatedSessionRoutesWithDeviceFabricActivation(
 	activation *devicefabricgate.Request,
 	lifecycleRegistryFile string,
 	clientInstanceSessionViewFile string,
+	leaseRegistryFiles ...string,
 ) (http.Handler, error) {
+	return newAuthenticatedSessionRoutesWithDeviceFabricActivationAndRunnerAuthority(
+		client, profiles, activation, lifecycleRegistryFile, clientInstanceSessionViewFile,
+		nil, leaseRegistryFiles...,
+	)
+}
+
+// newAuthenticatedSessionRoutesWithDeviceFabricActivationAndRunnerAuthority
+// is the explicit assembly seam for the future Runner effect boundary. The
+// ordinary helper above remains authority-free so existing inventory and
+// admission callers cannot accidentally mount this route.
+func newAuthenticatedSessionRoutesWithDeviceFabricActivationAndRunnerAuthority(
+	client *runtimebridge.Client,
+	profiles *executionprofile.Catalog,
+	activation *devicefabricgate.Request,
+	lifecycleRegistryFile string,
+	clientInstanceSessionViewFile string,
+	runnerAuthority *devicefabricgate.RunnerAuthorityConfig,
+	leaseRegistryFiles ...string,
+) (http.Handler, error) {
+	return newAuthenticatedSessionRoutesWithDeviceFabricActivationAndRunnerAuthorityWithBackend(
+		client, profiles, activation, lifecycleRegistryFile, clientInstanceSessionViewFile,
+		runnerAuthority, nil, leaseRegistryFiles...,
+	)
+}
+
+// newAuthenticatedSessionRoutesWithDeviceFabricActivationAndRunnerAuthorityWithBackend
+// is the production assembly seam that binds Runner preview boundaries to the
+// durable Runtime Run projection. The compatibility constructor above keeps
+// value-only focused tests explicit; Run supplies the backend here.
+func newAuthenticatedSessionRoutesWithDeviceFabricActivationAndRunnerAuthorityWithBackend(
+	client *runtimebridge.Client,
+	profiles *executionprofile.Catalog,
+	activation *devicefabricgate.Request,
+	lifecycleRegistryFile string,
+	clientInstanceSessionViewFile string,
+	runnerAuthority *devicefabricgate.RunnerAuthorityConfig,
+	runnerBackend conversationBackend,
+	leaseRegistryFiles ...string,
+) (http.Handler, error) {
+	leaseRegistryFile := ""
+	policyRegistryFile := ""
+	switch len(leaseRegistryFiles) {
+	case 0:
+	case 1:
+		leaseRegistryFile = leaseRegistryFiles[0]
+	case 2:
+		leaseRegistryFile, policyRegistryFile = leaseRegistryFiles[0], leaseRegistryFiles[1]
+	default:
+		return nil, fmt.Errorf("device execution lease/policy registry files may be supplied at most once each")
+	}
 	if activation == nil {
 		if lifecycleRegistryFile != "" {
 			return nil, fmt.Errorf("device inventory lifecycle registry file requires an enabled activation")
 		}
 		if clientInstanceSessionViewFile != "" {
 			return nil, fmt.Errorf("device client-instance session view file requires an enabled activation")
+		}
+		if leaseRegistryFile != "" {
+			return nil, fmt.Errorf("device execution lease registry file requires an enabled activation")
+		}
+		if policyRegistryFile != "" {
+			return nil, fmt.Errorf("device execution policy registry file requires an enabled activation")
+		}
+		if runnerAuthority != nil && runnerAuthority.Enabled {
+			return nil, fmt.Errorf("Runner execution authority requires an enabled activation")
 		}
 		return newAuthenticatedSessionRoutes(client, profiles), nil
 	}
@@ -44,6 +104,15 @@ func newAuthenticatedSessionRoutesWithDeviceFabricActivation(
 		if clientInstanceSessionViewFile != "" {
 			return nil, fmt.Errorf("device client-instance session view file requires an enabled activation")
 		}
+		if leaseRegistryFile != "" {
+			return nil, fmt.Errorf("device execution lease registry file requires an enabled activation")
+		}
+		if policyRegistryFile != "" {
+			return nil, fmt.Errorf("device execution policy registry file requires an enabled activation")
+		}
+		if runnerAuthority != nil && runnerAuthority.Enabled {
+			return nil, fmt.Errorf("Runner execution authority requires EXECUTE activation")
+		}
 		return newAuthenticatedSessionRoutes(client, profiles), nil
 	}
 	if !decision.Allowed {
@@ -51,6 +120,36 @@ func newAuthenticatedSessionRoutesWithDeviceFabricActivation(
 	}
 	if decision.Mode != devicefabricgate.ModeInventory && decision.Mode != devicefabricgate.ModeObserve && decision.Mode != devicefabricgate.ModeExecute {
 		return nil, fmt.Errorf("device fabric route assembly requires inventory, observe, or execute activation (got %s)", decision.Mode)
+	}
+	if leaseRegistryFile != "" {
+		if decision.Mode != devicefabricgate.ModeExecute {
+			return nil, fmt.Errorf("device execution lease registry file requires EXECUTE activation")
+		}
+		if err := validatePrivateFilePath(leaseRegistryFile); err != nil {
+			return nil, fmt.Errorf("device execution lease registry file: %w", err)
+		}
+	}
+	if policyRegistryFile != "" {
+		if decision.Mode != devicefabricgate.ModeExecute {
+			return nil, fmt.Errorf("device execution policy registry file requires EXECUTE activation")
+		}
+		if err := validatePrivateFilePath(policyRegistryFile); err != nil {
+			return nil, fmt.Errorf("device execution policy registry file: %w", err)
+		}
+	}
+	if runnerAuthority != nil && runnerAuthority.Enabled {
+		if decision.Mode != devicefabricgate.ModeExecute {
+			return nil, fmt.Errorf("Runner execution authority requires EXECUTE activation")
+		}
+		if leaseRegistryFile == "" {
+			return nil, fmt.Errorf("Runner execution authority requires an execution lease registry file")
+		}
+		gate := devicefabricgate.EvaluateRunnerExecution(devicefabricgate.RunnerExecutionGateRequest{
+			Activation: *activation, Authority: *runnerAuthority,
+		})
+		if !gate.Allowed {
+			return nil, fmt.Errorf("Runner execution authority blocked (%s): %v", gate.Mode, gate.Reasons)
+		}
 	}
 	if lifecycleRegistryFile == "" {
 		return nil, fmt.Errorf("accepted device fabric activation requires a lifecycle registry file")
@@ -99,29 +198,82 @@ func newAuthenticatedSessionRoutesWithDeviceFabricActivation(
 			},
 		})
 	}
-	// EXECUTE is deliberately an admission-only production assembly. It
-	// exposes the already owner-scoped consent and pending-intent handlers so
-	// clients can submit an explicit, reviewable intent. The additional
-	// preflight handlers below are pure binding projections; no Runner
-	// transport, target selection, lease, Run creation, or dispatch route is
-	// composed here.
+	// EXECUTE keeps consent and pending-intent admission reviewable. The
+	// preflight handlers below remain pure projections. A separate lease file
+	// may explicitly add the fenced scheduler-lease claim; even that route has
+	// no Runner transport, Run creation, command authorization, or dispatch.
 	var executeDeviceObservation http.Handler
 	var executeRunnerReceipt http.Handler
+	var executeRunnerReceiptHistory http.Handler
+	var executeRunnerReconciliation http.Handler
 	var executeAttemptLeasePreflight http.Handler
 	var executeDispatchPlanPreview http.Handler
+	var executeRunnerExecutionIntentPreview http.Handler
 	var executeReconciliation http.Handler
 	var executeSchedulerSelection http.Handler
+	var executeSchedulerLease http.Handler
+	var executeSchedulerLeaseRenewal http.Handler
+	var executeSchedulerLeaseRelease http.Handler
+	var executeRunnerDispatchAdmission http.Handler
+	var executeRunnerTransportAdmission http.Handler
+	var executeRunnerExecutionBoundary http.Handler
+	var executeRunnerAttemptBoundary http.Handler
+	var executeRunExecutionEvidence http.Handler
+	var policySource devicePlacementPolicyReadSource
+	if policyRegistryFile != "" {
+		// The policy image is a read-only owner-bound join.  Mounting it on
+		// preview as well as lease keeps the candidate shown to clients equal
+		// to the policy that a later fenced claim would evaluate.
+		policySource = newPersistedPlacementPolicyFileSource(policyRegistryFile)
+	}
 	if decision.Mode == devicefabricgate.ModeExecute {
 		executeDeviceObservation = newSessionDeviceObservationRoutes()
 		executeRunnerReceipt = newSessionRunnerReceiptObservationRoutes()
+		executeRunnerReceiptHistory = newSessionRunnerReceiptHistoryRoutes()
+		executeRunnerReconciliation = newSessionRunnerReconciliationProjectionRoutes()
 		executeAttemptLeasePreflight = newRunAttemptLeaseDispatchPreflightRoutes()
 		executeDispatchPlanPreview = newRunnerDispatchPlanPreviewRoutes()
+		executeRunnerExecutionIntentPreview = newRunnerExecutionIntentPreviewRoutesWithBackend(runnerBackend)
 		executeReconciliation = newExecutionReconciliationPreviewRoutes()
+		executeRunExecutionEvidence = newRunExecutionEvidencePreviewRoutes()
 		executeSchedulerSelection = newSchedulerSelectionPreviewRoutes(&schedulerSelectionPreviewConfig{
-			Enabled: true,
-			Source:  source,
-			Now:     activatedDeviceFabricObservationClock,
+			Enabled:      true,
+			Source:       source,
+			PolicySource: policySource,
+			Now:          activatedDeviceFabricObservationClock,
+			Backend:      runnerBackend,
 		})
+		if leaseRegistryFile != "" {
+			executeSchedulerLease = newSchedulerSelectionLeaseRoutes(&schedulerSelectionLeaseConfig{
+				Enabled: true, Source: source, Now: activatedDeviceFabricObservationClock,
+				PolicySource: policySource, RegistryPath: leaseRegistryFile, Backend: runnerBackend,
+			})
+			executeSchedulerLeaseRenewal = newSchedulerSelectionLeaseRenewalRoutes(&schedulerSelectionLeaseConfig{
+				Enabled: true, Now: activatedDeviceFabricObservationClock, RegistryPath: leaseRegistryFile,
+				Backend: runnerBackend,
+			})
+			executeSchedulerLeaseRelease = newSchedulerSelectionLeaseReleaseRoutes(&schedulerSelectionLeaseConfig{
+				Enabled: true, Now: activatedDeviceFabricObservationClock, RegistryPath: leaseRegistryFile,
+			})
+			executeRunnerDispatchAdmission = newRunnerDispatchAdmissionRoutes(&runnerDispatchAdmissionConfig{
+				Enabled: true, Now: activatedDeviceFabricObservationClock, RegistryPath: leaseRegistryFile,
+				Backend: runnerBackend,
+			})
+			executeRunnerTransportAdmission = newRunnerTransportAdmissionRoutes(&runnerTransportAdmissionConfig{
+				Enabled: true, Now: activatedDeviceFabricObservationClock, RegistryPath: leaseRegistryFile,
+				Backend: runnerBackend,
+			})
+			if runnerAuthority != nil && runnerAuthority.Enabled {
+				executeRunnerExecutionBoundary = newRunnerExecutionBoundaryRoutes(&runnerExecutionBoundaryConfig{
+					Enabled: true, Now: activatedDeviceFabricObservationClock, RegistryPath: leaseRegistryFile,
+					Activation: *activation, Authority: *runnerAuthority, Backend: runnerBackend,
+				})
+				executeRunnerAttemptBoundary = newRunnerAttemptBoundaryRoutes(&runnerAttemptBoundaryConfig{
+					Enabled: true, Now: activatedDeviceFabricObservationClock, RegistryPath: leaseRegistryFile,
+					Activation: *activation, Authority: *runnerAuthority, Backend: runnerBackend,
+				})
+			}
+		}
 	}
 	fabricRoutes := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.EscapedPath() {
@@ -151,6 +303,24 @@ func newAuthenticatedSessionRoutesWithDeviceFabricActivation(
 				return
 			}
 			writeJSON(w, r, http.StatusNotFound, notFoundBody)
+		case schedulerSelectionLeasePath:
+			if executeSchedulerLease != nil {
+				executeSchedulerLease.ServeHTTP(w, r)
+				return
+			}
+			writeJSON(w, r, http.StatusNotFound, notFoundBody)
+		case schedulerSelectionLeaseRenewalPath:
+			if executeSchedulerLeaseRenewal != nil {
+				executeSchedulerLeaseRenewal.ServeHTTP(w, r)
+				return
+			}
+			writeJSON(w, r, http.StatusNotFound, notFoundBody)
+		case schedulerSelectionLeaseReleasePath:
+			if executeSchedulerLeaseRelease != nil {
+				executeSchedulerLeaseRelease.ServeHTTP(w, r)
+				return
+			}
+			writeJSON(w, r, http.StatusNotFound, notFoundBody)
 		default:
 			if decision.Mode == devicefabricgate.ModeExecute {
 				if _, _, ok := sessionDeviceObservationPathIDs(r.URL.EscapedPath()); ok {
@@ -161,6 +331,14 @@ func newAuthenticatedSessionRoutesWithDeviceFabricActivation(
 					executeRunnerReceipt.ServeHTTP(w, r)
 					return
 				}
+				if _, _, ok := sessionRunnerReceiptHistoryPathIDs(r.URL.EscapedPath()); ok {
+					executeRunnerReceiptHistory.ServeHTTP(w, r)
+					return
+				}
+				if _, _, ok := sessionRunnerReconciliationProjectionPathIDs(r.URL.EscapedPath()); ok {
+					executeRunnerReconciliation.ServeHTTP(w, r)
+					return
+				}
 				if _, _, ok := runAttemptLeaseDispatchPreflightPathIDs(r.URL.EscapedPath()); ok {
 					executeAttemptLeasePreflight.ServeHTTP(w, r)
 					return
@@ -169,8 +347,48 @@ func newAuthenticatedSessionRoutesWithDeviceFabricActivation(
 					executeDispatchPlanPreview.ServeHTTP(w, r)
 					return
 				}
+				if _, _, ok := runnerExecutionIntentPreviewPathIDs(r.URL.EscapedPath()); ok {
+					executeRunnerExecutionIntentPreview.ServeHTTP(w, r)
+					return
+				}
+				if _, _, ok := runnerDispatchAdmissionPathIDs(r.URL.EscapedPath()); ok {
+					if executeRunnerDispatchAdmission != nil {
+						executeRunnerDispatchAdmission.ServeHTTP(w, r)
+						return
+					}
+					writeJSON(w, r, http.StatusNotFound, notFoundBody)
+					return
+				}
+				if _, _, ok := runnerTransportAdmissionPathIDs(r.URL.EscapedPath()); ok {
+					if executeRunnerTransportAdmission != nil {
+						executeRunnerTransportAdmission.ServeHTTP(w, r)
+						return
+					}
+					writeJSON(w, r, http.StatusNotFound, notFoundBody)
+					return
+				}
+				if _, _, ok := runnerExecutionBoundaryPathIDs(r.URL.EscapedPath()); ok {
+					if executeRunnerExecutionBoundary != nil {
+						executeRunnerExecutionBoundary.ServeHTTP(w, r)
+						return
+					}
+					writeJSON(w, r, http.StatusNotFound, notFoundBody)
+					return
+				}
+				if _, _, ok := runnerAttemptBoundaryPathIDs(r.URL.EscapedPath()); ok {
+					if executeRunnerAttemptBoundary != nil {
+						executeRunnerAttemptBoundary.ServeHTTP(w, r)
+						return
+					}
+					writeJSON(w, r, http.StatusNotFound, notFoundBody)
+					return
+				}
 				if _, _, ok := executionReconciliationPreviewPathIDs(r.URL.EscapedPath()); ok {
 					executeReconciliation.ServeHTTP(w, r)
+					return
+				}
+				if _, _, ok := runExecutionEvidencePreviewPathIDs(r.URL.EscapedPath()); ok {
+					executeRunExecutionEvidence.ServeHTTP(w, r)
 					return
 				}
 			}

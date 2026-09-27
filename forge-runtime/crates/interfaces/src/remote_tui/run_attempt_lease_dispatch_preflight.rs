@@ -78,6 +78,41 @@ pub(super) async fn remote_preview<W: Write>(
         .map_err(io_error)?;
         return Ok(());
     }
+    if !super::commands::ensure_conversation_visible_to_client_instance(
+        state,
+        &conversation_id,
+        writer,
+    )? {
+        return Ok(());
+    }
+    // Refresh the explicit inventory/resource pair at the candidate boundary
+    // just like the scheduler and other storage-only writes. A changed pair
+    // may revoke the selected Conversation, so visibility is checked again
+    // before the existing convergence guard and candidate POST.
+    if !super::writes::refresh_explicit_inventory_resource_observations(
+        client,
+        state,
+        "Run/Attempt/lease preflight",
+        writer,
+    )
+    .await?
+    {
+        return Ok(());
+    }
+    if !super::commands::ensure_conversation_visible_to_client_instance(
+        state,
+        &conversation_id,
+        writer,
+    )? {
+        return Ok(());
+    }
+    if !super::writes::ensure_inventory_resource_converged(
+        state,
+        "Run/Attempt/lease preflight",
+        writer,
+    )? {
+        return Ok(());
+    }
     let response = match client
         .preview_run_attempt_lease_dispatch_preflight(&conversation_id, &run_id, &request)
         .await

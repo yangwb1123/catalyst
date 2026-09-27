@@ -58,6 +58,23 @@ func TestConversationRoutesForwardVerifiedOwnerAndCollectionPage(t *testing.T) {
 	}
 }
 
+func TestConversationCreateRouteRejectsBackendResponseForAnotherRequest(t *testing.T) {
+	backend := &fakeConversationBackend{createResult: model.Conversation{
+		ID: "conversation-created", Scope: model.ConversationScope{Kind: "global"},
+		Title: "Foreign title", CreatedAtMS: 11, UpdatedAtMS: 11,
+	}}
+	identity, handler := conversationTestHandler(t, backend)
+	response := requestConversationAPI(t, handler, identity, http.MethodPost,
+		conversationCollectionPath, "forge:conversations:write", "application/json",
+		"create-key", `{"scope":{"kind":"global"},"title":"Build tests"}`)
+	if response.Code != http.StatusBadGateway || backend.createCalls != 1 {
+		t.Fatalf("foreign create response status=%d calls=%d body=%q", response.Code, backend.createCalls, response.Body.String())
+	}
+	if !strings.Contains(response.Body.String(), `"code":"conversation_service_error"`) {
+		t.Fatalf("foreign create response error=%q", response.Body.String())
+	}
+}
+
 func TestConversationDetailRouteForwardsVerifiedOwnerAndHidesForeignIDs(t *testing.T) {
 	backend := &fakeConversationBackend{detail: model.OwnedConversationEntry{
 		Conversation: model.Conversation{
@@ -88,6 +105,25 @@ func TestConversationDetailRouteForwardsVerifiedOwnerAndHidesForeignIDs(t *testi
 		conversationCollectionPath+"/conversation-17?unexpected=yes", "forge:conversations:read", "", "", "")
 	if response.Code != http.StatusBadRequest || backend.detailCalls != 2 {
 		t.Fatalf("detail query status=%d calls=%d body=%q", response.Code, backend.detailCalls, response.Body.String())
+	}
+}
+
+func TestConversationDetailRouteRejectsBackendResponseForAnotherConversation(t *testing.T) {
+	backend := &fakeConversationBackend{detail: model.OwnedConversationEntry{
+		Conversation: model.Conversation{
+			ID: "conversation-other", Scope: model.ConversationScope{Kind: "global"},
+			Title: "Foreign", CreatedAtMS: 10, UpdatedAtMS: 20,
+		},
+		AggregateVersion: 3,
+	}}
+	identity, handler := conversationTestHandler(t, backend)
+	response := requestConversationAPI(t, handler, identity, http.MethodGet,
+		conversationCollectionPath+"/conversation-requested", "forge:conversations:read", "", "", "")
+	if response.Code != http.StatusBadGateway || backend.detailCalls != 1 {
+		t.Fatalf("foreign detail response status=%d calls=%d body=%q", response.Code, backend.detailCalls, response.Body.String())
+	}
+	if !strings.Contains(response.Body.String(), `"code":"conversation_service_error"`) {
+		t.Fatalf("foreign detail response error=%q", response.Body.String())
 	}
 }
 

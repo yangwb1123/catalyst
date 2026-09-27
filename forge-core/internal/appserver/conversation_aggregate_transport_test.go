@@ -1,6 +1,7 @@
 package appserver
 
 import (
+	"fmt"
 	"net/http"
 	"testing"
 
@@ -62,14 +63,15 @@ func TestConversationHTTPAggregateVersionUsesJSONSafeBoundary(t *testing.T) {
 	}
 
 	promptPath := conversationCollectionPath + "/conversation-1/prompts"
+	appendBody := fmt.Sprintf(`{"content":"ship it","expected_version":%d}`, maxSafeJSONInteger-1)
 	backend.appendAggVer = maxSafeJSONInteger
 	if response := requestConversationAPI(t, handler, identity, http.MethodPost, promptPath,
-		"forge:conversations:write", "application/json", "aggregate-prompt", `{"content":"ship it","expected_version":1}`); response.Code != http.StatusCreated {
+		"forge:conversations:write", "application/json", "aggregate-prompt", appendBody); response.Code != http.StatusCreated {
 		t.Fatalf("safe append status=%d body=%q", response.Code, response.Body.String())
 	}
 	backend.appendAggVer = maxSafeJSONInteger + 1
 	if response := requestConversationAPI(t, handler, identity, http.MethodPost, promptPath,
-		"forge:conversations:write", "application/json", "aggregate-prompt-unsafe", `{"content":"ship it","expected_version":1}`); response.Code != http.StatusBadGateway {
+		"forge:conversations:write", "application/json", "aggregate-prompt-unsafe", appendBody); response.Code != http.StatusBadGateway {
 		t.Fatalf("unsafe append status=%d body=%q", response.Code, response.Body.String())
 	}
 }

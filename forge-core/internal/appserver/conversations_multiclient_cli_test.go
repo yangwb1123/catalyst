@@ -360,6 +360,32 @@ func (output *boundedCLIOutput) String() string {
 	return output.buffer.String()
 }
 
+// synchronizedCLIOutput is used only by the live TUI harness, where the
+// PTY's stdout goroutine and the test need to inspect the same bounded buffer
+// while an external client is making a write.
+type synchronizedCLIOutput struct {
+	mu     sync.Mutex
+	output boundedCLIOutput
+}
+
+func (output *synchronizedCLIOutput) Write(value []byte) (int, error) {
+	output.mu.Lock()
+	defer output.mu.Unlock()
+	return output.output.Write(value)
+}
+
+func (output *synchronizedCLIOutput) String() string {
+	output.mu.Lock()
+	defer output.mu.Unlock()
+	return output.output.String()
+}
+
+func (output *synchronizedCLIOutput) Exceeded() bool {
+	output.mu.Lock()
+	defer output.mu.Unlock()
+	return output.output.exceeded
+}
+
 type recordedConversationRequest struct {
 	method string
 	path   string

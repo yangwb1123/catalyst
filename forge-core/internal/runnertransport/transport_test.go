@@ -7,6 +7,7 @@ import (
 )
 
 const (
+	// secret-scan:ignore — deterministic HMAC fixture, never used outside this test.
 	testSecret  = "runner-secret-for-transport-tests"
 	testMethod  = "POST"
 	testPath    = "/heartbeat"

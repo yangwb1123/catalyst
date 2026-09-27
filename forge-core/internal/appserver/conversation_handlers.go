@@ -33,7 +33,7 @@ func (routes conversationRoutes) getConversation(w http.ResponseWriter, r *http.
 		writeConversationBackendError(w, r, err)
 		return
 	}
-	if !conversationEntryJSONSafe(entry) {
+	if !conversationEntryJSONSafeForID(entry, conversationID) {
 		writeConversationBackendError(w, r, &runtimebridge.Error{Code: "invalid_runtime_response"})
 		return
 	}
@@ -115,7 +115,7 @@ func (routes conversationRoutes) createConversation(w http.ResponseWriter, r *ht
 		writeConversationBackendError(w, r, err)
 		return
 	}
-	if !conversationTimestampsJSONSafe(conversation) {
+	if !conversationCreateJSONSafe(conversation, request.Scope, request.Title) {
 		writeConversationBackendError(w, r, &runtimebridge.Error{Code: "invalid_runtime_response"})
 		return
 	}
@@ -164,7 +164,7 @@ func (routes conversationRoutes) importConversationHandler(w http.ResponseWriter
 		writeConversationBackendError(w, r, err)
 		return
 	}
-	if !conversationImportJSONSafe(result) {
+	if !conversationImportJSONSafe(result, request.Title, len(request.Prompts)) {
 		writeConversationBackendError(w, r, &runtimebridge.Error{Code: "invalid_runtime_response"})
 		return
 	}
@@ -394,7 +394,9 @@ func (routes conversationRoutes) appendConversationPrompt(w http.ResponseWriter,
 	if replayed {
 		status = http.StatusOK
 	}
-	if !conversationPromptAppendJSONSafe(prompt, aggregateVersion) {
+	if !conversationPromptAppendJSONSafe(
+		prompt, conversationID, request.Content, request.ExpectedVersion, aggregateVersion,
+	) {
 		writeConversationBackendError(w, r, &runtimebridge.Error{Code: "invalid_runtime_response"})
 		return
 	}

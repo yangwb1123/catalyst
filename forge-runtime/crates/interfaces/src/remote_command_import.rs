@@ -117,7 +117,11 @@ pub(super) async fn confirm_preview(
             &idempotency_key,
         )
         .await?;
-    validate_import_result(&result, preview.source.prompts.len())?;
+    super::validate_import_result(
+        &result,
+        &preview.source.conversation.title,
+        preview.source.prompts.len(),
+    )?;
     Ok(result)
 }
 
@@ -227,29 +231,6 @@ fn scope_label(scope: &ConversationScope) -> String {
             format!("group {}", serde_json::to_string(id).unwrap_or_default())
         }
     }
-}
-
-fn validate_import_result(result: &Value, expected_prompt_count: usize) -> Result<(), RemoteError> {
-    let conversation_id = result
-        .get("conversation")
-        .and_then(|conversation| conversation.get("id"))
-        .and_then(Value::as_str)
-        .ok_or_else(|| RemoteError("Forge API returned an invalid import result".into()))?;
-    super::validate_conversation_id(conversation_id)
-        .map_err(|_| RemoteError("Forge API returned an invalid import result".into()))?;
-    if result
-        .get("aggregate_version")
-        .and_then(Value::as_u64)
-        .is_none_or(|version| version == 0 || version > 9_007_199_254_740_991)
-        || result.get("imported_prompt_count").and_then(Value::as_u64)
-            != u64::try_from(expected_prompt_count).ok()
-        || result.get("replayed").and_then(Value::as_bool).is_none()
-    {
-        return Err(RemoteError(
-            "Forge API returned an invalid import result".into(),
-        ));
-    }
-    Ok(())
 }
 
 #[cfg(test)]

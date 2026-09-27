@@ -67,6 +67,14 @@ func TestObservationCandidatesRemainDefaultOffFromProductionSessionConstructor(t
 			target: "/api/v1/conversations/conversation-1/runs/run-1/runner-receipt-observation/preview", body: `{}`,
 		},
 		{
+			name: "runner receipt history", method: http.MethodPost,
+			target: "/api/v1/conversations/conversation-1/runs/run-1/runner-receipt-history/preview", body: `{}`,
+		},
+		{
+			name: "runner reconciliation projection", method: http.MethodPost,
+			target: "/api/v1/conversations/conversation-1/runs/run-1/runner-reconciliation/preview", body: `{}`,
+		},
+		{
 			name: "local runner preview", method: http.MethodPost,
 			target: "/api/v1/conversations/conversation-1/run-intents/intent-1/execution-readiness-preview", body: `{}`,
 		},

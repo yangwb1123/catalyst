@@ -41,9 +41,10 @@ func TestLifecycleCredentialCandidateIssuesAndPersistsMetadataOnlyPlan(t *testin
 		Store:      newPersistedLifecycleRegistryCandidateStore(path),
 		Credential: &lifecycleCredentialCandidateConfig{Enabled: true},
 		Heartbeat: &lifecycleHeartbeatCandidateConfig{
-			Enabled:      true,
-			Now:          func(context.Context) (uint64, error) { return 120_000, nil },
-			StaleAfterMS: 90_000,
+			Enabled:            true,
+			AllowUnsignedProof: true,
+			Now:                func(context.Context) (uint64, error) { return 120_000, nil },
+			StaleAfterMS:       90_000,
 		},
 	}
 	handler := authenticator.Handler(newLifecycleRegistryCandidateRoutes(config))
@@ -112,9 +113,10 @@ func TestLifecycleCredentialCandidateRotateRevokeAndStaleRevision(t *testing.T) 
 		Store:      newPersistedLifecycleRegistryCandidateStore(path),
 		Credential: &lifecycleCredentialCandidateConfig{Enabled: true},
 		Heartbeat: &lifecycleHeartbeatCandidateConfig{
-			Enabled:      true,
-			Now:          func(context.Context) (uint64, error) { return 120_000, nil },
-			StaleAfterMS: 90_000,
+			Enabled:            true,
+			AllowUnsignedProof: true,
+			Now:                func(context.Context) (uint64, error) { return 120_000, nil },
+			StaleAfterMS:       90_000,
 		},
 	}
 	handler := authenticator.Handler(newLifecycleRegistryCandidateRoutes(config))

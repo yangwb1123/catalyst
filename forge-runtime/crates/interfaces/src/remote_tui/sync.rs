@@ -59,6 +59,19 @@ pub(super) async fn sync_command<W: Write>(
             break;
         }
     }
+    // An active client-instance filter is a private display boundary for the
+    // selected Conversation. Refresh its explicit owner-bound observation
+    // before the Conversation snapshot can hydrate Prompt history or Run
+    // metadata; otherwise a revocation arriving in this sync would still
+    // permit one round of reads under the previous instance image. The
+    // default TUI path has no filter and keeps this candidate request-free.
+    let previous_resource_view = state.client_instance_resource_view_observed.clone();
+    let client_instance_refreshed_before_owner_reads = state.client_instance_filter.is_some();
+    if client_instance_refreshed_before_owner_reads
+        && !super::sync_client_instances::sync_client_instance_views(client, state, writer).await?
+    {
+        return Ok(());
+    }
     if let Err(error) = refresh_sessions(client, state, false).await {
         let cleared = super::clear_session_view_after_authorization_error(state, &error);
         writeln!(
@@ -86,12 +99,27 @@ pub(super) async fn sync_command<W: Write>(
                 Err(error) => {
                     let cleared =
                         super::clear_session_view_after_authorization_error(state, &error);
+                    let dropped = if cleared {
+                        false
+                    } else {
+                        super::commands::drop_selected_session_after_read_rejection(
+                            state,
+                            &selected_id,
+                            &error,
+                        )
+                    };
                     writeln!(writer, "Sync Prompt history refresh failed: {error}. The change cursor was not advanced.")
                         .map_err(io_error)?;
                     if cleared {
                         writeln!(
                             writer,
                             "Local session view cleared after authorization failure."
+                        )
+                        .map_err(io_error)?;
+                    } else if dropped {
+                        writeln!(
+                            writer,
+                            "Selected session was removed after its owner Prompt read was rejected."
                         )
                         .map_err(io_error)?;
                     }
@@ -115,12 +143,15 @@ pub(super) async fn sync_command<W: Write>(
         // replacement could not be validated.
         return Ok(());
     }
+    let previous_inventory_v2 = state.device_inventory_v2_observed.clone();
     if !sync_device_inventory_v2(client, state, writer).await? {
         // An explicitly opened inventory view is part of the same owner
         // refresh boundary. Do not advance the conversation cursor when its
         // replacement could not be validated.
         return Ok(());
     }
+    let previous_client_instance_session = state.client_instance_session_view_observed.clone();
+    let previous_client_instance_resource = state.client_instance_resource_view_observed.clone();
     if !sync_pending_run_intent_page(client, state, writer).await? {
         // An explicitly opened pending Run-intent page is another owner-bound
         // observation. Keep the conversation cursor unchanged when its
@@ -128,12 +159,61 @@ pub(super) async fn sync_command<W: Write>(
         // page rather than silently dropping the refresh boundary.
         return Ok(());
     }
-    if !sync_client_instance_views(client, state, writer).await? {
+    if !client_instance_refreshed_before_owner_reads
+        && !super::sync_client_instances::sync_client_instance_views(client, state, writer).await?
+    {
         // Client-instance observations are explicit owner-bound reads.
         // Keep the conversation cursor unchanged when either replacement
         // cannot be validated so the next sync retries the same boundary.
         return Ok(());
     }
+    if let (Some(previous_session), Some(previous_resource)) = (
+        previous_client_instance_session,
+        previous_client_instance_resource,
+    ) {
+        let current_session = state.client_instance_session_view_observed.as_ref();
+        let current_resource = state.client_instance_resource_view_observed.as_ref();
+        if let (Some(current_session), Some(current_resource)) = (current_session, current_resource)
+            && !super::client_instance_convergence::observations_converged(
+                current_session,
+                current_resource,
+            )
+        {
+            state.client_instance_session_view_observed = Some(previous_session);
+            state.client_instance_resource_view_observed = Some(previous_resource);
+            state.mark_client_instance_observations_not_converged();
+            writeln!(
+                writer,
+                "Client-instance session/resource observations did not converge; previous snapshots were retained and the change cursor was not advanced."
+            )
+            .map_err(io_error)?;
+            return Ok(());
+        }
+    }
+    if previous_inventory_v2.is_some()
+        && previous_resource_view.is_some()
+        && !super::inventory_convergence::observations_converged(
+            state.device_inventory_v2_observed.as_ref().unwrap(),
+            state
+                .client_instance_resource_view_observed
+                .as_ref()
+                .unwrap(),
+        )
+    {
+        state.device_inventory_v2_observed = previous_inventory_v2;
+        state.client_instance_resource_view_observed = previous_resource_view;
+        writeln!(
+            writer,
+            "Inventory/resource observations did not converge; previous snapshots were retained and the change cursor was not advanced."
+        )
+        .map_err(io_error)?;
+        return Ok(());
+    }
+    // Commit selection only after the optional paired client-instance reads
+    // have passed their convergence boundary. During a mixed refresh the
+    // active projection intentionally returns None, so a Prompt/Run selection
+    // cannot be cleared and then lost before the previous pair is restored.
+    state.reconcile_client_instance_selection();
     client.persist_change_cursor(next_cursor)?;
     state.change_cursor = next_cursor;
     writeln!(
@@ -180,82 +260,6 @@ async fn sync_device_inventory<W: Write>(
     state.device_inventory_observed = Some(value);
     writeln!(writer, "Selected inventory observation refreshed.").map_err(io_error)?;
     Ok(true)
-}
-
-/// Refreshes only the client-instance candidates explicitly opened in this
-/// TUI process. Ordinary session sync never probes either private route.
-async fn sync_client_instance_views<W: Write>(
-    client: &super::super::RemoteClient,
-    state: &mut TuiState,
-    writer: &mut W,
-) -> Result<bool, RemoteError> {
-    if state.client_instance_session_view_observed.is_some() {
-        let response = match client.read_client_instance_session_view().await {
-            Ok(response) => response,
-            Err(error) => {
-                return report_client_instance_refresh_failure(
-                    state,
-                    "session-view",
-                    error,
-                    writer,
-                );
-            }
-        };
-        crate::device_client_session_view_command::write_remote_output(&response, writer)
-            .map_err(io_error)?;
-        state.client_instance_session_view_observed = Some(response);
-        state.reconcile_client_instance_selection();
-        writeln!(writer, "Selected client-instance/session-view refreshed.").map_err(io_error)?;
-    }
-    if state.client_instance_resource_view_observed.is_some() {
-        let response = match client.read_client_instance_resource_view().await {
-            Ok(response) => response,
-            Err(error) => {
-                return report_client_instance_refresh_failure(
-                    state,
-                    "resource-view",
-                    error,
-                    writer,
-                );
-            }
-        };
-        crate::device_client_instance_resource_view_command::write_remote_output(&response, writer)
-            .map_err(io_error)?;
-        state.client_instance_resource_view_observed = Some(response);
-        state.reconcile_client_instance_selection();
-        writeln!(writer, "Selected client-instance/resource-view refreshed.").map_err(io_error)?;
-    }
-    Ok(true)
-}
-
-fn report_client_instance_refresh_failure<W: Write>(
-    state: &mut TuiState,
-    kind: &str,
-    error: RemoteError,
-    writer: &mut W,
-) -> Result<bool, RemoteError> {
-    let (authorization_cleared, projection_cleared) =
-        super::clear_client_instance_view_after_failure(state, kind, &error);
-    writeln!(
-        writer,
-        "Sync client-instance/{kind} refresh failed: {error}. The change cursor was not advanced."
-    )
-    .map_err(io_error)?;
-    if authorization_cleared {
-        writeln!(
-            writer,
-            "Local session view cleared after authorization failure."
-        )
-        .map_err(io_error)?;
-    }
-    if projection_cleared {
-        writeln!(
-            writer,
-            "Local client-instance/{kind} view cleared after refresh failure."
-        )
-        .map_err(io_error)?;
-    }
-    Ok(false)
 }
 
 /// Refreshes the exact pending Run-intent metadata page opened by the user.
@@ -397,6 +401,15 @@ pub(super) async fn sync_selected_run_timeline<W: Write>(
         Ok(page) => page,
         Err(error) => {
             let cleared = super::clear_session_view_after_authorization_error(state, &error);
+            let dropped = if cleared {
+                false
+            } else {
+                super::commands::drop_selected_session_after_read_rejection(
+                    state,
+                    &conversation_id,
+                    &error,
+                )
+            };
             writeln!(
                 writer,
                 "Sync Run timeline refresh failed: {error}. The change cursor was not advanced."
@@ -408,6 +421,12 @@ pub(super) async fn sync_selected_run_timeline<W: Write>(
                     "Local session view cleared after authorization failure."
                 )
                 .map_err(io_error)?;
+            } else if dropped {
+                writeln!(
+                    writer,
+                    "Selected session was removed after its owner Run read was rejected."
+                )
+                .map_err(io_error)?;
             }
             return Ok(false);
         }
@@ -415,7 +434,30 @@ pub(super) async fn sync_selected_run_timeline<W: Write>(
     let scanned_through_sequence = page
         .get("scanned_through_sequence")
         .and_then(Value::as_u64)
-        .ok_or_else(|| RemoteError("Forge API returned an invalid Run timeline".into()))?;
+        .ok_or_else(|| RemoteError("Forge API returned an invalid Run timeline".into()));
+    let scanned_through_sequence = match scanned_through_sequence {
+        Ok(sequence) => sequence,
+        Err(error) => {
+            let dropped = super::commands::drop_selected_session_after_read_rejection(
+                state,
+                &conversation_id,
+                &error,
+            );
+            writeln!(
+                writer,
+                "Sync Run timeline refresh failed: {error}. The change cursor was not advanced."
+            )
+            .map_err(io_error)?;
+            if dropped {
+                writeln!(
+                    writer,
+                    "Selected session was removed after its owner Run read was rejected."
+                )
+                .map_err(io_error)?;
+            }
+            return Ok(false);
+        }
+    };
     if scanned_through_sequence < after_sequence {
         writeln!(
             writer,
@@ -435,6 +477,15 @@ pub(super) async fn sync_selected_run_timeline<W: Write>(
         Ok(observation) => observation,
         Err(error) => {
             let cleared = super::clear_session_view_after_authorization_error(state, &error);
+            let dropped = if cleared {
+                false
+            } else {
+                super::commands::drop_selected_session_after_read_rejection(
+                    state,
+                    &conversation_id,
+                    &error,
+                )
+            };
             writeln!(
                 writer,
                 "Sync Run observation refresh failed: {error}. The change cursor was not advanced."
@@ -444,6 +495,12 @@ pub(super) async fn sync_selected_run_timeline<W: Write>(
                 writeln!(
                     writer,
                     "Local session view cleared after authorization failure."
+                )
+                .map_err(io_error)?;
+            } else if dropped {
+                writeln!(
+                    writer,
+                    "Selected session was removed after its owner Run read was rejected."
                 )
                 .map_err(io_error)?;
             }

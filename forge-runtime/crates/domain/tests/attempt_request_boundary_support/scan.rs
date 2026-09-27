@@ -1,4 +1,7 @@
-use super::{MAX_SOURCE_FILE_BYTES, MAX_TOTAL_SOURCE_BYTES, admission, lex, lifecycle, path_attr};
+use super::{
+    MAX_SOURCE_FILE_BYTES, MAX_TOTAL_SOURCE_BYTES, admission, attempt_inventory, lex, lifecycle,
+    path_attr,
+};
 use std::{
     fs::{self, File},
     io::Read,
@@ -118,7 +121,12 @@ fn visit_workspace_file(
         .unwrap_or_else(|error| panic!("{}: {error}", path.display()));
     let reviewed_admission = admission::check_source(&source, Some(relative))
         .unwrap_or_else(|error| panic!("{}: {error}", path.display()));
-    if !reviewed_admission && !reviewed_attempt_source(path, workspace, attempt) {
+    let reviewed_attempt_consumer =
+        attempt_inventory::is_reviewed_consumer(path, workspace, &source);
+    if !reviewed_admission
+        && !reviewed_attempt_source(path, workspace, attempt)
+        && !reviewed_attempt_consumer
+    {
         lex::check_no_attempt_consumer(&source, true, Some(relative))
             .unwrap_or_else(|error| panic!("{}: {error}", path.display()));
     }

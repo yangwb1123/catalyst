@@ -4,9 +4,10 @@ use std::{
     io::{BufRead, BufReader, Cursor, Read, Write},
     net::TcpListener,
     thread,
-    time::Duration,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use reqwest::{Client, Url, redirect::Policy};
 use serde_json::{Value, json};
 

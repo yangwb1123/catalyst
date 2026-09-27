@@ -3,6 +3,8 @@ use std::{collections::HashSet, net::IpAddr};
 use reqwest::{Response, Url};
 use serde_json::Value;
 
+use crate::args::RemoteConversationScope;
+
 use super::{
     OwnedConversationEntry, OwnedConversationPage, OwnedRunPageResponse, OwnedRunSummaryResponse,
     OwnedRunTimelinePageResponse, RemoteError,
@@ -181,6 +183,22 @@ pub(super) fn validate_owned_conversation_entry(
     {
         return Err(RemoteError(
             "Forge API returned an invalid conversation detail".into(),
+        ));
+    }
+    Ok(())
+}
+
+pub(super) fn validate_created_conversation(
+    response: &Value,
+    requested_scope: &RemoteConversationScope,
+    requested_title: &str,
+) -> Result<(), RemoteError> {
+    if !is_valid_conversation_projection(response)
+        || response.get("title").and_then(Value::as_str) != Some(requested_title)
+        || response.get("scope") != Some(&super::scope_json(requested_scope))
+    {
+        return Err(RemoteError(
+            "Forge API returned an invalid created conversation".into(),
         ));
     }
     Ok(())

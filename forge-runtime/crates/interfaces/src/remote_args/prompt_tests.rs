@@ -72,6 +72,32 @@ fn remote_prompt_add_rejects_expected_version_above_json_safe_integer() {
 }
 
 #[test]
+fn remote_prompt_receipt_is_an_explicit_content_free_append_command() {
+    assert_eq!(
+        parse_remote_command(&[
+            "--idempotency-key",
+            "prompt-key",
+            "remote",
+            "prompts",
+            "receipt",
+            "conversation-1",
+            "--expected-version",
+            "3",
+            "hello",
+            "world",
+        ])
+        .unwrap(),
+        RemoteCommand::PromptsReceipt {
+            conversation_id: "conversation-1".into(),
+            expected_version: 3,
+            content: "hello world".into(),
+            instance_id: None,
+            instance_view: None,
+        }
+    );
+}
+
+#[test]
 fn remote_prompt_history_cursor_accepts_absent_or_complete_pair() {
     assert_eq!(
         parse_remote_command(&["remote", "prompts", "list", "c-1"]).unwrap(),

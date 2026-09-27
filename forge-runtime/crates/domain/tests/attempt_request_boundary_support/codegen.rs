@@ -1,3 +1,5 @@
+use sha2::Digest;
+
 const ALLOWED_ATTRIBUTES: &[&str] = &[
     "allow",
     "cfg",
@@ -29,7 +31,7 @@ const ALLOWED_DERIVES: &[&str] = &[
     "serde::Deserialize",
     "serde::Serialize",
 ];
-const PURE_ATTRIBUTES: &[&str] = &["derive", "must_use"];
+const PURE_ATTRIBUTES: &[&str] = &["cfg", "derive", "must_use"];
 const PURE_DERIVES: &[&str] = &["Clone", "Copy", "Debug", "Eq", "PartialEq"];
 const REVIEWED_LOCAL_MACROS: &[&str] = &[
     "forward_scalar",
@@ -84,6 +86,7 @@ const ALLOWED_FUNCTION_MACROS: &[&str] = &[
     "owned_conversation_methods",
     "panic",
     "params",
+    "print",
     "println",
     "reject",
     "reject_inventory_mutations",
@@ -104,6 +107,9 @@ const ALLOWED_FUNCTION_MACROS: &[&str] = &[
     "writeln",
 ];
 const MAX_CODEGEN_USES_PER_SOURCE: usize = 65_536;
+const REVIEWED_INCLUDE_SOURCE: &str = "crates/interfaces/src/remote_tui_tests/helpers.rs";
+const REVIEWED_INCLUDE_SOURCE_SHA256: &str =
+    "6d106f29ea65b7dde714dd9ccee4c285b07051f7a310705c66fe8c68e0bd890e";
 
 pub(super) fn check(
     tokens: &[String],
@@ -114,7 +120,7 @@ pub(super) fn check(
     check_declarative_macros(tokens, source, source_path)?;
     check_attributes(tokens, reviewed_path_attributes)?;
     check_sensitive_aliases(tokens)?;
-    check_function_macros(tokens)
+    check_function_macros(tokens, source, source_path)
 }
 
 fn check_declarative_macros(
@@ -235,7 +241,11 @@ fn check_derives(tokens: &[String], start: usize, pure: bool) -> Result<(), Stri
     }
 }
 
-fn check_function_macros(tokens: &[String]) -> Result<(), String> {
+fn check_function_macros(
+    tokens: &[String],
+    source: &str,
+    source_path: Option<&str>,
+) -> Result<(), String> {
     let mut uses = 0_usize;
     for index in 0..tokens.len() {
         let previous = tokens.get(index.wrapping_sub(1)).map(String::as_str);
@@ -252,7 +262,8 @@ fn check_function_macros(tokens: &[String]) -> Result<(), String> {
         uses += 1;
         check_use_bound(uses)?;
         let path = macro_path(tokens, index)?;
-        if !ALLOWED_FUNCTION_MACROS.contains(&path.as_str()) {
+        let reviewed_include = path == "include" && reviewed_include_source(source, source_path);
+        if !ALLOWED_FUNCTION_MACROS.contains(&path.as_str()) && !reviewed_include {
             return Err(format!("unreviewed function-like macro: {path}!"));
         }
         if REVIEWED_LOCAL_MACROS.contains(&path.as_str()) {
@@ -260,6 +271,12 @@ fn check_function_macros(tokens: &[String]) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+pub(super) fn reviewed_include_source(source: &str, source_path: Option<&str>) -> bool {
+    source_path == Some(REVIEWED_INCLUDE_SOURCE)
+        && format!("{:x}", sha2::Sha256::digest(source.as_bytes()))
+            == REVIEWED_INCLUDE_SOURCE_SHA256
 }
 
 fn check_local_macro_arguments(tokens: &[String], open: usize, name: &str) -> Result<(), String> {

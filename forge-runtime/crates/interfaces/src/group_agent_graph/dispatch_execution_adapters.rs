@@ -378,7 +378,7 @@ fn validate_execute_preflight(
     confirm_off_machine: bool,
 ) -> Result<(), Box<dyn Error>> {
     let database = hub_database_path(args.state_dir.as_deref())?;
-    let store = Arc::new(SqliteHubStore::open_existing_dispatch_preflight_read_only(
+    let store = Arc::new(SqliteHubStore::open_existing_dispatch_inspection_read_only(
         database,
     )?);
     let service = GroupAgentNodeDispatchReleaseControlService::new(

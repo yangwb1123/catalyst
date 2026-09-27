@@ -133,6 +133,65 @@ async fn local_runner_preview_posts_the_bound_request_once_without_retry() {
     server.join().unwrap();
 }
 
+#[tokio::test]
+async fn local_runner_preview_rejects_request_url_drift_before_post() {
+    let request = request();
+    let error = test_remote_client("127.0.0.1:1".parse().unwrap())
+        .preview_local_runner_execution_readiness("conversation-foreign", "intent-001", &request)
+        .await
+        .expect_err("a request bound to another Conversation must fail before transport");
+    assert_eq!(
+        error.to_string(),
+        "local Runner preview request does not match the URL path"
+    );
+}
+
+#[tokio::test]
+async fn local_runner_preview_rejects_response_binding_drift_at_client_boundary() {
+    let request = request();
+    let mut forged = response();
+    forged["command_id"] = json!("command-foreign");
+    let (client, server) = spawn_mock_server(vec![ExpectedRequest {
+        request_prefix: "POST /api/v1/conversations/conversation-001/run-intents/intent-001/execution-readiness-preview ",
+        required_headers: &[],
+        body_fields: request.clone(),
+        response_status: "200 OK",
+        response: forged,
+    }]);
+    let error = client
+        .preview_local_runner_execution_readiness("conversation-001", "intent-001", &request)
+        .await
+        .expect_err("a foreign local Runner identity must not escape the HTTP client");
+    assert_eq!(
+        error.to_string(),
+        "Forge API returned a local Runner preview with a different identity binding"
+    );
+    server.join().unwrap();
+}
+
+#[tokio::test]
+async fn local_runner_preview_rejects_authority_drift_at_client_boundary() {
+    let request = request();
+    let mut forged = response();
+    forged["authority"]["execution_authorized"] = Value::Bool(true);
+    let (client, server) = spawn_mock_server(vec![ExpectedRequest {
+        request_prefix: "POST /api/v1/conversations/conversation-001/run-intents/intent-001/execution-readiness-preview ",
+        required_headers: &[],
+        body_fields: request.clone(),
+        response_status: "200 OK",
+        response: forged,
+    }]);
+    let error = client
+        .preview_local_runner_execution_readiness("conversation-001", "intent-001", &request)
+        .await
+        .expect_err("authority-bearing local Runner preview must not escape the client");
+    assert_eq!(
+        error.to_string(),
+        "Forge API returned a local Runner preview with invalid authority or binding"
+    );
+    server.join().unwrap();
+}
+
 #[test]
 fn local_runner_preview_rejects_binding_and_authority_drift() {
     let request = request();

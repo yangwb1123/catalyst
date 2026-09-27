@@ -1,9 +1,15 @@
 use serde_json::Value;
 
-use super::super::OwnedConversationEntry;
+use super::super::{OwnedConversationEntry, RemoteError};
 use crate::args::{PromptPageCursor, RemoteConversationScope};
 use crate::client_instance_session_scope;
 use crate::runtime_domain::run_observed::RunObserved;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct ClientInstanceObservationStatus {
+    pub(super) session_view_present: bool,
+    pub(super) resource_view_present: bool,
+}
 
 #[derive(Default)]
 pub(super) struct TuiState {
@@ -61,6 +67,11 @@ pub(super) struct TuiState {
     /// opened by the user. It remains metadata-only and never becomes
     /// inventory, placement, reservation, or execution authority.
     pub(super) client_instance_resource_view_observed: Option<Value>,
+    /// A paired client-instance observation can temporarily be divergent or
+    /// incomplete while retaining the last JSON snapshots for display. This
+    /// status is process-local UI state; it never grants authority and makes
+    /// the local instance filter/private projection fail closed.
+    pub(super) client_instance_observation_status: Option<ClientInstanceObservationStatus>,
 }
 
 #[derive(Clone)]
@@ -173,6 +184,32 @@ impl TuiState {
         self.clear_pending_run_intent_timeline();
     }
 
+    /// Revokes private Prompt/Run projections when the caller changes the
+    /// client-instance display boundary. The selected Conversation, owner
+    /// observations, and pending writes remain available for an explicit
+    /// re-read or retry under the new local projection.
+    pub(super) fn clear_client_instance_private_projection(&mut self) {
+        self.clear_prompt_history();
+        self.clear_run_timeline();
+    }
+
+    /// Drops one selected Conversation after an authenticated private read
+    /// proves that the cached owner row is no longer readable. This keeps
+    /// other owner rows available while revoking the selected Prompt/Run
+    /// projection; a later refresh may discover a replacement row normally.
+    pub(super) fn drop_selected_session(&mut self, conversation_id: &str) {
+        if self.selected_id.as_deref() != Some(conversation_id) {
+            return;
+        }
+        self.conversations.retain(|entry| {
+            entry.conversation.get("id").and_then(Value::as_str) != Some(conversation_id)
+        });
+        self.selected_id = None;
+        self.selected_entry = None;
+        self.clear_prompt_history();
+        self.clear_run_timeline();
+    }
+
     pub(super) fn clear_device_inventory_v2(&mut self) {
         self.device_inventory_v2_observed = None;
     }
@@ -185,6 +222,69 @@ impl TuiState {
         self.client_instance_session_view_observed = None;
         self.client_instance_resource_view_observed = None;
         self.client_instance_filter = None;
+        self.client_instance_observation_status = None;
+    }
+
+    /// Records that the two independent readers cannot currently be treated
+    /// as one projection. Existing observations remain available to the TUI
+    /// renderer, while private Prompt/Run state is revoked immediately.
+    pub(super) fn mark_client_instance_observations_not_converged(&mut self) {
+        self.client_instance_observation_status = Some(ClientInstanceObservationStatus {
+            session_view_present: self.client_instance_session_view_observed.is_some(),
+            resource_view_present: self.client_instance_resource_view_observed.is_some(),
+        });
+        // The instance projection is an optional local boundary. Preserve
+        // the existing default owner-read behavior when no filter is active;
+        // once a caller selected an instance, revoke its private Prompt/Run
+        // cache and selection until both readers converge again.
+        if self.client_instance_filter.is_some() {
+            self.clear_client_instance_private_projection();
+            self.reconcile_client_instance_selection();
+        }
+    }
+
+    /// Clears a transient observation issue only after both current readers
+    /// describe the same owner-scoped instance image.
+    pub(super) fn mark_client_instance_observations_converged(&mut self) {
+        self.client_instance_observation_status = None;
+    }
+
+    /// Recomputes the paired-reader status after an explicit response has
+    /// been installed. A single reader remains a valid display-only
+    /// candidate; once an issue exists, the missing side keeps the projection
+    /// blocked until both readers are present and equal.
+    pub(super) fn refresh_client_instance_observation_status(&mut self) {
+        match (
+            self.client_instance_session_view_observed.as_ref(),
+            self.client_instance_resource_view_observed.as_ref(),
+        ) {
+            (Some(session), Some(resource))
+                if super::client_instance_convergence::observations_converged(
+                    session, resource,
+                ) =>
+            {
+                self.mark_client_instance_observations_converged()
+            }
+            (Some(_), Some(_)) => self.mark_client_instance_observations_not_converged(),
+            (_, _) if self.client_instance_observation_status.is_some() => {
+                self.mark_client_instance_observations_not_converged()
+            }
+            _ => {}
+        }
+    }
+
+    pub(super) fn client_instance_observations_blocked(&self) -> bool {
+        self.client_instance_observation_status.is_some()
+            || matches!(
+                (
+                    self.client_instance_session_view_observed.as_ref(),
+                    self.client_instance_resource_view_observed.as_ref(),
+                ),
+                (Some(session), Some(resource))
+                    if !super::client_instance_convergence::observations_converged(
+                        session, resource,
+                    )
+            )
     }
 
     /// Revokes one explicitly opened client-instance reader while retaining
@@ -192,18 +292,39 @@ impl TuiState {
     /// replacement projection, `reconcile_client_instance_selection` clears
     /// the selected private Prompt/Run state and leaves the list empty.
     pub(super) fn clear_client_instance_view(&mut self, kind: &str) -> bool {
+        let had_pair = self.client_instance_session_view_observed.is_some()
+            && self.client_instance_resource_view_observed.is_some();
         let cleared = match kind {
             "session-view" => self.client_instance_session_view_observed.take().is_some(),
             "resource-view" => self.client_instance_resource_view_observed.take().is_some(),
             _ => false,
         };
         if cleared {
-            self.reconcile_client_instance_selection();
+            if self.client_instance_session_view_observed.is_none()
+                && self.client_instance_resource_view_observed.is_none()
+            {
+                self.client_instance_observation_status = None;
+                self.reconcile_client_instance_selection();
+            } else if had_pair || self.client_instance_observation_status.is_some() {
+                self.mark_client_instance_observations_not_converged();
+            } else {
+                self.reconcile_client_instance_selection();
+            }
         }
         cleared
     }
 
     pub(super) fn active_client_instance_view(&self) -> Option<&Value> {
+        // A session declaration and a resource declaration are one local
+        // projection when both have been opened.  Do not let a Prompt or Run
+        // read use the newer session_ids with an older resource image (or
+        // vice versa): a mixed pair can briefly broaden or move the selected
+        // instance boundary during refresh.  The pair remains display-only;
+        // a drift simply makes the active filter empty until the next
+        // converged refresh.
+        if self.client_instance_observations_blocked() {
+            return None;
+        }
         self.client_instance_session_view_observed
             .as_ref()
             .or(self.client_instance_resource_view_observed.as_ref())
@@ -284,6 +405,67 @@ impl TuiState {
         self.clear_device_inventory_v2();
         self.clear_client_instance_views();
     }
+}
+
+/// Fails closed before an owner Conversation page is requested when the
+/// caller selected a client-instance projection but has no validated view to
+/// apply. The view remains a local display declaration and never changes the
+/// authenticated request or grants instance authority.
+pub(super) fn ensure_client_instance_projection(state: &TuiState) -> Result<(), RemoteError> {
+    if let Some(instance_id) = state
+        .client_instance_filter
+        .as_deref()
+        .filter(|_| state.active_client_instance_view().is_none())
+    {
+        return Err(RemoteError(format!(
+            "remote TUI client-instance filter {instance_id:?} has no validated view"
+        )));
+    }
+    Ok(())
+}
+
+/// Fails closed before an owner-wide Conversation create when the caller has
+/// selected a client-instance projection without a converged session/resource
+/// pair. A create has no existing Conversation to re-check, so a single
+/// display observation would otherwise make an instance-scoped write look
+/// more precise than its resource boundary.
+pub(super) fn ensure_converged_client_instance_projection(
+    state: &TuiState,
+) -> Result<(), RemoteError> {
+    if state.client_instance_filter.is_none() {
+        return Ok(());
+    }
+    if state.client_instance_observations_blocked()
+        || state.client_instance_session_view_observed.is_none()
+        || state.client_instance_resource_view_observed.is_none()
+    {
+        return Err(RemoteError(
+            "selected client-instance create requires converged session/resource observations"
+                .into(),
+        ));
+    }
+    Ok(())
+}
+
+/// Returns whether one owner Conversation belongs to the selected local
+/// client-instance projection. Missing or divergent observations fail
+/// closed so callers cannot accidentally broaden a private read during a
+/// refresh gap.
+pub(super) fn conversation_visible_to_selected_client_instance(
+    state: &TuiState,
+    conversation: &Value,
+) -> Result<bool, RemoteError> {
+    let Some(instance_id) = state.client_instance_filter.as_deref() else {
+        return Ok(true);
+    };
+    let Some(view) = state.active_client_instance_view() else {
+        return Ok(false);
+    };
+    Ok(client_instance_session_scope::matches_conversation(
+        conversation,
+        Some(view),
+        Some(instance_id),
+    ))
 }
 
 fn cursor_precedes(left: &PromptPageCursor, right: &PromptPageCursor) -> bool {

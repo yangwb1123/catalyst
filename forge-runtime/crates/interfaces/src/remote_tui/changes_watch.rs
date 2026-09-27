@@ -1,10 +1,11 @@
 use std::io::Write;
 
 use serde::Deserialize;
-use serde_json::Value;
+
+use crate::client_instance_session_scope;
 
 use super::super::super::changes::OwnedConversationChange;
-use super::state::{TuiState, io_error, json_text};
+use super::state::{TuiState, io_error};
 use super::{RemoteClient, RemoteError};
 
 const DEFAULT_POLLS: usize = 8;
@@ -15,12 +16,22 @@ const MAX_MIN_DELAY_MS: u64 = 10_000;
 const MAX_MAX_DELAY_MS: u64 = 60_000;
 const MAX_SAFE_JSON_INTEGER: u64 = 9_007_199_254_740_991;
 
-#[derive(Clone, Copy)]
+#[path = "changes_feed.rs"]
+mod feed;
+
+#[derive(Clone, Debug)]
+struct ListOptions {
+    after_cursor: Option<u64>,
+    instance_id: Option<String>,
+}
+
+#[derive(Clone, Debug)]
 struct WatchOptions {
     after_cursor: Option<u64>,
     polls: usize,
     min_delay_ms: u64,
     max_delay_ms: u64,
+    instance_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -29,6 +40,23 @@ struct WatchResult {
     start_cursor: u64,
     scanned_through_cursor: u64,
     polls: usize,
+    has_more: bool,
+    changes: Vec<OwnedConversationChange>,
+}
+
+#[derive(Clone, Debug)]
+struct StreamOptions {
+    after_cursor: Option<u64>,
+    wait_ms: u64,
+    instance_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct StreamResult {
+    start_cursor: u64,
+    scanned_through_cursor: u64,
+    timed_out: bool,
     has_more: bool,
     changes: Vec<OwnedConversationChange>,
 }
@@ -44,14 +72,30 @@ pub(super) async fn changes_command<W: Write>(
     writer: &mut W,
 ) -> Result<(), RemoteError> {
     let mut tokens = argument.split_whitespace();
-    if tokens.next() != Some("watch") {
-        return write_usage(writer);
+    match tokens.next() {
+        Some("list") => {
+            let options = match parse_list_options(tokens, writer)? {
+                Some(options) => options,
+                None => return Ok(()),
+            };
+            feed::list(client, state, options, writer).await
+        }
+        Some("watch") => {
+            let options = match parse_options(tokens, writer)? {
+                Some(options) => options,
+                None => return Ok(()),
+            };
+            feed::watch(client, state, options, writer).await
+        }
+        Some("stream") => {
+            let options = match parse_stream_options(tokens, writer)? {
+                Some(options) => options,
+                None => return Ok(()),
+            };
+            feed::stream(client, state, options, writer).await
+        }
+        _ => write_usage(writer),
     }
-    let options = match parse_options(tokens, writer)? {
-        Some(options) => options,
-        None => return Ok(()),
-    };
-    watch(client, state, options, writer).await
 }
 
 /// Short alias for interactive users; `changes watch` remains the documented
@@ -70,7 +114,55 @@ pub(super) async fn watch_command<W: Write>(
     if tokens.next().is_some() {
         return write_usage(writer);
     }
-    watch(client, state, options, writer).await
+    feed::watch(client, state, options, writer).await
+}
+
+fn parse_list_options<'a, I, W>(
+    mut tokens: I,
+    writer: &mut W,
+) -> Result<Option<ListOptions>, RemoteError>
+where
+    I: Iterator<Item = &'a str>,
+    W: Write,
+{
+    let mut options = ListOptions {
+        after_cursor: None,
+        instance_id: None,
+    };
+    let mut after_seen = false;
+    let mut instance_seen = false;
+    while let Some(option) = tokens.next() {
+        match option {
+            "--after-cursor" if !after_seen => {
+                let Some(value) = tokens.next() else {
+                    return list_usage_error(writer, "--after-cursor requires a value");
+                };
+                let Some(value) = parse_safe_u64(value) else {
+                    return list_usage_error(
+                        writer,
+                        "--after-cursor must be a JSON-safe unsigned integer",
+                    );
+                };
+                options.after_cursor = Some(value);
+                after_seen = true;
+            }
+            "--instance" if !instance_seen => {
+                let Some(value) = tokens.next() else {
+                    return list_usage_error(writer, "--instance requires a value");
+                };
+                if client_instance_session_scope::validate_instance_id(value).is_err() {
+                    return list_usage_error(
+                        writer,
+                        "--instance must be a valid client-instance id",
+                    );
+                }
+                options.instance_id = Some(value.to_owned());
+                instance_seen = true;
+            }
+            _ => return list_usage_error(writer, "unknown or duplicate changes list option"),
+        }
+    }
+    Ok(Some(options))
 }
 
 fn parse_options<'a, I, W>(
@@ -86,11 +178,13 @@ where
         polls: DEFAULT_POLLS,
         min_delay_ms: DEFAULT_MIN_DELAY_MS,
         max_delay_ms: DEFAULT_MAX_DELAY_MS,
+        instance_id: None,
     };
     let mut after_seen = false;
     let mut polls_seen = false;
     let mut min_seen = false;
     let mut max_seen = false;
+    let mut instance_seen = false;
 
     while let Some(option) = tokens.next() {
         match option {
@@ -137,6 +231,16 @@ where
                 options.max_delay_ms = value;
                 max_seen = true;
             }
+            "--instance" if !instance_seen => {
+                let Some(value) = tokens.next() else {
+                    return usage_error(writer, "--instance requires a value");
+                };
+                if client_instance_session_scope::validate_instance_id(value).is_err() {
+                    return usage_error(writer, "--instance must be a valid client-instance id");
+                }
+                options.instance_id = Some(value.to_owned());
+                instance_seen = true;
+            }
             _ => return usage_error(writer, "unknown or duplicate changes watch option"),
         }
     }
@@ -145,6 +249,66 @@ where
             writer,
             "--max-delay-ms must be greater than or equal to --min-delay-ms",
         );
+    }
+    Ok(Some(options))
+}
+
+fn parse_stream_options<'a, I, W>(
+    mut tokens: I,
+    writer: &mut W,
+) -> Result<Option<StreamOptions>, RemoteError>
+where
+    I: Iterator<Item = &'a str>,
+    W: Write,
+{
+    let mut options = StreamOptions {
+        after_cursor: None,
+        wait_ms: 5_000,
+        instance_id: None,
+    };
+    let mut after_seen = false;
+    let mut wait_seen = false;
+    let mut instance_seen = false;
+    while let Some(option) = tokens.next() {
+        match option {
+            "--after-cursor" if !after_seen => {
+                let Some(value) = tokens.next() else {
+                    return stream_usage_error(writer, "--after-cursor requires a value");
+                };
+                let Some(value) = parse_safe_u64(value) else {
+                    return stream_usage_error(
+                        writer,
+                        "--after-cursor must be a JSON-safe unsigned integer",
+                    );
+                };
+                options.after_cursor = Some(value);
+                after_seen = true;
+            }
+            "--wait-ms" if !wait_seen => {
+                let Some(value) = tokens.next() else {
+                    return stream_usage_error(writer, "--wait-ms requires a value");
+                };
+                let Some(value) = parse_bounded_u64(value, 0, 10_000) else {
+                    return stream_usage_error(writer, "--wait-ms must be between 0 and 10000");
+                };
+                options.wait_ms = value;
+                wait_seen = true;
+            }
+            "--instance" if !instance_seen => {
+                let Some(value) = tokens.next() else {
+                    return stream_usage_error(writer, "--instance requires a value");
+                };
+                if client_instance_session_scope::validate_instance_id(value).is_err() {
+                    return stream_usage_error(
+                        writer,
+                        "--instance must be a valid client-instance id",
+                    );
+                }
+                options.instance_id = Some(value.to_owned());
+                instance_seen = true;
+            }
+            _ => return stream_usage_error(writer, "unknown or duplicate changes stream option"),
+        }
     }
     Ok(Some(options))
 }
@@ -176,134 +340,28 @@ fn usage_error<W: Write>(
     Ok(None)
 }
 
-async fn watch<W: Write>(
-    client: &RemoteClient,
-    state: &mut TuiState,
-    options: WatchOptions,
+fn list_usage_error<W: Write>(
     writer: &mut W,
-) -> Result<(), RemoteError> {
-    let expected_start = match options.after_cursor {
-        Some(cursor) => cursor,
-        None => client.saved_change_cursor()?,
-    };
-    let response = match client
-        .watch_conversation_changes(
-            options.after_cursor,
-            options.polls,
-            options.min_delay_ms,
-            options.max_delay_ms,
-        )
-        .await
-    {
-        Ok(response) => response,
-        Err(error) => {
-            let cleared = super::super::clear_session_view_after_authorization_error(state, &error);
-            writeln!(
-                writer,
-                "Changes watch request failed: {error}. The in-memory TUI cursor was not advanced."
-            )
-            .map_err(io_error)?;
-            if cleared {
-                writeln!(
-                    writer,
-                    "Local session view cleared after authorization failure."
-                )
-                .map_err(io_error)?;
-            }
-            return Ok(());
-        }
-    };
-    let result = match decode_result(&response, expected_start, options.polls) {
-        Ok(result) => result,
-        Err(error) => {
-            writeln!(writer, "Changes watch response failed validation: {error}")
-                .map_err(io_error)?;
-            return Ok(());
-        }
-    };
-
-    for change in &result.changes {
-        super::super::sync::apply_conversation_change(state, change);
-    }
-    state.change_cursor = result.scanned_through_cursor;
-
-    let checkpoint = if options.after_cursor.is_some() {
-        "one-off; saved checkpoint unchanged"
-    } else {
-        "saved checkpoint advanced per valid page"
-    };
-    writeln!(
-        writer,
-        "Changes watch start_cursor={} scanned_through_cursor={} polls={} changes={} has_more={} ({checkpoint}).",
-        result.start_cursor,
-        result.scanned_through_cursor,
-        result.polls,
-        result.changes.len(),
-        result.has_more,
-    )
-    .map_err(io_error)?;
-    for change in &result.changes {
-        writeln!(
-            writer,
-            "  Change cursor={} conversation={} entity={} aggregate_version={} kind={} created_at_ms={}",
-            change.cursor,
-            json_text(&change.conversation_id),
-            json_text(&change.entity_id),
-            change.aggregate_version,
-            json_text(&change.kind),
-            change.created_at_ms,
-        )
-        .map_err(io_error)?;
-    }
-    if result.has_more {
-        writeln!(
-            writer,
-            "  More owner-visible changes remain; run changes watch again to continue."
-        )
-        .map_err(io_error)?;
-    }
-    Ok(())
+    message: &str,
+) -> Result<Option<ListOptions>, RemoteError> {
+    writeln!(writer, "Changes list option error: {message}.").map_err(io_error)?;
+    write_usage(writer)?;
+    Ok(None)
 }
 
-fn decode_result(
-    value: &Value,
-    expected_start: u64,
-    expected_polls: usize,
-) -> Result<WatchResult, RemoteError> {
-    let result: WatchResult = serde_json::from_value(value.clone())
-        .map_err(|_| RemoteError("Forge API returned an invalid change watch".into()))?;
-    if result.start_cursor != expected_start
-        || result.polls != expected_polls
-        || result.scanned_through_cursor < result.start_cursor
-    {
-        return Err(RemoteError(
-            "Forge API returned an invalid change watch".into(),
-        ));
-    }
-    let mut previous = result.start_cursor;
-    for change in &result.changes {
-        let expected = previous
-            .checked_add(1)
-            .ok_or_else(|| RemoteError("Forge API returned an invalid change watch".into()))?;
-        if change.cursor != expected || change.cursor > result.scanned_through_cursor {
-            return Err(RemoteError(
-                "Forge API returned an invalid change watch".into(),
-            ));
-        }
-        previous = change.cursor;
-    }
-    if previous != result.scanned_through_cursor {
-        return Err(RemoteError(
-            "Forge API returned an invalid change watch".into(),
-        ));
-    }
-    Ok(result)
+fn stream_usage_error<W: Write>(
+    writer: &mut W,
+    message: &str,
+) -> Result<Option<StreamOptions>, RemoteError> {
+    writeln!(writer, "Changes stream option error: {message}.").map_err(io_error)?;
+    write_usage(writer)?;
+    Ok(None)
 }
 
 fn write_usage<W: Write>(writer: &mut W) -> Result<(), RemoteError> {
     writeln!(
         writer,
-        "Use changes watch [--after-cursor N] [--polls 1..64] [--min-delay-ms 0..10000] [--max-delay-ms 0..60000]."
+        "Use changes list [--after-cursor N] [--instance INSTANCE_ID], changes watch [--after-cursor N] [--polls 1..64] [--min-delay-ms 0..10000] [--max-delay-ms 0..60000] [--instance INSTANCE_ID], or changes stream [--after-cursor N] [--wait-ms 0..10000] [--instance INSTANCE_ID]."
     )
     .map_err(io_error)
 }

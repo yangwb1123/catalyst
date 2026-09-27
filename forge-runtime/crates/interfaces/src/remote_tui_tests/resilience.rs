@@ -4,10 +4,10 @@ use serde_json::{Value, json};
 
 use super::{
     helpers::{
-        accept_request, accept_stream, conversation_page, conversation_projection, read_request,
-        respond, serve_ambiguous_create_retry, serve_ambiguous_prompt_retry,
-        serve_conversation_page, serve_failed_refresh_keeps_session,
-        serve_transient_history_failure, test_client,
+        accept_request, accept_stream, conversation_page, conversation_projection,
+        prompt_append_response, read_request, receipt_test_client, respond,
+        serve_ambiguous_create_retry, serve_ambiguous_prompt_retry, serve_conversation_page,
+        serve_failed_refresh_keeps_session, serve_transient_history_failure,
     },
     run_with_io,
 };
@@ -18,7 +18,7 @@ async fn ambiguous_prompt_retry_reuses_the_same_key_version_and_body() {
     let address = listener.local_addr().unwrap();
     let server = thread::spawn(move || serve_ambiguous_prompt_retry(&listener));
 
-    let client = test_client(address);
+    let client = receipt_test_client(address);
     let mut reader = Cursor::new("prompt finish the shared task\nquit\nretry\nquit\n");
     let mut writer = Vec::new();
     run_with_io(&client, &mut reader, &mut writer)
@@ -40,7 +40,7 @@ async fn ambiguous_create_retry_reuses_the_same_key_and_title() {
     let address = listener.local_addr().unwrap();
     let server = thread::spawn(move || serve_ambiguous_create_retry(&listener));
 
-    let client = test_client(address);
+    let client = receipt_test_client(address);
     let mut reader = Cursor::new(
         "create --scope project:prj_1 Shared session\nretry\nprompt continue newly created session\nquit\n",
     );
@@ -89,7 +89,7 @@ async fn discarding_pending_prompt_prints_recovery_metadata_without_prompt_body(
         );
     });
 
-    let client = test_client(address);
+    let client = receipt_test_client(address);
     let mut reader = Cursor::new("prompt private prompt body\nquit --discard-pending\n");
     let mut writer = Vec::new();
     run_with_io(&client, &mut reader, &mut writer)
@@ -138,7 +138,7 @@ async fn oversized_command_preserves_pending_write_recovery() {
     let mut input = String::from("prompt private prompt body\n");
     input.push_str(&"x".repeat(256 * 1024 + 1));
     input.push('\n');
-    let client = test_client(address);
+    let client = receipt_test_client(address);
     let mut reader = Cursor::new(input);
     let mut writer = Vec::new();
     run_with_io(&client, &mut reader, &mut writer)
@@ -158,7 +158,7 @@ async fn failed_refresh_keeps_the_loaded_session_available() {
     let address = listener.local_addr().unwrap();
     let server = thread::spawn(move || serve_failed_refresh_keeps_session(&listener));
 
-    let client = test_client(address);
+    let client = receipt_test_client(address);
     let mut reader = Cursor::new("list\nopen c-1\nquit\n");
     let mut writer = Vec::new();
     run_with_io(&client, &mut reader, &mut writer)
@@ -191,11 +191,15 @@ async fn successful_prompt_write_survives_history_refresh_failure() {
         assert!(request.starts_with("POST /api/v1/conversations/c-1/prompts "));
         let prompt: Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(prompt["content"], "new confirmed prompt");
-        respond(&mut post, "201 Created", &json!({"aggregate_version": 2}));
+        respond(
+            &mut post,
+            "201 Created",
+            &prompt_append_response("c-1", "p-2", "new confirmed prompt", 2, false),
+        );
         serve_transient_history_failure(&listener);
     });
 
-    let client = test_client(address);
+    let client = receipt_test_client(address);
     let mut reader = Cursor::new("open c-1\nprompt new confirmed prompt\nquit\n");
     let mut writer = Vec::new();
     run_with_io(&client, &mut reader, &mut writer)

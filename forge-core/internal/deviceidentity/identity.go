@@ -42,6 +42,15 @@ type Challenge struct {
 	Consumed        bool   `json:"consumed"`
 }
 
+// Validate checks the value shape of a persisted challenge. It does not read
+// a clock and does not decide whether the challenge may be consumed.
+func (challenge Challenge) Validate() error {
+	if !validChallenge(challenge) {
+		return ErrInvalidBinding
+	}
+	return nil
+}
+
 // Proof is a structural test vector. ProofSHA256 is intentionally not a
 // cryptographic signature and must never be treated as proof-of-possession.
 type Proof struct {

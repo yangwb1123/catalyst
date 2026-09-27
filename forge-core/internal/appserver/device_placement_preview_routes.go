@@ -80,10 +80,15 @@ type authenticatedSessionRoutes struct {
 	placement                        http.Handler
 	deviceObservation                http.Handler
 	sessionRunnerReceipt             http.Handler
+	sessionRunnerReceiptHistory      http.Handler
+	sessionRunnerReconciliation      http.Handler
 	localRunnerPreview               http.Handler
 	runAttemptLeaseDispatchPreflight http.Handler
 	runnerDispatchPlanPreview        http.Handler
+	runnerExecutionIntentPreview     http.Handler
+	runnerDispatchAdmission          http.Handler
 	runObserved                      http.Handler
+	runExecutionEvidence             http.Handler
 	executionReconciliation          http.Handler
 }
 
@@ -98,6 +103,22 @@ func (routes authenticatedSessionRoutes) ServeHTTP(w http.ResponseWriter, r *htt
 	}
 	if _, _, ok := sessionRunnerReceiptObservationPathIDs(r.URL.EscapedPath()); ok {
 		routes.sessionRunnerReceipt.ServeHTTP(w, r)
+		return
+	}
+	if _, _, ok := sessionRunnerReceiptHistoryPathIDs(r.URL.EscapedPath()); ok {
+		if routes.sessionRunnerReceiptHistory == nil {
+			writeJSON(w, r, http.StatusNotFound, notFoundBody)
+			return
+		}
+		routes.sessionRunnerReceiptHistory.ServeHTTP(w, r)
+		return
+	}
+	if _, _, ok := sessionRunnerReconciliationProjectionPathIDs(r.URL.EscapedPath()); ok {
+		if routes.sessionRunnerReconciliation == nil {
+			writeJSON(w, r, http.StatusNotFound, notFoundBody)
+			return
+		}
+		routes.sessionRunnerReconciliation.ServeHTTP(w, r)
 		return
 	}
 	if _, _, ok := localRunnerPreviewPathIDs(r.URL.EscapedPath()); ok {
@@ -124,12 +145,36 @@ func (routes authenticatedSessionRoutes) ServeHTTP(w http.ResponseWriter, r *htt
 		routes.runnerDispatchPlanPreview.ServeHTTP(w, r)
 		return
 	}
+	if _, _, ok := runnerExecutionIntentPreviewPathIDs(r.URL.EscapedPath()); ok {
+		if routes.runnerExecutionIntentPreview == nil {
+			writeJSON(w, r, http.StatusNotFound, notFoundBody)
+			return
+		}
+		routes.runnerExecutionIntentPreview.ServeHTTP(w, r)
+		return
+	}
+	if _, _, ok := runnerDispatchAdmissionPathIDs(r.URL.EscapedPath()); ok {
+		if routes.runnerDispatchAdmission == nil {
+			writeJSON(w, r, http.StatusNotFound, notFoundBody)
+			return
+		}
+		routes.runnerDispatchAdmission.ServeHTTP(w, r)
+		return
+	}
 	if _, _, ok := conversationRunObservedIDs(r.URL.EscapedPath()); ok {
 		if routes.runObserved == nil {
 			writeJSON(w, r, http.StatusNotFound, notFoundBody)
 			return
 		}
 		routes.runObserved.ServeHTTP(w, r)
+		return
+	}
+	if _, _, ok := runExecutionEvidencePreviewPathIDs(r.URL.EscapedPath()); ok {
+		if routes.runExecutionEvidence == nil {
+			writeJSON(w, r, http.StatusNotFound, notFoundBody)
+			return
+		}
+		routes.runExecutionEvidence.ServeHTTP(w, r)
 		return
 	}
 	if _, _, ok := executionReconciliationPreviewPathIDs(r.URL.EscapedPath()); ok {
@@ -154,7 +199,11 @@ func newAuthenticatedSessionRoutesWithObservationCandidates(
 	client *runtimebridge.Client,
 	profiles *executionprofile.Catalog,
 ) http.Handler {
-	return newAuthenticatedSessionRoutesWithObservationCandidatesBackend(client, profiles)
+	var backend conversationBackend
+	if client != nil {
+		backend = client
+	}
+	return newAuthenticatedSessionRoutesWithObservationCandidatesBackend(backend, profiles)
 }
 
 func newAuthenticatedSessionRoutesWithObservationCandidatesBackend(
@@ -166,9 +215,13 @@ func newAuthenticatedSessionRoutesWithObservationCandidatesBackend(
 		placement:                        newDevicePlacementPreviewRoutes(),
 		deviceObservation:                newSessionDeviceObservationRoutes(),
 		sessionRunnerReceipt:             newSessionRunnerReceiptObservationRoutes(),
+		sessionRunnerReceiptHistory:      newSessionRunnerReceiptHistoryRoutes(),
+		sessionRunnerReconciliation:      newSessionRunnerReconciliationProjectionRoutes(),
 		runAttemptLeaseDispatchPreflight: newRunAttemptLeaseDispatchPreflightRoutes(),
 		runnerDispatchPlanPreview:        newRunnerDispatchPlanPreviewRoutes(),
+		runnerExecutionIntentPreview:     newRunnerExecutionIntentPreviewRoutesWithBackend(backend),
 		runObserved:                      newRunObservedRoutes(backend),
+		runExecutionEvidence:             newRunExecutionEvidencePreviewRoutes(),
 		executionReconciliation:          newExecutionReconciliationPreviewRoutes(),
 	}
 }

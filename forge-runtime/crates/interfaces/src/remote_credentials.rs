@@ -20,6 +20,7 @@ mod storage;
 mod token_claims;
 pub(super) use checkpoint::ChangeCursorStore;
 use storage::{check_file_metadata, ensure_directory, read_credential, reject_symlink_if_present};
+pub(super) use token_claims::owner_from_access_token;
 pub(super) use token_claims::{OwnerSelector, StoredCredential, credential_from_token};
 use token_claims::{credential_key, validate_credential};
 

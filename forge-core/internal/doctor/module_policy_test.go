@@ -17,6 +17,7 @@ func TestModulePolicyConfinesExternalImports(t *testing.T) {
 		{"Snaplink resource server in auth boundary", "internal/authn/authn.go", "package authn\nimport \"github.com/yangwb1123/snaplink/interfaces/ssoclient/rs\"\n", false},
 		{"Snaplink remote validator in auth boundary", "internal/authn/authn.go", "package authn\nimport \"github.com/yangwb1123/snaplink/interfaces/ssoclient/remote\"\n", false},
 		{"Snaplink outside auth boundary", "internal/appserver/example.go", "package appserver\nimport \"github.com/yangwb1123/snaplink/interfaces/ssoclient/rs\"\n", true},
+		{"Snaplink in appserver integration test", "internal/appserver/example_test.go", "package appserver\nimport \"github.com/yangwb1123/snaplink/interfaces/sso\"\n", false},
 		{"other external module", "internal/example/example.go", "package example\nimport _ \"github.com/example/module\"\n", true},
 		{"cgo", "internal/example/example.go", "package example\nimport \"C\"\n", true},
 	} {

@@ -6,24 +6,46 @@ use serde_json::{Value, json};
 
 use crate::client_instance_session_scope::ClientInstanceSessionScope;
 
+#[path = "remote_command_client_changes_stream.rs"]
+mod changes_stream;
 #[path = "remote_command_client_changes_watch.rs"]
 mod changes_watch;
 #[path = "remote_command_client_execution_consent.rs"]
 mod execution_consent;
 #[path = "remote_command_client_import.rs"]
 mod import_client;
+#[path = "remote_command_client_inventory_convergence.rs"]
+mod inventory_convergence;
 #[path = "remote_lifecycle_registry.rs"]
 mod lifecycle_registry;
 #[path = "remote_command_client_local_runner_preview.rs"]
 mod local_runner_preview;
 #[path = "remote_pending_intent.rs"]
 mod pending_intent;
+#[path = "remote_command_client_prompt_append_receipt.rs"]
+mod prompt_append_receipt;
 #[path = "remote_command_client_retry.rs"]
 mod retry;
+#[path = "remote_command_client_run_execution_evidence.rs"]
+mod run_execution_evidence;
+#[path = "remote_command_client_runner_attempt_boundary.rs"]
+mod runner_attempt_boundary;
+#[path = "remote_command_client_runner_dispatch_admission.rs"]
+mod runner_dispatch_admission;
 #[path = "remote_command_client_runner_dispatch_plan_preview.rs"]
 mod runner_dispatch_plan_preview;
+#[path = "remote_command_client_runner_execution_boundary.rs"]
+mod runner_execution_boundary;
+#[path = "remote_command_client_runner_execution_intent.rs"]
+mod runner_execution_intent;
+#[path = "remote_command_client_runner_transport_admission.rs"]
+mod runner_transport_admission;
 #[path = "remote_command_client_session_runner_receipt.rs"]
 mod session_runner_receipt;
+#[path = "remote_command_client_session_runner_receipt_history.rs"]
+mod session_runner_receipt_history;
+#[path = "remote_command_client_session_runner_reconciliation.rs"]
+mod session_runner_reconciliation;
 #[path = "remote_command_client_urls.rs"]
 mod urls;
 
@@ -178,6 +200,20 @@ impl RemoteClient {
         request: reqwest::RequestBuilder,
     ) -> Result<Value, RemoteError> {
         self.send_json_with_policy(request, false).await
+    }
+
+    pub(super) async fn authenticated_owner(
+        &self,
+    ) -> Result<
+        crate::runtime_domain::execution::runner_execution_intent::RunnerExecutionOwner,
+        RemoteError,
+    > {
+        let access_token = match &self.token_refresh {
+            Some(provider) => provider.access_token().await?,
+            None => self.access_token.clone(),
+        };
+        super::credentials::owner_from_access_token(&access_token)
+            .map_err(|_| RemoteError("Forge access token has no valid owner declaration".into()))
     }
 
     /// Sends an authenticated read request with a bounded retry window.
@@ -443,25 +479,32 @@ impl RemoteClient {
         if title.trim().is_empty() || title.len() > 256 {
             return Err(RemoteError("conversation title is invalid".into()));
         }
-        self.send_json(
-            self.http
-                .post(self.endpoint("/api/v1/conversations")?)
-                .header("Idempotency-Key", idempotency_key)
-                .json(&json!({"scope": scope_json(scope), "title": title})),
-        )
-        .await
+        let response = self
+            .send_json(
+                self.http
+                    .post(self.endpoint("/api/v1/conversations")?)
+                    .header("Idempotency-Key", idempotency_key)
+                    .json(&json!({"scope": scope_json(scope), "title": title})),
+            )
+            .await?;
+        super::validate_created_conversation(&response, scope, title)?;
+        Ok(response)
     }
 
     pub(super) async fn preview_device_placement(
         &self,
         request: &Value,
     ) -> Result<Value, RemoteError> {
-        self.send_json(
-            self.http
-                .post(self.endpoint("/api/v1/device-placement/preview")?)
-                .json(request),
-        )
-        .await
+        super::placement::validate_request(request)?;
+        let response = self
+            .send_json(
+                self.http
+                    .post(self.endpoint("/api/v1/device-placement/preview")?)
+                    .json(request),
+            )
+            .await?;
+        super::placement::validate_response(&response, request)?;
+        Ok(response)
     }
 
     /// Posts one explicit owner-bound registry placement preview. The
@@ -471,12 +514,98 @@ impl RemoteClient {
         &self,
         request: &Value,
     ) -> Result<Value, RemoteError> {
-        self.send_json(
-            self.http
-                .post(self.endpoint("/api/v1/device-placement/registry-preview")?)
-                .json(request),
-        )
-        .await
+        super::placement_registry::validate_request(request)?;
+        let response = self
+            .send_json(
+                self.http
+                    .post(self.endpoint("/api/v1/device-placement/registry-preview")?)
+                    .json(request),
+            )
+            .await?;
+        super::placement_registry::validate_response(&response)?;
+        Ok(response)
+    }
+
+    /// Posts one owner-bound scheduler selection comparison. The returned
+    /// selected IDs remain display-only; this client never treats them as a
+    /// reservation, lease, or dispatch authorization.
+    pub(super) async fn preview_scheduler_selection(
+        &self,
+        request: &Value,
+    ) -> Result<Value, RemoteError> {
+        super::scheduler_selection::validate_request(request)?;
+        let response = self
+            .send_json(
+                self.http
+                    .post(self.scheduler_selection_preview_url()?)
+                    .json(request),
+            )
+            .await?;
+        super::scheduler_selection::validate_response_for_request(&response, request)?;
+        Ok(response)
+    }
+
+    /// Claims one owner-bound fenced scheduler lease. This is an effectful
+    /// POST, so the caller supplies the explicit idempotency key and the
+    /// client performs no automatic retry.
+    pub(super) async fn claim_scheduler_selection_lease(
+        &self,
+        request: &Value,
+        idempotency_key: &str,
+    ) -> Result<Value, RemoteError> {
+        super::scheduler_lease::validate_request(request)?;
+        let response = self
+            .send_json(
+                self.http
+                    .post(self.scheduler_selection_lease_url()?)
+                    .header("Idempotency-Key", idempotency_key)
+                    .json(request),
+            )
+            .await?;
+        super::scheduler_lease::validate_response_for_request(&response, request)?;
+        Ok(response)
+    }
+
+    /// Renews one owner-bound fenced lease proof. The effectful POST is sent
+    /// once; callers must reuse the explicit key when retrying an uncertain
+    /// response.
+    pub(super) async fn renew_scheduler_selection_lease(
+        &self,
+        request: &Value,
+        idempotency_key: &str,
+    ) -> Result<Value, RemoteError> {
+        super::scheduler_lease_renew::validate_request(request)?;
+        let response = self
+            .send_json(
+                self.http
+                    .post(self.scheduler_selection_lease_renewal_url()?)
+                    .header("Idempotency-Key", idempotency_key)
+                    .json(request),
+            )
+            .await?;
+        super::scheduler_lease_renew::validate_response_for_request(&response, request)?;
+        Ok(response)
+    }
+
+    /// Releases one owner-bound fenced lease proof. The effectful POST is
+    /// sent once; callers must reuse the explicit key when retrying an
+    /// uncertain response.
+    pub(super) async fn release_scheduler_selection_lease(
+        &self,
+        request: &Value,
+        idempotency_key: &str,
+    ) -> Result<Value, RemoteError> {
+        super::scheduler_lease_release::validate_request(request)?;
+        let response = self
+            .send_json(
+                self.http
+                    .post(self.scheduler_selection_lease_release_url()?)
+                    .header("Idempotency-Key", idempotency_key)
+                    .json(request),
+            )
+            .await?;
+        super::scheduler_lease_release::validate_response_for_request(&response, request)?;
+        Ok(response)
     }
 
     pub(super) async fn preview_session_device_observation(
@@ -487,12 +616,34 @@ impl RemoteClient {
     ) -> Result<Value, RemoteError> {
         validate_conversation_id(conversation_id)?;
         validate_entity_id(run_id, "Run")?;
-        self.send_json(
-            self.http
-                .post(self.session_device_observation_url(conversation_id, run_id)?)
-                .json(request),
-        )
-        .await
+        super::session_observation::validate_request(request)?;
+        let request_object = request
+            .as_object()
+            .ok_or_else(|| RemoteError("remote session observation input is invalid".into()))?;
+        let request_conversation_id = request_object
+            .get("conversation_id")
+            .and_then(Value::as_str)
+            .ok_or_else(|| {
+                RemoteError("remote session observation conversation is invalid".into())
+            })?;
+        let request_run_id = request_object
+            .get("run_id")
+            .and_then(Value::as_str)
+            .ok_or_else(|| RemoteError("remote session observation Run is invalid".into()))?;
+        if request_conversation_id != conversation_id || request_run_id != run_id {
+            return Err(RemoteError(
+                "Session device observation request does not match its URL".into(),
+            ));
+        }
+        let response = self
+            .send_json(
+                self.http
+                    .post(self.session_device_observation_url(conversation_id, run_id)?)
+                    .json(request),
+            )
+            .await?;
+        super::session_observation::validate_response(&response, request)?;
+        Ok(response)
     }
 
     /// Posts one authenticated Run/Attempt/lease preflight declaration. The
@@ -506,12 +657,28 @@ impl RemoteClient {
     ) -> Result<Value, RemoteError> {
         validate_conversation_id(conversation_id)?;
         validate_entity_id(run_id, "Run")?;
-        self.send_json(
-            self.http
-                .post(self.run_attempt_lease_dispatch_preflight_url(conversation_id, run_id)?)
-                .json(request),
-        )
-        .await
+        super::run_attempt_lease_dispatch_preflight::validate_request(request)?;
+        let (request_conversation_id, request_run_id) =
+            super::run_attempt_lease_dispatch_preflight::conversation_and_run(request)?;
+        if request_conversation_id != conversation_id || request_run_id != run_id {
+            return Err(RemoteError(
+                "remote Run/Attempt/lease preflight request does not match the URL path".into(),
+            ));
+        }
+        let response = self
+            .send_json(
+                self.http
+                    .post(self.run_attempt_lease_dispatch_preflight_url(conversation_id, run_id)?)
+                    .json(request),
+            )
+            .await?;
+        super::run_attempt_lease_dispatch_preflight::validate_response(
+            &response,
+            request,
+            conversation_id,
+            run_id,
+        )?;
+        Ok(response)
     }
 
     /// Posts one caller-supplied restart image to the authenticated
@@ -525,12 +692,21 @@ impl RemoteClient {
     ) -> Result<Value, RemoteError> {
         validate_conversation_id(conversation_id)?;
         validate_entity_id(run_id, "Run")?;
-        self.send_json(
-            self.http
-                .post(self.execution_reconciliation_preview_url(conversation_id, run_id)?)
-                .json(request),
-        )
-        .await
+        super::execution_reconciliation::validate_request(request)?;
+        let response = self
+            .send_json(
+                self.http
+                    .post(self.execution_reconciliation_preview_url(conversation_id, run_id)?)
+                    .json(request),
+            )
+            .await?;
+        super::execution_reconciliation::validate_response(
+            &response,
+            request,
+            conversation_id,
+            run_id,
+        )?;
+        Ok(response)
     }
 
     pub(super) async fn list_prompts(
@@ -641,8 +817,13 @@ impl RemoteClient {
             .map_err(|_| {
                 RemoteError("Forge API returned an invalid pending Run-intent submission".into())
             })?;
-        pending_intent::validate_submission(&submission, conversation_id, content)
-            .map_err(RemoteError)?;
+        pending_intent::validate_submission_for_version(
+            &submission,
+            conversation_id,
+            content,
+            expected_version,
+        )
+        .map_err(RemoteError)?;
         serde_json::to_value(submission)
             .map_err(|_| RemoteError("pending Run-intent submission could not be encoded".into()))
     }
@@ -795,6 +976,12 @@ impl RemoteClient {
                     })),
             )
             .await?;
+        prompt_append_receipt::validate_append_response_value(
+            &response,
+            conversation_id,
+            expected_version,
+            content,
+        )?;
         let aggregate_version = response
             .get("aggregate_version")
             .and_then(Value::as_u64)

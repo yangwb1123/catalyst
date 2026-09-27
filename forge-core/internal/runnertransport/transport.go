@@ -106,6 +106,26 @@ type Observation struct {
 	Authority      Authority `json:"authority"`
 }
 
+// Validate checks a metadata-only transport observation after it crosses a
+// process or language boundary. A valid observation proves only that the
+// envelope verifier accepted bounded bytes; every device and execution
+// authority bit remains false.
+func (observation Observation) Validate() error {
+	if observation.SchemaVersion != SchemaVersion ||
+		observation.EvaluationMode != EvaluationMode ||
+		validateMethod(observation.Method) != nil ||
+		validatePath(observation.Path) != nil ||
+		observation.Timestamp <= 0 ||
+		validateNonce(observation.Nonce) != nil ||
+		len(observation.PayloadSHA256) != sha256.Size*2 ||
+		!isLowerHex(observation.PayloadSHA256) ||
+		observation.PayloadBytes <= 0 || observation.PayloadBytes > MaxPayloadBytes ||
+		!observation.PreviewOnly || observation.Authority != (Authority{}) {
+		return ErrMalformedEnvelope
+	}
+	return nil
+}
+
 // ReplayCache is a bounded process-local nonce set. It intentionally stores
 // no device secret or payload. A cache is optional for pure signature checks;
 // production adapters should always provide one that is scoped to the
