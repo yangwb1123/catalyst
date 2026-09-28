@@ -132,7 +132,7 @@ pub(crate) fn execute(
     let fixture: Fixture = serde_json::from_slice(&bytes).map_err(|error| {
         format!("device inventory persisted-observation input is invalid JSON: {error}")
     })?;
-    evaluate(fixture)
+    evaluate(&fixture)
 }
 
 pub(crate) fn run(command: &DeviceCommand, json: bool) -> ExitCode {
@@ -190,7 +190,7 @@ pub(crate) fn write_output(
     Ok(())
 }
 
-fn evaluate(fixture: Fixture) -> Result<PersistedInventoryObservation, Box<dyn Error>> {
+fn evaluate(fixture: &Fixture) -> Result<PersistedInventoryObservation, Box<dyn Error>> {
     if fixture.schema_version != SCHEMA_VERSION
         || fixture.evaluation_mode != EVALUATION_MODE
         || fixture.states.len() > MAX_STATES
@@ -267,7 +267,7 @@ fn parse_runner(value: &RunnerState) -> Result<RunnerInstance, Box<dyn Error>> {
         parse_liveness(&value.liveness)?,
         capabilities,
     )
-    .map_err(|error| error.into())
+    .map_err(Into::into)
 }
 
 fn parse_approval(value: &str) -> Result<DeviceApprovalState, Box<dyn Error>> {

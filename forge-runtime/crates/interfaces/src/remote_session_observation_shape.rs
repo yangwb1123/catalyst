@@ -132,6 +132,10 @@ fn validate_device(value: &Value) -> Result<(), RemoteError> {
             "remote session observation device declaration has an invalid shape".into(),
         ));
     }
+    validate_device_fields(object)
+}
+
+fn validate_device_fields(object: &Map<String, Value>) -> Result<(), RemoteError> {
     required_string(object, "device_id")?;
     validate_owner(required_value(object, "owner")?)?;
     required_string(object, "approval_state")?;

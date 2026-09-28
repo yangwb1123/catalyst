@@ -161,6 +161,10 @@ pub struct RunnerTerminalReceipt {
 /// authority, persistence, dispatch, or audit publication.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "The terminal receipt wire contract exposes each authority claim as a distinct boolean."
+)]
 pub struct RunnerTerminalReceiptAuthority {
     pub device_identity_verified: bool,
     pub command_persisted: bool,
@@ -173,6 +177,10 @@ pub struct RunnerTerminalReceiptAuthority {
 /// A bounded, payload-free projection of one validated terminal receipt.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "The terminal observation wire contract retains separate evidence and follow-up predicates."
+)]
 pub struct RunnerTerminalReceiptObservation {
     pub schema_version: &'static str,
     pub evaluation_mode: &'static str,
@@ -254,6 +262,12 @@ impl RunnerTerminalReceipt {
 
 /// Validates and projects a caller-supplied terminal receipt without reading
 /// a clock, persisting state, contacting a Runner, or granting authority.
+///
+/// # Errors
+///
+/// Returns the validation or encoding errors from [`RunnerTerminalReceipt::validate_against`]
+/// for malformed commands, grants or receipts, mismatched identities/digests/proofs,
+/// invalid dispositions, or lease-fencing and observation-time failures.
 pub fn observe_runner_terminal_receipt(
     command: &RunnerCommand,
     grant: &LeaseGrant,

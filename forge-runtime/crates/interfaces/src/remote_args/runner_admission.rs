@@ -31,7 +31,7 @@ fn parse_options(
 ) -> Result<(String, Option<String>, Option<String>), String> {
     let mut options = Options::default();
     while let Some(option) = tokens.pop_front() {
-        options.accept(option, tokens, label)?;
+        options.accept(&option, tokens, label)?;
     }
     options.finish(label)
 }
@@ -39,11 +39,11 @@ fn parse_options(
 impl Options {
     fn accept(
         &mut self,
-        option: String,
+        option: &str,
         tokens: &mut VecDeque<String>,
         label: &str,
     ) -> Result<(), String> {
-        match option.as_str() {
+        match option {
             "--input" if self.input.is_none() => {
                 self.input = Some(next_value(tokens, "--input")?);
             }

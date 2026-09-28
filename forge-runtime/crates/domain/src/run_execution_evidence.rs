@@ -97,6 +97,11 @@ impl RunExecutionEvidence {
     /// This is deliberately separate from `observe_run_execution_evidence` so
     /// local CLI/TUI consumers can safely inspect a fixture without
     /// reconstructing the source Run and receipt observations.
+    ///
+    /// # Errors
+    ///
+    /// Returns `InvalidEvidence` for invalid identifiers, metadata or bounds,
+    /// inconsistent disposition flags, or included content or authority.
     pub fn validate(&self) -> Result<(), RunExecutionEvidenceError> {
         if self.api_version != RUN_EXECUTION_EVIDENCE_SCHEMA_VERSION
             || self.evaluation_mode != RUN_EXECUTION_EVIDENCE_EVALUATION_MODE

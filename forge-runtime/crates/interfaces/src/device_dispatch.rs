@@ -3,10 +3,9 @@ use std::{io, process::ExitCode};
 use crate::{
     args::{DeviceCommand, DeviceInventoryCommand, DevicePlacementCommand},
     device_attempt_request_command, device_client_instance_resource_view_command,
-    device_client_instance_scheduler_selection_preview_command,
-    device_client_session_view_command, device_command, device_credential_candidate_command,
-    device_execution_lease_checkpoint_command, device_heartbeat_persistence_command,
-    device_identity_proof_command, device_inventory_command,
+    device_client_instance_scheduler_selection_preview_command, device_client_session_view_command,
+    device_command, device_credential_candidate_command, device_execution_lease_checkpoint_command,
+    device_heartbeat_persistence_command, device_identity_proof_command, device_inventory_command,
     device_inventory_observation_v2_command, device_inventory_persisted_observation_command,
     device_inventory_persistence_command, device_inventory_placement_batch_evaluation_command,
     device_inventory_placement_evaluation_command,
@@ -21,94 +20,71 @@ use crate::{
 };
 
 pub(crate) fn run(command: &DeviceCommand, json: bool) -> ExitCode {
-    match command {
-        DeviceCommand::AttemptRequestPreview { .. } => run_attempt_request_preview(command, json),
-        DeviceCommand::PendingRunIntentPreview { .. } => {
-            run_pending_run_intent_preview(command, json)
-        }
-        DeviceCommand::Placement(DevicePlacementCommand::DryRun { .. }) => {
-            run_placement_dry_run(command, json)
-        }
+    let execute: fn(&DeviceCommand, bool) -> ExitCode = match command {
+        DeviceCommand::AttemptRequestPreview { .. } => run_attempt_request_preview,
+        DeviceCommand::PendingRunIntentPreview { .. } => run_pending_run_intent_preview,
+        DeviceCommand::Placement(DevicePlacementCommand::DryRun { .. }) => run_placement_dry_run,
         DeviceCommand::Placement(DevicePlacementCommand::RunIntentPreview { .. }) => {
-            run_run_intent_preview(command, json)
+            run_run_intent_preview
         }
-        DeviceCommand::RunnerReceiptPreview { .. } => run_runner_receipt_preview(command, json),
-        DeviceCommand::RunnerLeaseFencingPreview { .. } => {
-            run_runner_lease_fencing_preview(command, json)
-        }
+        DeviceCommand::RunnerReceiptPreview { .. } => run_runner_receipt_preview,
+        DeviceCommand::RunnerLeaseFencingPreview { .. } => run_runner_lease_fencing_preview,
         DeviceCommand::ExecutionLeaseCheckpointPreview { .. } => {
-            run_execution_lease_checkpoint_preview(command, json)
+            run_execution_lease_checkpoint_preview
         }
-        DeviceCommand::RunnerDispatchPlanPreview { .. } => {
-            run_runner_dispatch_plan_preview(command, json)
-        }
-        DeviceCommand::RunnerAttemptBoundaryPreview { .. } => {
-            run_runner_attempt_boundary_preview(command, json)
-        }
-        DeviceCommand::ClientSessionViewPreview { .. } => {
-            run_client_session_view_preview(command, json)
-        }
+        DeviceCommand::RunnerDispatchPlanPreview { .. } => run_runner_dispatch_plan_preview,
+        DeviceCommand::RunnerAttemptBoundaryPreview { .. } => run_runner_attempt_boundary_preview,
+        DeviceCommand::ClientSessionViewPreview { .. } => run_client_session_view_preview,
         DeviceCommand::ClientInstanceResourceViewPreview { .. } => {
-            run_client_instance_resource_view_preview(command, json)
+            run_client_instance_resource_view_preview
         }
         DeviceCommand::ClientInstanceSchedulerSelectionPreview { .. } => {
-            device_client_instance_scheduler_selection_preview_command::run(command, json)
+            device_client_instance_scheduler_selection_preview_command::run
         }
-        DeviceCommand::CredentialCandidatePreview { .. } => {
-            run_credential_candidate_preview(command, json)
-        }
-        DeviceCommand::RunnerExecutionIntentPreview { .. } => {
-            run_runner_execution_intent_preview(command, json)
-        }
-        DeviceCommand::SessionRunnerReceiptPreview { .. } => {
-            run_session_runner_receipt_preview(command, json)
-        }
+        DeviceCommand::CredentialCandidatePreview { .. } => run_credential_candidate_preview,
+        DeviceCommand::RunnerExecutionIntentPreview { .. } => run_runner_execution_intent_preview,
+        DeviceCommand::SessionRunnerReceiptPreview { .. } => run_session_runner_receipt_preview,
         DeviceCommand::SessionRunnerReceiptHistoryPreview { .. } => {
-            run_session_runner_receipt_history_preview(command, json)
+            run_session_runner_receipt_history_preview
         }
-        DeviceCommand::RunObservedPreview { .. } => run_run_observed_preview(command, json),
-        DeviceCommand::RunExecutionEvidencePreview { .. } => {
-            run_run_execution_evidence_preview(command, json)
-        }
+        DeviceCommand::RunObservedPreview { .. } => run_run_observed_preview,
+        DeviceCommand::RunExecutionEvidencePreview { .. } => run_run_execution_evidence_preview,
         DeviceCommand::RunAttemptLeaseDispatchPreflightPreview { .. } => {
-            run_run_attempt_lease_dispatch_preflight_preview(command, json)
+            run_run_attempt_lease_dispatch_preflight_preview
         }
-        DeviceCommand::HeartbeatPersistencePreview { .. } => {
-            run_heartbeat_persistence_preview(command, json)
+        DeviceCommand::HeartbeatPersistencePreview { .. } => run_heartbeat_persistence_preview,
+        DeviceCommand::IdentityProofPreview { .. } => run_identity_proof_preview,
+        DeviceCommand::Inventory(inventory) => inventory_executor(inventory),
+    };
+    execute(command, json)
+}
+
+fn inventory_executor(command: &DeviceInventoryCommand) -> fn(&DeviceCommand, bool) -> ExitCode {
+    match command {
+        DeviceInventoryCommand::Show { .. } => run_inventory_show,
+        DeviceInventoryCommand::PersistencePreview { .. } => {
+            device_inventory_persistence_command::run
         }
-        DeviceCommand::IdentityProofPreview { .. } => run_identity_proof_preview(command, json),
-        DeviceCommand::Inventory(DeviceInventoryCommand::Show { .. }) => {
-            run_inventory_show(command, json)
+        DeviceInventoryCommand::PersistedObservation { .. } => {
+            device_inventory_persisted_observation_command::run
         }
-        DeviceCommand::Inventory(DeviceInventoryCommand::PersistencePreview { .. }) => {
-            device_inventory_persistence_command::run(command, json)
+        DeviceInventoryCommand::PersistedObservationV2 { .. } => {
+            device_inventory_observation_v2_command::run
         }
-        DeviceCommand::Inventory(DeviceInventoryCommand::PersistedObservation { .. }) => {
-            device_inventory_persisted_observation_command::run(command, json)
+        DeviceInventoryCommand::Status { .. } => device_inventory_status_command::run,
+        DeviceInventoryCommand::SnapshotCanonical { .. } => device_inventory_snapshot_command::run,
+        DeviceInventoryCommand::ResourceSummary { .. } => device_resource_summary_command::run,
+        DeviceInventoryCommand::SessionObservation { .. } => {
+            device_resource_summary_command::session_observation::run
         }
-        DeviceCommand::Inventory(DeviceInventoryCommand::PersistedObservationV2 { .. }) => {
-            device_inventory_observation_v2_command::run(command, json)
+        DeviceInventoryCommand::PlacementBatchEvaluation { .. } => {
+            device_inventory_placement_batch_evaluation_command::run
         }
-        DeviceCommand::Inventory(DeviceInventoryCommand::Status { .. }) => {
-            device_inventory_status_command::run(command, json)
+        DeviceInventoryCommand::PlacementEvaluation { .. } => {
+            device_inventory_placement_evaluation_command::run
         }
-        DeviceCommand::Inventory(DeviceInventoryCommand::SnapshotCanonical { .. }) => {
-            device_inventory_snapshot_command::run(command, json)
-        }
-        DeviceCommand::Inventory(DeviceInventoryCommand::ResourceSummary { .. }) => {
-            device_resource_summary_command::run(command, json)
-        }
-        DeviceCommand::Inventory(DeviceInventoryCommand::SessionObservation { .. }) => {
-            device_resource_summary_command::session_observation::run(command, json)
-        }
-        DeviceCommand::Inventory(DeviceInventoryCommand::PlacementBatchEvaluation { .. }) => {
-            device_inventory_placement_batch_evaluation_command::run(command, json)
-        }
-        DeviceCommand::Inventory(DeviceInventoryCommand::PlacementEvaluation { .. }) => {
-            device_inventory_placement_evaluation_command::run(command, json)
-        }
-        DeviceCommand::Inventory(DeviceInventoryCommand::PlacementEvaluationV2 { .. }) => {
-            device_inventory_placement_evaluation_v2_command::run(command, json)
+        DeviceInventoryCommand::PlacementEvaluationV2 { .. } => {
+            device_inventory_placement_evaluation_v2_command::run
         }
     }
 }

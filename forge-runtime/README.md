@@ -2,6 +2,10 @@
 
 First-party Rust Dev Agent Runtime and local Conversation Hub.
 
+For a standalone Linux binary, see [Build and use a developer preview](PREVIEW.md).
+`--version` / `-V` prints the Cargo package version; `--json --version` emits
+the stable name/version object without opening local state.
+
 The runtime has one authoritative Agent Loop, versioned durable Run events,
 bounded Conversation-history replay, a deterministic test provider, and an
 explicit OpenAI Responses provider. The `agent` command is read-only by default;

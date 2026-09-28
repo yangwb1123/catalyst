@@ -58,68 +58,71 @@ fn write_output<W: Write>(value: &Value, writer: &mut W) -> Result<(), RemoteErr
     )
     .map_err(io_error)?;
     for state in states {
-        let device = state
-            .get("device")
-            .and_then(Value::as_object)
-            .ok_or_else(|| {
-                RemoteError("Forge API returned an invalid lifecycle registry candidate".into())
-            })?;
-        let heartbeat = state
-            .get("heartbeat")
-            .and_then(Value::as_object)
-            .and_then(|value| value.get("instance"))
-            .and_then(Value::as_object)
-            .ok_or_else(|| {
-                RemoteError("Forge API returned an invalid lifecycle registry candidate".into())
-            })?;
-        let capabilities = heartbeat.get("capabilities").and_then(Value::as_object);
-        writeln!(
-            writer,
-            "  device={} instance={} revision={} os={} arch={} cpu={}/{} memory={}/{} storage={}/{}",
-            device.get("device_id").and_then(Value::as_str).unwrap_or(""),
-            heartbeat
-                .get("instance_id")
-                .and_then(Value::as_str)
-                .unwrap_or(""),
-            state.get("revision").and_then(Value::as_u64).unwrap_or_default(),
-            capabilities
-                .and_then(|value| value.get("os"))
-                .and_then(Value::as_str)
-                .unwrap_or(""),
-            capabilities
-                .and_then(|value| value.get("architecture"))
-                .and_then(Value::as_str)
-                .unwrap_or(""),
-            capabilities
-                .and_then(|value| value.get("available_cpu_cores"))
-                .and_then(Value::as_u64)
-                .unwrap_or_default(),
-            capabilities
-                .and_then(|value| value.get("cpu_cores"))
-                .and_then(Value::as_u64)
-                .unwrap_or_default(),
-            capabilities
-                .and_then(|value| value.get("available_memory_bytes"))
-                .and_then(Value::as_u64)
-                .unwrap_or_default(),
-            capabilities
-                .and_then(|value| value.get("memory_bytes"))
-                .and_then(Value::as_u64)
-                .unwrap_or_default(),
-            capabilities
-                .and_then(|value| value.get("available_storage_bytes"))
-                .and_then(Value::as_u64)
-                .unwrap_or_default(),
-            capabilities
-                .and_then(|value| value.get("storage_bytes"))
-                .and_then(Value::as_u64)
-                .unwrap_or_default(),
-        )
-        .map_err(io_error)?;
+        write_state(state, writer)?;
     }
     writeln!(
         writer,
         "  observation_only: owner_authenticated=false inventory_authoritative=false reservation_created=false execution_authorized=false dispatch_performed=false"
     )
     .map_err(io_error)
+}
+
+fn write_state<W: Write>(state: &Value, writer: &mut W) -> Result<(), RemoteError> {
+    let device = state
+        .get("device")
+        .and_then(Value::as_object)
+        .ok_or_else(|| {
+            RemoteError("Forge API returned an invalid lifecycle registry candidate".into())
+        })?;
+    let heartbeat = state
+        .get("heartbeat")
+        .and_then(Value::as_object)
+        .and_then(|value| value.get("instance"))
+        .and_then(Value::as_object)
+        .ok_or_else(|| {
+            RemoteError("Forge API returned an invalid lifecycle registry candidate".into())
+        })?;
+    let capabilities = heartbeat.get("capabilities").and_then(Value::as_object);
+    writeln!(
+        writer,
+        "  device={} instance={} revision={} os={} arch={} cpu={}/{} memory={}/{} storage={}/{}",
+        device
+            .get("device_id")
+            .and_then(Value::as_str)
+            .unwrap_or(""),
+        heartbeat
+            .get("instance_id")
+            .and_then(Value::as_str)
+            .unwrap_or(""),
+        state
+            .get("revision")
+            .and_then(Value::as_u64)
+            .unwrap_or_default(),
+        capability_text(capabilities, "os"),
+        capability_text(capabilities, "architecture"),
+        capability_number(capabilities, "available_cpu_cores"),
+        capability_number(capabilities, "cpu_cores"),
+        capability_number(capabilities, "available_memory_bytes"),
+        capability_number(capabilities, "memory_bytes"),
+        capability_number(capabilities, "available_storage_bytes"),
+        capability_number(capabilities, "storage_bytes"),
+    )
+    .map_err(io_error)?;
+    Ok(())
+}
+
+fn capability_number(capabilities: Option<&serde_json::Map<String, Value>>, field: &str) -> u64 {
+    capabilities
+        .and_then(|value| value.get(field))
+        .and_then(Value::as_u64)
+        .unwrap_or_default()
+}
+fn capability_text<'a>(
+    capabilities: Option<&'a serde_json::Map<String, Value>>,
+    field: &str,
+) -> &'a str {
+    capabilities
+        .and_then(|value| value.get(field))
+        .and_then(Value::as_str)
+        .unwrap_or("")
 }

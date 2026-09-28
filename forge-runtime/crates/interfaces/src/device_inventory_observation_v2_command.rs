@@ -144,6 +144,12 @@ fn validate_observation(
         observation.owner_declaration.tenant_id.as_str(),
     )?;
 
+    validate_candidates(observation)
+}
+
+fn validate_candidates(
+    observation: &PersistedInventoryObservationV2,
+) -> Result<(), Box<dyn Error>> {
     let mut seen_devices = HashSet::with_capacity(observation.devices.len());
     let mut seen_instances = HashSet::with_capacity(observation.devices.len());
     let mut previous_key: Option<(&str, &str)> = None;
@@ -204,6 +210,12 @@ fn validate_device(
     DeviceId::parse(device.device_id.clone())?;
     RunnerInstanceId::parse(instance_id.to_owned())?;
     TenantId::parse(device.owner.tenant_id.clone())?;
+    validate_resources(device)
+}
+
+fn validate_resources(
+    device: &PersistedInventoryObservationV2Device,
+) -> Result<(), Box<dyn Error>> {
     if device.snapshot_observed_at_ms > MAX_PERSISTED_INVENTORY_OBSERVATION_SAFE_INTEGER
         || device.lease_expires_at_ms > MAX_PERSISTED_INVENTORY_OBSERVATION_SAFE_INTEGER
         || !device
@@ -227,6 +239,12 @@ fn validate_device(
         )
         .into());
     }
+    validate_device_declarations(device)
+}
+
+fn validate_device_declarations(
+    device: &PersistedInventoryObservationV2Device,
+) -> Result<(), Box<dyn Error>> {
     if !matches!(
         device.approval_state.as_str(),
         "pending" | "approved" | "revoked"

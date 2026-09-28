@@ -64,23 +64,23 @@ fn read_remote_request<W: Write>(
     }
     let request = match super::super::runner_dispatch_plan_preview::read_tui_request(input) {
         Ok(request) => request,
-        Err(error) => return report_input_error(writer, error),
+        Err(error) => return report_input_error(writer, &error),
     };
     let (conversation_id, run_id) =
         match super::super::runner_dispatch_plan_preview::conversation_and_run(&request) {
             Ok(ids) => ids,
-            Err(error) => return report_input_error(writer, error),
+            Err(error) => return report_input_error(writer, &error),
         };
     let dispatch_plan = match super::super::runner_dispatch_plan_preview::dispatch_plan(&request) {
         Ok(plan) => plan,
-        Err(error) => return report_input_error(writer, error),
+        Err(error) => return report_input_error(writer, &error),
     };
     Ok(Some((request, conversation_id, run_id, dispatch_plan)))
 }
 
 fn report_input_error<W: Write>(
     writer: &mut W,
-    error: RemoteError,
+    error: &RemoteError,
 ) -> Result<Option<(Value, String, String, Value)>, RemoteError> {
     writeln!(writer, "Runner dispatch-plan preview input failed: {error}").map_err(io_error)?;
     Ok(None)

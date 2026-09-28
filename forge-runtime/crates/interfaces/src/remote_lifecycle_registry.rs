@@ -210,35 +210,7 @@ fn validate_state(state: &State, owner: &Owner) -> Result<(), RemoteError> {
         return Err(invalid());
     }
     validate_capabilities(&instance.capabilities)?;
-    let inventory = &state.inventory;
-    if inventory.device.device_id != state.device.device_id
-        || inventory.device.owner != snapshot_owner(owner)
-        || inventory.device.approval_state != state.device.approval_state
-        || !matches!(
-            inventory.device.approval_state.as_str(),
-            "pending" | "approved" | "revoked"
-        )
-        || !matches!(inventory.device.cordon_state.as_str(), "clear" | "cordoned")
-        || !matches!(
-            inventory.device.reservation_state.as_str(),
-            "none" | "reserved"
-        )
-        || inventory.runner.device_id != instance.device_id
-        || inventory.runner.instance_id != instance.instance_id
-        || inventory.runner.generation != instance.generation
-        || inventory.runner.heartbeat_sequence != instance.heartbeat_sequence
-        || inventory.runner.server_observed_at_ms != instance.server_observed_at_ms
-        || inventory.runner.capability_lease_expires_at_ms
-            != instance.capability_lease_expires_at_ms
-        || inventory.runner.capabilities != instance.capabilities
-        || !matches!(inventory.runner.liveness.as_str(), "online" | "offline")
-        || !safe_counter(inventory.runner.generation)
-        || !safe_counter(inventory.runner.heartbeat_sequence)
-        || inventory.runner.server_observed_at_ms > MAX_SAFE_INTEGER
-        || inventory.runner.capability_lease_expires_at_ms > MAX_SAFE_INTEGER
-    {
-        return Err(invalid());
-    }
+    validate_inventory_binding(state, owner)?;
     Ok(())
 }
 
@@ -397,7 +369,17 @@ mod tests {
             "capability_lease_expires_at_ms": 170000,
             "capabilities": capabilities
         });
-        let state = json!({
+        let state = joined_state(&owner, &heartbeat_instance, &capabilities);
+        validate_response(&json!({
+            "schema_version": SCHEMA_VERSION,
+            "owner": {"issuer":"https://id.example","subject":"user-a","tenant_id":"tenant-a"},
+            "states": [state]
+        }))
+        .unwrap();
+    }
+
+    fn joined_state(owner: &Value, heartbeat_instance: &Value, capabilities: &Value) -> Value {
+        json!({
             "revision": 1,
             "owner": owner,
             "device": {
@@ -429,13 +411,7 @@ mod tests {
                     "capabilities": capabilities
                 }
             }
-        });
-        validate_response(&json!({
-            "schema_version": SCHEMA_VERSION,
-            "owner": {"issuer":"https://id.example","subject":"user-a","tenant_id":"tenant-a"},
-            "states": [state]
-        }))
-        .unwrap();
+        })
     }
 
     #[test]
@@ -463,4 +439,38 @@ mod tests {
         value["schema_version"] = json!("forge.other/v1");
         assert!(validate_response(&value).is_err());
     }
+}
+
+fn validate_inventory_binding(state: &State, owner: &Owner) -> Result<(), RemoteError> {
+    let instance = &state.heartbeat.instance;
+    let inventory = &state.inventory;
+    if inventory.device.device_id != state.device.device_id
+        || inventory.device.owner != snapshot_owner(owner)
+        || inventory.device.approval_state != state.device.approval_state
+        || !matches!(
+            inventory.device.approval_state.as_str(),
+            "pending" | "approved" | "revoked"
+        )
+        || !matches!(inventory.device.cordon_state.as_str(), "clear" | "cordoned")
+        || !matches!(
+            inventory.device.reservation_state.as_str(),
+            "none" | "reserved"
+        )
+        || inventory.runner.device_id != instance.device_id
+        || inventory.runner.instance_id != instance.instance_id
+        || inventory.runner.generation != instance.generation
+        || inventory.runner.heartbeat_sequence != instance.heartbeat_sequence
+        || inventory.runner.server_observed_at_ms != instance.server_observed_at_ms
+        || inventory.runner.capability_lease_expires_at_ms
+            != instance.capability_lease_expires_at_ms
+        || inventory.runner.capabilities != instance.capabilities
+        || !matches!(inventory.runner.liveness.as_str(), "online" | "offline")
+        || !safe_counter(inventory.runner.generation)
+        || !safe_counter(inventory.runner.heartbeat_sequence)
+        || inventory.runner.server_observed_at_ms > MAX_SAFE_INTEGER
+        || inventory.runner.capability_lease_expires_at_ms > MAX_SAFE_INTEGER
+    {
+        return Err(invalid());
+    }
+    Ok(())
 }

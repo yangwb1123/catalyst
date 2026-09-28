@@ -42,6 +42,9 @@ jobs:
       - name: Install check.py dependency (PyYAML)
         run: python3 -m pip install --quiet pyyaml
 
+      - name: forge-runtime preview packaging guards
+        run: python3 -m unittest discover -s scripts -p 'test_forge_runtime_*.py' -v
+
       - name: forge accept (Stop gate — aggregates gate/arch-check/check/secret-scan/tests)
         run: node harness/acceptance.mjs
 

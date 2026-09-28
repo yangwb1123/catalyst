@@ -95,7 +95,7 @@ pub(super) fn validate_response(
 }
 
 pub(super) fn validate_request(value: &Value) -> Result<(), RemoteError> {
-    let object = value.as_object().ok_or_else(|| invalid_request())?;
+    let object = value.as_object().ok_or_else(invalid_request)?;
     if !exact_fields(
         object,
         [

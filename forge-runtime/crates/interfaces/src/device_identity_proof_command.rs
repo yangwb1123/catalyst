@@ -214,35 +214,13 @@ fn evaluate(fixture: Fixture) -> Result<IdentityProofOutput, Box<dyn Error>> {
         if !names.insert(case.name.clone()) {
             return Err(format!("duplicate device identity proof case {:?}", case.name).into());
         }
-        let device = DeviceIdentityBinding::new(
-            device_id.clone(),
-            device_owner.clone(),
-            fixture.device.key_id.clone(),
-            fixture.device.public_key_sha256.clone(),
-            case.device_approval_state,
-            case.device_credential_state,
-        );
-        let challenge = IdentityChallenge::new(
-            fixture.challenge.challenge_id.clone(),
-            fixture.challenge.challenge_sha256.clone(),
-            fixture.challenge.issued_at_ms,
-            fixture.challenge.expires_at_ms,
-            case.challenge_consumed || fixture.challenge.consumed,
-        );
-        let proof = DeviceIdentityProof::new(
-            case.proof.device_id,
-            case.proof.key_id,
-            case.proof.public_key_sha256,
-            owner(&case.proof.owner),
-            case.proof.challenge_id,
-            case.proof.challenge_sha256,
-            case.proof.proof_sha256,
-            case.proof.issued_at_ms,
-            case.proof.expires_at_ms,
-        );
-        let actual =
-            evaluate_identity_proof(&declared_owner, &device, &challenge, &proof, case.now_ms);
-        cases.push(compare_case(case.name, case.expected, actual)?);
+        cases.push(evaluate_case(
+            &fixture.device,
+            &fixture.challenge,
+            case,
+            &declared_owner,
+            &device_owner,
+        )?);
     }
     Ok(IdentityProofOutput {
         v: 1,
@@ -258,6 +236,49 @@ fn evaluate(fixture: Fixture) -> Result<IdentityProofOutput, Box<dyn Error>> {
         cases,
         authority: Authority::default(),
     })
+}
+
+fn evaluate_case(
+    device: &DeviceFixture,
+    challenge: &ChallengeFixture,
+    case: Case,
+    declared_owner: &IdentityOwner,
+    device_owner: &IdentityOwner,
+) -> Result<CaseOutput, Box<dyn Error>> {
+    let binding = DeviceIdentityBinding::new(
+        device.device_id.clone(),
+        device_owner.clone(),
+        device.key_id.clone(),
+        device.public_key_sha256.clone(),
+        case.device_approval_state,
+        case.device_credential_state,
+    );
+    let identity_challenge = IdentityChallenge::new(
+        challenge.challenge_id.clone(),
+        challenge.challenge_sha256.clone(),
+        challenge.issued_at_ms,
+        challenge.expires_at_ms,
+        case.challenge_consumed || challenge.consumed,
+    );
+    let proof = DeviceIdentityProof::new(
+        case.proof.device_id,
+        case.proof.key_id,
+        case.proof.public_key_sha256,
+        owner(&case.proof.owner),
+        case.proof.challenge_id,
+        case.proof.challenge_sha256,
+        case.proof.proof_sha256,
+        case.proof.issued_at_ms,
+        case.proof.expires_at_ms,
+    );
+    let actual = evaluate_identity_proof(
+        declared_owner,
+        &binding,
+        &identity_challenge,
+        &proof,
+        case.now_ms,
+    );
+    compare_case(case.name, &case.expected, actual)
 }
 
 fn validate_fixture(fixture: &Fixture) -> Result<(), Box<dyn Error>> {
@@ -288,7 +309,7 @@ fn owner(value: &OwnerFixture) -> IdentityOwner {
 
 fn compare_case(
     name: String,
-    expected: Expected,
+    expected: &Expected,
     actual: Result<IdentityProofDecision, forge_runtime_domain::IdentityProofError>,
 ) -> Result<CaseOutput, Box<dyn Error>> {
     match (expected.accepted, actual) {

@@ -8845,3 +8845,110 @@ compatible. Oversized CLI argument, dispatch, and help files were split along
 their existing command boundaries. No Attempt persistence, reservation, lease
 mutation, Runner transport/execution, receipt, Audit, or P4 authority was added;
 ADR-0039 remains planning-only and ADR-0114 remains Proposed/null.
+
+Validation for §758: the final Runtime CLI binary passed all 1,060 unit tests,
+and the independent fresh-context review passed. The standalone structural
+gate still reports 44 violations in files outside this increment. Formal
+`forge accept` completed with `REJECTED` because its candidate journal lost
+watch coverage; its per-criterion results therefore do not establish a valid
+whole-repository verdict. This increment does not claim full acceptance.
+
+### Runtime standalone preview — version identity and repeatable local packaging
+
+Runtime CLI now supports `--version` / `-V` and an exact JSON name/version
+object without opening or migrating Hub state. The version comes from Cargo;
+the preview manifest separately records source revision, selected-source
+fingerprint, dirty paths, toolchain, dependency requirements, and binary digest.
+`scripts/package_forge_runtime.py` builds the pinned Linux x86_64 target with
+locked offline dependencies, strips a copy, runs the standalone offline smoke,
+and produces an unsigned local archive plus checksums without replacing existing
+artifacts. The smoke checks actual read contents, edit effects, zero process exit,
+and durable results against loopback provider fixtures; it makes no real model
+request. Python packaging regressions are wired into the existing CI workflow.
+
+Validation: 1,067 CLI unit tests, 3 version integration tests, 14 Python regression
+tests, and all 10 smoke checks on the final release binary passed. Fresh-context
+review passed after fixing pinned-toolchain selection, failed-read false positives,
+and concurrent output-directory replacement. Changed Rust files pass formatting;
+governance passes 13 checks after restoring the existing domain registration
+file's required 0644 mode. Full-repository formatting, structural/architecture
+checks, and strict Clippy remain blocked by existing findings outside this
+increment (44 structural violations; Clippy stops on 55 domain errors).
+This local preview does not claim full acceptance, cross-distribution validation,
+signing, publication, or stable-release readiness.
+
+### Runtime preview quality — Domain lint and formatting cleanup
+
+The Domain production library's 55 strict Clippy findings are resolved through
+explicit error contracts, checked history-count conversions, and smaller pure
+validation/projection helpers. Independent boolean authority fields retain their
+frozen wire shape with narrowly scoped, documented lint allowances. Validation
+order, output ordering, and authority values remain unchanged; history boundary
+coverage now includes empty, single, maximum, oversized, and unrepresentable
+counts. No boundary-checker whitelist or pinned metadata was changed.
+
+Runtime dispatch and TUI write paths are split along their existing operations,
+and the instance-filter fixture is separated from its tests. Request order,
+visibility checks, failure recovery, and output-error propagation remain intact.
+Whole-workspace Cargo formatting now passes, and the structural file violations
+fall from 44 to 43, all outside the files changed by this increment.
+
+Validation: strict Domain library Clippy and whole-workspace Cargo formatting
+pass. Domain all-target tests report 715 passed and 3 failed in the existing
+Attempt-request boundary snapshots: two dependency-manifest fingerprints and
+one exact lifecycle module declaration. Their checker inputs are byte-identical
+to HEAD; this increment does not repin them. Strict CLI Clippy now reaches the
+interfaces crate and reports 269 errors outside the changed files. Repository
+architecture checks still report 12 package, 2 fan-in, 1 naming, and 540
+function-length findings; none identify a changed file. Fresh-context Domain
+and Runtime reviews pass. Full repository acceptance remains unestablished.
+
+The CLI binary and selected device/version integration targets pass 1,089 tests;
+the final scheduler-preview cleanup also passes 6 focused tests. All 14 Python
+packaging regressions and 10 standalone smoke checks pass. The refreshed local
+archive is `dist/forge-runtime-0.1.0-preview-d44379b77509-linux-x86_64.tar.gz`
+(10,420,272 bytes; SHA-256
+`310c923f8e23f7300d6c72bbca2b314f191768e9b0e8462c427055afc7ca2b4e`).
+It remains an unsigned Linux x86_64 developer preview requiring glibc 2.39 and
+D-Bus, tested with loopback provider fixtures only; no publication or real-model
+validation is claimed.
+
+### Runtime preview quality — CLI lint and reviewed boundary snapshots
+
+The production CLI now passes strict Clippy with the pinned, locked/offline
+toolchain; all 269 findings from the previous increment are resolved. Device,
+remote command, and TUI operations are split along existing validation,
+rendering, and refresh boundaries. Wire fields and Serde type names, error
+messages, request/validation order, authorization clearing, rollback snapshots,
+writer-error propagation, and cursor commit order are preserved. Whole-workspace
+Cargo formatting and the 13 governance checks pass. Independent fresh-context
+reviews of the device/boundary, remote, and TUI changes all pass.
+
+The three stale Attempt-boundary tests are repaired after reviewing their
+historical inputs: the CLI manifest added `futures-util` for bounded SSE reads;
+the exact test include host added only base64/time imports; the registered
+execution leaves already existed. The preview consumer's exact digest reflects
+its reviewed equivalent function extraction. The consumer scanner and exact
+module declarations remain restrictive, with five new regression tests for
+manifest changes, aliases/globs, module registration, include hosts, and preview
+source paths/bytes. The tokenizer was split without changing lexical rules.
+Domain all-target tests now pass all 723 cases across 22 targets, including all
+27 Attempt-boundary checks.
+
+Repository structure violations fall from 43 to 31, and function-length
+findings fall from 540 to 446; no finding identifies a changed file. The
+remaining 12 package, 2 fan-in, 1 naming, and 446 function-length findings still
+prevent whole-repository acceptance. Strict production CLI lint success does
+not claim all-target/test lint success or stable-release acceptance.
+
+Final validation: the CLI binary unit tests plus all 15 device integration
+targets and the version target pass 1,130/1,130 cases across 17 targets. All
+14 Python packaging regressions and 10 smoke checks on the refreshed binary
+pass. The new archive is
+`dist/forge-runtime-0.1.0-preview-389127c43562-linux-x86_64.tar.gz`
+(10,464,343 bytes; SHA-256
+`2249c0ef8fa6e070b1b433a290b14780bfbf6f4621872219c0a71c93cbf5622f`).
+The stripped executable is 27,309,984 bytes. It remains an unsigned local Linux
+x86_64 preview requiring glibc 2.39 and D-Bus, validated with loopback provider
+fixtures only. Existing archives are preserved; no real-model validation,
+cross-distribution validation, signing, or external publication occurred.

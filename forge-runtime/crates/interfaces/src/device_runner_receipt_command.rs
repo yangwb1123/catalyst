@@ -40,6 +40,10 @@ struct ReceiptExpected {
 }
 
 #[derive(Debug, Serialize)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "Independent contract flags preserve the frozen observation and authority wire shape"
+)]
 pub(crate) struct RunnerReceiptPreviewOutput {
     schema_version: &'static str,
     evaluation_mode: &'static str,

@@ -263,11 +263,11 @@ impl TuiState {
                     session, resource,
                 ) =>
             {
-                self.mark_client_instance_observations_converged()
+                self.mark_client_instance_observations_converged();
             }
             (Some(_), Some(_)) => self.mark_client_instance_observations_not_converged(),
             (_, _) if self.client_instance_observation_status.is_some() => {
-                self.mark_client_instance_observations_not_converged()
+                self.mark_client_instance_observations_not_converged();
             }
             _ => {}
         }
@@ -454,18 +454,14 @@ pub(super) fn ensure_converged_client_instance_projection(
 pub(super) fn conversation_visible_to_selected_client_instance(
     state: &TuiState,
     conversation: &Value,
-) -> Result<bool, RemoteError> {
+) -> bool {
     let Some(instance_id) = state.client_instance_filter.as_deref() else {
-        return Ok(true);
+        return true;
     };
     let Some(view) = state.active_client_instance_view() else {
-        return Ok(false);
+        return false;
     };
-    Ok(client_instance_session_scope::matches_conversation(
-        conversation,
-        Some(view),
-        Some(instance_id),
-    ))
+    client_instance_session_scope::matches_conversation(conversation, Some(view), Some(instance_id))
 }
 
 fn cursor_precedes(left: &PromptPageCursor, right: &PromptPageCursor) -> bool {

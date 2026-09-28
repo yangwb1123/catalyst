@@ -206,10 +206,12 @@ fn parse_scheduler_lease_release(tokens: &mut VecDeque<String>) -> Result<Comman
     ))
 }
 
+type InputOptions = (Option<String>, Option<String>, Option<String>);
+
 fn parse_scheduler_input_options(
     tokens: &mut VecDeque<String>,
     label: &str,
-) -> Result<(Option<String>, Option<String>, Option<String>), String> {
+) -> Result<InputOptions, String> {
     let mut input = None;
     let mut instance_id = None;
     let mut instance_view = None;

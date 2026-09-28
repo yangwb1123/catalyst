@@ -63,7 +63,8 @@ pub(super) fn render_human(
     writer: &mut impl Write,
 ) -> Result<(), RemoteError> {
     let response = validate_response(value, conversation_id)?;
-    writeln!(writer, "execution-consent preview [read-only candidate]").map_err(io_error)?;
+    writeln!(writer, "execution-consent preview [read-only candidate]")
+        .map_err(|error| io_error(&error))?;
     writeln!(
         writer,
         "conversation={} project={} profile={} profile_sha256={} maximum_ttl_ms={}",
@@ -73,12 +74,12 @@ pub(super) fn render_human(
         response.profile_sha256,
         response.maximum_ttl_ms
     )
-    .map_err(io_error)?;
+    .map_err(|error| io_error(&error))?;
     writeln!(
         writer,
         "No consent was granted; no Run, device selection, lease, reservation, dispatch, or Runner request was created."
     )
-    .map_err(io_error)
+    .map_err(|error| io_error(&error))
 }
 
 fn is_lowercase_sha256(value: &str) -> bool {
@@ -88,7 +89,7 @@ fn is_lowercase_sha256(value: &str) -> bool {
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
-fn io_error(error: std::io::Error) -> RemoteError {
+fn io_error(error: &std::io::Error) -> RemoteError {
     RemoteError(format!(
         "could not render execution-consent preview: {error}"
     ))

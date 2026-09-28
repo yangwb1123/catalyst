@@ -1,4 +1,4 @@
-use super::*;
+use super::{Error, RemoteClient, RemoteError, Value, client_instance_session_scope};
 
 /// Applies the selected client-instance/resource boundary before an admission
 /// candidate. Online selection refreshes both owner-bound pairs and requires

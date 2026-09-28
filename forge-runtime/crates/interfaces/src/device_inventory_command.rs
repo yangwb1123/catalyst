@@ -83,6 +83,10 @@ struct GpuDeclaration {
 }
 
 #[derive(Debug, Serialize)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "Independent contract flags preserve the frozen observation and authority wire shape"
+)]
 pub(crate) struct InventoryShowOutput {
     schema_version: String,
     evaluation_mode: &'static str,

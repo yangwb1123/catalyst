@@ -23,6 +23,10 @@ const EXPECTED_CASE_COUNT: usize = 4;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, Default)]
 #[serde(deny_unknown_fields)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "Independent contract flags preserve the frozen observation and authority wire shape"
+)]
 struct Authority {
     lease_issued: bool,
     terminal_persisted: bool,

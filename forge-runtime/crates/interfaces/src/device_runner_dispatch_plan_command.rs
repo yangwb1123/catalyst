@@ -27,6 +27,10 @@ const EVALUATION_MODE: &str = "pure_dispatch_plan_preview_only";
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "Independent contract flags preserve the frozen observation and authority wire shape"
+)]
 pub(crate) struct RunnerDispatchPlanPreviewOutput {
     schema_version: String,
     evaluation_mode: String,
@@ -65,6 +69,10 @@ struct Owner {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "Independent contract flags preserve the frozen observation and authority wire shape"
+)]
 struct Candidate {
     target_id: String,
     attributes_unverified: bool,
@@ -78,6 +86,10 @@ struct Candidate {
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "Independent contract flags preserve the frozen observation and authority wire shape"
+)]
 struct Authority {
     device_identity_verified: bool,
     attempt_persisted: bool,
@@ -139,6 +151,17 @@ pub(crate) fn write_output(
         output.declarative_ready_count,
         output.evaluated_at_ms
     )?;
+    write_candidates(output, writer)?;
+    writeln!(
+        writer,
+        "authority: device_identity_verified=false attempt_persisted=false reservation_created=false execution_authorized=false dispatch_performed=false audit_published=false"
+    )
+}
+
+fn write_candidates(
+    output: &RunnerDispatchPlanPreviewOutput,
+    writer: &mut impl Write,
+) -> io::Result<()> {
     for candidate in &output.candidates {
         writeln!(
             writer,
@@ -152,10 +175,7 @@ pub(crate) fn write_output(
             candidate.reasons.join(",")
         )?;
     }
-    writeln!(
-        writer,
-        "authority: device_identity_verified=false attempt_persisted=false reservation_created=false execution_authorized=false dispatch_performed=false audit_published=false"
-    )
+    Ok(())
 }
 
 fn validate_output(output: &RunnerDispatchPlanPreviewOutput) -> Result<(), Box<dyn Error>> {
@@ -185,6 +205,10 @@ fn validate_output(output: &RunnerDispatchPlanPreviewOutput) -> Result<(), Box<d
         return Err("Runner dispatch-plan preview observation is invalid".into());
     }
 
+    validate_candidates(output)
+}
+
+fn validate_candidates(output: &RunnerDispatchPlanPreviewOutput) -> Result<(), Box<dyn Error>> {
     let mut ready_count = 0;
     for (index, candidate) in output.candidates.iter().enumerate() {
         if !valid_identifier(&candidate.target_id)

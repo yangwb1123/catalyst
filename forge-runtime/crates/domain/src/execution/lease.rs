@@ -293,6 +293,12 @@ impl LeaseState {
     /// Restores a lease state from a validated value image. Terminal evidence
     /// must match the exact proof and have been accepted within the grant's
     /// active window.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`LeaseError::InvalidCheckpoint`] if the schema, evaluation mode,
+    /// grant, or terminal receipt is invalid, including a proof or active-window
+    /// mismatch.
     pub fn from_checkpoint(checkpoint: LeaseCheckpoint) -> Result<Self, LeaseError> {
         if checkpoint.schema_version != EXECUTION_LEASE_CHECKPOINT_SCHEMA_VERSION
             || checkpoint.evaluation_mode != EXECUTION_LEASE_CHECKPOINT_EVALUATION_MODE

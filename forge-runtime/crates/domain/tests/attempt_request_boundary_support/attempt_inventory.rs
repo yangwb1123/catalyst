@@ -21,7 +21,7 @@ const EXPECTED_ATTEMPT_SOURCES: &[(&str, &str)] = &[
 ];
 const REVIEWED_CONSUMERS: &[(&str, &str)] = &[(
     "crates/interfaces/src/device_attempt_request_command.rs",
-    "5ab95de1fbe5b3c7b68d556c1174bfaa4a6d2d5de0ef806c75466a6bcd7de299",
+    "446e76f225bfa2c6fb85317c3d2531609d4849beb715cd7b48bded0b760c1ccc",
 )];
 
 pub(super) fn verify(path: &Path, source: &str) {

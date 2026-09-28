@@ -36,6 +36,10 @@ struct Fixture {
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "Independent contract flags preserve the frozen observation and authority wire shape"
+)]
 struct Authority {
     device_identity_verified: bool,
     inventory_authoritative: bool,
@@ -67,6 +71,10 @@ struct Prompt {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
+#[allow(
+    clippy::struct_field_names,
+    reason = "Preserve frozen wire field names and existing Serde type-name diagnostics"
+)]
 struct Event {
     event_id: String,
     seq: u64,

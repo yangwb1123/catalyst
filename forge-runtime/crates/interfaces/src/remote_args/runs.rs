@@ -186,7 +186,6 @@ struct RunTimelineOptions {
     after_sequence_seen: bool,
     limit_seen: bool,
     resume: bool,
-    resume_seen: bool,
     instance_id: Option<String>,
     instance_view: Option<String>,
 }
@@ -199,7 +198,6 @@ impl RunTimelineOptions {
             after_sequence_seen: false,
             limit_seen: false,
             resume: false,
-            resume_seen: false,
             instance_id: None,
             instance_view: None,
         };
@@ -223,9 +221,8 @@ impl RunTimelineOptions {
                     parse_bounded_usize(&next_value(tokens, "--limit")?, 1, 128, "--limit")?;
                 self.limit_seen = true;
             }
-            "--resume" if !self.resume_seen => {
+            "--resume" if !self.resume => {
                 self.resume = true;
-                self.resume_seen = true;
             }
             "--instance" | "--instance-id" if self.instance_id.is_none() => {
                 self.instance_id = Some(parse_instance_id(tokens)?);

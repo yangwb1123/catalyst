@@ -41,33 +41,7 @@ pub(crate) async fn run(args: &Args, command: &RemoteCommand) -> ExitCode {
         Ok(None) => remote_command::execute(command, args.idempotency_key.as_deref()).await,
         Err(error) => Err(error),
     };
-    match result {
-        Ok(value) => match serde_json::to_string_pretty(&value) {
-            Ok(output) => {
-                println!("{output}");
-                if matches!(command, RemoteCommand::PromptsAdd { .. }) {
-                    eprintln!("{}", prompt_acknowledgement(&value));
-                } else if matches!(command, RemoteCommand::PromptsReceipt { .. }) {
-                    eprintln!("Prompt append receipt observed. No Run was started.");
-                } else if matches!(command, RemoteCommand::PendingRunIntentSubmit { .. }) {
-                    eprintln!("Pending Run-intent stored. No Run was started.");
-                }
-                ExitCode::SUCCESS
-            }
-            Err(error) => {
-                eprintln!("failed to encode remote API response: {error}");
-                ExitCode::FAILURE
-            }
-        },
-        Err(error) => {
-            eprintln!("Remote Forge command failed: {error}");
-            if let Some(recovery) = pending_write_recovery(command, args.idempotency_key.as_deref())
-            {
-                eprintln!("Pending write recovery: {recovery}");
-            }
-            ExitCode::FAILURE
-        }
-    }
+    report_remote_result(args, command, result)
 }
 
 fn prompt_acknowledgement(value: &serde_json::Value) -> &'static str {
@@ -104,74 +78,48 @@ fn pending_write_recovery(command: &RemoteCommand, key: Option<&str>) -> Option<
             conversation_id,
             expected_version,
             ..
-        } => PendingWriteMetadata {
-            operation: "append_prompt".into(),
-            conversation_id: Some(conversation_id.clone()),
-            expected_version: Some(*expected_version),
-            idempotency_key: key.into(),
-            state: "unconfirmed".into(),
-            attempted_at_ms: None,
-            last_observed_at_ms: None,
-        },
+        } => pending_write_metadata(
+            "append_prompt",
+            Some(conversation_id.clone()),
+            Some(*expected_version),
+            key,
+        ),
         RemoteCommand::PromptsReceipt {
             conversation_id,
             expected_version,
             ..
-        } => PendingWriteMetadata {
-            operation: "append_prompt_receipt".into(),
-            conversation_id: Some(conversation_id.clone()),
-            expected_version: Some(*expected_version),
-            idempotency_key: key.into(),
-            state: "unconfirmed".into(),
-            attempted_at_ms: None,
-            last_observed_at_ms: None,
-        },
+        } => pending_write_metadata(
+            "append_prompt_receipt",
+            Some(conversation_id.clone()),
+            Some(*expected_version),
+            key,
+        ),
         RemoteCommand::PendingRunIntentSubmit {
             conversation_id,
             expected_version,
             ..
-        } => PendingWriteMetadata {
-            operation: "submit_pending_run_intent".into(),
-            conversation_id: Some(conversation_id.clone()),
-            expected_version: Some(*expected_version),
-            idempotency_key: key.into(),
-            state: "unconfirmed".into(),
-            attempted_at_ms: None,
-            last_observed_at_ms: None,
-        },
-        RemoteCommand::SessionsCreate { .. } => PendingWriteMetadata {
-            operation: "create_conversation".into(),
-            conversation_id: None,
-            expected_version: None,
-            idempotency_key: key.into(),
-            state: "unconfirmed".into(),
-            attempted_at_ms: None,
-            last_observed_at_ms: None,
-        },
+        } => pending_write_metadata(
+            "submit_pending_run_intent",
+            Some(conversation_id.clone()),
+            Some(*expected_version),
+            key,
+        ),
+        RemoteCommand::SessionsCreate { .. } => {
+            pending_write_metadata("create_conversation", None, None, key)
+        }
         _ => return None,
     };
-    project_pending_write(metadata.clone()).ok()?;
-    let mut value = serde_json::to_value(metadata).ok()?;
-    let object = value.as_object_mut()?;
-    object.insert(
-        "schema_version".into(),
-        serde_json::Value::String(PENDING_WRITE_RECOVERY_SCHEMA_VERSION.into()),
-    );
-    object.insert(
-        "evaluation_mode".into(),
-        serde_json::Value::String(PENDING_WRITE_RECOVERY_EVALUATION_MODE.into()),
-    );
-    serde_json::to_string(&value).ok()
+    encode_pending_write_recovery(metadata)
 }
 
 fn resolve_stdin_prompt(
     command: &RemoteCommand,
 ) -> Result<Option<String>, Box<dyn std::error::Error>> {
-    let content = match command {
-        RemoteCommand::PromptsAdd { content, .. }
-        | RemoteCommand::PromptsReceipt { content, .. }
-        | RemoteCommand::PendingRunIntentSubmit { content, .. } => content,
-        _ => return Ok(None),
+    let (RemoteCommand::PromptsAdd { content, .. }
+    | RemoteCommand::PromptsReceipt { content, .. }
+    | RemoteCommand::PendingRunIntentSubmit { content, .. }) = command
+    else {
+        return Ok(None);
     };
     if content != "-" {
         return Ok(None);
@@ -241,4 +189,70 @@ async fn run_import(args: &Args, conversation_id: &str, confirm: Option<&str>) -
             ExitCode::FAILURE
         }
     }
+}
+
+fn report_remote_result(
+    args: &Args,
+    command: &RemoteCommand,
+    result: Result<serde_json::Value, Box<dyn std::error::Error>>,
+) -> ExitCode {
+    match result {
+        Ok(value) => match serde_json::to_string_pretty(&value) {
+            Ok(output) => {
+                println!("{output}");
+                if matches!(command, RemoteCommand::PromptsAdd { .. }) {
+                    eprintln!("{}", prompt_acknowledgement(&value));
+                } else if matches!(command, RemoteCommand::PromptsReceipt { .. }) {
+                    eprintln!("Prompt append receipt observed. No Run was started.");
+                } else if matches!(command, RemoteCommand::PendingRunIntentSubmit { .. }) {
+                    eprintln!("Pending Run-intent stored. No Run was started.");
+                }
+                ExitCode::SUCCESS
+            }
+            Err(error) => {
+                eprintln!("failed to encode remote API response: {error}");
+                ExitCode::FAILURE
+            }
+        },
+        Err(error) => {
+            eprintln!("Remote Forge command failed: {error}");
+            if let Some(recovery) = pending_write_recovery(command, args.idempotency_key.as_deref())
+            {
+                eprintln!("Pending write recovery: {recovery}");
+            }
+            ExitCode::FAILURE
+        }
+    }
+}
+
+fn pending_write_metadata(
+    operation: &str,
+    conversation_id: Option<String>,
+    expected_version: Option<u64>,
+    key: &str,
+) -> PendingWriteMetadata {
+    PendingWriteMetadata {
+        operation: operation.into(),
+        conversation_id,
+        expected_version,
+        idempotency_key: key.into(),
+        state: "unconfirmed".into(),
+        attempted_at_ms: None,
+        last_observed_at_ms: None,
+    }
+}
+
+fn encode_pending_write_recovery(metadata: PendingWriteMetadata) -> Option<String> {
+    project_pending_write(metadata.clone()).ok()?;
+    let mut value = serde_json::to_value(metadata).ok()?;
+    let object = value.as_object_mut()?;
+    object.insert(
+        "schema_version".into(),
+        serde_json::Value::String(PENDING_WRITE_RECOVERY_SCHEMA_VERSION.into()),
+    );
+    object.insert(
+        "evaluation_mode".into(),
+        serde_json::Value::String(PENDING_WRITE_RECOVERY_EVALUATION_MODE.into()),
+    );
+    serde_json::to_string(&value).ok()
 }

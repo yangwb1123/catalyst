@@ -42,12 +42,12 @@ fn read_request<W: Write>(
     };
     let request = match super::super::runner_attempt_boundary::read_tui_request(input) {
         Ok(request) => request,
-        Err(error) => return report_input_error(writer, error),
+        Err(error) => return report_input_error(writer, &error),
     };
     let (conversation_id, run_id) =
         match super::super::runner_attempt_boundary::conversation_and_run(&request) {
             Ok(ids) => ids,
-            Err(error) => return report_input_error(writer, error),
+            Err(error) => return report_input_error(writer, &error),
         };
     Ok(Some((request, conversation_id, run_id)))
 }
@@ -202,7 +202,7 @@ fn usage<W: Write>(writer: &mut W) -> Result<(), RemoteError> {
 
 fn report_input_error<W: Write>(
     writer: &mut W,
-    error: RemoteError,
+    error: &RemoteError,
 ) -> Result<Option<(Value, String, String)>, RemoteError> {
     writeln!(writer, "Runner Attempt boundary input failed: {error}").map_err(io_error)?;
     Ok(None)

@@ -20,7 +20,7 @@ pub(super) fn preview<W: Write>(argument: &str, writer: &mut W) -> Result<(), Re
     match crate::device_execution_lease_checkpoint_command::execute(&command) {
         Ok(output) => {
             crate::device_execution_lease_checkpoint_command::write_output(&output, false, writer)
-                .map_err(io_error)
+                .map_err(|error| io_error(&error))
         }
         Err(error) => Err(RemoteError(format!(
             "Execution lease checkpoint preview failed: {error}"
@@ -28,7 +28,7 @@ pub(super) fn preview<W: Write>(argument: &str, writer: &mut W) -> Result<(), Re
     }
 }
 
-fn io_error(error: io::Error) -> RemoteError {
+fn io_error(error: &io::Error) -> RemoteError {
     RemoteError(format!(
         "failed to write execution lease checkpoint preview: {error}"
     ))

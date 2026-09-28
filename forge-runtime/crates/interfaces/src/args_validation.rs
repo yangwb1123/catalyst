@@ -150,6 +150,9 @@ fn dispatch_claim_key_error(command: &Command) -> Option<&'static str> {
 }
 
 fn accepts_idempotency_key(command: &Command) -> bool {
+    if let Command::Group(group) = command {
+        return group_accepts_idempotency_key(group);
+    }
     matches!(
         command,
         Command::Session(SessionCommand::New { .. })
@@ -163,7 +166,19 @@ fn accepts_idempotency_key(command: &Command) -> bool {
                     | RemoteCommand::SchedulerSelectionLeaseRenew { .. }
                     | RemoteCommand::SchedulerSelectionLeaseRelease { .. },
             )
-            | Command::Group(
+            | Command::Run(
+                RunCommand::Start { .. } | RunCommand::Restart { .. } | RunCommand::Branch { .. },
+            )
+            | Command::Agent(_)
+            | Command::Governance(GovernanceCommand::Journal(
+                GovernanceJournalCommand::Append { .. },
+            ))
+    )
+}
+
+fn group_accepts_idempotency_key(command: &GroupCommand) -> bool {
+    matches!(
+        command,
                 GroupCommand::Create { .. }
                     | GroupCommand::Add { .. }
                     | GroupCommand::Analysis(GroupAnalysisCommand::Prepare { .. })
@@ -196,16 +211,6 @@ fn accepts_idempotency_key(command: &Command) -> bool {
                     | GroupCommand::Run(GroupRunCommand::Prepare { .. })
                     | GroupCommand::Synthesis(GroupSynthesisCommand::Prepare { .. })
             )
-            | Command::Run(
-                RunCommand::Start { .. }
-                    | RunCommand::Restart { .. }
-                    | RunCommand::Branch { .. },
-            )
-            | Command::Agent(_)
-            | Command::Governance(GovernanceCommand::Journal(
-                GovernanceJournalCommand::Append { .. },
-            ))
-    )
 }
 
 fn validate_execution_options(options: &GlobalOptions, command: &Command) -> Result<(), String> {

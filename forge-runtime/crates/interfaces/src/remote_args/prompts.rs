@@ -53,18 +53,12 @@ fn parse_prompt_list(tokens: &mut VecDeque<String>) -> Result<Command, String> {
         }
     }
     require_empty(tokens)?;
-    if !valid_prompt_cursor_fields(before_created_at_ms, before_prompt_id.as_deref()) {
-        return Err(format!(
-            "remote prompts list cursor requires a valid timestamp and Prompt ID pair\n\n{}",
-            usage()
-        ));
-    }
-    if instance_view.is_some() && instance_id.is_none() {
-        return Err(format!(
-            "remote prompts list --instance-view requires --instance\n\n{}",
-            usage()
-        ));
-    }
+    validate_prompt_list_options(
+        before_created_at_ms,
+        before_prompt_id.as_deref(),
+        instance_id.as_deref(),
+        instance_view.as_deref(),
+    )?;
     Ok(Command::Remote(RemoteCommand::PromptsList {
         conversation_id,
         before_created_at_ms,
@@ -96,6 +90,61 @@ fn parse_prompt_receipt(tokens: &mut VecDeque<String>) -> Result<Command, String
 
 fn parse_prompt_write(tokens: &mut VecDeque<String>, receipt: bool) -> Result<Command, String> {
     let conversation_id = next_value(tokens, "remote prompts add")?;
+    let expected_version = prompt_expected_version(tokens)?;
+    let (instance_id, instance_view) = prompt_write_projection(tokens)?;
+    if tokens.is_empty() {
+        return Err(format!("prompt content is required\n\n{}", usage()));
+    }
+    let content_tokens = tokens.drain(..).collect::<Vec<_>>();
+    if content_tokens.first().is_some_and(|token| token == "-") && content_tokens.len() != 1 {
+        return Err(format!(
+            "remote stdin prompt marker '-' must be the only prompt token\n\n{}",
+            usage()
+        ));
+    }
+    let content = content_tokens.join(" ");
+    let command = if receipt {
+        RemoteCommand::PromptsReceipt {
+            conversation_id,
+            expected_version,
+            content,
+            instance_id,
+            instance_view,
+        }
+    } else {
+        RemoteCommand::PromptsAdd {
+            conversation_id,
+            expected_version,
+            content,
+            instance_id,
+            instance_view,
+        }
+    };
+    Ok(Command::Remote(command))
+}
+
+fn validate_prompt_list_options(
+    before_created_at_ms: Option<u64>,
+    before_prompt_id: Option<&str>,
+    instance_id: Option<&str>,
+    instance_view: Option<&str>,
+) -> Result<(), String> {
+    if !valid_prompt_cursor_fields(before_created_at_ms, before_prompt_id) {
+        return Err(format!(
+            "remote prompts list cursor requires a valid timestamp and Prompt ID pair\n\n{}",
+            usage()
+        ));
+    }
+    if instance_view.is_some() && instance_id.is_none() {
+        return Err(format!(
+            "remote prompts list --instance-view requires --instance\n\n{}",
+            usage()
+        ));
+    }
+    Ok(())
+}
+
+fn prompt_expected_version(tokens: &mut VecDeque<String>) -> Result<u64, String> {
     if tokens
         .front()
         .is_none_or(|value| value != "--expected-version")
@@ -113,6 +162,12 @@ fn parse_prompt_write(tokens: &mut VecDeque<String>, receipt: bool) -> Result<Co
         .filter(|value| *value > 0 && *value <= 9_007_199_254_740_991)
         .ok_or_else(|| format!("invalid --expected-version '{version}'\n\n{}", usage()))?;
 
+    Ok(expected_version)
+}
+
+fn prompt_write_projection(
+    tokens: &mut VecDeque<String>,
+) -> Result<(Option<String>, Option<String>), String> {
     let mut instance_id = None;
     let mut instance_view = None;
     while let Some(option) = tokens.front().map(String::as_str) {
@@ -150,33 +205,5 @@ fn parse_prompt_write(tokens: &mut VecDeque<String>, receipt: bool) -> Result<Co
             usage()
         ));
     }
-    if tokens.is_empty() {
-        return Err(format!("prompt content is required\n\n{}", usage()));
-    }
-    let content_tokens = tokens.drain(..).collect::<Vec<_>>();
-    if content_tokens.first().is_some_and(|token| token == "-") && content_tokens.len() != 1 {
-        return Err(format!(
-            "remote stdin prompt marker '-' must be the only prompt token\n\n{}",
-            usage()
-        ));
-    }
-    let content = content_tokens.join(" ");
-    let command = if receipt {
-        RemoteCommand::PromptsReceipt {
-            conversation_id,
-            expected_version,
-            content,
-            instance_id,
-            instance_view,
-        }
-    } else {
-        RemoteCommand::PromptsAdd {
-            conversation_id,
-            expected_version,
-            content,
-            instance_id,
-            instance_view,
-        }
-    };
-    Ok(Command::Remote(command))
+    Ok((instance_id, instance_view))
 }

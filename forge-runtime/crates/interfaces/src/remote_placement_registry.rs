@@ -141,7 +141,7 @@ pub(super) fn validate_request(value: &Value) -> Result<(), RemoteError> {
         return Err(invalid_request());
     }
     let request: Request = serde_json::from_value(value.clone()).map_err(|_| invalid_request())?;
-    validate_requirements(&request.requirements).map_err(|_| invalid_request())
+    validate_requirements(&request.requirements).map_err(|()| invalid_request())
 }
 
 pub(super) fn validate_response(value: &Value) -> Result<PreviewResult, RemoteError> {
@@ -164,46 +164,7 @@ pub(super) fn validate_response(value: &Value) -> Result<PreviewResult, RemoteEr
         return Err(invalid_response());
     }
 
-    let mut previous: Option<(&str, &str)> = None;
-    let mut devices = HashSet::with_capacity(result.decisions.len());
-    let mut instances = HashSet::with_capacity(result.decisions.len());
-    let mut eligible = 0;
-    for decision in &result.decisions {
-        let key = (decision.device_id.as_str(), decision.instance_id.as_str());
-        if previous.is_some_and(|value| value >= key)
-            || !devices.insert(decision.device_id.as_str())
-            || !instances.insert(decision.instance_id.as_str())
-            || !valid_counter(decision.revision)
-            || !valid_counter(decision.generation)
-            || !valid_counter(decision.heartbeat_sequence)
-            || !valid_identifier(&decision.device_id)
-            || !valid_identifier(&decision.instance_id)
-            || !matches!(decision.reservation_state.as_str(), "none" | "reserved")
-            || decision.gpu_count > MAX_ARRAY_ITEMS
-            || decision.available_gpu_memory_bytes > MAX_GPU_MEMORY_BYTES
-            || !decision.owner_declaration_unverified
-            || !decision.device_attributes_unverified
-            || decision.exclusion_reasons.len() > MAX_EXCLUSION_REASONS
-            || decision
-                .exclusion_reasons
-                .windows(2)
-                .any(|pair| pair[0] >= pair[1])
-            || decision
-                .exclusion_reasons
-                .iter()
-                .any(|reason| !valid_token(reason))
-            || decision.matches_requirements != decision.exclusion_reasons.is_empty()
-        {
-            return Err(invalid_response());
-        }
-        if decision.matches_requirements {
-            eligible += 1;
-        }
-        previous = Some(key);
-    }
-    if eligible != result.eligible_candidate_count {
-        return Err(invalid_response());
-    }
+    validate_decisions(&result)?;
     Ok(result)
 }
 
@@ -447,4 +408,48 @@ mod tests {
         count["eligible_candidate_count"] = json!(0);
         assert!(validate_response(&count).is_err());
     }
+}
+
+fn validate_decisions(result: &PreviewResult) -> Result<(), RemoteError> {
+    let mut previous: Option<(&str, &str)> = None;
+    let mut devices = HashSet::with_capacity(result.decisions.len());
+    let mut instances = HashSet::with_capacity(result.decisions.len());
+    let mut eligible = 0;
+    for decision in &result.decisions {
+        let key = (decision.device_id.as_str(), decision.instance_id.as_str());
+        if previous.is_some_and(|value| value >= key)
+            || !devices.insert(decision.device_id.as_str())
+            || !instances.insert(decision.instance_id.as_str())
+            || !valid_counter(decision.revision)
+            || !valid_counter(decision.generation)
+            || !valid_counter(decision.heartbeat_sequence)
+            || !valid_identifier(&decision.device_id)
+            || !valid_identifier(&decision.instance_id)
+            || !matches!(decision.reservation_state.as_str(), "none" | "reserved")
+            || decision.gpu_count > MAX_ARRAY_ITEMS
+            || decision.available_gpu_memory_bytes > MAX_GPU_MEMORY_BYTES
+            || !decision.owner_declaration_unverified
+            || !decision.device_attributes_unverified
+            || decision.exclusion_reasons.len() > MAX_EXCLUSION_REASONS
+            || decision
+                .exclusion_reasons
+                .windows(2)
+                .any(|pair| pair[0] >= pair[1])
+            || decision
+                .exclusion_reasons
+                .iter()
+                .any(|reason| !valid_token(reason))
+            || decision.matches_requirements != decision.exclusion_reasons.is_empty()
+        {
+            return Err(invalid_response());
+        }
+        if decision.matches_requirements {
+            eligible += 1;
+        }
+        previous = Some(key);
+    }
+    if eligible != result.eligible_candidate_count {
+        return Err(invalid_response());
+    }
+    Ok(())
 }

@@ -43,6 +43,10 @@ pub struct ReconciliationInput {
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "The frozen wire carries independent authority disclaimers."
+)]
 pub struct ReconciliationAuthority {
     pub identity_verified: bool,
     pub run_authoritative: bool,
@@ -57,6 +61,10 @@ pub struct ReconciliationAuthority {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "The frozen wire carries independent observation and authority flags."
+)]
 pub struct ReconciliationObservation {
     pub schema_version: String,
     pub evaluation_mode: String,
@@ -95,9 +103,54 @@ impl std::error::Error for ReconciliationError {}
 
 /// Classifies a caller-supplied restart snapshot without reading or writing
 /// any durable state.
+///
+/// # Errors
+/// Returns `ReconciliationError` when the identities, states, lease, observation
+/// time, or supplied terminal receipt violate the reconciliation contract.
 pub fn observe(
     input: ReconciliationInput,
 ) -> Result<ReconciliationObservation, ReconciliationError> {
+    validate_input(&input)?;
+    let terminal_observed = input.terminal.is_some();
+    let (terminal_disposition, terminal_state_aligned) = observe_terminal(&input)?;
+    let lease_active = input.lease.is_active(input.observed_at_ms);
+    let next_observation = classify(
+        &input.run_status,
+        &input.attempt_state,
+        lease_active,
+        terminal_observed,
+        terminal_disposition,
+        terminal_state_aligned,
+    )
+    .to_owned();
+    let reconciliation_required = requires_reconciliation(&next_observation);
+    Ok(ReconciliationObservation {
+        schema_version: EXECUTION_RECONCILIATION_SCHEMA_VERSION.to_owned(),
+        evaluation_mode: EXECUTION_RECONCILIATION_EVALUATION_MODE.to_owned(),
+        owner: input.owner,
+        conversation_id: input.conversation_id,
+        run_id: input.run_id,
+        attempt_id: input.attempt_id,
+        command_id: input.command_id,
+        target_id: input.target_id,
+        run_status: input.run_status,
+        attempt_state: input.attempt_state,
+        lease_epoch: input.lease.epoch,
+        lease_active,
+        observed_at_ms: input.observed_at_ms,
+        terminal_observed,
+        terminal_disposition: terminal_disposition.to_owned(),
+        terminal_state_aligned,
+        next_observation,
+        reconciliation_required,
+        manual_review_required: reconciliation_required,
+        automatic_retry: false,
+        preview_only: true,
+        authority: ReconciliationAuthority::default(),
+    })
+}
+
+fn validate_input(input: &ReconciliationInput) -> Result<(), ReconciliationError> {
     if !valid_owner(&input.owner)
         || !valid_identifier(&input.conversation_id)
         || !valid_identifier(&input.run_id)
@@ -119,68 +172,44 @@ pub fn observe(
     {
         return Err(ReconciliationError);
     }
+    Ok(())
+}
 
-    let mut terminal_disposition = "none".to_owned();
-    let terminal_observed = input.terminal.is_some();
-    let mut terminal_state_aligned = true;
-    if let Some(terminal) = &input.terminal {
-        let mut state = LeaseState::new(input.lease.clone()).map_err(|_| ReconciliationError)?;
-        state
-            .submit_terminal(
-                terminal.proof.clone(),
-                terminal.disposition.clone(),
-                terminal.observed_at_ms,
-            )
-            .map_err(|_| ReconciliationError)?;
-        if terminal.observed_at_ms > input.observed_at_ms {
-            return Err(ReconciliationError);
-        }
-        terminal_disposition = disposition_name(&terminal.disposition).to_owned();
-        terminal_state_aligned =
-            terminal_state_matches_attempt(&terminal_disposition, &input.attempt_state);
+fn observe_terminal(
+    input: &ReconciliationInput,
+) -> Result<(&'static str, bool), ReconciliationError> {
+    let Some(terminal) = &input.terminal else {
+        return Ok(("none", true));
+    };
+    let mut state = LeaseState::new(input.lease.clone()).map_err(|_| ReconciliationError)?;
+    state
+        .submit_terminal(
+            terminal.proof.clone(),
+            terminal.disposition.clone(),
+            terminal.observed_at_ms,
+        )
+        .map_err(|_| ReconciliationError)?;
+    if terminal.observed_at_ms > input.observed_at_ms {
+        return Err(ReconciliationError);
     }
-
-    let lease_active = input.lease.is_active(input.observed_at_ms);
-    let next_observation = classify(
-        &input.run_status,
-        &input.attempt_state,
-        lease_active,
-        terminal_observed,
-        &terminal_disposition,
-        terminal_state_aligned,
-    )
-    .to_owned();
-    let reconciliation_required = requires_reconciliation(&next_observation);
-    Ok(ReconciliationObservation {
-        schema_version: EXECUTION_RECONCILIATION_SCHEMA_VERSION.to_owned(),
-        evaluation_mode: EXECUTION_RECONCILIATION_EVALUATION_MODE.to_owned(),
-        owner: input.owner,
-        conversation_id: input.conversation_id,
-        run_id: input.run_id,
-        attempt_id: input.attempt_id,
-        command_id: input.command_id,
-        target_id: input.target_id,
-        run_status: input.run_status,
-        attempt_state: input.attempt_state,
-        lease_epoch: input.lease.epoch,
-        lease_active,
-        observed_at_ms: input.observed_at_ms,
-        terminal_observed,
-        terminal_disposition,
-        terminal_state_aligned,
-        next_observation,
-        reconciliation_required,
-        manual_review_required: reconciliation_required,
-        automatic_retry: false,
-        preview_only: true,
-        authority: ReconciliationAuthority::default(),
-    })
+    let disposition = disposition_name(&terminal.disposition);
+    let aligned = terminal_state_matches_attempt(disposition, &input.attempt_state);
+    Ok((disposition, aligned))
 }
 
 impl ReconciliationObservation {
     /// Validates the output shape and its classification invariants. It does
     /// not establish that the observation is current or durable.
+    ///
+    /// # Errors
+    /// Returns `ReconciliationError` for invalid fields, inconsistent terminal
+    /// classification, or authority claims outside the preview-only contract.
     pub fn validate(&self) -> Result<(), ReconciliationError> {
+        self.validate_shape()?;
+        self.validate_classification()
+    }
+
+    fn validate_shape(&self) -> Result<(), ReconciliationError> {
         if self.schema_version != EXECUTION_RECONCILIATION_SCHEMA_VERSION
             || self.evaluation_mode != EXECUTION_RECONCILIATION_EVALUATION_MODE
             || !valid_owner(&self.owner)
@@ -206,6 +235,10 @@ impl ReconciliationObservation {
         {
             return Err(ReconciliationError);
         }
+        Ok(())
+    }
+
+    fn validate_classification(&self) -> Result<(), ReconciliationError> {
         if self.next_observation
             != classify(
                 &self.run_status,

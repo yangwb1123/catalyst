@@ -74,6 +74,11 @@ impl RunObserved {
     /// This is deliberately separate from `observe_run`: local CLI/TUI
     /// consumers may inspect a fixture without reconstructing the owner and
     /// source Run summary.
+    ///
+    /// # Errors
+    ///
+    /// Returns `InvalidObservation` for invalid metadata, bounds, status, or
+    /// any claim of included content or authority.
     pub fn validate(&self) -> Result<(), RunObservedError> {
         if self.api_version != FORGE_RUN_OBSERVED_V1
             || !valid_digest(&self.owner_ref)

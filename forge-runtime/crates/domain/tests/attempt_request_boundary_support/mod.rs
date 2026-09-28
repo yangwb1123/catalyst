@@ -1,13 +1,16 @@
 mod admission;
 mod attempt_inventory;
 mod codegen;
+mod execution_inventory;
 mod lex;
 mod lifecycle;
 mod macro_inventory;
 mod metadata;
 mod path_attr;
+mod regression;
 mod scan;
 mod serde_policy;
+mod tokens;
 
 use std::{fs, path::Path};
 

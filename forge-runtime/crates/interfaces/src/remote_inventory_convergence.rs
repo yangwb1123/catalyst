@@ -24,28 +24,7 @@ pub(crate) fn validate(inventory: &Value, resource_view: &Value) -> Result<(), R
         .map_err(|_| {
             RemoteError("Forge API returned an invalid client-instance resource view".into())
         })?;
-    if inventory.get("owner_declaration") != resource_view.get("owner_declaration")
-        || inventory
-            .get("owner_declaration_unverified")
-            .and_then(Value::as_bool)
-            != Some(true)
-        || resource_view
-            .get("owner_declaration_unverified")
-            .and_then(Value::as_bool)
-            != Some(true)
-        || inventory
-            .get("inventory_declarations_unverified")
-            .and_then(Value::as_bool)
-            != Some(true)
-        || resource_view
-            .get("device_attributes_unverified")
-            .and_then(Value::as_bool)
-            != Some(true)
-    {
-        return Err(RemoteError(
-            "Forge API inventory/resource owner or declaration drifted".into(),
-        ));
-    }
+    validate_declarations(inventory, resource_view)?;
     let Some(inventory_devices) = inventory.get("devices").and_then(Value::as_array) else {
         return Err(RemoteError(
             "Forge API returned an invalid inventory/resource convergence pair".into(),
@@ -57,38 +36,9 @@ pub(crate) fn validate(inventory: &Value, resource_view: &Value) -> Result<(), R
         ));
     };
     if inventory_devices.len() != resource_devices.len()
-        || inventory_devices.iter().any(|candidate| {
-            let Some(device) = candidate.get("device") else {
-                return true;
-            };
-            let Some(device_id) = device.get("device_id").and_then(Value::as_str) else {
-                return true;
-            };
-            let Some(resource_device) = resource_devices
-                .iter()
-                .find(|row| row.get("device_id").and_then(Value::as_str) == Some(device_id))
-            else {
-                return true;
-            };
-            candidate.get("instance_id") != resource_device.get("runner_instance_id")
-                || candidate.get("revision") != resource_device.get("revision")
-                || candidate.get("generation") != resource_device.get("generation")
-                || candidate.get("heartbeat_sequence") != resource_device.get("heartbeat_sequence")
-                || device.get("owner") != resource_device.get("owner")
-                || device.get("approval_state") != resource_device.get("approval_state")
-                || device.get("cordon_state") != resource_device.get("cordon_state")
-                || device.get("reservation_state") != resource_device.get("reservation_state")
-                || device.get("liveness") != resource_device.get("liveness")
-                || device.get("snapshot_observed_at_ms") != resource_device.get("observed_at_ms")
-                || device.get("os") != resource_device.get("os")
-                || device.get("architecture") != resource_device.get("architecture")
-                || device.get("available_cpu_cores") != resource_device.get("available_cpu_cores")
-                || device.get("available_memory_bytes")
-                    != resource_device.get("available_memory_bytes")
-                || device.get("available_storage_bytes")
-                    != resource_device.get("available_storage_bytes")
-                || !gpu_summary_converged(device, resource_device)
-        })
+        || inventory_devices
+            .iter()
+            .any(|candidate| device_drifted(candidate, resource_devices))
     {
         return Err(RemoteError(
             "Forge API inventory/resource observations did not converge".into(),
@@ -159,11 +109,11 @@ fn gpu_summary_converged(device: &Value, resource_device: &Value) -> bool {
 }
 
 pub(crate) fn envelope(inventory: Value, resource_view: Value) -> Value {
-    json!({
+    let mut value = json!({
         "schema_version": SCHEMA_VERSION,
         "evaluation_mode": EVALUATION_MODE,
-        "inventory": inventory,
-        "resource_view": resource_view,
+        "inventory": null,
+        "resource_view": null,
         "converged": true,
         "read_only": true,
         "authority": {
@@ -175,5 +125,65 @@ pub(crate) fn envelope(inventory: Value, resource_view: Value) -> Value {
             "dispatch_performed": false,
             "audit_published": false
         }
-    })
+    });
+    value["inventory"] = inventory;
+    value["resource_view"] = resource_view;
+    value
+}
+
+fn device_drifted(candidate: &Value, resource_devices: &[Value]) -> bool {
+    let Some(device) = candidate.get("device") else {
+        return true;
+    };
+    let Some(device_id) = device.get("device_id").and_then(Value::as_str) else {
+        return true;
+    };
+    let Some(resource_device) = resource_devices
+        .iter()
+        .find(|row| row.get("device_id").and_then(Value::as_str) == Some(device_id))
+    else {
+        return true;
+    };
+    candidate.get("instance_id") != resource_device.get("runner_instance_id")
+        || candidate.get("revision") != resource_device.get("revision")
+        || candidate.get("generation") != resource_device.get("generation")
+        || candidate.get("heartbeat_sequence") != resource_device.get("heartbeat_sequence")
+        || device.get("owner") != resource_device.get("owner")
+        || device.get("approval_state") != resource_device.get("approval_state")
+        || device.get("cordon_state") != resource_device.get("cordon_state")
+        || device.get("reservation_state") != resource_device.get("reservation_state")
+        || device.get("liveness") != resource_device.get("liveness")
+        || device.get("snapshot_observed_at_ms") != resource_device.get("observed_at_ms")
+        || device.get("os") != resource_device.get("os")
+        || device.get("architecture") != resource_device.get("architecture")
+        || device.get("available_cpu_cores") != resource_device.get("available_cpu_cores")
+        || device.get("available_memory_bytes") != resource_device.get("available_memory_bytes")
+        || device.get("available_storage_bytes") != resource_device.get("available_storage_bytes")
+        || !gpu_summary_converged(device, resource_device)
+}
+
+fn validate_declarations(inventory: &Value, resource_view: &Value) -> Result<(), RemoteError> {
+    if inventory.get("owner_declaration") != resource_view.get("owner_declaration")
+        || inventory
+            .get("owner_declaration_unverified")
+            .and_then(Value::as_bool)
+            != Some(true)
+        || resource_view
+            .get("owner_declaration_unverified")
+            .and_then(Value::as_bool)
+            != Some(true)
+        || inventory
+            .get("inventory_declarations_unverified")
+            .and_then(Value::as_bool)
+            != Some(true)
+        || resource_view
+            .get("device_attributes_unverified")
+            .and_then(Value::as_bool)
+            != Some(true)
+    {
+        return Err(RemoteError(
+            "Forge API inventory/resource owner or declaration drifted".into(),
+        ));
+    }
+    Ok(())
 }

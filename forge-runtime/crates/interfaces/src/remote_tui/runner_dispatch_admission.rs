@@ -47,19 +47,19 @@ fn read_request<W: Write>(
     }
     let request = match super::super::runner_dispatch_admission::read_tui_request(input) {
         Ok(request) => request,
-        Err(error) => return report_input_error(writer, error),
+        Err(error) => return report_input_error(writer, &error),
     };
     let (conversation_id, run_id) =
         match super::super::runner_dispatch_admission::conversation_and_run(&request) {
             Ok(ids) => ids,
-            Err(error) => return report_input_error(writer, error),
+            Err(error) => return report_input_error(writer, &error),
         };
     Ok(Some((request, conversation_id, run_id)))
 }
 
 fn report_input_error<W: Write>(
     writer: &mut W,
-    error: RemoteError,
+    error: &RemoteError,
 ) -> Result<Option<(Value, String, String)>, RemoteError> {
     writeln!(writer, "Runner dispatch admission input failed: {error}").map_err(io_error)?;
     Ok(None)
@@ -164,7 +164,7 @@ async fn post_and_render<W: Write>(
     writer: &mut W,
 ) -> Result<(), RemoteError> {
     let response = match client
-        .preview_runner_dispatch_admission(&conversation_id, &run_id, &request)
+        .preview_runner_dispatch_admission(conversation_id, run_id, request)
         .await
     {
         Ok(response) => response,
@@ -184,9 +184,9 @@ async fn post_and_render<W: Write>(
     };
     match super::super::runner_dispatch_admission::validate_response(
         &response,
-        &request,
-        &conversation_id,
-        &run_id,
+        request,
+        conversation_id,
+        run_id,
     ) {
         Ok(()) => super::super::runner_dispatch_admission::render_human(&response, writer)
             .map_err(io_error)?,

@@ -21,10 +21,10 @@ pub(super) fn preview<W: Write>(argument: &str, writer: &mut W) -> Result<(), Re
     match crate::device_run_execution_evidence_command::execute(&command) {
         Ok(output) => {
             crate::device_run_execution_evidence_command::write_output(&output, false, writer)
-                .map_err(io_error)?
+                .map_err(io_error)?;
         }
         Err(error) => {
-            writeln!(writer, "Run execution-evidence preview failed: {error}").map_err(io_error)?
+            writeln!(writer, "Run execution-evidence preview failed: {error}").map_err(io_error)?;
         }
     }
     Ok(())
@@ -38,23 +38,8 @@ pub(super) async fn remote_preview<W: Write>(
     argument: &str,
     writer: &mut W,
 ) -> Result<(), RemoteError> {
-    let Some(suffix) = argument.strip_prefix("--input") else {
-        return remote_usage(writer);
-    };
-    if !suffix.chars().next().is_some_and(char::is_whitespace) {
-        return remote_usage(writer);
-    }
-    let input = suffix.trim();
-    if input.is_empty() || input == "-" {
-        return remote_usage(writer);
-    }
-    let request = match super::super::run_execution_evidence::read_tui_request(input) {
-        Ok(request) => request,
-        Err(error) => {
-            writeln!(writer, "Run execution evidence input failed: {error}")
-                .map_err(super::state::io_error)?;
-            return Ok(());
-        }
+    let Some(request) = read_request(argument, writer)? else {
+        return Ok(());
     };
     let (conversation_id, run_id) =
         match super::super::run_execution_evidence::conversation_and_run(&request) {
@@ -80,8 +65,63 @@ pub(super) async fn remote_preview<W: Write>(
     )? {
         return Ok(());
     }
+    post_and_render(client, state, &request, &conversation_id, &run_id, writer).await
+}
+
+fn usage<W: Write>(writer: &mut W) -> Result<(), RemoteError> {
+    writeln!(
+        writer,
+        "Use run-execution-evidence-preview --input FILE. The file is a caller-supplied offline declaration; '-' is reserved for the standalone CLI."
+    )
+    .map_err(io_error)
+}
+
+fn remote_usage<W: Write>(writer: &mut W) -> Result<(), RemoteError> {
+    writeln!(
+        writer,
+        "Use run-execution-evidence-remote-preview --input FILE. The pair is posted to the authenticated Run evidence route; '-' is reserved for the standalone CLI."
+    )
+    .map_err(io_error)
+}
+
+fn read_request<W: Write>(
+    argument: &str,
+    writer: &mut W,
+) -> Result<Option<serde_json::Value>, RemoteError> {
+    let Some(suffix) = argument.strip_prefix("--input") else {
+        remote_usage(writer)?;
+        return Ok(None);
+    };
+    if !suffix.chars().next().is_some_and(char::is_whitespace) {
+        remote_usage(writer)?;
+        return Ok(None);
+    }
+    let input = suffix.trim();
+    if input.is_empty() || input == "-" {
+        remote_usage(writer)?;
+        return Ok(None);
+    }
+    let request = match super::super::run_execution_evidence::read_tui_request(input) {
+        Ok(request) => request,
+        Err(error) => {
+            writeln!(writer, "Run execution evidence input failed: {error}")
+                .map_err(super::state::io_error)?;
+            return Ok(None);
+        }
+    };
+    Ok(Some(request))
+}
+
+async fn post_and_render<W: Write>(
+    client: &super::RemoteClient,
+    state: &mut super::state::TuiState,
+    request: &serde_json::Value,
+    conversation_id: &str,
+    run_id: &str,
+    writer: &mut W,
+) -> Result<(), RemoteError> {
     let response = match client
-        .preview_run_execution_evidence(&conversation_id, &run_id, &request)
+        .preview_run_execution_evidence(conversation_id, run_id, request)
         .await
     {
         Ok(response) => response,
@@ -101,9 +141,9 @@ pub(super) async fn remote_preview<W: Write>(
     };
     match super::super::run_execution_evidence::validate_response(
         &response,
-        &request,
-        &conversation_id,
-        &run_id,
+        request,
+        conversation_id,
+        run_id,
     ) {
         Ok(()) => super::super::run_execution_evidence::render_human(&response, writer)
             .map_err(super::state::io_error)?,
@@ -116,20 +156,4 @@ pub(super) async fn remote_preview<W: Write>(
         }
     }
     Ok(())
-}
-
-fn usage<W: Write>(writer: &mut W) -> Result<(), RemoteError> {
-    writeln!(
-        writer,
-        "Use run-execution-evidence-preview --input FILE. The file is a caller-supplied offline declaration; '-' is reserved for the standalone CLI."
-    )
-    .map_err(io_error)
-}
-
-fn remote_usage<W: Write>(writer: &mut W) -> Result<(), RemoteError> {
-    writeln!(
-        writer,
-        "Use run-execution-evidence-remote-preview --input FILE. The pair is posted to the authenticated Run evidence route; '-' is reserved for the standalone CLI."
-    )
-    .map_err(io_error)
 }

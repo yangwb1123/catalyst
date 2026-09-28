@@ -17,6 +17,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::args::{DeviceCommand, DeviceInventoryCommand};
 
+#[path = "device_inventory_placement_evaluation_command/source.rs"]
+mod source;
+use source::{SourceAuthority, SourceCapabilities, SourceFixture};
+
 const MAX_INPUT_BYTES: usize = 2 * 1024 * 1024;
 const MAX_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
 const SCHEMA_VERSION: &str = "forge.device-inventory-placement-evaluation/v1";
@@ -72,6 +76,10 @@ struct Requirements {
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "Independent contract flags preserve the frozen observation and authority wire shape"
+)]
 struct Authority {
     placement_evaluated: bool,
     placement_selected: bool,
@@ -82,6 +90,10 @@ struct Authority {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "Independent contract flags preserve the frozen observation and authority wire shape"
+)]
 struct Expected {
     accepted: bool,
     error: String,
@@ -96,6 +108,10 @@ struct Expected {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
+#[allow(
+    clippy::struct_field_names,
+    reason = "Preserve frozen wire field names and existing Serde type-name diagnostics"
+)]
 pub(crate) struct Fixture {
     schema_version: String,
     evaluation_mode: String,
@@ -105,162 +121,6 @@ pub(crate) struct Fixture {
     policy_requirements: Requirements,
     authority: Authority,
     expected: Expected,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct SourceFixture {
-    schema_version: String,
-    evaluation_mode: String,
-    evaluation_owner: Owner,
-    policy_requirements: SourcePolicy,
-    authority: SourceAuthority,
-    state: SourceState,
-    cases: Vec<SourceCase>,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct SourcePolicy {
-    data_residency_zones: Vec<String>,
-    minimum_trust_zone: String,
-    sandbox_floor: String,
-    concurrency_slots: u16,
-}
-
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
-#[serde(deny_unknown_fields)]
-struct SourceAuthority {
-    identity_verified: bool,
-    heartbeat_persisted: bool,
-    inventory_authoritative: bool,
-    placement_selected: bool,
-    reservation_created: bool,
-    execution_authorized: bool,
-    dispatch_performed: bool,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct SourceState {
-    revision: u64,
-    device: SourceDevice,
-    runner: SourceRunner,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct SourceDevice {
-    device_id: String,
-    owner: Owner,
-    approval_state: String,
-    cordon_state: String,
-    reservation_state: String,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct SourceRunner {
-    device_id: String,
-    instance_id: String,
-    generation: u64,
-    heartbeat_sequence: u64,
-    server_observed_at_ms: u64,
-    capability_lease_expires_at_ms: u64,
-    liveness: String,
-    capabilities: SourceCapabilities,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct SourceCapabilities {
-    os: String,
-    architecture: String,
-    cpu_cores: u32,
-    available_cpu_cores: u32,
-    memory_bytes: u64,
-    available_memory_bytes: u64,
-    storage_bytes: u64,
-    available_storage_bytes: u64,
-    gpus: Vec<SourceGpu>,
-    runtimes: Vec<String>,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct SourceGpu {
-    id: String,
-    vendor: String,
-    memory_bytes: u64,
-    available_memory_bytes: u64,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct SourceCase {
-    name: String,
-    #[serde(default)]
-    evaluation_owner: Option<Owner>,
-    #[serde(default)]
-    runner_device_id: Option<String>,
-    #[serde(default)]
-    approval_state: Option<String>,
-    #[serde(default)]
-    cordon_state: Option<String>,
-    #[serde(default)]
-    liveness: Option<String>,
-    #[serde(default)]
-    server_observed_at_ms: Option<u64>,
-    #[serde(default)]
-    capability_lease_expires_at_ms: Option<u64>,
-    #[allow(dead_code)]
-    expected: SourceExpected,
-}
-
-#[allow(dead_code)]
-#[derive(Clone, Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct SourceExpected {
-    accepted: bool,
-    error: String,
-    #[serde(default)]
-    revision: Option<u64>,
-    #[serde(default)]
-    device_id: Option<String>,
-    #[serde(default)]
-    instance_id: Option<String>,
-    #[serde(default)]
-    generation: Option<u64>,
-    #[serde(default)]
-    heartbeat_sequence: Option<u64>,
-    #[serde(default)]
-    approval_state: Option<String>,
-    #[serde(default)]
-    cordon_state: Option<String>,
-    #[serde(default)]
-    reservation_state: Option<String>,
-    #[serde(default)]
-    liveness: Option<String>,
-    #[serde(default)]
-    snapshot_observed_at_ms: Option<u64>,
-    #[serde(default)]
-    lease_expires_at_ms: Option<u64>,
-    #[serde(default)]
-    owner_declaration_unverified: Option<bool>,
-    #[serde(default)]
-    policy_attributes_unverified: Option<bool>,
-    #[serde(default)]
-    data_residency_zones: Option<Vec<String>>,
-    #[serde(default)]
-    trust_zone: Option<String>,
-    #[serde(default)]
-    sandbox_levels: Option<Vec<String>>,
-    #[serde(default)]
-    concurrency_limit: Option<u16>,
-    #[serde(default)]
-    active_concurrency: Option<u16>,
-    #[serde(default)]
-    policy_requirements_met: Option<bool>,
 }
 
 pub(crate) fn execute(command: &DeviceCommand) -> Result<Fixture, Box<dyn Error>> {
@@ -390,6 +250,34 @@ fn build_online_input(
     source: &SourceFixture,
     owner: &SnapshotOwner,
 ) -> Result<forge_runtime_domain::PersistedInventoryPlacementInput, Box<dyn Error>> {
+    validate_online_source(source, owner)?;
+    let device_id = DeviceId::parse(source.state.device.device_id.clone())?;
+    let tenant_id = TenantId::parse(source.state.device.owner.tenant_id.clone())?;
+    let device = Device::restore(
+        device_id.clone(),
+        tenant_id,
+        DeviceApprovalState::Approved,
+        false,
+    );
+    let persisted = PersistedInventoryDevice::restore(device, owner.clone(), false);
+    let runner = RunnerInstance::restore(
+        device_id,
+        RunnerInstanceId::parse(source.state.runner.instance_id.clone())?,
+        source.state.runner.generation,
+        source.state.runner.heartbeat_sequence,
+        source.state.runner.server_observed_at_ms,
+        source.state.runner.capability_lease_expires_at_ms,
+        RunnerLiveness::Online,
+        capabilities(&source.state.runner.capabilities)?,
+    )?;
+    let state = restore_persisted_inventory(source.state.revision, persisted, runner)?;
+    Ok(build_persisted_inventory_placement_input(&state, owner)?)
+}
+
+fn validate_online_source(
+    source: &SourceFixture,
+    owner: &SnapshotOwner,
+) -> Result<(), Box<dyn Error>> {
     let source_case = source
         .cases
         .iter()
@@ -418,27 +306,7 @@ fn build_online_input(
     {
         return Err("placement evaluation source owner or timestamp drifted".into());
     }
-    let device_id = DeviceId::parse(source.state.device.device_id.clone())?;
-    let tenant_id = TenantId::parse(source.state.device.owner.tenant_id.clone())?;
-    let device = Device::restore(
-        device_id.clone(),
-        tenant_id,
-        DeviceApprovalState::Approved,
-        false,
-    );
-    let persisted = PersistedInventoryDevice::restore(device, owner.clone(), false);
-    let runner = RunnerInstance::restore(
-        device_id,
-        RunnerInstanceId::parse(source.state.runner.instance_id.clone())?,
-        source.state.runner.generation,
-        source.state.runner.heartbeat_sequence,
-        source.state.runner.server_observed_at_ms,
-        source.state.runner.capability_lease_expires_at_ms,
-        RunnerLiveness::Online,
-        capabilities(&source.state.runner.capabilities)?,
-    )?;
-    let state = restore_persisted_inventory(source.state.revision, persisted, runner)?;
-    Ok(build_persisted_inventory_placement_input(&state, owner)?)
+    Ok(())
 }
 
 fn capabilities(value: &SourceCapabilities) -> Result<CapabilitySnapshot, Box<dyn Error>> {

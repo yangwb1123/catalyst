@@ -1,12 +1,17 @@
 //! Strict consumer for the durable lease-bound Runner dispatch admission
 //! preview. The response is metadata only and never contains fencing data.
 
+#[path = "remote_runner_dispatch_admission/request.rs"]
+mod request;
+pub(super) use request::validate_request;
+
 use std::{
     fs::File,
     io::{self, Read, Write},
     path::Path,
 };
 
+use forge_runtime_domain::execution::runner_command::RunnerCommand;
 use serde::Deserialize;
 use serde_json::{Map, Value};
 
@@ -34,6 +39,10 @@ struct Owner {
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "Published wire predicates are separate booleans; changing their representation would change the protocol."
+)]
 struct Authority {
     device_identity_verified: bool,
     reservation_created: bool,
@@ -44,6 +53,10 @@ struct Authority {
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "Published wire predicates are separate booleans; changing their representation would change the protocol."
+)]
 struct AdmissionResult {
     schema_version: String,
     evaluation_mode: String,
@@ -114,280 +127,6 @@ pub(super) fn target_id(value: &Value) -> Result<&str, RemoteError> {
         .ok_or_else(invalid_request)
 }
 
-pub(super) fn validate_request(value: &Value) -> Result<(), RemoteError> {
-    let object = value.as_object().ok_or_else(invalid_request)?;
-    if !exact_fields(
-        object,
-        [
-            "owner",
-            "conversation_id",
-            "run_id",
-            "attempt_id",
-            "attempt_state",
-            "command",
-            "evaluated_at_ms",
-        ],
-    ) {
-        return Err(invalid_request());
-    }
-    let owner = object.get("owner").ok_or_else(invalid_request)?;
-    validate_owner(owner)?;
-    for field in ["conversation_id", "run_id", "attempt_id"] {
-        let id = object
-            .get(field)
-            .and_then(Value::as_str)
-            .ok_or_else(invalid_request)?;
-        if !valid_identifier(id) {
-            return Err(invalid_request());
-        }
-    }
-    let state = object
-        .get("attempt_state")
-        .and_then(Value::as_str)
-        .ok_or_else(invalid_request)?;
-    if !matches!(
-        state,
-        "requested"
-            | "accepted"
-            | "starting"
-            | "running"
-            | "interrupted"
-            | "completed"
-            | "failed"
-            | "uncertain"
-    ) {
-        return Err(invalid_request());
-    }
-    let evaluated = object
-        .get("evaluated_at_ms")
-        .and_then(Value::as_u64)
-        .ok_or_else(invalid_request)?;
-    if evaluated == 0 || evaluated > MAX_SAFE_INTEGER {
-        return Err(invalid_request());
-    }
-    let command = object
-        .get("command")
-        .and_then(Value::as_object)
-        .ok_or_else(invalid_request)?;
-    if !exact_fields(
-        command,
-        [
-            "v",
-            "command_id",
-            "lease_proof",
-            "idempotency_key",
-            "workspace_ref",
-            "argv",
-            "timeout_ms",
-            "max_output_bytes",
-        ],
-    ) {
-        return Err(invalid_request());
-    }
-    if command.get("v").and_then(Value::as_u64) != Some(1) {
-        return Err(invalid_request());
-    }
-    let command_id = command
-        .get("command_id")
-        .and_then(Value::as_str)
-        .ok_or_else(invalid_request)?;
-    if !valid_identifier(command_id) {
-        return Err(invalid_request());
-    }
-    for field in ["idempotency_key", "workspace_ref"] {
-        let text = command
-            .get(field)
-            .and_then(Value::as_str)
-            .ok_or_else(invalid_request)?;
-        if text.is_empty()
-            || text.len() > MAX_TOKEN_BYTES
-            || text.trim() != text
-            || text.chars().any(char::is_control)
-        {
-            return Err(invalid_request());
-        }
-    }
-    let timeout = command
-        .get("timeout_ms")
-        .and_then(Value::as_u64)
-        .ok_or_else(invalid_request)?;
-    let output = command
-        .get("max_output_bytes")
-        .and_then(Value::as_u64)
-        .ok_or_else(invalid_request)?;
-    if timeout == 0 || timeout > MAX_TIMEOUT_MS || output == 0 || output > MAX_OUTPUT_BYTES {
-        return Err(invalid_request());
-    }
-    let argv = command
-        .get("argv")
-        .and_then(Value::as_array)
-        .ok_or_else(invalid_request)?;
-    if argv.is_empty() || argv.len() > MAX_ARGUMENTS {
-        return Err(invalid_request());
-    }
-    let mut total = 0usize;
-    for (index, value) in argv.iter().enumerate() {
-        let argument = value.as_str().ok_or_else(invalid_request)?;
-        if argument.len() > MAX_ARGUMENT_BYTES
-            || argument.chars().any(char::is_control)
-            || (index == 0 && argument.is_empty())
-        {
-            return Err(invalid_request());
-        }
-        total = total
-            .checked_add(argument.len())
-            .ok_or_else(invalid_request)?;
-    }
-    if total > MAX_ARGUMENT_TOTAL_BYTES {
-        return Err(invalid_request());
-    }
-    let proof = command
-        .get("lease_proof")
-        .and_then(Value::as_object)
-        .ok_or_else(invalid_request)?;
-    if !exact_fields(proof, ["attempt_id", "target_id", "epoch", "fencing_token"]) {
-        return Err(invalid_request());
-    }
-    let proof_attempt = proof
-        .get("attempt_id")
-        .and_then(Value::as_str)
-        .ok_or_else(invalid_request)?;
-    let proof_target = proof
-        .get("target_id")
-        .and_then(Value::as_str)
-        .ok_or_else(invalid_request)?;
-    if !valid_identifier(proof_attempt)
-        || !valid_identifier(proof_target)
-        || proof.get("epoch").and_then(Value::as_u64).is_none()
-        || proof.get("epoch").and_then(Value::as_u64) == Some(0)
-    {
-        return Err(invalid_request());
-    }
-    let token = proof
-        .get("fencing_token")
-        .and_then(Value::as_str)
-        .ok_or_else(invalid_request)?;
-    if token.is_empty()
-        || token.len() > MAX_TOKEN_BYTES
-        || token.trim() != token
-        || token.chars().any(char::is_control)
-    {
-        return Err(invalid_request());
-    }
-    if proof_attempt
-        != object
-            .get("attempt_id")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-    {
-        return Err(invalid_request());
-    }
-    Ok(())
-}
-
-pub(super) fn validate_response(
-    value: &Value,
-    request: &Value,
-    conversation_id: &str,
-    run_id: &str,
-) -> Result<(), RemoteError> {
-    validate_request(request)?;
-    let result: AdmissionResult =
-        serde_json::from_value(value.clone()).map_err(|_| invalid_response())?;
-    let request_object = request.as_object().ok_or_else(invalid_request)?;
-    let owner: Owner = serde_json::from_value(
-        request_object
-            .get("owner")
-            .cloned()
-            .ok_or_else(invalid_request)?,
-    )
-    .map_err(|_| invalid_request())?;
-    let command = request_object
-        .get("command")
-        .and_then(Value::as_object)
-        .ok_or_else(invalid_request)?;
-    let command_id = command
-        .get("command_id")
-        .and_then(Value::as_str)
-        .ok_or_else(invalid_request)?;
-    let proof = command
-        .get("lease_proof")
-        .and_then(Value::as_object)
-        .ok_or_else(invalid_request)?;
-    let target_id = proof
-        .get("target_id")
-        .and_then(Value::as_str)
-        .ok_or_else(invalid_request)?;
-    let epoch = proof
-        .get("epoch")
-        .and_then(Value::as_u64)
-        .ok_or_else(invalid_request)?;
-    let request_attempt_state = request_object
-        .get("attempt_state")
-        .and_then(Value::as_str)
-        .ok_or_else(invalid_request)?;
-    let runner_command: forge_runtime_domain::execution::runner_command::RunnerCommand =
-        serde_json::from_value(Value::Object(command.clone())).map_err(|_| invalid_request())?;
-    let expected_command_sha = runner_command
-        .command_sha256()
-        .map_err(|_| invalid_request())?;
-    let command_sha = result.command_sha256.as_str();
-    let reasons = admission_reasons(
-        result.command_binding_valid,
-        result.lease_proof_current,
-        result.lease_active,
-        result.attempt_state_admissible,
-    );
-    if result.schema_version != SCHEMA_VERSION
-        || result.evaluation_mode != EVALUATION_MODE
-        || result.owner.issuer != owner.issuer
-        || result.owner.subject != owner.subject
-        || result.owner.tenant_id != owner.tenant_id
-        || result.conversation_id != conversation_id
-        || result.run_id != run_id
-        || result.attempt_id
-            != request_object
-                .get("attempt_id")
-                .and_then(Value::as_str)
-                .unwrap_or_default()
-        || result.command_id != command_id
-        || result.attempt_state != request_attempt_state
-        || result.target_id != target_id
-        || result.lease_epoch != epoch
-        || command_sha != expected_command_sha
-        || !valid_digest(command_sha)
-        || result.lease_issued_at_ms == 0
-        || result.lease_expires_at_ms <= result.lease_issued_at_ms
-        || result.lease_expires_at_ms > MAX_SAFE_INTEGER
-        || result.evaluated_at_ms == 0
-        || result.evaluated_at_ms > MAX_SAFE_INTEGER
-        || result.attempt_state_admissible
-            != matches!(
-                result.attempt_state.as_str(),
-                "accepted" | "starting" | "running"
-            )
-        || result.admission_ready
-            != (result.command_binding_valid
-                && result.lease_proof_current
-                && result.lease_active
-                && result.attempt_state_admissible)
-        || result.rejection_reasons != reasons
-        || result
-            .rejection_reasons
-            .iter()
-            .any(|reason| !valid_identifier(reason))
-        || !result.preview_only
-        || result.authority.device_identity_verified
-        || result.authority.reservation_created
-        || result.authority.execution_authorized
-        || result.authority.dispatch_performed
-        || result.authority.audit_published
-    {
-        return Err(invalid_response());
-    }
-    Ok(())
-}
-
 pub(super) fn render_human(value: &Value, writer: &mut impl Write) -> io::Result<()> {
     let result: AdmissionResult = serde_json::from_value(value.clone()).map_err(|_| {
         io::Error::new(
@@ -418,25 +157,6 @@ pub(super) fn render_human(value: &Value, writer: &mut impl Write) -> io::Result
         "rejection_reasons={:?}; execution_authorized=false dispatch_performed=false audit_published=false (fencing token, argv, workspace, and output withheld)",
         result.rejection_reasons
     )
-}
-
-fn admission_reasons(command_valid: bool, current: bool, active: bool, state: bool) -> Vec<String> {
-    let mut reasons = Vec::new();
-    if !command_valid {
-        reasons.push("command_binding_invalid".to_owned());
-    }
-    if !current {
-        reasons.push("lease_proof_not_current".to_owned());
-    }
-    if !active {
-        reasons.push("lease_inactive_at_evaluated_time".to_owned());
-    }
-    if !state {
-        reasons.push("attempt_state_not_dispatchable".to_owned());
-    }
-    reasons.sort();
-    reasons.dedup();
-    reasons
 }
 
 fn exact_fields<const N: usize>(object: &Map<String, Value>, fields: [&str; N]) -> bool {
@@ -538,4 +258,164 @@ mod tests {
         assert!(validate_request(&unknown).is_err());
         assert!(valid_digest(&"a".repeat(64)));
     }
+}
+
+pub(super) fn validate_response(
+    value: &Value,
+    request: &Value,
+    conversation_id: &str,
+    run_id: &str,
+) -> Result<(), RemoteError> {
+    validate_request(request)?;
+    let result: AdmissionResult =
+        serde_json::from_value(value.clone()).map_err(|_| invalid_response())?;
+    let context = response_request(request)?;
+    validate_response_binding(&result, &context, conversation_id, run_id)?;
+    validate_response_state(&result)
+}
+
+struct ResponseRequest<'a> {
+    request_object: &'a Map<String, Value>,
+    owner: Owner,
+    command_id: &'a str,
+    target_id: &'a str,
+    epoch: u64,
+    request_attempt_state: &'a str,
+    expected_command_sha: String,
+}
+
+fn response_request(request: &Value) -> Result<ResponseRequest<'_>, RemoteError> {
+    let request_object = request.as_object().ok_or_else(invalid_request)?;
+    let owner: Owner = request_field(request_object, "owner")?;
+    let command = request_object
+        .get("command")
+        .and_then(Value::as_object)
+        .ok_or_else(invalid_request)?;
+    let command_id = command
+        .get("command_id")
+        .and_then(Value::as_str)
+        .ok_or_else(invalid_request)?;
+    let proof = command
+        .get("lease_proof")
+        .and_then(Value::as_object)
+        .ok_or_else(invalid_request)?;
+    let target_id = proof
+        .get("target_id")
+        .and_then(Value::as_str)
+        .ok_or_else(invalid_request)?;
+    let epoch = proof
+        .get("epoch")
+        .and_then(Value::as_u64)
+        .ok_or_else(invalid_request)?;
+    let request_attempt_state = request_object
+        .get("attempt_state")
+        .and_then(Value::as_str)
+        .ok_or_else(invalid_request)?;
+    let runner_command: RunnerCommand =
+        serde_json::from_value(Value::Object(command.clone())).map_err(|_| invalid_request())?;
+    let expected_command_sha = runner_command
+        .command_sha256()
+        .map_err(|_| invalid_request())?;
+    Ok(ResponseRequest {
+        request_object,
+        owner,
+        command_id,
+        target_id,
+        epoch,
+        request_attempt_state,
+        expected_command_sha,
+    })
+}
+
+fn validate_response_binding(
+    result: &AdmissionResult,
+    context: &ResponseRequest<'_>,
+    conversation_id: &str,
+    run_id: &str,
+) -> Result<(), RemoteError> {
+    let command_sha = result.command_sha256.as_str();
+    if result.schema_version != SCHEMA_VERSION
+        || result.evaluation_mode != EVALUATION_MODE
+        || result.owner.issuer != context.owner.issuer
+        || result.owner.subject != context.owner.subject
+        || result.owner.tenant_id != context.owner.tenant_id
+        || result.conversation_id != conversation_id
+        || result.run_id != run_id
+        || result.attempt_id
+            != context
+                .request_object
+                .get("attempt_id")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+        || result.command_id != context.command_id
+        || result.attempt_state != context.request_attempt_state
+        || result.target_id != context.target_id
+        || result.lease_epoch != context.epoch
+        || command_sha != context.expected_command_sha
+        || !valid_digest(command_sha)
+    {
+        return Err(invalid_response());
+    }
+    Ok(())
+}
+
+fn validate_response_state(result: &AdmissionResult) -> Result<(), RemoteError> {
+    let reasons = admission_reasons(result);
+    if result.lease_issued_at_ms == 0
+        || result.lease_expires_at_ms <= result.lease_issued_at_ms
+        || result.lease_expires_at_ms > MAX_SAFE_INTEGER
+        || result.evaluated_at_ms == 0
+        || result.evaluated_at_ms > MAX_SAFE_INTEGER
+        || result.attempt_state_admissible
+            != matches!(
+                result.attempt_state.as_str(),
+                "accepted" | "starting" | "running"
+            )
+        || result.admission_ready
+            != (result.command_binding_valid
+                && result.lease_proof_current
+                && result.lease_active
+                && result.attempt_state_admissible)
+        || result.rejection_reasons != reasons
+        || result
+            .rejection_reasons
+            .iter()
+            .any(|reason| !valid_identifier(reason))
+        || !result.preview_only
+        || result.authority.device_identity_verified
+        || result.authority.reservation_created
+        || result.authority.execution_authorized
+        || result.authority.dispatch_performed
+        || result.authority.audit_published
+    {
+        return Err(invalid_response());
+    }
+    Ok(())
+}
+
+fn admission_reasons(result: &AdmissionResult) -> Vec<String> {
+    let mut reasons = Vec::new();
+    if !result.command_binding_valid {
+        reasons.push("command_binding_invalid".to_owned());
+    }
+    if !result.lease_proof_current {
+        reasons.push("lease_proof_not_current".to_owned());
+    }
+    if !result.lease_active {
+        reasons.push("lease_inactive_at_evaluated_time".to_owned());
+    }
+    if !result.attempt_state_admissible {
+        reasons.push("attempt_state_not_dispatchable".to_owned());
+    }
+    reasons.sort();
+    reasons.dedup();
+    reasons
+}
+
+fn request_field<T: serde::de::DeserializeOwned>(
+    request: &Map<String, Value>,
+    key: &str,
+) -> Result<T, RemoteError> {
+    serde_json::from_value(request.get(key).cloned().ok_or_else(invalid_request)?)
+        .map_err(|_| invalid_request())
 }

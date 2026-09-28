@@ -275,7 +275,7 @@ fn evaluate_case(
     let current = match case.current.as_ref() {
         Some(current) => match restore_current(current, capabilities) {
             Ok(current) => Some(current),
-            Err(error) => return compare_error(name, expected, error.to_string()),
+            Err(error) => return compare_error(name, &expected, error.to_string()),
         },
         None => None,
     };
@@ -289,15 +289,15 @@ fn evaluate_case(
         case.lease_ttl_ms,
     );
     match result {
-        Ok(state) => compare_success(name, expected, state),
-        Err(error) => compare_error(name, expected, error.to_string()),
+        Ok(state) => compare_success(name, &expected, &state),
+        Err(error) => compare_error(name, &expected, error.to_string()),
     }
 }
 
 fn compare_success(
     name: String,
-    expected: Expected,
-    state: PersistedRunnerInstance,
+    expected: &Expected,
+    state: &PersistedRunnerInstance,
 ) -> Result<CaseOutput, Box<dyn Error>> {
     if !expected.accepted
         || expected.error.is_some()
@@ -324,7 +324,7 @@ fn compare_success(
 
 fn compare_error(
     name: String,
-    expected: Expected,
+    expected: &Expected,
     actual_error: String,
 ) -> Result<CaseOutput, Box<dyn Error>> {
     if expected.accepted

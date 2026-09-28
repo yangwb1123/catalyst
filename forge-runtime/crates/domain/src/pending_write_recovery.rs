@@ -24,6 +24,10 @@ pub struct PendingWriteMetadata {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "The shared recovery projection exposes separately named retry and uncertainty flags."
+)]
 pub struct PendingWriteRecoveryProjection {
     pub schema_version: &'static str,
     pub evaluation_mode: &'static str,
@@ -61,6 +65,7 @@ impl std::fmt::Display for PendingWriteRecoveryError {
 impl std::error::Error for PendingWriteRecoveryError {}
 
 impl PendingWriteRecoveryError {
+    #[must_use]
     pub const fn code(&self) -> &'static str {
         match self {
             Self::InvalidOperation => "invalid_operation",
@@ -83,6 +88,27 @@ impl PendingWriteRecoveryError {
 pub fn project_pending_write(
     metadata: PendingWriteMetadata,
 ) -> Result<PendingWriteRecoveryProjection, PendingWriteRecoveryError> {
+    validate_metadata(&metadata)?;
+    let unconfirmed = metadata.state == "unconfirmed";
+    Ok(PendingWriteRecoveryProjection {
+        schema_version: PENDING_WRITE_RECOVERY_SCHEMA_VERSION,
+        evaluation_mode: PENDING_WRITE_RECOVERY_EVALUATION_MODE,
+        operation: metadata.operation,
+        conversation_id: metadata.conversation_id,
+        expected_version: metadata.expected_version,
+        idempotency_key: metadata.idempotency_key,
+        state: metadata.state,
+        pending: true,
+        unconfirmed,
+        retry_allowed: true,
+        same_key_required: true,
+        reconcile_before_retry: unconfirmed,
+        attempted_at_ms: metadata.attempted_at_ms,
+        last_observed_at_ms: metadata.last_observed_at_ms,
+    })
+}
+
+fn validate_metadata(metadata: &PendingWriteMetadata) -> Result<(), PendingWriteRecoveryError> {
     if !matches!(
         metadata.operation.as_str(),
         "append_prompt" | "create_conversation"
@@ -95,6 +121,20 @@ pub fn project_pending_write(
     if !valid_key(&metadata.idempotency_key) {
         return Err(PendingWriteRecoveryError::InvalidIdempotencyKey);
     }
+    validate_operation_binding(metadata)?;
+    if metadata
+        .last_observed_at_ms
+        .zip(metadata.attempted_at_ms)
+        .is_some_and(|(observed, attempted)| observed < attempted)
+    {
+        return Err(PendingWriteRecoveryError::ObservationTimeRegressed);
+    }
+    Ok(())
+}
+
+fn validate_operation_binding(
+    metadata: &PendingWriteMetadata,
+) -> Result<(), PendingWriteRecoveryError> {
     match metadata.operation.as_str() {
         "append_prompt" => {
             if metadata
@@ -118,30 +158,7 @@ pub fn project_pending_write(
         }
         _ => unreachable!("operation was checked above"),
     }
-    if metadata
-        .last_observed_at_ms
-        .zip(metadata.attempted_at_ms)
-        .is_some_and(|(observed, attempted)| observed < attempted)
-    {
-        return Err(PendingWriteRecoveryError::ObservationTimeRegressed);
-    }
-    let unconfirmed = metadata.state == "unconfirmed";
-    Ok(PendingWriteRecoveryProjection {
-        schema_version: PENDING_WRITE_RECOVERY_SCHEMA_VERSION,
-        evaluation_mode: PENDING_WRITE_RECOVERY_EVALUATION_MODE,
-        operation: metadata.operation,
-        conversation_id: metadata.conversation_id,
-        expected_version: metadata.expected_version,
-        idempotency_key: metadata.idempotency_key,
-        state: metadata.state,
-        pending: true,
-        unconfirmed,
-        retry_allowed: true,
-        same_key_required: true,
-        reconcile_before_retry: unconfirmed,
-        attempted_at_ms: metadata.attempted_at_ms,
-        last_observed_at_ms: metadata.last_observed_at_ms,
-    })
+    Ok(())
 }
 
 fn valid_identifier(value: &str) -> bool {

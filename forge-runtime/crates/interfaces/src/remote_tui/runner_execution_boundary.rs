@@ -14,23 +14,8 @@ pub(super) async fn remote_preview<W: Write>(
     argument: &str,
     writer: &mut W,
 ) -> Result<(), RemoteError> {
-    let Some(suffix) = argument.strip_prefix("--input") else {
-        return usage(writer);
-    };
-    if !suffix.chars().next().is_some_and(char::is_whitespace) {
-        return usage(writer);
-    }
-    let input = suffix.trim();
-    if input.is_empty() || input == "-" {
-        return usage(writer);
-    }
-    let request = match super::super::runner_execution_boundary::read_tui_request(input) {
-        Ok(request) => request,
-        Err(error) => {
-            writeln!(writer, "Runner execution boundary input failed: {error}")
-                .map_err(io_error)?;
-            return Ok(());
-        }
+    let Some(request) = read_request(argument, writer)? else {
+        return Ok(());
     };
     let (conversation_id, run_id) =
         match super::super::runner_execution_boundary::conversation_and_run(&request) {
@@ -56,40 +41,7 @@ pub(super) async fn remote_preview<W: Write>(
     if !ensure_instance_boundary(client, state, &conversation_id, &request, writer).await? {
         return Ok(());
     }
-    let response = match client
-        .preview_runner_execution_boundary(&conversation_id, &run_id, &request)
-        .await
-    {
-        Ok(response) => response,
-        Err(error) => {
-            let cleared = super::clear_session_view_after_authorization_error(state, &error);
-            writeln!(writer, "Runner execution boundary request failed: {error}")
-                .map_err(io_error)?;
-            if cleared {
-                writeln!(
-                    writer,
-                    "Local session view cleared after authorization failure."
-                )
-                .map_err(io_error)?;
-            }
-            return Ok(());
-        }
-    };
-    match super::super::runner_execution_boundary::validate_response(
-        &response,
-        &request,
-        &conversation_id,
-        &run_id,
-    ) {
-        Ok(()) => super::super::runner_execution_boundary::render_human(&response, writer)
-            .map_err(io_error)?,
-        Err(error) => writeln!(
-            writer,
-            "Runner execution boundary response failed validation: {error}"
-        )
-        .map_err(io_error)?,
-    }
-    Ok(())
+    post_and_render(client, state, &request, &conversation_id, &run_id, writer).await
 }
 
 async fn ensure_instance_boundary<W: Write>(
@@ -182,4 +134,76 @@ fn ensure_target_in_resource_view<W: Write>(
 
 fn usage<W: Write>(writer: &mut W) -> Result<(), RemoteError> {
     writeln!(writer, "Use runner-execution-boundary-remote-preview --input FILE. The request is metadata-only; '-' is reserved for the standalone CLI.").map_err(io_error)
+}
+
+fn read_request<W: Write>(
+    argument: &str,
+    writer: &mut W,
+) -> Result<Option<serde_json::Value>, RemoteError> {
+    let Some(suffix) = argument.strip_prefix("--input") else {
+        usage(writer)?;
+        return Ok(None);
+    };
+    if !suffix.chars().next().is_some_and(char::is_whitespace) {
+        usage(writer)?;
+        return Ok(None);
+    }
+    let input = suffix.trim();
+    if input.is_empty() || input == "-" {
+        usage(writer)?;
+        return Ok(None);
+    }
+    let request = match super::super::runner_execution_boundary::read_tui_request(input) {
+        Ok(request) => request,
+        Err(error) => {
+            writeln!(writer, "Runner execution boundary input failed: {error}")
+                .map_err(io_error)?;
+            return Ok(None);
+        }
+    };
+    Ok(Some(request))
+}
+
+async fn post_and_render<W: Write>(
+    client: &RemoteClient,
+    state: &mut TuiState,
+    request: &serde_json::Value,
+    conversation_id: &str,
+    run_id: &str,
+    writer: &mut W,
+) -> Result<(), RemoteError> {
+    let response = match client
+        .preview_runner_execution_boundary(conversation_id, run_id, request)
+        .await
+    {
+        Ok(response) => response,
+        Err(error) => {
+            let cleared = super::clear_session_view_after_authorization_error(state, &error);
+            writeln!(writer, "Runner execution boundary request failed: {error}")
+                .map_err(io_error)?;
+            if cleared {
+                writeln!(
+                    writer,
+                    "Local session view cleared after authorization failure."
+                )
+                .map_err(io_error)?;
+            }
+            return Ok(());
+        }
+    };
+    match super::super::runner_execution_boundary::validate_response(
+        &response,
+        request,
+        conversation_id,
+        run_id,
+    ) {
+        Ok(()) => super::super::runner_execution_boundary::render_human(&response, writer)
+            .map_err(io_error)?,
+        Err(error) => writeln!(
+            writer,
+            "Runner execution boundary response failed validation: {error}"
+        )
+        .map_err(io_error)?,
+    }
+    Ok(())
 }

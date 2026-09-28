@@ -25,6 +25,10 @@ const EVALUATION_MODE: &str = "pure_scheduler_selection_preview";
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "Published wire predicates are separate booleans; changing their representation would change the protocol."
+)]
 struct Authority {
     placement_selected: bool,
     reservation_created: bool,

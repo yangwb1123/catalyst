@@ -67,6 +67,7 @@ pub enum Command {
     Agent(AgentArgs),
     Demo(DemoArgs),
     Help,
+    Version,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -84,6 +85,7 @@ struct GlobalOptions {
     read_path: Option<String>,
     json: bool,
     legacy_demo: bool,
+    version: bool,
 }
 
 impl Args {
@@ -109,15 +111,8 @@ fn parse_global_options(tokens: &mut VecDeque<String>) -> Result<GlobalOptions, 
                 tokens.pop_front();
                 options.group = Some(next_value(tokens, "--group")?);
             }
-            Some("--idempotency-key") if options.idempotency_key.is_none() => {
-                tokens.pop_front();
-                options.idempotency_key = Some(next_value(tokens, "--idempotency-key")?);
-            }
             Some("--idempotency-key") => {
-                return Err(format!(
-                    "--idempotency-key was specified more than once\n\n{}",
-                    usage()
-                ));
+                parse_idempotency_key(tokens, &mut options)?;
             }
             Some("--read") => {
                 tokens.pop_front();
@@ -127,6 +122,13 @@ fn parse_global_options(tokens: &mut VecDeque<String>) -> Result<GlobalOptions, 
             Some("--json") => {
                 tokens.pop_front();
                 options.json = true;
+            }
+            Some("--version" | "-V") if !options.version => {
+                tokens.pop_front();
+                options.version = true;
+            }
+            Some("--version" | "-V") => {
+                return Err("--version/-V was specified more than once".into());
             }
             Some("--help" | "-h") => {
                 tokens.clear();
@@ -141,10 +143,29 @@ fn parse_global_options(tokens: &mut VecDeque<String>) -> Result<GlobalOptions, 
     }
 }
 
+fn parse_idempotency_key(
+    tokens: &mut VecDeque<String>,
+    options: &mut GlobalOptions,
+) -> Result<(), String> {
+    if options.idempotency_key.is_some() {
+        return Err(format!(
+            "--idempotency-key was specified more than once\n\n{}",
+            usage()
+        ));
+    }
+    tokens.pop_front();
+    options.idempotency_key = Some(next_value(tokens, "--idempotency-key")?);
+    Ok(())
+}
+
 fn parse_command(
     tokens: &mut VecDeque<String>,
     options: &mut GlobalOptions,
 ) -> Result<Command, String> {
+    if options.version {
+        require_empty(tokens)?;
+        return Ok(Command::Version);
+    }
     let Some(first) = tokens.pop_front() else {
         return Ok(Command::Hub);
     };
@@ -322,6 +343,10 @@ mod run_branch_tests;
 #[cfg(test)]
 #[path = "args_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "args/version_tests.rs"]
+mod version_tests;
 
 #[cfg(test)]
 #[path = "group_panel_args_tests.rs"]

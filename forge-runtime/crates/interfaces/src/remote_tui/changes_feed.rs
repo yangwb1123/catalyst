@@ -34,20 +34,7 @@ pub(super) async fn list<W: Write>(
     {
         Ok(page) => page,
         Err(error) => {
-            let cleared =
-                super::super::super::clear_session_view_after_authorization_error(state, &error);
-            writeln!(
-                writer,
-                "Changes list request failed: {error}. The in-memory TUI cursor was not advanced."
-            )
-            .map_err(io_error)?;
-            if cleared {
-                writeln!(
-                    writer,
-                    "Local session view cleared after authorization failure."
-                )
-                .map_err(io_error)?;
-            }
+            report_feed_request_failure(state, &error, "list", writer)?;
             return Ok(());
         }
     };
@@ -68,13 +55,7 @@ pub(super) async fn list<W: Write>(
     )
     .map_err(io_error)?;
     write_change_rows(writer, &changes)?;
-    if page.has_more {
-        writeln!(
-            writer,
-            "  More owner-visible changes remain; run changes list again to continue."
-        )
-        .map_err(io_error)?;
-    }
+    write_list_continuation(page.has_more, writer)?;
     Ok(())
 }
 
@@ -109,20 +90,7 @@ pub(super) async fn watch<W: Write>(
     {
         Ok(response) => response,
         Err(error) => {
-            let cleared =
-                super::super::super::clear_session_view_after_authorization_error(state, &error);
-            writeln!(
-                writer,
-                "Changes watch request failed: {error}. The in-memory TUI cursor was not advanced."
-            )
-            .map_err(io_error)?;
-            if cleared {
-                writeln!(
-                    writer,
-                    "Local session view cleared after authorization failure."
-                )
-                .map_err(io_error)?;
-            }
+            report_feed_request_failure(state, &error, "watch", writer)?;
             return Ok(());
         }
     };
@@ -135,33 +103,7 @@ pub(super) async fn watch<W: Write>(
         }
     };
 
-    let changes = project_changes(state, &result.changes)?;
-    apply_changes(state, &changes, result.scanned_through_cursor);
-
-    let checkpoint = if options.after_cursor.is_some() {
-        "one-off; saved checkpoint unchanged"
-    } else {
-        "saved checkpoint advanced per valid page"
-    };
-    writeln!(
-        writer,
-        "Changes watch start_cursor={} scanned_through_cursor={} polls={} changes={} has_more={} ({checkpoint}).",
-        result.start_cursor,
-        result.scanned_through_cursor,
-        result.polls,
-        changes.len(),
-        result.has_more,
-    )
-    .map_err(io_error)?;
-    write_change_rows(writer, &changes)?;
-    if result.has_more {
-        writeln!(
-            writer,
-            "  More owner-visible changes remain; run changes watch again to continue."
-        )
-        .map_err(io_error)?;
-    }
-    Ok(())
+    apply_and_render_watch(state, &result, options.after_cursor.is_some(), writer)
 }
 
 pub(super) async fn stream<W: Write>(
@@ -190,20 +132,7 @@ pub(super) async fn stream<W: Write>(
     {
         Ok(response) => response,
         Err(error) => {
-            let cleared =
-                super::super::super::clear_session_view_after_authorization_error(state, &error);
-            writeln!(
-                writer,
-                "Changes stream request failed: {error}. The in-memory TUI cursor was not advanced."
-            )
-            .map_err(io_error)?;
-            if cleared {
-                writeln!(
-                    writer,
-                    "Local session view cleared after authorization failure."
-                )
-                .map_err(io_error)?;
-            }
+            report_feed_request_failure(state, &error, "stream", writer)?;
             return Ok(());
         }
     };
@@ -215,33 +144,13 @@ pub(super) async fn stream<W: Write>(
             return Ok(());
         }
     };
-    let changes = project_changes(state, &result.changes)?;
-    apply_changes(state, &changes, result.scanned_through_cursor);
-    let checkpoint = if options.after_cursor.is_some() {
-        "one-off; saved checkpoint unchanged"
-    } else {
-        "saved checkpoint advanced after a valid page"
-    };
-    writeln!(
-        writer,
-        "Changes stream start_cursor={} scanned_through_cursor={} wait_ms={} changes={} has_more={} timed_out={} ({checkpoint}).",
-        result.start_cursor,
-        result.scanned_through_cursor,
+    apply_and_render_stream(
+        state,
+        &result,
+        options.after_cursor.is_some(),
         options.wait_ms,
-        changes.len(),
-        result.has_more,
-        result.timed_out,
+        writer,
     )
-    .map_err(io_error)?;
-    write_change_rows(writer, &changes)?;
-    if result.has_more {
-        writeln!(
-            writer,
-            "  More owner-visible changes remain; run changes stream again to continue."
-        )
-        .map_err(io_error)?;
-    }
-    Ok(())
 }
 
 /// Refreshes an explicitly selected client-instance projection before a
@@ -291,7 +200,7 @@ async fn refresh_converged_instance_projection<W: Write>(
 ) -> Result<bool, RemoteError> {
     let response = match client.read_converged_client_instance_views().await {
         Ok(response) => response,
-        Err(error) => return report_projection_refresh_failure(state, error, writer),
+        Err(error) => return report_projection_refresh_failure(state, &error, writer),
     };
     let session_view = response
         .get("session_view")
@@ -320,10 +229,10 @@ async fn refresh_converged_instance_projection<W: Write>(
 
 fn report_projection_refresh_failure<W: Write>(
     state: &mut TuiState,
-    error: RemoteError,
+    error: &RemoteError,
     writer: &mut W,
 ) -> Result<bool, RemoteError> {
-    let cleared = super::super::super::clear_session_view_after_authorization_error(state, &error);
+    let cleared = super::super::super::clear_session_view_after_authorization_error(state, error);
     if !cleared {
         state.mark_client_instance_observations_not_converged();
     }
@@ -469,4 +378,108 @@ fn decode_result(
         ));
     }
     Ok(result)
+}
+
+fn report_feed_request_failure<W: Write>(
+    state: &mut TuiState,
+    error: &RemoteError,
+    operation: &str,
+    writer: &mut W,
+) -> Result<(), RemoteError> {
+    let cleared = super::super::super::clear_session_view_after_authorization_error(state, error);
+    writeln!(
+        writer,
+        "Changes {operation} request failed: {error}. The in-memory TUI cursor was not advanced."
+    )
+    .map_err(io_error)?;
+    if cleared {
+        writeln!(
+            writer,
+            "Local session view cleared after authorization failure."
+        )
+        .map_err(io_error)?;
+    }
+    Ok(())
+}
+
+fn apply_and_render_watch<W: Write>(
+    state: &mut TuiState,
+    result: &WatchResult,
+    explicit_cursor: bool,
+    writer: &mut W,
+) -> Result<(), RemoteError> {
+    let changes = project_changes(state, &result.changes)?;
+    apply_changes(state, &changes, result.scanned_through_cursor);
+
+    let checkpoint = if explicit_cursor {
+        "one-off; saved checkpoint unchanged"
+    } else {
+        "saved checkpoint advanced per valid page"
+    };
+    writeln!(
+        writer,
+        "Changes watch start_cursor={} scanned_through_cursor={} polls={} changes={} has_more={} ({checkpoint}).",
+        result.start_cursor,
+        result.scanned_through_cursor,
+        result.polls,
+        changes.len(),
+        result.has_more,
+    )
+    .map_err(io_error)?;
+    write_change_rows(writer, &changes)?;
+    if result.has_more {
+        writeln!(
+            writer,
+            "  More owner-visible changes remain; run changes watch again to continue."
+        )
+        .map_err(io_error)?;
+    }
+    Ok(())
+}
+
+fn apply_and_render_stream<W: Write>(
+    state: &mut TuiState,
+    result: &StreamResult,
+    explicit_cursor: bool,
+    wait_ms: u64,
+    writer: &mut W,
+) -> Result<(), RemoteError> {
+    let changes = project_changes(state, &result.changes)?;
+    apply_changes(state, &changes, result.scanned_through_cursor);
+    let checkpoint = if explicit_cursor {
+        "one-off; saved checkpoint unchanged"
+    } else {
+        "saved checkpoint advanced after a valid page"
+    };
+    writeln!(
+        writer,
+        "Changes stream start_cursor={} scanned_through_cursor={} wait_ms={} changes={} has_more={} timed_out={} ({checkpoint}).",
+        result.start_cursor,
+        result.scanned_through_cursor,
+        wait_ms,
+        changes.len(),
+        result.has_more,
+        result.timed_out,
+    )
+    .map_err(io_error)?;
+    write_change_rows(writer, &changes)?;
+    if result.has_more {
+        writeln!(
+            writer,
+            "  More owner-visible changes remain; run changes stream again to continue."
+        )
+        .map_err(io_error)?;
+    }
+    Ok(())
+}
+
+fn write_list_continuation<W: Write>(has_more: bool, writer: &mut W) -> Result<(), RemoteError> {
+    if has_more {
+        writeln!(
+            writer,
+            "  More owner-visible changes remain; run changes list again to continue."
+        )
+        .map_err(io_error)?;
+    }
+    Ok(())
 }

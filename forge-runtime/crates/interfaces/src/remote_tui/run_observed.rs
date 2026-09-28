@@ -29,7 +29,7 @@ pub(super) fn preview<W: Write>(argument: &str, writer: &mut W) -> Result<(), Re
     Ok(())
 }
 
-/// Reads one RunObserved projection through the authenticated owner-bound
+/// Reads one `RunObserved` projection through the authenticated owner-bound
 /// candidate. The Conversation is always taken from the selected session so
 /// this command cannot silently cross session boundaries.
 pub(super) async fn show<W: Write>(
@@ -55,30 +55,7 @@ pub(super) async fn show<W: Write>(
     let observation = match client.read_run_observation(&conversation_id, &run_id).await {
         Ok(observation) => observation,
         Err(error) => {
-            let cleared = super::clear_session_view_after_authorization_error(state, &error);
-            let dropped = if cleared {
-                false
-            } else {
-                super::commands::drop_selected_session_after_read_rejection(
-                    state,
-                    &conversation_id,
-                    &error,
-                )
-            };
-            writeln!(writer, "Run observed request failed: {error}").map_err(io_error)?;
-            if cleared {
-                writeln!(
-                    writer,
-                    "Local session view cleared after authorization failure."
-                )
-                .map_err(io_error)?;
-            } else if dropped {
-                writeln!(
-                    writer,
-                    "Selected session was removed after its owner Run read was rejected."
-                )
-                .map_err(io_error)?;
-            }
+            report_read_failure(state, &conversation_id, &error, writer)?;
             return Ok(());
         }
     };
@@ -93,4 +70,33 @@ fn usage<W: Write>(writer: &mut W) -> Result<(), RemoteError> {
         "Use run-observed RUN_ID with the selected session, or run-observed-preview --input FILE for a caller-supplied offline declaration; '-' is reserved for the standalone CLI."
     )
     .map_err(io_error)
+}
+
+fn report_read_failure<W: Write>(
+    state: &mut TuiState,
+    conversation_id: &str,
+    error: &RemoteError,
+    writer: &mut W,
+) -> Result<(), RemoteError> {
+    let cleared = super::clear_session_view_after_authorization_error(state, error);
+    let dropped = if cleared {
+        false
+    } else {
+        super::commands::drop_selected_session_after_read_rejection(state, conversation_id, error)
+    };
+    writeln!(writer, "Run observed request failed: {error}").map_err(io_error)?;
+    if cleared {
+        writeln!(
+            writer,
+            "Local session view cleared after authorization failure."
+        )
+        .map_err(io_error)?;
+    } else if dropped {
+        writeln!(
+            writer,
+            "Selected session was removed after its owner Run read was rejected."
+        )
+        .map_err(io_error)?;
+    }
+    Ok(())
 }

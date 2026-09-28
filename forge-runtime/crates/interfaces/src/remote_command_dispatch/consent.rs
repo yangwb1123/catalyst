@@ -1,4 +1,4 @@
-use super::*;
+use super::{Error, RemoteClient, RemoteError, Value, client_instance_session_scope};
 
 /// Applies a caller-selected client-instance display projection before the
 /// read-only execution-consent preview. The projection never changes the

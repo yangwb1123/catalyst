@@ -73,11 +73,11 @@ mod tests {
 }
 
 pub(crate) fn envelope(session_view: Value, resource_view: Value) -> Value {
-    json!({
+    let mut value = json!({
         "schema_version": SCHEMA_VERSION,
         "evaluation_mode": EVALUATION_MODE,
-        "session_view": session_view,
-        "resource_view": resource_view,
+        "session_view": null,
+        "resource_view": null,
         "converged": true,
         "read_only": true,
         "authority": {
@@ -90,5 +90,8 @@ pub(crate) fn envelope(session_view: Value, resource_view: Value) -> Value {
             "dispatch_performed": false,
             "audit_published": false
         }
-    })
+    });
+    value["session_view"] = session_view;
+    value["resource_view"] = resource_view;
+    value
 }

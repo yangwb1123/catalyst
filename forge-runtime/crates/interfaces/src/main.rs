@@ -95,6 +95,7 @@ async fn dispatch(args: &Args) -> ExitCode {
             println!("{}", usage());
             ExitCode::SUCCESS
         }
+        Command::Version => cli_usage::version::run(args.json),
         Command::Demo(demo_args) => run_demo(demo_args, args.project.as_deref()).await,
         Command::Device(command) => device_dispatch::run(command, args.json),
         Command::Agent(agent_args) => run_agent(args, agent_args).await,

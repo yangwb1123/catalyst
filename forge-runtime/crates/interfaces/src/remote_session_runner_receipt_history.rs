@@ -104,7 +104,7 @@ pub(super) fn validate_response(
     Ok(())
 }
 
-pub(super) fn validate_value(value: &Value) -> Result<(), RemoteError> {
+fn validate_shape(value: &Value) -> Result<&Map<String, Value>, RemoteError> {
     let object = value.as_object().ok_or_else(invalid_history)?;
     if !exact_fields(
         object,
@@ -133,6 +133,11 @@ pub(super) fn validate_value(value: &Value) -> Result<(), RemoteError> {
     ) {
         return Err(invalid_history());
     }
+    Ok(object)
+}
+
+pub(super) fn validate_value(value: &Value) -> Result<(), RemoteError> {
+    let object = validate_shape(value)?;
     if object.get("schema_version").and_then(Value::as_str) != Some(SCHEMA_VERSION)
         || object.get("evaluation_mode").and_then(Value::as_str) != Some(EVALUATION_MODE)
         || !object.get("selected_target_id").is_some_and(Value::is_null)
@@ -205,6 +210,13 @@ pub(super) fn render_human(value: &Value, writer: &mut impl Write) -> io::Result
             terminal.uncertain
         )?;
     }
+    render_summary(&observation, writer)
+}
+
+fn render_summary(
+    observation: &SessionRunnerReceiptHistoryObservation,
+    writer: &mut impl Write,
+) -> io::Result<()> {
     writeln!(
         writer,
         "latest: command={} attempt={} target={} disposition={} observed_at_ms={}",

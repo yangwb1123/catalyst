@@ -6,36 +6,10 @@ use super::{LocalImportPreview, RemoteError, scope_label};
 
 pub(crate) fn render_preview_text(preview: &LocalImportPreview) -> Result<String, RemoteError> {
     let source = &preview.source;
-    let source_json = &preview.preview["source"];
     let target_json = &preview.preview["target"];
     let quoted = |value: &str| serde_json::to_string(value).unwrap_or_else(|_| "\"\"".into());
     let mut output = String::new();
-    writeln!(
-        &mut output,
-        "Local conversation import preview (nothing uploaded)"
-    )
-    .map_err(|_| RemoteError("could not render the local import preview".into()))?;
-    writeln!(&mut output, "Source: this device's local Hub")
-        .map_err(|_| RemoteError("could not render the local import preview".into()))?;
-    writeln!(
-        &mut output,
-        "Conversation: {} {}",
-        quoted(&source.conversation.id),
-        quoted(&source.conversation.title)
-    )
-    .map_err(|_| RemoteError("could not render the local import preview".into()))?;
-    writeln!(
-        &mut output,
-        "Scope: {}",
-        scope_label(&source.conversation.scope)
-    )
-    .map_err(|_| RemoteError("could not render the local import preview".into()))?;
-    writeln!(
-        &mut output,
-        "Visible prompts: {} ({} UTF-8 content bytes)",
-        source_json["prompt_count"], source_json["content_bytes"]
-    )
-    .map_err(|_| RemoteError("could not render the local import preview".into()))?;
+    render_source(preview, &mut output)?;
     writeln!(
         &mut output,
         "Target Coordinator: {}",
@@ -107,4 +81,33 @@ pub(crate) fn render_import_result(
     )
     .map_err(|_| RemoteError("could not render the import result".into()))?;
     Ok(output)
+}
+
+fn render_source(preview: &LocalImportPreview, output: &mut String) -> Result<(), RemoteError> {
+    let source = &preview.source;
+    let source_json = &preview.preview["source"];
+    let quoted = |value: &str| serde_json::to_string(value).unwrap_or_else(|_| "\"\"".into());
+    writeln!(
+        output,
+        "Local conversation import preview (nothing uploaded)"
+    )
+    .map_err(|_| RemoteError("could not render the local import preview".into()))?;
+    writeln!(output, "Source: this device's local Hub")
+        .map_err(|_| RemoteError("could not render the local import preview".into()))?;
+    writeln!(
+        output,
+        "Conversation: {} {}",
+        quoted(&source.conversation.id),
+        quoted(&source.conversation.title)
+    )
+    .map_err(|_| RemoteError("could not render the local import preview".into()))?;
+    writeln!(output, "Scope: {}", scope_label(&source.conversation.scope))
+        .map_err(|_| RemoteError("could not render the local import preview".into()))?;
+    writeln!(
+        output,
+        "Visible prompts: {} ({} UTF-8 content bytes)",
+        source_json["prompt_count"], source_json["content_bytes"]
+    )
+    .map_err(|_| RemoteError("could not render the local import preview".into()))?;
+    Ok(())
 }

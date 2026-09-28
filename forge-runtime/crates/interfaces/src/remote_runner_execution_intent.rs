@@ -103,36 +103,7 @@ pub(super) fn render_human(value: &Value, writer: &mut impl Write) -> io::Result
         io::Error::new(io::ErrorKind::InvalidData, "invalid Runner intent response")
     })?;
     writeln!(writer, "remote Runner execution intent preview")?;
-    writeln!(
-        writer,
-        "owner={} conversation={} prompt={} run={} attempt={} command={} target={}",
-        object
-            .get("owner")
-            .and_then(|owner| owner.get("subject"))
-            .and_then(Value::as_str)
-            .unwrap_or(""),
-        object
-            .get("conversation_id")
-            .and_then(Value::as_str)
-            .unwrap_or(""),
-        object
-            .get("prompt_id")
-            .and_then(Value::as_str)
-            .unwrap_or(""),
-        object.get("run_id").and_then(Value::as_str).unwrap_or(""),
-        object
-            .get("attempt_id")
-            .and_then(Value::as_str)
-            .unwrap_or(""),
-        object
-            .get("command_id")
-            .and_then(Value::as_str)
-            .unwrap_or(""),
-        object
-            .get("target_id")
-            .and_then(Value::as_str)
-            .unwrap_or(""),
-    )?;
+    render_identity(object, writer)?;
     writeln!(
         writer,
         "binding: prompt_run_binding_valid={} runner_command_binding_valid={} preview_only={} selected_target=none",
@@ -232,4 +203,41 @@ mod tests {
         assert!(!output.contains("fence-001"));
         assert!(!output.contains("forge-task"));
     }
+}
+
+fn render_identity(
+    object: &serde_json::Map<String, Value>,
+    writer: &mut impl Write,
+) -> io::Result<()> {
+    writeln!(
+        writer,
+        "owner={} conversation={} prompt={} run={} attempt={} command={} target={}",
+        object
+            .get("owner")
+            .and_then(|owner| owner.get("subject"))
+            .and_then(Value::as_str)
+            .unwrap_or(""),
+        object
+            .get("conversation_id")
+            .and_then(Value::as_str)
+            .unwrap_or(""),
+        object
+            .get("prompt_id")
+            .and_then(Value::as_str)
+            .unwrap_or(""),
+        object.get("run_id").and_then(Value::as_str).unwrap_or(""),
+        object
+            .get("attempt_id")
+            .and_then(Value::as_str)
+            .unwrap_or(""),
+        object
+            .get("command_id")
+            .and_then(Value::as_str)
+            .unwrap_or(""),
+        object
+            .get("target_id")
+            .and_then(Value::as_str)
+            .unwrap_or(""),
+    )?;
+    Ok(())
 }

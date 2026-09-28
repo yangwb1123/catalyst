@@ -26,6 +26,10 @@ const EXPECTED_CASE_COUNT: usize = 16;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "Independent contract flags preserve the frozen observation and authority wire shape"
+)]
 struct Authority {
     device_identity_verified: bool,
     command_persisted: bool,
@@ -220,7 +224,7 @@ pub(crate) fn write_output(
                 case.uncertain.unwrap_or(false)
             )?,
             (_, Some(false), Some(error)) => {
-                writeln!(writer, "{}: accepted=false error={error}", case.name)?
+                writeln!(writer, "{}: accepted=false error={error}", case.name)?;
             }
             _ => writeln!(writer, "{}: no-result", case.name)?,
         }
@@ -262,21 +266,7 @@ fn evaluate_case(grant: &LeaseGrant, case: &Case) -> Result<CaseOutput, Box<dyn 
             output.active = Some(active);
         }
         "renew" => {
-            let result = grant.renew(
-                case.observed_at_ms,
-                case.fencing_token
-                    .clone()
-                    .ok_or_else(|| case_mismatch(case, "renew token missing"))?,
-                case.ttl_ms
-                    .ok_or_else(|| case_mismatch(case, "renew ttl missing"))?,
-            );
-            check_result(case, &result, &mut output)?;
-            if let Ok(next) = result {
-                check_renew_expectation(case, &next)?;
-                output.epoch = Some(next.epoch);
-                output.issued_at_ms = Some(next.issued_at_ms);
-                output.expires_at_ms = Some(next.expires_at_ms);
-            }
+            evaluate_renewal(grant, case, &mut output)?;
         }
         "proof" => {
             let proof = case
@@ -287,31 +277,7 @@ fn evaluate_case(grant: &LeaseGrant, case: &Case) -> Result<CaseOutput, Box<dyn 
             check_result(case, &result, &mut output)?;
         }
         "terminal" | "terminal_replay" | "terminal_conflict" => {
-            let mut state = seeded_state(grant, case)?;
-            let result = state.submit_terminal(
-                grant.proof(),
-                case.disposition
-                    .clone()
-                    .ok_or_else(|| case_mismatch(case, "terminal disposition missing"))?,
-                case.observed_at_ms,
-            );
-            check_result(case, &result, &mut output)?;
-            if let Ok(submission) = result {
-                if submission.replayed != case.expected.replayed {
-                    return Err(case_mismatch(case, "replay expectation mismatch"));
-                }
-                let uncertain = submission.receipt.disposition.is_uncertain();
-                if uncertain != case.expected.uncertain {
-                    return Err(case_mismatch(case, "uncertain expectation mismatch"));
-                }
-                if let Some(automatic_retry) = case.expected.automatic_retry
-                    && automatic_retry
-                {
-                    return Err(case_mismatch(case, "automatic retry must remain disabled"));
-                }
-                output.replayed = Some(submission.replayed);
-                output.uncertain = Some(uncertain);
-            }
+            evaluate_terminal(grant, case, &mut output)?;
         }
         "renew_after_terminal" => {
             let mut state = seeded_state(grant, case)?;
@@ -333,6 +299,62 @@ fn evaluate_case(grant: &LeaseGrant, case: &Case) -> Result<CaseOutput, Box<dyn 
         }
     }
     Ok(output)
+}
+
+fn evaluate_renewal(
+    grant: &LeaseGrant,
+    case: &Case,
+    output: &mut CaseOutput,
+) -> Result<(), Box<dyn Error>> {
+    let result = grant.renew(
+        case.observed_at_ms,
+        case.fencing_token
+            .clone()
+            .ok_or_else(|| case_mismatch(case, "renew token missing"))?,
+        case.ttl_ms
+            .ok_or_else(|| case_mismatch(case, "renew ttl missing"))?,
+    );
+    check_result(case, &result, output)?;
+    if let Ok(next) = result {
+        check_renew_expectation(case, &next)?;
+        output.epoch = Some(next.epoch);
+        output.issued_at_ms = Some(next.issued_at_ms);
+        output.expires_at_ms = Some(next.expires_at_ms);
+    }
+    Ok(())
+}
+
+fn evaluate_terminal(
+    grant: &LeaseGrant,
+    case: &Case,
+    output: &mut CaseOutput,
+) -> Result<(), Box<dyn Error>> {
+    let mut state = seeded_state(grant, case)?;
+    let result = state.submit_terminal(
+        grant.proof(),
+        case.disposition
+            .clone()
+            .ok_or_else(|| case_mismatch(case, "terminal disposition missing"))?,
+        case.observed_at_ms,
+    );
+    check_result(case, &result, output)?;
+    if let Ok(submission) = result {
+        if submission.replayed != case.expected.replayed {
+            return Err(case_mismatch(case, "replay expectation mismatch"));
+        }
+        let uncertain = submission.receipt.disposition.is_uncertain();
+        if uncertain != case.expected.uncertain {
+            return Err(case_mismatch(case, "uncertain expectation mismatch"));
+        }
+        if let Some(automatic_retry) = case.expected.automatic_retry
+            && automatic_retry
+        {
+            return Err(case_mismatch(case, "automatic retry must remain disabled"));
+        }
+        output.replayed = Some(submission.replayed);
+        output.uncertain = Some(uncertain);
+    }
+    Ok(())
 }
 
 fn seeded_state(grant: &LeaseGrant, case: &Case) -> Result<LeaseState, Box<dyn Error>> {

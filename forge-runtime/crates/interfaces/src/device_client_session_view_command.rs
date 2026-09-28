@@ -45,6 +45,10 @@ struct Owner {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+#[allow(
+    clippy::struct_field_names,
+    reason = "Preserve frozen wire field names and existing Serde type-name diagnostics"
+)]
 struct Instance {
     instance_id: String,
     client_kind: String,
@@ -55,6 +59,10 @@ struct Instance {
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "Independent contract flags preserve the frozen observation and authority wire shape"
+)]
 struct Authority {
     owner_authenticated: bool,
     session_read_authorized: bool,

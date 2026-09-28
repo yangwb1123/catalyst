@@ -109,7 +109,7 @@ const ALLOWED_FUNCTION_MACROS: &[&str] = &[
 const MAX_CODEGEN_USES_PER_SOURCE: usize = 65_536;
 const REVIEWED_INCLUDE_SOURCE: &str = "crates/interfaces/src/remote_tui_tests/helpers.rs";
 const REVIEWED_INCLUDE_SOURCE_SHA256: &str =
-    "6d106f29ea65b7dde714dd9ccee4c285b07051f7a310705c66fe8c68e0bd890e";
+    "779a288ab054bc7863fa2caa3cd31352c1d503aa1dcab3e1df949a93f26f77dd";
 
 pub(super) fn check(
     tokens: &[String],

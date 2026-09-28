@@ -23,6 +23,10 @@ const NOTICE: &str = "All owner, approval, liveness, resource, residency, trust,
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "Published wire predicates are separate booleans; changing their representation would change the protocol."
+)]
 pub(super) struct PreviewResult {
     schema_version: String,
     evaluation_mode: String,
@@ -95,34 +99,7 @@ pub(super) fn validate_response(
         .iter()
         .map(|device| device.device_id.clone())
         .collect::<BTreeSet<_>>();
-    let mut result_ids = BTreeSet::new();
-    let mut previous_id: Option<&str> = None;
-    for device in &result.device_results {
-        if !valid_device_id(&device.device_id)
-            || !device.attributes_unverified
-            || device.matches_requirements != device.exclusion_reasons.is_empty()
-            || device.exclusion_reasons.len() > MAX_EXCLUSION_REASONS
-            || previous_id.is_some_and(|previous| previous >= device.device_id.as_str())
-            || device
-                .exclusion_reasons
-                .windows(2)
-                .any(|pair| pair[0] >= pair[1])
-            || device
-                .exclusion_reasons
-                .iter()
-                .any(|reason| !valid_token(reason))
-        {
-            return Err(RemoteError(
-                "Forge API returned an invalid placement result ordering".into(),
-            ));
-        }
-        if !result_ids.insert(device.device_id.clone()) {
-            return Err(RemoteError(
-                "Forge API returned duplicate placement result IDs".into(),
-            ));
-        }
-        previous_id = Some(device.device_id.as_str());
-    }
+    let result_ids = placement_result_ids(&result)?;
     if result_ids != requested_ids {
         return Err(RemoteError(
             "Forge API returned placement results for a different device set".into(),
@@ -190,4 +167,36 @@ fn read_bounded_input(input: &str) -> Result<Vec<u8>, RemoteError> {
         )));
     }
     Ok(bytes)
+}
+
+fn placement_result_ids(result: &PreviewResult) -> Result<BTreeSet<String>, RemoteError> {
+    let mut result_ids = BTreeSet::new();
+    let mut previous_id: Option<&str> = None;
+    for device in &result.device_results {
+        if !valid_device_id(&device.device_id)
+            || !device.attributes_unverified
+            || device.matches_requirements != device.exclusion_reasons.is_empty()
+            || device.exclusion_reasons.len() > MAX_EXCLUSION_REASONS
+            || previous_id.is_some_and(|previous| previous >= device.device_id.as_str())
+            || device
+                .exclusion_reasons
+                .windows(2)
+                .any(|pair| pair[0] >= pair[1])
+            || device
+                .exclusion_reasons
+                .iter()
+                .any(|reason| !valid_token(reason))
+        {
+            return Err(RemoteError(
+                "Forge API returned an invalid placement result ordering".into(),
+            ));
+        }
+        if !result_ids.insert(device.device_id.clone()) {
+            return Err(RemoteError(
+                "Forge API returned duplicate placement result IDs".into(),
+            ));
+        }
+        previous_id = Some(device.device_id.as_str());
+    }
+    Ok(result_ids)
 }

@@ -57,20 +57,14 @@ pub(crate) fn write_output(
         output.owner.subject, output.conversation_id, output.prompt_id, output.run_id
     )?;
     writeln!(writer, "attempt_count={}", output.attempt_count)?;
-    for (index, receipt) in output.receipts.iter().enumerate() {
-        let terminal = &receipt.receipt_observation;
-        writeln!(
-            writer,
-            "attempt[{}]: command={} attempt={} target={} disposition={} observed_at_ms={} uncertain={}",
-            index + 1,
-            terminal.command_id,
-            terminal.attempt_id,
-            terminal.target_id,
-            terminal.disposition_kind,
-            terminal.observed_at_ms,
-            terminal.uncertain
-        )?;
-    }
+    write_attempts(output, writer)?;
+    write_latest(output, writer)
+}
+
+fn write_latest(
+    output: &SessionRunnerReceiptHistoryObservation,
+    writer: &mut impl Write,
+) -> io::Result<()> {
     writeln!(
         writer,
         "latest: command={} attempt={} target={} disposition={} observed_at_ms={}",
@@ -102,6 +96,27 @@ pub(crate) fn write_output(
         output.authority.dispatch_performed,
         output.authority.audit_published
     )
+}
+
+fn write_attempts(
+    output: &SessionRunnerReceiptHistoryObservation,
+    writer: &mut impl Write,
+) -> io::Result<()> {
+    for (index, receipt) in output.receipts.iter().enumerate() {
+        let terminal = &receipt.receipt_observation;
+        writeln!(
+            writer,
+            "attempt[{}]: command={} attempt={} target={} disposition={} observed_at_ms={} uncertain={}",
+            index + 1,
+            terminal.command_id,
+            terminal.attempt_id,
+            terminal.target_id,
+            terminal.disposition_kind,
+            terminal.observed_at_ms,
+            terminal.uncertain
+        )?;
+    }
+    Ok(())
 }
 
 fn read_bounded_input(input: &str) -> Result<Vec<u8>, Box<dyn Error>> {

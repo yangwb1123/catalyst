@@ -24,7 +24,8 @@ pub(super) fn preview<W: Write>(argument: &str, writer: &mut W) -> Result<(), Re
                 .map_err(io_error)?;
         }
         Err(error) => {
-            writeln!(writer, "Runner execution intent preview failed: {error}").map_err(io_error)?
+            writeln!(writer, "Runner execution intent preview failed: {error}")
+                .map_err(io_error)?;
         }
     }
     Ok(())

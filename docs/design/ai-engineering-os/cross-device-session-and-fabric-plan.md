@@ -13376,3 +13376,10 @@ compatible. Oversized CLI argument, dispatch, and help files were split along
 their existing command boundaries. No Attempt persistence, reservation, lease
 mutation, Runner transport/execution, receipt, Audit, or P4 authority was added;
 ADR-0039 remains planning-only and ADR-0114 remains Proposed/null.
+
+Validation for §758: the final Runtime CLI binary passed all 1,060 unit tests,
+and the independent fresh-context review passed. The standalone structural
+gate still reports 44 violations in files outside this increment. Formal
+`forge accept` completed with `REJECTED` because its candidate journal lost
+watch coverage; its per-criterion results therefore do not establish a valid
+whole-repository verdict. This increment does not claim full acceptance.

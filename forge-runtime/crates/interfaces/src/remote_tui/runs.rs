@@ -39,30 +39,7 @@ pub(super) async fn runs_command<W: Write>(
     {
         Ok(page) => page,
         Err(error) => {
-            let cleared = super::clear_session_view_after_authorization_error(state, &error);
-            let dropped = if cleared {
-                false
-            } else {
-                super::commands::drop_selected_session_after_read_rejection(
-                    state,
-                    &conversation_id,
-                    &error,
-                )
-            };
-            writeln!(writer, "Run list failed: {error}").map_err(super::state::io_error)?;
-            if cleared {
-                writeln!(
-                    writer,
-                    "Local session view cleared after authorization failure."
-                )
-                .map_err(super::state::io_error)?;
-            } else if dropped {
-                writeln!(
-                    writer,
-                    "Selected session was removed after its owner Run read was rejected."
-                )
-                .map_err(super::state::io_error)?;
-            }
+            report_run_read_error(state, &conversation_id, "list", &error, writer)?;
             return Ok(());
         }
     };
@@ -104,33 +81,20 @@ pub(super) async fn timeline_command<W: Write>(
     } {
         Ok(page) => page,
         Err(error) => {
-            let cleared = super::clear_session_view_after_authorization_error(state, &error);
-            let dropped = if cleared {
-                false
-            } else {
-                super::commands::drop_selected_session_after_read_rejection(
-                    state,
-                    &conversation_id,
-                    &error,
-                )
-            };
-            writeln!(writer, "Run timeline failed: {error}").map_err(super::state::io_error)?;
-            if cleared {
-                writeln!(
-                    writer,
-                    "Local session view cleared after authorization failure."
-                )
-                .map_err(super::state::io_error)?;
-            } else if dropped {
-                writeln!(
-                    writer,
-                    "Selected session was removed after its owner Run read was rejected."
-                )
-                .map_err(super::state::io_error)?;
-            }
+            report_run_read_error(state, &conversation_id, "timeline", &error, writer)?;
             return Ok(());
         }
     };
+    record_timeline_page(state, &conversation_id, run_id, &page, writer)
+}
+
+fn record_timeline_page<W: Write>(
+    state: &mut TuiState,
+    conversation_id: &str,
+    run_id: String,
+    page: &Value,
+    writer: &mut W,
+) -> Result<(), RemoteError> {
     let scanned_through_sequence = match page
         .get("scanned_through_sequence")
         .and_then(Value::as_u64)
@@ -140,7 +104,7 @@ pub(super) async fn timeline_command<W: Write>(
         Err(error) => {
             let dropped = super::commands::drop_selected_session_after_read_rejection(
                 state,
-                &conversation_id,
+                conversation_id,
                 &error,
             );
             writeln!(writer, "Run timeline failed: {error}").map_err(super::state::io_error)?;
@@ -156,7 +120,37 @@ pub(super) async fn timeline_command<W: Write>(
     };
     state.selected_run_id = Some(run_id);
     state.run_timeline_sequence = scanned_through_sequence;
-    render_timeline(&page, writer)
+    render_timeline(page, writer)
+}
+
+fn report_run_read_error<W: Write>(
+    state: &mut TuiState,
+    conversation_id: &str,
+    kind: &str,
+    error: &RemoteError,
+    writer: &mut W,
+) -> Result<(), RemoteError> {
+    let cleared = super::clear_session_view_after_authorization_error(state, error);
+    let dropped = if cleared {
+        false
+    } else {
+        super::commands::drop_selected_session_after_read_rejection(state, conversation_id, error)
+    };
+    writeln!(writer, "Run {kind} failed: {error}").map_err(super::state::io_error)?;
+    if cleared {
+        writeln!(
+            writer,
+            "Local session view cleared after authorization failure."
+        )
+        .map_err(super::state::io_error)?;
+    } else if dropped {
+        writeln!(
+            writer,
+            "Selected session was removed after its owner Run read was rejected."
+        )
+        .map_err(super::state::io_error)?;
+    }
+    Ok(())
 }
 
 pub(super) fn selected_conversation_id<'a, W: Write>(
@@ -235,8 +229,7 @@ fn parse_timeline_cursor<W: Write>(
         return Ok(None);
     };
     let after_sequence = match remainder.trim() {
-        "" => 0,
-        "--resume" => 0,
+        "" | "--resume" => 0,
         value => {
             if let Some(value) = value
                 .parse::<u64>()

@@ -24,6 +24,10 @@ const EVALUATION_MODE: &str = "durable_scheduler_lease_release";
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "Published wire predicates are separate booleans; changing their representation would change the protocol."
+)]
 struct Authority {
     placement_selected: bool,
     reservation_created: bool,

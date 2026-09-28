@@ -44,9 +44,9 @@ impl RunTimelineCursorStore {
         client_id: &str,
         subject: &str,
         tenant_id: &str,
-        conversation_id: &str,
-        run_id: &str,
+        run: (&str, &str),
     ) -> Self {
+        let (conversation_id, run_id) = run;
         let checkpoint = PersistedRunTimelineCursor {
             schema_version: 1,
             coordinator: coordinator.to_owned(),

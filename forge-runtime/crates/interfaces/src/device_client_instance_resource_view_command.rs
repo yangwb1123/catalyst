@@ -49,6 +49,10 @@ struct Owner {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+#[allow(
+    clippy::struct_field_names,
+    reason = "Preserve frozen wire field names and existing Serde type-name diagnostics"
+)]
 struct Instance {
     instance_id: String,
     client_kind: String,
@@ -59,6 +63,10 @@ struct Instance {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+#[allow(
+    clippy::struct_field_names,
+    reason = "Preserve frozen wire field names and existing Serde type-name diagnostics"
+)]
 struct Device {
     device_id: String,
     runner_instance_id: String,
@@ -85,6 +93,10 @@ struct Device {
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "Independent contract flags preserve the frozen observation and authority wire shape"
+)]
 struct Authority {
     owner_authenticated: bool,
     session_read_authorized: bool,
@@ -176,6 +188,17 @@ fn write_human_output(
             instance.session_ids.join(",")
         )?;
     }
+    write_devices(output, writer)?;
+    writeln!(
+        writer,
+        "authority: owner_authenticated=false session_read_authorized=false prompt_write_authorized=false device_identity_verified=false reservation_created=false execution_authorized=false dispatch_performed=false audit_published=false"
+    )
+}
+
+fn write_devices(
+    output: &ClientInstanceResourceViewOutput,
+    writer: &mut impl Write,
+) -> io::Result<()> {
     for device in &output.devices {
         writeln!(
             writer,
@@ -195,10 +218,7 @@ fn write_human_output(
             device.available_gpu_memory_bytes
         )?;
     }
-    writeln!(
-        writer,
-        "authority: owner_authenticated=false session_read_authorized=false prompt_write_authorized=false device_identity_verified=false reservation_created=false execution_authorized=false dispatch_performed=false audit_published=false"
-    )
+    Ok(())
 }
 
 fn validate_output(output: &ClientInstanceResourceViewOutput) -> Result<(), Box<dyn Error>> {

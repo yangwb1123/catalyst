@@ -92,7 +92,7 @@ pub(super) fn validate_response(
     Ok(())
 }
 
-pub(super) fn validate_value(value: &Value) -> Result<(), RemoteError> {
+fn observation_object(value: &Value) -> Result<&Map<String, Value>, RemoteError> {
     let object = value.as_object().ok_or_else(|| {
         RemoteError("remote session Runner receipt observation must be a JSON object".into())
     })?;
@@ -117,6 +117,10 @@ pub(super) fn validate_value(value: &Value) -> Result<(), RemoteError> {
             "remote session Runner receipt observation has an invalid shape".into(),
         ));
     }
+    Ok(object)
+}
+
+fn validate_observation_metadata(object: &Map<String, Value>) -> Result<(), RemoteError> {
     if object.get("schema_version").and_then(Value::as_str) != Some(SCHEMA_VERSION)
         || !object.get("selected_target_id").is_some_and(Value::is_null)
     {
@@ -155,6 +159,10 @@ pub(super) fn validate_value(value: &Value) -> Result<(), RemoteError> {
             "audit_published",
         ],
     )?;
+    Ok(())
+}
+
+fn receipt_object(object: &Map<String, Value>) -> Result<&Map<String, Value>, RemoteError> {
     let receipt = object
         .get("receipt_observation")
         .ok_or_else(|| RemoteError("remote session Runner receipt metadata is missing".into()))?;
@@ -191,6 +199,13 @@ pub(super) fn validate_value(value: &Value) -> Result<(), RemoteError> {
             "remote session Runner receipt metadata contains null fields".into(),
         ));
     }
+    Ok(receipt_object)
+}
+
+pub(super) fn validate_value(value: &Value) -> Result<(), RemoteError> {
+    let object = observation_object(value)?;
+    validate_observation_metadata(object)?;
+    let receipt_object = receipt_object(object)?;
     exact_nested_fields(
         receipt_object.get("authority"),
         [
@@ -241,6 +256,14 @@ pub(super) fn render_human(value: &Value, writer: &mut impl Write) -> io::Result
         receipt["receipt_valid"].as_bool().unwrap_or(false),
         receipt["uncertain"].as_bool().unwrap_or(false)
     )?;
+    render_bindings(object, receipt, writer)
+}
+
+fn render_bindings(
+    object: &Map<String, Value>,
+    receipt: &Map<String, Value>,
+    writer: &mut impl Write,
+) -> io::Result<()> {
     writeln!(
         writer,
         "binding: prompt_run_binding_valid={} receipt_binding_valid={} preview_only={} selected_target=none",

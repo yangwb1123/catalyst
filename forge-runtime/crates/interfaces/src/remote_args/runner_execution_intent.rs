@@ -35,15 +35,7 @@ pub(super) fn parse(tokens: &mut VecDeque<String>) -> Result<Command, String> {
             }
         }
     }
-    let input = input.ok_or_else(|| {
-        format!(
-            "remote Runner execution-intent preview requires --input FILE|-\n\n{}",
-            usage()
-        )
-    })?;
-    if input.trim().is_empty() {
-        return Err("--input requires a non-empty FILE|- value".into());
-    }
+    let input = required_input(input)?;
     if instance_view.is_some() && instance_id.is_none() {
         return Err(format!(
             "remote Runner execution-intent preview --instance-view requires --instance\n\n{}",
@@ -57,4 +49,17 @@ pub(super) fn parse(tokens: &mut VecDeque<String>) -> Result<Command, String> {
             instance_view,
         },
     ))
+}
+
+fn required_input(input: Option<String>) -> Result<String, String> {
+    let input = input.ok_or_else(|| {
+        format!(
+            "remote Runner execution-intent preview requires --input FILE|-\n\n{}",
+            usage()
+        )
+    })?;
+    if input.trim().is_empty() {
+        return Err("--input requires a non-empty FILE|- value".into());
+    }
+    Ok(input)
 }

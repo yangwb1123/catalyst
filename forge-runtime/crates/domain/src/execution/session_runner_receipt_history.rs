@@ -20,6 +20,10 @@ pub const MAX_SESSION_RUNNER_RECEIPTS: usize = 16;
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "The frozen wire carries independent authority disclaimers."
+)]
 pub struct SessionRunnerReceiptHistoryAuthority {
     pub identity_verified: bool,
     pub receipt_persisted: bool,
@@ -39,6 +43,10 @@ pub struct SessionRunnerReceiptHistoryRequest {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "The frozen wire carries independent observation and authority flags."
+)]
 pub struct SessionRunnerReceiptHistoryObservation {
     pub schema_version: String,
     pub evaluation_mode: String,
@@ -75,6 +83,12 @@ impl fmt::Display for SessionRunnerReceiptHistoryError {
 
 impl std::error::Error for SessionRunnerReceiptHistoryError {}
 
+/// Reduces a bounded receipt history without adding execution or persistence authority.
+///
+/// # Errors
+/// Returns `SessionRunnerReceiptHistoryError::InvalidHistory` for an empty or
+/// oversized history, invalid receipt bindings, duplicate attempts, unordered
+/// receipts, or an attempt following a completed or uncertain receipt.
 pub fn observe_session_runner_receipt_history(
     input: SessionRunnerReceiptHistoryRequest,
 ) -> Result<SessionRunnerReceiptHistoryObservation, SessionRunnerReceiptHistoryError> {
@@ -82,9 +96,12 @@ pub fn observe_session_runner_receipt_history(
         return Err(SessionRunnerReceiptHistoryError::InvalidHistory);
     }
     let receipts = input.receipts;
+    // Validated histories contain at most sixteen receipts, so this is exact.
+    let attempt_count = u32::try_from(receipts.len())
+        .map_err(|_| SessionRunnerReceiptHistoryError::InvalidHistory)?;
     let latest = receipts
         .last()
-        .expect("valid history requires one receipt")
+        .ok_or(SessionRunnerReceiptHistoryError::InvalidHistory)?
         .receipt_observation
         .clone();
     let uncertain = latest.uncertain;
@@ -95,7 +112,7 @@ pub fn observe_session_runner_receipt_history(
         conversation_id: input.conversation_id,
         prompt_id: input.prompt_id,
         run_id: input.run_id,
-        attempt_count: receipts.len() as u32,
+        attempt_count,
         receipts,
         latest_attempt_id: latest.attempt_id,
         latest_command_id: latest.command_id,
@@ -117,6 +134,11 @@ pub fn observe_session_runner_receipt_history(
 }
 
 impl SessionRunnerReceiptHistoryObservation {
+    /// Checks the history and recomputes its derived summary and boundary flags.
+    ///
+    /// # Errors
+    /// Returns `SessionRunnerReceiptHistoryError::InvalidHistory` when the wire
+    /// identifiers, receipt history, or any derived field violate the contract.
     pub fn validate(&self) -> Result<(), SessionRunnerReceiptHistoryError> {
         if self.schema_version != SESSION_RUNNER_RECEIPT_HISTORY_SCHEMA_VERSION
             || self.evaluation_mode != SESSION_RUNNER_RECEIPT_HISTORY_EVALUATION_MODE
@@ -181,3 +203,49 @@ fn receipt_after(
 #[cfg(test)]
 #[path = "session_runner_receipt_history_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+mod count_boundaries {
+    use super::*;
+
+    #[test]
+    fn valid_history_counts_are_exact_at_both_boundaries() {
+        for count in [1, 16] {
+            let observation = observe_session_runner_receipt_history(request(count)).unwrap();
+            assert_eq!(observation.attempt_count, count);
+            assert!(observation.validate().is_ok());
+        }
+    }
+
+    #[test]
+    fn empty_and_oversized_histories_return_the_existing_error() {
+        for count in [0, 17] {
+            assert_eq!(
+                observe_session_runner_receipt_history(request(count)),
+                Err(SessionRunnerReceiptHistoryError::InvalidHistory)
+            );
+        }
+    }
+
+    fn request(count: u32) -> SessionRunnerReceiptHistoryRequest {
+        let history: SessionRunnerReceiptHistoryObservation = serde_json::from_str(include_str!(
+            "../../../../../docs/contracts/fixtures/forge-session-runner-receipt-history-v1.json"
+        ))
+        .unwrap();
+        let receipts = (1..=count)
+            .map(|attempt| {
+                let mut receipt = history.receipts[0].clone();
+                receipt.receipt_observation.attempt_id = format!("attempt-{attempt:03}");
+                receipt.receipt_observation.observed_at_ms = u64::from(attempt);
+                receipt
+            })
+            .collect();
+        SessionRunnerReceiptHistoryRequest {
+            owner: history.owner,
+            conversation_id: history.conversation_id,
+            prompt_id: history.prompt_id,
+            run_id: history.run_id,
+            receipts,
+        }
+    }
+}

@@ -1,3 +1,5 @@
+pub(crate) mod version;
+
 pub const TEXT: &str = concat!(
     include_str!("cli_usage/device.txt"),
     include_str!("cli_usage/remote.txt"),

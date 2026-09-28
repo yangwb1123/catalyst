@@ -31,9 +31,9 @@ pub(super) fn parse(tokens: &mut VecDeque<String>) -> Result<Command, String> {
     ))
 }
 
-fn parse_options(
-    tokens: &mut VecDeque<String>,
-) -> Result<(Option<String>, Option<String>, Option<String>), String> {
+type InputOptions = (Option<String>, Option<String>, Option<String>);
+
+fn parse_options(tokens: &mut VecDeque<String>) -> Result<InputOptions, String> {
     let mut input = None;
     let mut instance_id = None;
     let mut instance_view = None;

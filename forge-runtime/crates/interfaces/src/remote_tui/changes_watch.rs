@@ -74,23 +74,20 @@ pub(super) async fn changes_command<W: Write>(
     let mut tokens = argument.split_whitespace();
     match tokens.next() {
         Some("list") => {
-            let options = match parse_list_options(tokens, writer)? {
-                Some(options) => options,
-                None => return Ok(()),
+            let Some(options) = parse_list_options(tokens, writer)? else {
+                return Ok(());
             };
             feed::list(client, state, options, writer).await
         }
         Some("watch") => {
-            let options = match parse_options(tokens, writer)? {
-                Some(options) => options,
-                None => return Ok(()),
+            let Some(options) = parse_options(tokens, writer)? else {
+                return Ok(());
             };
             feed::watch(client, state, options, writer).await
         }
         Some("stream") => {
-            let options = match parse_stream_options(tokens, writer)? {
-                Some(options) => options,
-                None => return Ok(()),
+            let Some(options) = parse_stream_options(tokens, writer)? else {
+                return Ok(());
             };
             feed::stream(client, state, options, writer).await
         }
@@ -107,9 +104,8 @@ pub(super) async fn watch_command<W: Write>(
     writer: &mut W,
 ) -> Result<(), RemoteError> {
     let mut tokens = argument.split_whitespace();
-    let options = match parse_options(tokens.by_ref(), writer)? {
-        Some(options) => options,
-        None => return Ok(()),
+    let Some(options) = parse_options(tokens.by_ref(), writer)? else {
+        return Ok(());
     };
     if tokens.next().is_some() {
         return write_usage(writer);
@@ -180,68 +176,13 @@ where
         max_delay_ms: DEFAULT_MAX_DELAY_MS,
         instance_id: None,
     };
-    let mut after_seen = false;
-    let mut polls_seen = false;
-    let mut min_seen = false;
-    let mut max_seen = false;
-    let mut instance_seen = false;
-
+    let mut seen = std::collections::BTreeSet::new();
     while let Some(option) = tokens.next() {
-        match option {
-            "--after-cursor" if !after_seen => {
-                let Some(value) = tokens.next() else {
-                    return usage_error(writer, "--after-cursor requires a value");
-                };
-                let Some(value) = parse_safe_u64(value) else {
-                    return usage_error(
-                        writer,
-                        "--after-cursor must be a JSON-safe unsigned integer",
-                    );
-                };
-                options.after_cursor = Some(value);
-                after_seen = true;
-            }
-            "--polls" if !polls_seen => {
-                let Some(value) = tokens.next() else {
-                    return usage_error(writer, "--polls requires a value");
-                };
-                let Some(value) = parse_bounded_usize(value, 1, MAX_POLLS) else {
-                    return usage_error(writer, "--polls must be between 1 and 64");
-                };
-                options.polls = value;
-                polls_seen = true;
-            }
-            "--min-delay-ms" if !min_seen => {
-                let Some(value) = tokens.next() else {
-                    return usage_error(writer, "--min-delay-ms requires a value");
-                };
-                let Some(value) = parse_bounded_u64(value, 0, MAX_MIN_DELAY_MS) else {
-                    return usage_error(writer, "--min-delay-ms must be between 0 and 10000");
-                };
-                options.min_delay_ms = value;
-                min_seen = true;
-            }
-            "--max-delay-ms" if !max_seen => {
-                let Some(value) = tokens.next() else {
-                    return usage_error(writer, "--max-delay-ms requires a value");
-                };
-                let Some(value) = parse_bounded_u64(value, 0, MAX_MAX_DELAY_MS) else {
-                    return usage_error(writer, "--max-delay-ms must be between 0 and 60000");
-                };
-                options.max_delay_ms = value;
-                max_seen = true;
-            }
-            "--instance" if !instance_seen => {
-                let Some(value) = tokens.next() else {
-                    return usage_error(writer, "--instance requires a value");
-                };
-                if client_instance_session_scope::validate_instance_id(value).is_err() {
-                    return usage_error(writer, "--instance must be a valid client-instance id");
-                }
-                options.instance_id = Some(value.to_owned());
-                instance_seen = true;
-            }
-            _ => return usage_error(writer, "unknown or duplicate changes watch option"),
+        if !seen.insert(option) {
+            return usage_error(writer, "unknown or duplicate changes watch option");
+        }
+        if let Err(message) = parse_watch_option(&mut options, option, &mut tokens) {
+            return usage_error(writer, message);
         }
     }
     if options.max_delay_ms < options.min_delay_ms {
@@ -266,48 +207,13 @@ where
         wait_ms: 5_000,
         instance_id: None,
     };
-    let mut after_seen = false;
-    let mut wait_seen = false;
-    let mut instance_seen = false;
+    let mut seen = std::collections::BTreeSet::new();
     while let Some(option) = tokens.next() {
-        match option {
-            "--after-cursor" if !after_seen => {
-                let Some(value) = tokens.next() else {
-                    return stream_usage_error(writer, "--after-cursor requires a value");
-                };
-                let Some(value) = parse_safe_u64(value) else {
-                    return stream_usage_error(
-                        writer,
-                        "--after-cursor must be a JSON-safe unsigned integer",
-                    );
-                };
-                options.after_cursor = Some(value);
-                after_seen = true;
-            }
-            "--wait-ms" if !wait_seen => {
-                let Some(value) = tokens.next() else {
-                    return stream_usage_error(writer, "--wait-ms requires a value");
-                };
-                let Some(value) = parse_bounded_u64(value, 0, 10_000) else {
-                    return stream_usage_error(writer, "--wait-ms must be between 0 and 10000");
-                };
-                options.wait_ms = value;
-                wait_seen = true;
-            }
-            "--instance" if !instance_seen => {
-                let Some(value) = tokens.next() else {
-                    return stream_usage_error(writer, "--instance requires a value");
-                };
-                if client_instance_session_scope::validate_instance_id(value).is_err() {
-                    return stream_usage_error(
-                        writer,
-                        "--instance must be a valid client-instance id",
-                    );
-                }
-                options.instance_id = Some(value.to_owned());
-                instance_seen = true;
-            }
-            _ => return stream_usage_error(writer, "unknown or duplicate changes stream option"),
+        if !seen.insert(option) {
+            return stream_usage_error(writer, "unknown or duplicate changes stream option");
+        }
+        if let Err(message) = parse_stream_option(&mut options, option, &mut tokens) {
+            return stream_usage_error(writer, message);
         }
     }
     Ok(Some(options))
@@ -364,4 +270,74 @@ fn write_usage<W: Write>(writer: &mut W) -> Result<(), RemoteError> {
         "Use changes list [--after-cursor N] [--instance INSTANCE_ID], changes watch [--after-cursor N] [--polls 1..64] [--min-delay-ms 0..10000] [--max-delay-ms 0..60000] [--instance INSTANCE_ID], or changes stream [--after-cursor N] [--wait-ms 0..10000] [--instance INSTANCE_ID]."
     )
     .map_err(io_error)
+}
+
+fn parse_watch_option<'a>(
+    options: &mut WatchOptions,
+    option: &str,
+    tokens: &mut impl Iterator<Item = &'a str>,
+) -> Result<(), &'static str> {
+    match option {
+        "--after-cursor" => {
+            let value = tokens.next().ok_or("--after-cursor requires a value")?;
+            options.after_cursor = Some(
+                parse_safe_u64(value)
+                    .ok_or("--after-cursor must be a JSON-safe unsigned integer")?,
+            );
+        }
+        "--polls" => {
+            let value = tokens.next().ok_or("--polls requires a value")?;
+            options.polls = parse_bounded_usize(value, 1, MAX_POLLS)
+                .ok_or("--polls must be between 1 and 64")?;
+        }
+        "--min-delay-ms" => {
+            let value = tokens.next().ok_or("--min-delay-ms requires a value")?;
+            options.min_delay_ms = parse_bounded_u64(value, 0, MAX_MIN_DELAY_MS)
+                .ok_or("--min-delay-ms must be between 0 and 10000")?;
+        }
+        "--max-delay-ms" => {
+            let value = tokens.next().ok_or("--max-delay-ms requires a value")?;
+            options.max_delay_ms = parse_bounded_u64(value, 0, MAX_MAX_DELAY_MS)
+                .ok_or("--max-delay-ms must be between 0 and 60000")?;
+        }
+        "--instance" => {
+            let value = tokens.next().ok_or("--instance requires a value")?;
+            if client_instance_session_scope::validate_instance_id(value).is_err() {
+                return Err("--instance must be a valid client-instance id");
+            }
+            options.instance_id = Some(value.to_owned());
+        }
+        _ => return Err("unknown or duplicate changes watch option"),
+    }
+    Ok(())
+}
+
+fn parse_stream_option<'a>(
+    options: &mut StreamOptions,
+    option: &str,
+    tokens: &mut impl Iterator<Item = &'a str>,
+) -> Result<(), &'static str> {
+    match option {
+        "--after-cursor" => {
+            let value = tokens.next().ok_or("--after-cursor requires a value")?;
+            options.after_cursor = Some(
+                parse_safe_u64(value)
+                    .ok_or("--after-cursor must be a JSON-safe unsigned integer")?,
+            );
+        }
+        "--wait-ms" => {
+            let value = tokens.next().ok_or("--wait-ms requires a value")?;
+            options.wait_ms = parse_bounded_u64(value, 0, 10_000)
+                .ok_or("--wait-ms must be between 0 and 10000")?;
+        }
+        "--instance" => {
+            let value = tokens.next().ok_or("--instance requires a value")?;
+            if client_instance_session_scope::validate_instance_id(value).is_err() {
+                return Err("--instance must be a valid client-instance id");
+            }
+            options.instance_id = Some(value.to_owned());
+        }
+        _ => return Err("unknown or duplicate changes stream option"),
+    }
+    Ok(())
 }

@@ -22,6 +22,10 @@ const MAX_IDENTIFIER_BYTES: usize = 128;
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "The Attempt boundary wire contract records each authority claim as a separate boolean."
+)]
 pub struct RunnerAttemptBoundaryAuthority {
     pub attempt_persisted: bool,
     pub reservation_created: bool,
@@ -32,6 +36,10 @@ pub struct RunnerAttemptBoundaryAuthority {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "Wire compatibility requires distinct lifecycle, readiness, and preview predicates."
+)]
 pub struct RunnerAttemptBoundaryObservation {
     pub schema_version: String,
     pub evaluation_mode: String,
@@ -69,6 +77,13 @@ impl std::error::Error for RunnerAttemptBoundaryError {}
 
 /// Decodes one strict canonical observation. `serde_json` rejects unknown,
 /// duplicate, malformed, and trailing JSON fields for this typed envelope.
+/// Decoding checks shape only; use [`RunnerAttemptBoundaryObservation::validate`]
+/// to check the derived lifecycle predicates.
+///
+/// # Errors
+///
+/// Returns a prefixed decode error for malformed JSON, unknown or duplicate
+/// fields, missing required fields, type mismatches, or trailing input.
 pub fn decode(bytes: &[u8]) -> Result<RunnerAttemptBoundaryObservation, String> {
     serde_json::from_slice(bytes)
         .map_err(|error| format!("invalid_runner_attempt_boundary: {error}"))
@@ -76,6 +91,12 @@ pub fn decode(bytes: &[u8]) -> Result<RunnerAttemptBoundaryObservation, String> 
 
 impl RunnerAttemptBoundaryObservation {
     /// Validates the derived lifecycle predicates without granting authority.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RunnerAttemptBoundaryError::InvalidObservation`] for invalid
+    /// metadata, identities, epoch, state/transition names, inconsistent derived
+    /// predicates or rejection reasons, or non-preview/authority claims.
     pub fn validate(&self) -> Result<(), RunnerAttemptBoundaryError> {
         if self.schema_version != RUNNER_ATTEMPT_BOUNDARY_SCHEMA_VERSION
             || self.evaluation_mode != RUNNER_ATTEMPT_BOUNDARY_EVALUATION_MODE

@@ -2,6 +2,10 @@
 //! preview. The request carries a separately verified transport observation;
 //! this module never opens a Runner connection or sends its payload.
 
+#[path = "remote_runner_transport_admission/request.rs"]
+mod request;
+pub(super) use request::validate_request;
+
 use std::{
     fs::File,
     io::{self, Read, Write},
@@ -35,6 +39,10 @@ struct Owner {
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "Published wire predicates are separate booleans; changing their representation would change the protocol."
+)]
 struct TransportAuthority {
     identity_verified: bool,
     heartbeat_accepted: bool,
@@ -63,6 +71,10 @@ struct TransportObservation {
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "Published wire predicates are separate booleans; changing their representation would change the protocol."
+)]
 struct AdmissionAuthority {
     device_identity_verified: bool,
     transport_authenticated: bool,
@@ -74,6 +86,10 @@ struct AdmissionAuthority {
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "Published wire predicates are separate booleans; changing their representation would change the protocol."
+)]
 struct AdmissionResult {
     schema_version: String,
     evaluation_mode: String,
@@ -152,199 +168,6 @@ pub(super) fn target_id(value: &Value) -> Result<&str, RemoteError> {
         .ok_or_else(invalid_request)
 }
 
-pub(super) fn validate_request(value: &Value) -> Result<(), RemoteError> {
-    let object = value.as_object().ok_or_else(invalid_request)?;
-    if !exact_fields(
-        object,
-        [
-            "owner",
-            "conversation_id",
-            "run_id",
-            "attempt_id",
-            "attempt_state",
-            "command",
-            "lease",
-            "transport",
-            "expected_payload_sha256",
-            "evaluated_at_ms",
-        ],
-    ) {
-        return Err(invalid_request());
-    }
-    validate_owner(object.get("owner").ok_or_else(invalid_request)?)?;
-    for field in ["conversation_id", "run_id", "attempt_id"] {
-        let id = object
-            .get(field)
-            .and_then(Value::as_str)
-            .ok_or_else(invalid_request)?;
-        if !valid_identifier(id) {
-            return Err(invalid_request());
-        }
-    }
-    let state = object
-        .get("attempt_state")
-        .and_then(Value::as_str)
-        .ok_or_else(invalid_request)?;
-    if !valid_attempt_state(state) {
-        return Err(invalid_request());
-    }
-    let evaluated = object
-        .get("evaluated_at_ms")
-        .and_then(Value::as_u64)
-        .ok_or_else(invalid_request)?;
-    if evaluated == 0 || evaluated > MAX_SAFE_INTEGER {
-        return Err(invalid_request());
-    }
-    let command_value = object.get("command").ok_or_else(invalid_request)?;
-    let command: RunnerCommand =
-        serde_json::from_value(command_value.clone()).map_err(|_| invalid_request())?;
-    command.validate().map_err(|_| invalid_request())?;
-    if command.lease_proof.attempt_id
-        != object
-            .get("attempt_id")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-    {
-        return Err(invalid_request());
-    }
-    validate_lease(object.get("lease").ok_or_else(invalid_request)?)?;
-    validate_transport(object.get("transport").ok_or_else(invalid_request)?)?;
-    let expected = object
-        .get("expected_payload_sha256")
-        .and_then(Value::as_str)
-        .ok_or_else(invalid_request)?;
-    if !valid_digest(expected) {
-        return Err(invalid_request());
-    }
-    Ok(())
-}
-
-pub(super) fn validate_response(
-    value: &Value,
-    request: &Value,
-    conversation_id: &str,
-    run_id: &str,
-) -> Result<(), RemoteError> {
-    validate_request(request)?;
-    let result: AdmissionResult =
-        serde_json::from_value(value.clone()).map_err(|_| invalid_response())?;
-    let request_object = request.as_object().ok_or_else(invalid_request)?;
-    let owner: Owner = serde_json::from_value(
-        request_object
-            .get("owner")
-            .cloned()
-            .ok_or_else(invalid_request)?,
-    )
-    .map_err(|_| invalid_request())?;
-    let command: RunnerCommand = serde_json::from_value(
-        request_object
-            .get("command")
-            .cloned()
-            .ok_or_else(invalid_request)?,
-    )
-    .map_err(|_| invalid_request())?;
-    let expected_command_sha = command.command_sha256().map_err(|_| invalid_request())?;
-    let attempt_state = request_object
-        .get("attempt_state")
-        .and_then(Value::as_str)
-        .ok_or_else(invalid_request)?;
-    let attempt_id = request_object
-        .get("attempt_id")
-        .and_then(Value::as_str)
-        .ok_or_else(invalid_request)?;
-    let expected_payload = request_object
-        .get("expected_payload_sha256")
-        .and_then(Value::as_str)
-        .ok_or_else(invalid_request)?;
-    let transport: TransportObservation = serde_json::from_value(
-        request_object
-            .get("transport")
-            .cloned()
-            .ok_or_else(invalid_request)?,
-    )
-    .map_err(|_| invalid_request())?;
-    let target_id = command.lease_proof.target_id.as_str();
-    let transport_binding = transport.method == "POST"
-        && transport.path == format!("/api/v1/runners/{target_id}/dispatch")
-        && transport.payload_sha256 == expected_payload;
-    let transport_authority_clear = !transport.authority.identity_verified
-        && !transport.authority.heartbeat_accepted
-        && !transport.authority.lease_issued
-        && !transport.authority.reservation_created
-        && !transport.authority.execution_authorized
-        && !transport.authority.dispatch_performed
-        && !transport.authority.audit_published;
-    let reasons = admission_reasons(
-        result.command_binding_valid,
-        result.lease_proof_current,
-        result.lease_active,
-        result.attempt_state_admissible,
-        result.transport_binding_valid,
-    );
-    if result.schema_version != SCHEMA_VERSION
-        || result.evaluation_mode != EVALUATION_MODE
-        || result.owner.issuer != owner.issuer
-        || result.owner.subject != owner.subject
-        || result.owner.tenant_id != owner.tenant_id
-        || result.conversation_id != conversation_id
-        || result.run_id != run_id
-        || result.attempt_id != attempt_id
-        || result.attempt_state != attempt_state
-        || result.command_id != command.command_id
-        || result.command_sha256 != expected_command_sha
-        || !valid_digest(&result.command_sha256)
-        || result.target_id != target_id
-        || result.lease_epoch != command.lease_proof.epoch
-        || result.lease_issued_at_ms == 0
-        || result.lease_expires_at_ms <= result.lease_issued_at_ms
-        || result.lease_expires_at_ms > MAX_SAFE_INTEGER
-        || result.evaluated_at_ms == 0
-        || result.evaluated_at_ms > MAX_SAFE_INTEGER
-        || result.transport_method != transport.method
-        || result.transport_path != transport.path
-        || result.transport_timestamp != transport.timestamp
-        || result.transport_nonce != transport.nonce
-        || result.transport_payload_sha256 != transport.payload_sha256
-        || result.transport_payload_bytes != transport.payload_bytes
-        || result.transport_replay_checked != transport.replay_checked
-        || transport.schema_version != TRANSPORT_SCHEMA_VERSION
-        || transport.evaluation_mode != TRANSPORT_EVALUATION_MODE
-        || !transport.preview_only
-        || !transport_authority_clear
-        || result.transport_timestamp <= 0
-        || result.transport_payload_bytes == 0
-        || result.transport_payload_bytes > MAX_PAYLOAD_BYTES as u64
-        || result.transport_method != "POST"
-        || result.transport_path != format!("/api/v1/runners/{}/dispatch", result.target_id)
-        || result.transport_binding_valid != transport_binding
-        || result.attempt_state_admissible != dispatchable_attempt_state(&result.attempt_state)
-        || result.admission_ready
-            != (result.command_binding_valid
-                && result.lease_proof_current
-                && result.lease_active
-                && result.attempt_state_admissible
-                && result.transport_binding_valid)
-        || result.rejection_reasons != reasons
-        || result
-            .rejection_reasons
-            .iter()
-            .any(|reason| !valid_identifier(reason))
-        || !result.preview_only
-        || result.authority.device_identity_verified
-        || result.authority.transport_authenticated
-        || result.authority.reservation_created
-        || result.authority.execution_authorized
-        || result.authority.dispatch_performed
-        || result.authority.audit_published
-    {
-        return Err(invalid_response());
-    }
-    if result.admission_ready && !result.rejection_reasons.is_empty() {
-        return Err(invalid_response());
-    }
-    Ok(())
-}
-
 pub(super) fn render_human(value: &Value, writer: &mut impl Write) -> io::Result<()> {
     let result: AdmissionResult = serde_json::from_value(value.clone()).map_err(|_| {
         io::Error::new(
@@ -375,191 +198,6 @@ pub(super) fn render_human(value: &Value, writer: &mut impl Write) -> io::Result
         "rejection_reasons={:?}; execution_authorized=false dispatch_performed=false audit_published=false (transport payload, fencing token, argv, workspace, and output withheld)",
         result.rejection_reasons
     )
-}
-
-fn validate_lease(value: &Value) -> Result<(), RemoteError> {
-    let object = value.as_object().ok_or_else(invalid_request)?;
-    if !exact_fields(
-        object,
-        [
-            "target_id",
-            "epoch",
-            "issued_at_ms",
-            "expires_at_ms",
-            "current",
-            "active",
-        ],
-    ) {
-        return Err(invalid_request());
-    }
-    let target = object
-        .get("target_id")
-        .and_then(Value::as_str)
-        .ok_or_else(invalid_request)?;
-    if !valid_identifier(target) {
-        return Err(invalid_request());
-    }
-    let epoch = object
-        .get("epoch")
-        .and_then(Value::as_u64)
-        .ok_or_else(invalid_request)?;
-    let issued = object
-        .get("issued_at_ms")
-        .and_then(Value::as_u64)
-        .ok_or_else(invalid_request)?;
-    let expires = object
-        .get("expires_at_ms")
-        .and_then(Value::as_u64)
-        .ok_or_else(invalid_request)?;
-    if epoch == 0
-        || epoch > MAX_SAFE_INTEGER
-        || issued == 0
-        || issued > MAX_SAFE_INTEGER
-        || expires <= issued
-        || expires > MAX_SAFE_INTEGER
-    {
-        return Err(invalid_request());
-    }
-    if !object.get("current").is_some_and(Value::is_boolean)
-        || !object.get("active").is_some_and(Value::is_boolean)
-    {
-        return Err(invalid_request());
-    }
-    Ok(())
-}
-
-fn validate_transport(value: &Value) -> Result<(), RemoteError> {
-    let object = value.as_object().ok_or_else(invalid_request)?;
-    if !exact_fields(
-        object,
-        [
-            "schema_version",
-            "evaluation_mode",
-            "method",
-            "path",
-            "timestamp",
-            "nonce",
-            "payload_sha256",
-            "payload_bytes",
-            "replay_checked",
-            "preview_only",
-            "authority",
-        ],
-    ) {
-        return Err(invalid_request());
-    }
-    if object.get("schema_version").and_then(Value::as_str) != Some(TRANSPORT_SCHEMA_VERSION)
-        || object.get("evaluation_mode").and_then(Value::as_str) != Some(TRANSPORT_EVALUATION_MODE)
-        || object.get("method").and_then(Value::as_str) != Some("POST")
-        || object.get("preview_only") != Some(&Value::Bool(true))
-    {
-        return Err(invalid_request());
-    }
-    let path = object
-        .get("path")
-        .and_then(Value::as_str)
-        .ok_or_else(invalid_request)?;
-    if !path.starts_with("/api/v1/runners/") || !path.ends_with("/dispatch") || path.len() > 2_048 {
-        return Err(invalid_request());
-    }
-    let timestamp = object
-        .get("timestamp")
-        .and_then(Value::as_i64)
-        .ok_or_else(invalid_request)?;
-    let nonce = object
-        .get("nonce")
-        .and_then(Value::as_str)
-        .ok_or_else(invalid_request)?;
-    let payload_bytes = object
-        .get("payload_bytes")
-        .and_then(Value::as_u64)
-        .ok_or_else(invalid_request)?;
-    if timestamp <= 0
-        || timestamp as u64 > MAX_SAFE_INTEGER
-        || nonce.is_empty()
-        || nonce.len() > MAX_NONCE_BYTES
-        || nonce.chars().any(char::is_control)
-        || !valid_digest(
-            object
-                .get("payload_sha256")
-                .and_then(Value::as_str)
-                .ok_or_else(invalid_request)?,
-        )
-        || payload_bytes == 0
-        || payload_bytes > MAX_PAYLOAD_BYTES as u64
-        || object.get("replay_checked") != Some(&Value::Bool(true))
-    {
-        return Err(invalid_request());
-    }
-    let authority = object
-        .get("authority")
-        .and_then(Value::as_object)
-        .ok_or_else(invalid_request)?;
-    if !exact_fields(
-        authority,
-        [
-            "identity_verified",
-            "heartbeat_accepted",
-            "lease_issued",
-            "reservation_created",
-            "execution_authorized",
-            "dispatch_performed",
-            "audit_published",
-        ],
-    ) || authority.values().any(|value| value != &Value::Bool(false))
-    {
-        return Err(invalid_request());
-    }
-    Ok(())
-}
-
-fn validate_owner(value: &Value) -> Result<(), RemoteError> {
-    let object = value.as_object().ok_or_else(invalid_request)?;
-    if !exact_fields(object, ["issuer", "subject", "tenant_id"]) {
-        return Err(invalid_request());
-    }
-    for field in ["issuer", "subject", "tenant_id"] {
-        let part = object
-            .get(field)
-            .and_then(Value::as_str)
-            .ok_or_else(invalid_request)?;
-        if part.is_empty()
-            || part.len() > MAX_OWNER_PART_BYTES
-            || part.trim() != part
-            || part.chars().any(char::is_control)
-        {
-            return Err(invalid_request());
-        }
-    }
-    Ok(())
-}
-
-fn admission_reasons(
-    command: bool,
-    current: bool,
-    active: bool,
-    state: bool,
-    transport: bool,
-) -> Vec<String> {
-    let mut reasons = Vec::new();
-    if !command {
-        reasons.push("command_binding_invalid".to_owned());
-    }
-    if !current {
-        reasons.push("lease_proof_not_current".to_owned());
-    }
-    if !active {
-        reasons.push("lease_inactive_at_evaluated_time".to_owned());
-    }
-    if !state {
-        reasons.push("attempt_state_not_dispatchable".to_owned());
-    }
-    if !transport {
-        reasons.push("transport_binding_invalid".to_owned());
-    }
-    reasons.sort();
-    reasons.dedup();
-    reasons
 }
 
 fn dispatchable_attempt_state(value: &str) -> bool {
@@ -637,4 +275,184 @@ fn read_bounded_input(input: &str) -> Result<Vec<u8>, RemoteError> {
         )));
     }
     Ok(bytes)
+}
+
+pub(super) fn validate_response(
+    value: &Value,
+    request: &Value,
+    conversation_id: &str,
+    run_id: &str,
+) -> Result<(), RemoteError> {
+    validate_request(request)?;
+    let result: AdmissionResult =
+        serde_json::from_value(value.clone()).map_err(|_| invalid_response())?;
+    let context = response_request(request)?;
+    validate_response_binding(&result, &context, conversation_id, run_id)?;
+    validate_response_state(&result, &context)
+}
+
+struct ResponseRequest<'a> {
+    owner: Owner,
+    command: RunnerCommand,
+    expected_command_sha: String,
+    attempt_state: &'a str,
+    attempt_id: &'a str,
+    expected_payload: &'a str,
+    transport: TransportObservation,
+}
+
+fn response_request(request: &Value) -> Result<ResponseRequest<'_>, RemoteError> {
+    let request_object = request.as_object().ok_or_else(invalid_request)?;
+    let owner: Owner = request_field(request_object, "owner")?;
+    let command: RunnerCommand = request_field(request_object, "command")?;
+    let expected_command_sha = command.command_sha256().map_err(|_| invalid_request())?;
+    let attempt_state = request_object
+        .get("attempt_state")
+        .and_then(Value::as_str)
+        .ok_or_else(invalid_request)?;
+    let attempt_id = request_object
+        .get("attempt_id")
+        .and_then(Value::as_str)
+        .ok_or_else(invalid_request)?;
+    let expected_payload = request_object
+        .get("expected_payload_sha256")
+        .and_then(Value::as_str)
+        .ok_or_else(invalid_request)?;
+    let transport: TransportObservation = request_field(request_object, "transport")?;
+    Ok(ResponseRequest {
+        owner,
+        command,
+        expected_command_sha,
+        attempt_state,
+        attempt_id,
+        expected_payload,
+        transport,
+    })
+}
+
+fn validate_response_binding(
+    result: &AdmissionResult,
+    context: &ResponseRequest<'_>,
+    conversation_id: &str,
+    run_id: &str,
+) -> Result<(), RemoteError> {
+    let target_id = context.command.lease_proof.target_id.as_str();
+    if result.schema_version != SCHEMA_VERSION
+        || result.evaluation_mode != EVALUATION_MODE
+        || result.owner.issuer != context.owner.issuer
+        || result.owner.subject != context.owner.subject
+        || result.owner.tenant_id != context.owner.tenant_id
+        || result.conversation_id != conversation_id
+        || result.run_id != run_id
+        || result.attempt_id != context.attempt_id
+        || result.attempt_state != context.attempt_state
+        || result.command_id != context.command.command_id
+        || result.command_sha256 != context.expected_command_sha
+        || !valid_digest(&result.command_sha256)
+        || result.target_id != target_id
+        || result.lease_epoch != context.command.lease_proof.epoch
+        || result.lease_issued_at_ms == 0
+        || result.lease_expires_at_ms <= result.lease_issued_at_ms
+        || result.lease_expires_at_ms > MAX_SAFE_INTEGER
+        || result.evaluated_at_ms == 0
+        || result.evaluated_at_ms > MAX_SAFE_INTEGER
+    {
+        return Err(invalid_response());
+    }
+    Ok(())
+}
+
+fn validate_response_state(
+    result: &AdmissionResult,
+    context: &ResponseRequest<'_>,
+) -> Result<(), RemoteError> {
+    let target_id = context.command.lease_proof.target_id.as_str();
+    let transport_binding = context.transport.method == "POST"
+        && context.transport.path == format!("/api/v1/runners/{target_id}/dispatch")
+        && context.transport.payload_sha256 == context.expected_payload;
+    let transport_authority_clear = !context.transport.authority.identity_verified
+        && !context.transport.authority.heartbeat_accepted
+        && !context.transport.authority.lease_issued
+        && !context.transport.authority.reservation_created
+        && !context.transport.authority.execution_authorized
+        && !context.transport.authority.dispatch_performed
+        && !context.transport.authority.audit_published;
+    if result.transport_method != context.transport.method
+        || result.transport_path != context.transport.path
+        || result.transport_timestamp != context.transport.timestamp
+        || result.transport_nonce != context.transport.nonce
+        || result.transport_payload_sha256 != context.transport.payload_sha256
+        || result.transport_payload_bytes != context.transport.payload_bytes
+        || result.transport_replay_checked != context.transport.replay_checked
+        || context.transport.schema_version != TRANSPORT_SCHEMA_VERSION
+        || context.transport.evaluation_mode != TRANSPORT_EVALUATION_MODE
+        || !context.transport.preview_only
+        || !transport_authority_clear
+        || result.transport_timestamp <= 0
+        || result.transport_payload_bytes == 0
+        || result.transport_payload_bytes > MAX_PAYLOAD_BYTES as u64
+        || result.transport_method != "POST"
+        || result.transport_path != format!("/api/v1/runners/{}/dispatch", result.target_id)
+        || result.transport_binding_valid != transport_binding
+        || response_readiness_invalid(result)
+    {
+        return Err(invalid_response());
+    }
+    if result.admission_ready && !result.rejection_reasons.is_empty() {
+        return Err(invalid_response());
+    }
+    Ok(())
+}
+
+fn admission_reasons(result: &AdmissionResult) -> Vec<String> {
+    let mut reasons = Vec::new();
+    if !result.command_binding_valid {
+        reasons.push("command_binding_invalid".to_owned());
+    }
+    if !result.lease_proof_current {
+        reasons.push("lease_proof_not_current".to_owned());
+    }
+    if !result.lease_active {
+        reasons.push("lease_inactive_at_evaluated_time".to_owned());
+    }
+    if !result.attempt_state_admissible {
+        reasons.push("attempt_state_not_dispatchable".to_owned());
+    }
+    if !result.transport_binding_valid {
+        reasons.push("transport_binding_invalid".to_owned());
+    }
+    reasons.sort();
+    reasons.dedup();
+    reasons
+}
+
+fn request_field<T: serde::de::DeserializeOwned>(
+    request: &Map<String, Value>,
+    key: &str,
+) -> Result<T, RemoteError> {
+    serde_json::from_value(request.get(key).cloned().ok_or_else(invalid_request)?)
+        .map_err(|_| invalid_request())
+}
+
+fn response_readiness_invalid(result: &AdmissionResult) -> bool {
+    let reasons = admission_reasons(result);
+    result.attempt_state_admissible != dispatchable_attempt_state(&result.attempt_state)
+        || result.admission_ready
+            != (result.command_binding_valid
+                && result.lease_proof_current
+                && result.lease_active
+                && result.attempt_state_admissible
+                && result.transport_binding_valid)
+        || result.rejection_reasons != reasons
+        || result
+            .rejection_reasons
+            .iter()
+            .any(|reason| !valid_identifier(reason))
+        || !result.preview_only
+        || result.authority.device_identity_verified
+        || result.authority.transport_authenticated
+        || result.authority.reservation_created
+        || result.authority.execution_authorized
+        || result.authority.dispatch_performed
+        || result.authority.audit_published
 }

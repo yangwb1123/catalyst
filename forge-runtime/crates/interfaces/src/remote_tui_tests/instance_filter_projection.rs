@@ -1,104 +1,13 @@
 use std::{net::TcpListener, thread};
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use super::super::state::TuiState;
-use super::super::{
-    state::{PendingCreate, PendingPrompt, PendingRunIntent, PendingRunIntentPageObservation},
-    OwnedConversationEntry,
-};
 use super::helpers::{accept_request, respond, test_client};
 
-fn shared_state_with_private_projection() -> TuiState {
-    let session_view = serde_json::from_str(include_str!(
-        "../../../../../docs/contracts/fixtures/forge-client-instance-session-view-v1.json"
-    ))
-    .unwrap();
-    let resource_view = serde_json::from_str(include_str!(
-        "../../../../../docs/contracts/fixtures/forge-client-instance-resource-view-v1.json"
-    ))
-    .unwrap();
-    let conversation = json!({
-        "id": "conversation-001",
-        "scope": {"kind": "global"},
-        "title": "Shared",
-        "created_at_ms": 1,
-        "updated_at_ms": 1
-    });
-    TuiState {
-        conversations: vec![OwnedConversationEntry {
-            conversation: conversation.clone(),
-            aggregate_version: 7,
-        }],
-        selected_id: Some("conversation-001".into()),
-        selected_entry: Some(OwnedConversationEntry {
-            conversation,
-            aggregate_version: 7,
-        }),
-        client_instance_filter: Some("client-web-001".into()),
-        history_loaded_for: Some("conversation-001".into()),
-        prompt_history: vec![json!({
-            "id": "prompt-001",
-            "conversation_id": "conversation-001",
-            "role": "user",
-            "content": "private prompt",
-            "created_at_ms": 1
-        })],
-        history_before: Some(crate::args::PromptPageCursor {
-            created_at_ms: 1,
-            prompt_id: "prompt-001".into(),
-        }),
-        pending_prompt: Some(PendingPrompt {
-            conversation_id: "conversation-001".into(),
-            expected_version: 7,
-            content: "pending prompt".into(),
-            idempotency_key: "pending-prompt".into(),
-        }),
-        pending_run_intent: Some(PendingRunIntent {
-            conversation_id: "conversation-001".into(),
-            expected_version: 7,
-            content: "pending run".into(),
-            idempotency_key: "pending-run".into(),
-        }),
-        pending_create: Some(PendingCreate {
-            title: "pending create".into(),
-            scope: crate::args::RemoteConversationScope::Global,
-            idempotency_key: "pending-create".into(),
-        }),
-        selected_run_id: Some("run-001".into()),
-        run_timeline_sequence: 9,
-        selected_run_observed: Some(crate::runtime_domain::run_observed::RunObserved {
-            api_version: "forge.run.observed.v1",
-            owner_ref: "owner-ref".into(),
-            conversation_id: "conversation-001".into(),
-            run_id: "run-001".into(),
-            prompt_id: "prompt-001".into(),
-            created_at_ms: 1,
-            latest_sequence: 9,
-            status: "completed",
-            metadata_observed: true,
-            content_included: false,
-            authority: Default::default(),
-        }),
-        device_inventory_observed: Some(
-            json!({"schema_version": "forge.device-inventory-observation/v1"}),
-        ),
-        device_inventory_v2_observed: Some(
-            json!({"schema_version": "forge.device-inventory-observation/v2"}),
-        ),
-        pending_run_intent_page: Some(PendingRunIntentPageObservation {
-            conversation_id: "conversation-001".into(),
-            before_submitted_at_ms: Some(10),
-            before_intent_id: Some("intent-001".into()),
-        }),
-        selected_pending_run_intent_conversation_id: Some("conversation-001".into()),
-        selected_pending_run_intent_id: Some("intent-001".into()),
-        pending_run_intent_timeline_sequence: 4,
-        client_instance_session_view_observed: Some(session_view),
-        client_instance_resource_view_observed: Some(resource_view),
-        ..TuiState::default()
-    }
-}
+#[path = "instance_filter_projection/fixture.rs"]
+mod fixture;
+use fixture::shared_state_with_private_projection;
 
 fn assert_private_projection_cleared(state: &TuiState) {
     assert!(state.history_loaded_for.is_none());
@@ -273,11 +182,9 @@ fn remote_tui_create_projection_keeps_unobserved_session_hidden() {
 
     assert!(
         !super::super::state::conversation_visible_to_selected_client_instance(&state, &hidden)
-            .unwrap()
     );
     assert!(
         super::super::state::conversation_visible_to_selected_client_instance(&state, &visible)
-            .unwrap()
     );
 }
 
@@ -303,9 +210,11 @@ async fn remote_tui_create_stops_before_http_when_instance_projection_is_invalid
         .unwrap();
 
     assert!(state.pending_create.is_none());
-    assert!(String::from_utf8(output)
-        .unwrap()
-        .contains("Create blocked by client-instance display filter"));
+    assert!(
+        String::from_utf8(output)
+            .unwrap()
+            .contains("Create blocked by client-instance display filter")
+    );
 }
 
 #[tokio::test]
@@ -328,52 +237,54 @@ async fn remote_tui_instance_create_requires_a_converged_resource_pair() {
     ));
 }
 
+fn serve_hidden_created_session(listener: &TcpListener) {
+    let session_view: Value = serde_json::from_str(include_str!(
+        "../../../../../docs/contracts/fixtures/forge-client-instance-session-view-v1.json"
+    ))
+    .unwrap();
+    let resource_view: Value = serde_json::from_str(include_str!(
+        "../../../../../docs/contracts/fixtures/forge-client-instance-resource-view-v1.json"
+    ))
+    .unwrap();
+    let (mut session, request, _, body) = accept_request(listener);
+    assert!(request.starts_with("GET /api/v1/client-instances/session-view "));
+    assert!(body.is_empty());
+    respond(&mut session, "200 OK", &session_view);
+
+    let (mut resource, request, _, body) = accept_request(listener);
+    assert!(request.starts_with("GET /api/v1/client-instances/resource-view "));
+    assert!(body.is_empty());
+    respond(&mut resource, "200 OK", &resource_view);
+
+    let (mut create, request, _, _) = accept_request(listener);
+    assert!(request.starts_with("POST /api/v1/conversations "));
+    let created = json!({
+        "id": "conversation-created-after-observation",
+        "scope": {"kind": "global"},
+        "title": "Created",
+        "created_at_ms": 2,
+        "updated_at_ms": 2
+    });
+    respond(&mut create, "201 Created", &created);
+
+    let (mut list, request, _, _) = accept_request(listener);
+    assert!(request.starts_with("GET /api/v1/conversations?"));
+    respond(
+        &mut list,
+        "200 OK",
+        &json!({
+            "conversations": [{"conversation": created, "aggregate_version": 1}],
+            "next_after_id": null,
+            "has_more": false
+        }),
+    );
+}
+
 #[tokio::test]
 async fn remote_tui_create_does_not_select_session_hidden_by_instance_projection() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();
-    let server = thread::spawn(move || {
-        let session_view: Value = serde_json::from_str(include_str!(
-            "../../../../../docs/contracts/fixtures/forge-client-instance-session-view-v1.json"
-        ))
-        .unwrap();
-        let resource_view: Value = serde_json::from_str(include_str!(
-            "../../../../../docs/contracts/fixtures/forge-client-instance-resource-view-v1.json"
-        ))
-        .unwrap();
-        let (mut session, request, _, body) = accept_request(&listener);
-        assert!(request.starts_with("GET /api/v1/client-instances/session-view "));
-        assert!(body.is_empty());
-        respond(&mut session, "200 OK", &session_view);
-
-        let (mut resource, request, _, body) = accept_request(&listener);
-        assert!(request.starts_with("GET /api/v1/client-instances/resource-view "));
-        assert!(body.is_empty());
-        respond(&mut resource, "200 OK", &resource_view);
-
-        let (mut create, request, _, _) = accept_request(&listener);
-        assert!(request.starts_with("POST /api/v1/conversations "));
-        let created = json!({
-            "id": "conversation-created-after-observation",
-            "scope": {"kind": "global"},
-            "title": "Created",
-            "created_at_ms": 2,
-            "updated_at_ms": 2
-        });
-        respond(&mut create, "201 Created", &created);
-
-        let (mut list, request, _, _) = accept_request(&listener);
-        assert!(request.starts_with("GET /api/v1/conversations?"));
-        respond(
-            &mut list,
-            "200 OK",
-            &json!({
-                "conversations": [{"conversation": created, "aggregate_version": 1}],
-                "next_after_id": null,
-                "has_more": false
-            }),
-        );
-    });
+    let server = thread::spawn(move || serve_hidden_created_session(&listener));
 
     let client = test_client(address);
     let mut state = shared_state_with_private_projection();

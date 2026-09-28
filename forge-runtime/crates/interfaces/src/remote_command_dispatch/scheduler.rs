@@ -1,4 +1,7 @@
-use super::*;
+use super::{
+    Error, RemoteClient, RemoteError, Value, client_instance_session_scope,
+    ensure_online_inventory_resource_convergence,
+};
 
 /// Applies a caller-selected client-instance projection before the
 /// read-only scheduler selection preview. The paired authenticated

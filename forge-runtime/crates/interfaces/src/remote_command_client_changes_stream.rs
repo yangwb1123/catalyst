@@ -41,52 +41,13 @@ impl RemoteClient {
                 "conversation change stream bounds are invalid".into(),
             ));
         }
-        let access_token = match &self.token_refresh {
-            Some(provider) => provider.access_token().await?,
-            None => self.access_token.clone(),
-        };
-        let response = self
-            .http
-            .get(self.endpoint("/api/v1/conversation-changes/stream")?)
-            .query(&[
-                ("after_cursor", start_cursor.to_string()),
-                ("limit", CHANGE_PAGE_SIZE.to_string()),
-                ("wait_ms", wait_ms.to_string()),
-            ])
-            .header(header::ACCEPT, "text/event-stream")
-            .bearer_auth(access_token)
-            .send()
-            .await
-            .map_err(|_| RemoteError("Forge API request failed".into()))?;
+        let response = self.request_change_stream(start_cursor, wait_ms).await?;
         let status = response.status();
-        let content_type = response
-            .headers()
-            .get(header::CONTENT_TYPE)
-            .and_then(|value| value.to_str().ok())
-            .map(|value| {
-                value
-                    .split(';')
-                    .next()
-                    .unwrap_or_default()
-                    .trim()
-                    .to_ascii_lowercase()
-            });
+        let content_type = stream_content_type(&response);
         let body = read_stream_body(response).await?;
 
         if status == reqwest::StatusCode::NO_CONTENT {
-            if !body.is_empty() {
-                return Err(RemoteError(
-                    "Forge API returned a non-empty conversation change stream timeout".into(),
-                ));
-            }
-            return serde_json::to_value(OwnedConversationChangeStreamResult {
-                start_cursor,
-                scanned_through_cursor: start_cursor,
-                timed_out: true,
-                has_more: false,
-                changes: Vec::new(),
-            })
-            .map_err(|_| RemoteError("conversation change stream could not be encoded".into()));
+            return stream_timeout(start_cursor, &body);
         }
         if !status.is_success() {
             return Err(super::super::validation::http_status_error(status, &body));
@@ -110,6 +71,30 @@ impl RemoteClient {
             changes: page.changes,
         })
         .map_err(|_| RemoteError("conversation change stream could not be encoded".into()))
+    }
+    async fn request_change_stream(
+        &self,
+        start_cursor: u64,
+        wait_ms: u64,
+    ) -> Result<Response, RemoteError> {
+        let access_token = match &self.token_refresh {
+            Some(provider) => provider.access_token().await?,
+            None => self.access_token.clone(),
+        };
+        let response = self
+            .http
+            .get(self.endpoint("/api/v1/conversation-changes/stream")?)
+            .query(&[
+                ("after_cursor", start_cursor.to_string()),
+                ("limit", CHANGE_PAGE_SIZE.to_string()),
+                ("wait_ms", wait_ms.to_string()),
+            ])
+            .header(header::ACCEPT, "text/event-stream")
+            .bearer_auth(access_token)
+            .send()
+            .await
+            .map_err(|_| RemoteError("Forge API request failed".into()))?;
+        Ok(response)
     }
 }
 
@@ -149,32 +134,7 @@ fn parse_stream_page(
         ));
     }
 
-    let mut event = None;
-    let mut id = None;
-    let mut data = None;
-    for line in lines {
-        let Some((field, raw_value)) = line.split_once(':') else {
-            return Err(RemoteError(
-                "Forge API returned malformed conversation SSE".into(),
-            ));
-        };
-        if field.is_empty() || !matches!(field, "event" | "id" | "data") {
-            return Err(RemoteError(
-                "Forge API returned malformed conversation SSE".into(),
-            ));
-        }
-        let value = raw_value.strip_prefix(' ').unwrap_or(raw_value);
-        match field {
-            "event" if event.is_none() => event = Some(value),
-            "id" if id.is_none() => id = Some(value),
-            "data" if data.is_none() => data = Some(value),
-            _ => {
-                return Err(RemoteError(
-                    "Forge API returned malformed conversation SSE".into(),
-                ));
-            }
-        }
-    }
+    let StreamFields { event, id, data } = stream_fields(lines)?;
     if event != Some("conversation_changes") {
         return Err(RemoteError(
             "Forge API returned an unknown conversation SSE event".into(),
@@ -249,4 +209,71 @@ mod tests {
             assert!(parse_stream_page(frame.as_bytes(), 0).is_err(), "{id}");
         }
     }
+}
+
+struct StreamFields<'a> {
+    event: Option<&'a str>,
+    id: Option<&'a str>,
+    data: Option<&'a str>,
+}
+
+fn stream_fields(lines: Vec<&str>) -> Result<StreamFields<'_>, RemoteError> {
+    let mut event = None;
+    let mut id = None;
+    let mut data = None;
+    for line in lines {
+        let Some((field, raw_value)) = line.split_once(':') else {
+            return Err(RemoteError(
+                "Forge API returned malformed conversation SSE".into(),
+            ));
+        };
+        if field.is_empty() || !matches!(field, "event" | "id" | "data") {
+            return Err(RemoteError(
+                "Forge API returned malformed conversation SSE".into(),
+            ));
+        }
+        let value = raw_value.strip_prefix(' ').unwrap_or(raw_value);
+        match field {
+            "event" if event.is_none() => event = Some(value),
+            "id" if id.is_none() => id = Some(value),
+            "data" if data.is_none() => data = Some(value),
+            _ => {
+                return Err(RemoteError(
+                    "Forge API returned malformed conversation SSE".into(),
+                ));
+            }
+        }
+    }
+    Ok(StreamFields { event, id, data })
+}
+
+fn stream_timeout(start_cursor: u64, body: &[u8]) -> Result<Value, RemoteError> {
+    if !body.is_empty() {
+        return Err(RemoteError(
+            "Forge API returned a non-empty conversation change stream timeout".into(),
+        ));
+    }
+    serde_json::to_value(OwnedConversationChangeStreamResult {
+        start_cursor,
+        scanned_through_cursor: start_cursor,
+        timed_out: true,
+        has_more: false,
+        changes: Vec::new(),
+    })
+    .map_err(|_| RemoteError("conversation change stream could not be encoded".into()))
+}
+
+fn stream_content_type(response: &Response) -> Option<String> {
+    response
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .map(|value| {
+            value
+                .split(';')
+                .next()
+                .unwrap_or_default()
+                .trim()
+                .to_ascii_lowercase()
+        })
 }

@@ -74,6 +74,7 @@ pub fn execute(args: &Args) -> Result<CliOutput, Box<dyn Error>> {
         | Command::Demo(_)
         | Command::Device(_)
         | Command::Remote(_)
+        | Command::Version
         | Command::Help => Err("command is not a Hub operation".into()),
     }
 }

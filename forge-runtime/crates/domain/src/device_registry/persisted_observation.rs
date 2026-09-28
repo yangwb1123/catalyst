@@ -158,94 +158,8 @@ pub fn build_persisted_inventory_observation(
     {
         return Err(PersistedInventoryObservationError::InvalidObservation);
     }
-
     let owner = PersistedInventoryObservationOwner::from(evaluation_owner);
-    let mut devices = Vec::with_capacity(values.len());
-    let mut seen_devices = HashSet::with_capacity(values.len());
-    let mut seen_instances = HashSet::with_capacity(values.len());
-
-    for value in values {
-        let canonical = restore_persisted_inventory(
-            value.revision(),
-            value.device().clone(),
-            value.runner().clone(),
-        )?;
-        if canonical.device().owner() != evaluation_owner {
-            return Err(PersistedInventoryObservationError::Persistence(
-                PersistenceError::InventoryOwnerMismatch,
-            ));
-        }
-        if canonical.device().reserved() || !canonical.runner().capabilities().gpus().is_empty() {
-            return Err(PersistedInventoryObservationError::UnsupportedObservation);
-        }
-        if canonical.runner().server_observed_at_ms()
-            > MAX_PERSISTED_INVENTORY_OBSERVATION_SAFE_INTEGER
-            || canonical.runner().capability_lease_expires_at_ms()
-                > MAX_PERSISTED_INVENTORY_OBSERVATION_SAFE_INTEGER
-            || canonical.runner().capabilities().available_memory_bytes()
-                > MAX_PERSISTED_INVENTORY_OBSERVATION_SAFE_INTEGER
-            || canonical.runner().capabilities().available_storage_bytes()
-                > MAX_PERSISTED_INVENTORY_OBSERVATION_SAFE_INTEGER
-        {
-            return Err(PersistedInventoryObservationError::InvalidObservation);
-        }
-        project_persisted_inventory(
-            &canonical,
-            evaluation_owner,
-            evaluated_at_ms,
-            DEFAULT_STALE_AFTER_MS,
-        )?;
-
-        let device_id = canonical.device().device().id().as_str().to_owned();
-        let instance_id = canonical.runner().instance_id().as_str().to_owned();
-        if !seen_devices.insert(device_id.clone()) {
-            return Err(PersistedInventoryObservationError::DuplicateDevice);
-        }
-        if !seen_instances.insert(instance_id.clone()) {
-            return Err(PersistedInventoryObservationError::DuplicateInstance);
-        }
-
-        let capabilities = canonical.runner().capabilities();
-        devices.push(PersistedInventoryObservationCandidate {
-            instance_id,
-            device: PersistedInventoryObservationDevice {
-                device_id,
-                owner: owner.clone(),
-                approval_state: approval_state(canonical.device().device().approval()).to_owned(),
-                cordon_state: if canonical.device().device().is_cordoned() {
-                    "cordoned"
-                } else {
-                    "clear"
-                }
-                .to_owned(),
-                liveness: liveness(canonical.runner().liveness()).to_owned(),
-                snapshot_observed_at_ms: canonical.runner().server_observed_at_ms(),
-                lease_expires_at_ms: canonical.runner().capability_lease_expires_at_ms(),
-                os: capabilities.operating_system().to_owned(),
-                architecture: capabilities.architecture().to_owned(),
-                available_cpu_cores: capabilities.available_cpu_cores(),
-                available_memory_bytes: capabilities.available_memory_bytes(),
-                available_storage_bytes: capabilities.available_storage_bytes(),
-                runtimes: capabilities.runtimes().to_vec(),
-                gpu: PersistedInventoryObservationGpu {
-                    present: false,
-                    memory_bytes: 0,
-                    runtime: String::new(),
-                },
-                data_residency_zones: Vec::new(),
-                trust_zone: "unknown".to_owned(),
-                sandbox_levels: Vec::new(),
-                concurrency_limit: 0,
-                active_concurrency: 0,
-            },
-        });
-    }
-    devices.sort_by(|left, right| {
-        left.device
-            .device_id
-            .cmp(&right.device.device_id)
-            .then_with(|| left.instance_id.cmp(&right.instance_id))
-    });
+    let devices = collect_observation_devices(values, evaluation_owner, evaluated_at_ms, &owner)?;
 
     Ok(PersistedInventoryObservation {
         schema_version: PERSISTED_INVENTORY_OBSERVATION_SCHEMA_VERSION.to_owned(),
@@ -260,6 +174,121 @@ pub fn build_persisted_inventory_observation(
         reservation_created: false,
         dispatch_performed: false,
     })
+}
+
+fn collect_observation_devices(
+    values: &[PersistedInventoryState],
+    evaluation_owner: &SnapshotOwner,
+    evaluated_at_ms: u64,
+    owner: &PersistedInventoryObservationOwner,
+) -> Result<Vec<PersistedInventoryObservationCandidate>, PersistedInventoryObservationError> {
+    let mut devices = Vec::with_capacity(values.len());
+    let mut seen_devices = HashSet::with_capacity(values.len());
+    let mut seen_instances = HashSet::with_capacity(values.len());
+    for value in values {
+        let canonical = canonical_observation(value, evaluation_owner, evaluated_at_ms)?;
+        let device_id = canonical.device().device().id().as_str().to_owned();
+        let instance_id = canonical.runner().instance_id().as_str().to_owned();
+        if !seen_devices.insert(device_id.clone()) {
+            return Err(PersistedInventoryObservationError::DuplicateDevice);
+        }
+        if !seen_instances.insert(instance_id.clone()) {
+            return Err(PersistedInventoryObservationError::DuplicateInstance);
+        }
+        devices.push(PersistedInventoryObservationCandidate {
+            instance_id,
+            device: observation_device(&canonical, device_id, owner),
+        });
+    }
+    devices.sort_by(|left, right| {
+        left.device
+            .device_id
+            .cmp(&right.device.device_id)
+            .then_with(|| left.instance_id.cmp(&right.instance_id))
+    });
+    Ok(devices)
+}
+
+fn canonical_observation(
+    value: &PersistedInventoryState,
+    evaluation_owner: &SnapshotOwner,
+    evaluated_at_ms: u64,
+) -> Result<PersistedInventoryState, PersistedInventoryObservationError> {
+    let canonical = restore_persisted_inventory(
+        value.revision(),
+        value.device().clone(),
+        value.runner().clone(),
+    )?;
+    if canonical.device().owner() != evaluation_owner {
+        return Err(PersistedInventoryObservationError::Persistence(
+            PersistenceError::InventoryOwnerMismatch,
+        ));
+    }
+    if canonical.device().reserved() || !canonical.runner().capabilities().gpus().is_empty() {
+        return Err(PersistedInventoryObservationError::UnsupportedObservation);
+    }
+    validate_observation_bounds(&canonical)?;
+    project_persisted_inventory(
+        &canonical,
+        evaluation_owner,
+        evaluated_at_ms,
+        DEFAULT_STALE_AFTER_MS,
+    )?;
+
+    Ok(canonical)
+}
+
+fn validate_observation_bounds(
+    canonical: &PersistedInventoryState,
+) -> Result<(), PersistedInventoryObservationError> {
+    if canonical.runner().server_observed_at_ms() > MAX_PERSISTED_INVENTORY_OBSERVATION_SAFE_INTEGER
+        || canonical.runner().capability_lease_expires_at_ms()
+            > MAX_PERSISTED_INVENTORY_OBSERVATION_SAFE_INTEGER
+        || canonical.runner().capabilities().available_memory_bytes()
+            > MAX_PERSISTED_INVENTORY_OBSERVATION_SAFE_INTEGER
+        || canonical.runner().capabilities().available_storage_bytes()
+            > MAX_PERSISTED_INVENTORY_OBSERVATION_SAFE_INTEGER
+    {
+        return Err(PersistedInventoryObservationError::InvalidObservation);
+    }
+    Ok(())
+}
+
+fn observation_device(
+    canonical: &PersistedInventoryState,
+    device_id: String,
+    owner: &PersistedInventoryObservationOwner,
+) -> PersistedInventoryObservationDevice {
+    let capabilities = canonical.runner().capabilities();
+    PersistedInventoryObservationDevice {
+        device_id,
+        owner: owner.clone(),
+        approval_state: approval_state(canonical.device().device().approval()).to_owned(),
+        cordon_state: cordon_state(canonical.device().device().is_cordoned()).to_owned(),
+        liveness: liveness(canonical.runner().liveness()).to_owned(),
+        snapshot_observed_at_ms: canonical.runner().server_observed_at_ms(),
+        lease_expires_at_ms: canonical.runner().capability_lease_expires_at_ms(),
+        os: capabilities.operating_system().to_owned(),
+        architecture: capabilities.architecture().to_owned(),
+        available_cpu_cores: capabilities.available_cpu_cores(),
+        available_memory_bytes: capabilities.available_memory_bytes(),
+        available_storage_bytes: capabilities.available_storage_bytes(),
+        runtimes: capabilities.runtimes().to_vec(),
+        gpu: PersistedInventoryObservationGpu {
+            present: false,
+            memory_bytes: 0,
+            runtime: String::new(),
+        },
+        data_residency_zones: Vec::new(),
+        trust_zone: "unknown".to_owned(),
+        sandbox_levels: Vec::new(),
+        concurrency_limit: 0,
+        active_concurrency: 0,
+    }
+}
+
+const fn cordon_state(cordoned: bool) -> &'static str {
+    if cordoned { "cordoned" } else { "clear" }
 }
 
 fn valid_owner(owner: &SnapshotOwner) -> bool {

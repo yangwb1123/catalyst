@@ -28,7 +28,7 @@ pub(super) fn preview<W: Write>(argument: &str, writer: &mut W) -> Result<(), Re
         )
         .map_err(io_error)?,
         Err(error) => {
-            writeln!(writer, "Run/Attempt/lease preflight failed: {error}").map_err(io_error)?
+            writeln!(writer, "Run/Attempt/lease preflight failed: {error}").map_err(io_error)?;
         }
     }
     Ok(())
@@ -42,24 +42,8 @@ pub(super) async fn remote_preview<W: Write>(
     argument: &str,
     writer: &mut W,
 ) -> Result<(), RemoteError> {
-    let Some(suffix) = argument.strip_prefix("--input") else {
-        return remote_usage(writer);
-    };
-    if !suffix.chars().next().is_some_and(char::is_whitespace) {
-        return remote_usage(writer);
-    }
-    let input = suffix.trim();
-    if input.is_empty() || input == "-" {
-        return remote_usage(writer);
-    }
-    let request = match super::super::run_attempt_lease_dispatch_preflight::read_tui_request(input)
-    {
-        Ok(request) => request,
-        Err(error) => {
-            writeln!(writer, "Run/Attempt/lease preflight input failed: {error}")
-                .map_err(io_error)?;
-            return Ok(());
-        }
+    let Some(request) = read_request(argument, writer)? else {
+        return Ok(());
     };
     let (conversation_id, run_id) =
         match super::super::run_attempt_lease_dispatch_preflight::conversation_and_run(&request) {
@@ -85,36 +69,67 @@ pub(super) async fn remote_preview<W: Write>(
     )? {
         return Ok(());
     }
-    // Refresh the explicit inventory/resource pair at the candidate boundary
-    // just like the scheduler and other storage-only writes. A changed pair
-    // may revoke the selected Conversation, so visibility is checked again
-    // before the existing convergence guard and candidate POST.
-    if !super::writes::refresh_explicit_inventory_resource_observations(
-        client,
-        state,
-        "Run/Attempt/lease preflight",
+    if !ensure_fresh_instance_projection(client, state, &conversation_id, writer).await? {
+        return Ok(());
+    }
+    post_and_render(client, state, &request, &conversation_id, &run_id, writer).await
+}
+
+fn usage<W: Write>(writer: &mut W) -> Result<(), RemoteError> {
+    writeln!(
         writer,
+        "Use run-attempt-lease-dispatch-preflight-preview --input FILE. The file is a caller-supplied offline declaration; '-' is reserved for the standalone CLI."
     )
-    .await?
+    .map_err(io_error)
+}
+
+fn remote_usage<W: Write>(writer: &mut W) -> Result<(), RemoteError> {
+    writeln!(
+        writer,
+        "Use run-attempt-lease-dispatch-preflight-remote-preview --input FILE. The file is posted to the authenticated test-only candidate; '-' is reserved for the standalone CLI."
+    )
+    .map_err(io_error)
+}
+
+fn read_request<W: Write>(
+    argument: &str,
+    writer: &mut W,
+) -> Result<Option<serde_json::Value>, RemoteError> {
+    let Some(suffix) = argument.strip_prefix("--input") else {
+        remote_usage(writer)?;
+        return Ok(None);
+    };
+    if !suffix.chars().next().is_some_and(char::is_whitespace) {
+        remote_usage(writer)?;
+        return Ok(None);
+    }
+    let input = suffix.trim();
+    if input.is_empty() || input == "-" {
+        remote_usage(writer)?;
+        return Ok(None);
+    }
+    let request = match super::super::run_attempt_lease_dispatch_preflight::read_tui_request(input)
     {
-        return Ok(());
-    }
-    if !super::commands::ensure_conversation_visible_to_client_instance(
-        state,
-        &conversation_id,
-        writer,
-    )? {
-        return Ok(());
-    }
-    if !super::writes::ensure_inventory_resource_converged(
-        state,
-        "Run/Attempt/lease preflight",
-        writer,
-    )? {
-        return Ok(());
-    }
+        Ok(request) => request,
+        Err(error) => {
+            writeln!(writer, "Run/Attempt/lease preflight input failed: {error}")
+                .map_err(io_error)?;
+            return Ok(None);
+        }
+    };
+    Ok(Some(request))
+}
+
+async fn post_and_render<W: Write>(
+    client: &RemoteClient,
+    state: &mut TuiState,
+    request: &serde_json::Value,
+    conversation_id: &str,
+    run_id: &str,
+    writer: &mut W,
+) -> Result<(), RemoteError> {
     let response = match client
-        .preview_run_attempt_lease_dispatch_preflight(&conversation_id, &run_id, &request)
+        .preview_run_attempt_lease_dispatch_preflight(conversation_id, run_id, request)
         .await
     {
         Ok(response) => response,
@@ -137,13 +152,13 @@ pub(super) async fn remote_preview<W: Write>(
     };
     match super::super::run_attempt_lease_dispatch_preflight::validate_response(
         &response,
-        &request,
-        &conversation_id,
-        &run_id,
+        request,
+        conversation_id,
+        run_id,
     ) {
         Ok(()) => {
             super::super::run_attempt_lease_dispatch_preflight::render_human(&response, writer)
-                .map_err(io_error)?
+                .map_err(io_error)?;
         }
         Err(error) => {
             writeln!(
@@ -156,18 +171,39 @@ pub(super) async fn remote_preview<W: Write>(
     Ok(())
 }
 
-fn usage<W: Write>(writer: &mut W) -> Result<(), RemoteError> {
-    writeln!(
+async fn ensure_fresh_instance_projection<W: Write>(
+    client: &RemoteClient,
+    state: &mut TuiState,
+    conversation_id: &str,
+    writer: &mut W,
+) -> Result<bool, RemoteError> {
+    // Refresh the explicit inventory/resource pair at the candidate boundary
+    // just like the scheduler and other storage-only writes. A changed pair
+    // may revoke the selected Conversation, so visibility is checked again
+    // before the existing convergence guard and candidate POST.
+    if !super::writes::refresh_explicit_inventory_resource_observations(
+        client,
+        state,
+        "Run/Attempt/lease preflight",
         writer,
-        "Use run-attempt-lease-dispatch-preflight-preview --input FILE. The file is a caller-supplied offline declaration; '-' is reserved for the standalone CLI."
     )
-    .map_err(io_error)
-}
-
-fn remote_usage<W: Write>(writer: &mut W) -> Result<(), RemoteError> {
-    writeln!(
+    .await?
+    {
+        return Ok(false);
+    }
+    if !super::commands::ensure_conversation_visible_to_client_instance(
+        state,
+        conversation_id,
         writer,
-        "Use run-attempt-lease-dispatch-preflight-remote-preview --input FILE. The file is posted to the authenticated test-only candidate; '-' is reserved for the standalone CLI."
-    )
-    .map_err(io_error)
+    )? {
+        return Ok(false);
+    }
+    if !super::writes::ensure_inventory_resource_converged(
+        state,
+        "Run/Attempt/lease preflight",
+        writer,
+    )? {
+        return Ok(false);
+    }
+    Ok(true)
 }

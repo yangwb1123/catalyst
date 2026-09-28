@@ -28,6 +28,10 @@ const MAX_IDENTIFIER_BYTES: usize = 128;
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "The session receipt wire contract represents each authority claim as a separate boolean."
+)]
 pub struct SessionRunnerReceiptAuthority {
     pub identity_verified: bool,
     pub receipt_persisted: bool,
@@ -52,6 +56,10 @@ pub struct SessionRunnerReceiptObservationRequest {
 /// decode the session envelope without borrowing a process-static buffer.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "The owned wire form preserves the terminal observation's distinct evidence and follow-up predicates."
+)]
 pub struct SessionRunnerTerminalReceiptObservation {
     pub schema_version: String,
     pub evaluation_mode: String,
@@ -161,6 +169,12 @@ impl std::error::Error for SessionRunnerReceiptError {}
 /// The returned value is always preview-only. It does not infer that the
 /// caller owns the session, that the receipt was persisted, or that execution
 /// was authorized.
+///
+/// # Errors
+///
+/// Returns [`SessionRunnerReceiptError::InvalidBinding`] when intent/session
+/// identities or receipt/command bindings disagree, or supplied intent/receipt
+/// metadata and flags violate the preview-only contract.
 pub fn observe_session_runner_receipt(
     input: SessionRunnerReceiptObservationRequest,
 ) -> Result<SessionRunnerReceiptObservation, SessionRunnerReceiptError> {
@@ -197,6 +211,12 @@ pub fn observe_session_runner_receipt(
 
 impl SessionRunnerReceiptObservation {
     /// Validates the canonical wire projection without adding authority.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SessionRunnerReceiptError::InvalidBinding`] for invalid schema,
+    /// owner or session identities, a selected target, non-preview/authority claims,
+    /// false binding predicates, or an invalid nested terminal observation.
     pub fn validate(&self) -> Result<(), SessionRunnerReceiptError> {
         if self.schema_version != SESSION_RUNNER_RECEIPT_OBSERVATION_SCHEMA_VERSION
             || self.evaluation_mode != SESSION_RUNNER_RECEIPT_OBSERVATION_EVALUATION_MODE

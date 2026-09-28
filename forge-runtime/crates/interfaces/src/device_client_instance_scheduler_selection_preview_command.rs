@@ -26,6 +26,10 @@ const EVALUATION_MODE: &str = "owner_bound_client_instance_scheduler_selection_p
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+#[allow(
+    clippy::struct_field_names,
+    reason = "Preserve frozen wire field names and existing Serde type-name diagnostics"
+)]
 pub(crate) struct Preview {
     schema_version: String,
     evaluation_mode: String,
@@ -51,6 +55,10 @@ struct Owner {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+#[allow(
+    clippy::struct_field_names,
+    reason = "Preserve frozen wire field names and existing Serde type-name diagnostics"
+)]
 struct Instance {
     instance_id: String,
     client_kind: String,
@@ -101,6 +109,10 @@ struct SchedulerPreview {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "Independent authority attestations are frozen wire fields, each validated as false"
+)]
 struct SchedulerAuthority {
     placement_selected: bool,
     reservation_created: bool,
@@ -112,6 +124,10 @@ struct SchedulerAuthority {
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "Independent authority attestations are frozen wire fields, each validated as false"
+)]
 struct Authority {
     owner_authenticated: bool,
     session_read_authorized: bool,
@@ -126,11 +142,11 @@ struct Authority {
     audit_published: bool,
 }
 
-pub(crate) fn execute(
-    command: &DeviceCommand,
-) -> Result<Preview, Box<dyn std::error::Error>> {
+pub(crate) fn execute(command: &DeviceCommand) -> Result<Preview, Box<dyn std::error::Error>> {
     let DeviceCommand::ClientInstanceSchedulerSelectionPreview { input } = command else {
-        return Err("device client-instance scheduler-selection preview command is required".into());
+        return Err(
+            "device client-instance scheduler-selection preview command is required".into(),
+        );
     };
     let bytes = read_bounded_input(input)?;
     reject_duplicate_keys(&bytes).map_err(|error| {
@@ -157,7 +173,10 @@ pub(crate) fn write_output(
         .selected_device_id
         .as_deref()
         .zip(preview.scheduler_preview.selected_instance_id.as_deref())
-        .map_or_else(|| "none".to_owned(), |(device, runner)| format!("{device}/{runner}"));
+        .map_or_else(
+            || "none".to_owned(),
+            |(device, runner)| format!("{device}/{runner}"),
+        );
     writeln!(
         writer,
         "offline client-instance scheduler-selection preview [{}] instance={} kind={} conversation={} run={} attempt={} sessions={} resource={} revision={} generation={} heartbeat={} selected={} reason={}",
@@ -218,7 +237,9 @@ fn validate(preview: &Preview) -> Result<(), Box<dyn std::error::Error>> {
         .iter()
         .any(|session_id| session_id == &preview.conversation_id)
     {
-        return Err("scheduler preview conversation is not declared by the selected instance".into());
+        return Err(
+            "scheduler preview conversation is not declared by the selected instance".into(),
+        );
     }
     Ok(())
 }
@@ -236,7 +257,10 @@ fn valid_owner(owner: &Owner) -> bool {
 
 fn valid_instance(instance: &Instance) -> bool {
     valid_identifier(&instance.instance_id)
-        && matches!(instance.client_kind.as_str(), "cli" | "tui" | "web" | "app" | "mobile")
+        && matches!(
+            instance.client_kind.as_str(),
+            "cli" | "tui" | "web" | "app" | "mobile"
+        )
         && instance.session_ids.len() <= MAX_SESSION_IDS
         && instance
             .session_ids
@@ -264,7 +288,10 @@ fn valid_resource(resource: &Resource) -> bool {
         && resource.available_storage_bytes <= MAX_SAFE_INTEGER
         && resource.gpu_count <= 32
         && resource.available_gpu_memory_bytes <= MAX_SAFE_INTEGER
-        && matches!(resource.approval_state.as_str(), "pending" | "approved" | "revoked")
+        && matches!(
+            resource.approval_state.as_str(),
+            "pending" | "approved" | "revoked"
+        )
         && matches!(resource.cordon_state.as_str(), "clear" | "cordoned")
         && matches!(resource.reservation_state.as_str(), "none" | "reserved")
         && matches!(resource.liveness.as_str(), "online" | "offline")

@@ -21,7 +21,7 @@ pub(super) fn preview<W: Write>(argument: &str, writer: &mut W) -> Result<(), Re
     match crate::device_client_session_view_command::execute(&command) {
         Ok(output) => {
             crate::device_client_session_view_command::write_output(&output, false, writer)
-                .map_err(io_error)?
+                .map_err(io_error)?;
         }
         Err(error) => writeln!(
             writer,

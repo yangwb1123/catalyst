@@ -127,22 +127,7 @@ fn render_conversations<W: Write>(
     state: &TuiState,
     writer: &mut W,
 ) -> Result<(), super::super::super::RemoteError> {
-    if let Some(scope) = &state.scope_filter {
-        writeln!(
-            writer,
-            "  Scope filter: {} (organization-only display filter; not authorization or device identity).",
-            scope_filter_label(scope)
-        )
-        .map_err(io_error)?;
-    }
-    if let Some(instance_id) = state.client_instance_filter.as_deref() {
-        writeln!(
-            writer,
-            "  Client-instance filter: {} (local display filter; instance/session metadata is unverified).",
-            json_text(instance_id)
-        )
-        .map_err(io_error)?;
-    }
+    render_conversation_filters(state, writer)?;
     let mut visible = state
         .conversations
         .iter()
@@ -156,13 +141,7 @@ fn render_conversations<W: Write>(
         })
         .peekable();
     if visible.peek().is_none() {
-        let empty_message = if state.scope_filter.is_some() {
-            "  No sessions match this scope filter in the loaded pages."
-        } else if state.client_instance_filter.is_some() {
-            "  No sessions match this client-instance filter in the loaded pages."
-        } else {
-            "  No sessions on this page."
-        };
+        let empty_message = empty_conversation_message(state);
         writeln!(writer, "{empty_message}").map_err(io_error)?;
     }
     for entry in visible {
@@ -186,6 +165,39 @@ fn render_conversations<W: Write>(
             json_text(title),
             conversation_scope_label(&entry.conversation),
             entry.aggregate_version
+        )
+        .map_err(io_error)?;
+    }
+    Ok(())
+}
+
+fn empty_conversation_message(state: &TuiState) -> &'static str {
+    if state.scope_filter.is_some() {
+        "  No sessions match this scope filter in the loaded pages."
+    } else if state.client_instance_filter.is_some() {
+        "  No sessions match this client-instance filter in the loaded pages."
+    } else {
+        "  No sessions on this page."
+    }
+}
+
+fn render_conversation_filters<W: Write>(
+    state: &TuiState,
+    writer: &mut W,
+) -> Result<(), super::super::super::RemoteError> {
+    if let Some(scope) = &state.scope_filter {
+        writeln!(
+            writer,
+            "  Scope filter: {} (organization-only display filter; not authorization or device identity).",
+            scope_filter_label(scope)
+        )
+        .map_err(io_error)?;
+    }
+    if let Some(instance_id) = state.client_instance_filter.as_deref() {
+        writeln!(
+            writer,
+            "  Client-instance filter: {} (local display filter; instance/session metadata is unverified).",
+            json_text(instance_id)
         )
         .map_err(io_error)?;
     }
@@ -275,12 +287,86 @@ fn render_pending_writes<W: Write>(
     Ok(())
 }
 
+const HELP_TEXT: &str = concat!(
+    "Commands: list | next | filter global|project:ID|group:ID | filter instance:INSTANCE_ID | ",
+    "filter clear | instance INSTANCE_ID|list|clear | detail ID | open ID | older | changes list ",
+    "[--after-cursor N] [--instance INSTANCE_ID] | changes watch [--after-cursor N] [--polls 1..64] ",
+    "[--min-delay-ms 0..10000] [--max-delay-ms 0..60000] [--instance INSTANCE_ID] | changes stream ",
+    "[--after-cursor N] [--wait-ms 0..10000] [--instance INSTANCE_ID] | import LOCAL_CONVERSATION_ID",
+    " [--confirm SHA256] | runs [--before TIME RUN_ID] | timeline RUN_ID [AFTER_SEQUENCE|--resume] |",
+    " run-observed RUN_ID | run-intents [--before TIME INTENT_ID] | run-intents timeline INTENT_ID ",
+    "[AFTER_SEQUENCE|--resume] | run-intents submit TEXT | execution-consent-preview | ",
+    "lifecycle-registry show | inventory read | inventory read-v2 | inventory show-converged | ",
+    "client-instances session-view | client-instances resource-view | client-instances ",
+    "show-converged | inventory show --input FILE | inventory persistence-preview --input FILE | ",
+    "inventory persisted-observation --input FILE | inventory persisted-observation-v2 --input FILE ",
+    "| inventory placement-evaluation --input FILE | inventory placement-evaluation-v2 --input FILE ",
+    "| inventory status --input FILE | inventory snapshot-canonical --input FILE | inventory ",
+    "resource-summary --input FILE | inventory session-observation --input FILE | inventory ",
+    "placement-batch-evaluation --input FILE | heartbeat-persistence-preview --input FILE | ",
+    "identity-proof-preview --input FILE | placement-preview --input FILE | ",
+    "placement-registry-preview --input FILE | session-observation-preview --input FILE | ",
+    "run-intent-preview --input RUN_FILE --placement-input SESSION_FILE | runner-receipt-preview ",
+    "--input FILE | runner-lease-fencing-preview --input FILE | execution-lease-checkpoint-preview ",
+    "--input FILE | client-session-view-preview --input FILE | client-instance-resource-view-preview",
+    " --input FILE | runner-execution-intent-preview --input FILE | session-runner-receipt-preview ",
+    "--input FILE | session-runner-receipt-history-preview --input FILE | ",
+    "session-runner-reconciliation-preview --input FILE | ",
+    "session-runner-reconciliation-remote-preview --input FILE | ",
+    "session-runner-receipt-offline-preview --input FILE | ",
+    "session-runner-receipt-history-offline-preview --input FILE | ",
+    "runner-execution-readiness-preview --input FILE | run-observed-preview --input FILE | ",
+    "run-execution-evidence-preview --input FILE | run-attempt-lease-dispatch-preflight-preview ",
+    "--input FILE | run-attempt-lease-dispatch-preflight-remote-preview --input FILE | ",
+    "runner-dispatch-plan-preview --input FILE | runner-dispatch-plan-remote-preview --input FILE | ",
+    "create [--scope global|project:ID|group:ID] TITLE | prompt TEXT | retry | quit | quit ",
+    "--discard-pending\nThe scope filter only organizes the displayed session list; it is not ",
+    "authorization and does not identify a device. After an explicit authenticated client-instances ",
+    "read, `filter instance:INSTANCE_ID` or `instance INSTANCE_ID` applies the caller-declared ",
+    "session_ids locally; the instance filter is display-only and does not change authorization. ",
+    "Changes list/watch/stream consume the authenticated owner-visible Conversation feed; an ",
+    "explicit `--instance` first refreshes a converged session/resource pair, renders only changes ",
+    "whose Conversation is declared for that instance, and still advances the local cursor through ",
+    "hidden owner rows. Watch uses finite polls and bounded backoff; stream is a bounded one-page ",
+    "SSE read and a 204 timeout leaves the cursor unchanged. Import previews the local ownerless Hub",
+    " transcript and uploads only after its current digest is confirmed. Inventory read/read-v2 and ",
+    "inventory show-converged, lifecycle-registry show, authenticated client-instances reads, and ",
+    "all file previews are local or explicitly injected, unverified observations only; ",
+    "lifecycle-registry show is an explicit candidate GET and is not refreshed by `sync`. `inventory",
+    " show-converged` performs one authenticated v2 inventory GET and one resource-view GET, commits",
+    " both only after their owner, device, and revision/generation/heartbeat/resource fields ",
+    "converge, and retains the previous pair after a non-authority failure. After an explicit ",
+    "`inventory read-v2`, `sync` refreshes that same owner-scoped observation. `client-instances ",
+    "show-converged` performs one explicit session-view GET and one resource-view GET, commits both ",
+    "only after their owner and instance rows converge, and retains the previous pair after a ",
+    "non-authority failure. Pending Run-intent reads are owner-scoped metadata observations; ",
+    "`timeline INTENT_ID --resume` reuses only the exact in-process session/intent cursor and never ",
+    "creates a Run; submit stores a consent-checked inert receipt and never starts a Run or selects ",
+    "a device. The execution-consent preview reads only the server-resolved ",
+    "project/profile/digest/maximum TTL for the selected session; it grants no consent, creates no ",
+    "Run, selects no device, acquires no lease, reserves no capacity, dispatches no command, and ",
+    "contacts no Runner. Placement, session-observation, session-bound Runner receipt, ",
+    "lease/fencing, execution-lease checkpoint, client-instance/session-view, ",
+    "client-instance-resource-view, and session Runner receipt-history previews are local or ",
+    "authenticated stateless read-only value checks; receipt-history reduction rejects unknown, ",
+    "duplicate, trailing, lifecycle, and summary-drift input and never retries or requests a device.",
+    " The local `session-runner-reconciliation-preview` recomputes its manual projection from an ",
+    "explicit file and opens no remote client. The authenticated ",
+    "`session-runner-reconciliation-remote-preview` first canonicalizes the full ",
+    "owner/Conversation/Run-bound history, then forwards the returned history to the projection ",
+    "route; it never issues a lease, reserves a target, dispatches a process, persists a receipt, ",
+    "retries, or publishes Audit. The authenticated `session-runner-receipt-history-preview` command",
+    " uses the opt-in Core read route once and revalidates the canonical reduction; it does not ",
+    "persist history or create retry/selection/dispatch authority. The local Runner ",
+    "execution-readiness preview is a test-only authenticated candidate that may invoke an injected ",
+    "local executor once; it returns metadata-only receipt fields and never creates a Run, persists ",
+    "a receipt, selects a device, reserves capacity, or enables production execution. Run observed ",
+    "and Run execution-evidence previews are local metadata-only file reads and never contact a ",
+    "device.",
+);
+
 pub(crate) fn write_help<W: Write>(writer: &mut W) -> Result<(), super::super::super::RemoteError> {
-    writeln!(
-        writer,
-        "Commands: list | next | filter global|project:ID|group:ID | filter instance:INSTANCE_ID | filter clear | instance INSTANCE_ID|list|clear | detail ID | open ID | older | changes list [--after-cursor N] [--instance INSTANCE_ID] | changes watch [--after-cursor N] [--polls 1..64] [--min-delay-ms 0..10000] [--max-delay-ms 0..60000] [--instance INSTANCE_ID] | changes stream [--after-cursor N] [--wait-ms 0..10000] [--instance INSTANCE_ID] | import LOCAL_CONVERSATION_ID [--confirm SHA256] | runs [--before TIME RUN_ID] | timeline RUN_ID [AFTER_SEQUENCE|--resume] | run-observed RUN_ID | run-intents [--before TIME INTENT_ID] | run-intents timeline INTENT_ID [AFTER_SEQUENCE|--resume] | run-intents submit TEXT | execution-consent-preview | lifecycle-registry show | inventory read | inventory read-v2 | inventory show-converged | client-instances session-view | client-instances resource-view | client-instances show-converged | inventory show --input FILE | inventory persistence-preview --input FILE | inventory persisted-observation --input FILE | inventory persisted-observation-v2 --input FILE | inventory placement-evaluation --input FILE | inventory placement-evaluation-v2 --input FILE | inventory status --input FILE | inventory snapshot-canonical --input FILE | inventory resource-summary --input FILE | inventory session-observation --input FILE | inventory placement-batch-evaluation --input FILE | heartbeat-persistence-preview --input FILE | identity-proof-preview --input FILE | placement-preview --input FILE | placement-registry-preview --input FILE | session-observation-preview --input FILE | run-intent-preview --input RUN_FILE --placement-input SESSION_FILE | runner-receipt-preview --input FILE | runner-lease-fencing-preview --input FILE | execution-lease-checkpoint-preview --input FILE | client-session-view-preview --input FILE | client-instance-resource-view-preview --input FILE | runner-execution-intent-preview --input FILE | session-runner-receipt-preview --input FILE | session-runner-receipt-history-preview --input FILE | session-runner-reconciliation-preview --input FILE | session-runner-reconciliation-remote-preview --input FILE | session-runner-receipt-offline-preview --input FILE | session-runner-receipt-history-offline-preview --input FILE | runner-execution-readiness-preview --input FILE | run-observed-preview --input FILE | run-execution-evidence-preview --input FILE | run-attempt-lease-dispatch-preflight-preview --input FILE | run-attempt-lease-dispatch-preflight-remote-preview --input FILE | runner-dispatch-plan-preview --input FILE | runner-dispatch-plan-remote-preview --input FILE | create [--scope global|project:ID|group:ID] TITLE | prompt TEXT | retry | quit | quit --discard-pending\nThe scope filter only organizes the displayed session list; it is not authorization and does not identify a device. After an explicit authenticated client-instances read, `filter instance:INSTANCE_ID` or `instance INSTANCE_ID` applies the caller-declared session_ids locally; the instance filter is display-only and does not change authorization. Changes list/watch/stream consume the authenticated owner-visible Conversation feed; an explicit `--instance` first refreshes a converged session/resource pair, renders only changes whose Conversation is declared for that instance, and still advances the local cursor through hidden owner rows. Watch uses finite polls and bounded backoff; stream is a bounded one-page SSE read and a 204 timeout leaves the cursor unchanged. Import previews the local ownerless Hub transcript and uploads only after its current digest is confirmed. Inventory read/read-v2 and inventory show-converged, lifecycle-registry show, authenticated client-instances reads, and all file previews are local or explicitly injected, unverified observations only; lifecycle-registry show is an explicit candidate GET and is not refreshed by `sync`. `inventory show-converged` performs one authenticated v2 inventory GET and one resource-view GET, commits both only after their owner, device, and revision/generation/heartbeat/resource fields converge, and retains the previous pair after a non-authority failure. After an explicit `inventory read-v2`, `sync` refreshes that same owner-scoped observation. `client-instances show-converged` performs one explicit session-view GET and one resource-view GET, commits both only after their owner and instance rows converge, and retains the previous pair after a non-authority failure. Pending Run-intent reads are owner-scoped metadata observations; `timeline INTENT_ID --resume` reuses only the exact in-process session/intent cursor and never creates a Run; submit stores a consent-checked inert receipt and never starts a Run or selects a device. The execution-consent preview reads only the server-resolved project/profile/digest/maximum TTL for the selected session; it grants no consent, creates no Run, selects no device, acquires no lease, reserves no capacity, dispatches no command, and contacts no Runner. Placement, session-observation, session-bound Runner receipt, lease/fencing, execution-lease checkpoint, client-instance/session-view, client-instance-resource-view, and session Runner receipt-history previews are local or authenticated stateless read-only value checks; receipt-history reduction rejects unknown, duplicate, trailing, lifecycle, and summary-drift input and never retries or requests a device. The local `session-runner-reconciliation-preview` recomputes its manual projection from an explicit file and opens no remote client. The authenticated `session-runner-reconciliation-remote-preview` first canonicalizes the full owner/Conversation/Run-bound history, then forwards the returned history to the projection route; it never issues a lease, reserves a target, dispatches a process, persists a receipt, retries, or publishes Audit. The authenticated `session-runner-receipt-history-preview` command uses the opt-in Core read route once and revalidates the canonical reduction; it does not persist history or create retry/selection/dispatch authority. The local Runner execution-readiness preview is a test-only authenticated candidate that may invoke an injected local executor once; it returns metadata-only receipt fields and never creates a Run, persists a receipt, selects a device, reserves capacity, or enables production execution. Run observed and Run execution-evidence previews are local metadata-only file reads and never contact a device."
-    )
-    .map_err(io_error)?;
+    writeln!(writer, "{HELP_TEXT}").map_err(io_error)?;
     writeln!(
         writer,
         "runner-execution-intent-remote-preview --input FILE (authenticated Prompt/Run/Runner binding preview; all authority remains false) | run-execution-evidence-remote-preview --input FILE (authenticated metadata-only preview; all authority remains false)"

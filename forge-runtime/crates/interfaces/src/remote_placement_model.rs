@@ -56,6 +56,10 @@ pub(super) struct GpuRequirement {
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[allow(
+    clippy::struct_field_names,
+    reason = "Keep the published wire field and Serde type names unchanged, including decoder diagnostics."
+)]
 pub(super) struct Device {
     pub(super) device_id: String,
     pub(super) owner: Owner,
@@ -340,9 +344,7 @@ fn append_resource_reasons(reasons: &mut Vec<String>, requirement: &Requirements
         reasons.push("runtime_missing".into());
     }
     if requirement.gpu.required {
-        if !device.gpu.present {
-            reasons.push("gpu_missing".into());
-        } else {
+        if device.gpu.present {
             if device.gpu.memory_bytes < requirement.gpu.min_memory_bytes {
                 reasons.push("gpu_memory_insufficient".into());
             }
@@ -350,6 +352,8 @@ fn append_resource_reasons(reasons: &mut Vec<String>, requirement: &Requirements
             {
                 reasons.push("gpu_runtime_mismatch".into());
             }
+        } else {
+            reasons.push("gpu_missing".into());
         }
     }
     if device.active_concurrency > device.concurrency_limit
@@ -385,7 +389,7 @@ fn append_policy_reasons(reasons: &mut Vec<String>, requirement: &Requirements, 
     ) {
         (None, _) => reasons.push("trust_zone_unconfirmed".into()),
         (Some(actual), Some(minimum)) if actual < minimum => {
-            reasons.push("trust_zone_below_minimum".into())
+            reasons.push("trust_zone_below_minimum".into());
         }
         (Some(_), Some(_)) => {}
         (_, None) => unreachable!("validated minimum trust zone"),

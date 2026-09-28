@@ -2,6 +2,10 @@
 //! preview. This is a metadata-only join. It never opens a Runner transport,
 //! sends a payload, or treats readiness as execution authority.
 
+#[path = "remote_runner_execution_boundary/request.rs"]
+mod request;
+pub(super) use request::validate_request;
+
 use std::{
     fs::File,
     io::{self, Read, Write},
@@ -34,6 +38,10 @@ struct Owner {
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "Published wire predicates are separate booleans; changing their representation would change the protocol."
+)]
 struct TransportAuthority {
     identity_verified: bool,
     heartbeat_accepted: bool,
@@ -69,6 +77,10 @@ struct Controls {
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "Published wire predicates are separate booleans; changing their representation would change the protocol."
+)]
 struct BoundaryAuthority {
     device_identity_verified: bool,
     command_persisted: bool,
@@ -80,6 +92,10 @@ struct BoundaryAuthority {
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "Published wire predicates are separate booleans; changing their representation would change the protocol."
+)]
 struct BoundaryResult {
     schema_version: String,
     evaluation_mode: String,
@@ -151,178 +167,6 @@ pub(super) fn target_id(value: &Value) -> Result<&str, RemoteError> {
         .ok_or_else(invalid_request)
 }
 
-pub(super) fn validate_request(value: &Value) -> Result<(), RemoteError> {
-    let object = value.as_object().ok_or_else(invalid_request)?;
-    if !exact_fields(
-        object,
-        [
-            "owner",
-            "conversation_id",
-            "run_id",
-            "attempt_id",
-            "attempt_state",
-            "command",
-            "transport",
-            "expected_payload_sha256",
-            "controls",
-        ],
-    ) {
-        return Err(invalid_request());
-    }
-    validate_owner(object.get("owner").ok_or_else(invalid_request)?)?;
-    for field in ["conversation_id", "run_id", "attempt_id"] {
-        let id = object
-            .get(field)
-            .and_then(Value::as_str)
-            .ok_or_else(invalid_request)?;
-        if !valid_identifier(id) {
-            return Err(invalid_request());
-        }
-    }
-    let state = object
-        .get("attempt_state")
-        .and_then(Value::as_str)
-        .ok_or_else(invalid_request)?;
-    if !valid_attempt_state(state) {
-        return Err(invalid_request());
-    }
-    let command_value = object.get("command").ok_or_else(invalid_request)?;
-    let command: RunnerCommand =
-        serde_json::from_value(command_value.clone()).map_err(|_| invalid_request())?;
-    command.validate().map_err(|_| invalid_request())?;
-    if command.lease_proof.attempt_id
-        != object
-            .get("attempt_id")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-    {
-        return Err(invalid_request());
-    }
-    validate_transport(object.get("transport").ok_or_else(invalid_request)?)?;
-    let expected = object
-        .get("expected_payload_sha256")
-        .and_then(Value::as_str)
-        .ok_or_else(invalid_request)?;
-    if !valid_digest(expected) {
-        return Err(invalid_request());
-    }
-    validate_controls(object.get("controls").ok_or_else(invalid_request)?)
-}
-
-pub(super) fn validate_response(
-    value: &Value,
-    request: &Value,
-    conversation_id: &str,
-    run_id: &str,
-) -> Result<(), RemoteError> {
-    validate_request(request)?;
-    let result: BoundaryResult =
-        serde_json::from_value(value.clone()).map_err(|_| invalid_response())?;
-    let request_object = request.as_object().ok_or_else(invalid_request)?;
-    let owner: Owner = serde_json::from_value(
-        request_object
-            .get("owner")
-            .cloned()
-            .ok_or_else(invalid_request)?,
-    )
-    .map_err(|_| invalid_request())?;
-    let command: RunnerCommand = serde_json::from_value(
-        request_object
-            .get("command")
-            .cloned()
-            .ok_or_else(invalid_request)?,
-    )
-    .map_err(|_| invalid_request())?;
-    let expected_command_sha = command.command_sha256().map_err(|_| invalid_request())?;
-    let attempt_id = request_object
-        .get("attempt_id")
-        .and_then(Value::as_str)
-        .ok_or_else(invalid_request)?;
-    let attempt_state = request_object
-        .get("attempt_state")
-        .and_then(Value::as_str)
-        .ok_or_else(invalid_request)?;
-    let controls: Controls = serde_json::from_value(
-        request_object
-            .get("controls")
-            .cloned()
-            .ok_or_else(invalid_request)?,
-    )
-    .map_err(|_| invalid_request())?;
-    let transport: TransportObservation = serde_json::from_value(
-        request_object
-            .get("transport")
-            .cloned()
-            .ok_or_else(invalid_request)?,
-    )
-    .map_err(|_| invalid_request())?;
-    let target_id = command.lease_proof.target_id.as_str();
-    let expected_payload = request_object
-        .get("expected_payload_sha256")
-        .and_then(Value::as_str)
-        .ok_or_else(invalid_request)?;
-    let transport_binding = transport.method == "POST"
-        && transport.path == format!("/api/v1/runners/{target_id}/dispatch")
-        && transport.payload_sha256 == expected_payload;
-    let reasons = result.rejection_reasons.as_slice();
-    let ready = result.mode == "execute"
-        && result.activation_allowed
-        && result.runner_authority_accepted
-        && result.dispatch_admission_ready
-        && result.transport_admission_ready
-        && result.effect_state_startable
-        && result.cancellation_clear;
-    if result.schema_version != SCHEMA_VERSION
-        || result.evaluation_mode != EVALUATION_MODE
-        || result.owner.issuer != owner.issuer
-        || result.owner.subject != owner.subject
-        || result.owner.tenant_id != owner.tenant_id
-        || result.conversation_id != conversation_id
-        || result.run_id != run_id
-        || result.attempt_id != attempt_id
-        || result.attempt_state != attempt_state
-        || result.command_id != command.command_id
-        || result.command_sha256 != expected_command_sha
-        || !valid_digest(&result.command_sha256)
-        || result.target_id != target_id
-        || result.lease_epoch == 0
-        || !valid_effect_state(&result.effect_state)
-        || result.effect_state != controls.effect_state
-        || result.effect_state_startable != effect_state_startable(&result.effect_state)
-        || result.cancellation_clear == controls.cancellation_requested
-        || result.transport_admission_ready != transport_binding
-        || transport.schema_version != TRANSPORT_SCHEMA_VERSION
-        || transport.evaluation_mode != TRANSPORT_EVALUATION_MODE
-        || transport.timestamp <= 0
-        || transport.nonce.is_empty()
-        || transport.nonce.len() > MAX_NONCE_BYTES
-        || transport.payload_bytes == 0
-        || transport.payload_bytes > MAX_PAYLOAD_BYTES as u64
-        || !transport.replay_checked
-        || !transport.preview_only
-        || !transport_authority_clear(&transport.authority)
-        || !valid_mode(&result.mode)
-        || result.execution_boundary_ready != ready
-        || !sorted_unique_identifiers(reasons)
-        || (ready && !reasons.is_empty())
-        || (!ready && reasons.is_empty())
-        || (!result.dispatch_admission_ready
-            && !reasons.iter().any(|v| v == "dispatch_admission_not_ready"))
-        || (!result.transport_admission_ready
-            && !reasons.iter().any(|v| v == "transport_admission_not_ready"))
-        || (!result.cancellation_clear && !reasons.iter().any(|v| v == "cancellation_requested"))
-        || (!result.effect_state_startable
-            && !reasons.iter().any(|v| {
-                v == "effect_state_not_startable" || v == "uncertain_effect_requires_reconciliation"
-            }))
-        || !result.preview_only
-        || !boundary_authority_clear(&result.authority)
-    {
-        return Err(invalid_response());
-    }
-    Ok(())
-}
-
 pub(super) fn render_human(value: &Value, writer: &mut impl Write) -> io::Result<()> {
     let result: BoundaryResult = serde_json::from_value(value.clone()).map_err(|_| {
         io::Error::new(
@@ -352,131 +196,6 @@ pub(super) fn render_human(value: &Value, writer: &mut impl Write) -> io::Result
         "rejection_reasons={:?}; preview_only=true execution_authorized=false dispatch_performed=false audit_published=false (fencing token, argv, workspace, transport payload, and Runner output withheld)",
         result.rejection_reasons
     )
-}
-
-fn validate_controls(value: &Value) -> Result<(), RemoteError> {
-    let object = value.as_object().ok_or_else(invalid_request)?;
-    if !exact_fields(object, ["effect_state", "cancellation_requested"]) {
-        return Err(invalid_request());
-    }
-    let effect_state = object
-        .get("effect_state")
-        .and_then(Value::as_str)
-        .ok_or_else(invalid_request)?;
-    if !valid_effect_state(effect_state)
-        || !object
-            .get("cancellation_requested")
-            .is_some_and(Value::is_boolean)
-    {
-        return Err(invalid_request());
-    }
-    Ok(())
-}
-
-fn validate_transport(value: &Value) -> Result<(), RemoteError> {
-    let object = value.as_object().ok_or_else(invalid_request)?;
-    if !exact_fields(
-        object,
-        [
-            "schema_version",
-            "evaluation_mode",
-            "method",
-            "path",
-            "timestamp",
-            "nonce",
-            "payload_sha256",
-            "payload_bytes",
-            "replay_checked",
-            "preview_only",
-            "authority",
-        ],
-    ) {
-        return Err(invalid_request());
-    }
-    if object.get("schema_version").and_then(Value::as_str) != Some(TRANSPORT_SCHEMA_VERSION)
-        || object.get("evaluation_mode").and_then(Value::as_str) != Some(TRANSPORT_EVALUATION_MODE)
-        || object.get("method").and_then(Value::as_str) != Some("POST")
-        || object.get("preview_only") != Some(&Value::Bool(true))
-    {
-        return Err(invalid_request());
-    }
-    let path = object
-        .get("path")
-        .and_then(Value::as_str)
-        .ok_or_else(invalid_request)?;
-    let timestamp = object
-        .get("timestamp")
-        .and_then(Value::as_i64)
-        .ok_or_else(invalid_request)?;
-    let nonce = object
-        .get("nonce")
-        .and_then(Value::as_str)
-        .ok_or_else(invalid_request)?;
-    let payload_bytes = object
-        .get("payload_bytes")
-        .and_then(Value::as_u64)
-        .ok_or_else(invalid_request)?;
-    if !path.starts_with("/api/v1/runners/")
-        || !path.ends_with("/dispatch")
-        || path.len() > 2_048
-        || timestamp <= 0
-        || timestamp as u64 > MAX_SAFE_INTEGER
-        || nonce.is_empty()
-        || nonce.len() > MAX_NONCE_BYTES
-        || nonce.chars().any(char::is_control)
-        || !valid_digest(
-            object
-                .get("payload_sha256")
-                .and_then(Value::as_str)
-                .ok_or_else(invalid_request)?,
-        )
-        || payload_bytes == 0
-        || payload_bytes > MAX_PAYLOAD_BYTES as u64
-        || object.get("replay_checked") != Some(&Value::Bool(true))
-    {
-        return Err(invalid_request());
-    }
-    let authority = object
-        .get("authority")
-        .and_then(Value::as_object)
-        .ok_or_else(invalid_request)?;
-    if !exact_fields(
-        authority,
-        [
-            "identity_verified",
-            "heartbeat_accepted",
-            "lease_issued",
-            "reservation_created",
-            "execution_authorized",
-            "dispatch_performed",
-            "audit_published",
-        ],
-    ) || authority.values().any(|v| v != &Value::Bool(false))
-    {
-        return Err(invalid_request());
-    }
-    Ok(())
-}
-
-fn validate_owner(value: &Value) -> Result<(), RemoteError> {
-    let object = value.as_object().ok_or_else(invalid_request)?;
-    if !exact_fields(object, ["issuer", "subject", "tenant_id"]) {
-        return Err(invalid_request());
-    }
-    for field in ["issuer", "subject", "tenant_id"] {
-        let part = object
-            .get(field)
-            .and_then(Value::as_str)
-            .ok_or_else(invalid_request)?;
-        if part.is_empty()
-            || part.len() > MAX_OWNER_PART_BYTES
-            || part.trim() != part
-            || part.chars().any(char::is_control)
-        {
-            return Err(invalid_request());
-        }
-    }
-    Ok(())
 }
 
 fn valid_mode(value: &str) -> bool {
@@ -584,4 +303,152 @@ fn read_bounded_input(input: &str) -> Result<Vec<u8>, RemoteError> {
         ));
     }
     Ok(bytes)
+}
+
+pub(super) fn validate_response(
+    value: &Value,
+    request: &Value,
+    conversation_id: &str,
+    run_id: &str,
+) -> Result<(), RemoteError> {
+    validate_request(request)?;
+    let result: BoundaryResult =
+        serde_json::from_value(value.clone()).map_err(|_| invalid_response())?;
+    let context = response_request(request)?;
+    validate_response_binding(&result, &context, conversation_id, run_id)?;
+    validate_response_state(&result, &context)
+}
+
+struct ResponseRequest<'a> {
+    owner: Owner,
+    command: RunnerCommand,
+    expected_command_sha: String,
+    attempt_id: &'a str,
+    attempt_state: &'a str,
+    controls: Controls,
+    transport: TransportObservation,
+    expected_payload: &'a str,
+}
+
+fn response_request(request: &Value) -> Result<ResponseRequest<'_>, RemoteError> {
+    let request_object = request.as_object().ok_or_else(invalid_request)?;
+    let owner: Owner = request_field(request_object, "owner")?;
+    let command: RunnerCommand = request_field(request_object, "command")?;
+    let expected_command_sha = command.command_sha256().map_err(|_| invalid_request())?;
+    let attempt_id = request_object
+        .get("attempt_id")
+        .and_then(Value::as_str)
+        .ok_or_else(invalid_request)?;
+    let attempt_state = request_object
+        .get("attempt_state")
+        .and_then(Value::as_str)
+        .ok_or_else(invalid_request)?;
+    let controls: Controls = request_field(request_object, "controls")?;
+    let transport: TransportObservation = request_field(request_object, "transport")?;
+    let expected_payload = request_object
+        .get("expected_payload_sha256")
+        .and_then(Value::as_str)
+        .ok_or_else(invalid_request)?;
+    Ok(ResponseRequest {
+        owner,
+        command,
+        expected_command_sha,
+        attempt_id,
+        attempt_state,
+        controls,
+        transport,
+        expected_payload,
+    })
+}
+
+fn validate_response_binding(
+    result: &BoundaryResult,
+    context: &ResponseRequest<'_>,
+    conversation_id: &str,
+    run_id: &str,
+) -> Result<(), RemoteError> {
+    let target_id = context.command.lease_proof.target_id.as_str();
+    if result.schema_version != SCHEMA_VERSION
+        || result.evaluation_mode != EVALUATION_MODE
+        || result.owner.issuer != context.owner.issuer
+        || result.owner.subject != context.owner.subject
+        || result.owner.tenant_id != context.owner.tenant_id
+        || result.conversation_id != conversation_id
+        || result.run_id != run_id
+        || result.attempt_id != context.attempt_id
+        || result.attempt_state != context.attempt_state
+        || result.command_id != context.command.command_id
+        || result.command_sha256 != context.expected_command_sha
+        || !valid_digest(&result.command_sha256)
+        || result.target_id != target_id
+        || result.lease_epoch == 0
+    {
+        return Err(invalid_response());
+    }
+    Ok(())
+}
+
+fn validate_response_state(
+    result: &BoundaryResult,
+    context: &ResponseRequest<'_>,
+) -> Result<(), RemoteError> {
+    let target_id = context.command.lease_proof.target_id.as_str();
+    let transport_binding = context.transport.method == "POST"
+        && context.transport.path == format!("/api/v1/runners/{target_id}/dispatch")
+        && context.transport.payload_sha256 == context.expected_payload;
+    if !valid_effect_state(&result.effect_state)
+        || result.effect_state != context.controls.effect_state
+        || result.effect_state_startable != effect_state_startable(&result.effect_state)
+        || result.cancellation_clear == context.controls.cancellation_requested
+        || result.transport_admission_ready != transport_binding
+        || context.transport.schema_version != TRANSPORT_SCHEMA_VERSION
+        || context.transport.evaluation_mode != TRANSPORT_EVALUATION_MODE
+        || context.transport.timestamp <= 0
+        || context.transport.nonce.is_empty()
+        || context.transport.nonce.len() > MAX_NONCE_BYTES
+        || context.transport.payload_bytes == 0
+        || context.transport.payload_bytes > MAX_PAYLOAD_BYTES as u64
+        || !context.transport.replay_checked
+        || !context.transport.preview_only
+        || !transport_authority_clear(&context.transport.authority)
+        || response_readiness_invalid(result)
+    {
+        return Err(invalid_response());
+    }
+    Ok(())
+}
+
+fn request_field<T: serde::de::DeserializeOwned>(
+    request: &Map<String, Value>,
+    key: &str,
+) -> Result<T, RemoteError> {
+    serde_json::from_value(request.get(key).cloned().ok_or_else(invalid_request)?)
+        .map_err(|_| invalid_request())
+}
+
+fn response_readiness_invalid(result: &BoundaryResult) -> bool {
+    let reasons = result.rejection_reasons.as_slice();
+    let ready = result.mode == "execute"
+        && result.activation_allowed
+        && result.runner_authority_accepted
+        && result.dispatch_admission_ready
+        && result.transport_admission_ready
+        && result.effect_state_startable
+        && result.cancellation_clear;
+    !valid_mode(&result.mode)
+        || result.execution_boundary_ready != ready
+        || !sorted_unique_identifiers(reasons)
+        || (ready && !reasons.is_empty())
+        || (!ready && reasons.is_empty())
+        || (!result.dispatch_admission_ready
+            && !reasons.iter().any(|v| v == "dispatch_admission_not_ready"))
+        || (!result.transport_admission_ready
+            && !reasons.iter().any(|v| v == "transport_admission_not_ready"))
+        || (!result.cancellation_clear && !reasons.iter().any(|v| v == "cancellation_requested"))
+        || (!result.effect_state_startable
+            && !reasons.iter().any(|v| {
+                v == "effect_state_not_startable" || v == "uncertain_effect_requires_reconciliation"
+            }))
+        || !result.preview_only
+        || !boundary_authority_clear(&result.authority)
 }

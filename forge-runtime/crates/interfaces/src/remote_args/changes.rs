@@ -150,7 +150,6 @@ struct WatchOptions {
     max_delay_ms: u64,
     instance_id: Option<String>,
     instance_view: Option<String>,
-    after_cursor_seen: bool,
     polls_seen: bool,
     min_delay_seen: bool,
     max_delay_seen: bool,
@@ -165,7 +164,6 @@ impl WatchOptions {
             max_delay_ms: 5_000,
             instance_id: None,
             instance_view: None,
-            after_cursor_seen: false,
             polls_seen: false,
             min_delay_seen: false,
             max_delay_seen: false,
@@ -178,12 +176,11 @@ impl WatchOptions {
 
     fn parse_option(&mut self, option: &str, tokens: &mut VecDeque<String>) -> Result<(), String> {
         match option {
-            "--after-cursor" if !self.after_cursor_seen => {
+            "--after-cursor" if self.after_cursor.is_none() => {
                 self.after_cursor = Some(parse_safe_integer_u64(
                     &next_value(tokens, "--after-cursor")?,
                     "--after-cursor",
                 )?);
-                self.after_cursor_seen = true;
             }
             "--polls" if !self.polls_seen => {
                 self.polls =

@@ -14,22 +14,8 @@ pub(super) async fn preview<W: Write>(
     argument: &str,
     writer: &mut W,
 ) -> Result<(), RemoteError> {
-    let Some(suffix) = argument.strip_prefix("--input") else {
-        return usage(writer);
-    };
-    if !suffix.chars().next().is_some_and(char::is_whitespace) {
-        return usage(writer);
-    }
-    let input = suffix.trim();
-    if input.is_empty() || input == "-" {
-        return usage(writer);
-    }
-    let request = match super::super::execution_reconciliation::read_tui_request(input) {
-        Ok(request) => request,
-        Err(error) => {
-            writeln!(writer, "Execution reconciliation input failed: {error}").map_err(io_error)?;
-            return Ok(());
-        }
+    let Some(request) = read_request(argument, writer)? else {
+        return Ok(());
     };
     let (conversation_id, run_id) =
         match super::super::execution_reconciliation::conversation_and_run(&request) {
@@ -55,8 +41,54 @@ pub(super) async fn preview<W: Write>(
     )? {
         return Ok(());
     }
+    post_and_render(client, state, &request, &conversation_id, &run_id, writer).await
+}
+
+fn usage<W: Write>(writer: &mut W) -> Result<(), RemoteError> {
+    writeln!(
+        writer,
+        "Use execution-reconciliation-preview --input FILE. The file is posted to the authenticated test-only candidate; '-' is reserved for the standalone CLI."
+    )
+    .map_err(io_error)
+}
+
+fn read_request<W: Write>(
+    argument: &str,
+    writer: &mut W,
+) -> Result<Option<serde_json::Value>, RemoteError> {
+    let Some(suffix) = argument.strip_prefix("--input") else {
+        usage(writer)?;
+        return Ok(None);
+    };
+    if !suffix.chars().next().is_some_and(char::is_whitespace) {
+        usage(writer)?;
+        return Ok(None);
+    }
+    let input = suffix.trim();
+    if input.is_empty() || input == "-" {
+        usage(writer)?;
+        return Ok(None);
+    }
+    let request = match super::super::execution_reconciliation::read_tui_request(input) {
+        Ok(request) => request,
+        Err(error) => {
+            writeln!(writer, "Execution reconciliation input failed: {error}").map_err(io_error)?;
+            return Ok(None);
+        }
+    };
+    Ok(Some(request))
+}
+
+async fn post_and_render<W: Write>(
+    client: &RemoteClient,
+    state: &mut TuiState,
+    request: &serde_json::Value,
+    conversation_id: &str,
+    run_id: &str,
+    writer: &mut W,
+) -> Result<(), RemoteError> {
     let response = match client
-        .preview_execution_reconciliation(&conversation_id, &run_id, &request)
+        .preview_execution_reconciliation(conversation_id, run_id, request)
         .await
     {
         Ok(response) => response,
@@ -76,9 +108,9 @@ pub(super) async fn preview<W: Write>(
     };
     match super::super::execution_reconciliation::validate_response(
         &response,
-        &request,
-        &conversation_id,
-        &run_id,
+        request,
+        conversation_id,
+        run_id,
     ) {
         Ok(()) => super::super::execution_reconciliation::render_human(&response, writer)
             .map_err(io_error)?,
@@ -91,12 +123,4 @@ pub(super) async fn preview<W: Write>(
         }
     }
     Ok(())
-}
-
-fn usage<W: Write>(writer: &mut W) -> Result<(), RemoteError> {
-    writeln!(
-        writer,
-        "Use execution-reconciliation-preview --input FILE. The file is posted to the authenticated test-only candidate; '-' is reserved for the standalone CLI."
-    )
-    .map_err(io_error)
 }

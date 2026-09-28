@@ -63,6 +63,10 @@ pub struct RunAttemptLeaseDispatchPreflightObservation {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "The wire decoder must retain the published preflight predicates as distinct booleans."
+)]
 struct RunAttemptLeaseDispatchPreflightWire {
     schema_version: String,
     evaluation_mode: String,
@@ -103,8 +107,14 @@ impl std::error::Error for RunAttemptLeaseDispatchPreflightError {}
 
 /// Decodes one caller-supplied preflight document after recursively rejecting
 /// duplicate JSON object keys. The typed `Deserialize` implementation keeps
-/// the value shape strict; this byte entrypoint closes serde_json's
+/// the value shape strict; this byte entrypoint closes `serde_json`'s
 /// last-member-wins behavior before that implementation runs.
+///
+/// # Errors
+///
+/// Returns an error for malformed JSON, duplicate or unknown fields, missing
+/// required fields, type mismatches, trailing input, or metadata rejected by
+/// [`RunAttemptLeaseDispatchPreflightObservation::validate`].
 pub fn decode(bytes: &[u8]) -> Result<RunAttemptLeaseDispatchPreflightObservation, String> {
     serde_json::from_slice(bytes)
         .map_err(|error| format!("invalid_run_attempt_lease_dispatch_preflight: {error}"))
@@ -180,6 +190,12 @@ impl<'de> de::Visitor<'de> for UniqueJson {
 
 impl RunAttemptLeaseDispatchPreflightObservation {
     /// Validates a caller-supplied metadata envelope without gaining authority.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RunAttemptLeaseDispatchPreflightError::InvalidObservation`] for
+    /// invalid schema, owner, identities, states, numeric bounds, derived readiness
+    /// predicates or rejection reasons, or any selection/non-preview/authority claim.
     pub fn validate(&self) -> Result<(), RunAttemptLeaseDispatchPreflightError> {
         if self.schema_version != RUN_ATTEMPT_LEASE_DISPATCH_PREFLIGHT_SCHEMA_VERSION
             || self.evaluation_mode != RUN_ATTEMPT_LEASE_DISPATCH_PREFLIGHT_EVALUATION_MODE

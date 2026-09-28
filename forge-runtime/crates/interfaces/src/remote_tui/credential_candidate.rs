@@ -23,10 +23,10 @@ pub(super) fn preview<W: Write>(argument: &str, writer: &mut W) -> Result<(), Re
     match crate::device_credential_candidate_command::execute(&command) {
         Ok(output) => {
             crate::device_credential_candidate_command::write_output(&output, false, writer)
-                .map_err(io_error)?
+                .map_err(io_error)?;
         }
         Err(error) => {
-            writeln!(writer, "Credential candidate preview failed: {error}").map_err(io_error)?
+            writeln!(writer, "Credential candidate preview failed: {error}").map_err(io_error)?;
         }
     }
     Ok(())

@@ -13,6 +13,10 @@ pub(super) struct Cursor {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
+#[allow(
+    clippy::struct_field_names,
+    reason = "Keep the published wire field and Serde type names unchanged, including decoder diagnostics."
+)]
 pub(super) struct Intent {
     pub(super) intent_id: String,
     pub(super) conversation_id: String,
@@ -37,6 +41,10 @@ pub(super) struct Page {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
+#[allow(
+    clippy::struct_field_names,
+    reason = "Keep the published wire field and Serde type names unchanged, including decoder diagnostics."
+)]
 pub(super) struct Event {
     pub(super) event_id: String,
     pub(super) seq: u64,

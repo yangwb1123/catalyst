@@ -72,8 +72,7 @@ impl ChangeCursorStore {
             &self.checkpoint.client_id,
             &self.checkpoint.subject,
             &self.checkpoint.tenant_id,
-            conversation_id,
-            run_id,
+            (conversation_id, run_id),
         )
     }
 

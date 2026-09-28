@@ -7,7 +7,7 @@ use super::RemoteCommand;
 pub(super) fn parse(tokens: &mut VecDeque<String>) -> Result<Command, String> {
     let subcommand = tokens.pop_front();
     match subcommand.as_deref() {
-        Some("preview") | Some("remote-preview") => {
+        Some("preview" | "remote-preview") => {
             let remote = subcommand.as_deref() == Some("remote-preview");
             let mut input = None;
             while let Some(option) = tokens.pop_front() {

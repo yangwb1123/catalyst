@@ -113,6 +113,11 @@ fn count_eligible_decisions<'a>(
     Ok((eligible_devices, eligible_instances))
 }
 
+#[allow(
+    clippy::struct_field_names,
+    reason = "Keep availability metrics explicit at the resource-summary projection boundary"
+)]
+#[derive(Clone, Copy)]
 struct ResourceTotals {
     available_cpu_cores: u64,
     available_memory_bytes: u64,

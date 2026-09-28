@@ -18,39 +18,18 @@ pub(super) async fn sync_client_instance_views<W: Write>(
     // Read both sides into local values first. A paired refresh must never
     // publish a newer session declaration beside an older resource image when
     // the second request fails or the two observations drift.
-    let next_session = if read_session {
-        match client.read_client_instance_session_view().await {
-            Ok(response) => Some(response),
-            Err(error) => {
-                return report_refresh_failure(
-                    state,
-                    "session-view",
-                    error,
-                    writer,
-                    previous_session,
-                    previous_resource,
-                );
-            }
+    let (next_session, next_resource) = match read_pair(client, read_session, read_resource).await {
+        Ok(pair) => pair,
+        Err((kind, error)) => {
+            return report_refresh_failure(
+                state,
+                kind,
+                &error,
+                writer,
+                previous_session,
+                previous_resource,
+            );
         }
-    } else {
-        None
-    };
-    let next_resource = if read_resource {
-        match client.read_client_instance_resource_view().await {
-            Ok(response) => Some(response),
-            Err(error) => {
-                return report_refresh_failure(
-                    state,
-                    "resource-view",
-                    error,
-                    writer,
-                    previous_session,
-                    previous_resource,
-                );
-            }
-        }
-    } else {
-        None
     };
 
     if let (Some(session), Some(resource)) = (&next_session, &next_resource)
@@ -72,6 +51,15 @@ pub(super) async fn sync_client_instance_views<W: Write>(
         return Ok(false);
     }
 
+    commit_pair(state, next_session, next_resource, writer)
+}
+
+fn commit_pair<W: Write>(
+    state: &mut TuiState,
+    next_session: Option<serde_json::Value>,
+    next_resource: Option<serde_json::Value>,
+    writer: &mut W,
+) -> Result<bool, RemoteError> {
     // Render before committing so an unexpected renderer failure also leaves
     // the last validated process-local pair untouched.
     if let Some(response) = next_session.as_ref() {
@@ -94,15 +82,45 @@ pub(super) async fn sync_client_instance_views<W: Write>(
     Ok(true)
 }
 
+type ClientInstancePair = (Option<serde_json::Value>, Option<serde_json::Value>);
+
+async fn read_pair(
+    client: &RemoteClient,
+    read_session: bool,
+    read_resource: bool,
+) -> Result<ClientInstancePair, (&'static str, RemoteError)> {
+    let session = if read_session {
+        Some(
+            client
+                .read_client_instance_session_view()
+                .await
+                .map_err(|error| ("session-view", error))?,
+        )
+    } else {
+        None
+    };
+    let resource = if read_resource {
+        Some(
+            client
+                .read_client_instance_resource_view()
+                .await
+                .map_err(|error| ("resource-view", error))?,
+        )
+    } else {
+        None
+    };
+    Ok((session, resource))
+}
+
 fn report_refresh_failure<W: Write>(
     state: &mut TuiState,
     kind: &str,
-    error: RemoteError,
+    error: &RemoteError,
     writer: &mut W,
     previous_session: Option<serde_json::Value>,
     previous_resource: Option<serde_json::Value>,
 ) -> Result<bool, RemoteError> {
-    let authorization_cleared = super::clear_session_view_after_authorization_error(state, &error);
+    let authorization_cleared = super::clear_session_view_after_authorization_error(state, error);
     let projection_cleared = if authorization_cleared {
         false
     } else {

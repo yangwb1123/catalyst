@@ -31,6 +31,10 @@ struct Fixture {
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "Independent contract flags preserve the frozen observation and authority wire shape"
+)]
 struct Authority {
     device_identity_verified: bool,
     references_resolved: bool,
@@ -71,6 +75,10 @@ struct WireRequest {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[allow(
+    clippy::struct_field_names,
+    reason = "Preserve frozen wire field names and existing Serde type-name diagnostics"
+)]
 struct WireControlVersionBinding {
     objective_version: i64,
     change_version: i64,
@@ -80,6 +88,10 @@ struct WireControlVersionBinding {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[allow(
+    clippy::struct_field_names,
+    reason = "Preserve frozen wire field names and existing Serde type-name diagnostics"
+)]
 struct WireAttemptBudget {
     max_duration_ms: i64,
     max_cost_usd_micros: i64,
@@ -206,66 +218,69 @@ fn validate_fixture(fixture: &Fixture) -> Result<(), Box<dyn Error>> {
 
 fn evaluate_case(case: Case) -> Result<CaseOutput, Box<dyn Error>> {
     let expected = case.expected;
-    let request = AttemptRequest::try_from_input(&case.request.into());
-    match request {
-        Ok(request) => {
-            if !expected.accepted
-                || expected.initial_state != "requested"
-                || request.requested_effects() != expected.requested_effects
-                || request
-                    .approval_refs()
-                    .iter()
-                    .map(|value| value.record_id.as_str())
-                    .collect::<Vec<_>>()
-                    != expected
-                        .approval_record_ids
-                        .iter()
-                        .map(String::as_str)
-                        .collect::<Vec<_>>()
-            {
-                return Err(format!(
-                    "Attempt request fixture expectation mismatch: {}",
-                    case.name
-                )
-                .into());
-            }
-            Ok(CaseOutput {
-                name: case.name,
-                accepted: true,
-                error: None,
-                initial_state: "requested",
-                requested_effects: request.requested_effects().to_vec(),
-                approval_record_ids: request
-                    .approval_refs()
-                    .iter()
-                    .map(|value| value.record_id.clone())
-                    .collect(),
-            })
-        }
-        Err(error) => {
-            let expected_error = expected
-                .error
-                .as_deref()
-                .filter(|value| !value.is_empty())
-                .ok_or_else(|| format!("{} has no expected rejection class", case.name))?;
-            let actual_error = error_code(error.code());
-            if expected.accepted || expected_error != actual_error {
-                return Err(format!(
-                    "Attempt request fixture expectation mismatch: {}",
-                    case.name
-                )
-                .into());
-            }
-            Ok(CaseOutput {
-                name: case.name,
-                accepted: false,
-                error: Some(actual_error),
-                initial_state: "requested",
-                requested_effects: expected.requested_effects,
-                approval_record_ids: expected.approval_record_ids,
-            })
-        }
+    match AttemptRequest::try_from_input(&case.request.into()) {
+        Ok(request) => accepted_case(case.name, &expected, &request),
+        Err(error) => rejected_case(case.name, expected, error.code()),
     }
+}
+
+fn accepted_case(
+    name: String,
+    expected: &Expected,
+    request: &AttemptRequest,
+) -> Result<CaseOutput, Box<dyn Error>> {
+    if !expected.accepted
+        || expected.initial_state != "requested"
+        || request.requested_effects() != expected.requested_effects
+        || request
+            .approval_refs()
+            .iter()
+            .map(|value| value.record_id.as_str())
+            .collect::<Vec<_>>()
+            != expected
+                .approval_record_ids
+                .iter()
+                .map(String::as_str)
+                .collect::<Vec<_>>()
+    {
+        return Err(format!("Attempt request fixture expectation mismatch: {name}").into());
+    }
+    Ok(CaseOutput {
+        name,
+        accepted: true,
+        error: None,
+        initial_state: "requested",
+        requested_effects: request.requested_effects().to_vec(),
+        approval_record_ids: request
+            .approval_refs()
+            .iter()
+            .map(|value| value.record_id.clone())
+            .collect(),
+    })
+}
+
+fn rejected_case(
+    name: String,
+    expected: Expected,
+    code: AttemptRequestErrorCode,
+) -> Result<CaseOutput, Box<dyn Error>> {
+    let expected_error = expected
+        .error
+        .as_deref()
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| format!("{name} has no expected rejection class"))?;
+    let actual_error = error_code(code);
+    if expected.accepted || expected_error != actual_error {
+        return Err(format!("Attempt request fixture expectation mismatch: {name}").into());
+    }
+    Ok(CaseOutput {
+        name,
+        accepted: false,
+        error: Some(actual_error),
+        initial_state: "requested",
+        requested_effects: expected.requested_effects,
+        approval_record_ids: expected.approval_record_ids,
+    })
 }
 
 fn error_code(value: AttemptRequestErrorCode) -> &'static str {

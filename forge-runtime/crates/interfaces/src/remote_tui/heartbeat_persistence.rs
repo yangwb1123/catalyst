@@ -21,10 +21,10 @@ pub(super) fn preview<W: Write>(argument: &str, writer: &mut W) -> Result<(), Re
     match crate::device_heartbeat_persistence_command::execute(&command) {
         Ok(output) => {
             crate::device_heartbeat_persistence_command::write_output(&output, false, writer)
-                .map_err(io_error)?
+                .map_err(io_error)?;
         }
         Err(error) => {
-            writeln!(writer, "Heartbeat persistence preview failed: {error}").map_err(io_error)?
+            writeln!(writer, "Heartbeat persistence preview failed: {error}").map_err(io_error)?;
         }
     }
     Ok(())

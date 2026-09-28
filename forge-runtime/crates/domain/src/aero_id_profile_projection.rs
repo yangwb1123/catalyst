@@ -44,6 +44,10 @@ pub struct Membership {
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "The frozen projection names each independently denied authority capability."
+)]
 pub struct Authority {
     pub identity_verified: bool,
     pub profile_authoritative: bool,
@@ -56,6 +60,10 @@ pub struct Authority {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "The shared wire retains separate unverified and partial-observation flags."
+)]
 pub struct Projection {
     pub schema_version: String,
     pub evaluation_mode: String,
@@ -73,6 +81,11 @@ pub struct Projection {
 }
 
 /// Decode and validate only the supplied projection bytes.
+///
+/// # Errors
+///
+/// Rejects empty or oversized input, malformed or duplicate-key JSON, unknown
+/// fields, and projections that violate the envelope or membership constraints.
 pub fn decode(bytes: &[u8]) -> Result<Projection, String> {
     if bytes.is_empty() || bytes.len() > MAX_BYTES {
         return Err("aero-id profile projection size is invalid".into());
@@ -154,6 +167,11 @@ impl<'de> de::Visitor<'de> for UniqueJson {
 }
 
 /// Validate the versioned shape and deterministic membership ordering.
+///
+/// # Errors
+///
+/// Rejects invalid envelope, authority, consistency, owner, profile, or membership
+/// declarations, including excessive, duplicate, and unsorted memberships.
 pub fn validate(projection: &Projection) -> Result<(), String> {
     if projection.schema_version != SCHEMA_VERSION
         || projection.evaluation_mode != EVALUATION_MODE
@@ -200,6 +218,10 @@ pub fn validate(projection: &Projection) -> Result<(), String> {
 
 /// Require an exact owner tuple match.  The tuple is still unverified data;
 /// this only prevents a confused-deputy display across owners.
+///
+/// # Errors
+///
+/// Rejects an invalid expected owner or a projection declaring a different owner.
 pub fn bind_owner(projection: &Projection, expected: &Owner) -> Result<(), String> {
     validate_owner(expected)?;
     if projection.owner_declaration != *expected {

@@ -76,6 +76,10 @@ pub struct RunnerExecutionIntentRequest {
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "The execution-intent wire contract records each authority claim as a separate boolean."
+)]
 pub struct RunnerExecutionIntentAuthority {
     pub device_identity_verified: bool,
     pub command_persisted: bool,
@@ -128,6 +132,12 @@ impl std::error::Error for RunnerExecutionIntentError {}
 /// The returned value is metadata-only and always preview-only. It has no
 /// clock, storage, transport, selection, reservation, dispatch, or process
 /// effect.
+///
+/// # Errors
+///
+/// Returns an owner, Prompt, Run, or binding error for invalid supplied metadata
+/// or inconsistent identities, digests, keys, and selection fields. Command
+/// validation and encoding failures are wrapped in [`RunnerExecutionIntentError::Command`].
 pub fn observe_runner_execution_intent(
     input: RunnerExecutionIntentRequest,
 ) -> Result<RunnerExecutionIntentObservation, RunnerExecutionIntentError> {

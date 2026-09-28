@@ -22,7 +22,8 @@ pub(super) fn preview<W: Write>(argument: &str, writer: &mut W) -> Result<(), Re
         Ok(output) => crate::device_runner_receipt_command::write_output(&output, false, writer)
             .map_err(io_error)?,
         Err(error) => {
-            writeln!(writer, "Runner terminal receipt preview failed: {error}").map_err(io_error)?
+            writeln!(writer, "Runner terminal receipt preview failed: {error}")
+                .map_err(io_error)?;
         }
     }
     Ok(())

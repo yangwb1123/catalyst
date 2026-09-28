@@ -27,6 +27,10 @@ const MAX_IDENTIFIER_BYTES: usize = 128;
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "The frozen wire carries independent authority disclaimers."
+)]
 pub struct SessionRunnerReconciliationAuthority {
     pub identity_verified: bool,
     pub receipt_persisted: bool,
@@ -53,6 +57,10 @@ pub struct SessionRunnerReceiptHistorySummary {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "The frozen wire carries independent reconciliation and authority flags."
+)]
 pub struct SessionRunnerReconciliationProjection {
     pub schema_version: String,
     pub evaluation_mode: String,
@@ -92,6 +100,11 @@ impl fmt::Display for SessionRunnerReconciliationProjectionError {
 impl std::error::Error for SessionRunnerReconciliationProjectionError {}
 
 /// Projects the manual-reconciliation view of one validated uncertain history.
+///
+/// # Errors
+/// Returns `InvalidProjection` for an invalid history before checking whether
+/// the history is uncertain; otherwise returns `HistoryIsNotUncertain` if the
+/// validated history does not declare the manual-reconciliation boundary.
 pub fn project_session_runner_reconciliation(
     history: &SessionRunnerReceiptHistoryObservation,
 ) -> Result<SessionRunnerReconciliationProjection, SessionRunnerReconciliationProjectionError> {
@@ -111,6 +124,10 @@ pub fn project_session_runner_reconciliation(
 
 impl SessionRunnerReconciliationProjection {
     /// Recomputes every derived field from the embedded history summary.
+    ///
+    /// # Errors
+    /// Returns `SessionRunnerReconciliationProjectionError::InvalidProjection`
+    /// for an invalid source summary or any inconsistent derived field.
     pub fn validate(&self) -> Result<(), SessionRunnerReconciliationProjectionError> {
         validate_summary(&self.source)?;
         if self != &expected_projection(self.source.clone()) {
@@ -174,7 +191,8 @@ fn validate_summary(
         && valid_identifier(&summary.conversation_id)
         && valid_identifier(&summary.prompt_id)
         && valid_identifier(&summary.run_id)
-        && (1..=MAX_SESSION_RUNNER_RECEIPTS as u32).contains(&summary.attempt_count)
+        && usize::try_from(summary.attempt_count)
+            .is_ok_and(|count| (1..=MAX_SESSION_RUNNER_RECEIPTS).contains(&count))
         && valid_identifier(&summary.latest_attempt_id)
         && valid_identifier(&summary.latest_command_id)
         && valid_identifier(&summary.latest_target_id)
@@ -206,3 +224,29 @@ fn valid_text(value: &str, max_bytes: usize) -> bool {
 #[cfg(test)]
 #[path = "session_runner_reconciliation_projection_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+mod count_boundaries {
+    use super::*;
+
+    #[test]
+    fn summary_attempt_count_keeps_the_frozen_range_without_truncation() {
+        let fixture: SessionRunnerReconciliationProjection = serde_json::from_str(include_str!(
+            "../../../../../docs/contracts/fixtures/forge-session-runner-reconciliation-projection-v1.json"
+        ))
+        .unwrap();
+        for count in [1, 16] {
+            let mut projection = fixture.clone();
+            projection.source.attempt_count = count;
+            assert!(projection.validate().is_ok());
+        }
+        for count in [0, 17, u32::MAX] {
+            let mut projection = fixture.clone();
+            projection.source.attempt_count = count;
+            assert_eq!(
+                projection.validate(),
+                Err(SessionRunnerReconciliationProjectionError::InvalidProjection)
+            );
+        }
+    }
+}

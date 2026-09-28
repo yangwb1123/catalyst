@@ -1,4 +1,6 @@
-use super::*;
+use super::{
+    Error, RemoteClient, RemoteCommand, RemoteError, Value, client_instance_session_scope,
+};
 
 /// Reads an owner-wide change feed and applies an optional caller-declared
 /// client-instance projection to its rows.  The feed request and cursor
@@ -82,9 +84,11 @@ pub(super) fn project_change_feed_response(
     Ok(response)
 }
 
+type InstanceProjection<'a> = (Option<&'a str>, Option<&'a str>);
+
 fn change_instance_projection(
     command: &RemoteCommand,
-) -> Result<(Option<&str>, Option<&str>), Box<dyn Error>> {
+) -> Result<InstanceProjection<'_>, Box<dyn Error>> {
     match command {
         RemoteCommand::ChangesList {
             instance_id,

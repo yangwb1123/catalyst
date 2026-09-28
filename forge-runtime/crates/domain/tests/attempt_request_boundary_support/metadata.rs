@@ -39,7 +39,8 @@ const EXPECTED_DEPENDENCY_FILES: &[(&str, &str)] = &[
     ),
     (
         "crates/interfaces/Cargo.toml",
-        "c341717b32242b21be5ee4c9ee1e1e791f1fa04da32217d9440bbedf80adb66c",
+        // 29b6356 adds futures-util for bounded SSE reads; Domain is unchanged.
+        "72153a84f71dc2e2795745a6d7422609333a339cff0880eb7d85d49e787b5c05",
     ),
 ];
 
@@ -92,8 +93,8 @@ pub(super) fn verify_dependency_manifests(metadata: &CargoMetadata) {
         ));
     }
     assert_eq!(actual, expected, "dependency manifest inventory drift");
-    for (relative, digest) in EXPECTED_DEPENDENCY_FILES {
-        verify_file_digest(&metadata.workspace_root.join(relative), digest);
+    for (relative, _) in EXPECTED_DEPENDENCY_FILES {
+        verify_file_digest(&metadata.workspace_root.join(relative), relative);
     }
     verify_no_repository_cargo_config(&metadata.workspace_root);
 }
@@ -209,7 +210,7 @@ fn validate_production_target(target: &CargoTarget, root: &Path, workspace: &Pat
     assert_regular(&target.src_path, "target source");
 }
 
-fn verify_file_digest(path: &Path, expected: &str) {
+fn verify_file_digest(path: &Path, relative: &str) {
     assert_regular(path, "dependency manifest");
     let mut bytes = Vec::new();
     File::open(path)
@@ -218,13 +219,21 @@ fn verify_file_digest(path: &Path, expected: &str) {
         .read_to_end(&mut bytes)
         .expect("read dependency manifest");
     assert!(u64::try_from(bytes.len()).expect("manifest length") <= MAX_MANIFEST_BYTES);
-    let actual = format!("{:x}", Sha256::digest(&bytes));
-    assert_eq!(
-        actual,
-        expected,
-        "dependency manifest drift: {}",
-        path.display()
-    );
+    check_dependency_source(relative, &bytes)
+        .unwrap_or_else(|error| panic!("{}: {error}", path.display()));
+}
+
+pub(super) fn check_dependency_source(relative: &str, bytes: &[u8]) -> Result<(), String> {
+    let expected = EXPECTED_DEPENDENCY_FILES
+        .iter()
+        .find_map(|(path, digest)| (*path == relative).then_some(*digest))
+        .ok_or_else(|| format!("unreviewed dependency manifest: {relative}"))?;
+    let actual = format!("{:x}", Sha256::digest(bytes));
+    if actual == expected {
+        Ok(())
+    } else {
+        Err(format!("dependency manifest drift: {relative}: {actual}"))
+    }
 }
 
 fn relative_utf8<'a>(root: &Path, path: &'a Path) -> &'a str {

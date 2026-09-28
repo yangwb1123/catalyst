@@ -22,10 +22,10 @@ pub(super) fn preview<W: Write>(argument: &str, writer: &mut W) -> Result<(), su
     match crate::device_pending_run_intent_command::execute(&command) {
         Ok(output) => {
             crate::device_pending_run_intent_command::write_output(&output, false, writer)
-                .map_err(io_error)?
+                .map_err(io_error)?;
         }
         Err(error) => {
-            writeln!(writer, "Pending Run-intent preview failed: {error}").map_err(io_error)?
+            writeln!(writer, "Pending Run-intent preview failed: {error}").map_err(io_error)?;
         }
     }
     Ok(())

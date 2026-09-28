@@ -7,6 +7,13 @@
 //! metadata-only domain observation.  No target is selected and no authority
 //! bit is accepted from the transport.
 
+#[path = "remote_run_attempt_lease_dispatch_preflight/request_validation.rs"]
+mod request_validation;
+use request_validation::{
+    same_owner, valid_digest, valid_idempotency_key, valid_identifier, valid_owner,
+    valid_placement, valid_route_identifier,
+};
+
 use std::{
     fs::File,
     io::{self, Read, Write},
@@ -79,6 +86,10 @@ struct IntentObservation {
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "Published wire predicates are separate booleans; changing their representation would change the protocol."
+)]
 struct IntentAuthority {
     device_identity_verified: bool,
     command_persisted: bool,
@@ -207,7 +218,9 @@ pub(super) fn validate_response(
     let plan = &request.dispatch_plan;
     let placement = &plan.placement_request;
     let intent = &plan.runner_execution_intent;
-    let expected_lease_active = plan.lease.is_active(placement.evaluated_at_ms as u64);
+    let expected_lease_active = plan
+        .lease
+        .is_active(placement.evaluated_at_ms.cast_unsigned());
     if !same_owner(&observation.owner, &request.owner)
         || observation.conversation_id != conversation_id
         || observation.run_id != run_id
@@ -218,7 +231,7 @@ pub(super) fn validate_response(
         || observation.intent_target_id != intent.target_id
         || observation.lease_epoch != plan.lease.epoch
         || observation.lease_active != expected_lease_active
-        || observation.evaluated_at_ms != placement.evaluated_at_ms as u64
+        || observation.evaluated_at_ms != placement.evaluated_at_ms.cast_unsigned()
         || observation.candidate_count as usize != placement.devices.len()
         || !observation.preview_only
         || observation.selected_target_id.is_some()
@@ -342,183 +355,6 @@ fn valid_intent(plan: &DispatchPlanRequest, request: &PreflightRequest) -> bool 
         && intent.authority == IntentAuthority::default()
 }
 
-fn valid_placement(value: &PlacementRequest, expected_owner: &OwnerWire) -> bool {
-    value.schema_version == REQUEST_SCHEMA_VERSION
-        && value.evaluated_at_ms > 0
-        && (value.evaluated_at_ms as u64) <= MAX_SAFE_INTEGER
-        && value.max_snapshot_age_ms > 0
-        && (value.max_snapshot_age_ms as u64) <= 86_400_000
-        && valid_owner(&value.owner)
-        && value.owner == *expected_owner
-        && valid_requirements(&value.requirements)
-        && value.devices.len() <= MAX_CANDIDATES
-        && value
-            .devices
-            .iter()
-            .all(|device| valid_device(device, expected_owner))
-        && value.devices.iter().enumerate().all(|(index, device)| {
-            value.devices[..index]
-                .iter()
-                .all(|previous| previous.device_id != device.device_id)
-        })
-}
-
-fn valid_requirements(value: &PlacementRequirements) -> bool {
-    valid_token(&value.os)
-        && valid_token(&value.architecture)
-        && value.min_cpu_cores > 0
-        && value.min_memory_bytes > 0
-        && value.min_memory_bytes <= MAX_SAFE_INTEGER
-        && value.min_storage_bytes > 0
-        && value.min_storage_bytes <= MAX_SAFE_INTEGER
-        && valid_token(&value.runtime)
-        && valid_zones(&value.data_residency_zones)
-        && matches!(
-            value.minimum_trust_zone.as_str(),
-            "untrusted" | "low" | "standard" | "high" | "restricted"
-        )
-        && matches!(
-            value.sandbox_floor.as_str(),
-            "process" | "container" | "microvm"
-        )
-        && value.concurrency_slots > 0
-        && valid_gpu_requirement(&value.gpu)
-}
-
-fn valid_gpu_requirement(value: &GpuRequirement) -> bool {
-    if value.required {
-        value.min_memory_bytes <= MAX_SAFE_INTEGER
-            && (value.runtime.is_empty() || valid_token(&value.runtime))
-    } else {
-        value.min_memory_bytes == 0 && value.runtime.is_empty()
-    }
-}
-
-fn valid_device(value: &PlacementDevice, expected_owner: &OwnerWire) -> bool {
-    let _ = (
-        value.available_cpu_cores,
-        value.concurrency_limit,
-        value.active_concurrency,
-    );
-    valid_identifier(&value.device_id)
-        && valid_owner(&value.owner)
-        && value.owner == *expected_owner
-        && matches!(
-            value.approval_state.as_str(),
-            "approved" | "pending" | "revoked" | "unknown"
-        )
-        && matches!(
-            value.cordon_state.as_str(),
-            "clear" | "cordoned" | "unknown"
-        )
-        && matches!(value.liveness.as_str(), "online" | "offline" | "unknown")
-        && value.snapshot_observed_at_ms >= 0
-        && (value.snapshot_observed_at_ms as u64) <= MAX_SAFE_INTEGER
-        && value.lease_expires_at_ms >= 0
-        && (value.lease_expires_at_ms as u64) <= MAX_SAFE_INTEGER
-        && valid_token(&value.os)
-        && valid_token(&value.architecture)
-        && value.available_memory_bytes <= MAX_SAFE_INTEGER
-        && value.available_storage_bytes <= MAX_SAFE_INTEGER
-        && value.runtimes.len() <= 32
-        && value.runtimes.iter().all(|item| valid_token(item))
-        && valid_gpu_declaration(&value.gpu)
-        && valid_zones(&value.data_residency_zones)
-        && matches!(
-            value.trust_zone.as_str(),
-            "untrusted" | "low" | "standard" | "high" | "restricted" | "unknown"
-        )
-        && value.sandbox_levels.len() <= 32
-        && value
-            .sandbox_levels
-            .iter()
-            .all(|item| matches!(item.as_str(), "process" | "container" | "microvm"))
-}
-
-fn valid_gpu_declaration(value: &GpuDeclaration) -> bool {
-    if value.present {
-        value.memory_bytes <= MAX_SAFE_INTEGER
-            && (value.runtime.is_empty() || valid_token(&value.runtime))
-    } else {
-        value.memory_bytes == 0 && value.runtime.is_empty()
-    }
-}
-
-fn valid_owner(value: &OwnerWire) -> bool {
-    valid_owner_part(&value.issuer)
-        && valid_owner_part(&value.subject)
-        && valid_owner_part(&value.tenant_id)
-}
-
-fn valid_owner_part(value: &str) -> bool {
-    !value.is_empty()
-        && value.len() <= 512
-        && value.trim() == value
-        && !value.chars().any(char::is_control)
-}
-
-fn valid_identifier(value: &str) -> bool {
-    !value.is_empty()
-        && value.len() <= 128
-        && value.chars().enumerate().all(|(index, character)| {
-            character.is_ascii_alphanumeric()
-                || (index > 0 && matches!(character, '.' | '_' | ':' | '-' | '+' | '/'))
-        })
-}
-
-fn valid_route_identifier(value: &str) -> bool {
-    !value.is_empty()
-        && value.len() <= 128
-        && value.chars().enumerate().all(|(index, character)| {
-            character.is_ascii_alphanumeric()
-                || (index > 0 && matches!(character, '.' | '_' | '-' | '+'))
-        })
-}
-
-fn valid_idempotency_key(value: &str) -> bool {
-    !value.is_empty()
-        && value.len() <= 256
-        && value.chars().all(|character| {
-            character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | ':' | '-' | '+')
-        })
-}
-
-fn valid_token(value: &str) -> bool {
-    !value.is_empty()
-        && value.len() <= 128
-        && value.chars().all(|character| {
-            character.is_ascii_alphanumeric() || ". _:+/-".replace(' ', "").contains(character)
-        })
-}
-
-fn valid_zones(values: &[String]) -> bool {
-    values.len() <= 32
-        && values.iter().all(|value| {
-            !value.is_empty()
-                && value.len() <= 64
-                && value.chars().all(|character| {
-                    character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '-')
-                })
-        })
-        && values
-            .iter()
-            .enumerate()
-            .all(|(index, value)| values[..index].iter().all(|previous| previous != value))
-}
-
-fn valid_digest(value: &str) -> bool {
-    value.len() == 64
-        && value
-            .bytes()
-            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
-}
-
-fn same_owner(value: &forge_runtime_domain::ConversationOwner, expected: &OwnerWire) -> bool {
-    value.issuer == expected.issuer
-        && value.subject == expected.subject
-        && value.tenant_id == expected.tenant_id
-}
-
 fn invalid_request() -> RemoteError {
     RemoteError("remote Run/Attempt/lease preflight input is invalid".into())
 }
@@ -562,197 +398,8 @@ fn read_bounded_input(input: &str) -> Result<Vec<u8>, RemoteError> {
 }
 
 #[cfg(test)]
-mod tests {
-    use serde_json::{Value, json};
-    use sha2::{Digest, Sha256};
-
-    use super::{conversation_and_run, read_request, render_human, validate_response};
-
-    const CANONICAL_REQUEST_FIXTURE: &[u8] = include_bytes!(
-        "../../../../docs/contracts/fixtures/forge-run-attempt-lease-dispatch-preflight-request-v1.json"
-    );
-    const CANONICAL_REQUEST_SHA256: &str =
-        "a6ce75bfc27cf3150b5f00ff8ccaefded70502c3be9b1c7847477fae77bbbdce";
-
-    pub(super) fn request() -> Value {
-        let owner =
-            json!({"issuer":"https://id.example","subject":"user-1","tenant_id":"tenant-1"});
-        let intent = json!({
-            "schema_version": "forge.runner-execution-intent/v1",
-            "evaluation_mode": "pure_runner_binding_only",
-            "owner": owner,
-            "conversation_id": "conversation-001",
-            "prompt_id": "prompt-001",
-            "run_id": "run-001",
-            "attempt_id": "attempt-001",
-            "command_id": "command-001",
-            "target_id": "runner-1",
-            "command_sha256": "42ed02a535113450e6f2cc757fb9b4e2cce6143724274191bbae159e9ea8de7a",
-            "idempotency_key": "run-001:attempt-001:command-001",
-            "prompt_run_binding_valid": true,
-            "runner_command_binding_valid": true,
-            "preview_only": true,
-            "selected_target_id": null,
-            "authority": {
-                "device_identity_verified": false,
-                "command_persisted": false,
-                "reservation_created": false,
-                "execution_authorized": false,
-                "dispatch_performed": false,
-                "audit_published": false
-            }
-        });
-        let placement = json!({
-            "schema_version":"forge.device-placement-dry-run/v1",
-            "evaluated_at_ms":200500,
-            "owner":owner,
-            "max_snapshot_age_ms":86400000,
-            "requirements": {
-                "os":"linux","architecture":"x86_64","min_cpu_cores":1,
-                "min_memory_bytes":1024,"min_storage_bytes":1024,"runtime":"forge",
-                "gpu":{"required":false,"min_memory_bytes":0,"runtime":""},
-                "data_residency_zones":["us"],"minimum_trust_zone":"standard",
-                "sandbox_floor":"process","concurrency_slots":1
-            },
-            "devices":[
-                {
-                    "device_id":"runner-1","owner":owner,"approval_state":"approved","cordon_state":"clear","liveness":"online",
-                    "snapshot_observed_at_ms":200000,"lease_expires_at_ms":201000,"os":"linux","architecture":"x86_64",
-                    "available_cpu_cores":4,"available_memory_bytes":4096,"available_storage_bytes":4096,"runtimes":["forge"],
-                    "gpu":{"present":false,"memory_bytes":0,"runtime":""},"data_residency_zones":["us"],"trust_zone":"standard",
-                    "sandbox_levels":["process"],"concurrency_limit":2,"active_concurrency":0
-                },
-                {
-                    "device_id":"runner-2","owner":owner,"approval_state":"approved","cordon_state":"clear","liveness":"online",
-                    "snapshot_observed_at_ms":200000,"lease_expires_at_ms":201000,"os":"linux","architecture":"x86_64",
-                    "available_cpu_cores":4,"available_memory_bytes":4096,"available_storage_bytes":4096,"runtimes":["forge"],
-                    "gpu":{"present":false,"memory_bytes":0,"runtime":""},"data_residency_zones":["us"],"trust_zone":"standard",
-                    "sandbox_levels":["process"],"concurrency_limit":2,"active_concurrency":0
-                }
-            ]
-        });
-        json!({
-            "owner":owner,"conversation_id":"conversation-001","run_id":"run-001","run_status":"nonterminal",
-            "dispatch_plan":{
-                "attempt_state":"accepted","placement_request":placement,"runner_execution_intent":intent,
-                "lease":{"v":1,"attempt_id":"attempt-001","target_id":"runner-1","epoch":1,"fencing_token":"fence-001","issued_at_ms":199500,"expires_at_ms":205500}
-            }
-        })
-    }
-
-    fn response() -> Value {
-        serde_json::from_str(include_str!(
-            "../../../../docs/contracts/fixtures/forge-run-attempt-lease-dispatch-preflight-v1.json"
-        ))
-        .expect("preflight fixture")
-    }
-
-    #[test]
-    fn request_is_strict_and_path_bound() {
-        let value = request();
-        let file = tempfile::NamedTempFile::new().unwrap();
-        std::fs::write(file.path(), serde_json::to_vec(&value).unwrap()).unwrap();
-        let decoded = read_request(file.path().to_str().unwrap()).unwrap();
-        assert_eq!(
-            conversation_and_run(&decoded).unwrap(),
-            ("conversation-001".to_owned(), "run-001".to_owned())
-        );
-        let duplicate = serde_json::to_string(&value).unwrap().replacen(
-            "\"run_status\":\"nonterminal\"",
-            "\"run_status\":\"nonterminal\",\"run_status\":\"nonterminal\"",
-            1,
-        );
-        std::fs::write(file.path(), duplicate).unwrap();
-        assert!(read_request(file.path().to_str().unwrap()).is_err());
-
-        let mut path_confused = request();
-        path_confused["conversation_id"] = Value::String("conversation/001".to_owned());
-        std::fs::write(file.path(), serde_json::to_vec(&path_confused).unwrap()).unwrap();
-        assert!(read_request(file.path().to_str().unwrap()).is_err());
-    }
-
-    #[test]
-    fn canonical_request_fixture_is_accepted() {
-        let file = tempfile::NamedTempFile::new().unwrap();
-        std::fs::write(file.path(), CANONICAL_REQUEST_FIXTURE).unwrap();
-        let decoded = read_request(file.path().to_str().unwrap()).unwrap();
-        assert_eq!(
-            conversation_and_run(&decoded).unwrap(),
-            ("conversation-001".to_owned(), "run-001".to_owned())
-        );
-    }
-
-    #[test]
-    fn canonical_request_fixture_bytes_reject_all_unsafe_mutations() {
-        assert_eq!(
-            format!("{:x}", Sha256::digest(CANONICAL_REQUEST_FIXTURE)),
-            CANONICAL_REQUEST_SHA256
-        );
-        let canonical = std::str::from_utf8(CANONICAL_REQUEST_FIXTURE).unwrap();
-        assert_request_is_rejected(&canonical.replacen(
-            "  \"run_status\": \"nonterminal\",\n",
-            "  \"run_status\": \"nonterminal\",\n  \"unexpected\": true,\n",
-            1,
-        ));
-        assert_request_is_rejected(&canonical.replacen(
-            "  \"run_status\": \"nonterminal\",\n",
-            "  \"run_status\": \"nonterminal\",\n  \"run_status\": \"nonterminal\",\n",
-            1,
-        ));
-        assert_request_is_rejected(&format!("{canonical} {{}}\n"));
-        assert_request_is_rejected(&canonical.replacen(
-            "      \"selected_target_id\": null",
-            "      \"selected_target_id\": \"runner-1\"",
-            1,
-        ));
-        assert_request_is_rejected(&canonical.replacen(
-            "      \"target_id\": \"runner-1\",\n      \"epoch\": 1,",
-            "      \"target_id\": \"runner-foreign\",\n      \"epoch\": 1,",
-            1,
-        ));
-        assert_request_is_rejected(&canonical.replacen(
-            "        \"dispatch_performed\": false",
-            "        \"dispatch_performed\": true",
-            1,
-        ));
-    }
-
-    fn assert_request_is_rejected(input: &str) {
-        let file = tempfile::NamedTempFile::new().unwrap();
-        std::fs::write(file.path(), input.as_bytes()).unwrap();
-        assert!(
-            read_request(file.path().to_str().unwrap()).is_err(),
-            "unsafe preflight request mutation was accepted"
-        );
-    }
-
-    #[test]
-    fn response_requires_bindings_and_false_authority() {
-        let request = request();
-        let response = response();
-        validate_response(&response, &request, "conversation-001", "run-001").unwrap();
-        let mut foreign = response.clone();
-        foreign["run_id"] = json!("run-002");
-        assert!(validate_response(&foreign, &request, "conversation-001", "run-001").is_err());
-        let mut selected = response.clone();
-        selected["selected_target_id"] = json!("runner-1");
-        assert!(validate_response(&selected, &request, "conversation-001", "run-001").is_err());
-        let mut authority = response.clone();
-        authority["authority"]["dispatch_performed"] = json!(true);
-        assert!(validate_response(&authority, &request, "conversation-001", "run-001").is_err());
-    }
-
-    #[test]
-    fn human_output_is_metadata_only() {
-        let mut output = Vec::new();
-        render_human(&response(), &mut output).unwrap();
-        let output = String::from_utf8(output).unwrap();
-        assert!(output.contains("declarative_preflight_ready=true selected_target_id=null"));
-        assert!(output.contains("dispatch_performed=false"));
-        assert!(!output.contains("fence-001"));
-        assert!(!output.contains("argv"));
-    }
-}
+#[path = "remote_run_attempt_lease_dispatch_preflight/tests.rs"]
+mod tests;
 
 #[cfg(test)]
 pub(super) fn test_request() -> Value {

@@ -114,7 +114,7 @@ async fn revalidate_missing_selected(
     if !super::conversation_visible_to_selected_client_instance(
         state,
         &serde_json::json!({"id": selected_id}),
-    )? {
+    ) {
         return Ok(None);
     }
     client

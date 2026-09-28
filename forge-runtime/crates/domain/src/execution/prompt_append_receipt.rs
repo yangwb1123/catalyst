@@ -56,6 +56,10 @@ pub struct PromptAppendReceipt {
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "The receipt wire contract represents each authority claim as a separate boolean."
+)]
 pub struct PromptAppendReceiptAuthority {
     pub run_created: bool,
     pub device_selected: bool,
@@ -88,6 +92,13 @@ impl fmt::Display for PromptAppendReceiptError {
 
 impl std::error::Error for PromptAppendReceiptError {}
 
+/// Projects supplied append metadata into a content-free receipt observation.
+///
+/// # Errors
+///
+/// Returns [`PromptAppendReceiptError::Invalid`] for invalid owner or identifier
+/// fields, role, content or key bounds, timestamp, or version; also rejects a
+/// next version outside the JSON-safe range or inconsistent receipt fields.
 pub fn observe(
     input: PromptAppendReceiptInput,
 ) -> Result<PromptAppendReceiptObservation, PromptAppendReceiptError> {
@@ -121,6 +132,13 @@ pub fn observe(
 }
 
 impl PromptAppendReceiptObservation {
+    /// Checks the supplied request/receipt relationship and metadata bounds.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`PromptAppendReceiptError::Invalid`] if schema, owner, identities,
+    /// digests, role, version relationship, timestamp, or storage/content/authority
+    /// flags violate the receipt contract.
     pub fn validate(&self) -> Result<(), PromptAppendReceiptError> {
         if self.schema_version != PROMPT_APPEND_RECEIPT_SCHEMA_VERSION
             || !valid_owner(&self.owner)

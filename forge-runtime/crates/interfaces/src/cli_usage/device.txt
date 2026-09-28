@@ -1,4 +1,5 @@
 usage:
+  forge-runtime [--json] --version|-V
   forge-runtime [--state-dir PATH] [--json] [PATH|-C PATH|--group GROUP_ID]
   forge-runtime [OPTIONS] [PATH|-C PATH|--group GROUP_ID] session list
   forge-runtime [OPTIONS] [PATH|-C PATH|--group GROUP_ID] session new [--title TITLE]

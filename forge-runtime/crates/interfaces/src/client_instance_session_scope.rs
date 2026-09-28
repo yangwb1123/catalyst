@@ -27,6 +27,10 @@ struct ConvergenceEnvelope {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "Independent contract flags preserve the frozen observation and authority wire shape"
+)]
 struct ConvergenceAuthority {
     owner_authenticated: bool,
     session_read_authorized: bool,

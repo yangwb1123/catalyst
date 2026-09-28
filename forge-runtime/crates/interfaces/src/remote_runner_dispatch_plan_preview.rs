@@ -26,7 +26,7 @@ pub(super) fn conversation_and_run(request: &Value) -> Result<(String, String), 
 }
 
 pub(super) fn dispatch_plan(request: &Value) -> Result<Value, RemoteError> {
-    let object = request.as_object().ok_or_else(|| invalid_request())?;
+    let object = request.as_object().ok_or_else(invalid_request)?;
     object
         .get("dispatch_plan")
         .filter(|value| value.is_object())
@@ -51,7 +51,7 @@ pub(super) fn validate_dispatch_plan_request(
 
 /// Reuses the existing full-response validator with the internal plan-only
 /// envelope, keeping the public CLI/TUI request shape unchanged while making
-/// direct RemoteClient callers receive the same canonical checks.
+/// direct `RemoteClient` callers receive the same canonical checks.
 pub(super) fn validate_response_for_dispatch_plan(
     value: &Value,
     dispatch_plan: &Value,
@@ -111,7 +111,7 @@ pub(super) fn validate_response(
         RemoteError("Forge API returned an invalid Runner dispatch-plan preview".into())
     })?;
 
-    let root = request.as_object().ok_or_else(|| invalid_request())?;
+    let root = request.as_object().ok_or_else(invalid_request)?;
     let plan = root
         .get("dispatch_plan")
         .and_then(Value::as_object)
@@ -132,53 +132,8 @@ pub(super) fn validate_response(
         RemoteError("Forge API returned an invalid Runner dispatch-plan preview".into())
     })?;
 
-    for (response_field, expected) in [
-        ("owner_declaration", intent.get("owner")),
-        ("conversation_id", intent.get("conversation_id")),
-        ("run_id", intent.get("run_id")),
-        ("attempt_id", intent.get("attempt_id")),
-        ("attempt_state", plan.get("attempt_state")),
-        ("command_id", intent.get("command_id")),
-        ("command_sha256", intent.get("command_sha256")),
-        ("intent_target_id", intent.get("target_id")),
-        ("lease_epoch", lease.get("epoch")),
-        ("evaluated_at_ms", placement.get("evaluated_at_ms")),
-    ] {
-        if response.get(response_field) != expected {
-            return Err(RemoteError(format!(
-                "Forge API returned a Runner dispatch-plan preview with a different {response_field}"
-            )));
-        }
-    }
-    if response.get("candidate_count").and_then(Value::as_u64)
-        != placement
-            .get("devices")
-            .and_then(Value::as_array)
-            .map(|devices| devices.len() as u64)
-    {
-        return Err(RemoteError(
-            "Forge API returned a Runner dispatch-plan preview with a different candidate count"
-                .into(),
-        ));
-    }
-    let evaluated_at_ms = placement
-        .get("evaluated_at_ms")
-        .and_then(Value::as_u64)
-        .ok_or_else(invalid_request)?;
-    let issued_at_ms = lease
-        .get("issued_at_ms")
-        .and_then(Value::as_u64)
-        .ok_or_else(invalid_request)?;
-    let expires_at_ms = lease
-        .get("expires_at_ms")
-        .and_then(Value::as_u64)
-        .ok_or_else(invalid_request)?;
-    let expected_lease_active = evaluated_at_ms >= issued_at_ms && evaluated_at_ms < expires_at_ms;
-    if response.get("lease_active") != Some(&Value::Bool(expected_lease_active)) {
-        return Err(RemoteError(
-            "Forge API returned a Runner dispatch-plan preview with a different lease state".into(),
-        ));
-    }
+    validate_response_fields(response, intent, plan, placement, lease)?;
+    validate_response_lease(response, placement, lease)?;
     Ok(())
 }
 
@@ -269,4 +224,69 @@ mod tests {
         assert!(output.contains("dispatch_performed=false"));
         assert!(!output.contains("fence-001"));
     }
+}
+
+fn validate_response_fields(
+    response: &serde_json::Map<String, Value>,
+    intent: &serde_json::Map<String, Value>,
+    plan: &serde_json::Map<String, Value>,
+    placement: &serde_json::Map<String, Value>,
+    lease: &serde_json::Map<String, Value>,
+) -> Result<(), RemoteError> {
+    for (response_field, expected) in [
+        ("owner_declaration", intent.get("owner")),
+        ("conversation_id", intent.get("conversation_id")),
+        ("run_id", intent.get("run_id")),
+        ("attempt_id", intent.get("attempt_id")),
+        ("attempt_state", plan.get("attempt_state")),
+        ("command_id", intent.get("command_id")),
+        ("command_sha256", intent.get("command_sha256")),
+        ("intent_target_id", intent.get("target_id")),
+        ("lease_epoch", lease.get("epoch")),
+        ("evaluated_at_ms", placement.get("evaluated_at_ms")),
+    ] {
+        if response.get(response_field) != expected {
+            return Err(RemoteError(format!(
+                "Forge API returned a Runner dispatch-plan preview with a different {response_field}"
+            )));
+        }
+    }
+    if response.get("candidate_count").and_then(Value::as_u64)
+        != placement
+            .get("devices")
+            .and_then(Value::as_array)
+            .map(|devices| devices.len() as u64)
+    {
+        return Err(RemoteError(
+            "Forge API returned a Runner dispatch-plan preview with a different candidate count"
+                .into(),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_response_lease(
+    response: &serde_json::Map<String, Value>,
+    placement: &serde_json::Map<String, Value>,
+    lease: &serde_json::Map<String, Value>,
+) -> Result<(), RemoteError> {
+    let evaluated_at_ms = placement
+        .get("evaluated_at_ms")
+        .and_then(Value::as_u64)
+        .ok_or_else(invalid_request)?;
+    let issued_at_ms = lease
+        .get("issued_at_ms")
+        .and_then(Value::as_u64)
+        .ok_or_else(invalid_request)?;
+    let expires_at_ms = lease
+        .get("expires_at_ms")
+        .and_then(Value::as_u64)
+        .ok_or_else(invalid_request)?;
+    let expected_lease_active = evaluated_at_ms >= issued_at_ms && evaluated_at_ms < expires_at_ms;
+    if response.get("lease_active") != Some(&Value::Bool(expected_lease_active)) {
+        return Err(RemoteError(
+            "Forge API returned a Runner dispatch-plan preview with a different lease state".into(),
+        ));
+    }
+    Ok(())
 }
