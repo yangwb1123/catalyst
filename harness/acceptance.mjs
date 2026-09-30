@@ -30,7 +30,7 @@ import {
 import { probeLint, probeCoverage } from './acceptance-quality.mjs';
 import {
   runNodeHarness, runPythonHarness, runPythonHarnessParallel,
-  runCountedNodeFiles, runPythonSuites,
+  runCountedNodeFiles, runPythonSuites, pythonLaneDetail,
 } from './acceptance-tests.mjs';
 import {
   criticalNAReasons,
@@ -127,17 +127,12 @@ export function nodeTestRow() {
 
 export function pythonTestRow() {
   const r = runPythonHarness();
-  return result('test_pass_python', r.ok ? PASS : FAIL,
-    `recursive Python suites (${r.files} files/${r.count} tests)`);
+  return result('test_pass_python', r.ok ? PASS : FAIL, pythonLaneDetail(r));
 }
 
-// Parallel-python row used by the worker path: the 60+ suite files run as
-// independent processes with a bounded pool, so the python wall-clock drops to
-// ~the slowest file. Same verdict semantics and detail shape as pythonTestRow.
 export async function pythonTestRowParallel() {
   const r = await runPythonHarnessParallel();
-  return result('test_pass_python', r.ok ? PASS : FAIL,
-    `recursive Python suites (${r.files} files/${r.count} tests)`);
+  return result('test_pass_python', r.ok ? PASS : FAIL, pythonLaneDetail(r));
 }
 
 // Fold the three test sub-rows (Node / Python / project) into the single

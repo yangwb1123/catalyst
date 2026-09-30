@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -12,15 +13,14 @@ import (
 	model "forgeos/forge-core/internal/runtimebridge/model"
 )
 
+// fixtureEnvVar names the environment override a cross-repository contract
+// script uses to supply the authoritative canonical bytes. It is an override,
+// not a precondition: without it every local suite still runs these checks
+// against the checked-in testdata witness instead of failing or skipping.
+const fixtureEnvVar = "FORGE_PROMPT_APPEND_RECEIPT_FIXTURE"
+
 func TestPromptAppendReceiptCanonicalFixture(t *testing.T) {
-	path := os.Getenv("FORGE_PROMPT_APPEND_RECEIPT_FIXTURE")
-	if path == "" {
-		t.Skip("FORGE_PROMPT_APPEND_RECEIPT_FIXTURE is set by the contract script")
-	}
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
+	raw := fixtureBytes(t)
 	value, err := decode(raw)
 	if err != nil {
 		t.Fatal(err)
@@ -62,7 +62,7 @@ func TestPromptAppendReceiptRejectsInvalidInput(t *testing.T) {
 }
 
 func TestPromptAppendReceiptRejectsWireAndBindingDrift(t *testing.T) {
-	raw := canonicalFixture(t)
+	raw := fixtureBytes(t)
 	mutations := map[string][]byte{
 		"unknown":   append(bytes.TrimSuffix(bytes.TrimSpace(raw), []byte("}")), []byte(`,"unexpected":true}`)...),
 		"duplicate": append(bytes.TrimSuffix(bytes.TrimSpace(raw), []byte("}")), []byte(`,"schema_version":"forge.prompt-append-receipt/v1"}`)...),
@@ -80,15 +80,15 @@ func TestPromptAppendReceiptRejectsWireAndBindingDrift(t *testing.T) {
 	}
 }
 
-func canonicalFixture(t *testing.T) []byte {
+func fixtureBytes(t *testing.T) []byte {
 	t.Helper()
-	path := os.Getenv("FORGE_PROMPT_APPEND_RECEIPT_FIXTURE")
+	path := os.Getenv(fixtureEnvVar)
 	if path == "" {
-		t.Fatal("FORGE_PROMPT_APPEND_RECEIPT_FIXTURE is required")
+		path = filepath.Join("testdata", "prompt_append_receipt_canonical.json")
 	}
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("canonical fixture %s: %v", path, err)
 	}
 	return raw
 }

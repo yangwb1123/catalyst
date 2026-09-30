@@ -63,6 +63,51 @@ print("FORGE_PY_TESTS=" + str(count))
 raise SystemExit(0 if ok and count > 0 else 1)
 `;
 
+// Repository Python suites that live OUTSIDE harness/ are load-bearing source
+// with no owning project manifest, so the acceptance lane owns and executes
+// them instead of leaving them unowned by any runner. Two execution modes are
+// required and neither may be substituted for the other:
+//   - skills/<skill>/tests/test_*.py  fail closed unless Python is isolated,
+//     so they run under -I;
+//   - scripts/test_*.py                import their sibling modules from the
+//     script directory, so they run with the harness lane's own sys.path
+//     handling and no -I.
+// Vendored copies under scripts/_vendor are the distribution payload itself
+// and are excluded exactly as the harness lane excludes them.
+export function discoverRepositoryPythonSuites(root = ROOT, readDir = readdirSync) {
+  const isolated = [];
+  const shared = [];
+  const errors = [];
+  function walk(current) {
+    let entries;
+    try {
+      entries = readDir(current, { withFileTypes: true });
+    } catch (err) {
+      errors.push({
+        path: relative(root, current).replace(/\\/g, '/') || '.',
+        message: err?.message ?? String(err),
+      });
+      return;
+    }
+    for (const entry of entries) {
+      const path = join(current, entry.name);
+      if (entry.isDirectory()) {
+        if (!SKIP_DIRS.has(entry.name) && entry.name !== '_vendor') walk(path);
+      } else if (entry.isFile() && /^test_.*\.py$/.test(entry.name)) {
+        const inTests = current.split(/[\\/]/).pop() === 'tests';
+        if (inTests) isolated.push(path);
+        else if (current === join(root, 'scripts')) shared.push(path);
+      }
+    }
+  }
+  walk(join(root, 'skills'));
+  walk(join(root, 'scripts'));
+  const sort = (list) => list.sort();
+  return {
+    isolated: sort(isolated), shared: sort(shared), errors,
+  };
+}
+
 export function discoverHarnessSuites(dir = HARNESS_DIR, readDir = readdirSync) {
   const node = [];
   const python = [];
@@ -149,6 +194,53 @@ export function runPythonSuites(dir = HARNESS_DIR, exec = run, discovery = disco
   return { entries, count, files: found.length };
 }
 
+// The python lane also executes the portable skill distributions, so the
+// evidence string must name them: a silent extra lane would otherwise look
+// identical to the original harness-only count.
+export function pythonLaneDetail(result) {
+  return `recursive Python suites (${result.files} files/${result.count} tests; `
+    + `${result.portable ? result.portable.files : 0} outside harness/ `
+    + `(skills/ isolated, scripts/ shared)`;
+}
+
+// Serial lane for the repository suites outside harness/. Each suite runs in
+// the mode it demands, so a suite that refuses its interpreter still fails
+// closed here instead of being skipped.
+export function runPortableSkillSuites(
+  exec = run, discovery = discoverRepositoryPythonSuites(),
+) {
+  const entries = [];
+  let count = 0;
+  const modes = [
+    [discovery.isolated, ['-I', '-B']],
+    [discovery.shared, ['-B']],
+  ];
+  for (const [files, flags] of modes) {
+    for (const path of files) {
+      const r = exec('python3', [...flags, '-c', PYTHON_SUITE_RUNNER, path], {
+        PYTHONDONTWRITEBYTECODE: '1',
+      }, ROOT);
+      const discovered = Number(
+        (String(r.out ?? '').match(/(?:^|\n)FORGE_PY_TESTS=(\d+)/) ?? [])[1],
+      );
+      const tests = Number.isNaN(discovered) ? 0 : discovered;
+      count += tests;
+      entries.push([relative(ROOT, path).replace(/\\/g, '/'), r.ok && tests > 0]);
+    }
+  }
+  const files = discovery.isolated.length + discovery.shared.length;
+  if (files === 0) {
+    entries.push(['repository Python discovery (no suites outside harness/)', false]);
+  }
+  for (const failure of discovery.errors) {
+    entries.push([
+      `repository Python discovery unreadable: ${failure.path} (${failure.message})`,
+      false,
+    ]);
+  }
+  return { entries, count, files };
+}
+
 export function runNodeHarness(dir = HARNESS_DIR, root = ROOT, exec = run) {
   const found = discoverHarnessSuites(dir);
   const node = runCountedNodeFiles(found.node, root, exec);
@@ -163,11 +255,14 @@ export function runNodeHarness(dir = HARNESS_DIR, root = ROOT, exec = run) {
 
 export function runPythonHarness(dir = HARNESS_DIR, exec = run) {
   const python = runPythonSuites(dir, exec);
+  const portable = runPortableSkillSuites(exec);
+  const entries = [...python.entries, ...portable.entries];
   return {
-    ok: python.entries.every(([, ok]) => ok),
-    count: python.count,
-    files: python.files,
-    entries: python.entries,
+    ok: entries.every(([, ok]) => ok),
+    count: python.count + portable.count,
+    files: python.files + portable.files,
+    entries,
+    portable,
   };
 }
 
@@ -194,9 +289,20 @@ function terminatePythonSuite(child) {
   child.kill('SIGKILL');
 }
 
+// Portable skill suites fail closed unless Python itself is isolated (-I), so
+// they get their own argv. Same bounded-output and process-group discipline as
+// the harness lane: identical verdict semantics, one isolation flag apart.
+function spawnPortableSkillSuite(path, index, env) {
+  return spawnSuiteWithArgs(['-I', '-B', '-c', PYTHON_SUITE_RUNNER, path], index, env);
+}
+
 function spawnPythonSuite(path, index, env) {
+  return spawnSuiteWithArgs(['-B', '-c', PYTHON_SUITE_RUNNER, path], index, env);
+}
+
+function spawnSuiteWithArgs(args, index, env) {
   return new Promise((resolve) => {
-    const child = spawn('python3', ['-B', '-c', PYTHON_SUITE_RUNNER, path], {
+    const child = spawn('python3', args, {
       cwd: ROOT, env, stdio: ['ignore', 'pipe', 'pipe'],
       detached: process.platform !== 'win32',
     });
@@ -230,14 +336,14 @@ function spawnPythonSuite(path, index, env) {
   });
 }
 
-async function runPythonPool(files, workers, env) {
+async function runPythonPool(files, workers, env, spawnSuite = spawnPythonSuite) {
   const results = new Array(files.length);
   let cursor = 0;
   async function lane() {
     while (cursor < files.length) {
       const index = cursor;
       cursor += 1;
-      results[index] = await spawnPythonSuite(files[index], index, env);
+      results[index] = await spawnSuite(files[index], index, env);
     }
   }
   await Promise.all(Array.from(
@@ -273,15 +379,65 @@ function summarizePythonPool(dir, found, results) {
   return { ok: entries.every(([, ok]) => ok), count, files: found.python.length, entries };
 }
 
+// The parallel lane runs the isolated and shared pools separately (different
+// argv) and folds them back into one result array whose index order matches
+// [...isolated, ...shared] so a single summarizer covers both.
+function mergePortableSkillPools(found, isolatedResults, sharedResults) {
+  return summarizePortableSkillPool(found, [...isolatedResults, ...sharedResults]);
+}
+
+function summarizePortableSkillPool(found, results) {
+  let count = 0;
+  const entries = [];
+  const all = [...found.isolated, ...found.shared];
+  all.forEach((path, index) => {
+    const row = results[index];
+    const tests = Number(
+      (String(row?.out ?? '').match(/(?:^|\n)FORGE_PY_TESTS=(\d+)/) ?? [])[1],
+    );
+    const observed = Number.isNaN(tests) ? 0 : tests;
+    count += observed;
+    entries.push([
+      relative(ROOT, path).replace(/\\/g, '/'),
+      row?.code === 0 && observed > 0 && !row?.overflow,
+    ]);
+  });
+  if (all.length === 0) {
+    entries.push(['repository Python discovery (no suites outside harness/)', false]);
+  }
+  for (const failure of found.errors) {
+    entries.push([
+      `repository Python discovery unreadable: ${failure.path} (${failure.message})`,
+      false,
+    ]);
+  }
+  return { ok: entries.every(([, ok]) => ok), count, files: all.length, entries };
+}
+
 export async function runPythonHarnessParallel(dir = HARNESS_DIR, { workers = 8 } = {}) {
   if (!Number.isSafeInteger(workers) || workers < 1) {
     throw new Error('parallel Python workers must be a positive integer');
   }
   const found = discoverHarnessSuites(dir);
+  const skill = discoverRepositoryPythonSuites();
   const env = { ...process.env, PYTHONDONTWRITEBYTECODE: '1' };
   delete env.NODE_TEST_CONTEXT;
   const results = await runPythonPool(found.python, workers, env);
-  return summarizePythonPool(dir, found, results);
+  const skillResults = await runPythonPool(
+    skill.isolated, workers, env, spawnPortableSkillSuite,
+  );
+  const base = summarizePythonPool(dir, found, results);
+  const sharedResults = await runPythonPool(skill.shared, workers, env);
+  const portable = mergePortableSkillPools(
+    skill, skillResults, sharedResults,
+  );
+  return {
+    ok: base.ok && portable.ok,
+    count: base.count + portable.count,
+    files: base.files + portable.files,
+    entries: [...base.entries, ...portable.entries],
+    portable,
+  };
 }
 
 export function runHarnessSuites(dir = HARNESS_DIR, root = ROOT, exec = run) {
