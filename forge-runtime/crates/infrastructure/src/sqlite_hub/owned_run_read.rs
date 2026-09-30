@@ -10,13 +10,12 @@ use super::{
     read_error,
 };
 mod query;
-use query::{RUN_SUMMARY_QUERY, corrupt, invalid_page, not_found_conversation};
+use query::{corrupt, invalid_page, not_found_conversation, query_run_summaries};
 
 type RunSummaryRow = (String, String, i64, i64, i64);
 
 // Keep owner check, scalar scan, aggregate event-byte budget, payload projection,
 // and cursor construction together over one deferred snapshot.
-#[allow(clippy::too_many_lines)]
 pub(super) fn owned_run_page(
     connection: &mut Connection,
     owner: &ConversationOwner,
@@ -75,28 +74,8 @@ pub(super) fn owned_run_observation(
 
     ensure_owned_conversation(&transaction, owner, conversation_id)?;
     ensure_run_in_conversation(&transaction, conversation_id, run_id)?;
-    let (run_id, prompt_id, created_at, latest_sequence, latest_event_bytes) = transaction
-        .query_row(
-            "SELECT r.id, r.prompt_id, r.created_at_ms,
-                    COALESCE((SELECT MAX(e.seq) FROM run_events AS e
-                              WHERE e.run_id = r.id), 0),
-                    COALESCE((SELECT length(CAST(e.event_json AS BLOB))
-                              FROM run_events AS e WHERE e.run_id = r.id
-                              ORDER BY e.seq DESC LIMIT 1), 0)
-             FROM runs AS r
-             WHERE r.id = ?1 AND r.conversation_id = ?2",
-            params![run_id, conversation_id],
-            |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, i64>(2)?,
-                    row.get::<_, i64>(3)?,
-                    row.get::<_, i64>(4)?,
-                ))
-            },
-        )
-        .map_err(read_error)?;
+    let (run_id, prompt_id, created_at, latest_sequence, latest_event_bytes) =
+        query::run_summary(&transaction, conversation_id, run_id)?;
     let mut source_event_bytes = 0_usize;
     let summary = decode_run_summary(
         &transaction,
@@ -289,40 +268,6 @@ fn decode_timeline_event(
         emitted_at_ms: event.emitted_at_ms,
         event_type,
     }))
-}
-
-fn query_run_summaries(
-    transaction: &Transaction<'_>,
-    owner: &ConversationOwner,
-    conversation_id: &str,
-    cursor_time: Option<i64>,
-    cursor_id: Option<&str>,
-    limit: i64,
-) -> Result<Vec<RunSummaryRow>, HubStoreError> {
-    let mut statement = transaction.prepare(RUN_SUMMARY_QUERY).map_err(read_error)?;
-    let rows = statement
-        .query_map(
-            params![
-                owner.issuer,
-                owner.subject,
-                owner.tenant_id,
-                conversation_id,
-                cursor_time,
-                cursor_id,
-                limit,
-            ],
-            |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, i64>(2)?,
-                    row.get::<_, i64>(3)?,
-                    row.get::<_, i64>(4)?,
-                ))
-            },
-        )
-        .map_err(read_error)?;
-    rows.collect::<Result<Vec<_>, _>>().map_err(read_error)
 }
 
 fn ensure_owned_conversation(

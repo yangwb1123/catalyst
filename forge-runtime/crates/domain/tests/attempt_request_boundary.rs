@@ -453,3 +453,24 @@ fn lifecycle_gate_does_not_expand_existing_serde_path_exceptions() {
         assert!(check_lifecycle_consumer_fixture(&changed, path).is_err());
     }
 }
+
+#[test]
+fn lifecycle_gate_keeps_rpc_default_exception_bound_to_reviewed_source() {
+    let source = include_str!("../../interfaces/src/runtime_rpc/validation.rs");
+    let path = Some("crates/interfaces/src/runtime_rpc/validation.rs");
+    assert!(check_lifecycle_consumer_fixture(source, path).is_ok());
+    for other_path in [
+        None,
+        Some("crates/interfaces/src/runtime_rpc/validation/operation.rs"),
+    ] {
+        assert!(check_lifecycle_consumer_fixture(source, other_path).is_err());
+    }
+    let drifted = format!("{source}\n// source changed\n");
+    assert!(check_lifecycle_consumer_fixture(&drifted, path).is_err());
+    let changed = source.replace(
+        "owned::default_owned_change_limit",
+        "forge_runtime_domain::execution::attempt_lifecycle::AttemptLifecycle::requested",
+    );
+    assert_ne!(source, changed);
+    assert!(check_lifecycle_consumer_fixture(&changed, path).is_err());
+}

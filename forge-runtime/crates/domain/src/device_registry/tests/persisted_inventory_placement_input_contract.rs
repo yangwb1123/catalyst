@@ -1,5 +1,10 @@
 use super::*;
-use serde::Deserialize;
+#[path = "persisted_inventory_placement_input_contract/fixture.rs"]
+mod fixture;
+use fixture::{
+    CapabilityFixture, Case, EvaluationFixture, EvaluationPolicyFixture, Fixture, OwnerFixture,
+    PolicyFixture, StateFixture,
+};
 
 const FIXTURE: &str = include_str!(
     "../../../../../../docs/contracts/fixtures/forge-device-inventory-placement-input-v1.json"
@@ -7,233 +12,6 @@ const FIXTURE: &str = include_str!(
 const EVALUATION_FIXTURE: &str = include_str!(
     "../../../../../../docs/contracts/fixtures/forge-device-inventory-placement-evaluation-v1.json"
 );
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Fixture {
-    schema_version: String,
-    evaluation_mode: String,
-    evaluation_owner: OwnerFixture,
-    policy_requirements: PolicyFixture,
-    authority: Authority,
-    state: StateFixture,
-    cases: Vec<Case>,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct OwnerFixture {
-    issuer: String,
-    subject: String,
-    tenant_id: String,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct PolicyFixture {
-    data_residency_zones: Vec<String>,
-    minimum_trust_zone: String,
-    sandbox_floor: String,
-    concurrency_slots: u16,
-}
-
-#[derive(Deserialize)]
-#[allow(clippy::struct_excessive_bools)]
-#[serde(deny_unknown_fields)]
-struct Authority {
-    identity_verified: bool,
-    heartbeat_persisted: bool,
-    inventory_authoritative: bool,
-    placement_selected: bool,
-    reservation_created: bool,
-    execution_authorized: bool,
-    dispatch_performed: bool,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct StateFixture {
-    revision: u64,
-    device: DeviceFixture,
-    runner: RunnerFixture,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct DeviceFixture {
-    device_id: String,
-    owner: OwnerFixture,
-    approval_state: String,
-    cordon_state: String,
-    reservation_state: String,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct RunnerFixture {
-    device_id: String,
-    instance_id: String,
-    generation: u64,
-    heartbeat_sequence: u64,
-    server_observed_at_ms: u64,
-    capability_lease_expires_at_ms: u64,
-    liveness: String,
-    capabilities: CapabilityFixture,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct CapabilityFixture {
-    os: String,
-    architecture: String,
-    cpu_cores: u32,
-    available_cpu_cores: u32,
-    memory_bytes: u64,
-    available_memory_bytes: u64,
-    storage_bytes: u64,
-    available_storage_bytes: u64,
-    gpus: Vec<GpuFixture>,
-    runtimes: Vec<String>,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct GpuFixture {
-    id: String,
-    vendor: String,
-    memory_bytes: u64,
-    available_memory_bytes: u64,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Case {
-    name: String,
-    #[serde(default)]
-    evaluation_owner: Option<OwnerFixture>,
-    #[serde(default)]
-    runner_device_id: Option<String>,
-    #[serde(default)]
-    approval_state: Option<String>,
-    #[serde(default)]
-    cordon_state: Option<String>,
-    #[serde(default)]
-    liveness: Option<String>,
-    #[serde(default)]
-    server_observed_at_ms: Option<u64>,
-    #[serde(default)]
-    capability_lease_expires_at_ms: Option<u64>,
-    expected: Expected,
-}
-
-#[allow(clippy::struct_excessive_bools)]
-#[derive(Default, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Expected {
-    accepted: bool,
-    error: String,
-    #[serde(default)]
-    revision: u64,
-    #[serde(default)]
-    device_id: String,
-    #[serde(default)]
-    instance_id: String,
-    #[serde(default)]
-    generation: u64,
-    #[serde(default)]
-    heartbeat_sequence: u64,
-    #[serde(default)]
-    approval_state: String,
-    #[serde(default)]
-    cordon_state: String,
-    #[serde(default)]
-    reservation_state: String,
-    #[serde(default)]
-    liveness: String,
-    #[serde(default)]
-    snapshot_observed_at_ms: u64,
-    #[serde(default)]
-    lease_expires_at_ms: u64,
-    #[serde(default)]
-    owner_declaration_unverified: bool,
-    #[serde(default)]
-    policy_attributes_unverified: bool,
-    #[serde(default)]
-    data_residency_zones: Vec<String>,
-    #[serde(default)]
-    trust_zone: String,
-    #[serde(default)]
-    sandbox_levels: Vec<String>,
-    #[serde(default)]
-    concurrency_limit: u16,
-    #[serde(default)]
-    active_concurrency: u16,
-    #[serde(default)]
-    policy_requirements_met: bool,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct EvaluationFixture {
-    schema_version: String,
-    evaluation_mode: String,
-    source_fixture: String,
-    source_case: String,
-    evaluated_at_ms: u64,
-    policy_requirements: EvaluationPolicyFixture,
-    authority: EvaluationAuthority,
-    expected: EvaluationExpected,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct EvaluationPolicyFixture {
-    os: String,
-    architecture: String,
-    min_cpu_cores: u32,
-    min_memory_bytes: u64,
-    min_storage_bytes: u64,
-    runtime: String,
-    gpu: EvaluationGpuFixture,
-    data_residency_zones: Vec<String>,
-    minimum_trust_zone: String,
-    sandbox_floor: String,
-    concurrency_slots: u16,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct EvaluationGpuFixture {
-    required: bool,
-    min_memory_bytes: u64,
-    runtime: String,
-}
-
-#[allow(clippy::struct_excessive_bools)]
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct EvaluationAuthority {
-    placement_evaluated: bool,
-    placement_selected: bool,
-    reservation_created: bool,
-    execution_authorized: bool,
-    dispatch_performed: bool,
-}
-
-#[allow(clippy::struct_excessive_bools)]
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct EvaluationExpected {
-    accepted: bool,
-    error: String,
-    revision: u64,
-    device_id: String,
-    instance_id: String,
-    matches_requirements: bool,
-    exclusion_reasons: Vec<String>,
-    owner_declaration_unverified: bool,
-    device_attributes_unverified: bool,
-}
 
 #[test]
 fn persisted_inventory_placement_input_contract_fixture() {
@@ -265,28 +43,10 @@ fn persisted_inventory_placement_input_contract_fixture() {
     }
 }
 
-#[allow(clippy::too_many_lines)]
 #[test]
 fn persisted_inventory_offline_placement_evaluation_contract_fixture() {
     let evaluation: EvaluationFixture = serde_json::from_str(EVALUATION_FIXTURE).unwrap();
-    assert_eq!(
-        evaluation.schema_version,
-        "forge.device-inventory-placement-evaluation/v1"
-    );
-    assert_eq!(
-        evaluation.evaluation_mode,
-        "pure_persisted_inventory_offline_evaluation"
-    );
-    assert_eq!(
-        evaluation.source_fixture,
-        "forge-device-inventory-placement-input-v1.json"
-    );
-    assert_eq!(evaluation.source_case, "online");
-    assert!(!evaluation.authority.placement_evaluated);
-    assert!(!evaluation.authority.placement_selected);
-    assert!(!evaluation.authority.reservation_created);
-    assert!(!evaluation.authority.execution_authorized);
-    assert!(!evaluation.authority.dispatch_performed);
+    assert_evaluation_envelope(&evaluation);
 
     let source: Fixture = serde_json::from_str(FIXTURE).unwrap();
     let source_case = source
@@ -297,29 +57,7 @@ fn persisted_inventory_offline_placement_evaluation_contract_fixture() {
     let state = state_for_case(&source.state, source_case).unwrap();
     let input = build_persisted_inventory_placement_input(&state, &owner(&source.evaluation_owner))
         .unwrap();
-    let policy = &evaluation.policy_requirements;
-    let requirements = DevicePlacementRequirements::new(
-        Some(&policy.os),
-        Some(&policy.architecture),
-        policy.min_cpu_cores,
-        policy.min_memory_bytes,
-        policy.min_storage_bytes,
-        vec![policy.runtime.clone()],
-        usize::from(policy.gpu.required),
-        policy.gpu.min_memory_bytes,
-    )
-    .unwrap()
-    .with_policy(
-        DevicePlacementPolicy::new()
-            .with_allowed_data_residency_zones(policy.data_residency_zones.clone())
-            .unwrap()
-            .with_minimum_trust_zone(&policy.minimum_trust_zone)
-            .unwrap()
-            .with_sandbox_floor(&policy.sandbox_floor)
-            .unwrap()
-            .with_concurrency_slots(policy.concurrency_slots)
-            .unwrap(),
-    );
+    let requirements = evaluation_requirements(&evaluation.policy_requirements);
     assert!(!evaluation.policy_requirements.gpu.required);
     assert_eq!(evaluation.policy_requirements.gpu.runtime, "");
     let actual = evaluate_persisted_inventory_placement_input(
@@ -462,13 +200,17 @@ fn state_for_case(
     restore_persisted_inventory(base.revision, persisted, runner)
 }
 
-#[allow(clippy::too_many_lines)]
 fn assert_input(case: &Case, input: &PersistedInventoryPlacementInput, policy: &PolicyFixture) {
+    assert_input_identity(case, input);
+    assert_input_observation(case, input);
+    assert_input_attributes(case, input);
+    assert_input_policy(case, input, policy);
+}
+
+fn assert_input_identity(case: &Case, input: &PersistedInventoryPlacementInput) {
     let expected = &case.expected;
-    let candidate = input.candidate();
-    let device = candidate.device();
-    let runner = candidate.instance();
-    let attributes = candidate.attributes();
+    let device = input.candidate().device();
+    let runner = input.candidate().instance();
     assert_eq!(input.revision(), expected.revision, "{}", case.name);
     assert_eq!(device.id().as_str(), expected.device_id, "{}", case.name);
     assert_eq!(
@@ -506,6 +248,11 @@ fn assert_input(case: &Case, input: &PersistedInventoryPlacementInput, policy: &
         "{}",
         case.name
     );
+}
+
+fn assert_input_observation(case: &Case, input: &PersistedInventoryPlacementInput) {
+    let expected = &case.expected;
+    let runner = input.candidate().instance();
     assert_eq!(
         liveness_string(runner.liveness()),
         expected.liveness,
@@ -536,6 +283,11 @@ fn assert_input(case: &Case, input: &PersistedInventoryPlacementInput, policy: &
         "{}",
         case.name
     );
+}
+
+fn assert_input_attributes(case: &Case, input: &PersistedInventoryPlacementInput) {
+    let expected = &case.expected;
+    let attributes = input.candidate().attributes();
     assert_eq!(
         attributes.data_residency_zones(),
         expected.data_residency_zones,
@@ -565,6 +317,17 @@ fn assert_input(case: &Case, input: &PersistedInventoryPlacementInput, policy: &
         "{}",
         case.name
     );
+}
+
+fn assert_input_policy(
+    case: &Case,
+    input: &PersistedInventoryPlacementInput,
+    policy: &PolicyFixture,
+) {
+    let expected = &case.expected;
+    let candidate = input.candidate();
+    let device = candidate.device();
+    let runner = candidate.instance();
     let request = DevicePlacementRequest::new(
         device.tenant_id().clone(),
         DevicePlacementRequirements::any().with_policy(policy_value(policy)),
@@ -664,4 +427,50 @@ fn capabilities(value: &CapabilityFixture) -> CapabilitySnapshot {
         value.runtimes.clone(),
     )
     .unwrap()
+}
+
+fn assert_evaluation_envelope(evaluation: &EvaluationFixture) {
+    assert_eq!(
+        evaluation.schema_version,
+        "forge.device-inventory-placement-evaluation/v1"
+    );
+    assert_eq!(
+        evaluation.evaluation_mode,
+        "pure_persisted_inventory_offline_evaluation"
+    );
+    assert_eq!(
+        evaluation.source_fixture,
+        "forge-device-inventory-placement-input-v1.json"
+    );
+    assert_eq!(evaluation.source_case, "online");
+    assert!(!evaluation.authority.placement_evaluated);
+    assert!(!evaluation.authority.placement_selected);
+    assert!(!evaluation.authority.reservation_created);
+    assert!(!evaluation.authority.execution_authorized);
+    assert!(!evaluation.authority.dispatch_performed);
+}
+
+fn evaluation_requirements(policy: &EvaluationPolicyFixture) -> DevicePlacementRequirements {
+    DevicePlacementRequirements::new(
+        Some(&policy.os),
+        Some(&policy.architecture),
+        policy.min_cpu_cores,
+        policy.min_memory_bytes,
+        policy.min_storage_bytes,
+        vec![policy.runtime.clone()],
+        usize::from(policy.gpu.required),
+        policy.gpu.min_memory_bytes,
+    )
+    .unwrap()
+    .with_policy(
+        DevicePlacementPolicy::new()
+            .with_allowed_data_residency_zones(policy.data_residency_zones.clone())
+            .unwrap()
+            .with_minimum_trust_zone(&policy.minimum_trust_zone)
+            .unwrap()
+            .with_sandbox_floor(&policy.sandbox_floor)
+            .unwrap()
+            .with_concurrency_slots(policy.concurrency_slots)
+            .unwrap(),
+    )
 }

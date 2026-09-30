@@ -11,7 +11,7 @@ const REMOTE_LOGIN_SHA256: &str =
     "feb4a5f797b867475fc2e7150d735077c3326cf5a501d509ed7887feaa368a2b";
 const RUNTIME_RPC_VALIDATION: &str = "crates/interfaces/src/runtime_rpc/validation.rs";
 const RUNTIME_RPC_VALIDATION_SHA256: &str =
-    "b37e5bbcde1d2a3450fca5842774866aa242f9e47ae6bce7e39475ab5824555e";
+    "7ca91fea365695fb54c44e12815a9994cbc704db84a1953370f04f1397e4da8d";
 const RESOURCE_SUMMARY: &str = "crates/interfaces/src/device_resource_summary_command.rs";
 const RESOURCE_SUMMARY_SHA256: &str =
     "fcc66afb929113cb774eb5dfb3e5d77580c8ac59223ac0b59741b35d4ae83f6c";

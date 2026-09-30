@@ -8952,3 +8952,46 @@ The stripped executable is 27,309,984 bytes. It remains an unsigned local Linux
 x86_64 preview requiring glibc 2.39 and D-Bus, validated with loopback provider
 fixtures only. Existing archives are preserved; no real-model validation,
 cross-distribution validation, signing, or external publication occurred.
+
+### Runtime preview quality — bounded source modules and preserved behavior
+
+The 22 remaining oversized Runtime source/test files are split by their existing
+command, query, validation, and fixture responsibilities. This clears Runtime's
+500-line file violations; the repository total falls from 31 to 9, all outside
+Runtime. Function-length findings fall from 446 to 383. The 12 package, 2 fan-in,
+and 1 naming findings remain, so full repository acceptance is not established.
+The 109 changed/new Rust files contain 723 detected functions, with maxima of
+493 lines per file and 50 per function and no local structure findings.
+
+Argument parsing, remote client operations, credential capability reporting,
+inventory evaluation, persisted placement, owner-scoped Run reads, and their
+tests retain validation/error order and wire/output behavior. Run ownership,
+membership, scalar reads, byte budgets, and commit remain in the same deferred
+SQLite snapshot. Existing test names, assertions, fixture values, and request
+ordering are preserved through named modules and explicit helper parameters.
+Three fresh-context independent reviews pass for the argument/remote, core/TUI,
+and inventory groups. Strict production CLI Clippy passes.
+
+The Runtime RPC wire request declaration stays in place; only its internal
+Operation enum and methods move to a child module. After source review, the
+exact Serde source digest is updated without broadening the exception. A new
+regression checks the real source/path and rejects absent/substituted paths,
+source-byte drift, and a substituted default function path. Final Domain and
+Infrastructure validation passes against the reviewed source and exact digest.
+
+All 14 Python packaging regressions and 10 smoke checks on the standalone
+release executable pass. The refreshed local archive is
+`dist/forge-runtime-0.1.0-preview-dcddd620df84-linux-x86_64.tar.gz`
+(10,479,687 bytes; SHA-256
+`3394827711ce9939874a39f8c6f4159450c3410de02227e4749ea18f2eb681d1`).
+The stripped executable is 27,373,056 bytes. It remains an unsigned local Linux
+x86_64 developer preview requiring glibc 2.39 and D-Bus. Provider checks use only
+loopback fixtures; no paid model calls, signing, cross-distribution validation,
+or external publication occurred. Earlier archives are preserved.
+
+Final Rust validation passes 2,894 cases across 113 targets with no failures or
+ignored cases: Application 328/39, Domain 724/22 (including all 28 Attempt-boundary
+checks), Infrastructure 712/35, and CLI 1,130/17 (binary unit tests, all 15 device
+integration targets, and version integration). Whole-workspace Cargo formatting,
+strict production CLI Clippy, `git diff --check`, and all 13 governance checks
+pass. Full `forge accept` and all-target/test Clippy success are not claimed.
